@@ -21,7 +21,7 @@ Don't do screenshots its not very usefull
 </br>
 Take http://www.nirsoft.net/utils/blue_screen_view.html and post data from it.
 
-[Source](https://mega.nz/file/wS41nLQR#FagAvQmmIJWNzf7g2bFJBYbXldvg0leFLZAPIqYnd-4)
+[Source](https://mega.nz/file/VOo2GRzS#JQX5eIDuW9n6eUkOmHcTZJbdGfvwgnpIoyw6F0l74b4)
 
 **Pay attention that mega.nz fails on mypal68**
 

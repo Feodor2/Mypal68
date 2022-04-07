@@ -15,6 +15,12 @@ MD5: 9c210e09f7efe90e274abcaef0958aa8
 SHA256: c576fee15d1ebdbb8c0fd4b2b56c86522b4a8f42e315e7e8c924eb2a09df0bdf
 </br>
 
+**IF YOU GOT THE BLUE SCREEN**
+
+Don't do screenshots its not very usefull
+</br>
+Take http://www.nirsoft.net/utils/blue_screen_view.html and post data from it.
+
 [Source](https://mega.nz/file/wS41nLQR#FagAvQmmIJWNzf7g2bFJBYbXldvg0leFLZAPIqYnd-4)
 
 **Pay attention that mega.nz fails on mypal68**

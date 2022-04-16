@@ -1,0 +1,53 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
+
+MARIONETTE_UNIT_MANIFESTS += ['tests/marionette/manifest.ini']
+
+JAR_MANIFESTS += ['jar.mn']
+
+XPIDL_SOURCES += [
+    'nsIBrowserProfileMigrator.idl',
+]
+
+XPIDL_MODULE = 'migration'
+
+EXTRA_JS_MODULES += [
+    'ChromeMigrationUtils.jsm',
+    'ChromeProfileMigrator.jsm',
+    'FirefoxProfileMigrator.jsm',
+    'MigrationUtils.jsm',
+    'ProfileMigrator.jsm',
+]
+
+if CONFIG['OS_ARCH'] == 'WINNT':
+    if CONFIG['ENABLE_TESTS']:
+        DIRS += [
+            'tests/unit/insertIEHistory',
+        ]
+    SOURCES += [
+        'nsIEHistoryEnumerator.cpp',
+    ]
+    EXTRA_JS_MODULES += [
+        '360seProfileMigrator.jsm',
+        'EdgeProfileMigrator.jsm',
+        'ESEDBReader.jsm',
+        'IEProfileMigrator.jsm',
+        'MSMigrationUtils.jsm',
+    ]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
+    EXTRA_JS_MODULES += [
+        'SafariProfileMigrator.jsm',
+    ]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
+FINAL_LIBRARY = 'browsercomps'
+
+with Files('**'):
+    BUG_COMPONENT = ('Firefox', 'Migration')

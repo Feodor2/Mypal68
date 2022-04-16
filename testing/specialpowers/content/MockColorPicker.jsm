@@ -1,0 +1,115 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+var EXPORTED_SYMBOLS = ["MockColorPicker"];
+
+const Cm = Components.manager;
+
+const CONTRACT_ID = "@mozilla.org/colorpicker;1";
+
+// Allow stuff from this scope to be accessed from non-privileged scopes. This
+// would crash if used outside of automation.
+Cu.forcePermissiveCOWs();
+
+var registrar = Cm.QueryInterface(Ci.nsIComponentRegistrar);
+var oldClassID = "";
+var newClassID = Cc["@mozilla.org/uuid-generator;1"]
+  .getService(Ci.nsIUUIDGenerator)
+  .generateUUID();
+var newFactory = function(window) {
+  return {
+    createInstance(aOuter, aIID) {
+      if (aOuter) {
+        throw Cr.NS_ERROR_NO_AGGREGATION;
+      }
+      return new MockColorPickerInstance(window).QueryInterface(aIID);
+    },
+    lockFactory(aLock) {
+      throw Cr.NS_ERROR_NOT_IMPLEMENTED;
+    },
+    QueryInterface: ChromeUtils.generateQI([Ci.nsIFactory]),
+  };
+};
+
+var MockColorPicker = {
+  init(window) {
+    this.reset();
+    this.factory = newFactory(window);
+    if (!registrar.isCIDRegistered(newClassID)) {
+      try {
+        oldClassID = registrar.contractIDToCID(CONTRACT_ID);
+      } catch (ex) {
+        oldClassID = "";
+        dump(
+          "TEST-INFO | can't get colorpicker registered component, " +
+            "assuming there is none"
+        );
+      }
+      registrar.registerFactory(newClassID, "", CONTRACT_ID, this.factory);
+    }
+  },
+
+  reset() {
+    this.returnColor = "";
+    this.showCallback = null;
+    this.shown = false;
+    this.showing = false;
+  },
+
+  cleanup() {
+    var previousFactory = this.factory;
+    this.reset();
+    this.factory = null;
+
+    registrar.unregisterFactory(newClassID, previousFactory);
+    if (oldClassID != "") {
+      registrar.registerFactory(oldClassID, "", CONTRACT_ID, null);
+    }
+  },
+};
+
+function MockColorPickerInstance(window) {
+  this.window = window;
+}
+MockColorPickerInstance.prototype = {
+  QueryInterface: ChromeUtils.generateQI([Ci.nsIColorPicker]),
+  init(aParent, aTitle, aInitialColor) {
+    this.parent = aParent;
+    this.initialColor = aInitialColor;
+  },
+  initialColor: "",
+  parent: null,
+  open(aColorPickerShownCallback) {
+    MockColorPicker.showing = true;
+    MockColorPicker.shown = true;
+
+    this.window.setTimeout(() => {
+      let result = "";
+      try {
+        if (typeof MockColorPicker.showCallback == "function") {
+          var updateCb = function(color) {
+            result = color;
+            aColorPickerShownCallback.update(color);
+          };
+          let returnColor = MockColorPicker.showCallback(this, updateCb);
+          if (typeof returnColor === "string") {
+            result = returnColor;
+          }
+        } else if (typeof MockColorPicker.returnColor === "string") {
+          result = MockColorPicker.returnColor;
+        }
+      } catch (ex) {
+        dump(
+          "TEST-UNEXPECTED-FAIL | Exception in MockColorPicker.jsm open() " +
+            "method: " +
+            ex +
+            "\n"
+        );
+      }
+      if (aColorPickerShownCallback) {
+        aColorPickerShownCallback.done(result);
+      }
+    }, 0);
+  },
+};

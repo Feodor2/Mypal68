@@ -1,0 +1,38 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+DIRS += [
+    'menu',
+    'reps',
+    'splitter',
+    'tabs',
+    'throttling',
+    'tree',
+]
+
+DevToolsModules(
+    'Accordion.css',
+    'Accordion.js',
+    'AutoCompletePopup.js',
+    'Frame.js',
+    'HSplitBox.js',
+    'List.css',
+    'List.js',
+    'MdnLink.css',
+    'MdnLink.js',
+    'NotificationBox.css',
+    'NotificationBox.js',
+    'SearchBox.js',
+    'Sidebar.js',
+    'SidebarToggle.css',
+    'SidebarToggle.js',
+    'SmartTrace.css',
+    'SmartTrace.js',
+    'StackTrace.js',
+    'VirtualizedTree.js',
+    'VisibilityHandler.js',
+)
+
+MOCHITEST_CHROME_MANIFESTS += ['test/mochitest/chrome.ini']
+BROWSER_CHROME_MANIFESTS += ['test/browser/browser.ini']

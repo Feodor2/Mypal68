@@ -1,0 +1,63 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+EXPORTS += [
+    'commonupdatedir.h',
+    'readstrings.h',
+    'updatecommon.h',
+    'updatedefines.h',
+    'updatererrors.h',
+]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
+    EXPORTS += [
+        'certificatecheck.h',
+        'pathhash.h',
+        'registrycertificates.h',
+        'uachelper.h',
+        'updatehelper.cpp',
+        'updatehelper.h',
+        'updateutils_win.h',
+    ]
+
+Library('updatecommon')
+
+DEFINES['NS_NO_XPCOM'] = True
+USE_STATIC_LIBS = True
+
+DisableStlWrapping()
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
+    SOURCES += [
+        'certificatecheck.cpp',
+        'pathhash.cpp',
+        'registrycertificates.cpp',
+        'uachelper.cpp',
+        'updatehelper.cpp',
+        'updateutils_win.cpp',
+    ]
+    OS_LIBS += [
+        'advapi32',
+        'crypt32',
+        'ole32',
+        'rpcrt4',
+        'shell32',
+        'wintrust',
+    ]
+
+SOURCES += [
+    '/other-licenses/nsis/Contrib/CityHash/cityhash/city.cpp',
+    'commonupdatedir.cpp',
+    'readstrings.cpp',
+    'updatecommon.cpp',
+]
+
+if CONFIG['CC_TYPE'] == 'clang-cl':
+    AllowCompilerWarnings()  # workaround for bug 1090497
+
+LOCAL_INCLUDES += [
+    '/other-licenses/nsis/Contrib/CityHash/cityhash',
+]
+
+DEFINES['MOZ_APP_BASENAME'] = '"%s"' % CONFIG['MOZ_APP_BASENAME']

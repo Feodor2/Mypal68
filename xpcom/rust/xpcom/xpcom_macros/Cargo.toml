@@ -1,0 +1,12 @@
+[package]
+name = "xpcom_macros"
+version = "0.1.0"
+authors = ["Michael Layzell <michael@thelayzells.com>"]
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "0.13"
+quote = "0.5"
+lazy_static = "1.0"

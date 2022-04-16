@@ -1,0 +1,190 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test for X-Frame-Options response header</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<p id="display"></p>
+<div id="content" style="display: none">
+
+</div>
+
+<iframe style="width:100%;height:300px;" id="harness"></iframe>
+<script class="testbody" type="text/javascript">
+
+var path = "/tests/dom/base/test/";
+var isUnique = SpecialPowers.getBoolPref("security.data_uri.unique_opaque_origin");
+
+var testFramesLoaded = function() {
+  var harness = SpecialPowers.wrap(document).getElementById("harness");
+
+  // iframe from same origin, no X-F-O header - should load
+  var frame = harness.contentDocument.getElementById("control1");
+  var test1 = frame.contentDocument.getElementById("test").textContent;
+  is(test1, "control1", "test control1");
+
+  // iframe from different origin, no X-F-O header - should load
+  frame = harness.contentDocument.getElementById("control2");
+  var test2 = frame.contentDocument.getElementById("test").textContent;
+  is(test2, "control2", "test control2");
+
+  // iframe from same origin, X-F-O: DENY - should not load
+  frame = harness.contentDocument.getElementById("deny");
+  var test3 = frame.contentDocument.getElementById("test");
+  is(test3, null, "test deny");
+
+  // iframe from same origin, X-F-O: SAMEORIGIN - should load
+  frame = harness.contentDocument.getElementById("sameorigin1");
+  var test4 = frame.contentDocument.getElementById("test").textContent;
+  is(test4, "sameorigin1", "test sameorigin1");
+
+  // iframe from different origin, X-F-O: SAMEORIGIN - should not load
+  frame = harness.contentDocument.getElementById("sameorigin2");
+  var test5 = frame.contentDocument.getElementById("test");
+  is(test5, null, "test sameorigin2");
+
+  // iframe from different origin, X-F-O: SAMEORIGIN, SAMEORIGIN - should not load
+  frame = harness.contentDocument.getElementById("sameorigin5");
+  var test6 = frame.contentDocument.getElementById("test");
+  is(test6, null, "test sameorigin5");
+
+  // iframe from same origin, X-F-O: SAMEORIGIN, SAMEORIGIN - should load
+  frame = harness.contentDocument.getElementById("sameorigin6");
+  var test7 = frame.contentDocument.getElementById("test").textContent;
+  is(test7, "sameorigin6", "test sameorigin6");
+
+  // iframe from same origin, X-F-O: SAMEORIGIN,SAMEORIGIN, SAMEORIGIN - should load
+  frame = harness.contentDocument.getElementById("sameorigin7");
+  var test8 = frame.contentDocument.getElementById("test").textContent;
+  is(test8, "sameorigin7", "test sameorigin7");
+
+  // iframe from same origin, X-F-O: SAMEORIGIN,SAMEORIGIN, SAMEORIGIN - should not load
+  frame = harness.contentDocument.getElementById("sameorigin8");
+  var test9 = frame.contentDocument.getElementById("test");
+  is(test9, null, "test sameorigin8");
+
+  // iframe from same origin, X-F-O: DENY,SAMEORIGIN - should not load
+  frame = harness.contentDocument.getElementById("mixedpolicy");
+  var test10 = frame.contentDocument.getElementById("test");
+  is(test10, null, "test mixedpolicy");
+
+  // iframe from different origin, allow-from: this origin - should load
+  frame = harness.contentDocument.getElementById("allow-from-allow");
+  var test11 = frame.contentDocument.getElementById("test").textContent;
+  is(test11, "allow-from-allow", "test allow-from-allow");
+
+  // iframe from different origin, with allow-from: other - should not load
+  frame = harness.contentDocument.getElementById("allow-from-deny");
+  var test12 = frame.contentDocument.getElementById("test");
+  is(test12, null, "test allow-from-deny");
+
+  // iframe from different origin, X-F-O: SAMEORIGIN, multipart - should not load
+  frame = harness.contentDocument.getElementById("sameorigin-multipart");
+  var test13 = frame.contentDocument.getElementById("test");
+  is(test13, null, "test sameorigin-multipart");
+
+  // iframe from same origin, X-F-O: SAMEORIGIN, multipart - should load
+  frame = harness.contentDocument.getElementById("sameorigin-multipart2");
+  var test14 = frame.contentDocument.getElementById("test").textContent;
+  is(test14, "sameorigin-multipart2", "test sameorigin-multipart2");
+
+
+  // frames from bug 836132 tests
+  {
+    frame = harness.contentDocument.getElementById("allow-from-allow-1");
+    var theTestResult = frame.contentDocument.getElementById("test");
+    isnot(theTestResult, null, "test afa1 should have been allowed");
+    if(theTestResult) {
+      is(theTestResult.textContent, "allow-from-allow-1", "test allow-from-allow-1");
+    }
+  }
+  for (var i = 1; i<=14; i++) {
+    frame = harness.contentDocument.getElementById("allow-from-deny-" + i);
+    var theTestResult = frame.contentDocument.getElementById("test");
+    is(theTestResult, null, "test allow-from-deny-" + i);
+  }
+
+  // call tests to check principal comparison, e.g. a document can open a window
+  // to a data: or javascript: document which frames an
+  // X-Frame-Options: SAMEORIGIN document and the frame should load
+  testFrameInJSURI();
+};
+
+// test that a document can be framed under a javascript: URL opened by the
+// same site as the frame
+// We can't set a load event listener before calling document.open/document.write, because those will remove such listeners.  So we need to define a function that the new window will be able to call.
+function frameInJSURILoaded(win) {
+  var test = win.document.getElementById("sameorigin3")
+                .contentDocument.getElementById("test");
+  ok(test != null, "frame under javascript: URL should have loaded.");
+  win.close();
+
+  // run last test
+  if (!isUnique) {
+    testFrameInDataURI();
+  } else {
+    testFrameNotLoadedInDataURI();
+  }
+}
+
+var testFrameInJSURI = function() {
+  var html = '<iframe id="sameorigin3" src="http://mochi.test:8888/tests/dom/base/test/file_x-frame-options_page.sjs?testid=sameorigin3&xfo=sameorigin"></iframe>';
+  var win = window.open();
+  win.location.href = "javascript:document.open(); onload = opener.frameInJSURILoaded.bind(null, window); document.write('"+html+"');document.close();";
+};
+
+// test that a document can be framed under a data: URL opened by the
+// same site as the frame
+var testFrameInDataURI = function() {
+  var html = '<iframe id="sameorigin4" src="http://mochi.test:8888/tests/dom/base/test/file_x-frame-options_page.sjs?testid=sameorigin4&xfo=sameorigin"></iframe>';
+  var win = window.open();
+  win.onload = function() {
+    ok(!isUnique, "This test should be run only when security.data_uri.unique_opaque_origin is off");
+    var test = win.document.getElementById("sameorigin4")
+              .contentDocument.getElementById("test");
+    ok(test != null, "frame under data: URL should have loaded.");
+    win.close();
+
+    SimpleTest.finish();
+  };
+  win.location.href = "data:text/html,"+html;
+};
+
+// test an iframe with X-FRAME-OPTIONS shouldn't be loaded in a cross-origin window,
+var testFrameNotLoadedInDataURI = function() {
+  // In this case we load two iframes, one is sameorigin4, which will have X-FRAME-OPTIONS,
+  // the other is postmessage, which won't get the XFO header.
+  // And because now window is navigated to a data: URI, which is considered as cross origin,
+  // So win.onload won't be fired, so we use the iframe 'postmessage' to know the iframes
+  // have been loaded.
+  var html = `<iframe id="sameorigin4" src="http://mochi.test:8888/tests/dom/base/test/file_x-frame-options_page.sjs?testid=sameorigin4&xfo=sameorigin"></iframe>
+              <iframe id="postmessage" src="http://mochi.test:8888/tests/dom/base/test/file_x-frame-options_page.sjs?testid=postmessage"></iframe>`;
+  var win = window.open();
+  window.onmessage = function(evt) {
+    ok(isUnique, "This test should be run only when security.data_uri.unique_opaque_origin is on");
+    var iframe = SpecialPowers.wrap(win).document.getElementById("sameorigin4");
+    var test = iframe.contentDocument.getElementById("test");
+    ok(test == null, "frame under data: URL should have blocked.");
+    win.close();
+
+    SimpleTest.finish();
+  };
+  win.location.href = "data:text/html,"+html;
+};
+
+SimpleTest.waitForExplicitFinish();
+
+// load the test harness
+SpecialPowers.pushPrefEnv({
+  "set": [["security.data_uri.block_toplevel_data_uri_navigations", false],]
+}, function() {
+  document.getElementById("harness").src = "file_x-frame-options_main.html";
+});
+
+</script>
+</pre>
+
+</body>
+</html>

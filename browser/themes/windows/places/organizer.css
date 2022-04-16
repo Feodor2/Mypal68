@@ -1,0 +1,154 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* Toolbar */
+#placesToolbar {
+  padding: 3px;
+  padding-inline-end: 6px;
+}
+
+#placesToolbar > toolbarbutton > .toolbarbutton-icon {
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
+  fill-opacity: 0.8;
+}
+
+#placesToolbar > toolbarbutton[disabled] > .toolbarbutton-icon {
+  opacity: .4;
+}
+
+#back-button {
+  list-style-image: url("chrome://browser/skin/back.svg");
+}
+
+#forward-button {
+  list-style-image: url("chrome://browser/skin/forward.svg");
+}
+
+#back-button:-moz-locale-dir(rtl) > .toolbarbutton-icon,
+#forward-button:-moz-locale-dir(rtl) > .toolbarbutton-icon {
+  transform: scaleX(-1);
+}
+
+/* Menu */
+#placesMenu {
+  margin-inline-start: 6px;
+}
+
+#placesMenu > menu {
+  padding-inline-start: 4px;
+  padding-inline-end: 1px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  -moz-appearance: toolbarbutton;
+%ifdef XP_WIN
+% use standard menu colors on OS/2
+  color: -moz-DialogText;
+%endif
+  border: 1px solid transparent;
+}
+
+#placesMenu > menu[_moz-menuactive="true"] {
+  background-color: transparent;
+}
+
+#placesMenu > menu:hover {
+  border-color: ThreeDHighlight ThreeDShadow ThreeDShadow ThreeDHighlight;
+}
+
+#placesMenu > menu[open="true"] {
+  border-color: ThreeDShadow ThreeDHighlight ThreeDHighlight ThreeDShadow;
+  padding-inline-start: 5px;
+  padding-inline-end: 0px;
+  padding-top: 3px;
+  padding-bottom: 1px;
+}
+
+#placesMenu > menu > .menubar-text {
+  padding-inline-end: 8px;
+  background: url(chrome://global/skin/arrow/arrow-dn.gif) right center no-repeat;
+}
+
+#placesMenu > menu > .menubar-text:-moz-locale-dir(rtl) {
+  background-position: left center;
+}
+
+/* organize button */
+#organizeButton {
+  list-style-image: url("chrome://browser/skin/settings.svg");
+}
+
+/* view button */
+#viewMenu {
+  list-style-image: url("chrome://browser/skin/sort.svg");
+}
+
+/* maintenance button */
+#maintenanceButton {
+  list-style-image: url("chrome://browser/skin/import-export.svg");
+}
+
+/* Info box */
+#detailsDeck {
+  border-top: 1px solid ThreeDShadow;
+  padding: 5px;
+}
+
+#infoBoxExpanderLabel {
+  padding-inline-start: 2px;
+}
+
+#searchFilter {
+  margin: 0;
+}
+
+/**
+ * Downloads pane
+ */
+
+#clearDownloadsButton > .toolbarbutton-icon {
+  display: none;
+}
+
+#clearDownloadsButton {
+  padding-inline-start: 9px;
+  padding-inline-end: 9px;
+}
+
+@media (-moz-windows-classic: 0) {
+  #placesToolbox {
+    -moz-appearance: none;
+    background-color: transparent;
+  }
+
+  #placesToolbar {
+    -moz-appearance: none;
+    background-color: -moz-Dialog;
+    color: -moz-dialogText;
+  }
+}
+
+@media (-moz-windows-default-theme) {
+  #placesView > splitter {
+    border: 0;
+    border-inline-end: 1px solid #A9B7C9;
+    min-width: 0;
+    width: 3px;
+    background-color: transparent;
+    margin-inline-start: -3px;
+    position: relative;
+  }
+
+  @media (-moz-os-version: windows-win7) {
+    #detailsDeck {
+      border-top-color: #A9B7C9;
+    }
+  }
+}
+
+@media (-moz-windows-glass) {
+  #placesToolbox {
+    border-top: none;
+  }
+}

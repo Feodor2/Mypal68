@@ -1,0 +1,198 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=574663
+-->
+<head>
+  <title>Test for Bug 574663</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css"/>
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=574663">Mozilla Bug 574663</a>
+<p id="display"></p>
+<div id="content" style="display: none">
+
+</div>
+<pre id="test">
+<script type="application/javascript">
+
+/** Test for Bug 574663 **/
+
+// SimpleTest's paint_listener does not work on other windows, so we inline
+// a smaller version here.
+function waitForPaint(win, utils, callback) {
+  win.document.documentElement.getBoundingClientRect();
+  if (!utils.isMozAfterPaintPending) {
+    win.requestAnimationFrame(function() {
+      setTimeout(callback);
+    });
+    return;
+  }
+
+  var onpaint = function() {
+    if (!utils.isMozAfterPaintPending) {
+      win.removeEventListener("MozAfterPaint", onpaint);
+      callback();
+      return;
+    }
+    if (utils.isTestControllingRefreshes) {
+      utils.advanceTimeAndRefresh(0);
+    }
+  }
+  win.addEventListener("MozAfterPaint", onpaint);
+  if (utils.isTestControllingRefreshes) {
+    utils.advanceTimeAndRefresh(0);
+  }
+}
+
+function forceScrollAndWait(scrollbox, callback) {
+  let win = scrollbox.ownerDocument.defaultView;
+  let utils = SpecialPowers.getDOMWindowUtils(win);
+
+  utils.advanceTimeAndRefresh(1000);
+
+  let postApzFlush = function() {
+    SpecialPowers.Services.obs.removeObserver(postApzFlush, "apz-repaints-flushed", false);
+    waitForPaint(win, utils, callback);
+  }
+  SpecialPowers.Services.obs.addObserver(postApzFlush, "apz-repaints-flushed");
+  if (!utils.flushApzRepaints()) {
+    postApzFlush();
+  }
+}
+
+var kExtraEvents = 5;
+var kDelta = 3;
+
+function sendTouchpadScrollMotion(scrollbox, direction, ctrl, momentum, callback) {
+  var win = scrollbox.ownerDocument.defaultView;
+  let event = {
+    deltaMode: WheelEvent.DOM_DELTA_PIXEL,
+    deltaY: direction * kDelta,
+    lineOrPageDeltaY: direction,
+    ctrlKey: ctrl,
+    isMomentum: momentum
+  };
+  let received = 0;
+  let deltaY = 0;
+  var onwheel = function(e) {
+    deltaY += e.deltaY;
+    if (++received == 2) {
+      // We have captured all the outstanding wheel events. Wait for the
+      // animation to add itself to the refresh driver.
+      scrollbox.removeEventListener("wheel", onwheel);
+      setTimeout(function() {
+        forceScrollAndWait(scrollbox, callback);
+      }, 0);
+    }
+  };
+  scrollbox.addEventListener("wheel", onwheel);
+
+  synthesizeWheel(scrollbox, 10, 10, event, win);
+  // then 5 additional pixel scrolls
+  event.lineOrPageDeltaY = 0;
+  for (let i = 1; i <= kExtraEvents; ++i) {
+    synthesizeWheel(scrollbox, 10, 10, event, win);
+  }
+}
+
+function runTest() {
+  var win = open('bug574663.html', '_blank', 'width=300,height=300');
+  let winUtils = SpecialPowers.getDOMWindowUtils(win);
+
+  let waitUntilPainted = function(callback) {
+    // Until the first non-blank paint, the parent will set the opacity of our
+    // browser to 0 using the 'blank' attribute.
+    // Until the blank attribute is removed, we can't send scroll events.
+    SimpleTest.waitForFocus(function() {
+      /* eslint-disable no-shadow */
+      let chromeScript = SpecialPowers.loadChromeScript(_ => {
+        const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
+        let win = Services.wm.getMostRecentWindow("navigator:browser");
+        win.requestAnimationFrame(() => {
+          win.gBrowser.selectedBrowser.removeAttribute("blank");
+          win.requestAnimationFrame(() => {
+            sendAsyncMessage("blank-attribute-removed");
+          });
+        });
+      });
+      /* eslint-enable no-shadow */
+      chromeScript.promiseOneMessage("blank-attribute-removed").then(() => {
+        chromeScript.destroy();
+        waitForPaint(win, winUtils, callback);
+      });
+    }, win);
+  };
+
+  waitUntilPainted(function () {
+    var scrollbox = win.document.getElementById("scrollbox");
+    let outstandingTests = [
+      [false, false],
+      [false, true],
+      [true, false],
+      [true, true],
+    ];
+
+    // grab the refresh driver, since we want to make sure
+    // async scrolls happen in deterministic time
+    winUtils.advanceTimeAndRefresh(1000);
+
+    function nextTest() {
+      let [ctrlKey, isMomentum] = outstandingTests.shift();
+      let scrollTopBefore = scrollbox.scrollTop;
+      let zoomFactorBefore = winUtils.fullZoom;
+
+      let check = function() {
+        if (!ctrlKey) {
+          let postfix = isMomentum ? ", even after releasing the touchpad" : "";
+          // Normal scroll: scroll
+          is(winUtils.fullZoom, zoomFactorBefore, "Normal scrolling shouldn't change zoom" + postfix);
+          is(scrollbox.scrollTop, scrollTopBefore + kDelta * (kExtraEvents + 1),
+             "Normal scrolling should scroll" + postfix);
+        } else {
+          if (!isMomentum) {
+            isnot(winUtils.fullZoom, zoomFactorBefore, "Ctrl-scrolling should zoom while the user is touching the touchpad");
+            is(scrollbox.scrollTop, scrollTopBefore, "Ctrl-scrolling shouldn't scroll while the user is touching the touchpad");
+          } else {
+            is(winUtils.fullZoom, zoomFactorBefore, "Momentum scrolling shouldn't zoom, even when pressing Ctrl");
+            is(scrollbox.scrollTop, scrollTopBefore + kDelta * (kExtraEvents + 1),
+               "Momentum scrolling should scroll, even when pressing Ctrl");
+          }
+        }
+
+        if (!outstandingTests.length) {
+          winUtils.restoreNormalRefresh();
+          win.close();
+          SimpleTest.finish();
+          return;
+        }
+
+        // Revert the effect for the next test.
+        sendTouchpadScrollMotion(scrollbox, -1, ctrlKey, isMomentum, function() {
+          setTimeout(nextTest, 0);
+        });
+      }
+
+      sendTouchpadScrollMotion(scrollbox, 1, ctrlKey, isMomentum, check);
+    }
+    nextTest();
+  });
+}
+
+window.onload = function() {
+  SpecialPowers.pushPrefEnv({
+    "set":[["general.smoothScroll", false],
+           ["mousewheel.acceleration.start", -1],
+           ["mousewheel.system_scroll_override_on_root_content.enabled", false],
+           ["mousewheel.with_control.action", 3]]}, runTest);
+}
+
+SimpleTest.waitForExplicitFinish();
+
+</script>
+</pre>
+
+</body>
+</html>

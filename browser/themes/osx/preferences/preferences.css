@@ -1,0 +1,80 @@
+/*
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+*/
+
+%include ../../../../toolkit/themes/osx/global/shared.inc
+
+window {
+  font: -moz-dialog;
+}
+
+tabpanels {
+  padding: 20px 7px 7px;
+}
+
+#popupPolicyRow {
+  margin-bottom: 4px !important;
+  padding-bottom: 4px !important;
+  border-bottom: 1px solid #ccc;
+}
+
+#translationAttributionImage {
+  width: 70px;
+  cursor: pointer;
+}
+
+#browserUseCurrent,
+#browserUseBookmark,
+#browserUseBlank {
+  margin-top: 10px;
+}
+
+#advancedPrefs {
+  margin: 0 8px;
+}
+
+#privacyPrefs {
+  padding: 0 4px;
+}
+
+#privacyPrefs > tabpanels {
+  padding: 18px 10px 10px;
+}
+
+#OCSPDialogPane {
+  font: message-box !important;
+}
+
+/* General Pane */
+
+#useFirefoxSync,
+#getStarted {
+  font-size: 90%;
+}
+
+#isNotDefaultLabel {
+  font-weight: bold;
+}
+
+/**
+ * Update Preferences
+ */
+#autoInstallOptions {
+  margin-inline-start: 20px;
+}
+
+.updateControls {
+  margin-inline-start: 10px;
+}
+
+/* ----- SYNC PANE ----- */
+
+#noFxaAccount {
+  line-height: 1.2em;
+}
+
+#noFxaAccount > label:first-child {
+  margin-bottom: 0.6em;
+}

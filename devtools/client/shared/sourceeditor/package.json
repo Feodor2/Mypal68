@@ -1,0 +1,15 @@
+{
+  "name": "sourceeditor",
+  "version": "0.0.2",
+  "description": "Build a minified codeMirror bundle including useful addons",
+  "main": "",
+  "scripts": {
+    "build": "webpack"
+  },
+  "author": "",
+  "license": "",
+  "devDependencies": {
+    "webpack": "^4.28.4",
+    "webpack-cli": "^3.2.1"
+  }
+}

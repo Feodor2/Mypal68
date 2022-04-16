@@ -1,0 +1,295 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: taskgraph.loader.transform:loader
+
+kind-dependencies:
+    - toolchain
+
+transforms:
+    - taskgraph.transforms.use_toolchains:transforms
+    - taskgraph.transforms.job:transforms
+    - taskgraph.transforms.task:transforms
+
+job-defaults:
+    attributes:
+        retrigger: true
+    run-on-projects: ['mozilla-beta', 'trunk', 'try']
+    treeherder:
+        tier: 1
+        kind: other
+    worker:
+        max-run-time: 1800
+        env:
+            RUST_BACKTRACE: 'full'
+            RUSTFLAGS: '--deny warnings'
+
+jobs:
+    lint-tidy:
+        description: Runs linting checks on WebRender code
+        worker-type: b-linux
+        worker:
+            docker-image: {in-tree: webrender}
+        run:
+            using: run-task
+            command: >-
+                cd $HOME/checkouts/gecko/gfx/wr &&
+                servo-tidy
+        treeherder:
+            platform: linux64-qr/opt
+            symbol: WR(tidy)
+        when:
+            files-changed:
+                - 'gfx/wr/**'
+
+    linux-release:
+        description: Runs release-mode WebRender CI tests on a Linux worker
+        worker-type: b-linux
+        worker:
+            docker-image: {in-tree: webrender}
+        toolchains:
+            - linux64-rust
+            - wrench-deps
+        run:
+            using: run-task
+            command: >-
+                cd $HOME/workspace &&
+                $HOME/checkouts/gecko/mach artifact toolchain -v $MOZ_TOOLCHAINS &&
+                export PATH=$PATH:$PWD/rustc/bin &&
+                cd $HOME/checkouts/gecko/gfx/wr &&
+                mv $HOME/workspace/wrench-deps/{vendor,.cargo} ./ &&
+                CARGOFLAGS="--verbose --frozen" ci-scripts/linux-release-tests.sh
+        treeherder:
+            platform: linux64-qr/opt
+            symbol: WR(wrench)
+            kind: other
+        when:
+            files-changed:
+                - 'gfx/wr/**'
+
+    linux-debug:
+        description: Runs debug-mode WebRender CI tests on a Linux worker
+        worker-type: b-linux
+        worker:
+            docker-image: {in-tree: webrender}
+        toolchains:
+            - linux64-rust
+            - wrench-deps
+        run:
+            using: run-task
+            command: >-
+                cd $HOME/workspace &&
+                $HOME/checkouts/gecko/mach artifact toolchain -v $MOZ_TOOLCHAINS &&
+                export PATH=$PATH:$PWD/rustc/bin &&
+                cd $HOME/checkouts/gecko/gfx/wr &&
+                mv $HOME/workspace/wrench-deps/{vendor,.cargo} ./ &&
+                CARGOFLAGS="--verbose --frozen" ci-scripts/linux-debug-tests.sh
+        treeherder:
+            platform: linux64-qr/debug
+            symbol: WR(wrench)
+            kind: other
+        when:
+            files-changed:
+                - 'gfx/wr/**'
+
+    wrench-macos-build:
+        description: Cross compilation of wrench for macOS on Linux
+        worker-type: b-linux
+        worker:
+            docker-image: {in-tree: webrender}
+            env:
+                TOOLTOOL_MANIFEST: "/builds/worker/checkouts/gecko/browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
+            chain-of-trust: true
+            artifacts:
+                - type: file
+                  name: public/build/wrench-macos.tar.bz2
+                  path: /builds/worker/artifacts/wrench-macos.tar.bz2
+                - type: file
+                  name: public/build/wrench-macos-headless.tar.bz2
+                  path: /builds/worker/artifacts/wrench-macos-headless.tar.bz2
+        toolchains:
+            - linux64-rust-macos
+            - linux64-cctools-port
+            - linux64-clang
+            - linux64-llvm-dsymutil
+            - wrench-deps
+        run:
+            using: run-task
+            tooltool-downloads: internal
+            command: '$HOME/checkouts/gecko/taskcluster/scripts/misc/wrench-macos-build.sh'
+        treeherder:
+            platform: macosx64-qr/opt
+            symbol: WR(B)
+        when:
+            files-changed:
+                - 'gfx/wr/**'
+                - 'taskcluster/scripts/misc/tooltool-download.sh'
+                - 'taskcluster/scripts/misc/wr-macos-cross-build-setup.sh'
+                - 'taskcluster/scripts/misc/wrench-macos-build.sh'
+
+    macos-release:
+        description: Runs release-mode WebRender CI tests on a macOS worker
+        worker-type: t-osx-1010
+        worker:
+            max-run-time: 3600
+            env:
+                MOZ_FETCHES_DIR: 'checkouts/gecko/gfx/wr'
+        dependencies:
+            webrender-wrench-macos-build: webrender-wrench-macos-build
+        fetches:
+            webrender-wrench-macos-build:
+                - 'wrench-macos.tar.bz2'
+                - 'wrench-macos-headless.tar.bz2'
+        run:
+            using: run-task
+            command: >-
+                cd $GECKO_PATH/gfx/wr &&
+                export WRENCH_HEADLESS_TARGET=$PWD/wrench-macos-headless/ &&
+                export WRENCH_BINARY=$PWD/wrench-macos/bin/wrench &&
+                ci-scripts/macos-release-tests.sh
+        treeherder:
+            platform: macosx64-qr/opt
+            symbol: WR(wrench)
+        when:
+            files-changed:
+                - 'gfx/wr/**'
+
+    cargotest-macos-build:
+        description: Cross compilation of cargo tests for macOS on Linux
+        worker-type: b-linux
+        worker:
+            docker-image: {in-tree: webrender}
+            env:
+                TOOLTOOL_MANIFEST: "/builds/worker/checkouts/gecko/browser/config/tooltool-manifests/macosx64/cross-releng.manifest"
+            chain-of-trust: true
+            artifacts:
+                - type: file
+                  name: public/build/cargo-test-binaries.tar.bz2
+                  path: /builds/worker/artifacts/cargo-test-binaries.tar.bz2
+        toolchains:
+            - linux64-rust-macos
+            - linux64-cctools-port
+            - linux64-clang
+            - linux64-llvm-dsymutil
+            - wrench-deps
+        run:
+            using: run-task
+            tooltool-downloads: internal
+            command: '$HOME/checkouts/gecko/taskcluster/scripts/misc/wr-cargotest-macos-build.sh'
+        treeherder:
+            platform: macosx64-qr/debug
+            symbol: WR(B)
+        when:
+            files-changed:
+                - 'gfx/wr/**'
+                - 'taskcluster/scripts/misc/tooltool-download.sh'
+                - 'taskcluster/scripts/misc/wr-cargotest-macos-build.sh'
+                - 'taskcluster/scripts/misc/wr-macos-cross-build-setup.sh'
+
+    macos-debug:
+        description: Runs debug-mode WebRender CI tests on a macOS worker
+        worker-type: t-osx-1010
+        worker:
+            max-run-time: 3600
+            env:
+                MOZ_FETCHES_DIR: 'checkouts/gecko/gfx/wr'
+        dependencies:
+            webrender-cargotest-macos-build: webrender-cargotest-macos-build
+        fetches:
+            webrender-cargotest-macos-build:
+                - 'cargo-test-binaries.tar.bz2'
+        run:
+            using: run-task
+            command: >-
+                cd $GECKO_PATH/gfx/wr &&
+                mv cargo-test-binaries target &&
+                cd target &&
+                for i in debug/*; do $i; done
+        treeherder:
+            platform: macosx64-qr/debug
+            symbol: WR(cargotest)
+        when:
+            files-changed:
+                - 'gfx/wr/**'
+
+    windows:
+        description: Runs WebRender CI tests on a Windows worker
+        worker-type: t-win10-64
+        worker:
+            max-run-time: 5400
+            env:
+                TOOLTOOL_MANIFEST: 'browser/config/tooltool-manifests/win64/webrender.manifest'
+        toolchains:
+            - win64-rust
+            - wrench-deps
+        run:
+            using: run-task
+            use-caches: false
+            command: '$GECKO_PATH/taskcluster/scripts/misc/wrench-windows-tests.sh'
+            tooltool-downloads: internal
+        treeherder:
+            platform: windows10-64-qr/release
+            symbol: WR(wrench)
+        when:
+            files-changed:
+                - 'build/win64/mozconfig.vs2017'
+                - 'browser/config/tooltool-manifests/win64/webrender.manifest'
+                - 'gfx/wr/**'
+                - 'taskcluster/scripts/misc/tooltool-download.sh'
+                - 'taskcluster/scripts/misc/wrench-windows-tests.sh'
+
+    wrench-android-debug:
+        description: Debug build of wrench for Android
+        worker-type: b-linux
+        worker:
+            max-run-time: 5400
+            docker-image: {in-tree: webrender}
+            artifacts:
+                - type: file
+                  name: public/build/wrench-debug.apk
+                  path: /builds/worker/checkouts/gecko/gfx/wr/target/android-artifacts/app/build/outputs/apk/app-debug.apk
+        run:
+            using: run-task
+            command: '$GECKO_PATH/taskcluster/scripts/misc/wrench-android-build.sh debug'
+        toolchains:
+            - android-gradle-dependencies
+            - android-ndk-linux
+            - android-sdk-linux
+            - linux64-rust-android
+            - wrench-deps
+        treeherder:
+            platform: android-4-0-armv7-api16/debug
+            symbol: WR(B)
+        when:
+            files-changed:
+                - 'gfx/wr/**'
+                - 'taskcluster/scripts/misc/wrench-android-build.sh'
+
+    wrench-android-release:
+        description: Release build of wrench for Android
+        worker-type: b-linux
+        worker:
+            max-run-time: 5400
+            docker-image: {in-tree: webrender}
+            artifacts:
+                - type: file
+                  name: public/build/wrench-release.apk
+                  path: /builds/worker/checkouts/gecko/gfx/wr/target/android-artifacts/app/build/outputs/apk/release/app-release-unsigned.apk
+        run:
+            using: run-task
+            command: '$GECKO_PATH/taskcluster/scripts/misc/wrench-android-build.sh release'
+        toolchains:
+            - android-gradle-dependencies
+            - android-ndk-linux
+            - android-sdk-linux
+            - linux64-rust-android
+            - wrench-deps
+        treeherder:
+            platform: android-4-0-armv7-api16/opt
+            symbol: WR(B)
+        when:
+            files-changed:
+                - 'gfx/wr/**'
+                - 'taskcluster/scripts/misc/wrench-android-build.sh'
+                - 'mobile/android/debug_sign_tool.py'

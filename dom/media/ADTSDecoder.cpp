@@ -1,0 +1,45 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "ADTSDecoder.h"
+#include "MediaContainerType.h"
+#include "PDMFactory.h"
+
+namespace mozilla {
+
+/* static */
+bool ADTSDecoder::IsEnabled() {
+  RefPtr<PDMFactory> platform = new PDMFactory();
+  return platform->SupportsMimeType(NS_LITERAL_CSTRING("audio/mp4a-latm"),
+                                    /* DecoderDoctorDiagnostics* */ nullptr);
+}
+
+/* static */
+bool ADTSDecoder::IsSupportedType(const MediaContainerType& aContainerType) {
+  if (aContainerType.Type() == MEDIAMIMETYPE("audio/aac") ||
+      aContainerType.Type() == MEDIAMIMETYPE("audio/aacp") ||
+      aContainerType.Type() == MEDIAMIMETYPE("audio/x-aac")) {
+    return IsEnabled() && (aContainerType.ExtendedType().Codecs().IsEmpty() ||
+                           aContainerType.ExtendedType().Codecs() == "aac");
+  }
+
+  return false;
+}
+
+/* static */
+nsTArray<UniquePtr<TrackInfo>> ADTSDecoder::GetTracksInfo(
+    const MediaContainerType& aType) {
+  nsTArray<UniquePtr<TrackInfo>> tracks;
+  if (!IsSupportedType(aType)) {
+    return tracks;
+  }
+
+  tracks.AppendElement(
+      CreateTrackInfoWithMIMETypeAndContainerTypeExtraParameters(
+          NS_LITERAL_CSTRING("audio/mp4a-latm"), aType));
+
+  return tracks;
+}
+
+}  // namespace mozilla

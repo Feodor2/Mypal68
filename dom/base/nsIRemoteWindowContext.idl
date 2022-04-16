@@ -1,0 +1,18 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+interface nsIURI;
+
+[scriptable, builtinclass, uuid(94f4a92b-752e-4fd9-8345-11b069ca19f3)]
+interface nsIRemoteWindowContext : nsISupports
+{
+  /*
+   * Determines if the window is in private browsing.
+   */
+  readonly attribute boolean usePrivateBrowsing;
+
+  void openURI(in nsIURI aURI);
+};

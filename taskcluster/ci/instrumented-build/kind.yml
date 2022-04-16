@@ -1,0 +1,100 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: taskgraph.loader.transform:loader
+
+kind-dependencies:
+    - toolchain
+    - fetch
+
+transforms:
+    - taskgraph.transforms.build:transforms
+    - taskgraph.transforms.build_attrs:transforms
+    - taskgraph.transforms.build_lints:transforms
+    - taskgraph.transforms.use_toolchains:transforms
+    - taskgraph.transforms.job:transforms
+    - taskgraph.transforms.task:transforms
+
+job-defaults:
+    treeherder:
+        symbol: Bpgo(instr)
+        tier: 1
+
+jobs:
+    linux64-shippable/opt:
+        description: "Linux64 Instrumented"
+        shipping-phase: build
+        shipping-product: firefox
+        treeherder:
+            platform: linux64-shippable/opt
+        worker-type: b-linux
+        worker:
+            max-run-time: 7200
+            env:
+                PERFHERDER_EXTRA_OPTIONS: instrumented
+        run:
+            using: mozharness
+            actions: [get-secrets, build]
+            config:
+                - builds/releng_base_firefox.py
+                - builds/releng_base_linux_64_builds.py
+            script: "mozharness/scripts/fx_desktop_build.py"
+            secrets: true
+            mozconfig-variant: profile-generate
+            tooltool-downloads: public
+            need-xvfb: true
+        toolchains:
+            - linux64-binutils
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-nasm
+            - linux64-node
+
+    android-api-16/pgo:
+        description: "Android 4.0 api-16+ PGO instrumented"
+        shipping-phase: build
+        shipping-product: fennec
+        attributes:
+            enable-full-crashsymbols: true
+        treeherder:
+            platform: android-4-0-armv7-api16/pgo
+        worker-type: b-linux
+        worker:
+            docker-image: {in-tree: android-build}
+            max-run-time: 7200
+            env:
+                GRADLE_USER_HOME: "/builds/worker/workspace/build/src/mobile/android/gradle/dotgradle-offline"
+                TOOLTOOL_MANIFEST: "mobile/android/config/tooltool-manifests/android/releng.manifest"
+                PERFHERDER_EXTRA_OPTIONS: instrumented
+            artifacts:
+                - name: public/build
+                  path: /builds/worker/artifacts/
+                  type: directory
+                - name: public/build/geckoview-androidTest.apk
+                  path: /builds/worker/workspace/build/src/obj-firefox/gradle/build/mobile/android/geckoview/outputs/apk/androidTest/withGeckoBinaries/debug/geckoview-withGeckoBinaries-debug-androidTest.apk
+                  type: file
+                - name: public/build/geckoview_example.apk
+                  path: /builds/worker/workspace/build/src/obj-firefox/gradle/build/mobile/android/geckoview_example/outputs/apk/withGeckoBinaries/debug/geckoview_example-withGeckoBinaries-debug.apk
+                  type: file
+        run:
+            using: mozharness
+            actions: [get-secrets, build]
+            config:
+                - builds/releng_base_android_64_builds.py
+            script: "mozharness/scripts/fx_desktop_build.py"
+            secrets: true
+            custom-build-variant-cfg: api-16-profile-generate
+            tooltool-downloads: internal
+        toolchains:
+            - android-gradle-dependencies
+            - android-ndk-linux
+            - android-sdk-linux
+            - linux64-clang-android-cross
+            - linux64-rust-android
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-nasm
+            - linux64-node

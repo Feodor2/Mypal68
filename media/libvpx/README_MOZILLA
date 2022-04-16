@@ -1,0 +1,11 @@
+The source from this directory was copied from the libvpx
+git repository using the update.py script. The only changes
+made were those applied by update.py and the addition of
+moz.build and Makefile.in build files for the
+Mozilla build system.
+
+The libvpx git repository is:
+
+    https://chromium.googlesource.com/webm/libvpx
+
+The git commit ID used was f80be22a1099b2a431c2796f529bb261064ec6b4

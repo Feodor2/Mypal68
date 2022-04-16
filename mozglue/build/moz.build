@@ -1,0 +1,140 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Build mozglue as a shared lib on Windows, OSX and Android. But not for
+# embedders!
+# If this is ever changed, update MOZ_SHARED_MOZGLUE in browser/installer/Makefile.in
+if CONFIG['JS_STANDALONE'] and not CONFIG['MOZ_MEMORY']:
+    Library('mozglue')
+elif CONFIG['OS_TARGET'] in ('WINNT', 'Darwin', 'Android'):
+    SharedLibrary('mozglue')
+else:
+    Library('mozglue')
+
+if CONFIG['OS_TARGET'] == 'Android':
+    LDFLAGS += ['-Wl,--version-script,%s/mozglue.ver' % SRCDIR]
+    SOURCES += [
+        'BionicGlue.cpp',
+    ]
+
+if CONFIG['MOZ_ASAN']:
+    SOURCES += [
+        'AsanOptions.cpp',
+    ]
+
+if CONFIG['MOZ_UBSAN']:
+    SOURCES += [
+        'UbsanOptions.cpp',
+    ]
+
+if CONFIG['OS_TARGET'] == 'WINNT':
+    DEFFILE = 'mozglue.def'
+    # We'll break the DLL blocklist if we immediately load user32.dll
+    DELAYLOAD_DLLS += [
+        'user32.dll',
+    ]
+    RCINCLUDE = 'mozglue.rc'
+
+    if CONFIG['MOZ_PGO'] and CONFIG['CC_TYPE'] == 'clang-cl':
+        SOURCES += ['cygprofile.cpp']
+        SOURCES['cygprofile.cpp'].pgo_generate_only = True
+
+if CONFIG['MOZ_WIDGET_TOOLKIT']:
+
+    if CONFIG['MOZ_MEMORY'] and FORCE_SHARED_LIB:
+        pass
+        # TODO: SHARED_LIBRARY_LIBS go here
+    else:
+        # Temporary, until bug 662814 lands
+        NoVisibilityFlags()
+        SOURCES += [
+            'dummy.cpp',
+        ]
+
+    if CONFIG['OS_TARGET'] == 'WINNT':
+        LOCAL_INCLUDES += [
+            '/memory/build',
+        ]
+
+        SOURCES += [
+#            'Authenticode.cpp',
+#            'UntrustedDllsHandler.cpp',
+            'WindowsDllBlocklist.cpp',
+        ]
+
+        DisableStlWrapping()
+        OS_LIBS += [
+#            'crypt32',
+            'ntdll',
+            'version',
+#            'wintrust',
+        ]
+        DELAYLOAD_DLLS += [
+#            'crypt32.dll',
+#            'wintrust.dll',
+        ]
+        EXPORTS.mozilla += [
+#            'Authenticode.h',
+            'WindowsDllBlocklistCommon.h',
+            'WindowsDllBlocklistDefs.h',
+        ]
+        EXPORTS.mozilla.glue += [
+#            'WindowsDllServices.h',
+        ]
+        USE_LIBS += [
+        #    'mscom-mozglue',
+        ]
+        if CONFIG['CPU_ARCH'] == 'aarch64':
+            USE_LIBS += [
+                'interceptor',
+            ]
+
+    EXPORTS.mozilla += [
+        'arm.h',
+        'mips.h',
+        'SSE.h',
+        'WindowsDllBlocklist.h',
+    ]
+
+    if CONFIG['CPU_ARCH'].startswith('x86'):
+        SOURCES += [
+            'SSE.cpp',
+        ]
+
+    if CONFIG['CPU_ARCH'] == 'arm':
+        SOURCES += [
+            'arm.cpp',
+        ]
+
+    if CONFIG['CPU_ARCH'].startswith('mips'):
+        SOURCES += [
+            'mips.cpp',
+        ]
+
+    if CONFIG['MOZ_LINKER']:
+        USE_LIBS += [
+            'zlib',
+        ]
+
+USE_LIBS += [
+    'mfbt',
+]
+
+DEFINES['IMPL_MFBT'] = True
+LIBRARY_DEFINES['MOZ_HAS_MOZGLUE'] = True
+
+if CONFIG['OS_TARGET'] == 'Darwin':
+    # On OSX 10.10.3, a dead lock happens in some cases involving dynamic
+    # symbol resolution for symbols that jemalloc itself uses. While it
+    # might be possible to find a way to avoid all such symbol resolutions,
+    # it's currently not possible because at the very least there's a call
+    # to pthread_self from tsd_init_check_recursion, which is necessary
+    # because somehow clang doesn't want to accept the __thread keyword
+    # for TLS.
+    LDFLAGS += ['-Wl,-bind_at_load']
+
+if CONFIG['MOZ_LINKER'] and CONFIG['CPU_ARCH'] == 'arm':
+    LDFLAGS += ['-Wl,-version-script,%s/arm-eabi-filter' % SRCDIR]
+
+DIST_INSTALL = True

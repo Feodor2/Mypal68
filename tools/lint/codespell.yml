@@ -1,0 +1,66 @@
+---
+codespell:
+    description: Check code for common misspellings
+    include:
+        - browser/base/content/docs/
+        - browser/branding/
+        - browser/components/newtab/docs/
+        - browser/components/newtab/prerendered/locales/en-US/
+        - browser/extensions/formautofill/locales/en-US/
+        - browser/extensions/report-site-issue/locales/en-US/
+        - browser/installer/windows/docs/
+        - browser/locales/en-US/
+        - build/docs/
+        - devtools/client/locales/en-US/
+        - devtools/docs/
+        - devtools/shared/locales/en-US/
+        - devtools/startup/locales/en-US/
+        - dom/locales/en-US/
+        - gfx/docs/
+        - intl/docs/
+        - intl/locales/en-US/
+        - js/src/doc/
+        - layout/tools/layout-debug/ui/locale/en-US/
+        - mobile/android/base/locales/en-US/
+        - mobile/android/branding/
+        - mobile/android/docs/
+        - mobile/android/locales/en-US/
+        - mobile/locales/en-US/
+        - netwerk/locales/en-US/
+        - python/docs/
+        - python/mach/docs/
+        - python/mozlint/
+        - python/safety/
+        - services/sync/locales/en-US/
+        - taskcluster/docs/
+        - testing/mozbase/docs/
+        - toolkit/components/extensions/docs/
+        - toolkit/components/normandy/docs/
+        - toolkit/components/telemetry/docs/
+        - toolkit/crashreporter/docs/
+        - tools/lint/
+        - tools/tryselect/
+    # List of extensions coming from:
+    # tools/lint/{flake8,eslint}.yml
+    # tools/mach_commands.py (clang-format)
+    # + documentation
+    # + localization files
+    extensions:
+        - js
+        - jsm
+        - jxs
+        - xml
+        - html
+        - xhtml
+        - cpp
+        - c
+        - h
+        - configure
+        - py
+        - properties
+        - rst
+        - md
+    support-files:
+        - 'tools/lint/spell/**'
+    type: external
+    payload: spell:lint

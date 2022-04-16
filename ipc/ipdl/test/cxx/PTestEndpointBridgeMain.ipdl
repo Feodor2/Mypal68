@@ -1,0 +1,19 @@
+include protocol PTestEndpointBridgeMainSub;
+include protocol PTestEndpointBridgeSub;
+
+namespace mozilla {
+namespace _ipdltest {
+
+
+protocol PTestEndpointBridgeMain {
+
+child:
+  async Start();
+
+parent:
+  async Bridged(Endpoint<PTestEndpointBridgeMainSubParent> endpoint);
+};
+
+
+} // namespace mozilla
+} // namespace _ipdltest

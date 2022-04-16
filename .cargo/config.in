@@ -1,0 +1,31 @@
+# Note: if you add more configure substitutions here with required values
+# you will also need to fix the sed commands in:
+# taskcluster/scripts/builder/build-sm-mozjs-crate.sh
+# taskcluster/scripts/builder/build-sm-rust-bindings.sh
+
+[source.crates-io]
+registry = 'https://github.com/rust-lang/crates.io-index'
+replace-with = 'vendored-sources'
+
+[source."https://github.com/servo/serde"]
+git = "https://github.com/servo/serde"
+branch = "deserialize_from_enums10"
+replace-with = "vendored-sources"
+
+[source."https://github.com/retep998/winapi-rs"]
+git = "https://github.com/froydnj/winapi-rs"
+branch = "aarch64"
+replace-with = "vendored-sources"
+
+[source."https://github.com/rust-lang-nursery/packed_simd"]
+git = "https://github.com/hsivonen/packed_simd"
+branch = "rust_1_32"
+replace-with = "vendored-sources"
+
+[source."https://github.com/CraneStation/Cranelift"]
+git = "https://github.com/CraneStation/Cranelift"
+rev = "cc216b46b35a797d03c0f3e8b16a2096f1c6db61"
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = '@top_srcdir@/third_party/rust'

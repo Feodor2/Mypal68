@@ -1,0 +1,38 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <script type="application/javascript" src="mediaStreamPlayback.js"></script>
+  <script type="application/javascript" src="blacksilence.js"></script>
+</head>
+<body>
+<pre id="test">
+<script type="application/javascript">
+createHTML({
+  title: "Test getUserMedia peerIdentity Constraint",
+  bug: "942367"
+});
+function theTest() {
+  function testPeerIdentityConstraint(withConstraint) {
+    var config = { audio: true, video: true };
+    if (withConstraint) {
+      config.peerIdentity = 'user@example.com';
+    }
+    info('getting media with constraints: ' + JSON.stringify(config));
+    return getUserMedia(config)
+      .then(stream => Promise.all([
+        audioIsSilence(withConstraint, stream),
+        videoIsBlack(withConstraint, stream)
+      ]).then(() => stream.getTracks().forEach(t => t.stop())));
+  };
+
+  // both without and with the constraint
+  return testPeerIdentityConstraint(false)
+    .then(() => testPeerIdentityConstraint(true));
+}
+
+runTest(theTest);
+
+</script>
+</pre>
+</body>
+</html>

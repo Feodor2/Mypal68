@@ -1,0 +1,256 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://global/skin/in-content/info-pages.css");
+
+html.private {
+  --in-content-page-color: white;
+  --in-content-text-color: white;
+  --in-content-page-background: #25003e;
+  --in-content-link-color-hover: white;
+  --in-content-link-color-active: white;
+}
+
+a:link {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.container {
+  max-width: 48em;
+}
+
+.section-main {
+  margin-bottom: 48px;
+}
+
+.section-main:last-child {
+  margin-bottom: 0;
+}
+
+p {
+  line-height: 1.5em;
+}
+
+.list-row {
+  display: grid;
+  column-gap: 2em;
+  grid-template-columns: repeat(auto-fill, minmax(10em, 16em));
+  margin-inline-start: 3em;
+}
+
+.list-row li {
+  margin-bottom: 0;
+  padding: .25em 0;
+  line-height: 1.5;
+}
+
+.title {
+  background-image: url("chrome://browser/skin/privatebrowsing/private-browsing.svg");
+  background-position: left center;
+  background-size: 2em;
+  line-height: 1.4;
+  padding-top: 0.3em;
+  padding-bottom: 0.3em;
+  margin-inline-start: calc(-2em - 10px);
+  padding-inline-start: calc(2em + 10px);
+}
+
+.title:dir(rtl) {
+  background-position: right center;
+}
+
+.about-subheader {
+  --icon-size: 1.5em;
+  display: flex;
+  align-items: center;
+  font-size: 1.5em;
+  font-weight: lighter;
+  background-image: url("chrome://browser/skin/privatebrowsing/tracking-protection.svg");
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: var(--icon-size);
+  line-height: 1.5em;
+  margin-inline-start: calc((var(--icon-size) + 10px) * -1);
+  padding-inline-start: calc(var(--icon-size) + 10px);
+}
+
+.about-subheader:dir(rtl) {
+  background-position: right;
+}
+
+@media (max-width: 970px) {
+  .about-subheader {
+    --icon-size: 1em;
+    margin-inline-start: 0;
+  }
+}
+
+.about-info {
+  font-size: .9em;
+}
+
+a.button {
+  padding: 3px 20px;
+  background-color: #8000d7;
+  border: 1px solid #6000a1;
+  text-decoration: none;
+  display: inline-block;
+}
+
+a.button:hover:active {
+  color: inherit;
+  background-color: #6000a1;
+}
+
+.logo-and-wordmark {
+  align-items: center;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 50px;
+}
+
+.search-ui .container {
+  max-width: 768px;
+}
+
+.logo {
+  background: url("chrome://branding/content/icon128.png") no-repeat center center;
+  background-size: 97px;
+  display: inline-block;
+  height: 97px;
+  width: 97px;
+}
+
+.wordmark {
+  background: url("resource://activity-stream/data/content/assets/firefox-wordmark.svg") no-repeat center center;
+  background-size: 175px;
+  -moz-context-properties: fill;
+  display: inline-block;
+  fill: #fff;
+  height: 97px;
+  margin-inline-start: 15px;
+  width: 175px;
+}
+
+.search-inner-wrapper {
+  display: flex;
+  height: 48px;
+  margin-bottom: 64px;
+  padding: 0 22px;
+}
+
+.search-handoff-button,
+.search-handoff-button:active,
+.search-handoff-button:enabled:hover:active  {
+  background: #fff var(--newtab-search-icon) 12px center no-repeat;
+  background-size: 24px;
+  border: solid 1px rgba(249, 249, 250, 0.2);
+  border-radius: 3px;
+  box-shadow: 0 1px 4px 0 rgba(12, 12, 13, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.15);
+  cursor: text;
+  font-size: 15px;
+  margin: 0;
+  padding: 0;
+  padding-inline-end: 48px;
+  padding-inline-start: 46px;
+  position: relative;
+  opacity: 1;
+  transition: opacity 500ms;
+  width: 100%;
+}
+
+.search-handoff-button.focused {
+  border: solid 1px #0060df;
+  box-shadow: 0 0 0 1px #0060df, 0 0 0 4px rgba(0, 96, 223, 0.3);
+}
+
+.search-handoff-button.hidden {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.search-handoff-button:dir(rtl),
+.search-handoff-button:active:dir(rtl),
+.search-handoff-button:enabled:hover:active:dir(rtl) {
+  background-position-x: right 12px;
+}
+
+.search-inner-wrapper .search-handoff-button:hover {
+  background-color: #fff;
+}
+
+.search-handoff-button.focused .fake-caret {
+  display: block;
+}
+
+.fake-editable:focus {
+  outline: none;
+  caret-color: transparent;
+}
+
+.fake-editable {
+  border: 0;
+  height: 100%;
+  left: 0;
+  opacity: 0;
+  padding: 0;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.fake-textbox {
+  color: rgb(12, 12, 13);
+  opacity: 0.54;
+  text-align: start;
+}
+
+@keyframes caret-animation {
+  to {
+    visibility: hidden;
+  }
+}
+
+.fake-caret {
+  animation: caret-animation 1.3s steps(5, start) infinite;
+  background: rgb(12, 12, 13);
+  display: none;
+  inset-inline-start: 47px;
+  height: 17px;
+  position: absolute;
+  top: 16px;
+  width: 1px;
+}
+
+.dummy-input {
+  display: none;
+}
+
+.info {
+  background-color: rgba(0, 0, 0, 0.2);
+  background-image: url("chrome://browser/skin/privatebrowsing/private-browsing.svg");
+  background-position: left 32px top 20px;
+  background-repeat: no-repeat;
+  background-size: 32px;
+  border-radius: 6px;
+  letter-spacing: -0.2px;
+  padding: 20px;
+  padding-inline-start: 76px;
+}
+
+.info:dir(rtl) {
+  background-position: right 32px top 20px;
+}
+
+.info h1 {
+  font-size: 18px;
+  font-weight: bold;
+  line-height: 28px;
+}
+
+.info p {
+  font-size: 15px;
+  line-height: 25px;
+}

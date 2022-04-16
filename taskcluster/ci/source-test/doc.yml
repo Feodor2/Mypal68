@@ -1,0 +1,48 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+generate:
+    description: Generate the Sphinx documentation
+    platform: lint/opt
+    treeherder:
+        symbol: Doc
+        kind: test
+        tier: 1
+    run-on-projects: ['trunk', 'try']
+    worker-type: t-linux-xlarge
+    worker:
+        docker-image: {in-tree: "lint"}
+        max-run-time: 1800
+        artifacts:
+            - type: file
+              name: public/docs.tar.gz
+              path: /builds/worker/checkouts/gecko/docs-out/main.tar.gz
+    run:
+        using: mach
+        mach: doc --outdir docs-out --no-open --no-serve --archive
+        sparse-profile: sphinx-docs
+    optimization:
+        skip-unless-schedules: [docs]
+
+upload:
+    description: Generate and upload the Sphinx documentation
+    platform: lint/opt
+    treeherder:
+        symbol: DocUp
+        kind: test
+        tier: 2
+    run-on-projects: [mozilla-central]
+    worker-type: t-linux-xlarge
+    worker:
+        docker-image: {in-tree: "lint"}
+        max-run-time: 1800
+        taskcluster-proxy: true
+    run:
+        using: mach
+        mach: doc --upload --no-open --no-serve
+        sparse-profile: sphinx-docs
+    scopes:
+        - secrets:get:project/releng/gecko/build/level-{level}/gecko-docs-upload
+    optimization:
+        skip-unless-schedules: [docs]

@@ -1,0 +1,50 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+include protocol PBrowser;
+include protocol PChildToParentStream;
+include protocol PIPCBlobInputStream;
+include protocol PFileDescriptorSet;
+include protocol PParentToChildStream;
+
+include IPCBlob;
+
+using struct mozilla::void_t from "ipc/IPCMessageUtils.h";
+
+namespace mozilla {
+namespace dom {
+
+struct InputBlobs
+{
+  IPCBlob[] blobs;
+};
+
+struct InputDirectory
+{
+  nsString directoryPath;
+};
+
+union MaybeInputData
+{
+  InputBlobs;
+  InputDirectory;
+  void_t;
+};
+
+protocol PFilePicker
+{
+  manager PBrowser;
+
+parent:
+    async Open(int16_t selectedType, bool addToRecentDocs, nsString defaultFile,
+               nsString defaultExtension, nsString[] filters, nsString[] filterNames,
+               nsString[] rawFilters, nsString displayDirectory,
+               nsString displaySpecialDirectory, nsString okButtonLabel);
+
+child:
+    async __delete__(MaybeInputData data, int16_t result);
+};
+
+} // namespace dom
+} // namespace mozilla

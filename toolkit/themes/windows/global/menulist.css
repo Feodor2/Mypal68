@@ -1,0 +1,65 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* ===== menulist.css ===================================================
+  == Styles used by the XUL menulist element.
+  ======================================================================= */
+
+@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@namespace html url("http://www.w3.org/1999/xhtml");
+
+/* :::::::::: menulist :::::::::: */
+
+menulist {
+  -moz-appearance: menulist;
+  margin: 2px 4px;
+  color: -moz-FieldText;
+  text-shadow: none;
+}
+
+.menulist-label-box {
+  -moz-box-align: center;
+  -moz-box-pack: center;
+}
+
+.menulist-label {
+  margin: 0 3px !important;
+}
+
+/* ..... focused state ..... */
+
+menulist:focus:not([open="true"]) > .menulist-label-box {
+  background-color: Highlight;
+  color: HighlightText;
+}
+
+menulist:-moz-focusring:not([open="true"]) > .menulist-label-box {
+  outline: 1px dotted;
+}
+
+/* ..... disabled state ..... */
+
+menulist[disabled="true"] {
+  background-color: -moz-Dialog;
+  color: GrayText;
+}
+
+@media (-moz-windows-default-theme) {
+  .menulist-label-box {
+    background-color: transparent !important;
+    color: inherit !important;
+  }
+
+  .menulist-icon,
+  .menulist-label {
+    margin-top: -1px !important;
+    margin-bottom: -1px !important;
+  }
+
+  .menulist-dropmarker {
+    margin-top: -2px;
+    margin-inline-start: 3px;
+    margin-inline-end: -3px;
+  }
+}

@@ -1,0 +1,49 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+EXPORTS += [
+    'nsNetCID.h',
+]
+
+SOURCES += [
+    'nsNetModule.cpp',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
+include('/ipc/chromium/chromium-config.mozbuild')
+
+FINAL_LIBRARY = 'xul'
+
+LOCAL_INCLUDES += [
+    '/extensions/auth',
+    '/netwerk/base',
+    '/netwerk/cache',
+    '/netwerk/dns',
+    '/netwerk/mime',
+    '/netwerk/protocol/about',
+    '/netwerk/protocol/data',
+    '/netwerk/protocol/file',
+    '/netwerk/protocol/ftp',
+    '/netwerk/protocol/http',
+    '/netwerk/protocol/res',
+    '/netwerk/protocol/viewsource',
+    '/netwerk/protocol/websocket',
+    '/netwerk/socket',
+    '/netwerk/streamconv',
+    '/netwerk/streamconv/converters',
+]
+
+if 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
+    LOCAL_INCLUDES += [
+        '/netwerk/protocol/gio',
+    ]
+
+
+LOCAL_INCLUDES += [
+    '!/netwerk/dns',
+    '/modules/brotli/dec',
+]

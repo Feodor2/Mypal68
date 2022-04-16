@@ -1,0 +1,24 @@
+[package]
+name = "audioipc-server"
+version = "0.2.3"
+authors = [
+        "Matthew Gregan <kinetik@flim.org>",
+        "Dan Glastonbury <dan.glastonbury@gmail.com>"
+        ]
+description = "Remote cubeb server"
+
+[dependencies]
+audioipc = { path = "../audioipc" }
+cubeb-core = "0.5.4"
+bytes = "0.4"
+lazycell = "^0.4"
+libc = "0.2"
+log = "0.4"
+slab = "0.3.0"
+futures = "0.1.18"
+tokio-core = "0.1"
+tokio-uds = "0.1.7"
+
+[dependencies.error-chain]
+version = "0.11.0"
+default-features = false

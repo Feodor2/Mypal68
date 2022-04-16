@@ -1,0 +1,40 @@
+# 
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+CORE_DEPTH = ..
+DEPTH      = ..
+
+LIB_SRCDIRS = \
+	google_test \
+	common \
+	$(NULL)
+
+ifneq ($(NSS_BUILD_WITHOUT_UTIL),1)
+UTIL_SRCDIRS = \
+	util_gtest \
+	$(NULL)
+endif
+
+ifneq ($(NSS_BUILD_SOFTOKEN_ONLY),1)
+ifneq ($(NSS_BUILD_UTIL_ONLY),1)
+NSS_SRCDIRS = \
+	certdb_gtest \
+	certhigh_gtest \
+	cryptohi_gtest \
+	der_gtest \
+	pk11_gtest \
+	smime_gtest \
+	softoken_gtest \
+	ssl_gtest \
+	$(SYSINIT_GTEST) \
+	nss_bogo_shim \
+	$(NULL)
+endif
+endif
+
+DIRS = \
+	$(LIB_SRCDIRS) \
+	$(UTIL_SRCDIRS) \
+	$(NSS_SRCDIRS) \
+	$(NULL)

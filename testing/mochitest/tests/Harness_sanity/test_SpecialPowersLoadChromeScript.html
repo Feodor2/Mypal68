@@ -1,0 +1,69 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <title>Test for SpecialPowers.loadChromeScript</title>
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+
+<pre id="test">
+<script class="testbody" type="text/javascript">
+SimpleTest.waitForExplicitFinish();
+
+var url = SimpleTest.getTestFileURL("SpecialPowersLoadChromeScript.js");
+var script = SpecialPowers.loadChromeScript(url);
+
+var MESSAGE = { bar: true };
+script.addMessageListener("bar", function (message) {
+  is(JSON.stringify(message), JSON.stringify(MESSAGE),
+     "received back message from the chrome script");
+
+  checkAssert();
+});
+
+function checkAssert() {
+  script.sendAsyncMessage("valid-assert");
+  script.addMessageListener("valid-assert-done", endOfFirstTest);
+}
+
+var script2;
+
+function endOfFirstTest() {
+  script.destroy();
+
+  // wantGlobalProperties should add the specified properties to the sandbox
+  // that is used to run the chrome script.
+  script2 = SpecialPowers.loadChromeScript(_ => {
+    addMessageListener("valid-assert", function (message) {
+      assert.equal(typeof XMLHttpRequest, "function", "XMLHttpRequest is defined");
+      assert.equal(typeof CSS, "undefined", "CSS is not defined");
+      sendAsyncMessage("valid-assert-done");
+    });
+  }, { wantGlobalProperties: ["ChromeUtils", "XMLHttpRequest"] });
+
+  script2.sendAsyncMessage("valid-assert");
+  script2.addMessageListener("valid-assert-done", endOfTest);
+
+}
+
+function endOfTest() {
+  script2.destroy();
+  SimpleTest.finish();
+}
+
+script.sendAsyncMessage("foo", MESSAGE);
+
+/*
+ * [0][0] is because we're using one real message listener in SpecialPowersObserverAPI.js
+ * and dispatching that to multiple _chromeScriptListeners. The outer array comes
+ * from the message manager since there can be multiple real listeners. The inner
+ * array is for the return values of _chromeScriptListeners.
+ */
+is(script.sendSyncMessage("sync-message")[0][0], "Received a synchronous message.",
+   "Check sync return value");
+
+</script>
+</pre>
+</body>
+</html>

@@ -1,0 +1,32 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+EXPORTS += [
+    'mar.h',
+    'mar_cmdline.h',
+]
+
+HOST_SOURCES += [
+    'mar_create.c',
+    'mar_extract.c',
+    'mar_read.c',
+]
+HostLibrary('hostmar')
+
+Library('mar')
+
+UNIFIED_SOURCES += [
+    'mar_create.c',
+    'mar_extract.c',
+    'mar_read.c',
+]
+
+LOCAL_INCLUDES += [
+    '../../../other-licenses/nsis/Contrib/CityHash/cityhash',
+]
+
+FORCE_STATIC_LIB = True
+
+if CONFIG['OS_ARCH'] == 'WINNT':
+    USE_STATIC_LIBS = True

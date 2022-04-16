@@ -1,0 +1,83 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files("**"):
+    BUG_COMPONENT = ("Core", "DOM: Quota Manager")
+
+MOCHITEST_MANIFESTS += ['test/mochitest.ini']
+
+BROWSER_CHROME_MANIFESTS += ['test/browser.ini']
+
+XPCSHELL_TESTS_MANIFESTS += [
+    'test/unit/xpcshell.ini'
+]
+
+TEST_HARNESS_FILES.xpcshell.dom.quota.test += [
+    'test/head-shared.js',
+]
+
+TEST_DIRS += ['test/gtest']
+
+XPIDL_SOURCES += [
+    'nsIQuotaCallbacks.idl',
+    'nsIQuotaManagerService.idl',
+    'nsIQuotaRequests.idl',
+    'nsIQuotaResults.idl',
+]
+
+XPIDL_MODULE = 'dom_quota'
+
+EXPORTS.mozilla.dom += [
+  'StorageManager.h',
+]
+
+EXPORTS.mozilla.dom.quota += [
+    'ActorsParent.h',
+    'CheckedUnsafePtr.h',
+    'Client.h',
+    'FileStreams.h',
+    'MemoryOutputStream.h',
+    'OriginScope.h',
+    'PersistenceType.h',
+    'QuotaCommon.h',
+    'QuotaManager.h',
+    'QuotaManagerService.h',
+    'QuotaObject.h',
+    'SerializationHelpers.h',
+    'UsageInfo.h',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
+UNIFIED_SOURCES += [
+    'ActorsChild.cpp',
+    'ActorsParent.cpp',
+    'FileStreams.cpp',
+    'MemoryOutputStream.cpp',
+    'nsIndexedDBProtocolHandler.cpp',
+    'QuotaCommon.cpp',
+    'QuotaManagerService.cpp',
+    'QuotaRequests.cpp',
+    'QuotaResults.cpp',
+    'StorageManager.cpp',
+]
+
+IPDL_SOURCES += [
+    'PQuota.ipdl',
+    'PQuotaRequest.ipdl',
+    'PQuotaUsageRequest.ipdl',
+]
+
+include('/ipc/chromium/chromium-config.mozbuild')
+
+FINAL_LIBRARY = 'xul'
+
+LOCAL_INCLUDES += [
+    '/caps',
+]
+
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
+    CXXFLAGS += ['-Wno-error=shadow']

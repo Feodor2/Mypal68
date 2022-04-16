@@ -1,0 +1,55 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+GeckoProgram('fuzz-tests', linkage=None)
+
+include('../js-cxxflags.mozbuild')
+
+UNIFIED_SOURCES += [
+    'testExample.cpp',
+    'tests.cpp',
+    'testStructuredCloneReader.cpp',
+    'testWasm.cpp',
+]
+
+if CONFIG['JS_BUILD_BINAST']:
+    UNIFIED_SOURCES += [
+        'testBinASTReader.cpp',
+    ]
+
+DEFINES['EXPORT_JS_API'] = True
+
+LOCAL_INCLUDES += [
+    '!..',
+    '..',
+]
+
+if CONFIG['FUZZING']:
+    USE_LIBS += [
+        'static:fuzzer-registry',
+    ]
+
+if CONFIG['LIBFUZZER']:
+    USE_LIBS += [
+        'static:fuzzer',
+    ]
+
+    # Add libFuzzer configuration directives
+    include('/tools/fuzzing/libfuzzer-config.mozbuild')
+
+USE_LIBS += [
+    'static:js',
+]
+
+if CONFIG['ENABLE_WASM_CRANELIFT']:
+    USE_LIBS += [
+        'jsrust'
+    ]
+
+if CONFIG['MOZ_NEEDS_LIBATOMIC']:
+    OS_LIBS += ['atomic']
+
+OS_LIBS += CONFIG['MOZ_ZLIB_LIBS']
+
+DEFINES['topsrcdir'] = '%s/js/src' % TOPSRCDIR

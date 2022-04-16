@@ -1,0 +1,23 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Developer builds call mach -> Make -> gradle -> mach, which races to
+# find and create .mozconfig files and to generate targets.
+.NOTPARALLEL:
+
+include $(topsrcdir)/config/AB_rCD.mk
+
+chrome-%:: AB_CD=$*
+chrome-%::
+	$(MAKE) \
+	  res/values$(AB_rCD)/strings.xml \
+	  res/raw$(AB_rCD)/suggestedsites.json \
+	  AB_CD=$*
+
+include $(topsrcdir)/config/rules.mk
+
+# The RecursiveMake backend puts this target into the `export`
+# tier... but we then don't `export::` it in artifact builds.  We need
+# this for artifact builds, so we `export::` it here.
+export:: android_apks

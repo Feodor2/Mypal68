@@ -1,0 +1,51 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#ifndef mozilla_dom_SVGFEDiffuseLightingElement_h
+#define mozilla_dom_SVGFEDiffuseLightingElement_h
+
+#include "SVGFilters.h"
+
+nsresult NS_NewSVGFEDiffuseLightingElement(
+    nsIContent** aResult, already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo);
+
+namespace mozilla {
+namespace dom {
+
+typedef SVGFELightingElement SVGFEDiffuseLightingElementBase;
+
+class SVGFEDiffuseLightingElement : public SVGFEDiffuseLightingElementBase {
+  friend nsresult(::NS_NewSVGFEDiffuseLightingElement(
+      nsIContent** aResult,
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo));
+
+ protected:
+  explicit SVGFEDiffuseLightingElement(
+      already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
+      : SVGFEDiffuseLightingElementBase(std::move(aNodeInfo)) {}
+  virtual JSObject* WrapNode(JSContext* aCx,
+                             JS::Handle<JSObject*> aGivenProto) override;
+
+ public:
+  virtual FilterPrimitiveDescription GetPrimitiveDescription(
+      nsSVGFilterInstance* aInstance, const IntRect& aFilterSubregion,
+      const nsTArray<bool>& aInputsAreTainted,
+      nsTArray<RefPtr<SourceSurface>>& aInputImages) override;
+  virtual bool AttributeAffectsRendering(int32_t aNameSpaceID,
+                                         nsAtom* aAttribute) const override;
+
+  virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  // WebIDL
+  already_AddRefed<DOMSVGAnimatedString> In1();
+  already_AddRefed<DOMSVGAnimatedNumber> SurfaceScale();
+  already_AddRefed<DOMSVGAnimatedNumber> DiffuseConstant();
+  already_AddRefed<DOMSVGAnimatedNumber> KernelUnitLengthX();
+  already_AddRefed<DOMSVGAnimatedNumber> KernelUnitLengthY();
+};
+
+}  // namespace dom
+}  // namespace mozilla
+
+#endif  // mozilla_dom_SVGFEDiffuseLightingElement_h

@@ -1,0 +1,1143 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+linux64/opt:
+    description: "Linux64 Opt"
+    index:
+        product: firefox
+        job-name: linux64-opt
+    attributes:
+        enable-full-crashsymbols: true
+    treeherder:
+        platform: linux64/opt
+        symbol: B
+    worker-type: b-linux
+    worker:
+        max-run-time: 7200
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        tooltool-downloads: public
+        need-xvfb: true
+    run-on-projects: ['mozilla-central', 'try']
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux64-plain/opt:
+    description: "Linux64 Opt Plain"
+    index:
+        product: firefox
+        job-name: linux64-plain-opt
+    treeherder:
+        platform: linux64/opt
+        symbol: Bp
+        tier: 2
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian9-amd64-build}
+        max-run-time: 5400
+        env:
+            PERFHERDER_EXTRA_OPTIONS: plain
+    run:
+        using: mozharness
+        actions: [build]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: mozharness/scripts/fx_desktop_build.py
+        tooltool-downloads: public
+        extra-config:
+            disable_package_metrics: true
+        mozconfig-variant: plain-opt
+    run-on-projects: ['mozilla-central', 'try']
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-nasm
+        - linux64-node
+        - linux64-cbindgen
+
+linux64-fuzzing/debug:
+    description: "Linux64 Fuzzing Debug"
+    index:
+        product: firefox
+        job-name: linux64-fuzzing-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: Bf
+    worker-type: b-linux
+    worker:
+        max-run-time: 5400
+        env:
+            MOZ_LOW_PARALLELISM_BUILD: '1'
+            PERFHERDER_EXTRA_OPTIONS: fuzzing
+            FORCE_GCC: '1'
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: fuzzing-debug
+        mozconfig-variant: debug-fuzzing
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-clang
+        - linux64-gcc
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-nasm
+        - linux64-node
+
+linux64/debug:
+    description: "Linux64 Debug"
+    index:
+        product: firefox
+        job-name: linux64-debug
+    attributes:
+        enable-full-crashsymbols: true
+    treeherder:
+        platform: linux64/debug
+        symbol: B
+    worker-type: b-linux
+    worker:
+        max-run-time: 5400
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: debug
+        mozconfig-variant: debug
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-nasm
+        - linux64-node
+
+linux64-plain/debug:
+    description: "Linux64 Debug Plain"
+    index:
+        product: firefox
+        job-name: linux64-plain-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: Bp
+        tier: 2
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian9-amd64-build}
+        max-run-time: 5400
+        env:
+            PERFHERDER_EXTRA_OPTIONS: plain
+    run:
+        using: mozharness
+        actions: [build]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        extra-config:
+            disable_package_metrics: true
+        mozconfig-variant: plain-debug
+        script: mozharness/scripts/fx_desktop_build.py
+        tooltool-downloads: public
+    run-on-projects: [trunk]
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-nasm
+        - linux64-node
+        - linux64-cbindgen
+
+linux64-devedition-nightly/opt:
+    description: "Linux64 devedition Nightly"
+    use-pgo: linux64-shippable/opt
+    attributes:
+        nightly: true
+        enable-full-crashsymbols: true
+    shipping-phase: build
+    shipping-product: devedition
+    index:
+        product: devedition
+        job-name: linux64-opt
+        type: nightly
+    treeherder:
+        platform: linux64-devedition/opt
+        symbol: N
+    worker-type: b-linux
+    worker:
+        max-run-time: 7200
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+            - taskcluster_nightly.py
+        extra-config:
+            stage_platform: 'linux64-devedition'
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        tooltool-downloads: public
+        need-xvfb: true
+        mozconfig-variant: devedition
+    run-on-projects: ['mozilla-beta']
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-nasm
+        - linux64-node
+
+linux64-base-toolchains/opt:
+    description: "Linux64 base toolchains Opt"
+    index:
+        product: firefox
+        job-name: linux64-base-toolchains-opt
+    treeherder:
+        platform: linux64/opt
+        symbol: Bb
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian7-amd64-build-base}
+        max-run-time: 7200
+        env:
+            PERFHERDER_EXTRA_OPTIONS: base-toolchains
+            FORCE_GCC: '1'
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-clang-4.0
+        - linux64-gcc-6
+        - linux64-rust-1.34
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm-2.13.02
+        - linux64-node
+
+linux64-base-toolchains/debug:
+    description: "Linux64 base toolchains Debug"
+    index:
+        product: firefox
+        job-name: linux64-base-toolchains-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: Bb
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian7-amd64-build-base}
+        max-run-time: 5400
+        env:
+            PERFHERDER_EXTRA_OPTIONS: base-toolchains
+            FORCE_GCC: '1'
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: debug
+        mozconfig-variant: debug
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-clang-4.0
+        - linux64-gcc-6
+        - linux64-rust-1.34
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm-2.13.02
+        - linux64-node
+
+linux64-base-toolchains-clang/opt:
+    description: "Linux64 base toolchains clang Opt"
+    index:
+        product: firefox
+        job-name: linux64-base-toolchains-clang-opt
+    treeherder:
+        platform: linux64/opt
+        symbol: Bbc
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian7-amd64-build-base}
+        max-run-time: 7200
+        env:
+            PERFHERDER_EXTRA_OPTIONS: base-toolchains-clang
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-binutils
+        - linux64-clang-4.0
+        - linux64-rust-1.34
+        - linux64-cbindgen
+        - linux64-nasm-2.13.02
+        - linux64-node
+
+linux64-base-toolchains-clang/debug:
+    description: "Linux64 base toolchains clang Debug"
+    index:
+        product: firefox
+        job-name: linux64-base-toolchains-clang-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: Bbc
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian7-amd64-build-base}
+        max-run-time: 3600
+        env:
+            PERFHERDER_EXTRA_OPTIONS: base-toolchains-clang
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: debug
+        mozconfig-variant: debug
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-binutils
+        - linux64-clang-4.0
+        - linux64-rust-1.34
+        - linux64-cbindgen
+        - linux64-nasm-2.13.02
+        - linux64-node
+
+linux/opt:
+    description: "Linux32 Opt"
+    index:
+        product: firefox
+        job-name: linux-opt
+    attributes:
+        enable-full-crashsymbols: true
+    treeherder:
+        platform: linux32/opt
+        symbol: B
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian7-i386-build}
+        max-run-time: 7200
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_32_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        tooltool-downloads: public
+        need-xvfb: true
+    run-on-projects: ['mozilla-central', 'try']
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux/debug:
+    description: "Linux32 Debug"
+    index:
+        product: firefox
+        job-name: linux-debug
+    attributes:
+        enable-full-crashsymbols: true
+    treeherder:
+        platform: linux32/debug
+        symbol: B
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian7-i386-build}
+        max-run-time: 5400
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_32_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: debug
+        mozconfig-variant: debug
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux-rusttests/opt:
+    description: "Linux32 Rust Tests Opt"
+    index:
+        product: firefox
+        job-name: linux-rusttests-opt
+    treeherder:
+        platform: linux32/opt
+        symbol: BR
+        tier: 1
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian7-i386-build}
+        max-run-time: 2700
+        env:
+            PERFHERDER_EXTRA_OPTIONS: rusttests
+    run:
+        using: mozharness
+        actions: [get-secrets, build]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_32_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: rusttests
+        mozconfig-variant: rusttests
+        tooltool-downloads: public
+        keep-artifacts: false
+        need-xvfb: true
+    run-on-projects: ['trunk', 'try']
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux-rusttests/debug:
+    description: "Linux32 Rust Tests Debug"
+    index:
+        product: firefox
+        job-name: linux-rusttests-debug
+    treeherder:
+        platform: linux32/debug
+        symbol: BR
+        tier: 1
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian7-i386-build}
+        max-run-time: 2700
+        env:
+            PERFHERDER_EXTRA_OPTIONS: rusttests
+    run:
+        using: mozharness
+        actions: [get-secrets, build]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_32_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: rusttests-debug
+        mozconfig-variant: rusttests-debug
+        tooltool-downloads: public
+        keep-artifacts: false
+        need-xvfb: true
+    run-on-projects: ['trunk', 'try']
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux-devedition-nightly/opt:
+    description: "Linux32 devedition Nightly"
+    attributes:
+        nightly: true
+        enable-full-crashsymbols: true
+    shipping-phase: build
+    shipping-product: devedition
+    index:
+        product: devedition
+        job-name: linux-opt
+        type: nightly
+    treeherder:
+        platform: linux32-devedition/opt
+        symbol: N
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian7-i386-build}
+        max-run-time: 7200
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_32_builds.py
+            - taskcluster_nightly.py
+        extra-config:
+            stage_platform: linux-devedition
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        tooltool-downloads: public
+        need-xvfb: true
+        mozconfig-variant: devedition
+    run-on-projects: ['mozilla-beta']
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-nasm
+        - linux64-node
+
+linux-shippable/opt:
+    description: "Linux32 Shippable"
+    attributes:
+        shippable: true
+        enable-full-crashsymbols: true
+    shipping-phase: build
+    shipping-product: firefox
+    index:
+        product: firefox
+        job-name: linux-opt
+        type: shippable
+    treeherder:
+        platform: linux32-shippable/opt
+        symbol: B
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian7-i386-build}
+        max-run-time: 9000
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_32_builds.py
+            - taskcluster_nightly.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-nasm
+        - linux64-node
+
+linux64-asan/opt:
+    description: "Linux64 Opt ASAN"
+    index:
+        product: firefox
+        job-name: linux64-asan-opt
+    treeherder:
+        platform: linux64/asan
+        symbol: Bo
+    worker-type: b-linux
+    worker:
+        env:
+            PERFHERDER_EXTRA_OPTIONS: "opt asan"
+        max-run-time: 5400
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: asan-tc
+        mozconfig-variant: nightly-asan
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux64-asan-fuzzing/opt:
+    description: "Linux64 Fuzzing Opt ASAN"
+    index:
+        product: firefox
+        job-name: linux64-fuzzing-asan-opt
+    treeherder:
+        platform: linux64/asan
+        symbol: Bof
+    worker-type: b-linux
+    worker:
+        env:
+            PERFHERDER_EXTRA_OPTIONS: asan-fuzzing
+        max-run-time: 5400
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: fuzzing-asan-tc
+        mozconfig-variant: nightly-fuzzing-asan
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux64-asan-fuzzing-ccov/opt:
+    description: "Linux64 Fuzzing Opt ASAN w/ Coverage"
+    index:
+        product: firefox
+        job-name: linux64-ccov-fuzzing-asan-opt
+    treeherder:
+        platform: linux64/asan
+        symbol: Bocf
+    run-on-projects: ['mozilla-central', 'try']
+    worker-type: b-linux
+    worker:
+        env:
+            PERFHERDER_EXTRA_OPTIONS: asan-fuzzing-ccov
+        max-run-time: 5400
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        mozconfig-variant: asan-fuzzing-ccov
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux64-fuzzing-ccov/opt:
+    description: "Linux64 Fuzzing Opt w/ Coverage"
+    index:
+        product: firefox
+        job-name: linux64-ccov-fuzzing-opt
+    treeherder:
+        platform: linux64/opt
+        symbol: Bocf
+    run-on-projects: ['mozilla-central', 'try']
+    worker-type: b-linux
+    worker:
+        max-run-time: 5400
+        env:
+            MOZ_LOW_PARALLELISM_BUILD: '1'
+            PERFHERDER_EXTRA_OPTIONS: fuzzing-ccov
+            FORCE_GCC: '1'
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        mozconfig-variant: fuzzing-ccov
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-clang
+        - linux64-gcc
+        - linux64-cbindgen
+        - linux64-rust-nightly
+        - linux64-rust-size
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux64-asan-reporter-nightly/opt:
+    description: "Linux64 Opt ASAN Reporter Nightly"
+    attributes:
+        nightly: true
+    shipping-product:
+        by-release-type:
+            nightly: firefox
+            default: null
+    index:
+        product: firefox
+        job-name: linux64-asan-reporter-opt
+        type: nightly
+    treeherder:
+        platform: linux64-asan-reporter/opt
+        symbol: BoR
+    run-on-projects: ['mozilla-central']
+    worker-type: b-linux
+    worker:
+        env:
+            PERFHERDER_EXTRA_OPTIONS: asan-reporter
+        max-run-time: 3600
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+            - taskcluster_nightly.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: asan-reporter-tc
+        mozconfig-variant: nightly-asan-reporter
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-nasm
+        - linux64-node
+
+linux64-asan/debug:
+    description: "Linux64 Debug ASAN"
+    index:
+        product: firefox
+        job-name: linux64-asan-debug
+    treeherder:
+        platform: linux64/asan
+        symbol: Bd
+    worker-type: b-linux
+    worker:
+        env:
+            PERFHERDER_EXTRA_OPTIONS: "debug asan"
+        max-run-time: 5400
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: asan-tc-and-debug
+        mozconfig-variant: debug-asan
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux64-shippable/opt:
+    description: "Linux64 Shippable"
+    use-pgo: true
+    attributes:
+        shippable: true
+        enable-full-crashsymbols: true
+    shipping-phase: build
+    shipping-product: firefox
+    index:
+        product: firefox
+        job-name: linux64-opt
+        type: shippable
+    treeherder:
+        platform: linux64-shippable/opt
+        symbol: Bpgo(B)
+    worker-type: b-linux
+    worker:
+        max-run-time: 9000
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+            - taskcluster_nightly.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-nasm
+        - linux64-node
+
+linux64-noopt/debug:
+    description: "Linux64 No-optimize Debug"
+    index:
+        product: firefox
+        job-name: linux64-noopt-debug
+    treeherder:
+        platform: linux64-noopt/debug
+        symbol: B
+        tier: 2
+    attributes:
+        enable-full-crashsymbols: true
+    worker-type: b-linux
+    worker:
+        max-run-time: 5400
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: noopt-debug
+        mozconfig-variant: noopt-debug
+        tooltool-downloads: public
+        keep-artifacts: false
+        need-xvfb: true
+    run-on-projects: ['trunk', 'try']
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux64-rusttests/opt:
+    description: "Linux64 Rust Tests Opt"
+    index:
+        product: firefox
+        job-name: linux64-rusttests-opt
+    treeherder:
+        platform: linux64/opt
+        symbol: BR
+        tier: 1
+    worker-type: b-linux
+    worker:
+        max-run-time: 2700
+        env:
+            PERFHERDER_EXTRA_OPTIONS: rusttests
+    run:
+        using: mozharness
+        actions: [get-secrets, build]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: rusttests
+        mozconfig-variant: rusttests
+        tooltool-downloads: public
+        keep-artifacts: false
+        need-xvfb: true
+    run-on-projects: ['trunk', 'try']
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux64-rusttests/debug:
+    description: "Linux64 Rust Tests Debug"
+    index:
+        product: firefox
+        job-name: linux64-rusttests-debug
+    treeherder:
+        platform: linux64/debug
+        symbol: BR
+        tier: 1
+    worker-type: b-linux
+    worker:
+        max-run-time: 2700
+        env:
+            PERFHERDER_EXTRA_OPTIONS: rusttests
+    run:
+        using: mozharness
+        actions: [get-secrets, build]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: rusttests-debug
+        mozconfig-variant: rusttests-debug
+        tooltool-downloads: public
+        keep-artifacts: false
+        need-xvfb: true
+    run-on-projects: ['trunk', 'try']
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux64-tup/opt:
+    description: "Linux64 Tup"
+    index:
+        product: firefox
+        job-name: linux64-tup-opt
+    treeherder:
+        platform: linux64/opt
+        symbol: Btup
+        tier: 3
+    worker-type: b-linux
+    worker:
+        max-run-time: 3600
+        env:
+            PERFHERDER_EXTRA_OPTIONS: tup
+    run:
+        using: mozharness
+        actions: [get-secrets, build]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: tup
+        mozconfig-variant: tup
+        tooltool-downloads: public
+        need-xvfb: true
+    run-on-projects: []
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust-nightly
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-tup
+        - linux64-nasm
+        - linux64-node
+
+linux64-ccov/debug:
+    description: "Linux64-CCov Debug"
+    index:
+        product: firefox
+        job-name: linux64-ccov-debug
+    treeherder:
+        platform: linux64-ccov/debug
+        symbol: B
+        tier: 2
+    run-on-projects: ['mozilla-central', 'try']
+    worker-type: b-linux
+    worker:
+        artifacts:
+            - name: public/code-coverage-grcov.zip
+              path: /builds/worker/workspace/build/src/obj-firefox/code-coverage-grcov.zip
+              type: file
+        max-run-time: 7200
+        env:
+            FORCE_GCC: '1'
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: code-coverage-debug
+        mozconfig-variant: code-coverage-debug
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-clang-8
+        - linux64-rust-nightly
+        - linux64-gcc
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+    fetches:
+        toolchain:
+            - linux64-grcov
+
+linux64-ccov/opt:
+    description: "Linux64-CCov Opt"
+    index:
+        product: firefox
+        job-name: linux64-ccov-opt
+    treeherder:
+        platform: linux64-ccov/opt
+        symbol: B
+        tier: 2
+    run-on-projects: ['mozilla-central', 'try']
+    worker-type: b-linux
+    worker:
+        max-run-time: 7200
+        env:
+            MOZ_LOW_PARALLELISM_BUILD: '1'
+            FORCE_GCC: '1'
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: code-coverage-opt
+        mozconfig-variant: code-coverage-opt
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-clang-8
+        - linux64-rust-nightly
+        - linux64-gcc
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux64-add-on-devel/opt:
+    description: "Linux64 add-on-devel"
+    index:
+        product: firefox
+        job-name: linux64-add-on-devel
+    treeherder:
+        platform: linux64-add-on-devel/opt
+        symbol: B
+        tier: 2
+    worker-type: b-linux
+    worker:
+        max-run-time: 3600
+    run:
+        using: mozharness
+        actions: [get-secrets, build, check-test]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        custom-build-variant-cfg: add-on-devel
+        mozconfig-variant: add-on-devel
+        tooltool-downloads: public
+        need-xvfb: true
+    run-on-projects: ['mozilla-beta', 'mozilla-release', 'mozilla-esr45']
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-nasm
+        - linux64-node
+
+linux64-aarch64/opt:
+    description: "Linux64 aarch64 Opt"
+    index:
+        product: firefox
+        job-name: linux64-aarch64-opt
+    attributes:
+        enable-full-crashsymbols: true
+    treeherder:
+        platform: linux64-aarch64/opt
+        symbol: B
+        tier: 2
+    worker-type: b-linux
+    worker:
+        docker-image: {in-tree: debian9-arm64-build}
+        max-run-time: 7200
+    run:
+        using: mozharness
+        actions: [get-secrets, build]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        extra-config:
+            mozconfig_platform: linux64-aarch64
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        mozconfig-variant: opt
+        tooltool-downloads: public
+        need-xvfb: true
+    toolchains:
+        - linux64-binutils
+        - linux64-clang
+        - linux64-rust
+        - linux64-rust-size
+        - linux64-cbindgen
+        - linux64-sccache
+        - linux64-node

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- This Source Code Form is subject to the terms of the Mozilla Public
+   - License, v. 2.0. If a copy of the MPL was not distributed with this
+   - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
+<!DOCTYPE html [
+  <!ENTITY % htmlDTD PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">
+  %htmlDTD;
+]>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      windowtype="Toolkit:PictureInPicture"
+      chromemargin="0,0,0,0">
+  <head>
+    <meta charset="utf-8"/>
+    <link rel="stylesheet" type="text/css"
+          href="chrome://global/skin/pictureinpicture/player.css"/>
+    <script src="chrome://global/content/pictureinpicture/player.js"></script>
+  </head>
+
+  <body>
+    <div class="player-holder">
+      <xul:browser type="content" primary="true" remote="true" remoteType="web" id="browser"></xul:browser>
+    </div>
+    <div id="controls">
+      <div id="close" class="control-item"></div>
+
+      <div id="controls-bottom">
+        <div id="unpip" class="control-item"></div>
+        <div id="gap"></div>
+        <div id="pause" class="control-item"></div>
+        <div id="play" class="control-item"></div>
+      </div>
+    </div>
+  </body>
+</html>

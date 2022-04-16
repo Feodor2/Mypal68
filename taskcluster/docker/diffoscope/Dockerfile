@@ -1,0 +1,30 @@
+# %ARG DOCKER_IMAGE_PARENT
+FROM $DOCKER_IMAGE_PARENT
+MAINTAINER Mike Hommey <mhommey@mozilla.com>
+
+VOLUME /builds/worker/checkouts
+VOLUME /builds/worker/workspace
+VOLUME /builds/worker/tooltool-cache
+
+ENV LANG=en_US.UTF-8
+
+RUN apt-get install \
+      binutils-multiarch \
+      bzip2 \
+      curl \
+      enjarify \
+      diffoscope/stretch-backports \
+      jsbeautifier \
+      libc++abi1 \
+      locales \
+      openjdk-8-jdk-headless \
+      python3-progressbar \
+      unzip \
+      zip \
+      && \
+    sed -i '/en_US.UTF-8/s/^# *//' /etc/locale.gen && \
+    locale-gen
+
+COPY get_and_diffoscope /builds/worker/bin/get_and_diffoscope
+
+RUN chown -R worker:worker /builds/worker/bin && chmod 755 /builds/worker/bin/*

@@ -1,0 +1,315 @@
+<!DOCTYPE HTML>
+<html>
+<!--
+https://bugzilla.mozilla.org/show_bug.cgi?id=851780
+-->
+<head>
+<title>Test for input event</title>
+<script src="/tests/SimpleTest/SimpleTest.js"></script>
+<script src="/tests/SimpleTest/EventUtils.js"></script>
+<link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css" />
+</head>
+<body>
+<a target="_blank" href="https://bugzilla.mozilla.org/show_bug.cgi?id=851780">Mozilla Bug 851780</a>
+<p id="display"></p>
+<div id="content">
+<input type="file" id="fileInput">
+<textarea id="textarea"></textarea>
+<input type="text" id="input_text">
+<input type="email" id="input_email">
+<input type="search" id="input_search">
+<input type="tel" id="input_tel">
+<input type="url" id="input_url">
+<input type="password" id="input_password">
+
+<!-- "Non-text" inputs-->
+<input type="button" id="input_button">
+<input type="submit" id="input_submit">
+<input type="image" id="input_image">
+<input type="reset" id="input_reset">
+<input type="radio" id="input_radio">
+<input type="checkbox" id="input_checkbox">
+<input type="range" id="input_range">
+<input type="number" id="input_number">
+ 
+</div>
+<pre id="test">
+<script class="testbody" type="text/javascript">
+
+  /** Test for input event. This is highly based on test_change_event.html **/
+
+  const isDesktop = !/Mobile|Tablet/.test(navigator.userAgent);
+
+  let expectedInputType = "";
+  let expectedData = null;
+  function checkIfInputIsInputEvent(aEvent, aToDo, aDescription) {
+    if (aToDo) {
+      // Probably, key operation should fire "input" event with InputEvent interface.
+      // See https://github.com/w3c/input-events/issues/88
+      todo(aEvent instanceof InputEvent,
+         `"input" event should be dispatched with InputEvent interface ${aDescription}`);
+    } else {
+      ok(aEvent instanceof InputEvent,
+         `"input" event should be dispatched with InputEvent interface ${aDescription}`);
+      is(aEvent.inputType, expectedInputType,
+         `inputType should be "${expectedInputType}" ${aDescription}`);
+      is(aEvent.data, expectedData,
+         `data should be ${expectedData} ${aDescription}`);
+      is(aEvent.dataTransfer, null,
+         `dataTransfer should be null ${aDescription}`);
+    }
+    is(aEvent.cancelable, false,
+       `"input" event should be never cancelable ${aDescription}`);
+    is(aEvent.bubbles, true,
+       `"input" event should always bubble ${aDescription}`);
+  }
+
+  function checkIfInputIsEvent(aEvent, aDescription) {
+    ok(aEvent instanceof Event && !(aEvent instanceof UIEvent),
+       `"input" event should be dispatched with InputEvent interface ${aDescription}`);
+    is(aEvent.cancelable, false,
+       `"input" event should be never cancelable ${aDescription}`);
+    is(aEvent.bubbles, true,
+       `"input" event should always bubble ${aDescription}`);
+  }
+
+  var textareaInput = 0;
+  document.getElementById("textarea").oninput = (aEvent) => {
+    ++textareaInput;
+    checkIfInputIsInputEvent(aEvent, false, "on textarea element");
+  };
+
+  // These are the type were the input event apply.
+  var textTypes = ["text", "email", "search", "tel", "url", "password"];
+  var textInput = [0, 0, 0, 0, 0, 0];
+  for (let id of ["input_text", "input_email", "input_search", "input_tel", "input_url", "input_password"]) {
+    document.getElementById(id).oninput = (aEvent) => {
+      ++textInput[textTypes.indexOf(aEvent.target.type)];
+      checkIfInputIsInputEvent(aEvent, false, `on input element whose type is ${aEvent.target.type}`);
+    };
+  }
+
+  // These are the type were the input event does not apply.
+  var NonTextTypes = ["button", "submit", "image", "reset", "radio", "checkbox"];
+  var NonTextInput = [0, 0, 0, 0, 0, 0];
+  for (let id of ["input_button", "input_submit", "input_image", "input_reset", "input_radio", "input_checkbox"]) {
+    document.getElementById(id).oninput = (aEvent) => {
+      ++NonTextInput[NonTextTypes.indexOf(aEvent.target.type)];
+      checkIfInputIsEvent(aEvent, `on input element whose type is ${aEvent.target.type}`);
+    };
+  }
+
+  var rangeInput = 0;
+  document.getElementById("input_range").oninput = (aEvent) => {
+    ++rangeInput;
+    checkIfInputIsEvent(aEvent, "on input element whose type is range");
+  };
+
+  var numberInput = 0;
+  document.getElementById("input_number").oninput = (aEvent) => {
+    ++numberInput;
+    checkIfInputIsInputEvent(aEvent, true, "on input element whose type is number");
+  };
+
+  SimpleTest.waitForExplicitFinish();
+  var MockFilePicker = SpecialPowers.MockFilePicker;
+  MockFilePicker.init(window);
+
+  function testUserInput() {
+    // Simulating an OK click and with a file name return.
+    MockFilePicker.useBlobFile();
+    MockFilePicker.returnValue = MockFilePicker.returnOK;
+    var input = document.getElementById('fileInput');
+    input.focus();
+
+    input.addEventListener("input", function (aEvent) {
+      ok(true, "input event should have been dispatched on file input.");
+      checkIfInputIsEvent(aEvent, "on file input");
+    });
+
+    input.click();
+    setTimeout(testUserInput2, 0);
+  }
+
+  function testUserInput2() {
+    // Some generic checks for types that support the input event.
+    for (var i = 0; i < textTypes.length; ++i) {
+      input = document.getElementById("input_" + textTypes[i]);
+      input.focus();
+      expectedInputType = "insertLineBreak";
+      expectedData = null;
+      synthesizeKey("KEY_Enter");
+      is(textInput[i], 0, "input event shouldn't be dispatched on " + textTypes[i] + " input element");
+
+      expectedInputType = "insertText";
+      expectedData = "m";
+      sendString("m");
+      is(textInput[i], 1, textTypes[i] + " input element should have dispatched input event.");
+      expectedInputType = "insertLineBreak";
+      expectedData = null;
+      synthesizeKey("KEY_Enter");
+      is(textInput[i], 1, "input event shouldn't be dispatched on " + textTypes[i] + " input element");
+
+      expectedInputType = "deleteContentBackward";
+      expectedData = null;
+      synthesizeKey("KEY_Backspace");
+      is(textInput[i], 2, textTypes[i] + " input element should have dispatched input event.");
+    }
+
+    // Some scenarios of value changing from script and from user input.
+    input = document.getElementById("input_text");
+    input.focus();
+    expectedInputType = "insertText";
+    expectedData = "f";
+    sendString("f");
+    is(textInput[0], 3, "input event should have been dispatched");
+    input.blur();
+    is(textInput[0], 3, "input event should not have been dispatched");
+
+    input.focus();
+    input.value = 'foo';
+    is(textInput[0], 3, "input event should not have been dispatched");
+    input.blur();
+    is(textInput[0], 3, "input event should not have been dispatched");
+
+    input.focus();
+    expectedInputType = "insertText";
+    expectedData = "f";
+    sendString("f");
+    is(textInput[0], 4, "input event should have been dispatched");
+    input.value = 'bar';
+    is(textInput[0], 4, "input event should not have been dispatched");
+    input.blur();
+    is(textInput[0], 4, "input event should not have been dispatched");
+
+    // Same for textarea.
+    var textarea = document.getElementById("textarea");
+    textarea.focus();
+    expectedInputType = "insertText";
+    expectedData = "f";
+    sendString("f");
+    is(textareaInput, 1, "input event should have been dispatched");
+    textarea.blur();
+    is(textareaInput, 1, "input event should not have been dispatched");
+
+    textarea.focus();
+    textarea.value = 'foo';
+    is(textareaInput, 1, "input event should not have been dispatched");
+    textarea.blur();
+    is(textareaInput, 1, "input event should not have been dispatched");
+
+    textarea.focus();
+    expectedInputType = "insertText";
+    expectedData = "f";
+    sendString("f");
+    is(textareaInput, 2, "input event should have been dispatched");
+    textarea.value = 'bar';
+    is(textareaInput, 2, "input event should not have been dispatched");
+    expectedInputType = "deleteContentBackward";
+    expectedData = null;
+    synthesizeKey("KEY_Backspace");
+    is(textareaInput, 3, "input event should have been dispatched");
+    textarea.blur();
+    is(textareaInput, 3, "input event should not have been dispatched");
+
+    // Non-text input tests:
+    for (var i = 0; i < NonTextTypes.length; ++i) {
+      // Button, submit, image and reset input type tests.
+      if (i < 4) {
+        input = document.getElementById("input_" + NonTextTypes[i]);
+        input.focus();
+        input.click();
+        is(NonTextInput[i], 0, "input event doesn't apply");
+        input.blur();
+        is(NonTextInput[i], 0, "input event doesn't apply");
+      }
+      // For radio and checkboxes, input event should be dispatched.
+      else {
+        input = document.getElementById("input_" + NonTextTypes[i]);
+        input.focus();
+        input.click();
+        is(NonTextInput[i], 1, "input event should have been dispatched");
+        input.blur();
+        is(NonTextInput[i], 1, "input event should not have been dispatched");
+
+        // Test that input event is not dispatched if click event is cancelled.
+        function preventDefault(e) {
+          e.preventDefault();
+        }
+        input.addEventListener("click", preventDefault);
+        input.click();
+        is(NonTextInput[i], 1, "input event shouldn't be dispatched if click event is cancelled");
+        input.removeEventListener("click", preventDefault);
+      }
+    }
+
+    // Type changes.
+    var input = document.createElement('input');
+    input.type = 'text';
+    input.value = 'foo';
+    input.oninput = function() {
+      ok(false, "we shouldn't get an input event when the type changes");
+    };
+    input.type = 'range';
+    isnot(input.value, 'foo');
+
+    // Tests for type='range'.
+    var range = document.getElementById("input_range");
+
+    range.focus();
+    sendString("a");
+    range.blur();
+    is(rangeInput, 0, "input event shouldn't be dispatched on range input " +
+                      "element for key changes that don't change its value");
+
+    range.focus();
+    synthesizeKey("KEY_Home");
+    is(rangeInput, 1, "input event should be dispatched for key changes");
+    range.blur();
+    is(rangeInput, 1, "input event shouldn't be dispatched on blur");
+
+    range.focus();
+    var bcr = range.getBoundingClientRect();
+    var centerOfRangeX = bcr.width / 2;
+    var centerOfRangeY = bcr.height / 2;
+    synthesizeMouse(range, centerOfRangeX - 10, centerOfRangeY, { type: "mousedown" });
+    is(rangeInput, 2, "Input event should be dispatched on mousedown if the value changes");
+    synthesizeMouse(range, centerOfRangeX - 5, centerOfRangeY, { type: "mousemove" });
+    is(rangeInput, 3, "Input event should be dispatched during a drag");
+    synthesizeMouse(range, centerOfRangeX, centerOfRangeY, { type: "mouseup" });
+    is(rangeInput, 4, "Input event should be dispatched at the end of a drag");
+
+    // Tests for type='number'.
+    // We only test key events here since input events for mouse event changes
+    // are tested in test_input_number_mouse_events.html
+    var number = document.getElementById("input_number");
+
+    if (isDesktop) { // up/down arrow keys not supported on android/b2g
+      number.value = "";
+      number.focus();
+      // <input type="number">'s inputType value hasn't been decided, see
+      // https://github.com/w3c/input-events/issues/88
+      expectedInputType = "";
+      expectedData = null;
+      synthesizeKey("KEY_ArrowUp");
+      is(numberInput, 1, "input event should be dispatched for up/down arrow key keypress");
+      is(number.value, "1", "sanity check value of number control after keypress");
+
+      synthesizeKey("KEY_ArrowDown", {repeat: 3});
+      is(numberInput, 4, "input event should be dispatched for each up/down arrow key keypress event, even when rapidly repeated");
+      is(number.value, "-2", "sanity check value of number control after multiple keydown events");
+
+      number.blur();
+      is(numberInput, 4, "input event shouldn't be dispatched on blur");
+    }
+
+    MockFilePicker.cleanup();
+    SimpleTest.finish();
+  }
+
+  addLoadEvent(testUserInput);
+
+</script>
+</pre>
+</body>
+</html>

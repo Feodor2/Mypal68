@@ -1,0 +1,426 @@
+:root {
+  --section-width: 664px;
+  --addon-icon-size: 32px;
+}
+
+*|*[hidden] {
+  display: none !important;
+}
+
+.header-name {
+  -moz-user-select: initial;
+}
+
+#main {
+  margin-inline-start: 28px;
+  margin-bottom: 28px;
+  max-width: var(--section-width);
+}
+
+#abuse-reports-messages {
+  margin-inline-start: 28px;
+  max-width: var(--section-width);
+}
+
+/* The margin between message bars. */
+message-bar-stack > * {
+  margin-bottom: 8px;
+}
+
+/* The margin between pending message-bar-stack and the section heading. */
+addon-list message-bar-stack.pending-uninstall {
+  margin-bottom: 12px;
+}
+
+/* List sections */
+
+.list-section-heading {
+  font-size: 17px;
+  font-weight: 600;
+  margin-block: 16px;
+}
+
+/* The margin is set on the main heading, no need on the first subheading. */
+.list-section-heading:first-of-type {
+  margin-top: 0;
+}
+
+/* Add-on cards */
+
+.addon.card {
+  margin-bottom: 16px;
+}
+
+.addon.card:hover {
+  box-shadow: var(--card-shadow);
+}
+
+addon-card:not([expanded]) > .addon.card:hover {
+  box-shadow: var(--card-shadow-hover);
+  cursor: pointer;
+}
+
+addon-card[expanded] .addon.card {
+  padding-bottom: 0;
+}
+
+.addon-card-collapsed {
+  display: flex;
+}
+
+addon-list addon-card > .addon.card {
+  -moz-user-select: none;
+}
+
+.addon-card-message {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  margin: 8px calc(var(--card-padding) * -1) calc(var(--card-padding) * -1);
+}
+
+addon-card[expanded] .addon-card-message {
+  border-radius: 0;
+  margin-bottom: 0;
+}
+
+/* Theme preview image. */
+.card-heading-image {
+  /* If the width, height or aspect ratio changes, don't forget to update the
+   * getScreenshotUrlForAddon function in aboutaddons.js */
+  width: var(--section-width);
+  /* Adjust height so that the image preserves the aspect ratio from AMO.
+   * For details, see https://bugzilla.mozilla.org/show_bug.cgi?id=1546123 */
+  height: calc(var(--section-width) * 92 / 680);
+}
+
+.card-heading-icon {
+  flex-shrink: 0;
+  width: var(--addon-icon-size);
+  height: var(--addon-icon-size);
+  margin-inline-end: 16px;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+.card-contents {
+  word-break: break-word;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-actions {
+  flex-shrink: 0;
+}
+
+.addon-name-container {
+  /* Subtract the top line-height so the text and icon align at the top. */
+  margin-top: -3px;
+  display: flex;
+  align-items: center;
+}
+
+.addon-name {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+  margin: 0;
+  margin-inline-end: 8px;
+}
+
+.addon-name-link,
+.addon-name-link:hover {
+  color: var(--in-content-text-color);
+  text-decoration: none;
+}
+
+.addon-badge {
+  width: 16px;
+  height: 16px;
+  background-size: 16px;
+  background-repeat: no-repeat;
+  background-position: center;
+  margin-inline-end: 8px;
+}
+
+.addon-badge-private-browsing-allowed {
+  background-image: url("chrome://browser/skin/private-browsing.svg");
+}
+
+.addon-badge-recommended {
+  background-color: var(--orange-50);
+  background-image: url("chrome://mozapps/skin/extensions/recommended.svg");
+  background-size: 10px;
+  border-radius: 8px;
+  fill: #fff;
+  -moz-context-properties: fill;
+}
+
+.addon-description {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--in-content-deemphasized-text);
+  font-weight: 400;
+}
+
+/* Prevent the content from wrapping unless expanded. */
+addon-card:not([expanded]) .card-contents {
+  /* Card padding times 4: 2 times for card, 1 between icon and content,
+   * 1 for the ... button. */
+  width: calc(var(--section-width) - var(--card-padding) * 4 - var(--addon-icon-size));
+  white-space: nowrap;
+}
+
+/* Ellipsize if the content is too long. */
+addon-card:not([expanded]) .addon-name,
+addon-card:not([expanded]) .addon-description {
+  text-overflow: ellipsis;
+  overflow-x: hidden;
+}
+
+.more-options-menu {
+  position: relative;
+  /* Add some negative margin to account for the button's padding */
+  margin-top: -10px;
+  margin-inline-end: -8px;
+}
+
+/* Recommended add-ons on list views */
+.recommended-heading {
+  margin-bottom: 16px;
+}
+
+/* Discopane extensions to the add-on card */
+
+recommended-addon-card .addon-name {
+  display: flex;
+}
+
+recommended-addon-card .addon-description:not(:empty) {
+  margin-top: 0.5em;
+}
+
+.disco-card-head {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.disco-addon-author {
+  font-size: 12px;
+  font-weight: normal;
+}
+
+.disco-description-statistics {
+  margin-top: 1em;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  grid-column-gap: 2em;
+  align-items: center;
+}
+
+.disco-cta-button {
+  font-size: 14px;
+  flex-shrink: 0;
+  flex-grow: 0;
+  align-self: baseline;
+}
+
+.disco-cta-button[action="install-addon"]::before {
+  content: "+";
+  padding-inline-end: 4px;
+}
+
+.discopane-notice {
+  margin: 0.5em 0;
+}
+
+.discopane-notice-content {
+  align-items: center;
+  display: flex;
+  width: 100%;
+}
+
+.discopane-notice-content > span {
+  flex-grow: 1;
+}
+
+.discopane-notice-content > button {
+  flex-grow: 0;
+  flex-shrink: 0;
+}
+
+.view-footer {
+  text-align: center;
+}
+
+.view-footer-item {
+  margin-top: 30px;
+}
+
+.privacy-policy-link {
+  font-size: small;
+}
+
+addon-details {
+  color: var(--in-content-deemphasized-text);
+}
+
+.addon-detail-description {
+  margin: 16px 0;
+}
+
+.addon-detail-contribute {
+  display: flex;
+  padding: var(--card-padding);
+  border: 1px solid var(--in-content-box-border-color);
+  border-radius: var(--panel-border-radius);
+  margin-bottom: var(--card-padding);
+  flex-direction: column;
+}
+
+.addon-detail-contribute > label {
+  font-style: italic;
+}
+
+.addon-detail-contribute-button {
+  -moz-context-properties: fill;
+  fill: currentColor;
+  background-image: url("chrome://global/skin/icons/heart.svg");
+  background-repeat: no-repeat;
+  background-position: 8px;
+  padding-inline-start: 28px;
+  margin-top: var(--card-padding);
+  margin-bottom: 0;
+  align-self: flex-end;
+}
+
+.addon-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--in-content-box-border-color);
+  margin: 0 calc(var(--card-padding) * -1);
+  padding: var(--card-padding);
+  color: var(--in-content-text-color);
+}
+
+.addon-detail-row.addon-detail-help-row {
+  display: block;
+  color: var(--in-content-deemphasized-text);
+  padding-top: 4px;
+  padding-bottom: var(--card-padding);
+  border: none;
+}
+
+.addon-detail-row-has-help {
+  padding-bottom: 0;
+}
+
+.addon-detail-row input[type="checkbox"] {
+  margin: 0;
+}
+
+.addon-detail-rating {
+  display: flex;
+}
+
+.addon-detail-rating > a {
+  margin-inline-start: 8px;
+}
+
+.more-options-button {
+  min-width: auto;
+  min-height: auto;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  -moz-context-properties: fill;
+  fill: currentColor;
+  background: url("chrome://global/skin/icons/more.svg") no-repeat center center;
+  position: relative;
+}
+
+.more-options-button-badged::after {
+  content: "";
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--blue-50);
+  position: absolute;
+  top: 0;
+}
+
+.more-options-button-badged:-moz-locale-dir(ltr)::after {
+  right: 0;
+}
+
+.more-options-button-badged:-moz-locale-dir(rtl)::after {
+  left: 0;
+}
+
+panel-item[action="remove"] {
+  -moz-context-properties: fill;
+  fill: currentColor;
+  --icon: url("chrome://global/skin/icons/delete.svg");
+}
+
+panel-item[action="install-update"] {
+  --icon: url("chrome://global/skin/icons/update-icon.svg");
+}
+
+panel-item[action="report"] {
+  -moz-context-properties: fill;
+  fill: currentColor;
+  --icon: url(chrome://global/skin/icons/warning.svg);
+}
+
+panel-item-separator {
+  display: block;
+  height: 1px;
+  background: var(--in-content-box-border-color);
+  padding: 0;
+  margin: 6px 0;
+}
+
+.hide-amo-link .amo-link-container {
+  display: none;
+}
+
+.button-link {
+  min-height: auto;
+  background: none !important;
+  padding: 0;
+  margin: 0;
+  color: var(--in-content-link-color) !important;
+  cursor: pointer;
+  border: none;
+}
+
+.button-link:hover {
+  color: var(--in-content-link-color-hover) !important;
+  text-decoration: underline;
+}
+
+.button-link:active {
+  color: var(--in-content-link-color-active) !important;
+  text-decoration: none;
+}
+
+.inline-options-stack {
+  /* If the options browser triggers an alert we need room to show it. */
+  min-height: 250px;
+  width: 100%;
+  background-color: white;
+}
+
+addon-permissions-list > .addon-detail-row:first-of-type {
+  border-top: none;
+}
+
+.deck-tab-group {
+  margin-top: 8px;
+  /* Pull the buttons flush with the side of the card */
+  margin-inline: calc(var(--card-padding) * -1);
+}

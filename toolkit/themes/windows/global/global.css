@@ -1,0 +1,238 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* ===== global.css =====================================================
+  == Styles that apply everywhere.
+  ======================================================================= */
+
+/* all localizable skin settings shall live here */
+@import url("chrome://global/locale/intl.css");
+@import url("chrome://global/content/widgets.css");
+
+@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@namespace html url("http://www.w3.org/1999/xhtml");
+
+%include ../../shared/global.inc.css
+
+/* ::::: Variables ::::: */
+:root {
+  --arrowpanel-padding: 10px;
+  --default-arrowpanel-background: -moz-field;
+  --default-arrowpanel-color: -moz-fieldText;
+  --default-arrowpanel-border-color: ThreeDShadow;
+  --arrowpanel-background: var(--default-arrowpanel-background);
+  --arrowpanel-color: var(--default-arrowpanel-color);
+  --arrowpanel-border-color: var(--default-arrowpanel-border-color);
+  --panel-disabled-color: GrayText;
+}
+
+@media (-moz-windows-default-theme) {
+  :root {
+    --arrowpanel-border-color: hsla(210,4%,10%,.2);
+  }
+}
+
+/* ::::: root elements ::::: */
+
+window,
+page,
+dialog,
+wizard {
+  background-color: -moz-Dialog;
+  color: -moz-DialogText;
+  font: message-box;
+}
+
+/* ::::: alert icons :::::*/
+
+.message-icon,
+.alert-icon,
+.error-icon,
+.question-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.message-icon {
+  list-style-image: url("chrome://global/skin/icons/info.svg");
+}
+
+.alert-dialog #infoIcon,
+.alert-icon {
+  list-style-image: url("chrome://global/skin/icons/warning.svg");
+  width: 32px;
+  height: 32px;
+}
+
+.error-icon {
+  list-style-image: url("chrome://global/skin/icons/Error.png");
+}
+
+.question-icon {
+  list-style-image: url("chrome://global/skin/icons/help.svg");
+}
+
+/* ::::: iframe ::::: */
+
+iframe {
+  border: none;
+  width: 100px;
+  height: 100px;
+  min-width: 10px;
+  min-height: 10px;
+}
+
+@supports -moz-bool-pref("layout.css.emulate-moz-box-with-flex") {
+  /* In emulation, <iframe> is block instead of inline, so reset the width/height */
+  iframe {
+    width: auto;
+    height: auto;
+  }
+}
+
+/* XXXBlake yeah, shoot me -- these don't belong here.  I'll move them later. */
+
+sidebarheader {
+  min-height: 25px;
+  text-shadow: none;
+}
+
+sidebarheader > label {
+  padding-inline-start: 4px;
+}
+
+toolbar[mode="text"] .toolbarbutton-text {
+  padding: 0 !important;
+  margin: 3px 5px !important;
+}
+
+/* ::::: print preview ::::: */
+
+.print-preview-navigate-button {
+  min-width: 1.9em;
+}
+
+.print-preview-navigate-button > .toolbarbutton-icon {
+  display: none;
+}
+
+#print-preview-portrait-button {
+  list-style-image: url("chrome://global/skin/icons/Print-preview.png");
+  -moz-image-region: rect(0px 16px 16px 0px);
+}
+
+#print-preview-landscape-button {
+  list-style-image: url("chrome://global/skin/icons/Print-preview.png");
+  -moz-image-region: rect(0px 32px 16px 16px);
+}
+
+#print-preview-portrait-button > .toolbarbutton-icon,
+#print-preview-landscape-button > .toolbarbutton-icon {
+  margin-inline-end: 2px;
+}
+
+html|*#print-preview-pageNumber {
+  /* 3 chars + (3px border + 1px padding) on both sides */
+  width: calc(8px + 3ch);
+  margin: 0 4px;
+}
+
+/* ::::: miscellaneous formatting ::::: */
+
+:root[lwtheme-image]:-moz-lwtheme-darktext {
+  text-shadow: 0 -0.5px 1.5px white;
+}
+
+:root[lwtheme-image]:-moz-lwtheme-brighttext {
+  text-shadow: 1px 1px 1.5px black;
+}
+
+/* separators */
+separator:not([orient="vertical"]) {
+  height: 1.5em;
+}
+separator[orient="vertical"] {
+  width: 1.5em;
+}
+
+separator.thin:not([orient="vertical"]) {
+  height: 0.5em;
+}
+separator.thin[orient="vertical"] {
+  width: 0.5em;
+}
+
+separator.groove:not([orient="vertical"]) {
+  border-top: 1px solid ThreeDShadow;
+  border-bottom: 1px solid ThreeDHighlight;
+  height: 0;
+  margin-top: 0.4em;
+  margin-bottom: 0.4em;
+}
+separator.groove[orient="vertical"] {
+  border-left: 1px solid ThreeDShadow;
+  border-right: 1px solid ThreeDHighlight;
+  width: 0;
+  margin-left: 0.4em;
+  margin-right: 0.4em;
+}
+
+description,
+label {
+  cursor: default;
+  margin-top: 1px;
+  margin-bottom: 2px;
+  margin-inline-start: 6px;
+  margin-inline-end: 5px;
+}
+
+description {
+  margin-bottom: 4px;
+}
+
+label[disabled="true"] {
+  color: GrayText;
+}
+
+@media (-moz-windows-classic) {
+  label[disabled="true"] {
+    color: ThreeDShadow;
+    text-shadow: 1px 1px ThreeDHighlight;
+  }
+}
+
+.tooltip-label {
+  margin: 0;
+}
+
+.header {
+  font-weight: bold;
+}
+
+.indent {
+  margin-inline-start: 23px;
+}
+
+.box-padded {
+  padding: 5px;
+}
+
+.text-link {
+  color: -moz-nativehyperlinktext;
+  cursor: pointer;
+}
+
+.text-link:hover {
+  text-decoration: underline;
+}
+
+.text-link:-moz-focusring {
+  outline: 1px dotted;
+}
+
+popupnotificationcontent {
+  margin-top: .5em;
+}
+
+%include ../../shared/notification-popup.inc.css

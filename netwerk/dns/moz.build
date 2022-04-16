@@ -1,0 +1,83 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files('**'):
+    BUG_COMPONENT = ('Core', 'Networking: DNS')
+
+DIRS += [
+    'mdns',
+]
+
+XPIDL_SOURCES += [
+    'nsIDNSByTypeRecord.idl',
+    'nsIDNSListener.idl',
+    'nsIDNSRecord.idl',
+    'nsIDNSService.idl',
+    'nsIEffectiveTLDService.idl',
+    'nsIIDNService.idl',
+    'nsPIDNSService.idl',
+]
+
+XPIDL_MODULE = 'necko_dns'
+
+EXPORTS += [
+    'nsEffectiveTLDService.h',
+]
+
+EXPORTS.mozilla.net += [
+    'ChildDNSService.h',
+    'DNS.h',
+    'DNSListenerProxy.h',
+    'DNSRequestChild.h',
+    'DNSRequestParent.h',
+    'IDNBlocklistUtils.h',
+    'PDNSParams.h',
+    'TRRService.h',
+]
+
+SOURCES += [
+    'nsEffectiveTLDService.cpp', # Excluded from UNIFIED_SOURCES due to special build flags.
+    'nsHostResolver.cpp', # Redefines LOG
+]
+
+UNIFIED_SOURCES += [
+    'ChildDNSService.cpp',
+    'DNS.cpp',
+    'DNSListenerProxy.cpp',
+    'DNSRequestChild.cpp',
+    'DNSRequestParent.cpp',
+    'GetAddrInfo.cpp',
+    'IDNBlocklistUtils.cpp',
+    'nsDNSService2.cpp',
+    'nsIDNService.cpp',
+    'punycode.c',
+    'TRR.cpp',
+    'TRRService.cpp',
+]
+
+IPDL_SOURCES = [
+    'PDNSRequest.ipdl',
+    'PDNSRequestParams.ipdlh',
+]
+
+include('/ipc/chromium/chromium-config.mozbuild')
+
+FINAL_LIBRARY = 'xul'
+
+GENERATED_FILES = [
+    'etld_data.inc',
+]
+etld_data = GENERATED_FILES['etld_data.inc']
+etld_data.script = 'prepare_tlds.py'
+etld_data.inputs = ['effective_tld_names.dat']
+
+# need to include etld_data.inc
+LOCAL_INCLUDES += [
+    '/netwerk/base',
+]
+
+USE_LIBS += ['icu']
+
+if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
+    CXXFLAGS += ['-Wno-error=shadow']

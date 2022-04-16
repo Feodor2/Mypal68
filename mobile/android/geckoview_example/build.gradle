@@ -1,0 +1,50 @@
+buildDir "${topobjdir}/gradle/build/mobile/android/geckoview_example"
+
+apply plugin: 'com.android.application'
+
+apply from: "${topsrcdir}/mobile/android/gradle/product_flavors.gradle"
+
+android {
+    compileSdkVersion project.ext.compileSdkVersion
+
+    defaultConfig {
+        targetSdkVersion project.ext.targetSdkVersion
+        minSdkVersion project.ext.minSdkVersion
+        manifestPlaceholders = project.ext.manifestPlaceholders
+
+        applicationId "org.mozilla.geckoview_example"
+        versionCode 1
+        versionName "1.0"
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    // By default the android plugins ignores folders that start with `_`, but
+    // we need those in web extensions.
+    // See also:
+    //  - https://issuetracker.google.com/issues/36911326
+    //  - https://stackoverflow.com/questions/9206117/how-to-workaround-autoomitting-fiiles-folders-starting-with-underscore-in
+    aaptOptions {
+        ignoreAssetsPattern  '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+
+    project.configureProductFlavors.delegate = it
+    project.configureProductFlavors()
+}
+
+dependencies {
+    implementation "com.android.support:support-annotations:$support_library_version"
+    implementation "com.android.support:appcompat-v7:$support_library_version"
+
+    implementation project(path: ':geckoview')
+}

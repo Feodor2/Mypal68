@@ -1,0 +1,6 @@
+tools/ci/
+tools/lint/
+tools/manifest/
+tools/serve/
+tools/taskcluster/
+tools/wpt/

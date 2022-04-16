@@ -1,0 +1,115 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* General styles */
+
+*|*.plain {
+  -moz-appearance: none;
+  margin: 0 !important;
+  border: none;
+  padding: 0;
+}
+
+html|textarea {
+  font: inherit;
+}
+
+/* Close icon */
+
+.close-icon {
+  -moz-appearance: none;
+  -moz-context-properties: fill, fill-opacity;
+  list-style-image: url(chrome://global/skin/icons/close.svg);
+  color: inherit !important;
+  fill: currentColor;
+  fill-opacity: 0;
+}
+
+.close-icon:hover {
+  fill-opacity: 0.1;
+}
+
+.close-icon:hover:active {
+  fill-opacity: 0.2;
+}
+
+.close-icon > .button-icon,
+.close-icon > .button-box > .button-icon,
+.close-icon > .toolbarbutton-icon {
+  width: 20px;
+  height: 20px;
+}
+
+/* Autoscroll popup */
+
+.autoscroller {
+  border: none;
+  padding: 0;
+  background-image: url("chrome://global/skin/icons/autoscroll.svg");
+  background-size: contain;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  -moz-appearance: none;
+  -moz-window-shadow: none;
+}
+
+.autoscroller[scrolldir="NS"] {
+  background-image: url("chrome://global/skin/icons/autoscroll-vertical.svg");
+}
+
+.autoscroller[scrolldir="EW"] {
+  background-image: url("chrome://global/skin/icons/autoscroll-horizontal.svg");
+}
+
+/* Panel footers */
+
+.panel-footer {
+  background-color: var(--arrowpanel-dimmed);
+}
+
+.panel-footer > button {
+  -moz-appearance: none;
+  border-top: 1px solid var(--panel-separator-color);
+  /* !important overrides :hover and :active colors from button.css: */
+  color: inherit !important;
+  min-width: 0;
+  margin: 0;
+  padding: .9em 2px;
+}
+
+.panel-footer > button[disabled] {
+  color: var(--panel-disabled-color) !important;
+}
+
+.panel-footer > button:-moz-focusring {
+  outline: 1px dotted;
+  outline-offset: -3px;
+}
+
+.panel-footer > button:not([disabled]):hover {
+  background-color: var(--arrowpanel-dimmed);
+}
+
+.panel-footer > button:not([disabled]):hover:active,
+.panel-footer > button:not([disabled])[open] {
+  background-color: var(--arrowpanel-dimmed-further);
+  box-shadow: 0 1px 0 hsla(210,4%,10%,.05) inset;
+}
+
+.panel-footer > button:not([disabled])[default] {
+  color: white !important;
+  background-color: #0060df;
+}
+
+.panel-footer > button:not([disabled])[default]:hover {
+  background-color: #003eaa;
+}
+
+.panel-footer > button:not([disabled])[default]:hover:active {
+  background-color: #002275;
+}
+
+.panel-footer > button > .button-box {
+  padding: 0;
+}

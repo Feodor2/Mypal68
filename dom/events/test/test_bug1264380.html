@@ -1,0 +1,81 @@
+<html>
+<head>
+  <title>Test the dragstart event on the anchor in side shadow DOM</title>
+  <link rel="stylesheet" type="text/css" href="/tests/SimpleTest/test.css">
+  <script src="/tests/SimpleTest/SimpleTest.js"></script>
+  <script src="/tests/SimpleTest/EventUtils.js"></script>
+<script>
+
+function runTests()
+{
+  let dragService = SpecialPowers.Cc["@mozilla.org/widget/dragservice;1"].
+    getService(SpecialPowers.Ci.nsIDragService);
+
+  let iframe = document.createElement('iframe');
+  document.body.appendChild(iframe);
+  iframe.contentDocument.body.innerHTML = '<div id="outer"/>';
+
+  let iframeDoc = iframe.contentDocument;
+  let iframeWin = iframe.contentWindow;
+
+  let shadow = iframeDoc.querySelector('#outer').attachShadow({mode: 'open'});
+  let target = iframeDoc.createElement('a');
+
+  const TEXT = "Drag me if you can!";
+  let linkText = iframeDoc.createTextNode(TEXT);
+  target.appendChild(linkText);
+
+  const URL = "http://www.mozilla.org/";
+  target.href = URL;
+  shadow.appendChild(target);
+
+  // Some of the drag data we don't actually care about for this test,
+  // so we'll use this comparator function to ignore them.
+  function ignoreFunc(actualData, expectedData) {
+    return true;
+  }
+
+  const EXPECTED_DRAG_DATA = [[{
+    type: "text/x-moz-url",
+    data: "",
+    eqTest: ignoreFunc,
+  }, {
+    type: "text/x-moz-url-data",
+    data: "",
+    eqTest: ignoreFunc,
+  }, {
+    type: "text/x-moz-url-desc",
+    data: "",
+    eqTest: ignoreFunc,
+  }, {
+    type: "text/uri-list",
+    data: URL,
+  }, {
+    type: "text/_moz_htmlinfo",
+    data: "",
+    eqTest: ignoreFunc,
+  }, {
+    type: "text/html",
+    data: "",
+    eqTest: ignoreFunc,
+  }, {
+    type: "text/plain",
+    data: URL,
+  }]];
+
+  let result = synthesizeDragStart(target, EXPECTED_DRAG_DATA, iframeWin);
+  is(result, null, "Should have gotten the expected drag data.");
+  SimpleTest.finish();
+}
+
+
+SimpleTest.waitForExplicitFinish();
+window.onload = () => {
+  SimpleTest.waitForFocus(runTests);
+};
+
+</script>
+
+<body>
+</body>
+</html>

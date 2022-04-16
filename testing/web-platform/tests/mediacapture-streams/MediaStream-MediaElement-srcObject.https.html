@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+<head>
+<title>Assigning mediastream to a video element</title>
+<link rel="author" title="Dominique Hazael-Massieux" href="mailto:dom@w3.org"/>
+<link rel="help" href="http://dev.w3.org/2011/webrtc/editor/getusermedia.html#navigatorusermedia">
+</head>
+<body>
+<p class="instructions">When prompted, accept to share your video stream.</p>
+<h1 class="instructions">Description</h1>
+<p class="instructions">This test checks that the MediaStream object returned by
+the success callback in getUserMedia can be properly assigned to a video element
+via the <code>srcObject</code> attribute.</p>
+
+<video id="vid"></video>
+
+<div id='log'></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+'use strict';
+const vid = document.getElementById("vid");
+
+promise_test(async t => {
+  const wait = ms => new Promise(r => t.step_timeout(r, ms));
+  const timeout = (promise, time, msg) =>
+    Promise.race([promise, wait(time).then(() => Promise.reject(new Error(msg)))]);
+
+  const stream = await timeout(navigator.mediaDevices.getUserMedia({video: true}), 10000, "getUserMedia timeout");
+  t.add_cleanup(() => stream.getTracks().forEach(track => track.stop()));
+  vid.defaultPlaybackRate = 0.4;
+  vid.playbackRate = 0.4;
+  vid.preload = "metadata";
+  vid.srcObject = stream;
+  vid.onratechange = t.unreached_func('ratechange event must not be fired');
+  vid.play();
+  assert_true(!vid.seeking, "A MediaStream is not seekable");
+  assert_equals(vid.seekable.length, 0, "A MediaStream is not seekable");
+  assert_equals(vid.defaultPlaybackRate, 1, "playback rate is always 1");
+  vid.defaultPlaybackRate = 0.5;
+  assert_equals(vid.defaultPlaybackRate, 1, "Setting defaultPlaybackRate must be ignored");
+  assert_equals(vid.playbackRate, 1, "playback rate is always 1");
+  vid.playbackRate = 0.5;
+  assert_equals(vid.playbackRate, 1, "Setting playbackRate must be ignored");
+  assert_equals(vid.buffered.length, 0, "A MediaStream cannot be preloaded.  Therefore, there is no buffered timeranges");
+  assert_equals(vid.readyState, vid.HAVE_NOTHING, "readyState is HAVE_NOTHING initially");
+  assert_equals(vid.duration, NaN, "A MediaStream does not have any duration initially.");
+  assert_equals(vid.preload, "none", "preload must always be none");
+  vid.preload = "metadata";
+  assert_equals(vid.preload, "none", "Setting preload must be ignored");
+
+  const haveLoadedData = new Promise(r => vid.addEventListener("loadeddata", r, {once: true}));
+
+  await new Promise(r => vid.addEventListener("timeupdate", r, {once: true}));
+  assert_equals(vid.played.length, 1, "A MediaStream's timeline always consists of a single range");
+  assert_equals(vid.played.start(0), 0, "A MediaStream's timeline always starts at zero");
+  assert_equals(vid.played.end(0), vid.currentTime, "A MediaStream's end MUST return the last known currentTime, says mediacapture-main");
+  assert_equals(vid.duration, Infinity, "A MediaStream does not have a pre-defined duration. ");
+
+  const time = vid.currentTime;
+  vid.currentTime = 0;
+  assert_equals(vid.currentTime, time, "The UA MUST ignore attempts to set the currentTime attribute");
+
+  await haveLoadedData;
+  assert_equals(vid.readyState, vid.HAVE_ENOUGH_DATA, "Upon having loaded a media stream, the UA sets readyState to HAVE_ENOUGH_DATA");
+  assert_equals(vid.duration, Infinity, "A MediaStream does not have a pre-defined duration.");
+
+  // TODO add test that duration must be set to currentTime
+  // when mediastream is destroyed
+}, "Tests that a MediaStream can be assigned to a video element with srcObject");
+</script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+%include ../../shared/syncedtabs/sidebar.inc.css
+
+/* These styles are intended to mimic XUL trees and the XUL search box. */
+
+body:not([lwt-sidebar]) .content-container {
+  -moz-appearance: -moz-mac-source-list;
+  -moz-font-smoothing-background-color: -moz-mac-source-list;
+}
+
+.item-title-container {
+  box-sizing: border-box;
+  align-items: center;
+  height: 24px;
+  font-size: 12px;
+}
+
+body:not([lwt-sidebar]) .item.selected:not(:focus) > .item-title-container {
+  -moz-appearance: -moz-mac-source-list-selection;
+  -moz-font-smoothing-background-color: -moz-mac-source-list-selection;
+}
+
+body:not([lwt-sidebar-highlight]) .item.selected:focus > .item-title-container {
+  -moz-appearance: -moz-mac-active-source-list-selection;
+  -moz-font-smoothing-background-color: -moz-mac-active-source-list-selection;
+}
+
+@media (-moz-mac-yosemite-theme: 0) {
+  .item.selected > .item-title-container {
+    color: #fff;
+    font-weight: bold;
+  }
+}
+
+.sidebar-search-container {
+  padding: 4px;
+}
+
+.search-box {
+  -moz-appearance: searchfield;
+  padding: 1px;
+  font-size: 12px;
+  cursor: text;
+  margin: 4px;
+  color: -moz-fieldText;
+  -moz-user-select: text;
+  text-shadow: none;
+}
+
+.search-box > .textbox-input-box > .textbox-search-icons > .textbox-search-clear {
+  background-image: url(chrome://global/skin/icons/searchfield-cancel.svg);
+  background-repeat: no-repeat;
+  background-size: 11px 11px;
+  width: 11px;
+  height: 11px;
+}
+
+.textbox-search-clear {
+  margin-top: 1px;
+}

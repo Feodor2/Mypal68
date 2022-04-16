@@ -1,0 +1,24 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+EXTRA_JS_MODULES.addons += [
+    'AddonRepository.jsm',
+    'AddonSettings.jsm',
+    'AddonUpdateChecker.jsm',
+    'Content.js',
+    'GMPProvider.jsm',
+    'ProductAddonChecker.jsm',
+    'XPIDatabase.jsm',
+    'XPIInstall.jsm',
+    'XPIProvider.jsm',
+]
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'android':
+    EXTRA_JS_MODULES.addons += [
+        'PluginProvider.jsm',
+    ]
+
+TESTING_JS_MODULES += [
+    'AddonTestUtils.jsm',
+]

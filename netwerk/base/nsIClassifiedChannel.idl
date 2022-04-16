@@ -1,0 +1,66 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/**
+ * nsIClassifiedChannel
+ *
+ * A channel may optionally implement this interface if it carries classified
+ * result information of channel classifier. The information contains, for
+ * example, the name of matched table and the name of matched provider.
+ */
+[scriptable, uuid(70cf6091-a1de-4aa8-8224-058f8964be31)]
+interface nsIClassifiedChannel : nsISupports
+{
+  /**
+   * Sets matched info of the classified channel.
+   *
+   * @param aList
+   *        Name of the Safe Browsing list that matched (e.g. goog-phish-shavar).
+   * @param aProvider
+   *        Name of the Safe Browsing provider that matched (e.g. google)
+   * @param aFullHash
+   *        Full hash of URL that matched Safe Browsing list.
+   */
+  void setMatchedInfo(in ACString aList,
+                      in ACString aProvider,
+                      in ACString aFullHash);
+
+  /**
+   * Name of the list that matched
+   */
+  readonly attribute ACString matchedList;
+
+  /**
+   * Name of provider that matched
+   */
+  readonly attribute ACString matchedProvider;
+
+  /**
+   * Full hash of URL that matched
+   */
+  readonly attribute ACString matchedFullHash;
+
+  /**
+   * Sets matched tracking info of the classified channel.
+   *
+   * @param aLists
+   *        Name of the Tracking Protection list that matched (e.g. content-track-digest256).
+   * @param aFullHash
+   *        Full hash of URLs that matched Tracking Protection list.
+   */
+  void setMatchedTrackingInfo(in Array<ACString> aLists,
+                              in Array<ACString> aFullHashes);
+
+  /**
+   * Name of the lists that matched
+   */
+  readonly attribute Array<ACString> matchedTrackingLists;
+
+  /**
+   * Full hash of URLs that matched
+   */
+  readonly attribute Array<ACString> matchedTrackingFullHashes;
+};

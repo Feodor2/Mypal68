@@ -1,0 +1,30 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+GeckoCppUnitTests(
+    [
+      'TestDllInterceptor',
+    ],
+    linkage=None
+)
+
+if CONFIG['OS_TARGET'] == 'WINNT' and CONFIG['CPU_ARCH'] in ('x86', 'x86_64'):
+    # Cross-process interceptors not yet supported on aarch64
+    GeckoCppUnitTests(
+        [
+          'TestDllInterceptorCrossProcess',
+        ],
+        linkage=None
+    )
+
+OS_LIBS += [
+    'ntdll',
+    'ole32',
+]
+
+if CONFIG['OS_TARGET'] == 'WINNT' and CONFIG['CC_TYPE'] in ('gcc', 'clang'):
+    # This allows us to use wmain as the entry point on mingw
+    LDFLAGS += [
+        '-municode',
+    ]

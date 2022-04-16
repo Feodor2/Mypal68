@@ -1,0 +1,58 @@
+Running Wrench on Android devices.
+==================================
+
+Setting up the environment:
+---------------------------
+
+Follow the steps at https://github.com/tomaka/android-rs-glue#setting-up-your-environment, with exceptions:
+    - No need to download the Android NDK and SDK, we will use the ones downloaded by Gecko in ~/.mozbuild/
+
+    - Install both the i686-linux-android and armv7-linux-androideabi rust
+      targets, as the APK will include native libraries with both architectures.
+
+    - Don't install currently published version of cargo-apk (it has a bug related to SDK versions).
+      Instead, install the patched version like so:
+        cargo install --git https://github.com/staktrace/android-rs-glue --branch mozilla_master cargo-apk
+
+    - Consider adding ~/.mozbuild/android-sdk-linux/platform-tools to your path, for the adb commands below.
+
+Compiling and running:
+----------------------
+
+    Compile wrench:
+        cd wrench
+        export ANDROID_HOME=$HOME/.mozbuild/android-sdk-linux # exact path may vary
+        export NDK_HOME=$HOME/.mozbuild/android-ndk-r17b      # exact path may vary
+        export CARGO_APK_GRADLE_COMMAND=$PWD/../../../gradlew
+        cargo-apk build
+
+    Install the APK:
+        adb install -r ../target/android-artifacts/app/build/outputs/apk/app-debug.apk
+
+    Set command line arguments:
+        adb shell
+        mkdir /sdcard/wrench
+        echo "load reftests/aa/rounded-rects.yaml" >/sdcard/wrench/args
+        exit
+
+    Push reftests (if you need these files for what you're doing):
+        adb push reftests /sdcard/wrench/
+
+    Run the application:
+        adb shell am start -n org.mozilla.wrench/rust.wrench.MainActivity
+            (or click the icon in the launcher)
+
+Release mode:
+-------------
+
+    Building in release does work as well. Use the following steps to compile wrench:
+        cd wrench
+        export ANDROID_HOME=$HOME/.mozbuild/android-sdk-linux # exact path may vary
+        export NDK_HOME=$HOME/.mozbuild/android-ndk           # exact path may vary
+        export CARGO_APK_GRADLE_COMMAND=$PWD/../../../gradlew
+        cargo-apk build --release
+        ../../../mobile/android/debug_sign_tool.py ../target/android-artifacts/app/build/outputs/apk/app-release-unsigned.apk
+
+    Now the APK at ../target/android-artifacts/app/build/outputs/apk/app-release-unsigned.apk
+    should be signed and installable (you may need to uninstall the debug APK first if you
+    have that installed).

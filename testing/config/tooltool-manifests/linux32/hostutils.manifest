@@ -1,0 +1,10 @@
+[
+  {
+    "algorithm": "sha512",
+    "visibility": "public",
+    "filename": "host-utils-68.0a1.en-US.linux-i686.tar.gz",
+    "unpack": true,
+    "digest": "39940d5873ff5cbef9046fd1ac0a3e9fd1e696fc3cad5a8948507fc205c060080b94537205bf3726afd93dfdd1bcc8047f25cce7d6385e3b071944efc13a4a72",
+    "size": 79137774
+  }
+]

@@ -1,0 +1,1251 @@
+activity_stream:
+  event:
+    objects: [
+      "ARCHIVE_FROM_POCKET",
+      "BLOCK",
+      "BOOKMARK_ADD",
+      "BOOKMARK_DELETE",
+      "CLICK",
+      "CLOSE_NEWTAB_PREFS",
+      "DELETE",
+      "DELETE_FROM_POCKET",
+      "DELETE_CONFIRM",
+      "DIALOG_CANCEL",
+      "DIALOG_OPEN",
+      "DRAG",
+      "DROP",
+      "MIGRATION_CANCEL",
+      "MIGRATION_START",
+      "OPEN_NEWTAB_PREFS",
+      "OPEN_NEW_WINDOW",
+      "OPEN_PRIVATE_WINDOW",
+      "PIN",
+      "PREVIEW_REQUEST",
+      "SAVE_TO_POCKET",
+      "SEARCH",
+      "SEARCH_EDIT_ADD",
+      "SEARCH_EDIT_CLOSE",
+      "SEARCH_EDIT_DELETE",
+      "SEARCH_HANDOFF",
+      "SKIPPED_SIGNIN",
+      "SUBMIT_EMAIL",
+      "DISCLAIMER_ACKED",
+      "MENU_ADD_SEARCH",
+      "MENU_ADD_TOPSITE",
+      "MENU_COLLAPSE",
+      "MENU_EXPAND",
+      "MENU_MANAGE",
+      "MENU_MOVE_DOWN",
+      "MENU_MOVE_UP",
+      "MENU_PRIVACY_NOTICE",
+      "MENU_REMOVE",
+      "TOP_SITES_EDIT",
+      "TOP_SITES_EDIT_CLOSE",
+      "UNPIN"]
+    release_channel_collection: opt-out
+    record_in_processes: ["main"]
+    description: >
+      This is recorded with every user interaction on Activity Stream elements.
+    bug_numbers: [1429497, 1429489, 1514732]
+    notification_emails:
+      - "najiang@mozilla.com"
+      - "msamuel@mozilla.com"
+      - "rrosario@mozilla.com"
+    expiry_version: never
+    extra_keys:
+      addon_version: The Activity Stream addon version.
+      session_id: The ID of the Activity Stream session in which the event occurred
+      page: about:home or about_newtab - the page where the event occurred
+      user_prefs: An integer representaing a user's A-S settings.
+      action_position: The index of card receiving interactions.
+  end:
+    objects: ["session"]
+    release_channel_collection: opt-out
+    record_in_processes: ["main"]
+    description: >
+      This is recorded with every session ended in Activity Stream.
+    bug_numbers: [1429497, 1429489]
+    notification_emails:
+      - "najiang@mozilla.com"
+      - "msamuel@mozilla.com"
+    expiry_version: never
+    extra_keys:
+      addon_version: The Activity Stream addon version.
+      session_id: The ID of the Activity Stream session in which the event occurred
+      page: about:home or about_newtab - the page where the event occurred
+      user_prefs: An integer representaing a user's A-S settings.
+  enroll:
+    objects: ["preference_study"]
+    release_channel_collection: opt-out
+    description: >
+      Sent when a user gets enrolled in a preference study.
+    bug_numbers: [1549784]
+    notification_emails:
+      - "najiang@mozilla.com"
+      - "edilee@mozilla.com"
+    record_in_processes: ["main"]
+    expiry_version: never
+    extra_keys:
+      experimentType: >
+        For preference_study recipes, the type of experiment this is ("exp" or "exp-highpop").
+      branch: >
+        For preference_study recipes, the slug of the branch that was chosen for this client.
+
+addonsManager:
+  install:
+    description: >
+      This events are recorded during the install and update flow for extensions and themes,
+      the value of the event is an install_id shared by the events related to the same install
+      or update flow.
+    objects: ["extension", "theme", "locale", "dictionary", "other", "unknown"]
+    methods: ["install", "update"]
+    extra_keys:
+      addon_id: A string which identify the extension (when available)
+      download_time: The number of ms needed to complete the download
+      error: The AddonManager error related to an install or update failure.
+      source: The source that originally triggered the add-on installation
+      method: >
+        The method used by the source to install the add-on (included when the source can use more than one,
+        e.g. install events with source "about:addons" may have "install-from-file" or "url" as method).
+      num_strings: The number of permission description strings in the extension permission doorhanger
+      updated_from: Determine if an update has been requested by the user or the application ("app" / "user")
+      step: >
+        The current step in the install or update flow:
+          - started, postponed, cancelled, failed, permissions_prompt, completed
+          - site_warning, site_blocked, install_disabled_warning
+          - download_started, download_completed, download_failed
+    notification_emails: ["addons-dev-internal@mozilla.com"]
+    expiry_version: "73"
+    record_in_processes: ["main"]
+    bug_numbers: [1433335, 1515697, 1523641]
+    release_channel_collection: opt-out
+  manage:
+    description: >
+      This events are recorded when an installed add-ons is being disable/enabled/uninstalled,
+      the value of the event is the addon_id (which also allow to correlate multiple events
+      related to each other).
+    objects: ["extension", "theme", "locale", "dictionary", "other"]
+    methods: ["disable", "enable", "sideload_prompt", "uninstall"]
+    extra_keys:
+      source: The source from which the addon has been installed
+      method: >
+        The method used by the source to install the add-on (included when the source can use more than one,
+        e.g. install events with source "about:addons" may have "install-from-file" or "url" as method).
+      num_strings: The number of permission description strings in the extension permission doorhanger
+    notification_emails: ["addons-dev-internal@mozilla.com"]
+    expiry_version: "73"
+    record_in_processes: ["main"]
+    bug_numbers: [1433335, 1515697, 1523641]
+    release_channel_collection: opt-out
+  link:
+    description: >
+      A link method event triggered when a user follows a link. The object is the page that the link is on:
+      aboutAddons or aboutPreferences. The value is where the link goes: about:addons, about:preferences,
+      about:debugging, support (on SUMO) or rating, search, author (on AMO) or homepage (on AMO or elsewhere),
+      discohome (on AMO via a recommended add-on card),
+      discomore (on AMO via discover), disconotice (on SUMO via discover)
+    objects:
+      - aboutAddons
+      - aboutPreferences
+      - customize
+    extra_keys:
+      view: The view the user was on (discover, list, detail or updates).
+      type: "For search: the type of page for this view (especially extension or theme list)."
+    notification_emails: ["addons-dev-internal@mozilla.com"]
+    expiry_version: "73"
+    record_in_processes: ["main"]
+    bug_numbers: [1500147, 1546248]
+    release_channel_collection: opt-out
+  view:
+    description: >
+      A view method event is triggered when a user views a page in about:addons. The object is always
+      aboutAddons. The value is the view name: discover, list, updates or detail.
+    objects:
+      - aboutAddons
+    extra_keys:
+      type: >
+        The type of the view, for about:addons views shared between the supported add-on types
+        it is set to an extension type, while for views related to updates it is set to
+        "recent" or "available".
+      source: The source of the installation for an add-on.
+      addonId: The id of the add-on being acted upon.
+    notification_emails: ["addons-dev-internal@mozilla.com"]
+    expiry_version: "73"
+    record_in_processes: ["main"]
+    bug_numbers: [1500147]
+    release_channel_collection: opt-out
+  action:
+    description: >
+      An action method event is triggered when a user performs an action through the UI on an add-on
+      (besides the object "appUpgrade" which is referred to action performed automatically for the user
+      as part of a Firefox upgrade). The object is where in the product the action was performed.
+    objects:
+      - aboutAddons
+      - browserAction
+      - customize
+      - pageAction
+      - doorhanger
+      - appUpgrade
+    extra_keys:
+      action: >
+        The action that was performed. Options include disable, enable, uninstall, undo, contribute, preferences,
+        installFromFile, manage, dismiss, checkForUpdates, checkForUpdate, setUpdatePolicy, setAddonUpdate,
+        installFromRecommendation, resetUpdatePolicy, privateBrowsingAllowed and releaseNotes.
+      type: "For enable, disable, uninstall, undo and installFromRecommendation: the add-on type that is being acted upon."
+      view: >
+        The view for the event when object is aboutAddons, or the specific doorhanger when object is doorhanger.
+      addonId: The id of the add-on being acted upon.
+    notification_emails: ["addons-dev-internal@mozilla.com"]
+    expiry_version: "73"
+    record_in_processes: ["main"]
+    bug_numbers: [1500147, 1513344, 1529347, 1546248]
+    release_channel_collection: opt-out
+  report:
+    description: >
+      An abuse report submitted by a user for a given extension. The object of the event
+      represent the report entry point, the value is the id of the addon being reported.
+    objects:
+    - menu
+    - toolbar_context_menu
+    - uninstall
+    extra_keys:
+      addon_type: The type of the add-on being reported (missing on ERROR_ADDON_NOT_FOUND).
+      error_type: >
+        AbuseReport Error Type (included in case of submission failures). The error types include
+        ERROR_ABORTED_SUBMIT, ERROR_ADDON_NOT_FOUND, ERROR_CLIENT, ERROR_NETWORK, ERROR_UNKNOWN,
+        ERROR_RECENT_SUBMIT, ERROR_SERVER
+    notification_emails: ["addons-dev-internal@mozilla.com"]
+    expiry_version: "73"
+    record_in_processes: ["main"]
+    bug_numbers: [1544927]
+    release_channel_collection: opt-out
+
+extensions.data:
+  migrateResult:
+    objects: ["storageLocal"]
+    bug_numbers: [1470213]
+    notification_emails: ["addons-dev-internal@mozilla.com"]
+    expiry_version: "70"
+    record_in_processes: ["main"]
+    release_channel_collection: opt-out
+    extra_keys:
+      backend: The selected backend ("JSONFile" / "IndexedDB").
+      data_migrated: The old extension data has been migrated ("y" / "n").
+      error_name: >
+        A DOMException error name if any ("OtherError" for unknown errors).
+        The error has been fatal if the `backend` extra key is "JSONFile",
+        otherwise it is a non fatal error which didn't prevented the
+        extension from switching to the IndexedDB backend.
+      has_jsonfile: The extension has a JSONFile ("y" / "n").
+      has_olddata: The extension had some data stored in the JSONFile ("y" / "n").
+    description: >
+      These events are sent when an extension is migrating its data to the new IndexedDB backend,
+      the value of this event is the addon id.
+
+navigation:
+  search:
+    objects: ["about_home", "about_newtab", "contextmenu", "oneoff",
+              "suggestion", "alias", "enter", "searchbar", "urlbar",
+              "webextension"]
+    release_channel_collection: opt-out
+    record_in_processes: ["main"]
+    description: >
+      This is recorded on each search navigation.
+      The value field records the action used to trigger the search:
+        "enter", "oneoff", "suggestion", "alias", null (for contextmenu and webextension)
+    bug_numbers: [1316281, 1496764]
+    notification_emails:
+      - "mdeboer@mozilla.com"
+      - "rharter@mozilla.com"
+    expiry_version: never
+    extra_keys:
+      engine: The id of the search engine used.
+
+normandy:
+  enroll:
+    objects: ["preference_study", "addon_study", "preference_rollout"]
+    description: >
+      Sent when applying a Normandy recipe of the above types has succeeded.
+    extra_keys:
+      experimentType: >
+        For preference_study recipes, the type of experiment this is ("exp" or "exp-highpop").
+      branch: >
+        For preference_study recipes, the slug of the branch that was chosen for this client.
+      addonId: For addon_study recipes, the ID of the addon that was installed.
+      addonVersion: For addon_study recipes, the version of the addon that was installed.
+    bug_numbers: [1443560]
+    notification_emails: ["normandy-notifications@mozilla.com"]
+    record_in_processes: [main]
+    release_channel_collection: opt-out
+    expiry_version: never
+
+  enroll_failed:
+    methods: ["enrollFailed"]
+    objects: ["addon_study", "preference_rollout", "preference_study"]
+    description: >
+      Sent when applying a Normandy recipe of the above types has failed.
+    extra_keys:
+      reason: An error code describing the failure.
+      preference: >
+        For preference_rollout when reason=conflict, the name of the preference
+        that was going to be modified.
+      detail: >
+        Extra text describing the failure.
+        Currently only provided for addon_study.
+    bug_numbers: [1443560]
+    notification_emails: ["normandy-notifications@mozilla.com"]
+    record_in_processes: [main]
+    release_channel_collection: opt-out
+    expiry_version: never
+
+  update:
+    objects: ["addon_study", "preference_rollout"]
+    description: >
+      This event is fired when a client detects that a recipe of the
+      ahove types has changed on the server, and the new version of the
+      recipe is being applied over an existing, older version previously
+      fetched from the server.
+    extra_keys:
+      previousState: >
+        For preference_rollout recipes, the state of the rollout that had been applied
+        previously.
+      addonId: For addon_study recipes, the ID of the addon that was updated.
+      addonVersion: For addon_study recipes, the version of the addon that was installed.
+    bug_numbers: [1443560, 1474413]
+    notification_emails: ["normandy-notifications@mozilla.com"]
+    record_in_processes: [main]
+    release_channel_collection: opt-out
+    expiry_version: never
+
+  update_failed:
+    methods: ["updateFailed"]
+    objects: ["addon_study"]
+    description: >
+      Sent when applying a new version of a Normandy recipe of the above types (over an
+      existing, older version previously fetched from the server) has failed.
+    extra_keys:
+      reason: An error code describing the failure.
+      detail: >
+        Extra text describing the failure.
+        Currently only provided for addon_study.
+    bug_numbers: [1474413]
+    notification_emails: ["normandy-notifications@mozilla.com"]
+    record_in_processes: [main]
+    release_channel_collection: opt-out
+    expiry_version: never
+
+  unenroll:
+    objects: ["preference_study", "addon_study", "preference_rollback"]
+    description: >
+      Sent when a Normandy recipe of certain types "ends".  N.B. For
+      preference_rollback, this is fired when the recipe is fired (the
+      recipe that "ends" is a corresponding preference_rollout).
+    extra_keys:
+      reason: A code describing the reason why the recipe ended.
+      didResetValue: >
+        For preference_study, "true" or "false" according to whether we put the preference back the way it was.
+      addonId: For addon_study, the ID of the addon that ended.
+      addonVersion: For addon_study, the version of the addon for which the recipe ended.
+      branch: For preference_study, the branch of the experiment that this client was on.
+    bug_numbers: [1443560]
+    notification_emails: ["normandy-notifications@mozilla.com"]
+    record_in_processes: [main]
+    release_channel_collection: opt-out
+    expiry_version: never
+
+  unenroll_failed:
+    methods: ["unenrollFailed"]
+    description: >
+      Sent when unenrolling a user fails (see the unenroll event).
+    objects: ["preference_rollback", "preference_study"]
+    extra_keys:
+      reason: A code describing the reason the unenroll failed.
+    bug_numbers: [1443560]
+    notification_emails: ["normandy-notifications@mozilla.com"]
+    record_in_processes: [main]
+    release_channel_collection: opt-out
+    expiry_version: never
+
+  graduate:
+    objects: ["preference_rollout"]
+    description: >
+      Sent when a preference rollout ends due to the rolled-out
+      preference becoming a new default.
+    bug_numbers: [1443560]
+    notification_emails: ["normandy-notifications@mozilla.com"]
+    record_in_processes: [main]
+    release_channel_collection: opt-out
+    expiry_version: never
+
+pwmgr:
+  open_management:
+    objects: ["autocomplete", "capturedoorhanger", "contextmenu", "pageinfo", "preferences", "mainmenu"]
+    methods: ["open_management"]
+    description: >
+      Sent when opening the password management UI.
+    bug_numbers: [1543499, 1454733, 1545172]
+    notification_emails: ["loines@mozilla.com", "passwords-dev@mozilla.org", "sfoster@mozilla.com"]
+    record_in_processes: [main]
+    release_channel_collection: opt-out
+    expiry_version: never
+
+fxa_avatar_menu:
+  click:
+    objects: [
+      "account_settings",
+      "cad",
+      "login",
+      "send_tab",
+      "sync_now",
+      "sync_settings",
+      "sync_tabs",
+      "sync_tabs_sidebar",
+      "toolbar_icon",
+      "unver_sync_settings"
+      ]
+    methods: ["click"]
+    release_channel_collection: opt-out
+    record_in_processes: ["main"]
+    description: This is recorded on interactions with the FxA avatar menu on the toolbar
+    bug_numbers: [1524665]
+    notification_emails: ["vbudhram@mozilla.com", "loines@mozilla.com"]
+    expiry_version: "71"
+    extra_keys:
+      fxa_status: >
+        The current state of the user. Possible states are "not_configured", "unverified",
+        "signedin" and "login_failed".
+      fxa_avatar: Boolean for whether or not account has set an avatar
+
+fxa_app_menu:
+  click:
+    objects: [
+      "account_settings",
+      "cad",
+      "send_tab",
+      "sync_now",
+      "sync_settings",
+      "sync_tabs",
+      "sync_tabs_sidebar",
+      "toolbar_icon"
+      ]
+    methods: ["click"]
+    release_channel_collection: opt-out
+    record_in_processes: ["main"]
+    description: This is recorded on interactions with the FxA menu in the app (hamburger) menu
+    bug_numbers: [1542334]
+    notification_emails: ["vbudhram@mozilla.com", "loines@mozilla.com"]
+    expiry_version: "73"
+    extra_keys:
+      fxa_status: >
+        The current state of the user. Possible states are "not_configured", "unverified",
+        "signedin" and "login_failed".
+      fxa_avatar: Boolean for whether or not account has set an avatar
+
+# This category contains event entries used for Telemetry tests.
+# They will not be sent out with any pings.
+telemetry.test:
+  test:
+    methods: ["test1", "test2"]
+    objects: ["object1", "object2"]
+    bug_numbers: [1286606]
+    notification_emails: ["telemetry-client-dev@mozilla.com"]
+    record_in_processes: ["main"]
+    description: This is a test entry for Telemetry.
+    expiry_version: never
+    extra_keys:
+      key1: This is just a test description.
+      key2: This is another test description.
+  optout:
+    objects: ["object1", "object2"]
+    bug_numbers: [1286606]
+    notification_emails: ["telemetry-client-dev@mozilla.com"]
+    release_channel_collection: opt-out
+    record_in_processes: ["main"]
+    description: This is an opt-out test entry.
+    expiry_version: never
+    extra_keys:
+      key1: This is just a test description.
+  expired_version:
+    objects: ["object1", "object2"]
+    bug_numbers: [1286606]
+    notification_emails: ["telemetry-client-dev@mozilla.com"]
+    record_in_processes: ["main"]
+    description: This is a test entry with an expired version.
+    expiry_version: "3"
+  not_expired_optout:
+    objects: ["object1"]
+    bug_numbers: [1286606]
+    notification_emails: ["telemetry-client-dev@mozilla.com"]
+    description: This is an opt-out test entry with unexpired date and version.
+    release_channel_collection: opt-out
+    record_in_processes: ["main"]
+    expiry_version: "999"
+  main_only:
+    objects: ["object1"]
+    bug_numbers: [1313326]
+    notification_emails: ["telemetry-client-dev@mozilla.com"]
+    record_in_processes: ["main"]
+    description: This event is used to test main-process only recording.
+    expiry_version: never
+  content_only:
+    objects: ["object1"]
+    bug_numbers: [1313326]
+    notification_emails: ["telemetry-client-dev@mozilla.com"]
+    record_in_processes: ["content"]
+    description: This event is used to test content-process only recording.
+    expiry_version: never
+    extra_keys:
+      foo: This is just a test description.
+      bar: And this is another test description.
+  main_and_content:
+    objects: ["object1"]
+    bug_numbers: [1313326]
+    notification_emails: ["telemetry-client-dev@mozilla.com"]
+    record_in_processes: ["main", "content"]
+    description: This event is used to test main and content process recording.
+    expiry_version: never
+  default_products:
+    objects: ["object1"]
+    bug_numbers: [1452552]
+    notification_emails: ["telemetry-client-dev@mozilla.com"]
+    record_in_processes: ["main"]
+    description: This event is used to test default products main recording.
+    expiry_version: never
+  desktop_only:
+    objects: ["object1"]
+    bug_numbers: [1452552]
+    notification_emails: ["telemetry-client-dev@mozilla.com"]
+    record_in_processes: ["main"]
+    description: This event is used to test desktop-only main recording.
+    expiry_version: never
+    products: ["firefox"]
+  multiproduct:
+    objects: ["object1"]
+    bug_numbers: [1452552]
+    notification_emails: ["telemetry-client-dev@mozilla.com"]
+    record_in_processes: ["main"]
+    description: This event is used to test multiproduct main recording.
+    expiry_version: never
+    products: ["firefox", "fennec", "geckoview"]
+  mobile_only:
+    objects: ["object1"]
+    bug_numbers: [1452552]
+    notification_emails: ["telemetry-client-dev@mozilla.com"]
+    record_in_processes: ["main"]
+    description: This event is used to test mobile-only main recording.
+    expiry_version: never
+    products: ["fennec", "geckoview"]
+
+# This is a secondary category used for Telemetry tests.
+# The events here will not be sent out with any pings.
+telemetry.test.second:
+  test:
+    objects: ["object1", "object2", "object3"]
+    bug_numbers: [1286606]
+    notification_emails: ["telemetry-client-dev@mozilla.com"]
+    record_in_processes: ["main"]
+    description: This is a test entry for Telemetry.
+    expiry_version: never
+    extra_keys:
+      key1: This is just a test description.
+
+devtools.main:
+  activate:
+    objects: ["responsive_design", "split_console"]
+    bug_numbers: [1455273]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User activates the responsive_design or split_console in the devtools toolbox.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      host: "Toolbox host (positioning): bottom, left, right, window, page or other."
+      width: Toolbox width rounded up to the nearest 50px.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  add_breakpoint:
+    objects: ["debugger"]
+    bug_numbers: [1463123]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has added a breakpoint to a script.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  blackbox:
+    objects: ["debugger"]
+    bug_numbers: [1463126]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User clicked the blackbox button to blackbox a script.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  close:
+    objects: ["tools"]
+    bug_numbers: [1453312]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User closes devtools toolbox.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      host: "Toolbox host (positioning): bottom, side, window or other."
+      width: Toolbox width rounded up to the nearest 50px.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  close_adbg:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1504173]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User closes about:debugging.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      width: Toolbox width rounded up to the nearest 50px.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  connection_attempt:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1549970]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User is trying to connect to a remote runtime.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      connection_id: Randomly generated id to keep to group various events related to the same connection attempt.
+      connection_type: Connection type
+      runtime_id: Random id generated to track events related to a single runtime
+      status: One of (cancelled, failed, not responding, start, success).
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  continue:
+    objects: ["debugger"]
+    bug_numbers: [1463122]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has pressed the continue button on a paused script.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  deactivate:
+    objects: ["responsive_design", "split_console"]
+    bug_numbers: [1455275]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User deactivates the responsive_design or split_console in the devtools toolbox.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      host: "Toolbox host (positioning): bottom, side, window or other."
+      width: Toolbox width rounded up to the nearest 50px.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  device_added:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1521507]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: A new device was detected in about:debugging
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      connection_type: Connection type
+      device_name: Device name
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  device_removed:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1521507]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: A previously listed device was removed in about:debugging
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      connection_type: Connection type
+      device_name: Device name
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  edit_html:
+    objects: ["inspector"]
+    bug_numbers: [1463080]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User is editing HTML via the context menu item in the markup view.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      made_changes: Indicates whether changes were made.
+      time_open: The amount of time in ms that the HTML editor was open.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  edit_resend:
+    objects: ["netmonitor"]
+    bug_numbers: [1463171]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has executed edit / resend in the netmonitor.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      session_id: The toolbox session start time e.g. 13963.
+  edit_rule:
+    objects: ["ruleview"]
+    bug_numbers: [1463081]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User is editing a CSS rule by clicking on or next to a CSS property, enabling / disabling a rule or creating a new property.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  enter:
+    objects: ["accessibility", "application", "dom", "inspector", "jsdebugger", "memory", "netmonitor", "options", "performance", "scratchpad", "storage", "styleeditor", "webconsole", "other", "fakeTool4242", "testBlankPanel", "testTool", "testtool1", "testTool1072208", "testtool2"]
+    bug_numbers: [1441070]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User opens a tool in the devtools toolbox.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      host: "Toolbox host (positioning): bottom, side, window or other."
+      width: Toolbox width rounded up to the nearest 50px.
+      message_count: The number of cached console messages.
+      start_state: debuggerStatement, breakpoint, exception, tab_switch, toolbox_show, initial_panel, toggle_settings_off, toggle_settings_on, key_shortcut, select_next_key, select_prev_key, tool_unloaded, inspect_dom, unknown etc.
+      panel_name: The name of the panel opened or other
+      cold: Is this the first time the current panel has been opened in this toolbox?
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  execute_js:
+    objects: ["webconsole"]
+    bug_numbers: [1463083]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has executed some JS in the Web Console.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      lines: The number of lines contained in the command.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  exit:
+    objects: ["accessibility", "application", "dom", "inspector", "jsdebugger", "memory", "netmonitor", "options", "performance", "scratchpad", "storage", "styleeditor", "webconsole", "other", "fakeTool4242", "testBlankPanel", "testTool", "testtool1", "testTool1072208", "testtool2"]
+    bug_numbers: [1455270]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User closes a tool in the devtools toolbox.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      host: "Toolbox host (positioning): bottom, side, window or other."
+      width: Toolbox width rounded up to the nearest 50px.
+      next_panel: The name of the panel closed or other.
+      panel_name: The name of the panel opened or other
+      reason: debuggerStatement, breakpoint, exception, tab_switch, toolbox_show, initial_panel, toggle_settings_off, toggle_settings_on, key_shortcut, select_next_key, select_prev_key, tool_unloaded, inspect_dom, toolbox_closed, unknown etc.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  filters_changed:
+    objects: ["netmonitor", "webconsole"]
+    bug_numbers: [1463144, 1463095]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has changed filters in the web console.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      trigger: "The cause of the filter change: error, warn, log, info, debug, css, netxhr, net, text or reset and all, html, css, js, xhr, fonts, images, media, ws or other for netmonitor"
+      active: Comma separated list of active filters.
+      inactive: Comma separated list of inactive filters.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  inspect:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1504173]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has clicked on the inspect button of one of the debug targets of aboutdebugging.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      runtime_type: The runtime type
+      target_type: The target type
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  jump_to_definition:
+    objects: ["webconsole"]
+    bug_numbers: [1463101]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has clicked "Jump to definition" icon (next to logged functions) in the web console.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  jump_to_source:
+    objects: ["webconsole"]
+    bug_numbers: [1463092]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has clicked a link to a source file in the web console.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  object_expanded:
+    objects: ["webconsole"]
+    bug_numbers: [1463104]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has expanded an object in the web console.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  open:
+    objects: ["tools"]
+    bug_numbers: [1416024, 1456984]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User opens devtools toolbox.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      entrypoint: How was the toolbox opened? CommandLine, ContextMenu, HamburgerMenu, KeyShortcut, SessionRestore or SystemMenu
+      first_panel: The name of the first panel opened.
+      host: "Toolbox host (positioning): bottom, side, window or other."
+      splitconsole: Indicates whether the split console was open.
+      width: Toolbox width rounded up to the nearest 50px.
+      shortcut: The key combination pressed. Used only in the case that entrypoint === KeyShortcut.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  open_adbg:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1504173]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User opens about:debugging.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      width: Toolbox width rounded up to the nearest 50px.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  pause_on_exceptions:
+    objects: ["debugger"]
+    bug_numbers: [1463117]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has changed pausing behaviour in the debugger.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      exceptions: Pause on exceptions is checked.
+      caught_exceptio: Pause on caught exceptions is checked.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  pause:
+    objects: ["debugger"]
+    bug_numbers: [1463118]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: Debugger has paused in a script due to a breakpoint or exception.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      reason: caught-exception, uncaught-exception, pausing, debugger-statement or breakpoint.
+      lib_stacks: Number of collapsed callstacks in the call tree. These are call stacks that are part of external libraries e.g. react, which are collapsed  by default.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  persist_changed:
+    objects: ["netmonitor", "webconsole"]
+    bug_numbers: [1531395, 1542312]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has changed log persist status.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  pretty_print:
+    objects: ["debugger"]
+    bug_numbers: [1463125]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User clicked the pretty print button to pretty print a script.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  remove_breakpoint:
+    objects: ["debugger"]
+    bug_numbers: [1463124]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has removed a breakpoint from a script.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  runtime_added:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1521507]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: A new remote runtime has been detected in about:debugging
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      connection_type: Connection type
+      device_name: Name of the device on which the runtime is running (optional)
+      runtime_id: Random id generated to track events related to a single runtime
+      runtime_name: Name of the runtime
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  runtime_connected:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1521507, 1530997]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: Connection was established with a remote runtime in about:debugging
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      connection_type: Connection type
+      device_name: Name of the device on which the runtime is running (optional)
+      runtime_id: Random id generated to track events related to a single runtime
+      runtime_name: Name of the runtime
+      runtime_os: Operating system on which the runtime is running (eg Android or Linux)
+      runtime_version: Version of the runtime (eg 67.0a1)
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  runtime_disconnected:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1521507]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: Connection was lost with a remote runtime in about debugging
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      connection_type: Connection type
+      device_name: Name of the device on which the runtime is running (optional)
+      runtime_id: Random id generated to track events related to a single runtime
+      runtime_name: Name of the runtime
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  runtime_removed:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1521507]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: A previously listed runtime was removed in about:debugging
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      connection_type: Connection type
+      device_name: Name of the device on which the runtime is running (optional)
+      runtime_id: Random id generated to track events related to a single runtime
+      runtime_name: Name of the runtime
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  select_page:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1504173]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User navigates to a new page of an application such as about:debugging
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      page_type: Type of page the user navigates to (this-firefox, connect, runtime)
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  show_profiler:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1521511]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has clicked on the "Open Profiler" button in a runtime page of about:debugging
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      runtime_id: Random id generated to track events related to a single runtime
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  sidepanel_changed:
+    objects: ["inspector", "netmonitor"]
+    bug_numbers: [1463083, 1463169]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has switched sidepanel tabs.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      oldpanel: The panel the user is switching from
+      newpanel: The panel the user is switching to
+      os: The OS name and version e.g. "Linux 4.4.0-1014-aws", "Darwin 14.5.0", "Windows_NT 6.1.7601" or "Windows_NT 10.0.15063." This can be used to make sense of data when a feature is only available from a particular operating system build number.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  throttle_changed:
+    objects: ["netmonitor"]
+    bug_numbers: [1463147]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has changed the throttle setting in the netmonitor.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      mode: No throttling, GPRS, Regular 2G, Good 2G, Regular 3G, Good 3G, Regular 4G / LTE, DSL or WI-FI.
+      session_id: The toolbox session start time e.g. 13963.
+  tool_timer:
+    objects: ["animationinspector", "computedview", "changesview", "fontinspector", "layoutview", "ruleview"]
+    bug_numbers: [1483817]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: The amount of time a tool was opened for.
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      time_open: Time open.
+      os: The OS name and version e.g. "Linux 4.4.0-1014-aws", "Darwin 14.5.0", "Windows_NT 6.1.7601" or "Windows_NT 10.0.15063." This can be used to make sense of data when a feature is only available from a particular operating system build number.
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+  update_conn_prompt:
+    objects: ["aboutdebugging"]
+    bug_numbers: [1521511]
+    notification_emails: ["dev-developer-tools@lists.mozilla.org", "hkirschner@mozilla.com"]
+    record_in_processes: ["main"]
+    description: User has clicked on the "Enable/Disable connection prompt" button in a runtime page of about:debugging
+    release_channel_collection: opt-out
+    expiry_version: never
+    extra_keys:
+      prompt_enabled: True if the user enables the prompt, false otherwise.
+      runtime_id: Random id generated to track events related to a single runtime
+      session_id: The start time of the session in milliseconds since epoch (Unix Timestamp) e.g. 1396381378123.
+
+security.ui.certerror:
+  load:
+    objects: ["aboutcerterror"]
+    bug_numbers:
+      - 1484255
+      - 1505310
+    description: >
+      The about:certerror page is loaded, keyed by error code, see https://searchfox.org/mozilla-central/source/security/nss/lib/mozpkix/include/pkix/Result.h
+    expiry_version: "70"
+    notification_emails:
+      - jhofmann@mozilla.com
+      - rtestard@mozilla.com
+      - seceng-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes: ["content"]
+    products:
+      - firefox
+    extra_keys:
+      is_frame: If the error page is loaded in an iframe.
+      has_sts: If the error page is for a site with HSTS headers or with a pinned key.
+  click:
+    objects: [
+      "advanced_button",
+      "exception_button",
+      "return_button_top",
+      "return_button_adv",
+      "learn_more_link",
+      "auto_report_cb",
+      "error_code_link",
+      "clipboard_button_top",
+      "clipboard_button_bot",
+    ]
+    bug_numbers:
+      - 1484255
+      - 1505310
+    description: >
+      User interaction by click events on the cert error page. Keyed by error code, see https://searchfox.org/mozilla-central/source/security/nss/lib/mozpkix/include/pkix/Result.h
+    expiry_version: "70"
+    notification_emails:
+      - jhofmann@mozilla.com
+      - rtestard@mozilla.com
+      - seceng-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes: ["content"]
+    products:
+      - firefox
+    extra_keys:
+      is_frame: If the error page is loaded in an iframe.
+      has_sts: If the error page is for a site with HSTS headers or with a pinned key.
+      panel_open: If the advanced panel was open at the time of the interaction.
+
+security.ui.identitypopup:
+  open:
+    objects: ["identity_popup"]
+    bug_numbers:
+      - 1484251
+      - 1522256
+      - 1522919
+    description: >
+      How many times the control center was opened.
+      Keyed by the state of the content blocking shield, where the shield-showing key indicates
+      that the shield icon in the identity UI is visible to the user, and shield-hidden indicates
+      that it is not visible.
+    expiry_version: "70"
+    notification_emails:
+      - jhofmann@mozilla.com
+      - pdol@mozilla.com
+      - seceng-telemetry@mozilla.com
+    release_channel_collection: opt-in
+    record_in_processes:
+      - main
+    extra_keys:
+      fp: Whether Fingerprinter blocking was active while the user opened the popup
+      cm: Whether Cryptominer blocking was active while the user opened the popup
+      tp: Whether Tracking Protection was active while the user opened the popup
+      cr: Whether Cookie Restrictions was active while the user opened the popup
+    products:
+      - firefox
+  click:
+    objects: [
+      "cb_prefs_button",
+      "permission_prefs_btn",
+      "clear_sitedata",
+      "unblock",
+      "unblock_private",
+      "block",
+      "report_breakage",
+      "security_subview_btn",
+      "trackers_subview_btn",
+      "cookies_subview_btn",
+      "trackers_prefs_btn",
+      "cookies_prefs_btn"
+    ]
+    bug_numbers:
+      - 1484251
+    description: >
+      User interaction by click events in the identity popup.
+    expiry_version: "70"
+    notification_emails:
+      - jhofmann@mozilla.com
+      - pdol@mozilla.com
+      - seceng-telemetry@mozilla.com
+    release_channel_collection: opt-in
+    record_in_processes:
+      - main
+    extra_keys:
+      fp: Whether Fingerprinter blocking was active while the user interacted with the UI
+      cm: Whether Cryptominer blocking was active while the user interacted with the UI
+      tp: Whether Tracking Protection was active while the user interacted with the UI
+      cr: Whether Cookie Restrictions was active while the user interacted with the UI
+    products:
+      - firefox
+uptake.remotecontent.result:
+  uptake:
+    description: >
+      Was the remote content successfully pulled?
+      This uptake telemetry allows to monitor the behaviour of our clients when it comes
+      to fetching data from remote servers. This helps defect-detection and allow observation of
+      the proportion of success among clients and sources, the distribution of error causes, and
+      its evolution over time.
+    methods:
+      - uptake
+    objects:
+      - remotesettings
+      - normandy
+    extra_keys:
+      source: >
+        A label to distinguish what is being pulled or updated in the component (eg. recipe id,
+        settings collection name, ...).
+      trigger: >
+        A label to distinguish what triggered the polling/fetching of remote content (eg. "broadcast",
+        "timer", "forced", "manual")
+      age: >
+        The age of pulled data in seconds (ie. difference between publication time and fetch time).
+      duration: >
+        The duration of the synchronization process in milliseconds.
+    bug_numbers:
+      - 1517469
+    record_in_processes: ["main"]
+    release_channel_collection: opt-out
+    expiry_version: never
+    notification_emails:
+      - mleplatre@mozilla.com
+      - bens-directs@mozilla.com
+
+intl.ui.browserLanguage:
+  action:
+    description: >
+      User interactions for the browser language within about-preferences in the main pane and in
+      the browser language dialog. Each dialog event (on the dialog object, and the manage and
+      search methods of the main object) has a value which is a monotonically increasing number
+      that links it with other events related to the same dialog instance.
+    objects:
+      - dialog
+      - main
+    methods:
+      - manage
+      - search
+      - add
+      - remove
+      - reorder
+      - apply
+      - accept
+      - cancel
+    extra_keys:
+      installId: The id for an install.
+    products:
+      - firefox
+    expiry_version: "70"
+    notification_emails:
+      - flod@mozilla.com
+      - mstriemer@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes: ["main"]
+    bug_numbers: [1486507]
+
+# This data collection is intended for study-only collection
+# and is not meant to be enabled permanently on opt-in or opt-out.
+# It is controlled by the permissions.eventTelemetry.enabled pref.
+security.ui.permissionprompt:
+  show:
+    objects: [
+      "notifications",
+      "geo",
+    ]
+    bug_numbers:
+      - 1536454
+    description: >
+      When a permission prompt was shown.
+    expiry_version: "72"
+    notification_emails:
+      - jhofmann@mozilla.com
+      - ehsan@mozilla.com
+      - seceng-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    extra_keys:
+      previousVisits: How often the user has visited this site before today
+      timeOnPage: How much time the user has spent on this page so far
+      hasUserInput: Whether the prompt was handling user input (not including scrolling)
+      docHasUserInput: Whether the document has been interacted with (includes scrolling)
+      lastInteraction: When the site was last interacted with (includes scrolling)
+      allPermsDenied: How many permissions were denied by the user in total
+      allPermsGranted: How many permissions were granted by the user in total
+      thisPermDenied: How many permissions of the same kind were denied by the user in total
+      thisPermGranted: How many permissions of the same kind were granted by the user in total
+    products:
+      - firefox
+  remove:
+    objects: [
+      "notifications",
+      "geo",
+    ]
+    methods: [
+      "accept",
+      "deny",
+      "never",
+      "leave",
+      "other",
+    ]
+    bug_numbers:
+      - 1536454
+    description: >
+      When a permission prompt was removed, with the reasons being represented in the method field.
+    expiry_version: "72"
+    notification_emails:
+      - jhofmann@mozilla.com
+      - ehsan@mozilla.com
+      - seceng-telemetry@mozilla.com
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    extra_keys:
+      previousVisits: How often the user has visited this site before today
+      timeOnPage: How much time the user has spent on this page so far
+      hasUserInput: Whether the prompt was handling user input (not including scrolling)
+      docHasUserInput: Whether the document has been interacted with (includes scrolling)
+      lastInteraction: When the site was last interacted with (includes scrolling)
+      allPermsDenied: How many permissions were denied by the user in total
+      allPermsGranted: How many permissions were granted by the user in total
+      thisPermDenied: How many permissions of the same kind were denied by the user in total
+      thisPermGranted: How many permissions of the same kind were granted by the user in total
+    products:
+      - firefox

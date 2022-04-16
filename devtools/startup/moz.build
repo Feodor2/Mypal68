@@ -1,0 +1,36 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+JAR_MANIFESTS += ['jar.mn']
+
+DIRS += [
+    'preferences',
+]
+
+# Register the startup components only for 'all' builds.
+if CONFIG['MOZ_DEVTOOLS'] == 'all':
+    EXTRA_JS_MODULES += [
+        'AboutDebuggingRegistration.jsm',
+        'AboutDevToolsToolboxRegistration.jsm',
+        'DevToolsStartup.jsm',
+    ]
+
+    DIRS += [
+      'aboutdevtools',
+      'locales',
+    ]
+
+if CONFIG['NIGHTLY_BUILD']:
+    EXTRA_JS_MODULES += [
+        'AboutDebuggingNewRegistration.jsm',
+    ]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
+XPCSHELL_TESTS_MANIFESTS += ['tests/unit/xpcshell.ini']
+
+if CONFIG['MOZ_BUILD_APP'] != 'mobile/android':
+    BROWSER_CHROME_MANIFESTS += ['tests/browser/browser.ini']

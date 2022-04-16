@@ -1,0 +1,92 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Due to duplicate file names, we compile libavutil/x86 in its own
+# moz.build file.
+if CONFIG['FFVPX_ASFLAGS']:
+    DIRS += ['x86']
+
+#    'dummy_funcs.c',
+
+SharedLibrary('mozavutil')
+SOURCES += [
+    'adler32.c',
+    'aes.c',
+    'aes_ctr.c',
+    'atomic.c',
+    'audio_fifo.c',
+    'avstring.c',
+    'base64.c',
+    'blowfish.c',
+    'bprint.c',
+    'buffer.c',
+    'camellia.c',
+    'cast5.c',
+    'channel_layout.c',
+    'color_utils.c',
+    'cpu.c',
+    'crc.c',
+    'des.c',
+    'dict.c',
+    'display.c',
+    'downmix_info.c',
+    'error.c',
+    'eval.c',
+    'fifo.c',
+    'file.c',
+    'file_open.c',
+    'fixed_dsp.c',
+    'float_dsp.c',
+    'frame.c',
+    'hash.c',
+    'hmac.c',
+    'hwcontext.c',
+    'imgutils.c',
+    'integer.c',
+    'intmath.c',
+    'lfg.c',
+    'lls.c',
+    'log.c',
+    'log2_tab.c',
+    'lzo.c',
+    'mastering_display_metadata.c',
+    'mathematics.c',
+    'md5.c',
+    'mem.c',
+    'murmur3.c',
+    'opt.c',
+    'parseutils.c',
+    'pixdesc.c',
+    'pixelutils.c',
+    'random_seed.c',
+    'rational.c',
+    'rc4.c',
+    'reverse.c',
+    'ripemd.c',
+    'samplefmt.c',
+    'sha.c',
+    'sha512.c',
+    'slicethread.c',
+    'spherical.c',
+    'stereo3d.c',
+    'tea.c',
+    'threadmessage.c',
+    'time.c',
+    'timecode.c',
+    'tree.c',
+    'twofish.c',
+    'utils.c',
+    'video_enc_params.c',
+    'xga_font_data.c',
+    'xtea.c',
+]
+
+SYMBOLS_FILE =  'avutil.symbols'
+NoVisibilityFlags()
+
+OS_LIBS += CONFIG['REALTIME_LIBS']
+if CONFIG['OS_TARGET'] != 'WINNT':
+    OS_LIBS += ['m']
+
+include("../ffvpxcommon.mozbuild")

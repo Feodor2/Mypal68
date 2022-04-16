@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/preload/resources/preload_helper.js"></script>
+<script>
+    var t = async_test('Makes sure that Link headers on subresources preload resources');
+</script>
+<link rel=stylesheet href="resources/dummy-preloads-subresource.css?link-header-on-subresource">
+<script>
+    window.addEventListener("load", t.step_func(function() {
+        t.step_timeout(function() {
+            verifyPreloadAndRTSupport();
+            verifyNumberOfResourceTimingEntries("/fonts/CanvasTest.ttf?link-header-on-subresource", 1);
+            t.done();
+        }, 5000);
+    }));
+</script>
+

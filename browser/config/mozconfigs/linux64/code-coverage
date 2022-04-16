@@ -1,0 +1,17 @@
+MOZ_AUTOMATION_L10N_CHECK=0
+
+. "$topsrcdir/browser/config/mozconfigs/linux64/nightly"
+
+TOOLTOOL_DIR=${TOOLTOOL_DIR:-$topsrcdir}
+
+ac_add_options --disable-install-strip
+ac_add_options --disable-elf-hack
+ac_add_options --disable-sandbox
+ac_add_options --disable-dmd
+ac_add_options --disable-profiling
+ac_add_options --disable-warnings-as-errors
+ac_add_options --enable-coverage
+
+export LDFLAGS="--coverage -L$topsrcdir/clang/lib/clang/8.0.0/lib/linux/"
+export LIBS="-lclang_rt.profile-x86_64"
+export RUSTFLAGS="-Ccodegen-units=1 -Zprofile -Zno-landing-pads -Clink-dead-code -Coverflow-checks=off"

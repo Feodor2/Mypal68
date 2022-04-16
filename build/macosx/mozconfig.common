@@ -1,0 +1,7 @@
+if test `uname -s` = Linux; then
+  . $topsrcdir/build/macosx/cross-mozconfig.common
+else
+  . $topsrcdir/build/macosx/local-mozconfig.common
+fi
+
+. $topsrcdir/build/mozconfig.stylo

@@ -1,0 +1,24 @@
+# This file has default permissions for the permission manager.
+# The file-format is strict:
+# * matchtype \t type \t permission \t host
+# * "origin" should be used for matchtype, "host" is supported for legacy reasons
+# * type is a string that identifies the type of permission (e.g. "cookie")
+# * permission is an integer between 1 and 15
+# See nsPermissionManager.cpp for more...
+
+# UITour
+origin	uitour	1	https://www.mozilla.org
+origin	uitour	1	https://screenshots.firefox.com
+origin	uitour	1	https://support.mozilla.org
+origin	uitour	1	about:home
+origin	uitour	1	about:newtab
+
+# Remote troubleshooting
+origin	remote-troubleshooting	1	https://support.mozilla.org
+
+# Hybrid Content Telemetry - https://firefox-source-docs.mozilla.org/toolkit/components/telemetry/telemetry/collection/hybrid-content.html
+# Adding hc_telemetry permission to a new domain requires Data Collection Review: https://wiki.mozilla.org/Firefox/Data_Collection
+origin	hc_telemetry	1	https://discovery.addons.mozilla.org
+
+# addon install
+origin	install	1	https://private-network.firefox.com

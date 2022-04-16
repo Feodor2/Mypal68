@@ -1,0 +1,72 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+DIRS += [
+    'actors',
+    'components',
+    'content',
+    'crashreporter',
+    'forgetaboutsite',
+    'locales',
+    'modules',
+    'mozapps/downloads',
+    'mozapps/extensions',
+    'mozapps/preferences',
+    'pluginproblem',
+    'profile',
+    'recordreplay',
+    'themes',
+]
+
+if CONFIG['MOZ_UPDATER'] and CONFIG['MOZ_WIDGET_TOOLKIT'] != 'android':
+    DIRS += ['mozapps/update']
+
+if CONFIG['MOZ_MAINTENANCE_SERVICE'] or CONFIG['MOZ_UPDATER']:
+    DIRS += [
+        'mozapps/update/common',
+    ]
+
+if CONFIG['MOZ_MAINTENANCE_SERVICE']:
+    DIRS += [
+        'components/maintenanceservice'
+    ]
+
+DIRS += ['xre']
+
+if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'android':
+    DIRS += ['mozapps/handling']
+if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'gtk3':
+    DIRS += ['system/unixproxy']
+elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
+    DIRS += ['system/osxproxy']
+elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
+    DIRS += ['system/windowsproxy',
+            'system/windowsDHCPClient']
+elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'android':
+    DIRS += ['system/androidproxy']
+
+TEST_HARNESS_FILES.testing.mochitest.browser.toolkit.crashreporter.test.browser += [
+    'crashreporter/test/browser/crashreport.sjs',
+]
+
+with Files('moz.*'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
+with Files('toolkit.mozbuild'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
+with Files('nss.configure'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
+with Files('library/**'):
+    BUG_COMPONENT = ('Firefox Build System', 'General')
+
+with Files('mozapps/installer/windows/**'):
+    BUG_COMPONENT = ('Toolkit', 'NSIS Installer')
+
+with Files('mozapps/preferences/**'):
+    BUG_COMPONENT = ('Toolkit', 'Preferences')
+
+with Files('pluginproblem/**'):
+    BUG_COMPONENT = ('Core', 'Plug-ins')

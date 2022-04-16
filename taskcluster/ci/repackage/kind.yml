@@ -1,0 +1,89 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: taskgraph.loader.single_dep:loader
+
+transforms:
+    - taskgraph.transforms.name_sanity:transforms
+    - taskgraph.transforms.repackage:transforms
+    - taskgraph.transforms.use_toolchains:transforms
+    - taskgraph.transforms.repackage_routes:transforms
+    - taskgraph.transforms.job:transforms
+    - taskgraph.transforms.task:transforms
+
+kind-dependencies:
+    - build-signing
+    - toolchain
+
+only-for-build-platforms:
+    - linux-shippable/opt
+    - linux-nightly/opt
+    - linux-devedition-nightly/opt
+    - linux/opt
+    - linux64-shippable/opt
+    - linux64-nightly/opt
+    - linux64-devedition-nightly/opt
+    - linux64-asan-reporter-nightly/opt
+    - linux64/opt
+    - linux64-pgo/opt
+    - macosx64-shippable/opt
+    - macosx64-nightly/opt
+    - macosx64-devedition-nightly/opt
+    - macosx64/opt
+    - win32-shippable/opt
+    - win32-nightly/opt
+    - win32-devedition-nightly/opt
+    - win32/opt
+    - win32-pgo/opt
+    - win64-shippable/opt
+    - win64-nightly/opt
+    - win64-devedition-nightly/opt
+    - win64-aarch64-shippable/opt
+    - win64-aarch64-nightly/opt
+    - win64-aarch64-devedition-nightly/opt
+    - win64/opt
+    - win64-pgo/opt
+    - win64-asan-reporter-nightly/opt
+
+job-template:
+    mozharness:
+        config:
+            by-build-platform:
+                linux\b.*:
+                    - repackage/base.py
+                    - repackage/linux32_signed.py
+                linux64\b.*:
+                    - repackage/base.py
+                    - repackage/linux64_signed.py
+                macosx64\b.*:
+                    - repackage/base.py
+                    - repackage/osx_signed.py
+                win32\b.*:
+                    - repackage/base.py
+                    - repackage/win32_sfx_stub.py
+                    - repackage/win32_signed.py
+                win64(?!-aarch64)\b.*:
+                    - repackage/base.py
+                    - repackage/win32_sfx_stub.py
+                    - repackage/win64_signed.py
+                win64-aarch64\b.*:
+                    - repackage/base.py
+                    - repackage/win64-aarch64_sfx_stub.py
+                    - repackage/win64_signed.py
+    package-formats:
+        by-release-type:
+            esr(60|68):
+                by-build-platform:
+                    linux.*: [mar]
+                    linux4\b.*: [mar]
+                    macosx64\b.*: [mar, dmg]
+                    win32\b.*: [mar, installer]
+                    win64\b.*: [mar, installer]
+            default:
+                by-build-platform:
+                    linux.*: [mar]
+                    linux4\b.*: [mar]
+                    macosx64\b.*: [mar, dmg]
+                    win32\b.*: [mar, installer]
+                    win64\b.*: [mar, installer]

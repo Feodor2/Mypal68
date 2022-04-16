@@ -1,0 +1,118 @@
+# Bug 1016240 - Exterminate CR+LF line endings. r=briansmith,cpearce,ehsan,gavin
+# https://hg.mozilla.org/mozilla-central/rev/ca251a28d3dd
+741fa39165c4bec22e115d1d501631ae499c4180 # cinnabar
+51ba75d1355026c53c89c0c08bb36cada57d21a5 # gecko-dev
+
+# Bug 1128203 - Reduce indentation from 4 to 2 spaces. rs=dolske DONTBUILD CLOSED TREE
+# https://hg.mozilla.org/mozilla-central/rev/a569f5a4bb6a27f25e99b5b45ee241db2660b7e3
+b8ffa2c11b99bd5762b5ed612acd755b29d1eae6 # cinnabar
+174ae94f90f1b5edc83b737b4006c82bb830db7c # gecko-dev
+
+# Bug 1204606 - Reformat of dom/media
+# https://hg.mozilla.org/mozilla-central/rev/0ceae9db9ec0be18daa1a279511ad305723185d4
+abd6d77c618998827e5ffc3dab12f1a34d6ed03d # cinnabar
+804b8b8883ba2a6795b0fcf65ebcb18306b6416b # gecko-dev
+
+# Bug 1511181 - Reformat everything to the Google coding style
+# https://hg.mozilla.org/mozilla-central/rev/6f3709b3878117466168c40affa7bca0b60cf75b
+0e0308d10a5fd4a8dcf0601978776342a2abf2df # cinnabar
+265e6721798a455604328ed5262f430cfcc37c2f # gecko-dev
+
+# Bug 1516555 - Reformat everything to the Google coding style
+# https://hg.mozilla.org/mozilla-central/rev/d57dde190f67
+cf6442a0664caf8eb39eb75b77963f648597cbd8 # cinnabar
+cccdda3c2aec019cc138d410fc0e4aa3e307b6ab # gecko-dev
+
+# Bug 1512961 - Reformat recent changes to the Google coding style
+# https://hg.mozilla.org/integration/autoland/rev/8869368a3f30
+20061c7bfce850ba0158c7b8a439ac3ecc62a262 # cinnabar
+ad75e912fbc1d64ed63c1d0a51d7157566de1887 # gecko-dev
+
+# Bug 1513205 - Also update the tests to match the Google coding style
+# https://hg.mozilla.org/integration/autoland/rev/09c71a7cf75a
+13452f36fb36ad09d81f6b53eaf7928ee63f05e3 # cinnabar
+6f45c666bc7f98c3e3250a7c2cf8dc3fb95d12d7 # gecko-dev
+
+# Bug 1519636 - Reformat everything to the Google coding style
+# https://hg.mozilla.org/mozilla-central/rev/d54846d01280026138135bde6e0bb1bcfe58feae
+abc28896717209d5f0ed2a6b0a46f8e03880ad19 # cinnabar
+47a5dd1fb80fa5bbe608c32db426f1ed29b7fd79 # gecko-dev
+
+# Bug 1521000 - Part 1: Reformat the tree to ensure everything is forma…
+# https://hg.mozilla.org/mozilla-central/rev/9916e7d6e327
+4205caa5c71ba3b111ac494d32d46ff76882b795 # cinnabar
+06c3d29113e60ab1a316fbd5a16c667202d012fb # gecko-dev
+
+# Bug 1521000 - Part 2: Adjust our clang-format rules to include spaces…
+# https://hg.mozilla.org/mozilla-central/rev/5f4630838d46
+d25e4032d4d15e732a78082505d62b6d6ffa1445 # cinnabar
+e5e885ae3128a6878d08df4ff6baaf3fc4a4b9e8 # gecko-dev
+
+# Bug 1513205 - Ride along, update some code to match the Google coding style
+# https://hg.mozilla.org/integration/autoland/rev/039a7c0c18fb
+1ce955dcb2e09fd9ce19c1ec6c470f75db486bd2 # cinnabar
+7cf43b9bc01d650f87deceb65f336cdac7c0e78f # gecko-dev
+
+# Bug 1519636 - clang-format-8: Reformat recent changes to the Google coding style
+# and its various backouts.
+# https://hg.mozilla.org/integration/autoland/rev/d091a005f031
+a7f51c0bd925f88cd4f7c90e53eee9bc8a699958 # cinnabar
+96da5036adba9b6cf7339388ef20fc81fbc8bf8f # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/44928a7f5745
+85e14a8329a4f70eff94454c20fb30d068afdd7e # cinnabar
+a1dce6440a18b10feed1479fd9e1bb76498c5297 # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/f95dc32944ac
+e4401f52c313cdbd1f6a21d2d158a39aea08629a # cinnabar
+7f60810d8613c150c5efd762229bbfaea7c95b34 # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/662b776a02e6
+a45536a2ffe94764488656e0cff7f792da61d208 # cinnabar
+03c8e8c2ddd618ee28fd1fe42126cc7e7c903871 # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/6d386a2162b9
+5ff1b801dc84e045ebe1c10ffa0008f1551baa07 # cinnabar
+ba58e936bd475793a3c74f9355498554ea02c341 # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/4ad80127f89f
+51f8a2a90bddca7d6b72b4170b10caae45dcac7b # cinnabar
+d1c1878603873095a41a7d0f45022d469eb6baa8 # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/9e48fefcf1ac
+64a824984811080bc44ad5364ff70e652396c29c # cinnabar
+24dbe577a5e1f238defc1cfd800e6258a72632df # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/389b6bbd76db
+8780f9e6d11598df632eb1ac1a9fa2cb11a3e76a # cinnabar
+399dbd28fe9d399571a92347957ae4712333441c # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/7de6e431f1ae
+48ca7974405930abc6f87d89704fe111444e6f86 # cinnabar
+ef0bfc3822e1ebcc4af26fa1d604393f504333c0 # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/fa3daa92292d
+7c9505d11132c1713ae20d3de68086f7dee06454 # cinnabar
+3d0316a9027c4ae6ec84d454a3b4454b7fd84e1f # gecko-dev
+# https://hg.mozilla.org/integration/mozilla-inbound/rev/d55401632cea
+4ea8582800a843ae3348a03ca619b0109d1c1537 # cinnabar
+4aa92e3091227fe771d64424fe62d3e133633be2 # gecko-dev
+# https://hg.mozilla.org/integration/mozilla-inbound/rev/9adeff2c423f
+dafa8b4d1a427e98492d391d8692d555e716711c # cinnabar
+e0c61dafa502cf337a3ace00834c6138a5a8ba11 # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/a031c9dd9dd5
+d2f46ba4a543531b6c87ebf54d57a8be1999038e # cinnabar
+41d1d7909496a3f672eb9aeed1efec042c9568b0 # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/3924aed041cf
+20f6da83f406ebbe5367f6df3b8719428c022d92 # cinnabar
+14486004b69a5342e075d784430b741a259c9ac7 # gecko-dev
+# https://hg.mozilla.org/integration/mozilla-inbound/rev/07f6f62a24f5
+9595b32aaa2c87be8168ad20ba8d277dc5f474c9 # cinnabar
+ee2016670c850d7ec19c6d6c56fca0a38e591d9d # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/08b686c04a01
+0f53aeedad4bcfe93916273a00b4577747c3914c # cinnabar
+b61d90492bef978d04e9a12e7081837825e55973 # gecko-dev
+# https://hg.mozilla.org/integration/mozilla-inbound/rev/7d46c1872ba7
+140cb38f7666d3d48c527f8ce9ca13f0b060ab03 # cinnabar
+c4a4488fb459de2180f7d39bfc9be97bfa59bbf8 # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/2307fb1cfa80
+d9145bdd58d06b0550ff76d6cd449fb0aa065787 # cinnabar
+9c0e9e7467ba1697326a8f056cc11e0153e8217d # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/d536f45f5b16
+cfc0d52d902cd58293f32a97f286a5e2a3683386 # cinnabar
+755a1a7c2f77bf360808d8470d92a8b48dd2469c # gecko-dev
+# https://hg.mozilla.org/integration/autoland/rev/d54846d01280
+abc28896717209d5f0ed2a6b0a46f8e03880ad19 # cinnabar
+47a5dd1fb80fa5bbe608c32db426f1ed29b7fd79 # gecko-dev
+

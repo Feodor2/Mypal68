@@ -1,0 +1,112 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+
+menupopup,
+panel {
+  -moz-appearance: menupopup;
+  -moz-font-smoothing-background-color: -moz-mac-menupopup;
+  background-color: Menu;
+  color: MenuText;
+}
+
+menupopup > menu > menupopup {
+  margin-top: -4px;
+}
+
+.popup-internal-box {
+  padding: 4px 0;
+}
+
+panel[titlebar] {
+  -moz-appearance: none; /* to disable rounded corners */
+}
+
+panel[type="arrow"] {
+  -moz-appearance: none;
+  background: transparent;
+}
+
+panel[type="arrow"][side="top"],
+panel[type="arrow"][side="bottom"] {
+  margin-left: -25px;
+  margin-right: -25px;
+}
+
+panel[type="arrow"][side="left"],
+panel[type="arrow"][side="right"] {
+  margin-top: -25px;
+  margin-bottom: -25px;
+}
+
+.panel-arrowcontent {
+  -moz-appearance: none;
+  -moz-font-smoothing-background-color: var(--arrowpanel-background);
+  background: var(--arrowpanel-background);
+  border-radius: var(--arrowpanel-border-radius);
+  box-shadow: 0 0 0 1px var(--arrowpanel-border-color);
+  color: var(--arrowpanel-color);
+  border: none;
+  padding: var(--arrowpanel-padding);
+  margin: 1px;
+}
+
+.panel-arrow {
+  -moz-context-properties: fill, stroke;
+  fill: var(--arrowpanel-background);
+  stroke: var(--arrowpanel-border-color);
+}
+
+.panel-arrow[side="top"] {
+  list-style-image: url("chrome://global/skin/arrow/panelarrow-vertical.svg");
+  margin-left: 16px;
+  margin-right: 16px;
+  margin-bottom: -1px;
+}
+
+.panel-arrow[side="bottom"] {
+  list-style-image: url("chrome://global/skin/arrow/panelarrow-vertical.svg");
+  -moz-transform: scaleY(-1);
+  margin-left: 16px;
+  margin-right: 16px;
+  margin-top: -1px;
+}
+
+.panel-arrow[side="left"] {
+  list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal.svg");
+  margin-top: 16px;
+  margin-bottom: 16px;
+  margin-right: -1px;
+}
+
+.panel-arrow[side="right"] {
+  list-style-image: url("chrome://global/skin/arrow/panelarrow-horizontal.svg");
+  transform: scaleX(-1);
+  margin-top: 16px;
+  margin-bottom: 16px;
+  margin-left: -1px;
+}
+
+/* rules for popups associated with menulists */
+
+menulist > menupopup {
+  min-width: 0px;
+  padding: 4px 0;
+}
+
+menulist > menupopup:not([position]) {
+  margin-inline-start: -13px;
+  margin-top: -2px;
+}
+
+menulist > menupopup > .popup-internal-box {
+  padding: 0;
+}
+
+menupopup[customoptionstyling="true"] {
+  -moz-appearance: none;
+  padding-top: 0;
+  padding-bottom: 0;
+}

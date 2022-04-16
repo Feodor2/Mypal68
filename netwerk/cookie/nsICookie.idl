@@ -1,0 +1,62 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsISupports.idl"
+
+/** 
+ * An optional interface for accessing the HTTP or
+ * javascript cookie object
+ */
+
+typedef long nsCookieStatus;
+typedef long nsCookiePolicy;
+
+[scriptable, uuid(adf0db5e-211e-45a3-be14-4486ac430a58)]
+interface nsICookie : nsISupports {
+
+    /**
+     * the name of the cookie
+     */
+    readonly attribute ACString name;
+
+    /**
+     * the cookie value
+     */
+    readonly attribute AUTF8String value;
+
+    /**
+     * true if the cookie is a domain cookie, false otherwise
+     */
+    readonly attribute boolean isDomain;
+
+    /**
+     * the host (possibly fully qualified) of the cookie
+     */
+    readonly attribute AUTF8String host;
+
+    /**
+     * the path pertaining to the cookie
+     */
+    readonly attribute AUTF8String path;
+
+    /**
+     * true if the cookie was transmitted over ssl, false otherwise
+     */
+    readonly attribute boolean isSecure;
+
+    /**
+     * @DEPRECATED use nsICookie2.expiry and nsICookie2.isSession instead.
+     *
+     * expiration time in seconds since midnight (00:00:00), January 1, 1970 UTC.
+     * expires = 0 represents a session cookie.
+     * expires = 1 represents an expiration time earlier than Jan 1, 1970.
+     */
+    readonly attribute uint64_t expires;
+
+    /**
+     * The origin attributes for this cookie
+     */
+    [implicit_jscontext]
+    readonly attribute jsval originAttributes;
+};

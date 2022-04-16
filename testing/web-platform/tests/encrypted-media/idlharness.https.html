@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset=utf-8>
+    <title>Encrypted Media Extentions IDL test</title>
+    <link rel="help" href="https://w3c.github.io/encrypted-media/">
+
+    <script src=/resources/testharness.js></script>
+    <script src=/resources/testharnessreport.js></script>
+    <script src=/resources/WebIDLParser.js></script>
+    <script src=/resources/idlharness.js></script>
+    <script src=/encrypted-media/util/fetch.js></script>
+  </head>
+  <body>
+    <h1 class="instructions">Description</h1>
+    <p class="instructions">
+      This test verifies that implementations of the Encrypted Media Extensions API match its WebIDL definition.
+    </p>
+
+    <div id='log'></div>
+
+    <script>
+      'use strict';
+
+      promise_test(async () => {
+        const idls = await fetch('/interfaces/encrypted-media.idl').then(r => r.text());
+        const html = await fetch('/interfaces/html.idl').then(r => r.text());
+        const dom = await fetch('/interfaces/dom.idl').then(r => r.text());
+        var idl_array = new IdlArray();
+        idl_array.add_idls(idls);
+        idl_array.add_dependency_idls(html);
+        idl_array.add_dependency_idls(dom);
+        idl_array.test();
+      }, 'Test encrypted-media IDL');
+    </script>
+  </body>
+</html>

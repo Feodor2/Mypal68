@@ -1,0 +1,28 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+EXTRA_JS_MODULES += [
+    'AndroidLog.jsm',
+    'ContentCrashHandler.jsm',
+    'DelayedInit.jsm',
+    'GeckoViewAccessibility.jsm',
+    'GeckoViewAutoFill.jsm',
+    'GeckoViewChildModule.jsm',
+    'GeckoViewConsole.jsm',
+    'GeckoViewContent.jsm',
+    'GeckoViewContentBlocking.jsm',
+    'GeckoViewMedia.jsm',
+    'GeckoViewModule.jsm',
+    'GeckoViewNavigation.jsm',
+    'GeckoViewProgress.jsm',
+    'GeckoViewRemoteDebugger.jsm',
+    'GeckoViewSettings.jsm',
+    'GeckoViewStorageController.jsm',
+    'GeckoViewTab.jsm',
+    'GeckoViewTelemetry.jsm',
+    'GeckoViewUtils.jsm',
+    'GeckoViewWebExtension.jsm',
+    'LoadURIDelegate.jsm',
+    'Messaging.jsm',
+]

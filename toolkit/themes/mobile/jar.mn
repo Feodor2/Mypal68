@@ -1,0 +1,53 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+toolkit.jar:
+% skin global classic/1.0 %skin/classic/global/
+# These are the CSS files that must exist
+   skin/classic/global/about.css                           (global/about.css)
+   skin/classic/global/aboutMemory.css                     (global/aboutMemory.css)
+   skin/classic/global/aboutSupport.css                    (global/aboutSupport.css)
+   skin/classic/global/autocomplete.css                    (global/empty.css)
+   skin/classic/global/button.css                          (global/empty.css)
+   skin/classic/global/checkbox.css                        (global/empty.css)
+   skin/classic/global/dialog.css                          (global/empty.css)
+   skin/classic/global/dropmarker.css                      (global/empty.css)
+   skin/classic/global/global.css                          (global/empty.css)
+   skin/classic/global/menu.css                            (global/empty.css)
+   skin/classic/global/menulist.css                        (global/empty.css)
+   skin/classic/global/numberinput.css                     (global/empty.css)
+   skin/classic/global/popup.css                           (global/empty.css)
+   skin/classic/global/radio.css                           (global/empty.css)
+   skin/classic/global/richlistbox.css                     (global/empty.css)
+   skin/classic/global/scrollbox.css                       (global/empty.css)
+   skin/classic/global/splitter.css                        (global/empty.css)
+   skin/classic/global/tabbox.css                          (global/empty.css)
+   skin/classic/global/textbox.css                         (global/empty.css)
+   skin/classic/global/toolbar.css                         (global/empty.css)
+   skin/classic/global/toolbarbutton.css                   (global/empty.css)
+   skin/classic/global/tooltip.css                         (global/empty.css)
+   skin/classic/global/tree.css                            (global/empty.css)
+   skin/classic/global/wizard.css                          (global/empty.css)
+   skin/classic/global/scrollbars.css                      (global/empty.css)
+
+   skin/classic/global/media/TopLevelImageDocument.css     (global/media/TopLevelImageDocument.css)
+   skin/classic/global/media/TopLevelVideoDocument.css     (global/media/TopLevelVideoDocument.css)
+   skin/classic/global/media/imagedoc-lightnoise.png       (global/media/imagedoc-lightnoise.png)
+   skin/classic/global/media/imagedoc-darknoise.png        (global/media/imagedoc-darknoise.png)
+
+* skin/classic/global/media/videocontrols.css              (../shared/media/videocontrols.css)
+  skin/classic/global/media/pauseButton.svg                (../shared/media/pauseButton.svg)
+  skin/classic/global/media/playButton.svg                 (../shared/media/playButton.svg)
+  skin/classic/global/media/error.png                      (../shared/media/error.png)
+  skin/classic/global/media/throbber.png                   (../shared/media/throbber.png)
+  skin/classic/global/media/stalled.png                    (../shared/media/stalled.png)
+  skin/classic/global/media/audioMutedButton.svg           (../shared/media/audioMutedButton.svg)
+  skin/classic/global/media/audioNoAudioButton.svg         (../shared/media/audioNoAudioButton.svg)
+  skin/classic/global/media/audioUnmutedButton.svg         (../shared/media/audioUnmutedButton.svg)
+  skin/classic/global/media/castingButton-ready.svg        (../shared/media/castingButton-ready.svg)
+  skin/classic/global/media/castingButton-active.svg       (../shared/media/castingButton-active.svg)
+  skin/classic/global/media/closedCaptionButton-cc-off.svg (../shared/media/closedCaptionButton-cc-off.svg)
+  skin/classic/global/media/closedCaptionButton-cc-on.svg  (../shared/media/closedCaptionButton-cc-on.svg)
+  skin/classic/global/media/fullscreenEnterButton.svg      (../shared/media/fullscreenEnterButton.svg)
+  skin/classic/global/media/fullscreenExitButton.svg       (../shared/media/fullscreenExitButton.svg)

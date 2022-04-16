@@ -1,0 +1,71 @@
+[workspace]
+
+# These are the "root" crates, which we build and test as top-level targets.
+# Their transitive dependencies and dev-dependencies are included automatically
+# and do not need to be listed here. Their external dependencies are vendored
+# into `third_party/rust` by `mach vendor rust`.
+members = [
+  "js/src",
+  "js/src/rust",
+  "js/src/wasm/cranelift",
+  "js/rust",
+  "js/src/frontend/binast", # Code generator.
+  "testing/geckodriver",
+  "toolkit/crashreporter/rust",
+  "toolkit/library/gtest/rust",
+  "toolkit/library/rust/",
+]
+
+# Excluded crates may be built as dependencies, but won't be considered members
+# of the workspace and their dev-dependencies won't be included.
+exclude = [
+  # Exclude third-party code vendored into mozilla-central.
+  "servo",
+  "third_party/rust",
+
+  # Excluded because these crates have their own Cargo workspaces so they can't
+  # be included in the top-level one.
+  "gfx/wr",
+  "media/audioipc",
+  "media/cubeb-rs",
+
+  # Excluded because they are used only as dependencies, not top-level targets,
+  # so we don't need to vendor their dev-dependencies.
+  "dom/webauthn/u2f-hid-rs",
+  "gfx/webrender_bindings",
+  "media/mp4parse-rust/mp4parse",
+  "media/mp4parse-rust/mp4parse_capi",
+  "media/mp4parse-rust/mp4parse_fallible",
+  "xpcom/rust/gkrust_utils",
+]
+
+# Explicitly specify what our profiles use.  The opt-level setting here is
+# a total fiction; see the setup of MOZ_RUST_DEFAULT_FLAGS for what the
+# opt-level setting will be as a result of various other configure flags.
+[profile.dev]
+opt-level = 1
+rpath = false
+lto = false
+debug-assertions = true
+panic = "abort"
+
+[profile.release]
+opt-level = 2
+rpath = false
+debug-assertions = false
+panic = "abort"
+codegen-units = 1
+
+[patch.crates-io]
+libudev-sys = { path = "dom/webauthn/libudev-sys" }
+serde_derive = { git = "https://github.com/servo/serde", branch = "deserialize_from_enums10" }
+winapi = { git = "https://github.com/froydnj/winapi-rs", branch = "aarch64" }
+packed_simd = { git = "https://github.com/hsivonen/packed_simd", branch = "rust_1_32" }
+
+[patch.crates-io.cranelift-codegen]
+git = "https://github.com/CraneStation/Cranelift"
+rev = "cc216b46b35a797d03c0f3e8b16a2096f1c6db61"
+
+[patch.crates-io.cranelift-wasm]
+git = "https://github.com/CraneStation/Cranelift"
+rev = "cc216b46b35a797d03c0f3e8b16a2096f1c6db61"

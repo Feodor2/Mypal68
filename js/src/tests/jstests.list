@@ -1,0 +1,529 @@
+# Manifest entries for imported test suites whose individual test cases
+# we don't want to change.
+
+# Skip the folder with tests for the scripts
+skip include test/jstests.list
+
+skip script non262/String/normalize-generateddata-input.js # input data for other test
+
+# Timeouts on arm and cgc builds.
+slow script test262/built-ins/decodeURI/S15.1.3.1_A2.5_T1.js
+slow script test262/built-ins/decodeURIComponent/S15.1.3.2_A2.5_T1.js
+
+# Windows10-aarch64 fails certain tests.
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1526003
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1526012
+skip-if((xulRuntime.XPCOMABI.match(/aarch64/))&&(xulRuntime.OS=="WINNT")) script non262/Math/fround.js
+skip-if((xulRuntime.XPCOMABI.match(/aarch64/))&&(xulRuntime.OS=="WINNT")) script non262/Math/log2-approx.js
+
+###########################################################################
+# Generated jstests.list for test262 when inline |reftest| isn't possible #
+###########################################################################
+
+include test262/jstests.list
+
+
+#################################################################
+# Tests disabled due to intentional alternative implementations #
+#################################################################
+
+# Legacy "caller" and "arguments" implemented as accessor properties on Function.prototype.
+skip script test262/built-ins/Function/prototype/restricted-property-arguments.js
+skip script test262/built-ins/Function/prototype/restricted-property-caller.js
+skip script test262/built-ins/ThrowTypeError/unique-per-realm-function-proto.js
+
+# https://github.com/tc39/ecma262/issues/1049
+# The "name" property is present on all functions. V8 and JSC agree, but the
+# spec and tests say anonymous functions simply have no own .name property. The
+# spec should change.
+skip script test262/built-ins/Proxy/revocable/revocation-function-name.js
+skip script test262/built-ins/Promise/reject-function-name.js
+skip script test262/built-ins/Promise/resolve-function-name.js
+skip script test262/built-ins/Promise/executor-function-name.js
+skip script test262/built-ins/Promise/all/resolve-element-function-name.js
+
+
+#########################################################################
+# Test262 tests disabled when features are only conditionally available #
+#########################################################################
+
+skip-if(!Array.prototype.values) script test262/built-ins/Array/prototype/Symbol.iterator.js
+skip-if(!Array.prototype.values) include test262/built-ins/Array/prototype/values/jstests.list
+skip-if(!String.prototype.normalize) include test262/built-ins/String/prototype/normalize/jstests.list
+
+# Requires ICU to detect Final_Sigma case mapping context
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/toLowerCase/Final_Sigma_U180E.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/toLowerCase/special_casing_conditional.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/toLocaleLowerCase/Final_Sigma_U180E.js
+skip-if(!this.hasOwnProperty("Intl")) script test262/built-ins/String/prototype/toLocaleLowerCase/special_casing_conditional.js
+
+# Skip intl402 tests when Intl isn't available.
+skip-if(!this.hasOwnProperty("Intl")) include test262/intl402/jstests.list
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1415303
+skip-if(!this.hasOwnProperty("Atomics")) include test262/built-ins/Atomics/jstests.list
+skip-if(!this.hasOwnProperty("SharedArrayBuffer")) include test262/built-ins/SharedArrayBuffer/jstests.list
+
+
+#####################################
+# Test262 tests disabled on browser #
+#####################################
+
+# Defines a non-configurable property on the WindowProxy object.
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-block-decl-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-block-decl-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-if-decl-else-decl-a-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-if-decl-else-decl-a-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-if-decl-else-decl-b-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-if-decl-else-decl-b-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-if-decl-else-stmt-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-if-decl-else-stmt-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-if-decl-no-else-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-if-decl-no-else-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-if-stmt-else-decl-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-if-stmt-else-decl-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-switch-case-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-switch-case-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-switch-dflt-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/direct/global-switch-dflt-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-block-decl-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-block-decl-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-if-decl-else-decl-a-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-if-decl-else-decl-a-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-if-decl-else-decl-b-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-if-decl-else-decl-b-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-if-decl-else-stmt-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-if-decl-else-stmt-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-if-decl-no-else-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-if-stmt-else-decl-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-if-stmt-else-decl-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-switch-case-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-switch-case-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-switch-dflt-eval-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/eval-code/indirect/global-switch-dflt-eval-global-existing-global-update.js
+skip-if(!xulRuntime.shell) script test262/language/eval-code/direct/var-env-func-init-global-update-non-configurable.js
+skip-if(!xulRuntime.shell) script test262/language/eval-code/indirect/var-env-func-init-global-update-non-configurable.js
+skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-lex-restricted-global.js
+skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-var.js
+skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-func-err-non-configurable.js
+skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-func.js
+
+# Calls preventExtensions() on the WindowProxy object.
+skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-func-err-non-extensible.js
+skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-lex.js
+skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-var-err.js
+
+# Global var-bindings are configurable in a browser environment.
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/block-decl-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/block-decl-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/if-decl-else-decl-a-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/if-decl-else-decl-a-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/if-decl-else-decl-b-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/if-decl-else-decl-b-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/if-decl-else-stmt-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/if-decl-else-stmt-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/if-decl-no-else-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/if-decl-no-else-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/if-stmt-else-decl-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/if-stmt-else-decl-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/switch-case-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/switch-case-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/switch-dflt-global-existing-global-init.js
+skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/switch-dflt-global-init.js
+skip-if(!xulRuntime.shell) script test262/language/eval-code/direct/var-env-var-init-global-exstng.js
+skip-if(!xulRuntime.shell) script test262/language/eval-code/indirect/var-env-var-init-global-exstng.js
+skip-if(!xulRuntime.shell) script test262/language/global-code/decl-func.js
+skip-if(!xulRuntime.shell) script test262/language/global-code/decl-var.js
+
+
+##################################################
+# Test262 tests skipped due to SpiderMonkey bugs #
+##################################################
+
+# %ThrowTypeError% should be anonymous
+skip script test262/built-ins/ThrowTypeError/name.js
+
+# BigInt typed arrays -- BigInt64Array, BigUint64Array -- aren't implemented
+# yet -- bug 1456569.
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-species-returns-throws.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-species.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-species-use-default-ctor.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-species-custom-ctor-throws.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-species-custom-ctor-invocation.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-species-custom-ctor-returns-another-instance.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-ctor-inherited.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-ctor.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-species-custom-ctor-length.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-species-custom-ctor-length-throws.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-ctor-returns-throws.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-species-custom-ctor.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-species-abrupt.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/speciesctor-get-ctor-abrupt.js
+
+# Anonymous functions have own name property in SpiderMonkey
+skip script test262/language/expressions/assignment/fn-name-lhs-cover.js
+skip script test262/language/expressions/assignment/fn-name-lhs-member.js
+skip script test262/language/expressions/function/name.js
+skip script test262/language/expressions/generators/name.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1079853
+skip script test262/built-ins/TypedArray/prototype/every/BigInt/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/every/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/filter/BigInt/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/filter/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/find/BigInt/predicate-may-detach-buffer.js
+skip script test262/built-ins/TypedArray/prototype/find/predicate-may-detach-buffer.js
+skip script test262/built-ins/TypedArray/prototype/findIndex/BigInt/predicate-may-detach-buffer.js
+skip script test262/built-ins/TypedArray/prototype/findIndex/predicate-may-detach-buffer.js
+skip script test262/built-ins/TypedArray/prototype/forEach/BigInt/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/forEach/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/map/BigInt/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/map/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/reduce/BigInt/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/reduce/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/reduceRight/BigInt/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/reduceRight/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/some/BigInt/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArray/prototype/some/callbackfn-detachbuffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer-realm.js
+skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/tonumber-value-detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/detached-buffer-realm.js
+skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/tonumber-value-detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Get/BigInt/detached-buffer-realm.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Get/BigInt/detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Get/BigInt/infinity-detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Get/detached-buffer-realm.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Get/detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Get/infinity-detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/detached-buffer-realm.js
+skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/enumerate-detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/detached-buffer-realm.js
+skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/enumerate-detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/BigInt/detached-buffer-realm.js
+skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/BigInt/detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/BigInt/infinity-with-detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/detached-buffer-realm.js
+skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/infinity-with-detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/detached-buffer-realm.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/tonumber-value-detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Set/detached-buffer-realm.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Set/detached-buffer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Set/tonumber-value-detached-buffer.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1129202
+skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/key-is-not-canonical-index.js
+skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/BigInt/key-is-not-integer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/key-is-not-canonical-index.js
+skip script test262/built-ins/TypedArrayConstructors/internals/DefineOwnProperty/key-is-not-integer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Get/BigInt/key-is-not-canonical-index.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Get/BigInt/key-is-not-integer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Get/key-is-not-canonical-index.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Get/key-is-not-integer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/BigInt/key-is-not-canonical-index.js
+skip script test262/built-ins/TypedArrayConstructors/internals/GetOwnProperty/key-is-not-canonical-index.js
+skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/BigInt/key-is-not-canonical-index.js
+skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/BigInt/key-is-not-integer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/key-is-not-canonical-index.js
+skip script test262/built-ins/TypedArrayConstructors/internals/HasProperty/key-is-not-integer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/key-is-not-canonical-index.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/key-is-not-integer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Set/BigInt/tonumber-value-throws.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Set/key-is-not-canonical-index.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Set/key-is-not-integer.js
+skip script test262/built-ins/TypedArrayConstructors/internals/Set/tonumber-value-throws.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1317405
+skip script test262/language/computed-property-names/class/static/method-number.js
+skip script test262/language/computed-property-names/class/static/method-string.js
+skip script test262/language/computed-property-names/class/static/method-symbol.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1286997
+# Bug 1286997 probably doesn't cover all spec violations.
+skip script test262/language/expressions/assignment/S11.13.1_A5_T5.js
+skip script test262/language/expressions/assignment/S11.13.1_A7_T1.js
+skip script test262/language/expressions/assignment/S11.13.1_A7_T2.js
+skip script test262/language/expressions/assignment/S11.13.1_A7_T3.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A5.10_T5.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A5.11_T5.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A5.1_T5.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A5.2_T5.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A5.3_T5.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A5.4_T5.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A5.5_T5.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A5.6_T5.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A5.7_T5.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A5.8_T5.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A5.9_T5.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.10_T1.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.10_T2.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.11_T1.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.11_T2.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.1_T1.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.1_T2.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.2_T1.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.2_T2.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.3_T1.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.3_T2.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.4_T1.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.4_T2.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.5_T1.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.5_T2.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.6_T1.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.6_T2.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.7_T1.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.7_T2.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.8_T1.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.8_T2.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.9_T1.js
+skip script test262/language/expressions/compound-assignment/S11.13.2_A7.9_T2.js
+skip script test262/language/expressions/postfix-decrement/S11.3.2_A5_T5.js
+skip script test262/language/expressions/postfix-decrement/S11.3.2_A6_T1.js
+skip script test262/language/expressions/postfix-decrement/S11.3.2_A6_T2.js
+skip script test262/language/expressions/postfix-increment/S11.3.1_A5_T5.js
+skip script test262/language/expressions/postfix-increment/S11.3.1_A6_T1.js
+skip script test262/language/expressions/postfix-increment/S11.3.1_A6_T2.js
+skip script test262/language/expressions/prefix-decrement/S11.4.5_A5_T5.js
+skip script test262/language/expressions/prefix-decrement/S11.4.5_A6_T1.js
+skip script test262/language/expressions/prefix-decrement/S11.4.5_A6_T2.js
+skip script test262/language/expressions/prefix-increment/S11.4.4_A5_T5.js
+skip script test262/language/expressions/prefix-increment/S11.4.4_A6_T1.js
+skip script test262/language/expressions/prefix-increment/S11.4.4_A6_T2.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=944846
+skip script test262/built-ins/Number/prototype/toExponential/return-values.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1225839
+skip script test262/built-ins/Function/internals/Call/class-ctor-realm.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1297179
+skip script test262/built-ins/Proxy/apply/arguments-realm.js
+skip script test262/built-ins/Proxy/apply/trap-is-not-callable-realm.js
+skip script test262/built-ins/Proxy/construct/arguments-realm.js
+skip script test262/built-ins/Proxy/construct/trap-is-not-callable-realm.js
+skip script test262/built-ins/Proxy/defineProperty/desc-realm.js
+skip script test262/built-ins/Proxy/defineProperty/null-handler-realm.js
+skip script test262/built-ins/Proxy/defineProperty/targetdesc-configurable-desc-not-configurable-realm.js
+skip script test262/built-ins/Proxy/defineProperty/targetdesc-not-compatible-descriptor-not-configurable-target-realm.js
+skip script test262/built-ins/Proxy/defineProperty/targetdesc-not-compatible-descriptor-realm.js
+skip script test262/built-ins/Proxy/defineProperty/targetdesc-undefined-not-configurable-descriptor-realm.js
+skip script test262/built-ins/Proxy/defineProperty/targetdesc-undefined-target-is-not-extensible-realm.js
+skip script test262/built-ins/Proxy/defineProperty/trap-is-not-callable-realm.js
+skip script test262/built-ins/Proxy/deleteProperty/trap-is-not-callable-realm.js
+skip script test262/built-ins/Proxy/get/trap-is-not-callable-realm.js
+skip script test262/built-ins/Proxy/getOwnPropertyDescriptor/result-type-is-not-object-nor-undefined-realm.js
+skip script test262/built-ins/Proxy/getOwnPropertyDescriptor/trap-is-not-callable-realm.js
+skip script test262/built-ins/Proxy/getPrototypeOf/trap-is-not-callable-realm.js
+skip script test262/built-ins/Proxy/has/trap-is-not-callable-realm.js
+skip script test262/built-ins/Proxy/isExtensible/trap-is-not-callable-realm.js
+skip script test262/built-ins/Proxy/ownKeys/return-not-list-object-throws-realm.js
+skip script test262/built-ins/Proxy/ownKeys/trap-is-not-callable-realm.js
+skip script test262/built-ins/Proxy/preventExtensions/trap-is-not-callable-realm.js
+skip script test262/built-ins/Proxy/set/trap-is-not-callable-realm.js
+skip script test262/built-ins/Proxy/setPrototypeOf/trap-is-not-callable-realm.js
+
+# Errors thrown from wrong realm, similar to 1225839, 1288457, and 1297179.
+skip script test262/built-ins/Array/length/define-own-prop-length-overflow-realm.js
+skip script test262/built-ins/Function/internals/Construct/derived-return-val-realm.js
+skip script test262/built-ins/Function/internals/Construct/derived-this-uninitialized-realm.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1317416
+skip script test262/built-ins/GeneratorFunction/proto-from-ctor-realm.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1317395
+skip script test262/built-ins/ArrayBuffer/prototype/byteLength/detached-buffer.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1317378
+skip script test262/language/statements/do-while/cptn-abrupt-empty.js
+skip script test262/language/statements/do-while/cptn-normal.js
+skip script test262/language/statements/for-in/cptn-decl-abrupt-empty.js
+skip script test262/language/statements/for-in/cptn-decl-itr.js
+skip script test262/language/statements/for-in/cptn-decl-skip-itr.js
+skip script test262/language/statements/for-in/cptn-decl-zero-itr.js
+skip script test262/language/statements/for-in/cptn-expr-abrupt-empty.js
+skip script test262/language/statements/for-in/cptn-expr-itr.js
+skip script test262/language/statements/for-in/cptn-expr-skip-itr.js
+skip script test262/language/statements/for-in/cptn-expr-zero-itr.js
+skip script test262/language/statements/for/cptn-decl-expr-iter.js
+skip script test262/language/statements/for/cptn-decl-expr-no-iter.js
+skip script test262/language/statements/for/cptn-expr-expr-iter.js
+skip script test262/language/statements/for/cptn-expr-expr-no-iter.js
+skip script test262/language/statements/for/S12.6.3_A9.1.js
+skip script test262/language/statements/for/S12.6.3_A9.js
+skip script test262/language/statements/for-of/cptn-decl-abrupt-empty.js
+skip script test262/language/statements/for-of/cptn-decl-itr.js
+skip script test262/language/statements/for-of/cptn-decl-no-itr.js
+skip script test262/language/statements/for-of/cptn-expr-abrupt-empty.js
+skip script test262/language/statements/for-of/cptn-expr-itr.js
+skip script test262/language/statements/for-of/cptn-expr-no-itr.js
+skip script test262/language/statements/if/cptn-else-false-nrml.js
+skip script test262/language/statements/if/cptn-else-false-abrupt-empty.js
+skip script test262/language/statements/if/cptn-else-true-abrupt-empty.js
+skip script test262/language/statements/if/cptn-else-true-nrml.js
+skip script test262/language/statements/if/cptn-no-else-false.js
+skip script test262/language/statements/if/cptn-no-else-true-abrupt-empty.js
+skip script test262/language/statements/if/cptn-no-else-true-nrml.js
+skip script test262/language/statements/switch/cptn-a-abrupt-empty.js
+skip script test262/language/statements/switch/cptn-abrupt-empty.js
+skip script test262/language/statements/switch/cptn-b-abrupt-empty.js
+skip script test262/language/statements/switch/cptn-b-final.js
+skip script test262/language/statements/switch/cptn-dflt-abrupt-empty.js
+skip script test262/language/statements/switch/cptn-dflt-b-abrupt-empty.js
+skip script test262/language/statements/switch/cptn-dflt-b-final.js
+skip script test262/language/statements/switch/cptn-dflt-final.js
+skip script test262/language/statements/switch/cptn-no-dflt-match-abrupt-empty.js
+skip script test262/language/statements/switch/cptn-no-dflt-match-final.js
+skip script test262/language/statements/switch/cptn-no-dflt-no-match.js
+skip script test262/language/statements/try/cptn-finally-skip-catch.js
+skip script test262/language/statements/try/cptn-finally-wo-catch.js
+skip script test262/language/statements/try/cptn-try.js
+skip script test262/language/statements/while/cptn-abrupt-empty.js
+skip script test262/language/statements/while/cptn-iter.js
+skip script test262/language/statements/while/cptn-no-iter.js
+skip script test262/language/statements/with/cptn-abrupt-empty.js
+skip script test262/language/statements/with/cptn-nrml.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1296234
+skip script test262/intl402/Collator/prototype/compare/compare-function-name.js
+skip script test262/intl402/DateTimeFormat/prototype/format/format-function-name.js
+skip script test262/intl402/NumberFormat/prototype/format/format-function-name.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1340307
+skip script test262/language/module-code/instn-resolve-empty-export.js
+skip script test262/language/module-code/instn-resolve-empty-import.js
+skip script test262/language/module-code/instn-resolve-err-reference.js
+skip script test262/language/module-code/instn-resolve-order-depth.js
+skip script test262/language/module-code/instn-resolve-order-src.js
+skip script test262/language/module-code/parse-err-reference.js
+skip script test262/language/expressions/postfix-increment/target-cover-yieldexpr.js
+skip script test262/language/expressions/postfix-increment/target-newtarget.js
+skip script test262/language/expressions/postfix-increment/target-cover-newtarget.js
+skip script test262/language/expressions/postfix-increment/non-simple.js
+skip script test262/language/expressions/postfix-decrement/target-cover-yieldexpr.js
+skip script test262/language/expressions/postfix-decrement/target-newtarget.js
+skip script test262/language/expressions/postfix-decrement/target-cover-newtarget.js
+skip script test262/language/expressions/postfix-decrement/non-simple.js
+skip script test262/language/expressions/prefix-increment/target-cover-yieldexpr.js
+skip script test262/language/expressions/prefix-increment/target-newtarget.js
+skip script test262/language/expressions/prefix-increment/target-cover-newtarget.js
+skip script test262/language/expressions/prefix-increment/non-simple.js
+skip script test262/language/expressions/prefix-decrement/target-cover-yieldexpr.js
+skip script test262/language/expressions/prefix-decrement/target-newtarget.js
+skip script test262/language/expressions/prefix-decrement/target-cover-newtarget.js
+skip script test262/language/expressions/prefix-decrement/non-simple.js
+skip script test262/language/asi/S7.9_A5.7_T1.js
+skip script test262/language/expressions/dynamic-import/syntax/invalid/invalid-asssignmenttargettype-reference-error-1-update-expression.js
+skip script test262/language/expressions/dynamic-import/syntax/invalid/invalid-asssignmenttargettype-reference-error-2-update-expression.js
+skip script test262/language/expressions/dynamic-import/syntax/invalid/invalid-asssignmenttargettype-reference-error-3-update-expression.js
+skip script test262/language/expressions/dynamic-import/syntax/invalid/invalid-asssignmenttargettype-reference-error-4-update-expression.js
+
+# Dependent on evalInWorker, setSharedArrayBuffer, and
+# getSharedArrayBuffer, plus the test cases can't actually run in the
+# browser even if that were fixed, https://bugzil.la/1349863
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wait/negative-timeout.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wait/was-woken.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wait/did-timeout.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wait/good-views.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wait/no-spurious-wakeup.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wait/nan-timeout.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wake/wake-all.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wake/wake-zero.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wake/wake-negative.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wake/wake-nan.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wake/wake-two.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wake/wake-in-order.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wake/wake-one.js
+skip-if(!xulRuntime.shell) script test262/built-ins/Atomics/wake/wake-all-on-loc.js
+
+# Hoisted block-level function named "arguments" not initialized with undefined per B.3.3.1
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1339123
+skip script test262/annexB/language/function-code/block-decl-func-skip-arguments.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1407587
+skip script test262/language/expressions/assignment/destructuring/keyed-destructuring-property-reference-target-evaluation-order.js
+skip script test262/language/expressions/assignment/destructuring/iterator-destructuring-property-reference-target-evaluation-order.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1495072
+skip script test262/language/expressions/await/await-monkey-patched-promise.js
+skip script test262/language/expressions/await/async-await-interleaved.js
+skip script test262/language/expressions/await/for-await-of-interleaved.js
+skip script test262/language/expressions/await/async-generator-interleaved.js
+skip script test262/language/statements/for-await-of/async-from-sync-iterator-continuation-abrupt-completion-get-constructor.js
+skip script test262/language/statements/for-await-of/ticks-with-async-iter-resolved-promise-and-constructor-lookup-two.js
+skip script test262/language/statements/for-await-of/ticks-with-sync-iter-resolved-promise-and-constructor-lookup.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1321616
+skip script test262/annexB/built-ins/Function/createdynfn-html-close-comment-params.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1462745
+skip script test262/annexB/language/function-code/block-decl-nested-blocks-with-fun-decl.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1473229
+skip include test262/intl402/RelativeTimeFormat/prototype/formatToParts/jstests.list
+
+# Need to add "numberingSystem" to resolvedOptions() to address
+# https://github.com/tc39/test262/pull/2011 apparently -- bug 1521819.
+skip script test262/intl402/RelativeTimeFormat/prototype/resolvedOptions/order.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1508683
+skip script test262/built-ins/RegExp/prototype/multiline/cross-realm.js
+skip script test262/built-ins/RegExp/prototype/global/cross-realm.js
+skip script test262/built-ins/RegExp/prototype/sticky/cross-realm.js
+skip script test262/built-ins/RegExp/prototype/ignoreCase/cross-realm.js
+skip script test262/built-ins/RegExp/prototype/unicode/cross-realm.js
+skip script test262/built-ins/RegExp/prototype/source/cross-realm.js
+
+# The Intl spec recently changed from canonicalizing locales using RFC 5646 to
+# using UTS 35.  This still needs to be implemented in bug 1522070.  See also
+# <https://github.com/tc39/ecma402/commit/77cd7634e6aef828b0d0a4d97dece622c5f8e01f>.
+skip script test262/intl402/Intl/getCanonicalLocales/non-iana-canon.js
+
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1508684
+skip script test262/language/expressions/import.meta/syntax/invalid-assignment-target-update-expr.js
+
+# https://github.com/tc39/test262/issues/2127
+skip script test262/language/expressions/class/elements/derived-cls-direct-eval-err-contains-superproperty-1.js
+skip script test262/language/expressions/class/elements/derived-cls-direct-eval-err-contains-superproperty-2.js
+skip script test262/language/statements/class/elements/derived-cls-direct-eval-err-contains-superproperty-1.js
+skip script test262/language/statements/class/elements/derived-cls-direct-eval-err-contains-superproperty-2.js
+
+
+###########################################################
+# Tests disabled due to issues in test262 importer script #
+###########################################################
+
+# test262 importer merges all includes in a per directory shell.js file, breaking this harness test case.
+skip script test262/harness/detachArrayBuffer.js
+
+
+####################################################
+# Tests disabled due to invalid test expectations  #
+####################################################
+
+# zh-Hans-CN and zh are supported by ICU, but the test requires that ICU also
+# explicitly supports zh-Hans. That isn't the case and it rather looks like the
+# shouldn't require that zh-Hans is explicitly supported without a fallback to
+# zh.
+skip script test262/intl402/fallback-locales-are-supported.js
+
+# https://github.com/tc39/test262/pull/2097
+#
+# "zh-hak-CN" no longer allowed, because it contains an extlang subtag.
+skip script test262/intl402/language-tags-canonicalized.js
+skip script test262/intl402/Intl/getCanonicalLocales/canonicalized-tags.js
+
+# Irregular grandfathered tags no longer allowed: "i-klingon"
+skip script test262/intl402/language-tags-valid.js
+
+# Irregular grandfathered tags no longer allowed: "en-GB-oed"
+skip script test262/intl402/Intl/getCanonicalLocales/preferred-grandfathered.js
+skip script test262/intl402/RelativeTimeFormat/constructor/constructor/locales-valid.js
+
+# Privateuse-only tags no longer allowed: "x-u-foo"
+skip script test262/intl402/Intl/getCanonicalLocales/weird-cases.js

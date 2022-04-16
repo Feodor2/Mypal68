@@ -1,0 +1,152 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+using struct gfxPoint from "gfxPoint.h";
+using nsIntRegion from "nsRegion.h";
+using struct mozilla::layers::SurfaceDescriptorX11 from "gfxipc/ShadowLayerUtils.h";
+using mozilla::StereoMode from "ImageTypes.h";
+using struct mozilla::null_t from "ipc/IPCMessageUtils.h";
+using mozilla::WindowsHandle from "ipc/IPCMessageUtils.h";
+using mozilla::gfx::YUVColorSpace from "mozilla/gfx/Types.h";
+using mozilla::gfx::ColorDepth from "mozilla/gfx/Types.h";
+using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
+using mozilla::gfx::IntRect from "mozilla/gfx/Rect.h";
+using mozilla::gfx::IntSize from "mozilla/gfx/Point.h";
+using mozilla::ipc::SharedMemoryBasic::Handle from "mozilla/ipc/SharedMemoryBasic.h";
+using gfxImageFormat from "gfxTypes.h";
+
+namespace mozilla {
+namespace layers {
+
+struct SurfaceDescriptorFileMapping {
+  WindowsHandle handle;
+  SurfaceFormat format;
+  IntSize size;
+};
+
+struct SurfaceDescriptorDIB {
+  // gfxWindowsSurface*
+  uintptr_t surface;
+};
+
+struct SurfaceDescriptorD3D10 {
+  WindowsHandle handle;
+  SurfaceFormat format;
+  IntSize size;
+  YUVColorSpace yUVColorSpace;
+};
+
+struct SurfaceDescriptorDXGIYCbCr {
+  WindowsHandle handleY;
+  WindowsHandle handleCb;
+  WindowsHandle handleCr;
+  IntSize size;
+  IntSize sizeY;
+  IntSize sizeCbCr;
+  ColorDepth colorDepth;
+  YUVColorSpace yUVColorSpace;
+};
+
+struct SurfaceDescriptorMacIOSurface {
+  uint32_t surfaceId;
+  double scaleFactor;
+  bool isOpaque;
+  YUVColorSpace yUVColorSpace;
+};
+
+struct SurfaceTextureDescriptor {
+  uint64_t handle;
+  IntSize size;
+  SurfaceFormat format;
+  bool continuous;
+  bool ignoreTransform;
+};
+
+struct EGLImageDescriptor {
+  uintptr_t image; // `EGLImage` is a `void*`.
+  uintptr_t fence;
+  IntSize size;
+  bool hasAlpha;
+};
+
+struct SurfaceDescriptorSharedGLTexture {
+  uint32_t texture;
+  uint32_t target;
+  uintptr_t fence;
+  IntSize size;
+  bool hasAlpha;
+};
+
+
+union GPUVideoSubDescriptor {
+  SurfaceDescriptorD3D10;
+  SurfaceDescriptorDXGIYCbCr;
+  null_t;
+};
+
+struct SurfaceDescriptorGPUVideo {
+  uint64_t handle;
+  GPUVideoSubDescriptor subdesc;
+};
+
+struct RGBDescriptor {
+  IntSize size;
+  SurfaceFormat format;
+  bool hasIntermediateBuffer;
+};
+
+struct YCbCrDescriptor {
+  IntSize ySize;
+  uint32_t yStride;
+  IntSize cbCrSize;
+  uint32_t cbCrStride;
+  uint32_t yOffset;
+  uint32_t cbOffset;
+  uint32_t crOffset;
+  StereoMode stereoMode;
+  ColorDepth colorDepth;
+  YUVColorSpace yUVColorSpace;
+  bool hasIntermediateBuffer;
+};
+
+union BufferDescriptor {
+  RGBDescriptor;
+  YCbCrDescriptor;
+};
+
+union MemoryOrShmem {
+  uintptr_t;
+  Shmem;
+};
+
+struct SurfaceDescriptorBuffer {
+  BufferDescriptor desc;
+  MemoryOrShmem data;
+};
+
+struct SurfaceDescriptorShared
+{
+  IntSize size;
+  int32_t stride;
+  SurfaceFormat format;
+  Handle handle;
+};
+
+union SurfaceDescriptor {
+  SurfaceDescriptorBuffer;
+  SurfaceDescriptorDIB;
+  SurfaceDescriptorD3D10;
+  SurfaceDescriptorFileMapping;
+  SurfaceDescriptorDXGIYCbCr;
+  SurfaceDescriptorX11;
+  SurfaceTextureDescriptor;
+  EGLImageDescriptor;
+  SurfaceDescriptorMacIOSurface;
+  SurfaceDescriptorSharedGLTexture;
+  SurfaceDescriptorGPUVideo;
+  null_t;
+};
+
+} // namespace
+} // namespace

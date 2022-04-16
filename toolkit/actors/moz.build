@@ -1,0 +1,41 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+with Files('**'):
+    BUG_COMPONENT = ('Toolkit', 'General')
+
+with Files('Finder*.jsm'):
+    BUG_COMPONENT = ('Toolkit', 'Find Toolbar')
+
+with Files('KeyPressEventModelCheckerChild.jsm'):
+    BUG_COMPONENT = ('Core', 'DOM: Events')
+
+TESTING_JS_MODULES += [
+    'TestChild.jsm',
+    'TestParent.jsm',
+]
+
+FINAL_TARGET_FILES.actors += [
+    'AudioPlaybackChild.jsm',
+    'AutoplayChild.jsm',
+    'BrowserChild.jsm',
+    'ControllersChild.jsm',
+    'DateTimePickerChild.jsm',
+    'ExtFindChild.jsm',
+    'FindBarChild.jsm',
+    'FinderChild.jsm',
+    'KeyPressEventModelCheckerChild.jsm',
+    'PictureInPictureChild.jsm',
+    'PopupBlockingChild.jsm',
+    'PrintingChild.jsm',
+    'PurgeSessionHistoryChild.jsm',
+    'SelectChild.jsm',
+    'SelectionSourceChild.jsm',
+    'ThumbnailsChild.jsm',
+    'UAWidgetsChild.jsm',
+    'UnselectedTabHoverChild.jsm',
+    'WebChannelChild.jsm',
+    'WebNavigationChild.jsm',
+    'ZoomChild.jsm',
+]

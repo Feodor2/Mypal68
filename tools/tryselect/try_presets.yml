@@ -1,0 +1,87 @@
+---
+# Presets defined here will be available to all users. Run them with:
+#   $ mach try --preset <name>
+#
+# If editing this file, make sure to run:
+#   $ mach python-test tools/tryselect/test/test_presets.py
+#
+# Descriptions are required. Please keep this in alphabetical order.
+
+# yamllint disable rule:line-length
+
+debugger-tests:
+    selector: fuzzy
+    description: >-
+        Runs the tests relevant to the Firefox Devtools Debugger
+    query:
+        - "'debugger"
+        - "'mozlint-eslint"
+        - "!asan 'devtools !shippable | 'linux32 | 'macosx64"
+        - "!android !asan 'linux32 | 'macosx64 | !shippable 'mochitest-chrome"
+        - "!asan !shippable 'linux64/ 'xpcshell"
+        - "!qr !macosx !shippable 'damp"
+
+devtools:
+    selector: fuzzy
+    description: >-
+        Runs the tests relevant to the Firefox Devtools
+    query:
+        - "'debugger | 'node-devtools"
+        - "'mozlint-eslint"
+        - "'mochitest-devtools | 'mochitest-chrome 'linux64 | 'mac | 'windows10 !asan !shippable !-sw !qr"
+        - "'xpcshell 'linux64/ !asan !shippable"
+
+perf:
+    selector: fuzzy
+    description: >-
+        Runs all performance (raptor and talos) tasks across all platforms.
+        This preset can be filtered down further (e.g to limit it to a specific
+        platform) via |mach try --preset perf -xq "'windows"|.
+
+        Android hardware platforms are excluded due to resource limitations.
+    query:
+        - "^test- !android-hw 'raptor | 'talos"
+    rebuild: 5
+
+perf-chrome:
+    description: >-
+        Runs the talos tests most likely to change when making a change to
+        the browser chrome. This skips a number of talos jobs that are unlikely
+        to be affected in order to conserve resources.
+    query:
+        - "opt-talos- 'chrome | 'svg | 'session | 'tabswitch"
+    rebuild: 6
+    selector: fuzzy
+
+sample-suites:
+    selector: fuzzy
+    description: >-
+        Runs one chunk of every test suite plus all suites that aren't chunked.
+        It is useful for testing infrastructure changes that can affect the
+        harnesses themselves but are unlikely to break specific tests.
+    query:
+        - ^test- -1$
+        # Only run a single talos + raptor suite per platform
+        - ^test- !1$ !2$ !3$ !4$ !5$ !6$ !7$ !8$ !9$ !0$ !raptor !talos
+        - ^test- 'raptor-speedometer | 'talos-g1
+
+sm-shell:
+    selector: fuzzy
+    description: <-
+        Runs a set of tests aimed to give a reasonable level of confidence for
+        basic SpiderMonkey changes (shell only)
+    query:
+        - "'spidermonkey | 'shell-haz"
+        - "!shippable !android 'jittest"  # macosx64 jittests
+
+sm-all:
+    selector: fuzzy
+    description: <-
+        Runs a set of tests aimed to give a reasonable level of confidence for
+        basic SpiderMonkey changes, including those that would require a
+        browser build.
+    query:
+        - "'spidermonkey | 'hazard"
+        - "!android !asan !shippable 'xpcshell"
+        - "!android !asan !shippable 'jsreftest"
+        - "!shippable !android 'jittest"  # macosx64 jittests

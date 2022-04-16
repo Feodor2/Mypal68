@@ -1,0 +1,4 @@
+# This file is used by all Win64 builds
+
+ac_add_options --target=x86_64-pc-mingw32
+

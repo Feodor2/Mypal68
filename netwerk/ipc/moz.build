@@ -1,0 +1,72 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+EXPORTS.mozilla.net += [
+    'ChannelEventQueue.h',
+    'NeckoChild.h',
+    'NeckoCommon.h',
+    'NeckoMessageUtils.h',
+    'NeckoParent.h',
+    'NeckoTargetHolder.h',
+    'SocketProcessBridgeChild.h',
+    'SocketProcessBridgeParent.h',
+    'SocketProcessChild.h',
+    'SocketProcessHost.h',
+    'SocketProcessImpl.h',
+    'SocketProcessParent.h',
+]
+
+UNIFIED_SOURCES += [
+    'ChannelEventQueue.cpp',
+    'NeckoChild.cpp',
+    'NeckoCommon.cpp',
+    'NeckoParent.cpp',
+    'NeckoTargetHolder.cpp',
+    'SocketProcessBridgeChild.cpp',
+    'SocketProcessBridgeParent.cpp',
+    'SocketProcessChild.cpp',
+    'SocketProcessHost.cpp',
+    'SocketProcessImpl.cpp',
+    'SocketProcessParent.cpp',
+]
+
+IPDL_SOURCES = [
+    'NeckoChannelParams.ipdlh',
+    'PChannelDiverter.ipdl',
+    'PDataChannel.ipdl',
+    'PFileChannel.ipdl',
+    'PNecko.ipdl',
+    'PSimpleChannel.ipdl',
+    'PSocketProcess.ipdl',
+    'PSocketProcessBridge.ipdl'
+]
+
+# needed so --disable-webrtc builds work (yes, a bit messy)
+if not CONFIG['MOZ_WEBRTC']:
+  IPDL_SOURCES += [
+      '../../media/mtransport/ipc/PStunAddrsRequest.ipdl',
+      '../../media/mtransport/ipc/PWebrtcProxyChannel.ipdl',
+  ]
+  EXPORTS.mozilla.net += [
+      '../../media/mtransport/ipc/NrIceStunAddrMessageUtils.h',
+      '../../media/mtransport/ipc/PStunAddrsParams.h',
+  ]
+
+include('/ipc/chromium/chromium-config.mozbuild')
+
+FINAL_LIBRARY = 'xul'
+
+LOCAL_INCLUDES += [
+    '/caps',
+    '/dom/base',
+    '/media/mtransport',
+    '/media/webrtc',
+    '/modules/libjar',
+    '/netwerk/base',
+    '/netwerk/protocol/http',
+    '/xpcom/threads'
+]
+
+# Add libFuzzer configuration directives
+include('/tools/fuzzing/libfuzzer-config.mozbuild')

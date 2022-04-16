@@ -1,0 +1,51 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+GeckoProgram('gdb-tests', linkage=None)
+
+include('../js-cxxflags.mozbuild')
+
+SOURCES += [
+    # This file must not be unified with any of the test files, or the use()
+    # and breakpoint() functions might get optimized out.
+    'gdb-tests.cpp'
+]
+
+UNIFIED_SOURCES += [
+    'tests/test-asmjs.cpp',
+    'tests/test-ExecutableAllocator.cpp',
+    'tests/test-GCCellPtr.cpp',
+    'tests/test-Interpreter.cpp',
+    'tests/test-jsid.cpp',
+    'tests/test-JSObject.cpp',
+    'tests/test-JSString.cpp',
+    'tests/test-JSSymbol.cpp',
+    'tests/test-jsval.cpp',
+    'tests/test-prettyprinters.cpp',
+    'tests/test-Root.cpp',
+    'tests/test-unwind.cpp',
+    'tests/typedef-printers.cpp',
+]
+
+DEFINES['EXPORT_JS_API'] = True
+
+LOCAL_INCLUDES += [
+    '!..',
+    '..',
+]
+
+USE_LIBS += [
+    'static:js',
+]
+
+if CONFIG['ENABLE_WASM_CRANELIFT']:
+    USE_LIBS += [
+        'jsrust'
+    ]
+
+OS_LIBS += CONFIG['MOZ_ZLIB_LIBS']
+
+DEFINES['topsrcdir'] = '%s/js/src' % TOPSRCDIR
+FINAL_TARGET_PP_FILES += ['gdb-tests-gdb.py.in']
+OBJDIR_FILES.js.src.gdb += ['!/dist/bin/gdb-tests-gdb.py']

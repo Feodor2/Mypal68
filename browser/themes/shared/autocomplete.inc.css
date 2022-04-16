@@ -1,0 +1,119 @@
+%if 0
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+%endif
+
+/* General popup rules */
+
+#PopupAutoComplete > richlistbox > richlistitem {
+  height: 20px;
+  min-height: 20px;
+  border: 0;
+  border-radius: 0;
+  padding: 0px 1px 0px 1px;
+}
+
+#PopupAutoComplete > richlistbox > richlistitem > .ac-site-icon {
+  margin-inline-start: 4px;
+  margin-inline-end: 0;
+}
+
+#PopupAutoComplete > richlistbox > richlistitem > .ac-title {
+  font: icon;
+  margin-inline-start: 4px;
+}
+
+#PopupAutoComplete > richlistbox {
+  padding: 0;
+}
+
+/* Popup states */
+
+.autocomplete-richlistitem:hover {
+  background-color: var(--arrowpanel-dimmed);
+}
+
+.autocomplete-richlistitem[selected] {
+  background-color: Highlight;
+  color: HighlightText;
+}
+
+/* Login form autocompletion with and without origin showing */
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="loginWithOrigin"] > .login-wrapper > .ac-site-icon,
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="login"] > .ac-site-icon {
+  display: initial;
+  list-style-image: url(chrome://browser/skin/login.svg);
+  -moz-context-properties: fill;
+  fill: GrayText;
+}
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="loginWithOrigin"][selected] > .login-wrapper > .ac-site-icon,
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="login"] > .ac-site-icon[selected] {
+  fill: HighlightText;
+}
+
+/* Login form autocompletion with origin showing */
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="loginWithOrigin"] {
+  height: auto;
+  padding: 4px;
+}
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="loginWithOrigin"] > .login-wrapper {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  margin: 0;
+}
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="loginWithOrigin"] > .login-wrapper > .ac-site-icon {
+  margin-inline-start: auto;
+  margin-inline-end: 4px;
+}
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="loginWithOrigin"] > .login-wrapper > .login-text {
+  /* The text should flex while the icon should not */
+  flex: 1;
+  /* width/min-width are needed to get the text-overflow: ellipsis to work for the children */
+  min-width: 0;
+  width: 0;
+}
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="loginWithOrigin"] > .login-wrapper > .login-text > .login-row {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="loginWithOrigin"] > .login-wrapper > .login-text > .login-origin {
+  padding-top: 2px !important;
+  opacity: .6;
+}
+
+/* Insecure field warning */
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="insecureWarning"] {
+  background-color: var(--arrowpanel-dimmed);
+  border-bottom: 1px solid var(--panel-separator-color);
+  padding-bottom: 4px;
+  padding-top: 4px;
+}
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="insecureWarning"][selected] {
+  background-color: var(--arrowpanel-dimmed-further);
+  color: -moz-DialogText;
+}
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="insecureWarning"] > .ac-title {
+  color: GrayText;
+  font-size: 1em;
+}
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="insecureWarning"][selected] > .ac-title {
+  color: inherit;
+}
+
+#PopupAutoComplete > richlistbox > richlistitem[originaltype="insecureWarning"] > .ac-site-icon {
+  list-style-image: url(chrome://browser/skin/connection-mixed-active-loaded.svg);
+  -moz-context-properties: fill;
+  fill: GrayText;
+}

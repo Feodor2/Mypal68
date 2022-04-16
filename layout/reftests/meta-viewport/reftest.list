@@ -1,0 +1,34 @@
+default-preferences pref(dom.meta-viewport.enabled,true) pref(apz.allow_zooming,true)
+
+# These tests assume that viewport width in reftest is 800px.
+== box-shadow.html initial-scale-0_5-ref.html
+== initial-scale-0.html initial-scale-0_25-ref.html
+== initial-scale-100.html initial-scale-10-ref.html
+== no-viewport.html initial-scale-0_5-ref.html
+== viewport-width.html initial-scale-0_5-ref.html
+== initial-scale-1.html no-zoom-ref.html
+== minimum-scale.html no-zoom-ref.html
+== invalid-width.html invalid-width-ref.html
+== invalid-content.html width-980-ref.html
+== device-height-for-width.html invalid-width-ref.html
+== negative-initial-and-maximum-scale.html initial-scale-0_5-ref.html
+== no-scalable-with-minimum-scale.html no-scalable-with-minimum-scale-ref.html
+== clamped-by-default-minimum-scale.html initial-scale-0_25-ref.html
+
+skip-if(!Android) == position-fixed-on-minimum-scale-size.html position-fixed-on-minimum-scale-size-ref.html
+== position-fixed-out-of-view.html about:blank
+
+# Skip below tests on Windows (bug 1516322) on Webrender (bug 1520096)
+skip-if(winWidget||webrender) == overflow-region.html overflow-region-ref.html
+skip-if(winWidget||webrender) == overflow-hidden-region.html overflow-region-ref.html
+skip-if(winWidget||webrender) == overflow-hidden-region-with-negative-left-positioned-element.html overflow-region-ref.html
+skip-if(winWidget||webrender) fails == horizontal-overflow-hidden-region.html horizontal-overflow-hidden-region-ref.html # bug 1508177
+skip-if(winWidget||webrender) == vertical-overflow-hidden-region.html about:blank
+skip-if(winWidget||webrender) == scroll-to-unreachable-area.html scroll-to-unreachable-area-ref.html
+skip-if(winWidget||webrender) == wrapped-text-at-icb.html wrapped-text-at-icb-ref.html
+skip-if(winWidget||webrender) == overflow-hidden-region-dynamic-width-change.html overflow-region-ref.html
+skip-if(winWidget||webrender) == remove-overflow-hidden-region.html remove-overflow-hidden-region-ref.html
+skip-if(winWidget||webrender) fails == dynamic-grow-width.html horizontal-overflow-hidden-region-ref.html # bug 1508177
+skip-if(winWidget||webrender) == dynamic-grow-width-and-height.html overflow-region-ref.html
+skip-if(winWidget||webrender) == not-able-to-scrollTo.html about:blank
+skip-if(winWidget||webrender) == min-scale-aspect-ratio.html about:blank

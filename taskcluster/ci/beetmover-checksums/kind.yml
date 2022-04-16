@@ -1,0 +1,30 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+loader: taskgraph.loader.single_dep:loader
+
+transforms:
+    - taskgraph.transforms.name_sanity:transforms
+    - taskgraph.transforms.beetmover_checksums:transforms
+    - taskgraph.transforms.task:transforms
+
+kind-dependencies:
+    - checksums-signing
+
+only-for-attributes:
+    - nightly
+    - shippable
+
+job-template:
+    shipping-phase: promote
+    attributes:
+        artifact_prefix: public
+        artifact_map:
+            by-platform:
+                android-(aarch64|api-16|x86|x86_64)-(beta|release): taskcluster/taskgraph/manifests/fennec_candidates_checksums.yml
+                android-(aarch64|api-16|x86|x86_64)-nightly: taskcluster/taskgraph/manifests/fennec_nightly_checksums.yml
+                default:
+                    by-release-type:
+                        beta|release.*|esr.*: taskcluster/taskgraph/manifests/firefox_candidates_checksums.yml
+                        default: taskcluster/taskgraph/manifests/firefox_nightly_checksums.yml

@@ -1,0 +1,94 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+#include "nsIStreamListener.idl"
+#include "nsIHttpChannel.idl"
+
+interface nsIRemoteTab;
+
+%{C++
+namespace mozilla {
+namespace net {
+class HttpChannelParentListener;
+}
+}
+%}
+
+[ptr] native HttpChannelParentListener(mozilla::net::HttpChannelParentListener);
+
+/**
+ * Implemented by chrome side of IPC protocols.
+ */
+
+[scriptable, uuid(e0fc4801-6030-4653-a59f-1fb282bd1a04)]
+interface nsIParentChannel : nsIStreamListener
+{
+  /**
+   * Called to set the HttpChannelParentListener object (optional).
+   */
+  [noscript] void setParentListener(in HttpChannelParentListener listener);
+
+  /**
+   * Called to notify the HttpChannelChild that channel classifier protection
+   * was disabled for this load.
+   */
+  [noscript] void notifyChannelClassifierProtectionDisabled(in uint32_t aAcceptedReason);
+
+  /**
+   * Called to notify the HttpChannelChild that cookie has been allowed for
+   * this load.
+   */
+  [noscript] void notifyCookieAllowed();
+
+  /**
+   * Called to notify the HttpChannelChild that cookie has been blocked for
+   * this load.
+   */
+  [noscript] void notifyCookieBlocked(in uint32_t aRejectedReason);
+
+  /**
+   * Called to notify the HttpChannelChild that flash plugin state has changed.
+   */
+  [noscript] void notifyFlashPluginStateChanged(in nsIHttpChannel_FlashPluginState aState);
+
+   /**
+   * Called to set matched information when URL matches SafeBrowsing list.
+   * @param aList
+   *        Name of the list that matched
+   * @param aProvider
+   *        Name of provider that matched
+   * @param aFullHash
+   *        String represents full hash that matched
+   */
+  [noscript] void setClassifierMatchedInfo(in ACString aList,
+                                           in ACString aProvider,
+                                           in ACString aFullHash);
+
+   /**
+   * Called to set matched tracking information when URL matches tracking annotation list.
+   * @param aList
+   *        Comma-separated list of tables that matched
+   * @param aFullHashes
+   *        Comma-separated list of base64 encoded full hashes that matched
+   */
+  [noscript] void setClassifierMatchedTrackingInfo(in ACString aLists,
+                                                   in ACString aFullHashes);
+
+  /**
+   * Called to notify the HttpChannelChild that the resource being loaded
+   * has been classified.
+   * @param aClassificationFlags
+   *        What classifier identifies this channel.
+   * @param aIsThirdParty
+   *        Whether or not the resourced is considered first-party
+   *        with the URI of the window.
+   */
+  [noscript] void notifyClassificationFlags(in uint32_t aClassificationFlags,
+                                            in bool aIsThirdParty);
+
+  /**
+   * Called to invoke deletion of the IPC protocol.
+   */
+  void delete();
+};

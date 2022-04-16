@@ -1,0 +1,50 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+/* ===== menulist.css ===================================================
+   == Styles used by the XUL menulist element.
+   ====================================================================== */
+
+@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@namespace html url("http://www.w3.org/1999/xhtml");
+
+/* :::::::::: menulist :::::::::: */
+
+menulist {
+  -moz-appearance: menulist;
+  margin: 2px 4px;
+  color: -moz-DialogText;
+  font: menu;
+  text-shadow: none;
+}
+
+.menulist-label-box {
+  -moz-appearance: menulist-text;
+  -moz-box-align: center;
+  -moz-box-pack: center;
+  color: inherit;
+}
+
+.menulist-label {
+  margin: 1px 3px !important;
+}
+
+.menulist-dropmarker {
+  display: none;
+}
+
+menulist:hover {
+  color: -moz-buttonhovertext;
+}
+
+menulist:hover:active,
+menulist[open="true"] {
+  color: -moz-gtk-buttonactivetext;
+}
+
+menulist[disabled="true"],
+menulist[disabled="true"]:hover,
+menulist[disabled="true"]:hover:active {
+  color: GrayText;
+}

@@ -1,0 +1,71 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+if CONFIG['OS_ARCH'] in ('Darwin', 'Linux'):
+    DIRS += ['dwarf']
+
+UNIFIED_SOURCES += [
+    'convert_UTF.c',
+    'string_conversion.cc',
+]
+
+if CONFIG['OS_ARCH'] == 'Darwin':
+    UNIFIED_SOURCES += [
+        'md5.cc',
+    ]
+
+if CONFIG['OS_ARCH'] == 'Linux':
+    HOST_DEFINES['HAVE_A_OUT_H'] = True
+elif CONFIG['OS_ARCH'] == 'Darwin':
+    HOST_DEFINES['HAVE_MACH_O_NLIST_H'] = True
+    HOST_SOURCES += [
+        'stabs_reader.cc',
+        'stabs_to_module.cc',
+    ]
+    if CONFIG['HOST_OS_ARCH'] != 'Darwin':
+        HOST_CXXFLAGS += [
+            '-I%s/toolkit/crashreporter/google-breakpad/src/third_party/mac_headers/' % TOPSRCDIR,
+        ]
+
+if CONFIG['OS_ARCH'] != 'WINNT':
+    HOST_SOURCES += [
+        'arm_ex_reader.cc',
+        'arm_ex_to_module.cc',
+        'convert_UTF.c',
+        'dwarf_cfi_to_module.cc',
+        'dwarf_cu_to_module.cc',
+        'dwarf_line_to_module.cc',
+        'dwarf_range_list_handler.cc',
+        'language.cc',
+        'md5.cc',
+        'module.cc',
+        'path_helper.cc',
+        'string_conversion.cc',
+    ]
+    if CONFIG['OS_ARCH'] == 'Darwin':
+        HOST_CXXFLAGS += [
+            '-stdlib=libc++',
+        ]
+    HOST_CXXFLAGS += [
+        '-O2',
+        '-g',
+    ]
+    HOST_DEFINES['HAVE_RUST_DEMANGLE'] = True
+    LOCAL_INCLUDES += [
+        '/toolkit/crashreporter/rust',
+    ]
+    HostLibrary('host_breakpad_common_s')
+
+if CONFIG['OS_TARGET'] == 'Android':
+    # We don't support unifying assembly files.
+    SOURCES += [
+        'android/breakpad_getcontext.S',
+    ]
+    LOCAL_INCLUDES += [
+        '/toolkit/crashreporter/google-breakpad/src/common/android/include',
+    ]
+
+Library('breakpad_common_s')
+
+include('/toolkit/crashreporter/crashreporter.mozbuild')

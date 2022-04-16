@@ -1,0 +1,34 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+---
+job-defaults:
+    platform: lint/opt
+    treeherder:
+        kind: test
+        tier: 1
+    worker-type: t-linux-xlarge
+    worker:
+        docker-image: {in-tree: "lint"}
+        max-run-time: 1800
+
+bugzilla-components:
+    description: Generate metadata about source files and Bugzilla
+    treeherder:
+        symbol: Bugzilla
+    index:
+        product: source
+        job-name: source-bugzilla-info
+    run:
+        using: mach
+        mach: file-info bugzilla-automation /builds/worker/artifacts
+    worker:
+        artifacts:
+            - type: directory
+              path: /builds/worker/artifacts
+              name: public
+        max-run-time: 2700
+    run-on-projects: ['mozilla-central']
+    when:
+        files-changed:
+            - '**'

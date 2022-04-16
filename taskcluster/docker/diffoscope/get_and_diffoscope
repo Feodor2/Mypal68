@@ -1,0 +1,93 @@
+#!/bin/bash
+
+set -e
+set -x
+
+cd /builds/worker
+
+mkdir a b
+
+# Until https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=879010 is
+# implemented, it's better to first manually extract the data.
+# Plus dmg files are not supported yet.
+
+# duplicate the functionality of taskcluster-lib-urls, but in bash..
+if [ "$TASKCLUSTER_ROOT_URL" = "https://taskcluster.net" ]; then
+    queue_base='https://queue.taskcluster.net/v1'
+else
+    queue_base="$TASKCLUSTER_ROOT_URL/api/queue/v1"
+fi
+
+case "$ORIG_URL" in
+*/target.zip|*/target.apk)
+	curl -L "$ORIG_URL" > a.zip
+	curl -L "$NEW_URL" > b.zip
+	unzip -d a a.zip
+	unzip -d b b.zip
+	;;
+*/target.tar.bz2)
+	curl -L "$ORIG_URL" | tar -C a -jxf -
+	curl -L "$NEW_URL" | tar -C b -jxf -
+	;;
+*/target.dmg)
+	# We don't have mach available to call mach artifact toolchain.
+	# This is the trivial equivalent for those toolchains we use here.
+	for t in $MOZ_TOOLCHAINS; do
+		curl -L $queue_base/task/${t#*@}/artifacts/${t%@*} | tar -Jxf -
+	done
+	for tool in lipo otool; do
+		ln -s /builds/worker/cctools/bin/x86_64-darwin*-$tool bin/$tool
+	done
+	export PATH=$PATH:/builds/worker/bin
+	curl -L "$ORIG_URL" > a.dmg
+	curl -L "$NEW_URL" > b.dmg
+	for i in a b; do
+		dmg/dmg extract $i.dmg $i.hfs
+		dmg/hfsplus $i.hfs extractall / $i
+	done
+	;;
+esac
+
+case "$ORIG_URL" in
+*/target.apk)
+	OMNIJAR=assets/omni.ja
+	;;
+*)
+	OMNIJAR=omni.ja
+	;;
+esac
+
+# Builds are 99% of the time differing in some small ways, so it's not
+# really useful to report a failure (at least not until we actually
+# care about the builds being 100% identical).
+POST=true
+
+for option; do
+	case "$option" in
+	--unpack)
+		CURDIR=$PWD
+		for dir in a b; do
+			# Need to run mach python from inside the gecko source.
+			# See bug #1533642.
+			(cd $GECKO_PATH && ./mach python toolkit/mozapps/installer/unpack.py --omnijar $OMNIJAR $CURDIR/$dir)
+		done
+		;;
+	--fail)
+		POST="exit 1"
+		;;
+	*)
+		echo "Unsupported option: $option" >&2
+		exit 1
+	esac
+done
+
+if [ -n "$PRE_DIFF" ]; then
+	eval $PRE_DIFF
+fi
+
+diffoscope \
+	--html diff.html \
+	--text diff.txt \
+	--progress \
+	$DIFFOSCOPE_ARGS \
+	a b || $POST

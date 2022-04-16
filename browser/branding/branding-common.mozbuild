@@ -1,0 +1,26 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+@template
+def FirefoxBranding():
+    JS_PREFERENCE_FILES += [
+        'pref/mypal-branding.js',
+    ]
+
+    if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
+        FINAL_TARGET_FILES['..'] += [
+            'mypal.VisualElementsManifest.xml',
+        ]
+        FINAL_TARGET_FILES.VisualElements += [
+            'VisualElements_150.png',
+            'VisualElements_70.png',
+        ]
+    elif 'gtk' in CONFIG['MOZ_WIDGET_TOOLKIT']:
+        FINAL_TARGET_FILES.chrome.icons.default += [
+            'default128.png',
+            'default16.png',
+            'default32.png',
+            'default48.png',
+            'default64.png',
+        ]

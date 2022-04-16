@@ -1,0 +1,22 @@
+include protocol PTestEndpointBridgeMain;
+include protocol PTestEndpointBridgeSub;
+
+namespace mozilla {
+namespace _ipdltest {
+
+// (Bridge protocols can have different semantics than the endpoints
+// they bridge)
+intr protocol PTestEndpointBridgeMainSub {
+child:
+  async Hi();
+  intr HiRpc();
+
+parent:
+  async Hello();
+  sync HelloSync();
+  intr HelloRpc();
+};
+
+
+} // namespace mozilla
+} // namespace _ipdltest

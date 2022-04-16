@@ -1,0 +1,51 @@
+:host([checked]) {
+  --icon: url("chrome://global/skin/icons/check.svg");
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+button {
+  background-color: transparent;
+  color: inherit;
+  background-image: var(--icon);
+  background-position: 16px center;
+  background-repeat: no-repeat;
+  background-size: 16px;
+  border: none;
+  position: relative;
+  display: block;
+  font-size: inherit;
+  padding: 4px 40px;
+  padding-inline-end: 12px;
+  text-align: start;
+  width: 100%;
+}
+
+button:dir(rtl) {
+  background-position: right 16px center;
+}
+
+:host([badged]) button::after {
+  content: "";
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--blue-50);
+  position: absolute;
+  top: 4px;
+  left: 28px;
+}
+
+button:focus,
+button:enabled:hover {
+  background-color: var(--in-content-button-background);
+}
+
+button:enabled:hover:active {
+  background-color: var(--in-content-button-background-hover);
+}
+
+button:disabled {
+  opacity: 0.4;
+}

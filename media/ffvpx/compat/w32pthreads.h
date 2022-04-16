@@ -28,6 +28,7 @@
 
 #ifndef COMPAT_W32PTHREADS_H
 #define COMPAT_W32PTHREADS_H
+#define _WIN32_WINNT 0x0501
 
 /* Build up a pthread-like API using underlying Windows API. Have only static
  * methods so as to not conflict with a potentially linked in pthread-win32

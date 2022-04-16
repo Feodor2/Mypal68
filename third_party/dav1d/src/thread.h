@@ -28,9 +28,17 @@
 #ifndef DAV1D_SRC_THREAD_H
 #define DAV1D_SRC_THREAD_H
 
+#if defined(__GNUC__) || defined(__clang__)
+#    define dav_unused __attribute__((unused))
+#else
+#    define dav_unused
+#endif
+
+
 #if defined(_WIN32)
 
 #include <windows.h>
+#include <malloc.h>
 
 #define PTHREAD_ONCE_INIT INIT_ONCE_STATIC_INIT
 
@@ -82,48 +90,150 @@ static inline int pthread_attr_setstacksize(pthread_attr_t *const attr,
 static inline int pthread_mutex_init(pthread_mutex_t *const mutex,
                                      const void *const attr)
 {
-//    InitializeSRWLock(mutex);
+    InitializeCriticalSection(mutex);
     return 0;
 }
 
 static inline int pthread_mutex_destroy(pthread_mutex_t *const mutex) {
+    DeleteCriticalSection(mutex);
     return 0;
 }
 
 static inline int pthread_mutex_lock(pthread_mutex_t *const mutex) {
-//    AcquireSRWLockExclusive(mutex);
+    EnterCriticalSection(mutex);
     return 0;
 }
 
 static inline int pthread_mutex_unlock(pthread_mutex_t *const mutex) {
-//    ReleaseSRWLockExclusive(mutex);
+    LeaveCriticalSection(mutex);
     return 0;
 }
+
+typedef struct  win32_cond_t {
+    pthread_mutex_t mtx_broadcast;
+    pthread_mutex_t mtx_waiter_count;
+    volatile int waiter_count;
+    HANDLE semaphore;
+    HANDLE waiters_done;
+    volatile int is_broadcast;
+} win32_cond_t;
 
 static inline int pthread_cond_init(pthread_cond_t *const cond,
                                     const void *const attr)
 {
-//    InitializeConditionVariable(cond);
+
+    win32_cond_t *win32_cond = NULL;
+
+    win32_cond = _aligned_malloc(sizeof(win32_cond_t), 16);
+    if (win32_cond)
+        memset(win32_cond, 0, sizeof(win32_cond_t));
+    else
+        return ENOMEM;
+    cond->Ptr = win32_cond;
+    win32_cond->semaphore = CreateSemaphore(NULL, 0, 0x7fffffff, NULL);
+    if (!win32_cond->semaphore)
+        return ENOMEM;
+    win32_cond->waiters_done = CreateEvent(NULL, TRUE, FALSE, NULL);
+    if (!win32_cond->waiters_done)
+        return ENOMEM;
+
+    pthread_mutex_init(&win32_cond->mtx_waiter_count, NULL);
+    pthread_mutex_init(&win32_cond->mtx_broadcast, NULL);
     return 0;
 }
 
 static inline int pthread_cond_destroy(pthread_cond_t *const cond) {
+    win32_cond_t *win32_cond = (win32_cond_t*)cond->Ptr;
+
+    /* non native condition variables */
+    CloseHandle(win32_cond->semaphore);
+    CloseHandle(win32_cond->waiters_done);
+    pthread_mutex_destroy(&win32_cond->mtx_waiter_count);
+    pthread_mutex_destroy(&win32_cond->mtx_broadcast);
+
+    void *val;
+
+    memcpy(&val, &win32_cond, sizeof(val));
+    memcpy(&win32_cond, &(void *){ NULL }, sizeof(val));
+    _aligned_free(val);
+
+    cond->Ptr = NULL;
     return 0;
 }
 
 static inline int pthread_cond_wait(pthread_cond_t *const cond,
                                     pthread_mutex_t *const mutex)
 {
-//    return !SleepConditionVariableSRW(cond, mutex, INFINITE, 0);
+    win32_cond_t *win32_cond = (win32_cond_t*)cond->Ptr;
+    int last_waiter;
+
+    /* non native condition variables */
+    pthread_mutex_lock(&win32_cond->mtx_broadcast);
+    pthread_mutex_lock(&win32_cond->mtx_waiter_count);
+    win32_cond->waiter_count++;
+    pthread_mutex_unlock(&win32_cond->mtx_waiter_count);
+    pthread_mutex_unlock(&win32_cond->mtx_broadcast);
+
+    // unlock the external mutex
+    pthread_mutex_unlock(mutex);
+    WaitForSingleObject(win32_cond->semaphore, INFINITE);
+
+    pthread_mutex_lock(&win32_cond->mtx_waiter_count);
+    win32_cond->waiter_count--;
+    last_waiter = !win32_cond->waiter_count || !win32_cond->is_broadcast;
+    pthread_mutex_unlock(&win32_cond->mtx_waiter_count);
+
+    if (last_waiter)
+        SetEvent(win32_cond->waiters_done);
+
+    // lock the external mutex
+    return pthread_mutex_lock(mutex);
 }
 
 static inline int pthread_cond_signal(pthread_cond_t *const cond) {
-//    WakeConditionVariable(cond);
+    win32_cond_t *win32_cond = (win32_cond_t*)cond->Ptr;
+    int have_waiter;
+
+    pthread_mutex_lock(&win32_cond->mtx_broadcast);
+
+    /* non-native condition variables */
+    pthread_mutex_lock(&win32_cond->mtx_waiter_count);
+    have_waiter = win32_cond->waiter_count;
+    pthread_mutex_unlock(&win32_cond->mtx_waiter_count);
+
+    if (have_waiter) {
+        ReleaseSemaphore(win32_cond->semaphore, 1, NULL);
+        WaitForSingleObject(win32_cond->waiters_done, INFINITE);
+        ResetEvent(win32_cond->waiters_done);
+    }
+
+    pthread_mutex_unlock(&win32_cond->mtx_broadcast);
     return 0;
 }
 
 static inline int pthread_cond_broadcast(pthread_cond_t *const cond) {
-//    WakeAllConditionVariable(cond);
+    win32_cond_t *win32_cond = (win32_cond_t*)cond->Ptr;
+    int have_waiter;
+
+    /* non native condition variables */
+    pthread_mutex_lock(&win32_cond->mtx_broadcast);
+    pthread_mutex_lock(&win32_cond->mtx_waiter_count);
+    have_waiter = 0;
+
+    if (win32_cond->waiter_count) {
+        win32_cond->is_broadcast = 1;
+        have_waiter = 1;
+    }
+
+    if (have_waiter) {
+        ReleaseSemaphore(win32_cond->semaphore, win32_cond->waiter_count, NULL);
+        pthread_mutex_unlock(&win32_cond->mtx_waiter_count);
+        WaitForSingleObject(win32_cond->waiters_done, INFINITE);
+        ResetEvent(win32_cond->waiters_done);
+        win32_cond->is_broadcast = 0;
+    } else
+        pthread_mutex_unlock(&win32_cond->mtx_waiter_count);
+    pthread_mutex_unlock(&win32_cond->mtx_broadcast);
     return 0;
 }
 

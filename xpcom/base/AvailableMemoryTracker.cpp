@@ -6,7 +6,6 @@
 
 #if defined(XP_WIN)
 #  include "nsExceptionHandler.h"
-#  include "nsICrashReporter.h"
 #  include "nsIMemoryReporter.h"
 #  include "nsMemoryPressure.h"
 #endif
@@ -175,18 +174,6 @@ void nsAvailableMemoryWatcher::SendMemoryPressureEvent() {
   NS_DispatchEventualMemoryPressure(state);
 }
 
-void nsAvailableMemoryWatcher::MaybeSaveMemoryReport() {
-  if (!mSavedReport && OngoingMemoryPressure()) {
-    nsCOMPtr<nsICrashReporter> cr =
-        do_GetService("@mozilla.org/toolkit/crash-reporter;1");
-    if (cr) {
-      if (NS_SUCCEEDED(cr->SaveMemoryReport())) {
-        mSavedReport = true;
-      }
-    }
-  }
-}
-
 void nsAvailableMemoryWatcher::AdjustPollingInterval(const bool aLowMemory) {
   if (aLowMemory) {
     // We entered a low-memory state, wait for a longer interval before polling
@@ -214,7 +201,6 @@ nsAvailableMemoryWatcher::Notify(nsITimer* aTimer) {
 
     if (lowMemory) {
       SendMemoryPressureEvent();
-      MaybeSaveMemoryReport();
     } else {
       mSavedReport = false;  // Save a new report if memory gets low again
     }

@@ -24,7 +24,8 @@ D3dDevice::D3dDevice(D3dDevice&& other) = default;
 D3dDevice::~D3dDevice() = default;
 
 bool D3dDevice::Initialize(const ComPtr<IDXGIAdapter>& adapter) {
-  dxgi_adapter_ = adapter;
+  return false;
+  /*dxgi_adapter_ = adapter;
   if (!dxgi_adapter_) {
     RTC_LOG(LS_WARNING) << "An empty IDXGIAdapter instance has been received.";
     return false;
@@ -63,18 +64,18 @@ bool D3dDevice::Initialize(const ComPtr<IDXGIAdapter>& adapter) {
     return false;
   }
 
-  return true;
+  return true;*/
 }
 
 // static
 std::vector<D3dDevice> D3dDevice::EnumDevices() {
   ComPtr<IDXGIFactory1> factory;
-  _com_error error = CreateDXGIFactory1(__uuidof(IDXGIFactory1),
+  /*_com_error error = CreateDXGIFactory1(__uuidof(IDXGIFactory1),
       reinterpret_cast<void**>(factory.GetAddressOf()));
-  if (error.Error() != S_OK || !factory) {
+  if (error.Error() != S_OK || !factory) {*/
     RTC_LOG(LS_WARNING) << "Cannot create IDXGIFactory1.";
     return std::vector<D3dDevice>();
-  }
+  /*}
 
   std::vector<D3dDevice> result;
   for (int i = 0;; i++) {
@@ -94,7 +95,7 @@ std::vector<D3dDevice> D3dDevice::EnumDevices() {
           << error.ErrorMessage() << " with code " << error.Error();
     }
   }
-  return result;
+  return result;*/
 }
 
 }  // namespace webrtc

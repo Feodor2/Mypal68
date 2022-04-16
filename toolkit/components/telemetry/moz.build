@@ -78,7 +78,7 @@ SOURCES += [
     'geckoview/TelemetryGeckoViewPersistence.cpp',
     'other/CombinedStacks.cpp',
     'other/ProcessedStack.cpp',
-    'other/TelemetryIOInterposeObserver.cpp',
+    #'other/TelemetryIOInterposeObserver.cpp',
     'other/WebrtcTelemetry.cpp',
 ]
 

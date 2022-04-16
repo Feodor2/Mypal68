@@ -11,7 +11,7 @@
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/quota/QuotaObject.h"
 #include "mozilla/net/IOActivityMonitor.h"
-#include "mozilla/IOInterposer.h"
+//#include "mozilla/IOInterposer.h"
 #include "nsEscape.h"
 
 // The last VFS version for which this file has been updated.
@@ -85,8 +85,8 @@ class IOThreadAutoTimer {
    * either "sqlite-mainthread" or "sqlite-otherthread".
    */
   explicit IOThreadAutoTimer(
-      Telemetry::HistogramID aId,
-      IOInterposeObserver::Operation aOp = IOInterposeObserver::OpNone)
+      Telemetry::HistogramID aId)//,
+      //IOInterposeObserver::Operation aOp = IOInterposeObserver::OpNone)
       : start(TimeStamp::Now()),
         id(aId)
 #if defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN)
@@ -102,7 +102,7 @@ class IOThreadAutoTimer {
    *
    * @param aOp IO Operation to report through the IOInterposer.
    */
-  explicit IOThreadAutoTimer(IOInterposeObserver::Operation aOp)
+  explicit IOThreadAutoTimer()//IOInterposeObserver::Operation aOp)
       : start(TimeStamp::Now()),
         id(Telemetry::HistogramCount)
 #if defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN)
@@ -123,7 +123,7 @@ class IOThreadAutoTimer {
     // mechanism for intercepting I/O on that platform that captures a superset
     // of the data captured here.
 #if defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN)
-    if (IOInterposer::IsObservedOperation(op)) {
+    /*if (IOInterposer::IsObservedOperation(op)) {
       const char* main_ref = "sqlite-mainthread";
       const char* other_ref = "sqlite-otherthread";
 
@@ -132,7 +132,7 @@ class IOThreadAutoTimer {
                                           (mainThread ? main_ref : other_ref));
       // Report observation
       IOInterposer::Report(ob);
-    }
+    }*/
 #endif /* defined(MOZ_GECKO_PROFILER) && !defined(XP_WIN) */
   }
 
@@ -367,7 +367,7 @@ int xClose(sqlite3_file* pFile) {
   telemetry_file* p = (telemetry_file*)pFile;
   int rc;
   {  // Scope for IOThreadAutoTimer
-    IOThreadAutoTimer ioTimer(IOInterposeObserver::OpClose);
+    //IOThreadAutoTimer ioTimer(IOInterposeObserver::OpClose);
     rc = p->pReal->pMethods->xClose(p->pReal);
   }
   if (rc == SQLITE_OK) {
@@ -387,7 +387,7 @@ int xClose(sqlite3_file* pFile) {
 */
 int xRead(sqlite3_file* pFile, void* zBuf, int iAmt, sqlite_int64 iOfst) {
   telemetry_file* p = (telemetry_file*)pFile;
-  IOThreadAutoTimer ioTimer(p->histograms->readMS, IOInterposeObserver::OpRead);
+  //IOThreadAutoTimer ioTimer(p->histograms->readMS);
   int rc;
   rc = p->pReal->pMethods->xRead(p->pReal, zBuf, iAmt, iOfst);
   if (rc == SQLITE_OK && IOActivityMonitor::IsActive()) {
@@ -403,7 +403,7 @@ int xRead(sqlite3_file* pFile, void* zBuf, int iAmt, sqlite_int64 iOfst) {
 ** Return the current file-size of a telemetry_file.
 */
 int xFileSize(sqlite3_file* pFile, sqlite_int64* pSize) {
-  IOThreadAutoTimer ioTimer(IOInterposeObserver::OpStat);
+  //IOThreadAutoTimer ioTimer(IOInterposeObserver::OpStat);
   telemetry_file* p = (telemetry_file*)pFile;
   int rc;
   rc = p->pReal->pMethods->xFileSize(p->pReal, pSize);
@@ -416,8 +416,8 @@ int xFileSize(sqlite3_file* pFile, sqlite_int64* pSize) {
 int xWrite(sqlite3_file* pFile, const void* zBuf, int iAmt,
            sqlite_int64 iOfst) {
   telemetry_file* p = (telemetry_file*)pFile;
-  IOThreadAutoTimer ioTimer(p->histograms->writeMS,
-                            IOInterposeObserver::OpWrite);
+  /*IOThreadAutoTimer ioTimer(p->histograms->writeMS,
+                            IOInterposeObserver::OpWrite);*/
   int rc;
   if (p->quotaObject) {
     MOZ_ASSERT(INT64_MAX - iOfst >= iAmt);
@@ -488,8 +488,8 @@ int xTruncate(sqlite3_file* pFile, sqlite_int64 size) {
 */
 int xSync(sqlite3_file* pFile, int flags) {
   telemetry_file* p = (telemetry_file*)pFile;
-  IOThreadAutoTimer ioTimer(p->histograms->syncMS,
-                            IOInterposeObserver::OpFSync);
+  /*IOThreadAutoTimer ioTimer(p->histograms->syncMS,
+                            IOInterposeObserver::OpFSync);*/
   return p->pReal->pMethods->xSync(p->pReal, flags);
 }
 
@@ -626,8 +626,8 @@ int xUnfetch(sqlite3_file* pFile, sqlite3_int64 iOff, void* pResOut) {
 
 int xOpen(sqlite3_vfs* vfs, const char* zName, sqlite3_file* pFile, int flags,
           int* pOutFlags) {
-  IOThreadAutoTimer ioTimer(Telemetry::MOZ_SQLITE_OPEN_MS,
-                            IOInterposeObserver::OpCreateOrOpen);
+  /*IOThreadAutoTimer ioTimer(Telemetry::MOZ_SQLITE_OPEN_MS,
+                            IOInterposeObserver::OpCreateOrOpen);*/
   Telemetry::AutoTimer<Telemetry::MOZ_SQLITE_OPEN_MS> timer;
   sqlite3_vfs* orig_vfs = static_cast<sqlite3_vfs*>(vfs->pAppData);
   int rc;

@@ -13,7 +13,7 @@
 #include "mozilla/FilePreferences.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/CmdLineAndEnvUtils.h"
-#include "mozilla/IOInterposer.h"
+//#include "mozilla/IOInterposer.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MemoryChecking.h"
 #include "mozilla/Poison.h"
@@ -22,7 +22,7 @@
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
-#include "mozilla/Telemetry.h"
+//#include "mozilla/Telemetry.h"
 #include "mozilla/intl/LocaleService.h"
 #include "mozilla/recordreplay/ParentIPC.h"
 #include "mozilla/JSONWriter.h"
@@ -157,7 +157,7 @@
 #include "nsINIParser.h"
 #include "mozilla/Omnijar.h"
 #include "mozilla/StartupTimeline.h"
-#include "mozilla/LateWriteChecks.h"
+//#include "mozilla/LateWriteChecks.h"
 
 #include <stdlib.h>
 #include <locale.h>
@@ -208,8 +208,6 @@
 #endif
 
 #include "nsExceptionHandler.h"
-#include "nsICrashReporter.h"
-#define NS_CRASHREPORTER_CONTRACTID "@mozilla.org/toolkit/crash-reporter;1"
 #include "nsIPrefService.h"
 #include "nsIMemoryInfoDumper.h"
 #if defined(XP_LINUX) && !defined(ANDROID)
@@ -246,11 +244,6 @@ extern void InstallSignalHandlers(const char* ProgramName);
 #define FILE_COMPATIBILITY_INFO NS_LITERAL_CSTRING("compatibility.ini")
 #define FILE_INVALIDATE_CACHES NS_LITERAL_CSTRING(".purgecaches")
 #define FILE_STARTUP_INCOMPLETE NS_LITERAL_STRING(".startup-incomplete")
-
-#if defined(MOZ_BLOCK_PROFILE_DOWNGRADE) || defined(MOZ_LAUNCHER_PROCESS)
-static const char kPrefHealthReportUploadEnabled[] =
-    "datareporting.healthreport.uploadEnabled";
-#endif  // defined(MOZ_BLOCK_PROFILE_DOWNGRADE) || defined(MOZ_LAUNCHER_PROCESS)
 
 int gArgc;
 char** gArgv;
@@ -442,8 +435,6 @@ class nsXULAppInfo : public nsIXULAppInfo,
 #ifdef XP_WIN
                      public nsIWinAppHelper,
 #endif
-                     public nsICrashReporter,
-                     public nsIFinishDumpingCallback,
                      public nsIXULRuntime
 
 {
@@ -454,8 +445,6 @@ class nsXULAppInfo : public nsIXULAppInfo,
   NS_DECL_NSIXULAPPINFO
   NS_DECL_NSIXULRUNTIME
   NS_DECL_NSIOBSERVER
-  NS_DECL_NSICRASHREPORTER
-  NS_DECL_NSIFINISHDUMPINGCALLBACK
 #ifdef XP_WIN
   NS_DECL_NSIWINAPPHELPER
 #endif
@@ -468,8 +457,6 @@ NS_INTERFACE_MAP_BEGIN(nsXULAppInfo)
 #ifdef XP_WIN
   NS_INTERFACE_MAP_ENTRY(nsIWinAppHelper)
 #endif
-  NS_INTERFACE_MAP_ENTRY(nsICrashReporter)
-  NS_INTERFACE_MAP_ENTRY(nsIFinishDumpingCallback)
   NS_INTERFACE_MAP_ENTRY(nsIPlatformInfo)
   NS_INTERFACE_MAP_ENTRY_CONDITIONAL(nsIXULAppInfo,
                                      gAppData || XRE_IsContentProcess())
@@ -944,245 +931,6 @@ nsXULAppInfo::GetUserCanElevate(bool* aUserCanElevate) {
 }
 #endif
 
-NS_IMETHODIMP
-nsXULAppInfo::GetEnabled(bool* aEnabled) {
-  *aEnabled = CrashReporter::GetEnabled();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::SetEnabled(bool aEnabled) {
-  if (aEnabled) {
-    if (CrashReporter::GetEnabled()) {
-      // no point in erroring for double-enabling
-      return NS_OK;
-    }
-
-    nsCOMPtr<nsIFile> greBinDir;
-    NS_GetSpecialDirectory(NS_GRE_BIN_DIR, getter_AddRefs(greBinDir));
-    if (!greBinDir) {
-      return NS_ERROR_FAILURE;
-    }
-
-    nsCOMPtr<nsIFile> xreBinDirectory = greBinDir;
-    if (!xreBinDirectory) {
-      return NS_ERROR_FAILURE;
-    }
-
-    return CrashReporter::SetExceptionHandler(xreBinDirectory, true);
-  }
-
-  if (!CrashReporter::GetEnabled()) {
-    // no point in erroring for double-disabling
-    return NS_OK;
-  }
-
-  return CrashReporter::UnsetExceptionHandler();
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::GetServerURL(nsIURL** aServerURL) {
-  NS_ENSURE_ARG_POINTER(aServerURL);
-  if (!CrashReporter::GetEnabled()) return NS_ERROR_NOT_INITIALIZED;
-
-  nsAutoCString data;
-  if (!CrashReporter::GetServerURL(data)) {
-    return NS_ERROR_FAILURE;
-  }
-  nsCOMPtr<nsIURI> uri;
-  NS_NewURI(getter_AddRefs(uri), data);
-  if (!uri) return NS_ERROR_FAILURE;
-
-  nsCOMPtr<nsIURL> url;
-  url = do_QueryInterface(uri);
-  NS_ADDREF(*aServerURL = url);
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::SetServerURL(nsIURL* aServerURL) {
-  bool schemeOk;
-  // only allow https or http URLs
-  nsresult rv = aServerURL->SchemeIs("https", &schemeOk);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (!schemeOk) {
-    rv = aServerURL->SchemeIs("http", &schemeOk);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    if (!schemeOk) return NS_ERROR_INVALID_ARG;
-  }
-  nsAutoCString spec;
-  rv = aServerURL->GetSpec(spec);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  return CrashReporter::SetServerURL(spec);
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::GetMinidumpPath(nsIFile** aMinidumpPath) {
-  if (!CrashReporter::GetEnabled()) return NS_ERROR_NOT_INITIALIZED;
-
-  nsAutoString path;
-  if (!CrashReporter::GetMinidumpPath(path)) return NS_ERROR_FAILURE;
-
-  nsresult rv = NS_NewLocalFile(path, false, aMinidumpPath);
-  NS_ENSURE_SUCCESS(rv, rv);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::SetMinidumpPath(nsIFile* aMinidumpPath) {
-  nsAutoString path;
-  nsresult rv = aMinidumpPath->GetPath(path);
-  NS_ENSURE_SUCCESS(rv, rv);
-  return CrashReporter::SetMinidumpPath(path);
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::GetMinidumpForID(const nsAString& aId, nsIFile** aMinidump) {
-  if (!CrashReporter::GetMinidumpForID(aId, aMinidump)) {
-    return NS_ERROR_FILE_NOT_FOUND;
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::GetExtraFileForID(const nsAString& aId, nsIFile** aExtraFile) {
-  if (!CrashReporter::GetExtraFileForID(aId, aExtraFile)) {
-    return NS_ERROR_FILE_NOT_FOUND;
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::AnnotateCrashReport(const nsACString& key,
-                                  const nsACString& data) {
-  CrashReporter::Annotation annotation;
-
-  if (!AnnotationFromString(annotation, PromiseFlatCString(key).get())) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  return CrashReporter::AnnotateCrashReport(annotation, data);
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::RemoveCrashReportAnnotation(const nsACString& key) {
-  CrashReporter::Annotation annotation;
-
-  if (!AnnotationFromString(annotation, PromiseFlatCString(key).get())) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  return CrashReporter::RemoveCrashReportAnnotation(annotation);
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::IsAnnotationWhitelistedForPing(const nsACString& aValue,
-                                             bool* aIsWhitelisted) {
-  CrashReporter::Annotation annotation;
-
-  if (!AnnotationFromString(annotation, PromiseFlatCString(aValue).get())) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  *aIsWhitelisted = CrashReporter::IsAnnotationWhitelistedForPing(annotation);
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::AppendAppNotesToCrashReport(const nsACString& data) {
-  return CrashReporter::AppendAppNotesToCrashReport(data);
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::RegisterAppMemory(uint64_t pointer, uint64_t len) {
-  return CrashReporter::RegisterAppMemory((void*)pointer, len);
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::WriteMinidumpForException(void* aExceptionInfo) {
-#ifdef XP_WIN
-  return CrashReporter::WriteMinidumpForException(
-      static_cast<EXCEPTION_POINTERS*>(aExceptionInfo));
-#else
-  return NS_ERROR_NOT_IMPLEMENTED;
-#endif
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::AppendObjCExceptionInfoToAppNotes(void* aException) {
-#ifdef XP_MACOSX
-  return CrashReporter::AppendObjCExceptionInfoToAppNotes(aException);
-#else
-  return NS_ERROR_NOT_IMPLEMENTED;
-#endif
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::GetSubmitReports(bool* aEnabled) {
-  return CrashReporter::GetSubmitReports(aEnabled);
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::SetSubmitReports(bool aEnabled) {
-  return CrashReporter::SetSubmitReports(aEnabled);
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::UpdateCrashEventsDir() {
-  CrashReporter::UpdateCrashEventsDir();
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::SaveMemoryReport() {
-  if (!CrashReporter::GetEnabled()) {
-    return NS_ERROR_NOT_INITIALIZED;
-  }
-  nsCOMPtr<nsIFile> file;
-  nsresult rv = CrashReporter::GetDefaultMemoryReportFile(getter_AddRefs(file));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  nsString path;
-  file->GetPath(path);
-
-  nsCOMPtr<nsIMemoryInfoDumper> dumper =
-      do_GetService("@mozilla.org/memory-info-dumper;1");
-  if (NS_WARN_IF(!dumper)) {
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  rv = dumper->DumpMemoryReportsToNamedFile(path, this, file,
-                                            true /* anonymize */);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsXULAppInfo::SetTelemetrySessionId(const nsACString& id) {
-  CrashReporter::SetTelemetrySessionId(id);
-  return NS_OK;
-}
-
-// This method is from nsIFInishDumpingCallback.
-NS_IMETHODIMP
-nsXULAppInfo::Callback(nsISupports* aData) {
-  nsCOMPtr<nsIFile> file = do_QueryInterface(aData);
-  MOZ_ASSERT(file);
-
-  CrashReporter::SetMemoryReportFile(file);
-  return NS_OK;
-}
-
 static const nsXULAppInfo kAppInfo;
 namespace mozilla {
 nsresult AppInfoConstructor(nsISupports* aOuter, REFNSIID aIID,
@@ -1524,15 +1272,6 @@ static void OnLauncherPrefChanged(const char* aPref, void* aData) {
   MOZ_ASSERT(reflectResult.isOk());
 }
 
-static void OnLauncherTelemetryPrefChanged(const char* aPref, void* aData) {
-  bool prefVal = Preferences::GetBool(kPrefHealthReportUploadEnabled, true);
-
-  mozilla::LauncherRegistryInfo launcherRegInfo;
-  mozilla::LauncherVoidResult reflectResult =
-      launcherRegInfo.ReflectTelemetryPrefToRegistry(prefVal);
-  MOZ_ASSERT(reflectResult.isOk());
-}
-
 static void SetupLauncherProcessPref() {
   if (gLauncherProcessState) {
     // We've already successfully run
@@ -1558,15 +1297,8 @@ static void SetupLauncherProcessPref() {
             mozilla::LauncherRegistryInfo::EnabledState::ForceDisabled);
   }
 
-  mozilla::LauncherVoidResult reflectResult =
-      launcherRegInfo.ReflectTelemetryPrefToRegistry(
-          Preferences::GetBool(kPrefHealthReportUploadEnabled, true));
-  MOZ_ASSERT(reflectResult.isOk());
-
   Preferences::RegisterCallback(&OnLauncherPrefChanged,
                                 PREF_WIN_LAUNCHER_PROCESS_ENABLED);
-  Preferences::RegisterCallback(&OnLauncherTelemetryPrefChanged,
-                                kPrefHealthReportUploadEnabled);
 }
 
 #  endif  // defined(MOZ_LAUNCHER_PROCESS)
@@ -1729,8 +1461,6 @@ static ReturnAbortOnError ProfileLockedDialog(nsIFile* aProfileDir,
   ScopedXPCOMStartup xpcom;
   rv = xpcom.Initialize();
   NS_ENSURE_SUCCESS(rv, rv);
-
-  mozilla::Telemetry::WriteFailedProfileLock(aProfileDir);
 
   rv = xpcom.SetWindowCreator(aNative);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
@@ -2041,175 +1771,6 @@ struct FileWriteFunc : public JSONWriteFunc {
   void Write(const char* aStr) override { fprintf(mFile, "%s", aStr); }
 };
 
-static void SubmitDowngradeTelemetry(const nsCString& aLastVersion,
-                                     bool aHasSync, int32_t aButton) {
-  nsCOMPtr<nsIPrefService> prefSvc =
-      do_GetService("@mozilla.org/preferences-service;1");
-  NS_ENSURE_TRUE_VOID(prefSvc);
-
-  nsCOMPtr<nsIPrefBranch> prefBranch = do_QueryInterface(prefSvc);
-  NS_ENSURE_TRUE_VOID(prefBranch);
-
-  bool enabled;
-  nsresult rv =
-      prefBranch->GetBoolPref(kPrefHealthReportUploadEnabled, &enabled);
-  NS_ENSURE_SUCCESS_VOID(rv);
-  if (!enabled) {
-    return;
-  }
-
-  nsCString server;
-  rv = prefBranch->GetCharPref("toolkit.telemetry.server", server);
-  NS_ENSURE_SUCCESS_VOID(rv);
-
-  nsCString clientId;
-  rv = prefBranch->GetCharPref("toolkit.telemetry.cachedClientID", clientId);
-  NS_ENSURE_SUCCESS_VOID(rv);
-
-  rv = prefSvc->GetDefaultBranch(nullptr, getter_AddRefs(prefBranch));
-  NS_ENSURE_SUCCESS_VOID(rv);
-
-  nsCString channel("default");
-  rv = prefBranch->GetCharPref("app.update.channel", channel);
-  NS_ENSURE_SUCCESS_VOID(rv);
-
-  nsID uuid;
-  nsCOMPtr<nsIUUIDGenerator> uuidGen =
-      do_GetService("@mozilla.org/uuid-generator;1");
-  NS_ENSURE_TRUE_VOID(uuidGen);
-  rv = uuidGen->GenerateUUIDInPlace(&uuid);
-  NS_ENSURE_SUCCESS_VOID(rv);
-
-  char strid[NSID_LENGTH];
-  uuid.ToProvidedString(strid);
-
-  nsCString arch("null");
-  nsCOMPtr<nsIPropertyBag2> sysInfo =
-      do_GetService("@mozilla.org/system-info;1");
-  NS_ENSURE_TRUE_VOID(sysInfo);
-  sysInfo->GetPropertyAsACString(NS_LITERAL_STRING("arch"), arch);
-
-  time_t now;
-  time(&now);
-  char date[sizeof "YYYY-MM-DDThh:mm:ss.000Z"];
-  strftime(date, sizeof date, "%FT%T.000Z", gmtime(&now));
-
-  // NSID_LENGTH includes the trailing \0 and we also want to strip off the
-  // surrounding braces so the length becomes NSID_LENGTH - 3.
-  nsDependentCSubstring pingId(strid + 1, NSID_LENGTH - 3);
-  NS_NAMED_LITERAL_CSTRING(pingType, "downgrade");
-
-  int32_t pos = aLastVersion.Find("_");
-  if (pos == kNotFound) {
-    return;
-  }
-
-  const nsDependentCSubstring lastVersion = Substring(aLastVersion, 0, pos);
-  const nsDependentCSubstring lastBuildId =
-      Substring(aLastVersion, pos + 1, 14);
-
-  nsPrintfCString url("%s/submit/telemetry/%s/%s/%s/%s/%s/%s?v=%d",
-                      server.get(), PromiseFlatCString(pingId).get(),
-                      pingType.get(), (const char*)gAppData->name,
-                      (const char*)gAppData->version, channel.get(),
-                      (const char*)gAppData->buildID,
-                      TELEMETRY_PING_FORMAT_VERSION);
-
-  nsCOMPtr<nsIFile> pingFile;
-  rv = NS_GetSpecialDirectory(XRE_USER_APP_DATA_DIR, getter_AddRefs(pingFile));
-  NS_ENSURE_SUCCESS_VOID(rv);
-  rv = pingFile->Append(NS_LITERAL_STRING("Pending Pings"));
-  NS_ENSURE_SUCCESS_VOID(rv);
-  rv = pingFile->Create(nsIFile::DIRECTORY_TYPE, 0755);
-  if (NS_FAILED(rv) && rv != NS_ERROR_FILE_ALREADY_EXISTS) {
-    return;
-  }
-  rv = pingFile->Append(NS_ConvertUTF8toUTF16(pingId));
-  NS_ENSURE_SUCCESS_VOID(rv);
-
-  nsCOMPtr<nsIFile> pingSender;
-  rv = NS_GetSpecialDirectory(NS_GRE_BIN_DIR, getter_AddRefs(pingSender));
-  NS_ENSURE_SUCCESS_VOID(rv);
-#  ifdef XP_WIN
-  pingSender->Append(NS_LITERAL_STRING("pingsender.exe"));
-#  else
-  pingSender->Append(NS_LITERAL_STRING("pingsender"));
-#  endif
-
-  bool exists;
-  rv = pingSender->Exists(&exists);
-  NS_ENSURE_SUCCESS_VOID(rv);
-  if (!exists) {
-    return;
-  }
-
-  FILE* file;
-  rv = pingFile->OpenANSIFileDesc("w", &file);
-  NS_ENSURE_SUCCESS_VOID(rv);
-
-  JSONWriter w(MakeUnique<FileWriteFunc>(file));
-  w.Start();
-  {
-    w.StringProperty("type", pingType.get());
-    w.StringProperty("id", PromiseFlatCString(pingId).get());
-    w.StringProperty("creationDate", date);
-    w.IntProperty("version", TELEMETRY_PING_FORMAT_VERSION);
-    w.StringProperty("clientId", clientId.get());
-    w.StartObjectProperty("application");
-    {
-      w.StringProperty("architecture", arch.get());
-      w.StringProperty("buildId", gAppData->buildID);
-      w.StringProperty("name", gAppData->name);
-      w.StringProperty("version", gAppData->version);
-      w.StringProperty("displayVersion",
-                       MOZ_STRINGIFY(MOZ_APP_VERSION_DISPLAY));
-      w.StringProperty("vendor", gAppData->vendor);
-      w.StringProperty("platformVersion", gToolkitVersion);
-#  ifdef TARGET_XPCOM_ABI
-      w.StringProperty("xpcomAbi", TARGET_XPCOM_ABI);
-#  else
-      w.StringProperty("xpcomAbi", "unknown");
-#  endif
-      w.StringProperty("channel", channel.get());
-    }
-    w.EndObject();
-    w.StartObjectProperty("payload");
-    {
-      w.StringProperty("lastVersion", PromiseFlatCString(lastVersion).get());
-      w.StringProperty("lastBuildId", PromiseFlatCString(lastBuildId).get());
-      w.BoolProperty("hasSync", aHasSync);
-      w.IntProperty("button", aButton);
-    }
-    w.EndObject();
-  }
-  w.End();
-
-  fclose(file);
-
-  PathString filePath = pingFile->NativePath();
-  const filesystem::Path::value_type* args[2];
-#  ifdef XP_WIN
-  nsString urlw = NS_ConvertUTF8toUTF16(url);
-  args[0] = urlw.get();
-#  else
-  args[0] = url.get();
-#  endif
-  args[1] = filePath.get();
-
-  nsCOMPtr<nsIProcess> process =
-      do_CreateInstance("@mozilla.org/process/util;1");
-  NS_ENSURE_TRUE_VOID(process);
-  process->Init(pingSender);
-  process->SetStartHidden(true);
-  process->SetNoShell(true);
-
-#  ifdef XP_WIN
-  process->Runw(false, args, 2);
-#  else
-  process->Run(false, args, 2);
-#  endif
-}
-
 static const char kProfileDowngradeURL[] =
     "chrome://mozapps/content/profile/profileDowngrade.xul";
 
@@ -2283,8 +1844,6 @@ static ReturnAbortOnError CheckDowngrade(nsIFile* aProfileDir,
       NS_ENSURE_SUCCESS(rv, rv);
 
       paramBlock->GetInt(1, &result);
-
-      SubmitDowngradeTelemetry(aLastVersion, hasSync, result);
     }
   }
 
@@ -3617,7 +3176,7 @@ static void PR_CALLBACK ReadAheadDlls_ThreadStart(void*) {
 }
 #endif
 
-namespace mozilla {
+/*namespace mozilla {
 ShutdownChecksMode gShutdownChecks = SCM_NOTHING;
 }  // namespace mozilla
 
@@ -3655,7 +3214,7 @@ static void SetShutdownChecks() {
       gShutdownChecks = SCM_NOTHING;
     }
   }
-}
+}*/
 
 #if defined(MOZ_WAYLAND)
 bool IsWaylandDisabled() {
@@ -3724,23 +3283,7 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
   if (!aExitFlag) return 1;
   *aExitFlag = false;
 
-  SetShutdownChecks();
-
-  // Enable Telemetry IO Reporting on DEBUG, nightly and local builds,
-  // but disable it on FUZZING builds.
-#ifndef FUZZING
-#  ifdef DEBUG
-  mozilla::Telemetry::InitIOReporting(gAppData->xreDirectory);
-#  else
-  {
-    const char* releaseChannel = MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL);
-    if (strcmp(releaseChannel, "nightly") == 0 ||
-        strcmp(releaseChannel, "default") == 0) {
-      mozilla::Telemetry::InitIOReporting(gAppData->xreDirectory);
-    }
-  }
-#  endif /* DEBUG */
-#endif   /* FUZZING */
+  //SetShutdownChecks();
 
 #if defined(XP_WIN)
   // Enable the HeapEnableTerminationOnCorruption exploit mitigation. We ignore
@@ -4167,8 +3710,6 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
 
   //////////////////////// NOW WE HAVE A PROFILE ////////////////////////
 
-  mozilla::Telemetry::SetProfileDir(mProfD);
-
   if (mAppData->flags & NS_XRE_ENABLE_CRASH_REPORTER) {
     MakeOrSetMinidumpPath(mProfD);
   }
@@ -4590,19 +4131,6 @@ nsresult XREMain::XRE_mainRun() {
   // If we're on Linux, we now have information about the OS capabilities
   // available to us.
   SandboxInfo sandboxInfo = SandboxInfo::Get();
-  Telemetry::Accumulate(Telemetry::SANDBOX_HAS_SECCOMP_BPF,
-                        sandboxInfo.Test(SandboxInfo::kHasSeccompBPF));
-  Telemetry::Accumulate(Telemetry::SANDBOX_HAS_SECCOMP_TSYNC,
-                        sandboxInfo.Test(SandboxInfo::kHasSeccompTSync));
-  Telemetry::Accumulate(
-      Telemetry::SANDBOX_HAS_USER_NAMESPACES_PRIVILEGED,
-      sandboxInfo.Test(SandboxInfo::kHasPrivilegedUserNamespaces));
-  Telemetry::Accumulate(Telemetry::SANDBOX_HAS_USER_NAMESPACES,
-                        sandboxInfo.Test(SandboxInfo::kHasUserNamespaces));
-  Telemetry::Accumulate(Telemetry::SANDBOX_CONTENT_ENABLED,
-                        sandboxInfo.Test(SandboxInfo::kEnabledForContent));
-  Telemetry::Accumulate(Telemetry::SANDBOX_MEDIA_ENABLED,
-                        sandboxInfo.Test(SandboxInfo::kEnabledForMedia));
   nsAutoCString flagsString;
   flagsString.AppendInt(sandboxInfo.AsInteger());
 
@@ -4712,7 +4240,7 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
   mAppData->sandboxPermissionsService = aConfig.sandboxPermissionsService;
 #endif
 
-  mozilla::IOInterposerInit ioInterposerGuard;
+  //mozilla::IOInterposerInit ioInterposerGuard;
 
 #if defined(XP_WIN)
   // Some COM settings are global to the process and must be set before any non-
@@ -4766,7 +4294,7 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
 
     // We have an application restart don't do any shutdown checks here
     // In particular we don't want to poison IO for checking late-writes.
-    gShutdownChecks = SCM_NOTHING;
+    //gShutdownChecks = SCM_NOTHING;
   }
 
 #if defined(MOZ_HAS_REMOTE)
@@ -4827,7 +4355,7 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
   return NS_FAILED(rv) ? 1 : 0;
 }
 
-void XRE_StopLateWriteChecks(void) { mozilla::StopLateWriteChecks(); }
+//void XRE_StopLateWriteChecks(void) { mozilla::StopLateWriteChecks(); }
 
 int XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
   XREMain main;

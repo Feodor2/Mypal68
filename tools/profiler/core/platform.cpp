@@ -32,7 +32,7 @@
 #include "ProfiledThreadData.h"
 #include "ProfilerBacktrace.h"
 #include "ProfileBuffer.h"
-#include "ProfilerIOInterposeObserver.h"
+//#include "ProfilerIOInterposeObserver.h"
 #include "ProfilerMarkerPayload.h"
 #include "ProfilerParent.h"
 #include "RegisteredThread.h"
@@ -488,10 +488,10 @@ class ActivePS {
         // main loop within Run() is blocked until this function's caller
         // unlocks gPSMutex.
         ,
-        mSamplerThread(NewSamplerThread(aLock, mGeneration, aInterval)),
-        mInterposeObserver(ProfilerFeature::HasMainThreadIO(aFeatures)
+        mSamplerThread(NewSamplerThread(aLock, mGeneration, aInterval))
+        /*mInterposeObserver(ProfilerFeature::HasMainThreadIO(aFeatures)
                                ? new ProfilerIOInterposeObserver()
-                               : nullptr)
+                               : nullptr)*/
 #undef HAS_FEATURE
         ,
         mIsPaused(false)
@@ -506,7 +506,7 @@ class ActivePS {
       mFilters[i] = aFilters[i];
     }
 
-#if !defined(RELEASE_OR_BETA)
+/*#if !defined(RELEASE_OR_BETA)
     if (mInterposeObserver) {
       // We need to register the observer on the main thread, because we want
       // to observe IO that happens on the main thread.
@@ -524,11 +524,11 @@ class ActivePS {
             }));
       }
     }
-#endif
+#endif*/
   }
 
   ~ActivePS() {
-#if !defined(RELEASE_OR_BETA)
+/*#if !defined(RELEASE_OR_BETA)
     if (mInterposeObserver) {
       // We need to unregister the observer on the main thread, because that's
       // where we've registered it.
@@ -543,7 +543,7 @@ class ActivePS {
             }));
       }
     }
-#endif
+#endif*/
   }
 
   bool ThreadSelected(const char* aThreadName) {
@@ -818,7 +818,7 @@ class ActivePS {
     sInstance->mDeadProfiledPages.clear();
   }
 
-#if !defined(RELEASE_OR_BETA)
+/*#if !defined(RELEASE_OR_BETA)
   static void UnregisterIOInterposer(PSLockRef) {
     if (!sInstance->mInterposeObserver) {
       return;
@@ -847,7 +847,7 @@ class ActivePS {
     IOInterposer::Register(IOInterposeObserver::OpAll,
                            sInstance->mInterposeObserver);
   }
-#endif
+#endif*/
 
   static void ClearExpiredExitProfiles(PSLockRef) {
     uint64_t bufferRangeStart = sInstance->mBuffer->mRangeStart;
@@ -941,7 +941,7 @@ class ActivePS {
   SamplerThread* const mSamplerThread;
 
   // The interposer that records main thread I/O.
-  RefPtr<ProfilerIOInterposeObserver> mInterposeObserver;
+  //RefPtr<ProfilerIOInterposeObserver> mInterposeObserver;
 
   // Is the profiler paused?
   bool mIsPaused;
@@ -2159,15 +2159,15 @@ bool profiler_stream_json_for_this_process(SpliceableJSONWriter& aWriter,
     return false;
   }
 
-#if !defined(RELEASE_OR_BETA)
+/*#if !defined(RELEASE_OR_BETA)
   ActivePS::PauseIOInterposer(lock);
-#endif
+#endif*/
 
   locked_profiler_stream_json_for_this_process(lock, aWriter, aSinceTime,
                                                aIsShuttingDown);
-#if !defined(RELEASE_OR_BETA)
+/*#if !defined(RELEASE_OR_BETA)
   ActivePS::ResumeIOInterposer(lock);
-#endif
+#endif*/
 
   return true;
 }
@@ -3003,11 +3003,11 @@ void profiler_shutdown() {
     if (ActivePS::Exists(lock)) {
       const char* filename = getenv("MOZ_PROFILER_SHUTDOWN");
       if (filename) {
-#if !defined(RELEASE_OR_BETA)
+/*#if !defined(RELEASE_OR_BETA)
         // Attempting to record the I/O we are doing to the shutdown profile
         // file while we are locked will deadlock.
         ActivePS::UnregisterIOInterposer(lock);
-#endif
+#endif*/
         locked_profiler_save_profile_to_file(lock, filename,
                                              /* aIsShuttingDown */ true);
       }

@@ -169,14 +169,6 @@ UINT nsAppShell::GetTaskbarButtonCreatedMessage() {
   return sTaskbarButtonCreatedMsg;
 }
 
-namespace mozilla {
-namespace crashreporter {
-void LSPAnnotate();
-}  // namespace crashreporter
-}  // namespace mozilla
-
-using mozilla::crashreporter::LSPAnnotate;
-
 //-------------------------------------------------------------------------
 
 // Note that since we're on x86-ish processors here, ReleaseAcquire is the
@@ -314,8 +306,6 @@ nsAppShell::Observe(nsISupports* aSubject, const char* aTopic,
 #endif  // defined(ACCESSIBILITY)
 
 nsresult nsAppShell::Init() {
-  LSPAnnotate();
-
   hal::Init();
 
   if (XRE_Win32kCallsAllowed()) {

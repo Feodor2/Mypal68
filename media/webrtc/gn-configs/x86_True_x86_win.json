@@ -14586,7 +14586,6 @@
                 "//system_wrappers/include/file_wrapper.h",
                 "//system_wrappers/include/ntp_time.h",
                 "//system_wrappers/include/rtp_to_ntp_estimator.h",
-                "//system_wrappers/include/rw_lock_wrapper.h",
                 "//system_wrappers/include/sleep.h",
                 "//system_wrappers/include/timestamp_extrapolator.h",
                 "//system_wrappers/source/aligned_malloc.cc",
@@ -14599,9 +14598,6 @@
                 "//system_wrappers/source/event_timer_win.h",
                 "//system_wrappers/source/file_impl.cc",
                 "//system_wrappers/source/rtp_to_ntp_estimator.cc",
-                "//system_wrappers/source/rw_lock.cc",
-                "//system_wrappers/source/rw_lock_win.cc",
-                "//system_wrappers/source/rw_lock_win.h",
                 "//system_wrappers/source/sleep.cc",
                 "//system_wrappers/source/timestamp_extrapolator.cc"
             ],

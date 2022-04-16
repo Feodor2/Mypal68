@@ -27,7 +27,7 @@
 #include "nsThreadManager.h"
 #include "nsVariant.h"
 #include "mozilla/EventQueue.h"
-#include "mozilla/IOInterposer.h"
+//#include "mozilla/IOInterposer.h"
 #include "mozilla/ThreadEventQueue.h"
 #include "mozilla/Services.h"
 #include "mozilla/Tokenizer.h"
@@ -414,11 +414,11 @@ void StorageDBThread::ThreadFunc(void* aArg) {
 
   AUTO_PROFILER_REGISTER_THREAD("localStorage DB");
   NS_SetCurrentThreadName("localStorage DB");
-  mozilla::IOInterposer::RegisterCurrentThread();
+  //mozilla::IOInterposer::RegisterCurrentThread();
 
   StorageDBThread* thread = static_cast<StorageDBThread*>(aArg);
   thread->ThreadFunc();
-  mozilla::IOInterposer::UnregisterCurrentThread();
+  //mozilla::IOInterposer::UnregisterCurrentThread();
 }
 
 void StorageDBThread::ThreadFunc() {

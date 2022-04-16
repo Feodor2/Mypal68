@@ -99,13 +99,6 @@ mozilla::detail::ConditionVariableImpl::platformData() {
 
 }*/
 
-
-// Fallback condition variable support for Windows XP and Server 2003. Given the
-// difficulty of testing on these antiquated platforms and their rapidly
-// diminishing market share, this implementation trades performance for
-// predictable behavior.
-struct ConditionVariableFallback
-{
   static const uint32_t WAKEUP_MODE_NONE = 0;
   static const uint32_t WAKEUP_MODE_ONE = 0x40000000;
   static const uint32_t WAKEUP_MODE_ALL = 0x80000000;
@@ -113,6 +106,17 @@ struct ConditionVariableFallback
   static const uint32_t WAKEUP_MODE_MASK = WAKEUP_MODE_ONE | WAKEUP_MODE_ALL;
   static const uint32_t SLEEPERS_COUNT_MASK = ~WAKEUP_MODE_MASK;
 
+
+// Fallback condition variable support for Windows XP and Server 2003. Given the
+// difficulty of testing on these antiquated platforms and their rapidly
+// diminishing market share, this implementation trades performance for
+// predictable behavior.
+class ConditionVariableFallback
+{
+  /*HANDLE waiting_sem_;
+  HANDLE received_sem_;
+  HANDLE signal_event_;*/
+public:
   void initialize()
   {
     // Initialize the state variable to 0 sleepers, no wakeup.
@@ -130,6 +134,12 @@ struct ConditionVariableFallback
     // Use a manual-reset event for waking up all sleepers.
     wakeAllEvent_ = CreateEventW(NULL, TRUE, FALSE, NULL);
     MOZ_RELEASE_ASSERT(wakeAllEvent_);
+    /*waiting_sem_ = CreateSemaphore(NULL, 0, MAX_DECODE_THREADS, NULL);
+    MOZ_RELEASE_ASSERT(waiting_sem_);
+    received_sem_ = CreateSemaphore(NULL, 0, MAX_DECODE_THREADS, NULL);
+    MOZ_RELEASE_ASSERT(received_sem_);
+    signal_event_ = CreateEvent(NULL, FALSE, FALSE, NULL);
+    MOZ_RELEASE_ASSERT(signal_event_);*/
   }
 
   void destroy()
@@ -146,6 +156,9 @@ struct ConditionVariableFallback
 
     r = CloseHandle(wakeAllEvent_);
     //MOZ_RELEASE_ASSERT(r);
+    /*CloseHandle(waiting_sem_);
+    CloseHandle(received_sem_);
+    CloseHandle(signal_event_);*/
   }
 
 private:

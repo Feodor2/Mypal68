@@ -30,7 +30,7 @@ if CONFIG['MOZ_GECKO_PROFILER']:
         'gecko/ChildProfilerController.cpp',
         'gecko/nsProfilerStartParams.cpp',
         'gecko/ProfilerChild.cpp',
-        'gecko/ProfilerIOInterposeObserver.cpp',
+        #'gecko/ProfilerIOInterposeObserver.cpp',
         'gecko/ProfilerParent.cpp',
         'gecko/ThreadResponsiveness.cpp',
     ]

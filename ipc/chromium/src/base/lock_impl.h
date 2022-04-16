@@ -6,6 +6,7 @@
 #define BASE_LOCK_IMPL_H_
 
 #include "base/basictypes.h"
+#include "base/platform_thread.h"
 #include "build/build_config.h"
 
 #if defined(OS_WIN)

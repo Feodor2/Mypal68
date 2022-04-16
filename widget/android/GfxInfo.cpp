@@ -9,7 +9,6 @@
 #include "prenv.h"
 #include "nsExceptionHandler.h"
 #include "nsHashKeys.h"
-#include "nsICrashReporter.h"
 #include "nsVersionComparator.h"
 #include "AndroidBridge.h"
 #include "nsIWindowWatcher.h"

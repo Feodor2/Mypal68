@@ -38,6 +38,10 @@ SOURCES += [
     'decode.c',
     'dirac.c',
     'dv_profile.c',
+    'dxva2.c',
+    'dxva2_h264.c',
+    'dxva2_hevc.c',
+    'dxva2_vp9.c',
     'encode.c',
     'error_resilience.c',
     'faandct.c',
@@ -182,5 +186,8 @@ USE_LIBS += [
 
 if CONFIG['OS_TARGET'] != 'WINNT':
     OS_LIBS += ['m']
+
+if CONFIG['OS_TARGET'] == 'WINNT':
+    OS_LIBS += ['ole32']
 
 include("../ffvpxcommon.mozbuild")

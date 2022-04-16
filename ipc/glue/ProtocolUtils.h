@@ -30,7 +30,6 @@
 #include "mozilla/Scoped.h"
 #include "mozilla/UniquePtr.h"
 #include "MainThreadUtils.h"
-#include "nsICrashReporter.h"
 
 #if defined(ANDROID) && defined(DEBUG)
 #  include <android/log.h>
@@ -836,13 +835,6 @@ class Endpoint {
   ProcessId mMyPid, mOtherPid;
 };
 
-#if defined(XP_MACOSX)
-void AnnotateCrashReportWithErrno(CrashReporter::Annotation tag, int error);
-#else
-static inline void AnnotateCrashReportWithErrno(CrashReporter::Annotation tag,
-                                                int error) {}
-#endif
-
 // This function is used internally to create a pair of Endpoints. See the
 // comment above Endpoint for a description of how it might be used.
 template <class PFooParent, class PFooChild>
@@ -858,8 +850,6 @@ nsresult CreateEndpoints(const PrivateIPDLInterface& aPrivate,
   nsresult rv;
   if (NS_FAILED(rv = CreateTransport(aParentDestPid, &parentTransport,
                                      &childTransport))) {
-    AnnotateCrashReportWithErrno(
-        CrashReporter::Annotation::IpcCreateEndpointsNsresult, int(rv));
     return rv;
   }
 

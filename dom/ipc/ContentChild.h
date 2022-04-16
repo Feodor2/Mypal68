@@ -587,9 +587,6 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvFlushCodeCoverageCounters(
       FlushCodeCoverageCountersResolver&& aResolver);
 
-  mozilla::ipc::IPCResult RecvGetMemoryUniqueSetSize(
-      GetMemoryUniqueSetSizeResolver&& aResolver);
-
   mozilla::ipc::IPCResult RecvSetInputEventQueueEnabled();
 
   mozilla::ipc::IPCResult RecvFlushInputEventQueue();

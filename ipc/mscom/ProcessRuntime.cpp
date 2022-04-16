@@ -31,6 +31,9 @@
 // This API from oleaut32.dll is not declared in Windows SDK headers
 extern "C" void __cdecl SetOaNoCache(void);
 
+static CRITICAL_SECTION gLock;
+static bool gIsProcessInitialized = false;
+
 namespace mozilla {
 namespace mscom {
 
@@ -42,6 +45,7 @@ ProcessRuntime::ProcessRuntime(GeckoProcessType aProcessType)
       mActCtxRgn(a11y::Compatibility::GetActCtxResourceId())
 #endif  // defined(ACCESSIBILITY) && defined(MOZILLA_INTERNAL_API)
 {
+  InitializeCriticalSection(&gLock);
 #if defined(MOZILLA_INTERNAL_API) && defined(MOZ_SANDBOX)
   // If our process is running under Win32k lockdown, we cannot initialize
   // COM with single-threaded apartments. This is because STAs create a hidden
@@ -124,6 +128,13 @@ ProcessRuntime::ProcessRuntime(GeckoProcessType aProcessType)
 }
 
 void ProcessRuntime::InitInsideApartment() {
+  if (gIsProcessInitialized) {
+    mInitResult = S_OK;
+    return;
+  }
+  EnterCriticalSection(&gLock);
+  gIsProcessInitialized = true;
+
   //ProcessInitLock lock;
   /*if (lock.IsInitialized()) {
     // COM has already been initialized by a previous ProcessRuntime instance
@@ -316,6 +327,11 @@ ProcessRuntime::InitializeSecurity() {
   return ::CoInitializeSecurity(
       &sd, -1, nullptr, nullptr, RPC_C_AUTHN_LEVEL_DEFAULT,
       RPC_C_IMP_LEVEL_IDENTIFY, nullptr, EOAC_NONE, nullptr);
+}
+
+ProcessRuntime::~ProcessRuntime() {
+  LeaveCriticalSection(&gLock);
+  DeleteCriticalSection(&gLock);
 }
 
 }  // namespace mscom

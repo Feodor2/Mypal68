@@ -13,7 +13,7 @@
 #include "js/SourceText.h"  // JS::SourceText
 #include "mozilla/ChaosMode.h"
 #include "mozilla/dom/ScriptSettings.h"
-#include "mozilla/IOInterposer.h"
+//#include "mozilla/IOInterposer.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 #include "nsServiceManagerUtils.h"
@@ -1088,7 +1088,7 @@ int XRE_XPCShellMain(int argc, char** argv, char** envp,
 
   // This guard ensures that all threads that attempt to register themselves
   // with the IOInterposer will be properly tracked.
-  mozilla::IOInterposerInit ioInterposerGuard;
+  //mozilla::IOInterposerInit ioInterposerGuard;
 
 #ifdef MOZ_GECKO_PROFILER
   char aLocal;

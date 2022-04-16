@@ -12,7 +12,7 @@
 #include "nsThreadManager.h"
 #include "nsThreadUtils.h"
 #include "mozilla/EventQueue.h"
-#include "mozilla/IOInterposer.h"
+//#include "mozilla/IOInterposer.h"
 #include "mozilla/ThreadEventQueue.h"
 #include "GeckoProfiler.h"
 
@@ -419,10 +419,10 @@ void CacheIOThread::ThreadFunc(void* aClosure) {
   // so causes leaks, see bug 1323100.
   NS_SetCurrentThreadName("Cache2 I/O");
 
-  mozilla::IOInterposer::RegisterCurrentThread();
+  //mozilla::IOInterposer::RegisterCurrentThread();
   CacheIOThread* thread = static_cast<CacheIOThread*>(aClosure);
   thread->ThreadFunc();
-  mozilla::IOInterposer::UnregisterCurrentThread();
+  //mozilla::IOInterposer::UnregisterCurrentThread();
 }
 
 void CacheIOThread::ThreadFunc() {

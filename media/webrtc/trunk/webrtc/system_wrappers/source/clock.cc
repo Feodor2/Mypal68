@@ -26,7 +26,8 @@
 
 #include "rtc_base/criticalsection.h"
 #include "rtc_base/timeutils.h"
-#include "system_wrappers/include/rw_lock_wrapper.h"
+//#include "system_wrappers/include/rw_lock_wrapper.h"
+#include "mozilla/RWLock.h"
 
 namespace webrtc {
 
@@ -228,17 +229,21 @@ Clock* Clock::GetRealTimeClock() {
 }
 
 SimulatedClock::SimulatedClock(int64_t initial_time_us)
-    : time_us_(initial_time_us), lock_(RWLockWrapper::CreateRWLock()) {}
+    : time_us_(initial_time_us), lock_(nullptr) {
+  lock_ = new mozilla::RWLock("clock");
+}
 
-SimulatedClock::~SimulatedClock() {}
+SimulatedClock::~SimulatedClock() {
+  delete lock_;
+}
 
 int64_t SimulatedClock::TimeInMilliseconds() const {
-  ReadLockScoped synchronize(*lock_);
+  mozilla::AutoReadLock synchronize(*lock_);
   return (time_us_ + 500) / 1000;
 }
 
 int64_t SimulatedClock::TimeInMicroseconds() const {
-  ReadLockScoped synchronize(*lock_);
+  mozilla::AutoReadLock synchronize(*lock_);
   return time_us_;
 }
 
@@ -259,7 +264,7 @@ void SimulatedClock::AdvanceTimeMilliseconds(int64_t milliseconds) {
 }
 
 void SimulatedClock::AdvanceTimeMicroseconds(int64_t microseconds) {
-  WriteLockScoped synchronize(*lock_);
+  mozilla::AutoWriteLock synchronize(*lock_);
   time_us_ += microseconds;
 }
 

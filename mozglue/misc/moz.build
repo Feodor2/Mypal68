@@ -39,6 +39,7 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         'interceptor',
     ]
     EXPORTS += [
+        'InitOnceExecOnceXP.h',
         'nsWindowsDllInterceptor.h',
     ]
     EXPORTS.mozilla += [

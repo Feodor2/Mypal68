@@ -11,6 +11,7 @@
 #include "FFmpegDataDecoder.h"
 #include "mozilla/TaskQueue.h"
 #include "prsystem.h"
+#include "mozilla/StaticPrefs.h"
 
 namespace mozilla {
 
@@ -65,6 +66,17 @@ MediaResult FFmpegDataDecoder<LIBAV_VER>::InitDecoder() {
   mCodecContext->opaque = this;
 
   InitCodecContext();
+
+  int hwacc_type=StaticPrefs::MediaFFmpegHwaccType();
+  bool grp_codecs=mCodecID==AV_CODEC_ID_H264||mCodecID==AV_CODEC_ID_HEVC||mCodecID==AV_CODEC_ID_VP9;
+
+  if (mLib->mdev_ctx!=NULL) {
+    if (((grp_codecs||mCodecID==AV_CODEC_ID_VP8)&&hwacc_type==2)||
+       (grp_codecs&&hwacc_type==4)||
+       ((grp_codecs||mCodecID==AV_CODEC_ID_VP8)&&hwacc_type==5)) {
+       mCodecContext->hw_device_ctx=mLib->mdev_ctx;
+    }
+  }
 
   if (mExtraData) {
     mCodecContext->extradata_size = mExtraData->Length();

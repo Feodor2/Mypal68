@@ -42,6 +42,8 @@ SOURCES += [
     'hash.c',
     'hmac.c',
     'hwcontext.c',
+    'hwcontext_cuda.c',
+    'hwcontext_dxva2.c',
     'imgutils.c',
     'integer.c',
     'intmath.c',

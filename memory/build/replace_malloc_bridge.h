@@ -115,11 +115,11 @@ struct DMDFuncs;
 
 // Callbacks to register debug file handles for Poison IO interpose.
 // See Mozilla(|Un)RegisterDebugHandle in xpcom/build/PoisonIOInterposer.h
-struct DebugFdRegistry {
+/*struct DebugFdRegistry {
   virtual void RegisterHandle(intptr_t aFd);
 
   virtual void UnRegisterHandle(intptr_t aFd);
-};
+};*/
 
 }  // namespace mozilla
 

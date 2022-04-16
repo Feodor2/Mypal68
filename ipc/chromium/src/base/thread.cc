@@ -9,7 +9,7 @@
 #include "base/waitable_event.h"
 #include "GeckoProfiler.h"
 #include "mozilla/EventQueue.h"
-#include "mozilla/IOInterposer.h"
+//#include "mozilla/IOInterposer.h"
 #include "mozilla/ThreadEventQueue.h"
 #include "nsThreadUtils.h"
 #include "nsThreadManager.h"
@@ -162,7 +162,7 @@ void Thread::ThreadMain() {
   }
 
   AUTO_PROFILER_REGISTER_THREAD(name_.c_str());
-  mozilla::IOInterposer::RegisterCurrentThread();
+  //mozilla::IOInterposer::RegisterCurrentThread();
 
   // The message loop for this thread.
   MessageLoop message_loop(startup_data_->options.message_loop_type,
@@ -195,7 +195,7 @@ void Thread::ThreadMain() {
   // Assert that MessageLoop::Quit was called by ThreadQuitTask.
   DCHECK(GetThreadWasQuitProperly());
 
-  mozilla::IOInterposer::UnregisterCurrentThread();
+  //mozilla::IOInterposer::UnregisterCurrentThread();
 
 #ifdef MOZ_TASK_TRACER
   mozilla::tasktracer::FreeTraceInfo();

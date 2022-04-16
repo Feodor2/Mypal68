@@ -166,6 +166,10 @@ STRUCT!{struct IO_STATUS_BLOCK {
     Information: ULONG_PTR,
 }}
 
+STRUCT!{struct FILE_IO_COMPLETION_NOTIFICATION_INFORMATION {
+    Flags: ULONG,
+}}
+
 extern "system" {
     pub fn NtQueryInformationFile(
         hFile: HANDLE,

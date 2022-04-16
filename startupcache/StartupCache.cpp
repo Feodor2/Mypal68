@@ -4,7 +4,7 @@
 
 #include "prio.h"
 #include "PLDHashTable.h"
-#include "mozilla/IOInterposer.h"
+//#include "mozilla/IOInterposer.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/scache/StartupCache.h"
 
@@ -461,7 +461,7 @@ void StartupCache::WaitOnWriteThread() {
 void StartupCache::ThreadedWrite(void* aClosure) {
   AUTO_PROFILER_REGISTER_THREAD("StartupCache");
   NS_SetCurrentThreadName("StartupCache");
-  mozilla::IOInterposer::RegisterCurrentThread();
+  //mozilla::IOInterposer::RegisterCurrentThread();
   /*
    * It is safe to use the pointer passed in aClosure to reference the
    * StartupCache object because the thread's lifetime is tightly coupled to
@@ -471,7 +471,7 @@ void StartupCache::ThreadedWrite(void* aClosure) {
    */
   StartupCache* startupCacheObj = static_cast<StartupCache*>(aClosure);
   startupCacheObj->WriteToDisk();
-  mozilla::IOInterposer::UnregisterCurrentThread();
+  //mozilla::IOInterposer::UnregisterCurrentThread();
 }
 
 /*

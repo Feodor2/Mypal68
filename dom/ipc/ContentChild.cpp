@@ -15,7 +15,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/LookAndFeel.h"
-#include "mozilla/MemoryTelemetry.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProcessHangMonitorIPC.h"
@@ -3504,12 +3503,6 @@ mozilla::ipc::IPCResult ContentChild::RecvFlushCodeCoverageCounters(
 #else
   MOZ_CRASH("Shouldn't receive this message in non-code coverage builds!");
 #endif
-}
-
-mozilla::ipc::IPCResult ContentChild::RecvGetMemoryUniqueSetSize(
-    GetMemoryUniqueSetSizeResolver&& aResolver) {
-  MemoryTelemetry::Get().GetUniqueSetSize(std::move(aResolver));
-  return IPC_OK();
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvSetInputEventQueueEnabled() {

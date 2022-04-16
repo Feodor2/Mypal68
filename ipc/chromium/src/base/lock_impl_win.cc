@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/lock_impl.h"
+#include "base/logging.h"
 
 namespace base {
 namespace internal {

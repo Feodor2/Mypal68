@@ -32,7 +32,6 @@ UNIFIED_SOURCES += [
     'PassthruProxy.cpp',
     'ProcessRuntime.cpp',
     'ProxyStream.cpp',
-    'RegistrationAnnotator.cpp',
     'Utils.cpp',
 ]
 

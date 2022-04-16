@@ -31,11 +31,12 @@ namespace mozilla {
 namespace mscom {
 
 bool IsCOMInitializedOnCurrentThread() {
-  APTTYPE aptType;
+  return false;
+  /*APTTYPE aptType;
   APTTYPEQUALIFIER aptTypeQualifier;
-  struct oletls *info;// = COM_CurrentInfo();
-  HRESULT hr;// = CoGetApartmentType(&aptType, &aptTypeQualifier);
-  return hr != CO_E_NOTINITIALIZED;
+  struct oletls *info = COM_CurrentInfo();
+  HRESULT hr = CoGetApartmentType(&aptType, &aptTypeQualifier);
+  return hr != CO_E_NOTINITIALIZED;*/
 }
 
 bool IsCurrentThreadMTA() {

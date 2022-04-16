@@ -23,7 +23,7 @@ class MOZ_NON_TEMPORARY_CLASS ProcessRuntime final {
 #endif  // defined(MOZILLA_INTERNAL_API)
 
   explicit ProcessRuntime(GeckoProcessType aProcessType);
-  ~ProcessRuntime() = default;
+  ~ProcessRuntime();
 
   explicit operator bool() const { return SUCCEEDED(mInitResult); }
   HRESULT GetHResult() const { return mInitResult; }
@@ -42,7 +42,6 @@ class MOZ_NON_TEMPORARY_CLASS ProcessRuntime final {
  private:
   void InitInsideApartment();
   HRESULT InitializeSecurity();
-
   HRESULT mInitResult;
   const bool mIsParentProcess;
 #if defined(ACCESSIBILITY) && defined(MOZILLA_INTERNAL_API)

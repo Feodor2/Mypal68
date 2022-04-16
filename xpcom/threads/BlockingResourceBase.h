@@ -18,7 +18,7 @@
 // NB: Comment this out to enable callstack tracking.
 #  define MOZ_CALLSTACK_DISABLED
 
-#  include "prinit.h"
+#  include "nspr/prinit.h"
 
 #  include "nsString.h"
 

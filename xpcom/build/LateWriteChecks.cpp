@@ -4,8 +4,8 @@
 
 #include <algorithm>
 
-#include "mozilla/IOInterposer.h"
-#include "mozilla/PoisonIOInterposer.h"
+//#include "mozilla/IOInterposer.h"
+//#include "mozilla/PoisonIOInterposer.h"
 #include "mozilla/ProcessedStack.h"
 #include "mozilla/SHA1.h"
 #include "mozilla/Scoped.h"
@@ -43,7 +43,7 @@ using namespace mozilla;
 class SHA1Stream {
  public:
   explicit SHA1Stream(FILE* aStream) : mFile(aStream) {
-    MozillaRegisterDebugFILE(mFile);
+    //MozillaRegisterDebugFILE(mFile);
   }
 
   void Printf(const char* aFormat, ...) MOZ_FORMAT_PRINTF(2, 3) {
@@ -59,7 +59,7 @@ class SHA1Stream {
   void Finish(SHA1Sum::Hash& aHash) {
     int fd = fileno(mFile);
     fflush(mFile);
-    MozillaUnRegisterDebugFD(fd);
+    //MozillaUnRegisterDebugFD(fd);
     fclose(mFile);
     mSHA1.finish(aHash);
     mFile = nullptr;

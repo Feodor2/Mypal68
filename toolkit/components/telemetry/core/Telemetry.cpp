@@ -28,14 +28,14 @@
 #include "mozilla/Components.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/FStream.h"
-#include "mozilla/IOInterposer.h"
+//#include "mozilla/IOInterposer.h"
 #include "mozilla/Likely.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/MemoryTelemetry.h"
+//#include "mozilla/MemoryTelemetry.h"
 #include "mozilla/ModuleUtils.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/PoisonIOInterposer.h"
+//#include "mozilla/PoisonIOInterposer.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProcessedStack.h"
 #include "mozilla/StartupTimeline.h"
@@ -83,7 +83,7 @@
 #include "nsXPCOMPrivate.h"
 #include "nsXULAppAPI.h"
 #include "other/CombinedStacks.h"
-#include "other/TelemetryIOInterposeObserver.h"
+//#include "other/TelemetryIOInterposeObserver.h"
 #include "other/WebrtcTelemetry.h"
 #include "plstr.h"
 #if defined(MOZ_GECKO_PROFILER)
@@ -103,7 +103,7 @@ using mozilla::dom::AutoJSAPI;
 using mozilla::dom::Promise;
 using mozilla::Telemetry::CombinedStacks;
 using mozilla::Telemetry::EventExtraEntry;
-using mozilla::Telemetry::TelemetryIOInterposeObserver;
+//using mozilla::Telemetry::TelemetryIOInterposeObserver;
 using Telemetry::Common::AutoHashtable;
 using Telemetry::Common::GetCurrentProduct;
 using Telemetry::Common::SetCurrentProduct;
@@ -117,15 +117,15 @@ using mozilla::Telemetry::KeyedStackCapturer;
 
 // This is not a member of TelemetryImpl because we want to record I/O during
 // startup.
-StaticAutoPtr<TelemetryIOInterposeObserver> sTelemetryIOObserver;
+//StaticAutoPtr<TelemetryIOInterposeObserver> sTelemetryIOObserver;
 
 void ClearIOReporting() {
-  if (!sTelemetryIOObserver) {
+  /*if (!sTelemetryIOObserver) {
     return;
   }
   IOInterposer::Unregister(IOInterposeObserver::OpAllWithStaging,
-                           sTelemetryIOObserver);
-  sTelemetryIOObserver = nullptr;
+                          sTelemetryIOObserver);
+  sTelemetryIOObserver = nullptr;*/
 }
 
 class TelemetryImpl final : public nsITelemetry, public nsIMemoryReporter {
@@ -245,11 +245,11 @@ TelemetryImpl::CollectReports(nsIHandleReportCallback* aHandleReport,
                    "Memory used by the SanitizedSQL Telemetry");
   }
 
-  if (sTelemetryIOObserver) {
+  /*if (sTelemetryIOObserver) {
     COLLECT_REPORT("explicit/telemetry/IOObserver",
                    sTelemetryIOObserver->SizeOfIncludingThis(aMallocSizeOf),
                    "Memory used by the Telemetry IO Observer");
-  }
+  }*/
 
 #if defined(MOZ_GECKO_PROFILER)
   COLLECT_REPORT("explicit/telemetry/StackCapturer",
@@ -691,14 +691,14 @@ TelemetryImpl::GetMaximalNumberOfConcurrentThreads(uint32_t* ret) {
   return NS_OK;
 }
 
-/*NS_IMETHODIMP
+NS_IMETHODIMP
 TelemetryImpl::GetUntrustedModuleLoadEvents(JSContext* cx, Promise** aPromise) {
-#if defined(XP_WIN) && defined(NIGHTLY_BUILD)
+/*#if defined(XP_WIN) && defined(NIGHTLY_BUILD)
   return Telemetry::GetUntrustedModuleLoadEvents(cx, aPromise);
-#else
+#else*/
   return NS_ERROR_NOT_IMPLEMENTED;
-#endif
-}*/
+//#endif
+}
 
 NS_IMETHODIMP
 TelemetryImpl::SnapshotCapturedStacks(bool clear, JSContext* cx,
@@ -1554,7 +1554,7 @@ NS_IMPL_ISUPPORTS(TelemetryImpl, nsITelemetry, nsIMemoryReporter)
 
 NS_IMETHODIMP
 TelemetryImpl::GetFileIOReports(JSContext* cx, JS::MutableHandleValue ret) {
-  if (sTelemetryIOObserver) {
+  /*if (sTelemetryIOObserver) {
     JS::Rooted<JSObject*> obj(cx, JS_NewPlainObject(cx));
     if (!obj) {
       return NS_ERROR_FAILURE;
@@ -1565,7 +1565,7 @@ TelemetryImpl::GetFileIOReports(JSContext* cx, JS::MutableHandleValue ret) {
     }
     ret.setObject(*obj);
     return NS_OK;
-  }
+  }*/
   ret.setNull();
   return NS_OK;
 }
@@ -1775,25 +1775,25 @@ TelemetryImpl::FlushBatchedChildTelemetry() {
 
 NS_IMETHODIMP
 TelemetryImpl::EarlyInit() {
-  Unused << MemoryTelemetry::Get();
+//  Unused << MemoryTelemetry::Get();
   return NS_OK;
 }
 
 NS_IMETHODIMP
 TelemetryImpl::DelayedInit() {
-  MemoryTelemetry::Get().DelayedInit();
+//  MemoryTelemetry::Get().DelayedInit();
   return NS_OK;
 }
 
 NS_IMETHODIMP
 TelemetryImpl::Shutdown() {
-  MemoryTelemetry::Get().Shutdown();
+//  MemoryTelemetry::Get().Shutdown();
   return NS_OK;
 }
 
 NS_IMETHODIMP
 TelemetryImpl::GatherMemory(JSContext* aCx, Promise** aResult) {
-  ErrorResult rv;
+  /*ErrorResult rv;
   RefPtr<Promise> promise = Promise::Create(xpc::CurrentNativeGlobal(aCx), rv);
   if (rv.Failed()) {
     return rv.StealNSResult();
@@ -1802,7 +1802,7 @@ TelemetryImpl::GatherMemory(JSContext* aCx, Promise** aResult) {
   MemoryTelemetry::Get().GatherReports(
       [promise]() { promise->MaybeResolve(JS::UndefinedHandleValue); });
 
-  promise.forget(aResult);
+  promise.forget(aResult);*/
   return NS_OK;
 }
 
@@ -1914,14 +1914,14 @@ void RecordShutdownEndTimeStamp() {
   // calling _exit, but on a debug build or when the user forces a full
   // shutdown this is called as late as possible, so we have to
   // white list this write as write poisoning will be enabled.
-  MozillaRegisterDebugFILE(f);
+  //MozillaRegisterDebugFILE(f);
 
   TimeStamp now = TimeStamp::Now();
   MOZ_ASSERT(now >= gRecordedShutdownStartTime);
   TimeDuration diff = now - gRecordedShutdownStartTime;
   uint32_t diff2 = diff.ToMilliseconds();
   int written = fprintf(f, "%d\n", diff2);
-  MozillaUnRegisterDebugFILE(f);
+  //MozillaUnRegisterDebugFILE(f);
   int rv = fclose(f);
   if (written < 0 || rv != 0) {
     tmpFile->Remove(false);
@@ -2087,17 +2087,17 @@ void WriteFailedProfileLock(nsIFile* aProfileDir) {
 
 void InitIOReporting(nsIFile* aXreDir) {
   // Never initialize twice
-  if (sTelemetryIOObserver) {
+  /*if (sTelemetryIOObserver) {
     return;
   }
 
   sTelemetryIOObserver = new TelemetryIOInterposeObserver(aXreDir);
   IOInterposer::Register(IOInterposeObserver::OpAllWithStaging,
-                         sTelemetryIOObserver);
+                         sTelemetryIOObserver);*/
 }
 
 void SetProfileDir(nsIFile* aProfD) {
-  if (!sTelemetryIOObserver || !aProfD) {
+  /*if (!sTelemetryIOObserver || !aProfD) {
     return;
   }
   nsAutoString profDirPath;
@@ -2105,7 +2105,7 @@ void SetProfileDir(nsIFile* aProfD) {
   if (NS_FAILED(rv)) {
     return;
   }
-  sTelemetryIOObserver->AddPath(profDirPath, NS_LITERAL_STRING("{profile}"));
+  sTelemetryIOObserver->AddPath(profDirPath, NS_LITERAL_STRING("{profile}"));*/
 }
 
 // Scalar API C++ Endpoints

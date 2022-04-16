@@ -7,18 +7,21 @@ use winapi::ctypes::wchar_t;
 use comptr::ComPtr;
 use winapi::shared::winerror::S_OK;
 use winapi::shared::minwindef::{BOOL, FALSE};
-use winapi::um::winnls::GetUserDefaultLocaleName;
+//use winapi::um::winnls::GetUserDefaultLocaleName;
 use std::ffi::{OsStr};
 use std::os::windows::ffi::{OsStrExt};
 
 
 lazy_static! {
-    static ref SYSTEM_LOCALE: Vec<wchar_t> = {
+    /*static ref SYSTEM_LOCALE: Vec<wchar_t> = {
         unsafe {
             let mut locale: Vec<wchar_t> = vec![0; 85];
             GetUserDefaultLocaleName(locale.as_mut_ptr(), locale.len() as i32 - 1);
             locale
         }
+    };*/
+    static ref SYSTEM_LOCALE: Vec<wchar_t> = {
+        OsStr::new("en-us").encode_wide().collect()
     };
     static ref EN_US_LOCALE: Vec<wchar_t> = {
         OsStr::new("en-us").encode_wide().collect()

@@ -18,7 +18,7 @@
 #include "nsIPropertyBag2.h"
 #include "mozilla/Services.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/LateWriteChecks.h"
+//#include "mozilla/LateWriteChecks.h"
 #include "mozIStorageCompletionCallback.h"
 #include "mozIStoragePendingStatement.h"
 
@@ -735,7 +735,7 @@ Service::Observe(nsISupports*, const char* aTopic, const char16_t*) {
       return true;
     });
 
-    if (gShutdownChecks == SCM_CRASH) {
+    /*if (gShutdownChecks == SCM_CRASH) {
       nsTArray<RefPtr<Connection>> connections;
       getConnections(connections);
       for (uint32_t i = 0, n = connections.Length(); i < n; i++) {
@@ -752,7 +752,7 @@ Service::Observe(nsISupports*, const char* aTopic, const char16_t*) {
           MOZ_CRASH();
         }
       }
-    }
+    }*/
   }
 
   return NS_OK;

@@ -56,7 +56,7 @@
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/cpu_info.h"
 #include "system_wrappers/include/metrics.h"
-#include "system_wrappers/include/rw_lock_wrapper.h"
+//#include "system_wrappers/include/rw_lock_wrapper.h"
 #include "video/call_stats.h"
 #include "video/send_delay_stats.h"
 #include "video/stats_counter.h"
@@ -284,7 +284,7 @@ class Call : public webrtc::Call,
   NetworkState audio_network_state_;
   NetworkState video_network_state_;
 
-  std::unique_ptr<RWLockWrapper> receive_crit_;
+  mozilla::RWLock* receive_crit_;
   // Audio, Video, and FlexFEC receive streams are owned by the client that
   // creates them.
   std::set<AudioReceiveStream*> audio_receive_streams_
@@ -324,7 +324,7 @@ class Call : public webrtc::Call,
   std::map<uint32_t, ReceiveRtpConfig> receive_rtp_config_
       RTC_GUARDED_BY(receive_crit_);
 
-  std::unique_ptr<RWLockWrapper> send_crit_;
+  mozilla::RWLock* send_crit_;
   // Audio and Video send streams are owned by the client that creates them.
   std::map<uint32_t, AudioSendStream*> audio_send_ssrcs_
       RTC_GUARDED_BY(send_crit_);
@@ -427,8 +427,8 @@ Call::Call(const Call::Config& config,
       config_(config),
       audio_network_state_(kNetworkDown),
       video_network_state_(kNetworkDown),
-      receive_crit_(RWLockWrapper::CreateRWLock()),
-      send_crit_(RWLockWrapper::CreateRWLock()),
+      receive_crit_(nullptr),
+      send_crit_(nullptr),
       event_log_(config.event_log),
       received_bytes_per_second_counter_(clock_, nullptr, true),
       received_audio_bytes_per_second_counter_(clock_, nullptr, true),
@@ -443,6 +443,9 @@ Call::Call(const Call::Config& config,
       start_ms_(clock_->TimeInMilliseconds()),
       worker_queue_("call_worker_queue"),
       base_bitrate_config_(config.bitrate_config) {
+  receive_crit_ = new mozilla::RWLock("receive");
+  send_crit_ = new mozilla::RWLock("send");
+
   RTC_DCHECK(config.event_log != nullptr);
   RTC_DCHECK_GE(config.bitrate_config.min_bitrate_bps, 0);
   RTC_DCHECK_GE(config.bitrate_config.start_bitrate_bps,
@@ -510,6 +513,9 @@ Call::~Call() {
   }
   UpdateReceiveHistograms();
   UpdateHistograms();
+  delete receive_crit_;
+  delete send_crit_;
+
 }
 
 void Call::UpdateHistograms() {
@@ -621,13 +627,13 @@ webrtc::AudioSendStream* Call::CreateAudioSendStream(
       bitrate_allocator_.get(), event_log_, call_stats_->rtcp_rtt_stats(),
       suspended_rtp_state);
   {
-    WriteLockScoped write_lock(*send_crit_);
+    mozilla::AutoWriteLock write_lock(*send_crit_);
     RTC_DCHECK(audio_send_ssrcs_.find(config.rtp.ssrc) ==
                audio_send_ssrcs_.end());
     audio_send_ssrcs_[config.rtp.ssrc] = send_stream;
   }
   {
-    ReadLockScoped read_lock(*receive_crit_);
+    mozilla::AutoReadLock read_lock(*receive_crit_);
     for (AudioReceiveStream* stream : audio_receive_streams_) {
       if (stream->config().rtp.local_ssrc == config.rtp.ssrc) {
         stream->AssociateSendStream(send_stream);
@@ -651,12 +657,12 @@ void Call::DestroyAudioSendStream(webrtc::AudioSendStream* send_stream) {
       static_cast<webrtc::internal::AudioSendStream*>(send_stream);
   suspended_audio_send_ssrcs_[ssrc] = audio_send_stream->GetRtpState();
   {
-    WriteLockScoped write_lock(*send_crit_);
+    mozilla::AutoWriteLock write_lock(*send_crit_);
     size_t num_deleted = audio_send_ssrcs_.erase(ssrc);
     RTC_DCHECK_EQ(1, num_deleted);
   }
   {
-    ReadLockScoped read_lock(*receive_crit_);
+    mozilla::AutoReadLock read_lock(*receive_crit_);
     for (AudioReceiveStream* stream : audio_receive_streams_) {
       if (stream->config().rtp.local_ssrc == ssrc) {
         stream->AssociateSendStream(nullptr);
@@ -678,7 +684,7 @@ webrtc::AudioReceiveStream* Call::CreateAudioReceiveStream(
       &audio_receiver_controller_, transport_send_->packet_router(), config,
       config_.audio_state, event_log_);
   {
-    WriteLockScoped write_lock(*receive_crit_);
+    mozilla::AutoWriteLock write_lock(*receive_crit_);
     receive_rtp_config_[config.rtp.remote_ssrc] =
         ReceiveRtpConfig(config.rtp.extensions, UseSendSideBwe(config));
     audio_receive_streams_.insert(receive_stream);
@@ -686,7 +692,7 @@ webrtc::AudioReceiveStream* Call::CreateAudioReceiveStream(
     ConfigureSync(config.sync_group);
   }
   {
-    ReadLockScoped read_lock(*send_crit_);
+    mozilla::AutoReadLock read_lock(*send_crit_);
     auto it = audio_send_ssrcs_.find(config.rtp.local_ssrc);
     if (it != audio_send_ssrcs_.end()) {
       receive_stream->AssociateSendStream(it->second);
@@ -705,7 +711,7 @@ void Call::DestroyAudioReceiveStream(
   webrtc::internal::AudioReceiveStream* audio_receive_stream =
       static_cast<webrtc::internal::AudioReceiveStream*>(receive_stream);
   {
-    WriteLockScoped write_lock(*receive_crit_);
+    mozilla::AutoWriteLock write_lock(*receive_crit_);
     const AudioReceiveStream::Config& config = audio_receive_stream->config();
     uint32_t ssrc = config.rtp.remote_ssrc;
     receive_side_cc_.GetRemoteBitrateEstimator(UseSendSideBwe(config))
@@ -749,7 +755,7 @@ webrtc::VideoSendStream* Call::CreateVideoSendStream(
       suspended_video_payload_states_);
 
   {
-    WriteLockScoped write_lock(*send_crit_);
+    mozilla::AutoWriteLock write_lock(*send_crit_);
     for (uint32_t ssrc : ssrcs) {
       RTC_DCHECK(video_send_ssrcs_.find(ssrc) == video_send_ssrcs_.end());
       video_send_ssrcs_[ssrc] = send_stream;
@@ -771,7 +777,7 @@ void Call::DestroyVideoSendStream(webrtc::VideoSendStream* send_stream) {
 
   VideoSendStream* send_stream_impl = nullptr;
   {
-    WriteLockScoped write_lock(*send_crit_);
+    mozilla::AutoWriteLock write_lock(*send_crit_);
     auto it = video_send_ssrcs_.begin();
     while (it != video_send_ssrcs_.end()) {
       if (it->second == static_cast<VideoSendStream*>(send_stream)) {
@@ -814,7 +820,7 @@ webrtc::VideoReceiveStream* Call::CreateVideoReceiveStream(
   ReceiveRtpConfig receive_config(config.rtp.extensions,
                                   UseSendSideBwe(config));
   {
-    WriteLockScoped write_lock(*receive_crit_);
+    mozilla::AutoWriteLock write_lock(*receive_crit_);
     if (config.rtp.rtx_ssrc) {
       // We record identical config for the rtx stream as for the main
       // stream. Since the transport_send_cc negotiation is per payload
@@ -842,7 +848,7 @@ void Call::DestroyVideoReceiveStream(
       static_cast<VideoReceiveStream*>(receive_stream);
   const VideoReceiveStream::Config& config = receive_stream_impl->config();
   {
-    WriteLockScoped write_lock(*receive_crit_);
+    mozilla::AutoWriteLock write_lock(*receive_crit_);
     // Remove all ssrcs pointing to a receive stream. As RTX retransmits on a
     // separate SSRC there can be either one or two.
     receive_rtp_config_.erase(config.rtp.remote_ssrc);
@@ -869,7 +875,7 @@ FlexfecReceiveStream* Call::CreateFlexfecReceiveStream(
 
   FlexfecReceiveStreamImpl* receive_stream;
   {
-    WriteLockScoped write_lock(*receive_crit_);
+    mozilla::AutoWriteLock write_lock(*receive_crit_);
     // Unlike the video and audio receive streams,
     // FlexfecReceiveStream implements RtpPacketSinkInterface itself,
     // and hence its constructor passes its |this| pointer to
@@ -900,7 +906,7 @@ void Call::DestroyFlexfecReceiveStream(FlexfecReceiveStream* receive_stream) {
 
   RTC_DCHECK(receive_stream != nullptr);
   {
-    WriteLockScoped write_lock(*receive_crit_);
+    mozilla::AutoWriteLock write_lock(*receive_crit_);
 
     const FlexfecReceiveStream::Config& config = receive_stream->GetConfig();
     uint32_t ssrc = config.remote_ssrc;
@@ -1055,7 +1061,7 @@ void Call::SignalChannelNetworkState(MediaType media, NetworkState state) {
 
   UpdateAggregateNetworkState();
   {
-    ReadLockScoped read_lock(*send_crit_);
+    mozilla::AutoReadLock read_lock(*send_crit_);
     for (auto& kv : audio_send_ssrcs_) {
       kv.second->SignalNetworkState(audio_network_state_);
     }
@@ -1064,7 +1070,7 @@ void Call::SignalChannelNetworkState(MediaType media, NetworkState state) {
     }
   }
   {
-    ReadLockScoped read_lock(*receive_crit_);
+    mozilla::AutoReadLock read_lock(*receive_crit_);
     for (AudioReceiveStream* audio_receive_stream : audio_receive_streams_) {
       audio_receive_stream->SignalNetworkState(audio_network_state_);
     }
@@ -1078,14 +1084,14 @@ void Call::OnTransportOverheadChanged(MediaType media,
                                       int transport_overhead_per_packet) {
   switch (media) {
     case MediaType::AUDIO: {
-      ReadLockScoped read_lock(*send_crit_);
+      mozilla::AutoReadLock read_lock(*send_crit_);
       for (auto& kv : audio_send_ssrcs_) {
         kv.second->SetTransportOverhead(transport_overhead_per_packet);
       }
       break;
     }
     case MediaType::VIDEO: {
-      ReadLockScoped read_lock(*send_crit_);
+      mozilla::AutoReadLock read_lock(*send_crit_);
       for (auto& kv : video_send_ssrcs_) {
         kv.second->SetTransportOverhead(transport_overhead_per_packet);
       }
@@ -1143,14 +1149,14 @@ void Call::UpdateAggregateNetworkState() {
   bool have_audio = false;
   bool have_video = false;
   {
-    ReadLockScoped read_lock(*send_crit_);
+    mozilla::AutoReadLock read_lock(*send_crit_);
     if (audio_send_ssrcs_.size() > 0)
       have_audio = true;
     if (video_send_ssrcs_.size() > 0)
       have_video = true;
   }
   {
-    ReadLockScoped read_lock(*receive_crit_);
+    mozilla::AutoReadLock read_lock(*receive_crit_);
     if (audio_receive_streams_.size() > 0)
       have_audio = true;
     if (video_receive_streams_.size() > 0)
@@ -1205,7 +1211,7 @@ void Call::OnNetworkChanged(uint32_t target_bitrate_bps,
 
   bool sending_video;
   {
-    ReadLockScoped read_lock(*send_crit_);
+    mozilla::AutoReadLock read_lock(*send_crit_);
     sending_video = !video_send_streams_.empty();
   }
 
@@ -1296,28 +1302,28 @@ PacketReceiver::DeliveryStatus Call::DeliverRtcp(MediaType media_type,
   }
   bool rtcp_delivered = false;
   if (media_type == MediaType::ANY || media_type == MediaType::VIDEO) {
-    ReadLockScoped read_lock(*receive_crit_);
+    mozilla::AutoReadLock read_lock(*receive_crit_);
     for (VideoReceiveStream* stream : video_receive_streams_) {
       if (stream->DeliverRtcp(packet, length))
         rtcp_delivered = true;
     }
   }
   if (media_type == MediaType::ANY || media_type == MediaType::AUDIO) {
-    ReadLockScoped read_lock(*receive_crit_);
+    mozilla::AutoReadLock read_lock(*receive_crit_);
     for (AudioReceiveStream* stream : audio_receive_streams_) {
       if (stream->DeliverRtcp(packet, length))
         rtcp_delivered = true;
     }
   }
   if (media_type == MediaType::ANY || media_type == MediaType::VIDEO) {
-    ReadLockScoped read_lock(*send_crit_);
+    mozilla::AutoReadLock read_lock(*send_crit_);
     for (VideoSendStream* stream : video_send_streams_) {
       if (stream->DeliverRtcp(packet, length))
         rtcp_delivered = true;
     }
   }
   if (media_type == MediaType::ANY || media_type == MediaType::AUDIO) {
-    ReadLockScoped read_lock(*send_crit_);
+    mozilla::AutoReadLock read_lock(*send_crit_);
     for (auto& kv : audio_send_ssrcs_) {
       if (kv.second->DeliverRtcp(packet, length))
         rtcp_delivered = true;
@@ -1356,7 +1362,7 @@ PacketReceiver::DeliveryStatus Call::DeliverRtp(MediaType media_type,
   RTC_DCHECK(media_type == MediaType::AUDIO || media_type == MediaType::VIDEO ||
              is_keep_alive_packet);
 
-  ReadLockScoped read_lock(*receive_crit_);
+  mozilla::AutoReadLock read_lock(*receive_crit_);
   auto it = receive_rtp_config_.find(parsed_packet.Ssrc());
   if (it == receive_rtp_config_.end()) {
     RTC_LOG(LS_ERROR) << "receive_rtp_config_ lookup failed for ssrc "
@@ -1423,7 +1429,7 @@ void Call::OnRecoveredPacket(const uint8_t* packet, size_t length) {
 
   parsed_packet.set_recovered(true);
 
-  ReadLockScoped read_lock(*receive_crit_);
+  mozilla::AutoReadLock read_lock(*receive_crit_);
   auto it = receive_rtp_config_.find(parsed_packet.Ssrc());
   if (it == receive_rtp_config_.end()) {
     RTC_LOG(LS_ERROR) << "receive_rtp_config_ lookup failed for ssrc "

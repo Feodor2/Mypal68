@@ -16,7 +16,8 @@
 #include "modules/desktop_capture/desktop_geometry.h"
 #include "modules/desktop_capture/desktop_region.h"
 #include "rtc_base/constructormagic.h"
-#include "system_wrappers/include/rw_lock_wrapper.h"
+//#include "system_wrappers/include/rw_lock_wrapper.h"
+#include "mozilla/RWLock.h"
 
 namespace webrtc {
 
@@ -72,7 +73,8 @@ class ScreenCapturerHelper {
   DesktopRegion invalid_region_;
 
   // A lock protecting |invalid_region_| across threads.
-  std::unique_ptr<RWLockWrapper> invalid_region_lock_;
+  //std::unique_ptr<RWLockWrapper> invalid_region_lock_;
+  mozilla::RWLock* invalid_region_lock_;
 
   // The size of the most recently captured screen.
   DesktopSize size_most_recent_;

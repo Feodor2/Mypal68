@@ -241,6 +241,7 @@ av_hwdevice_ctx_init
 av_hwdevice_get_hwframe_constraints
 av_hwdevice_get_type_name
 av_hwdevice_hwconfig_alloc
+av_hwdevice_iterate_types
 av_hwframe_constraints_free
 av_hwframe_ctx_alloc
 av_hwframe_ctx_init

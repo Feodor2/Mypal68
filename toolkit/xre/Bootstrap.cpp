@@ -44,9 +44,9 @@ class BootstrapImpl final : public Bootstrap {
     return ::XRE_main(argc, argv, aConfig);
   }
 
-  virtual void XRE_StopLateWriteChecks() override {
+  /*virtual void XRE_StopLateWriteChecks() override {
     ::XRE_StopLateWriteChecks();
-  }
+  }*/
 
   virtual int XRE_XPCShellMain(int argc, char** argv, char** envp,
                                const XREShellData* aShellData) override {

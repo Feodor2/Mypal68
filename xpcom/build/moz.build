@@ -16,35 +16,10 @@ EXPORTS.mozilla += [
     '!Services.h',
     'FileLocation.h',
     'GeckoProcessTypes.h',
-    'IOInterposer.h',
-    'LateWriteChecks.h',
     'Omnijar.h',
-    'PoisonIOInterposer.h',
     'XPCOM.h',
     'XREAppData.h',
 ]
-
-if CONFIG['OS_ARCH'] == 'WINNT':
-    EXPORTS.mozilla += [
-        'perfprobe.h',
-    ]
-    SOURCES += ['perfprobe.cpp']
-    if CONFIG['CC_TYPE'] not in ('gcc', 'clang'):
-        SOURCES += [
-            'PoisonIOInterposerBase.cpp',
-            'PoisonIOInterposerWin.cpp',
-        ]
-    else:
-        SOURCES += ['PoisonIOInterposerStub.cpp']
-elif CONFIG['MOZ_WIDGET_TOOLKIT'] == 'cocoa':
-    UNIFIED_SOURCES += [
-        'PoisonIOInterposerBase.cpp',
-        'PoisonIOInterposerMac.cpp',
-    ]
-    SOURCES += ['mach_override.c']
-    SOURCES['mach_override.c'].flags += ['-Wno-unused-function']
-else:
-    SOURCES += ['PoisonIOInterposerStub.cpp']
 
 include('../glue/objs.mozbuild')
 
@@ -57,9 +32,7 @@ UNIFIED_SOURCES += xpcom_glue_src_cppsrcs
 
 UNIFIED_SOURCES += [
     'FileLocation.cpp',
-    'IOInterposer.cpp',
-    'LateWriteChecks.cpp',
-    'MainThreadIOLogger.cpp',
+#    'MainThreadIOLogger.cpp',
     'Omnijar.cpp',
     'XPCOMInit.cpp',
 ]
@@ -68,7 +41,7 @@ SOURCES += ['!Services.cpp']
 
 if CONFIG['OS_ARCH'] != 'WINNT':
     SOURCES += [
-        'NSPRInterposer.cpp',
+#        'NSPRInterposer.cpp',
     ]
 
 GENERATED_FILES += [

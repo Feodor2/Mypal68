@@ -3713,8 +3713,7 @@ static bool malloc_init_hard() {
   const char* opts;
   long result;
 
-//  AutoLock<
-//StaticMutex> lock(gInitLock);
+  //AutoLock<StaticMutex> lock(gInitLock);
 
   if (malloc_initialized) {
     // Another thread initialized the allocator before this one

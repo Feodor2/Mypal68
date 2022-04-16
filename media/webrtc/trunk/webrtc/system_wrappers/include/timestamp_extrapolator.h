@@ -11,8 +11,9 @@
 #ifndef SYSTEM_WRAPPERS_INCLUDE_TIMESTAMP_EXTRAPOLATOR_H_
 #define SYSTEM_WRAPPERS_INCLUDE_TIMESTAMP_EXTRAPOLATOR_H_
 
-#include "system_wrappers/include/rw_lock_wrapper.h"
+//#include "system_wrappers/include/rw_lock_wrapper.h"
 #include "typedefs.h"  // NOLINT(build/include)
+#include "mozilla/RWLock.h"
 
 namespace webrtc {
 
@@ -27,7 +28,7 @@ class TimestampExtrapolator {
  private:
   void CheckForWrapArounds(uint32_t ts90khz);
   bool DelayChangeDetection(double error);
-  RWLockWrapper* _rwLock;
+  mozilla::RWLock* _rwLock;
   double _w[2];
   double _pP[2][2];
   int64_t _startMs;

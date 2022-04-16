@@ -772,9 +772,9 @@ MFBT_API void DllBlocklist_Initialize(uint32_t aInitFlags) {
 
 #ifdef DEBUG
 MFBT_API void DllBlocklist_Shutdown() {
-  if (IsUntrustedDllsHandlerEnabled()) {
+  /*if (IsUntrustedDllsHandlerEnabled()) {
     glue::UntrustedDllsHandler::Shutdown();
-  }
+  }*/
 }
 #endif  // DEBUG
 

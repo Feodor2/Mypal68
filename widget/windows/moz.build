@@ -47,7 +47,6 @@ UNIFIED_SOURCES += [
     'InProcessWinCompositorWidget.cpp',
     'JumpListItem.cpp',
     'KeyboardLayout.cpp',
-    'LSPAnnotator.cpp',
     'nsAppShell.cpp',
     'nsClipboard.cpp',
     'nsColorPicker.cpp',

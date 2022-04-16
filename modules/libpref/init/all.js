@@ -1072,6 +1072,7 @@ pref("toolkit.scrollbox.clickToScroll.scrollDelay", 150);
 pref("toolkit.tabbox.switchByScrolling", false);
 
 // Telemetry settings.
+pref("toolkit.telemetry.enabled", false);
 // Server to submit telemetry pings to.
 pref("toolkit.telemetry.server", "data:text/plain,");
 // Telemetry server owner. Please change if you set toolkit.telemetry.server to a different server

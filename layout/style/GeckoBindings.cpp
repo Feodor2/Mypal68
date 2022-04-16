@@ -20,7 +20,6 @@
 #include "nsDOMTokenList.h"
 #include "nsDeviceContext.h"
 #include "nsIContentInlines.h"
-#include "nsICrashReporter.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsILoadContext.h"
 #include "nsIFrame.h"

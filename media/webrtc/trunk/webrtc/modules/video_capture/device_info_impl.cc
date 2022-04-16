@@ -22,22 +22,24 @@
 namespace webrtc {
 namespace videocapturemodule {
 DeviceInfoImpl::DeviceInfoImpl()
-    : _apiLock(*RWLockWrapper::CreateRWLock()),
+    : _apiLock(nullptr),
       _lastUsedDeviceName(NULL),
-      _lastUsedDeviceNameLength(0) {}
+      _lastUsedDeviceNameLength(0) {
+  _apiLock = new mozilla::RWLock("_apiLock");
+}
 
 DeviceInfoImpl::~DeviceInfoImpl(void) {
-  _apiLock.AcquireLockExclusive();
+  _apiLock->WriteLock();
   free(_lastUsedDeviceName);
-  _apiLock.ReleaseLockExclusive();
+  _apiLock->WriteUnlock();
 
-  delete &_apiLock;
+  delete _apiLock;
 }
 int32_t DeviceInfoImpl::NumberOfCapabilities(const char* deviceUniqueIdUTF8) {
   if (!deviceUniqueIdUTF8)
     return -1;
 
-  _apiLock.AcquireLockShared();
+  _apiLock->ReadLock();
 
   if (_lastUsedDeviceNameLength == strlen((char*)deviceUniqueIdUTF8)) {
 // Is it the same device that is asked for again.
@@ -50,13 +52,13 @@ int32_t DeviceInfoImpl::NumberOfCapabilities(const char* deviceUniqueIdUTF8) {
 #endif
     {
       // yes
-      _apiLock.ReleaseLockShared();
+      _apiLock->ReadUnlock();
       return static_cast<int32_t>(_captureCapabilities.size());
     }
   }
   // Need to get exclusive rights to create the new capability map.
-  _apiLock.ReleaseLockShared();
-  WriteLockScoped cs2(_apiLock);
+  _apiLock->ReadUnlock();
+  mozilla::AutoWriteLock cs2(*_apiLock);
 
   int32_t ret = CreateCapabilityMap(deviceUniqueIdUTF8);
   return ret;
@@ -67,7 +69,7 @@ int32_t DeviceInfoImpl::GetCapability(const char* deviceUniqueIdUTF8,
                                       VideoCaptureCapability& capability) {
   assert(deviceUniqueIdUTF8 != NULL);
 
-  ReadLockScoped cs(_apiLock);
+  mozilla::AutoReadLock cs(*_apiLock);
 
   if ((_lastUsedDeviceNameLength != strlen((char*)deviceUniqueIdUTF8))
 #if defined(WEBRTC_MAC) || defined(WEBRTC_LINUX) || defined(WEBRTC_BSD)
@@ -79,15 +81,15 @@ int32_t DeviceInfoImpl::GetCapability(const char* deviceUniqueIdUTF8,
 #endif
 
   {
-    _apiLock.ReleaseLockShared();
-    _apiLock.AcquireLockExclusive();
+    _apiLock->ReadUnlock();
+    _apiLock->WriteLock();
     if (-1 == CreateCapabilityMap(deviceUniqueIdUTF8)) {
-      _apiLock.ReleaseLockExclusive();
-      _apiLock.AcquireLockShared();
+      _apiLock->WriteUnlock();
+      _apiLock->ReadLock();
       return -1;
     }
-    _apiLock.ReleaseLockExclusive();
-    _apiLock.AcquireLockShared();
+    _apiLock->WriteUnlock();
+    _apiLock->ReadLock();
   }
 
   // Make sure the number is valid
@@ -109,7 +111,7 @@ int32_t DeviceInfoImpl::GetBestMatchedCapability(
   if (!deviceUniqueIdUTF8)
     return -1;
 
-  ReadLockScoped cs(_apiLock);
+  mozilla::AutoReadLock cs(*_apiLock);
   if ((_lastUsedDeviceNameLength != strlen((char*)deviceUniqueIdUTF8))
 #if defined(WEBRTC_MAC) || defined(WEBRTC_LINUX) || defined(WEBRTC_BSD)
       || (strncasecmp((char*)_lastUsedDeviceName, (char*)deviceUniqueIdUTF8,
@@ -119,13 +121,13 @@ int32_t DeviceInfoImpl::GetBestMatchedCapability(
                     _lastUsedDeviceNameLength) != 0))
 #endif
   {
-    _apiLock.ReleaseLockShared();
-    _apiLock.AcquireLockExclusive();
+    _apiLock->ReadUnlock();
+    _apiLock->WriteLock();
     if (-1 == CreateCapabilityMap(deviceUniqueIdUTF8)) {
       return -1;
     }
-    _apiLock.ReleaseLockExclusive();
-    _apiLock.AcquireLockShared();
+    _apiLock->WriteUnlock();
+    _apiLock->ReadLock();
   }
 
   int32_t bestformatIndex = -1;

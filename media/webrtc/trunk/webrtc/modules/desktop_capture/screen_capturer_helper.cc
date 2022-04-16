@@ -16,26 +16,28 @@
 namespace webrtc {
 
 ScreenCapturerHelper::ScreenCapturerHelper()
-    : invalid_region_lock_(RWLockWrapper::CreateRWLock()),
+    : invalid_region_lock_(nullptr),
       log_grid_size_(0) {
+  invalid_region_lock_ = new mozilla::RWLock("invalid_region");
 }
 
 ScreenCapturerHelper::~ScreenCapturerHelper() {
+  delete invalid_region_lock_;
 }
 
 void ScreenCapturerHelper::ClearInvalidRegion() {
-  WriteLockScoped scoped_invalid_region_lock(*invalid_region_lock_);
+  mozilla::AutoWriteLock scoped_invalid_region_lock(*invalid_region_lock_);
   invalid_region_.Clear();
 }
 
 void ScreenCapturerHelper::InvalidateRegion(
     const DesktopRegion& invalid_region) {
-  WriteLockScoped scoped_invalid_region_lock(*invalid_region_lock_);
+  mozilla::AutoWriteLock scoped_invalid_region_lock(*invalid_region_lock_);
   invalid_region_.AddRegion(invalid_region);
 }
 
 void ScreenCapturerHelper::InvalidateScreen(const DesktopSize& size) {
-  WriteLockScoped scoped_invalid_region_lock(*invalid_region_lock_);
+  mozilla::AutoWriteLock scoped_invalid_region_lock(*invalid_region_lock_);
   invalid_region_.AddRect(DesktopRect::MakeSize(size));
 }
 
@@ -44,7 +46,7 @@ void ScreenCapturerHelper::TakeInvalidRegion(
   invalid_region->Clear();
 
   {
-    WriteLockScoped scoped_invalid_region_lock(*invalid_region_lock_);
+    mozilla::AutoWriteLock scoped_invalid_region_lock(*invalid_region_lock_);
     invalid_region->Swap(&invalid_region_);
   }
 

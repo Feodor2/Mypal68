@@ -24,7 +24,7 @@
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/Logging.h"
 #include "nsIObserverService.h"
-#include "mozilla/IOInterposer.h"
+//#include "mozilla/IOInterposer.h"
 #include "mozilla/ipc/MessageChannel.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/Preferences.h"
@@ -425,7 +425,7 @@ void nsThread::ThreadFunc(void* aArg) {
   // Inform the ThreadManager
   nsThreadManager::get().RegisterCurrentThread(*self);
 
-  mozilla::IOInterposer::RegisterCurrentThread();
+  //mozilla::IOInterposer::RegisterCurrentThread();
 
   // This must come after the call to nsThreadManager::RegisterCurrentThread(),
   // because that call is needed to properly set up this thread as an nsThread,
@@ -473,7 +473,7 @@ void nsThread::ThreadFunc(void* aArg) {
     }
   }
 
-  mozilla::IOInterposer::UnregisterCurrentThread();
+  //mozilla::IOInterposer::UnregisterCurrentThread();
 
   // Inform the threadmanager that this thread is going away
   nsThreadManager::get().UnregisterCurrentThread(*self);

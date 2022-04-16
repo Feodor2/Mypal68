@@ -14,7 +14,8 @@
 #include <vector>
 
 #include "modules/video_capture/video_capture.h"
-#include "system_wrappers/include/rw_lock_wrapper.h"
+//#include "system_wrappers/include/rw_lock_wrapper.h"
+#include "mozilla/RWLock.h"
 
 namespace webrtc
 {
@@ -52,7 +53,8 @@ protected:
     // Data members
     typedef std::vector<VideoCaptureCapability> VideoCaptureCapabilities;
     VideoCaptureCapabilities _captureCapabilities;
-    RWLockWrapper& _apiLock;
+    //RWLockWrapper& _apiLock;
+    mozilla::RWLock* _apiLock;
     char* _lastUsedDeviceName;
     uint32_t _lastUsedDeviceNameLength;
 };

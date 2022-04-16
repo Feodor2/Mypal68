@@ -487,7 +487,7 @@ XRE_API(void, XRE_TelemetryAccumulate, (int aID, uint32_t aSample))
 XRE_API(void, XRE_StartupTimelineRecord, (int aEvent, mozilla::TimeStamp aWhen))
 
 XRE_API(void, XRE_InitOmnijar, (nsIFile * aGreOmni, nsIFile* aAppOmni))
-XRE_API(void, XRE_StopLateWriteChecks, (void))
+//XRE_API(void, XRE_StopLateWriteChecks, (void))
 
 XRE_API(void, XRE_EnableSameExecutableForContentProc, ())
 

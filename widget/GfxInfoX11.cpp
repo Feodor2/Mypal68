@@ -9,7 +9,6 @@
 #include <sys/utsname.h>
 #include "nsCRTGlue.h"
 #include "nsExceptionHandler.h"
-#include "nsICrashReporter.h"
 #include "prenv.h"
 #include "nsPrintfCString.h"
 #include "nsWhitespaceTokenizer.h"

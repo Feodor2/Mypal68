@@ -44,7 +44,7 @@ impl DirectComposition {
     ///
     /// `hwnd` must be a valid handle to a window.
     pub unsafe fn new(hwnd: HWND) -> Self {
-        let d3d_device = ComPtr::new_with(|ptr_ptr| winapi::um::d3d11::D3D11CreateDevice(
+        /*let d3d_device = ComPtr::new_with(|ptr_ptr| winapi::um::d3d11::D3D11CreateDevice(
             ptr::null_mut(),
             winapi::um::d3dcommon::D3D_DRIVER_TYPE_HARDWARE,
             ptr::null_mut(),
@@ -94,7 +94,7 @@ impl DirectComposition {
             d3d_device, dxgi_factory,
             egl, gleam,
             composition_device, composition_target, root_visual,
-        }
+        }*/
     }
 
     /// Execute changes to the DirectComposition scene.

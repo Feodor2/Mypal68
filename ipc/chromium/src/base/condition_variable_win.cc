@@ -19,10 +19,10 @@ using base::TimeDelta;
 }*/
 
 ConditionVariable::ConditionVariable(Lock* user_lock)
-  : user_lock_(*user_lock),
-    run_state_(RUNNING),
-    allocation_counter_(0),
-    recycling_list_size_(0) {
+  : run_state_(RUNNING),
+    user_lock_(*user_lock),
+    recycling_list_size_(0),
+    allocation_counter_(0) {
   DCHECK(user_lock);
 }
 

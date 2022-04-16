@@ -503,7 +503,7 @@ static bool PrepPing(const PingThreadContext& aContext, const std::wstring& aId,
     aJson.BoolProperty("server_os", isServer);
   }
 
-  WCHAR localeName[LOCALE_NAME_MAX_LENGTH] = {};
+  /*WCHAR localeName[LOCALE_NAME_MAX_LENGTH] = {};
   int localeNameLen =
       ::GetUserDefaultLocaleName(localeName, mozilla::ArrayLength(localeName));
   if (localeNameLen) {
@@ -511,7 +511,8 @@ static bool PrepPing(const PingThreadContext& aContext, const std::wstring& aId,
     if (localeNameUtf8) {
       aJson.StringProperty("os_locale", localeNameUtf8.get());
     }
-  }
+  }*/
+  aJson.StringProperty("os_locale", "en");
 
   SYSTEM_INFO sysInfo;
   ::GetNativeSystemInfo(&sysInfo);
@@ -673,13 +674,6 @@ static bool SendPing(const mozilla::LauncherError& aError) {
     return false;
   }
 #  endif  // defined(MOZ_LAUNCHER_PROCESS)
-
-  // We send this ping when the launcher process fails. After we start the
-  // SendPingThread, this thread falls back from running as the launcher process
-  // to running as the browser main thread. Once this happens, it will be unsafe
-  // to set up PoisonIOInterposer (since we have already spun up a background
-  // thread).
-  mozilla::SaveToEnv("MOZ_DISABLE_POISON_IO_INTERPOSER=1");
 
   // Capture aError and our module list into context for processing on another
   // thread.

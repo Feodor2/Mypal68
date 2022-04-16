@@ -155,7 +155,7 @@ int32_t DeviceInfoDS::Init() {
   return 0;
 }
 uint32_t DeviceInfoDS::NumberOfDevices() {
-  ReadLockScoped cs(_apiLock);
+  mozilla::AutoReadLock cs(*_apiLock);
   return GetDeviceInfo(0, 0, 0, 0, 0, 0, 0, 0);
 }
 
@@ -168,7 +168,7 @@ int32_t DeviceInfoDS::GetDeviceName(uint32_t deviceNumber,
                                     uint32_t productUniqueIdUTF8Size,
                                     pid_t* pid)
 {
-  ReadLockScoped cs(_apiLock);
+  mozilla::AutoReadLock cs(*_apiLock);
   const int32_t result = GetDeviceInfo(
       deviceNumber, deviceNameUTF8, deviceNameSize, deviceUniqueIdUTF8,
       deviceUniqueIdUTF8Size, productUniqueIdUTF8, productUniqueIdUTF8Size,
@@ -350,7 +350,7 @@ IBaseFilter* DeviceInfoDS::GetDeviceFilter(const char* deviceUniqueIdUTF8,
 int32_t DeviceInfoDS::GetWindowsCapability(
     const int32_t capabilityIndex,
     VideoCaptureCapabilityWindows& windowsCapability) {
-  ReadLockScoped cs(_apiLock);
+  mozilla::AutoReadLock cs(*_apiLock);
 
   if (capabilityIndex < 0 || static_cast<size_t>(capabilityIndex) >=
                                  _captureCapabilitiesWindows.size()) {
@@ -651,7 +651,7 @@ int32_t DeviceInfoDS::DisplayCaptureSettingsDialogBox(
     void* parentWindow,
     uint32_t positionX,
     uint32_t positionY) {
-  ReadLockScoped cs(_apiLock);
+  mozilla::AutoReadLock cs(*_apiLock);
   HWND window = (HWND)parentWindow;
 
   IBaseFilter* filter = GetDeviceFilter(deviceUniqueIdUTF8, NULL, 0);

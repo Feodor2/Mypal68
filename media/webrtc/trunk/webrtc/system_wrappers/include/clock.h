@@ -14,8 +14,9 @@
 #include <memory>
 
 #include "system_wrappers/include/ntp_time.h"
-#include "system_wrappers/include/rw_lock_wrapper.h"
+//#include "system_wrappers/include/rw_lock_wrapper.h"
 #include "typedefs.h"  // NOLINT(build/include)
+#include "mozilla/RWLock.h"
 
 namespace webrtc {
 
@@ -80,7 +81,7 @@ class SimulatedClock : public Clock {
 
  private:
   int64_t time_us_;
-  std::unique_ptr<RWLockWrapper> lock_;
+  mozilla::RWLock* lock_;
 };
 
 };  // namespace webrtc

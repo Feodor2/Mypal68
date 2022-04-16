@@ -14,6 +14,7 @@
 #ifndef XP_WIN
 #  include <pthread.h>
 #else
+#  include <windows.h>
 typedef struct _RTL_RWLOCK {
    RTL_CRITICAL_SECTION rtlCS;
 
@@ -29,11 +30,9 @@ typedef struct _RTL_RWLOCK {
    PVOID  pDebugInfo;
 } RTL_RWLOCK, *LPRTL_RWLOCK;
 
-typedef VOID (WINAPI *RtlInitializeResource)(LPRTL_RWLOCK rwl);
-typedef VOID (WINAPI *RtlDeleteResource)(LPRTL_RWLOCK rwl);
-typedef VOID (WINAPI *RtlAcquireResourceExclusive)(LPRTL_RWLOCK rwl, BYTE fWait);
-typedef VOID (WINAPI *RtlAcquireResourceShared)(LPRTL_RWLOCK rwl, BYTE fWait);
-typedef VOID (WINAPI *RtlReleaseResource)(LPRTL_RWLOCK rwl);
+typedef void(__stdcall *RtlManagePtr)(LPRTL_RWLOCK);
+typedef BYTE(__stdcall *RtlOperatePtr)(LPRTL_RWLOCK, BYTE);
+
 #endif
 
 namespace mozilla {
@@ -66,18 +65,18 @@ class RWLock : public BlockingResourceBase {
 
   ~RWLock();
 
-//#ifdef DEBUG
+#ifdef DEBUG
   bool LockedForWritingByCurrentThread();
-  void ReadLock(){};
-  void ReadUnlock(){};
-  void WriteLock(){};
-  void WriteUnlock(){};
-/*#else
+  void ReadLock();
+  void ReadUnlock();
+  void WriteLock();
+  void WriteUnlock();
+#else
   void ReadLock() { ReadLockInternal(); }
   void ReadUnlock() { ReadUnlockInternal(); }
   void WriteLock() { WriteLockInternal(); }
   void WriteUnlock() { WriteUnlockInternal(); }
-#endif*/
+#endif
 
  private:
   void ReadLockInternal();
@@ -89,24 +88,22 @@ class RWLock : public BlockingResourceBase {
   RWLock(const RWLock&) = delete;
   RWLock& operator=(const RWLock&) = delete;
 
+#ifdef DEBUG
+  // We record the owning thread for write locks only.
+  PRThread* mOwningThread;
+#endif
+
 #ifndef XP_WIN
   pthread_rwlock_t mRWLock;
 #else
-  // SRWLock is pointer-sized.  We declare it in such a fashion here to
-  // avoid pulling in windows.h wherever this header is used.
-  void* mRWLock;
+  HMODULE hModule;
+  RtlManagePtr RtlDelete;
+  RtlManagePtr RtlRelease;
+  RtlOperatePtr RtlAcquireExclusive;
+  RtlOperatePtr RtlAcquireShared;
   RTL_RWLOCK rtlRWLock;
-  void* Initialize;
-  void* Delete;
-  void* AcquireExclusive;
-  void* AcquireShared;
-  void* Release;
 #endif
 
-//#ifdef DEBUG
-  // We record the owning thread for write locks only.
-  PRThread* mOwningThread;
-//#endif
 };
 
 // Read lock and unlock a RWLock with RAII semantics.  Much preferred to bare

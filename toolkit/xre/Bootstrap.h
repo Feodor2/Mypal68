@@ -93,7 +93,7 @@ class Bootstrap {
   virtual int XRE_main(int argc, char* argv[],
                        const BootstrapConfig& aConfig) = 0;
 
-  virtual void XRE_StopLateWriteChecks() = 0;
+  //virtual void XRE_StopLateWriteChecks() = 0;
 
   virtual int XRE_XPCShellMain(int argc, char** argv, char** envp,
                                const XREShellData* aShellData) = 0;

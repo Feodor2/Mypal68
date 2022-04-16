@@ -31,7 +31,6 @@
 #include "mozilla/StaticPrefs.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/SystemGroup.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/URLPreloader.h"
 #include "mozilla/Variant.h"
@@ -1667,14 +1666,6 @@ static void NotifyCallbacks(const char* aPrefName, const PrefWrapper* aPref) {
 // Prefs parsing
 //===========================================================================
 
-struct TelemetryLoadData {
-  uint32_t mFileLoadSize_B;
-  uint32_t mFileLoadNumPrefs;
-  uint32_t mFileLoadTime_us;
-};
-
-static nsDataHashtable<nsCStringHashKey, TelemetryLoadData>* gTelemetryLoadData;
-
 extern "C" {
 
 // Keep this in sync with PrefFn in prefs_parser/src/lib.rs.
@@ -1707,15 +1698,6 @@ class Parser {
     if (!ok) {
       return false;
     }
-
-    uint32_t loadTime_us = (TimeStamp::Now() - aStartTime).ToMicroseconds();
-
-    // Most prefs files are read before telemetry initializes, so we have to
-    // save these measurements now and send them to telemetry later.
-    TelemetryLoadData loadData = {uint32_t(aBuf.Length()), sNumPrefs,
-                                  loadTime_us};
-    gTelemetryLoadData->Put(aName, loadData);
-
     return true;
   }
 
@@ -1772,21 +1754,6 @@ void TestParseError(PrefValueKind aKind, const char* aText,
   // gTestParseErrorMsgs.
   aErrorMsg.Assign(gTestParseErrorMsgs);
   gTestParseErrorMsgs.Truncate();
-}
-
-void SendTelemetryLoadData() {
-  for (auto iter = gTelemetryLoadData->Iter(); !iter.Done(); iter.Next()) {
-    const nsCString& filename = PromiseFlatCString(iter.Key());
-    const TelemetryLoadData& data = iter.Data();
-    Telemetry::Accumulate(Telemetry::PREFERENCES_FILE_LOAD_SIZE_B, filename,
-                          data.mFileLoadSize_B);
-    Telemetry::Accumulate(Telemetry::PREFERENCES_FILE_LOAD_NUM_PREFS, filename,
-                          data.mFileLoadNumPrefs);
-    Telemetry::Accumulate(Telemetry::PREFERENCES_FILE_LOAD_TIME_US, filename,
-                          data.mFileLoadTime_us);
-  }
-
-  gTelemetryLoadData->Clear();
 }
 
 //===========================================================================
@@ -3321,100 +3288,6 @@ class AddPreferencesMemoryReporterRunnable : public Runnable {
 // A list of changed prefs sent from the parent via shared memory.
 static InfallibleTArray<dom::Pref>* gChangedDomPrefs;
 
-static const char kTelemetryPref[] = "toolkit.telemetry.enabled";
-static const char kChannelPref[] = "app.update.channel";
-
-#ifdef MOZ_WIDGET_ANDROID
-
-static Maybe<bool> TelemetryPrefValue() {
-  // Leave it unchanged if it's already set.
-  // XXX: how could it already be set?
-  if (Preferences::GetType(kTelemetryPref) != nsIPrefBranch::PREF_INVALID) {
-    return Nothing();
-  }
-
-  // Determine the correct default for toolkit.telemetry.enabled. If this
-  // build has MOZ_TELEMETRY_ON_BY_DEFAULT *or* we're on the beta channel,
-  // telemetry is on by default, otherwise not. This is necessary so that
-  // beta users who are testing final release builds don't flipflop defaults.
-#  ifdef MOZ_TELEMETRY_ON_BY_DEFAULT
-  return Some(true);
-#  else
-  nsAutoCString channelPrefValue;
-  Unused << Preferences::GetCString(kChannelPref, channelPrefValue,
-                                    PrefValueKind::Default);
-  return Some(channelPrefValue.EqualsLiteral("beta"));
-#  endif
-}
-
-/* static */
-void Preferences::SetupTelemetryPref() {
-  MOZ_ASSERT(XRE_IsParentProcess());
-
-  Maybe<bool> telemetryPrefValue = TelemetryPrefValue();
-  if (telemetryPrefValue.isSome()) {
-    Preferences::SetBool(kTelemetryPref, *telemetryPrefValue,
-                         PrefValueKind::Default);
-  }
-}
-
-#else  // !MOZ_WIDGET_ANDROID
-
-static bool TelemetryPrefValue() {
-  // For platforms with Unified Telemetry (here meaning not-Android),
-  // toolkit.telemetry.enabled determines whether we send "extended" data.
-  // We only want extended data from pre-release channels due to size.
-
-  NS_NAMED_LITERAL_CSTRING(channel, MOZ_STRINGIFY(MOZ_UPDATE_CHANNEL));
-
-  // Easy cases: Nightly, Aurora, Beta.
-  if (channel.EqualsLiteral("nightly") || channel.EqualsLiteral("aurora") ||
-      channel.EqualsLiteral("beta")) {
-    return true;
-  }
-
-#  ifndef MOZILLA_OFFICIAL
-  // Local developer builds: non-official builds on the "default" channel.
-  if (channel.EqualsLiteral("default")) {
-    return true;
-  }
-#  endif
-
-  // Release Candidate builds: builds that think they are release builds, but
-  // are shipped to beta users.
-  if (channel.EqualsLiteral("release")) {
-    nsAutoCString channelPrefValue;
-    Unused << Preferences::GetCString(kChannelPref, channelPrefValue,
-                                      PrefValueKind::Default);
-    if (channelPrefValue.EqualsLiteral("beta")) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-/* static */
-void Preferences::SetupTelemetryPref() {
-  MOZ_ASSERT(XRE_IsParentProcess());
-
-  Preferences::SetBool(kTelemetryPref, TelemetryPrefValue(),
-                       PrefValueKind::Default);
-  Preferences::Lock(kTelemetryPref);
-}
-
-static void CheckTelemetryPref() {
-  MOZ_ASSERT(!XRE_IsParentProcess());
-
-  // Make sure the children got passed the right telemetry pref details.
-  DebugOnly<bool> value;
-  MOZ_ASSERT(NS_SUCCEEDED(Preferences::GetBool(kTelemetryPref, &value)) &&
-             value == TelemetryPrefValue());
-  MOZ_ASSERT(Preferences::IsLocked(kTelemetryPref));
-}
-
-#endif  // MOZ_WIDGET_ANDROID
-
 /* static */
 already_AddRefed<Preferences> Preferences::GetInstanceForService() {
   if (sPreferences) {
@@ -3432,9 +3305,6 @@ already_AddRefed<Preferences> Preferences::GetInstanceForService() {
   gHashTable = new PrefsHashTable(XRE_IsParentProcess()
                                       ? kHashTableInitialLengthParent
                                       : kHashTableInitialLengthContent);
-
-  gTelemetryLoadData =
-      new nsDataHashtable<nsCStringHashKey, TelemetryLoadData>();
 
 #ifdef ACCESS_COUNTS
   MOZ_ASSERT(!gAccessCounts);
@@ -3459,10 +3329,6 @@ already_AddRefed<Preferences> Preferences::GetInstanceForService() {
     delete gChangedDomPrefs;
     gChangedDomPrefs = nullptr;
 
-#ifndef MOZ_WIDGET_ANDROID
-    CheckTelemetryPref();
-#endif
-
   } else {
     // Check if there is a deployment configuration file. If so, set up the
     // pref config machinery, which will actually read the file.
@@ -3484,8 +3350,6 @@ already_AddRefed<Preferences> Preferences::GetInstanceForService() {
       return nullptr;
     }
 
-    observerService->AddObserver(sPreferences,
-                                 "profile-before-change-telemetry", true);
     rv = observerService->AddObserver(sPreferences, "profile-before-change",
                                       true);
 
@@ -3567,9 +3431,6 @@ Preferences::~Preferences() {
 
   delete gHashTable;
   gHashTable = nullptr;
-
-  delete gTelemetryLoadData;
-  gTelemetryLoadData = nullptr;
 
 #ifdef ACCESS_COUNTS
   delete gAccessCounts;
@@ -3692,10 +3553,6 @@ void Preferences::InitializeUserPrefs() {
   sPreferences->mCurrentFile = prefsFile.forget();
 
   sPreferences->NotifyServiceObservers(NS_PREFSERVICE_READ_TOPIC_ID);
-
-  // At this point all the prefs files have been read and telemetry has been
-  // initialized. Send all the file load measurements to telemetry.
-  SendTelemetryLoadData();
 }
 
 NS_IMETHODIMP
@@ -3714,14 +3571,6 @@ Preferences::Observe(nsISupports* aSubject, const char* aTopic,
     if (AllowOffMainThreadSave()) {
       SavePrefFile(nullptr);
     }
-
-  } else if (!nsCRT::strcmp(aTopic, "profile-before-change-telemetry")) {
-    // It's possible that a profile-before-change observer after ours
-    // set a pref. A blocking save here re-saves if necessary and also waits
-    // for any pending saves to complete.
-    SavePrefFileBlocking();
-    MOZ_ASSERT(!mDirty, "Preferences should not be dirty");
-    mProfileShutdown = true;
 
   } else if (!nsCRT::strcmp(aTopic, "reload-default-prefs")) {
     // Reload the default prefs from file.
@@ -4010,15 +3859,11 @@ already_AddRefed<nsIFile> Preferences::ReadSavedPrefs() {
   rv = openPrefFile(file, PrefValueKind::User);
   if (rv == NS_ERROR_FILE_NOT_FOUND) {
     // This is a normal case for new users.
-    Telemetry::ScalarSet(
-        Telemetry::ScalarID::PREFERENCES_CREATED_NEW_USER_PREFS_FILE, true);
     rv = NS_OK;
   } else if (NS_FAILED(rv)) {
     // Save a backup copy of the current (invalid) prefs file, since all prefs
     // from the error line to the end of the file will be lost (bug 361102).
     // TODO we should notify the user about it (bug 523725).
-    Telemetry::ScalarSet(
-        Telemetry::ScalarID::PREFERENCES_PREFS_FILE_WAS_INVALID, true);
     MakeBackupPrefFile(file);
   }
 
@@ -4035,11 +3880,6 @@ void Preferences::ReadUserOverridePrefs() {
 
   aFile->AppendNative(NS_LITERAL_CSTRING("user.js"));
   rv = openPrefFile(aFile, PrefValueKind::User);
-  if (rv != NS_ERROR_FILE_NOT_FOUND) {
-    // If the file exists and was at least partially read, record that in
-    // telemetry as it may be a sign of pref injection.
-    Telemetry::ScalarSet(Telemetry::ScalarID::PREFERENCES_READ_USER_JS, true);
-  }
 }
 
 nsresult Preferences::MakeBackupPrefFile(nsIFile* aFile) {
@@ -4589,10 +4429,6 @@ static nsresult pref_ReadDefaultPrefs(const RefPtr<nsZipArchive> jarReader,
       // Do we care if a file provided by this process fails to load?
       pref_LoadPrefsInDir(path, nullptr, 0);
     }
-  }
-
-  if (XRE_IsParentProcess()) {
-    SetupTelemetryPref();
   }
 
   NS_CreateServicesFromCategory(NS_PREFSERVICE_APPDEFAULTS_TOPIC_ID, nullptr,

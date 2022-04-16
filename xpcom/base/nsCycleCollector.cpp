@@ -188,7 +188,7 @@
 
 #include "mozilla/AutoGlobalTimelineMarker.h"
 #include "mozilla/Likely.h"
-#include "mozilla/PoisonIOInterposer.h"
+//#include "mozilla/PoisonIOInterposer.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/ThreadLocal.h"
 
@@ -1422,11 +1422,11 @@ class nsCycleCollectorLogSinkToFile final : public nsICycleCollectorLogSink {
  private:
   ~nsCycleCollectorLogSinkToFile() {
     if (mGCLog.mStream) {
-      MozillaUnRegisterDebugFILE(mGCLog.mStream);
+      //MozillaUnRegisterDebugFILE(mGCLog.mStream);
       fclose(mGCLog.mStream);
     }
     if (mCCLog.mStream) {
-      MozillaUnRegisterDebugFILE(mCCLog.mStream);
+      //MozillaUnRegisterDebugFILE(mCCLog.mStream);
       fclose(mCCLog.mStream);
     }
   }
@@ -1495,7 +1495,7 @@ class nsCycleCollectorLogSinkToFile final : public nsICycleCollectorLogSink {
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return NS_ERROR_UNEXPECTED;
     }
-    MozillaRegisterDebugFILE(aLog->mStream);
+    //MozillaRegisterDebugFILE(aLog->mStream);
     return NS_OK;
   }
 
@@ -1503,7 +1503,7 @@ class nsCycleCollectorLogSinkToFile final : public nsICycleCollectorLogSink {
     MOZ_ASSERT(aLog->mStream);
     MOZ_ASSERT(aLog->mFile);
 
-    MozillaUnRegisterDebugFILE(aLog->mStream);
+    //MozillaUnRegisterDebugFILE(aLog->mStream);
     fclose(aLog->mStream);
     aLog->mStream = nullptr;
 

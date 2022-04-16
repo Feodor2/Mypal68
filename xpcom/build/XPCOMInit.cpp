@@ -73,8 +73,8 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/BackgroundHangMonitor.h"
 
-#include "mozilla/PoisonIOInterposer.h"
-#include "mozilla/LateWriteChecks.h"
+//#include "mozilla/PoisonIOInterposer.h"
+//#include "mozilla/LateWriteChecks.h"
 
 #include "mozilla/scache/StartupCache.h"
 
@@ -653,7 +653,7 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
     // Late-write checks needs to find the profile directory, so it has to
     // be initialized before mozilla::services::Shutdown or (because of
     // xpcshell tests replacing the service) modules being unloaded.
-    mozilla::InitLateWriteChecks();
+    //mozilla::InitLateWriteChecks();
 
     if (observerService) {
       mozilla::KillClearOnShutdown(ShutdownPhase::ShutdownLoaders);
@@ -711,12 +711,12 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
 
   PROFILER_ADD_MARKER("Shutdown xpcom", OTHER);
   // If we are doing any shutdown checks, poison writes.
-  if (gShutdownChecks != SCM_NOTHING) {
-#ifdef XP_MACOSX
-    mozilla::OnlyReportDirtyWrites();
-#endif /* XP_MACOSX */
-    mozilla::BeginLateWriteChecks();
-  }
+  //if (gShutdownChecks != SCM_NOTHING) {
+//#ifdef XP_MACOSX
+//    mozilla::OnlyReportDirtyWrites();
+//#endif /* XP_MACOSX */
+    //mozilla::BeginLateWriteChecks();
+  //}
 
   // Shutdown xpcom. This will release all loaders and cause others holding
   // a refcount to the component manager to release it.

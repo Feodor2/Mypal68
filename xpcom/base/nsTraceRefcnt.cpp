@@ -35,7 +35,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BlockingResourceBase.h"
-#include "mozilla/PoisonIOInterposer.h"
+//#include "mozilla/PoisonIOInterposer.h"
 #include "mozilla/UniquePtr.h"
 
 #include <string>
@@ -553,7 +553,7 @@ static bool InitLog(const EnvCharType* aEnvVar, const char* aMsg,
       const char* fp = fname.get();
 #endif
       if (stream) {
-        MozillaRegisterDebugFD(fileno(stream));
+        //MozillaRegisterDebugFD(fileno(stream));
         *aResult = stream;
         fprintf(stderr,
                 "### " ENVVAR_PRINTF " defined -- logging %s to " ENVVAR_PRINTF
@@ -578,7 +578,7 @@ static void maybeUnregisterAndCloseFile(FILE*& aFile) {
     return;
   }
 
-  MozillaUnRegisterDebugFILE(aFile);
+  //MozillaUnRegisterDebugFILE(aFile);
   fclose(aFile);
   aFile = nullptr;
 }

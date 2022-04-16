@@ -306,7 +306,7 @@ int main(int argc, char* argv[], char* envp[]) {
   // at least one such write that we don't control (see bug 826029). For
   // now we enable writes again and early exits will have to use exit instead
   // of _exit.
-  gBootstrap->XRE_StopLateWriteChecks();
+  //gBootstrap->XRE_StopLateWriteChecks();
 #endif
 
   gBootstrap.reset();

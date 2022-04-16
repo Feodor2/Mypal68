@@ -52,7 +52,7 @@
 #  include <mach/mach_time.h>
 #endif
 
-#include "mozilla/IOInterposer.h"
+//#include "mozilla/IOInterposer.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/StartupTimeline.h"
 
@@ -64,53 +64,6 @@ static NS_DEFINE_CID(kAppShellCID, NS_APPSHELL_CID);
 #define kPrefAlwaysUseSafeMode "toolkit.startup.always_use_safe_mode"
 
 #define kNanosecondsPerSecond 1000000000.0
-
-#if defined(XP_WIN)
-#  include "mozilla/perfprobe.h"
-/**
- * Events sent to the system for profiling purposes
- */
-// Keep them syncronized with the .mof file
-
-// Process-wide GUID, used by the OS to differentiate sources
-// {509962E0-406B-46F4-99BA-5A009F8D2225}
-// Keep it synchronized with the .mof file
-#  define NS_APPLICATION_TRACING_CID                   \
-    {                                                  \
-      0x509962E0, 0x406B, 0x46F4, {                    \
-        0x99, 0xBA, 0x5A, 0x00, 0x9F, 0x8D, 0x22, 0x25 \
-      }                                                \
-    }
-
-// Event-specific GUIDs, used by the OS to differentiate events
-// {A3DA04E0-57D7-482A-A1C1-61DA5F95BACB}
-#  define NS_PLACES_INIT_COMPLETE_EVENT_CID            \
-    {                                                  \
-      0xA3DA04E0, 0x57D7, 0x482A, {                    \
-        0xA1, 0xC1, 0x61, 0xDA, 0x5F, 0x95, 0xBA, 0xCB \
-      }                                                \
-    }
-// {917B96B1-ECAD-4DAB-A760-8D49027748AE}
-#  define NS_SESSION_STORE_WINDOW_RESTORED_EVENT_CID   \
-    {                                                  \
-      0x917B96B1, 0xECAD, 0x4DAB, {                    \
-        0xA7, 0x60, 0x8D, 0x49, 0x02, 0x77, 0x48, 0xAE \
-      }                                                \
-    }
-// {26D1E091-0AE7-4F49-A554-4214445C505C}
-#  define NS_XPCOM_SHUTDOWN_EVENT_CID                  \
-    {                                                  \
-      0x26D1E091, 0x0AE7, 0x4F49, {                    \
-        0xA5, 0x54, 0x42, 0x14, 0x44, 0x5C, 0x50, 0x5C \
-      }                                                \
-    }
-
-static NS_DEFINE_CID(kApplicationTracingCID, NS_APPLICATION_TRACING_CID);
-static NS_DEFINE_CID(kPlacesInitCompleteCID, NS_PLACES_INIT_COMPLETE_EVENT_CID);
-static NS_DEFINE_CID(kSessionStoreWindowRestoredCID,
-                     NS_SESSION_STORE_WINDOW_RESTORED_EVENT_CID);
-static NS_DEFINE_CID(kXPCOMShutdownCID, NS_XPCOM_SHUTDOWN_EVENT_CID);
-#endif  // defined(XP_WIN)
 
 using namespace mozilla;
 
@@ -181,40 +134,6 @@ nsresult nsAppStartup::Init() {
   os->AddObserver(this, "xul-window-destroyed", true);
   os->AddObserver(this, "profile-before-change", true);
   os->AddObserver(this, "xpcom-shutdown", true);
-
-#if defined(XP_WIN)
-  os->AddObserver(this, "places-init-complete", true);
-  // This last event is only interesting to us for xperf-based measures
-
-  // Initialize interaction with profiler
-  mProbesManager = new ProbeManager(
-      kApplicationTracingCID, NS_LITERAL_CSTRING("Application startup probe"));
-  // Note: The operation is meant mostly for in-house profiling.
-  // Therefore, we do not warn if probes manager cannot be initialized
-
-  if (mProbesManager) {
-    mPlacesInitCompleteProbe = mProbesManager->GetProbe(
-        kPlacesInitCompleteCID, NS_LITERAL_CSTRING("places-init-complete"));
-    NS_WARNING_ASSERTION(mPlacesInitCompleteProbe,
-                         "Cannot initialize probe 'places-init-complete'");
-
-    mSessionWindowRestoredProbe = mProbesManager->GetProbe(
-        kSessionStoreWindowRestoredCID,
-        NS_LITERAL_CSTRING("sessionstore-windows-restored"));
-    NS_WARNING_ASSERTION(
-        mSessionWindowRestoredProbe,
-        "Cannot initialize probe 'sessionstore-windows-restored'");
-
-    mXPCOMShutdownProbe = mProbesManager->GetProbe(
-        kXPCOMShutdownCID, NS_LITERAL_CSTRING("xpcom-shutdown"));
-    NS_WARNING_ASSERTION(mXPCOMShutdownProbe,
-                         "Cannot initialize probe 'xpcom-shutdown'");
-
-    rv = mProbesManager->StartSession();
-    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                         "Cannot initialize system probe manager");
-  }
-#endif  // defined(XP_WIN)
 
   return NS_OK;
 }
@@ -700,25 +619,11 @@ nsAppStartup::Observe(nsISupports* aSubject, const char* aTopic,
     ExitLastWindowClosingSurvivalArea();
   } else if (!strcmp(aTopic, "sessionstore-windows-restored")) {
     StartupTimeline::Record(StartupTimeline::SESSION_RESTORED);
-    IOInterposer::EnteringNextStage();
-#if defined(XP_WIN)
-    if (mSessionWindowRestoredProbe) {
-      mSessionWindowRestoredProbe->Trigger();
-    }
-  } else if (!strcmp(aTopic, "places-init-complete")) {
-    if (mPlacesInitCompleteProbe) {
-      mPlacesInitCompleteProbe->Trigger();
-    }
-#endif  // defined(XP_WIN)
+    //IOInterposer::EnteringNextStage();
   } else if (!strcmp(aTopic, "sessionstore-init-started")) {
     StartupTimeline::Record(StartupTimeline::SESSION_RESTORE_INIT);
   } else if (!strcmp(aTopic, "xpcom-shutdown")) {
-    IOInterposer::EnteringNextStage();
-#if defined(XP_WIN)
-    if (mXPCOMShutdownProbe) {
-      mXPCOMShutdownProbe->Trigger();
-    }
-#endif  // defined(XP_WIN)
+    //IOInterposer::EnteringNextStage();
   } else if (!strcmp(aTopic, "quit-application")) {
     StartupTimeline::Record(StartupTimeline::QUIT_APPLICATION);
   } else if (!strcmp(aTopic, "profile-before-change")) {

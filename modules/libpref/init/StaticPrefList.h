@@ -1699,7 +1699,7 @@ VARCACHE_PREF(
 VARCACHE_PREF(
               "media.peerconnection.enabled",
               media_peerconnection_enabled,
-              bool, true
+              bool, false
               )
 
 #ifdef MOZ_WEBRTC

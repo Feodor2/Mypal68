@@ -3333,12 +3333,7 @@ pref("dom.ipc.plugins.asyncdrawing.enabled", true);
 // Force the accelerated direct path for a subset of Flash wmode values
 pref("dom.ipc.plugins.forcedirect.enabled", true);
 
-// Enable multi by default.
-#if !defined(MOZ_ASAN)
-pref("dom.ipc.processCount", 8);
-#else
-pref("dom.ipc.processCount", 4);
-#endif
+pref("dom.ipc.processCount", 3);
 
 // Default to allow only one file:// URL content process.
 pref("dom.ipc.processCount.file", 1);

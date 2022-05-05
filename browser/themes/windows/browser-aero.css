@@ -293,7 +293,7 @@
     /* Artificially draw window borders that are covered by lwtheme, see bug 591930.
      * Borders for Vista/7 are below, win10 doesn't need them. */
     #main-window[sizemode="normal"] > #navigator-toolbox:-moz-lwtheme {
-      border-top: 1px solid hsla(240,5%,5%,0.3);
+      border-top: @glassShadowColor@;
     }
   }
 
@@ -308,8 +308,8 @@
     /* Vertical toolbar border */
     #main-window[sizemode=normal] .browser-toolbar:not(.titlebar-color):not(:-moz-lwtheme),
     #main-window[sizemode=normal] .browser-toolbar:-moz-lwtheme {
-      border-left: 1px solid hsla(240,5%,5%,0.3);
-      border-right: 1px solid hsla(240,5%,5%,0.3);
+      border-left: 1px solid @glassShadowColor@;
+      border-right: 1px solid @glassShadowColor@;
       background-clip: padding-box;
     }
 

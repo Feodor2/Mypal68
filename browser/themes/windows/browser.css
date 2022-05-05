@@ -90,26 +90,30 @@
 }
 
 /* Use a different color only on Windows 8 and higher in inactive windows.
- * On Win 7, the menubar fog disappears for inactive windows, and renders gray
- * illegible.
+ * On Win Vista and 7, the menubar fog disappears for inactive windows, 
+ * and renders grey illegible.
  */
 @media (-moz-windows-default-theme) {
-  @media not (-moz-os-version: windows-win7) {
+  @media not (-moz-windows-glass) {
+      @media not (-moz-os-version: windows-win7) {
     #toolbar-menubar:not(:-moz-lwtheme):-moz-window-inactive {
       color: ThreeDShadow;
+      }
     }
   }
 }
 
-@media not (-moz-os-version: windows-win7) {
-  @media not (-moz-os-version: windows-win8) {
-    /* On Windows 10, when temporarily showing the menu bar, make it at least as
-     * tall as the tab bar such that the window controls don't appear to move up. */
-    :root[tabsintitlebar] #toolbar-menubar[autohide="true"] {
-      height: calc(var(--tab-min-height) - var(--tabs-navbar-shadow-size));
-    }
-    :root[tabsintitlebar][sizemode="normal"] #toolbar-menubar[autohide="true"] {
-      height: calc(var(--tab-min-height) + var(--space-above-tabbar) - var(--tabs-navbar-shadow-size));
+@media not (-moz-windows-glass) {
+  @media not (-moz-os-version: windows-win7) {
+    @media not (-moz-os-version: windows-win8) {
+      /* On Windows 10, when temporarily showing the menu bar, make it at least as
+       * tall as the tab bar such that the window controls don't appear to move up. */
+      :root[tabsintitlebar] #toolbar-menubar[autohide="true"] {
+        height: calc(var(--tab-min-height) - var(--tabs-navbar-shadow-size));
+      }
+      :root[tabsintitlebar][sizemode="normal"] #toolbar-menubar[autohide="true"] {
+        height: calc(var(--tab-min-height) + var(--space-above-tabbar) - var(--tabs-navbar-shadow-size));
+      }
     }
   }
 }
@@ -119,8 +123,9 @@
   padding-top: var(--space-above-tabbar);
 }
 
-/* Add 4px extra margin on top of the tabs toolbar on Windows 7. */
-@media (-moz-os-version: windows-win7) {
+/* Add 4px extra margin on top of the tabs toolbar on Windows Vista and 7. */
+@media (-moz-windows-glass), 
+       (-moz-os-version: windows-win7) {
   :root[sizemode="normal"][chromehidden~="menubar"] #TabsToolbar > .toolbar-items,
   :root[sizemode="normal"] #toolbar-menubar[autohide="true"][inactive] + #TabsToolbar > .toolbar-items {
     padding-top: calc(var(--space-above-tabbar) + 4px);
@@ -140,13 +145,14 @@
 }
 
 /*
- * Windows 7 draws the chrome background color as the tab background
- * instead of in the tabs toolbar.
+ * Windows Vista and 7 draw the chrome background color as
+ * the tab background instead of in the tabs toolbar.
  */
-@media (-moz-os-version: windows-win7) {
+@media (-moz-windows-glass), 
+       (-moz-os-version: windows-win7) {
   @media (-moz-windows-default-theme) {
     #navigator-toolbox:not(:-moz-lwtheme) {
-      --tabs-border-color: @glassShadowColor@;
+      --tabs-border-color: hsla(240,5%,5%,0.3);
     }
 
     #TabsToolbar:not(:-moz-lwtheme) {
@@ -333,7 +339,7 @@
    * click and hover mouse events to work properly for the button in the restored
    * window state. Otherwise, elements in the navigator-toolbox, like the menubar,
    * can swallow those events. It will also place the buttons above the fog on
-   * Windows 7 with Aero Glass.
+   * Windows Vista and 7 with Aero Glass.
    */
   z-index: 1;
 }
@@ -342,7 +348,8 @@
   -moz-box-align: stretch;
 }
 
-@media (-moz-os-version: windows-win7),
+@media (-moz-windows-glass),
+       (-moz-os-version: windows-win7),
        (-moz-os-version: windows-win8) {
   /* Preserve window control buttons position at the top of the button box. */
   .titlebar-buttonbox-container {
@@ -464,7 +471,8 @@ menuitem.bookmark-item {
   background-color: hsl(355, 82%, 69%);
 }
 
-@media (-moz-os-version: windows-win7) {
+@media (-moz-windows-glass),
+       (-moz-os-version: windows-win7) {
   #window-controls {
     -moz-box-align: start;
     margin-inline-start: 4px;
@@ -986,7 +994,8 @@ panel[touchmode] .PanelUI-subView #appMenu-zoom-controls > .subviewbutton-iconic
   overflow: hidden;
 }
 
-@media (-moz-os-version: windows-win7) {
+@media (-moz-windows-glass),
+       (-moz-os-version: windows-win7) {
   .cui-widget-panelview[id^=PanelUI-webext-] {
     border-radius: 4px;
   }

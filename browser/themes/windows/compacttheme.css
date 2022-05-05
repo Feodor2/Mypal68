@@ -6,7 +6,7 @@
 
 /* The window background is white due to no accentcolor in the lightweight
    theme. It can't be changed to transparent when there is no compositor
-   (Win 7 in classic / basic theme), or else dragging and focus become
+   (Vista/7 in classic / basic theme), or else dragging and focus become
    broken. So instead just show the normal titlebar in that case, and override
    the window color as transparent when the compositor is available. */
 @media (-moz-windows-compositor: 0) {
@@ -26,7 +26,8 @@
   }
 }
 
-@media (-moz-os-version: windows-win7) {
+@media (-moz-windows-glass),
+       (-moz-os-version: windows-win7) {
   @media (-moz-windows-default-theme) {
     /* Always show light toolbar elements on aero surface. */
     #TabsToolbar {
@@ -63,7 +64,8 @@
   }
 }
 
-@media (-moz-os-version: windows-win7),
+@media (-moz-windows-glass),
+       (-moz-os-version: windows-win7),
        (-moz-os-version: windows-win8) {
   @media (-moz-windows-compositor) {
     #main-window {
@@ -109,7 +111,7 @@
     display: none !important;
   }
 
-  /* Use proper menu text styling in Win7 classic mode (copied from browser.css) */
+  /* Use proper menu text styling in Vista/7 classic mode (copied from browser.css) */
   @media (-moz-windows-compositor: 0),
          (-moz-windows-default-theme: 0) {
     :root[tabsintitlebar]:not([inFullscreen]) {

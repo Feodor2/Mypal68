@@ -14,8 +14,8 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/EventQueue.h"
-#include "mozilla/Mutex.h"
 #include "mozilla/Monitor.h"
+#include "base/condition_variable.h"
 
 class nsThreadPool final : public nsIThreadPool, public nsIRunnable {
  public:
@@ -34,8 +34,8 @@ class nsThreadPool final : public nsIThreadPool, public nsIRunnable {
   nsresult PutEvent(already_AddRefed<nsIRunnable> aEvent, uint32_t aFlags);
 
   nsCOMArray<nsIThread> mThreads;
-  mozilla::Mutex mMutex;
-  mozilla::CondVar mEventsAvailable;
+  Lock mMutex;
+  ConditionVariable mEventsAvailable;
   mozilla::EventQueue mEvents;
   uint32_t mThreadLimit;
   uint32_t mIdleThreadLimit;

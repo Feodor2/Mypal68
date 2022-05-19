@@ -300,14 +300,14 @@ class PACResolver final : public nsIDNSListener,
   explicit PACResolver(nsIEventTarget* aTarget)
       : mStatus(NS_ERROR_FAILURE),
         mMainThreadEventTarget(aTarget),
-        mMutex("PACResolver::Mutex") {}
+        mMutex() {}
 
   // nsIDNSListener
   NS_IMETHOD OnLookupComplete(nsICancelable* request, nsIDNSRecord* record,
                               nsresult status) override {
     nsCOMPtr<nsITimer> timer;
     {
-      MutexAutoLock lock(mMutex);
+      AutoLock lock(mMutex);
       timer.swap(mTimer);
       mRequest = nullptr;
     }
@@ -331,7 +331,7 @@ class PACResolver final : public nsIDNSListener,
   NS_IMETHOD Notify(nsITimer* timer) override {
     nsCOMPtr<nsICancelable> request;
     {
-      MutexAutoLock lock(mMutex);
+      AutoLock lock(mMutex);
       request.swap(mRequest);
       mTimer = nullptr;
     }
@@ -352,7 +352,7 @@ class PACResolver final : public nsIDNSListener,
   nsCOMPtr<nsIDNSRecord> mResponse;
   nsCOMPtr<nsITimer> mTimer;
   nsCOMPtr<nsIEventTarget> mMainThreadEventTarget;
-  Mutex mMutex;
+  Lock mMutex;
 
  private:
   ~PACResolver() = default;

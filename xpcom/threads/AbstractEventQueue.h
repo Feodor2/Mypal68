@@ -5,9 +5,9 @@
 #ifndef mozilla_AbstractEventQueue_h
 #define mozilla_AbstractEventQueue_h
 
+#include "base/lock.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Mutex.h"
 
 class nsIRunnable;
 
@@ -47,37 +47,37 @@ class AbstractEventQueue {
   // the result of calling nsIRunnablePriority::GetPriority().
   virtual void PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
                         EventQueuePriority aPriority,
-                        const MutexAutoLock& aProofOfLock) = 0;
+                        const AutoLock& aProofOfLock) = 0;
 
   // Get an event from the front of the queue. aPriority is an out param. If the
   // implementation supports priorities, then this should be the same priority
   // that the event was pushed with. aPriority may be null. This should return
   // null if the queue is non-empty but the event in front is not ready to run.
   virtual already_AddRefed<nsIRunnable> GetEvent(
-      EventQueuePriority* aPriority, const MutexAutoLock& aProofOfLock) = 0;
+      EventQueuePriority* aPriority, const AutoLock& aProofOfLock) = 0;
 
   // Returns true if the queue is empty. Implies !HasReadyEvent().
-  virtual bool IsEmpty(const MutexAutoLock& aProofOfLock) = 0;
+  virtual bool IsEmpty(const AutoLock& aProofOfLock) = 0;
 
   // Returns true if the queue is non-empty and if the event in front is ready
   // to run. Implies !IsEmpty(). This should return true iff GetEvent returns a
   // non-null value.
-  virtual bool HasReadyEvent(const MutexAutoLock& aProofOfLock) = 0;
+  virtual bool HasReadyEvent(const AutoLock& aProofOfLock) = 0;
 
   virtual bool HasPendingHighPriorityEvents(
-      const MutexAutoLock& aProofOfLock) = 0;
+      const AutoLock& aProofOfLock) = 0;
 
   // Returns the number of events in the queue.
-  virtual size_t Count(const MutexAutoLock& aProofOfLock) const = 0;
+  virtual size_t Count(const AutoLock& aProofOfLock) const = 0;
 
   virtual void EnableInputEventPrioritization(
-      const MutexAutoLock& aProofOfLock) = 0;
+      const AutoLock& aProofOfLock) = 0;
   virtual void FlushInputEventPrioritization(
-      const MutexAutoLock& aProofOfLock) = 0;
+      const AutoLock& aProofOfLock) = 0;
   virtual void SuspendInputEventPrioritization(
-      const MutexAutoLock& aProofOfLock) = 0;
+      const AutoLock& aProofOfLock) = 0;
   virtual void ResumeInputEventPrioritization(
-      const MutexAutoLock& aProofOfLock) = 0;
+      const AutoLock& aProofOfLock) = 0;
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);

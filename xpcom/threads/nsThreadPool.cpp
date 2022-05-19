@@ -72,7 +72,7 @@ nsresult nsThreadPool::PutEvent(already_AddRefed<nsIRunnable> aEvent,
   bool spawnThread = false;
   uint32_t stackSize = 0;
   {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
 
     if (NS_WARN_IF(mShutdown)) {
       return NS_ERROR_NOT_AVAILABLE;
@@ -91,7 +91,7 @@ nsresult nsThreadPool::PutEvent(already_AddRefed<nsIRunnable> aEvent,
     }
 
     mEvents.PutEvent(std::move(aEvent), EventQueuePriority::Normal, lock);
-    mEventsAvailable.Notify();
+    mEventsAvailable.Signal();
     stackSize = mStackSize;
   }
 
@@ -114,7 +114,7 @@ nsresult nsThreadPool::PutEvent(already_AddRefed<nsIRunnable> aEvent,
 
   bool killThread = false;
   {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     if (mShutdown) {
       killThread = true;
     } else if (mThreads.Count() < (int32_t)mThreadLimit) {
@@ -167,7 +167,7 @@ nsThreadPool::Run() {
 
   nsCOMPtr<nsIThreadPoolListener> listener;
   {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     listener = mListener;
   }
 
@@ -178,7 +178,7 @@ nsThreadPool::Run() {
   do {
     nsCOMPtr<nsIRunnable> event;
     {
-      MutexAutoLock lock(mMutex);
+      AutoLock lock(mMutex);
 
       event = mEvents.GetEvent(nullptr, lock);
       if (!event) {
@@ -224,7 +224,7 @@ nsThreadPool::Run() {
                delta.ToMilliseconds()));
           {
             AUTO_PROFILER_THREAD_SLEEP;
-            mEventsAvailable.Wait(delta);
+            mEventsAvailable.TimedWait(delta);
           }
           LOG(("THRD-P(%p) done waiting\n", this));
         }
@@ -299,7 +299,7 @@ nsThreadPool::DelayedDispatch(already_AddRefed<nsIRunnable>, uint32_t) {
 
 NS_IMETHODIMP_(bool)
 nsThreadPool::IsOnCurrentThreadInfallible() {
-  MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
 
   nsIThread* thread = NS_GetCurrentThread();
   for (uint32_t i = 0; i < static_cast<uint32_t>(mThreads.Count()); ++i) {
@@ -312,7 +312,7 @@ nsThreadPool::IsOnCurrentThreadInfallible() {
 
 NS_IMETHODIMP
 nsThreadPool::IsOnCurrentThread(bool* aResult) {
-  MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
   if (NS_WARN_IF(mShutdown)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -333,9 +333,9 @@ nsThreadPool::Shutdown() {
   nsCOMArray<nsIThread> threads;
   nsCOMPtr<nsIThreadPoolListener> listener;
   {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     mShutdown = true;
-    mEventsAvailable.NotifyAll();
+    mEventsAvailable.Broadcast();
 
     threads.AppendObjects(mThreads);
     mThreads.Clear();
@@ -384,9 +384,9 @@ nsThreadPool::ShutdownWithTimeout(int32_t aTimeoutMs) {
   nsCOMArray<nsIThread> threads;
   nsCOMPtr<nsIThreadPoolListener> listener;
   {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     mShutdown = true;
-    mEventsAvailable.NotifyAll();
+    mEventsAvailable.Broadcast();
 
     threads.AppendObjects(mThreads);
     mThreads.Clear();
@@ -457,7 +457,7 @@ nsThreadPool::GetThreadLimit(uint32_t* aValue) {
 
 NS_IMETHODIMP
 nsThreadPool::SetThreadLimit(uint32_t aValue) {
-  MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
   LOG(("THRD-P(%p) thread limit [%u]\n", this, aValue));
   mThreadLimit = aValue;
   if (mIdleThreadLimit > mThreadLimit) {
@@ -466,7 +466,7 @@ nsThreadPool::SetThreadLimit(uint32_t aValue) {
 
   if (static_cast<uint32_t>(mThreads.Count()) > mThreadLimit) {
     mEventsAvailable
-        .NotifyAll();  // wake up threads so they observe this change
+        .Broadcast();  // wake up threads so they observe this change
   }
   return NS_OK;
 }
@@ -479,7 +479,7 @@ nsThreadPool::GetIdleThreadLimit(uint32_t* aValue) {
 
 NS_IMETHODIMP
 nsThreadPool::SetIdleThreadLimit(uint32_t aValue) {
-  MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
   LOG(("THRD-P(%p) idle thread limit [%u]\n", this, aValue));
   mIdleThreadLimit = aValue;
   if (mIdleThreadLimit > mThreadLimit) {
@@ -489,7 +489,7 @@ nsThreadPool::SetIdleThreadLimit(uint32_t aValue) {
   // Do we need to kill some idle threads?
   if (mIdleCount > mIdleThreadLimit) {
     mEventsAvailable
-        .NotifyAll();  // wake up threads so they observe this change
+        .Broadcast();  // wake up threads so they observe this change
   }
   return NS_OK;
 }
@@ -502,14 +502,14 @@ nsThreadPool::GetIdleThreadTimeout(uint32_t* aValue) {
 
 NS_IMETHODIMP
 nsThreadPool::SetIdleThreadTimeout(uint32_t aValue) {
-  MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
   uint32_t oldTimeout = mIdleThreadTimeout;
   mIdleThreadTimeout = aValue;
 
   // Do we need to notify any idle threads that their sleep time has shortened?
   if (mIdleThreadTimeout < oldTimeout && mIdleCount > 0) {
     mEventsAvailable
-        .NotifyAll();  // wake up threads so they observe this change
+        .Broadcast();  // wake up threads so they observe this change
   }
   return NS_OK;
 }
@@ -522,35 +522,35 @@ nsThreadPool::GetIdleThreadTimeoutRegressive(bool* aValue) {
 
 NS_IMETHODIMP
 nsThreadPool::SetIdleThreadTimeoutRegressive(bool aValue) {
-  MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
   bool oldRegressive = mRegressiveMaxIdleTime;
   mRegressiveMaxIdleTime = aValue;
 
   // Would setting regressive timeout effect idle threads?
   if (mRegressiveMaxIdleTime > oldRegressive && mIdleCount > 1) {
     mEventsAvailable
-        .NotifyAll();  // wake up threads so they observe this change
+        .Broadcast();  // wake up threads so they observe this change
   }
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsThreadPool::GetThreadStackSize(uint32_t* aValue) {
-  MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
   *aValue = mStackSize;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsThreadPool::SetThreadStackSize(uint32_t aValue) {
-  MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
   mStackSize = aValue;
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsThreadPool::GetListener(nsIThreadPoolListener** aListener) {
-  MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
   NS_IF_ADDREF(*aListener = mListener);
   return NS_OK;
 }
@@ -559,7 +559,7 @@ NS_IMETHODIMP
 nsThreadPool::SetListener(nsIThreadPoolListener* aListener) {
   nsCOMPtr<nsIThreadPoolListener> swappedListener(aListener);
   {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     mListener.swap(swappedListener);
   }
   return NS_OK;
@@ -568,7 +568,7 @@ nsThreadPool::SetListener(nsIThreadPoolListener* aListener) {
 NS_IMETHODIMP
 nsThreadPool::SetName(const nsACString& aName) {
   {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     if (mThreads.Count()) {
       return NS_ERROR_NOT_AVAILABLE;
     }

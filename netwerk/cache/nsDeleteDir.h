@@ -7,7 +7,7 @@
 
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
-#include "mozilla/Mutex.h"
+#include "base/lock.h"
 #include "mozilla/CondVar.h"
 
 class nsIFile;
@@ -65,8 +65,8 @@ class nsDeleteDir {
   nsresult RemoveDir(nsIFile* file, bool* stopDeleting);
 
   static nsDeleteDir* gInstance;
-  mozilla::Mutex mLock;
-  mozilla::CondVar mCondVar;
+  Lock mLock;
+  ConditionVariable mCondVar;
   bool mNotified;
   nsCOMArray<nsITimer> mTimers;
   nsCOMPtr<nsIThread> mThread;

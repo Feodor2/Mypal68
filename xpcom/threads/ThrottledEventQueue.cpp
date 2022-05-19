@@ -4,10 +4,10 @@
 
 #include "ThrottledEventQueue.h"
 
+#include "base/condition_variable.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/EventQueue.h"
-#include "mozilla/Mutex.h"
 #include "mozilla/Unused.h"
 #include "nsThreadUtils.h"
 
@@ -91,8 +91,8 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 #endif
   };
 
-  mutable Mutex mMutex;
-  mutable CondVar mIdleCondVar;
+  mutable Lock mMutex;
+  mutable ConditionVariable mIdleCondVar;
 
   // As-of-yet unexecuted runnables queued on this ThrottledEventQueue.
   //
@@ -121,7 +121,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 
   explicit Inner(nsISerialEventTarget* aBaseTarget, const char* aName,
                  uint32_t aPriority)
-      : mMutex("ThrottledEventQueue"),
+      : mMutex(),
         mIdleCondVar(mMutex, "ThrottledEventQueue:Idle"),
         mBaseTarget(aBaseTarget),
         mName(aName),
@@ -132,7 +132,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 
   ~Inner() {
 #ifdef DEBUG
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
 
     // As long as an executor exists, it had better keep us alive, since it's
     // going to call ExecuteRunnable on us.
@@ -151,7 +151,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 
   // Make sure an executor has been queued on our base target. If we already
   // have one, do nothing; otherwise, create and dispatch it.
-  nsresult EnsureExecutor(MutexAutoLock& lock) {
+  nsresult EnsureExecutor(AutoLock& lock) {
     if (mExecutor) return NS_OK;
 
     // Note, this creates a ref cycle keeping the inner alive
@@ -176,7 +176,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 #endif
 
     {
-      MutexAutoLock lock(mMutex);
+      AutoLock lock(mMutex);
 
       // We only check the name of an executor runnable when we know there is
       // something in the queue, so this should never fail.
@@ -204,7 +204,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 #endif
 
     {
-      MutexAutoLock lock(mMutex);
+      AutoLock lock(mMutex);
 
       // Normally, a paused queue doesn't dispatch any executor, but we might
       // have been paused after the executor was already in flight. There's no
@@ -239,7 +239,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
       else {
         // Break the Executor::mInner / Inner::mExecutor reference loop.
         mExecutor = nullptr;
-        mIdleCondVar.NotifyAll();
+        mIdleCondVar.Broadcast();
       }
     }
 
@@ -266,7 +266,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
 
   uint32_t Length() const {
     // Any thread
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     return mEventQueue.Count(lock);
   }
 
@@ -281,21 +281,21 @@ class ThrottledEventQueue::Inner final : public nsISupports {
     MOZ_ASSERT(!onBaseTarget);
 #endif
 
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     while (mExecutor || IsPaused(lock)) {
       mIdleCondVar.Wait();
     }
   }
 
   bool IsPaused() const {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     return IsPaused(lock);
   }
 
-  bool IsPaused(const MutexAutoLock& aProofOfLock) const { return mIsPaused; }
+  bool IsPaused(const AutoLock& aProofOfLock) const { return mIsPaused; }
 
   nsresult SetIsPaused(bool aIsPaused) {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
 
     // If we will be unpaused, and we have events in our queue, make sure we
     // have an executor queued on the base event target to run them. Do this
@@ -321,7 +321,7 @@ class ThrottledEventQueue::Inner final : public nsISupports {
     MOZ_ASSERT(aFlags == NS_DISPATCH_NORMAL || aFlags == NS_DISPATCH_AT_END);
 
     // Any thread
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
 
     if (!IsPaused(lock)) {
       // Make sure we have an executor in flight to process events. This is

@@ -19,7 +19,7 @@
 #include "nsClassHashtable.h"
 #include "nsIWeakReference.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Mutex.h"
+#include "base/lock.h"
 
 class nsIURI;
 class nsOfflineCacheDevice;
@@ -158,8 +158,8 @@ class nsOfflineCacheDevice final : public nsCacheDevice, public nsISupports {
   nsresult GetGroupsTimeOrdered(uint32_t* count, char*** keys);
 
   bool IsLocked(const nsACString& key);
-  void Lock(const nsACString& key);
-  void Unlock(const nsACString& key);
+  void DiskCacheLock(const nsACString& key);
+  void DiskCacheUnlock(const nsACString& key);
 
   /**
    * Preference accessors
@@ -252,7 +252,7 @@ class nsOfflineCacheDevice final : public nsCacheDevice, public nsISupports {
   int32_t mDeltaCounter;
   bool mAutoShutdown;
 
-  mozilla::Mutex mLock;
+  Lock mLock;
 
   nsInterfaceHashtable<nsCStringHashKey, nsIWeakReference> mCaches;
   nsClassHashtable<nsCStringHashKey, nsCString> mActiveCachesByGroup;

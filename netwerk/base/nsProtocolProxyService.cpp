@@ -31,8 +31,8 @@
 #include "prnetdb.h"
 #include "nsPACMan.h"
 #include "nsProxyRelease.h"
-#include "mozilla/Mutex.h"
-#include "mozilla/CondVar.h"
+#include "base/lock.h"
+#include "base/condition_variable.h"
 #include "nsISystemProxySettings.h"
 #include "nsINetworkLinkService.h"
 #include "nsIHttpChannelInternal.h"
@@ -1465,32 +1465,32 @@ class nsAsyncBridgeRequest final : public nsPACManCallback {
   NS_DECL_THREADSAFE_ISUPPORTS
 
   nsAsyncBridgeRequest()
-      : mMutex("nsDeprecatedCallback"),
+      : mMutex(),
         mCondVar(mMutex, "nsDeprecatedCallback"),
         mStatus(NS_OK),
         mCompleted(false) {}
 
   void OnQueryComplete(nsresult status, const nsACString& pacString,
                        const nsACString& newPACURL) override {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     mCompleted = true;
     mStatus = status;
     mPACString = pacString;
     mPACURL = newPACURL;
-    mCondVar.Notify();
+    mCondVar.Signal();
   }
 
-  void Lock() { mMutex.Lock(); }
-  void Unlock() { mMutex.Unlock(); }
-  void Wait() { mCondVar.Wait(TimeDuration::FromSeconds(3)); }
+  void AcquireM() { mMutex.Acquire(); }
+  void ReleaseM() { mMutex.Release(); }
+  void Wait() { mCondVar.TimedWait(TimeDuration::FromSeconds(3)); }
 
  private:
   ~nsAsyncBridgeRequest() = default;
 
   friend class nsProtocolProxyService;
 
-  Mutex mMutex;
-  CondVar mCondVar;
+  Lock mMutex;
+  ConditionVariable mCondVar;
 
   nsresult mStatus;
   nsCString mPACString;

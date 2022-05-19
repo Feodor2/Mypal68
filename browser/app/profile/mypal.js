@@ -35,24 +35,6 @@ pref("extensions.checkCompatibility.temporaryThemeOverride_minAppVersion", "29.0
 pref("extensions.webextPermissionPrompts", true);
 pref("extensions.webextOptionalPermissionPrompts", true);
 
-// Preferences for AMO integration
-pref("extensions.getAddons.cache.enabled", false);
-pref("extensions.getAddons.get.url", "data:text/plain,");
-pref("extensions.getAddons.compatOverides.url", "data:text/plain,");
-pref("extensions.getAddons.search.browseURL", "data:text/plain,");
-pref("extensions.webservice.discoverURL", "data:text/plain,");
-pref("extensions.getAddons.link.url", "data:text/plain,");
-pref("extensions.getAddons.langpacks.url", "data:text/plain,");
-pref("extensions.getAddons.discovery.api_url", "data:text/plain,");
-
-// Enable the HTML-based discovery panel at about:addons.
-pref("extensions.htmlaboutaddons.discover.enabled", true);
-
-// The URL for the privacy policy related to recommended extensions.
-pref("extensions.recommendations.privacyPolicyUrl", "data:text/plain,");
-// The URL for Firefox Color, recommended on the theme page in about:addons.
-pref("extensions.recommendations.themeRecommendationUrl", "data:text/plain,");
-
 pref("extensions.update.autoUpdateDefault", false);
 
 // Check AUS for system add-on updates.

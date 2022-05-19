@@ -15,9 +15,6 @@ const { DeferredTask } = ChromeUtils.import(
 const { AddonManager } = ChromeUtils.import(
   "resource://gre/modules/AddonManager.jsm"
 );
-const { AddonRepository } = ChromeUtils.import(
-  "resource://gre/modules/addons/AddonRepository.jsm"
-);
 
 ChromeUtils.defineModuleGetter(
   this,
@@ -239,7 +236,6 @@ function initialize(event) {
 
   gViewController.initialize();
   gCategories.initialize();
-  gHeader.initialize();
   gEventManager.initialize();
   Services.obs.addObserver(sendEMPong, "EM-ping");
   Services.obs.notifyObservers(window, "EM-loaded");
@@ -2255,34 +2251,6 @@ var gHeader = {
   _search: null,
   _dest: "",
 
-  initialize() {
-    this._search = document.getElementById("header-search");
-
-    this._search.addEventListener("command", function(aEvent) {
-      var query = aEvent.target.value;
-      if (query.length == 0) {
-        return;
-      }
-
-      let url = AddonRepository.getSearchURL(query);
-
-      let browser = getBrowserElement();
-      let chromewin = browser.ownerGlobal;
-      chromewin.openLinkIn(url, "tab", {
-        fromChrome: true,
-        triggeringPrincipal: Services.scriptSecurityManager.createNullPrincipal(
-          {}
-        ),
-      });
-
-      recordLinkTelemetry("search");
-    });
-  },
-
-  focusSearchBox() {
-    this._search.focus();
-  },
-
   onKeyPress(aEvent) {
     if (String.fromCharCode(aEvent.charCode) == "/") {
       this.focusSearchBox();
@@ -2319,14 +2287,6 @@ var gHeader = {
     }
 
     return false;
-  },
-
-  get searchQuery() {
-    return this._search.value;
-  },
-
-  set searchQuery(aQuery) {
-    this._search.value = aQuery;
   },
 };
 

@@ -5205,11 +5205,6 @@ pref("extensions.htmlaboutaddons.inline-options.enabled", true);
 // Show recommendations on the extension and theme list views.
 pref("extensions.htmlaboutaddons.recommendations.enabled", true);
 
-// The URL for the privacy policy related to recommended add-ons.
-pref("extensions.recommendations.privacyPolicyUrl", "");
-// The URL for a recommended theme, shown on the theme page in about:addons.
-pref("extensions.recommendations.themeRecommendationUrl", "");
-
 // Report Site Issue button
 // Note that on enabling the button in other release channels, make sure to
 // disable it in problematic tests, see disableNonReleaseActions() inside

@@ -3319,7 +3319,7 @@ pref("dom.ipc.tabs.createKillHardCrashReports", false);
 pref("dom.ipc.tabs.createKillHardCrashReports", true);
 #endif
 
-pref("dom.ipc.plugins.flash.disable-protected-mode", false);
+pref("dom.ipc.plugins.flash.disable-protected-mode", true);
 
 pref("dom.ipc.plugins.flash.subprocess.crashreporter.enabled", true);
 pref("dom.ipc.plugins.reportCrashURL", true);

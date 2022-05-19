@@ -67,8 +67,8 @@ StorageDBBridge::StorageDBBridge()
 
 class StorageDBThread::InitHelper final : public Runnable {
   nsCOMPtr<nsIEventTarget> mOwningThread;
-  mozilla::Mutex mMutex;
-  mozilla::CondVar mCondVar;
+  Lock mMutex;
+  ConditionVariable mCondVar;
   nsString mProfilePath;
   nsresult mMainThreadResultCode;
   bool mWaiting;
@@ -213,7 +213,7 @@ nsresult StorageDBThread::Init(const nsString& aProfilePath) {
 
   // Need to keep the lock to avoid setting mThread later then
   // the thread body executes.
-  MonitorAutoLock monitor(mThreadObserver->GetMonitor());
+  Monitor2AutoLock monitor(mThreadObserver->GetMonitor());
 
   mThread = PR_CreateThread(PR_USER_THREAD, &StorageDBThread::ThreadFunc, this,
                             PR_PRIORITY_LOW, PR_GLOBAL_THREAD,
@@ -241,12 +241,12 @@ nsresult StorageDBThread::Shutdown() {
   Telemetry::AutoTimer<Telemetry::LOCALDOMSTORAGE_SHUTDOWN_DATABASE_MS> timer;
 
   {
-    MonitorAutoLock monitor(mThreadObserver->GetMonitor());
+    Monitor2AutoLock monitor(mThreadObserver->GetMonitor());
 
     // After we stop, no other operations can be accepted
     mFlushImmediately = true;
     mStopIOThread = true;
-    monitor.Notify();
+    monitor.Signal();
   }
 
   PR_JoinThread(mThread);
@@ -273,7 +273,7 @@ void StorageDBThread::SyncPreload(LocalStorageCacheBridge* aCache,
   if (mDBReady && mWALModeEnabled) {
     bool pendingTasks;
     {
-      MonitorAutoLock monitor(mThreadObserver->GetMonitor());
+      Monitor2AutoLock monitor(mThreadObserver->GetMonitor());
       pendingTasks = mPendingTasks.IsOriginUpdatePending(
                          aCache->OriginSuffix(), aCache->OriginNoSuffix()) ||
                      mPendingTasks.IsOriginClearPending(
@@ -301,32 +301,32 @@ void StorageDBThread::SyncPreload(LocalStorageCacheBridge* aCache,
 }
 
 void StorageDBThread::AsyncFlush() {
-  MonitorAutoLock monitor(mThreadObserver->GetMonitor());
+  Monitor2AutoLock monitor(mThreadObserver->GetMonitor());
   mFlushImmediately = true;
-  monitor.Notify();
+  monitor.Signal();
 }
 
 bool StorageDBThread::ShouldPreloadOrigin(const nsACString& aOrigin) {
-  MonitorAutoLock monitor(mThreadObserver->GetMonitor());
+  Monitor2AutoLock monitor(mThreadObserver->GetMonitor());
   return mOriginsHavingData.Contains(aOrigin);
 }
 
 void StorageDBThread::GetOriginsHavingData(
     InfallibleTArray<nsCString>* aOrigins) {
-  MonitorAutoLock monitor(mThreadObserver->GetMonitor());
+  Monitor2AutoLock monitor(mThreadObserver->GetMonitor());
   for (auto iter = mOriginsHavingData.Iter(); !iter.Done(); iter.Next()) {
     aOrigins->AppendElement(iter.Get()->GetKey());
   }
 }
 
 nsresult StorageDBThread::InsertDBOp(StorageDBThread::DBOperation* aOperation) {
-  MonitorAutoLock monitor(mThreadObserver->GetMonitor());
+  Monitor2AutoLock monitor(mThreadObserver->GetMonitor());
 
   // Sentinel to don't forget to delete the operation when we exit early.
   nsAutoPtr<StorageDBThread::DBOperation> opScope(aOperation);
 
   if (NS_FAILED(mStatus)) {
-    MonitorAutoUnlock unlock(mThreadObserver->GetMonitor());
+    Monitor2AutoUnlock unlock(mThreadObserver->GetMonitor());
     aOperation->Finalize(mStatus);
     return mStatus;
   }
@@ -357,7 +357,7 @@ nsresult StorageDBThread::InsertDBOp(StorageDBThread::DBOperation* aOperation) {
         // has actually been cleared from the database.  Preloads are processed
         // immediately before update and clear operations on the database that
         // are flushed periodically in batches.
-        MonitorAutoUnlock unlock(mThreadObserver->GetMonitor());
+        Monitor2AutoUnlock unlock(mThreadObserver->GetMonitor());
         aOperation->Finalize(NS_OK);
         return NS_OK;
       }
@@ -375,7 +375,7 @@ nsresult StorageDBThread::InsertDBOp(StorageDBThread::DBOperation* aOperation) {
       opScope.forget();
 
       // Immediately start executing this.
-      monitor.Notify();
+      monitor.Signal();
       break;
 
     default:
@@ -424,7 +424,7 @@ void StorageDBThread::ThreadFunc(void* aArg) {
 void StorageDBThread::ThreadFunc() {
   nsresult rv = InitDatabase();
 
-  MonitorAutoLock lockMonitor(mThreadObserver->GetMonitor());
+  Monitor2AutoLock lockMonitor(mThreadObserver->GetMonitor());
 
   if (NS_FAILED(rv)) {
     mStatus = rv;
@@ -445,7 +445,7 @@ void StorageDBThread::ThreadFunc() {
     // Process xpcom events first.
     while (MOZ_UNLIKELY(mThreadObserver->HasPendingEvents())) {
       mThreadObserver->ClearPendingEvents();
-      MonitorAutoUnlock unlock(mThreadObserver->GetMonitor());
+      Monitor2AutoUnlock unlock(mThreadObserver->GetMonitor());
       bool processedEvent;
       do {
         rv = thread->ProcessNextEvent(false, &processedEvent);
@@ -458,7 +458,7 @@ void StorageDBThread::ThreadFunc() {
       UnscheduleFlush();
       if (mPendingTasks.Prepare()) {
         {
-          MonitorAutoUnlock unlockMonitor(mThreadObserver->GetMonitor());
+          Monitor2AutoUnlock unlockMonitor(mThreadObserver->GetMonitor());
           rv = mPendingTasks.Execute(this);
         }
 
@@ -472,7 +472,7 @@ void StorageDBThread::ThreadFunc() {
       nsAutoPtr<DBOperation> op(mPreloads[0]);
       mPreloads.RemoveElementAt(0);
       {
-        MonitorAutoUnlock unlockMonitor(mThreadObserver->GetMonitor());
+        Monitor2AutoUnlock unlockMonitor(mThreadObserver->GetMonitor());
         op->PerformAndFinalize(this);
       }
 
@@ -497,9 +497,9 @@ NS_IMPL_ISUPPORTS(StorageDBThread::ThreadObserver, nsIThreadObserver)
 
 NS_IMETHODIMP
 StorageDBThread::ThreadObserver::OnDispatchedEvent() {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   mHasPendingEvents = true;
-  lock.Notify();
+  lock.Signal();
   return NS_OK;
 }
 
@@ -603,7 +603,7 @@ nsresult StorageDBThread::InitDatabase() {
     rv = stmt->GetUTF8String(0, foundOrigin);
     NS_ENSURE_SUCCESS(rv, rv);
 
-    MonitorAutoLock monitor(mThreadObserver->GetMonitor());
+    Monitor2AutoLock monitor(mThreadObserver->GetMonitor());
     mOriginsHavingData.PutEntry(foundOrigin);
   }
 
@@ -736,7 +736,7 @@ void StorageDBThread::ScheduleFlush() {
   mDirtyEpoch = TimeStamp::Now();
 
   // Wake the monitor from indefinite sleep...
-  (mThreadObserver->GetMonitor()).Notify();
+  (mThreadObserver->GetMonitor()).Signal();
 }
 
 void StorageDBThread::UnscheduleFlush() {
@@ -1028,7 +1028,7 @@ nsresult StorageDBThread::DBOperation::Perform(StorageDBThread* aThread) {
       rv = stmt->Execute();
       NS_ENSURE_SUCCESS(rv, rv);
 
-      MonitorAutoLock monitor(aThread->mThreadObserver->GetMonitor());
+      Monitor2AutoLock monitor(aThread->mThreadObserver->GetMonitor());
       aThread->mOriginsHavingData.PutEntry(Origin());
       break;
     }
@@ -1081,7 +1081,7 @@ nsresult StorageDBThread::DBOperation::Perform(StorageDBThread* aThread) {
       rv = stmt->Execute();
       NS_ENSURE_SUCCESS(rv, rv);
 
-      MonitorAutoLock monitor(aThread->mThreadObserver->GetMonitor());
+      Monitor2AutoLock monitor(aThread->mThreadObserver->GetMonitor());
       aThread->mOriginsHavingData.RemoveEntry(Origin());
       break;
     }
@@ -1098,7 +1098,7 @@ nsresult StorageDBThread::DBOperation::Perform(StorageDBThread* aThread) {
       rv = stmt->Execute();
       NS_ENSURE_SUCCESS(rv, rv);
 
-      MonitorAutoLock monitor(aThread->mThreadObserver->GetMonitor());
+      Monitor2AutoLock monitor(aThread->mThreadObserver->GetMonitor());
       aThread->mOriginsHavingData.Clear();
       break;
     }
@@ -1500,7 +1500,7 @@ nsresult StorageDBThread::InitHelper::SyncDispatchAndReturnProfilePath(
 
   MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
 
-  mozilla::MutexAutoLock autolock(mMutex);
+  AutoLock autolock(mMutex);
   while (mWaiting) {
     mCondVar.Wait();
   }
@@ -1522,11 +1522,11 @@ StorageDBThread::InitHelper::Run() {
     mMainThreadResultCode = rv;
   }
 
-  mozilla::MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
   MOZ_ASSERT(mWaiting);
 
   mWaiting = false;
-  mCondVar.Notify();
+  mCondVar.Signal();
 
   return NS_OK;
 }

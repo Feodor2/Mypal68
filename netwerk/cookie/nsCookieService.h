@@ -32,7 +32,7 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/UniquePtr.h"
 
 using mozilla::OriginAttributes;
@@ -414,7 +414,7 @@ class nsCookieService final : public nsICookieService,
 
   // thread
   nsCOMPtr<nsIThread> mThread;
-  mozilla::Monitor mMonitor;
+  mozilla::Monitor2 mMonitor;
   mozilla::Atomic<bool> mInitializedDBStates;
   mozilla::Atomic<bool> mInitializedDBConn;
   mozilla::TimeStamp mEndInitDBConn;

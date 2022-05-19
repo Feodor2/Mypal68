@@ -7,9 +7,9 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Monitor.h"
-#include "mozilla/Mutex.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/StaticPtr.h"
+#include "base/lock.h"
 #include "nsCOMPtr.h"
 #include "nsDataHashtable.h"
 #include "nsIObserver.h"
@@ -180,10 +180,10 @@ class DataStorage : public nsIObserver {
   typedef nsRefPtrHashtable<nsStringHashKey, DataStorage> DataStorages;
 
   void WaitForReady();
-  nsresult AsyncWriteData(const MutexAutoLock& aProofOfLock);
-  nsresult AsyncReadData(const MutexAutoLock& aProofOfLock);
-  nsresult AsyncSetTimer(const MutexAutoLock& aProofOfLock);
-  nsresult DispatchShutdownTimer(const MutexAutoLock& aProofOfLock);
+  nsresult AsyncWriteData(const AutoLock& aProofOfLock);
+  nsresult AsyncReadData(const AutoLock& aProofOfLock);
+  nsresult AsyncSetTimer(const AutoLock& aProofOfLock);
+  nsresult DispatchShutdownTimer(const AutoLock& aProofOfLock);
 
   static nsresult ValidateKeyAndValue(const nsCString& aKey,
                                       const nsCString& aValue);
@@ -195,20 +195,20 @@ class DataStorage : public nsIObserver {
   void PrefChanged(const char* aPref);
 
   bool GetInternal(const nsCString& aKey, Entry* aEntry, DataStorageType aType,
-                   const MutexAutoLock& aProofOfLock);
+                   const AutoLock& aProofOfLock);
   nsresult PutInternal(const nsCString& aKey, Entry& aEntry,
                        DataStorageType aType,
-                       const MutexAutoLock& aProofOfLock);
+                       const AutoLock& aProofOfLock);
   void MaybeEvictOneEntry(DataStorageType aType,
-                          const MutexAutoLock& aProofOfLock);
+                          const AutoLock& aProofOfLock);
   DataStorageTable& GetTableForType(DataStorageType aType,
-                                    const MutexAutoLock& aProofOfLock);
+                                    const AutoLock& aProofOfLock);
 
   void ReadAllFromTable(DataStorageType aType,
                         InfallibleTArray<DataStorageItem>* aItems,
-                        const MutexAutoLock& aProofOfLock);
+                        const AutoLock& aProofOfLock);
 
-  Mutex mMutex;  // This mutex protects access to the following members:
+  Lock mMutex;  // This mutex protects access to the following members:
   DataStorageTable mPersistentDataTable;
   DataStorageTable mTemporaryDataTable;
   DataStorageTable mPrivateDataTable;
@@ -222,7 +222,7 @@ class DataStorage : public nsIObserver {
 
   mozilla::Atomic<bool> mInitCalled;  // Indicates that Init() has been called.
 
-  Monitor mReadyMonitor;  // Do not acquire this at the same time as mMutex.
+  Monitor2 mReadyMonitor;  // Do not acquire this at the same time as mMutex.
   bool mReady;  // Indicates that saved data has been read and Get can proceed.
 
   const nsString mFilename;

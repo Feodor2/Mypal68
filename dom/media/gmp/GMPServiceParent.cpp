@@ -1692,25 +1692,25 @@ mozilla::ipc::IPCResult GMPServiceParent::RecvGetGMPNodeId(
   return IPC_OK();
 }
 
-void GMPServiceParent::CloseTransport(Monitor* aSyncMonitor, bool* aCompleted) {
+void GMPServiceParent::CloseTransport(Monitor2* aSyncMonitor, bool* aCompleted) {
   MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
 
-  MonitorAutoLock lock(*aSyncMonitor);
+  Monitor2AutoLock lock(*aSyncMonitor);
 
   // This deletes the transport.
   SetTransport(nullptr);
 
   *aCompleted = true;
-  lock.NotifyAll();
+  lock.Broadcast();
 }
 
 void GMPServiceParent::ActorDestroy(ActorDestroyReason aWhy) {
-  Monitor monitor("DeleteGMPServiceParent");
+  Monitor2 monitor("DeleteGMPServiceParent");
   bool completed = false;
 
   // Make sure the IPC channel is closed before destroying mToDelete.
-  MonitorAutoLock lock(monitor);
-  RefPtr<Runnable> task = NewNonOwningRunnableMethod<Monitor*, bool*>(
+  Monitor2AutoLock lock(monitor);
+  RefPtr<Runnable> task = NewNonOwningRunnableMethod<Monitor2*, bool*>(
       "gmp::GMPServiceParent::CloseTransport", this,
       &GMPServiceParent::CloseTransport, &monitor, &completed);
   XRE_GetIOMessageLoop()->PostTask(task.forget());

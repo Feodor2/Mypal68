@@ -11,7 +11,7 @@
 #include "nsISpeechService.h"
 #include "nsRefPtrHashtable.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 
 namespace mozilla {
 namespace dom {

@@ -181,7 +181,7 @@ class MediaStreamGraphInitThreadRunnable : public Runnable {
 
     RefPtr<GraphDriver> previousDriver;
     {
-      MonitorAutoLock mon(mDriver->mGraphImpl->GetMonitor());
+      Monitor2AutoLock mon(mDriver->mGraphImpl->GetMonitor());
       previousDriver = mDriver->PreviousDriver();
     }
     if (previousDriver) {
@@ -194,10 +194,10 @@ class MediaStreamGraphInitThreadRunnable : public Runnable {
                              AsyncCubebOperation::SHUTDOWN);
       releaseEvent->Dispatch();
 
-      MonitorAutoLock mon(mDriver->mGraphImpl->GetMonitor());
+      Monitor2AutoLock mon(mDriver->mGraphImpl->GetMonitor());
       mDriver->SetPreviousDriver(nullptr);
     } else {
-      MonitorAutoLock mon(mDriver->mGraphImpl->GetMonitor());
+      Monitor2AutoLock mon(mDriver->mGraphImpl->GetMonitor());
       MOZ_ASSERT(mDriver->mGraphImpl->MessagesQueued(),
                  "Don't start a graph without messages queued.");
       mDriver->mGraphImpl->SwapMessageQueues();
@@ -234,7 +234,7 @@ void ThreadedDriver::Revive() {
   LOG(LogLevel::Debug, ("AudioCallbackDriver reviving."));
   // If we were switching, switch now. Otherwise, tell thread to run the main
   // loop again.
-  MonitorAutoLock mon(mGraphImpl->GetMonitor());
+  Monitor2AutoLock mon(mGraphImpl->GetMonitor());
   if (NextDriver()) {
     SwitchToNextDriver();
   } else {
@@ -315,7 +315,7 @@ void ThreadedDriver::RunThread() {
       GraphImpl()->SignalMainThreadCleanup();
       break;
     }
-    MonitorAutoLock lock(GraphImpl()->GetMonitor());
+    Monitor2AutoLock lock(GraphImpl()->GetMonitor());
     if (NextDriver()) {
       LOG(LogLevel::Debug,
           ("%p: Switching to AudioCallbackDriver", GraphImpl()));
@@ -364,10 +364,10 @@ void ThreadedDriver::WaitForNextIteration() {
     }
   }
   if (!timeout.IsZero()) {
-    CVStatus status = GraphImpl()->GetMonitor().Wait(timeout);
+    CVStatus2 status = GraphImpl()->GetMonitor().Wait(timeout);
     LOG(LogLevel::Verbose,
         ("%p: Resuming after %s", GraphImpl(),
-         status == CVStatus::Timeout ? "timeout" : "wake-up"));
+         status == CVStatus2::Timeout ? "timeout" : "wake-up"));
   }
 
   if (!another) {
@@ -379,7 +379,7 @@ void ThreadedDriver::WaitForNextIteration() {
 void ThreadedDriver::WakeUp() {
   GraphImpl()->GetMonitor().AssertCurrentThreadOwns();
   GraphImpl()->mGraphDriverAsleep = false;  // atomic
-  GraphImpl()->GetMonitor().Notify();
+  GraphImpl()->GetMonitor().Signal();
 }
 
 TimeDuration SystemClockDriver::WaitInterval() {
@@ -564,7 +564,7 @@ bool AudioCallbackDriver::Init() {
     if (!mFromFallback) {
       CubebUtils::ReportCubebStreamInitFailure(true);
     }
-    MonitorAutoLock lock(GraphImpl()->GetMonitor());
+    Monitor2AutoLock lock(GraphImpl()->GetMonitor());
     FallbackToSystemClockDriver();
     return true;
   }
@@ -588,7 +588,7 @@ bool AudioCallbackDriver::Init() {
   mOutputChannels = GraphImpl()->AudioOutputChannelCount();
   if (!mOutputChannels) {
     LOG(LogLevel::Warning, ("Output number of channels is 0."));
-    MonitorAutoLock lock(GraphImpl()->GetMonitor());
+    Monitor2AutoLock lock(GraphImpl()->GetMonitor());
     FallbackToSystemClockDriver();
     return true;
   }
@@ -659,7 +659,7 @@ bool AudioCallbackDriver::Init() {
     if (!mFromFallback) {
       CubebUtils::ReportCubebStreamInitFailure(firstStream);
     }
-    MonitorAutoLock lock(GraphImpl()->GetMonitor());
+    Monitor2AutoLock lock(GraphImpl()->GetMonitor());
     FallbackToSystemClockDriver();
     return true;
   }
@@ -736,7 +736,7 @@ void AudioCallbackDriver::Revive() {
   // We know were weren't in a running state
   LOG(LogLevel::Debug, ("%p: AudioCallbackDriver reviving.", GraphImpl()));
   // If we were switching, switch now. Otherwise, start the audio thread again.
-  MonitorAutoLock mon(GraphImpl()->GetMonitor());
+  Monitor2AutoLock mon(GraphImpl()->GetMonitor());
   if (NextDriver()) {
     SwitchToNextDriver();
   } else {
@@ -839,7 +839,7 @@ long AudioCallbackDriver::DataCallback(const AudioDataValue* aInputBuffer,
 
   GraphTime stateComputedTime = StateComputedTime();
   if (stateComputedTime == 0) {
-    MonitorAutoLock mon(GraphImpl()->GetMonitor());
+    Monitor2AutoLock mon(GraphImpl()->GetMonitor());
     // Because this function is called during cubeb_stream_init (to prefill the
     // audio buffers), it can be that we don't have a message here (because this
     // driver is the first one for this graph), and the graph would exit. Simply
@@ -946,7 +946,7 @@ long AudioCallbackDriver::DataCallback(const AudioDataValue* aInputBuffer,
 
   bool switching = false;
   {
-    MonitorAutoLock mon(GraphImpl()->GetMonitor());
+    Monitor2AutoLock mon(GraphImpl()->GetMonitor());
     switching = !!NextDriver();
   }
 
@@ -954,7 +954,7 @@ long AudioCallbackDriver::DataCallback(const AudioDataValue* aInputBuffer,
     mShouldFallbackIfError = false;
     // If the audio stream has not been started by the previous driver or
     // the graph itself, keep it alive.
-    MonitorAutoLock mon(GraphImpl()->GetMonitor());
+    Monitor2AutoLock mon(GraphImpl()->GetMonitor());
     if (!IsStarted()) {
       return aFrames;
     }
@@ -992,7 +992,7 @@ void AudioCallbackDriver::StateCallback(cubeb_state aState) {
   if (aState == CUBEB_STATE_ERROR && mShouldFallbackIfError) {
     MOZ_ASSERT(!ThreadRunning());
     mShouldFallbackIfError = false;
-    MonitorAutoLock lock(GraphImpl()->GetMonitor());
+    Monitor2AutoLock lock(GraphImpl()->GetMonitor());
     RemoveMixerCallback();
     FallbackToSystemClockDriver();
   } else if (aState == CUBEB_STATE_STOPPED) {
@@ -1064,7 +1064,7 @@ void AudioCallbackDriver::DeviceChangedCallback() {
   MOZ_ASSERT(!OnGraphThread());
   // Tell the audio engine the device has changed, it might want to reset some
   // state.
-  MonitorAutoLock mon(mGraphImpl->GetMonitor());
+  Monitor2AutoLock mon(mGraphImpl->GetMonitor());
   GraphImpl()->DeviceChanged();
 #ifdef XP_MACOSX
   PanOutputIfNeeded(mInputChannelCount);
@@ -1084,7 +1084,7 @@ void AudioCallbackDriver::EnqueueStreamAndPromiseForOperation(
     MediaStream* aStream, void* aPromise, dom::AudioContextOperation aOperation,
     dom::AudioContextOperationFlags aFlags) {
   MOZ_ASSERT(OnGraphThread() || !ThreadRunning());
-  MonitorAutoLock mon(mGraphImpl->GetMonitor());
+  Monitor2AutoLock mon(mGraphImpl->GetMonitor());
   MOZ_ASSERT((aFlags | dom::AudioContextOperationFlags::SendStateChange) ||
              !aPromise);
   if (aFlags == dom::AudioContextOperationFlags::SendStateChange) {
@@ -1101,7 +1101,7 @@ void AudioCallbackDriver::CompleteAudioContextOperations(
   // We can't lock for the whole function because AudioContextOperationCompleted
   // will grab the monitor
   {
-    MonitorAutoLock mon(GraphImpl()->GetMonitor());
+    Monitor2AutoLock mon(GraphImpl()->GetMonitor());
     array.SwapElements(mPromisesForOperation);
   }
 
@@ -1120,7 +1120,7 @@ void AudioCallbackDriver::CompleteAudioContextOperations(
   }
 
   if (!array.IsEmpty()) {
-    MonitorAutoLock mon(GraphImpl()->GetMonitor());
+    Monitor2AutoLock mon(GraphImpl()->GetMonitor());
     mPromisesForOperation.AppendElements(array);
   }
 }

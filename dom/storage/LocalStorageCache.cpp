@@ -532,14 +532,14 @@ void LocalStorageCache::UnloadItems(uint32_t aUnloadFlags) {
 // LocalStorageCacheBridge
 
 uint32_t LocalStorageCache::LoadedCount() {
-  MonitorAutoLock monitor(mMonitor);
+  Monitor2AutoLock monitor(mMonitor);
   Data& data = mData[kDefaultSet];
   return data.mKeys.Count();
 }
 
 bool LocalStorageCache::LoadItem(const nsAString& aKey,
                                  const nsString& aValue) {
-  MonitorAutoLock monitor(mMonitor);
+  Monitor2AutoLock monitor(mMonitor);
   if (mLoaded) {
     return false;
   }
@@ -555,14 +555,14 @@ bool LocalStorageCache::LoadItem(const nsAString& aKey,
 }
 
 void LocalStorageCache::LoadDone(nsresult aRv) {
-  MonitorAutoLock monitor(mMonitor);
+  Monitor2AutoLock monitor(mMonitor);
   mLoadResult = aRv;
   mLoaded = true;
-  monitor.Notify();
+  monitor.Signal();
 }
 
 void LocalStorageCache::LoadWait() {
-  MonitorAutoLock monitor(mMonitor);
+  Monitor2AutoLock monitor(mMonitor);
   while (!mLoaded) {
     monitor.Wait();
   }

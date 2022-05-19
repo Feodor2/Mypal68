@@ -11,7 +11,7 @@
 #include "nsTArray.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "nsString.h"
 #include "nsCOMPtr.h"
 #include "nsIThread.h"

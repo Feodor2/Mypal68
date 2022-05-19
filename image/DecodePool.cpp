@@ -8,7 +8,7 @@
 
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/DebugOnly.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/TimeStamp.h"
 #include "nsCOMPtr.h"
 #include "nsIObserverService.h"
@@ -66,7 +66,7 @@ class DecodePoolImpl {
         mAvailableThreads(aMaxThreads),
         mIdleThreads(0),
         mShuttingDown(false) {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     bool success = CreateThread();
     MOZ_RELEASE_ASSERT(success, "Must create first image decoder thread!");
   }
@@ -76,7 +76,7 @@ class DecodePoolImpl {
     {
       // If this is an idle thread shutdown, then we need to remove it from the
       // worker array. Process shutdown will move the entire array.
-      MonitorAutoLock lock(mMonitor);
+      Monitor2AutoLock lock(mMonitor);
       if (!mShuttingDown) {
         ++mAvailableThreads;
         DebugOnly<bool> removed = mThreads.RemoveElement(aThisThread);
@@ -103,11 +103,11 @@ class DecodePoolImpl {
     nsTArray<nsCOMPtr<nsIThread>> threads;
 
     {
-      MonitorAutoLock lock(mMonitor);
+      Monitor2AutoLock lock(mMonitor);
       mShuttingDown = true;
       mAvailableThreads = 0;
       threads.SwapElements(mThreads);
-      mMonitor.NotifyAll();
+      mMonitor.Broadcast();
     }
 
     for (uint32_t i = 0; i < threads.Length(); ++i) {
@@ -116,7 +116,7 @@ class DecodePoolImpl {
   }
 
   bool IsShuttingDown() const {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     return mShuttingDown;
   }
 
@@ -125,7 +125,7 @@ class DecodePoolImpl {
     MOZ_ASSERT(aTask);
     RefPtr<IDecodingTask> task(aTask);
 
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
 
     if (mShuttingDown) {
       // Drop any new work on the floor if we're shutting down.
@@ -147,11 +147,11 @@ class DecodePoolImpl {
       }
     }
 
-    mMonitor.Notify();
+    mMonitor.Signal();
   }
 
   Work StartWork(bool aShutdownIdle) {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
 
     // The thread was already marked as idle when it was created. Once it gets
     // its first work item, it is assumed it is busy performing that work until
@@ -162,7 +162,7 @@ class DecodePoolImpl {
   }
 
   Work PopWork(bool aShutdownIdle) {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     return PopWorkLocked(aShutdownIdle);
   }
 
@@ -240,7 +240,7 @@ class DecodePoolImpl {
   nsThreadPoolNaming mThreadNaming;
 
   // mMonitor guards everything below.
-  mutable Monitor mMonitor;
+  mutable Monitor2 mMonitor;
   nsTArray<RefPtr<IDecodingTask>> mHighPriorityQueue;
   nsTArray<RefPtr<IDecodingTask>> mLowPriorityQueue;
   nsTArray<nsCOMPtr<nsIThread>> mThreads;

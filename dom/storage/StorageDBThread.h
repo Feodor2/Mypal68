@@ -9,7 +9,7 @@
 #include "prinrval.h"
 #include "nsTArray.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/storage/StatementCache.h"
 #include "mozilla/TimeStamp.h"
@@ -275,13 +275,13 @@ class StorageDBThread final {
       mMonitor.AssertCurrentThreadOwns();
       mHasPendingEvents = false;
     }
-    Monitor& GetMonitor() { return mMonitor; }
+    Monitor2& GetMonitor() { return mMonitor; }
 
    private:
     virtual ~ThreadObserver() {}
     bool mHasPendingEvents;
     // The monitor we drive the thread with
-    Monitor mMonitor;
+    Monitor2 mMonitor;
   };
 
   class InitHelper;

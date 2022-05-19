@@ -240,7 +240,7 @@ class GMPServiceParent final : public PGMPServiceParent {
       nsCString* aOutErrorDescription) override;
 
  private:
-  void CloseTransport(Monitor* aSyncMonitor, bool* aCompleted);
+  void CloseTransport(Monitor2* aSyncMonitor, bool* aCompleted);
 
   RefPtr<GeckoMediaPluginServiceParent> mService;
 };

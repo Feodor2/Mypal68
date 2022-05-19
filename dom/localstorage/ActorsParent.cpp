@@ -1540,7 +1540,7 @@ class Connection::CachedStatement final {
  * origin, so we need to queue a runnable and wait our turn.)
  */
 class Connection::InitOriginHelper final : public Runnable {
-  mozilla::Monitor mMonitor;
+  mozilla::Monitor2 mMonitor;
   const nsCString mSuffix;
   const nsCString mGroup;
   const nsCString mOrigin;
@@ -4520,7 +4520,7 @@ nsresult Connection::InitOriginHelper::BlockAndReturnOriginDirectoryPath(
   MOZ_ALWAYS_SUCCEEDS(
       quotaManager->IOThread()->Dispatch(this, NS_DISPATCH_NORMAL));
 
-  mozilla::MonitorAutoLock lock(mMonitor);
+  mozilla::Monitor2AutoLock lock(mMonitor);
   while (mWaiting) {
     lock.Wait();
   }
@@ -4566,11 +4566,11 @@ Connection::InitOriginHelper::Run() {
     mIOThreadResultCode = rv;
   }
 
-  mozilla::MonitorAutoLock lock(mMonitor);
+  mozilla::Monitor2AutoLock lock(mMonitor);
   MOZ_ASSERT(mWaiting);
 
   mWaiting = false;
-  lock.Notify();
+  lock.Signal();
 
   return NS_OK;
 }

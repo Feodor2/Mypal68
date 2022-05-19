@@ -99,7 +99,7 @@ void MediaStreamGraphImpl::RemoveStreamGraphThread(MediaStream* aStream) {
   // Pending updates are not needed (since the main thread has already given
   // up the stream) so we will just drop them.
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     for (uint32_t i = 0; i < mStreamUpdates.Length(); ++i) {
       if (mStreamUpdates[i].mStream == aStream) {
         mStreamUpdates[i].mStream = nullptr;
@@ -348,7 +348,7 @@ void MediaStreamGraphImpl::UpdateStreamOrder() {
 
   if (!audioTrackPresent && mRealtime &&
       CurrentDriver()->AsAudioCallbackDriver()) {
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
     if (CurrentDriver()->AsAudioCallbackDriver()->IsStarted() &&
         !(CurrentDriver()->Switching())) {
       if (LifecycleStateRef() == LIFECYCLE_RUNNING) {
@@ -360,13 +360,13 @@ void MediaStreamGraphImpl::UpdateStreamOrder() {
 
   bool switching = false;
   {
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
     switching = CurrentDriver()->Switching();
   }
 
   if (audioTrackPresent && mRealtime &&
       !CurrentDriver()->AsAudioCallbackDriver() && !switching) {
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
     if (LifecycleStateRef() == LIFECYCLE_RUNNING) {
       AudioCallbackDriver* driver = new AudioCallbackDriver(
           this, AudioInputChannelCount(), AudioInputDevicePreference());
@@ -605,12 +605,12 @@ void MediaStreamGraphImpl::CreateOrDestroyAudioStreams(MediaStream* aStream) {
       bool switching = false;
 
       {
-        MonitorAutoLock lock(mMonitor);
+        Monitor2AutoLock lock(mMonitor);
         switching = CurrentDriver()->Switching();
       }
 
       if (!CurrentDriver()->AsAudioCallbackDriver() && !switching) {
-        MonitorAutoLock mon(mMonitor);
+        Monitor2AutoLock mon(mMonitor);
         if (LifecycleStateRef() == LIFECYCLE_RUNNING) {
           AudioCallbackDriver* driver = new AudioCallbackDriver(
               this, AudioInputChannelCount(), AudioInputDevicePreference());
@@ -744,7 +744,7 @@ void MediaStreamGraphImpl::OpenAudioInputImpl(CubebUtils::AudioDeviceID aID,
   if (listeners.Length() == 1) {  // first open for this device
     mInputDeviceID = aID;
     // Switch Drivers since we're adding input (to input-only or full-duplex)
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
     if (LifecycleStateRef() == LIFECYCLE_RUNNING) {
       AudioCallbackDriver* driver = new AudioCallbackDriver(
           this, AudioInputChannelCount(), AudioInputDevicePreference());
@@ -815,7 +815,7 @@ void MediaStreamGraphImpl::CloseAudioInputImpl(
   // or output only)
   bool audioTrackPresent = AudioTrackPresent();
 
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   if (LifecycleStateRef() == LIFECYCLE_RUNNING) {
     GraphDriver* driver;
     if (audioTrackPresent) {
@@ -892,7 +892,7 @@ void MediaStreamGraphImpl::NotifyInputData(const AudioDataValue* aBuffer,
 #else
 #  ifdef DEBUG
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     // Either we have an audio input device, or we just removed the audio input
     // this iteration, and we're switching back to an output-only driver next
     // iteration.
@@ -978,7 +978,7 @@ void MediaStreamGraphImpl::ReevaluateInputDevice() {
     // However, maybe it's not the correct number of channels. Re-query the
     // correct channel amount at this time.
 #ifdef DEBUG
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     MOZ_ASSERT(CurrentDriver()->Switching());
 #endif
     needToSwitch = true;
@@ -987,7 +987,7 @@ void MediaStreamGraphImpl::ReevaluateInputDevice() {
     AudioCallbackDriver* newDriver = new AudioCallbackDriver(
         this, AudioInputChannelCount(), AudioInputDevicePreference());
     {
-      MonitorAutoLock lock(mMonitor);
+      Monitor2AutoLock lock(mMonitor);
       CurrentDriver()->SwitchAtNextIteration(newDriver);
     }
   }
@@ -1341,7 +1341,7 @@ void MediaStreamGraphImpl::Process() {
 
 bool MediaStreamGraphImpl::UpdateMainThreadState() {
   MOZ_ASSERT(OnGraphThread());
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   bool finalUpdate =
       mForceShutDown || (IsEmpty() && mBackMessageQueue.IsEmpty());
   PrepareUpdatesToMainThreadState(finalUpdate);
@@ -1505,7 +1505,7 @@ class MediaStreamGraphShutDownRunnable : public Runnable {
     // which won't otherwise release its reference on the graph until
     // nsTimerImpl::Shutdown(), which runs after xpcom-shutdown-threads.
     {
-      MonitorAutoLock mon(mGraph->mMonitor);
+      Monitor2AutoLock mon(mGraph->mMonitor);
       mGraph->SetCurrentDriver(nullptr);
     }
 
@@ -1611,7 +1611,7 @@ void MediaStreamGraphImpl::RunInStableState(bool aSourceIsMSG) {
   nsTArray<UniquePtr<ControlMessage>> controlMessagesToRunDuringShutdown;
 
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     if (aSourceIsMSG) {
       MOZ_ASSERT(mPostedRunInStableStateEvent);
       mPostedRunInStableStateEvent = false;
@@ -1690,7 +1690,7 @@ void MediaStreamGraphImpl::RunInStableState(bool aSourceIsMSG) {
                CurrentDriver()->AsAudioCallbackDriver() ? "AudioCallbackDriver"
                                                         : "SystemClockDriver"));
           RefPtr<GraphDriver> driver = CurrentDriver();
-          MonitorAutoUnlock unlock(mMonitor);
+          Monitor2AutoUnlock unlock(mMonitor);
           driver->Revive();
         }
       }
@@ -1709,7 +1709,7 @@ void MediaStreamGraphImpl::RunInStableState(bool aSourceIsMSG) {
              CurrentDriver()->AsAudioCallbackDriver() ? "AudioCallbackDriver"
                                                       : "SystemClockDriver"));
         RefPtr<GraphDriver> driver = CurrentDriver();
-        MonitorAutoUnlock unlock(mMonitor);
+        Monitor2AutoUnlock unlock(mMonitor);
         driver->Start();
         // It's not safe to Shutdown() a thread from StableState, and
         // releasing this may shutdown a SystemClockDriver thread.
@@ -1786,7 +1786,7 @@ void MediaStreamGraphImpl::EnsureStableStateEventPosted() {
 void MediaStreamGraphImpl::SignalMainThreadCleanup() {
   MOZ_ASSERT(mDriver->OnThread());
 
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   // LIFECYCLE_THREAD_NOT_STARTED is possible when shutting down offline
   // graphs that have not started.
   MOZ_DIAGNOSTIC_ASSERT(mLifecycleState <= LIFECYCLE_RUNNING);
@@ -3374,7 +3374,7 @@ MediaStreamGraphImpl::CollectReports(nsIHandleReportCallback* aHandleReport,
                                      nsISupports* aData, bool aAnonymize) {
   MOZ_ASSERT(NS_IsMainThread());
   {
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
     if (LifecycleStateRef() >= LIFECYCLE_WAITING_FOR_THREAD_SHUTDOWN) {
       // Shutting down, nothing to report.
       FinishCollectReports(aHandleReport, aData, nsTArray<AudioNodeSizes>());
@@ -3669,7 +3669,7 @@ void MediaStreamGraphImpl::ApplyAudioContextOperationImpl(
   bool switching = false;
   GraphDriver* nextDriver = nullptr;
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     switching = CurrentDriver()->Switching();
     if (switching) {
       nextDriver = CurrentDriver()->NextDriver();
@@ -3691,7 +3691,7 @@ void MediaStreamGraphImpl::ApplyAudioContextOperationImpl(
       } else {
         driver = new AudioCallbackDriver(this, AudioInputChannelCount(),
                                          AudioInputDevicePreference());
-        MonitorAutoLock lock(mMonitor);
+        Monitor2AutoLock lock(mMonitor);
         CurrentDriver()->SwitchAtNextIteration(driver);
       }
       driver->EnqueueStreamAndPromiseForOperation(aDestinationStream, aPromise,
@@ -3722,7 +3722,7 @@ void MediaStreamGraphImpl::ApplyAudioContextOperationImpl(
         MOZ_ASSERT(!nextDriver->AsAudioCallbackDriver());
       } else {
         driver = new SystemClockDriver(this);
-        MonitorAutoLock lock(mMonitor);
+        Monitor2AutoLock lock(mMonitor);
         CurrentDriver()->SwitchAtNextIteration(driver);
       }
       // We are closing or suspending an AudioContext, but we just got resumed.

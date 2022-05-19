@@ -54,7 +54,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/Navigator.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/StaticPrefs.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollector.h"
@@ -1690,22 +1690,22 @@ class CrashIfHangingRunnable : public WorkerControlRunnable {
   bool WorkerRun(JSContext* aCx, WorkerPrivate* aWorkerPrivate) override {
     aWorkerPrivate->DumpCrashInformation(mMsg);
 
-    MonitorAutoLock lock(mMonitor);
-    lock.Notify();
+    Monitor2AutoLock lock(mMonitor);
+    lock.Signal();
     return true;
   }
 
   nsresult Cancel() override {
     mMsg.Assign("Canceled");
 
-    MonitorAutoLock lock(mMonitor);
-    lock.Notify();
+    Monitor2AutoLock lock(mMonitor);
+    lock.Signal();
 
     return NS_OK;
   }
 
   void DispatchAndWait() {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
 
     if (!Dispatch()) {
       mMsg.Assign("Dispatch Error");
@@ -1723,7 +1723,7 @@ class CrashIfHangingRunnable : public WorkerControlRunnable {
   void PostDispatch(WorkerPrivate* aWorkerPrivate,
                     bool aDispatchResult) override {}
 
-  Monitor mMonitor;
+  Monitor2 mMonitor;
   nsCString mMsg;
 };
 

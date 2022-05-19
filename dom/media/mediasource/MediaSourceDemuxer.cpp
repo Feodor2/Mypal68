@@ -86,7 +86,7 @@ bool MediaSourceDemuxer::ScanSourceBuffersForContent() {
     return false;
   }
 
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
 
   bool haveEmptySourceBuffer = false;
   for (const auto& sourceBuffer : mSourceBuffers) {
@@ -114,7 +114,7 @@ bool MediaSourceDemuxer::ScanSourceBuffersForContent() {
 }
 
 uint32_t MediaSourceDemuxer::GetNumberTracks(TrackType aType) const {
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
 
   switch (aType) {
     case TrackType::kAudioTrack:
@@ -142,7 +142,7 @@ already_AddRefed<MediaTrackDemuxer> MediaSourceDemuxer::GetTrackDemuxer(
 bool MediaSourceDemuxer::IsSeekable() const { return true; }
 
 UniquePtr<EncryptionInfo> MediaSourceDemuxer::GetCrypto() {
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   auto crypto = MakeUnique<EncryptionInfo>();
   *crypto = mInfo.mCrypto;
   return crypto;
@@ -183,7 +183,7 @@ void MediaSourceDemuxer::DoDetachSourceBuffer(
         return aLinkedSourceBuffer == aSourceBuffer;
       });
   {
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
     if (aSourceBuffer == mAudioTrack) {
       mAudioTrack = nullptr;
     }
@@ -201,7 +201,7 @@ void MediaSourceDemuxer::DoDetachSourceBuffer(
 }
 
 TrackInfo* MediaSourceDemuxer::GetTrackInfo(TrackType aTrack) {
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   switch (aTrack) {
     case TrackType::kAudioTrack:
       return &mInfo.mAudio;
@@ -213,7 +213,7 @@ TrackInfo* MediaSourceDemuxer::GetTrackInfo(TrackType aTrack) {
 }
 
 RefPtr<TrackBuffersManager> MediaSourceDemuxer::GetManager(TrackType aTrack) {
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   switch (aTrack) {
     case TrackType::kAudioTrack:
       return mAudioTrack;
@@ -229,7 +229,7 @@ MediaSourceDemuxer::~MediaSourceDemuxer() {
 }
 
 void MediaSourceDemuxer::GetMozDebugReaderData(nsACString& aString) {
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   nsAutoCString result;
   result += nsPrintfCString("Dumping Data for Demuxer: %p\n", this);
   if (mAudioTrack) {
@@ -327,7 +327,7 @@ void MediaSourceTrackDemuxer::Reset() {
         MOZ_ASSERT(self->OnTaskQueue());
         self->mManager->Seek(self->mType, TimeUnit::Zero(), TimeUnit::Zero());
         {
-          MonitorAutoLock mon(self->mMonitor);
+          Monitor2AutoLock mon(self->mMonitor);
           self->mNextRandomAccessPoint =
               self->mManager->GetNextRandomAccessPoint(
                   self->mType, MediaSourceDemuxer::EOS_FUZZ);
@@ -339,7 +339,7 @@ void MediaSourceTrackDemuxer::Reset() {
 }
 
 nsresult MediaSourceTrackDemuxer::GetNextRandomAccessPoint(TimeUnit* aTime) {
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   *aTime = mNextRandomAccessPoint;
   return NS_OK;
 }
@@ -353,7 +353,7 @@ MediaSourceTrackDemuxer::SkipToNextRandomAccessPoint(
 }
 
 media::TimeIntervals MediaSourceTrackDemuxer::GetBuffered() {
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   if (!mManager) {
     return media::TimeIntervals();
   }
@@ -417,7 +417,7 @@ RefPtr<MediaSourceTrackDemuxer::SeekPromise> MediaSourceTrackDemuxer::DoSeek(
   mNextSample = Some(sample);
   mReset = false;
   {
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
     mNextRandomAccessPoint =
         mManager->GetNextRandomAccessPoint(mType, MediaSourceDemuxer::EOS_FUZZ);
   }
@@ -472,7 +472,7 @@ MediaSourceTrackDemuxer::DoGetSamples(int32_t aNumSamples) {
   RefPtr<SamplesHolder> samples = new SamplesHolder;
   samples->mSamples.AppendElement(sample);
   if (mNextRandomAccessPoint <= sample->mTime) {
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
     mNextRandomAccessPoint =
         mManager->GetNextRandomAccessPoint(mType, MediaSourceDemuxer::EOS_FUZZ);
   }
@@ -517,7 +517,7 @@ bool MediaSourceTrackDemuxer::HasManager(TrackBuffersManager* aManager) const {
 
 void MediaSourceTrackDemuxer::DetachManager() {
   MOZ_ASSERT(OnTaskQueue());
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   mManager = nullptr;
 }
 

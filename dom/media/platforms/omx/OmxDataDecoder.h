@@ -5,7 +5,7 @@
 #if !defined(OmxDataDecoder_h_)
 #  define OmxDataDecoder_h_
 
-#  include "mozilla/Monitor.h"
+#  include "mozilla/Monitor2.h"
 #  include "mozilla/StateWatching.h"
 
 #  include "AudioCompactor.h"

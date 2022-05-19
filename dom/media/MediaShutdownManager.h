@@ -5,7 +5,7 @@
 #if !defined(MediaShutdownManager_h_)
 #  define MediaShutdownManager_h_
 
-#  include "mozilla/Monitor.h"
+#  include "mozilla/Monitor2.h"
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/StaticPtr.h"
 #  include "nsCOMPtr.h"

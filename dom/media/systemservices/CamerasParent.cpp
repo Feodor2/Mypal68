@@ -86,7 +86,7 @@ StaticRefPtr<VideoEngine> CamerasParent::sEngines[CaptureEngine::MaxEngine];
 int32_t CamerasParent::sNumOfOpenCamerasParentEngines = 0;
 int32_t CamerasParent::sNumOfCamerasParents = 0;
 base::Thread* CamerasParent::sVideoCaptureThread = nullptr;
-Monitor* CamerasParent::sThreadMonitor = nullptr;
+Monitor2* CamerasParent::sThreadMonitor = nullptr;
 StaticMutex CamerasParent::sMutex;
 
 // 3 threads are involved in this code:
@@ -183,7 +183,7 @@ nsresult CamerasParent::DispatchToVideoCaptureThread(RefPtr<Runnable> event) {
   // Don't try to dispatch if we're already on the right thread.
   // There's a potential deadlock because the sThreadMonitor is likely
   // to be taken already.
-  MonitorAutoLock lock(*sThreadMonitor);
+  Monitor2AutoLock lock(*sThreadMonitor);
   MOZ_ASSERT(!sVideoCaptureThread ||
              sVideoCaptureThread->thread_id() != PlatformThread::CurrentId());
 
@@ -206,7 +206,7 @@ void CamerasParent::StopVideoCapture() {
   RefPtr<CamerasParent> self(this);
   DebugOnly<nsresult> rv =
       DispatchToVideoCaptureThread(NewRunnableFrom([self]() {
-        MonitorAutoLock lock(*(self->sThreadMonitor));
+        Monitor2AutoLock lock(*(self->sThreadMonitor));
         self->CloseEngines();
         // After closing the WebRTC stack, clean up the
         // VideoCapture thread.
@@ -1054,7 +1054,7 @@ CamerasParent::CamerasParent()
   StaticMutexAutoLock slock(sMutex);
 
   if (sNumOfCamerasParents++ == 0) {
-    sThreadMonitor = new Monitor("CamerasParent::sThreadMonitor");
+    sThreadMonitor = new Monitor2("CamerasParent::sThreadMonitor");
   }
 
   mPBackgroundEventTarget = GetCurrentThreadSerialEventTarget();
@@ -1070,7 +1070,7 @@ CamerasParent::CamerasParent()
     MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
 
     // Start the thread
-    MonitorAutoLock lock(*(self->sThreadMonitor));
+    Monitor2AutoLock lock(*(self->sThreadMonitor));
     if (self->sVideoCaptureThread == nullptr) {
       MOZ_ASSERT(sNumOfOpenCamerasParentEngines == 0);
       self->sVideoCaptureThread = new base::Thread("VideoCapture");
@@ -1085,7 +1085,7 @@ CamerasParent::CamerasParent()
       }
     }
     sNumOfOpenCamerasParentEngines++;
-    self->sThreadMonitor->NotifyAll();
+    self->sThreadMonitor->Broadcast();
     return NS_OK;
   }));
 }

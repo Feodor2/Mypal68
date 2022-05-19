@@ -2205,7 +2205,7 @@ CacheStorageService::CollectReports(nsIHandleReportCallback* aHandleReport,
 
 NS_IMETHODIMP
 CacheStorageService::IOThreadSuspender::Run() {
-  MonitorAutoLock mon(mMon);
+  Monitor2AutoLock mon(mMon);
   while (!mSignaled) {
     mon.Wait();
   }
@@ -2213,9 +2213,9 @@ CacheStorageService::IOThreadSuspender::Run() {
 }
 
 void CacheStorageService::IOThreadSuspender::Notify() {
-  MonitorAutoLock mon(mMon);
+  Monitor2AutoLock mon(mMon);
   mSignaled = true;
-  mon.Notify();
+  mon.Signal();
 }
 
 NS_IMETHODIMP

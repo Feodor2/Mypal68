@@ -11,7 +11,7 @@
 #include "ScopedNSSTypes.h"
 #include "SharedCertVerifier.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
@@ -94,7 +94,7 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
   bool ShouldEnableEnterpriseRootsForFamilySafety(uint32_t familySafetyMode);
 
   // mLoadableRootsLoadedMonitor protects mLoadableRootsLoaded.
-  mozilla::Monitor mLoadableRootsLoadedMonitor;
+  mozilla::Monitor2 mLoadableRootsLoadedMonitor;
   bool mLoadableRootsLoaded;
   nsresult mLoadableRootsLoadedResult;
 

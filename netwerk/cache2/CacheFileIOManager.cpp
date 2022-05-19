@@ -535,18 +535,18 @@ class ShutdownEvent : public Runnable {
 
  public:
   NS_IMETHOD Run() override {
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
 
     CacheFileIOManager::gInstance->ShutdownInternal();
 
     mNotified = true;
-    mon.Notify();
+    mon.Signal();
 
     return NS_OK;
   }
 
   void PostAndWait() {
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
 
     DebugOnly<nsresult> rv;
     rv = CacheFileIOManager::gInstance->mIOThread->Dispatch(
@@ -560,14 +560,14 @@ class ShutdownEvent : public Runnable {
       if (!mNotified) {
         // If there is any IO blocking on the IO thread, this will
         // try to cancel it.  Returns no later than after two seconds.
-        MonitorAutoUnlock unmon(mMonitor);  // Prevent delays
+        Monitor2AutoUnlock unmon(mMonitor);  // Prevent delays
         CacheFileIOManager::gInstance->mIOThread->CancelBlockingIO();
       }
     }
   }
 
  protected:
-  mozilla::Monitor mMonitor;
+  mozilla::Monitor2 mMonitor;
   bool mNotified;
 };
 
@@ -4209,7 +4209,7 @@ class SizeOfHandlesRunnable : public Runnable {
       return 0;
     }
 
-    mozilla::MonitorAutoLock mon(mMonitor);
+    mozilla::Monitor2AutoLock mon(mMonitor);
     mMonitorNotified = false;
     nsresult rv = target->Dispatch(this, nsIEventTarget::DISPATCH_NORMAL);
     if (NS_FAILED(rv)) {
@@ -4224,7 +4224,7 @@ class SizeOfHandlesRunnable : public Runnable {
   }
 
   NS_IMETHOD Run() override {
-    mozilla::MonitorAutoLock mon(mMonitor);
+    mozilla::Monitor2AutoLock mon(mMonitor);
     // Excluding this since the object itself is a member of CacheFileIOManager
     // reported in CacheFileIOManager::SizeOfIncludingThis as part of |this|.
     mSize = mHandles.SizeOfExcludingThis(mMallocSizeOf);
@@ -4233,12 +4233,12 @@ class SizeOfHandlesRunnable : public Runnable {
     }
 
     mMonitorNotified = true;
-    mon.Notify();
+    mon.Signal();
     return NS_OK;
   }
 
  private:
-  mozilla::Monitor mMonitor;
+  mozilla::Monitor2 mMonitor;
   bool mMonitorNotified;
   mozilla::MallocSizeOf mMallocSizeOf;
   CacheFileHandles const& mHandles;

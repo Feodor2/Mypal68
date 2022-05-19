@@ -11,7 +11,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MaybeOneOf.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/Range.h"
 #include "mozilla/Vector.h"
 #include "mozilla/Result.h"
@@ -378,7 +378,7 @@ class ScriptPreloader : public nsIObserver,
 
   void Cleanup();
 
-  void FinishPendingParses(MonitorAutoLock& aMal);
+  void FinishPendingParses(Monitor2AutoLock& aMal);
   void InvalidateCache();
 
   // Opens the cache file for reading.
@@ -486,8 +486,8 @@ class ScriptPreloader : public nsIObserver,
   // The mmapped cache data from this session's cache file.
   AutoMemMap mCacheData;
 
-  Monitor mMonitor;
-  Monitor mSaveMonitor;
+  Monitor2 mMonitor;
+  Monitor2 mSaveMonitor;
 };
 
 }  // namespace mozilla

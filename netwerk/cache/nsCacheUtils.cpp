@@ -50,7 +50,7 @@ nsresult nsShutdownThread::BlockingShutdown(nsIThread* aThread) {
   }
 
   {
-    MonitorAutoLock mon(st->mMonitor);
+    Monitor2AutoLock mon(st->mMonitor);
     rv = workerThread->Dispatch(st, NS_DISPATCH_NORMAL);
     if (NS_FAILED(rv)) {
       NS_WARNING(
@@ -68,9 +68,9 @@ nsresult nsShutdownThread::BlockingShutdown(nsIThread* aThread) {
 
 NS_IMETHODIMP
 nsShutdownThread::Run() {
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   mThread->Shutdown();
   mShuttingDown = false;
-  mon.Notify();
+  mon.Signal();
   return NS_OK;
 }

@@ -166,9 +166,9 @@ ReverbConvolver::~ReverbConvolver() {
 
     // Wake up thread so it can return
     {
-      MonitorAutoLock locker(m_backgroundThreadMonitor);
+      Monitor2AutoLock locker(m_backgroundThreadMonitor);
       m_moreInputBuffered = true;
-      m_backgroundThreadMonitor.Notify();
+      m_backgroundThreadMonitor.Signal();
     }
 
     m_backgroundThread.Stop();
@@ -208,7 +208,7 @@ void ReverbConvolver::backgroundThreadEntry() {
     // Wait for realtime thread to give us more input
     m_moreInputBuffered = false;
     {
-      MonitorAutoLock locker(m_backgroundThreadMonitor);
+      Monitor2AutoLock locker(m_backgroundThreadMonitor);
       while (!m_moreInputBuffered && !m_wantsToExit)
         m_backgroundThreadMonitor.Wait();
     }
@@ -250,17 +250,17 @@ void ReverbConvolver::process(const float* sourceChannelData,
 
   // Now that we've buffered more input, wake up our background thread.
 
-  // Not using a MonitorAutoLock looks strange, but we use a TryLock() instead
+  // Not using a Monitor2AutoLock looks strange, but we use a TryLock() instead
   // because this is run on the real-time thread where it is a disaster for the
   // lock to be contended (causes audio glitching).  It's OK if we fail to
   // signal from time to time, since we'll get to it the next time we're called.
   // We're called repeatedly and frequently (around every 3ms).  The background
   // thread is processing well into the future and has a considerable amount of
   // leeway here...
-  if (m_backgroundThreadMonitor.TryLock()) {
+  if (m_backgroundThreadMonitor.Try()) {
     m_moreInputBuffered = true;
-    m_backgroundThreadMonitor.Notify();
-    m_backgroundThreadMonitor.Unlock();
+    m_backgroundThreadMonitor.Signal();
+    m_backgroundThreadMonitor.Release();
   }
 }
 

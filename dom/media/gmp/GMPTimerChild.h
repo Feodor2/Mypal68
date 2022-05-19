@@ -6,7 +6,7 @@
 #define GMPTimerChild_h_
 
 #include "mozilla/gmp/PGMPTimerChild.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "nsDataHashtable.h"
 #include "nsHashKeys.h"
 #include "gmp-errors.h"

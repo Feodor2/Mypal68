@@ -14,7 +14,7 @@
 #include "base/task.h"                   // for NewRunnableFunction, etc
 #include "base/thread.h"                 // for Thread
 #include "mozilla/Assertions.h"          // for MOZ_ASSERT, etc
-#include "mozilla/Monitor.h"             // for Monitor, MonitorAutoLock
+#include "mozilla/Monitor2.h"             // for Monitor, MonitorAutoLock
 #include "mozilla/ReentrantMonitor.h"    // for ReentrantMonitor, etc
 #include "mozilla/ipc/MessageChannel.h"  // for MessageChannel, etc
 #include "mozilla/ipc/Transport.h"       // for Transport

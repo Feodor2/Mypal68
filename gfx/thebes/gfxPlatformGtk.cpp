@@ -21,7 +21,7 @@
 #include "gfxTextRun.h"
 #include "VsyncSource.h"
 #include "mozilla/Atomics.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "base/task.h"
 #include "base/thread.h"
 #include "base/message_loop.h"
@@ -714,7 +714,7 @@ class GtkVsyncSource final : public VsyncSource {
     Monitor mSetupLock;
     base::Thread mVsyncThread;
     RefPtr<Runnable> mVsyncTask;
-    Monitor mVsyncEnabledLock;
+    Monitor2 mVsyncEnabledLock;
     bool mVsyncEnabled;
 #  ifdef MOZ_WAYLAND
     bool mIsWaylandDisplay;

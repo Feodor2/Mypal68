@@ -8,7 +8,7 @@
 #include "base/basictypes.h"     // for DISALLOW_EVIL_CONSTRUCTORS
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT_HELPER2
 #include "mozilla/Attributes.h"  // for override
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/layers/PCompositorBridgeChild.h"
 #include "mozilla/layers/TextureForwarder.h"  // for TextureForwarder
@@ -364,7 +364,7 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
 
   // Off-Main-Thread Painting state. This covers access to the OMTP-related
   // state below.
-  Monitor mPaintLock;
+  Monitor2 mPaintLock;
 
   // Contains the number of asynchronous paints that were queued since the
   // beginning of the last async transaction, and the time stamp of when

@@ -8,7 +8,7 @@
 #include <stdint.h>  // for uint64_t
 
 #include "mozilla/Attributes.h"  // for override
-#include "mozilla/Monitor.h"     // for Monitor
+#include "mozilla/Monitor2.h"     // for Monitor
 #include "mozilla/RefPtr.h"      // for RefPtr
 #include "mozilla/TimeStamp.h"   // for TimeStamp
 #include "mozilla/gfx/Point.h"   // for IntSize
@@ -158,10 +158,10 @@ class CompositorVsyncScheduler {
   widget::CompositorWidget* mWidget;
   RefPtr<CompositorVsyncScheduler::Observer> mVsyncObserver;
 
-  mozilla::Monitor mCurrentCompositeTaskMonitor;
+  mozilla::Monitor2 mCurrentCompositeTaskMonitor;
   RefPtr<CancelableRunnable> mCurrentCompositeTask;
 
-  mozilla::Monitor mCurrentVRTaskMonitor;
+  mozilla::Monitor2 mCurrentVRTaskMonitor;
   RefPtr<CancelableRunnable> mCurrentVRTask;
 };
 

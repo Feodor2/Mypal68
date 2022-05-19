@@ -68,23 +68,21 @@
 #include "base/basictypes.h"
 #include "base/lock.h"
 #include "build/build_config.h"
+#include "mozilla/TimeStamp.h"
 
 #if defined(OS_POSIX)
 #  include <pthread.h>
 #endif
 
-#if defined(OS_WIN)
-#  include <windows.h>
-#endif
-
-namespace base {
-class TimeDelta;
+namespace mozilla {
+enum class CVStatus2 { NoTimeout, Timeout };
 }
 
 class ConditionVariable {
  public:
   // Construct a cv for use with ONLY one user lock.
-  explicit ConditionVariable(Lock* user_lock);
+  explicit ConditionVariable(Lock& user_lock);
+  explicit ConditionVariable(Lock& user_lock, const char* aName);
 
   ~ConditionVariable();
 
@@ -92,7 +90,7 @@ class ConditionVariable {
   // sleep, and the reacquires it when it is signaled. The wait functions are
   // susceptible to spurious wakeups. (See usage note 1 for more details.)
   void Wait();
-  void TimedWait(const base::TimeDelta& max_time);
+  mozilla::CVStatus2 TimedWait(const mozilla::TimeDuration& rel_time);
 
   // Broadcast() revives all waiting threads. (See usage note 2 for more
   // details.)
@@ -128,12 +126,14 @@ class ConditionVariable {
 
     // Methods for use on list elements.
     // Accessor method.
-    HANDLE handle() const;
+    void* handle() const;
     // Pull an element from a list (if it's in one).
     Event* Extract();
 
     // Method for use on a list element or on a list.
     bool IsSingleton() const;
+
+    const char* mName;
 
    private:
     // Provide pre/post conditions to validate correct manipulations.
@@ -142,7 +142,7 @@ class ConditionVariable {
     bool ValidateAsList() const;
     bool ValidateLinks() const;
 
-    HANDLE handle_;
+    void* handle_;
     Event* next_;
     Event* prev_;
     DISALLOW_COPY_AND_ASSIGN(Event);

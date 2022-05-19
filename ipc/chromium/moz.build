@@ -5,6 +5,20 @@
 libevent_path_prefix = 'src/third_party'
 include(libevent_path_prefix + '/libeventcommon.mozbuild')
 
+EXPORTS.base += [
+    'src/base/basictypes.h',
+    'src/base/condition_variable.h',
+    'src/base/lock.h',
+    'src/base/lock_impl.h',
+    'src/base/platform_thread.h',
+    'src/base/port.h',
+
+]
+
+EXPORTS.build += [
+    'src/build/build_config.h',
+]
+
 UNIFIED_SOURCES += [
     'src/base/at_exit.cc',
     'src/base/command_line.cc',

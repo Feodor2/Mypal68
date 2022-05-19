@@ -14,6 +14,8 @@
 #include "nsStringStream.h"
 #include "nsTArray.h"
 
+#include "base/condition_variable.h"
+
 namespace mozilla {
 namespace dom {
 namespace cache {
@@ -100,8 +102,8 @@ class ReadStream::Inner final : public ReadStream::Controllable {
   // to close a stream on our owning thread while an IO thread is simultaneously
   // reading the same stream.  Therefore, protect all access to these stream
   // objects with a mutex.
-  Mutex mMutex;
-  CondVar mCondVar;
+  Lock mMutex;
+  ConditionVariable mCondVar;
   nsCOMPtr<nsIInputStream> mStream;
   nsCOMPtr<nsIInputStream> mSnappyStream;
 
@@ -216,7 +218,7 @@ void ReadStream::Inner::Serialize(
   mControl->SerializeControl(aReadStreamOut);
 
   {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     mControl->SerializeStream(aReadStreamOut, mStream, aStreamCleanupList);
   }
 
@@ -256,7 +258,7 @@ nsresult ReadStream::Inner::Close() {
   // stream ops can happen on any thread
   nsresult rv = NS_OK;
   {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     if (mSnappyStream) {
       rv = mSnappyStream->Close();
     }
@@ -269,7 +271,7 @@ nsresult ReadStream::Inner::Available(uint64_t* aNumAvailableOut) {
   // stream ops can happen on any thread
   nsresult rv = NS_OK;
   {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     rv = EnsureStream()->Available(aNumAvailableOut);
   }
 
@@ -287,7 +289,7 @@ nsresult ReadStream::Inner::Read(char* aBuf, uint32_t aCount,
 
   nsresult rv = NS_OK;
   {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     rv = EnsureStream()->Read(aBuf, aCount, aNumReadOut);
   }
 
@@ -313,7 +315,7 @@ nsresult ReadStream::Inner::ReadSegments(nsWriteSegmentFun aWriter,
 
   nsresult rv = NS_OK;
   {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     rv = EnsureStream()->ReadSegments(aWriter, aClosure, aCount, aNumReadOut);
   }
 
@@ -336,7 +338,7 @@ nsresult ReadStream::Inner::ReadSegments(nsWriteSegmentFun aWriter,
 
 nsresult ReadStream::Inner::IsNonBlocking(bool* aNonBlockingOut) {
   // stream ops can happen on any thread
-  MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
   if (mSnappyStream) {
     return mSnappyStream->IsNonBlocking(aNonBlockingOut);
   }
@@ -413,7 +415,7 @@ void ReadStream::Inner::ForgetOnOwningThread() {
 }
 
 nsIInputStream* ReadStream::Inner::EnsureStream() {
-  mMutex.AssertCurrentThreadOwns();
+  //1111mMutex.AssertCurrentThreadOwns();
 
   // We need to block the current thread while we open the stream.  We
   // cannot do this safely from the main owning thread since it would
@@ -447,9 +449,9 @@ void ReadStream::Inner::AsyncOpenStreamOnOwningThread() {
   MOZ_ASSERT(mOwningEventTarget->IsOnCurrentThread());
 
   if (!mControl || mState == Closed) {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     OpenStreamFailed();
-    mCondVar.NotifyAll();
+    mCondVar.Broadcast();
     return;
   }
 
@@ -460,7 +462,7 @@ void ReadStream::Inner::AsyncOpenStreamOnOwningThread() {
 
   RefPtr<ReadStream::Inner> self = this;
   mControl->OpenStream(mId, [self](nsCOMPtr<nsIInputStream>&& aStream) {
-    MutexAutoLock lock(self->mMutex);
+    AutoLock lock(self->mMutex);
     self->mAsyncOpenStarted = false;
     if (!self->mStream) {
       if (!aStream) {
@@ -470,7 +472,7 @@ void ReadStream::Inner::AsyncOpenStreamOnOwningThread() {
         self->mSnappyStream = new SnappyUncompressInputStream(self->mStream);
       }
     }
-    self->mCondVar.NotifyAll();
+    self->mCondVar.Broadcast();
   });
 }
 
@@ -479,15 +481,15 @@ void ReadStream::Inner::MaybeAbortAsyncOpenStream() {
     return;
   }
 
-  MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
   OpenStreamFailed();
-  mCondVar.NotifyAll();
+  mCondVar.Broadcast();
 }
 
 void ReadStream::Inner::OpenStreamFailed() {
   MOZ_DIAGNOSTIC_ASSERT(!mStream);
   MOZ_DIAGNOSTIC_ASSERT(!mSnappyStream);
-  mMutex.AssertCurrentThreadOwns();
+  //1111mMutex.AssertCurrentThreadOwns();
   Unused << NS_NewCStringInputStream(getter_AddRefs(mStream), EmptyCString());
   mSnappyStream = mStream;
   mStream->Close();

@@ -24,8 +24,9 @@
   margin-top: -4px;
 }
 
-/* Add border-radius on Windows 7 */
-@media (-moz-os-version: windows-win7) {
+/* Add border-radius on Windows Vista/7 */
+@media (-moz-windows-glass),
+       (-moz-os-version: windows-win7) {
   #BMB_bookmarksPopup menupopup[placespopup=true] > hbox {
     border-radius: 3.5px;
   }

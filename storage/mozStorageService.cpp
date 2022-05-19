@@ -116,7 +116,7 @@ Service::CollectReports(nsIHandleReportCallback* aHandleReport,
       // Note that we have consumers of the synchronous API that are off the
       // main-thread, like the DOM Cache and IndexedDB, and as such we must be
       // sure that we have a connection.
-      MutexAutoLock lockedAsyncScope(conn->sharedAsyncExecutionMutex);
+      AutoLock lockedAsyncScope(conn->sharedAsyncExecutionMutex);
       if (!conn->connectionReady()) {
         continue;
       }

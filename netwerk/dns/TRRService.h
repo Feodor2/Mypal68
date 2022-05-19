@@ -69,7 +69,7 @@ class TRRService : public nsIObserver,
   Atomic<uint32_t, Relaxed> mTRRBlacklistExpireTime;
   Atomic<uint32_t, Relaxed> mTRRTimeout;
 
-  Mutex mLock;
+  Lock mLock;
 
   nsCString mPrivateURI;   // main thread only
   nsCString mPrivateCred;  // main thread only

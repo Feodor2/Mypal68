@@ -29,6 +29,9 @@ class Lock {
   // Null implementation if not debug.
   void AssertAcquired() const {}
 
+  void AssertCurrentThreadOwns() const {}
+  void AssertNotCurrentThreadOwns() const {}
+
   // Whether Lock mitigates priority inversion when used from different thread
   // priorities.
   static bool HandlesMultipleThreadPriorities() {

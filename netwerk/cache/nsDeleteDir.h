@@ -8,7 +8,7 @@
 #include "nsCOMPtr.h"
 #include "nsCOMArray.h"
 #include "base/lock.h"
-#include "mozilla/CondVar.h"
+#include "base/condition_variable.h"
 
 class nsIFile;
 class nsIThread;

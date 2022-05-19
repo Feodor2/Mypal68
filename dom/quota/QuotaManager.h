@@ -9,7 +9,7 @@
 
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/ipc/IdType.h"
-#include "mozilla/Mutex.h"
+#include "base/lock.h"
 
 #include "nsClassHashtable.h"
 #include "nsRefPtrHashtable.h"
@@ -191,7 +191,7 @@ class QuotaManager final : public BackgroundThreadObject {
   void RemoveQuotaForOrigin(PersistenceType aPersistenceType,
                             const nsACString& aGroup,
                             const nsACString& aOrigin) {
-    MutexAutoLock lock(mQuotaMutex);
+    AutoLock lock(mQuotaMutex);
     LockedRemoveQuotaForOrigin(aPersistenceType, aGroup, aOrigin);
   }
 
@@ -516,7 +516,7 @@ class QuotaManager final : public BackgroundThreadObject {
 
   static void ShutdownTimerCallback(nsITimer* aTimer, void* aClosure);
 
-  mozilla::Mutex mQuotaMutex;
+  Lock mQuotaMutex;
 
   nsClassHashtable<nsCStringHashKey, GroupInfoPair> mGroupInfoPairs;
 

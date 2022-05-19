@@ -7,7 +7,7 @@
 // SQLiteMutexes. We use #include and some macros to avoid actual source code
 // duplication.
 
-#include "mozilla/CondVar.h"
+#include "base/condition_variable.h"
 #include "mozilla/RecursiveMutex.h"
 #include "mozilla/ReentrantMonitor.h"
 #include "SQLiteMutex.h"

@@ -7,7 +7,7 @@
 
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/CondVar.h"
+#include "base/condition_variable.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/RelativeTimeline.h"
 #include "nsContentUtils.h"
@@ -56,11 +56,9 @@ class WorkerThread;
 // object. It exists to avoid changing a lot of code to use Mutex* instead of
 // Mutex&.
 class SharedMutex {
-  typedef mozilla::Mutex Mutex;
-
-  class RefCountedMutex final : public Mutex {
+  class RefCountedMutex final : public Lock {
    public:
-    explicit RefCountedMutex(const char* aName) : Mutex(aName) {}
+    explicit RefCountedMutex() : Lock() {}
 
     NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RefCountedMutex)
 
@@ -71,14 +69,14 @@ class SharedMutex {
   RefPtr<RefCountedMutex> mMutex;
 
  public:
-  explicit SharedMutex(const char* aName)
-      : mMutex(new RefCountedMutex(aName)) {}
+  explicit SharedMutex()
+      : mMutex(new RefCountedMutex()) {}
 
   SharedMutex(SharedMutex& aOther) : mMutex(aOther.mMutex) {}
 
-  operator Mutex&() { return *mMutex; }
+  operator Lock&() { return *mMutex; }
 
-  operator const Mutex&() const { return *mMutex; }
+  operator const Lock&() const { return *mMutex; }
 
   void AssertCurrentThreadOwns() const { mMutex->AssertCurrentThreadOwns(); }
 };
@@ -148,12 +146,12 @@ class WorkerPrivate : public RelativeTimeline {
   void SetIsDebuggerRegistered(bool aDebuggerRegistered) {
     AssertIsOnMainThread();
 
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
 
     MOZ_ASSERT(mDebuggerRegistered != aDebuggerRegistered);
     mDebuggerRegistered = aDebuggerRegistered;
 
-    mCondVar.Notify();
+    mCondVar.Signal();
   }
 
   void WaitForIsDebuggerRegistered(bool aDebuggerRegistered) {
@@ -161,7 +159,7 @@ class WorkerPrivate : public RelativeTimeline {
 
     MOZ_ASSERT(!NS_IsMainThread());
 
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
 
     while (mDebuggerRegistered != aDebuggerRegistered) {
       mCondVar.Wait();
@@ -457,18 +455,18 @@ class WorkerPrivate : public RelativeTimeline {
   bool IsAcceptingEvents() {
     AssertIsOnParentThread();
 
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     return mParentStatus < Canceling;
   }
 
   WorkerStatus ParentStatusProtected() {
     AssertIsOnParentThread();
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     return mParentStatus;
   }
 
   WorkerStatus ParentStatus() const {
-    mMutex.AssertCurrentThreadOwns();
+    //1111mMutex.AssertCurrentThreadOwns();
     return mParentStatus;
   }
 
@@ -512,12 +510,12 @@ class WorkerPrivate : public RelativeTimeline {
   LocationInfo& GetLocationInfo() { return mLocationInfo; }
 
   void CopyJSSettings(workerinternals::JSSettings& aSettings) {
-    mozilla::MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     aSettings = mJSSettings;
   }
 
   void CopyJSRealmOptions(JS::RealmOptions& aOptions) {
-    mozilla::MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     aOptions = IsChromeWorker() ? mJSSettings.chrome.realmOptions
                                 : mJSSettings.content.realmOptions;
   }
@@ -878,7 +876,7 @@ class WorkerPrivate : public RelativeTimeline {
 
     WorkerStatus status;
     {
-      MutexAutoLock lock(mMutex);
+      AutoLock lock(mMutex);
       status = mStatus;
     }
 
@@ -902,7 +900,7 @@ class WorkerPrivate : public RelativeTimeline {
   };
 
   ProcessAllControlRunnablesResult ProcessAllControlRunnables() {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     return ProcessAllControlRunnablesLocked();
   }
 
@@ -947,7 +945,7 @@ class WorkerPrivate : public RelativeTimeline {
   // to allow runnables to be atomically dispatched in bulk.
   nsresult DispatchLockHeld(already_AddRefed<WorkerRunnable> aRunnable,
                             nsIEventTarget* aSyncLoopTarget,
-                            const MutexAutoLock& aProofOfLock);
+                            const AutoLock& aProofOfLock);
 
   // This method dispatches a simple runnable that starts the shutdown procedure
   // after a self.close(). This method is called after a ClearMainEventQueue()
@@ -969,7 +967,7 @@ class WorkerPrivate : public RelativeTimeline {
   friend class mozilla::dom::WorkerThread;
 
   SharedMutex mMutex;
-  mozilla::CondVar mCondVar;
+  ConditionVariable mCondVar;
 
   WorkerPrivate* mParent;
 

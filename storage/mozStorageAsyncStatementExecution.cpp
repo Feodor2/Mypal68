@@ -169,7 +169,7 @@ bool AsyncExecuteStatements::executeAndProcessStatement(
 
     // If we have been canceled, there is no point in going on...
     {
-      MutexAutoLock lockedScope(mMutex);
+      AutoLock lockedScope(mMutex);
       if (mCancelRequested) {
         mState = CANCELED;
         return false;
@@ -461,7 +461,7 @@ AsyncExecuteStatements::Cancel() {
   NS_ENSURE_FALSE(mCancelRequested, NS_ERROR_UNEXPECTED);
 
   {
-    MutexAutoLock lockedScope(mMutex);
+    AutoLock lockedScope(mMutex);
 
     // We need to indicate that we want to try and cancel now.
     mCancelRequested = true;
@@ -479,7 +479,7 @@ AsyncExecuteStatements::Run() {
 
   // Do not run if we have been canceled.
   {
-    MutexAutoLock lockedScope(mMutex);
+    AutoLock lockedScope(mMutex);
     if (mCancelRequested) mState = CANCELED;
   }
   if (mState == CANCELED) return notifyComplete();

@@ -372,7 +372,7 @@ bool AddrHostRecord::HasUsableResultInternal() const {
 }
 
 void AddrHostRecord::Cancel() {
-  MutexAutoLock trrlock(mTrrLock);
+  AutoLock trrlock(mTrrLock);
   if (mTrrA) {
     mTrrA->Cancel();
     mTrrA = nullptr;
@@ -387,7 +387,7 @@ void AddrHostRecord::Cancel() {
 // Sets mResolveAgain true for entries being resolved right now.
 bool AddrHostRecord::RemoveOrRefresh(bool aTrrToo) {
   // no need to flush TRRed names, they're not resolved "locally"
-  MutexAutoLock lock(addr_info_lock);
+  AutoLock lock(addr_info_lock);
   if (addr_info && !aTrrToo && addr_info->IsTRR()) {
     return false;
   }
@@ -549,13 +549,13 @@ bool TypeHostRecord::HasUsableResultInternal() const {
 
 void TypeHostRecord::GetRecords(nsTArray<nsCString>& aRecords) {
   // deep copy
-  MutexAutoLock lock(mResultsLock);
+  AutoLock lock(mResultsLock);
   aRecords = mResults;
 }
 
 void TypeHostRecord::GetRecordsAsOneString(nsACString& aRecords) {
   // deep copy
-  MutexAutoLock lock(mResultsLock);
+  AutoLock lock(mResultsLock);
 
   for (uint32_t i = 0; i < mResults.Length(); i++) {
     aRecords.Append(mResults[i]);
@@ -716,7 +716,7 @@ void nsHostResolver::ClearPendingQueue(
 // right now, so we need to mark them to get re-resolved on completion!
 
 void nsHostResolver::FlushCache(bool aTrrToo) {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
   mEvictionQSize = 0;
 
   // Clear the evictionQ and remove all its corresponding entries from
@@ -762,7 +762,7 @@ void nsHostResolver::Shutdown() {
       evictionQ;
 
   {
-    MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
 
     mShutdown = true;
 
@@ -775,7 +775,7 @@ void nsHostResolver::Shutdown() {
     mEvictionQSize = 0;
     mPendingCount = 0;
 
-    if (mNumIdleTasks) mIdleTaskCV.NotifyAll();
+    if (mNumIdleTasks) mIdleTaskCV.Broadcast();
 
     for (auto iter = mRecordDB.Iter(); !iter.Done(); iter.Next()) {
       iter.UserData()->Cancel();
@@ -814,7 +814,7 @@ nsresult nsHostResolver::GetHostRecord(const nsACString& host, uint16_t type,
                                        uint16_t flags, uint16_t af, bool pb,
                                        const nsCString& originSuffix,
                                        nsHostRecord** result) {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
   nsHostKey key(host, type, flags, af, pb, originSuffix);
 
   RefPtr<nsHostRecord>& entry = mRecordDB.GetOrInsert(key);
@@ -881,7 +881,7 @@ nsresult nsHostResolver::ResolveHost(const nsACString& aHost, uint16_t type,
   RefPtr<nsHostRecord> result;
   nsresult status = NS_OK, rv = NS_OK;
   {
-    MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
 
     if (mShutdown) {
       rv = NS_ERROR_NOT_INITIALIZED;
@@ -1007,7 +1007,7 @@ nsresult nsHostResolver::ResolveHost(const nsACString& aHost, uint16_t type,
 
             // We need to lock in case any other thread is reading
             // addr_info.
-            MutexAutoLock lock(addrRec->addr_info_lock);
+            AutoLock lock(addrRec->addr_info_lock);
 
             addrRec->addr_info = nullptr;
             addrRec->addr_info_gencnt++;
@@ -1135,7 +1135,7 @@ nsresult nsHostResolver::ResolveHost(const nsACString& aHost, uint16_t type,
             rec->remove();
             mMediumQ.insertBack(rec);
             rec->flags = flags;
-            mIdleTaskCV.Notify();
+            mIdleTaskCV.Signal();
           }
         }
       }
@@ -1162,7 +1162,7 @@ void nsHostResolver::DetachCallback(const nsACString& host, uint16_t aType,
   RefPtr<nsResolveHostCallback> callback(aCallback);
 
   {
-    MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
 
     nsAutoCString originSuffix;
     aOriginAttributes.CreateSuffix(originSuffix);
@@ -1194,7 +1194,7 @@ void nsHostResolver::DetachCallback(const nsACString& host, uint16_t aType,
 nsresult nsHostResolver::ConditionallyCreateThread(nsHostRecord* rec) {
   if (mNumIdleTasks) {
     // wake up idle tasks to process this lookup
-    mIdleTaskCV.Notify();
+    mIdleTaskCV.Signal();
   } else if ((mActiveTaskCount < HighThreadThreshold) ||
              (IsHighPriority(rec->flags) &&
               mActiveTaskCount < MAX_RESOLVER_THREADS)) {
@@ -1217,7 +1217,7 @@ nsresult nsHostResolver::ConditionallyCreateThread(nsHostRecord* rec) {
 #define TRROutstanding() ((addrRec->mTrrA || addrRec->mTrrAAAA))
 
 nsresult nsHostResolver::TrrLookup_unlocked(nsHostRecord* rec, TRR* pushedTRR) {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
   return TrrLookup(rec, pushedTRR);
 }
 
@@ -1240,7 +1240,7 @@ nsresult nsHostResolver::TrrLookup(nsHostRecord* aRec, TRR* pushedTRR) {
 
 #ifdef DEBUG
   if (rec->IsAddrRecord()) {
-    MutexAutoLock trrlock(addrRec->mTrrLock);
+    AutoLock trrlock(addrRec->mTrrLock);
     MOZ_ASSERT(!TRROutstanding());
   }
 #endif
@@ -1286,7 +1286,7 @@ nsresult nsHostResolver::TrrLookup(nsHostRecord* aRec, TRR* pushedTRR) {
       }
       LOG(("TRR Resolve %s type %d\n", addrRec->host.get(), (int)rectype));
       RefPtr<TRR> trr;
-      MutexAutoLock trrlock(addrRec->mTrrLock);
+      AutoLock trrlock(addrRec->mTrrLock);
       trr = pushedTRR ? pushedTRR : new TRR(this, rec, rectype);
       if (pushedTRR || NS_SUCCEEDED(NS_DispatchToMainThread(trr))) {
         addrRec->mResolving++;
@@ -1319,7 +1319,7 @@ nsresult nsHostResolver::TrrLookup(nsHostRecord* aRec, TRR* pushedTRR) {
 
     LOG(("TRR Resolve %s type %d\n", typeRec->host.get(), (int)rectype));
     RefPtr<TRR> trr;
-    MutexAutoLock trrlock(typeRec->mTrrLock);
+    AutoLock trrlock(typeRec->mTrrLock);
     trr = pushedTRR ? pushedTRR : new TRR(this, rec, rectype);
     if (pushedTRR || NS_SUCCEEDED(NS_DispatchToMainThread(trr))) {
       typeRec->mResolving++;
@@ -1494,7 +1494,7 @@ bool nsHostResolver::GetHostToLookup(AddrHostRecord** result) {
   TimeDuration timeout;
   TimeStamp epoch, now;
 
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   timeout = (mNumIdleTasks >= HighThreadThreshold) ? mShortIdleTimeout
                                                    : mLongIdleTimeout;
@@ -1540,7 +1540,7 @@ bool nsHostResolver::GetHostToLookup(AddrHostRecord** result) {
     //  (3) the thread has been idle for too long
 
     mNumIdleTasks++;
-    mIdleTaskCV.Wait(timeout);
+    mIdleTaskCV.TimedWait(timeout);
     mNumIdleTasks--;
 
     now = TimeStamp::Now();
@@ -1693,7 +1693,7 @@ void nsHostResolver::AddToEvictionQ(nsHostRecord* rec) {
 nsHostResolver::LookupStatus nsHostResolver::CompleteLookup(
     nsHostRecord* rec, nsresult status, AddrInfo* aNewRRSet, bool pb,
     const nsACString& aOriginsuffix) {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
   MOZ_ASSERT(rec);
   MOZ_ASSERT(rec->pb == pb);
   MOZ_ASSERT(rec->IsAddrRecord());
@@ -1719,7 +1719,7 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookup(
        aNewRRSet ? aNewRRSet->IsTRR() : 0, addrRec->mResolving));
 
   if (trrResult) {
-    MutexAutoLock trrlock(addrRec->mTrrLock);
+    AutoLock trrlock(addrRec->mTrrLock);
     LOG(("TRR lookup Complete (%d) %s %s\n", newRRSet->IsTRR(),
          newRRSet->mHostName.get(), NS_SUCCEEDED(status) ? "OK" : "FAILED"));
     MOZ_ASSERT(TRROutstanding());
@@ -1835,7 +1835,7 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookup(
   // a late second TRR response.
   // note that we don't update the addr_info if this is trr shadow results
   if (!mShutdown && !(trrResult && addrRec->mResolverMode == MODE_SHADOW)) {
-    MutexAutoLock lock(addrRec->addr_info_lock);
+    AutoLock lock(addrRec->addr_info_lock);
     RefPtr<AddrInfo> old_addr_info;
     if (different_rrset(addrRec->addr_info, newRRSet)) {
       LOG(("nsHostResolver record %p new gencnt\n", addrRec.get()));
@@ -1869,7 +1869,7 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookup(
   }
 
   if (LOG_ENABLED()) {
-    MutexAutoLock lock(addrRec->addr_info_lock);
+    AutoLock lock(addrRec->addr_info_lock);
     NetAddrElement* element;
     if (addrRec->addr_info) {
       for (element = addrRec->addr_info->mAddresses.getFirst(); element;
@@ -1908,7 +1908,7 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookup(
   // Unless the result is from TRR, resolve again to get TTL
   bool fromTRR = false;
   {
-    MutexAutoLock lock(addrRec->addr_info_lock);
+    AutoLock lock(addrRec->addr_info_lock);
     if (addrRec->addr_info && addrRec->addr_info->IsTRR()) {
       fromTRR = true;
     }
@@ -1930,7 +1930,7 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookup(
 nsHostResolver::LookupStatus nsHostResolver::CompleteLookupByType(
     nsHostRecord* rec, nsresult status, const nsTArray<nsCString>* aResult,
     uint32_t aTtl, bool pb) {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
   MOZ_ASSERT(rec);
   MOZ_ASSERT(rec->pb == pb);
   MOZ_ASSERT(!rec->IsAddrRecord());
@@ -1941,7 +1941,7 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookupByType(
   MOZ_ASSERT(typeRec->mResolving);
   typeRec->mResolving--;
 
-  MutexAutoLock trrlock(typeRec->mTrrLock);
+  AutoLock trrlock(typeRec->mTrrLock);
   typeRec->mTrr = nullptr;
 
   uint32_t duration = static_cast<uint32_t>(
@@ -1961,7 +1961,7 @@ nsHostResolver::LookupStatus nsHostResolver::CompleteLookupByType(
         ("nsHostResolver::CompleteLookupByType record %p [%s], number of "
          "records %zu\n",
          typeRec.get(), typeRec->host.get(), aResult->Length()));
-    MutexAutoLock typeLock(typeRec->mResultsLock);
+    AutoLock typeLock(typeRec->mResultsLock);
     typeRec->mResults = *aResult;
     typeRec->SetExpiration(TimeStamp::NowLoRes(), aTtl, mDefaultGracePeriod);
     typeRec->negative = false;
@@ -1992,7 +1992,7 @@ void nsHostResolver::CancelAsyncRequest(
     nsIDNSListener* aListener, nsresult status)
 
 {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   nsAutoCString originSuffix;
   aOriginAttributes.CreateSuffix(originSuffix);
@@ -2026,7 +2026,7 @@ void nsHostResolver::CancelAsyncRequest(
 }
 
 size_t nsHostResolver::SizeOfIncludingThis(MallocSizeOf mallocSizeOf) const {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   size_t n = mallocSizeOf(this);
 
@@ -2082,7 +2082,7 @@ void nsHostResolver::ThreadFunc() {
 #endif
 
     {  // obtain lock to check shutdown and manage inter-module telemetry
-      MutexAutoLock lock(mLock);
+      AutoLock lock(mLock);
 
       if (!mShutdown) {
         TimeDuration elapsed = TimeStamp::Now() - startTime;
@@ -2126,7 +2126,7 @@ void nsHostResolver::ThreadFunc() {
 void nsHostResolver::SetCacheLimits(uint32_t aMaxCacheEntries,
                                     uint32_t aDefaultCacheEntryLifetime,
                                     uint32_t aDefaultGracePeriod) {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
   mMaxCacheEntries = aMaxCacheEntries;
   mDefaultCacheLifetime = aDefaultCacheEntryLifetime;
   mDefaultGracePeriod = aDefaultGracePeriod;
@@ -2149,7 +2149,7 @@ nsresult nsHostResolver::Create(uint32_t maxCacheEntries,
 }
 
 void nsHostResolver::GetDNSCacheEntries(nsTArray<DNSCacheEntries>* args) {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
   for (auto iter = mRecordDB.Iter(); !iter.Done(); iter.Next()) {
     // We don't pay attention to address literals, only resolved domains.
     // Also require a host.
@@ -2182,7 +2182,7 @@ void nsHostResolver::GetDNSCacheEntries(nsTArray<DNSCacheEntries>* args) {
     }
 
     {
-      MutexAutoLock lock(addrRec->addr_info_lock);
+      AutoLock lock(addrRec->addr_info_lock);
 
       NetAddr* addr = nullptr;
       NetAddrElement* addrElement = addrRec->addr_info->mAddresses.getFirst();

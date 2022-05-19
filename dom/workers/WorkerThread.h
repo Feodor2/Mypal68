@@ -6,7 +6,7 @@
 #define mozilla_dom_workers_WorkerThread_h__
 
 #include "mozilla/Attributes.h"
-#include "mozilla/CondVar.h"
+#include "base/condition_variable.h"
 #include "mozilla/DebugOnly.h"
 #include "nsISupportsImpl.h"
 #include "mozilla/RefPtr.h"
@@ -41,8 +41,8 @@ class WorkerThreadFriendKey {
 class WorkerThread final : public nsThread {
   class Observer;
 
-  Mutex mLock;
-  CondVar mWorkerPrivateCondVar;
+  Lock mLock;
+  ConditionVariable mWorkerPrivateCondVar;
 
   // Protected by nsThread::mLock.
   WorkerPrivate* mWorkerPrivate;

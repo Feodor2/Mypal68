@@ -311,7 +311,7 @@ nsresult Statement::internalFinalize(bool aDestructing) {
     // Thus we must be sure that the connection state won't change during this
     // operation, to avoid racing with finalizations made by the closing
     // connection.  See Connection::internalClose().
-    MutexAutoLock lockedScope(mDBConnection->sharedAsyncExecutionMutex);
+    AutoLock lockedScope(mDBConnection->sharedAsyncExecutionMutex);
     if (!mDBConnection->isClosed(lockedScope)) {
       MOZ_LOG(gStorageLog, LogLevel::Debug,
               ("Finalizing statement '%s' during garbage-collection",

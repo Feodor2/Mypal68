@@ -8,7 +8,7 @@
 #  include "mozilla/Logging.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/Mutex.h"
-#  include "mozilla/Monitor.h"
+#  include "mozilla/Monitor2.h"
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/Tuple.h"
 #  include "mozilla/TypeTraits.h"
@@ -1126,7 +1126,7 @@ class MozPromiseHolder {
   }
 
   // Provide a Monitor that should always be held when accessing this instance.
-  void SetMonitor(Monitor* aMonitor) { mMonitor = aMonitor; }
+  void SetMonitor(Monitor2* aMonitor) { mMonitor = aMonitor; }
 
   bool IsEmpty() const {
     if (mMonitor) {
@@ -1211,7 +1211,7 @@ class MozPromiseHolder {
   }
 
  private:
-  Monitor* mMonitor;
+  Monitor2* mMonitor;
   RefPtr<typename PromiseType::Private> mPromise;
 };
 

@@ -322,7 +322,7 @@ GeckoMediaPluginServiceParent::Observe(nsISupports* aSubject,
 }
 
 RefPtr<GenericPromise> GeckoMediaPluginServiceParent::EnsureInitialized() {
-  MonitorAutoLock lock(mInitPromiseMonitor);
+  Monitor2AutoLock lock(mInitPromiseMonitor);
   if (mLoadPluginsFromDiskComplete) {
     return GenericPromise::CreateAndResolve(true, __func__);
   }
@@ -391,7 +391,7 @@ GeckoMediaPluginServiceParent::GetContentParent(
 void GeckoMediaPluginServiceParent::InitializePlugins(
     AbstractThread* aAbstractGMPThread) {
   MOZ_ASSERT(aAbstractGMPThread);
-  MonitorAutoLock lock(mInitPromiseMonitor);
+  Monitor2AutoLock lock(mInitPromiseMonitor);
   if (mLoadPluginsFromDiskComplete) {
     return;
   }
@@ -403,12 +403,12 @@ void GeckoMediaPluginServiceParent::InitializePlugins(
       ->Then(
           aAbstractGMPThread, __func__,
           [self]() -> void {
-            MonitorAutoLock lock(self->mInitPromiseMonitor);
+            Monitor2AutoLock lock(self->mInitPromiseMonitor);
             self->mLoadPluginsFromDiskComplete = true;
             self->mInitPromise.Resolve(true, __func__);
           },
           [self]() -> void {
-            MonitorAutoLock lock(self->mInitPromiseMonitor);
+            Monitor2AutoLock lock(self->mInitPromiseMonitor);
             self->mLoadPluginsFromDiskComplete = true;
             self->mInitPromise.Reject(NS_ERROR_FAILURE, __func__);
           });

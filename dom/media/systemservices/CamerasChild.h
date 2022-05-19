@@ -209,7 +209,7 @@ class CamerasChild final : public PCamerasChild, public DeviceChangeCallback {
   ~CamerasChild();
   // Dispatch a Runnable to the PCamerasParent, by executing it on the
   // decidecated Cameras IPC/PBackground thread.
-  bool DispatchToParent(nsIRunnable* aRunnable, MonitorAutoLock& aMonitor);
+  bool DispatchToParent(nsIRunnable* aRunnable, Monitor2AutoLock& aMonitor);
   void AddCallback(const CaptureEngine aCapEngine, const int capture_id,
                    FrameRelay* render);
   void RemoveCallback(const CaptureEngine aCapEngine, const int capture_id);
@@ -232,7 +232,7 @@ class CamerasChild final : public PCamerasChild, public DeviceChangeCallback {
   // Take this one before taking mReplyMonitor.
   Mutex mRequestMutex;
   // Hold to wait for an async response to our calls
-  Monitor mReplyMonitor;
+  Monitor2 mReplyMonitor;
   // Async response valid?
   bool mReceivedReply;
   // Async responses data contents;

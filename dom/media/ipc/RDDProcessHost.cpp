@@ -101,7 +101,7 @@ void RDDProcessHost::OnChannelConnected(int32_t peer_pid) {
   // thread-safe.
   RefPtr<Runnable> runnable;
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     runnable =
         mTaskFactory.NewRunnableMethod(&RDDProcessHost::OnChannelConnectedTask);
   }
@@ -117,7 +117,7 @@ void RDDProcessHost::OnChannelError() {
   // thread-safe.
   RefPtr<Runnable> runnable;
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     runnable =
         mTaskFactory.NewRunnableMethod(&RDDProcessHost::OnChannelErrorTask);
   }
@@ -247,7 +247,7 @@ void RDDProcessHost::DestroyProcess() {
   // Cancel all tasks. We don't want anything triggering after our caller
   // expects this to go away.
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     mTaskFactory.RevokeAll();
   }
 

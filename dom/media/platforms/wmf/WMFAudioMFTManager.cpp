@@ -152,8 +152,8 @@ bool WMFAudioMFTManager::Init() {
   NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
   if (mStreamType == AAC) {
-    /*hr = inputType->SetUINT32(MF_MT_AAC_PAYLOAD_TYPE, 0x0);  // Raw AAC packet
-    NS_ENSURE_TRUE(SUCCEEDED(hr), false);*/
+    hr = inputType->SetUINT32(MF_MT_AAC_PAYLOAD_TYPE, 0x0);  // Raw AAC packet
+    NS_ENSURE_TRUE(SUCCEEDED(hr), false);
 
     hr = inputType->SetBlob(MF_MT_USER_DATA, mUserData.Elements(),
                             mUserData.Length());

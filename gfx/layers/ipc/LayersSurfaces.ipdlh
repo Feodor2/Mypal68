@@ -19,6 +19,11 @@ using gfxImageFormat from "gfxTypes.h";
 namespace mozilla {
 namespace layers {
 
+struct SurfaceDescriptorD3D9 {
+  // IDirect3DTexture9*
+  uintptr_t texture;
+};
+
 struct SurfaceDescriptorFileMapping {
   WindowsHandle handle;
   SurfaceFormat format;
@@ -135,6 +140,7 @@ struct SurfaceDescriptorShared
 
 union SurfaceDescriptor {
   SurfaceDescriptorBuffer;
+  SurfaceDescriptorD3D9;
   SurfaceDescriptorDIB;
   SurfaceDescriptorD3D10;
   SurfaceDescriptorFileMapping;

@@ -41,6 +41,7 @@
 #include "gfxGDIFont.h"
 
 #include "mozilla/layers/CompositorThread.h"
+#include "DeviceManagerD3D9.h"
 #include "mozilla/layers/PaintThread.h"
 #include "mozilla/layers/ReadbackManagerD3D11.h"
 
@@ -123,8 +124,10 @@ class GfxD2DVramReporter final : public nsIMemoryReporter {
 
 NS_IMPL_ISUPPORTS(GfxD2DVramReporter, nsIMemoryReporter)
 
-#define GFX_USE_CLEARTYPE_ALWAYS "gfx.font_rendering.cleartype.always_use_for_content"
-#define GFX_DOWNLOADABLE_FONTS_USE_CLEARTYPE "gfx.font_rendering.cleartype.use_for_downloadable_fonts"
+#define GFX_USE_CLEARTYPE_ALWAYS \
+  "gfx.font_rendering.cleartype.always_use_for_content"
+#define GFX_DOWNLOADABLE_FONTS_USE_CLEARTYPE \
+  "gfx.font_rendering.cleartype.use_for_downloadable_fonts"
 
 #define GFX_CLEARTYPE_PARAMS "gfx.font_rendering.cleartype_params."
 #define GFX_CLEARTYPE_PARAMS_GAMMA "gfx.font_rendering.cleartype_params.gamma"
@@ -306,6 +309,7 @@ gfxWindowsPlatform::gfxWindowsPlatform() : mRenderMode(RENDER_GDI) {
 gfxWindowsPlatform::~gfxWindowsPlatform() {
   mozilla::gfx::Factory::D2DCleanup();
 
+  DeviceManagerD3D9::Shutdown();
   DeviceManagerDx::Shutdown();
 
   /*
@@ -427,6 +431,7 @@ void gfxWindowsPlatform::InitAcceleration() {
   gfxPlatform::InitAcceleration();
 
   DeviceManagerDx::Init();
+  DeviceManagerD3D9::Init();
 
   InitializeConfig();
   // Ensure devices initialization. SharedSurfaceANGLE and
@@ -468,7 +473,7 @@ bool gfxWindowsPlatform::CanUseHardwareVideoDecoding() {
   if (!dm) {
     return false;
   }
-  if (!dm->TextureSharingWorks()) {
+  if (!gfxPrefs::LayersPreferD3D9() && !dm->TextureSharingWorks()) {
     return false;
   }
   return !dm->IsWARP() && gfxPlatform::CanUseHardwareVideoDecoding();
@@ -1046,7 +1051,8 @@ void gfxWindowsPlatform::GetPlatformCMSOutputProfile(void*& mem,
 
 bool gfxWindowsPlatform::UseClearTypeForDownloadableFonts() {
   if (mUseClearTypeForDownloadableFonts == UNINITIALIZED_VALUE) {
-      mUseClearTypeForDownloadableFonts = Preferences::GetBool(GFX_DOWNLOADABLE_FONTS_USE_CLEARTYPE, true);
+    mUseClearTypeForDownloadableFonts =
+        Preferences::GetBool(GFX_DOWNLOADABLE_FONTS_USE_CLEARTYPE, true);
   }
 
   return mUseClearTypeForDownloadableFonts;
@@ -1054,7 +1060,7 @@ bool gfxWindowsPlatform::UseClearTypeForDownloadableFonts() {
 
 bool gfxWindowsPlatform::UseClearTypeAlways() {
   if (mUseClearTypeAlways == UNINITIALIZED_VALUE) {
-      mUseClearTypeAlways = Preferences::GetBool(GFX_USE_CLEARTYPE_ALWAYS, false);
+    mUseClearTypeAlways = Preferences::GetBool(GFX_USE_CLEARTYPE_ALWAYS, false);
   }
 
   return mUseClearTypeAlways;
@@ -1149,7 +1155,8 @@ void gfxWindowsPlatform::FontsPrefsChanged(const char* aPref) {
     mUseClearTypeForDownloadableFonts = UNINITIALIZED_VALUE;
   } else if (!strcmp(GFX_USE_CLEARTYPE_ALWAYS, aPref)) {
     mUseClearTypeAlways = UNINITIALIZED_VALUE;
-  } else if (!strncmp(GFX_CLEARTYPE_PARAMS, aPref, strlen(GFX_CLEARTYPE_PARAMS))) {
+  } else if (!strncmp(GFX_CLEARTYPE_PARAMS, aPref,
+                      strlen(GFX_CLEARTYPE_PARAMS))) {
     SetupClearTypeParams();
   } else {
     clearTextFontCaches = false;
@@ -1355,12 +1362,44 @@ void gfxWindowsPlatform::InitializeConfig() {
   if (XRE_IsParentProcess()) {
     // The parent process first determines which features can be attempted.
     // This information is relayed to content processes and the GPU process.
+    InitializeD3D9Config();
     InitializeD3D11Config();
     InitializeANGLEConfig();
     InitializeD2DConfig();
   } else {
     FetchAndImportContentDeviceData();
     InitializeANGLEConfig();
+  }
+}
+
+void gfxWindowsPlatform::InitializeD3D9Config() {
+  MOZ_ASSERT(XRE_IsParentProcess());
+
+  FeatureState& d3d9 = gfxConfig::GetFeature(Feature::D3D9_COMPOSITING);
+
+  if (!gfxConfig::IsEnabled(Feature::HW_COMPOSITING)) {
+    d3d9.DisableByDefault(
+        FeatureStatus::Unavailable, "Hardware compositing is disabled",
+        NS_LITERAL_CSTRING("FEATURE_FAILURE_D3D9_NEED_HWCOMP"));
+    return;
+  }
+
+  d3d9.SetDefaultFromPref(gfxPrefs::GetLayersAllowD3D9FallbackPrefName(), true,
+                          gfxPrefs::GetLayersAllowD3D9FallbackPrefDefault());
+
+  if (!d3d9.IsEnabled() && gfxPrefs::LayersPreferD3D9()) {
+    d3d9.UserEnable("Direct3D9 enabled via layers.prefer-d3d9");
+  }
+
+  nsCString message;
+  nsCString failureId;
+  if (!gfxPlatform::IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_DIRECT3D_9_LAYERS,
+                                        &message, failureId)) {
+    d3d9.Disable(FeatureStatus::Blacklisted, message.get(), failureId);
+  }
+
+  if (gfxConfig::IsForcedOnByUser(Feature::HW_COMPOSITING)) {
+    d3d9.UserForceEnable("Hardware compositing is force-enabled");
   }
 }
 
@@ -1377,6 +1416,13 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
   }
 
   d3d11.EnableByDefault();
+
+  // If the user prefers D3D9, act as though they disabled D3D11.
+  if (gfxPrefs::LayersPreferD3D9()) {
+    d3d11.UserDisable("Disabled due to user preference for Direct3D 9",
+                      NS_LITERAL_CSTRING("FEATURE_FAILURE_D3D11_PREF"));
+    return;
+  }
 
   if (!IsWin8OrLater() &&
       !DeviceManagerDx::Get()->CheckRemotePresentSupport()) {
@@ -1547,8 +1593,8 @@ void gfxWindowsPlatform::InitializeD3D11() {
   // is not blacklisted for D3D11 layers. This first attempt will try to create
   // a hardware accelerated device. If this creation fails or the hardware is
   // blacklisted, then this function will abort if WARP is disabled, causing us
-  // to fallback to Basic layers. If WARP is not disabled it will use a WARP
-  // device which should always be available on Windows 7 and higher.
+  // to fallback to D3D9 or Basic layers. If WARP is not disabled it will use
+  // a WARP device which should always be available on Windows 7 and higher.
   if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     return;
   }
@@ -1576,7 +1622,8 @@ void gfxWindowsPlatform::InitializeD2DConfig() {
   FeatureState& d2d1 = gfxConfig::GetFeature(Feature::DIRECT2D);
 
   if (!IsVistaOrLater()) {
-    d2d1.DisableByDefault(FeatureStatus::Unavailable, "Direct2D is not available on Windows XP",
+    d2d1.DisableByDefault(FeatureStatus::Unavailable,
+                          "Direct2D is not available on Windows XP",
                           NS_LITERAL_CSTRING("FEATURE_FAILURE_D2D_XP"));
     return;
   }
@@ -1693,9 +1740,10 @@ bool gfxWindowsPlatform::InitGPUProcessSupport() {
     // available and remote presentation for D3D11 will not work. Rather
     // than take a regression and use D3D9, we revert back to in-process
     // rendering.
-    gpuProc.Disable(FeatureStatus::Unavailable,
-                    "Windows XP, Vista, and 7 Pre-SP1 cannot use the GPU process",
-                    NS_LITERAL_CSTRING("FEATURE_FAILURE_OLD_WINDOWS"));
+    gpuProc.Disable(
+        FeatureStatus::Unavailable,
+        "Windows XP, Vista, and 7 Pre-SP1 cannot use the GPU process",
+        NS_LITERAL_CSTRING("FEATURE_FAILURE_OLD_WINDOWS"));
   } else if (!IsWin8OrLater()) {
     // Windows 7 SP1 can have DXGI 1.2 only via the Platform Update, so we
     // explicitly check for that here.
@@ -2004,8 +2052,18 @@ void gfxWindowsPlatform::GetAcceleratedCompositorBackends(
     aBackends.AppendElement(LayersBackend::LAYERS_OPENGL);
   }
 
+  if (gfxConfig::IsEnabled(Feature::D3D9_COMPOSITING) &&
+      gfxPrefs::LayersPreferD3D9()) {
+    aBackends.AppendElement(LayersBackend::LAYERS_D3D9);
+  }
+
   if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     aBackends.AppendElement(LayersBackend::LAYERS_D3D11);
+  }
+
+  if (gfxConfig::IsEnabled(Feature::D3D9_COMPOSITING) &&
+      !gfxPrefs::LayersPreferD3D9()) {
+    aBackends.AppendElement(LayersBackend::LAYERS_D3D9);
   }
 }
 
@@ -2016,6 +2074,7 @@ void gfxWindowsPlatform::ImportGPUDeviceData(
   gfxPlatform::ImportGPUDeviceData(aData);
 
   gfxConfig::ImportChange(Feature::D3D11_COMPOSITING, aData.d3d11Compositing());
+  gfxConfig::ImportChange(Feature::D3D9_COMPOSITING, aData.d3d9Compositing());
 
   DeviceManagerDx* dm = DeviceManagerDx::Get();
   if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
@@ -2051,6 +2110,7 @@ void gfxWindowsPlatform::ImportContentDeviceData(
 
   const DevicePrefs& prefs = aData.prefs();
   gfxConfig::Inherit(Feature::D3D11_COMPOSITING, prefs.d3d11Compositing());
+  gfxConfig::Inherit(Feature::D3D9_COMPOSITING, prefs.d3d9Compositing());
   gfxConfig::Inherit(Feature::DIRECT2D, prefs.useD2D1());
 
   if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
@@ -2067,6 +2127,8 @@ void gfxWindowsPlatform::BuildContentDeviceData(ContentDeviceData* aOut) {
 
   const FeatureState& d3d11 = gfxConfig::GetFeature(Feature::D3D11_COMPOSITING);
   aOut->prefs().d3d11Compositing() = d3d11.GetValue();
+  aOut->prefs().d3d9Compositing() =
+      gfxConfig::GetValue(Feature::D3D9_COMPOSITING);
   aOut->prefs().useD2D1() = gfxConfig::GetValue(Feature::DIRECT2D);
 
   if (d3d11.IsEnabled()) {

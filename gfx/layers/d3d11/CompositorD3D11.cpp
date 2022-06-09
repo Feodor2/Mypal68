@@ -31,6 +31,7 @@
 #include "BlendShaderConstants.h"
 
 #include "D3D11ShareHandleImage.h"
+#include "D3D9SurfaceImage.h"
 #include "DeviceAttachmentsD3D11.h"
 
 #include <versionhelpers.h>  // For IsWindows8OrGreater

@@ -5130,6 +5130,9 @@ pref("gfx.direct3d11.use-double-buffering", false);
 #endif
 
 pref("layers.prefer-opengl", false);
+pref("layers.prefer-d3d9", false);
+// Disable for now due to bug 1304360
+pref("layers.allow-d3d9-fallback", true);
 #endif
 
 // Copy-on-write canvas

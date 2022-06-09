@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "IMFYCbCrImage.h"
+#include "DeviceManagerD3D9.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/Types.h"
@@ -99,6 +100,162 @@ bool IMFYCbCrImage::CopyDataToTexture(const Data& aData, ID3D11Device* aDevice,
   return true;
 }
 
+static already_AddRefed<IDirect3DTexture9> InitTextures(
+    IDirect3DDevice9* aDevice, const IntSize& aSize, _D3DFORMAT aFormat,
+    RefPtr<IDirect3DSurface9>& aSurface, HANDLE& aHandle,
+    D3DLOCKED_RECT& aLockedRect) {
+  if (!aDevice) {
+    return nullptr;
+  }
+
+  RefPtr<IDirect3DTexture9> result;
+  if (FAILED(aDevice->CreateTexture(aSize.width, aSize.height, 1, 0, aFormat,
+                                    D3DPOOL_DEFAULT, getter_AddRefs(result),
+                                    &aHandle))) {
+    return nullptr;
+  }
+  if (!result) {
+    return nullptr;
+  }
+
+  RefPtr<IDirect3DTexture9> tmpTexture;
+  if (FAILED(aDevice->CreateTexture(aSize.width, aSize.height, 1, 0, aFormat,
+                                    D3DPOOL_SYSTEMMEM,
+                                    getter_AddRefs(tmpTexture), nullptr))) {
+    return nullptr;
+  }
+  if (!tmpTexture) {
+    return nullptr;
+  }
+
+  tmpTexture->GetSurfaceLevel(0, getter_AddRefs(aSurface));
+  if (FAILED(aSurface->LockRect(&aLockedRect, nullptr, 0)) ||
+      !aLockedRect.pBits) {
+    NS_WARNING("Could not lock surface");
+    return nullptr;
+  }
+
+  return result.forget();
+}
+
+static bool FinishTextures(IDirect3DDevice9* aDevice,
+                           IDirect3DTexture9* aTexture,
+                           IDirect3DSurface9* aSurface) {
+  if (!aDevice) {
+    return false;
+  }
+
+  HRESULT hr = aSurface->UnlockRect();
+  if (FAILED(hr)) {
+    return false;
+  }
+
+  RefPtr<IDirect3DSurface9> dstSurface;
+  hr = aTexture->GetSurfaceLevel(0, getter_AddRefs(dstSurface));
+  if (FAILED(hr)) {
+    return false;
+  }
+
+  hr = aDevice->UpdateSurface(aSurface, nullptr, dstSurface, nullptr);
+  if (FAILED(hr)) {
+    return false;
+  }
+  return true;
+}
+
+static bool UploadData(IDirect3DDevice9* aDevice,
+                       RefPtr<IDirect3DTexture9>& aTexture, HANDLE& aHandle,
+                       uint8_t* aSrc, const gfx::IntSize& aSrcSize,
+                       int32_t aSrcStride) {
+  RefPtr<IDirect3DSurface9> surf;
+  D3DLOCKED_RECT rect;
+  aTexture = InitTextures(aDevice, aSrcSize, D3DFMT_A8, surf, aHandle, rect);
+  if (!aTexture) {
+    return false;
+  }
+
+  if (aSrcStride == rect.Pitch) {
+    memcpy(rect.pBits, aSrc, rect.Pitch * aSrcSize.height);
+  } else {
+    for (int i = 0; i < aSrcSize.height; i++) {
+      memcpy((uint8_t*)rect.pBits + i * rect.Pitch, aSrc + i * aSrcStride,
+             aSrcSize.width);
+    }
+  }
+
+  return FinishTextures(aDevice, aTexture, surf);
+}
+
+DXGIYCbCrTextureData* IMFYCbCrImage::GetD3D9TextureData(Data aData,
+                                                        gfx::IntSize aSize) {
+  RefPtr<IDirect3DDevice9> device = DeviceManagerD3D9::GetDevice();
+  if (!device) {
+    return nullptr;
+  }
+
+  RefPtr<IDirect3DTexture9> textureY;
+  HANDLE shareHandleY = 0;
+  if (!UploadData(device, textureY, shareHandleY, aData.mYChannel, aData.mYSize,
+                  aData.mYStride)) {
+    return nullptr;
+  }
+
+  RefPtr<IDirect3DTexture9> textureCb;
+  HANDLE shareHandleCb = 0;
+  if (!UploadData(device, textureCb, shareHandleCb, aData.mCbChannel,
+                  aData.mCbCrSize, aData.mCbCrStride)) {
+    return nullptr;
+  }
+
+  RefPtr<IDirect3DTexture9> textureCr;
+  HANDLE shareHandleCr = 0;
+  if (!UploadData(device, textureCr, shareHandleCr, aData.mCrChannel,
+                  aData.mCbCrSize, aData.mCbCrStride)) {
+    return nullptr;
+  }
+
+  RefPtr<IDirect3DQuery9> query;
+  HRESULT hr = device->CreateQuery(D3DQUERYTYPE_EVENT, getter_AddRefs(query));
+  hr = query->Issue(D3DISSUE_END);
+
+  int iterations = 0;
+  bool valid = false;
+  while (iterations < 10) {
+    HRESULT hr = query->GetData(nullptr, 0, D3DGETDATA_FLUSH);
+    if (hr == S_FALSE) {
+      Sleep(1);
+      iterations++;
+      continue;
+    }
+    if (hr == S_OK) {
+      valid = true;
+    }
+    break;
+  }
+
+  if (!valid) {
+    return nullptr;
+  }
+
+  return DXGIYCbCrTextureData::Create(
+      textureY, textureCb, textureCr, shareHandleY, shareHandleCb,
+      shareHandleCr, aSize, aData.mYSize, aData.mCbCrSize, aData.mColorDepth,
+      aData.mYUVColorSpace);
+}
+
+TextureClient* IMFYCbCrImage::GetD3D9TextureClient(
+    KnowsCompositor* aForwarder) {
+  DXGIYCbCrTextureData* textureData = GetD3D9TextureData(mData, GetSize());
+  if (textureData == nullptr) {
+    return nullptr;
+  }
+
+  mTextureClient = TextureClient::CreateWithData(
+      textureData, TextureFlags::DEFAULT, aForwarder->GetTextureForwarder());
+
+  return mTextureClient;
+}
+
 TextureClient* IMFYCbCrImage::GetD3D11TextureClient(
     KnowsCompositor* aForwarder) {
   if (!mAllocator) {
@@ -138,7 +295,12 @@ TextureClient* IMFYCbCrImage::GetTextureClient(KnowsCompositor* aForwarder) {
   }
 
   RefPtr<ID3D11Device> device = gfx::DeviceManagerDx::Get()->GetImageDevice();
-  if (!device || !aForwarder->SupportsD3D11()) {
+
+  LayersBackend backend = aForwarder->GetCompositorBackendType();
+  if (!device || backend != LayersBackend::LAYERS_D3D11) {
+    if (backend == LayersBackend::LAYERS_D3D9) {
+      return GetD3D9TextureClient(aForwarder);
+    }
     return nullptr;
   }
   return GetD3D11TextureClient(aForwarder);

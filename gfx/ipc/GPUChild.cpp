@@ -60,6 +60,8 @@ void GPUChild::Init() {
   devicePrefs.hwCompositing() = gfxConfig::GetValue(Feature::HW_COMPOSITING);
   devicePrefs.d3d11Compositing() =
       gfxConfig::GetValue(Feature::D3D11_COMPOSITING);
+  devicePrefs.d3d9Compositing() =
+      gfxConfig::GetValue(Feature::D3D9_COMPOSITING);
   devicePrefs.oglCompositing() =
       gfxConfig::GetValue(Feature::OPENGL_COMPOSITING);
   devicePrefs.advancedLayers() = gfxConfig::GetValue(Feature::ADVANCED_LAYERS);

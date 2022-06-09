@@ -390,9 +390,6 @@ var AddonTestUtils = {
     // And scan for changes at startup
     Services.prefs.setIntPref("extensions.startupScanScopes", 15);
 
-    // By default, don't cache add-ons in AddonRepository.jsm
-    Services.prefs.setBoolPref("extensions.getAddons.cache.enabled", false);
-
     // Point update checks to the local machine for fast failures
     Services.prefs.setCharPref(
       "extensions.update.url",

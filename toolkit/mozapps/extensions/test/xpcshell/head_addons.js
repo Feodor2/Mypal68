@@ -40,9 +40,6 @@ var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 var { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
 );
-var { AddonRepository } = ChromeUtils.import(
-  "resource://gre/modules/addons/AddonRepository.jsm"
-);
 var { OS, require } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 var { AddonTestUtils, MockAsyncShutdown } = ChromeUtils.import(

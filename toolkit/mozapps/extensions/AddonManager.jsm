@@ -72,7 +72,6 @@ var { AsyncShutdown } = ChromeUtils.import(
 XPCOMUtils.defineLazyGlobalGetters(this, ["Element"]);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
   Extension: "resource://gre/modules/Extension.jsm",
 });
 
@@ -595,7 +594,6 @@ var gAutoUpdateDefault = true;
 var gWebExtensionsMinPlatformVersion = "";
 var gFinalShutdownBarrier = null;
 var gBeforeShutdownBarrier = null;
-var gRepoShutdownState = "";
 var gShutdownInProgress = false;
 var gPluginPageListener = null;
 var gBrowserUpdated = null;
@@ -1094,10 +1092,6 @@ var AddonManagerInternal = {
         state.push({ name: barrier.client.name, state: barrier.state });
       }
     }
-    state.push({
-      name: "AddonRepository: async shutdown",
-      state: gRepoShutdownState,
-    });
     return state;
   },
 
@@ -1118,7 +1112,6 @@ var AddonManagerInternal = {
     logger.debug("shutdown");
     this.callManagerListeners("onShutdown");
 
-    gRepoShutdownState = "pending";
     gShutdownInProgress = true;
     // Clean up listeners
     Services.prefs.removeObserver(PREF_EM_CHECK_COMPATIBILITY, this);
@@ -1143,21 +1136,6 @@ var AddonManagerInternal = {
           err
         );
       }
-    }
-
-    // Shut down AddonRepository after providers (if any).
-    try {
-      gRepoShutdownState = "in progress";
-      await AddonRepository.shutdown();
-      gRepoShutdownState = "done";
-    } catch (err) {
-      savedError = err;
-      logger.error("Failure during AddonRepository shutdown", err);
-      AddonManagerPrivate.recordException(
-        "AMI",
-        "Async shutdown of AddonRepository",
-        err
-      );
     }
 
     logger.debug("Async provider shutdown done");
@@ -1421,10 +1399,6 @@ var AddonManagerInternal = {
         let updates = [];
 
         let allAddons = await this.getAllAddons();
-
-        // Repopulate repository cache first, to ensure compatibility overrides
-        // are up to date before checking for addon updates.
-        await AddonRepository.backgroundUpdateCheck();
 
         for (let addon of allAddons) {
           // Check all add-ons for updates so that any compatibility updates will
@@ -1773,28 +1747,6 @@ var AddonManagerInternal = {
     }
 
     this.callProviders("updateAddonAppDisabledStates");
-  },
-
-  /**
-   * Notifies all providers that the repository has updated its data for
-   * installed add-ons.
-   */
-  updateAddonRepositoryData() {
-    if (!gStarted) {
-      throw Components.Exception(
-        "AddonManager is not initialized",
-        Cr.NS_ERROR_NOT_INITIALIZED
-      );
-    }
-
-    return (async () => {
-      for (let provider of this.providers) {
-        await promiseCallProvider(provider, "updateAddonRepositoryData");
-      }
-
-      // only tests should care about this
-      Services.obs.notifyObservers(null, "TEST:addon-repository-data-updated");
-    })();
   },
 
   /**
@@ -3527,10 +3479,6 @@ var AddonManagerPrivate = {
 
   updateAddonAppDisabledStates() {
     AddonManagerInternal.updateAddonAppDisabledStates();
-  },
-
-  updateAddonRepositoryData() {
-    return AddonManagerInternal.updateAddonRepositoryData();
   },
 
   callInstallListeners(...aArgs) {

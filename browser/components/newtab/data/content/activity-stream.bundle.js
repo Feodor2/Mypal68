@@ -2137,7 +2137,7 @@ class ASRouterUISurface extends react__WEBPACK_IMPORTED_MODULE_8___default.a.Pur
   }
 
   renderSnippets() {
-    if (this.state.bundle.template === "onboarding" || this.state.message.template === "fxa_overlay" || this.state.message.template === "return_to_amo_overlay" || this.state.message.template === "trailhead") {
+    if (this.state.bundle.template === "onboarding" || this.state.message.template === "fxa_overlay" || this.state.message.template === "trailhead") {
       return null;
     }
 
@@ -2192,19 +2192,6 @@ class ASRouterUISurface extends react__WEBPACK_IMPORTED_MODULE_8___default.a.Pur
         onBlock: this.onDismissById(message.id),
         dispatch: this.props.dispatch
       }));
-    } else if (message.template === "return_to_amo_overlay") {
-      global.document.body.classList.add("amo");
-      return react__WEBPACK_IMPORTED_MODULE_8___default.a.createElement(fluent_react__WEBPACK_IMPORTED_MODULE_5__["LocalizationProvider"], {
-        messages: Object(_rich_text_strings__WEBPACK_IMPORTED_MODULE_3__["generateMessages"])({
-          "amo_html": message.content.text
-        })
-      }, react__WEBPACK_IMPORTED_MODULE_8___default.a.createElement(_templates_ReturnToAMO_ReturnToAMO__WEBPACK_IMPORTED_MODULE_10__["ReturnToAMO"], _extends({}, message, {
-        UISurface: "NEWTAB_OVERLAY",
-        onReady: this.triggerOnboarding,
-        onBlock: this.onDismissById(message.id),
-        onAction: ASRouterUtils.executeAction,
-        sendUserActionTelemetry: this.sendUserActionTelemetry
-      })));
     }
 
     return null;

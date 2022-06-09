@@ -5,41 +5,7 @@
 const {Localization} = ChromeUtils.import("resource://gre/modules/Localization.jsm");
 const {FxAccountsConfig} = ChromeUtils.import("resource://gre/modules/FxAccountsConfig.jsm");
 const {AttributionCode} = ChromeUtils.import("resource:///modules/AttributionCode.jsm");
-const {AddonRepository} = ChromeUtils.import("resource://gre/modules/addons/AddonRepository.jsm");
 const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-
-async function getAddonInfo() {
-  try {
-    let {content, source} = await AttributionCode.getAttrDataAsync();
-    if (!content || source !== "addons.mozilla.org") {
-      return null;
-    }
-    // Attribution data can be double encoded
-    while (content.includes("%")) {
-      try {
-        const result = decodeURIComponent(content);
-        if (result === content) {
-          break;
-        }
-        content = result;
-      } catch (e) {
-        break;
-      }
-    }
-    const [addon] = await AddonRepository.getAddonsByIDs([content]);
-    if (addon.sourceURI.scheme !== "https") {
-      return null;
-    }
-    return {
-      name: addon.name,
-      url: addon.sourceURI.spec,
-      iconURL: addon.icons["64"] || addon.icons["32"],
-    };
-  } catch (e) {
-    Cu.reportError("Failed to get the latest add-on version for Return to AMO");
-    return null;
-  }
-}
 
 const L10N = new Localization([
   "branding/brand.ftl",
@@ -419,29 +385,6 @@ const ONBOARDING_MESSAGES = async () => ([
     template: "fxa_overlay",
     trigger: {id: "firstRun"},
   },
-  {
-    id: "RETURN_TO_AMO_1",
-    template: "return_to_amo_overlay",
-    content: {
-      header: {string_id: "onboarding-welcome-header"},
-      title: {string_id: "return-to-amo-sub-header"},
-      addon_icon: null,
-      icon: "gift-extension",
-      text: {string_id: "return-to-amo-addon-header", args: {"addon-name": null}},
-      primary_button: {
-        label: {string_id: "return-to-amo-extension-button"},
-        action: {
-          type: "INSTALL_ADDON_FROM_URL",
-          data: {url: null},
-        },
-      },
-      secondary_button: {
-        label: {string_id: "return-to-amo-get-started-button"},
-      },
-    },
-    targeting: "attributionData.campaign == 'non-fx-button' && attributionData.source == 'addons.mozilla.org'",
-    trigger: {id: "firstRun"},
-  },
 ]);
 
 const OnboardingMessageProvider = {
@@ -470,35 +413,6 @@ const OnboardingMessageProvider = {
       if (!translatedMessage.content) {
         translatedMessages.push(translatedMessage);
         continue;
-      }
-
-      // We need some addon info if we are showing return to amo overlay, so fetch
-      // that, and update the message accordingly
-      if (msg.template === "return_to_amo_overlay") {
-        try {
-          const {name, iconURL, url} = await getAddonInfo();
-          // If we do not have all the data from the AMO api to indicate to the user
-          // what they are installing we don't want to show the message
-          if (!name || !iconURL || !url) {
-            continue;
-          }
-
-          msg.content.text.args["addon-name"] = name;
-          msg.content.addon_icon = iconURL;
-          msg.content.primary_button.action.data.url = url;
-        } catch (e) {
-          continue;
-        }
-
-        // We know we want to show this message, so translate message strings
-        const [primary_button_string, title_string, text_string] = await L10N.formatMessages([
-          {id: msg.content.primary_button.label.string_id},
-          {id: msg.content.title.string_id},
-          {id: msg.content.text.string_id, args: msg.content.text.args},
-        ]);
-        translatedMessage.content.primary_button.label = primary_button_string.value;
-        translatedMessage.content.title = title_string.value;
-        translatedMessage.content.text = text_string.value;
       }
 
       // Translate any secondary buttons separately

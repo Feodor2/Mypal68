@@ -242,7 +242,6 @@ export class ASRouterUISurface extends React.PureComponent {
   renderSnippets() {
     if (this.state.bundle.template === "onboarding" ||
         this.state.message.template === "fxa_overlay" ||
-        this.state.message.template === "return_to_amo_overlay" ||
         this.state.message.template === "trailhead") {
       return null;
     }
@@ -294,19 +293,6 @@ export class ASRouterUISurface extends React.PureComponent {
             onBlock={this.onDismissById(message.id)}
             dispatch={this.props.dispatch} />
         </IntlProvider>
-      );
-    } else if (message.template === "return_to_amo_overlay") {
-      global.document.body.classList.add("amo");
-      return (
-        <LocalizationProvider messages={generateMessages({"amo_html": message.content.text})}>
-          <ReturnToAMO
-            {...message}
-            UISurface="NEWTAB_OVERLAY"
-            onReady={this.triggerOnboarding}
-            onBlock={this.onDismissById(message.id)}
-            onAction={ASRouterUtils.executeAction}
-            sendUserActionTelemetry={this.sendUserActionTelemetry} />
-        </LocalizationProvider>
       );
     }
     return null;

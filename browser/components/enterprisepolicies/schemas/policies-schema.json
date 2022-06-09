@@ -247,10 +247,6 @@
       "type": "boolean"
     },
 
-    "DisableFirefoxStudies": {
-      "type": "boolean"
-    },
-
     "DisableForgetButton": {
       "type": "boolean"
     },

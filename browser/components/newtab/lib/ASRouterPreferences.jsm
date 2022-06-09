@@ -17,17 +17,6 @@ const DEFAULT_STATE = {
   _devtoolsPref: DEVTOOLS_PREF,
 };
 
-const MIGRATE_PREFS = [
-  // Old pref, New pref
-  ["browser.newtabpage.activity-stream.asrouter.userprefs.cfr", "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons"],
-];
-
-const USER_PREFERENCES = {
-  snippets: "browser.newtabpage.activity-stream.feeds.snippets",
-  cfrAddons: "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons",
-  cfrFeatures: "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features",
-};
-
 // Preferences that influence targeting attributes. When these change we need
 // to re-evaluate if the message targeting still matches
 const TARGETING_PREFERENCES = [FXA_USERNAME_PREF];
@@ -66,24 +55,6 @@ class _ASRouterPreferences {
     }, []);
   }
 
-  // XXX Bug 1531734
-  // Required for 67 when the pref change will happen
-  _migratePrefs() {
-    for (let [oldPref, newPref] of MIGRATE_PREFS) {
-      if (!Services.prefs.prefHasUserValue(oldPref)) {
-        continue;
-      }
-      if (Services.prefs.prefHasUserValue(newPref)) {
-        Services.prefs.clearUserPref(oldPref);
-        continue;
-      }
-      // If the pref was user modified we assume it was set to false
-      const oldValue = Services.prefs.getBoolPref(oldPref, false);
-      Services.prefs.clearUserPref(oldPref);
-      Services.prefs.setBoolPref(newPref, oldValue);
-    }
-  }
-
   get providers() {
     if (!this._initialized || this._providers === null) {
       const config = this._getProviderConfig();
@@ -112,9 +83,6 @@ class _ASRouterPreferences {
     for (const pref of Services.prefs.getChildList(this._providerPrefBranch)) {
       Services.prefs.clearUserPref(pref);
     }
-    for (const id of Object.keys(USER_PREFERENCES)) {
-      Services.prefs.clearUserPref(USER_PREFERENCES[id]);
-    }
   }
 
   get devtoolsEnabled() {
@@ -134,28 +102,6 @@ class _ASRouterPreferences {
     this._callbacks.forEach(cb => cb(aPrefName));
   }
 
-  getUserPreference(providerId) {
-    if (!USER_PREFERENCES[providerId]) {
-      return null;
-    }
-    return Services.prefs.getBoolPref(USER_PREFERENCES[providerId], true);
-  }
-
-  getAllUserPreferences() {
-    const values = {};
-    for (const id of Object.keys(USER_PREFERENCES)) {
-      values[id] = this.getUserPreference(id);
-    }
-    return values;
-  }
-
-  setUserPreference(providerId, value) {
-    if (!USER_PREFERENCES[providerId]) {
-      return;
-    }
-    Services.prefs.setBoolPref(USER_PREFERENCES[providerId], value);
-  }
-
   addListener(callback) {
     this._callbacks.add(callback);
   }
@@ -168,12 +114,8 @@ class _ASRouterPreferences {
     if (this._initialized) {
       return;
     }
-    this._migratePrefs();
     Services.prefs.addObserver(this._providerPrefBranch, this);
     Services.prefs.addObserver(this._devtoolsPref, this);
-    for (const id of Object.keys(USER_PREFERENCES)) {
-      Services.prefs.addObserver(USER_PREFERENCES[id], this);
-    }
     for (const targetingPref of TARGETING_PREFERENCES) {
       Services.prefs.addObserver(targetingPref, this);
     }
@@ -184,9 +126,6 @@ class _ASRouterPreferences {
     if (this._initialized) {
       Services.prefs.removeObserver(this._providerPrefBranch, this);
       Services.prefs.removeObserver(this._devtoolsPref, this);
-      for (const id of Object.keys(USER_PREFERENCES)) {
-        Services.prefs.removeObserver(USER_PREFERENCES[id], this);
-      }
       for (const targetingPref of TARGETING_PREFERENCES) {
         Services.prefs.removeObserver(targetingPref, this);
       }

@@ -113,7 +113,7 @@ bool AudioSink::HasUnplayedFrames() {
   // so we need to add 1 here before comparing it to mWritten.
   int64_t total;
   {
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
     total = mWritten + (mCursor.get() ? mCursor->Available() : 0);
   }
   return mProcessedQueue.GetSize() ||
@@ -199,7 +199,7 @@ nsresult AudioSink::InitializeAudioStream(const PlaybackParams& aParams) {
 TimeUnit AudioSink::GetEndTime() const {
   int64_t written;
   {
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
     written = mWritten;
   }
   TimeUnit played = FramesToTimeUnit(written, mOutputRate) + mStartTime;
@@ -247,7 +247,7 @@ UniquePtr<AudioStream::Chunk> AudioSink::PopFrames(uint32_t aFrames) {
     needPopping = true;
     mCurrentData = mProcessedQueue.PeekFront();
     {
-      MonitorAutoLock mon(mMonitor);
+      Monitor2AutoLock mon(mMonitor);
       mCursor = MakeUnique<AudioBufferCursor>(mCurrentData->Data(),
                                               mCurrentData->mChannels,
                                               mCurrentData->Frames());
@@ -267,7 +267,7 @@ UniquePtr<AudioStream::Chunk> AudioSink::PopFrames(uint32_t aFrames) {
       MakeUnique<Chunk>(mCurrentData, framesToPop, mCursor->Ptr());
 
   {
-    MonitorAutoLock mon(mMonitor);
+    Monitor2AutoLock mon(mMonitor);
     mWritten += framesToPop;
     mCursor->Advance(framesToPop);
   }

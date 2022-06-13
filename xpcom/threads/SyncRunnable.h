@@ -7,7 +7,7 @@
 
 #include "nsThreadUtils.h"
 #include "mozilla/AbstractThread.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/Move.h"
 
 namespace mozilla {
@@ -57,7 +57,7 @@ class SyncRunnable : public Runnable {
 
     rv = aThread->Dispatch(this, NS_DISPATCH_NORMAL);
     if (NS_SUCCEEDED(rv)) {
-      mozilla::MonitorAutoLock lock(mMonitor);
+      mozilla::Monitor2AutoLock lock(mMonitor);
       while (!mDone) {
         lock.Wait();
       }
@@ -75,7 +75,7 @@ class SyncRunnable : public Runnable {
     MOZ_ASSERT(!aThread->RequiresTailDispatchFromCurrentThread());
 
     aThread->Dispatch(RefPtr<nsIRunnable>(this).forget());
-    mozilla::MonitorAutoLock lock(mMonitor);
+    mozilla::Monitor2AutoLock lock(mMonitor);
     while (!mDone) {
       lock.Wait();
     }
@@ -97,18 +97,18 @@ class SyncRunnable : public Runnable {
   NS_IMETHOD Run() override {
     mRunnable->Run();
 
-    mozilla::MonitorAutoLock lock(mMonitor);
+    mozilla::Monitor2AutoLock lock(mMonitor);
     MOZ_ASSERT(!mDone);
 
     mDone = true;
-    mMonitor.Notify();
+    mMonitor.Signal();
 
     return NS_OK;
   }
 
  private:
   nsCOMPtr<nsIRunnable> mRunnable;
-  mozilla::Monitor mMonitor;
+  mozilla::Monitor2 mMonitor;
   bool mDone;
 };
 

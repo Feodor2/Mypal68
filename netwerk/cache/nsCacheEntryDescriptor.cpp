@@ -74,7 +74,7 @@ nsCacheEntryDescriptor::nsCacheEntryDescriptor(nsCacheEntry* entry,
     : mCacheEntry(entry),
       mAccessGranted(accessGranted),
       mOutputWrapper(nullptr),
-      mLock("nsCacheEntryDescriptor.mLock"),
+      mLock(),
       mAsyncDoomPending(false),
       mDoomedOnClose(false),
       mClosingDescriptor(false) {
@@ -470,7 +470,7 @@ NS_IMETHODIMP
 nsCacheEntryDescriptor::AsyncDoom(nsICacheListener* listener) {
   bool asyncDoomPending;
   {
-    mozilla::MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
     asyncDoomPending = mAsyncDoomPending;
     mAsyncDoomPending = true;
   }
@@ -601,11 +601,11 @@ nsCacheEntryDescriptor::nsInputStreamWrapper::Release() {
   RefPtr<nsCacheEntryDescriptor> desc;
 
   {
-    mozilla::MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
     desc = mDescriptor;
   }
 
-  if (desc) nsCacheService::Lock(LOCK_TELEM(NSINPUTSTREAMWRAPPER_RELEASE));
+  if (desc) nsCacheService::CacheLock(LOCK_TELEM(NSINPUTSTREAMWRAPPER_RELEASE));
 
   nsrefcnt count;
   MOZ_ASSERT(0 != mRefCnt, "dup release");
@@ -620,14 +620,14 @@ nsCacheEntryDescriptor::nsInputStreamWrapper::Release() {
       mDescriptor->mInputWrappers.RemoveElement(this);
     }
 
-    if (desc) nsCacheService::Unlock();
+    if (desc) nsCacheService::CacheUnlock();
 
     mRefCnt = 1;
     delete (this);
     return 0;
   }
 
-  if (desc) nsCacheService::Unlock();
+  if (desc) nsCacheService::CacheUnlock();
 
   return count;
 }
@@ -677,7 +677,7 @@ nsresult nsCacheEntryDescriptor::nsInputStreamWrapper::EnsureInit() {
 }
 
 void nsCacheEntryDescriptor::nsInputStreamWrapper::CloseInternal() {
-  mLock.AssertCurrentThreadOwns();
+  //1111mLock.AssertCurrentThreadOwns();
   if (!mDescriptor) {
     NS_ASSERTION(!mInitialized, "Bad state");
     NS_ASSERTION(!mInput, "Bad state");
@@ -696,7 +696,7 @@ void nsCacheEntryDescriptor::nsInputStreamWrapper::CloseInternal() {
 }
 
 nsresult nsCacheEntryDescriptor::nsInputStreamWrapper::Close() {
-  mozilla::MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   return Close_Locked();
 }
@@ -717,7 +717,7 @@ nsresult nsCacheEntryDescriptor::nsInputStreamWrapper::Close_Locked() {
 
 nsresult nsCacheEntryDescriptor::nsInputStreamWrapper::Available(
     uint64_t* avail) {
-  mozilla::MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   nsresult rv = EnsureInit();
   if (NS_FAILED(rv)) return rv;
@@ -727,7 +727,7 @@ nsresult nsCacheEntryDescriptor::nsInputStreamWrapper::Available(
 
 nsresult nsCacheEntryDescriptor::nsInputStreamWrapper::Read(
     char* buf, uint32_t count, uint32_t* countRead) {
-  mozilla::MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   return Read_Locked(buf, count, countRead);
 }
@@ -771,12 +771,12 @@ nsCacheEntryDescriptor::nsDecompressInputStreamWrapper::Release() {
   RefPtr<nsCacheEntryDescriptor> desc;
 
   {
-    mozilla::MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
     desc = mDescriptor;
   }
 
   if (desc)
-    nsCacheService::Lock(LOCK_TELEM(NSDECOMPRESSINPUTSTREAMWRAPPER_RELEASE));
+    nsCacheService::CacheLock(LOCK_TELEM(NSDECOMPRESSINPUTSTREAMWRAPPER_RELEASE));
 
   nsrefcnt count;
   MOZ_ASSERT(0 != mRefCnt, "dup release");
@@ -792,14 +792,14 @@ nsCacheEntryDescriptor::nsDecompressInputStreamWrapper::Release() {
       mDescriptor->mInputWrappers.RemoveElement(this);
     }
 
-    if (desc) nsCacheService::Unlock();
+    if (desc) nsCacheService::CacheUnlock();
 
     mRefCnt = 1;
     delete (this);
     return 0;
   }
 
-  if (desc) nsCacheService::Unlock();
+  if (desc) nsCacheService::CacheUnlock();
 
   return count;
 }
@@ -811,7 +811,7 @@ NS_INTERFACE_MAP_END
 
 NS_IMETHODIMP nsCacheEntryDescriptor::nsDecompressInputStreamWrapper::Read(
     char* buf, uint32_t count, uint32_t* countRead) {
-  mozilla::MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   int zerr = Z_OK;
   nsresult rv = NS_OK;
@@ -880,7 +880,7 @@ NS_IMETHODIMP nsCacheEntryDescriptor::nsDecompressInputStreamWrapper::Read(
 }
 
 nsresult nsCacheEntryDescriptor::nsDecompressInputStreamWrapper::Close() {
-  mozilla::MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   if (!mDescriptor) return NS_ERROR_NOT_AVAILABLE;
 
@@ -936,11 +936,11 @@ nsCacheEntryDescriptor::nsOutputStreamWrapper::Release() {
   RefPtr<nsCacheEntryDescriptor> desc;
 
   {
-    mozilla::MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
     desc = mDescriptor;
   }
 
-  if (desc) nsCacheService::Lock(LOCK_TELEM(NSOUTPUTSTREAMWRAPPER_RELEASE));
+  if (desc) nsCacheService::CacheLock(LOCK_TELEM(NSOUTPUTSTREAMWRAPPER_RELEASE));
 
   nsrefcnt count;
   MOZ_ASSERT(0 != mRefCnt, "dup release");
@@ -951,14 +951,14 @@ nsCacheEntryDescriptor::nsOutputStreamWrapper::Release() {
     // don't use desc here since mDescriptor might be already nulled out
     if (mDescriptor) mDescriptor->mOutputWrapper = nullptr;
 
-    if (desc) nsCacheService::Unlock();
+    if (desc) nsCacheService::CacheUnlock();
 
     mRefCnt = 1;
     delete (this);
     return 0;
   }
 
-  if (desc) nsCacheService::Unlock();
+  if (desc) nsCacheService::CacheUnlock();
 
   return count;
 }
@@ -1033,7 +1033,7 @@ nsresult nsCacheEntryDescriptor::nsOutputStreamWrapper::OnWrite(
 }
 
 void nsCacheEntryDescriptor::nsOutputStreamWrapper::CloseInternal() {
-  mLock.AssertCurrentThreadOwns();
+  //1111mLock.AssertCurrentThreadOwns();
   if (!mDescriptor) {
     NS_ASSERTION(!mInitialized, "Bad state");
     NS_ASSERTION(!mOutput, "Bad state");
@@ -1052,7 +1052,7 @@ void nsCacheEntryDescriptor::nsOutputStreamWrapper::CloseInternal() {
 }
 
 NS_IMETHODIMP nsCacheEntryDescriptor::nsOutputStreamWrapper::Close() {
-  mozilla::MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   return Close_Locked();
 }
@@ -1072,7 +1072,7 @@ nsresult nsCacheEntryDescriptor::nsOutputStreamWrapper::Close_Locked() {
 }
 
 NS_IMETHODIMP nsCacheEntryDescriptor::nsOutputStreamWrapper::Flush() {
-  mozilla::MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   nsresult rv = EnsureInit();
   if (NS_FAILED(rv)) return rv;
@@ -1082,7 +1082,7 @@ NS_IMETHODIMP nsCacheEntryDescriptor::nsOutputStreamWrapper::Flush() {
 
 NS_IMETHODIMP nsCacheEntryDescriptor::nsOutputStreamWrapper::Write(
     const char* buf, uint32_t count, uint32_t* result) {
-  mozilla::MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
   return Write_Locked(buf, count, result);
 }
 
@@ -1127,12 +1127,12 @@ nsCacheEntryDescriptor::nsCompressOutputStreamWrapper::Release() {
   RefPtr<nsCacheEntryDescriptor> desc;
 
   {
-    mozilla::MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
     desc = mDescriptor;
   }
 
   if (desc)
-    nsCacheService::Lock(LOCK_TELEM(NSCOMPRESSOUTPUTSTREAMWRAPPER_RELEASE));
+    nsCacheService::CacheLock(LOCK_TELEM(NSCOMPRESSOUTPUTSTREAMWRAPPER_RELEASE));
 
   nsrefcnt count;
   MOZ_ASSERT(0 != mRefCnt, "dup release");
@@ -1144,14 +1144,14 @@ nsCacheEntryDescriptor::nsCompressOutputStreamWrapper::Release() {
     // don't use desc here since mDescriptor might be already nulled out
     if (mDescriptor) mDescriptor->mOutputWrapper = nullptr;
 
-    if (desc) nsCacheService::Unlock();
+    if (desc) nsCacheService::CacheUnlock();
 
     mRefCnt = 1;
     delete (this);
     return 0;
   }
 
-  if (desc) nsCacheService::Unlock();
+  if (desc) nsCacheService::CacheUnlock();
 
   return count;
 }
@@ -1163,7 +1163,7 @@ NS_INTERFACE_MAP_END
 
 NS_IMETHODIMP nsCacheEntryDescriptor::nsCompressOutputStreamWrapper::Write(
     const char* buf, uint32_t count, uint32_t* result) {
-  mozilla::MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   int zerr = Z_OK;
   nsresult rv = NS_OK;
@@ -1217,7 +1217,7 @@ NS_IMETHODIMP nsCacheEntryDescriptor::nsCompressOutputStreamWrapper::Write(
 }
 
 NS_IMETHODIMP nsCacheEntryDescriptor::nsCompressOutputStreamWrapper::Close() {
-  mozilla::MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   if (!mDescriptor) return NS_ERROR_NOT_AVAILABLE;
 

@@ -16,11 +16,6 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "AddonRepository",
-  "resource://gre/modules/addons/AddonRepository.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "RemoteSettings",
   "resource://services-settings/remote-settings.js"
 );
@@ -461,7 +456,7 @@ var gBrowserLanguagesDialog = {
       return;
     }
 
-    // Disable the dropdown while we hit the network.
+    /*// Disable the dropdown while we hit the network.
     this._availableLocales.disableWithMessageId("browser-languages-searching");
 
     // Fetch the available langpacks from AMO.
@@ -505,7 +500,7 @@ var gBrowserLanguagesDialog = {
     this._availableLocales.setItems(items);
     this._availableLocales.enableWithMessageId(
       "browser-languages-select-language"
-    );
+    );*/
   },
 
   async loadLocalesFromInstalled(available) {
@@ -587,7 +582,7 @@ var gBrowserLanguagesDialog = {
   },
 
   async installDictionariesForLanguage(locale) {
-    try {
+    /*try {
       let ids = await dictionaryIdsForLocale(locale);
       let addonInfos = await AddonRepository.getAddonsByIDs(ids);
       await Promise.all(
@@ -595,7 +590,7 @@ var gBrowserLanguagesDialog = {
       );
     } catch (e) {
       Cu.reportError(e);
-    }
+    }*/
   },
 
   showError() {

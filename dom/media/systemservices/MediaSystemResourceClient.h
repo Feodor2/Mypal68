@@ -9,7 +9,7 @@
 #  include "MediaSystemResourceTypes.h"
 #  include "mozilla/Atomics.h"
 #  include "mozilla/media/MediaSystemResourceTypes.h"
-#  include "mozilla/Monitor.h"
+#  include "mozilla/Monitor2.h"
 #  include "mozilla/RefPtr.h"
 
 namespace mozilla {

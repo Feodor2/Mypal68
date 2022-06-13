@@ -129,7 +129,7 @@ void SocketProcessHost::OnChannelConnected(int32_t peer_pid) {
   // thread-safe.
   RefPtr<Runnable> runnable;
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     runnable = mTaskFactory.NewRunnableMethod(
         &SocketProcessHost::OnChannelConnectedTask);
   }
@@ -145,7 +145,7 @@ void SocketProcessHost::OnChannelError() {
   // thread-safe.
   RefPtr<Runnable> runnable;
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     runnable =
         mTaskFactory.NewRunnableMethod(&SocketProcessHost::OnChannelErrorTask);
   }
@@ -247,7 +247,7 @@ void SocketProcessHost::OnChannelClosed() {
 
 void SocketProcessHost::DestroyProcess() {
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     mTaskFactory.RevokeAll();
   }
 

@@ -1,3 +1,5 @@
+/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+/* vim: set ts=8 sts=2 et sw=2 tw=80: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -17,8 +19,7 @@
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsRefPtrHashtable.h"
-#include "mozilla/CondVar.h"
-#include "mozilla/Mutex.h"
+#include "base/condition_variable.h"
 #include "mozilla/Telemetry.h"
 
 class nsCacheRequest;
@@ -179,7 +180,7 @@ class nsCacheService final : public nsICacheServiceInternal {
     return gService->mInitialized;
   }
 
-  static void AssertOwnsLock() { gService->mLock.AssertCurrentThreadOwns(); }
+  static void AssertOwnsLock() {} //1111gService->mLock.AssertCurrentThreadOwns(); }
 
   static void LeavePrivateBrowsing();
   bool IsDoomListEmpty();
@@ -206,9 +207,9 @@ class nsCacheService final : public nsICacheServiceInternal {
    * Internal Methods
    */
 
-  static void Lock();
-  static void Lock(::mozilla::Telemetry::HistogramID mainThreadLockerID);
-  static void Unlock();
+  static void CacheLock();
+  static void CacheLock(::mozilla::Telemetry::HistogramID mainThreadLockerID);
+  static void CacheUnlock();
   void LockAcquired();
   void LockReleased();
 
@@ -270,11 +271,11 @@ class nsCacheService final : public nsICacheServiceInternal {
 
   nsCacheProfilePrefObserver* mObserver;
 
-  mozilla::Mutex mLock;
-  mozilla::CondVar mCondVar;
+  Lock mLock;
+  ConditionVariable mCondVar;
   bool mNotified;
 
-  mozilla::Mutex mTimeStampLock;
+  Lock mTimeStampLock;
   mozilla::TimeStamp mLockAcquiredTimeStamp;
 
   nsCOMPtr<nsIThread> mCacheIOThread;
@@ -319,12 +320,12 @@ class nsCacheService final : public nsICacheServiceInternal {
 // execution scope.
 class nsCacheServiceAutoLock {
  public:
-  nsCacheServiceAutoLock() { nsCacheService::Lock(); }
+  nsCacheServiceAutoLock() { nsCacheService::CacheLock(); }
   explicit nsCacheServiceAutoLock(
       mozilla::Telemetry::HistogramID mainThreadLockerID) {
-    nsCacheService::Lock(mainThreadLockerID);
+    nsCacheService::CacheLock(mainThreadLockerID);
   }
-  ~nsCacheServiceAutoLock() { nsCacheService::Unlock(); }
+  ~nsCacheServiceAutoLock() { nsCacheService::CacheUnlock(); }
 };
 
 #endif  // _nsCacheService_h_

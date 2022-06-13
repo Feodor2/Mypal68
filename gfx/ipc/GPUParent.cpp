@@ -49,6 +49,7 @@
 #include "cairo.h"
 #include "skia/include/core/SkGraphics.h"
 #if defined(XP_WIN)
+#  include "DeviceManagerD3D9.h"
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #  include "mozilla/widget/WinCompositorWindowThread.h"
 #  include "mozilla/WindowsVersion.h"
@@ -117,6 +118,7 @@ bool GPUParent::Init(base::ProcessId aParentPid, const char* aParentBuildID,
   mlg::InitializeMemoryReporters();
 #if defined(XP_WIN)
   DeviceManagerDx::Init();
+  DeviceManagerD3D9::Init();
 #endif
 
   if (NS_FAILED(NS_InitMinimalXPCOM())) {
@@ -187,6 +189,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   gfxConfig::Inherit(Feature::HW_COMPOSITING, devicePrefs.hwCompositing());
   gfxConfig::Inherit(Feature::D3D11_COMPOSITING,
                      devicePrefs.d3d11Compositing());
+  gfxConfig::Inherit(Feature::D3D9_COMPOSITING, devicePrefs.d3d9Compositing());
   gfxConfig::Inherit(Feature::OPENGL_COMPOSITING, devicePrefs.oglCompositing());
   gfxConfig::Inherit(Feature::ADVANCED_LAYERS, devicePrefs.advancedLayers());
   gfxConfig::Inherit(Feature::DIRECT2D, devicePrefs.useD2D1());
@@ -364,6 +367,7 @@ static void CopyFeatureChange(Feature aFeature, Maybe<FeatureFailure>* aOut) {
 
 mozilla::ipc::IPCResult GPUParent::RecvGetDeviceStatus(GPUDeviceData* aOut) {
   CopyFeatureChange(Feature::D3D11_COMPOSITING, &aOut->d3d11Compositing());
+  CopyFeatureChange(Feature::D3D9_COMPOSITING, &aOut->d3d9Compositing());
   CopyFeatureChange(Feature::OPENGL_COMPOSITING, &aOut->oglCompositing());
   CopyFeatureChange(Feature::ADVANCED_LAYERS, &aOut->advancedLayers());
 
@@ -552,6 +556,7 @@ void GPUParent::ActorDestroy(ActorDestroyReason aWhy) {
 
 #if defined(XP_WIN)
   DeviceManagerDx::Shutdown();
+  DeviceManagerD3D9::Shutdown();
 #endif
   LayerTreeOwnerTracker::Shutdown();
   gfxVars::Shutdown();

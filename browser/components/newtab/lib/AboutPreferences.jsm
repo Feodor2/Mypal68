@@ -96,28 +96,8 @@ this.AboutPreferences = class AboutPreferences {
     }
   }
 
-  handleDiscoverySettings(sections) {
-    // Deep copy object to not modify original Sections state in store
-    let sectionsCopy = JSON.parse(JSON.stringify(sections));
-    sectionsCopy.forEach(obj => {
-      if (obj.id === "highlights") {
-        obj.shouldHidePref = true;
-      }
-
-      if (obj.id === "topstories") {
-        obj.rowsPref = "";
-      }
-    });
-    return sectionsCopy;
-  }
-
   async observe(window) {
-    const discoveryStreamConfig = this.store.getState().DiscoveryStream.config;
     let sections = this.store.getState().Sections;
-
-    if (discoveryStreamConfig.enabled) {
-      sections = this.handleDiscoverySettings(sections);
-    }
 
     this.renderPreferences(window, await this.strings, [...PREFS_BEFORE_SECTIONS,
       ...sections, ...PREFS_AFTER_SECTIONS]);
@@ -227,19 +207,6 @@ this.AboutPreferences = class AboutPreferences {
       checkbox.setAttribute("label", formatString(titleString));
       checkbox.setAttribute("src", iconUrl);
       linkPref(checkbox, name, "bool");
-
-      // Specially add a link for stories
-      if (id === "topstories") {
-        const sponsoredHbox = createAppend("hbox", sectionVbox);
-        sponsoredHbox.setAttribute("align", "center");
-        sponsoredHbox.appendChild(checkbox);
-        checkbox.classList.add("tail-with-learn-more");
-
-        const link = createAppend("label", sponsoredHbox, {is: "text-link"});
-        link.classList.add("learn-sponsored");
-        link.setAttribute("href", sectionData.learnMore.link.href);
-        link.textContent = formatString(sectionData.learnMore.link.id);
-      }
 
       // Add more details for the section (e.g., description, more prefs)
       const detailVbox = createAppend("vbox", sectionVbox);

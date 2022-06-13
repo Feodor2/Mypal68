@@ -22,26 +22,26 @@ class EventQueue final : public AbstractEventQueue {
 
   void PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
                 EventQueuePriority aPriority,
-                const MutexAutoLock& aProofOfLock) final;
+                const AutoLock& aProofOfLock) final;
   already_AddRefed<nsIRunnable> GetEvent(
-      EventQueuePriority* aPriority, const MutexAutoLock& aProofOfLock) final;
+      EventQueuePriority* aPriority, const AutoLock& aProofOfLock) final;
 
-  bool IsEmpty(const MutexAutoLock& aProofOfLock) final;
-  bool HasReadyEvent(const MutexAutoLock& aProofOfLock) final;
-  bool HasPendingHighPriorityEvents(const MutexAutoLock& aProofOfLock) final {
+  bool IsEmpty(const AutoLock& aProofOfLock) final;
+  bool HasReadyEvent(const AutoLock& aProofOfLock) final;
+  bool HasPendingHighPriorityEvents(const AutoLock& aProofOfLock) final {
     // EventQueue doesn't support any prioritization.
     return false;
   }
 
-  size_t Count(const MutexAutoLock& aProofOfLock) const final;
-  already_AddRefed<nsIRunnable> PeekEvent(const MutexAutoLock& aProofOfLock);
+  size_t Count(const AutoLock& aProofOfLock) const final;
+  already_AddRefed<nsIRunnable> PeekEvent(const AutoLock& aProofOfLock);
 
-  void EnableInputEventPrioritization(const MutexAutoLock& aProofOfLock) final {
+  void EnableInputEventPrioritization(const AutoLock& aProofOfLock) final {
   }
-  void FlushInputEventPrioritization(const MutexAutoLock& aProofOfLock) final {}
+  void FlushInputEventPrioritization(const AutoLock& aProofOfLock) final {}
   void SuspendInputEventPrioritization(
-      const MutexAutoLock& aProofOfLock) final {}
-  void ResumeInputEventPrioritization(const MutexAutoLock& aProofOfLock) final {
+      const AutoLock& aProofOfLock) final {}
+  void ResumeInputEventPrioritization(const AutoLock& aProofOfLock) final {
   }
 
   size_t SizeOfExcludingThis(

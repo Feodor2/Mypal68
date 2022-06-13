@@ -51,6 +51,7 @@
 #endif
 
 #ifdef XP_WIN
+#  include "mozilla/layers/TextureD3D9.h"
 #  include "mozilla/layers/TextureD3D11.h"
 #  include "mozilla/layers/TextureDIB.h"
 #endif
@@ -209,9 +210,15 @@ already_AddRefed<TextureHost> TextureHost::Create(
 #endif
 
 #ifdef XP_WIN
+    case SurfaceDescriptor::TSurfaceDescriptorD3D9:
+      result = CreateTextureHostD3D9(aDesc, aDeallocator, aBackend, aFlags);
     case SurfaceDescriptor::TSurfaceDescriptorD3D10:
     case SurfaceDescriptor::TSurfaceDescriptorDXGIYCbCr:
-      result = CreateTextureHostD3D11(aDesc, aDeallocator, aBackend, aFlags);
+      if (aBackend == LayersBackend::LAYERS_D3D9) {
+        result = CreateTextureHostD3D9(aDesc, aDeallocator, aBackend, aFlags);
+      } else {
+        result = CreateTextureHostD3D11(aDesc, aDeallocator, aBackend, aFlags);
+      }
       break;
 #endif
     default:

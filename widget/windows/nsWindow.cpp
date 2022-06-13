@@ -1791,7 +1791,7 @@ void nsWindow::Move(double aX, double aY) {
     // Workaround SetWindowPos bug with D3D9. If our window has a clip
     // region, some drivers or OSes may incorrectly copy into the clipped-out
     // area.
-    if (IsPlugin() && !mLayerManager && mClipRects &&
+    if (IsPlugin() && (!mLayerManager || mLayerManager->GetBackendType() == LayersBackend::LAYERS_D3D9) && mClipRects &&
         (mClipRectCount != 1 ||
          !mClipRects[0].IsEqualInterior(
              LayoutDeviceIntRect(0, 0, mBounds.Width(), mBounds.Height())))) {

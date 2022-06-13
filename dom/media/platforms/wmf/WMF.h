@@ -67,8 +67,8 @@ HRESULT MFGetService(IUnknown* punkObject, REFGUID guidService, REFIID riid,
 HRESULT DXVA2CreateDirect3DDeviceManager9(
     UINT* pResetToken, IDirect3DDeviceManager9** ppDXVAManager);
 
-/*HRESULT MFCreateDXGIDeviceManager(UINT* pResetToken,
-                                  IMFDXGIDeviceManager** ppDXVAManager);*/
+HRESULT MFCreateDXGIDeviceManager(UINT* pResetToken,
+                                  IMFDXGIDeviceManager** ppDXVAManager);
 
 HRESULT MFCreateSample(IMFSample** ppIMFSample);
 

@@ -198,8 +198,6 @@ const POLICIES_TESTS = [
     },
     lockedPrefs: {
       "xpinstall.enabled": false,
-      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons": false,
-      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features": false,
     },
   },
 
@@ -507,17 +505,6 @@ const POLICIES_TESTS = [
     },
   },
 
-  // POLICY: DisableShield
-  {
-    policies: {
-      DisableFirefoxStudies: true,
-    },
-    lockedPrefs: {
-      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons": false,
-      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features": false,
-    },
-  },
-
   // POLICY: NewTabPage
   {
     policies: {
@@ -561,29 +548,6 @@ const POLICIES_TESTS = [
     },
     unlockedPrefs: {
       "signon.rememberSignons": false,
-    },
-  },
-
-  // POLICY: UserMessaging
-  {
-    policies: {
-      UserMessaging: {
-        ExtensionRecommendations: false,
-      },
-    },
-    unlockedPrefs: {
-      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.addons": false,
-    },
-  },
-
-  {
-    policies: {
-      UserMessaging: {
-        FeatureRecommendations: false,
-      },
-    },
-    unlockedPrefs: {
-      "browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features": false,
     },
   },
 

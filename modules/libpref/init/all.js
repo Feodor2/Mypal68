@@ -3319,7 +3319,7 @@ pref("dom.ipc.tabs.createKillHardCrashReports", false);
 pref("dom.ipc.tabs.createKillHardCrashReports", true);
 #endif
 
-pref("dom.ipc.plugins.flash.disable-protected-mode", false);
+pref("dom.ipc.plugins.flash.disable-protected-mode", true);
 
 pref("dom.ipc.plugins.flash.subprocess.crashreporter.enabled", true);
 pref("dom.ipc.plugins.reportCrashURL", true);
@@ -5130,6 +5130,9 @@ pref("gfx.direct3d11.use-double-buffering", false);
 #endif
 
 pref("layers.prefer-opengl", false);
+pref("layers.prefer-d3d9", false);
+// Disable for now due to bug 1304360
+pref("layers.allow-d3d9-fallback", true);
 #endif
 
 // Copy-on-write canvas
@@ -5204,11 +5207,6 @@ pref("extensions.htmlaboutaddons.enabled", true);
 pref("extensions.htmlaboutaddons.inline-options.enabled", true);
 // Show recommendations on the extension and theme list views.
 pref("extensions.htmlaboutaddons.recommendations.enabled", true);
-
-// The URL for the privacy policy related to recommended add-ons.
-pref("extensions.recommendations.privacyPolicyUrl", "");
-// The URL for a recommended theme, shown on the theme page in about:addons.
-pref("extensions.recommendations.themeRecommendationUrl", "");
 
 // Report Site Issue button
 // Note that on enabling the button in other release channels, make sure to

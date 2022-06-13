@@ -11,7 +11,7 @@
 #  include "TrackBuffersManager.h"
 #  include "mozilla/Atomics.h"
 #  include "mozilla/Maybe.h"
-#  include "mozilla/Monitor.h"
+#  include "mozilla/Monitor2.h"
 #  include "mozilla/TaskQueue.h"
 
 namespace mozilla {
@@ -80,7 +80,7 @@ class MediaSourceDemuxer : public MediaDataDemuxer,
   MozPromiseHolder<InitPromise> mInitPromise;
 
   // Monitor to protect members below across multiple threads.
-  mutable Monitor mMonitor;
+  mutable Monitor2 mMonitor;
   RefPtr<TrackBuffersManager> mAudioTrack;
   RefPtr<TrackBuffersManager> mVideoTrack;
   MediaInfo mInfo;
@@ -135,7 +135,7 @@ class MediaSourceTrackDemuxer
   RefPtr<MediaSourceDemuxer> mParent;
   TrackInfo::TrackType mType;
   // Monitor protecting members below accessed from multiple threads.
-  Monitor mMonitor;
+  Monitor2 mMonitor;
   media::TimeUnit mNextRandomAccessPoint;
   // Would be accessed in MFR's demuxer proxy task queue and TaskQueue, and
   // only be set on the TaskQueue. It can be accessed while on TaskQueue without

@@ -33,7 +33,7 @@
 #include "ReverbInputBuffer.h"
 #include "nsAutoPtr.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #ifdef LOG
 #  undef LOG
 #endif
@@ -79,7 +79,7 @@ class ReverbConvolver {
 
   // Background thread and synchronization
   base::Thread m_backgroundThread;
-  mozilla::Monitor m_backgroundThreadMonitor;
+  mozilla::Monitor2 m_backgroundThreadMonitor;
   bool m_useBackgroundThreads;
   bool m_wantsToExit;
   bool m_moreInputBuffered;

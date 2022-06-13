@@ -11,7 +11,7 @@
 #include "mozilla/layers/ZoomConstraints.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/RecursiveMutex.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
@@ -148,7 +148,7 @@ struct AncestorTransform {
 class AsyncPanZoomController {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(AsyncPanZoomController)
 
-  typedef mozilla::MonitorAutoLock MonitorAutoLock;
+  typedef mozilla::Monitor2AutoLock Monitor2AutoLock;
   typedef mozilla::gfx::Matrix4x4 Matrix4x4;
   typedef mozilla::layers::RepaintRequest::ScrollOffsetUpdateType
       RepaintUpdateType;
@@ -920,7 +920,7 @@ class AsyncPanZoomController {
      updater thread. */
   RefPtr<GeckoContentController> mGeckoContentController;
   RefPtr<GestureEventListener> mGestureEventListener;
-  mutable Monitor mRefPtrMonitor;
+  mutable Monitor2 mRefPtrMonitor;
 
   // This is a raw pointer to avoid introducing a reference cycle between
   // AsyncPanZoomController and APZCTreeManager. Since these objects don't

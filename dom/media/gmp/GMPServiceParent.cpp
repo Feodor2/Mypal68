@@ -322,7 +322,7 @@ GeckoMediaPluginServiceParent::Observe(nsISupports* aSubject,
 }
 
 RefPtr<GenericPromise> GeckoMediaPluginServiceParent::EnsureInitialized() {
-  MonitorAutoLock lock(mInitPromiseMonitor);
+  Monitor2AutoLock lock(mInitPromiseMonitor);
   if (mLoadPluginsFromDiskComplete) {
     return GenericPromise::CreateAndResolve(true, __func__);
   }
@@ -391,7 +391,7 @@ GeckoMediaPluginServiceParent::GetContentParent(
 void GeckoMediaPluginServiceParent::InitializePlugins(
     AbstractThread* aAbstractGMPThread) {
   MOZ_ASSERT(aAbstractGMPThread);
-  MonitorAutoLock lock(mInitPromiseMonitor);
+  Monitor2AutoLock lock(mInitPromiseMonitor);
   if (mLoadPluginsFromDiskComplete) {
     return;
   }
@@ -403,12 +403,12 @@ void GeckoMediaPluginServiceParent::InitializePlugins(
       ->Then(
           aAbstractGMPThread, __func__,
           [self]() -> void {
-            MonitorAutoLock lock(self->mInitPromiseMonitor);
+            Monitor2AutoLock lock(self->mInitPromiseMonitor);
             self->mLoadPluginsFromDiskComplete = true;
             self->mInitPromise.Resolve(true, __func__);
           },
           [self]() -> void {
-            MonitorAutoLock lock(self->mInitPromiseMonitor);
+            Monitor2AutoLock lock(self->mInitPromiseMonitor);
             self->mLoadPluginsFromDiskComplete = true;
             self->mInitPromise.Reject(NS_ERROR_FAILURE, __func__);
           });
@@ -1692,25 +1692,25 @@ mozilla::ipc::IPCResult GMPServiceParent::RecvGetGMPNodeId(
   return IPC_OK();
 }
 
-void GMPServiceParent::CloseTransport(Monitor* aSyncMonitor, bool* aCompleted) {
+void GMPServiceParent::CloseTransport(Monitor2* aSyncMonitor, bool* aCompleted) {
   MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
 
-  MonitorAutoLock lock(*aSyncMonitor);
+  Monitor2AutoLock lock(*aSyncMonitor);
 
   // This deletes the transport.
   SetTransport(nullptr);
 
   *aCompleted = true;
-  lock.NotifyAll();
+  lock.Broadcast();
 }
 
 void GMPServiceParent::ActorDestroy(ActorDestroyReason aWhy) {
-  Monitor monitor("DeleteGMPServiceParent");
+  Monitor2 monitor("DeleteGMPServiceParent");
   bool completed = false;
 
   // Make sure the IPC channel is closed before destroying mToDelete.
-  MonitorAutoLock lock(monitor);
-  RefPtr<Runnable> task = NewNonOwningRunnableMethod<Monitor*, bool*>(
+  Monitor2AutoLock lock(monitor);
+  RefPtr<Runnable> task = NewNonOwningRunnableMethod<Monitor2*, bool*>(
       "gmp::GMPServiceParent::CloseTransport", this,
       &GMPServiceParent::CloseTransport, &monitor, &completed);
   XRE_GetIOMessageLoop()->PostTask(task.forget());

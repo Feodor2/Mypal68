@@ -1842,13 +1842,6 @@ class BootstrapScope {
 
     XPIProvider.activeAddons.set(this.addon.id, this);
 
-    // Mark the add-on as active for the crash reporter before loading.
-    // But not at app startup, since we'll already have added all of our
-    // annotations before starting any loads.
-    if (aReason !== BOOTSTRAP_REASONS.APP_STARTUP) {
-      XPIProvider.addAddonsToCrashReporter();
-    }
-
     logger.debug(`Loading bootstrap scope from ${this.addon.rootURI}`);
 
     if (this.addon.isWebExtension) {
@@ -1887,7 +1880,6 @@ class BootstrapScope {
    */
   unloadBootstrapScope() {
     XPIProvider.activeAddons.delete(this.addon.id);
-    XPIProvider.addAddonsToCrashReporter();
 
     this.scope = null;
     this.startupPromise = null;
@@ -2415,17 +2407,6 @@ var XPIProvider = {
 
       resolveProviderReady(Promise.all(this.startupPromises));
 
-      if (AppConstants.MOZ_CRASHREPORTER) {
-        // Annotate the crash report with relevant add-on information.
-        try {
-          Services.appinfo.annotateCrashReport(
-            "EMCheckCompatibility",
-            AddonManager.checkCompatibility
-          );
-        } catch (e) {}
-        this.addAddonsToCrashReporter();
-      }
-
       // This is a one-time migration when incognito is turned on.  Any previously
       // enabled extension will be migrated.
       try {
@@ -2678,28 +2659,6 @@ var XPIProvider = {
       promises.push(promise);
     }
     return Promise.all(promises);
-  },
-
-  /**
-   * Adds a list of currently active add-ons to the next crash report.
-   */
-  addAddonsToCrashReporter() {
-    if (
-      !(Services.appinfo instanceof Ci.nsICrashReporter) ||
-      Services.appinfo.inSafeMode
-    ) {
-      return;
-    }
-
-    let data = Array.from(XPIStates.enabledAddons(), a => a.telemetryKey).join(
-      ","
-    );
-
-    try {
-      Services.appinfo.annotateCrashReport("Add-ons", data);
-    } catch (e) {}
-
-    TelemetrySession.setAddOns(data);
   },
 
   /**
@@ -3135,7 +3094,6 @@ for (let meth of [
   "addonChanged",
   "getAddonByID",
   "getAddonBySyncGUID",
-  "updateAddonRepositoryData",
   "updateAddonAppDisabledStates",
 ]) {
   XPIProvider[meth] = function() {

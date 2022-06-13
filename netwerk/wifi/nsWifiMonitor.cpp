@@ -43,7 +43,7 @@ nsWifiMonitor::Observe(nsISupports* subject, const char* topic,
 
     ReentrantMonitorAutoEnter mon(mReentrantMonitor);
     mKeepGoing = false;
-    mon.Notify();
+    mon.Signal();
     mThread = nullptr;
   }
   return NS_OK;
@@ -81,7 +81,7 @@ NS_IMETHODIMP nsWifiMonitor::StartWatching(nsIWifiListener* aListener) {
           "nsIWifiListener", aListener)));
 
   // tell ourselves that we have a new watcher.
-  mon.Notify();
+  mon.Signal();
   return NS_OK;
 }
 

@@ -669,7 +669,7 @@ void nsCookieService::InitDBStates() {
         NS_ENSURE_TRUE_VOID(gCookieService && gCookieService->mDBState &&
                             gCookieService->mDefaultDBState);
 
-        MonitorAutoLock lock(gCookieService->mMonitor);
+        Monitor2AutoLock lock(gCookieService->mMonitor);
 
         // Attempt to open and read the database. If TryInitDB() returns
         // RESULT_RETRY, do so.
@@ -710,7 +710,7 @@ void nsCookieService::InitDBStates() {
               NS_ENSURE_TRUE_VOID(gCookieService);
               gCookieService->InitDBConn();
             }));
-        gCookieService->mMonitor.Notify();
+        gCookieService->mMonitor.Signal();
       });
 
   mThread->Dispatch(runnable, NS_DISPATCH_NORMAL);
@@ -2672,7 +2672,7 @@ void nsCookieService::EnsureReadComplete(bool aInitDBConn) {
 
   if (!mInitializedDBStates) {
     TimeStamp startBlockTime = TimeStamp::Now();
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
 
     while (!mInitializedDBStates) {
       mMonitor.Wait();

@@ -6,7 +6,7 @@
 #define mozilla_MediaUtils_h
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/SharedThreadPool.h"
@@ -183,25 +183,25 @@ void Await(already_AddRefed<nsIEventTarget> aPool,
            RejectFunction&& aRejectFunction) {
   RefPtr<TaskQueue> taskQueue =
       new TaskQueue(std::move(aPool), "MozPromiseAwait");
-  Monitor mon(__func__);
+  Monitor2 mon(__func__);
   bool done = false;
 
   aPromise->Then(
       taskQueue, __func__,
       [&](ResolveValueType&& aResolveValue) {
-        MonitorAutoLock lock(mon);
+        Monitor2AutoLock lock(mon);
         aResolveFunction(std::forward<ResolveValueType>(aResolveValue));
         done = true;
-        mon.Notify();
+        mon.Signal();
       },
       [&](RejectValueType&& aRejectValue) {
-        MonitorAutoLock lock(mon);
+        Monitor2AutoLock lock(mon);
         aRejectFunction(std::forward<RejectValueType>(aRejectValue));
         done = true;
-        mon.Notify();
+        mon.Signal();
       });
 
-  MonitorAutoLock lock(mon);
+  Monitor2AutoLock lock(mon);
   while (!done) {
     mon.Wait();
   }
@@ -214,7 +214,7 @@ Await(already_AddRefed<nsIEventTarget> aPool,
       RefPtr<MozPromise<ResolveValueType, RejectValueType, Excl>> aPromise) {
   RefPtr<TaskQueue> taskQueue =
       new TaskQueue(std::move(aPool), "MozPromiseAwait");
-  Monitor mon(__func__);
+  Monitor2 mon(__func__);
   bool done = false;
 
   typename MozPromise<ResolveValueType, RejectValueType,
@@ -223,18 +223,18 @@ Await(already_AddRefed<nsIEventTarget> aPool,
       taskQueue, __func__,
       [&](ResolveValueType aResolveValue) {
         val.SetResolve(std::move(aResolveValue));
-        MonitorAutoLock lock(mon);
+        Monitor2AutoLock lock(mon);
         done = true;
-        mon.Notify();
+        mon.Signal();
       },
       [&](RejectValueType aRejectValue) {
         val.SetReject(std::move(aRejectValue));
-        MonitorAutoLock lock(mon);
+        Monitor2AutoLock lock(mon);
         done = true;
-        mon.Notify();
+        mon.Signal();
       });
 
-  MonitorAutoLock lock(mon);
+  Monitor2AutoLock lock(mon);
   while (!done) {
     mon.Wait();
   }

@@ -50,6 +50,7 @@ EXPORTS.mozilla += [
     'LazyIdleThread.h',
     'MainThreadIdlePeriod.h',
     'Monitor.h',
+    'Monitor2.h',
     'MozPromise.h',
     'Mutex.h',
     'PerformanceCounter.h',

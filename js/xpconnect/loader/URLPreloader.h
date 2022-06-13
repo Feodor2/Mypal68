@@ -9,7 +9,7 @@
 #include "mozilla/HashFunctions.h"
 #include "mozilla/LinkedList.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/Omnijar.h"
 #include "mozilla/Range.h"
 #include "mozilla/Vector.h"
@@ -122,7 +122,7 @@ class URLPreloader final : public nsIObserver, public nsIMemoryReporter {
     ~AutoBeginReading() {
       auto& reader = GetSingleton();
 
-      MonitorAutoLock mal(reader.mMonitor);
+      Monitor2AutoLock mal(reader.mMonitor);
 
       while (!reader.mReaderInitialized && URLPreloader::sInitialized) {
         mal.Wait();
@@ -305,7 +305,7 @@ class URLPreloader final : public nsIObserver, public nsIMemoryReporter {
   // from the last session's cache file.
   HashType mCachedURLs;
 
-  Monitor mMonitor{"[URLPreloader::mMutex]"};
+  Monitor2 mMonitor{"[URLPreloader::mMutex]"};
 };
 
 }  // namespace mozilla

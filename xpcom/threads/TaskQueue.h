@@ -5,7 +5,7 @@
 #ifndef TaskQueue_h_
 #define TaskQueue_h_
 
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TaskDispatcher.h"
@@ -64,7 +64,7 @@ class TaskQueue : public AbstractThread {
            DispatchReason aReason = NormalDispatch) override {
     nsCOMPtr<nsIRunnable> r = aRunnable;
     {
-      MonitorAutoLock mon(mQueueMonitor);
+      Monitor2AutoLock mon(mQueueMonitor);
       return DispatchLocked(/* passed by ref */ r, aReason);
     }
     // If the ownership of |r| is not transferred in DispatchLocked() due to
@@ -123,7 +123,7 @@ class TaskQueue : public AbstractThread {
   nsCOMPtr<nsIEventTarget> mTarget;
 
   // Monitor that protects the queue and mIsRunning;
-  Monitor mQueueMonitor;
+  Monitor2 mQueueMonitor;
 
   // Queue of tasks to run.
   std::queue<nsCOMPtr<nsIRunnable>> mTasks;

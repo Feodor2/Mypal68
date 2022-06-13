@@ -1190,7 +1190,7 @@ class DeserializeIndexValueHelper final : public Runnable {
 
     MOZ_ASSERT(!(mCloneReadInfo.mData.Size() % sizeof(uint64_t)));
 
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
 
     RefPtr<Runnable> self = this;
     const nsresult rv =
@@ -1265,11 +1265,11 @@ class DeserializeIndexValueHelper final : public Runnable {
   void OperationCompleted(nsresult aStatus) {
     mStatus = aStatus;
 
-    MonitorAutoLock lock(mMonitor);
-    lock.Notify();
+    Monitor2AutoLock lock(mMonitor);
+    lock.Signal();
   }
 
-  Monitor mMonitor;
+  Monitor2 mMonitor;
 
   int64_t mIndexID;
   const KeyPath& mKeyPath;
@@ -1301,7 +1301,7 @@ class DeserializeUpgradeValueHelper final : public Runnable {
 
     MOZ_ASSERT(!(mCloneReadInfo.mData.Size() % sizeof(uint64_t)));
 
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
 
     RefPtr<Runnable> self = this;
     nsresult rv = SystemGroup::Dispatch(TaskCategory::Other, self.forget());
@@ -1386,11 +1386,11 @@ class DeserializeUpgradeValueHelper final : public Runnable {
   void OperationCompleted(nsresult aStatus) {
     mStatus = aStatus;
 
-    MonitorAutoLock lock(mMonitor);
-    lock.Notify();
+    Monitor2AutoLock lock(mMonitor);
+    lock.Signal();
   }
 
-  Monitor mMonitor;
+  Monitor2 mMonitor;
   StructuredCloneReadInfo& mCloneReadInfo;
   nsresult mStatus;
 };

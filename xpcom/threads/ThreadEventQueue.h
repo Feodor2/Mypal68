@@ -6,7 +6,7 @@
 #define mozilla_ThreadEventQueue_h
 
 #include "mozilla/AbstractEventQueue.h"
-#include "mozilla/CondVar.h"
+#include "base/condition_variable.h"
 #include "mozilla/SynchronizedEventQueue.h"
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
@@ -44,7 +44,7 @@ class ThreadEventQueue final : public SynchronizedEventQueue {
 
   bool ShutdownIfNoPendingEvents() final;
 
-  void Disconnect(const MutexAutoLock& aProofOfLock) final {}
+  void Disconnect(const AutoLock& aProofOfLock) final {}
 
   void EnableInputEventPrioritization() final;
   void FlushInputEventPrioritization() final;
@@ -58,7 +58,7 @@ class ThreadEventQueue final : public SynchronizedEventQueue {
   already_AddRefed<nsIThreadObserver> GetObserverOnThread() final;
   void SetObserver(nsIThreadObserver* aObserver) final;
 
-  Mutex& MutexRef() { return mLock; }
+  Lock& MutexRef() { return mLock; }
 
   size_t SizeOfExcludingThis(
       mozilla::MallocSizeOf aMallocSizeOf) const override;
@@ -84,8 +84,8 @@ class ThreadEventQueue final : public SynchronizedEventQueue {
 
   nsTArray<NestedQueueItem> mNestedQueues;
 
-  Mutex mLock;
-  CondVar mEventsAvailable;
+  Lock mLock;
+  ConditionVariable mEventsAvailable;
 
   bool mEventsAreDoomed = false;
   nsCOMPtr<nsIThreadObserver> mObserver;

@@ -16,7 +16,7 @@ nsresult SyncRunnableBase::DispatchToMainThreadAndWait() {
     RunOnTargetThread();
     rv = NS_OK;
   } else {
-    mozilla::MonitorAutoLock lock(monitor);
+    mozilla::Monitor2AutoLock lock(monitor);
     rv = NS_DispatchToMainThread(this);
     if (NS_SUCCEEDED(rv)) {
       lock.Wait();
@@ -29,7 +29,7 @@ nsresult SyncRunnableBase::DispatchToMainThreadAndWait() {
 NS_IMETHODIMP
 SyncRunnableBase::Run() {
   RunOnTargetThread();
-  mozilla::MonitorAutoLock(monitor).Notify();
+  mozilla::Monitor2AutoLock(monitor).Signal();
   return NS_OK;
 }
 

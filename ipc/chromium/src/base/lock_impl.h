@@ -9,9 +9,7 @@
 #include "base/platform_thread.h"
 #include "build/build_config.h"
 
-#if defined(OS_WIN)
-#  include <windows.h>
-#elif defined(OS_POSIX)
+#if defined(OS_POSIX)
 #  include <pthread.h>
 #endif
 
@@ -25,7 +23,6 @@ class LockImpl {
  public:
 #if defined(OS_WIN)
 //  using NativeHandle = SRWLOCK;
-  typedef CRITICAL_SECTION OSLockType;
 #elif defined(OS_POSIX)
   using NativeHandle = pthread_mutex_t;
 #endif
@@ -56,7 +53,7 @@ class LockImpl {
 
  private:
   //NativeHandle native_handle_;
-  OSLockType os_lock_;
+  char os_lock_[24];
 
 #if !defined(NDEBUG) && defined(OS_WIN)
   // All private data is implicitly protected by lock_.

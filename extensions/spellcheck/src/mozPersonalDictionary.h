@@ -50,8 +50,8 @@ class mozPersonalDictionary final : public mozIPersonalDictionary,
   bool mSavePending;
 
   nsCOMPtr<nsIFile> mFile;
-  mozilla::Monitor mMonitor;
-  mozilla::Monitor mMonitorSave;
+  mozilla::Monitor2 mMonitor;
+  mozilla::Monitor2 mMonitorSave;
   nsTHashtable<nsStringHashKey> mDictionaryTable;
   nsTHashtable<nsStringHashKey> mIgnoreTable;
 

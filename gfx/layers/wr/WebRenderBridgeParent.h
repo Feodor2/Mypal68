@@ -10,6 +10,7 @@
 
 #include "CompositableHost.h"  // for CompositableHost, ImageCompositeNotificationInfo
 #include "GLContextProvider.h"
+#include "Layers.h"
 #include "mozilla/layers/CompositableTransactionParent.h"
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/CompositorVsyncSchedulerOwner.h"
@@ -45,6 +46,7 @@ class CompositorBridgeParentBase;
 class CompositorVsyncScheduler;
 class AsyncImagePipelineManager;
 class WebRenderImageHost;
+class FrameStats;
 
 class WebRenderBridgeParent final
     : public PWebRenderBridgeParent,

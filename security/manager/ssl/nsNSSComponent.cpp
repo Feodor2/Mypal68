@@ -674,12 +674,12 @@ LoadLoadableRootsTask::Run() {
     mNSSComponent->UpdateCertVerifierWithEnterpriseRoots();
   }
   {
-    MonitorAutoLock rootsLoadedLock(mNSSComponent->mLoadableRootsLoadedMonitor);
+    Monitor2AutoLock rootsLoadedLock(mNSSComponent->mLoadableRootsLoadedMonitor);
     mNSSComponent->mLoadableRootsLoaded = true;
     // Cache the result of LoadLoadableRoots so BlockUntilLoadableRootsLoaded
     // can return it to all callers later.
     mNSSComponent->mLoadableRootsLoadedResult = loadLoadableRootsResult;
-    nsresult rv = mNSSComponent->mLoadableRootsLoadedMonitor.NotifyAll();
+    nsresult rv = mNSSComponent->mLoadableRootsLoadedMonitor.Broadcast();
     if (NS_WARN_IF(NS_FAILED(rv))) {
       MOZ_LOG(gPIPNSSLog, LogLevel::Error,
               ("failed to notify loadable roots loaded monitor"));
@@ -735,7 +735,7 @@ nsNSSComponent::HasUserCertsInstalled(bool* result) {
 }
 
 nsresult nsNSSComponent::BlockUntilLoadableRootsLoaded() {
-  MonitorAutoLock rootsLoadedLock(mLoadableRootsLoadedMonitor);
+  Monitor2AutoLock rootsLoadedLock(mLoadableRootsLoadedMonitor);
   while (!mLoadableRootsLoaded) {
     rootsLoadedLock.Wait();
   }

@@ -98,7 +98,7 @@ class TimerEventAllocator {
 
   ArenaAllocator<4096> mPool;
   FreeEntry* mFirstFree;
-  mozilla::Monitor mMonitor;
+  mozilla::Monitor2 mMonitor;
 
  public:
   TimerEventAllocator()
@@ -106,7 +106,7 @@ class TimerEventAllocator {
         mFirstFree(nullptr),
         // Timer thread state may be accessed during GC, so uses of this monitor
         // are not preserved when recording/replaying.
-        mMonitor("TimerEventAllocator", recordreplay::Behavior::DontPreserve) {}
+        mMonitor("TimerEventAllocator") {}
 
   ~TimerEventAllocator() {}
 
@@ -195,7 +195,7 @@ namespace {
 void* TimerEventAllocator::Alloc(size_t aSize) {
   MOZ_ASSERT(aSize == sizeof(nsTimerEvent));
 
-  mozilla::MonitorAutoLock lock(mMonitor);
+  mozilla::Monitor2AutoLock lock(mMonitor);
 
   void* p;
   if (mFirstFree) {
@@ -209,7 +209,7 @@ void* TimerEventAllocator::Alloc(size_t aSize) {
 }
 
 void TimerEventAllocator::Free(void* aPtr) {
-  mozilla::MonitorAutoLock lock(mMonitor);
+  mozilla::Monitor2AutoLock lock(mMonitor);
 
   FreeEntry* entry = reinterpret_cast<FreeEntry*>(aPtr);
 
@@ -302,14 +302,14 @@ nsresult TimerThread::Shutdown() {
   nsTArray<RefPtr<nsTimerImpl>> timers;
   {
     // lock scope
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
 
     mShutdown = true;
 
     // notify the cond var so that Run() can return
     if (mWaiting) {
       mNotified = true;
-      mMonitor.Notify();
+      mMonitor.Signal();
     }
 
     // Need to copy content of mTimers array to a local array
@@ -359,7 +359,7 @@ NS_IMETHODIMP
 TimerThread::Run() {
   NS_SetCurrentThreadName("Timer");
 
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   // We need to know how many microseconds give a positive PRIntervalTime. This
   // is platform-dependent and we calculate it at runtime, finding a value |v|
@@ -510,7 +510,7 @@ TimerThread::Run() {
 }
 
 nsresult TimerThread::AddTimer(nsTimerImpl* aTimer) {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   if (!aTimer->mEventTarget) {
     return NS_ERROR_NOT_INITIALIZED;
@@ -529,14 +529,14 @@ nsresult TimerThread::AddTimer(nsTimerImpl* aTimer) {
   // Awaken the timer thread.
   if (mWaiting && mTimers[0]->Value() == aTimer) {
     mNotified = true;
-    mMonitor.Notify();
+    mMonitor.Signal();
   }
 
   return NS_OK;
 }
 
 nsresult TimerThread::RemoveTimer(nsTimerImpl* aTimer) {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   // Remove the timer from our array.  Tell callers that aTimer was not found
   // by returning NS_ERROR_NOT_AVAILABLE.
@@ -548,7 +548,7 @@ nsresult TimerThread::RemoveTimer(nsTimerImpl* aTimer) {
   // Awaken the timer thread.
   if (mWaiting) {
     mNotified = true;
-    mMonitor.Notify();
+    mMonitor.Signal();
   }
 
   return NS_OK;
@@ -556,7 +556,7 @@ nsresult TimerThread::RemoveTimer(nsTimerImpl* aTimer) {
 
 TimeStamp TimerThread::FindNextFireTimeForCurrentThread(TimeStamp aDefault,
                                                         uint32_t aSearchBound) {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   TimeStamp timeStamp = aDefault;
   uint32_t index = 0;
 
@@ -734,7 +734,7 @@ already_AddRefed<nsTimerImpl> TimerThread::PostTimerEvent(
   {
     // We release mMonitor around the Dispatch because if this timer is targeted
     // at the TimerThread we'll deadlock.
-    MonitorAutoUnlock unlock(mMonitor);
+    Monitor2AutoUnlock unlock(mMonitor);
     rv = target->Dispatch(event, NS_DISPATCH_NORMAL);
   }
 
@@ -749,20 +749,20 @@ already_AddRefed<nsTimerImpl> TimerThread::PostTimerEvent(
 
 void TimerThread::DoBeforeSleep() {
   // Mainthread
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   mSleeping = true;
 }
 
 // Note: wake may be notified without preceding sleep notification
 void TimerThread::DoAfterSleep() {
   // Mainthread
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   mSleeping = false;
 
   // Wake up the timer thread to re-process the array to ensure the sleep delay
   // is correct, and fire any expired timers (perhaps quite a few)
   mNotified = true;
-  mMonitor.Notify();
+  mMonitor.Signal();
 }
 
 NS_IMETHODIMP

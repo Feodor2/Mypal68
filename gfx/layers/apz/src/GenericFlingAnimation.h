@@ -15,7 +15,7 @@
 #include "OverscrollHandoffState.h"
 #include "gfxPrefs.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "nsThreadUtils.h"

@@ -6,7 +6,7 @@
 #define mozilla_layers_CheckerboardEvent_h
 
 #include "mozilla/DefineEnum.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/TimeStamp.h"
 #include <sstream>
 #include "Units.h"
@@ -105,7 +105,7 @@ class CheckerboardEvent final {
    */
   void LogInfo(RendertraceProperty aProperty, const TimeStamp& aTimestamp,
                const CSSRect& aRect, const std::string& aExtraInfo,
-               const MonitorAutoLock& aProofOfLock);
+               const Monitor2AutoLock& aProofOfLock);
 
   /**
    * Helper struct that holds a single rendertrace property value.
@@ -131,13 +131,13 @@ class CheckerboardEvent final {
      */
     void Update(RendertraceProperty aProperty, const CSSRect& aRect,
                 const std::string& aExtraInfo,
-                const MonitorAutoLock& aProofOfLock);
+                const Monitor2AutoLock& aProofOfLock);
     /**
      * Dump the recorded values, oldest to newest, to the given vector, and
      * remove them from this buffer.
      */
     void Flush(std::vector<PropertyValue>& aOut,
-               const MonitorAutoLock& aProofOfLock);
+               const Monitor2AutoLock& aProofOfLock);
 
    private:
     static const uint32_t BUFFER_SIZE = 5;
@@ -197,7 +197,7 @@ class CheckerboardEvent final {
    * Monitor that needs to be acquired before touching mBufferedProperties
    * or mRendertraceInfo.
    */
-  mutable Monitor mRendertraceLock;
+  mutable Monitor2 mRendertraceLock;
   /**
    * A circular buffer to store some properties. This is used before the
    * checkerboarding actually starts, so that we have some data on what

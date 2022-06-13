@@ -173,7 +173,7 @@ void PluginProcessParent::OnChannelError() {
 }
 
 bool PluginProcessParent::IsConnected() {
-  mozilla::MonitorAutoLock lock(mMonitor);
+  mozilla::Monitor2AutoLock lock(mMonitor);
   return mProcessState == PROCESS_CONNECTED;
 }
 

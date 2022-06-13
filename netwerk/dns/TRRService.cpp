@@ -136,7 +136,7 @@ nsresult TRRService::ReadPrefs(const char* name) {
   }
   if (!name || !strcmp(name, TRR_PREF("uri"))) {
     // URI Template, RFC 6570.
-    MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
     nsAutoCString old(mPrivateURI);
     Preferences::GetCString(TRR_PREF("uri"), mPrivateURI);
     nsAutoCString scheme;
@@ -188,11 +188,11 @@ nsresult TRRService::ReadPrefs(const char* name) {
     }
   }
   if (!name || !strcmp(name, TRR_PREF("credentials"))) {
-    MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
     Preferences::GetCString(TRR_PREF("credentials"), mPrivateCred);
   }
   if (!name || !strcmp(name, TRR_PREF("confirmationNS"))) {
-    MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
     nsAutoCString old(mConfirmationNS);
     Preferences::GetCString(TRR_PREF("confirmationNS"), mConfirmationNS);
     if (name && !old.IsEmpty() && !mConfirmationNS.Equals(old) &&
@@ -202,7 +202,7 @@ nsresult TRRService::ReadPrefs(const char* name) {
     }
   }
   if (!name || !strcmp(name, TRR_PREF("bootstrapAddress"))) {
-    MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
     Preferences::GetCString(TRR_PREF("bootstrapAddress"), mBootstrapAddr);
   }
   if (!name || !strcmp(name, TRR_PREF("wait-for-portal"))) {
@@ -281,13 +281,13 @@ nsresult TRRService::ReadPrefs(const char* name) {
 }
 
 nsresult TRRService::GetURI(nsCString& result) {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
   result = mPrivateURI;
   return NS_OK;
 }
 
 nsresult TRRService::GetCredentials(nsCString& result) {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
   result = mPrivateCred;
   return NS_OK;
 }
@@ -314,7 +314,7 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
   if (!strcmp(aTopic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID)) {
     ReadPrefs(NS_ConvertUTF16toUTF8(aData).get());
 
-    MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
     if (((mConfirmationState == CONFIRM_INIT) && !mBootstrapAddr.IsEmpty() &&
          (mMode == MODE_TRRONLY)) ||
         (mConfirmationState == CONFIRM_FAILED)) {
@@ -332,7 +332,7 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
     if (!mTRRBLStorage) {
       // We need a lock if we modify mTRRBLStorage variable because it is
       // access off the main thread as well.
-      MutexAutoLock lock(mLock);
+      AutoLock lock(mLock);
       mTRRBLStorage = DataStorage::Get(DataStorageClass::TRRBlacklist);
       if (mTRRBLStorage) {
         if (NS_FAILED(mTRRBLStorage->Init(nullptr))) {
@@ -368,7 +368,7 @@ TRRService::Observe(nsISupports* aSubject, const char* aTopic,
 }
 
 void TRRService::MaybeConfirm() {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
   MaybeConfirm_locked();
 }
 
@@ -398,7 +398,7 @@ void TRRService::MaybeConfirm_locked() {
 
 bool TRRService::MaybeBootstrap(const nsACString& aPossible,
                                 nsACString& aResult) {
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
   if (TRR_DISABLED(mMode) || mBootstrapAddr.IsEmpty()) {
     return false;
   }
@@ -559,7 +559,7 @@ void TRRService::TRRBlacklist(const nsACString& aHost,
                               const nsACString& aOriginSuffix,
                               bool privateBrowsing, bool aParentsToo) {
   {
-    MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
     if (!mTRRBLStorage) {
       return;
     }
@@ -659,13 +659,13 @@ AHostResolver::LookupStatus TRRService::CompleteLookup(
 
 #ifdef DEBUG
   {
-    MutexAutoLock lock(mLock);
+    AutoLock lock(mLock);
     MOZ_ASSERT(!mConfirmer || (mConfirmationState == CONFIRM_TRYING));
   }
 #endif
   if (mConfirmationState == CONFIRM_TRYING) {
     {
-      MutexAutoLock lock(mLock);
+      AutoLock lock(mLock);
       MOZ_ASSERT(mConfirmer);
       mConfirmationState = NS_SUCCEEDED(status) ? CONFIRM_OK : CONFIRM_FAILED;
       LOG(("TRRService finishing confirmation test %s %d %X\n",

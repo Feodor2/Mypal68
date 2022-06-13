@@ -5,7 +5,7 @@
 #ifndef PSMRunnable_h
 #define PSMRunnable_h
 
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "nsThreadUtils.h"
 #include "nsIObserver.h"
 #include "nsProxyRelease.h"
@@ -26,7 +26,7 @@ class SyncRunnableBase : public Runnable {
   virtual void RunOnTargetThread() = 0;
 
  private:
-  mozilla::Monitor monitor;
+  mozilla::Monitor2 monitor;
 };
 
 class NotifyObserverRunnable : public Runnable {

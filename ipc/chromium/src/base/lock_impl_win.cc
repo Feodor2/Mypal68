@@ -5,6 +5,8 @@
 #include "base/lock_impl.h"
 #include "base/logging.h"
 
+#include <windows.h>
+
 namespace base {
 namespace internal {
 
@@ -22,19 +24,19 @@ LockImpl::LockImpl() {
 #endif  // NDEBUG
   // The second parameter is the spin count, for short-held locks it avoid the
   // contending thread from going to sleep which helps performance greatly.
-  ::InitializeCriticalSectionAndSpinCount(&os_lock_, 2000);
+  ::InitializeCriticalSectionAndSpinCount((LPCRITICAL_SECTION)&os_lock_, 2000);
 }
 
 //LockImpl::~LockImpl() = default;
 
 LockImpl::~LockImpl() {
-  ::DeleteCriticalSection(&os_lock_);
+  ::DeleteCriticalSection((LPCRITICAL_SECTION)&os_lock_);
 }
 
 //bool LockImpl::Try() { return !!::TryAcquireSRWLockExclusive(&native_handle_); }
 
 bool LockImpl::Try() {
-  if (::TryEnterCriticalSection(&os_lock_) != FALSE) {
+  if (::TryEnterCriticalSection((LPCRITICAL_SECTION)&os_lock_) != FALSE) {
 #ifndef NDEBUG
     // ONLY access data after locking.
     owning_thread_id_ = PlatformThread::CurrentId();
@@ -53,7 +55,7 @@ bool LockImpl::Try() {
 //void LockImpl::Lock() { ::AcquireSRWLockExclusive(&native_handle_); }
 
 void LockImpl::Lock() {
-  ::EnterCriticalSection(&os_lock_);
+  ::EnterCriticalSection((LPCRITICAL_SECTION)&os_lock_);
 #ifndef NDEBUG
   // ONLY access data after locking.
   owning_thread_id_ = PlatformThread::CurrentId();
@@ -74,7 +76,7 @@ void LockImpl::Unlock() {
   DCHECK(0 <= recursion_count_shadow_);
   owning_thread_id_ = 0;
 #endif  // NDEBUG
-  ::LeaveCriticalSection(&os_lock_);
+  ::LeaveCriticalSection((LPCRITICAL_SECTION)&os_lock_);
 }
 
 }  // namespace internal

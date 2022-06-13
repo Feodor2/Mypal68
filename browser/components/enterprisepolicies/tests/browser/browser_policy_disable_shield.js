@@ -19,12 +19,6 @@ add_task(async function test_policy_disable_shield() {
   RecipeRunner.checkPrefs();
   is(RecipeRunner.enabled, true, "RecipeRunner is enabled");
 
-  await setupPolicyEngineWithJson({
-    policies: {
-      DisableFirefoxStudies: true,
-    },
-  });
-
   RecipeRunner.checkPrefs();
   is(RecipeRunner.enabled, false, "RecipeRunner is disabled");
 });

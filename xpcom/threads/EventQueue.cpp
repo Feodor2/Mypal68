@@ -11,13 +11,13 @@ EventQueue::EventQueue(EventQueuePriority aPriority) {}
 
 void EventQueue::PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
                           EventQueuePriority aPriority,
-                          const MutexAutoLock& aProofOfLock) {
+                          const AutoLock& aProofOfLock) {
   nsCOMPtr<nsIRunnable> event(aEvent);
   mQueue.Push(std::move(event));
 }
 
 already_AddRefed<nsIRunnable> EventQueue::GetEvent(
-    EventQueuePriority* aPriority, const MutexAutoLock& aProofOfLock) {
+    EventQueuePriority* aPriority, const AutoLock& aProofOfLock) {
   if (mQueue.IsEmpty()) {
     return nullptr;
   }
@@ -30,16 +30,16 @@ already_AddRefed<nsIRunnable> EventQueue::GetEvent(
   return result.forget();
 }
 
-bool EventQueue::IsEmpty(const MutexAutoLock& aProofOfLock) {
+bool EventQueue::IsEmpty(const AutoLock& aProofOfLock) {
   return mQueue.IsEmpty();
 }
 
-bool EventQueue::HasReadyEvent(const MutexAutoLock& aProofOfLock) {
+bool EventQueue::HasReadyEvent(const AutoLock& aProofOfLock) {
   return !IsEmpty(aProofOfLock);
 }
 
 already_AddRefed<nsIRunnable> EventQueue::PeekEvent(
-    const MutexAutoLock& aProofOfLock) {
+    const AutoLock& aProofOfLock) {
   if (mQueue.IsEmpty()) {
     return nullptr;
   }
@@ -48,6 +48,6 @@ already_AddRefed<nsIRunnable> EventQueue::PeekEvent(
   return result.forget();
 }
 
-size_t EventQueue::Count(const MutexAutoLock& aProofOfLock) const {
+size_t EventQueue::Count(const AutoLock& aProofOfLock) const {
   return mQueue.Count();
 }

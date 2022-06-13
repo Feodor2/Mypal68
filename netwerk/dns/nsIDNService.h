@@ -98,7 +98,7 @@ class nsIDNService final : public nsIIDNService,
   void prefsChanged(const char* pref);
 
   static void PrefChanged(const char* aPref, nsIDNService* aSelf) {
-    mozilla::MutexAutoLock lock(aSelf->mLock);
+    AutoLock lock(aSelf->mLock);
     aSelf->prefsChanged(aPref);
   }
 
@@ -168,7 +168,7 @@ class nsIDNService final : public nsIIDNService,
   // These members can only be updated on the main thread and
   // read on any thread. Therefore, acquiring the mutex is required
   // only for threads other than the main thread.
-  mozilla::Mutex mLock;
+  Lock mLock;
 
   // guarded by mLock
   nsTArray<mozilla::net::BlocklistRange> mIDNBlocklist;

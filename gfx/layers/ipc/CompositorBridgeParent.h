@@ -18,7 +18,7 @@
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT_HELPER2
 #include "mozilla/Attributes.h"  // for override
 #include "mozilla/Maybe.h"
-#include "mozilla/Monitor.h"    // for Monitor
+#include "mozilla/Monitor2.h"    // for Monitor
 #include "mozilla/RefPtr.h"     // for RefPtr
 #include "mozilla/TimeStamp.h"  // for TimeStamp
 #include "mozilla/dom/ipc/IdType.h"
@@ -589,7 +589,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   // Helper method so that we don't have to expose mApzcTreeManager to
   // ContentCompositorBridgeParent.
   void AllocateAPZCTreeManagerParent(
-      const MonitorAutoLock& aProofOfLayerTreeStateLock,
+      const Monitor2AutoLock& aProofOfLayerTreeStateLock,
       const WRRootId& aWrRootId, LayerTreeState& aLayerTreeStateToUpdate);
 
   PAPZParent* AllocPAPZParent(const LayersId& aLayersId) override;
@@ -746,8 +746,8 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
 
   CompositorOptions mOptions;
 
-  mozilla::Monitor mPauseCompositionMonitor;
-  mozilla::Monitor mResumeCompositionMonitor;
+  mozilla::Monitor2 mPauseCompositionMonitor;
+  mozilla::Monitor2 mResumeCompositionMonitor;
 
   uint64_t mCompositorBridgeID;
   LayersId mRootLayerTreeID;

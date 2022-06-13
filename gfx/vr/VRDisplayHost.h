@@ -103,7 +103,7 @@ class VRDisplayHost {
 
   VRDisplayInfo mLastUpdateDisplayInfo;
 
-  mozilla::Monitor mCurrentSubmitTaskMonitor;
+  mozilla::Monitor2 mCurrentSubmitTaskMonitor;
   RefPtr<CancelableRunnable> mCurrentSubmitTask;
   bool mFrameStarted;
 #if defined(MOZ_WIDGET_ANDROID)

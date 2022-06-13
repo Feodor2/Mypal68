@@ -5,7 +5,7 @@
 #ifndef mozilla_dom_ServiceWorkerRegistrar_h
 #define mozilla_dom_ServiceWorkerRegistrar_h
 
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/Telemetry.h"
 #include "nsClassHashtable.h"
 #include "nsIAsyncShutdown.h"
@@ -88,7 +88,7 @@ class ServiceWorkerRegistrar : public nsIObserver,
 
   bool IsSupportedVersion(const nsACString& aVersion) const;
 
-  mozilla::Monitor mMonitor;
+  mozilla::Monitor2 mMonitor;
 
  protected:
   // protected by mMonitor.

@@ -877,14 +877,14 @@ PlatformSpecificStateBase* AsyncPanZoomController::GetPlatformSpecificState() {
 
 already_AddRefed<GeckoContentController>
 AsyncPanZoomController::GetGeckoContentController() const {
-  MonitorAutoLock lock(mRefPtrMonitor);
+  Monitor2AutoLock lock(mRefPtrMonitor);
   RefPtr<GeckoContentController> controller = mGeckoContentController;
   return controller.forget();
 }
 
 already_AddRefed<GestureEventListener>
 AsyncPanZoomController::GetGestureEventListener() const {
-  MonitorAutoLock lock(mRefPtrMonitor);
+  Monitor2AutoLock lock(mRefPtrMonitor);
   RefPtr<GestureEventListener> listener = mGestureEventListener;
   return listener.forget();
 }
@@ -899,7 +899,7 @@ void AsyncPanZoomController::Destroy() {
   CancelAnimation(CancelAnimationFlags::ScrollSnap);
 
   {  // scope the lock
-    MonitorAutoLock lock(mRefPtrMonitor);
+    Monitor2AutoLock lock(mRefPtrMonitor);
     mGeckoContentController = nullptr;
     mGestureEventListener = nullptr;
   }

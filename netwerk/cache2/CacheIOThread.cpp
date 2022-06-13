@@ -105,7 +105,7 @@ class BlockingIOWatcher {
   // thread, this is called on the main thread during shutdown.
   // Waits for notification from the IO thread for up to two seconds.
   // If that times out, it attempts to cancel the IO operation.
-  void WatchAndCancel(Monitor& aMonitor);
+  void WatchAndCancel(Monitor2& aMonitor);
   // Called by the IO thread after each operation has been
   // finished (after each Run() call).  This wakes the main
   // thread up and makes WatchAndCancel() early exit and become
@@ -148,7 +148,7 @@ void BlockingIOWatcher::InitThread() {
                     DUPLICATE_SAME_ACCESS);
 }
 
-void BlockingIOWatcher::WatchAndCancel(Monitor& aMonitor) {
+void BlockingIOWatcher::WatchAndCancel(Monitor2& aMonitor) {
   if (!mEvent) {
     return;
   }
@@ -159,7 +159,7 @@ void BlockingIOWatcher::WatchAndCancel(Monitor& aMonitor) {
 
   HANDLE thread;
   {
-    MonitorAutoLock lock(aMonitor);
+    Monitor2AutoLock lock(aMonitor);
     thread = mThread;
 
     if (!thread) {
@@ -202,7 +202,7 @@ void BlockingIOWatcher::NotifyOperationDone() {
 BlockingIOWatcher::BlockingIOWatcher() = default;
 BlockingIOWatcher::~BlockingIOWatcher() = default;
 void BlockingIOWatcher::InitThread() {}
-void BlockingIOWatcher::WatchAndCancel(Monitor&) {}
+void BlockingIOWatcher::WatchAndCancel(Monitor2&) {}
 void BlockingIOWatcher::NotifyOperationDone() {}
 
 #endif
@@ -252,7 +252,7 @@ CacheIOThread::~CacheIOThread() {
 
 nsresult CacheIOThread::Init() {
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     // Yeah, there is not a thread yet, but we want to make sure
     // the sequencing is correct.
     mBlockingIOWatcher = MakeUnique<detail::BlockingIOWatcher>();
@@ -281,7 +281,7 @@ nsresult CacheIOThread::Dispatch(already_AddRefed<nsIRunnable> aRunnable,
   // Runnable is always expected to be non-null, hard null-check bellow.
   MOZ_ASSERT(runnable);
 
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   if (mShutdown && (PR_GetCurrentThread() != mThread))
     return NS_ERROR_UNEXPECTED;
@@ -293,7 +293,7 @@ nsresult CacheIOThread::DispatchAfterPendingOpens(nsIRunnable* aRunnable) {
   // Runnable is always expected to be non-null, hard null-check bellow.
   MOZ_ASSERT(aRunnable);
 
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   if (mShutdown && (PR_GetCurrentThread() != mThread))
     return NS_ERROR_UNEXPECTED;
@@ -326,7 +326,7 @@ nsresult CacheIOThread::DispatchInternal(
   mEventQueue[aLevel].AppendElement(runnable.forget());
   if (mLowestLevelWaiting > aLevel) mLowestLevelWaiting = aLevel;
 
-  mMonitor.NotifyAll();
+  mMonitor.Broadcast();
 
   return NS_OK;
 }
@@ -336,7 +336,7 @@ bool CacheIOThread::IsCurrentThread() {
 }
 
 uint32_t CacheIOThread::QueueSize(bool highPriority) {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   if (highPriority) {
     return mQueueLength[OPEN_PRIORITY] + mQueueLength[READ_PRIORITY];
   }
@@ -371,9 +371,9 @@ void CacheIOThread::Shutdown() {
   }
 
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     mShutdown = true;
-    mMonitor.NotifyAll();
+    mMonitor.Broadcast();
   }
 
   PR_JoinThread(mThread);
@@ -402,7 +402,7 @@ already_AddRefed<nsIEventTarget> CacheIOThread::Target() {
 
   target = mXPCOMThread;
   if (!target && mThread) {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     while (!mXPCOMThread) {
       lock.Wait();
     }
@@ -429,7 +429,7 @@ void CacheIOThread::ThreadFunc() {
   nsCOMPtr<nsIThreadInternal> threadInternal;
 
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
 
     MOZ_ASSERT(mBlockingIOWatcher);
     mBlockingIOWatcher->InitThread();
@@ -445,7 +445,7 @@ void CacheIOThread::ThreadFunc() {
 
     mXPCOMThread = xpcomThread.forget().take();
 
-    lock.NotifyAll();
+    lock.Broadcast();
 
     do {
     loopStart:
@@ -459,7 +459,7 @@ void CacheIOThread::ThreadFunc() {
         mHasXPCOMEvents = false;
         mCurrentlyExecutingLevel = XPCOM_LEVEL;
 
-        MonitorAutoUnlock unlock(mMonitor);
+        Monitor2AutoUnlock unlock(mMonitor);
 
         bool processedEvent;
         nsresult rv;
@@ -523,7 +523,7 @@ void CacheIOThread::LoopOneLevel(uint32_t aLevel) {
 
   EventQueue::size_type index;
   {
-    MonitorAutoUnlock unlock(mMonitor);
+    Monitor2AutoUnlock unlock(mMonitor);
 
     for (index = 0; index < length; ++index) {
       if (EventsPending(aLevel)) {
@@ -585,10 +585,10 @@ bool CacheIOThread::EventsPending(uint32_t aLastLevel) {
 }
 
 NS_IMETHODIMP CacheIOThread::OnDispatchedEvent() {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   mHasXPCOMEvents = true;
   MOZ_ASSERT(mInsideLoop);
-  lock.Notify();
+  lock.Signal();
   return NS_OK;
 }
 
@@ -606,7 +606,7 @@ NS_IMETHODIMP CacheIOThread::AfterProcessNextEvent(nsIThreadInternal* thread,
 
 size_t CacheIOThread::SizeOfExcludingThis(
     mozilla::MallocSizeOf mallocSizeOf) const {
-  MonitorAutoLock lock(const_cast<CacheIOThread*>(this)->mMonitor);
+  Monitor2AutoLock lock(const_cast<CacheIOThread*>(this)->mMonitor);
 
   size_t n = 0;
   for (const auto& event : mEventQueue) {

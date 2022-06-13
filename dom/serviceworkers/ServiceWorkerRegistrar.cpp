@@ -178,7 +178,7 @@ void ServiceWorkerRegistrar::GetRegistrations(
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aValues.IsEmpty());
 
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   // If we don't have the profile directory, profile is not started yet (and
   // probably we are in a utest).
@@ -246,7 +246,7 @@ void ServiceWorkerRegistrar::RegisterServiceWorker(
   }
 
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     MOZ_ASSERT(mDataLoaded);
     RegisterServiceWorkerInternal(aData);
   }
@@ -267,7 +267,7 @@ void ServiceWorkerRegistrar::UnregisterServiceWorker(
   bool deleted = false;
 
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     MOZ_ASSERT(mDataLoaded);
 
     ServiceWorkerRegistrationData tmp;
@@ -302,7 +302,7 @@ void ServiceWorkerRegistrar::RemoveAll() {
 
   nsTArray<ServiceWorkerRegistrationData> data;
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     MOZ_ASSERT(mDataLoaded);
 
     // Let's take a copy in order to inform StorageActivityService.
@@ -336,10 +336,10 @@ void ServiceWorkerRegistrar::LoadData() {
     // Also if the reading failed we have to notify what is waiting for data.
   }
 
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   MOZ_ASSERT(!mDataLoaded);
   mDataLoaded = true;
-  mMonitor.Notify();
+  mMonitor.Signal();
 }
 
 nsresult ServiceWorkerRegistrar::ReadData() {
@@ -349,7 +349,7 @@ nsresult ServiceWorkerRegistrar::ReadData() {
   nsCOMPtr<nsIFile> file;
 
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
 
     if (!mProfileDir) {
       return NS_ERROR_FAILURE;
@@ -749,7 +749,7 @@ void ServiceWorkerRegistrar::DeleteData() {
   nsCOMPtr<nsIFile> file;
 
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     mData.Clear();
 
     if (!mProfileDir) {
@@ -850,7 +850,7 @@ void ServiceWorkerRegistrar::MaybeScheduleSaveData() {
   nsTArray<ServiceWorkerRegistrationData> data;
 
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     generation = mDataGeneration;
     data.AppendElements(mData);
   }
@@ -975,7 +975,7 @@ nsresult ServiceWorkerRegistrar::WriteData(
   nsCOMPtr<nsIFile> file;
 
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
 
     if (!mProfileDir) {
       return NS_ERROR_FAILURE;
@@ -1099,7 +1099,7 @@ nsresult ServiceWorkerRegistrar::WriteData(
 void ServiceWorkerRegistrar::ProfileStarted() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   MOZ_DIAGNOSTIC_ASSERT(!mProfileDir);
 
   nsresult rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,
@@ -1131,7 +1131,7 @@ void ServiceWorkerRegistrar::ProfileStarted() {
 void ServiceWorkerRegistrar::ProfileStopped() {
   MOZ_ASSERT(NS_IsMainThread());
 
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   if (!mProfileDir) {
     nsresult rv = NS_GetSpecialDirectory(NS_APP_USER_PROFILE_50_DIR,

@@ -23,7 +23,6 @@ const { XPCOMUtils } = ChromeUtils.import(
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
-  AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
   AddonSettings: "resource://gre/modules/addons/AddonSettings.jsm",
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   DeferredTask: "resource://gre/modules/DeferredTask.jsm",
@@ -216,23 +215,6 @@ async function idleForEach(array, func, taskTimeMS = 5) {
     }
     func(array[i], i);
   }
-}
-
-/**
- * Asynchronously fill in the _repositoryAddon field for one addon
- *
- * @param {AddonInternal} aAddon
- *        The add-on to annotate.
- * @returns {AddonInternal}
- *        The annotated add-on.
- */
-async function getRepositoryAddon(aAddon) {
-  if (aAddon) {
-    aAddon._repositoryAddon = await AddonRepository.getCachedAddonByID(
-      aAddon.id
-    );
-  }
-  return aAddon;
 }
 
 /**
@@ -539,18 +521,6 @@ class AddonInternal {
       !this.strictCompatibility &&
       (!AddonManager.strictCompatibility || this.type == "dictionary")
     ) {
-      // The repository can specify compatibility overrides.
-      // Note: For now, only blacklisting is supported by overrides.
-      let overrides = AddonRepository.getCompatibilityOverridesSync(this.id);
-      if (overrides) {
-        let override = AddonRepository.findMatchingCompatOverride(
-          this.version,
-          overrides
-        );
-        if (override) {
-          return false;
-        }
-      }
 
       return Services.vc.compare(version, minVersion) >= 0;
     }
@@ -878,12 +848,6 @@ AddonWrapper = class {
     let addon = addonFor(this);
     let icons = {};
 
-    if (addon._repositoryAddon) {
-      for (let size in addon._repositoryAddon.icons) {
-        icons[size] = addon._repositoryAddon.icons[size];
-      }
-    }
-
     if (addon.icons) {
       for (let size in addon.icons) {
         let path = addon.icons[size].replace(/^\//, "");
@@ -903,13 +867,6 @@ AddonWrapper = class {
 
   get screenshots() {
     let addon = addonFor(this);
-    let repositoryAddon = addon._repositoryAddon;
-    if (repositoryAddon && "screenshots" in repositoryAddon) {
-      let repositoryScreenshots = repositoryAddon.screenshots;
-      if (repositoryScreenshots && repositoryScreenshots.length > 0) {
-        return repositoryScreenshots;
-      }
-    }
 
     if (addon.previewImage) {
       let url = this.getResourceURI(addon.previewImage).spec;
@@ -1225,16 +1182,7 @@ AddonWrapper = class {
 };
 
 function chooseValue(aAddon, aObj, aProp) {
-  let repositoryAddon = aAddon._repositoryAddon;
   let objValue = aObj[aProp];
-
-  if (
-    repositoryAddon &&
-    aProp in repositoryAddon &&
-    (aProp === "creator" || objValue == null)
-  ) {
-    return [repositoryAddon[aProp], true];
-  }
 
   let id = `extension.${aAddon.id}.${aProp}`;
   for (let bundle of LOCALE_BUNDLES) {
@@ -1278,26 +1226,6 @@ function defineAddonWrapperProperty(name, getter) {
   defineAddonWrapperProperty(aProp, function() {
     let addon = addonFor(this);
     return aProp in addon ? addon[aProp] : undefined;
-  });
-});
-
-[
-  "fullDescription",
-  "developerComments",
-  "supportURL",
-  "contributionURL",
-  "averageRating",
-  "reviewCount",
-  "reviewURL",
-  "weeklyDownloads",
-].forEach(function(aProp) {
-  defineAddonWrapperProperty(aProp, function() {
-    let addon = addonFor(this);
-    if (addon._repositoryAddon) {
-      return addon._repositoryAddon[aProp];
-    }
-
-    return null;
   });
 });
 
@@ -1902,10 +1830,7 @@ this.XPIDatabase = {
     try {
       let addonDB = await this.asyncLoadDB();
       let addonList = _filterDB(addonDB, aFilter);
-      let addons = await Promise.all(
-        addonList.map(addon => getRepositoryAddon(addon))
-      );
-      return addons;
+      return addonList;
     } catch (error) {
       logger.error("getAddonList failed", error);
       return [];
@@ -1922,7 +1847,7 @@ this.XPIDatabase = {
    */
   getAddon(aFilter) {
     return this.asyncLoadDB()
-      .then(addonDB => getRepositoryAddon(_findAddon(addonDB, aFilter)))
+      .then(addonDB => _findAddon(addonDB, aFilter))
       .catch(error => {
         logger.error("getAddon failed", error);
       });
@@ -1940,7 +1865,7 @@ this.XPIDatabase = {
    */
   getAddonInLocation(aId, aLocation) {
     return this.asyncLoadDB().then(addonDB =>
-      getRepositoryAddon(addonDB.get(aLocation + ":" + aId))
+      addonDB.get(aLocation + ":" + aId)
     );
   },
 
@@ -2536,31 +2461,6 @@ this.XPIDatabase = {
     for (let addon of this.getAddons()) {
       this.updateAddonDisabledState(addon);
     }
-  },
-
-  /**
-   * Update the repositoryAddon property for all add-ons.
-   */
-  async updateAddonRepositoryData() {
-    let addons = await this.getVisibleAddons(null);
-    logger.debug(
-      "updateAddonRepositoryData found " + addons.length + " visible add-ons"
-    );
-
-    await Promise.all(
-      addons.map(addon =>
-        AddonRepository.getCachedAddonByID(addon.id).then(aRepoAddon => {
-          if (
-            aRepoAddon ||
-            AddonRepository.getCompatibilityOverridesSync(addon.id)
-          ) {
-            logger.debug("updateAddonRepositoryData got info for " + addon.id);
-            addon._repositoryAddon = aRepoAddon;
-            this.updateAddonDisabledState(addon);
-          }
-        })
-      )
-    );
   },
 
   /**

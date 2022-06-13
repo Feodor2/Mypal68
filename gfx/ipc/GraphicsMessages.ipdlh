@@ -41,6 +41,7 @@ struct DevicePrefs
 {
   FeatureStatus hwCompositing;
   FeatureStatus d3d11Compositing;
+  FeatureStatus d3d9Compositing;
   FeatureStatus oglCompositing;
   FeatureStatus advancedLayers;
   FeatureStatus useD2D1;
@@ -65,6 +66,7 @@ struct GPUDeviceData
   // If a feature state has changed from Enabled -> Failure, these will be non-
   // null.
   FeatureFailure? d3d11Compositing;
+  FeatureFailure? d3d9Compositing;
   FeatureFailure? oglCompositing;
   FeatureFailure? advancedLayers;
   D3D11DeviceStatus? gpuDevice;

@@ -83,7 +83,7 @@ class GMPStorageChild : public PGMPStorageChild {
   mozilla::ipc::IPCResult RecvShutdown();
 
  private:
-  Monitor mMonitor;
+  Monitor2 mMonitor;
   nsRefPtrHashtable<nsCStringHashKey, GMPRecordImpl> mRecords;
   GMPChild* mPlugin;
   bool mShutdown;

@@ -15,7 +15,7 @@ using namespace mozilla;
 template <class InnerQueueT>
 void PrioritizedEventQueue<InnerQueueT>::PutEvent(
     already_AddRefed<nsIRunnable>&& aEvent, EventQueuePriority aPriority,
-    const MutexAutoLock& aProofOfLock) {
+    const AutoLock& aProofOfLock) {
   static_assert(IsBaseOf<AbstractEventQueue, InnerQueueT>::value,
                 "InnerQueueT must be an AbstractEventQueue subclass");
 
@@ -74,7 +74,7 @@ TimeStamp PrioritizedEventQueue<InnerQueueT>::GetIdleDeadline() {
     // might need to lock the timer thread. Unlocking here might make
     // us receive an event on the main queue, but we've committed to
     // run an idle event anyhow.
-    MutexAutoUnlock unlock(*mMutex);
+    AutoUnlock unlock(*mMutex);
     mIdlePeriod->GetIdlePeriodHint(&idleDeadline);
   }
 
@@ -104,7 +104,7 @@ TimeStamp PrioritizedEventQueue<InnerQueueT>::GetIdleDeadline() {
 
 template <class InnerQueueT>
 EventQueuePriority PrioritizedEventQueue<InnerQueueT>::SelectQueue(
-    bool aUpdateState, const MutexAutoLock& aProofOfLock) {
+    bool aUpdateState, const AutoLock& aProofOfLock) {
   size_t inputCount = mInputQueue->Count(aProofOfLock);
 
   if (aUpdateState && mInputQueueState == STATE_ENABLED &&
@@ -181,7 +181,7 @@ EventQueuePriority PrioritizedEventQueue<InnerQueueT>::SelectQueue(
 
 template <class InnerQueueT>
 already_AddRefed<nsIRunnable> PrioritizedEventQueue<InnerQueueT>::GetEvent(
-    EventQueuePriority* aPriority, const MutexAutoLock& aProofOfLock) {
+    EventQueuePriority* aPriority, const AutoLock& aProofOfLock) {
   auto guard =
       MakeScopeExit([&] { mHasPendingEventsPromisedIdleEvent = false; });
 
@@ -262,7 +262,7 @@ already_AddRefed<nsIRunnable> PrioritizedEventQueue<InnerQueueT>::GetEvent(
 
 template <class InnerQueueT>
 bool PrioritizedEventQueue<InnerQueueT>::IsEmpty(
-    const MutexAutoLock& aProofOfLock) {
+    const AutoLock& aProofOfLock) {
   // Just check IsEmpty() on the sub-queues. Don't bother checking the idle
   // deadline since that only determines whether an idle event is ready or not.
   return mHighQueue->IsEmpty(aProofOfLock) &&
@@ -275,7 +275,7 @@ bool PrioritizedEventQueue<InnerQueueT>::IsEmpty(
 
 template <class InnerQueueT>
 bool PrioritizedEventQueue<InnerQueueT>::HasReadyEvent(
-    const MutexAutoLock& aProofOfLock) {
+    const AutoLock& aProofOfLock) {
   mHasPendingEventsPromisedIdleEvent = false;
 
   EventQueuePriority queue = SelectQueue(false, aProofOfLock);
@@ -312,19 +312,19 @@ bool PrioritizedEventQueue<InnerQueueT>::HasReadyEvent(
 
 template <class InnerQueueT>
 bool PrioritizedEventQueue<InnerQueueT>::HasPendingHighPriorityEvents(
-    const MutexAutoLock& aProofOfLock) {
+    const AutoLock& aProofOfLock) {
   return !mHighQueue->IsEmpty(aProofOfLock);
 }
 
 template <class InnerQueueT>
 size_t PrioritizedEventQueue<InnerQueueT>::Count(
-    const MutexAutoLock& aProofOfLock) const {
+    const AutoLock& aProofOfLock) const {
   MOZ_CRASH("unimplemented");
 }
 
 template <class InnerQueueT>
 void PrioritizedEventQueue<InnerQueueT>::EnableInputEventPrioritization(
-    const MutexAutoLock& aProofOfLock) {
+    const AutoLock& aProofOfLock) {
   MOZ_ASSERT(mInputQueueState == STATE_DISABLED);
   mInputQueueState = STATE_ENABLED;
   mInputHandlingStartTime = TimeStamp();
@@ -332,7 +332,7 @@ void PrioritizedEventQueue<InnerQueueT>::EnableInputEventPrioritization(
 
 template <class InnerQueueT>
 void PrioritizedEventQueue<InnerQueueT>::FlushInputEventPrioritization(
-    const MutexAutoLock& aProofOfLock) {
+    const AutoLock& aProofOfLock) {
   MOZ_ASSERT(mInputQueueState == STATE_ENABLED ||
              mInputQueueState == STATE_SUSPEND);
   mInputQueueState =
@@ -341,7 +341,7 @@ void PrioritizedEventQueue<InnerQueueT>::FlushInputEventPrioritization(
 
 template <class InnerQueueT>
 void PrioritizedEventQueue<InnerQueueT>::SuspendInputEventPrioritization(
-    const MutexAutoLock& aProofOfLock) {
+    const AutoLock& aProofOfLock) {
   MOZ_ASSERT(mInputQueueState == STATE_ENABLED ||
              mInputQueueState == STATE_FLUSHING);
   mInputQueueState = STATE_SUSPEND;
@@ -349,7 +349,7 @@ void PrioritizedEventQueue<InnerQueueT>::SuspendInputEventPrioritization(
 
 template <class InnerQueueT>
 void PrioritizedEventQueue<InnerQueueT>::ResumeInputEventPrioritization(
-    const MutexAutoLock& aProofOfLock) {
+    const AutoLock& aProofOfLock) {
   MOZ_ASSERT(mInputQueueState == STATE_SUSPEND);
   mInputQueueState = STATE_ENABLED;
 }

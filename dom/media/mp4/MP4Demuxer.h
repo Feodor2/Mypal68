@@ -6,7 +6,7 @@
 #  define MP4Demuxer_h_
 
 #  include "mozilla/Maybe.h"
-#  include "mozilla/Monitor.h"
+#  include "mozilla/Monitor2.h"
 #  include "MediaDataDemuxer.h"
 #  include "MediaResource.h"
 

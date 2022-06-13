@@ -189,7 +189,7 @@ imgFrame::imgFrame()
 
 imgFrame::~imgFrame() {
 #ifdef DEBUG
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   MOZ_ASSERT(mAborted || AreAllPixelsWritten());
   MOZ_ASSERT(mAborted || mFinished);
 #endif
@@ -291,7 +291,7 @@ nsresult imgFrame::InitForDecoder(const nsIntSize& aImageSize,
 nsresult imgFrame::InitForDecoderRecycle(const AnimationParams& aAnimParams) {
   // We want to recycle this frame, but there is no guarantee that consumers are
   // done with it in a timely manner. Let's ensure they are done with it first.
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   MOZ_ASSERT(mLockCount > 0);
   MOZ_ASSERT(mLockedSurface);
@@ -445,7 +445,7 @@ nsresult imgFrame::InitWithDrawable(
   mFinished = true;
 
 #ifdef DEBUG
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   MOZ_ASSERT(AreAllPixelsWritten());
 #endif
 
@@ -593,7 +593,7 @@ bool imgFrame::Draw(gfxContext* aContext, const ImageRegion& aRegion,
   gfxRect imageRect(0, 0, mImageSize.width, mImageSize.height);
 
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
 
     // Possibly convert this image into a GPU texture, this may also cause our
     // mLockedSurface to be released and the OS to release the underlying
@@ -640,7 +640,7 @@ bool imgFrame::Draw(gfxContext* aContext, const ImageRegion& aRegion,
 }
 
 nsresult imgFrame::ImageUpdated(const nsIntRect& aUpdateRect) {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   return ImageUpdatedInternal(aUpdateRect);
 }
 
@@ -669,7 +669,7 @@ nsresult imgFrame::ImageUpdatedInternal(const nsIntRect& aUpdateRect) {
 
 void imgFrame::Finish(Opacity aFrameOpacity /* = Opacity::SOME_TRANSPARENCY */,
                       bool aFinalize /* = true */) {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   MOZ_ASSERT(mLockCount > 0, "Image data should be locked");
 
   IntRect frameRect(GetRect());
@@ -700,7 +700,7 @@ void imgFrame::Finish(Opacity aFrameOpacity /* = Opacity::SOME_TRANSPARENCY */,
   mFinished = true;
 
   // The image is now complete, wake up anyone who's waiting.
-  mMonitor.NotifyAll();
+  mMonitor.Broadcast();
 }
 
 uint32_t imgFrame::GetImageBytesPerRow() const {
@@ -718,7 +718,7 @@ uint32_t imgFrame::GetImageDataLength() const {
 }
 
 void imgFrame::GetImageData(uint8_t** aData, uint32_t* aLength) const {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   GetImageDataInternal(aData, aLength);
 }
 
@@ -750,7 +750,7 @@ uint8_t* imgFrame::GetImageData() const {
 }
 
 uint8_t* imgFrame::LockImageData(bool aOnlyFinished) {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   MOZ_ASSERT(mLockCount >= 0, "Unbalanced locks and unlocks");
   if (mLockCount < 0 || (aOnlyFinished && !mFinished)) {
@@ -776,13 +776,13 @@ uint8_t* imgFrame::LockImageData(bool aOnlyFinished) {
 
 void imgFrame::AssertImageDataLocked() const {
 #ifdef DEBUG
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   MOZ_ASSERT(mLockCount > 0, "Image data should be locked");
 #endif
 }
 
 nsresult imgFrame::UnlockImageData() {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   MOZ_ASSERT(mLockCount > 0, "Unlocking an unlocked image!");
   if (mLockCount <= 0) {
@@ -799,12 +799,12 @@ nsresult imgFrame::UnlockImageData() {
 
 void imgFrame::SetOptimizable() {
   AssertImageDataLocked();
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   mOptimizable = true;
 }
 
 void imgFrame::FinalizeSurface() {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   FinalizeSurfaceInternal();
 }
 
@@ -822,7 +822,7 @@ void imgFrame::FinalizeSurfaceInternal() {
 }
 
 already_AddRefed<SourceSurface> imgFrame::GetSourceSurface() {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   return GetSourceSurfaceInternal(/* aTemporary */ false);
 }
 
@@ -879,26 +879,26 @@ already_AddRefed<SourceSurface> imgFrame::GetSourceSurfaceInternal(
 }
 
 void imgFrame::Abort() {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   mAborted = true;
 
   // Wake up anyone who's waiting.
-  mMonitor.NotifyAll();
+  mMonitor.Broadcast();
 }
 
 bool imgFrame::IsAborted() const {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   return mAborted;
 }
 
 bool imgFrame::IsFinished() const {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   return mFinished;
 }
 
 void imgFrame::WaitUntilFinished() const {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   while (true) {
     // Return if we're aborted or complete.
@@ -918,7 +918,7 @@ bool imgFrame::AreAllPixelsWritten() const {
 
 void imgFrame::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
                                       const AddSizeOfCb& aCallback) const {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   AddSizeOfCbData metadata;
   if (mLockedSurface) {
@@ -949,10 +949,10 @@ RecyclingSourceSurface::RecyclingSourceSurface(imgFrame* aParent,
 }
 
 RecyclingSourceSurface::~RecyclingSourceSurface() {
-  MonitorAutoLock lock(mParent->mMonitor);
+  Monitor2AutoLock lock(mParent->mMonitor);
   MOZ_ASSERT(mParent->mRecycleLockCount > 0);
   if (--mParent->mRecycleLockCount == 0) {
-    mParent->mMonitor.NotifyAll();
+    mParent->mMonitor.Broadcast();
   }
 }
 

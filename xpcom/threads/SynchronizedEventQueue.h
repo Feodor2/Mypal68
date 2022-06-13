@@ -8,7 +8,7 @@
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/AbstractEventQueue.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Mutex.h"
+#include "base/lock.h"
 #include "nsTObserverArray.h"
 
 class nsIEventTarget;
@@ -39,7 +39,7 @@ class ThreadTargetSink {
                         EventQueuePriority aPriority) = 0;
 
   // After this method is called, no more events can be posted.
-  virtual void Disconnect(const MutexAutoLock& aProofOfLock) = 0;
+  virtual void Disconnect(const AutoLock& aProofOfLock) = 0;
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const {
     return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);

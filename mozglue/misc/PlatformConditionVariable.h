@@ -49,15 +49,17 @@ class ConditionVariableImpl {
   ConditionVariableImpl(const ConditionVariableImpl&) = delete;
   ConditionVariableImpl& operator=(const ConditionVariableImpl&) = delete;
 
-  PlatformData* platformData();
-
 #ifndef XP_WIN
+  PlatformData* platformData();
   void* platformData_[sizeof(pthread_cond_t) / sizeof(void*)];
   static_assert(sizeof(pthread_cond_t) / sizeof(void*) != 0 &&
                     sizeof(pthread_cond_t) % sizeof(void*) == 0,
                 "pthread_cond_t must have pointer alignment");
 #else
-  void* platformData_[4];
+  uint32_t sleepersCountAndWakeupMode_;
+  void* sleepWakeupSemaphore_;
+  void* wakeOneEvent_;
+  void* wakeAllEvent_;
 #endif
 };
 

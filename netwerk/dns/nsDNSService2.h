@@ -14,7 +14,7 @@
 #include "nsString.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
-#include "mozilla/Mutex.h"
+#include "base/lock.h"
 #include "mozilla/Attributes.h"
 #include "TRRService.h"
 
@@ -76,7 +76,7 @@ class nsDNSService final : public nsPIDNSService,
   nsCOMPtr<nsIIDNService> mIDN;
 
   // mLock protects access to mResolver, mLocalDomains and mIPv4OnlyDomains
-  mozilla::Mutex mLock;
+  Lock mLock;
 
   // mIPv4OnlyDomains is a comma-separated list of domains for which only
   // IPv4 DNS lookups are performed. This allows the user to disable IPv6 on

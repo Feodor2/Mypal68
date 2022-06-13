@@ -76,7 +76,7 @@ static const char* gCallbackPrefs[] = {
 
 nsresult nsIDNService::Init() {
   MOZ_ASSERT(NS_IsMainThread());
-  MutexAutoLock lock(mLock);
+  AutoLock lock(mLock);
 
   nsCOMPtr<nsIPrefService> prefs(do_GetService(NS_PREFSERVICE_CONTRACTID));
   if (prefs)
@@ -380,20 +380,20 @@ NS_IMETHODIMP nsIDNService::Normalize(const nsACString& input,
 namespace {
 
 class MOZ_STACK_CLASS MutexSettableAutoUnlock final {
-  Mutex* mMutex;
+  Lock* mMutex;
 
  public:
   MutexSettableAutoUnlock() : mMutex(nullptr) {}
 
-  void Acquire(mozilla::Mutex& aMutex) {
+  void Acquire(Lock& aMutex) {
     MOZ_ASSERT(!mMutex);
     mMutex = &aMutex;
-    mMutex->Lock();
+    mMutex->Acquire();
   }
 
   ~MutexSettableAutoUnlock() {
     if (mMutex) {
-      mMutex->Unlock();
+      mMutex->Release();
     }
   }
 };

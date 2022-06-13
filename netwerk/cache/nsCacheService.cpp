@@ -126,7 +126,7 @@ class nsBlockOnCacheThreadEvent : public Runnable {
     nsCacheServiceAutoLock autoLock(LOCK_TELEM(NSBLOCKONCACHETHREADEVENT_RUN));
     CACHE_LOG_DEBUG(("nsBlockOnCacheThreadEvent [%p]\n", this));
     nsCacheService::gService->mNotified = true;
-    nsCacheService::gService->mCondVar.Notify();
+    nsCacheService::gService->mCondVar.Signal();
     return NS_OK;
   }
 };
@@ -342,7 +342,7 @@ nsresult nsCacheService::DispatchToCacheIOThread(nsIRunnable* event) {
 
 nsresult nsCacheService::SyncWithCacheIOThread() {
   if (!gService || !gService->mCacheIOThread) return NS_ERROR_NOT_AVAILABLE;
-  gService->mLock.AssertCurrentThreadOwns();
+  //1111gService->mLock.AssertCurrentThreadOwns();
 
   nsCOMPtr<nsIRunnable> event = new nsBlockOnCacheThreadEvent();
 
@@ -474,10 +474,10 @@ NS_IMPL_ISUPPORTS(nsCacheService, nsICacheService, nsICacheServiceInternal)
 
 nsCacheService::nsCacheService()
     : mObserver(nullptr),
-      mLock("nsCacheService.mLock"),
+      mLock(),
       mCondVar(mLock, "nsCacheService.mCondVar"),
       mNotified(false),
-      mTimeStampLock("nsCacheService.mTimeStampLock"),
+      mTimeStampLock(),
       mInitialized(false),
       mClearingEntries(false),
       mEnableOfflineDevice(false),
@@ -822,7 +822,7 @@ NS_IMETHODIMP nsCacheService::GetCacheIOTarget(
   // read from the main thread without the lock. This is useful to prevent
   // blocking the main thread on other cache operations.
   if (!NS_IsMainThread()) {
-    Lock(LOCK_TELEM(NSCACHESERVICE_GETCACHEIOTARGET));
+    CacheLock(LOCK_TELEM(NSCACHESERVICE_GETCACHEIOTARGET));
   }
 
   nsresult rv;
@@ -835,14 +835,14 @@ NS_IMETHODIMP nsCacheService::GetCacheIOTarget(
   }
 
   if (!NS_IsMainThread()) {
-    Unlock();
+    CacheUnlock();
   }
 
   return rv;
 }
 
 NS_IMETHODIMP nsCacheService::GetLockHeldTime(double* aLockHeldTime) {
-  MutexAutoLock lock(mTimeStampLock);
+  AutoLock lock(mTimeStampLock);
 
   if (mLockAcquiredTimeStamp.IsNull()) {
     *aLockHeldTime = 0.0;
@@ -1054,9 +1054,9 @@ nsresult nsCacheService::ProcessRequest(nsCacheRequest* request,
         }
 
         // XXX this is probably wrong...
-        Unlock();
+        CacheUnlock();
         rv = request->WaitForValidation();
-        Lock(LOCK_TELEM(NSCACHESERVICE_PROCESSREQUEST));
+        CacheLock(LOCK_TELEM(NSCACHESERVICE_PROCESSREQUEST));
       }
 
       PR_REMOVE_AND_INIT_LINK(request);
@@ -1496,21 +1496,21 @@ nsresult nsCacheService::OnDataSizeChange(nsCacheEntry* entry,
 }
 
 void nsCacheService::LockAcquired() {
-  MutexAutoLock lock(mTimeStampLock);
+  AutoLock lock(mTimeStampLock);
   mLockAcquiredTimeStamp = TimeStamp::Now();
 }
 
 void nsCacheService::LockReleased() {
-  MutexAutoLock lock(mTimeStampLock);
+  AutoLock lock(mTimeStampLock);
   mLockAcquiredTimeStamp = TimeStamp();
 }
 
-void nsCacheService::Lock() {
-  gService->mLock.Lock();
+void nsCacheService::CacheLock() {
+  gService->mLock.Acquire();
   gService->LockAcquired();
 }
 
-void nsCacheService::Lock(mozilla::Telemetry::HistogramID mainThreadLockerID) {
+void nsCacheService::CacheLock(mozilla::Telemetry::HistogramID mainThreadLockerID) {
   mozilla::Telemetry::HistogramID lockerID;
   mozilla::Telemetry::HistogramID generalID;
 
@@ -1524,7 +1524,7 @@ void nsCacheService::Lock(mozilla::Telemetry::HistogramID mainThreadLockerID) {
 
   TimeStamp start(TimeStamp::Now());
 
-  nsCacheService::Lock();
+  nsCacheService::CacheLock();
 
   TimeStamp stop(TimeStamp::Now());
 
@@ -1536,21 +1536,21 @@ void nsCacheService::Lock(mozilla::Telemetry::HistogramID mainThreadLockerID) {
   mozilla::Telemetry::AccumulateTimeDelta(generalID, start, stop);
 }
 
-void nsCacheService::Unlock() {
-  gService->mLock.AssertCurrentThreadOwns();
+void nsCacheService::CacheUnlock() {
+  //1111gService->mLock.AssertCurrentThreadOwns();
 
   nsTArray<nsISupports*> doomed;
   doomed.SwapElements(gService->mDoomedObjects);
 
   gService->LockReleased();
-  gService->mLock.Unlock();
+  gService->mLock.Release();
 
   for (uint32_t i = 0; i < doomed.Length(); ++i) doomed[i]->Release();
 }
 
 void nsCacheService::ReleaseObject_Locked(nsISupports* obj,
                                           nsIEventTarget* target) {
-  gService->mLock.AssertCurrentThreadOwns();
+  //1111gService->mLock.AssertCurrentThreadOwns();
 
   bool isCur;
   if (!target || (NS_SUCCEEDED(target->IsOnCurrentThread(&isCur)) && isCur)) {

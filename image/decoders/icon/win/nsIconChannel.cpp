@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 
 #include "nsIconChannel.h"
 #include "nsIIconURI.h"
@@ -124,7 +124,7 @@ class nsIconChannel::IconSyncOpenTask final : public Runnable {
 
   NS_IMETHOD Run() override;
 
-  Monitor& GetMonitor() { return mMonitor; }
+  Monitor2& GetMonitor() { return mMonitor; }
   bool Done() const {
     mMonitor.AssertCurrentThreadOwns();
     return mDone;
@@ -139,7 +139,7 @@ class nsIconChannel::IconSyncOpenTask final : public Runnable {
   }
 
  private:
-  Monitor mMonitor;
+  Monitor2 mMonitor;
   bool mDone;
   // Parameters in
   RefPtr<nsIconChannel> mChannel;
@@ -154,10 +154,10 @@ class nsIconChannel::IconSyncOpenTask final : public Runnable {
 
 NS_IMETHODIMP
 nsIconChannel::IconSyncOpenTask::Run() {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   mRv = mChannel->GetHIconFromFile(mLocalFile, mPath, mInfoFlags, &mHIcon);
   mDone = true;
-  mMonitor.NotifyAll();
+  mMonitor.Broadcast();
   // Do this little dance because nsIconChannel multiple inherits from
   // nsISupports.
   nsCOMPtr<nsIChannel> channel = mChannel.forget();
@@ -501,7 +501,7 @@ nsresult nsIconChannel::GetHIconFromFile(bool aNonBlocking, HICON* hIcon) {
   RefPtr<nsIEventTarget> target = DecodePool::Singleton()->GetIOEventTarget();
   RefPtr<IconSyncOpenTask> task = new IconSyncOpenTask(
       this, mListenerTarget, std::move(localFile), filePath, infoFlags);
-  MonitorAutoLock lock(task->GetMonitor());
+  Monitor2AutoLock lock(task->GetMonitor());
   target->Dispatch(task, NS_DISPATCH_NORMAL);
   do {
     task->GetMonitor().Wait();

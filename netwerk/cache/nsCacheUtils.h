@@ -7,7 +7,7 @@
 
 #include "nsThreadUtils.h"
 #include "nsCOMPtr.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 
 class nsIThread;
 
@@ -34,7 +34,7 @@ class nsShutdownThread : public mozilla::Runnable {
   static nsresult BlockingShutdown(nsIThread* aThread);
 
  private:
-  mozilla::Monitor mMonitor;
+  mozilla::Monitor2 mMonitor;
   bool mShuttingDown;
   nsCOMPtr<nsIThread> mThread;
 };

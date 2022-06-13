@@ -28,7 +28,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
-#include "mozilla/CondVar.h"
+#include "base/condition_variable.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/dom/PContent.h"
 #include "mozilla/dom/cache/QuotaClient.h"
@@ -46,7 +46,7 @@
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/net/MozURL.h"
 #include "mozilla/IntegerRange.h"
-#include "mozilla/Mutex.h"
+#include "base/lock.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
@@ -797,8 +797,8 @@ namespace {
 class CollectOriginsHelper final : public Runnable {
   uint64_t mMinSizeToBeFreed;
 
-  Mutex& mMutex;
-  CondVar mCondVar;
+  Lock& mMutex;
+  ConditionVariable mCondVar;
 
   // The members below are protected by mMutex.
   nsTArray<RefPtr<DirectoryLockImpl>> mLocks;
@@ -806,7 +806,7 @@ class CollectOriginsHelper final : public Runnable {
   bool mWaiting;
 
  public:
-  CollectOriginsHelper(mozilla::Mutex& aMutex, uint64_t aMinSizeToBeFreed);
+  CollectOriginsHelper(Lock& aMutex, uint64_t aMinSizeToBeFreed);
 
   // Blocks the current thread until origins are collected on the main thread.
   // The returned value contains an aggregate size of those origins.
@@ -2729,7 +2729,7 @@ void QuotaObject::AddRef() {
     return;
   }
 
-  MutexAutoLock lock(quotaManager->mQuotaMutex);
+  AutoLock lock(quotaManager->mQuotaMutex);
 
   ++mRefCnt;
 }
@@ -2749,7 +2749,7 @@ void QuotaObject::Release() {
   }
 
   {
-    MutexAutoLock lock(quotaManager->mQuotaMutex);
+    AutoLock lock(quotaManager->mQuotaMutex);
 
     --mRefCnt;
 
@@ -2769,7 +2769,7 @@ bool QuotaObject::MaybeUpdateSize(int64_t aSize, bool aTruncate) {
   QuotaManager* quotaManager = QuotaManager::Get();
   MOZ_ASSERT(quotaManager);
 
-  MutexAutoLock lock(quotaManager->mQuotaMutex);
+  AutoLock lock(quotaManager->mQuotaMutex);
 
   return LockedMaybeUpdateSize(aSize, aTruncate);
 }
@@ -2780,7 +2780,7 @@ bool QuotaObject::IncreaseSize(int64_t aDelta) {
   QuotaManager* quotaManager = QuotaManager::Get();
   MOZ_ASSERT(quotaManager);
 
-  MutexAutoLock lock(quotaManager->mQuotaMutex);
+  AutoLock lock(quotaManager->mQuotaMutex);
 
   AssertNoOverflow(mSize, aDelta);
   int64_t size = mSize + aDelta;
@@ -2792,7 +2792,7 @@ void QuotaObject::DisableQuotaCheck() {
   QuotaManager* quotaManager = QuotaManager::Get();
   MOZ_ASSERT(quotaManager);
 
-  MutexAutoLock lock(quotaManager->mQuotaMutex);
+  AutoLock lock(quotaManager->mQuotaMutex);
 
   mQuotaCheckDisabled = true;
 }
@@ -2801,7 +2801,7 @@ void QuotaObject::EnableQuotaCheck() {
   QuotaManager* quotaManager = QuotaManager::Get();
   MOZ_ASSERT(quotaManager);
 
-  MutexAutoLock lock(quotaManager->mQuotaMutex);
+  AutoLock lock(quotaManager->mQuotaMutex);
 
   mQuotaCheckDisabled = false;
 }
@@ -2897,7 +2897,7 @@ bool QuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate) {
     uint64_t sizeToBeFreed;
 
     if (IsOnBackgroundThread()) {
-      MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
+      AutoUnlock autoUnlock(quotaManager->mQuotaMutex);
 
       sizeToBeFreed = quotaManager->CollectOriginsForEviction(delta, locks);
     } else {
@@ -2908,7 +2908,7 @@ bool QuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate) {
     if (!sizeToBeFreed) {
       uint64_t usage = quotaManager->mTemporaryStorageUsage;
 
-      MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
+      AutoUnlock autoUnlock(quotaManager->mQuotaMutex);
 
       quotaManager->NotifyStoragePressure(usage);
 
@@ -2918,7 +2918,7 @@ bool QuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate) {
     NS_ASSERTION(sizeToBeFreed >= delta, "Huh?");
 
     {
-      MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
+      AutoUnlock autoUnlock(quotaManager->mQuotaMutex);
 
       for (RefPtr<DirectoryLockImpl>& lock : locks) {
         MOZ_ASSERT(!lock->GetPersistenceType().IsNull());
@@ -2975,7 +2975,7 @@ bool QuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate) {
         // meantime and we are not below the group limit anymore.
 
         // However, the origin eviction must be finalized in this case too.
-        MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
+        AutoUnlock autoUnlock(quotaManager->mQuotaMutex);
 
         quotaManager->FinalizeOriginEviction(locks);
 
@@ -3006,7 +3006,7 @@ bool QuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate) {
 
     // Finally, release IO thread only objects and allow next synchronized
     // ops for the evicted origins.
-    MutexAutoUnlock autoUnlock(quotaManager->mQuotaMutex);
+    AutoUnlock autoUnlock(quotaManager->mQuotaMutex);
 
     quotaManager->FinalizeOriginEviction(locks);
 
@@ -3029,7 +3029,7 @@ bool QuotaObject::LockedMaybeUpdateSize(int64_t aSize, bool aTruncate) {
  ******************************************************************************/
 
 QuotaManager::QuotaManager()
-    : mQuotaMutex("QuotaManager.mQuotaMutex"),
+    : mQuotaMutex(),
       mTemporaryStorageLimit(0),
       mTemporaryStorageUsage(0),
       mTemporaryStorageInitialized(false),
@@ -3329,7 +3329,7 @@ uint64_t QuotaManager::CollectOriginsForEviction(
 
   // Enumerate and process inactive origins. This must be protected by the
   // mutex.
-  MutexAutoLock lock(mQuotaMutex);
+  AutoLock lock(mQuotaMutex);
 
   for (auto iter = mGroupInfoPairs.Iter(); !iter.Done(); iter.Next()) {
     GroupInfoPair* pair = iter.UserData();
@@ -3391,7 +3391,7 @@ uint64_t QuotaManager::CollectOriginsForEviction(
 
 template <typename P>
 void QuotaManager::CollectPendingOriginsForListing(P aPredicate) {
-  MutexAutoLock lock(mQuotaMutex);
+  AutoLock lock(mQuotaMutex);
 
   for (auto iter = mGroupInfoPairs.Iter(); !iter.Done(); iter.Next()) {
     GroupInfoPair* pair = iter.UserData();
@@ -3545,7 +3545,7 @@ void QuotaManager::InitQuotaForOrigin(PersistenceType aPersistenceType,
   AssertIsOnIOThread();
   MOZ_ASSERT(aPersistenceType != PERSISTENCE_TYPE_PERSISTENT);
 
-  MutexAutoLock lock(mQuotaMutex);
+  AutoLock lock(mQuotaMutex);
 
   RefPtr<GroupInfo> groupInfo =
       LockedGetOrCreateGroupInfo(aPersistenceType, aGroup);
@@ -3562,7 +3562,7 @@ void QuotaManager::EnsureQuotaForOrigin(PersistenceType aPersistenceType,
   AssertIsOnIOThread();
   MOZ_ASSERT(aPersistenceType != PERSISTENCE_TYPE_PERSISTENT);
 
-  MutexAutoLock lock(mQuotaMutex);
+  AutoLock lock(mQuotaMutex);
 
   RefPtr<GroupInfo> groupInfo =
       LockedGetOrCreateGroupInfo(aPersistenceType, aGroup);
@@ -3586,7 +3586,7 @@ void QuotaManager::NoteOriginDirectoryCreated(PersistenceType aPersistenceType,
 
   int64_t timestamp;
 
-  MutexAutoLock lock(mQuotaMutex);
+  AutoLock lock(mQuotaMutex);
 
   RefPtr<GroupInfo> groupInfo =
       LockedGetOrCreateGroupInfo(aPersistenceType, aGroup);
@@ -3614,7 +3614,7 @@ void QuotaManager::DecreaseUsageForOrigin(PersistenceType aPersistenceType,
   MOZ_ASSERT(!NS_IsMainThread());
   MOZ_ASSERT(aPersistenceType != PERSISTENCE_TYPE_PERSISTENT);
 
-  MutexAutoLock lock(mQuotaMutex);
+  AutoLock lock(mQuotaMutex);
 
   GroupInfoPair* pair;
   if (!mGroupInfoPairs.Get(aGroup, &pair)) {
@@ -3638,7 +3638,7 @@ void QuotaManager::UpdateOriginAccessTime(PersistenceType aPersistenceType,
   AssertIsOnOwningThread();
   MOZ_ASSERT(aPersistenceType != PERSISTENCE_TYPE_PERSISTENT);
 
-  MutexAutoLock lock(mQuotaMutex);
+  AutoLock lock(mQuotaMutex);
 
   GroupInfoPair* pair;
   if (!mGroupInfoPairs.Get(aGroup, &pair)) {
@@ -3655,7 +3655,7 @@ void QuotaManager::UpdateOriginAccessTime(PersistenceType aPersistenceType,
     int64_t timestamp = PR_Now();
     originInfo->LockedUpdateAccessTime(timestamp);
 
-    MutexAutoUnlock autoUnlock(mQuotaMutex);
+    AutoUnlock autoUnlock(mQuotaMutex);
 
     RefPtr<SaveOriginAccessTimeOp> op =
         new SaveOriginAccessTimeOp(aPersistenceType, aOrigin, timestamp);
@@ -3667,7 +3667,7 @@ void QuotaManager::UpdateOriginAccessTime(PersistenceType aPersistenceType,
 void QuotaManager::RemoveQuota() {
   AssertIsOnIOThread();
 
-  MutexAutoLock lock(mQuotaMutex);
+  AutoLock lock(mQuotaMutex);
 
   for (auto iter = mGroupInfoPairs.Iter(); !iter.Done(); iter.Next()) {
     nsAutoPtr<GroupInfoPair>& pair = iter.Data();
@@ -3729,7 +3729,7 @@ already_AddRefed<QuotaObject> QuotaManager::GetQuotaObject(
 
   RefPtr<QuotaObject> result;
   {
-    MutexAutoLock lock(mQuotaMutex);
+    AutoLock lock(mQuotaMutex);
 
     GroupInfoPair* pair;
     if (!mGroupInfoPairs.Get(aGroup, &pair)) {
@@ -3797,7 +3797,7 @@ Nullable<bool> QuotaManager::OriginPersisted(const nsACString& aGroup,
                                              const nsACString& aOrigin) {
   AssertIsOnIOThread();
 
-  MutexAutoLock lock(mQuotaMutex);
+  AutoLock lock(mQuotaMutex);
 
   RefPtr<OriginInfo> originInfo =
       LockedGetOriginInfo(PERSISTENCE_TYPE_DEFAULT, aGroup, aOrigin);
@@ -3812,7 +3812,7 @@ void QuotaManager::PersistOrigin(const nsACString& aGroup,
                                  const nsACString& aOrigin) {
   AssertIsOnIOThread();
 
-  MutexAutoLock lock(mQuotaMutex);
+  AutoLock lock(mQuotaMutex);
 
   RefPtr<OriginInfo> originInfo =
       LockedGetOriginInfo(PERSISTENCE_TYPE_DEFAULT, aGroup, aOrigin);
@@ -5987,7 +5987,7 @@ void QuotaManager::GetGroupUsageAndLimit(const nsACString& aGroup,
   MOZ_ASSERT(aUsageInfo);
 
   {
-    MutexAutoLock lock(mQuotaMutex);
+    AutoLock lock(mQuotaMutex);
 
     aUsageInfo->SetLimit(GetGroupLimit());
     aUsageInfo->ResetUsage();
@@ -6302,7 +6302,7 @@ uint64_t QuotaManager::LockedCollectOriginsForEviction(
   // also calls an observer that can do various stuff like IO, so it's better
   // to not hold our mutex while that happens).
   {
-    MutexAutoUnlock autoUnlock(mQuotaMutex);
+    AutoUnlock autoUnlock(mQuotaMutex);
 
     MOZ_ALWAYS_SUCCEEDS(mOwningThread->Dispatch(helper, NS_DISPATCH_NORMAL));
   }
@@ -6380,7 +6380,7 @@ void QuotaManager::CheckTemporaryStorageLimits() {
 
   nsTArray<OriginInfo*> doomedOriginInfos;
   {
-    MutexAutoLock lock(mQuotaMutex);
+    AutoLock lock(mQuotaMutex);
 
     for (auto iter = mGroupInfoPairs.Iter(); !iter.Done(); iter.Next()) {
       GroupInfoPair* pair = iter.UserData();
@@ -6486,7 +6486,7 @@ void QuotaManager::CheckTemporaryStorageLimits() {
 
 #ifdef DEBUG
     {
-      MutexAutoLock lock(mQuotaMutex);
+      AutoLock lock(mQuotaMutex);
       MOZ_ASSERT(!doomedOriginInfo->LockedPersisted());
     }
 #endif
@@ -6497,7 +6497,7 @@ void QuotaManager::CheckTemporaryStorageLimits() {
 
   nsTArray<OriginParams> doomedOrigins;
   {
-    MutexAutoLock lock(mQuotaMutex);
+    AutoLock lock(mQuotaMutex);
 
     for (uint32_t index = 0; index < doomedOriginInfos.Length(); index++) {
       OriginInfo* doomedOriginInfo = doomedOriginInfos[index];
@@ -6751,7 +6751,7 @@ RefPtr<GroupInfo>& GroupInfoPair::GetGroupInfoForPersistenceType(
   }
 }
 
-CollectOriginsHelper::CollectOriginsHelper(mozilla::Mutex& aMutex,
+CollectOriginsHelper::CollectOriginsHelper(Lock& aMutex,
                                            uint64_t aMinSizeToBeFreed)
     : Runnable("dom::quota::CollectOriginsHelper"),
       mMinSizeToBeFreed(aMinSizeToBeFreed),
@@ -6789,14 +6789,14 @@ CollectOriginsHelper::Run() {
   uint64_t sizeToBeFreed =
       quotaManager->CollectOriginsForEviction(mMinSizeToBeFreed, locks);
 
-  MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
 
   NS_ASSERTION(mWaiting, "Huh?!");
 
   mLocks.SwapElements(locks);
   mSizeToBeFreed = sizeToBeFreed;
   mWaiting = false;
-  mCondVar.Notify();
+  mCondVar.Signal();
 
   return NS_OK;
 }

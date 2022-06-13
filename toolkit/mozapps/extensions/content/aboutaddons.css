@@ -147,15 +147,6 @@ addon-card[expanded] .addon-card-message {
   background-image: url("chrome://browser/skin/private-browsing.svg");
 }
 
-.addon-badge-recommended {
-  background-color: var(--orange-50);
-  background-image: url("chrome://mozapps/skin/extensions/recommended.svg");
-  background-size: 10px;
-  border-radius: 8px;
-  fill: #fff;
-  -moz-context-properties: fill;
-}
-
 .addon-description {
   font-size: 14px;
   line-height: 20px;
@@ -183,71 +174,6 @@ addon-card:not([expanded]) .addon-description {
   /* Add some negative margin to account for the button's padding */
   margin-top: -10px;
   margin-inline-end: -8px;
-}
-
-/* Recommended add-ons on list views */
-.recommended-heading {
-  margin-bottom: 16px;
-}
-
-/* Discopane extensions to the add-on card */
-
-recommended-addon-card .addon-name {
-  display: flex;
-}
-
-recommended-addon-card .addon-description:not(:empty) {
-  margin-top: 0.5em;
-}
-
-.disco-card-head {
-  flex-grow: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.disco-addon-author {
-  font-size: 12px;
-  font-weight: normal;
-}
-
-.disco-description-statistics {
-  margin-top: 1em;
-  display: grid;
-  grid-template-columns: repeat(2, max-content);
-  grid-column-gap: 2em;
-  align-items: center;
-}
-
-.disco-cta-button {
-  font-size: 14px;
-  flex-shrink: 0;
-  flex-grow: 0;
-  align-self: baseline;
-}
-
-.disco-cta-button[action="install-addon"]::before {
-  content: "+";
-  padding-inline-end: 4px;
-}
-
-.discopane-notice {
-  margin: 0.5em 0;
-}
-
-.discopane-notice-content {
-  align-items: center;
-  display: flex;
-  width: 100%;
-}
-
-.discopane-notice-content > span {
-  flex-grow: 1;
-}
-
-.discopane-notice-content > button {
-  flex-grow: 0;
-  flex-shrink: 0;
 }
 
 .view-footer {

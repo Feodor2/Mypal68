@@ -52,7 +52,7 @@ void MediaTimer::Destroy() {
 
   // Reject any outstanding entries.
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     Reject();
   }
 
@@ -75,7 +75,7 @@ RefPtr<MediaTimerPromise> MediaTimer::WaitFor(const TimeDuration& aDuration,
 
 RefPtr<MediaTimerPromise> MediaTimer::WaitUntil(const TimeStamp& aTimeStamp,
                                                 const char* aCallSite) {
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   TIMER_LOG("MediaTimer::WaitUntil %" PRId64, RelativeMicroseconds(aTimeStamp));
   Entry e(aTimeStamp, aCallSite);
   RefPtr<MediaTimerPromise> p = e.mPromise.get();
@@ -85,7 +85,7 @@ RefPtr<MediaTimerPromise> MediaTimer::WaitUntil(const TimeStamp& aTimeStamp,
 }
 
 void MediaTimer::Cancel() {
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   TIMER_LOG("MediaTimer::Cancel");
   Reject();
 }
@@ -106,7 +106,7 @@ void MediaTimer::ScheduleUpdate() {
 }
 
 void MediaTimer::Update() {
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   UpdateLocked();
 }
 
@@ -172,7 +172,7 @@ void MediaTimer::TimerCallback(nsITimer* aTimer, void* aClosure) {
 }
 
 void MediaTimer::TimerFired() {
-  MonitorAutoLock mon(mMonitor);
+  Monitor2AutoLock mon(mMonitor);
   MOZ_ASSERT(OnMediaTimerThread());
   mCurrentTimerTarget = TimeStamp();
   UpdateLocked();

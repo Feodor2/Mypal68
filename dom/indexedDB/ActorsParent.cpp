@@ -7671,8 +7671,8 @@ class GetFileReferencesHelper final : public Runnable {
   nsString mDatabaseName;
   int64_t mFileId;
 
-  mozilla::Mutex mMutex;
-  mozilla::CondVar mCondVar;
+  Lock mMutex;
+  ConditionVariable mCondVar;
   int32_t mMemRefCnt;
   int32_t mDBRefCnt;
   int32_t mSliceRefCnt;
@@ -26797,7 +26797,7 @@ nsresult GetFileReferencesHelper::DispatchAndReturnFileReferences(
     return rv;
   }
 
-  mozilla::MutexAutoLock autolock(mMutex);
+  AutoLock autolock(mMutex);
   while (mWaiting) {
     mCondVar.Wait();
   }
@@ -26835,11 +26835,11 @@ GetFileReferencesHelper::Run() {
     }
   }
 
-  mozilla::MutexAutoLock lock(mMutex);
+  AutoLock lock(mMutex);
   MOZ_ASSERT(mWaiting);
 
   mWaiting = false;
-  mCondVar.Notify();
+  mCondVar.Signal();
 
   return NS_OK;
 }
@@ -27076,10 +27076,10 @@ class FileHelper::ReadCallback final : public nsIInputStreamCallback {
 
   NS_IMETHOD
   OnInputStreamReady(nsIAsyncInputStream* aStream) override {
-    mozilla::MutexAutoLock autolock(mMutex);
+    AutoLock autolock(mMutex);
 
     mInputAvailable = true;
-    mCondVar.Notify();
+    mCondVar.Signal();
 
     return NS_OK;
   }
@@ -27087,7 +27087,7 @@ class FileHelper::ReadCallback final : public nsIInputStreamCallback {
   nsresult AsyncWait(nsIAsyncInputStream* aStream, uint32_t aBufferSize,
                      nsIEventTarget* aTarget) {
     MOZ_ASSERT(aStream);
-    mozilla::MutexAutoLock autolock(mMutex);
+    AutoLock autolock(mMutex);
 
     nsresult rv = aStream->AsyncWait(this, 0, aBufferSize, aTarget);
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -27105,8 +27105,8 @@ class FileHelper::ReadCallback final : public nsIInputStreamCallback {
  private:
   ~ReadCallback() = default;
 
-  mozilla::Mutex mMutex;
-  mozilla::CondVar mCondVar;
+  Lock mMutex;
+  ConditionVariable mCondVar;
   bool mInputAvailable;
 };
 

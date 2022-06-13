@@ -70,7 +70,7 @@ GMPStorageChild::GMPStorageChild(GMPChild* aPlugin)
 GMPErr GMPStorageChild::CreateRecord(const nsCString& aRecordName,
                                      GMPRecord** aOutRecord,
                                      GMPRecordClient* aClient) {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   if (mShutdown) {
     NS_WARNING("GMPStorage used after it's been shutdown!");
@@ -101,14 +101,14 @@ bool GMPStorageChild::HasRecord(const nsCString& aRecordName) {
 
 already_AddRefed<GMPRecordImpl> GMPStorageChild::GetRecord(
     const nsCString& aRecordName) {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   RefPtr<GMPRecordImpl> record;
   mRecords.Get(aRecordName, getter_AddRefs(record));
   return record.forget();
 }
 
 GMPErr GMPStorageChild::Open(GMPRecordImpl* aRecord) {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   if (mShutdown) {
     NS_WARNING("GMPStorage used after it's been shutdown!");
@@ -126,7 +126,7 @@ GMPErr GMPStorageChild::Open(GMPRecordImpl* aRecord) {
 }
 
 GMPErr GMPStorageChild::Read(GMPRecordImpl* aRecord) {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   if (mShutdown) {
     NS_WARNING("GMPStorage used after it's been shutdown!");
@@ -149,7 +149,7 @@ GMPErr GMPStorageChild::Write(GMPRecordImpl* aRecord, const uint8_t* aData,
     return GMPQuotaExceededErr;
   }
 
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   if (mShutdown) {
     NS_WARNING("GMPStorage used after it's been shutdown!");
@@ -167,7 +167,7 @@ GMPErr GMPStorageChild::Write(GMPRecordImpl* aRecord, const uint8_t* aData,
 }
 
 GMPErr GMPStorageChild::Close(const nsCString& aRecordName) {
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
 
   if (!HasRecord(aRecordName)) {
     // Already closed.
@@ -232,7 +232,7 @@ mozilla::ipc::IPCResult GMPStorageChild::RecvShutdown() {
   // Block any new storage requests, and thus any messages back to the
   // parent. We don't delete any objects here, as that may invalidate
   // GMPRecord pointers held by the GMP.
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   mShutdown = true;
   return IPC_OK();
 }

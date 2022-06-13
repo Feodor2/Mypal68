@@ -65,11 +65,6 @@ ChromeUtils.defineModuleGetter(
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "AddonRepository",
-  "resource://gre/modules/addons/AddonRepository.jsm"
-);
 
 var EXPORTED_SYMBOLS = ["AddonsEngine", "AddonValidator"];
 
@@ -633,22 +628,9 @@ AddonsStore.prototype = {
     // in tests), getCachedAddonByID always returns null - so skip the check
     // in that case. We also provide a way to specifically opt-out of the check
     // even if the cache is enabled, which is used by the validators.
-    if (ignoreRepoCheck || !AddonRepository.cacheEnabled) {
+    if (ignoreRepoCheck) {
       return true;
     }
-
-    let result = await new Promise(res => {
-      AddonRepository.getCachedAddonByID(addon.id, res);
-    });
-
-    if (!result) {
-      this._log.debug(
-        addon.id + " not syncable: add-on not found in add-on repository."
-      );
-      return false;
-    }
-
-    return this.isSourceURITrusted(result.sourceURI);
   },
 
   /**

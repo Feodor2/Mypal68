@@ -8,6 +8,7 @@
 #include <stddef.h>  // for size_t
 #include <stdint.h>  // for uint32_t, uint64_t
 #include <unordered_map>
+#include <d3d11.h>
 
 #include "mozilla/Attributes.h"  // for override
 #include "mozilla/Atomics.h"

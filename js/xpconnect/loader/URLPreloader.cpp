@@ -324,11 +324,11 @@ void URLPreloader::BackgroundReadFiles() {
   Vector<nsZipCursor> cursors;
   LinkedList<URLEntry> pendingURLs;
   {
-    MonitorAutoLock mal(mMonitor);
+    Monitor2AutoLock mal(mMonitor);
 
     if (ReadCache(pendingURLs).isErr()) {
       mReaderInitialized = true;
-      mal.NotifyAll();
+      mal.Broadcast();
       return;
     }
 
@@ -374,7 +374,7 @@ void URLPreloader::BackgroundReadFiles() {
     }
 
     mReaderInitialized = true;
-    mal.NotifyAll();
+    mal.Broadcast();
   }
 
   // Loop over the entries, read the file's contents, store them in the
@@ -410,7 +410,7 @@ void URLPreloader::BackgroundReadFiles() {
     }
 
     entry->mResultCode = rv;
-    mMonitor.NotifyAll();
+    mMonitor.Broadcast();
   }
 
   // We're done reading pending entries, so clear the list.
@@ -616,7 +616,7 @@ Result<const nsCString, nsresult> URLPreloader::URLEntry::ReadOrWait(
   });
 
   if (mResultCode == NS_ERROR_NOT_INITIALIZED) {
-    MonitorAutoLock mal(GetSingleton().mMonitor);
+    Monitor2AutoLock mal(GetSingleton().mMonitor);
 
     while (mResultCode == NS_ERROR_NOT_INITIALIZED) {
       mal.Wait();

@@ -40,10 +40,10 @@ GraphRunner::~GraphRunner() {
 
 void GraphRunner::Shutdown() {
   {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     MOZ_ASSERT(mThreadState == ThreadState::Wait);
     mThreadState = ThreadState::Shutdown;
-    mMonitor.Notify();
+    mMonitor.Signal();
   }
   // We need to wait for runner thread shutdown here for the sake of the
   // xpcomWillShutdown case, so that the main thread is not shut down before
@@ -56,7 +56,7 @@ void GraphRunner::Shutdown() {
 bool GraphRunner::OneIteration(GraphTime aStateEnd) {
   TRACE_AUDIO_CALLBACK();
 
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   MOZ_ASSERT(mThreadState == ThreadState::Wait);
   mStateEnd = aStateEnd;
 
@@ -72,7 +72,7 @@ bool GraphRunner::OneIteration(GraphTime aStateEnd) {
 #endif
   // Signal that mStateEnd was updated
   mThreadState = ThreadState::Run;
-  mMonitor.Notify();
+  mMonitor.Signal();
   // Wait for mStillProcessing to update
   do {
     mMonitor.Wait();
@@ -88,7 +88,7 @@ bool GraphRunner::OneIteration(GraphTime aStateEnd) {
 
 void GraphRunner::Run() {
   PR_SetCurrentThreadName("GraphRunner");
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   while (true) {
     while (mThreadState == ThreadState::Wait) {
       mMonitor.Wait();  // Wait for mStateEnd to update or for shutdown
@@ -100,7 +100,7 @@ void GraphRunner::Run() {
     mStillProcessing = mGraph->OneIterationImpl(mStateEnd);
     // Signal that mStillProcessing was updated
     mThreadState = ThreadState::Wait;
-    mMonitor.Notify();
+    mMonitor.Signal();
   }
 
   dom::WorkletThread::DeleteCycleCollectedJSContext();

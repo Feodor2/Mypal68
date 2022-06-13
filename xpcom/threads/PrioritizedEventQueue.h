@@ -51,20 +51,20 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
 
   void PutEvent(already_AddRefed<nsIRunnable>&& aEvent,
                 EventQueuePriority aPriority,
-                const MutexAutoLock& aProofOfLock) final;
+                const AutoLock& aProofOfLock) final;
   already_AddRefed<nsIRunnable> GetEvent(
-      EventQueuePriority* aPriority, const MutexAutoLock& aProofOfLock) final;
+      EventQueuePriority* aPriority, const AutoLock& aProofOfLock) final;
 
-  bool IsEmpty(const MutexAutoLock& aProofOfLock) final;
-  size_t Count(const MutexAutoLock& aProofOfLock) const final;
-  bool HasReadyEvent(const MutexAutoLock& aProofOfLock) final;
-  bool HasPendingHighPriorityEvents(const MutexAutoLock& aProofOfLock) final;
+  bool IsEmpty(const AutoLock& aProofOfLock) final;
+  size_t Count(const AutoLock& aProofOfLock) const final;
+  bool HasReadyEvent(const AutoLock& aProofOfLock) final;
+  bool HasPendingHighPriorityEvents(const AutoLock& aProofOfLock) final;
 
   // When checking the idle deadline, we need to drop whatever mutex protects
   // this queue. This method allows that mutex to be stored so that we can drop
   // it and reacquire it when checking the idle deadline. The mutex must live at
   // least as long as the queue.
-  void SetMutexRef(Mutex& aMutex) { mMutex = &aMutex; }
+  void SetMutexRef(Lock& aMutex) { mMutex = &aMutex; }
 
 #ifndef RELEASE_OR_BETA
   // nsThread.cpp sends telemetry containing the most recently computed idle
@@ -75,10 +75,10 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
   }
 #endif
 
-  void EnableInputEventPrioritization(const MutexAutoLock& aProofOfLock) final;
-  void FlushInputEventPrioritization(const MutexAutoLock& aProofOfLock) final;
-  void SuspendInputEventPrioritization(const MutexAutoLock& aProofOfLock) final;
-  void ResumeInputEventPrioritization(const MutexAutoLock& aProofOfLock) final;
+  void EnableInputEventPrioritization(const AutoLock& aProofOfLock) final;
+  void FlushInputEventPrioritization(const AutoLock& aProofOfLock) final;
+  void SuspendInputEventPrioritization(const AutoLock& aProofOfLock) final;
+  void ResumeInputEventPrioritization(const AutoLock& aProofOfLock) final;
 
   size_t SizeOfExcludingThis(
       mozilla::MallocSizeOf aMallocSizeOf) const override {
@@ -100,7 +100,7 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
 
  private:
   EventQueuePriority SelectQueue(bool aUpdateState,
-                                 const MutexAutoLock& aProofOfLock);
+                                 const AutoLock& aProofOfLock);
 
   // Returns a null TimeStamp if we're not in the idle period.
   mozilla::TimeStamp GetIdleDeadline();
@@ -114,7 +114,7 @@ class PrioritizedEventQueue final : public AbstractEventQueue {
 
   // We need to drop the queue mutex when checking the idle deadline, so we keep
   // a pointer to it here.
-  Mutex* mMutex = nullptr;
+  Lock* mMutex = nullptr;
 
 #ifndef RELEASE_OR_BETA
   // Pointer to a place where the most recently computed idle deadline is

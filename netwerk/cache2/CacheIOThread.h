@@ -10,7 +10,7 @@
 #include "prthread.h"
 #include "nsTArray.h"
 #include "nsAutoPtr.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/UniquePtr.h"
@@ -112,7 +112,7 @@ class CacheIOThread final : public nsIThreadObserver {
 
   static CacheIOThread* sSelf;
 
-  mozilla::Monitor mMonitor;
+  mozilla::Monitor2 mMonitor;
   PRThread* mThread;
   UniquePtr<detail::BlockingIOWatcher> mBlockingIOWatcher;
   Atomic<nsIThread*> mXPCOMThread;

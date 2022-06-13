@@ -5,7 +5,7 @@
 #include "CloneableWithRangeMediaResource.h"
 
 #include "mozilla/AbstractThread.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "nsContentUtils.h"
 #include "nsIAsyncInputStream.h"
 #include "nsNetCID.h"
@@ -55,8 +55,8 @@ class InputStreamReader final : public nsIInputStreamCallback {
   NS_IMETHOD
   OnInputStreamReady(nsIAsyncInputStream* aStream) override {
     // Let's continue with SyncRead().
-    MonitorAutoLock lock(mMonitor);
-    return lock.Notify();
+    Monitor2AutoLock lock(mMonitor);
+    return lock.Signal();
   }
 
  private:
@@ -95,7 +95,7 @@ class InputStreamReader final : public nsIInputStreamCallback {
 
       {
         // We wait for ::OnInputStreamReady() to be called.
-        MonitorAutoLock lock(mMonitor);
+        Monitor2AutoLock lock(mMonitor);
 
         rv = mAsyncStream->AsyncWait(this, 0, aSize, target);
         if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -109,7 +109,7 @@ class InputStreamReader final : public nsIInputStreamCallback {
 
   nsCOMPtr<nsIInputStream> mStream;
   nsCOMPtr<nsIAsyncInputStream> mAsyncStream;
-  Monitor mMonitor;
+  Monitor2 mMonitor;
 };
 
 NS_IMPL_ADDREF(InputStreamReader);

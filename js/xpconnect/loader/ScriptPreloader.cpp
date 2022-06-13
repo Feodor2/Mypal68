@@ -240,7 +240,7 @@ void ScriptPreloader::Cleanup() {
   // hashtable, since the parse tasks depend on memory allocated by those
   // scripts.
   {
-    MonitorAutoLock mal(mMonitor);
+    Monitor2AutoLock mal(mMonitor);
     FinishPendingParses(mal);
 
     mScripts.Clear();
@@ -264,7 +264,7 @@ void ScriptPreloader::StartCacheWrite() {
 
 void ScriptPreloader::InvalidateCache() {
   mMonitor.AssertNotCurrentThreadOwns();
-  MonitorAutoLock mal(mMonitor);
+  Monitor2AutoLock mal(mMonitor);
 
   mCacheInvalidated = true;
 
@@ -620,7 +620,7 @@ void ScriptPreloader::PrepareCacheWriteInternal() {
 }
 
 void ScriptPreloader::PrepareCacheWrite() {
-  MonitorAutoLock mal(mMonitor);
+  Monitor2AutoLock mal(mMonitor);
 
   PrepareCacheWriteInternal();
 }
@@ -644,7 +644,7 @@ Result<Ok, nsresult> ScriptPreloader::WriteCache() {
   MOZ_ASSERT(!NS_IsMainThread());
 
   if (!mDataPrepared && !mSaveComplete) {
-    MonitorAutoUnlock mau(mSaveMonitor);
+    Monitor2AutoUnlock mau(mSaveMonitor);
 
     NS_DispatchToMainThread(
         NewRunnableMethod("ScriptPreloader::PrepareCacheWrite", this,
@@ -674,7 +674,7 @@ Result<Ok, nsresult> ScriptPreloader::WriteCache() {
     // We also need to hold mMonitor while we're touching scripts in
     // mScripts, or they may be freed before we're done with them.
     mMonitor.AssertNotCurrentThreadOwns();
-    MonitorAutoLock mal(mMonitor);
+    Monitor2AutoLock mal(mMonitor);
 
     nsTArray<CachedScript*> scripts;
     for (auto& script : IterHash(mScripts, Match<ScriptStatus::Saved>())) {
@@ -718,7 +718,7 @@ Result<Ok, nsresult> ScriptPreloader::WriteCache() {
 // Runs in the mSaveThread thread, and writes out the cache file for the next
 // session after a reasonable delay.
 nsresult ScriptPreloader::Run() {
-  MonitorAutoLock mal(mSaveMonitor);
+  Monitor2AutoLock mal(mSaveMonitor);
 
   // Ideally wait about 10 seconds before saving, to avoid unnecessary IO
   // during early startup. But only if the cache hasn't been invalidated,
@@ -884,7 +884,7 @@ JSScript* ScriptPreloader::WaitForCachedScript(JSContext* cx,
     auto start = TimeStamp::Now();
 
     mMonitor.AssertNotCurrentThreadOwns();
-    MonitorAutoLock mal(mMonitor);
+    Monitor2AutoLock mal(mMonitor);
 
     // Check for finished operations again *after* locking, or we may race
     // against mToken being set between our last check and the time we
@@ -902,7 +902,7 @@ JSScript* ScriptPreloader::WaitForCachedScript(JSContext* cx,
       while (!script->mReadyToExecute) {
         mal.Wait();
 
-        MonitorAutoUnlock mau(mMonitor);
+        Monitor2AutoUnlock mau(mMonitor);
         MaybeFinishOffThreadDecode();
       }
     }
@@ -921,12 +921,12 @@ void ScriptPreloader::OffThreadDecodeCallback(JS::OffThreadToken* token,
   auto cache = static_cast<ScriptPreloader*>(context);
 
   cache->mMonitor.AssertNotCurrentThreadOwns();
-  MonitorAutoLock mal(cache->mMonitor);
+  Monitor2AutoLock mal(cache->mMonitor);
 
   // First notify any tasks that are already waiting on scripts, since they'll
   // be blocking the main thread, and prevent any runnables from executing.
   cache->mToken = token;
-  mal.NotifyAll();
+  mal.Broadcast();
 
   // If nothing processed the token, and we don't already have a pending
   // runnable, then dispatch a new one to finish the processing on the main
@@ -939,7 +939,7 @@ void ScriptPreloader::OffThreadDecodeCallback(JS::OffThreadToken* token,
   }
 }
 
-void ScriptPreloader::FinishPendingParses(MonitorAutoLock& aMal) {
+void ScriptPreloader::FinishPendingParses(Monitor2AutoLock& aMal) {
   mMonitor.AssertCurrentThreadOwns();
 
   mPendingScripts.clear();
@@ -1159,7 +1159,7 @@ nsresult ScriptPreloader::BlockShutdown(
     nsIAsyncShutdownClient* aBarrierClient) {
   // If we're waiting on a timeout to finish saving, interrupt it and just save
   // immediately.
-  mSaveMonitor.NotifyAll();
+  mSaveMonitor.Broadcast();
   return NS_OK;
 }
 

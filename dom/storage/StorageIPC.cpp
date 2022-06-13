@@ -707,26 +707,26 @@ class SyncLoadCacheHelper : public LocalStorageCacheBridge {
 
   virtual void LoadDone(nsresult aRv) override {
     // Called on the aCache background thread
-    MonitorAutoLock monitor(mMonitor);
+    Monitor2AutoLock monitor(mMonitor);
     MOZ_ASSERT(!mLoaded && mRv);
     mLoaded = true;
     if (mRv) {
       *mRv = aRv;
       mRv = nullptr;
     }
-    monitor.Notify();
+    monitor.Signal();
   }
 
   virtual void LoadWait() override {
     // Called on the main thread, exits after LoadDone() call
-    MonitorAutoLock monitor(mMonitor);
+    Monitor2AutoLock monitor(mMonitor);
     while (!mLoaded) {
       monitor.Wait();
     }
   }
 
  private:
-  Monitor mMonitor;
+  Monitor2 mMonitor;
   nsCString mSuffix, mOrigin;
   InfallibleTArray<nsString>* mKeys;
   InfallibleTArray<nsString>* mValues;

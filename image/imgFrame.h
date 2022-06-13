@@ -7,7 +7,7 @@
 
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/Move.h"
 #include "AnimationParams.h"
 #include "gfxDrawable.h"
@@ -260,7 +260,7 @@ class imgFrame {
   // Thread-safe mutable data, protected by mMonitor.
   //////////////////////////////////////////////////////////////////////////////
 
-  mutable Monitor mMonitor;
+  mutable Monitor2 mMonitor;
 
   /**
    * Surface which contains either a weak or a strong reference to its
@@ -339,7 +339,7 @@ class DrawableFrameRef final {
 
   explicit DrawableFrameRef(imgFrame* aFrame) : mFrame(aFrame) {
     MOZ_ASSERT(aFrame);
-    MonitorAutoLock lock(aFrame->mMonitor);
+    Monitor2AutoLock lock(aFrame->mMonitor);
 
     if (aFrame->mRawSurface) {
       mRef.emplace(aFrame->mRawSurface, DataSourceSurface::READ);

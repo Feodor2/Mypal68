@@ -6,7 +6,7 @@
 #define mozilla_GraphRunner_h
 
 #include "MediaSegment.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 
 #include <thread>
 
@@ -54,7 +54,7 @@ class GraphRunner {
  private:
   // Monitor used for yielding mThread through Wait(), and scheduling mThread
   // through Signal() from a GraphDriver.
-  Monitor mMonitor;
+  Monitor2 mMonitor;
   // The MediaStreamGraph we're running. Weakptr beecause this graph owns us and
   // guarantees that our lifetime will not go beyond that of itself.
   MediaStreamGraphImpl* const mGraph;

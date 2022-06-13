@@ -87,7 +87,7 @@ class mozPersonalDictionarySave final : public mozilla::Runnable {
     MOZ_ASSERT(!NS_IsMainThread());
 
     {
-      mozilla::MonitorAutoLock mon(mDict->mMonitorSave);
+      mozilla::Monitor2AutoLock mon(mDict->mMonitorSave);
 
       nsCOMPtr<nsIOutputStream> outStream;
       NS_NewSafeLocalFileOutputStream(getter_AddRefs(outStream), mFile,
@@ -125,7 +125,7 @@ class mozPersonalDictionarySave final : public mozilla::Runnable {
       // Save is done, reset the state variable and notify those who are
       // waiting.
       mDict->mSavePending = false;
-      mon.Notify();
+      mon.Signal();
 
       // Leaving the block where 'mon' was declared will call the destructor
       // and unlock.
@@ -183,7 +183,7 @@ void mozPersonalDictionary::WaitForLoad() {
   // If the dictionary hasn't been loaded, we try to lock the same monitor
   // that the thread uses that does the load. This way the main thread will
   // be suspended until the monitor becomes available.
-  mozilla::MonitorAutoLock mon(mMonitor);
+  mozilla::Monitor2AutoLock mon(mMonitor);
 
   // The monitor has become available. This can have two reasons:
   // 1: The thread that does the load has finished.
@@ -196,7 +196,7 @@ void mozPersonalDictionary::WaitForLoad() {
 
 nsresult mozPersonalDictionary::LoadInternal() {
   nsresult rv;
-  mozilla::MonitorAutoLock mon(mMonitor);
+  mozilla::Monitor2AutoLock mon(mMonitor);
 
   if (mIsLoaded) {
     return NS_OK;
@@ -245,7 +245,7 @@ NS_IMETHODIMP mozPersonalDictionary::Load() {
 void mozPersonalDictionary::SyncLoad() {
   MOZ_ASSERT(!NS_IsMainThread());
 
-  mozilla::MonitorAutoLock mon(mMonitor);
+  mozilla::Monitor2AutoLock mon(mMonitor);
 
   if (mIsLoaded) {
     return;
@@ -253,7 +253,7 @@ void mozPersonalDictionary::SyncLoad() {
 
   SyncLoadInternal();
   mIsLoaded = true;
-  mon.Notify();
+  mon.Signal();
 }
 
 void mozPersonalDictionary::SyncLoadInternal() {
@@ -316,7 +316,7 @@ void mozPersonalDictionary::WaitForSave() {
   // If a save is pending, we try to lock the same monitor that the thread uses
   // that does the save. This way the main thread will be suspended until the
   // monitor becomes available.
-  mozilla::MonitorAutoLock mon(mMonitorSave);
+  mozilla::Monitor2AutoLock mon(mMonitorSave);
 
   // The monitor has become available. This can have two reasons:
   // 1: The thread that does the save has finished.

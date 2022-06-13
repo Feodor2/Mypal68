@@ -596,7 +596,7 @@ MediaResult WMFVideoMFTManager::InitInternal() {
     }
   }
 
-  /*if (useDxva) {
+  if (useDxva) {
     if (aware) {
       // TODO: Test if I need this anywhere... Maybe on Vista?
       // hr = attr->SetUINT32(CODECAPI_AVDecVideoAcceleration_H264, TRUE);
@@ -614,7 +614,7 @@ MediaResult WMFVideoMFTManager::InitInternal() {
       mDXVAFailureReason.AssignLiteral(
           "Decoder returned false for MF_SA_D3D_AWARE");
     }
-  }*/
+  }
 
   if (!mUseHwAccel) {
     if (mDXVA2Manager) {

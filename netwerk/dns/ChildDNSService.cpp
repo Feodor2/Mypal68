@@ -101,7 +101,7 @@ nsresult ChildDNSService::AsyncResolveInternal(
       hostname, type, aOriginAttributes, flags, listener, target);
 
   {
-    MutexAutoLock lock(mPendingRequestsLock);
+    AutoLock lock(mPendingRequestsLock);
     nsCString key;
     GetDNSRecordHashKey(hostname, type, aOriginAttributes, originalFlags,
                         originalListener, key);
@@ -131,7 +131,7 @@ nsresult ChildDNSService::CancelAsyncResolveInternal(
     return NS_ERROR_DNS_LOOKUP_QUEUE_FULL;
   }
 
-  MutexAutoLock lock(mPendingRequestsLock);
+  AutoLock lock(mPendingRequestsLock);
   nsTArray<RefPtr<DNSRequestChild>>* hashEntry;
   nsCString key;
   GetDNSRecordHashKey(aHostname, aType, aOriginAttributes, aFlags, aListener,
@@ -307,7 +307,7 @@ void ChildDNSService::NotifyRequestDone(DNSRequestChild* aDnsRequest) {
     }
   }
 
-  MutexAutoLock lock(mPendingRequestsLock);
+  AutoLock lock(mPendingRequestsLock);
 
   nsCString key;
   GetDNSRecordHashKey(aDnsRequest->mHost, aDnsRequest->mType,

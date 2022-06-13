@@ -300,12 +300,12 @@ MFCreateAlignedMemoryBuffer(DWORD cbMaxLength, DWORD fAlignmentFlags,
                                           ppBuffer);
 }
 
-/*HRESULT
+HRESULT
 MFCreateDXGIDeviceManager(UINT* pResetToken,
                           IMFDXGIDeviceManager** ppDXVAManager) {
   ENSURE_FUNCTION_PTR(MFCreateDXGIDeviceManager, mfplat.dll)
   return (MFCreateDXGIDeviceManagerPtr)(pResetToken, ppDXVAManager);
-}*/
+}
 
 HRESULT
 MFCreateDXGISurfaceBuffer(REFIID riid, IUnknown* punkSurface,

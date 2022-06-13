@@ -46,7 +46,7 @@ uint32_t CheckerboardEvent::GetPeak() { return mPeakPixels; }
 TimeDuration CheckerboardEvent::GetDuration() { return mEndTime - mStartTime; }
 
 std::string CheckerboardEvent::GetLog() {
-  MonitorAutoLock lock(mRendertraceLock);
+  Monitor2AutoLock lock(mRendertraceLock);
   return mRendertraceInfo.str();
 }
 
@@ -58,7 +58,7 @@ void CheckerboardEvent::UpdateRendertraceProperty(
   if (!mRecordTrace) {
     return;
   }
-  MonitorAutoLock lock(mRendertraceLock);
+  Monitor2AutoLock lock(mRendertraceLock);
   if (!mCheckerboardingActive) {
     mBufferedProperties[aProperty].Update(aProperty, aRect, aExtraInfo, lock);
   } else {
@@ -70,7 +70,7 @@ void CheckerboardEvent::LogInfo(RendertraceProperty aProperty,
                                 const TimeStamp& aTimestamp,
                                 const CSSRect& aRect,
                                 const std::string& aExtraInfo,
-                                const MonitorAutoLock& aProofOfLock) {
+                                const Monitor2AutoLock& aProofOfLock) {
   MOZ_ASSERT(mRecordTrace);
   if (mRendertraceInfo.tellp() >= LOG_LENGTH_LIMIT) {
     // The log is already long enough, don't put more things into it. We'll
@@ -125,7 +125,7 @@ void CheckerboardEvent::StartEvent() {
   if (!mRecordTrace) {
     return;
   }
-  MonitorAutoLock lock(mRendertraceLock);
+  Monitor2AutoLock lock(mRendertraceLock);
   std::vector<PropertyValue> history;
   for (PropertyBuffer& bufferedProperty : mBufferedProperties) {
     bufferedProperty.Flush(history, lock);
@@ -144,7 +144,7 @@ void CheckerboardEvent::StopEvent() {
   if (!mRecordTrace) {
     return;
   }
-  MonitorAutoLock lock(mRendertraceLock);
+  Monitor2AutoLock lock(mRendertraceLock);
   if (mRendertraceInfo.tellp() >= LOG_LENGTH_LIMIT) {
     mRendertraceInfo << "[logging aborted due to length limitations]\n";
   }
@@ -168,13 +168,13 @@ CheckerboardEvent::PropertyBuffer::PropertyBuffer() : mIndex(0) {}
 
 void CheckerboardEvent::PropertyBuffer::Update(
     RendertraceProperty aProperty, const CSSRect& aRect,
-    const std::string& aExtraInfo, const MonitorAutoLock& aProofOfLock) {
+    const std::string& aExtraInfo, const Monitor2AutoLock& aProofOfLock) {
   mValues[mIndex] = {aProperty, TimeStamp::Now(), aRect, aExtraInfo};
   mIndex = (mIndex + 1) % BUFFER_SIZE;
 }
 
 void CheckerboardEvent::PropertyBuffer::Flush(
-    std::vector<PropertyValue>& aOut, const MonitorAutoLock& aProofOfLock) {
+    std::vector<PropertyValue>& aOut, const Monitor2AutoLock& aProofOfLock) {
   for (uint32_t i = 0; i < BUFFER_SIZE; i++) {
     uint32_t ix = (mIndex + i) % BUFFER_SIZE;
     if (!mValues[ix].mTimeStamp.IsNull()) {

@@ -532,7 +532,7 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
         // This is so that we don't flood the refresh driver with vsync messages
         // if the main thread is blocked for long periods of time
         {  // scope lock
-          MonitorAutoLock lock(mRefreshTickLock);
+          Monitor2AutoLock lock(mRefreshTickLock);
           mRecentVsync = aVsync.mTime;
           mRecentVsyncId = aVsync.mId;
           if (!mProcessedVsync) {
@@ -679,7 +679,7 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
 
       RecordTelemetryProbes(aVsyncTimestamp);
       if (XRE_IsParentProcess()) {
-        MonitorAutoLock lock(mRefreshTickLock);
+        Monitor2AutoLock lock(mRefreshTickLock);
         aVsyncTimestamp = mRecentVsync;
         mProcessedVsync = true;
       } else {
@@ -717,7 +717,7 @@ class VsyncRefreshDriverTimer : public RefreshDriverTimer {
     // be always available before Shutdown(). We can just use the raw pointer
     // here.
     VsyncRefreshDriverTimer* mVsyncRefreshDriverTimer;
-    Monitor mRefreshTickLock;
+    Monitor2 mRefreshTickLock;
     TimeStamp mRecentVsync;
     VsyncId mRecentVsyncId;
     TimeStamp mLastChildTick;

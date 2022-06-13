@@ -35,24 +35,6 @@ pref("extensions.checkCompatibility.temporaryThemeOverride_minAppVersion", "29.0
 pref("extensions.webextPermissionPrompts", true);
 pref("extensions.webextOptionalPermissionPrompts", true);
 
-// Preferences for AMO integration
-pref("extensions.getAddons.cache.enabled", false);
-pref("extensions.getAddons.get.url", "data:text/plain,");
-pref("extensions.getAddons.compatOverides.url", "data:text/plain,");
-pref("extensions.getAddons.search.browseURL", "data:text/plain,");
-pref("extensions.webservice.discoverURL", "data:text/plain,");
-pref("extensions.getAddons.link.url", "data:text/plain,");
-pref("extensions.getAddons.langpacks.url", "data:text/plain,");
-pref("extensions.getAddons.discovery.api_url", "data:text/plain,");
-
-// Enable the HTML-based discovery panel at about:addons.
-pref("extensions.htmlaboutaddons.discover.enabled", true);
-
-// The URL for the privacy policy related to recommended extensions.
-pref("extensions.recommendations.privacyPolicyUrl", "data:text/plain,");
-// The URL for Firefox Color, recommended on the theme page in about:addons.
-pref("extensions.recommendations.themeRecommendationUrl", "data:text/plain,");
-
 pref("extensions.update.autoUpdateDefault", false);
 
 // Check AUS for system add-on updates.
@@ -740,16 +722,18 @@ pref("plugin.state.flash", 0);
 pref("plugin.state.flash", 1);
 #endif
 
+pref("plugin.load_flash_only", false);
+
 // Enables the download and use of the flash blocklists.
-pref("plugins.flashBlock.enabled", true);
+pref("plugins.flashBlock.enabled", false);
 
 // Prefer HTML5 video over Flash content, and don't
 // load plugin instances with no src declared.
 // These prefs are documented in details on all.js.
 // With the "follow-ctp" setting, this will only
 // apply to users that have plugin.state.flash = 1.
-pref("plugins.favorfallback.mode", "follow-ctp");
-pref("plugins.favorfallback.rules", "nosrc,video");
+pref("plugins.favorfallback.mode", "never");
+pref("plugins.favorfallback.rules", "");
 
 
 #ifdef XP_WIN
@@ -1010,7 +994,7 @@ pref("browser.bookmarks.editDialog.showForNewBookmarks", true);
 // bookmarking dialog
 pref("browser.bookmarks.editDialog.firstEditField", "namePicker");
 
-pref("dom.ipc.plugins.flash.disable-protected-mode", false);
+pref("dom.ipc.plugins.flash.disable-protected-mode", true);
 
 // Feature-disable the protected-mode auto-flip
 pref("browser.flash-protected-mode-flip.enable", false);

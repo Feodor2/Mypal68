@@ -11,7 +11,7 @@
 #include "MediaSink.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
 #include "nsISupportsImpl.h"
@@ -100,7 +100,7 @@ class AudioSink : private AudioStream::DataSource {
   // mCursor is created/destroyed on the cubeb thread, while we must also
   // ensure that mWritten and mCursor::Available() get modified simultaneously.
   // (written on cubeb thread, and read on MDSM task queue).
-  mutable Monitor mMonitor;
+  mutable Monitor2 mMonitor;
   // Keep track of the read position of mCurrentData.
   UniquePtr<AudioBufferCursor> mCursor;
 

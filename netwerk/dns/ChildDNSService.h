@@ -8,7 +8,7 @@
 #include "nsPIDNSService.h"
 #include "nsIObserver.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Mutex.h"
+#include "base/lock.h"
 #include "DNSRequestChild.h"
 #include "nsHashKeys.h"
 #include "nsClassHashtable.h"
@@ -55,7 +55,7 @@ class ChildDNSService final : public nsPIDNSService, public nsIObserver {
   // We need to remember pending dns requests to be able to cancel them.
   nsClassHashtable<nsCStringHashKey, nsTArray<RefPtr<DNSRequestChild>>>
       mPendingRequests;
-  Mutex mPendingRequestsLock;
+  Lock mPendingRequestsLock;
 };
 
 }  // namespace net

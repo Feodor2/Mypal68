@@ -40,7 +40,6 @@ XPCOMUtils.defineLazyGlobalGetters(this, [
 ]);
 
 XPCOMUtils.defineLazyModuleGetters(this, {
-  AddonRepository: "resource://gre/modules/addons/AddonRepository.jsm",
   AddonSettings: "resource://gre/modules/addons/AddonSettings.jsm",
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   CertUtils: "resource://gre/modules/CertUtils.jsm",
@@ -1585,22 +1584,7 @@ class AddonInstall {
     // Setting the iconURL to something inside the XPI locks the XPI and
     // makes it impossible to delete on Windows.
 
-    // Try to load from the existing cache first
-    let repoAddon = await AddonRepository.getCachedAddonByID(this.addon.id);
-
-    // It wasn't there so try to re-download it
-    if (!repoAddon) {
-      try {
-        [repoAddon] = await AddonRepository.cacheAddons([this.addon.id]);
-      } catch (err) {
-        logger.debug(
-          `Error getting metadata for ${this.addon.id}: ${err.message}`
-        );
-      }
-    }
-
-    this.addon._repositoryAddon = repoAddon;
-    this.name = this.name || this.addon._repositoryAddon.name;
+    this.name = this.name;
     this.addon.appDisabled = !XPIDatabase.isUsableAddon(this.addon);
     return undefined;
   }
@@ -2900,17 +2884,12 @@ UpdateChecker.prototype = {
       );
     }
 
-    let compatOverrides = AddonManager.strictCompatibility
-      ? null
-      : await AddonRepository.getCompatibilityOverrides(this.addon.id);
-
     let update = await AUC.getNewestCompatibleUpdate(
       aUpdates,
       this.appVersion,
       this.platformVersion,
       ignoreMaxVersion,
-      ignoreStrictCompat,
-      compatOverrides
+      ignoreStrictCompat
     );
 
     if (

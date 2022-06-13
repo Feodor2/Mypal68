@@ -8,7 +8,7 @@
 #include <windows.h>
 
 #include "mozilla/Atomics.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "nsNamedPipeService.h"
 #include "nsNetCID.h"
 
@@ -28,13 +28,13 @@ class Event {
   ~Event() = default;
 
   void Set() {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     MOZ_ASSERT(!mSignaled);
     mSignaled = true;
     mMonitor.Notify();
   }
   void Wait() {
-    MonitorAutoLock lock(mMonitor);
+    Monitor2AutoLock lock(mMonitor);
     while (!mSignaled) {
       lock.Wait();
     }

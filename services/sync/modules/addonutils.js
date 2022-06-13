@@ -17,11 +17,6 @@ ChromeUtils.defineModuleGetter(
   "AddonManager",
   "resource://gre/modules/AddonManager.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "AddonRepository",
-  "resource://gre/modules/addons/AddonRepository.jsm"
-);
 
 function AddonUtilsInternal() {
   this._log = Log.repository.getLogger("Sync.AddonUtils");
@@ -208,12 +203,6 @@ AddonUtilsInternal.prototype = {
     for (let addon of installs) {
       ids.push(addon.id);
     }
-
-    let addons = await AddonRepository.getAddonsByIDs(ids);
-    this._log.info(
-      `Found ${addons.length} / ${ids.length}` +
-        " add-ons during repository search."
-    );
 
     let ourResult = {
       installedIDs: [],

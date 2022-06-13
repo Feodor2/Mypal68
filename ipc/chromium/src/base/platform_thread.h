@@ -16,8 +16,7 @@
 // should not initialize it to a value, like 0.  If it's a member variable, the
 // constructor can safely "value initialize" using () in the initializer list.
 #if defined(OS_WIN)
-#  include <windows.h>
-typedef DWORD PlatformThreadId;
+typedef unsigned long PlatformThreadId;
 typedef void* PlatformThreadHandle;  // HANDLE
 #elif defined(OS_POSIX)
 #  include <pthread.h>

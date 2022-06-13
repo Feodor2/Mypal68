@@ -106,19 +106,8 @@ mozilla::detail::ConditionVariableImpl::platformData() {
   static const uint32_t WAKEUP_MODE_MASK = WAKEUP_MODE_ONE | WAKEUP_MODE_ALL;
   static const uint32_t SLEEPERS_COUNT_MASK = ~WAKEUP_MODE_MASK;
 
-
-// Fallback condition variable support for Windows XP and Server 2003. Given the
-// difficulty of testing on these antiquated platforms and their rapidly
-// diminishing market share, this implementation trades performance for
-// predictable behavior.
-class ConditionVariableFallback
-{
-  /*HANDLE waiting_sem_;
-  HANDLE received_sem_;
-  HANDLE signal_event_;*/
-public:
-  void initialize()
-  {
+mozilla::detail::ConditionVariableImpl::ConditionVariableImpl() {
+//    platformData()->fallback.initialize();
     // Initialize the state variable to 0 sleepers, no wakeup.
     sleepersCountAndWakeupMode_ = 0 | WAKEUP_MODE_NONE;
 
@@ -134,51 +123,25 @@ public:
     // Use a manual-reset event for waking up all sleepers.
     wakeAllEvent_ = CreateEventW(NULL, TRUE, FALSE, NULL);
     MOZ_RELEASE_ASSERT(wakeAllEvent_);
-    /*waiting_sem_ = CreateSemaphore(NULL, 0, MAX_DECODE_THREADS, NULL);
-    MOZ_RELEASE_ASSERT(waiting_sem_);
-    received_sem_ = CreateSemaphore(NULL, 0, MAX_DECODE_THREADS, NULL);
-    MOZ_RELEASE_ASSERT(received_sem_);
-    signal_event_ = CreateEvent(NULL, FALSE, FALSE, NULL);
-    MOZ_RELEASE_ASSERT(signal_event_);*/
-  }
+}
 
-  void destroy()
-  {
-    BOOL r;
-
-    //MOZ_RELEASE_ASSERT(sleepersCountAndWakeupMode_ == (0 | WAKEUP_MODE_NONE));
-
-    r = CloseHandle(sleepWakeupSemaphore_);
-    //MOZ_RELEASE_ASSERT(r);
-
-    r = CloseHandle(wakeOneEvent_);
-    //MOZ_RELEASE_ASSERT(r);
-
-    r = CloseHandle(wakeAllEvent_);
-    //MOZ_RELEASE_ASSERT(r);
-    /*CloseHandle(waiting_sem_);
-    CloseHandle(received_sem_);
-    CloseHandle(signal_event_);*/
-  }
-
-private:
-  void wakeup(uint32_t wakeupMode, HANDLE wakeEvent)
-  {
+void mozilla::detail::ConditionVariableImpl::notify_one() {
+//    platformData()->fallback.notify_one();
     // Ensure that only one thread at a time can wake up others.
     BOOL result = WaitForSingleObject(sleepWakeupSemaphore_, INFINITE);
     //MOZ_RELEASE_ASSERT(result == WAIT_OBJECT_0);
 
     // Atomically set the wakeup mode and retrieve the number of sleepers.
     uint32_t wcwm = InterlockedExchangeAdd(&sleepersCountAndWakeupMode_,
-                                           wakeupMode);
+                                           WAKEUP_MODE_ONE);
     uint32_t sleepersCount = wcwm & SLEEPERS_COUNT_MASK;
     //MOZ_RELEASE_ASSERT((wcwm & WAKEUP_MODE_MASK) == WAKEUP_MODE_NONE);
 
     if (sleepersCount > 0) {
       // If there are any sleepers, set the wake event. The (last) woken
       // up thread is responsible for releasing the semaphore.
-      BOOL success = SetEvent(wakeEvent);
-      MOZ_RELEASE_ASSERT(success);
+      BOOL success = SetEvent(wakeOneEvent_);
+      //MOZ_RELEASE_ASSERT(success);
 
     } else {
       // If there are no sleepers, set the wakeup mode back to 'none'
@@ -188,15 +151,53 @@ private:
       BOOL success = ReleaseSemaphore(sleepWakeupSemaphore_, 1, NULL);
       //MOZ_RELEASE_ASSERT(success);
     }
-  }
+}
 
-public:
-  void notify_one() { wakeup(WAKEUP_MODE_ONE, wakeOneEvent_); }
+void mozilla::detail::ConditionVariableImpl::notify_all() {
+    // Ensure that only one thread at a time can wake up others.
+    BOOL result = WaitForSingleObject(sleepWakeupSemaphore_, INFINITE);
+    //MOZ_RELEASE_ASSERT(result == WAIT_OBJECT_0);
 
-  void notify_all() { wakeup(WAKEUP_MODE_ALL, wakeAllEvent_); }
+    // Atomically set the wakeup mode and retrieve the number of sleepers.
+    uint32_t wcwm = InterlockedExchangeAdd(&sleepersCountAndWakeupMode_,
+                                           WAKEUP_MODE_ALL);
+    uint32_t sleepersCount = wcwm & SLEEPERS_COUNT_MASK;
+    //MOZ_RELEASE_ASSERT((wcwm & WAKEUP_MODE_MASK) == WAKEUP_MODE_NONE);
 
-  bool wait(CRITICAL_SECTION* userLock, DWORD msec)
-  {
+    if (sleepersCount > 0) {
+      // If there are any sleepers, set the wake event. The (last) woken
+      // up thread is responsible for releasing the semaphore.
+      BOOL success = SetEvent(wakeAllEvent_);
+      //MOZ_RELEASE_ASSERT(success);
+
+    } else {
+      // If there are no sleepers, set the wakeup mode back to 'none'
+      // and release the semaphore ourselves.
+      sleepersCountAndWakeupMode_ = 0 | WAKEUP_MODE_NONE;
+
+      BOOL success = ReleaseSemaphore(sleepWakeupSemaphore_, 1, NULL);
+      //MOZ_RELEASE_ASSERT(success);
+    }
+}
+
+void mozilla::detail::ConditionVariableImpl::wait(MutexImpl& lock) {
+  wait_for(lock, mozilla::TimeDuration::Forever());
+}
+
+mozilla::CVStatus mozilla::detail::ConditionVariableImpl::wait_for(
+  MutexImpl& lock, const mozilla::TimeDuration& rel_time) {
+  CRITICAL_SECTION* cs = &lock.platformData->criticalSection;
+
+  // Note that DWORD is unsigned, so we have to be careful to clamp at 0.
+  // If rel_time is Forever, then ToMilliseconds is +inf, which evaluates as
+  // greater than UINT32_MAX, resulting in the correct INFINITE wait.
+  double msecd = rel_time.ToMilliseconds();
+  DWORD msec = msecd < 0.0
+               ? 0
+               : msecd > UINT32_MAX
+                 ? INFINITE
+                 : static_cast<DWORD>(msecd);
+
     // Make sure that we can't enter sleep when there are other threads
     // that still need to wake up on either of the wake events being set.
     DWORD result = WaitForSingleObject(sleepWakeupSemaphore_, INFINITE);
@@ -214,7 +215,7 @@ public:
     MOZ_RELEASE_ASSERT(success);
 
     // Release the caller's mutex.
-    LeaveCriticalSection(userLock);
+    LeaveCriticalSection(cs);
 
     // Wait for either event to become signaled, which happens when
     // notify_one() or notify_all() is called, or for a timeout.
@@ -265,7 +266,7 @@ public:
       // mode, but no threads to be woken up by it, and we need to clean
       // that up.
       BOOL success = ResetEvent(wakeOneEvent_);
-      MOZ_RELEASE_ASSERT(success);
+      //MOZ_RELEASE_ASSERT(success);
 
       // This is safe - we are certain there are no other sleepers that
       // could wake up right now, and the semaphore ensures that no
@@ -319,85 +320,31 @@ public:
     }
 
     // Reacquire the user mutex.
-    EnterCriticalSection(userLock);
+    EnterCriticalSection(cs);
 
     // Return true if woken up, false when timed out.
     if (waitResult == WAIT_TIMEOUT) {
       SetLastError(ERROR_TIMEOUT);
-      return false;
+      return CVStatus::Timeout;
     }
-    return true;
-  }
-
-private:
-  uint32_t sleepersCountAndWakeupMode_;
-  HANDLE sleepWakeupSemaphore_;
-  HANDLE wakeOneEvent_;
-  HANDLE wakeAllEvent_;
-};
-
-struct mozilla::detail::ConditionVariableImpl::PlatformData
-{
-    ConditionVariableFallback fallback;
-};
-
-mozilla::detail::ConditionVariableImpl::ConditionVariableImpl() {
-    platformData()->fallback.initialize();
-}
-
-void mozilla::detail::ConditionVariableImpl::notify_one() {
-    platformData()->fallback.notify_one();
-}
-
-void mozilla::detail::ConditionVariableImpl::notify_all() {
-    platformData()->fallback.notify_all();
-}
-
-void mozilla::detail::ConditionVariableImpl::wait(MutexImpl& lock) {
-  CRITICAL_SECTION* cs = &lock.platformData->criticalSection;
-  bool r;
-  //if (sNativeImports.supported())
-  //  r = platformData()->native.wait(cs, INFINITE);
-  //else
-    r = platformData()->fallback.wait(cs, INFINITE);
-  MOZ_RELEASE_ASSERT(r);
-}
-
-mozilla::CVStatus mozilla::detail::ConditionVariableImpl::wait_for(
-    MutexImpl& lock, const mozilla::TimeDuration& rel_time) {
-  CRITICAL_SECTION* cs = &lock.platformData->criticalSection;
-
-  // Note that DWORD is unsigned, so we have to be careful to clamp at 0.
-  // If rel_time is Forever, then ToMilliseconds is +inf, which evaluates as
-  // greater than UINT32_MAX, resulting in the correct INFINITE wait.
-  double msecd = rel_time.ToMilliseconds();
-  DWORD msec = msecd < 0.0
-               ? 0
-               : msecd > UINT32_MAX
-                 ? INFINITE
-                 : static_cast<DWORD>(msecd);
-
-  BOOL r;
-  //if (sNativeImports.supported())
-  //  r = platformData()->native.wait(cs, msec);
-  //else
-    r = platformData()->fallback.wait(cs, msec);
-  if (r)
     return CVStatus::NoTimeout;
-  MOZ_RELEASE_ASSERT(GetLastError() == ERROR_TIMEOUT);
-  return CVStatus::Timeout;
 }
 
 mozilla::detail::ConditionVariableImpl::~ConditionVariableImpl() {
   //if (sNativeImports.supported())
   //  platformData()->native.destroy();
   //else
-    platformData()->fallback.destroy();
-}
+  //  platformData()->fallback.destroy();
+    BOOL r;
 
-inline mozilla::detail::ConditionVariableImpl::PlatformData*
-mozilla::detail::ConditionVariableImpl::platformData() {
-  static_assert(sizeof platformData_ >= sizeof(PlatformData),
-                "platformData_ is too small");
-  return reinterpret_cast<PlatformData*>(platformData_);
+    //MOZ_RELEASE_ASSERT(sleepersCountAndWakeupMode_ == (0 | WAKEUP_MODE_NONE));
+
+    r = CloseHandle(sleepWakeupSemaphore_);
+    //MOZ_RELEASE_ASSERT(r);
+
+    r = CloseHandle(wakeOneEvent_);
+    //MOZ_RELEASE_ASSERT(r);
+
+    r = CloseHandle(wakeAllEvent_);
+    //MOZ_RELEASE_ASSERT(r);
 }

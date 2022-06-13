@@ -297,7 +297,7 @@ void VRDisplayHost::SubmitFrameInternal(
   AUTO_PROFILER_TRACING("VR", "SubmitFrameAtVRDisplayHost", OTHER);
 
   {  // scope lock
-    MonitorAutoLock lock(mCurrentSubmitTaskMonitor);
+    Monitor2AutoLock lock(mCurrentSubmitTaskMonitor);
 
     if (!SubmitFrame(aTexture, aFrameId, aLeftEyeRect, aRightEyeRect)) {
       mCurrentSubmitTask = nullptr;
@@ -332,7 +332,7 @@ void VRDisplayHost::SubmitFrame(VRLayerParent* aLayer,
                                 uint64_t aFrameId,
                                 const gfx::Rect& aLeftEyeRect,
                                 const gfx::Rect& aRightEyeRect) {
-  MonitorAutoLock lock(mCurrentSubmitTaskMonitor);
+  Monitor2AutoLock lock(mCurrentSubmitTaskMonitor);
   if ((mDisplayInfo.mGroupMask & aLayer->GetGroup()) == 0) {
     // Suppress layers hidden by the group mask
     return;
@@ -382,7 +382,7 @@ void VRDisplayHost::SubmitFrame(VRLayerParent* aLayer,
 }
 
 void VRDisplayHost::CancelCurrentSubmitTask() {
-  MonitorAutoLock lock(mCurrentSubmitTaskMonitor);
+  Monitor2AutoLock lock(mCurrentSubmitTaskMonitor);
   if (mCurrentSubmitTask) {
     mCurrentSubmitTask->Cancel();
     mCurrentSubmitTask = nullptr;

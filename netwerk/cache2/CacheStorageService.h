@@ -16,7 +16,7 @@
 #include "nsString.h"
 #include "nsThreadUtils.h"
 #include "nsProxyRelease.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/TimeStamp.h"
@@ -393,7 +393,7 @@ class CacheStorageService final : public nsICacheStorageService,
     virtual ~IOThreadSuspender() = default;
     NS_IMETHOD Run() override;
 
-    Monitor mMon;
+    Monitor2 mMon;
     bool mSignaled;
   };
 

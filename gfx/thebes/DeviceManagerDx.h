@@ -113,6 +113,7 @@ class DeviceManagerDx final {
   // Note: these set the cached device reset reason, which will be picked up
   // on the next frame.
   void ForceDeviceReset(ForcedDeviceResetReason aReason);
+  void NotifyD3D9DeviceReset();
 
  private:
   // Pre-load any compositor resources that are expensive, and are needed when

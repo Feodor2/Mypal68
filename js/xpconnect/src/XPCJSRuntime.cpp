@@ -1009,8 +1009,8 @@ void XPCJSRuntime::OnLargeAllocationFailure() {
 }
 
 class LargeAllocationFailureRunnable final : public Runnable {
-  Mutex mMutex;
-  CondVar mCondVar;
+  Lock mMutex;
+  ConditionVariable mCondVar;
   bool mWaiting;
 
   virtual ~LargeAllocationFailureRunnable() { MOZ_ASSERT(!mWaiting); }
@@ -1021,11 +1021,11 @@ class LargeAllocationFailureRunnable final : public Runnable {
 
     XPCJSRuntime::Get()->OnLargeAllocationFailure();
 
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     MOZ_ASSERT(mWaiting);
 
     mWaiting = false;
-    mCondVar.Notify();
+    mCondVar.Signal();
     return NS_OK;
   }
 
@@ -1041,7 +1041,7 @@ class LargeAllocationFailureRunnable final : public Runnable {
   void BlockUntilDone() {
     MOZ_ASSERT(!NS_IsMainThread());
 
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     while (mWaiting) {
       mCondVar.Wait();
     }

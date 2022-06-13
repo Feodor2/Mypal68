@@ -863,26 +863,6 @@ class NetErrorChild extends ActorChild {
       let baseURL = Services.urlFormatter.formatURLPref("app.support.baseURL");
       learnMoreLink.setAttribute("href", baseURL + "connection-not-secure");
     }
-
-    let automatic = Services.prefs.getBoolPref(
-      "security.ssl.errorReporting.automatic"
-    );
-    win.dispatchEvent(
-      new win.CustomEvent("AboutNetErrorOptions", {
-        detail: JSON.stringify({
-          enabled: Services.prefs.getBoolPref(
-            "security.ssl.errorReporting.enabled"
-          ),
-          changedCertPrefs: this.changedCertPrefs(),
-          automatic,
-          hideAddExceptionButton,
-        }),
-      })
-    );
-
-    this.mm.sendAsyncMessage("Browser:SSLErrorReportTelemetry", {
-      reportStatus: TLS_ERROR_REPORT_TELEMETRY_UI_SHOWN,
-    });
   }
 
   onResetPreferences(evt) {

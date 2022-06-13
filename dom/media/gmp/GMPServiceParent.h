@@ -191,7 +191,7 @@ class GeckoMediaPluginServiceParent final
 
   // Synchronization for barrier that ensures we've loaded GMPs from
   // MOZ_GMP_PATH before allowing GetContentParentFrom() to proceed.
-  Monitor mInitPromiseMonitor;
+  Monitor2 mInitPromiseMonitor;
   MozPromiseHolder<GenericPromise> mInitPromise;
   bool mLoadPluginsFromDiskComplete;
 
@@ -240,7 +240,7 @@ class GMPServiceParent final : public PGMPServiceParent {
       nsCString* aOutErrorDescription) override;
 
  private:
-  void CloseTransport(Monitor* aSyncMonitor, bool* aCompleted);
+  void CloseTransport(Monitor2* aSyncMonitor, bool* aCompleted);
 
   RefPtr<GeckoMediaPluginServiceParent> mService;
 };

@@ -22,7 +22,7 @@
 #include "mozilla/layers/PImageBridgeParent.h"
 #include "mozilla/layers/TextureHostOGL.h"  // for TextureHostOGL
 #include "mozilla/layers/Compositor.h"
-#include "mozilla/Monitor.h"
+#include "mozilla/Monitor2.h"
 #include "mozilla/mozalloc.h"  // for operator new, etc
 #include "mozilla/Unused.h"
 #include "nsDebug.h"                 // for NS_ASSERTION, etc
@@ -42,7 +42,7 @@ using namespace mozilla::media;
 
 ImageBridgeParent::ImageBridgeMap ImageBridgeParent::sImageBridges;
 
-StaticAutoPtr<mozilla::Monitor> sImageBridgesLock;
+StaticAutoPtr<mozilla::Monitor2> sImageBridgesLock;
 
 static StaticRefPtr<ImageBridgeParent> sImageBridgeParentSingleton;
 
@@ -50,7 +50,7 @@ static StaticRefPtr<ImageBridgeParent> sImageBridgeParentSingleton;
 void ImageBridgeParent::Setup() {
   MOZ_ASSERT(NS_IsMainThread());
   if (!sImageBridgesLock) {
-    sImageBridgesLock = new Monitor("ImageBridges");
+    sImageBridgesLock = new Monitor2("ImageBridges");
     mozilla::ClearOnShutdown(&sImageBridgesLock);
   }
 }
@@ -74,7 +74,7 @@ ImageBridgeParent* ImageBridgeParent::CreateSameProcess() {
   parent->mSelfRef = parent;
 
   {
-    MonitorAutoLock lock(*sImageBridgesLock);
+    Monitor2AutoLock lock(*sImageBridgesLock);
     MOZ_RELEASE_ASSERT(sImageBridges.count(pid) == 0);
     sImageBridges[pid] = parent;
   }
@@ -110,7 +110,7 @@ void ImageBridgeParent::ShutdownInternal() {
   // don't want the object to get freed underneath us.
   nsTArray<RefPtr<ImageBridgeParent>> actors;
   {
-    MonitorAutoLock lock(*sImageBridgesLock);
+    Monitor2AutoLock lock(*sImageBridgesLock);
     for (const auto& iter : sImageBridges) {
       actors.AppendElement(iter.second);
     }
@@ -136,7 +136,7 @@ void ImageBridgeParent::ActorDestroy(ActorDestroyReason aWhy) {
   mClosed = true;
   mCompositables.clear();
   {
-    MonitorAutoLock lock(*sImageBridgesLock);
+    Monitor2AutoLock lock(*sImageBridgesLock);
     sImageBridges.erase(OtherPid());
   }
   MessageLoop::current()->PostTask(
@@ -234,7 +234,7 @@ void ImageBridgeParent::Bind(Endpoint<PImageBridgeParent>&& aEndpoint) {
   // object was destroyed, we need to clean it up first.
   RefPtr<ImageBridgeParent> oldActor;
   {
-    MonitorAutoLock lock(*sImageBridgesLock);
+    Monitor2AutoLock lock(*sImageBridgesLock);
     ImageBridgeMap::const_iterator i = sImageBridges.find(OtherPid());
     if (i != sImageBridges.end()) {
       oldActor = i->second;
@@ -248,7 +248,7 @@ void ImageBridgeParent::Bind(Endpoint<PImageBridgeParent>&& aEndpoint) {
   }
 
   {
-    MonitorAutoLock lock(*sImageBridgesLock);
+    Monitor2AutoLock lock(*sImageBridgesLock);
     sImageBridges[OtherPid()] = this;
   }
 }
@@ -369,7 +369,7 @@ void ImageBridgeParent::DeferredDestroy() {
 already_AddRefed<ImageBridgeParent> ImageBridgeParent::GetInstance(
     ProcessId aId) {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
-  MonitorAutoLock lock(*sImageBridgesLock);
+  Monitor2AutoLock lock(*sImageBridgesLock);
   ImageBridgeMap::const_iterator i = sImageBridges.find(aId);
   if (i == sImageBridges.end()) {
     NS_WARNING("Cannot find image bridge for process!");

@@ -17,6 +17,7 @@
 #include "frontend/EitherParser.h"
 #include "frontend/JumpList.h"
 #include "frontend/NameFunctions.h"
+#include "frontend/OptionalEmitter.h"  // OptionalEmitter
 #include "frontend/ParseNode.h"
 #include "frontend/SharedContext.h"
 #include "frontend/SourceNotes.h"
@@ -33,6 +34,8 @@ class ElemOpEmitter;
 class EmitterScope;
 class NestableControl;
 class PropertyEmitter;
+class PropOpEmitter;
+class OptionalEmitter;
 class TDZCheckCache;
 class TryEmitter;
 
@@ -359,6 +362,10 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
                              ValueUsage valueUsage = ValueUsage::WantValue,
                              EmitLineNumberNote emitLineNote = EMIT_LINENOTE);
 
+  MOZ_MUST_USE bool emitOptionalTree(
+      ParseNode* pn, OptionalEmitter& oe,
+      ValueUsage valueUsage = ValueUsage::WantValue);
+
   // Emit global, eval, or module code for tree rooted at body. Always
   // encompasses the entire source.
   MOZ_MUST_USE bool emitScript(ParseNode* body);
@@ -662,6 +669,28 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
   MOZ_MUST_USE bool emitDeleteElement(UnaryNode* deleteNode);
   MOZ_MUST_USE bool emitDeleteExpression(UnaryNode* deleteNode);
 
+  // Optional methods which emit Optional Jump Target
+  MOZ_MUST_USE bool emitOptionalChain(UnaryNode* expr, ValueUsage valueUsage);
+  MOZ_MUST_USE bool emitCalleeAndThisForOptionalChain(UnaryNode* expr,
+                                                      CallNode* callNode,
+                                                      CallOrNewEmitter& cone);
+  MOZ_MUST_USE bool emitDeleteOptionalChain(UnaryNode* deleteNode);
+
+  // Optional methods which emit a shortCircuit jump. They need to be called by
+  // a method which emits an Optional Jump Target, see below.
+  MOZ_MUST_USE bool emitOptionalDotExpression(PropertyAccessBase* expr,
+                                              PropOpEmitter& poe, bool isSuper,
+                                              OptionalEmitter& oe);
+  MOZ_MUST_USE bool emitOptionalElemExpression(PropertyByValueBase* elem,
+                                               ElemOpEmitter& poe, bool isSuper,
+                                               OptionalEmitter& oe);
+  MOZ_MUST_USE bool emitOptionalCall(CallNode* callNode, OptionalEmitter& oe,
+                                     ValueUsage valueUsage);
+  MOZ_MUST_USE bool emitDeletePropertyInOptChain(PropertyAccessBase* propExpr,
+                                                 OptionalEmitter& oe);
+  MOZ_MUST_USE bool emitDeleteElementInOptChain(PropertyByValueBase* elemExpr,
+                                                OptionalEmitter& oe);
+
   // |op| must be JSOP_TYPEOF or JSOP_TYPEOFEXPR.
   MOZ_MUST_USE bool emitTypeof(UnaryNode* typeofNode, JSOp op);
 
@@ -679,6 +708,10 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
       ValueUsage valueUsage = ValueUsage::WantValue);
 
   bool isRestParameter(ParseNode* expr);
+
+  MOZ_MUST_USE ParseNode* getCoordNode(ParseNode* callNode,
+                                       ParseNode* calleeNode, JSOp op,
+                                       ListNode* argsList);
 
   MOZ_MUST_USE bool emitArguments(ListNode* argsList, bool isCall,
                                   bool isSpread, CallOrNewEmitter& cone);
@@ -745,6 +778,10 @@ struct MOZ_STACK_CLASS BytecodeEmitter {
 
   MOZ_MUST_USE bool emitCalleeAndThis(ParseNode* callee, ParseNode* call,
                                       CallOrNewEmitter& cone);
+
+  MOZ_MUST_USE bool emitOptionalCalleeAndThis(ParseNode* callee, CallNode* call,
+                                              CallOrNewEmitter& cone,
+                                              OptionalEmitter& oe);
 
   MOZ_MUST_USE bool emitPipeline(ListNode* node);
 

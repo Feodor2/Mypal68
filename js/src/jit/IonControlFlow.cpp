@@ -5,6 +5,7 @@
 #include "jit/IonControlFlow.h"
 
 #include "mozilla/DebugOnly.h"
+#include <windows.h>
 
 using namespace js;
 using namespace js::jit;
@@ -298,7 +299,8 @@ ControlFlowGenerator::ControlStatus ControlFlowGenerator::snoopControlFlow(
 
         default:
           // Hard assert for now - make an error later.
-          MOZ_CRASH("unknown goto case");
+          return ControlStatus::Abort;
+          //MOZ_CRASH("unknown goto case");
       }
       break;
     }

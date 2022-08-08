@@ -329,6 +329,7 @@ restart:
     case ParseNodeKind::DeleteNameExpr:
     case ParseNodeKind::DeletePropExpr:
     case ParseNodeKind::DeleteElemExpr:
+    case ParseNodeKind::DeleteOptionalChainExpr:
     case ParseNodeKind::DeleteExpr:
     case ParseNodeKind::PosExpr:
     case ParseNodeKind::NegExpr:
@@ -383,6 +384,10 @@ restart:
     case ParseNodeKind::ElemExpr:
     case ParseNodeKind::Arguments:
     case ParseNodeKind::CallExpr:
+    case ParseNodeKind::OptionalChain:
+    case ParseNodeKind::OptionalDotExpr:
+    case ParseNodeKind::OptionalElemExpr:
+    case ParseNodeKind::OptionalCallExpr:
     case ParseNodeKind::Name:
     case ParseNodeKind::PrivateName:
     case ParseNodeKind::TemplateStringExpr:
@@ -760,7 +765,10 @@ static bool FoldAndOrCoalesce(JSContext* cx, ParseNode** nodePtr) {
   // its element.
   if (node->count() == 1) {
     ParseNode* first = node->head();
-    ReplaceNode(nodePtr, first);
+    if (!TryReplaceNode(nodePtr, first)) {
+      ;
+      return false;
+    }
   }
 
   return true;
@@ -1374,6 +1382,7 @@ class FoldVisitor : public RewritingParseNodeVisitor<FoldVisitor> {
  private:
   bool internalVisitCall(BinaryNode* node) {
     MOZ_ASSERT(node->isKind(ParseNodeKind::CallExpr) ||
+               node->isKind(ParseNodeKind::OptionalCallExpr) ||
                node->isKind(ParseNodeKind::SuperCallExpr) ||
                node->isKind(ParseNodeKind::NewExpr) ||
                node->isKind(ParseNodeKind::TaggedTemplateExpr));
@@ -1410,6 +1419,10 @@ class FoldVisitor : public RewritingParseNodeVisitor<FoldVisitor> {
 
  public:
   bool visitCallExpr(ParseNode*& pn) {
+    return internalVisitCall(&pn->as<BinaryNode>());
+  }
+
+  bool visitOptionalCallExpr(ParseNode*& pn) {
     return internalVisitCall(&pn->as<BinaryNode>());
   }
 

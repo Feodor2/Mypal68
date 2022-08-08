@@ -1076,6 +1076,7 @@ restart:
       return true;
 
     // Watch out for getters!
+    case ParseNodeKind::OptionalDotExpr:
     case ParseNodeKind::DotExpr:
       MOZ_ASSERT(pn->is<BinaryNode>());
       *answer = true;
@@ -1155,6 +1156,7 @@ restart:
     case ParseNodeKind::DeleteNameExpr:
     case ParseNodeKind::DeletePropExpr:
     case ParseNodeKind::DeleteElemExpr:
+    case ParseNodeKind::DeleteOptionalChainExpr:
       MOZ_ASSERT(pn->is<UnaryNode>());
       *answer = true;
       return true;
@@ -1264,6 +1266,7 @@ restart:
     }
 
     // More getters.
+    case ParseNodeKind::OptionalElemExpr:
     case ParseNodeKind::ElemExpr:
       MOZ_ASSERT(pn->is<BinaryNode>());
       *answer = true;
@@ -1332,6 +1335,7 @@ restart:
     // Function calls can invoke non-local code.
     case ParseNodeKind::NewExpr:
     case ParseNodeKind::CallExpr:
+    case ParseNodeKind::OptionalCallExpr:
     case ParseNodeKind::TaggedTemplateExpr:
     case ParseNodeKind::SuperCallExpr:
       MOZ_ASSERT(pn->is<BinaryNode>());
@@ -1343,6 +1347,11 @@ restart:
     // the call being made will always trigger side-effects, it isn't needed.
     case ParseNodeKind::Arguments:
       MOZ_ASSERT(pn->is<ListNode>());
+      *answer = true;
+      return true;
+
+    case ParseNodeKind::OptionalChain:
+      MOZ_ASSERT(pn->is<UnaryNode>());
       *answer = true;
       return true;
 
@@ -1810,8 +1819,6 @@ bool BytecodeEmitter::emitPropLHS(PropertyAccess* prop) {
   }
 
   while (true) {
-    // TODO(khyperia): Implement private field access.
-
     // Walk back up the list, emitting annotated name ops.
     if (!emitAtomOp(pndot->key().atom(), JSOP_GETPROP)) {
       return false;
@@ -1831,7 +1838,6 @@ bool BytecodeEmitter::emitPropLHS(PropertyAccess* prop) {
 
 bool BytecodeEmitter::emitPropIncDec(UnaryNode* incDec) {
   PropertyAccess* prop = &incDec->kid()->as<PropertyAccess>();
-  // TODO(khyperia): Implement private field access.
   bool isSuper = prop->isSuper();
   ParseNodeKind kind = incDec->getKind();
   PropOpEmitter poe(
@@ -2724,7 +2730,6 @@ bool BytecodeEmitter::emitSetOrInitializeDestructuring(
         //          [stack] # otherwise
         //          [stack] OBJ VAL
         PropertyAccess* prop = &target->as<PropertyAccess>();
-        // TODO(khyperia): Implement private field access.
         bool isSuper = prop->isSuper();
         PropOpEmitter poe(this, PropOpEmitter::Kind::SimpleAssignment,
                           isSuper ? PropOpEmitter::ObjKind::Super
@@ -4241,7 +4246,6 @@ bool BytecodeEmitter::emitAssignmentOrInit(ParseNodeKind kind, ParseNode* lhs,
     switch (lhs->getKind()) {
       case ParseNodeKind::DotExpr: {
         PropertyAccess* prop = &lhs->as<PropertyAccess>();
-        // TODO(khyperia): Implement private field access.
         if (!poe->emitGet(prop->key().atom())) {
           //        [stack] # if Super
           //        [stack] THIS SUPERBASE PROP
@@ -4322,7 +4326,6 @@ bool BytecodeEmitter::emitAssignmentOrInit(ParseNodeKind kind, ParseNode* lhs,
   switch (lhs->getKind()) {
     case ParseNodeKind::DotExpr: {
       PropertyAccess* prop = &lhs->as<PropertyAccess>();
-      // TODO(khyperia): Implement private field access.
       if (!poe->emitAssignment(prop->key().atom())) {
         //          [stack] VAL
         return false;
@@ -6785,7 +6788,6 @@ bool BytecodeEmitter::emitDeleteProperty(UnaryNode* deleteNode) {
   MOZ_ASSERT(deleteNode->isKind(ParseNodeKind::DeletePropExpr));
 
   PropertyAccess* propExpr = &deleteNode->kid()->as<PropertyAccess>();
-  // TODO(khyperia): Implement private field access.
   PropOpEmitter poe(this, PropOpEmitter::Kind::Delete,
                     propExpr->as<PropertyAccess>().isSuper()
                         ? PropOpEmitter::ObjKind::Super
@@ -6892,6 +6894,131 @@ bool BytecodeEmitter::emitDeleteExpression(UnaryNode* deleteNode) {
   }
 
   return emit1(JSOP_TRUE);
+}
+
+bool BytecodeEmitter::emitDeleteOptionalChain(UnaryNode* deleteNode) {
+  MOZ_ASSERT(deleteNode->isKind(ParseNodeKind::DeleteOptionalChainExpr));
+
+  OptionalEmitter oe(this, bytecodeSection().stackDepth());
+
+  ParseNode* kid = deleteNode->kid();
+  switch (kid->getKind()) {
+    case ParseNodeKind::ElemExpr:
+    case ParseNodeKind::OptionalElemExpr: {
+      auto* elemExpr = &kid->as<PropertyByValueBase>();
+      if (!emitDeleteElementInOptChain(elemExpr, oe)) {
+        //          [stack] # If shortcircuit
+        //          [stack] UNDEFINED-OR-NULL
+        //          [stack] # otherwise
+        //          [stack] SUCCEEDED
+        return false;
+      }
+
+      break;
+    }
+    case ParseNodeKind::DotExpr:
+    case ParseNodeKind::OptionalDotExpr: {
+      auto* propExpr = &kid->as<PropertyAccessBase>();
+      if (!emitDeletePropertyInOptChain(propExpr, oe)) {
+        //          [stack] # If shortcircuit
+        //          [stack] UNDEFINED-OR-NULL
+        //          [stack] # otherwise
+        //          [stack] SUCCEEDED
+        return false;
+      }
+      break;
+    }
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unrecognized optional delete ParseNodeKind");
+  }
+
+  if (!oe.emitOptionalJumpTarget(JSOP_TRUE)) {
+    //              [stack] # If shortcircuit
+    //              [stack] TRUE
+    //              [stack] # otherwise
+    //              [stack] SUCCEEDED
+    return false;
+  }
+
+  return true;
+}
+
+bool BytecodeEmitter::emitDeletePropertyInOptChain(PropertyAccessBase* propExpr,
+                                                   OptionalEmitter& oe) {
+  MOZ_ASSERT_IF(propExpr->is<PropertyAccess>(),
+                !propExpr->as<PropertyAccess>().isSuper());
+  PropOpEmitter poe(this, PropOpEmitter::Kind::Delete,
+                    PropOpEmitter::ObjKind::Other);
+
+  if (!poe.prepareForObj()) {
+    //              [stack]
+    return false;
+  }
+  if (!emitOptionalTree(&propExpr->expression(), oe)) {
+    //              [stack] OBJ
+    return false;
+  }
+  if (propExpr->isKind(ParseNodeKind::OptionalDotExpr)) {
+    if (!oe.emitJumpShortCircuit()) {
+      //            [stack] # if Jump
+      //            [stack] UNDEFINED-OR-NULL
+      //            [stack] # otherwise
+      //            [stack] OBJ
+      return false;
+    }
+  }
+
+  if (!poe.emitDelete(propExpr->key().atom())) {
+    //              [stack] SUCCEEDED
+    return false;
+  }
+
+  return true;
+}
+
+bool BytecodeEmitter::emitDeleteElementInOptChain(PropertyByValueBase* elemExpr,
+                                                  OptionalEmitter& oe) {
+  MOZ_ASSERT_IF(elemExpr->is<PropertyByValue>(),
+                !elemExpr->as<PropertyByValue>().isSuper());
+  ElemOpEmitter eoe(this, ElemOpEmitter::Kind::Delete,
+                    ElemOpEmitter::ObjKind::Other);
+
+  if (!eoe.prepareForObj()) {
+    //              [stack]
+    return false;
+  }
+
+  if (!emitOptionalTree(&elemExpr->expression(), oe)) {
+    //              [stack] OBJ
+    return false;
+  }
+
+  if (elemExpr->isKind(ParseNodeKind::OptionalElemExpr)) {
+    if (!oe.emitJumpShortCircuit()) {
+      //            [stack] # if Jump
+      //            [stack] UNDEFINED-OR-NULL
+      //            [stack] # otherwise
+      //            [stack] OBJ
+      return false;
+    }
+  }
+
+  if (!eoe.prepareForKey()) {
+    //              [stack] OBJ
+    return false;
+  }
+
+  if (!emitTree(&elemExpr->key())) {
+    //              [stack] OBJ KEY
+    return false;
+  }
+
+  if (!eoe.emitDelete()) {
+    //              [stack] SUCCEEDED
+    return false;
+  }
+
+  return true;
 }
 
 static const char* SelfHostedCallFunctionName(JSAtom* name, JSContext* cx) {
@@ -7165,6 +7292,116 @@ bool BytecodeEmitter::isRestParameter(ParseNode* expr) {
   return false;
 }
 
+/* A version of emitCalleeAndThis for the optional cases:
+ *   * a?.()
+ *   * a?.b()
+ *   * a?.["b"]()
+ *   * (a?.b)()
+ *
+ * See emitCallOrNew and emitOptionalCall for more context.
+ */
+bool BytecodeEmitter::emitOptionalCalleeAndThis(ParseNode* callee,
+                                                CallNode* call,
+                                                CallOrNewEmitter& cone,
+                                                OptionalEmitter& oe) {
+  if (!CheckRecursionLimit(cx)) {
+    return false;
+  }
+
+  switch (ParseNodeKind kind = callee->getKind()) {
+    case ParseNodeKind::Name: {
+      RootedAtom nameAtom(cx, callee->as<NameNode>().name());
+      if (!cone.emitNameCallee(nameAtom)) {
+        //          [stack] CALLEE THIS
+        return false;
+      }
+      break;
+    }
+
+    case ParseNodeKind::OptionalDotExpr: {
+      MOZ_ASSERT(emitterMode != BytecodeEmitter::SelfHosting);
+      OptionalPropertyAccess* prop = &callee->as<OptionalPropertyAccess>();
+      bool isSuper = false;
+
+      PropOpEmitter& poe = cone.prepareForPropCallee(isSuper);
+      if (!emitOptionalDotExpression(prop, poe, isSuper, oe)) {
+        //          [stack] CALLEE THIS
+        return false;
+      }
+      break;
+    }
+    case ParseNodeKind::DotExpr: {
+      MOZ_ASSERT(emitterMode != BytecodeEmitter::SelfHosting);
+      PropertyAccess* prop = &callee->as<PropertyAccess>();
+      bool isSuper = prop->isSuper();
+
+      PropOpEmitter& poe = cone.prepareForPropCallee(isSuper);
+      if (!emitOptionalDotExpression(prop, poe, isSuper, oe)) {
+        //          [stack] CALLEE THIS
+        return false;
+      }
+      break;
+    }
+
+    case ParseNodeKind::OptionalElemExpr: {
+      OptionalPropertyByValue* elem = &callee->as<OptionalPropertyByValue>();
+      bool isSuper = false;
+
+      ElemOpEmitter& eoe = cone.prepareForElemCallee(isSuper);
+      if (!emitOptionalElemExpression(elem, eoe, isSuper, oe)) {
+        //          [stack] CALLEE THIS
+        return false;
+      }
+      break;
+    }
+    case ParseNodeKind::ElemExpr: {
+      PropertyByValue* elem = &callee->as<PropertyByValue>();
+      bool isSuper = elem->isSuper();
+
+      ElemOpEmitter& eoe = cone.prepareForElemCallee(isSuper);
+      if (!emitOptionalElemExpression(elem, eoe, isSuper, oe)) {
+        //          [stack] CALLEE THIS
+        return false;
+      }
+      break;
+    }
+
+    case ParseNodeKind::Function:
+      if (!cone.prepareForFunctionCallee()) {
+        return false;
+      }
+      if (!emitOptionalTree(callee, oe)) {
+        //          [stack] CALLEE
+        return false;
+      }
+      break;
+
+    case ParseNodeKind::OptionalChain: {
+      return emitCalleeAndThisForOptionalChain(&callee->as<UnaryNode>(), call,
+                                               cone);
+    }
+
+    default:
+      MOZ_RELEASE_ASSERT(kind != ParseNodeKind::SuperBase);
+
+      if (!cone.prepareForOtherCallee()) {
+        return false;
+      }
+      if (!emitOptionalTree(callee, oe)) {
+        //          [stack] CALLEE
+        return false;
+      }
+      break;
+  }
+
+  if (!cone.emitThis()) {
+    //              [stack] CALLEE THIS
+    return false;
+  }
+
+  return true;
+}
+
 bool BytecodeEmitter::emitCalleeAndThis(ParseNode* callee, ParseNode* call,
                                         CallOrNewEmitter& cone) {
   switch (callee->getKind()) {
@@ -7177,7 +7414,6 @@ bool BytecodeEmitter::emitCalleeAndThis(ParseNode* callee, ParseNode* call,
     case ParseNodeKind::DotExpr: {
       MOZ_ASSERT(emitterMode != BytecodeEmitter::SelfHosting);
       PropertyAccess* prop = &callee->as<PropertyAccess>();
-      // TODO(khyperia): Implement private field access.
       bool isSuper = prop->isSuper();
 
       PropOpEmitter& poe = cone.prepareForPropCallee(isSuper);
@@ -7240,6 +7476,10 @@ bool BytecodeEmitter::emitCalleeAndThis(ParseNode* callee, ParseNode* call,
         return false;
       }
       break;
+    case ParseNodeKind::OptionalChain: {
+      return emitCalleeAndThisForOptionalChain(&callee->as<UnaryNode>(),
+                                               &call->as<CallNode>(), cone);
+    }
     default:
       if (!cone.prepareForOtherCallee()) {
         return false;
@@ -7289,6 +7529,43 @@ bool BytecodeEmitter::emitPipeline(ListNode* node) {
   return true;
 }
 
+ParseNode* BytecodeEmitter::getCoordNode(ParseNode* callNode,
+                                         ParseNode* calleeNode, JSOp op,
+                                         ListNode* argsList) {
+  ParseNode* coordNode = callNode;
+  if (op == JSOP_CALL || op == JSOP_SPREADCALL || op == JSOP_FUNCALL ||
+      op == JSOP_FUNAPPLY) {
+    // Default to using the location of the `(` itself.
+    // obj[expr]() // expression
+    //          ^  // column coord
+    coordNode = argsList;
+
+    switch (calleeNode->getKind()) {
+      case ParseNodeKind::DotExpr:
+        // Use the position of a property access identifier.
+        //
+        // obj().aprop() // expression
+        //       ^       // column coord
+        //
+        // Note: Because of the constant folding logic in FoldElement,
+        // this case also applies for constant string properties.
+        //
+        // obj()['aprop']() // expression
+        //       ^          // column coord
+        coordNode = &calleeNode->as<PropertyAccess>().key();
+        break;
+      case ParseNodeKind::Name:
+        // Use the start of callee names.
+        coordNode = calleeNode;
+        break;
+
+      default:
+        break;
+    }
+  }
+  return coordNode;
+}
+
 bool BytecodeEmitter::emitArguments(ListNode* argsList, bool isCall,
                                     bool isSpread, CallOrNewEmitter& cone) {
   uint32_t argc = argsList->count();
@@ -7329,6 +7606,60 @@ bool BytecodeEmitter::emitArguments(ListNode* argsList, bool isCall,
   return true;
 }
 
+bool BytecodeEmitter::emitOptionalCall(CallNode* callNode, OptionalEmitter& oe,
+                                       ValueUsage valueUsage) {
+  /*
+   * A modified version of emitCallOrNew that handles optional calls.
+   *
+   * These include the following:
+   *    a?.()
+   *    a.b?.()
+   *    a.["b"]?.()
+   *    (a?.b)?.()
+   *
+   * See CallOrNewEmitter for more context.
+   */
+  ParseNode* calleeNode = callNode->left();
+  ListNode* argsList = &callNode->right()->as<ListNode>();
+  bool isSpread = JOF_OPTYPE(callNode->callOp()) == JOF_BYTE;
+  JSOp op = callNode->callOp();
+  uint32_t argc = argsList->count();
+
+  CallOrNewEmitter cone(
+      this, op,
+      isSpread && (argc == 1) &&
+              isRestParameter(argsList->head()->as<UnaryNode>().kid())
+          ? CallOrNewEmitter::ArgumentsKind::SingleSpreadRest
+          : CallOrNewEmitter::ArgumentsKind::Other,
+      valueUsage);
+
+  ParseNode* coordNode = getCoordNode(callNode, calleeNode, op, argsList);
+
+  if (!emitOptionalCalleeAndThis(calleeNode, callNode, cone, oe)) {
+    //              [stack] CALLEE THIS
+    return false;
+  }
+
+  if (callNode->isKind(ParseNodeKind::OptionalCallExpr)) {
+    if (!oe.emitJumpShortCircuitForCall()) {
+      //            [stack] CALLEE THIS
+      return false;
+    }
+  }
+
+  if (!emitArguments(argsList, /* isCall = */ true, isSpread, cone)) {
+    //              [stack] CALLEE THIS ARGS...
+    return false;
+  }
+
+  if (!cone.emitEnd(argc, Some(coordNode->pn_pos.begin))) {
+    //              [stack] RVAL
+    return false;
+  }
+
+  return true;
+}
+
 bool BytecodeEmitter::emitCallOrNew(
     CallNode* callNode, ValueUsage valueUsage /* = ValueUsage::WantValue */) {
   /*
@@ -7351,6 +7682,7 @@ bool BytecodeEmitter::emitCallOrNew(
   ParseNode* calleeNode = callNode->left();
   ListNode* argsList = &callNode->right()->as<ListNode>();
   bool isSpread = JOF_OPTYPE(callNode->callOp()) == JOF_BYTE;
+
   if (calleeNode->isKind(ParseNodeKind::Name) &&
       emitterMode == BytecodeEmitter::SelfHosting && !isSpread) {
     // Calls to "forceInterpreter", "callFunction",
@@ -7393,6 +7725,7 @@ bool BytecodeEmitter::emitCallOrNew(
           ? CallOrNewEmitter::ArgumentsKind::SingleSpreadRest
           : CallOrNewEmitter::ArgumentsKind::Other,
       valueUsage);
+
   if (!emitCalleeAndThis(calleeNode, callNode, cone)) {
     //              [stack] CALLEE THIS
     return false;
@@ -7402,36 +7735,8 @@ bool BytecodeEmitter::emitCallOrNew(
     return false;
   }
 
-  ParseNode* coordNode = callNode;
-  if (op == JSOP_CALL || op == JSOP_SPREADCALL || op == JSOP_FUNCALL ||
-      op == JSOP_FUNAPPLY) {
-    // Default to using the location of the `(` itself.
-    // obj[expr]() // expression
-    //          ^  // column coord
-    coordNode = argsList;
+  ParseNode* coordNode = getCoordNode(callNode, calleeNode, op, argsList);
 
-    switch (calleeNode->getKind()) {
-      case ParseNodeKind::DotExpr:
-        // Use the position of a property access identifier.
-        //
-        // obj().aprop() // expression
-        //       ^       // column coord
-        //
-        // Note: Because of the constant folding logic in FoldElement,
-        // this case also applies for constant string properties.
-        //
-        // obj()['aprop']() // expression
-        //       ^          // column coord
-        coordNode = &calleeNode->as<PropertyAccess>().key();
-        break;
-      case ParseNodeKind::Name:
-        // Use the start of callee names.
-        coordNode = calleeNode;
-        break;
-      default:
-        break;
-    }
-  }
   if (!cone.emitEnd(argc, Some(coordNode->pn_pos.begin))) {
     //              [stack] RVAL
     return false;
@@ -7500,6 +7805,253 @@ bool BytecodeEmitter::emitLeftAssociative(ListNode* node) {
       return false;
     }
   } while ((nextExpr = nextExpr->pn_next));
+  return true;
+}
+
+/*
+ * Special `emitTree` for Optional Chaining case.
+ * Examples of this are `emitOptionalChain`, `emitDeleteOptionalChain` and
+ * `emitCalleeAndThisForOptionalChain`.
+ */
+bool BytecodeEmitter::emitOptionalTree(
+    ParseNode* pn, OptionalEmitter& oe,
+    ValueUsage valueUsage /* = ValueUsage::WantValue */) {
+  if (!CheckRecursionLimit(cx)) {
+    return false;
+  }
+  ParseNodeKind kind = pn->getKind();
+  switch (kind) {
+    case ParseNodeKind::OptionalDotExpr: {
+      OptionalPropertyAccess* prop = &pn->as<OptionalPropertyAccess>();
+      bool isSuper = false;
+      PropOpEmitter poe(this, PropOpEmitter::Kind::Get,
+                        PropOpEmitter::ObjKind::Other);
+      if (!emitOptionalDotExpression(prop, poe, isSuper, oe)) {
+        return false;
+      }
+      break;
+    }
+    case ParseNodeKind::DotExpr: {
+      PropertyAccess* prop = &pn->as<PropertyAccess>();
+      bool isSuper = prop->isSuper();
+      PropOpEmitter poe(this, PropOpEmitter::Kind::Get,
+                        isSuper ? PropOpEmitter::ObjKind::Super
+                                : PropOpEmitter::ObjKind::Other);
+      if (!emitOptionalDotExpression(prop, poe, isSuper, oe)) {
+        return false;
+      }
+      break;
+    }
+
+    case ParseNodeKind::OptionalElemExpr: {
+      OptionalPropertyByValue* elem = &pn->as<OptionalPropertyByValue>();
+      bool isSuper = false;
+      ElemOpEmitter eoe(this, ElemOpEmitter::Kind::Get,
+                        ElemOpEmitter::ObjKind::Other);
+
+      if (!emitOptionalElemExpression(elem, eoe, isSuper, oe)) {
+        return false;
+      }
+      break;
+    }
+    case ParseNodeKind::ElemExpr: {
+      PropertyByValue* elem = &pn->as<PropertyByValue>();
+      bool isSuper = elem->isSuper();
+      ElemOpEmitter eoe(this, ElemOpEmitter::Kind::Get,
+                        isSuper ? ElemOpEmitter::ObjKind::Super
+                                : ElemOpEmitter::ObjKind::Other);
+
+      if (!emitOptionalElemExpression(elem, eoe, isSuper, oe)) {
+        return false;
+      }
+      break;
+    }
+    case ParseNodeKind::CallExpr:
+    case ParseNodeKind::OptionalCallExpr:
+      if (!emitOptionalCall(&pn->as<CallNode>(), oe, valueUsage)) {
+        return false;
+      }
+      break;
+    // List of accepted ParseNodeKinds that might appear only at the beginning
+    // of an Optional Chain.
+    // For example, a taggedTemplateExpr node might occur if we have
+    // `test`?.b, with `test` as the taggedTemplateExpr ParseNode.
+    default:
+#ifdef DEBUG
+      // https://tc39.es/ecma262/#sec-primary-expression
+      bool isPrimaryExpression =
+          kind == ParseNodeKind::ThisExpr || kind == ParseNodeKind::Name ||
+          kind == ParseNodeKind::NullExpr || kind == ParseNodeKind::TrueExpr ||
+          kind == ParseNodeKind::FalseExpr ||
+          kind == ParseNodeKind::NumberExpr ||
+          kind == ParseNodeKind::BigIntExpr ||
+          kind == ParseNodeKind::StringExpr ||
+          kind == ParseNodeKind::ArrayExpr ||
+          kind == ParseNodeKind::ObjectExpr ||
+          kind == ParseNodeKind::Function || kind == ParseNodeKind::ClassDecl ||
+          kind == ParseNodeKind::RegExpExpr ||
+          kind == ParseNodeKind::TemplateStringExpr ||
+          kind == ParseNodeKind::RawUndefinedExpr || pn->isInParens();
+
+      // https://tc39.es/ecma262/#sec-left-hand-side-expressions
+      bool isMemberExpression = isPrimaryExpression ||
+                                kind == ParseNodeKind::TaggedTemplateExpr ||
+                                kind == ParseNodeKind::NewExpr ||
+                                kind == ParseNodeKind::NewTargetExpr ||
+                                kind == ParseNodeKind::ImportMetaExpr;
+
+      bool isCallExpression = kind == ParseNodeKind::SetThis ||
+                              kind == ParseNodeKind::CallImportExpr;
+
+      MOZ_ASSERT(isMemberExpression || isCallExpression,
+                 "Unknown ParseNodeKind for OptionalChain");
+#endif
+      return emitTree(pn);
+  }
+  return true;
+}
+
+// Handle the case of a call made on a OptionalChainParseNode.
+// For example `(a?.b)()` and `(a?.b)?.()`.
+bool BytecodeEmitter::emitCalleeAndThisForOptionalChain(
+    UnaryNode* optionalChain, CallNode* callNode, CallOrNewEmitter& cone) {
+  ParseNode* calleeNode = optionalChain->kid();
+
+  // Create a new OptionalEmitter, in order to emit the right bytecode
+  // in isolation.
+  OptionalEmitter oe(this, bytecodeSection().stackDepth());
+
+  if (!emitOptionalCalleeAndThis(calleeNode, callNode, cone, oe)) {
+    //              [stack] CALLEE THIS
+    return false;
+  }
+
+  // complete the jump if necessary. This will set both the "this" value
+  // and the "callee" value to undefined, if the callee is undefined. It
+  // does not matter much what the this value is, the function call will
+  // fail if it is not optional, and be set to undefined otherwise.
+  if (!oe.emitOptionalJumpTarget(JSOP_UNDEFINED,
+                                 OptionalEmitter::Kind::Reference)) {
+    //              [stack] # If shortcircuit
+    //              [stack] UNDEFINED UNDEFINED
+    //              [stack] # otherwise
+    //              [stack] CALLEE THIS
+    return false;
+  }
+  return true;
+}
+
+bool BytecodeEmitter::emitOptionalChain(UnaryNode* optionalChain,
+                                        ValueUsage valueUsage) {
+  ParseNode* expr = optionalChain->kid();
+
+  OptionalEmitter oe(this, bytecodeSection().stackDepth());
+
+  if (!emitOptionalTree(expr, oe, valueUsage)) {
+    //              [stack] VAL
+    return false;
+  }
+
+  if (!oe.emitOptionalJumpTarget(JSOP_UNDEFINED)) {
+    //              [stack] # If shortcircuit
+    //              [stack] UNDEFINED
+    //              [stack] # otherwise
+    //              [stack] VAL
+    return false;
+  }
+
+  return true;
+}
+
+bool BytecodeEmitter::emitOptionalDotExpression(PropertyAccessBase* prop,
+                                                PropOpEmitter& poe,
+                                                bool isSuper,
+                                                OptionalEmitter& oe) {
+  if (!poe.prepareForObj()) {
+    //              [stack]
+    return false;
+  }
+
+  if (isSuper) {
+    UnaryNode* base = &prop->expression().as<UnaryNode>();
+    if (!emitGetThisForSuperBase(base)) {
+      //            [stack] OBJ
+      return false;
+    }
+  } else {
+    if (!emitOptionalTree(&prop->expression(), oe)) {
+      //            [stack] OBJ
+      return false;
+    }
+  }
+
+  if (prop->isKind(ParseNodeKind::OptionalDotExpr)) {
+    MOZ_ASSERT(!isSuper);
+    if (!oe.emitJumpShortCircuit()) {
+      //            [stack] # if Jump
+      //            [stack] UNDEFINED-OR-NULL
+      //            [stack] # otherwise
+      //            [stack] OBJ
+      return false;
+    }
+  }
+
+  if (!poe.emitGet(prop->key().atom())) {
+    //              [stack] PROP
+    return false;
+  }
+
+  return true;
+}
+
+bool BytecodeEmitter::emitOptionalElemExpression(PropertyByValueBase* elem,
+                                                 ElemOpEmitter& eoe,
+                                                 bool isSuper,
+                                                 OptionalEmitter& oe) {
+  if (!eoe.prepareForObj()) {
+    //              [stack]
+    return false;
+  }
+
+  if (isSuper) {
+    UnaryNode* base = &elem->expression().as<UnaryNode>();
+    if (!emitGetThisForSuperBase(base)) {
+      //            [stack] OBJ
+      return false;
+    }
+  } else {
+    if (!emitOptionalTree(&elem->expression(), oe)) {
+      //            [stack] OBJ
+      return false;
+    }
+  }
+
+  if (elem->isKind(ParseNodeKind::OptionalElemExpr)) {
+    MOZ_ASSERT(!isSuper);
+    if (!oe.emitJumpShortCircuit()) {
+      //            [stack] # if Jump
+      //            [stack] UNDEFINED-OR-NULL
+      //            [stack] # otherwise
+      //            [stack] OBJ
+      return false;
+    }
+  }
+
+  if (!eoe.prepareForKey()) {
+    //              [stack] OBJ? OBJ
+    return false;
+  }
+
+  if (!emitTree(&elem->key())) {
+    //              [stack] OBJ? OBJ KEY
+    return false;
+  }
+
+  if (!eoe.emitGet()) {
+    //              [stack] ELEM
+    return false;
+  }
+
   return true;
 }
 
@@ -9171,9 +9723,20 @@ bool BytecodeEmitter::emitTree(
       }
       break;
 
+    case ParseNodeKind::DeleteOptionalChainExpr:
+      if (!emitDeleteOptionalChain(&pn->as<UnaryNode>())) {
+        return false;
+      }
+      break;
+
+    case ParseNodeKind::OptionalChain:
+      if (!emitOptionalChain(&pn->as<UnaryNode>(), valueUsage)) {
+        return false;
+      }
+      break;
+
     case ParseNodeKind::DotExpr: {
       PropertyAccess* prop = &pn->as<PropertyAccess>();
-      // TODO(khyperia): Implement private field access.
       bool isSuper = prop->isSuper();
       PropOpEmitter poe(this, PropOpEmitter::Kind::Get,
                         isSuper ? PropOpEmitter::ObjKind::Super

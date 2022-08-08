@@ -627,7 +627,11 @@ uint32_t MacroAssembler::pushFakeReturnAddress(Register scratch) {
 // ===============================================================
 // WebAssembly
 
-CodeOffset MacroAssembler::wasmTrapInstruction() { return ud2(); }
+CodeOffset MacroAssembler::wasmTrapInstruction() { //return ud2(); }
+    CodeOffset off(masm.currentOffset());
+    masm.nop();
+    masm.nop();
+    return off; }
 
 void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
                                      Register boundsCheckLimit, Label* label) {

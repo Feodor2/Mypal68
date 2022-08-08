@@ -252,7 +252,8 @@ namespace jit {
   _(JSOP_IMPORTMETA)            \
   _(JSOP_DYNAMIC_IMPORT)        \
   _(JSOP_INC)                   \
-  _(JSOP_DEC)
+  _(JSOP_DEC)                   \
+  _(JSOP_COALESCE)
 
 // Base class for BaselineCompiler and BaselineInterpreterGenerator. The Handler
 // template is a class storing fields/methods that are interpreter or compiler
@@ -453,6 +454,7 @@ class BaselineCodeGen {
   MOZ_MUST_USE bool emitToBoolean();
   MOZ_MUST_USE bool emitTest(bool branchIfTrue);
   MOZ_MUST_USE bool emitAndOr(bool branchIfTrue);
+  MOZ_MUST_USE bool emitCoalesce();
 
   MOZ_MUST_USE bool emitCall(JSOp op);
   MOZ_MUST_USE bool emitSpreadCall(JSOp op);

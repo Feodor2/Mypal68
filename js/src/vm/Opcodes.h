@@ -2544,7 +2544,17 @@
      *   Operands: uint32_t constIndex
      *   Stack: => val
      */ \
-    MACRO(JSOP_BIGINT, 237, "bigint", NULL, 5, 0, 1, JOF_BIGINT)
+    MACRO(JSOP_BIGINT, 237, "bigint", NULL, 5, 0, 1, JOF_BIGINT) \
+    /*
+     * If the value on top of the stack is not null or undefined, jumps to a 32-bit offset from the
+     * current bytecode.
+     *
+     *   Category: Statements
+     *   Type: Jumps
+     *   Operands: int32_t offset
+     *   Stack: cond => cond
+     */ \
+    MACRO(JSOP_COALESCE, 238, "coalesce", NULL, 5, 1, 1, JOF_JUMP|JOF_DETECTING)
 // clang-format on
 
 /*
@@ -2552,7 +2562,6 @@
  * a power of two.  Use this macro to do so.
  */
 #define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
-  MACRO(238)                                   \
   MACRO(239)                                   \
   MACRO(240)                                   \
   MACRO(241)                                   \

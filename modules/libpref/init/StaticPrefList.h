@@ -1308,17 +1308,11 @@ VARCACHE_PREF(
   bool, false
 )
 
-#ifdef NIGHTLY_BUILD
-# define PREF_VALUE true
-#else
-# define PREF_VALUE false
-#endif
 VARCACHE_PREF(
   "layout.css.resizeobserver.enabled",
    layout_css_resizeobserver_enabled,
-  bool, PREF_VALUE
+  bool, true
 )
-#undef PREF_VALUE
 
 // Is support for GeometryUtils.getBoxQuads enabled?
 #ifdef RELEASE_OR_BETA

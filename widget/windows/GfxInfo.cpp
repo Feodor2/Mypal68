@@ -1040,7 +1040,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
      * 187.45 (late October 2009) and earlier contain a bug which can cause us
      * to crash on shutdown.
      */
-    APPEND_TO_DRIVER_BLOCKLIST(
+    /*APPEND_TO_DRIVER_BLOCKLIST(
         OperatingSystem::Windows7,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorNVIDIA),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
@@ -1055,22 +1055,22 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         GfxDriverInfo::allDevices, GfxDriverInfo::allFeatures,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
         DRIVER_BETWEEN_INCLUSIVE_START, V(8, 16, 10, 0000), V(8, 16, 11, 8745),
-        "FEATURE_FAILURE_NV_W7_16", "nVidia driver > 187.45");
+        "FEATURE_FAILURE_NV_W7_16", "nVidia driver > 187.45");*/
     // Telemetry doesn't show any driver in this range so it might not even be
     // required.
-    APPEND_TO_DRIVER_BLOCKLIST_RANGE(
+    /*APPEND_TO_DRIVER_BLOCKLIST_RANGE(
         OperatingSystem::Windows7,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorNVIDIA),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         GfxDriverInfo::allDevices, GfxDriverInfo::allFeatures,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
         DRIVER_BETWEEN_INCLUSIVE_START, V(8, 17, 10, 0000), V(8, 17, 11, 8745),
-        "FEATURE_FAILURE_NV_W7_17", "nVidia driver > 187.45");
+        "FEATURE_FAILURE_NV_W7_17", "nVidia driver > 187.45");*/
 
     /*
      * AMD/ATI entries. 8.56.1.15 is the driver that shipped with Windows 7 RTM
      */
-    APPEND_TO_DRIVER_BLOCKLIST(
+    /*APPEND_TO_DRIVER_BLOCKLIST(
         OperatingSystem::Windows,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorATI),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
@@ -1129,12 +1129,12 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         GfxDriverInfo::allDevices, nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_BETWEEN_INCLUSIVE,
         V(16, 100, 0, 0), V(16, 300, 2311, 0), "FEATURE_FAILURE_BUG_1267970",
-        "16.100.0.0-16.300.2311.0");
+        "16.100.0.0-16.300.2311.0");*/
 
     /*
      * Bug 783517 - crashes in AMD driver on Windows 8
      */
-    APPEND_TO_DRIVER_BLOCKLIST_RANGE(
+    /*APPEND_TO_DRIVER_BLOCKLIST_RANGE(
         OperatingSystem::Windows8,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorATI),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
@@ -1149,7 +1149,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         GfxDriverInfo::allDevices, GfxDriverInfo::allFeatures,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
         DRIVER_BETWEEN_INCLUSIVE_START, V(8, 982, 0, 0), V(8, 983, 0, 0),
-        "FEATURE_FAILURE_BUG_783517_ATI", "!= 8.982.*.*");
+        "FEATURE_FAILURE_BUG_783517_ATI", "!= 8.982.*.*");*/
 
     /* OpenGL on any ATI/AMD hardware is discouraged
      * See:
@@ -1157,7 +1157,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
      * Parity Error" bugs 584403, 584404, 620924 - crashes in atioglxx
      *  + many complaints about incorrect rendering
      */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorATI),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
@@ -1170,7 +1170,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         GfxDriverInfo::allDevices, nsIGfxInfo::FEATURE_OPENGL_LAYERS,
         nsIGfxInfo::FEATURE_DISCOURAGED, DRIVER_LESS_THAN,
-        GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_OGL_AMD_DIS");
+        GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_OGL_AMD_DIS");*/
 
 /*
  * Intel entries
@@ -1197,7 +1197,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
       nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_BUILD_ID_LESS_THAN, \
       driverVer, ruleId)
 
-    IMPLEMENT_INTEL_DRIVER_BLOCKLIST_D2D(OperatingSystem::Windows7, IntelGMA500,
+    /*IMPLEMENT_INTEL_DRIVER_BLOCKLIST_D2D(OperatingSystem::Windows7, IntelGMA500,
                                          2026, "FEATURE_FAILURE_594877_7");
     IMPLEMENT_INTEL_DRIVER_BLOCKLIST_D2D(OperatingSystem::Windows7, IntelGMA900,
                                          GfxDriverInfo::allDriverVersions,
@@ -1212,14 +1212,14 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
                                          "FEATURE_FAILURE_594877_11");
     IMPLEMENT_INTEL_DRIVER_BLOCKLIST_D2D(OperatingSystem::Windows7,
                                          IntelHDGraphicsToSandyBridge, 2202,
-                                         "FEATURE_FAILURE_594877_12");
+                                         "FEATURE_FAILURE_594877_12");*/
 
     /* Disable Direct2D on Intel GMAX4500 devices because of rendering
      * corruption discovered in bug 1180379. These seems to affect even the most
      * recent drivers. We're black listing all of the devices to be safe even
      * though we've only confirmed the issue on the G45
      */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
@@ -1267,35 +1267,35 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
             IntelHDGraphicsToSandyBridge),
         GfxDriverInfo::allFeatures, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
         DRIVER_EQUAL, V(8, 15, 10, 1749), "FEATURE_FAILURE_BUG_1074378_2",
-        "8.15.10.2342");
+        "8.15.10.2342");*/
 
     /* OpenGL on any Intel hardware is discouraged */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         GfxDriverInfo::allDevices, nsIGfxInfo::FEATURE_OPENGL_LAYERS,
         nsIGfxInfo::FEATURE_DISCOURAGED, DRIVER_LESS_THAN,
-        GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_INTEL_OGL_DIS");
+        GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_INTEL_OGL_DIS");*/
 
     /**
      * Disable acceleration on Intel HD 3000 for graphics drivers
      * <= 8.15.10.2321. See bug 1018278 and bug 1060736.
      */
-    APPEND_TO_DRIVER_BLOCKLIST(
+    /*APPEND_TO_DRIVER_BLOCKLIST(
         OperatingSystem::Windows,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(IntelHD3000),
         GfxDriverInfo::allFeatures, nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
         DRIVER_BUILD_ID_LESS_THAN_OR_EQUAL, 2321, "FEATURE_FAILURE_BUG_1018278",
-        "X.X.X.2342");
+        "X.X.X.2342");*/
 
     /**
      * Disable D2D on Win7 on Intel Haswell for graphics drivers build id <=
      * 4578. See bug 1432610
      */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows7,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
@@ -1304,36 +1304,36 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_DIRECT2D,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION,
         DRIVER_BUILD_ID_LESS_THAN_OR_EQUAL, 4578,
-        "FEATURE_FAILURE_BUG_1432610");
+        "FEATURE_FAILURE_BUG_1432610");*/
 
     /* Disable D2D on Win7 on Intel HD Graphics on driver <= 8.15.10.2302
      * See bug 806786
      */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows7,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(IntelMobileHDGraphics),
         nsIGfxInfo::FEATURE_DIRECT2D,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN_OR_EQUAL,
-        V(8, 15, 10, 2302), "FEATURE_FAILURE_BUG_806786");
+        V(8, 15, 10, 2302), "FEATURE_FAILURE_BUG_806786");*/
 
     /* Disable D2D on Win8 on Intel HD Graphics on driver <= 8.15.10.2302
      * See bug 804144 and 863683
      */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows8,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(IntelMobileHDGraphics),
         nsIGfxInfo::FEATURE_DIRECT2D,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN_OR_EQUAL,
-        V(8, 15, 10, 2302), "FEATURE_FAILURE_BUG_804144");
+        V(8, 15, 10, 2302), "FEATURE_FAILURE_BUG_804144");*/
 
     /* Disable D2D on Win7 on Intel HD Graphics on driver == 8.15.10.2418
      * See bug 1433790
      */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows7,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
@@ -1341,25 +1341,25 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
             IntelHDGraphicsToSandyBridge),
         nsIGfxInfo::FEATURE_DIRECT2D,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_EQUAL,
-        V(8, 15, 10, 2418), "FEATURE_FAILURE_BUG_1433790");
+        V(8, 15, 10, 2418), "FEATURE_FAILURE_BUG_1433790");*/
 
     /* Disable D3D11 layers on Intel G41 express graphics and Intel GM965, Intel
      * X3100, for causing device resets. See bug 1116812.
      */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(Bug1116812),
         nsIGfxInfo::FEATURE_DIRECT3D_11_LAYERS,
         nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_LESS_THAN,
-        GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_BUG_1116812");
+        GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_BUG_1116812");*/
 
     /* Disable D3D11 layers on Intel GMA 3150 for failing to allocate a shared
      * handle for textures. See bug 1207665. Additionally block D2D so we don't
      * accidentally use WARP.
      */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
@@ -1382,7 +1382,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         GfxDriverInfo::allDevices, nsIGfxInfo::FEATURE_DIRECT2D,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN,
-        GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_QUALCOMM");
+        GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_QUALCOMM");*/
 
     // Bug 1548410. Disable hardware accelerated video decoding on
     // Qualcomm drivers used on Windows on ARM64 which are known to
@@ -1418,45 +1418,45 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
     /* Disable D3D9 layers on NVIDIA 6100/6150/6200 series due to glitches
      * whilst scrolling. See bugs: 612007, 644787 & 645872.
      */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorNVIDIA),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(NvidiaBlockD3D9Layers),
         nsIGfxInfo::FEATURE_DIRECT3D_9_LAYERS,
         nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_LESS_THAN,
-        GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_BUG_612007");
+        GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_BUG_612007");*/
 
     /* Microsoft RemoteFX; blocked less than 6.2.0.0 */
-    APPEND_TO_DRIVER_BLOCKLIST(
+    /*APPEND_TO_DRIVER_BLOCKLIST(
         OperatingSystem::Windows,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorMicrosoft),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         GfxDriverInfo::allDevices, GfxDriverInfo::allFeatures,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN,
-        V(6, 2, 0, 0), "< 6.2.0.0", "FEATURE_FAILURE_REMOTE_FX");
+        V(6, 2, 0, 0), "< 6.2.0.0", "FEATURE_FAILURE_REMOTE_FX");*/
 
     /* Bug 1008759: Optimus (NVidia) crash.  Disable D2D on NV 310M. */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorNVIDIA),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(Nvidia310M),
         nsIGfxInfo::FEATURE_DIRECT2D, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         DRIVER_LESS_THAN, GfxDriverInfo::allDriverVersions,
-        "FEATURE_FAILURE_BUG_1008759");
+        "FEATURE_FAILURE_BUG_1008759");*/
 
     /* Bug 1139503: DXVA crashes with ATI cards on windows 10. */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows10,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorATI),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         GfxDriverInfo::allDevices, nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_EQUAL,
-        V(15, 200, 1006, 0), "FEATURE_FAILURE_BUG_1139503");
+        V(15, 200, 1006, 0), "FEATURE_FAILURE_BUG_1139503");*/
 
     /* Bug 1213107: D3D9 crashes with ATI cards on Windows 7. */
-    APPEND_TO_DRIVER_BLOCKLIST_RANGE(
+    /*APPEND_TO_DRIVER_BLOCKLIST_RANGE(
         OperatingSystem::Windows7,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorATI),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
@@ -1471,20 +1471,20 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         GfxDriverInfo::allDevices, nsIGfxInfo::FEATURE_WEBGL_ANGLE,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_BETWEEN_INCLUSIVE,
         V(8, 861, 0, 0), V(8, 862, 6, 5000), "FEATURE_FAILURE_BUG_1213107_2",
-        "Radeon driver > 8.862.6.5000");
+        "Radeon driver > 8.862.6.5000");*/
 
     /* This may not be needed at all */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::Windows7,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
         (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(Bug1155608),
         nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_LESS_THAN,
-        V(8, 15, 10, 2869), "FEATURE_FAILURE_INTEL_W7_HW_DECODING");
+        V(8, 15, 10, 2869), "FEATURE_FAILURE_INTEL_W7_HW_DECODING");*/
 
     /* Bug 1203199/1092166: DXVA startup crashes on some intel drivers. */
-    APPEND_TO_DRIVER_BLOCKLIST(
+    /*APPEND_TO_DRIVER_BLOCKLIST(
         OperatingSystem::Windows,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
@@ -1500,7 +1500,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         (GfxDeviceFamily*)GfxDriverInfo::GetDeviceFamily(Nvidia8800GTS),
         nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING,
         nsIGfxInfo::FEATURE_BLOCKED_DRIVER_VERSION, DRIVER_EQUAL,
-        V(9, 18, 13, 4052), "FEATURE_FAILURE_BUG_1203199_2");
+        V(9, 18, 13, 4052), "FEATURE_FAILURE_BUG_1203199_2");*/
 
     /* Bug 1137716: XXX this should really check for the matching Intel piece as
      * well. Unfortunately, we don't have the infrastructure to do that */
@@ -1525,7 +1525,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         GfxDriverInfo::allDriverVersions, "FEATURE_FAILURE_BUG_1153381");
 
     /* Bug 1336710: Crash in rx::Blit9::initialize. */
-    APPEND_TO_DRIVER_BLOCKLIST2(
+    /*APPEND_TO_DRIVER_BLOCKLIST2(
         OperatingSystem::WindowsXP,
         (nsAString&)GfxDriverInfo::GetDeviceVendor(VendorIntel),
         (nsAString&)GfxDriverInfo::GetDriverVendor(DriverVendorAll),
@@ -1542,7 +1542,7 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
             IntelHDGraphicsToSandyBridge),
         nsIGfxInfo::FEATURE_WEBGL_ANGLE, nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
         DRIVER_LESS_THAN, GfxDriverInfo::allDriverVersions,
-        "FEATURE_FAILURE_BUG_1336710");
+        "FEATURE_FAILURE_BUG_1336710");*/
 
     /* Bug 1304360: Graphical artifacts with D3D9 on Windows 7. */
     APPEND_TO_DRIVER_BLOCKLIST2(

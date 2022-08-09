@@ -490,7 +490,7 @@ class ParentImpl::ConnectActorRunnable final : public Runnable {
 };
 
 class ParentImpl::CreateActorHelper final : public Runnable {
-  mozilla::Monitor mMonitor;
+  mozilla::Monitor2 mMonitor;
   RefPtr<ParentImpl> mParentActor;
   nsCOMPtr<nsIThread> mThread;
   nsresult mMainThreadResultCode;
@@ -1222,7 +1222,7 @@ nsresult ParentImpl::CreateActorHelper::BlockAndGetResults(
     MOZ_ALWAYS_SUCCEEDS(NS_DispatchToMainThread(this));
   }
 
-  mozilla::MonitorAutoLock lock(mMonitor);
+  mozilla::Monitor2AutoLock lock(mMonitor);
   while (mWaiting) {
     lock.Wait();
   }
@@ -1263,11 +1263,11 @@ ParentImpl::CreateActorHelper::Run() {
     mMainThreadResultCode = rv;
   }
 
-  mozilla::MonitorAutoLock lock(mMonitor);
+  mozilla::Monitor2AutoLock lock(mMonitor);
   MOZ_ASSERT(mWaiting);
 
   mWaiting = false;
-  lock.Notify();
+  lock.Signal();
 
   return NS_OK;
 }

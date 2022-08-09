@@ -1121,9 +1121,9 @@ struct ResponseHandler<functionId, ResultType HOOK_CALL(ParamTypes...),
  * Reference-counted monitor, used to synchronize communication between a
  * thread using a brokered API and the FunctionDispatch thread.
  */
-class FDMonitor : public Monitor {
+class FDMonitor : public Monitor2 {
  public:
-  FDMonitor() : Monitor("FunctionDispatchThread lock") {}
+  FDMonitor() : Monitor2("FunctionDispatchThread lock") {}
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FDMonitor)
 
@@ -1226,11 +1226,11 @@ class FunctionBroker<functionId, ResultType HOOK_CALL(ParamTypes...),
       // We need to grab the lock to make sure that Wait() has been
       // called in PostToDispatchThread.  We need that since we wake it with
       // Notify().
-      MonitorAutoLock lock(*monitor);
+      Monitor2AutoLock lock(*monitor);
       *notified = true;
     }
 
-    monitor->Notify();
+    monitor->Signal();
   };
 
   template <typename... VarParams>
@@ -1413,7 +1413,7 @@ bool FunctionBroker<
   // Run PostToDispatchHelper on the dispatch thread.  It will notify our
   // waiting monitor when it is done.
   RefPtr<FDMonitor> monitor(new FDMonitor());
-  MonitorAutoLock lock(*monitor);
+  Monitor2AutoLock lock(*monitor);
   bool success = false;
   bool notified = false;
   FunctionBrokerChild::GetInstance()->PostToDispatchThread(NewRunnableFunction(

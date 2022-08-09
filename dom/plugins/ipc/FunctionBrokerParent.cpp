@@ -62,9 +62,9 @@ void FunctionBrokerParent::ShutdownOnBrokerThread() {
   Close();
 
   // Notify waiting thread that we are done.
-  MonitorAutoLock lock(mMonitor);
+  Monitor2AutoLock lock(mMonitor);
   mShutdownDone = true;
-  mMonitor.Notify();
+  mMonitor.Signal();
 }
 
 void FunctionBrokerParent::Destroy(FunctionBrokerParent* aInst) {
@@ -73,7 +73,7 @@ void FunctionBrokerParent::Destroy(FunctionBrokerParent* aInst) {
 
   {
     // Hold the lock while we destroy the actor on the broker thread.
-    MonitorAutoLock lock(aInst->mMonitor);
+    Monitor2AutoLock lock(aInst->mMonitor);
     aInst->mThread->Dispatch(NewNonOwningRunnableMethod(
         "FunctionBrokerParent::ShutdownOnBrokerThread", aInst,
         &FunctionBrokerParent::ShutdownOnBrokerThread));

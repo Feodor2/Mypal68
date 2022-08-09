@@ -38,7 +38,7 @@ class FunctionBrokerChild : public PFunctionBrokerChild {
   // True if tasks on the FunctionBrokerThread have completed
   bool mShutdownDone;
   // This monitor guards mShutdownDone.
-  Monitor mMonitor;
+  Monitor2 mMonitor;
 
   static FunctionBrokerChild* sInstance;
 };

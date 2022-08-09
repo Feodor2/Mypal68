@@ -55,7 +55,7 @@ class FunctionBrokerParent : public PFunctionBrokerParent {
 #endif  // defined(XP_WIN) && defined(MOZ_SANDBOX)
 
   nsAutoPtr<FunctionBrokerThread> mThread;
-  Monitor mMonitor;
+  Monitor2 mMonitor;
   bool mShutdownDone;
 };
 

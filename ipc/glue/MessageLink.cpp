@@ -99,7 +99,7 @@ void ProcessLink::Open(mozilla::ipc::Transport* aTransport,
   }
 
   {
-    MonitorAutoLock lock(*mChan->mMonitor);
+    Monitor2AutoLock lock(*mChan->mMonitor);
 
     if (needOpen) {
       // Transport::Connect() has not been called.  Call it so
@@ -172,7 +172,7 @@ ThreadLink::ThreadLink(MessageChannel* aChan, MessageChannel* aTargetChan)
 ThreadLink::~ThreadLink() {
   MOZ_ASSERT(mChan);
   MOZ_ASSERT(mChan->mMonitor);
-  MonitorAutoLock lock(*mChan->mMonitor);
+  Monitor2AutoLock lock(*mChan->mMonitor);
 
   // Bug 848949: We need to prevent the other side
   // from sending us any more messages to avoid Use-After-Free.
@@ -230,7 +230,7 @@ void ThreadLink::SendClose() {
 }
 
 bool ThreadLink::Unsound_IsClosed() const {
-  MonitorAutoLock lock(*mChan->mMonitor);
+  Monitor2AutoLock lock(*mChan->mMonitor);
   return mChan->mChannelState == ChannelClosed;
 }
 
@@ -246,7 +246,7 @@ uint32_t ThreadLink::Unsound_NumQueuedMessages() const {
 void ProcessLink::OnMessageReceived(Message&& msg) {
   AssertIOThread();
   NS_ASSERTION(mChan->mChannelState != ChannelError, "Shouldn't get here!");
-  MonitorAutoLock lock(*mChan->mMonitor);
+  Monitor2AutoLock lock(*mChan->mMonitor);
   mChan->OnMessageReceivedFromLink(std::move(msg));
 }
 
@@ -260,7 +260,7 @@ void ProcessLink::OnChannelOpened() {
   AssertIOThread();
 
   {
-    MonitorAutoLock lock(*mChan->mMonitor);
+    Monitor2AutoLock lock(*mChan->mMonitor);
 
     mExistingListener = mTransport->set_listener(this);
 #ifdef DEBUG
@@ -272,7 +272,7 @@ void ProcessLink::OnChannelOpened() {
 #endif  // DEBUG
 
     mChan->mChannelState = ChannelOpening;
-    lock.Notify();
+    lock.Signal();
   }
 
   if (!mTransport->Connect()) {
@@ -286,7 +286,7 @@ void ProcessLink::OnTakeConnectedChannel() {
 
   std::queue<Message> pending;
   {
-    MonitorAutoLock lock(*mChan->mMonitor);
+    Monitor2AutoLock lock(*mChan->mMonitor);
 
     mChan->mChannelState = ChannelConnected;
 
@@ -294,7 +294,7 @@ void ProcessLink::OnTakeConnectedChannel() {
     if (mExistingListener) {
       mExistingListener->GetQueuedMessages(pending);
     }
-    lock.Notify();
+    lock.Signal();
   }
 
   // Dispatch whatever messages the previous listener had queued up.
@@ -310,14 +310,14 @@ void ProcessLink::OnChannelConnected(int32_t peer_pid) {
   bool notifyChannel = false;
 
   {
-    MonitorAutoLock lock(*mChan->mMonitor);
+    Monitor2AutoLock lock(*mChan->mMonitor);
     // Do not force it into connected if it has errored out, started
     // closing, etc. Note that we can be in the Connected state already
     // since the parent starts out Connected.
     if (mChan->mChannelState == ChannelOpening ||
         mChan->mChannelState == ChannelConnected) {
       mChan->mChannelState = ChannelConnected;
-      mChan->mMonitor->Notify();
+      mChan->mMonitor->Signal();
       notifyChannel = true;
     }
   }
@@ -334,7 +334,7 @@ void ProcessLink::OnChannelConnected(int32_t peer_pid) {
 void ProcessLink::OnChannelConnectError() {
   AssertIOThread();
 
-  MonitorAutoLock lock(*mChan->mMonitor);
+  Monitor2AutoLock lock(*mChan->mMonitor);
 
   mChan->OnChannelErrorFromLink();
 }
@@ -342,7 +342,7 @@ void ProcessLink::OnChannelConnectError() {
 void ProcessLink::OnChannelError() {
   AssertIOThread();
 
-  MonitorAutoLock lock(*mChan->mMonitor);
+  Monitor2AutoLock lock(*mChan->mMonitor);
 
   MOZ_ALWAYS_TRUE(this == mTransport->set_listener(mExistingListener));
 
@@ -354,7 +354,7 @@ void ProcessLink::OnCloseChannel() {
 
   mTransport->Close();
 
-  MonitorAutoLock lock(*mChan->mMonitor);
+  Monitor2AutoLock lock(*mChan->mMonitor);
 
   DebugOnly<IPC::Channel::Listener*> previousListener =
       mTransport->set_listener(mExistingListener);
@@ -363,7 +363,7 @@ void ProcessLink::OnCloseChannel() {
   MOZ_ASSERT(previousListener == this || previousListener == mExistingListener);
 
   mChan->mChannelState = ChannelClosed;
-  mChan->mMonitor->Notify();
+  mChan->mMonitor->Signal();
 }
 
 bool ProcessLink::Unsound_IsClosed() const {

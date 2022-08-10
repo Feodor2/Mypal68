@@ -550,7 +550,7 @@ class ChildImpl::SendInitBackgroundRunnable final : public CancelableRunnable {
   nsCOMPtr<nsISerialEventTarget> mOwningEventTarget;
   RefPtr<StrongWorkerRef> mWorkerRef;
   Endpoint<PBackgroundParent> mParent;
-  mozilla::Mutex mMutex;
+  Lock mMutex;
   bool mSentInitBackground;
   std::function<void(Endpoint<PBackgroundParent>&& aParent)> mSendInitfunc;
 
@@ -562,7 +562,7 @@ class ChildImpl::SendInitBackgroundRunnable final : public CancelableRunnable {
   void ClearEventTarget() {
     mWorkerRef = nullptr;
 
-    mozilla::MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     mOwningEventTarget = nullptr;
   }
 
@@ -1773,7 +1773,7 @@ ChildImpl::SendInitBackgroundRunnable::Run() {
 
     nsCOMPtr<nsISerialEventTarget> owningEventTarget;
     {
-      mozilla::MutexAutoLock lock(mMutex);
+      AutoLock lock(mMutex);
       owningEventTarget = mOwningEventTarget;
     }
 

@@ -107,8 +107,8 @@ using namespace mozilla;
 using namespace mozilla::ipc;
 using namespace std;
 
-using mozilla::MonitorAutoLock;
-using mozilla::MonitorAutoUnlock;
+using mozilla::Monitor2AutoLock;
+using mozilla::Monitor2AutoUnlock;
 using mozilla::dom::AutoNoJSAPI;
 using mozilla::dom::ScriptSettingsInitialized;
 
@@ -698,7 +698,7 @@ bool MessageChannel::CanSend() const {
   if (!mMonitor) {
     return false;
   }
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   return Connected();
 }
 
@@ -711,7 +711,7 @@ void MessageChannel::WillDestroyCurrentMessageLoop() {
 #endif
 
   // Clear mWorkerThread to avoid posting to it in the future.
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   mWorkerLoop = nullptr;
 }
 
@@ -809,7 +809,7 @@ bool MessageChannel::Open(Transport* aTransport, MessageLoop* aIOLoop,
                           Side aSide) {
   MOZ_ASSERT(!mLink, "Open() called > once");
 
-  mMonitor = new RefCountedMonitor();
+  mMonitor = new Monitor2("aTransport");
   mWorkerLoop = MessageLoop::current();
   mWorkerThread = GetCurrentVirtualThread();
   mWorkerLoop->AddDestructionObserver(this);
@@ -857,9 +857,9 @@ bool MessageChannel::Open(MessageChannel* aTargetChan,
       break;
   }
 
-  mMonitor = new RefCountedMonitor();
+  mMonitor = new Monitor2("aTargetChan");
 
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   mChannelState = ChannelOpening;
   MOZ_ALWAYS_SUCCEEDS(
       aEventTarget->Dispatch(NewNonOwningRunnableMethod<MessageChannel*, Side>(
@@ -881,12 +881,12 @@ void MessageChannel::OnOpenAsSlave(MessageChannel* aTargetChan, Side aSide) {
   CommonThreadOpenInit(aTargetChan, aSide);
   mMonitor = aTargetChan->mMonitor;
 
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   MOZ_RELEASE_ASSERT(ChannelOpening == aTargetChan->mChannelState,
                      "Target channel not in the process of opening");
   mChannelState = ChannelConnected;
   aTargetChan->mChannelState = ChannelConnected;
-  aTargetChan->mMonitor->Notify();
+  aTargetChan->mMonitor->Signal();
 }
 
 void MessageChannel::CommonThreadOpenInit(MessageChannel* aTargetChan,
@@ -919,7 +919,7 @@ bool MessageChannel::OpenOnSameThread(MessageChannel* aTargetChan,
 
   // XXX(nika): Avoid setting up a monitor for same thread channels? We
   // shouldn't need it.
-  mMonitor = new RefCountedMonitor();
+  mMonitor = new Monitor2("OpenOnSameThread");
 
   mChannelState = ChannelOpening;
   aTargetChan->CommonThreadOpenInit(this, oppSide);
@@ -941,7 +941,7 @@ bool MessageChannel::Echo(Message* aMsg) {
     return false;
   }
 
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
 
   if (!Connected()) {
     ReportConnectionError("MessageChannel", msg.get());
@@ -984,7 +984,7 @@ bool MessageChannel::Send(Message* aMsg) {
     return false;
   }
 
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   if (!Connected()) {
     ReportConnectionError("MessageChannel", msg.get());
     return false;
@@ -1006,7 +1006,7 @@ void MessageChannel::BeginPostponingSends() {
   AssertWorkerThread();
   mMonitor->AssertNotCurrentThreadOwns();
 
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   {
     MOZ_ASSERT(!mIsPostponingSends);
     mIsPostponingSends = true;
@@ -1015,7 +1015,7 @@ void MessageChannel::BeginPostponingSends() {
 
 void MessageChannel::StopPostponingSends() {
   // Note: this can be called from any thread.
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
 
   MOZ_ASSERT(mIsPostponingSends);
 
@@ -1091,7 +1091,7 @@ bool MessageChannel::SendBuildIDsMatchMessage(const char* aParentBuildID) {
   mMonitor->AssertNotCurrentThreadOwns();
   // Don't check for MSG_ROUTING_NONE.
 
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   if (!Connected()) {
     ReportConnectionError("MessageChannel", msg);
     return false;
@@ -1322,7 +1322,7 @@ void MessageChannel::OnMessageReceivedFromLink(Message&& aMsg) {
 void MessageChannel::PeekMessages(
     const std::function<bool(const Message& aMsg)>& aInvoke) {
   // FIXME: We shouldn't be holding the lock for aInvoke!
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
 
   for (MessageTask* it : mPending) {
     const Message& msg = it->Msg();
@@ -1423,7 +1423,7 @@ bool MessageChannel::Send(Message* aMsg, Message* aReply) {
 
   CxxStackFrame f(*this, OUT_MESSAGE, msg.get());
 
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
 
   if (mTimedOutMessageSeqno) {
     // Don't bother sending another sync message if a previous one timed out
@@ -1534,7 +1534,7 @@ bool MessageChannel::Send(Message* aMsg, Message* aReply) {
     bool maybeTimedOut = !WaitForSyncNotify(handleWindowsMessages);
 
     if (mListener->NeedArtificialSleep()) {
-      MonitorAutoUnlock unlock(*mMonitor);
+      Monitor2AutoUnlock unlock(*mMonitor);
       mListener->ArtificialSleep();
     }
 
@@ -1633,7 +1633,7 @@ bool MessageChannel::Call(Message* aMsg, Message* aReply) {
   // monitor lock.
   CxxStackFrame cxxframe(*this, OUT_MESSAGE, msg.get());
 
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   if (!Connected()) {
     ReportConnectionError("MessageChannel::Call", msg.get());
     return false;
@@ -1777,7 +1777,7 @@ bool MessageChannel::Call(Message* aMsg, Message* aReply) {
 #ifdef MOZ_TASK_TRACER
       Message::AutoTaskTracerRun tasktracerRun(recvd);
 #endif
-      MonitorAutoUnlock unlock(*mMonitor);
+      Monitor2AutoUnlock unlock(*mMonitor);
 
       CxxStackFrame frame(*this, IN_MESSAGE, &recvd);
       DispatchInterruptMessage(std::move(recvd), stackDepth);
@@ -1798,7 +1798,7 @@ bool MessageChannel::WaitForIncomingMessage() {
                                    REQUIRE_DEFERRED_MESSAGE_PROTECTION);
 #endif
 
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   AutoEnterWaitForIncoming waitingForIncoming(*this);
   if (mChannelState != ChannelConnected) {
     return false;
@@ -1952,7 +1952,7 @@ nsresult MessageChannel::MessageTask::Run() {
   mChannel->AssertWorkerThread();
   mChannel->mMonitor->AssertNotCurrentThreadOwns();
 
-  MonitorAutoLock lock(*mChannel->mMonitor);
+  Monitor2AutoLock lock(*mChannel->mMonitor);
 
   // In case we choose not to run this message, we may need to be able to Post
   // it again.
@@ -1975,7 +1975,7 @@ nsresult MessageChannel::MessageTask::Cancel() {
   mChannel->AssertWorkerThread();
   mChannel->mMonitor->AssertNotCurrentThreadOwns();
 
-  MonitorAutoLock lock(*mChannel->mMonitor);
+  Monitor2AutoLock lock(*mChannel->mMonitor);
 
   if (!isInList()) {
     return NS_OK;
@@ -2062,7 +2062,7 @@ void MessageChannel::DispatchMessage(Message&& aMsg) {
 #ifdef MOZ_TASK_TRACER
       Message::AutoTaskTracerRun tasktracerRun(aMsg);
 #endif
-      MonitorAutoUnlock unlock(*mMonitor);
+      Monitor2AutoUnlock unlock(*mMonitor);
       CxxStackFrame frame(*this, IN_MESSAGE, &aMsg);
 
       mListener->ArtificialSleep();
@@ -2184,7 +2184,7 @@ void MessageChannel::DispatchInterruptMessage(Message&& aMsg,
   }
   reply->set_seqno(aMsg.seqno());
 
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   if (ChannelConnected == mChannelState) {
     mLink->SendMessage(reply.forget());
   }
@@ -2274,7 +2274,7 @@ void MessageChannel::EnteredCxxStack() { mListener->EnteredCxxStack(); }
 void MessageChannel::ExitedCxxStack() {
   mListener->ExitedCxxStack();
   if (mSawInterruptOutMsg) {
-    MonitorAutoLock lock(*mMonitor);
+    Monitor2AutoLock lock(*mMonitor);
     // see long comment in OnMaybeDequeueOne()
     EnqueuePendingMessages();
     mSawInterruptOutMsg = false;
@@ -2332,18 +2332,18 @@ bool MessageChannel::WaitForSyncNotify(bool /* aHandleWindowsMessages */) {
   TimeDuration timeout = (kNoTimeout == mTimeoutMs)
                              ? TimeDuration::Forever()
                              : TimeDuration::FromMilliseconds(mTimeoutMs);
-  CVStatus status = mMonitor->Wait(timeout);
+  CVStatus2 status = mMonitor->Wait(timeout);
 
   // If the timeout didn't expire, we know we received an event. The
   // converse is not true.
-  return WaitResponse(status == CVStatus::Timeout);
+  return WaitResponse(status == CVStatus2::Timeout);
 }
 
 bool MessageChannel::WaitForInterruptNotify() {
   return WaitForSyncNotify(true);
 }
 
-void MessageChannel::NotifyWorkerThread() { mMonitor->Notify(); }
+void MessageChannel::NotifyWorkerThread() { mMonitor->Signal(); }
 #endif
 
 bool MessageChannel::ShouldContinueFromTimeout() {
@@ -2352,7 +2352,7 @@ bool MessageChannel::ShouldContinueFromTimeout() {
 
   bool cont;
   {
-    MonitorAutoUnlock unlock(*mMonitor);
+    Monitor2AutoUnlock unlock(*mMonitor);
     cont = mListener->ShouldContinueFromReplyTimeout();
     mListener->ArtificialSleep();
   }
@@ -2443,7 +2443,7 @@ void MessageChannel::ReportConnectionError(const char* aChannelName,
     PrintErrorMessage(mSide, aChannelName, errorMsg);
   }
 
-  MonitorAutoUnlock unlock(*mMonitor);
+  Monitor2AutoUnlock unlock(*mMonitor);
   mListener->ProcessingError(MsgDropped, errorMsg);
 }
 
@@ -2525,7 +2525,7 @@ void MessageChannel::OnChannelErrorFromLink() {
       ProcessChild::QuickExit();
     }
     mChannelState = ChannelError;
-    mMonitor->Notify();
+    mMonitor->Signal();
   }
 
   PostErrorNotifyTask();
@@ -2572,7 +2572,7 @@ void MessageChannel::OnNotifyMaybeChannelError() {
   // exited. We enforce that order by grabbing the mutex here which
   // should only continue once OnChannelError has completed.
   {
-    MonitorAutoLock lock(*mMonitor);
+    Monitor2AutoLock lock(*mMonitor);
     // nothing to do here
   }
 
@@ -2628,7 +2628,7 @@ void MessageChannel::SynchronouslyClose() {
 void MessageChannel::CloseWithError() {
   AssertWorkerThread();
 
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   if (ChannelConnected != mChannelState) {
     return;
   }
@@ -2640,7 +2640,7 @@ void MessageChannel::CloseWithError() {
 void MessageChannel::CloseWithTimeout() {
   AssertWorkerThread();
 
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   if (ChannelConnected != mChannelState) {
     return;
   }
@@ -2655,11 +2655,11 @@ void MessageChannel::Close() {
     // We don't use MonitorAutoLock here as that causes some sort of
     // deadlock in the error/timeout-with-a-listener state below when
     // compiling an optimized msvc build.
-    mMonitor->Lock();
+    mMonitor->Acquire();
 
     // Instead just use a ScopeExit to manage the unlock.
-    RefPtr<RefCountedMonitor> monitor(mMonitor);
-    auto exit = MakeScopeExit([m = std::move(monitor)]() { m->Unlock(); });
+    Monitor2* monitor(mMonitor);
+    auto exit = MakeScopeExit([m = std::move(monitor)]() { m->Release(); });
 
     if (ChannelError == mChannelState || ChannelTimeout == mChannelState) {
       // See bug 538586: if the listener gets deleted while the
@@ -2669,7 +2669,7 @@ void MessageChannel::Close() {
       // of the channel error.
       if (mListener) {
         exit.release();  // Explicitly unlocking, clear scope exit.
-        mMonitor->Unlock();
+        mMonitor->Release();
         NotifyMaybeChannelError();
       }
       return;
@@ -2883,12 +2883,12 @@ void MessageChannel::CancelTransaction(int transaction) {
 }
 
 bool MessageChannel::IsInTransaction() const {
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   return !!mTransactionStack;
 }
 
 void MessageChannel::CancelCurrentTransaction() {
-  MonitorAutoLock lock(*mMonitor);
+  Monitor2AutoLock lock(*mMonitor);
   if (DispatchingSyncMessageNestedLevel() >= IPC::Message::NESTED_INSIDE_SYNC) {
     if (DispatchingSyncMessageNestedLevel() ==
             IPC::Message::NESTED_INSIDE_CPOW ||

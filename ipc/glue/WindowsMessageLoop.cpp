@@ -730,7 +730,7 @@ void MessageChannel::SpinInternalEventLoop() {
 
     // Don't get wrapped up in here if the child connection dies.
     {
-      MonitorAutoLock lock(*mMonitor);
+      Monitor2AutoLock lock(*mMonitor);
       if (!Connected()) {
         return;
       }
@@ -862,7 +862,7 @@ bool SuppressedNeuteringRegion::sSuppressNeutering = false;
 #if defined(ACCESSIBILITY)
 bool MessageChannel::WaitForSyncNotifyWithA11yReentry() {
   mMonitor->AssertCurrentThreadOwns();
-  MonitorAutoUnlock unlock(*mMonitor);
+  Monitor2AutoUnlock unlock(*mMonitor);
 
   const DWORD waitStart = ::GetTickCount();
   DWORD elapsed = 0;
@@ -872,7 +872,7 @@ bool MessageChannel::WaitForSyncNotifyWithA11yReentry() {
 
   while (true) {
     {  // Scope for lock
-      MonitorAutoLock lock(*mMonitor);
+      Monitor2AutoLock lock(*mMonitor);
       if (!Connected()) {
         break;
       }
@@ -942,14 +942,14 @@ bool MessageChannel::WaitForSyncNotify(bool aHandleWindowsMessages) {
     MOZ_ASSERT(!mIsSyncWaitingOnNonMainThread);
     mIsSyncWaitingOnNonMainThread = true;
 
-    CVStatus status = mMonitor->Wait(timeout);
+    CVStatus2 status = mMonitor->Wait(timeout);
 
     MOZ_ASSERT(mIsSyncWaitingOnNonMainThread);
     mIsSyncWaitingOnNonMainThread = false;
 
     // If the timeout didn't expire, we know we received an event. The
     // converse is not true.
-    return WaitResponse(status == CVStatus::Timeout);
+    return WaitResponse(status == CVStatus2::Timeout);
   }
 
   NS_ASSERTION(
@@ -958,7 +958,7 @@ bool MessageChannel::WaitForSyncNotify(bool aHandleWindowsMessages) {
   NS_ASSERTION(mTopFrame && !mTopFrame->mInterrupt,
                "Top frame is not a sync frame!");
 
-  MonitorAutoUnlock unlock(*mMonitor);
+  Monitor2AutoUnlock unlock(*mMonitor);
 
   bool timedout = false;
 
@@ -981,7 +981,7 @@ bool MessageChannel::WaitForSyncNotify(bool aHandleWindowsMessages) {
       MSG msg = {0};
       // Don't get wrapped up in here if the child connection dies.
       {
-        MonitorAutoLock lock(*mMonitor);
+        Monitor2AutoLock lock(*mMonitor);
         if (!Connected()) {
           break;
         }
@@ -1086,7 +1086,7 @@ bool MessageChannel::WaitForInterruptNotify() {
   NS_ASSERTION(mTopFrame && mTopFrame->mInterrupt,
                "Top frame is not a sync frame!");
 
-  MonitorAutoUnlock unlock(*mMonitor);
+  Monitor2AutoUnlock unlock(*mMonitor);
 
   bool timedout = false;
 
@@ -1129,7 +1129,7 @@ bool MessageChannel::WaitForInterruptNotify() {
 
     // Don't get wrapped up in here if the child connection dies.
     {
-      MonitorAutoLock lock(*mMonitor);
+      Monitor2AutoLock lock(*mMonitor);
       if (!Connected()) {
         break;
       }
@@ -1191,7 +1191,7 @@ void MessageChannel::NotifyWorkerThread() {
   mMonitor->AssertCurrentThreadOwns();
 
   if (mIsSyncWaitingOnNonMainThread) {
-    mMonitor->Notify();
+    mMonitor->Signal();
     return;
   }
 

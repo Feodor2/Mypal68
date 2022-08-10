@@ -146,6 +146,7 @@ class WebSocketChannel : public BaseWebSocketChannel,
   void GeneratePong(uint8_t* payload, uint32_t len);
   void GeneratePing();
 
+  MOZ_MUST_USE nsresult OnNetworkChangedTargetThread();
   MOZ_MUST_USE nsresult OnNetworkChanged();
   MOZ_MUST_USE nsresult StartPinging();
 

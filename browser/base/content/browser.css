@@ -325,6 +325,17 @@ window:not([chromehidden~="toolbar"]) #nav-bar[nonemptyoverflow] > .overflow-but
   position: relative;
 }
 
+/* Adjusts titlebar button height to make them square on Windows XP  */
+:root[tabsintitlebar] .titlebar-buttonbox-container {
+  max-height:15px !important;
+  }
+  
+ :root[tabsintitlebar] .titlebar-color {   
+  max-height: var(--tab-min-height) !important;
+  }
+ 
+
+
 #personal-bookmarks {
   -moz-window-dragging: inherit;
 }

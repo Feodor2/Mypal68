@@ -333,7 +333,11 @@ window:not([chromehidden~="toolbar"]) #nav-bar[nonemptyoverflow] > .overflow-but
  :root[tabsintitlebar] .titlebar-color {   
   max-height: var(--tab-min-height) !important;
   }
- 
+
+   :root[tabsintitlebar]:not([inFullscreen="true"]):not([sizemode="maximized"]) .titlebar-buttonbox-container { /* Adjusts Buttons when windowed */
+padding-top: 4px !important;
+}
+
 
 
 #personal-bookmarks {

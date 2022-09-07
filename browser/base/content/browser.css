@@ -334,8 +334,10 @@ window:not([chromehidden~="toolbar"]) #nav-bar[nonemptyoverflow] > .overflow-but
   max-height: var(--tab-min-height) !important;
   }
 
-   :root[tabsintitlebar]:not([inFullscreen="true"]):not([sizemode="maximized"]) .titlebar-buttonbox-container { /* Adjusts Buttons when windowed */
+@media not (-moz-windows-classic) {
+  :root[tabsintitlebar]:not([inFullscreen="true"]):not([sizemode="maximized"]) .titlebar-buttonbox-container {
 padding-top: 4px !important;
+}
 }
 
 

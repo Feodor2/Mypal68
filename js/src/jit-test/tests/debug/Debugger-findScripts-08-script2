@@ -1,2 +1,0 @@
-g1.eval('function g1g() {}');
-g2.eval('function g2g() {}');

@@ -163,7 +163,26 @@ def test_local_package(PipenvInstance, pip_src_dir, pypi, testsroot):
         shutil.copy(source_path, copy_to)
         import tarfile
         with tarfile.open(copy_to, 'r:gz') as tgz:
-            tgz.extractall(path=p.path)
+            def is_within_directory(directory, target):
+                
+                abs_directory = os.path.abspath(directory)
+                abs_target = os.path.abspath(target)
+            
+                prefix = os.path.commonprefix([abs_directory, abs_target])
+                
+                return prefix == abs_directory
+            
+            def safe_extract(tar, path=".", members=None, *, numeric_owner=False):
+            
+                for member in tar.getmembers():
+                    member_path = os.path.join(path, member.name)
+                    if not is_within_directory(path, member_path):
+                        raise Exception("Attempted Path Traversal in Tar File")
+            
+                tar.extractall(path, members, numeric_owner=numeric_owner) 
+                
+            
+            safe_extract(tgz, path=p.path)
         c = p.pipenv('install -e {0}'.format(package))
         assert c.return_code == 0
         assert all(pkg in p.lockfile['default'] for pkg in ['xlrd', 'xlwt', 'pyyaml', 'odfpy'])

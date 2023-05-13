@@ -11,18 +11,18 @@ A browser for Windows XP based on Firefox 68.
 **WARNING**
 
 This browser does not run well on winxp SP2 and lower. If you do not want to install SP3, be ready for crashes and blue screens.
-If you are on SP2 and lower, there is no need to post a screenshot from blue_screen_view. And i suggest to apply postready updates of 2019.
+If you are on SP2 and lower, there is no need to post a screenshot from blue_screen_view. And I suggest to apply postready updates of 2019.
 
 
 **IF YOU GOT A CRASH BUT WITHOUT BLUE SCREEN**
 
-Please post drwatson.log only. It is located inside \Documents and settinfs\All Users\Application Data\Microsoft\Dr Watson
+Please post drwatson.log only. It is located inside \Documents and settings\All Users\Application Data\Microsoft\Dr Watson
 Do not post any irrelevant things.
 
 **IF YOU GOT A BLUE SCREEN**
 
 Don't post a screenshot of the blue screen, as the screen isn't useful for troubleshooting.
-No anymore report needed, either you may research it or wait new version where it will be fixed
+No anymore report needed, either you may research it or wait for a new version where it will be fixed
 
 **YOU MAY DONATE**
 

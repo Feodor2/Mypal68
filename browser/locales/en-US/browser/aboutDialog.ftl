@@ -31,7 +31,7 @@ update-manual = Updates available at <label data-l10n-name="manual-link"/>
 
 update-restarting = Restarting…
 
-community-2 = { -brand-short-name } is based on Mozilla Firefox adapted for winxp\win2003.
+community-2 = { -brand-short-name } is based on Mozilla Firefox and is adapted for Windows XP/Windows Server 2003.
 
 bottomLinks-license = Licensing Information
 bottomLinks-rights = End-User Rights

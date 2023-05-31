@@ -31,6 +31,10 @@ namespace mozilla {
 
 struct Nothing {};
 
+inline constexpr bool operator==(const Nothing&, const Nothing&) {
+  return true;
+}
+
 namespace detail {
 
 // You would think that poisoning Maybe instances could just be a call
@@ -68,7 +72,7 @@ struct InlinePoisoner<N, N> {
 // bloated to boot.  So provide a fallback to the out-of-line poisoner.
 template <size_t ObjectSize>
 struct OutOfLinePoisoner {
-  static void poison(void* p, const uintptr_t) {
+  static MOZ_NEVER_INLINE void poison(void* p, const uintptr_t) {
     mozWritePoison(p, ObjectSize);
   }
 };
@@ -152,16 +156,16 @@ struct MaybePoisoner {
  *     functions |Some()| and |Nothing()|.
  */
 template <class T>
-class MOZ_NON_PARAM MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS Maybe {
-  MOZ_ALIGNAS_IN_STRUCT(T) unsigned char mStorage[sizeof(T)];
+class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS Maybe {
+  using NonConstT = typename RemoveConst<T>::Type;
+  union Union {
+    Union() {}
+    ~Union() {}
+    NonConstT val;
+  } mStorage;
   char mIsSome;  // not bool -- guarantees minimal space consumption
 
-  // GCC fails due to -Werror=strict-aliasing if |mStorage| is directly cast to
-  // T*.  Indirecting through these functions addresses the problem.
-  void* data() { return mStorage; }
-  const void* data() const { return mStorage; }
-
-  void poisonData() { detail::MaybePoisoner<T>::poison(data()); }
+  void poisonData() { detail::MaybePoisoner<T>::poison(&mStorage.val); }
 
  public:
   using ValueType = T;
@@ -464,6 +468,72 @@ class MOZ_NON_PARAM MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS Maybe {
 };
 
 template <typename T>
+class Maybe<T&> {
+ public:
+  constexpr Maybe() = default;
+  constexpr MOZ_IMPLICIT Maybe(Nothing) {}
+
+  void emplace(T& aRef) { mValue = &aRef; }
+
+  /* Methods that check whether this Maybe contains a value */
+  explicit operator bool() const { return isSome(); }
+  bool isSome() const { return mValue; }
+  bool isNothing() const { return !mValue; }
+
+  T& ref() const {
+    MOZ_DIAGNOSTIC_ASSERT(isSome());
+    return *mValue;
+  }
+
+  T* operator->() const { return &ref(); }
+  T& operator*() const { return ref(); }
+
+  // Deliberately not defining value and ptr accessors, as these may be
+  // confusing on a reference-typed Maybe.
+
+  // XXX Should we define refOr?
+
+  void reset() { mValue = nullptr; }
+
+  template <typename Func>
+  Maybe& apply(Func&& aFunc) {
+    if (isSome()) {
+      std::forward<Func>(aFunc)(ref());
+    }
+    return *this;
+  }
+
+  template <typename Func>
+  const Maybe& apply(Func&& aFunc) const {
+    if (isSome()) {
+      std::forward<Func>(aFunc)(ref());
+    }
+    return *this;
+  }
+
+  template <typename Func>
+  auto map(Func&& aFunc) {
+    Maybe<decltype(std::forward<Func>(aFunc)(ref()))> val;
+    if (isSome()) {
+      val.emplace(std::forward<Func>(aFunc)(ref()));
+    }
+    return val;
+  }
+
+  template <typename Func>
+  auto map(Func&& aFunc) const {
+    Maybe<decltype(std::forward<Func>(aFunc)(ref()))> val;
+    if (isSome()) {
+      val.emplace(std::forward<Func>(aFunc)(ref()));
+    }
+    return val;
+  }
+
+ private:
+  T* mValue = nullptr;
+};
+
+template <typename T>
 T Maybe<T>::value() const {
   MOZ_DIAGNOSTIC_ASSERT(mIsSome);
   return ref();
@@ -496,13 +566,13 @@ const T* Maybe<T>::operator->() const {
 template <typename T>
 T& Maybe<T>::ref() {
   MOZ_DIAGNOSTIC_ASSERT(mIsSome);
-  return *static_cast<T*>(data());
+  return mStorage.val;
 }
 
 template <typename T>
 const T& Maybe<T>::ref() const {
   MOZ_DIAGNOSTIC_ASSERT(mIsSome);
-  return *static_cast<const T*>(data());
+  return mStorage.val;
 }
 
 template <typename T>
@@ -521,7 +591,7 @@ template <typename T>
 template <typename... Args>
 void Maybe<T>::emplace(Args&&... aArgs) {
   MOZ_DIAGNOSTIC_ASSERT(!mIsSome);
-  ::new (KnownNotNull, data()) T(std::forward<Args>(aArgs)...);
+  ::new (KnownNotNull, &mStorage.val) T(std::forward<Args>(aArgs)...);
   mIsSome = true;
 }
 
@@ -544,6 +614,13 @@ Maybe<U> Some(T&& aValue) {
 }
 
 template <typename T>
+Maybe<T&> SomeRef(T& aValue) {
+  Maybe<T&> value;
+  value.emplace(aValue);
+  return value;
+}
+
+template <typename T>
 Maybe<typename RemoveCV<typename RemoveReference<T>::Type>::Type> ToMaybe(
     T* aPtr) {
   if (aPtr) {
@@ -559,6 +636,9 @@ Maybe<typename RemoveCV<typename RemoveReference<T>::Type>::Type> ToMaybe(
  */
 template <typename T>
 bool operator==(const Maybe<T>& aLHS, const Maybe<T>& aRHS) {
+  static_assert(!std::is_reference_v<T>,
+                "operator== is not defined for Maybe<T&>, compare values or "
+                "addresses explicitly instead");
   if (aLHS.isNothing() != aRHS.isNothing()) {
     return false;
   }

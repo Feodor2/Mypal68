@@ -25,8 +25,6 @@
 #  include "dw-extra.h"
 #endif
 
-using namespace std;
-
 #ifdef USE_SKIA
 #  include "PathSkia.h"
 #  include "skia/include/core/SkPaint.h"
@@ -218,7 +216,7 @@ void ScaledFontDWrite::GetGlyphDesignMetrics(const uint16_t* aGlyphs,
   DWRITE_FONT_METRICS fontMetrics;
   mFontFace->GetMetrics(&fontMetrics);
 
-  vector<DWRITE_GLYPH_METRICS> metrics(aNumGlyphs);
+  std::vector<DWRITE_GLYPH_METRICS> metrics(aNumGlyphs);
   mFontFace->GetDesignGlyphMetrics(aGlyphs, aNumGlyphs, &metrics.front());
 
   Float scaleFactor = mSize / fontMetrics.designUnitsPerEm;

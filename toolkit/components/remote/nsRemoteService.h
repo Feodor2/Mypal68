@@ -6,7 +6,6 @@
 #define __nsRemoteService_h__
 
 #include "nsRemoteServer.h"
-#include "nsIObserverService.h"
 #include "nsIObserver.h"
 #include "mozilla/UniquePtr.h"
 #include "nsIFile.h"

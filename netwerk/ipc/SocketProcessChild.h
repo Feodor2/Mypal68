@@ -47,6 +47,10 @@ class SocketProcessChild final : public PSocketProcessChild {
   PWebrtcProxyChannelChild* AllocPWebrtcProxyChannelChild(
       const PBrowserOrId& browser);
   bool DeallocPWebrtcProxyChannelChild(PWebrtcProxyChannelChild* aActor);
+  PDNSRequestChild* AllocPDNSRequestChild(
+      const nsCString& aHost, const OriginAttributes& aOriginAttributes,
+      const uint32_t& aFlags);
+  bool DeallocPDNSRequestChild(PDNSRequestChild*);
 
   void CleanUp();
   void DestroySocketProcessBridgeParent(ProcessId aId);

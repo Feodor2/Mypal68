@@ -7,7 +7,6 @@
 
 using namespace mozilla;
 using namespace mozilla::gfx;
-using namespace std;
 
 TestDrawTargetBase::TestDrawTargetBase() {
   REGISTER_TEST(TestDrawTargetBase, Initialized);

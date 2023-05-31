@@ -43,6 +43,8 @@ function openContextMenu(aMessage) {
   let data = aMessage.data;
   let browser = aMessage.target;
   let spellInfo = data.spellInfo;
+  let frameReferrerInfo = data.frameReferrerInfo;
+  let targetReferrerInfo = data.targetReferrerInfo;
 
   // ContextMenu.jsm sends us the target as a CPOW only so that
   // we can send that CPOW back down to the content process and
@@ -60,16 +62,16 @@ function openContextMenu(aMessage) {
     data.charSet,
     makeURI(data.baseURI)
   );
-  let referrerInfo = new ReferrerInfo(
-    data.referrerPolicy,
-    !data.context.linkHasNoReferrer,
-    documentURIObject
-  );
-  let frameReferrerInfo = new ReferrerInfo(
-    data.referrerPolicy,
-    !data.context.linkHasNoReferrer,
-    data.referrer ? makeURI(data.referrer) : null
-  );
+
+  if (frameReferrerInfo) {
+    frameReferrerInfo =
+      E10SUtils.deserializeReferrerInfo(frameReferrerInfo);
+  }
+
+  if (targetReferrerInfo) {
+    targetReferrerInfo = E10SUtils.deserializeReferrerInfo(targetReferrerInfo);
+  }
+
   gContextMenuContentData = {
     context: data.context,
     isRemote: data.isRemote,
@@ -82,8 +84,9 @@ function openContextMenu(aMessage) {
     documentURIObject,
     docLocation: data.docLocation,
     charSet: data.charSet,
-    referrerInfo,
+    referrerInfo: E10SUtils.deserializeReferrerInfo(data.referrerInfo),
     frameReferrerInfo,
+    targetReferrerInfo,
     contentType: data.contentType,
     contentDisposition: data.contentDisposition,
     frameOuterWindowID: data.frameOuterWindowID,
@@ -441,8 +444,7 @@ nsContextMenu.prototype = {
         "label",
         gBrowserBundle.formatStringFromName(
           "userContextOpenLink.label",
-          [label],
-          1
+          [label]
         )
       );
     }
@@ -975,10 +977,14 @@ nsContextMenu.prototype = {
   initPasswordManagerItems() {
     let loginFillInfo =
       gContextMenuContentData && gContextMenuContentData.loginFillInfo;
+    let documentURI = gContextMenuContentData.documentURIObject;
 
     // If we could not find a password field we
     // don't want to show the form fill option.
-    let showFill = loginFillInfo && loginFillInfo.passwordField.found;
+    let showFill =
+      loginFillInfo &&
+      loginFillInfo.passwordField.found &&
+      !documentURI.schemeIs("about");
 
     // Disable the fill option if the user hasn't unlocked with their master password
     // or if the password field or target field are disabled.
@@ -1013,14 +1019,29 @@ nsContextMenu.prototype = {
     if (!showFill || disableFill) {
       return;
     }
-    let documentURI = gContextMenuContentData.documentURIObject;
+
+    let formOrigin = LoginHelper.getLoginOrigin(documentURI.spec);
     let fragment = LoginManagerContextMenu.addLoginsToMenu(
       this.targetAsCPOW,
       this.browser,
-      documentURI
+      formOrigin
     );
+    let isGeneratedPasswordEnabled =
+      LoginHelper.generationAvailable && LoginHelper.generationEnabled;
+    let canFillGeneratedPassword =
+      this.onPassword &&
+      isGeneratedPasswordEnabled &&
+      Services.logins.getLoginSavingEnabled(formOrigin);
 
     this.showItem("fill-login-no-logins", !fragment);
+    this.showItem("fill-login-generated-password", canFillGeneratedPassword);
+    this.showItem("generated-password-separator", canFillGeneratedPassword);
+
+    this.setItemAttr(
+      "fill-login-generated-password",
+      "disabled",
+      PrivateBrowsingUtils.isWindowPrivate(window)
+    );
 
     if (!fragment) {
       return;
@@ -1039,6 +1060,12 @@ nsContextMenu.prototype = {
       filterString: gContextMenuContentData.documentURIObject.host,
       entryPoint: "contextmenu",
     });
+  },
+
+  fillGeneratedPassword() {
+    LoginManagerContextMenu.fillGeneratedPassword(this.targetIdentifier,
+                                                  gContextMenuContentData.documentURIObject,
+                                                  this.browser);
   },
 
   inspectNode() {
@@ -1344,7 +1371,7 @@ nsContextMenu.prototype = {
     );
 
     // Cache this because we fetch the data async
-    let { documentURIObject } = gContextMenuContentData;
+    let { targetReferrerInfo } = gContextMenuContentData;
 
     let onMessage = message => {
       mm.removeMessageListener(
@@ -1359,7 +1386,7 @@ nsContextMenu.prototype = {
         "SaveImageTitle",
         true, // bypass cache
         false, // don't skip prompt for where to save
-        documentURIObject, // referrer
+        targetReferrerInfo, // referrer info
         null, // document
         null, // content type
         null, // content disposition
@@ -1472,7 +1499,7 @@ nsContextMenu.prototype = {
     dialogTitle,
     bypassCache,
     doc,
-    docURI,
+    referrerInfo,
     windowID,
     linkDownload,
     isContentWindowPrivate
@@ -1540,7 +1567,7 @@ nsContextMenu.prototype = {
             dialogTitle,
             bypassCache,
             false,
-            docURI,
+            referrerInfo,
             doc,
             isContentWindowPrivate,
             this._triggeringPrincipal
@@ -1622,12 +1649,6 @@ nsContextMenu.prototype = {
     channel.loadFlags |= flags;
 
     if (channel instanceof Ci.nsIHttpChannel) {
-      let referrerInfo = new ReferrerInfo(
-        Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
-        true,
-        docURI
-      );
-
       channel.referrerInfo = referrerInfo;
       if (channel instanceof Ci.nsIHttpChannelInternal) {
         channel.forceAllowThirdPartyCookie = true;
@@ -1660,7 +1681,7 @@ nsContextMenu.prototype = {
       null,
       true,
       this.ownerDoc,
-      gContextMenuContentData.documentURIObject,
+      gContextMenuContentData.referrerInfo,
       this.frameOuterWindowID,
       this.linkDownload,
       isContentWindowPrivate
@@ -1680,7 +1701,7 @@ nsContextMenu.prototype = {
     let isContentWindowPrivate = this.isRemote
       ? this.ownerDoc.isPrivate
       : undefined;
-    let referrerURI = gContextMenuContentData.documentURIObject;
+    let referrerInfo = gContextMenuContentData.targetReferrerInfo;
     let isPrivate = PrivateBrowsingUtils.isBrowserPrivate(this.browser);
     if (this.onCanvas) {
       // Bypass cache, since it's a data: URL.
@@ -1691,7 +1712,7 @@ nsContextMenu.prototype = {
           "SaveImageTitle",
           true,
           false,
-          referrerURI,
+          referrerInfo,
           null,
           null,
           null,
@@ -1707,7 +1728,7 @@ nsContextMenu.prototype = {
         "SaveImageTitle",
         false,
         false,
-        referrerURI,
+        referrerInfo,
         null,
         gContextMenuContentData.contentType,
         gContextMenuContentData.contentDisposition,
@@ -1722,7 +1743,7 @@ nsContextMenu.prototype = {
         dialogTitle,
         false,
         doc,
-        referrerURI,
+        referrerInfo,
         this.frameOuterWindowID,
         "",
         isContentWindowPrivate

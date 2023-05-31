@@ -1,7 +1,7 @@
 import {actionCreators as ac, actionTypes as at} from "common/Actions.jsm";
 
 const _OpenInPrivateWindow = site => ({
-  id: "menu_action_open_private_window",
+  id: "newtab-menu-open-new-private-window",
   icon: "new-window-private",
   action: ac.OnlyToMain({
     type: at.OPEN_PRIVATE_WINDOW,
@@ -9,19 +9,6 @@ const _OpenInPrivateWindow = site => ({
   }),
   userEvent: "OPEN_PRIVATE_WINDOW",
 });
-
-export const GetPlatformString = platform => {
-  switch (platform) {
-    case "win":
-      return "menu_action_show_file_windows";
-    case "macosx":
-      return "menu_action_show_file_mac_os";
-    case "linux":
-      return "menu_action_show_file_linux";
-    default:
-      return "menu_action_show_file_default";
-  }
-};
 
 /**
  * List of functions that return items that can be included as menu options in a
@@ -32,7 +19,7 @@ export const LinkMenuOptions = {
   Separator: () => ({type: "separator"}),
   EmptyItem: () => ({type: "empty"}),
   RemoveBookmark: site => ({
-    id: "menu_action_remove_bookmark",
+    id: "newtab-menu-remove-bookmark",
     icon: "bookmark-added",
     action: ac.AlsoToMain({
       type: at.DELETE_BOOKMARK_BY_ID,
@@ -41,7 +28,7 @@ export const LinkMenuOptions = {
     userEvent: "BOOKMARK_DELETE",
   }),
   AddBookmark: site => ({
-    id: "menu_action_bookmark",
+    id: "newtab-menu-bookmark",
     icon: "bookmark-hollow",
     action: ac.AlsoToMain({
       type: at.BOOKMARK_URL,
@@ -50,7 +37,7 @@ export const LinkMenuOptions = {
     userEvent: "BOOKMARK_ADD",
   }),
   OpenInNewWindow: site => ({
-    id: "menu_action_open_new_window",
+    id: "newtab-menu-open-new-window",
     icon: "new-window",
     action: ac.AlsoToMain({
       type: at.OPEN_NEW_WINDOW,
@@ -63,16 +50,20 @@ export const LinkMenuOptions = {
     userEvent: "OPEN_NEW_WINDOW",
   }),
   BlockUrl: (site, index, eventSource) => ({
-    id: "menu_action_dismiss",
+    id: "newtab-menu-dismiss",
     icon: "dismiss",
     action: ac.AlsoToMain({
       type: at.BLOCK_URL,
-      data: {url: site.open_url || site.url, pocket_id: site.pocket_id},
+      data: {url: site.open_url || site.url},
     }),
     impression: ac.ImpressionStats({
       source: eventSource,
       block: 0,
-      tiles: [{id: site.guid, pos: index}],
+      tiles: [{
+        id: site.guid,
+        pos: index,
+        ...(site.shim && site.shim.delete ? {shim: site.shim.delete} : {}),
+      }],
     }),
     userEvent: "BLOCK",
   }),
@@ -81,7 +72,7 @@ export const LinkMenuOptions = {
   // memory and notify the web extenion, rather than using the built-in block list.
   WebExtDismiss: (site, index, eventSource) => ({
     id: "menu_action_webext_dismiss",
-    string_id: "menu_action_dismiss",
+    string_id: "newtab-menu-dismiss",
     icon: "dismiss",
     action: ac.WebExtEvent(at.WEBEXT_DISMISS, {
       source: eventSource,
@@ -90,26 +81,26 @@ export const LinkMenuOptions = {
     }),
   }),
   DeleteUrl: (site, index, eventSource, isEnabled, siteInfo) => ({
-    id: "menu_action_delete",
+    id: "newtab-menu-delete-history",
     icon: "delete",
     action: {
       type: at.DIALOG_OPEN,
       data: {
         onConfirm: [
-          ac.AlsoToMain({type: at.DELETE_HISTORY_URL, data: {url: site.url, pocket_id: site.pocket_id, forceBlock: site.bookmarkGuid}}),
+          ac.AlsoToMain({type: at.DELETE_HISTORY_URL, data: {url: site.url, forceBlock: site.bookmarkGuid}}),
           ac.UserEvent(Object.assign({event: "DELETE", source: eventSource, action_position: index}, siteInfo)),
         ],
         eventSource,
-        body_string_id: ["confirm_history_delete_p1", "confirm_history_delete_notice_p2"],
-        confirm_button_string_id: "menu_action_delete",
-        cancel_button_string_id: "topsites_form_cancel_button",
+        body_string_id: ["newtab-confirm-delete-history-p1", "newtab-confirm-delete-history-p2"],
+        confirm_button_string_id: "newtab-topsites-delete-history-button",
+        cancel_button_string_id: "newtab-topsites-cancel-button",
         icon: "modal-delete",
       },
     },
     userEvent: "DIALOG_OPEN",
   }),
-  ShowFile: (site, index, eventSource, isEnabled, siteInfo, platform) => ({
-    id: GetPlatformString(platform),
+  ShowFile: site => ({
+    id: "newtab-menu-show-file",
     icon: "search",
     action: ac.OnlyToMain({
       type: at.SHOW_DOWNLOAD_FILE,
@@ -117,7 +108,7 @@ export const LinkMenuOptions = {
     }),
   }),
   OpenFile: site => ({
-    id: "menu_action_open_file",
+    id: "newtab-menu-open-file",
     icon: "open-file",
     action: ac.OnlyToMain({
       type: at.OPEN_DOWNLOAD_FILE,
@@ -125,7 +116,7 @@ export const LinkMenuOptions = {
     }),
   }),
   CopyDownloadLink: site => ({
-    id: "menu_action_copy_download_link",
+    id: "newtab-menu-copy-download-link",
     icon: "copy",
     action: ac.OnlyToMain({
       type: at.COPY_DOWNLOAD_LINK,
@@ -133,7 +124,7 @@ export const LinkMenuOptions = {
     }),
   }),
   GoToDownloadPage: site => ({
-    id: "menu_action_go_to_download_page",
+    id: "newtab-menu-go-to-download-page",
     icon: "download",
     action: ac.OnlyToMain({
       type: at.OPEN_LINK,
@@ -142,7 +133,7 @@ export const LinkMenuOptions = {
     disabled: !site.referrer,
   }),
   RemoveDownload: site => ({
-    id: "menu_action_remove_download",
+    id: "newtab-menu-remove-download",
     icon: "delete",
     action: ac.OnlyToMain({
       type: at.REMOVE_DOWNLOAD_FILE,
@@ -150,7 +141,7 @@ export const LinkMenuOptions = {
     }),
   }),
   PinTopSite: ({url, searchTopSite, label}, index) => ({
-    id: "menu_action_pin",
+    id: "newtab-menu-pin",
     icon: "pin",
     action: ac.AlsoToMain({
       type: at.TOP_SITES_PIN,
@@ -165,7 +156,7 @@ export const LinkMenuOptions = {
     userEvent: "PIN",
   }),
   UnpinTopSite: site => ({
-    id: "menu_action_unpin",
+    id: "newtab-menu-unpin",
     icon: "unpin",
     action: ac.AlsoToMain({
       type: at.TOP_SITES_UNPIN,
@@ -174,7 +165,7 @@ export const LinkMenuOptions = {
     userEvent: "UNPIN",
   }),
   EditTopSite: (site, index) => ({
-    id: "edit_topsites_button_text",
+    id: "newtab-menu-edit-topsites",
     icon: "edit",
     action: {
       type: at.TOP_SITES_EDIT,
@@ -183,6 +174,5 @@ export const LinkMenuOptions = {
   }),
   CheckBookmark: site => (site.bookmarkGuid ? LinkMenuOptions.RemoveBookmark(site) : LinkMenuOptions.AddBookmark(site)),
   CheckPinTopSite: (site, index) => (site.isPinned ? LinkMenuOptions.UnpinTopSite(site) : LinkMenuOptions.PinTopSite(site, index)),
-  CheckBookmarkOrArchive: site => (site.pocket_id = LinkMenuOptions.CheckBookmark(site)),
   OpenInPrivateWindow: (site, index, eventSource, isEnabled) => (isEnabled ? _OpenInPrivateWindow(site) : LinkMenuOptions.EmptyItem()),
 };

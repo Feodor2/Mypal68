@@ -10,8 +10,6 @@
 #include "CacheIndexIterator.h"
 #include "CacheIndexContextIterator.h"
 #include "nsThreadUtils.h"
-#include "nsISimpleEnumerator.h"
-#include "nsIDirectoryEnumerator.h"
 #include "nsISizeOf.h"
 #include "nsPrintfCString.h"
 #include "mozilla/DebugOnly.h"
@@ -148,7 +146,7 @@ class CacheIndexEntryAutoManage {
         if (!mDoNotSearchInUpdates) {
           entry = mIndex->mPendingUpdates.GetEntry(*mHash);
         }
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
       case CacheIndex::BUILDING:
       case CacheIndex::UPDATING:
       case CacheIndex::READY:
@@ -448,7 +446,7 @@ nsresult CacheIndex::Shutdown() {
   switch (oldState) {
     case WRITING:
       index->FinishWrite(false);
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case READY:
       if (index->mIndexOnDiskIsValid && !index->mDontMarkIndexClean) {
         if (!sanitize && NS_FAILED(index->WriteLogToDisk())) {
@@ -1227,7 +1225,7 @@ nsresult CacheIndex::HasEntry(
     case READING:
     case WRITING:
       entry = index->mPendingUpdates.GetEntry(hash);
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case BUILDING:
     case UPDATING:
     case READY:

@@ -5,6 +5,7 @@
 #include "UntrustedModules.h"
 
 #include "core/TelemetryCommon.h"
+#include "js/Array.h"  // JS::NewArrayObject
 #include "mozilla/dom/Promise.h"
 #include "mozilla/WinDllServices.h"
 #include "nsLocalFile.h"
@@ -81,7 +82,7 @@ template <typename T, size_t N, typename AllocPolicy, typename Converter>
 static bool VectorToJSArray(JSContext* cx, JS::MutableHandleObject aRet,
                             const Vector<T, N, AllocPolicy>& aContainer,
                             Converter&& aElementConverter) {
-  JS::RootedObject arr(cx, JS_NewArrayObject(cx, 0));
+  JS::RootedObject arr(cx, JS::NewArrayObject(cx, 0));
   if (!arr) {
     return false;
   }

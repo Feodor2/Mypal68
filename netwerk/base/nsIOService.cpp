@@ -13,7 +13,6 @@
 #include "nsErrorService.h"
 #include "netCore.h"
 #include "nsIObserverService.h"
-#include "nsIPrefService.h"
 #include "nsXPCOM.h"
 #include "nsIProxiedProtocolHandler.h"
 #include "nsIProxyInfo.h"
@@ -26,17 +25,16 @@
 #include "nsIConsoleService.h"
 #include "nsIUploadChannel2.h"
 #include "nsXULAppAPI.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIProtocolProxyCallback.h"
 #include "nsICancelable.h"
 #include "nsINetworkLinkService.h"
-#include "nsPISocketTransportService.h"
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "nsURLHelper.h"
 #include "nsIProtocolProxyService2.h"
 #include "MainThreadUtils.h"
 #include "nsINode.h"
 #include "nsIWidget.h"
+#include "nsIHttpChannel.h"
 #include "nsThreadUtils.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/net/NeckoCommon.h"
@@ -55,10 +53,13 @@
 #include "mozilla/net/SocketProcessParent.h"
 #include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/Unused.h"
-#include "ReferrerPolicy.h"
 #include "nsContentSecurityManager.h"
 #include "nsContentUtils.h"
 #include "nsExceptionHandler.h"
+
+#ifdef MOZ_WIDGET_GTK
+#  include "nsGIOProtocolHandler.h"
+#endif
 
 namespace mozilla {
 namespace net {
@@ -80,6 +81,7 @@ using mozilla::dom::ServiceWorkerDescriptor;
 #define NETWORK_NOTIFY_CHANGED_PREF "network.notify.changed"
 #define NETWORK_CAPTIVE_PORTAL_PREF "network.captive-portal-service.enabled"
 #define WEBRTC_PREF_PREFIX "media.peerconnection."
+#define NETWORK_DNS_PREF "network.dns."
 
 #define MAX_RECURSION_COUNT 50
 
@@ -218,6 +220,7 @@ static const char* gCallbackPrefs[] = {
 
 static const char* gCallbackPrefsForSocketProcess[] = {
     WEBRTC_PREF_PREFIX,
+    NETWORK_DNS_PREF,
     nullptr,
 };
 
@@ -706,24 +709,14 @@ nsIOService::GetProtocolHandler(const char* scheme,
     }
 
 #ifdef MOZ_WIDGET_GTK
-    // check to see whether GVFS can handle this URI scheme.  if it can
-    // create a nsIURI for the "scheme:", then we assume it has support for
-    // the requested protocol.  otherwise, we failover to using the default
-    // protocol handler.
+    // check to see whether GVFS can handle this URI scheme. otherwise, we
+    // failover to using the default protocol handler.
 
-    rv =
-        CallGetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "moz-gio", result);
-    if (NS_SUCCEEDED(rv)) {
-      nsAutoCString spec(scheme);
-      spec.Append(':');
-
-      nsCOMPtr<nsIURI> uri;
-      rv = (*result)->NewURI(spec, nullptr, nullptr, getter_AddRefs(uri));
-      if (NS_SUCCEEDED(rv)) {
-        return rv;
-      }
-
-      NS_RELEASE(*result);
+    RefPtr<nsGIOProtocolHandler> gioHandler =
+        nsGIOProtocolHandler::GetSingleton();
+    if (gioHandler->IsSupportedProtocol(nsCString(scheme))) {
+      gioHandler.forget(result);
+      return NS_OK;
     }
 #endif
   }
@@ -800,34 +793,7 @@ class AutoIncrement {
 
 nsresult nsIOService::NewURI(const nsACString& aSpec, const char* aCharset,
                              nsIURI* aBaseURI, nsIURI** result) {
-  NS_ASSERTION(NS_IsMainThread(), "wrong thread");
-
-  static uint32_t recursionCount = 0;
-  if (recursionCount >= MAX_RECURSION_COUNT) return NS_ERROR_MALFORMED_URI;
-  AutoIncrement inc(&recursionCount);
-
-  nsAutoCString scheme;
-  nsresult rv = ExtractScheme(aSpec, scheme);
-  if (NS_FAILED(rv)) {
-    // then aSpec is relative
-    if (!aBaseURI) return NS_ERROR_MALFORMED_URI;
-
-    if (!aSpec.IsEmpty() && aSpec[0] == '#') {
-      // Looks like a reference instead of a fully-specified URI.
-      // --> initialize |uri| as a clone of |aBaseURI|, with ref appended.
-      return NS_GetURIWithNewRef(aBaseURI, aSpec, result);
-    }
-
-    rv = aBaseURI->GetScheme(scheme);
-    if (NS_FAILED(rv)) return rv;
-  }
-
-  // now get the handler for this scheme
-  nsCOMPtr<nsIProtocolHandler> handler;
-  rv = GetProtocolHandler(scheme.get(), getter_AddRefs(handler));
-  if (NS_FAILED(rv)) return rv;
-
-  return handler->NewURI(aSpec, aCharset, aBaseURI, result);
+  return NS_NewURI(result, aSpec, aCharset, aBaseURI);
 }
 
 NS_IMETHODIMP
@@ -1667,27 +1633,6 @@ nsIOService::ExtractCharsetFromContentType(const nsACString& aTypeHeader,
   return NS_OK;
 }
 
-// parse policyString to policy enum value (see ReferrerPolicy.h)
-NS_IMETHODIMP
-nsIOService::ParseAttributePolicyString(const nsAString& policyString,
-                                        uint32_t* outPolicyEnum) {
-  NS_ENSURE_ARG(outPolicyEnum);
-  *outPolicyEnum = (uint32_t)AttributeReferrerPolicyFromString(policyString);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsIOService::GetReferrerPolicyString(uint32_t aPolicy, nsACString& aResult) {
-  if (aPolicy >= ArrayLength(kReferrerPolicyString)) {
-    aResult.AssignLiteral("unknown");
-    return NS_ERROR_INVALID_ARG;
-  }
-
-  aResult.AssignASCII(
-      ReferrerPolicyToString(static_cast<ReferrerPolicy>(aPolicy)));
-  return NS_OK;
-}
-
 // nsISpeculativeConnect
 class IOServiceProxyCallback final : public nsIProtocolProxyCallback {
   ~IOServiceProxyCallback() = default;
@@ -1756,9 +1701,7 @@ nsresult nsIOService::SpeculativeConnectInternal(
     bool aAnonymous) {
   NS_ENSURE_ARG(aURI);
 
-  bool isHTTP, isHTTPS;
-  if (!(NS_SUCCEEDED(aURI->SchemeIs("http", &isHTTP)) && isHTTP) &&
-      !(NS_SUCCEEDED(aURI->SchemeIs("https", &isHTTPS)) && isHTTPS)) {
+  if (!aURI->SchemeIs("http") && !aURI->SchemeIs("https")) {
     // We don't speculatively connect to non-HTTP[S] URIs.
     return NS_OK;
   }

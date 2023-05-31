@@ -74,8 +74,12 @@ class AltSvcMapping;
  * FRAMECHECK_STRICT - we also do not allow case 2) and 3) from
  *                     FRAMECHECK_BARELY.
  */
-enum FrameCheckLevel { FRAMECHECK_LAX, FRAMECHECK_BARELY,
-                       FRAMECHECK_STRICT_CHUNKED, FRAMECHECK_STRICT };
+enum FrameCheckLevel {
+  FRAMECHECK_LAX,
+  FRAMECHECK_BARELY,
+  FRAMECHECK_STRICT_CHUNKED,
+  FRAMECHECK_STRICT
+};
 
 //-----------------------------------------------------------------------------
 // nsHttpHandler - protocol handler for HTTP and HTTPS
@@ -115,9 +119,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   PRIntervalTime ResponseTimeoutEnabled() { return mResponseTimeoutEnabled; }
   uint32_t NetworkChangedTimeout() { return mNetworkChangedTimeout; }
   uint16_t MaxRequestAttempts() { return mMaxRequestAttempts; }
-  const char* DefaultSocketType() {
-    return mDefaultSocketType.IsVoid() ? nullptr : mDefaultSocketType.get();
-  }
+  const nsCString& DefaultSocketType() { return mDefaultSocketType; }
   uint32_t PhishyUserPassLength() { return mPhishyUserPassLength; }
   uint8_t GetQoSBits() { return mQoSBits; }
   uint16_t GetIdleSynTimeout() { return mIdleSynTimeout; }
@@ -328,9 +330,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   already_AddRefed<AltSvcMapping> GetAltServiceMapping(
       const nsACString& scheme, const nsACString& host, int32_t port, bool pb,
+      bool isolated, const nsACString& topWindowOrigin,
       const OriginAttributes& originAttributes) {
-    return mConnMgr->GetAltServiceMapping(scheme, host, port, pb,
-                                          originAttributes);
+    return mConnMgr->GetAltServiceMapping(scheme, host, port, pb, isolated,
+                                          topWindowOrigin, originAttributes);
   }
 
   //

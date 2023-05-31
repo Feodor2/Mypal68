@@ -8,7 +8,6 @@
 #include "XULListboxAccessible.h"
 
 #include "ia2AccessibleTable.h"
-#include "ia2AccessibleTableCell.h"
 
 namespace mozilla {
 namespace a11y {

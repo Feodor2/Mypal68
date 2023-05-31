@@ -11,9 +11,9 @@
 #include "mozilla/dom/GamepadEventTypes.h"
 #include "mozilla/layers/TextureHost.h"
 #include "mozilla/layers/CompositorThread.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Unused.h"
 
-#include "gfxPrefs.h"
 #include "gfxVR.h"
 #include "gfxVRExternal.h"
 
@@ -77,7 +77,7 @@ VRManager::VRManager()
 #if !defined(MOZ_WIDGET_ANDROID)
   // The VR Service accesses all hardware from a separate process
   // and replaces the other VRSystemManager when enabled.
-  if (!gfxPrefs::VRProcessEnabled() || !XRE_IsGPUProcess()) {
+  if (!StaticPrefs::dom_vr_process_enabled_AtStartup() || !XRE_IsGPUProcess()) {
     VRServiceManager::Get().CreateService();
   }
   if (VRServiceManager::Get().IsServiceValid()) {
@@ -98,7 +98,7 @@ VRManager::VRManager()
 
   // Enable gamepad extensions while VR is enabled.
   // Preference only can be set at the Parent process.
-  if (XRE_IsParentProcess() && gfxPrefs::VREnabled()) {
+  if (XRE_IsParentProcess() && StaticPrefs::dom_vr_enabled()) {
     Preferences::SetBool("dom.gamepad.extensions.enabled", true);
   }
 }
@@ -142,7 +142,8 @@ void VRManager::Shutdown() {
   }
   // XRE_IsGPUProcess() is helping us to check some platforms like
   // Win 7 try which are not using GPU process but VR process is enabled.
-  if (XRE_IsGPUProcess() && gfxPrefs::VRProcessEnabled() && mVRServiceStarted) {
+  if (XRE_IsGPUProcess() && StaticPrefs::dom_vr_process_enabled_AtStartup() &&
+      mVRServiceStarted) {
     RefPtr<Runnable> task = NS_NewRunnableFunction(
         "VRServiceManager::ShutdownVRProcess",
         []() -> void { VRServiceManager::Get().ShutdownVRProcess(); });
@@ -385,7 +386,7 @@ void VRManager::CheckForInactiveTimeout() {
     Shutdown();
   } else {
     TimeDuration duration = TimeStamp::Now() - mLastActiveTime;
-    if (duration.ToMilliseconds() > gfxPrefs::VRInactiveTimeout()) {
+    if (duration.ToMilliseconds() > StaticPrefs::dom_vr_inactive_timeout()) {
       Shutdown();
       // We must not throttle the next enumeration request
       // after an idle timeout, as it may result in the
@@ -416,11 +417,12 @@ void VRManager::EnumerateVRDisplays() {
   StartTasks();
   /**
    * Throttle the rate of enumeration to the interval set in
-   * VRDisplayEnumerateInterval
+   * dom_vr_display_enumerate_interval.
    */
   if (!mLastDisplayEnumerationTime.IsNull()) {
     TimeDuration duration = TimeStamp::Now() - mLastDisplayEnumerationTime;
-    if (duration.ToMilliseconds() < gfxPrefs::VRDisplayEnumerateInterval()) {
+    if (duration.ToMilliseconds() <
+        StaticPrefs::dom_vr_display_enumerate_interval()) {
       return;
     }
   }
@@ -437,8 +439,8 @@ void VRManager::EnumerateVRDisplays() {
   }
 
   /**
-   * If we get this far, don't try again until
-   * the VRDisplayEnumerateInterval elapses
+   * If we get this far, don't try again until the
+   * dom_vr_display_enumerate_interval elapses.
    */
   mLastDisplayEnumerationTime = TimeStamp::Now();
 
@@ -453,7 +455,7 @@ void VRManager::EnumerateVRDisplays() {
    */
 #if !defined(MOZ_WIDGET_ANDROID)
   if (!mVRServiceStarted) {
-    if (XRE_IsGPUProcess() && gfxPrefs::VRProcessEnabled()) {
+    if (XRE_IsGPUProcess() && StaticPrefs::dom_vr_process_enabled_AtStartup()) {
       VRServiceManager::Get().CreateVRProcess();
       mVRServiceStarted = true;
     } else {
@@ -695,7 +697,8 @@ void VRManager::ScanForControllers() {
   // have enumerated recently
   if (!mLastControllerEnumerationTime.IsNull()) {
     TimeDuration duration = TimeStamp::Now() - mLastControllerEnumerationTime;
-    if (duration.ToMilliseconds() < gfxPrefs::VRControllerEnumerateInterval()) {
+    if (duration.ToMilliseconds() <
+        StaticPrefs::dom_vr_controller_enumerate_interval()) {
       return;
     }
   }

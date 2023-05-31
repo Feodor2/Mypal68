@@ -132,9 +132,7 @@ nsStaticCaseInsensitiveNameTable::nsStaticCaseInsensitiveNameTable(
 
     entry->mIndex = index;
   }
-#ifdef DEBUG
   mNameTable.MarkImmutable();
-#endif
 }
 
 nsStaticCaseInsensitiveNameTable::~nsStaticCaseInsensitiveNameTable() {

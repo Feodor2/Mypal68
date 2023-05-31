@@ -15,11 +15,11 @@
 #include "UnitTransforms.h"  // for ViewAs
 #include "gfxEnv.h"
 #include "gfxPlatform.h"  // for gfxPlatform
-#include "gfxPrefs.h"
 #include "gfxUtils.h"  // for gfxUtils, etc
 #include "gfx2DGlue.h"
 #include "mozilla/DebugOnly.h"  // for DebugOnly
 #include "mozilla/IntegerPrintfMacros.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/Telemetry.h"  // for Accumulate
 #include "mozilla/ToString.h"
 #include "mozilla/gfx/2D.h"        // for DrawTarget
@@ -136,8 +136,19 @@ already_AddRefed<ImageContainer> LayerManager::CreateImageContainer(
   return container.forget();
 }
 
+bool LayerManager::LayersComponentAlphaEnabled() {
+  // If MOZ_GFX_OPTIMIZE_MOBILE is defined, we force component alpha off
+  // and ignore the preference.
+#ifdef MOZ_GFX_OPTIMIZE_MOBILE
+  return false;
+#else
+  return StaticPrefs::
+      layers_componentalpha_enabled_AtStartup_DoNotUseDirectly();
+#endif
+}
+
 bool LayerManager::AreComponentAlphaLayersEnabled() {
-  return gfxPrefs::ComponentAlphaEnabled();
+  return LayerManager::LayersComponentAlphaEnabled();
 }
 
 /*static*/
@@ -2226,7 +2237,7 @@ bool LayerManager::SetPendingScrollUpdateForNextTransaction(
   wr::RenderRoot renderRoot = (GetBackendType() == LayersBackend::LAYERS_WR)
                                   ? aRenderRoot
                                   : wr::RenderRoot::Default;
-  mPendingScrollUpdates[renderRoot][aScrollId] = aUpdateInfo;
+  mPendingScrollUpdates[renderRoot].Put(aScrollId, aUpdateInfo);
   return true;
 }
 
@@ -2235,11 +2246,8 @@ Maybe<ScrollUpdateInfo> LayerManager::GetPendingScrollInfoUpdate(
   // This never gets called for WebRenderLayerManager, so we assume that all
   // pending scroll info updates are stored under the default RenderRoot.
   MOZ_ASSERT(GetBackendType() != LayersBackend::LAYERS_WR);
-  auto it = mPendingScrollUpdates[wr::RenderRoot::Default].find(aScrollId);
-  if (it != mPendingScrollUpdates[wr::RenderRoot::Default].end()) {
-    return Some(it->second);
-  }
-  return Nothing();
+  auto p = mPendingScrollUpdates[wr::RenderRoot::Default].Lookup(aScrollId);
+  return p ? Some(p.Data()) : Nothing();
 }
 
 std::unordered_set<ScrollableLayerGuid::ViewID>
@@ -2247,10 +2255,10 @@ LayerManager::ClearPendingScrollInfoUpdate() {
   std::unordered_set<ScrollableLayerGuid::ViewID> scrollIds;
   for (auto renderRoot : wr::kRenderRoots) {
     auto& updates = mPendingScrollUpdates[renderRoot];
-    for (const auto& update : updates) {
-      scrollIds.insert(update.first);
+    for (auto it = updates.Iter(); !it.Done(); it.Next()) {
+      scrollIds.insert(it.Key());
     }
-    updates.clear();
+    updates.Clear();
   }
   return scrollIds;
 }

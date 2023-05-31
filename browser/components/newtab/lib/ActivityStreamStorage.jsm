@@ -1,10 +1,14 @@
-ChromeUtils.defineModuleGetter(this, "IndexedDB", "resource://gre/modules/IndexedDB.jsm");
+ChromeUtils.defineModuleGetter(
+  this,
+  "IndexedDB",
+  "resource://gre/modules/IndexedDB.jsm"
+);
 
 this.ActivityStreamStorage = class ActivityStreamStorage {
   /**
    * @param storeNames Array of strings used to create all the required stores
    */
-  constructor({storeNames, telemetry}) {
+  constructor({ storeNames, telemetry }) {
     if (!storeNames) {
       throw new Error("storeNames required");
     }
@@ -42,19 +46,25 @@ this.ActivityStreamStorage = class ActivityStreamStorage {
   }
 
   _get(storeName, key) {
-    return this._requestWrapper(async () => (await this._getStore(storeName)).get(key));
+    return this._requestWrapper(async () =>
+      (await this._getStore(storeName)).get(key)
+    );
   }
 
   _getAll(storeName) {
-    return this._requestWrapper(async () => (await this._getStore(storeName)).getAll());
+    return this._requestWrapper(async () =>
+      (await this._getStore(storeName)).getAll()
+    );
   }
 
   _set(storeName, key, value) {
-    return this._requestWrapper(async () => (await this._getStore(storeName)).put(value, key));
+    return this._requestWrapper(async () =>
+      (await this._getStore(storeName)).put(value, key)
+    );
   }
 
   _openDatabase() {
-    return IndexedDB.open(this.dbName, {version: this.dbVersion}, db => {
+    return IndexedDB.open(this.dbName, { version: this.dbVersion }, db => {
       // If provided with array of objectStore names we need to create all the
       // individual stores
       this.storeNames.forEach(store => {
@@ -77,9 +87,6 @@ this.ActivityStreamStorage = class ActivityStreamStorage {
       const db = await this._openDatabase();
       return db;
     } catch (e) {
-      if (this.telemetry) {
-        this.telemetry.handleUndesiredEvent({data: {event: "INDEXEDDB_OPEN_FAILED"}});
-      }
       await IndexedDB.deleteDatabase(this.dbName);
       return this._openDatabase();
     }
@@ -90,9 +97,6 @@ this.ActivityStreamStorage = class ActivityStreamStorage {
     try {
       result = await request();
     } catch (e) {
-      if (this.telemetry) {
-        this.telemetry.handleUndesiredEvent({data: {event: "TRANSACTION_FAILED"}});
-      }
       throw e;
     }
 
@@ -101,7 +105,7 @@ this.ActivityStreamStorage = class ActivityStreamStorage {
 };
 
 function getDefaultOptions(options) {
-  return {collapsed: !!options.collapsed};
+  return { collapsed: !!options.collapsed };
 }
 
 const EXPORTED_SYMBOLS = ["ActivityStreamStorage", "getDefaultOptions"];

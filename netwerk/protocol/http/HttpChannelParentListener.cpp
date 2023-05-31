@@ -16,7 +16,6 @@
 #include "nsIHttpHeaderVisitor.h"
 #include "nsIRemoteTab.h"
 #include "nsIPromptFactory.h"
-#include "nsIWindowWatcher.h"
 #include "nsQueryObject.h"
 
 using mozilla::Unused;

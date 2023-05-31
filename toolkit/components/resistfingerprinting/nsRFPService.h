@@ -248,14 +248,11 @@ class nsRFPService final : public nsIObserver {
   static void MaybeCreateSpoofingKeyCodesForEnUS();
 
   static void GetKeyboardLangAndRegion(const nsAString& aLanguage,
-                                       KeyboardLangs& aLang,
+                                       KeyboardLangs& aLocale,
                                        KeyboardRegions& aRegion);
   static bool GetSpoofedKeyCodeInfo(const mozilla::dom::Document* aDoc,
                                     const WidgetKeyboardEvent* aKeyboardEvent,
                                     SpoofingKeyboardCode& aOut);
-
-  static Atomic<bool, Relaxed> sPrivacyResistFingerprinting;
-  static Atomic<bool, Relaxed> sPrivacyTimerPrecisionReduction;
 
   static nsDataHashtable<KeyboardHashKey, const SpoofingKeyboardCode*>*
       sSpoofingKeyboardCodes;

@@ -844,13 +844,6 @@ var Policies = {
           extensionSettings["*"].installation_mode == "blocked"
         ) {
           blockAllExtensions = true;
-          // Turn off discovery pane in about:addons
-          setAndLockPref("extensions.getAddons.showPane", false);
-          // Turn off recommendations
-          setAndLockPref(
-            "extensions.htmlaboutaddons.recommendations.enable",
-            false
-          );
           // Block about:debugging
           blockAboutPage(manager, "about:debugging");
         }
@@ -1692,7 +1685,7 @@ function setDefaultPermission(policyName, policyParam) {
 /**
  * addAllowDenyPermissions
  *
- * Helper function to call the permissions manager (Services.perms.add)
+ * Helper function to call the permissions manager (Services.perms.addFromPrincipal)
  * for two arrays of URLs.
  *
  * @param {string} permissionName
@@ -1708,8 +1701,8 @@ function addAllowDenyPermissions(permissionName, allowList, blockList) {
 
   for (let origin of allowList) {
     try {
-      Services.perms.add(
-        Services.io.newURI(origin.href),
+      Services.perms.addFromPrincipal(
+        Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(origin),
         permissionName,
         Ci.nsIPermissionManager.ALLOW_ACTION,
         Ci.nsIPermissionManager.EXPIRE_POLICY
@@ -1721,8 +1714,8 @@ function addAllowDenyPermissions(permissionName, allowList, blockList) {
   }
 
   for (let origin of blockList) {
-    Services.perms.add(
-      Services.io.newURI(origin.href),
+    Services.perms.addFromPrincipal(
+      Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(origin),
       permissionName,
       Ci.nsIPermissionManager.DENY_ACTION,
       Ci.nsIPermissionManager.EXPIRE_POLICY

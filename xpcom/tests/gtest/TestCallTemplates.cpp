@@ -9,8 +9,6 @@
 
 #include "nsISupportsUtils.h"
 #include "nsIWeakReference.h"
-#include "nsIComponentManager.h"
-#include "nsIServiceManager.h"
 #include "nsWeakReference.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"

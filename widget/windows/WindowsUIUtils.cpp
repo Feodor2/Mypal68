@@ -11,11 +11,8 @@
 #include "WindowsUIUtils.h"
 
 #include "nsIObserverService.h"
-#include "nsIBaseWindow.h"
-#include "nsIDocShell.h"
 #include "nsIAppShellService.h"
 #include "nsAppShellCID.h"
-#include "nsIXULWindow.h"
 #include "mozilla/Services.h"
 #include "mozilla/WidgetUtils.h"
 #include "mozilla/WindowsVersion.h"

@@ -13,7 +13,7 @@ class OriginAttributes;
 [ptr] native OriginAttributesPtr(mozilla::OriginAttributes);
 
 interface nsISimpleEnumerator;
-interface nsICookie2;
+interface nsICookie;
 interface nsIFile;
 
 [scriptable, function, uuid(20709db8-8dad-4e45-b33e-6e7c761dfc5d)]
@@ -65,22 +65,18 @@ interface nsICookieManager : nsISupports
    * @param aName The name specified in the cookie
    * @param aPath The path for which the cookie was set
    * @param aOriginAttributes The originAttributes of this cookie.
-   * @param aBlocked Indicates if cookies from this host should be permanently
-   *                 blocked.
    *
    */
   [implicit_jscontext]
   void remove(in AUTF8String   aHost,
               in ACString      aName,
               in AUTF8String   aPath,
-              in boolean       aBlocked,
               in jsval         aOriginAttributes);
 
   [notxpcom]
   nsresult removeNative(in AUTF8String   aHost,
                         in ACString      aName,
                         in AUTF8String   aPath,
-                        in boolean       aBlocked,
                         in OriginAttributesPtr aOriginAttributes);
 
   /**
@@ -199,7 +195,7 @@ interface nsICookieManager : nsISupports
    * @param aOriginAttributes The originAttributes of cookies that would be
    *                          retrived.
    *
-   * @return an nsISimpleEnumerator of nsICookie2 objects.
+   * @return an nsISimpleEnumerator of nsICookie objects.
    *
    * @see countCookiesFromHost
    */

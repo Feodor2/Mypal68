@@ -13,7 +13,7 @@ add_task(async function test() {
         guid: "70a",
         username: "jared",
         password: "deraj",
-        hostname: "https://www.example.com",
+        origin: "https://www.example.com",
       };
 
       await ContentTask.spawn(browser, TEST_LOGIN, async function(login) {
@@ -25,14 +25,15 @@ add_task(async function test() {
         loginItem.setLogin(Cu.cloneInto(login, content));
 
         // Lower the timeout for the test.
-        let copyButton = loginItem.shadowRoot.querySelector(
-          ".copy-username-button"
+        Object.defineProperty(
+          loginItem.constructor,
+          "COPY_BUTTON_RESET_TIMEOUT",
+          {
+            configurable: true,
+            writable: true,
+            value: 1000,
+          }
         );
-        Object.defineProperty(copyButton.constructor, "BUTTON_RESET_TIMEOUT", {
-          configurable: true,
-          writable: true,
-          value: 1000,
-        });
       });
 
       for (let testCase of [
@@ -43,6 +44,9 @@ add_task(async function test() {
           expectedValue: testCase[0],
           copyButtonSelector: testCase[1],
         };
+        info(
+          "waiting for " + testObj.expectedValue + " to be placed on clipboard"
+        );
         await SimpleTest.promiseClipboardChange(
           testObj.expectedValue,
           async () => {
@@ -51,25 +55,21 @@ add_task(async function test() {
               let copyButton = loginItem.shadowRoot.querySelector(
                 aTestObj.copyButtonSelector
               );
-              let innerButton = copyButton.shadowRoot.querySelector("button");
               info("Clicking 'copy' button");
-              innerButton.click();
+              copyButton.click();
             });
           }
         );
-        ok(true, "Username is on clipboard now");
+        ok(true, testObj.expectedValue + " is on clipboard now");
 
         await ContentTask.spawn(browser, testObj, async function(aTestObj) {
           let loginItem = content.document.querySelector("login-item");
           let copyButton = loginItem.shadowRoot.querySelector(
             aTestObj.copyButtonSelector
           );
-          ok(
-            copyButton.hasAttribute("copied"),
-            "Success message should be shown"
-          );
+          ok(copyButton.dataset.copied, "Success message should be shown");
           await ContentTaskUtils.waitForCondition(
-            () => !copyButton.hasAttribute("copied"),
+            () => !copyButton.dataset.copied,
             "'copied' attribute should be removed after a timeout"
           );
         });

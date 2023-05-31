@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/net/CookieSettings.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Unused.h"
 #include "nsGlobalWindowInner.h"
 #if defined(MOZ_THUNDERBIRD) || defined(MOZ_SUITE)
@@ -99,6 +100,15 @@ CookieSettings::~CookieSettings() {
 NS_IMETHODIMP
 CookieSettings::GetCookieBehavior(uint32_t* aCookieBehavior) {
   *aCookieBehavior = mCookieBehavior;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+CookieSettings::GetRejectThirdPartyTrackers(bool* aRejectThirdPartyTrackers) {
+  *aRejectThirdPartyTrackers =
+      mCookieBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
+      mCookieBehavior ==
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
   return NS_OK;
 }
 

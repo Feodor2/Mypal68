@@ -25,18 +25,14 @@
 #include "nsISimpleEnumerator.h"
 #include "nsIContent.h"
 #include "mozilla/dom/Document.h"
-#include "nsIServiceManager.h"
 #include "mozilla/Preferences.h"
 #include "BasicLayers.h"
 #include "ClientLayerManager.h"
 #include "mozilla/layers/Compositor.h"
-#include "nsIXULRuntime.h"
 #include "nsIXULWindow.h"
 #include "nsIBaseWindow.h"
 #include "nsXULPopupManager.h"
-#include "nsXBLWindowKeyHandler.h"
 #include "nsIWidgetListener.h"
-#include "nsIGfxInfo.h"
 #include "npapi.h"
 #include "X11UndefineNone.h"
 #include "base/thread.h"
@@ -45,10 +41,13 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Unused.h"
 #include "nsContentUtils.h"
-#include "gfxPrefs.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/MouseEvents.h"
 #include "GLConsts.h"
+#include "mozilla/GlobalKeyListener.h"
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/Unused.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/VsyncDispatcher.h"
@@ -136,7 +135,7 @@ namespace widget {
 
 void IMENotification::SelectionChangeDataBase::SetWritingMode(
     const WritingMode& aWritingMode) {
-  mWritingMode = aWritingMode.mWritingMode;
+  mWritingMode = aWritingMode.mWritingMode.bits;
 }
 
 WritingMode IMENotification::SelectionChangeDataBase::GetWritingMode() const {
@@ -855,7 +854,7 @@ bool nsBaseWidget::UseAPZ() {
           (WindowType() == eWindowType_toplevel ||
            WindowType() == eWindowType_child ||
            (WindowType() == eWindowType_popup && HasRemoteContent() &&
-            gfxPrefs::APZPopupsEnabled())));
+            StaticPrefs::apz_popups_enabled())));
 }
 
 bool nsBaseWidget::AllowWebRenderForThisWindow() {
@@ -889,8 +888,8 @@ void nsBaseWidget::ConfigureAPZCTreeManager() {
       NewRunnableMethod<float>("layers::IAPZCTreeManager::SetDPI", mAPZC,
                                &IAPZCTreeManager::SetDPI, dpi));
 
-  if (gfxPrefs::APZKeyboardEnabled()) {
-    KeyboardMap map = nsXBLWindowKeyHandler::CollectKeyboardShortcuts();
+  if (StaticPrefs::apz_keyboard_enabled_AtStartup()) {
+    KeyboardMap map = RootWindowGlobalKeyListener::CollectKeyboardShortcuts();
     // On Android the main thread is not the controller thread
     APZThreadUtils::RunOnControllerThread(NewRunnableMethod<KeyboardMap>(
         "layers::IAPZCTreeManager::SetKeyboardMap", mAPZC,
@@ -930,7 +929,7 @@ void nsBaseWidget::ConfigureAPZCTreeManager() {
   // have code that can deal with them properly. If APZ is not enabled, this
   // function doesn't get called.
   if (Preferences::GetInt("dom.w3c_touch_events.enabled", 0) ||
-      Preferences::GetBool("dom.w3c_pointer_events.enabled", false)) {
+      StaticPrefs::dom_w3c_pointer_events_enabled()) {
     RegisterTouchWindow();
   }
 }
@@ -1008,7 +1007,7 @@ nsEventStatus nsBaseWidget::ProcessUntransformedAPZEvent(
     UniquePtr<DisplayportSetListener> postLayerization;
     if (WidgetTouchEvent* touchEvent = aEvent->AsTouchEvent()) {
       if (touchEvent->mMessage == eTouchStart) {
-        if (gfxPrefs::TouchActionEnabled()) {
+        if (StaticPrefs::layout_css_touch_action_enabled()) {
           APZCCallbackHelper::SendSetAllowedTouchBehaviorNotification(
               this, GetDocument(), *(original->AsTouchEvent()), aInputBlockId,
               mSetAllowedTouchBehaviorCallback);
@@ -1242,6 +1241,8 @@ already_AddRefed<LayerManager> nsBaseWidget::CreateCompositorSession(
     if (!GetNativeData(NS_JAVA_SURFACE)) {
       options.SetInitiallyPaused(true);
     }
+#else
+    options.SetInitiallyPaused(CompositorInitiallyPaused());
 #endif
 
     RefPtr<LayerManager> lm;
@@ -1438,9 +1439,6 @@ CompositorBridgeChild* nsBaseWidget::GetRemoteRenderer() {
 }
 
 already_AddRefed<gfx::DrawTarget> nsBaseWidget::StartRemoteDrawing() {
-  if (recordreplay::IsRecordingOrReplaying()) {
-    return recordreplay::child::DrawTargetForRemoteDrawing(mBounds.Size());
-  }
   return nullptr;
 }
 
@@ -1725,12 +1723,10 @@ void nsBaseWidget::NotifyThemeChanged() {
   }
 }
 
-void nsBaseWidget::NotifyUIStateChanged(UIStateChangeType aShowAccelerators,
-                                        UIStateChangeType aShowFocusRings) {
+void nsBaseWidget::NotifyUIStateChanged(UIStateChangeType aShowFocusRings) {
   if (Document* doc = GetDocument()) {
-    nsPIDOMWindowOuter* win = doc->GetWindow();
-    if (win) {
-      win->SetKeyboardIndicators(aShowAccelerators, aShowFocusRings);
+    if (nsPIDOMWindowOuter* win = doc->GetWindow()) {
+      win->SetKeyboardIndicators(aShowFocusRings);
     }
   }
 }

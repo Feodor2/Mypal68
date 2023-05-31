@@ -4,21 +4,14 @@
 
 #include "nsCookiePermission.h"
 
-#include "nsICookie2.h"
-#include "nsIServiceManager.h"
-#include "nsICookieManager.h"
+#include "nsICookie.h"
 #include "nsICookieService.h"
 #include "nsNetUtil.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIProtocolHandler.h"
 #include "nsIURI.h"
 #include "nsIChannel.h"
-#include "nsIHttpChannelInternal.h"
-#include "nsIDOMWindow.h"
-#include "nsIPrincipal.h"
 #include "nsString.h"
 #include "nsCRT.h"
-#include "nsILoadContext.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsNetCID.h"
 #include "prtime.h"
@@ -33,8 +26,6 @@
 using namespace mozilla;
 
 static const bool kDefaultPolicy = true;
-
-static const nsLiteralCString kPermissionType(NS_LITERAL_CSTRING("cookie"));
 
 namespace {
 mozilla::StaticRefPtr<nsCookiePermission> gSingleton;
@@ -52,33 +43,17 @@ already_AddRefed<nsICookiePermission> nsCookiePermission::GetOrCreate() {
 }
 
 bool nsCookiePermission::Init() {
-  // Initialize nsIPermissionManager and fetch relevant prefs. This is only
+  // Initialize nsPermissionManager and fetch relevant prefs. This is only
   // required for some methods on nsICookiePermission, so it should be done
   // lazily.
-  nsresult rv;
-  mPermMgr = do_GetService(NS_PERMISSIONMANAGER_CONTRACTID, &rv);
-  if (NS_FAILED(rv)) return false;
 
-  return true;
-}
-
-NS_IMETHODIMP
-nsCookiePermission::SetAccess(nsIURI* aURI, nsCookieAccess aAccess) {
-  // Lazily initialize ourselves
-  if (!EnsureInitialized()) return NS_ERROR_UNEXPECTED;
-
-  //
-  // NOTE: nsCookieAccess values conveniently match up with
-  //       the permission codes used by nsIPermissionManager.
-  //       this is nice because it avoids conversion code.
-  //
-  return mPermMgr->Add(aURI, kPermissionType, aAccess,
-                       nsIPermissionManager::EXPIRE_NEVER, 0);
+  mPermMgr = nsPermissionManager::GetInstance();
+  return mPermMgr != nullptr;
 }
 
 NS_IMETHODIMP
 nsCookiePermission::CanSetCookie(nsIURI* aURI, nsIChannel* aChannel,
-                                 nsICookie2* aCookie, bool* aIsSession,
+                                 nsICookie* aCookie, bool* aIsSession,
                                  int64_t* aExpiry, bool* aResult) {
   NS_ASSERTION(aURI, "null uri");
 
@@ -87,12 +62,14 @@ nsCookiePermission::CanSetCookie(nsIURI* aURI, nsIChannel* aChannel,
   // Lazily initialize ourselves
   if (!EnsureInitialized()) return NS_ERROR_UNEXPECTED;
 
+  nsCookie* cookie = static_cast<nsCookie*>(aCookie);
   uint32_t perm;
-  mPermMgr->TestPermission(aURI, kPermissionType, &perm);
+  mPermMgr->LegacyTestPermissionFromURI(aURI, &cookie->OriginAttributesRef(),
+                                        NS_LITERAL_CSTRING("cookie"), &perm);
   switch (perm) {
     case nsICookiePermission::ACCESS_SESSION:
       *aIsSession = true;
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
 
     case nsICookiePermission::ACCESS_ALLOW:
       *aResult = true;

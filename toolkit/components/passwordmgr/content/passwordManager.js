@@ -3,9 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 /** * =================== SAVED SIGNONS CODE =================== ***/
+/* eslint-disable-next-line no-var */
 var { AppConstants } = ChromeUtils.import(
   "resource://gre/modules/AppConstants.jsm"
 );
+/* eslint-disable-next-line no-var */
 var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(
@@ -20,7 +22,7 @@ ChromeUtils.defineModuleGetter(
 );
 
 // Default value for signon table sorting
-let lastSignonSortColumn = "hostname";
+let lastSignonSortColumn = "origin";
 let lastSignonSortAscending = true;
 
 let showingPasswords = false;
@@ -88,9 +90,8 @@ function Startup() {
 
   if (Services.policies && !Services.policies.isAllowed("passwordReveal")) {
     togglePasswordsButton.hidden = true;
-  }
+  }  document.l10n.setAttributes(togglePasswordsButton, "show-passwords");
 
-  document.l10n.setAttributes(togglePasswordsButton, "show-passwords");
   document.l10n.setAttributes(signonsIntro, "logins-description-all");
   document.l10n.setAttributes(
     autofillCheckbox,
@@ -162,11 +163,7 @@ let signonsTreeView = {
 
     const signon = GetVisibleLogins()[row];
 
-    return PlacesUtils.urlWithSizeRef(
-      window,
-      "page-icon:" + signon.hostname,
-      16
-    );
+    return PlacesUtils.urlWithSizeRef(window, "page-icon:" + signon.origin, 16);
   },
   getCellValue(row, column) {},
   getCellText(row, column) {
@@ -175,8 +172,8 @@ let signonsTreeView = {
     switch (column.id) {
       case "siteCol":
         return signon.httpRealm
-          ? signon.hostname + " (" + signon.httpRealm + ")"
-          : signon.hostname;
+          ? signon.origin + " (" + signon.httpRealm + ")"
+          : signon.origin;
       case "userCol":
         return signon.username || "";
       case "passwordCol":
@@ -257,7 +254,7 @@ function SortTree(column, ascending) {
   function compareFunc(a, b) {
     let valA, valB;
     switch (column) {
-      case "hostname":
+      case "origin":
         let realmA = a.httpRealm;
         let realmB = b.httpRealm;
         realmA = realmA == null ? "" : realmA.toLowerCase();
@@ -556,7 +553,7 @@ function HandleSignonKeyPress(e) {
 
 function getColumnByName(column) {
   switch (column) {
-    case "hostname":
+    case "origin":
       return document.getElementById("siteCol");
     case "username":
       return document.getElementById("userCol");
@@ -631,7 +628,7 @@ function FocusFilterBox() {
 }
 
 function SignonMatchesFilter(aSignon, aFilterValue) {
-  if (aSignon.hostname.toLowerCase().includes(aFilterValue)) {
+  if (aSignon.origin.toLowerCase().includes(aFilterValue)) {
     return true;
   }
   if (

@@ -537,14 +537,14 @@ var DownloadIntegration = {
           );
           try {
             let zoneId = "[ZoneTransfer]\r\nZoneId=" + zone + "\r\n";
-            if (!aDownload.source.isPrivate) {
+            let { url, isPrivate, referrerInfo } = aDownload.source;
+            if (!isPrivate) {
+              let referrer = referrerInfo
+                ? referrerInfo.computedReferrerSpec
+                : "";
               zoneId +=
-                this._zoneIdKey("ReferrerUrl", aDownload.source.referrer) +
-                this._zoneIdKey(
-                  "HostUrl",
-                  aDownload.source.url,
-                  "about:internet"
-                );
+                this._zoneIdKey("ReferrerUrl", referrer) +
+                this._zoneIdKey("HostUrl", url, "about:internet");
             }
             await stream.write(new TextEncoder().encode(zoneId));
           } finally {
@@ -606,8 +606,8 @@ var DownloadIntegration = {
     }
 
     let aReferrer = null;
-    if (aDownload.source.referrer) {
-      aReferrer = NetUtil.newURI(aDownload.source.referrer);
+    if (aDownload.source.referrerInfo) {
+      aReferrer = aDownload.source.referrerInfo.originalReferrer;
     }
 
     await gDownloadPlatform.downloadDone(

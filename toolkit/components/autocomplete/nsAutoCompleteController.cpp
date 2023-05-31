@@ -8,7 +8,6 @@
 #include "nsAutoPtr.h"
 #include "nsNetCID.h"
 #include "nsIIOService.h"
-#include "nsIServiceManager.h"
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
 #include "nsIScriptSecurityManager.h"

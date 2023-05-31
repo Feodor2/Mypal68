@@ -14,7 +14,6 @@
 #else
 #  include "nsICertBlocklist.h"
 #endif
-#include "nsIX509CertDB.h"
 #include "ScopedNSSTypes.h"
 
 namespace mozilla {

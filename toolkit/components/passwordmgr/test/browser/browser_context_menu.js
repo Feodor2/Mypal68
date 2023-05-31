@@ -1,4 +1,4 @@
-/*
+/**
  * Test the password manager context menu.
  */
 
@@ -6,8 +6,8 @@
 
 "use strict";
 
-// The hostname for the test URIs.
-const TEST_HOSTNAME = "https://example.com";
+// The origin for the test URIs.
+const TEST_ORIGIN = "https://example.com";
 const MULTIPLE_FORMS_PAGE_PATH =
   "/browser/toolkit/components/passwordmgr/test/browser/multiple_forms.html";
 
@@ -38,7 +38,7 @@ add_task(async function test_context_menu_populate_password_noSchemeUpgrades() {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url: TEST_HOSTNAME + MULTIPLE_FORMS_PAGE_PATH,
+      url: TEST_ORIGIN + MULTIPLE_FORMS_PAGE_PATH,
     },
     async function(browser) {
       await openPasswordContextMenu(browser, "#test-password-1");
@@ -61,7 +61,7 @@ add_task(async function test_context_menu_populate_password_schemeUpgrades() {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url: TEST_HOSTNAME + MULTIPLE_FORMS_PAGE_PATH,
+      url: TEST_ORIGIN + MULTIPLE_FORMS_PAGE_PATH,
     },
     async function(browser) {
       await openPasswordContextMenu(browser, "#test-password-1");
@@ -86,7 +86,7 @@ add_task(
       {
         gBrowser,
         url:
-          TEST_HOSTNAME +
+          TEST_ORIGIN +
           "/browser/toolkit/components/" +
           "passwordmgr/test/browser/multiple_forms.html",
       },
@@ -113,7 +113,7 @@ add_task(
       {
         gBrowser,
         url:
-          TEST_HOSTNAME +
+          TEST_ORIGIN +
           "/browser/toolkit/components/" +
           "passwordmgr/test/browser/multiple_forms.html",
       },
@@ -139,7 +139,7 @@ add_task(async function test_context_menu_password_fill() {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url: TEST_HOSTNAME + MULTIPLE_FORMS_PAGE_PATH,
+      url: TEST_ORIGIN + MULTIPLE_FORMS_PAGE_PATH,
     },
     async function(browser) {
       let formDescriptions = await ContentTask.spawn(
@@ -233,7 +233,7 @@ add_task(async function test_context_menu_username_login_fill() {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url: TEST_HOSTNAME + MULTIPLE_FORMS_PAGE_PATH,
+      url: TEST_ORIGIN + MULTIPLE_FORMS_PAGE_PATH,
     },
     async function(browser) {
       let formDescriptions = await ContentTask.spawn(
@@ -379,14 +379,14 @@ add_task(async function test_context_menu_open_management() {
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
-      url: TEST_HOSTNAME + MULTIPLE_FORMS_PAGE_PATH,
+      url: TEST_ORIGIN + MULTIPLE_FORMS_PAGE_PATH,
     },
     async function(browser) {
       await openPasswordContextMenu(browser, "#test-password-1");
 
-      gContextMenu.openPasswordManager();
+      let openingFunc = () => gContextMenu.openPasswordManager();
       // wait until the management UI opens
-      let dialogWindow = await waitForPasswordManagerDialog();
+      let passwordManager = await openPasswordManager(openingFunc);
       info("Management UI dialog was opened");
 
       TelemetryTestUtils.assertEvents(
@@ -394,61 +394,11 @@ add_task(async function test_context_menu_open_management() {
         { category: "pwmgr", method: "open_management" }
       );
 
-      dialogWindow.close();
+      await passwordManager.close();
       CONTEXT_MENU.hidePopup();
     }
   );
 });
-
-/**
- * Synthesize mouse clicks to open the password manager context menu popup
- * for a target password input element.
- *
- * assertCallback should return true if we should continue or else false.
- */
-async function openPasswordContextMenu(
-  browser,
-  passwordInput,
-  assertCallback = null
-) {
-  let contextMenuShownPromise = BrowserTestUtils.waitForEvent(
-    CONTEXT_MENU,
-    "popupshown"
-  );
-
-  // Synthesize a right mouse click over the password input element, we have to trigger
-  // both events because formfill code relies on this event happening before the contextmenu
-  // (which it does for real user input) in order to not show the password autocomplete.
-  let eventDetails = { type: "mousedown", button: 2 };
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    passwordInput,
-    eventDetails,
-    browser
-  );
-  // Synthesize a contextmenu event to actually open the context menu.
-  eventDetails = { type: "contextmenu", button: 2 };
-  await BrowserTestUtils.synthesizeMouseAtCenter(
-    passwordInput,
-    eventDetails,
-    browser
-  );
-
-  await contextMenuShownPromise;
-
-  if (assertCallback) {
-    let shouldContinue = await assertCallback();
-    if (!shouldContinue) {
-      return;
-    }
-  }
-
-  // Synthesize a mouse click over the fill login menu header.
-  let popupShownPromise = BrowserTestUtils.waitForCondition(
-    () => POPUP_HEADER.open
-  );
-  EventUtils.synthesizeMouseAtCenter(POPUP_HEADER, {});
-  await popupShownPromise;
-}
 
 /**
  * Verify that only the expected form fields are filled.
@@ -559,14 +509,14 @@ async function assertContextMenuFill(
 }
 
 /**
- * Check if every login that matches the page hostname are available at the context menu.
+ * Check if every login that matches the page origin are available at the context menu.
  * @param {Element} contextMenu
  * @param {Number} expectedCount - Number of logins expected in the context menu. Used to ensure
  *                                  we continue testing something useful.
  */
 function checkMenu(contextMenu, expectedCount) {
   let logins = loginList().filter(login => {
-    return LoginHelper.isOriginMatching(login.hostname, TEST_HOSTNAME, {
+    return LoginHelper.isOriginMatching(login.origin, TEST_ORIGIN, {
       schemeUpgrades: Services.prefs.getBoolPref("signon.schemeUpgrades"),
     });
   });
@@ -588,7 +538,7 @@ function checkMenu(contextMenu, expectedCount) {
 /**
  * Search for a login by it's username.
  *
- * Only unique login/hostname combinations should be used at this test.
+ * Only unique login/origin combinations should be used at this test.
  */
 function getLoginFromUsername(username) {
   return loginList().find(login => login.username == username);
@@ -604,33 +554,33 @@ function getLoginFromUsername(username) {
 function loginList() {
   return [
     LoginTestUtils.testData.formLogin({
-      hostname: "https://example.com",
-      formSubmitURL: "https://example.com",
+      origin: "https://example.com",
+      formActionOrigin: "https://example.com",
       username: "username",
       password: "password",
     }),
     // Same as above but HTTP in order to test de-duping.
     LoginTestUtils.testData.formLogin({
-      hostname: "http://example.com",
-      formSubmitURL: "http://example.com",
+      origin: "http://example.com",
+      formActionOrigin: "http://example.com",
       username: "username",
       password: "password",
     }),
     LoginTestUtils.testData.formLogin({
-      hostname: "http://example.com",
-      formSubmitURL: "http://example.com",
+      origin: "http://example.com",
+      formActionOrigin: "http://example.com",
       username: "username1",
       password: "password1",
     }),
     LoginTestUtils.testData.formLogin({
-      hostname: "https://example.com",
-      formSubmitURL: "https://example.com",
+      origin: "https://example.com",
+      formActionOrigin: "https://example.com",
       username: "username2",
       password: "password2",
     }),
     LoginTestUtils.testData.formLogin({
-      hostname: "http://example.org",
-      formSubmitURL: "http://example.org",
+      origin: "http://example.org",
+      formActionOrigin: "http://example.org",
       username: "username-cross-origin",
       password: "password-cross-origin",
     }),

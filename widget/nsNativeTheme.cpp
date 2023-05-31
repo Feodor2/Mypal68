@@ -11,9 +11,7 @@
 #include "nsPresContext.h"
 #include "nsString.h"
 #include "nsNameSpaceManager.h"
-#include "nsIDOMXULMenuListElement.h"
 #include "nsStyleConsts.h"
-#include "nsIComponentManager.h"
 #include "nsPIDOMWindow.h"
 #include "nsProgressFrame.h"
 #include "nsMeterFrame.h"
@@ -27,7 +25,7 @@
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLProgressElement.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include <algorithm>
 

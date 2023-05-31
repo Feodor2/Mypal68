@@ -4,7 +4,6 @@
 
 #include "ISurfaceAllocator.h"
 
-#include "gfxPrefs.h"
 #include "mozilla/layers/ImageBridgeParent.h"  // for ImageBridgeParent
 #include "mozilla/layers/TextureHost.h"        // for TextureHost
 #include "mozilla/layers/TextureForwarder.h"
@@ -50,7 +49,7 @@ void HostIPCAllocator::SendPendingAsyncMessages() {
   static const uint32_t kMaxMessageNumber = 250;
 #endif
 
-  InfallibleTArray<AsyncParentMessageData> messages;
+  nsTArray<AsyncParentMessageData> messages;
   messages.SetCapacity(mPendingAsyncMessage.size());
   for (size_t i = 0; i < mPendingAsyncMessage.size(); i++) {
     messages.AppendElement(mPendingAsyncMessage[i]);

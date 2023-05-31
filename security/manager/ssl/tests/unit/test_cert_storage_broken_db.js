@@ -1,3 +1,4 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -40,6 +41,18 @@ async function check_has_prior_cert_data(certStorage, expectedResult) {
   );
 }
 
+async function check_has_prior_crlite_data(certStorage, expectedResult) {
+  let hasPriorCRLiteData = await call_has_prior_data(
+    certStorage,
+    Ci.nsICertStorage.DATA_TYPE_CRLITE
+  );
+  Assert.equal(
+    hasPriorCRLiteData,
+    expectedResult,
+    `should ${expectedResult ? "have" : "not have"} prior CRLite data`
+  );
+}
+
 add_task(
   {
     skip_if: () => !AppConstants.MOZ_NEW_CERT_STORAGE,
@@ -56,6 +69,7 @@ add_task(
     );
     check_has_prior_revocation_data(certStorage, false);
     check_has_prior_cert_data(certStorage, false);
+    check_has_prior_crlite_data(certStorage, false);
 
     let result = await new Promise(resolve => {
       certStorage.setRevocations([], resolve);
@@ -64,6 +78,7 @@ add_task(
 
     check_has_prior_revocation_data(certStorage, true);
     check_has_prior_cert_data(certStorage, false);
+    check_has_prior_crlite_data(certStorage, false);
 
     result = await new Promise(resolve => {
       certStorage.addCerts([], resolve);
@@ -72,5 +87,14 @@ add_task(
 
     check_has_prior_revocation_data(certStorage, true);
     check_has_prior_cert_data(certStorage, true);
+    check_has_prior_crlite_data(certStorage, false);
+
+    result = await new Promise(resolve => {
+      certStorage.setCRLiteState([], resolve);
+    });
+    Assert.equal(result, Cr.NS_OK, "setCRLiteState should succeed");
+    check_has_prior_revocation_data(certStorage, true);
+    check_has_prior_cert_data(certStorage, true);
+    check_has_prior_crlite_data(certStorage, true);
   }
 );

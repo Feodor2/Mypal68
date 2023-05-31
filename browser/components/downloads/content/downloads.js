@@ -1101,7 +1101,7 @@ DownloadsViewItem.prototype = {
   },
 
   downloadsCmd_openReferrer() {
-    openURL(this.download.source.referrer);
+    openURL(this.download.source.referrerInfo.originalReferrer);
   },
 
   downloadsCmd_copyLocation() {

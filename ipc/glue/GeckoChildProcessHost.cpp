@@ -36,7 +36,6 @@
 #include "mozilla/ipc/BrowserProcessSubThread.h"
 #include "mozilla/ipc/EnvironmentMap.h"
 #include "mozilla/Omnijar.h"
-#include "mozilla/RecordReplay.h"
 #include "mozilla/RDDProcessHost.h"
 #include "mozilla/Scoped.h"
 #include "mozilla/Services.h"
@@ -610,29 +609,6 @@ void GeckoChildProcessHost::RunPerformAsyncLaunch(
       fail();
     }
   };
-
-  // The Web Replay middleman process launches the actual content
-  // processes, and doesn't initialize enough of XPCOM to use thread
-  // pools.
-  if (!mozilla::recordreplay::IsMiddleman()) {
-    auto launcher = GetIPCLauncher();
-    MOZ_DIAGNOSTIC_ASSERT(launcher != nullptr);
-    // Creating a thread pool shouldn't normally fail, but in case it
-    // does, use the fallback we already have for the middleman case.
-    if (launcher != nullptr) {
-      nsresult rv = launcher->Dispatch(
-          NS_NewRunnableFunction(
-              "ipc::GeckoChildProcessHost::PerformAsyncLaunch", launchWrapper),
-          NS_DISPATCH_NORMAL);
-      if (NS_FAILED(rv)) {
-        CHROMIUM_LOG(ERROR) << "Failed to dispatch launch task for "
-                            << XRE_ChildProcessTypeToString(mProcessType)
-                            << " process; launching during shutdown?";
-        fail();
-      }
-      return;
-    }
-  }
 
   // Fall back to launching on the I/O thread.
   launchWrapper();

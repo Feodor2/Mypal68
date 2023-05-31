@@ -413,19 +413,22 @@ def get_compiler_info(compiler, language):
     # in Xcode have a completely different versioning scheme despite exposing
     # the version with the same defines.
     # So instead, we make things such that the version is missing when the
-    # clang used is below the minimum supported version (currently clang 4.0).
+    # clang used is below the minimum supported version (currently clang 4.0,
+    # or 5.0 on mac).
     # We then only include the version information when the compiler matches
     # the feature check, so that an unsupported version of clang would have
     # no version number.
     check = dedent('''\
-        #if defined(_MSC_VER)
-        #if defined(__clang__)
+        #if defined(_MSC_VER) && defined(__clang__) && defined(_MT)
         %COMPILER "clang-cl"
         %VERSION __clang_major__.__clang_minor__.__clang_patchlevel__
-        #endif
         #elif defined(__clang__)
         %COMPILER "clang"
-        #  if __has_attribute(diagnose_if)
+        #  if defined(__APPLE__)
+        #    if __has_warning("-Wunguarded-availability")
+        %VERSION __clang_major__.__clang_minor__.__clang_patchlevel__
+        #    endif
+        #  elif __has_attribute(diagnose_if)
         %VERSION __clang_major__.__clang_minor__.__clang_patchlevel__
         #  endif
         #elif defined(__GNUC__)
@@ -543,18 +546,16 @@ def check_compiler(compiler, language, target):
             flags.append('-Xclang')
         flags.append('-std=gnu99')
 
-    # Note: this is a strict version check because we used to always add
-    # -std=gnu++14.
-    cxx14_version = 201402
+    cxx17_version = 201703
     if info.language == 'C++':
-        if info.language_version != cxx14_version:
-            # MSVC headers include C++14 features, but don't guard them
+        if info.language_version != cxx17_version:
+            # MSVC headers include C++17 features, but don't guard them
             # with appropriate checks.
             if info.type == 'clang-cl':
                 flags.append('-Xclang')
-                flags.append('-std=c++14')
+                flags.append('-std=c++17')
             else:
-                flags.append('-std=gnu++14')
+                flags.append('-std=gnu++17')
 
     # Check compiler target
     # --------------------------------------------------------------------
@@ -580,8 +581,7 @@ def check_compiler(compiler, language, target):
         elif (info.cpu, target.cpu) in same_arch:
             flags.append('-m64')
         elif info.type == 'clang-cl' and target.cpu == 'aarch64':
-            # clang-cl uses a different name for this target
-            flags.append('--target=aarch64-windows-msvc')
+            flags.append('--target=%s' % target.toolchain)
         elif info.type == 'clang':
             flags.append('--target=%s' % target.toolchain)
 
@@ -914,6 +914,12 @@ def provided_program(env_var):
     return provided
 
 
+def prepare_flags(host_or_target, macos_sdk):
+    if macos_sdk and host_or_target.os == 'OSX':
+        return ['-isysroot', macos_sdk]
+    return []
+
+
 @template
 def compiler(language, host_or_target, c_compiler=None, other_compiler=None,
              other_c_compiler=None):
@@ -992,8 +998,8 @@ def compiler(language, host_or_target, c_compiler=None, other_compiler=None,
         else:
             flags = []
 
-        if not flags and macos_sdk and host_or_target.os == 'OSX':
-            flags = ['-isysroot', macos_sdk]
+        if not flags:
+            flags = prepare_flags(host_or_target, macos_sdk)
 
         info = check_compiler(wrapper + [compiler] + flags, language,
                               host_or_target)
@@ -1058,6 +1064,9 @@ def compiler(language, host_or_target, c_compiler=None, other_compiler=None,
         # If you want to bump the version check here search for
         # diagnose_if above, and see the associated comment.
         if info.type == 'clang' and not info.version:
+            if host_or_target.os == 'OSX':
+                raise FatalCheckError(
+                    'Only clang/llvm 5.0 or newer is supported.')
             raise FatalCheckError(
                 'Only clang/llvm 4.0 or newer is supported.')
 
@@ -1419,7 +1428,9 @@ def pgo_flags(compiler, build_env, target):
 
     if compiler.type in ('clang-cl', 'clang'):
         profdata = os.path.join(topobjdir, 'merged.profdata')
+        prefix = ''
         if compiler.type == 'clang-cl':
+            prefix = '/clang:'
             if target.cpu == 'x86_64':
                 gen_ldflags = ['clang_rt.profile-x86_64.lib']
             elif target.cpu == 'x86':
@@ -1427,15 +1438,16 @@ def pgo_flags(compiler, build_env, target):
             else:
                 gen_ldflags = None
         else:
-            gen_ldflags = ['-fprofile-instr-generate']
+            gen_ldflags = ['-fprofile-generate']
 
         if gen_ldflags:
             return namespace(
-                gen_cflags=['-fprofile-instr-generate'],
+                gen_cflags=[prefix + '-fprofile-generate'],
                 gen_ldflags=gen_ldflags,
-                use_cflags=['-fprofile-instr-use=%s' % profdata,
-                            '-Wno-error=profile-instr-out-of-date',
-                            '-Wno-error=profile-instr-unprofiled'],
+                use_cflags=[prefix + '-fprofile-use=%s' % profdata,
+                            # Some error messages about mismatched profile data
+                            # come in via -Wbackend-plugin, so disable those too.
+                            '-Wno-error=backend-plugin'],
                 use_ldflags=[],
             )
 
@@ -1498,7 +1510,7 @@ set_config('MOZ_PROFILE_USE',
            depends_if('--enable-profile-use')(lambda _: True))
 
 
-@depends('--with-pgo-profile-path', '--enable-profile-use', 'LLVM_PROFDATA')
+@depends('--with-pgo-profile-path', '--enable-profile-use', llvm_profdata)
 @imports('os')
 def pgo_profile_path(path, pgo_use, profdata):
     if not path:
@@ -1533,16 +1545,16 @@ js_option('--enable-lto',
           help='Enable LTO')
 
 
-@depends('--enable-lto', 'MOZ_PGO', c_compiler)
+@depends('--enable-lto', 'MOZ_PGO', '--enable-profile-generate', c_compiler)
 @imports('multiprocessing')
-def lto(value, pgo, c_compiler):
+def lto(value, pgo, profile_generate, c_compiler):
     cflags = []
     ldflags = []
     enabled = None
     rust_lto = False
 
     # MSVC's implementation of PGO implies LTO. Make clang-cl match this.
-    if c_compiler.type == 'clang-cl' and pgo and value.origin == 'default':
+    if c_compiler.type == 'clang-cl' and pgo and not profile_generate and value.origin == 'default':
         value = ['thin']
 
     if value:

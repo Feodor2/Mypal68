@@ -10,7 +10,6 @@
 #include "mozilla/Poison.h"
 #include "mozilla/RemoteDecoderManagerChild.h"
 #include "mozilla/SharedThreadPool.h"
-#include "mozilla/VideoDecoderManagerChild.h"
 #include "mozilla/XPCOM.h"
 #include "mozJSComponentLoader.h"
 #include "nsXULAppAPI.h"
@@ -53,7 +52,6 @@
 #include "nsDirectoryService.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsCategoryManager.h"
-#include "nsICategoryManager.h"
 #include "nsMultiplexInputStream.h"
 
 #include "nsAtomTable.h"
@@ -87,6 +85,7 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CountingAllocatorBase.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/ServoStyleConsts.h"
 
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 
@@ -622,7 +621,6 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
     // are triggered by the NS_XPCOM_SHUTDOWN_OBSERVER_ID notification.
     NS_ProcessPendingEvents(thread);
     gfxPlatform::ShutdownLayersIPC();
-    mozilla::VideoDecoderManagerChild::Shutdown();
     mozilla::RemoteDecoderManagerChild::Shutdown();
 
     mozilla::scache::StartupCache::DeleteSingleton();
@@ -769,7 +767,19 @@ nsresult ShutdownXPCOM(nsIServiceManager* aServMgr) {
 
   GkRust_Shutdown();
 
+#ifdef NS_FREE_PERMANENT_DATA
+  // By the time we're shutting down, there may still be async parse tasks going
+  // on in the Servo thread-pool. This is fairly uncommon, though not
+  // impossible. CSS parsing heavily uses the atom table, so obviously it's not
+  // fine to get rid of it.
+  //
+  // In leak-checking / ASAN / etc. builds, shut down the servo thread-pool,
+  // which will wait for all the work to be done. For other builds, we don't
+  // really want to wait on shutdown for possibly slow tasks. So just leak the
+  // atom table in those.
+  Servo_ShutdownThreadPool();
   NS_ShutdownAtomTable();
+#endif
 
   NS_IF_RELEASE(gDebug);
 

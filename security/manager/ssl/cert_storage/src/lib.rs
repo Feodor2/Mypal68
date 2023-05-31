@@ -19,10 +19,11 @@ extern crate time;
 extern crate xpcom;
 extern crate storage_variant;
 extern crate style;
+extern crate tempfile;
 
 use byteorder::{NetworkEndian, ReadBytesExt, WriteBytesExt};
 use crossbeam_utils::atomic::AtomicCell;
-use lmdb::EnvironmentFlags;
+use lmdb::{EnvironmentFlags, Error as LmdbError};
 use moz_task::{create_thread, is_main_thread, Task, TaskRunnable};
 use nserror::{
     nsresult, NS_ERROR_FAILURE, NS_ERROR_NOT_SAME_THREAD, NS_ERROR_NO_AGGREGATION,
@@ -30,12 +31,12 @@ use nserror::{
 };
 use nsstring::{nsACString, nsAString, nsCStr, nsCString, nsString};
 use rkv::error::StoreError;
-use rkv::{Rkv, SingleStore, StoreOptions, Value};
+use rkv::{migrate::Migrator, Rkv, SingleStore, StoreOptions, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::fmt::Display;
-use std::fs::{create_dir_all, remove_file, File};
+use std::fs::{copy, create_dir_all, remove_file, File};
 use std::io::{BufRead, BufReader};
 use std::mem::size_of;
 use std::os::raw::c_char;
@@ -45,9 +46,10 @@ use std::str;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime};
 use storage_variant::VariantType;
+use tempfile::tempdir;
 use thin_vec::ThinVec;
 use xpcom::interfaces::{
-    nsICertInfo, nsICertStorage, nsICertStorageCallback, nsIFile,
+    nsICRLiteState, nsICertInfo, nsICertStorage, nsICertStorageCallback, nsIFile,
     nsIIssuerAndSerialRevocationState, nsIObserver, nsIPrefBranch, nsIRevocationState,
     nsISubjectAndPubKeyRevocationState, nsISupports, nsIThread,
 };
@@ -55,6 +57,7 @@ use xpcom::{nsIID, GetterAddrefs, RefPtr, ThreadBoundRefPtr, XpCom};
 
 const PREFIX_REV_IS: &str = "is";
 const PREFIX_REV_SPK: &str = "spk";
+const PREFIX_CRLITE: &str = "crlite";
 const PREFIX_SUBJECT: &str = "subject";
 const PREFIX_CERT: &str = "cert";
 const PREFIX_DATA_TYPE: &str = "datatype";
@@ -289,9 +292,10 @@ impl SecurityState {
         }
     }
 
-    pub fn set_revocations(
+    pub fn set_batch_state(
         &mut self,
         entries: &[(Vec<u8>, i16)],
+        typ: u8,
     ) -> Result<(), SecurityStateError> {
         self.reopen_store_read_write()?;
         {
@@ -300,13 +304,10 @@ impl SecurityState {
                 None => return Err(SecurityStateError::from("env and store not initialized?")),
             };
             let mut writer = env_and_store.env.write()?;
-            // Make a note that we have prior revocation data now.
+            // Make a note that we have prior data of the given type now.
             env_and_store.store.put(
                 &mut writer,
-                &make_key!(
-                    PREFIX_DATA_TYPE,
-                    &[nsICertStorage::DATA_TYPE_REVOCATION as u8]
-                ),
+                &make_key!(PREFIX_DATA_TYPE, &[typ]),
                 &Value::Bool(true),
             )?;
 
@@ -358,6 +359,23 @@ impl SecurityState {
                     "problem reading revocation state (from subject / pubkey)",
                 ));
             }
+        }
+    }
+
+    pub fn get_crlite_state(
+        &self,
+        subject: &[u8],
+        pub_key: &[u8],
+    ) -> Result<i16, SecurityStateError> {
+        let mut digest = Sha256::default();
+        digest.input(pub_key);
+        let pub_key_hash = digest.result();
+
+        let subject_pubkey = make_key!(PREFIX_CRLITE, subject, &pub_key_hash);
+        match self.read_entry(&subject_pubkey) {
+            Ok(Some(value)) => Ok(value),
+            Ok(None) => Ok(nsICertStorage::STATE_UNSET as i16),
+            Err(_) => Err(SecurityStateError::from("problem reading crlite state")),
         }
     }
 
@@ -772,7 +790,18 @@ fn make_env(path: &Path) -> Result<Rkv, SecurityStateError> {
     let mut builder = Rkv::environment_builder();
     builder.set_max_dbs(2);
     builder.set_map_size(16777216); // 16MB
-    Rkv::from_env(path, builder).map_err(SecurityStateError::from)
+    match Rkv::from_env(path, builder) {
+        Ok(env) => Ok(env),
+        Err(StoreError::LmdbError(LmdbError::Invalid)) => {
+            let temp_env = tempdir()?;
+            let mut migrator = Migrator::new(&path)?;
+            migrator.migrate(temp_env.path())?;
+            copy(temp_env.path().join("data.mdb"), path.join("data.mdb"))?;
+            copy(temp_env.path().join("lock.mdb"), path.join("lock.mdb"))?;
+            Rkv::from_env(path, builder)
+        },
+        Err(err) => Err(err),
+    }.map_err(SecurityStateError::from)
 }
 
 fn unconditionally_remove_file(path: &Path) -> Result<(), SecurityStateError> {
@@ -1099,7 +1128,7 @@ impl CertStorage {
         let task = Box::new(SecurityStateTask::new(
             &*callback,
             &self.security_state,
-            move |ss| ss.set_revocations(&entries),
+            move |ss| ss.set_batch_state(&entries, nsICertStorage::DATA_TYPE_REVOCATION as u8),
         ));
         let thread = try_ns!(self.thread.lock());
         let runnable = try_ns!(TaskRunnable::new("SetRevocations", task));
@@ -1116,7 +1145,7 @@ impl CertStorage {
         state: *mut i16,
     ) -> nserror::nsresult {
         // TODO (bug 1541212): We really want to restrict this to non-main-threads only, but we
-        // can't do so until bug 1406854 and bug 1534600 are fixed.
+        // can't do so until bug 1406854 is fixed.
         if issuer.is_null() || serial.is_null() || subject.is_null() || pub_key.is_null() {
             return NS_ERROR_NULL_POINTER;
         }
@@ -1141,6 +1170,71 @@ impl CertStorage {
         };
 
         NS_OK
+    }
+
+    unsafe fn SetCRLiteState(
+        &self,
+        crlite_state: *const ThinVec<RefPtr<nsICRLiteState>>,
+        callback: *const nsICertStorageCallback,
+    ) -> nserror::nsresult {
+        if !is_main_thread() {
+            return NS_ERROR_NOT_SAME_THREAD;
+        }
+        if crlite_state.is_null() || callback.is_null() {
+            return NS_ERROR_NULL_POINTER;
+        }
+
+        let crlite_state = &*crlite_state;
+        let mut crlite_entries = Vec::with_capacity(crlite_state.len());
+
+        // By continuing when an nsICRLiteState attribute value is invalid, we prevent errors
+        // relating to individual entries from causing sync to fail.
+        for crlite_entry in crlite_state {
+            let mut state: i16 = 0;
+            try_ns!(crlite_entry.GetState(&mut state).to_result(), or continue);
+
+            let mut subject = nsCString::new();
+            try_ns!(crlite_entry.GetSubject(&mut *subject).to_result(), or continue);
+            let subject = try_ns!(base64::decode(&subject), or continue);
+
+            let mut pub_key_hash = nsCString::new();
+            try_ns!(crlite_entry.GetSpkiHash(&mut *pub_key_hash).to_result(), or continue);
+            let pub_key_hash = try_ns!(base64::decode(&pub_key_hash), or continue);
+
+            crlite_entries.push((make_key!(PREFIX_CRLITE, &subject, &pub_key_hash), state));
+        }
+
+        let task = Box::new(SecurityStateTask::new(
+            &*callback,
+            &self.security_state,
+            move |ss| ss.set_batch_state(&crlite_entries, nsICertStorage::DATA_TYPE_CRLITE as u8),
+        ));
+        let thread = try_ns!(self.thread.lock());
+        let runnable = try_ns!(TaskRunnable::new("SetCRLiteState", task));
+        try_ns!(runnable.dispatch(&*thread));
+        NS_OK
+    }
+
+    unsafe fn GetCRLiteState(
+        &self,
+        subject: *const ThinVec<u8>,
+        pub_key: *const ThinVec<u8>,
+        state: *mut i16,
+    ) -> nserror::nsresult {
+        // TODO (bug 1541212): We really want to restrict this to non-main-threads only, but we
+        // can't do so until bug 1406854 is fixed.
+        if subject.is_null() || pub_key.is_null() {
+            return NS_ERROR_NULL_POINTER;
+        }
+        *state = nsICertStorage::STATE_UNSET as i16;
+        let ss = get_security_state!(self);
+        match ss.get_crlite_state(&*subject, &*pub_key) {
+            Ok(st) => {
+                *state = st;
+                NS_OK
+            }
+            _ => NS_ERROR_FAILURE,
+        }
     }
 
     unsafe fn AddCerts(
@@ -1212,7 +1306,7 @@ impl CertStorage {
         certs: *mut ThinVec<ThinVec<u8>>,
     ) -> nserror::nsresult {
         // TODO (bug 1541212): We really want to restrict this to non-main-threads only, but we
-        // can't do so until bug 1406854 and bug 1534600 are fixed.
+        // can't do so until bug 1406854 is fixed.
         if subject.is_null() || certs.is_null() {
             return NS_ERROR_NULL_POINTER;
         }

@@ -6,10 +6,8 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/SessionStoreListener.h"
 #include "mozilla/dom/BrowserChild.h"
-#include "nsIBrowser.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeOwner.h"
-#include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 #include "nsITimer.h"
 #include "nsIXULBrowserWindow.h"
@@ -413,17 +411,17 @@ void ContentSessionStore::GetScrollPositions(
   mScrollChanged = NO_CHANGE;
 }
 
-bool TabListener::ForceFlushFromParent(uint32_t aFlushId) {
+bool TabListener::ForceFlushFromParent(uint32_t aFlushId, bool aIsFinal) {
   if (!XRE_IsParentProcess()) {
     return false;
   }
   if (!mSessionStore) {
     return false;
   }
-  return UpdateSessionStore(aFlushId);
+  return UpdateSessionStore(aFlushId, aIsFinal);
 }
 
-bool TabListener::UpdateSessionStore(uint32_t aFlushId) {
+bool TabListener::UpdateSessionStore(uint32_t aFlushId, bool aIsFinal) {
   if (!aFlushId) {
     if (!mSessionStore || !mSessionStore->UpdateNeeded()) {
       return false;
@@ -475,7 +473,7 @@ bool TabListener::UpdateSessionStore(uint32_t aFlushId) {
     mSessionStore->GetScrollPositions(positions, descendants);
     xulBrowserWindow->UpdateScrollPositions(positions, descendants);
   }
-  xulBrowserWindow->UpdateSessionStore(mOwnerContent, aFlushId);
+  xulBrowserWindow->UpdateSessionStore(mOwnerContent, aFlushId, aIsFinal);
   StopTimerForUpdate();
   return true;
 }
@@ -517,4 +515,4 @@ void TabListener::RemoveListeners() {
   }
 }
 
-TabListener::~TabListener() { RemoveListeners();}
+TabListener::~TabListener() { RemoveListeners(); }

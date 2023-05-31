@@ -30,12 +30,7 @@ class nsHashPropertyBagBase : public nsIWritablePropertyBag,
 
 class nsHashPropertyBag : public nsHashPropertyBagBase {
  public:
-  nsHashPropertyBag() {
-    // Avoid destroying this object when recording/replaying. See bug 1497299.
-    if (mozilla::recordreplay::IsRecordingOrReplaying()) {
-      AddRef();
-    }
-  }
+  nsHashPropertyBag() = default;
   NS_DECL_THREADSAFE_ISUPPORTS
 
  protected:

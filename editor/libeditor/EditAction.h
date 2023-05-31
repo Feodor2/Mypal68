@@ -6,7 +6,7 @@
 #define mozilla_EditAction_h
 
 #include "mozilla/EventForwards.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 namespace mozilla {
 
@@ -347,9 +347,10 @@ enum class EditAction {
   // eHidePassword indicates that editor hides password with mask characters.
   eHidePassword,
 
-  // eCreateBogusNode indicates that editor wants to create a bogus node after
-  // the editor is modified, asynchronously.
-  eCreateBogusNode,
+  // eCreatePaddingBRElementForEmptyEditor indicates that editor wants to
+  // create a padding <br> element for empty editor after it modifies its
+  // content.
+  eCreatePaddingBRElementForEmptyEditor,
 };
 
 // This is int32_t instead of int16_t because nsIInlineSpellChecker.idl's
@@ -434,18 +435,27 @@ enum class EditSubAction : int32_t {
   // move its descendants to where the block was.
   eCreateOrRemoveBlock,
 
+  // eMergeBlockContents is not an actual sub-action, but this is used by
+  // HTMLEditor::MoveBlock() to request special handling in
+  // HTMLEditor::SplitInlinesAndCollectEditTargetNodesInOneHardLine().
+  eMergeBlockContents,
+
   // eRemoveList removes specific type of list but keep its content.
   eRemoveList,
 
-  // eCreateOrChangeDefinitionList indicates to create new definition list or
-  // change existing list to a definition list.
-  eCreateOrChangeDefinitionList,
+  // eCreateOrChangeDefinitionListItem indicates to format current hard line(s)
+  // `<dd>` or `<dt>`.  This may cause creating or changing existing list
+  // element to new `<dl>` element.
+  eCreateOrChangeDefinitionListItem,
 
   // eInsertElement indicates to insert an element.
   eInsertElement,
 
   // eInsertQuotation indicates to insert an element and make it "quoted text".
   eInsertQuotation,
+
+  // eInsertQuotedText indicates to insert text which has already been quoted.
+  eInsertQuotedText,
 
   // ePasteHTMLContent indicates to paste HTML content in clipboard.
   ePasteHTMLContent,
@@ -468,8 +478,9 @@ enum class EditSubAction : int32_t {
   eDecreaseZIndex,
   eIncreaseZIndex,
 
-  // eCreateBogusNode indicates to create a bogus <br> node.
-  eCreateBogusNode,
+  // eCreatePaddingBRElementForEmptyEditor indicates to create a padding <br>
+  // element for empty editor.
+  eCreatePaddingBRElementForEmptyEditor,
 };
 
 inline EditorInputType ToInputType(EditAction aEditAction) {

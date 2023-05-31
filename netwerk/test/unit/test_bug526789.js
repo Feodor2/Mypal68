@@ -23,7 +23,7 @@ function run_test() {
     true,
     expiry,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   Assert.equal(cm.countCookiesFromHost("baz.com"), 1);
   Assert.equal(cm.countCookiesFromHost("BAZ.com"), 1);
@@ -39,9 +39,9 @@ function run_test() {
   do_check_throws(function() {
     cm.countCookiesFromHost("..baz.com");
   }, Cr.NS_ERROR_ILLEGAL_VALUE);
-  cm.remove("BAZ.com.", "foo", "/", false, {});
+  cm.remove("BAZ.com.", "foo", "/", {});
   Assert.equal(cm.countCookiesFromHost("baz.com"), 1);
-  cm.remove("baz.com", "foo", "/", false, {});
+  cm.remove("baz.com", "foo", "/", {});
   Assert.equal(cm.countCookiesFromHost("baz.com"), 0);
 
   // Test that 'baz.com' and 'baz.com.' are treated differently
@@ -55,16 +55,16 @@ function run_test() {
     true,
     expiry,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   Assert.equal(cm.countCookiesFromHost("baz.com"), 0);
   Assert.equal(cm.countCookiesFromHost("BAZ.com"), 0);
   Assert.equal(cm.countCookiesFromHost(".baz.com"), 0);
   Assert.equal(cm.countCookiesFromHost("baz.com."), 1);
   Assert.equal(cm.countCookiesFromHost(".baz.com."), 1);
-  cm.remove("baz.com", "foo", "/", false, {});
+  cm.remove("baz.com", "foo", "/", {});
   Assert.equal(cm.countCookiesFromHost("baz.com."), 1);
-  cm.remove("baz.com.", "foo", "/", false, {});
+  cm.remove("baz.com.", "foo", "/", {});
   Assert.equal(cm.countCookiesFromHost("baz.com."), 0);
 
   // test that domain cookies are illegal for IP addresses, aliases such as
@@ -79,7 +79,7 @@ function run_test() {
     true,
     expiry,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   Assert.equal(cm.countCookiesFromHost("192.168.0.1"), 1);
   Assert.equal(cm.countCookiesFromHost("192.168.0.1."), 0);
@@ -100,7 +100,7 @@ function run_test() {
     true,
     expiry,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   Assert.equal(cm.countCookiesFromHost("localhost"), 1);
   Assert.equal(cm.countCookiesFromHost("localhost."), 0);
@@ -121,7 +121,7 @@ function run_test() {
     true,
     expiry,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   Assert.equal(cm.countCookiesFromHost("co.uk"), 1);
   Assert.equal(cm.countCookiesFromHost("co.uk."), 0);
@@ -158,7 +158,7 @@ function run_test() {
 
   e = cm.getCookiesFromHost("baz.com", {});
   Assert.ok(e.hasMoreElements());
-  Assert.equal(e.getNext().QueryInterface(Ci.nsICookie2).name, "foo");
+  Assert.equal(e.getNext().QueryInterface(Ci.nsICookie).name, "foo");
   Assert.ok(!e.hasMoreElements());
   e = cm.getCookiesFromHost("", {});
   Assert.ok(!e.hasMoreElements());
@@ -219,7 +219,7 @@ function run_test() {
     true,
     expiry,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   Assert.equal(getCookieCount(), 1);
   do_check_throws(function() {
@@ -233,15 +233,15 @@ function run_test() {
       true,
       expiry,
       {},
-      Ci.nsICookie2.SAMESITE_UNSET
+      Ci.nsICookie.SAMESITE_UNSET
     );
   }, Cr.NS_ERROR_ILLEGAL_VALUE);
   Assert.equal(getCookieCount(), 1);
 
-  cm.remove("", "foo2", "/", false, {});
+  cm.remove("", "foo2", "/", {});
   Assert.equal(getCookieCount(), 0);
   do_check_throws(function() {
-    cm.remove(".", "foo3", "/", false, {});
+    cm.remove(".", "foo3", "/", {});
   }, Cr.NS_ERROR_ILLEGAL_VALUE);
 
   // test that the 'domain' attribute accepts a leading dot for IP addresses,
@@ -278,13 +278,13 @@ function testDomainCookie(uriString, domain) {
   cs.setCookieString(uri, null, "foo=bar; domain=" + domain, null);
   var e = cm.getCookiesFromHost(domain, {});
   Assert.ok(e.hasMoreElements());
-  Assert.equal(e.getNext().QueryInterface(Ci.nsICookie2).host, domain);
+  Assert.equal(e.getNext().QueryInterface(Ci.nsICookie).host, domain);
   cm.removeAll();
 
   cs.setCookieString(uri, null, "foo=bar; domain=." + domain, null);
   e = cm.getCookiesFromHost(domain, {});
   Assert.ok(e.hasMoreElements());
-  Assert.equal(e.getNext().QueryInterface(Ci.nsICookie2).host, domain);
+  Assert.equal(e.getNext().QueryInterface(Ci.nsICookie).host, domain);
   cm.removeAll();
 }
 

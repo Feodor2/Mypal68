@@ -11,7 +11,6 @@
 #include "nsIAccessibleTypes.h"
 
 #include "nsString.h"
-#include "nsIURI.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;

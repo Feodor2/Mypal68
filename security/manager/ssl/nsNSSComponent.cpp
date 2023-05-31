@@ -4,10 +4,10 @@
 
 #include "nsNSSComponent.h"
 
+#include "CryptoTask.h"
 #include "EnterpriseRoots.h"
 #include "ExtendedValidation.h"
 #include "NSSCertDBTrustDomain.h"
-#include "PKCS11ModuleDB.h"
 #include "ScopedNSSTypes.h"
 #include "SharedSSLState.h"
 #include "cert.h"
@@ -36,13 +36,13 @@
 #include "nsIObserverService.h"
 #include "nsIPrompt.h"
 #include "nsIProperties.h"
-#include "nsISiteSecurityService.h"
 #include "nsITokenPasswordDialogs.h"
 #include "nsIWindowWatcher.h"
 #include "nsIXULRuntime.h"
 #include "nsLiteralString.h"
 #include "nsNSSCertificateDB.h"
 #include "nsNSSHelper.h"
+#include "nsNetCID.h"
 #include "nsPK11TokenDB.h"
 #include "nsPrintfCString.h"
 #include "nsServiceManagerUtils.h"
@@ -528,7 +528,7 @@ void nsNSSComponent::MaybeImportEnterpriseRoots() {
   if (importEnterpriseRoots) {
     RefPtr<BackgroundImportEnterpriseCertsTask> task =
         new BackgroundImportEnterpriseCertsTask(this);
-    Unused << task->Dispatch("EnterpriseCrts");
+    Unused << task->Dispatch();
   }
 }
 
@@ -610,40 +610,22 @@ class LoadLoadableRootsTask final : public Runnable {
   bool mImportEnterpriseRoots;
   uint32_t mFamilySafetyMode;
   Vector<nsCString> mPossibleLoadableRootsLocations;
-  nsCOMPtr<nsIThread> mThread;
 };
 
 nsresult LoadLoadableRootsTask::Dispatch() {
-  // Can't add 'this' as the event to run, since mThread may not be set yet
-  nsresult rv = NS_NewNamedThread("LoadRoots", getter_AddRefs(mThread), nullptr,
-                                  nsIThreadManager::DEFAULT_STACK_SIZE);
-  if (NS_FAILED(rv)) {
-    return rv;
+  // The stream transport service (note: not the socket transport service) can
+  // be used to perform background tasks or I/O that would otherwise block the
+  // main thread.
+  nsCOMPtr<nsIEventTarget> target(
+      do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID));
+  if (!target) {
+    return NS_ERROR_FAILURE;
   }
-
-  // Note: event must not null out mThread!
-  return mThread->Dispatch(this, NS_DISPATCH_NORMAL);
+  return target->Dispatch(this, NS_DISPATCH_NORMAL);
 }
 
 NS_IMETHODIMP
 LoadLoadableRootsTask::Run() {
-  // First we Run() on the "LoadRoots" thread, do our work, and then we Run()
-  // again on the main thread so we can shut down the thread (since we don't
-  // need it any more). We can't shut down the thread while we're *on* the
-  // thread, which is why we do the dispatch to the main thread. CryptoTask.cpp
-  // (which informs this code) says that we can't null out mThread. This appears
-  // to be because its refcount could be decreased while this dispatch is being
-  // processed, so it might get prematurely destroyed. I'm not sure this makes
-  // sense but it'll get cleaned up in our destructor anyway, so it's fine to
-  // not null it out here (as long as we don't run twice on the main thread,
-  // which shouldn't be possible).
-  if (NS_IsMainThread()) {
-    if (mThread) {
-      mThread->Shutdown();
-    }
-    return NS_OK;
-  }
-
   nsresult loadLoadableRootsResult = LoadLoadableRoots();
   if (NS_WARN_IF(NS_FAILED(loadLoadableRootsResult))) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Error, ("LoadLoadableRoots failed"));
@@ -685,9 +667,7 @@ LoadLoadableRootsTask::Run() {
               ("failed to notify loadable roots loaded monitor"));
     }
   }
-
-  // Go back to the main thread to clean up this worker thread.
-  return NS_DispatchToMainThread(this);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1789,28 +1769,6 @@ nsresult nsNSSComponent::InitializeNSS() {
 
   if (PK11_IsFIPS()) {
     Telemetry::Accumulate(Telemetry::FIPS_ENABLED, true);
-  }
-
-  // Gather telemetry on any PKCS#11 modules we have loaded. Note that because
-  // we load the built-in root module asynchronously after this, the telemetry
-  // will not include it.
-  {  // Introduce scope for the AutoSECMODListReadLock.
-    AutoSECMODListReadLock lock;
-    for (SECMODModuleList* list = SECMOD_GetDefaultModuleList(); list;
-         list = list->next) {
-      nsAutoString scalarKey;
-      GetModuleNameForTelemetry(list->module, scalarKey);
-      // Scalar keys must be between 0 and 70 characters (exclusive).
-      // GetModuleNameForTelemetry takes care of keys that are too long. If for
-      // some reason it couldn't come up with an appropriate name and returned
-      // an empty result, however, we need to not attempt to record this (it
-      // wouldn't give us anything useful anyway).
-      if (scalarKey.Length() > 0) {
-        Telemetry::ScalarSet(
-            Telemetry::ScalarID::SECURITY_PKCS11_MODULES_LOADED, scalarKey,
-            true);
-      }
-    }
   }
 
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("NSS Initialization done\n"));

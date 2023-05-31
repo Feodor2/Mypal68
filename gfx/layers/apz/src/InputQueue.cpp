@@ -5,12 +5,14 @@
 #include "InputQueue.h"
 
 #include "AsyncPanZoomController.h"
-#include "gfxPrefs.h"
+
 #include "InputBlockState.h"
 #include "LayersLogging.h"
 #include "mozilla/layers/APZThreadUtils.h"
 #include "OverscrollHandoffState.h"
 #include "QueuedInput.h"
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_layout.h"
 
 #define INPQ_LOG(...)
 // #define INPQ_LOG(...) printf_stderr("INPQ: " __VA_ARGS__)
@@ -80,7 +82,7 @@ nsEventStatus InputQueue::ReceiveTouchInput(
   if (aEvent.mType == MultiTouchInput::MULTITOUCH_START) {
     nsTArray<TouchBehaviorFlags> currentBehaviors;
     bool haveBehaviors = false;
-    if (!gfxPrefs::TouchActionEnabled()) {
+    if (!StaticPrefs::layout_css_touch_action_enabled()) {
       haveBehaviors = true;
     } else if (mActiveTouchBlock) {
       haveBehaviors =
@@ -112,7 +114,7 @@ nsEventStatus InputQueue::ReceiveTouchInput(
           aTarget, InputBlockState::TargetConfirmationState::eConfirmed,
           nullptr /* the block was just created so it has no events */,
           false /* not a scrollbar drag */);
-      if (gfxPrefs::TouchActionEnabled()) {
+      if (StaticPrefs::layout_css_touch_action_enabled()) {
         block->SetAllowedTouchBehaviors(currentBehaviors);
       }
       INPQ_LOG("block %p tagged as fast-motion\n", block);
@@ -316,7 +318,7 @@ nsEventStatus InputQueue::ReceiveKeyboardInput(
 
   // If APZ is allowing passive listeners then we must dispatch the event to
   // content, otherwise we can consume the event.
-  return gfxPrefs::APZKeyboardPassiveListeners()
+  return StaticPrefs::apz_keyboard_passive_listeners()
              ? nsEventStatus_eConsumeDoDefault
              : nsEventStatus_eConsumeNoDefault;
 }
@@ -549,7 +551,7 @@ void InputQueue::ScheduleMainThreadTimeout(
   RefPtr<Runnable> timeoutTask = NewRunnableMethod<uint64_t>(
       "layers::InputQueue::MainThreadTimeout", this,
       &InputQueue::MainThreadTimeout, aBlock->GetBlockId());
-  int32_t timeout = gfxPrefs::APZContentResponseTimeout();
+  int32_t timeout = StaticPrefs::apz_content_response_timeout();
   if (timeout == 0) {
     // If the timeout is zero, treat it as a request to ignore any main
     // thread confirmation and unconditionally use fallback behaviour for

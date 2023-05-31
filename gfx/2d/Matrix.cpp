@@ -12,8 +12,6 @@
 
 #include "mozilla/FloatingPoint.h"  // for UnspecifiedNaN
 
-using namespace std;
-
 namespace mozilla {
 namespace gfx {
 

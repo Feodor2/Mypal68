@@ -90,8 +90,6 @@ class ProfilerScreenshots final {
    */
   void ReturnSurface(DataSourceSurface* aSurface);
 
-  // The thread on which encoding happens.
-  nsCOMPtr<nsIThread> mThread;
   // An array of surfaces ready to be recycled. Can be accessed from multiple
   // threads, protected by mMutex.
   nsTArray<RefPtr<DataSourceSurface>> mAvailableSurfaces;

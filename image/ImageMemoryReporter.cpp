@@ -5,6 +5,7 @@
 #include "ImageMemoryReporter.h"
 #include "Image.h"
 #include "mozilla/layers/SharedSurfacesParent.h"
+#include "mozilla/StaticPrefs_image.h"
 #include "nsIMemoryReporter.h"
 #include "nsISupportsImpl.h"
 
@@ -94,7 +95,7 @@ void ImageMemoryReporter::ReportSharedSurface(
     path.AppendLiteral("/");
   }
 
-  if (gfxPrefs::ImageMemDebugReporting()) {
+  if (StaticPrefs::image_mem_debug_reporting()) {
     path.AppendInt(aExternalId, 16);
     path.AppendLiteral("/");
   }
@@ -134,7 +135,7 @@ void ImageMemoryReporter::AppendSharedSurfacePrefix(
   if (extId) {
     auto gpuEntry = aSharedSurfaces.mSurfaces.find(extId);
 
-    if (gfxPrefs::ImageMemDebugReporting()) {
+    if (StaticPrefs::image_mem_debug_reporting()) {
       aPathPrefix.AppendLiteral(", external_id:");
       aPathPrefix.AppendInt(extId, 16);
       if (gpuEntry != aSharedSurfaces.mSurfaces.end()) {

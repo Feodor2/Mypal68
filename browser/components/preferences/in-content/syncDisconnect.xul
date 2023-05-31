@@ -48,7 +48,7 @@
       <spacer flex="1"/>
       <hbox class="actionButtons" align="right" flex="1">
         <button id="butCancel"
-                oncommand="close(event);"
+                oncommand="window.close(event);"
                 class="syncDisconnectButton"
                 data-l10n-id="sync-disconnect-cancel"/>
         <button id="butDisconnect"

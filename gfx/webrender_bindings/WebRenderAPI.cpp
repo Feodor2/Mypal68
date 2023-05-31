@@ -4,7 +4,7 @@
 
 #include "WebRenderAPI.h"
 
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "LayersLogging.h"
 #include "mozilla/ipc/ByteBuf.h"
 #include "mozilla/webrender/RendererOGL.h"
@@ -75,8 +75,9 @@ class NewRenderer : public RendererEvent {
     if (!wr_window_new(
             aWindowId, mSize.width, mSize.height,
             supportLowPriorityTransactions,
-            gfxPrefs::WebRenderPictureCaching() && supportPictureCaching,
-            gfxPrefs::WebRenderStartDebugServer(), compositor->gl(),
+            StaticPrefs::gfx_webrender_picture_caching() &&
+                supportPictureCaching,
+            StaticPrefs::gfx_webrender_start_debug_server(), compositor->gl(),
             aRenderThread.GetProgramCache()
                 ? aRenderThread.GetProgramCache()->Raw()
                 : nullptr,
@@ -242,6 +243,11 @@ void TransactionWrapper::UpdateScrollPosition(
 
 void TransactionWrapper::UpdatePinchZoom(float aZoom) {
   wr_transaction_pinch_zoom(mTxn, aZoom);
+}
+
+void TransactionWrapper::UpdateIsTransformPinchZooming(uint64_t aAnimationId,
+                                                       bool aIsZooming) {
+  wr_transaction_set_is_transform_pinch_zooming(mTxn, aAnimationId, aIsZooming);
 }
 
 /*static*/
@@ -423,7 +429,10 @@ void WebRenderAPI::Readback(const TimeStamp& aStartTime, gfx::IntSize size,
     explicit Readback(layers::SynchronousTask* aTask, TimeStamp aStartTime,
                       gfx::IntSize aSize, const gfx::SurfaceFormat& aFormat,
                       const Range<uint8_t>& aBuffer)
-        : mTask(aTask), mStartTime(aStartTime), mSize(aSize), mFormat(aFormat),
+        : mTask(aTask),
+          mStartTime(aStartTime),
+          mSize(aSize),
+          mFormat(aFormat),
           mBuffer(aBuffer) {
       MOZ_COUNT_CTOR(Readback);
     }
@@ -567,6 +576,34 @@ void WebRenderAPI::Capture() {
   wr_api_capture(mDocHandle, path, bits);
 }
 
+void WebRenderAPI::SetCompositionRecorder(
+    RefPtr<layers::WebRenderCompositionRecorder>&& aRecorder) {
+  class SetCompositionRecorderEvent final : public RendererEvent {
+   public:
+    explicit SetCompositionRecorderEvent(
+        RefPtr<layers::WebRenderCompositionRecorder>&& aRecorder)
+        : mRecorder(std::move(aRecorder)) {
+      MOZ_COUNT_CTOR(SetCompositionRecorderEvent);
+    }
+
+    ~SetCompositionRecorderEvent() {
+      MOZ_COUNT_DTOR(SetCompositionRecorderEvent);
+    }
+
+    void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
+      MOZ_ASSERT(mRecorder);
+
+      aRenderThread.SetCompositionRecorderForWindow(aWindowId,
+                                                    std::move(mRecorder));
+    }
+
+   private:
+    RefPtr<layers::WebRenderCompositionRecorder> mRecorder;
+  };
+
+  auto event = MakeUnique<SetCompositionRecorderEvent>(std::move(aRecorder));
+  RunOnRenderThread(std::move(event));
+}
 void TransactionBuilder::Clear() { wr_resource_updates_clear(mTxn); }
 
 void TransactionBuilder::Notify(wr::Checkpoint aWhen,
@@ -583,23 +620,27 @@ void TransactionBuilder::AddImage(ImageKey key,
 
 void TransactionBuilder::AddBlobImage(BlobImageKey key,
                                       const ImageDescriptor& aDescriptor,
-                                      wr::Vec<uint8_t>& aBytes) {
-  wr_resource_updates_add_blob_image(mTxn, key, &aDescriptor, &aBytes.inner);
+                                      wr::Vec<uint8_t>& aBytes,
+                                      const wr::DeviceIntRect& aVisibleRect) {
+  wr_resource_updates_add_blob_image(mTxn, key, &aDescriptor, &aBytes.inner,
+                                     aVisibleRect);
 }
 
-void TransactionBuilder::AddExternalImage(
-    ImageKey key, const ImageDescriptor& aDescriptor, ExternalImageId aExtID,
-    wr::WrExternalImageBufferType aBufferType, uint8_t aChannelIndex) {
+void TransactionBuilder::AddExternalImage(ImageKey key,
+                                          const ImageDescriptor& aDescriptor,
+                                          ExternalImageId aExtID,
+                                          wr::ExternalImageType aImageType,
+                                          uint8_t aChannelIndex) {
   wr_resource_updates_add_external_image(mTxn, key, &aDescriptor, aExtID,
-                                         aBufferType, aChannelIndex);
+                                         &aImageType, aChannelIndex);
 }
 
 void TransactionBuilder::AddExternalImageBuffer(
     ImageKey aKey, const ImageDescriptor& aDescriptor,
     ExternalImageId aHandle) {
   auto channelIndex = 0;
-  AddExternalImage(aKey, aDescriptor, aHandle,
-                   wr::WrExternalImageBufferType::ExternalBuffer, channelIndex);
+  AddExternalImage(aKey, aDescriptor, aHandle, wr::ExternalImageType::Buffer(),
+                   channelIndex);
 }
 
 void TransactionBuilder::UpdateImageBuffer(ImageKey aKey,
@@ -611,28 +652,31 @@ void TransactionBuilder::UpdateImageBuffer(ImageKey aKey,
 void TransactionBuilder::UpdateBlobImage(BlobImageKey aKey,
                                          const ImageDescriptor& aDescriptor,
                                          wr::Vec<uint8_t>& aBytes,
+                                         const wr::DeviceIntRect& aVisibleRect,
                                          const wr::LayoutIntRect& aDirtyRect) {
   wr_resource_updates_update_blob_image(mTxn, aKey, &aDescriptor, &aBytes.inner,
-                                        aDirtyRect);
+                                        aVisibleRect, aDirtyRect);
 }
 
-void TransactionBuilder::UpdateExternalImage(
-    ImageKey aKey, const ImageDescriptor& aDescriptor, ExternalImageId aExtID,
-    wr::WrExternalImageBufferType aBufferType, uint8_t aChannelIndex) {
+void TransactionBuilder::UpdateExternalImage(ImageKey aKey,
+                                             const ImageDescriptor& aDescriptor,
+                                             ExternalImageId aExtID,
+                                             wr::ExternalImageType aImageType,
+                                             uint8_t aChannelIndex) {
   wr_resource_updates_update_external_image(mTxn, aKey, &aDescriptor, aExtID,
-                                            aBufferType, aChannelIndex);
+                                            &aImageType, aChannelIndex);
 }
 
 void TransactionBuilder::UpdateExternalImageWithDirtyRect(
     ImageKey aKey, const ImageDescriptor& aDescriptor, ExternalImageId aExtID,
-    wr::WrExternalImageBufferType aBufferType,
-    const wr::DeviceIntRect& aDirtyRect, uint8_t aChannelIndex) {
+    wr::ExternalImageType aImageType, const wr::DeviceIntRect& aDirtyRect,
+    uint8_t aChannelIndex) {
   wr_resource_updates_update_external_image_with_dirty_rect(
-      mTxn, aKey, &aDescriptor, aExtID, aBufferType, aChannelIndex, aDirtyRect);
+      mTxn, aKey, &aDescriptor, aExtID, &aImageType, aChannelIndex, aDirtyRect);
 }
 
-void TransactionBuilder::SetImageVisibleArea(BlobImageKey aKey,
-                                             const wr::DeviceIntRect& aArea) {
+void TransactionBuilder::SetBlobImageVisibleArea(
+    BlobImageKey aKey, const wr::DeviceIntRect& aArea) {
   wr_resource_updates_set_blob_image_visible_area(mTxn, aKey, &aArea);
 }
 
@@ -770,6 +814,8 @@ void DisplayListBuilder::Finalize(
                           &aOutTransaction.mDLDesc, &dl.inner);
   aOutTransaction.mDL.emplace(dl.inner.data, dl.inner.length,
                               dl.inner.capacity);
+  aOutTransaction.mRemotePipelineIds =
+      std::move(SubBuilder(aOutTransaction.mRenderRoot).mRemotePipelineIds);
   dl.inner.capacity = 0;
   dl.inner.data = nullptr;
 }
@@ -971,6 +1017,25 @@ void DisplayListBuilder::PushClearRectWithComplexRegion(
                                          &spaceAndClip);
 }
 
+void DisplayListBuilder::PushBackdropFilter(
+    const wr::LayoutRect& aBounds, const wr::ComplexClipRegion& aRegion,
+    const nsTArray<wr::FilterOp>& aFilters,
+    const nsTArray<wr::WrFilterData>& aFilterDatas, bool aIsBackfaceVisible) {
+  wr::LayoutRect clip = MergeClipLeaf(aBounds);
+  WRDL_LOG("PushBackdropFilter b=%s c=%s\n", mWrState,
+           Stringify(aBounds).c_str(), Stringify(clip).c_str());
+
+  AutoTArray<wr::ComplexClipRegion, 1> clips;
+  clips.AppendElement(aRegion);
+  auto clipId = DefineClip(Nothing(), aBounds, &clips, nullptr);
+  auto spaceAndClip = WrSpaceAndClip{mCurrentSpaceAndClipChain.space, clipId};
+
+  wr_dp_push_backdrop_filter_with_parent_clip(
+      mWrState, aBounds, clip, aIsBackfaceVisible, &spaceAndClip,
+      aFilters.Elements(), aFilters.Length(), aFilterDatas.Elements(),
+      aFilterDatas.Length());
+}
+
 void DisplayListBuilder::PushLinearGradient(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
     bool aIsBackfaceVisible, const wr::LayoutPoint& aStartPoint,
@@ -1058,6 +1123,7 @@ void DisplayListBuilder::PushIFrame(const wr::LayoutRect& aBounds,
                                     bool aIsBackfaceVisible,
                                     PipelineId aPipeline,
                                     bool aIgnoreMissingPipeline) {
+  mRemotePipelineIds.AppendElement(aPipeline);
   wr_dp_push_iframe(mWrState, aBounds, MergeClipLeaf(aBounds),
                     aIsBackfaceVisible, &mCurrentSpaceAndClipChain, aPipeline,
                     aIgnoreMissingPipeline);
@@ -1079,44 +1145,40 @@ void DisplayListBuilder::PushBorder(const wr::LayoutRect& aBounds,
                     aSides[1], aSides[2], aSides[3], aRadius);
 }
 
-void DisplayListBuilder::PushBorderImage(
-    const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
-    bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths,
-    wr::ImageKey aImage, const int32_t aWidth, const int32_t aHeight,
-    const wr::SideOffsets2D<int32_t>& aSlice,
-    const wr::SideOffsets2D<float>& aOutset,
-    const wr::RepeatMode& aRepeatHorizontal,
-    const wr::RepeatMode& aRepeatVertical) {
+void DisplayListBuilder::PushBorderImage(const wr::LayoutRect& aBounds,
+                                         const wr::LayoutRect& aClip,
+                                         bool aIsBackfaceVisible,
+                                         const wr::WrBorderImage& aParams) {
   wr_dp_push_border_image(mWrState, aBounds, MergeClipLeaf(aClip),
                           aIsBackfaceVisible, &mCurrentSpaceAndClipChain,
-                          aWidths, aImage, aWidth, aHeight, aSlice, aOutset,
-                          aRepeatHorizontal, aRepeatVertical);
+                          &aParams);
 }
 
 void DisplayListBuilder::PushBorderGradient(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
     bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths,
-    const int32_t aWidth, const int32_t aHeight,
-    const wr::SideOffsets2D<int32_t>& aSlice,
+    const int32_t aWidth, const int32_t aHeight, bool aFill,
+    const wr::DeviceIntSideOffsets& aSlice,
     const wr::LayoutPoint& aStartPoint, const wr::LayoutPoint& aEndPoint,
     const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
-    const wr::SideOffsets2D<float>& aOutset) {
-  wr_dp_push_border_gradient(
-      mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
-      &mCurrentSpaceAndClipChain, aWidths, aWidth, aHeight, aSlice, aStartPoint,
-      aEndPoint, aStops.Elements(), aStops.Length(), aExtendMode, aOutset);
+    const wr::LayoutSideOffsets& aOutset) {
+  wr_dp_push_border_gradient(mWrState, aBounds, MergeClipLeaf(aClip),
+                             aIsBackfaceVisible, &mCurrentSpaceAndClipChain,
+                             aWidths, aWidth, aHeight, aFill, aSlice,
+                             aStartPoint, aEndPoint, aStops.Elements(),
+                             aStops.Length(), aExtendMode, aOutset);
 }
 
 void DisplayListBuilder::PushBorderRadialGradient(
     const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
-    bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths,
+    bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths, bool aFill,
     const wr::LayoutPoint& aCenter, const wr::LayoutSize& aRadius,
     const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
-    const wr::SideOffsets2D<float>& aOutset) {
+    const wr::LayoutSideOffsets& aOutset) {
   wr_dp_push_border_radial_gradient(
       mWrState, aBounds, MergeClipLeaf(aClip), aIsBackfaceVisible,
-      &mCurrentSpaceAndClipChain, aWidths, aCenter, aRadius, aStops.Elements(),
-      aStops.Length(), aExtendMode, aOutset);
+      &mCurrentSpaceAndClipChain, aWidths, aFill, aCenter, aRadius,
+      aStops.Elements(), aStops.Length(), aExtendMode, aOutset);
 }
 
 void DisplayListBuilder::PushText(const wr::LayoutRect& aBounds,
@@ -1154,8 +1216,7 @@ void DisplayListBuilder::PushShadow(const wr::LayoutRect& aRect,
   // being re-enabled mid-shadow. The optimization is restored in PopAllShadows.
   SuspendClipLeafMerging();
   wr_dp_push_shadow(mWrState, aRect, aClip, aIsBackfaceVisible,
-                    &mCurrentSpaceAndClipChain, aShadow,
-                    aShouldInflate);
+                    &mCurrentSpaceAndClipChain, aShadow, aShouldInflate);
 }
 
 void DisplayListBuilder::PopAllShadows() {

@@ -46,13 +46,6 @@ nsDataHandler::GetProtocolFlags(uint32_t* result) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsDataHandler::NewURI(const nsACString& aSpec,
-                      const char* aCharset,  // ignore charset info
-                      nsIURI* aBaseURI, nsIURI** result) {
-  return nsDataHandler::CreateNewURI(aSpec, aCharset, aBaseURI, result);
-}
-
 /* static */ nsresult nsDataHandler::CreateNewURI(const nsACString& aSpec,
                                                   const char* aCharset,
                                                   nsIURI* aBaseURI,
@@ -106,16 +99,9 @@ nsDataHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
     channel = new mozilla::net::DataChannelChild(uri);
   }
 
-  nsresult rv = channel->Init();
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
   // set the loadInfo on the new channel
-  rv = channel->SetLoadInfo(aLoadInfo);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  nsresult rv = channel->SetLoadInfo(aLoadInfo);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   channel.forget(result);
   return NS_OK;

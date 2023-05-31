@@ -4,23 +4,19 @@
 
 #include "nsCOMPtr.h"
 #include "nsMemory.h"
-#include "nsIServiceManager.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/ModuleUtils.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
-#include "nsIWebBrowserChrome.h"
 #include "nsCURILoader.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsNetUtil.h"
 #include "nsIURL.h"
 #include "nsIURI.h"
 #include "nsIDocShell.h"
-#include "nsIDocShellTreeOwner.h"
 #include "nsISimpleEnumerator.h"
 #include "nsPIDOMWindow.h"
 #include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
 #include "nsString.h"
 #include "nsCRT.h"
 #include "nsGenericHTMLElement.h"
@@ -28,14 +24,12 @@
 #include "nsIFrame.h"
 #include "nsContainerFrame.h"
 #include "nsFrameTraversal.h"
-#include "nsIImageDocument.h"
 #include "mozilla/dom/Document.h"
 #include "nsIContent.h"
 #include "nsTextFragment.h"
 #include "nsIEditor.h"
 
 #include "nsIDocShellTreeItem.h"
-#include "nsIWebNavigation.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsContentCID.h"
@@ -43,7 +37,6 @@
 #include "nsWidgetsCID.h"
 #include "nsIFormControl.h"
 #include "nsNameSpaceManager.h"
-#include "nsIWindowWatcher.h"
 #include "nsIObserverService.h"
 #include "nsFocusManager.h"
 #include "mozilla/dom/Element.h"
@@ -371,7 +364,7 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
   nsCOMPtr<nsIDocShellTreeItem> rootContentTreeItem;
   nsCOMPtr<nsIDocShell> currentDocShell;
 
-  startingDocShell->GetSameTypeRootTreeItem(
+  startingDocShell->GetInProcessSameTypeRootTreeItem(
       getter_AddRefs(rootContentTreeItem));
   nsCOMPtr<nsIDocShell> rootContentDocShell =
       do_QueryInterface(rootContentTreeItem);
@@ -532,7 +525,7 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
             nsCOMPtr<nsIDocShellTreeItem> fwTreeItem(fwPI->GetDocShell());
             if (NS_SUCCEEDED(rv)) {
               nsCOMPtr<nsIDocShellTreeItem> fwRootTreeItem;
-              rv = fwTreeItem->GetSameTypeRootTreeItem(
+              rv = fwTreeItem->GetInProcessSameTypeRootTreeItem(
                   getter_AddRefs(fwRootTreeItem));
               if (NS_SUCCEEDED(rv) && fwRootTreeItem == rootContentTreeItem)
                 shouldFocusEditableElement = true;
@@ -597,7 +590,8 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
       // Select the found text
       if (selection) {
         selection->RemoveAllRanges(IgnoreErrors());
-        selection->AddRange(*returnRange, IgnoreErrors());
+        selection->AddRangeAndSelectFramesAndNotifyListeners(*returnRange,
+                                                             IgnoreErrors());
       }
 
       if (!mFoundEditable && fm) {

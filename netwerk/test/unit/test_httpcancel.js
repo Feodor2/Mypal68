@@ -43,7 +43,7 @@ var observer = {
       Assert.equal(currentReferrer, "http://site1.com/");
       var uri = ios.newURI("http://site2.com");
       subject.referrerInfo = new ReferrerInfo(
-        Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
+        Ci.nsIReferrerInfo.EMPTY,
         true,
         uri
       );
@@ -72,7 +72,7 @@ let cancelDuringOnStartListener = {
       // we expect setting referrer to fail
       try {
         request.referrerInfo = new ReferrerInfo(
-          Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
+          Ci.nsIReferrerInfo.EMPTY,
           true,
           uri
         );
@@ -125,11 +125,7 @@ function makeChan(url) {
 
   // ENSURE_CALLED_BEFORE_CONNECT: set original value
   var uri = ios.newURI("http://site1.com");
-  chan.referrerInfo = new ReferrerInfo(
-    Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
-    true,
-    uri
-  );
+  chan.referrerInfo = new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, uri);
   return chan;
 }
 

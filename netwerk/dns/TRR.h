@@ -5,10 +5,12 @@
 #ifndef mozilla_net_TRR_h
 #define mozilla_net_TRR_h
 
+#include "mozilla/Assertions.h"
 #include "nsIChannel.h"
 #include "nsIHttpPushListener.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIStreamListener.h"
+#include "nsXULAppAPI.h"
 
 namespace mozilla {
 namespace net {
@@ -78,6 +80,7 @@ class TRR : public Runnable,
         mOriginSuffix(aRec->originSuffix) {
     mHost = aRec->host;
     mPB = aRec->pb;
+    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess(), "TRR must be in parent");
   }
 
   // when following CNAMEs
@@ -94,7 +97,9 @@ class TRR : public Runnable,
         mCnameLoop(aLoopCount),
         mAllowRFC1918(false),
         mTxtTtl(UINT32_MAX),
-        mOriginSuffix(aRec ? aRec->originSuffix : EmptyCString()) {}
+        mOriginSuffix(aRec ? aRec->originSuffix : EmptyCString()) {
+    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess(), "TRR must be in parent");
+  }
 
   // used on push
   explicit TRR(AHostResolver* aResolver, bool aPB)
@@ -106,7 +111,9 @@ class TRR : public Runnable,
         mPB(aPB),
         mCnameLoop(kCnameChaseMax),
         mAllowRFC1918(false),
-        mTxtTtl(UINT32_MAX) {}
+        mTxtTtl(UINT32_MAX) {
+    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess(), "TRR must be in parent");
+  }
 
   // to verify a domain
   explicit TRR(AHostResolver* aResolver, nsACString& aHost, enum TrrType aType,
@@ -122,7 +129,9 @@ class TRR : public Runnable,
         mCnameLoop(kCnameChaseMax),
         mAllowRFC1918(false),
         mTxtTtl(UINT32_MAX),
-        mOriginSuffix(aOriginSuffix) {}
+        mOriginSuffix(aOriginSuffix) {
+    MOZ_DIAGNOSTIC_ASSERT(XRE_IsParentProcess(), "TRR must be in parent");
+  }
 
   NS_IMETHOD Run() override;
   void Cancel();

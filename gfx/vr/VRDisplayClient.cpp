@@ -6,7 +6,7 @@
 
 #include "prlink.h"
 #include "prenv.h"
-#include "gfxPrefs.h"
+
 #include "nsIGlobalObject.h"
 #include "nsRefPtrHashtable.h"
 #include "nsString.h"
@@ -15,7 +15,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
 #include "nsServiceManagerUtils.h"
-#include "nsIScreenManager.h"
 
 #ifdef XP_WIN
 #  include "../layers/d3d11/CompositorD3D11.h"
@@ -94,7 +93,7 @@ void VRDisplayClient::FireEvents() {
   // Check if we need to trigger onvrdisplayactivate event
   if (!bLastEventWasMounted && mDisplayInfo.mDisplayState.isMounted) {
     bLastEventWasMounted = true;
-    if (gfxPrefs::VRAutoActivateEnabled()) {
+    if (StaticPrefs::dom_vr_autoactivate_enabled()) {
       vm->FireDOMVRDisplayMountedEvent(mDisplayInfo.mDisplayID);
     }
   }
@@ -102,7 +101,7 @@ void VRDisplayClient::FireEvents() {
   // Check if we need to trigger onvrdisplaydeactivate event
   if (bLastEventWasMounted && !mDisplayInfo.mDisplayState.isMounted) {
     bLastEventWasMounted = false;
-    if (gfxPrefs::VRAutoActivateEnabled()) {
+    if (StaticPrefs::dom_vr_autoactivate_enabled()) {
       vm->FireDOMVRDisplayUnmountedEvent(mDisplayInfo.mDisplayID);
     }
   }

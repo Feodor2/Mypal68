@@ -13,7 +13,7 @@
 #include "mozilla/Scoped.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs_print.h"
 
 #include "cairo.h"
 #include "cairo-tee.h"
@@ -1307,7 +1307,7 @@ void DrawTargetCairo::FillGlyphs(ScaledFont* aFont, const GlyphBuffer& aBuffer,
   }
 
   if (!SupportsVariationSettings(mSurface) && aFont->HasVariationSettings() &&
-      gfxPrefs::PrintFontVariationsAsPaths()) {
+      StaticPrefs::print_font_variations_as_paths()) {
     cairo_set_fill_rule(mContext, CAIRO_FILL_RULE_WINDING);
     cairo_new_path(mContext);
     cairo_glyph_path(mContext, &glyphs[0], aBuffer.mNumGlyphs);

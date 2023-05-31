@@ -3,23 +3,17 @@ py2:
     description: Python 2 compatibility check
     include: ['.']
     exclude:
-        - accessible/xpcom/AccEventGen.py
-        - browser
         - build
         - client.py
         - config
-        - configure.py
-        - devtools/shared/css/generated/mach_commands.py
         - dom
         - editor
         - gfx
-        - intl
         - ipc
         - js/src
         - js/xpconnect
         - layout
         - media
-        - memory
         - mobile
         - modules
         - mozglue
@@ -33,14 +27,10 @@ py2:
         - servo
         - taskcluster/docker/funsize-update-generator
         - testing/awsy
-        - testing/firefox-ui
-        - testing/geckodriver
         - testing/gtest
         - testing/mochitest
         - testing/mozharness
         - testing/raptor
-        - testing/remotecppunittests.py
-        - testing/runcppunittests.py
         - testing/runtimes
         - testing/tools
         - testing/tps
@@ -49,8 +39,6 @@ py2:
         - tools/docs
         - tools/jprof/split-profile.py
         - tools/lint
-        - tools/mach_commands.py
-        - tools/power/mach_commands.py
         - tools/profiler
         - tools/rb
         - tools/update-packaging

@@ -61,7 +61,6 @@ mod cgfont_to_data;
 
 use crate::binary_frame_reader::BinaryFrameReader;
 use gleam::gl;
-use glutin::GlContext;
 use crate::perf::PerfHarness;
 use crate::png::save_flipped;
 use crate::rawtest::RawtestHarness;
@@ -164,9 +163,9 @@ impl HeadlessContext {
 }
 
 pub enum WindowWrapper {
-    Window(glutin::GlWindow, Rc<gl::Gl>),
-    Angle(winit::Window, angle::Context, Rc<gl::Gl>),
-    Headless(HeadlessContext, Rc<gl::Gl>),
+    WindowedContext(glutin::WindowedContext<glutin::PossiblyCurrent>, Rc<dyn gl::Gl>),
+    Angle(winit::Window, angle::Context, Rc<dyn gl::Gl>),
+    Headless(HeadlessContext, Rc<dyn gl::Gl>),
 }
 
 pub struct HeadlessEventIterater;
@@ -174,7 +173,9 @@ pub struct HeadlessEventIterater;
 impl WindowWrapper {
     fn swap_buffers(&self) {
         match *self {
-            WindowWrapper::Window(ref window, _) => window.swap_buffers().unwrap(),
+            WindowWrapper::WindowedContext(ref windowed_context, _) => {
+                windowed_context.swap_buffers().unwrap()
+            }
             WindowWrapper::Angle(_, ref context, _) => context.swap_buffers().unwrap(),
             WindowWrapper::Headless(_, _) => {}
         }
@@ -189,7 +190,9 @@ impl WindowWrapper {
             DeviceIntSize::new(size.width as i32, size.height as i32)
         }
         match *self {
-            WindowWrapper::Window(ref window, _) => inner_size(window.window()),
+            WindowWrapper::WindowedContext(ref windowed_context, _) => {
+                inner_size(windowed_context.window())
+            }
             WindowWrapper::Angle(ref window, ..) => inner_size(window),
             WindowWrapper::Headless(ref context, _) => DeviceIntSize::new(context.width, context.height),
         }
@@ -197,7 +200,9 @@ impl WindowWrapper {
 
     fn hidpi_factor(&self) -> f32 {
         match *self {
-            WindowWrapper::Window(ref window, _) => window.get_hidpi_factor() as f32,
+            WindowWrapper::WindowedContext(ref windowed_context, _) => {
+                windowed_context.window().get_hidpi_factor() as f32
+            }
             WindowWrapper::Angle(ref window, ..) => window.get_hidpi_factor() as f32,
             WindowWrapper::Headless(_, _) => 1.0,
         }
@@ -205,8 +210,9 @@ impl WindowWrapper {
 
     fn resize(&mut self, size: DeviceIntSize) {
         match *self {
-            WindowWrapper::Window(ref mut window, _) => {
-                window.set_inner_size(LogicalSize::new(size.width as f64, size.height as f64))
+            WindowWrapper::WindowedContext(ref mut windowed_context, _) => {
+                windowed_context.window()
+                    .set_inner_size(LogicalSize::new(size.width as f64, size.height as f64))
             },
             WindowWrapper::Angle(ref mut window, ..) => {
                 window.set_inner_size(LogicalSize::new(size.width as f64, size.height as f64))
@@ -217,23 +223,25 @@ impl WindowWrapper {
 
     fn set_title(&mut self, title: &str) {
         match *self {
-            WindowWrapper::Window(ref window, _) => window.set_title(title),
+            WindowWrapper::WindowedContext(ref windowed_context, _) => {
+                windowed_context.window().set_title(title)
+            }
             WindowWrapper::Angle(ref window, ..) => window.set_title(title),
             WindowWrapper::Headless(_, _) => (),
         }
     }
 
-    pub fn gl(&self) -> &gl::Gl {
+    pub fn gl(&self) -> &dyn gl::Gl {
         match *self {
-            WindowWrapper::Window(_, ref gl) |
+            WindowWrapper::WindowedContext(_, ref gl) |
             WindowWrapper::Angle(_, _, ref gl) |
             WindowWrapper::Headless(_, ref gl) => &**gl,
         }
     }
 
-    pub fn clone_gl(&self) -> Rc<gl::Gl> {
+    pub fn clone_gl(&self) -> Rc<dyn gl::Gl> {
         match *self {
-            WindowWrapper::Window(_, ref gl) |
+            WindowWrapper::WindowedContext(_, ref gl) |
             WindowWrapper::Angle(_, _, ref gl) |
             WindowWrapper::Headless(_, ref gl) => gl.clone(),
         }
@@ -246,49 +254,66 @@ fn make_window(
     vsync: bool,
     events_loop: &Option<winit::EventsLoop>,
     angle: bool,
+    gl_request: glutin::GlRequest,
 ) -> WindowWrapper {
     let wrapper = match *events_loop {
         Some(ref events_loop) => {
             let context_builder = glutin::ContextBuilder::new()
-                .with_gl(glutin::GlRequest::GlThenGles {
-                    opengl_version: (3, 2),
-                    opengles_version: (3, 0),
-                })
+                .with_gl(gl_request)
                 .with_vsync(vsync);
             let window_builder = winit::WindowBuilder::new()
                 .with_title("WRench")
                 .with_multitouch()
                 .with_dimensions(LogicalSize::new(size.width as f64, size.height as f64));
 
-            let init = |context: &glutin::GlContext| {
-                unsafe {
-                    context
-                        .make_current()
-                        .expect("unable to make context current!");
-                }
-
-                match context.get_api() {
-                    glutin::Api::OpenGl => unsafe {
-                        gl::GlFns::load_with(|symbol| context.get_proc_address(symbol) as *const _)
-                    },
-                    glutin::Api::OpenGlEs => unsafe {
-                        gl::GlesFns::load_with(|symbol| context.get_proc_address(symbol) as *const _)
-                    },
-                    glutin::Api::WebGl => unimplemented!(),
-                }
-            };
-
             if angle {
                 let (_window, _context) = angle::Context::with_window(
                     window_builder, context_builder, events_loop
                 ).unwrap();
-                let gl = init(&_context);
+
+                unsafe {
+                    _context
+                        .make_current()
+                        .expect("unable to make context current!");
+                }
+
+                let gl = match _context.get_api() {
+                    glutin::Api::OpenGl => unsafe {
+                        gl::GlFns::load_with(|symbol| _context.get_proc_address(symbol) as *const _)
+                    },
+                    glutin::Api::OpenGlEs => unsafe {
+                        gl::GlesFns::load_with(|symbol| _context.get_proc_address(symbol) as *const _)
+                    },
+                    glutin::Api::WebGl => unimplemented!(),
+                };
+
                 WindowWrapper::Angle(_window, _context, gl)
             } else {
-                let window = glutin::GlWindow::new(window_builder, context_builder, events_loop)
+                let windowed_context = context_builder
+                    .build_windowed(window_builder, events_loop)
                     .unwrap();
-                let gl = init(&window);
-                WindowWrapper::Window(window, gl)
+
+                let windowed_context = unsafe {
+                    windowed_context
+                        .make_current()
+                        .expect("unable to make context current!")
+                };
+
+                let gl = match windowed_context.get_api() {
+                    glutin::Api::OpenGl => unsafe {
+                        gl::GlFns::load_with(
+                            |symbol| windowed_context.get_proc_address(symbol) as *const _
+                        )
+                    },
+                    glutin::Api::OpenGlEs => unsafe {
+                        gl::GlesFns::load_with(
+                            |symbol| windowed_context.get_proc_address(symbol) as *const _
+                        )
+                    },
+                    glutin::Api::WebGl => unimplemented!(),
+                };
+
+                WindowWrapper::WindowedContext(windowed_context, gl)
             }
         }
         None => {
@@ -336,7 +361,7 @@ struct Notifier {
 
 // setup a notifier so we can wait for frames to be finished
 impl RenderNotifier for Notifier {
-    fn clone(&self) -> Box<RenderNotifier> {
+    fn clone(&self) -> Box<dyn RenderNotifier> {
         Box::new(Notifier {
             tx: self.tx.clone(),
         })
@@ -361,7 +386,7 @@ impl RenderNotifier for Notifier {
     }
 }
 
-fn create_notifier() -> (Box<RenderNotifier>, Receiver<NotifierEvent>) {
+fn create_notifier() -> (Box<dyn RenderNotifier>, Receiver<NotifierEvent>) {
     let (tx, rx) = channel();
     (Box::new(Notifier { tx: tx }), rx)
 }
@@ -413,8 +438,19 @@ fn main() {
         let mut args = vec!["wrench".to_string()];
 
         if let Ok(wrench_args) = fs::read_to_string("/sdcard/wrench/args") {
-            for arg in wrench_args.split_whitespace() {
-                args.push(arg.to_string());
+            for line in wrench_args.lines() {
+                if line.starts_with("env: ") {
+                    let envvar = &line[5..];
+                    if let Some(ix) = envvar.find('=') {
+                        std::env::set_var(&envvar[0..ix], &envvar[ix + 1..]);
+                    } else {
+                        std::env::set_var(envvar, "");
+                    }
+                    continue;
+                }
+                for arg in line.split_whitespace() {
+                    args.push(arg.to_string());
+                }
             }
         }
 
@@ -465,14 +501,39 @@ fn main() {
         None => webrender::ChasePrimitive::Nothing,
     };
 
+    let dump_shader_source = args.value_of("dump_shader_source").map(String::from);
+
     let mut events_loop = if args.is_present("headless") {
         None
     } else {
         Some(winit::EventsLoop::new())
     };
 
+    let gl_request = match args.value_of("renderer") {
+        Some("es3") => {
+            glutin::GlRequest::Specific(glutin::Api::OpenGlEs, (3, 0))
+        }
+        Some("gl3") => {
+            glutin::GlRequest::Specific(glutin::Api::OpenGl, (3, 2))
+        }
+        Some("default") | None => {
+            glutin::GlRequest::GlThenGles {
+                opengl_version: (3, 2),
+                opengles_version: (3, 0),
+            }
+        }
+        Some(api) => {
+            panic!("Unexpected renderer string {}", api);
+        }
+    };
+
     let mut window = make_window(
-        size, dp_ratio, args.is_present("vsync"), &events_loop, args.is_present("angle"),
+        size,
+        dp_ratio,
+        args.is_present("vsync"),
+        &events_loop,
+        args.is_present("angle"),
+        gl_request,
     );
     let dp_ratio = dp_ratio.unwrap_or(window.hidpi_factor());
     let dim = window.get_inner_size();
@@ -496,6 +557,7 @@ fn main() {
         dim,
         args.is_present("rebuild"),
         args.is_present("no_subpixel_aa"),
+        args.is_present("no_picture_caching"),
         args.is_present("verbose"),
         args.is_present("no_scissor"),
         args.is_present("no_batch"),
@@ -503,6 +565,7 @@ fn main() {
         args.is_present("slow_subpixel"),
         zoom_factor.unwrap_or(1.0),
         chase_primitive,
+        dump_shader_source,
         notifier,
     );
 
@@ -513,7 +576,15 @@ fn main() {
     }
 
     if let Some(subargs) = args.subcommand_matches("show") {
-        render(&mut wrench, &mut window, size, &mut events_loop, subargs);
+        let no_block = args.is_present("no_block");
+        render(
+            &mut wrench,
+            &mut window,
+            size,
+            &mut events_loop,
+            subargs,
+            no_block,
+        );
     } else if let Some(subargs) = args.subcommand_matches("png") {
         let surface = match subargs.value_of("surface") {
             Some("screen") | None => png::ReadSurface::Screen,
@@ -556,6 +627,7 @@ fn render<'a>(
     size: DeviceIntSize,
     events_loop: &mut Option<winit::EventsLoop>,
     subargs: &clap::ArgMatches<'a>,
+    no_block: bool,
 ) {
     let input_path = subargs.value_of("INPUT").map(PathBuf::from).unwrap();
 
@@ -568,7 +640,7 @@ fn render<'a>(
             window.resize(fb_size);
         }
         wrench.document_id = captured.document_id;
-        Box::new(captured) as Box<WrenchThing>
+        Box::new(captured) as Box<dyn WrenchThing>
     } else {
         let extension = input_path
             .extension()
@@ -577,8 +649,8 @@ fn render<'a>(
             .expect("Tried to render with an unknown file type.");
 
         match extension {
-            "yaml" => Box::new(YamlFrameReader::new_from_args(subargs)) as Box<WrenchThing>,
-            "bin" => Box::new(BinaryFrameReader::new_from_args(subargs)) as Box<WrenchThing>,
+            "yaml" => Box::new(YamlFrameReader::new_from_args(subargs)) as Box<dyn WrenchThing>,
+            "bin" => Box::new(BinaryFrameReader::new_from_args(subargs)) as Box<dyn WrenchThing>,
             _ => panic!("Tried to render with an unknown file type."),
         }
     };
@@ -763,6 +835,11 @@ fn render<'a>(
                             wrench.api.send_debug_cmd(DebugCommand::SetFlags(debug_flags));
                             do_render = true;
                         }
+                        VirtualKeyCode::Y => {
+                            println!("Clearing all caches...");
+                            wrench.api.send_debug_cmd(DebugCommand::ClearCaches(ClearCache::all()));
+                            do_frame = true;
+                        }
                         _ => {}
                     }
                     _ => {}
@@ -815,7 +892,7 @@ fn render<'a>(
                 // Block the thread until at least one event arrives
                 // On Android, we are generally profiling when running
                 // wrench, and don't want to block on UI events.
-                if cfg!(not(target_os = "android")) {
+                if !no_block && cfg!(not(target_os = "android")) {
                     events_loop.run_forever(|event| {
                         pending_events.push(event);
                         winit::ControlFlow::Break

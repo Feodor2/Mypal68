@@ -8,8 +8,8 @@
 #include "WMF.h"
 #include "d3d11.h"
 #include "gfxImageSurface.h"
-#include "gfxPrefs.h"
 #include "gfxWindowsPlatform.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/layers/CompositableClient.h"
 #include "mozilla/layers/CompositableForwarder.h"
@@ -221,11 +221,11 @@ D3D11RecycleAllocator::D3D11RecycleAllocator(
     gfx::SurfaceFormat aPreferredFormat)
     : TextureClientRecycleAllocator(aAllocator),
       mDevice(aDevice),
-      mCanUseNV12(gfxPrefs::PDMWMFUseNV12Format() &&
+      mCanUseNV12(StaticPrefs::media_wmf_use_nv12_format() &&
                   gfx::DeviceManagerDx::Get()->CanUseNV12()),
-      mCanUseP010(gfxPrefs::PDMWMFUseNV12Format() &&
+      mCanUseP010(StaticPrefs::media_wmf_use_nv12_format() &&
                   gfx::DeviceManagerDx::Get()->CanUseP010()),
-      mCanUseP016(gfxPrefs::PDMWMFUseNV12Format() &&
+      mCanUseP016(StaticPrefs::media_wmf_use_nv12_format() &&
                   gfx::DeviceManagerDx::Get()->CanUseP016()) {
   SetPreferredSurfaceFormat(aPreferredFormat);
 }
@@ -254,7 +254,7 @@ already_AddRefed<TextureClient> D3D11RecycleAllocator::CreateOrRecycleClient(
   mImageDevice = device;
 
   TextureAllocationFlags allocFlags = TextureAllocationFlags::ALLOC_DEFAULT;
-  if (gfxPrefs::PDMWMFUseSyncTexture() ||
+  if (StaticPrefs::media_wmf_use_sync_texture_AtStartup() ||
       mDevice == DeviceManagerDx::Get()->GetCompositorDevice()) {
     // If our device is the compositor device, we don't need any synchronization
     // in practice.

@@ -14,6 +14,7 @@
 #include "mozilla/layers/IpcResourceUpdateQueue.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/layers/SyncObject.h"
+#include "mozilla/layers/WebRenderCompositionRecorder.h"
 #include "mozilla/Range.h"
 #include "mozilla/webrender/webrender_ffi.h"
 #include "mozilla/webrender/WebRenderTypes.h"
@@ -119,14 +120,15 @@ class TransactionBuilder final {
                 wr::Vec<uint8_t>& aBytes);
 
   void AddBlobImage(wr::BlobImageKey aKey, const ImageDescriptor& aDescriptor,
-                    wr::Vec<uint8_t>& aBytes);
+                    wr::Vec<uint8_t>& aBytes,
+                    const wr::DeviceIntRect& aVisibleRect);
 
   void AddExternalImageBuffer(ImageKey key, const ImageDescriptor& aDescriptor,
                               ExternalImageId aHandle);
 
   void AddExternalImage(ImageKey key, const ImageDescriptor& aDescriptor,
                         ExternalImageId aExtID,
-                        wr::WrExternalImageBufferType aBufferType,
+                        wr::ExternalImageType aImageType,
                         uint8_t aChannelIndex = 0);
 
   void UpdateImageBuffer(wr::ImageKey aKey, const ImageDescriptor& aDescriptor,
@@ -135,19 +137,23 @@ class TransactionBuilder final {
   void UpdateBlobImage(wr::BlobImageKey aKey,
                        const ImageDescriptor& aDescriptor,
                        wr::Vec<uint8_t>& aBytes,
+                       const wr::DeviceIntRect& aVisibleRect,
                        const wr::LayoutIntRect& aDirtyRect);
 
   void UpdateExternalImage(ImageKey aKey, const ImageDescriptor& aDescriptor,
                            ExternalImageId aExtID,
-                           wr::WrExternalImageBufferType aBufferType,
+                           wr::ExternalImageType aImageType,
                            uint8_t aChannelIndex = 0);
 
-  void UpdateExternalImageWithDirtyRect(
-      ImageKey aKey, const ImageDescriptor& aDescriptor, ExternalImageId aExtID,
-      wr::WrExternalImageBufferType aBufferType,
-      const wr::DeviceIntRect& aDirtyRect, uint8_t aChannelIndex = 0);
+  void UpdateExternalImageWithDirtyRect(ImageKey aKey,
+                                        const ImageDescriptor& aDescriptor,
+                                        ExternalImageId aExtID,
+                                        wr::ExternalImageType aImageType,
+                                        const wr::DeviceIntRect& aDirtyRect,
+                                        uint8_t aChannelIndex = 0);
 
-  void SetImageVisibleArea(BlobImageKey aKey, const wr::DeviceIntRect& aArea);
+  void SetBlobImageVisibleArea(BlobImageKey aKey,
+                               const wr::DeviceIntRect& aArea);
 
   void DeleteImage(wr::ImageKey aKey);
 
@@ -191,6 +197,7 @@ class TransactionWrapper final {
       const layers::ScrollableLayerGuid::ViewID& aScrollId,
       const wr::LayoutPoint& aScrollPosition);
   void UpdatePinchZoom(float aZoom);
+  void UpdateIsTransformPinchZooming(uint64_t aAnimationId, bool aIsZooming);
 
  private:
   Transaction* mTxn;
@@ -252,6 +259,9 @@ class WebRenderAPI final {
   layers::SyncHandle GetSyncHandle() const { return mSyncHandle; }
 
   void Capture();
+
+  void SetCompositionRecorder(
+      RefPtr<layers::WebRenderCompositionRecorder>&& aRecorder);
 
  protected:
   WebRenderAPI(wr::DocumentHandle* aHandle, wr::WindowId aId,
@@ -322,7 +332,8 @@ struct MOZ_STACK_CLASS StackingContextParams : public WrStackingContextParams {
                                 nullptr,
                                 /* is_backface_visible = */ true,
                                 /* cache_tiles = */ false,
-                                wr::MixBlendMode::Normal} {}
+                                wr::MixBlendMode::Normal,
+                                /* is_backdrop_root = */ false} {}
 
   void SetPreserve3D(bool aPreserve) {
     transform_style =
@@ -427,6 +438,12 @@ class DisplayListBuilder final {
   void PushClearRectWithComplexRegion(const wr::LayoutRect& aBounds,
                                       const wr::ComplexClipRegion& aRegion);
 
+  void PushBackdropFilter(const wr::LayoutRect& aBounds,
+                          const wr::ComplexClipRegion& aRegion,
+                          const nsTArray<wr::FilterOp>& aFilters,
+                          const nsTArray<wr::WrFilterData>& aFilterDatas,
+                          bool aIsBackfaceVisible);
+
   void PushLinearGradient(const wr::LayoutRect& aBounds,
                           const wr::LayoutRect& aClip, bool aIsBackfaceVisible,
                           const wr::LayoutPoint& aStartPoint,
@@ -490,31 +507,25 @@ class DisplayListBuilder final {
 
   void PushBorderImage(const wr::LayoutRect& aBounds,
                        const wr::LayoutRect& aClip, bool aIsBackfaceVisible,
-                       const wr::LayoutSideOffsets& aWidths,
-                       wr::ImageKey aImage, const int32_t aWidth,
-                       const int32_t aHeight,
-                       const wr::SideOffsets2D<int32_t>& aSlice,
-                       const wr::SideOffsets2D<float>& aOutset,
-                       const wr::RepeatMode& aRepeatHorizontal,
-                       const wr::RepeatMode& aRepeatVertical);
+                       const wr::WrBorderImage& aParams);
 
   void PushBorderGradient(const wr::LayoutRect& aBounds,
                           const wr::LayoutRect& aClip, bool aIsBackfaceVisible,
                           const wr::LayoutSideOffsets& aWidths,
                           const int32_t aWidth, const int32_t aHeight,
-                          const wr::SideOffsets2D<int32_t>& aSlice,
+                          bool aFill, const wr::DeviceIntSideOffsets& aSlice,
                           const wr::LayoutPoint& aStartPoint,
                           const wr::LayoutPoint& aEndPoint,
                           const nsTArray<wr::GradientStop>& aStops,
                           wr::ExtendMode aExtendMode,
-                          const wr::SideOffsets2D<float>& aOutset);
+                          const wr::LayoutSideOffsets& aOutset);
 
   void PushBorderRadialGradient(
       const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
-      bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths,
+      bool aIsBackfaceVisible, const wr::LayoutSideOffsets& aWidths, bool aFill,
       const wr::LayoutPoint& aCenter, const wr::LayoutSize& aRadius,
       const nsTArray<wr::GradientStop>& aStops, wr::ExtendMode aExtendMode,
-      const wr::SideOffsets2D<float>& aOutset);
+      const wr::LayoutSideOffsets& aOutset);
 
   void PushText(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
                 bool aIsBackfaceVisible, const wr::ColorF& aColor,
@@ -629,6 +640,7 @@ class DisplayListBuilder final {
   wr::PipelineId mPipelineId;
   wr::LayoutSize mContentSize;
 
+  nsTArray<wr::PipelineId> mRemotePipelineIds;
   RenderRoot mRenderRoot;
   bool mSendSubBuilderDisplayList;
 

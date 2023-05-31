@@ -6,7 +6,6 @@
 #include "GLContextEAGL.h"
 #include "nsDebug.h"
 #include "nsIWidget.h"
-#include "gfxPrefs.h"
 #include "gfxFailure.h"
 #include "prenv.h"
 #include "mozilla/Preferences.h"

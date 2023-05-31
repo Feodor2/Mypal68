@@ -4,6 +4,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/LinkedList.h"
+#include "mozilla/StaticPrefs_content.h"
 
 #include "nsCORSListenerProxy.h"
 #include "nsIChannel.h"
@@ -12,12 +13,10 @@
 #include "nsIHttpChannelInternal.h"
 #include "nsError.h"
 #include "nsContentUtils.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsNetUtil.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsServiceManagerUtils.h"
 #include "nsMimeTypes.h"
-#include "nsIStreamConverterService.h"
 #include "nsStringStream.h"
 #include "nsGkAtoms.h"
 #include "nsWhitespaceTokenizer.h"
@@ -33,25 +32,22 @@
 #include "nsILoadGroup.h"
 #include "nsILoadContext.h"
 #include "nsIConsoleService.h"
-#include "nsIDOMWindowUtils.h"
-#include "nsIDOMWindow.h"
 #include "nsINetworkInterceptController.h"
 #include "nsICorsPreflightCallback.h"
 #include "nsISupportsImpl.h"
 #include "nsHttpChannel.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/NullPrincipal.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsQueryObject.h"
+#include "mozilla/StaticPrefs_network.h"
 #include <algorithm>
 
 using namespace mozilla;
 using namespace mozilla::net;
 
 #define PREFLIGHT_CACHE_SIZE 100
-
-static bool gDisableCORS = false;
-static bool gDisableCORSPrivateData = false;
 
 static void LogBlockedRequest(nsIRequest* aRequest, const char* aProperty,
                               const char16_t* aParam, uint32_t aBlockingReason,
@@ -71,8 +67,12 @@ static void LogBlockedRequest(nsIRequest* aRequest, const char* aProperty,
 
   // Generate the error message
   nsAutoString blockedMessage;
+  AutoTArray<nsString, 2> params;
+  CopyUTF8toUTF16(spec, *params.AppendElement());
+  if (aParam) {
+    params.AppendElement(aParam);
+  }
   NS_ConvertUTF8toUTF16 specUTF16(spec);
-  const char16_t* params[] = {specUTF16.get(), aParam};
   rv = nsContentUtils::FormatLocalizedString(
       nsContentUtils::eSECURITY_PROPERTIES, aProperty, params, blockedMessage);
 
@@ -107,8 +107,7 @@ static void LogBlockedRequest(nsIRequest* aRequest, const char* aProperty,
   bool fromChromeContext = false;
   if (channel) {
     nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
-    fromChromeContext =
-        nsContentUtils::IsSystemPrincipal(loadInfo->TriggeringPrincipal());
+    fromChromeContext = loadInfo->TriggeringPrincipal()->IsSystemPrincipal();
   }
 
   // we are passing aProperty as the category so we can link to the
@@ -373,13 +372,6 @@ NS_IMPL_ISUPPORTS(nsCORSListenerProxy, nsIStreamListener, nsIRequestObserver,
                   nsIThreadRetargetableStreamListener)
 
 /* static */
-void nsCORSListenerProxy::Startup() {
-  Preferences::AddBoolVarCache(&gDisableCORS, "content.cors.disable");
-  Preferences::AddBoolVarCache(&gDisableCORSPrivateData,
-                               "content.cors.no_private_data");
-}
-
-/* static */
 void nsCORSListenerProxy::Shutdown() {
   delete sPreflightCache;
   sPreflightCache = nullptr;
@@ -391,7 +383,7 @@ nsCORSListenerProxy::nsCORSListenerProxy(nsIStreamListener* aOuter,
     : mOuterListener(aOuter),
       mRequestingPrincipal(aRequestingPrincipal),
       mOriginHeaderPrincipal(aRequestingPrincipal),
-      mWithCredentials(aWithCredentials && !gDisableCORSPrivateData),
+      mWithCredentials(aWithCredentials),
       mRequestApproved(false),
       mHasBeenCrossSite(false),
 #ifdef DEBUG
@@ -510,7 +502,7 @@ nsresult nsCORSListenerProxy::CheckRequestApproved(nsIRequest* aRequest) {
   nsCOMPtr<nsIHttpChannel> topChannel;
   topChannel.swap(mHttpChannel);
 
-  if (gDisableCORS) {
+  if (StaticPrefs::content_cors_disable()) {
     LogBlockedRequest(aRequest, "CORSDisabled", nullptr,
                       nsILoadInfo::BLOCKING_REASON_CORSDISABLED, topChannel);
     return NS_ERROR_DOM_BAD_URI;
@@ -550,6 +542,13 @@ nsresult nsCORSListenerProxy::CheckRequestApproved(nsIRequest* aRequest) {
     // For synthesized responses, we don't need to perform any checks.
     // Note: This would be unsafe if we ever changed our behavior to allow
     // service workers to intercept CORS preflights.
+    return NS_OK;
+  }
+  if (loadInfo->GetBypassCORSChecks()) {
+    // This flag gets set if a WebExtention redirects a channel
+    // @onBeforeRequest. At this point no request has been made so we don't have
+    // the "Access-Control-Allow-Origin" header yet and the redirect would fail.
+    // So we're skipping the CORS check in that case.
     return NS_OK;
   }
 
@@ -829,12 +828,9 @@ bool CheckUpgradeInsecureRequestsPreventsCORS(
   nsCOMPtr<nsIURI> channelURI;
   nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(channelURI));
   NS_ENSURE_SUCCESS(rv, false);
-  bool isHttpScheme = false;
-  rv = channelURI->SchemeIs("http", &isHttpScheme);
-  NS_ENSURE_SUCCESS(rv, false);
 
   // upgrade insecure requests is only applicable to http requests
-  if (!isHttpScheme) {
+  if (!channelURI->SchemeIs("http")) {
     return false;
   }
 
@@ -890,10 +886,7 @@ nsresult nsCORSListenerProxy::UpdateChannel(nsIChannel* aChannel,
 
   // exempt data URIs from the same origin check.
   if (aAllowDataURI == DataURIHandling::Allow && originalURI == uri) {
-    bool dataScheme = false;
-    rv = uri->SchemeIs("data", &dataScheme);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (dataScheme) {
+    if (uri->SchemeIs("data")) {
       return NS_OK;
     }
     if (loadInfo->GetAboutBlankInherits() && NS_IsAboutBlank(uri)) {
@@ -977,7 +970,7 @@ nsresult nsCORSListenerProxy::UpdateChannel(nsIChannel* aChannel,
   NS_ENSURE_TRUE(http, NS_ERROR_FAILURE);
 
   // hide the Origin header when requesting from .onion and requesting CORS
-  if (dom::ReferrerInfo::HideOnionReferrerSource()) {
+  if (StaticPrefs::network_http_referer_hideOnionSource()) {
     nsCOMPtr<nsIURI> potentialOnionUri;  // the candidate uri in header Origin:
     rv = mOriginHeaderPrincipal->GetURI(getter_AddRefs(potentialOnionUri));
     NS_ENSURE_SUCCESS(rv, rv);
@@ -993,7 +986,7 @@ nsresult nsCORSListenerProxy::UpdateChannel(nsIChannel* aChannel,
 
     if (!currentOrgin.EqualsIgnoreCase(origin.get()) &&
         StringEndsWith(potentialOnionHost, NS_LITERAL_CSTRING(".onion"))) {
-      origin.Truncate();
+      origin.AssignLiteral("null");
     }
   }
 
@@ -1427,7 +1420,7 @@ nsresult nsCORSListenerProxy::StartCORSPreflight(
     nsTArray<nsCString>& aUnsafeHeaders, nsIChannel** aPreflightChannel) {
   *aPreflightChannel = nullptr;
 
-  if (gDisableCORS) {
+  if (StaticPrefs::content_cors_disable()) {
     nsCOMPtr<nsIHttpChannel> http = do_QueryInterface(aRequestChannel);
     LogBlockedRequest(aRequestChannel, "CORSDisabled", nullptr,
                       nsILoadInfo::BLOCKING_REASON_CORSDISABLED, http);

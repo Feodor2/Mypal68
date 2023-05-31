@@ -4,11 +4,21 @@
 
 /* eslint-env mozilla/frame-script */
 
-const { WebProgressChild } = ChromeUtils.import(
-  "resource://gre/modules/WebProgressChild.jsm"
-);
+try {
+  docShell
+    .QueryInterface(Ci.nsIInterfaceRequestor)
+    .getInterface(Ci.nsIBrowserChild)
+    .beginSendingWebProgressEventsToParent();
+} catch (e) {
+  // In responsive design mode, we do not have a BrowserChild for the in-parent
+  // document.
+}
 
-this.WebProgress = new WebProgressChild(this);
+// This message is used to measure content process startup performance in Talos
+// tests.
+sendAsyncMessage("Content:BrowserChildReady", {
+  time: Services.telemetry.msSystemNow(),
+});
 
 addEventListener(
   "DOMTitleChanged",

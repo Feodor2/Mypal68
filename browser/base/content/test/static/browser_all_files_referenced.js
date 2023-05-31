@@ -181,21 +181,12 @@ var whitelist = [
     file: "chrome://mozapps/skin/downloads/downloadButtons.png",
     platforms: ["linux", "win"],
   },
-  // Bug 1348558
-  {
-    file: "chrome://mozapps/skin/update/downloadButtons.png",
-    platforms: ["linux"],
-  },
   // Bug 1348559
   { file: "chrome://pippki/content/resetpassword.xul" },
   // Bug 1337345
   { file: "resource://gre/modules/Manifest.jsm" },
-  // Bug 1548381
-  { file: "resource://gre/modules/PasswordGenerator.jsm" },
   // Bug 1351097
   { file: "resource://gre/modules/accessibility/AccessFu.jsm" },
-  // Bug 1356043
-  { file: "resource://gre/modules/PerfMeasurement.jsm" },
   // Bug 1356045
   { file: "chrome://global/content/test-ipc.xul" },
   // Bug 1378173 (warning: still used by devtools)

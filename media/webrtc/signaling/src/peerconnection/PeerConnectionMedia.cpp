@@ -15,7 +15,6 @@
 
 #include "nsContentUtils.h"
 #include "nsIURI.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsICancelable.h"
 #include "nsILoadInfo.h"
 #include "nsIContentPolicy.h"
@@ -24,10 +23,14 @@
 #include "nsIPrincipal.h"
 #include "mozilla/LoadInfo.h"
 #include "nsProxyRelease.h"
+#include "nsIHttpChannelInternal.h"
 
 #include "nsIScriptGlobalObject.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/net/NeckoChild.h"
+#include "mozilla/net/ProxyConfigLookup.h"
+#include "mozilla/net/ProxyConfigLookupChild.h"
 #include "MediaManager.h"
 #include "WebrtcGmpVideoCodec.h"
 
@@ -39,50 +42,6 @@ static const char* pcmLogTag = "PeerConnectionMedia";
 #  undef LOGTAG
 #endif
 #define LOGTAG pcmLogTag
-
-NS_IMETHODIMP PeerConnectionMedia::ProtocolProxyQueryHandler::OnProxyAvailable(
-    nsICancelable* request, nsIChannel* aChannel, nsIProxyInfo* proxyinfo,
-    nsresult result) {
-  if (!pcm_->mProxyRequest) {
-    // PeerConnectionMedia is no longer waiting
-    return NS_OK;
-  }
-
-  CSFLogInfo(LOGTAG, "%s: Proxy Available: %d", __FUNCTION__, (int)result);
-
-  if (NS_SUCCEEDED(result) && proxyinfo) {
-    SetProxyOnPcm(*proxyinfo);
-  }
-
-  pcm_->mProxyResolveCompleted = true;
-  pcm_->mProxyRequest = nullptr;
-  pcm_->FlushIceCtxOperationQueueIfReady();
-
-  return NS_OK;
-}
-
-void PeerConnectionMedia::ProtocolProxyQueryHandler::SetProxyOnPcm(
-    nsIProxyInfo& proxyinfo) {
-  CSFLogInfo(LOGTAG, "%s: Had proxyinfo", __FUNCTION__);
-
-  nsCString alpn = NS_LITERAL_CSTRING("webrtc,c-webrtc");
-  auto browserChild = BrowserChild::GetFrom(pcm_->GetWindow());
-  if (!browserChild) {
-    // Android doesn't have browser child apparently...
-    return;
-  }
-  TabId id = browserChild->GetTabId();
-  nsCOMPtr<nsILoadInfo> loadInfo = new net::LoadInfo(
-      nsContentUtils::GetSystemPrincipal(), nullptr, nullptr, 0, 0);
-
-  Maybe<net::LoadInfoArgs> loadInfoArgs;
-  MOZ_ALWAYS_SUCCEEDS(
-      mozilla::ipc::LoadInfoToLoadInfoArgs(loadInfo, &loadInfoArgs));
-  pcm_->mProxyConfig.reset(new NrSocketProxyConfig(id, alpn, *loadInfoArgs));
-}
-
-NS_IMPL_ISUPPORTS(PeerConnectionMedia::ProtocolProxyQueryHandler,
-                  nsIProtocolProxyCallback)
 
 void PeerConnectionMedia::StunAddrsHandler::OnStunAddrsAvailable(
     const mozilla::net::NrIceStunAddrArray& addrs) {
@@ -96,8 +55,7 @@ void PeerConnectionMedia::StunAddrsHandler::OnStunAddrsAvailable(
     // If parent process returns 0 STUN addresses, change ICE connection
     // state to failed.
     if (!pcm_->mStunAddrs.Length()) {
-      pcm_->SignalIceConnectionStateChange(
-          dom::PCImplIceConnectionState::Failed);
+      pcm_->IceConnectionStateChange_m(dom::RTCIceConnectionState::Failed);
     }
 
     pcm_ = nullptr;
@@ -113,7 +71,9 @@ PeerConnectionMedia::PeerConnectionMedia(PeerConnectionImpl* parent)
       mSTSThread(mParent->GetSTSThread()),
       mProxyResolveCompleted(false),
       mProxyConfig(nullptr),
-      mLocalAddrsCompleted(false) {}
+      mLocalAddrsCompleted(false),
+      mTargetForDefaultLocalAddressLookupIsSet(false),
+      mDestroyed(false) {}
 
 PeerConnectionMedia::~PeerConnectionMedia() {
   MOZ_RELEASE_ASSERT(!mMainThread);
@@ -152,55 +112,22 @@ nsresult PeerConnectionMedia::InitProxy() {
     return NS_OK;
   }
 
-  nsresult rv;
-  nsCOMPtr<nsIProtocolProxyService> pps =
-      do_GetService(NS_PROTOCOLPROXYSERVICE_CONTRACTID, &rv);
-  if (NS_FAILED(rv)) {
-    CSFLogError(LOGTAG, "%s: Failed to get proxy service: %d", __FUNCTION__,
-                (int)rv);
-    return NS_ERROR_FAILURE;
+  if (!XRE_IsParentProcess()) {
+    if (NS_WARN_IF(!net::gNeckoChild)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    RefPtr<PeerConnectionMedia> self = this;
+    net::ProxyConfigLookupChild* actor = new net::ProxyConfigLookupChild(
+        [self](bool aProxied) { self->ProxySettingReceived(aProxied); });
+
+    net::gNeckoChild->SendPProxyConfigLookupConstructor(actor);
+    return NS_OK;
   }
 
-  // We use the following URL to find the "default" proxy address for all HTTPS
-  // connections.  We will only attempt one HTTP(S) CONNECT per peer connection.
-  // "example.com" is guaranteed to be unallocated and should return the best
-  // default.
-  nsCOMPtr<nsIURI> fakeHttpsLocation;
-  rv = NS_NewURI(getter_AddRefs(fakeHttpsLocation), "https://example.com");
-  if (NS_FAILED(rv)) {
-    CSFLogError(LOGTAG, "%s: Failed to set URI: %d", __FUNCTION__, (int)rv);
-    return NS_ERROR_FAILURE;
-  }
-
-  nsCOMPtr<nsIChannel> channel;
-  rv = NS_NewChannel(getter_AddRefs(channel), fakeHttpsLocation,
-                     nsContentUtils::GetSystemPrincipal(),
-                     nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL,
-                     nsIContentPolicy::TYPE_OTHER);
-
-  if (NS_FAILED(rv)) {
-    CSFLogError(LOGTAG, "%s: Failed to get channel from URI: %d", __FUNCTION__,
-                (int)rv);
-    return NS_ERROR_FAILURE;
-  }
-
-  nsCOMPtr<nsIEventTarget> target =
-      mParent->GetWindow()
-          ? mParent->GetWindow()->EventTargetFor(TaskCategory::Network)
-          : nullptr;
-  RefPtr<ProtocolProxyQueryHandler> handler =
-      new ProtocolProxyQueryHandler(this);
-  rv = pps->AsyncResolve(channel,
-                         nsIProtocolProxyService::RESOLVE_PREFER_HTTPS_PROXY |
-                             nsIProtocolProxyService::RESOLVE_ALWAYS_TUNNEL,
-                         handler, target, getter_AddRefs(mProxyRequest));
-  if (NS_FAILED(rv)) {
-    CSFLogError(LOGTAG, "%s: Failed to resolve protocol proxy: %d",
-                __FUNCTION__, (int)rv);
-    return NS_ERROR_FAILURE;
-  }
-
-  return NS_OK;
+  RefPtr<PeerConnectionMedia> self = this;
+  return net::ProxyConfigLookup::Create(
+      [self](bool aProxied) { self->ProxySettingReceived(aProxied); });
 }
 
 nsresult PeerConnectionMedia::Init() {
@@ -217,15 +144,11 @@ nsresult PeerConnectionMedia::Init() {
 void PeerConnectionMedia::EnsureTransports(const JsepSession& aSession) {
   for (const auto& transceiver : aSession.GetTransceivers()) {
     if (transceiver->HasOwnTransport()) {
-      RUN_ON_THREAD(
-          GetSTSThread(),
-          WrapRunnable(mTransportHandler,
-                       &MediaTransportHandler::EnsureProvisionalTransport,
-                       transceiver->mTransport.mTransportId,
-                       transceiver->mTransport.mLocalUfrag,
-                       transceiver->mTransport.mLocalPwd,
-                       transceiver->mTransport.mComponents),
-          NS_DISPATCH_NORMAL);
+      mTransportHandler->EnsureProvisionalTransport(
+          transceiver->mTransport.mTransportId,
+          transceiver->mTransport.mLocalUfrag,
+          transceiver->mTransport.mLocalPwd,
+          transceiver->mTransport.mComponents);
     }
   }
 
@@ -242,11 +165,7 @@ nsresult PeerConnectionMedia::UpdateTransports(const JsepSession& aSession,
     }
   }
 
-  RUN_ON_THREAD(GetSTSThread(),
-                WrapRunnable(mTransportHandler,
-                             &MediaTransportHandler::RemoveTransportsExcept,
-                             finalTransports),
-                NS_DISPATCH_NORMAL);
+  mTransportHandler->RemoveTransportsExcept(finalTransports);
 
   for (const auto& transceiverImpl : mTransceivers) {
     transceiverImpl->UpdateTransport();
@@ -300,16 +219,11 @@ void PeerConnectionMedia::UpdateTransport(const JsepTransceiver& aTransceiver,
     digests.emplace_back(ss.str(), fingerprint.fingerprint);
   }
 
-  RUN_ON_THREAD(
-      GetSTSThread(),
-      WrapRunnable(
-          mTransportHandler, &MediaTransportHandler::ActivateTransport,
-          transport.mTransportId, transport.mLocalUfrag, transport.mLocalPwd,
-          components, ufrag, pwd, keyDer, certDer,
-          mParent->Identity()->auth_type(),
-          transport.mDtls->GetRole() == JsepDtlsTransport::kJsepDtlsClient,
-          digests, mParent->PrivacyRequested()),
-      NS_DISPATCH_NORMAL);
+  mTransportHandler->ActivateTransport(
+      transport.mTransportId, transport.mLocalUfrag, transport.mLocalPwd,
+      components, ufrag, pwd, keyDer, certDer, mParent->Identity()->auth_type(),
+      transport.mDtls->GetRole() == JsepDtlsTransport::kJsepDtlsClient, digests,
+      mParent->PrivacyRequested());
 
   for (auto& candidate : candidates) {
     AddIceCandidate("candidate:" + candidate, transport.mTransportId, ufrag);
@@ -345,34 +259,23 @@ nsresult PeerConnectionMedia::UpdateMediaPipelines() {
 }
 
 void PeerConnectionMedia::StartIceChecks(const JsepSession& aSession) {
-  nsCOMPtr<nsIRunnable> runnable(WrapRunnable(
-      RefPtr<PeerConnectionMedia>(this), &PeerConnectionMedia::StartIceChecks_s,
-      aSession.IsIceControlling(), aSession.IsOfferer(),
-      aSession.RemoteIsIceLite(),
-      // Copy, just in case API changes to return a ref
-      std::vector<std::string>(aSession.GetIceOptions())));
-
-  PerformOrEnqueueIceCtxOperation(runnable);
-}
-
-void PeerConnectionMedia::StartIceChecks_s(
-    bool aIsControlling, bool aIsOfferer, bool aIsIceLite,
-    const std::vector<std::string>& aIceOptionsList) {
-  CSFLogDebug(LOGTAG, "Starting ICE Checking");
-
   std::vector<std::string> attributes;
-  if (aIsIceLite) {
+  if (aSession.RemoteIsIceLite()) {
     attributes.push_back("ice-lite");
   }
 
-  if (!aIceOptionsList.empty()) {
+  if (!aSession.GetIceOptions().empty()) {
     attributes.push_back("ice-options:");
-    for (const auto& option : aIceOptionsList) {
+    for (const auto& option : aSession.GetIceOptions()) {
       attributes.back() += option + ' ';
     }
   }
 
-  mTransportHandler->StartIceChecks(aIsControlling, aIsOfferer, attributes);
+  nsCOMPtr<nsIRunnable> runnable(WrapRunnable(
+      mTransportHandler, &MediaTransportHandler::StartIceChecks,
+      aSession.IsIceControlling(), attributes));
+
+  PerformOrEnqueueIceCtxOperation(runnable);
 }
 
 bool PeerConnectionMedia::GetPrefDefaultAddressOnly() const {
@@ -402,19 +305,11 @@ void PeerConnectionMedia::AddIceCandidate(const std::string& aCandidate,
                                           const std::string& aTransportId,
                                           const std::string& aUfrag) {
   MOZ_ASSERT(!aTransportId.empty());
-  RUN_ON_THREAD(
-      GetSTSThread(),
-      WrapRunnable(mTransportHandler, &MediaTransportHandler::AddIceCandidate,
-                   aTransportId, aCandidate, aUfrag),
-      NS_DISPATCH_NORMAL);
+  mTransportHandler->AddIceCandidate(aTransportId, aCandidate, aUfrag);
 }
 
 void PeerConnectionMedia::UpdateNetworkState(bool online) {
-  RUN_ON_THREAD(
-      GetSTSThread(),
-      WrapRunnable(mTransportHandler,
-                   &MediaTransportHandler::UpdateNetworkState, online),
-      NS_DISPATCH_NORMAL);
+  mTransportHandler->UpdateNetworkState(online);
 }
 
 void PeerConnectionMedia::FlushIceCtxOperationQueueIfReady() {
@@ -422,7 +317,7 @@ void PeerConnectionMedia::FlushIceCtxOperationQueueIfReady() {
 
   if (IsIceCtxReady()) {
     for (auto& mQueuedIceCtxOperation : mQueuedIceCtxOperations) {
-      GetSTSThread()->Dispatch(mQueuedIceCtxOperation, NS_DISPATCH_NORMAL);
+      mQueuedIceCtxOperation->Run();
     }
     mQueuedIceCtxOperations.clear();
   }
@@ -433,7 +328,7 @@ void PeerConnectionMedia::PerformOrEnqueueIceCtxOperation(
   ASSERT_ON_THREAD(mMainThread);
 
   if (IsIceCtxReady()) {
-    GetSTSThread()->Dispatch(runnable, NS_DISPATCH_NORMAL);
+    runnable->Run();
   } else {
     mQueuedIceCtxOperations.push_back(runnable);
   }
@@ -446,12 +341,59 @@ void PeerConnectionMedia::GatherIfReady() {
   mQueuedIceCtxOperations.clear();
   nsCOMPtr<nsIRunnable> runnable(WrapRunnable(
       RefPtr<PeerConnectionMedia>(this),
-      &PeerConnectionMedia::EnsureIceGathering_s, GetPrefDefaultAddressOnly()));
+      &PeerConnectionMedia::EnsureIceGathering, GetPrefDefaultAddressOnly()));
 
   PerformOrEnqueueIceCtxOperation(runnable);
 }
 
-void PeerConnectionMedia::EnsureIceGathering_s(bool aDefaultRouteOnly) {
+nsresult PeerConnectionMedia::SetTargetForDefaultLocalAddressLookup() {
+  Document* doc = mParent->GetWindow()->GetExtantDoc();
+  if (!doc) {
+    NS_WARNING("Unable to get document from window");
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  bool isFileScheme;
+  doc->GetDocumentURI()->SchemeIs("file", &isFileScheme);
+  if (!isFileScheme) {
+    nsIChannel* channel = doc->GetChannel();
+    if (!channel) {
+      NS_WARNING("Unable to get channel from document");
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+
+    nsCOMPtr<nsIHttpChannelInternal> httpChannelInternal =
+        do_QueryInterface(channel);
+    if (!httpChannelInternal) {
+      CSFLogInfo(LOGTAG, "%s: Document does not have an HTTP channel",
+                 __FUNCTION__);
+      return NS_OK;
+    }
+
+    nsCString remoteIp;
+    nsresult rv = httpChannelInternal->GetRemoteAddress(remoteIp);
+    if (NS_FAILED(rv) || remoteIp.IsEmpty()) {
+      CSFLogError(LOGTAG, "%s: Failed to get remote IP address: %d",
+                  __FUNCTION__, (int)rv);
+      return rv;
+    }
+
+    int32_t remotePort;
+    rv = httpChannelInternal->GetRemotePort(&remotePort);
+    if (NS_FAILED(rv)) {
+      CSFLogError(LOGTAG, "%s: Failed to get remote port number: %d",
+                  __FUNCTION__, (int)rv);
+      return rv;
+    }
+
+    mTransportHandler->SetTargetForDefaultLocalAddressLookup(remoteIp.get(),
+                                                             remotePort);
+  }
+
+  return NS_OK;
+}
+
+void PeerConnectionMedia::EnsureIceGathering(bool aDefaultRouteOnly) {
   if (mProxyConfig) {
     // Note that this could check if PrivacyRequested() is set on the PC and
     // remove "webrtc" from the ALPN list.  But that would only work if the PC
@@ -460,6 +402,14 @@ void PeerConnectionMedia::EnsureIceGathering_s(bool aDefaultRouteOnly) {
     // media is isolated, then we would need to restructure this code.
     mTransportHandler->SetProxyServer(std::move(*mProxyConfig));
     mProxyConfig.reset();
+  }
+
+  if (!mTargetForDefaultLocalAddressLookupIsSet) {
+    nsresult rv = SetTargetForDefaultLocalAddressLookup();
+    if (NS_FAILED(rv)) {
+      NS_WARNING("Unable to set target for default local address lookup");
+    }
+    mTargetForDefaultLocalAddressLookupIsSet = true;
   }
 
   // Make sure we don't call StartIceGathering if we're in e10s mode
@@ -481,14 +431,11 @@ void PeerConnectionMedia::SelfDestruct() {
 
   CSFLogDebug(LOGTAG, "%s: ", __FUNCTION__);
 
+  mDestroyed = true;
+
   if (mStunAddrsRequest) {
     mStunAddrsRequest->Cancel();
     mStunAddrsRequest = nullptr;
-  }
-
-  if (mProxyRequest) {
-    mProxyRequest->Cancel(NS_ERROR_ABORT);
-    mProxyRequest = nullptr;
   }
 
   for (auto& transceiver : mTransceivers) {
@@ -506,6 +453,7 @@ void PeerConnectionMedia::SelfDestruct() {
       mSTSThread,
       WrapRunnable(this, &PeerConnectionMedia::ShutdownMediaTransport_s),
       NS_DISPATCH_NORMAL);
+  mParent = nullptr;
 
   CSFLogDebug(LOGTAG, "%s: Media shut down", __FUNCTION__);
 }
@@ -630,7 +578,7 @@ nsresult PeerConnectionMedia::AddRIDFilter(MediaStreamTrack& aRecvTrack,
 }
 
 void PeerConnectionMedia::IceGatheringStateChange_s(
-    dom::PCImplIceGatheringState aState) {
+    dom::RTCIceGatheringState aState) {
   ASSERT_ON_THREAD(mSTSThread);
 
   // ShutdownMediaTransport_s has not run yet because it unhooks this function
@@ -644,7 +592,7 @@ void PeerConnectionMedia::IceGatheringStateChange_s(
 }
 
 void PeerConnectionMedia::IceConnectionStateChange_s(
-    dom::PCImplIceConnectionState aState) {
+    dom::RTCIceConnectionState aState) {
   ASSERT_ON_THREAD(mSTSThread);
   // ShutdownMediaTransport_s has not run yet because it unhooks this function
   // from its signal, which means that SelfDestruct_m has not been dispatched
@@ -676,43 +624,38 @@ void PeerConnectionMedia::OnCandidateFound_s(
 }
 
 void PeerConnectionMedia::IceGatheringStateChange_m(
-    dom::PCImplIceGatheringState aState) {
+    dom::RTCIceGatheringState aState) {
   ASSERT_ON_THREAD(mMainThread);
-  SignalIceGatheringStateChange(aState);
+  if (mParent) {
+    mParent->IceGatheringStateChange(aState);
+  }
 }
 
 void PeerConnectionMedia::IceConnectionStateChange_m(
-    dom::PCImplIceConnectionState aState) {
+    dom::RTCIceConnectionState aState) {
   ASSERT_ON_THREAD(mMainThread);
-  SignalIceConnectionStateChange(aState);
+  if (mParent) {
+    mParent->IceConnectionStateChange(aState);
+  }
 }
 
 void PeerConnectionMedia::OnCandidateFound_m(
     const std::string& aTransportId, const CandidateInfo& aCandidateInfo) {
   ASSERT_ON_THREAD(mMainThread);
-  if (!aCandidateInfo.mDefaultHostRtp.empty()) {
-    SignalUpdateDefaultCandidate(aCandidateInfo.mDefaultHostRtp,
-                                 aCandidateInfo.mDefaultPortRtp,
-                                 aCandidateInfo.mDefaultHostRtcp,
-                                 aCandidateInfo.mDefaultPortRtcp, aTransportId);
+  if (mParent) {
+    mParent->OnCandidateFound(aTransportId, aCandidateInfo);
   }
-  SignalCandidate(aCandidateInfo.mCandidate, aTransportId,
-                  aCandidateInfo.mUfrag);
 }
 
 void PeerConnectionMedia::AlpnNegotiated_s(const std::string& aAlpn) {
   GetMainThread()->Dispatch(
-      WrapRunnableNM(&PeerConnectionMedia::AlpnNegotiated_m, mParentHandle,
-                     aAlpn),
+      WrapRunnable(this, &PeerConnectionMedia::AlpnNegotiated_m, aAlpn),
       NS_DISPATCH_NORMAL);
 }
 
-void PeerConnectionMedia::AlpnNegotiated_m(const std::string& aParentHandle,
-                                           const std::string& aAlpn) {
-  PeerConnectionWrapper pcWrapper(aParentHandle);
-  PeerConnectionImpl* pc = pcWrapper.impl();
-  if (pc) {
-    pc->OnAlpnNegotiated(aAlpn);
+void PeerConnectionMedia::AlpnNegotiated_m(const std::string& aAlpn) {
+  if (mParent) {
+    mParent->OnAlpnNegotiated(aAlpn);
   }
 }
 
@@ -768,4 +711,39 @@ bool PeerConnectionMedia::AnyCodecHasPluginID(uint64_t aPluginID) {
 nsPIDOMWindowInner* PeerConnectionMedia::GetWindow() const {
   return mParent->GetWindow();
 }
+
+void PeerConnectionMedia::ProxySettingReceived(bool aProxied) {
+  if (mDestroyed) {
+    // PeerConnectionMedia is no longer waiting
+    return;
+  }
+
+  if (aProxied) {
+    SetProxy();
+  }
+
+  mProxyResolveCompleted = true;
+  FlushIceCtxOperationQueueIfReady();
+}
+
+void PeerConnectionMedia::SetProxy() {
+  CSFLogInfo(LOGTAG, "%s: Had proxyinfo", __FUNCTION__);
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsCString alpn = NS_LITERAL_CSTRING("webrtc,c-webrtc");
+  auto browserChild = BrowserChild::GetFrom(GetWindow());
+  if (!browserChild) {
+    // Android doesn't have browser child apparently...
+    return;
+  }
+  TabId id = browserChild->GetTabId();
+  nsCOMPtr<nsILoadInfo> loadInfo = new net::LoadInfo(
+      nsContentUtils::GetSystemPrincipal(), nullptr, nullptr, 0, 0);
+
+  Maybe<net::LoadInfoArgs> loadInfoArgs;
+  MOZ_ALWAYS_SUCCEEDS(
+      mozilla::ipc::LoadInfoToLoadInfoArgs(loadInfo, &loadInfoArgs));
+  mProxyConfig.reset(new NrSocketProxyConfig(id, alpn, *loadInfoArgs));
+}
+
 }  // namespace mozilla

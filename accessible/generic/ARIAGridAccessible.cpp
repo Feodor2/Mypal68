@@ -10,7 +10,6 @@
 #include "Role.h"
 #include "States.h"
 
-#include "nsIMutableArray.h"
 #include "nsIPersistentProperties2.h"
 #include "nsComponentManagerUtils.h"
 

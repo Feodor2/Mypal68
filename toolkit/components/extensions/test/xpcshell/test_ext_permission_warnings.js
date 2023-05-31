@@ -157,18 +157,15 @@ add_task(async function host_permissions() {
         // Wildcard hosts take precedence in the permission list.
         bundle.formatStringFromName(
           "webextPerms.hostDescription.wildcard",
-          ["b"],
-          1
+          ["b"]
         ),
         bundle.formatStringFromName(
           "webextPerms.hostDescription.oneSite",
-          ["a"],
-          1
+          ["a"]
         ),
         bundle.formatStringFromName(
           "webextPerms.hostDescription.oneSite",
-          ["c"],
-          1
+          ["c"]
         ),
       ],
     },
@@ -202,38 +199,31 @@ add_task(async function host_permissions() {
         // Wildcard hosts take precedence in the permission list.
         bundle.formatStringFromName(
           "webextPerms.hostDescription.wildcard",
-          ["1"],
-          1
+          ["1"]
         ),
         bundle.formatStringFromName(
           "webextPerms.hostDescription.wildcard",
-          ["2"],
-          1
+          ["2"]
         ),
         bundle.formatStringFromName(
           "webextPerms.hostDescription.wildcard",
-          ["3"],
-          1
+          ["3"]
         ),
         bundle.formatStringFromName(
           "webextPerms.hostDescription.wildcard",
-          ["4"],
-          1
+          ["4"]
         ),
         bundle.formatStringFromName(
           "webextPerms.hostDescription.oneSite",
-          ["a"],
-          1
+          ["a"]
         ),
         bundle.formatStringFromName(
           "webextPerms.hostDescription.oneSite",
-          ["b"],
-          1
+          ["b"]
         ),
         bundle.formatStringFromName(
           "webextPerms.hostDescription.oneSite",
-          ["c"],
-          1
+          ["c"]
         ),
         PluralForm.get(
           2,
@@ -299,24 +289,20 @@ add_task(async function api_permissions() {
       // Host permissions first, with wildcards on top.
       bundle.formatStringFromName(
         "webextPerms.hostDescription.wildcard",
-        ["x"],
-        1
+        ["x"]
       ),
       bundle.formatStringFromName(
         "webextPerms.hostDescription.wildcard",
-        ["tld"],
-        1
+        ["tld"]
       ),
       bundle.formatStringFromName(
         "webextPerms.hostDescription.oneSite",
-        ["x"],
-        1
+        ["x"]
       ),
       // nativeMessaging permission warning first of all permissions.
       bundle.formatStringFromName(
         "webextPerms.description.nativeMessaging",
-        [DUMMY_APP_NAME],
-        1
+        [DUMMY_APP_NAME]
       ),
       // Other permissions in alphabetical order.
       // Note: activeTab has no permission warning string.
@@ -389,8 +375,7 @@ add_task(async function unprivileged_with_mozillaAddons() {
     [
       bundle.formatStringFromName(
         "webextPerms.hostDescription.oneSite",
-        ["a"],
-        1
+        ["a"]
       ),
     ],
     "Expected warnings for unprivileged add-on with mozillaAddons permission."
@@ -482,13 +467,11 @@ add_task(async function update_change_permissions() {
     [
       bundle.formatStringFromName(
         "webextPerms.hostDescription.wildcard",
-        ["c"],
-        1
+        ["c"]
       ),
       bundle.formatStringFromName(
         "webextPerms.description.proxy",
-        [DUMMY_APP_NAME],
-        1
+        [DUMMY_APP_NAME]
       ),
     ],
     "Expected permission warnings for new permissions only"
@@ -517,8 +500,7 @@ add_task(async function update_privileged_with_mozillaAddons() {
     [
       bundle.formatStringFromName(
         "webextPerms.hostDescription.oneSite",
-        ["b"],
-        1
+        ["b"]
       ),
     ],
     "Expected permission warnings for new host only"

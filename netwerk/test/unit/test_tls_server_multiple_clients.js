@@ -98,7 +98,6 @@ function storeCertOverride(port, cert) {
 function startClient(port) {
   let transport = socketTransportService.createTransport(
     ["ssl"],
-    1,
     "127.0.0.1",
     port,
     null

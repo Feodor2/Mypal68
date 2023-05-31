@@ -33,7 +33,7 @@ ChromeUtils.defineModuleGetter(
 );
 
 XPCOMUtils.defineLazyGetter(this, "log", () => {
-  let logger = LoginHelper.createLogger("nsLoginManager");
+  let logger = LoginHelper.createLogger("LoginManager");
   return logger;
 });
 
@@ -213,12 +213,12 @@ LoginManager.prototype = {
       "PWMGR_LOGIN_LAST_USED_DAYS"
     );
 
-    let hostnameCount = new Map();
+    let originCount = new Map();
     for (let login of logins) {
       usernamePresentHistogram.add(!!login.username);
 
-      let hostname = login.hostname;
-      hostnameCount.set(hostname, (hostnameCount.get(hostname) || 0) + 1);
+      let origin = login.origin;
+      originCount.set(origin, (originCount.get(origin) || 0) + 1);
 
       login.QueryInterface(Ci.nsILoginMetaInfo);
       let timeLastUsedAgeMs = referenceTimeMs - login.timeLastUsed;
@@ -237,7 +237,7 @@ LoginManager.prototype = {
     let passwordsCountHistogram = clearAndGetHistogram(
       "PWMGR_NUM_PASSWORDS_PER_HOSTNAME"
     );
-    for (let count of hostnameCount.values()) {
+    for (let count of originCount.values()) {
       passwordsCountHistogram.add(count);
     }
     Services.obs.notifyObservers(
@@ -255,8 +255,8 @@ LoginManager.prototype = {
    */
   _checkLogin(login) {
     // Sanity check the login
-    if (login.hostname == null || login.hostname.length == 0) {
-      throw new Error("Can't add a login with a null or empty hostname.");
+    if (login.origin == null || login.origin.length == 0) {
+      throw new Error("Can't add a login with a null or empty origin.");
     }
 
     // For logins w/o a username, set to "", not null.
@@ -268,24 +268,24 @@ LoginManager.prototype = {
       throw new Error("Can't add a login with a null or empty password.");
     }
 
-    if (login.formSubmitURL || login.formSubmitURL == "") {
+    if (login.formActionOrigin || login.formActionOrigin == "") {
       // We have a form submit URL. Can't have a HTTP realm.
       if (login.httpRealm != null) {
         throw new Error(
-          "Can't add a login with both a httpRealm and formSubmitURL."
+          "Can't add a login with both a httpRealm and formActionOrigin."
         );
       }
     } else if (login.httpRealm) {
       // We have a HTTP realm. Can't have a form submit URL.
-      if (login.formSubmitURL != null) {
+      if (login.formActionOrigin != null) {
         throw new Error(
-          "Can't add a login with both a httpRealm and formSubmitURL."
+          "Can't add a login with both a httpRealm and formActionOrigin."
         );
       }
     } else {
       // Need one or the other!
       throw new Error(
-        "Can't add a login without a httpRealm or formSubmitURL."
+        "Can't add a login without a httpRealm or formActionOrigin."
       );
     }
   },
@@ -306,9 +306,9 @@ LoginManager.prototype = {
     this._checkLogin(login);
 
     // Look for an existing entry.
-    var logins = this.findLogins(
-      login.hostname,
-      login.formSubmitURL,
+    let logins = this.findLogins(
+      login.origin,
+      login.formActionOrigin,
       login.httpRealm
     );
 
@@ -383,6 +383,16 @@ LoginManager.prototype = {
   },
 
   /**
+   * Get a dump of all stored logins asynchronously. Used by the login manager UI.
+   *
+   * @return {nsILoginInfo[]} - If there are no logins, the array is empty.
+   */
+  async getAllLoginsAsync() {
+    log.debug("Getting a list of all logins asynchronously");
+    return this._storage.getAllLoginsAsync();
+  },
+
+  /**
    * Remove all stored logins.
    */
   removeAllLogins() {
@@ -402,7 +412,7 @@ LoginManager.prototype = {
     log.debug("Getting a list of all disabled origins");
 
     let disabledHosts = [];
-    for (let perm of Services.perms.enumerator) {
+    for (let perm of Services.perms.all) {
       if (
         perm.type == PERMISSION_SAVE_LOGINS &&
         perm.capability == Services.perms.DENY_ACTION
@@ -446,15 +456,17 @@ LoginManager.prototype = {
 
     matchData.QueryInterface(Ci.nsIPropertyBag2);
     if (!matchData.hasKey("guid")) {
-      if (!matchData.hasKey("hostname")) {
-        log.warn("searchLogins: A `hostname` is recommended");
+      if (!matchData.hasKey("origin")) {
+        log.warn("searchLogins: An `origin` is recommended");
       }
 
       if (
-        !matchData.hasKey("formSubmitURL") &&
+        !matchData.hasKey("formActionOrigin") &&
         !matchData.hasKey("httpRealm")
       ) {
-        log.warn("searchLogins: `formSubmitURL` or `httpRealm` is recommended");
+        log.warn(
+          "searchLogins: `formActionOrigin` or `httpRealm` is recommended"
+        );
       }
     }
 
@@ -496,9 +508,15 @@ LoginManager.prototype = {
     }
 
     let uri = Services.io.newURI(origin);
+    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      uri,
+      {}
+    );
     return (
-      Services.perms.testPermission(uri, PERMISSION_SAVE_LOGINS) !=
-      Services.perms.DENY_ACTION
+      Services.perms.testPermissionFromPrincipal(
+        principal,
+        PERMISSION_SAVE_LOGINS
+      ) != Services.perms.DENY_ACTION
     );
   },
 
@@ -507,14 +525,18 @@ LoginManager.prototype = {
    */
   setLoginSavingEnabled(origin, enabled) {
     // Throws if there are bogus values.
-    LoginHelper.checkHostnameValue(origin);
+    LoginHelper.checkOriginValue(origin);
 
     let uri = Services.io.newURI(origin);
+    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+      uri,
+      {}
+    );
     if (enabled) {
-      Services.perms.remove(uri, PERMISSION_SAVE_LOGINS);
+      Services.perms.removeFromPrincipal(principal, PERMISSION_SAVE_LOGINS);
     } else {
-      Services.perms.add(
-        uri,
+      Services.perms.addFromPrincipal(
+        principal,
         PERMISSION_SAVE_LOGINS,
         Services.perms.DENY_ACTION
       );
@@ -528,4 +550,4 @@ LoginManager.prototype = {
   },
 }; // end of LoginManager implementation
 
-var EXPORTED_SYMBOLS = ["LoginManager"];
+const EXPORTED_SYMBOLS = ["LoginManager"];

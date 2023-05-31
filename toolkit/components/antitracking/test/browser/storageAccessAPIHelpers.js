@@ -19,9 +19,13 @@ async function callRequestStorageAccess(callback, expectFail) {
   let success = true;
   // We only grant storage exceptions when the reject tracker behavior is enabled.
   let rejectTrackers =
-    SpecialPowers.Services.prefs.getIntPref("network.cookie.cookieBehavior") ==
-      SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER &&
-    !isOnContentBlockingAllowList();
+    [
+      SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER,
+      SpecialPowers.Ci.nsICookieService
+        .BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+    ].includes(
+      SpecialPowers.Services.prefs.getIntPref("network.cookie.cookieBehavior")
+    ) && !isOnContentBlockingAllowList();
   // With another-tracking.example.net, we're same-eTLD+1, so the first try succeeds.
   if (origin != "https://another-tracking.example.net") {
     if (rejectTrackers) {
@@ -131,7 +135,7 @@ async function callRequestStorageAccess(callback, expectFail) {
     // conditions.
     await waitUntilPermission(
       "http://example.net/browser/toolkit/components/antitracking/test/browser/page.html",
-      "3rdPartyStorage^https://tracking.example.org"
+      "3rdPartyStorage^" + window.origin
     );
   }
 
@@ -143,8 +147,13 @@ async function waitUntilPermission(url, name) {
     let id = setInterval(_ => {
       let Services = SpecialPowers.Services;
       let uri = Services.io.newURI(url);
+      let principal = Services.scriptSecurityManager.createCodebasePrincipal(
+        uri,
+        {}
+      );
       if (
-        Services.perms.testPermission(uri, name) == Services.perms.ALLOW_ACTION
+        Services.perms.testPermissionFromPrincipal(principal, name) ==
+        Services.perms.ALLOW_ACTION
       ) {
         clearInterval(id);
         resolve();
@@ -159,33 +168,28 @@ async function interactWithTracker() {
 
     info("Let's interact with the tracker");
     window.open(
-      "https://tracking.example.org/browser/toolkit/components/antitracking/test/browser/3rdPartyOpenUI.html?messageme"
+      "/browser/toolkit/components/antitracking/test/browser/3rdPartyOpenUI.html?messageme"
     );
   });
 
   // Wait until the user interaction permission becomes visible in our process
-  await waitUntilPermission("https://tracking.example.org", "storageAccessAPI");
+  await waitUntilPermission(window.origin, "storageAccessAPI");
 }
 
 function isOnContentBlockingAllowList() {
-  let prefs = [
-    "browser.contentblocking.allowlist.storage.enabled",
-    "browser.contentblocking.allowlist.annotations.enabled",
-  ];
-  function allEnabled(prev, pref) {
-    return pref && SpecialPowers.Services.prefs.getBoolPref(pref);
-  }
-  if (!prefs.reduce(allEnabled)) {
-    return false;
-  }
-
   let url = new URL(SpecialPowers.wrap(top).location.href);
   let origin = SpecialPowers.Services.io.newURI("https://" + url.host);
+  let principal = SpecialPowers.Services.scriptSecurityManager.createCodebasePrincipal(
+    origin,
+    {}
+  );
   let types = ["trackingprotection", "trackingprotection-pb"];
   return types.some(type => {
     return (
-      SpecialPowers.Services.perms.testPermission(origin, type) ==
-      SpecialPowers.Services.perms.ALLOW_ACTION
+      SpecialPowers.Services.perms.testPermissionFromPrincipal(
+        principal,
+        type
+      ) == SpecialPowers.Services.perms.ALLOW_ACTION
     );
   });
 }

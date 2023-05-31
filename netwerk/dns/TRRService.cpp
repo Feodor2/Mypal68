@@ -4,7 +4,6 @@
 
 #include "nsICaptivePortalService.h"
 #include "nsIObserverService.h"
-#include "nsIURIMutator.h"
 #include "nsNetUtil.h"
 #include "nsStandardURL.h"
 #include "TRR.h"

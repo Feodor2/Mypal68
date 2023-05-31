@@ -6,6 +6,7 @@
 
 #include "ipc/TelemetryComms.h"
 #include "ipc/TelemetryIPCAccumulator.h"
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/PContent.h"
 #include "mozilla/JSONWriter.h"
@@ -33,7 +34,6 @@ using mozilla::Some;
 using mozilla::StaticAutoPtr;
 using mozilla::StaticMutex;
 using mozilla::StaticMutexAutoLock;
-using mozilla::StaticMutexNotRecorded;
 using mozilla::Telemetry::DynamicScalarDefinition;
 using mozilla::Telemetry::KeyedScalarAction;
 using mozilla::Telemetry::ProcessID;
@@ -1383,7 +1383,7 @@ nsresult internal_GetEnumByScalarName(const StaticMutexAutoLock& lock,
   if (!entry) {
     return NS_ERROR_INVALID_ARG;
   }
-  *aId = entry->mData;
+  *aId = entry->GetData();
   return NS_OK;
 }
 
@@ -1919,7 +1919,7 @@ void internal_RegisterScalars(const StaticMutexAutoLock& lock,
       // Change the scalar to expired if needed.
       if (scalarInfo.mDynamicExpiration && !scalarInfo.builtin) {
         DynamicScalarInfo& scalarData =
-            (*gDynamicScalarInfo)[existingKey->mData.id];
+            (*gDynamicScalarInfo)[existingKey->GetData().id];
         scalarData.mDynamicExpiration = true;
       }
       continue;
@@ -1928,7 +1928,7 @@ void internal_RegisterScalars(const StaticMutexAutoLock& lock,
     gDynamicScalarInfo->AppendElement(scalarInfo);
     uint32_t scalarId = gDynamicScalarInfo->Length() - 1;
     CharPtrEntryType* entry = gScalarNameIDMap.PutEntry(scalarInfo.name());
-    entry->mData = ScalarKey{scalarId, true};
+    entry->SetData(ScalarKey{scalarId, true});
   }
 }
 
@@ -2394,7 +2394,7 @@ void internal_ApplyPendingOperations(const StaticMutexAutoLock& lock) {
 // that, due to the nature of Telemetry, we cannot rely on having a
 // mutex initialized in InitializeGlobalState. Unfortunately, we
 // cannot make sure that no other function is called before this point.
-static StaticMutexNotRecorded gTelemetryScalarsMutex;
+static StaticMutex gTelemetryScalarsMutex;
 
 void TelemetryScalar::InitializeGlobalState(bool aCanRecordBase,
                                             bool aCanRecordExtended) {
@@ -2413,7 +2413,7 @@ void TelemetryScalar::InitializeGlobalState(bool aCanRecordBase,
       static_cast<uint32_t>(mozilla::Telemetry::ScalarID::ScalarCount);
   for (uint32_t i = 0; i < scalarCount; i++) {
     CharPtrEntryType* entry = gScalarNameIDMap.PutEntry(gScalars[i].name());
-    entry->mData = ScalarKey{i, false};
+    entry->SetData(ScalarKey{i, false});
   }
 
   // To summarize dynamic events we need a dynamic scalar.
@@ -3374,7 +3374,7 @@ nsresult TelemetryScalar::RegisterScalars(const nsACString& aCategoryName,
     if (JS_HasProperty(cx, scalarDef, "stores", &hasProperty) && hasProperty) {
       bool isArray = false;
       if (!JS_GetProperty(cx, scalarDef, "stores", &value) ||
-          !JS_IsArrayObject(cx, value, &isArray) || !isArray) {
+          !JS::IsArrayObject(cx, value, &isArray) || !isArray) {
         JS_ReportErrorASCII(cx, "Invalid 'stores' for scalar %s.",
                             PromiseFlatCString(fullName).get());
         return NS_ERROR_FAILURE;
@@ -3382,7 +3382,7 @@ nsresult TelemetryScalar::RegisterScalars(const nsACString& aCategoryName,
 
       JS::RootedObject arrayObj(cx, &value.toObject());
       uint32_t storesLength = 0;
-      if (!JS_GetArrayLength(cx, arrayObj, &storesLength)) {
+      if (!JS::GetArrayLength(cx, arrayObj, &storesLength)) {
         JS_ReportErrorASCII(cx,
                             "Can't get 'stores' array length for scalar %s.",
                             PromiseFlatCString(fullName).get());

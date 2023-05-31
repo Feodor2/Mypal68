@@ -2089,11 +2089,11 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                         case OBJECT:
                         case TABLE:
                         case AREA_OR_WBR:
+                        case KEYGEN:
                         case BR:
                         case EMBED:
                         case IMG:
                         case INPUT:
-                        case KEYGEN:
                         case HR:
                         case TEXTAREA:
                         case XMP:
@@ -2325,6 +2325,7 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             case BR:
                             case EMBED:
                             case AREA_OR_WBR:
+                            case KEYGEN:
                                 reconstructTheActiveFormattingElements();
                                 // FALL THROUGH to PARAM_OR_SOURCE_OR_TRACK
                                 // CPPONLY: MOZ_FALLTHROUGH;
@@ -2349,7 +2350,6 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                                 elementName = ElementName.IMG;
                                 continue starttagloop;
                             case IMG:
-                            case KEYGEN:
                             case INPUT:
                                 reconstructTheActiveFormattingElements();
                                 appendVoidElementToCurrentMayFoster(
@@ -2733,7 +2733,6 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             }
                         case INPUT:
                         case TEXTAREA:
-                        case KEYGEN:
                             errStartTagWithSelectOpen(name);
                             eltPos = findLastInTableScope("select");
                             if (eltPos == TreeBuilder.NOT_FOUND_ON_STACK) {
@@ -3795,13 +3794,13 @@ public abstract class TreeBuilder<T> implements TokenHandler,
                             // fall through to IN_HEAD;
                             break;
                         case AREA_OR_WBR:
+                        case KEYGEN: // XXX??
                         // CPPONLY: case MENUITEM:
                         case PARAM_OR_SOURCE_OR_TRACK:
                         case EMBED:
                         case IMG:
                         case IMAGE:
                         case INPUT:
-                        case KEYGEN: // XXX??
                         case HR:
                         case IFRAME:
                         case NOEMBED: // XXX???

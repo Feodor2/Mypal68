@@ -9,6 +9,7 @@
 
 #include "prthread.h"
 #include "nsAppDirectoryServiceDefs.h"
+#include "nsComponentManagerUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsMemory.h"
@@ -20,8 +21,6 @@
 #include "mozIStorageConnection.h"
 #include "mozIStorageStatementCallback.h"
 #include "mozIStorageCompletionCallback.h"
-#include "mozIStorageBindingParamsArray.h"
-#include "mozIStorageBindingParams.h"
 #include "mozIStorageAsyncStatement.h"
 #include "mozIStorageStatement.h"
 #include "mozIStoragePendingStatement.h"

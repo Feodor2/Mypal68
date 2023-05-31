@@ -8,7 +8,6 @@
 #include "ipc/WebrtcProxyChannel.h"
 #include "mozilla/LoadInfo.h"
 
-#include "nsIEventTarget.h"
 #include "nsNetCID.h"
 #include "nsProxyRelease.h"
 

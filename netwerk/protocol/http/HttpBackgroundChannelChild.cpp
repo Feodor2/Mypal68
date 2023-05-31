@@ -91,10 +91,6 @@ bool HttpBackgroundChannelChild::CreateBackgroundChannel() {
     return false;
   }
 
-  // hold extra reference for IPDL
-  RefPtr<HttpBackgroundChannelChild> self = this;
-  Unused << self.forget().take();
-
   mChannelChild->OnBackgroundChildReady(this);
   return true;
 }

@@ -112,8 +112,7 @@ add_task(async function test_ui_state_unverified() {
   let expectedLabel = gSync.appMenuStatus.getAttribute("unverifiedlabel");
   let tooltipText = gSync.fxaStrings.formatStringFromName(
     "verifyDescription",
-    [state.email],
-    1
+    [state.email]
   );
   checkPanelUIStatusBar({
     label: expectedLabel,
@@ -140,8 +139,7 @@ add_task(async function test_ui_state_loginFailed() {
   let expectedLabel = gSync.appMenuStatus.getAttribute("errorlabel");
   let tooltipText = gSync.fxaStrings.formatStringFromName(
     "reconnectDescription",
-    [state.email],
-    1
+    [state.email]
   );
   checkPanelUIStatusBar({
     label: expectedLabel,

@@ -6,7 +6,7 @@ extern crate env_logger;
 extern crate euclid;
 
 use gleam::gl;
-use glutin::{self, GlContext};
+use glutin;
 use std::env;
 use std::path::PathBuf;
 use webrender;
@@ -14,7 +14,6 @@ use winit;
 use webrender::{DebugFlags, ShaderPrecacheFlags};
 use webrender::api::*;
 use webrender::api::units::*;
-
 
 struct Notifier {
     events_proxy: winit::EventsLoopProxy,
@@ -27,7 +26,7 @@ impl Notifier {
 }
 
 impl RenderNotifier for Notifier {
-    fn clone(&self) -> Box<RenderNotifier> {
+    fn clone(&self) -> Box<dyn RenderNotifier> {
         Box::new(Notifier {
             events_proxy: self.events_proxy.clone(),
         })
@@ -94,12 +93,12 @@ pub trait Example {
     }
     fn get_image_handlers(
         &mut self,
-        _gl: &gl::Gl,
-    ) -> (Option<Box<webrender::ExternalImageHandler>>,
-          Option<Box<webrender::OutputImageHandler>>) {
+        _gl: &dyn gl::Gl,
+    ) -> (Option<Box<dyn webrender::ExternalImageHandler>>,
+          Option<Box<dyn webrender::OutputImageHandler>>) {
         (None, None)
     }
-    fn draw_custom(&mut self, _gl: &gl::Gl) {
+    fn draw_custom(&mut self, _gl: &dyn gl::Gl) {
     }
 }
 
@@ -117,35 +116,37 @@ pub fn main_wrapper<E: Example>(
     };
 
     let mut events_loop = winit::EventsLoop::new();
-    let context_builder = glutin::ContextBuilder::new()
-        .with_gl(glutin::GlRequest::GlThenGles {
-            opengl_version: (3, 2),
-            opengles_version: (3, 0),
-        });
     let window_builder = winit::WindowBuilder::new()
         .with_title(E::TITLE)
         .with_multitouch()
         .with_dimensions(winit::dpi::LogicalSize::new(E::WIDTH as f64, E::HEIGHT as f64));
-    let window = glutin::GlWindow::new(window_builder, context_builder, &events_loop)
+    let windowed_context = glutin::ContextBuilder::new()
+        .with_gl(glutin::GlRequest::GlThenGles {
+            opengl_version: (3, 2),
+            opengles_version: (3, 0),
+        })
+        .build_windowed(window_builder, &events_loop)
         .unwrap();
 
-    unsafe {
-        window.make_current().ok();
-    }
+    let windowed_context = unsafe { windowed_context.make_current().unwrap() };
 
-    let gl = match window.get_api() {
+    let gl = match windowed_context.get_api() {
         glutin::Api::OpenGl => unsafe {
-            gl::GlFns::load_with(|symbol| window.get_proc_address(symbol) as *const _)
+            gl::GlFns::load_with(
+                |symbol| windowed_context.get_proc_address(symbol) as *const _
+            )
         },
         glutin::Api::OpenGlEs => unsafe {
-            gl::GlesFns::load_with(|symbol| window.get_proc_address(symbol) as *const _)
+            gl::GlesFns::load_with(
+                |symbol| windowed_context.get_proc_address(symbol) as *const _
+            )
         },
         glutin::Api::WebGl => unimplemented!(),
     };
 
     println!("OpenGL version {}", gl.get_string(gl::VERSION));
     println!("Shader resource path: {:?}", res_path);
-    let device_pixel_ratio = window.get_hidpi_factor() as f32;
+    let device_pixel_ratio = windowed_context.window().get_hidpi_factor() as f32;
     println!("Device pixel ratio: {}", device_pixel_ratio);
 
     println!("Loading shaders...");
@@ -161,7 +162,8 @@ pub fn main_wrapper<E: Example>(
     };
 
     let device_size = {
-        let size = window
+        let size = windowed_context
+            .window()
             .get_inner_size()
             .unwrap()
             .to_physical(device_pixel_ratio as f64);
@@ -190,7 +192,7 @@ pub fn main_wrapper<E: Example>(
 
     let epoch = Epoch(0);
     let pipeline_id = PipelineId(0, 0);
-    let layout_size = device_size.to_f32() / euclid::TypedScale::new(device_pixel_ratio);
+    let layout_size = device_size.to_f32() / euclid::Scale::new(device_pixel_ratio);
     let mut builder = DisplayListBuilder::new(pipeline_id, layout_size);
     let mut txn = Transaction::new();
 
@@ -310,7 +312,7 @@ pub fn main_wrapper<E: Example>(
         renderer.render(device_size).unwrap();
         let _ = renderer.flush_pipeline_info();
         example.draw_custom(&*gl);
-        window.swap_buffers().ok();
+        windowed_context.swap_buffers().ok();
 
         winit::ControlFlow::Continue
     });

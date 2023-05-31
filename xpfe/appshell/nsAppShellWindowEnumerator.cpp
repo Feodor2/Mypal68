@@ -7,8 +7,6 @@
 #include "nsIContentViewer.h"
 #include "nsIDocShell.h"
 #include "mozilla/dom/Document.h"
-#include "nsIDOMWindow.h"
-#include "nsIFactory.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIXULWindow.h"
@@ -17,7 +15,7 @@
 #include "nsWindowMediator.h"
 
 using mozilla::dom::Document;
-using mozilla::dom::Element;
+using dom::Element;
 
 //
 // static helper functions
@@ -27,7 +25,7 @@ static void GetAttribute(nsIXULWindow* inWindow, const nsAString& inAttribute,
                          nsAString& outValue);
 static void GetWindowType(nsIXULWindow* inWindow, nsString& outType);
 
-static Element* GetElementFromDocShell(nsIDocShell* aShell) {
+static dom::Element* GetElementFromDocShell(nsIDocShell* aShell) {
   nsCOMPtr<nsIContentViewer> cv;
   aShell->GetContentViewer(getter_AddRefs(cv));
   if (cv) {
@@ -45,7 +43,7 @@ void GetAttribute(nsIXULWindow* inWindow, const nsAString& inAttribute,
                   nsAString& outValue) {
   nsCOMPtr<nsIDocShell> shell;
   if (inWindow && NS_SUCCEEDED(inWindow->GetDocShell(getter_AddRefs(shell)))) {
-    RefPtr<Element> webshellElement = GetElementFromDocShell(shell);
+    RefPtr<dom::Element> webshellElement = GetElementFromDocShell(shell);
     if (webshellElement) {
       webshellElement->GetAttribute(inAttribute, outValue);
     }

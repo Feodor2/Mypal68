@@ -17,6 +17,10 @@ job-defaults:
             - type: file
               name: public/code-review/mozlint.json
               path: /builds/worker/mozlint.json
+        env:
+            RUSTFMT: /build/rust/bin/rustfmt
+            RUSTUP_HOME: /build/rust
+            CARGO_HOME: /build/rust
     run:
         using: mach
     when:
@@ -68,8 +72,8 @@ eslint:
         symbol: ES
     run:
         using: run-task
+        cwd: '{checkout}'
         command: >
-            cd /builds/worker/checkouts/gecko/ &&
             cp -r /build/node_modules_eslint node_modules &&
             ln -s ../tools/lint/eslint/eslint-plugin-mozilla node_modules &&
             ln -s ../tools/lint/eslint/eslint-plugin-spidermonkey-js node_modules &&
@@ -193,3 +197,57 @@ localization:
             - '**/l10n.toml'
             - 'third_party/python/compare-locales/**'
             - 'third_party/python/fluent/**'
+
+
+rustfmt:
+    description: rustfmt on the Rust code
+    platform: lint/opt
+    treeherder:
+        symbol: rustfmt
+    run:
+        mach: lint -l rustfmt -f treeherder -f json:/builds/worker/mozlint.json
+    when:
+        files-changed:
+            - '**/*.rs'
+
+
+file-whitespace:
+    description: Check for trailing whitespaces and Windows CR
+    platform: lint/opt
+    treeherder:
+        symbol: file-whitespace
+    run:
+        mach: lint -l file-whitespace -f treeherder -f json:/builds/worker/mozlint.json
+    when:
+        files-changed:
+            - '**/*.c'
+            - '**/*.cc'
+            - '**/*.cpp'
+            - '**/*.h'
+            - '**/*.py'
+            - '**/*.rs'
+
+
+file-perm:
+    description: Check for incorrect permissions on source files
+    platform: lint/opt
+    treeherder:
+        symbol: file-perm
+    run:
+        mach: lint -l file-perm -f treeherder -f json:/builds/worker/mozlint.json
+    when:
+        files-changed:
+            - '**/*.c'
+            - '**/*.cc'
+            - '**/*.cpp'
+            - '**/*.h'
+            - '**/*.html'
+            - '**/*.js'
+            - '**/*.jsm'
+            - '**/*.jsx'
+            - '**/*.m'
+            - '**/*.mm'
+            - '**/*.rs'
+            - '**/*.xhtml'
+            - '**/*.xml'
+            - '**/*.xul'

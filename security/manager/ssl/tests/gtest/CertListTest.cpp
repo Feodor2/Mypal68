@@ -4,8 +4,6 @@
 
 #include "gtest/gtest.h"
 #include "nsCOMPtr.h"
-#include "nsIPrefService.h"
-#include "nsISimpleEnumerator.h"
 #include "nsIX509Cert.h"
 #include "nsIX509CertDB.h"
 #include "nsIX509CertList.h"

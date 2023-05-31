@@ -23,7 +23,6 @@
 #include "nsIUploadChannel2.h"
 #include "nsIProgressEventSink.h"
 #include "nsIURI.h"
-#include "nsIEffectiveTLDService.h"
 #include "nsIStringEnumerator.h"
 #include "nsISupportsPriority.h"
 #include "nsIClassOfService.h"
@@ -31,11 +30,10 @@
 #include "nsIApplicationCache.h"
 #include "nsIResumableChannel.h"
 #include "nsITraceableChannel.h"
-#include "nsILoadContext.h"
 #include "nsILoadInfo.h"
 #include "mozilla/net/NeckoCommon.h"
 #include "nsThreadUtils.h"
-#include "PrivateBrowsingChannel.h"
+#include "mozilla/net/PrivateBrowsingChannel.h"
 #include "mozilla/net/DNS.h"
 #include "nsITimedChannel.h"
 #include "nsIHttpChannel.h"
@@ -250,7 +248,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD SetDocumentURI(nsIURI* aDocumentURI) override;
   NS_IMETHOD GetRequestVersion(uint32_t* major, uint32_t* minor) override;
   NS_IMETHOD GetResponseVersion(uint32_t* major, uint32_t* minor) override;
-  NS_IMETHOD SetCookie(const char* aCookieHeader) override;
+  NS_IMETHOD SetCookie(const nsACString& aCookieHeader) override;
   NS_IMETHOD GetThirdPartyFlags(uint32_t* aForce) override;
   NS_IMETHOD SetThirdPartyFlags(uint32_t aForce) override;
   NS_IMETHOD GetForceAllowThirdPartyCookie(bool* aForce) override;
@@ -296,6 +294,8 @@ class HttpBaseChannel : public nsHashPropertyBag,
   NS_IMETHOD GetFetchCacheMode(uint32_t* aFetchCacheMode) override;
   NS_IMETHOD SetFetchCacheMode(uint32_t aFetchCacheMode) override;
   NS_IMETHOD GetTopWindowURI(nsIURI** aTopWindowURI) override;
+  NS_IMETHOD GetContentBlockingAllowListPrincipal(
+      nsIPrincipal** aPrincipal) override;
   NS_IMETHOD SetTopWindowURIIfUnknown(nsIURI* aTopWindowURI) override;
   NS_IMETHOD GetProxyURI(nsIURI** proxyURI) override;
   virtual void SetCorsPreflightParameters(
@@ -453,6 +453,10 @@ class HttpBaseChannel : public nsHashPropertyBag,
     return NS_OK;
   }
 
+  void SetContentBlockingAllowListPrincipal(nsIPrincipal* aPrincipal) {
+    mContentBlockingAllowListPrincipal = aPrincipal;
+  }
+
   // Set referrerInfo and compute the referrer header if neccessary.
   nsresult SetReferrerInfo(nsIReferrerInfo* aReferrerInfo, bool aClone,
                            bool aCompute);
@@ -474,7 +478,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   // Set-Cookie header in the response header of any network request.
   // This notification will come only after the "http-on-examine-response"
   // was fired.
-  void NotifySetCookie(char const* aCookie);
+  void NotifySetCookie(const nsACString& aCookie);
 
   mozilla::dom::PerformanceStorage* GetPerformanceStorage();
   void MaybeReportTimingData();
@@ -554,6 +558,7 @@ class HttpBaseChannel : public nsHashPropertyBag,
   nsCOMPtr<nsIURI> mProxyURI;
   nsCOMPtr<nsIPrincipal> mPrincipal;
   nsCOMPtr<nsIURI> mTopWindowURI;
+  nsCOMPtr<nsIPrincipal> mContentBlockingAllowListPrincipal;
   nsCOMPtr<nsIStreamListener> mListener;
   // An instance of nsHTTPCompressConv
   nsCOMPtr<nsIStreamListener> mCompressListener;

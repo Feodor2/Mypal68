@@ -69,6 +69,9 @@ class nsTString : public nsTSubstring<T> {
     this->Assign(aData, aLength);
   }
 
+  explicit nsTString(mozilla::Span<const char_type> aData)
+      : nsTString(aData.Elements(), aData.Length()) {}
+
 #if defined(MOZ_USE_CHAR16_WRAPPER)
   template <typename Q = T, typename EnableIfChar16 = mozilla::Char16OnlyT<Q>>
   explicit nsTString(char16ptr_t aStr, size_type aLength = size_type(-1))
@@ -649,6 +652,11 @@ class nsTArrayElementTraits<nsTAutoString<T>> {
   template <class A>
   static Dont_Instantiate_nsTArray_of<nsTAutoString<T>>* Construct(
       Instead_Use_nsTArray_of<nsTString<T>>* aE, const A& aArg) {
+    return 0;
+  }
+  template <class... Args>
+  static Dont_Instantiate_nsTArray_of<nsTAutoString<T>>* Construct(
+      Instead_Use_nsTArray_of<nsTString<T>>* aE, Args&&... aArgs) {
     return 0;
   }
   static Dont_Instantiate_nsTArray_of<nsTAutoString<T>>* Destruct(

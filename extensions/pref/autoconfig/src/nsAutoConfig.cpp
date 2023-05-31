@@ -8,13 +8,13 @@
 
 #include "nsIURI.h"
 #include "nsIHttpChannel.h"
-#include "nsIFileStreams.h"
 #include "nsThreadUtils.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIObserverService.h"
 #include "nsLiteralString.h"
 #include "nsIPromptService.h"
-#include "nsIServiceManager.h"
+#include "nsIInputStream.h"
+#include "nsIOutputStream.h"
 #include "nsIStringBundle.h"
 #include "nsContentUtils.h"
 #include "nsCRT.h"
@@ -229,7 +229,7 @@ nsresult nsAutoConfig::downloadAutoConfig() {
   nsCOMPtr<nsIURI> url;
   nsCOMPtr<nsIChannel> channel;
 
-  rv = NS_NewURI(getter_AddRefs(url), mConfigURL.get(), nullptr, nullptr);
+  rv = NS_NewURI(getter_AddRefs(url), mConfigURL);
   if (NS_FAILED(rv)) {
     MOZ_LOG(
         MCD, LogLevel::Debug,

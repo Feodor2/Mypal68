@@ -7,8 +7,7 @@
 #include "mozilla/layers/CompositableForwarder.h"
 #include "mozilla/layers/TextureForwarder.h"
 #include "mozilla/layers/TiledContentClient.h"
-
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs_layers.h"
 
 #include "nsComponentManagerUtils.h"
 
@@ -140,7 +139,7 @@ void TextureClientPool::AllocateTextureClient() {
   }
 
   RefPtr<TextureClient> newClient;
-  if (gfxPrefs::ForceShmemTiles()) {
+  if (StaticPrefs::layers_force_shmem_tiles_AtStartup()) {
     // gfx::BackendType::NONE means use the content backend
     newClient = TextureClient::CreateForRawBufferAccess(
         mSurfaceAllocator, mFormat, mSize, gfx::BackendType::NONE, mBackend,

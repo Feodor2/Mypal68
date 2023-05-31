@@ -32,7 +32,7 @@ add_task(async function test_tracking() {
     let record = {
       id: "GUID" + recordNum,
       hostname: "http://foo.bar.com",
-      formSubmitURL: "http://foo.bar.com/baz",
+      formSubmitURL: "http://foo.bar.com",
       username: "john" + recordNum,
       password: "smith",
       usernameField: "username",

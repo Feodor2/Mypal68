@@ -6,7 +6,6 @@
 #define GFX_VR_EXTERNAL_H
 
 #include "nsTArray.h"
-#include "nsIScreen.h"
 #include "nsCOMPtr.h"
 #include "mozilla/RefPtr.h"
 

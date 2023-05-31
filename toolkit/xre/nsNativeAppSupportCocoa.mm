@@ -11,19 +11,14 @@
 #include "nsCocoaFeatures.h"
 #include "nsNativeAppSupportBase.h"
 
-#include "nsIAppShellService.h"
-#include "nsIAppStartup.h"
 #include "nsIBaseWindow.h"
 #include "nsCommandLine.h"
 #include "mozIDOMWindow.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIObserver.h"
-#include "nsIServiceManager.h"
 #include "nsIWebNavigation.h"
 #include "nsIWidget.h"
-#include "nsIWindowMediator.h"
 
 // This must be included last:
 #include "nsObjCExceptions.h"

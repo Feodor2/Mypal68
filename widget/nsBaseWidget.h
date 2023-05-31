@@ -345,8 +345,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   // theme changes.
   void NotifySysColorChanged();
   void NotifyThemeChanged();
-  void NotifyUIStateChanged(UIStateChangeType aShowAccelerators,
-                            UIStateChangeType aShowFocusRings);
+  void NotifyUIStateChanged(UIStateChangeType aShowFocusRings);
 
 #ifdef ACCESSIBILITY
   // Get the accessible for the window.
@@ -470,6 +469,7 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
     return true;
   }
   virtual uint32_t GetGLFrameBufferFormat();
+  virtual bool CompositorInitiallyPaused() { return false; }
 
  protected:
   void ResolveIconName(const nsAString& aIconName, const nsAString& aIconSuffix,

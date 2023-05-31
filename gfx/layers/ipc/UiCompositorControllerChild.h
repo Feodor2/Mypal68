@@ -53,14 +53,14 @@ class UiCompositorControllerChild final
 
  protected:
   void ActorDestroy(ActorDestroyReason aWhy) override;
-  void DeallocPUiCompositorControllerChild() override;
+  void ActorDealloc() override;
   void ProcessingError(Result aCode, const char* aReason) override;
   void HandleFatalError(const char* aMsg) const override;
   mozilla::ipc::IPCResult RecvToolbarAnimatorMessageFromCompositor(
       const int32_t& aMessage);
   mozilla::ipc::IPCResult RecvRootFrameMetrics(const ScreenPoint& aScrollOffset,
                                                const CSSToScreenScale& aZoom);
-  mozilla::ipc::IPCResult RecvScreenPixels(ipc::Shmem&& aMem,
+  mozilla::ipc::IPCResult RecvScreenPixels(Shmem&& aMem,
                                            const ScreenIntSize& aSize);
 
  private:

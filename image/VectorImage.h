@@ -66,8 +66,6 @@ class VectorImage final : public ImageResource, public nsIStreamListener {
   void OnSVGDocumentLoaded();
   void OnSVGDocumentError();
 
-  virtual void ReportUseCounters() override;
-
  protected:
   explicit VectorImage(nsIURI* aURI = nullptr);
   virtual ~VectorImage();

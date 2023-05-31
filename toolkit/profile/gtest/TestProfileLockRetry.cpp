@@ -7,6 +7,7 @@
 #include <sys/eventfd.h>
 #include <sched.h>
 
+#include "nsComponentManagerUtils.h"
 #include "nsCOMPtr.h"
 #include "nsIFile.h"
 #include "nsProfileLock.h"

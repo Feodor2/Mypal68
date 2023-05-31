@@ -4,17 +4,16 @@
 
 #include "mozilla/EditorCommands.h"
 
-#include "mozilla/HTMLEditor.h"          // for HTMLEditor
-#include "mozilla/TextEditor.h"          // for TextEditor
-#include "mozilla/dom/Document.h"        // for Document
-#include "nsCommandParams.h"             // for nsCommandParams
-#include "nsIDocShell.h"                 // for nsIDocShell
-#include "nsIEditingSession.h"           // for nsIEditingSession, etc
-#include "nsISelectionController.h"      // for nsISelectionController
-#include "nsISupportsImpl.h"             // for nsPresContext::Release
-#include "nsISupportsUtils.h"            // for NS_IF_ADDREF
-#include "nsIURI.h"                      // for nsIURI
-#include "nsPresContext.h"               // for nsPresContext
+#include "mozilla/HTMLEditor.h"    // for HTMLEditor
+#include "mozilla/TextEditor.h"    // for TextEditor
+#include "mozilla/dom/Document.h"  // for Document
+#include "nsCommandParams.h"       // for nsCommandParams
+#include "nsIEditingSession.h"     // for nsIEditingSession, etc
+#include "nsIPrincipal.h"          // for nsIPrincipal
+#include "nsISupportsImpl.h"       // for nsPresContext::Release
+#include "nsISupportsUtils.h"      // for NS_IF_ADDREF
+#include "nsIURI.h"                // for nsIURI
+#include "nsPresContext.h"         // for nsPresContext
 
 // defines
 #define STATE_ENABLED "state_enabled"
@@ -43,13 +42,15 @@ bool SetDocumentStateCommand::IsCommandEnabled(Command aCommand,
 }
 
 nsresult SetDocumentStateCommand::DoCommand(Command aCommand,
-                                            TextEditor& aTextEditor) const {
+                                            TextEditor& aTextEditor,
+                                            nsIPrincipal* aPrincipal) const {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-nsresult SetDocumentStateCommand::DoCommandParams(
-    Command aCommand, nsCommandParams* aParams, TextEditor& aTextEditor) const {
-  if (NS_WARN_IF(!aParams)) {
+nsresult SetDocumentStateCommand::DoCommandParam(
+    Command aCommand, const Maybe<bool>& aBoolParam, TextEditor& aTextEditor,
+    nsIPrincipal* aPrincipal) const {
+  if (NS_WARN_IF(aBoolParam.isNothing())) {
     return NS_ERROR_INVALID_ARG;
   }
 
@@ -59,148 +60,102 @@ nsresult SetDocumentStateCommand::DoCommandParams(
 
   switch (aCommand) {
     case Command::SetDocumentModified: {
-      ErrorResult error;
-      bool modified = aParams->GetBool(STATE_ATTRIBUTE, error);
-      // Should we fail if this param wasn't set?
-      // I'm not sure we should be that strict
-      if (NS_WARN_IF(error.Failed())) {
-        return error.StealNSResult();
-      }
-      if (modified) {
+      if (aBoolParam.value()) {
         nsresult rv = aTextEditor.IncrementModificationCount(1);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return rv;
-        }
-        return NS_OK;
-      }
-      nsresult rv = aTextEditor.ResetModificationCount();
-      if (NS_WARN_IF(NS_FAILED(rv))) {
+        NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                             "IncrementModificationCount() failed");
         return rv;
       }
-      return NS_OK;
+      nsresult rv = aTextEditor.ResetModificationCount();
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "ResetModificationCount() failed");
+      return rv;
     }
     case Command::SetDocumentReadOnly: {
       ErrorResult error;
-      bool isReadOnly = aParams->GetBool(STATE_ATTRIBUTE, error);
-      if (NS_WARN_IF(error.Failed())) {
-        return error.StealNSResult();
-      }
-      if (isReadOnly) {
+      if (aBoolParam.value()) {
         nsresult rv =
             aTextEditor.AddFlags(nsIPlaintextEditor::eEditorReadonlyMask);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return rv;
-        }
-        return NS_OK;
+        NS_WARNING_ASSERTION(
+            NS_SUCCEEDED(rv),
+            "AddFlags(nsIPlaintextEditor::eEditorReadonlyMask) failed");
+        return rv;
       }
       nsresult rv =
           aTextEditor.RemoveFlags(nsIPlaintextEditor::eEditorReadonlyMask);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-      return NS_OK;
+      NS_WARNING_ASSERTION(
+          NS_SUCCEEDED(rv),
+          "RemoveFlags(nsIPlaintextEditor::eEditorReadonlyMask) failed");
+      return rv;
     }
     case Command::SetDocumentUseCSS: {
-      HTMLEditor* htmlEditor = aTextEditor.AsHTMLEditor();
-      if (NS_WARN_IF(!htmlEditor)) {
-        return NS_ERROR_INVALID_ARG;
-      }
-      ErrorResult error;
-      bool desireCSS = aParams->GetBool(STATE_ATTRIBUTE, error);
-      if (NS_WARN_IF(error.Failed())) {
-        return error.StealNSResult();
-      }
-      nsresult rv = htmlEditor->SetIsCSSEnabled(desireCSS);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-      return NS_OK;
+      nsresult rv =
+          aTextEditor.AsHTMLEditor()->SetIsCSSEnabled(aBoolParam.value());
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "SetIsCSSEnabled() failed");
+      return rv;
     }
     case Command::SetDocumentInsertBROnEnterKeyPress: {
-      HTMLEditor* htmlEditor = aTextEditor.AsHTMLEditor();
-      if (NS_WARN_IF(!htmlEditor)) {
-        return NS_ERROR_INVALID_ARG;
-      }
-      ErrorResult error;
-      bool insertBrOnReturn = aParams->GetBool(STATE_ATTRIBUTE, error);
-      if (NS_WARN_IF(error.Failed())) {
-        return error.StealNSResult();
-      }
-      nsresult rv = htmlEditor->SetReturnInParagraphCreatesNewParagraph(
-          !insertBrOnReturn);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
+      nsresult rv =
+          aTextEditor.AsHTMLEditor()->SetReturnInParagraphCreatesNewParagraph(
+              !aBoolParam.value());
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                           "SetReturnInParagraphCreatesNewParagraph() failed");
+      return rv;
+    }
+    case Command::ToggleObjectResizers: {
+      MOZ_KnownLive(aTextEditor.AsHTMLEditor())
+          ->EnableObjectResizer(aBoolParam.value());
       return NS_OK;
     }
+    case Command::ToggleInlineTableEditor: {
+      MOZ_KnownLive(aTextEditor.AsHTMLEditor())
+          ->EnableInlineTableEditor(aBoolParam.value());
+      return NS_OK;
+    }
+    case Command::ToggleAbsolutePositionEditor: {
+      MOZ_KnownLive(aTextEditor.AsHTMLEditor())
+          ->EnableAbsolutePositionEditor(aBoolParam.value());
+      return NS_OK;
+    }
+    default:
+      return NS_ERROR_NOT_IMPLEMENTED;
+  }
+}
+
+nsresult SetDocumentStateCommand::DoCommandParam(
+    Command aCommand, const nsACString& aCStringParam, TextEditor& aTextEditor,
+    nsIPrincipal* aPrincipal) const {
+  if (NS_WARN_IF(aCStringParam.IsVoid())) {
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  if (NS_WARN_IF(!aTextEditor.AsHTMLEditor())) {
+    return NS_ERROR_FAILURE;
+  }
+
+  switch (aCommand) {
     case Command::SetDocumentDefaultParagraphSeparator: {
-      HTMLEditor* htmlEditor = aTextEditor.AsHTMLEditor();
-      if (NS_WARN_IF(!htmlEditor)) {
-        return NS_ERROR_INVALID_ARG;
-      }
-
-      nsAutoCString newValue;
-      nsresult rv = aParams->GetCString(STATE_ATTRIBUTE, newValue);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-
-      if (newValue.LowerCaseEqualsLiteral("div")) {
-        htmlEditor->SetDefaultParagraphSeparator(ParagraphSeparator::div);
+      if (aCStringParam.LowerCaseEqualsLiteral("div")) {
+        aTextEditor.AsHTMLEditor()->SetDefaultParagraphSeparator(
+            ParagraphSeparator::div);
         return NS_OK;
       }
-      if (newValue.LowerCaseEqualsLiteral("p")) {
-        htmlEditor->SetDefaultParagraphSeparator(ParagraphSeparator::p);
+      if (aCStringParam.LowerCaseEqualsLiteral("p")) {
+        aTextEditor.AsHTMLEditor()->SetDefaultParagraphSeparator(
+            ParagraphSeparator::p);
         return NS_OK;
       }
-      if (newValue.LowerCaseEqualsLiteral("br")) {
+      if (aCStringParam.LowerCaseEqualsLiteral("br")) {
         // Mozilla extension for backwards compatibility
-        htmlEditor->SetDefaultParagraphSeparator(ParagraphSeparator::br);
+        aTextEditor.AsHTMLEditor()->SetDefaultParagraphSeparator(
+            ParagraphSeparator::br);
         return NS_OK;
       }
 
       // This should not be reachable from nsHTMLDocument::ExecCommand
+      // XXX Shouldn't return error in this case because Chrome does not throw
+      //     exception in this case.
       NS_WARNING("Invalid default paragraph separator");
       return NS_ERROR_UNEXPECTED;
-    }
-    case Command::ToggleObjectResizers: {
-      HTMLEditor* htmlEditor = aTextEditor.AsHTMLEditor();
-      if (NS_WARN_IF(!htmlEditor)) {
-        return NS_ERROR_INVALID_ARG;
-      }
-      ErrorResult error;
-      bool enabled = aParams->GetBool(STATE_ATTRIBUTE, error);
-      if (NS_WARN_IF(error.Failed())) {
-        return error.StealNSResult();
-      }
-      MOZ_KnownLive(htmlEditor)->EnableObjectResizer(enabled);
-      return NS_OK;
-    }
-    case Command::ToggleInlineTableEditor: {
-      HTMLEditor* htmlEditor = aTextEditor.AsHTMLEditor();
-      if (NS_WARN_IF(!htmlEditor)) {
-        return NS_ERROR_INVALID_ARG;
-      }
-      ErrorResult error;
-      bool enabled = aParams->GetBool(STATE_ATTRIBUTE, error);
-      if (NS_WARN_IF(error.Failed())) {
-        return error.StealNSResult();
-      }
-      MOZ_KnownLive(htmlEditor)->EnableInlineTableEditor(enabled);
-      return NS_OK;
-    }
-    case Command::ToggleAbsolutePositionEditor: {
-      HTMLEditor* htmlEditor = aTextEditor.AsHTMLEditor();
-      if (NS_WARN_IF(!htmlEditor)) {
-        return NS_ERROR_INVALID_ARG;
-      }
-      ErrorResult error;
-      bool enabled = aParams->GetBool(STATE_ATTRIBUTE, error);
-      if (NS_WARN_IF(error.Failed())) {
-        return error.StealNSResult();
-      }
-      MOZ_KnownLive(htmlEditor)->EnableAbsolutePositionEditor(enabled);
-      return NS_OK;
     }
     default:
       return NS_ERROR_NOT_IMPLEMENTED;
@@ -210,8 +165,6 @@ nsresult SetDocumentStateCommand::DoCommandParams(
 nsresult SetDocumentStateCommand::GetCommandStateParams(
     Command aCommand, nsCommandParams& aParams, TextEditor* aTextEditor,
     nsIEditingSession* aEditingSession) const {
-  // If the result is set to STATE_ALL as bool value, queryCommandState()
-  // returns the bool value.
   // If the result is set to STATE_ATTRIBUTE as CString value,
   // queryCommandValue() returns the string value.
   // Otherwise, ignored.
@@ -402,13 +355,8 @@ bool DocumentStateCommand::IsCommandEnabled(Command aCommand,
 }
 
 nsresult DocumentStateCommand::DoCommand(Command aCommand,
-                                         TextEditor& aTextEditor) const {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-nsresult DocumentStateCommand::DoCommandParams(Command aCommand,
-                                               nsCommandParams* aParams,
-                                               TextEditor& aTextEditor) const {
+                                         TextEditor& aTextEditor,
+                                         nsIPrincipal* aPrincipal) const {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

@@ -58,9 +58,6 @@
 #include "nsAtom.h"
 #include "nsIURI.h"
 #include "nsArrayUtils.h"
-#include "nsIMutableArray.h"
-#include "nsIObserverService.h"
-#include "nsIServiceManager.h"
 #include "nsWhitespaceTokenizer.h"
 #include "nsAttrName.h"
 #include "nsPersistentProperties.h"
@@ -119,15 +116,10 @@ Accessible::Accessible(nsIContent* aContent, DocAccessible* aDoc)
       mHideEventTarget(false) {
   mBits.groupInfo = nullptr;
   mInt.mIndexOfEmbeddedChild = -1;
-
-  // Assign an ID to this Accessible for use in UniqueID().
-  recordreplay::RegisterThing(this);
 }
 
 Accessible::~Accessible() {
   NS_ASSERTION(!mDoc, "LastRelease was never called!?!");
-
-  recordreplay::UnregisterThing(this);
 }
 
 ENameValueFlag Accessible::Name(nsString& aName) const {
@@ -741,8 +733,7 @@ void Accessible::TakeFocus() const {
 
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (fm) {
-    AutoHandlingUserInputStatePusher inputStatePusher(true, nullptr,
-                                                      focusContent->OwnerDoc());
+    AutoHandlingUserInputStatePusher inputStatePusher(true);
     // XXXbz: Can we actually have a non-element content here?
     RefPtr<Element> element =
         focusContent->IsElement() ? focusContent->AsElement() : nullptr;
@@ -1076,10 +1067,11 @@ already_AddRefed<nsIPersistentProperties> Accessible::NativeAttributes() {
     if (!docShellTreeItem) break;
 
     nsCOMPtr<nsIDocShellTreeItem> sameTypeParent;
-    docShellTreeItem->GetSameTypeParent(getter_AddRefs(sameTypeParent));
+    docShellTreeItem->GetInProcessSameTypeParent(
+        getter_AddRefs(sameTypeParent));
     if (!sameTypeParent || sameTypeParent == docShellTreeItem) break;
 
-    dom::Document* parentDoc = doc->GetParentDocument();
+    dom::Document* parentDoc = doc->GetInProcessParentDocument();
     if (!parentDoc) break;
 
     startContent = parentDoc->FindContentForSubDocument(doc);
@@ -1789,7 +1781,7 @@ Relation Accessible::RelationByType(RelationType aType) const {
         // Walk up the parent chain without crossing the boundary at which item
         // types change, preventing us from walking up out of tab content.
         nsCOMPtr<nsIDocShellTreeItem> root;
-        docShell->GetSameTypeRootTreeItem(getter_AddRefs(root));
+        docShell->GetInProcessSameTypeRootTreeItem(getter_AddRefs(root));
         if (root) {
           // If the item type is typeContent, we assume we are in browser tab
           // content. Note, this includes content such as about:addons,
@@ -2453,8 +2445,7 @@ Accessible* Accessible::CurrentItem() const {
     dom::Document* DOMDoc = mContent->OwnerDoc();
     dom::Element* activeDescendantElm = DOMDoc->GetElementById(id);
     if (activeDescendantElm) {
-      if (nsContentUtils::ContentIsDescendantOf(mContent,
-                                                activeDescendantElm)) {
+      if (mContent->IsInclusiveDescendantOf(activeDescendantElm)) {
         // Don't want a cyclical descendant relationship. That would be bad.
         return nullptr;
       }

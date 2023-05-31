@@ -4,7 +4,6 @@
 
 #include "LookupCache.h"
 #include "HashStore.h"
-#include "nsISeekableStream.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Logging.h"

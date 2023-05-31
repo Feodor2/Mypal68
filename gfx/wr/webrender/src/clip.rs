@@ -15,10 +15,11 @@ use crate::image::{self, Repetition};
 use crate::intern;
 use crate::prim_store::{ClipData, ImageMaskData, SpaceMapper, VisibleMaskImageTile};
 use crate::prim_store::{PointKey, SizeKey, RectangleKey};
+use crate::render_backend::DataStores;
 use crate::render_task::to_cache_size;
 use crate::resource_cache::{ImageRequest, ResourceCache};
-use std::{cmp, u32};
-use crate::util::{extract_inner_rect_safe, project_rect, ScaleOffset};
+use std::{cmp, ops, u32};
+use crate::util::{extract_inner_rect_safe, project_rect, ScaleOffset, MaxRect};
 
 /*
 
@@ -209,6 +210,7 @@ pub struct ClipChainNode {
     pub local_pos: LayoutPoint,
     pub spatial_node_index: SpatialNodeIndex,
     pub parent_clip_chain_id: ClipChainId,
+    pub has_complex_clip: bool,
 }
 
 // When a clip node is found to be valid for a
@@ -239,6 +241,18 @@ pub struct ClipNodeRange {
     pub count: u32,
 }
 
+impl ClipNodeRange {
+    pub fn to_range(&self) -> ops::Range<usize> {
+        let start = self.first as usize;
+        let end = start + self.count as usize;
+
+        ops::Range {
+            start,
+            end,
+        }
+    }
+}
+
 /// A helper struct for converting between coordinate systems
 /// of clip sources and primitives.
 // todo(gw): optimize:
@@ -251,6 +265,38 @@ enum ClipSpaceConversion {
     Local,
     ScaleOffset(ScaleOffset),
     Transform(LayoutToWorldTransform),
+}
+
+impl ClipSpaceConversion {
+    /// Construct a new clip space converter between two spatial nodes.
+    fn new(
+        prim_spatial_node_index: SpatialNodeIndex,
+        clip_spatial_node_index: SpatialNodeIndex,
+        clip_scroll_tree: &ClipScrollTree,
+    ) -> Self {
+        //Note: this code is different from `get_relative_transform` in a way that we only try
+        // getting the relative transform if it's Local or ScaleOffset,
+        // falling back to the world transform otherwise.
+        let clip_spatial_node = &clip_scroll_tree
+            .spatial_nodes[clip_spatial_node_index.0 as usize];
+        let prim_spatial_node = &clip_scroll_tree
+            .spatial_nodes[prim_spatial_node_index.0 as usize];
+
+        if prim_spatial_node_index == clip_spatial_node_index {
+            ClipSpaceConversion::Local
+        } else if prim_spatial_node.coordinate_system_id == clip_spatial_node.coordinate_system_id {
+            let scale_offset = prim_spatial_node.content_transform
+                .inverse()
+                .accumulate(&clip_spatial_node.content_transform);
+            ClipSpaceConversion::ScaleOffset(scale_offset)
+        } else {
+            ClipSpaceConversion::Transform(
+                clip_scroll_tree
+                    .get_world_transform(clip_spatial_node_index)
+                    .into_transform()
+            )
+        }
+    }
 }
 
 // Temporary information that is cached and reused
@@ -462,8 +508,10 @@ impl ClipNode {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 pub struct ClipStore {
     pub clip_chain_nodes: Vec<ClipChainNode>,
-    clip_node_instances: Vec<ClipNodeInstance>,
-    clip_node_info: Vec<ClipNodeInfo>,
+    pub clip_node_instances: Vec<ClipNodeInstance>,
+
+    active_clip_node_info: Vec<ClipNodeInfo>,
+    active_local_clip_rect: Option<LayoutRect>,
 }
 
 // A clip chain instance is what gets built for a given clip
@@ -501,6 +549,27 @@ impl ClipChainInstance {
     }
 }
 
+/// Maintains a (flattened) list of clips for a given level in the surface level stack.
+pub struct ClipChainLevel {
+    clips: Vec<ClipChainId>,
+    clip_counts: Vec<usize>,
+    viewport: WorldRect,
+}
+
+impl ClipChainLevel {
+    /// Construct a new level in the active clip chain stack. The viewport
+    /// is used to filter out irrelevant clips.
+    fn new(
+        viewport: WorldRect,
+    ) -> Self {
+        ClipChainLevel {
+            clips: Vec::new(),
+            clip_counts: Vec::new(),
+            viewport,
+        }
+    }
+}
+
 /// Maintains a stack of clip chain ids that are currently active,
 /// when a clip exists on a picture that has no surface, and is passed
 /// on down to the child primitive(s).
@@ -510,40 +579,137 @@ pub struct ClipChainStack {
     /// a new entry is added to the main stack. Each time a new picture
     /// without surface is pushed, it adds the picture clip chain to the
     /// current stack list.
-    pub stack: Vec<Vec<ClipChainId>>,
+    pub stack: Vec<ClipChainLevel>,
 }
 
 impl ClipChainStack {
     pub fn new() -> Self {
         ClipChainStack {
-            stack: vec![vec![]],
+            stack: vec![ClipChainLevel::new(WorldRect::max_rect())],
         }
     }
 
     /// Push a clip chain root onto the currently active list.
-    pub fn push_clip(&mut self, clip_chain_id: ClipChainId) {
-        self.stack.last_mut().unwrap().push(clip_chain_id);
+    pub fn push_clip(
+        &mut self,
+        clip_chain_id: ClipChainId,
+        clip_store: &ClipStore,
+        data_stores: &DataStores,
+        clip_scroll_tree: &ClipScrollTree,
+        global_screen_world_rect: WorldRect,
+    ) {
+        let level = self.stack.last_mut().unwrap();
+        let mut clip_count = 0;
+
+        let mut current_clip_chain_id = clip_chain_id;
+        while current_clip_chain_id != ClipChainId::NONE {
+            let clip_chain_node = &clip_store.clip_chain_nodes[current_clip_chain_id.0 as usize];
+
+            let clip_node = &data_stores.clip[clip_chain_node.handle];
+
+            // Filter out irrelevant rectangle clips. If a clip rect is in world space
+            // and completely contains the viewport to be rendered, then the clip itself
+            // is redundant. This is particularly important for picture caching, to avoid
+            // extra invalidations. By skipping these global clip rects (such as the iframe rect)
+            // we can (a) avoid invalidations due to introducing clip dependencies where the
+            // relative transform changes during scrolling, and (b) allow correct rendering
+            // of tiles that exceed these clip rects, so that we can draw them once and
+            // cache them, to be used during scrolling.
+            let valid_clip = match clip_node.item {
+                ClipItem::Rectangle(size, ClipMode::Clip) => {
+                    let scroll_root = clip_scroll_tree.find_scroll_root(
+                        clip_chain_node.spatial_node_index,
+                    );
+
+                    let local_clip_rect = LayoutRect::new(
+                        clip_chain_node.local_pos,
+                        size,
+                    );
+
+                    let mut is_required = true;
+
+                    if scroll_root == ROOT_SPATIAL_NODE_INDEX {
+                        let map_local_to_world = SpaceMapper::new_with_target(
+                            ROOT_SPATIAL_NODE_INDEX,
+                            clip_chain_node.spatial_node_index,
+                            global_screen_world_rect,
+                            clip_scroll_tree,
+                        );
+
+                        // TODO(gw): This map method can produce a conservative bounding rect
+                        //           which is not what we require here. In this case, we know
+                        //           that the conversion is exect, due to checking that the
+                        //           scroll root is the root spatial node. However, we should
+                        //           change this to directly use the content_transform, to make
+                        //           the intent clearer here.
+                        if let Some(clip_world_rect) = map_local_to_world.map(&local_clip_rect) {
+                            if clip_world_rect.contains_rect(&level.viewport) {
+                                is_required = false;
+                            }
+                        }
+                    }
+
+                    is_required
+                }
+                _ => {
+                    true
+                }
+            };
+
+            if valid_clip {
+                level.clips.push(current_clip_chain_id);
+                clip_count += 1;
+            }
+
+            current_clip_chain_id = clip_chain_node.parent_clip_chain_id;
+        }
+
+        level.clip_counts.push(clip_count);
     }
 
     /// Pop a clip chain root from the currently active list.
     pub fn pop_clip(&mut self) {
-        self.stack.last_mut().unwrap().pop().unwrap();
+        let level = self.stack.last_mut().unwrap();
+        let count = level.clip_counts.pop().unwrap();
+        for _ in 0 .. count {
+            level.clips.pop().unwrap();
+        }
     }
 
     /// When a surface is created, it takes all clips and establishes a new
     /// stack of clips to be propagated.
-    pub fn push_surface(&mut self) {
-        self.stack.push(Vec::new());
+    pub fn push_surface(
+        &mut self,
+        viewport: WorldRect,
+    ) {
+        // Ensure that sub-surfaces (e.g. filters) of a tile
+        // cache intersect with any parent viewport. This ensures
+        // that we correctly filter out redundant clips on these
+        // child surfaces.
+        let viewport = match self.stack.last() {
+            Some(parent_level) => {
+                parent_level.viewport
+                    .intersection(&viewport)
+                    .unwrap_or(WorldRect::zero())
+            }
+            None => {
+                viewport
+            }
+        };
+
+        let level = ClipChainLevel::new(viewport);
+        self.stack.push(level);
     }
 
     /// Pop a surface from the clip chain stack
     pub fn pop_surface(&mut self) {
-        self.stack.pop().unwrap();
+        let level = self.stack.pop().unwrap();
+        assert!(level.clip_counts.is_empty() && level.clips.is_empty());
     }
 
     /// Get the list of currently active clip chains
-    pub fn current_clips(&self) -> &[ClipChainId] {
-        self.stack.last().unwrap()
+    pub fn current_clips_array(&self) -> &[ClipChainId] {
+        &self.stack.last().unwrap().clips
     }
 }
 
@@ -552,7 +718,9 @@ impl ClipStore {
         ClipStore {
             clip_chain_nodes: Vec::new(),
             clip_node_instances: Vec::new(),
-            clip_node_info: Vec::new(),
+
+            active_clip_node_info: Vec::new(),
+            active_local_clip_rect: None,
         }
     }
 
@@ -566,6 +734,7 @@ impl ClipStore {
         local_pos: LayoutPoint,
         spatial_node_index: SpatialNodeIndex,
         parent_clip_chain_id: ClipChainId,
+        has_complex_clip: bool,
     ) -> ClipChainId {
         let id = ClipChainId(self.clip_chain_nodes.len() as u32);
         self.clip_chain_nodes.push(ClipChainNode {
@@ -573,6 +742,7 @@ impl ClipStore {
             spatial_node_index,
             local_pos,
             parent_clip_chain_id,
+            has_complex_clip,
         });
         id
     }
@@ -585,14 +755,74 @@ impl ClipStore {
         &self.clip_node_instances[(node_range.first + index) as usize]
     }
 
-    // The main interface other code uses. Given a local primitive, positioning
-    // information, and a clip chain id, build an optimized clip chain instance.
-    pub fn build_clip_chain_instance(
+    /// Setup the active clip chains for building a clip chain instance.
+    pub fn set_active_clips(
         &mut self,
-        clip_chains: &[ClipChainId],
-        local_prim_rect: LayoutRect,
         local_prim_clip_rect: LayoutRect,
         spatial_node_index: SpatialNodeIndex,
+        clip_chains: &[ClipChainId],
+        clip_scroll_tree: &ClipScrollTree,
+        clip_data_store: &mut ClipDataStore,
+    ) {
+        self.active_clip_node_info.clear();
+        self.active_local_clip_rect = None;
+
+        let mut local_clip_rect = local_prim_clip_rect;
+
+        for clip_chain_id in clip_chains {
+            let clip_chain_node = &self.clip_chain_nodes[clip_chain_id.0 as usize];
+
+            if !add_clip_node_to_current_chain(
+                clip_chain_node,
+                spatial_node_index,
+                &mut local_clip_rect,
+                &mut self.active_clip_node_info,
+                clip_data_store,
+                clip_scroll_tree,
+            ) {
+                return;
+            }
+        }
+
+        self.active_local_clip_rect = Some(local_clip_rect);
+    }
+
+    /// Setup the active clip chains, based on an existing primitive clip chain instance.
+    pub fn set_active_clips_from_clip_chain(
+        &mut self,
+        prim_clip_chain: &ClipChainInstance,
+        prim_spatial_node_index: SpatialNodeIndex,
+        clip_scroll_tree: &ClipScrollTree,
+    ) {
+        // TODO(gw): Although this does less work than set_active_clips(), it does
+        //           still do some unnecessary work (such as the clip space conversion).
+        //           We could consider optimizing this if it ever shows up in a profile.
+
+        self.active_clip_node_info.clear();
+        self.active_local_clip_rect = Some(prim_clip_chain.local_clip_rect);
+
+        let clip_instances = &self
+            .clip_node_instances[prim_clip_chain.clips_range.to_range()];
+        for clip_instance in clip_instances {
+            let conversion = ClipSpaceConversion::new(
+                prim_spatial_node_index,
+                clip_instance.spatial_node_index,
+                clip_scroll_tree,
+            );
+            self.active_clip_node_info.push(ClipNodeInfo {
+                handle: clip_instance.handle,
+                local_pos: clip_instance.local_pos,
+                spatial_node_index: clip_instance.spatial_node_index,
+                conversion,
+            });
+        }
+    }
+
+    /// The main interface external code uses. Given a local primitive, positioning
+    /// information, and a clip chain id, build an optimized clip chain instance.
+    pub fn build_clip_chain_instance(
+        &mut self,
+        local_prim_rect: LayoutRect,
         prim_to_pic_mapper: &SpaceMapper<LayoutPixel, PicturePixel>,
         pic_to_world_mapper: &SpaceMapper<PicturePixel, WorldPixel>,
         clip_scroll_tree: &ClipScrollTree,
@@ -603,34 +833,10 @@ impl ClipStore {
         clip_data_store: &mut ClipDataStore,
         request_resources: bool,
     ) -> Option<ClipChainInstance> {
-        let mut local_clip_rect = local_prim_clip_rect;
-
-        // Walk the clip chain to build local rects, and collect the
-        // smallest possible local/device clip area.
-
-        self.clip_node_info.clear();
-
-        for clip_chain_root in clip_chains {
-            let mut current_clip_chain_id = *clip_chain_root;
-
-            // for each clip chain node
-            while current_clip_chain_id != ClipChainId::NONE {
-                let clip_chain_node = &self.clip_chain_nodes[current_clip_chain_id.0 as usize];
-
-                if !add_clip_node_to_current_chain(
-                    clip_chain_node,
-                    spatial_node_index,
-                    &mut local_clip_rect,
-                    &mut self.clip_node_info,
-                    clip_data_store,
-                    clip_scroll_tree,
-                ) {
-                    return None;
-                }
-
-                current_clip_chain_id = clip_chain_node.parent_clip_chain_id;
-            }
-        }
+        let local_clip_rect = match self.active_local_clip_rect {
+            Some(rect) => rect,
+            None => return None,
+        };
 
         let local_bounding_rect = local_prim_rect.intersection(&local_clip_rect)?;
         let pic_clip_rect = prim_to_pic_mapper.map(&local_bounding_rect)?;
@@ -646,7 +852,7 @@ impl ClipStore {
         let mut needs_mask = false;
 
         // For each potential clip node
-        for node_info in self.clip_node_info.drain(..) {
+        for node_info in self.active_clip_node_info.drain(..) {
             let node = &mut clip_data_store[node_info.handle];
 
             // See how this clip affects the prim region.
@@ -754,7 +960,7 @@ impl<I: Iterator<Item = ComplexClipRegion>> Iterator for ComplexTranslateIter<I>
         self.source
             .next()
             .map(|mut complex| {
-                complex.rect = complex.rect.translate(&self.offset);
+                complex.rect = complex.rect.translate(self.offset);
                 complex
             })
     }
@@ -778,11 +984,11 @@ impl<J> ClipRegion<ComplexTranslateIter<J>> {
         J: Iterator<Item = ComplexClipRegion>
     {
         if let Some(ref mut image_mask) = image_mask {
-            image_mask.rect = image_mask.rect.translate(reference_frame_relative_offset);
+            image_mask.rect = image_mask.rect.translate(*reference_frame_relative_offset);
         }
 
         ClipRegion {
-            main: rect.translate(reference_frame_relative_offset),
+            main: rect.translate(*reference_frame_relative_offset),
             image_mask,
             complex_clips: ComplexTranslateIter {
                 source: complex_clips,
@@ -798,7 +1004,7 @@ impl ClipRegion<Option<ComplexClipRegion>> {
         reference_frame_relative_offset: &LayoutVector2D
     ) -> Self {
         ClipRegion {
-            main: local_clip.translate(reference_frame_relative_offset),
+            main: local_clip.translate(*reference_frame_relative_offset),
             image_mask: None,
             complex_clips: None,
         }
@@ -870,6 +1076,17 @@ impl ClipItemKey {
             Au::from_f32_px(blur_radius),
             clip_mode,
         )
+    }
+
+    pub fn has_complex_clip(&self) -> bool {
+        match *self {
+            ClipItemKey::Rectangle(_, ClipMode::Clip) => false,
+
+            ClipItemKey::Rectangle(_, ClipMode::ClipOut) |
+            ClipItemKey::RoundedRectangle(..) |
+            ClipItemKey::ImageMask(..) |
+            ClipItemKey::BoxShadow(..) => true,
+        }
     }
 }
 
@@ -1276,7 +1493,7 @@ pub fn rounded_rectangle_contains_point(
     rect: &LayoutRect,
     radii: &BorderRadius
 ) -> bool {
-    if !rect.contains(point) {
+    if !rect.contains(*point) {
         return false;
     }
 
@@ -1314,10 +1531,10 @@ pub fn project_inner_rect(
     rect: &LayoutRect,
 ) -> Option<WorldRect> {
     let points = [
-        transform.transform_point2d(&rect.origin)?,
-        transform.transform_point2d(&rect.top_right())?,
-        transform.transform_point2d(&rect.bottom_left())?,
-        transform.transform_point2d(&rect.bottom_right())?,
+        transform.transform_point2d(rect.origin)?,
+        transform.transform_point2d(rect.top_right())?,
+        transform.transform_point2d(rect.bottom_left())?,
+        transform.transform_point2d(rect.bottom_right())?,
     ];
 
     let mut xs = [points[0].x, points[1].x, points[2].x, points[3].x];
@@ -1342,28 +1559,14 @@ fn add_clip_node_to_current_chain(
     clip_scroll_tree: &ClipScrollTree,
 ) -> bool {
     let clip_node = &clip_data_store[node.handle];
-    let clip_spatial_node = &clip_scroll_tree.spatial_nodes[node.spatial_node_index.0 as usize];
-    let ref_spatial_node = &clip_scroll_tree.spatial_nodes[spatial_node_index.0 as usize];
 
     // Determine the most efficient way to convert between coordinate
     // systems of the primitive and clip node.
-    //Note: this code is different from `get_relative_transform` in a way that we only try
-    // getting the relative transform if it's Local or ScaleOffset,
-    // falling back to the world transform otherwise.
-    let conversion = if spatial_node_index == node.spatial_node_index {
-        ClipSpaceConversion::Local
-    } else if ref_spatial_node.coordinate_system_id == clip_spatial_node.coordinate_system_id {
-        let scale_offset = ref_spatial_node.coordinate_system_relative_scale_offset
-            .inverse()
-            .accumulate(&clip_spatial_node.coordinate_system_relative_scale_offset);
-        ClipSpaceConversion::ScaleOffset(scale_offset)
-    } else {
-        ClipSpaceConversion::Transform(
-            clip_scroll_tree
-                .get_world_transform(node.spatial_node_index)
-                .into_transform()
-        )
-    };
+    let conversion = ClipSpaceConversion::new(
+        spatial_node_index,
+        node.spatial_node_index,
+        clip_scroll_tree,
+    );
 
     // If we can convert spaces, try to reduce the size of the region
     // requested, and cache the conversion information for the next step.

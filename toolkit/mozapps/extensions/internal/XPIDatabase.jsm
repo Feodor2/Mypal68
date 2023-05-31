@@ -526,7 +526,7 @@ class AddonInternal {
     }
 
     return (
-      Services.vc.compare(version, minVersion) >= 0 &&
+      Services.vc.compare(79, minVersion) >= 0 &&
       Services.vc.compare(version, maxVersion) <= 0
     );
   }

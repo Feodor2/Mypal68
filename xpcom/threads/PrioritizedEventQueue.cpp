@@ -5,7 +5,7 @@
 #include "PrioritizedEventQueue.h"
 #include "mozilla/EventQueue.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_threads.h"
 #include "nsThreadManager.h"
 #include "nsXPCOMPrivate.h"  // for gXPCOMThreadsShutDown
 #include "InputEventStatistics.h"
@@ -16,7 +16,7 @@ template <class InnerQueueT>
 void PrioritizedEventQueue<InnerQueueT>::PutEvent(
     already_AddRefed<nsIRunnable>&& aEvent, EventQueuePriority aPriority,
     const AutoLock& aProofOfLock) {
-  static_assert(IsBaseOf<AbstractEventQueue, InnerQueueT>::value,
+  static_assert(std::is_base_of<AbstractEventQueue, InnerQueueT>::value,
                 "InnerQueueT must be an AbstractEventQueue subclass");
 
   // Double check the priority with a QI.
@@ -27,7 +27,7 @@ void PrioritizedEventQueue<InnerQueueT>::PutEvent(
       mInputQueueState == STATE_DISABLED) {
     priority = EventQueuePriority::Normal;
   } else if (priority == EventQueuePriority::MediumHigh &&
-             !StaticPrefs::medium_high_event_queue_enabled()) {
+             !StaticPrefs::threads_medium_high_event_queue_enabled()) {
     priority = EventQueuePriority::Normal;
   }
 

@@ -5,8 +5,8 @@
 #ifndef mozilla_places_Shutdown_h_
 #define mozilla_places_Shutdown_h_
 
-#include "nsIAsyncShutdown.h"
 #include "Database.h"
+#include "mozIStorageCompletionCallback.h"
 #include "nsProxyRelease.h"
 
 namespace mozilla {

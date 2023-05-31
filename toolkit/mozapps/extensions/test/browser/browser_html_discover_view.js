@@ -694,7 +694,7 @@ add_task(async function discopane_no_cookies() {
     false,
     Date.now() / 1000 + 600,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   let win = await loadInitialView("discover");
   let request = await requestPromise;

@@ -337,7 +337,6 @@ var SiteDataManager = {
         cookie.host,
         cookie.name,
         cookie.path,
-        false,
         cookie.originAttributes
       );
     }
@@ -348,10 +347,8 @@ var SiteDataManager = {
   // we consider part of "site data and cookies".
   _getDeletablePermissions() {
     let perms = [];
-    let enumerator = Services.perms.enumerator;
 
-    while (enumerator.hasMoreElements()) {
-      let permission = enumerator.getNext().QueryInterface(Ci.nsIPermission);
+    for (let permission of Services.perms.all) {
       if (
         permission.type == "persistent-storage" ||
         permission.type == "storage-access"
@@ -435,8 +432,7 @@ var SiteDataManager = {
     let title = gStringBundle.GetStringFromName("clearSiteDataPromptTitle");
     let text = gStringBundle.formatStringFromName(
       "clearSiteDataPromptText",
-      [brandName],
-      1
+      [brandName]
     );
     let btn0Label = gStringBundle.GetStringFromName("clearSiteDataNow");
 

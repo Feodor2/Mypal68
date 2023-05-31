@@ -9,6 +9,7 @@
 #include "ipc/TelemetryIPCAccumulator.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
 #include "js/GCAPI.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/gfx/GPUProcessManager.h"
@@ -30,8 +31,8 @@ using base::CountHistogram;
 using base::FlagHistogram;
 using base::LinearHistogram;
 using mozilla::MakeTuple;
+using mozilla::StaticMutex;
 using mozilla::StaticMutexAutoLock;
-using mozilla::StaticMutexNotRecorded;
 using mozilla::Telemetry::HistogramAccumulation;
 using mozilla::Telemetry::HistogramCount;
 using mozilla::Telemetry::HistogramID;
@@ -108,7 +109,7 @@ namespace TelemetryIPCAccumulator = mozilla::TelemetryIPCAccumulator;
 // a normal Mutex would show up as a leak in BloatView.  StaticMutex
 // also has the "OffTheBooks" property, so it won't show as a leak
 // in BloatView.
-static StaticMutexNotRecorded gTelemetryHistogramMutex;
+static StaticMutex gTelemetryHistogramMutex;
 
 ////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////
@@ -787,7 +788,7 @@ nsresult internal_ReflectHistogramAndSamples(
              "The number of buckets and the number of counts must match.");
 
   // Create the "range" property and add it to the final object.
-  JS::Rooted<JSObject*> rarray(cx, JS_NewArrayObject(cx, 2));
+  JS::Rooted<JSObject*> rarray(cx, JS::NewArrayObject(cx, 2));
   if (rarray == nullptr ||
       !JS_DefineProperty(cx, obj, "range", rarray, JSPROP_ENUMERATE)) {
     return NS_ERROR_FAILURE;
@@ -1731,7 +1732,7 @@ bool internal_JSHistogram_GetValueArray(JSContext* aCx, JS::CallArgs& args,
     JS::Rooted<JSObject*> arrayObj(aCx, &args[firstArgIndex].toObject());
 
     bool isArray = false;
-    JS_IsArrayObject(aCx, arrayObj, &isArray);
+    JS::IsArrayObject(aCx, arrayObj, &isArray);
 
     if (!isArray) {
       LogToBrowserConsole(
@@ -1742,7 +1743,7 @@ bool internal_JSHistogram_GetValueArray(JSContext* aCx, JS::CallArgs& args,
     }
 
     uint32_t arrayLength = 0;
-    if (!JS_GetArrayLength(aCx, arrayObj, &arrayLength)) {
+    if (!JS::GetArrayLength(aCx, arrayObj, &arrayLength)) {
       LogToBrowserConsole(
           nsIScriptError::errorFlag,
           NS_LITERAL_STRING("Failed while trying to get array length"));
@@ -2269,7 +2270,7 @@ bool internal_JSKeyedHistogram_Keys(JSContext* cx, unsigned argc,
     }
   }
 
-  JS::RootedObject jsKeys(cx, JS_NewArrayObject(cx, autoKeys));
+  JS::RootedObject jsKeys(cx, JS::NewArrayObject(cx, autoKeys));
   if (!jsKeys) {
     return false;
   }
@@ -3092,7 +3093,7 @@ nsresult internal_ParseHistogramData(
   JS::RootedValue countsArray(aCx);
   bool countsIsArray = false;
   if (!JS_GetProperty(aCx, histogramObj, "counts", &countsArray) ||
-      !JS_IsArrayObject(aCx, countsArray, &countsIsArray)) {
+      !JS::IsArrayObject(aCx, countsArray, &countsIsArray)) {
     JS_ClearPendingException(aCx);
     return NS_ERROR_FAILURE;
   }
@@ -3106,7 +3107,7 @@ nsresult internal_ParseHistogramData(
   // Get the length of the array.
   uint32_t countsLen = 0;
   JS::RootedObject countsArrayObj(aCx, &countsArray.toObject());
-  if (!JS_GetArrayLength(aCx, countsArrayObj, &countsLen)) {
+  if (!JS::GetArrayLength(aCx, countsArrayObj, &countsLen)) {
     JS_ClearPendingException(aCx);
     return NS_ERROR_FAILURE;
   }

@@ -12,8 +12,6 @@
 #ifndef mozilla_XULStore_h
 #define mozilla_XULStore_h
 
-#include "nsIXULStore.h"
-
 namespace mozilla {
 class XULStoreIterator final {
  public:

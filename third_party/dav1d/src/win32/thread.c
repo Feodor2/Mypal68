@@ -66,39 +66,26 @@ int dav1d_pthread_join(pthread_t *const thread, void **const res) {
 int dav1d_pthread_once(pthread_once_t *const once_control,
                        void (*const init_routine)(void))
 {
-    BOOL pending = FALSE;
-
-    //if (InitOnceBeginInitialize(once_control, 0, &pending, NULL) != TRUE)
-    //    return 1;
-
-    if (pending == TRUE)
-        init_routine();
-
-    //return 0;
-    return -1;
-}
-/*static inline void w32thread_once_fallback(LONG volatile *state, void (*init_routine)(void))
-{
-    switch (InterlockedCompareExchange(state, 1, 0)) {
+    switch (InterlockedCompareExchange(&once_control->state, 1, 0)) {
     /* Initial run */
-    /*case 0:
+    case 0:
         init_routine();
-        InterlockedExchange(state, 2);
+        InterlockedExchange(&once_control->state, 2);
         break;
     /* Another thread is running init */
-    /*case 1:
+    case 1:
         while (1) {
             MemoryBarrier();
-            if (*state == 2)
+            if (once_control->state == 2)
                 break;
             Sleep(0);
         }
         break;
     /* Initialization complete */
-    /*case 2:
+    case 2:
         break;
     }
-}*/
-
+    return 0;
+}
 
 #endif

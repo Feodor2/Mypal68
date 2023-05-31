@@ -24,7 +24,7 @@
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIThreadRetargetableStreamListener.h"
-#include "PrivateBrowsingChannel.h"
+#include "mozilla/net/PrivateBrowsingChannel.h"
 #include "nsThreadUtils.h"
 
 class nsIInputStream;
@@ -63,9 +63,6 @@ class nsBaseChannel
   NS_DECL_NSITHREADRETARGETABLESTREAMLISTENER
 
   nsBaseChannel();
-
-  // This method must be called to initialize the basechannel instance.
-  nsresult Init() { return NS_OK; }
 
  protected:
   // -----------------------------------------------

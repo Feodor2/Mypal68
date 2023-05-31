@@ -99,6 +99,12 @@ let gWhitelist = [
     key: "PatternAttributeCompileFailure",
     type: "single-quote",
   },
+  // dom.properties is packaged twice so we need to have two exceptions for this string.
+  {
+    file: "dom.properties",
+    key: "PatternAttributeCompileFailure",
+    type: "single-quote",
+  },
   {
     file: "netError.dtd",
     key: "inadequateSecurityError.longDesc",
@@ -272,6 +278,7 @@ add_task(async function checkAllTheFluents() {
     {}
   );
   let domParser = new DOMParser();
+  domParser.forceEnableDTD();
   for (let uri of uris) {
     let rawContents = await fetchFile(uri.spec);
     let resource = FluentResource.fromString(rawContents);

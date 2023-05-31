@@ -20,7 +20,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
   BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
-  CFRPageActions: "resource://activity-stream/lib/CFRPageActions.jsm",
   CharsetMenu: "resource://gre/modules/CharsetMenu.jsm",
   Color: "resource://gre/modules/Color.jsm",
   ContentSearch: "resource:///modules/ContentSearch.jsm",
@@ -639,7 +638,7 @@ var gNavigatorBundle = {
     return gBrowserBundle.GetStringFromName(key);
   },
   getFormattedString(key, array) {
-    return gBrowserBundle.formatStringFromName(key, array, array.length);
+    return gBrowserBundle.formatStringFromName(key, array);
   },
 };
 
@@ -1090,7 +1089,10 @@ var gPopupBlockerObserver = {
       blockedPopupAllowSite.removeAttribute("hidden");
       let uriHost = uri.asciiHost ? uri.host : uri.spec;
       var pm = Services.perms;
-      if (pm.testPermission(uri, "popup") == pm.ALLOW_ACTION) {
+      if (
+        pm.testPermissionFromPrincipal(browser.contentPrincipal, "popup") ==
+        pm.ALLOW_ACTION
+      ) {
         // Offer an item to block popups for this site, if a whitelist entry exists
         // already for it.
         let blockString = gNavigatorBundle.getFormattedString("popupBlock", [
@@ -1506,7 +1508,7 @@ function _loadURI(browser, uri, params = {}) {
 
   // !requiredRemoteType means we're loading in the parent/this process.
   if (!requiredRemoteType) {
-    browser.inLoadURI = true;
+    browser.isNavigating = true;
   }
   let loadURIOptions = {
     triggeringPrincipal,
@@ -1580,7 +1582,7 @@ function _loadURI(browser, uri, params = {}) {
     }
   } finally {
     if (!requiredRemoteType) {
-      browser.inLoadURI = false;
+      browser.isNavigating = false;
     }
   }
 }
@@ -2190,10 +2192,10 @@ var gBrowserInit = {
             // See below for the semantics of window.arguments. Only the minimum is supported.
             userContextId: window.arguments[5],
             triggeringPrincipal:
-              window.arguments[7] ||
+              window.arguments[8] ||
               Services.scriptSecurityManager.getSystemPrincipal(),
-            allowInheritPrincipal: window.arguments[8],
-            csp: window.arguments[9],
+            allowInheritPrincipal: window.arguments[9],
+            csp: window.arguments[10],
             fromExternal: true,
           });
         } catch (e) {}
@@ -2204,9 +2206,10 @@ var gBrowserInit = {
         //                 [4]: allowThirdPartyFixup (bool)
         //                 [5]: userContextId (int)
         //                 [6]: originPrincipal (nsIPrincipal)
-        //                 [7]: triggeringPrincipal (nsIPrincipal)
-        //                 [8]: allowInheritPrincipal (bool)
-        //                 [9]: csp (nsIContentSecurityPolicy)
+        //                 [7]: originStoragePrincipal (nsIPrincipal)
+        //                 [8]: triggeringPrincipal (nsIPrincipal)
+        //                 [9]: allowInheritPrincipal (bool)
+        //                 [10]: csp (nsIContentSecurityPolicy)
         let userContextId =
           window.arguments[5] != undefined
             ? window.arguments[5]
@@ -2220,12 +2223,13 @@ var gBrowserInit = {
           // pass the origin principal (if any) and force its use to create
           // an initial about:blank viewer if present:
           window.arguments[6],
-          !!window.arguments[6],
           window.arguments[7],
+          !!window.arguments[6],
+          window.arguments[8],
           // TODO fix allowInheritPrincipal to default to false.
           // Default to true unless explicitly set to false because of bug 1475201.
-          window.arguments[8] !== false,
-          window.arguments[9]
+          window.arguments[9] !== false,
+          window.arguments[10]
         );
         window.focus();
       } else {
@@ -3034,6 +3038,7 @@ function loadURI(
   allowThirdPartyFixup,
   userContextId,
   originPrincipal,
+  originStoragePrincipal,
   forceAboutBlankViewerInCurrent,
   triggeringPrincipal,
   allowInheritPrincipal = false,
@@ -3043,23 +3048,6 @@ function loadURI(
     throw new Error("Must load with a triggering Principal");
   }
 
-  // After Bug 965637 we can remove that Error because the CSP will not
-  // hang off the Principal anymore. Please note that the SystemPrincipal
-  // can not hold a CSP!
-  if (AppConstants.EARLY_BETA_OR_EARLIER) {
-    // Please note that the backend will still query the CSP from the Principal in
-    // release versions of Firefox. We use this error just to annotate all the
-    // callsites to explicitly pass a CSP before we can remove the CSP from
-    // the Principal within Bug 965637.
-    if (
-      !triggeringPrincipal.isSystemPrincipal &&
-      triggeringPrincipal.csp &&
-      !csp
-    ) {
-      throw new Error("If Principal has CSP then we need an explicit CSP");
-    }
-  }
-
   try {
     openLinkIn(uri, "current", {
       referrerInfo,
@@ -3067,6 +3055,7 @@ function loadURI(
       allowThirdPartyFixup,
       userContextId,
       originPrincipal,
+      originStoragePrincipal,
       triggeringPrincipal,
       csp,
       forceAboutBlankViewerInCurrent,
@@ -3849,8 +3838,14 @@ var BrowserOnClick = {
       flags: Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CLASSIFIER,
     });
 
-    Services.perms.add(
+    // We can't use gBrowser.contentPrincipal which is principal of about:blocked
+    // Create one from uri with current principal origin attributes
+    let principal = Services.scriptSecurityManager.createCodebasePrincipal(
       gBrowser.currentURI,
+      gBrowser.contentPrincipal.originAttributes
+    );
+    Services.perms.addFromPrincipal(
+      principal,
       "safe-browsing",
       Ci.nsIPermissionManager.ALLOW_ACTION,
       Ci.nsIPermissionManager.EXPIRE_SESSION
@@ -4002,15 +3997,6 @@ function BrowserReloadWithFlags(reloadFlags) {
         );
         gBrowser._insertBrowser(tab);
       }
-    } else if (browser.hasAttribute("recordExecution")) {
-      // Recording tabs always use new content processes when reloading, to get
-      // a fresh recording.
-      gBrowser.updateBrowserRemoteness(browser, {
-        recordExecution: "*",
-        newFrameloader: true,
-        remoteType: E10SUtils.DEFAULT_REMOTE_TYPE,
-      });
-      loadBrowserURI(browser, url);
     } else {
       unchangedRemoteness.push(tab);
     }
@@ -4776,8 +4762,7 @@ const BrowserSearch = {
     if (name) {
       placeholder = gBrowserBundle.formatStringFromName(
         "urlbar.placeholder",
-        [name],
-        1
+        [name]
       );
     } else {
       placeholder = gURLBar.getAttribute("defaultPlaceholder");
@@ -4987,7 +4972,9 @@ const BrowserSearch = {
       terms,
       true,
       "contextmenu",
-      triggeringPrincipal,
+      Services.scriptSecurityManager.createNullPrincipal(
+        triggeringPrincipal.originAttributes
+      ),
       csp
     );
     if (engine) {
@@ -5626,12 +5613,23 @@ var XULBrowserWindow = {
     elt.label = tooltip;
     elt.style.direction = direction;
 
-    elt.openPopupAtScreen(
-      browser.screenX + x,
-      browser.screenY + y,
-      false,
-      null
-    );
+    let screenX;
+    let screenY;
+
+    if (browser instanceof XULElement) {
+      // XUL element such as <browser> has the `screenX` and `screenY` fields.
+      // https://searchfox.org/mozilla-central/source/dom/webidl/XULElement.webidl
+      screenX = browser.screenX;
+      screenY = browser.screenY;
+    } else {
+      // In case of HTML element such as <iframe> which RDM uses,
+      // calculate the coordinate manually since it does not have the fields.
+      const componentBounds = browser.getBoundingClientRect();
+      screenX = window.screenX + componentBounds.x;
+      screenY = window.screenY + componentBounds.y;
+    }
+
+    elt.openPopupAtScreen(screenX + x, screenY + y, false, null);
   },
 
   hideTooltip() {
@@ -5657,7 +5655,7 @@ var XULBrowserWindow = {
   shouldLoadURI(
     aDocShell,
     aURI,
-    aReferrer,
+    aReferrerInfo,
     aHasPostData,
     aTriggeringPrincipal,
     aCsp
@@ -5679,14 +5677,14 @@ var XULBrowserWindow = {
       return true;
     }
 
-    if (!E10SUtils.shouldLoadURI(aDocShell, aURI, aReferrer, aHasPostData)) {
+    if (!E10SUtils.shouldLoadURI(aDocShell, aURI, aHasPostData)) {
       // XXX: Do we want to complain if we have post data but are still
       // redirecting the load? Perhaps a telemetry probe? Theoretically we
       // shouldn't do this, as it throws out data. See bug 1348018.
       E10SUtils.redirectLoad(
         aDocShell,
         aURI,
-        aReferrer,
+        aReferrerInfo,
         aTriggeringPrincipal,
         false,
         null,
@@ -5811,26 +5809,6 @@ var XULBrowserWindow = {
   onLocationChange(aWebProgress, aRequest, aLocationURI, aFlags, aIsSimulated) {
     var location = aLocationURI ? aLocationURI.spec : "";
 
-    let pageTooltip = document.getElementById("aHTMLTooltip");
-    let tooltipNode = pageTooltip.triggerNode;
-    if (tooltipNode) {
-      // Optimise for the common case
-      if (aWebProgress.isTopLevel) {
-        pageTooltip.hidePopup();
-      } else {
-        for (
-          let tooltipWindow = tooltipNode.ownerGlobal;
-          tooltipWindow != tooltipWindow.parent;
-          tooltipWindow = tooltipWindow.parent
-        ) {
-          if (tooltipWindow == aWebProgress.DOMWindow) {
-            pageTooltip.hidePopup();
-            break;
-          }
-        }
-      }
-    }
-
     this.hideOverLinkImmediately = true;
     this.setOverLink("", null);
     this.hideOverLinkImmediately = false;
@@ -5883,8 +5861,6 @@ var XULBrowserWindow = {
       ) {
         gCustomizeMode.exit();
       }
-
-      CFRPageActions.updatePageActions(gBrowser.selectedBrowser);
     }
     Services.obs.notifyObservers(null, "touchbar-location-change", location);
     UpdateBackForwardCommands(gBrowser.webNavigation);
@@ -6052,6 +6028,13 @@ var XULBrowserWindow = {
 
     CombinedStopReload.onTabSwitch();
 
+    // Docshell should normally take care of hiding the tooltip, but we need to do it
+    // ourselves for tabswitches.
+    this.hideTooltip();
+
+    // Also hide tooltips for content loaded in the parent process:
+    document.getElementById("aHTMLTooltip").hidePopup();
+
     var nsIWebProgressListener = Ci.nsIWebProgressListener;
     var loadingDone = aStateFlags & nsIWebProgressListener.STATE_STOP;
     // use a pseudo-object instead of a (potentially nonexistent) channel for getting
@@ -6176,16 +6159,17 @@ var XULBrowserWindow = {
     this._sessionData.isPrivate = aIsPrivate;
   },
 
-  updateSessionStore: function XWB_updateSessionStore(aBrowser, aFlushId) {
-    let tab = gBrowser.getTabForBrowser(aBrowser);
-    if (tab) {
-      SessionStore.updateSessionStoreFromTablistener(tab, {
-        data: this._sessionData,
-        flushID: aFlushId,
-        isFinal: false,
-      });
-      this._sessionData = {};
-    }
+  updateSessionStore: function XWB_updateSessionStore(
+    aBrowser,
+    aFlushId,
+    aIsFinal
+  ) {
+    SessionStore.updateSessionStoreFromTablistener(aBrowser, {
+      data: this._sessionData,
+      flushID: aFlushId,
+      isFinal: false,
+    });
+    this._sessionData = {};
   },
 };
 
@@ -6736,23 +6720,6 @@ nsBrowserAccess.prototype = {
       throw Cr.NS_ERROR_FAILURE;
     }
 
-    // After Bug 965637 we can remove that Error because the CSP will not
-    // hang off the Principal anymore. Please note that the SystemPrincipal
-    // can not hold a CSP!
-    if (AppConstants.EARLY_BETA_OR_EARLIER) {
-      // Please note that the backend will still query the CSP from the Principal in
-      // release versions of Firefox. We use this error just to annotate all the
-      // callsites to explicitly pass a CSP before we can remove the CSP from
-      // the Principal within Bug 965637.
-      if (
-        !aTriggeringPrincipal.isSystemPrincipal &&
-        aTriggeringPrincipal.csp &&
-        !aCsp
-      ) {
-        throw new Error("If Principal has CSP then we need an explicit CSP");
-      }
-    }
-
     var newWindow = null;
     var isExternal = !!(aFlags & Ci.nsIBrowserDOMWindow.OPEN_EXTERNAL);
 
@@ -6786,16 +6753,12 @@ nsBrowserAccess.prototype = {
 
     let referrerInfo;
     if (aFlags & Ci.nsIBrowserDOMWindow.OPEN_NO_REFERRER) {
-      referrerInfo = new ReferrerInfo(
-        Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
-        false,
-        null
-      );
+      referrerInfo = new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, false, null);
     } else {
       referrerInfo = new ReferrerInfo(
         aOpener && aOpener.document
-          ? aOpener.document.referrerPolicy
-          : Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
+          ? aOpener.document.referrerInfo.referrerPolicy
+          : Ci.nsIReferrerInfo.EMPTY,
         true,
         aOpener ? makeURI(aOpener.location.href) : null
       );
@@ -6823,6 +6786,7 @@ nsBrowserAccess.prototype = {
             features,
             // window.arguments
             url,
+            null,
             null,
             null,
             null,
@@ -7550,6 +7514,14 @@ function handleLinkClick(event, href, linkNode) {
   }
 
   var doc = event.target.ownerDocument;
+  let referrerInfo = Cc["@mozilla.org/referrer-info;1"].createInstance(
+    Ci.nsIReferrerInfo
+  );
+  if (linkNode) {
+    referrerInfo.initWithNode(linkNode);
+  } else {
+    referrerInfo.initWithDocument(doc);
+  }
 
   if (where == "save") {
     saveURL(
@@ -7558,14 +7530,13 @@ function handleLinkClick(event, href, linkNode) {
       null,
       true,
       true,
-      doc.documentURIObject,
+      referrerInfo,
       doc
     );
     event.preventDefault();
     return true;
   }
 
-  var referrerURI = doc.documentURIObject;
   // if the mixedContentChannel is present and the referring URI passes
   // a same origin check with the target URI, we can preserve the users
   // decision of disabling MCB on a page for it's child tabs.
@@ -7577,33 +7548,17 @@ function handleLinkClick(event, href, linkNode) {
       var targetURI = makeURI(href);
       let isPrivateWin =
         doc.nodePrincipal.originAttributes.privateBrowsingId > 0;
-      sm.checkSameOriginURI(referrerURI, targetURI, false, isPrivateWin);
+      sm.checkSameOriginURI(
+        doc.documentURIObject,
+        targetURI,
+        false,
+        isPrivateWin
+      );
       persistAllowMixedContentInChildTab = true;
     } catch (e) {}
   }
 
-  // first get document wide referrer policy, then
-  // get referrer attribute from clicked link and parse it and
-  // allow per element referrer to overrule the document wide referrer if enabled
-  let referrerPolicy = doc.referrerPolicy;
-  if (linkNode) {
-    let referrerAttrValue = Services.netUtils.parseAttributePolicyString(
-      linkNode.getAttribute("referrerpolicy")
-    );
-    if (referrerAttrValue != Ci.nsIHttpChannel.REFERRER_POLICY_UNSET) {
-      referrerPolicy = referrerAttrValue;
-    }
-  }
-
   let frameOuterWindowID = WebNavigationFrames.getFrameId(doc.defaultView);
-  let referrerInfo = new ReferrerInfo(
-    referrerPolicy,
-    !BrowserUtils.linkHasNoReferrer(linkNode),
-    referrerURI
-  );
-
-  // Bug 965637, query the CSP from the doc instead of the Principal
-  let csp = doc.nodePrincipal.csp;
 
   urlSecurityCheck(href, doc.nodePrincipal);
   let params = {
@@ -7611,8 +7566,9 @@ function handleLinkClick(event, href, linkNode) {
     allowMixedContent: persistAllowMixedContentInChildTab,
     referrerInfo,
     originPrincipal: doc.nodePrincipal,
+    originStoragePrincipal: doc.effectiveStoragePrincipal,
     triggeringPrincipal: doc.nodePrincipal,
-    csp,
+    csp: doc.csp,
     frameOuterWindowID,
   };
 
@@ -8181,7 +8137,7 @@ var BrowserOffline = {
 };
 
 var OfflineApps = {
-  warnUsage(browser, uri) {
+  warnUsage(browser, principal, host) {
     if (!browser) {
       return;
     }
@@ -8195,7 +8151,7 @@ var OfflineApps = {
     let warnQuotaKB = Services.prefs.getIntPref("offline-apps.quota.warn");
     // This message shows the quota in MB, and so we divide the quota (in kb) by 1024.
     let message = gNavigatorBundle.getFormattedString("offlineApps.usage", [
-      uri.host,
+      host,
       warnQuotaKB / 1024,
     ]);
 
@@ -8216,8 +8172,8 @@ var OfflineApps = {
 
     // Now that we've warned once, prevent the warning from showing up
     // again.
-    Services.perms.add(
-      uri,
+    Services.perms.addFromPrincipal(
+      principal,
       "offline-app",
       Ci.nsIOfflineCacheUpdateService.ALLOW_NO_WARN
     );
@@ -8248,13 +8204,15 @@ var OfflineApps = {
     return usage;
   },
 
-  _usedMoreThanWarnQuota(uri) {
+  _usedMoreThanWarnQuota(principal, asciiHost) {
     // if the user has already allowed excessive usage, don't bother checking
     if (
-      Services.perms.testExactPermission(uri, "offline-app") !=
-      Ci.nsIOfflineCacheUpdateService.ALLOW_NO_WARN
+      Services.perms.testExactPermissionFromPrincipal(
+        principal,
+        "offline-app"
+      ) != Ci.nsIOfflineCacheUpdateService.ALLOW_NO_WARN
     ) {
-      let usageBytes = this._getOfflineAppUsage(uri.asciiHost);
+      let usageBytes = this._getOfflineAppUsage(asciiHost);
       let warnQuotaKB = Services.prefs.getIntPref("offline-apps.quota.warn");
       // The pref is in kb, the usage we get is in bytes, so multiply the quota
       // to compare correctly:
@@ -8266,112 +8224,24 @@ var OfflineApps = {
     return false;
   },
 
-  requestPermission(browser, docId, uri) {
-    let host = uri.asciiHost;
-    let notificationID = "offline-app-requested-" + host;
-    let notification = PopupNotifications.getNotification(
-      notificationID,
-      browser
-    );
-
-    if (notification) {
-      notification.options.controlledItems.push([
-        Cu.getWeakReference(browser),
-        docId,
-        uri,
-      ]);
-    } else {
-      let mainAction = {
-        label: gNavigatorBundle.getString("offlineApps.allowStoring.label"),
-        accessKey: gNavigatorBundle.getString(
-          "offlineApps.allowStoring.accesskey"
-        ),
-        callback() {
-          for (let [ciBrowser, ciDocId, ciUri] of notification.options
-            .controlledItems) {
-            OfflineApps.allowSite(ciBrowser, ciDocId, ciUri);
-          }
-        },
-      };
-      let secondaryActions = [
-        {
-          label: gNavigatorBundle.getString("offlineApps.dontAllow.label"),
-          accessKey: gNavigatorBundle.getString(
-            "offlineApps.dontAllow.accesskey"
-          ),
-          callback() {
-            for (let [, , ciUri] of notification.options.controlledItems) {
-              OfflineApps.disallowSite(ciUri);
-            }
-          },
-        },
-      ];
-      let message = gNavigatorBundle.getFormattedString(
-        "offlineApps.available2",
-        [host]
-      );
-      let anchorID = "indexedDB-notification-icon";
-      let options = {
-        persistent: true,
-        hideClose: true,
-        controlledItems: [[Cu.getWeakReference(browser), docId, uri]],
-      };
-      notification = PopupNotifications.show(
-        browser,
-        notificationID,
-        message,
-        anchorID,
-        mainAction,
-        secondaryActions,
-        options
-      );
-    }
-  },
-
-  disallowSite(uri) {
-    Services.perms.add(uri, "offline-app", Services.perms.DENY_ACTION);
-  },
-
-  allowSite(browserRef, docId, uri) {
-    Services.perms.add(uri, "offline-app", Services.perms.ALLOW_ACTION);
-
-    // When a site is enabled while loading, manifest resources will
-    // start fetching immediately.  This one time we need to do it
-    // ourselves.
-    let browser = browserRef.get();
-    if (browser && browser.messageManager) {
-      browser.messageManager.sendAsyncMessage("OfflineApps:StartFetching", {
-        docId,
-      });
-    }
-  },
-
   manage() {
     openPreferences("panePrivacy");
   },
 
   receiveMessage(msg) {
-    switch (msg.name) {
-      case "OfflineApps:CheckUsage":
-        let uri = makeURI(msg.data.uri);
-        if (this._usedMoreThanWarnQuota(uri)) {
-          this.warnUsage(msg.target, uri);
-        }
-        break;
-      case "OfflineApps:RequestPermission":
-        this.requestPermission(
-          msg.target,
-          msg.data.docId,
-          makeURI(msg.data.uri)
-        );
-        break;
+    if (msg.name !== "OfflineApps:CheckUsage") {
+      return;
+    }
+    let uri = makeURI(msg.data.uri);
+    let principal = E10SUtils.deserializePrincipal(msg.data.principal);
+    if (this._usedMoreThanWarnQuota(principal, uri.asciiHost)) {
+      this.warnUsage(msg.target, principal, uri.host);
     }
   },
 
   init() {
     let mm = window.messageManager;
     mm.addMessageListener("OfflineApps:CheckUsage", this);
-    mm.addMessageListener("OfflineApps:RequestPermission", this);
   },
 };
 
@@ -8477,7 +8347,7 @@ var CanvasPermissionPromptHelper = {
   },
 
   // aSubject is an nsIBrowser (e10s) or an nsIDOMWindow (non-e10s).
-  // aData is an URL string.
+  // aData is an Origin string.
   observe(aSubject, aTopic, aData) {
     if (
       aTopic != this._permissionsPrompt &&
@@ -8494,7 +8364,6 @@ var CanvasPermissionPromptHelper = {
       browser = aSubject;
     }
 
-    let uri = Services.io.newURI(aData);
     if (gBrowser.selectedBrowser !== browser) {
       // Must belong to some other window.
       return;
@@ -8506,9 +8375,13 @@ var CanvasPermissionPromptHelper = {
       1
     );
 
-    function setCanvasPermission(aURI, aPerm, aPersistent) {
-      Services.perms.add(
-        aURI,
+    let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+      aData
+    );
+
+    function setCanvasPermission(aPerm, aPersistent) {
+      Services.perms.addFromPrincipal(
+        principal,
         "canvas",
         aPerm,
         aPersistent
@@ -8522,7 +8395,6 @@ var CanvasPermissionPromptHelper = {
       accessKey: gNavigatorBundle.getString("canvas.allow.accesskey"),
       callback(state) {
         setCanvasPermission(
-          uri,
           Ci.nsIPermissionManager.ALLOW_ACTION,
           state && state.checkboxChecked
         );
@@ -8535,7 +8407,6 @@ var CanvasPermissionPromptHelper = {
         accessKey: gNavigatorBundle.getString("canvas.notAllow.accesskey"),
         callback(state) {
           setCanvasPermission(
-            uri,
             Ci.nsIPermissionManager.DENY_ACTION,
             state && state.checkboxChecked
           );
@@ -8554,7 +8425,7 @@ var CanvasPermissionPromptHelper = {
 
     let options = {
       checkbox,
-      name: uri.asciiHost,
+      name: principal.URI.host,
       learnMoreURL:
         Services.urlFormatter.formatURLPref("app.support.baseURL") +
         "fingerprint-permission",
@@ -9106,8 +8977,7 @@ function ReportFalseDeceptiveSite() {
           bundle.GetStringFromName("errorReportFalseDeceptiveTitle"),
           bundle.formatStringFromName(
             "errorReportFalseDeceptiveMessage",
-            [message.data.blockedInfo.provider],
-            1
+            [message.data.blockedInfo.provider]
           )
         );
       }
@@ -9914,10 +9784,10 @@ TabModalPromptBox.prototype = {
   },
 
   appendPrompt(args, onCloseCallback) {
-    let newPrompt = new TabModalPrompt(window);
+    let browser = this.browser;
+    let newPrompt = new TabModalPrompt(browser.ownerGlobal);
     this.prompts.set(newPrompt.element, newPrompt);
 
-    let browser = this.browser;
     browser.parentNode.insertBefore(
       newPrompt.element,
       browser.nextElementSibling
@@ -9947,8 +9817,7 @@ TabModalPromptBox.prototype = {
       allowFocusRow.appendChild(spacer);
       let label = gTabBrowserBundle.formatStringFromName(
         "tabs.allowTabFocusByPromptForSite",
-        [hostForAllowFocusCheckbox],
-        1
+        [hostForAllowFocusCheckbox]
       );
       allowFocusCheckbox.setAttribute("label", label);
       allowFocusRow.appendChild(allowFocusCheckbox);

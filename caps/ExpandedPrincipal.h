@@ -11,6 +11,8 @@
 #include "nsNetUtil.h"
 #include "mozilla/BasePrincipal.h"
 
+class nsIContentSecurityPolicy;
+
 class ExpandedPrincipal : public nsIExpandedPrincipal,
                           public mozilla::BasePrincipal {
  public:
@@ -45,6 +47,8 @@ class ExpandedPrincipal : public nsIExpandedPrincipal,
 
   bool AddonAllowsLoad(nsIURI* aURI, bool aExplicit = false);
 
+  void SetCsp(nsIContentSecurityPolicy* aCSP);
+
   // Returns the principal to inherit when this principal requests the given
   // URL. See BasePrincipal::PrincipalToInherit.
   nsIPrincipal* PrincipalToInherit(nsIURI* aRequestedURI = nullptr);
@@ -63,6 +67,7 @@ class ExpandedPrincipal : public nsIExpandedPrincipal,
 
  private:
   nsTArray<nsCOMPtr<nsIPrincipal>> mPrincipals;
+  nsCOMPtr<nsIContentSecurityPolicy> mCSP;
 };
 
 #define NS_EXPANDEDPRINCIPAL_CONTRACTID "@mozilla.org/expandedprincipal;1"

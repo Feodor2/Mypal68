@@ -9,7 +9,6 @@
 #include "pratom.h"
 
 #include "nsIObserverService.h"
-#include "nsIServiceManager.h"
 #include "mozilla/Services.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/ArenaAllocator.h"
@@ -102,11 +101,7 @@ class TimerEventAllocator {
 
  public:
   TimerEventAllocator()
-      : mPool(),
-        mFirstFree(nullptr),
-        // Timer thread state may be accessed during GC, so uses of this monitor
-        // are not preserved when recording/replaying.
-        mMonitor("TimerEventAllocator") {}
+      : mPool(), mFirstFree(nullptr), mMonitor("TimerEventAllocator") {}
 
   ~TimerEventAllocator() {}
 
@@ -149,7 +144,7 @@ class nsTimerEvent final : public CancelableRunnable {
   static void Shutdown();
   static void DeleteAllocatorIfNeeded();
 
-  static void* operator new(size_t aSize) CPP_THROW_NEW {
+  static void* operator new(size_t aSize) noexcept(true) {
     return sAllocator->Alloc(aSize);
   }
   void operator delete(void* aPtr) {
@@ -177,17 +172,12 @@ class nsTimerEvent final : public CancelableRunnable {
 
   static TimerEventAllocator* sAllocator;
 
-  // Timer thread state may be accessed during GC, so uses of this atomic are
-  // not preserved when recording/replaying.
-  static Atomic<int32_t, SequentiallyConsistent,
-                recordreplay::Behavior::DontPreserve>
-      sAllocatorUsers;
+  static Atomic<int32_t, SequentiallyConsistent> sAllocatorUsers;
   static bool sCanDeleteAllocator;
 };
 
 TimerEventAllocator* nsTimerEvent::sAllocator = nullptr;
-Atomic<int32_t, SequentiallyConsistent, recordreplay::Behavior::DontPreserve>
-    nsTimerEvent::sAllocatorUsers;
+Atomic<int32_t, SequentiallyConsistent> nsTimerEvent::sAllocatorUsers;
 bool nsTimerEvent::sCanDeleteAllocator = false;
 
 namespace {

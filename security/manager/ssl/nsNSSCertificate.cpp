@@ -12,6 +12,8 @@
 #include "mozilla/Base64.h"
 #include "mozilla/Casting.h"
 #include "mozilla/NotNull.h"
+#include "mozilla/Span.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/Unused.h"
 #include "mozilla/net/DNS.h"
 #include "mozpkix/Result.h"
@@ -19,12 +21,9 @@
 #include "mozpkix/pkixtypes.h"
 #include "nsArray.h"
 #include "nsCOMPtr.h"
-#include "nsICertificateDialogs.h"
 #include "nsIClassInfoImpl.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
-#include "nsISupportsPrimitives.h"
-#include "nsIURI.h"
 #include "nsIX509Cert.h"
 #include "nsNSSASN1Object.h"
 #include "nsNSSCertHelper.h"
@@ -559,7 +558,7 @@ void nsNSSCertificate::GetSubjectAltNames() {
             current->name.other.len);
         // dNSName fields are defined as type IA5String and thus should
         // be limited to ASCII characters.
-        if (IsASCII(nameFromCert)) {
+        if (IsAscii(nameFromCert)) {
           name.Assign(NS_ConvertASCIItoUTF16(nameFromCert));
           mSubjectAltNames.push_back(name);
         }
@@ -936,6 +935,8 @@ nsNSSCertList::AsPKCS7Blob(/*out*/ nsACString& result) {
   return NS_OK;
 }
 
+// NB: Any updates (except disk-only fields) must be kept in sync with
+//     |SerializeToIPC|.
 NS_IMETHODIMP
 nsNSSCertList::Write(nsIObjectOutputStream* aStream) {
   // Write the length of the list
@@ -960,6 +961,8 @@ nsNSSCertList::Write(nsIObjectOutputStream* aStream) {
   return rv;
 }
 
+// NB: Any updates (except disk-only fields) must be kept in sync with
+//     |DeserializeFromIPC|.
 NS_IMETHODIMP
 nsNSSCertList::Read(nsIObjectInputStream* aStream) {
   uint32_t certListLen;
@@ -985,6 +988,35 @@ nsNSSCertList::Read(nsIObjectInputStream* aStream) {
   }
 
   return NS_OK;
+}
+
+void nsNSSCertList::SerializeToIPC(IPC::Message* aMsg) {
+  const size_t certCount = static_cast<size_t>(mCerts.size());
+  WriteParam(aMsg, certCount);
+
+  for (const auto& certRef : mCerts) {
+    RefPtr<nsIX509Cert> cert = nsNSSCertificate::Create(certRef.get());
+    MOZ_RELEASE_ASSERT(cert);
+
+    WriteParam(aMsg, cert);
+  }
+}
+
+bool nsNSSCertList::DeserializeFromIPC(const IPC::Message* aMsg,
+                                       PickleIterator* aIter) {
+  size_t count = 0;
+  if (!ReadParam(aMsg, aIter, &count)) {
+    return false;
+  }
+
+  for (size_t i = 0; i < count; i++) {
+    RefPtr<nsIX509Cert> cert;
+    if (!ReadParam(aMsg, aIter, &cert) || !cert || NS_FAILED(AddCert(cert))) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 NS_IMETHODIMP
@@ -1192,6 +1224,8 @@ nsNSSCertListEnumerator::GetNext(nsISupports** _retval) {
   return NS_OK;
 }
 
+// NB: Any updates (except disk-only fields) must be kept in sync with
+//     |SerializeToIPC|.
 NS_IMETHODIMP
 nsNSSCertificate::Write(nsIObjectOutputStream* aStream) {
   NS_ENSURE_STATE(mCert);
@@ -1204,9 +1238,12 @@ nsNSSCertificate::Write(nsIObjectOutputStream* aStream) {
   if (NS_FAILED(rv)) {
     return rv;
   }
-  return aStream->WriteByteArray(mCert->derCert.data, mCert->derCert.len);
+  return aStream->WriteBytes(
+      AsBytes(MakeSpan(mCert->derCert.data, mCert->derCert.len)));
 }
 
+// NB: Any updates (except disk-only fields) must be kept in sync with
+//     |DeserializeFromIPC|.
 NS_IMETHODIMP
 nsNSSCertificate::Read(nsIObjectInputStream* aStream) {
   NS_ENSURE_STATE(!mCert);
@@ -1235,6 +1272,45 @@ nsNSSCertificate::Read(nsIObjectInputStream* aStream) {
   }
 
   return NS_OK;
+}
+
+void nsNSSCertificate::SerializeToIPC(IPC::Message* aMsg) {
+  bool hasCert = static_cast<bool>(mCert);
+  WriteParam(aMsg, hasCert);
+
+  if (!hasCert) {
+    return;
+  }
+
+  const nsDependentCSubstring certBytes(
+      reinterpret_cast<char*>(mCert->derCert.data), mCert->derCert.len);
+
+  WriteParam(aMsg, certBytes);
+}
+
+bool nsNSSCertificate::DeserializeFromIPC(const IPC::Message* aMsg,
+                                          PickleIterator* aIter) {
+  bool hasCert = false;
+  if (!ReadParam(aMsg, aIter, &hasCert)) {
+    return false;
+  }
+
+  if (!hasCert) {
+    return true;
+  }
+
+  nsCString derBytes;
+  if (!ReadParam(aMsg, aIter, &derBytes)) {
+    return false;
+  }
+
+  if (derBytes.Length() == 0) {
+    return false;
+  }
+
+  // NSS accepts a |char*| here, but doesn't modify the contents of the array
+  // and casts it back to an |unsigned char*|.
+  return InitFromDER(const_cast<char*>(derBytes.get()), derBytes.Length());
 }
 
 NS_IMETHODIMP

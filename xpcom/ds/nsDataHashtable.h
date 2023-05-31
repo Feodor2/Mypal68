@@ -38,7 +38,7 @@ class nsDataHashtable : public nsBaseHashtable<KeyClass, DataType, DataType> {
    */
   DataType* GetValue(KeyType aKey) {
     if (EntryType* ent = this->GetEntry(aKey)) {
-      return &ent->mData;
+      return ent->GetModifiableData();
     }
     return nullptr;
   }
@@ -54,7 +54,7 @@ class nsDataHashtable : public nsBaseHashtable<KeyClass, DataType, DataType> {
   mozilla::Maybe<DataType> GetAndRemove(KeyType aKey) {
     mozilla::Maybe<DataType> value;
     if (EntryType* ent = this->GetEntry(aKey)) {
-      value.emplace(std::move(ent->mData));
+      value.emplace(std::move(*ent->GetModifiableData()));
       this->RemoveEntry(ent);
     }
     return value;

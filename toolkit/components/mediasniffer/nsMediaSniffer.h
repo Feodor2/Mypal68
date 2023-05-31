@@ -5,11 +5,7 @@
 #ifndef nsMediaSniffer_h
 #define nsMediaSniffer_h
 
-#include "nsIModule.h"
-#include "nsIFactory.h"
 
-#include "nsIComponentManager.h"
-#include "nsIComponentRegistrar.h"
 #include "nsIContentSniffer.h"
 #include "mozilla/Attributes.h"
 

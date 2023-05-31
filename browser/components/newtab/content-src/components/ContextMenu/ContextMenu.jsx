@@ -37,11 +37,14 @@ export class ContextMenu extends React.PureComponent {
   }
 
   render() {
-    return (<span className="context-menu" onClick={this.onClick}>
-      <ul role="menu" className="context-menu-list">
+    // Disabling focus on the menu span allows the first tab to focus on the first menu item instead of the wrapper.
+    return (
+      // eslint-disable-next-line jsx-a11y/interactive-supports-focus
+      <span role="menu" className="context-menu" onClick={this.onClick} onKeyDown={this.onClick} >
+      <ul className="context-menu-list">
         {this.props.options.map((option, i) => (option.type === "separator" ?
           (<li key={i} className="separator" />) :
-          (option.type !== "empty" && <ContextMenuItem key={i} option={option} hideContext={this.hideContext} />)
+          (option.type !== "empty" && <ContextMenuItem key={i} option={option} hideContext={this.hideContext} tabIndex="0" />)
         ))}
       </ul>
     </span>);
@@ -53,11 +56,32 @@ export class ContextMenuItem extends React.PureComponent {
     super(props);
     this.onClick = this.onClick.bind(this);
     this.onKeyDown = this.onKeyDown.bind(this);
+    this.focusFirst = this.focusFirst.bind(this);
   }
 
   onClick() {
     this.props.hideContext();
     this.props.option.onClick();
+  }
+
+  focusFirst(button) {
+    if (button) {
+      button.focus();
+    }
+  }
+
+  // This selects the correct node based on the key pressed
+  focusSibling(target, key) {
+    const parent = target.parentNode;
+    const closestSiblingSelector = (key === "ArrowUp") ? "previousSibling" : "nextSibling";
+    if (!parent[closestSiblingSelector]) {
+      return;
+    }
+    if (parent[closestSiblingSelector].firstElementChild) {
+      parent[closestSiblingSelector].firstElementChild.focus();
+    } else {
+      parent[closestSiblingSelector][closestSiblingSelector].firstElementChild.focus();
+    }
   }
 
   onKeyDown(event) {
@@ -71,9 +95,17 @@ export class ContextMenuItem extends React.PureComponent {
           this.props.hideContext();
         }
         break;
+      case "ArrowUp":
+      case "ArrowDown":
+        event.preventDefault();
+        this.focusSibling(event.target, event.key);
+        break;
       case "Enter":
         this.props.hideContext();
         option.onClick();
+        break;
+      case "Escape":
+        this.props.hideContext();
         break;
     }
   }
@@ -81,11 +113,11 @@ export class ContextMenuItem extends React.PureComponent {
   render() {
     const {option} = this.props;
     return (
-      <li role="menuitem" className="context-menu-item">
-        <a onClick={this.onClick} onKeyDown={this.onKeyDown} tabIndex="0" className={option.disabled ? "disabled" : ""}>
+      <li role="menuitem" className="context-menu-item" >
+        <button className={option.disabled ? "disabled" : ""} tabIndex="0" onClick={this.onClick} onKeyDown={this.onKeyDown} ref={option.first ? this.focusFirst : null}>
           {option.icon && <span className={`icon icon-spacer icon-${option.icon}`} />}
-          {option.label}
-        </a>
+          <span data-l10n-id={option.string_id || option.id} />
+        </button>
       </li>);
   }
 }

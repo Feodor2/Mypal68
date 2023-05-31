@@ -3,15 +3,14 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsCOMPtr.h"
+#include "nsIWindowMediator.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
 #include "nsTArray.h"
 #include "nsIBaseWindow.h"
 #include "nsIWidget.h"
-#include "nsIDOMWindow.h"
 #include "nsIObserverService.h"
-#include "nsIServiceManager.h"
 #include "nsISimpleEnumerator.h"
 #include "nsAppShellWindowEnumerator.h"
 #include "nsWindowMediator.h"

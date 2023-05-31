@@ -249,8 +249,7 @@
 
         let headerText = this.bundle.formatStringFromName(
           "searchHeader",
-          [currentEngine.name],
-          1
+          [currentEngine.name]
         );
         this.searchbarEngineName.setAttribute("value", headerText);
         this.searchbarEngine.engine = currentEngine;

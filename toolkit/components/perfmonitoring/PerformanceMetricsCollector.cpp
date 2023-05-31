@@ -2,12 +2,13 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "nsContentUtils.h"
 #include "nsThreadUtils.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Logging.h"
 #include "mozilla/PerformanceUtils.h"
 #include "mozilla/PerformanceMetricsCollector.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Promise.h"

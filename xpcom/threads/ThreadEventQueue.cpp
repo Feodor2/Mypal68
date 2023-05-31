@@ -48,7 +48,7 @@ ThreadEventQueue<InnerQueueT>::ThreadEventQueue(UniquePtr<InnerQueueT> aQueue)
     : mBaseQueue(std::move(aQueue)),
       mLock(),
       mEventsAvailable(mLock, "EventsAvail") {
-  static_assert(IsBaseOf<AbstractEventQueue, InnerQueueT>::value,
+  static_assert(std::is_base_of<AbstractEventQueue, InnerQueueT>::value,
                 "InnerQueueT must be an AbstractEventQueue subclass");
 }
 
@@ -87,6 +87,10 @@ bool ThreadEventQueue<InnerQueueT>::PutEventInternal(
           aPriority = EventQueuePriority::Input;
         } else if (prio == nsIRunnablePriority::PRIORITY_MEDIUMHIGH) {
           aPriority = EventQueuePriority::MediumHigh;
+        } else if (prio == nsIRunnablePriority::PRIORITY_DEFERRED_TIMERS) {
+          aPriority = EventQueuePriority::DeferredTimers;
+        } else if (prio == nsIRunnablePriority::PRIORITY_IDLE) {
+          aPriority = EventQueuePriority::Idle;
         }
       }
     }

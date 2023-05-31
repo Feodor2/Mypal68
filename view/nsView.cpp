@@ -11,6 +11,7 @@
 #include "mozilla/Likely.h"
 #include "mozilla/Poison.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsIWidget.h"
 #include "nsViewManager.h"
 #include "nsIFrame.h"
@@ -22,8 +23,6 @@
 #include "mozilla/CompositeTimelineMarker.h"
 
 using namespace mozilla;
-
-static bool sShowPreviousPage = true;
 
 nsView::nsView(nsViewManager* aViewManager, nsViewVisibility aVisibility)
     : mViewManager(aViewManager),
@@ -46,13 +45,6 @@ nsView::nsView(nsViewManager* aViewManager, nsViewVisibility aVisibility)
   // a promise that the view will paint all its pixels opaquely. Views
   // should make this promise explicitly by calling
   // SetViewContentTransparency.
-
-  static bool sShowPreviousPageInitialized = false;
-  if (!sShowPreviousPageInitialized) {
-    Preferences::AddBoolVarCache(&sShowPreviousPage,
-                                 "layout.show_previous_page", true);
-    sShowPreviousPageInitialized = true;
-  }
 }
 
 void nsView::DropMouseGrabbing() {
@@ -1075,6 +1067,6 @@ nsEventStatus nsView::HandleEvent(WidgetGUIEvent* aEvent,
 }
 
 bool nsView::IsPrimaryFramePaintSuppressed() {
-  return sShowPreviousPage && mFrame &&
+  return StaticPrefs::layout_show_previous_page() && mFrame &&
          mFrame->PresShell()->IsPaintingSuppressed();
 }

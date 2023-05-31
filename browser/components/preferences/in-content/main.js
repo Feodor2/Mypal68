@@ -19,9 +19,6 @@ var { AppConstants } = ChromeUtils.import(
 var { L10nRegistry } = ChromeUtils.import(
   "resource://gre/modules/L10nRegistry.jsm"
 );
-var { Localization } = ChromeUtils.import(
-  "resource://gre/modules/Localization.jsm"
-);
 var { HomePage } = ChromeUtils.import("resource:///modules/HomePage.jsm");
 ChromeUtils.defineModuleGetter(
   this,
@@ -207,6 +204,7 @@ if (AppConstants.platform === "win") {
 
 if (AppConstants.MOZ_UPDATER) {
   Preferences.addAll([
+    { id: "app.update.auto", type: "int" },
     { id: "app.update.disable_button.showUpdateHistory", type: "bool" },
   ]);
 
@@ -567,11 +565,11 @@ var gMainPane = {
     if (AppConstants.MOZ_UPDATER) {
       // XXX Workaround bug 1523453 -- changing selectIndex of a <deck> before
       // frame construction could confuse nsDeckFrame::RemoveFrame().
-      window.requestAnimationFrame(() => {
+      /*window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           gAppUpdater = new appUpdater();
         });
-      });
+      });*/
       setEventListener("showUpdateHistory", "command", gMainPane.showUpdates);
 
       let updateDisabled =
@@ -593,38 +591,6 @@ var gMainPane = {
           "command",
           gMainPane.updateWritePrefs
         );
-      }
-
-      if (AppConstants.platform == "win") {
-        // On Windows, the Application Update setting is an installation-
-        // specific preference, not a profile-specific one. Show a warning to
-        // inform users of this.
-        let updateContainer = document.getElementById(
-          "updateSettingsContainer"
-        );
-        updateContainer.classList.add("updateSettingCrossUserWarningContainer");
-        document.getElementById("updateSettingCrossUserWarning").hidden = false;
-      }
-
-      if (AppConstants.MOZ_MAINTENANCE_SERVICE) {
-        // Check to see if the maintenance service is installed.
-        // If it isn't installed, don't show the preference at all.
-        let installed;
-        try {
-          let wrk = Cc["@mozilla.org/windows-registry-key;1"].createInstance(
-            Ci.nsIWindowsRegKey
-          );
-          wrk.open(
-            wrk.ROOT_KEY_LOCAL_MACHINE,
-            "SOFTWARE\\Mozilla\\MaintenanceService",
-            wrk.ACCESS_READ | wrk.WOW64_64
-          );
-          installed = wrk.readIntValue("Installed");
-          wrk.close();
-        } catch (e) {}
-        if (installed != 1) {
-          document.getElementById("useService").hidden = true;
-        }
       }
     }
 
@@ -678,6 +644,43 @@ var gMainPane = {
 
     // Notify observers that the UI is now ready
     Services.obs.notifyObservers(window, "main-pane-loaded");
+
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("defaultFont"),
+      element => FontBuilder.readFontSelection(element)
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("translate"),
+      () =>
+        this.updateButtons(
+          "translateButton",
+          "browser.translation.detectLanguage"
+        )
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("checkSpelling"),
+      () => this.readCheckSpelling()
+    );
+    Preferences.addSyncToPrefListener(
+      document.getElementById("checkSpelling"),
+      () => this.writeCheckSpelling()
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("saveWhere"),
+      () => this.readUseDownloadDir()
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("linkTargeting"),
+      () => this.readLinkTarget()
+    );
+    Preferences.addSyncToPrefListener(
+      document.getElementById("linkTargeting"),
+      () => this.writeLinkTarget()
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("browserContainersCheckbox"),
+      () => this.readBrowserContainersCheckbox()
+    );
 
     this.setInitialized();
   },
@@ -1600,7 +1603,7 @@ var gMainPane = {
       (!Services.policies || Services.policies.isAllowed("appUpdate"))
     ) {
       let radiogroup = document.getElementById("updateRadioGroup");
-      let updateAutoValue = radiogroup.value == "true";
+      let updateAutoValue = radiogroup.value;
       radiogroup.disabled = true;
       try {
         await UpdateUtils.setAppUpdateAutoEnabled(updateAutoValue);
@@ -1608,31 +1611,8 @@ var gMainPane = {
       } catch (error) {
         Cu.reportError(error);
         await this.updateReadPrefs();
-        await this.reportUpdatePrefWriteError(error);
       }
     }
-  },
-
-  async reportUpdatePrefWriteError(error) {
-    let [title, message] = await document.l10n.formatValues([
-      { id: "update-pref-write-failure-title" },
-      { id: "update-pref-write-failure-message", args: { path: error.path } },
-    ]);
-
-    // Set up the Ok Button
-    let buttonFlags =
-      Services.prompt.BUTTON_POS_0 * Services.prompt.BUTTON_TITLE_OK;
-    Services.prompt.confirmEx(
-      window,
-      title,
-      message,
-      buttonFlags,
-      null,
-      null,
-      null,
-      null,
-      {}
-    );
   },
 
   /**
@@ -1682,9 +1662,6 @@ var gMainPane = {
         this._rebuildView();
       }
     } else if (aTopic == AUTO_UPDATE_CHANGED_TOPIC) {
-      if (aData != "true" && aData != "false") {
-        throw new Error("Invalid preference value for app.update.auto");
-      }
       document.getElementById("updateRadioGroup").value = aData;
     }
   },

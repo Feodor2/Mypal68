@@ -40,7 +40,7 @@ add_task(async function() {
 
   let tab = await BrowserTestUtils.openNewForegroundTab(
     gBrowser,
-    "data:text/plain;charset=utf8,test%20search"
+    "https://example.com/browser/browser/components/search/test/browser/test_search.html"
   );
 
   await ContentTask.spawn(tab.linkedBrowser, "", async function() {
@@ -74,7 +74,7 @@ add_task(async function() {
   ok(searchItem, "Got search context menu item");
   is(
     searchItem.label,
-    "Search " + ENGINE_NAME + " for \u201ctest search\u201d",
+    "Search " + ENGINE_NAME + " for \u201ctest%20search\u201d",
     "Check context menu label"
   );
   is(

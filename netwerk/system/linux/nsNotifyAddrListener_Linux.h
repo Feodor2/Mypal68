@@ -20,7 +20,6 @@
 #include "nsCOMPtr.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/TimeStamp.h"
-#include "nsITimer.h"
 #include "nsClassHashtable.h"
 
 class nsNotifyAddrListener : public nsINetworkLinkService,

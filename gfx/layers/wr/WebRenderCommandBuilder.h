@@ -85,7 +85,6 @@ class WebRenderCommandBuilder final {
         mRootStackingContexts(nullptr),
         mCurrentClipManager(nullptr),
         mLastAsr(nullptr),
-        mBuilderDumpIndex(0),
         mDumpIndent(0),
         mDoGrouping(false),
         mContainsSVGGroup(false) {}
@@ -158,7 +157,9 @@ class WebRenderCommandBuilder final {
   void ClearCachedResources();
 
   bool ShouldDumpDisplayList(nsDisplayListBuilder* aBuilder);
-  wr::usize GetBuilderDumpIndex() { return mBuilderDumpIndex; }
+  wr::usize GetBuilderDumpIndex(wr::RenderRoot aRenderRoot) const {
+    return mBuilderDumpIndex[aRenderRoot];
+  }
 
   bool GetContainsSVGGroup() { return mContainsSVGGroup; }
 
@@ -250,7 +251,7 @@ class WebRenderCommandBuilder final {
   // Store of WebRenderCanvasData objects for use in empty transactions
   CanvasDataSet mLastCanvasDatas;
 
-  wr::usize mBuilderDumpIndex;
+  wr::RenderRootArray<wr::usize> mBuilderDumpIndex;
   wr::usize mDumpIndent;
 
  public:

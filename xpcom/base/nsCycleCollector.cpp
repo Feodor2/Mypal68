@@ -2358,7 +2358,7 @@ class JSPurpleBuffer {
   SegmentedVector<JSObject*, kSegmentSize, InfallibleAllocPolicy> mObjects;
 };
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(JSPurpleBuffer)
+NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(JSPurpleBuffer)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(JSPurpleBuffer)
   tmp->Destroy();
@@ -2428,11 +2428,6 @@ class SnowWhiteKiller : public TraceCallbacks {
   }
 
   bool Visit(nsPurpleBuffer& aBuffer, nsPurpleBufferEntry* aEntry) {
-    // The cycle collector does not collect anything when recording/replaying.
-    if (recordreplay::IsRecordingOrReplaying()) {
-      return true;
-    }
-
     if (mBudget) {
       if (mBudget->isOverBudget()) {
         return false;
@@ -2486,9 +2481,9 @@ class SnowWhiteKiller : public TraceCallbacks {
     AppendJSObjectToPurpleBuffer(aObject->unbarrieredGet());
   }
 
-  virtual void Trace(JSObject** aObject, const char* aName,
+  virtual void Trace(nsWrapperCache* aWrapperCache, const char* aName,
                      void* aClosure) const override {
-    AppendJSObjectToPurpleBuffer(*aObject);
+    AppendJSObjectToPurpleBuffer(aWrapperCache->GetWrapperPreserveColor());
   }
 
   virtual void Trace(JS::TenuredHeap<JSObject*>* aObject, const char* aName,
@@ -2640,11 +2635,6 @@ void nsCycleCollector::ForgetSkippable(js::SliceBudget& aBudget,
   // If we remove things from the purple buffer during graph building, we may
   // lose track of an object that was mutated during graph building.
   MOZ_ASSERT(IsIdle());
-
-  // The cycle collector does not collect anything when recording/replaying.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    return;
-  }
 
   if (mCCJSRuntime) {
     mCCJSRuntime->PrepareForForgetSkippable();
@@ -3370,9 +3360,7 @@ bool nsCycleCollector::Collect(ccType aCCType, SliceBudget& aBudget,
   CheckThreadSafety();
 
   // This can legitimately happen in a few cases. See bug 383651.
-  // When recording/replaying we do not collect cycles.
-  if (mActivelyCollecting || mFreeingSnowWhite ||
-      recordreplay::IsRecordingOrReplaying()) {
+  if (mActivelyCollecting || mFreeingSnowWhite) {
     return false;
   }
   mActivelyCollecting = true;
@@ -3790,9 +3778,7 @@ uint32_t nsCycleCollector_suspectedCount() {
   // We should have started the cycle collector by now.
   MOZ_ASSERT(data);
 
-  // When recording/replaying we do not collect cycles. Return zero here so
-  // that callers behave consistently between recording and replaying.
-  if (!data->mCollector || recordreplay::IsRecordingOrReplaying()) {
+  if (!data->mCollector) {
     return 0;
   }
 
@@ -3811,8 +3797,6 @@ bool nsCycleCollector_init() {
   return sCollectorData.init();
 }
 
-static nsCycleCollector* gMainThreadCollector;
-
 void nsCycleCollector_startup() {
   if (sCollectorData.get()) {
     MOZ_CRASH();
@@ -3823,40 +3807,6 @@ void nsCycleCollector_startup() {
   data->mContext = nullptr;
 
   sCollectorData.set(data);
-
-  if (NS_IsMainThread()) {
-    MOZ_ASSERT(!gMainThreadCollector);
-    gMainThreadCollector = data->mCollector;
-  }
-}
-
-void nsCycleCollector_registerNonPrimaryContext(CycleCollectedJSContext* aCx) {
-  if (sCollectorData.get()) {
-    MOZ_CRASH();
-  }
-
-  MOZ_ASSERT(gMainThreadCollector);
-
-  CollectorData* data = new CollectorData;
-
-  data->mCollector = gMainThreadCollector;
-  data->mContext = aCx;
-
-  sCollectorData.set(data);
-}
-
-void nsCycleCollector_forgetNonPrimaryContext() {
-  CollectorData* data = sCollectorData.get();
-
-  // We should have started the cycle collector by now.
-  MOZ_ASSERT(data);
-  // And we shouldn't have already forgotten our context.
-  MOZ_ASSERT(data->mContext);
-  // We should not have shut down the cycle collector yet.
-  MOZ_ASSERT(data->mCollector);
-
-  delete data;
-  sCollectorData.set(nullptr);
 }
 
 void nsCycleCollector_setBeforeUnlinkCallback(CC_BeforeUnlinkCallback aCB) {
@@ -3989,9 +3939,6 @@ void nsCycleCollector_shutdown(bool aDoCollect) {
     MOZ_ASSERT(data->mCollector);
     AUTO_PROFILER_LABEL("nsCycleCollector_shutdown", OTHER);
 
-    if (gMainThreadCollector == data->mCollector) {
-      gMainThreadCollector = nullptr;
-    }
     data->mCollector->Shutdown(aDoCollect);
     data->mCollector = nullptr;
     if (data->mContext) {

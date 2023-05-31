@@ -1,8 +1,9 @@
-use libc::{size_t, uint8_t, uint16_t, uint32_t};
+use libc::size_t;
 use std::ffi::CStr;
 use std::{str, slice};
 use std::error::Error;
 use std::boxed::Box;
+use std::convert::TryInto;
 
 use nserror::{nsresult, NS_OK, NS_ERROR_INVALID_ARG};
 
@@ -22,8 +23,9 @@ impl<'a> From<&'a str> for StringView {
     }
 }
 
-impl Into<Result<String,Box<Error>>> for StringView {
-    fn into(self) -> Result<String,Box<Error>> {
+impl TryInto<String> for StringView {
+    type Error = Box<dyn Error>;
+    fn try_into(self) -> Result<String, Box<dyn Error>> {
 
         // This block must be unsafe as it converts a StringView, most likly provided from the
         // C++ code, into a rust String and thus needs to operate with raw pointers.
@@ -108,7 +110,7 @@ pub unsafe extern "C" fn u32_vec_len(vec: *const Vec<u32>) -> size_t {
 #[no_mangle]
 pub unsafe extern "C" fn u32_vec_get(vec: *const Vec<u32>,
                                      index: size_t,
-                                     ret: *mut uint32_t) -> nsresult {
+                                     ret: *mut u32) -> nsresult {
     match (*vec).get(index) {
         Some(val) => {
             *ret = *val;
@@ -126,7 +128,7 @@ pub unsafe extern "C" fn u16_vec_len(vec: *const Vec<u16>) -> size_t {
 #[no_mangle]
 pub unsafe extern "C" fn u16_vec_get(vec: *const Vec<u16>,
                                     index: size_t,
-                                    ret: *mut uint16_t) -> nsresult {
+                                    ret: *mut u16) -> nsresult {
     match (*vec).get(index) {
         Some(val) => {
             *ret = *val;
@@ -144,7 +146,7 @@ pub unsafe extern "C" fn u8_vec_len(vec: *const Vec<u8>) -> size_t {
 #[no_mangle]
 pub unsafe extern "C" fn u8_vec_get(vec: *const Vec<u8>,
                                     index: size_t,
-                                    ret: *mut uint8_t) -> nsresult {
+                                    ret: *mut u8) -> nsresult {
     match (*vec).get(index) {
         Some(val) => {
             *ret = *val;

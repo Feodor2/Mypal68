@@ -5,9 +5,11 @@
 #include "WebRenderLayerManager.h"
 
 #include "BasicLayers.h"
-#include "gfxPrefs.h"
+
 #include "GeckoProfiler.h"
 #include "LayersLogging.h"
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/TabGroup.h"
 #include "mozilla/gfx/DrawEventRecorder.h"
@@ -180,7 +182,7 @@ bool WebRenderLayerManager::BeginTransaction(const nsCString& aURL) {
   // enabled in this process; it may be enabled in the parent process,
   // and the parent process expects unique sequence numbers.
   ++mPaintSequenceNumber;
-  if (gfxPrefs::APZTestLoggingEnabled()) {
+  if (StaticPrefs::apz_test_logging_enabled()) {
     mApzTestData.StartNewPaint(mPaintSequenceNumber);
   }
   return true;
@@ -207,7 +209,7 @@ bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
       !mWebRenderCommandBuilder.NeedsEmptyTransaction()) {
     bool haveScrollUpdates = false;
     for (auto renderRoot : wr::kRenderRoots) {
-      if (!mPendingScrollUpdates[renderRoot].empty()) {
+      if (!mPendingScrollUpdates[renderRoot].IsEmpty()) {
         haveScrollUpdates = true;
         break;
       }
@@ -247,25 +249,26 @@ bool WebRenderLayerManager::EndEmptyTransaction(EndTransactionFlags aFlags) {
   for (auto& stateManager : mStateManagers) {
     auto renderRoot = stateManager.GetRenderRoot();
     if (stateManager.mAsyncResourceUpdates ||
-        !mPendingScrollUpdates[renderRoot].empty() ||
+        !mPendingScrollUpdates[renderRoot].IsEmpty() ||
         WrBridge()->HasWebRenderParentCommands(renderRoot)) {
       auto updates = renderRootUpdates.AppendElement();
       updates->mRenderRoot = renderRoot;
+      updates->mPaintSequenceNumber = mPaintSequenceNumber;
       if (stateManager.mAsyncResourceUpdates) {
         stateManager.mAsyncResourceUpdates->Flush(updates->mResourceUpdates,
                                                   updates->mSmallShmems,
                                                   updates->mLargeShmems);
       }
       updates->mScrollUpdates = std::move(mPendingScrollUpdates[renderRoot]);
-      for (const auto& entry : updates->mScrollUpdates) {
-        nsLayoutUtils::NotifyPaintSkipTransaction(/*scroll id=*/entry.first);
+      for (auto it = updates->mScrollUpdates.Iter(); !it.Done(); it.Next()) {
+        nsLayoutUtils::NotifyPaintSkipTransaction(/*scroll id=*/it.Key());
       }
     }
   }
 
   Maybe<wr::IpcResourceUpdateQueue> nothing;
   WrBridge()->EndEmptyTransaction(mFocusTarget, renderRootUpdates,
-                                  mPaintSequenceNumber, mLatestTransactionId,
+                                  mLatestTransactionId,
                                   mTransactionIdAllocator->GetVsyncId(),
                                   mTransactionIdAllocator->GetVsyncStart(),
                                   refreshStart, mTransactionStart, mURL);
@@ -339,7 +342,8 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     mWebRenderCommandBuilder.BuildWebRenderCommands(
         builder, resourceUpdates, aDisplayList, aDisplayListBuilder,
         mScrollDatas, std::move(aFilters));
-    builderDumpIndex = mWebRenderCommandBuilder.GetBuilderDumpIndex();
+    builderDumpIndex = mWebRenderCommandBuilder.GetBuilderDumpIndex(
+        builder.GetRenderRoot());
     containsSVGGroup = mWebRenderCommandBuilder.GetContainsSVGGroup();
   } else {
     // ViewToPaint does not have frame yet, then render only background clolor.
@@ -489,13 +493,13 @@ void WebRenderLayerManager::MakeSnapshotIfRequired(LayoutDeviceIntSize aSize) {
   // so on Android we use RGBA.
   SurfaceFormat format =
 #ifdef MOZ_WIDGET_ANDROID
-    SurfaceFormat::R8G8B8A8;
+      SurfaceFormat::R8G8B8A8;
 #else
-    SurfaceFormat::B8G8R8A8;
+      SurfaceFormat::B8G8R8A8;
 #endif
   RefPtr<TextureClient> texture = TextureClient::CreateForRawBufferAccess(
-      WrBridge(), format, aSize.ToUnknownSize(),
-      BackendType::SKIA, TextureFlags::SNAPSHOT);
+      WrBridge(), format, aSize.ToUnknownSize(), BackendType::SKIA,
+      TextureFlags::SNAPSHOT);
   if (!texture) {
     return;
   }
@@ -698,7 +702,7 @@ void WebRenderLayerManager::FlushRendering() {
   if (WrBridge()->GetCompositorUseDComp() && !resizing) {
     cBridge->SendFlushRenderingAsync();
   } else if (mWidget->SynchronouslyRepaintOnResize() ||
-             gfxPrefs::LayersForceSynchronousResize()) {
+             StaticPrefs::layers_force_synchronous_resize()) {
     cBridge->SendFlushRendering();
   } else {
     cBridge->SendFlushRenderingAsync();
@@ -732,7 +736,7 @@ WebRenderLayerManager::CreatePersistentBufferProvider(
   // initialized with WebRender to reduce memory usage.
   gfxPlatform::GetPlatform()->EnsureDevicesInitialized();
 
-  if (gfxPrefs::PersistentBufferProviderSharedEnabled()) {
+  if (StaticPrefs::layers_shared_buffer_provider_enabled()) {
     RefPtr<PersistentBufferProvider> provider =
         PersistentBufferProviderShared::Create(aSize, aFormat,
                                                AsKnowsCompositor());

@@ -12,7 +12,7 @@
 #include "RenderTrace.h"        // for RenderTraceScope
 #include "gfx2DGlue.h"          // for Moz2D transition helpers
 #include "gfxPlatform.h"        // for gfxImageFormat, gfxPlatform
-#include "gfxPrefs.h"
+
 //#include "gfxSharedImageSurface.h"      // for gfxSharedImageSurface
 #include "ipc/IPCMessageUtils.h"  // for gfxContentType, null_t
 #include "IPDLActor.h"
@@ -533,7 +533,7 @@ bool ShadowLayerForwarder::EndTransaction(
     const mozilla::TimeStamp& aRefreshStart,
     const mozilla::TimeStamp& aTransactionStart, bool aContainsSVG,
     const nsCString& aURL, bool* aSent,
-    const InfallibleTArray<CompositionPayload>& aPayload) {
+    const nsTArray<CompositionPayload>& aPayload) {
   *aSent = false;
 
   TransactionInfo info;
@@ -544,7 +544,7 @@ bool ShadowLayerForwarder::EndTransaction(
   }
 
   Maybe<TimeStamp> startTime;
-  if (gfxPrefs::LayersDrawFPS()) {
+  if (StaticPrefs::layers_acceleration_draw_fps()) {
     startTime = Some(TimeStamp::Now());
   }
 
@@ -714,10 +714,6 @@ bool ShadowLayerForwarder::EndTransaction(
     mPaintTiming.sendMs() =
         (TimeStamp::Now() - startTime.value()).ToMilliseconds();
     mShadowManager->SendRecordPaintTimes(mPaintTiming);
-  }
-
-  if (recordreplay::IsRecordingOrReplaying()) {
-    recordreplay::child::NotifyPaintStart();
   }
 
   *aSent = true;

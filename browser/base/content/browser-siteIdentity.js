@@ -343,20 +343,10 @@ var gIdentityHandler = {
   },
 
   recordClick(object) {
-    let extra = {};
-    for (let blocker of ContentBlocking.blockers) {
-      if (blocker.telemetryIdentifier) {
-        extra[blocker.telemetryIdentifier] = blocker.activated
-          ? "true"
-          : "false";
-      }
-    }
     Services.telemetry.recordEvent(
       "security.ui.identitypopup",
       "click",
-      object,
-      null,
-      extra
+      object
     );
   },
 
@@ -754,7 +744,10 @@ var gIdentityHandler = {
       gBrowser.selectedBrowser
     );
     for (let permission of permissions) {
-      if (permission.state == SitePermissions.BLOCK) {
+      if (
+        permission.state == SitePermissions.BLOCK ||
+        permission.state == SitePermissions.AUTOPLAY_BLOCKED_ALL
+      ) {
         let icon = permissionAnchors[permission.id];
         if (icon) {
           icon.setAttribute("showing", "true");
@@ -1067,24 +1060,10 @@ var gIdentityHandler = {
       window.addEventListener("focus", this, true);
     }
 
-    let extra = {};
-    for (let blocker of ContentBlocking.blockers) {
-      if (blocker.telemetryIdentifier) {
-        extra[blocker.telemetryIdentifier] = blocker.activated
-          ? "true"
-          : "false";
-      }
-    }
-
-    let shieldStatus = ContentBlocking.iconBox.hasAttribute("active")
-      ? "shield-showing"
-      : "shield-hidden";
     Services.telemetry.recordEvent(
       "security.ui.identitypopup",
       "open",
-      "identity_popup",
-      shieldStatus,
-      extra
+      "identity_popup"
     );
   },
 
@@ -1339,7 +1318,7 @@ var gIdentityHandler = {
         }
         menuitem.setAttribute(
           "label",
-          SitePermissions.getMultichoiceStateLabel(state)
+          SitePermissions.getMultichoiceStateLabel(aPermission.id, state)
         );
         menupopup.appendChild(menuitem);
       }
@@ -1354,8 +1333,8 @@ var gIdentityHandler = {
 
       // Avoiding listening to the "select" event on purpose. See Bug 1404262.
       menulist.addEventListener("command", () => {
-        SitePermissions.set(
-          gBrowser.currentURI,
+        SitePermissions.setForPrincipal(
+          gBrowser.contentPrincipal,
           aPermission.id,
           menulist.selectedItem.value
         );
@@ -1419,18 +1398,18 @@ var gIdentityHandler = {
           // If we set persistent permissions or the sharing has
           // started due to existing persistent permissions, we need
           // to handle removing these even for frames with different hostnames.
-          let uris = browser._devicePermissionURIs || [];
-          for (let uri of uris) {
+          let principals = browser._devicePermissionPrincipals || [];
+          for (let principal of principals) {
             // It's not possible to stop sharing one of camera/microphone
             // without the other.
             for (let id of ["camera", "microphone"]) {
               if (this._sharingState[id]) {
-                let perm = SitePermissions.get(uri, id);
+                let perm = SitePermissions.getForPrincipal(principal, id);
                 if (
                   perm.state == SitePermissions.ALLOW &&
                   perm.scope == SitePermissions.SCOPE_PERSISTENT
                 ) {
-                  SitePermissions.remove(uri, id);
+                  SitePermissions.removeFromPrincipal(principal, id);
                 }
               }
             }
@@ -1439,7 +1418,11 @@ var gIdentityHandler = {
         browser.messageManager.sendAsyncMessage("webrtc:StopSharing", windowId);
         webrtcUI.forgetActivePermissionsFromBrowser(gBrowser.selectedBrowser);
       }
-      SitePermissions.remove(gBrowser.currentURI, aPermission.id, browser);
+      SitePermissions.removeFromPrincipal(
+        gBrowser.contentPrincipal,
+        aPermission.id,
+        browser
+      );
 
       this._permissionReloadHint.removeAttribute("hidden");
       PanelView.forNode(

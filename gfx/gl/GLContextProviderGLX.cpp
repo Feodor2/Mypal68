@@ -18,6 +18,8 @@
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/Range.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/GtkCompositorWidget.h"
 #include "mozilla/Unused.h"
@@ -36,7 +38,6 @@
 #include "gfxUtils.h"
 #include "gfx2DGlue.h"
 #include "GLScreenBuffer.h"
-#include "gfxPrefs.h"
 
 #include "gfxCrashReporterUtils.h"
 
@@ -184,7 +185,7 @@ bool GLXLibrary::EnsureInitialized() {
 
   if (HasExtension(extensionsStr, "GLX_EXT_texture_from_pixmap") &&
       fnLoadSymbols(symbols_texturefrompixmap)) {
-    mUseTextureFromPixmap = gfxPrefs::UseGLXTextureFromPixmap();
+    mUseTextureFromPixmap = StaticPrefs::gfx_use_glx_texture_from_pixmap();
   } else {
     mUseTextureFromPixmap = false;
     NS_WARNING("Texture from pixmap disabled");
@@ -596,7 +597,7 @@ bool GLContextGLX::MakeCurrentImpl() const {
     // Many GLX implementations default to blocking until the next
     // VBlank when calling glXSwapBuffers. We want to run unthrottled
     // in ASAP mode. See bug 1280744.
-    const bool isASAP = (gfxPrefs::LayoutFrameRate() == 0);
+    const bool isASAP = (StaticPrefs::layout_frame_rate() == 0);
     mGLX->fSwapInterval(mDisplay, mDrawable, isASAP ? 0 : 1);
   }
   return succeeded;
@@ -771,8 +772,6 @@ static bool ChooseConfig(GLXLibrary* glx, Display* display, int screen,
                          ScopedXFree<GLXFBConfig>* const out_scopedConfigArr,
                          GLXFBConfig* const out_config, int* const out_visid) {
   ScopedXFree<GLXFBConfig>& scopedConfigArr = *out_scopedConfigArr;
-
-  if (minCaps.antialias) return false;
 
   int attribs[] = {LOCAL_GLX_DRAWABLE_TYPE,
                    LOCAL_GLX_PIXMAP_BIT,
@@ -1040,16 +1039,8 @@ already_AddRefed<GLContext> GLContextProviderGLX::CreateHeadless(
 already_AddRefed<GLContext> GLContextProviderGLX::CreateOffscreen(
     const IntSize& size, const SurfaceCaps& minCaps, CreateContextFlags flags,
     nsACString* const out_failureId) {
-  SurfaceCaps minBackbufferCaps = minCaps;
-  if (minCaps.antialias) {
-    minBackbufferCaps.antialias = false;
-    minBackbufferCaps.depth = false;
-    minBackbufferCaps.stencil = false;
-  }
-
   RefPtr<GLContext> gl;
-  gl = CreateOffscreenPixmapContext(flags, size, minBackbufferCaps,
-                                    out_failureId);
+  gl = CreateOffscreenPixmapContext(flags, size, minCaps, out_failureId);
   if (!gl) return nullptr;
 
   if (!gl->InitOffscreen(size, minCaps)) {

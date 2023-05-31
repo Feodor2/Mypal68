@@ -4,7 +4,6 @@
 
 #include "nsLookAndFeel.h"
 #include "nsCocoaFeatures.h"
-#include "nsIServiceManager.h"
 #include "nsNativeThemeColors.h"
 #include "nsStyleConsts.h"
 #include "nsCocoaFeatures.h"
@@ -251,7 +250,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
         break;
       }
       // Otherwise fall through and return the regular button text:
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case ColorID::Buttontext:
     case ColorID::MozButtonhovertext:
       aColor = mColorButtonHoverText;

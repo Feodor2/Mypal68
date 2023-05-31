@@ -22,11 +22,6 @@ class NeckoChild : public PNeckoChild {
   static void InitNeckoChild();
 
  protected:
-  PHttpChannelChild* AllocPHttpChannelChild(
-      const PBrowserOrId&, const SerializedLoadContext&,
-      const HttpChannelCreationArgs& aOpenArgs);
-  bool DeallocPHttpChannelChild(PHttpChannelChild*);
-
   PStunAddrsRequestChild* AllocPStunAddrsRequestChild();
   bool DeallocPStunAddrsRequestChild(PStunAddrsRequestChild* aActor);
 
@@ -62,10 +57,6 @@ class NeckoChild : public PNeckoChild {
       const nsCString& aHost, const OriginAttributes& aOriginAttributes,
       const uint32_t& aFlags);
   bool DeallocPDNSRequestChild(PDNSRequestChild*);
-  PDataChannelChild* AllocPDataChannelChild(const uint32_t& channelId);
-  bool DeallocPDataChannelChild(PDataChannelChild* child);
-  PFileChannelChild* AllocPFileChannelChild(const uint32_t& channelId);
-  bool DeallocPFileChannelChild(PFileChannelChild* child);
   PSimpleChannelChild* AllocPSimpleChannelChild(const uint32_t& channelId);
   bool DeallocPSimpleChannelChild(PSimpleChannelChild* child);
   PChannelDiverterChild* AllocPChannelDiverterChild(
@@ -90,11 +81,16 @@ class NeckoChild : public PNeckoChild {
   mozilla::ipc::IPCResult RecvNetworkChangeNotification(nsCString const& type);
 
   PClassifierDummyChannelChild* AllocPClassifierDummyChannelChild(
-      nsIURI* aURI, nsIURI* aTopWindowURI, const nsresult& aTopWindowURIResult,
+      nsIURI* aURI, nsIURI* aTopWindowURI,
+      nsIPrincipal* aContentBlockingAllowListPrincipal,
+      const nsresult& aTopWindowURIResult,
       const Maybe<LoadInfoArgs>& aLoadInfo);
 
   bool DeallocPClassifierDummyChannelChild(
       PClassifierDummyChannelChild* aChannel);
+
+  PProxyConfigLookupChild* AllocPProxyConfigLookupChild();
+  bool DeallocPProxyConfigLookupChild(PProxyConfigLookupChild* aActor);
 };
 
 /**

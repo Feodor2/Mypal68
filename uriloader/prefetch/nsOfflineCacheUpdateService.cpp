@@ -9,20 +9,11 @@
 #include "nsOfflineCacheUpdate.h"
 
 #include "nsCURILoader.h"
-#include "nsIApplicationCacheContainer.h"
-#include "nsIApplicationCacheChannel.h"
 #include "nsIApplicationCacheService.h"
-#include "nsICachingChannel.h"
 #include "nsIContent.h"
-#include "nsIDocShell.h"
-#include "nsIDocumentLoader.h"
-#include "nsIDOMWindow.h"
 #include "mozilla/dom/Document.h"
 #include "nsIObserverService.h"
-#include "nsIURL.h"
 #include "nsIWebProgress.h"
-#include "nsIWebNavigation.h"
-#include "nsICryptoHash.h"
 #include "nsIPermissionManager.h"
 #include "nsIPrincipal.h"
 #include "nsNetCID.h"
@@ -32,14 +23,11 @@
 #include "nsThreadUtils.h"
 #include "nsProxyRelease.h"
 #include "mozilla/Logging.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
 #include "mozilla/Components.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/Unused.h"
-#include "nsIDocShell.h"
-#include "nsIDocShellTreeItem.h"
-#include "nsIDocShellTreeOwner.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "nsContentUtils.h"
@@ -49,7 +37,6 @@ using namespace mozilla;
 using namespace mozilla::dom;
 
 static nsOfflineCacheUpdateService* gOfflineCacheUpdateService = nullptr;
-static bool sAllowOfflineCache = true;
 static bool sAllowInsecureOfflineCache = true;
 
 nsTHashtable<nsCStringHashKey>* nsOfflineCacheUpdateService::mAllowedDomains =
@@ -238,8 +225,6 @@ NS_IMPL_ISUPPORTS(nsOfflineCacheUpdateService, nsIOfflineCacheUpdateService,
 nsOfflineCacheUpdateService::nsOfflineCacheUpdateService()
     : mDisabled(false), mUpdateRunning(false) {
   MOZ_ASSERT(NS_IsMainThread());
-  Preferences::AddBoolVarCache(&sAllowOfflineCache,
-                               "browser.cache.offline.enable", true);
   Preferences::AddBoolVarCache(&sAllowInsecureOfflineCache,
                                "browser.cache.offline.insecure.enable", true);
 }
@@ -526,11 +511,10 @@ nsOfflineCacheUpdateService::Observe(nsISupports* aSubject, const char* aTopic,
 //-----------------------------------------------------------------------------
 
 static nsresult OfflineAppPermForPrincipal(nsIPrincipal* aPrincipal,
-                                           nsIPrefBranch* aPrefBranch,
                                            bool pinned, bool* aAllowed) {
   *aAllowed = false;
 
-  if (!sAllowOfflineCache) {
+  if (!StaticPrefs::browser_cache_offline_enable()) {
     return NS_OK;
   }
 
@@ -545,24 +529,13 @@ static nsresult OfflineAppPermForPrincipal(nsIPrincipal* aPrincipal,
   if (!innerURI) return NS_OK;
 
   // only http and https applications can use offline APIs.
-  bool match;
-  nsresult rv = innerURI->SchemeIs("http", &match);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (!match) {
-    rv = innerURI->SchemeIs("https", &match);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (!match) {
-      return NS_OK;
-    }
-  } else {
-    if (!sAllowInsecureOfflineCache) {
-      return NS_OK;
-    }
+  if (!(innerURI->SchemeIs("http") && sAllowInsecureOfflineCache) &&
+      !innerURI->SchemeIs("https")) {
+    return NS_OK;
   }
 
   nsAutoCString domain;
-  rv = innerURI->GetAsciiHost(domain);
+  nsresult rv = innerURI->GetAsciiHost(domain);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (nsOfflineCacheUpdateService::AllowedDomains()->Contains(domain)) {
@@ -587,42 +560,37 @@ static nsresult OfflineAppPermForPrincipal(nsIPrincipal* aPrincipal,
     *aAllowed = true;
   }
 
-  // offline-apps.allow_by_default is now effective at the cache selection
-  // algorithm code (nsContentSink).
-
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsOfflineCacheUpdateService::OfflineAppAllowed(nsIPrincipal* aPrincipal,
-                                               nsIPrefBranch* aPrefBranch,
                                                bool* aAllowed) {
-  return OfflineAppPermForPrincipal(aPrincipal, aPrefBranch, false, aAllowed);
+  return OfflineAppPermForPrincipal(aPrincipal, false, aAllowed);
 }
 
 NS_IMETHODIMP
 nsOfflineCacheUpdateService::OfflineAppAllowedForURI(nsIURI* aURI,
-                                                     nsIPrefBranch* aPrefBranch,
                                                      bool* aAllowed) {
   OriginAttributes attrs;
   nsCOMPtr<nsIPrincipal> principal =
       BasePrincipal::CreateCodebasePrincipal(aURI, attrs);
-  return OfflineAppPermForPrincipal(principal, aPrefBranch, false, aAllowed);
+  return OfflineAppPermForPrincipal(principal, false, aAllowed);
 }
 
 nsresult nsOfflineCacheUpdateService::OfflineAppPinnedForURI(
-    nsIURI* aDocumentURI, nsIPrefBranch* aPrefBranch, bool* aPinned) {
+    nsIURI* aDocumentURI, bool* aPinned) {
   OriginAttributes attrs;
   nsCOMPtr<nsIPrincipal> principal =
       BasePrincipal::CreateCodebasePrincipal(aDocumentURI, attrs);
-  return OfflineAppPermForPrincipal(principal, aPrefBranch, true, aPinned);
+  return OfflineAppPermForPrincipal(principal, true, aPinned);
 }
 
 NS_IMETHODIMP
 nsOfflineCacheUpdateService::AllowOfflineApp(nsIPrincipal* aPrincipal) {
   nsresult rv;
 
-  if (!sAllowOfflineCache) {
+  if (!StaticPrefs::browser_cache_offline_enable()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -640,11 +608,7 @@ nsOfflineCacheUpdateService::AllowOfflineApp(nsIPrincipal* aPrincipal) {
     }
 
     // if http then we should prevent this cache
-    bool match;
-    rv = innerURI->SchemeIs("http", &match);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    if (match) {
+    if (innerURI->SchemeIs("http")) {
       return NS_ERROR_NOT_AVAILABLE;
     }
   }

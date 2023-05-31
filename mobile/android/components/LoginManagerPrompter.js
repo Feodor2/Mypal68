@@ -116,7 +116,11 @@ LoginManagerPrompter.prototype = {
    * promptToSavePassword
    *
    */
-  promptToSavePassword: function(aLogin, dismissed) {
+  promptToSavePassword: function(
+    aLogin,
+    dismissed = false,
+    notifySaved = false
+  ) {
     this._showSaveLoginNotification(aLogin, dismissed);
     Services.telemetry
       .getHistogramById("PWMGR_PROMPT_REMEMBER_ACTION")
@@ -199,7 +203,7 @@ LoginManagerPrompter.prototype = {
         label: this._getLocalizedString("neverButton"),
         callback: function() {
           promptHistogram.add(PROMPT_NEVER);
-          pwmgr.setLoginSavingEnabled(aLogin.hostname, false);
+          pwmgr.setLoginSavingEnabled(aLogin.origin, false);
         },
       },
       {
@@ -369,11 +373,7 @@ LoginManagerPrompter.prototype = {
    */
   _getLocalizedString: function(key, formatArgs) {
     if (formatArgs) {
-      return this._strBundle.pwmgr.formatStringFromName(
-        key,
-        formatArgs,
-        formatArgs.length
-      );
+      return this._strBundle.pwmgr.formatStringFromName(key, formatArgs);
     }
     return this._strBundle.pwmgr.GetStringFromName(key);
   },

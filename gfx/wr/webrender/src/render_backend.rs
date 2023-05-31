@@ -118,6 +118,12 @@ impl FrameId {
     pub const INVALID: FrameId = FrameId(0);
 }
 
+impl Default for FrameId {
+    fn default() -> Self {
+        FrameId::INVALID
+    }
+}
+
 impl ::std::ops::Add<usize> for FrameId {
     type Output = Self;
     fn add(self, other: usize) -> FrameId {
@@ -131,6 +137,11 @@ impl ::std::ops::Sub<usize> for FrameId {
         assert!(self.0 >= other, "Underflow subtracting FrameIds");
         FrameId(self.0 - other)
     }
+}
+
+enum RenderBackendStatus {
+    Continue,
+    ShutDown(Option<MsgSender<()>>),
 }
 
 /// Identifier to track a sequence of frames.
@@ -193,7 +204,7 @@ impl FrameStamp {
         FrameStamp {
             id: FrameId::first(),
             time: SystemTime::now(),
-            document_id: document_id,
+            document_id,
         }
     }
 
@@ -296,6 +307,14 @@ impl DataStores {
             PrimitiveInstanceKind::YuvImage { data_handle, .. } => {
                 let prim_data = &self.yuv_image[data_handle];
                 &prim_data.common
+            }
+            PrimitiveInstanceKind::Backdrop { data_handle, .. } => {
+                let prim_data = &self.backdrop[data_handle];
+                &prim_data.common
+            }
+            PrimitiveInstanceKind::PushClipChain |
+            PrimitiveInstanceKind::PopClipChain => {
+                unreachable!();
             }
         }
     }
@@ -486,6 +505,16 @@ impl Document {
                     self.frame_is_valid = false;
                 }
             }
+            FrameMsg::SetIsTransformPinchZooming(is_zooming, animation_id) => {
+                let node = self.clip_scroll_tree.spatial_nodes.iter_mut()
+                    .find(|node| node.is_transform_bound_to_property(animation_id));
+                if let Some(node) = node {
+                    if node.is_pinch_zooming != is_zooming {
+                        node.is_pinch_zooming = is_zooming;
+                        self.frame_is_valid = false;
+                    }
+                }
+            }
         }
 
         DocumentOps::nop()
@@ -617,7 +646,6 @@ impl Document {
         if let Some(frame_builder) = self.frame_builder.take() {
             let globals = frame_builder.destroy(
                 &mut retained_tiles,
-                &self.clip_scroll_tree,
             );
 
             // Provide any cached tiles from the previous frame builder to
@@ -686,9 +714,9 @@ pub struct RenderBackend {
     frame_config: FrameBuilderConfig,
     documents: FastHashMap<DocumentId, Document>,
 
-    notifier: Box<RenderNotifier>,
-    recorder: Option<Box<ApiRecordingReceiver>>,
-    sampler: Option<Box<AsyncPropertySampler + Send>>,
+    notifier: Box<dyn RenderNotifier>,
+    recorder: Option<Box<dyn ApiRecordingReceiver>>,
+    sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
     size_of_ops: Option<MallocSizeOfOps>,
     debug_flags: DebugFlags,
     namespace_alloc_by_client: bool,
@@ -706,10 +734,10 @@ impl RenderBackend {
         scene_rx: Receiver<SceneBuilderResult>,
         default_device_pixel_ratio: f32,
         resource_cache: ResourceCache,
-        notifier: Box<RenderNotifier>,
+        notifier: Box<dyn RenderNotifier>,
         frame_config: FrameBuilderConfig,
-        recorder: Option<Box<ApiRecordingReceiver>>,
-        sampler: Option<Box<AsyncPropertySampler + Send>>,
+        recorder: Option<Box<dyn ApiRecordingReceiver>>,
+        sampler: Option<Box<dyn AsyncPropertySampler + Send>>,
         size_of_ops: Option<MallocSizeOfOps>,
         debug_flags: DebugFlags,
         namespace_alloc_by_client: bool,
@@ -850,13 +878,13 @@ impl RenderBackend {
 
     pub fn run(&mut self, mut profile_counters: BackendProfileCounters) {
         let mut frame_counter: u32 = 0;
-        let mut keep_going = true;
+        let mut status = RenderBackendStatus::Continue;
 
         if let Some(ref sampler) = self.sampler {
             sampler.register();
         }
 
-        while keep_going {
+        while let RenderBackendStatus::Continue = status {
             profile_scope!("handle_msg");
 
             while let Ok(msg) = self.scene_rx.try_recv() {
@@ -938,14 +966,14 @@ impl RenderBackend {
                 }
             }
 
-            keep_going = match self.api_rx.recv() {
+            status = match self.api_rx.recv() {
                 Ok(msg) => {
                     if let Some(ref mut r) = self.recorder {
                         r.write_msg(frame_counter, &msg);
                     }
                     self.process_api_msg(msg, &mut profile_counters, &mut frame_counter)
                 }
-                Err(..) => { false }
+                Err(..) => { RenderBackendStatus::ShutDown(None) }
             };
         }
 
@@ -966,12 +994,18 @@ impl RenderBackend {
             }
         }
 
+        self.documents.clear();
+
         self.notifier.shut_down();
 
         if let Some(ref sampler) = self.sampler {
             sampler.deregister();
         }
 
+
+        if let RenderBackendStatus::ShutDown(Some(sender)) = status {
+            let _ = sender.send(());
+        }
     }
 
     fn process_api_msg(
@@ -979,7 +1013,7 @@ impl RenderBackend {
         msg: ApiMsg,
         profile_counters: &mut BackendProfileCounters,
         frame_counter: &mut u32,
-    ) -> bool {
+    ) -> RenderBackendStatus {
         match msg {
             ApiMsg::WakeUp => {}
             ApiMsg::WakeSceneBuilder => {
@@ -1084,7 +1118,7 @@ impl RenderBackend {
                         )).unwrap();
 
                         // We don't want to forward this message to the renderer.
-                        return true;
+                        return RenderBackendStatus::Continue;
                     }
                     DebugCommand::FetchDocuments => {
                         let json = self.get_docs_for_debugger();
@@ -1139,21 +1173,21 @@ impl RenderBackend {
 
                         // Note: we can't pass `LoadCapture` here since it needs to arrive
                         // before the `PublishDocument` messages sent by `load_capture`.
-                        return true;
+                        return RenderBackendStatus::Continue;
                     }
                     DebugCommand::ClearCaches(mask) => {
                         self.resource_cache.clear(mask);
-                        return true;
+                        return RenderBackendStatus::Continue;
                     }
                     DebugCommand::SimulateLongSceneBuild(time_ms) => {
                         self.scene_tx.send(SceneBuilderRequest::SimulateLongSceneBuild(time_ms)).unwrap();
-                        return true;
+                        return RenderBackendStatus::Continue;
                     }
                     DebugCommand::SimulateLongLowPrioritySceneBuild(time_ms) => {
                         self.low_priority_scene_tx.send(
                             SceneBuilderRequest::SimulateLongLowPrioritySceneBuild(time_ms)
                         ).unwrap();
-                        return true;
+                        return RenderBackendStatus::Continue;
                     }
                     DebugCommand::SetFlags(flags) => {
                         self.resource_cache.set_debug_flags(flags);
@@ -1181,9 +1215,9 @@ impl RenderBackend {
                 self.result_tx.send(msg).unwrap();
                 self.notifier.wake_up();
             }
-            ApiMsg::ShutDown => {
+            ApiMsg::ShutDown(sender) => {
                 info!("Recycling stats: {:?}", self.recycler);
-                return false;
+                return RenderBackendStatus::ShutDown(sender);
             }
             ApiMsg::UpdateDocuments(document_ids, transaction_msgs) => {
                 self.prepare_transactions(
@@ -1195,7 +1229,7 @@ impl RenderBackend {
             }
         }
 
-        true
+        RenderBackendStatus::Continue
     }
 
     fn prepare_for_frames(&mut self) {
@@ -1398,17 +1432,6 @@ impl RenderBackend {
             scroll |= op.scroll;
         }
 
-        for update in &resource_updates {
-            if let ResourceUpdate::UpdateImage(..) = update {
-                doc.frame_is_valid = false;
-            }
-        }
-
-        self.resource_cache.post_scene_building_update(
-            resource_updates,
-            &mut profile_counters.resources,
-        );
-
         if doc.dynamic_properties.flush_pending_updates() {
             doc.frame_is_valid = false;
             doc.hit_tester_is_valid = false;
@@ -1420,6 +1443,31 @@ impl RenderBackend {
             // composition here and do it as soon as we receive the scene.
             render_frame = false;
         }
+
+        if doc.frame_is_valid {
+            // Invalidate WR frame if ResourceUpdate::UpdateImage exists except
+            // when image of ExternalImageType::TextureHandle is not used.
+            let resource_cache = &self.resource_cache;
+            if resource_updates.iter().any(|update| {
+                match update {
+                    ResourceUpdate::UpdateImage(update_image) => {
+                        if !resource_cache.is_image_active(update_image.key) {
+                            return false;
+                        }
+                        true
+                    }
+                    _ => { false }
+                }
+            })
+            {
+                doc.frame_is_valid = false;
+            }
+        }
+
+        self.resource_cache.post_scene_building_update(
+            resource_updates,
+            &mut profile_counters.resources,
+        );
 
         // Avoid re-building the frame if the current built frame is still valid.
         // However, if the resource_cache requires a frame build, _always_ do that, unless
@@ -1806,7 +1854,7 @@ impl RenderBackend {
                 .expect(&format!("Unable to open {}.ron", data_stores_name));
 
             let doc = Document {
-                id: id,
+                id,
                 scene: scene.clone(),
                 removed_pipelines: Vec::new(),
                 view: view.clone(),

@@ -42,6 +42,8 @@ auto MAXBYTE;
 auto MAXWORD;
 auto MAXDWORD;
 
+auto ERROR;
+
 auto DELETE;
 auto READ_CONTROL;
 auto WRITE_DAC;

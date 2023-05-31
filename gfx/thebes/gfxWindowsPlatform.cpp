@@ -27,8 +27,6 @@
 #include "mozilla/Telemetry.h"
 #include "GeckoProfiler.h"
 
-#include "nsIWindowsRegKey.h"
-#include "nsIFile.h"
 #include "plbase64.h"
 #include "nsIXULRuntime.h"
 #include "imgLoader.h"
@@ -75,7 +73,8 @@
 #include "d3dkmtQueryStatistics.h"
 
 #include "base/thread.h"
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "gfxConfig.h"
 #include "VsyncSource.h"
 #include "DriverCrashGuard.h"
@@ -473,7 +472,8 @@ bool gfxWindowsPlatform::CanUseHardwareVideoDecoding() {
   if (!dm) {
     return false;
   }
-  if (!gfxPrefs::LayersPreferD3D9() && !dm->TextureSharingWorks()) {
+  if (!StaticPrefs::layers_prefer_d3d9_AtStartup() &&
+      !dm->TextureSharingWorks()) {
     return false;
   }
   return !dm->IsWARP() && gfxPlatform::CanUseHardwareVideoDecoding();
@@ -1384,10 +1384,10 @@ void gfxWindowsPlatform::InitializeD3D9Config() {
     return;
   }
 
-  d3d9.SetDefaultFromPref(gfxPrefs::GetLayersAllowD3D9FallbackPrefName(), true,
-                          gfxPrefs::GetLayersAllowD3D9FallbackPrefDefault());
+  d3d9.SetDefaultFromPref(StaticPrefs::GetPrefName_layers_allow_d3d9_fallback(), true,
+                          StaticPrefs::GetPrefDefault_layers_allow_d3d9_fallback());
 
-  if (!d3d9.IsEnabled() && gfxPrefs::LayersPreferD3D9()) {
+  if (!d3d9.IsEnabled() && StaticPrefs::layers_prefer_d3d9_AtStartup()) {
     d3d9.UserEnable("Direct3D9 enabled via layers.prefer-d3d9");
   }
 
@@ -1418,7 +1418,7 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
   d3d11.EnableByDefault();
 
   // If the user prefers D3D9, act as though they disabled D3D11.
-  if (gfxPrefs::LayersPreferD3D9()) {
+  if (StaticPrefs::layers_prefer_d3d9_AtStartup()) {
     d3d11.UserDisable("Disabled due to user preference for Direct3D 9",
                       NS_LITERAL_CSTRING("FEATURE_FAILURE_D3D11_PREF"));
     return;
@@ -1439,7 +1439,7 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
       d3d11.Disable(FeatureStatus::Blacklisted, "Blacklisted, see bug 1351349",
                     NS_LITERAL_CSTRING("FEATURE_FAILURE_BUG_1351349"));
 #else
-      gfxPrefs::SetCompositorClearState(true);
+      Preferences::SetBool("gfx.compositor.clearstate", true);
 #endif
     }
   }
@@ -1452,7 +1452,7 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
   }
 
   // Check if the user really, really wants WARP.
-  if (gfxPrefs::LayersD3D11ForceWARP()) {
+  if (StaticPrefs::layers_d3d11_force_warp_AtStartup()) {
     // Force D3D11 on even if we disabled it.
     d3d11.UserForceEnable("User force-enabled WARP");
   }
@@ -1469,14 +1469,14 @@ void gfxWindowsPlatform::InitializeAdvancedLayersConfig() {
 
   FeatureState& al = gfxConfig::GetFeature(Feature::ADVANCED_LAYERS);
   al.SetDefaultFromPref(
-      gfxPrefs::GetAdvancedLayersEnabledDoNotUseDirectlyPrefName(),
+      StaticPrefs::GetPrefName_layers_mlgpu_enabled(),
       true /* aIsEnablePref */,
-      gfxPrefs::GetAdvancedLayersEnabledDoNotUseDirectlyPrefDefault());
+      StaticPrefs::GetPrefDefault_layers_mlgpu_enabled());
 
   // Windows 7 has an extra pref since it uses totally different buffer paths
   // that haven't been performance tested yet.
   if (al.IsEnabled() && !IsWin8OrLater()) {
-    if (gfxPrefs::AdvancedLayersEnableOnWindows7()) {
+    if (StaticPrefs::layers_mlgpu_enable_on_windows7_AtStartup()) {
       al.UserEnable("Enabled for Windows 7 via user-preference");
     } else {
       al.Disable(FeatureStatus::Disabled,
@@ -1634,8 +1634,9 @@ void gfxWindowsPlatform::InitializeD2DConfig() {
     return;
   }
 
-  d2d1.SetDefaultFromPref(gfxPrefs::GetDirect2DDisabledPrefName(), false,
-                          gfxPrefs::GetDirect2DDisabledPrefDefault());
+  d2d1.SetDefaultFromPref(
+      StaticPrefs::GetPrefName_gfx_direct2d_disabled(), false,
+      StaticPrefs::GetPrefDefault_gfx_direct2d_disabled());
 
   nsCString message;
   nsCString failureId;
@@ -1644,7 +1645,8 @@ void gfxWindowsPlatform::InitializeD2DConfig() {
     d2d1.Disable(FeatureStatus::Blacklisted, message.get(), failureId);
   }
 
-  if (!d2d1.IsEnabled() && gfxPrefs::Direct2DForceEnabled()) {
+  if (!d2d1.IsEnabled() &&
+      StaticPrefs::gfx_direct2d_force_enabled_AtStartup()) {
     d2d1.UserForceEnable("Force-enabled via user-preference");
   }
 }
@@ -1725,16 +1727,7 @@ bool gfxWindowsPlatform::InitGPUProcessSupport() {
     return false;
   }
 
-  if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
-    // Don't use the GPU process if not using D3D11, unless software
-    // compositor is allowed
-    if (gfxPrefs::GPUProcessAllowSoftware()) {
-      return gpuProc.IsEnabled();
-    }
-    gpuProc.Disable(FeatureStatus::Unavailable,
-                    "Not using GPU Process since D3D11 is unavailable",
-                    NS_LITERAL_CSTRING("FEATURE_FAILURE_NO_D3D11"));
-  } else if (!IsWin7SP1OrLater()) {
+  if (!IsWin7SP1OrLater()) {
     // For Windows XP, we simply don't care enough to support this
     // configuration. On Windows Vista and 7 Pre-SP1, DXGI 1.2 is not
     // available and remote presentation for D3D11 will not work. Rather
@@ -1755,8 +1748,17 @@ bool gfxWindowsPlatform::InitGPUProcessSupport() {
       // Clear anything cached by the above call since we don't need it.
       DeviceManagerDx::Get()->ResetDevices();
     }
-  }
+  } else if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
+    // Don't use the GPU process if not using D3D11, unless software
+    // compositor is allowed
+    if (StaticPrefs::layers_gpu_process_allow_software_AtStartup()) {
+      return gpuProc.IsEnabled();
+    }
+    gpuProc.Disable(FeatureStatus::Unavailable,
+                    "Not using GPU Process since D3D11 is unavailable",
+                    NS_LITERAL_CSTRING("FEATURE_FAILURE_NO_D3D11"));
 
+  }
   // If we're still enabled at this point, the user set the force-enabled pref.
   return gpuProc.IsEnabled();
 }
@@ -2048,12 +2050,12 @@ gfxWindowsPlatform::CreateHardwareVsyncSource() {
 void gfxWindowsPlatform::GetAcceleratedCompositorBackends(
     nsTArray<LayersBackend>& aBackends) {
   if (gfxConfig::IsEnabled(Feature::OPENGL_COMPOSITING) &&
-      gfxPrefs::LayersPreferOpenGL()) {
+      StaticPrefs::layers_prefer_opengl_AtStartup()) {
     aBackends.AppendElement(LayersBackend::LAYERS_OPENGL);
   }
 
   if (gfxConfig::IsEnabled(Feature::D3D9_COMPOSITING) &&
-      gfxPrefs::LayersPreferD3D9()) {
+      StaticPrefs::layers_prefer_d3d9_AtStartup()) {
     aBackends.AppendElement(LayersBackend::LAYERS_D3D9);
   }
 
@@ -2062,7 +2064,7 @@ void gfxWindowsPlatform::GetAcceleratedCompositorBackends(
   }
 
   if (gfxConfig::IsEnabled(Feature::D3D9_COMPOSITING) &&
-      !gfxPrefs::LayersPreferD3D9()) {
+      !StaticPrefs::layers_prefer_d3d9_AtStartup()) {
     aBackends.AppendElement(LayersBackend::LAYERS_D3D9);
   }
 }

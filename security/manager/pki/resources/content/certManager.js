@@ -313,7 +313,6 @@ async function backupCerts() {
       if (certdialogs.setPKCS12FilePassword(window, password)) {
         let errorCode = certdb.exportPKCS12File(
           fp.file,
-          selected_certs.length,
           selected_certs,
           password.value
         );

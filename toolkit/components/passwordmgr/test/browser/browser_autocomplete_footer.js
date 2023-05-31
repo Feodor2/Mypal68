@@ -1,19 +1,19 @@
 "use strict";
 
-const TEST_HOSTNAME = "https://example.com";
+const TEST_ORIGIN = "https://example.com";
 const BASIC_FORM_PAGE_PATH = DIRECTORY_PATH + "form_basic.html";
 
 function loginList() {
   return [
     LoginTestUtils.testData.formLogin({
-      hostname: "https://example.com",
-      formSubmitURL: "https://example.com",
+      origin: "https://example.com",
+      formActionOrigin: "https://example.com",
       username: "username",
       password: "password",
     }),
     LoginTestUtils.testData.formLogin({
-      hostname: "https://example.com",
-      formSubmitURL: "https://example.com",
+      origin: "https://example.com",
+      formActionOrigin: "https://example.com",
       username: "username2",
       password: "password2",
     }),
@@ -53,7 +53,7 @@ add_task(async function test_initialize() {
 });
 
 add_task(async function test_autocomplete_footer_onclick() {
-  let url = TEST_HOSTNAME + BASIC_FORM_PAGE_PATH;
+  let url = TEST_ORIGIN + BASIC_FORM_PAGE_PATH;
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
@@ -72,13 +72,16 @@ add_task(async function test_autocomplete_footer_onclick() {
         return !EventUtils.isHidden(footer);
       }, "Waiting for footer to become visible");
 
-      EventUtils.synthesizeMouseAtCenter(footer, {});
-      let window = await waitForPasswordManagerDialog();
-      info("Login dialog was opened");
+      let openingFunc = () => EventUtils.synthesizeMouseAtCenter(footer, {});
+      let passwordManager = await openPasswordManager(openingFunc, true);
 
-      await TestUtils.waitForCondition(() => {
-        return window.document.getElementById("filter").value == "example.com";
-      }, "Waiting for the search string to filter logins");
+      info("Password Manager was opened");
+
+      is(
+        passwordManager.filterValue,
+        "example.com",
+        "Search string should be set to filter logins"
+      );
 
       // Check event telemetry recorded when opening management UI
       TelemetryTestUtils.assertEvents(
@@ -86,14 +89,14 @@ add_task(async function test_autocomplete_footer_onclick() {
         { category: "pwmgr", method: "open_management" }
       );
 
-      window.close();
+      await passwordManager.close();
       popup.hidePopup();
     }
   );
 });
 
 add_task(async function test_autocomplete_footer_keydown() {
-  let url = TEST_HOSTNAME + BASIC_FORM_PAGE_PATH;
+  let url = TEST_ORIGIN + BASIC_FORM_PAGE_PATH;
   await BrowserTestUtils.withNewTab(
     {
       gBrowser,
@@ -115,14 +118,16 @@ add_task(async function test_autocomplete_footer_keydown() {
       await EventUtils.synthesizeKey("KEY_ArrowDown");
       await EventUtils.synthesizeKey("KEY_ArrowDown");
       await EventUtils.synthesizeKey("KEY_ArrowDown");
-      await EventUtils.synthesizeKey("KEY_Enter");
+      let openingFunc = () => EventUtils.synthesizeKey("KEY_Enter");
 
-      let window = await waitForPasswordManagerDialog();
+      let passwordManager = await openPasswordManager(openingFunc, true);
       info("Login dialog was opened");
 
-      await TestUtils.waitForCondition(() => {
-        return window.document.getElementById("filter").value == "example.com";
-      }, "Waiting for the search string to filter logins");
+      is(
+        passwordManager.filterValue,
+        "example.com",
+        "Search string should be set to filter logins"
+      );
 
       // Check event telemetry recorded when opening management UI
       TelemetryTestUtils.assertEvents(
@@ -130,7 +135,7 @@ add_task(async function test_autocomplete_footer_keydown() {
         { category: "pwmgr", method: "open_management" }
       );
 
-      window.close();
+      await passwordManager.close();
       popup.hidePopup();
     }
   );

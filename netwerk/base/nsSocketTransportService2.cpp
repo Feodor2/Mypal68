@@ -12,8 +12,6 @@
 #include "nsError.h"
 #include "prnetdb.h"
 #include "prerror.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIObserverService.h"
 #include "mozilla/Atomics.h"
@@ -757,26 +755,24 @@ nsSocketTransportService::GetKeepaliveProbeCount(
 }
 
 NS_IMETHODIMP
-nsSocketTransportService::CreateTransport(const char** types,
-                                          uint32_t typeCount,
+nsSocketTransportService::CreateTransport(const nsTArray<nsCString>& types,
                                           const nsACString& host, int32_t port,
                                           nsIProxyInfo* proxyInfo,
                                           nsISocketTransport** result) {
-  return CreateRoutedTransport(types, typeCount, host, port,
-                               NS_LITERAL_CSTRING(""), 0, proxyInfo, result);
+  return CreateRoutedTransport(types, host, port, NS_LITERAL_CSTRING(""), 0,
+                               proxyInfo, result);
 }
 
 NS_IMETHODIMP
 nsSocketTransportService::CreateRoutedTransport(
-    const char** types, uint32_t typeCount, const nsACString& host,
-    int32_t port, const nsACString& hostRoute, int32_t portRoute,
-    nsIProxyInfo* proxyInfo, nsISocketTransport** result) {
+    const nsTArray<nsCString>& types, const nsACString& host, int32_t port,
+    const nsACString& hostRoute, int32_t portRoute, nsIProxyInfo* proxyInfo,
+    nsISocketTransport** result) {
   NS_ENSURE_TRUE(mInitialized, NS_ERROR_NOT_INITIALIZED);
   NS_ENSURE_TRUE(port >= 0 && port <= 0xFFFF, NS_ERROR_ILLEGAL_VALUE);
 
   RefPtr<nsSocketTransport> trans = new nsSocketTransport();
-  nsresult rv = trans->Init(types, typeCount, host, port, hostRoute, portRoute,
-                            proxyInfo);
+  nsresult rv = trans->Init(types, host, port, hostRoute, portRoute, proxyInfo);
   if (NS_FAILED(rv)) {
     return rv;
   }

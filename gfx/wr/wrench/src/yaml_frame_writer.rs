@@ -4,7 +4,7 @@
 
 extern crate yaml_rust;
 
-use euclid::{TypedPoint2D, TypedRect, TypedSize2D, TypedTransform3D, TypedVector2D};
+use euclid::{Point2D, Rect, Size2D, Transform3D, Vector2D};
 use image::{save_buffer, ColorType};
 use crate::premultiply::unpremultiply;
 use crate::scene::{Scene, SceneProperties};
@@ -72,23 +72,31 @@ fn color_to_string(value: ColorF) -> String {
     }
 }
 
+fn filter_input_to_string(input: FilterPrimitiveInput) -> String {
+    match input {
+        FilterPrimitiveInput::Original => "original".into(),
+        FilterPrimitiveInput::Previous => "previous".into(),
+        FilterPrimitiveInput::OutputOfPrimitiveIndex(index) => index.to_string(),
+    }
+}
+
 fn color_node(parent: &mut Table, key: &str, value: ColorF) {
     yaml_node(parent, key, Yaml::String(color_to_string(value)));
 }
 
-fn point_node<U>(parent: &mut Table, key: &str, value: &TypedPoint2D<f32, U>) {
+fn point_node<U>(parent: &mut Table, key: &str, value: &Point2D<f32, U>) {
     f32_vec_node(parent, key, &[value.x, value.y]);
 }
 
-fn vector_node<U>(parent: &mut Table, key: &str, value: &TypedVector2D<f32, U>) {
+fn vector_node<U>(parent: &mut Table, key: &str, value: &Vector2D<f32, U>) {
     f32_vec_node(parent, key, &[value.x, value.y]);
 }
 
-fn size_node<U>(parent: &mut Table, key: &str, value: &TypedSize2D<f32, U>) {
+fn size_node<U>(parent: &mut Table, key: &str, value: &Size2D<f32, U>) {
     f32_vec_node(parent, key, &[value.width, value.height]);
 }
 
-fn rect_yaml<U>(value: &TypedRect<f32, U>) -> Yaml {
+fn rect_yaml<U>(value: &Rect<f32, U>) -> Yaml {
     f32_vec_yaml(
         &[
             value.origin.x,
@@ -100,11 +108,11 @@ fn rect_yaml<U>(value: &TypedRect<f32, U>) -> Yaml {
     )
 }
 
-fn rect_node<U>(parent: &mut Table, key: &str, value: &TypedRect<f32, U>) {
+fn rect_node<U>(parent: &mut Table, key: &str, value: &Rect<f32, U>) {
     yaml_node(parent, key, rect_yaml(value));
 }
 
-fn matrix4d_node<U1, U2>(parent: &mut Table, key: &str, value: &TypedTransform3D<f32, U1, U2>) {
+fn matrix4d_node<U1, U2>(parent: &mut Table, key: &str, value: &Transform3D<f32, U1, U2>) {
     f32_vec_node(parent, key, &value.to_row_major_array());
 }
 
@@ -130,6 +138,10 @@ fn bool_node(parent: &mut Table, key: &str, value: bool) {
 
 fn table_node(parent: &mut Table, key: &str, value: Table) {
     yaml_node(parent, key, Yaml::Hash(value));
+}
+
+fn filter_input_node(parent: &mut Table, key: &str, value: FilterPrimitiveInput) {
+    yaml_node(parent, key, Yaml::String(filter_input_to_string(value)));
 }
 
 fn string_vec_yaml(value: &[String], check_unique: bool) -> Yaml {
@@ -247,31 +259,12 @@ fn shadow_parameters(shadow: &Shadow) -> String {
     )
 }
 
-fn write_stacking_context(
+fn write_filters(
     parent: &mut Table,
-    sc: &StackingContext,
+    name: &str,
+    filter_iter: impl IntoIterator<Item = FilterOp>,
     properties: &SceneProperties,
-    filter_iter: AuxIter<FilterOp>,
-    filter_data_iter: &[TempFilterData],
-    display_list: &BuiltDisplayList,
 ) {
-    enum_node(parent, "transform-style", sc.transform_style);
-
-    let raster_space = match sc.raster_space {
-        RasterSpace::Local(scale) => {
-            format!("local({})", scale)
-        }
-        RasterSpace::Screen => {
-            "screen".to_owned()
-        }
-    };
-    str_node(parent, "raster-space", &raster_space);
-
-    // mix_blend_mode
-    if sc.mix_blend_mode != MixBlendMode::Normal {
-        enum_node(parent, "mix-blend-mode", sc.mix_blend_mode)
-    }
-    // filters
     let mut filters = vec![];
     for filter in filter_iter {
         match filter {
@@ -306,15 +299,23 @@ fn write_stacking_context(
             FilterOp::ComponentTransfer => {
                 filters.push(Yaml::String("component-transfer".to_string()))
             }
+            FilterOp::Flood(color) => {
+                filters.push(Yaml::String(format!("flood({})", color_to_string(color))))
+            }
         }
     }
 
-    yaml_node(parent, "filters", Yaml::Array(filters));
+    yaml_node(parent, name, Yaml::Array(filters));
+}
 
-    // filter datas
+fn write_filter_datas(
+    parent: &mut Table,
+    name: &str,
+    filter_data_iter: &[TempFilterData],
+) {
     let mut filter_datas = vec![];
     for filter_data in filter_data_iter {
-        let func_types = display_list.get(filter_data.func_types).map(|func_type| {
+        let func_types = filter_data.func_types.iter().map(|func_type| {
             match func_type {
                 ComponentTransferFuncType::Identity => { Yaml::String("Identity".to_string()) }
                 ComponentTransferFuncType::Table => { Yaml::String("Table".to_string()) }
@@ -323,16 +324,16 @@ fn write_stacking_context(
                 ComponentTransferFuncType::Gamma => { Yaml::String("Gamma".to_string()) }
             }
         }).collect();
-        let r_values = display_list.get(filter_data.r_values).map(|value| {
+        let r_values = filter_data.r_values.iter().map(|value| {
             Yaml::String(format!("{}", value))
         }).collect();
-        let g_values = display_list.get(filter_data.g_values).map(|value| {
+        let g_values = filter_data.g_values.iter().map(|value| {
             Yaml::String(format!("{}", value))
         }).collect();
-        let b_values = display_list.get(filter_data.b_values).map(|value| {
+        let b_values = filter_data.b_values.iter().map(|value| {
             Yaml::String(format!("{}", value))
         }).collect();
-        let a_values = display_list.get(filter_data.a_values).map(|value| {
+        let a_values = filter_data.a_values.iter().map(|value| {
             Yaml::String(format!("{}", value))
         }).collect();
 
@@ -346,7 +347,94 @@ fn write_stacking_context(
         filter_datas.push(Yaml::Array(avec));
     }
 
-    yaml_node(parent, "filter-datas", Yaml::Array(filter_datas));
+    yaml_node(parent, name, Yaml::Array(filter_datas));
+}
+
+fn write_filter_primitives(
+    parent: &mut Table,
+    name: &str,
+    filter_primitive_iter: impl IntoIterator<Item = FilterPrimitive>,
+) {
+    let mut filter_primitives = vec![];
+    for filter_primitive in filter_primitive_iter {
+        let mut table = new_table();
+        match filter_primitive.kind {
+            FilterPrimitiveKind::Identity(identity_primitive) => {
+                yaml_node(&mut table, "type", Yaml::String("identity".into()));
+                filter_input_node(&mut table, "in", identity_primitive.input);
+            }
+            FilterPrimitiveKind::Blend(blend_primitive) => {
+                yaml_node(&mut table, "type", Yaml::String("blend".into()));
+                filter_input_node(&mut table, "in1", blend_primitive.input1);
+                filter_input_node(&mut table, "in2", blend_primitive.input2);
+                enum_node(&mut table, "mode", blend_primitive.mode);
+            }
+            FilterPrimitiveKind::Flood(flood_primitive) => {
+                yaml_node(&mut table, "type", Yaml::String("flood".into()));
+                color_node(&mut table, "color", flood_primitive.color);
+            }
+            FilterPrimitiveKind::Blur(blur_primitive) => {
+                yaml_node(&mut table, "type", Yaml::String("blur".into()));
+                filter_input_node(&mut table, "in", blur_primitive.input);
+                f32_node(&mut table, "radius", blur_primitive.radius);
+            }
+            FilterPrimitiveKind::Opacity(opacity_primitive) => {
+                yaml_node(&mut table, "type", Yaml::String("opacity".into()));
+                filter_input_node(&mut table, "in", opacity_primitive.input);
+                f32_node(&mut table, "opacity", opacity_primitive.opacity);
+            }
+            FilterPrimitiveKind::ColorMatrix(color_matrix_primitive) => {
+                yaml_node(&mut table, "type", Yaml::String("color-matrix".into()));
+                filter_input_node(&mut table, "in", color_matrix_primitive.input);
+                f32_vec_node(&mut table, "matrix", &color_matrix_primitive.matrix);
+            }
+            FilterPrimitiveKind::DropShadow(drop_shadow_primitive) => {
+                yaml_node(&mut table, "type", Yaml::String("drop-shadow".into()));
+                filter_input_node(&mut table, "in", drop_shadow_primitive.input);
+                vector_node(&mut table, "offset", &drop_shadow_primitive.shadow.offset);
+                color_node(&mut table, "color", drop_shadow_primitive.shadow.color);
+                f32_node(&mut table, "radius", drop_shadow_primitive.shadow.blur_radius);
+            }
+            FilterPrimitiveKind::ComponentTransfer(component_transfer_primitive) => {
+                yaml_node(&mut table, "type", Yaml::String("component-transfer".into()));
+                filter_input_node(&mut table, "in", component_transfer_primitive.input);
+            }
+        }
+        enum_node(&mut table, "color-space", filter_primitive.color_space);
+        filter_primitives.push(Yaml::Hash(table));
+    }
+
+    yaml_node(parent, name, Yaml::Array(filter_primitives));
+}
+
+fn write_stacking_context(
+    parent: &mut Table,
+    sc: &StackingContext,
+    properties: &SceneProperties,
+    filter_iter: impl IntoIterator<Item = FilterOp>,
+    filter_data_iter: &[TempFilterData],
+    filter_primitive_iter: impl IntoIterator<Item = FilterPrimitive>,
+) {
+    enum_node(parent, "transform-style", sc.transform_style);
+
+    let raster_space = match sc.raster_space {
+        RasterSpace::Local(scale) => {
+            format!("local({})", scale)
+        }
+        RasterSpace::Screen => {
+            "screen".to_owned()
+        }
+    };
+    str_node(parent, "raster-space", &raster_space);
+
+    // mix_blend_mode
+    if sc.mix_blend_mode != MixBlendMode::Normal {
+        enum_node(parent, "mix-blend-mode", sc.mix_blend_mode)
+    }
+
+    write_filters(parent, "filters", filter_iter, properties);
+    write_filter_datas(parent, "filter-datas", filter_data_iter);
+    write_filter_primitives(parent, "filter-primitives", filter_primitive_iter);
 }
 
 #[cfg(target_os = "macos")]
@@ -392,7 +480,6 @@ fn radial_gradient_to_yaml(
     table: &mut Table,
     gradient: &webrender::api::RadialGradient,
     stops_range: ItemRange<GradientStop>,
-    display_list: &BuiltDisplayList
 ) {
     point_node(table, "center", &gradient.center);
     size_node(table, "radius", &gradient.radius);
@@ -403,7 +490,7 @@ fn radial_gradient_to_yaml(
     assert!(first_offset <= last_offset);
 
     let mut denormalized_stops = vec![];
-    for stop in display_list.get(stops_range) {
+    for stop in stops_range {
         let denormalized_stop = (stop.offset * stops_delta) + first_offset;
         denormalized_stops.push(Yaml::Real(denormalized_stop.to_string()));
         denormalized_stops.push(Yaml::String(color_to_string(stop.color)));
@@ -807,15 +894,14 @@ impl YamlFrameWriter {
 
     fn make_complex_clips_node(
         &mut self,
-        complex_clip_count: usize,
         complex_clips: ItemRange<ComplexClipRegion>,
-        list: &BuiltDisplayList,
     ) -> Option<Yaml> {
-        if complex_clip_count == 0 {
+        let iter = complex_clips.iter();
+        if iter.len() == 0 {
             return None;
         }
 
-        let complex_items = list.get(complex_clips)
+        let complex_items = iter
             .map(|ccx| if ccx.radii.is_zero() {
                 rect_yaml(&ccx.rect)
             } else {
@@ -886,10 +972,9 @@ impl YamlFrameWriter {
                     str_node(&mut v, "style", item.style.as_str());
                 }
                 DisplayItem::Text(item) => {
-                    let gi = display_list.get(base.glyphs());
                     let mut indices: Vec<u32> = vec![];
                     let mut offsets: Vec<f32> = vec![];
-                    for g in gi {
+                    for g in base.glyphs() {
                         indices.push(g.index);
                         offsets.push(g.point.x);
                         offsets.push(g.point.y);
@@ -1040,7 +1125,7 @@ impl YamlFrameWriter {
                                     point_node(&mut v, "start", &gradient.start_point);
                                     point_node(&mut v, "end", &gradient.end_point);
                                     let mut stops = vec![];
-                                    for stop in display_list.get(base.gradient_stops()) {
+                                    for stop in base.gradient_stops() {
                                         stops.push(Yaml::Real(stop.offset.to_string()));
                                         stops.push(Yaml::String(color_to_string(stop.color)));
                                     }
@@ -1053,7 +1138,6 @@ impl YamlFrameWriter {
                                         &mut v,
                                         &gradient,
                                         base.gradient_stops(),
-                                        display_list
                                     );
                                 }
                             }
@@ -1115,7 +1199,7 @@ impl YamlFrameWriter {
                     size_node(&mut v, "tile-size", &item.tile_size);
                     size_node(&mut v, "tile-spacing", &item.tile_spacing);
                     let mut stops = vec![];
-                    for stop in display_list.get(base.gradient_stops()) {
+                    for stop in base.gradient_stops() {
                         stops.push(Yaml::Real(stop.offset.to_string()));
                         stops.push(Yaml::String(color_to_string(stop.color)));
                     }
@@ -1136,7 +1220,6 @@ impl YamlFrameWriter {
                         &mut v,
                         &item.gradient,
                         base.gradient_stops(),
-                        display_list
                     );
                 }
                 DisplayItem::Iframe(item) => {
@@ -1162,14 +1245,13 @@ impl YamlFrameWriter {
                     );
                     point_node(&mut v, "origin", &item.origin);
                     bool_node(&mut v, "backface-visible", item.is_backface_visible);
-                    let filters = display_list.get(base.filters());
                     write_stacking_context(
                         &mut v,
                         &item.stacking_context,
                         &scene.properties,
-                        filters,
+                        base.filters(),
                         base.filter_datas(),
-                        display_list,
+                        base.filter_primitives(),
                     );
 
                     let mut sub_iter = base.sub_iter();
@@ -1199,11 +1281,8 @@ impl YamlFrameWriter {
                     rect_node(&mut v, "clip-rect", &item.clip_rect);
                     usize_node(&mut v, "id", clip_id_mapper.add_clip_id(item.id));
 
-                    let (complex_clips, complex_clip_count) = base.complex_clip();
                     if let Some(complex) = self.make_complex_clips_node(
-                        complex_clip_count,
-                        complex_clips,
-                        display_list,
+                        base.complex_clip()
                     ) {
                         yaml_node(&mut v, "complex", complex);
                     }
@@ -1218,7 +1297,7 @@ impl YamlFrameWriter {
                     let id = ClipId::ClipChain(item.id);
                     u32_node(&mut v, "id", clip_id_mapper.add_clip_id(id) as u32);
 
-                    let clip_ids = display_list.get(base.clip_chain_items()).map(|clip_id| {
+                    let clip_ids = base.clip_chain_items().iter().map(|clip_id| {
                         clip_id_mapper.map_clip_id(&clip_id)
                     }).collect();
                     yaml_node(&mut v, "clips", Yaml::Array(clip_ids));
@@ -1235,11 +1314,8 @@ impl YamlFrameWriter {
                     rect_node(&mut v, "bounds", &item.clip_rect);
                     vector_node(&mut v, "external-scroll-offset", &item.external_scroll_offset);
 
-                    let (complex_clips, complex_clip_count) = base.complex_clip();
                     if let Some(complex) = self.make_complex_clips_node(
-                        complex_clip_count,
-                        complex_clips,
-                        display_list,
+                        base.complex_clip()
                     ) {
                         yaml_node(&mut v, "complex", complex);
                     }
@@ -1284,13 +1360,23 @@ impl YamlFrameWriter {
                     ];
                     yaml_node(&mut v, "previously-applied-offset", Yaml::Array(applied));
                 }
+                DisplayItem::BackdropFilter(item) => {
+                    str_node(&mut v, "type", "backdrop-filter");
+                    common_node(&mut v, clip_id_mapper, &item.common);
+
+                    write_filters(&mut v, "filters", base.filters(), &scene.properties);
+                    write_filter_datas(&mut v, "filter-datas", base.filter_datas());
+                    write_filter_primitives(&mut v, "filter-primitives", base.filter_primitives());
+                }
 
                 DisplayItem::PopReferenceFrame |
                 DisplayItem::PopStackingContext => return,
 
-                DisplayItem::SetGradientStops => panic!("dummy item yielded?"),
-                DisplayItem::SetFilterOps => panic!("dummy item yielded?"),
-                DisplayItem::SetFilterData => panic!("dummy item yielded?"),
+                DisplayItem::SetGradientStops |
+                DisplayItem::SetFilterOps |
+                DisplayItem::SetFilterData |
+                DisplayItem::SetFilterPrimitives => panic!("dummy item yielded?"),
+
                 DisplayItem::PushShadow(item) => {
                     str_node(&mut v, "type", "shadow");
                     vector_node(&mut v, "offset", &item.shadow.offset);

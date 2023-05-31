@@ -35,9 +35,7 @@
 #include "nsIInputStreamPump.h"
 #include "nsIJARURI.h"
 #include "nsIStreamListener.h"
-#include "nsIThread.h"
 #include "nsIInputStream.h"
-#include "nsIOutputStream.h"
 #include "nsIStreamConverterService.h"
 #include "nsNetUtil.h"
 #include "nsReadableUtils.h"
@@ -396,6 +394,8 @@ bool ExtensionProtocolHandler::ResolveSpecialCases(const nsACString& aHost,
                                                    const nsACString& aPath,
                                                    const nsACString& aPathname,
                                                    nsACString& aResult) {
+  MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread(),
+                        "The ExtensionPolicyService is not thread safe");
   // Create special moz-extension://foo/_generated_background_page.html page
   // for all registered extensions. We can't just do this as a substitution
   // because substitutions can only match on host.
@@ -673,9 +673,7 @@ Result<nsCOMPtr<nsIInputStream>, nsresult> ExtensionProtocolHandler::NewStream(
   // these requests ordinarily come from the child's ExtensionProtocolHandler.
   // Ensure this request is for a moz-extension URI. A rogue child process
   // could send us any URI.
-  bool isExtScheme = false;
-  if (NS_FAILED(aChildURI->SchemeIs(EXTENSION_SCHEME, &isExtScheme)) ||
-      !isExtScheme) {
+  if (!aChildURI->SchemeIs(EXTENSION_SCHEME)) {
     return Err(NS_ERROR_UNKNOWN_PROTOCOL);
   }
 
@@ -791,9 +789,7 @@ Result<Ok, nsresult> ExtensionProtocolHandler::NewFD(
   nsresult rv;
 
   // Ensure this is a moz-extension URI
-  bool isExtScheme = false;
-  if (NS_FAILED(aChildURI->SchemeIs(EXTENSION_SCHEME, &isExtScheme)) ||
-      !isExtScheme) {
+  if (!aChildURI->SchemeIs(EXTENSION_SCHEME)) {
     return Err(NS_ERROR_UNKNOWN_PROTOCOL);
   }
 

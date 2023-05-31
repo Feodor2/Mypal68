@@ -123,8 +123,7 @@ nsresult DeleteRangeTransaction::CreateTxnsToDeleteBetween(
   }
 
   // see what kind of node we have
-  if (RefPtr<CharacterData> charDataNode =
-          CharacterData::FromNode(aStart.Container())) {
+  if (RefPtr<Text> textNode = Text::FromNode(aStart.Container())) {
     // if the node is a chardata node, then delete chardata content
     int32_t numToDel;
     if (aStart == aEnd) {
@@ -135,7 +134,7 @@ nsresult DeleteRangeTransaction::CreateTxnsToDeleteBetween(
     }
 
     RefPtr<DeleteTextTransaction> deleteTextTransaction =
-        DeleteTextTransaction::MaybeCreate(*mEditorBase, *charDataNode,
+        DeleteTextTransaction::MaybeCreate(*mEditorBase, *textNode,
                                            aStart.Offset(), numToDel);
     // If the text node isn't editable, it should be never undone/redone.
     // So, the transaction shouldn't be recorded.
@@ -175,8 +174,8 @@ nsresult DeleteRangeTransaction::CreateTxnsToDeleteContent(
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  RefPtr<CharacterData> dataNode = CharacterData::FromNode(aPoint.Container());
-  if (!dataNode) {
+  RefPtr<Text> textNode = Text::FromNode(aPoint.Container());
+  if (!textNode) {
     return NS_OK;
   }
 
@@ -195,7 +194,7 @@ nsresult DeleteRangeTransaction::CreateTxnsToDeleteContent(
   }
 
   RefPtr<DeleteTextTransaction> deleteTextTransaction =
-      DeleteTextTransaction::MaybeCreate(*mEditorBase, *dataNode, startOffset,
+      DeleteTextTransaction::MaybeCreate(*mEditorBase, *textNode, startOffset,
                                          numToDelete);
   // If the text node isn't editable, it should be never undone/redone.
   // So, the transaction shouldn't be recorded.

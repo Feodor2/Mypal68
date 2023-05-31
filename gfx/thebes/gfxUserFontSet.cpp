@@ -6,12 +6,11 @@
 
 #include "gfxUserFontSet.h"
 #include "gfxPlatform.h"
-#include "gfxPrefs.h"
-#include "nsIProtocolHandler.h"
 #include "gfxFontConstants.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/gfx/2D.h"
 #include "gfxPlatformFontList.h"
@@ -185,11 +184,13 @@ class MOZ_STACK_CLASS gfxOTSContext : public ots::OTSContext {
   explicit gfxOTSContext(gfxUserFontEntry* aUserFontEntry)
       : mUserFontEntry(aUserFontEntry) {
     // Whether to apply OTS validation to OpenType Layout tables
-    mCheckOTLTables = gfxPrefs::ValidateOTLTables();
+    mCheckOTLTables = StaticPrefs::gfx_downloadable_fonts_otl_validation();
     // Whether to preserve Variation tables in downloaded fonts
-    mCheckVariationTables = gfxPrefs::ValidateVariationTables();
+    mCheckVariationTables =
+        StaticPrefs::gfx_downloadable_fonts_validate_variation_tables();
     // Whether to preserve color bitmap glyphs
-    mKeepColorBitmaps = gfxPrefs::KeepColorBitmaps();
+    mKeepColorBitmaps =
+        StaticPrefs::gfx_downloadable_fonts_keep_color_bitmaps();
   }
 
   virtual ots::TableAction GetTableAction(uint32_t aTag) override {
@@ -1221,9 +1222,7 @@ void gfxUserFontSet::UserFontCache::Entry::ReportMemory(
       spec.ReplaceChar('/', '\\');
       // Some fonts are loaded using horrendously-long data: URIs;
       // truncate those before reporting them.
-      bool isData;
-      if (NS_SUCCEEDED(mURI->get()->SchemeIs("data", &isData)) && isData &&
-          spec.Length() > 255) {
+      if (mURI->get()->SchemeIs("data") && spec.Length() > 255) {
         spec.Truncate(252);
         spec.AppendLiteral("...");
       }

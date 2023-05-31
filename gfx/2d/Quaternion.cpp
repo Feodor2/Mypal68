@@ -9,8 +9,6 @@
 #include <ostream>
 #include <math.h>
 
-using namespace std;
-
 namespace mozilla {
 namespace gfx {
 

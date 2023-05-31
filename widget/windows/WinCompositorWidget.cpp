@@ -3,7 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "WinCompositorWidget.h"
-#include "gfxPrefs.h"
+
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/layers/Compositor.h"
@@ -36,9 +37,9 @@ WinCompositorWidget::WinCompositorWidget(
 
   // mNotDeferEndRemoteDrawing is set on the main thread during init,
   // but is only accessed after on the compositor thread.
-  mNotDeferEndRemoteDrawing = gfxPrefs::LayersCompositionFrameRate() == 0 ||
-                              gfxPlatform::IsInLayoutAsapMode() ||
-                              gfxPlatform::ForceSoftwareVsync();
+  mNotDeferEndRemoteDrawing =
+      StaticPrefs::layers_offmainthreadcomposition_frame_rate() == 0 ||
+      gfxPlatform::IsInLayoutAsapMode() || gfxPlatform::ForceSoftwareVsync();
 }
 
 WinCompositorWidget::~WinCompositorWidget() { DestroyCompositorWindow(); }

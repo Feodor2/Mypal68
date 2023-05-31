@@ -68,7 +68,7 @@ void VsyncBridgeParent::ActorDestroy(ActorDestroyReason aWhy) {
   mCompositorThreadRef = nullptr;
 }
 
-void VsyncBridgeParent::DeallocPVsyncBridgeParent() { Release(); }
+void VsyncBridgeParent::ActorDealloc() { Release(); }
 
 }  // namespace gfx
 }  // namespace mozilla

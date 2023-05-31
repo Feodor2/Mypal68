@@ -611,7 +611,7 @@ var PlacesUtils = {
   },
 
   getFormattedString: function PU_getFormattedString(key, params) {
-    return bundle.formatStringFromName(key, params, params.length);
+    return bundle.formatStringFromName(key, params);
   },
 
   getString: function PU_getString(key) {

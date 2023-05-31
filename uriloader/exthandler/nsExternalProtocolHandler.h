@@ -9,7 +9,6 @@
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsWeakReference.h"
-#include "nsIExternalProtocolService.h"
 #include "mozilla/Attributes.h"
 
 class nsIURI;

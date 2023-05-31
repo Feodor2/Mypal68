@@ -35,14 +35,12 @@
 #include "mozilla/StaticPtr.h"
 #include "gfxUtils.h"
 
-using namespace std;
-
 namespace mozilla {
 
 namespace layers {
 
 // defined in CompositorBridgeParent.cpp
-typedef map<LayersId, CompositorBridgeParent::LayerTreeState> LayerTreeMap;
+typedef std::map<LayersId, CompositorBridgeParent::LayerTreeState> LayerTreeMap;
 extern LayerTreeMap sIndirectLayerTrees;
 extern StaticAutoPtr<mozilla::Monitor2> sIndirectLayerTreesLock;
 void UpdateIndirectTree(LayersId aId, Layer* aRoot,
@@ -200,11 +198,6 @@ bool ContentCompositorBridgeParent::DeallocPAPZParent(PAPZParent* aActor) {
 PWebRenderBridgeParent*
 ContentCompositorBridgeParent::AllocPWebRenderBridgeParent(
     const wr::PipelineId& aPipelineId, const LayoutDeviceIntSize& aSize) {
-#ifndef MOZ_BUILD_WEBRENDER
-  // Extra guard since this in the parent process and we don't want a malicious
-  // child process invoking this codepath before it's ready
-  MOZ_RELEASE_ASSERT(false);
-#endif
   LayersId layersId = wr::AsLayersId(aPipelineId);
   // Check to see if this child process has access to this layer tree.
   if (!LayerTreeOwnerTracker::Get()->IsMapped(layersId, OtherPid())) {
@@ -227,7 +220,7 @@ ContentCompositorBridgeParent::AllocPWebRenderBridgeParent(
     }
   }
 
-  InfallibleTArray<RefPtr<wr::WebRenderAPI>> apis;
+  nsTArray<RefPtr<wr::WebRenderAPI>> apis;
   bool cloneSuccess = false;
   if (root) {
     cloneSuccess = root->CloneWebRenderAPIs(apis);
@@ -265,11 +258,6 @@ ContentCompositorBridgeParent::AllocPWebRenderBridgeParent(
 
 bool ContentCompositorBridgeParent::DeallocPWebRenderBridgeParent(
     PWebRenderBridgeParent* aActor) {
-#ifndef MOZ_BUILD_WEBRENDER
-  // Extra guard since this in the parent process and we don't want a malicious
-  // child process invoking this codepath before it's ready
-  MOZ_RELEASE_ASSERT(false);
-#endif
   WebRenderBridgeParent* parent = static_cast<WebRenderBridgeParent*>(aActor);
   EraseLayerState(wr::AsLayersId(parent->PipelineId()));
   parent->Release();  // IPDL reference

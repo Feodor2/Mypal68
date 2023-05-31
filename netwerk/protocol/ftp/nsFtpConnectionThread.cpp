@@ -26,20 +26,15 @@
 #include "nsStreamUtils.h"
 #include "nsIURL.h"
 #include "nsISocketTransport.h"
-#include "nsIStreamListenerTee.h"
-#include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 #include "nsAuthInformationHolder.h"
 #include "nsIProtocolProxyService.h"
 #include "nsICancelable.h"
 #include "nsIOutputStream.h"
-#include "nsIPrompt.h"
 #include "nsIProtocolHandler.h"
 #include "nsIProxyInfo.h"
-#include "nsIRunnable.h"
 #include "nsISocketTransportService.h"
 #include "nsIURI.h"
-#include "nsIURIMutator.h"
 #include "nsILoadInfo.h"
 #include "nsIAuthPrompt2.h"
 #include "nsIFTPChannelParentInternal.h"
@@ -1344,7 +1339,8 @@ nsFtpState::R_pasv() {
       if (NS_FAILED(rv)) return FTP_ERROR;
     }
 
-    rv = sts->CreateTransport(nullptr, 0, host, port, mChannel->ProxyInfo(),
+    rv = sts->CreateTransport(nsTArray<nsCString>(), host, port,
+                              mChannel->ProxyInfo(),
                               getter_AddRefs(strans));  // the data socket
     if (NS_FAILED(rv)) return FTP_ERROR;
     mDataTransport = strans;
@@ -1498,11 +1494,11 @@ nsresult nsFtpState::Init(nsFtpChannel* channel) {
     // now unescape it... %xx reduced inline to resulting character
     int32_t len = NS_UnescapeURL(fwdPtr);
     mPath.Assign(fwdPtr, len);
-
-#ifdef DEBUG
-    if (mPath.FindCharInSet(CRLF) >= 0)
-      NS_ERROR("NewURI() should've prevented this!!!");
-#endif
+    if (mPath.FindCharInSet(CRLF) != kNotFound ||
+        mPath.FindChar('\0') != kNotFound) {
+      mPath.Truncate();
+      return NS_ERROR_MALFORMED_URI;
+    }
   }
 
   // pull any username and/or password out of the uri

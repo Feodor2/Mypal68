@@ -9,8 +9,6 @@
 #include "base/process.h"
 #include "chrome/common/ipc_channel.h"
 
-#include "nsIAppShell.h"
-
 #include "nsCOMPtr.h"
 #include "nsDebug.h"
 #include "nsServiceManagerUtils.h"  // do_GetService()

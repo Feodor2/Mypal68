@@ -104,18 +104,12 @@ class BasePrincipal : public nsJSPrincipals {
   NS_IMETHOD CheckMayLoad(nsIURI* uri, bool report,
                           bool allowIfInheritsPrincipal) final;
   NS_IMETHOD GetAddonPolicy(nsISupports** aResult) final;
-  NS_IMETHOD GetCsp(nsIContentSecurityPolicy** aCsp) override;
-  NS_IMETHOD SetCsp(nsIContentSecurityPolicy* aCsp) override;
-  NS_IMETHOD EnsureCSP(dom::Document* aDocument,
-                       nsIContentSecurityPolicy** aCSP) override;
-  NS_IMETHOD GetPreloadCsp(nsIContentSecurityPolicy** aPreloadCSP) override;
-  NS_IMETHOD EnsurePreloadCSP(dom::Document* aDocument,
-                              nsIContentSecurityPolicy** aCSP) override;
-  NS_IMETHOD GetCspJSON(nsAString& outCSPinJSON) override;
   NS_IMETHOD GetIsNullPrincipal(bool* aResult) override;
   NS_IMETHOD GetIsCodebasePrincipal(bool* aResult) override;
   NS_IMETHOD GetIsExpandedPrincipal(bool* aResult) override;
   NS_IMETHOD GetIsSystemPrincipal(bool* aResult) override;
+  NS_IMETHOD SchemeIs(const char* aScheme, bool* aResult) override;
+  NS_IMETHOD GetAboutModuleFlags(uint32_t* flags) override;
   NS_IMETHOD GetIsAddonOrExpandedAddonPrincipal(bool* aResult) override;
   NS_IMETHOD GetOriginAttributes(JSContext* aCx,
                                  JS::MutableHandle<JS::Value> aVal) final;
@@ -125,6 +119,8 @@ class BasePrincipal : public nsJSPrincipals {
   NS_IMETHOD GetUserContextId(uint32_t* aUserContextId) final;
   NS_IMETHOD GetPrivateBrowsingId(uint32_t* aPrivateBrowsingId) final;
   NS_IMETHOD GetSiteOrigin(nsACString& aOrigin) override;
+  NS_IMETHOD IsThirdPartyURI(nsIURI* uri, bool* aRes) override;
+  NS_IMETHOD IsThirdPartyPrincipal(nsIPrincipal* uri, bool* aRes) override;
 
   virtual bool AddonHasPermission(const nsAtom* aPerm);
 
@@ -162,8 +158,6 @@ class BasePrincipal : public nsJSPrincipals {
 
   PrincipalKind Kind() const { return mKind; }
 
-  already_AddRefed<BasePrincipal> CloneForcingFirstPartyDomain(nsIURI* aURI);
-
   already_AddRefed<BasePrincipal> CloneForcingOriginAttributes(
       const OriginAttributes& aOriginAttributes);
 
@@ -195,17 +189,13 @@ class BasePrincipal : public nsJSPrincipals {
   // (or, if no URI is given, the last allowlist principal).
   nsIPrincipal* PrincipalToInherit(nsIURI* aRequestedURI = nullptr);
 
-  /**
-   * Returns true if this principal's CSP should override a document's CSP for
-   * loads that it triggers. Currently true for system principal, for expanded
-   * principals which subsume the document principal, and add-on codebase
-   * principals regardless of whether they subsume the document principal.
+  /* Returns true if this principal's CSP should override a document's CSP for
+   * loads that it triggers. Currently true for expanded principals which
+   * subsume the document principal, and add-on codebase principals regardless
+   * of whether they subsume the document principal.
    */
   bool OverridesCSP(nsIPrincipal* aDocumentPrincipal) {
-    // SystemPrincipal can override the page's CSP by definition.
-    if (mKind == eSystemPrincipal) {
-      return true;
-    }
+    MOZ_ASSERT(aDocumentPrincipal);
 
     // Expanded principals override CSP if and only if they subsume the document
     // principal.
@@ -220,6 +210,7 @@ class BasePrincipal : public nsJSPrincipals {
   }
 
   uint32_t GetOriginNoSuffixHash() const { return mOriginNoSuffix->hash(); }
+  uint32_t GetOriginSuffixHash() const { return mOriginSuffix->hash(); }
 
   virtual nsresult GetSiteIdentifier(SiteIdentifier& aSite) = 0;
 
@@ -247,9 +238,6 @@ class BasePrincipal : public nsJSPrincipals {
   void FinishInit(BasePrincipal* aOther,
                   const OriginAttributes& aOriginAttributes);
 
-  nsCOMPtr<nsIContentSecurityPolicy> mCSP;
-  nsCOMPtr<nsIContentSecurityPolicy> mPreloadCSP;
-
  private:
   static already_AddRefed<BasePrincipal> CreateCodebasePrincipal(
       nsIURI* aURI, const OriginAttributes& aAttrs,
@@ -268,6 +256,8 @@ class BasePrincipal : public nsJSPrincipals {
 };
 
 inline bool BasePrincipal::FastEquals(nsIPrincipal* aOther) {
+  MOZ_ASSERT(aOther);
+
   auto other = Cast(aOther);
   if (Kind() != other->Kind()) {
     // Principals of different kinds can't be equal.
@@ -291,6 +281,8 @@ inline bool BasePrincipal::FastEquals(nsIPrincipal* aOther) {
 }
 
 inline bool BasePrincipal::FastEqualsConsideringDomain(nsIPrincipal* aOther) {
+  MOZ_ASSERT(aOther);
+
   // If neither of the principals have document.domain set, we use the fast path
   // in Equals().  Otherwise, we fall back to the slow path below.
   auto other = Cast(aOther);
@@ -303,6 +295,8 @@ inline bool BasePrincipal::FastEqualsConsideringDomain(nsIPrincipal* aOther) {
 }
 
 inline bool BasePrincipal::FastSubsumes(nsIPrincipal* aOther) {
+  MOZ_ASSERT(aOther);
+
   // If two principals are equal, then they both subsume each other.
   if (FastEquals(aOther)) {
     return true;
@@ -313,6 +307,8 @@ inline bool BasePrincipal::FastSubsumes(nsIPrincipal* aOther) {
 }
 
 inline bool BasePrincipal::FastSubsumesConsideringDomain(nsIPrincipal* aOther) {
+  MOZ_ASSERT(aOther);
+
   // If neither of the principals have document.domain set, we hand off to
   // FastSubsumes() which has fast paths for some special cases. Otherwise, we
   // fall back to the slow path below.
@@ -325,6 +321,8 @@ inline bool BasePrincipal::FastSubsumesConsideringDomain(nsIPrincipal* aOther) {
 
 inline bool BasePrincipal::FastSubsumesIgnoringFPD(
     nsIPrincipal* aOther, DocumentDomainConsideration aConsideration) {
+  MOZ_ASSERT(aOther);
+
   if (Kind() == eCodebasePrincipal &&
       !dom::ChromeUtils::IsOriginAttributesEqualIgnoringFPD(
           mOriginAttributes, Cast(aOther)->mOriginAttributes)) {

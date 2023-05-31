@@ -11,7 +11,6 @@
 #include "nsHashKeys.h"
 #include "nsVersionComparator.h"
 #include "AndroidBridge.h"
-#include "nsIWindowWatcher.h"
 #include "nsServiceManagerUtils.h"
 
 #include "mozilla/Preferences.h"

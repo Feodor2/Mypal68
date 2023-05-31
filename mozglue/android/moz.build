@@ -62,8 +62,6 @@ LOCAL_INCLUDES += [
     '/xpcom/build',
 ]
 
-DisableStlWrapping()
-
 if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 

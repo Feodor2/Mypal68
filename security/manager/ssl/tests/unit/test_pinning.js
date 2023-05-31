@@ -298,7 +298,7 @@ function check_pinning_telemetry() {
 }
 
 function run_test() {
-  add_tls_server_setup("BadCertServer", "bad_certs");
+  add_tls_server_setup("BadCertAndPinningServer", "bad_certs");
 
   // Add a user-specified trust anchor.
   addCertFromFile(certdb, "bad_certs/other-test-ca.pem", "CTu,u,u");

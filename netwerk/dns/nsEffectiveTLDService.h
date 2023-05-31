@@ -8,6 +8,7 @@
 #include "nsIEffectiveTLDService.h"
 
 #include "nsHashKeys.h"
+#include "nsIIDNService.h"
 #include "nsIMemoryReporter.h"
 #include "nsString.h"
 #include "nsCOMPtr.h"

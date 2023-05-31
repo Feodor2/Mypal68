@@ -5,14 +5,36 @@
 with Files('**'):
     BUG_COMPONENT = ('Core', 'DOM: Security')
 
+XPIDL_SOURCES += [
+    'nsIURLDecorationAnnotationsService.idl',
+]
+
+XPIDL_MODULE = 'toolkit_antitracking'
+
+EXTRA_COMPONENTS += [
+    'antitracking.manifest',
+]
+
+EXTRA_JS_MODULES += [
+    'URLDecorationAnnotationsService.jsm',
+]
+
+XPCOM_MANIFESTS += [
+    'components.conf',
+]
+
 EXPORTS.mozilla = [
     'AntiTrackingCommon.h',
+    'StorageAccess.h',
     'StoragePrincipalHelper.h',
+    'URLDecorationStripper.h',
 ]
 
 UNIFIED_SOURCES += [
     'AntiTrackingCommon.cpp',
+    'StorageAccess.cpp',
     'StoragePrincipalHelper.cpp',
+    'URLDecorationStripper.cpp',
 ]
 
 LOCAL_INCLUDES += [

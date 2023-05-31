@@ -19,7 +19,7 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsTArray.h"
 #include "nsAtom.h"
-#include "nsICookie2.h"
+#include "nsICookie.h"
 #include "nsISupports.h"
 #include "nsIURI.h"
 #include "nsWrapperCache.h"
@@ -156,7 +156,7 @@ class URLInfo final {
 // Similar to URLInfo, but for cookies.
 class MOZ_STACK_CLASS CookieInfo final {
  public:
-  MOZ_IMPLICIT CookieInfo(nsICookie2* aCookie) : mCookie(aCookie) {}
+  MOZ_IMPLICIT CookieInfo(nsICookie* aCookie) : mCookie(aCookie) {}
 
   bool IsSecure() const;
   bool IsDomain() const;
@@ -165,7 +165,7 @@ class MOZ_STACK_CLASS CookieInfo final {
   const nsCString& RawHost() const;
 
  private:
-  nsCOMPtr<nsICookie2> mCookie;
+  nsCOMPtr<nsICookie> mCookie;
 
   mutable Maybe<bool> mIsSecure;
   mutable Maybe<bool> mIsDomain;

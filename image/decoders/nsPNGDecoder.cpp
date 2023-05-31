@@ -12,7 +12,6 @@
 #include "gfxPlatform.h"
 #include "imgFrame.h"
 #include "nsColor.h"
-#include "nsIInputStream.h"
 #include "nsMemory.h"
 #include "nsRect.h"
 #include "nspr.h"

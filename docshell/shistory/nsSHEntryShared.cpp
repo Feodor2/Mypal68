@@ -7,12 +7,7 @@
 #include "nsArray.h"
 #include "nsDocShellEditorData.h"
 #include "nsIContentViewer.h"
-#include "nsIDocShell.h"
-#include "nsIDocShellTreeItem.h"
 #include "mozilla/dom/Document.h"
-#include "nsILayoutHistoryState.h"
-#include "nsISHistory.h"
-#include "nsIWebNavigation.h"
 #include "nsThreadUtils.h"
 
 #include "mozilla/Attributes.h"
@@ -68,6 +63,7 @@ already_AddRefed<nsSHEntryShared> nsSHEntryShared::Duplicate(
   newEntry->mChildShells.AppendObjects(aEntry->mChildShells);
   newEntry->mTriggeringPrincipal = aEntry->mTriggeringPrincipal;
   newEntry->mPrincipalToInherit = aEntry->mPrincipalToInherit;
+  newEntry->mStoragePrincipalToInherit = aEntry->mStoragePrincipalToInherit;
   newEntry->mCsp = aEntry->mCsp;
   newEntry->mContentType.Assign(aEntry->mContentType);
   newEntry->mIsFrameNavigation = aEntry->mIsFrameNavigation;

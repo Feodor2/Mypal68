@@ -30,6 +30,7 @@ const { XPCOMUtils } = ChromeUtils.import(
 XPCOMUtils.defineLazyModuleGetters(this, {
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   DownloadHistory: "resource://gre/modules/DownloadHistory.jsm",
+  E10SUtils: "resource://gre/modules/E10SUtils.jsm",
   FileUtils: "resource://gre/modules/FileUtils.jsm",
   NetUtil: "resource://gre/modules/NetUtil.jsm",
   OS: "resource://gre/modules/osfile.jsm",
@@ -1306,10 +1307,10 @@ this.DownloadSource.prototype = {
   isPrivate: false,
 
   /**
-   * String containing the referrer URI of the download source, or null if no
-   * referrer should be sent or the download source is not HTTP.
+   * Represents the referrerInfo of the download source, could be null for
+   * example if the download source is not HTTP.
    */
-  referrer: null,
+  referrerInfo: null,
 
   /**
    * For downloads handled by the (default) DownloadCopySaver, this function
@@ -1329,6 +1330,23 @@ this.DownloadSource.prototype = {
   adjustChannel: null,
 
   /**
+   * For downloads handled by the (default) DownloadCopySaver, this function
+   * will determine, if provided, if a download can progress or has to be
+   * cancelled based on the HTTP status code of the network channel.
+   *
+   * @note If this is defined this object will not be serializable, thus the
+   *       Download object will not be persisted across sessions.
+   *
+   * @param aDownload
+   *        The download asking.
+   * @param aStatus
+   *        The HTTP status in question
+   *
+   * @return {Boolean} Download can progress
+   */
+  allowHttpStatus: null,
+
+  /**
    * Returns a static representation of the current object state.
    *
    * @return A JavaScript object that can be serialized to JSON.
@@ -1339,8 +1357,13 @@ this.DownloadSource.prototype = {
       return null;
     }
 
+    if (this.allowHttpStatus) {
+      // If the callback was used, we can't reproduce this across sessions.
+      return null;
+    }
+
     // Simplify the representation if we don't have other details.
-    if (!this.isPrivate && !this.referrer && !this._unknownProperties) {
+    if (!this.isPrivate && !this.referrerInfo && !this._unknownProperties) {
       return this.url;
     }
 
@@ -1348,8 +1371,13 @@ this.DownloadSource.prototype = {
     if (this.isPrivate) {
       serializable.isPrivate = true;
     }
-    if (this.referrer) {
-      serializable.referrer = this.referrer;
+
+    if (this.referrerInfo && isString(this.referrerInfo)) {
+      serializable.referrerInfo = this.referrerInfo;
+    } else if (this.referrerInfo) {
+      serializable.referrerInfo = E10SUtils.serializeReferrerInfo(
+        this.referrerInfo
+      );
     }
 
     serializeUnknownProperties(this, serializable);
@@ -1368,15 +1396,18 @@ this.DownloadSource.prototype = {
  *          url: String containing the URI for the download source.
  *          isPrivate: Indicates whether the download originated from a private
  *                     window.  If omitted, the download is public.
- *          referrer: String containing the referrer URI of the download source.
- *                    This is the value that will be sent on the network,
- *                    meaning that any referrer policy should be computed in
- *                    advance.  Can be omitted or null if no referrer should be
- *                    sent or the download source is not HTTP.
+ *          referrerInfo: represents the referrerInfo of the download source.
+ *                        Can be omitted or null for examnple if the download
+ *                        source is not HTTP.
  *          adjustChannel: For downloads handled by (default) DownloadCopySaver,
  *                         this function can adjust the network channel before
  *                         it is opened, for example to change the HTTP headers
  *                         or to upload a stream as POST data.  Optional.
+ *          allowHttpStatus: For downloads handled by the (default)
+ *                           DownloadCopySaver, this function will determine, if
+ *                           provided, if a download can progress or has to be
+ *                           cancelled based on the HTTP status code of the
+ *                           network channel.
  *        }
  *
  * @return The newly created DownloadSource object.
@@ -1400,18 +1431,32 @@ this.DownloadSource.fromSerializable = function(aSerializable) {
     if ("isPrivate" in aSerializable) {
       source.isPrivate = aSerializable.isPrivate;
     }
-    if ("referrer" in aSerializable) {
-      source.referrer = aSerializable.referrer;
+    if ("referrerInfo" in aSerializable) {
+      // Quick pass, pass directly nsIReferrerInfo, we don't need to serialize
+      // and deserialize
+      if (aSerializable.referrerInfo instanceof Ci.nsIReferrerInfo) {
+        source.referrerInfo = aSerializable.referrerInfo;
+      } else {
+        source.referrerInfo = E10SUtils.deserializeReferrerInfo(
+          aSerializable.referrerInfo
+        );
+      }
     }
     if ("adjustChannel" in aSerializable) {
       source.adjustChannel = aSerializable.adjustChannel;
+    }
+
+    if ("allowHttpStatus" in aSerializable) {
+      source.allowHttpStatus = aSerializable.allowHttpStatus;
     }
 
     deserializeUnknownProperties(
       source,
       aSerializable,
       property =>
-        property != "url" && property != "isPrivate" && property != "referrer"
+        property != "url" &&
+        property != "isPrivate" &&
+        property != "referrerInfo"
     );
   }
 
@@ -2007,21 +2052,13 @@ this.DownloadCopySaver.prototype = {
       if (channel instanceof Ci.nsIPrivateBrowsingChannel) {
         channel.setPrivate(download.source.isPrivate);
       }
-      if (channel instanceof Ci.nsIHttpChannel && download.source.referrer) {
-        // Sending Referrer header is computed at the time we initialize a
-        // download (eg. user clicks on "Save Link As"). We use
-        // REFERRER_POLICY_UNSAFE_URL to keep the referrer header the same
-        // here.
-        let ReferrerInfo = Components.Constructor(
-          "@mozilla.org/referrer-info;1",
-          "nsIReferrerInfo",
-          "init"
-        );
-        channel.referrerInfo = new ReferrerInfo(
-          Ci.nsIHttpChannel.REFERRER_POLICY_UNSAFE_URL,
-          true,
-          NetUtil.newURI(download.source.referrer)
-        );
+      if (
+        channel instanceof Ci.nsIHttpChannel &&
+        download.source.referrerInfo
+      ) {
+        channel.referrerInfo = download.source.referrerInfo;
+        // Stored computed referrerInfo;
+        download.source.referrerInfo = channel.referrerInfo;
       }
 
       // This makes the channel be corretly throttled during page loads
@@ -2093,6 +2130,19 @@ this.DownloadCopySaver.prototype = {
             // Set a flag that can be retrieved later when handling the
             // cancellation so that the proper error can be thrown.
             this.download._blockedByParentalControls = true;
+            aRequest.cancel(Cr.NS_BINDING_ABORTED);
+            return;
+          }
+
+          // Check back with the initiator if we should allow a certain
+          // HTTP code. By default, we'll just save error pages too,
+          // however a consumer down the line, such as the WebExtensions
+          // downloads API might want to handle this differently.
+          if (
+            download.source.allowHttpStatus &&
+            aRequest instanceof Ci.nsIHttpChannel &&
+            !download.source.allowHttpStatus(download, aRequest.responseStatus)
+          ) {
             aRequest.cancel(Cr.NS_BINDING_ABORTED);
             return;
           }
@@ -2477,12 +2527,9 @@ this.DownloadLegacySaver.prototype = {
       }
     }
 
-    // For legacy downloads, we must update the referrer at this time.
+    // For legacy downloads, we must update the referrerInfo at this time.
     if (aRequest instanceof Ci.nsIHttpChannel) {
-      let referrerInfo = aRequest.referrerInfo;
-      if (referrerInfo && referrerInfo.originalReferrer) {
-        this.download.source.referrer = referrerInfo.originalReferrer.spec;
-      }
+      this.download.source.referrerInfo = aRequest.referrerInfo;
     }
 
     this.addToHistory();

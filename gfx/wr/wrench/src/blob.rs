@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use webrender::api::*;
 use webrender::api::units::{BlobDirtyRect, BlobToDeviceTranslation, TileOffset};
+use webrender::api::units::DeviceIntRect;
 
 // Serialize/deserialize the blob.
 
@@ -105,7 +106,7 @@ fn render_blob(
 /// See rawtest.rs. We use this to test that blob images are requested the right
 /// amount of times.
 pub struct BlobCallbacks {
-    pub request: Box<Fn(&[BlobImageParams]) + Send + 'static>,
+    pub request: Box<dyn Fn(&[BlobImageParams]) + Send + 'static>,
 }
 
 impl BlobCallbacks {
@@ -129,12 +130,14 @@ impl CheckerboardRenderer {
 }
 
 impl BlobImageHandler for CheckerboardRenderer {
-    fn add(&mut self, key: BlobImageKey, cmds: Arc<BlobImageData>, tile_size: Option<TileSize>) {
+    fn add(&mut self, key: BlobImageKey, cmds: Arc<BlobImageData>,
+           _visible_rect: &DeviceIntRect, tile_size: Option<TileSize>) {
         self.image_cmds
             .insert(key, (deserialize_blob(&cmds[..]).unwrap(), tile_size));
     }
 
-    fn update(&mut self, key: BlobImageKey, cmds: Arc<BlobImageData>, _dirty_rect: &BlobDirtyRect) {
+    fn update(&mut self, key: BlobImageKey, cmds: Arc<BlobImageData>,
+              _visible_rect: &DeviceIntRect, _dirty_rect: &BlobDirtyRect) {
         // Here, updating is just replacing the current version of the commands with
         // the new one (no incremental updates).
         self.image_cmds.get_mut(&key).unwrap().0 = deserialize_blob(&cmds[..]).unwrap();
@@ -152,7 +155,7 @@ impl BlobImageHandler for CheckerboardRenderer {
 
     fn prepare_resources(
         &mut self,
-        _services: &BlobImageResources,
+        _services: &dyn BlobImageResources,
         requests: &[BlobImageParams],
     ) {
         if !requests.is_empty() {
@@ -160,7 +163,7 @@ impl BlobImageHandler for CheckerboardRenderer {
         }
     }
 
-    fn create_blob_rasterizer(&mut self) -> Box<AsyncBlobImageRasterizer> {
+    fn create_blob_rasterizer(&mut self) -> Box<dyn AsyncBlobImageRasterizer> {
         Box::new(Rasterizer { image_cmds: self.image_cmds.clone() })
     }
 }

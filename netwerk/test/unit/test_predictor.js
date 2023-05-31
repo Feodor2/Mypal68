@@ -661,7 +661,7 @@ function test_prefetch_prime() {
     }).QueryInterface(Ci.nsIHttpChannel);
     channel.requestMethod = "GET";
     channel.referrerInfo = new ReferrerInfo(
-      Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
+      Ci.nsIReferrerInfo.EMPTY,
       true,
       prefetch_tluri
     );

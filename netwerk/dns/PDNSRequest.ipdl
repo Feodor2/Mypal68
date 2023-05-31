@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 include protocol PNecko;
+include protocol PSocketProcess;
 
 include PDNSRequestParams;
 
@@ -15,7 +16,7 @@ namespace net {
 
 async protocol PDNSRequest
 {
-  manager PNecko;
+  manager PNecko or PSocketProcess;
 
 parent:
   // constructor in PNecko takes AsyncResolve args that initialize request

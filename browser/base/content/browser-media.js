@@ -320,17 +320,12 @@ let gDecoderDoctorHandler = {
       formats && "media.decoder-doctor." + decoderDoctorReportId + ".formats";
     let buttonClickedPref =
       "media.decoder-doctor." + decoderDoctorReportId + ".button-clicked";
-    let histogram = Services.telemetry.getKeyedHistogramById(
-      "DECODER_DOCTOR_INFOBAR_STATS"
-    );
-
     let formatsInPref = formats && Services.prefs.getCharPref(formatsPref, "");
 
     if (!isSolved) {
       if (formats) {
         if (!formatsInPref) {
           Services.prefs.setCharPref(formatsPref, formats);
-          histogram.add(decoderDoctorReportId, TELEMETRY_DDSTAT_SHOWN_FIRST);
         } else {
           // Split existing formats into an array of strings.
           let existing = formatsInPref.split(",").map(x => x.trim());
@@ -353,7 +348,6 @@ let gDecoderDoctorHandler = {
         );
         return;
       }
-      histogram.add(decoderDoctorReportId, TELEMETRY_DDSTAT_SHOWN);
 
       let buttons = [];
       let sumo = gDecoderDoctorHandler.getSumoForLearnHowButton(type);
@@ -368,12 +362,7 @@ let gDecoderDoctorHandler = {
             );
             if (!clickedInPref) {
               Services.prefs.setBoolPref(buttonClickedPref, true);
-              histogram.add(
-                decoderDoctorReportId,
-                TELEMETRY_DDSTAT_CLICKED_FIRST
-              );
             }
-            histogram.add(decoderDoctorReportId, TELEMETRY_DDSTAT_CLICKED);
 
             let baseURL = Services.urlFormatter.formatURLPref(
               "app.support.baseURL"
@@ -398,12 +387,7 @@ let gDecoderDoctorHandler = {
             );
             if (!clickedInPref) {
               Services.prefs.setBoolPref(buttonClickedPref, true);
-              histogram.add(
-                decoderDoctorReportId,
-                TELEMETRY_DDSTAT_CLICKED_FIRST
-              );
             }
-            histogram.add(decoderDoctorReportId, TELEMETRY_DDSTAT_CLICKED);
 
             let params = new URLSearchParams();
             params.append("url", docURL);
@@ -434,7 +418,6 @@ let gDecoderDoctorHandler = {
       // first time we get this resolution -> Clear prefs and report telemetry.
       Services.prefs.clearUserPref(formatsPref);
       Services.prefs.clearUserPref(buttonClickedPref);
-      histogram.add(decoderDoctorReportId, TELEMETRY_DDSTAT_SOLVED);
     }
   },
 };

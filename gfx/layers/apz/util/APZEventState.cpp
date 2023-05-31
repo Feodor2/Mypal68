@@ -6,7 +6,7 @@
 
 #include "ActiveElementManager.h"
 #include "APZCCallbackHelper.h"
-#include "gfxPrefs.h"
+
 #include "LayersLogging.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/dom/MouseEventBinding.h"
@@ -33,6 +33,8 @@
 #include "nsLayoutUtils.h"
 #include "nsIScrollableFrame.h"
 #include "nsIScrollbarMediator.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/widget/nsAutoRollup.h"
 
@@ -91,9 +93,6 @@ int32_t WidgetModifiersToDOMModifiers(mozilla::Modifiers aModifiers) {
 namespace mozilla {
 namespace layers {
 
-static int32_t sActiveDurationMs = 10;
-static bool sActiveDurationMsSet = false;
-
 APZEventState::APZEventState(nsIWidget* aWidget,
                              ContentReceivedInputBlockCallback&& aCallback)
     : mWidget(nullptr)  // initialized in constructor body
@@ -111,13 +110,6 @@ APZEventState::APZEventState(nsIWidget* aWidget,
   MOZ_ASSERT(NS_SUCCEEDED(rv),
              "APZEventState constructed with a widget that"
              " does not support weak references. APZ will NOT work!");
-
-  if (!sActiveDurationMsSet) {
-    Preferences::AddIntVarCache(&sActiveDurationMs,
-                                "ui.touch_activation.duration_ms",
-                                sActiveDurationMs);
-    sActiveDurationMsSet = true;
-  }
 }
 
 APZEventState::~APZEventState() {}
@@ -174,8 +166,8 @@ void APZEventState::ProcessSingleTap(const CSSPoint& aPoint,
                                      const CSSToLayoutDeviceScale& aScale,
                                      Modifiers aModifiers,
                                      int32_t aClickCount) {
-  APZES_LOG("Handling single tap at %s with %d\n",
-            Stringify(aPoint).c_str(), mTouchEndCancelled);
+  APZES_LOG("Handling single tap at %s with %d\n", Stringify(aPoint).c_str(),
+            mTouchEndCancelled);
 
   RefPtr<nsIContent> touchRollup = GetTouchRollup();
   mTouchRollup = nullptr;
@@ -201,8 +193,9 @@ void APZEventState::ProcessSingleTap(const CSSPoint& aPoint,
   }
   RefPtr<DelayedFireSingleTapEvent> callback = new DelayedFireSingleTapEvent(
       mWidget, ldPoint, aModifiers, aClickCount, timer, touchRollup);
-  nsresult rv = timer->InitWithCallback(callback, sActiveDurationMs,
-                                        nsITimer::TYPE_ONE_SHOT);
+  nsresult rv = timer->InitWithCallback(
+      callback, StaticPrefs::ui_touch_activation_duration_ms(),
+      nsITimer::TYPE_ONE_SHOT);
   if (NS_FAILED(rv)) {
     // Make |callback| not hold the timer, so they will both be destructed when
     // we leave the scope of this function.
@@ -370,10 +363,10 @@ void APZEventState::ProcessTouchEvent(const WidgetTouchEvent& aEvent,
         mTouchEndCancelled = true;
         mEndTouchIsClick = false;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case eTouchCancel:
       mActiveElementManager->HandleTouchEndEvent(mEndTouchIsClick);
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case eTouchMove: {
       if (mPendingTouchPreventedResponse) {
         MOZ_ASSERT(aGuid == mPendingTouchPreventedGuid);
@@ -394,7 +387,7 @@ void APZEventState::ProcessTouchEvent(const WidgetTouchEvent& aEvent,
 
   if (sentContentResponse && !isTouchPrevented &&
       aApzResponse == nsEventStatus_eConsumeDoDefault &&
-      gfxPrefs::PointerEventsEnabled()) {
+      StaticPrefs::dom_w3c_pointer_events_enabled()) {
     WidgetTouchEvent cancelEvent(aEvent);
     cancelEvent.mMessage = eTouchPointerCancel;
     cancelEvent.mFlags.mCancelable = false;  // mMessage != eTouchCancel;

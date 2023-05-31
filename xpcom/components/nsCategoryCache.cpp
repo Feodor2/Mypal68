@@ -5,8 +5,9 @@
 #include "nsIObserverService.h"
 #include "mozilla/Services.h"
 #include "mozilla/SimpleEnumerator.h"
+
+#include "nsICategoryManager.h"
 #include "nsISupportsPrimitives.h"
-#include "nsIStringEnumerator.h"
 
 #include "nsXPCOMCID.h"
 

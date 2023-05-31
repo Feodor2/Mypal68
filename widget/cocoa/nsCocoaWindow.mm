@@ -19,7 +19,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIXULWindow.h"
 #include "nsToolkit.h"
-#include "nsIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsThreadUtils.h"
 #include "nsMenuBarX.h"
@@ -34,12 +33,13 @@
 #include "VibrancyManager.h"
 
 #include "gfxPlatform.h"
-#include "gfxPrefs.h"
 #include "qcms.h"
 
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/PresShell.h"
 #include <algorithm>
 
@@ -1836,12 +1836,14 @@ void nsCocoaWindow::SetMenuBar(nsMenuBarX* aMenuBar) {
     mMenuBar->Paint();
 }
 
-nsresult nsCocoaWindow::SetFocus(bool aState) {
-  if (!mWindow) return NS_OK;
+void nsCocoaWindow::SetFocus(Raise aRaise) {
+  if (!mWindow) return;
 
   if (mPopupContentView) {
-    mPopupContentView->SetFocus(aState);
-  } else if (aState && ([mWindow isVisible] || [mWindow isMiniaturized])) {
+    return mPopupContentView->SetFocus(aRaise);
+  }
+
+  if (aRaise == Raise::Yes && ([mWindow isVisible] || [mWindow isMiniaturized])) {
     if ([mWindow isMiniaturized]) {
       [mWindow deminiaturize:nil];
     }
@@ -1849,8 +1851,6 @@ nsresult nsCocoaWindow::SetFocus(bool aState) {
     [mWindow makeKeyAndOrderFront:nil];
     SendSetZLevelEvent();
   }
-
-  return NS_OK;
 }
 
 LayoutDeviceIntPoint nsCocoaWindow::WidgetToScreenOffset() {
@@ -2005,7 +2005,7 @@ void nsCocoaWindow::SetWindowTransform(const gfx::Matrix& aTransform) {
     return;
   }
 
-  if (gfxPrefs::WindowTransformsDisabled()) {
+  if (StaticPrefs::widget_window_transforms_disabled()) {
     // CGSSetWindowTransform is a private API. In case calling it causes
     // problems either now or in the future, we'll want to have an easy kill
     // switch. So we allow disabling it with a pref.

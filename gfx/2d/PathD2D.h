@@ -34,7 +34,6 @@ class PathBuilderD2D : public PathBuilder {
   virtual void Close();
   virtual void Arc(const Point& aOrigin, Float aRadius, Float aStartAngle,
                    Float aEndAngle, bool aAntiClockwise = false);
-  virtual Point CurrentPoint() const;
 
   virtual already_AddRefed<Path> Finish();
 
@@ -53,8 +52,6 @@ class PathBuilderD2D : public PathBuilder {
   RefPtr<ID2D1PathGeometry> mGeometry;
 
   bool mFigureActive;
-  Point mCurrentPoint;
-  Point mBeginPoint;
   FillRule mFillRule;
   BackendType mBackendType;
 };

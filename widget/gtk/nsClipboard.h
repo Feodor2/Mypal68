@@ -7,7 +7,6 @@
 
 #include "nsIClipboard.h"
 #include "nsIObserver.h"
-#include "nsIBinaryOutputStream.h"
 #include <gtk/gtk.h>
 
 class nsRetrievalContext {

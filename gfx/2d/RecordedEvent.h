@@ -9,6 +9,7 @@
 #include <ostream>
 #include <sstream>
 #include <cstring>
+#include <functional>
 #include <vector>
 
 namespace mozilla {

@@ -5,10 +5,10 @@
 #include "nsDocShellLoadState.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIWebNavigation.h"
 #include "nsIChildChannel.h"
 #include "ReferrerInfo.h"
+#include "mozilla/BasePrincipal.h"
 
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/NullPrincipal.h"
@@ -24,6 +24,7 @@ nsDocShellLoadState::nsDocShellLoadState(nsIURI* aURI)
       mPrincipalIsExplicit(false),
       mForceAllowDataURI(false),
       mOriginalFrameSrc(false),
+      mIsFormSubmission(false),
       mLoadType(LOAD_NORMAL),
       mTarget(),
       mSrcdocData(VoidString()),
@@ -44,6 +45,7 @@ nsDocShellLoadState::nsDocShellLoadState(DocShellLoadStateInit& aLoadState) {
   mPrincipalIsExplicit = aLoadState.PrincipalIsExplicit();
   mForceAllowDataURI = aLoadState.ForceAllowDataURI();
   mOriginalFrameSrc = aLoadState.OriginalFrameSrc();
+  mIsFormSubmission = aLoadState.IsFormSubmission();
   mLoadType = aLoadState.LoadType();
   mTarget = aLoadState.Target();
   mLoadFlags = aLoadState.LoadFlags();
@@ -198,6 +200,12 @@ void nsDocShellLoadState::SetOriginalFrameSrc(bool aOriginalFrameSrc) {
   mOriginalFrameSrc = aOriginalFrameSrc;
 }
 
+bool nsDocShellLoadState::IsFormSubmission() const { return mIsFormSubmission; }
+
+void nsDocShellLoadState::SetIsFormSubmission(bool aIsFormSubmission) {
+  mIsFormSubmission = aIsFormSubmission;
+}
+
 uint32_t nsDocShellLoadState::LoadType() const { return mLoadType; }
 
 void nsDocShellLoadState::SetLoadType(uint32_t aLoadType) {
@@ -334,7 +342,7 @@ nsresult nsDocShellLoadState::SetupInheritingPrincipal(
   //     created later from the channel's internal data.
   mPrincipalToInherit = mTriggeringPrincipal;
   if (mPrincipalToInherit && aItemType != nsIDocShellTreeItem::typeChrome) {
-    if (nsContentUtils::IsSystemPrincipal(mPrincipalToInherit)) {
+    if (mPrincipalToInherit->IsSystemPrincipal()) {
       if (mPrincipalIsExplicit) {
         return NS_ERROR_DOM_SECURITY_ERR;
       }
@@ -403,8 +411,9 @@ void nsDocShellLoadState::CalculateLoadURIFlags() {
   mLoadFlags = 0;
 
   if (mInheritPrincipal) {
-    MOZ_ASSERT(!nsContentUtils::IsSystemPrincipal(mPrincipalToInherit),
-               "Should not inherit SystemPrincipal");
+    MOZ_ASSERT(
+        !mPrincipalToInherit || !mPrincipalToInherit->IsSystemPrincipal(),
+        "Should not inherit SystemPrincipal");
     mLoadFlags |= nsDocShell::INTERNAL_LOAD_FLAGS_INHERIT_PRINCIPAL;
   }
 
@@ -449,6 +458,7 @@ DocShellLoadStateInit nsDocShellLoadState::Serialize() {
   loadState.PrincipalIsExplicit() = mPrincipalIsExplicit;
   loadState.ForceAllowDataURI() = mForceAllowDataURI;
   loadState.OriginalFrameSrc() = mOriginalFrameSrc;
+  loadState.IsFormSubmission() = mIsFormSubmission;
   loadState.LoadType() = mLoadType;
   loadState.Target() = mTarget;
   loadState.LoadFlags() = mLoadFlags;

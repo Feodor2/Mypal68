@@ -305,47 +305,22 @@ already_AddRefed<QuotaObject> GetQuotaObjectFromName(const char* zName,
     filename = DatabasePathFromWALPath(zName);
   }
   MOZ_ASSERT(filename);
-  const char* persistenceType =
-      sqlite3_uri_parameter(filename, "persistenceType");
-  if (!persistenceType) {
+  const char* directoryLockIdParam =
+      sqlite3_uri_parameter(filename, "directoryLockId");
+  if (!directoryLockIdParam) {
     return nullptr;
   }
 
-  const char* group = sqlite3_uri_parameter(filename, "group");
-  if (!group) {
-    NS_WARNING("SQLite URI had 'persistenceType' but not 'group'?!");
-    return nullptr;
-  }
-
-  const char* origin = sqlite3_uri_parameter(filename, "origin");
-  if (!origin) {
-    NS_WARNING(
-        "SQLite URI had 'persistenceType' and 'group' but not "
-        "'origin'?!");
-    return nullptr;
-  }
-
-  // Re-escape group and origin to make sure we get the right quota group and
-  // origin.
-  nsAutoCString escGroup;
-  nsresult rv =
-      NS_EscapeURL(nsDependentCString(group), esc_Query, escGroup, fallible);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return nullptr;
-  }
-
-  nsAutoCString escOrigin;
-  rv = NS_EscapeURL(nsDependentCString(origin), esc_Query, escOrigin, fallible);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return nullptr;
-  }
+  nsresult rv;
+  const int64_t directoryLockId =
+      nsDependentCString(directoryLockIdParam).ToInteger64(&rv);
+  MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
 
   QuotaManager* quotaManager = QuotaManager::Get();
   MOZ_ASSERT(quotaManager);
 
-  return quotaManager->GetQuotaObject(
-      PersistenceTypeFromText(nsDependentCString(persistenceType)), escGroup,
-      escOrigin, NS_ConvertUTF8toUTF16(zName));
+  return quotaManager->GetQuotaObject(directoryLockId,
+                                      NS_ConvertUTF8toUTF16(zName));
 }
 
 void MaybeEstablishQuotaControl(const char* zName, telemetry_file* pFile,

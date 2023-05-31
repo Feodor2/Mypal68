@@ -13,8 +13,6 @@
 
 #include "Decoder.h"
 
-#include "nsIInputStream.h"
-#include "nsIPipe.h"
 #include "qcms.h"
 
 extern "C" {

@@ -212,7 +212,6 @@ async function async_check_pins() {
     "a.pinning2.example.com",
     true,
     new Date().getTime() + 1000000,
-    2,
     [NON_ISSUED_KEY_HASH, PINNING_ROOT_KEY_HASH]
   );
   await checkFail(
@@ -272,7 +271,6 @@ async function async_check_pins() {
     "a.pinning2.example.com",
     false,
     new Date().getTime() + 1000000,
-    2,
     [NON_ISSUED_KEY_HASH, PINNING_ROOT_KEY_HASH]
   );
   await checkFail(
@@ -318,7 +316,6 @@ async function async_check_pins() {
         "a.pinning2.example.com",
         true,
         new Date().getTime() + 1000000,
-        1,
         ["not a hash"]
       );
     },
@@ -361,21 +358,6 @@ async function async_check_pins() {
 
   checkDefaultSiteHPKPStatus();
 
-  // Incorrect size results in failure
-  throws(
-    () => {
-      gSSService.setKeyPins(
-        "a.pinning2.example.com",
-        true,
-        new Date().getTime() + 1000000,
-        2,
-        ["not a hash"]
-      );
-    },
-    /NS_ERROR_XPC_NOT_ENOUGH_ELEMENTS_IN_ARRAY/,
-    "Attempting to set a pin with an incorrect size should fail"
-  );
-
   // Ensure built-in pins work as expected
   ok(
     !gSSService.isSecureURI(
@@ -394,13 +376,9 @@ async function async_check_pins() {
     "Built-in include-subdomains.pinning.example.com should have HPKP status"
   );
 
-  gSSService.setKeyPins(
-    "a.pinning2.example.com",
-    false,
-    new Date().getTime(),
-    1,
-    [NON_ISSUED_KEY_HASH]
-  );
+  gSSService.setKeyPins("a.pinning2.example.com", false, new Date().getTime(), [
+    NON_ISSUED_KEY_HASH,
+  ]);
 
   // Check that a preload pin loaded from file works as expected
   await checkFail(
@@ -424,7 +402,6 @@ async function async_check_pins() {
     "b.preload.example.com",
     false,
     new Date().getTime() + 1000000,
-    2,
     [NON_ISSUED_KEY_HASH, PINNING_ROOT_KEY_HASH],
     true
   );

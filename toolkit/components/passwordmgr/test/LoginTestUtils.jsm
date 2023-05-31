@@ -7,11 +7,15 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["LoginTestUtils"];
+const EXPORTED_SYMBOLS = ["LoginTestUtils"];
 
 const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
-const { Assert } = ChromeUtils.import("resource://testing-common/Assert.jsm");
+let { Assert: AssertCls } = ChromeUtils.import(
+  "resource://testing-common/Assert.jsm"
+);
+let Assert = AssertCls;
+
 const { TestUtils } = ChromeUtils.import(
   "resource://testing-common/TestUtils.jsm"
 );
@@ -22,7 +26,11 @@ const LoginInfo = Components.Constructor(
   "init"
 );
 
-var LoginTestUtils = {
+this.LoginTestUtils = {
+  setAssertReporter(reporterFunc) {
+    Assert = new AssertCls(Cu.waiveXrays(reporterFunc));
+  },
+
   /**
    * Forces the storage module to save all data, and the Login Manager service
    * to replace the storage module with a newly initialized instance.
@@ -37,9 +45,33 @@ var LoginTestUtils = {
    */
   clearData() {
     Services.logins.removeAllLogins();
-    for (let hostname of Services.logins.getAllDisabledHosts()) {
-      Services.logins.setLoginSavingEnabled(hostname, true);
+    for (let origin of Services.logins.getAllDisabledHosts()) {
+      Services.logins.setLoginSavingEnabled(origin, true);
     }
+  },
+
+  /**
+   * Add a new login to the store
+   */
+  async addLogin({
+    username,
+    password,
+    origin = "https://example.com",
+    formActionOrigin,
+  }) {
+    const login = LoginTestUtils.testData.formLogin({
+      origin,
+      formActionOrigin: formActionOrigin || origin,
+      username,
+      password,
+    });
+    let storageChangedPromised = TestUtils.topicObserved(
+      "passwordmgr-storage-changed",
+      (_, data) => data == "addLogin"
+    );
+    Services.logins.addLogin(login);
+    await storageChangedPromised;
+    return login;
   },
 
   /**
@@ -127,9 +159,7 @@ this.LoginTestUtils.testData = {
       null,
       "The HTTP Realm",
       "the username",
-      "the password",
-      "",
-      ""
+      "the password"
     );
     loginInfo.QueryInterface(Ci.nsILoginMetaInfo);
     if (modifications) {
@@ -181,7 +211,7 @@ this.LoginTestUtils.testData = {
         "form_field_password"
       ),
 
-      // Forms found on the same host, but with different hostnames in the
+      // Forms found on the same origin, but with different origins in the
       // "action" attribute, are handled independently.
       new LoginInfo(
         "http://www3.example.com",
@@ -272,9 +302,7 @@ this.LoginTestUtils.testData = {
         null,
         "The HTTP Realm",
         "the username",
-        "the password",
-        "",
-        ""
+        "the password"
       ),
 
       // Simple FTP authentication login.
@@ -283,9 +311,7 @@ this.LoginTestUtils.testData = {
         null,
         "ftp://ftp.example.org",
         "the username",
-        "the password",
-        "",
-        ""
+        "the password"
       ),
 
       // Multiple HTTP authentication logins can be stored for different realms.
@@ -294,18 +320,14 @@ this.LoginTestUtils.testData = {
         null,
         "The HTTP Realm",
         "the username",
-        "the password",
-        "",
-        ""
+        "the password"
       ),
       new LoginInfo(
         "http://www2.example.org",
         null,
         "The HTTP Realm Other",
         "the username other",
-        "the password other",
-        "",
-        ""
+        "the password other"
       ),
 
       // --- Both form and authentication logins (example.net) ---
@@ -342,27 +364,21 @@ this.LoginTestUtils.testData = {
         null,
         "The HTTP Realm",
         "the username",
-        "the password",
-        "",
-        ""
+        "the password"
       ),
       new LoginInfo(
         "http://example.net",
         null,
         "The HTTP Realm Other",
         "username two",
-        "the password",
-        "",
-        ""
+        "the password"
       ),
       new LoginInfo(
         "ftp://example.net",
         null,
         "ftp://example.net",
         "the username",
-        "the password",
-        "",
-        ""
+        "the password"
       ),
 
       // --- Examples of logins added by extensions (chrome scheme) ---
@@ -381,9 +397,7 @@ this.LoginTestUtils.testData = {
         null,
         "Example Login Two",
         "the username",
-        "the password two",
-        "",
-        ""
+        "the password two"
       ),
     ];
   },
@@ -441,4 +455,34 @@ this.LoginTestUtils.masterPassword = {
   disable() {
     this._set(false);
   },
+};
+
+/**
+ * Utilities related to interacting with login fields in content.
+ */
+this.LoginTestUtils.loginField = {
+  checkPasswordMasked(field, expected, msg) {
+    let { editor } = field;
+    let valueLength = field.value.length;
+    Assert.equal(
+      editor.autoMaskingEnabled,
+      expected,
+      `Check autoMaskingEnabled: ${msg}`
+    );
+    Assert.equal(editor.unmaskedStart, 0, `unmaskedStart is 0: ${msg}`);
+    if (expected) {
+      Assert.equal(editor.unmaskedEnd, 0, `Password is masked: ${msg}`);
+    } else {
+      Assert.equal(
+        editor.unmaskedEnd,
+        valueLength,
+        `Unmasked to the end: ${msg}`
+      );
+    }
+  },
+};
+
+this.LoginTestUtils.generation = {
+  LENGTH: 15,
+  REGEX: /^[a-km-np-zA-HJ-NP-Z2-9]{15}$/,
 };

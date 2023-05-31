@@ -365,7 +365,7 @@ function openLinkIn(url, where, params) {
   var aCharset = params.charset;
   var aReferrerInfo = params.referrerInfo
     ? params.referrerInfo
-    : new ReferrerInfo(Ci.nsIHttpChannel.REFERRER_POLICY_UNSET, true, null);
+    : new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, null);
   var aRelatedToCurrent = params.relatedToCurrent;
   var aAllowInheritPrincipal = !!params.allowInheritPrincipal;
   var aAllowMixedContent = params.allowMixedContent;
@@ -379,6 +379,7 @@ function openLinkIn(url, where, params) {
   var aUserContextId = params.userContextId;
   var aIndicateErrorPageLoad = params.indicateErrorPageLoad;
   var aPrincipal = params.originPrincipal;
+  var aStoragePrincipal     = params.originStoragePrincipal;
   var aTriggeringPrincipal = params.triggeringPrincipal;
   var aCsp = params.csp;
   var aForceAboutBlankViewerInCurrent = params.forceAboutBlankViewerInCurrent;
@@ -398,7 +399,7 @@ function openLinkIn(url, where, params) {
         null,
         true,
         true,
-        aReferrerInfo.sendReferrer ? aReferrerInfo.originalReferrer : null,
+        aReferrerInfo,
         null,
         params.isContentWindowPrivate,
         aPrincipal
@@ -411,15 +412,7 @@ function openLinkIn(url, where, params) {
         );
         return;
       }
-      saveURL(
-        url,
-        null,
-        null,
-        true,
-        true,
-        aReferrerInfo.sendReferrer ? aReferrerInfo.originalReferrer : null,
-        aInitiatingDoc
-      );
+      saveURL(url, null, null, true, true, aReferrerInfo, aInitiatingDoc);
     }
     return;
   }
@@ -449,12 +442,14 @@ function openLinkIn(url, where, params) {
         userContextId: aUserContextId,
         privateBrowsingId:
           aIsPrivate || (w && PrivateBrowsingUtils.isWindowPrivate(w)),
+        firstPartyDomain: principal.originAttributes.firstPartyDomain,
       };
       return Services.scriptSecurityManager.principalWithOA(principal, attrs);
     }
     return principal;
   }
   aPrincipal = useOAForPrincipal(aPrincipal);
+  aStoragePrincipal = useOAForPrincipal(aStoragePrincipal);
   aTriggeringPrincipal = useOAForPrincipal(aTriggeringPrincipal);
 
   if (!w || where == "window") {
@@ -503,6 +498,7 @@ function openLinkIn(url, where, params) {
     sa.appendElement(allowThirdPartyFixupSupports);
     sa.appendElement(userContextIdSupports);
     sa.appendElement(aPrincipal);
+    sa.appendElement(aStoragePrincipal);
     sa.appendElement(aTriggeringPrincipal);
     sa.appendElement(null); // allowInheritPrincipal
     sa.appendElement(aCsp);
@@ -630,20 +626,10 @@ function openLinkIn(url, where, params) {
       ) {
         // Unless we know for sure we're not inheriting principals,
         // force the about:blank viewer to have the right principal:
-        targetBrowser.createAboutBlankContentViewer(aPrincipal);
-      }
-
-      // When navigating a recording tab, use a new content process in order to
-      // start a new recording.
-      if (
-        targetBrowser.hasAttribute("recordExecution") &&
-        targetBrowser.currentURI.spec != "about:blank"
-      ) {
-        w.gBrowser.updateBrowserRemoteness(targetBrowser, {
-          recordExecution: "*",
-          newFrameloader: true,
-          remoteType: E10SUtils.DEFAULT_REMOTE_TYPE,
-        });
+        targetBrowser.createAboutBlankContentViewer(
+          aPrincipal,
+          aStoragePrincipal
+        );
       }
 
       targetBrowser.loadURI(url, {
@@ -681,6 +667,7 @@ function openLinkIn(url, where, params) {
         allowMixedContent: aAllowMixedContent,
         userContextId: aUserContextId,
         originPrincipal: aPrincipal,
+        originStoragePrincipal: aStoragePrincipal,
         triggeringPrincipal: aTriggeringPrincipal,
         allowInheritPrincipal: aAllowInheritPrincipal,
         csp: aCsp,

@@ -766,8 +766,8 @@ class PrincipalsCollector {
   async getAllPrincipalsInternal(progress) {
     progress.step = "principals-quota-manager";
     let principals = await new Promise(resolve => {
-      quotaManagerService.listInitializedOrigins(request => {
-        progress.step = "principals-quota-manager-listInitializedOrigins";
+      quotaManagerService.listOrigins(request => {
+        progress.step = "principals-quota-manager-listOrigins";
         if (request.resultCode != Cr.NS_OK) {
           // We are probably shutting down. We don't want to propagate the
           // error, rejecting the promise.
@@ -904,7 +904,7 @@ async function sanitizeOnShutdown(progress) {
   progress.advancement = "session-permission";
 
   // Let's see if we have to forget some particular site.
-  for (let permission of Services.perms.enumerator) {
+  for (let permission of Services.perms.all) {
     if (
       permission.type != "cookie" ||
       permission.capability != Ci.nsICookiePermission.ACCESS_SESSION
@@ -988,7 +988,7 @@ function cookiesAllowedForDomainOrSubDomain(principal) {
     return false;
   }
 
-  for (let perm of Services.perms.enumerator) {
+  for (let perm of Services.perms.all) {
     if (perm.type != "cookie") {
       continue;
     }

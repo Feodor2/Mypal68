@@ -6,6 +6,7 @@
 #define mozilla_dom_CanonicalBrowsingContext_h
 
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/dom/MediaController.h"
 #include "mozilla/RefPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
@@ -70,6 +71,15 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // are related with the canonical browsing content tree to start delayed
   // autoplay media.
   void NotifyStartDelayedAutoplayMedia();
+
+  // This function is used to mute or unmute all media within a tab. It would
+  // set the media mute property for the top level window and propagate it to
+  // other top level windows in other processes.
+  void NotifyMediaMutedChanged(bool aMuted);
+
+  // This function would update the media action for the current outer window
+  // and propogate the action to other browsing contexts in content processes.
+  void UpdateMediaAction(MediaControlActions aAction);
 
   // Validate that the given process is allowed to perform the given
   // transaction. aSource is |nullptr| if set in the parent process.

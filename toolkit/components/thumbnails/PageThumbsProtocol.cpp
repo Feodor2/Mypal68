@@ -10,7 +10,6 @@
 #include "nsIPageThumbsStorageService.h"
 #include "PageThumbsProtocol.h"
 #include "nsIURI.h"
-#include "nsIFileURL.h"
 #include "nsIFile.h"
 #include "nsIChannel.h"
 #include "nsComponentManagerUtils.h"
@@ -46,16 +45,6 @@ PageThumbsProtocol::GetProtocolFlags(uint32_t* aProtocolFlags) {
   *aProtocolFlags = (URI_DANGEROUS_TO_LOAD | URI_IS_LOCAL_RESOURCE |
                      URI_NORELATIVE | URI_NOAUTH);
   return NS_OK;
-}
-
-// PageThumbsProtocol::NewURI
-
-NS_IMETHODIMP
-PageThumbsProtocol::NewURI(const nsACString& aSpec, const char* aOriginCharset,
-                           nsIURI* aBaseURI, nsIURI** _retval) {
-  return NS_MutateURI(NS_SIMPLEURIMUTATOR_CONTRACTID)
-      .SetSpec(aSpec)
-      .Finalize(_retval);
 }
 
 // PageThumbsProtocol::NewChannel

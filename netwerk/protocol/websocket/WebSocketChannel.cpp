@@ -10,20 +10,18 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/MathAlgorithms.h"
+#include "mozilla/Utf8.h"
 #include "mozilla/net/WebSocketEventService.h"
 
 #include "nsIURI.h"
-#include "nsIURIMutator.h"
 #include "nsIChannel.h"
 #include "nsICryptoHash.h"
 #include "nsIRunnable.h"
 #include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
 #include "nsICancelable.h"
 #include "nsIClassOfService.h"
 #include "nsIDNSRecord.h"
 #include "nsIDNSService.h"
-#include "nsIStreamConverterService.h"
 #include "nsIIOService.h"
 #include "nsIProtocolProxyService.h"
 #include "nsIProxyInfo.h"
@@ -32,14 +30,12 @@
 #include "nsIDashboardEventNotifier.h"
 #include "nsIEventTarget.h"
 #include "nsIHttpChannel.h"
-#include "nsILoadGroup.h"
 #include "nsIProtocolHandler.h"
 #include "nsIRandomGenerator.h"
 #include "nsISocketTransport.h"
 #include "nsThreadUtils.h"
 #include "nsINetworkLinkService.h"
 #include "nsIObserverService.h"
-#include "nsITransportProvider.h"
 #include "nsCharSeparatedTokenizer.h"
 
 #include "nsAutoPtr.h"
@@ -1655,7 +1651,7 @@ nsresult WebSocketChannel::ProcessInput(uint8_t* buffer, uint32_t count) {
         }
 
         // Section 8.1 says to fail connection if invalid utf-8 in text message
-        if (!IsUTF8(utf8Data)) {
+        if (!IsUtf8(utf8Data)) {
           LOG(("WebSocketChannel:: text frame invalid utf-8\n"));
           return NS_ERROR_CANNOT_CONVERT_DATA;
         }
@@ -1704,7 +1700,7 @@ nsresult WebSocketChannel::ProcessInput(uint8_t* buffer, uint32_t count) {
             // (which are non-conformant to send) with u+fffd,
             // but secteam feels that silently rewriting messages is
             // inappropriate - so we will fail the connection instead.
-            if (!IsUTF8(mServerCloseReason)) {
+            if (!IsUtf8(mServerCloseReason)) {
               LOG(("WebSocketChannel:: close frame invalid utf-8\n"));
               return NS_ERROR_CANNOT_CONVERT_DATA;
             }
@@ -2060,7 +2056,7 @@ void WebSocketChannel::PrimeNewOutgoingMessage() {
         msgType = kMsgTypeBinaryString;
 
         // no break: fall down into binary string case
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
 
       case kMsgTypeBinaryString:
         mOutHeader[0] = kFinalFragBit | nsIWebSocketFrame::OPCODE_BINARY;
@@ -3076,9 +3072,7 @@ WebSocketChannel::AsyncOnChannelRedirect(
   NS_ENSURE_SUCCESS(rv, rv);
 
   // newuri is expected to be http or https
-  bool newuriIsHttps = false;
-  rv = newuri->SchemeIs("https", &newuriIsHttps);
-  NS_ENSURE_SUCCESS(rv, rv);
+  bool newuriIsHttps = newuri->SchemeIs("https");
 
   if (!mAutoFollowRedirects) {
     // Even if redirects configured off, still allow them for HTTP Strict
@@ -3658,6 +3652,24 @@ WebSocketChannel::OnTransportAvailable(nsISocketTransport* aTransport,
     return CallStartWebsocketData();
   }
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WebSocketChannel::OnUpgradeFailed(nsresult aErrorCode) {
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+
+  LOG(("WebSocketChannel::OnUpgradeFailed() %p [aErrorCode %" PRIx32 "]", this,
+       static_cast<uint32_t>(aErrorCode)));
+
+  if (mStopped) {
+    LOG(("WebSocketChannel::OnUpgradeFailed: Already stopped"));
+    return NS_OK;
+  }
+
+  MOZ_ASSERT(!mRecvdHttpUpgradeTransport, "OTA already called");
+
+  AbortSession(aErrorCode);
   return NS_OK;
 }
 

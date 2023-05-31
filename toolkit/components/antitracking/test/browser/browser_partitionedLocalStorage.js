@@ -1,6 +1,7 @@
 /* import-globals-from antitracking_head.js */
+/* import-globals-from partitionedstorage_head.js */
 
-AntiTracking.runTest(
+AntiTracking.runTestInNormalAndPrivateMode(
   "localStorage and Storage Access API",
   async _ => {
     /* import-globals-from storageAccessAPIHelpers.js */
@@ -90,4 +91,28 @@ AntiTracking.runTest(
   ],
   false,
   false
+);
+
+PartitionedStorageHelper.runPartitioningTestInNormalAndPrivateMode(
+  "Partitioned tabs - localStorage",
+
+  // getDataCallback
+  async win => {
+    return "foo" in win.localStorage ? win.localStorage.foo : "";
+  },
+
+  // addDataCallback
+  async (win, value) => {
+    win.localStorage.foo = value;
+    return true;
+  },
+
+  // cleanup
+  async _ => {
+    await new Promise(resolve => {
+      Services.clearData.deleteData(Ci.nsIClearDataService.CLEAR_ALL, value =>
+        resolve()
+      );
+    });
+  }
 );

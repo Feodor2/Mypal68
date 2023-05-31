@@ -265,9 +265,9 @@ LoginManagerStorage_mozStorage.prototype = {
       ":timePasswordChanged, :timesUsed)";
 
     let params = {
-      hostname: loginClone.hostname,
+      hostname: loginClone.origin,
       httpRealm: loginClone.httpRealm,
-      formSubmitURL: loginClone.formSubmitURL,
+      formSubmitURL: loginClone.formActionOrigin,
       usernameField: loginClone.usernameField,
       passwordField: loginClone.passwordField,
       encryptedUsername: encUsername,
@@ -345,8 +345,8 @@ LoginManagerStorage_mozStorage.prototype = {
     // Look for an existing entry in case key properties changed.
     if (!newLogin.matches(oldLogin, true)) {
       let logins = this.findLogins(
-        newLogin.hostname,
-        newLogin.formSubmitURL,
+        newLogin.origin,
+        newLogin.formActionOrigin,
         newLogin.httpRealm
       );
 
@@ -377,9 +377,9 @@ LoginManagerStorage_mozStorage.prototype = {
 
     let params = {
       id: idToModify,
-      hostname: newLogin.hostname,
+      hostname: newLogin.origin,
       httpRealm: newLogin.httpRealm,
-      formSubmitURL: newLogin.formSubmitURL,
+      formSubmitURL: newLogin.formActionOrigin,
       usernameField: newLogin.usernameField,
       passwordField: newLogin.passwordField,
       encryptedUsername: encUsername,
@@ -419,6 +419,33 @@ LoginManagerStorage_mozStorage.prototype = {
 
     this.log("_getAllLogins: returning " + logins.length + " logins.");
     return logins;
+  },
+
+  /**
+   * Returns an array of nsILoginInfo.
+   *
+   * @resolve {nsILoginInfo[]}
+   */
+  async getAllLoginsAsync() {
+    let [logins, ids] = this._searchLogins({});
+    if (!logins.length) {
+      return [];
+    }
+    let ciphertexts = logins
+      .map(l => l.username)
+      .concat(logins.map(l => l.password));
+    let plaintexts = await this._crypto.decryptMany(ciphertexts);
+    let usernames = plaintexts.slice(0, logins.length);
+    let passwords = plaintexts.slice(logins.length);
+
+    let result = [];
+    for (let i = 0; i < logins.length; i++) {
+      logins[i].username = usernames[i];
+      logins[i].password = passwords[i];
+      result.push(logins[i]);
+    }
+
+    return result;
   },
 
   /**
@@ -473,17 +500,32 @@ LoginManagerStorage_mozStorage.prototype = {
     for (let field in matchData) {
       let value = matchData[field];
       let condition = "";
+
+      // Override the storage field name for some fields due to backwards
+      // compatibility with Sync/storage.
+      let storageFieldName = field;
       switch (field) {
-        case "formSubmitURL":
+        case "formActionOrigin": {
+          storageFieldName = "formSubmitURL";
+          break;
+        }
+        case "origin": {
+          storageFieldName = "hostname";
+          break;
+        }
+      }
+
+      switch (field) {
+        case "formActionOrigin":
           if (value != null) {
             // Historical compatibility requires this special case
             condition = "formSubmitURL = '' OR ";
           }
         // Fall through
-        case "hostname":
+        case "origin":
           if (value != null) {
-            condition += `${field} = :${field}`;
-            params[field] = value;
+            condition += `${storageFieldName} = :${storageFieldName}`;
+            params[storageFieldName] = value;
             let valueURI;
             try {
               if (
@@ -491,8 +533,9 @@ LoginManagerStorage_mozStorage.prototype = {
                 (valueURI = Services.io.newURI(value)) &&
                 valueURI.scheme == "https"
               ) {
-                condition += ` OR ${field} = :http${field}`;
-                params["http" + field] = "http://" + valueURI.displayHostPort;
+                condition += ` OR ${storageFieldName} = :http${storageFieldName}`;
+                params["http" + storageFieldName] =
+                  "http://" + valueURI.displayHostPort;
               }
             } catch (ex) {
               // newURI will throw for some values (e.g. chrome://FirefoxAccounts)
@@ -515,10 +558,10 @@ LoginManagerStorage_mozStorage.prototype = {
         case "timePasswordChanged":
         case "timesUsed":
           if (value == null) {
-            condition = field + " isnull";
+            condition = storageFieldName + " isnull";
           } else {
-            condition = field + " = :" + field;
-            params[field] = value;
+            condition = storageFieldName + " = :" + storageFieldName;
+            params[storageFieldName] = value;
           }
           break;
         // Fail if caller requests an unknown property.
@@ -630,14 +673,14 @@ LoginManagerStorage_mozStorage.prototype = {
     LoginHelper.notifyStorageChanged("removeAllLogins", null);
   },
 
-  findLogins(hostname, formSubmitURL, httpRealm) {
+  findLogins(origin, formActionOrigin, httpRealm) {
     let loginData = {
-      hostname,
-      formSubmitURL,
+      origin,
+      formActionOrigin,
       httpRealm,
     };
     let matchData = {};
-    for (let field of ["hostname", "formSubmitURL", "httpRealm"]) {
+    for (let field of ["origin", "formActionOrigin", "httpRealm"]) {
       if (loginData[field] != "") {
         matchData[field] = loginData[field];
       }
@@ -651,12 +694,12 @@ LoginManagerStorage_mozStorage.prototype = {
     return logins;
   },
 
-  countLogins(hostname, formSubmitURL, httpRealm) {
-    let _countLoginsHelper = (hostname, formSubmitURL, httpRealm) => {
+  countLogins(origin, formActionOrigin, httpRealm) {
+    let _countLoginsHelper = (origin, formActionOrigin, httpRealm) => {
       // Do checks for null and empty strings, adjust conditions and params
       let [conditions, params] = this._buildConditionsAndParams(
-        hostname,
-        formSubmitURL,
+        origin,
+        formActionOrigin,
         httpRealm
       );
 
@@ -681,7 +724,7 @@ LoginManagerStorage_mozStorage.prototype = {
       return numLogins;
     };
 
-    let resultLogins = _countLoginsHelper(hostname, formSubmitURL, httpRealm);
+    let resultLogins = _countLoginsHelper(origin, formActionOrigin, httpRealm);
     this.log("_countLogins: counted logins: " + resultLogins);
     return resultLogins;
   },
@@ -701,7 +744,7 @@ LoginManagerStorage_mozStorage.prototype = {
    */
   _getIdForLogin(login) {
     let matchData = {};
-    for (let field of ["hostname", "formSubmitURL", "httpRealm"]) {
+    for (let field of ["origin", "formActionOrigin", "httpRealm"]) {
       if (login[field] != "") {
         matchData[field] = login[field];
       }
@@ -736,22 +779,22 @@ LoginManagerStorage_mozStorage.prototype = {
    * statement being created. This fixes the cases where nulls are involved
    * and the empty string is supposed to be a wildcard match
    */
-  _buildConditionsAndParams(hostname, formSubmitURL, httpRealm) {
+  _buildConditionsAndParams(origin, formActionOrigin, httpRealm) {
     let conditions = [],
       params = {};
 
-    if (hostname == null) {
+    if (origin == null) {
       conditions.push("hostname isnull");
-    } else if (hostname != "") {
+    } else if (origin != "") {
       conditions.push("hostname = :hostname");
-      params.hostname = hostname;
+      params.hostname = origin;
     }
 
-    if (formSubmitURL == null) {
+    if (formActionOrigin == null) {
       conditions.push("formSubmitURL isnull");
-    } else if (formSubmitURL != "") {
+    } else if (formActionOrigin != "") {
       conditions.push("formSubmitURL = :formSubmitURL OR formSubmitURL = ''");
-      params.formSubmitURL = formSubmitURL;
+      params.formSubmitURL = formActionOrigin;
     }
 
     if (httpRealm == null) {
@@ -1188,8 +1231,12 @@ LoginManagerStorage_mozStorage.prototype = {
       for (let host of disabledHosts) {
         try {
           let uri = Services.io.newURI(host);
-          Services.perms.add(
+          let principal = Services.scriptSecurityManager.createCodebasePrincipal(
             uri,
+            {}
+          );
+          Services.perms.addFromPrincipal(
+            principal,
             PERMISSION_SAVE_LOGINS,
             Services.perms.DENY_ACTION
           );
@@ -1313,4 +1360,4 @@ XPCOMUtils.defineLazyGetter(
   }
 );
 
-var EXPORTED_SYMBOLS = ["LoginManagerStorage_mozStorage"];
+const EXPORTED_SYMBOLS = ["LoginManagerStorage_mozStorage"];

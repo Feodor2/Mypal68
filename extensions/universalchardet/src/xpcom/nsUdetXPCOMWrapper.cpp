@@ -10,7 +10,6 @@
 
 #include "nsUniversalCharDetDll.h"
 //---- for XPCOM
-#include "nsIFactory.h"
 #include "nsISupports.h"
 #include "nsCOMPtr.h"
 

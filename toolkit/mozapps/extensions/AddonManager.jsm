@@ -323,16 +323,6 @@ BrowserListener.prototype = {
     }
   },
 
-  observe(subject, topic, data) {
-    if (subject != this.browser.messageManager) {
-      return;
-    }
-
-    // The browser's message manager has closed and so the browser is
-    // going away, cancel the install
-    this.cancelInstall();
-  },
-
   onLocationChange(webProgress, request, location) {
     if (
       this.browser.contentPrincipal &&

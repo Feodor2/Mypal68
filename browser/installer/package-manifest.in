@@ -190,6 +190,8 @@
 
 @RESPATH@/components/Push.manifest
 
+@RESPATH@/components/antitracking.manifest
+
 ; CDP remote agent
 #ifdef ENABLE_REMOTE_AGENT
 @RESPATH@/chrome/remote@JAREXT@
@@ -236,6 +238,9 @@
 
 #ifdef MOZ_D3DCOMPILER_VISTA_DLL
 @BINPATH@/@MOZ_D3DCOMPILER_VISTA_DLL@
+#endif
+#ifdef MOZ_D3DCOMPILER_XP_DLL
+@BINPATH@/@MOZ_D3DCOMPILER_XP_DLL@
 #endif
 #endif # MOZ_ANGLE_RENDERER
 
@@ -335,6 +340,10 @@
 @RESPATH@/res/fonts/*
 @RESPATH@/res/dtd/*
 @RESPATH@/res/language.properties
+@RESPATH@/res/locale/layout/HtmlForm.properties
+@RESPATH@/res/locale/layout/MediaDocument.properties
+@RESPATH@/res/locale/layout/xmlparser.properties
+@RESPATH@/res/locale/dom/dom.properties
 #ifdef XP_MACOSX
 @RESPATH@/res/MainMenu.nib/
 #endif

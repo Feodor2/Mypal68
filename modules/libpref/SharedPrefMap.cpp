@@ -80,6 +80,7 @@ void SharedPrefMapBuilder::Add(const char* aKey, const Flags& aFlags,
       aFlags.mIsSticky,
       aFlags.mIsLocked,
       aFlags.mDefaultChanged,
+      aFlags.mIsSkippedByIteration,
   });
 }
 
@@ -102,6 +103,7 @@ void SharedPrefMapBuilder::Add(const char* aKey, const Flags& aFlags,
       aFlags.mIsSticky,
       aFlags.mIsLocked,
       aFlags.mDefaultChanged,
+      aFlags.mIsSkippedByIteration,
   });
 }
 
@@ -127,6 +129,7 @@ void SharedPrefMapBuilder::Add(const char* aKey, const Flags& aFlags,
       aFlags.mIsSticky,
       aFlags.mIsLocked,
       aFlags.mDefaultChanged,
+      aFlags.mIsSkippedByIteration,
   });
 }
 
@@ -184,16 +187,22 @@ Result<Ok, nsresult> SharedPrefMapBuilder::Finalize(loader::AutoMemMap& aMap, ns
   const char* str;
   aName.GetData(&str);
   MOZ_TRY(mem.Init(offset, str));
+
   auto headerPtr = mem.Get<Header>();
   headerPtr[0] = header;
 
   auto* entryPtr = reinterpret_cast<SharedPrefMap::Entry*>(&headerPtr[1]);
   for (auto* entry : entries) {
     *entryPtr = {
-        entry->mKey,          GetValue(*entry),
-        entry->mType,         entry->mHasDefaultValue,
-        entry->mHasUserValue, entry->mIsSticky,
-        entry->mIsLocked,     entry->mDefaultChanged,
+        entry->mKey,
+        GetValue(*entry),
+        entry->mType,
+        entry->mHasDefaultValue,
+        entry->mHasUserValue,
+        entry->mIsSticky,
+        entry->mIsLocked,
+        entry->mDefaultChanged,
+        entry->mIsSkippedByIteration,
     };
     entryPtr++;
   }

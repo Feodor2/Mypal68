@@ -453,9 +453,7 @@ class Runnable : public nsIRunnable
 #  endif
 {
  public:
-  // Runnable refcount changes are preserved when recording/replaying to ensure
-  // that they are destroyed at consistent points.
-  NS_DECL_THREADSAFE_ISUPPORTS_WITH_RECORDING(recordreplay::Behavior::Preserve)
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIRUNNABLE
 #  ifdef MOZ_COLLECTING_RUNNABLE_TELEMETRY
   NS_DECL_NSINAMED
@@ -766,7 +764,7 @@ template <typename PtrType, class C, typename R, bool Owning,
           mozilla::RunnableKind Kind, typename... As>
 struct nsRunnableMethodTraits<PtrType, R (C::*)(As...), Owning, Kind> {
   typedef typename mozilla::RemoveRawOrSmartPointer<PtrType>::Type class_type;
-  static_assert(mozilla::IsBaseOf<C, class_type>::value,
+  static_assert(std::is_base_of<C, class_type>::value,
                 "Stored class must inherit from method's class");
   typedef R return_type;
   typedef nsRunnableMethod<C, R, Owning, Kind> base_type;
@@ -778,7 +776,7 @@ template <typename PtrType, class C, typename R, bool Owning,
 struct nsRunnableMethodTraits<PtrType, R (C::*)(As...) const, Owning, Kind> {
   typedef const typename mozilla::RemoveRawOrSmartPointer<PtrType>::Type
       class_type;
-  static_assert(mozilla::IsBaseOf<C, class_type>::value,
+  static_assert(std::is_base_of<C, class_type>::value,
                 "Stored class must inherit from method's class");
   typedef R return_type;
   typedef nsRunnableMethod<C, R, Owning, Kind> base_type;
@@ -791,7 +789,7 @@ template <typename PtrType, class C, typename R, bool Owning,
 struct nsRunnableMethodTraits<PtrType, R (__stdcall C::*)(As...), Owning,
                               Kind> {
   typedef typename mozilla::RemoveRawOrSmartPointer<PtrType>::Type class_type;
-  static_assert(mozilla::IsBaseOf<C, class_type>::value,
+  static_assert(std::is_base_of<C, class_type>::value,
                 "Stored class must inherit from method's class");
   typedef R return_type;
   typedef nsRunnableMethod<C, R, Owning, Kind> base_type;
@@ -802,7 +800,7 @@ template <typename PtrType, class C, typename R, bool Owning,
           mozilla::RunnableKind Kind>
 struct nsRunnableMethodTraits<PtrType, R (NS_STDCALL C::*)(), Owning, Kind> {
   typedef typename mozilla::RemoveRawOrSmartPointer<PtrType>::Type class_type;
-  static_assert(mozilla::IsBaseOf<C, class_type>::value,
+  static_assert(std::is_base_of<C, class_type>::value,
                 "Stored class must inherit from method's class");
   typedef R return_type;
   typedef nsRunnableMethod<C, R, Owning, Kind> base_type;
@@ -815,7 +813,7 @@ struct nsRunnableMethodTraits<PtrType, R (__stdcall C::*)(As...) const, Owning,
                               Kind> {
   typedef const typename mozilla::RemoveRawOrSmartPointer<PtrType>::Type
       class_type;
-  static_assert(mozilla::IsBaseOf<C, class_type>::value,
+  static_assert(std::is_base_of<C, class_type>::value,
                 "Stored class must inherit from method's class");
   typedef R return_type;
   typedef nsRunnableMethod<C, R, Owning, Kind> base_type;
@@ -828,7 +826,7 @@ struct nsRunnableMethodTraits<PtrType, R (NS_STDCALL C::*)() const, Owning,
                               Kind> {
   typedef const typename mozilla::RemoveRawOrSmartPointer<PtrType>::Type
       class_type;
-  static_assert(mozilla::IsBaseOf<C, class_type>::value,
+  static_assert(std::is_base_of<C, class_type>::value,
                 "Stored class must inherit from method's class");
   typedef R return_type;
   typedef nsRunnableMethod<C, R, Owning, Kind> base_type;
@@ -1689,51 +1687,21 @@ void NS_UnsetMainThread();
 extern mozilla::TimeStamp NS_GetTimerDeadlineHintOnCurrentThread(
     mozilla::TimeStamp aDefault, uint32_t aSearchBound);
 
-namespace mozilla {
-
 /**
- * Cooperative thread scheduling is governed by two rules:
- * - Only one thread in the pool of cooperatively scheduled threads runs at a
- *   time.
- * - Thread switching happens at well-understood safe points.
- *
- * In some cases we may want to treat all the threads in a cooperative pool as a
- * single thread, while other parts of the code may want to view them as
- * separate threads. GetCurrentVirtualThread() will return the same value for
- * all threads in a cooperative thread pool. GetCurrentPhysicalThread will
- * return a different value for each thread in the pool.
- *
- * Thread safety assertions are a concrete example where GetCurrentVirtualThread
- * should be used. An object may want to assert that it only can be used on the
- * thread that created it. Such assertions would normally prevent the object
- * from being used on different cooperative threads. However, the object might
- * really only care that it's used atomically. Cooperative scheduling guarantees
- * that it will be (assuming we don't yield in the middle of modifying the
- * object). So we can weaken the assertion to compare the virtual thread the
- * object was created on to the virtual thread on which it's being used. This
- * assertion allows the object to be used across threads in a cooperative thread
- * pool while preventing accesses across preemptively scheduled threads (which
- * would be unsafe).
+ * Dispatches the given event to a background thread.  The primary benefit of
+ * this API is that you do not have to manage the lifetime of your own thread
+ * for running your own events; the thread manager will take care of the
+ * background thread's lifetime.  Not having to manage your own thread also
+ * means less resource usage, as the underlying implementation here can manage
+ * spinning up and shutting down threads appropriately.
  */
+extern nsresult NS_DispatchToBackgroundThread(
+    already_AddRefed<nsIRunnable> aEvent,
+    uint32_t aDispatchFlags = NS_DISPATCH_NORMAL);
+extern nsresult NS_DispatchToBackgroundThread(
+    nsIRunnable* aEvent, uint32_t aDispatchFlags = NS_DISPATCH_NORMAL);
 
-// Returns the PRThread on which this code is running.
-PRThread* GetCurrentPhysicalThread();
-
-// Returns a "virtual" PRThread that should only be used for comparison with
-// other calls to GetCurrentVirtualThread. Two threads in the same cooperative
-// thread pool will return the same virtual thread. Threads that are not
-// cooperatively scheduled will have their own unique virtual PRThread (which
-// will be equal to their physical PRThread).
-//
-// The return value of GetCurrentVirtualThread() is guaranteed not to change
-// throughout the lifetime of a thread.
-//
-// Note that the original main thread (the first one created in the process) is
-// considered as part of the pool of cooperative threads, so the return value of
-// GetCurrentVirtualThread() for this thread (throughout its lifetime, even
-// during shutdown) is the same as the return value from any other thread in the
-// cooperative pool.
-PRThread* GetCurrentVirtualThread();
+namespace mozilla {
 
 // These functions return event targets that can be used to dispatch to the
 // current or main thread. They can also be used to test if you're on those

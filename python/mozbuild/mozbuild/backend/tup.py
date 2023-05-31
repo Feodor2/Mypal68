@@ -410,7 +410,7 @@ class TupBackend(CommonBackend):
             ['-o', shlib.lib_name]
         )
 
-        objs, _, _, shared_libs, os_libs, static_libs = self._expand_libs(shlib)
+        objs, _, shared_libs, os_libs, static_libs = self._expand_libs(shlib)
         static_libs = self._lib_paths(backend_file.objdir, static_libs)
         shared_libs = self._lib_paths(backend_file.objdir, shared_libs)
 
@@ -465,7 +465,7 @@ class TupBackend(CommonBackend):
 
     def _gen_program(self, backend_file, prog):
         cc_or_cxx = 'CXX' if prog.cxx_link else 'CC'
-        objs, _, _, shared_libs, os_libs, static_libs = self._expand_libs(prog)
+        objs, _, shared_libs, os_libs, static_libs = self._expand_libs(prog)
 
         static_libs = self._lib_paths(backend_file.objdir, static_libs)
         shared_libs = self._lib_paths(backend_file.objdir, shared_libs)
@@ -520,7 +520,7 @@ class TupBackend(CommonBackend):
 
 
     def _gen_host_program(self, backend_file, prog):
-        _, _, _, _, extra_libs, _ = self._expand_libs(prog)
+        _, _, _, extra_libs, _ = self._expand_libs(prog)
         objs = prog.objs
 
         if isinstance(prog, HostSimpleProgram):
@@ -566,7 +566,7 @@ class TupBackend(CommonBackend):
             backend_file.environment.substs['AR_FLAGS'].replace('$@', '%o')
         ]
 
-        objs, _, _, shared_libs, _, static_libs = self._expand_libs(backend_file.static_lib)
+        objs, _, shared_libs, _, static_libs = self._expand_libs(backend_file.static_lib)
         static_libs = self._lib_paths(backend_file.objdir, static_libs)
         shared_libs = self._lib_paths(backend_file.objdir, shared_libs)
 
@@ -1048,7 +1048,7 @@ class TupBackend(CommonBackend):
                    for f in obj.outputs):
                 output_group = self._early_generated_files
             else:
-                output_group = self._installed_files if obj.required_for_compile else None
+                output_group = self._installed_files if obj.required_during_compile else None
                 full_inputs += [self._early_generated_files]
 
             extra_inputs = []

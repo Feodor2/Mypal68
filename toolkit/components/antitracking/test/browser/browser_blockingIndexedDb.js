@@ -1,6 +1,6 @@
 /* import-globals-from antitracking_head.js */
 
-AntiTracking.runTest(
+AntiTracking.runTestInNormalAndPrivateMode(
   "IndexedDB",
   // blocking callback
   async _ => {
@@ -27,7 +27,7 @@ AntiTracking.runTest(
   }
 );
 
-AntiTracking.runTest(
+AntiTracking.runTestInNormalAndPrivateMode(
   "IndexedDB and Storage Access API",
   // blocking callback
   async _ => {

@@ -17,8 +17,7 @@ add_task(async function setup() {
   originalEngine = await Services.search.getDefault();
   expectedString = gBrowserBundle.formatStringFromName(
     "urlbar.placeholder",
-    [originalEngine.name],
-    1
+    [originalEngine.name]
   );
 
   let rootDir = getRootDirectory(gTestPath);

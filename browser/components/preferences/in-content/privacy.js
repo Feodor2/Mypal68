@@ -47,7 +47,7 @@ const CONTENT_BLOCKING_PREFS = [
 const PREF_OPT_OUT_STUDIES_ENABLED = "app.shield.optoutstudies.enabled";
 const PREF_NORMANDY_ENABLED = "app.normandy.enabled";
 
-const PREF_ADDON_RECOMMENDATIONS_ENABLED = "browser.discovery.enabled";
+const PREF_PASSWORD_GENERATION_AVAILABLE = "signon.generation.available";
 
 XPCOMUtils.defineLazyGetter(this, "AlertsServiceDND", function() {
   try {
@@ -118,6 +118,7 @@ Preferences.addAll([
   { id: "dom.disable_open_during_load", type: "bool" },
   // Passwords
   { id: "signon.rememberSignons", type: "bool" },
+  { id: "signon.generation.enabled", type: "bool" },
 
   // Buttons
   { id: "pref.privacy.disable_button.view_passwords", type: "bool" },
@@ -162,7 +163,6 @@ if (AppConstants.MOZ_DATA_REPORTING) {
   Preferences.addAll([
     // Preference instances for prefs that we need to monitor while the page is open.
     { id: PREF_OPT_OUT_STUDIES_ENABLED, type: "bool" },
-    { id: PREF_ADDON_RECOMMENDATIONS_ENABLED, type: "bool" },
     { id: PREF_UPLOAD_ENABLED, type: "bool" },
   ]);
 }
@@ -179,6 +179,14 @@ function setEventListener(aId, aEventType, aCallback) {
   document
     .getElementById(aId)
     .addEventListener(aEventType, aCallback.bind(gPrivacyPane));
+}
+
+function setSyncFromPrefListener(aId, aCallback) {
+  Preferences.addSyncFromPrefListener(document.getElementById(aId), aCallback);
+}
+
+function setSyncToPrefListener(aId, aCallback) {
+  Preferences.addSyncToPrefListener(document.getElementById(aId), aCallback);
 }
 
 function dataCollectionCheckboxHandler({
@@ -346,17 +354,11 @@ var gPrivacyPane = {
     /* Initialize Content Blocking */
     this.initContentBlocking();
 
-    this.blockAutoplayReadPrefs();
     this.trackingProtectionReadPrefs();
     this.networkCookieBehaviorReadPrefs();
     this._initTrackingProtectionExtensionControl();
 
     Services.telemetry.setEventRecordingEnabled("pwmgr", true);
-
-    Preferences.get("media.autoplay.default").on(
-      "change",
-      gPrivacyPane.blockAutoplayReadPrefs.bind(gPrivacyPane)
-    );
 
     Preferences.get("privacy.trackingprotection.enabled").on(
       "change",
@@ -461,9 +463,17 @@ var gPrivacyPane = {
     );
 
     this._pane = document.getElementById("panePrivacy");
+
+    this._initPasswordGenerationUI();
     this._initMasterPasswordUI();
+
     this._initSafeBrowsing();
 
+    setEventListener(
+      "autoplaySettingsButton",
+      "command",
+      gPrivacyPane.showAutoplayMediaExceptions
+    );
     setEventListener(
       "notificationSettingsButton",
       "command",
@@ -490,20 +500,41 @@ var gPrivacyPane = {
       gPrivacyPane.showPopupExceptions
     );
     setEventListener(
-      "autoplayMediaCheckbox",
-      "command",
-      gPrivacyPane.toggleAutoplayMedia
-    );
-    setEventListener(
-      "autoplayMediaPolicyButton",
-      "command",
-      gPrivacyPane.showAutoplayMediaExceptions
-    );
-    setEventListener(
       "notificationsDoNotDisturb",
       "command",
       gPrivacyPane.toggleDoNotDisturbNotifications
     );
+
+    setSyncFromPrefListener("contentBlockingBlockCookiesCheckbox", () =>
+      this.readBlockCookies()
+    );
+    setSyncToPrefListener("contentBlockingBlockCookiesCheckbox", () =>
+      this.writeBlockCookies()
+    );
+    setSyncFromPrefListener("blockCookiesMenu", () =>
+      this.readBlockCookiesFrom()
+    );
+    setSyncToPrefListener("blockCookiesMenu", () =>
+      this.writeBlockCookiesFrom()
+    );
+    setSyncFromPrefListener("deleteOnClose", () => this.readDeleteOnClose());
+    setSyncToPrefListener("deleteOnClose", () => this.writeDeleteOnClose());
+    setSyncFromPrefListener("savePasswords", () => this.readSavePasswords());
+
+    let microControlHandler = el =>
+      this.ensurePrivacyMicroControlUncheckedWhenDisabled(el);
+    setSyncFromPrefListener("rememberHistory", microControlHandler);
+    setSyncFromPrefListener("rememberForms", microControlHandler);
+    setSyncFromPrefListener("alwaysClear", microControlHandler);
+
+    setSyncFromPrefListener("popupPolicy", () =>
+      this.updateButtons("popupPolicyButton", "dom.disable_open_during_load")
+    );
+    setSyncFromPrefListener("warnAddonInstall", () =>
+      this.readWarnAddonInstall()
+    );
+    setSyncFromPrefListener("enableOCSP", () => this.readEnableOCSP());
+    setSyncToPrefListener("enableOCSP", () => this.writeEnableOCSP());
 
     if (AlertsServiceDND) {
       let notificationsDoNotDisturbBox = document.getElementById(
@@ -554,7 +585,6 @@ var gPrivacyPane = {
         gPrivacyPane.updateSubmitHealthReport
       );
       this.initOptOutStudyCheckbox();
-      this.initAddonRecommendationsCheckbox();
     }
     this._initA11yState();
     let signonBundle = document.getElementById("signonBundle");
@@ -675,17 +705,6 @@ var gPrivacyPane = {
       Services.urlFormatter.formatURLPref("app.support.baseURL") +
       "content-blocking";
     link.setAttribute("href", contentBlockingUrl);
-
-    let contentBlockingTour =
-      Services.urlFormatter.formatURLPref(
-        "privacy.trackingprotection.introURL"
-      ) + `?step=3&newtab=true`;
-    let warningLinks = document.getElementsByClassName(
-      "content-blocking-warning-learn-how"
-    );
-    for (let warningLink of warningLinks) {
-      warningLink.setAttribute("href", contentBlockingTour);
-    }
   },
 
   populateCategoryContents() {
@@ -821,6 +840,9 @@ var gPrivacyPane = {
             document.querySelector(
               selector + " .third-party-tracking-cookies-option"
             ).hidden = false;
+            break;
+          case "cookieBehavior5":
+            // No UI support for this cookie policy yet
             break;
         }
       }
@@ -1591,37 +1613,11 @@ var gPrivacyPane = {
 
   // MEDIA
 
-  blockAutoplayReadPrefs() {
-    let blocked =
-      Preferences.get("media.autoplay.default").value == Ci.nsIAutoplay.BLOCKED;
-    document.getElementById("autoplayMediaCheckbox").checked = blocked;
-  },
-
-  /**
-   * The checkbox enabled sets the pref to BLOCKED
-   */
-  toggleAutoplayMedia(event) {
-    let blocked = event.target.checked
-      ? Ci.nsIAutoplay.BLOCKED
-      : Ci.nsIAutoplay.ALLOWED;
-    Services.prefs.setIntPref("media.autoplay.default", blocked);
-  },
-
-  /**
-   * Displays the autoplay exceptions dialog where specific site autoplay preferences
-   * can be set.
-   */
   showAutoplayMediaExceptions() {
-    var params = {
-      blockVisible: true,
-      sessionVisible: false,
-      allowVisible: true,
-      prefilledHost: "",
-      permissionType: "autoplay-media",
-    };
+    var params = { permissionType: "autoplay-media" };
 
     gSubDialog.open(
-      "chrome://browser/content/preferences/permissions.xul",
+      "chrome://browser/content/preferences/sitePermissions.xul",
       "resizable=yes",
       params
     );
@@ -1776,6 +1772,19 @@ var gPrivacyPane = {
   },
 
   /**
+   * Set up the initial state for the password generation UI.
+   * It will be hidden unless the .available pref is true
+   */
+  _initPasswordGenerationUI() {
+    // we don't watch the .available pref for runtime changes
+    let prefValue = Services.prefs.getBoolPref(
+      PREF_PASSWORD_GENERATION_AVAILABLE,
+      false
+    );
+    document.getElementById("generatePasswordsBox").hidden = !prefValue;
+  },
+
+  /**
    * Shows the sites where the user has saved passwords and the associated login
    * information.
    */
@@ -1794,20 +1803,26 @@ var gPrivacyPane = {
   },
 
   /**
-   * Enables/disables the Exceptions button used to configure sites where
+   * Enables/disables dependent controls related to password saving
+   * When password saving is not enabled, we need to also disable the password generation checkbox
+   * The Exceptions button is used to configure sites where
    * passwords are never saved. When browser is set to start in Private
    * Browsing mode, the "Remember passwords" UI is useless, so we disable it.
    */
   readSavePasswords() {
     var pref = Preferences.get("signon.rememberSignons");
     var excepts = document.getElementById("passwordExceptions");
+    var generatePasswords = document.getElementById("generatePasswords");
 
     if (PrivateBrowsingUtils.permanentPrivateBrowsing) {
       document.getElementById("savePasswords").disabled = true;
       excepts.disabled = true;
+      generatePasswords.disabled = true;
       return false;
     }
     excepts.disabled = !pref.value;
+    generatePasswords.disabled = !pref.value;
+
     // don't override pref value in UI
     return undefined;
   },
@@ -2118,22 +2133,6 @@ var gPrivacyPane = {
         Services.prefs.getBoolPref(PREF_NORMANDY_ENABLED, false),
       isDisabled: () => !allowedByPolicy,
       pref: PREF_OPT_OUT_STUDIES_ENABLED,
-    });
-  },
-
-  initAddonRecommendationsCheckbox() {
-    // Setup the learn more link.
-    const url =
-      Services.urlFormatter.formatURLPref("app.support.baseURL") +
-      "personalized-addons";
-    document
-      .getElementById("addonRecommendationLearnMore")
-      .setAttribute("href", url);
-
-    // Setup the checkbox.
-    dataCollectionCheckboxHandler({
-      checkbox: document.getElementById("addonRecommendationEnabled"),
-      pref: PREF_ADDON_RECOMMENDATIONS_ENABLED,
     });
   },
 

@@ -8,13 +8,11 @@
 #include "TextureD3D9.h"
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"
-#include "gfxPrefs.h"
 #include "gfxWindowsPlatform.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "nsIConsoleService.h"
-#include "nsIServiceManager.h"
 #include "nsPrintfCString.h"
 #include "plstr.h"
 #include <algorithm>
@@ -286,19 +284,40 @@ bool DeviceManagerD3D9::Initialize() {
   pp.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
   pp.hDeviceWindow = mFocusWnd;
 
+  DWORD     behaviorFlags = 0;
+  D3DCAPS9  pD3D9DeviceCaps;
+
+  hr = mD3D9->GetDeviceCaps(D3DADAPTER_DEFAULT,
+                            D3DDEVTYPE_HAL,
+                            &pD3D9DeviceCaps);
+
+  if (FAILED(hr)) {
+      // something wrong happened, bail out
+      return false;
+  }
+
+  // XPRTM Edit:
+  // check if hardware T&L is available
+  if (pD3D9DeviceCaps.DevCaps & D3DDEVCAPS_HWTRANSFORMANDLIGHT) {
+      behaviorFlags |= D3DCREATE_HARDWARE_VERTEXPROCESSING |
+                       D3DCREATE_MULTITHREADED |
+                       D3DCREATE_FPU_PRESERVE;
+  } else {
+      behaviorFlags |= D3DCREATE_SOFTWARE_VERTEXPROCESSING |
+                       D3DCREATE_MULTITHREADED |
+                       D3DCREATE_FPU_PRESERVE;
+  }
+  
   if (mD3D9Ex) {
     hr = mD3D9Ex->CreateDeviceEx(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, mFocusWnd,
-                                 D3DCREATE_FPU_PRESERVE |
-                                     D3DCREATE_MULTITHREADED |
-                                     D3DCREATE_MIXED_VERTEXPROCESSING,
-                                 &pp, nullptr, getter_AddRefs(mDeviceEx));
+                                 behaviorFlags, &pp, nullptr,
+                                 getter_AddRefs(mDeviceEx));
     if (SUCCEEDED(hr)) {
       mDevice = mDeviceEx;
     }
 
-    D3DCAPS9 caps;
-    if (mDeviceEx && mDeviceEx->GetDeviceCaps(&caps)) {
-      if (LACKS_CAP(caps.Caps2, D3DCAPS2_DYNAMICTEXTURES)) {
+    if (mDeviceEx) {
+      if (LACKS_CAP(pD3D9DeviceCaps.Caps2, D3DCAPS2_DYNAMICTEXTURES)) {
         // XXX - Should we actually hit this we'll need a CanvasLayer that
         // supports static D3DPOOL_DEFAULT textures.
         NS_WARNING("D3D9Ex device not used because of lack of support for \
@@ -311,9 +330,8 @@ bool DeviceManagerD3D9::Initialize() {
 
   if (!mDevice) {
     hr = mD3D9->CreateDevice(D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, mFocusWnd,
-                             D3DCREATE_FPU_PRESERVE | D3DCREATE_MULTITHREADED |
-                                 D3DCREATE_MIXED_VERTEXPROCESSING,
-                             &pp, getter_AddRefs(mDevice));
+                             behaviorFlags, &pp,
+                             getter_AddRefs(mDevice));
 
     if (FAILED(hr) || !mDevice) {
       gfxCriticalError() << "[D3D9] Failed to create the device, code: "
@@ -759,10 +777,10 @@ bool DeviceManagerD3D9::VerifyCaps() {
     return false;
   }
 
-  if (caps.MaxTextureHeight < 4096 || caps.MaxTextureWidth < 4096) {
+  mMaxTextureSize = std::min(caps.MaxTextureHeight, caps.MaxTextureWidth);
+  if (mMaxTextureSize < 1024) {
     return false;
   }
-  mMaxTextureSize = std::min(caps.MaxTextureHeight, caps.MaxTextureWidth);
 
   if ((caps.PixelShaderVersion & 0xffff) < 0x200 ||
       (caps.VertexShaderVersion & 0xffff) < 0x200) {

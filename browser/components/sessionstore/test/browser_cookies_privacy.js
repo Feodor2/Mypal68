@@ -15,7 +15,7 @@ function addCookie(scheme, secure = false) {
     /* isSession = */ true,
     MAX_EXPIRY,
     /* originAttributes = */ {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   return cookie;
 }

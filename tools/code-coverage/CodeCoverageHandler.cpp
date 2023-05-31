@@ -57,7 +57,7 @@ void CodeCoverageHandler::FlushCounters() {
   dom::AutoJSAPI jsapi;
   jsapi.Init();
   size_t length;
-  char* result = js::GetCodeCoverageSummary(jsapi.cx(), &length);
+  JS::UniqueChars result = js::GetCodeCoverageSummaryAll(jsapi.cx(), &length);
   if (!result) {
     return;
   }
@@ -78,7 +78,7 @@ void CodeCoverageHandler::FlushCounters() {
   rv = NS_NewLocalFileOutputStream(getter_AddRefs(outputStream), file);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
-  char* data = result;
+  char* data = result.get();
   while (length) {
     uint32_t n = 0;
     rv = outputStream->Write(data, length, &n);
@@ -89,8 +89,6 @@ void CodeCoverageHandler::FlushCounters() {
 
   rv = outputStream->Close();
   MOZ_ASSERT(NS_SUCCEEDED(rv));
-
-  free(result);
 
   printf_stderr("[CodeCoverage] JS flush completed.\n");
 }

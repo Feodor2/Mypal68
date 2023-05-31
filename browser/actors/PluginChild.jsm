@@ -585,8 +585,7 @@ class PluginChild extends ActorChild {
         let pluginName = this._getPluginInfo(plugin).pluginName;
         let messageString = gNavigatorBundle.formatStringFromName(
           "PluginClickToActivate2",
-          [pluginName],
-          1
+          [pluginName]
         );
         let overlayText = this.getPluginUI(plugin, "clickToPlay");
         overlayText.textContent = messageString;
@@ -1068,8 +1067,7 @@ class PluginChild extends ActorChild {
   NPAPIPluginProcessCrashed({ pluginName, runID, state }) {
     let message = gNavigatorBundle.formatStringFromName(
       "crashedpluginsMessage.title",
-      [pluginName],
-      1
+      [pluginName]
     );
 
     let contentWindow = this.content;
@@ -1216,8 +1214,7 @@ class PluginChild extends ActorChild {
 
     let messageString = gNavigatorBundle.formatStringFromName(
       "crashedpluginsMessage.title",
-      [pluginName],
-      1
+      [pluginName]
     );
 
     this.mm.sendAsyncMessage("PluginContent:ShowPluginCrashedNotification", {

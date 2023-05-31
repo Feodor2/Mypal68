@@ -238,7 +238,7 @@ nsresult MacOSFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
     gfxPlatformFontList* pfl = gfxPlatformFontList::PlatformFontList();
     fontlist::FontList* sharedFontList = pfl->SharedFontList();
     if (!IsUserFont() && mShmemFace) {
-      mShmemFace->SetCharacterMap(sharedFontList, charmap); // async
+      mShmemFace->SetCharacterMap(sharedFontList, charmap);  // async
       if (!TrySetShmemCharacterMap()) {
         // Temporarily retain charmap, until the shared version is
         // ready for use.
@@ -754,7 +754,7 @@ void gfxMacFontFamily::LocalizedName(nsACString& aLocalizedName) {
   // It's unsafe to call HasOtherFamilyNames off the main thread because
   // it entrains FindStyleVariations, which calls GetWeightOverride, which
   // retrieves prefs.  And the pref names can change (via user overrides),
-  // so we can't use gfxPrefs to access them.
+  // so we can't use StaticPrefs to access them.
   if (NS_IsMainThread() && !HasOtherFamilyNames()) {
     aLocalizedName = mName;
     return;
@@ -1762,8 +1762,7 @@ void gfxMacPlatformFontList::ActivateFontsFromDir(nsIFile* aDir) {
 }
 
 void gfxMacPlatformFontList::GetFacesInitDataForFamily(
-    const fontlist::Family* aFamily,
-    nsTArray<fontlist::Face::InitData>& aFaces) const {
+    const fontlist::Family* aFamily, nsTArray<fontlist::Face::InitData>& aFaces) const {
   nsAutoreleasePool localPool;
 
   NS_ConvertUTF8toUTF16 name(aFamily->Key().AsString(SharedFontList()));
@@ -1859,8 +1858,7 @@ void gfxMacPlatformFontList::ReadFaceNamesForFamily(fontlist::Family* aFamily,
     // of the macOS UI font; see MacOSFontEntry::GetFontRef(). We pass 16.0 in
     // order to get a standard text-size face in this case, although it's
     // unlikely to matter for the purpose of just reading family names.
-    auto fe = MakeUnique<MacOSFontEntry>(name, WeightRange(FontWeight::Normal()),
-                                         false, 16.0);
+    auto fe = MakeUnique<MacOSFontEntry>(name, WeightRange(FontWeight::Normal()), false, 16.0);
     if (!fe) {
       continue;
     }
@@ -1871,8 +1869,8 @@ void gfxMacPlatformFontList::ReadFaceNamesForFamily(fontlist::Family* aFamily,
     uint32_t dataLength;
     const char* nameData = hb_blob_get_data(nameTable, &dataLength);
     AutoTArray<nsCString, 4> otherFamilyNames;
-    gfxFontUtils::ReadOtherFamilyNamesForFace(canonicalName, nameData, dataLength,
-                                              otherFamilyNames, false);
+    gfxFontUtils::ReadOtherFamilyNamesForFace(canonicalName, nameData, dataLength, otherFamilyNames,
+                                              false);
     for (const auto& alias : otherFamilyNames) {
       auto af = mAliasTable.LookupOrAdd(alias);
       af->AppendElement(facePtrs[i]);

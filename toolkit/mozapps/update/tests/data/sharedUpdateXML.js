@@ -21,6 +21,7 @@ const SIZE_SIMPLE_MAR = "1419";
 const STATE_NONE = "null";
 const STATE_DOWNLOADING = "downloading";
 const STATE_PENDING = "pending";
+const STATE_PENDING_ELEVATE = "pending-elevate";
 const STATE_PENDING_SVC = "pending-service";
 const STATE_APPLYING = "applying";
 const STATE_APPLIED = "applied";

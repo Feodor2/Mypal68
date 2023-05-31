@@ -36,7 +36,7 @@ void VideoBridgeParent::ActorDestroy(ActorDestroyReason aWhy) {
   mClosed = true;
 }
 
-void VideoBridgeParent::DeallocPVideoBridgeParent() {
+void VideoBridgeParent::ActorDealloc() {
   mCompositorThreadRef = nullptr;
   mSelfRef = nullptr;
 }
@@ -62,7 +62,7 @@ bool VideoBridgeParent::DeallocPTextureParent(PTextureParent* actor) {
 }
 
 void VideoBridgeParent::SendAsyncMessage(
-    const InfallibleTArray<AsyncParentMessageData>& aMessage) {
+    const nsTArray<AsyncParentMessageData>& aMessage) {
   MOZ_ASSERT(false, "AsyncMessages not supported");
 }
 

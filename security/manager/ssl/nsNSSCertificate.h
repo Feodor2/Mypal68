@@ -15,7 +15,6 @@
 #include "nsIClassInfo.h"
 #include "nsISerializable.h"
 #include "nsIX509Cert.h"
-#include "nsIX509CertDB.h"
 #include "nsIX509CertList.h"
 #include "nsSimpleEnumerator.h"
 #include "nsStringFwd.h"

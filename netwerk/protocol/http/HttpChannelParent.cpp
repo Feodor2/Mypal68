@@ -31,11 +31,7 @@
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "SerializedLoadContext.h"
-#include "nsIAuthInformation.h"
-#include "nsIAuthPromptCallback.h"
-#include "nsIContentPolicy.h"
 #include "mozilla/ipc/BackgroundUtils.h"
-#include "nsICachingChannel.h"
 #include "mozilla/LoadInfo.h"
 #include "nsQueryObject.h"
 #include "mozilla/BasePrincipal.h"
@@ -48,10 +44,8 @@
 #include "nsISecureBrowserUI.h"
 #include "nsStreamUtils.h"
 #include "nsStringStream.h"
-#include "nsIStorageStream.h"
 #include "nsThreadUtils.h"
 #include "nsQueryObject.h"
-#include "nsIURIClassifier.h"
 
 using mozilla::BasePrincipal;
 using namespace mozilla::dom;
@@ -130,14 +124,21 @@ bool HttpChannelParent::Init(const HttpChannelCreationArgs& aArgs) {
   switch (aArgs.type()) {
     case HttpChannelCreationArgs::THttpChannelOpenArgs: {
       const HttpChannelOpenArgs& a = aArgs.get_HttpChannelOpenArgs();
+      PrincipalInfo contentBlockingAllowListPrincipal;
+      if (a.contentBlockingAllowListPrincipal().type() ==
+          OptionalPrincipalInfo::TPrincipalInfo) {
+        contentBlockingAllowListPrincipal =
+            a.contentBlockingAllowListPrincipal();
+      }
       return DoAsyncOpen(
           a.uri(), a.original(), a.doc(), a.referrerInfo(), a.apiRedirectTo(),
-          a.topWindowURI(), a.loadFlags(), a.requestHeaders(),
-          a.requestMethod(), a.uploadStream(), a.uploadStreamHasHeaders(),
-          a.priority(), a.classOfService(), a.redirectionLimit(), a.allowSTS(),
-          a.thirdPartyFlags(), a.resumeAt(), a.startPos(), a.entityID(),
-          a.chooseApplicationCache(), a.appCacheClientID(), a.allowSpdy(),
-          a.allowAltSvc(), a.beConservative(), a.tlsFlags(), a.loadInfo(),
+          a.topWindowURI(), contentBlockingAllowListPrincipal, a.loadFlags(),
+          a.requestHeaders(), a.requestMethod(), a.uploadStream(),
+          a.uploadStreamHasHeaders(), a.priority(), a.classOfService(),
+          a.redirectionLimit(), a.allowSTS(), a.thirdPartyFlags(), a.resumeAt(),
+          a.startPos(), a.entityID(), a.chooseApplicationCache(),
+          a.appCacheClientID(), a.allowSpdy(), a.allowAltSvc(),
+          a.beConservative(), a.tlsFlags(), a.loadInfo(),
           a.synthesizedResponseHead(), a.synthesizedSecurityInfoSerialization(),
           a.cacheKey(), a.requestContextID(), a.preflightArgs(),
           a.initialRwin(), a.blockAuthPrompt(),
@@ -260,7 +261,7 @@ base::ProcessId HttpChannelParent::OtherPid() const {
   if (mIPCClosed) {
     return 0;
   }
-  return Manager()->OtherPid();
+  return IProtocol::OtherPid();
 }
 
 //-----------------------------------------------------------------------------
@@ -376,13 +377,14 @@ bool HttpChannelParent::DoAsyncOpen(
     const URIParams& aURI, const Maybe<URIParams>& aOriginalURI,
     const Maybe<URIParams>& aDocURI, nsIReferrerInfo* aReferrerInfo,
     const Maybe<URIParams>& aAPIRedirectToURI,
-    const Maybe<URIParams>& aTopWindowURI, const uint32_t& aLoadFlags,
-    const RequestHeaderTuples& requestHeaders, const nsCString& requestMethod,
-    const Maybe<IPCStream>& uploadStream, const bool& uploadStreamHasHeaders,
-    const int16_t& priority, const uint32_t& classOfService,
-    const uint8_t& redirectionLimit, const bool& allowSTS,
-    const uint32_t& thirdPartyFlags, const bool& doResumeAt,
-    const uint64_t& startPos, const nsCString& entityID,
+    const Maybe<URIParams>& aTopWindowURI,
+    const PrincipalInfo& aContentBlockingAllowListPrincipal,
+    const uint32_t& aLoadFlags, const RequestHeaderTuples& requestHeaders,
+    const nsCString& requestMethod, const Maybe<IPCStream>& uploadStream,
+    const bool& uploadStreamHasHeaders, const int16_t& priority,
+    const uint32_t& classOfService, const uint8_t& redirectionLimit,
+    const bool& allowSTS, const uint32_t& thirdPartyFlags,
+    const bool& doResumeAt, const uint64_t& startPos, const nsCString& entityID,
     const bool& chooseApplicationCache, const nsCString& appCacheClientID,
     const bool& allowSpdy, const bool& allowAltSvc, const bool& beConservative,
     const uint32_t& tlsFlags, const Maybe<LoadInfoArgs>& aLoadInfoArgs,
@@ -417,6 +419,10 @@ bool HttpChannelParent::DoAsyncOpen(
   nsCOMPtr<nsIURI> docUri = DeserializeURI(aDocURI);
   nsCOMPtr<nsIURI> apiRedirectToUri = DeserializeURI(aAPIRedirectToURI);
   nsCOMPtr<nsIURI> topWindowUri = DeserializeURI(aTopWindowURI);
+  nsCOMPtr<nsIPrincipal> contentBlockingAllowListPrincipal =
+      (aContentBlockingAllowListPrincipal.type() != PrincipalInfo::T__None)
+          ? PrincipalInfoToPrincipal(aContentBlockingAllowListPrincipal)
+          : nullptr;
 
   LOG(("HttpChannelParent RecvAsyncOpen [this=%p uri=%s, gid=%" PRIu64
        " topwinid=%" PRIx64 "]\n",
@@ -481,6 +487,11 @@ bool HttpChannelParent::DoAsyncOpen(
   if (topWindowUri) {
     rv = httpChannel->SetTopWindowURI(topWindowUri);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
+  }
+
+  if (contentBlockingAllowListPrincipal) {
+    httpChannel->SetContentBlockingAllowListPrincipal(
+        contentBlockingAllowListPrincipal);
   }
 
   if (aLoadFlags != nsIRequest::LOAD_NORMAL)
@@ -1465,6 +1476,9 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
   bool isResolvedByTRR = false;
   chan->GetIsResolvedByTRR(&isResolvedByTRR);
 
+  bool allRedirectsSameOrigin = false;
+  chan->GetAllRedirectsSameOrigin(&allRedirectsSameOrigin);
+
   rv = NS_OK;
   if (mIPCClosed ||
       !SendOnStartRequest(
@@ -1474,7 +1488,8 @@ HttpChannelParent::OnStartRequest(nsIRequest* aRequest) {
           mCacheEntry ? true : false, cacheEntryId, fetchCount, expirationTime,
           cachedCharset, secInfoSerialization, chan->GetSelfAddr(),
           chan->GetPeerAddr(), redirectCount, cacheKey, altDataType, altDataLen,
-          deliveringAltData, applyConversion, isResolvedByTRR, timing)) {
+          deliveringAltData, applyConversion, isResolvedByTRR, timing,
+          allRedirectsSameOrigin)) {
     rv = NS_ERROR_UNEXPECTED;
   }
   requestHead->Exit();
@@ -2021,12 +2036,15 @@ HttpChannelParent::StartRedirect(uint32_t registrarId, nsIChannel* newChannel,
     responseHead = &cleanedUpResponseHead;
   }
 
+  ResourceTimingStruct timing;
+  GetTimingAttributes(mChannel, timing);
+
   bool result = false;
   if (!mIPCClosed) {
     result = SendRedirect1Begin(registrarId, uriParams, newLoadFlags,
                                 redirectFlags, loadInfoForwarderArg,
                                 *responseHead, secInfoSerialization, channelId,
-                                mChannel->GetPeerAddr());
+                                mChannel->GetPeerAddr(), timing);
   }
   if (!result) {
     // Bug 621446 investigation

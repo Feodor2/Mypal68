@@ -1,28 +1,19 @@
 import {actionCreators as ac, actionTypes as at} from "common/Actions.jsm";
-import {addLocaleData, injectIntl, IntlProvider} from "react-intl";
 import {ASRouterAdmin} from "content-src/components/ASRouterAdmin/ASRouterAdmin";
 import {ASRouterUISurface} from "../../asrouter/asrouter-content";
 import {ConfirmDialog} from "content-src/components/ConfirmDialog/ConfirmDialog";
 import {connect} from "react-redux";
 import {DiscoveryStreamBase} from "content-src/components/DiscoveryStreamBase/DiscoveryStreamBase";
 import {ErrorBoundary} from "content-src/components/ErrorBoundary/ErrorBoundary";
-import {PrerenderData} from "common/PrerenderData.jsm";
 import React from "react";
 import {Search} from "content-src/components/Search/Search";
 import {Sections} from "content-src/components/Sections/Sections";
 
-const PrefsButton = injectIntl(props => (
+const PrefsButton = props => (
   <div className="prefs-button">
-    <button className="icon icon-settings" onClick={props.onClick} title={props.intl.formatMessage({id: "settings_pane_button_label"})} />
+    <button className="icon icon-settings" onClick={props.onClick} data-l10n-id="newtab-settings-button" />
   </div>
-));
-
-// Add the locale data for pluralization and relative-time formatting for now,
-// this just uses english locale data. We can make this more sophisticated if
-// more features are needed.
-function addLocaleDataForReactIntl(locale) {
-  addLocaleData([{locale, parentLocale: "en"}]);
-}
+);
 
 // Returns a function will not be continuously triggered when called. The
 // function will be triggered if called again after `wait` milliseconds.
@@ -40,20 +31,8 @@ function debounce(func, wait) {
 
 export class _Base extends React.PureComponent {
   componentWillMount() {
-    const {locale} = this.props;
-    addLocaleDataForReactIntl(locale);
     if (this.props.isFirstrun) {
       global.document.body.classList.add("welcome", "hide-main");
-    }
-  }
-
-  componentDidMount() {
-    // Request state AFTER the first render to ensure we don't cause the
-    // prerendered DOM to be unmounted. Otherwise, NEW_TAB_STATE_REQUEST is
-    // dispatched right after the store is ready.
-    if (this.props.isPrerendered) {
-      this.props.dispatch(ac.AlsoToMain({type: at.NEW_TAB_STATE_REQUEST}));
-      this.props.dispatch(ac.AlsoToMain({type: at.PAGE_PRERENDERED}));
     }
   }
 
@@ -79,22 +58,21 @@ export class _Base extends React.PureComponent {
 
   render() {
     const {props} = this;
-    const {App, locale, strings} = props;
-    const {initialized} = App;
+    const {App} = props;
     const isDevtoolsEnabled = props.Prefs.values["asrouter.devtoolsEnabled"];
 
-    if (!props.isPrerendered && !initialized) {
+    if (!App.initialized) {
       return null;
     }
 
-    return (<IntlProvider locale={locale} messages={strings}>
+    return (
       <ErrorBoundary className="base-content-fallback">
         <React.Fragment>
           <BaseContent {...this.props} />
           {isDevtoolsEnabled ? <ASRouterAdmin /> : null}
         </React.Fragment>
       </ErrorBoundary>
-    </IntlProvider>);
+    );
   }
 }
 
@@ -134,7 +112,6 @@ export class BaseContent extends React.PureComponent {
     const {initialized} = App;
     const prefs = props.Prefs.values;
 
-    const shouldBeFixedToTop = PrerenderData.arePrefsValid(name => prefs[name]);
     const isDiscoveryStream = props.DiscoveryStream.config && props.DiscoveryStream.config.enabled;
     let filteredSections = props.Sections;
 
@@ -149,7 +126,6 @@ export class BaseContent extends React.PureComponent {
       "outer-wrapper",
       isDiscoveryStream && "ds-outer-wrapper-search-alignment",
       isDiscoveryStream && "ds-outer-wrapper-breakpoint-override",
-      shouldBeFixedToTop && "fixed-to-top",
       prefs.showSearch && this.state.fixedSearch && !noSectionsEnabled && "fixed-search",
       prefs.showSearch && noSectionsEnabled && "only-search",
     ].filter(v => v).join(" ");

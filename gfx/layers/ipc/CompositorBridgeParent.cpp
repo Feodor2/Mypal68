@@ -22,13 +22,14 @@
 #ifdef MOZ_WIDGET_GTK
 #  include "gfxPlatformGtk.h"  // for gfxPlatform
 #endif
-#include "gfxPrefs.h"                 // for gfxPrefs
 #include "mozilla/AutoRestore.h"      // for AutoRestore
 #include "mozilla/ClearOnShutdown.h"  // for ClearOnShutdown
 #include "mozilla/DebugOnly.h"        // for DebugOnly
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/gfx/2D.h"         // for DrawTarget
-#include "mozilla/gfx/GPUChild.h"   // for GfxPrefValue
 #include "mozilla/gfx/Point.h"      // for IntSize
 #include "mozilla/gfx/Rect.h"       // for IntSize
 #include "mozilla/gfx/gfxVars.h"    // for gfxVars
@@ -111,7 +112,6 @@ namespace layers {
 
 using namespace mozilla::ipc;
 using namespace mozilla::gfx;
-using namespace std;
 
 using base::ProcessId;
 using base::Thread;
@@ -150,7 +150,7 @@ void CompositorBridgeParentBase::NotifyNotUsed(PTextureParent* aTexture,
 }
 
 void CompositorBridgeParentBase::SendAsyncMessage(
-    const InfallibleTArray<AsyncParentMessageData>& aMessage) {
+    const nsTArray<AsyncParentMessageData>& aMessage) {
   Unused << SendParentAsyncMessages(aMessage);
 }
 
@@ -233,7 +233,7 @@ CompositorBridgeParent::LayerTreeState::~LayerTreeState() {
   }
 }
 
-typedef map<LayersId, CompositorBridgeParent::LayerTreeState> LayerTreeMap;
+typedef std::map<LayersId, CompositorBridgeParent::LayerTreeState> LayerTreeMap;
 LayerTreeMap sIndirectLayerTrees;
 StaticAutoPtr<mozilla::Monitor2> sIndirectLayerTreesLock;
 
@@ -265,7 +265,7 @@ inline void CompositorBridgeParent::ForEachIndirectLayerTree(
  * compositions without having to keep references to the
  * compositor
  */
-typedef map<uint64_t, CompositorBridgeParent*> CompositorMap;
+typedef std::map<uint64_t, CompositorBridgeParent*> CompositorMap;
 static StaticAutoPtr<CompositorMap> sCompositorMap;
 
 void CompositorBridgeParent::Setup() {
@@ -293,10 +293,11 @@ static int32_t CalculateCompositionFrameRate() {
   // DEFAULT_FRAME_RATE in nsRefreshDriver.cpp.
   // TODO: This should actually return the vsync rate.
   const int32_t defaultFrameRate = 60;
-  int32_t compositionFrameRatePref = gfxPrefs::LayersCompositionFrameRate();
+  int32_t compositionFrameRatePref =
+      StaticPrefs::layers_offmainthreadcomposition_frame_rate();
   if (compositionFrameRatePref < 0) {
     // Use the same frame rate for composition as for layout.
-    int32_t layoutFrameRatePref = gfxPrefs::LayoutFrameRate();
+    int32_t layoutFrameRatePref = StaticPrefs::layout_frame_rate();
     if (layoutFrameRatePref < 0) {
       // TODO: The main thread frame scheduling code consults the actual
       // monitor refresh rate in this case. We should do the same.
@@ -341,7 +342,7 @@ CompositorBridgeParent::CompositorBridgeParent(
 
 void CompositorBridgeParent::InitSameProcess(widget::CompositorWidget* aWidget,
                                              const LayersId& aLayerTreeId) {
-  MOZ_ASSERT(XRE_IsParentProcess() || recordreplay::IsRecordingOrReplaying());
+  MOZ_ASSERT(XRE_IsParentProcess());
   MOZ_ASSERT(NS_IsMainThread());
 
   mWidget = aWidget;
@@ -402,7 +403,7 @@ LayersId CompositorBridgeParent::RootLayerTreeId() {
 }
 
 CompositorBridgeParent::~CompositorBridgeParent() {
-  InfallibleTArray<PTextureParent*> textures;
+  nsTArray<PTextureParent*> textures;
   ManagedPTextureParent(textures);
   // We expect all textures to be destroyed by now.
   MOZ_DIAGNOSTIC_ASSERT(textures.Length() == 0);
@@ -536,6 +537,11 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvResume() {
   return IPC_OK();
 }
 
+mozilla::ipc::IPCResult CompositorBridgeParent::RecvResumeAsync() {
+  ResumeComposition();
+  return IPC_OK();
+}
+
 mozilla::ipc::IPCResult CompositorBridgeParent::RecvMakeSnapshot(
     const SurfaceDescriptor& aInSnapshot, const gfx::IntRect& aRect) {
   RefPtr<DrawTarget> target =
@@ -616,7 +622,7 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvStartFrameTimeRecording(
 }
 
 mozilla::ipc::IPCResult CompositorBridgeParent::RecvStopFrameTimeRecording(
-    const uint32_t& aStartIndex, InfallibleTArray<float>* intervals) {
+    const uint32_t& aStartIndex, nsTArray<float>* intervals) {
   if (mLayerManager) {
     mLayerManager->StopFrameTimeRecording(aStartIndex, *intervals);
   } else if (mWrBridge) {
@@ -851,7 +857,7 @@ void CompositorBridgeParent::NotifyShadowTreeTransaction(
                                     WRRootId::NonWebRender(aId), aFocusTarget);
       if (aHitTestUpdate) {
         mApzUpdater->UpdateHitTestingTree(
-            mRootLayerTreeID, mLayerManager->GetRoot(), aIsFirstPaint, aId,
+            mLayerManager->GetRoot(), aIsFirstPaint, aId,
             aPaintSequenceNumber);
       }
     }
@@ -984,11 +990,7 @@ void CompositorBridgeParent::CompositeToTarget(VsyncId aId, DrawTarget* aTarget,
   bool requestNextFrame =
       mCompositionManager->TransformShadowTree(time, mVsyncRate);
 
-  // Don't eagerly schedule new compositions here when recording or replaying.
-  // Recording/replaying processes schedule composites at the top of the main
-  // thread's event loop rather than via PVsync, which can cause the composites
-  // scheduled here to pile up without any drawing actually happening.
-  if (requestNextFrame && !recordreplay::IsRecordingOrReplaying()) {
+  if (requestNextFrame) {
     ScheduleComposition();
 #if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
     // If we have visible windowed plugins then we need to wait for content (and
@@ -1002,12 +1004,10 @@ void CompositorBridgeParent::CompositeToTarget(VsyncId aId, DrawTarget* aTarget,
 
   RenderTraceLayers(mLayerManager->GetRoot(), "0000");
 
-#ifdef MOZ_DUMP_PAINTING
-  if (gfxPrefs::DumpHostLayers()) {
+  if (StaticPrefs::layers_dump_host_layers() || StaticPrefs::layers_dump()) {
     printf_stderr("Painting --- compositing layer tree:\n");
     mLayerManager->Dump(/* aSorted = */ true);
   }
-#endif
   mLayerManager->SetDebugOverlayWantsNextFrame(false);
   mLayerManager->EndTransaction(time);
 
@@ -1043,7 +1043,7 @@ void CompositorBridgeParent::CompositeToTarget(VsyncId aId, DrawTarget* aTarget,
 #endif
 
   // 0 -> Full-tilt composite
-  if (gfxPrefs::LayersCompositionFrameRate() == 0 ||
+  if (StaticPrefs::layers_offmainthreadcomposition_frame_rate() == 0 ||
       mLayerManager->AlwaysScheduleComposite()) {
     // Special full-tilt composite mode for performance testing
     ScheduleComposition();
@@ -1215,7 +1215,7 @@ void CompositorBridgeParent::ScheduleRotationOnCompositorThread(
         "layers::CompositorBridgeParent::ForceComposition", this,
         &CompositorBridgeParent::ForceComposition);
     mForceCompositionTask = task;
-    ScheduleTask(task.forget(), gfxPrefs::OrientationSyncMillis());
+    ScheduleTask(task.forget(), StaticPrefs::layers_orientation_sync_timeout());
   }
 }
 
@@ -1247,7 +1247,7 @@ void CompositorBridgeParent::ShadowLayersUpdated(
     if (aHitTestUpdate) {
       AutoResolveRefLayers resolve(mCompositionManager);
 
-      mApzUpdater->UpdateHitTestingTree(mRootLayerTreeID, root,
+      mApzUpdater->UpdateHitTestingTree(root,
                                         aInfo.isFirstPaint(), mRootLayerTreeID,
                                         aInfo.paintSequenceNumber());
     }
@@ -1558,7 +1558,7 @@ PLayerTransactionParent* CompositorBridgeParent::AllocPLayerTransactionParent(
 #ifdef XP_WIN
   // This is needed to avoid freezing the window on a device crash on double
   // buffering, see bug 1549674.
-  if (gfxPrefs::Direct3D11UseDoubleBuffering() && IsWin10OrLater() &&
+  if (StaticPrefs::gfx_direct3d11_use_double_buffering() && IsWin10OrLater() &&
       XRE_IsGPUProcess()) {
     mWidget->AsWindows()->EnsureCompositorWindow();
   }
@@ -1759,11 +1759,6 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvAdoptChild(
 
 PWebRenderBridgeParent* CompositorBridgeParent::AllocPWebRenderBridgeParent(
     const wr::PipelineId& aPipelineId, const LayoutDeviceIntSize& aSize) {
-#ifndef MOZ_BUILD_WEBRENDER
-  // Extra guard since this in the parent process and we don't want a malicious
-  // child process invoking this codepath before it's ready
-  MOZ_RELEASE_ASSERT(false);
-#endif
   MOZ_ASSERT(wr::AsLayersId(aPipelineId) == mRootLayerTreeID);
   MOZ_ASSERT(!mWrBridge);
   MOZ_ASSERT(!mCompositor);
@@ -1797,7 +1792,7 @@ PWebRenderBridgeParent* CompositorBridgeParent::AllocPWebRenderBridgeParent(
     return mWrBridge;
   }
 
-  if (gfxPrefs::WebRenderSplitRenderRoots()) {
+  if (StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
     apis.AppendElement(
         apis[0]->CreateDocument(aSize, 1, wr::RenderRoot::Content));
   }
@@ -1830,11 +1825,6 @@ PWebRenderBridgeParent* CompositorBridgeParent::AllocPWebRenderBridgeParent(
 
 bool CompositorBridgeParent::DeallocPWebRenderBridgeParent(
     PWebRenderBridgeParent* aActor) {
-#ifndef MOZ_BUILD_WEBRENDER
-  // Extra guard since this in the parent process and we don't want a malicious
-  // child process invoking this codepath before it's ready
-  MOZ_RELEASE_ASSERT(false);
-#endif
   WebRenderBridgeParent* parent = static_cast<WebRenderBridgeParent*>(aActor);
   {
     Monitor2AutoLock lock(*sIndirectLayerTreesLock);
@@ -2614,10 +2604,15 @@ int32_t RecordContentFrameTime(
 
 mozilla::ipc::IPCResult CompositorBridgeParent::RecvBeginRecording(
     const TimeStamp& aRecordingStart) {
-  mCompositionRecorder.reset(new CompositionRecorder(aRecordingStart));
-
   if (mLayerManager) {
-    mLayerManager->SetCompositionRecorder(mCompositionRecorder.get());
+    mCompositionRecorder = new CompositionRecorder(aRecordingStart);
+    mLayerManager->SetCompositionRecorder(do_AddRef(mCompositionRecorder));
+  } else if (mWrBridge) {
+    RefPtr<WebRenderCompositionRecorder> recorder =
+        new WebRenderCompositionRecorder(aRecordingStart,
+                                         mWrBridge->PipelineId());
+    mCompositionRecorder = recorder;
+    mWrBridge->SetCompositionRecorder(std::move(recorder));
   }
 
   return IPC_OK();
@@ -2627,8 +2622,13 @@ mozilla::ipc::IPCResult CompositorBridgeParent::RecvEndRecording() {
   if (mLayerManager) {
     mLayerManager->SetCompositionRecorder(nullptr);
   }
+
+  // If we are using WebRender, the |RenderThread| will have a handle to this
+  // |WebRenderCompositionRecorder|, which it will release once the frames have
+  // been written.
+
   mCompositionRecorder->WriteCollectedFrames();
-  mCompositionRecorder.reset(nullptr);
+  mCompositionRecorder = nullptr;
   return IPC_OK();
 }
 

@@ -4,10 +4,9 @@
 
 #include "TestCommon.h"
 #include "gtest/gtest.h"
-#include "nsIServiceManager.h"
 #include "nsICookieService.h"
 #include "nsICookieManager.h"
-#include "nsICookie2.h"
+#include "nsICookie.h"
 #include <stdio.h>
 #include "plstr.h"
 #include "nsNetUtil.h"
@@ -18,7 +17,6 @@
 #include "nsServiceManagerUtils.h"
 #include "nsNetCID.h"
 #include "nsIPrefBranch.h"
-#include "nsIPrefService.h"
 #include "mozilla/Unused.h"
 #include "mozilla/net/CookieSettings.h"
 #include "nsIURI.h"
@@ -72,7 +70,8 @@ void SetACookie(nsICookieService* aCookieService, const char* aSpec1,
   if (aSpec2) NS_NewURI(getter_AddRefs(uri2), aSpec2);
 
   nsresult rv = aCookieService->SetCookieStringFromHttp(
-      uri1, uri2, nullptr, (char*)aCookieString, aServerTime, nullptr);
+      uri1, uri2, nullptr, nsDependentCString(aCookieString),
+      aServerTime ? nsDependentCString(aServerTime) : VoidCString(), nullptr);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 }
 
@@ -108,7 +107,9 @@ void SetASameSiteCookie(nsICookieService* aCookieService, const char* aSpec1,
   loadInfo->SetCookieSettings(cookieSettings);
 
   nsresult rv = aCookieService->SetCookieStringFromHttp(
-      uri1, uri2, nullptr, (char*)aCookieString, aServerTime, dummyChannel);
+      uri1, uri2, nullptr, nsDependentCString(aCookieString),
+      aServerTime ? nsDependentCString(aServerTime) : VoidCString(),
+      dummyChannel);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 }
 
@@ -117,8 +118,8 @@ void SetACookieNoHttp(nsICookieService* aCookieService, const char* aSpec,
   nsCOMPtr<nsIURI> uri;
   NS_NewURI(getter_AddRefs(uri), aSpec);
 
-  nsresult rv = aCookieService->SetCookieString(uri, nullptr,
-                                                (char*)aCookieString, nullptr);
+  nsresult rv = aCookieService->SetCookieString(
+      uri, nullptr, nsDependentCString(aCookieString), nullptr);
   EXPECT_TRUE(NS_SUCCEEDED(rv));
 }
 
@@ -130,7 +131,7 @@ void GetACookie(nsICookieService* aCookieService, const char* aSpec1,
   if (aSpec2) NS_NewURI(getter_AddRefs(uri2), aSpec2);
 
   Unused << aCookieService->GetCookieStringFromHttp(uri1, uri2, nullptr,
-                                                    getter_Copies(aCookie));
+                                                    aCookie);
 }
 
 // The cookie string is returned via aCookie.
@@ -139,8 +140,7 @@ void GetACookieNoHttp(nsICookieService* aCookieService, const char* aSpec,
   nsCOMPtr<nsIURI> uri;
   NS_NewURI(getter_AddRefs(uri), aSpec);
 
-  Unused << aCookieService->GetCookieString(uri, nullptr,
-                                            getter_Copies(aCookie));
+  Unused << aCookieService->GetCookieString(uri, nullptr, aCookie);
 }
 
 // some #defines for comparison rules
@@ -856,7 +856,7 @@ TEST(TestCookie, TestCookieMain)
                             true,       // is session
                             INT64_MAX,  // expiry time
                             &attrs,     // originAttributes
-                            nsICookie2::SAMESITE_UNSET)));
+                            nsICookie::SAMESITE_UNSET)));
   EXPECT_TRUE(NS_SUCCEEDED(
       cookieMgr2->AddNative(NS_LITERAL_CSTRING("cookiemgr.test"),  // domain
                             NS_LITERAL_CSTRING("/foo"),            // path
@@ -867,7 +867,7 @@ TEST(TestCookie, TestCookieMain)
                             true,                            // is session
                             PR_Now() / PR_USEC_PER_SEC + 2,  // expiry time
                             &attrs,                          // originAttributes
-                            nsICookie2::SAMESITE_UNSET)));
+                            nsICookie::SAMESITE_UNSET)));
   EXPECT_TRUE(NS_SUCCEEDED(
       cookieMgr2->AddNative(NS_LITERAL_CSTRING("new.domain"),  // domain
                             NS_LITERAL_CSTRING("/rabbit"),     // path
@@ -878,21 +878,21 @@ TEST(TestCookie, TestCookieMain)
                             true,                              // is session
                             INT64_MAX,                         // expiry time
                             &attrs,  // originAttributes
-                            nsICookie2::SAMESITE_UNSET)));
+                            nsICookie::SAMESITE_UNSET)));
   // confirm using enumerator
   nsCOMPtr<nsISimpleEnumerator> enumerator;
   EXPECT_TRUE(
       NS_SUCCEEDED(cookieMgr->GetEnumerator(getter_AddRefs(enumerator))));
   int32_t i = 0;
   bool more;
-  nsCOMPtr<nsICookie2> expiredCookie, newDomainCookie;
+  nsCOMPtr<nsICookie> expiredCookie, newDomainCookie;
   while (NS_SUCCEEDED(enumerator->HasMoreElements(&more)) && more) {
     nsCOMPtr<nsISupports> cookie;
     if (NS_FAILED(enumerator->GetNext(getter_AddRefs(cookie)))) break;
     ++i;
 
     // keep tabs on the second and third cookies, so we can check them later
-    nsCOMPtr<nsICookie2> cookie2(do_QueryInterface(cookie));
+    nsCOMPtr<nsICookie> cookie2(do_QueryInterface(cookie));
     if (!cookie2) break;
     nsAutoCString name;
     cookie2->GetName(name);
@@ -919,32 +919,6 @@ TEST(TestCookie, TestCookieMain)
       NS_LITERAL_CSTRING("test3"), &attrs, &found)));
   EXPECT_TRUE(found);
 
-  // remove the cookie, block it, and ensure it can't be added again
-  EXPECT_TRUE(NS_SUCCEEDED(
-      cookieMgr->RemoveNative(NS_LITERAL_CSTRING("new.domain"),  // domain
-                              NS_LITERAL_CSTRING("test3"),       // name
-                              NS_LITERAL_CSTRING("/rabbit"),     // path
-                              true,                              // is blocked
-                              &attrs)));  // originAttributes
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->CookieExistsNative(
-      NS_LITERAL_CSTRING("new.domain"), NS_LITERAL_CSTRING("/rabbit"),
-      NS_LITERAL_CSTRING("test3"), &attrs, &found)));
-  EXPECT_FALSE(found);
-  EXPECT_TRUE(NS_SUCCEEDED(
-      cookieMgr2->AddNative(NS_LITERAL_CSTRING("new.domain"),  // domain
-                            NS_LITERAL_CSTRING("/rabbit"),     // path
-                            NS_LITERAL_CSTRING("test3"),       // name
-                            NS_LITERAL_CSTRING("yes"),         // value
-                            false,                             // is secure
-                            false,                             // is httponly
-                            true,                              // is session
-                            INT64_MIN,                         // expiry time
-                            &attrs,  // originAttributes
-                            nsICookie2::SAMESITE_UNSET)));
-  EXPECT_TRUE(NS_SUCCEEDED(cookieMgr2->CookieExistsNative(
-      NS_LITERAL_CSTRING("new.domain"), NS_LITERAL_CSTRING("/rabbit"),
-      NS_LITERAL_CSTRING("test3"), &attrs, &found)));
-  EXPECT_FALSE(found);
   // sleep four seconds, to make sure the second cookie has expired
   PR_Sleep(4 * PR_TicksPerSecond());
   // check that both CountCookiesFromHost() and CookieExistsNative() count the
@@ -1071,24 +1045,24 @@ TEST(TestCookie, TestCookieMain)
     ++i;
 
     // keep tabs on the second and third cookies, so we can check them later
-    nsCOMPtr<nsICookie2> cookie2(do_QueryInterface(cookie));
+    nsCOMPtr<nsICookie> cookie2(do_QueryInterface(cookie));
     if (!cookie2) break;
     nsAutoCString name;
     cookie2->GetName(name);
     int32_t sameSiteAttr;
     cookie2->GetSameSite(&sameSiteAttr);
     if (name.EqualsLiteral("unset")) {
-      EXPECT_TRUE(sameSiteAttr == nsICookie2::SAMESITE_UNSET);
+      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_UNSET);
     } else if (name.EqualsLiteral("unspecified")) {
-      EXPECT_TRUE(sameSiteAttr == nsICookie2::SAMESITE_UNSET);
+      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_UNSET);
     } else if (name.EqualsLiteral("empty")) {
-      EXPECT_TRUE(sameSiteAttr == nsICookie2::SAMESITE_UNSET);
+      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_UNSET);
     } else if (name.EqualsLiteral("bogus")) {
-      EXPECT_TRUE(sameSiteAttr == nsICookie2::SAMESITE_UNSET);
+      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_UNSET);
     } else if (name.EqualsLiteral("strict")) {
-      EXPECT_TRUE(sameSiteAttr == nsICookie2::SAMESITE_STRICT);
+      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_STRICT);
     } else if (name.EqualsLiteral("lax")) {
-      EXPECT_TRUE(sameSiteAttr == nsICookie2::SAMESITE_LAX);
+      EXPECT_TRUE(sameSiteAttr == nsICookie::SAMESITE_LAX);
     }
   }
 

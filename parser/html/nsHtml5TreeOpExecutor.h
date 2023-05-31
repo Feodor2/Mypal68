@@ -22,7 +22,6 @@
 #include "nsHashKeys.h"
 #include "mozilla/LinkedList.h"
 #include "nsHtml5DocumentBuilder.h"
-#include "mozilla/net/ReferrerPolicy.h"
 
 class nsHtml5Parser;
 class nsHtml5StreamParser;
@@ -39,7 +38,7 @@ class nsHtml5TreeOpExecutor final
       public nsAHtml5TreeOpSink,
       public mozilla::LinkedListElement<nsHtml5TreeOpExecutor> {
   friend class nsHtml5FlushLoopGuard;
-  typedef mozilla::net::ReferrerPolicy ReferrerPolicy;
+  typedef mozilla::dom::ReferrerPolicy ReferrerPolicy;
   using Encoding = mozilla::Encoding;
   template <typename T>
   using NotNull = mozilla::NotNull<T>;
@@ -71,11 +70,6 @@ class nsHtml5TreeOpExecutor final
   nsTHashtable<nsCStringHashKey> mPreloadedURLs;
 
   nsCOMPtr<nsIURI> mSpeculationBaseURI;
-
-  /**
-   * Speculative referrer policy
-   */
-  ReferrerPolicy mSpeculationReferrerPolicy;
 
   nsCOMPtr<nsIURI> mViewSourceBaseURI;
 
@@ -259,8 +253,7 @@ class nsHtml5TreeOpExecutor final
 
   void SetSpeculationBase(const nsAString& aURL);
 
-  void SetSpeculationReferrerPolicy(ReferrerPolicy aReferrerPolicy);
-  void SetSpeculationReferrerPolicy(const nsAString& aReferrerPolicy);
+  void UpdateReferrerInfoFromMeta(const nsAString& aMetaReferrer);
 
   void AddSpeculationCSP(const nsAString& aCSP);
 
@@ -288,6 +281,8 @@ class nsHtml5TreeOpExecutor final
   bool ShouldPreloadURI(nsIURI* aURI);
 
   ReferrerPolicy GetPreloadReferrerPolicy(const nsAString& aReferrerPolicy);
+
+  ReferrerPolicy GetPreloadReferrerPolicy(ReferrerPolicy aReferrerPolicy);
 };
 
 #endif  // nsHtml5TreeOpExecutor_h

@@ -29,8 +29,6 @@ class DataChannelChild : public nsDataChannel,
  private:
   ~DataChannelChild() = default;
 
-  void AddIPDLReference();
-
   bool mIPCOpen;
 };
 

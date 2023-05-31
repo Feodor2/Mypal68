@@ -5,6 +5,7 @@
 #include "KeyedStackCapturer.h"
 
 #include "jsapi.h"
+#include "js/Array.h"  // JS::NewArrayObject
 #include "mozilla/StackWalk.h"
 #include "nsPrintfCString.h"
 #include "ProcessedStack.h"
@@ -110,7 +111,7 @@ KeyedStackCapturer::ReflectCapturedStacks(JSContext* cx,
     return NS_ERROR_FAILURE;
   }
 
-  JS::RootedObject keysArray(cx, JS_NewArrayObject(cx, 0));
+  JS::RootedObject keysArray(cx, JS::NewArrayObject(cx, 0));
   if (!keysArray) {
     return NS_ERROR_FAILURE;
   }
@@ -126,7 +127,7 @@ KeyedStackCapturer::ReflectCapturedStacks(JSContext* cx,
        iter.Next(), ++keyIndex) {
     const StackFrequencyInfo* info = iter.Data();
 
-    JS::RootedObject infoArray(cx, JS_NewArrayObject(cx, 0));
+    JS::RootedObject infoArray(cx, JS::NewArrayObject(cx, 0));
     if (!keysArray) {
       return NS_ERROR_FAILURE;
     }

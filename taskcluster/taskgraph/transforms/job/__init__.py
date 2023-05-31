@@ -16,6 +16,8 @@ import logging
 import json
 import os
 
+import mozpack.path as mozpath
+
 from taskgraph.transforms.base import TransformSequence
 from taskgraph.util.schema import (
     validate_schema,
@@ -157,6 +159,7 @@ def get_attribute(dict, key, attributes, attribute_name):
 @transforms.add
 def use_fetches(config, jobs):
     artifact_names = {}
+    aliases = {}
 
     for task in config.kind_dependencies_tasks:
         if task.kind in ('fetch', 'toolchain'):
@@ -164,6 +167,9 @@ def use_fetches(config, jobs):
                 artifact_names, task.label, task.attributes,
                 '{kind}-artifact'.format(kind=task.kind),
             )
+            value = task.attributes.get('{}-alias'.format(task.kind))
+            if value:
+                aliases['{}-{}'.format(task.kind, value)] = task.label
 
     for job in jobs:
         fetches = job.pop('fetches', None)
@@ -174,20 +180,26 @@ def use_fetches(config, jobs):
         job_fetches = []
         name = job.get('name', job.get('label'))
         dependencies = job.setdefault('dependencies', {})
+        worker = job.setdefault('worker', {})
         prefix = get_artifact_prefix(job)
         for kind, artifacts in fetches.items():
             if kind in ('fetch', 'toolchain'):
                 for fetch_name in artifacts:
                     label = '{kind}-{name}'.format(kind=kind, name=fetch_name)
+                    label = aliases.get(label, label)
                     if label not in artifact_names:
                         raise Exception('Missing fetch job for {kind}-{name}: {fetch}'.format(
                             kind=config.kind, name=name, fetch=fetch_name))
 
                     path = artifact_names[label]
                     if not path.startswith('public/'):
-                        raise Exception(
-                            'Non-public artifacts not supported for {kind}-{name}: '
-                            '{fetch}'.format(kind=config.kind, name=name, fetch=fetch_name))
+                        # Use taskcluster-proxy and request appropriate scope.  For example, add
+                        # 'scopes: [queue:get-artifact:path/to/*]' for 'path/to/artifact.tar.xz'.
+                        worker['taskcluster-proxy'] = True
+                        dirname = mozpath.dirname(path)
+                        scope = 'queue:get-artifact:{}/*'.format(dirname)
+                        if scope not in job.setdefault('scopes', []):
+                            job['scopes'].append(scope)
 
                     dependencies[label] = label
                     job_fetches.append({
@@ -195,6 +207,9 @@ def use_fetches(config, jobs):
                         'task': '<{label}>'.format(label=label),
                         'extract': True,
                     })
+
+                    if kind == 'toolchain' and fetch_name.endswith('-sccache'):
+                        job['needs-sccache'] = True
             else:
                 if kind not in dependencies:
                     raise Exception("{name} can't fetch {kind} artifacts because "
@@ -219,14 +234,10 @@ def use_fetches(config, jobs):
                         fetch['dest'] = dest
                     job_fetches.append(fetch)
 
-        env = job.setdefault('worker', {}).setdefault('env', {})
+        env = worker.setdefault('env', {})
         env['MOZ_FETCHES'] = {'task-reference': json.dumps(job_fetches, sort_keys=True)}
 
-        if job['worker']['os'] in ('windows', 'macosx'):
-            env.setdefault('MOZ_FETCHES_DIR', 'fetches')
-        else:
-            workdir = job['run'].get('workdir', '/builds/worker')
-            env.setdefault('MOZ_FETCHES_DIR', '{}/fetches'.format(workdir))
+        env.setdefault('MOZ_FETCHES_DIR', 'fetches')
 
         yield job
 

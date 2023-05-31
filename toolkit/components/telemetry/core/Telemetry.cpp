@@ -19,6 +19,7 @@
 #include "ipc/TelemetryIPCAccumulator.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/Array.h"  // JS::NewArrayObject
 #include "js/GCAPI.h"
 #include "mozilla/dom/ToJSValue.h"
 #include "mozilla/dom/Promise.h"
@@ -51,16 +52,11 @@
 #include "nsCOMPtr.h"
 #include "nsDataHashtable.h"
 #include "nsHashKeys.h"
-#include "nsIComponentManager.h"
 #include "nsIDirectoryEnumerator.h"
 #include "nsIFileStreams.h"
 #include "nsIMemoryReporter.h"
 #include "nsISeekableStream.h"
-#include "nsIServiceManager.h"
-#include "nsISimpleEnumerator.h"
 #include "nsITelemetry.h"
-#include "nsIXPConnect.h"
-#include "nsIXULAppInfo.h"
 #if defined(XP_WIN) && defined(NIGHTLY_BUILD)
 //#  include "other/UntrustedModules.h"
 #endif
@@ -189,10 +185,8 @@ class TelemetryImpl final : public nsITelemetry, public nsIMemoryReporter {
   AutoHashtable<SlowSQLEntryType> mPrivateSQL;
   AutoHashtable<SlowSQLEntryType> mSanitizedSQL;
   Mutex mHashMutex;
-  Atomic<bool, SequentiallyConsistent, recordreplay::Behavior::DontPreserve>
-      mCanRecordBase;
-  Atomic<bool, SequentiallyConsistent, recordreplay::Behavior::DontPreserve>
-      mCanRecordExtended;
+  Atomic<bool, SequentiallyConsistent> mCanRecordBase;
+  Atomic<bool, SequentiallyConsistent> mCanRecordExtended;
 
 #if defined(MOZ_GECKO_PROFILER)
   // Stores data about stacks captured on demand.
@@ -547,7 +541,7 @@ bool TelemetryImpl::ReflectSQL(const SlowSQLEntryType* entry, const Stat* stat,
 
   const nsACString& sql = entry->GetKey();
 
-  JS::Rooted<JSObject*> arrayObj(cx, JS_NewArrayObject(cx, 0));
+  JS::Rooted<JSObject*> arrayObj(cx, JS::NewArrayObject(cx, 0));
   if (!arrayObj) {
     return false;
   }
@@ -560,13 +554,13 @@ bool TelemetryImpl::ReflectSQL(const SlowSQLEntryType* entry, const Stat* stat,
 
 bool TelemetryImpl::ReflectMainThreadSQL(SlowSQLEntryType* entry, JSContext* cx,
                                          JS::Handle<JSObject*> obj) {
-  return ReflectSQL(entry, &entry->mData.mainThread, cx, obj);
+  return ReflectSQL(entry, &entry->GetModifiableData()->mainThread, cx, obj);
 }
 
 bool TelemetryImpl::ReflectOtherThreadsSQL(SlowSQLEntryType* entry,
                                            JSContext* cx,
                                            JS::Handle<JSObject*> obj) {
-  return ReflectSQL(entry, &entry->mData.otherThreads, cx, obj);
+  return ReflectSQL(entry, &entry->GetModifiableData()->otherThreads, cx, obj);
 }
 
 bool TelemetryImpl::AddSQLInfo(JSContext* cx, JS::Handle<JSObject*> rootObj,
@@ -750,7 +744,7 @@ class GetLoadedModulesResultRunnable final : public Runnable {
 
     JSContext* cx = jsapi.cx();
 
-    JS::RootedObject moduleArray(cx, JS_NewArrayObject(cx, 0));
+    JS::RootedObject moduleArray(cx, JS::NewArrayObject(cx, 0));
     if (!moduleArray) {
       mPromise->MaybeReject(NS_ERROR_FAILURE);
       return NS_OK;
@@ -1107,9 +1101,6 @@ TelemetryImpl::GetCanRecordBase(bool* ret) {
 
 NS_IMETHODIMP
 TelemetryImpl::SetCanRecordBase(bool canRecord) {
-  if (recordreplay::IsRecordingOrReplaying()) {
-    return NS_OK;
-  }
 #ifndef FUZZING
   if (canRecord != mCanRecordBase) {
     TelemetryHistogram::SetCanRecordBase(canRecord);
@@ -1136,9 +1127,6 @@ TelemetryImpl::GetCanRecordExtended(bool* ret) {
 
 NS_IMETHODIMP
 TelemetryImpl::SetCanRecordExtended(bool canRecord) {
-  if (recordreplay::IsRecordingOrReplaying()) {
-    return NS_OK;
-  }
 #ifndef FUZZING
   if (canRecord != mCanRecordExtended) {
     TelemetryHistogram::SetCanRecordExtended(canRecord);
@@ -1180,13 +1168,8 @@ already_AddRefed<nsITelemetry> TelemetryImpl::CreateTelemetryInstance() {
 
   bool useTelemetry = false;
 #ifndef FUZZING
-  if ((XRE_IsParentProcess() || XRE_IsContentProcess() || XRE_IsGPUProcess() ||
-       XRE_IsSocketProcess()) &&
-      // Telemetry is never accumulated when recording or replaying, both
-      // because the resulting measurements might be biased and because
-      // measurements might occur at non-deterministic points in execution
-      // (e.g. garbage collections).
-      !recordreplay::IsRecordingOrReplaying()) {
+  if (XRE_IsParentProcess() || XRE_IsContentProcess() || XRE_IsGPUProcess() ||
+       XRE_IsSocketProcess()) {
     useTelemetry = true;
   }
 #endif
@@ -1264,18 +1247,18 @@ void TelemetryImpl::StoreSlowSQL(const nsACString& sql, uint32_t delay,
   if (!entry) {
     entry = slowSQLMap->PutEntry(sql);
     if (MOZ_UNLIKELY(!entry)) return;
-    entry->mData.mainThread.hitCount = 0;
-    entry->mData.mainThread.totalTime = 0;
-    entry->mData.otherThreads.hitCount = 0;
-    entry->mData.otherThreads.totalTime = 0;
+    entry->GetModifiableData()->mainThread.hitCount = 0;
+    entry->GetModifiableData()->mainThread.totalTime = 0;
+    entry->GetModifiableData()->otherThreads.hitCount = 0;
+    entry->GetModifiableData()->otherThreads.totalTime = 0;
   }
 
   if (NS_IsMainThread()) {
-    entry->mData.mainThread.hitCount++;
-    entry->mData.mainThread.totalTime += delay;
+    entry->GetModifiableData()->mainThread.hitCount++;
+    entry->GetModifiableData()->mainThread.totalTime += delay;
   } else {
-    entry->mData.otherThreads.hitCount++;
-    entry->mData.otherThreads.totalTime += delay;
+    entry->GetModifiableData()->otherThreads.hitCount++;
+    entry->GetModifiableData()->otherThreads.totalTime += delay;
   }
 }
 
@@ -1835,7 +1818,7 @@ TelemetryImpl::GetAllStores(JSContext* aCx, JS::MutableHandleValue aResult) {
     }
   }
 
-  JS::Rooted<JSObject*> rarray(aCx, JS_NewArrayObject(aCx, allStores));
+  JS::Rooted<JSObject*> rarray(aCx, JS::NewArrayObject(aCx, allStores));
   if (rarray == nullptr) {
     return NS_ERROR_FAILURE;
   }

@@ -6,6 +6,7 @@
 
 #include "JavaBuiltins.h"
 #include "jsapi.h"
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "nsIURI.h"
 #include "nsXULAppAPI.h"
 
@@ -529,7 +530,7 @@ class GetVisitedCallback final : public nsIAndroidEventCallback {
       return true;
     }
     bool isArray = false;
-    if (NS_WARN_IF(!JS_IsArrayObject(aCx, aData, &isArray))) {
+    if (NS_WARN_IF(!JS::IsArrayObject(aCx, aData, &isArray))) {
       return false;
     }
     if (NS_WARN_IF(!isArray)) {
@@ -537,7 +538,7 @@ class GetVisitedCallback final : public nsIAndroidEventCallback {
     }
     JS::Rooted<JSObject*> visited(aCx, &aData.toObject());
     uint32_t length = 0;
-    if (NS_WARN_IF(!JS_GetArrayLength(aCx, visited, &length))) {
+    if (NS_WARN_IF(!JS::GetArrayLength(aCx, visited, &length))) {
       return false;
     }
     if (NS_WARN_IF(length != mURIs.Length())) {

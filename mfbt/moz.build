@@ -7,6 +7,10 @@ with Files("**"):
 
 Library('mfbt')
 
+EXPORTS += [
+    '../third_party/rust/encoding_c_mem/include/encoding_rs_mem.h',
+]
+
 EXPORTS.mozilla = [
     'Algorithm.h',
     'Alignment.h',
@@ -29,7 +33,6 @@ EXPORTS.mozilla = [
     'Compression.h',
     'DbgMacro.h',
     'DebugOnly.h',
-    'decimal/Decimal.h',
     'DefineEnum.h',
     'DoublyLinkedList.h',
     'EndianUtils.h',
@@ -49,6 +52,8 @@ EXPORTS.mozilla = [
     'IntegerRange.h',
     'IntegerTypeTraits.h',
     'JSONWriter.h',
+    'JsRust.h',
+    'Latin1.h',
     'Likely.h',
     'LinkedList.h',
     'MacroArgs.h',
@@ -72,7 +77,6 @@ EXPORTS.mozilla = [
     'Range.h',
     'RangedArray.h',
     'RangedPtr.h',
-    'RecordReplay.h',
     'ReentrancyGuard.h',
     'RefCounted.h',
     'RefCountType.h',
@@ -155,11 +159,6 @@ UNIFIED_SOURCES += [
 ]
 
 if CONFIG['MOZ_BUILD_APP'] not in ('memory', 'tools/crashreporter'):
-    # RecordReplay.cpp uses files from js/
-    UNIFIED_SOURCES += [
-        'RecordReplay.cpp',
-    ]
-
     # Building MFBT tests adds a large overhead when building
     # tools/crashreporter.
     TEST_DIRS += ['tests']
@@ -168,15 +167,10 @@ DEFINES['IMPL_MFBT'] = True
 
 SOURCES += [
     'Compression.cpp',
-    'decimal/Decimal.cpp',
     'lz4.c',
 ]
 
 DisableStlWrapping()
-
-if CONFIG['CC_TYPE'] == 'clang':
-    # Suppress warnings from third-party V8 Decimal code.
-    SOURCES['decimal/Decimal.cpp'].flags += ['-Wno-implicit-fallthrough']
 
 if CONFIG['MOZ_NEEDS_LIBATOMIC']:
     OS_LIBS += ['atomic']

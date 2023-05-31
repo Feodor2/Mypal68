@@ -6,6 +6,7 @@
 #include "nsObjCExceptions.h"
 
 #include "mozilla/IntegerTypeTraits.h"
+#include <limits>
 
 namespace mozilla {
 
@@ -13,7 +14,7 @@ nsresult CopyCocoaStringToXPCOMString(NSString* aFrom, nsAString& aTo) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   NSUInteger len = [aFrom length];
-  if (len > MaxValue<nsAString::size_type>::value) {
+  if (len > std::numeric_limits<nsAString::size_type>::max()) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 

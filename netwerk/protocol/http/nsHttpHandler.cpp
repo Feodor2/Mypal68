@@ -13,14 +13,8 @@
 #include "nsHttpChannel.h"
 #include "nsHttpAuthCache.h"
 #include "nsStandardURL.h"
-#include "nsIDOMWindow.h"
-#include "nsIHttpChannel.h"
-#include "nsIStandardURL.h"
 #include "LoadContextInfo.h"
 #include "nsCategoryManagerUtils.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
-#include "nsIPrefLocalizedString.h"
 #include "nsSocketProviderService.h"
 #include "nsISocketProvider.h"
 #include "nsPrintfCString.h"
@@ -29,6 +23,8 @@
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Printf.h"
 #include "mozilla/Sprintf.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "nsSocketTransportService2.h"
 #include "nsAlgorithm.h"
@@ -41,11 +37,10 @@
 #include "nsISiteSecurityService.h"
 #include "nsIStreamConverterService.h"
 #include "nsCRT.h"
-#include "nsIMemoryReporter.h"
 #include "nsIParentalControlsService.h"
 #include "nsPIDOMWindow.h"
-#include "nsINetworkLinkService.h"
 #include "nsHttpChannelAuthProvider.h"
+#include "nsINetworkLinkService.h"
 #include "nsNetUtil.h"
 #include "nsServiceManagerUtils.h"
 #include "nsComponentManagerUtils.h"
@@ -137,16 +132,6 @@ namespace mozilla {
 namespace net {
 
 LazyLogModule gHttpLog("nsHttp");
-
-static nsresult NewURI(const nsACString& aSpec, const char* aCharset,
-                       nsIURI* aBaseURI, int32_t aDefaultPort, nsIURI** aURI) {
-  nsCOMPtr<nsIURI> base(aBaseURI);
-  return NS_MutateURI(new nsStandardURL::Mutator())
-      .Apply(NS_MutatorMethod(&nsIStandardURLMutator::Init,
-                              nsIStandardURL::URLTYPE_AUTHORITY, aDefaultPort,
-                              nsCString(aSpec), aCharset, base, nullptr))
-      .Finalize(aURI);
-}
 
 #ifdef ANDROID
 static nsCString GetDeviceModelId() {
@@ -2020,13 +2005,6 @@ nsHttpHandler::GetProtocolFlags(uint32_t* result) {
 }
 
 NS_IMETHODIMP
-nsHttpHandler::NewURI(const nsACString& aSpec, const char* aCharset,
-                      nsIURI* aBaseURI, nsIURI** aURI) {
-  return mozilla::net::NewURI(aSpec, aCharset, aBaseURI, NS_HTTP_DEFAULT_PORT,
-                              aURI);
-}
-
-NS_IMETHODIMP
 nsHttpHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
                           nsIChannel** result) {
   LOG(("nsHttpHandler::NewChannel\n"));
@@ -2034,18 +2012,10 @@ nsHttpHandler::NewChannel(nsIURI* uri, nsILoadInfo* aLoadInfo,
   NS_ENSURE_ARG_POINTER(uri);
   NS_ENSURE_ARG_POINTER(result);
 
-  bool isHttp = false, isHttps = false;
-
   // Verify that we have been given a valid scheme
-  nsresult rv = uri->SchemeIs("http", &isHttp);
-  if (NS_FAILED(rv)) return rv;
-  if (!isHttp) {
-    rv = uri->SchemeIs("https", &isHttps);
-    if (NS_FAILED(rv)) return rv;
-    if (!isHttps) {
-      NS_WARNING("Invalid URI scheme");
-      return NS_ERROR_UNEXPECTED;
-    }
+  if (!uri->SchemeIs("http") && !uri->SchemeIs("https")) {
+    NS_WARNING("Invalid URI scheme");
+    return NS_ERROR_UNEXPECTED;
   }
 
   return NewProxiedChannel(uri, nullptr, 0, nullptr, aLoadInfo, result);
@@ -2084,10 +2054,6 @@ nsHttpHandler::NewProxiedChannel(nsIURI* uri, nsIProxyInfo* givenProxyInfo,
     NS_ENSURE_ARG(proxyInfo);
   }
 
-  bool https;
-  nsresult rv = uri->SchemeIs("https", &https);
-  if (NS_FAILED(rv)) return rv;
-
   if (IsNeckoChild()) {
     httpChannel = new HttpChannelChild();
   } else {
@@ -2107,7 +2073,7 @@ nsHttpHandler::NewProxiedChannel(nsIURI* uri, nsIProxyInfo* givenProxyInfo,
   }
 
   uint64_t channelId;
-  rv = NewChannelId(channelId);
+  nsresult rv = NewChannelId(channelId);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsContentPolicyType contentPolicyType =
@@ -2166,6 +2132,11 @@ NS_IMETHODIMP
 nsHttpHandler::GetMisc(nsACString& value) {
   value = mMisc;
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsHttpHandler::GetAltSvcCacheKeys(nsTArray<nsCString>& value) {
+  return mConnMgr->GetAltSvcCacheKeys(value);
 }
 
 //-----------------------------------------------------------------------------
@@ -2464,11 +2435,7 @@ nsresult nsHttpHandler::SpeculativeConnectInternal(
     return NS_ERROR_UNEXPECTED;
 
   // Construct connection info object
-  bool usingSSL = false;
-  rv = aURI->SchemeIs("https", &usingSSL);
-  if (NS_FAILED(rv)) return rv;
-
-  if (usingSSL && !mSpeculativeConnectEnabled) {
+  if (aURI->SchemeIs("https") && !mSpeculativeConnectEnabled) {
     return NS_ERROR_UNEXPECTED;
   }
 
@@ -2489,7 +2456,7 @@ nsresult nsHttpHandler::SpeculativeConnectInternal(
   // and all of its consumers.
   RefPtr<nsHttpConnectionInfo> ci = new nsHttpConnectionInfo(
       host, port, EmptyCString(), username, EmptyCString(), nullptr,
-      originAttributes, usingSSL);
+      originAttributes, aURI->SchemeIs("https"));
   ci->SetAnonymous(anonymous);
 
   return SpeculativeConnect(ci, aCallbacks);
@@ -2564,13 +2531,6 @@ NS_IMETHODIMP
 nsHttpsHandler::GetProtocolFlags(uint32_t* aProtocolFlags) {
   *aProtocolFlags = NS_HTTP_PROTOCOL_FLAGS | URI_IS_POTENTIALLY_TRUSTWORTHY;
   return NS_OK;
-}
-
-NS_IMETHODIMP
-nsHttpsHandler::NewURI(const nsACString& aSpec, const char* aOriginCharset,
-                       nsIURI* aBaseURI, nsIURI** _retval) {
-  return mozilla::net::NewURI(aSpec, aOriginCharset, aBaseURI,
-                              NS_HTTPS_DEFAULT_PORT, _retval);
 }
 
 NS_IMETHODIMP

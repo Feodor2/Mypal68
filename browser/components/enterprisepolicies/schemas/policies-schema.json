@@ -860,9 +860,6 @@
         "extensions.getAddons.showPane": {
           "type": "boolean"
         },
-        "extensions.htmlaboutaddons.recommendations.enabled": {
-          "type": "boolean"
-        },
         "geo.enabled": {
           "type": "boolean"
         },

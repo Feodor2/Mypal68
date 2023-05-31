@@ -5,7 +5,6 @@
 // Avoid DMD-specific parts of MOZ_DEFINE_MALLOC_SIZE_OF
 #undef MOZ_DMD
 
-#include "nsIMemoryReporter.h"
 #include "mozilla/Mutex.h"
 
 #include "gtest/gtest.h"

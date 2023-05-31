@@ -6,7 +6,6 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "nsIChannel.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;

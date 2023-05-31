@@ -31,6 +31,7 @@ from .common import CommonBackend
 from ..frontend.data import (
     BaseLibrary,
     BaseProgram,
+    BaseRustLibrary,
     ChromeManifestEntry,
     ComputedFlags,
     ConfigFileSubstitution,
@@ -61,9 +62,7 @@ from ..frontend.data import (
     PerSourceFlag,
     PgoGenerateOnlySources,
     Program,
-    RustLibrary,
     HostSharedLibrary,
-    HostRustLibrary,
     RustProgram,
     RustTests,
     SharedLibrary,
@@ -480,10 +479,8 @@ class RecursiveMakeBackend(CommonBackend):
                 f = mozpath.relpath(f, base)
                 for var in variables:
                     backend_file.write('%s += %s\n' % (var, f))
-        elif isinstance(obj, PgoGenerateOnlySources):
-            assert obj.canonical_suffix == '.cpp'
-            for f in sorted(obj.files):
-                backend_file.write('PGO_GEN_ONLY_CPPSRCS += %s\n' % f)
+            self._compile_graph[mozpath.join(
+                backend_file.relobjdir, 'target-objects')]
         elif isinstance(obj, (HostSources, HostGeneratedSources)):
             suffix_map = {
                 '.c': 'HOST_CSRCS',
@@ -491,7 +488,7 @@ class RecursiveMakeBackend(CommonBackend):
                 '.cpp': 'HOST_CPPSRCS',
             }
             variables = [suffix_map[obj.canonical_suffix]]
-            if isinstance(obj, GeneratedSources):
+            if isinstance(obj, HostGeneratedSources):
                 variables.append('GARBAGE')
                 base = backend_file.objdir
             else:
@@ -500,6 +497,8 @@ class RecursiveMakeBackend(CommonBackend):
                 f = mozpath.relpath(f, base)
                 for var in variables:
                     backend_file.write('%s += %s\n' % (var, f))
+            self._compile_graph[mozpath.join(
+                backend_file.relobjdir, 'host-objects')]
         elif isinstance(obj, VariablePassthru):
             # Sorted so output is consistent and we don't bump mtimes.
             for k, v in sorted(obj.variables.items()):
@@ -521,13 +520,16 @@ class RecursiveMakeBackend(CommonBackend):
             self._process_defines(obj, backend_file)
 
         elif isinstance(obj, GeneratedFile):
-            if obj.required_for_compile:
+            if obj.required_before_compile:
                 tier = 'export'
+            elif obj.required_during_compile:
+                tier = None
             elif obj.localized:
                 tier = 'libs'
             else:
                 tier = 'misc'
-            self._no_skip[tier].add(backend_file.relobjdir)
+            if tier:
+                self._no_skip[tier].add(backend_file.relobjdir)
 
             # Localized generated files can use {AB_CD} and {AB_rCD} in their
             # output paths.
@@ -588,12 +590,13 @@ class RecursiveMakeBackend(CommonBackend):
                 force = ' $(if $(IS_LANGUAGE_REPACK),FORCE)'
 
             if obj.script:
-                # If we're doing this during export that means we need it during
-                # compile, but if we have an artifact build we don't run compile,
-                # so we can skip it altogether or let the rule run as the result of
-                # something depending on it.
-                if tier != 'export' or not self.environment.is_artifact_build:
-                    if not needs_AB_rCD:
+                # If we are doing an artifact build, we don't run compiler, so
+                # we can skip generated files that are needed during compile,
+                # or let the rule run as the result of something depending on
+                # it.
+                if not (obj.required_before_compile or obj.required_during_compile) or \
+                        not self.environment.is_artifact_build:
+                    if tier and not needs_AB_rCD:
                         # Android localized resources have special Makefile
                         # handling.
                         backend_file.write('%s:: %s\n' % (tier, stub_file))
@@ -674,7 +677,7 @@ class RecursiveMakeBackend(CommonBackend):
         elif isinstance(obj, InstallationTarget):
             self._process_installation_target(obj, backend_file)
 
-        elif isinstance(obj, RustLibrary):
+        elif isinstance(obj, BaseRustLibrary):
             self.backend_input_files.add(obj.cargo_file)
             self._process_rust_library(obj, backend_file)
             self._rust_dirs.add(obj.relobjdir)
@@ -832,7 +835,8 @@ class RecursiveMakeBackend(CommonBackend):
             # rest of the compile graph.
             target_name = mozpath.basename(root)
 
-            if target_name not in ('target', 'host'):
+            if target_name not in ('target', 'target-objects',
+                                   'host', 'host-objects'):
                 non_default_roots[target_name].append(root)
                 non_default_graphs[target_name][root] = self._compile_graph[root]
                 del self._compile_graph[root]
@@ -1058,6 +1062,9 @@ class RecursiveMakeBackend(CommonBackend):
 
             backend_file.write('%s += %s\n' % (
                     non_unified_var, ' '.join(source_files)))
+
+        self._compile_graph[mozpath.join(
+            backend_file.relobjdir, 'target-objects')]
 
     def _process_directory_traversal(self, obj, backend_file):
         """Process a data.DirectoryTraversal instance."""
@@ -1365,11 +1372,7 @@ class RecursiveMakeBackend(CommonBackend):
                                                  name))
 
         topobjdir = mozpath.normsep(obj.topobjdir)
-        # This will create the node even if there aren't any linked libraries.
-        build_target = self._build_target_for_obj(obj)
-        self._compile_graph[build_target]
-
-        objs, pgo_gen_objs, no_pgo_objs, shared_libs, os_libs, static_libs = self._expand_libs(obj)
+        objs, no_pgo_objs, shared_libs, os_libs, static_libs = self._expand_libs(obj)
 
         obj_target = obj.name
         if isinstance(obj, Program):
@@ -1391,8 +1394,6 @@ class RecursiveMakeBackend(CommonBackend):
                 if not is_unit_test and not isinstance(obj, SimpleProgram):
                     profile_gen_objs = [o if o in no_pgo_objs else '%s.%s' %
                                         (mozpath.splitext(o)[0], 'i_o') for o in objs]
-                    profile_gen_objs += ['%s.%s' % (mozpath.splitext(o)[0], 'i_o')
-                                         for o in pgo_gen_objs]
 
         def write_obj_deps(target, objs_ref, pgo_objs_ref):
             if pgo_objs_ref:
@@ -1440,53 +1441,50 @@ class RecursiveMakeBackend(CommonBackend):
             write_obj_deps(obj_target, objs_ref, pgo_objs_ref)
 
         for lib in shared_libs:
+            assert obj.KIND != 'host'
             backend_file.write_once('SHARED_LIBS += %s\n' %
                                     pretty_relpath(lib, lib.import_name))
-        for lib in static_libs:
-            backend_file.write_once('STATIC_LIBS += %s\n' %
-                                    pretty_relpath(lib, lib.import_name))
+
+        # We have to link any Rust libraries after all intermediate static
+        # libraries have been listed to ensure that the Rust libraries are
+        # searched after the C/C++ objects that might reference Rust symbols.
+        var = 'HOST_LIBS' if obj.KIND == 'host' else 'STATIC_LIBS'
+        for lib in chain(
+                (l for l in static_libs if not isinstance(l, BaseRustLibrary)),
+                (l for l in static_libs if isinstance(l, BaseRustLibrary)),
+        ):
+            backend_file.write_once('%s += %s\n' %
+                                    (var, pretty_relpath(lib, lib.import_name)))
+
         for lib in os_libs:
             if obj.KIND == 'target':
                 backend_file.write_once('OS_LIBS += %s\n' % lib)
             else:
                 backend_file.write_once('HOST_EXTRA_LIBS += %s\n' % lib)
 
-        for lib in obj.linked_libraries:
-            if not isinstance(lib, ExternalLibrary):
-                self._compile_graph[build_target].add(
-                    self._build_target_for_obj(lib))
-            if isinstance(lib, HostRustLibrary):
-                backend_file.write_once('HOST_LIBS += %s\n' %
-                                        pretty_relpath(lib, lib.import_name))
+        if not isinstance(obj, (StaticLibrary, HostLibrary)) or obj.no_expand_lib:
+            # This will create the node even if there aren't any linked libraries.
+            build_target = self._build_target_for_obj(obj)
+            self._compile_graph[build_target]
 
-        # We have to link any Rust libraries after all intermediate static
-        # libraries have been listed to ensure that the Rust libraries are
-        # searched after the C/C++ objects that might reference Rust symbols.
-        if isinstance(obj, (SharedLibrary, Program)):
-            self._process_rust_libraries(obj, backend_file, pretty_relpath)
+            # Make the build target depend on all the target/host-objects that
+            # recursively are linked into it.
+            def recurse_libraries(obj):
+                for lib in obj.linked_libraries:
+                    if isinstance(lib, (StaticLibrary, HostLibrary)) and not lib.no_expand_lib:
+                        recurse_libraries(lib)
+                    elif not isinstance(lib, ExternalLibrary):
+                        self._compile_graph[build_target].add(
+                            self._build_target_for_obj(lib))
+                relobjdir = mozpath.relpath(obj.objdir, self.environment.topobjdir)
+                objects_target = mozpath.join(relobjdir, '%s-objects' % obj.KIND)
+                if objects_target in self._compile_graph:
+                    self._compile_graph[build_target].add(objects_target)
+
+            recurse_libraries(obj)
 
         # Process library-based defines
         self._process_defines(obj.lib_defines, backend_file)
-
-    def _process_rust_libraries(self, obj, backend_file, pretty_relpath):
-        assert isinstance(obj, (SharedLibrary, Program))
-
-        # If this library does not depend on any Rust libraries, then we are done.
-        direct_linked = [l for l in obj.linked_libraries if isinstance(l, RustLibrary)]
-        if not direct_linked:
-            return
-
-        # We should have already checked this in Linkable.link_library.
-        assert len(direct_linked) == 1
-
-        # TODO: see bug 1310063 for checking dependencies are set up correctly.
-
-        direct_linked = direct_linked[0]
-        backend_file.write('RUST_STATIC_LIB := %s\n' %
-                           pretty_relpath(direct_linked, direct_linked.import_name))
-
-        for lib in direct_linked.linked_system_libs:
-            backend_file.write_once('OS_LIBS += %s\n' % lib)
 
     def _process_final_target_files(self, obj, files, backend_file):
         target = obj.install_target
@@ -1793,3 +1791,9 @@ class RecursiveMakeBackend(CommonBackend):
         webidls_mk = mozpath.join(bindings_dir, 'webidlsrcs.mk')
         with self._write_file(webidls_mk) as fh:
             mk.dump(fh, removal_guard=False)
+
+        # Add the test directory to the compile graph.
+        if self.environment.substs.get('ENABLE_TESTS'):
+            self._compile_graph[mozpath.join(
+                mozpath.relpath(bindings_dir, self.environment.topobjdir),
+                'test', 'target-objects')]

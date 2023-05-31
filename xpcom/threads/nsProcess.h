@@ -13,7 +13,6 @@
 #include "mozilla/Mutex.h"
 #include "nsIProcess.h"
 #include "nsIFile.h"
-#include "nsIThread.h"
 #include "nsIObserver.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsIObserver.h"

@@ -9,7 +9,7 @@
 #include "nsContentUtils.h"
 #include "nsHtml5DocumentMode.h"
 #include "nsHtml5String.h"
-#include "mozilla/net/ReferrerPolicy.h"
+#include "ReferrerInfo.h"
 
 class nsHtml5TreeOpExecutor;
 
@@ -147,10 +147,23 @@ class nsHtml5SpeculativeLoad {
         nsContentUtils::TrimWhitespace<nsContentUtils::IsHTMLWhitespace>(
             referrerPolicy);
     mScriptReferrerPolicy =
-        mozilla::net::AttributeReferrerPolicyFromString(referrerPolicy);
+        mozilla::dom::ReferrerInfo::ReferrerPolicyAttributeFromString(
+            referrerPolicy);
 
     mIsAsync = aAsync;
     mIsDefer = aDefer;
+  }
+
+  inline void InitImportStyle(nsString&& aUrl) {
+    MOZ_ASSERT(mOpCode == eSpeculativeLoadUninitialized,
+               "Trying to reinitialize a speculative load!");
+    mOpCode = eSpeculativeLoadStyle;
+    mUrlOrSizes = std::move(aUrl);
+    mCharsetOrSrcset.SetIsVoid(true);
+    mCrossOriginOrMedia.SetIsVoid(true);
+    mReferrerPolicyOrIntegrity.SetIsVoid(true);
+    mTypeOrCharsetSourceOrDocumentModeOrMetaCSPOrSizesOrIntegrity.SetIsVoid(
+        true);
   }
 
   inline void InitStyle(nsHtml5String aUrl, nsHtml5String aCharset,
@@ -301,7 +314,7 @@ class nsHtml5SpeculativeLoad {
    * of the "referrerpolicy" attribute. This field holds one of the values
    * (REFERRER_POLICY_*) defined in nsIHttpChannel.
    */
-  mozilla::net::ReferrerPolicy mScriptReferrerPolicy;
+  mozilla::dom::ReferrerPolicy mScriptReferrerPolicy;
 };
 
 #endif  // nsHtml5SpeculativeLoad_h

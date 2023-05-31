@@ -18,6 +18,7 @@
 #include "mozilla/UniquePtr.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "mozilla/layers/SynchronousTask.h"
+#include "mozilla/layers/WebRenderCompositionRecorder.h"
 #include "mozilla/VsyncDispatcher.h"
 
 #include <list>
@@ -44,7 +45,16 @@ class WebRenderThreadPool {
 
   ~WebRenderThreadPool();
 
-  wr::WrThreadPool* Raw() { return mThreadPool; }
+  wr::WrThreadPool* Raw() {
+    // If this pointer is null we are likely at some late shutdown stage,
+    // when threads are no longer safe to interact with.
+    MOZ_RELEASE_ASSERT(mThreadPool);
+    return mThreadPool;
+  }
+
+  /// Prematurely destroys this handle to the thread pool.
+  /// After calling this the object is useless.
+  void Release();
 
  protected:
   wr::WrThreadPool* mThreadPool;
@@ -254,6 +264,10 @@ class RenderThread final {
 
   size_t RendererCount();
 
+  void SetCompositionRecorderForWindow(
+      wr::WindowId aWindowId,
+      RefPtr<layers::WebRenderCompositionRecorder>&& aCompositionRecorder);
+
  private:
   explicit RenderThread(base::Thread* aThread);
 
@@ -278,6 +292,8 @@ class RenderThread final {
   RefPtr<gl::GLContext> mSharedGL;
 
   std::map<wr::WindowId, UniquePtr<RendererOGL>> mRenderers;
+  std::map<wr::WindowId, RefPtr<layers::WebRenderCompositionRecorder>>
+      mCompositionRecorders;
 
   struct WindowInfo {
     bool mIsDestroyed = false;

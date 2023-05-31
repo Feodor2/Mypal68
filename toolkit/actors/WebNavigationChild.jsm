@@ -48,14 +48,6 @@ class WebNavigationChild extends ActorChild {
         this.gotoIndex(message.data);
         break;
       case "WebNavigation:LoadURI":
-        let histogram = Services.telemetry.getKeyedHistogramById(
-          "FX_TAB_REMOTE_NAVIGATION_DELAY_MS"
-        );
-        histogram.add(
-          "WebNavigation:LoadURI",
-          Services.telemetry.msSystemNow() - message.data.requestTime
-        );
-
         this.loadURI(message.data);
 
         break;
@@ -72,12 +64,12 @@ class WebNavigationChild extends ActorChild {
   }
 
   _wrapURIChangeCall(fn) {
-    this.mm.WebProgress.inLoadURI = true;
     try {
       fn();
     } finally {
-      this.mm.WebProgress.inLoadURI = false;
-      this.mm.WebProgress.sendLoadCallResult();
+      this.mm.docShell.QueryInterface(Ci.nsIInterfaceRequestor)
+        .getInterface(Ci.nsIBrowserChild)
+        .notifyNavigationFinished();
     }
   }
 

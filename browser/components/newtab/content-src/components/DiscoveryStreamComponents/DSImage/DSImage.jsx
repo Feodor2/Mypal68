@@ -42,7 +42,13 @@ export class DSImage extends React.PureComponent {
   }
 
   componentDidMount() {
-    this.observer = new IntersectionObserver(this.onSeen.bind(this));
+    this.observer = new IntersectionObserver(this.onSeen.bind(this), {
+      // Assume an image will be eventually seen if it is within 520px of the viewport
+      // This is half the average Desktop vertical screen size:
+      // http://gs.statcounter.com/screen-resolution-stats/desktop/north-america
+      rootMargin: `540px`,
+    });
+
     this.observer.observe(ReactDOM.findDOMNode(this));
   }
 
@@ -78,13 +84,13 @@ export class DSImage extends React.PureComponent {
             this.state.containerHeight * 2
           );
 
-          img = (<img crossOrigin="anonymous"
+          img = (<img alt="" crossOrigin="anonymous"
             onError={this.onOptimizedImageError}
             src={source}
             srcSet={`${source2x} 2x`} />);
         }
       } else if (!this.state.nonOptimizedImageFailed) {
-        img = (<img crossOrigin="anonymous"
+        img = (<img alt="" crossOrigin="anonymous"
           onError={this.onNonOptimizedImageError}
           src={this.props.source} />);
       } else {

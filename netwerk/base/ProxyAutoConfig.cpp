@@ -13,7 +13,7 @@
 #include "nsIURLParser.h"
 #include "nsJSUtils.h"
 #include "jsfriendapi.h"
-#include "js/CompilationAndEvaluation.h"  // JS::Compile{,DontInflate}
+#include "js/CompilationAndEvaluation.h"  // JS::Compile
 #include "js/ContextOptions.h"
 #include "js/PropertySpec.h"
 #include "js/SourceText.h"  // JS::Source{Ownership,Text}
@@ -383,7 +383,7 @@ static void PACLogErrorOrWarning(const nsAString& aKind,
 
 static void PACWarningReporter(JSContext* aCx, JSErrorReport* aReport) {
   MOZ_ASSERT(aReport);
-  MOZ_ASSERT(JSREPORT_IS_WARNING(aReport->flags));
+  MOZ_ASSERT(aReport->isWarning());
 
   PACLogErrorOrWarning(NS_LITERAL_STRING("Warning"), aReport);
 }
@@ -578,7 +578,7 @@ class JSContextWrapper {
     JSContext* cx = JS_NewContext(JS::DefaultHeapMaxBytes + aExtraHeapSize);
     if (NS_WARN_IF(!cx)) return nullptr;
 
-    JS::ContextOptionsRef(cx).setIon(false);
+    JS::ContextOptionsRef(cx).setDisableIon();
 
     JSContextWrapper* entry = new JSContextWrapper(cx);
     if (NS_FAILED(entry->Init())) {
@@ -735,14 +735,14 @@ nsresult ProxyAutoConfig::SetupJS() {
     // and otherwise inflate Latin-1 to UTF-16 and compile that.
     const char* scriptData = this->mConcatenatedPACData.get();
     size_t scriptLength = this->mConcatenatedPACData.Length();
-    if (mozilla::IsValidUtf8(scriptData, scriptLength)) {
+    if (mozilla::IsUtf8(mozilla::MakeSpan(scriptData, scriptLength))) {
       JS::SourceText<Utf8Unit> srcBuf;
       if (!srcBuf.init(cx, scriptData, scriptLength,
                        JS::SourceOwnership::Borrowed)) {
         return nullptr;
       }
 
-      return JS::CompileDontInflate(cx, options, srcBuf);
+      return JS::Compile(cx, options, srcBuf);
     }
 
     // nsReadableUtils.h says that "ASCII" is a misnomer "for legacy reasons",
@@ -835,7 +835,7 @@ nsresult ProxyAutoConfig::GetProxyForURI(const nsCString& aTestURI,
   JS::RootedString hostString(cx, JS_NewStringCopyZ(cx, aTestHost.get()));
 
   if (uriString && hostString) {
-    JS::AutoValueArray<2> args(cx);
+    JS::RootedValueArray<2> args(cx);
     args[0].setString(uriString);
     args[1].setString(hostString);
 

@@ -122,12 +122,26 @@ class nsDocLoader : public nsIDocumentLoader,
 
   void SetDocumentOpenedButNotLoaded() { mDocumentOpenedButNotLoaded = true; }
 
+  bool TreatAsBackgroundLoad();
+
+  void SetFakeOnLoadDispatched(){ mHasFakeOnLoadDispatched = true; };
+
+  bool HasFakeOnLoadDispatched(){ return mHasFakeOnLoadDispatched; };
+
+  void ResetToFirstLoad() {
+    mHasFakeOnLoadDispatched = false;
+    mIsReadyToHandlePostMessage = false;
+    mTreatAsBackgroundLoad = false;
+  };
+
  protected:
   virtual ~nsDocLoader();
 
   virtual MOZ_MUST_USE nsresult SetDocLoaderParent(nsDocLoader* aLoader);
 
   bool IsBusy();
+
+  void SetBackgroundLoadIframe();
 
   void Destroy();
   virtual void DestroyChildren();
@@ -202,6 +216,12 @@ class nsDocLoader : public nsIDocumentLoader,
     DocLoaderIsEmpty(true);
   }
 
+  // DocLoaderIsEmpty should be called whenever the docloader may be empty.
+  // This method is idempotent and does nothing if the docloader is not in
+  // fact empty.  This method _does_ make sure that layout is flushed if our
+  // loadgroup has no active requests before checking for "real" emptiness if
+  // aFlushLayout is true.
+  void DocLoaderIsEmpty(bool aFlushLayout);
  protected:
   struct nsStatusInfo : public mozilla::LinkedListElement<nsStatusInfo> {
     nsString mStatusMessage;
@@ -296,7 +316,12 @@ class nsDocLoader : public nsIDocumentLoader,
      flushing. */
   bool mIsFlushingLayout;
 
+  bool mTreatAsBackgroundLoad;
+
  private:
+  bool mHasFakeOnLoadDispatched;
+
+  bool mIsReadyToHandlePostMessage;
   /**
    * This flag indicates that the loader is waiting for completion of
    * a document.open-triggered "document load".  This is set when
@@ -313,13 +338,6 @@ class nsDocLoader : public nsIDocumentLoader,
   // DocLoaderIsEmpty calls (those coming from requests finishing in our
   // loadgroup) unless this is empty.
   nsCOMArray<nsIDocumentLoader> mChildrenInOnload;
-
-  // DocLoaderIsEmpty should be called whenever the docloader may be empty.
-  // This method is idempotent and does nothing if the docloader is not in
-  // fact empty.  This method _does_ make sure that layout is flushed if our
-  // loadgroup has no active requests before checking for "real" emptiness if
-  // aFlushLayout is true.
-  void DocLoaderIsEmpty(bool aFlushLayout);
 
   int64_t GetMaxTotalProgress();
 

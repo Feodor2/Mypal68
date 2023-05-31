@@ -65,6 +65,8 @@
 #  include FT_FREETYPE_H
 #endif
 #include "MainThreadUtils.h"
+#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_gfx.h"
 
 #if defined(MOZ_LOGGING)
 GFX2D_API mozilla::LogModule* GetGFX2DLog() {
@@ -185,9 +187,6 @@ void mozilla_UnlockFTLibrary(FT_Library aFTLibrary) {
 
 namespace mozilla {
 namespace gfx {
-
-// In Gecko, this value is managed by gfx.logging.level in gfxPrefs.
-int32_t LoggingPrefs::sGfxLogLevel = LOG_DEFAULT;
 
 #ifdef MOZ_ENABLE_FREETYPE
 FT_Library Factory::mFTLibrary = nullptr;
@@ -397,8 +396,8 @@ already_AddRefed<DrawTarget> Factory::CreateWrapAndRecordDrawTarget(
 }
 
 already_AddRefed<DrawTarget> Factory::CreateRecordingDrawTarget(
-    DrawEventRecorder* aRecorder, DrawTarget* aDT, IntSize aSize) {
-  return MakeAndAddRef<DrawTargetRecording>(aRecorder, aDT, aSize);
+    DrawEventRecorder* aRecorder, DrawTarget* aDT, IntRect aRect) {
+  return MakeAndAddRef<DrawTargetRecording>(aRecorder, aDT, aRect);
 }
 
 already_AddRefed<DrawTargetCapture> Factory::CreateCaptureDrawTargetForTarget(

@@ -40,6 +40,8 @@ var gSanitizePromptDialog = {
       gSanitizePromptDialog.sanitize(e);
     });
 
+    this.registerSyncFromPrefListeners();
+
     if (this.selectedTimespan === Sanitizer.TIMESPAN_EVERYTHING) {
       this.prepareWarning();
       this.warningBox.hidden = false;
@@ -217,5 +219,15 @@ var gSanitizePromptDialog = {
       }
     }
     return false;
+  },
+
+  /**
+   * Register syncFromPref listener functions.
+   */
+  registerSyncFromPrefListeners() {
+    let checkboxes = document.querySelectorAll("checkbox[preference]");
+    for (let checkbox of checkboxes) {
+      Preferences.addSyncFromPrefListener(checkbox, () => this.onReadGeneric());
+    }
   },
 };

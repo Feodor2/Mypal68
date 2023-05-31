@@ -19,7 +19,6 @@
 #include "nsTransportUtils.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
-#include "nsIChannel.h"
 #include "nsIPipe.h"
 #include "nsCRT.h"
 #include "mozilla/Tokenizer.h"
@@ -33,10 +32,10 @@
 #include "nsComponentManagerUtils.h"  // do_CreateInstance
 #include "nsIHttpActivityObserver.h"
 #include "nsSocketTransportService2.h"
-#include "nsICancelable.h"
 #include "nsIClassOfService.h"
 #include "nsIEventTarget.h"
 #include "nsIHttpChannelInternal.h"
+#include "nsIMultiplexInputStream.h"
 #include "nsIInputStream.h"
 #include "nsIThrottledInputChannel.h"
 #include "nsITransport.h"
@@ -1132,9 +1131,8 @@ void nsHttpTransaction::Close(nsresult reason) {
         // response that ends on exactly a chunk boundary also as partial.
         // Here a response must have the last 0-size chunk.
         if ((clevel == FRAMECHECK_STRICT) ||
-            (mChunkedDecoder &&
-             (mChunkedDecoder->GetChunkRemaining() ||
-              (clevel == FRAMECHECK_STRICT_CHUNKED))) ||
+            (mChunkedDecoder && (mChunkedDecoder->GetChunkRemaining() ||
+                                 (clevel == FRAMECHECK_STRICT_CHUNKED))) ||
             (!mChunkedDecoder && !mContentDecoding && mContentDecodingCheck)) {
           reason = NS_ERROR_NET_PARTIAL_TRANSFER;
           LOG(("Partial transfer, incomplete HTTP response received: %s",
@@ -1622,7 +1620,7 @@ nsresult nsHttpTransaction::HandleContentStart() {
     switch (mResponseHead->Status()) {
       case 101:
         mPreserveStream = true;
-        MOZ_FALLTHROUGH;  // to other no content cases:
+        [[fallthrough]];  // to other no content cases:
       case 204:
       case 205:
       case 304:

@@ -15,12 +15,8 @@
 #include "nsContentList.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/HTMLTextAreaElement.h"
-#include "nsIEditor.h"
 #include "nsIFormControl.h"
 #include "nsIPersistentProperties2.h"
-#include "nsISelectionController.h"
-#include "nsIServiceManager.h"
-#include "nsITextControlElement.h"
 #include "nsITextControlFrame.h"
 #include "nsNameSpaceManager.h"
 #include "mozilla/dom/ScriptSettings.h"
@@ -28,6 +24,7 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/TextControlElement.h"
 #include "mozilla/TextEditor.h"
 
 using namespace mozilla;
@@ -337,7 +334,8 @@ uint64_t HTMLTextFieldAccessible::NativeState() const {
     return state | states::SUPPORTS_AUTOCOMPLETION | states::HASPOPUP;
 
   // Ordinal XUL textboxes don't support autocomplete.
-  if (!BindingOrWidgetParent() && Preferences::GetBool("browser.formfill.enable")) {
+  if (!BindingOrWidgetParent() &&
+      Preferences::GetBool("browser.formfill.enable")) {
     // Check to see if autocompletion is allowed on this input. We don't expose
     // it for password fields even though the entire password can be remembered
     // for a page if the user asks it to be. However, the kind of autocomplete
@@ -376,8 +374,8 @@ bool HTMLTextFieldAccessible::DoAction(uint8_t aIndex) const {
 }
 
 already_AddRefed<TextEditor> HTMLTextFieldAccessible::GetEditor() const {
-  nsCOMPtr<nsITextControlElement> textControlElement =
-      do_QueryInterface(mContent);
+  RefPtr<TextControlElement> textControlElement =
+      TextControlElement::FromNodeOrNull(mContent);
   if (!textControlElement) {
     return nullptr;
   }

@@ -19,14 +19,9 @@
 #include "mozilla/ReentrancyGuard.h"
 #include "mozilla/TemplateLib.h"
 #include "mozilla/TypeTraits.h"
+#include "mozilla/Span.h"
 
 #include <new>  // for placement new
-
-/* Silence dire "bugs in previous versions of MSVC have been fixed" warnings */
-#ifdef _MSC_VER
-#  pragma warning(push)
-#  pragma warning(disable : 4345)
-#endif
 
 namespace mozilla {
 
@@ -216,31 +211,6 @@ struct VectorImpl<T, N, AP, true> {
     aV.mTail.mCapacity = aNewCap;
     return true;
   }
-
-  static inline void podResizeToFit(Vector<T, N, AP>& aV) {
-    if (aV.usingInlineStorage() || aV.mLength == aV.mTail.mCapacity) {
-      return;
-    }
-    if (!aV.mLength) {
-      aV.free_(aV.mBegin, aV.mTail.mCapacity);
-      aV.mBegin = aV.inlineStorage();
-      aV.mTail.mCapacity = aV.kInlineCapacity;
-#ifdef DEBUG
-      aV.mTail.mReserved = 0;
-#endif
-      return;
-    }
-    T* newbuf =
-        aV.template pod_realloc<T>(aV.mBegin, aV.mTail.mCapacity, aV.mLength);
-    if (MOZ_UNLIKELY(!newbuf)) {
-      return;
-    }
-    aV.mBegin = newbuf;
-    aV.mTail.mCapacity = aV.mLength;
-#ifdef DEBUG
-    aV.mTail.mReserved = aV.mLength;
-#endif
-  }
 };
 
 // A struct for TestVector.cpp to access private internal fields.
@@ -272,7 +242,7 @@ template <typename T, size_t MinInlineCapacity = 0,
 class MOZ_NON_PARAM Vector final : private AllocPolicy {
   /* utilities */
 
-  static const bool kElemIsPod = IsPod<T>::value;
+  static constexpr bool kElemIsPod = IsPod<T>::value;
   typedef detail::VectorImpl<T, MinInlineCapacity, AllocPolicy, kElemIsPod>
       Impl;
   friend struct detail::VectorImpl<T, MinInlineCapacity, AllocPolicy,
@@ -528,6 +498,12 @@ class MOZ_NON_PARAM Vector final : private AllocPolicy {
     return *(end() - 1);
   }
 
+  operator mozilla::Span<const T>() const {
+    return mozilla::MakeSpan(mBegin, mLength);
+  }
+
+  operator mozilla::Span<T>() { return mozilla::MakeSpan(mBegin, mLength); }
+
   class Range {
     friend class Vector;
     T* mCur;
@@ -646,11 +622,16 @@ class MOZ_NON_PARAM Vector final : private AllocPolicy {
   void clearAndFree();
 
   /**
-   * Calls the AllocPolicy's pod_realloc to release excess capacity. Since
-   * realloc is only safe on PODs, this method fails to compile if IsPod<T>
-   * is false.
+   * Shrinks the storage to drop excess capacity if possible.
+   *
+   * The return value indicates whether the operation succeeded, otherwise, it
+   * represents an OOM. The bool can be safely ignored unless you want to
+   * provide the guarantee that `length() == capacity()`.
+   *
+   * For PODs, it calls the AllocPolicy's pod_realloc. For non-PODs, it moves
+   * the elements into the new storage.
    */
-  void podResizeToFit();
+  bool shrinkStorageToFit();
 
   /**
    * If true, appending |aNeeded| elements won't reallocate elements storage.
@@ -842,7 +823,7 @@ class MOZ_NON_PARAM Vector final : private AllocPolicy {
 
 template <typename T, size_t N, class AP>
 MOZ_ALWAYS_INLINE Vector<T, N, AP>::Vector(AP aAP)
-    : AP(aAP),
+    : AP(std::move(aAP)),
       mLength(0),
       mTail(kInlineCapacity, 0)
 #ifdef DEBUG
@@ -1195,10 +1176,54 @@ inline void Vector<T, N, AP>::clearAndFree() {
 }
 
 template <typename T, size_t N, class AP>
-inline void Vector<T, N, AP>::podResizeToFit() {
-  // This function is only defined if IsPod is true and will fail to compile
-  // otherwise.
-  Impl::podResizeToFit(*this);
+inline bool Vector<T, N, AP>::shrinkStorageToFit() {
+  MOZ_REENTRANCY_GUARD_ET_AL;
+
+  const auto length = this->length();
+  if (usingInlineStorage() || length == capacity()) {
+    return true;
+  }
+
+  if (!length) {
+    this->free_(beginNoCheck(), mTail.mCapacity);
+    mBegin = inlineStorage();
+    mTail.mCapacity = kInlineCapacity;
+#ifdef DEBUG
+    mTail.mReserved = 0;
+#endif
+    return true;
+  }
+
+  T* newBuf;
+  size_t newCap;
+  if (length <= kInlineCapacity) {
+    newBuf = inlineStorage();
+    newCap = kInlineCapacity;
+  } else {
+    if (kElemIsPod) {
+      newBuf = this->template pod_realloc<T>(beginNoCheck(), mTail.mCapacity,
+                                             length);
+    } else {
+      newBuf = this->template pod_malloc<T>(length);
+    }
+    if (MOZ_UNLIKELY(!newBuf)) {
+      return false;
+    }
+    newCap = length;
+  }
+  if (!kElemIsPod || newBuf == inlineStorage()) {
+    Impl::moveConstruct(newBuf, beginNoCheck(), endNoCheck());
+    Impl::destroy(beginNoCheck(), endNoCheck());
+  }
+  if (!kElemIsPod) {
+    this->free_(beginNoCheck(), mTail.mCapacity);
+  }
+  mBegin = newBuf;
+  mTail.mCapacity = newCap;
+#ifdef DEBUG
+  mTail.mReserved = length;
+#endif
+  return true;
 }
 
 template <typename T, size_t N, class AP>
@@ -1516,9 +1541,5 @@ inline void Vector<T, N, AP>::swap(Vector& aOther) {
 }
 
 }  // namespace mozilla
-
-#ifdef _MSC_VER
-#  pragma warning(pop)
-#endif
 
 #endif /* mozilla_Vector_h */

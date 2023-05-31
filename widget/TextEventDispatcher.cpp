@@ -5,7 +5,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TextEventDispatcher.h"
-#include "nsIDocShell.h"
 #include "nsIFrame.h"
 #include "nsIWidget.h"
 #include "nsPIDOMWindow.h"

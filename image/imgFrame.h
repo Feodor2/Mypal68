@@ -11,7 +11,6 @@
 #include "mozilla/Move.h"
 #include "AnimationParams.h"
 #include "gfxDrawable.h"
-#include "imgIContainer.h"
 #include "MainThreadUtils.h"
 
 namespace mozilla {

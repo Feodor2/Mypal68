@@ -11,7 +11,6 @@ using namespace mozilla::net;
 #include "nsFTPChannel.h"
 #include "nsIStandardURL.h"
 #include "mozilla/Logging.h"
-#include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 #include "nsIObserverService.h"
 #include "nsEscape.h"
@@ -139,37 +138,6 @@ nsFtpProtocolHandler::GetProtocolFlags(uint32_t* result) {
 }
 
 NS_IMETHODIMP
-nsFtpProtocolHandler::NewURI(const nsACString& aSpec, const char* aCharset,
-                             nsIURI* aBaseURI, nsIURI** result) {
-  if (!mEnabled) {
-    return NS_ERROR_UNKNOWN_PROTOCOL;
-  }
-  nsAutoCString spec(aSpec);
-  spec.Trim(" \t\n\r");  // Match NS_IsAsciiWhitespace instead of HTML5
-
-  char* fwdPtr = spec.BeginWriting();
-
-  // now unescape it... %xx reduced inline to resulting character
-
-  int32_t len = NS_UnescapeURL(fwdPtr);
-
-  // NS_UnescapeURL() modified spec's buffer, truncate to ensure
-  // spec knows its new length.
-  spec.Truncate(len);
-
-  // return an error if we find a NUL, CR, or LF in the path
-  if (spec.FindCharInSet(CRLF) >= 0 || spec.FindChar('\0') >= 0)
-    return NS_ERROR_MALFORMED_URI;
-
-  nsCOMPtr<nsIURI> base(aBaseURI);
-  return NS_MutateURI(NS_STANDARDURLMUTATOR_CONTRACTID)
-      .Apply(NS_MutatorMethod(&nsIStandardURLMutator::Init,
-                              nsIStandardURL::URLTYPE_AUTHORITY, 21,
-                              nsCString(aSpec), aCharset, base, nullptr))
-      .Finalize(result);
-}
-
-NS_IMETHODIMP
 nsFtpProtocolHandler::NewChannel(nsIURI* url, nsILoadInfo* aLoadInfo,
                                  nsIChannel** result) {
   return NewProxiedChannel(url, nullptr, 0, nullptr, aLoadInfo, result);
@@ -181,6 +149,10 @@ nsFtpProtocolHandler::NewProxiedChannel(nsIURI* uri, nsIProxyInfo* proxyInfo,
                                         nsIURI* proxyURI,
                                         nsILoadInfo* aLoadInfo,
                                         nsIChannel** result) {
+  if (!mEnabled) {
+    return NS_ERROR_UNKNOWN_PROTOCOL;
+  }
+
   NS_ENSURE_ARG_POINTER(uri);
   RefPtr<nsBaseChannel> channel;
   if (IsNeckoChild())
@@ -188,16 +160,9 @@ nsFtpProtocolHandler::NewProxiedChannel(nsIURI* uri, nsIProxyInfo* proxyInfo,
   else
     channel = new nsFtpChannel(uri, proxyInfo);
 
-  nsresult rv = channel->Init();
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
   // set the loadInfo on the new channel
-  rv = channel->SetLoadInfo(aLoadInfo);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
+  nsresult rv = channel->SetLoadInfo(aLoadInfo);
+  NS_ENSURE_SUCCESS(rv, rv);
 
   channel.forget(result);
   return rv;

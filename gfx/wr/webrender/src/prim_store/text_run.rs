@@ -10,7 +10,7 @@ use crate::glyph_rasterizer::{FontInstance, FontTransform, GlyphKey, FONT_SIZE_L
 use crate::gpu_cache::GpuCache;
 use crate::intern;
 use crate::internal_types::LayoutPrimitiveInfo;
-use crate::picture::SurfaceInfo;
+use crate::picture::{SubpixelMode, SurfaceInfo};
 use crate::prim_store::{PrimitiveOpacity, PrimitiveSceneData,  PrimitiveScratchBuffer};
 use crate::prim_store::{PrimitiveStore, PrimKeyCommonData, PrimTemplateCommonData};
 use crate::render_task::{RenderTaskGraph};
@@ -103,6 +103,7 @@ impl TextRunTemplate {
         &mut self,
         frame_state: &mut FrameBuildingState,
     ) {
+        // corresponds to `fetch_glyph` in the shaders
         if let Some(mut request) = frame_state.gpu_cache.request(&mut self.common.gpu_cache_handle) {
             request.push(ColorF::from(self.font.color).premultiplied());
             // this is the only case where we need to provide plain color to GPU
@@ -221,7 +222,7 @@ impl TextRunPrimitive {
         specified_font: &FontInstance,
         device_pixel_scale: DevicePixelScale,
         transform: &LayoutToWorldTransform,
-        allow_subpixel_aa: bool,
+        subpixel_mode: SubpixelMode,
         raster_space: RasterSpace,
     ) -> bool {
         // If local raster space is specified, include that in the scale
@@ -237,16 +238,13 @@ impl TextRunPrimitive {
 
         // Determine if rasterizing glyphs in local or screen space.
         // Only support transforms that can be coerced to simple 2D transforms.
-        let transform_glyphs = if transform.has_perspective_component() ||
-           !transform.has_2d_inverse() ||
-           // Font sizes larger than the limit need to be scaled, thus can't use subpixels.
-           transform.exceeds_2d_scale(FONT_SIZE_LIMIT / device_font_size.to_f64_px()) ||
-           // Otherwise, ensure the font is rasterized in screen-space.
-           raster_space != RasterSpace::Screen {
-            false
-        } else {
-            true
-        };
+        let transform_glyphs =
+            !transform.has_perspective_component() &&
+            transform.has_2d_inverse() &&
+            // Font sizes larger than the limit need to be scaled, thus can't use subpixels.
+            !transform.exceeds_2d_scale(FONT_SIZE_LIMIT / device_font_size.to_f64_px()) &&
+            // Otherwise, ensure the font is rasterized in screen-space.
+            raster_space == RasterSpace::Screen;
 
         // Get the font transform matrix (skew / scale) from the complete transform.
         let font_transform = if transform_glyphs {
@@ -274,9 +272,10 @@ impl TextRunPrimitive {
         // If subpixel AA is disabled due to the backing surface the glyphs
         // are being drawn onto, disable it (unless we are using the
         // specifial subpixel mode that estimates background color).
-        if (!allow_subpixel_aa && self.used_font.bg_color.a == 0) ||
+        if (subpixel_mode == SubpixelMode::Deny && self.used_font.bg_color.a == 0) ||
             // If using local space glyphs, we don't want subpixel AA.
-            !transform_glyphs {
+            !transform_glyphs
+        {
             self.used_font.disable_subpixel_aa();
         }
 
@@ -291,6 +290,7 @@ impl TextRunPrimitive {
         transform: &LayoutToWorldTransform,
         surface: &SurfaceInfo,
         raster_space: RasterSpace,
+        subpixel_mode: SubpixelMode,
         resource_cache: &mut ResourceCache,
         gpu_cache: &mut GpuCache,
         render_tasks: &mut RenderTaskGraph,
@@ -302,7 +302,7 @@ impl TextRunPrimitive {
             specified_font,
             device_pixel_scale,
             transform,
-            surface.allow_subpixel_aa,
+            subpixel_mode,
             raster_space,
         );
 
@@ -313,7 +313,7 @@ impl TextRunPrimitive {
                 glyphs.iter().map(|src| {
                     let src_point = src.point + prim_offset;
                     let world_offset = self.used_font.transform.transform(&src_point);
-                    let device_offset = device_pixel_scale.transform_point(&world_offset);
+                    let device_offset = device_pixel_scale.transform_point(world_offset);
                     GlyphKey::new(src.index, device_offset, subpx_dir)
                 }));
         }

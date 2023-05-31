@@ -218,7 +218,7 @@ add_task(async function() {
     false,
     Date.now() + 1000 * 60 * 60,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   Services.cookies.add(
     uri.host,
@@ -230,7 +230,7 @@ add_task(async function() {
     false,
     Date.now() + 1000 * 60 * 60,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   Services.cookies.add(
     uri2.host,
@@ -242,7 +242,7 @@ add_task(async function() {
     false,
     Date.now() + 1000 * 60 * 60,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
 
   // Ensure that private browsing cookies are ignored.
@@ -256,7 +256,7 @@ add_task(async function() {
     false,
     Date.now() + 1000 * 60 * 60,
     { privateBrowsingId: 1 },
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
 
   // Get the exact creation date from the cookies (to avoid intermittents
@@ -265,8 +265,8 @@ add_task(async function() {
   // We made two valid cookies for example.com.
   cookiesEnum1.getNext();
   let cookiesEnum2 = Services.cookies.getCookiesFromHost(uri2.host, {});
-  let cookie1 = cookiesEnum1.getNext().QueryInterface(Ci.nsICookie2);
-  let cookie2 = cookiesEnum2.getNext().QueryInterface(Ci.nsICookie2);
+  let cookie1 = cookiesEnum1.getNext().QueryInterface(Ci.nsICookie);
+  let cookie2 = cookiesEnum2.getNext().QueryInterface(Ci.nsICookie);
 
   let fullFormatter = new Services.intl.DateTimeFormat(undefined, {
     dateStyle: "short",

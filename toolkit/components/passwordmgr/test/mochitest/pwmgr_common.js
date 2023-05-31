@@ -4,8 +4,32 @@
 
 /* import-globals-from ../../../../../toolkit/components/satchel/test/satchel_common.js */
 
-// Copied from LoginTestUtils.masterPassword.masterPassword to use from the content process.
-const MASTER_PASSWORD = "omgsecret!";
+const { LoginTestUtils } = SpecialPowers.Cu.import(
+  "resource://testing-common/LoginTestUtils.jsm",
+  {}
+);
+
+// Setup LoginTestUtils to report assertions to the mochitest harness.
+LoginTestUtils.setAssertReporter(
+  SpecialPowers.wrapCallback((err, message, stack) => {
+    SimpleTest.record(!err, err ? err.message : message, null, stack);
+  })
+);
+
+const { LoginHelper } = SpecialPowers.Cu.import(
+  "resource://gre/modules/LoginHelper.jsm",
+  {}
+);
+const { Services } = SpecialPowers.Cu.import(
+  "resource://gre/modules/Services.jsm",
+  {}
+);
+
+const {
+  LENGTH: GENERATED_PASSWORD_LENGTH,
+  REGEX: GENERATED_PASSWORD_REGEX,
+} = LoginTestUtils.generation;
+const LOGIN_FIELD_UTILS = LoginTestUtils.loginField;
 const TESTS_DIR = "/tests/toolkit/components/passwordmgr/test/";
 
 /**
@@ -39,8 +63,17 @@ function $_(formNum, name) {
 }
 
 /**
+ * Recreate a DOM tree using the outerHTML to ensure that any event listeners
+ * and internal state for the elements are removed.
+ */
+function recreateTree(element) {
+  // eslint-disable-next-line no-unsanitized/property, no-self-assign
+  element.outerHTML = element.outerHTML;
+}
+
+/**
  * Check autocomplete popup results to ensure that expected
- * values are being shown correctly as items in the popup.
+ * *labels* are being shown correctly as items in the popup.
  */
 function checkAutoCompleteResults(actualValues, expectedValues, hostname, msg) {
   if (hostname !== null) {
@@ -53,14 +86,7 @@ function checkAutoCompleteResults(actualValues, expectedValues, hostname, msg) {
 
     // Check the footer first.
     let footerResult = actualValues[actualValues.length - 1];
-    ok(
-      footerResult.includes("View Saved Logins"),
-      "the footer text is shown correctly"
-    );
-    ok(
-      footerResult.includes(hostname),
-      "the footer has the correct hostname attribute"
-    );
+    is(footerResult, "View Saved Logins", "the footer text is shown correctly");
   }
 
   if (hostname === null) {
@@ -80,6 +106,29 @@ function checkAutoCompleteResults(actualValues, expectedValues, hostname, msg) {
 
   // Check the rest of the autocomplete item values.
   checkArrayValues(actualValues.slice(0, -1), expectedValues, msg);
+}
+
+/**
+ * Check for expected username/password in form.
+ * @see `checkForm` below for a similar function.
+ */
+function checkLoginForm(
+  usernameField,
+  expectedUsername,
+  passwordField,
+  expectedPassword
+) {
+  let formID = usernameField.parentNode.id;
+  is(
+    usernameField.value,
+    expectedUsername,
+    "Checking " + formID + " username is: " + expectedUsername
+  );
+  is(
+    passwordField.value,
+    expectedPassword,
+    "Checking " + formID + " password is: " + expectedPassword
+  );
 }
 
 /**
@@ -220,7 +269,7 @@ function disableMasterPassword() {
 }
 
 function setMasterPassword(enable) {
-  PWMGR_COMMON_PARENT.sendSyncMessage("setMasterPassword", { enable });
+  PWMGR_COMMON_PARENT.sendAsyncMessage("setMasterPassword", { enable });
 }
 
 function isLoggedIn() {
@@ -237,7 +286,7 @@ function logoutMasterPassword() {
 }
 
 /**
- * Resolves when a specified number of forms have been processed.
+ * Resolves when a specified number of forms have been processed for (potential) filling.
  */
 function promiseFormsProcessed(expectedCount = 1) {
   var processedCount = 0;
@@ -245,6 +294,7 @@ function promiseFormsProcessed(expectedCount = 1) {
     function onProcessedForm(subject, topic, data) {
       processedCount++;
       if (processedCount == expectedCount) {
+        info(`${processedCount} form(s) processed`);
         SpecialPowers.removeObserver(
           onProcessedForm,
           "passwordmgr-processed-form"
@@ -377,6 +427,7 @@ const PWMGR_COMMON_PARENT = runInParent(
 
 SimpleTest.registerCleanupFunction(() => {
   SpecialPowers.popPrefEnv();
+
   runInParent(function cleanupParent() {
     // eslint-disable-next-line no-shadow
     const { Services } = ChromeUtils.import(
@@ -418,10 +469,6 @@ SimpleTest.registerCleanupFunction(() => {
   });
 });
 
-let { LoginHelper } = SpecialPowers.Cu.import(
-  "resource://gre/modules/LoginHelper.jsm",
-  {}
-);
 /**
  * Proxy for Services.logins (nsILoginManager).
  * Only supports arguments which support structured clone plus {nsILoginInfo}
@@ -444,32 +491,15 @@ this.LoginManager = new Proxy(
           return val;
         });
 
-        return PWMGR_COMMON_PARENT.sendSyncMessage("proxyLoginManager", {
+        let messageRV = PWMGR_COMMON_PARENT.sendSyncMessage("proxyLoginManager", {
           args: cloneableArgs,
           loginInfoIndices,
           methodName: prop,
-        })[0][0];
+        })[0];
+
+        // Handle methods with no return value such as removeLogin.
+        return messageRV ? messageRV[0] : undefined;
       };
     },
   }
 );
-
-// Check for expected username/password in form.
-function checkLoginForm(
-  usernameField,
-  expectedUsername,
-  passwordField,
-  expectedPassword
-) {
-  let formID = usernameField.parentNode.id;
-  is(
-    usernameField.value,
-    expectedUsername,
-    "Checking " + formID + " username is: " + expectedUsername
-  );
-  is(
-    passwordField.value,
-    expectedPassword,
-    "Checking " + formID + " password is: " + expectedPassword
-  );
-}

@@ -9,7 +9,7 @@
 #include "ReadbackManagerD3D11.h"
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "gfxWindowsPlatform.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
@@ -284,7 +284,8 @@ static void DestroyDrawTarget(RefPtr<DrawTarget>& aDT,
 
 D3D11TextureData::~D3D11TextureData() {
   if (mDrawTarget) {
-    if (PaintThread::Get() && gfxPrefs::Direct2DDestroyDTOnPaintThread()) {
+    if (PaintThread::Get() &&
+        StaticPrefs::gfx_direct2d_destroy_dt_on_paintthread()) {
       RefPtr<DrawTarget> dt = mDrawTarget;
       RefPtr<ID3D11Texture2D> tex = mTexture;
       RefPtr<Runnable> task = NS_NewRunnableFunction(
@@ -995,8 +996,9 @@ void DXGITextureHostD3D11::PushResourceUpdates(
       MOZ_ASSERT(aImageKeys.length() == 1);
 
       wr::ImageDescriptor descriptor(mSize, GetFormat());
-      auto bufferType = wr::WrExternalImageBufferType::TextureExternalHandle;
-      (aResources.*method)(aImageKeys[0], descriptor, aExtID, bufferType, 0);
+      auto imageType =
+          wr::ExternalImageType::TextureHandle(wr::TextureTarget::External);
+      (aResources.*method)(aImageKeys[0], descriptor, aExtID, imageType, 0);
       break;
     }
     case gfx::SurfaceFormat::P010:
@@ -1013,9 +1015,10 @@ void DXGITextureHostD3D11::PushResourceUpdates(
                                       mFormat == gfx::SurfaceFormat::NV12
                                           ? gfx::SurfaceFormat::R8G8
                                           : gfx::SurfaceFormat::R16G16);
-      auto bufferType = wr::WrExternalImageBufferType::TextureExternalHandle;
-      (aResources.*method)(aImageKeys[0], descriptor0, aExtID, bufferType, 0);
-      (aResources.*method)(aImageKeys[1], descriptor1, aExtID, bufferType, 1);
+      auto imageType =
+          wr::ExternalImageType::TextureHandle(wr::TextureTarget::External);
+      (aResources.*method)(aImageKeys[0], descriptor0, aExtID, imageType, 0);
+      (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1);
       break;
     }
     default: {
@@ -1237,15 +1240,16 @@ void DXGIYCbCrTextureHostD3D11::PushResourceUpdates(
   auto method = aOp == TextureHost::ADD_IMAGE
                     ? &wr::TransactionBuilder::AddExternalImage
                     : &wr::TransactionBuilder::UpdateExternalImage;
-  auto bufferType = wr::WrExternalImageBufferType::TextureExternalHandle;
+  auto imageType =
+      wr::ExternalImageType::TextureHandle(wr::TextureTarget::External);
 
   // y
   wr::ImageDescriptor descriptor0(mSize, gfx::SurfaceFormat::A8);
   // cb and cr
   wr::ImageDescriptor descriptor1(mSizeCbCr, gfx::SurfaceFormat::A8);
-  (aResources.*method)(aImageKeys[0], descriptor0, aExtID, bufferType, 0);
-  (aResources.*method)(aImageKeys[1], descriptor1, aExtID, bufferType, 1);
-  (aResources.*method)(aImageKeys[2], descriptor1, aExtID, bufferType, 2);
+  (aResources.*method)(aImageKeys[0], descriptor0, aExtID, imageType, 0);
+  (aResources.*method)(aImageKeys[1], descriptor1, aExtID, imageType, 1);
+  (aResources.*method)(aImageKeys[2], descriptor1, aExtID, imageType, 2);
 }
 
 void DXGIYCbCrTextureHostD3D11::PushDisplayItems(

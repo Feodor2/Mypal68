@@ -15,6 +15,7 @@
 #include "Http2HuffmanIncoming.h"
 #include "Http2HuffmanOutgoing.h"
 #include "mozilla/StaticPtr.h"
+#include "nsIMemoryReporter.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsHttpHandler.h"
 

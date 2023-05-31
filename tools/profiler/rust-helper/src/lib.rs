@@ -1,5 +1,6 @@
 extern crate memmap;
 extern crate thin_vec;
+extern crate uuid;
 
 #[cfg(feature = "parse_elf")]
 extern crate object;

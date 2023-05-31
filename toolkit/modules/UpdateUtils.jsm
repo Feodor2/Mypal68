@@ -34,13 +34,9 @@ const PREF_APP_DISTRIBUTION_VERSION = "distribution.version";
 // Do not use the PREF_APP_UPDATE_AUTO preference directly!
 // Call getAppUpdateAutoEnabled or setAppUpdateAutoEnabled instead.
 const PREF_APP_UPDATE_AUTO = "app.update.auto";
-const PREF_APP_UPDATE_AUTO_MIGRATED = "app.update.auto.migrated";
-// The setting name in the FILE_UPDATE_CONFIG_JSON file for whether the
-// Application Update Service automatically downloads and installs updates.
-const CONFIG_APP_UPDATE_AUTO = "app.update.auto";
 // The default value for the CONFIG_APP_UPDATE_AUTO setting and the
 // PREF_APP_UPDATE_AUTO preference.
-const DEFAULT_APP_UPDATE_AUTO = true;
+const DEFAULT_APP_UPDATE_AUTO = 0;
 
 var UpdateUtils = {
   _locale: undefined,
@@ -162,87 +158,24 @@ var UpdateUtils = {
    * downloads and installs updates. This corresponds to whether or not the user
    * has selected "Automatically install updates" in about:preferences.
    *
-   * On Windows, this setting is shared across all profiles for the installation
-   * and is read asynchronously from the file. On other operating systems, this
-   * setting is stored in a pref and is thus a per-profile setting.
-   *
-   * @return A Promise that resolves with a boolean.
+   * This setting is stored in a pref and is thus a per-profile setting.
    */
   getAppUpdateAutoEnabled() {
     if (Services.policies) {
       if (!Services.policies.isAllowed("app-auto-updates-off")) {
         // We aren't allowed to turn off auto-update - it is forced on.
-        return Promise.resolve(true);
+        return 2;
       }
       if (!Services.policies.isAllowed("app-auto-updates-on")) {
         // We aren't allowed to turn on auto-update - it is forced off.
-        return Promise.resolve(false);
+        return 0;
       }
     }
-    if (AppConstants.platform != "win") {
-      // On platforms other than Windows the setting is stored in a preference.
-      let prefValue = Services.prefs.getBoolPref(
-        PREF_APP_UPDATE_AUTO,
-        DEFAULT_APP_UPDATE_AUTO
-      );
-      return Promise.resolve(prefValue);
-    }
-    // Justification for the empty catch statement below:
-    // All promises returned by (get|set)AutoUpdateIsEnabled are part of a
-    // single promise chain in order to serialize disk operations. We don't want
-    // the entire promise chain to reject when one operation fails.
-    //
-    // There is only one situation when a promise in this chain should ever
-    // reject, which is when writing fails and the error is logged and
-    // re-thrown. All other possible exceptions are wrapped in try blocks, which
-    // also log any exception that may occur.
-    let readPromise = updateAutoIOPromise
-      .catch(() => {})
-      .then(async () => {
-        try {
-          let configValue = await readUpdateAutoConfig();
-          // If we read a value out of this file, don't later perform migration.
-          // If the file is deleted, we don't want some stale pref getting
-          // written to it just because a different profile performed migration.
-          Services.prefs.setBoolPref(PREF_APP_UPDATE_AUTO_MIGRATED, true);
-          return configValue;
-        } catch (e) {
-          // Not being able to read from the app update configuration file is not
-          // a serious issue so use logStringMessage to avoid concern from users.
-          Services.console.logStringMessage(
-            "UpdateUtils.getAppUpdateAutoEnabled - Unable to read app update " +
-              "configuration file. Exception: " +
-              e
-          );
-          let valueMigrated = Services.prefs.getBoolPref(
-            PREF_APP_UPDATE_AUTO_MIGRATED,
-            false
-          );
-          if (!valueMigrated) {
-            Services.prefs.setBoolPref(PREF_APP_UPDATE_AUTO_MIGRATED, true);
-            let prefValue = Services.prefs.getBoolPref(
-              PREF_APP_UPDATE_AUTO,
-              DEFAULT_APP_UPDATE_AUTO
-            );
-            try {
-              let writtenValue = await writeUpdateAutoConfig(prefValue);
-              Services.prefs.clearUserPref(PREF_APP_UPDATE_AUTO);
-              return writtenValue;
-            } catch (e) {
-              Cu.reportError(
-                "UpdateUtils.getAppUpdateAutoEnabled - Migration " +
-                  "failed. Exception: " +
-                  e
-              );
-            }
-          }
-        }
-        // Fallthrough for if the value could not be read or migrated.
-        return DEFAULT_APP_UPDATE_AUTO;
-      })
-      .then(maybeUpdateAutoConfigChanged);
-    updateAutoIOPromise = readPromise;
-    return readPromise;
+    let prefValue = Services.prefs.getIntPref(
+      PREF_APP_UPDATE_AUTO,
+      DEFAULT_APP_UPDATE_AUTO
+    );
+    return prefValue;
   },
 
   /**
@@ -265,8 +198,6 @@ var UpdateUtils = {
    * @return A Promise that, once the setting has been saved, resolves with the
    *         boolean value that was saved. If the setting could not be
    *         successfully saved, the Promise will reject.
-   *         On Windows, where this setting is stored in a file, this Promise
-   *         may reject with an I/O error.
    *         On other operating systems, this promise should not reject as
    *         this operation simply sets a pref.
    */
@@ -277,44 +208,12 @@ var UpdateUtils = {
           "it is locked by policy"
       );
     }
-    if (AppConstants.platform != "win") {
-      // Only in Windows do we store the update config in the update directory
-      let prefValue = !!enabledValue;
-      Services.prefs.setBoolPref(PREF_APP_UPDATE_AUTO, prefValue);
-      // Rather than call maybeUpdateAutoConfigChanged, a pref observer has
-      // been connected to PREF_APP_UPDATE_AUTO. This allows us to catch direct
-      // changes to the pref (which Firefox shouldn't be doing, but the user
-      // might do in about:config).
-      return Promise.resolve(prefValue);
-    }
-    // Justification for the empty catch statement below:
-    // All promises returned by (get|set)AutoUpdateIsEnabled are part of a
-    // single promise chain in order to serialize disk operations. We don't want
-    // the entire promise chain to reject when one operation fails.
-    //
-    // There is only one situation when a promise in this chain should ever
-    // reject, which is when writing fails and the error is logged and
-    // re-thrown. All other possible exceptions are wrapped in try blocks, which
-    // also log any exception that may occur.
-    let writePromise = updateAutoIOPromise
-      .catch(() => {})
-      .then(async () => {
-        try {
-          return await writeUpdateAutoConfig(enabledValue);
-        } catch (e) {
-          Cu.reportError(
-            "UpdateUtils.setAppUpdateAutoEnabled - App update " +
-              "configuration file write failed. Exception: " +
-              e
-          );
-          // Rethrow the error so the caller knows that writing the value in the
-          // app update config file failed.
-          throw e;
-        }
-      })
-      .then(maybeUpdateAutoConfigChanged);
-    updateAutoIOPromise = writePromise;
-    return writePromise;
+    Services.prefs.setIntPref(PREF_APP_UPDATE_AUTO, enabledValue);
+    // Rather than call maybeUpdateAutoConfigChanged, a pref observer has
+    // been connected to PREF_APP_UPDATE_AUTO. This allows us to catch direct
+    // changes to the pref (which Firefox shouldn't be doing, but the user
+    // might do in about:config).
+    return Promise.resolve(true);
   },
 
   /**
@@ -333,29 +232,7 @@ var UpdateUtils = {
   },
 };
 
-// Used for serializing reads and writes of the app update json config file so
-// the writes don't happen out of order and the last write is the one that
-// the sets the value.
-var updateAutoIOPromise = Promise.resolve();
 var updateAutoSettingCachedVal = null;
-
-async function readUpdateAutoConfig() {
-  let configFile = FileUtils.getDir("UpdRootD", [], true);
-  configFile.append(FILE_UPDATE_CONFIG_JSON);
-  let binaryData = await OS.File.read(configFile.path);
-  let jsonData = new TextDecoder().decode(binaryData);
-  let configData = JSON.parse(jsonData);
-  return !!configData[CONFIG_APP_UPDATE_AUTO];
-}
-
-async function writeUpdateAutoConfig(enabledValue) {
-  let enabledBoolValue = !!enabledValue;
-  let configFile = FileUtils.getDir("UpdRootD", [], true);
-  configFile.append(FILE_UPDATE_CONFIG_JSON);
-  let configObject = { [CONFIG_APP_UPDATE_AUTO]: enabledBoolValue };
-  await OS.File.writeAtomic(configFile.path, JSON.stringify(configObject));
-  return enabledBoolValue;
-}
 
 // Notifies observers if the value of app.update.auto has changed and returns
 // the value for app.update.auto.
@@ -370,18 +247,14 @@ function maybeUpdateAutoConfigChanged(newValue) {
   }
   return newValue;
 }
-// On non-Windows platforms, the Update Auto Config is still stored as a pref.
-// On those platforms, the best way to notify observers of this setting is
-// just to propagate it from a pref observer
-if (AppConstants.platform != "win") {
-  Services.prefs.addObserver(
-    PREF_APP_UPDATE_AUTO,
-    async (subject, topic, data) => {
-      let value = await UpdateUtils.getAppUpdateAutoEnabled();
-      maybeUpdateAutoConfigChanged(value);
-    }
-  );
-}
+
+Services.prefs.addObserver(
+  PREF_APP_UPDATE_AUTO,
+  async (subject, topic, data) => {
+    let value = await UpdateUtils.getAppUpdateAutoEnabled();
+    maybeUpdateAutoConfigChanged(value);
+  }
+);
 
 /* Get the distribution pref values, from defaults only */
 function getDistributionPrefValue(aPrefName) {

@@ -16,8 +16,6 @@ const INITIAL_STATE = {
     // Have we received real data from the app yet?
     initialized: false,
   },
-  ASRouter: {initialized: false},
-  Snippets: {initialized: false},
   TopSites: {
     // Have we received real data from history yet?
     initialized: false,
@@ -39,25 +37,6 @@ const INITIAL_STATE = {
     data: {},
   },
   Sections: [],
-  DiscoveryStream: {
-    // This is a JSON-parsed copy of the discoverystream.config pref value.
-    config: {enabled: false, layout_endpoint: ""},
-    layout: [],
-    lastUpdated: null,
-    feeds: {
-      data: {
-        // "https://foo.com/feed1": {lastUpdated: 123, data: []}
-      },
-      loaded: false,
-    },
-    spocs: {
-      spocs_endpoint: "",
-      lastUpdated: null,
-      data: {}, // {spocs: []}
-      loaded: false,
-      frequency_caps: [],
-    },
-  },
   Search: {
     // When search hand-off is enabled, we render a big button that is styled to
     // look like a search textbox. If the button is clicked, we style
@@ -220,8 +199,6 @@ function TopSites(prevState = INITIAL_STATE.TopSites, action) {
       return Object.assign({}, prevState, {rows: newRows});
     case at.UPDATE_SEARCH_SHORTCUTS:
       return {...prevState, searchShortcuts: action.data.searchShortcuts};
-    case at.SNIPPETS_PREVIEW_MODE:
-      return {...prevState, rows: []};
     default:
       return prevState;
   }
@@ -383,148 +360,6 @@ function Sections(prevState = INITIAL_STATE.Sections, action) {
       }
       return prevState.map(section =>
         Object.assign({}, section, {rows: section.rows.filter(site => site.url !== action.data.url)}));
-    case at.SNIPPETS_PREVIEW_MODE:
-      return prevState.map(section => ({...section, rows: []}));
-    default:
-      return prevState;
-  }
-}
-
-function Snippets(prevState = INITIAL_STATE.Snippets, action) {
-  switch (action.type) {
-    case at.SNIPPETS_DATA:
-      return Object.assign({}, prevState, {initialized: true}, action.data);
-    case at.SNIPPET_BLOCKED:
-      return Object.assign({}, prevState, {blockList: prevState.blockList.concat(action.data)});
-    case at.SNIPPETS_BLOCKLIST_CLEARED:
-      return Object.assign({}, prevState, {blockList: []});
-    case at.SNIPPETS_RESET:
-      return INITIAL_STATE.Snippets;
-    default:
-      return prevState;
-  }
-}
-
-function DiscoveryStream(prevState = INITIAL_STATE.DiscoveryStream, action) {
-  // Return if action data is empty, or spocs or feeds data is not loaded
-  const isNotReady = () =>
-    !action.data || !prevState.spocs.loaded || !prevState.feeds.loaded;
-
-  const nextState = handleSites => (
-    {
-      ...prevState,
-      spocs: {
-        ...prevState.spocs,
-        data: prevState.spocs.data.spocs ? {
-          spocs: handleSites(prevState.spocs.data.spocs),
-        } : {},
-      },
-      feeds: {
-        ...prevState.feeds,
-        data: Object.keys(prevState.feeds.data).reduce((accumulator, feed_url) => {
-          accumulator[feed_url] = {
-            data: {
-              ...prevState.feeds.data[feed_url].data,
-              recommendations: handleSites(prevState.feeds.data[feed_url].data.recommendations),
-            },
-          };
-          return accumulator;
-        }, {}),
-      },
-    });
-
-  switch (action.type) {
-    case at.DISCOVERY_STREAM_CONFIG_CHANGE:
-    // The reason this is a separate action is so it doesn't trigger a listener update on init
-    case at.DISCOVERY_STREAM_CONFIG_SETUP:
-      return {...prevState, config: action.data || {}};
-    case at.DISCOVERY_STREAM_LAYOUT_UPDATE:
-      return {...prevState, lastUpdated: action.data.lastUpdated || null, layout: action.data.layout || []};
-    case at.DISCOVERY_STREAM_LAYOUT_RESET:
-      return {...INITIAL_STATE.DiscoveryStream, config: prevState.config};
-    case at.DISCOVERY_STREAM_FEEDS_UPDATE:
-      return {
-        ...prevState,
-        feeds: {
-          ...prevState.feeds,
-          loaded: true,
-        },
-      };
-    case at.DISCOVERY_STREAM_FEED_UPDATE:
-      const newData = {};
-      newData[action.data.url] = action.data.feed;
-      return {
-        ...prevState,
-        feeds: {
-          ...prevState.feeds,
-          data: {
-            ...prevState.feeds.data,
-            ...newData,
-          },
-        },
-      };
-    case at.DISCOVERY_STREAM_SPOCS_CAPS:
-      return {
-        ...prevState,
-        spocs: {
-          ...prevState.spocs,
-          frequency_caps: [...prevState.spocs.frequency_caps, ...action.data],
-        },
-      };
-    case at.DISCOVERY_STREAM_SPOCS_ENDPOINT:
-      return {
-        ...prevState,
-        spocs: {
-          ...INITIAL_STATE.DiscoveryStream.spocs,
-          spocs_endpoint: action.data || INITIAL_STATE.DiscoveryStream.spocs.spocs_endpoint,
-        },
-      };
-    case at.DISCOVERY_STREAM_SPOCS_UPDATE:
-      if (action.data) {
-        return {
-          ...prevState,
-          spocs: {
-            ...prevState.spocs,
-            lastUpdated: action.data.lastUpdated,
-            data: action.data.spocs,
-            loaded: true,
-          },
-        };
-      }
-      return prevState;
-    case at.DISCOVERY_STREAM_LINK_BLOCKED:
-      return isNotReady() ? prevState :
-        nextState(items => items.filter(item => item.url !== action.data.url));
-
-    case at.PLACES_BOOKMARK_ADDED:
-      const updateBookmarkInfo = item => {
-        if (item.url === action.data.url) {
-          const {bookmarkGuid, bookmarkTitle, dateAdded} = action.data;
-          return Object.assign({}, item, {
-            bookmarkGuid,
-            bookmarkTitle,
-            bookmarkDateCreated: dateAdded,
-          });
-        }
-        return item;
-      };
-      return isNotReady() ? prevState :
-        nextState(items => items.map(updateBookmarkInfo));
-
-    case at.PLACES_BOOKMARK_REMOVED:
-      const removeBookmarkInfo = item => {
-        if (item.url === action.data.url) {
-          const newSite = Object.assign({}, item);
-          delete newSite.bookmarkGuid;
-          delete newSite.bookmarkTitle;
-          delete newSite.bookmarkDateCreated;
-          return newSite;
-        }
-        return item;
-      };
-      return isNotReady() ? prevState :
-        nextState(items => items.map(removeBookmarkInfo));
-
     default:
       return prevState;
   }
@@ -550,12 +385,9 @@ this.TOP_SITES_MAX_SITES_PER_ROW = TOP_SITES_MAX_SITES_PER_ROW;
 this.reducers = {
   TopSites,
   App,
-  ASRouter,
-  Snippets,
   Prefs,
   Dialog,
   Sections,
-  DiscoveryStream,
   Search,
 };
 

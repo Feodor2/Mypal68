@@ -1,6 +1,11 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "HangDetails.h"
 #include "nsIHangDetails.h"
 #include "nsPrintfCString.h"
+#include "js/Array.h"  // JS::NewArrayObject
 #include "mozilla/gfx/GPUParent.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/Unused.h"
@@ -94,7 +99,7 @@ NS_IMETHODIMP
 nsHangDetails::GetStack(JSContext* aCx, JS::MutableHandleValue aStack) {
   auto& stack = mDetails.stack();
   uint32_t length = stack.stack().Length();
-  JS::RootedObject ret(aCx, JS_NewArrayObject(aCx, length));
+  JS::RootedObject ret(aCx, JS::NewArrayObject(aCx, length));
   if (!ret) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
@@ -137,7 +142,7 @@ nsHangDetails::GetStack(JSContext* aCx, JS::MutableHandleValue aStack) {
       case HangEntry::THangEntryModOffset: {
         const HangEntryModOffset& mo = entry.get_HangEntryModOffset();
 
-        JS::RootedObject jsFrame(aCx, JS_NewArrayObject(aCx, 2));
+        JS::RootedObject jsFrame(aCx, JS::NewArrayObject(aCx, 2));
         if (!jsFrame) {
           return NS_ERROR_OUT_OF_MEMORY;
         }
@@ -201,14 +206,14 @@ NS_IMETHODIMP
 nsHangDetails::GetModules(JSContext* aCx, JS::MutableHandleValue aVal) {
   auto& modules = mDetails.stack().modules();
   size_t length = modules.Length();
-  JS::RootedObject retObj(aCx, JS_NewArrayObject(aCx, length));
+  JS::RootedObject retObj(aCx, JS::NewArrayObject(aCx, length));
   if (!retObj) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
 
   for (size_t i = 0; i < length; ++i) {
     const HangModule& module = modules[i];
-    JS::RootedObject jsModule(aCx, JS_NewArrayObject(aCx, 2));
+    JS::RootedObject jsModule(aCx, JS::NewArrayObject(aCx, 2));
     if (!jsModule) {
       return NS_ERROR_OUT_OF_MEMORY;
     }

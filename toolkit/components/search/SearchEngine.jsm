@@ -929,8 +929,7 @@ SearchEngine.prototype = {
     // Display only the hostname portion of the URL.
     var dialogMessage = stringBundle.formatStringFromName(
       "addEngineConfirmation",
-      [this._name, this._uri.host],
-      2
+      [this._name, this._uri.host]
     );
     var checkboxMessage = null;
     if (
@@ -1011,8 +1010,7 @@ SearchEngine.prototype = {
       var title = searchBundle.GetStringFromName(titleStringName);
       var text = searchBundle.formatStringFromName(
         msgStringName,
-        [brandName, engine._location],
-        2
+        [brandName, engine._location]
       );
 
       Services.ww.getNewPrompter(null).alert(title, text);

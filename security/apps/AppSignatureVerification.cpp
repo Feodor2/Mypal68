@@ -23,9 +23,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsDependentString.h"
 #include "nsHashKeys.h"
-#include "nsIDirectoryEnumerator.h"
 #include "nsIFile.h"
-#include "nsIFileStreams.h"
 #include "nsIInputStream.h"
 #include "nsIStringEnumerator.h"
 #include "nsIZipReader.h"
@@ -1366,5 +1364,5 @@ nsNSSCertificateDB::OpenSignedAppFileAsync(
   SignaturePolicy policy(policyInt);
   RefPtr<OpenSignedAppFileTask> task(
       new OpenSignedAppFileTask(aTrustedRoot, aJarFile, policy, aCallback));
-  return task->Dispatch("SignedJAR");
+  return task->Dispatch();
 }

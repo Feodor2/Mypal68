@@ -749,6 +749,17 @@ def split_triplet(triplet, allow_unknown=False):
     def bitness(cpu):
         return CPU_bitness[cpu]
 
+    # Toolchains, most notably for cross compilation may use cpu-os
+    # prefixes. We need to be more specific about the LLVM target on Mac
+    # so cross-language LTO will work correctly.
+
+    if os.startswith('darwin'):
+        toolchain = '%s-apple-%s' % (cpu, os)
+    elif canonical_cpu == 'aarch64' and canonical_os == 'WINNT':
+        toolchain = 'aarch64-windows-msvc'
+    else:
+        toolchain = '%s-%s' % (cpu, os)
+
     return namespace(
         alias=triplet,
         cpu=sanitize(CPU, canonical_cpu),
@@ -758,9 +769,7 @@ def split_triplet(triplet, allow_unknown=False):
         endianness=sanitize(Endianness, endianness),
         raw_cpu=cpu,
         raw_os=os,
-        # Toolchains, most notably for cross compilation may use cpu-os
-        # prefixes.
-        toolchain='%s-%s' % (cpu, os),
+        toolchain=toolchain,
         vendor=vendor,
     )
 
@@ -1202,7 +1211,7 @@ def milestone(build_env, build_project, version_path, _):
     # Only expose major milestone and alpha version in the symbolversion
     # string; as the name suggests, we use it for symbol versioning on Linux.
     return namespace(version=milestone,
-                     uaversion='%s.0' % major_version,
+                     uaversion='78.0',
                      symbolversion='%s%s' % (major_version, ab_patch),
                      is_nightly=is_nightly,
                      is_release_or_beta=is_release_or_beta,

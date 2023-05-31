@@ -77,7 +77,6 @@ const CookieCleaner = {
             cookie.host,
             cookie.name,
             cookie.path,
-            false,
             cookie.originAttributes
           );
           // We don't want to block the main-thread.
@@ -486,7 +485,7 @@ const QuotaCleaner = {
           // wiped if we are provided an aHost of "example.com".
           promises.push(
             new Promise((aResolve, aReject) => {
-              Services.qms.listInitializedOrigins(aRequest => {
+              Services.qms.listOrigins(aRequest => {
                 if (aRequest.resultCode != Cr.NS_OK) {
                   aReject({ message: "Delete by host failed" });
                   return;
@@ -546,9 +545,9 @@ const QuotaCleaner = {
       let principal = principals.queryElementAt(i, Ci.nsIPrincipal);
 
       if (
-        principal.URI.scheme != "http" &&
-        principal.URI.scheme != "https" &&
-        principal.URI.scheme != "file"
+        !principal.schemeIs("http") &&
+        !principal.schemeIs("https") &&
+        !principal.schemeIs("file")
       ) {
         continue;
       }
@@ -588,9 +587,9 @@ const QuotaCleaner = {
                 item.origin
               );
               if (
-                principal.URI.scheme == "http" ||
-                principal.URI.scheme == "https" ||
-                principal.URI.scheme == "file"
+                principal.schemeIs("http") ||
+                principal.schemeIs("https") ||
+                principal.schemeIs("file")
               ) {
                 promises.push(
                   new Promise((aResolve, aReject) => {
@@ -669,7 +668,7 @@ const PushNotificationsCleaner = {
 const StorageAccessCleaner = {
   deleteByHost(aHost, aOriginAttributes) {
     return new Promise(aResolve => {
-      for (let perm of Services.perms.enumerator) {
+      for (let perm of Services.perms.all) {
         if (perm.type == "storageAccessAPI") {
           let toBeRemoved = false;
           try {
@@ -780,7 +779,7 @@ const AuthCacheCleaner = {
 const PermissionsCleaner = {
   deleteByHost(aHost, aOriginAttributes) {
     return new Promise(aResolve => {
-      for (let perm of Services.perms.enumerator) {
+      for (let perm of Services.perms.all) {
         let toBeRemoved;
         try {
           toBeRemoved = Services.eTLD.hasRootDomain(

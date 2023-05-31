@@ -37,7 +37,6 @@
 #include "SVGDrawingParameters.h"
 #include "nsIDOMEventListener.h"
 #include "SurfaceCache.h"
-#include "mozilla/dom/Document.h"
 
 namespace mozilla {
 
@@ -67,7 +66,7 @@ class SVGRootRenderingObserver final : public SVGRenderingObserver {
     MOZ_ASSERT(elem, "no root SVG node for us to observe");
 
     SVGObserverUtils::AddRenderingObserver(elem, this);
-    mInObserverList = true;
+    mInObserverSet = true;
   }
 
   void ResumeHonoringInvalidations() { mHonoringInvalidations = true; }
@@ -102,9 +101,9 @@ class SVGRootRenderingObserver final : public SVGRenderingObserver {
 
     // Our caller might've removed us from rendering-observer list.
     // Add ourselves back!
-    if (!mInObserverList) {
+    if (!mInObserverSet) {
       SVGObserverUtils::AddRenderingObserver(elem, this);
-      mInObserverList = true;
+      mInObserverSet = true;
     }
   }
 
@@ -1495,19 +1494,6 @@ void VectorImage::InvalidateObserversOnNextRefreshDriverTick() {
       [=]() -> void { self->SendInvalidationNotifications(); }));
   eventTarget->Dispatch(CreateMediumHighRunnable(ev.forget()),
                         NS_DISPATCH_NORMAL);
-}
-
-void VectorImage::PropagateUseCounters(Document* aParentDocument) {
-  Document* doc = mSVGDocumentWrapper->GetDocument();
-  if (doc) {
-    doc->PropagateUseCounters(aParentDocument);
-  }
-}
-
-void VectorImage::ReportUseCounters() {
-  if (Document* doc = mSVGDocumentWrapper->GetDocument()) {
-    doc->ReportUseCounters();
-  }
 }
 
 nsIntSize VectorImage::OptimalImageSizeForDest(const gfxSize& aDest,

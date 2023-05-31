@@ -30,7 +30,6 @@ for (const type of [
   "AS_ROUTER_INITIALIZED",
   "AS_ROUTER_PREF_CHANGED",
   "AS_ROUTER_TARGETING_UPDATE",
-  "AS_ROUTER_TELEMETRY_USER_EVENT",
   "BLOCK_URL",
   "BOOKMARK_URL",
   "COPY_DOWNLOAD_LINK",
@@ -38,21 +37,6 @@ for (const type of [
   "DELETE_HISTORY_URL",
   "DIALOG_CANCEL",
   "DIALOG_OPEN",
-  "DISCOVERY_STREAM_CONFIG_CHANGE",
-  "DISCOVERY_STREAM_CONFIG_SETUP",
-  "DISCOVERY_STREAM_CONFIG_SET_VALUE",
-  "DISCOVERY_STREAM_FEEDS_UPDATE",
-  "DISCOVERY_STREAM_FEED_UPDATE",
-  "DISCOVERY_STREAM_IMPRESSION_STATS",
-  "DISCOVERY_STREAM_LAYOUT_RESET",
-  "DISCOVERY_STREAM_LAYOUT_UPDATE",
-  "DISCOVERY_STREAM_LINK_BLOCKED",
-  "DISCOVERY_STREAM_LOADED_CONTENT",
-  "DISCOVERY_STREAM_SPOCS_CAPS",
-  "DISCOVERY_STREAM_SPOCS_ENDPOINT",
-  "DISCOVERY_STREAM_SPOCS_FILL",
-  "DISCOVERY_STREAM_SPOCS_UPDATE",
-  "DISCOVERY_STREAM_SPOC_IMPRESSION",
   "DOWNLOAD_CHANGED",
   "FAKE_FOCUS_SEARCH",
   "FILL_SEARCH_TERM",
@@ -70,7 +54,6 @@ for (const type of [
   "OPEN_NEW_WINDOW",
   "OPEN_PRIVATE_WINDOW",
   "OPEN_WEBEXT_SETTINGS",
-  "PAGE_PRERENDERED",
   "PLACES_BOOKMARK_ADDED",
   "PLACES_BOOKMARK_REMOVED",
   "PLACES_HISTORY_CLEARED",
@@ -101,18 +84,8 @@ for (const type of [
   "SHOW_FIREFOX_ACCOUNTS",
   "SHOW_SEARCH",
   "SKIPPED_SIGNIN",
-  "SNIPPETS_BLOCKLIST_CLEARED",
-  "SNIPPETS_BLOCKLIST_UPDATED",
-  "SNIPPETS_DATA",
-  "SNIPPETS_PREVIEW_MODE",
-  "SNIPPETS_RESET",
-  "SNIPPET_BLOCKED",
   "SUBMIT_EMAIL",
   "SYSTEM_TICK",
-  "TELEMETRY_IMPRESSION_STATS",
-  "TELEMETRY_PERFORMANCE_EVENT",
-  "TELEMETRY_UNDESIRED_EVENT",
-  "TELEMETRY_USER_EVENT",
   "TOP_SITES_CANCEL_EDIT",
   "TOP_SITES_CLOSE_SEARCH_SHORTCUTS_MODAL",
   "TOP_SITES_EDIT",
@@ -259,124 +232,6 @@ function AlsoToPreloaded(action) {
   });
 }
 
-/**
- * UserEvent - A telemetry ping indicating a user action. This should only
- *                   be sent from the UI during a user session.
- *
- * @param  {object} data Fields to include in the ping (source, etc.)
- * @return {object} An AlsoToMain action
- */
-function UserEvent(data) {
-  return AlsoToMain({
-    type: actionTypes.TELEMETRY_USER_EVENT,
-    data,
-  });
-}
-
-/**
- * ASRouterUserEvent - A telemetry ping indicating a user action from AS router. This should only
- *                     be sent from the UI during a user session.
- *
- * @param  {object} data Fields to include in the ping (source, etc.)
- * @return {object} An AlsoToMain action
- */
-function ASRouterUserEvent(data) {
-  return AlsoToMain({
-    type: actionTypes.AS_ROUTER_TELEMETRY_USER_EVENT,
-    data,
-  });
-}
-
-/**
- * DiscoveryStreamSpocsFill - A telemetry ping indicating a SPOCS Fill event.
- *
- * @param  {object} data Fields to include in the ping (spoc_fills, etc.)
- * @param  {int} importContext (For testing) Override the import context for testing.
- * @return {object} An AlsoToMain action
- */
-function DiscoveryStreamSpocsFill(data, importContext = globalImportContext) {
-  const action = {
-    type: actionTypes.DISCOVERY_STREAM_SPOCS_FILL,
-    data,
-  };
-  return importContext === UI_CODE ? AlsoToMain(action) : action;
-}
-
-/**
- * UndesiredEvent - A telemetry ping indicating an undesired state.
- *
- * @param  {object} data Fields to include in the ping (value, etc.)
- * @param  {int} importContext (For testing) Override the import context for testing.
- * @return {object} An action. For UI code, a AlsoToMain action.
- */
-function UndesiredEvent(data, importContext = globalImportContext) {
-  const action = {
-    type: actionTypes.TELEMETRY_UNDESIRED_EVENT,
-    data,
-  };
-  return importContext === UI_CODE ? AlsoToMain(action) : action;
-}
-
-/**
- * PerfEvent - A telemetry ping indicating a performance-related event.
- *
- * @param  {object} data Fields to include in the ping (value, etc.)
- * @param  {int} importContext (For testing) Override the import context for testing.
- * @return {object} An action. For UI code, a AlsoToMain action.
- */
-function PerfEvent(data, importContext = globalImportContext) {
-  const action = {
-    type: actionTypes.TELEMETRY_PERFORMANCE_EVENT,
-    data,
-  };
-  return importContext === UI_CODE ? AlsoToMain(action) : action;
-}
-
-/**
- * ImpressionStats - A telemetry ping indicating an impression stats.
- *
- * @param  {object} data Fields to include in the ping
- * @param  {int} importContext (For testing) Override the import context for testing.
- * #return {object} An action. For UI code, a AlsoToMain action.
- */
-function ImpressionStats(data, importContext = globalImportContext) {
-  const action = {
-    type: actionTypes.TELEMETRY_IMPRESSION_STATS,
-    data,
-  };
-  return importContext === UI_CODE ? AlsoToMain(action) : action;
-}
-
-/**
- * DiscoveryStreamImpressionStats - A telemetry ping indicating an impression stats in Discovery Stream.
- *
- * @param  {object} data Fields to include in the ping
- * @param  {int} importContext (For testing) Override the import context for testing.
- * #return {object} An action. For UI code, a AlsoToMain action.
- */
-function DiscoveryStreamImpressionStats(data, importContext = globalImportContext) {
-  const action = {
-    type: actionTypes.DISCOVERY_STREAM_IMPRESSION_STATS,
-    data,
-  };
-  return importContext === UI_CODE ? AlsoToMain(action) : action;
-}
-
-/**
- * DiscoveryStreamLoadedContent - A telemetry ping indicating a content gets loaded in Discovery Stream.
- *
- * @param  {object} data Fields to include in the ping
- * @param  {int} importContext (For testing) Override the import context for testing.
- * #return {object} An action. For UI code, a AlsoToMain action.
- */
-function DiscoveryStreamLoadedContent(data, importContext = globalImportContext) {
-  const action = {
-    type: actionTypes.DISCOVERY_STREAM_LOADED_CONTENT,
-    data,
-  };
-  return importContext === UI_CODE ? AlsoToMain(action) : action;
-}
-
 function SetPref(name, value, importContext = globalImportContext) {
   const action = {type: actionTypes.SET_PREF, data: {name, value}};
   return importContext === UI_CODE ? AlsoToMain(action) : action;
@@ -395,11 +250,6 @@ this.ASRouterActions = ASRouterActions;
 
 this.actionCreators = {
   BroadcastToContent,
-  UserEvent,
-  ASRouterUserEvent,
-  UndesiredEvent,
-  PerfEvent,
-  ImpressionStats,
   AlsoToOneContent,
   OnlyToOneContent,
   AlsoToMain,
@@ -407,9 +257,6 @@ this.actionCreators = {
   AlsoToPreloaded,
   SetPref,
   WebExtEvent,
-  DiscoveryStreamImpressionStats,
-  DiscoveryStreamLoadedContent,
-  DiscoveryStreamSpocsFill,
 };
 
 // These are helpers to test for certain kinds of actions

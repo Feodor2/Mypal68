@@ -17,8 +17,8 @@ namespace mozilla {
 
 UniquePtr<Sdp> RsdparsaSdpParser::Parse(const std::string& sdpText) {
   ClearParseErrors();
-  RustSdpSession* result;
-  RustSdpError* err;
+  RustSdpSession* result = nullptr;
+  RustSdpError* err = nullptr;
   StringView sdpTextView{sdpText.c_str(), sdpText.length()};
   nsresult rv = parse_sdp(sdpTextView, false, &result, &err);
   if (rv != NS_OK) {
@@ -36,13 +36,11 @@ UniquePtr<Sdp> RsdparsaSdpParser::Parse(const std::string& sdpText) {
     AddParseWarnings(line, warningMsg);
   }
 
-  RsdparsaSessionHandle uniqueResult;
-  uniqueResult.reset(result);
+  RsdparsaSessionHandle uniqueResult(result);
   RustSdpOrigin rustOrigin = sdp_get_origin(uniqueResult.get());
-  sdp::AddrType addrType = convertAddressType(rustOrigin.addr.addrType);
+  auto address = convertExplicitlyTypedAddress(&rustOrigin.addr);
   SdpOrigin origin(convertStringView(rustOrigin.username), rustOrigin.sessionId,
-                   rustOrigin.sessionVersion, addrType,
-                   std::string(rustOrigin.addr.unicastAddr));
+                   rustOrigin.sessionVersion, address.first, address.second);
 
   return MakeUnique<RsdparsaSdp>(std::move(uniqueResult), origin);
 }

@@ -37,6 +37,26 @@ const sitePermissionsL10n = {
     disableLabel: "permissions-site-microphone-disable-label",
     disableDescription: "permissions-site-microphone-disable-desc",
   },
+  "autoplay-media": {
+    window: "permissions-site-autoplay-window",
+    description: "permissions-site-autoplay-desc",
+  },
+};
+
+const sitePermissionsConfig = {
+  "autoplay-media": {
+    _getCapabilityString(capability) {
+      switch (capability) {
+      case SitePermissions.ALLOW:
+        return "permissions-capabilities-autoplay-allow";
+      case SitePermissions.BLOCK:
+        return "permissions-capabilities-autoplay-block";
+      case SitePermissions.AUTOPLAY_BLOCKED_ALL:
+        return "permissions-capabilities-autoplay-blockall";
+      }
+      throw new Error(`Unknown capability: ${capability}`);
+    },
+  },
 };
 
 function Permission(principal, type, capability, l10nId) {
@@ -51,10 +71,13 @@ const PERMISSION_STATES = [
   SitePermissions.ALLOW,
   SitePermissions.BLOCK,
   SitePermissions.PROMPT,
+  SitePermissions.AUTOPLAY_BLOCKED_ALL,
 ];
 const NOTIFICATIONS_PERMISSION_OVERRIDE_KEY = "webNotificationsDisabled";
 const NOTIFICATIONS_PERMISSION_PREF =
   "permissions.default.desktop-notification";
+
+const AUTOPLAY_PREF = "media.autoplay.default";
 
 var gSitePermissionsManager = {
   _type: "",
@@ -93,16 +116,21 @@ var gSitePermissionsManager = {
     this._permissionsDisableDescription = document.getElementById(
       "permissionsDisableDescription"
     );
+    this._setAutoplayPref = document.getElementById("setAutoplayPref");
 
     let permissionsText = document.getElementById("permissionsText");
 
     let l10n = sitePermissionsL10n[this._type];
     document.l10n.setAttributes(permissionsText, l10n.description);
-    document.l10n.setAttributes(this._checkbox, l10n.disableLabel);
-    document.l10n.setAttributes(
-      this._permissionsDisableDescription,
-      l10n.disableDescription
-    );
+    if (l10n.disableLabel) {
+      document.l10n.setAttributes(this._checkbox, l10n.disableLabel);
+    }
+    if (l10n.disableDescription) {
+      document.l10n.setAttributes(
+        this._permissionsDisableDescription,
+        l10n.disableDescription
+      );
+    }
     document.l10n.setAttributes(document.documentElement, l10n.window);
 
     await document.l10n.translateElements([
@@ -120,6 +148,11 @@ var gSitePermissionsManager = {
     this._loadPermissions();
     this.buildPermissionsList();
 
+    if (params.permissionType == "autoplay-media") {
+      this.buildAutoplayMenulist();
+      this._setAutoplayPref.hidden = false;
+    }
+
     this._searchBox.focus();
   },
 
@@ -127,6 +160,9 @@ var gSitePermissionsManager = {
     if (this._isObserving) {
       Services.obs.removeObserver(this, "perm-changed");
       this._isObserving = false;
+    }
+    if (this._setAutoplayPref) {
+      this._setAutoplayPref.hidden = true;
     }
   },
 
@@ -151,7 +187,10 @@ var gSitePermissionsManager = {
     } else if (data == "changed") {
       let p = this._permissions.get(permission.principal.origin);
       p.capability = permission.capability;
-      p.l10nId = this._getCapabilityString(permission.capability);
+      p.l10nId = this._getCapabilityString(
+        permission.type,
+        permission.capability
+      );
       this._handleCapabilityChange(p);
       this.buildPermissionsList();
     } else if (data == "deleted") {
@@ -244,22 +283,24 @@ var gSitePermissionsManager = {
     }
   },
 
-  _getCapabilityString(capability) {
-    let stringKey = null;
+  _getCapabilityString(type, capability) {
+    if (
+      type in sitePermissionsConfig &&
+      sitePermissionsConfig[type]._getCapabilityString
+    ) {
+      return sitePermissionsConfig[type]._getCapabilityString(capability);
+    }
+
     switch (capability) {
       case Services.perms.ALLOW_ACTION:
-        stringKey = "permissions-capabilities-allow";
-        break;
+        return "permissions-capabilities-allow";
       case Services.perms.DENY_ACTION:
-        stringKey = "permissions-capabilities-block";
-        break;
+        return "permissions-capabilities-block";
       case Services.perms.PROMPT_ACTION:
-        stringKey = "permissions-capabilities-prompt";
-        break;
+        return "permissions-capabilities-prompt";
       default:
         throw new Error(`Unknown capability: ${capability}`);
     }
-    return stringKey;
   },
 
   _addPermissionToList(perm) {
@@ -270,7 +311,7 @@ var gSitePermissionsManager = {
     ) {
       return;
     }
-    let l10nId = this._getCapabilityString(perm.capability);
+    let l10nId = this._getCapabilityString(perm.type, perm.capability);
     let p = new Permission(perm.principal, perm.type, perm.capability, l10nId);
     this._permissions.set(p.origin, p);
   },
@@ -288,12 +329,13 @@ var gSitePermissionsManager = {
 
   _loadPermissions() {
     // load permissions into a table.
-    for (let nextPermission of Services.perms.enumerator) {
+    for (let nextPermission of Services.perms.all) {
       this._addPermissionToList(nextPermission);
     }
   },
 
   _createPermissionListItem(permission) {
+    let width = (permission.type == "autoplay-media") ? "75" : "50";
     let richlistitem = document.createXULElement("richlistitem");
     richlistitem.setAttribute("origin", permission.origin);
     let row = document.createXULElement("hbox");
@@ -302,14 +344,14 @@ var gSitePermissionsManager = {
     let hbox = document.createXULElement("hbox");
     let website = document.createXULElement("label");
     website.setAttribute("value", permission.origin);
-    website.setAttribute("width", "50");
+    website.setAttribute("width", width);
     hbox.setAttribute("class", "website-name");
     hbox.setAttribute("flex", "3");
     hbox.appendChild(website);
 
     let menulist = document.createXULElement("menulist");
     menulist.setAttribute("flex", "1");
-    menulist.setAttribute("width", "50");
+    menulist.setAttribute("width", width);
     menulist.setAttribute("class", "website-status");
     let states = SitePermissions.getAvailableStates(permission.type);
     for (let state of states) {
@@ -325,7 +367,7 @@ var gSitePermissionsManager = {
         continue;
       }
       let m = menulist.appendItem(undefined, state);
-      document.l10n.setAttributes(m, this._getCapabilityString(state));
+      document.l10n.setAttributes(m, this._getCapabilityString(permission.type, state));
     }
     menulist.value = permission.capability;
 
@@ -412,7 +454,7 @@ var gSitePermissionsManager = {
       return;
     }
     p.capability = capability;
-    p.l10nId = this._getCapabilityString(capability);
+    p.l10nId = this._getCapabilityString(perm.type, perm.capability);
     this._permissionsToChange.set(p.origin, p);
 
     // enable "remove all" button as needed
@@ -426,13 +468,11 @@ var gSitePermissionsManager = {
     this.uninit();
 
     for (let p of this._permissionsToChange.values()) {
-      let uri = Services.io.newURI(p.origin);
-      SitePermissions.set(uri, p.type, p.capability);
+      SitePermissions.setForPrincipal(p.principal, p.type, p.capability);
     }
 
     for (let p of this._permissionsToDelete.values()) {
-      let uri = Services.io.newURI(p.origin);
-      SitePermissions.remove(uri, p.type);
+      SitePermissions.removeFromPrincipal(p.principal, p.type);
     }
 
     if (this._checkbox.checked) {
@@ -476,6 +516,26 @@ var gSitePermissionsManager = {
     this._list.appendChild(frag);
 
     this._setRemoveButtonState();
+  },
+
+  buildAutoplayMenulist() {
+    let menulist = document.createXULElement("menulist");
+    let states = SitePermissions.getAvailableStates("autoplay-media");
+    for (let state of states) {
+      let m = menulist.appendItem(undefined, state);
+      document.l10n.setAttributes(
+        m,
+        this._getCapabilityString("autoplay-media", state)
+      );
+    }
+
+    menulist.value = SitePermissions.getDefault("autoplay-media");
+
+    menulist.addEventListener("select", () => {
+      SitePermissions.setDefault("autoplay-media", Number(menulist.value));
+    });
+
+    document.getElementById("setAutoplayPref").appendChild(menulist);
   },
 
   _sortPermissions(list, frag, column) {

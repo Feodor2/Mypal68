@@ -194,6 +194,87 @@ TEST(TArray, CopyOverlappingBackwards)
   }
 }
 
+namespace {
+
+class E {
+public:
+  E() : mA(-1), mB(-2) { constructCount++; }
+  E(int a, int b) : mA(a), mB(b) { constructCount++; }
+  E(E&& aRhs)
+    : mA(aRhs.mA), mB(aRhs.mB) {
+    aRhs.mA = 0;
+    aRhs.mB = 0;
+    moveCount++;
+  }
+
+  E& operator=(E&& aRhs) {
+    mA = aRhs.mA;
+    aRhs.mA = 0;
+    mB = aRhs.mB;
+    aRhs.mB = 0;
+    moveCount++;
+    return *this;
+  }
+
+
+  int a() const { return mA; }
+  int b() const { return mB; }
+
+  E(const E&) = delete;
+  E& operator=(const E&) = delete;
+
+  static size_t constructCount;
+  static size_t moveCount;
+
+private:
+  int mA;
+  int mB;
+};
+
+size_t E::constructCount = 0;
+size_t E::moveCount = 0;
+
+}
+
+TEST(TArray, Emplace)
+{
+  nsTArray<E> array;
+  array.SetCapacity(20);
+
+  ASSERT_EQ(array.Length(), 0u);
+
+  for (int i = 0; i < 10; i++) {
+    E s(i, i * i);
+    array.AppendElement(std::move(s));
+  }
+
+  ASSERT_EQ(array.Length(), 10u);
+  ASSERT_EQ(E::constructCount, 10u);
+  ASSERT_EQ(E::moveCount, 10u);
+
+  for (int i = 10; i < 20; i++) {
+    array.EmplaceBack(i, i * i);
+  }
+
+  ASSERT_EQ(array.Length(), 20u);
+  ASSERT_EQ(E::constructCount, 20u);
+  ASSERT_EQ(E::moveCount, 10u);
+
+  for (int i = 0; i < 20; i++) {
+    ASSERT_EQ(array[i].a(), i);
+    ASSERT_EQ(array[i].b(), i * i);
+  }
+
+  array.EmplaceBack();
+
+  ASSERT_EQ(array.Length(), 21u);
+  ASSERT_EQ(E::constructCount, 21u);
+  ASSERT_EQ(E::moveCount, 10u);
+
+  ASSERT_EQ(array[20].a(), -1);
+  ASSERT_EQ(array[20].b(), -2);
+}
+
 TEST(TArray, UnorderedRemoveElements)
 {
   // When removing an element from the end of the array, it can be removed in
@@ -324,6 +405,80 @@ TEST(TArray, RemoveFromEnd)
     array.RemoveLastElement();
     ASSERT_TRUE(array.IsEmpty());
   }
+}
+
+TEST(TArray, ConvertIteratorToConstIterator)
+{
+  nsTArray<int> array{1, 2, 3, 4};
+
+  nsTArray<int>::const_iterator it = array.begin();
+  ASSERT_EQ(array.cbegin(), it);
+}
+
+TEST(TArray, RemoveElementAt_ByIterator)
+{
+  nsTArray<int> array{1, 2, 3, 4};
+  const auto it = std::find(array.begin(), array.end(), 3);
+  const auto itAfter = array.RemoveElementAt(it);
+
+  // Based on the implementation of the iterator, we could compare it and
+  // itAfter, but we should not rely on such implementation details.
+
+  ASSERT_EQ(2, std::distance(array.cbegin(), itAfter));
+  const nsTArray<int> expected{1, 2, 4};
+  ASSERT_EQ(expected, array);
+}
+
+TEST(TArray, RemoveElementsAt_ByIterator)
+{
+  nsTArray<int> array{1, 2, 3, 4};
+  const auto it = std::find(array.begin(), array.end(), 3);
+  const auto itAfter = array.RemoveElementsAt(it, array.end());
+
+  // Based on the implementation of the iterator, we could compare it and
+  // itAfter, but we should not rely on such implementation details.
+
+  ASSERT_EQ(2, std::distance(array.cbegin(), itAfter));
+  const nsTArray<int> expected{1, 2};
+  ASSERT_EQ(expected, array);
+}
+
+static_assert(std::is_copy_assignable<decltype(
+                  MakeBackInserter(std::declval<nsTArray<int>&>()))>::value,
+              "output iteraror must be copy-assignable");
+static_assert(std::is_copy_constructible<decltype(
+                  MakeBackInserter(std::declval<nsTArray<int>&>()))>::value,
+              "output iterator must be copy-constructible");
+
+TEST(TArray, MakeBackInserter)
+{
+  const std::vector<int> src{1, 2, 3, 4};
+  nsTArray<int> dst;
+
+  std::copy(src.begin(), src.end(), MakeBackInserter(dst));
+
+  const nsTArray<int> expected{1, 2, 3, 4};
+  ASSERT_EQ(expected, dst);
+}
+
+TEST(TArray, MakeBackInserter_Move)
+{
+  uint32_t destructionCounter = 0;
+
+  {
+    std::vector<Movable> src(1);
+    src[0].mDestructionCounter = &destructionCounter;
+
+    nsTArray<Movable> dst;
+
+    std::copy(std::make_move_iterator(src.begin()),
+              std::make_move_iterator(src.end()), MakeBackInserter(dst));
+
+    ASSERT_EQ(1u, dst.Length());
+    ASSERT_EQ(0u, destructionCounter);
+  }
+
+  ASSERT_EQ(1u, destructionCounter);
 }
 
 }  // namespace TestTArray

@@ -35,10 +35,7 @@ const MIXED_PASSIVE_CONTENT_URL = `https://example.com/${RESOURCE_PATH}/mixed_pa
 const TRACKING_PAGE = `http://tracking.example.org/${RESOURCE_PATH}/tracking.html`;
 
 var ControlCenter = {
-  init(libDir) {
-    // Disable the FTU tours.
-    Services.prefs.setIntPref("browser.contentblocking.introCount", 5);
-  },
+  init(libDir) {},
 
   configurations: {
     about: {
@@ -103,8 +100,14 @@ var ControlCenter = {
     singlePermission: {
       selectors: ["#navigator-toolbox", "#identity-popup"],
       async applyConfig() {
-        let uri = Services.io.newURI(PERMISSIONS_PAGE);
-        SitePermissions.set(uri, "camera", SitePermissions.ALLOW);
+        let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+          PERMISSIONS_PAGE
+        );
+        SitePermissions.setForPrincipal(
+          principal,
+          "camera",
+          SitePermissions.ALLOW
+        );
 
         await loadPage(PERMISSIONS_PAGE);
         await openIdentityPopup();
@@ -117,9 +120,15 @@ var ControlCenter = {
         // TODO: (Bug 1330601) Rewrite this to consider temporary (TAB) permission states.
         // There are 2 possible non-default permission states, so we alternate between them.
         let states = [SitePermissions.ALLOW, SitePermissions.BLOCK];
-        let uri = Services.io.newURI(PERMISSIONS_PAGE);
+        let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+          PERMISSIONS_PAGE
+        );
         SitePermissions.listPermissions().forEach(function(permission, index) {
-          SitePermissions.set(uri, permission, states[index % 2]);
+          SitePermissions.setForPrincipal(
+            principal,
+            permission,
+            states[index % 2]
+          );
         });
 
         await loadPage(PERMISSIONS_PAGE);

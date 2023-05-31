@@ -13,7 +13,6 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/Mutex.h"
-#include "nsIComponentManager.h"
 #include "nsCOMPtr.h"
 #include "nsClassHashtable.h"
 #include "nsString.h"
@@ -24,7 +23,6 @@
 #include "nsTHashtable.h"
 #include "nsIZipReader.h"
 #include "nsZipArchive.h"
-#include "nsIObserverService.h"
 #include "nsWeakReference.h"
 #include "nsIObserver.h"
 #include "mozilla/Attributes.h"

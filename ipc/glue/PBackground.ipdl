@@ -24,7 +24,7 @@ include protocol PGamepadEventChannel;
 include protocol PGamepadTestChannel;
 include protocol PHttpBackgroundChannel;
 include protocol PIPCBlobInputStream;
-include protocol PPendingIPCBlob;
+include protocol PMediaTransport;
 include protocol PRemoteWorker;
 include protocol PRemoteWorkerService;
 include protocol PSharedWorker;
@@ -90,7 +90,7 @@ sync protocol PBackground
   manages PGamepadTestChannel;
   manages PHttpBackgroundChannel;
   manages PIPCBlobInputStream;
-  manages PPendingIPCBlob;
+  manages PMediaTransport;
   manages PRemoteWorker;
   manages PRemoteWorkerService;
   manages PSharedWorker;
@@ -225,13 +225,13 @@ parent:
   async RemoveEndpoint(nsString aGroupName, nsCString aEndpointURL,
                        PrincipalInfo aPrincipalInfo);
 
+  async PMediaTransport();
+
 child:
   async PCache();
   async PCacheStreamControl();
 
   async PParentToChildStream();
-
-  async PPendingIPCBlob(IPCBlob blob);
 
   async PRemoteWorker(RemoteWorkerData data);
 

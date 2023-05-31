@@ -9,16 +9,18 @@
 #include "nsXPLookAndFeel.h"
 #include "nsLookAndFeel.h"
 #include "HeadlessLookAndFeel.h"
+#include "nsContentUtils.h"
 #include "nsCRT.h"
 #include "nsFont.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ServoStyleSet.h"
+#include "mozilla/StaticPrefs_editor.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/widget/WidgetMessageUtils.h"
 
 #include "gfxPlatform.h"
-#include "gfxPrefs.h"
+
 #include "qcms.h"
 
 #ifdef DEBUG
@@ -884,10 +886,6 @@ nsresult nsXPLookAndFeel::GetColorImpl(ColorID aID,
   if (sUseNativeColors && NS_SUCCEEDED(NativeGetColor(aID, aResult))) {
     if (!mozilla::ServoStyleSet::IsInServoTraversal()) {
       MOZ_ASSERT(NS_IsMainThread());
-      // Make sure the preferences are initialized. In the normal run,
-      // they would already be, because gfxPlatform would have been created,
-      // but with some addon, that is not the case. See Bug 1357307.
-      gfxPrefs::GetSingleton();
       if ((gfxPlatform::GetCMSMode() == eCMSMode_All) &&
           !IsSpecialColor(aID, aResult)) {
         qcms_transform* transform = gfxPlatform::GetCMSInverseRGBTransform();
@@ -1001,12 +999,19 @@ char16_t LookAndFeel::GetPasswordCharacter() {
 
 // static
 bool LookAndFeel::GetEchoPassword() {
+  if (StaticPrefs::editor_password_mask_delay() >= 0) {
+    return StaticPrefs::editor_password_mask_delay() > 0;
+  }
   return nsLookAndFeel::GetInstance()->GetEchoPasswordImpl();
 }
 
 // static
 uint32_t LookAndFeel::GetPasswordMaskDelay() {
-  return nsLookAndFeel::GetInstance()->GetPasswordMaskDelayImpl();
+  int32_t delay = StaticPrefs::editor_password_mask_delay();
+  if (delay < 0) {
+    return nsLookAndFeel::GetInstance()->GetPasswordMaskDelayImpl();
+  }
+  return delay;
 }
 
 // static

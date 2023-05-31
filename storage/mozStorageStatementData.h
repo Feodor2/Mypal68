@@ -9,11 +9,9 @@
 
 #include "nsAutoPtr.h"
 #include "nsTArray.h"
-#include "nsIEventTarget.h"
 #include "MainThreadUtils.h"
 
 #include "mozStorageBindingParamsArray.h"
-#include "mozIStorageBaseStatement.h"
 #include "mozStorageConnection.h"
 #include "StorageBaseStatementInternal.h"
 

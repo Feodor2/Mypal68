@@ -3,9 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 var gPluginHandler = {
-  PREF_SESSION_PERSIST_MINUTES: "plugin.sessionPermissionNow.intervalInMinutes",
-  PREF_PERSISTENT_DAYS: "plugin.persistentPermissionAlways.intervalInDays",
-
   MESSAGES: [
     "PluginContent:ShowClickToPlayNotification",
     "PluginContent:RemoveNotification",
@@ -150,8 +147,7 @@ var gPluginHandler = {
    */
   _updatePluginPermission(aBrowser, aPluginInfo, aNewState) {
     let permission;
-    let expireType;
-    let expireTime;
+    let expireType = Ci.nsIPermissionManager.EXPIRE_NEVER;
     let histogram = Services.telemetry.getHistogramById(
       "PLUGINS_NOTIFICATION_USER_ACTION_2"
     );
@@ -168,11 +164,6 @@ var gPluginHandler = {
       case "allownow":
         permission = Ci.nsIPermissionManager.ALLOW_ACTION;
         expireType = Ci.nsIPermissionManager.EXPIRE_SESSION;
-        expireTime =
-          Date.now() +
-          Services.prefs.getIntPref(this.PREF_SESSION_PERSIST_MINUTES) *
-            60 *
-            1000;
         histogram.add(0);
         aPluginInfo.fallbackType = Ci.nsIObjectLoadingContent.PLUGIN_ACTIVE;
         notification.options.extraAttr = "active";
@@ -180,14 +171,6 @@ var gPluginHandler = {
 
       case "allowalways":
         permission = Ci.nsIPermissionManager.ALLOW_ACTION;
-        expireType = Ci.nsIPermissionManager.EXPIRE_TIME;
-        expireTime =
-          Date.now() +
-          Services.prefs.getIntPref(this.PREF_PERSISTENT_DAYS) *
-            24 *
-            60 *
-            60 *
-            1000;
         histogram.add(1);
         aPluginInfo.fallbackType = Ci.nsIObjectLoadingContent.PLUGIN_ACTIVE;
         notification.options.extraAttr = "active";
@@ -195,8 +178,6 @@ var gPluginHandler = {
 
       case "block":
         permission = Ci.nsIPermissionManager.PROMPT_ACTION;
-        expireType = Ci.nsIPermissionManager.EXPIRE_NEVER;
-        expireTime = 0;
         histogram.add(2);
         switch (aPluginInfo.blocklistState) {
           case Ci.nsIBlocklistService.STATE_VULNERABLE_UPDATE_AVAILABLE:
@@ -219,8 +200,6 @@ var gPluginHandler = {
       case "blockalways":
         permission =
           Ci.nsIObjectLoadingContent.PLUGIN_PERMISSION_PROMPT_ACTION_QUIET;
-        expireType = Ci.nsIPermissionManager.EXPIRE_NEVER;
-        expireTime = 0;
         histogram.add(3);
         aPluginInfo.fallbackType =
           Ci.nsIObjectLoadingContent.PLUGIN_CLICK_TO_PLAY_QUIET;
@@ -253,7 +232,7 @@ var gPluginHandler = {
         aPluginInfo.permissionString,
         permission,
         expireType,
-        expireTime
+        0
       );
       aPluginInfo.pluginPermissionType = expireType;
     }

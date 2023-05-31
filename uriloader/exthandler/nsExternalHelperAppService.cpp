@@ -71,7 +71,6 @@
 #  include "nsILocalFileMac.h"
 #endif
 
-#include "nsIPluginHost.h"  // XXX needed for ext->type mapping (bug 233289)
 #include "nsPluginHost.h"
 #include "nsEscape.h"
 
@@ -79,9 +78,6 @@
 #include "nsIPrompt.h"
 
 #include "nsITextToSubURI.h"  // to unescape the filename
-#include "nsIMIMEHeaderParam.h"
-
-#include "nsIWindowWatcher.h"
 
 #include "nsDocShellCID.h"
 
@@ -93,8 +89,6 @@
 #include "ContentChild.h"
 #include "nsXULAppAPI.h"
 #include "nsPIDOMWindow.h"
-#include "nsIDocShellTreeOwner.h"
-#include "nsIDocShellTreeItem.h"
 #include "ExternalHelperAppChild.h"
 
 #ifdef XP_WIN
@@ -672,14 +666,11 @@ nsresult nsExternalHelperAppService::DoContentContentProcessHelper(
   // protocol will act as a listener on the child-side and create a "real"
   // helperAppService listener on the parent-side, via another call to
   // DoContent.
-  mozilla::dom::PExternalHelperAppChild* pc =
-      child->SendPExternalHelperAppConstructor(
-          uriParams, loadInfoArgs, nsCString(aMimeContentType), disp,
-          contentDisposition, fileName, aForceSave, contentLength,
-          wasFileChannel, referrerParams,
-          mozilla::dom::BrowserChild::GetFrom(window));
-  ExternalHelperAppChild* childListener =
-      static_cast<ExternalHelperAppChild*>(pc);
+  RefPtr<ExternalHelperAppChild> childListener = new ExternalHelperAppChild();
+  MOZ_ALWAYS_TRUE(child->SendPExternalHelperAppConstructor(
+      childListener, uriParams, loadInfoArgs, nsCString(aMimeContentType), disp,
+      contentDisposition, fileName, aForceSave, contentLength, wasFileChannel,
+      referrerParams, mozilla::dom::BrowserChild::GetFrom(window)));
 
   NS_ADDREF(*aStreamListener = childListener);
 
@@ -743,17 +734,7 @@ NS_IMETHODIMP nsExternalHelperAppService::DoContent(
         nsAutoCString query;
 
         // We only care about the query for HTTP and HTTPS URLs
-        nsresult rv;
-        bool isHTTP, isHTTPS;
-        rv = uri->SchemeIs("http", &isHTTP);
-        if (NS_FAILED(rv)) {
-          isHTTP = false;
-        }
-        rv = uri->SchemeIs("https", &isHTTPS);
-        if (NS_FAILED(rv)) {
-          isHTTPS = false;
-        }
-        if (isHTTP || isHTTPS) {
+        if (uri->SchemeIs("http") || uri->SchemeIs("https")) {
           url->GetQuery(query);
         }
 
@@ -1812,7 +1793,7 @@ void nsExternalAppHandler::SendStatusChange(ErrorType type, nsresult rv,
         break;
       }
 #endif
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
 
     default:
       // Generic read/write/launch error message.
@@ -1848,9 +1829,8 @@ void nsExternalAppHandler::SendStatusChange(ErrorType type, nsresult rv,
             "chrome://global/locale/nsWebBrowserPersist.properties",
             getter_AddRefs(bundle)))) {
       nsAutoString msgText;
-      const char16_t* strings[] = {path.get()};
-      if (NS_SUCCEEDED(
-              bundle->FormatStringFromName(msgId, strings, 1, msgText))) {
+      AutoTArray<nsString, 1> strings = {path};
+      if (NS_SUCCEEDED(bundle->FormatStringFromName(msgId, strings, msgText))) {
         if (mDialogProgressListener) {
           // We have a listener, let it handle the error.
           mDialogProgressListener->OnStatusChange(
@@ -1866,7 +1846,7 @@ void nsExternalAppHandler::SendStatusChange(ErrorType type, nsresult rv,
           nsCOMPtr<nsIPrompt> prompter(
               do_GetInterface(GetDialogParent(), &qiRv));
           nsAutoString title;
-          bundle->FormatStringFromName("title", strings, 1, title);
+          bundle->FormatStringFromName("title", strings, title);
 
           MOZ_LOG(
               nsExternalHelperAppService::mLog, LogLevel::Debug,

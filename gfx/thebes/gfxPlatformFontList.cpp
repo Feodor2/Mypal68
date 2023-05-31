@@ -8,7 +8,6 @@
 #include "mozilla/intl/OSPreferences.h"
 
 #include "gfxPlatformFontList.h"
-#include "gfxPrefs.h"
 #include "gfxTextRun.h"
 #include "gfxUserFontSet.h"
 #include "SharedFontList-impl.h"
@@ -25,6 +24,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/BlobImpl.h"
@@ -35,6 +35,7 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/ipc/FileDescriptorUtils.h"
 #include "mozilla/ResultExtensions.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/Unused.h"
 
 #include "base/eintr_wrapper.h"
@@ -421,7 +422,8 @@ nsresult gfxPlatformFontList::InitFontList() {
 
   // Try to initialize the cross-process shared font list if enabled by prefs,
   // but not if we're running in Safe Mode.
-  if (gfxPrefs::SharedFontList() && !gfxPlatform::InSafeMode()) {
+  if (StaticPrefs::gfx_e10s_font_list_shared_AtStartup() &&
+      !gfxPlatform::InSafeMode()) {
     for (auto i = mFontEntries.Iter(); !i.Done(); i.Next()) {
       i.Data()->mShmemCharacterMap = nullptr;
       i.Data()->mShmemFace = nullptr;
@@ -924,7 +926,7 @@ bool gfxPlatformFontList::FindAndAddFamilies(
     // since reading name table entries is expensive.
     // Although ASCII localized family names are possible they don't occur
     // in practice, so avoid pulling in names at startup.
-    if (!mOtherFamilyNamesInitialized && !IsASCII(aFamily)) {
+    if (!mOtherFamilyNamesInitialized && !IsAscii(aFamily)) {
       InitOtherFamilyNames(
           !(aFlags & FindFamiliesFlags::eForceOtherFamilyNamesLoading));
       family = SharedFontList()->FindFamily(key);
@@ -961,7 +963,7 @@ bool gfxPlatformFontList::FindAndAddFamilies(
   // since reading name table entries is expensive.
   // although ASCII localized family names are possible they don't occur
   // in practice so avoid pulling in names at startup
-  if (!familyEntry && !mOtherFamilyNamesInitialized && !IsASCII(aFamily)) {
+  if (!familyEntry && !mOtherFamilyNamesInitialized && !IsAscii(aFamily)) {
     InitOtherFamilyNames(
         !(aFlags & FindFamiliesFlags::eForceOtherFamilyNamesLoading));
     familyEntry = mOtherFamilyNames.GetWeak(key);
@@ -1758,8 +1760,8 @@ bool gfxPlatformFontList::LoadFontInfo() {
   uint32_t i, endIndex = mNumFamilies;
   fontlist::FontList* list = SharedFontList();
   bool loadCmaps =
-    !list && (!UsesSystemFallback() ||
-              gfxPlatform::GetPlatform()->UseCmapsDuringSystemFallback());
+      !list && (!UsesSystemFallback() ||
+                gfxPlatform::GetPlatform()->UseCmapsDuringSystemFallback());
 
   // for each font family, load in various font info
   for (i = mStartIndex; i < endIndex; i++) {

@@ -11,7 +11,7 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["LoginManagerContent"];
+const EXPORTED_SYMBOLS = ["LoginManagerContent"];
 
 const PASSWORD_INPUT_ADDED_COALESCING_THRESHOLD_MS = 1;
 const AUTOCOMPLETE_AFTER_RIGHT_CLICK_THRESHOLD_MS = 400;
@@ -78,9 +78,9 @@ Services.cpmm.addMessageListener("clearRecipeCache", () => {
   LoginRecipesContent._clearRecipeCache();
 });
 
-var gLastRightClickTimeStamp = Number.NEGATIVE_INFINITY;
+let gLastRightClickTimeStamp = Number.NEGATIVE_INFINITY;
 
-var observer = {
+const observer = {
   QueryInterface: ChromeUtils.generateQI([
     Ci.nsIObserver,
     Ci.nsIWebProgressListener,
@@ -149,6 +149,39 @@ var observer = {
     LoginManagerContent._onNavigation(aWebProgress.DOMWindow.document);
   },
 
+  // nsIObserver
+  observe(subject, topic, data) {
+    switch (topic) {
+      case "autocomplete-did-enter-text": {
+        let input = subject.QueryInterface(Ci.nsIAutoCompleteInput);
+        let { selectedIndex } = input.popup;
+        if (selectedIndex < 0) {
+          break;
+        }
+
+        let { focusedInput } = LoginManagerContent._formFillService;
+        if (focusedInput.nodePrincipal.isNullPrincipal) {
+          // If we have a null principal then prevent any more password manager code from running and
+          // incorrectly using the document `location`.
+          return;
+        }
+
+        let style = input.controller.getStyleAt(selectedIndex);
+        if (style == "login" || style == "loginWithOrigin") {
+          let details = JSON.parse(
+            input.controller.getCommentAt(selectedIndex)
+          );
+          LoginManagerContent.onFieldAutoComplete(focusedInput, details.guid);
+        } else if (style == "generatedPassword") {
+          LoginManagerContent._highlightFilledField(focusedInput);
+          LoginManagerContent._generatedPasswordFilledOrEdited(focusedInput);
+        }
+        break;
+      }
+    }
+  },
+
+  // nsIDOMEventListener
   handleEvent(aEvent) {
     if (!aEvent.isTrusted) {
       return;
@@ -159,18 +192,47 @@ var observer = {
     }
 
     switch (aEvent.type) {
+      // Used to mask fields with filled generated passwords when blurred.
+      case "blur": {
+        let unmask = false;
+        LoginManagerContent._togglePasswordFieldMasking(aEvent.target, unmask);
+        break;
+      }
+
+      // Used to watch for changes to fields filled with generated passwords.
+      case "change": {
+        LoginManagerContent._generatedPasswordFilledOrEdited(aEvent.target);
+        break;
+      }
+
+      // Used to watch for changes to fields filled with generated passwords.
+      case "input": {
+        LoginManagerContent._maybeStopTreatingAsGeneratedPasswordField(aEvent);
+        break;
+      }
+
       case "keydown": {
         if (
           aEvent.keyCode == aEvent.DOM_VK_TAB ||
           aEvent.keyCode == aEvent.DOM_VK_RETURN
         ) {
-          LoginManagerContent.onUsernameInput(aEvent);
+          LoginManagerContent.onUsernameAutocompleted(aEvent.target);
         }
         break;
       }
 
-      // Only used for username fields.
       case "focus": {
+        if (aEvent.target.type == "password") {
+          // Used to unmask fields with filled generated passwords when focused.
+          let unmask = true;
+          LoginManagerContent._togglePasswordFieldMasking(
+            aEvent.target,
+            unmask
+          );
+          break;
+        }
+
+        // Only used for username fields.
         LoginManagerContent._onUsernameFocus(aEvent);
         break;
       }
@@ -192,8 +254,11 @@ var observer = {
   },
 };
 
+// Add this observer once for the process.
+Services.obs.addObserver(observer, "autocomplete-did-enter-text");
+
 // This object maps to the "child" process (even in the single-process case).
-var LoginManagerContent = {
+this.LoginManagerContent = {
   __formFillService: null, // FormFillController, for username autocompleting
   get _formFillService() {
     if (!this.__formFillService) {
@@ -326,8 +391,8 @@ var LoginManagerContent = {
         topDocument: topWindow.document,
         loginFormOrigin: msg.data.loginFormOrigin,
         loginsFound: LoginHelper.vanillaObjectsToLogins(msg.data.logins),
-        recipes: msg.data.recipes,
         inputElement: msg.objects.inputElement,
+        inputElementIdentifier: msg.data.inputElementIdentifier,
       });
       return;
     }
@@ -348,7 +413,41 @@ var LoginManagerContent = {
         let loginsFound = LoginHelper.vanillaObjectsToLogins(msg.data.logins);
         let messageManager = msg.target;
         let request = this._takeRequest(msg);
-        request.promise.resolve({ logins: loginsFound, messageManager });
+        request.promise.resolve({
+          generatedPassword: msg.data.generatedPassword,
+          logins: loginsFound,
+          messageManager,
+        });
+        break;
+      }
+
+      case "PasswordManager:fillGeneratedPassword": {
+        // make a login for the password
+        let generatedLogin = Cc[
+          "@mozilla.org/login-manager/loginInfo;1"
+        ].createInstance(Ci.nsILoginInfo);
+        generatedLogin.init(
+          msg.data.origin,
+          "", // empty formActionOrigin
+          null, // no realm
+          "", // empty username
+          msg.data.password
+        );
+        this.fillForm({
+          topDocument: topWindow.document,
+          loginFormOrigin: msg.data.origin,
+          loginsFound: [generatedLogin],
+          recipes: msg.data.recipes,
+          inputElementIdentifier: msg.data.inputElementIdentifier,
+        });
+        let inputElement = ContentDOMReference.resolve(
+          msg.data.inputElementIdentifier
+        );
+        if (inputElement) {
+          this._generatedPasswordFilledOrEdited(inputElement);
+        } else {
+          log("Could not resolve inputElementIdentifier to a living element.");
+        }
         break;
       }
 
@@ -376,6 +475,7 @@ var LoginManagerContent = {
    *
    * @param {HTMLFormElement} form - form to get login data for
    * @param {Object} options
+   * @param {boolean} options.guid - guid of a login to retrieve
    * @param {boolean} options.showMasterPassword - whether to show a master password prompt
    */
   _getLoginDataFromParent(form, options) {
@@ -404,13 +504,14 @@ var LoginManagerContent = {
     );
   },
 
-  _autoCompleteSearchAsync(aSearchString, aPreviousResult, aElement, aRect) {
+  _autoCompleteSearchAsync(aSearchString, aPreviousResult, aElement) {
     let doc = aElement.ownerDocument;
     let form = LoginFormFactory.createFromField(aElement);
     let win = doc.defaultView;
 
     let formOrigin = LoginHelper.getLoginOrigin(doc.documentURI);
     let actionOrigin = LoginHelper.getFormActionOrigin(form);
+    let autocompleteInfo = aElement.getAutocompleteInfo();
 
     let messageManager = win.docShell.messageManager;
 
@@ -423,11 +524,12 @@ var LoginManagerContent = {
 
     let requestData = {};
     let messageData = {
+      autocompleteInfo,
+      browsingContextId: win.docShell.browsingContext.id,
       formOrigin,
       actionOrigin,
       searchString: aSearchString,
       previousResult,
-      rect: aRect,
       isSecure: InsecurePasswordUtils.isFormSecure(form),
       isPasswordField: aElement.type == "password",
     };
@@ -784,6 +886,7 @@ var LoginManagerContent = {
       log("fillForm: No input element specified");
       return;
     }
+
     if (
       LoginHelper.getLoginOrigin(topDocument.documentURI) != loginFormOrigin
     ) {
@@ -869,18 +972,12 @@ var LoginManagerContent = {
   },
 
   /**
-   * Listens for DOMAutoComplete event on login form.
+   * A username or password was autocompleted into a field.
    */
-  onDOMAutoComplete(event) {
-    if (!event.isTrusted) {
-      return;
-    }
-
+  onFieldAutoComplete(acInputField, loginGUID) {
     if (!LoginHelper.enabled) {
       return;
     }
-
-    let acInputField = event.target;
 
     // This is probably a bit over-conservatative.
     if (
@@ -894,26 +991,21 @@ var LoginManagerContent = {
     }
 
     if (LoginHelper.isUsernameFieldType(acInputField)) {
-      this.onUsernameInput(event);
+      this.onUsernameAutocompleted(acInputField, loginGUID);
     } else if (acInputField.hasBeenTypePassword) {
-      this._highlightFilledField(event.target);
+      // Ensure the field gets re-masked and edits don't overwrite the generated
+      // password in case a generated password was filled into it previously.
+      this._stopTreatingAsGeneratedPasswordField(acInputField);
+      this._highlightFilledField(acInputField);
     }
   },
 
   /**
-   * Calls fill form on the username field.
+   * A username field was filled or tabbed away from so try fill in the
+   * associated password in the password field.
    */
-  onUsernameInput(event) {
-    let acInputField = event.target;
-
-    // If the username is blank, bail out now -- we don't want
-    // fillForm() to try filling in a login without a username
-    // to filter on (bug 471906).
-    if (!acInputField.value) {
-      return;
-    }
-
-    log("onUsernameInput from", event.type);
+  onUsernameAutocompleted(acInputField, loginGUID = null) {
+    log("onUsernameAutocompleted:", acInputField);
 
     let acForm = LoginFormFactory.createFromField(acInputField);
     let doc = acForm.ownerDocument;
@@ -922,13 +1014,16 @@ var LoginManagerContent = {
 
     // Make sure the username field fillForm will use is the
     // same field as the autocomplete was activated on.
-    var [usernameField, passwordField, ignored] = this._getFormFields(
+    let [usernameField, passwordField, ignored] = this._getFormFields(
       acForm,
       false,
       recipes
     );
     if (usernameField == acInputField && passwordField) {
-      this._getLoginDataFromParent(acForm, { showMasterPassword: false })
+      this._getLoginDataFromParent(acForm, {
+        guid: loginGUID,
+        showMasterPassword: false,
+      })
         .then(({ form, loginsFound, recipes }) => {
           this._fillForm(form, loginsFound, recipes, {
             autofillForm: true,
@@ -1046,14 +1141,14 @@ var LoginManagerContent = {
    * LoginForm has a password field.
    */
   _getFormFields(form, isSubmission, recipes) {
-    var usernameField = null;
-    var pwFields = null;
-    var fieldOverrideRecipe = LoginRecipesContent.getFieldOverrides(
+    let usernameField = null;
+    let pwFields = null;
+    let fieldOverrideRecipe = LoginRecipesContent.getFieldOverrides(
       recipes,
       form
     );
     if (fieldOverrideRecipe) {
-      var pwOverrideField = LoginRecipesContent.queryLoginField(
+      let pwOverrideField = LoginRecipesContent.queryLoginField(
         form,
         fieldOverrideRecipe.passwordSelector
       );
@@ -1068,7 +1163,7 @@ var LoginManagerContent = {
         ];
       }
 
-      var usernameOverrideField = LoginRecipesContent.queryLoginField(
+      let usernameOverrideField = LoginRecipesContent.queryLoginField(
         form,
         fieldOverrideRecipe.usernameSelector
       );
@@ -1097,8 +1192,8 @@ var LoginManagerContent = {
       // username. We might not find a username field if the user is
       // already logged in to the site.
 
-      for (var i = pwFields[0].index - 1; i >= 0; i--) {
-        var element = form.elements[i];
+      for (let i = pwFields[0].index - 1; i >= 0; i--) {
+        let element = form.elements[i];
         if (!LoginHelper.isUsernameFieldType(element)) {
           continue;
         }
@@ -1135,16 +1230,16 @@ var LoginManagerContent = {
     // password field values for us to use for identifying fields. So,
     // just assume the first password field is the one to be filled in.
     if (!isSubmission || pwFields.length == 1) {
-      var passwordField = pwFields[0].element;
+      let passwordField = pwFields[0].element;
       log("Password field", passwordField, "has name: ", passwordField.name);
       return [usernameField, passwordField, null];
     }
 
     // Try to figure out WTF is in the form based on the password values.
-    var oldPasswordField, newPasswordField;
-    var pw1 = pwFields[0].element.value;
-    var pw2 = pwFields[1].element.value;
-    var pw3 = pwFields[2] ? pwFields[2].element.value : null;
+    let oldPasswordField, newPasswordField;
+    let pw1 = pwFields[0].element.value;
+    let pw2 = pwFields[1].element.value;
+    let pw3 = pwFields[2] ? pwFields[2].element.value : null;
 
     if (pwFields.length == 3) {
       // Look for two identical passwords, that's the new password
@@ -1282,8 +1377,8 @@ var LoginManagerContent = {
    */
   _onFormSubmit(form) {
     log("_onFormSubmit", form);
-    var doc = form.ownerDocument;
-    var win = doc.defaultView;
+    let doc = form.ownerDocument;
+    let win = doc.defaultView;
 
     if (
       PrivateBrowsingUtils.isContentWindowPrivate(win) &&
@@ -1300,19 +1395,19 @@ var LoginManagerContent = {
       return;
     }
 
-    var hostname = LoginHelper.getLoginOrigin(doc.documentURI);
-    if (!hostname) {
-      log("(form submission ignored -- invalid hostname)");
+    let origin = LoginHelper.getLoginOrigin(doc.documentURI);
+    if (!origin) {
+      log("(form submission ignored -- invalid origin)");
       return;
     }
 
-    let formSubmitURL = LoginHelper.getFormActionOrigin(form);
+    let formActionOrigin = LoginHelper.getFormActionOrigin(form);
     let messageManager = win.docShell.messageManager;
 
-    let recipes = LoginRecipesContent.getRecipes(hostname, win);
+    let recipes = LoginRecipesContent.getRecipes(origin, win);
 
     // Get the appropriate fields from the form.
-    var [
+    let [
       usernameField,
       newPasswordField,
       oldPasswordField,
@@ -1409,8 +1504,8 @@ var LoginManagerContent = {
       form.rootElement
     );
     messageManager.sendAsyncMessage("PasswordManager:onFormSubmit", {
-      hostname,
-      formSubmitURL,
+      origin,
+      formActionOrigin,
       autoFilledLoginGuid: autoFilledLogin && autoFilledLogin.guid,
       usernameField: mockUsername,
       newPasswordField: mockPassword,
@@ -1418,6 +1513,117 @@ var LoginManagerContent = {
       openerTopWindowID,
       dismissedPrompt,
     });
+  },
+
+  _maybeStopTreatingAsGeneratedPasswordField(event) {
+    let passwordField = event.target;
+    let { value } = passwordField;
+
+    // If the field is now empty or the inserted text replaced the whole value
+    // then stop treating it as a generated password field.
+    if (!value || (event.data && event.data == value)) {
+      this._stopTreatingAsGeneratedPasswordField(passwordField);
+    }
+  },
+
+  _stopTreatingAsGeneratedPasswordField(passwordField) {
+    log("_stopTreatingAsGeneratedPasswordField");
+
+    // Remove all the event listeners added in _generatedPasswordFilledOrEdited
+    for (let eventType of ["blur", "change", "focus", "input"]) {
+      passwordField.removeEventListener(eventType, observer, {
+        capture: true,
+        mozSystemGroup: true,
+      });
+    }
+
+    // Mask the password field
+    this._togglePasswordFieldMasking(passwordField, false);
+  },
+
+  /**
+   * Notify the parent that a generated password was filled into a field or
+   * edited so that it can potentially be saved.
+   * @param {HTMLInputElement} passwordField
+   */
+  _generatedPasswordFilledOrEdited(passwordField) {
+    log("_generatedPasswordFilledOrEdited", passwordField);
+
+    if (!LoginHelper.enabled) {
+      throw new Error(
+        "A generated password was filled while the password manager was disabled."
+      );
+    }
+
+    let win = passwordField.ownerGlobal;
+
+    this._highlightFilledField(passwordField);
+
+    // change: Listen for changes to the field filled with the generated password so we can preserve edits.
+    // input: Listen for the field getting blanked (without blurring) or a paste
+    for (let eventType of ["blur", "change", "focus", "input"]) {
+      passwordField.addEventListener(eventType, observer, {
+        capture: true,
+        mozSystemGroup: true,
+      });
+    }
+    // Unmask the password field
+    this._togglePasswordFieldMasking(passwordField, true);
+
+    if (PrivateBrowsingUtils.isContentWindowPrivate(win)) {
+      log(
+        "_generatedPasswordFilledOrEdited: not automatically saving the password in private browsing mode"
+      );
+      return;
+    }
+
+    let loginForm = LoginFormFactory.createFromField(passwordField);
+    let formActionOrigin = LoginHelper.getFormActionOrigin(loginForm);
+    let origin = LoginHelper.getLoginOrigin(
+      passwordField.ownerDocument.documentURI
+    );
+    let recipes = LoginRecipesContent.getRecipes(origin, win);
+    let [usernameField] = this._getFormFields(loginForm, false, recipes);
+    let openerTopWindowID = null;
+    if (win.opener) {
+      openerTopWindowID = win.opener.top.windowUtils.outerWindowID;
+    }
+    let messageManager = win.docShell.messageManager;
+    messageManager.sendAsyncMessage(
+      "PasswordManager:onGeneratedPasswordFilledOrEdited",
+      {
+        browsingContextId: win.docShell.browsingContext.id,
+        formActionOrigin,
+        openerTopWindowID,
+        password: passwordField.value,
+        username: (usernameField && usernameField.value) || "",
+      }
+    );
+  },
+
+  _togglePasswordFieldMasking(passwordField, unmask) {
+    let { editor } = passwordField;
+
+    if (passwordField.type != "password") {
+      // The type may have been changed by the website.
+      log("_togglePasswordFieldMasking: Field isn't type=password");
+      return;
+    }
+
+    if (!unmask && !editor) {
+      // It hasn't been created yet but the default is to be masked anyways.
+      return;
+    }
+
+    if (unmask) {
+      editor.unmask(0);
+      return;
+    }
+
+    if (editor.autoMaskingEnabled) {
+      return;
+    }
+    editor.mask();
   },
 
   /** Remove login field highlight when its value is cleared or overwritten.
@@ -1486,6 +1692,7 @@ var LoginManagerContent = {
     }
 
     log("_fillForm", form.elements);
+    let usernameField;
     // Will be set to one of AUTOFILL_RESULT in the `try` block.
     let autofillResult = -1;
     const AUTOFILL_RESULT = {
@@ -1521,7 +1728,8 @@ var LoginManagerContent = {
       // We do this before checking to see if logins are stored,
       // so that the user isn't prompted for a master password
       // without need.
-      var [usernameField, passwordField, ignored] = this._getFormFields(
+      let passwordField;
+      [usernameField, passwordField] = this._getFormFields(
         form,
         false,
         recipes
@@ -1568,18 +1776,43 @@ var LoginManagerContent = {
       }
 
       if (!userTriggered) {
-        // Only autofill logins that match the form's action. In the above code
+        // Only autofill logins that match the form's action and origin. In the above code
         // we have attached autocomplete for logins that don't match the form action.
+        let loginOrigin = LoginHelper.getLoginOrigin(
+          form.ownerDocument.documentURI
+        );
+        let formActionOrigin = LoginHelper.getFormActionOrigin(form);
         foundLogins = foundLogins.filter(l => {
-          return LoginHelper.isOriginMatching(
-            l.formSubmitURL,
-            LoginHelper.getFormActionOrigin(form),
+          let formActionMatches = LoginHelper.isOriginMatching(
+            l.formActionOrigin,
+            formActionOrigin,
             {
               schemeUpgrades: LoginHelper.schemeUpgrades,
               acceptWildcardMatch: true,
+              acceptDifferentSubdomains: false,
             }
           );
+          let formOriginMatches = LoginHelper.isOriginMatching(
+            l.origin,
+            loginOrigin,
+            {
+              schemeUpgrades: LoginHelper.schemeUpgrades,
+              acceptWildcardMatch: true,
+              acceptDifferentSubdomains: false,
+            }
+          );
+          return formActionMatches && formOriginMatches;
         });
+
+        // Since the logins are already filtered now to only match the origin and formAction,
+        // dedupe to just the username since remaining logins may have different schemes.
+        foundLogins = LoginHelper.dedupeLogins(
+          foundLogins,
+          ["username"],
+          ["scheme", "timePasswordChanged"],
+          loginOrigin,
+          formActionOrigin
+        );
       }
 
       // Nothing to do if we have no matching logins available.
@@ -1606,8 +1839,8 @@ var LoginManagerContent = {
       // fit into the fields (as specified by the maxlength attribute).
       // The user couldn't enter these values anyway, and it helps
       // with sites that have an extra PIN to be entered (bug 391514)
-      var maxUsernameLen = Number.MAX_VALUE;
-      var maxPasswordLen = Number.MAX_VALUE;
+      let maxUsernameLen = Number.MAX_VALUE;
+      let maxPasswordLen = Number.MAX_VALUE;
 
       // If attribute wasn't set, default is -1.
       if (usernameField && usernameField.maxLength >= 0) {
@@ -1617,8 +1850,8 @@ var LoginManagerContent = {
         maxPasswordLen = passwordField.maxLength;
       }
 
-      var logins = foundLogins.filter(function(l) {
-        var fit =
+      let logins = foundLogins.filter(function(l) {
+        let fit =
           l.username.length <= maxUsernameLen &&
           l.password.length <= maxPasswordLen;
         if (!fit) {
@@ -1654,7 +1887,7 @@ var LoginManagerContent = {
       }
 
       // Select a login to use for filling in the form.
-      var selectedLogin;
+      let selectedLogin;
       if (
         !clobberUsername &&
         usernameField &&
@@ -1664,7 +1897,7 @@ var LoginManagerContent = {
       ) {
         // If username was specified in the field, it's disabled or it's readOnly, only fill in the
         // password if we find a matching login.
-        var username = usernameField.value.toLowerCase();
+        let username = usernameField.value.toLowerCase();
 
         let matchingLogins = logins.filter(
           l => l.username.toLowerCase() == username
@@ -1758,6 +1991,9 @@ var LoginManagerContent = {
 
       let doc = form.ownerDocument;
       if (passwordField.value != selectedLogin.password) {
+        // Ensure the field gets re-masked in case a generated password was
+        // filled into it previously.
+        this._stopTreatingAsGeneratedPasswordField(passwordField);
         passwordField.setUserInput(selectedLogin.password);
         let autoFilledLogin = {
           guid: selectedLogin.QueryInterface(Ci.nsILoginMetaInfo).guid,
@@ -1788,6 +2024,9 @@ var LoginManagerContent = {
       let win = doc.defaultView;
       let messageManager = win.docShell.messageManager;
       messageManager.sendAsyncMessage("LoginStats:LoginFillSuccessful");
+    } catch (ex) {
+      Cu.reportError(ex);
+      throw ex;
     } finally {
       if (autofillResult == -1) {
         // eslint-disable-next-line no-unsafe-finally

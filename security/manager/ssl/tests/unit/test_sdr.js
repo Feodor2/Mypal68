@@ -112,7 +112,7 @@ add_task(async function testAsyncEncryptStrings() {
     "aaa 一二三", // Includes Unicode with code points outside [0, 255].
   ];
 
-  let encrypteds = await sdr.asyncEncryptStrings(inputs.length, inputs);
+  let encrypteds = await sdr.asyncEncryptStrings(inputs);
   for (let i = 0; i < inputs.length; i++) {
     let encrypted = encrypteds[i];
     let input = inputs[i];
@@ -139,6 +139,50 @@ add_task(async function testAsyncEncryptStrings() {
       convertedInput,
       sdr.decryptString(encrypted),
       "decryptString(encryptString(input)) should return input"
+    );
+  }
+});
+
+add_task(async function testAsyncDecryptStrings() {
+  let sdr = Cc["@mozilla.org/security/sdr;1"].getService(
+    Ci.nsISecretDecoderRing
+  );
+
+  // Test valid inputs for encryptString() and decryptString().
+  let testCases = [
+    "",
+    " ", // First printable latin1 character (code point 32).
+    "foo",
+    "1234567890`~!@#$%^&*()-_=+{[}]|\\:;'\",<.>/?",
+    "¡äöüÿ", // Misc + last printable latin1 character (code point 255).
+    "aaa 一二三", // Includes Unicode with code points outside [0, 255].
+  ];
+
+  let convertedTestCases = testCases.map(tc => {
+    let converter = Cc[
+      "@mozilla.org/intl/scriptableunicodeconverter"
+    ].createInstance(Ci.nsIScriptableUnicodeConverter);
+    converter.charset = "UTF-8";
+
+    let convertedInput = converter.ConvertFromUnicode(tc);
+    convertedInput += converter.Finish();
+    return convertedInput;
+  });
+
+  let encryptedStrings = convertedTestCases.map(tc => sdr.encryptString(tc));
+  let decrypteds = await sdr.asyncDecryptStrings(encryptedStrings);
+  for (let i = 0; i < encryptedStrings.length; i++) {
+    let decrypted = decrypteds[i];
+
+    equal(
+      decrypted,
+      testCases[i],
+      "decrypted string should match expected value"
+    );
+    equal(
+      sdr.decryptString(encryptedStrings[i]),
+      convertedTestCases[i],
+      "decryptString(encryptString(input)) should return the initial decrypted string value"
     );
   }
 });

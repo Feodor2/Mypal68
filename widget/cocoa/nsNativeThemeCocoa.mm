@@ -34,7 +34,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLMeterElement.h"
 #include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsLookAndFeel.h"
 #include "VibrancyManager.h"
 
@@ -4173,7 +4173,7 @@ bool nsNativeThemeCocoa::ThemeSupportsWidget(nsPresContext* aPresContext, nsIFra
       if (aFrame && aFrame->GetWritingMode().IsVertical()) {
         return false;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
 
     case StyleAppearance::Listbox:
 

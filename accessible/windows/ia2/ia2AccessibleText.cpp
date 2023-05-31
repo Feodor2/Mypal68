@@ -4,7 +4,6 @@
 
 #include "ia2AccessibleText.h"
 
-#include "Accessible2.h"
 #include "AccessibleText_i.c"
 
 #include "HyperTextAccessibleWrap.h"

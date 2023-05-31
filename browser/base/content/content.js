@@ -39,6 +39,10 @@ addMessageListener("PasswordManager:fillForm", function(message) {
   );
   LoginManagerContent.receiveMessage(message, content);
 });
+addMessageListener("PasswordManager:fillGeneratedPassword", function(message) {
+  // forward message to LMC
+  LoginManagerContent.receiveMessage(message, content);
+});
 
 function shouldIgnoreLoginManagerEvent(event) {
   // If we have a null principal then prevent any more password manager code from running and
@@ -68,22 +72,8 @@ addEventListener("DOMInputPasswordAdded", function(event) {
   let formLike = LoginFormFactory.createFromField(event.originalTarget);
   InsecurePasswordUtils.reportInsecurePasswords(formLike);
 });
-addEventListener("DOMAutoComplete", function(event) {
-  if (shouldIgnoreLoginManagerEvent(event)) {
-    return;
-  }
-  LoginManagerContent.onDOMAutoComplete(event);
-});
 
 ContentMetaHandler.init(this);
 
 // This is a temporary hack to prevent regressions (bug 1471327).
 void content;
-
-addEventListener(
-  "DOMWindowFocus",
-  function(event) {
-    sendAsyncMessage("DOMWindowFocus", {});
-  },
-  false
-);

@@ -68,7 +68,7 @@ static int _valid_subexp(const T* aExpr, T aStop1, T aStop2) {
           return INVALID_SXP;
         }
         ++tld;
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
       case '*':
       case '?':
       case '$':
@@ -359,7 +359,7 @@ static int _shexp_match(const T* aStr, const T* aExpr, bool aCaseInsensitive,
         return ABORTED;
       case '\\':
         ++y;
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
       default:
         if (aCaseInsensitive) {
           if (::upper(aStr[x]) != ::upper(aExpr[y])) {

@@ -6,7 +6,7 @@
 
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/net/UrlClassifierCommon.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
 
@@ -150,7 +150,7 @@ UrlClassifierFeatureFingerprintingAnnotation::ProcessChannel(
   UrlClassifierCommon::SetTrackingInfo(aChannel, aList, aHashes);
 
   UrlClassifierCommon::AnnotateChannel(
-      aChannel, AntiTrackingCommon::eFingerprinting, flags,
+      aChannel, flags,
       nsIWebProgressListener::STATE_LOADED_FINGERPRINTING_CONTENT);
 
   return NS_OK;

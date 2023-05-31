@@ -8,7 +8,6 @@
 #include <queue>
 #include "mozilla/RefPtr.h"
 #include "nsThreadUtils.h"
-#include "nsIThreadManager.h"
 #include "nsIThreadPool.h"
 #include "nsISupports.h"
 #include "nsISupportsImpl.h"

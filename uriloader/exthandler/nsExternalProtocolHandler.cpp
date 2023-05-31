@@ -3,20 +3,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/BasePrincipal.h"
 #include "nsIURI.h"
-#include "nsIURL.h"
 #include "nsExternalProtocolHandler.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
-#include "nsIServiceManager.h"
-#include "nsServiceManagerUtils.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIStringBundle.h"
-#include "nsIPrefService.h"
-#include "nsIPrompt.h"
 #include "nsIURIMutator.h"
 #include "nsNetUtil.h"
 #include "nsContentSecurityManager.h"
@@ -213,7 +208,8 @@ NS_IMETHODIMP nsExtProtocolChannel::AsyncOpen(nsIStreamListener* aListener) {
           mLoadInfo->GetInitialSecurityCheckDone() ||
           (mLoadInfo->GetSecurityMode() ==
                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
-           nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal())),
+           mLoadInfo->LoadingPrincipal() &&
+           mLoadInfo->LoadingPrincipal()->IsSystemPrincipal()),
       "security flags in loadInfo but doContentSecurityCheck() not called");
 
   NS_ENSURE_ARG_POINTER(listener);
@@ -404,7 +400,7 @@ NS_IMETHODIMP nsExtProtocolChannel::SetClassifierMatchedInfo(
 }
 
 NS_IMETHODIMP nsExtProtocolChannel::SetClassifierMatchedTrackingInfo(
-    const nsACString &aLists, const nsACString &aFullHashes) {
+    const nsACString& aLists, const nsACString& aFullHashes) {
   // nothing to do
   return NS_OK;
 }
@@ -506,15 +502,6 @@ NS_IMETHODIMP nsExternalProtocolHandler::GetProtocolFlags(uint32_t* aUritype) {
   *aUritype = URI_NORELATIVE | URI_NOAUTH | URI_LOADABLE_BY_ANYONE |
               URI_NON_PERSISTABLE | URI_DOES_NOT_RETURN_DATA;
   return NS_OK;
-}
-
-NS_IMETHODIMP nsExternalProtocolHandler::NewURI(
-    const nsACString& aSpec,
-    const char* aCharset,  // ignore charset info
-    nsIURI* aBaseURI, nsIURI** _retval) {
-  return NS_MutateURI(NS_SIMPLEURIMUTATOR_CONTRACTID)
-      .SetSpec(aSpec)
-      .Finalize(_retval);
 }
 
 NS_IMETHODIMP

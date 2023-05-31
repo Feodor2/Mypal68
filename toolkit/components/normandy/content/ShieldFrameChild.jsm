@@ -94,8 +94,7 @@ class ShieldFrameChild extends ActorChild {
         const brandName = gBrandBundle.GetStringFromName("brandShortName");
         strings.enabledList = gStringBundle.formatStringFromName(
           "enabledList",
-          [brandName],
-          1
+          [brandName]
         );
 
         this.triggerPageCallback(

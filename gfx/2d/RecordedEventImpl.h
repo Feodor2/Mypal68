@@ -61,13 +61,13 @@ class RecordedDrawTargetCreation
     : public RecordedEventDerived<RecordedDrawTargetCreation> {
  public:
   RecordedDrawTargetCreation(ReferencePtr aRefPtr, BackendType aType,
-                             const IntSize& aSize, SurfaceFormat aFormat,
+                             const IntRect& aRect, SurfaceFormat aFormat,
                              bool aHasExistingData = false,
                              SourceSurface* aExistingData = nullptr)
       : RecordedEventDerived(DRAWTARGETCREATION),
         mRefPtr(aRefPtr),
         mBackendType(aType),
-        mSize(aSize),
+        mRect(aRect),
         mFormat(aFormat),
         mHasExistingData(aHasExistingData),
         mExistingData(aExistingData) {}
@@ -84,7 +84,7 @@ class RecordedDrawTargetCreation
 
   ReferencePtr mRefPtr;
   BackendType mBackendType;
-  IntSize mSize;
+  IntRect mRect;
   SurfaceFormat mFormat;
   bool mHasExistingData;
   RefPtr<SourceSurface> mExistingData;
@@ -1811,7 +1811,7 @@ ReferencePtr RecordedDrawingEvent<T>::GetObjectRef() const {
 inline bool RecordedDrawTargetCreation::PlayEvent(
     Translator* aTranslator) const {
   RefPtr<DrawTarget> newDT =
-      aTranslator->CreateDrawTarget(mRefPtr, mSize, mFormat);
+      aTranslator->CreateDrawTarget(mRefPtr, mRect.Size(), mFormat);
 
   // If we couldn't create a DrawTarget this will probably cause us to crash
   // with nullptr later in the playback, so return false to abort.
@@ -1832,19 +1832,19 @@ template <class S>
 void RecordedDrawTargetCreation::Record(S& aStream) const {
   WriteElement(aStream, mRefPtr);
   WriteElement(aStream, mBackendType);
-  WriteElement(aStream, mSize);
+  WriteElement(aStream, mRect);
   WriteElement(aStream, mFormat);
   WriteElement(aStream, mHasExistingData);
 
   if (mHasExistingData) {
     MOZ_ASSERT(mExistingData);
-    MOZ_ASSERT(mExistingData->GetSize() == mSize);
+    MOZ_ASSERT(mExistingData->GetSize() == mRect.Size());
     RefPtr<DataSourceSurface> dataSurf = mExistingData->GetDataSurface();
 
     DataSourceSurface::ScopedMap map(dataSurf, DataSourceSurface::READ);
-    for (int y = 0; y < mSize.height; y++) {
+    for (int y = 0; y < mRect.height; y++) {
       aStream.write((const char*)map.GetData() + y * map.GetStride(),
-                    BytesPerPixel(mFormat) * mSize.width);
+                    BytesPerPixel(mFormat) * mRect.width);
     }
   }
 }
@@ -1855,14 +1855,14 @@ RecordedDrawTargetCreation::RecordedDrawTargetCreation(S& aStream)
   ReadElement(aStream, mRefPtr);
   ReadElementConstrained(aStream, mBackendType, BackendType::NONE,
                          BackendType::CAPTURE);
-  ReadElement(aStream, mSize);
+  ReadElement(aStream, mRect);
   ReadElementConstrained(aStream, mFormat, SurfaceFormat::A8R8G8B8_UINT32,
                          SurfaceFormat::UNKNOWN);
   ReadElement(aStream, mHasExistingData);
 
   if (mHasExistingData) {
     RefPtr<DataSourceSurface> dataSurf =
-        Factory::CreateDataSourceSurface(mSize, mFormat);
+        Factory::CreateDataSourceSurface(mRect.Size(), mFormat);
     if (!dataSurf) {
       gfxWarning()
           << "RecordedDrawTargetCreation had to reset mHasExistingData";
@@ -1871,9 +1871,9 @@ RecordedDrawTargetCreation::RecordedDrawTargetCreation(S& aStream)
     }
 
     DataSourceSurface::ScopedMap map(dataSurf, DataSourceSurface::READ);
-    for (int y = 0; y < mSize.height; y++) {
+    for (int y = 0; y < mRect.height; y++) {
       aStream.read((char*)map.GetData() + y * map.GetStride(),
-                   BytesPerPixel(mFormat) * mSize.width);
+                   BytesPerPixel(mFormat) * mRect.width);
     }
     mExistingData = dataSurf;
   }
@@ -1882,8 +1882,8 @@ RecordedDrawTargetCreation::RecordedDrawTargetCreation(S& aStream)
 inline void RecordedDrawTargetCreation::OutputSimpleEventInfo(
     std::stringstream& aStringStream) const {
   aStringStream << "[" << mRefPtr << "] DrawTarget Creation (Type: "
-                << NameFromBackend(mBackendType) << ", Size: " << mSize.width
-                << "x" << mSize.height << ")";
+                << NameFromBackend(mBackendType) << ", Size: " << mRect.width
+                << "x" << mRect.height << ")";
 }
 
 inline bool RecordedDrawTargetDestruction::PlayEvent(

@@ -139,15 +139,13 @@ var DownloadUtils = {
       ];
       status = gBundle.formatStringFromName(
         gStr.statusFormatInfiniteRate,
-        params,
-        params.length
+        params
       );
     } else {
       let params = [transfer, rate, unit, timeLeft];
       status = gBundle.formatStringFromName(
         gStr.statusFormat,
-        params,
-        params.length
+        params
       );
     }
     return [status, newLast];
@@ -185,8 +183,7 @@ var DownloadUtils = {
     let params = [transfer, timeLeft];
     let status = gBundle.formatStringFromName(
       gStr.statusFormatNoRate,
-      params,
-      params.length
+      params
     );
     return [status, newLast];
   },
@@ -262,7 +259,7 @@ var DownloadUtils = {
       values = [progress, progressUnits, total, totalUnits];
     }
 
-    return gBundle.formatStringFromName(name, values, values.length);
+    return gBundle.formatStringFromName(name, values);
   },
 
   /**
@@ -329,13 +326,11 @@ var DownloadUtils = {
 
       let pair1 = gBundle.formatStringFromName(
         gStr.timePair,
-        [nf.format(time1), unit1],
-        2
+        [nf.format(time1), unit1]
       );
       let pair2 = gBundle.formatStringFromName(
         gStr.timePair,
-        [nf.format(time2), unit2],
-        2
+        [nf.format(time2), unit2]
       );
 
       // Only show minutes for under 1 hour unless there's a few minutes left;
@@ -343,15 +338,13 @@ var DownloadUtils = {
       if ((aSeconds < 3600 && time1 >= 4) || time2 == 0) {
         timeLeft = gBundle.formatStringFromName(
           gStr.timeLeftSingle,
-          [pair1],
-          1
+          [pair1]
         );
       } else {
         // We've got 2 pairs of times to display
         timeLeft = gBundle.formatStringFromName(
           gStr.timeLeftDouble,
-          [pair1, pair2],
-          2
+          [pair1, pair2]
         );
       }
     }
@@ -472,8 +465,7 @@ var DownloadUtils = {
       // Got nothing; show the scheme (data: about: moz-icon:)
       displayHost = gBundle.formatStringFromName(
         gStr.doneScheme,
-        [uri.scheme],
-        1
+        [uri.scheme]
       );
       fullHost = displayHost;
     } else if (uri.port != -1) {

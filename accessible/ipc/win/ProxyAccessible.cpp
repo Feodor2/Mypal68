@@ -16,7 +16,6 @@
 #include "mozilla/a11y/Platform.h"
 #include "RelationType.h"
 #include "mozilla/a11y/Role.h"
-#include "xpcAccessibleDocument.h"
 
 #include <comutil.h>
 

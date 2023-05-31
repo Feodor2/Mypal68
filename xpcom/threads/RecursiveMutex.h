@@ -85,7 +85,7 @@ class MOZ_RAII RecursiveMutexAutoLock {
   RecursiveMutexAutoLock() = delete;
   RecursiveMutexAutoLock(const RecursiveMutexAutoLock&) = delete;
   RecursiveMutexAutoLock& operator=(const RecursiveMutexAutoLock&) = delete;
-  static void* operator new(size_t) CPP_THROW_NEW;
+  static void* operator new(size_t) noexcept(true);
 
   mozilla::RecursiveMutex* mRecursiveMutex;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
@@ -107,7 +107,7 @@ class MOZ_RAII RecursiveMutexAutoUnlock {
   RecursiveMutexAutoUnlock() = delete;
   RecursiveMutexAutoUnlock(const RecursiveMutexAutoUnlock&) = delete;
   RecursiveMutexAutoUnlock& operator=(const RecursiveMutexAutoUnlock&) = delete;
-  static void* operator new(size_t) CPP_THROW_NEW;
+  static void* operator new(size_t) noexcept(true);
 
   mozilla::RecursiveMutex* mRecursiveMutex;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER

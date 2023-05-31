@@ -36,6 +36,9 @@ class MediaTransportHandlerIPC : public MediaTransportHandler {
                                   const std::string& aLocalPwd,
                                   size_t aComponentCount) override;
 
+  void SetTargetForDefaultLocalAddressLookup(const std::string& aTargetIp,
+                                             uint16_t aTargetPort) override;
+
   // We set default-route-only as late as possible because it depends on what
   // capture permissions have been granted on the window, which could easily
   // change between Init (ie; when the PC is created) and StartIceGathering
@@ -56,7 +59,7 @@ class MediaTransportHandlerIPC : public MediaTransportHandler {
   void RemoveTransportsExcept(
       const std::set<std::string>& aTransportIds) override;
 
-  void StartIceChecks(bool aIsControlling, bool aIsOfferer,
+  void StartIceChecks(bool aIsControlling,
                       const std::vector<std::string>& aIceOptions) override;
 
   void SendPacket(const std::string& aTransportId,
@@ -76,7 +79,7 @@ class MediaTransportHandlerIPC : public MediaTransportHandler {
   friend class MediaTransportChild;
 
   // We do not own this; it will tell us when it is going away.
-  MediaTransportChild* mChild = nullptr;
+  dom::PMediaTransportChild* mChild = nullptr;
 
   // |mChild| can only be initted asynchronously, |mInitPromise| resolves
   // when that happens. The |Then| calls make it convenient to dispatch API

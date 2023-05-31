@@ -46,7 +46,7 @@ struct RTCRtpSourceEntry;
 class TransceiverImpl : public nsISupports {
  public:
   /**
-   * |aReceiveStream| is always set; this holds even if the remote end has not
+   * |aReceiveTrack| is always set; this holds even if the remote end has not
    * negotiated one for this transceiver. |aSendTrack| might or might not be
    * set.
    */
@@ -92,6 +92,7 @@ class TransceiverImpl : public nsISupports {
   bool WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto,
                   JS::MutableHandle<JSObject*> aReflector);
   already_AddRefed<dom::MediaStreamTrack> GetReceiveTrack();
+  void SetReceiveTrackMuted(bool aMuted);
   void SyncWithJS(dom::RTCRtpTransceiver& aJsTransceiver, ErrorResult& aRv);
 
   void InsertDTMFTone(int tone, uint32_t duration);

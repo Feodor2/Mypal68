@@ -47,8 +47,7 @@ async function testDeviceConnected(deviceName) {
 add_task(async function() {
   expectedBody = accountsBundle.formatStringFromName(
     "deviceConnectedBody",
-    ["My phone"],
-    1
+    ["My phone"]
   );
   await testDeviceConnected("My phone");
 });

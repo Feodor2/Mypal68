@@ -7,6 +7,7 @@
 #include "mozilla/extensions/WebExtensionContentScript.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
 
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ResultExtensions.h"
@@ -346,12 +347,13 @@ nsresult ExtensionPolicyService::InjectContentScripts(
           DocInfo docInfo(win);
 
           using RunAt = dom::ContentScriptRunAt;
+          namespace RunAtValues = dom::ContentScriptRunAtValues;
           using Scripts = AutoTArray<RefPtr<WebExtensionContentScript>, 8>;
 
-          constexpr uint8_t n = uint8_t(RunAt::EndGuard_);
-          Scripts scripts[n];
+          Scripts scripts[RunAtValues::Count];
 
           auto GetScripts = [&](RunAt aRunAt) -> Scripts&& {
+            static_assert(sizeof(aRunAt) == 1, "Our cast is wrong");
             return std::move(scripts[uint8_t(aRunAt)]);
           };
 
@@ -425,11 +427,11 @@ static bool CheckParentFrames(nsPIDOMWindowOuter* aWindow,
   }
 
   auto* piWin = aWindow;
-  while ((piWin = piWin->GetScriptableParentOrNull())) {
+  while ((piWin = piWin->GetInProcessScriptableParentOrNull())) {
     auto* win = nsGlobalWindowOuter::Cast(piWin);
 
     auto* principal = BasePrincipal::Cast(win->GetPrincipal());
-    if (nsContentUtils::IsSystemPrincipal(principal)) {
+    if (principal->IsSystemPrincipal()) {
       // The add-on manager is a special case, since it contains extension
       // options pages in same-type <browser> frames.
       nsIURI* uri = win->GetDocumentURI();

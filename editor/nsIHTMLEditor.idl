@@ -6,7 +6,6 @@
 #include "domstubs.idl"
 
 interface nsIContent;
-interface nsIArray;
 
 webidl Document;
 webidl Element;
@@ -219,7 +218,6 @@ interface nsIHTMLEditor : nsISupports
    * @param aMixed     True if there is more than one format
    * @return           Name of block tag. "" is returned for none.
    */
-  [can_run_script]
   AString getParagraphState(out boolean aMixed);
 
   /**
@@ -253,7 +251,6 @@ interface nsIHTMLEditor : nsISupports
    * @param aUL       true if an "ul" list is selected.
    * @param aDL       true if a "dl" list is selected.
    */
-  [can_run_script]
   void getListState(out boolean aMixed, out boolean aOL, out boolean aUL,
                     out boolean aDL);
 
@@ -261,22 +258,22 @@ interface nsIHTMLEditor : nsISupports
    * getListItemState returns what list item type is in the selection.
    * @param aMixed    True if there is more than one type of list item, or
    *                  if there is some list and non-list
+   *                  XXX This ignores `<li>` element selected state.
+   *                      For example, even if `<li>` and `<dt>` are selected,
+   *                      this is set to false.
    * @param aLI       true if "li" list items are selected.
    * @param aDT       true if "dt" list items are selected.
    * @param aDD       true if "dd" list items are selected.
    */
-  [can_run_script]
   void getListItemState(out boolean aMixed, out boolean aLI,
                         out boolean aDT, out boolean aDD);
 
   /**
    * getAlignment     returns what alignment is in the selection.
-   * @param aMixed    True if there is more than one type of list item, or
-   *                  if there is some list and non-list
+   * @param aMixed    Always returns false.
    * @param aAlign    enum value for first encountered alignment
    *                  (left/center/right)
    */
-  [can_run_script]
   void getAlignment(out boolean aMixed, out short aAlign);
 
   /**
@@ -293,6 +290,7 @@ interface nsIHTMLEditor : nsISupports
    *
    * @param aListType  Unused.
    */
+  [can_run_script]
   void removeList(in AString aListType);
 
   /**
@@ -306,6 +304,7 @@ interface nsIHTMLEditor : nsISupports
    * Document me!
    *
    */
+  [can_run_script]
   void  align(in AString aAlign);
 
   /**
@@ -387,15 +386,6 @@ interface nsIHTMLEditor : nsISupports
    */
   [can_run_script]
   void setBackgroundColor(in AString aColor);
-
-  /**
-   * Find all the nodes in the document which contain references
-   * to outside URIs (e.g. a href, img src, script src, etc.)
-   * The objects in the array will be type nsIURIRefObject.
-   *
-   * @return aNodeList    the linked nodes found
-   */
-  nsIArray getLinkedObjects();
 
   /**
    * A boolean which is true is the HTMLEditor has been instantiated

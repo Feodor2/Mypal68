@@ -14,6 +14,7 @@
 #include "nsCExternalHandlerService.h"
 #include "nsCOMPtr.h"
 
+class nsIFileInputStream;
 class nsILineInputStream;
 class nsMIMEInfoBase;
 

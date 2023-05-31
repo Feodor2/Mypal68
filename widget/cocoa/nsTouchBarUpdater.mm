@@ -9,7 +9,6 @@
 #include "nsTouchBarUpdater.h"
 
 #include "nsCocoaWindow.h"
-#include "nsIArray.h"
 #include "nsIBaseWindow.h"
 #include "nsIWidget.h"
 

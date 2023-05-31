@@ -3,14 +3,42 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 :host {
-  padding-top: 36px;
-  padding-left: 40px;
-  padding-right: 40px;
+  padding: 18px;
+
+  --reveal-checkbox-opacity: .8;
+  --reveal-checkbox-opacity-hover: .6;
+  --reveal-checkbox-opacity-active: 1;
+  --success-color: #00c100;
 }
 
-:host(:not([editing])) .save-changes-button,
-:host(:not([editing])) .cancel-button {
+@supports -moz-bool-pref("browser.in-content.dark-mode") {
+@media (prefers-color-scheme: dark) {
+  :host {
+    --success-color: #86DE74;
+  }
+}
+}
+
+:host([data-editing]) .edit-button,
+:host([data-is-new-login]) .delete-button,
+:host([data-is-new-login]) .origin-saved-value,
+:host([data-is-new-login]) copy-to-clipboard-button,
+:host([data-is-new-login]) .open-site-button,
+:host([data-is-new-login]) .meta-info,
+:host([data-is-new-login]) .login-item-title,
+:host(:not([data-is-new-login])) .new-login-title,
+:host(:not([data-editing])) .cancel-button,
+:host(:not([data-editing])) .save-changes-button {
   display: none;
+}
+
+:host(:not([data-editing])) input[type="password"],
+:host(:not([data-editing])) input[type="text"],
+:host(:not([data-editing])) input[type="url"] {
+  all: unset;
+  display: inline-block;
+  width: -moz-available;
+  background-color: transparent !important; /* override common.inc.css */
 }
 
 .header {
@@ -48,12 +76,31 @@
   padding-inline-start: 32px; /* 8px on each side, and 16px for icon width */
 }
 
-.detail-row {
+:host(:not([data-editing])) input[type="url"] {
+  color: var(--in-content-link-color) !important;
+  cursor: pointer;
+}
+
+:host(:not([data-editing])) input[type="url"]:hover {
+  color: var(--in-content-link-color-hover) !important;
+  text-decoration: underline;
+}
+
+:host(:not([data-editing])) input[type="url"]:hover:active {
+  color: var(--in-content-link-color-active) !important;
+}
+
+.detail-row,
+.reveal-password-wrapper {
   display: flex;
+  align-items: center;
+}
+
+.detail-row {
   margin-bottom: 20px;
 }
 
-.detail-row > label {
+.detail-cell {
   flex: auto;
 }
 
@@ -68,18 +115,78 @@
   margin-bottom: 5px;
 }
 
+.copy-button:not([data-copied]) .copied-button-text,
+.copy-button[data-copied] .copy-button-text {
+  display: none;
+}
+
+.copy-button[data-copied] {
+  color: var(--success-color) !important; /* override common.css */
+  background-color: transparent;
+  opacity: 1; /* override common.css fading out disabled buttons */
+}
+
+.copy-button[data-copied]:-moz-focusring {
+  outline-width: 0;
+  box-shadow: none;
+}
+
 .meta-info {
   font-size: smaller;
 }
 
-.meta-info:not(:first-of-type) {
-  margin-top: 0;
-}
-
-.meta-info:not(:last-of-type) {
-  margin-bottom: 0;
-}
-
 .meta-info:first-of-type {
+  padding-top: 1em;
   border-top: 1px solid var(--in-content-box-border-color);
+  width: 40px;
+  /* Show a non-full length border but constrain the text to this width */
+  white-space: nowrap;
+}
+
+:host(:not([editing])) input[name='password'] {
+  font-family: monospace;
+}
+
+.reveal-password-checkbox {
+  /* !important is needed to override common.css styling for checkboxes */
+  background-color: transparent !important;
+  border-width: 0 !important;
+  background-image: url("chrome://browser/content/aboutlogins/icons/show-password.svg") !important;
+  margin-inline-start: 8px !important;
+  cursor: pointer;
+  -moz-context-properties: fill;
+  fill: currentColor !important;
+  opacity: var(--reveal-checkbox-opacity);
+}
+
+.reveal-password-checkbox:hover {
+  opacity: var(--reveal-checkbox-opacity-hover);
+}
+
+.reveal-password-checkbox:hover:active {
+  opacity: var(--reveal-checkbox-opacity-active);
+}
+
+.reveal-password-checkbox:checked {
+  background-image: url("chrome://browser/content/aboutlogins/icons/hide-password.svg") !important;
+}
+
+.reveal-password-checkbox:-moz-focusring {
+  outline: 2px solid var(--in-content-border-active);
+  /* offset outline to align with 1px border-width set for buttons/menulists above. */
+  outline-offset: -1px;
+  /* Make outline-radius slightly bigger than the border-radius set above,
+   * to make the thicker outline corners look smooth */
+  -moz-outline-radius: 3px;
+  box-shadow: 0 0 0 4px var(--in-content-border-active-shadow);
+}
+
+@supports -moz-bool-pref("browser.in-content.dark-mode") {
+@media (prefers-color-scheme: dark) {
+  :host {
+    --reveal-checkbox-opacity: .8;
+    --reveal-checkbox-opacity-hover: 1;
+    --reveal-checkbox-opacity-active: .6;
+  }
+}
 }

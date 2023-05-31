@@ -13,7 +13,6 @@
 #include "nsIProtocolProxyFilter.h"
 #include "nsIProxyInfo.h"
 #include "nsIObserver.h"
-#include "nsIThread.h"
 #include "nsDataHashtable.h"
 #include "nsHashKeys.h"
 #include "prio.h"

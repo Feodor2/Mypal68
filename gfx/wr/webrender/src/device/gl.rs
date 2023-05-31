@@ -6,30 +6,33 @@ use super::super::shader_source::SHADERS;
 use api::{ColorF, ImageDescriptor, ImageFormat, MemoryReport};
 use api::{MixBlendMode, TextureTarget, VoidPtrToSizeFn};
 use api::units::*;
-use euclid::Transform3D;
+use euclid::default::Transform3D;
 use gleam::gl;
-use crate::internal_types::{FastHashMap, LayerIndex, RenderTargetInfo};
-use log::Level;
+use crate::internal_types::{FastHashMap, LayerIndex, RenderTargetInfo, Swizzle};
+use crate::util::round_up_to_multiple;
 use crate::profiler;
+use log::Level;
 use sha2::{Digest, Sha256};
 use smallvec::SmallVec;
-use std::borrow::Cow;
-use std::cell::{Cell, RefCell};
-use std::cmp;
-use std::collections::hash_map::Entry;
-use std::marker::PhantomData;
-use std::mem;
-use std::num::NonZeroUsize;
-use std::os::raw::c_void;
-use std::ops::Add;
-use std::path::PathBuf;
-use std::ptr;
-use std::rc::Rc;
-use std::slice;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::thread;
-use std::time::Duration;
+use std::{
+    borrow::Cow,
+    cell::{Cell, RefCell},
+    cmp,
+    collections::hash_map::Entry,
+    marker::PhantomData,
+    mem,
+    num::NonZeroUsize,
+    os::raw::c_void,
+    ops::Add,
+    path::PathBuf,
+    ptr,
+    rc::Rc,
+    slice,
+    sync::Arc,
+    sync::atomic::{AtomicUsize, Ordering},
+    thread,
+    time::Duration,
+};
 use webrender_build::shader::ProgramSourceDigest;
 use webrender_build::shader::{parse_shader_source, shader_source_from_file};
 
@@ -104,6 +107,26 @@ pub enum TextureFilter {
     Trilinear,
 }
 
+/// A structure defining a particular workflow of texture transfers.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub struct TextureFormatPair<T> {
+    /// Format the GPU natively stores texels in.
+    pub internal: T,
+    /// Format we expect the users to provide the texels in.
+    pub external: T,
+}
+
+impl<T: Copy> From<T> for TextureFormatPair<T> {
+    fn from(value: T) -> Self {
+        TextureFormatPair {
+            internal: value,
+            external: value,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum VertexAttributeKind {
     F32,
@@ -166,7 +189,7 @@ fn supports_extension(extensions: &[String], extension: &str) -> bool {
     extensions.iter().any(|s| s == extension)
 }
 
-fn get_shader_version(gl: &gl::Gl) -> &'static str {
+fn get_shader_version(gl: &dyn gl::Gl) -> &'static str {
     match gl.get_type() {
         gl::GlType::Gl => SHADER_VERSION_GL,
         gl::GlType::Gles => SHADER_VERSION_GLES,
@@ -295,7 +318,7 @@ impl VertexAttribute {
         divisor: gl::GLuint,
         stride: gl::GLint,
         offset: gl::GLuint,
-        gl: &gl::Gl,
+        gl: &dyn gl::Gl,
     ) {
         gl.enable_vertex_attrib_array(attr_index);
         gl.vertex_attrib_divisor(attr_index, divisor);
@@ -365,7 +388,7 @@ impl VertexDescriptor {
         attributes: &[VertexAttribute],
         start_index: usize,
         divisor: u32,
-        gl: &gl::Gl,
+        gl: &dyn gl::Gl,
         vbo: VBOId,
     ) {
         vbo.bind(gl);
@@ -383,7 +406,7 @@ impl VertexDescriptor {
         }
     }
 
-    fn bind(&self, gl: &gl::Gl, main: VBOId, instance: VBOId) {
+    fn bind(&self, gl: &dyn gl::Gl, main: VBOId, instance: VBOId) {
         Self::bind_attributes(self.vertex_attributes, 0, 0, gl, main);
 
         if !self.instance_attributes.is_empty() {
@@ -397,19 +420,19 @@ impl VertexDescriptor {
 }
 
 impl VBOId {
-    fn bind(&self, gl: &gl::Gl) {
+    fn bind(&self, gl: &dyn gl::Gl) {
         gl.bind_buffer(gl::ARRAY_BUFFER, self.0);
     }
 }
 
 impl IBOId {
-    fn bind(&self, gl: &gl::Gl) {
+    fn bind(&self, gl: &dyn gl::Gl) {
         gl.bind_buffer(gl::ELEMENT_ARRAY_BUFFER, self.0);
     }
 }
 
 impl FBOId {
-    fn bind(&self, gl: &gl::Gl, target: FBOTarget) {
+    fn bind(&self, gl: &dyn gl::Gl, target: FBOTarget) {
         let target = match target {
             FBOTarget::Read => gl::READ_FRAMEBUFFER,
             FBOTarget::Draw => gl::DRAW_FRAMEBUFFER,
@@ -454,16 +477,19 @@ impl<T> Drop for VBO<T> {
 }
 
 #[cfg_attr(feature = "replay", derive(Clone))]
+#[derive(Debug)]
 pub struct ExternalTexture {
     id: gl::GLuint,
     target: gl::GLuint,
+    swizzle: Swizzle,
 }
 
 impl ExternalTexture {
-    pub fn new(id: u32, target: TextureTarget) -> Self {
+    pub fn new(id: u32, target: TextureTarget, swizzle: Swizzle) -> Self {
         ExternalTexture {
             id,
             target: get_gl_target(target),
+            swizzle,
         }
     }
 
@@ -495,6 +521,8 @@ pub struct Texture {
     size: DeviceIntSize,
     filter: TextureFilter,
     flags: TextureFlags,
+    /// An internally mutable swizzling state that may change between batches.
+    active_swizzle: Cell<Swizzle>,
     /// Framebuffer Objects, one for each layer of the texture, allowing this
     /// texture to be rendered to. Empty if this texture is not used as a render
     /// target.
@@ -585,6 +613,7 @@ impl Texture {
         let ext = ExternalTexture {
             id: self.id,
             target: self.target,
+            swizzle: Swizzle::default(),
         };
         self.id = 0; // don't complain, moved out
         ext
@@ -816,11 +845,11 @@ pub struct ProgramCache {
 
     /// Optional trait object that allows the client
     /// application to handle ProgramCache updating
-    program_cache_handler: Option<Box<ProgramCacheObserver>>,
+    program_cache_handler: Option<Box<dyn ProgramCacheObserver>>,
 }
 
 impl ProgramCache {
-    pub fn new(program_cache_observer: Option<Box<ProgramCacheObserver>>) -> Rc<Self> {
+    pub fn new(program_cache_observer: Option<Box<dyn ProgramCacheObserver>>) -> Rc<Self> {
         Rc::new(
             ProgramCache {
                 entries: RefCell::new(FastHashMap::default()),
@@ -892,10 +921,11 @@ impl UniformLocation {
 }
 
 pub struct Capabilities {
+    /// Whether multisampled render targets are supported.
     pub supports_multisampling: bool,
-    /// Whether the function glCopyImageSubData is available.
+    /// Whether the function `glCopyImageSubData` is available.
     pub supports_copy_image_sub_data: bool,
-    /// Whether we are able to use glBlitFramebuffers with the draw fbo
+    /// Whether we are able to use `glBlitFramebuffers` with the draw fbo
     /// bound to a non-0th layer of a texture array. This is buggy on
     /// Adreno devices.
     pub supports_blit_to_texture_array: bool,
@@ -903,6 +933,8 @@ pub struct Capabilities {
     /// is available on some mobile GPUs. This allows fast access to
     /// the per-pixel tile memory.
     pub supports_pixel_local_storage: bool,
+    /// Whether advanced blend equations are supported.
+    pub supports_advanced_blend_equation: bool,
     /// Whether KHR_debug is supported for getting debug messages from
     /// the driver.
     pub supports_khr_debug: bool,
@@ -940,11 +972,11 @@ enum TexStorageUsage {
 }
 
 pub struct Device {
-    gl: Rc<gl::Gl>,
+    gl: Rc<dyn gl::Gl>,
 
     /// If non-None, |gl| points to a profiling wrapper, and this points to the
     /// underling Gl instance.
-    base_gl: Option<Rc<gl::Gl>>,
+    base_gl: Option<Rc<dyn gl::Gl>>,
 
     // device state
     bound_textures: [gl::GLuint; 16],
@@ -965,8 +997,10 @@ pub struct Device {
     // HW or API capabilities
     capabilities: Capabilities,
 
-    bgra_format_internal: gl::GLuint,
-    bgra_format_external: gl::GLuint,
+    color_formats: TextureFormatPair<ImageFormat>,
+    bgra_formats: TextureFormatPair<gl::GLuint>,
+    // the swizzle required on sampling a texture with `TextureFormat::BGRA` format
+    bgra_swizzle: Swizzle,
 
     /// Map from texture dimensions to shared depth buffers for render targets.
     ///
@@ -1000,6 +1034,9 @@ pub struct Device {
 
     // GL extensions
     extensions: Vec<String>,
+
+    /// Dumps the source of the shader with the given name
+    dump_shader_source: Option<String>,
 }
 
 /// Contains the parameters necessary to bind a draw target.
@@ -1039,7 +1076,7 @@ pub enum DrawTarget {
 
 impl DrawTarget {
     pub fn new_default(size: DeviceIntSize) -> Self {
-        let total_size = FramebufferIntSize::from_untyped(&size.to_untyped());
+        let total_size = FramebufferIntSize::from_untyped(size.to_untyped());
         DrawTarget::Default {
             rect: total_size.into(),
             total_size,
@@ -1079,9 +1116,9 @@ impl DrawTarget {
     /// Returns the dimensions of this draw-target.
     pub fn dimensions(&self) -> DeviceIntSize {
         match *self {
-            DrawTarget::Default { total_size, .. } => DeviceIntSize::from_untyped(&total_size.to_untyped()),
+            DrawTarget::Default { total_size, .. } => DeviceIntSize::from_untyped(total_size.to_untyped()),
             DrawTarget::Texture { dimensions, .. } => dimensions,
-            DrawTarget::External { size, .. } => DeviceIntSize::from_untyped(&size.to_untyped()),
+            DrawTarget::External { size, .. } => DeviceIntSize::from_untyped(size.to_untyped()),
         }
     }
 
@@ -1111,7 +1148,7 @@ impl DrawTarget {
         match scissor_rect {
             Some(scissor_rect) => match *self {
                 DrawTarget::Default { ref rect, .. } => {
-                    self.to_framebuffer_rect(scissor_rect.translate(&-content_origin.to_vector()))
+                    self.to_framebuffer_rect(scissor_rect.translate(-content_origin.to_vector()))
                         .intersection(rect)
                         .unwrap_or_else(FramebufferIntRect::zero)
                 }
@@ -1122,7 +1159,7 @@ impl DrawTarget {
             None => {
                 FramebufferIntRect::new(
                     FramebufferIntPoint::zero(),
-                    FramebufferIntSize::from_untyped(&dimensions.to_untyped()),
+                    FramebufferIntSize::from_untyped(dimensions.to_untyped()),
                 )
             }
         }
@@ -1170,11 +1207,14 @@ impl From<DrawTarget> for ReadTarget {
 
 impl Device {
     pub fn new(
-        mut gl: Rc<gl::Gl>,
+        mut gl: Rc<dyn gl::Gl>,
         resource_override_path: Option<PathBuf>,
         upload_method: UploadMethod,
         cached_programs: Option<Rc<ProgramCache>>,
         allow_pixel_local_storage_support: bool,
+        allow_texture_storage_support: bool,
+        allow_texture_swizzling: bool,
+        dump_shader_source: Option<String>,
     ) -> Device {
         let mut max_texture_size = [0];
         let mut max_texture_layers = [0];
@@ -1210,15 +1250,19 @@ impl Device {
             });
         }
 
+        if supports_extension(&extensions, "GL_ANGLE_provoking_vertex") {
+            gl.provoking_vertex_angle(gl::FIRST_VERTEX_CONVENTION);
+        }
+
         // Our common-case image data in Firefox is BGRA, so we make an effort
         // to use BGRA as the internal texture storage format to avoid the need
         // to swizzle during upload. Currently we only do this on GLES (and thus
         // for Windows, via ANGLE).
         //
         // On Mac, Apple docs [1] claim that BGRA is a more efficient internal
-        // format, so we may want to consider doing that at some point, since it
-        // would give us both a more efficient internal format and avoid the
-        // swizzling in the common case.
+        // format, but they don't support it with glTextureStorage. As a workaround,
+        // we pretend that it's RGBA8 for the purposes of texture transfers,
+        // but swizzle R with B for the texture sampling.
         //
         // We also need our internal format types to be sized, since glTexStorage*
         // will reject non-sized internal format types.
@@ -1231,64 +1275,84 @@ impl Device {
         // The extension is available on ANGLE, but on Android this usually
         // means we must fall back to using unsized BGRA and glTexImage*.
         //
+        // Overall, we have the following factors in play when choosing the formats:
+        //   - with glTexStorage, the internal format needs to match the external format,
+        //     or the driver would have to do the conversion, which is slow
+        //   - on desktop GL, there is no BGRA internal format. However, initializing
+        //     the textures with glTexImage as RGBA appears to use BGRA internally,
+        //     preferring BGRA external data [4].
+        //   - when glTexStorage + BGRA internal format is not supported,
+        //     and the external data is BGRA, we have the following options:
+        //       1. use glTexImage with RGBA internal format, this costs us VRAM for mipmaps
+        //       2. use glTexStorage with RGBA internal format, this costs us the conversion by the driver
+        //       3. pretend we are uploading RGBA and set up the swizzling of the texture unit - this costs us batch breaks
+        //
         // [1] https://developer.apple.com/library/archive/documentation/
         //     GraphicsImaging/Conceptual/OpenGL-MacProgGuide/opengl_texturedata/
         //     opengl_texturedata.html#//apple_ref/doc/uid/TP40001987-CH407-SW22
         // [2] https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_texture_format_BGRA8888.txt
         // [3] https://www.khronos.org/registry/OpenGL/extensions/EXT/EXT_texture_storage.txt
-        let supports_bgra = supports_extension(&extensions, "GL_EXT_texture_format_BGRA8888");
-        let supports_texture_storage = match gl.get_type() {
-            gl::GlType::Gl => supports_extension(&extensions, "GL_ARB_texture_storage"),
-            gl::GlType::Gles => true,
-        };
+        // [4] http://http.download.nvidia.com/developer/Papers/2005/Fast_Texture_Transfers/Fast_Texture_Transfers.pdf
 
-        if supports_extension(&extensions, "GL_ANGLE_provoking_vertex") {
-            gl.provoking_vertex_angle(gl::FIRST_VERTEX_CONVENTION);
-        }
+        // To support BGRA8 with glTexStorage* we specifically need
+        // GL_EXT_texture_storage and GL_EXT_texture_format_BGRA8888.
+        let supports_gles_bgra = supports_extension(&extensions, "GL_EXT_texture_format_BGRA8888");
 
-        let (bgra_format_internal, bgra_format_external, texture_storage_usage) = if supports_bgra {
-            assert_eq!(gl.get_type(), gl::GlType::Gles, "gleam only detects bgra on gles");
-            // To support BGRA8 with glTexStorage* we specifically need
-            // GL_EXT_texture_storage and GL_EXT_texture_format_BGRA8888.
-            if supports_extension(&extensions, "GL_EXT_texture_format_BGRA8888") && supports_extension(&extensions, "GL_EXT_texture_storage") {
-                // We can use glTexStorage with BGRA8 as the internal format.
-                (gl::BGRA8_EXT, gl::BGRA_EXT, TexStorageUsage::Always)
-            } else {
-                // For BGRA8 textures we must must use the unsized BGRA internal
-                // format and glTexImage. If texture storage is supported we can
-                // use it for other formats.
-                (
-                    gl::BGRA_EXT,
-                    gl::BGRA_EXT,
-                    if supports_texture_storage {
-                        TexStorageUsage::NonBGRA8
-                    } else {
-                        TexStorageUsage::Never
-                    },
-                )
-            }
-        } else {
+        let (color_formats, bgra_formats, bgra_swizzle, texture_storage_usage) = match gl.get_type() {
+            // There is `glTexStorage`, use it and expect RGBA on the input.
+            gl::GlType::Gl if
+                allow_texture_storage_support &&
+                allow_texture_swizzling &&
+                supports_extension(&extensions, "GL_ARB_texture_storage")
+            => (
+                TextureFormatPair::from(ImageFormat::RGBA8),
+                TextureFormatPair { internal: gl::RGBA8, external: gl::RGBA },
+                Swizzle::Bgra, // pretend it's RGBA, rely on swizzling
+                TexStorageUsage::Always
+            ),
+            // There is no `glTexStorage`, upload as `glTexImage` with BGRA input.
+            gl::GlType::Gl => (
+                TextureFormatPair { internal: ImageFormat::RGBA8, external: ImageFormat::BGRA8 },
+                TextureFormatPair { internal: gl::RGBA, external: gl::BGRA },
+                Swizzle::Rgba, // converted on uploads by the driver, no swizzling needed
+                TexStorageUsage::Never
+            ),
+            // We can use glTexStorage with BGRA8 as the internal format.
+            gl::GlType::Gles if supports_gles_bgra && allow_texture_storage_support && supports_extension(&extensions, "GL_EXT_texture_storage") => (
+                TextureFormatPair::from(ImageFormat::BGRA8),
+                TextureFormatPair { internal: gl::BGRA8_EXT, external: gl::BGRA_EXT },
+                Swizzle::Rgba, // no conversion needed
+                TexStorageUsage::Always,
+            ),
+            // For BGRA8 textures we must use the unsized BGRA internal
+            // format and glTexImage. If texture storage is supported we can
+            // use it for other formats.
+            // We can't use glTexStorage with BGRA8 as the internal format.
+            gl::GlType::Gles if supports_gles_bgra => (
+                TextureFormatPair::from(ImageFormat::RGBA8),
+                TextureFormatPair::from(gl::BGRA_EXT),
+                Swizzle::Rgba, // no conversion needed
+                TexStorageUsage::NonBGRA8,
+            ),
             // BGRA is not supported as an internal format, therefore we will
-            // use RGBA. On non-gles we can swizzle during upload. This is not
-            // allowed on gles, so we must us RGBA for the external format too.
-            // Red and blue will appear reversed, but it is the best we can do.
-            // Since the internal format will actually be RGBA, if texture
-            // storage is supported we can use it for such textures.
-            (
-                gl::RGBA8,
-                if gl.get_type() == gl::GlType::Gles {
-                    gl::RGBA
-                } else {
-                    gl::BGRA
-                },
-                if supports_texture_storage {
-                    TexStorageUsage::Always
-                } else {
-                    TexStorageUsage::Never
-                },
-            )
+            // use RGBA. The swizzling will happen at the texture unit.
+            gl::GlType::Gles if allow_texture_swizzling => (
+                TextureFormatPair::from(ImageFormat::RGBA8),
+                TextureFormatPair { internal: gl::RGBA8, external: gl::RGBA },
+                Swizzle::Bgra, // pretend it's RGBA, rely on swizzling
+                TexStorageUsage::Always,
+            ),
+            // BGRA and swizzling are not supported. We force the conversion done by the driver.
+            gl::GlType::Gles => (
+                TextureFormatPair::from(ImageFormat::RGBA8),
+                TextureFormatPair { internal: gl::RGBA8, external: gl::BGRA },
+                Swizzle::Rgba,
+                TexStorageUsage::Always,
+            ),
         };
 
+        info!("GL texture cache {:?}, bgra {:?} swizzle {:?}, texture storage {:?}",
+            color_formats, bgra_formats, bgra_swizzle, texture_storage_usage);
         let supports_copy_image_sub_data = supports_extension(&extensions, "GL_EXT_copy_image") ||
             supports_extension(&extensions, "GL_ARB_copy_image");
 
@@ -1306,6 +1370,13 @@ impl Device {
             allow_pixel_local_storage_support &&
             ext_framebuffer_fetch &&
             ext_pixel_local_storage;
+
+        // KHR_blend_equation_advanced renders incorrectly on Adreno
+        // devices. This has only been confirmed up to Adreno 5xx, and has been
+        // fixed for Android 9, so this condition could be made more specific.
+        let supports_advanced_blend_equation =
+            supports_extension(&extensions, "GL_KHR_blend_equation_advanced") &&
+            !renderer_name.starts_with("Adreno");
 
         // On Adreno GPUs PBO texture upload is only performed asynchronously
         // if the stride of the data in the PBO is a multiple of 256 bytes.
@@ -1330,11 +1401,13 @@ impl Device {
                 supports_copy_image_sub_data,
                 supports_blit_to_texture_array,
                 supports_pixel_local_storage,
+                supports_advanced_blend_equation,
                 supports_khr_debug,
             },
 
-            bgra_format_internal,
-            bgra_format_external,
+            color_formats,
+            bgra_formats,
+            bgra_swizzle,
 
             depth_targets: FastHashMap::default(),
 
@@ -1357,14 +1430,15 @@ impl Device {
             extensions,
             texture_storage_usage,
             optimal_pbo_stride,
+            dump_shader_source,
         }
     }
 
-    pub fn gl(&self) -> &gl::Gl {
+    pub fn gl(&self) -> &dyn gl::Gl {
         &*self.gl
     }
 
-    pub fn rc_gl(&self) -> &Rc<gl::Gl> {
+    pub fn rc_gl(&self) -> &Rc<dyn gl::Gl> {
         &self.gl
     }
 
@@ -1391,6 +1465,18 @@ impl Device {
 
     pub fn get_capabilities(&self) -> &Capabilities {
         &self.capabilities
+    }
+
+    pub fn preferred_color_formats(&self) -> TextureFormatPair<ImageFormat> {
+        self.color_formats.clone()
+    }
+
+    pub fn bgra_swizzle(&self) -> Swizzle {
+        self.bgra_swizzle
+    }
+
+    pub fn get_optimal_pbo_stride(&self) -> NonZeroUsize {
+        self.optimal_pbo_stride
     }
 
     pub fn reset_state(&mut self) {
@@ -1420,7 +1506,7 @@ impl Device {
     }
 
     pub fn compile_shader(
-        gl: &gl::Gl,
+        gl: &dyn gl::Gl,
         name: &str,
         shader_type: gl::GLenum,
         source: &String,
@@ -1509,29 +1595,47 @@ impl Device {
         self.frame_id
     }
 
-    fn bind_texture_impl(&mut self, slot: TextureSlot, id: gl::GLuint, target: gl::GLenum) {
+    fn bind_texture_impl(
+        &mut self, slot: TextureSlot, id: gl::GLuint, target: gl::GLenum, set_swizzle: Option<Swizzle>
+    ) {
         debug_assert!(self.inside_frame);
 
-        if self.bound_textures[slot.0] != id {
-            self.bound_textures[slot.0] = id;
+        if self.bound_textures[slot.0] != id || set_swizzle.is_some() {
             self.gl.active_texture(gl::TEXTURE0 + slot.0 as gl::GLuint);
             self.gl.bind_texture(target, id);
+            if let Some(swizzle) = set_swizzle {
+                let components = match swizzle {
+                    Swizzle::Rgba => [gl::RED, gl::GREEN, gl::BLUE, gl::ALPHA],
+                    Swizzle::Bgra => [gl::BLUE, gl::GREEN, gl::RED, gl::ALPHA],
+                };
+                self.gl.tex_parameter_i(target, gl::TEXTURE_SWIZZLE_R, components[0] as i32);
+                self.gl.tex_parameter_i(target, gl::TEXTURE_SWIZZLE_G, components[1] as i32);
+                self.gl.tex_parameter_i(target, gl::TEXTURE_SWIZZLE_B, components[2] as i32);
+                self.gl.tex_parameter_i(target, gl::TEXTURE_SWIZZLE_A, components[3] as i32);
+            }
             self.gl.active_texture(gl::TEXTURE0);
+            self.bound_textures[slot.0] = id;
         }
     }
 
-    pub fn bind_texture<S>(&mut self, sampler: S, texture: &Texture)
+    pub fn bind_texture<S>(&mut self, slot: S, texture: &Texture, swizzle: Swizzle)
     where
         S: Into<TextureSlot>,
     {
-        self.bind_texture_impl(sampler.into(), texture.id, texture.target);
+        let old_swizzle = texture.active_swizzle.replace(swizzle);
+        let set_swizzle = if old_swizzle != swizzle {
+            Some(swizzle)
+        } else {
+            None
+        };
+        self.bind_texture_impl(slot.into(), texture.id, texture.target, set_swizzle);
     }
 
-    pub fn bind_external_texture<S>(&mut self, sampler: S, external_texture: &ExternalTexture)
+    pub fn bind_external_texture<S>(&mut self, slot: S, external_texture: &ExternalTexture)
     where
         S: Into<TextureSlot>,
     {
-        self.bind_texture_impl(sampler.into(), external_texture.id, external_texture.target);
+        self.bind_texture_impl(slot.into(), external_texture.id, external_texture.target, None);
     }
 
     pub fn bind_read_target_impl(&mut self, fbo_id: FBOId) {
@@ -1583,7 +1687,7 @@ impl Device {
             DrawTarget::Texture { dimensions, fbo_id, with_depth, .. } => {
                 let rect = FramebufferIntRect::new(
                     FramebufferIntPoint::zero(),
-                    FramebufferIntSize::from_untyped(&dimensions.to_untyped()),
+                    FramebufferIntSize::from_untyped(dimensions.to_untyped()),
                 );
                 (fbo_id, rect, with_depth)
             },
@@ -1704,6 +1808,13 @@ impl Device {
                     }
                 };
 
+            // Check if shader source should be dumped
+            if Some(info.base_filename) == self.dump_shader_source.as_ref().map(String::as_ref) {
+                let path = std::path::Path::new(info.base_filename);
+                std::fs::write(path.with_extension("vert"), vs_source).unwrap();
+                std::fs::write(path.with_extension("frag"), fs_source).unwrap();
+            }
+
             // Attach shaders
             self.gl.attach_shader(program.id, vs_id);
             self.gl.attach_shader(program.id, fs_id);
@@ -1808,13 +1919,14 @@ impl Device {
             layer_count,
             format,
             filter,
+            active_swizzle: Cell::default(),
             fbos: vec![],
             fbos_with_depth: vec![],
             blit_workaround_buffer: None,
             last_frame_used: self.frame_id,
             flags: TextureFlags::default(),
         };
-        self.bind_texture(DEFAULT_TEXTURE, &texture);
+        self.bind_texture(DEFAULT_TEXTURE, &texture, Swizzle::default());
         self.set_texture_parameters(texture.target, filter);
 
         // Allocate storage.
@@ -1971,7 +2083,7 @@ impl Device {
         } else {
             let rect = FramebufferIntRect::new(
                 FramebufferIntPoint::zero(),
-                FramebufferIntSize::from_untyped(&src.get_dimensions().to_untyped()),
+                FramebufferIntSize::from_untyped(src.get_dimensions().to_untyped()),
             );
             for layer in 0..src.layer_count.min(dst.layer_count) as LayerIndex {
                 self.blit_render_target(
@@ -2201,13 +2313,14 @@ impl Device {
                         dest_rect.size.width.abs(),
                         dest_rect.size.height.abs(),
                     ),
-                ).intersection(&dimensions.into()).unwrap_or(DeviceIntRect::zero());
+                ).intersection(&dimensions.into()).unwrap_or_else(DeviceIntRect::zero);
 
                 self.bind_read_target_impl(fbo);
                 self.bind_texture_impl(
                     DEFAULT_TEXTURE,
                     id,
                     target,
+                    None, // not depending on swizzle
                 );
 
                 // Copy from intermediate buffer to the texture layer.
@@ -2271,7 +2384,7 @@ impl Device {
 
         for bound_texture in &mut self.bound_textures {
             if *bound_texture == texture.id {
-                *bound_texture = 0
+                *bound_texture = 0;
             }
         }
 
@@ -2440,7 +2553,7 @@ impl Device {
                 rect.origin.y as _,
                 rect.size.width as _,
                 rect.size.height as _,
-                gl_format.external,
+                gl_format.read,
                 gl_format.pixel_type,
             );
         }
@@ -2490,7 +2603,7 @@ impl Device {
         upload_count: usize,
     ) -> TextureUploader<'a, T> {
         debug_assert!(self.inside_frame);
-        self.bind_texture(DEFAULT_TEXTURE, texture);
+        self.bind_texture(DEFAULT_TEXTURE, texture, Swizzle::default());
 
         let buffer = match self.upload_method {
             UploadMethod::Immediate => None,
@@ -2512,7 +2625,7 @@ impl Device {
         TextureUploader {
             target: UploadTarget {
                 gl: &*self.gl,
-                bgra_format: self.bgra_format_external,
+                bgra_format: self.bgra_formats.external,
                 optimal_pbo_stride: self.optimal_pbo_stride,
                 texture,
             },
@@ -2527,7 +2640,7 @@ impl Device {
         texture: &Texture,
         pixels: &[T]
     ) {
-        self.bind_texture(DEFAULT_TEXTURE, texture);
+        self.bind_texture(DEFAULT_TEXTURE, texture, Swizzle::default());
         let desc = self.gl_describe_format(texture.format);
         match texture.target {
             gl::TEXTURE_2D | gl::TEXTURE_RECTANGLE | gl::TEXTURE_EXTERNAL_OES =>
@@ -2566,7 +2679,7 @@ impl Device {
             0, 0,
             img_desc.size.width as i32,
             img_desc.size.height as i32,
-            desc.external,
+            desc.read,
             desc.pixel_type,
         )
     }
@@ -2589,7 +2702,7 @@ impl Device {
             rect.origin.y as _,
             rect.size.width as _,
             rect.size.height as _,
-            desc.external,
+            desc.read,
             desc.pixel_type,
             output,
         );
@@ -2602,7 +2715,7 @@ impl Device {
         format: ImageFormat,
         output: &mut [u8],
     ) {
-        self.bind_texture(DEFAULT_TEXTURE, texture);
+        self.bind_texture(DEFAULT_TEXTURE, texture, Swizzle::default());
         let desc = self.gl_describe_format(format);
         self.gl.get_tex_image_into_buffer(
             texture.target,
@@ -3145,7 +3258,7 @@ impl Device {
         }
     }
 
-    fn log_driver_messages(gl: &gl::Gl) {
+    fn log_driver_messages(gl: &dyn gl::Gl) {
         for msg in gl.get_debug_messages() {
             let level = match msg.severity {
                 gl::DEBUG_SEVERITY_HIGH => Level::Error,
@@ -3175,17 +3288,20 @@ impl Device {
             ImageFormat::R8 => FormatDesc {
                 internal: gl::R8,
                 external: gl::RED,
+                read: gl::RED,
                 pixel_type: gl::UNSIGNED_BYTE,
             },
             ImageFormat::R16 => FormatDesc {
                 internal: gl::R16,
                 external: gl::RED,
+                read: gl::RED,
                 pixel_type: gl::UNSIGNED_SHORT,
             },
             ImageFormat::BGRA8 => {
                 FormatDesc {
-                    internal: self.bgra_format_internal,
-                    external: self.bgra_format_external,
+                    internal: self.bgra_formats.internal,
+                    external: self.bgra_formats.external,
+                    read: gl::BGRA,
                     pixel_type: gl::UNSIGNED_BYTE,
                 }
             },
@@ -3193,27 +3309,32 @@ impl Device {
                 FormatDesc {
                     internal: gl::RGBA8,
                     external: gl::RGBA,
+                    read: gl::RGBA,
                     pixel_type: gl::UNSIGNED_BYTE,
                 }
             },
             ImageFormat::RGBAF32 => FormatDesc {
                 internal: gl::RGBA32F,
                 external: gl::RGBA,
+                read: gl::RGBA,
                 pixel_type: gl::FLOAT,
             },
             ImageFormat::RGBAI32 => FormatDesc {
                 internal: gl::RGBA32I,
                 external: gl::RGBA_INTEGER,
+                read: gl::RGBA_INTEGER,
                 pixel_type: gl::INT,
             },
             ImageFormat::RG8 => FormatDesc {
                 internal: gl::RG8,
                 external: gl::RG,
+                read: gl::RG,
                 pixel_type: gl::UNSIGNED_BYTE,
             },
             ImageFormat::RG16 => FormatDesc {
                 internal: gl::RG16,
                 external: gl::RG,
+                read: gl::RG,
                 pixel_type: gl::UNSIGNED_SHORT,
             },
         }
@@ -3224,8 +3345,7 @@ impl Device {
         match format {
             ImageFormat::R8 => gl::R8,
             ImageFormat::R16 => gl::R16UI,
-            // BGRA8 is not usable with renderbuffers so use RGBA8.
-            ImageFormat::BGRA8 => gl::RGBA8,
+            ImageFormat::BGRA8 => panic!("Unable to render to BGRA format!"),
             ImageFormat::RGBAF32 => gl::RGBA32F,
             ImageFormat::RG8 => gl::RG8,
             ImageFormat::RG16 => gl::RG16,
@@ -3245,8 +3365,14 @@ impl Device {
 }
 
 struct FormatDesc {
+    /// Format the texel data is internally stored in within a texture.
     internal: gl::GLenum,
+    /// Format that we expect the data to be provided when filling the texture.
     external: gl::GLuint,
+    /// Format to read the texels as, so that they can be uploaded as `external`
+    /// later on.
+    read: gl::GLuint,
+    /// Associated pixel type.
     pixel_type: gl::GLuint,
 }
 
@@ -3280,7 +3406,7 @@ impl PixelBuffer {
 }
 
 struct UploadTarget<'a> {
-    gl: &'a gl::Gl,
+    gl: &'a dyn gl::Gl,
     bgra_format: gl::GLuint,
     optimal_pbo_stride: NonZeroUsize,
     texture: &'a Texture,
@@ -3300,13 +3426,6 @@ impl<'a, T> Drop for TextureUploader<'a, T> {
             }
             self.target.gl.bind_buffer(gl::PIXEL_UNPACK_BUFFER, 0);
         }
-    }
-}
-
-fn round_up_to_multiple(val: usize, mul: NonZeroUsize) -> usize {
-    match val % mul.get() {
-        rem if rem > 0 => val - rem + mul.get(),
-        _ => val,
     }
 }
 

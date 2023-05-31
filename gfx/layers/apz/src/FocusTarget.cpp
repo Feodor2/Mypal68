@@ -10,6 +10,7 @@
 #include "mozilla/EventDispatcher.h"         // for EventDispatcher
 #include "mozilla/layout/RenderFrame.h"      // For RenderFrame
 #include "mozilla/PresShell.h"               // For PresShell
+#include "mozilla/StaticPrefs_apz.h"
 #include "nsIContentInlines.h"               // for nsINode::IsEditable()
 #include "nsLayoutUtils.h"                   // for nsLayoutUtils
 
@@ -137,7 +138,7 @@ FocusTarget::FocusTarget(PresShell* aRootPresShell,
 
   // Check if there are key event listeners that could prevent default or change
   // the focus or selection of the page.
-  if (gfxPrefs::APZKeyboardPassiveListeners()) {
+  if (StaticPrefs::apz_keyboard_passive_listeners()) {
     mFocusHasKeyEventListeners =
         HasListenersForNonPassiveKeyEvents(keyEventTarget.get());
   } else {

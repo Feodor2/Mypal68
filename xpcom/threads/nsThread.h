@@ -6,7 +6,6 @@
 #define nsThread_h__
 
 #include "mozilla/Mutex.h"
-#include "nsIIdlePeriod.h"
 #include "nsIThreadInternal.h"
 #include "nsISupportsPriority.h"
 #include "nsThreadUtils.h"
@@ -210,7 +209,6 @@ class nsThread : public nsIThreadInternal,
 
   mozilla::CycleCollectedJSContext* mScriptObserver;
 
-  PRThread* mThread;
   void* mStackBase = nullptr;
   uint32_t mStackSize;
   uint32_t mThreadId;
@@ -225,11 +223,7 @@ class nsThread : public nsIThreadInternal,
 
   int8_t mPriority;
 
-  uint8_t mIsMainThread;
-
-  bool IsMainThread() const {
-    return MainThreadFlag(mIsMainThread) == MAIN_THREAD;
-  }
+  bool mIsMainThread;
 
   // Set to true if this thread creates a JSRuntime.
   bool mCanInvokeJS;

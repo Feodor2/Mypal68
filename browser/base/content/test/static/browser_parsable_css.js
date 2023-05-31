@@ -12,25 +12,9 @@
 let whitelist = [
   // CodeMirror is imported as-is, see bug 1004423.
   { sourceName: /codemirror\.css$/i, isFromDevTools: true },
-  // The debugger uses cross-browser CSS.
-  {
-    sourceName: /devtools\/client\/debugger\/dist\/vendors.css/i,
-    isFromDevTools: true,
-  },
   {
     sourceName: /devtools\/client\/debugger\/src\/components\/([A-z\/]+).css/i,
     isFromDevTools: true,
-  },
-  // Reps uses cross-browser CSS.
-  {
-    sourceName: /devtools-client-shared\/components\/reps\/reps.css/i,
-    isFromDevTools: true,
-  },
-  // PDFjs rules needed for compat with other UAs.
-  {
-    sourceName: /web\/viewer\.css$/i,
-    errorMessage: /Unknown property.*(appearance|user-select)/i,
-    isFromDevTools: false,
   },
   // Highlighter CSS uses a UA-only pseudo-class, see bug 985597.
   {
@@ -53,6 +37,11 @@ let whitelist = [
   {
     sourceName: /\b(html|mathml|ua)\.css$/i,
     errorMessage: /Unknown property.*-moz-/i,
+    isFromDevTools: false,
+  },
+  {
+    sourceName: /minimal-xul\.css$/i,
+    errorMessage: /Unknown pseudo-class.*-moz-/i,
     isFromDevTools: false,
   },
   // Reserved to UA sheets unless layout.css.overflow-clip-box.enabled flipped to true.

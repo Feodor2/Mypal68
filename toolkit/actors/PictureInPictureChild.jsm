@@ -797,12 +797,7 @@ class PictureInPictureChild extends ActorChild {
     }
 
     let doc = this.content.document;
-    let playerVideo = originatingVideo.cloneNode();
-    playerVideo.removeAttribute("controls");
-
-    // Mute the video and rely on the originating video's audio playback.
-    // This way, we sidestep the AutoplayPolicy blocking stuff.
-    playerVideo.muted = true;
+    let playerVideo = doc.createElement("video");
 
     // Force the player video to assume maximum height and width of the
     // containing window

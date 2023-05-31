@@ -148,8 +148,10 @@ ChangeStyleTransaction::DoTransaction() {
 
   nsCOMPtr<nsICSSDeclaration> cssDecl = inlineStyles->Style();
 
-  nsAutoString propertyNameString;
-  mProperty->ToString(propertyNameString);
+  // FIXME(bug 1606994): Using atoms forces a string copy here which is not
+  // great.
+  nsAutoCString propertyNameString;
+  mProperty->ToUTF8String(propertyNameString);
 
   mUndoAttributeWasSet = mElement->HasAttr(kNameSpaceID_None, nsGkAtoms::style);
 
@@ -173,7 +175,8 @@ ChangeStyleTransaction::DoTransaction() {
       } else {
         nsAutoString priority;
         cssDecl->GetPropertyPriority(propertyNameString, priority);
-        rv = cssDecl->SetProperty(propertyNameString, values, priority);
+        rv = cssDecl->SetProperty(propertyNameString,
+                                  NS_ConvertUTF16toUTF8(values), priority);
         NS_ENSURE_SUCCESS(rv, rv);
       }
     } else {
@@ -189,7 +192,8 @@ ChangeStyleTransaction::DoTransaction() {
     } else {
       values.Assign(mValue);
     }
-    rv = cssDecl->SetProperty(propertyNameString, values, priority);
+    rv = cssDecl->SetProperty(propertyNameString,
+                              NS_ConvertUTF16toUTF8(values), priority);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -209,8 +213,8 @@ nsresult ChangeStyleTransaction::SetStyle(bool aAttributeWasSet,
                                           nsAString& aValue) {
   if (aAttributeWasSet) {
     // The style attribute was not empty, let's recreate the declaration
-    nsAutoString propertyNameString;
-    mProperty->ToString(propertyNameString);
+    nsAutoCString propertyNameString;
+    mProperty->ToUTF8String(propertyNameString);
 
     nsCOMPtr<nsStyledElement> inlineStyles = do_QueryInterface(mElement);
     NS_ENSURE_TRUE(inlineStyles, NS_ERROR_NULL_POINTER);
@@ -224,7 +228,8 @@ nsresult ChangeStyleTransaction::SetStyle(bool aAttributeWasSet,
     // Let's recreate the declaration as it was
     nsAutoString priority;
     cssDecl->GetPropertyPriority(propertyNameString, priority);
-    return cssDecl->SetProperty(propertyNameString, aValue, priority);
+    return cssDecl->SetProperty(propertyNameString,
+                                NS_ConvertUTF16toUTF8(aValue), priority);
   }
   return mElement->UnsetAttr(kNameSpaceID_None, nsGkAtoms::style, true);
 }

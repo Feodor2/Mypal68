@@ -89,12 +89,7 @@ bool LockScreenOrientation(const hal::ScreenOrientation& aOrientation) {
   return allowed;
 }
 
-void UnlockScreenOrientation() {
-  // Don't send this message from both the middleman and recording processes.
-  if (!recordreplay::IsMiddleman()) {
-    Hal()->SendUnlockScreenOrientation();
-  }
-}
+void UnlockScreenOrientation() { Hal()->SendUnlockScreenOrientation(); }
 
 void EnableSensorNotifications(SensorType aSensor) {
   Hal()->SendEnableSensorNotifications(aSensor);
@@ -162,7 +157,7 @@ class HalParent : public PHalParent,
   }
 
   virtual mozilla::ipc::IPCResult RecvVibrate(
-      InfallibleTArray<unsigned int>&& pattern, InfallibleTArray<uint64_t>&& id,
+      nsTArray<unsigned int>&& pattern, nsTArray<uint64_t>&& id,
       PBrowserParent* browserParent) override {
     // We give all content vibration permission.
     //    BrowserParent *browserParent = BrowserParent::GetFrom(browserParent);
@@ -176,7 +171,7 @@ class HalParent : public PHalParent,
   }
 
   virtual mozilla::ipc::IPCResult RecvCancelVibrate(
-      InfallibleTArray<uint64_t>&& id, PBrowserParent* browserParent) override {
+      nsTArray<uint64_t>&& id, PBrowserParent* browserParent) override {
     // BrowserParent *browserParent = BrowserParent::GetFrom(browserParent);
     /* XXXkhuey wtf
     nsCOMPtr<nsIDOMWindow> window =

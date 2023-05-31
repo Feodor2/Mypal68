@@ -23,7 +23,6 @@ XPIDL_SOURCES += [
     'nsIHTMLObjectResizer.idl',
     'nsIPlaintextEditor.idl',
     'nsITableEditor.idl',
-    'nsIURIRefObject.idl',
 ]
 
 XPIDL_MODULE = 'editor'

@@ -20,7 +20,6 @@
 #include "mozilla/layers/PImageBridgeChild.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/webrender/WebRenderTypes.h"
-#include "nsIObserver.h"
 #include "nsRegion.h"  // for nsIntRegion
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/ReentrantMonitor.h"  // for ReentrantMonitor, etc
@@ -117,7 +116,7 @@ class ImageBridgeChild final : public PImageBridgeChild,
                                public TextureForwarder {
   friend class ImageContainer;
 
-  typedef InfallibleTArray<AsyncParentMessageData> AsyncParentMessageArray;
+  typedef nsTArray<AsyncParentMessageData> AsyncParentMessageArray;
 
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(ImageBridgeChild, override);
@@ -191,10 +190,10 @@ class ImageBridgeChild final : public PImageBridgeChild,
       PMediaSystemResourceManagerChild* aActor);
 
   mozilla::ipc::IPCResult RecvParentAsyncMessages(
-      InfallibleTArray<AsyncParentMessageData>&& aMessages);
+      nsTArray<AsyncParentMessageData>&& aMessages);
 
   mozilla::ipc::IPCResult RecvDidComposite(
-      InfallibleTArray<ImageCompositeNotification>&& aNotifications);
+      nsTArray<ImageCompositeNotification>&& aNotifications);
 
   mozilla::ipc::IPCResult RecvReportFramesDropped(
       const CompositableHandle& aHandle, const uint32_t& aFrames);
@@ -367,7 +366,7 @@ class ImageBridgeChild final : public PImageBridgeChild,
   void MarkShutDown();
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
-  void DeallocPImageBridgeChild() override;
+  void ActorDealloc() override;
 
   bool CanSend() const;
   bool CanPostTask() const;

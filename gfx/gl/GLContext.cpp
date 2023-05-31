@@ -32,7 +32,8 @@
 #include "SharedSurfaceGL.h"
 #include "GfxTexturesReporter.h"
 #include "gfx2DGlue.h"
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_gl.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/gfx/Logging.h"
 
@@ -205,9 +206,11 @@ static const char* const sExtensionNames[] = {
     "GL_OES_vertex_array_object"};
 
 static bool ShouldUseTLSIsCurrent(bool useTLSIsCurrent) {
-  if (gfxPrefs::UseTLSIsCurrent() == 0) return useTLSIsCurrent;
+  if (StaticPrefs::gl_use_tls_is_current() == 0) {
+    return useTLSIsCurrent;
+  }
 
-  return gfxPrefs::UseTLSIsCurrent() > 0;
+  return StaticPrefs::gl_use_tls_is_current() > 0;
 }
 
 static bool ParseVersion(const std::string& versionStr,
@@ -272,7 +275,8 @@ GLContext::GLContext(CreateContextFlags flags, const SurfaceCaps& caps,
       mDebugFlags(ChooseDebugFlags(flags)),
       mSharedContext(sharedContext),
       mCaps(caps),
-      mWorkAroundDriverBugs(gfxPrefs::WorkAroundDriverBugs()) {
+      mWorkAroundDriverBugs(
+          StaticPrefs::gfx_work_around_driver_bugs_AtStartup()) {
   mOwningThreadId = PlatformThread::CurrentId();
   MOZ_ALWAYS_TRUE(sCurrentContext.init());
   sCurrentContext.set(0);
@@ -1757,16 +1761,6 @@ GLFormats GLContext::ChooseGLFormats(const SurfaceCaps& caps) const {
     }
   }
 
-  uint32_t msaaLevel = gfxPrefs::MSAALevel();
-  GLsizei samples = msaaLevel * msaaLevel;
-  samples = std::min(samples, mMaxSamples);
-
-  // Bug 778765.
-  if (WorkAroundDriverBugs() && samples == 1) {
-    samples = 0;
-  }
-  formats.samples = samples;
-
   // Be clear that these are 0 if unavailable.
   formats.depthStencil = 0;
   if (IsSupported(GLFeature::packed_depth_stencil)) {
@@ -2909,6 +2903,15 @@ void GLContext::OnImplicitMakeCurrentFailure(const char* const funcName) {
   gfxCriticalError() << "Ignoring call to " << funcName << " with failed"
                      << " mImplicitMakeCurrent.";
 }
+
+// -
+
+// These are defined out of line so that we don't need to include
+// ISurfaceAllocator.h in SurfaceTypes.h.
+SurfaceCaps::SurfaceCaps() = default;
+SurfaceCaps::SurfaceCaps(const SurfaceCaps& other) = default;
+SurfaceCaps& SurfaceCaps::operator=(const SurfaceCaps& other) = default;
+SurfaceCaps::~SurfaceCaps() = default;
 
 } /* namespace gl */
 } /* namespace mozilla */

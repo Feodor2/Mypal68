@@ -54,7 +54,7 @@ mozilla::ipc::IPCResult RemoteSpellcheckEngineParent::RecvCheckAsync(
 
 mozilla::ipc::IPCResult RemoteSpellcheckEngineParent::RecvCheckAndSuggest(
     const nsString& aWord, bool* aIsMisspelled,
-    InfallibleTArray<nsString>* aSuggestions) {
+    nsTArray<nsString>* aSuggestions) {
   nsresult rv = mSpellChecker->CheckWord(aWord, aIsMisspelled, aSuggestions);
   if (NS_FAILED(rv)) {
     aSuggestions->Clear();

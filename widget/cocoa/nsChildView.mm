@@ -35,7 +35,6 @@
 #include "nsFontMetrics.h"
 #include "nsIRollupListener.h"
 #include "nsViewManager.h"
-#include "nsIInterfaceRequestor.h"
 #include "nsIFile.h"
 #include "nsILocalFileMac.h"
 #include "nsGfxCIID.h"
@@ -82,7 +81,6 @@
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/widget/CompositorWidget.h"
 #include "gfxUtils.h"
-#include "gfxPrefs.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/BorrowedContext.h"
 #include "mozilla/gfx/MacIOSurface.h"
@@ -92,6 +90,9 @@
 #endif
 
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_general.h"
+#include "mozilla/StaticPrefs_gfx.h"
 
 #include <dlfcn.h>
 
@@ -371,7 +372,7 @@ void nsChildView::ReleaseTitlebarCGContext() {
 
 nsresult nsChildView::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
                              const LayoutDeviceIntRect& aRect, nsWidgetInitData* aInitData) {
-  NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_BEGIN_TRY_ABORT_BLOCK;
 
   // Because the hidden window is created outside of an event loop,
   // we need to provide an autorelease pool to avoid leaking cocoa objects
@@ -722,14 +723,12 @@ void nsChildView::Enable(bool aState) {}
 
 bool nsChildView::IsEnabled() const { return true; }
 
-nsresult nsChildView::SetFocus(bool aRaise) {
+void nsChildView::SetFocus(Raise) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   NSWindow* window = [mView window];
   if (window) [window makeFirstResponder:mView];
-  return NS_OK;
-
-  NS_OBJC_END_TRY_ABORT_BLOCK_NSRESULT;
+  NS_OBJC_END_TRY_ABORT_BLOCK;
 }
 
 // Override to set the cursor on the mac
@@ -1565,7 +1564,7 @@ InputContext nsChildView::GetInputContext() {
         break;
       }
       // If mTextInputHandler is null, set CLOSED instead...
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     default:
       mInputContext.mIMEState.mOpen = IMEState::CLOSED;
       break;
@@ -3290,7 +3289,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
   // Make the context opaque for fullscreen (since it performs better), and transparent
   // for windowed (since we need it for rounded corners), but allow overriding
   // it to opaque for testing purposes, even if that breaks the rounded corners.
-  GLint opaque = aOpaque || gfxPrefs::CompositorGLContextOpaque();
+  GLint opaque = aOpaque || StaticPrefs::gfx_compositor_glcontext_opaque();
   [mGLContext setValues:&opaque forParameter:NSOpenGLCPSurfaceOpacity];
   CGLUnlockContext((CGLContextObj)[mGLContext CGLContextObj]);
 }
@@ -3576,7 +3575,7 @@ NSEvent* gLastDragMouseDownEvent = nil;
   }
 
   // FIXME: bug 1525793 -- this may need to handle zooming or not on a per-document basis.
-  if (gfxPrefs::APZAllowZooming()) {
+  if (StaticPrefs::apz_allow_zooming()) {
     NSPoint locationInWindow = nsCocoaUtils::EventLocationForWindow(anEvent, [self window]);
     ScreenPoint position =
         ViewAs<ScreenPixel>([self convertWindowCoordinatesRoundDown:locationInWindow],
@@ -4393,7 +4392,7 @@ static gfx::IntPoint GetIntegerDeltaForEvent(NSEvent* aEvent) {
     geckoChildDeathGrip->DispatchAPZWheelInputEvent(wheelEvent, false);
   } else {
     ScrollWheelInput::ScrollMode scrollMode = ScrollWheelInput::SCROLLMODE_INSTANT;
-    if (gfxPrefs::SmoothScrollEnabled() && gfxPrefs::WheelSmoothScrollEnabled()) {
+    if (StaticPrefs::general_smoothScroll() && StaticPrefs::general_smoothScroll_mouseWheel()) {
       scrollMode = ScrollWheelInput::SCROLLMODE_SMOOTH;
     }
     ScrollWheelInput wheelEvent(eventIntervalTime, eventTimeStamp, modifiers, scrollMode,

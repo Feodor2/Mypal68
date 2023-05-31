@@ -2,18 +2,19 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{MixBlendMode, PipelineId, PremultipliedColorF};
-use api::{PropertyBinding, PropertyBindingId};
-use api::{DebugFlags, RasterSpace, ColorF, ImageKey, ClipMode};
+use api::{MixBlendMode, PipelineId, PremultipliedColorF, FilterPrimitiveKind};
+use api::{PropertyBinding, PropertyBindingId, FilterPrimitive, FontRenderMode};
+use api::{DebugFlags, RasterSpace, ImageKey, ColorF};
 use api::units::*;
 use crate::box_shadow::{BLUR_SAMPLE_SCALE};
-use crate::clip::{ClipChainId, ClipChainNode, ClipItem, ClipStore, ClipDataStore, ClipChainStack};
+use crate::clip::{ClipStore, ClipDataStore, ClipChainInstance};
 use crate::clip_scroll_tree::{ROOT_SPATIAL_NODE_INDEX,
-    ClipScrollTree, CoordinateSystemId, CoordinateSpaceMapping, SpatialNodeIndex, VisibleFace
+    ClipScrollTree, CoordinateSpaceMapping, SpatialNodeIndex, VisibleFace, CoordinateSystemId
 };
 use crate::debug_colors;
-use euclid::{size2, vec3, TypedPoint2D, TypedScale, TypedSize2D, Vector2D};
+use euclid::{vec3, Point2D, Scale, Size2D, Vector2D, Rect};
 use euclid::approxeq::ApproxEq;
+use crate::filterdata::SFilterData;
 use crate::frame_builder::{FrameVisibilityContext, FrameVisibilityState};
 use crate::intern::ItemUid;
 use crate::internal_types::{FastHashMap, FastHashSet, PlaneSplitter, Filter};
@@ -21,22 +22,22 @@ use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureStat
 use crate::gpu_cache::{GpuCache, GpuCacheAddress, GpuCacheHandle};
 use crate::gpu_types::UvRectKind;
 use plane_split::{Clipper, Polygon, Splitter};
-use crate::prim_store::SpaceMapper;
+use crate::prim_store::{SpaceMapper, PrimitiveVisibilityMask, PointKey, PrimitiveTemplateKind};
 use crate::prim_store::{PictureIndex, PrimitiveInstance, PrimitiveInstanceKind};
-use crate::prim_store::{get_raster_rects, PrimitiveScratchBuffer, VectorKey, PointKey};
-use crate::prim_store::{OpacityBindingStorage, ImageInstanceStorage, OpacityBindingIndex, RectangleKey};
+use crate::prim_store::{get_raster_rects, PrimitiveScratchBuffer, RectangleKey};
+use crate::prim_store::{OpacityBindingStorage, ImageInstanceStorage, OpacityBindingIndex};
 use crate::print_tree::PrintTreePrinter;
 use crate::render_backend::DataStores;
-use crate::render_task::{ClearMode, RenderTask, TileBlit};
+use crate::render_task::{ClearMode, RenderTargetKind, RenderTask};
 use crate::render_task::{RenderTaskId, RenderTaskLocation, BlurTaskCache};
 use crate::resource_cache::ResourceCache;
 use crate::scene::SceneProperties;
 use crate::scene_builder::Interners;
+use crate::spatial_node::SpatialNodeType;
 use smallvec::SmallVec;
 use std::{mem, u16};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use crate::texture_cache::TextureCacheHandle;
-use crate::tiling::RenderTargetKind;
 use crate::util::{ComparableVec, TransformedRectKind, MatrixHelpers, MaxRect, scale_factors};
 use crate::filterdata::{FilterDataHandle};
 
@@ -50,11 +51,91 @@ use crate::filterdata::{FilterDataHandle};
    this picture (e.g. in screen space or local space).
  */
 
+/// Specify whether a surface allows subpixel AA text rendering.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub enum SubpixelMode {
+    /// This surface allows subpixel AA text
+    Allow,
+    /// Subpixel AA text cannot be drawn on this surface
+    Deny,
+}
+
+/// A comparable transform matrix, that compares with epsilon checks.
+#[derive(Debug, Clone)]
+struct MatrixKey {
+    m: [f32; 16],
+}
+
+impl PartialEq for MatrixKey {
+    fn eq(&self, other: &Self) -> bool {
+        const EPSILON: f32 = 0.001;
+
+        // TODO(gw): It's possible that we may need to adjust the epsilon
+        //           to be tighter on most of the matrix, except the
+        //           translation parts?
+        for (i, j) in self.m.iter().zip(other.m.iter()) {
+            if !i.approx_eq_eps(j, &EPSILON) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+/// A comparable / hashable version of a coordinate space mapping. Used to determine
+/// if a transform dependency for a tile has changed.
+#[derive(Debug, PartialEq, Clone)]
+enum TransformKey {
+    Local,
+    ScaleOffset {
+        scale_x: f32,
+        scale_y: f32,
+        offset_x: f32,
+        offset_y: f32,
+    },
+    Transform {
+        m: MatrixKey,
+    }
+}
+
+impl<Src, Dst> From<CoordinateSpaceMapping<Src, Dst>> for TransformKey {
+    fn from(transform: CoordinateSpaceMapping<Src, Dst>) -> TransformKey {
+        match transform {
+            CoordinateSpaceMapping::Local => {
+                TransformKey::Local
+            }
+            CoordinateSpaceMapping::ScaleOffset(ref scale_offset) => {
+                TransformKey::ScaleOffset {
+                    scale_x: scale_offset.scale.x,
+                    scale_y: scale_offset.scale.y,
+                    offset_x: scale_offset.offset.x,
+                    offset_y: scale_offset.offset.y,
+                }
+            }
+            CoordinateSpaceMapping::Transform(ref m) => {
+                TransformKey::Transform {
+                    m: MatrixKey {
+                        m: m.to_row_major_array(),
+                    },
+                }
+            }
+        }
+    }
+}
+
 /// Information about a picture that is pushed / popped on the
 /// PictureUpdateState during picture traversal pass.
 struct PictureInfo {
     /// The spatial node for this picture.
     _spatial_node_index: SpatialNodeIndex,
+}
+
+pub struct PictureCacheState {
+    /// The tiles retained by this picture cache.
+    pub tiles: FastHashMap<TileOffset, Tile>,
+    /// The current fractional offset of the cache transform root.
+    fract_offset: PictureVector2D,
 }
 
 /// Stores a list of cached picture tiles that are retained
@@ -63,26 +144,22 @@ struct PictureInfo {
 pub struct RetainedTiles {
     /// The tiles retained between display lists.
     #[cfg_attr(feature = "capture", serde(skip))] //TODO
-    pub tiles: Vec<Tile>,
-    /// List of reference primitives that we will compare
-    /// to try and correlate the positioning of items
-    /// between display lists.
-    pub ref_prims: FastHashMap<ItemUid, WorldPoint>,
+    pub caches: FastHashMap<usize, PictureCacheState>,
 }
 
 impl RetainedTiles {
     pub fn new() -> Self {
         RetainedTiles {
-            tiles: Vec::new(),
-            ref_prims: FastHashMap::default(),
+            caches: FastHashMap::default(),
         }
     }
 
     /// Merge items from one retained tiles into another.
     pub fn merge(&mut self, other: RetainedTiles) {
-        assert!(self.tiles.is_empty() || other.tiles.is_empty());
-        self.tiles.extend(other.tiles);
-        self.ref_prims.extend(other.ref_prims);
+        assert!(self.caches.is_empty() || other.caches.is_empty());
+        if self.caches.is_empty() {
+            self.caches = other.caches;
+        }
     }
 }
 
@@ -91,9 +168,9 @@ impl RetainedTiles {
 pub struct TileCoordinate;
 
 // Geometry types for tile coordinates.
-pub type TileOffset = TypedPoint2D<i32, TileCoordinate>;
-pub type TileSize = TypedSize2D<i32, TileCoordinate>;
-pub struct TileIndex(pub usize);
+pub type TileOffset = Point2D<i32, TileCoordinate>;
+pub type TileSize = Size2D<i32, TileCoordinate>;
+pub type TileRect = Rect<i32, TileCoordinate>;
 
 /// The size in device pixels of a cached tile. The currently chosen
 /// size is arbitrary. We should do some profiling to find the best
@@ -102,27 +179,22 @@ pub struct TileIndex(pub usize);
 /// Note that we use a separate, smaller size during wrench testing, so that
 /// we get tighter dirty rects and can do more meaningful invalidation
 /// tests.
-const TILE_SIZE_WIDTH: i32 = 1024;
-const TILE_SIZE_HEIGHT: i32 = 256;
-const TILE_SIZE_TESTING: i32 = 64;
-
-const FRAMES_BEFORE_PICTURE_CACHING: usize = 2;
-const MAX_DIRTY_RECTS: usize = 3;
+pub const TILE_SIZE_WIDTH: i32 = 1024;
+pub const TILE_SIZE_HEIGHT: i32 = 512;
 
 /// The maximum size per axis of a surface,
 ///  in WorldPixel coordinates.
 const MAX_SURFACE_SIZE: f32 = 4096.0;
-
-
-/// The maximum number of primitives to look for in a display
-/// list, trying to find unique primitives.
-const MAX_PRIMS_TO_SEARCH: usize = 128;
 
 /// Used to get unique tile IDs, even when the tile cache is
 /// destroyed between display lists / scenes.
 static NEXT_TILE_ID: AtomicUsize = AtomicUsize::new(0);
 
 fn clamp(value: i32, low: i32, high: i32) -> i32 {
+    value.max(low).min(high)
+}
+
+fn clampf(value: f32, low: f32, high: f32) -> f32 {
     value.max(low).min(high)
 }
 
@@ -151,50 +223,171 @@ impl From<PropertyBinding<f32>> for OpacityBinding {
     }
 }
 
+// Immutable context passed to picture cache tiles during pre_update
+struct TilePreUpdateContext<'a> {
+    /// The local rect of the overall picture cache
+    local_rect: PictureRect,
+
+    /// Maps from picture cache coords -> world space coords.
+    pic_to_world_mapper: SpaceMapper<PicturePixel, WorldPixel>,
+
+    /// If true, the fractional position of the picture cache changed,
+    /// requiring invalidation of all tiles.
+    fract_changed: bool,
+
+    /// Information about opacity bindings from the picture cache.
+    opacity_bindings: &'a FastHashMap<PropertyBindingId, OpacityBindingInfo>,
+}
+
+// Immutable context passed to picture cache tiles during post_update
+struct TilePostUpdateContext<'a> {
+    /// Current set of WR debug flags
+    debug_flags: DebugFlags,
+
+    /// The global scale factor from world -> device coords.
+    global_device_pixel_scale: DevicePixelScale,
+
+    /// The visible part of the screen in world coords.
+    global_screen_world_rect: WorldRect,
+
+    /// Current state of transforms
+    clip_scroll_tree: &'a ClipScrollTree,
+
+    /// The calculated backdrop information for this cache instance.
+    backdrop: BackdropInfo,
+
+    /// The spatial node of the picture cache.
+    cache_spatial_node_index: SpatialNodeIndex,
+}
+
+// Mutable state passed to picture cache tiles during post_update
+struct TilePostUpdateState<'a> {
+    /// Scratch buffer for drawing debug information.
+    scratch: &'a mut PrimitiveScratchBuffer,
+
+    /// Current dirty region of this cache.
+    dirty_region: &'a mut DirtyRegion,
+
+    /// Allow access to the texture cache for requesting tiles
+    resource_cache: &'a mut ResourceCache,
+
+    /// Needed when requesting tile cache handles.
+    gpu_cache: &'a mut GpuCache,
+}
+
+/// Information about the dependencies of a single primitive instance.
+struct PrimitiveDependencyInfo {
+    /// If true, this instance can be cached.
+    is_cacheable: bool,
+
+    /// If true, we should clip the prim rect to the tile boundaries.
+    clip_by_tile: bool,
+
+    /// Unique content identifier of the primitive.
+    prim_uid: ItemUid,
+
+    /// Defines the spatial node for this primitive.
+    prim_spatial_node_index: SpatialNodeIndex,
+
+    /// The (conservative) area in picture space this primitive occupies.
+    prim_rect: PictureRect,
+
+    /// The (conservative) clipped area in picture space this primitive occupies.
+    prim_clip_rect: PictureRect,
+
+    /// Image keys this primitive depends on.
+    image_keys: SmallVec<[ImageKey; 8]>,
+
+    /// Opacity bindings this primitive depends on.
+    opacity_bindings: SmallVec<[OpacityBinding; 4]>,
+
+    /// Clips that this primitive depends on.
+    clips: SmallVec<[ClipDescriptor; 8]>,
+
+    /// Spatial nodes references by the clip dependencies of this primitive.
+    clip_spatial_nodes: FastHashSet<SpatialNodeIndex>,
+}
+
+impl PrimitiveDependencyInfo {
+    /// Construct dependency info for a new primitive.
+    fn new(
+        prim_uid: ItemUid,
+        prim_rect: PictureRect,
+        prim_spatial_node_index: SpatialNodeIndex,
+        is_cacheable: bool,
+    ) -> Self {
+        PrimitiveDependencyInfo {
+            prim_uid,
+            prim_rect,
+            prim_spatial_node_index,
+            is_cacheable,
+            image_keys: SmallVec::new(),
+            opacity_bindings: SmallVec::new(),
+            clip_by_tile: false,
+            prim_clip_rect: PictureRect::zero(),
+            clips: SmallVec::new(),
+            clip_spatial_nodes: FastHashSet::default(),
+        }
+    }
+}
+
 /// A stable ID for a given tile, to help debugging.
 #[derive(Debug, Copy, Clone, PartialEq)]
-struct TileId(usize);
+pub struct TileId(usize);
+
+/// The backing surface for this tile.
+#[derive(Debug)]
+pub enum TileSurface {
+    Texture {
+        /// Handle to the texture cache entry which gets drawn to.
+        handle: TextureCacheHandle,
+        /// Bitfield specifying the dirty region(s) that are relevant to this tile.
+        visibility_mask: PrimitiveVisibilityMask,
+    },
+    Color {
+        color: ColorF,
+    },
+}
+
+impl TileSurface {
+    fn kind(&self) -> &'static str {
+        match *self {
+            TileSurface::Color { .. } => "Color",
+            TileSurface::Texture { .. } => "Texture",
+        }
+    }
+}
 
 /// Information about a cached tile.
 #[derive(Debug)]
 pub struct Tile {
-    /// The current world rect of thie tile.
-    world_rect: WorldRect,
+    /// The current world rect of this tile.
+    pub world_rect: WorldRect,
     /// The current local rect of this tile.
-    pub local_rect: LayoutRect,
-    /// The currently visible rect within this tile, updated per frame.
-    /// If None, this tile is not currently visible.
-    visible_rect: Option<WorldRect>,
-    /// The currently valid rect of the tile, used to invalidate
-    /// tiles that were only partially drawn.
-    valid_rect: WorldRect,
+    pub rect: PictureRect,
+    /// The local rect of the tile clipped to the overal picture local rect.
+    clipped_rect: PictureRect,
     /// Uniquely describes the content of this tile, in a way that can be
     /// (reasonably) efficiently hashed and compared.
-    descriptor: TileDescriptor,
-    /// Handle to the cached texture for this tile.
-    pub handle: TextureCacheHandle,
+    pub descriptor: TileDescriptor,
+    /// Handle to the backing surface for this tile.
+    pub surface: Option<TileSurface>,
     /// If true, this tile is marked valid, and the existing texture
     /// cache handle can be used. Tiles are invalidated during the
     /// build_dirty_regions method.
-    is_valid: bool,
+    pub is_valid: bool,
     /// If true, the content on this tile is the same as last frame.
     is_same_content: bool,
-    /// The number of frames this tile has had the same content.
-    same_frames: usize,
     /// The tile id is stable between display lists and / or frames,
     /// if the tile is retained. Useful for debugging tile evictions.
-    id: TileId,
+    pub id: TileId,
     /// The set of transforms that affect primitives on this tile we
     /// care about. Stored as a set here, and then collected, sorted
     /// and converted to transform key values during post_update.
     transforms: FastHashSet<SpatialNodeIndex>,
-    /// A list of potentially important clips. We can't know if
-    /// they were important or can be discarded until we know the
-    /// tile cache bounding rect.
-    potential_clips: FastHashMap<RectangleKey, SpatialNodeIndex>,
-    /// If true, this tile should still be considered as part of
-    /// the dirty rect calculations.
-    consider_for_dirty_rect: bool,
+    /// If true, the tile was determined to be opaque, which means blending
+    /// can be disabled when drawing it.
+    pub is_opaque: bool,
 }
 
 impl Tile {
@@ -203,69 +396,410 @@ impl Tile {
         id: TileId,
     ) -> Self {
         Tile {
-            local_rect: LayoutRect::zero(),
+            rect: PictureRect::zero(),
+            clipped_rect: PictureRect::zero(),
             world_rect: WorldRect::zero(),
-            visible_rect: None,
-            valid_rect: WorldRect::zero(),
-            handle: TextureCacheHandle::invalid(),
+            surface: None,
             descriptor: TileDescriptor::new(),
             is_same_content: false,
             is_valid: false,
-            same_frames: 0,
             transforms: FastHashSet::default(),
-            potential_clips: FastHashMap::default(),
             id,
-            consider_for_dirty_rect: false,
+            is_opaque: false,
         }
     }
 
-    /// Clear the dependencies for a tile.
-    fn clear(&mut self) {
-        self.transforms.clear();
-        self.descriptor.clear();
-        self.potential_clips.clear();
-    }
-
     /// Invalidate a tile based on change in content. This
-    /// muct be called even if the tile is not currently
+    /// must be called even if the tile is not currently
     /// visible on screen. We might be able to improve this
     /// later by changing how ComparableVec is used.
     fn update_content_validity(&mut self) {
         // Check if the contents of the primitives, clips, and
         // other dependencies are the same.
-        self.is_same_content &= self.descriptor.is_same_content();
+        self.is_same_content &= self.descriptor.is_same_content(self.id);
         self.is_valid &= self.is_same_content;
     }
 
-    /// Update state related to whether a tile has a valid rect that
-    /// covers the required visible part of the tile.
-    fn update_rect_validity(&mut self, tile_bounding_rect: &WorldRect) {
-        // The tile is only valid if:
-        // - The content is the same *and*
-        // - The valid part of the tile includes the needed part.
-        self.is_valid &= self.valid_rect.contains_rect(tile_bounding_rect);
+    /// Called during pre_update of a tile cache instance. Allows the
+    /// tile to setup state before primitive dependency calculations.
+    fn pre_update(
+        &mut self,
+        rect: PictureRect,
+        ctx: &TilePreUpdateContext,
+    ) {
+        self.rect = rect;
 
-        // Update count of how many times this tile has had the same content.
-        if !self.is_same_content {
-            self.same_frames = 0;
+        self.clipped_rect = self.rect
+            .intersection(&ctx.local_rect)
+            .unwrap_or(PictureRect::zero());
+
+        self.world_rect = ctx.pic_to_world_mapper
+            .map(&self.rect)
+            .expect("bug: map local tile rect");
+
+        // Do tile invalidation for any dependencies that we know now.
+
+        // Start frame assuming that the tile has the same content,
+        // unless the fractional offset of the transform root changed.
+        self.is_same_content = !ctx.fract_changed;
+
+        // Content has changed if any opacity bindings changed.
+        for binding in self.descriptor.opacity_bindings.items() {
+            if let OpacityBinding::Binding(id) = binding {
+                let changed = match ctx.opacity_bindings.get(id) {
+                    Some(info) => info.changed,
+                    None => true,
+                };
+                if changed {
+                    self.is_same_content = false;
+                    break;
+                }
+            }
         }
-        self.same_frames += 1;
+
+        // Clear any dependencies so that when we rebuild them we
+        // can compare if the tile has the same content.
+        self.transforms.clear();
+        self.descriptor.clear();
+    }
+
+    /// Add dependencies for a given primitive to this tile.
+    fn add_prim_dependency(
+        &mut self,
+        info: &PrimitiveDependencyInfo,
+        cache_spatial_node_index: SpatialNodeIndex,
+    ) {
+        // Mark if the tile is cacheable at all.
+        self.is_same_content &= info.is_cacheable;
+
+        // Include any image keys this tile depends on.
+        self.descriptor.image_keys.extend_from_slice(&info.image_keys);
+
+        // Include any opacity bindings this primitive depends on.
+        self.descriptor.opacity_bindings.extend_from_slice(&info.opacity_bindings);
+
+        // TODO(gw): The origin of background rects produced by APZ changes
+        //           in Gecko during scrolling. Consider investigating this so the
+        //           hack / workaround below is not required.
+        let (prim_origin, prim_clip_rect) = if info.clip_by_tile {
+            let tile_p0 = self.clipped_rect.origin;
+            let tile_p1 = self.clipped_rect.bottom_right();
+
+            let clip_p0 = PicturePoint::new(
+                clampf(info.prim_clip_rect.origin.x, tile_p0.x, tile_p1.x),
+                clampf(info.prim_clip_rect.origin.y, tile_p0.y, tile_p1.y),
+            );
+
+            let clip_p1 = PicturePoint::new(
+                clampf(info.prim_clip_rect.origin.x + info.prim_clip_rect.size.width, tile_p0.x, tile_p1.x),
+                clampf(info.prim_clip_rect.origin.y + info.prim_clip_rect.size.height, tile_p0.y, tile_p1.y),
+            );
+
+            (
+                PicturePoint::new(
+                    clampf(info.prim_rect.origin.x, tile_p0.x, tile_p1.x),
+                    clampf(info.prim_rect.origin.y, tile_p0.y, tile_p1.y),
+                ),
+                PictureRect::new(
+                    clip_p0,
+                    PictureSize::new(
+                        clip_p1.x - clip_p0.x,
+                        clip_p1.y - clip_p0.y,
+                    ),
+                ),
+            )
+        } else {
+            (info.prim_rect.origin, info.prim_clip_rect)
+        };
+
+        // Update the tile descriptor, used for tile comparison during scene swaps.
+        self.descriptor.prims.push(PrimitiveDescriptor {
+            prim_uid: info.prim_uid,
+            origin: prim_origin.into(),
+            first_clip: self.descriptor.clips.len() as u16,
+            clip_count: info.clips.len() as u16,
+            prim_clip_rect: prim_clip_rect.into(),
+        });
+
+        self.descriptor.clips.extend_from_slice(&info.clips);
+
+        // If the primitive has the same spatial node, the relative transform
+        // will always be the same, so there's no need to depend on it.
+        if info.prim_spatial_node_index != cache_spatial_node_index {
+            self.transforms.insert(info.prim_spatial_node_index);
+        }
+        for spatial_node_index in &info.clip_spatial_nodes {
+            self.transforms.insert(*spatial_node_index);
+        }
+    }
+
+    /// Called during tile cache instance post_update. Allows invalidation and dirty
+    /// rect calculation after primitive dependencies have been updated.
+    fn post_update(
+        &mut self,
+        ctx: &TilePostUpdateContext,
+        state: &mut TilePostUpdateState,
+    ) -> bool {
+        // Check if this tile can be considered opaque.
+        self.is_opaque = ctx.backdrop.rect.contains_rect(&self.clipped_rect);
+
+        // Update tile transforms
+        let mut transform_spatial_nodes: Vec<SpatialNodeIndex> = self.transforms.drain().collect();
+        transform_spatial_nodes.sort();
+        for spatial_node_index in transform_spatial_nodes {
+            // Note: this is the only place where we don't know beforehand if the tile-affecting
+            // spatial node is below or above the current picture.
+            let transform = if ctx.cache_spatial_node_index >= spatial_node_index {
+                ctx.clip_scroll_tree
+                    .get_relative_transform(
+                        ctx.cache_spatial_node_index,
+                        spatial_node_index,
+                    )
+            } else {
+                ctx.clip_scroll_tree
+                    .get_relative_transform(
+                        spatial_node_index,
+                        ctx.cache_spatial_node_index,
+                    )
+            };
+            self.descriptor.transforms.push(transform.into());
+        }
+
+        // Content has changed if any images have changed.
+        // NOTE: This invalidation must be done after the request_resources
+        //       calls for primitives during visibility update, or the
+        //       is_image_dirty check may be incorrect.
+        for image_key in self.descriptor.image_keys.items() {
+            if state.resource_cache.is_image_dirty(*image_key) {
+                self.is_same_content = false;
+                break;
+            }
+        }
+
+        // Invalidate the tile based on the content changing.
+        self.update_content_validity();
+
+        // If there are no primitives there is no need to draw or cache it.
+        if self.descriptor.prims.is_empty() {
+            return false;
+        }
+
+        if !self.world_rect.intersects(&ctx.global_screen_world_rect) {
+            return false;
+        }
+
+        // See if this tile is a simple color, in which case we can just draw
+        // it as a rect, and avoid allocating a texture surface and drawing it.
+        let is_solid_color = self.descriptor.prims.len() == 1 && self.is_opaque;
+
+        // Set up the backing surface for this tile.
+        let mut surface = if is_solid_color {
+            // If we determine the tile can be represented by a color, set the
+            // surface unconditionally (this will drop any previously used
+            // texture cache backing surface).
+            TileSurface::Color {
+                color: ctx.backdrop.color,
+            }
+        } else {
+            // If this tile will be backed by a surface, we want to retain
+            // the texture handle from the previous frame, if possible. If
+            // the tile was previously a color, or not set, then just set
+            // up a new texture cache handle.
+            match self.surface.take() {
+                Some(old_surface @ TileSurface::Texture { .. }) => {
+                    old_surface
+                }
+                Some(TileSurface::Color { .. }) | None => {
+                    TileSurface::Texture {
+                        handle: TextureCacheHandle::invalid(),
+                        visibility_mask: PrimitiveVisibilityMask::empty(),
+                    }
+                }
+            }
+        };
+
+        if let TileSurface::Texture { ref handle, .. } = surface {
+            // Invalidate if the backing texture was evicted.
+            if state.resource_cache.texture_cache.is_allocated(handle) {
+                // Request the backing texture so it won't get evicted this frame.
+                // We specifically want to mark the tile texture as used, even
+                // if it's detected not visible below and skipped. This is because
+                // we maintain the set of tiles we care about based on visibility
+                // during pre_update. If a tile still exists after that, we are
+                // assuming that it's either visible or we want to retain it for
+                // a while in case it gets scrolled back onto screen soon.
+                // TODO(gw): Consider switching to manual eviction policy?
+                state.resource_cache.texture_cache.request(handle, state.gpu_cache);
+            } else {
+                // When a tile is invalidated, reset the opacity information
+                // so that it is recalculated during prim dependency updates.
+                self.is_valid = false;
+            }
+        }
+
+        // Decide how to handle this tile when drawing this frame.
+        if self.is_valid {
+            if ctx.debug_flags.contains(DebugFlags::PICTURE_CACHING_DBG) {
+                let tile_device_rect = self.world_rect * ctx.global_device_pixel_scale;
+                let label_offset = DeviceVector2D::new(20.0, 30.0);
+                let color = if self.is_opaque {
+                    debug_colors::GREEN
+                } else {
+                    debug_colors::YELLOW
+                };
+                state.scratch.push_debug_rect(
+                    tile_device_rect,
+                    color.scale_alpha(0.3),
+                );
+                if tile_device_rect.size.height >= label_offset.y {
+                    state.scratch.push_debug_string(
+                        tile_device_rect.origin + label_offset,
+                        debug_colors::RED,
+                        format!("{:?}: is_opaque={} surface={}",
+                            self.id,
+                            self.is_opaque,
+                            surface.kind(),
+                        ),
+                    );
+                }
+            }
+        } else {
+            if ctx.debug_flags.contains(DebugFlags::PICTURE_CACHING_DBG) {
+                state.scratch.push_debug_rect(
+                    self.world_rect * ctx.global_device_pixel_scale,
+                    debug_colors::RED,
+                );
+            }
+
+            // Ensure that this texture is allocated.
+            if let TileSurface::Texture { ref mut handle, ref mut visibility_mask } = surface {
+                if !state.resource_cache.texture_cache.is_allocated(handle) {
+                    let tile_size = DeviceIntSize::new(
+                        TILE_SIZE_WIDTH,
+                        TILE_SIZE_HEIGHT,
+                    );
+                    state.resource_cache.texture_cache.update_picture_cache(
+                        tile_size,
+                        handle,
+                        state.gpu_cache,
+                    );
+                }
+
+                *visibility_mask = PrimitiveVisibilityMask::empty();
+                let dirty_region_index = state.dirty_region.dirty_rects.len();
+
+                // If we run out of dirty regions, then force the last dirty region to
+                // be a union of any remaining regions. This is an inefficiency, in that
+                // we'll add items to batches later on that are redundant / outside this
+                // tile, but it's really rare except in pathological cases (even on a
+                // 4k screen, the typical dirty region count is < 16).
+                if dirty_region_index < PrimitiveVisibilityMask::MAX_DIRTY_REGIONS {
+                    visibility_mask.set_visible(dirty_region_index);
+
+                    state.dirty_region.push(
+                        self.world_rect,
+                        *visibility_mask,
+                    );
+                } else {
+                    visibility_mask.set_visible(PrimitiveVisibilityMask::MAX_DIRTY_REGIONS - 1);
+
+                    state.dirty_region.include_rect(
+                        PrimitiveVisibilityMask::MAX_DIRTY_REGIONS - 1,
+                        self.world_rect,
+                    );
+                }
+            }
+        }
+
+        // Store the current surface backing info for use during batching.
+        self.surface = Some(surface);
+
+        true
     }
 }
 
 /// Defines a key that uniquely identifies a primitive instance.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct PrimitiveDescriptor {
     /// Uniquely identifies the content of the primitive template.
     prim_uid: ItemUid,
     /// The origin in world space of this primitive.
-    origin: WorldPoint,
+    origin: PointKey,
+    /// The clip rect for this primitive. Included here in
+    /// dependencies since there is no entry in the clip chain
+    /// dependencies for the local clip rect.
+    prim_clip_rect: RectangleKey,
     /// The first clip in the clip_uids array of clips that affect this tile.
     first_clip: u16,
     /// The number of clips that affect this primitive instance.
     clip_count: u16,
-    /// The combined local clips + prim rect for this primitive.
-    world_culling_rect: WorldRect,
+}
+
+impl PartialEq for PrimitiveDescriptor {
+    fn eq(&self, other: &Self) -> bool {
+        const EPSILON: f32 = 0.001;
+
+        if self.prim_uid != other.prim_uid {
+            return false;
+        }
+        if self.first_clip != other.first_clip {
+            return false;
+        }
+        if self.clip_count != other.clip_count {
+            return false;
+        }
+
+        if !self.origin.x.approx_eq_eps(&other.origin.x, &EPSILON) {
+            return false;
+        }
+        if !self.origin.y.approx_eq_eps(&other.origin.y, &EPSILON) {
+            return false;
+        }
+
+        if !self.prim_clip_rect.x.approx_eq_eps(&other.prim_clip_rect.x, &EPSILON) {
+            return false;
+        }
+        if !self.prim_clip_rect.y.approx_eq_eps(&other.prim_clip_rect.y, &EPSILON) {
+            return false;
+        }
+        if !self.prim_clip_rect.w.approx_eq_eps(&other.prim_clip_rect.w, &EPSILON) {
+            return false;
+        }
+        if !self.prim_clip_rect.h.approx_eq_eps(&other.prim_clip_rect.h, &EPSILON) {
+            return false;
+        }
+
+        true
+    }
+}
+
+/// Defines a key that uniquely identifies a clip instance.
+#[derive(Debug, Clone)]
+pub struct ClipDescriptor {
+    /// The uid is guaranteed to uniquely describe the content of the clip node.
+    uid: ItemUid,
+    /// The origin defines the relative position of this clip template.
+    origin: PointKey,
+}
+
+impl PartialEq for ClipDescriptor {
+    fn eq(&self, other: &Self) -> bool {
+        const EPSILON: f32 = 0.001;
+
+        if self.uid != other.uid {
+            return false;
+        }
+
+        if !self.origin.x.approx_eq_eps(&other.origin.x, &EPSILON) {
+            return false;
+        }
+
+        if !self.origin.y.approx_eq_eps(&other.origin.y, &EPSILON) {
+            return false;
+        }
+
+        true
+    }
 }
 
 /// Uniquely describes the content of this tile, in a way that can be
@@ -275,16 +809,10 @@ pub struct TileDescriptor {
     /// List of primitive instance unique identifiers. The uid is guaranteed
     /// to uniquely describe the content of the primitive template, while
     /// the other parameters describe the clip chain and instance params.
-    prims: ComparableVec<PrimitiveDescriptor>,
+    pub prims: ComparableVec<PrimitiveDescriptor>,
 
-    /// List of clip node unique identifiers. The uid is guaranteed
-    /// to uniquely describe the content of the clip node.
-    clip_uids: ComparableVec<ItemUid>,
-
-    /// List of local offsets of the clip node origins. This
-    /// ensures that if a clip node is supplied but has a different
-    /// transform between frames that the tile is invalidated.
-    clip_vertices: ComparableVec<PointKey>,
+    /// List of clip node descriptors.
+    clips: ComparableVec<ClipDescriptor>,
 
     /// List of image keys that this tile depends on.
     image_keys: ComparableVec<ImageKey>,
@@ -295,15 +823,14 @@ pub struct TileDescriptor {
 
     /// List of the effects of transforms that we care about
     /// tracking for this tile.
-    transforms: ComparableVec<PointKey>,
+    transforms: ComparableVec<TransformKey>,
 }
 
 impl TileDescriptor {
     fn new() -> Self {
         TileDescriptor {
             prims: ComparableVec::new(),
-            clip_uids: ComparableVec::new(),
-            clip_vertices: ComparableVec::new(),
+            clips: ComparableVec::new(),
             opacity_bindings: ComparableVec::new(),
             image_keys: ComparableVec::new(),
             transforms: ComparableVec::new(),
@@ -314,8 +841,7 @@ impl TileDescriptor {
     /// are being rebuilt.
     fn clear(&mut self) {
         self.prims.reset();
-        self.clip_uids.reset();
-        self.clip_vertices.reset();
+        self.clips.reset();
         self.opacity_bindings.reset();
         self.image_keys.reset();
         self.transforms.reset();
@@ -324,17 +850,14 @@ impl TileDescriptor {
     /// Return true if the content of the tile is the same
     /// as last frame. This doesn't check validity of the
     /// tile based on the currently valid regions.
-    fn is_same_content(&self) -> bool {
+    fn is_same_content(&self, _id: TileId) -> bool {
         if !self.image_keys.is_valid() {
             return false;
         }
         if !self.opacity_bindings.is_valid() {
             return false;
         }
-        if !self.clip_uids.is_valid() {
-            return false;
-        }
-        if !self.clip_vertices.is_valid() {
+        if !self.clips.is_valid() {
             return false;
         }
         if !self.prims.is_valid() {
@@ -351,7 +874,10 @@ impl TileDescriptor {
 /// Stores both the world and devices rects for a single dirty rect.
 #[derive(Debug, Clone)]
 pub struct DirtyRegionRect {
+    /// World rect of this dirty region
     pub world_rect: WorldRect,
+    /// Bitfield for picture render tasks that draw this dirty region.
+    pub visibility_mask: PrimitiveVisibilityMask,
 }
 
 /// Represents the dirty region of a tile cache picture.
@@ -361,67 +887,68 @@ pub struct DirtyRegion {
     pub dirty_rects: Vec<DirtyRegionRect>,
 
     /// The overall dirty rect, a combination of dirty_rects
-    pub combined: DirtyRegionRect,
+    pub combined: WorldRect,
 }
 
 impl DirtyRegion {
     /// Construct a new dirty region tracker.
-    pub fn new() -> Self {
+    pub fn new(
+    ) -> Self {
         DirtyRegion {
-            dirty_rects: Vec::with_capacity(MAX_DIRTY_RECTS),
-            combined: DirtyRegionRect {
-                world_rect: WorldRect::zero(),
-            },
+            dirty_rects: Vec::with_capacity(PrimitiveVisibilityMask::MAX_DIRTY_REGIONS),
+            combined: WorldRect::zero(),
         }
     }
 
     /// Reset the dirty regions back to empty
     pub fn clear(&mut self) {
         self.dirty_rects.clear();
-        self.combined = DirtyRegionRect {
-            world_rect: WorldRect::zero(),
-        }
+        self.combined = WorldRect::zero();
     }
 
     /// Push a dirty rect into this region
     pub fn push(
         &mut self,
         rect: WorldRect,
+        visibility_mask: PrimitiveVisibilityMask,
     ) {
         // Include this in the overall dirty rect
-        self.combined.world_rect = self.combined.world_rect.union(&rect);
+        self.combined = self.combined.union(&rect);
 
         // Store the individual dirty rect.
         self.dirty_rects.push(DirtyRegionRect {
             world_rect: rect,
+            visibility_mask,
         });
     }
 
-    /// Returns true if this region has no dirty rects
-    pub fn is_empty(&self) -> bool {
-        self.dirty_rects.is_empty()
+    /// Include another rect into an existing dirty region.
+    pub fn include_rect(
+        &mut self,
+        region_index: usize,
+        rect: WorldRect,
+    ) {
+        self.combined = self.combined.union(&rect);
+
+        let region = &mut self.dirty_rects[region_index];
+        region.world_rect = region.world_rect.union(&rect);
     }
 
-    /// Collapse all dirty rects into a single dirty rect.
-    pub fn collapse(&mut self) {
-        self.dirty_rects.clear();
-        self.dirty_rects.push(self.combined.clone());
-    }
-
+    // TODO(gw): This returns a heap allocated object. Perhaps we can simplify this
+    //           logic? Although - it's only used very rarely so it may not be an issue.
     pub fn inflate(
         &self,
         inflate_amount: f32,
     ) -> DirtyRegion {
         let mut dirty_rects = Vec::with_capacity(self.dirty_rects.len());
-        let mut combined = DirtyRegionRect {
-            world_rect: WorldRect::zero(),
-        };
+        let mut combined = WorldRect::zero();
 
         for rect in &self.dirty_rects {
             let world_rect = rect.world_rect.inflate(inflate_amount, inflate_amount);
-            combined.world_rect = combined.world_rect.union(&world_rect);
+            combined = combined.union(&world_rect);
             dirty_rects.push(DirtyRegionRect {
                 world_rect,
+                visibility_mask: rect.visibility_mask,
             });
         }
 
@@ -461,304 +988,143 @@ impl ::std::fmt::Debug for RecordedDirtyRegion {
     }
 }
 
-/// A helper struct to build a (roughly) minimal set of dirty rectangles
-/// from a list of individual dirty rectangles. This minimizes the number
-/// of scissors rects and batch resubmissions that are needed.
-struct DirtyRegionBuilder<'a> {
-    tiles: &'a mut [Tile],
-    tile_count: TileSize,
+/// Stores information about the calculated opaque backdrop of this slice.
+#[derive(Debug, Copy, Clone)]
+struct BackdropInfo {
+    /// The picture space rectangle that is known to be opaque. This is used
+    /// to determine where subpixel AA can be used, and where alpha blending
+    /// can be disabled.
+    rect: PictureRect,
+    /// Color of the backdrop.
+    color: ColorF,
 }
 
-impl<'a> DirtyRegionBuilder<'a> {
-    fn new(
-        tiles: &'a mut [Tile],
-        tile_count: TileSize,
-    ) -> Self {
-        DirtyRegionBuilder {
-            tiles,
-            tile_count,
-        }
-    }
-
-    fn tile_index(&self, x: i32, y: i32) -> usize {
-        (y * self.tile_count.width + x) as usize
-    }
-
-    fn is_dirty(&self, x: i32, y: i32) -> bool {
-        if x == self.tile_count.width || y == self.tile_count.height {
-            return false;
-        }
-
-        self.get_tile(x, y).consider_for_dirty_rect
-    }
-
-    fn get_tile(&self, x: i32, y: i32) -> &Tile {
-        &self.tiles[self.tile_index(x, y)]
-    }
-
-    fn get_tile_mut(&mut self, x: i32, y: i32) -> &mut Tile {
-        &mut self.tiles[self.tile_index(x, y)]
-    }
-
-    /// Return true if the entire column is dirty
-    fn column_is_dirty(&self, x: i32, y0: i32, y1: i32) -> bool {
-        for y in y0 .. y1 {
-            if !self.is_dirty(x, y) {
-                return false;
-            }
-        }
-
-        true
-    }
-
-    /// Push a dirty rect into the final region list.
-    fn push_dirty_rect(
-        &mut self,
-        x0: i32,
-        y0: i32,
-        x1: i32,
-        y1: i32,
-        dirty_region: &mut DirtyRegion,
-    ) {
-        // Construct the overall dirty rect by combining the visible
-        // parts of the dirty rects that were combined.
-        let mut dirty_world_rect = WorldRect::zero();
-
-        for y in y0 .. y1 {
-            for x in x0 .. x1 {
-                let tile = self.get_tile_mut(x, y);
-                tile.consider_for_dirty_rect = false;
-                if let Some(visible_rect) = tile.visible_rect {
-                    dirty_world_rect = dirty_world_rect.union(&visible_rect);
-                }
-            }
-        }
-
-        dirty_region.push(dirty_world_rect);
-    }
-
-    /// Simple sweep through the tile grid to try and coalesce individual
-    /// dirty rects into a smaller number of larger dirty rectangles.
-    fn build(&mut self, dirty_region: &mut DirtyRegion) {
-        for x0 in 0 .. self.tile_count.width {
-            for y0 in 0 .. self.tile_count.height {
-                let mut y1 = y0;
-
-                while self.is_dirty(x0, y1) {
-                    y1 += 1;
-                }
-
-                if y1 > y0 {
-                    let mut x1 = x0;
-
-                    while self.column_is_dirty(x1, y0, y1) {
-                        x1 += 1;
-                    }
-
-                    self.push_dirty_rect(x0, y0, x1, y1, dirty_region);
-                }
-            }
+impl BackdropInfo {
+    fn empty() -> Self {
+        BackdropInfo {
+            rect: PictureRect::zero(),
+            color: ColorF::BLACK,
         }
     }
 }
 
 /// Represents a cache of tiles that make up a picture primitives.
-pub struct TileCache {
+pub struct TileCacheInstance {
+    /// Index of the tile cache / slice for this frame builder. It's determined
+    /// by the setup_picture_caching method during flattening, which splits the
+    /// picture tree into multiple slices. It's used as a simple input to the tile
+    /// keys. It does mean we invalidate tiles if a new layer gets inserted / removed
+    /// between display lists - this seems very unlikely to occur on most pages, but
+    /// can be revisited if we ever notice that.
+    pub slice: usize,
     /// The positioning node for this tile cache.
-    spatial_node_index: SpatialNodeIndex,
-    /// List of tiles present in this picture (stored as a 2D array)
-    pub tiles: Vec<Tile>,
-    /// A helper struct to map local rects into world coords.
-    map_local_to_world: SpaceMapper<LayoutPixel, WorldPixel>,
-    /// A list of tiles to draw during batching.
-    pub tiles_to_draw: Vec<TileIndex>,
+    pub spatial_node_index: SpatialNodeIndex,
+    /// Hash of tiles present in this picture.
+    pub tiles: FastHashMap<TileOffset, Tile>,
+    /// A helper struct to map local rects into surface coords.
+    map_local_to_surface: SpaceMapper<LayoutPixel, PicturePixel>,
     /// List of opacity bindings, with some extra information
     /// about whether they changed since last frame.
     opacity_bindings: FastHashMap<PropertyBindingId, OpacityBindingInfo>,
     /// The current dirty region tracker for this picture.
     pub dirty_region: DirtyRegion,
-    /// The current world reference point that tiles are created around.
-    world_origin: WorldPoint,
-    /// Current size of tiles in world units.
-    world_tile_size: WorldSize,
-    /// Current number of tiles in the allocated grid.
-    tile_count: TileSize,
-    /// The current scroll offset for this frame builder. Reset when
-    /// a new scene arrives.
-    scroll_offset: Option<WorldVector2D>,
-    /// A list of blits from the framebuffer to be applied during this frame.
-    pub pending_blits: Vec<TileBlit>,
-    /// The current world bounding rect of this tile cache. This is used
-    /// to derive a local clip rect, such that we don't obscure in the
-    /// z-buffer any items placed earlier in the render order (such as
-    /// scroll bars in gecko, when the content overflows under the
-    /// scroll bar).
-    world_bounding_rect: WorldRect,
-    /// World space clip rect of the root clipping node. Every primitive
-    /// has this as the root of the clip chain attached to the primitive.
-    root_clip_rect: WorldRect,
-    /// List of reference primitive information used for
-    /// correlating the position between display lists.
-    reference_prims: ReferencePrimitiveList,
-    /// The root clip chain for this tile cache.
-    root_clip_chain_id: ClipChainId,
-    /// If true, this tile cache is enabled. For now, it doesn't
-    /// support tile caching if the surface is not the main framebuffer.
-    pub is_enabled: bool,
+    /// Current size of tiles in picture units.
+    tile_size: PictureSize,
+    /// Tile coords of the currently allocated grid.
+    tile_rect: TileRect,
+    /// Pre-calculated versions of the tile_rect above, used to speed up the
+    /// calculations in get_tile_coords_for_rect.
+    tile_bounds_p0: TileOffset,
+    tile_bounds_p1: TileOffset,
+    /// Local rect (unclipped) of the picture this cache covers.
+    pub local_rect: PictureRect,
     /// Local clip rect for this tile cache.
-    pub local_clip_rect: LayoutRect,
+    pub local_clip_rect: PictureRect,
+    /// A list of tiles that are valid and visible, which should be drawn to the main scene.
+    pub tiles_to_draw: Vec<TileOffset>,
+    /// The world space viewport that this tile cache draws into.
+    /// Any clips outside this viewport can be ignored (and must be removed so that
+    /// we can draw outside the bounds of the viewport).
+    pub world_viewport_rect: WorldRect,
+    /// The surface index that this tile cache will be drawn into.
+    surface_index: SurfaceIndex,
+    /// The background color from the renderer. If this is set opaque, we know it's
+    /// fine to clear the tiles to this and allow subpixel text on the first slice.
+    pub background_color: Option<ColorF>,
+    /// Information about the calculated backdrop content of this cache.
+    backdrop: BackdropInfo,
+    /// The allowed subpixel mode for this surface, which depends on the detected
+    /// opacity of the background.
+    pub subpixel_mode: SubpixelMode,
+    /// The current fractional offset of the cache transform root. If this changes,
+    /// all tiles need to be invalidated and redrawn, since snapping differences are
+    /// likely to occur.
+    fract_offset: PictureVector2D,
 }
 
-/// Stores information about a primitive in the cache that we will
-/// try to use to correlate positions between display lists.
-#[derive(Clone)]
-struct ReferencePrimitive {
-    uid: ItemUid,
-    local_pos: LayoutPoint,
-    spatial_node_index: SpatialNodeIndex,
-    ref_count: usize,
-}
-
-/// A list of primitive with uids that only exist once in a display
-/// list. Used to obtain reference points to correlate the offset
-/// between two similar display lists.
-struct ReferencePrimitiveList {
-    ref_prims: Vec<ReferencePrimitive>,
-}
-
-impl ReferencePrimitiveList {
-    fn new(
-        prim_instances: &[PrimitiveInstance],
-        pictures: &[PicturePrimitive],
-    ) -> Self {
-        let mut map = FastHashMap::default();
-        let mut search_count = 0;
-
-        // Collect a set of primitives that we can
-        // potentially use for correlation.
-        collect_ref_prims(
-            prim_instances,
-            pictures,
-            &mut map,
-            &mut search_count,
-        );
-
-        // Select only primitives where the uid is unique
-        // in the display list, giving the best chance
-        // of finding correct correlations.
-        let ref_prims = map.values().filter(|prim| {
-            prim.ref_count == 1
-        }).cloned().collect();
-
-        ReferencePrimitiveList {
-            ref_prims,
-        }
-    }
-}
-
-/// Collect a sample of primitives from the prim list that can
-/// be used to correlate positions.
-fn collect_ref_prims(
-    prim_instances: &[PrimitiveInstance],
-    pictures: &[PicturePrimitive],
-    map: &mut FastHashMap<ItemUid, ReferencePrimitive>,
-    search_count: &mut usize,
-) {
-    for prim_instance in prim_instances {
-        if *search_count > MAX_PRIMS_TO_SEARCH {
-            return;
-        }
-
-        match prim_instance.kind {
-            PrimitiveInstanceKind::Picture { pic_index, .. } => {
-                collect_ref_prims(
-                    &pictures[pic_index.0].prim_list.prim_instances,
-                    pictures,
-                    map,
-                    search_count,
-                );
-            }
-            _ => {
-                let uid = prim_instance.uid();
-
-                let entry = map.entry(uid).or_insert_with(|| {
-                    ReferencePrimitive {
-                        uid,
-                        local_pos: prim_instance.prim_origin,
-                        spatial_node_index: prim_instance.spatial_node_index,
-                        ref_count: 0,
-                    }
-                });
-                entry.ref_count += 1;
-
-                *search_count = *search_count + 1;
-            }
-        }
-    }
-}
-
-impl TileCache {
+impl TileCacheInstance {
     pub fn new(
+        slice: usize,
         spatial_node_index: SpatialNodeIndex,
-        prim_instances: &[PrimitiveInstance],
-        root_clip_chain_id: ClipChainId,
-        pictures: &[PicturePrimitive],
+        background_color: Option<ColorF>,
     ) -> Self {
-        // Build the list of reference primitives
-        // for this picture cache.
-        let reference_prims = ReferencePrimitiveList::new(
-            prim_instances,
-            pictures,
-        );
-
-        TileCache {
+        TileCacheInstance {
+            slice,
             spatial_node_index,
-            tiles: Vec::new(),
-            map_local_to_world: SpaceMapper::new(
+            tiles: FastHashMap::default(),
+            map_local_to_surface: SpaceMapper::new(
                 ROOT_SPATIAL_NODE_INDEX,
-                WorldRect::zero(),
+                PictureRect::zero(),
             ),
-            tiles_to_draw: Vec::new(),
             opacity_bindings: FastHashMap::default(),
             dirty_region: DirtyRegion::new(),
-            world_origin: WorldPoint::zero(),
-            world_tile_size: WorldSize::zero(),
-            tile_count: TileSize::zero(),
-            scroll_offset: None,
-            pending_blits: Vec::new(),
-            world_bounding_rect: WorldRect::zero(),
-            root_clip_rect: WorldRect::max_rect(),
-            reference_prims,
-            root_clip_chain_id,
-            is_enabled: true,
-            local_clip_rect: LayoutRect::zero(),
+            tile_size: PictureSize::zero(),
+            tile_rect: TileRect::zero(),
+            tile_bounds_p0: TileOffset::zero(),
+            tile_bounds_p1: TileOffset::zero(),
+            local_rect: PictureRect::zero(),
+            local_clip_rect: PictureRect::zero(),
+            tiles_to_draw: Vec::new(),
+            world_viewport_rect: WorldRect::zero(),
+            surface_index: SurfaceIndex(0),
+            background_color,
+            backdrop: BackdropInfo::empty(),
+            subpixel_mode: SubpixelMode::Allow,
+            fract_offset: PictureVector2D::zero(),
+        }
+    }
+
+    /// Returns true if this tile cache is considered opaque.
+    pub fn is_opaque(&self) -> bool {
+        // If known opaque due to background clear color and being the first slice.
+        // The background_color will only be Some(..) if this is the first slice.
+        match self.background_color {
+            Some(color) => color.a >= 1.0,
+            None => false
         }
     }
 
     /// Get the tile coordinates for a given rectangle.
     fn get_tile_coords_for_rect(
         &self,
-        rect: &WorldRect,
+        rect: &PictureRect,
     ) -> (TileOffset, TileOffset) {
-        // Translate the rectangle into the virtual tile space
-        let origin = rect.origin - self.world_origin;
-
         // Get the tile coordinates in the picture space.
         let mut p0 = TileOffset::new(
-            (origin.x / self.world_tile_size.width).floor() as i32,
-            (origin.y / self.world_tile_size.height).floor() as i32,
+            (rect.origin.x / self.tile_size.width).floor() as i32,
+            (rect.origin.y / self.tile_size.height).floor() as i32,
         );
 
         let mut p1 = TileOffset::new(
-            ((origin.x + rect.size.width) / self.world_tile_size.width).ceil() as i32,
-            ((origin.y + rect.size.height) / self.world_tile_size.height).ceil() as i32,
+            ((rect.origin.x + rect.size.width) / self.tile_size.width).ceil() as i32,
+            ((rect.origin.y + rect.size.height) / self.tile_size.height).ceil() as i32,
         );
 
         // Clamp the tile coordinates here to avoid looping over irrelevant tiles later on.
-        p0.x = clamp(p0.x, 0, self.tile_count.width);
-        p0.y = clamp(p0.y, 0, self.tile_count.height);
-        p1.x = clamp(p1.x, 0, self.tile_count.width);
-        p1.y = clamp(p1.y, 0, self.tile_count.height);
+        p0.x = clamp(p0.x, self.tile_bounds_p0.x, self.tile_bounds_p1.x);
+        p0.y = clamp(p0.y, self.tile_bounds_p0.y, self.tile_bounds_p1.y);
+        p1.x = clamp(p1.x, self.tile_bounds_p0.x, self.tile_bounds_p1.x);
+        p1.y = clamp(p1.y, self.tile_bounds_p0.y, self.tile_bounds_p1.y);
 
         (p0, p1)
     }
@@ -766,80 +1132,122 @@ impl TileCache {
     /// Update transforms, opacity bindings and tile rects.
     pub fn pre_update(
         &mut self,
-        pic_rect: LayoutRect,
+        pic_rect: PictureRect,
+        surface_index: SurfaceIndex,
         frame_context: &FrameVisibilityContext,
         frame_state: &mut FrameVisibilityState,
-        surface_index: SurfaceIndex,
-    ) {
-        // If the tile cache is the first surface on the root
-        // surface, then we can enable it. If the client has
-        // requested caching on an offscreen surface, we will
-        // need to disable it (for now).
-        self.is_enabled = surface_index == SurfaceIndex(1);
-        if !self.is_enabled {
-            // TODO(gw): It's technically possible that this tile cache
-            //           might have been enabled in a valid state, and
-            //           then got an offscreen surface. In this case,
-            //           there may be some pre-cached tiles still existing.
-            //           They will expire from the texture cache as normal,
-            //           but we should check this path a bit more carefully
-            //           to see if any other memory should be freed.
-            return;
-        }
+    ) -> WorldRect {
+        let tile_width = TILE_SIZE_WIDTH;
+        let tile_height = TILE_SIZE_HEIGHT;
+        self.surface_index = surface_index;
 
-        let DeviceIntSize { width: tile_width, height: tile_height, _unit: _ } =
-            Self::tile_dimensions(frame_context.config.testing);
+        // Reset the opaque rect + subpixel mode, as they are calculated
+        // during the prim dependency checks.
+        self.backdrop = BackdropInfo::empty();
+        self.subpixel_mode = SubpixelMode::Allow;
 
-        // Work out the scroll offset to apply to the world reference point.
-        let scroll_offset_point = frame_context.clip_scroll_tree
-            .get_world_transform(self.spatial_node_index)
-            .inverse_project_2d_origin()
-            .unwrap_or_else(LayoutPoint::zero);
-
-        let scroll_offset = WorldVector2D::new(scroll_offset_point.x, scroll_offset_point.y);
-        let scroll_delta = match self.scroll_offset {
-            Some(prev) => prev - scroll_offset,
-            None => WorldVector2D::zero(),
-        };
-        self.scroll_offset = Some(scroll_offset);
-
-        // Pull any retained tiles from the previous scene.
-        let world_offset = if frame_state.retained_tiles.tiles.is_empty() {
-            None
-        } else {
-            assert!(self.tiles.is_empty());
-            self.tiles = mem::replace(&mut frame_state.retained_tiles.tiles, Vec::new());
-
-            // Get the positions of the reference primitives for this
-            // new display list.
-            let mut new_prim_map = FastHashMap::default();
-            build_ref_prims(
-                &self.reference_prims.ref_prims,
-                &mut new_prim_map,
-                frame_context.clip_scroll_tree,
-            );
-
-            // Attempt to correlate them to work out which offset to apply.
-            correlate_prim_maps(
-                &frame_state.retained_tiles.ref_prims,
-                &new_prim_map,
-            )
-        }.unwrap_or(WorldVector2D::zero());
-
-        // Assume no tiles are valid to draw by default
-        self.tiles_to_draw.clear();
-
-        self.map_local_to_world = SpaceMapper::new(
-            ROOT_SPATIAL_NODE_INDEX,
-            frame_context.screen_world_rect,
+        self.map_local_to_surface = SpaceMapper::new(
+            self.spatial_node_index,
+            PictureRect::from_untyped(&pic_rect.to_untyped()),
         );
 
-        let world_mapper = SpaceMapper::new_with_target(
+        let pic_to_world_mapper = SpaceMapper::new_with_target(
             ROOT_SPATIAL_NODE_INDEX,
             self.spatial_node_index,
-            frame_context.screen_world_rect,
+            frame_context.global_screen_world_rect,
             frame_context.clip_scroll_tree,
         );
+
+        // If there are pending retained state, retrieve it.
+        if let Some(prev_state) = frame_state.retained_tiles.caches.remove(&self.slice) {
+            self.tiles.extend(prev_state.tiles);
+            self.fract_offset = prev_state.fract_offset;
+        }
+
+        // Map an arbitrary point in picture space to world space, to work out
+        // what the fractional translation is that's applied by this scroll root.
+        // TODO(gw): I'm not 100% sure this is right. At least, in future, we should
+        //           make a specific API for this, and/or enforce that the picture
+        //           cache transform only includes scale and/or translation (we
+        //           already ensure it doesn't have perspective).
+        let world_origin = pic_to_world_mapper
+            .map(&PictureRect::new(PicturePoint::zero(), PictureSize::new(1.0, 1.0)))
+            .expect("bug: unable to map origin to world space")
+            .origin;
+
+        // Get the desired integer device coordinate
+        let device_origin = world_origin * frame_context.global_device_pixel_scale;
+        let desired_device_origin = device_origin.round();
+
+        // Unmap from device space to world space rect
+        let ref_world_rect = WorldRect::new(
+            desired_device_origin / frame_context.global_device_pixel_scale,
+            WorldSize::new(1.0, 1.0),
+        );
+
+        // Unmap from world space to picture space
+        let ref_point = pic_to_world_mapper
+            .unmap(&ref_world_rect)
+            .expect("bug: unable to unmap ref world rect")
+            .origin;
+
+        // Extract the fractional offset required in picture space to align in device space
+        let fract_offset = PictureVector2D::new(
+            ref_point.x.fract(),
+            ref_point.y.fract(),
+        );
+
+        // Determine if the fractional offset of the transform is different this frame
+        // from the currently cached tile set.
+        let fract_changed = (self.fract_offset.x - fract_offset.x).abs() > 0.001 ||
+                            (self.fract_offset.y - fract_offset.y).abs() > 0.001;
+        if fract_changed {
+            self.fract_offset = fract_offset;
+        }
+
+        let spatial_node = &frame_context
+            .clip_scroll_tree
+            .spatial_nodes[self.spatial_node_index.0 as usize];
+        let (viewport_rect, viewport_spatial_node_index) = match spatial_node.node_type {
+            SpatialNodeType::ScrollFrame(ref info) => {
+                (info.viewport_rect, spatial_node.parent.unwrap())
+            }
+            SpatialNodeType::StickyFrame(..) => {
+                unreachable!();
+            }
+            SpatialNodeType::ReferenceFrame(..) => {
+                assert_eq!(self.spatial_node_index, ROOT_SPATIAL_NODE_INDEX);
+                (LayoutRect::max_rect(), ROOT_SPATIAL_NODE_INDEX)
+            }
+        };
+
+        let viewport_to_world_mapper = SpaceMapper::new_with_target(
+            ROOT_SPATIAL_NODE_INDEX,
+            viewport_spatial_node_index,
+            frame_context.global_screen_world_rect,
+            frame_context.clip_scroll_tree,
+        );
+        self.world_viewport_rect = viewport_to_world_mapper
+            .map(&viewport_rect)
+            .expect("bug: unable to map viewport to world space");
+
+        // TODO(gw): This is a reverse mapping. It should always work since we know
+        //           that this path only runs for slices in the root coordinate system.
+        //           But perhaps we should assert that?
+        // TODO(gw): We could change to directly use the ScaleOffset in content_transform
+        //           which would make this clearer that we know the coordinate systems are the
+        //           same and that it's a safe / exact conversion.
+        self.map_local_to_surface.set_target_spatial_node(
+            viewport_spatial_node_index,
+            frame_context.clip_scroll_tree,
+        );
+        let local_viewport_rect = self
+            .map_local_to_surface
+            .map(&viewport_rect)
+            .expect("bug: unable to map to local viewport rect");
+
+        self.local_rect = pic_rect;
+        self.local_clip_rect = local_viewport_rect;
 
         // Do a hacky diff of opacity binding values from the last frame. This is
         // used later on during tile invalidation tests.
@@ -857,239 +1265,141 @@ impl TileCache {
             });
         }
 
-        // Map the picture rect to world and device space and work out the tiles
-        // that we need in order to ensure the screen is covered. We haven't done
-        // any snapping yet, so we need to round out in device space to ensure we
-        // cover all pixels the picture may touch.
-        let pic_device_rect = {
-            let unsnapped_world_rect = world_mapper
-                .map(&pic_rect)
-                .expect("bug: unable to map picture rect to world");
-            (unsnapped_world_rect * frame_context.global_device_pixel_scale)
-                .round_out()
-        };
-        let pic_world_rect = pic_device_rect / frame_context.global_device_pixel_scale;
-
-        // If the bounding rect of the picture to cache doesn't intersect with
-        // the visible world rect at all, just take the screen world rect as
-        // a reference for the area to create tiles for. This allows existing
-        // tiles to be retained in case they are still valid if / when they
-        // get scrolled back onto the screen.
-
-        let needed_world_rect = frame_context
-            .screen_world_rect
-            .intersection(&pic_world_rect)
-            .unwrap_or(frame_context.screen_world_rect);
-
-        // Get a reference point that serves as an origin that all tiles we create
-        // must be aligned to. This ensures that tiles get reused correctly between
-        // scrolls and display list changes, even with the different local coord
-        // systems that gecko supplies.
-        let mut world_ref_point = if self.tiles.is_empty() {
-            needed_world_rect.origin.floor()
-        } else {
-            self.tiles[0].world_rect.origin + world_offset
-        };
-
-        // Apply the scroll delta so that existing tiles still get used.
-        world_ref_point += scroll_delta;
-
-        // Work out the required device rect that we need to cover the screen,
-        // given the world reference point constraint.
-        let device_ref_point = world_ref_point * frame_context.global_device_pixel_scale;
-        let device_world_rect = frame_context.screen_world_rect * frame_context.global_device_pixel_scale;
-        let needed_device_rect = pic_device_rect
-            .intersection(&device_world_rect)
-            .unwrap_or(device_world_rect);
-
-        // Expand the needed device rect vertically by a small number of tiles. This
-        // ensures that as tiles are scrolled in/out of view, they are retained for
-        // a while before being discarded.
-        // TODO(gw): On some pages it might be worth also inflating horizontally.
-        //           (is this locale specific?). It might be possible to make a good
-        //           guess based on the size of the picture rect for the tile cache.
-        let needed_device_rect = needed_device_rect.inflate(
-            0.0,
-            3.0 * tile_height as f32,
-        );
-
-        let p0 = needed_device_rect.origin;
-        let p1 = needed_device_rect.bottom_right();
-
-        let p0 = DevicePoint::new(
-            device_ref_point.x + ((p0.x - device_ref_point.x) / tile_width as f32).floor() * tile_width as f32,
-            device_ref_point.y + ((p0.y - device_ref_point.y) / tile_height as f32).floor() * tile_height as f32,
-        );
-
-        let p1 = DevicePoint::new(
-            device_ref_point.x + ((p1.x - device_ref_point.x) / tile_width as f32).ceil() * tile_width as f32,
-            device_ref_point.y + ((p1.y - device_ref_point.y) / tile_height as f32).ceil() * tile_height as f32,
-        );
-
-        // And now the number of tiles from that device rect.
-        let x_tiles = ((p1.x - p0.x) / tile_width as f32).round() as i32;
-        let y_tiles = ((p1.y - p0.y) / tile_height as f32).round() as i32;
-
-        // Step through any old tiles, and retain them if we can. They are keyed only on
-        // the (scroll adjusted) world position, relying on the descriptor content checks
-        // later to invalidate them if the content has changed.
-        let mut old_tiles = FastHashMap::default();
-        for tile in self.tiles.drain(..) {
-            let tile_device_pos = (tile.world_rect.origin + scroll_delta) * frame_context.global_device_pixel_scale;
-            let key = (
-                (tile_device_pos.x + world_offset.x).round() as i32,
-                (tile_device_pos.y + world_offset.y).round() as i32,
-            );
-            old_tiles.insert(key, tile);
-        }
-
-        // Store parameters about the current tiling rect for use during dependency updates.
-        self.world_origin = WorldPoint::new(
-            p0.x / frame_context.global_device_pixel_scale.0,
-            p0.y / frame_context.global_device_pixel_scale.0,
-        );
-        self.world_tile_size = WorldSize::new(
+        let world_tile_size = WorldSize::new(
             tile_width as f32 / frame_context.global_device_pixel_scale.0,
             tile_height as f32 / frame_context.global_device_pixel_scale.0,
         );
-        self.tile_count = TileSize::new(x_tiles, y_tiles);
 
-        // Step through each tile and try to retain an old tile from the
-        // previous frame, and update bounding rects.
-        for y in 0 .. y_tiles {
-            for x in 0 .. x_tiles {
-                let px = p0.x + x as f32 * tile_width as f32;
-                let py = p0.y + y as f32 * tile_height as f32;
-                let key = (px.round() as i32, py.round() as i32);
+        // We know that this is an exact rectangle, since we (for now) only support tile
+        // caches where the scroll root is in the root coordinate system.
+        let local_tile_rect = pic_to_world_mapper
+            .unmap(&WorldRect::new(WorldPoint::zero(), world_tile_size))
+            .expect("bug: unable to get local tile rect");
 
-                let mut tile = match old_tiles.remove(&key) {
-                    Some(tile) => tile,
-                    None => {
+        self.tile_size = local_tile_rect.size;
+
+        let screen_rect_in_pic_space = pic_to_world_mapper
+            .unmap(&frame_context.global_screen_world_rect)
+            .expect("unable to unmap screen rect");
+
+        let visible_rect_in_pic_space = screen_rect_in_pic_space
+            .intersection(&self.local_clip_rect)
+            .unwrap_or(PictureRect::zero());
+
+        // Inflate the needed rect a bit, so that we retain tiles that we have drawn
+        // but have just recently gone off-screen. This means that we avoid re-drawing
+        // tiles if the user is scrolling up and down small amounts, at the cost of
+        // a bit of extra texture memory.
+        let desired_rect_in_pic_space = visible_rect_in_pic_space
+            .inflate(0.0, 3.0 * self.tile_size.height);
+
+        let needed_rect_in_pic_space = desired_rect_in_pic_space
+            .intersection(&pic_rect)
+            .unwrap_or(PictureRect::zero());
+
+        let p0 = needed_rect_in_pic_space.origin;
+        let p1 = needed_rect_in_pic_space.bottom_right();
+
+        let x0 = (p0.x / local_tile_rect.size.width).floor() as i32;
+        let x1 = (p1.x / local_tile_rect.size.width).ceil() as i32;
+
+        let y0 = (p0.y / local_tile_rect.size.height).floor() as i32;
+        let y1 = (p1.y / local_tile_rect.size.height).ceil() as i32;
+
+        let x_tiles = x1 - x0;
+        let y_tiles = y1 - y0;
+        self.tile_rect = TileRect::new(
+            TileOffset::new(x0, y0),
+            TileSize::new(x_tiles, y_tiles),
+        );
+        // This is duplicated information from tile_rect, but cached here to avoid
+        // redundant calculations during get_tile_coords_for_rect
+        self.tile_bounds_p0 = TileOffset::new(x0, y0);
+        self.tile_bounds_p1 = TileOffset::new(x1, y1);
+
+        let mut world_culling_rect = WorldRect::zero();
+
+        let mut old_tiles = mem::replace(
+            &mut self.tiles,
+            FastHashMap::default(),
+        );
+
+        let ctx = TilePreUpdateContext {
+            local_rect: self.local_rect,
+            pic_to_world_mapper,
+            fract_changed,
+            opacity_bindings: &self.opacity_bindings,
+        };
+
+        for y in y0 .. y1 {
+            for x in x0 .. x1 {
+                let key = TileOffset::new(x, y);
+
+                let mut tile = old_tiles
+                    .remove(&key)
+                    .unwrap_or_else(|| {
                         let next_id = TileId(NEXT_TILE_ID.fetch_add(1, Ordering::Relaxed));
                         Tile::new(next_id)
-                    }
-                };
+                    });
 
-                tile.world_rect = WorldRect::new(
-                    WorldPoint::new(
-                        px / frame_context.global_device_pixel_scale.0,
-                        py / frame_context.global_device_pixel_scale.0,
+                // Ensure each tile is offset by the appropriate amount from the
+                // origin, such that the content origin will be a whole number and
+                // the snapping will be consistent.
+                let rect = PictureRect::new(
+                    PicturePoint::new(
+                        x as f32 * self.tile_size.width + fract_offset.x,
+                        y as f32 * self.tile_size.height + fract_offset.y,
                     ),
-                    self.world_tile_size,
+                    self.tile_size,
                 );
 
-                tile.local_rect = world_mapper
-                    .unmap(&tile.world_rect)
-                    .expect("bug: can't unmap world rect");
-
-                tile.visible_rect = tile.world_rect.intersection(&frame_context.screen_world_rect);
-
-                self.tiles.push(tile);
-            }
-        }
-
-        if !old_tiles.is_empty() {
-            // TODO(gw): Should we explicitly drop the tile texture cache handles here?
-        }
-
-        self.world_bounding_rect = WorldRect::zero();
-        self.root_clip_rect = WorldRect::max_rect();
-
-        // Calculate the world space of the root clip node, that every primitive has
-        // at the root of its clip chain (this is enforced by the per-pipeline-root
-        // clip node added implicitly during display list flattening). Doing it once
-        // here saves doing it for every primitive during update_prim_dependencies.
-        if self.root_clip_chain_id != ClipChainId::NONE {
-            let root_clip_chain_node = &frame_state
-                .clip_store
-                .clip_chain_nodes[self.root_clip_chain_id.0 as usize];
-            let root_clip_node = &frame_state
-                .data_stores
-                .clip[root_clip_chain_node.handle];
-            if let Some(clip_rect) = root_clip_node.item.get_local_clip_rect(root_clip_chain_node.local_pos) {
-                self.map_local_to_world.set_target_spatial_node(
-                    root_clip_chain_node.spatial_node_index,
-                    frame_context.clip_scroll_tree,
+                tile.pre_update(
+                    rect,
+                    &ctx,
                 );
 
-                if let Some(world_clip_rect) = self.map_local_to_world.map(&clip_rect) {
-                    self.root_clip_rect = world_clip_rect;
-                }
+                world_culling_rect = world_culling_rect.union(&tile.world_rect);
+
+                self.tiles.insert(key, tile);
             }
         }
 
-        // Do tile invalidation for any dependencies that we know now.
-        for tile in &mut self.tiles {
-            // Start frame assuming that the tile has the same content.
-            tile.is_same_content = true;
-
-            // Content has changed if any images have changed
-            for image_key in tile.descriptor.image_keys.items() {
-                if frame_state.resource_cache.is_image_dirty(*image_key) {
-                    tile.is_same_content = false;
-                    break;
-                }
-            }
-
-            // Content has changed if any opacity bindings changed.
-            for binding in tile.descriptor.opacity_bindings.items() {
-                if let OpacityBinding::Binding(id) = binding {
-                    let changed = match self.opacity_bindings.get(id) {
-                        Some(info) => info.changed,
-                        None => true,
-                    };
-                    if changed {
-                        tile.is_same_content = false;
-                        break;
-                    }
-                }
-            }
-
-            // Clear any dependencies so that when we rebuild them we
-            // can compare if the tile has the same content.
-            tile.clear();
-        }
+        world_culling_rect
     }
 
     /// Update the dependencies for each tile for a given primitive instance.
     pub fn update_prim_dependencies(
         &mut self,
         prim_instance: &PrimitiveInstance,
-        clip_chain_stack: &ClipChainStack,
-        prim_rect: LayoutRect,
+        prim_clip_chain: Option<&ClipChainInstance>,
+        local_prim_rect: LayoutRect,
         clip_scroll_tree: &ClipScrollTree,
         data_stores: &DataStores,
-        clip_chain_nodes: &[ClipChainNode],
+        clip_store: &ClipStore,
         pictures: &[PicturePrimitive],
         resource_cache: &ResourceCache,
         opacity_binding_store: &OpacityBindingStorage,
         image_instances: &ImageInstanceStorage,
+        surface_index: SurfaceIndex,
     ) -> bool {
-        // If the tile cache is disabled, there's no need to update
-        // the primitive dependencies.
-        if !self.is_enabled {
-            // Return true to signal that we didn't early cull this primitive.
-            return true;
-        }
-
-        self.map_local_to_world.set_target_spatial_node(
+        self.map_local_to_surface.set_target_spatial_node(
             prim_instance.spatial_node_index,
             clip_scroll_tree,
         );
 
-        // Map the primitive local rect into world space.
-        let world_rect = match self.map_local_to_world.map(&prim_rect) {
+        // Map the primitive local rect into picture space.
+        let prim_rect = match self.map_local_to_surface.map(&local_prim_rect) {
             Some(rect) => rect,
             None => return false,
         };
 
         // If the rect is invalid, no need to create dependencies.
-        if world_rect.size.width <= 0.0 || world_rect.size.height <= 0.0 {
+        if prim_rect.size.is_empty_or_negative() {
             return false;
         }
 
         // Get the tile coordinates in the picture space.
-        let (p0, p1) = self.get_tile_coords_for_rect(&world_rect);
+        let (p0, p1) = self.get_tile_coords_for_rect(&prim_rect);
 
         // If the primitive is outside the tiling rects, it's known to not
         // be visible.
@@ -1097,23 +1407,39 @@ impl TileCache {
             return false;
         }
 
-        // Build the list of resources that this primitive has dependencies on.
-        let mut opacity_bindings: SmallVec<[OpacityBinding; 4]> = SmallVec::new();
-        let mut clip_chain_uids: SmallVec<[ItemUid; 8]> = SmallVec::new();
-        let mut clip_vertices: SmallVec<[WorldPoint; 8]> = SmallVec::new();
-        let mut image_keys: SmallVec<[ImageKey; 8]> = SmallVec::new();
-        let mut clip_spatial_nodes = FastHashSet::default();
-
-        // TODO(gw): We only care about world clip rects that don't have the main
-        //           scroll root as an ancestor. It may be a worthwhile optimization
-        //           to check for these and skip them.
-        let mut world_clips: SmallVec<[(RectangleKey, SpatialNodeIndex); 4]> = SmallVec::default();
-
         // Some primitives can not be cached (e.g. external video images)
         let is_cacheable = prim_instance.is_cacheable(
             &data_stores,
             resource_cache,
         );
+
+        // Build the list of resources that this primitive has dependencies on.
+        let mut prim_info = PrimitiveDependencyInfo::new(
+            prim_instance.uid(),
+            prim_rect,
+            prim_instance.spatial_node_index,
+            is_cacheable,
+        );
+
+        // If there was a clip chain, add any clip dependencies to the list for this tile.
+        if let Some(prim_clip_chain) = prim_clip_chain {
+            prim_info.prim_clip_rect = prim_clip_chain.pic_clip_rect;
+
+            let clip_instances = &clip_store
+                .clip_node_instances[prim_clip_chain.clips_range.to_range()];
+            for clip_instance in clip_instances {
+                prim_info.clips.push(ClipDescriptor {
+                    uid: clip_instance.handle.uid(),
+                    origin: clip_instance.local_pos.into(),
+                });
+
+                // If the clip has the same spatial node, the relative transform
+                // will always be the same, so there's no need to depend on it.
+                if clip_instance.spatial_node_index != self.spatial_node_index {
+                    prim_info.clip_spatial_nodes.insert(clip_instance.spatial_node_index);
+                }
+            }
+        }
 
         // For pictures, we don't (yet) know the valid clip rect, so we can't correctly
         // use it to calculate the local bounding rect for the tiles. If we include them
@@ -1126,25 +1452,62 @@ impl TileCache {
         // rect eventually means it doesn't affect that tile).
         // TODO(gw): Get picture clips earlier (during the initial picture traversal
         //           pass) so that we can calculate these correctly.
-        let include_clip_rect = match prim_instance.kind {
+        match prim_instance.kind {
             PrimitiveInstanceKind::Picture { pic_index,.. } => {
                 // Pictures can depend on animated opacity bindings.
                 let pic = &pictures[pic_index.0];
                 if let Some(PictureCompositeMode::Filter(Filter::Opacity(binding, _))) = pic.requested_composite_mode {
-                    opacity_bindings.push(binding.into());
+                    prim_info.opacity_bindings.push(binding.into());
                 }
-
-                false
             }
-            PrimitiveInstanceKind::Rectangle { opacity_binding_index, .. } => {
-                if opacity_binding_index != OpacityBindingIndex::INVALID {
+            PrimitiveInstanceKind::Rectangle { data_handle, opacity_binding_index, .. } => {
+                if opacity_binding_index == OpacityBindingIndex::INVALID {
+                    // Check a number of conditions to see if we can consider this
+                    // primitive as an opaque rect. Several of these are conservative
+                    // checks and could be relaxed in future. However, these checks
+                    // are quick and capture the common cases of background rects.
+                    // Specifically, we currently require:
+                    //  - No opacity binding (to avoid resolving the opacity here).
+                    //  - Color.a >= 1.0 (the primitive is opaque).
+                    //  - Same coord system as picture cache (ensures rects are axis-aligned).
+                    //  - No clip masks exist.
+
+                    let on_picture_surface = surface_index == self.surface_index;
+
+                    let color = match data_stores.prim[data_handle].kind {
+                        PrimitiveTemplateKind::Rectangle { color, .. } => color,
+                        _ => unreachable!(),
+                    };
+
+                    let prim_is_opaque = color.a >= 1.0;
+
+                    let same_coord_system = {
+                        let prim_spatial_node = &clip_scroll_tree
+                            .spatial_nodes[prim_instance.spatial_node_index.0 as usize];
+                        let surface_spatial_node = &clip_scroll_tree
+                            .spatial_nodes[self.spatial_node_index.0 as usize];
+
+                        prim_spatial_node.coordinate_system_id == surface_spatial_node.coordinate_system_id
+                    };
+
+                    if let Some(ref clip_chain) = prim_clip_chain {
+                        if prim_is_opaque && same_coord_system && !clip_chain.needs_mask && on_picture_surface {
+                            if clip_chain.pic_clip_rect.contains_rect(&self.backdrop.rect) {
+                                self.backdrop = BackdropInfo {
+                                    rect: clip_chain.pic_clip_rect,
+                                    color,
+                                };
+                            }
+                        }
+                    };
+                } else {
                     let opacity_binding = &opacity_binding_store[opacity_binding_index];
                     for binding in &opacity_binding.bindings {
-                        opacity_bindings.push(OpacityBinding::from(*binding));
+                        prim_info.opacity_bindings.push(OpacityBinding::from(*binding));
                     }
                 }
 
-                true
+                prim_info.clip_by_tile = true;
             }
             PrimitiveInstanceKind::Image { data_handle, image_instance_index, .. } => {
                 let image_data = &data_stores.image[data_handle].kind;
@@ -1154,225 +1517,72 @@ impl TileCache {
                 if opacity_binding_index != OpacityBindingIndex::INVALID {
                     let opacity_binding = &opacity_binding_store[opacity_binding_index];
                     for binding in &opacity_binding.bindings {
-                        opacity_bindings.push(OpacityBinding::from(*binding));
+                        prim_info.opacity_bindings.push(OpacityBinding::from(*binding));
                     }
                 }
 
-                image_keys.push(image_data.key);
-                true
+                prim_info.image_keys.push(image_data.key);
             }
             PrimitiveInstanceKind::YuvImage { data_handle, .. } => {
                 let yuv_image_data = &data_stores.yuv_image[data_handle].kind;
-                image_keys.extend_from_slice(&yuv_image_data.yuv_key);
-                true
+                prim_info.image_keys.extend_from_slice(&yuv_image_data.yuv_key);
             }
-            PrimitiveInstanceKind::TextRun { .. } |
+            PrimitiveInstanceKind::ImageBorder { data_handle, .. } => {
+                let border_data = &data_stores.image_border[data_handle].kind;
+                prim_info.image_keys.push(border_data.request.key);
+            }
+            PrimitiveInstanceKind::PushClipChain |
+            PrimitiveInstanceKind::PopClipChain => {
+                // Early exit to ensure this doesn't get added as a dependency on the tile.
+                return false;
+            }
+            PrimitiveInstanceKind::TextRun { data_handle, .. } => {
+                // Only do these checks if we haven't already disabled subpx
+                // text rendering for this slice.
+                if self.subpixel_mode == SubpixelMode::Allow && !self.is_opaque() {
+                    let run_data = &data_stores.text_run[data_handle];
+
+                    // If a text run is on a child surface, the subpx mode will be
+                    // correctly determined as we recurse through pictures in take_context.
+                    let on_picture_surface = surface_index == self.surface_index;
+
+                    // Only care about text runs that have requested subpixel rendering.
+                    // This is conservative - it may still end up that a subpx requested
+                    // text run doesn't get subpx for other reasons (e.g. glyph size).
+                    let subpx_requested = match run_data.font.render_mode {
+                        FontRenderMode::Subpixel => true,
+                        FontRenderMode::Alpha | FontRenderMode::Mono => false,
+                    };
+
+                    if on_picture_surface && subpx_requested {
+                        if !self.backdrop.rect.contains_rect(&prim_info.prim_clip_rect) {
+                            self.subpixel_mode = SubpixelMode::Deny;
+                        }
+                    }
+                }
+            }
             PrimitiveInstanceKind::LineDecoration { .. } |
             PrimitiveInstanceKind::Clear { .. } |
             PrimitiveInstanceKind::NormalBorder { .. } |
             PrimitiveInstanceKind::LinearGradient { .. } |
             PrimitiveInstanceKind::RadialGradient { .. } |
-            PrimitiveInstanceKind::ImageBorder { .. } => {
+            PrimitiveInstanceKind::Backdrop { .. } => {
                 // These don't contribute dependencies
-                true
             }
-        };
-
-        // The transforms of any clips that are relative to the picture may affect
-        // the content rendered by this primitive.
-        let mut world_clip_rect = world_rect;
-        let mut culling_rect = prim_rect
-            .intersection(&prim_instance.local_clip_rect)
-            .unwrap_or(LayoutRect::zero());
-
-        // To maintain the previous logic, consider every clip in the current active
-        // clip stack that could affect this primitive.
-        // TODO(gw): We can make this much more efficient now, by taking advantage
-        //           of the per-picture clip chain information, rather then considering
-        //           it for every primitive, as we do here for simplicity.
-        for clip_stack in &clip_chain_stack.stack {
-            for clip_chain_id in clip_stack {
-                let mut current_clip_chain_id = *clip_chain_id;
-                while current_clip_chain_id != ClipChainId::NONE {
-                    let clip_chain_node = &clip_chain_nodes[current_clip_chain_id.0 as usize];
-                    let clip_node = &data_stores.clip[clip_chain_node.handle];
-
-                    // We can skip the root clip node - it will be taken care of by the
-                    // world bounding rect calculated for the cache.
-                    if current_clip_chain_id == self.root_clip_chain_id {
-                        current_clip_chain_id = clip_chain_node.parent_clip_chain_id;
-                        continue;
-                    }
-
-                    self.map_local_to_world.set_target_spatial_node(
-                        clip_chain_node.spatial_node_index,
-                        clip_scroll_tree,
-                    );
-
-                    // Clips that are simple rects and handled by collapsing them into a single
-                    // clip rect. This avoids the need to store vertices for these cases, and also
-                    // allows easy calculation of the overall bounds of the tile cache.
-                    let add_to_clip_deps = match clip_node.item {
-                        ClipItem::Rectangle(size, ClipMode::Clip) => {
-                            let clip_spatial_node = &clip_scroll_tree.spatial_nodes[clip_chain_node.spatial_node_index.0 as usize];
-
-                            let local_clip_rect = LayoutRect::new(
-                                clip_chain_node.local_pos,
-                                size,
-                            );
-
-                            if clip_spatial_node.coordinate_system_id == CoordinateSystemId(0) {
-                                // Clips that are not in the root coordinate system are not axis-aligned,
-                                // so we need to treat them as normal style clips with vertices.
-                                match self.map_local_to_world.map(&local_clip_rect) {
-                                    Some(clip_world_rect) => {
-                                        // Even if this ends up getting clipped out by the current clip
-                                        // stack, we want to ensure the primitive gets added to the tiles
-                                        // below, to ensure invalidation isn't tripped up by the wrong
-                                        // number of primitives that affect this tile.
-                                        world_clip_rect = world_clip_rect
-                                            .intersection(&clip_world_rect)
-                                            .unwrap_or(WorldRect::zero());
-
-                                        // If the clip rect is in the same spatial node, it can be handled by the
-                                        // local clip rect.
-                                        if clip_chain_node.spatial_node_index == prim_instance.spatial_node_index {
-                                            culling_rect = culling_rect.intersection(&local_clip_rect).unwrap_or(LayoutRect::zero());
-
-                                            false
-                                        } else if !clip_scroll_tree.is_same_or_child_of(
-                                            clip_chain_node.spatial_node_index,
-                                            self.spatial_node_index,
-                                        ) {
-                                            // If the clip node is *not* a child of the main scroll root,
-                                            // add it to the list of potential world clips to be checked later.
-                                            // If it *is* a child of the main scroll root, then just track
-                                            // it as a normal clip dependency, since it likely moves in
-                                            // the same way as the primitive when scrolling (and if it doesn't,
-                                            // we want to invalidate and rasterize).
-                                            world_clips.push((
-                                                clip_world_rect.into(),
-                                                clip_chain_node.spatial_node_index,
-                                            ));
-
-                                            false
-                                        } else {
-                                            true
-                                        }
-                                    }
-                                    None => {
-                                        true
-                                    }
-                                }
-                            } else {
-                                true
-                            }
-                        }
-                        ClipItem::Rectangle(_, ClipMode::ClipOut) |
-                        ClipItem::RoundedRectangle(..) |
-                        ClipItem::Image { .. } |
-                        ClipItem::BoxShadow(..) => {
-                            true
-                        }
-                    };
-
-                    if add_to_clip_deps {
-                        clip_chain_uids.push(clip_chain_node.handle.uid());
-
-                        // If the clip has the same spatial node, the relative transform
-                        // will always be the same, so there's no need to depend on it.
-                        if clip_chain_node.spatial_node_index != self.spatial_node_index {
-                            clip_spatial_nodes.insert(clip_chain_node.spatial_node_index);
-                        }
-
-                        let local_clip_rect = LayoutRect::new(
-                            clip_chain_node.local_pos,
-                            LayoutSize::zero(),
-                        );
-                        if let Some(world_clip_rect) = self.map_local_to_world.map(&local_clip_rect) {
-                            clip_vertices.push(world_clip_rect.origin);
-                        }
-                    }
-
-                    current_clip_chain_id = clip_chain_node.parent_clip_chain_id;
-                }
-            }
-        }
-
-        if include_clip_rect {
-            // Intersect the calculated prim bounds with the root clip rect, to save
-            // having to process and transform the root clip rect in every primitive.
-            if let Some(clipped_world_rect) = world_clip_rect.intersection(&self.root_clip_rect) {
-                self.world_bounding_rect = self.world_bounding_rect.union(&clipped_world_rect);
-            }
-        }
-
-        self.map_local_to_world.set_target_spatial_node(
-            prim_instance.spatial_node_index,
-            clip_scroll_tree,
-        );
-        let world_culling_rect = match self.map_local_to_world.map(&culling_rect) {
-            Some(rect) => rect,
-            None => return false,
         };
 
         // Normalize the tile coordinates before adding to tile dependencies.
         // For each affected tile, mark any of the primitive dependencies.
         for y in p0.y .. p1.y {
             for x in p0.x .. p1.x {
-                let index = (y * self.tile_count.width + x) as usize;
-                let tile = &mut self.tiles[index];
+                // TODO(gw): Convert to 2d array temporarily to avoid hash lookups per-tile?
+                let key = TileOffset::new(x, y);
+                let tile = self.tiles.get_mut(&key).expect("bug: no tile");
 
-                // Store the local clip rect by calculating what portion
-                // of the tile it covers.
-                let world_culling_rect = world_culling_rect
-                    .intersection(&tile.world_rect)
-                    .map(|rect| {
-                        rect.translate(&-tile.world_rect.origin.to_vector())
-                    })
-                    .unwrap_or(WorldRect::zero())
-                    .round();
-
-                // Work out the needed rect for the primitive on this tile.
-                // TODO(gw): We should be able to remove this for any tile that is not
-                //           a partially clipped tile, which would be a significant
-                //           optimization for the common case (non-clipped tiles).
-
-                // Mark if the tile is cacheable at all.
-                tile.is_same_content &= is_cacheable;
-
-                // Include any image keys this tile depends on.
-                tile.descriptor.image_keys.extend_from_slice(&image_keys);
-
-                // // Include any opacity bindings this primitive depends on.
-                tile.descriptor.opacity_bindings.extend_from_slice(&opacity_bindings);
-
-                // Update the tile descriptor, used for tile comparison during scene swaps.
-                tile.descriptor.prims.push(PrimitiveDescriptor {
-                    prim_uid: prim_instance.uid(),
-                    origin: (world_rect.origin - tile.world_rect.origin.to_vector()).round(),
-                    first_clip: tile.descriptor.clip_uids.len() as u16,
-                    clip_count: clip_chain_uids.len() as u16,
-                    world_culling_rect,
-                });
-                tile.descriptor.clip_uids.extend_from_slice(&clip_chain_uids);
-                for clip_vertex in &clip_vertices {
-                    let clip_vertex = (*clip_vertex - tile.world_rect.origin.to_vector()).round();
-                    tile.descriptor.clip_vertices.push(clip_vertex.into());
-                }
-
-                // If the primitive has the same spatial node, the relative transform
-                // will always be the same, so there's no need to depend on it.
-                if prim_instance.spatial_node_index != self.spatial_node_index {
-                    tile.transforms.insert(prim_instance.spatial_node_index);
-                }
-
-                for spatial_node_index in &clip_spatial_nodes {
-                    tile.transforms.insert(*spatial_node_index);
-                }
-                for (world_rect, spatial_node_index) in &world_clips {
-                    tile.potential_clips.insert(world_rect.clone(), *spatial_node_index);
-                }
+                tile.add_prim_dependency(
+                    &prim_info,
+                    self.spatial_node_index,
+                );
             }
         }
 
@@ -1389,225 +1599,39 @@ impl TileCache {
         frame_context: &FrameVisibilityContext,
         scratch: &mut PrimitiveScratchBuffer,
     ) {
+        self.tiles_to_draw.clear();
         self.dirty_region.clear();
-        self.pending_blits.clear();
 
-        // If the tile cache is disabled, just return a no-op local clip rect.
-        if !self.is_enabled {
-            return;
-        }
+        let ctx = TilePostUpdateContext {
+            debug_flags: frame_context.debug_flags,
+            global_device_pixel_scale: frame_context.global_device_pixel_scale,
+            global_screen_world_rect: frame_context.global_screen_world_rect,
+            backdrop: self.backdrop,
+            cache_spatial_node_index: self.spatial_node_index,
+            clip_scroll_tree: frame_context.clip_scroll_tree,
+        };
 
-        // Skip all tiles if completely off-screen.
-        if !self.world_bounding_rect.intersects(&frame_context.screen_world_rect) {
-            return;
-        }
-
-        let map_surface_to_world: SpaceMapper<LayoutPixel, WorldPixel> = SpaceMapper::new_with_target(
-            ROOT_SPATIAL_NODE_INDEX,
-            self.spatial_node_index,
-            frame_context.screen_world_rect,
-            frame_context.clip_scroll_tree,
-        );
-
-        self.local_clip_rect = map_surface_to_world
-            .unmap(&self.world_bounding_rect)
-            .expect("bug: unable to map local clip rect");
+        let mut state = TilePostUpdateState {
+            resource_cache,
+            gpu_cache,
+            scratch,
+            dirty_region: &mut self.dirty_region,
+        };
 
         // Step through each tile and invalidate if the dependencies have changed.
-        for (i, tile) in self.tiles.iter_mut().enumerate() {
-            // Deal with any potential world clips. Check to see if they are
-            // outside the tile cache bounding rect. If they are, they're not
-            // relevant and we don't care if they move relative to the content
-            // itself. This avoids a lot of redundant invalidations.
-            for (clip_world_rect, spatial_node_index) in &tile.potential_clips {
-                let clip_world_rect = WorldRect::from(clip_world_rect.clone());
-                if !clip_world_rect.contains_rect(&self.world_bounding_rect) {
-                    tile.transforms.insert(*spatial_node_index);
-                }
-            }
-
-            // Update tile transforms
-            let mut transform_spatial_nodes: Vec<SpatialNodeIndex> = tile.transforms.drain().collect();
-            transform_spatial_nodes.sort();
-            for spatial_node_index in transform_spatial_nodes {
-                // Note: this is the only place where we don't know beforehand if the tile-affecting
-                // spatial node is below or above the current picture.
-                let inverse_origin = if self.spatial_node_index >= spatial_node_index {
-                    frame_context.clip_scroll_tree
-                        .get_relative_transform(
-                            self.spatial_node_index,
-                            spatial_node_index,
-                        )
-                        .project_2d_origin()
-                } else {
-                    frame_context.clip_scroll_tree
-                        .get_relative_transform(
-                            spatial_node_index,
-                            self.spatial_node_index,
-                        )
-                        .inverse_project_2d_origin()
-                };
-                // Store the result of transforming a fixed point by this
-                // transform.
-                // TODO(gw): This could in theory give incorrect results for a
-                //           primitive behind the near plane.
-                let key = inverse_origin
-                    .unwrap_or_else(LayoutPoint::zero)
-                    .round();
-                tile.descriptor.transforms.push(key.into());
-            }
-
-            // Invalidate if the backing texture was evicted.
-            if resource_cache.texture_cache.is_allocated(&tile.handle) {
-                // Request the backing texture so it won't get evicted this frame.
-                // We specifically want to mark the tile texture as used, even
-                // if it's detected not visible below and skipped. This is because
-                // we maintain the set of tiles we care about based on visibility
-                // during pre_update. If a tile still exists after that, we are
-                // assuming that it's either visible or we want to retain it for
-                // a while in case it gets scrolled back onto screen soon.
-                // TODO(gw): Consider switching to manual eviction policy?
-                resource_cache.texture_cache.request(&tile.handle, gpu_cache);
-            } else {
-                tile.is_valid = false;
-            }
-
-            // Invalidate the tile based on the content changing.
-            tile.update_content_validity();
-
-            let visible_rect = match tile.visible_rect {
-                Some(rect) => rect,
-                None => continue,
-            };
-
-            // Check the valid rect of the primitive is sufficient.
-            let tile_bounding_rect = match visible_rect.intersection(&self.world_bounding_rect) {
-                Some(rect) => rect.translate(&-tile.world_rect.origin.to_vector()),
-                None => continue,
-            };
-
-            tile.update_rect_validity(&tile_bounding_rect);
-
-            // If there are no primitives there is no need to draw or cache it.
-            if tile.descriptor.prims.is_empty() {
-                continue;
-            }
-
-            // Decide how to handle this tile when drawing this frame.
-            if tile.is_valid {
-                // No need to include this is any dirty rect calculations.
-                tile.consider_for_dirty_rect = false;
-                self.tiles_to_draw.push(TileIndex(i));
-
-                if frame_context.debug_flags.contains(DebugFlags::PICTURE_CACHING_DBG) {
-                    if let Some(world_rect) = tile.world_rect.intersection(&self.world_bounding_rect) {
-                        let tile_device_rect = world_rect * frame_context.global_device_pixel_scale;
-                        let mut label_offset = DeviceVector2D::new(20.0, 30.0);
-                        scratch.push_debug_rect(
-                            tile_device_rect,
-                            debug_colors::GREEN,
-                        );
-                        if tile_device_rect.size.height >= label_offset.y {
-                            scratch.push_debug_string(
-                                tile_device_rect.origin + label_offset,
-                                debug_colors::RED,
-                                format!("{:?} {:?} {:?}", tile.id, tile.handle, tile.world_rect),
-                            );
-                        }
-                        label_offset.y += 20.0;
-                        if tile_device_rect.size.height >= label_offset.y {
-                            scratch.push_debug_string(
-                                tile_device_rect.origin + label_offset,
-                                debug_colors::RED,
-                                format!("same: {} frames", tile.same_frames),
-                            );
-                        }
-                    }
-                }
-            } else {
-                if frame_context.debug_flags.contains(DebugFlags::PICTURE_CACHING_DBG) {
-                    if let Some(world_rect) = visible_rect.intersection(&self.world_bounding_rect) {
-                        scratch.push_debug_rect(
-                            world_rect * frame_context.global_device_pixel_scale,
-                            debug_colors::RED,
-                        );
-                    }
-                }
-
-                // Only cache tiles that have had the same content for at least two
-                // frames. This skips caching on pages / benchmarks that are changing
-                // every frame, which is wasteful.
-                // When we are testing invalidation, we want WR to try to cache tiles each
-                // frame, to make it simpler to define the expected dirty rects.
-                if tile.same_frames >= FRAMES_BEFORE_PICTURE_CACHING || frame_context.config.testing {
-                    // Ensure that this texture is allocated.
-                    if !resource_cache.texture_cache.is_allocated(&tile.handle) {
-                        resource_cache.texture_cache.update_picture_cache(
-                            &mut tile.handle,
-                            gpu_cache,
-                        );
-                    }
-
-                    let cache_item = resource_cache
-                        .get_texture_cache_item(&tile.handle);
-
-                    let src_origin = (visible_rect.origin * frame_context.global_device_pixel_scale).round().to_i32();
-                    let valid_rect = visible_rect.translate(&-tile.world_rect.origin.to_vector());
-
-                    tile.valid_rect = visible_rect
-                        .intersection(&self.world_bounding_rect)
-                        .map(|rect| rect.translate(&-tile.world_rect.origin.to_vector()))
-                        .unwrap_or(WorldRect::zero());
-
-                    // Store a blit operation to be done after drawing the
-                    // frame in order to update the cached texture tile.
-                    let dest_rect = (valid_rect * frame_context.global_device_pixel_scale).round().to_i32();
-                    self.pending_blits.push(TileBlit {
-                        target: cache_item,
-                        src_offset: src_origin,
-                        dest_offset: dest_rect.origin,
-                        size: dest_rect.size,
-                    });
-
-                    // We can consider this tile valid now.
-                    tile.is_valid = true;
-                }
-
-                // This tile should be considered as part of the dirty rect calculations.
-                tile.consider_for_dirty_rect = true;
+        for (key, tile) in self.tiles.iter_mut() {
+            if tile.post_update(
+                &ctx,
+                &mut state,
+            ) {
+                self.tiles_to_draw.push(*key);
             }
         }
-
-        // Build a minimal set of dirty rects from the set of dirty tiles that
-        // were found above.
-        let mut builder = DirtyRegionBuilder::new(
-            &mut self.tiles,
-            self.tile_count,
-        );
-
-        builder.build(&mut self.dirty_region);
 
         // When under test, record a copy of the dirty region to support
         // invalidation testing in wrench.
         if frame_context.config.testing {
             scratch.recorded_dirty_regions.push(self.dirty_region.record());
-        }
-
-        // If we end up with too many dirty rects, then it's going to be a lot
-        // of extra draw calls to submit (since we currently just submit every
-        // draw call for every dirty rect). In this case, bail out and work
-        // with a single, large dirty rect. In future we can consider improving
-        // on this by supporting batching per dirty region.
-        if self.dirty_region.dirty_rects.len() > MAX_DIRTY_RECTS {
-            self.dirty_region.collapse();
-        }
-    }
-
-    pub fn tile_dimensions(testing: bool) -> DeviceIntSize {
-        if testing {
-            size2(TILE_SIZE_TESTING, TILE_SIZE_TESTING)
-        } else {
-            size2(TILE_SIZE_WIDTH, TILE_SIZE_HEIGHT)
         }
     }
 }
@@ -1642,7 +1666,6 @@ impl<'a> PictureUpdateState<'a> {
 
         state.update(
             pic_index,
-            ClipChainId::NONE,
             picture_primitives,
             frame_context,
             gpu_cache,
@@ -1706,7 +1729,6 @@ impl<'a> PictureUpdateState<'a> {
     fn update(
         &mut self,
         pic_index: PictureIndex,
-        clip_chain_id: ClipChainId,
         picture_primitives: &mut [PicturePrimitive],
         frame_context: &FrameBuildingContext,
         gpu_cache: &mut GpuCache,
@@ -1714,16 +1736,12 @@ impl<'a> PictureUpdateState<'a> {
         clip_data_store: &ClipDataStore,
     ) {
         if let Some(prim_list) = picture_primitives[pic_index.0].pre_update(
-            clip_chain_id,
             self,
             frame_context,
-            clip_store,
-            clip_data_store,
         ) {
-            for (child_pic_index, clip_chain_id) in &prim_list.pictures {
+            for child_pic_index in &prim_list.pictures {
                 self.update(
                     *child_pic_index,
-                    *clip_chain_id,
                     picture_primitives,
                     frame_context,
                     gpu_cache,
@@ -1765,7 +1783,7 @@ impl<'a> PictureUpdateState<'a> {
             None => fallback_raster_spatial_node,
         };
 
-        for (child_pic_index, _) in &picture.prim_list.pictures {
+        for child_pic_index in &picture.prim_list.pictures {
             self.assign_raster_roots(*child_pic_index, picture_primitives, new_fallback);
         }
     }
@@ -1812,8 +1830,6 @@ pub struct SurfaceInfo {
     pub inflation_factor: f32,
     /// The device pixel ratio specific to this surface.
     pub device_pixel_scale: DevicePixelScale,
-    /// If true, subpixel AA rendering can be used on this surface.
-    pub allow_subpixel_aa: bool,
 }
 
 impl SurfaceInfo {
@@ -1824,7 +1840,6 @@ impl SurfaceInfo {
         world_rect: WorldRect,
         clip_scroll_tree: &ClipScrollTree,
         device_pixel_scale: DevicePixelScale,
-        allow_subpixel_aa: bool,
     ) -> Self {
         let map_surface_to_world = SpaceMapper::new_with_target(
             ROOT_SPATIAL_NODE_INDEX,
@@ -1835,7 +1850,7 @@ impl SurfaceInfo {
 
         let pic_bounds = map_surface_to_world
             .unmap(&map_surface_to_world.bounds)
-            .unwrap_or(PictureRect::max_rect());
+            .unwrap_or_else(PictureRect::max_rect);
 
         let map_local_to_surface = SpaceMapper::new(
             surface_spatial_node_index,
@@ -1850,7 +1865,6 @@ impl SurfaceInfo {
             surface_spatial_node_index,
             inflation_factor,
             device_pixel_scale,
-            allow_subpixel_aa,
         }
     }
 }
@@ -1878,6 +1892,8 @@ bitflags! {
         const CLIP = 2;
         /// Preserve-3D requires a surface for plane-splitting.
         const PRESERVE3D = 4;
+        /// A backdrop that is reused which requires a surface.
+        const BACKDROP = 8;
     }
 }
 
@@ -1898,8 +1914,67 @@ pub enum PictureCompositeMode {
     Blit(BlitReason),
     /// Used to cache a picture as a series of tiles.
     TileCache {
-        clear_color: ColorF,
     },
+    /// Apply an SVG filter
+    SvgFilter(Vec<FilterPrimitive>, Vec<SFilterData>),
+}
+
+impl PictureCompositeMode {
+    pub fn inflate_picture_rect(&self, picture_rect: PictureRect, inflation_factor: f32) -> PictureRect {
+        let mut result_rect = picture_rect;
+        match self {
+            PictureCompositeMode::Filter(filter) => match filter {
+                Filter::Blur(_) => {
+                    result_rect = picture_rect.inflate(inflation_factor, inflation_factor);
+                },
+                Filter::DropShadows(shadows) => {
+                    let mut max_inflation: f32 = 0.0;
+                    for shadow in shadows {
+                        let inflation_factor = shadow.blur_radius.round() * BLUR_SAMPLE_SCALE;
+                        max_inflation = max_inflation.max(inflation_factor);
+                    }
+                    result_rect = picture_rect.inflate(max_inflation, max_inflation);
+                },
+                _ => {}
+            }
+            PictureCompositeMode::SvgFilter(primitives, _) => {
+                let mut output_rects = Vec::with_capacity(primitives.len());
+                for (cur_index, primitive) in primitives.iter().enumerate() {
+                    let output_rect = match primitive.kind {
+                        FilterPrimitiveKind::Blur(ref primitive) => {
+                            let input = primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect);
+                            let inflation_factor = primitive.radius.round() * BLUR_SAMPLE_SCALE;
+                            input.inflate(inflation_factor, inflation_factor)
+                        }
+                        FilterPrimitiveKind::DropShadow(ref primitive) => {
+                            let inflation_factor = primitive.shadow.blur_radius.round() * BLUR_SAMPLE_SCALE;
+                            let input = primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect);
+                            let shadow_rect = input.inflate(inflation_factor, inflation_factor);
+                            input.union(&shadow_rect.translate(primitive.shadow.offset * Scale::new(1.0)))
+                        }
+                        FilterPrimitiveKind::Blend(ref primitive) => {
+                            primitive.input1.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect)
+                                .union(&primitive.input2.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect))
+                        }
+                        FilterPrimitiveKind::Identity(ref primitive) =>
+                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect),
+                        FilterPrimitiveKind::Opacity(ref primitive) =>
+                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect),
+                        FilterPrimitiveKind::ColorMatrix(ref primitive) =>
+                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect),
+                        FilterPrimitiveKind::ComponentTransfer(ref primitive) =>
+                            primitive.input.to_index(cur_index).map(|index| output_rects[index]).unwrap_or(picture_rect),
+
+                        FilterPrimitiveKind::Flood(..) => picture_rect,
+                    };
+                    output_rects.push(output_rect);
+                    result_rect = result_rect.union(&output_rect);
+                }
+            }
+            _ => {},
+        }
+        result_rect
+    }
 }
 
 /// Enum value describing the place of a picture in a 3D context.
@@ -1933,7 +2008,7 @@ pub struct OrderedPictureChild {
 
 /// Defines the grouping key for a cluster of primitives in a picture.
 /// In future this will also contain spatial grouping details.
-#[derive(Hash, Eq, PartialEq, Copy, Clone)]
+#[derive(Debug, Hash, Eq, PartialEq, Copy, Clone)]
 struct PrimitiveClusterKey {
     /// Grouping primitives by spatial node ensures that we can calculate a local
     /// bounding volume for the cluster, and then transform that by the spatial
@@ -1991,7 +2066,7 @@ impl ClusterIndex {
 
 /// A list of pictures, stored by the PrimitiveList to enable a
 /// fast traversal of just the pictures.
-pub type PictureList = SmallVec<[(PictureIndex, ClipChainId); 4]>;
+pub type PictureList = SmallVec<[PictureIndex; 4]>;
 
 /// A list of primitive instances that are added to a picture
 /// This ensures we can keep a list of primitives that
@@ -2040,7 +2115,7 @@ impl PrimitiveList {
             // remove this match and embed this info directly in the primitive instance.
             let is_pic = match prim_instance.kind {
                 PrimitiveInstanceKind::Picture { pic_index, .. } => {
-                    pictures.push((pic_index, prim_instance.clip_chain_id));
+                    pictures.push(pic_index);
                     true
                 }
                 _ => {
@@ -2048,37 +2123,55 @@ impl PrimitiveList {
                 }
             };
 
-            let prim_data = match prim_instance.kind {
+            let (is_backface_visible, prim_size) = match prim_instance.kind {
                 PrimitiveInstanceKind::Rectangle { data_handle, .. } |
                 PrimitiveInstanceKind::Clear { data_handle, .. } => {
-                    &interners.prim[data_handle]
+                    let data = &interners.prim[data_handle];
+                    (data.is_backface_visible, data.prim_size)
                 }
                 PrimitiveInstanceKind::Image { data_handle, .. } => {
-                    &interners.image[data_handle]
+                    let data = &interners.image[data_handle];
+                    (data.is_backface_visible, data.prim_size)
                 }
                 PrimitiveInstanceKind::ImageBorder { data_handle, .. } => {
-                    &interners.image_border[data_handle]
+                    let data = &interners.image_border[data_handle];
+                    (data.is_backface_visible, data.prim_size)
                 }
                 PrimitiveInstanceKind::LineDecoration { data_handle, .. } => {
-                    &interners.line_decoration[data_handle]
+                    let data = &interners.line_decoration[data_handle];
+                    (data.is_backface_visible, data.prim_size)
                 }
                 PrimitiveInstanceKind::LinearGradient { data_handle, .. } => {
-                    &interners.linear_grad[data_handle]
+                    let data = &interners.linear_grad[data_handle];
+                    (data.is_backface_visible, data.prim_size)
                 }
                 PrimitiveInstanceKind::NormalBorder { data_handle, .. } => {
-                    &interners.normal_border[data_handle]
+                    let data = &interners.normal_border[data_handle];
+                    (data.is_backface_visible, data.prim_size)
                 }
                 PrimitiveInstanceKind::Picture { data_handle, .. } => {
-                    &interners.picture[data_handle]
+                    let data = &interners.picture[data_handle];
+                    (data.is_backface_visible, data.prim_size)
                 }
                 PrimitiveInstanceKind::RadialGradient { data_handle, ..} => {
-                    &interners.radial_grad[data_handle]
+                    let data = &interners.radial_grad[data_handle];
+                    (data.is_backface_visible, data.prim_size)
                 }
                 PrimitiveInstanceKind::TextRun { data_handle, .. } => {
-                    &interners.text_run[data_handle]
+                    let data = &interners.text_run[data_handle];
+                    (data.is_backface_visible, data.prim_size)
                 }
                 PrimitiveInstanceKind::YuvImage { data_handle, .. } => {
-                    &interners.yuv_image[data_handle]
+                    let data = &interners.yuv_image[data_handle];
+                    (data.is_backface_visible, data.prim_size)
+                }
+                PrimitiveInstanceKind::Backdrop { data_handle, .. } => {
+                    let data = &interners.backdrop[data_handle];
+                    (data.is_backface_visible, data.prim_size)
+                }
+                PrimitiveInstanceKind::PushClipChain |
+                PrimitiveInstanceKind::PopClipChain => {
+                    (true, LayoutSize::zero())
                 }
             };
 
@@ -2086,7 +2179,7 @@ impl PrimitiveList {
             // belong to.
             let key = PrimitiveClusterKey {
                 spatial_node_index: prim_instance.spatial_node_index,
-                is_backface_visible: prim_data.is_backface_visible,
+                is_backface_visible,
             };
 
             // Find the cluster, or create a new one.
@@ -2096,11 +2189,15 @@ impl PrimitiveList {
                     let index = clusters.len();
                     clusters.push(PrimitiveCluster::new(
                         prim_instance.spatial_node_index,
-                        prim_data.is_backface_visible,
+                        is_backface_visible,
                     ));
                     index
                 }
             );
+
+            if prim_instance.is_chased() {
+                println!("\tcluster {} with {:?}", cluster_index, key);
+            }
 
             // Pictures don't have a known static local bounding rect (they are
             // calculated during the picture traversal dynamically). If not
@@ -2109,11 +2206,11 @@ impl PrimitiveList {
             if !is_pic {
                 let prim_rect = LayoutRect::new(
                     prim_instance.prim_origin,
-                    prim_data.prim_size,
+                    prim_size,
                 );
                 let culling_rect = prim_instance.local_clip_rect
                     .intersection(&prim_rect)
-                    .unwrap_or(LayoutRect::zero());
+                    .unwrap_or_else(LayoutRect::zero);
 
                 cluster.bounding_rect = cluster.bounding_rect.union(&culling_rect);
             }
@@ -2152,9 +2249,6 @@ pub struct PicturePrimitive {
 
     #[cfg_attr(feature = "capture", serde(skip))]
     pub state: Option<PictureState>,
-
-    /// The pipeline that the primitives on this picture belong to.
-    pub pipeline_id: PipelineId,
 
     /// If true, apply the local clip rect to primitive drawn
     /// in this picture.
@@ -2213,10 +2307,10 @@ pub struct PicturePrimitive {
 
     /// If Some(..) the tile cache that is associated with this picture.
     #[cfg_attr(feature = "capture", serde(skip))] //TODO
-    pub tile_cache: Option<TileCache>,
+    pub tile_cache: Option<Box<TileCacheInstance>>,
 
     /// The config options for this picture.
-    options: PictureOptions,
+    pub options: PictureOptions,
 }
 
 impl PicturePrimitive {
@@ -2234,7 +2328,7 @@ impl PicturePrimitive {
         pt.add_item(format!("raster_config: {:?}", self.raster_config));
         pt.add_item(format!("requested_composite_mode: {:?}", self.requested_composite_mode));
 
-        for (index, _) in &self.prim_list.pictures {
+        for index in &self.prim_list.pictures {
             pictures[index.0].print(pictures, *index, pt);
         }
 
@@ -2250,7 +2344,8 @@ impl PicturePrimitive {
             Some(RasterConfig { composite_mode: PictureCompositeMode::MixBlend(..), .. }) |
             Some(RasterConfig { composite_mode: PictureCompositeMode::Filter(..), .. }) |
             Some(RasterConfig { composite_mode: PictureCompositeMode::ComponentTransferFilter(..), .. }) |
-            Some(RasterConfig { composite_mode: PictureCompositeMode::TileCache { .. }, ..}) |
+            Some(RasterConfig { composite_mode: PictureCompositeMode::TileCache { .. }, .. }) |
+            Some(RasterConfig { composite_mode: PictureCompositeMode::SvgFilter(..), .. }) |
             None => {
                 false
             }
@@ -2292,18 +2387,17 @@ impl PicturePrimitive {
     pub fn destroy(
         &mut self,
         retained_tiles: &mut RetainedTiles,
-        clip_scroll_tree: &ClipScrollTree,
     ) {
         if let Some(tile_cache) = self.tile_cache.take() {
-            // Calculate and store positions of the reference
-            // primitives for this tile cache.
-            build_ref_prims(
-                &tile_cache.reference_prims.ref_prims,
-                &mut retained_tiles.ref_prims,
-                clip_scroll_tree,
-            );
-
-            retained_tiles.tiles.extend(tile_cache.tiles);
+            if !tile_cache.tiles.is_empty() {
+                retained_tiles.caches.insert(
+                    tile_cache.slice,
+                    PictureCacheState {
+                        tiles: tile_cache.tiles,
+                        fract_offset: tile_cache.fract_offset,
+                    },
+                );
+            }
         }
     }
 
@@ -2314,14 +2408,13 @@ impl PicturePrimitive {
     pub fn new_image(
         requested_composite_mode: Option<PictureCompositeMode>,
         context_3d: Picture3DContext<OrderedPictureChild>,
-        pipeline_id: PipelineId,
         frame_output_pipeline_id: Option<PipelineId>,
         apply_local_clip_rect: bool,
         is_backface_visible: bool,
         requested_raster_space: RasterSpace,
         prim_list: PrimitiveList,
         spatial_node_index: SpatialNodeIndex,
-        tile_cache: Option<TileCache>,
+        tile_cache: Option<Box<TileCacheInstance>>,
         options: PictureOptions,
     ) -> Self {
         PicturePrimitive {
@@ -2335,7 +2428,6 @@ impl PicturePrimitive {
             extra_gpu_data_handles: SmallVec::new(),
             apply_local_clip_rect,
             is_backface_visible,
-            pipeline_id,
             requested_raster_space,
             spatial_node_index,
             snapped_local_rect: LayoutRect::zero(),
@@ -2346,6 +2438,28 @@ impl PicturePrimitive {
         }
     }
 
+    /// Gets the raster space to use when rendering the picture.
+    /// Usually this would be the requested raster space. However, if the
+    /// picture's spatial node or one of its ancestors is being pinch zoomed
+    /// then we round it. This prevents us rasterizing glyphs for every minor
+    /// change in zoom level, as that would be too expensive.
+    pub fn get_raster_space(&self, clip_scroll_tree: &ClipScrollTree) -> RasterSpace {
+        let spatial_node = &clip_scroll_tree.spatial_nodes[self.spatial_node_index.0 as usize];
+        if spatial_node.is_ancestor_or_self_zooming {
+            let scale_factors = clip_scroll_tree
+                .get_relative_transform(self.spatial_node_index, ROOT_SPATIAL_NODE_INDEX)
+                .scale_factors();
+
+            // Round the scale up to the nearest power of 2, but don't exceed 8.
+            let scale = scale_factors.0.max(scale_factors.1).min(8.0);
+            let rounded_up = 1 << scale.log2().ceil() as u32;
+
+            RasterSpace::Local(rounded_up as f32)
+        } else {
+            self.requested_raster_space
+        }
+    }
+
     pub fn take_context(
         &mut self,
         pic_index: PictureIndex,
@@ -2353,6 +2467,7 @@ impl PicturePrimitive {
         surface_spatial_node_index: SpatialNodeIndex,
         raster_spatial_node_index: SpatialNodeIndex,
         parent_surface_index: SurfaceIndex,
+        parent_subpixel_mode: SubpixelMode,
         frame_state: &mut FrameBuildingState,
         frame_context: &FrameBuildingContext,
     ) -> Option<(PictureContext, PictureState, PrimitiveList)> {
@@ -2387,12 +2502,12 @@ impl PicturePrimitive {
         let map_pic_to_world = SpaceMapper::new_with_target(
             ROOT_SPATIAL_NODE_INDEX,
             surface_spatial_node_index,
-            frame_context.screen_world_rect,
+            frame_context.global_screen_world_rect,
             frame_context.clip_scroll_tree,
         );
 
         let pic_bounds = map_pic_to_world.unmap(&map_pic_to_world.bounds)
-                                         .unwrap_or(PictureRect::max_rect());
+                                         .unwrap_or_else(PictureRect::max_rect);
 
         let map_local_to_pic = SpaceMapper::new(
             surface_spatial_node_index,
@@ -2402,7 +2517,7 @@ impl PicturePrimitive {
         let (map_raster_to_world, map_pic_to_raster) = create_raster_mappers(
             surface_spatial_node_index,
             raster_spatial_node_index,
-            frame_context.screen_world_rect,
+            frame_context.global_screen_world_rect,
             frame_context.clip_scroll_tree,
         );
 
@@ -2418,25 +2533,7 @@ impl PicturePrimitive {
             }
         };
 
-        let (is_composite, is_passthrough) = match self.raster_config {
-            Some(ref rc @ RasterConfig { composite_mode: PictureCompositeMode::TileCache { .. }, .. }) => {
-                // For a picture surface, just push any child tasks and tile
-                // blits up to the parent surface.
-                let port = frame_state
-                    .surfaces[parent_surface_index.0]
-                    .render_tasks
-                    .expect("bug: no render tasks set for parent!")
-                    .port;
-
-                frame_state
-                    .surfaces[rc.surface_index.0]
-                    .render_tasks = Some(SurfaceRenderTasks {
-                        root: RenderTaskId::INVALID,
-                        port,
-                    });
-
-                (false, false)
-            },
+        match self.raster_config {
             Some(ref raster_config) => {
                 let pic_rect = PictureRect::from_untyped(&self.snapped_local_rect.to_untyped());
 
@@ -2458,10 +2555,7 @@ impl PicturePrimitive {
                 };
                 let transform = map_pic_to_raster.get_transform();
 
-                let (root, port) = match raster_config.composite_mode {
-                    PictureCompositeMode::TileCache { .. } => {
-                        unreachable!();
-                    }
+                let dep_info = match raster_config.composite_mode {
                     PictureCompositeMode::Filter(Filter::Blur(blur_radius)) => {
                         let blur_std_deviation = blur_radius * device_pixel_scale.0;
                         let scale_factors = scale_factors(&transform);
@@ -2469,28 +2563,44 @@ impl PicturePrimitive {
                             blur_std_deviation * scale_factors.0,
                             blur_std_deviation * scale_factors.1
                         );
-                        let inflation_factor = frame_state.surfaces[raster_config.surface_index.0].inflation_factor;
-                        let inflation_factor = (inflation_factor * device_pixel_scale.0).ceil() as i32;
+                        let device_rect = if self.options.inflate_if_required {
+                            let inflation_factor = frame_state.surfaces[raster_config.surface_index.0].inflation_factor;
+                            let inflation_factor = (inflation_factor * device_pixel_scale.0).ceil();
 
-                        // The clipped field is the part of the picture that is visible
-                        // on screen. The unclipped field is the screen-space rect of
-                        // the complete picture, if no screen / clip-chain was applied
-                        // (this includes the extra space for blur region). To ensure
-                        // that we draw a large enough part of the picture to get correct
-                        // blur results, inflate that clipped area by the blur range, and
-                        // then intersect with the total screen rect, to minimize the
-                        // allocation size.
-                        let mut device_rect = clipped
-                            .inflate(inflation_factor, inflation_factor)
-                            .intersection(&unclipped.to_i32())
-                            .unwrap();
-                        // Adjust the size to avoid introducing sampling errors during the down-scaling passes.
-                        // what would be even better is to rasterize the picture at the down-scaled size
-                        // directly.
-                        device_rect.size = RenderTask::adjusted_blur_source_size(
-                            device_rect.size,
-                            blur_std_deviation,
-                        );
+                            // The clipped field is the part of the picture that is visible
+                            // on screen. The unclipped field is the screen-space rect of
+                            // the complete picture, if no screen / clip-chain was applied
+                            // (this includes the extra space for blur region). To ensure
+                            // that we draw a large enough part of the picture to get correct
+                            // blur results, inflate that clipped area by the blur range, and
+                            // then intersect with the total screen rect, to minimize the
+                            // allocation size.
+                            // We cast clipped to f32 instead of casting unclipped to i32
+                            // because unclipped can overflow an i32.
+                            let device_rect = clipped.to_f32()
+                                .inflate(inflation_factor, inflation_factor)
+                                .intersection(&unclipped)
+                                .unwrap();
+
+                            let mut device_rect = match device_rect.try_cast::<i32>() {
+                                Some(rect) => rect,
+                                None => {
+                                    return None
+                                }
+                            };
+
+                            // Adjust the size to avoid introducing sampling errors during the down-scaling passes.
+                            // what would be even better is to rasterize the picture at the down-scaled size
+                            // directly.
+                            device_rect.size = RenderTask::adjusted_blur_source_size(
+                                device_rect.size,
+                                blur_std_deviation,
+                            );
+
+                            device_rect
+                        } else {
+                            clipped
+                        };
 
                         let uv_rect_kind = calculate_uv_rect_kind(
                             &pic_rect,
@@ -2506,9 +2616,9 @@ impl PicturePrimitive {
                             pic_index,
                             device_rect.origin,
                             uv_rect_kind,
-                            raster_spatial_node_index,
                             surface_spatial_node_index,
                             device_pixel_scale,
+                            PrimitiveVisibilityMask::all(),
                         );
 
                         let picture_task_id = frame_state.render_tasks.add(picture_task);
@@ -2522,7 +2632,7 @@ impl PicturePrimitive {
                             None,
                         );
 
-                        (blur_render_task_id, picture_task_id)
+                        Some((blur_render_task_id, picture_task_id))
                     }
                     PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
                         let mut max_std_deviation = 0.0;
@@ -2533,10 +2643,21 @@ impl PicturePrimitive {
                         }
 
                         max_std_deviation = max_std_deviation.round();
-                        let max_blur_range = (max_std_deviation * BLUR_SAMPLE_SCALE).ceil() as i32;
-                        let mut device_rect = clipped.inflate(max_blur_range, max_blur_range)
-                                .intersection(&unclipped.to_i32())
+                        let max_blur_range = (max_std_deviation * BLUR_SAMPLE_SCALE).ceil();
+                        // We cast clipped to f32 instead of casting unclipped to i32
+                        // because unclipped can overflow an i32.
+                        let device_rect = clipped.to_f32()
+                                .inflate(max_blur_range, max_blur_range)
+                                .intersection(&unclipped)
                                 .unwrap();
+
+                        let mut device_rect = match device_rect.try_cast::<i32>() {
+                            Some(rect) => rect,
+                            None => {
+                                return None
+                            }
+                        };
+
                         device_rect.size = RenderTask::adjusted_blur_source_size(
                             device_rect.size,
                             DeviceSize::new(max_std_deviation, max_std_deviation),
@@ -2556,9 +2677,9 @@ impl PicturePrimitive {
                             pic_index,
                             device_rect.origin,
                             uv_rect_kind,
-                            raster_spatial_node_index,
                             surface_spatial_node_index,
                             device_pixel_scale,
+                            PrimitiveVisibilityMask::all(),
                         );
                         picture_task.mark_for_saving();
 
@@ -2584,7 +2705,7 @@ impl PicturePrimitive {
                         }
 
                         // TODO(nical) the second one should to be the blur's task id but we have several blurs now
-                        (blur_render_task_id, picture_task_id)
+                        Some((blur_render_task_id, picture_task_id))
                     }
                     PictureCompositeMode::MixBlend(..) if !frame_context.fb_config.gpu_supports_advanced_blend => {
                         let uv_rect_kind = calculate_uv_rect_kind(
@@ -2601,9 +2722,9 @@ impl PicturePrimitive {
                             pic_index,
                             clipped.origin,
                             uv_rect_kind,
-                            raster_spatial_node_index,
                             surface_spatial_node_index,
                             device_pixel_scale,
+                            PrimitiveVisibilityMask::all(),
                         );
 
                         let readback_task_id = frame_state.render_tasks.add(
@@ -2619,7 +2740,7 @@ impl PicturePrimitive {
 
                         let render_task_id = frame_state.render_tasks.add(picture_task);
 
-                        (render_task_id, render_task_id)
+                        Some((render_task_id, render_task_id))
                     }
                     PictureCompositeMode::Filter(..) => {
                         let uv_rect_kind = calculate_uv_rect_kind(
@@ -2636,14 +2757,14 @@ impl PicturePrimitive {
                             pic_index,
                             clipped.origin,
                             uv_rect_kind,
-                            raster_spatial_node_index,
                             surface_spatial_node_index,
                             device_pixel_scale,
+                            PrimitiveVisibilityMask::all(),
                         );
 
                         let render_task_id = frame_state.render_tasks.add(picture_task);
 
-                        (render_task_id, render_task_id)
+                        Some((render_task_id, render_task_id))
                     }
                     PictureCompositeMode::ComponentTransferFilter(..) => {
                         let uv_rect_kind = calculate_uv_rect_kind(
@@ -2660,14 +2781,83 @@ impl PicturePrimitive {
                             pic_index,
                             clipped.origin,
                             uv_rect_kind,
-                            raster_spatial_node_index,
                             surface_spatial_node_index,
                             device_pixel_scale,
+                            PrimitiveVisibilityMask::all(),
                         );
 
                         let render_task_id = frame_state.render_tasks.add(picture_task);
 
-                        (render_task_id, render_task_id)
+                        Some((render_task_id, render_task_id))
+                    }
+                    PictureCompositeMode::TileCache { .. } => {
+                        let tile_cache = self.tile_cache.as_mut().unwrap();
+                        let mut first = true;
+
+                        let tile_size = DeviceSize::new(
+                            TILE_SIZE_WIDTH as f32,
+                            TILE_SIZE_HEIGHT as f32,
+                        );
+
+                        for key in &tile_cache.tiles_to_draw {
+                            let tile = tile_cache.tiles.get_mut(key).expect("bug: no tile found!");
+
+                            if tile.is_valid {
+                                // Register active image keys of valid tile.
+                                for image_key in tile.descriptor.image_keys.items() {
+                                    frame_state.resource_cache.set_image_active(*image_key);
+                                }
+                                continue;
+                            }
+
+                            let surface = tile.surface.as_ref().expect("no tile surface set!");
+                            if let TileSurface::Texture { ref handle, visibility_mask } = surface {
+                                let content_origin_f = tile.world_rect.origin * device_pixel_scale;
+                                let content_origin = content_origin_f.round();
+                                debug_assert!((content_origin_f.x - content_origin.x).abs() < 0.01);
+                                debug_assert!((content_origin_f.y - content_origin.y).abs() < 0.01);
+
+                                let cache_item = frame_state.resource_cache.texture_cache.get(handle);
+
+                                let task = RenderTask::new_picture(
+                                    RenderTaskLocation::PictureCache {
+                                        texture: cache_item.texture_id,
+                                        layer: cache_item.texture_layer,
+                                        size: tile_size.to_i32(),
+                                    },
+                                    tile_size,
+                                    pic_index,
+                                    content_origin.to_i32(),
+                                    UvRectKind::Rect,
+                                    surface_spatial_node_index,
+                                    device_pixel_scale,
+                                    *visibility_mask,
+                                );
+
+                                let render_task_id = frame_state.render_tasks.add(task);
+
+                                frame_state.render_tasks.add_dependency(
+                                    frame_state.surfaces[parent_surface_index.0].render_tasks.unwrap().port,
+                                    render_task_id,
+                                );
+
+                                if first {
+                                    // TODO(gw): Maybe we can restructure this code to avoid the
+                                    //           first hack here. Or at least explain it with a follow up
+                                    //           bug.
+                                    frame_state.surfaces[raster_config.surface_index.0].render_tasks = Some(SurfaceRenderTasks {
+                                        root: render_task_id,
+                                        port: render_task_id,
+                                    });
+
+                                    first = false;
+                                }
+                            }
+
+                            tile.is_valid = true;
+                        }
+
+                        None
                     }
                     PictureCompositeMode::MixBlend(..) |
                     PictureCompositeMode::Blit(_) => {
@@ -2692,32 +2882,64 @@ impl PicturePrimitive {
                             pic_index,
                             clipped.origin,
                             uv_rect_kind,
-                            raster_spatial_node_index,
                             surface_spatial_node_index,
                             device_pixel_scale,
+                            PrimitiveVisibilityMask::all(),
                         );
 
                         let render_task_id = frame_state.render_tasks.add(picture_task);
 
-                        (render_task_id, render_task_id)
+                        Some((render_task_id, render_task_id))
+                    }
+                    PictureCompositeMode::SvgFilter(ref primitives, ref filter_datas) => {
+                        let uv_rect_kind = calculate_uv_rect_kind(
+                            &pic_rect,
+                            &transform,
+                            &clipped,
+                            device_pixel_scale,
+                            true,
+                        );
+
+                        let picture_task = RenderTask::new_picture(
+                            RenderTaskLocation::Dynamic(None, clipped.size),
+                            unclipped.size,
+                            pic_index,
+                            clipped.origin,
+                            uv_rect_kind,
+                            surface_spatial_node_index,
+                            device_pixel_scale,
+                            PrimitiveVisibilityMask::all(),
+                        );
+
+                        let picture_task_id = frame_state.render_tasks.add(picture_task);
+
+                        let filter_task_id = RenderTask::new_svg_filter(
+                            primitives,
+                            filter_datas,
+                            &mut frame_state.render_tasks,
+                            clipped.size,
+                            uv_rect_kind,
+                            picture_task_id,
+                            device_pixel_scale,
+                        );
+
+                        Some((filter_task_id, picture_task_id))
                     }
                 };
 
-                frame_state.surfaces[raster_config.surface_index.0].render_tasks = Some(SurfaceRenderTasks {
-                    root,
-                    port,
-                });
+                if let Some((root, port)) = dep_info {
+                    frame_state.surfaces[raster_config.surface_index.0].render_tasks = Some(SurfaceRenderTasks {
+                        root,
+                        port,
+                    });
 
-                frame_state.render_tasks.add_dependency(
-                    frame_state.surfaces[parent_surface_index.0].render_tasks.unwrap().port,
-                    root,
-                );
-
-                (true, false)
+                    frame_state.render_tasks.add_dependency(
+                        frame_state.surfaces[parent_surface_index.0].render_tasks.unwrap().port,
+                        root,
+                    );
+                }
             }
-            None => {
-                (false, true)
-            }
+            None => {}
         };
 
         let state = PictureState {
@@ -2733,13 +2955,10 @@ impl PicturePrimitive {
 
         // If this is a picture cache, push the dirty region to ensure any
         // child primitives are culled and clipped to the dirty rect(s).
-        if let Some(ref tile_cache) = self.tile_cache {
-            // If the tile cache is disabled, it doesn't have a valid
-            // dirty region to exclude primitives from.
-            if tile_cache.is_enabled {
-                frame_state.push_dirty_region(tile_cache.dirty_region.clone());
-                dirty_region_count += 1;
-            }
+        if let Some(RasterConfig { composite_mode: PictureCompositeMode::TileCache { .. }, .. }) = self.raster_config {
+            let dirty_region = self.tile_cache.as_ref().unwrap().dirty_region.clone();
+            frame_state.push_dirty_region(dirty_region);
+            dirty_region_count += 1;
         }
 
         if inflation_factor > 0.0 {
@@ -2748,16 +2967,49 @@ impl PicturePrimitive {
             dirty_region_count += 1;
         }
 
+        // Disallow subpixel AA if an intermediate surface is needed.
+        // TODO(lsalzman): allow overriding parent if intermediate surface is opaque
+        let (is_passthrough, subpixel_mode) = match self.raster_config {
+            Some(RasterConfig { ref composite_mode, .. }) => {
+                let subpixel_mode = match composite_mode {
+                    PictureCompositeMode::TileCache { .. } => {
+                        self.tile_cache.as_ref().unwrap().subpixel_mode
+                    }
+                    PictureCompositeMode::Blit(..) |
+                    PictureCompositeMode::ComponentTransferFilter(..) |
+                    PictureCompositeMode::Filter(..) |
+                    PictureCompositeMode::MixBlend(..) |
+                    PictureCompositeMode::SvgFilter(..) => {
+                        // TODO(gw): We can take advantage of the same logic that
+                        //           exists in the opaque rect detection for tile
+                        //           caches, to allow subpixel text on other surfaces
+                        //           that can be detected as opaque.
+                        SubpixelMode::Deny
+                    }
+                };
+
+                (false, subpixel_mode)
+            }
+            None => {
+                (true, SubpixelMode::Allow)
+            }
+        };
+
+        // Still disable subpixel AA if parent forbids it
+        let subpixel_mode = match (parent_subpixel_mode, subpixel_mode) {
+            (SubpixelMode::Allow, SubpixelMode::Allow) => SubpixelMode::Allow,
+            _ => SubpixelMode::Deny,
+        };
+
         let context = PictureContext {
             pic_index,
             apply_local_clip_rect: self.apply_local_clip_rect,
-            is_composite,
             is_passthrough,
-            raster_space: self.requested_raster_space,
             raster_spatial_node_index,
             surface_spatial_node_index,
             surface_index,
             dirty_region_count,
+            subpixel_mode,
         };
 
         let prim_list = mem::replace(&mut self.prim_list, PrimitiveList::empty());
@@ -2818,7 +3070,7 @@ impl PicturePrimitive {
         match transform {
             CoordinateSpaceMapping::Local => {
                 let polygon = Polygon::from_rect(
-                    local_rect * TypedScale::new(1.0),
+                    local_rect * Scale::new(1.0),
                     plane_split_anchor,
                 );
                 splitter.add(polygon);
@@ -2881,10 +3133,10 @@ impl PicturePrimitive {
             };
 
             let local_points = [
-                transform.transform_point3d(&poly.points[0].cast()).unwrap(),
-                transform.transform_point3d(&poly.points[1].cast()).unwrap(),
-                transform.transform_point3d(&poly.points[2].cast()).unwrap(),
-                transform.transform_point3d(&poly.points[3].cast()).unwrap(),
+                transform.transform_point3d(poly.points[0].cast()).unwrap(),
+                transform.transform_point3d(poly.points[1].cast()).unwrap(),
+                transform.transform_point3d(poly.points[2].cast()).unwrap(),
+                transform.transform_point3d(poly.points[3].cast()).unwrap(),
             ];
             let gpu_blocks = [
                 [local_points[0].x, local_points[0].y, local_points[1].x, local_points[1].y].into(),
@@ -2906,11 +3158,8 @@ impl PicturePrimitive {
     /// surface / raster config now though.
     fn pre_update(
         &mut self,
-        clip_chain_id: ClipChainId,
         state: &mut PictureUpdateState,
         frame_context: &FrameBuildingContext,
-        clip_store: &ClipStore,
-        clip_data_store: &ClipDataStore,
     ) -> Option<PrimitiveList> {
         // Reset raster config in case we early out below.
         self.raster_config = None;
@@ -2942,61 +3191,25 @@ impl PicturePrimitive {
         // See if this picture actually needs a surface for compositing.
         let actual_composite_mode = match self.requested_composite_mode {
             Some(PictureCompositeMode::Filter(ref filter)) if filter.is_noop() => None,
-            Some(PictureCompositeMode::Blit(reason)) if reason == BlitReason::CLIP => {
-                // If the only reason a picture has requested a surface is due to the clip
-                // chain node, we might choose to skip drawing a surface, and instead apply
-                // the clips to each individual primitive. The logic below works out which
-                // option to choose.
-
-                // Assume that we will apply clips to individual items
-                let mut apply_clip_to_picture = false;
-                let mut current_clip_chain_id = clip_chain_id;
-
-                // Walk each clip in this chain, to see whether to allocate a surface and clip
-                // that, or whether to apply clips to each primitive.
-                while current_clip_chain_id != ClipChainId::NONE {
-                    let clip_chain_node = &clip_store.clip_chain_nodes[current_clip_chain_id.0 as usize];
-                    let clip_node = &clip_data_store[clip_chain_node.handle];
-
-                    match clip_node.item {
-                        ClipItem::Rectangle(_, ClipMode::Clip) => {
-                            // Normal rectangle clips can be handled as per-item clips.
-                            // TODO(gw): In future, we might want to consider selecting
-                            //           a surface in some situations here (e.g. if the
-                            //           stacking context is in a different coord system
-                            //           from the clip, and there are enough primitives
-                            //           in the stacking context to justify a surface).
-                        }
-                        ClipItem::Rectangle(_, ClipMode::ClipOut) |
-                        ClipItem::RoundedRectangle(..) |
-                        ClipItem::Image { .. } |
-                        ClipItem::BoxShadow(..) => {
-                            // Any of these clip types will require a surface.
-                            apply_clip_to_picture = true;
-                            break;
-                        }
-                    }
-
-                    current_clip_chain_id = clip_chain_node.parent_clip_chain_id;
-                }
-
-                // If we decided not to use a surfce for clipping, then skip and draw straight
-                // into the parent surface.
-                if apply_clip_to_picture {
-                    Some(PictureCompositeMode::Blit(reason))
+            Some(PictureCompositeMode::TileCache { .. }) => {
+                // Disable tile cache if the scroll root has a perspective transform, since
+                // this breaks many assumptions (it's a very rare edge case anyway, and
+                // is probably (?) going to be moving / animated in this case).
+                let spatial_node = &frame_context
+                    .clip_scroll_tree
+                    .spatial_nodes[self.spatial_node_index.0 as usize];
+                if spatial_node.coordinate_system_id == CoordinateSystemId::root() {
+                    Some(PictureCompositeMode::TileCache { })
                 } else {
                     None
                 }
-            }
+            },
             ref mode => mode.clone(),
         };
 
         if let Some(composite_mode) = actual_composite_mode {
             // Retrieve the positioning node information for the parent surface.
-            let (parent_raster_node_index, parent_allows_subpixel_aa)= {
-                let parent_surface = state.current_surface();
-                (parent_surface.raster_spatial_node_index, parent_surface.allow_subpixel_aa)
-            };
+            let parent_raster_node_index = state.current_surface().raster_spatial_node_index;
             let surface_spatial_node_index = self.spatial_node_index;
 
             // This inflation factor is to be applied to all primitives within the surface.
@@ -3012,34 +3225,32 @@ impl PicturePrimitive {
                         0.0
                     }
                 }
+                PictureCompositeMode::SvgFilter(ref primitives, _) if self.options.inflate_if_required => {
+                    let mut max = 0.0;
+                    for primitive in primitives {
+                        if let FilterPrimitiveKind::Blur(ref blur) = primitive.kind {
+                            max = f32::max(max, blur.radius * BLUR_SAMPLE_SCALE);
+                        }
+                    }
+                    max
+                }
                 _ => {
                     0.0
                 }
             };
 
-            // Check if there is perspective, and thus whether a new
+            // Filters must be applied before transforms, to do this, we can mark this picture as establishing a raster root.
+            let has_svg_filter = if let PictureCompositeMode::SvgFilter(..) = composite_mode {
+                true
+            } else {
+                false
+            };
+
+            // Check if there is perspective or if an SVG filter is applied, and thus whether a new
             // rasterization root should be established.
-            let establishes_raster_root = frame_context.clip_scroll_tree
+            let establishes_raster_root = has_svg_filter || frame_context.clip_scroll_tree
                 .get_relative_transform(surface_spatial_node_index, parent_raster_node_index)
                 .is_perspective();
-
-            // Disallow subpixel AA if an intermediate surface is needed.
-            // TODO(lsalzman): allow overriding parent if intermediate surface is opaque
-            let allow_subpixel_aa = match composite_mode {
-                PictureCompositeMode::TileCache { clear_color, .. } => {
-                    // If the tile cache has an opaque background, then it's fine to use
-                    // subpixel rendering (this is the common case).
-                    clear_color.a >= 1.0
-                }
-                PictureCompositeMode::Blit(..) |
-                PictureCompositeMode::ComponentTransferFilter(..) |
-                PictureCompositeMode::Filter(..) |
-                PictureCompositeMode::MixBlend(..) => {
-                    false
-                }
-            };
-            // Still disable subpixel AA if parent forbids it
-            let allow_subpixel_aa = parent_allows_subpixel_aa && allow_subpixel_aa;
 
             let surface = SurfaceInfo::new(
                 surface_spatial_node_index,
@@ -3049,10 +3260,9 @@ impl PicturePrimitive {
                     parent_raster_node_index
                 },
                 inflation_factor,
-                frame_context.screen_world_rect,
+                frame_context.global_screen_world_rect,
                 &frame_context.clip_scroll_tree,
                 frame_context.global_device_pixel_scale,
-                allow_subpixel_aa,
             );
 
             self.raster_config = Some(RasterConfig {
@@ -3125,26 +3335,14 @@ impl PicturePrimitive {
         // rect into the parent surface coordinate space, and propagate that up
         // to the parent.
         if let Some(ref mut raster_config) = self.raster_config {
-            let mut surface_rect = {
-                let surface = state.current_surface_mut();
-                // Inflate the local bounding rect if required by the filter effect.
-                // This inflaction factor is to be applied to the surface itsefl.
-                // TODO: in prepare_for_render we round before multiplying with the
-                // blur sample scale. Should we do this here as well?
-                let inflation_size = match raster_config.composite_mode {
-                    PictureCompositeMode::Filter(Filter::Blur(_)) => surface.inflation_factor,
-                    PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
-                        let mut max = 0.0;
-                        for shadow in shadows {
-                            max = f32::max(max, shadow.blur_radius * BLUR_SAMPLE_SCALE);
-                        }
-                        max.ceil()
-                    }
-                    _ => 0.0,
-                };
-                surface.rect = surface.rect.inflate(inflation_size, inflation_size);
-                surface.rect * TypedScale::new(1.0)
-            };
+            let surface = state.current_surface_mut();
+            // Inflate the local bounding rect if required by the filter effect.
+            // This inflaction factor is to be applied to the surface itself.
+            if self.options.inflate_if_required {
+                surface.rect = raster_config.composite_mode.inflate_picture_rect(surface.rect, surface.inflation_factor);
+            }
+
+            let mut surface_rect = surface.rect * Scale::new(1.0);
 
             // Pop this surface from the stack
             let surface_index = state.pop_surface();
@@ -3171,7 +3369,7 @@ impl PicturePrimitive {
                 PictureCompositeMode::Filter(Filter::DropShadows(ref shadows)) => {
                     for shadow in shadows {
                         let content_rect = surface_rect;
-                        let shadow_rect = surface_rect.translate(&shadow.offset);
+                        let shadow_rect = surface_rect.translate(shadow.offset);
                         surface_rect = content_rect.union(&shadow_rect);
                     }
                 }
@@ -3233,7 +3431,7 @@ impl PicturePrimitive {
                         // Basic brush primitive header is (see end of prepare_prim_for_render_inner in prim_store.rs)
                         //  [brush specific data]
                         //  [segment_rect, segment data]
-                        let shadow_rect = self.snapped_local_rect.translate(&shadow.offset);
+                        let shadow_rect = self.snapped_local_rect.translate(shadow.offset);
 
                         // ImageBrush colors
                         request.push(shadow.color.premultiplied());
@@ -3253,15 +3451,26 @@ impl PicturePrimitive {
             }
             PictureCompositeMode::MixBlend(..) if !frame_context.fb_config.gpu_supports_advanced_blend => {}
             PictureCompositeMode::Filter(ref filter) => {
-                if let Filter::ColorMatrix(ref m) = *filter {
-                    if self.extra_gpu_data_handles.is_empty() {
-                        self.extra_gpu_data_handles.push(GpuCacheHandle::new());
-                    }
-                    if let Some(mut request) = frame_state.gpu_cache.request(&mut self.extra_gpu_data_handles[0]) {
-                        for i in 0..5 {
-                            request.push([m[i*4], m[i*4+1], m[i*4+2], m[i*4+3]]);
+                match *filter {
+                    Filter::ColorMatrix(ref m) => {
+                        if self.extra_gpu_data_handles.is_empty() {
+                            self.extra_gpu_data_handles.push(GpuCacheHandle::new());
+                        }
+                        if let Some(mut request) = frame_state.gpu_cache.request(&mut self.extra_gpu_data_handles[0]) {
+                            for i in 0..5 {
+                                request.push([m[i*4], m[i*4+1], m[i*4+2], m[i*4+3]]);
+                            }
                         }
                     }
+                    Filter::Flood(ref color) => {
+                        if self.extra_gpu_data_handles.is_empty() {
+                            self.extra_gpu_data_handles.push(GpuCacheHandle::new());
+                        }
+                        if let Some(mut request) = frame_state.gpu_cache.request(&mut self.extra_gpu_data_handles[0]) {
+                            request.push(color.to_array());
+                        }
+                    }
+                    _ => {}
                 }
             }
             PictureCompositeMode::ComponentTransferFilter(handle) => {
@@ -3269,7 +3478,8 @@ impl PicturePrimitive {
                 filter_data.update(frame_state);
             }
             PictureCompositeMode::MixBlend(..) |
-            PictureCompositeMode::Blit(_) => {}
+            PictureCompositeMode::Blit(_) |
+            PictureCompositeMode::SvgFilter(..) => {}
         }
 
         true
@@ -3284,7 +3494,7 @@ fn calculate_screen_uv(
     device_pixel_scale: DevicePixelScale,
     supports_snapping: bool,
 ) -> DeviceHomogeneousVector {
-    let raster_pos = transform.transform_point2d_homogeneous(local_pos);
+    let raster_pos = transform.transform_point2d_homogeneous(*local_pos);
 
     let mut device_vec = DeviceHomogeneousVector::new(
         raster_pos.x * device_pixel_scale.0,
@@ -3376,7 +3586,7 @@ fn create_raster_mappers(
     );
 
     let raster_bounds = map_raster_to_world.unmap(&world_rect)
-                                           .unwrap_or(RasterRect::max_rect());
+                                           .unwrap_or_else(RasterRect::max_rect);
 
     let map_pic_to_raster = SpaceMapper::new_with_target(
         raster_spatial_node_index,
@@ -3386,77 +3596,4 @@ fn create_raster_mappers(
     );
 
     (map_raster_to_world, map_pic_to_raster)
-}
-
-// Convert a list of reference primitives into a map of prim uid -> world position.
-fn build_ref_prims(
-    ref_prims: &[ReferencePrimitive],
-    prim_map: &mut FastHashMap<ItemUid, WorldPoint>,
-    clip_scroll_tree: &ClipScrollTree,
-) {
-    prim_map.clear();
-
-    let mut map_local_to_world = SpaceMapper::new(
-        ROOT_SPATIAL_NODE_INDEX,
-        WorldRect::zero(),
-    );
-
-    for ref_prim in ref_prims {
-        map_local_to_world.set_target_spatial_node(
-            ref_prim.spatial_node_index,
-            clip_scroll_tree,
-        );
-
-        // We only care about the origin.
-        // TODO(gw): Consider adding a map_point to SpaceMapper.
-        let rect = LayoutRect::new(
-            ref_prim.local_pos,
-            LayoutSize::zero(),
-        );
-
-        if let Some(rect) = map_local_to_world.map(&rect) {
-            prim_map.insert(ref_prim.uid, rect.origin);
-        }
-    }
-}
-
-// Attempt to correlate the offset between two display lists by
-// comparing the offsets between a small number of primitives in
-// each display list.
-// TODO(gw): This is basically a horrible hack - there must be a better
-//           way to achieve this!
-fn correlate_prim_maps(
-    old_prims: &FastHashMap<ItemUid, WorldPoint>,
-    new_prims: &FastHashMap<ItemUid, WorldPoint>,
-) -> Option<WorldVector2D> {
-    let mut map: FastHashMap<VectorKey, usize> = FastHashMap::default();
-
-    // Find primitives with the same uid, find the difference
-    // between them and store the frequency of this offset
-    // in a hash map.
-    for (uid, old_point) in old_prims {
-        if let Some(new_point) = new_prims.get(uid) {
-            let key = (*new_point - *old_point).round().into();
-
-            let key_count = map.entry(key).or_insert(0);
-            *key_count += 1;
-        }
-    }
-
-    // Calculate the mode (the most common frequency of offset). This
-    // can be different for some primitives, if they've animated, or
-    // are attached to a different scroll node etc.
-    map.into_iter()
-        .max_by_key(|&(_, count)| count)
-        .and_then(|(offset, count)| {
-            // We will assume we can use the calculated offset if we
-            // found more than one quarter of the selected reference
-            // primitives to have the same offset.
-            let prims_available = new_prims.len().min(old_prims.len());
-            if count >= prims_available / 4 {
-                Some(offset.into())
-            } else {
-                None
-            }
-        })
 }

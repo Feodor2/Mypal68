@@ -14,14 +14,12 @@
 #include "mozilla/net/ChannelEventQueue.h"
 
 #include "nsIStreamListener.h"
-#include "nsILoadGroup.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIProgressEventSink.h"
 #include "nsICacheInfoChannel.h"
 #include "nsIApplicationCache.h"
 #include "nsIApplicationCacheChannel.h"
-#include "nsIUploadChannel2.h"
 #include "nsIResumableChannel.h"
 #include "nsIProxiedChannel.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
@@ -109,12 +107,6 @@ class HttpChannelChild final : public PHttpChannelChild,
   // nsIResumableChannel
   NS_IMETHOD ResumeAt(uint64_t startPos, const nsACString& entityID) override;
 
-  // IPDL holds a reference while the PHttpChannel protocol is live (starting at
-  // AsyncOpen, and ending at either OnStopRequest or any IPDL error, either of
-  // which call NeckoChild::DeallocPHttpChannelChild()).
-  void AddIPDLReference();
-  void ReleaseIPDLReference();
-
   nsresult SetReferrerHeader(const nsACString& aReferrer) override;
 
   MOZ_MUST_USE bool IsSuspended();
@@ -144,7 +136,8 @@ class HttpChannelChild final : public PHttpChannelChild,
       const uint32_t& cacheKey, const nsCString& altDataType,
       const int64_t& altDataLen, const bool& deliveringAltData,
       const bool& aApplyConversion, const bool& aIsResolvedByTRR,
-      const ResourceTimingStruct& aTiming) override;
+      const ResourceTimingStruct& aTiming,
+      const bool& aAllRedirectsSameOrigin) override;
   mozilla::ipc::IPCResult RecvFailedAsyncOpen(const nsresult& status) override;
   mozilla::ipc::IPCResult RecvRedirect1Begin(
       const uint32_t& registrarId, const URIParams& newURI,
@@ -152,7 +145,7 @@ class HttpChannelChild final : public PHttpChannelChild,
       const ParentLoadInfoForwarderArgs& loadInfoForwarder,
       const nsHttpResponseHead& responseHead,
       const nsCString& securityInfoSerialization, const uint64_t& channelId,
-      const NetAddr& oldPeerAddr) override;
+      const NetAddr& oldPeerAddr, const ResourceTimingStruct& aTiming) override;
   mozilla::ipc::IPCResult RecvRedirect3Complete() override;
   mozilla::ipc::IPCResult RecvAssociateApplicationCache(
       const nsCString& groupID, const nsCString& clientID) override;
@@ -395,8 +388,6 @@ class HttpChannelChild final : public PHttpChannelChild,
   // To ensure only one SendDeletingChannel is triggered.
   Atomic<bool> mDeletingChannelSent;
 
-  Atomic<bool> mIPCOpen;
-
   Atomic<bool, ReleaseAcquire> mUnknownDecoderInvolved;
 
   // Once set, OnData and possibly OnStop will be diverted to the parent.
@@ -460,7 +451,7 @@ class HttpChannelChild final : public PHttpChannelChild,
   void CleanupRedirectingChannel(nsresult rv);
 
   // true after successful AsyncOpen until OnStopRequest completes.
-  bool RemoteChannelExists() { return mIPCOpen && !mKeptAlive; }
+  bool RemoteChannelExists() { return CanSend() && !mKeptAlive; }
 
   void AssociateApplicationCache(const nsCString& groupID,
                                  const nsCString& clientID);
@@ -476,7 +467,8 @@ class HttpChannelChild final : public PHttpChannelChild,
       const NetAddr& peerAddr, const uint32_t& cacheKey,
       const nsCString& altDataType, const int64_t& altDataLen,
       const bool& deliveringAltData, const bool& aApplyConversion,
-      const bool& aIsResolvedByTRR, const ResourceTimingStruct& aTiming);
+      const bool& aIsResolvedByTRR, const ResourceTimingStruct& aTiming,
+      const bool& aAllRedirectsSameOrigin);
   void MaybeDivertOnData(const nsCString& data, const uint64_t& offset,
                          const uint32_t& count);
   void OnTransportAndData(const nsresult& channelStatus, const nsresult& status,
@@ -496,7 +488,8 @@ class HttpChannelChild final : public PHttpChannelChild,
                       const ParentLoadInfoForwarderArgs& loadInfoForwarder,
                       const nsHttpResponseHead& responseHead,
                       const nsACString& securityInfoSerialization,
-                      const uint64_t& channelId);
+                      const uint64_t& channelId,
+                      const ResourceTimingStruct& timing);
   bool Redirect3Complete(OverrideRunnable* aRunnable);
   void DeleteSelf();
   void DoNotifyListener();
@@ -537,7 +530,6 @@ class HttpChannelChild final : public PHttpChannelChild,
   friend class HttpAsyncAborter<HttpChannelChild>;
   friend class InterceptStreamListener;
   friend class InterceptedChannelContent;
-  friend class SyntheticDiversionListener;
   friend class HttpBackgroundChannelChild;
   friend class NeckoTargetChannelEvent<HttpChannelChild>;
   friend class ContinueDoNotifyListenerEvent;

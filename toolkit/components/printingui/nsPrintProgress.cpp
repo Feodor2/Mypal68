@@ -5,14 +5,14 @@
 #include "nsPrintProgress.h"
 
 #include "nsArray.h"
-#include "nsIBaseWindow.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIInterfaceRequestorUtils.h"
+#include "nsIPrintSettings.h"
 #include "nsIXULWindow.h"
 #include "nsXPCOM.h"
 #include "nsISupportsPrimitives.h"
-#include "nsIComponentManager.h"
 #include "nsPIDOMWindow.h"
 #include "nsXULAppAPI.h"
 

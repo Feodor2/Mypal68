@@ -39,13 +39,16 @@ let ACTORS = {
 let LEGACY_ACTORS = {
   AboutLogins: {
     child: {
-      matches: ["about:logins"],
+      matches: ["about:logins", "about:logins?*"],
       module: "resource:///actors/AboutLoginsChild.jsm",
       events: {
+        AboutLoginsCreateLogin: { wantUntrusted: true },
         AboutLoginsDeleteLogin: { wantUntrusted: true },
+        AboutLoginsImport: { wantUntrusted: true },
+        AboutLoginsInit: { wantUntrusted: true },
+        AboutLoginsOpenPreferences: { wantUntrusted: true },
         AboutLoginsOpenSite: { wantUntrusted: true },
         AboutLoginsUpdateLogin: { wantUntrusted: true },
-        AboutLoginsInit: { wantUntrusted: true },
       },
       messages: [
         "AboutLogins:AllLogins",
@@ -440,7 +443,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
     "resource://gre/modules/ContextualIdentityService.jsm",
   Corroborate: "resource://gre/modules/Corroborate.jsm",
   DateTimePickerParent: "resource://gre/modules/DateTimePickerParent.jsm",
-  Discovery: "resource:///modules/Discovery.jsm",
   ExtensionsUI: "resource:///modules/ExtensionsUI.jsm",
   FileSource: "resource://gre/modules/L10nRegistry.jsm",
   FxAccounts: "resource://gre/modules/FxAccounts.jsm",
@@ -464,6 +466,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.jsm",
   ProcessHangMonitor: "resource:///modules/ProcessHangMonitor.jsm",
   RemoteSettings: "resource://services-settings/remote-settings.js",
+  RemoteSecuritySettings: "resource://gre/modules/psm/RemoteSecuritySettings.jsm",
   RFPHelper: "resource://gre/modules/RFPHelper.jsm",
   SafeBrowsing: "resource://gre/modules/SafeBrowsing.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
@@ -570,7 +573,10 @@ const listeners = {
   },
 
   mm: {
+    "AboutLogins:CreateLogin": ["AboutLoginsParent"],
     "AboutLogins:DeleteLogin": ["AboutLoginsParent"],
+    "AboutLogins:Import": ["AboutLoginsParent"],
+    "AboutLogins:OpenPreferences": ["AboutLoginsParent"],
     "AboutLogins:OpenSite": ["AboutLoginsParent"],
     "AboutLogins:Subscribe": ["AboutLoginsParent"],
     "AboutLogins:UpdateLogin": ["AboutLoginsParent"],
@@ -589,6 +595,7 @@ const listeners = {
     "PasswordManager:findLogins": ["LoginManagerParent"],
     "PasswordManager:findRecipes": ["LoginManagerParent"],
     "PasswordManager:onFormSubmit": ["LoginManagerParent"],
+    "PasswordManager:onGeneratedPasswordFilledOrEdited": ["LoginManagerParent"],
     "PasswordManager:autoCompleteLogins": ["LoginManagerParent"],
     "PasswordManager:removeLogin": ["LoginManagerParent"],
     "PasswordManager:insecureLoginFormPresent": ["LoginManagerParent"],
@@ -1410,14 +1417,12 @@ BrowserGlue.prototype = {
     if (reason == "unused") {
       message = resetBundle.formatStringFromName(
         "resetUnusedProfile.message",
-        [productName],
-        1
+        [productName]
       );
     } else if (reason == "uninstall") {
       message = resetBundle.formatStringFromName(
         "resetUninstalled.message",
-        [productName],
-        1
+        [productName]
       );
     } else {
       throw new Error(
@@ -1428,8 +1433,7 @@ BrowserGlue.prototype = {
       {
         label: resetBundle.formatStringFromName(
           "refreshProfile.resetButton.label",
-          [productName],
-          1
+          [productName]
         ),
         accessKey: resetBundle.GetStringFromName(
           "refreshProfile.resetButton.accesskey"
@@ -1712,7 +1716,7 @@ BrowserGlue.prototype = {
     Services.telemetry.getHistogramById("COOKIE_BEHAVIOR").add(cookieBehavior);
 
     let exceptions = 0;
-    for (let permission of Services.perms.enumerator) {
+    for (let permission of Services.perms.all) {
       if (permission.type == "trackingprotection") {
         exceptions++;
       }
@@ -1813,38 +1817,6 @@ BrowserGlue.prototype = {
     RFPHelper.uninit();
   },
 
-  // Set up a listener to enable/disable the screenshots extension
-  // based on its preference.
-  _monitorScreenshotsPref() {
-    const PREF = "extensions.screenshots.disabled";
-    const ID = "screenshots@mozilla.org";
-    const _checkScreenshotsPref = async () => {
-      let addon = await AddonManager.getAddonByID(ID);
-      let disabled = Services.prefs.getBoolPref(PREF, false);
-      if (disabled) {
-        await addon.disable({ allowSystemAddons: true });
-      } else {
-        await addon.enable({ allowSystemAddons: true });
-      }
-    };
-    Services.prefs.addObserver(PREF, _checkScreenshotsPref);
-    _checkScreenshotsPref();
-  },
-
-  _monitorWebcompatReporterPref() {
-    const PREF = "extensions.webcompat-reporter.enabled";
-    const ID = "webcompat-reporter@mozilla.org";
-    Services.prefs.addObserver(PREF, async () => {
-      let addon = await AddonManager.getAddonByID(ID);
-      let enabled = Services.prefs.getBoolPref(PREF, false);
-      if (enabled && !addon.isActive) {
-        await addon.enable({ allowSystemAddons: true });
-      } else if (!enabled && addon.isActive) {
-        await addon.disable({ allowSystemAddons: true });
-      }
-    });
-  },
-
   _showNewInstallModal() {
     // Allow other observers of the same topic to run while we open the dialog.
     Services.tm.dispatchToMainThread(() => {
@@ -1927,9 +1899,6 @@ BrowserGlue.prototype = {
       LATE_TASKS_IDLE_TIME_SEC
     );
 
-    this._monitorScreenshotsPref();
-    this._monitorWebcompatReporterPref();
-
     if (Services.prefs.getBoolPref("corroborator.enabled", true)) {
       Corroborate.init().catch(Cu.reportError);
     }
@@ -1965,7 +1934,6 @@ BrowserGlue.prototype = {
   _scheduleStartupIdleTasks() {
     Services.tm.idleDispatchToMainThread(async () => {
       await ContextualIdentityService.load();
-      Discovery.update();
     });
 
     Services.tm.idleDispatchToMainThread(() => {
@@ -2134,6 +2102,10 @@ BrowserGlue.prototype = {
 
     Services.tm.idleDispatchToMainThread(() => {
       RemoteSettings.init();
+    });
+
+    Services.tm.idleDispatchToMainThread(() => {
+      RemoteSecuritySettings.init();
     });
   },
 
@@ -2651,8 +2623,7 @@ BrowserGlue.prototype = {
     var title = placesBundle.GetStringFromName("lockPrompt.title");
     var text = placesBundle.formatStringFromName(
       "lockPrompt.text",
-      [applicationName],
-      1
+      [applicationName]
     );
     var buttonText = placesBundle.GetStringFromName(
       "lockPromptInfoButton.label"
@@ -2697,8 +2668,7 @@ BrowserGlue.prototype = {
     let title = bundle.GetStringFromName("syncStartNotification.title");
     let body = bundle.formatStringFromName(
       "syncStartNotification.body2",
-      [productName],
-      1
+      [productName]
     );
 
     let clickCallback = (subject, topic, data) => {
@@ -3383,8 +3353,7 @@ BrowserGlue.prototype = {
         if (deviceName) {
           title = bundle.formatStringFromName(
             "tabArrivingNotificationWithDevice.title",
-            [deviceName],
-            1
+            [deviceName]
           );
         } else {
           title = bundle.GetStringFromName("tabArrivingNotification.title");
@@ -3400,8 +3369,7 @@ BrowserGlue.prototype = {
         if (wasTruncated) {
           body = bundle.formatStringFromName(
             "singleTabArrivingWithTruncatedURL.body",
-            [body],
-            1
+            [body]
           );
         }
       } else {
@@ -3496,8 +3464,7 @@ BrowserGlue.prototype = {
     let title = accountsBundle.GetStringFromName("deviceConnectedTitle");
     let body = accountsBundle.formatStringFromName(
       "deviceConnectedBody" + (deviceName ? "" : ".noDeviceName"),
-      [deviceName],
-      1
+      [deviceName]
     );
 
     let clickCallback = async (subject, topic, data) => {
@@ -3726,6 +3693,10 @@ var ContentBlockingCategoriesPrefs = {
           this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
             Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER;
           break;
+        case "cookieBehavior5":
+          this.CATEGORY_PREFS[type]["network.cookie.cookieBehavior"] =
+            Ci.nsICookieService.BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN;
+          break;
         default:
           Cu.reportError(`Error: Unknown rule observed ${item}`);
       }
@@ -3951,16 +3922,10 @@ ContentPermissionPrompt.prototype = {
     );
     let scheme = 0;
     try {
-      // URI is null for system principals.
-      if (request.principal.URI) {
-        switch (request.principal.URI.scheme) {
-          case "http":
-            scheme = 1;
-            break;
-          case "https":
-            scheme = 2;
-            break;
-        }
+      if (request.principal.schemeIs("http")) {
+        scheme = 1;
+      } else if (request.principal.schemeIs("https")) {
+        scheme = 2;
       }
     } catch (ex) {
       // If the request principal is not available at this point,
@@ -3972,16 +3937,6 @@ ContentPermissionPrompt.prototype = {
       return;
     }
     schemeHistogram.add(type, scheme);
-
-    // request.element should be the browser element in e10s.
-    if (request.element && request.element.contentPrincipal) {
-      let thirdPartyHistogram = Services.telemetry.getKeyedHistogramById(
-        "PERMISSION_REQUEST_THIRD_PARTY_ORIGIN"
-      );
-      let isThirdParty =
-        request.principal.origin != request.element.contentPrincipal.origin;
-      thirdPartyHistogram.add(type, isThirdParty);
-    }
 
     let userInputHistogram = Services.telemetry.getKeyedHistogramById(
       "PERMISSION_REQUEST_HANDLING_USER_INPUT"

@@ -4,23 +4,19 @@
 
 "use strict";
 
+const { PermissionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PermissionTestUtils.jsm"
+);
+
 const TRACKING_PAGE =
   "http://tracking.example.org/browser/browser/base/content/test/trackingUI/trackingPage.html";
 
 const TP_PREF = "privacy.trackingprotection.enabled";
 
 add_task(async function setup() {
-  let oldCanRecord = Services.telemetry.canRecordExtended;
-  Services.telemetry.canRecordExtended = true;
-
-  // Avoid the content blocking tour interfering with our tests by popping up.
-  await SpecialPowers.pushPrefEnv({
-    set: [[ContentBlocking.prefIntroCount, ContentBlocking.MAX_INTROS]],
-  });
   await UrlClassifierTestUtils.addTestTrackers();
 
   registerCleanupFunction(() => {
-    Services.telemetry.canRecordExtended = oldCanRecord;
     UrlClassifierTestUtils.cleanupTestTrackers();
   });
 });
@@ -28,8 +24,6 @@ add_task(async function setup() {
 async function assertSitesListed(blocked) {
   await BrowserTestUtils.withNewTab(TRACKING_PAGE, async function(browser) {
     await openIdentityPopup();
-
-    Services.telemetry.clearEvents();
 
     let categoryItem = document.getElementById(
       "identity-popup-content-blocking-category-tracking-protection"
@@ -44,17 +38,6 @@ async function assertSitesListed(blocked) {
     await viewShown;
 
     ok(true, "Trackers view was shown");
-
-    let events = Services.telemetry.snapshotEvents(
-      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS
-    ).parent;
-    let buttonEvents = events.filter(
-      e =>
-        e[1] == "security.ui.identitypopup" &&
-        e[2] == "click" &&
-        e[3] == "trackers_subview_btn"
-    );
-    is(buttonEvents.length, 1, "recorded telemetry for the button click");
 
     let listItems = trackersView.querySelectorAll(
       ".identity-popup-content-blocking-list-item"
@@ -134,10 +117,14 @@ add_task(async function testTrackersSubView() {
   await assertSitesListed(true);
   info("Testing trackers subview with TP enabled and a CB exception.");
   let uri = Services.io.newURI("https://tracking.example.org");
-  Services.perms.add(uri, "trackingprotection", Services.perms.ALLOW_ACTION);
+  PermissionTestUtils.add(
+    uri,
+    "trackingprotection",
+    Services.perms.ALLOW_ACTION
+  );
   await assertSitesListed(false);
   info("Testing trackers subview with TP enabled and a CB exception removed.");
-  Services.perms.remove(uri, "trackingprotection");
+  PermissionTestUtils.remove(uri, "trackingprotection");
   await assertSitesListed(true);
 
   Services.prefs.clearUserPref(TP_PREF);

@@ -10,6 +10,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/UniquePtr.h"
 #include "nsClassHashtable.h"
+#include "nsComponentManagerUtils.h"
 #include "nsDataHashtable.h"
 #include "nsIFile.h"
 #include "nsIObserverService.h"

@@ -5,12 +5,11 @@
 #include <stdio.h>
 
 #include "nsError.h"
-#include "nsIMutableArray.h"
 #include "nsAutoPtr.h"
-#include "nsIMemoryReporter.h"
 #include "nsThreadUtils.h"
 #include "nsIFile.h"
 #include "nsIFileURL.h"
+#include "nsIXPConnect.h"
 #include "mozilla/Telemetry.h"
 #include "base/lock.h"
 #include "base/condition_variable.h"

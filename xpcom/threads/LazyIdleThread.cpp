@@ -8,7 +8,6 @@
 
 #include "GeckoProfiler.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIIdlePeriod.h"
 #include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "mozilla/Services.h"

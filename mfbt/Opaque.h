@@ -24,7 +24,7 @@ class Opaque final {
   T mValue;
 
  public:
-  Opaque() {}
+  Opaque() = default;
   explicit Opaque(T aValue) : mValue(aValue) {}
 
   bool operator==(const Opaque& aOther) const {

@@ -6,7 +6,6 @@
 #define GFX_FRAMEMETRICS_H
 
 #include <stdint.h>  // for uint8_t, uint32_t, uint64_t
-#include <map>
 #include "Units.h"                  // for CSSRect, CSSPixel, etc
 #include "mozilla/DefineEnum.h"     // for MOZ_DEFINE_ENUM
 #include "mozilla/HashFunctions.h"  // for HashGeneric
@@ -19,12 +18,14 @@
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid
 #include "mozilla/StaticPtr.h"                   // for StaticAutoPtr
 #include "mozilla/TimeStamp.h"                   // for TimeStamp
+#include "nsDataHashtable.h"                     // for nsDataHashtable
 #include "nsString.h"
-#include "nsStyleCoord.h"  // for nsStyleCoord
 #include "PLDHashTable.h"  // for PLDHashNumber
 
 struct nsStyleDisplay;
 namespace mozilla {
+enum class StyleScrollSnapStrictness : uint8_t;
+enum class StyleOverscrollBehavior : uint8_t;
 class WritingMode;
 }  // namespace mozilla
 
@@ -714,15 +715,11 @@ struct FrameMetrics {
 };
 
 struct ScrollSnapInfo {
-  ScrollSnapInfo() = default;
+  ScrollSnapInfo();
 
   bool operator==(const ScrollSnapInfo& aOther) const {
-    return mScrollSnapTypeX == aOther.mScrollSnapTypeX &&
-           mScrollSnapTypeY == aOther.mScrollSnapTypeY &&
-           mScrollSnapIntervalX == aOther.mScrollSnapIntervalX &&
-           mScrollSnapIntervalY == aOther.mScrollSnapIntervalY &&
-           mScrollSnapDestination == aOther.mScrollSnapDestination &&
-           mScrollSnapCoordinates == aOther.mScrollSnapCoordinates &&
+    return mScrollSnapStrictnessX == aOther.mScrollSnapStrictnessX &&
+           mScrollSnapStrictnessY == aOther.mScrollSnapStrictnessY &&
            mSnapPositionX == aOther.mSnapPositionX &&
            mSnapPositionY == aOther.mSnapPositionY &&
            mXRangeWiderThanSnapport == aOther.mXRangeWiderThanSnapport &&
@@ -730,38 +727,15 @@ struct ScrollSnapInfo {
            mSnapportSize == aOther.mSnapportSize;
   }
 
-  bool HasScrollSnapping() const {
-    return mScrollSnapTypeY != mozilla::StyleScrollSnapStrictness::None ||
-           mScrollSnapTypeX != mozilla::StyleScrollSnapStrictness::None;
-  }
+  bool HasScrollSnapping() const;
+  bool HasSnapPositions() const;
 
-  bool HasSnapPositions() const {
-    return (!mSnapPositionX.IsEmpty() &&
-            mScrollSnapTypeX != mozilla::StyleScrollSnapStrictness::None) ||
-           (!mSnapPositionY.IsEmpty() &&
-            mScrollSnapTypeY != mozilla::StyleScrollSnapStrictness::None);
-  }
-
-  void InitializeScrollSnapType(WritingMode aWritingMode,
-                                const nsStyleDisplay* aDisplay);
+  void InitializeScrollSnapStrictness(WritingMode aWritingMode,
+                                      const nsStyleDisplay* aDisplay);
 
   // The scroll frame's scroll-snap-type.
-  mozilla::StyleScrollSnapStrictness mScrollSnapTypeX =
-      mozilla::StyleScrollSnapStrictness::None;
-  mozilla::StyleScrollSnapStrictness mScrollSnapTypeY =
-      mozilla::StyleScrollSnapStrictness::None;
-
-  // The intervals derived from the scroll frame's scroll-snap-points.
-  Maybe<nscoord> mScrollSnapIntervalX;
-  Maybe<nscoord> mScrollSnapIntervalY;
-
-  // The scroll frame's scroll-snap-destination, in cooked form (to avoid
-  // shipping the raw nsStyleCoord::CalcValue over IPC).
-  nsPoint mScrollSnapDestination;
-
-  // The scroll-snap-coordinates of any descendant frames of the scroll frame,
-  // relative to the origin of the scrolled frame.
-  nsTArray<nsPoint> mScrollSnapCoordinates;
+  StyleScrollSnapStrictness mScrollSnapStrictnessX;
+  StyleScrollSnapStrictness mScrollSnapStrictnessY;
 
   // The scroll positions corresponding to scroll-snap-align values.
   nsTArray<nscoord> mSnapPositionX;
@@ -984,9 +958,9 @@ struct ScrollMetadata {
     mIsAutoDirRootContentRTL = aValue;
   }
   bool IsAutoDirRootContentRTL() const { return mIsAutoDirRootContentRTL; }
-  // Implemented out of line because the implementation needs gfxPrefs.h
-  // and we don't want to include that from FrameMetrics.h.
-  void SetUsesContainerScrolling(bool aValue);
+  void SetUsesContainerScrolling(bool aValue) {
+    mUsesContainerScrolling = aValue;
+  }
   bool UsesContainerScrolling() const { return mUsesContainerScrolling; }
   void SetForceDisableApz(bool aForceDisable) {
     mForceDisableApz = aForceDisable;
@@ -1096,7 +1070,7 @@ struct ScrollMetadata {
   // Please add new fields above this comment.
 };
 
-typedef std::map<ScrollableLayerGuid::ViewID, ScrollUpdateInfo>
+typedef nsDataHashtable<ScrollableLayerGuid::ViewIDHashKey, ScrollUpdateInfo>
     ScrollUpdatesMap;
 
 }  // namespace layers

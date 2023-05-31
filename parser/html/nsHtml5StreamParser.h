@@ -365,6 +365,16 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
    */
   nsresult DispatchToMain(already_AddRefed<nsIRunnable>&& aRunnable);
 
+  /**
+   * Notify any devtools listeners about content newly received for parsing.
+   */
+  inline void OnNewContent(mozilla::Span<const char16_t> aData);
+
+  /**
+   * Notify any devtools listeners after all parse content has been received.
+   */
+  inline void OnContentComplete();
+
   nsCOMPtr<nsIRequest> mRequest;
   nsCOMPtr<nsIRequestObserver> mObserver;
 
@@ -571,6 +581,19 @@ class nsHtml5StreamParser final : public nsICharsetDetectionObserver {
    * Whether the parser is doing a normal parse, view source or plain text.
    */
   eParserMode mMode;
+
+  /**
+   * If the associated docshell is being watched by the devtools, this is
+   * set to the URI associated with the parse. All parse data is sent to the
+   * devtools, along with this URI. This URI is cleared out after the parse has
+   * been marked as completed.
+   */
+  nsCOMPtr<nsIURI> mURIToSendToDevtools;
+
+  /**
+   * If content is being sent to the devtools, an encoded UUID for the parser.
+   */
+  nsString mUUIDForDevtools;
 };
 
 #endif  // nsHtml5StreamParser_h

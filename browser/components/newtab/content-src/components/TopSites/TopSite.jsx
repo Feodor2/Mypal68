@@ -1,5 +1,4 @@
 import {actionCreators as ac, actionTypes as at} from "common/Actions.jsm";
-import {FormattedMessage, injectIntl} from "react-intl";
 import {
   MIN_CORNER_FAVICON_SIZE,
   MIN_RICH_FAVICON_SIZE,
@@ -281,11 +280,11 @@ export class TopSite extends React.PureComponent {
     const title = link.label || link.hostname;
     return (<TopSiteLink {...props} onClick={this.onLinkClick} onDragEvent={this.props.onDragEvent} className={`${props.className || ""}${isContextMenuOpen ? " active" : ""}`} title={title}>
         <div>
-          <button className="context-menu-button icon" title={this.props.intl.formatMessage({id: "context_menu_title"})} onClick={this.onMenuButtonClick}>
-            <span className="sr-only">
-              <FormattedMessage id="context_menu_button_sr" values={{title}} />
-            </span>
-          </button>
+          <button aria-haspopup="true"
+            className="context-menu-button icon"
+            data-l10n-id="newtab-menu-content-tooltip"
+            data-l10n-args={JSON.stringify({title})}
+            onClick={this.onMenuButtonClick} />
           {isContextMenuOpen &&
             <LinkMenu
               dispatch={props.dispatch}
@@ -318,14 +317,14 @@ export class TopSitePlaceholder extends React.PureComponent {
 
   render() {
     return (<TopSiteLink {...this.props} className={`placeholder ${this.props.className || ""}`} isDraggable={false}>
-      <button className="context-menu-button edit-button icon"
-       title={this.props.intl.formatMessage({id: "edit_topsites_edit_button"})}
+      <button aria-haspopup="true" className="context-menu-button edit-button icon"
+       data-l10n-id="newtab-menu-topsites-placeholder-tooltip"
        onClick={this.onEditButtonClick} />
     </TopSiteLink>);
   }
 }
 
-export class _TopSiteList extends React.PureComponent {
+export class TopSiteList extends React.PureComponent {
   static get DEFAULT_STATE() {
     return {
       activeIndex: null,
@@ -338,7 +337,7 @@ export class _TopSiteList extends React.PureComponent {
 
   constructor(props) {
     super(props);
-    this.state = _TopSiteList.DEFAULT_STATE;
+    this.state = TopSiteList.DEFAULT_STATE;
     this.onDragEvent = this.onDragEvent.bind(this);
     this.onActivate = this.onActivate.bind(this);
   }
@@ -351,7 +350,7 @@ export class _TopSiteList extends React.PureComponent {
         prevTopSites[this.state.draggedIndex].url === this.state.draggedSite.url &&
         (!newTopSites[this.state.draggedIndex] || newTopSites[this.state.draggedIndex].url !== this.state.draggedSite.url)) {
         // We got the new order from the redux store via props. We can clear state now.
-        this.setState(_TopSiteList.DEFAULT_STATE);
+        this.setState(TopSiteList.DEFAULT_STATE);
       }
     }
   }
@@ -379,7 +378,7 @@ export class _TopSiteList extends React.PureComponent {
       case "dragend":
         if (!this.dropped) {
           // If there was no drop event, reset the state to the default.
-          this.setState(_TopSiteList.DEFAULT_STATE);
+          this.setState(TopSiteList.DEFAULT_STATE);
         }
         break;
       case "dragenter":
@@ -472,7 +471,6 @@ export class _TopSiteList extends React.PureComponent {
     const commonProps = {
       onDragEvent: this.onDragEvent,
       dispatch: props.dispatch,
-      intl: props.intl,
     };
     // We assign a key to each placeholder slot. We need it to be independent
     // of the slot index (i below) so that the keys used stay the same during
@@ -511,5 +509,3 @@ export class _TopSiteList extends React.PureComponent {
     </ul>);
   }
 }
-
-export const TopSiteList = injectIntl(_TopSiteList);

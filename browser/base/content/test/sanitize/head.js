@@ -8,6 +8,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   Sanitizer: "resource:///modules/Sanitizer.jsm",
   SiteDataTestUtils: "resource://testing-common/SiteDataTestUtils.jsm",
+  PermissionTestUtils: "resource://testing-common/PermissionTestUtils.jsm",
 });
 
 function createIndexedDB(host, originAttributes) {
@@ -48,7 +49,7 @@ function createHostCookie(host, originAttributes) {
     false,
     Date.now() + 24000 * 60 * 60,
     originAttributes,
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
 }
 
@@ -63,7 +64,7 @@ function createDomainCookie(host, originAttributes) {
     false,
     Date.now() + 24000 * 60 * 60,
     originAttributes,
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
 }
 
@@ -98,7 +99,7 @@ async function deleteOnShutdown(opt) {
   // Custom permission without considering OriginAttributes
   if (opt.cookiePermission !== undefined) {
     let uri = Services.io.newURI("https://www.example.com");
-    Services.perms.add(uri, "cookie", opt.cookiePermission);
+    PermissionTestUtils.add(uri, "cookie", opt.cookiePermission);
   }
 
   // Let's create a tab with some data.
@@ -151,7 +152,7 @@ async function deleteOnShutdown(opt) {
 
   if (opt.cookiePermission !== undefined) {
     let uri = Services.io.newURI("https://www.example.com");
-    Services.perms.remove(uri, "cookie");
+    PermissionTestUtils.remove(uri, "cookie");
   }
 }
 

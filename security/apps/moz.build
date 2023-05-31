@@ -10,6 +10,8 @@ UNIFIED_SOURCES += [
     'AppTrustDomain.cpp',
 ]
 
+include('/ipc/chromium/chromium-config.mozbuild')
+
 FINAL_LIBRARY = 'xul'
 
 LOCAL_INCLUDES += [
@@ -43,7 +45,5 @@ headers_arrays_certs = [
 ]
 
 for header, array_name, cert in headers_arrays_certs:
-    GENERATED_FILES += [header]
-    h = GENERATED_FILES[header]
-    h.script = 'gen_cert_header.py:' + array_name
-    h.inputs = [cert]
+    GeneratedFile(header, script='gen_cert_header.py',
+                  entry_point=array_name, inputs=[cert])

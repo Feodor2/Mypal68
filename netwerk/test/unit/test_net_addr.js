@@ -177,8 +177,7 @@ function testIpv4() {
   do_timeout(connectTimeout, function(){ serv.timeoutCallback('testIpv4'); });*/
 
   testDataStore.transport = sts.createTransport(
-    null,
-    0,
+    [],
     "127.0.0.1",
     serv.port,
     null

@@ -16,7 +16,6 @@
 #include <unistd.h>
 
 #include "nsQueryObject.h"
-#include "nsIServiceManager.h"
 #include "nsPrintSettingsX.h"
 
 // This must be the last include:

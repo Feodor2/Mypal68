@@ -44,7 +44,6 @@ SOURCES += [
     'e_log2.cpp',
     'e_pow.cpp',
     'e_sinh.cpp',
-    'e_sqrt.cpp',
     'k_exp.cpp',
     's_asinh.cpp',
     's_atan.cpp',

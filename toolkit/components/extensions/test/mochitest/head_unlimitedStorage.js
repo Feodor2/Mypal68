@@ -1,3 +1,5 @@
+/* -*- Mode: indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set sts=2 sw=2 et tw=80: */
 "use strict";
 
 /* exported checkSitePermissions */
@@ -32,7 +34,7 @@ function checkSitePermissions(uuid, expectedPermAction, assertMessage) {
     ),
     persistentStorage: Services.perms.testPermissionFromPrincipal(
       principal,
-      "WebExtensions-unlimitedStorage"
+      "persistent-storage"
     ),
   };
 

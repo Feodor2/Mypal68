@@ -38,6 +38,7 @@
 #include "mozilla/Move.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/SizeOfState.h"
+#include "mozilla/StaticPrefs_image.h"
 #include <stdint.h>
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
@@ -47,7 +48,6 @@
 
 #include "GeckoProfiler.h"
 #include "gfx2DGlue.h"
-#include "gfxPrefs.h"
 #include "nsProperties.h"
 #include <algorithm>
 
@@ -346,7 +346,7 @@ LookupResult RasterImage::LookupFrame(const IntSize& aSize, uint32_t aFlags,
     // one. (Or we're sync decoding and the existing decoder hasn't even started
     // yet.) Trigger decoding so it'll be available next time.
     MOZ_ASSERT(aPlaybackType != PlaybackType::eAnimated ||
-                   gfxPrefs::ImageMemAnimatedDiscardable() ||
+                   StaticPrefs::image_mem_animated_discardable_AtStartup() ||
                    !mAnimationState || mAnimationState->KnownFrameCount() < 1,
                "Animated frames should be locked");
 
@@ -414,7 +414,7 @@ RasterImage::WillDrawOpaqueNow() {
   }
 
   if (mAnimationState) {
-    if (!gfxPrefs::ImageMemAnimatedDiscardable()) {
+    if (!StaticPrefs::image_mem_animated_discardable_AtStartup()) {
       // We never discard frames of animated images.
       return true;
     } else {
@@ -470,7 +470,7 @@ void RasterImage::OnSurfaceDiscardedInternal(bool aAnimatedFramesDiscarded) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (aAnimatedFramesDiscarded && mAnimationState) {
-    MOZ_ASSERT(gfxPrefs::ImageMemAnimatedDiscardable());
+    MOZ_ASSERT(StaticPrefs::image_mem_animated_discardable_AtStartup());
     ReleaseImageContainer();
     gfx::IntRect rect =
         mAnimationState->UpdateState(mAnimationFinished, this, mSize);
@@ -715,7 +715,7 @@ bool RasterImage::SetMetadata(const ImageMetadata& aMetadata,
     mAnimationState.emplace(mAnimationMode);
     mFrameAnimator = MakeUnique<FrameAnimator>(this, mSize);
 
-    if (!gfxPrefs::ImageMemAnimatedDiscardable()) {
+    if (!StaticPrefs::image_mem_animated_discardable_AtStartup()) {
       // We don't support discarding animated images (See bug 414259).
       // Lock the image and throw away the key.
       LockImage();
@@ -1019,7 +1019,8 @@ RasterImage::GetKeys(nsTArray<nsCString>& keys) {
 void RasterImage::Discard() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(CanDiscard(), "Asked to discard but can't");
-  MOZ_ASSERT(!mAnimationState || gfxPrefs::ImageMemAnimatedDiscardable(),
+  MOZ_ASSERT(!mAnimationState ||
+                 StaticPrefs::image_mem_animated_discardable_AtStartup(),
              "Asked to discard for animated image");
 
   // Delete all the decoded frames.
@@ -1041,7 +1042,8 @@ void RasterImage::Discard() {
 bool RasterImage::CanDiscard() {
   return mAllSourceData &&
          // Can discard animated images if the pref is set
-         (!mAnimationState || gfxPrefs::ImageMemAnimatedDiscardable());
+         (!mAnimationState ||
+          StaticPrefs::image_mem_animated_discardable_AtStartup());
 }
 
 NS_IMETHODIMP
@@ -1319,7 +1321,7 @@ bool RasterImage::CanDownscaleDuringDecode(const IntSize& aSize,
   // available, this image isn't transient, we have all the source data and know
   // our size, and the flags allow us to do it.
   if (!mHasSize || mTransient || !HaveSkia() ||
-      !gfxPrefs::ImageDownscaleDuringDecodeEnabled() ||
+      !StaticPrefs::image_downscale_during_decode_enabled() ||
       !(aFlags & imgIContainer::FLAG_HIGH_QUALITY_SCALING)) {
     return false;
   }
@@ -1736,10 +1738,6 @@ void RasterImage::ReportDecoderError() {
 already_AddRefed<imgIContainer> RasterImage::Unwrap() {
   nsCOMPtr<imgIContainer> self(this);
   return self.forget();
-}
-
-void RasterImage::PropagateUseCounters(dom::Document*) {
-  // No use counters.
 }
 
 IntSize RasterImage::OptimalImageSizeForDest(const gfxSize& aDest,

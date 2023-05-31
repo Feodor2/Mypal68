@@ -22,8 +22,8 @@
 #include "chrome/common/file_descriptor_set_posix.h"
 #include "mozilla/ipc/Faulty.h"
 #include "mozilla/TypeTraits.h"
+#include "nsComponentManagerUtils.h"
 #include "nsNetCID.h"
-#include "nsIEventTarget.h"
 #include "nsIFile.h"
 #include "nsIFileStreams.h"
 #include "nsILineInputStream.h"
@@ -59,20 +59,20 @@ void FuzzIntegralType(T* v, bool largeValues) {
         (*v) = RandomInteger<T>();
         break;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case 1:
       if (largeValues) {
         (*v) = RandomNumericLimit<T>();
         break;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case 2:
       if (largeValues) {
         (*v) = RandomIntegerRange<T>(std::numeric_limits<T>::min(),
                                      std::numeric_limits<T>::max());
         break;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     default:
       switch (FuzzingTraits::Random(2)) {
         case 0:
@@ -81,7 +81,7 @@ void FuzzIntegralType(T* v, bool largeValues) {
             (*v)--;
             break;
           }
-          MOZ_FALLTHROUGH;
+          [[fallthrough]];
         case 1:
           // Prevent overflow
           if (*v != std::numeric_limits<T>::max()) {
@@ -106,14 +106,14 @@ void FuzzFloatingPointType(T* v, bool largeValues) {
         (*v) = RandomNumericLimit<T>();
         break;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case 1:
       if (largeValues) {
         (*v) = RandomFloatingPointRange<T>(std::numeric_limits<T>::min(),
                                            std::numeric_limits<T>::max());
         break;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     default:
       (*v) = RandomFloatingPoint<T>();
   }
@@ -127,10 +127,10 @@ void FuzzStringType(T& v, const T& literal1, const T& literal2) {
   switch (FuzzingTraits::Random(5)) {
     case 4:
       v = v + v;
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case 3:
       v = v + v;
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case 2:
       v = v + v;
       break;

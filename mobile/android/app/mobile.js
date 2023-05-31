@@ -41,9 +41,6 @@ pref("browser.tabs.disableBackgroundZombification", false);
 // Controlled by Switchboard experiment "offline-cache".
 pref("browser.tabs.useCache", false);
 
-// From libpref/src/init/all.js, extended to allow a slightly wider zoom range.
-pref("zoom.minPercent", 20);
-pref("zoom.maxPercent", 400);
 pref("toolkit.zoomManager.zoomValues", ".2,.3,.5,.67,.8,.9,1,1.1,1.2,1.33,1.5,1.7,2,2.4,3,4");
 
 // Mobile will use faster, less durable mode.
@@ -67,13 +64,6 @@ pref("ui.scrollbarFadeDuration", 0);
 /* turn off the caret blink after 10 cycles */
 pref("ui.caretBlinkCount", 10);
 
-/* cache prefs */
-pref("browser.cache.disk.enable", true);
-pref("browser.cache.disk.smart_size.enabled", true);
-
-pref("browser.cache.memory.enable", true);
-pref("browser.cache.memory.capacity", 1024); // kilobytes
-
 pref("browser.cache.memory_limit", 5120); // 5 MB
 
 /* image cache prefs */
@@ -81,15 +71,11 @@ pref("image.cache.size", 1048576); // bytes
 
 /* offline cache prefs */
 pref("browser.offline-apps.notify", true);
-pref("browser.cache.offline.enable", true);
 pref("browser.cache.offline.capacity", 5120); // kilobytes
 pref("offline-apps.quota.warn", 1024); // kilobytes
 
 // Automatically shrink-to-fit image documents.
 pref("browser.enable_automatic_image_resizing", true);
-
-// cache compression turned off for now - see bug #715198
-pref("browser.cache.compression_level", 0);
 
 /* disable some protocol warnings */
 pref("network.protocol-handler.warn-external.tel", false);
@@ -176,7 +162,6 @@ pref("browser.formfill.enable", true);
 pref("layout.spellcheckDefault", 0);
 
 /* new html5 forms */
-pref("dom.forms.datetime", true);
 pref("dom.forms.datetime.others", true);
 
 /* extension manager and xpinstall */
@@ -240,7 +225,6 @@ pref("privacy.popups.showBrowserMessage", true);
 /* disable opening windows with the dialog feature */
 pref("dom.disable_window_open_dialog_feature", true);
 pref("dom.disable_window_showModalDialog", true);
-pref("dom.disable_window_print", true);
 pref("dom.disable_window_find", true);
 
 pref("keyword.enabled", true);
@@ -282,9 +266,6 @@ pref("browser.casting.enabled", true);
 pref("chrome.override_package.global", "browser");
 pref("chrome.override_package.mozapps", "browser");
 pref("chrome.override_package.passwordmgr", "browser");
-
-// enable xul error pages
-pref("browser.xul.error_pages.enabled", true);
 
 // disable color management
 pref("gfx.color_management.mode", 0);
@@ -348,9 +329,6 @@ pref("privacy.item.geolocation", true);
 pref("privacy.item.siteSettings", true);
 pref("privacy.item.syncAccount", true);
 
-// enable geo
-pref("geo.enabled", true);
-
 // content sink control -- controls responsiveness during page load
 // see https://bugzilla.mozilla.org/show_bug.cgi?id=481566#c9
 //pref("content.sink.enable_perf_mode",  2); // 0 - switch, 1 - interactive, 2 - perf
@@ -369,8 +347,6 @@ pref("devtools.debugger.unix-domain-socket", "@ANDROID_PACKAGE_NAME@/firefox-deb
 
 pref("devtools.remote.usb.enabled", false);
 pref("devtools.remote.wifi.enabled", false);
-
-pref("font.size.inflation.minTwips", 0);
 
 // When true, zooming will be enabled on all sites, even ones that declare user-scalable=no.
 pref("browser.ui.zoom.force-user-scalable", false);
@@ -791,11 +767,6 @@ pref("consoleservice.logcat", false);
 pref("consoleservice.logcat", true);
 #endif
 
-#ifndef RELEASE_OR_BETA
-// Enable VR on mobile, making it enable by default.
-pref("dom.vr.enabled", true);
-#endif
-
 pref("browser.tabs.showAudioPlayingIcon", true);
 
 pref("dom.serviceWorkers.enabled", true);
@@ -825,13 +796,6 @@ pref("identity.fxaccounts.remote.oauth.uri", "https://oauth.accounts.firefox.com
 
 // Token server used by Firefox Account-authenticated Sync.
 pref("identity.sync.tokenserver.uri", "https://token.services.mozilla.com/1.0/sync/1.5");
-
-#ifndef RELEASE_OR_BETA
-// Enable Presentation API on Nightly
-pref("dom.presentation.enabled", true);
-pref("dom.presentation.controller.enabled", true); // enable 1-UA mode
-pref("dom.presentation.receiver.enabled", true); // enable 1-UA mode
-#endif
 
 pref("dom.audiochannel.audioCompeting", true);
 pref("dom.audiochannel.mediaControl", true);

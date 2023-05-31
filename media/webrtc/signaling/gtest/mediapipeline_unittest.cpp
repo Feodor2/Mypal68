@@ -11,13 +11,12 @@
 
 #include "AudioSegment.h"
 #include "AudioStreamTrack.h"
-#include "DOMMediaStream.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "MediaPipeline.h"
 #include "MediaPipelineFilter.h"
-#include "MediaStreamGraph.h"
-#include "MediaStreamListener.h"
+#include "MediaTrackGraph.h"
+#include "MediaTrackListener.h"
 #include "MediaStreamTrack.h"
 #include "transportflow.h"
 #include "transportlayerloopback.h"
@@ -38,19 +37,6 @@ static MtransportTestUtils* test_utils;
 
 namespace {
 
-class FakeSourceMediaStream : public mozilla::SourceMediaStream {
- public:
-  FakeSourceMediaStream() : SourceMediaStream() {}
-
-  virtual ~FakeSourceMediaStream() override { mMainThreadDestroyed = true; }
-
-  virtual StreamTime AppendToTrack(
-      TrackID aID, MediaSegment* aSegment,
-      MediaSegment* aRawSegment = nullptr) override {
-    return aSegment->GetDuration();
-  }
-};
-
 class FakeMediaStreamTrackSource : public mozilla::dom::MediaStreamTrackSource {
  public:
   FakeMediaStreamTrackSource() : MediaStreamTrackSource(nullptr, nsString()) {}
@@ -69,8 +55,8 @@ class FakeMediaStreamTrackSource : public mozilla::dom::MediaStreamTrackSource {
 class FakeAudioStreamTrack : public mozilla::dom::AudioStreamTrack {
  public:
   FakeAudioStreamTrack()
-      : AudioStreamTrack(new DOMMediaStream(nullptr), 0, 1,
-                         new FakeMediaStreamTrackSource()),
+      : AudioStreamTrack(nullptr, nullptr, new FakeMediaStreamTrackSource(),
+                         mozilla::dom::MediaStreamTrackState::Ended),
         mMutex("Fake AudioStreamTrack"),
         mStop(false),
         mCount(0) {
@@ -87,13 +73,13 @@ class FakeAudioStreamTrack : public mozilla::dom::AudioStreamTrack {
     mTimer->Cancel();
   }
 
-  virtual void AddListener(MediaStreamTrackListener* aListener) override {
+  virtual void AddListener(MediaTrackListener* aListener) override {
     mozilla::MutexAutoLock lock(mMutex);
     mListeners.push_back(aListener);
   }
 
  private:
-  std::vector<MediaStreamTrackListener*> mListeners;
+  std::vector<MediaTrackListener*> mListeners;
   mozilla::Mutex mMutex;
   bool mStop;
   nsCOMPtr<nsITimer> mTimer;
@@ -174,6 +160,9 @@ class LoopbackTransport : public MediaTransportHandler {
                                   const std::string& aLocalPwd,
                                   size_t aComponentCount) override {}
 
+  void SetTargetForDefaultLocalAddressLookup(const std::string& aTargetIp,
+                                             uint16_t aTargetPort) override {}
+
   // We set default-route-only as late as possible because it depends on what
   // capture permissions have been granted on the window, which could easily
   // change between Init (ie; when the PC is created) and StartIceGathering
@@ -194,7 +183,7 @@ class LoopbackTransport : public MediaTransportHandler {
   void RemoveTransportsExcept(
       const std::set<std::string>& aTransportIds) override {}
 
-  void StartIceChecks(bool aIsControlling, bool aIsOfferer,
+  void StartIceChecks(bool aIsControlling,
                       const std::vector<std::string>& aIceOptions) override {}
 
   void AddIceCandidate(const std::string& aTransportId,

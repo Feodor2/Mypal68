@@ -8,8 +8,6 @@
 #include "Accessible.h"
 #include "mozilla/a11y/ProxyAccessibleBase.h"
 #include "mozilla/a11y/Role.h"
-#include "nsIAccessibleText.h"
-#include "nsIAccessibleTypes.h"
 #include "nsString.h"
 #include "nsTArray.h"
 #include "nsRect.h"

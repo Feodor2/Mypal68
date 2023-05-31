@@ -4,7 +4,7 @@
 
 body {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: minmax(320px, max-content) 1fr;
   grid-template-rows: 75px 1fr;
   grid-template-areas: "header header"
                        "logins login";
@@ -17,11 +17,16 @@ header {
   align-items: center;
   background-color: var(--in-content-box-background);
   border-bottom: 1px solid var(--in-content-box-border-color);
+  padding: 0 18px;
 }
 
 login-filter {
   flex: auto;
   align-self: center;
+}
+
+menu-button {
+  margin-inline-start: 18px;
 }
 
 login-list {
@@ -35,9 +40,10 @@ login-item {
 
 #branding-logo {
   height: 32px;
-  margin-inline-start: 18px;
+  margin-inline-end: 18px;
 }
 
 :root:not(.official-branding) #branding-logo {
   display: none;
 }
+

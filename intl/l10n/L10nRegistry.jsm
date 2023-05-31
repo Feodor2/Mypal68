@@ -5,6 +5,11 @@ const appinfo = Cc["@mozilla.org/xre/app-info;1"].getService(Ci.nsIXULRuntime);
 const { FluentBundle, FluentResource } = ChromeUtils.import("resource://gre/modules/Fluent.jsm");
 const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
+ChromeUtils.defineModuleGetter(
+  this,
+  "NetUtil",
+  "resource://gre/modules/NetUtil.jsm"
+);
 
 const isParentProcess = appinfo.processType === appinfo.PROCESS_TYPE_DEFAULT;
 /**
@@ -81,7 +86,7 @@ const isParentProcess = appinfo.processType === appinfo.PROCESS_TYPE_DEFAULT;
  *
  * Notice: L10nRegistry is primarily an asynchronous API, but
  * it does provide a synchronous version of it's main method
- * for use by the `LocalizationSync` class.
+ * for use  by the `Localization` class when in `sync` state.
  * This API should be only used in very specialized cases and
  * the uses should be reviewed by the toolkit owner/peer.
  */
@@ -732,8 +737,32 @@ this.L10nRegistry.loadSync = function(uri) {
     let data = Cu.readUTF8URI(url);
     return data;
   } catch (e) {
-    return false;
+    if (
+      e.result == Cr.NS_ERROR_INVALID_ARG ||
+      e.result == Cr.NS_ERROR_NOT_INITIALIZED
+    ) {
+      try {
+        // The preloader doesn't support this url or isn't initialized
+        // (xpcshell test). Try a synchronous channel load.
+        let stream = NetUtil.newChannel({
+          uri,
+          loadUsingSystemPrincipal: true,
+        }).open();
+
+        return NetUtil.readInputStreamToString(stream, stream.available(), {
+          charset: "UTF-8",
+        });
+      } catch (e) {
+        if (e.result != Cr.NS_ERROR_FILE_NOT_FOUND) {
+          Cu.reportError(e);
+        }
+      }
+    } else if (e.result != Cr.NS_ERROR_FILE_NOT_FOUND) {
+      Cu.reportError(e);
+    }
   }
+
+  return false;
 };
 
 this.FileSource = FileSource;

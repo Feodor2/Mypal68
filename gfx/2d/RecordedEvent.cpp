@@ -15,14 +15,12 @@
 namespace mozilla {
 namespace gfx {
 
-using namespace std;
-
 RecordedEvent* RecordedEvent::LoadEventFromStream(EventStream& aStream,
                                                   EventType aType) {
   return LoadEvent(aStream, aType);
 }
 
-string RecordedEvent::GetEventName(EventType aType) {
+std::string RecordedEvent::GetEventName(EventType aType) {
   switch (aType) {
     case DRAWTARGETCREATION:
       return "DrawTarget Creation";

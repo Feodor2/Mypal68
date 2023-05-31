@@ -75,7 +75,7 @@ function* do_run_test() {
     false,
     shortExpiry,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   do_timeout(2100, continue_test);
   yield;
@@ -91,7 +91,7 @@ function* do_run_test() {
     false,
     futureExpiry,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   Assert.equal(countCookies("captchart.com", "captchart.com"), 50);
 
@@ -118,7 +118,7 @@ function setCookies(aHost, aNumber, aExpiry) {
       false,
       aExpiry,
       {},
-      Ci.nsICookie2.SAMESITE_UNSET
+      Ci.nsICookie.SAMESITE_UNSET
     );
   }
 }

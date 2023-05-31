@@ -6,6 +6,7 @@
 #include "mozilla/net/ChildDNSService.h"
 #include "mozilla/net/DNSRequestChild.h"
 #include "mozilla/net/NeckoChild.h"
+#include "mozilla/net/SocketProcessChild.h"
 #include "mozilla/SystemGroup.h"
 #include "mozilla/Unused.h"
 #include "nsIDNSRecord.h"
@@ -13,7 +14,6 @@
 #include "nsHostResolver.h"
 #include "nsTArray.h"
 #include "nsNetAddr.h"
-#include "nsIThread.h"
 #include "nsThreadUtils.h"
 
 using namespace mozilla::ipc;
@@ -235,20 +235,32 @@ void DNSRequestChild::StartRequest() {
     return;
   }
 
-  nsCOMPtr<nsIEventTarget> systemGroupEventTarget =
-      SystemGroup::EventTargetFor(TaskCategory::Other);
+  if (XRE_IsContentProcess()) {
+    nsCOMPtr<nsIEventTarget> systemGroupEventTarget =
+        SystemGroup::EventTargetFor(TaskCategory::Other);
+    gNeckoChild->SetEventTargetForActor(this, systemGroupEventTarget);
 
-  gNeckoChild->SetEventTargetForActor(this, systemGroupEventTarget);
+    mozilla::dom::ContentChild* cc =
+        static_cast<mozilla::dom::ContentChild*>(gNeckoChild->Manager());
+    if (cc->IsShuttingDown()) {
+      return;
+    }
 
-  mozilla::dom::ContentChild* cc =
-      static_cast<mozilla::dom::ContentChild*>(gNeckoChild->Manager());
-  if (cc->IsShuttingDown()) {
+    // Send request to Parent process.
+    gNeckoChild->SendPDNSRequestConstructor(this, mHost, mOriginAttributes,
+                                            mFlags);
+  } else if (XRE_IsSocketProcess()) {
+    SocketProcessChild* child = SocketProcessChild::GetSingleton();
+    if (!child->CanSend()) {
+      return;
+    }
+
+    child->SendPDNSRequestConstructor(this, mHost, mOriginAttributes, mFlags);
+  } else {
+    MOZ_ASSERT(false, "Wrong process");
     return;
   }
 
-  // Send request to Parent process.
-  gNeckoChild->SendPDNSRequestConstructor(this, mHost, mOriginAttributes,
-                                          mFlags);
   mIPCOpen = true;
 
   // IPDL holds a reference until IPDL channel gets destroyed

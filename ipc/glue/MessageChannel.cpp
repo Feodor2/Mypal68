@@ -22,6 +22,7 @@
 #include "nsContentUtils.h"
 #include "nsDataHashtable.h"
 #include "nsDebug.h"
+#include "nsIMemoryReporter.h"
 #include "nsISupportsImpl.h"
 #include "nsPrintfCString.h"
 #include <math.h>
@@ -105,7 +106,6 @@ static mozilla::LazyLogModule sLogModule("ipc");
 
 using namespace mozilla;
 using namespace mozilla::ipc;
-using namespace std;
 
 using mozilla::Monitor2AutoLock;
 using mozilla::Monitor2AutoUnlock;
@@ -811,9 +811,9 @@ bool MessageChannel::Open(Transport* aTransport, MessageLoop* aIOLoop,
 
   mMonitor = new Monitor2("aTransport");
   mWorkerLoop = MessageLoop::current();
-  mWorkerThread = GetCurrentVirtualThread();
+  mWorkerThread = PR_GetCurrentThread();
   mWorkerLoop->AddDestructionObserver(this);
-  mListener->SetIsMainThreadProtocol();
+  mListener->OnIPCChannelOpened();
 
   ProcessLink* link = new ProcessLink(this);
   link->Open(aTransport, aIOLoop, aSide);  // :TODO: n.b.: sets mChild
@@ -892,9 +892,9 @@ void MessageChannel::OnOpenAsSlave(MessageChannel* aTargetChan, Side aSide) {
 void MessageChannel::CommonThreadOpenInit(MessageChannel* aTargetChan,
                                           Side aSide) {
   mWorkerLoop = MessageLoop::current();
-  mWorkerThread = GetCurrentVirtualThread();
+  mWorkerThread = PR_GetCurrentThread();
   mWorkerLoop->AddDestructionObserver(this);
-  mListener->SetIsMainThreadProtocol();
+  mListener->OnIPCChannelOpened();
 
   mLink = new ThreadLink(this, aTargetChan);
   mSide = aSide;
@@ -1780,7 +1780,9 @@ bool MessageChannel::Call(Message* aMsg, Message* aReply) {
       Monitor2AutoUnlock unlock(*mMonitor);
 
       CxxStackFrame frame(*this, IN_MESSAGE, &recvd);
-      DispatchInterruptMessage(std::move(recvd), stackDepth);
+      RefPtr<ActorLifecycleProxy> listenerProxy =
+          mListener->GetLifecycleProxy();
+      DispatchInterruptMessage(listenerProxy, std::move(recvd), stackDepth);
     }
     if (!Connected()) {
       ReportConnectionError("MessageChannel::DispatchInterruptMessage");
@@ -2014,15 +2016,6 @@ void MessageChannel::MessageTask::Clear() {
 
 NS_IMETHODIMP
 MessageChannel::MessageTask::GetPriority(uint32_t* aPriority) {
-  if (recordreplay::IsRecordingOrReplaying()) {
-    // Ignore message priorities in recording/replaying processes. Incoming
-    // messages were sorted in the middleman process according to their
-    // priority before being forwarded here, and reordering them again in this
-    // process can cause problems such as dispatching messages for an actor
-    // before the constructor for that actor.
-    *aPriority = PRIORITY_NORMAL;
-    return NS_OK;
-  }
   switch (mMessage.priority()) {
     case Message::NORMAL_PRIORITY:
       *aPriority = PRIORITY_NORMAL;
@@ -2043,6 +2036,8 @@ MessageChannel::MessageTask::GetPriority(uint32_t* aPriority) {
 void MessageChannel::DispatchMessage(Message&& aMsg) {
   AssertWorkerThread();
   mMonitor->AssertCurrentThreadOwns();
+
+  RefPtr<ActorLifecycleProxy> listenerProxy = mListener->GetLifecycleProxy();
 
   Maybe<AutoNoJSAPI> nojsapi;
   if (ScriptSettingsInitialized() && NS_IsMainThread()) nojsapi.emplace();
@@ -2067,12 +2062,13 @@ void MessageChannel::DispatchMessage(Message&& aMsg) {
 
       mListener->ArtificialSleep();
 
-      if (aMsg.is_sync())
-        DispatchSyncMessage(aMsg, *getter_Transfers(reply));
-      else if (aMsg.is_interrupt())
-        DispatchInterruptMessage(std::move(aMsg), 0);
-      else
-        DispatchAsyncMessage(aMsg);
+      if (aMsg.is_sync()) {
+        DispatchSyncMessage(listenerProxy, aMsg, *getter_Transfers(reply));
+      } else if (aMsg.is_interrupt()) {
+        DispatchInterruptMessage(listenerProxy, std::move(aMsg), 0);
+      } else {
+        DispatchAsyncMessage(listenerProxy, aMsg);
+      }
 
       mListener->ArtificialSleep();
     }
@@ -2092,7 +2088,8 @@ void MessageChannel::DispatchMessage(Message&& aMsg) {
   }
 }
 
-void MessageChannel::DispatchSyncMessage(const Message& aMsg,
+void MessageChannel::DispatchSyncMessage(ActorLifecycleProxy* aProxy,
+                                         const Message& aMsg,
                                          Message*& aReply) {
   AssertWorkerThread();
 
@@ -2100,10 +2097,8 @@ void MessageChannel::DispatchSyncMessage(const Message& aMsg,
 
   int nestedLevel = aMsg.nested_level();
 
-  MOZ_RELEASE_ASSERT(
-      nestedLevel == IPC::Message::NOT_NESTED || NS_IsMainThread() ||
-      // Middleman processes forward sync messages on a non-main thread.
-      recordreplay::IsMiddleman());
+  MOZ_RELEASE_ASSERT(nestedLevel == IPC::Message::NOT_NESTED ||
+                     NS_IsMainThread());
 #ifdef MOZ_TASK_TRACER
   AutoScopedLabel autolabel("sync message %s", aMsg.name());
 #endif
@@ -2115,7 +2110,7 @@ void MessageChannel::DispatchSyncMessage(const Message& aMsg,
   Result rv;
   {
     AutoSetValue<MessageChannel*> blocked(blockingVar, this);
-    rv = mListener->OnMessageReceived(aMsg, aReply);
+    rv = aProxy->Get()->OnMessageReceived(aMsg, aReply);
   }
 
   uint32_t latencyMs = round((TimeStamp::Now() - start).ToMilliseconds());
@@ -2131,7 +2126,8 @@ void MessageChannel::DispatchSyncMessage(const Message& aMsg,
   aReply->set_transaction_id(aMsg.transaction_id());
 }
 
-void MessageChannel::DispatchAsyncMessage(const Message& aMsg) {
+void MessageChannel::DispatchAsyncMessage(ActorLifecycleProxy* aProxy,
+                                          const Message& aMsg) {
   AssertWorkerThread();
   MOZ_RELEASE_ASSERT(!aMsg.is_interrupt() && !aMsg.is_sync());
 
@@ -2145,12 +2141,13 @@ void MessageChannel::DispatchAsyncMessage(const Message& aMsg) {
     AutoSetValue<bool> async(mDispatchingAsyncMessage, true);
     AutoSetValue<int> nestedLevelSet(mDispatchingAsyncMessageNestedLevel,
                                      nestedLevel);
-    rv = mListener->OnMessageReceived(aMsg);
+    rv = aProxy->Get()->OnMessageReceived(aMsg);
   }
   MaybeHandleError(rv, aMsg, "DispatchAsyncMessage");
 }
 
-void MessageChannel::DispatchInterruptMessage(Message&& aMsg,
+void MessageChannel::DispatchInterruptMessage(ActorLifecycleProxy* aProxy,
+                                              Message&& aMsg,
                                               size_t stackDepth) {
   AssertWorkerThread();
   mMonitor->AssertNotCurrentThreadOwns();
@@ -2176,7 +2173,7 @@ void MessageChannel::DispatchInterruptMessage(Message&& aMsg,
   nsAutoPtr<Message> reply;
 
   ++mRemoteStackDepthGuess;
-  Result rv = mListener->OnCallReceived(aMsg, *getter_Transfers(reply));
+  Result rv = aProxy->Get()->OnCallReceived(aMsg, *getter_Transfers(reply));
   --mRemoteStackDepthGuess;
 
   if (!MaybeHandleError(rv, aMsg, "DispatchInterruptMessage")) {

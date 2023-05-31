@@ -1,16 +1,16 @@
 == mask.yaml mask-ref.yaml
-== mask-tiling.yaml mask-ref.yaml
+skip_on(android,emulator) == mask-tiling.yaml mask-ref.yaml  # Android emulator: GL error 502 at tex_sub_image_3d_pbo, fails on opt
 == nested-mask.yaml nested-mask-ref.yaml
-== nested-mask-tiling.yaml nested-mask-ref.yaml
+skip_on(android,emulator) == nested-mask-tiling.yaml nested-mask-ref.yaml  # Android emulator: GL error 502 at tex_sub_image_3d_pbo, fails on opt
 != mask.yaml green.yaml
 == aligned-layer-rect.yaml aligned-layer-rect-ref.yaml
 == mask-transformed-to-empty-rect.yaml mask-transformed-to-empty-rect-ref.yaml
 platform(linux,mac) == rounded-corners.yaml rounded-corners.png
 != mask.yaml out-of-bounds.yaml
-platform(linux,mac) fuzzy(1,8750) color_targets(2) alpha_targets(1) == mask-atomicity.yaml mask-atomicity-ref.yaml
-platform(linux,mac) fuzzy(1,8750) == mask-atomicity-tiling.yaml mask-atomicity-ref.yaml
+platform(linux,mac) fuzzy(1,17500) color_targets(3) alpha_targets(1) == mask-atomicity.yaml mask-atomicity-ref.yaml
+platform(linux,mac) fuzzy(1,17500) == mask-atomicity-tiling.yaml mask-atomicity-ref.yaml
 platform(linux,mac) == mask-perspective.yaml mask-perspective.png
-== fuzzy(1,6) mask-perspective-tiling.yaml mask-perspective.yaml
+skip_on(android,emulator) == fuzzy(1,7) mask-perspective-tiling.yaml mask-perspective.yaml  # Android emulator: GL error 502 at tex_sub_image_3d_pbo, fails on opt
 platform(linux,mac) == checkerboard.yaml checkerboard.png
-== checkerboard.yaml checkerboard-tiling.yaml
+skip_on(android) == checkerboard.yaml checkerboard-tiling.yaml  # Android emulator: GL error 502 at blit_framebuffer, fails on opt emulator and on a Pixel2
 == missing-mask.yaml missing-mask-ref.yaml

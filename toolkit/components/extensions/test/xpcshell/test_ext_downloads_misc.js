@@ -957,7 +957,7 @@ add_task(async function test_getFileIcon() {
   let docShell = webNav.docShell;
 
   let system = Services.scriptSecurityManager.getSystemPrincipal();
-  docShell.createAboutBlankContentViewer(system);
+  docShell.createAboutBlankContentViewer(system, system);
 
   let img = webNav.document.createElement("img");
 
@@ -1038,6 +1038,24 @@ add_task(async function test_estimatedendtime() {
   equal(msg.status, "success", "search() succeeded");
   equal(msg.result.length, 1, "search() found 1 download");
   ok(!msg.result[0].estimatedEndTime, "download.estimatedEndTime is correct");
+});
+
+add_task(async function test_byExtension() {
+  let msg = await runInExtension("download", {url: TXT_URL});
+  equal(msg.status, "success", "download() succeeded");
+  const id = msg.result;
+  msg = await runInExtension("search", {id});
+
+  equal(
+    msg.result[0].byExtensionName,
+    "Generated extension",
+    "download.byExtensionName is correct"
+  );
+  equal(
+    msg.result[0].byExtensionId,
+    extension.id,
+    "download.byExtensionId is correct"
+  );
 });
 
 add_task(async function cleanup() {

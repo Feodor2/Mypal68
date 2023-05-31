@@ -11,6 +11,7 @@ const TEST_DOMAIN_4 = "http://prefixexample.com/";
 const TEST_DOMAIN_5 = "http://test/";
 const TEST_DOMAIN_6 = "http://mochi.test:8888/";
 const TEST_3RD_PARTY_DOMAIN = "https://tracking.example.org/";
+const TEST_3RD_PARTY_DOMAIN_HTTP = "http://tracking.example.org/";
 const TEST_3RD_PARTY_DOMAIN_TP = "https://tracking.example.com/";
 const TEST_4TH_PARTY_DOMAIN = "http://not-tracking.example.com/";
 const TEST_ANOTHER_3RD_PARTY_DOMAIN = "https://another-tracking.example.net/";
@@ -36,7 +37,11 @@ const TEST_4TH_PARTY_PAGE = TEST_4TH_PARTY_DOMAIN + TEST_PATH + "3rdParty.html";
 const TEST_ANOTHER_3RD_PARTY_PAGE =
   TEST_ANOTHER_3RD_PARTY_DOMAIN + TEST_PATH + "3rdParty.html";
 const TEST_3RD_PARTY_STORAGE_PAGE =
-  TEST_3RD_PARTY_DOMAIN + TEST_PATH + "3rdPartyStorage.html";
+  TEST_3RD_PARTY_DOMAIN_HTTP + TEST_PATH + "3rdPartyStorage.html";
+const TEST_4TH_PARTY_STORAGE_PAGE =
+  TEST_4TH_PARTY_DOMAIN + TEST_PATH + "3rdPartyStorage.html";
+const TEST_4TH_PARTY_PARTITIONED_PAGE =
+  TEST_4TH_PARTY_DOMAIN + TEST_PATH + "3rdPartyPartitioned.html";
 
 const BEHAVIOR_ACCEPT = Ci.nsICookieService.BEHAVIOR_ACCEPT;
 const BEHAVIOR_REJECT = Ci.nsICookieService.BEHAVIOR_REJECT;
@@ -50,12 +55,16 @@ const { UrlClassifierTestUtils } = ChromeUtils.import(
   "resource://testing-common/UrlClassifierTestUtils.jsm"
 );
 
+const { PermissionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PermissionTestUtils.jsm"
+);
+
 Services.scriptloader.loadSubScript(
   "chrome://mochitests/content/browser/toolkit/components/antitracking/test/browser/antitracking_head.js",
   this
 );
 
 Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/toolkit/components/antitracking/test/browser/storageprincipal_head.js",
+  "chrome://mochitests/content/browser/toolkit/components/antitracking/test/browser/partitionedstorage_head.js",
   this
 );

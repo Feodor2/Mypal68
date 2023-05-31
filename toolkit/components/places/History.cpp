@@ -25,7 +25,6 @@
 #include "mozilla/Services.h"
 #include "nsThreadUtils.h"
 #include "nsNetUtil.h"
-#include "nsIFileURL.h"
 #include "nsIWidget.h"
 #include "nsIXPConnect.h"
 #include "nsIXULRuntime.h"
@@ -36,6 +35,7 @@
 #include "nsPrintfCString.h"
 #include "nsTHashtable.h"
 #include "jsapi.h"
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
 #include "mozilla/dom/ContentProcessMessageManager.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/PlacesObservers.h"
@@ -188,12 +188,12 @@ nsresult GetJSArrayFromJSValue(JS::Handle<JS::Value> aValue, JSContext* aCtx,
   if (aValue.isObjectOrNull()) {
     JS::Rooted<JSObject*> val(aCtx, aValue.toObjectOrNull());
     bool isArray;
-    if (!JS_IsArrayObject(aCtx, val, &isArray)) {
+    if (!JS::IsArrayObject(aCtx, val, &isArray)) {
       return NS_ERROR_UNEXPECTED;
     }
     if (isArray) {
       _array.set(val);
-      (void)JS_GetArrayLength(aCtx, _array, _arrayLength);
+      (void)JS::GetArrayLength(aCtx, _array, _arrayLength);
       NS_ENSURE_ARG(*_arrayLength > 0);
       return NS_OK;
     }
@@ -202,7 +202,7 @@ nsresult GetJSArrayFromJSValue(JS::Handle<JS::Value> aValue, JSContext* aCtx,
   // Build a temporary array to store this one item so the code below can
   // just loop.
   *_arrayLength = 1;
-  _array.set(JS_NewArrayObject(aCtx, 0));
+  _array.set(JS::NewArrayObject(aCtx, 0));
   NS_ENSURE_TRUE(_array, NS_ERROR_OUT_OF_MEMORY);
 
   bool rc = JS_DefineElement(aCtx, _array, 0, aValue, 0);
@@ -611,7 +611,7 @@ class NotifyManyVisitsObservers : public Runnable {
 
     PRTime now = PR_Now();
     if (mPlaces.Length() > 0) {
-      InfallibleTArray<URIParams> serializableUris(mPlaces.Length());
+      nsTArray<URIParams> serializableUris(mPlaces.Length());
       for (uint32_t i = 0; i < mPlaces.Length(); ++i) {
         nsresult rv =
             NotifyVisit(navHistory, obsService, now, uris[i], mPlaces[i]);
@@ -924,7 +924,7 @@ class InsertVisitedURIs final : public Runnable {
     const VisitData* lastFetchedPlace = nullptr;
     uint32_t lastFetchedVisitCount = 0;
     bool shouldChunkNotifications = mPlaces.Length() > NOTIFY_VISITS_CHUNK_SIZE;
-    InfallibleTArray<VisitData> notificationChunk;
+    nsTArray<VisitData> notificationChunk;
     if (shouldChunkNotifications) {
       notificationChunk.SetCapacity(NOTIFY_VISITS_CHUNK_SIZE);
     }
@@ -2337,7 +2337,7 @@ History::UpdatePlaces(JS::Handle<JS::Value> aPlaceInfos,
       if (!visitsVal.isPrimitive()) {
         visits = visitsVal.toObjectOrNull();
         bool isArray;
-        if (!JS_IsArrayObject(aCtx, visits, &isArray)) {
+        if (!JS::IsArrayObject(aCtx, visits, &isArray)) {
           return NS_ERROR_UNEXPECTED;
         }
         if (!isArray) {
@@ -2349,7 +2349,7 @@ History::UpdatePlaces(JS::Handle<JS::Value> aPlaceInfos,
 
     uint32_t visitsLength = 0;
     if (visits) {
-      (void)JS_GetArrayLength(aCtx, visits, &visitsLength);
+      (void)JS::GetArrayLength(aCtx, visits, &visitsLength);
     }
     NS_ENSURE_ARG(visitsLength > 0);
 

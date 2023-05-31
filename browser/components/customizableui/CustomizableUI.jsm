@@ -1845,8 +1845,7 @@ var CustomizableUIInternal = {
         return (
           gWidgetsBundle.formatStringFromName(
             name,
-            aFormatArgs,
-            aFormatArgs.length
+            aFormatArgs
           ) || def
         );
       }

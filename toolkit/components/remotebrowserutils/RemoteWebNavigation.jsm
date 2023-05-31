@@ -153,7 +153,6 @@ RemoteWebNavigation.prototype = {
       csp: aLoadURIOptions.csp
         ? E10SUtils.serializeCSP(aLoadURIOptions.csp)
         : null,
-      requestTime: Services.telemetry.msSystemNow(),
       cancelContentJSEpoch,
     });
   },

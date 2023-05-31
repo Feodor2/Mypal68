@@ -8,9 +8,9 @@
 #include <stdint.h>  // for int32_t
 #include "Layers.h"
 #include "gfxContext.h"  // for gfxContext
-#include "gfxPrefs.h"
 #include "mozilla/Attributes.h"   // for override
-#include "mozilla/LinkedList.h"   // For LinkedList
+#include "mozilla/LinkedList.h"   // for LinkedList
+#include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/WidgetUtils.h"  // for ScreenRotation
 #include "mozilla/gfx/Rect.h"     // for Rect
 #include "mozilla/layers/CompositorTypes.h"
@@ -21,7 +21,6 @@
 #include "mozilla/layers/APZTestData.h"   // for APZTestData
 #include "mozilla/layers/MemoryPressureObserver.h"
 #include "nsCOMPtr.h"         // for already_AddRefed
-#include "nsIObserver.h"      // for nsIObserver
 #include "nsISupportsImpl.h"  // for Layer::Release, etc
 #include "nsRect.h"           // for mozilla::gfx::IntRect
 #include "nsTArray.h"         // for nsTArray
@@ -200,7 +199,7 @@ class ClientLayerManager final : public LayerManager,
   void LogTestDataForCurrentPaint(ScrollableLayerGuid::ViewID aScrollId,
                                   const std::string& aKey,
                                   const std::string& aValue) {
-    MOZ_ASSERT(gfxPrefs::APZTestLoggingEnabled(), "don't call me");
+    MOZ_ASSERT(StaticPrefs::apz_test_logging_enabled(), "don't call me");
     mApzTestData.LogTestDataForPaint(mPaintSequenceNumber, aScrollId, aKey,
                                      aValue);
   }
@@ -213,18 +212,18 @@ class ClientLayerManager final : public LayerManager,
 
   // TODO(botond): When we start using this and write a wrapper similar to
   // nsLayoutUtils::LogTestDataForPaint(), make sure that wrapper checks
-  // gfxPrefs::APZTestLoggingEnabled().
+  // StaticPrefs::apz_test_logging_enabled().
   void LogTestDataForRepaintRequest(SequenceNumber aSequenceNumber,
                                     ScrollableLayerGuid::ViewID aScrollId,
                                     const std::string& aKey,
                                     const std::string& aValue) {
-    MOZ_ASSERT(gfxPrefs::APZTestLoggingEnabled(), "don't call me");
+    MOZ_ASSERT(StaticPrefs::apz_test_logging_enabled(), "don't call me");
     mApzTestData.LogTestDataForRepaintRequest(aSequenceNumber, aScrollId, aKey,
                                               aValue);
   }
   void LogAdditionalTestData(const std::string& aKey,
                              const std::string& aValue) {
-    MOZ_ASSERT(gfxPrefs::APZTestLoggingEnabled(), "don't call me");
+    MOZ_ASSERT(StaticPrefs::apz_test_logging_enabled(), "don't call me");
     mApzTestData.RecordAdditionalData(aKey, aValue);
   }
 

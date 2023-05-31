@@ -14,7 +14,6 @@
 #include "nsUnicodeScriptCodes.h"
 
 #include "gfxTypes.h"
-#include "gfxFontFamilyList.h"
 #include "gfxBlur.h"
 #include "gfxSkipChars.h"
 #include "nsRect.h"
@@ -43,6 +42,7 @@ class gfxTextPerfMetrics;
 typedef struct FT_LibraryRec_* FT_Library;
 
 namespace mozilla {
+class FontFamilyList;
 namespace layers {
 class FrameStats;
 }
@@ -201,6 +201,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static void InitMoz2DLogging();
 
   static bool IsHeadless();
+
+  static bool UseWebRender();
 
   /**
    * Create an offscreen surface of the given dimensions
@@ -610,8 +612,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    */
   virtual mozilla::gfx::VsyncSource* GetHardwareVsync() {
     MOZ_ASSERT(mVsyncSource != nullptr);
-    MOZ_ASSERT(XRE_IsParentProcess() ||
-               mozilla::recordreplay::IsRecordingOrReplaying());
+    MOZ_ASSERT(XRE_IsParentProcess());
     return mVsyncSource;
   }
 
@@ -666,8 +667,9 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
       mozilla::gfx::SurfaceFormat aFormat);
 
   /**
-   * Wrapper around gfxPrefs::PerfWarnings().
-   * Extracted into a function to avoid including gfxPrefs.h from this file.
+   * Wrapper around StaticPrefs::gfx_perf_warnings_enabled().
+   * Extracted into a function to avoid including StaticPrefs_gfx.h from this
+   * file.
    */
   static bool PerfWarnings();
 

@@ -13,6 +13,24 @@
 
 namespace mozilla {
 
+namespace detail {
+template <typename T>
+struct AddInnerConst;
+
+template <typename T>
+struct AddInnerConst<T&> {
+  using Type = const T&;
+};
+
+template <typename T>
+struct AddInnerConst<T*> {
+  using Type = const T*;
+};
+
+template <typename T>
+using AddInnerConstT = typename AddInnerConst<T>::Type;
+}  // namespace detail
+
 // We have implemented a custom iterator class for array rather than using
 // raw pointers into the backing storage to improve the safety of C++11-style
 // range based iteration in the presence of array mutation, or script execution
@@ -37,6 +55,8 @@ class ArrayIterator {
   typedef value_type* pointer;
   typedef value_type& reference;
   typedef std::random_access_iterator_tag iterator_category;
+  typedef ArrayIterator<detail::AddInnerConstT<Element>, ArrayType>
+      const_iterator_type;
 
  private:
   const array_type* mArray;
@@ -53,6 +73,11 @@ class ArrayIterator {
     mArray = aOther.mArray;
     mIndex = aOther.mIndex;
     return *this;
+  }
+
+  constexpr operator const_iterator_type() const {
+    return mArray ? const_iterator_type{*mArray, mIndex}
+                  : const_iterator_type{};
   }
 
   bool operator==(const iterator_type& aRhs) const {
@@ -128,6 +153,10 @@ class ArrayIterator {
   Element operator[](difference_type aIndex) const {
     return *this->operator+(aIndex);
   }
+
+  constexpr const array_type* GetArray() const { return mArray; }
+
+  constexpr index_type GetIndex() const { return mIndex; }
 };
 
 }  // namespace mozilla

@@ -20,39 +20,21 @@
 // https://github.com/Microsoft/GSL/blob/3819df6e378ffccf0e29465afe99c3b324c2aa70/include/gsl/gsl_util
 
 #ifndef mozilla_Span_h
-#  define mozilla_Span_h
+#define mozilla_Span_h
 
-#  include "mozilla/Array.h"
-#  include "mozilla/Assertions.h"
-#  include "mozilla/Casting.h"
-#  include "mozilla/IntegerTypeTraits.h"
-#  include "mozilla/Move.h"
-#  include "mozilla/TypeTraits.h"
-#  include "mozilla/UniquePtr.h"
+#include "mozilla/Array.h"
+#include "mozilla/Assertions.h"
+#include "mozilla/Casting.h"
+#include "mozilla/IntegerTypeTraits.h"
+#include "mozilla/Move.h"
+#include "mozilla/TypeTraits.h"
+#include "mozilla/UniquePtr.h"
 
-#  include <algorithm>
-#  include <array>
-#  include <cstring>
-#  include <iterator>
-
-#  ifdef _MSC_VER
-#    pragma warning(push)
-
-// turn off some warnings that are noisy about our MOZ_RELEASE_ASSERT statements
-#    pragma warning(disable : 4127)  // conditional expression is constant
-
-// blanket turn off warnings from CppCoreCheck for now
-// so people aren't annoyed by them when running the tool.
-// more targeted suppressions will be added in a future update to the GSL
-#    pragma warning( \
-        disable : 26481 26482 26483 26485 26490 26491 26492 26493 26495)
-
-#    if _MSC_VER < 1910
-#      pragma push_macro("constexpr")
-#      define constexpr /*constexpr*/
-
-#    endif  // _MSC_VER < 1910
-#  endif    // _MSC_VER
+#include <algorithm>
+#include <array>
+#include <limits>
+#include <cstring>
+#include <iterator>
 
 namespace mozilla {
 
@@ -71,7 +53,7 @@ inline constexpr T narrow_cast(U&& u) {
 // and reserving a magic value that realistically doesn't occur in
 // compile-time-constant Span sizes makes things a lot less messy in terms of
 // comparison between signed and unsigned.
-constexpr const size_t dynamic_extent = mozilla::MaxValue<size_t>::value;
+constexpr const size_t dynamic_extent = std::numeric_limits<size_t>::max();
 
 template <class ElementType, size_t Extent = dynamic_extent>
 class Span;
@@ -278,7 +260,7 @@ class extent_type {
 
   static_assert(Ext >= 0, "A fixed-size Span must be >= 0 in size.");
 
-  constexpr extent_type() {}
+  constexpr extent_type() = default;
 
   template <index_type Other>
   constexpr MOZ_IMPLICIT extent_type(extent_type<Other> ext) {
@@ -377,7 +359,7 @@ class extent_type<dynamic_extent> {
  * AsBytes(). Any Span<T> can be viewed as Span<uint8_t> using the function
  * AsWritableBytes().
  */
-template <class ElementType, size_t Extent>
+template <class ElementType, size_t Extent /* = dynamic_extent */>
 class Span {
  public:
   // constants and types
@@ -397,17 +379,16 @@ class Span {
 
   // [Span.cons], Span constructors, copy, assignment, and destructor
   // "Dependent" is needed to make "span_details::enable_if_t<(Dependent ||
-  //   Extent == 0 || Extent == mozilla::MaxValue<size_t>::value)>" SFINAE,
-  // since "span_details::enable_if_t<(Extent == 0 || Extent ==
-  //   mozilla::MaxValue<size_t>::value)>" is ill-formed when Extent is neither
-  //   of the extreme values.
+  //   Extent == 0 || Extent == dynamic_extent)>" SFINAE,
+  // since
+  // "span_details::enable_if_t<(Extent == 0 || Extent == dynamic_extent)>" is
+  // ill-formed when Extent is neither of the extreme values.
   /**
    * Constructor with no args.
    */
   template <bool Dependent = false,
-            class = span_details::enable_if_t<
-                (Dependent || Extent == 0 ||
-                 Extent == mozilla::MaxValue<size_t>::value)>>
+            class = span_details::enable_if_t<(Dependent || Extent == 0 ||
+                                               Extent == dynamic_extent)>>
   constexpr Span() : storage_(nullptr, span_details::extent_type<0>()) {}
 
   /**
@@ -737,9 +718,8 @@ class Span {
           data_(elements ? elements
                          : reinterpret_cast<pointer>(alignof(element_type))) {
       const size_t extentSize = ExtentType::size();
-      MOZ_RELEASE_ASSERT(
-          (!elements && extentSize == 0) ||
-          (elements && extentSize != mozilla::MaxValue<size_t>::value));
+      MOZ_RELEASE_ASSERT((!elements && extentSize == 0) ||
+                         (elements && extentSize != dynamic_extent));
     }
 
     constexpr pointer data() const { return data_; }
@@ -755,7 +735,8 @@ class Span {
 template <class ElementType, size_t FirstExtent, size_t SecondExtent>
 inline constexpr bool operator==(const Span<ElementType, FirstExtent>& l,
                                  const Span<ElementType, SecondExtent>& r) {
-  return (l.size() == r.size()) && std::equal(l.begin(), l.end(), r.begin());
+  return (l.size() == r.size()) &&
+         std::equal(l.data(), l.data() + l.size(), r.data());
 }
 
 template <class ElementType, size_t Extent>
@@ -767,7 +748,8 @@ inline constexpr bool operator!=(const Span<ElementType, Extent>& l,
 template <class ElementType, size_t Extent>
 inline constexpr bool operator<(const Span<ElementType, Extent>& l,
                                 const Span<ElementType, Extent>& r) {
-  return std::lexicographical_compare(l.begin(), l.end(), r.begin(), r.end());
+  return std::lexicographical_compare(l.data(), l.data() + l.size(), r.data(),
+                                      r.data() + r.size());
 }
 
 template <class ElementType, size_t Extent>
@@ -825,6 +807,20 @@ template <
 Span<uint8_t, span_details::calculate_byte_size<ElementType, Extent>::value>
 AsWritableBytes(Span<ElementType, Extent> s) {
   return {reinterpret_cast<uint8_t*>(s.data()), s.size_bytes()};
+}
+
+/**
+ * View a span of uint8_t as a span of char.
+ */
+inline Span<const char> AsChars(Span<const uint8_t> s) {
+  return {reinterpret_cast<const char*>(s.data()), s.size()};
+}
+
+/**
+ * View a writable span of uint8_t as a span of char.
+ */
+inline Span<char> AsWritableChars(Span<uint8_t> s) {
+  return {reinterpret_cast<char*>(s.data()), s.size()};
 }
 
 //
@@ -928,15 +924,5 @@ inline Span<const char16_t> MakeStringSpan(const char16_t* aZeroTerminated) {
 }
 
 }  // namespace mozilla
-
-#  ifdef _MSC_VER
-#    if _MSC_VER < 1910
-#      undef constexpr
-#      pragma pop_macro("constexpr")
-
-#    endif  // _MSC_VER < 1910
-
-#    pragma warning(pop)
-#  endif  // _MSC_VER
 
 #endif  // mozilla_Span_h

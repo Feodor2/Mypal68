@@ -13,6 +13,7 @@
 #include "nsJARURI.h"
 #include "mozilla/chrome/RegistryMessageUtils.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/RWLock.h"
 
 class nsIIOService;
 
@@ -30,13 +31,17 @@ class SubstitutingProtocolHandler {
                               bool aEnforceFileOrJar = true);
   explicit SubstitutingProtocolHandler(const char* aScheme);
 
-  NS_INLINE_DECL_REFCOUNTING(SubstitutingProtocolHandler);
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SubstitutingProtocolHandler);
   NS_DECL_NON_VIRTUAL_NSIPROTOCOLHANDLER;
   NS_DECL_NON_VIRTUAL_NSISUBSTITUTINGPROTOCOLHANDLER;
 
   bool HasSubstitution(const nsACString& aRoot) const {
+    AutoReadLock lock(const_cast<RWLock&>(mSubstitutionsLock));
     return mSubstitutions.Get(aRoot, nullptr);
   }
+
+  nsresult NewURI(const nsACString& aSpec, const char* aCharset,
+                  nsIURI* aBaseURI, nsIURI** aResult);
 
   MOZ_MUST_USE nsresult
   CollectSubstitutions(InfallibleTArray<SubstitutionMapping>& aResources);
@@ -69,6 +74,12 @@ class SubstitutingProtocolHandler {
     return false;
   }
 
+  // This method should only return true if GetSubstitutionInternal would
+  // return the RESOLVE_JAR_URI flag.
+  virtual MOZ_MUST_USE bool MustResolveJAR(const nsACString& aRoot) {
+    return false;
+  }
+
   // Override this in the subclass to check for special case when opening
   // channels.
   virtual MOZ_MUST_USE nsresult SubstituteChannel(nsIURI* uri,
@@ -95,6 +106,8 @@ class SubstitutingProtocolHandler {
 
   nsCString mScheme;
   Maybe<uint32_t> mFlags;
+
+  RWLock mSubstitutionsLock;
   nsDataHashtable<nsCStringHashKey, SubstitutionEntry> mSubstitutions;
   nsCOMPtr<nsIIOService> mIOService;
 

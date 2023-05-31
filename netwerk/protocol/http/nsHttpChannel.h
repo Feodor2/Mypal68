@@ -15,7 +15,6 @@
 #include "nsIApplicationCacheChannel.h"
 #include "nsIChannelWithDivertableParentListener.h"
 #include "nsIProtocolProxyCallback.h"
-#include "nsIStreamTransportService.h"
 #include "nsIHttpAuthenticableChannel.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIThreadRetargetableRequest.h"
@@ -25,13 +24,11 @@
 #include "ADivertableParentChannel.h"
 #include "AutoClose.h"
 #include "nsIStreamListener.h"
-#include "nsISupportsPrimitives.h"
 #include "nsICorsPreflightCallback.h"
 #include "AlternateServices.h"
 #include "nsIRaceCacheWithNetwork.h"
 #include "mozilla/extensions/PStreamFilterParent.h"
 #include "mozilla/Mutex.h"
-#include "nsIRemoteTab.h"
 
 class nsDNSPrefetch;
 class nsICancelable;

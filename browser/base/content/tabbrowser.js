@@ -63,7 +63,6 @@
           this.selectedBrowser
         );
       }
-      messageManager.addMessageListener("DOMWindowFocus", this);
       messageManager.addMessageListener("RefreshBlocker:Blocked", this);
       messageManager.addMessageListener("Browser:WindowCreated", this);
 
@@ -1594,6 +1593,7 @@
       var aUserContextId;
       var aSameProcessAsFrameLoader;
       var aOriginPrincipal;
+      var aOriginStoragePrincipal;
       var aOpener;
       var aOpenerBrowser;
       var aCreateLazyBrowser;
@@ -1623,6 +1623,7 @@
         aUserContextId = params.userContextId;
         aSameProcessAsFrameLoader = params.sameProcessAsFrameLoader;
         aOriginPrincipal = params.originPrincipal;
+        aOriginStoragePrincipal = params.originStoragePrincipal;
         aOpener = params.opener;
         aOpenerBrowser = params.openerBrowser;
         aCreateLazyBrowser = params.createLazyBrowser;
@@ -1662,6 +1663,7 @@
         preferredRemoteType: aPreferredRemoteType,
         userContextId: aUserContextId,
         originPrincipal: aOriginPrincipal,
+        originStoragePrincipal: aOriginStoragePrincipal,
         sameProcessAsFrameLoader: aSameProcessAsFrameLoader,
         opener: aOpener,
         openerBrowser: aOpenerBrowser,
@@ -1813,7 +1815,6 @@
         opener,
         remoteType,
         sameProcessAsFrameLoader,
-        recordExecution,
         replaceBrowsingContext,
       } = {}
     ) {
@@ -1901,16 +1902,6 @@
         )
       ) {
         aBrowser.remove();
-      }
-
-      if (recordExecution) {
-        aBrowser.setAttribute("recordExecution", recordExecution);
-
-        // Web Replay middleman processes need the default URL to be loaded in
-        // order to set up their rendering state.
-        aBrowser.setAttribute("nodefaultsrc", "false");
-      } else if (aBrowser.hasAttribute("recordExecution")) {
-        aBrowser.removeAttribute("recordExecution");
       }
 
       // NB: This works with the hack in the browser constructor that
@@ -2078,9 +2069,7 @@
       name,
       nextRemoteTabId,
       openerWindow,
-      recordExecution,
       remoteType,
-      replayExecution,
       sameProcessAsFrameLoader,
       uriIsAboutBlank,
       userContextId,
@@ -2111,14 +2100,6 @@
       if (remoteType) {
         b.setAttribute("remoteType", remoteType);
         b.setAttribute("remote", "true");
-      }
-
-      if (recordExecution) {
-        b.setAttribute("recordExecution", recordExecution);
-      }
-
-      if (replayExecution) {
-        b.setAttribute("replayExecution", replayExecution);
       }
 
       if (openerWindow) {
@@ -2545,6 +2526,7 @@
         opener,
         openerBrowser,
         originPrincipal,
+        originStoragePrincipal,
         ownerTab,
         pinned,
         postData,
@@ -2556,8 +2538,6 @@
         skipBackgroundNotify,
         triggeringPrincipal,
         userContextId,
-        recordExecution,
-        replayExecution,
         csp,
       } = {}
     ) {
@@ -2773,12 +2753,7 @@
 
         // If we open a new tab with the newtab URL in the default
         // userContext, check if there is a preloaded browser ready.
-        if (
-          aURI == BROWSER_NEW_TAB_URL &&
-          !userContextId &&
-          !recordExecution &&
-          !replayExecution
-        ) {
+        if (aURI == BROWSER_NEW_TAB_URL && !userContextId) {
           b = NewTabPagePreloading.getPreloadedBrowser(window);
           if (b) {
             usingPreloadedContent = true;
@@ -2795,8 +2770,6 @@
             openerWindow: opener,
             nextRemoteTabId,
             name,
-            recordExecution,
-            replayExecution,
           });
         }
 
@@ -2866,7 +2839,12 @@
       });
       t.dispatchEvent(evt);
 
-      if (!usingPreloadedContent && originPrincipal && aURI) {
+      if (
+        !usingPreloadedContent &&
+        originPrincipal &&
+        originStoragePrincipal &&
+        aURI
+      ) {
         let { URI_INHERITS_SECURITY_CONTEXT } = Ci.nsIProtocolHandler;
         // Unless we know for sure we're not inheriting principals,
         // force the about:blank viewer to have the right principal:
@@ -2874,7 +2852,10 @@
           !aURIObject ||
           doGetProtocolFlags(aURIObject) & URI_INHERITS_SECURITY_CONTEXT
         ) {
-          b.createAboutBlankContentViewer(originPrincipal);
+          b.createAboutBlankContentViewer(
+            originPrincipal,
+           originStoragePrincipal
+          );
         }
       }
 
@@ -4815,8 +4796,7 @@
             [
               label,
               ContextualIdentityService.getUserContextLabel(tab.userContextId),
-            ],
-            2
+            ]
           );
         }
       }
@@ -4895,15 +4875,6 @@
         }
         case "contextmenu": {
           openContextMenu(aMessage);
-          break;
-        }
-        case "DOMWindowFocus": {
-          let tab = this.getTabForBrowser(browser);
-          if (!tab) {
-            return undefined;
-          }
-          this.selectedTab = tab;
-          window.focus();
           break;
         }
         case "Browser:Init": {
@@ -5370,8 +5341,8 @@
           return;
         }
 
-        SitePermissions.set(
-          event.detail.url,
+        SitePermissions.setForPrincipal(
+          browser.contentPrincipal,
           "autoplay-media",
           SitePermissions.BLOCK,
           SitePermissions.SCOPE_GLOBAL,
@@ -5728,8 +5699,8 @@
 
             this.mBrowser.userTypedValue = null;
 
-            let inLoadURI = this.mBrowser.inLoadURI;
-            if (this.mTab.selected && gURLBar && !inLoadURI) {
+            let isNavigating = this.mBrowser.isNavigating;
+            if (this.mTab.selected && gURLBar && !isNavigating) {
               URLBarSetURI();
             }
           } else if (isSuccessful) {
@@ -5824,7 +5795,7 @@
         if (
           this.mBrowser.didStartLoadSinceLastUserTyping() ||
           (isErrorPage && aLocation.spec != "about:blank") ||
-          (isSameDocument && this.mBrowser.inLoadURI) ||
+          (isSameDocument && this.mBrowser.isNavigating) ||
           (isSameDocument && !this.mBrowser.userTypedValue)
         ) {
           this.mBrowser.userTypedValue = null;

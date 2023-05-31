@@ -3,10 +3,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const {Services} = ChromeUtils.import("resource://gre/modules/Services.jsm");
-const {XPCOMUtils} = ChromeUtils.import("resource://gre/modules/XPCOMUtils.jsm");
-ChromeUtils.defineModuleGetter(this, "PluralForm", "resource://gre/modules/PluralForm.jsm");
-const {actionTypes: at} = ChromeUtils.import("resource://activity-stream/common/Actions.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+const { XPCOMUtils } = ChromeUtils.import(
+  "resource://gre/modules/XPCOMUtils.jsm"
+);
+const { actionTypes: at } = ChromeUtils.import(
+  "resource://activity-stream/common/Actions.jsm"
+);
 
 XPCOMUtils.defineLazyGlobalGetters(this, ["fetch"]);
 const HTML_NS = "http://www.w3.org/1999/xhtml";
@@ -19,7 +22,7 @@ const PREFS_BEFORE_SECTIONS = [
     id: "search",
     pref: {
       feed: "showSearch",
-      titleString: "prefs_search_header",
+      titleString: "home-prefs-search-header",
     },
     icon: "chrome://browser/skin/search-glass.svg",
   },
@@ -27,24 +30,12 @@ const PREFS_BEFORE_SECTIONS = [
     id: "topsites",
     pref: {
       feed: "feeds.topsites",
-      titleString: "settings_pane_topsites_header",
-      descString: "prefs_topsites_description",
+      titleString: "home-prefs-topsites-header",
+      descString: "home-prefs-topsites-description",
     },
     icon: "topsites",
     maxRows: 4,
     rowsPref: "topSitesRows",
-  },
-];
-
-const PREFS_AFTER_SECTIONS = [
-  {
-    id: "snippets",
-    pref: {
-      feed: "feeds.snippets",
-      titleString: "settings_pane_snippets_header",
-      descString: "prefs_snippets_description",
-    },
-    icon: "info",
   },
 ];
 
@@ -91,7 +82,9 @@ this.AboutPreferences = class AboutPreferences {
         break;
       // This is used to open the web extension settings page for an extension
       case at.OPEN_WEBEXT_SETTINGS:
-        action._target.browser.ownerGlobal.BrowserOpenAddonsMgr(`addons://detail/${encodeURIComponent(action.data)}`);
+        action._target.browser.ownerGlobal.BrowserOpenAddonsMgr(
+          `addons://detail/${encodeURIComponent(action.data)}`
+        );
         break;
     }
   }
@@ -99,8 +92,10 @@ this.AboutPreferences = class AboutPreferences {
   async observe(window) {
     let sections = this.store.getState().Sections;
 
-    this.renderPreferences(window, await this.strings, [...PREFS_BEFORE_SECTIONS,
-      ...sections, ...PREFS_AFTER_SECTIONS]);
+    this.renderPreferences(window, await this.strings, [
+      ...PREFS_BEFORE_SECTIONS,
+      ...sections,
+    ]);
   }
 
   /**
@@ -108,70 +103,84 @@ this.AboutPreferences = class AboutPreferences {
    * file should be a single variable assignment of a JSON/JS object of strings.
    */
   get strings() {
-    return this._strings || (this._strings = new Promise(async resolve => {
-      let data = {};
-      try {
-        const locale = Cc["@mozilla.org/browser/aboutnewtab-service;1"]
-          .getService(Ci.nsIAboutNewTabService).activityStreamLocale;
-        const request = await fetch(`resource://activity-stream/prerendered/${locale}/activity-stream-strings.js`);
-        const text = await request.text();
-        const [json] = text.match(/{[^]*}/);
-        data = JSON.parse(json);
-      } catch (ex) {
-        Cu.reportError("Failed to load strings for Activity Stream about:preferences");
-      }
-      resolve(data);
-    }));
+    return (
+      this._strings ||
+      (this._strings = new Promise(async resolve => {
+        let data = {};
+        try {
+          const locale = Cc[
+            "@mozilla.org/browser/aboutnewtab-service;1"
+          ].getService(Ci.nsIAboutNewTabService).activityStreamLocale;
+          const request = await fetch(
+            `resource://activity-stream/prerendered/${locale}/activity-stream-strings.js`
+          );
+          const text = await request.text();
+          const [json] = text.match(/{[^]*}/);
+          data = JSON.parse(json);
+        } catch (ex) {
+          Cu.reportError(
+            "Failed to load strings for Activity Stream about:preferences"
+          );
+        }
+        resolve(data);
+      }))
+    );
   }
 
   /**
    * Render preferences to an about:preferences content window with the provided
    * strings and preferences structure.
    */
-  renderPreferences({document, Preferences, gHomePane}, strings, prefStructure) {
+  renderPreferences(
+    { document, Preferences, gHomePane },
+    strings,
+    prefStructure
+  ) {
     // Helper to create a new element and append it
-    const createAppend = (tag, parent, options) => parent.appendChild(
-      document.createXULElement(tag, options));
+    const createAppend = (tag, parent, options) =>
+      parent.appendChild(document.createXULElement(tag, options));
 
-    // Helper to get strings and format with values if necessary
-    const formatString = id => {
-      if (typeof id !== "object") {
-        return strings[id] || id;
-      }
-      let string = strings[id.id] || JSON.stringify(id);
-      if (id.values) {
-        Object.entries(id.values).forEach(([key, val]) => {
-          string = string.replace(new RegExp(`{${key}}`, "g"), val);
-        });
-      }
-      return string;
-    };
+    // Helper to get fluentIDs sometimes encase in an object
+    const getString = message =>
+      typeof message !== "object" ? message : message.id;
 
     // Helper to link a UI element to a preference for updating
     const linkPref = (element, name, type) => {
       const fullPref = `browser.newtabpage.activity-stream.${name}`;
       element.setAttribute("preference", fullPref);
-      Preferences.add({id: fullPref, type});
+      Preferences.add({ id: fullPref, type });
 
       // Prevent changing the UI if the preference can't be changed
       element.disabled = Preferences.get(fullPref).locked;
     };
 
     // Add in custom styling
-    document.insertBefore(document.createProcessingInstruction("xml-stylesheet",
-      `href="data:text/css,${encodeURIComponent(CUSTOM_CSS)}" type="text/css"`),
-      document.documentElement);
+    document.insertBefore(
+      document.createProcessingInstruction(
+        "xml-stylesheet",
+        `href="data:text/css,${encodeURIComponent(CUSTOM_CSS)}" type="text/css"`
+      ),
+      document.documentElement
+    );
 
     // Insert a new group immediately after the homepage one
     const homeGroup = document.getElementById("homepageGroup");
-    const contentsGroup = homeGroup.insertAdjacentElement("afterend", homeGroup.cloneNode());
+    const contentsGroup = homeGroup.insertAdjacentElement(
+      "afterend",
+      homeGroup.cloneNode()
+    );
     contentsGroup.id = "homeContentsGroup";
     contentsGroup.setAttribute("data-subcategory", "contents");
-    createAppend("label", contentsGroup)
-      .appendChild(document.createElementNS(HTML_NS, "h2"))
-      .textContent = formatString("prefs_home_header");
-    createAppend("description", contentsGroup)
-      .textContent = formatString("prefs_home_description");
+    const homeHeader = createAppend("label", contentsGroup).appendChild(
+      document.createElementNS(HTML_NS, "h2")
+    );
+    document.l10n.setAttributes(homeHeader, "home-prefs-content-header");
+
+    const homeDescription = createAppend("description", contentsGroup);
+    document.l10n.setAttributes(
+      homeDescription,
+      "home-prefs-content-description"
+    );
 
     // Add preferences for each section
     prefStructure.forEach(sectionData => {
@@ -183,12 +192,8 @@ this.AboutPreferences = class AboutPreferences {
         rowsPref,
         shouldHidePref,
       } = sectionData;
-      const {
-        feed: name,
-        titleString,
-        descString,
-        nestedPrefs = [],
-      } = prefData || {};
+      const { feed: name, titleString = {}, descString, nestedPrefs = [] } =
+        prefData || {};
 
       // Don't show any sections that we don't want to expose in preferences UI
       if (shouldHidePref) {
@@ -196,16 +201,22 @@ this.AboutPreferences = class AboutPreferences {
       }
 
       // Use full icon spec for certain protocols or fall back to packaged icon
-      const iconUrl = !icon.search(/^(chrome|moz-extension|resource):/) ? icon :
-        `resource://activity-stream/data/content/assets/glyph-${icon}-16.svg`;
+      const iconUrl = !icon.search(/^(chrome|moz-extension|resource):/)
+        ? icon
+        : `resource://activity-stream/data/content/assets/glyph-${icon}-16.svg`;
 
       // Add the main preference for turning on/off a section
       const sectionVbox = createAppend("vbox", contentsGroup);
       sectionVbox.setAttribute("data-subcategory", id);
       const checkbox = createAppend("checkbox", sectionVbox);
       checkbox.classList.add("section-checkbox");
-      checkbox.setAttribute("label", formatString(titleString));
       checkbox.setAttribute("src", iconUrl);
+      document.l10n.setAttributes(
+        checkbox,
+        getString(titleString),
+        titleString.values
+      );
+
       linkPref(checkbox, name, "bool");
 
       // Add more details for the section (e.g., description, more prefs)
@@ -214,7 +225,7 @@ this.AboutPreferences = class AboutPreferences {
       if (descString) {
         const label = createAppend("label", detailVbox);
         label.classList.add("indent");
-        label.textContent = formatString(descString);
+        document.l10n.setAttributes(label, getString(descString));
 
         // Add a rows dropdown if we have a pref to control and a maximum
         if (rowsPref && maxRows) {
@@ -231,21 +242,39 @@ this.AboutPreferences = class AboutPreferences {
           menulist.setAttribute("crop", "none");
           const menupopup = createAppend("menupopup", menulist);
           for (let num = 1; num <= maxRows; num++) {
-            const plurals = formatString({id: "prefs_section_rows_option", values: {num}});
             const item = createAppend("menuitem", menupopup);
-            item.setAttribute("label", PluralForm.get(num, plurals));
+            document.l10n.setAttributes(
+              item,
+              "home-prefs-sections-rows-option",
+              { num }
+            );
             item.setAttribute("value", num);
           }
           linkPref(menulist, rowsPref, "int");
         }
       }
 
+      const subChecks = [];
+      const fullName = `browser.newtabpage.activity-stream.${
+        sectionData.pref.feed
+      }`;
+      const pref = Preferences.get(fullName);
+
       // Add a checkbox pref for any nested preferences
       nestedPrefs.forEach(nested => {
         const subcheck = createAppend("checkbox", detailVbox);
         subcheck.classList.add("indent");
-        subcheck.setAttribute("label", formatString(nested.titleString));
+        document.l10n.setAttributes(subcheck, nested.titleString);
         linkPref(subcheck, nested.name, "bool");
+        subChecks.push(subcheck);
+        subcheck.disabled = !pref._value;
+      });
+
+      // Disable any nested checkboxes if the parent pref is not enabled.
+      pref.on("change", () => {
+        subChecks.forEach(subcheck => {
+          subcheck.disabled = !pref._value;
+        });
       });
     });
 

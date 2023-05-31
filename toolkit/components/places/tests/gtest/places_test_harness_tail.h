@@ -3,8 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsWidgetsCID.h"
-#include "nsIComponentRegistrar.h"
-#include "nsICrashReporter.h"
 #include "nsIIdleService.h"
 
 #ifndef TEST_NAME

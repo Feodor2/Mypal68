@@ -2472,6 +2472,7 @@ this.VideoControlsImplWidget = class {
      * Remove it when migrate to Fluent.
      */
     const parser = new this.window.DOMParser();
+    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
       `<!DOCTYPE bindings [
       <!ENTITY % videocontrolsDTD SYSTEM "chrome://global/locale/videocontrols.dtd">
@@ -2719,6 +2720,7 @@ this.NoControlsMobileImplWidget = class {
      * Remove it when migrate to Fluent.
      */
     const parser = new this.window.DOMParser();
+    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
       `<!DOCTYPE bindings [
       <!ENTITY % videocontrolsDTD SYSTEM "chrome://global/locale/videocontrols.dtd">
@@ -2769,6 +2771,7 @@ this.NoControlsPictureInPictureImplWidget = class {
      * Remove it when migrate to Fluent.
      */
     const parser = new this.window.DOMParser();
+    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
       `<!DOCTYPE bindings [
       <!ENTITY % videocontrolsDTD SYSTEM "chrome://global/locale/videocontrols.dtd">
@@ -2875,6 +2878,7 @@ this.NoControlsDesktopImplWidget = class {
      * Remove it when migrate to Fluent.
      */
     const parser = new this.window.DOMParser();
+    parser.forceEnableDTD();
     let parserDoc = parser.parseFromString(
       `<!DOCTYPE bindings [
       <!ENTITY % videocontrolsDTD SYSTEM "chrome://global/locale/videocontrols.dtd">

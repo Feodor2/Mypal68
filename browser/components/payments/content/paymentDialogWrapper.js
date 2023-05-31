@@ -70,8 +70,7 @@ XPCOMUtils.defineLazyGetter(this, "reauthPasswordPromptMessage", () => {
   );
   return FormAutofillUtils.stringBundle.formatStringFromName(
     `useCreditCardPasswordPrompt.${AppConstants.platform}`,
-    [brandShortName],
-    1
+    [brandShortName]
   );
 });
 

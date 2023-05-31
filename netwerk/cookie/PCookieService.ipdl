@@ -72,6 +72,7 @@ parent:
                                             bool isForeign,
                                             bool isTrackingResource,
                                             bool firstPartyStorageAccessGranted,
+                                            uint32_t rejectedReason,
                                             OriginAttributes aStoragePrincipalAttrs,
                                             nsCString cookieString,
                                             nsCString serverTime,
@@ -81,6 +82,7 @@ parent:
                           bool isForeign,
                           bool isTrackingResource,
                           bool firstPartyStorageAccessGranted,
+                          uint32_t rejectedReason,
                           bool isSafeTopLevelNav,
                           bool isSameSiteForeign,
                           OriginAttributes attrs);

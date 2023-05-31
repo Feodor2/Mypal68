@@ -139,7 +139,6 @@ EXTRA_JS_MODULES += [
     'ContentMetaHandler.jsm',
     'ContentObservers.js',
     'ContentSearch.jsm',
-    'Discovery.jsm',
     'EveryWindow.jsm',
     'ExtensionsUI.jsm',
     'FaviconLoader.jsm',

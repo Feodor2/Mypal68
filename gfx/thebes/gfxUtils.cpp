@@ -28,6 +28,8 @@
 #include "mozilla/image/nsPNGEncoder.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Vector.h"
@@ -45,7 +47,6 @@
 #include "ImageContainer.h"
 #include "ImageRegion.h"
 #include "gfx2DGlue.h"
-#include "gfxPrefs.h"
 
 #ifdef XP_WIN
 #  include "gfxWindowsPlatform.h"
@@ -1460,20 +1461,24 @@ void gfxUtils::RemoveShaderCacheFromDiskIfNecessary() {
 
 /* static */
 bool gfxUtils::DumpDisplayList() {
-  return gfxPrefs::LayoutDumpDisplayList() ||
-         (gfxPrefs::LayoutDumpDisplayListParent() && XRE_IsParentProcess()) ||
-         (gfxPrefs::LayoutDumpDisplayListContent() && XRE_IsContentProcess());
+  return StaticPrefs::layout_display_list_dump() ||
+         (StaticPrefs::layout_display_list_dump_parent() &&
+          XRE_IsParentProcess()) ||
+         (StaticPrefs::layout_display_list_dump_content() &&
+          XRE_IsContentProcess());
 }
 
 wr::RenderRoot gfxUtils::GetContentRenderRoot() {
-  if (gfx::gfxVars::UseWebRender() && gfxPrefs::WebRenderSplitRenderRoots()) {
+  if (gfx::gfxVars::UseWebRender() &&
+      StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
     return wr::RenderRoot::Content;
   }
   return wr::RenderRoot::Default;
 }
 
 Maybe<wr::RenderRoot> gfxUtils::GetRenderRootForFrame(const nsIFrame* aFrame) {
-  if (!gfxVars::UseWebRender() || !gfxPrefs::WebRenderSplitRenderRoots()) {
+  if (!gfxVars::UseWebRender() ||
+      !StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
     return Nothing();
   }
   if (!aFrame->GetContent()) {
@@ -1487,7 +1492,8 @@ Maybe<wr::RenderRoot> gfxUtils::GetRenderRootForElement(
   if (!aElement) {
     return Nothing();
   }
-  if (!gfxVars::UseWebRender() || !gfxPrefs::WebRenderSplitRenderRoots()) {
+  if (!gfxVars::UseWebRender() ||
+      !StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
     return Nothing();
   }
   if (!aElement->IsXULElement()) {
@@ -1502,7 +1508,8 @@ Maybe<wr::RenderRoot> gfxUtils::GetRenderRootForElement(
 
 wr::RenderRoot gfxUtils::RecursivelyGetRenderRootForFrame(
     const nsIFrame* aFrame) {
-  if (!gfxVars::UseWebRender() || !gfxPrefs::WebRenderSplitRenderRoots()) {
+  if (!gfxVars::UseWebRender() ||
+      !StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
     return wr::RenderRoot::Default;
   }
 
@@ -1519,7 +1526,8 @@ wr::RenderRoot gfxUtils::RecursivelyGetRenderRootForFrame(
 
 wr::RenderRoot gfxUtils::RecursivelyGetRenderRootForElement(
     const dom::Element* aElement) {
-  if (!gfxVars::UseWebRender() || !gfxPrefs::WebRenderSplitRenderRoots()) {
+  if (!gfxVars::UseWebRender() ||
+      !StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
     return wr::RenderRoot::Default;
   }
 

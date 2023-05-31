@@ -481,8 +481,7 @@ var gSync = {
     if (status == UIState.STATUS_LOGIN_FAILED) {
       let tooltipDescription = this.fxaStrings.formatStringFromName(
         "reconnectDescription",
-        [state.email],
-        1
+        [state.email]
       );
       let errorLabel = this.appMenuStatus.getAttribute("errorlabel");
       this.appMenuContainer.setAttribute("fxastatus", "login-failed");
@@ -492,8 +491,7 @@ var gSync = {
     } else if (status == UIState.STATUS_NOT_VERIFIED) {
       let tooltipDescription = this.fxaStrings.formatStringFromName(
         "verifyDescription",
-        [state.email],
-        1
+        [state.email]
       );
       let unverifiedLabel = this.appMenuStatus.getAttribute("unverifiedlabel");
       this.appMenuContainer.setAttribute("fxastatus", "unverified");
@@ -1175,8 +1173,7 @@ var gSync = {
       // "needs verification"
       tooltiptext = this.fxaStrings.formatStringFromName(
         "verifyDescription",
-        [state.email],
-        1
+        [state.email]
       );
     } else if (status == UIState.STATUS_NOT_CONFIGURED) {
       // "needs setup".
@@ -1187,8 +1184,7 @@ var gSync = {
       // "need to reconnect/re-enter your password"
       tooltiptext = this.fxaStrings.formatStringFromName(
         "reconnectDescription",
-        [state.email],
-        1
+        [state.email]
       );
     } else {
       // Sync appears configured - format the "last synced at" time.
@@ -1221,8 +1217,7 @@ var gSync = {
     const relativeDateStr = this.relativeTimeFormat.formatBestUnit(date);
     return this.syncStrings.formatStringFromName(
       "lastSync2.label",
-      [relativeDateStr],
-      1
+      [relativeDateStr]
     );
   },
 

@@ -3,7 +3,7 @@
     "searchDefault": "DuckDuckGo",
     "searchOrder": ["DuckDuckGo", "Bing"],
     "visibleDefaultEngines": [
-      "bing", "ddg", "ecosia", "wikipedia"
+      "bing", "ddg", "wikipedia"
     ]
   },
   "locales": {

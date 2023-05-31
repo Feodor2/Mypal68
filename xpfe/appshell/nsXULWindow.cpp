@@ -21,7 +21,6 @@
 #include "nsGlobalWindowOuter.h"
 #include "nsIAppShell.h"
 #include "nsIAppShellService.h"
-#include "nsIServiceManager.h"
 #include "nsIContentViewer.h"
 #include "mozilla/dom/Document.h"
 #include "nsPIDOMWindow.h"
@@ -30,13 +29,11 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIIOService.h"
-#include "nsILoadContext.h"
 #include "nsIObserverService.h"
 #include "nsIWindowMediator.h"
 #include "nsIScreenManager.h"
 #include "nsIScreen.h"
 #include "nsIScrollable.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIWindowWatcher.h"
 #include "nsIURI.h"
 #include "nsAppShellCID.h"
@@ -65,6 +62,7 @@
 
 using namespace mozilla;
 using dom::AutoNoJSAPI;
+using dom::Element;
 
 #define SIZEMODE_NORMAL NS_LITERAL_STRING("normal")
 #define SIZEMODE_MAXIMIZED NS_LITERAL_STRING("maximized")

@@ -9,13 +9,14 @@
 #include "mozilla/layers/GeckoContentController.h"
 #include "mozilla/layers/RepaintRequest.h"
 #include "mozilla/layers/ZoomConstraints.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Monitor2.h"
 #include "mozilla/RecursiveMutex.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/Atomics.h"
 #include "InputData.h"
 #include "Axis.h"  // for Axis, Side, etc.
 #include "InputQueue.h"
@@ -1160,9 +1161,9 @@ class AsyncPanZoomController {
    * Returns true if the newly sampled value is different from the previously
    * sampled value.
    *
-   * (This is only relevant when |gfxPrefs::APZFrameDelayEnabled() == true|.
-   * Otherwise, GetCurrentAsyncTransform() always reflects what's stored in
-   * |Metrics()| immediately, without any delay.)
+   * (This is only relevant when StaticPrefs::apz_frame_delay_enabled() is
+   * true. Otherwise, GetCurrentAsyncTransform() always reflects what's stored
+   * in |Metrics()| immediately, without any delay.)
    */
   bool SampleCompositedAsyncTransform();
 
@@ -1607,6 +1608,8 @@ class AsyncPanZoomController {
   LayersId GetLayersId() const { return mLayersId; }
 
   wr::RenderRoot GetRenderRoot() const { return mRenderRoot; }
+
+  bool IsPinchZooming() const { return mState == PINCHING; }
 
  private:
   // Extra offset to add to the async scroll position for testing

@@ -23,7 +23,11 @@ export class DSCard extends React.PureComponent {
       this.props.dispatch(ac.ImpressionStats({
         source: this.props.type.toUpperCase(),
         click: 0,
-        tiles: [{id: this.props.id, pos: this.props.pos}],
+        tiles: [{
+          id: this.props.id,
+          pos: this.props.pos,
+          ...(this.props.shim && this.props.shim.click ? {shim: this.props.shim.click} : {}),
+        }],
       }));
     }
   }
@@ -51,7 +55,11 @@ export class DSCard extends React.PureComponent {
           </div>
           <ImpressionStats
             campaignId={this.props.campaignId}
-            rows={[{id: this.props.id, pos: this.props.pos}]}
+            rows={[{
+              id: this.props.id,
+              pos: this.props.pos,
+              ...(this.props.shim && this.props.shim.impression ? {shim: this.props.shim.impression} : {}),
+            }]}
             dispatch={this.props.dispatch}
             source={this.props.type} />
         </SafeAnchor>
@@ -59,12 +67,12 @@ export class DSCard extends React.PureComponent {
           id={this.props.id}
           index={this.props.pos}
           dispatch={this.props.dispatch}
-          intl={this.props.intl}
           url={this.props.url}
           title={this.props.title}
           source={this.props.source}
           type={this.props.type}
           pocket_id={this.props.pocket_id}
+          shim={this.props.shim}
           bookmarkGuid={this.props.bookmarkGuid} />}
       </div>
     );

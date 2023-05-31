@@ -570,7 +570,7 @@ var E10SUtils = {
     );
   },
 
-  shouldLoadURI(aDocShell, aURI, aReferrer, aHasPostData) {
+  shouldLoadURI(aDocShell, aURI, aHasPostData) {
     let remoteSubframes = aDocShell.useRemoteSubframes;
 
     // Inner frames should always load in the current process
@@ -655,7 +655,7 @@ var E10SUtils = {
   redirectLoad(
     aDocShell,
     aURI,
-    aReferrer,
+    aReferrerInfo,
     aTriggeringPrincipal,
     aFreshProcess,
     aFlags,
@@ -670,7 +670,7 @@ var E10SUtils = {
       loadOptions: {
         uri: aURI.spec,
         flags: aFlags || Ci.nsIWebNavigation.LOAD_FLAGS_NONE,
-        referrer: aReferrer ? aReferrer.spec : null,
+        referrerInfo: this.serializeReferrerInfo(aReferrerInfo),
         triggeringPrincipal: this.serializePrincipal(
           aTriggeringPrincipal ||
             Services.scriptSecurityManager.createNullPrincipal({})

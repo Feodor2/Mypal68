@@ -1,6 +1,6 @@
 /* import-globals-from antitracking_head.js */
 
-AntiTracking.runTest(
+AntiTracking.runTestInNormalAndPrivateMode(
   "localStorage",
   async _ => {
     is(window.localStorage, null, "LocalStorage is null");
@@ -25,7 +25,7 @@ AntiTracking.runTest(
   }
 );
 
-AntiTracking.runTest(
+AntiTracking.runTestInNormalAndPrivateMode(
   "localStorage and Storage Access API",
   async _ => {
     /* import-globals-from storageAccessAPIHelpers.js */

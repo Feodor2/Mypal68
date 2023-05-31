@@ -8,8 +8,6 @@
 #include "XULTreeAccessible.h"
 #include "TableAccessible.h"
 #include "TableCellAccessible.h"
-#include "xpcAccessibleTable.h"
-#include "xpcAccessibleTableCell.h"
 
 namespace mozilla {
 namespace a11y {

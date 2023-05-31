@@ -4,7 +4,6 @@
 
 #include "mozilla/ArenaAllocator.h"
 #include "mozilla/ArenaAllocatorExtensions.h"
-#include "nsIMemoryReporter.h"  // MOZ_MALLOC_SIZE_OF
 
 #include "gtest/gtest.h"
 

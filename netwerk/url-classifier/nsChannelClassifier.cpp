@@ -8,18 +8,12 @@
 #include "nsICacheEntry.h"
 #include "nsICachingChannel.h"
 #include "nsIChannel.h"
-#include "nsIIOService.h"
 #include "nsIObserverService.h"
-#include "nsIPermissionManager.h"
 #include "nsIProtocolHandler.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsISecureBrowserUI.h"
-#include "nsISupportsPriority.h"
 #include "nsNetUtil.h"
 #include "nsXULAppAPI.h"
 #include "nsQueryObject.h"
-#include "nsIUrlClassifierDBService.h"
-#include "nsIUrlClassifierFeature.h"
 #include "nsPrintfCString.h"
 
 #include "mozilla/Components.h"
@@ -161,10 +155,9 @@ nsresult nsChannelClassifier::StartInternal() {
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Don't bother checking certain types of URIs.
-  bool isAbout = false;
-  rv = uri->SchemeIs("about", &isAbout);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (isAbout) return NS_ERROR_UNEXPECTED;
+  if (uri->SchemeIs("about")) {
+    return NS_ERROR_UNEXPECTED;
+  }
 
   bool hasFlags;
   rv = NS_URIChainHasFlags(uri, nsIProtocolHandler::URI_DANGEROUS_TO_LOAD,

@@ -94,7 +94,7 @@ class StreamFilterParent final : public PStreamFilterParent,
   IPCResult RecvDisconnect();
   IPCResult RecvDestroy();
 
-  virtual void DeallocPStreamFilterParent() override;
+  virtual void ActorDealloc() override;
 
  private:
   bool IPCActive() {

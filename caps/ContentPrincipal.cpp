@@ -28,7 +28,6 @@
 #include "js/Wrapper.h"
 
 #include "mozilla/dom/BlobURLProtocolHandler.h"
-#include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ExtensionPolicyService.h"
@@ -48,12 +47,7 @@ NS_IMPL_CI_INTERFACE_GETTER(ContentPrincipal, nsIPrincipal, nsISerializable)
 
 ContentPrincipal::ContentPrincipal() : BasePrincipal(eCodebasePrincipal) {}
 
-ContentPrincipal::~ContentPrincipal() {
-  // let's clear the principal within the csp to avoid a tangling pointer
-  if (mCSP) {
-    static_cast<nsCSPContext*>(mCSP.get())->clearLoadingPrincipal();
-  }
-}
+ContentPrincipal::~ContentPrincipal() {}
 
 nsresult ContentPrincipal::Init(nsIURI* aCodebase,
                                 const OriginAttributes& aOriginAttributes,
@@ -142,10 +136,8 @@ nsresult ContentPrincipal::GenerateOriginNoSuffixFromURI(
   // These constraints can generally be achieved by restricting .origin to
   // nsIStandardURL-based URIs, but there are a few other URI schemes that we
   // need to handle.
-  bool isBehaved;
-  if ((NS_SUCCEEDED(origin->SchemeIs("about", &isBehaved)) && isBehaved) ||
-      (NS_SUCCEEDED(origin->SchemeIs("moz-safe-about", &isBehaved)) &&
-       isBehaved &&
+  if (origin->SchemeIs("about") ||
+      (origin->SchemeIs("moz-safe-about") &&
        // We generally consider two about:foo origins to be same-origin, but
        // about:blank is special since it can be generated from different
        // sources. We check for moz-safe-about:blank since origin is an
@@ -197,10 +189,7 @@ nsresult ContentPrincipal::GenerateOriginNoSuffixFromURI(
 
   // See whether we have a useful hostPort. If we do, use that.
   nsAutoCString hostPort;
-  bool isChrome = false;
-  rv = origin->SchemeIs("chrome", &isChrome);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (!isChrome) {
+  if (!origin->SchemeIs("chrome")) {
     rv = origin->GetAsciiHostPort(hostPort);
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -408,8 +397,7 @@ static nsresult GetSpecialBaseDomain(const nsCOMPtr<nsIURI>& aCodebase,
     return aCodebase->GetSpec(aBaseDomain);
   }
 
-  bool isBehaved;
-  if (NS_SUCCEEDED(aCodebase->SchemeIs("indexeddb", &isBehaved)) && isBehaved) {
+  if (aCodebase->SchemeIs("indexeddb")) {
     *aHandled = true;
     return aCodebase->GetSpec(aBaseDomain);
   }
@@ -520,9 +508,7 @@ WebExtensionPolicy* ContentPrincipal::AddonPolicy() {
   if (!mAddon.isSome()) {
     NS_ENSURE_TRUE(mCodebase, nullptr);
 
-    bool isMozExt;
-    if (NS_SUCCEEDED(mCodebase->SchemeIs("moz-extension", &isMozExt)) &&
-        isMozExt) {
+    if (mCodebase->SchemeIs("moz-extension")) {
       mAddon.emplace(EPS().GetByURL(mCodebase.get()));
     } else {
       mAddon.emplace(nullptr);
@@ -555,8 +541,7 @@ ContentPrincipal::Read(nsIObjectInputStream* aStream) {
   codebase = do_QueryInterface(supports);
   // Enforce re-parsing about: URIs so that if they change, we continue to use
   // their new principals correctly.
-  bool isAbout = false;
-  if (NS_SUCCEEDED(codebase->SchemeIs("about", &isAbout)) && isAbout) {
+  if (codebase->SchemeIs("about")) {
     nsAutoCString spec;
     codebase->GetSpec(spec);
     NS_ENSURE_SUCCESS(NS_NewURI(getter_AddRefs(codebase), spec),
@@ -579,8 +564,18 @@ ContentPrincipal::Read(nsIObjectInputStream* aStream) {
   bool ok = attrs.PopulateFromSuffix(suffix);
   NS_ENSURE_TRUE(ok, NS_ERROR_FAILURE);
 
-  rv = NS_ReadOptionalObject(aStream, true, getter_AddRefs(supports));
-  NS_ENSURE_SUCCESS(rv, rv);
+  // Since Bug 965637 we do not serialize the CSP within the
+  // Principal anymore. Nevertheless there might still be
+  // serialized Principals that do have a serialized CSP.
+  // For now, we just read the CSP here but do not actually
+  // consume it. Please note that we deliberately ignore
+  // the return value to avoid CSP deserialization problems.
+  // After Bug 1508939 we will have a new serialization for
+  // Principals which allows us to update the code here.
+  // Additionally, the format for serialized CSPs changed
+  // within Bug 965637 which also can cause failures within
+  // the CSP deserialization code.
+  Unused << NS_ReadOptionalObject(aStream, true, getter_AddRefs(supports));
 
   nsAutoCString originNoSuffix;
   rv = GenerateOriginNoSuffixFromURI(codebase, originNoSuffix);
@@ -588,13 +583,6 @@ ContentPrincipal::Read(nsIObjectInputStream* aStream) {
 
   rv = Init(codebase, attrs, originNoSuffix);
   NS_ENSURE_SUCCESS(rv, rv);
-
-  mCSP = do_QueryInterface(supports, &rv);
-  // make sure setRequestContext is called after Init(),
-  // to make sure  the principals URI been initalized.
-  if (mCSP) {
-    mCSP->SetRequestContext(nullptr, this);
-  }
 
   // Note: we don't call SetDomain here because we don't need the wrapper
   // recomputation code there (we just created this principal).
@@ -627,8 +615,14 @@ ContentPrincipal::Write(nsIObjectOutputStream* aStream) {
   rv = aStream->WriteStringZ(suffix.get());
   NS_ENSURE_SUCCESS(rv, rv);
 
+  // Since Bug 965637 we do not serialize the CSP within the
+  // Principal anymore. Nevertheless there might still be
+  // serialized Principals that do have a serialized CSP.
+  // For now, we just write a null CSP here to avoid breakage.
+  // After Bug 1508939 we will have a new serialization for
+  // Principals which allows us to update the code here.
   rv = NS_WriteOptionalCompoundObject(
-      aStream, mCSP, NS_GET_IID(nsIContentSecurityPolicy), true);
+      aStream, nullptr, NS_GET_IID(nsIContentSecurityPolicy), true);
   if (NS_FAILED(rv)) {
     return rv;
   }

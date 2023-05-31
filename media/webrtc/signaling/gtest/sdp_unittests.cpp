@@ -3898,7 +3898,7 @@ TEST_P(NewSdpTest, CheckAddMediaSection) {
 
   mSdp->AddMediaSection(SdpMediaSection::kAudio,
                         SdpDirectionAttribute::Direction::kSendonly, 14006,
-                        SdpMediaSection::kTcpTlsRtpSavpf, sdp::kIPv6,
+                        SdpMediaSection::kTcpDtlsRtpSavpf, sdp::kIPv6,
                         "2607:f8b0:4004:801::2013");
 
   ASSERT_EQ(5U, mSdp->GetMediaSectionCount())
@@ -3910,7 +3910,7 @@ TEST_P(NewSdpTest, CheckAddMediaSection) {
   ASSERT_EQ(SdpDirectionAttribute::Direction::kSendonly,
             nextNewMediaSection.GetDirectionAttribute().mValue);
   ASSERT_EQ(14006U, nextNewMediaSection.GetPort());
-  ASSERT_EQ(SdpMediaSection::kTcpTlsRtpSavpf,
+  ASSERT_EQ(SdpMediaSection::kTcpDtlsRtpSavpf,
             nextNewMediaSection.GetProtocol());
   ASSERT_EQ(sdp::kIPv6, nextNewMediaSection.GetConnection().GetAddrType());
   ASSERT_EQ("2607:f8b0:4004:801::2013",
@@ -3937,7 +3937,7 @@ TEST_P(NewSdpTest, CheckAddMediaSection) {
     // "NOT:AN.IP.ADDRESS" is expected to cause a failure
     mSdp->AddMediaSection(SdpMediaSection::kAudio,
                           SdpDirectionAttribute::Direction::kSendonly, 14006,
-                          SdpMediaSection::kTcpTlsRtpSavpf, sdp::kIPv6,
+                          SdpMediaSection::kTcpDtlsRtpSavpf, sdp::kIPv6,
                           "NOT:AN.IP.ADDRESS");
     ASSERT_EQ(5U, mSdp->GetMediaSectionCount())
         << "Wrong number of media sections after adding media section";
@@ -4013,12 +4013,22 @@ TEST(NewSdpTestNoFixture, CheckParsingResultComparer)
   auto check_comparison = [](const std::string sdp_string) {
     SipccSdpParser sipccParser;
     RsdparsaSdpParser rustParser;
+    auto print_errors = [](const SdpErrorHolder& holder, const char* name) {
+      for (const auto& e : holder.GetParseErrors()) {
+        std::cerr << name << " Line " << e.first << ": " << e.second;
+      }
+    };
 
     auto sipccSdp = sipccParser.Parse(sdp_string);
+    print_errors(sipccParser, "sipcc");
+
     auto rustSdp = rustParser.Parse(sdp_string);
+    print_errors(rustParser, "webrtc-sdp");
 
     ParsingResultComparer comparer;
-    return comparer.Compare(*rustSdp, *sipccSdp, sdp_string);
+    return sipccSdp && rustSdp
+               ? comparer.Compare(*rustSdp, *sipccSdp, sdp_string)
+               : false;
   };
 
   ASSERT_TRUE(check_comparison(kBasicAudioVideoOffer));

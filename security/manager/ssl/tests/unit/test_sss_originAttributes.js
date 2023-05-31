@@ -100,7 +100,6 @@ function doTest(originAttributes1, originAttributes2, shouldShare) {
     host,
     false,
     Date.now() + 1234567890,
-    2,
     [NON_ISSUED_KEY_HASH, PINNING_ROOT_KEY_HASH],
     false,
     originAttributes1
@@ -178,7 +177,6 @@ function testInvalidOriginAttributes(originAttributes) {
         host,
         false,
         Date.now() + 1234567890,
-        2,
         [NON_ISSUED_KEY_HASH, PINNING_ROOT_KEY_HASH],
         false,
         originAttributes

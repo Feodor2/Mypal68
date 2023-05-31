@@ -311,6 +311,7 @@ module.exports = {
     KeyEvent: false,
     KeyboardEvent: false,
     KeyframeEffect: false,
+    Localization: false,
     Location: false,
     MIDIAccess: false,
     MIDIConnectionEvent: false,

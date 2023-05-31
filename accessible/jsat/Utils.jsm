@@ -141,7 +141,7 @@ var Utils = {
           let args = aDetails.args;
           let count = aDetails.count;
           if (args) {
-            str = bundle.formatStringFromName(string, args, args.length);
+            str = bundle.formatStringFromName(string, args);
           } else {
             str = bundle.GetStringFromName(string);
           }

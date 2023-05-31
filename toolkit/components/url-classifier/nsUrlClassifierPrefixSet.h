@@ -9,8 +9,6 @@
 #include "nsID.h"
 #include "nsIFile.h"
 #include "nsIMemoryReporter.h"
-#include "nsIMutableArray.h"
-#include "nsIFileStreams.h"
 #include "nsIUrlClassifierPrefixSet.h"
 #include "nsTArray.h"
 #include "nsToolkitCompsCID.h"
@@ -18,6 +16,9 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/Poison.h"
+
+class nsIInputStream;
+class nsIOutputStream;
 
 namespace mozilla {
 namespace safebrowsing {

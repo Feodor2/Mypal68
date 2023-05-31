@@ -41,6 +41,7 @@
 #include "VTuneProfiler.h"
 
 #include "js/TraceLoggerAPI.h"
+#include "js/ProfilingFrameIterator.h"
 #include "memory_hooks.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Atomics.h"
@@ -57,6 +58,7 @@
 #include "mozilla/Tuple.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Vector.h"
+#include "BaseProfiler.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsIHttpProtocolHandler.h"
@@ -84,8 +86,8 @@
 #endif
 
 #if defined(GP_OS_android)
-#  include "FennecJNINatives.h"
-#  include "FennecJNIWrappers.h"
+#  include "GeneratedJNINatives.h"
+#  include "GeneratedJNIWrappers.h"
 #endif
 
 // Win32 builds always have frame pointers, so FramePointerStackWalk() always
@@ -459,12 +461,6 @@ class ActivePS {
     // Filter out any features unavailable in this platform/configuration.
     aFeatures &= AvailableFeatures();
 
-#if defined(GP_OS_android)
-    if (!jni::IsFennec()) {
-      aFeatures &= ~ProfilerFeature::Java;
-    }
-#endif
-
     // Always enable ProfilerFeature::Threads if we have a filter, because
     // users sometimes ask to filter by a list of threads but forget to
     // explicitly specify ProfilerFeature::Threads.
@@ -657,12 +653,17 @@ class ActivePS {
 
   static uint32_t JSFlags(PSLockRef aLock) {
     uint32_t Flags = 0;
-    Flags |= FeatureJS(aLock) ? uint32_t(JSSamplingFlags::StackSampling) : 0;
-    Flags |= FeatureTrackOptimizations(aLock)
-                 ? uint32_t(JSSamplingFlags::TrackOptimizations)
-                 : 0;
     Flags |=
-        FeatureJSTracer(aLock) ? uint32_t(JSSamplingFlags::TraceLogging) : 0;
+        FeatureJS(aLock) ? uint32_t(JSInstrumentationFlags::StackSampling) : 0;
+    Flags |= FeatureTrackOptimizations(aLock)
+                 ? uint32_t(JSInstrumentationFlags::TrackOptimizations)
+                 : 0;
+    Flags |= FeatureJSTracer(aLock)
+                 ? uint32_t(JSInstrumentationFlags::TraceLogging)
+                 : 0;
+    Flags |= FeatureJSAllocations(aLock)
+                 ? uint32_t(JSInstrumentationFlags::Allocations)
+                 : 0;
     return Flags;
   }
 
@@ -852,11 +853,29 @@ class ActivePS {
   static void ClearExpiredExitProfiles(PSLockRef) {
     uint64_t bufferRangeStart = sInstance->mBuffer->mRangeStart;
     // Discard exit profiles that were gathered before our buffer RangeStart.
+#ifdef MOZ_BASE_PROFILER
+    if (bufferRangeStart != 0 && sInstance->mBaseProfileThreads) {
+      sInstance->mBaseProfileThreads.reset();
+    }
+#endif
     sInstance->mExitProfiles.eraseIf(
         [bufferRangeStart](const ExitProfile& aExitProfile) {
           return aExitProfile.mBufferPositionAtGatherTime < bufferRangeStart;
         });
   }
+
+#ifdef MOZ_BASE_PROFILER
+  static void AddBaseProfileThreads(PSLockRef aLock,
+                                    UniquePtr<char[]> aBaseProfileThreads) {
+    sInstance->mBaseProfileThreads = std::move(aBaseProfileThreads);
+  }
+
+  static UniquePtr<char[]> MoveBaseProfileThreads(PSLockRef aLock) {
+    ClearExpiredExitProfiles(aLock);
+
+    return std::move(sInstance->mBaseProfileThreads);
+  }
+#endif
 
   static void AddExitProfile(PSLockRef aLock, const nsCString& aExitProfile) {
     ClearExpiredExitProfiles(aLock);
@@ -952,6 +971,11 @@ class ActivePS {
   bool mWasPaused;
 #endif
 
+#ifdef MOZ_BASE_PROFILER
+  // Optional startup profile thread array from BaseProfiler.
+  UniquePtr<char[]> mBaseProfileThreads;
+#endif
+
   struct ExitProfile {
     nsCString mJSON;
     uint64_t mBufferPositionAtGatherTime;
@@ -969,8 +993,7 @@ uint32_t ActivePS::sNextGeneration = 0;
 // The mutex that guards accesses to CorePS and ActivePS.
 static PSMutex gPSMutex;
 
-Atomic<uint32_t, MemoryOrdering::Relaxed, recordreplay::Behavior::DontPreserve>
-    RacyFeatures::sActiveAndFeatures(0);
+Atomic<uint32_t, MemoryOrdering::Relaxed> RacyFeatures::sActiveAndFeatures(0);
 
 // Each live thread has a RegisteredThread, and we store a reference to it in
 // TLS. This class encapsulates that TLS.
@@ -1282,10 +1305,19 @@ static void MergeStacks(uint32_t aFeatures, bool aIsSynchronous,
       if (aIsSynchronous ||
           jsFrame.kind == JS::ProfilingFrameIterator::Frame_Wasm) {
         aCollector.CollectWasmFrame(jsFrame.label);
+      } else if (jsFrame.kind ==
+                 JS::ProfilingFrameIterator::Frame_BaselineInterpreter) {
+        // For now treat this as a C++ Interpreter frame by materializing a
+        // ProfilingStackFrame.
+        JSScript* script = jsFrame.interpreterScript;
+        jsbytecode* pc = jsFrame.interpreterPC();
+        js::ProfilingStackFrame stackFrame;
+        stackFrame.initJsFrame("", jsFrame.label, script, pc);
+        aCollector.CollectProfilingStackFrame(stackFrame);
       } else {
         MOZ_ASSERT(jsFrame.kind == JS::ProfilingFrameIterator::Frame_Ion ||
                    jsFrame.kind == JS::ProfilingFrameIterator::Frame_Baseline);
-        aCollector.CollectJitReturnAddr(jsFrame.returnAddress);
+        aCollector.CollectJitReturnAddr(jsFrame.returnAddress());
       }
 
       jsIndex--;
@@ -2115,6 +2147,14 @@ static void locked_profiler_stream_json_for_this_process(
       java::GeckoJavaSampler::Unpause();
     }
 #endif
+
+#ifdef MOZ_BASE_PROFILER
+    UniquePtr<char[]> baseProfileThreads =
+        ActivePS::MoveBaseProfileThreads(aLock);
+    if (baseProfileThreads) {
+      aWriter.Splice(baseProfileThreads.get());
+    }
+#endif
   }
   aWriter.EndArray();
 
@@ -2205,6 +2245,9 @@ static void PrintUsageThenExit(int aExitCode) {
       "\n"
       "  MOZ_PROFILER_HELP\n"
       "  If set to any value, prints this message.\n"
+#ifdef MOZ_BASE_PROFILER
+      "  Use MOZ_BASE_PROFILER_HELP for BaseProfiler help.\n"
+#endif
       "\n"
       "  MOZ_LOG\n"
       "  Enables logging. The levels of logging available are\n"
@@ -2855,7 +2898,7 @@ void profiler_init(void* aStackTop) {
 #endif
 
 #if defined(GP_OS_android)
-    if (jni::IsFennec()) {
+    if (jni::IsAvailable()) {
       GeckoJavaSampler::Init();
     }
 #endif
@@ -3158,6 +3201,24 @@ void GetProfilerEnvVarsForChildProcess(
     }
   }
   aSetEnv("MOZ_PROFILER_STARTUP_FILTERS", filtersString.c_str());
+
+#ifdef MOZ_BASE_PROFILER
+  // Blindly copy MOZ_BASE_PROFILER_STARTUP* env-vars.
+  auto copyEnv = [&](const char* aName) {
+    const char* env = getenv(aName);
+    if (!env) {
+      return;
+    }
+    aSetEnv(aName, env);
+  };
+  copyEnv("MOZ_BASE_PROFILER_STARTUP");
+  copyEnv("MOZ_BASE_PROFILER_STARTUP_ENTRIES");
+  copyEnv("MOZ_BASE_PROFILER_STARTUP_DURATION");
+  copyEnv("MOZ_BASE_PROFILER_STARTUP_INTERVAL");
+  copyEnv("MOZ_BASE_PROFILER_STARTUP_FEATURES_BITFIELD");
+  copyEnv("MOZ_BASE_PROFILER_STARTUP_FEATURES");
+  copyEnv("MOZ_BASE_PROFILER_STARTUP_FILTERS");
+#endif
 }
 
 }  // namespace mozilla
@@ -3322,6 +3383,36 @@ static void locked_profiler_start(PSLockRef aLock, uint32_t aCapacity,
 
   ActivePS::Create(aLock, capacity, interval, aFeatures, aFilters, aFilterCount,
                    duration);
+
+  // ActivePS::Create can only succeed or crash.
+  MOZ_ASSERT(ActivePS::Exists(aLock));
+
+#ifdef MOZ_BASE_PROFILER
+  if (baseprofiler::profiler_is_active()) {
+    // Note that we still hold the lock, so the sampler cannot run yet and
+    // interact negatively with the still-active BaseProfiler sampler.
+    // Assume that BaseProfiler is active because of MOZ_BASE_PROFILER_STARTUP.
+    // Capture the BaseProfiler startup profile threads (if any).
+    UniquePtr<char[]> baseprofile = baseprofiler::profiler_get_profile(
+        /* aSinceTime */ 0, /* aIsShuttingDown */ false,
+        /* aOnlyThreads */ true);
+
+    // Now stop BaseProfiler, as further recording will be ignored anyway, and
+    // so that it won't clash with Gecko Profiler sampling starting after the
+    // lock is dropped.
+    // TODO: Allow non-sampling profiling to continue.
+    // TODO: Re-start BaseProfiler after Gecko Profiler shutdown, to capture
+    // post-XPCOM shutdown.
+    baseprofiler::profiler_stop();
+
+    if (baseprofile && baseprofile.get()[0] != '\0') {
+      // The BaseProfiler startup profile will be stored as a separate process
+      // in the Gecko Profiler profile, and shown as a new track under the
+      // corresponding Gecko Profiler thread.
+      ActivePS::AddBaseProfileThreads(aLock, std::move(baseprofile));
+    }
+  }
+#endif
 
   // Set up profiling for each registered thread, if appropriate.
   int tid = profiler_current_thread_id();
@@ -3671,12 +3762,12 @@ ProfilingStack* profiler_register_thread(const char* aName,
 }
 
 void profiler_unregister_thread() {
+  PSAutoLock lock(gPSMutex);
+
   if (!CorePS::Exists()) {
     // This function can be called after the main thread has already shut down.
     return;
   }
-
-  PSAutoLock lock(gPSMutex);
 
   // We don't call RegisteredThread::StopJSSampling() here; there's no point
   // doing that for a JS thread that is in the process of disappearing.
@@ -3741,12 +3832,12 @@ void profiler_register_page(const nsID& aDocShellId, uint32_t aHistoryId,
 }
 
 void profiler_unregister_pages(const nsID& aRegisteredDocShellId) {
+  PSAutoLock lock(gPSMutex);
+
   if (!CorePS::Exists()) {
     // This function can be called after the main thread has already shut down.
     return;
   }
-
-  PSAutoLock lock(gPSMutex);
 
   // During unregistration, if the profiler is active, we have to keep the
   // page information since there may be some markers associated with the given
@@ -3760,13 +3851,15 @@ void profiler_unregister_pages(const nsID& aRegisteredDocShellId) {
 }
 
 void profiler_clear_all_pages() {
-  if (!CorePS::Exists()) {
-    // This function can be called after the main thread has already shut down.
-    return;
-  }
-
   {
     PSAutoLock lock(gPSMutex);
+
+    if (!CorePS::Exists()) {
+      // This function can be called after the main thread has already shut
+      // down.
+      return;
+    }
+
     CorePS::ClearRegisteredPages(lock);
     if (ActivePS::Exists(lock)) {
       ActivePS::ClearUnregisteredPages(lock);
@@ -3925,6 +4018,13 @@ void profiler_add_marker(const char* aMarkerName,
 // into the JS engine.
 void profiler_add_js_marker(const char* aMarkerName) {
   profiler_add_marker(aMarkerName, JS::ProfilingCategoryPair::JS, nullptr);
+}
+
+void profiler_add_js_allocation_marker(JS::RecordAllocationInfo&& info) {
+  profiler_add_marker(
+      "JS allocation", JS::ProfilingCategoryPair::JS,
+      MakeUnique<JsAllocationMarkerPayload>(TimeStamp::Now(), std::move(info),
+                                            profiler_get_backtrace()));
 }
 
 void profiler_add_network_marker(

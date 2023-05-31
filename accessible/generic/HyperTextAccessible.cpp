@@ -25,18 +25,17 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsPersistentProperties.h"
 #include "nsIScrollableFrame.h"
-#include "nsIServiceManager.h"
-#include "nsITextControlElement.h"
 #include "nsIMathMLFrame.h"
 #include "nsRange.h"
 #include "nsTextFragment.h"
 #include "mozilla/BinarySearch.h"
-#include "mozilla/dom/Element.h"
 #include "mozilla/EventStates.h"
-#include "mozilla/dom/Selection.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/TextEditor.h"
+#include "mozilla/dom/Element.h"
+#include "mozilla/dom/HTMLBRElement.h"
+#include "mozilla/dom/Selection.h"
 #include "gfxSkipChars.h"
 #include <algorithm>
 
@@ -253,13 +252,10 @@ uint32_t HyperTextAccessible::DOMPointToOffset(nsINode* aNode,
   // first search)
   Accessible* descendant = nullptr;
   if (findNode) {
-    nsCOMPtr<nsIContent> findContent(do_QueryInterface(findNode));
-    if (findContent && findContent->IsHTMLElement(nsGkAtoms::br) &&
-        findContent->AsElement()->AttrValueIs(kNameSpaceID_None,
-                                              nsGkAtoms::mozeditorbogusnode,
-                                              nsGkAtoms::_true, eIgnoreCase)) {
-      // This <br> is the hacky "bogus node" used when there is no text in a
-      // control
+    dom::HTMLBRElement* brElement = dom::HTMLBRElement::FromNode(findNode);
+    if (brElement && brElement->IsPaddingForEmptyEditor()) {
+      // This <br> is the hacky "padding <br> element" used when there is no
+      // text in the editor.
       return 0;
     }
 
@@ -317,7 +313,7 @@ uint32_t HyperTextAccessible::TransformOffset(Accessible* aDescendant,
  *     ancestors too.
  */
 static nsIContent* GetElementAsContentOf(nsINode* aNode) {
-  if (Element* element = Element::FromNode(aNode)) {
+  if (auto* element = dom::Element::FromNode(aNode)) {
     return element;
   }
   return aNode->GetParentElement();
@@ -1270,7 +1266,8 @@ nsresult HyperTextAccessible::SetSelectionRange(int32_t aStartPos,
 
   // Set up the selection.
   for (int32_t idx = domSel->RangeCount() - 1; idx > 0; idx--)
-    domSel->RemoveRange(*domSel->GetRangeAt(idx), IgnoreErrors());
+    domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(
+        *domSel->GetRangeAt(idx), IgnoreErrors());
   SetSelectionBoundsAt(0, aStartPos, aEndPos);
 
   // Make sure it is visible
@@ -1527,12 +1524,12 @@ bool HyperTextAccessible::SelectionBoundsAt(int32_t aSelectionNum,
     endOffset = tempOffset;
   }
 
-  if (!nsContentUtils::ContentIsDescendantOf(startNode, mContent))
+  if (!startNode->IsInclusiveDescendantOf(mContent))
     *aStartOffset = 0;
   else
     *aStartOffset = DOMPointToOffset(startNode, startOffset);
 
-  if (!nsContentUtils::ContentIsDescendantOf(endNode, mContent))
+  if (!endNode->IsInclusiveDescendantOf(mContent))
     *aEndOffset = CharacterCount();
   else
     *aEndOffset = DOMPointToOffset(endNode, endOffset, true);
@@ -1569,11 +1566,12 @@ bool HyperTextAccessible::SetSelectionBoundsAt(int32_t aSelectionNum,
   // If this is not a new range, notify selection listeners that the existing
   // selection range has changed. Otherwise, just add the new range.
   if (aSelectionNum != static_cast<int32_t>(rangeCount)) {
-    domSel->RemoveRange(*range, IgnoreErrors());
+    domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(*range,
+                                                           IgnoreErrors());
   }
 
   IgnoredErrorResult err;
-  domSel->AddRange(*range, err);
+  domSel->AddRangeAndSelectFramesAndNotifyListeners(*range, err);
 
   if (!err.Failed()) {
     // Changing the direction of the selection assures that the caret
@@ -1593,7 +1591,8 @@ bool HyperTextAccessible::RemoveFromSelection(int32_t aSelectionNum) {
       aSelectionNum >= static_cast<int32_t>(domSel->RangeCount()))
     return false;
 
-  domSel->RemoveRange(*domSel->GetRangeAt(aSelectionNum), IgnoreErrors());
+  domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(
+      *domSel->GetRangeAt(aSelectionNum), IgnoreErrors());
   return true;
 }
 

@@ -11,7 +11,6 @@
 #include "nsCOMPtr.h"
 #include "nsTHashtable.h"
 #include "nsClassHashtable.h"
-#include "nsIFactory.h"
 #include "nsStringEnumerator.h"
 #include "nsSupportsPrimitives.h"
 #include "nsComponentManagerUtils.h"

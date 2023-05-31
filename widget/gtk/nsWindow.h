@@ -18,7 +18,6 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
 #include "nsIDragService.h"
-#include "nsITimer.h"
 #include "nsGkAtoms.h"
 #include "nsRefPtrHashtable.h"
 #include "nsIFrame.h"
@@ -136,7 +135,7 @@ class nsWindow final : public nsBaseWidget {
   void SetZIndex(int32_t aZIndex) override;
   virtual void SetSizeMode(nsSizeMode aMode) override;
   virtual void Enable(bool aState) override;
-  virtual nsresult SetFocus(bool aRaise = false) override;
+  virtual void SetFocus(Raise) override;
   virtual LayoutDeviceIntRect GetScreenBounds() override;
   virtual LayoutDeviceIntRect GetClientBounds() override;
   virtual LayoutDeviceIntSize GetClientSize() override;
@@ -405,7 +404,13 @@ class nsWindow final : public nsBaseWidget {
                                     GtkWidget* aOldContainer);
 
   virtual void RegisterTouchWindow() override;
-
+  virtual bool CompositorInitiallyPaused() override {
+#ifdef MOZ_WAYLAND
+    return mCompositorInitiallyPaused;
+#else
+    return false;
+#endif
+  }
   nsCOMPtr<nsIWidget> mParent;
   // Is this a toplevel window?
   bool mIsTopLevel;
@@ -433,6 +438,7 @@ class nsWindow final : public nsBaseWidget {
   bool mIsX11Display;
 #ifdef MOZ_WAYLAND
   bool mNeedsUpdatingEGLSurface;
+  bool mCompositorInitiallyPaused;
 #endif
 
  private:

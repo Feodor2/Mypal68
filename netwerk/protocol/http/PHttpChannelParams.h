@@ -14,8 +14,6 @@
 #include "nsHttpResponseHead.h"
 #include "mozilla/Tuple.h"
 
-#include "nsIClassInfo.h"
-
 namespace mozilla {
 namespace net {
 

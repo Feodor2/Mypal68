@@ -182,8 +182,7 @@ ContentPermissionPrompt.prototype = {
         : request.principal.URI.host;
     let message = browserBundle.formatStringFromName(
       entityName + ".ask",
-      [requestor],
-      1
+      [requestor]
     );
     // desktopNotification doesn't have a checkbox
     let options;

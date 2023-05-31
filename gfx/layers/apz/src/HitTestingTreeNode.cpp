@@ -5,8 +5,8 @@
 #include "HitTestingTreeNode.h"
 
 #include "AsyncPanZoomController.h"  // for AsyncPanZoomController
-#include "gfxPrefs.h"
 #include "LayersLogging.h"            // for Stringify
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/gfx/Point.h"        // for Point4D
 #include "mozilla/layers/APZUtils.h"  // for CompleteAsyncTransform
 #include "mozilla/layers/AsyncCompositionManager.h"  // for ViewTransform::operator Matrix4x4()
@@ -273,7 +273,7 @@ CompositorHitTestInfo HitTestingTreeNode::HitTest(
     if (mEventRegions.mDTCRequiresTargetConfirmation) {
       result += CompositorHitTestFlags::eRequiresTargetConfirmation;
     }
-  } else if (gfxPrefs::TouchActionEnabled()) {
+  } else if (StaticPrefs::layout_css_touch_action_enabled()) {
     if (mEventRegions.mNoActionRegion.Contains(point.x, point.y)) {
       // set all the touch-action flags as disabled
       result += CompositorHitTestTouchActionMask;
@@ -317,13 +317,18 @@ const CSSTransformMatrix& HitTestingTreeNode::GetTransform() const {
   return mTransform;
 }
 
-LayerToScreenMatrix4x4 HitTestingTreeNode::GetCSSTransformToRoot() const {
+LayerToScreenMatrix4x4 HitTestingTreeNode::GetTransformToGecko() const {
   if (mParent) {
     LayerToParentLayerMatrix4x4 thisToParent =
         mTransform * AsyncTransformMatrix();
+    if (mApzc) {
+      thisToParent = thisToParent *
+          ViewAs<ParentLayerToParentLayerMatrix4x4>(
+              mApzc->GetTransformToLastDispatchedPaint());
+    }
     ParentLayerToScreenMatrix4x4 parentToRoot =
         ViewAs<ParentLayerToScreenMatrix4x4>(
-            mParent->GetCSSTransformToRoot(),
+            mParent->GetTransformToGecko(),
             PixelCastJustification::MovingDownToChildren);
     return thisToParent * parentToRoot;
   }

@@ -504,11 +504,8 @@ END_GLOBALS
 // 6.25% of the process address space on a 32-bit OS for later use.
 static const size_t gRecycleLimit = 128_MiB;
 
-// The current amount of recycled bytes, updated atomically. Malloc may be
-// called non-deterministically when recording/replaying, so this atomic's
-// accesses are not recorded.
-static Atomic<size_t, ReleaseAcquire, recordreplay::Behavior::DontPreserve>
-    gRecycledSize;
+// The current amount of recycled bytes, updated atomically.
+static Atomic<size_t, ReleaseAcquire> gRecycledSize;
 
 // Maximum number of dirty pages per arena.
 #define DIRTY_MAX_DEFAULT (1U << 8)
@@ -547,11 +544,7 @@ static void* base_alloc(size_t aSize);
 // threads are created.
 static bool malloc_initialized;
 #else
-// Malloc may be called non-deterministically when recording/replaying, so this
-// atomic's accesses are not recorded.
-static Atomic<bool, SequentiallyConsistent,
-              recordreplay::Behavior::DontPreserve>
-    malloc_initialized;
+static Atomic<bool, SequentiallyConsistent> malloc_initialized;
 #endif
 
 //static StaticMutex gInitLock = {STATIC_MUTEX_INIT};
@@ -4417,8 +4410,7 @@ static malloc_table_t gReplaceMallocTables[2] = {
 unsigned gReplaceMallocIndex = 0;
 
 // Avoid races when swapping malloc impls dynamically
-static Atomic<malloc_table_t const*, mozilla::MemoryOrdering::Relaxed,
-              recordreplay::Behavior::DontPreserve>
+static Atomic<malloc_table_t const*, mozilla::MemoryOrdering::Relaxed>
     gReplaceMallocTable;
 
 #  ifdef MOZ_DYNAMIC_REPLACE_INIT
@@ -4613,31 +4605,33 @@ static void replace_malloc_init_funcs(malloc_table_t* table) {
   return_type name(ARGS_HELPER(TYPED_ARGS, ##__VA_ARGS__))            \
       __attribute__((alias(MOZ_STRINGIFY(name_impl))));
 
-#define GENERIC_MALLOC_DECL2(name, name_impl, return_type, ...)   \
-  return_type name_impl(ARGS_HELPER(TYPED_ARGS, ##__VA_ARGS__)) { \
+#define GENERIC_MALLOC_DECL2(attributes, name, name_impl, return_type, ...) \
+  return_type name_impl(ARGS_HELPER(TYPED_ARGS, ##__VA_ARGS__)) attributes { \
     return DefaultMalloc::name(ARGS_HELPER(ARGS, ##__VA_ARGS__)); \
   }
 
 #ifndef __MINGW32__
-#  define GENERIC_MALLOC_DECL(name, return_type, ...) \
-    GENERIC_MALLOC_DECL2(name, name##_impl, return_type, ##__VA_ARGS__)
+#  define GENERIC_MALLOC_DECL(attributes, name, return_type, ...)        \
+    GENERIC_MALLOC_DECL2(attributes, name, name##_impl, return_type, ##__VA_ARGS__)
 #else
-#  define GENERIC_MALLOC_DECL(name, return_type, ...)                   \
-    GENERIC_MALLOC_DECL2(name, name##_impl, return_type, ##__VA_ARGS__) \
+#  define GENERIC_MALLOC_DECL(attributes, name, return_type, ...)        \
+    GENERIC_MALLOC_DECL2(attributes, name, name##_impl, return_type, ##__VA_ARGS__) \
     GENERIC_MALLOC_DECL2_MINGW(name, name##_impl, return_type, ##__VA_ARGS__)
 #endif
 
+#define NOTHROW_MALLOC_DECL(...) \
+  MOZ_MEMORY_API MACRO_CALL(GENERIC_MALLOC_DECL, (noexcept(true), __VA_ARGS__))
 #define MALLOC_DECL(...) \
-  MOZ_MEMORY_API MACRO_CALL(GENERIC_MALLOC_DECL, (__VA_ARGS__))
+  MOZ_MEMORY_API MACRO_CALL(GENERIC_MALLOC_DECL, (, __VA_ARGS__))
 #define MALLOC_FUNCS MALLOC_FUNCS_MALLOC
 #include "malloc_decls.h"
 
 #undef GENERIC_MALLOC_DECL
-#define GENERIC_MALLOC_DECL(name, return_type, ...) \
-  GENERIC_MALLOC_DECL2(name, name, return_type, ##__VA_ARGS__)
+#define GENERIC_MALLOC_DECL(attributes, name, return_type, ...)  \
+  GENERIC_MALLOC_DECL2(attributes, name, name, return_type, ##__VA_ARGS__)
 
 #define MALLOC_DECL(...) \
-  MOZ_JEMALLOC_API MACRO_CALL(GENERIC_MALLOC_DECL, (__VA_ARGS__))
+  MOZ_JEMALLOC_API MACRO_CALL(GENERIC_MALLOC_DECL, (, __VA_ARGS__))
 #define MALLOC_FUNCS (MALLOC_FUNCS_JEMALLOC | MALLOC_FUNCS_ARENA)
 #include "malloc_decls.h"
 // ***************************************************************************

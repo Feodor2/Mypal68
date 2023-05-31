@@ -9,7 +9,6 @@
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsDocShellLoadTypes.h"
-#include "mozilla/net/ReferrerPolicy.h"
 
 class nsIContentSecurityPolicy;
 class nsIInputStream;
@@ -96,6 +95,10 @@ class nsDocShellLoadState final {
   bool OriginalFrameSrc() const;
 
   void SetOriginalFrameSrc(bool aOriginalFrameSrc);
+
+  bool IsFormSubmission() const;
+
+  void SetIsFormSubmission(bool aIsFormSubmission);
 
   uint32_t LoadType() const;
 
@@ -275,6 +278,11 @@ class nsDocShellLoadState final {
   // If this attribute is true, this load corresponds to a frame
   // element loading its original src (or srcdoc) attribute.
   bool mOriginalFrameSrc;
+
+  // If this attribute is true, then the load was initiated by a
+  // form submission. This is important to know for the CSP directive
+  // navigate-to.
+  bool mIsFormSubmission;
 
   // Contains a load type as specified by the nsDocShellLoadTypes::load*
   // constants

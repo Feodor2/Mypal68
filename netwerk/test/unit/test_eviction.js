@@ -201,7 +201,7 @@ function set_cookies(begin, end, expiry) {
       false,
       expiry,
       {},
-      Ci.nsICookie2.SAMESITE_UNSET
+      Ci.nsICookie.SAMESITE_UNSET
     );
 
     if (i == begin) {
@@ -224,7 +224,7 @@ function get_creationTime(i) {
   let host = "eviction." + i + ".tests";
   let enumerator = Services.cookiemgr.getCookiesFromHost(host, {});
   Assert.ok(enumerator.hasMoreElements());
-  let cookie = enumerator.getNext().QueryInterface(Ci.nsICookie2);
+  let cookie = enumerator.getNext().QueryInterface(Ci.nsICookie);
   return cookie.creationTime;
 }
 

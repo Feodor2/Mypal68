@@ -49,7 +49,8 @@ ignored_js_src_dirs = [
     'js/src/devtools/',          # auxiliary stuff
     'js/src/editline/',          # imported code
     'js/src/gdb/',               # auxiliary stuff
-    'js/src/vtune/'              # imported code
+    'js/src/vtune/',             # imported code
+    'js/src/zydis/',             # imported code
 ]
 
 # We ignore #includes of these files, because they don't follow the usual rules.
@@ -60,9 +61,10 @@ included_inclnames_to_ignore = set([
     'javascript-trace.h',       # generated in $OBJDIR if HAVE_DTRACE is defined
     'frontend/ReservedWordsGenerated.h',  # generated in $OBJDIR
     'gc/StatsPhasesGenerated.h',         # generated in $OBJDIR
-    'gc/StatsPhasesGenerated.cpp',       # generated in $OBJDIR
-    'jit/LOpcodes.h',           # generated in $OBJDIR
-    'jit/MOpcodes.h',           # generated in $OBJDIR
+    'gc/StatsPhasesGenerated.inc',       # generated in $OBJDIR
+    'jit/CacheIROpsGenerated.h',         # generated in $OBJDIR
+    'jit/LOpcodesGenerated.h',           # generated in $OBJDIR
+    'jit/MOpcodesGenerated.h',           # generated in $OBJDIR
     'jscustomallocator.h',      # provided by embedders;  allowed to be missing
     'js-config.h',              # generated in $OBJDIR
     'fdlibm.h',                 # fdlibm
@@ -91,21 +93,32 @@ included_inclnames_to_ignore = set([
     'unicode/uchar.h',          # ICU
     'unicode/uclean.h',         # ICU
     'unicode/ucol.h',           # ICU
+    'unicode/ucurr.h',          # ICU
     'unicode/udat.h',           # ICU
+    'unicode/udata.h',          # ICU
     'unicode/udatpg.h',         # ICU
     'unicode/udisplaycontext.h',  # ICU
     'unicode/uenum.h',          # ICU
+    'unicode/ufieldpositer.h',  # ICU
+    'unicode/uformattedvalue.h',  # ICU
+    'unicode/ulistformatter.h',  # ICU
+    'unicode/uldnames.h',       # ICU
     'unicode/uloc.h',           # ICU
+    'unicode/umachine.h',       # ICU
+    'unicode/uniset.h',         # ICU
     'unicode/unistr.h',         # ICU
     'unicode/unorm2.h',         # ICU
     'unicode/unum.h',           # ICU
+    'unicode/unumberformatter.h',  # ICU
     'unicode/unumsys.h',        # ICU
     'unicode/upluralrules.h',   # ICU
     'unicode/ureldatefmt.h',    # ICU
+    'unicode/ures.h',           # ICU
     'unicode/ustring.h',        # ICU
     'unicode/utypes.h',         # ICU
     'unicode/uversion.h',       # ICU
-    'vtune/VTuneWrapper.h'      # VTune
+    'vtune/VTuneWrapper.h',     # VTune
+    'zydis/ZydisAPI.h',         # Zydis
 ])
 
 # These files have additional constraints on where they are #included, so we
@@ -115,7 +128,7 @@ oddly_ordered_inclnames = set([
     # Included in the body of frontend/TokenStream.h
     'frontend/ReservedWordsGenerated.h',
     'gc/StatsPhasesGenerated.h',         # Included in the body of gc/Statistics.h
-    'gc/StatsPhasesGenerated.cpp',       # Included in the body of gc/Statistics.cpp
+    'gc/StatsPhasesGenerated.inc',       # Included in the body of gc/Statistics.cpp
     'psapi.h',                  # Must be included after "util/Windows.h" on Windows
     'machine/endian.h',         # Must be included after <sys/types.h> on BSD
     'winbase.h',                # Must precede other system headers(?)
@@ -245,7 +258,6 @@ def check_style(enable_fixup):
     #
     # Examples (filename -> inclname)
     # - "mfbt/Attributes.h"         -> "mozilla/Attributes.h"
-    # - "mfbt/decimal/Decimal.h     -> "mozilla/Decimal.h"
     # - "mozglue/misc/TimeStamp.h   -> "mozilla/TimeStamp.h"
     # - "memory/mozalloc/mozalloc.h -> "mozilla/mozalloc.h"
     # - "js/public/Vector.h"        -> "js/Vector.h"

@@ -11,7 +11,6 @@
 #include "nsIMIMEInfo.h"
 #include "nsComponentManagerUtils.h"
 #include "nsArray.h"
-#include "nsIFile.h"
 #include "nsPrintfCString.h"
 
 #include <gio/gio.h>

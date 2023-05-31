@@ -43,7 +43,6 @@ MOZHARNESS_SCRIPTS = {
             'jittest2',
             'jsreftest',
             'mochitest-browser-chrome-instrumentation',
-            'mochitest-devtools-chrome-webreplay',
             'mochitest-valgrind-plain',
             'reftest-gpu',
             'reftest-no-accel',

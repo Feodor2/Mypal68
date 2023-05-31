@@ -5,11 +5,9 @@
 #include "mozilla/dom/ChildSHistory.h"
 #include "mozilla/dom/ChildSHistoryBinding.h"
 #include "mozilla/dom/ContentFrameMessageManager.h"
-#include "nsIMessageManager.h"
 #include "nsComponentManagerUtils.h"
 #include "nsSHistory.h"
 #include "nsDocShell.h"
-#include "nsISHEntry.h"
 #include "nsXULAppAPI.h"
 
 namespace mozilla {

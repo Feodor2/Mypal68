@@ -13,7 +13,6 @@
 #include "nsContentUtils.h"
 #include "nsOfflineCacheUpdate.h"
 #include "nsIApplicationCache.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsNetUtil.h"
 
 using namespace mozilla::ipc;
@@ -90,8 +89,7 @@ nsresult OfflineCacheUpdateParent::Schedule(
 
   bool offlinePermissionAllowed = false;
 
-  rv = service->OfflineAppAllowed(mLoadingPrincipal, nullptr,
-                                  &offlinePermissionAllowed);
+  rv = service->OfflineAppAllowed(mLoadingPrincipal, &offlinePermissionAllowed);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!offlinePermissionAllowed) return NS_ERROR_DOM_SECURITY_ERR;
@@ -240,14 +238,6 @@ OfflineCacheUpdateParent::GetUseRemoteSubframes(bool* aUseRemoteSubframes) {
 NS_IMETHODIMP
 OfflineCacheUpdateParent::SetRemoteSubframes(bool aUseRemoteSubframes) {
   return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-OfflineCacheUpdateParent::GetIsInIsolatedMozBrowserElement(
-    bool* aIsInIsolatedMozBrowserElement) {
-  NS_ENSURE_TRUE(mLoadingPrincipal, NS_ERROR_UNEXPECTED);
-  return mLoadingPrincipal->GetIsInIsolatedMozBrowserElement(
-      aIsInIsolatedMozBrowserElement);
 }
 
 NS_IMETHODIMP

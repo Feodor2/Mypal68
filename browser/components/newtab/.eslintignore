@@ -1,11 +1,4 @@
-activity-streams-env/
-dist/
-firefox/
+data/
 logs/
-stats.json
 prerendered/
 vendor/
-data/
-bin/prerender.js
-bin/prerender.js.map
-aboutlibrary/content/

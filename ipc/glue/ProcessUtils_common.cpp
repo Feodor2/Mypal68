@@ -45,8 +45,6 @@ bool SharedPreferenceSerializer::SerializeToSharedMemory(
   name2.AssignLiteral("MSM_");
   Maybe<uint64_t> randomNum = RandomUint64();
   name2.AppendPrintf("%016llx", *randomNum);
-  randomNum = RandomUint64();
-  name2.AppendPrintf("%016llx", *randomNum);
 
   const char* str;
   name2.GetData(&str);
@@ -121,6 +119,11 @@ SharedPreferenceDeserializer::~SharedPreferenceDeserializer() {
 bool SharedPreferenceDeserializer::DeserializeFromSharedMemory(
     char* aPrefsHandleStr, char* aPrefMapHandleStr, char* aPrefsLenStr,
     char* aPrefMapSizeStr) {
+#ifdef XP_WIN
+  MOZ_ASSERT(aPrefsHandleStr && aPrefMapHandleStr, "Can't be null");
+#endif
+  MOZ_ASSERT(aPrefsLenStr && aPrefMapSizeStr, "Can't be null");
+
   // Parses an arg containing a pointer-sized-integer.
   auto parseUIntPtrArg = [](char*& aArg) {
     // ContentParent uses %zu to print a word-sized unsigned integer. So
@@ -129,24 +132,27 @@ bool SharedPreferenceDeserializer::DeserializeFromSharedMemory(
     return uintptr_t(strtoull(aArg, &aArg, 10));
   };
 
-  //MessageBoxW(NULL,L"DeserializeFromSharedMemory",L"Test",0);
-  //MessageBoxW(NULL,(LPCTSTR)NS_ConvertUTF8toUTF16(aPrefsHandleStr).get(),L"Test",0);
-
 #ifdef XP_WIN
   mPrefsHandle = Some(::OpenFileMapping(FILE_MAP_ALL_ACCESS, FALSE, (LPCTSTR)NS_ConvertUTF8toUTF16(aPrefsHandleStr).get()));
+  if (!aPrefsHandleStr) {
+    return false;
+  }
 
   HANDLE handle=::OpenFileMapping(FILE_MAP_READ, FALSE, (LPCTSTR)NS_ConvertUTF8toUTF16(aPrefMapHandleStr).get());
+  if (!aPrefMapHandleStr) {
+    return false;
+  }
 
   mPrefMapHandle.emplace(handle);
 #endif
 
   mPrefsLen = Some(parseUIntPtrArg(aPrefsLenStr));
-  if (aPrefsLenStr[0] != '\0') {
+  if (!aPrefsLenStr || aPrefsLenStr[0] != '\0') {
     return false;
   }
 
   mPrefMapSize = Some(parseUIntPtrArg(aPrefMapSizeStr));
-  if (aPrefMapSizeStr[0] != '\0') {
+  if (!aPrefMapSizeStr || aPrefMapSizeStr[0] != '\0') {
     return false;
   }
 

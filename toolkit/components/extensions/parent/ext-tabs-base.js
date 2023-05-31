@@ -1981,13 +1981,17 @@ class TabManagerBase {
       }
       yield* windowWrapper.getTabs();
     }
-    let windowWrappers = this.extension.windowManager.query(queryInfo, context);
-    for (let windowWrapper of windowWrappers) {
-      for (let tabWrapper of candidates(windowWrapper)) {
-        if (!queryInfo || tabWrapper.matches(queryInfo)) {
-          yield tabWrapper;
+    try {
+      let windowWrappers = this.extension.windowManager.query(queryInfo, context);
+      for (let windowWrapper of windowWrappers) {
+        for (let tabWrapper of candidates(windowWrapper)) {
+          if (!queryInfo || tabWrapper.matches(queryInfo)) {
+            yield tabWrapper;
+          }
         }
       }
+    } catch (e) {
+      Cu.reportError(e);
     }
   }
 

@@ -440,6 +440,14 @@ var gHomePane = {
     btn.style.visibility = prefChanged ? "visible" : "hidden";
   },
 
+  /**
+   * Set all prefs on the Home tab back to their default values.
+   */
+  restoreDefaultPrefsForHome() {
+    this.restoreDefaultHomePage();
+    this.homePanePrefs.forEach(pref => Services.prefs.clearUserPref(pref.id));
+  },
+
   init() {
     // Event Listeners
     document
@@ -457,6 +465,22 @@ var gHomePane = {
     document
       .getElementById("useBookmarkBtn")
       .addEventListener("command", this.setHomePageToBookmark.bind(this));
+    document
+      .getElementById("restoreDefaultHomePageBtn")
+      .addEventListener("command", this.restoreDefaultPrefsForHome.bind(this));
+
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("homePrefHidden"),
+      () => this.syncFromHomePref()
+    );
+    Preferences.addSyncFromPrefListener(
+      document.getElementById("newTabMode"),
+      () => this.syncFromNewTabPref()
+    );
+    Preferences.addSyncToPrefListener(
+      document.getElementById("newTabMode"),
+      element => this.syncToNewTabPref(element.value)
+    );
 
     this._updateUseCurrentButton();
     window.addEventListener("focus", this._updateUseCurrentButton.bind(this));

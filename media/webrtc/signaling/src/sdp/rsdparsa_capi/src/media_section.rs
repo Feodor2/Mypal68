@@ -1,7 +1,8 @@
 use std::ptr;
 use std::os::raw::c_char;
+use std::convert::TryInto;
 
-use libc::{size_t, uint32_t};
+use libc::size_t;
 
 use nserror::{nsresult, NS_OK, NS_ERROR_INVALID_ARG};
 use rsdparsa::{SdpBandwidth, SdpSession};
@@ -51,11 +52,13 @@ pub enum RustSdpProtocolValue {
     UdpTlsRtpSavp,
     TcpDtlsRtpSavp,
     UdpTlsRtpSavpf,
-    TcpTlsRtpSavpf,
     TcpDtlsRtpSavpf,
     DtlsSctp,
     UdpDtlsSctp,
     TcpDtlsSctp,
+    RtpAvp,
+    RtpAvpf,
+    RtpSavp,
 }
 
 impl<'a> From<&'a SdpProtocolValue> for RustSdpProtocolValue {
@@ -65,11 +68,13 @@ impl<'a> From<&'a SdpProtocolValue> for RustSdpProtocolValue {
             SdpProtocolValue::UdpTlsRtpSavp => RustSdpProtocolValue::UdpTlsRtpSavp,
             SdpProtocolValue::TcpDtlsRtpSavp => RustSdpProtocolValue::TcpDtlsRtpSavp,
             SdpProtocolValue::UdpTlsRtpSavpf => RustSdpProtocolValue::UdpTlsRtpSavpf,
-            SdpProtocolValue::TcpTlsRtpSavpf => RustSdpProtocolValue::TcpTlsRtpSavpf,
             SdpProtocolValue::TcpDtlsRtpSavpf => RustSdpProtocolValue::TcpDtlsRtpSavpf,
             SdpProtocolValue::DtlsSctp => RustSdpProtocolValue::DtlsSctp,
             SdpProtocolValue::UdpDtlsSctp => RustSdpProtocolValue::UdpDtlsSctp,
             SdpProtocolValue::TcpDtlsSctp => RustSdpProtocolValue::TcpDtlsSctp,
+            SdpProtocolValue::RtpAvp => RustSdpProtocolValue::RtpAvp,
+            SdpProtocolValue::RtpAvpf => RustSdpProtocolValue::RtpAvpf,
+            SdpProtocolValue::RtpSavp => RustSdpProtocolValue::RtpSavp,
         }
     }
 }
@@ -113,23 +118,23 @@ pub unsafe extern "C" fn sdp_get_format_u32_vec(sdp_media: *const SdpMedia) -> *
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_set_media_port(sdp_media: *mut SdpMedia, port: uint32_t) {
+pub unsafe extern "C" fn sdp_set_media_port(sdp_media: *mut SdpMedia, port: u32) {
     (*sdp_media).set_port(port);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_media_port(sdp_media: *const SdpMedia) -> uint32_t {
+pub unsafe extern "C" fn sdp_get_media_port(sdp_media: *const SdpMedia) -> u32 {
     (*sdp_media).get_port()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sdp_get_media_port_count(sdp_media: *const SdpMedia) -> uint32_t {
+pub unsafe extern "C" fn sdp_get_media_port_count(sdp_media: *const SdpMedia) -> u32 {
     (*sdp_media).get_port_count()
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn sdp_get_media_bandwidth(sdp_media: *const SdpMedia,
-                                                bandwidth_type: *const c_char) -> uint32_t {
+                                                bandwidth_type: *const c_char) -> u32 {
     get_bandwidth((*sdp_media).get_bandwidth(), bandwidth_type)
 }
 
@@ -166,9 +171,9 @@ pub unsafe extern "C" fn sdp_media_clear_codecs(sdp_media: *mut SdpMedia) {
 pub unsafe extern "C" fn sdp_media_add_codec(sdp_media: *mut SdpMedia, pt: u8,
                                              codec_name: StringView, clockrate: u32,
                                              channels: u16) -> nsresult {
-     let rtpmap = SdpAttributeRtpmap{
+     let rtpmap = SdpAttributeRtpmap {
                      payload_type: pt,
-                     codec_name: match codec_name.into() {
+                     codec_name: match codec_name.try_into() {
                          Ok(x) => x,
                          Err(boxed_error) => {
                              println!("Error while pasing string, description: {:?}", (*boxed_error).description());
@@ -189,7 +194,7 @@ pub unsafe extern "C" fn sdp_media_add_codec(sdp_media: *mut SdpMedia, pt: u8,
 pub unsafe extern "C" fn sdp_media_add_datachannel(sdp_media: *mut SdpMedia, name: StringView,
                                                     port: u16, streams: u16, message_size: u32)
                                                     -> nsresult {
-    let name_str = match name.into() {
+    let name_str = match name.try_into() {
         Ok(x) => x,
         Err(_) => {
             return NS_ERROR_INVALID_ARG;

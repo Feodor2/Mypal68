@@ -17,7 +17,6 @@
 
 using mozilla::CheckedInt;
 using mozilla::TimeDuration;
-using mozilla::TimeStamp;
 
 static const long NanoSecPerSec = 1000000000;
 

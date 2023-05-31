@@ -3,18 +3,17 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Monitor2.h"
 
 #include "nsIconChannel.h"
 #include "nsIIconURI.h"
-#include "nsIServiceManager.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsMimeTypes.h"
 #include "nsMemory.h"
-#include "nsIStringStream.h"
 #include "nsIURL.h"
 #include "nsIPipe.h"
 #include "nsNetCID.h"
@@ -353,7 +352,8 @@ nsIconChannel::AsyncOpen(nsIStreamListener* aListener) {
           mLoadInfo->GetInitialSecurityCheckDone() ||
           (mLoadInfo->GetSecurityMode() ==
                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
-           nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal())),
+           mLoadInfo->LoadingPrincipal() &&
+           mLoadInfo->LoadingPrincipal()->IsSystemPrincipal()),
       "security flags in loadInfo but doContentSecurityCheck() not called");
 
   nsCOMPtr<nsIInputStream> inStream;

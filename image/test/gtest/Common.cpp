@@ -7,9 +7,9 @@
 #include <cstdlib>
 
 #include "gfxPlatform.h"
-#include "gfxPrefs.h"
+
+#include "imgITools.h"
 #include "nsDirectoryServiceDefs.h"
-#include "nsIDirectoryService.h"
 #include "nsIFile.h"
 #include "nsIInputStream.h"
 #include "nsIProperties.h"
@@ -280,7 +280,6 @@ bool RowHasPixels(SourceSurface* aSurface, int32_t aRow,
 ///////////////////////////////////////////////////////////////////////////////
 
 already_AddRefed<Decoder> CreateTrivialDecoder() {
-  gfxPrefs::GetSingleton();
   DecoderType decoderType = DecoderFactory::GetDecoderType("image/gif");
   auto sourceBuffer = MakeNotNull<RefPtr<SourceBuffer>>();
   RefPtr<Decoder> decoder = DecoderFactory::CreateAnonymousDecoder(

@@ -23,9 +23,12 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
 //#include "mozilla/Telemetry.h"
+#include "mozilla/Utf8.h"
 #include "mozilla/intl/LocaleService.h"
-#include "mozilla/recordreplay/ParentIPC.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/JSONWriter.h"
+
+#include "BaseProfiler.h"
 
 #include "nsAppRunner.h"
 #include "mozilla/XREAppData.h"
@@ -55,49 +58,34 @@
 #include "prenv.h"
 #include "prtime.h"
 
-#include "nsIAppShellService.h"
 #include "nsIAppStartup.h"
 #include "nsAppStartupNotifier.h"
 #include "nsIMutableArray.h"
-#include "nsICategoryManager.h"
-#include "nsIChromeRegistry.h"
 #include "nsCommandLine.h"
-#include "nsIComponentManager.h"
 #include "nsIComponentRegistrar.h"
-#include "nsIConsoleService.h"
-#include "nsIContentHandler.h"
 #include "nsIDialogParamBlock.h"
-#include "nsIDOMWindow.h"
 #include "mozilla/ModuleUtils.h"
 #include "nsIIOService.h"
 #include "nsIObserverService.h"
 #include "nsINativeAppSupport.h"
 #include "nsIPlatformInfo.h"
-#include "nsIProcess.h"
 #include "nsIProfileUnlocker.h"
 #include "nsIPromptService.h"
-#include "nsIPropertyBag2.h"
 #include "nsIServiceManager.h"
 #include "nsIStringBundle.h"
 #include "nsISupportsPrimitives.h"
-#include "nsIToolkitChromeRegistry.h"
 #include "nsIToolkitProfile.h"
 #include "nsToolkitProfileService.h"
-#include "nsIURI.h"
-#include "nsIURL.h"
 #include "nsIWindowCreator.h"
-#include "nsIWindowMediator.h"
 #include "nsIWindowWatcher.h"
 #include "nsIXULAppInfo.h"
 #include "nsIXULRuntime.h"
 #include "nsPIDOMWindow.h"
-#include "nsIBaseWindow.h"
 #include "nsIWidget.h"
-#include "nsIDocShell.h"
 #include "nsAppShellCID.h"
+#include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/scache/StartupCache.h"
 #include "gfxPlatform.h"
-#include "gfxPrefs.h"
 
 #include "mozilla/Unused.h"
 
@@ -209,7 +197,6 @@
 
 #include "nsExceptionHandler.h"
 #include "nsIPrefService.h"
-#include "nsIMemoryInfoDumper.h"
 #if defined(XP_LINUX) && !defined(ANDROID)
 #  include "mozilla/widget/LSBUtils.h"
 #endif
@@ -248,10 +235,10 @@ extern void InstallSignalHandlers(const char* ProgramName);
 int gArgc;
 char** gArgv;
 
-#include "buildid.h"
-
 static const char gToolkitVersion[] = MOZ_STRINGIFY(GRE_MILESTONE);
-static const char gToolkitBuildID[] = MOZ_STRINGIFY(MOZ_BUILDID);
+// The gToolkitBuildID global is defined to MOZ_BUILDID via gen_buildid.py
+// in toolkit/library. See related comment in toolkit/library/moz.build.
+extern const char gToolkitBuildID[];
 
 static nsIProfileLock* gProfileLock;
 
@@ -314,6 +301,7 @@ using namespace mozilla::startup;
 using mozilla::Unused;
 using mozilla::dom::ContentChild;
 using mozilla::dom::ContentParent;
+using mozilla::dom::quota::QuotaManager;
 using mozilla::intl::LocaleService;
 using mozilla::scache::StartupCache;
 
@@ -1183,10 +1171,6 @@ static void DumpHelp() {
   printf("  --headless         Run without a GUI.\n");
 #endif
 
-  printf(
-      "  --save-recordings  Save recordings for all content processes to a "
-      "directory.\n");
-
   // this works, but only after the components have registered.  so if you drop
   // in a new command line handler, --help won't not until the second run. out
   // of the bug, because we ship a component.reg file, it works correctly.
@@ -1424,16 +1408,16 @@ static nsresult ProfileMissingDialog(nsINativeAppSupport* aNative) {
     NS_ENSURE_TRUE_LOG(sbs, NS_ERROR_FAILURE);
 
     NS_ConvertUTF8toUTF16 appName(gAppData->name);
-    const char16_t* params[] = {appName.get(), appName.get()};
+    AutoTArray<nsString, 2> params = {appName, appName};
 
     // profileMissing
     nsAutoString missingMessage;
-    rv = sb->FormatStringFromName("profileMissing", params, 2, missingMessage);
+    rv = sb->FormatStringFromName("profileMissing", params, missingMessage);
     NS_ENSURE_SUCCESS(rv, NS_ERROR_ABORT);
 
     nsAutoString missingTitle;
-    rv = sb->FormatStringFromName("profileMissingTitle", params, 1,
-                                  missingTitle);
+    params.SetLength(1);
+    rv = sb->FormatStringFromName("profileMissingTitle", params, missingTitle);
     NS_ENSURE_SUCCESS(rv, NS_ERROR_ABORT);
 
     nsCOMPtr<nsIPromptService> ps(do_GetService(NS_PROMPTSERVICE_CONTRACTID));
@@ -1476,22 +1460,23 @@ static ReturnAbortOnError ProfileLockedDialog(nsIFile* aProfileDir,
     NS_ENSURE_TRUE_LOG(sbs, NS_ERROR_FAILURE);
 
     NS_ConvertUTF8toUTF16 appName(gAppData->name);
-    const char16_t* params[] = {appName.get(), appName.get()};
+    AutoTArray<nsString, 2> params = {appName, appName};
 
     nsAutoString killMessage;
 #ifndef XP_MACOSX
     rv = sb->FormatStringFromName(
         aUnlocker ? "restartMessageUnlocker" : "restartMessageNoUnlocker",
-        params, 2, killMessage);
+        params, killMessage);
 #else
     rv = sb->FormatStringFromName(
         aUnlocker ? "restartMessageUnlockerMac" : "restartMessageNoUnlockerMac",
-        params, 2, killMessage);
+        params, killMessage);
 #endif
     NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
+    params.SetLength(1);
     nsAutoString killTitle;
-    rv = sb->FormatStringFromName("restartTitle", params, 1, killTitle);
+    rv = sb->FormatStringFromName("restartTitle", params, killTitle);
     NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
     if (gfxPlatform::IsHeadless()) {
@@ -1563,10 +1548,6 @@ static ReturnAbortOnError ShowProfileManager(
     ScopedXPCOMStartup xpcom;
     rv = xpcom.Initialize();
     NS_ENSURE_SUCCESS(rv, rv);
-
-    // Initialize the graphics prefs, some of the paths need them before
-    // any other graphics is initialized (e.g., showing the profile chooser.)
-    gfxPrefs::GetSingleton();
 
     rv = xpcom.SetWindowCreator(aNative);
     NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
@@ -2100,11 +2081,11 @@ static bool CheckCompatibility(nsIFile* aProfileDir, const nsCString& aVersion,
   *aCachesOK = (NS_FAILED(rv) || !buf.EqualsLiteral("1"));
 
   bool purgeCaches = false;
-  if (aFlagFile) {
-    aFlagFile->Exists(&purgeCaches);
+  if (aFlagFile && NS_SUCCEEDED(aFlagFile->Exists(&purgeCaches)) &&
+      purgeCaches) {
+    *aCachesOK = false;
   }
 
-  *aCachesOK = !purgeCaches && *aCachesOK;
   return true;
 }
 
@@ -2573,6 +2554,21 @@ int XREMain::XRE_mainInit(bool* aExitFlag) {
 #ifdef XP_MACOSX
   DisableAppNap();
 #endif
+
+#ifndef ANDROID
+  if (PR_GetEnv("MOZ_RUN_GTEST")
+#  ifdef FUZZING
+      || PR_GetEnv("FUZZER")
+#  endif
+  ) {
+    // Enable headless mode and assert that it worked, since gfxPlatform
+    // uses a static bool set after the first call to `IsHeadless`.
+    // Note: Android gtests seem to require an Activity and fail to start
+    // with headless mode enabled.
+    PR_SetEnv("MOZ_HEADLESS=1");
+    MOZ_ASSERT(gfxPlatform::IsHeadless());
+  }
+#endif  // ANDROID
 
   if (PR_GetEnv("MOZ_CHAOSMODE")) {
     ChaosFeature feature = ChaosFeature::Any;
@@ -3692,6 +3688,9 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
       mProfD, version, osABI, mDirProvider.GetGREDir(), mAppData->directory,
       flagFile, &cachesOK, &isDowngrade, lastVersion);
 
+  MOZ_RELEASE_ASSERT(!cachesOK || versionOK,
+               "Caches cannot be good if the version has changed.");
+
 #ifdef MOZ_BLOCK_PROFILE_DOWNGRADE
   // The argument check must come first so the argument is always removed from
   // the command line regardless of whether this is a downgrade or not.
@@ -3731,7 +3730,7 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
   bool lastStartupWasCrash = CheckLastStartupWasCrash().unwrapOr(false);
 
   if (CheckArg("purgecaches") || PR_GetEnv("MOZ_PURGE_CACHES") ||
-      lastStartupWasCrash) {
+      lastStartupWasCrash || gSafeMode) {
     cachesOK = false;
   }
 
@@ -3743,32 +3742,17 @@ int XREMain::XRE_mainStartup(bool* aExitFlag) {
   // re-generated to prevent mysterious component loading failures.
   //
   bool startupCacheValid = true;
-  if (gSafeMode) {
+
+  if (!cachesOK || !versionOK) {
+    QuotaManager::InvalidateQuotaCache();
+
     startupCacheValid = RemoveComponentRegistries(mProfD, mProfLD, false);
-    WriteVersion(mProfD, NS_LITERAL_CSTRING("Safe Mode"), osABI,
-                 mDirProvider.GetGREDir(), mAppData->directory,
-                 !startupCacheValid);
-  } else if (versionOK) {
-    if (!cachesOK) {
-      // Remove caches, forcing component re-registration.
-      // The new list of additional components directories is derived from
-      // information in "extensions.ini".
-      startupCacheValid = RemoveComponentRegistries(mProfD, mProfLD, false);
 
-      // Rewrite compatibility.ini to remove the flag
-      WriteVersion(mProfD, version, osABI, mDirProvider.GetGREDir(),
-                   mAppData->directory, !startupCacheValid);
-    }
-    // Nothing need be done for the normal startup case.
-  } else {
-    // Remove caches, forcing component re-registration
-    // with the default set of components (this disables any potentially
-    // troublesome incompatible XPCOM components).
-    startupCacheValid = RemoveComponentRegistries(mProfD, mProfLD, true);
-
-    // Write out version
+    // Rewrite compatibility.ini to match the current build. The next run
+    // should attempt to invalidate the caches if either this run is safe mode
+    // or the attempt to invalidate the caches this time failed.
     WriteVersion(mProfD, version, osABI, mDirProvider.GetGREDir(),
-                 mAppData->directory, !startupCacheValid);
+                 mAppData->directory, gSafeMode || !startupCacheValid);
   }
 
   if (!startupCacheValid) StartupCache::IgnoreDiskCache();
@@ -3961,7 +3945,7 @@ nsresult XREMain::XRE_mainRun() {
   nsAutoCString path;
   rv = mDirProvider.GetProfileStartupDir(getter_AddRefs(profileDir));
   if (NS_SUCCEEDED(rv) && NS_SUCCEEDED(profileDir->GetNativePath(path)) &&
-      !IsUTF8(path)) {
+      !IsUtf8(path)) {
     PR_fprintf(
         PR_STDERR,
         "Error: The profile path is not valid UTF-8. Unable to continue.\n");
@@ -4172,6 +4156,7 @@ int XREMain::XRE_main(int argc, char* argv[], const BootstrapConfig& aConfig) {
   CodeCoverageHandler::Init();
 #endif
 
+  AUTO_BASE_PROFILER_LABEL("XREMain::XRE_main (around Gecko Profiler)", OTHER);
   AUTO_PROFILER_INIT;
   AUTO_PROFILER_LABEL("XREMain::XRE_main", OTHER);
 
@@ -4399,8 +4384,6 @@ nsresult XRE_InitCommandLine(int aArgc, char* aArgv[]) {
   delete[] canonArgs;
 #endif
 
-  recordreplay::parent::InitializeUIProcess(gArgc, gArgv);
-
   const char* path = nullptr;
   ArgResult ar = CheckArg("greomni", &path);
   if (ar == ARG_BAD) {
@@ -4474,15 +4457,7 @@ bool XRE_UseNativeEventProcessing() {
   }
 #endif
   if (XRE_IsContentProcess()) {
-    static bool sInited = false;
-    static bool sUseNativeEventProcessing = false;
-    if (!sInited) {
-      Preferences::AddBoolVarCache(&sUseNativeEventProcessing,
-                                   "dom.ipc.useNativeEventProcessing.content");
-      sInited = true;
-    }
-
-    return sUseNativeEventProcessing;
+    return StaticPrefs::dom_ipc_useNativeEventProcessing_content();
   }
 
   return true;

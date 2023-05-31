@@ -5,7 +5,6 @@
 
 #include "nscore.h"
 #include "nsCUPSShim.h"
-#include "nsIServiceManager.h"
 #include "nsPSPrinters.h"
 #include "nsReadableUtils.h"  // StringBeginsWith()
 #include "nsCUPSShim.h"

@@ -4,7 +4,6 @@
 
 #![cfg_attr(feature = "oom_with_hook", feature(alloc_error_hook))]
 
-#[cfg(feature="servo")]
 extern crate geckoservo;
 
 extern crate kvstore;
@@ -14,6 +13,7 @@ extern crate nserror;
 extern crate xpcom;
 extern crate netwerk_helper;
 extern crate prefs_parser;
+extern crate static_prefs;
 #[cfg(feature = "gecko_profiler")]
 extern crate profiler_helper;
 extern crate mozurl;
@@ -21,14 +21,13 @@ extern crate mozurl;
 extern crate webrender_bindings;
 #[cfg(feature = "cubeb_pulse_rust")]
 extern crate cubeb_pulse;
-extern crate encoding_c;
 extern crate encoding_glue;
 #[cfg(feature = "cubeb-remoting")]
 extern crate audioipc_client;
 #[cfg(feature = "cubeb-remoting")]
 extern crate audioipc_server;
 extern crate env_logger;
-extern crate u2fhid;
+extern crate authenticator;
 extern crate gkrust_utils;
 extern crate log;
 #[cfg(feature = "new_cert_storage")]
@@ -37,7 +36,6 @@ extern crate cosec;
 extern crate rsdparsa_capi;
 #[cfg(feature = "new_xulstore")]
 extern crate xulstore;
-#[cfg(feature = "spidermonkey_rust")]
 extern crate jsrust_shared;
 #[cfg(feature = "bitsdownload")]
 extern crate bitsdownload;
@@ -76,8 +74,8 @@ impl GeckoLogger {
         let mut builder = env_logger::Builder::new();
         let default_level = if cfg!(debug_assertions) { "warn" } else { "error" };
         let logger = match env::var("RUST_LOG") {
-            Ok(v) => builder.parse(&v).build(),
-            _ => builder.parse(default_level).build(),
+            Ok(v) => builder.parse_filters(&v).build(),
+            _ => builder.parse_filters(default_level).build(),
         };
 
         GeckoLogger {

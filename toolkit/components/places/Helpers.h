@@ -15,6 +15,7 @@
 #include "nsProxyRelease.h"
 #include "prtime.h"
 #include "mozilla/Telemetry.h"
+#include "mozIStorageStatementCallback.h"
 
 namespace mozilla {
 namespace places {

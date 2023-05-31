@@ -4,7 +4,7 @@
 
 #include "ScaledFontBase.h"
 
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
 
 #ifdef USE_SKIA
 #  include "PathSkia.h"
@@ -20,8 +20,6 @@
 #include <vector>
 #include <cmath>
 
-using namespace std;
-
 namespace mozilla {
 namespace gfx {
 
@@ -34,7 +32,7 @@ Atomic<uint32_t> ScaledFont::sDeletionCounter(0);
 ScaledFont::~ScaledFont() { sDeletionCounter++; }
 
 AntialiasMode ScaledFont::GetDefaultAAMode() {
-  if (gfxPrefs::DisableAllTextAA()) {
+  if (StaticPrefs::gfx_text_disable_aa_AtStartup()) {
     return AntialiasMode::NONE;
   }
 

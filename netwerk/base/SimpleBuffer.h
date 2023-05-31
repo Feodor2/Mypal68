@@ -13,7 +13,6 @@
 
 #include "prtypes.h"
 #include "mozilla/LinkedList.h"
-#include "nsIThreadInternal.h"
 
 namespace mozilla {
 namespace net {

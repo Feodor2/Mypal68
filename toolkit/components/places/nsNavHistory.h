@@ -6,10 +6,7 @@
 #define nsNavHistory_h_
 
 #include "nsINavHistoryService.h"
-#include "nsINavBookmarksService.h"
-#include "nsIFaviconService.h"
 
-#include "nsIObserverService.h"
 #include "nsICollation.h"
 #include "nsIStringBundle.h"
 #include "nsITimer.h"
@@ -23,8 +20,9 @@
 #include "nsNavHistoryResult.h"
 #include "nsNavHistoryQuery.h"
 #include "Database.h"
-#include "mozilla/Attributes.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/Attributes.h"
+#include "mozIStorageVacuumParticipant.h"
 
 #ifdef XP_WIN
 #  include "WinUtils.h"
@@ -68,6 +66,7 @@
 #define TAGS_ROOT_GUID "tags________"
 #define MOBILE_ROOT_GUID "mobile______"
 
+class mozIStorageValueArray;
 class nsIAutoCompleteController;
 class nsIEffectiveTLDService;
 class nsIIDNService;

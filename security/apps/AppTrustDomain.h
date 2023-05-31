@@ -9,7 +9,6 @@
 #include "mozilla/StaticMutex.h"
 #include "mozilla/UniquePtr.h"
 #include "nsDebug.h"
-#include "nsIX509CertDB.h"
 #include "ScopedNSSTypes.h"
 
 namespace mozilla {

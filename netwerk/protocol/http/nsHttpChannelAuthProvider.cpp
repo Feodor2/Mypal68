@@ -5,6 +5,7 @@
 // HttpLog.h should generally be included first
 #include "HttpLog.h"
 
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Preferences.h"
 #include "nsHttpChannelAuthProvider.h"
 #include "nsNetUtil.h"
@@ -28,9 +29,8 @@
 #include "nsHttpNegotiateAuth.h"
 #include "nsHttpNTLMAuth.h"
 #include "nsServiceManagerUtils.h"
-#include "nsILoadContext.h"
 #include "nsIURL.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
 #include "nsIProxiedChannel.h"
 #include "nsIProxyInfo.h"
@@ -917,7 +917,7 @@ bool nsHttpChannelAuthProvider::BlockPrompt(bool proxyAuth) {
 
   if (!topDoc) {
     nsCOMPtr<nsIPrincipal> triggeringPrinc = loadInfo->TriggeringPrincipal();
-    if (nsContentUtils::IsSystemPrincipal(triggeringPrinc)) {
+    if (triggeringPrinc->IsSystemPrincipal()) {
       nonWebContent = true;
     }
   }
@@ -1493,10 +1493,10 @@ bool nsHttpChannelAuthProvider::ConfirmAuth(const char* bundleKey,
     }
   }
 
-  const char16_t* strs[2] = {ucsHost.get(), ucsUser.get()};
+  AutoTArray<nsString, 2> strs = {ucsHost, ucsUser};
 
   nsAutoString msg;
-  rv = bundle->FormatStringFromName(bundleKey, strs, 2, msg);
+  rv = bundle->FormatStringFromName(bundleKey, strs, msg);
   if (NS_FAILED(rv)) return true;
 
   nsCOMPtr<nsIInterfaceRequestor> callbacks;

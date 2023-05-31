@@ -7,6 +7,7 @@
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/Array.h"  // JS::IsArrayObject
 #include "js/ArrayBuffer.h"
 #include "js/JSON.h"
 #include "js/TracingAPI.h"
@@ -159,7 +160,7 @@ static Result<nsCString, nsresult> DecodeLZ4(const nsACString& lz4,
 
   MOZ_DIAGNOSTIC_ASSERT(size == outputSize);
 
-  return result;
+  return std::move(result);
 }
 
 // Our zlib headers redefine this to MOZ_Z_compress, which breaks LZ4::compress
@@ -193,7 +194,7 @@ static Result<nsCString, nsresult> EncodeLZ4(const nsACString& data,
   if (!result.SetLength(off + size, fallible)) {
     return Err(NS_ERROR_OUT_OF_MEMORY);
   }
-  return result;
+  return std::move(result);
 }
 
 static_assert(sizeof STRUCTURED_CLONE_MAGIC % 8 == 0,
@@ -497,7 +498,7 @@ nsresult AddonManagerStartup::ReadStartupData(
   auto res = ReadFileLZ4(file);
   if (res.isOk()) {
     data = res.unwrap();
-  } else if (res.unwrapErr() != NS_ERROR_FILE_NOT_FOUND) {
+  } else if (res.inspectErr() != NS_ERROR_FILE_NOT_FOUND) {
     return res.unwrapErr();
   }
 
@@ -621,8 +622,8 @@ nsresult AddonManagerStartup::EnumerateJAR(nsIURI* uri,
     MOZ_TRY(ParseJARURI(jarURI, getter_AddRefs(fileURI), entry));
 
     MOZ_TRY_VAR(file, GetFile(fileURI));
-    MOZ_TRY(zipCache->GetInnerZip(file, Substring(entry, 1),
-                                  getter_AddRefs(zip)));
+    MOZ_TRY(
+        zipCache->GetInnerZip(file, Substring(entry, 1), getter_AddRefs(zip)));
   } else {
     MOZ_TRY_VAR(file, GetFile(uri));
     MOZ_TRY(zipCache->GetZip(file, getter_AddRefs(zip)));
@@ -778,7 +779,7 @@ AddonManagerStartup::RegisterChrome(nsIURI* manifestURI,
                                     nsIJSRAIIHelper** result) {
   auto IsArray = [cx](JS::HandleValue val) -> bool {
     bool isArray;
-    return JS_IsArrayObject(cx, val, &isArray) && isArray;
+    return JS::IsArrayObject(cx, val, &isArray) && isArray;
   };
 
   NS_ENSURE_ARG_POINTER(manifestURI);

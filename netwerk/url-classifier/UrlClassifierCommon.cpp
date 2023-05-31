@@ -9,7 +9,9 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/net/HttpBaseChannel.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StaticPrefs_channelclassifier.h"
 #include "mozIThirdPartyUtil.h"
 #include "nsContentUtils.h"
 #include "nsIChannel.h"
@@ -227,8 +229,8 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
   // Log a warning to the web console.
   nsCOMPtr<nsIURI> uri;
   channel->GetURI(getter_AddRefs(uri));
-  NS_ConvertUTF8toUTF16 spec(uri->GetSpecOrDefault());
-  const char16_t* params[] = {spec.get()};
+  AutoTArray<nsString, 1> params;
+  CopyUTF8toUTF16(uri->GetSpecOrDefault(), *params.AppendElement());
   const char* message;
   nsCString category;
 
@@ -242,7 +244,7 @@ nsresult UrlClassifierCommon::SetBlockedContent(nsIChannel* channel,
 
   nsContentUtils::ReportToConsole(nsIScriptError::warningFlag, category, doc,
                                   nsContentUtils::eNECKO_PROPERTIES, message,
-                                  params, ArrayLength(params));
+                                  params);
 
   return NS_OK;
 }
@@ -386,15 +388,10 @@ void LowerPriorityHelper(nsIChannel* aChannel) {
 }  // namespace
 
 // static
-void UrlClassifierCommon::AnnotateChannel(
-    nsIChannel* aChannel,
-    AntiTrackingCommon::ContentBlockingAllowListPurpose aPurpose,
-    uint32_t aClassificationFlags, uint32_t aLoadingState) {
+void UrlClassifierCommon::AnnotateChannel(nsIChannel* aChannel,
+                                          uint32_t aClassificationFlags,
+                                          uint32_t aLoadingState) {
   MOZ_ASSERT(aChannel);
-  MOZ_ASSERT(aPurpose == AntiTrackingCommon::eTrackingProtection ||
-             aPurpose == AntiTrackingCommon::eTrackingAnnotations ||
-             aPurpose == AntiTrackingCommon::eFingerprinting ||
-             aPurpose == AntiTrackingCommon::eCryptomining);
 
   nsCOMPtr<nsIURI> chanURI;
   nsresult rv = aChannel->GetURI(getter_AddRefs(chanURI));
@@ -421,7 +418,7 @@ void UrlClassifierCommon::AnnotateChannel(
       IsCryptominingClassificationFlag(aClassificationFlags);
 
   if (validClassificationFlags &&
-      (isThirdPartyWithTopLevelWinURI || IsAllowListed(aChannel, aPurpose))) {
+      (isThirdPartyWithTopLevelWinURI || IsAllowListed(aChannel))) {
     UrlClassifierCommon::NotifyChannelClassifierProtectionDisabled(
         aChannel, aLoadingState);
   }
@@ -433,43 +430,44 @@ void UrlClassifierCommon::AnnotateChannel(
 }
 
 // static
-bool UrlClassifierCommon::IsAllowListed(
-    nsIChannel* aChannel,
-    AntiTrackingCommon::ContentBlockingAllowListPurpose aPurpose) {
-  MOZ_ASSERT(aPurpose == AntiTrackingCommon::eTrackingProtection ||
-             aPurpose == AntiTrackingCommon::eTrackingAnnotations ||
-             aPurpose == AntiTrackingCommon::eFingerprinting ||
-             aPurpose == AntiTrackingCommon::eCryptomining);
-
+bool UrlClassifierCommon::IsAllowListed(nsIChannel* aChannel) {
   nsCOMPtr<nsIHttpChannelInternal> channel = do_QueryInterface(aChannel);
   if (!channel) {
     UC_LOG(("nsChannelClassifier: Not an HTTP channel"));
     return false;
   }
 
-  nsCOMPtr<nsIURI> topWinURI;
-  nsresult rv = channel->GetTopWindowURI(getter_AddRefs(topWinURI));
+  nsCOMPtr<nsIPrincipal> cbAllowListPrincipal;
+  nsresult rv = channel->GetContentBlockingAllowListPrincipal(
+      getter_AddRefs(cbAllowListPrincipal));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return false;
   }
 
-  if (!topWinURI && StaticPrefs::channelclassifier_allowlist_example()) {
+  if (!cbAllowListPrincipal &&
+      StaticPrefs::channelclassifier_allowlist_example()) {
     UC_LOG(("nsChannelClassifier: Allowlisting test domain"));
     nsCOMPtr<nsIIOService> ios = services::GetIOService();
     if (NS_WARN_IF(!ios)) {
       return false;
     }
 
+    nsCOMPtr<nsIURI> uri;
     rv = ios->NewURI(NS_LITERAL_CSTRING("http://allowlisted.example.com"),
-                     nullptr, nullptr, getter_AddRefs(topWinURI));
+                     nullptr, nullptr, getter_AddRefs(uri));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return false;
     }
+
+    nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+    RefPtr<BasePrincipal> bp = BasePrincipal::CreateCodebasePrincipal(
+        uri, loadInfo->GetOriginAttributes());
+    cbAllowListPrincipal = bp.forget();
   }
 
   bool isAllowListed = false;
   rv = AntiTrackingCommon::IsOnContentBlockingAllowList(
-      topWinURI, NS_UsePrivateBrowsing(aChannel), aPurpose, isAllowListed);
+      cbAllowListPrincipal, NS_UsePrivateBrowsing(aChannel), isAllowListed);
   if (NS_FAILED(rv)) {  // normal for some loads, no need to print a warning
     return false;
   }

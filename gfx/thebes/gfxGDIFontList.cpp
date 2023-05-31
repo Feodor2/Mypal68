@@ -6,6 +6,7 @@
 #include <algorithm>
 
 #include "mozilla/Logging.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/Sprintf.h"
 
 #include "gfxGDIFontList.h"
@@ -21,8 +22,6 @@
 #include "nsDirectoryServiceUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsAppDirectoryServiceDefs.h"
-#include "nsISimpleEnumerator.h"
-#include "nsIWindowsRegKey.h"
 #include "gfxFontConstants.h"
 #include "GeckoProfiler.h"
 
@@ -653,7 +652,7 @@ int CALLBACK gfxGDIFontList::EnumFontFamExProc(ENUMLOGFONTEXW* lpelfe,
     // GDI, then if a family name is non-ASCII immediately read in other
     // family names.  This assures that MS Gothic, MS Mincho are all found
     // before lookups begin.
-    if (!IsASCII(faceName)) {
+    if (!IsAscii(faceName)) {
       family->ReadOtherFamilyNames(gfxPlatformFontList::PlatformFontList());
     }
 

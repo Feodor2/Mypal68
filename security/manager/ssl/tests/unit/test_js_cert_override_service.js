@@ -48,7 +48,7 @@ function run_test() {
   registerCleanupFunction(() => {
     MockRegistrar.unregister(certOverrideServiceCID);
   });
-  add_tls_server_setup("BadCertServer", "bad_certs");
+  add_tls_server_setup("BadCertAndPinningServer", "bad_certs");
   add_connection_test("expired.example.com", PRErrorCodeSuccess);
   run_next_test();
 }

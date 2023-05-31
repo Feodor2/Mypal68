@@ -9,7 +9,6 @@
 #include "Layers.h"                         // for Layer, ContainerLayer, etc
 #include "CompositableTransactionParent.h"  // for EditReplyVector
 #include "CompositorBridgeParent.h"
-#include "gfxPrefs.h"
 #include "mozilla/gfx/BasePoint3D.h"         // for BasePoint3D
 #include "mozilla/layers/AnimationHelper.h"  // for GetAnimatedPropValue
 #include "mozilla/layers/CanvasLayerComposite.h"
@@ -24,6 +23,8 @@
 #include "mozilla/layers/TextureHostOGL.h"  // for TextureHostOGL
 #include "mozilla/layers/PaintedLayerComposite.h"
 #include "mozilla/mozalloc.h"  // for operator delete, etc
+#include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "nsCoord.h"          // for NSAppUnitsToFloatPixels
@@ -114,7 +115,7 @@ class MOZ_STACK_CLASS AutoLayerTransactionParentAsyncMessageSender final {
  public:
   explicit AutoLayerTransactionParentAsyncMessageSender(
       LayerTransactionParent* aLayerTransaction,
-      const InfallibleTArray<OpDestroy>* aDestroyActors = nullptr)
+      const nsTArray<OpDestroy>* aDestroyActors = nullptr)
       : mLayerTransaction(aLayerTransaction), mActorsToDestroy(aDestroyActors) {
     mLayerTransaction->SetAboutToSendAsyncMessages();
   }
@@ -132,7 +133,7 @@ class MOZ_STACK_CLASS AutoLayerTransactionParentAsyncMessageSender final {
 
  private:
   LayerTransactionParent* mLayerTransaction;
-  const InfallibleTArray<OpDestroy>* mActorsToDestroy;
+  const nsTArray<OpDestroy>* mActorsToDestroy;
 };
 
 mozilla::ipc::IPCResult LayerTransactionParent::RecvPaintTime(
@@ -143,12 +144,6 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvPaintTime(
 
 mozilla::ipc::IPCResult LayerTransactionParent::RecvUpdate(
     const TransactionInfo& aInfo) {
-  auto guard = MakeScopeExit([&] {
-    if (recordreplay::IsRecordingOrReplaying()) {
-      recordreplay::child::NotifyPaintComplete();
-    }
-  });
-
   AUTO_PROFILER_TRACING("Paint", "LayerTransaction", GRAPHICS);
   AUTO_PROFILER_LABEL("LayerTransactionParent::RecvUpdate", GRAPHICS);
 
@@ -470,9 +465,10 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvUpdate(
 #endif
 
   // Enable visual warning for long transaction when draw FPS option is enabled
-  bool drawFps = gfxPrefs::LayersDrawFPS();
+  bool drawFps = StaticPrefs::layers_acceleration_draw_fps();
   if (drawFps) {
-    uint32_t visualWarningTrigger = gfxPrefs::LayerTransactionWarning();
+    uint32_t visualWarningTrigger =
+        StaticPrefs::layers_transaction_warning_ms();
     // The default theshold is 200ms to trigger, hit red when it take 4 times
     // longer
     TimeDuration latency = TimeStamp::Now() - aInfo.transactionStart();
@@ -493,11 +489,6 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvUpdate(
 
     mLayerManager->RecordUpdateTime(
         (TimeStamp::Now() - updateStart).ToMilliseconds());
-  }
-
-  // Compose after every update when recording/replaying.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    mCompositorBridge->ForceComposeToTarget(nullptr);
   }
 
   return IPC_OK();
@@ -749,7 +740,7 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvGetTransform(
   // containers are enabled, then the APZ transform might not be on |layer| but
   // instead would be on the parent of |layer|, if that is the root scrollable
   // metrics. So we special-case that behaviour.
-  if (gfxPrefs::LayoutUseContainersForRootFrames() &&
+  if (StaticPrefs::layout_scroll_root_frame_containers() &&
       !layer->HasScrollableFrameMetrics() && layer->GetParent() &&
       layer->GetParent()->HasRootScrollableFrameMetrics()) {
     transform *= layer->GetParent()->AsHostLayer()->GetShadowBaseTransform();
@@ -951,7 +942,7 @@ TransactionId LayerTransactionParent::FlushTransactionId(
 }
 
 void LayerTransactionParent::SendAsyncMessage(
-    const InfallibleTArray<AsyncParentMessageData>& aMessage) {
+    const nsTArray<AsyncParentMessageData>& aMessage) {
   MOZ_ASSERT_UNREACHABLE("unexpected to be called");
 }
 

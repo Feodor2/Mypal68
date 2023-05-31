@@ -30,7 +30,6 @@
 #include "HashStore.h"
 #include "nsICryptoHash.h"
 #include "nsISeekableStream.h"
-#include "nsIStreamConverterService.h"
 #include "nsNetUtil.h"
 #include "nsCheckSummedOutputStream.h"
 #include "prio.h"

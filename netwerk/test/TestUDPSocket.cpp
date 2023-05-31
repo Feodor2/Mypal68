@@ -5,12 +5,8 @@
 #include "TestCommon.h"
 #include "gtest/gtest.h"
 #include "nsIUDPSocket.h"
-#include "nsISocketTransportService.h"
-#include "nsISocketTransport.h"
 #include "nsIOutputStream.h"
-#include "nsIInputStream.h"
 #include "nsINetAddr.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsITimer.h"
 #include "nsContentUtils.h"
 #include "mozilla/net/DNS.h"
@@ -101,9 +97,10 @@ UDPClientListener::OnPacketReceived(nsIUDPSocket* socket,
 
   if (TEST_SEND_API == phase && CheckMessageContent(message, REQUEST)) {
     uint32_t count;
-    const uint32_t data = RESPONSE;
-    mResult = socket->SendWithAddr(fromAddr, (const uint8_t*)&data,
-                                   sizeof(uint32_t), &count);
+    nsTArray<uint8_t> data;
+    const uint32_t dataBuffer = RESPONSE;
+    data.AppendElements((const uint8_t*)&dataBuffer, sizeof(uint32_t));
+    mResult = socket->SendWithAddr(fromAddr, data, &count);
     if (mResult == NS_OK && count == sizeof(uint32_t)) {
       SUCCEED();
     } else {
@@ -261,11 +258,12 @@ TEST(TestUDPSocket, TestUDPSocketMain)
 
   // Write data to server
   uint32_t count;
-  const uint32_t data = REQUEST;
+  nsTArray<uint8_t> data;
+  const uint32_t dataBuffer = REQUEST;
+  data.AppendElements((const uint8_t*)&dataBuffer, sizeof(uint32_t));
 
   phase = TEST_OUTPUT_STREAM;
-  rv = client->Send(NS_LITERAL_CSTRING("127.0.0.1"), serverPort,
-                    (uint8_t*)&data, sizeof(uint32_t), &count);
+  rv = client->Send(NS_LITERAL_CSTRING("127.0.0.1"), serverPort, data, &count);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   EXPECT_EQ(count, sizeof(uint32_t));
 
@@ -284,8 +282,7 @@ TEST(TestUDPSocket, TestUDPSocketMain)
   clientAddr.inet.ip = PR_htonl(127 << 24 | 1);
 
   phase = TEST_SEND_API;
-  rv = server->SendWithAddress(&clientAddr, (uint8_t*)&data, sizeof(uint32_t),
-                               &count);
+  rv = server->SendWithAddress(&clientAddr, data, &count);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   EXPECT_EQ(count, sizeof(uint32_t));
 
@@ -314,8 +311,7 @@ TEST(TestUDPSocket, TestUDPSocketMain)
   // Send multicast ping
   timerCb->mResult = NS_OK;
   timer->InitWithCallback(timerCb, MULTICAST_TIMEOUT, nsITimer::TYPE_ONE_SHOT);
-  rv = client->SendWithAddress(&multicastAddr, (uint8_t*)&data,
-                               sizeof(uint32_t), &count);
+  rv = client->SendWithAddress(&multicastAddr, data, &count);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   EXPECT_EQ(count, sizeof(uint32_t));
 
@@ -333,8 +329,7 @@ TEST(TestUDPSocket, TestUDPSocketMain)
   // Send multicast ping
   timerCb->mResult = NS_OK;
   timer->InitWithCallback(timerCb, MULTICAST_TIMEOUT, nsITimer::TYPE_ONE_SHOT);
-  rv = client->SendWithAddress(&multicastAddr, (uint8_t*)&data,
-                               sizeof(uint32_t), &count);
+  rv = client->SendWithAddress(&multicastAddr, data, &count);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   EXPECT_EQ(count, sizeof(uint32_t));
 
@@ -356,8 +351,7 @@ TEST(TestUDPSocket, TestUDPSocketMain)
   // Send multicast ping
   timerCb->mResult = NS_OK;
   timer->InitWithCallback(timerCb, MULTICAST_TIMEOUT, nsITimer::TYPE_ONE_SHOT);
-  rv = client->SendWithAddress(&multicastAddr, (uint8_t*)&data,
-                               sizeof(uint32_t), &count);
+  rv = client->SendWithAddress(&multicastAddr, data, &count);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   EXPECT_EQ(count, sizeof(uint32_t));
 
@@ -379,8 +373,7 @@ TEST(TestUDPSocket, TestUDPSocketMain)
   // Send multicast ping
   timerCb->mResult = NS_OK;
   timer->InitWithCallback(timerCb, MULTICAST_TIMEOUT, nsITimer::TYPE_ONE_SHOT);
-  rv = client->SendWithAddress(&multicastAddr, (uint8_t*)&data,
-                               sizeof(uint32_t), &count);
+  rv = client->SendWithAddress(&multicastAddr, data, &count);
   ASSERT_TRUE(NS_SUCCEEDED(rv));
   EXPECT_EQ(count, sizeof(uint32_t));
 

@@ -4,7 +4,7 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["LoginManagerContextMenu"];
+const EXPORTED_SYMBOLS = ["LoginManagerContextMenu"];
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -21,11 +21,14 @@ ChromeUtils.defineModuleGetter(
   "LoginManagerParent",
   "resource://gre/modules/LoginManagerParent.jsm"
 );
+XPCOMUtils.defineLazyGetter(this, "log", () => {
+  return LoginHelper.createLogger("LoginManagerContextMenu");
+});
 
-/*
+/**
  * Password manager object for the browser contextual menu.
  */
-var LoginManagerContextMenu = {
+this.LoginManagerContextMenu = {
   /**
    * Look for login items and add them to the contextual menu.
    *
@@ -33,14 +36,14 @@ var LoginManagerContextMenu = {
    *        The target input element of the context menu click.
    * @param {xul:browser} browser
    *        The browser for the document the context menu was open on.
-   * @param {nsIURI} documentURI
-   *        The URI of the document that the context menu was activated from.
-   *        This isn't the same as the browser's top-level document URI
+   * @param {string} formOrigin
+   *        The origin of the document that the context menu was activated from.
+   *        This isn't the same as the browser's top-level document origin
    *        when subframes are involved.
    * @returns {DocumentFragment} a document fragment with all the login items.
    */
-  addLoginsToMenu(inputElement, browser, documentURI) {
-    let foundLogins = this._findLogins(documentURI);
+  addLoginsToMenu(inputElement, browser, formOrigin) {
+    let foundLogins = this._findLogins(formOrigin);
 
     if (!foundLogins.length) {
       return null;
@@ -70,7 +73,12 @@ var LoginManagerContextMenu = {
       item.addEventListener(
         "command",
         function(login, event) {
-          this._fillTargetField(login, inputElement, browser, documentURI);
+          this._fillTargetField(
+            login,
+            inputElement,
+            browser,
+            formOrigin
+          );
         }.bind(this, login)
       );
 
@@ -93,19 +101,47 @@ var LoginManagerContextMenu = {
     }
   },
 
+  async fillGeneratedPassword(inputElementIdentifier, documentURI, browser) {
+    let password = LoginManagerParent.getGeneratedPassword(
+      inputElementIdentifier.browsingContextId
+    );
+    let origin = LoginHelper.getLoginOrigin(documentURI.spec);
+    log.debug("fillGeneratedPassword into:", inputElementIdentifier, origin);
+
+    let recipes = [];
+    let formHost;
+    try {
+      formHost = documentURI.hostPort;
+      let recipeManager = await LoginManagerParent.recipeParentPromise;
+      recipes = recipeManager.getRecipesForHost(formHost);
+    } catch (ex) {
+      // Some schemes e.g. chrome aren't supported by URL
+      log.debug("Couldnt get recipes for formHost:", formHost, ex);
+    }
+    browser.messageManager.sendAsyncMessage(
+      "PasswordManager:fillGeneratedPassword",
+      {
+        password,
+        origin,
+        inputElementIdentifier,
+        recipes,
+      }
+    );
+  },
+
   /**
-   * Find logins for the current URI.
+   * Find logins for the specified origin..
    *
-   * @param {nsIURI} documentURI
-   *        URI object with the hostname of the logins we want to find.
+   * @param {string} formOrigin
+   *        Origin of the logins we want to find that has be sanitized by `getLoginOrigin`.
    *        This isn't the same as the browser's top-level document URI
    *        when subframes are involved.
    *
    * @returns {nsILoginInfo[]} a login list
    */
-  _findLogins(documentURI) {
+  _findLogins(formOrigin) {
     let searchParams = {
-      hostname: documentURI.displayPrePath,
+      origin: formOrigin,
       schemeUpgrades: LoginHelper.schemeUpgrades,
     };
     let logins = LoginHelper.searchLoginsWithObject(searchParams);
@@ -114,7 +150,7 @@ var LoginManagerContextMenu = {
       logins,
       ["username", "password"],
       resolveBy,
-      documentURI.displayPrePath
+      formOrigin
     );
 
     // Sort logins in alphabetical order and by date.
@@ -168,15 +204,16 @@ var LoginManagerContextMenu = {
    *        The target input element we want to fill.
    * @param {xul:browser} browser
    *        The target tab browser.
-   * @param {nsIURI} documentURI
-   *        URI of the document owning the form we want to fill.
+   * @param {string} formOrigin
+   *        Origin of the document we're filling after sanitization via
+   *        `getLoginOrigin`.
    *        This isn't the same as the browser's top-level
-   *        document URI when subframes are involved.
+   *        origin when subframes are involved.
    */
-  _fillTargetField(login, inputElement, browser, documentURI) {
+  _fillTargetField(login, inputElement, browser, formOrigin) {
     LoginManagerParent.fillForm({
       browser,
-      loginFormOrigin: documentURI.displayPrePath,
+      loginFormOrigin: formOrigin,
       login,
       inputElement,
     }).catch(Cu.reportError);
@@ -193,11 +230,7 @@ var LoginManagerContextMenu = {
    */
   _getLocalizedString(key, formatArgs) {
     if (formatArgs) {
-      return this._stringBundle.formatStringFromName(
-        key,
-        formatArgs,
-        formatArgs.length
-      );
+      return this._stringBundle.formatStringFromName(key, formatArgs);
     }
     return this._stringBundle.GetStringFromName(key);
   },

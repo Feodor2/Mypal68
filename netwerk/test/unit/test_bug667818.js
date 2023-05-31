@@ -16,7 +16,7 @@ function run_test() {
     "test=test; path=/; domain=example.com; expires=Sun, 31-Dec-1899 16:00:00 GMT;",
     null
   );
-  Assert.equal(serv.getCookieString(uri, null), null);
+  Assert.equal(serv.getCookieString(uri, null), "");
   // Now sanity check
   serv.setCookieString(
     uri,

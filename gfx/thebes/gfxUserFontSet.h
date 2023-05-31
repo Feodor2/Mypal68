@@ -12,14 +12,12 @@
 #include "nsRefPtrHashtable.h"
 #include "nsCOMPtr.h"
 #include "nsIMemoryReporter.h"
-#include "nsIPrincipal.h"
 #include "nsIRunnable.h"
 #include "nsIScriptError.h"
-#include "nsIURI.h"
+#include "nsIReferrerInfo.h"
 #include "nsURIHashKey.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/ServoStyleConsts.h"
-#include "mozilla/net/ReferrerPolicy.h"
 #include "gfxFontConstants.h"
 
 class gfxFont;
@@ -57,8 +55,7 @@ struct gfxFontFaceSrc {
 
   nsCString mLocalName;        // full font name if local
   RefPtr<gfxFontSrcURI> mURI;  // uri if url
-  nsCOMPtr<nsIURI> mReferrer;  // referrer url if url
-  mozilla::net::ReferrerPolicy mReferrerPolicy;
+  nsCOMPtr<nsIReferrerInfo> mReferrerInfo;       // referrer info if url
   RefPtr<gfxFontSrcPrincipal> mOriginPrincipal;  // principal if url
 
   RefPtr<gfxFontFaceBufferSource> mBuffer;
@@ -83,9 +80,8 @@ inline bool operator==(const gfxFontFaceSrc& a, const gfxFontFaceSrc& b) {
       return a.mUseOriginPrincipal == b.mUseOriginPrincipal &&
              a.mFormatFlags == b.mFormatFlags &&
              (a.mURI == b.mURI || a.mURI->Equals(b.mURI)) &&
-             NS_SUCCEEDED(a.mReferrer->Equals(b.mReferrer, &equals)) &&
-             equals && a.mReferrerPolicy == b.mReferrerPolicy &&
-             a.mOriginPrincipal->Equals(b.mOriginPrincipal);
+             NS_SUCCEEDED(a.mReferrerInfo->Equals(b.mReferrerInfo, &equals)) &&
+             equals && a.mOriginPrincipal->Equals(b.mOriginPrincipal);
     }
     case gfxFontFaceSrc::eSourceType_Buffer:
       return a.mBuffer == b.mBuffer;

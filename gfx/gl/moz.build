@@ -123,7 +123,6 @@ UNIFIED_SOURCES += [
     'GLContext.cpp',
     'GLContextFeatures.cpp',
     'GLContextProviderEGL.cpp',
-    'GLContextTypes.cpp',
     'GLDebugUtils.cpp',
     'GLLibraryEGL.cpp',
     'GLLibraryLoader.cpp',
@@ -136,7 +135,6 @@ UNIFIED_SOURCES += [
     'SharedSurface.cpp',
     'SharedSurfaceEGL.cpp',
     'SharedSurfaceGL.cpp',
-    'SurfaceTypes.cpp',
     'TextureImageEGL.cpp',
 ]
 
@@ -146,6 +144,8 @@ FINAL_LIBRARY = 'xul'
 
 if CONFIG['MOZ_D3DCOMPILER_VISTA_DLL']:
     DEFINES['MOZ_D3DCOMPILER_VISTA_DLL'] = CONFIG['MOZ_D3DCOMPILER_VISTA_DLL']
+if CONFIG['MOZ_D3DCOMPILER_XP_DLL']:
+    DEFINES['MOZ_D3DCOMPILER_XP_DLL'] = CONFIG['MOZ_D3DCOMPILER_XP_DLL']
 
 CXXFLAGS += CONFIG['MOZ_CAIRO_CFLAGS']
 CXXFLAGS += CONFIG['TK_CFLAGS']

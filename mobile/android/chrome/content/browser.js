@@ -502,11 +502,7 @@ function createReferrerInfo(aReferrer) {
     referrerUri = Services.io.newURI(aReferrer);
   } catch (ignored) {}
 
-  return new ReferrerInfo(
-    Ci.nsIHttpChannel.REFERRER_POLICY_UNSET,
-    true,
-    referrerUri
-  );
+  return new ReferrerInfo(Ci.nsIReferrerInfo.EMPTY, true, referrerUri);
 }
 
 /**
@@ -1335,6 +1331,10 @@ var BrowserApp = {
             return;
           }
 
+          let referrerInfo = Cc["@mozilla.org/referrer-info;1"].createInstance(
+            Ci.nsIReferrerInfo
+          );
+          referrerInfo.initWithDocument(aTarget.ownerDocument);
           let uri = aTarget.currentRequestFinalURI || aTarget.currentURI;
           ContentAreaUtils.saveImageURL(
             uri.spec,
@@ -1342,7 +1342,7 @@ var BrowserApp = {
             "SaveImageTitle",
             false,
             true,
-            aTarget.ownerDocument.documentURIObject,
+            referrerInfo,
             aTarget.ownerDocument
           );
         });
@@ -1400,6 +1400,10 @@ var BrowserApp = {
         }
 
         // Skipped trying to pull MIME type out of cache for now
+        let referrerInfo = Cc["@mozilla.org/referrer-info;1"].createInstance(
+          Ci.nsIReferrerInfo
+        );
+        referrerInfo.initWithDocument(aTarget.ownerDocument);
         ContentAreaUtils.internalSave(
           url,
           null,
@@ -1409,7 +1413,7 @@ var BrowserApp = {
           false,
           filePickerTitleKey,
           null,
-          aTarget.ownerDocument.documentURIObject,
+          referrerInfo,
           aTarget.ownerDocument,
           true,
           null
@@ -1816,8 +1820,7 @@ var BrowserApp = {
         } else if (title) {
           message = Strings.browser.formatStringFromName(
             "undoCloseToast.message",
-            [title],
-            1
+            [title]
           );
         } else {
           message = Strings.browser.GetStringFromName(
@@ -2476,8 +2479,8 @@ var BrowserApp = {
               if (PrivateBrowsingUtils.isBrowserPrivate(browser)) {
                 PrivateBrowsingUtils.addToTrackingAllowlist(normalizedUrl);
               } else {
-                Services.perms.add(
-                  normalizedUrl,
+                Services.perms.addFromPrincipal(
+                  browser.contentPrincipal
                   "trackingprotection",
                   Services.perms.ALLOW_ACTION
                 );
@@ -2491,7 +2494,7 @@ var BrowserApp = {
               if (PrivateBrowsingUtils.isBrowserPrivate(browser)) {
                 PrivateBrowsingUtils.removeFromTrackingAllowlist(normalizedUrl);
               } else {
-                Services.perms.remove(normalizedUrl, "trackingprotection");
+                Services.perms.removeFromPrincipal(browser.contentPrincipal, "trackingprotection");
                 Telemetry.addData("TRACKING_PROTECTION_EVENTS", 2);
               }
             }
@@ -3980,8 +3983,7 @@ ChromeUtils.defineModuleGetter(
   XPCOMUtils.defineLazyGetter(NativeWindow, name, () => {
     var err = Strings.browser.formatStringFromName(
       "nativeWindow.deprecated",
-      ["NativeWindow." + name, script],
-      2
+      ["NativeWindow." + name, script]
     );
     Cu.reportError(err);
 
@@ -4503,9 +4505,8 @@ Tab.prototype = {
     this.browser.addEventListener("DOMWillOpenModalDialog", this, true);
     this.browser.addEventListener("pagehide", this, true);
     this.browser.addEventListener("pageshow", this, true);
-    this.browser.addEventListener("MozApplicationManifest", this, true);
     this.browser.addEventListener("TabPreZombify", this, true);
-    this.browser.addEventListener("DOMWindowFocus", this, true);
+    this.browser.addEventListener("framefocusrequested", this, true);
     this.browser.addEventListener("focusin", this, true);
     this.browser.addEventListener("focusout", this, true);
     this.browser.addEventListener("TabSelect", this, true);
@@ -4666,9 +4667,8 @@ Tab.prototype = {
     this.browser.removeEventListener("DOMWillOpenModalDialog", this, true);
     this.browser.removeEventListener("pagehide", this, true);
     this.browser.removeEventListener("pageshow", this, true);
-    this.browser.removeEventListener("MozApplicationManifest", this, true);
     this.browser.removeEventListener("TabPreZombify", this, true);
-    this.browser.removeEventListener("DOMWindowFocus", this, true);
+    this.browser.removeEventListener("framefocusrequested", this, true);
     this.browser.removeEventListener("focusin", this, true);
     this.browser.removeEventListener("focusout", this, true);
     this.browser.removeEventListener("TabSelect", this, true);
@@ -5262,17 +5262,15 @@ Tab.prototype = {
         break;
       }
 
-      case "MozApplicationManifest": {
-        OfflineApps.offlineAppRequested(aEvent.originalTarget.defaultView);
-        break;
-      }
-
-      case "DOMWindowFocus": {
-        GlobalEventDispatcher.sendRequest({
-          type: "Tab:Select",
-          tabID: this.id,
-          foreground: true,
-        });
+      case "framefocusrequested": {
+        if (BrowserApp.selectedTab !== this) {
+          GlobalEventDispatcher.sendRequest({
+            type: "Tab:Select",
+            tabID: this.id,
+            foreground: true,
+          });
+          aEvent.preventDefault();
+        }
         break;
       }
 
@@ -6076,8 +6074,7 @@ var XPInstallObserver = {
         } else {
           message = strings.formatStringFromName(
             "xpinstallDisabledMessage2",
-            [brandShortName, host],
-            2
+            [brandShortName, host]
           );
           buttons = [
             strings.GetStringFromName("xpinstallDisabledButton"),
@@ -6108,8 +6105,7 @@ var XPInstallObserver = {
           // We have a host which asked for the install.
           message = strings.formatStringFromName(
             "xpinstallPromptWarning2",
-            [brandShortName, host],
-            2
+            [brandShortName, host]
           );
         } else {
           // Without a host we address the add-on as the initiator of the install.
@@ -6121,15 +6117,13 @@ var XPInstallObserver = {
             // We have an addon name, show the regular message.
             message = strings.formatStringFromName(
               "xpinstallPromptWarningLocal",
-              [brandShortName, addon],
-              2
+              [brandShortName, addon]
             );
           } else {
             // We don't have an addon name, show an alternative message.
             message = strings.formatStringFromName(
               "xpinstallPromptWarningDirect",
-              [brandShortName],
-              1
+              [brandShortName]
             );
           }
         }
@@ -6161,8 +6155,7 @@ var XPInstallObserver = {
           title: Strings.browser.GetStringFromName("addonError.titleBlocked"),
           message: strings.formatStringFromName(
             "xpinstallPromptWarningDirect",
-            [brandShortName],
-            1
+            [brandShortName]
           ),
           buttons: [
             strings.GetStringFromName("unsignedAddonsDisabled.dismiss"),
@@ -6437,8 +6430,8 @@ var PopupBlockerObserver = {
       return;
     }
 
-    let result = Services.perms.testExactPermission(
-      BrowserApp.selectedBrowser.currentURI,
+    let result = Services.perms.testExactPermissionFromPrincipal(
+      BrowserApp.selectedBrowser.contentPrincipal,
       "popup"
     );
     if (result == Ci.nsIPermissionManager.DENY_ACTION) {
@@ -6502,9 +6495,9 @@ var PopupBlockerObserver = {
   },
 
   allowPopupsForSite: function allowPopupsForSite(aAllow) {
-    let currentURI = BrowserApp.selectedBrowser.currentURI;
-    Services.perms.add(
-      currentURI,
+    let principal = BrowserApp.selectedBrowser.contentPrincipal;
+    Services.perms.addFromPrincipal(
+      principal,
       "popup",
       aAllow
         ? Ci.nsIPermissionManager.ALLOW_ACTION
@@ -6578,7 +6571,7 @@ var IndexedDB = {
 
     let message, responseTopic;
     if (topic == this._permissionsPrompt) {
-      message = strings.formatStringFromName("offlineApps.ask", [host], 1);
+      message = strings.formatStringFromName("offlineApps.ask", [host]);
       responseTopic = this._permissionsResponse;
     }
 
@@ -6954,8 +6947,7 @@ var IdentityHandler = {
     let iData = this.getIdentityData();
     result.verifier = Strings.browser.formatStringFromName(
       "identity.identified.verifier",
-      [iData.caOrg],
-      1
+      [iData.caOrg]
     );
 
     // If the cert is identified, then we can populate the results with credentials
@@ -6970,8 +6962,7 @@ var IdentityHandler = {
       if (iData.state && iData.country) {
         supplemental += Strings.browser.formatStringFromName(
           "identity.identified.state_and_country",
-          [iData.state, iData.country],
-          2
+          [iData.state, iData.country]
         );
         result.country = iData.country;
       } else if (iData.state) {
@@ -7248,8 +7239,7 @@ var SearchEngines = {
       Snackbars.show(
         Strings.browser.formatStringFromName(
           "alertSearchEngineAddedToast",
-          [engine.title],
-          1
+          [engine.title]
         ),
         Snackbars.LENGTH_LONG
       );
@@ -7265,7 +7255,7 @@ var SearchEngines = {
       }
 
       Snackbars.show(
-        Strings.browser.formatStringFromName(errorMessage, [engine.title], 1),
+        Strings.browser.formatStringFromName(errorMessage, [engine.title]),
         Snackbars.LENGTH_LONG
       );
     }
@@ -7429,8 +7419,7 @@ var SearchEngines = {
           Snackbars.show(
             Strings.browser.formatStringFromName(
               "alertSearchEngineAddedToast",
-              [name],
-              1
+              [name]
             ),
             Snackbars.LENGTH_LONG
           );
@@ -7583,8 +7572,7 @@ var ExternalApps = {
         return apps.length == 1
           ? Strings.browser.formatStringFromName(
               "helperapps.openWithApp2",
-              [apps[0].name],
-              1
+              [apps[0].name]
             )
           : Strings.browser.GetStringFromName("helperapps.openWithList2");
       },

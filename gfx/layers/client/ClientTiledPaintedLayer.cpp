@@ -8,9 +8,10 @@
 #include "UnitTransforms.h"        // for TransformTo
 #include "ClientLayerManager.h"    // for ClientLayerManager, etc
 #include "gfxPlatform.h"           // for gfxPlatform
-#include "gfxPrefs.h"              // for gfxPrefs
 #include "gfxRect.h"               // for gfxRect
 #include "mozilla/Assertions.h"    // for MOZ_ASSERT, etc
+#include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/gfx/BaseSize.h"  // for BaseSize
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/Rect.h"  // for Rect, RectTyped
@@ -83,7 +84,7 @@ static LayerToParentLayerMatrix4x4 GetTransformToAncestorsParentLayer(
        iter = iter.GetParent()) {
     transform = transform * iter.GetTransform();
 
-    if (gfxPrefs::LayoutUseContainersForRootFrames()) {
+    if (StaticPrefs::layout_scroll_root_frame_containers()) {
       // When scrolling containers, layout adds a post-scale into the transform
       // of the displayport-ancestor (which we pick up in GetTransform() above)
       // to cancel out the pres shell resolution (for historical reasons). The
@@ -265,7 +266,7 @@ bool ClientTiledPaintedLayer::IsScrollingOnCompositor(
 }
 
 bool ClientTiledPaintedLayer::UseProgressiveDraw() {
-  if (!gfxPrefs::ProgressivePaint()) {
+  if (!StaticPrefs::layers_progressive_paint()) {
     // pref is disabled, so never do progressive
     return false;
   }
@@ -477,7 +478,7 @@ void ClientTiledPaintedLayer::RenderLayer() {
        isHalfTileWidthOrHeight) &&
       SingleTiledContentClient::ClientSupportsLayerSize(layerSize,
                                                         ClientManager()) &&
-      gfxPrefs::LayersSingleTileEnabled();
+      StaticPrefs::layers_single_tile_enabled();
 
   if (mContentClient && mHaveSingleTiledContentClient &&
       !wantSingleTiledContentClient) {

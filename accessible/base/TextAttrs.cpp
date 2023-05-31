@@ -262,7 +262,7 @@ bool TextAttrsMgr::InvalidTextAttr::GetValue(nsIContent* aElm,
   nsIContent* elm = aElm;
   do {
     if (nsAccUtils::HasDefinedARIAToken(elm, nsGkAtoms::aria_invalid)) {
-      static Element::AttrValuesArray tokens[] = {
+      static dom::Element::AttrValuesArray tokens[] = {
           nsGkAtoms::_false, nsGkAtoms::grammar, nsGkAtoms::spelling, nullptr};
 
       int32_t idx = elm->AsElement()->FindAttrValueIn(
@@ -347,11 +347,11 @@ bool TextAttrsMgr::BGColorTextAttr::GetColor(nsIFrame* aFrame,
 TextAttrsMgr::ColorTextAttr::ColorTextAttr(nsIFrame* aRootFrame,
                                            nsIFrame* aFrame)
     : TTextAttr<nscolor>(!aFrame) {
-  mRootNativeValue = aRootFrame->StyleColor()->mColor.ToColor();
+  mRootNativeValue = aRootFrame->StyleText()->mColor.ToColor();
   mIsRootDefined = true;
 
   if (aFrame) {
-    mNativeValue = aFrame->StyleColor()->mColor.ToColor();
+    mNativeValue = aFrame->StyleText()->mColor.ToColor();
     mIsDefined = true;
   }
 }
@@ -361,7 +361,7 @@ bool TextAttrsMgr::ColorTextAttr::GetValueFor(Accessible* aAccessible,
   nsIContent* elm = nsCoreUtils::GetDOMElementFor(aAccessible->GetContent());
   if (elm) {
     if (nsIFrame* frame = elm->GetPrimaryFrame()) {
-      *aValue = frame->StyleColor()->mColor.ToColor();
+      *aValue = frame->StyleText()->mColor.ToColor();
       return true;
     }
   }

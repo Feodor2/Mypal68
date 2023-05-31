@@ -4,7 +4,6 @@
 
 #include "HTMLEditUtils.h"
 
-#include "TextEditUtils.h"        // for TextEditUtils
 #include "mozilla/ArrayUtils.h"   // for ArrayLength
 #include "mozilla/Assertions.h"   // for MOZ_ASSERT, etc.
 #include "mozilla/EditAction.h"   // for EditAction
@@ -212,7 +211,9 @@ bool HTMLEditUtils::IsNamedAnchor(nsINode* aNode) {
 bool HTMLEditUtils::IsMozDiv(nsINode* aNode) {
   MOZ_ASSERT(aNode);
   return aNode->IsHTMLElement(nsGkAtoms::div) &&
-         TextEditUtils::HasMozAttr(aNode);
+         aNode->AsElement()->AttrValueIs(kNameSpaceID_None, nsGkAtoms::type,
+                                         NS_LITERAL_STRING("_moz"),
+                                         eIgnoreCase);
 }
 
 /**
@@ -245,8 +246,8 @@ bool HTMLEditUtils::IsFormWidget(nsINode* aNode) {
   MOZ_ASSERT(aNode);
   return aNode->IsAnyOfHTMLElements(nsGkAtoms::textarea, nsGkAtoms::select,
                                     nsGkAtoms::button, nsGkAtoms::output,
-                                    nsGkAtoms::keygen, nsGkAtoms::progress,
-                                    nsGkAtoms::meter, nsGkAtoms::input);
+                                    nsGkAtoms::progress, nsGkAtoms::meter,
+                                    nsGkAtoms::input);
 }
 
 bool HTMLEditUtils::SupportsAlignAttr(nsINode& aNode) {
@@ -450,7 +451,7 @@ static const ElementInfo kElements[eHTMLTag_userdefined] = {
     ELEM(input, false, false, GROUP_FORMCONTROL, GROUP_NONE),
     ELEM(ins, true, true, GROUP_PHRASE | GROUP_BLOCK, GROUP_FLOW_ELEMENT),
     ELEM(kbd, true, true, GROUP_PHRASE, GROUP_INLINE_ELEMENT),
-    ELEM(keygen, false, false, GROUP_FORMCONTROL, GROUP_NONE),
+    ELEM(keygen, false, false, GROUP_NONE, GROUP_NONE),
     ELEM(label, true, false, GROUP_FORMCONTROL, GROUP_INLINE_ELEMENT),
     ELEM(legend, true, true, GROUP_NONE, GROUP_INLINE_ELEMENT),
     ELEM(li, true, false, GROUP_LI, GROUP_FLOW_ELEMENT),

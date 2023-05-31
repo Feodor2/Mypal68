@@ -508,8 +508,7 @@ var gSyncPane = {
       let email = !isError && data ? data.email : "";
       let body = sb.formatStringFromName(
         "verification" + maybeNot + "SentBody",
-        [email],
-        1
+        [email]
       );
       new Notification(title, { body });
     };

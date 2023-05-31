@@ -350,8 +350,6 @@ update-application-manual =
     .label = Never check for updates (not recommended)
     .accesskey = N
 
-update-application-warning-cross-user-setting = This setting will apply to all Windows accounts and { -brand-short-name } profiles using this installation of { -brand-short-name }.
-
 update-application-use-service =
     .label = Use a background service to install updates
     .accesskey = b
@@ -359,12 +357,6 @@ update-application-use-service =
 update-enable-search-update =
     .label = Automatically update search engines
     .accesskey = e
-
-update-pref-write-failure-title = Write Failure
-
-# Variables:
-#   $path (String) - Path to the configuration file
-update-pref-write-failure-message = Unable to save preference. Could not write to file: { $path }
 
 ## General Section - Performance
 
@@ -474,6 +466,30 @@ use-current-pages =
 choose-bookmark =
     .label = Use Bookmark…
     .accesskey = B
+
+## Home Section - Firefox Home Content Customization
+
+home-prefs-content-header = Firefox Home Content
+home-prefs-content-description = Choose what content you want on your Firefox Home screen.
+home-prefs-content-discovery-description = Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.
+
+home-prefs-search-header =
+    .label = Web Search
+home-prefs-topsites-header =
+    .label = Top Sites
+home-prefs-topsites-description = The sites you visit most
+
+home-prefs-highlights-header =
+    .label = Highlights
+home-prefs-highlights-description = A selection of sites that you’ve saved or visited
+home-prefs-highlights-option-visited-pages =
+    .label = Visited Pages
+home-prefs-highlights-options-bookmarks =
+    .label = Bookmarks
+home-prefs-highlights-option-most-recent-download =
+    .label = Most Recent Download
+home-prefs-highlights-option-saved-to-pocket =
+    .label = Pages Saved to { -pocket-brand-name }
 
 ## Search Section
 
@@ -676,6 +692,9 @@ forms-ask-to-save-logins =
 forms-exceptions =
     .label = Exceptions…
     .accesskey = x
+forms-generate-passwords =
+    .label = Suggest and generate strong passwords
+    .accesskey = u
 forms-saved-logins =
     .label = Saved Logins…
     .accesskey = L
@@ -842,7 +861,6 @@ content-blocking-fingerprinters = Fingerprinters
 
 content-blocking-warning-title = Heads up!
 content-blocking-warning-description = Blocking content can cause some websites to break. It’s easy to disable blocking for sites you trust.
-content-blocking-learn-how = Learn how
 
 content-blocking-reload-description = You will need to reload your tabs to apply these changes.
 content-blocking-reload-tabs-button =
@@ -864,7 +882,7 @@ content-blocking-cookies-label =
   .label = Cookies
   .accesskey = C
 
-content-blocking-expand-section = 
+content-blocking-expand-section =
   .tooltiptext = More information
 
 # Cryptomining refers to using scripts on websites that can use a computer’s resources to mine cryptocurrency without a user’s knowledge.
@@ -913,13 +931,11 @@ permissions-notification-pause =
     .label = Pause notifications until { -brand-short-name } restarts
     .accesskey = n
 
-permissions-block-autoplay-media2 =
-    .label = Block websites from automatically playing sound
-    .accesskey = B
+permissions-autoplay = Autoplay
 
-permissions-block-autoplay-media-exceptions =
-    .label = Exceptions…
-    .accesskey = E
+permissions-autoplay-settings =
+    .label = Settings…
+    .accesskey = t
 
 permissions-block-popups =
     .label = Block pop-up windows

@@ -18,7 +18,7 @@ function run_test() {
     true,
     expiry,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   Assert.equal(cm.countCookiesFromHost("a"), 1);
   Assert.equal(cs.getCookieString(NetUtil.newURI("http://a"), null), "foo=bar");

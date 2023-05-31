@@ -567,7 +567,7 @@ function get_string(aName, ...aArgs) {
   if (aArgs.length == 0) {
     return bundle.GetStringFromName(aName);
   }
-  return bundle.formatStringFromName(aName, aArgs, aArgs.length);
+  return bundle.formatStringFromName(aName, aArgs);
 }
 
 function formatDate(aDate) {

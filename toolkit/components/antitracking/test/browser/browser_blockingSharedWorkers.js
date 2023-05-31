@@ -2,7 +2,7 @@
 
 requestLongerTimeout(2);
 
-AntiTracking.runTest(
+AntiTracking.runTestInNormalAndPrivateMode(
   "SharedWorkers",
   async _ => {
     try {
@@ -26,7 +26,7 @@ AntiTracking.runTest(
   }
 );
 
-AntiTracking.runTest(
+AntiTracking.runTestInNormalAndPrivateMode(
   "SharedWorkers and Storage Access API",
   async _ => {
     /* import-globals-from storageAccessAPIHelpers.js */

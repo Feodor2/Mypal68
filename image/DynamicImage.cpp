@@ -289,9 +289,5 @@ already_AddRefed<imgIContainer> DynamicImage::Unwrap() {
   return self.forget();
 }
 
-void DynamicImage::PropagateUseCounters(dom::Document*) {
-  // No use counters.
-}
-
 }  // namespace image
 }  // namespace mozilla

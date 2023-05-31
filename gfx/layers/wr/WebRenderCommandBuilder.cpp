@@ -7,6 +7,7 @@
 #include "BasicLayers.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/Types.h"
@@ -668,18 +669,17 @@ struct DIGroup {
                 aStream.write((const char*)&font, sizeof(font));
               }
               fonts = std::move(aScaledFonts);
-            });
+            },
+            mLayerBounds.ToUnknownRect().TopLeft());
 
     RefPtr<gfx::DrawTarget> dummyDt = gfx::Factory::CreateDrawTarget(
         gfx::BackendType::SKIA, gfx::IntSize(1, 1), format);
 
-    RefPtr<gfx::DrawTarget> dt =
-        gfx::Factory::CreateRecordingDrawTarget(recorder, dummyDt, dtSize);
+    RefPtr<gfx::DrawTarget> dt = gfx::Factory::CreateRecordingDrawTarget(
+        recorder, dummyDt, mLayerBounds.ToUnknownRect());
     // Setup the gfxContext
     RefPtr<gfxContext> context = gfxContext::CreateOrNull(dt);
-    GP("ctx-offset %f %f\n", bounds.x, bounds.y);
-    context->SetMatrix(Matrix::Scaling(mScale.width, mScale.height)
-                           .PreTranslate(-bounds.x, -bounds.y));
+    context->SetMatrix(Matrix::Scaling(mScale.width, mScale.height).PostTranslate(mResidualOffset.x, mResidualOffset.y));
 
     GP("mInvalidRect: %d %d %d %d\n", mInvalidRect.x, mInvalidRect.y,
        mInvalidRect.width, mInvalidRect.height);
@@ -717,7 +717,10 @@ struct DIGroup {
       GP("No previous key making new one %d\n", key._0.mHandle);
       wr::ImageDescriptor descriptor(dtSize, 0, dt->GetFormat(), opacity);
       MOZ_RELEASE_ASSERT(bytes.length() > sizeof(size_t));
-      if (!aResources.AddBlobImage(key, descriptor, bytes)) {
+      if (!aResources.AddBlobImage(
+              key, descriptor, bytes,
+              ViewAs<ImagePixel>(mPaintRect,
+                                 PixelCastJustification::LayerIsImage))) {
         return;
       }
       mKey = Some(MakePair(aBuilder.GetRenderRoot(), key));
@@ -730,8 +733,11 @@ struct DIGroup {
                          bottomRight.y <= dtSize.height);
       GP("Update Blob %d %d %d %d\n", mInvalidRect.x, mInvalidRect.y,
          mInvalidRect.width, mInvalidRect.height);
-      if (!aResources.UpdateBlobImage(mKey.value().second(), descriptor, bytes,
-                                      ViewAs<ImagePixel>(mInvalidRect))) {
+      if (!aResources.UpdateBlobImage(
+              mKey.value().second(), descriptor, bytes,
+              ViewAs<ImagePixel>(mPaintRect,
+                                 PixelCastJustification::LayerIsImage),
+              ViewAs<ImagePixel>(mInvalidRect))) {
         return;
       }
     }
@@ -957,7 +963,7 @@ void Grouper::PaintContainerItem(DIGroup* aGroup, nsDisplayItem* aItem,
 
       aContext->GetDrawTarget()->PushLayer(false, opacityItem->GetOpacity(),
                                            nullptr, mozilla::gfx::Matrix(),
-                                           aItemBounds);
+                                           aItemBounds + aGroup->mLayerBounds.ToUnknownRect().TopLeft());
       GP("beginGroup %s %p-%d\n", aItem->Name(), aItem->Frame(),
          aItem->GetPerFrameKey());
       aContext->GetDrawTarget()->FlushItem(aItemBounds);
@@ -973,7 +979,7 @@ void Grouper::PaintContainerItem(DIGroup* aGroup, nsDisplayItem* aItem,
       auto blendItem = static_cast<nsDisplayBlendMode*>(aItem);
       auto blendMode = blendItem->BlendMode();
       aContext->GetDrawTarget()->PushLayerWithBlend(
-          false, 1.0, nullptr, mozilla::gfx::Matrix(), aItemBounds, false,
+          false, 1.0, nullptr, mozilla::gfx::Matrix(), aItemBounds + aGroup->mLayerBounds.ToUnknownRect().TopLeft(), false,
           blendMode);
       GP("beginGroup %s %p-%d\n", aItem->Name(), aItem->Frame(),
          aItem->GetPerFrameKey());
@@ -988,7 +994,7 @@ void Grouper::PaintContainerItem(DIGroup* aGroup, nsDisplayItem* aItem,
     }
     case DisplayItemType::TYPE_BLEND_CONTAINER: {
       aContext->GetDrawTarget()->PushLayer(false, 1.0, nullptr,
-                                           mozilla::gfx::Matrix(), aItemBounds);
+                                           mozilla::gfx::Matrix(), aItemBounds + aGroup->mLayerBounds.ToUnknownRect().TopLeft());
       GP("beginGroup %s %p-%d\n", aItem->Name(), aItem->Frame(),
          aItem->GetPerFrameKey());
       aContext->GetDrawTarget()->FlushItem(aItemBounds);
@@ -1320,8 +1326,11 @@ void Grouper::ConstructItemInsideInactive(
   // still
   aGroup->ComputeGeometryChange(aItem, data, mTransform, mDisplayListBuilder);
 
-  // Temporarily restrict the image bounds to the bounds of the container so
-  // that clipped children within the container know about the clip.
+  // Temporarily restrict the image bounds to the bounds of the container so that
+  // clipped children within the container know about the clip. This ensures
+  // that the bounds passed to FlushItem are contained in the bounds of the clip
+  // so that we don't include items in the recording without including their
+  // corresponding clipping items.
   IntRect oldClippedImageBounds = aGroup->mClippedImageBounds;
   aGroup->mClippedImageBounds =
       aGroup->mClippedImageBounds.Intersect(data->mRect);
@@ -1555,11 +1564,11 @@ void WebRenderCommandBuilder::BuildWebRenderCommands(
       mClipManagers[renderRoot].BeginBuild(mManager,
                                            aBuilder.SubBuilder(renderRoot));
     }
+    mBuilderDumpIndex[renderRoot] = 0;
   }
   MOZ_ASSERT(mLayerScrollDatas.IsEmpty());
   mLastCanvasDatas.Clear();
   mLastAsr = nullptr;
-  mBuilderDumpIndex = 0;
   mContainsSVGGroup = false;
   MOZ_ASSERT(mDumpIndent == 0);
 
@@ -1588,8 +1597,10 @@ void WebRenderCommandBuilder::BuildWebRenderCommands(
       }
     }
     if (ShouldDumpDisplayList(aDisplayListBuilder)) {
-      mBuilderDumpIndex =
-          aBuilder.Dump(mDumpIndent + 1, Some(mBuilderDumpIndex), Nothing());
+      mBuilderDumpIndex[aBuilder.GetRenderRoot()] =
+          aBuilder.Dump(mDumpIndent + 1,
+                        Some(mBuilderDumpIndex[aBuilder.GetRenderRoot()]),
+                        Nothing());
     }
     MOZ_ASSERT(mRootStackingContexts == nullptr);
     AutoRestore<wr::RenderRootArray<Maybe<StackingContextHelper>>*> rootScs(
@@ -1636,8 +1647,10 @@ void WebRenderCommandBuilder::BuildWebRenderCommands(
 bool WebRenderCommandBuilder::ShouldDumpDisplayList(
     nsDisplayListBuilder* aBuilder) {
   return aBuilder != nullptr && aBuilder->IsInActiveDocShell() &&
-         ((XRE_IsParentProcess() && gfxPrefs::WebRenderDLDumpParent()) ||
-          (XRE_IsContentProcess() && gfxPrefs::WebRenderDLDumpContent()));
+         ((XRE_IsParentProcess() &&
+           StaticPrefs::gfx_webrender_dl_dump_parent()) ||
+          (XRE_IsContentProcess() &&
+           StaticPrefs::gfx_webrender_dl_dump_content()));
 }
 
 void WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList(
@@ -1661,8 +1674,10 @@ void WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList(
   if (dumpEnabled) {
     // If we're inside a nested display list, print the WR DL items from the
     // wrapper item before we start processing the nested items.
-    mBuilderDumpIndex =
-        aBuilder.Dump(mDumpIndent + 1, Some(mBuilderDumpIndex), Nothing());
+    mBuilderDumpIndex[aBuilder.GetRenderRoot()] =
+        aBuilder.Dump(mDumpIndent + 1,
+                      Some(mBuilderDumpIndex[aBuilder.GetRenderRoot()]),
+                      Nothing());
   }
 
   mDumpIndent++;
@@ -1771,8 +1786,10 @@ void WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList(
       }
 
       if (dumpEnabled) {
-        mBuilderDumpIndex =
-            aBuilder.Dump(mDumpIndent + 1, Some(mBuilderDumpIndex), Nothing());
+        mBuilderDumpIndex[aBuilder.GetRenderRoot()] =
+            aBuilder.Dump(mDumpIndent + 1,
+                          Some(mBuilderDumpIndex[aBuilder.GetRenderRoot()]),
+                          Nothing());
       }
     }
 
@@ -2035,20 +2052,9 @@ static bool PaintItemByDrawTarget(nsDisplayItem* aItem, gfx::DrawTarget* aDT,
   MOZ_ASSERT(context);
 
   switch (aItem->GetType()) {
-    case DisplayItemType::TYPE_SVG_WRAPPER: {
-      // XXX Why doesn't this need the scaling applied?
-      context->SetMatrix(
-          context->CurrentMatrix().PreTranslate(-aOffset.x, -aOffset.y));
-      isInvalidated = PaintByLayer(
-          aItem, aDisplayListBuilder, aManager, context, aScale, [&]() {
-            aManager->EndTransaction(FrameLayerBuilder::DrawPaintedLayer,
-                                     aDisplayListBuilder);
-          });
-      break;
-    }
+    case DisplayItemType::TYPE_SVG_WRAPPER:
     case DisplayItemType::TYPE_MASK: {
-      // We could handle this case with the same code as TYPE_FILTER, but it
-      // would be good to know what situations trigger it.
+      // These items should be handled by other code paths
       MOZ_RELEASE_ASSERT(0);
       break;
     }
@@ -2091,9 +2097,9 @@ static bool PaintItemByDrawTarget(nsDisplayItem* aItem, gfx::DrawTarget* aDT,
     }
     if (aItem->Frame()->PresContext()->GetPaintFlashing() && isInvalidated) {
       aDT->SetTransform(gfx::Matrix());
-      float r = float(rand()) / RAND_MAX;
-      float g = float(rand()) / RAND_MAX;
-      float b = float(rand()) / RAND_MAX;
+      float r = float(rand()) / float(RAND_MAX);
+      float g = float(rand()) / float(RAND_MAX);
+      float b = float(rand()) / float(RAND_MAX);
       aDT->FillRect(Rect(aDT->GetRect()),
                     gfx::ColorPattern(gfx::Color(r, g, b, 0.5)));
     }
@@ -2107,10 +2113,10 @@ WebRenderCommandBuilder::GenerateFallbackData(
     nsDisplayItem* aItem, wr::DisplayListBuilder& aBuilder,
     wr::IpcResourceUpdateQueue& aResources, const StackingContextHelper& aSc,
     nsDisplayListBuilder* aDisplayListBuilder, LayoutDeviceRect& aImageRect) {
-  bool useBlobImage =
-      gfxPrefs::WebRenderBlobImages() && !aItem->MustPaintOnContentSide();
+  bool useBlobImage = StaticPrefs::gfx_webrender_blob_images() &&
+                      !aItem->MustPaintOnContentSide();
   Maybe<gfx::Color> highlight = Nothing();
-  if (gfxPrefs::WebRenderHighlightPaintedLayers()) {
+  if (StaticPrefs::gfx_webrender_highlight_painted_layers()) {
     highlight = Some(useBlobImage ? gfx::Color(1.0, 0.0, 0.0, 0.5)
                                   : gfx::Color(1.0, 1.0, 0.0, 0.5));
   }
@@ -2253,17 +2259,18 @@ WebRenderCommandBuilder::GenerateFallbackData(
                   aStream.write((const char*)&font, sizeof(font));
                 }
                 fonts = std::move(aScaledFonts);
-              });
+              },
+              dtRect.ToUnknownRect().TopLeft());
       RefPtr<gfx::DrawTarget> dummyDt = gfx::Factory::CreateDrawTarget(
           gfx::BackendType::SKIA, gfx::IntSize(1, 1), format);
       RefPtr<gfx::DrawTarget> dt = gfx::Factory::CreateRecordingDrawTarget(
-          recorder, dummyDt, dtSize.ToUnknownSize());
+          recorder, dummyDt, dtRect.ToUnknownRect());
       if (!fallbackData->mBasicLayerManager) {
         fallbackData->mBasicLayerManager =
             new BasicLayerManager(BasicLayerManager::BLM_INACTIVE);
       }
       bool isInvalidated = PaintItemByDrawTarget(
-          aItem, dt, offset, aDisplayListBuilder,
+          aItem, dt, LayoutDevicePoint(0, 0), aDisplayListBuilder,
           fallbackData->mBasicLayerManager, scale, highlight);
       if (!isInvalidated) {
         if (!aItem->GetBuildingRect().IsEqualInterior(
@@ -2288,7 +2295,10 @@ WebRenderCommandBuilder::GenerateFallbackData(
             wr::BlobImageKey{mManager->WrBridge()->GetNextImageKey()};
         wr::ImageDescriptor descriptor(dtSize.ToUnknownSize(), 0,
                                        dt->GetFormat(), opacity);
-        if (!aResources.AddBlobImage(key, descriptor, bytes)) {
+        if (!aResources.AddBlobImage(
+                key, descriptor, bytes,
+                ViewAs<ImagePixel>(visibleRect,
+                                   PixelCastJustification::LayerIsImage))) {
           return nullptr;
         }
         TakeExternalSurfaces(
@@ -2303,11 +2313,11 @@ WebRenderCommandBuilder::GenerateFallbackData(
         if (!fallbackData->GetBlobImageKey().isSome()) {
           return nullptr;
         }
+        aResources.SetBlobImageVisibleArea(
+            fallbackData->GetBlobImageKey().value(),
+            ViewAs<ImagePixel>(visibleRect,
+                               PixelCastJustification::LayerIsImage));
       }
-      aResources.SetBlobImageVisibleArea(
-          fallbackData->GetBlobImageKey().value(),
-          ViewAs<ImagePixel>(visibleRect,
-                             PixelCastJustification::LayerIsImage));
     } else {
       WebRenderImageData* imageData = fallbackData->PaintIntoImage();
 
@@ -2472,12 +2482,13 @@ Maybe<wr::ImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
               }
 
               fonts = std::move(aScaledFonts);
-            });
+            },
+            IntPoint(0, 0));
 
     RefPtr<DrawTarget> dummyDt = Factory::CreateDrawTarget(
         BackendType::SKIA, IntSize(1, 1), SurfaceFormat::A8);
     RefPtr<DrawTarget> dt =
-        Factory::CreateRecordingDrawTarget(recorder, dummyDt, size);
+        Factory::CreateRecordingDrawTarget(recorder, dummyDt, IntRect(IntPoint(0, 0), size));
 
     RefPtr<gfxContext> context = gfxContext::CreateOrNull(dt);
     MOZ_ASSERT(context);
@@ -2507,9 +2518,8 @@ Maybe<wr::ImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
         wr::BlobImageKey{mManager->WrBridge()->GetNextImageKey()};
     wr::ImageDescriptor descriptor(size, 0, dt->GetFormat(),
                                    wr::OpacityType::HasAlphaChannel);
-    if (!aResources.AddBlobImage(key, descriptor,
-                                 bytes)) {  // visible area: ImageIntRect(0, 0,
-                                            // size.width, size.height)
+    if (!aResources.AddBlobImage(key, descriptor, bytes,
+                                 ImageIntRect(0, 0, size.width, size.height))) {
       return Nothing();
     }
     maskData->ClearImageKey();

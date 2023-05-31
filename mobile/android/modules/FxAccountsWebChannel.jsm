@@ -273,8 +273,7 @@ this.FxAccountsWebChannel.prototype = {
                     );
                     let message = strings.formatStringFromName(
                       "relinkVerify.message",
-                      [data.email],
-                      1
+                      [data.email]
                     );
                     new Prompt({
                       window:

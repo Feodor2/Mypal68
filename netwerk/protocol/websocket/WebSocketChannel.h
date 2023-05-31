@@ -17,7 +17,6 @@
 #include "nsIProtocolProxyCallback.h"
 #include "nsIChannelEventSink.h"
 #include "nsIHttpChannelInternal.h"
-#include "nsIStringStream.h"
 #include "BaseWebSocketChannel.h"
 
 #include "nsCOMPtr.h"

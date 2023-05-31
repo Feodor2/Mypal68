@@ -21,9 +21,7 @@
 #include "nsDiskCacheDeviceSQL.h"
 #include "nsCacheUtils.h"
 #include "../cache2/CacheObserver.h"
-#include "nsINamed.h"
 #include "nsIObserverService.h"
-#include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 #include "nsIFile.h"
 #include "nsIOService.h"
@@ -35,8 +33,6 @@
 #include "nsNetCID.h"
 #include <math.h>  // for log()
 #include "mozilla/Services.h"
-#include "nsITimer.h"
-#include "mozIStorageService.h"
 
 #include "mozilla/net/NeckoCommon.h"
 #include <algorithm>

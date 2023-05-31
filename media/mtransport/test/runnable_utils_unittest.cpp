@@ -12,11 +12,6 @@
 #include "nsXPCOM.h"
 
 #include "mozilla/RefPtr.h"
-#include "nsIComponentManager.h"
-#include "nsIComponentRegistrar.h"
-#include "nsIIOService.h"
-#include "nsIServiceManager.h"
-#include "nsISocketTransportService.h"
 
 #include "nsASocketHandler.h"
 #include "nsServiceManagerUtils.h"

@@ -118,6 +118,11 @@
   list-style-image: url(chrome://browser/skin/login.svg);
 }
 
+.login-icon[extraAttr="attention"] {
+  fill: var(--toolbarbutton-icon-fill-attention);
+  fill-opacity: 1;
+}
+
 .camera-icon {
   list-style-image: url(chrome://browser/skin/notification-icons/camera.svg);
 }
@@ -281,7 +286,6 @@ html|*#webRTC-previewVideo {
 
 /* OFFLINE APPS */
 
-.popup-notification-icon[popupid*="offline-app-requested"],
 .popup-notification-icon[popupid="offline-app-usage"] {
   list-style-image: url(chrome://global/skin/icons/question-64.png);
 }

@@ -58,11 +58,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "prnetdb.h"
 
 #include "mozilla/RefPtr.h"
-#include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "nsAutoPtr.h"
 #include "nsIEventTarget.h"
-#include "nsITimer.h"
 #include "nsTArray.h"
 
 #include "m_cpp_utils.h"
@@ -86,11 +84,6 @@ typedef void* NR_SOCKET;
 namespace mozilla {
 
 class NrSocketProxyConfig;
-
-// Timestamps set whenever a packet is dropped due to global rate limiting
-// (see nr_socket_prsock.cpp)
-TimeStamp nr_socket_short_term_violation_time();
-TimeStamp nr_socket_long_term_violation_time();
 
 class NrIceMediaStream;
 
@@ -222,6 +215,9 @@ class NrIceCtx {
                                 bool tcp_enabled = true,
                                 bool allow_link_local = false);
 
+  void SetTargetForDefaultLocalAddressLookup(const std::string& target_ip,
+                                             uint16_t target_port);
+
   // static GetStunAddrs for use in parent process to support
   // sandboxing restrictions
   static nsTArray<NrIceStunAddr> GetStunAddrs();
@@ -313,7 +309,7 @@ class NrIceCtx {
   nsresult StartGathering(bool default_route_only, bool proxy_only);
 
   // Start checking
-  nsresult StartChecks(bool offerer);
+  nsresult StartChecks();
 
   // Notify that the network has gone online/offline
   void UpdateNetworkState(bool online);
@@ -378,8 +374,6 @@ class NrIceCtx {
   ConnectionState connection_state_;
   GatheringState gathering_state_;
   const std::string name_;
-  bool offerer_;
-  TimeStamp ice_start_time_;
   bool ice_controlling_set_;
   std::map<std::string, RefPtr<NrIceMediaStream>> streams_;
   nr_ice_ctx* ctx_;

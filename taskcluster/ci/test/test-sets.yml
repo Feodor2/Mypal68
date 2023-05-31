@@ -341,7 +341,6 @@ macosx1014-64-tests:
     - mochitest-browser-chrome
     - mochitest-chrome
     - mochitest-devtools-chrome
-    - mochitest-devtools-webreplay
     - mochitest-gpu
     - mochitest-media
     - mochitest-webgl1-core
@@ -381,32 +380,7 @@ macosx64-talos:
     # - talos-h1 # too long to unpack profile- Bug 1442893
 
 linux32-tests:
-    - cppunit
-    - crashtest
-    - firefox-ui-functional-local
-    - firefox-ui-functional-remote
-    - gtest
-    - jittest
-    - jsreftest
-    - marionette
-    - mochitest
-    - mochitest-a11y
-    - mochitest-browser-chrome
-    - mochitest-chrome
-    - mochitest-gpu
-    - mochitest-media
-    - mochitest-webgl1-core
-    - reftest
-    - reftest-no-accel
-    - telemetry-tests-client
     - web-platform-tests
-    - web-platform-tests-reftests
-    - web-platform-tests-wdspec
-    - xpcshell
-
-linux32-opt-tests:
-    # mochitest-dt is too slow on linux32/debug
-    - mochitest-devtools-chrome
 
 desktop-screenshot-capture:
     - browser-screenshots
@@ -472,9 +446,6 @@ android-hw-arm7-opt-unittests:
 
 android-hw-arm7-debug-unittests:
     - mochitest-media
-
-android-hw-aarch64-opt-unittests:
-    - jittest
 
 android-hw-arm7-raptor:
     - raptor-speedometer-geckoview

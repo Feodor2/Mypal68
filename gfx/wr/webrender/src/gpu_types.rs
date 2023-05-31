@@ -105,8 +105,23 @@ pub struct BlurInstance {
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 pub struct ScalingInstance {
+    pub target_rect: DeviceRect,
+    pub source_rect: DeviceIntRect,
+    pub source_layer: i32,
+}
+
+#[derive(Debug)]
+#[repr(C)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+pub struct SvgFilterInstance {
     pub task_address: RenderTaskAddress,
-    pub src_task_address: RenderTaskAddress,
+    pub input_1_task_address: RenderTaskAddress,
+    pub input_2_task_address: RenderTaskAddress,
+    pub kind: u16,
+    pub input_count: u16,
+    pub generic_int: u16,
+    pub extra_data_address: GpuCacheAddress,
 }
 
 #[derive(Copy, Clone, Debug, Hash, MallocSizeOf, PartialEq, Eq)]
@@ -319,22 +334,6 @@ pub struct SplitCompositeInstance {
     pub polygons_address: GpuCacheAddress,
     pub z: ZBufferId,
     pub render_task_address: RenderTaskAddress,
-}
-
-impl SplitCompositeInstance {
-    pub fn new(
-        prim_header_index: PrimitiveHeaderIndex,
-        polygons_address: GpuCacheAddress,
-        render_task_address: RenderTaskAddress,
-        z: ZBufferId,
-    ) -> Self {
-        SplitCompositeInstance {
-            prim_header_index,
-            polygons_address,
-            z,
-            render_task_address,
-        }
-    }
 }
 
 impl From<SplitCompositeInstance> for PrimitiveInstanceData {
@@ -670,16 +669,11 @@ fn register_transform(
     to_index: SpatialNodeIndex,
     transform: LayoutToPictureTransform,
 ) -> usize {
-    // TODO(gw): This shouldn't ever happen - should be eliminated before
-    //           we get an uninvertible transform here. But maybe do
-    //           some investigation on if this ever happens?
-    let inv_transform = match transform.inverse() {
-        Some(inv_transform) => inv_transform,
-        None => {
-            error!("Unable to get inverse transform");
-            PictureToLayoutTransform::identity()
-        }
-    };
+    // TODO: refactor the calling code to not even try
+    // registering a non-invertible transform.
+    let inv_transform = transform
+        .inverse()
+        .unwrap_or_else(PictureToLayoutTransform::identity);
 
     let metadata = TransformMetadata {
         transform_kind: transform.transform_kind()

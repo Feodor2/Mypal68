@@ -4,12 +4,12 @@
 
 #include "nsCommandLine.h"
 
+#include "nsComponentManagerUtils.h"
 #include "nsICategoryManager.h"
 #include "nsICommandLineHandler.h"
 #include "nsICommandLineValidator.h"
 #include "nsIConsoleService.h"
 #include "nsIClassInfoImpl.h"
-#include "nsIDOMWindow.h"
 #include "nsIFile.h"
 #include "nsISimpleEnumerator.h"
 #include "mozilla/SimpleEnumerator.h"

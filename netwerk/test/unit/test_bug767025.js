@@ -1,4 +1,7 @@
 const { HttpServer } = ChromeUtils.import("resource://testing-common/httpd.js");
+const { PermissionTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PermissionTestUtils.jsm"
+);
 
 /**
  * This is testcase do following steps to make sure bug767025 removing
@@ -105,7 +108,7 @@ function do_app_cache(manifestURL, pageURL) {
     Ci.nsIOfflineCacheUpdateService
   );
 
-  Services.perms.add(
+  PermissionTestUtils.add(
     manifestURL,
     "offline-app",
     Ci.nsIPermissionManager.ALLOW_ACTION

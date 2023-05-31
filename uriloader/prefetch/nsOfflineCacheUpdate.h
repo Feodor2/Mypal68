@@ -16,11 +16,9 @@
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
 #include "nsIApplicationCache.h"
-#include "nsIRequestObserver.h"
 #include "nsIRunnable.h"
 #include "nsIStreamListener.h"
 #include "nsIURI.h"
-#include "nsIWebProgressListener.h"
 #include "nsClassHashtable.h"
 #include "nsString.h"
 #include "nsTArray.h"
@@ -354,9 +352,7 @@ class nsOfflineCacheUpdateService final : public nsIOfflineCacheUpdateService,
 
   static already_AddRefed<nsOfflineCacheUpdateService> GetInstance();
 
-  static nsresult OfflineAppPinnedForURI(nsIURI* aDocumentURI,
-                                         nsIPrefBranch* aPrefBranch,
-                                         bool* aPinned);
+  static nsresult OfflineAppPinnedForURI(nsIURI* aDocumentURI, bool* aPinned);
 
   static nsTHashtable<nsCStringHashKey>* AllowedDomains();
 

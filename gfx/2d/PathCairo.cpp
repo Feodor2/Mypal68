@@ -100,18 +100,18 @@ void PathBuilderCairo::Arc(const Point& aOrigin, float aRadius,
               aAntiClockwise);
 }
 
-Point PathBuilderCairo::CurrentPoint() const { return mCurrentPoint; }
-
 already_AddRefed<Path> PathBuilderCairo::Finish() {
-  return MakeAndAddRef<PathCairo>(mFillRule, mPathData, mCurrentPoint);
+  return MakeAndAddRef<PathCairo>(mFillRule, mPathData, mCurrentPoint, mBeginPoint);
 }
 
 PathCairo::PathCairo(FillRule aFillRule,
                      std::vector<cairo_path_data_t>& aPathData,
-                     const Point& aCurrentPoint)
+                     const Point& aCurrentPoint,
+                     const Point& aBeginPoint)
     : mFillRule(aFillRule),
       mContainingContext(nullptr),
-      mCurrentPoint(aCurrentPoint) {
+      mCurrentPoint(aCurrentPoint),
+      mBeginPoint(aBeginPoint) {
   mPathData.swap(aPathData);
 }
 
@@ -141,6 +141,7 @@ already_AddRefed<PathBuilder> PathCairo::CopyToBuilder(
 
   builder->mPathData = mPathData;
   builder->mCurrentPoint = mCurrentPoint;
+  builder->mBeginPoint = mBeginPoint;
 
   return builder.forget();
 }
@@ -151,6 +152,7 @@ already_AddRefed<PathBuilder> PathCairo::TransformedCopyToBuilder(
 
   AppendPathToBuilder(builder, &aTransform);
   builder->mCurrentPoint = aTransform.TransformPoint(mCurrentPoint);
+  builder->mBeginPoint = aTransform.TransformPoint(mBeginPoint);
 
   return builder.forget();
 }

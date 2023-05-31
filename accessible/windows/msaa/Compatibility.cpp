@@ -6,6 +6,7 @@
 
 #include "mozilla/WindowsVersion.h"
 #include "nsExceptionHandler.h"
+#include "nsIXULRuntime.h"
 #include "nsPrintfCString.h"
 #include "nsUnicharUtils.h"
 #include "nsWindowsDllInterceptor.h"

@@ -7,8 +7,10 @@
 #include <cstring>
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Preferences.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIConsoleService.h"
 #include "nsITelemetry.h"
+#include "nsServiceManagerUtils.h"
 #include "nsThreadUtils.h"
 #include "nsVersionComparator.h"
 #include "TelemetryProcessData.h"

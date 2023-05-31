@@ -414,8 +414,7 @@ var defaultEngineObj = async function() {
     name: engine.name,
     placeholder: bundle.formatStringFromName(
       "searchWithEngine",
-      [engine.name],
-      1
+      [engine.name]
     ),
     iconData: await iconDataFromURI(uriFavicon),
   };

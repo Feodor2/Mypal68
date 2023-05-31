@@ -12,7 +12,7 @@ cd $GECKO_PATH
 
 # This will download the rustc, cmake, ninja, MSVC, and wrench-deps artifacts.
 WORKSPACE="$PWD/../../" taskcluster/scripts/misc/tooltool-download.sh
-export PATH=$PATH:$PWD/rustc/bin:$PWD/cmake/bin:$PWD/ninja/bin
+export PATH=$PATH:$MOZ_FETCHES_DIR/rustc/bin:$PWD/cmake/bin:$PWD/ninja/bin
 
 # We will be sourcing mozconfig files, which end up calling mk_add_options with
 # various settings. We only need the variable settings they create along the
@@ -50,7 +50,7 @@ export INCLUDE=$(convert_path_to_win "$INCLUDE")
 export LIB=$(convert_path_to_win "$LIB")
 
 # Move the wrench-deps vendored crates into place
-mv wrench-deps/{vendor,.cargo} gfx/wr
+mv ${MOZ_FETCHES_DIR}/wrench-deps/{vendor,.cargo} gfx/wr
 cd gfx/wr
 
 # This is needed for the WebRender standalone reftests
@@ -60,4 +60,3 @@ powershell.exe 'iex (Get-Content -Raw ci-scripts\set-screenresolution.ps1); Set-
 export CARGOFLAGS='--verbose --frozen'
 export FREETYPE_CMAKE_GENERATOR=Ninja
 cmd.exe /c 'ci-scripts\windows-tests.cmd'
-cmd.exe /c 'ci-scripts\windows-pathfinder.cmd'

@@ -114,6 +114,9 @@ class Type:
     def isAtom(self):
         return False
 
+    def isRefcounted(self):
+        return False
+
     def isUniquePtr(self):
         return False
 
@@ -142,9 +145,6 @@ class VoidType(Type):
 
     def isAtom(self):
         return True
-
-    def isRefcounted(self):
-        return False
 
     def name(self): return 'void'
 
@@ -292,16 +292,20 @@ class MessageType(IPDLType):
 
 
 class ProtocolType(IPDLType):
-    def __init__(self, qname, nested, sendSemantics):
+    def __init__(self, qname, nested, sendSemantics, refcounted):
         self.qname = qname
         self.nestedRange = (NOT_NESTED, nested)
         self.sendSemantics = sendSemantics
         self.managers = []           # ProtocolType
         self.manages = []
         self.hasDelete = False
-        self.hasReentrantDelete = False
+        self.refcounted = refcounted
 
-    def isProtocol(self): return True
+    def isProtocol(self):
+        return True
+
+    def isRefcounted(self):
+        return self.refcounted
 
     def name(self):
         return self.qname.baseid
@@ -361,7 +365,11 @@ class ActorType(IPDLType):
         self.protocol = protocol
         self.nullable = nullable
 
-    def isActor(self): return True
+    def isActor(self):
+        return True
+
+    def isRefcounted(self):
+        return self.protocol.isRefcounted()
 
     def name(self):
         return self.protocol.name()
@@ -777,7 +785,7 @@ class GatherDecls(TcheckVisitor):
             fullname = str(qname)
             p.decl = self.declare(
                 loc=p.loc,
-                type=ProtocolType(qname, p.nested, p.sendSemantics),
+                type=ProtocolType(qname, p.nested, p.sendSemantics, p.refcounted),
                 shortname=p.name,
                 fullname=None if 0 == len(qname.quals) else fullname)
 
@@ -990,9 +998,6 @@ class GatherDecls(TcheckVisitor):
                 p.loc,
                 "destructor declaration `%s(...)' required for managed protocol `%s'",
                 _DELETE_MSG, p.name)
-
-        p.decl.type.hasReentrantDelete = p.decl.type.hasDelete and self.symtab.lookup(
-            _DELETE_MSG).type.isInterrupt()
 
         # FIXME/cjones declare all the little C++ thingies that will
         # be generated.  they're not relevant to IPDL itself, but

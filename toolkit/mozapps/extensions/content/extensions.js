@@ -89,11 +89,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "useHtmlDiscover",
   "extensions.htmlaboutaddons.discover.enabled"
 );
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "useNewAboutDebugging",
-  "devtools.aboutdebugging.new-enabled"
-);
 
 const PREF_DISCOVERURL = "extensions.webservice.discoverURL";
 const PREF_DISCOVER_ENABLED = "extensions.getAddons.showPane";
@@ -1034,8 +1029,7 @@ var gViewController = {
     if (view.type == "discover") {
       headingLabel = gStrings.ext.formatStringFromName(
         "listHeading.discover",
-        [gStrings.brandShortName],
-        1
+        [gStrings.brandShortName]
       );
     } else {
       try {
@@ -1547,10 +1541,13 @@ var gViewController = {
         let mainWindow = window.windowRoot.ownerGlobal;
         recordLinkTelemetry("about:debugging");
         if ("switchToTabHavingURI" in mainWindow) {
-          let path = useNewAboutDebugging ? "/runtime/this-firefox" : "addons";
-          mainWindow.switchToTabHavingURI(`about:debugging#${path}`, true, {
-            triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-          });
+          mainWindow.switchToTabHavingURI(
+            `about:debugging#/runtime/this-firefox`,
+            true,
+            {
+              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+            }
+          );
         }
       },
     },
@@ -2907,8 +2904,7 @@ var gListView = {
         let text =
           gStrings.ext.formatStringFromName(
             descriptionId,
-            [gStrings.brandShortName],
-            1
+            [gStrings.brandShortName]
           ) + " ";
         el.insertBefore(document.createTextNode(text), el.childNodes[0]);
         legacyNotice.hidden = false;
@@ -3442,8 +3438,7 @@ var gDetailView = {
         "detail-pending"
       ).textContent = gStrings.ext.formatStringFromName(
         "details.notification.restartless-uninstall",
-        [this._addon.name],
-        1
+        [this._addon.name]
       );
     } else {
       this.node.removeAttribute("pending");
@@ -3454,8 +3449,7 @@ var gDetailView = {
           "detail-error"
         ).textContent = gStrings.ext.formatStringFromName(
           "details.notification.blocked",
-          [this._addon.name],
-          1
+          [this._addon.name]
         );
         var errorLink = document.getElementById("detail-error-link");
         errorLink.value = gStrings.ext.GetStringFromName(
@@ -3471,8 +3465,7 @@ var gDetailView = {
           "detail-error"
         ).textContent = gStrings.ext.formatStringFromName(
           "details.notification.unsignedAndDisabled",
-          [this._addon.name, gStrings.brandShortName],
-          2
+          [this._addon.name, gStrings.brandShortName]
         );
         let errorLink = document.getElementById("detail-error-link");
         errorLink.value = gStrings.ext.GetStringFromName(
@@ -3491,8 +3484,7 @@ var gDetailView = {
           "detail-warning"
         ).textContent = gStrings.ext.formatStringFromName(
           "details.notification.incompatible",
-          [this._addon.name, gStrings.brandShortName, gStrings.appVersion],
-          3
+          [this._addon.name, gStrings.brandShortName, gStrings.appVersion]
         );
         document.getElementById("detail-warning-link").hidden = true;
       } else if (!isCorrectlySigned(this._addon)) {
@@ -3501,8 +3493,7 @@ var gDetailView = {
           "detail-warning"
         ).textContent = gStrings.ext.formatStringFromName(
           "details.notification.unsigned",
-          [this._addon.name, gStrings.brandShortName],
-          2
+          [this._addon.name, gStrings.brandShortName]
         );
         var warningLink = document.getElementById("detail-warning-link");
         warningLink.value = gStrings.ext.GetStringFromName(
@@ -3518,8 +3509,7 @@ var gDetailView = {
           "detail-warning"
         ).textContent = gStrings.ext.formatStringFromName(
           "details.notification.softblocked",
-          [this._addon.name],
-          1
+          [this._addon.name]
         );
         let warningLink = document.getElementById("detail-warning-link");
         warningLink.value = gStrings.ext.GetStringFromName(
@@ -3537,8 +3527,7 @@ var gDetailView = {
           "detail-warning"
         ).textContent = gStrings.ext.formatStringFromName(
           "details.notification.outdated",
-          [this._addon.name],
-          1
+          [this._addon.name]
         );
         let warningLink = document.getElementById("detail-warning-link");
         warningLink.value = gStrings.ext.GetStringFromName(
@@ -3557,8 +3546,7 @@ var gDetailView = {
           "detail-error"
         ).textContent = gStrings.ext.formatStringFromName(
           "details.notification.vulnerableUpdatable",
-          [this._addon.name],
-          1
+          [this._addon.name]
         );
         let errorLink = document.getElementById("detail-error-link");
         errorLink.value = gStrings.ext.GetStringFromName(
@@ -3577,8 +3565,7 @@ var gDetailView = {
           "detail-error"
         ).textContent = gStrings.ext.formatStringFromName(
           "details.notification.vulnerableNoUpdate",
-          [this._addon.name],
-          1
+          [this._addon.name]
         );
         let errorLink = document.getElementById("detail-error-link");
         errorLink.value = gStrings.ext.GetStringFromName(
@@ -3597,8 +3584,7 @@ var gDetailView = {
         let warning = document.getElementById("detail-warning");
         warning.textContent = gStrings.ext.formatStringFromName(
           "details.notification.gmpPending",
-          [this._addon.name],
-          1
+          [this._addon.name]
         );
       } else {
         this.node.removeAttribute("notification");

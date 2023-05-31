@@ -64,10 +64,8 @@ class VRService {
 #if defined(XP_WIN)
   HANDLE mMutex;
 #endif
-  // We store the value of gfxPrefs::VRProcessEnabled() in mVRProcessEnabled.
-  // This allows us to read the value in the VRService destructor, after
-  // gfxPrefs has been shut down.  We should investigate why gfxPrefs
-  // is shutting down earlier - See bug xxx
+  // We store the value of StaticPrefs::dom_vr_process_enabled() in
+  // mVRProcessEnabled.
   bool mVRProcessEnabled;
 
   bool IsInServiceThread();

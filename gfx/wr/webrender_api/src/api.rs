@@ -5,6 +5,7 @@
 extern crate serde_bytes;
 
 use crate::channel::{self, MsgSender, Payload, PayloadSender, PayloadSenderHelperMethods};
+use peek_poke::PeekPoke;
 use std::cell::Cell;
 use std::fmt;
 use std::marker::PhantomData;
@@ -244,6 +245,10 @@ impl Transaction {
         self.frame_ops.push(FrameMsg::SetPinchZoom(pinch_zoom));
     }
 
+    pub fn set_is_transform_pinch_zooming(&mut self, is_zooming: bool, animation_id: PropertyBindingId) {
+        self.frame_ops.push(FrameMsg::SetIsTransformPinchZooming(is_zooming, animation_id));
+    }
+
     pub fn set_pan(&mut self, pan: DeviceIntPoint) {
         self.frame_ops.push(FrameMsg::SetPan(pan));
     }
@@ -343,6 +348,7 @@ impl Transaction {
         key: BlobImageKey,
         descriptor: ImageDescriptor,
         data: Arc<BlobImageData>,
+        visible_rect: DeviceIntRect,
         tiling: Option<TileSize>,
     ) {
         self.resource_updates.push(
@@ -350,6 +356,7 @@ impl Transaction {
                 key,
                 descriptor,
                 data,
+                visible_rect,
                 tiling,
             })
         );
@@ -360,6 +367,7 @@ impl Transaction {
         key: BlobImageKey,
         descriptor: ImageDescriptor,
         data: Arc<BlobImageData>,
+        visible_rect: DeviceIntRect,
         dirty_rect: &BlobDirtyRect,
     ) {
         self.resource_updates.push(
@@ -367,6 +375,7 @@ impl Transaction {
                 key,
                 descriptor,
                 data,
+                visible_rect,
                 dirty_rect: *dirty_rect,
             })
         );
@@ -519,6 +528,7 @@ pub struct AddBlobImage {
     pub descriptor: ImageDescriptor,
     //#[serde(with = "serde_image_data_raw")]
     pub data: Arc<BlobImageData>,
+    pub visible_rect: DeviceIntRect,
     pub tiling: Option<TileSize>,
 }
 
@@ -528,6 +538,7 @@ pub struct UpdateBlobImage {
     pub descriptor: ImageDescriptor,
     //#[serde(with = "serde_image_data_raw")]
     pub data: Arc<BlobImageData>,
+    pub visible_rect: DeviceIntRect,
     pub dirty_rect: BlobDirtyRect,
 }
 
@@ -617,6 +628,7 @@ pub enum FrameMsg {
     UpdateDynamicProperties(DynamicProperties),
     AppendDynamicProperties(DynamicProperties),
     SetPinchZoom(ZoomFactor),
+    SetIsTransformPinchZooming(bool, PropertyBindingId),
 }
 
 impl fmt::Debug for SceneMsg {
@@ -645,6 +657,7 @@ impl fmt::Debug for FrameMsg {
             FrameMsg::UpdateDynamicProperties(..) => "FrameMsg::UpdateDynamicProperties",
             FrameMsg::AppendDynamicProperties(..) => "FrameMsg::AppendDynamicProperties",
             FrameMsg::SetPinchZoom(..) => "FrameMsg::SetPinchZoom",
+            FrameMsg::SetIsTransformPinchZooming(..) => "FrameMsg::SetIsTransformPinchZooming",
         })
     }
 }
@@ -704,10 +717,10 @@ pub enum DebugCommand {
     ClearCaches(ClearCache),
     /// Invalidate GPU cache, forcing the update from the CPU mirror.
     InvalidateGpuCache,
-    /// Causes the scene builder to pause for a given amount of miliseconds each time it
+    /// Causes the scene builder to pause for a given amount of milliseconds each time it
     /// processes a transaction.
     SimulateLongSceneBuild(u32),
-    /// Causes the low priority scene builder to pause for a given amount of miliseconds
+    /// Causes the low priority scene builder to pause for a given amount of milliseconds
     /// each time it processes a transaction.
     SimulateLongLowPrioritySceneBuild(u32),
 }
@@ -751,7 +764,7 @@ pub enum ApiMsg {
     WakeUp,
     WakeSceneBuilder,
     FlushSceneBuilder(MsgSender<()>),
-    ShutDown,
+    ShutDown(Option<MsgSender<()>>),
 }
 
 impl fmt::Debug for ApiMsg {
@@ -770,7 +783,7 @@ impl fmt::Debug for ApiMsg {
             ApiMsg::MemoryPressure => "ApiMsg::MemoryPressure",
             ApiMsg::ReportMemory(..) => "ApiMsg::ReportMemory",
             ApiMsg::DebugCommand(..) => "ApiMsg::DebugCommand",
-            ApiMsg::ShutDown => "ApiMsg::ShutDown",
+            ApiMsg::ShutDown(..) => "ApiMsg::ShutDown",
             ApiMsg::WakeUp => "ApiMsg::WakeUp",
             ApiMsg::WakeSceneBuilder => "ApiMsg::WakeSceneBuilder",
             ApiMsg::FlushSceneBuilder(..) => "ApiMsg::FlushSceneBuilder",
@@ -789,11 +802,12 @@ impl Epoch {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, Hash, Ord, PartialOrd, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, MallocSizeOf, PartialEq, Hash, Ord, PartialOrd, PeekPoke)]
+#[derive(Deserialize, Serialize)]
 pub struct IdNamespace(pub u32);
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize, PeekPoke)]
 pub struct DocumentId {
     pub namespace_id: IdNamespace,
     pub id: u32,
@@ -819,8 +833,14 @@ pub type PipelineSourceId = u32;
 /// From the point of view of WR, `PipelineId` is completely opaque and generic as long as
 /// it's clonable, serializable, comparable, and hashable.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, MallocSizeOf, PartialEq, Serialize, PeekPoke)]
 pub struct PipelineId(pub PipelineSourceId, pub u32);
+
+impl Default for PipelineId {
+    fn default() -> Self {
+        PipelineId::dummy()
+    }
+}
 
 impl PipelineId {
     pub fn dummy() -> Self {
@@ -866,6 +886,7 @@ macro_rules! enumerate_interners {
             picture: Picture,
             text_run: TextRun,
             filter_data: FilterDataIntern,
+            backdrop: Backdrop,
         }
     }
 }
@@ -991,9 +1012,9 @@ impl RenderApiSender {
                 // This is used to discover the underlying cause of https://github.com/servo/servo/issues/13480.
                 let webrender_is_alive = self.api_sender.send(ApiMsg::WakeUp);
                 if webrender_is_alive.is_err() {
-                    panic!("Webrender was shut down before processing CloneApi: {}", e);
+                    panic!("WebRender was shut down before processing CloneApi: {}", e);
                 } else {
-                    panic!("CloneApi message response was dropped while Webrender was still alive: {}", e);
+                    panic!("CloneApi message response was dropped while WebRender was still alive: {}", e);
                 }
             }
         };
@@ -1183,8 +1204,14 @@ impl RenderApi {
         self.api_sender.send(ApiMsg::DebugCommand(cmd)).unwrap();
     }
 
-    pub fn shut_down(&self) {
-        self.api_sender.send(ApiMsg::ShutDown).unwrap();
+    pub fn shut_down(&self, synchronously: bool) {
+        if synchronously {
+            let (tx, rx) = channel::msg_channel().unwrap();
+            self.api_sender.send(ApiMsg::ShutDown(Some(tx))).unwrap();
+            rx.recv().unwrap();
+        } else {
+            self.api_sender.send(ApiMsg::ShutDown(None)).unwrap();
+        }
     }
 
     /// Create a new unique key that can be used for
@@ -1404,7 +1431,7 @@ impl ZoomFactor {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, MallocSizeOf, PartialEq, Serialize, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, MallocSizeOf, PartialEq, Serialize, Eq, Hash, PeekPoke)]
 pub struct PropertyBindingId {
     namespace: IdNamespace,
     uid: u32,
@@ -1422,7 +1449,7 @@ impl PropertyBindingId {
 /// A unique key that is used for connecting animated property
 /// values to bindings in the display list.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub struct PropertyBindingKey<T> {
     pub id: PropertyBindingId,
     _phantom: PhantomData<T>,
@@ -1451,10 +1478,16 @@ impl<T> PropertyBindingKey<T> {
 /// used for the case where the animation is still in-delay phase
 /// (i.e. the animation doesn't produce any animation values).
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize, PeekPoke)]
 pub enum PropertyBinding<T> {
     Value(T),
     Binding(PropertyBindingKey<T>, T),
+}
+
+impl<T: Default> Default for PropertyBinding<T> {
+    fn default() -> Self {
+        PropertyBinding::Value(Default::default())
+    }
 }
 
 impl<T> From<T> for PropertyBinding<T> {
@@ -1481,7 +1514,7 @@ pub struct DynamicProperties {
 }
 
 pub trait RenderNotifier: Send {
-    fn clone(&self) -> Box<RenderNotifier>;
+    fn clone(&self) -> Box<dyn RenderNotifier>;
     fn wake_up(&self);
     fn new_frame_ready(&self, _: DocumentId, scrolled: bool, composite_needed: bool, render_time_ns: Option<u64>);
     fn external_event(&self, _evt: ExternalEvent) {
@@ -1507,12 +1540,12 @@ pub trait NotificationHandler : Send + Sync {
 }
 
 pub struct NotificationRequest {
-    handler: Option<Box<NotificationHandler>>,
+    handler: Option<Box<dyn NotificationHandler>>,
     when: Checkpoint,
 }
 
 impl NotificationRequest {
-    pub fn new(when: Checkpoint, handler: Box<NotificationHandler>) -> Self {
+    pub fn new(when: Checkpoint, handler: Box<dyn NotificationHandler>) -> Self {
         NotificationRequest {
             handler: Some(handler),
             when,

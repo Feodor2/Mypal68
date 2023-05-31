@@ -3,15 +3,15 @@ const TEST_URL_PATH =
 
 add_task(async function setup() {
   let login = LoginTestUtils.testData.formLogin({
-    hostname: "http://example.org",
-    formSubmitURL: "http://example.org",
+    origin: "http://example.org",
+    formActionOrigin: "http://example.org",
     username: "username",
     password: "password",
   });
   Services.logins.addLogin(login);
   login = LoginTestUtils.testData.formLogin({
-    hostname: "http://example.org",
-    formSubmitURL: "http://another.domain",
+    origin: "http://example.org",
+    formActionOrigin: "http://another.domain",
     username: "username",
     password: "password",
   });

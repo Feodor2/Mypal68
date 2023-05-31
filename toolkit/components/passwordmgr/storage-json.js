@@ -171,9 +171,9 @@ this.LoginManagerStorage_json.prototype = {
 
     this._store.data.logins.push({
       id: this._store.data.nextId++,
-      hostname: loginClone.hostname,
+      hostname: loginClone.origin,
       httpRealm: loginClone.httpRealm,
-      formSubmitURL: loginClone.formSubmitURL,
+      formSubmitURL: loginClone.formActionOrigin,
       usernameField: loginClone.usernameField,
       passwordField: loginClone.passwordField,
       encryptedUsername: encUsername,
@@ -230,8 +230,8 @@ this.LoginManagerStorage_json.prototype = {
     // Look for an existing entry in case key properties changed.
     if (!newLogin.matches(oldLogin, true)) {
       let logins = this.findLogins(
-        newLogin.hostname,
-        newLogin.formSubmitURL,
+        newLogin.origin,
+        newLogin.formActionOrigin,
         newLogin.httpRealm
       );
 
@@ -245,9 +245,9 @@ this.LoginManagerStorage_json.prototype = {
 
     for (let loginItem of this._store.data.logins) {
       if (loginItem.id == idToModify) {
-        loginItem.hostname = newLogin.hostname;
+        loginItem.hostname = newLogin.origin;
         loginItem.httpRealm = newLogin.httpRealm;
-        loginItem.formSubmitURL = newLogin.formSubmitURL;
+        loginItem.formSubmitURL = newLogin.formActionOrigin;
         loginItem.usernameField = newLogin.usernameField;
         loginItem.passwordField = newLogin.passwordField;
         loginItem.encryptedUsername = encUsername;
@@ -277,6 +277,33 @@ this.LoginManagerStorage_json.prototype = {
 
     this.log("_getAllLogins: returning", logins.length, "logins.");
     return logins;
+  },
+
+  /**
+   * Returns an array of nsILoginInfo.
+   *
+   * @resolve {nsILoginInfo[]}
+   */
+  async getAllLoginsAsync() {
+    let [logins, ids] = this._searchLogins({});
+    if (!logins.length) {
+      return [];
+    }
+    let ciphertexts = logins
+      .map(l => l.username)
+      .concat(logins.map(l => l.password));
+    let plaintexts = await this._crypto.decryptMany(ciphertexts);
+    let usernames = plaintexts.slice(0, logins.length);
+    let passwords = plaintexts.slice(logins.length);
+
+    let result = [];
+    for (let i = 0; i < logins.length; i++) {
+      logins[i].username = usernames[i];
+      logins[i].password = passwords[i];
+      result.push(logins[i]);
+    }
+
+    return result;
   },
 
   /**
@@ -327,19 +354,45 @@ this.LoginManagerStorage_json.prototype = {
   ) {
     this._store.ensureDataReady();
 
-    function match(aLogin) {
+    if (
+      "formActionOrigin" in matchData &&
+      matchData.formActionOrigin === "" &&
+      // Carve an exception out for a unit test in test_legacy_empty_formSubmitURL.js
+      Object.keys(matchData).length != 1
+    ) {
+      throw new Error(
+        "Searching with an empty `formActionOrigin` doesn't do a wildcard search"
+      );
+    }
+
+    function match(aLoginItem) {
       for (let field in matchData) {
         let wantedValue = matchData[field];
+
+        // Override the storage field name for some fields due to backwards
+        // compatibility with Sync/storage.
+        let storageFieldName = field;
         switch (field) {
-          case "formSubmitURL":
+          case "formActionOrigin": {
+            storageFieldName = "formSubmitURL";
+            break;
+          }
+          case "origin": {
+            storageFieldName = "hostname";
+            break;
+          }
+        }
+
+        switch (field) {
+          case "formActionOrigin":
             if (wantedValue != null) {
               // Historical compatibility requires this special case
-              if (aLogin.formSubmitURL == "") {
+              if (aLoginItem.formSubmitURL == "") {
                 break;
               }
               if (
                 !LoginHelper.isOriginMatching(
-                  aLogin[field],
+                  aLoginItem[storageFieldName],
                   wantedValue,
                   aOptions
                 )
@@ -349,12 +402,12 @@ this.LoginManagerStorage_json.prototype = {
               break;
             }
           // fall through
-          case "hostname":
+          case "origin":
             if (wantedValue != null) {
-              // needed for formSubmitURL fall through
+              // needed for formActionOrigin fall through
               if (
                 !LoginHelper.isOriginMatching(
-                  aLogin[field],
+                  aLoginItem[storageFieldName],
                   wantedValue,
                   aOptions
                 )
@@ -377,9 +430,9 @@ this.LoginManagerStorage_json.prototype = {
           case "timeLastUsed":
           case "timePasswordChanged":
           case "timesUsed":
-            if (wantedValue == null && aLogin[field]) {
+            if (wantedValue == null && aLoginItem[storageFieldName]) {
               return false;
-            } else if (aLogin[field] != wantedValue) {
+            } else if (aLoginItem[storageFieldName] != wantedValue) {
               return false;
             }
             break;
@@ -444,14 +497,14 @@ this.LoginManagerStorage_json.prototype = {
     LoginHelper.notifyStorageChanged("removeAllLogins", null);
   },
 
-  findLogins(hostname, formSubmitURL, httpRealm) {
+  findLogins(origin, formActionOrigin, httpRealm) {
     let loginData = {
-      hostname,
-      formSubmitURL,
+      origin,
+      formActionOrigin,
       httpRealm,
     };
     let matchData = {};
-    for (let field of ["hostname", "formSubmitURL", "httpRealm"]) {
+    for (let field of ["origin", "formActionOrigin", "httpRealm"]) {
       if (loginData[field] != "") {
         matchData[field] = loginData[field];
       }
@@ -465,14 +518,14 @@ this.LoginManagerStorage_json.prototype = {
     return logins;
   },
 
-  countLogins(hostname, formSubmitURL, httpRealm) {
+  countLogins(origin, formActionOrigin, httpRealm) {
     let loginData = {
-      hostname,
-      formSubmitURL,
+      origin,
+      formActionOrigin,
       httpRealm,
     };
     let matchData = {};
-    for (let field of ["hostname", "formSubmitURL", "httpRealm"]) {
+    for (let field of ["origin", "formActionOrigin", "httpRealm"]) {
       if (loginData[field] != "") {
         matchData[field] = loginData[field];
       }
@@ -498,7 +551,7 @@ this.LoginManagerStorage_json.prototype = {
    */
   _getIdForLogin(login) {
     let matchData = {};
-    for (let field of ["hostname", "formSubmitURL", "httpRealm"]) {
+    for (let field of ["origin", "formActionOrigin", "httpRealm"]) {
       if (login[field] != "") {
         matchData[field] = login[field];
       }
@@ -591,4 +644,4 @@ XPCOMUtils.defineLazyGetter(
   }
 );
 
-var EXPORTED_SYMBOLS = ["LoginManagerStorage_json"];
+const EXPORTED_SYMBOLS = ["LoginManagerStorage_json"];

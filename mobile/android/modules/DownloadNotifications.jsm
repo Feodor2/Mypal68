@@ -135,8 +135,7 @@ var DownloadNotifications = {
       Snackbars.show(
         strings.formatStringFromName(
           "alertDownloadSucceeded",
-          [file.leafName],
-          1
+          [file.leafName]
         ),
         Snackbars.LENGTH_LONG,
         {

@@ -25,7 +25,6 @@
 #include "nsAttrName.h"
 #include "nsDOMTokenList.h"
 #include "nsEventShell.h"
-#include "nsIURI.h"
 #include "nsTextFormatter.h"
 #include "OuterDocAccessible.h"
 #include "Role.h"
@@ -37,7 +36,6 @@
 #include "TextLeafAccessibleWrap.h"
 #include "TreeWalker.h"
 #include "xpcAccessibleApplication.h"
-#include "xpcAccessibleDocument.h"
 
 #ifdef MOZ_ACCESSIBILITY_ATK
 #  include "AtkSocketAccessible.h"
@@ -1395,12 +1393,13 @@ nsAccessibilityService::CreateAccessibleByFrameType(nsIFrame* aFrame,
 
       if (table) {
         nsIContent* parentContent =
-            aContent->GetParentOrHostNode()->AsContent();
+            aContent->GetParentOrShadowHostNode()->AsContent();
         nsIFrame* parentFrame = nullptr;
         if (parentContent) {
           parentFrame = parentContent->GetPrimaryFrame();
           if (!parentFrame || !parentFrame->IsTableWrapperFrame()) {
-            parentContent = parentContent->GetParentOrHostNode()->AsContent();
+            parentContent =
+                parentContent->GetParentOrShadowHostNode()->AsContent();
             if (parentContent) {
               parentFrame = parentContent->GetPrimaryFrame();
             }

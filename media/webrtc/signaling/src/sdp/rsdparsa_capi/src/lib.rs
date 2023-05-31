@@ -11,11 +11,15 @@ use libc::size_t;
 
 use std::rc::Rc;
 
+use std::convert::{TryFrom, TryInto};
+
 use nserror::{nsresult, NS_OK, NS_ERROR_INVALID_ARG};
 use rsdparsa::{SdpTiming, SdpBandwidth, SdpSession};
 use rsdparsa::error::SdpParserError;
 use rsdparsa::media_type::{SdpMediaValue, SdpProtocolValue};
 use rsdparsa::attribute_type::{SdpAttribute};
+use rsdparsa::anonymizer::{StatefulSdpAnonymizer, AnonymizingClone};
+use rsdparsa::address::ExplicitlyTypedAddress;
 
 pub mod types;
 pub mod network;
@@ -24,14 +28,14 @@ pub mod media_section;
 
 pub use types::{StringView, NULL_STRING};
 use network::{RustSdpOrigin, origin_view_helper, RustSdpConnection,
-              get_bandwidth};
+              get_bandwidth, RustAddressType};
 
 #[no_mangle]
 pub unsafe extern "C" fn parse_sdp(sdp: StringView,
                                    fail_on_warning: bool,
                                    session: *mut *const SdpSession,
                                    error: *mut *const SdpParserError) -> nsresult {
-    let sdp_str = match sdp.into() {
+    let sdp_str:String = match sdp.try_into() {
         Ok(string) => string,
         Err(boxed_error) => {
             *session = ptr::null();
@@ -45,10 +49,10 @@ pub unsafe extern "C" fn parse_sdp(sdp: StringView,
 
     let parser_result = rsdparsa::parse_sdp(&sdp_str, fail_on_warning);
     match parser_result {
-        Ok(parsed) => {
+        Ok(mut parsed) => {
             *error = match parsed.warnings.len(){
                 0 => ptr::null(),
-                _ => Box::into_raw(Box::new(parsed.warnings[0].clone())),
+                _ => Box::into_raw(Box::new(parsed.warnings.remove(0))),
             };
             *session = Rc::into_raw(Rc::new(parsed));
             NS_OK
@@ -61,6 +65,11 @@ pub unsafe extern "C" fn parse_sdp(sdp: StringView,
             NS_ERROR_INVALID_ARG
         }
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn create_anonymized_sdp_clone(session: *const SdpSession) -> *const SdpSession {
+    Rc::into_raw(Rc::new((*session).masked_clone(&mut StatefulSdpAnonymizer::new())))
 }
 
 #[no_mangle]
@@ -133,14 +142,21 @@ pub unsafe extern "C" fn sdp_get_session_connection(session: *const SdpSession,
 pub unsafe extern "C" fn sdp_add_media_section(session: *mut SdpSession,
                                                media_type: u32, direction: u32,
                                                port: u16, protocol: u32,
-                                               addr_type: u32, addr: StringView) -> nsresult {
-
-    let addr_str:String = match addr.into() {
+                                               addr_type: u32, address: StringView) -> nsresult {
+    let addr_type = match RustAddressType::try_from(addr_type) {
+        Ok(a) => a.into(),
+        Err(e) => { return e;},
+    };
+    let address_string:String = match address.try_into(){
        Ok(x) => x,
        Err(boxed_error) => {
            println!("Error while pasing string, description: {:?}", (*boxed_error).description());
            return NS_ERROR_INVALID_ARG;
        }
+    };
+    let address = match ExplicitlyTypedAddress::try_from((addr_type, address_string.as_str())) {
+        Ok(a) => a,
+        Err(_) => {return NS_ERROR_INVALID_ARG;},
     };
 
     let media_type = match media_type {
@@ -154,13 +170,12 @@ pub unsafe extern "C" fn sdp_add_media_section(session: *mut SdpSession,
     let protocol = match protocol {
         20 => SdpProtocolValue::RtpSavpf,        // Protocol::kRtpSavpf
         21 => SdpProtocolValue::UdpTlsRtpSavp,   // Protocol::kUdpTlsRtpSavp
-        23 => SdpProtocolValue::TcpDtlsRtpSavp,  // Protocol::kTcpDtlsRtpSavp
-        25 => SdpProtocolValue::UdpTlsRtpSavpf,  // Protocol::kUdpTlsRtpSavpf
-        26 => SdpProtocolValue::TcpTlsRtpSavpf,  // Protocol::kTcpTlsRtpSavpf
-        27 => SdpProtocolValue::TcpDtlsRtpSavpf,  // Protocol::kTcpTlsRtpSavpf
-        39 => SdpProtocolValue::DtlsSctp,        // Protocol::kDtlsSctp
-        40 => SdpProtocolValue::UdpDtlsSctp,     // Protocol::kUdpDtlsSctp
-        41 => SdpProtocolValue::TcpDtlsSctp,     // Protocol::kTcpDtlsSctp
+        22 => SdpProtocolValue::TcpDtlsRtpSavp,  // Protocol::kTcpDtlsRtpSavp
+        24 => SdpProtocolValue::UdpTlsRtpSavpf,  // Protocol::kUdpTlsRtpSavpf
+        25 => SdpProtocolValue::TcpDtlsRtpSavpf, // Protocol::kTcpTlsRtpSavpf
+        37 => SdpProtocolValue::DtlsSctp,        // Protocol::kDtlsSctp
+        38 => SdpProtocolValue::UdpDtlsSctp,     // Protocol::kUdpDtlsSctp
+        39 => SdpProtocolValue::TcpDtlsSctp,     // Protocol::kTcpDtlsSctp
         _ => {
           return NS_ERROR_INVALID_ARG;
       }
@@ -174,18 +189,7 @@ pub unsafe extern "C" fn sdp_add_media_section(session: *mut SdpSession,
       }
     };
 
-    // Check that the provided address type is valid. The rust parser will find out
-    // on his own which address type was provided
-    match addr_type {
-      // enum AddrType { kAddrTypeNone, kIPv4, kIPv6 };
-      // kAddrTypeNone is explicitly not covered as it is an 'invalid' flag
-      1...2 => (),
-      _ => {
-          return NS_ERROR_INVALID_ARG;
-      }
-    }
-
-    match (*session).add_media(media_type, direction, port as u32, protocol, addr_str) {
+    match (*session).add_media(media_type, direction, port as u32, protocol, address) {
         Ok(_) => NS_OK,
         Err(_) => NS_ERROR_INVALID_ARG
     }

@@ -18,7 +18,6 @@
 
 #include "nsCOMPtr.h"
 #include "mozilla/RefPtr.h"
-#include "nsISHistory.h"
 #include "mozilla/ErrorResult.h"
 #include "nsWrapperCache.h"
 

@@ -99,7 +99,6 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/Likely.h"
 
-#include "nsIInputStream.h"
 #include "RasterImage.h"
 #include <algorithm>
 

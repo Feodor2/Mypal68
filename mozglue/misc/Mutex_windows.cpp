@@ -10,7 +10,7 @@
 
 #include "MutexPlatformData_windows.h"
 
-mozilla::detail::MutexImpl::MutexImpl(recordreplay::Behavior aRecorded) {
+mozilla::detail::MutexImpl::MutexImpl() {
   platformData = reinterpret_cast<PlatformData*>(platformData_);
   BOOL r;
   r = InitializeCriticalSectionAndSpinCount(&platformData->criticalSection,1500);

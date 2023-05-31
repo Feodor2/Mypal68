@@ -8,11 +8,11 @@
 #include "mozilla/Move.h"
 #include "mozilla/Unused.h"
 #include "nsContentUtils.h"
-#include "nsICookieService.h"
 #include "nsLayoutUtils.h"
 #include "nsString.h"
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/HashFunctions.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
@@ -46,9 +46,9 @@ ImageCacheKey::ImageCacheKey(nsIURI* aURI, const OriginAttributes& aAttrs,
       mControlledDocument(GetSpecialCaseDocumentToken(aDocument, aURI)),
       mTopLevelBaseDomain(GetTopLevelBaseDomain(aDocument, aURI)),
       mIsChrome(false) {
-  if (SchemeIs("blob")) {
+  if (mURI->SchemeIs("blob")) {
     mBlobSerial = BlobSerial(mURI);
-  } else if (SchemeIs("chrome")) {
+  } else if (mURI->SchemeIs("chrome")) {
     mIsChrome = true;
   }
 }
@@ -142,11 +142,6 @@ void ImageCacheKey::EnsureHash() const {
   mHash.emplace(hash);
 }
 
-bool ImageCacheKey::SchemeIs(const char* aScheme) {
-  bool matches = false;
-  return NS_SUCCEEDED(mURI->SchemeIs(aScheme, &matches)) && matches;
-}
-
 /* static */
 void* ImageCacheKey::GetSpecialCaseDocumentToken(Document* aDocument,
                                                  nsIURI* aURI) {
@@ -178,7 +173,7 @@ nsCString ImageCacheKey::GetTopLevelBaseDomain(Document* aDocument,
   // access is granted for this image.
   if (nsContentUtils::IsThirdPartyTrackingResourceWindow(
           aDocument->GetInnerWindow())) {
-    return nsContentUtils::StorageDisabledByAntiTracking(aDocument, aURI)
+    return StorageDisabledByAntiTracking(aDocument, aURI)
                ? aDocument->GetBaseDomain()
                : EmptyCString();
   }
@@ -191,8 +186,9 @@ nsCString ImageCacheKey::GetTopLevelBaseDomain(Document* aDocument,
   // unique image cache per the top-level document eTLD+1.
   if (!AntiTrackingCommon::MaybeIsFirstPartyStorageAccessGrantedFor(
           aDocument->GetInnerWindow(), aURI)) {
-    nsPIDOMWindowOuter* top = aDocument->GetInnerWindow()->GetScriptableTop();
-    nsPIDOMWindowInner* topInner = top->GetCurrentInnerWindow();
+    nsPIDOMWindowOuter* top =
+        aDocument->GetInnerWindow()->GetInProcessScriptableTop();
+    nsPIDOMWindowInner* topInner = top ? top->GetCurrentInnerWindow() : nullptr;
     if (!topInner) {
       return aDocument
           ->GetBaseDomain();  // because we don't have anything better!

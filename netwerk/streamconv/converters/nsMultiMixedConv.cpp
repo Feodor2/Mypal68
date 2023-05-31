@@ -12,7 +12,6 @@
 #include "nsIHttpChannelInternal.h"
 #include "nsURLHelper.h"
 #include "nsIStreamConverterService.h"
-#include "nsICacheInfoChannel.h"
 #include <algorithm>
 #include "nsContentSecurityManager.h"
 #include "nsHttp.h"
@@ -646,7 +645,7 @@ nsresult nsMultiMixedConv::ConsumeToken(Token const& token) {
         return rv;
       }
       mParserState = BODY;
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
 
     case BODY: {
       if (!token.Equals(mLFToken) && !token.Equals(mCRLFToken)) {
@@ -952,8 +951,7 @@ nsresult nsMultiMixedConv::ProcessHeader() {
           do_QueryInterface(mChannel);
       mResponseHeaderValue.CompressWhitespace();
       if (httpInternal) {
-        DebugOnly<nsresult> rv =
-            httpInternal->SetCookie(mResponseHeaderValue.get());
+        DebugOnly<nsresult> rv = httpInternal->SetCookie(mResponseHeaderValue);
         MOZ_ASSERT(NS_SUCCEEDED(rv));
       }
       break;

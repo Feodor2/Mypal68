@@ -6,8 +6,8 @@
 
 #include "prlink.h"
 #include "prenv.h"
-#include "gfxPrefs.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 #include "mozilla/gfx/Quaternion.h"
 
@@ -35,7 +35,6 @@ static const char* kShmemName = "/moz.gecko.vr_ext.0.0.1";
 #include "VRThread.h"
 
 #include "nsServiceManagerUtils.h"
-#include "nsIScreenManager.h"
 
 #include "mozilla/dom/GamepadEventTypes.h"
 #include "mozilla/dom/GamepadBinding.h"
@@ -524,7 +523,7 @@ void VRSystemManagerExternal::OpenShmem() {
 
 #elif defined(XP_WIN)
   if (mShmemFile == NULL) {
-    if (gfxPrefs::VRProcessEnabled()) {
+    if (StaticPrefs::dom_vr_process_enabled_AtStartup()) {
       mShmemFile =
           CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0,
                              sizeof(VRExternalShmem), kShmemName);
@@ -622,11 +621,11 @@ already_AddRefed<VRSystemManagerExternal> VRSystemManagerExternal::Create(
     VRExternalShmem* aAPIShmem /* = nullptr*/) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (!gfxPrefs::VREnabled()) {
+  if (!StaticPrefs::dom_vr_enabled()) {
     return nullptr;
   }
 
-  if ((!gfxPrefs::VRExternalEnabled() && aAPIShmem == nullptr)
+  if ((!StaticPrefs::dom_vr_external_enabled_AtStartup() && aAPIShmem == nullptr)
 #if defined(XP_WIN)
       || !XRE_IsGPUProcess()
 #endif

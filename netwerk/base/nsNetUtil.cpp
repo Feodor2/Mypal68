@@ -14,6 +14,7 @@
 #include "mozilla/LoadInfo.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Monitor2.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StoragePrincipalHelper.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/Telemetry.h"
@@ -22,7 +23,6 @@
 #include "nsFileStreams.h"
 #include "nsHashKeys.h"
 #include "nsHttp.h"
-#include "nsIAsyncStreamCopier.h"
 #include "nsIAuthPrompt.h"
 #include "nsIAuthPrompt2.h"
 #include "nsIAuthPromptAdapterFactory.h"
@@ -30,7 +30,6 @@
 #include "nsIChannelEventSink.h"
 #include "nsIContentSniffer.h"
 #include "mozilla/dom/Document.h"
-#include "nsICookieService.h"
 #include "nsIDownloader.h"
 #include "nsIFileProtocolHandler.h"
 #include "nsIFileStreams.h"
@@ -41,7 +40,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsILoadContext.h"
 #include "nsIMIMEHeaderParam.h"
-#include "nsIMutable.h"
 #include "nsINode.h"
 #include "nsIObjectLoadingContent.h"
 #include "nsIOfflineCacheUpdate.h"
@@ -51,21 +49,15 @@
 #include "nsIProtocolProxyService.h"
 #include "mozilla/net/RedirectChannelRegistrar.h"
 #include "nsRequestObserverProxy.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsISensitiveInfoHiddenURI.h"
 #include "nsISimpleStreamListener.h"
 #include "nsISocketProvider.h"
-#include "nsISocketProviderService.h"
 #include "nsIStandardURL.h"
 #include "nsIStreamLoader.h"
 #include "nsIIncrementalStreamLoader.h"
-#include "nsIStreamTransportService.h"
 #include "nsStringStream.h"
 #include "nsSyncStreamListener.h"
-#include "nsITransport.h"
 #include "nsIURIWithSpecialOrigin.h"
-#include "nsIURLParser.h"
-#include "nsIUUIDGenerator.h"
 #include "nsIViewSourceChannel.h"
 #include "nsInterfaceRequestorAgg.h"
 #include "plstr.h"
@@ -95,7 +87,12 @@
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "nsStreamUtils.h"
 #include "nsSocketTransportService2.h"
-
+#include "nsViewSourceHandler.h"
+#include "nsJARURI.h"
+#include "nsIconURI.h"
+#include "nsAboutProtocolHandler.h"
+#include "nsResProtocolHandler.h"
+#include "mozilla/net/ExtensionProtocolHandler.h"
 #include <limits>
 
 using namespace mozilla;
@@ -854,14 +851,7 @@ bool NS_LoadGroupMatchesPrincipal(nsILoadGroup* aLoadGroup,
                                 getter_AddRefs(loadContext));
   NS_ENSURE_TRUE(loadContext, false);
 
-  // Verify load context browser flag match the principal
-  bool contextInIsolatedBrowser;
-  nsresult rv =
-      loadContext->GetIsInIsolatedMozBrowserElement(&contextInIsolatedBrowser);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  return contextInIsolatedBrowser ==
-         aPrincipal->GetIsInIsolatedMozBrowserElement();
+  return true;
 }
 
 nsresult NS_NewDownloader(nsIStreamListener** result,
@@ -1614,63 +1604,37 @@ nsresult NS_ReadInputStreamToString(nsIInputStream* aInputStream,
   return NS_OK;
 }
 
-nsresult NS_NewURI(
-    nsIURI** result, const nsACString& spec,
-    const char* charset /* = nullptr */, nsIURI* baseURI /* = nullptr */,
-    nsIIOService*
-        ioService /* = nullptr */)  // pass in nsIIOService to optimize callers
-{
-  nsresult rv;
-  nsCOMPtr<nsIIOService> grip;
-  rv = net_EnsureIOService(&ioService, grip);
-  if (ioService) rv = ioService->NewURI(spec, charset, baseURI, result);
-  return rv;
-}
-
-nsresult NS_NewURI(
-    nsIURI** result, const nsACString& spec, NotNull<const Encoding*> encoding,
-    nsIURI* baseURI /* = nullptr */,
-    nsIIOService*
-        ioService /* = nullptr */)  // pass in nsIIOService to optimize callers
-{
+nsresult NS_NewURI(nsIURI** result, const nsACString& spec,
+                   NotNull<const Encoding*> encoding,
+                   nsIURI* baseURI /* = nullptr */) {
   nsAutoCString charset;
   encoding->Name(charset);
-  return NS_NewURI(result, spec, charset.get(), baseURI, ioService);
+  return NS_NewURI(result, spec, charset.get(), baseURI);
 }
 
-nsresult NS_NewURI(
-    nsIURI** result, const nsAString& aSpec,
-    const char* charset /* = nullptr */, nsIURI* baseURI /* = nullptr */,
-    nsIIOService*
-        ioService /* = nullptr */)  // pass in nsIIOService to optimize callers
-{
+nsresult NS_NewURI(nsIURI** result, const nsAString& aSpec,
+                   const char* charset /* = nullptr */,
+                   nsIURI* baseURI /* = nullptr */) {
   nsAutoCString spec;
   if (!AppendUTF16toUTF8(aSpec, spec, mozilla::fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  return NS_NewURI(result, spec, charset, baseURI, ioService);
+  return NS_NewURI(result, spec, charset, baseURI);
 }
 
-nsresult NS_NewURI(
-    nsIURI** result, const nsAString& aSpec, NotNull<const Encoding*> encoding,
-    nsIURI* baseURI /* = nullptr */,
-    nsIIOService*
-        ioService /* = nullptr */)  // pass in nsIIOService to optimize callers
-{
+nsresult NS_NewURI(nsIURI** result, const nsAString& aSpec,
+                   NotNull<const Encoding*> encoding,
+                   nsIURI* baseURI /* = nullptr */) {
   nsAutoCString spec;
   if (!AppendUTF16toUTF8(aSpec, spec, mozilla::fallible)) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  return NS_NewURI(result, spec, encoding, baseURI, ioService);
+  return NS_NewURI(result, spec, encoding, baseURI);
 }
 
-nsresult NS_NewURI(
-    nsIURI** result, const char* spec, nsIURI* baseURI /* = nullptr */,
-    nsIIOService*
-        ioService /* = nullptr */)  // pass in nsIIOService to optimize callers
-{
-  return NS_NewURI(result, nsDependentCString(spec), nullptr, baseURI,
-                   ioService);
+nsresult NS_NewURI(nsIURI** result, const char* spec,
+                   nsIURI* baseURI /* = nullptr */) {
+  return NS_NewURI(result, nsDependentCString(spec), nullptr, baseURI);
 }
 
 static nsresult NewStandardURI(const nsACString& aSpec, const char* aCharset,
@@ -1706,10 +1670,9 @@ class TlsAutoIncrement {
   T& mVar;
 };
 
-nsresult NS_NewURIOnAnyThread(nsIURI** aURI, const nsACString& aSpec,
-                              const char* aCharset /* = nullptr */,
-                              nsIURI* aBaseURI /* = nullptr */,
-                              nsIIOService* aIOService /* = nullptr */) {
+nsresult NS_NewURI(nsIURI** aURI, const nsACString& aSpec,
+                   const char* aCharset /* = nullptr */,
+                   nsIURI* aBaseURI /* = nullptr */) {
   TlsAutoIncrement<decltype(gTlsURLRecursionCount)> inc(gTlsURLRecursionCount);
   if (inc.value() >= MAX_RECURSION_COUNT) {
     return NS_ERROR_MALFORMED_URI;
@@ -1743,6 +1706,9 @@ nsresult NS_NewURIOnAnyThread(nsIURI** aURI, const nsACString& aSpec,
   }
   if (scheme.EqualsLiteral("ftp")) {
     return NewStandardURI(aSpec, aCharset, aBaseURI, 21, aURI);
+  }
+  if (scheme.EqualsLiteral("ssh")) {
+    return NewStandardURI(aSpec, aCharset, aBaseURI, 22, aURI);
   }
 
   if (scheme.EqualsLiteral("file")) {
@@ -1791,13 +1757,98 @@ nsresult NS_NewURIOnAnyThread(nsIURI** aURI, const nsACString& aSpec,
                                                 aURI);
   }
 
-  if (NS_IsMainThread()) {
-    // XXX (valentin): this fallback should be removed once we get rid of
-    // nsIProtocolHandler.newURI
-    return NS_NewURI(aURI, aSpec, aCharset, aBaseURI, aIOService);
+  if (scheme.EqualsLiteral("view-source")) {
+    return nsViewSourceHandler::CreateNewURI(aSpec, aCharset, aBaseURI, aURI);
   }
 
-  return NS_ERROR_UNKNOWN_PROTOCOL;
+  if (scheme.EqualsLiteral("resource")) {
+    RefPtr<nsResProtocolHandler> handler = nsResProtocolHandler::GetSingleton();
+    if (!handler) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+    return handler->NewURI(aSpec, aCharset, aBaseURI, aURI);
+  }
+
+  if (scheme.EqualsLiteral("indexeddb")) {
+    nsCOMPtr<nsIURI> base(aBaseURI);
+    return NS_MutateURI(new nsStandardURL::Mutator())
+        .Apply(NS_MutatorMethod(&nsIStandardURLMutator::Init,
+                                nsIStandardURL::URLTYPE_AUTHORITY, 0,
+                                nsCString(aSpec), aCharset, base, nullptr))
+        .Finalize(aURI);
+  }
+
+  if (scheme.EqualsLiteral("moz-extension")) {
+    RefPtr<mozilla::net::ExtensionProtocolHandler> handler =
+        mozilla::net::ExtensionProtocolHandler::GetSingleton();
+    if (!handler) {
+      return NS_ERROR_NOT_AVAILABLE;
+    }
+    return handler->NewURI(aSpec, aCharset, aBaseURI, aURI);
+  }
+
+  if (scheme.EqualsLiteral("about")) {
+    return nsAboutProtocolHandler::CreateNewURI(aSpec, aCharset, aBaseURI,
+                                                aURI);
+  }
+
+  if (scheme.EqualsLiteral("jar")) {
+    nsCOMPtr<nsIURI> base(aBaseURI);
+    return NS_MutateURI(new nsJARURI::Mutator())
+        .Apply(NS_MutatorMethod(&nsIJARURIMutator::SetSpecBaseCharset,
+                                nsCString(aSpec), base, aCharset))
+        .Finalize(aURI);
+  }
+
+  if (scheme.EqualsLiteral("moz-icon")) {
+    return NS_MutateURI(new nsMozIconURI::Mutator())
+        .SetSpec(aSpec)
+        .Finalize(aURI);
+  }
+
+#ifdef MOZ_WIDGET_GTK
+  if (scheme.EqualsLiteral("smb") || scheme.EqualsLiteral("sftp")) {
+    nsCOMPtr<nsIURI> base(aBaseURI);
+    return NS_MutateURI(new nsStandardURL::Mutator())
+        .Apply(NS_MutatorMethod(&nsIStandardURLMutator::Init,
+                                nsIStandardURL::URLTYPE_STANDARD, -1,
+                                nsCString(aSpec), aCharset, base, nullptr))
+        .Finalize(aURI);
+  }
+#endif
+
+  if (scheme.EqualsLiteral("android")) {
+    nsCOMPtr<nsIURI> base(aBaseURI);
+    return NS_MutateURI(NS_STANDARDURLMUTATOR_CONTRACTID)
+        .Apply(NS_MutatorMethod(&nsIStandardURLMutator::Init,
+                                nsIStandardURL::URLTYPE_STANDARD, -1,
+                                nsCString(aSpec), aCharset, base, nullptr))
+        .Finalize(aURI);
+  }
+
+  if (scheme.EqualsLiteral("dweb") || scheme.EqualsLiteral("dat")) {
+    return NewStandardURI(aSpec, aCharset, aBaseURI, -1, aURI);
+  }
+
+  if (aBaseURI) {
+    nsAutoCString newSpec;
+    rv = aBaseURI->Resolve(aSpec, newSpec);
+    NS_ENSURE_SUCCESS(rv, rv);
+
+    nsAutoCString newScheme;
+    rv = net_ExtractURLScheme(newSpec, newScheme);
+    if (NS_SUCCEEDED(rv)) {
+      // The scheme shouldn't really change at this point.
+      MOZ_DIAGNOSTIC_ASSERT(newScheme == scheme);
+    }
+
+    return NS_MutateURI(new nsSimpleURI::Mutator())
+        .SetSpec(newSpec)
+        .Finalize(aURI);
+  }
+
+  // Falls back to external protocol handler.
+  return NS_MutateURI(new nsSimpleURI::Mutator()).SetSpec(aSpec).Finalize(aURI);
 }
 
 nsresult NS_GetSanitizedURIStringFromURI(nsIURI* aUri,
@@ -2043,7 +2094,7 @@ bool NS_ShouldCheckAppCache(nsIPrincipal* aPrincipal) {
   }
 
   bool allowed;
-  rv = offlineService->OfflineAppAllowed(aPrincipal, nullptr, &allowed);
+  rv = offlineService->OfflineAppAllowed(aPrincipal, &allowed);
   return NS_SUCCEEDED(rv) && allowed;
 }
 
@@ -2466,8 +2517,7 @@ bool NS_IsHSTSUpgradeRedirect(nsIChannel* aOldChannel, nsIChannel* aNewChannel,
     return false;
   }
 
-  bool isHttp;
-  if (NS_FAILED(oldURI->SchemeIs("http", &isHttp)) || !isHttp) {
+  if (!oldURI->SchemeIs("http")) {
     return false;
   }
 
@@ -2583,8 +2633,7 @@ void net_EnsurePSMInit() {
 
 bool NS_IsAboutBlank(nsIURI* uri) {
   // GetSpec can be expensive for some URIs, so check the scheme first.
-  bool isAbout = false;
-  if (NS_FAILED(uri->SchemeIs("about", &isAbout)) || !isAbout) {
+  if (!uri->SchemeIs("about")) {
     return false;
   }
 
@@ -2679,9 +2728,7 @@ nsresult NS_ShouldSecureUpgrade(
   // data (it is read-only).
   // if the connection is not using SSL and either the exact host matches or
   // a superdomain wants to force HTTPS, do it.
-  bool isHttps = false;
-  nsresult rv = aURI->SchemeIs("https", &isHttps);
-  NS_ENSURE_SUCCESS(rv, rv);
+  bool isHttps = aURI->SchemeIs("https");
 
   if (!isHttps &&
       !nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackURL(aURI)) {
@@ -2701,10 +2748,10 @@ nsresult NS_ShouldSecureUpgrade(
         NS_ConvertUTF8toUTF16 reportScheme(scheme);
 
         if (aLoadInfo->GetUpgradeInsecureRequests()) {
-          const char16_t* params[] = {reportSpec.get(), reportScheme.get()};
+          AutoTArray<nsString, 2> params = {reportSpec, reportScheme};
           uint32_t innerWindowId = aLoadInfo->GetInnerWindowID();
           CSP_LogLocalizedStr(
-              "upgradeInsecureRequest", params, ArrayLength(params),
+              "upgradeInsecureRequest", params,
               EmptyString(),  // aSourceFile
               EmptyString(),  // aScriptSample
               0,              // aLineNumber
@@ -2725,14 +2772,13 @@ nsresult NS_ShouldSecureUpgrade(
           nsresult rv = nsContentUtils::GetLocalizedString(
               nsContentUtils::eBRAND_PROPERTIES, "brandShortName", brandName);
           if (NS_SUCCEEDED(rv)) {
-            const char16_t* params[] = {brandName.get(), reportSpec.get(),
-                                        reportScheme.get()};
+            AutoTArray<nsString, 3> params = {brandName, reportSpec,
+                                              reportScheme};
             nsContentUtils::ReportToConsole(
                 nsIScriptError::warningFlag,
                 NS_LITERAL_CSTRING("DATA_URI_BLOCKED"), doc,
                 nsContentUtils::eSECURITY_PROPERTIES,
-                "BrowserUpgradeInsecureDisplayRequest", params,
-                ArrayLength(params));
+                "BrowserUpgradeInsecureDisplayRequest", params);
           }
           Telemetry::AccumulateCategorical(
               Telemetry::LABELS_HTTP_SCHEME_UPGRADE_TYPE::BrowserDisplay);
@@ -2789,7 +2835,7 @@ nsresult NS_ShouldSecureUpgrade(
     if (!storageReady && gSocketTransportService && aResultCallback) {
       nsCOMPtr<nsIURI> uri = aURI;
       nsCOMPtr<nsISiteSecurityService> service = sss;
-      rv = gSocketTransportService->Dispatch(
+      nsresult rv = gSocketTransportService->Dispatch(
           NS_NewRunnableFunction(
               "net::NS_ShouldSecureUpgrade",
               [service{std::move(service)}, uri{std::move(uri)}, flags(flags),
@@ -2819,7 +2865,7 @@ nsresult NS_ShouldSecureUpgrade(
       return rv;
     }
 
-    rv = sss->IsSecureURI(nsISiteSecurityService::HEADER_HSTS, aURI, flags,
+    nsresult rv = sss->IsSecureURI(nsISiteSecurityService::HEADER_HSTS, aURI, flags,
                           aOriginAttributes, nullptr, &hstsSource, &isStsHost);
 
     // if the SSS check fails, it's likely because this load is on a
@@ -2887,8 +2933,7 @@ nsresult NS_CompareLoadInfoAndLoadContext(nsIChannel* aChannel) {
   nsINode* node = loadInfo->LoadingNode();
   if (node) {
     nsIURI* uri = node->OwnerDoc()->GetDocumentURI();
-    nsresult rv = uri->SchemeIs("about", &isAboutPage);
-    NS_ENSURE_SUCCESS(rv, rv);
+    isAboutPage = uri->SchemeIs("about");
   }
 
   if (isAboutPage) {
@@ -2901,17 +2946,11 @@ nsresult NS_CompareLoadInfoAndLoadContext(nsIChannel* aChannel) {
   // the loadInfo will use originAttributes from the content. Thus, the
   // originAttributes between loadInfo and loadContext will be different.
   // That's why we have to skip the comparison for the favicon loading.
-  if (nsContentUtils::IsSystemPrincipal(loadInfo->LoadingPrincipal()) &&
+  if (loadInfo->LoadingPrincipal() &&
+      loadInfo->LoadingPrincipal()->IsSystemPrincipal() &&
       loadInfo->InternalContentPolicyType() ==
           nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON) {
     return NS_OK;
-  }
-
-  bool loadContextIsInBE = false;
-  nsresult rv =
-      loadContext->GetIsInIsolatedMozBrowserElement(&loadContextIsInBE);
-  if (NS_FAILED(rv)) {
-    return NS_ERROR_UNEXPECTED;
   }
 
   OriginAttributes originAttrsLoadInfo = loadInfo->GetOriginAttributes();
@@ -2919,17 +2958,12 @@ nsresult NS_CompareLoadInfoAndLoadContext(nsIChannel* aChannel) {
   loadContext->GetOriginAttributes(originAttrsLoadContext);
 
   LOG(
-      ("NS_CompareLoadInfoAndLoadContext - loadInfo: %d, %d, %d; "
-       "loadContext: %d %d, %d. [channel=%p]",
-       originAttrsLoadInfo.mInIsolatedMozBrowser,
+      ("NS_CompareLoadInfoAndLoadContext - loadInfo: %d, %d; "
+       "loadContext: %d, %d. [channel=%p]",
        originAttrsLoadInfo.mUserContextId,
-       originAttrsLoadInfo.mPrivateBrowsingId, loadContextIsInBE,
+       originAttrsLoadInfo.mPrivateBrowsingId,
        originAttrsLoadContext.mUserContextId,
        originAttrsLoadContext.mPrivateBrowsingId, aChannel));
-
-  MOZ_ASSERT(originAttrsLoadInfo.mInIsolatedMozBrowser == loadContextIsInBE,
-             "The value of InIsolatedMozBrowser in the loadContext and in "
-             "the loadInfo are not the same!");
 
   MOZ_ASSERT(originAttrsLoadInfo.mUserContextId ==
                  originAttrsLoadContext.mUserContextId,
@@ -3031,15 +3065,12 @@ bool NS_ShouldClassifyChannel(nsIChannel* aChannel) {
   }
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  if (loadInfo) {
-    nsContentPolicyType type = loadInfo->GetExternalContentPolicyType();
-
-    // Skip classifying channel triggered by system unless it is a top-level
-    // load.
-    if (nsContentUtils::IsSystemPrincipal(loadInfo->TriggeringPrincipal()) &&
-        nsIContentPolicy::TYPE_DOCUMENT != type) {
-      return false;
-    }
+  nsContentPolicyType type = loadInfo->GetExternalContentPolicyType();
+  // Skip classifying channel triggered by system unless it is a top-level
+  // load.
+  if (loadInfo->TriggeringPrincipal()->IsSystemPrincipal() &&
+      nsIContentPolicy::TYPE_DOCUMENT != type) {
+    return false;
   }
 
   return true;

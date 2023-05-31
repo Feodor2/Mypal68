@@ -68,7 +68,7 @@ function prefillAlertInfo() {
         let label = document.getElementById("alertSourceLabel");
         label.setAttribute(
           "value",
-          ALERT_BUNDLE.formatStringFromName("source.label", [hostPort], 1)
+          ALERT_BUNDLE.formatStringFromName("source.label", [hostPort])
         );
         let doNotDisturbMenuItem = document.getElementById(
           "doNotDisturbMenuItem"
@@ -77,8 +77,7 @@ function prefillAlertInfo() {
           "label",
           ALERT_BUNDLE.formatStringFromName(
             "pauseNotifications.label",
-            [BRAND_NAME],
-            1
+            [BRAND_NAME]
           )
         );
         let disableForOrigin = document.getElementById(
@@ -88,8 +87,7 @@ function prefillAlertInfo() {
           "label",
           ALERT_BUNDLE.formatStringFromName(
             "webActions.disableForOrigin.label",
-            [hostPort],
-            1
+            [hostPort]
           )
         );
         let openSettings = document.getElementById("openSettingsMenuItem");

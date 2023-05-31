@@ -637,7 +637,8 @@ void SurfaceTextureHost::PushResourceUpdates(
   auto method = aOp == TextureHost::ADD_IMAGE
                     ? &wr::TransactionBuilder::AddExternalImage
                     : &wr::TransactionBuilder::UpdateExternalImage;
-  auto bufferType = wr::WrExternalImageBufferType::TextureExternalHandle;
+  auto imageType =
+      wr::ExternalImageType::TextureHandle(wr::TextureTarget::External);
 
   switch (GetFormat()) {
     case gfx::SurfaceFormat::R8G8B8X8:
@@ -650,7 +651,7 @@ void SurfaceTextureHost::PushResourceUpdates(
                         ? gfx::SurfaceFormat::B8G8R8A8
                         : gfx::SurfaceFormat::B8G8R8X8;
       wr::ImageDescriptor descriptor(GetSize(), format);
-      (aResources.*method)(aImageKeys[0], descriptor, aExtID, bufferType, 0);
+      (aResources.*method)(aImageKeys[0], descriptor, aExtID, imageType, 0);
       break;
     }
     default: {
@@ -834,7 +835,8 @@ void EGLImageTextureHost::PushResourceUpdates(
   auto method = aOp == TextureHost::ADD_IMAGE
                     ? &wr::TransactionBuilder::AddExternalImage
                     : &wr::TransactionBuilder::UpdateExternalImage;
-  auto bufferType = wr::WrExternalImageBufferType::TextureExternalHandle;
+  auto imageType =
+      wr::ExternalImageType::TextureHandle(wr::TextureTarget::External);
 
   gfx::SurfaceFormat format =
       mHasAlpha ? gfx::SurfaceFormat::R8G8B8A8 : gfx::SurfaceFormat::R8G8B8X8;
@@ -846,7 +848,7 @@ void EGLImageTextureHost::PushResourceUpdates(
                        ? gfx::SurfaceFormat::B8G8R8A8
                        : gfx::SurfaceFormat::B8G8R8X8;
   wr::ImageDescriptor descriptor(GetSize(), formatTmp);
-  (aResources.*method)(aImageKeys[0], descriptor, aExtID, bufferType, 0);
+  (aResources.*method)(aImageKeys[0], descriptor, aExtID, imageType, 0);
 }
 
 void EGLImageTextureHost::PushDisplayItems(

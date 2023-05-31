@@ -11,7 +11,6 @@
 #include "nsAutoPtr.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
-#include "nsIXULAppInfo.h"
 #include "WinUtils.h"
 
 #include "mozilla/ArrayUtils.h"

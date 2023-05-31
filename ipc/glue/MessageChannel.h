@@ -8,7 +8,6 @@
 #include "base/basictypes.h"
 #include "base/message_loop.h"
 
-#include "nsIMemoryReporter.h"
 #include "mozilla/Atomics.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Monitor.h"
@@ -35,6 +34,7 @@ namespace ipc {
 
 class MessageChannel;
 class IToplevelProtocol;
+class ActorLifecycleProxy;
 
 enum class SyncSendError {
   SendSuccess,
@@ -380,11 +380,11 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
 
   // DispatchMessage will route to one of these functions depending on the
   // protocol type of the message.
-  void DispatchSyncMessage(const Message& aMsg, Message*& aReply);
-  void DispatchUrgentMessage(const Message& aMsg);
-  void DispatchAsyncMessage(const Message& aMsg);
-  void DispatchRPCMessage(const Message& aMsg);
-  void DispatchInterruptMessage(Message&& aMsg, size_t aStackDepth);
+  void DispatchSyncMessage(ActorLifecycleProxy* aProxy, const Message& aMsg,
+                           Message*& aReply);
+  void DispatchAsyncMessage(ActorLifecycleProxy* aProxy, const Message& aMsg);
+  void DispatchInterruptMessage(ActorLifecycleProxy* aProxy, Message&& aMsg,
+                                size_t aStackDepth);
 
   // Return true if the wait ended because a notification was received.
   //
@@ -526,7 +526,7 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
   // Can be run on either thread
   void AssertWorkerThread() const {
     MOZ_ASSERT(mWorkerThread, "Channel hasn't been opened yet");
-    MOZ_RELEASE_ASSERT(mWorkerThread == GetCurrentVirtualThread(),
+    MOZ_RELEASE_ASSERT(mWorkerThread == PR_GetCurrentThread(),
                        "not on worker thread!");
   }
 
@@ -544,7 +544,7 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
     // If we aren't a same-thread channel, our "link" thread is _not_ our
     // worker thread!
     MOZ_ASSERT(mWorkerThread, "Channel hasn't been opened yet");
-    MOZ_RELEASE_ASSERT(mWorkerThread != GetCurrentVirtualThread(),
+    MOZ_RELEASE_ASSERT(mWorkerThread != PR_GetCurrentThread(),
                        "on worker thread but should not be!");
   }
 

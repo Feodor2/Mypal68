@@ -477,8 +477,7 @@ var Addons = {
       ".status-uninstalled"
     ).textContent = gStringBundle.formatStringFromName(
       "addonStatus.uninstalled",
-      [addon.name],
-      1
+      [addon.name]
     );
 
     let updateBtn = document.getElementById("update-btn");

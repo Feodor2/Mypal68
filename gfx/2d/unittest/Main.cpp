@@ -18,8 +18,6 @@ struct TestObject {
   std::string name;
 };
 
-using namespace std;
-
 int main() {
   TestObject tests[] = {
       {new SanityChecks(), "Sanity Checks"},
@@ -31,7 +29,7 @@ int main() {
 
   int totalFailures = 0;
   int totalTests = 0;
-  stringstream message;
+  std::stringstream message;
   printf("------ STARTING RUNNING TESTS ------\n");
   for (int i = 0; i < sizeof(tests) / sizeof(TestObject); i++) {
     message << "--- RUNNING TESTS: " << tests[i].name << " ---\n";

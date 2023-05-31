@@ -24,7 +24,7 @@
 #include "mozilla/dom/EndpointForReportChild.h"
 #include "mozilla/dom/FileSystemTaskBase.h"
 #include "mozilla/dom/IPCBlobInputStreamChild.h"
-#include "mozilla/dom/PendingIPCBlobChild.h"
+#include "mozilla/dom/PMediaTransportChild.h"
 #include "mozilla/dom/TemporaryIPCBlobChild.h"
 #include "mozilla/dom/cache/ActorUtils.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBFactoryChild.h"
@@ -308,17 +308,6 @@ bool BackgroundChildImpl::DeallocPBackgroundStorageChild(
   return true;
 }
 
-dom::PPendingIPCBlobChild* BackgroundChildImpl::AllocPPendingIPCBlobChild(
-    const IPCBlob& aBlob) {
-  return new dom::PendingIPCBlobChild(aBlob);
-}
-
-bool BackgroundChildImpl::DeallocPPendingIPCBlobChild(
-    dom::PPendingIPCBlobChild* aActor) {
-  delete aActor;
-  return true;
-}
-
 dom::PRemoteWorkerChild* BackgroundChildImpl::AllocPRemoteWorkerChild(
     const RemoteWorkerData& aData) {
   RefPtr<dom::RemoteWorkerChild> agent = new dom::RemoteWorkerChild();
@@ -392,22 +381,12 @@ bool BackgroundChildImpl::DeallocPFileCreatorChild(PFileCreatorChild* aActor) {
   return true;
 }
 
-dom::PIPCBlobInputStreamChild*
+already_AddRefed<dom::PIPCBlobInputStreamChild>
 BackgroundChildImpl::AllocPIPCBlobInputStreamChild(const nsID& aID,
                                                    const uint64_t& aSize) {
-  // IPCBlobInputStreamChild is refcounted. Here it's created and in
-  // DeallocPIPCBlobInputStreamChild is released.
-
   RefPtr<dom::IPCBlobInputStreamChild> actor =
       new dom::IPCBlobInputStreamChild(aID, aSize);
-  return actor.forget().take();
-}
-
-bool BackgroundChildImpl::DeallocPIPCBlobInputStreamChild(
-    dom::PIPCBlobInputStreamChild* aActor) {
-  RefPtr<dom::IPCBlobInputStreamChild> actor =
-      dont_AddRef(static_cast<dom::IPCBlobInputStreamChild*>(aActor));
-  return true;
+  return actor.forget();
 }
 
 PFileDescriptorSetChild* BackgroundChildImpl::AllocPFileDescriptorSetChild(
@@ -628,21 +607,6 @@ bool BackgroundChildImpl::DeallocPMIDIManagerChild(PMIDIManagerChild* aActor) {
   return true;
 }
 
-dom::PFileSystemRequestChild* BackgroundChildImpl::AllocPFileSystemRequestChild(
-    const FileSystemParams& aParams) {
-  MOZ_CRASH("Should never get here!");
-  return nullptr;
-}
-
-bool BackgroundChildImpl::DeallocPFileSystemRequestChild(
-    PFileSystemRequestChild* aActor) {
-  // The reference is increased in FileSystemTaskBase::Start of
-  // FileSystemTaskBase.cpp. We should decrease it after IPC.
-  RefPtr<dom::FileSystemTaskChildBase> child =
-      dont_AddRef(static_cast<dom::FileSystemTaskChildBase*>(aActor));
-  return true;
-}
-
 // Gamepad API Background IPC
 dom::PGamepadEventChannelChild*
 BackgroundChildImpl::AllocPGamepadEventChannelChild() {
@@ -704,24 +668,6 @@ bool BackgroundChildImpl::DeallocPWebAuthnTransactionChild(
   return true;
 }
 
-net::PHttpBackgroundChannelChild*
-BackgroundChildImpl::AllocPHttpBackgroundChannelChild(
-    const uint64_t& aChannelId) {
-  MOZ_CRASH(
-      "PHttpBackgroundChannelChild actor should be manually constructed!");
-  return nullptr;
-}
-
-bool BackgroundChildImpl::DeallocPHttpBackgroundChannelChild(
-    PHttpBackgroundChannelChild* aActor) {
-  // The reference is increased in BackgroundChannelCreateCallback::ActorCreated
-  // of HttpBackgroundChannelChild.cpp. We should decrease it after IPC
-  // destroyed.
-  RefPtr<net::HttpBackgroundChannelChild> child =
-      dont_AddRef(static_cast<net::HttpBackgroundChannelChild*>(aActor));
-  return true;
-}
-
 PServiceWorkerChild* BackgroundChildImpl::AllocPServiceWorkerChild(
     const IPCServiceWorkerDescriptor&) {
   return dom::AllocServiceWorkerChild();
@@ -762,6 +708,21 @@ bool BackgroundChildImpl::DeallocPEndpointForReportChild(
     PEndpointForReportChild* aActor) {
   MOZ_ASSERT(aActor);
   delete static_cast<dom::EndpointForReportChild*>(aActor);
+  return true;
+}
+
+dom::PMediaTransportChild* BackgroundChildImpl::AllocPMediaTransportChild() {
+  // We don't allocate here: MediaTransportHandlerIPC is in charge of that,
+  // so we don't need to know the implementation particulars here.
+  MOZ_ASSERT_UNREACHABLE(
+      "The only thing that ought to be creating a PMediaTransportChild is "
+      "MediaTransportHandlerIPC!");
+  return nullptr;
+}
+
+bool BackgroundChildImpl::DeallocPMediaTransportChild(
+    dom::PMediaTransportChild* aActor) {
+  delete aActor;
   return true;
 }
 

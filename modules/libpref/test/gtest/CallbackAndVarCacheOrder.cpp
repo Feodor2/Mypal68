@@ -44,52 +44,47 @@ void SetFunc(const nsCString& aPrefName, float aValue) {
 }
 
 void AddVarCacheFunc(bool* aVar, const nsCString& aPrefName) {
-  nsresult rv = Preferences::AddBoolVarCache(aVar, aPrefName);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  Preferences::AddBoolVarCache(aVar, aPrefName);
 }
 
 void AddVarCacheFunc(Atomic<bool, Relaxed>* aVar, const nsCString& aPrefName) {
-  nsresult rv = Preferences::AddAtomicBoolVarCache(aVar, aPrefName);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  Preferences::AddAtomicBoolVarCache(aVar, aPrefName);
 }
 
 void AddVarCacheFunc(Atomic<bool, ReleaseAcquire>* aVar,
                      const nsCString& aPrefName) {
-  nsresult rv = Preferences::AddAtomicBoolVarCache(aVar, aPrefName);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  Preferences::AddAtomicBoolVarCache(aVar, aPrefName);
 }
 
 void AddVarCacheFunc(int32_t* aVar, const nsCString& aPrefName) {
-  nsresult rv = Preferences::AddIntVarCache(aVar, aPrefName);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  Preferences::AddIntVarCache(aVar, aPrefName);
 }
 
 void AddVarCacheFunc(Atomic<int32_t, Relaxed>* aVar,
                      const nsCString& aPrefName) {
-  nsresult rv = Preferences::AddAtomicIntVarCache(aVar, aPrefName);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  Preferences::AddAtomicIntVarCache(aVar, aPrefName);
 }
 
 void AddVarCacheFunc(uint32_t* aVar, const nsCString& aPrefName) {
-  nsresult rv = Preferences::AddUintVarCache(aVar, aPrefName);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  Preferences::AddUintVarCache(aVar, aPrefName);
 }
 
 void AddVarCacheFunc(Atomic<uint32_t, Relaxed>* aVar,
                      const nsCString& aPrefName) {
-  nsresult rv = Preferences::AddAtomicUintVarCache(aVar, aPrefName);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  Preferences::AddAtomicUintVarCache(aVar, aPrefName);
 }
 
 void AddVarCacheFunc(Atomic<uint32_t, ReleaseAcquire>* aVar,
                      const nsCString& aPrefName) {
-  nsresult rv = Preferences::AddAtomicUintVarCache(aVar, aPrefName);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  Preferences::AddAtomicUintVarCache(aVar, aPrefName);
 }
 
 void AddVarCacheFunc(float* aVar, const nsCString& aPrefName) {
-  nsresult rv = Preferences::AddFloatVarCache(aVar, aPrefName);
-  ASSERT_TRUE(NS_SUCCEEDED(rv));
+  Preferences::AddFloatVarCache(aVar, aPrefName);
+}
+
+void AddVarCacheFunc(std::atomic<float>* aVar, const nsCString& aPrefName) {
+  Preferences::AddAtomicFloatVarCache(aVar, aPrefName);
 }
 
 template <typename T, typename U = T>
@@ -192,6 +187,13 @@ TEST(CallbackAndVarCacheOrder, Float)
 {
   RunTest<float>(NS_LITERAL_CSTRING("test_pref.float.1"),
                  NS_LITERAL_CSTRING("test_pref.float.2"), -10.0f, 11.0f);
+}
+
+TEST(CallbackAndVarCacheOrder, AtomicFloat)
+{
+  RunTest<float, std::atomic<float>>(
+      NS_LITERAL_CSTRING("test_pref.atomic_float.1"),
+      NS_LITERAL_CSTRING("test_pref.atomic_float.2"), -12.0f, 13.0f);
 }
 
 }  // namespace mozilla

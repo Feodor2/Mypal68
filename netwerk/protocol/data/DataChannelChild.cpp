@@ -29,7 +29,7 @@ DataChannelChild::ConnectParent(uint32_t aId) {
   }
 
   // IPC now has a ref to us.
-  AddIPDLReference();
+  mIPCOpen = true;
   return NS_OK;
 }
 
@@ -49,15 +49,9 @@ DataChannelChild::CompleteRedirectSetup(nsIStreamListener* aListener,
   return NS_OK;
 }
 
-void DataChannelChild::AddIPDLReference() {
-  AddRef();
-  mIPCOpen = true;
-}
-
 void DataChannelChild::ActorDestroy(ActorDestroyReason why) {
   MOZ_ASSERT(mIPCOpen);
   mIPCOpen = false;
-  Release();
 }
 
 }  // namespace net

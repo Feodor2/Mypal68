@@ -22,7 +22,6 @@
 #include "gfxWindowsSurface.h"
 #include "nsWindowDbg.h"
 #include "cairo.h"
-#include "nsITimer.h"
 #include "nsRegion.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/Maybe.h"
@@ -143,7 +142,7 @@ class nsWindow final : public nsWindowBase {
   virtual void SuppressAnimation(bool aSuppress) override;
   virtual void Enable(bool aState) override;
   virtual bool IsEnabled() const override;
-  virtual nsresult SetFocus(bool aRaise) override;
+  virtual void SetFocus(Raise) override;
   virtual LayoutDeviceIntRect GetBounds() override;
   virtual LayoutDeviceIntRect GetScreenBounds() override;
   virtual MOZ_MUST_USE nsresult

@@ -8,26 +8,18 @@
 #include "nsIContentHandler.h"
 #include "nsILoadGroup.h"
 #include "nsIDocumentLoader.h"
-#include "nsIWebProgress.h"
-#include "nsIWebProgressListener.h"
-#include "nsIIOService.h"
-#include "nsIServiceManager.h"
 #include "nsIStreamListener.h"
 #include "nsIURI.h"
 #include "nsIChannel.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIProgressEventSink.h"
 #include "nsIInputStream.h"
 #include "nsIStreamConverterService.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsIHttpChannel.h"
-#include "nsIMultiPartChannel.h"
 #include "netCore.h"
 #include "nsCRT.h"
 #include "nsIDocShell.h"
-#include "nsIDocShellTreeItem.h"
-#include "nsIDocShellTreeOwner.h"
 #include "nsIThreadRetargetableStreamListener.h"
 #include "nsIChildChannel.h"
 
@@ -39,7 +31,6 @@
 #include "nsICategoryManager.h"
 #include "nsCExternalHandlerService.h"
 
-#include "nsIMIMEHeaderParam.h"
 #include "nsNetCID.h"
 
 #include "nsMimeTypes.h"
@@ -64,9 +55,9 @@ mozilla::LazyLogModule nsURILoader::mLog("URILoader");
 static uint32_t sConvertDataLimit = 20;
 
 static bool InitPreferences() {
-  nsresult rv = mozilla::Preferences::AddUintVarCache(
+  mozilla::Preferences::AddUintVarCache(
       &sConvertDataLimit, "general.document_open_conversion_depth_limit", 20);
-  return NS_SUCCEEDED(rv);
+  return true;
 }
 
 /**
@@ -250,11 +241,7 @@ NS_IMETHODIMP nsDocumentOpenInfo::OnStartRequest(nsIRequest* request) {
         nsCOMPtr<nsIURI> uri;
         rv = httpChannel->GetURI(getter_AddRefs(uri));
         if (NS_SUCCEEDED(rv) && uri) {
-          bool httpScheme = false;
-          bool httpsScheme = false;
-          uri->SchemeIs("http", &httpScheme);
-          uri->SchemeIs("https", &httpsScheme);
-          if ((httpScheme || httpsScheme) &&
+          if ((uri->SchemeIs("http") || uri->SchemeIs("https")) &&
               nsContentUtils::AttemptLargeAllocationLoad(httpChannel)) {
             return NS_BINDING_ABORTED;
           }

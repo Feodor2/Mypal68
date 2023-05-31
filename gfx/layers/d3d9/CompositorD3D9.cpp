@@ -8,7 +8,6 @@
 #include "Nv3DVUtils.h"
 #include "gfxCrashReporterUtils.h"
 #include "gfxFailure.h"
-#include "gfxPrefs.h"
 #include "gfxUtils.h"
 #include "gfxWindowsPlatform.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
@@ -17,6 +16,7 @@
 #include "mozilla/layers/Effects.h"
 #include "mozilla/layers/ImageHost.h"
 #include "mozilla/layers/LayerManagerComposite.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/widget/WinCompositorWidget.h"
 #include "nsIWidget.h"
 #include "nsWindowsHelpers.h"
@@ -453,7 +453,7 @@ void CompositorD3D9::DrawQuad(const gfx::Rect &aRect,
         mDeviceManager->SetShaderMode(DeviceManagerD3D9::YCBCRLAYER, maskType);
   } break;
   case EffectTypes::COMPONENT_ALPHA: {
-    MOZ_ASSERT(gfxPrefs::ComponentAlphaEnabled());
+    MOZ_ASSERT(StaticPrefs::layers_componentalpha_enabled_AtStartup_DoNotUseDirectly());
     EffectComponentAlpha *effectComponentAlpha =
         static_cast<EffectComponentAlpha *>(aEffectChain.mPrimaryEffect.get());
     TextureSourceD3D9 *sourceOnWhite =

@@ -9,7 +9,6 @@
 #include "mozilla/TelemetryProcessEnums.h"
 #include "mozilla/Unused.h"
 #include "nsJSUtils.h"  // nsAutoJSString
-#include "nsITelemetry.h"
 #include "nsThreadUtils.h"
 #include "TelemetryFixture.h"
 #include "TelemetryTestHelpers.h"

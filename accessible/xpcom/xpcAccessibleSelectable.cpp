@@ -3,7 +3,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Accessible-inl.h"
-#include "xpcAccessibleDocument.h"
 
 #include "nsIMutableArray.h"
 

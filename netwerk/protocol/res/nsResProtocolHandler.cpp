@@ -7,8 +7,6 @@
 #include "mozilla/Unused.h"
 
 #include "nsResProtocolHandler.h"
-#include "nsIIOService.h"
-#include "nsIFile.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsURLHelper.h"
@@ -23,6 +21,20 @@ using mozilla::dom::ContentParent;
 #define kAPP "app"
 #define kGRE "gre"
 #define kAndroid "android"
+
+mozilla::StaticRefPtr<nsResProtocolHandler> nsResProtocolHandler::sSingleton;
+
+already_AddRefed<nsResProtocolHandler> nsResProtocolHandler::GetSingleton() {
+  if (!sSingleton) {
+    RefPtr<nsResProtocolHandler> handler = new nsResProtocolHandler();
+    if (NS_WARN_IF(NS_FAILED(handler->Init()))) {
+      return nullptr;
+    }
+    sSingleton = handler;
+    ClearOnShutdown(&sSingleton);
+  }
+  return do_AddRef(sSingleton);
+}
 
 nsresult nsResProtocolHandler::Init() {
   nsresult rv;

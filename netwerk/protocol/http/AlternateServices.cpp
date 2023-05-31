@@ -15,6 +15,8 @@
 #include "NullHttpTransaction.h"
 #include "nsISSLSocketControl.h"
 #include "nsIWellKnownOpportunisticUtils.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/dom/PContent.h"
 
 /* RFC 7838 Alternative Services
    http://httpwg.org/http-extensions/opsec.html
@@ -49,7 +51,7 @@ bool AltSvcMapping::AcceptableProxy(nsProxyInfo* proxyInfo) {
 void AltSvcMapping::ProcessHeader(
     const nsCString& buf, const nsCString& originScheme,
     const nsCString& originHost, int32_t originPort, const nsACString& username,
-    const nsACString& topWindowOrigin, bool privateBrowsing,
+    const nsACString& topWindowOrigin, bool privateBrowsing, bool isolated,
     nsIInterfaceRequestor* callbacks, nsProxyInfo* proxyInfo, uint32_t caps,
     const OriginAttributes& originAttributes) {
   MOZ_ASSERT(NS_IsMainThread());
@@ -58,7 +60,8 @@ void AltSvcMapping::ProcessHeader(
     return;
   }
 
-  if (!AcceptableProxy(proxyInfo)) {
+  if (StaticPrefs::network_http_altsvc_proxy_checks() &&
+      !AcceptableProxy(proxyInfo)) {
     LOG(("AltSvcMapping::ProcessHeader ignoring due to proxy\n"));
     return;
   }
@@ -122,8 +125,8 @@ void AltSvcMapping::ProcessHeader(
       originAttributes.CreateSuffix(suffix);
       LOG(("Alt Svc clearing mapping for %s:%d:%s", originHost.get(),
            originPort, suffix.get()));
-      gHttpHandler->ConnMgr()->ClearHostMapping(originHost, originPort,
-                                                originAttributes);
+      gHttpHandler->ConnMgr()->ClearHostMapping(
+          originHost, originPort, originAttributes, topWindowOrigin);
       continue;
     }
 
@@ -148,15 +151,15 @@ void AltSvcMapping::ProcessHeader(
     RefPtr<AltSvcMapping> mapping = new AltSvcMapping(
         gHttpHandler->ConnMgr()->GetStoragePtr(),
         gHttpHandler->ConnMgr()->StorageEpoch(), originScheme, originHost,
-        originPort, username, topWindowOrigin, privateBrowsing,
+        originPort, username, topWindowOrigin, privateBrowsing, isolated,
         NowInSeconds() + maxage, hostname, portno, npnToken, originAttributes);
     if (mapping->TTL() <= 0) {
       LOG(("Alt Svc invalid map"));
       mapping = nullptr;
       // since this isn't a parse error, let's clear any existing mapping
       // as that would have happened if we had accepted the parameters.
-      gHttpHandler->ConnMgr()->ClearHostMapping(originHost, originPort,
-                                                originAttributes);
+      gHttpHandler->ConnMgr()->ClearHostMapping(
+          originHost, originPort, originAttributes, topWindowOrigin);
     } else {
       gHttpHandler->UpdateAltServiceMapping(mapping, proxyInfo, callbacks, caps,
                                             originAttributes);
@@ -169,15 +172,13 @@ void AltSvcMapping::ProcessHeader(
   }
 }
 
-AltSvcMapping::AltSvcMapping(DataStorage* storage, int32_t epoch,
-                             const nsACString& originScheme,
-                             const nsACString& originHost, int32_t originPort,
-                             const nsACString& username,
-                             const nsACString& topWindowOrigin,
-                             bool privateBrowsing, uint32_t expiresAt,
-                             const nsACString& alternateHost,
-                             int32_t alternatePort, const nsACString& npnToken,
-                             const OriginAttributes& originAttributes)
+AltSvcMapping::AltSvcMapping(
+    DataStorage* storage, int32_t epoch, const nsACString& originScheme,
+    const nsACString& originHost, int32_t originPort,
+    const nsACString& username, const nsACString& topWindowOrigin,
+    bool privateBrowsing, bool isolated, uint32_t expiresAt,
+    const nsACString& alternateHost, int32_t alternatePort,
+    const nsACString& npnToken, const OriginAttributes& originAttributes)
     : mStorage(storage),
       mStorageEpoch(epoch),
       mAlternateHost(alternateHost),
@@ -187,6 +188,7 @@ AltSvcMapping::AltSvcMapping(DataStorage* storage, int32_t epoch,
       mUsername(username),
       mTopWindowOrigin(topWindowOrigin),
       mPrivate(privateBrowsing),
+      mIsolated(isolated),
       mExpiresAt(expiresAt),
       mValidated(false),
       mMixedScheme(false),
@@ -223,7 +225,7 @@ AltSvcMapping::AltSvcMapping(DataStorage* storage, int32_t epoch,
 
   if (mExpiresAt) {
     MakeHashKey(mHashKey, originScheme, mOriginHost, mOriginPort, mPrivate,
-                mOriginAttributes);
+                mIsolated, mTopWindowOrigin, mOriginAttributes);
   }
 }
 
@@ -231,6 +233,8 @@ void AltSvcMapping::MakeHashKey(nsCString& outKey,
                                 const nsACString& originScheme,
                                 const nsACString& originHost,
                                 int32_t originPort, bool privateBrowsing,
+                                bool isolated,
+                                const nsACString& topWindowOrigin,
                                 const OriginAttributes& originAttributes) {
   outKey.Truncate();
 
@@ -250,6 +254,15 @@ void AltSvcMapping::MakeHashKey(nsCString& outKey,
   nsAutoCString suffix;
   originAttributes.CreateSuffix(suffix);
   outKey.Append(suffix);
+
+  if (isolated) {
+    outKey.Append(':');
+    outKey.Append('I');
+    outKey.Append(':');
+    outKey.Append(topWindowOrigin);
+    outKey.Append(
+        '|');  // Be careful, the top window origin may contain colons!
+  }
 }
 
 int32_t AltSvcMapping::TTL() { return mExpiresAt - NowInSeconds(); }
@@ -324,6 +337,7 @@ void AltSvcMapping::GetConnectionInfo(
     ci->SetInsecureScheme(true);
   }
   ci->SetPrivate(mPrivate);
+  ci->SetIsolated(mIsolated);
   ci.forget(outCI);
 }
 
@@ -358,6 +372,8 @@ void AltSvcMapping::Serialize(nsCString& out) {
   out.Append(':');
   out.Append(mTopWindowOrigin);
   out.Append('|');  // Be careful, the top window origin may contain colons!
+  out.Append(mIsolated ? 'y' : 'n');
+  out.Append(':');
   // Add code to serialize new members here!
 }
 
@@ -419,13 +435,16 @@ AltSvcMapping::AltSvcMapping(DataStorage* storage, int32_t epoch,
     _NS_NEXT_TOKEN;
     mTopWindowOrigin = Substring(str, start, idx - start);
     separator = ':';
+    _NS_NEXT_TOKEN;
+    mIsolated = Substring(str, start, idx - start).EqualsLiteral("y");
     // Add code to deserialize new members here!
 #undef _NS_NEXT_TOKEN
 
     MakeHashKey(
         mHashKey,
         mHttps ? NS_LITERAL_CSTRING("https") : NS_LITERAL_CSTRING("http"),
-        mOriginHost, mOriginPort, mPrivate, mOriginAttributes);
+        mOriginHost, mOriginPort, mPrivate, mIsolated, mTopWindowOrigin,
+        mOriginAttributes);
   } while (false);
 }
 
@@ -1015,7 +1034,8 @@ void AltSvcCache::UpdateAltServiceMapping(
 
 already_AddRefed<AltSvcMapping> AltSvcCache::GetAltServiceMapping(
     const nsACString& scheme, const nsACString& host, int32_t port,
-    bool privateBrowsing, const OriginAttributes& originAttributes) {
+    bool privateBrowsing, bool isolated, const nsACString& topWindowOrigin,
+    const OriginAttributes& originAttributes) {
   bool isHTTPS;
   MOZ_ASSERT(NS_IsMainThread());
   if (!mStorage) {
@@ -1045,8 +1065,8 @@ already_AddRefed<AltSvcMapping> AltSvcCache::GetAltServiceMapping(
   }
 
   nsAutoCString key;
-  AltSvcMapping::MakeHashKey(key, scheme, host, port, privateBrowsing,
-                             originAttributes);
+  AltSvcMapping::MakeHashKey(key, scheme, host, port, privateBrowsing, isolated,
+                             topWindowOrigin, originAttributes);
   RefPtr<AltSvcMapping> existing = LookupMapping(key, privateBrowsing);
   LOG(
       ("AltSvcCache::GetAltServiceMapping %p key=%s "
@@ -1062,15 +1082,18 @@ already_AddRefed<AltSvcMapping> AltSvcCache::GetAltServiceMapping(
 class ProxyClearHostMapping : public Runnable {
  public:
   explicit ProxyClearHostMapping(const nsACString& host, int32_t port,
-                                 const OriginAttributes& originAttributes)
+                                 const OriginAttributes& originAttributes,
+                                 const nsACString& topWindowOrigin)
       : Runnable("net::ProxyClearHostMapping"),
         mHost(host),
         mPort(port),
-        mOriginAttributes(originAttributes) {}
+        mOriginAttributes(originAttributes),
+        mTopWindowOrigin(topWindowOrigin) {}
 
   NS_IMETHOD Run() override {
     MOZ_ASSERT(NS_IsMainThread());
-    gHttpHandler->ConnMgr()->ClearHostMapping(mHost, mPort, mOriginAttributes);
+    gHttpHandler->ConnMgr()->ClearHostMapping(mHost, mPort, mOriginAttributes,
+                                              mTopWindowOrigin);
     return NS_OK;
   }
 
@@ -1078,52 +1101,43 @@ class ProxyClearHostMapping : public Runnable {
   nsCString mHost;
   int32_t mPort;
   OriginAttributes mOriginAttributes;
+  nsCString mTopWindowOrigin;
 };
 
 void AltSvcCache::ClearHostMapping(const nsACString& host, int32_t port,
-                                   const OriginAttributes& originAttributes) {
+                                   const OriginAttributes& originAttributes,
+                                   const nsACString& topWindowOrigin) {
   if (!NS_IsMainThread()) {
-    nsCOMPtr<nsIRunnable> event =
-        new ProxyClearHostMapping(host, port, originAttributes);
+    nsCOMPtr<nsIRunnable> event = new ProxyClearHostMapping(
+        host, port, originAttributes, topWindowOrigin);
     if (event) {
       NS_DispatchToMainThread(event);
     }
     return;
   }
   nsAutoCString key;
-  AltSvcMapping::MakeHashKey(key, NS_LITERAL_CSTRING("http"), host, port, true,
-                             originAttributes);
-  RefPtr<AltSvcMapping> existing = LookupMapping(key, true);
-  if (existing) {
-    existing->SetExpired();
-  }
-
-  AltSvcMapping::MakeHashKey(key, NS_LITERAL_CSTRING("https"), host, port, true,
-                             originAttributes);
-  existing = LookupMapping(key, true);
-  if (existing) {
-    existing->SetExpired();
-  }
-
-  AltSvcMapping::MakeHashKey(key, NS_LITERAL_CSTRING("http"), host, port, false,
-                             originAttributes);
-  existing = LookupMapping(key, false);
-  if (existing) {
-    existing->SetExpired();
-  }
-
-  AltSvcMapping::MakeHashKey(key, NS_LITERAL_CSTRING("https"), host, port,
-                             false, originAttributes);
-  existing = LookupMapping(key, false);
-  if (existing) {
-    existing->SetExpired();
+  for (int secure = 0; secure < 2; ++secure) {
+    NS_NAMED_LITERAL_CSTRING(http, "http");
+    NS_NAMED_LITERAL_CSTRING(https, "https");
+    const nsLiteralCString& scheme = secure ? https : http;
+    for (int pb = 1; pb >= 0; --pb) {
+      for (int isolate = 0; isolate < 2; ++isolate) {
+        AltSvcMapping::MakeHashKey(key, scheme, host, port, bool(pb),
+                                   bool(isolate), topWindowOrigin,
+                                   originAttributes);
+        RefPtr<AltSvcMapping> existing = LookupMapping(key, bool(pb));
+        if (existing) {
+          existing->SetExpired();
+        }
+      }
+    }
   }
 }
 
 void AltSvcCache::ClearHostMapping(nsHttpConnectionInfo* ci) {
   if (!ci->GetOrigin().IsEmpty()) {
     ClearHostMapping(ci->GetOrigin(), ci->OriginPort(),
-                     ci->GetOriginAttributes());
+                     ci->GetOriginAttributes(), ci->GetTopWindowOrigin());
   }
 }
 
@@ -1132,6 +1146,19 @@ void AltSvcCache::ClearAltServiceMappings() {
   if (mStorage) {
     mStorage->Clear();
   }
+}
+
+nsresult AltSvcCache::GetAltSvcCacheKeys(nsTArray<nsCString>& value) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (gHttpHandler->AllowAltSvc() && mStorage) {
+    nsTArray<mozilla::dom::DataStorageItem> items;
+    mStorage->GetAll(&items);
+
+    for (const auto& item : items) {
+      value.AppendElement(item.key());
+    }
+  }
+  return NS_OK;
 }
 
 NS_IMETHODIMP

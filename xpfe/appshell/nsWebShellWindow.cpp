@@ -7,22 +7,14 @@
 #include "nsLayoutCID.h"
 #include "nsContentCID.h"
 #include "nsContentList.h"
-#include "nsIWeakReference.h"
 #include "nsIContentViewer.h"
-#include "nsIComponentManager.h"
-#include "nsIServiceManager.h"
-#include "nsIURL.h"
-#include "nsIIOService.h"
-#include "nsIURL.h"
 #include "nsNetCID.h"
-#include "nsIStringBundle.h"
 #include "nsReadableUtils.h"
 
 #include "nsContentUtils.h"
 #include "nsEscape.h"
 #include "nsPIDOMWindow.h"
 #include "nsIWebNavigation.h"
-#include "nsIWindowWatcher.h"
 
 #include "nsWidgetInitData.h"
 #include "nsWidgetsCID.h"
@@ -40,14 +32,11 @@
 #include "nsIWebProgressListener.h"
 
 #include "mozilla/dom/Document.h"
-#include "nsIDocumentLoaderFactory.h"
-#include "nsIObserverService.h"
 
 #include "nsIScreenManager.h"
 #include "nsIScreen.h"
 
 #include "nsIContent.h"  // for menus
-#include "nsIScriptSecurityManager.h"
 
 // For calculating size
 #include "nsPresContext.h"
@@ -76,6 +65,7 @@
 
 using namespace mozilla;
 using namespace mozilla::dom;
+using dom::Element;
 
 #define SIZE_PERSISTENCE_TIMEOUT 500  // msec
 
@@ -229,7 +219,10 @@ nsresult nsWebShellWindow::Initialize(
     if (nsContentUtils::IsExpandedPrincipal(principal)) {
       principal = nullptr;
     }
-    rv = mDocShell->CreateAboutBlankContentViewer(principal);
+    // Use the subject (or system) principal as the storage principal too until
+    // the new window finishes navigating and gets a real storage principal.
+    rv = mDocShell->CreateAboutBlankContentViewer(principal, principal,
+                                                  /* aCsp = */ nullptr);
     NS_ENSURE_SUCCESS(rv, rv);
     RefPtr<Document> doc = mDocShell->GetDocument();
     NS_ENSURE_TRUE(!!doc, NS_ERROR_FAILURE);
@@ -493,7 +486,7 @@ static void LoadNativeMenus(Document* aDoc, nsIWidget* aParentWindow) {
   }
 
   if (menubarNode) {
-    nsCOMPtr<Element> menubarContent(do_QueryInterface(menubarNode));
+    nsCOMPtr<dom::Element> menubarContent(do_QueryInterface(menubarNode));
     nms->CreateNativeMenuBar(aParentWindow, menubarContent);
   } else {
     nms->CreateNativeMenuBar(aParentWindow, nullptr);

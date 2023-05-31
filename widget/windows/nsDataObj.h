@@ -12,7 +12,6 @@
 #include "nsString.h"
 #include "nsIFile.h"
 #include "nsIURI.h"
-#include "nsIInputStream.h"
 #include "nsIStreamListener.h"
 #include "nsIChannel.h"
 #include "nsCOMArray.h"

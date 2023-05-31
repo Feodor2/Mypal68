@@ -42,7 +42,27 @@ struct RangeItem final {
     mEndContainer = aEndPoint.GetContainer();
     mEndOffset = aEndPoint.Offset();
   }
+  void Clear() {
+    mStartContainer = mEndContainer = nullptr;
+    mStartOffset = mEndOffset = 0;
+  }
   already_AddRefed<nsRange> GetRange();
+  bool IsCollapsed() const {
+    return mStartContainer == mEndContainer && mStartOffset == mEndOffset;
+  }
+  bool IsSet() const { return mStartContainer && mEndContainer; }
+  EditorDOMPoint StartPoint() const {
+    return EditorDOMPoint(mStartContainer, mStartOffset);
+  }
+  EditorDOMPoint EndPoint() const {
+    return EditorDOMPoint(mEndContainer, mEndOffset);
+  }
+  EditorRawDOMPoint StartRawPoint() const {
+    return EditorRawDOMPoint(mStartContainer, mStartOffset);
+  }
+  EditorRawDOMPoint EndRawPoint() const {
+    return EditorRawDOMPoint(mEndContainer, mEndOffset);
+  }
 
   NS_INLINE_DECL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_NATIVE_REFCOUNTING(RangeItem)
   NS_DECL_CYCLE_COLLECTION_NATIVE_CLASS(RangeItem)
@@ -188,6 +208,19 @@ class MOZ_STACK_CLASS AutoTrackDOMPoint final {
   ~AutoTrackDOMPoint() {
     mRangeUpdater.DropRangeItem(mRangeItem);
     if (mPoint) {
+      // Setting `mPoint` with invalid DOM point causes hitting `NS_ASSERTION()`
+      // and the number of times may be too many.  (E.g., 1533913.html hits
+      // over 700 times!)  We should just put warning instead.
+      if (NS_WARN_IF(!mRangeItem->mStartContainer) ||
+          NS_WARN_IF(mRangeItem->mStartOffset < 0)) {
+        mPoint->Clear();
+        return;
+      }
+      if (NS_WARN_IF(mRangeItem->mStartContainer->Length() <
+                     static_cast<uint32_t>(mRangeItem->mStartOffset))) {
+        mPoint->SetToEndOf(mRangeItem->mStartContainer);
+        return;
+      }
       mPoint->Set(mRangeItem->mStartContainer, mRangeItem->mStartOffset);
       return;
     }

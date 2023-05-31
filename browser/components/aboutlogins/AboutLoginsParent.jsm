@@ -21,6 +21,11 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
+  "MigrationUtils",
+  "resource:///modules/MigrationUtils.jsm"
+);
+ChromeUtils.defineModuleGetter(
+  this,
   "Services",
   "resource://gre/modules/Services.jsm"
 );
@@ -30,6 +35,7 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
 });
 
 const ABOUT_LOGINS_ORIGIN = "about:logins";
+const MASTER_PASSWORD_NOTIFICATION_ID = "master-password-login-required";
 
 const PRIVILEGED_PROCESS_PREF =
   "browser.tabs.remote.separatePrivilegedContentProcess";
@@ -45,7 +51,7 @@ const EXPECTED_ABOUTLOGINS_REMOTE_TYPE = PRIVILEGED_PROCESS_ENABLED
   : E10SUtils.DEFAULT_REMOTE_TYPE;
 
 const isValidLogin = login => {
-  return !(login.hostname || "").startsWith("chrome://");
+  return !(login.origin || "").startsWith("chrome://");
 };
 
 const convertSubjectToLogin = subject => {
@@ -54,14 +60,30 @@ const convertSubjectToLogin = subject => {
   if (!isValidLogin(login)) {
     return null;
   }
-  return login;
+  return augmentVanillaLoginObject(login);
+};
+
+const SCHEME_REGEX = new RegExp(/^http(s)?:\/\//);
+const SUBDOMAIN_REGEX = new RegExp(/^www\d*\./);
+const augmentVanillaLoginObject = login => {
+  let title;
+  try {
+    title = new URL(login.origin).host;
+  } catch (ex) {
+    title = login.origin.replace(SCHEME_REGEX, "");
+  }
+  title = title.replace(SUBDOMAIN_REGEX, "");
+  return Object.assign({}, login, {
+    title,
+  });
 };
 
 var AboutLoginsParent = {
+  _l10n: null,
   _subscribers: new WeakSet(),
 
   // Listeners are added in BrowserGlue.jsm
-  receiveMessage(message) {
+  async receiveMessage(message) {
     // Only respond to messages sent from about:logins.
     if (
       message.target.remoteType != EXPECTED_ABOUTLOGINS_REMOTE_TYPE ||
@@ -71,24 +93,57 @@ var AboutLoginsParent = {
     }
 
     switch (message.name) {
+      case "AboutLogins:CreateLogin": {
+        let newLogin = message.data.login;
+        // Remove the path from the origin, if it was provided.
+        let origin = LoginHelper.getLoginOrigin(newLogin.origin);
+        if (!origin) {
+          Cu.reportError(
+            "AboutLogins:CreateLogin: Unable to get an origin from the login details."
+          );
+          return;
+        }
+        newLogin.origin = origin;
+        Object.assign(newLogin, {
+          formActionOrigin: "",
+          usernameField: "",
+          passwordField: "",
+        });
+        Services.logins.addLogin(LoginHelper.vanillaObjectToLogin(newLogin));
+        break;
+      }
       case "AboutLogins:DeleteLogin": {
         let login = LoginHelper.vanillaObjectToLogin(message.data.login);
         Services.logins.removeLogin(login);
         break;
       }
+      case "AboutLogins:Import": {
+        try {
+          MigrationUtils.showMigrationWizard(message.target.ownerGlobal, [
+            MigrationUtils.MIGRATION_ENTRYPOINT_PASSWORDS,
+          ]);
+        } catch (ex) {
+          Cu.reportError(ex);
+        }
+        break;
+      }
+      case "AboutLogins:OpenPreferences": {
+        message.target.ownerGlobal.openPreferences("privacy-logins");
+        break;
+      }
       case "AboutLogins:OpenSite": {
         let guid = message.data.login.guid;
         let logins = LoginHelper.searchLoginsWithObject({ guid });
-        if (!logins || logins.length != 1) {
+        if (logins.length != 1) {
           log.warn(
             `AboutLogins:OpenSite: expected to find a login for guid: ${guid} but found ${
-              (logins || []).length
+              logins.length
             }`
           );
           return;
         }
 
-        message.target.ownerGlobal.openWebLinkIn(logins[0].hostname, "tab", {
+        message.target.ownerGlobal.openWebLinkIn(logins[0].origin, "tab", {
           relatedToCurrent: true,
         });
         break;
@@ -97,15 +152,29 @@ var AboutLoginsParent = {
         if (
           !ChromeUtils.nondeterministicGetWeakSetKeys(this._subscribers).length
         ) {
+          Services.obs.addObserver(this, "passwordmgr-crypto-login");
+          Services.obs.addObserver(this, "passwordmgr-crypto-loginCanceled");
           Services.obs.addObserver(this, "passwordmgr-storage-changed");
         }
         this._subscribers.add(message.target);
 
         let messageManager = message.target.messageManager;
-        messageManager.sendAsyncMessage(
-          "AboutLogins:AllLogins",
-          this.getAllLogins()
-        );
+        try {
+          messageManager.sendAsyncMessage(
+            "AboutLogins:AllLogins",
+            await this.getAllLogins()
+          );
+        } catch (ex) {
+          if (ex.result != Cr.NS_ERROR_NOT_INITIALIZED) {
+            throw ex;
+          }
+
+          // The message manager may be destroyed before the replies can be sent.
+          log.debug(
+            "AboutLogins:Subscribe: exception when replying with logins",
+            ex
+          );
+        }
         break;
       }
       case "AboutLogins:UpdateLogin": {
@@ -113,11 +182,11 @@ var AboutLoginsParent = {
         let logins = LoginHelper.searchLoginsWithObject({
           guid: loginUpdates.guid,
         });
-        if (!logins || logins.length != 1) {
+        if (logins.length != 1) {
           log.warn(
             `AboutLogins:UpdateLogin: expected to find a login for guid: ${
               loginUpdates.guid
-            } but found ${(logins || []).length}`
+            } but found ${logins.length}`
           );
           return;
         }
@@ -136,9 +205,25 @@ var AboutLoginsParent = {
     }
   },
 
-  observe(subject, topic, type) {
+  async observe(subject, topic, type) {
     if (!ChromeUtils.nondeterministicGetWeakSetKeys(this._subscribers).length) {
+      Services.obs.removeObserver(this, "passwordmgr-crypto-login");
+      Services.obs.removeObserver(this, "passwordmgr-crypto-loginCanceled");
       Services.obs.removeObserver(this, "passwordmgr-storage-changed");
+      return;
+    }
+
+    if (topic == "passwordmgr-crypto-login") {
+      this.removeMasterPasswordLoginNotifications();
+      this.messageSubscribers(
+        "AboutLogins:AllLogins",
+        await this.getAllLogins()
+      );
+      return;
+    }
+
+    if (topic == "passwordmgr-crypto-loginCanceled") {
+      this.showMasterPasswordLoginNotifications();
       return;
     }
 
@@ -173,7 +258,68 @@ var AboutLoginsParent = {
     }
   },
 
-  messageSubscribers(name, details) {
+  async showMasterPasswordLoginNotifications() {
+    for (let subscriber of this._subscriberIterator()) {
+      let MozXULElement = subscriber.ownerGlobal.MozXULElement;
+      MozXULElement.insertFTLIfNeeded("browser/aboutLogins.ftl");
+
+      // If there's already an existing notification bar, don't do anything.
+      let { gBrowser } = subscriber.ownerGlobal;
+      let browser = subscriber;
+      let notificationBox = gBrowser.getNotificationBox(browser);
+      let notification = notificationBox.getNotificationWithValue(
+        MASTER_PASSWORD_NOTIFICATION_ID
+      );
+      if (notification) {
+        continue;
+      }
+
+      // Configure the notification bar
+      let priority = notificationBox.PRIORITY_WARNING_MEDIUM;
+      let iconURL = "chrome://browser/skin/login.svg";
+
+      let doc = subscriber.ownerDocument;
+      let messageFragment = doc.createDocumentFragment();
+      let message = doc.createElement("span");
+      doc.l10n.setAttributes(message, "master-password-notification-message");
+      messageFragment.appendChild(message);
+
+      let buttons = [
+        {
+          "l10n-id": "master-password-reload-button",
+          popup: null,
+          callback() {
+            browser.reload();
+          },
+        },
+      ];
+
+      notification = notificationBox.appendNotification(
+        messageFragment,
+        MASTER_PASSWORD_NOTIFICATION_ID,
+        iconURL,
+        priority,
+        buttons
+      );
+    }
+  },
+
+  removeMasterPasswordLoginNotifications() {
+    for (let subscriber of this._subscriberIterator()) {
+      let { gBrowser } = subscriber.ownerGlobal;
+      let browser = subscriber;
+      let notificationBox = gBrowser.getNotificationBox(browser);
+      let notification = notificationBox.getNotificationWithValue(
+        MASTER_PASSWORD_NOTIFICATION_ID
+      );
+      if (!notification) {
+        continue;
+      }
+      notificationBox.removeNotification(notification);
+    }
+  },
+
+  *_subscriberIterator() {
     let subscribers = ChromeUtils.nondeterministicGetWeakSetKeys(
       this._subscribers
     );
@@ -186,16 +332,41 @@ var AboutLoginsParent = {
         this._subscribers.delete(subscriber);
         continue;
       }
-      try {
-        subscriber.messageManager.sendAsyncMessage(name, details);
-      } catch (ex) {}
+      yield subscriber;
     }
   },
 
-  getAllLogins() {
-    return Services.logins
-      .getAllLogins()
-      .filter(isValidLogin)
-      .map(LoginHelper.loginToVanillaObject);
+  messageSubscribers(name, details) {
+    for (let subscriber of this._subscriberIterator()) {
+      try {
+        subscriber.messageManager.sendAsyncMessage(name, details);
+      } catch (ex) {
+        if (ex.result != Cr.NS_ERROR_NOT_INITIALIZED) {
+          throw ex;
+        }
+
+        // The message manager may be destroyed before the message is sent.
+        log.debug(
+          "messageSubscribers: exception when calling sendAsyncMessage",
+          ex
+        );
+      }
+    }
+  },
+
+  async getAllLogins() {
+    try {
+      let logins = await Services.logins.getAllLoginsAsync();
+      return logins
+        .filter(isValidLogin)
+        .map(LoginHelper.loginToVanillaObject)
+        .map(augmentVanillaLoginObject);
+    } catch (e) {
+      if (e.result == Cr.NS_ERROR_ABORT) {
+        // If the user cancels the MP prompt then return no logins.
+        return [];
+      }
+      throw e;
+    }
   },
 };

@@ -33,11 +33,9 @@ from mozbuild.frontend.data import (
     GnProjectData,
     HostLibrary,
     HostGeneratedSources,
-    HostRustLibrary,
     IPDLCollection,
     LocalizedPreprocessedFiles,
     LocalizedFiles,
-    RustLibrary,
     SharedLibrary,
     StaticLibrary,
     UnifiedSources,
@@ -175,8 +173,9 @@ class CommonBackend(BuildBackend):
             return False
 
         elif isinstance(obj, GeneratedFile):
-            if obj.required_for_compile:
-                for f in obj.required_for_compile:
+            if obj.required_during_compile or obj.required_before_compile:
+                for f in itertools.chain(obj.required_before_compile,
+                                         obj.required_during_compile):
                     fullpath = ObjDirPath(obj._context, '!' + f).full_path
                     self._handle_generated_sources([fullpath])
             return False
@@ -232,19 +231,12 @@ class CommonBackend(BuildBackend):
         no_pgo_objs = []
 
         seen_objs = set()
-        seen_pgo_gen_only_objs = set()
         seen_libs = set()
 
         def add_objs(lib):
-            seen_pgo_gen_only_objs.update(lib.pgo_gen_only_objs)
-
             for o in lib.objs:
                 if o in seen_objs:
                     continue
-
-                # The front end should keep pgo generate-only objects and
-                # normal objects separate.
-                assert o not in seen_pgo_gen_only_objs
 
                 seen_objs.add(o)
                 objs.append(o)
@@ -256,7 +248,7 @@ class CommonBackend(BuildBackend):
 
         def expand(lib, recurse_objs, system_libs):
             if isinstance(lib, (HostLibrary, StaticLibrary)):
-                if not isinstance(lib, HostLibrary) and lib.no_expand_lib:
+                if lib.no_expand_lib:
                     static_libs.append(lib)
                     recurse_objs = False
                 elif recurse_objs:
@@ -280,9 +272,7 @@ class CommonBackend(BuildBackend):
 
         system_libs = not isinstance(input_bin, (HostLibrary, StaticLibrary))
         for lib in input_bin.linked_libraries:
-            if isinstance(lib, RustLibrary):
-                continue
-            elif isinstance(lib, (HostLibrary, StaticLibrary)):
+            if isinstance(lib, (HostLibrary, StaticLibrary)):
                 expand(lib, True, system_libs)
             elif isinstance(lib, SharedLibrary):
                 if lib not in seen_libs:
@@ -294,8 +284,7 @@ class CommonBackend(BuildBackend):
                 seen_libs.add(lib)
                 os_libs.append(lib)
 
-        return (objs, sorted(seen_pgo_gen_only_objs), no_pgo_objs, \
-                shared_libs, os_libs, static_libs)
+        return (objs, no_pgo_objs, shared_libs, os_libs, static_libs)
 
     def _make_list_file(self, kind, objdir, objs, name):
         if not objs:

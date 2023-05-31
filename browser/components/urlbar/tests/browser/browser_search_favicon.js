@@ -60,7 +60,7 @@ add_task(async function() {
   );
   Assert.equal(
     result.displayed.action,
-    bundle.formatStringFromName("searchWithEngine", ["SearchEngine"], 1),
+    bundle.formatStringFromName("searchWithEngine", ["SearchEngine"]),
     "Should have the correct action text"
   );
 

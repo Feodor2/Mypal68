@@ -8,6 +8,7 @@
 #include <limits>
 #include "ipc/TelemetryIPCAccumulator.h"
 #include "jsapi.h"
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject, JS::NewArrayObject
 #include "mozilla/Maybe.h"
 #include "mozilla/Pair.h"
 #include "mozilla/Preferences.h"
@@ -29,9 +30,7 @@
 #include "TelemetryEventData.h"
 #include "TelemetryScalar.h"
 
-using mozilla::ArrayLength;
 using mozilla::Maybe;
-using mozilla::Nothing;
 using mozilla::StaticAutoPtr;
 using mozilla::StaticMutex;
 using mozilla::StaticMutexAutoLock;
@@ -41,11 +40,9 @@ using mozilla::Telemetry::EventExtraEntry;
 using mozilla::Telemetry::LABELS_TELEMETRY_EVENT_RECORDING_ERROR;
 using mozilla::Telemetry::LABELS_TELEMETRY_EVENT_REGISTRATION_ERROR;
 using mozilla::Telemetry::ProcessID;
-using mozilla::Telemetry::Common::AutoHashtable;
 using mozilla::Telemetry::Common::CanRecordDataset;
 using mozilla::Telemetry::Common::CanRecordInProcess;
 using mozilla::Telemetry::Common::CanRecordProduct;
-using mozilla::Telemetry::Common::GetCurrentProduct;
 using mozilla::Telemetry::Common::GetNameForProcessID;
 using mozilla::Telemetry::Common::IsExpiredVersion;
 using mozilla::Telemetry::Common::IsInDataset;
@@ -572,7 +569,7 @@ nsresult SerializeEventsArray(const EventRecordArray& events, JSContext* cx,
                               JS::MutableHandleObject result,
                               unsigned int dataset) {
   // We serialize the events to a JS array.
-  JS::RootedObject eventsArray(cx, JS_NewArrayObject(cx, events.Length()));
+  JS::RootedObject eventsArray(cx, JS::NewArrayObject(cx, events.Length()));
   if (!eventsArray) {
     return NS_ERROR_FAILURE;
   }
@@ -658,7 +655,7 @@ nsresult SerializeEventsArray(const EventRecordArray& events, JSContext* cx,
     }
 
     // Add the record to the events array.
-    JS::RootedObject itemsArray(cx, JS_NewArrayObject(cx, items));
+    JS::RootedObject itemsArray(cx, JS::NewArrayObject(cx, items));
     if (!JS_DefineElement(cx, eventsArray, i, itemsArray, JSPROP_ENUMERATE)) {
       return NS_ERROR_FAILURE;
     }
@@ -1005,7 +1002,7 @@ static bool GetArrayPropertyValues(JSContext* cx, JS::HandleObject obj,
   }
 
   bool isArray = false;
-  if (!JS_IsArrayObject(cx, value, &isArray) || !isArray) {
+  if (!JS::IsArrayObject(cx, value, &isArray) || !isArray) {
     JS_ReportErrorASCII(cx, R"(Property "%s" for event should be an array)",
                         property);
     return false;
@@ -1013,7 +1010,7 @@ static bool GetArrayPropertyValues(JSContext* cx, JS::HandleObject obj,
 
   JS::RootedObject arrayObj(cx, &value.toObject());
   uint32_t arrayLength;
-  if (!JS_GetArrayLength(cx, arrayObj, &arrayLength)) {
+  if (!JS::GetArrayLength(cx, arrayObj, &arrayLength)) {
     return false;
   }
 

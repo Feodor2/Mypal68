@@ -47,7 +47,7 @@ class EnumeratedArray {
   ArrayType mArray;
 
  public:
-  EnumeratedArray() {}
+  EnumeratedArray() = default;
 
   template <typename... Args>
   MOZ_IMPLICIT constexpr EnumeratedArray(Args&&... aArgs)

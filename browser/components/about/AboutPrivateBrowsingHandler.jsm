@@ -13,7 +13,7 @@ const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 var AboutPrivateBrowsingHandler = {
   _inited: false,
-  _topics: ["DontShowIntroPanelAgain", "OpenPrivateWindow", "SearchHandoff"],
+  _topics: ["OpenPrivateWindow", "SearchHandoff"],
 
   init() {
     if (this._inited) {
@@ -44,11 +44,6 @@ var AboutPrivateBrowsingHandler = {
       case "OpenPrivateWindow": {
         let win = aMessage.target.browser.ownerGlobal;
         win.OpenBrowserWindow({ private: true });
-        break;
-      }
-      case "DontShowIntroPanelAgain": {
-        let win = aMessage.target.browser.ownerGlobal;
-        win.ContentBlocking.dontShowIntroPanelAgain();
         break;
       }
       case "SearchHandoff": {

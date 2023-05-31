@@ -74,43 +74,21 @@ already_AddRefed<nsINetUtil> do_GetNetUtil(nsresult* error = nullptr);
 nsresult net_EnsureIOService(nsIIOService** ios, nsCOMPtr<nsIIOService>& grip);
 
 nsresult NS_NewURI(nsIURI** result, const nsACString& spec,
-                   const char* charset = nullptr, nsIURI* baseURI = nullptr,
-                   nsIIOService* ioService =
-                       nullptr);  // pass in nsIIOService to optimize callers
+                   const char* charset = nullptr, nsIURI* baseURI = nullptr);
 
 nsresult NS_NewURI(nsIURI** result, const nsACString& spec,
                    mozilla::NotNull<const mozilla::Encoding*> encoding,
-                   nsIURI* baseURI = nullptr,
-                   nsIIOService* ioService =
-                       nullptr);  // pass in nsIIOService to optimize callers
+                   nsIURI* baseURI = nullptr);
 
 nsresult NS_NewURI(nsIURI** result, const nsAString& spec,
-                   const char* charset = nullptr, nsIURI* baseURI = nullptr,
-                   nsIIOService* ioService =
-                       nullptr);  // pass in nsIIOService to optimize callers
+                   const char* charset = nullptr, nsIURI* baseURI = nullptr);
 
 nsresult NS_NewURI(nsIURI** result, const nsAString& spec,
                    mozilla::NotNull<const mozilla::Encoding*> encoding,
-                   nsIURI* baseURI = nullptr,
-                   nsIIOService* ioService =
-                       nullptr);  // pass in nsIIOService to optimize callers
+                   nsIURI* baseURI = nullptr);
 
-nsresult NS_NewURI(nsIURI** result, const char* spec, nsIURI* baseURI = nullptr,
-                   nsIIOService* ioService =
-                       nullptr);  // pass in nsIIOService to optimize callers
-
-// This function attempts to create an nsIURI on any thread. This implies we
-// can't instantiate a protcol handler, since protocol handers may have a JS
-// implementation so they can't work off-main-thread.
-// When called off the main thread, if the nsIURI can't be created without
-// instantiating protocol handlers, the method will return
-// NS_ERROR_UNKNOWN_PROTOCOL. The caller may retry on the main thread.
-// When called on the main thread, this function will fall back on calling
-// nsIProtocolHandler.newURI
-nsresult NS_NewURIOnAnyThread(nsIURI** aResult, const nsACString& aSpec,
-                              const char* aCharset = nullptr,
-                              nsIURI* aBaseURI = nullptr,
-                              nsIIOService* aIOService = nullptr);
+nsresult NS_NewURI(nsIURI** result, const char* spec,
+                   nsIURI* baseURI = nullptr);
 
 nsresult NS_NewFileURI(
     nsIURI** result, nsIFile* spec,

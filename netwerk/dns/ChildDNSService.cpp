@@ -4,11 +4,8 @@
 
 #include "mozilla/net/ChildDNSService.h"
 #include "nsIDNSListener.h"
-#include "nsIIOService.h"
-#include "nsIThread.h"
 #include "nsThreadUtils.h"
 #include "nsIXPConnect.h"
-#include "nsIPrefService.h"
 #include "nsIProtocolProxyService.h"
 #include "nsNetCID.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -29,7 +26,7 @@ static StaticRefPtr<ChildDNSService> gChildDNSService;
 static const char kPrefNameDisablePrefetch[] = "network.dns.disablePrefetch";
 
 already_AddRefed<ChildDNSService> ChildDNSService::GetSingleton() {
-  MOZ_ASSERT(IsNeckoChild());
+  MOZ_ASSERT(XRE_IsContentProcess() || XRE_IsSocketProcess());
 
   if (!gChildDNSService) {
     gChildDNSService = new ChildDNSService();
@@ -45,7 +42,7 @@ ChildDNSService::ChildDNSService()
     : mFirstTime(true),
       mDisablePrefetch(false),
       mPendingRequestsLock("DNSPendingRequestsLock") {
-  MOZ_ASSERT(IsNeckoChild());
+  MOZ_ASSERT(XRE_IsContentProcess() || XRE_IsSocketProcess());
 }
 
 void ChildDNSService::GetDNSRecordHashKey(
@@ -67,19 +64,12 @@ nsresult ChildDNSService::AsyncResolveInternal(
     const nsACString& hostname, uint16_t type, uint32_t flags,
     nsIDNSListener* listener, nsIEventTarget* target_,
     const OriginAttributes& aOriginAttributes, nsICancelable** result) {
-  NS_ENSURE_TRUE(gNeckoChild != nullptr, NS_ERROR_FAILURE);
+  if (XRE_IsContentProcess()) {
+    NS_ENSURE_TRUE(gNeckoChild != nullptr, NS_ERROR_FAILURE);
+  }
 
   if (mDisablePrefetch && (flags & RESOLVE_SPECULATE)) {
     return NS_ERROR_DNS_LOOKUP_QUEUE_FULL;
-  }
-
-  // We need original flags for the pending requests hash.
-  uint32_t originalFlags = flags;
-
-  // Support apps being 'offline' even if parent is not: avoids DNS traffic by
-  // apps that have been told they are offline.
-  if (GetOffline()) {
-    flags |= RESOLVE_OFFLINE;
   }
 
   // We need original listener for the pending requests hash.
@@ -103,7 +93,7 @@ nsresult ChildDNSService::AsyncResolveInternal(
   {
     AutoLock lock(mPendingRequestsLock);
     nsCString key;
-    GetDNSRecordHashKey(hostname, type, aOriginAttributes, originalFlags,
+    GetDNSRecordHashKey(hostname, type, aOriginAttributes, flags,
                         originalListener, key);
     auto entry = mPendingRequests.LookupForAdd(key);
     if (entry) {
@@ -372,15 +362,6 @@ NS_IMETHODIMP
 ChildDNSService::SetPrefetchEnabled(bool inVal) {
   mDisablePrefetch = !inVal;
   return NS_OK;
-}
-
-bool ChildDNSService::GetOffline() const {
-  bool offline = false;
-  nsCOMPtr<nsIIOService> io = do_GetService(NS_IOSERVICE_CONTRACTID);
-  if (io) {
-    io->GetOffline(&offline);
-  }
-  return offline;
 }
 
 //-----------------------------------------------------------------------------

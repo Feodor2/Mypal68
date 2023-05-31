@@ -31,7 +31,7 @@ add_task(async function() {
 
   let uri = Services.io.newURI(TEST_DOMAIN);
   is(
-    Services.perms.testPermission(uri, "storageAccessAPI"),
+    PermissionTestUtils.testPermission(uri, "storageAccessAPI"),
     Services.perms.UNKNOWN_ACTION,
     "Before user-interaction we don't have a permission"
   );
@@ -106,6 +106,8 @@ add_task(async function() {
 
   info("Removing the tab");
   BrowserTestUtils.removeTab(tab);
+
+  UrlClassifierTestUtils.cleanupTestTrackers();
 });
 
 add_task(async function() {

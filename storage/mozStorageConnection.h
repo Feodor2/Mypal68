@@ -21,7 +21,6 @@
 #include "mozIStorageAsyncConnection.h"
 #include "mozIStorageCompletionCallback.h"
 
-#include "nsIMutableArray.h"
 #include "mozilla/Attributes.h"
 
 #include "sqlite3.h"

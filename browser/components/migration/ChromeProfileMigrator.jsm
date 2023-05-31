@@ -390,7 +390,7 @@ async function GetCookiesResource(aProfileFolder) {
             false,
             parseInt(expiresUtc),
             {},
-            Ci.nsICookie2.SAMESITE_UNSET
+            Ci.nsICookie.SAMESITE_UNSET
           );
         } catch (e) {
           Cu.reportError(e);
@@ -443,8 +443,8 @@ async function GetWindowsPasswordsResource(aProfileFolder) {
               crypto.arrayToString(row.getResultByName("password_value")),
               null
             ),
-            hostname: origin_url.prePath,
-            formSubmitURL: null,
+            origin: origin_url.prePath,
+            formActionOrigin: null,
             httpRealm: null,
             usernameElement: row.getResultByName("username_element"),
             passwordElement: row.getResultByName("password_element"),
@@ -459,22 +459,22 @@ async function GetWindowsPasswordsResource(aProfileFolder) {
               let action_url = row.getResultByName("action_url");
               if (!action_url) {
                 // If there is no action_url, store the wildcard "" value.
-                // See the `formSubmitURL` IDL comments.
-                loginInfo.formSubmitURL = "";
+                // See the `formActionOrigin` IDL comments.
+                loginInfo.formActionOrigin = "";
                 break;
               }
               let action_uri = NetUtil.newURI(action_url);
               if (!kValidSchemes.has(action_uri.scheme)) {
                 continue; // This continues the outer for loop.
               }
-              loginInfo.formSubmitURL = action_uri.prePath;
+              loginInfo.formActionOrigin = action_uri.prePath;
               break;
             case AUTH_TYPE.SCHEME_BASIC:
             case AUTH_TYPE.SCHEME_DIGEST:
               // signon_realm format is URIrealm, so we need remove URI
               loginInfo.httpRealm = row
                 .getResultByName("signon_realm")
-                .substring(loginInfo.hostname.length + 1);
+                .substring(loginInfo.origin.length + 1);
               break;
             default:
               throw new Error(

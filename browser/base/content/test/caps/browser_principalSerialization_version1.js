@@ -141,7 +141,6 @@ add_task(async function test_realHistoryCheck() {
           privateBrowsingId: 0,
           userContextId: 0,
         },
-        cspJSON: "{}",
       },
     },
     {
@@ -156,7 +155,6 @@ add_task(async function test_realHistoryCheck() {
           privateBrowsingId: 0,
           userContextId: 0,
         },
-        cspJSON: "{}",
       },
     },
     {
@@ -169,7 +167,6 @@ add_task(async function test_realHistoryCheck() {
           privateBrowsingId: 0,
           userContextId: 0,
         },
-        cspJSON: "{}",
       },
     },
     {
@@ -183,14 +180,12 @@ add_task(async function test_realHistoryCheck() {
           privateBrowsingId: 0,
           userContextId: 0,
         },
-        cspJSON: "{}",
       },
     },
   ];
 
   for (let test of serializedPrincipalsFromFirefox) {
     let principal = E10SUtils.deserializePrincipal(test.input);
-    is(principal.cspJSON, test.output.cspJSON, "should have CSP");
 
     for (let key in principal.originAttributes) {
       is(

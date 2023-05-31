@@ -6,7 +6,7 @@
 #include "APZTestCommon.h"
 
 #include "InputUtils.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 
 class APZCSnappingOnMomentumTester : public APZCTreeManagerTester {};
 
@@ -26,12 +26,8 @@ TEST_F(APZCSnappingOnMomentumTester, Snap_On_Momentum) {
   ScrollSnapInfo snap;
   snap.mScrollSnapTypeY = StyleScrollSnapStrictness::Mandatory;
 
-  if (StaticPrefs::layout_css_scroll_snap_v1_enabled()) {
-    snap.mSnapPositionY.AppendElement(0 * AppUnitsPerCSSPixel());
-    snap.mSnapPositionY.AppendElement(100 * AppUnitsPerCSSPixel());
-  } else {
-    snap.mScrollSnapIntervalY = Some(100 * AppUnitsPerCSSPixel());
-  }
+  snap.mSnapPositionY.AppendElement(0 * AppUnitsPerCSSPixel());
+  snap.mSnapPositionY.AppendElement(100 * AppUnitsPerCSSPixel());
 
   ScrollMetadata metadata = root->GetScrollMetadata(0);
   metadata.SetSnapInfo(ScrollSnapInfo(snap));
@@ -39,7 +35,7 @@ TEST_F(APZCSnappingOnMomentumTester, Snap_On_Momentum) {
 
   UniquePtr<ScopedLayerTreeRegistration> registration =
       MakeUnique<ScopedLayerTreeRegistration>(manager, LayersId{0}, root, mcc);
-  manager->UpdateHitTestingTree(LayersId{0}, root, false, LayersId{0}, 0);
+  UpdateHitTestingTree();
 
   RefPtr<TestAsyncPanZoomController> apzc = ApzcOf(root);
 

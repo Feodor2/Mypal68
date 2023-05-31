@@ -606,8 +606,7 @@ var MigrationUtils = Object.freeze({
     }
     return getMigrationBundle().formatStringFromName(
       aKey,
-      aReplacements,
-      aReplacements.length
+      aReplacements
     );
   },
 

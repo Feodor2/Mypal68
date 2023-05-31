@@ -543,21 +543,11 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   void NS_FASTCALL Replace(index_type aCutStart, size_type aCutLength,
                            const substring_tuple_type& aTuple);
 
-  void NS_FASTCALL ReplaceASCII(index_type aCutStart, size_type aCutLength,
-                                const char* aData,
-                                size_type aLength = size_type(-1));
-
-  MOZ_MUST_USE bool NS_FASTCALL ReplaceASCII(index_type aCutStart,
-                                             size_type aCutLength,
-                                             const char* aData,
-                                             size_type aLength,
-                                             const fallible_t&);
-
   // ReplaceLiteral must ONLY be called with an actual literal string, or
   // a character array *constant* of static storage duration declared
   // without an explicit size and with an initializer that is a string
   // literal or is otherwise null-terminated.
-  // Use Replace or ReplaceASCII for other character array variables.
+  // Use Replace for other character array variables.
   template <int N>
   void ReplaceLiteral(index_type aCutStart, size_type aCutLength,
                       const char_type (&aStr)[N]) {
@@ -953,17 +943,29 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
 
   void Append(mozilla::Span<const char_type> aSpan) {
     auto len = aSpan.Length();
-    MOZ_RELEASE_ASSERT(len <= mozilla::MaxValue<size_type>::value);
+    MOZ_RELEASE_ASSERT(len <= std::numeric_limits<size_type>::max());
     Append(aSpan.Elements(), len);
   }
 
   MOZ_MUST_USE bool Append(mozilla::Span<const char_type> aSpan,
                            const fallible_t& aFallible) {
     auto len = aSpan.Length();
-    if (len > mozilla::MaxValue<size_type>::value) {
+    if (len > std::numeric_limits<size_type>::max()) {
       return false;
     }
     return Append(aSpan.Elements(), len, aFallible);
+  }
+
+  void NS_FASTCALL AssignASCII(mozilla::Span<const char> aData) {
+    AssignASCII(aData.Elements(), aData.Length());
+  }
+  MOZ_MUST_USE bool NS_FASTCALL AssignASCII(mozilla::Span<const char> aData,
+                                            const fallible_t& aFallible) {
+    return AssignASCII(aData.Elements(), aData.Length(), aFallible);
+  }
+
+  void AppendASCII(mozilla::Span<const char> aData) {
+    AppendASCII(aData.Elements(), aData.Length());
   }
 
   template <typename Q = T, typename EnableIfChar = mozilla::CharOnlyT<Q>>
@@ -982,7 +984,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   template <typename Q = T, typename EnableIfChar = mozilla::CharOnlyT<Q>>
   void Append(mozilla::Span<const uint8_t> aSpan) {
     auto len = aSpan.Length();
-    MOZ_RELEASE_ASSERT(len <= mozilla::MaxValue<size_type>::value);
+    MOZ_RELEASE_ASSERT(len <= std::numeric_limits<size_type>::max());
     Append(reinterpret_cast<const char*>(aSpan.Elements()), len);
   }
 
@@ -990,7 +992,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
   MOZ_MUST_USE bool Append(mozilla::Span<const uint8_t> aSpan,
                            const fallible_t& aFallible) {
     auto len = aSpan.Length();
-    if (len > mozilla::MaxValue<size_type>::value) {
+    if (len > std::numeric_limits<size_type>::max()) {
       return false;
     }
     return Append(reinterpret_cast<const char*>(aSpan.Elements()), len,

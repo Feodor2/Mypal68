@@ -6,7 +6,6 @@
 #define nsAppFileLocationProvider_h
 
 #include "nsIDirectoryService.h"
-#include "nsIFile.h"
 #include "mozilla/Attributes.h"
 
 class nsIFile;

@@ -81,7 +81,7 @@ class nsAvailableMemoryWatcher final : public nsIObserver,
   bool OngoingMemoryPressure() { return mUnderMemoryPressure; }
   void AdjustPollingInterval(const bool aLowMemory);
   void SendMemoryPressureEvent();
-  void MaybeSaveMemoryReport();
+  void MaybeSendMemoryPressureStopEvent();
   void Shutdown();
 
   nsCOMPtr<nsITimer> mTimer;
@@ -174,6 +174,12 @@ void nsAvailableMemoryWatcher::SendMemoryPressureEvent() {
   NS_DispatchEventualMemoryPressure(state);
 }
 
+void nsAvailableMemoryWatcher::MaybeSendMemoryPressureStopEvent() {
+  if (OngoingMemoryPressure()) {
+    NS_DispatchEventualMemoryPressure(MemPressure_Stopping);
+  }
+}
+
 void nsAvailableMemoryWatcher::AdjustPollingInterval(const bool aLowMemory) {
   if (aLowMemory) {
     // We entered a low-memory state, wait for a longer interval before polling
@@ -202,6 +208,7 @@ nsAvailableMemoryWatcher::Notify(nsITimer* aTimer) {
     if (lowMemory) {
       SendMemoryPressureEvent();
     } else {
+      MaybeSendMemoryPressureStopEvent();
       mSavedReport = false;  // Save a new report if memory gets low again
     }
 

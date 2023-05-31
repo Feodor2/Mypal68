@@ -10,7 +10,6 @@
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsIObserverService.h"
-#include "nsIPrincipal.h"
 #include "mozilla/LoadContextInfo.h"
 
 using namespace mozilla;
@@ -170,23 +169,23 @@ nsApplicationCacheService::EvictMatchingOriginAttributes(
 }
 
 NS_IMETHODIMP
-nsApplicationCacheService::GetGroups(uint32_t* count, char*** keys) {
+nsApplicationCacheService::GetGroups(nsTArray<nsCString>& keys) {
   if (!mCacheService) return NS_ERROR_UNEXPECTED;
 
   RefPtr<nsOfflineCacheDevice> device;
   nsresult rv = mCacheService->GetOfflineDevice(getter_AddRefs(device));
   NS_ENSURE_SUCCESS(rv, rv);
-  return device->GetGroups(count, keys);
+  return device->GetGroups(keys);
 }
 
 NS_IMETHODIMP
-nsApplicationCacheService::GetGroupsTimeOrdered(uint32_t* count, char*** keys) {
+nsApplicationCacheService::GetGroupsTimeOrdered(nsTArray<nsCString>& keys) {
   if (!mCacheService) return NS_ERROR_UNEXPECTED;
 
   RefPtr<nsOfflineCacheDevice> device;
   nsresult rv = mCacheService->GetOfflineDevice(getter_AddRefs(device));
   NS_ENSURE_SUCCESS(rv, rv);
-  return device->GetGroupsTimeOrdered(count, keys);
+  return device->GetGroupsTimeOrdered(keys);
 }
 
 //-----------------------------------------------------------------------------

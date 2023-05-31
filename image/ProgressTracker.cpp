@@ -5,7 +5,6 @@
 #include "ImageLogging.h"
 #include "ProgressTracker.h"
 
-#include "imgIContainer.h"
 #include "imgINotificationObserver.h"
 #include "imgIRequest.h"
 #include "Image.h"

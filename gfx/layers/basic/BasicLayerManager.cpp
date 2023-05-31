@@ -21,12 +21,13 @@
 #include "gfxImageSurface.h"        // for gfxImageSurface
 #include "gfxMatrix.h"              // for gfxMatrix
 #include "gfxPlatform.h"            // for gfxPlatform
-#include "gfxPrefs.h"               // for gfxPrefs
+
 #include "gfxPoint.h"               // for IntSize, gfxPoint
 #include "gfxRect.h"                // for gfxRect
 #include "gfxUtils.h"               // for gfxUtils
 #include "gfx2DGlue.h"              // for thebes --> moz2d transition
 #include "mozilla/Assertions.h"     // for MOZ_ASSERT, etc
+#include "mozilla/StaticPrefs_nglayout.h"
 #include "mozilla/WidgetUtils.h"    // for ScreenRotation
 #include "mozilla/gfx/2D.h"         // for DrawTarget
 #include "mozilla/gfx/BasePoint.h"  // for BasePoint
@@ -659,10 +660,10 @@ bool BasicLayerManager::EndTransactionInternal(
 }
 
 void BasicLayerManager::FlashWidgetUpdateArea(gfxContext* aContext) {
-  if (gfxPrefs::WidgetUpdateFlashing()) {
-    float r = float(rand()) / RAND_MAX;
-    float g = float(rand()) / RAND_MAX;
-    float b = float(rand()) / RAND_MAX;
+  if (StaticPrefs::nglayout_debug_widget_update_flashing()) {
+    float r = float(rand()) / float(RAND_MAX);
+    float g = float(rand()) / float(RAND_MAX);
+    float b = float(rand()) / float(RAND_MAX);
     aContext->SetColor(Color(r, g, b, 0.2f));
     aContext->Paint();
   }

@@ -3,7 +3,7 @@ import {MIN_CORNER_FAVICON_SIZE, MIN_RICH_FAVICON_SIZE, TOP_SITES_SOURCE} from "
 import {CollapsibleSection} from "content-src/components/CollapsibleSection/CollapsibleSection";
 import {ComponentPerfTimer} from "content-src/components/ComponentPerfTimer/ComponentPerfTimer";
 import {connect} from "react-redux";
-import {injectIntl} from "react-intl";
+import {ModalOverlayWrapper} from "../../asrouter/components/ModalOverlay/ModalOverlay";
 import React from "react";
 import {SearchShortcutsForm} from "./SearchShortcutsForm";
 import {TOP_SITES_MAX_SITES_PER_ROW} from "common/Reducers.jsm";
@@ -126,7 +126,7 @@ export class _TopSites extends React.PureComponent {
         className="top-sites"
         icon="topsites"
         id="topsites"
-        title={this.props.title || {id: "header_top_sites"}}
+        title={this.props.title || {id: "newtab-section-header-topsites"}}
         extraMenuOptions={extraMenuOptions}
         showPrefName="feeds.topsites"
         eventSource={TOP_SITES_SOURCE}
@@ -135,30 +135,27 @@ export class _TopSites extends React.PureComponent {
         isFirst={props.isFirst}
         isLast={props.isLast}
         dispatch={props.dispatch}>
-        <TopSiteList TopSites={props.TopSites} TopSitesRows={props.TopSitesRows} dispatch={props.dispatch} intl={props.intl} topSiteIconType={topSiteIconType} />
+        <TopSiteList TopSites={props.TopSites} TopSitesRows={props.TopSitesRows} dispatch={props.dispatch} topSiteIconType={topSiteIconType} />
         <div className="edit-topsites-wrapper">
           {editForm &&
             <div className="edit-topsites">
-              <div className="modal-overlay" onClick={this.onEditFormClose} role="presentation" />
-              <div className="modal">
+              <ModalOverlayWrapper unstyled={true} onClose={this.onEditFormClose} innerClassName="modal" >
                 <TopSiteForm
                   site={props.TopSites.rows[editForm.index]}
                   onClose={this.onEditFormClose}
                   dispatch={this.props.dispatch}
-                  intl={this.props.intl}
                   {...editForm} />
-              </div>
+              </ModalOverlayWrapper>
             </div>
           }
           {showSearchShortcutsForm &&
             <div className="edit-search-shortcuts">
-              <div className="modal-overlay" onClick={this.onSearchShortcutsFormClose} role="presentation" />
-              <div className="modal">
+              <ModalOverlayWrapper unstyled={true} onClose={this.onSearchShortcutsFormClose} innerClassName="modal" >
                 <SearchShortcutsForm
                   TopSites={props.TopSites}
                   onClose={this.onSearchShortcutsFormClose}
                   dispatch={this.props.dispatch} />
-              </div>
+              </ModalOverlayWrapper>
             </div>
           }
         </div>
@@ -171,4 +168,4 @@ export const TopSites = connect(state => ({
   TopSites: state.TopSites,
   Prefs: state.Prefs,
   TopSitesRows: state.Prefs.values.topSitesRows,
-}))(injectIntl(_TopSites));
+}))(_TopSites);

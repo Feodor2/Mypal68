@@ -15,8 +15,6 @@ XPIDL_SOURCES += [
     'nsIContentSignatureVerifier.idl',
     'nsICryptoHash.idl',
     'nsICryptoHMAC.idl',
-    'nsIGenKeypairInfoDlg.idl',
-    'nsIKeygenThread.idl',
     'nsIKeyModule.idl',
     'nsILocalCertService.idl',
     'nsINSSComponent.idl',
@@ -84,6 +82,7 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.psm += [
     'PSMContentListener.h',
+    'TransportSecurityInfo.h',
 ]
 
 EXPORTS.ipc += [
@@ -100,9 +99,6 @@ UNIFIED_SOURCES += [
     'nsCertOverrideService.cpp',
     'nsClientAuthRemember.cpp',
     'nsCryptoHash.cpp',
-    'nsKeygenHandler.cpp',
-    'nsKeygenHandlerContent.cpp',
-    'nsKeygenThread.cpp',
     'nsKeyModule.cpp',
     'nsNSSASN1Object.cpp',
     'nsNSSCallbacks.cpp',
@@ -206,12 +202,9 @@ LOCAL_INCLUDES += [
     '!/dist/public/nss',
 ]
 
-GENERATED_FILES = [
-    'nsSTSPreloadList.h',
-]
-dafsa_data = GENERATED_FILES['nsSTSPreloadList.h']
-dafsa_data.script = '../../../xpcom/ds/tools/make_dafsa.py'
-dafsa_data.inputs = ['nsSTSPreloadList.inc']
+GeneratedFile('nsSTSPreloadList.h',
+              script='../../../xpcom/ds/tools/make_dafsa.py',
+              inputs=['nsSTSPreloadList.inc'])
 
 if CONFIG['NSS_DISABLE_DBM']:
     DEFINES['NSS_DISABLE_DBM'] = '1'

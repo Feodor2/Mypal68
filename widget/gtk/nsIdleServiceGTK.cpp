@@ -5,7 +5,6 @@
 #include <gtk/gtk.h>
 
 #include "nsIdleServiceGTK.h"
-#include "nsIServiceManager.h"
 #include "nsDebug.h"
 #include "prlink.h"
 #include "mozilla/Logging.h"

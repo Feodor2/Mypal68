@@ -1065,14 +1065,14 @@ fn add_corner_segment(
     }
 
     let segment_rect = image_rect.intersection(&non_overlapping_rect)
-        .unwrap_or(LayoutRect::zero());
+        .unwrap_or_else(LayoutRect::zero);
 
     if segment_rect.size.width <= 0. || segment_rect.size.height <= 0. {
         return;
     }
 
     let texture_rect = segment_rect
-        .translate(&-image_rect.origin.to_vector())
+        .translate(-image_rect.origin.to_vector())
         .scale(1.0 / image_rect.size.width, 1.0 / image_rect.size.height);
 
     brush_segments.push(

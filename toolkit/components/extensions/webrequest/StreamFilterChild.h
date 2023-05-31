@@ -97,7 +97,7 @@ class StreamFilterChild final : public PStreamFilterChild,
   IPCResult RecvResumed();
   IPCResult RecvFlushData();
 
-  virtual void DeallocPStreamFilterChild() override;
+  virtual void ActorDealloc() override;
 
   void SetStreamFilter(StreamFilter* aStreamFilter) {
     mStreamFilter = aStreamFilter;

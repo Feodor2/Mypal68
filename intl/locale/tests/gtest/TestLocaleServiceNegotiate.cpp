@@ -4,7 +4,6 @@
 
 #include "gtest/gtest.h"
 #include "mozilla/intl/LocaleService.h"
-#include "nsIToolkitChromeRegistry.h"
 
 using namespace mozilla::intl;
 

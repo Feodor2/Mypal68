@@ -26,7 +26,6 @@
 #include "nsAppDirectoryServiceDefs.h"
 
 #include "nsIObserverService.h"
-#include "nsIPrefService.h"
 #include "nsExceptionHandler.h"
 #include "GeckoProfiler.h"
 #include "nsThreadUtils.h"

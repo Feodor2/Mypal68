@@ -359,8 +359,7 @@ var ExtensionsUI = {
       strings.addonName = name;
       strings.text = bundle.formatStringFromName(
         "webext.defaultSearch.description",
-        ["<>", currentEngine, newEngine],
-        3
+        ["<>", currentEngine, newEngine]
       );
 
       this.showDefaultSearchPrompt(browser, strings, icon).then(respond);

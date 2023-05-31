@@ -104,7 +104,6 @@ function run_test() {
     "dynamic-pin.example.com",
     true,
     new Date().getTime() + 1000000,
-    1,
     [NON_ISSUED_KEY_HASH]
   );
 
@@ -122,7 +121,9 @@ function run_test() {
     let maxAge = "max-age=" + i * 1000;
     // alternate setting includeSubdomains
     let includeSubdomains = i % 2 == 0 ? "; includeSubdomains" : "";
-    let secInfo = new FakeTransportSecurityInfo();
+    let secInfo = Cc[
+      "@mozilla.org/security/transportsecurityinfo;1"
+    ].createInstance(Ci.nsITransportSecurityInfo);
     SSService.processHeader(
       Ci.nsISiteSecurityService.HEADER_HSTS,
       uris[uriIndex],

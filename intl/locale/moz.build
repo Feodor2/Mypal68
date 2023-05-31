@@ -34,6 +34,7 @@ EXPORTS.mozilla.intl += [
     'LocaleService.h',
     'MozLocale.h',
     'OSPreferences.h',
+    'Quotes.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -45,6 +46,7 @@ UNIFIED_SOURCES += [
     'nsLanguageAtomService.cpp',
     'nsUConvPropertySearch.cpp',
     'OSPreferences.cpp',
+    'Quotes.cpp',
 ]
 
 EXTRA_JS_MODULES += [
@@ -72,10 +74,7 @@ prefixes = (
 for prefix in prefixes:
     input_file = prefix + '.properties'
     header = prefix + '.properties.h'
-    GENERATED_FILES += [header]
-    props = GENERATED_FILES[header]
-    props.script = 'props2arrays.py'
-    props.inputs = [input_file]
+    GeneratedFile(header, script='props2arrays.py', inputs=[input_file])
 
 if CONFIG['ENABLE_TESTS']:
     DIRS += ['tests/gtest']

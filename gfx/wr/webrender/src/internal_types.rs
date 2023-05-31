@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{DebugCommand, DocumentId, ExternalImageData, ExternalImageId};
+use api::{ColorF, DebugCommand, DocumentId, ExternalImageData, ExternalImageId};
 use api::{ImageFormat, ItemTag, NotificationRequest, Shadow, FilterOp, MAX_BLUR_RADIUS};
 use api::units::*;
 use api;
@@ -55,6 +55,7 @@ pub enum Filter {
     SrgbToLinear,
     LinearToSrgb,
     ComponentTransfer,
+    Flood(ColorF),
 }
 
 impl Filter {
@@ -92,6 +93,9 @@ impl Filter {
             Filter::ComponentTransfer  => true,
             Filter::Opacity(_, amount) => {
                 amount > OPACITY_EPSILON
+            },
+            Filter::Flood(color) => {
+                color.a > OPACITY_EPSILON
             }
         }
     }
@@ -128,7 +132,8 @@ impl Filter {
             }
             Filter::SrgbToLinear |
             Filter::LinearToSrgb |
-            Filter::ComponentTransfer => false,
+            Filter::ComponentTransfer |
+            Filter::Flood(..) => false,
         }
     }
 }
@@ -151,7 +156,22 @@ impl From<FilterOp> for Filter {
             FilterOp::LinearToSrgb => Filter::LinearToSrgb,
             FilterOp::ComponentTransfer => Filter::ComponentTransfer,
             FilterOp::DropShadow(shadow) => Filter::DropShadows(smallvec![shadow]),
+            FilterOp::Flood(color) => Filter::Flood(color),
         }
+    }
+}
+
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq)]
+pub enum Swizzle {
+    Rgba,
+    Bgra,
+}
+
+impl Default for Swizzle {
+    fn default() -> Self {
+        Swizzle::Rgba
     }
 }
 
@@ -204,7 +224,7 @@ pub enum TextureSource {
     /// Equivalent to `None`, allowing us to avoid using `Option`s everywhere.
     Invalid,
     /// An entry in the texture cache.
-    TextureCache(CacheTextureId),
+    TextureCache(CacheTextureId, Swizzle),
     /// An external image texture, mananged by the embedding.
     External(ExternalImageData),
     /// The alpha target of the immediately-preceding pass.
@@ -214,7 +234,7 @@ pub enum TextureSource {
     /// A render target from an earlier pass. Unlike the immediately-preceding
     /// passes, these are not made available automatically, but are instead
     /// opt-in by the `RenderTask` (see `mark_for_saving()`).
-    RenderTaskCache(SavedTargetIndex),
+    RenderTaskCache(SavedTargetIndex, Swizzle),
 }
 
 // See gpu_types.rs where we declare the number of possible documents and
@@ -260,6 +280,8 @@ pub struct TextureCacheAllocInfo {
     pub filter: TextureFilter,
     /// Indicates whether this corresponds to one of the shared texture caches.
     pub is_shared_cache: bool,
+    /// If true, this texture requires a depth target.
+    pub has_depth: bool,
 }
 
 /// Sub-operation-specific information for allocation operations.

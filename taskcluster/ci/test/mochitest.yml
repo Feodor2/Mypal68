@@ -73,10 +73,7 @@ mochitest:
             windows10-64-ccov/debug: 10
             macosx.*64-ccov/debug: 10
             default: 5
-    e10s:
-        by-test-platform:
-            linux32/debug: both
-            default: true
+    e10s: true
     max-run-time:
         by-test-platform:
             android-em.*: 7200
@@ -126,6 +123,8 @@ mochitest-browser-chrome:
     max-run-time:
         by-test-platform:
             linux64-.*cov/opt: 7200
+            windows7-32/debug: 5400
+            windows10-64/debug: 5400
             windows10-64-ccov/debug: 7200
             windows10-aarch64/*: 7200
             macosx.*64-ccov/debug: 10800
@@ -241,23 +240,6 @@ mochitest-devtools-chrome:
     # Bug 1296086: high number of intermittents observed with software GL and large instances
     allow-software-gl-layers: false
 
-mochitest-devtools-webreplay:
-    description: "Mochitest devtools-webreplay run"
-    treeherder-symbol: M(dt-wr)
-    loopback-video: true
-    tier: 2
-    max-run-time: 900
-    mozharness:
-        mochitest-flavor: chrome
-        extra-options:
-            - --mochitest-suite=mochitest-devtools-chrome-webreplay
-    allow-software-gl-layers: false
-    run-on-projects:
-        by-test-platform:
-            macosx.*64/opt: ['mozilla-central', 'try']
-            macosx.*64.*/opt: ['trunk', 'try']
-            default: []
-
 mochitest-gpu:
     description: "Mochitest GPU run"
     suite:
@@ -273,10 +255,7 @@ mochitest-gpu:
             android-em.*: xlarge
             default: default
     virtualization: virtual-with-gpu
-    e10s:
-        by-test-platform:
-            linux32/debug: both
-            default: true
+    e10s: true
     mozharness:
         mochitest-flavor: plain
         extra-options:
@@ -387,10 +366,7 @@ mochitest-webgl1-core:
             windows10-aarch64/opt: ['try', 'mozilla-central']
             default: built-projects
     virtualization: virtual-with-gpu
-    e10s:
-        by-test-platform:
-            linux32/debug: both
-            default: true
+    e10s: true
     loopback-video: true
     tier:
         by-test-platform:
@@ -414,10 +390,7 @@ mochitest-webgl1-ext:
             windows10-aarch64/opt: ['try', 'mozilla-central']
             default: built-projects
     virtualization: virtual-with-gpu
-    e10s:
-        by-test-platform:
-            linux32/debug: both
-            default: true
+    e10s: true
     loopback-video: true
     tier:
         by-test-platform:
@@ -440,10 +413,7 @@ mochitest-webgl2-core:
             windows10-aarch64/opt: ['try', 'mozilla-central']
             default: built-projects
     virtualization: virtual-with-gpu
-    e10s:
-        by-test-platform:
-            linux32/debug: both
-            default: true
+    e10s: true
     loopback-video: true
     tier:
         by-test-platform:
@@ -467,10 +437,7 @@ mochitest-webgl2-ext:
             default: built-projects
     virtualization: virtual-with-gpu
     chunks: 4
-    e10s:
-        by-test-platform:
-            linux32/debug: both
-            default: true
+    e10s: true
     loopback-video: true
     tier:
         by-test-platform:
@@ -492,10 +459,7 @@ mochitest-webgl2-deqp:
     run-on-projects: []  # Don't run this for now.
     virtualization: virtual-with-gpu
     chunks: 4
-    e10s:
-        by-test-platform:
-            linux32/debug: both
-            default: true
+    e10s: true
     loopback-video: true
     tier:
         by-test-platform:

@@ -35,7 +35,7 @@ function addCookie(cookie) {
     false,
     Date.now() / 1000 + 10000,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   ok(
     Services.cookies.cookieExists(cookie.host, cookie.path, cookie.name, {}),

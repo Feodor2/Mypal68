@@ -12,13 +12,12 @@ using mozilla::MemoryOrdering;
 using mozilla::Relaxed;
 using mozilla::ReleaseAcquire;
 using mozilla::SequentiallyConsistent;
-using mozilla::recordreplay::Behavior;
 
 #define A(a, b) MOZ_RELEASE_ASSERT(a, b)
 
 template <typename T, MemoryOrdering Order>
 static void TestTypeWithOrdering() {
-  Atomic<T, Order, Behavior::DontPreserve> atomic(5);
+  Atomic<T, Order> atomic(5);
   A(atomic == 5, "Atomic variable did not initialize");
 
   // Test atomic increment
@@ -82,7 +81,7 @@ static void TestTypeWithOrdering() {
 template <typename T, MemoryOrdering Order>
 static void TestPointerWithOrdering() {
   T array1[10];
-  Atomic<T*, Order, Behavior::DontPreserve> atomic(array1);
+  Atomic<T*, Order> atomic(array1);
   A(atomic == array1, "Atomic variable did not initialize");
 
   // Test atomic increment
@@ -134,7 +133,7 @@ enum EnumType {
 
 template <MemoryOrdering Order>
 static void TestEnumWithOrdering() {
-  Atomic<EnumType, Order, Behavior::DontPreserve> atomic(EnumType_2);
+  Atomic<EnumType, Order> atomic(EnumType_2);
   A(atomic == EnumType_2, "Atomic variable did not initialize");
 
   // Test assignment
@@ -169,7 +168,7 @@ enum class EnumClass : uint32_t {
 
 template <MemoryOrdering Order>
 static void TestEnumClassWithOrdering() {
-  Atomic<EnumClass, Order, Behavior::DontPreserve> atomic(EnumClass::Value2);
+  Atomic<EnumClass, Order> atomic(EnumClass::Value2);
   A(atomic == EnumClass::Value2, "Atomic variable did not initialize");
 
   // Test assignment
@@ -198,7 +197,7 @@ static void TestEnumClassWithOrdering() {
 
 template <MemoryOrdering Order>
 static void TestBoolWithOrdering() {
-  Atomic<bool, Order, Behavior::DontPreserve> atomic(false);
+  Atomic<bool, Order> atomic(false);
   A(atomic == false, "Atomic variable did not initialize");
 
   // Test assignment

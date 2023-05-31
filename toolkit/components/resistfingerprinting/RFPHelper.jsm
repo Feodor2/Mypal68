@@ -264,8 +264,7 @@ class _RFPHelper {
     );
     let message = navigatorBundle.formatStringFromName(
       "privacy.spoof_english",
-      [brandShortName],
-      1
+      [brandShortName]
     );
     let response = Services.prompt.confirmEx(
       null,

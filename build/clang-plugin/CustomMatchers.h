@@ -29,6 +29,12 @@ AST_MATCHER(CXXRecordDecl, hasTrivialCtorDtor) {
   return hasCustomAttribute<moz_trivial_ctor_dtor>(&Node);
 }
 
+/// This matcher will match any C++ class that is marked as having a trivial
+/// destructor.
+AST_MATCHER(CXXRecordDecl, hasTrivialDtor) {
+  return hasCustomAttribute<moz_trivial_dtor>(&Node);
+}
+
 AST_MATCHER(CXXConstructExpr, allowsTemporary) {
   return hasCustomAttribute<moz_allow_temporary>(Node.getConstructor());
 }
@@ -320,7 +326,7 @@ AST_MATCHER(CXXMethodDecl, isNonVirtual) {
 
 AST_MATCHER(FunctionDecl, isMozMustReturnFromCaller) {
   const FunctionDecl *Decl = Node.getCanonicalDecl();
-  return Decl && hasCustomAttribute<moz_must_return_from_caller>(Decl);
+  return Decl && hasCustomAttribute<moz_must_return_from_caller_if_this_is_arg>(Decl);
 }
 
 /// This matcher will select default args which have nullptr as the value.

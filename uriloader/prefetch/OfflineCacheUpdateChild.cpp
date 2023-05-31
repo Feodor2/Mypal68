@@ -11,17 +11,12 @@
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/net/NeckoCommon.h"
 
-#include "nsIApplicationCacheContainer.h"
 #include "nsIApplicationCacheChannel.h"
-#include "nsIApplicationCacheService.h"
 #include "nsIDocShell.h"
-#include "nsIDocShellTreeItem.h"
-#include "nsIDocShellTreeOwner.h"
 #include "nsPIDOMWindow.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/net/CookieSettings.h"
 #include "nsIObserverService.h"
-#include "nsIURL.h"
 #include "nsIBrowserChild.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -30,7 +25,6 @@
 #include "nsThreadUtils.h"
 #include "nsProxyRelease.h"
 #include "mozilla/Logging.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsApplicationCache.h"
 
 using namespace mozilla::ipc;
@@ -181,14 +175,8 @@ OfflineCacheUpdateChild::Init(nsIURI* aManifestURI, nsIURI* aDocumentURI,
   LOG(("OfflineCacheUpdateChild::Init [%p]", this));
 
   // Only http and https applications are supported.
-  bool match;
-  rv = aManifestURI->SchemeIs("http", &match);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (!match) {
-    rv = aManifestURI->SchemeIs("https", &match);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (!match) return NS_ERROR_ABORT;
+  if (!aManifestURI->SchemeIs("http") && !aManifestURI->SchemeIs("https")) {
+    return NS_ERROR_ABORT;
   }
 
   mManifestURI = aManifestURI;
@@ -257,6 +245,14 @@ OfflineCacheUpdateChild::GetStatus(uint16_t* aStatus) {
 NS_IMETHODIMP
 OfflineCacheUpdateChild::GetPartial(bool* aPartial) {
   *aPartial = false;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+OfflineCacheUpdateChild::GetLoadingPrincipal(nsIPrincipal** aLoadingPrincipal) {
+  NS_ENSURE_TRUE(mState >= STATE_INITIALIZED, NS_ERROR_NOT_INITIALIZED);
+
+  NS_IF_ADDREF(*aLoadingPrincipal = mLoadingPrincipal);
   return NS_OK;
 }
 
@@ -400,15 +396,9 @@ OfflineCacheUpdateChild::Schedule() {
     CookieSettings::Cast(mCookieSettings)->Serialize(csArgs);
   }
 
-  // Need to addref ourself here, because the IPC stack doesn't hold
-  // a reference to us. Will be released in RecvFinish() that identifies
-  // the work has been done.
   ContentChild::GetSingleton()->SendPOfflineCacheUpdateConstructor(
       this, manifestURI, documentURI, loadingPrincipalInfo, stickDocument,
       csArgs);
-
-  // ContentChild::DeallocPOfflineCacheUpdate will release this.
-  NS_ADDREF_THIS();
 
   return NS_OK;
 }

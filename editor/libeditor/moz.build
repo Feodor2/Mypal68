@@ -26,7 +26,7 @@ EXPORTS.mozilla += [
     'ManualNAC.h',
     'SelectionState.h',
     'TextEditor.h',
-    'TextEditRules.h',
+    'TypeInState.h',
 ]
 
 UNIFIED_SOURCES += [
@@ -54,12 +54,11 @@ UNIFIED_SOURCES += [
     'HTMLEditorDocumentCommands.cpp',
     'HTMLEditorEventListener.cpp',
     'HTMLEditorObjectResizer.cpp',
-    'HTMLEditRules.cpp',
+    'HTMLEditSubActionHandler.cpp',
     'HTMLEditUtils.cpp',
     'HTMLInlineTableEditor.cpp',
     'HTMLStyleEditor.cpp',
     'HTMLTableEditor.cpp',
-    'HTMLURIRefObject.cpp',
     'InsertNodeTransaction.cpp',
     'InsertTextTransaction.cpp',
     'InternetCiter.cpp',
@@ -69,9 +68,7 @@ UNIFIED_SOURCES += [
     'SplitNodeTransaction.cpp',
     'TextEditor.cpp',
     'TextEditorDataTransfer.cpp',
-    'TextEditRules.cpp',
-    'TextEditRulesBidi.cpp',
-    'TextEditUtils.cpp',
+    'TextEditSubActionHandler.cpp',
     'TypeInState.cpp',
     'WSRunObject.cpp',
 ]

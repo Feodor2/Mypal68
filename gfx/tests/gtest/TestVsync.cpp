@@ -5,7 +5,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "gfxPlatform.h"
-#include "gfxPrefs.h"
+
 #include "MainThreadUtils.h"
 #include "nsIThread.h"
 #include "mozilla/RefPtr.h"
@@ -69,7 +69,6 @@ class VsyncTester : public ::testing::Test {
  protected:
   explicit VsyncTester() {
     gfxPlatform::GetPlatform();
-    gfxPrefs::GetSingleton();
     mVsyncSource = gfxPlatform::GetPlatform()->GetHardwareVsync();
     MOZ_RELEASE_ASSERT(mVsyncSource, "GFX: Vsync source not found.");
   }

@@ -49,13 +49,13 @@ function streamDefaultFavicon(uri, loadInfo, outputStream, originalChannel) {
   }
 }
 
-function serveIcon(pipe, data, len) {
+function serveIcon(pipe, data) {
   // Pass the icon data to the output stream.
   let stream = Cc["@mozilla.org/binaryoutputstream;1"].createInstance(
     Ci.nsIBinaryOutputStream
   );
   stream.setOutputStream(pipe.outputStream);
-  stream.writeByteArray(data, len);
+  stream.writeByteArray(data);
   stream.close();
   pipe.outputStream.close();
 }
@@ -78,13 +78,6 @@ PageIconProtocolHandler.prototype = {
       Ci.nsIProtocolHandler.URI_DANGEROUS_TO_LOAD |
       Ci.nsIProtocolHandler.URI_IS_LOCAL_RESOURCE
     );
-  },
-
-  newURI(spec, originCharset, baseURI) {
-    return Cc["@mozilla.org/network/simple-uri-mutator;1"]
-      .createInstance(Ci.nsIURIMutator)
-      .setSpec(spec)
-      .finalize();
   },
 
   newChannel(uri, loadInfo) {
@@ -116,7 +109,10 @@ PageIconProtocolHandler.prototype = {
             try {
               channel.contentType = mimeType;
               channel.contentLength = len;
-              serveIcon(pipe, data, len);
+              if (len != data.length) {
+                throw new Error("Unexpected data length");
+              }
+              serveIcon(pipe, data);
             } catch (ex) {
               streamDefaultFavicon(uri, loadInfo, pipe.outputStream, channel);
             }

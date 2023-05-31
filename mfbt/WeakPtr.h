@@ -204,7 +204,7 @@ template <typename T>
 class SupportsWeakPtr {
  protected:
   ~SupportsWeakPtr() {
-    static_assert(IsBaseOf<SupportsWeakPtr<T>, T>::value,
+    static_assert(std::is_base_of<SupportsWeakPtr<T>, T>::value,
                   "T must derive from SupportsWeakPtr<T>");
     if (mSelfReferencingWeakPtr) {
       mSelfReferencingWeakPtr.mRef->detach();

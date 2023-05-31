@@ -18,12 +18,12 @@
 #include "mozilla/Pair.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/StaticMutex.h"
+#include "mozilla/StaticPrefs_image.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Tuple.h"
 #include "nsIMemoryReporter.h"
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"
-#include "gfxPrefs.h"
 #include "imgFrame.h"
 #include "Image.h"
 #include "ISurfaceProvider.h"
@@ -100,8 +100,7 @@ class CostEntry {
 
   bool operator<(const CostEntry& aOther) const {
     return mCost < aOther.mCost ||
-           (mCost == aOther.mCost &&
-            recordreplay::RecordReplayValue(mSurface < aOther.mSurface));
+           (mCost == aOther.mCost && mSurface < aOther.mSurface);
   }
 
  private:
@@ -408,7 +407,8 @@ class ImageSurfaceCache {
 
     // Typically an image cache will not have too many size-varying surfaces, so
     // if we exceed the given threshold, we should consider using a subset.
-    int32_t thresholdSurfaces = gfxPrefs::ImageCacheFactor2ThresholdSurfaces();
+    int32_t thresholdSurfaces =
+        StaticPrefs::image_cache_factor2_threshold_surfaces();
     if (thresholdSurfaces < 0 ||
         mSurfaces.Count() <= static_cast<uint32_t>(thresholdSurfaces)) {
       return;
@@ -1052,10 +1052,10 @@ class SurfaceCacheImpl final : public nsIMemoryReporter {
 
     // (Note that we *don't* unlock the per-image cache here; that's the
     // difference between this and UnlockImage.)
-    DoUnlockSurfaces(
-        WrapNotNull(cache),
-        /* aStaticOnly = */ !gfxPrefs::ImageMemAnimatedDiscardable(),
-        aAutoLock);
+    DoUnlockSurfaces(WrapNotNull(cache),
+                     /* aStaticOnly = */
+                     !StaticPrefs::image_mem_animated_discardable_AtStartup(),
+                     aAutoLock);
   }
 
   already_AddRefed<ImageSurfaceCache> RemoveImage(
@@ -1371,22 +1371,23 @@ void SurfaceCache::Initialize() {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!sInstance, "Shouldn't initialize more than once");
 
-  // See gfxPrefs for the default values of these preferences.
+  // See StaticPrefs for the default values of these preferences.
 
   // Length of time before an unused surface is removed from the cache, in
   // milliseconds.
   uint32_t surfaceCacheExpirationTimeMS =
-      gfxPrefs::ImageMemSurfaceCacheMinExpirationMS();
+      StaticPrefs::image_mem_surfacecache_min_expiration_ms_AtStartup();
 
   // What fraction of the memory used by the surface cache we should discard
   // when we get a memory pressure notification. This value is interpreted as
   // 1/N, so 1 means to discard everything, 2 means to discard about half of the
   // memory we're using, and so forth. We clamp it to avoid division by zero.
   uint32_t surfaceCacheDiscardFactor =
-      max(gfxPrefs::ImageMemSurfaceCacheDiscardFactor(), 1u);
+      max(StaticPrefs::image_mem_surfacecache_discard_factor_AtStartup(), 1u);
 
   // Maximum size of the surface cache, in kilobytes.
-  uint64_t surfaceCacheMaxSizeKB = gfxPrefs::ImageMemSurfaceCacheMaxSizeKB();
+  uint64_t surfaceCacheMaxSizeKB =
+      StaticPrefs::image_mem_surfacecache_max_size_kb_AtStartup();
 
   // A knob determining the actual size of the surface cache. Currently the
   // cache is (size of main memory) / (surface cache size factor) KB
@@ -1397,7 +1398,7 @@ void SurfaceCache::Initialize() {
   // of memory, which would yield a 64MB cache on this setting.
   // We clamp this value to avoid division by zero.
   uint32_t surfaceCacheSizeFactor =
-      max(gfxPrefs::ImageMemSurfaceCacheSizeFactor(), 1u);
+      max(StaticPrefs::image_mem_surfacecache_size_factor_AtStartup(), 1u);
 
   // Compute the size of the surface cache.
   uint64_t memorySize = PR_GetPhysicalMemorySize();
@@ -1635,7 +1636,8 @@ IntSize SurfaceCache::ClampVectorSize(const IntSize& aSize) {
   // It shouldn't get here if it is significantly larger because
   // VectorImage::UseSurfaceCacheForSize should prevent us from requesting
   // a rasterized version of a surface greater than 4x the maximum.
-  int32_t maxSizeKB = gfxPrefs::ImageCacheMaxRasterizedSVGThresholdKB();
+  int32_t maxSizeKB =
+      StaticPrefs::image_cache_max_rasterized_svg_threshold_kb();
   if (maxSizeKB <= 0) {
     return aSize;
   }

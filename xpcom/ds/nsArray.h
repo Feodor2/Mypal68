@@ -5,7 +5,6 @@
 #ifndef nsArray_h__
 #define nsArray_h__
 
-#include "nsIArrayExtensions.h"
 #include "nsIMutableArray.h"
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"

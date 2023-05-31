@@ -4,6 +4,7 @@ import {CollapsibleSection} from "content-src/components/CollapsibleSection/Coll
 import {connect} from "react-redux";
 import {DSMessage} from "content-src/components/DiscoveryStreamComponents/DSMessage/DSMessage";
 import {Hero} from "content-src/components/DiscoveryStreamComponents/Hero/Hero";
+import {Highlights} from "content-src/components/DiscoveryStreamComponents/Highlights/Highlights";
 import {HorizontalRule} from "content-src/components/DiscoveryStreamComponents/HorizontalRule/HorizontalRule";
 import {List} from "content-src/components/DiscoveryStreamComponents/List/List";
 import {Navigation} from "content-src/components/DiscoveryStreamComponents/Navigation/Navigation";
@@ -89,6 +90,8 @@ export class _DiscoveryStreamBase extends React.PureComponent {
 
   renderComponent(component, embedWidth) {
     switch (component.type) {
+      case "Highlights":
+        return (<Highlights />);
       case "TopSites":
         return (<TopSites header={component.header} />);
       case "Message":
@@ -141,6 +144,7 @@ export class _DiscoveryStreamBase extends React.PureComponent {
         return (
           <List
             data={component.data}
+            feed={component.feed}
             fullWidth={component.properties.full_width}
             hasBorders={component.properties.border === "border"}
             hasImages={component.properties.has_images}
@@ -213,7 +217,7 @@ export class _DiscoveryStreamBase extends React.PureComponent {
     const topSites = extractComponent("TopSites");
     const message = extractComponent("Message") || {
       header: {
-        link_text: topStories.learnMore.link.id,
+        link_text: topStories.learnMore.link.message,
         link_url: topStories.learnMore.link.href,
         title: topStories.title,
       },
@@ -236,7 +240,7 @@ export class _DiscoveryStreamBase extends React.PureComponent {
           learnMore={{
             link: {
               href: message.header.link_url,
-              id: message.header.link_text,
+              message: message.header.link_text,
             },
           }}
           privacyNoticeURL={topStories.privacyNoticeURL}
@@ -244,6 +248,10 @@ export class _DiscoveryStreamBase extends React.PureComponent {
           title={message.header.title}>
           {this.renderLayout(layoutRender)}
         </CollapsibleSection>}
+        {this.renderLayout([{
+          width: 12,
+          components: [{type: "Highlights"}],
+        }])}
       </React.Fragment>
     );
   }

@@ -95,7 +95,7 @@ int32_t nsAccUtils::GetLevelForXULContainerItem(nsIContent* aContent) {
       aContent->AsElement()->AsXULContainerItem();
   if (!item) return 0;
 
-  nsCOMPtr<Element> containerElement;
+  nsCOMPtr<dom::Element> containerElement;
   item->GetParentContainer(getter_AddRefs(containerElement));
   nsCOMPtr<nsIDOMXULContainerElement> container =
       containerElement ? containerElement->AsXULContainer() : nullptr;
@@ -173,7 +173,7 @@ bool nsAccUtils::HasDefinedARIAToken(nsIContent* aContent, nsAtom* aAtom) {
 
   if (!aContent->IsElement()) return false;
 
-  Element* element = aContent->AsElement();
+  dom::Element* element = aContent->AsElement();
   if (!element->HasAttr(kNameSpaceID_None, aAtom) ||
       element->AttrValueIs(kNameSpaceID_None, aAtom, nsGkAtoms::_empty,
                            eCaseMatters) ||
@@ -187,7 +187,7 @@ bool nsAccUtils::HasDefinedARIAToken(nsIContent* aContent, nsAtom* aAtom) {
 nsStaticAtom* nsAccUtils::GetARIAToken(dom::Element* aElement, nsAtom* aAttr) {
   if (!HasDefinedARIAToken(aElement, aAttr)) return nsGkAtoms::_empty;
 
-  static Element::AttrValuesArray tokens[] = {
+  static dom::Element::AttrValuesArray tokens[] = {
       nsGkAtoms::_false, nsGkAtoms::_true, nsGkAtoms::mixed, nullptr};
 
   int32_t idx =
@@ -204,7 +204,7 @@ nsStaticAtom* nsAccUtils::NormalizeARIAToken(dom::Element* aElement,
   }
 
   if (aAttr == nsGkAtoms::aria_current) {
-    static Element::AttrValuesArray tokens[] = {
+    static dom::Element::AttrValuesArray tokens[] = {
         nsGkAtoms::page, nsGkAtoms::step, nsGkAtoms::location_,
         nsGkAtoms::date, nsGkAtoms::time, nsGkAtoms::_true,
         nullptr};
@@ -510,12 +510,13 @@ bool nsAccUtils::IsARIALive(const Accessible* aAccessible) {
     }
 
     nsCOMPtr<nsIDocShellTreeItem> sameTypeParent;
-    docShellTreeItem->GetSameTypeParent(getter_AddRefs(sameTypeParent));
+    docShellTreeItem->GetInProcessSameTypeParent(
+        getter_AddRefs(sameTypeParent));
     if (!sameTypeParent || sameTypeParent == docShellTreeItem) {
       break;
     }
 
-    dom::Document* parentDoc = doc->GetParentDocument();
+    dom::Document* parentDoc = doc->GetInProcessParentDocument();
     if (!parentDoc) {
       break;
     }

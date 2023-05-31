@@ -25,30 +25,44 @@ nsLoginInfo.prototype = {
   // nsILoginInfo interfaces...
   //
 
-  hostname: null,
-  formSubmitURL: null,
+  origin: null,
+  formActionOrigin: null,
   httpRealm: null,
   username: null,
   password: null,
   usernameField: null,
   passwordField: null,
 
+  /**
+   * @deprecated Use `origin` instead.
+   */
+  get hostname() {
+    return this.origin;
+  },
+
+  /**
+   * @deprecated Use `formActionOrigin` instead.
+   */
+  get formSubmitURL() {
+    return this.formActionOrigin;
+  },
+
   init(
-    aHostname,
-    aFormSubmitURL,
+    aOrigin,
+    aFormActionOrigin,
     aHttpRealm,
     aUsername,
     aPassword,
-    aUsernameField,
-    aPasswordField
+    aUsernameField = "",
+    aPasswordField = ""
   ) {
-    this.hostname = aHostname;
-    this.formSubmitURL = aFormSubmitURL;
+    this.origin = aOrigin;
+    this.formActionOrigin = aFormActionOrigin;
     this.httpRealm = aHttpRealm;
     this.username = aUsername;
     this.password = aPassword;
-    this.usernameField = aUsernameField;
-    this.passwordField = aPasswordField;
+    this.usernameField = aUsernameField || "";
+    this.passwordField = aPasswordField || "";
   },
 
   matches(aLogin, ignorePassword) {
@@ -59,8 +73,8 @@ nsLoginInfo.prototype = {
 
   equals(aLogin) {
     if (
-      this.hostname != aLogin.hostname ||
-      this.formSubmitURL != aLogin.formSubmitURL ||
+      this.origin != aLogin.origin ||
+      this.formActionOrigin != aLogin.formActionOrigin ||
       this.httpRealm != aLogin.httpRealm ||
       this.username != aLogin.username ||
       this.password != aLogin.password ||
@@ -78,8 +92,8 @@ nsLoginInfo.prototype = {
       Ci.nsILoginInfo
     );
     clone.init(
-      this.hostname,
-      this.formSubmitURL,
+      this.origin,
+      this.formActionOrigin,
       this.httpRealm,
       this.username,
       this.password,
@@ -109,4 +123,4 @@ nsLoginInfo.prototype = {
   timesUsed: null,
 }; // end of nsLoginInfo implementation
 
-var EXPORTED_SYMBOLS = ["nsLoginInfo"];
+const EXPORTED_SYMBOLS = ["nsLoginInfo"];

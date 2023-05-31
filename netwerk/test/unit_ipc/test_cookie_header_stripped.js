@@ -82,7 +82,7 @@ function run_test() {
       false,
       expiry,
       {},
-      Ci.nsICookie2.SAMESITE_UNSET
+      Ci.nsICookie.SAMESITE_UNSET
     );
     do_send_remote_message("set-cookie-done");
   });

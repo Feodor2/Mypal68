@@ -12,7 +12,6 @@
 #include "mozilla/RefPtr.h"
 #include "nsCOMPtr.h"
 #include "imgINotificationObserver.h"
-#include "nsIContentPolicy.h"
 
 class nsIURI;
 class nsIContent;

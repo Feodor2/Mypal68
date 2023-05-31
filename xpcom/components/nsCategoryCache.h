@@ -7,10 +7,7 @@
 
 #include "mozilla/Attributes.h"
 
-#include "nsICategoryManager.h"
 #include "nsIObserver.h"
-#include "nsISimpleEnumerator.h"
-#include "nsISupportsPrimitives.h"
 
 #include "nsServiceManagerUtils.h"
 

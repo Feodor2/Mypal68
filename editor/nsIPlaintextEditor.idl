@@ -85,6 +85,7 @@ interface nsIPlaintextEditor : nsISupports
    *
    * @param aString   the string to be inserted
    */
+   [can_run_script]
    void insertText(in AString aStringToInsert);
 
   /**
@@ -93,5 +94,6 @@ interface nsIPlaintextEditor : nsISupports
    * it may enter a character, split a node in the tree, etc.
    * This may be more efficient than calling InsertText with a newline.
    */
+  [can_run_script]
   void insertLineBreak();
 };

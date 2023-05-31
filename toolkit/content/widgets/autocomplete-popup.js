@@ -393,6 +393,7 @@
             "autofill-footer",
             "autofill-clear-button",
             "autofill-insecureWarning",
+            "generatedPassword",
             "insecureWarning",
             "loginsFooter",
             "loginWithOrigin",
@@ -423,6 +424,9 @@
             case "autofill-insecureWarning":
               options = { is: "autocomplete-creditcard-insecure-field" };
               break;
+            case "generatedPassword":
+              options = { is: "autocomplete-two-line-richlistitem" };
+              break;
             case "insecureWarning":
               options = { is: "autocomplete-richlistitem-insecure-warning" };
               break;
@@ -430,7 +434,7 @@
               options = { is: "autocomplete-richlistitem-logins-footer" };
               break;
             case "loginWithOrigin":
-              options = { is: "autocomplete-richlistitem-login-with-origin" };
+              options = { is: "autocomplete-login-richlistitem" };
               break;
             default:
               options = { is: "autocomplete-richlistitem" };

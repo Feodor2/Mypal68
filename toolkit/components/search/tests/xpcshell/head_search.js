@@ -10,6 +10,7 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   Services: "resource://gre/modules/Services.jsm",
   setTimeout: "resource://gre/modules/Timer.jsm",
   TestUtils: "resource://testing-common/TestUtils.jsm",
+  SearchUtils: "resource://gre/modules/SearchUtils.jsm",
 });
 
 var { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
@@ -18,7 +19,6 @@ var { AddonTestUtils } = ChromeUtils.import(
   "resource://testing-common/AddonTestUtils.jsm"
 );
 
-const BROWSER_SEARCH_PREF = "browser.search.";
 const PREF_SEARCH_URL = "geoSpecificDefaults.url";
 const NS_APP_SEARCH_DIR = "SrchPlugns";
 
@@ -44,7 +44,7 @@ Services.prefs.setIntPref("browser.search.geoip.timeout", 3000);
 Services.prefs.setCharPref("browser.search.geoip.url", "");
 // Also disable region defaults - tests using it will also re-configure it.
 Services.prefs
-  .getDefaultBranch(BROWSER_SEARCH_PREF)
+  .getDefaultBranch(SearchUtils.BROWSER_SEARCH_PREF)
   .setCharPref("geoSpecificDefaults.url", "");
 
 AddonTestUtils.init(this, false);
@@ -365,12 +365,14 @@ async function withGeoServer(
   srv.start(-1);
 
   let url = `http://localhost:${srv.identity.primaryPort}/${path}?`;
-  let defaultBranch = Services.prefs.getDefaultBranch(BROWSER_SEARCH_PREF);
+  let defaultBranch = Services.prefs.getDefaultBranch(
+    SearchUtils.BROWSER_SEARCH_PREF
+  );
   let originalURL = defaultBranch.getCharPref(PREF_SEARCH_URL);
   defaultBranch.setCharPref(PREF_SEARCH_URL, url);
   // Set a bogus user value so that running the test ensures we ignore it.
   Services.prefs.setCharPref(
-    BROWSER_SEARCH_PREF + PREF_SEARCH_URL,
+    SearchUtils.BROWSER_SEARCH_PREF + PREF_SEARCH_URL,
     "about:blank"
   );
 
@@ -386,7 +388,9 @@ async function withGeoServer(
   } finally {
     srv.stop(() => {});
     defaultBranch.setCharPref(PREF_SEARCH_URL, originalURL);
-    Services.prefs.clearUserPref(BROWSER_SEARCH_PREF + PREF_SEARCH_URL);
+    Services.prefs.clearUserPref(
+      SearchUtils.BROWSER_SEARCH_PREF + PREF_SEARCH_URL
+    );
     Services.prefs.clearUserPref("browser.search.geoip.url");
   }
 }

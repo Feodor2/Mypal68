@@ -13,13 +13,14 @@
 
 class nsIChannel;
 class nsICookieSettings;
-class nsIHttpChannel;
 class nsIPermission;
 class nsIPrincipal;
 class nsIURI;
 class nsPIDOMWindowInner;
 
 namespace mozilla {
+
+class OriginAttributes;
 
 class AntiTrackingCommon final {
  public:
@@ -46,7 +47,7 @@ class AntiTrackingCommon final {
       uint32_t* aRejectedReason);
 
   // Note: you should use IsFirstPartyStorageAccessGrantedFor() passing the
-  // nsIHttpChannel! Use this method _only_ if the channel is not available.
+  // nsIChannel! Use this method _only_ if the channel is not available.
   // For first party window, it's impossible to know if the aURI is a tracking
   // resource synchronously, so here we return the best guest: if we are sure
   // that the permission is granted for the origin of aURI, this method returns
@@ -58,7 +59,7 @@ class AntiTrackingCommon final {
   // aChannel can be a 3rd party channel, or not.
   // See IsFirstPartyStorageAccessGrantedFor(window) to see the possible values
   // of aRejectedReason.
-  static bool IsFirstPartyStorageAccessGrantedFor(nsIHttpChannel* aChannel,
+  static bool IsFirstPartyStorageAccessGrantedFor(nsIChannel* aChannel,
                                                   nsIURI* aURI,
                                                   uint32_t* aRejectedReason);
 
@@ -99,6 +100,11 @@ class AntiTrackingCommon final {
       StorageAccessGrantedReason aReason,
       const PerformFinalChecks& aPerformFinalChecks = nullptr);
 
+  // Given a principal, returns the storage permission key that will be used for
+  // the principal.  Returns true on success.
+  static bool CreateStoragePermissionKey(nsIPrincipal* aPrincipal,
+                                         nsACString& aKey);
+
   // Returns true if the permission passed in is a storage access permission
   // for the passed in principal argument.
   static bool IsStorageAccessPermission(nsIPermission* aPermission,
@@ -124,18 +130,20 @@ class AntiTrackingCommon final {
       const nsCString& aParentOrigin, const nsCString& aGrantedOrigin,
       int aAllowMode);
 
-  enum ContentBlockingAllowListPurpose {
-    eStorageChecks,
-    eTrackingProtection,
-    eTrackingAnnotations,
-    eFingerprinting,
-    eCryptomining,
-  };
+  // Check whether a top window principal is on the content blocking allow list.
+  static nsresult IsOnContentBlockingAllowList(nsIPrincipal* aTopWinPrincipal,
+                                               bool aIsPrivateBrowsing,
+                                               bool& aIsAllowListed);
 
-  // Check whether a top window URI is on the content blocking allow list.
-  static nsresult IsOnContentBlockingAllowList(
-      nsIURI* aTopWinURI, bool aIsPrivateBrowsing,
-      ContentBlockingAllowListPurpose aPurpose, bool& aIsAllowListed);
+  // Computes the principal used to check the content blocking allow list for a
+  // top-level document based on the document principal.  This function is used
+  // right after setting up the document principal.
+  static void ComputeContentBlockingAllowListPrincipal(
+      nsIPrincipal* aDocumentPrincipal, nsIPrincipal** aPrincipal);
+
+  static void RecomputeContentBlockingAllowListPrincipal(
+      nsIURI* aURIBeingLoaded, const OriginAttributes& aAttrs,
+      nsIPrincipal** aPrincipal);
 
   enum class BlockingDecision {
     eBlock,

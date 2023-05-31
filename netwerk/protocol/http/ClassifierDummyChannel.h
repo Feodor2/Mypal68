@@ -6,6 +6,7 @@
 #define mozilla_net_ClassifierDummyChannel_h
 
 #include "nsIChannel.h"
+#include "nsIHttpChannelInternal.h"
 #include <functional>
 
 #define CLASSIFIER_DUMMY_CHANNEL_IID                 \
@@ -16,6 +17,7 @@
   }
 
 class nsIChannel;
+class nsIPrincipal;
 
 namespace mozilla {
 namespace net {
@@ -61,6 +63,7 @@ class ClassifierDummyChannel final : public nsIChannel,
       nsIChannel* aChannel, const std::function<void(bool)>& aCallback);
 
   ClassifierDummyChannel(nsIURI* aURI, nsIURI* aTopWindowURI,
+                         nsIPrincipal* aContentBlockingAllowListPrincipal,
                          nsresult aTopWindowURIResult, nsILoadInfo* aLoadInfo);
 
   uint32_t ClassificationFlags() const;
@@ -73,6 +76,7 @@ class ClassifierDummyChannel final : public nsIChannel,
   nsCOMPtr<nsILoadInfo> mLoadInfo;
   nsCOMPtr<nsIURI> mURI;
   nsCOMPtr<nsIURI> mTopWindowURI;
+  nsCOMPtr<nsIPrincipal> mContentBlockingAllowListPrincipal;
   nsresult mTopWindowURIResult;
 
   uint32_t mClassificationFlags;

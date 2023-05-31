@@ -19,7 +19,6 @@
 
 #include "nsCommandManager.h"
 #include "nsContentUtils.h"
-#include "nsIMutableArray.h"
 #include "nsIDocShell.h"
 #include "mozilla/dom/Document.h"
 #include "nsPIDOMWindow.h"
@@ -28,7 +27,6 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsImageFrame.h"
 #include "nsIPersistentProperties2.h"
-#include "nsIServiceManager.h"
 #include "nsViewManager.h"
 #include "nsIScrollableFrame.h"
 #include "nsUnicharUtils.h"
@@ -191,7 +189,7 @@ role DocAccessible::NativeRole() const {
   nsCOMPtr<nsIDocShell> docShell = nsCoreUtils::GetDocShellFor(mDocumentNode);
   if (docShell) {
     nsCOMPtr<nsIDocShellTreeItem> sameTypeRoot;
-    docShell->GetSameTypeRootTreeItem(getter_AddRefs(sameTypeRoot));
+    docShell->GetInProcessSameTypeRootTreeItem(getter_AddRefs(sameTypeRoot));
     int32_t itemType = docShell->ItemType();
     if (sameTypeRoot == docShell) {
       // Root of content or chrome tree
@@ -292,8 +290,7 @@ void DocAccessible::TakeFocus() const {
   // Focus the document.
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
   RefPtr<dom::Element> newFocus;
-  AutoHandlingUserInputStatePusher inputStatePusher(true, nullptr,
-                                                    mDocumentNode);
+  AutoHandlingUserInputStatePusher inputStatePusher(true);
   fm->MoveFocus(mDocumentNode->GetWindow(), nullptr,
                 nsFocusManager::MOVEFOCUS_ROOT, 0, getter_AddRefs(newFocus));
 }
@@ -497,7 +494,7 @@ nsRect DocAccessible::RelativeBounds(nsIFrame** aRelativeFrame) const {
       bounds = scrollPort;
     }
 
-    document = parentDoc = document->GetParentDocument();
+    document = parentDoc = document->GetInProcessParentDocument();
   }
 
   return bounds;
@@ -1937,7 +1934,7 @@ void DocAccessible::DoARIAOwnsRelocation(Accessible* aOwner) {
     // Make an attempt to create an accessible if it wasn't created yet.
     if (!child) {
       // An owned child cannot be an ancestor of the owner.
-      if (nsContentUtils::ContentIsDescendantOf(aOwner->Elm(), childEl)) {
+      if (aOwner->Elm()->IsInclusiveDescendantOf(childEl)) {
         continue;
       }
 
@@ -2275,7 +2272,7 @@ bool DocAccessible::IsLoadEventTarget() const {
   NS_ASSERTION(treeItem, "No document shell for document!");
 
   nsCOMPtr<nsIDocShellTreeItem> parentTreeItem;
-  treeItem->GetParent(getter_AddRefs(parentTreeItem));
+  treeItem->GetInProcessParent(getter_AddRefs(parentTreeItem));
 
   // Not a root document.
   if (parentTreeItem) {

@@ -72,7 +72,8 @@ class HTMLTextFieldAccessible final : public HyperTextAccessibleWrap {
                                        HyperTextAccessibleWrap)
 
   // HyperTextAccessible
-  virtual already_AddRefed<TextEditor> GetEditor() const override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual already_AddRefed<TextEditor> GetEditor()
+      const override;
 
   // Accessible
   virtual void Value(nsString& aValue) const override;
@@ -101,7 +102,7 @@ class HTMLTextFieldAccessible final : public HyperTextAccessibleWrap {
    * HTML:input@type="number".
    */
   nsIContent* BindingOrWidgetParent() const {
-    nsIContent * el = mContent->GetBindingParent();
+    nsIContent* el = mContent->GetBindingParent();
     if (el) {
       return el;
     }

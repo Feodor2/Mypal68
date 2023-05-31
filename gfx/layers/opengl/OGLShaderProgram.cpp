@@ -5,7 +5,7 @@
 #include "OGLShaderProgram.h"
 
 #include <stdint.h>  // for uint32_t
-#include <sstream>   // for ostringstream
+#include <sstream>   // for std::ostringstream
 #include "gfxEnv.h"
 #include "gfxRect.h"  // for gfxRect
 #include "gfxUtils.h"
@@ -19,7 +19,7 @@
 namespace mozilla {
 namespace layers {
 
-using namespace std;
+using std::endl;
 
 #define GAUSSIAN_KERNEL_HALF_WIDTH 11
 #define GAUSSIAN_KERNEL_STEP 0.2
@@ -155,7 +155,7 @@ void ShaderConfigOGL::SetDynamicGeometry(bool aEnabled) {
 /* static */
 ProgramProfileOGL ProgramProfileOGL::GetProfileFor(ShaderConfigOGL aConfig) {
   ProgramProfileOGL result;
-  ostringstream fs, vs;
+  std::ostringstream fs, vs;
 
   AddUniforms(result);
 
@@ -852,7 +852,7 @@ bool ShaderProgramOGL::Initialize() {
   NS_ASSERTION(mProgramState == STATE_NEW,
                "Shader program has already been initialised");
 
-  ostringstream vs, fs;
+  std::ostringstream vs, fs;
   for (uint32_t i = 0; i < mProfile.mDefines.Length(); ++i) {
     vs << mProfile.mDefines[i] << endl;
     fs << mProfile.mDefines[i] << endl;

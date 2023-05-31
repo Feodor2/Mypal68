@@ -298,8 +298,7 @@ function makeUrlbarResult(tokens, info) {
                 .slice(1)
                 .map(t => t.value)
                 .join(" "),
-            ],
-            2
+            ]
           );
         }
         return new UrlbarResult(

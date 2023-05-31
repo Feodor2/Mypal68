@@ -21,6 +21,10 @@
 using PLDHashNumber = mozilla::HashNumber;
 static const uint32_t kPLDHashNumberBits = mozilla::kHashNumberBits;
 
+#ifdef DEBUG
+#define MOZ_HASH_TABLE_CHECKS_ENABLED 1
+#endif
+
 class PLDHashTable;
 struct PLDHashTableOps;
 
@@ -50,7 +54,7 @@ struct PLDHashEntryHdr {
   friend class PLDHashTable;
 };
 
-#ifdef DEBUG
+#ifdef MOZ_HASH_TABLE_CHECKS_ENABLED
 
 // This class does three kinds of checking:
 //
@@ -80,14 +84,15 @@ struct PLDHashEntryHdr {
 //
 class Checker {
  public:
-  constexpr Checker() : mState(kIdle), mIsWritable(1) {}
+  constexpr Checker() : mState(kIdle), mIsWritable(true) {}
 
   Checker& operator=(Checker&& aOther) {
     // Atomic<> doesn't have an |operator=(Atomic<>&&)|.
     mState = uint32_t(aOther.mState);
-    mIsWritable = uint32_t(aOther.mIsWritable);
+    mIsWritable = bool(aOther.mIsWritable);
 
     aOther.mState = kIdle;
+    // XXX Shouldn't we set mIsWritable to true here for consistency?
 
     return *this;
   }
@@ -101,9 +106,9 @@ class Checker {
 
   bool IsIdle() const { return mState == kIdle; }
 
-  bool IsWritable() const { return !!mIsWritable; }
+  bool IsWritable() const { return mIsWritable; }
 
-  void SetNonWritable() { mIsWritable = 0; }
+  void SetNonWritable() { mIsWritable = false; }
 
   // NOTE: the obvious way to implement these functions is to (a) check
   // |mState| is reasonable, and then (b) update |mState|. But the lack of
@@ -120,57 +125,57 @@ class Checker {
 
   void StartReadOp() {
     uint32_t oldState = mState++;  // this is an atomic increment
-    MOZ_ASSERT(IsIdle(oldState) || IsRead(oldState));
-    MOZ_ASSERT(oldState < kReadMax);  // check for overflow
+    MOZ_RELEASE_ASSERT(IsIdle(oldState) || IsRead(oldState));
+    MOZ_RELEASE_ASSERT(oldState < kReadMax);  // check for overflow
   }
 
   void EndReadOp() {
     uint32_t oldState = mState--;  // this is an atomic decrement
-    MOZ_ASSERT(IsRead(oldState));
+    MOZ_RELEASE_ASSERT(IsRead(oldState));
   }
 
   void StartWriteOp() {
-    MOZ_ASSERT(IsWritable());
+    MOZ_RELEASE_ASSERT(IsWritable());
     uint32_t oldState = mState.exchange(kWrite);
-    MOZ_ASSERT(IsIdle(oldState));
+    MOZ_RELEASE_ASSERT(IsIdle(oldState));
   }
 
   void EndWriteOp() {
     // Check again that the table is writable, in case it was marked as
     // non-writable just after the IsWritable() assertion in StartWriteOp()
     // occurred.
-    MOZ_ASSERT(IsWritable());
+    MOZ_RELEASE_ASSERT(IsWritable());
     uint32_t oldState = mState.exchange(kIdle);
-    MOZ_ASSERT(IsWrite(oldState));
+    MOZ_RELEASE_ASSERT(IsWrite(oldState));
   }
 
   void StartIteratorRemovalOp() {
     // When doing removals at the end of iteration, we go from Read1 state to
     // Write and then back.
-    MOZ_ASSERT(IsWritable());
+    MOZ_RELEASE_ASSERT(IsWritable());
     uint32_t oldState = mState.exchange(kWrite);
-    MOZ_ASSERT(IsRead1(oldState));
+    MOZ_RELEASE_ASSERT(IsRead1(oldState));
   }
 
   void EndIteratorRemovalOp() {
     // Check again that the table is writable, in case it was marked as
     // non-writable just after the IsWritable() assertion in
     // StartIteratorRemovalOp() occurred.
-    MOZ_ASSERT(IsWritable());
+    MOZ_RELEASE_ASSERT(IsWritable());
     uint32_t oldState = mState.exchange(kRead1);
-    MOZ_ASSERT(IsWrite(oldState));
+    MOZ_RELEASE_ASSERT(IsWrite(oldState));
   }
 
   void StartDestructorOp() {
     // A destructor op is like a write, but the table doesn't need to be
     // writable.
     uint32_t oldState = mState.exchange(kWrite);
-    MOZ_ASSERT(IsIdle(oldState));
+    MOZ_RELEASE_ASSERT(IsIdle(oldState));
   }
 
   void EndDestructorOp() {
     uint32_t oldState = mState.exchange(kIdle);
-    MOZ_ASSERT(IsWrite(oldState));
+    MOZ_RELEASE_ASSERT(IsWrite(oldState));
   }
 
  private:
@@ -184,12 +189,8 @@ class Checker {
   static const uint32_t kReadMax = 9999;
   static const uint32_t kWrite = 10000;
 
-  mutable mozilla::Atomic<uint32_t, mozilla::SequentiallyConsistent,
-                          mozilla::recordreplay::Behavior::DontPreserve>
-      mState;
-  mutable mozilla::Atomic<uint32_t, mozilla::SequentiallyConsistent,
-                          mozilla::recordreplay::Behavior::DontPreserve>
-      mIsWritable;
+  mozilla::Atomic<uint32_t, mozilla::SequentiallyConsistent> mState;
+  mozilla::Atomic<bool, mozilla::SequentiallyConsistent> mIsWritable;
 };
 #endif
 
@@ -376,7 +377,7 @@ class PLDHashTable {
   uint32_t mEntryCount;               // Number of entries in table.
   uint32_t mRemovedCount;             // Removed entry sentinels in table.
 
-#ifdef DEBUG
+#ifdef MOZ_HASH_TABLE_CHECKS_ENABLED
   mutable Checker mChecker;
 #endif
 
@@ -416,10 +417,6 @@ class PLDHashTable {
         mEntryStore(),
         mGeneration(0),
         mEntrySize(0)
-#ifdef DEBUG
-        ,
-        mChecker()
-#endif
   {
     *this = std::move(aOther);
   }
@@ -429,12 +426,7 @@ class PLDHashTable {
   ~PLDHashTable();
 
   // This should be used rarely.
-  const PLDHashTableOps* Ops() const {
-    return mozilla::recordreplay::UnwrapPLDHashTableCallbacks(mOps);
-  }
-
-  // Provide access to the raw ops to internal record/replay structures.
-  const PLDHashTableOps* RecordReplayWrappedOps() const { return mOps; }
+  const PLDHashTableOps* Ops() const { return mOps; }
 
   // Size in entries (gross, not net of free and removed sentinels) for table.
   // This can be zero if no elements have been added yet, in which case the
@@ -517,12 +509,14 @@ class PLDHashTable {
   // Like ShallowSizeOfExcludingThis(), but includes sizeof(*this).
   size_t ShallowSizeOfExcludingThis(mozilla::MallocSizeOf aMallocSizeOf) const;
 
-#ifdef DEBUG
   // Mark a table as immutable for the remainder of its lifetime. This
   // changes the implementation from asserting one set of invariants to
   // asserting a different set.
-  void MarkImmutable();
+  void MarkImmutable() {
+#ifdef MOZ_HASH_TABLE_CHECKS_ENABLED
+    mChecker.SetNonWritable();
 #endif
+  }
 
   // If you use PLDHashEntryStub or a subclass of it as your entry struct, and
   // if your entries move via memcpy and clear via memset(0), you can use these
@@ -569,6 +563,8 @@ class PLDHashTable {
   class Iterator {
    public:
     explicit Iterator(PLDHashTable* aTable);
+    struct EndIteratorTag {};
+    Iterator(PLDHashTable* aTable, EndIteratorTag aTag);
     Iterator(Iterator&& aOther);
     ~Iterator();
 
@@ -589,6 +585,13 @@ class PLDHashTable {
     // must not be called on that entry afterwards.
     void Remove();
 
+    bool operator==(const Iterator& aOther) const {
+      MOZ_ASSERT(mTable == aOther.mTable);
+      return mNexts == aOther.mNexts;
+    }
+
+    Iterator Clone() const { return {*this}; }
+
    protected:
     PLDHashTable* mTable;  // Main table pointer.
 
@@ -605,7 +608,7 @@ class PLDHashTable {
     void MoveToNextLiveEntry();
 
     Iterator() = delete;
-    Iterator(const Iterator&) = delete;
+    Iterator(const Iterator&);
     Iterator& operator=(const Iterator&) = delete;
     Iterator& operator=(const Iterator&&) = delete;
   };

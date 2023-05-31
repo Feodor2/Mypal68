@@ -5,23 +5,18 @@
 #include "mozilla/BasePrincipal.h"
 
 #include "nsDocShell.h"
-#include "nsIContentSecurityPolicy.h"
-#include "nsIObjectInputStream.h"
-#include "nsIObjectOutputStream.h"
-#include "nsIStandardURL.h"
 
 #include "ExpandedPrincipal.h"
 #include "nsNetUtil.h"
 #include "nsIURIWithSpecialOrigin.h"
 #include "nsScriptSecurityManager.h"
 #include "nsServiceManagerUtils.h"
-
+#include "nsAboutProtocolUtils.h"
+#include "ThirdPartyUtil.h"
 #include "mozilla/ContentPrincipal.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
 #include "mozilla/dom/ChromeUtils.h"
-#include "mozilla/dom/CSPDictionariesBinding.h"
-#include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/dom/ToJSValue.h"
 
 namespace mozilla {
@@ -77,7 +72,7 @@ bool BasePrincipal::Subsumes(nsIPrincipal* aOther,
 
 NS_IMETHODIMP
 BasePrincipal::Equals(nsIPrincipal* aOther, bool* aResult) {
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
+  NS_ENSURE_ARG_POINTER(aOther);
 
   *aResult = FastEquals(aOther);
 
@@ -86,7 +81,7 @@ BasePrincipal::Equals(nsIPrincipal* aOther, bool* aResult) {
 
 NS_IMETHODIMP
 BasePrincipal::EqualsConsideringDomain(nsIPrincipal* aOther, bool* aResult) {
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
+  NS_ENSURE_ARG_POINTER(aOther);
 
   *aResult = FastEqualsConsideringDomain(aOther);
 
@@ -95,7 +90,7 @@ BasePrincipal::EqualsConsideringDomain(nsIPrincipal* aOther, bool* aResult) {
 
 NS_IMETHODIMP
 BasePrincipal::Subsumes(nsIPrincipal* aOther, bool* aResult) {
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
+  NS_ENSURE_ARG_POINTER(aOther);
 
   *aResult = FastSubsumes(aOther);
 
@@ -104,7 +99,7 @@ BasePrincipal::Subsumes(nsIPrincipal* aOther, bool* aResult) {
 
 NS_IMETHODIMP
 BasePrincipal::SubsumesConsideringDomain(nsIPrincipal* aOther, bool* aResult) {
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
+  NS_ENSURE_ARG_POINTER(aOther);
 
   *aResult = FastSubsumesConsideringDomain(aOther);
 
@@ -114,7 +109,7 @@ BasePrincipal::SubsumesConsideringDomain(nsIPrincipal* aOther, bool* aResult) {
 NS_IMETHODIMP
 BasePrincipal::SubsumesConsideringDomainIgnoringFPD(nsIPrincipal* aOther,
                                                     bool* aResult) {
-  NS_ENSURE_TRUE(aOther, NS_ERROR_INVALID_ARG);
+  NS_ENSURE_ARG_POINTER(aOther);
 
   *aResult = FastSubsumesConsideringDomainIgnoringFPD(aOther);
 
@@ -124,6 +119,8 @@ BasePrincipal::SubsumesConsideringDomainIgnoringFPD(nsIPrincipal* aOther,
 NS_IMETHODIMP
 BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport,
                             bool aAllowIfInheritsPrincipal) {
+  NS_ENSURE_ARG_POINTER(aURI);
+
   // Check the internal method first, which allows us to quickly approve loads
   // for the System Principal.
   if (MayLoadInternal(aURI)) {
@@ -164,85 +161,27 @@ BasePrincipal::CheckMayLoad(nsIURI* aURI, bool aReport,
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetCsp(nsIContentSecurityPolicy** aCsp) {
-  NS_IF_ADDREF(*aCsp = mCSP);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::SetCsp(nsIContentSecurityPolicy* aCsp) {
-  // Never destroy an existing CSP on the principal.
-  // This method should only be called in rare cases.
-
-  MOZ_ASSERT(!mCSP, "do not destroy an existing CSP");
-  if (mCSP) {
-    return NS_ERROR_ALREADY_INITIALIZED;
-  }
-
-  mCSP = aCsp;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::EnsureCSP(dom::Document* aDocument,
-                         nsIContentSecurityPolicy** aCSP) {
-  if (mCSP) {
-    // if there is a CSP already associated with this principal
-    // then just return that - do not overwrite it!!!
-    NS_IF_ADDREF(*aCSP = mCSP);
+BasePrincipal::IsThirdPartyURI(nsIURI* aURI, bool* aRes) {
+  *aRes = true;
+  // If we do not have a URI its always 3rd party.
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
     return NS_OK;
   }
-
-  nsresult rv = NS_OK;
-  mCSP = do_CreateInstance("@mozilla.org/cspcontext;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Store the request context for violation reports
-  rv = aDocument ? mCSP->SetRequestContext(aDocument, nullptr)
-                 : mCSP->SetRequestContext(nullptr, this);
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_IF_ADDREF(*aCSP = mCSP);
-  return NS_OK;
+  ThirdPartyUtil* thirdPartyUtil = ThirdPartyUtil::GetInstance();
+  return thirdPartyUtil->IsThirdPartyURI(prinURI, aURI, aRes);
 }
 
 NS_IMETHODIMP
-BasePrincipal::GetPreloadCsp(nsIContentSecurityPolicy** aPreloadCSP) {
-  NS_IF_ADDREF(*aPreloadCSP = mPreloadCSP);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::EnsurePreloadCSP(dom::Document* aDocument,
-                                nsIContentSecurityPolicy** aPreloadCSP) {
-  if (mPreloadCSP) {
-    // if there is a speculative CSP already associated with this principal
-    // then just return that - do not overwrite it!!!
-    NS_IF_ADDREF(*aPreloadCSP = mPreloadCSP);
+BasePrincipal::IsThirdPartyPrincipal(nsIPrincipal* aPrin, bool* aRes) {
+  *aRes = true;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
     return NS_OK;
   }
-
-  nsresult rv = NS_OK;
-  mPreloadCSP = do_CreateInstance("@mozilla.org/cspcontext;1", &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  // Store the request context for violation reports
-  rv = aDocument ? mPreloadCSP->SetRequestContext(aDocument, nullptr)
-                 : mPreloadCSP->SetRequestContext(nullptr, this);
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_IF_ADDREF(*aPreloadCSP = mPreloadCSP);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-BasePrincipal::GetCspJSON(nsAString& outCSPinJSON) {
-  outCSPinJSON.Truncate();
-  dom::CSPPolicies jsonPolicies;
-
-  if (!mCSP) {
-    jsonPolicies.ToJSON(outCSPinJSON);
-    return NS_OK;
-  }
-  return mCSP->ToJSON(outCSPinJSON);
+  return aPrin->IsThirdPartyURI(prinURI, aRes);
 }
 
 NS_IMETHODIMP
@@ -273,6 +212,38 @@ NS_IMETHODIMP
 BasePrincipal::GetIsAddonOrExpandedAddonPrincipal(bool* aResult) {
   *aResult = AddonPolicy() || ContentScriptAddonPolicy();
   return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::SchemeIs(const char* aScheme, bool* aResult) {
+  *aResult = false;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_OK;
+  }
+  *aResult = prinURI->SchemeIs(aScheme);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+BasePrincipal::GetAboutModuleFlags(uint32_t* flags) {
+  *flags = 0;
+  nsCOMPtr<nsIURI> prinURI;
+  nsresult rv = GetURI(getter_AddRefs(prinURI));
+  if (NS_FAILED(rv) || !prinURI) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+  if (!prinURI->SchemeIs("about")) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIAboutModule> aboutModule;
+  rv = NS_GetAboutModule(prinURI, getter_AddRefs(aboutModule));
+  if (NS_FAILED(rv) || !aboutModule) {
+    return rv;
+  }
+  return aboutModule->GetURIFlags(prinURI, flags);
 }
 
 NS_IMETHODIMP
@@ -424,19 +395,6 @@ already_AddRefed<BasePrincipal> BasePrincipal::CreateCodebasePrincipal(
   return BasePrincipal::CreateCodebasePrincipal(uri, attrs);
 }
 
-already_AddRefed<BasePrincipal> BasePrincipal::CloneForcingFirstPartyDomain(
-    nsIURI* aURI) {
-  if (NS_WARN_IF(!IsCodebasePrincipal())) {
-    return nullptr;
-  }
-
-  OriginAttributes attrs = OriginAttributesRef();
-  // XXX this is slow. Maybe we should consider to make it faster.
-  attrs.SetFirstPartyDomain(false, aURI, true /* aForced */);
-
-  return CloneForcingOriginAttributes(attrs);
-}
-
 already_AddRefed<BasePrincipal> BasePrincipal::CloneForcingOriginAttributes(
     const OriginAttributes& aOriginAttributes) {
   if (NS_WARN_IF(!IsCodebasePrincipal())) {
@@ -507,20 +465,6 @@ void BasePrincipal::FinishInit(BasePrincipal* aOther,
 
   mOriginNoSuffix = aOther->mOriginNoSuffix;
   mHasExplicitDomain = aOther->mHasExplicitDomain;
-
-  if (aOther->mPreloadCSP) {
-    mPreloadCSP = do_CreateInstance("@mozilla.org/cspcontext;1");
-    nsCSPContext* preloadCSP = static_cast<nsCSPContext*>(mPreloadCSP.get());
-    preloadCSP->InitFromOther(
-        static_cast<nsCSPContext*>(aOther->mPreloadCSP.get()), nullptr, this);
-  }
-
-  if (aOther->mCSP) {
-    mCSP = do_CreateInstance("@mozilla.org/cspcontext;1");
-    nsCSPContext* csp = static_cast<nsCSPContext*>(mCSP.get());
-    csp->InitFromOther(static_cast<nsCSPContext*>(aOther->mCSP.get()), nullptr,
-                       this);
-  }
 }
 
 bool SiteIdentifier::Equals(const SiteIdentifier& aOther) const {

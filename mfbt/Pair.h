@@ -24,13 +24,13 @@ enum StorageType { AsBase, AsMember };
 // The extra conditions on storage for B are necessary so that PairHelper won't
 // ambiguously inherit from either A or B, such that one or the other base class
 // would be inaccessible.
-template <typename A, typename B,
-          detail::StorageType =
-              IsEmpty<A>::value ? detail::AsBase : detail::AsMember,
-          detail::StorageType = IsEmpty<B>::value && !IsBaseOf<A, B>::value &&
-                                        !IsBaseOf<B, A>::value
-                                    ? detail::AsBase
-                                    : detail::AsMember>
+template <
+    typename A, typename B,
+    detail::StorageType = IsEmpty<A>::value ? detail::AsBase : detail::AsMember,
+    detail::StorageType = IsEmpty<B>::value && !std::is_base_of<A, B>::value &&
+                                  !std::is_base_of<B, A>::value
+                              ? detail::AsBase
+                              : detail::AsMember>
 struct PairHelper;
 
 template <typename A, typename B>
@@ -139,20 +139,10 @@ struct Pair : private detail::PairHelper<A, B> {
   Pair(AArg&& aA, BArg&& aB)
       : Base(std::forward<AArg>(aA), std::forward<BArg>(aB)) {}
 
-  Pair(Pair&& aOther)
-      : Base(std::move(aOther.first()), std::move(aOther.second())) {}
-
+  Pair(Pair&& aOther) = default;
   Pair(const Pair& aOther) = default;
 
-  Pair& operator=(Pair&& aOther) {
-    MOZ_ASSERT(this != &aOther, "Self-moves are prohibited");
-
-    first() = std::move(aOther.first());
-    second() = std::move(aOther.second());
-
-    return *this;
-  }
-
+  Pair& operator=(Pair&& aOther) = default;
   Pair& operator=(const Pair& aOther) = default;
 
   /** The A instance. */

@@ -599,8 +599,7 @@
 
             let engineStr = this._stringBundle.formatStringFromName(
               "searchWithEngine",
-              [engineName],
-              1
+              [engineName]
             );
             this._setUpDescription(this._actionText, engineStr, true);
 
@@ -1016,25 +1015,20 @@
           return;
         }
 
+        // ac-label gets populated from getCommentAt despite the attribute name.
+        // The "comment" is used to populate additional visible text.
+        let formHostname = this.getAttribute("ac-label");
         LoginHelper.openPasswordManager(this.ownerGlobal, {
-          filterString: this._data.hostname,
+          filterString: formHostname,
           entryPoint: "autocomplete",
         });
       }
 
       this.addEventListener("click", handleEvent);
     }
-
-    get _data() {
-      return JSON.parse(this.getAttribute("ac-value"));
-    }
-
-    _adjustAcItem() {
-      this._titleText.textContent = this._data.label;
-    }
   }
 
-  class MozAutocompleteRichlistitemLoginWithOrigin extends MozElements.MozRichlistitem {
+  class MozAutocompleteTwoLineRichlistitem extends MozElements.MozRichlistitem {
     connectedCallback() {
       if (this.delayConnectedCallback()) {
         return;
@@ -1048,7 +1042,10 @@
 
     static get inheritedAttributes() {
       return {
-        ".login-username": "text=ac-value",
+        // getLabelAt:
+        ".line1-label": "text=ac-value",
+        // getCommentAt:
+        ".line2-label": "text=ac-label",
       };
     }
 
@@ -1056,11 +1053,11 @@
       return `
       <div xmlns="http://www.w3.org/1999/xhtml"
            xmlns:xul="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
-           class="login-wrapper">
+           class="two-line-wrapper">
         <xul:image class="ac-site-icon"></xul:image>
-        <div class="login-text">
-          <div class="login-row login-username"></div>
-          <div class="login-row login-origin"></div>
+        <div class="labels-wrapper">
+          <div class="label-row line1-label"></div>
+          <div class="label-row line2-label"></div>
         </div>
       </div>
     `;
@@ -1072,16 +1069,6 @@
       // Make item fit in popup as XUL box could not constrain
       // item's width
       this.firstElementChild.style.width = outerBoxRect.width + "px";
-
-      let data = JSON.parse(this.getAttribute("ac-label"));
-      let originElement = this.querySelector(".login-origin");
-      try {
-        let uri = Services.io.newURI(data.loginOrigin);
-        // Fallback to handle file: URIs
-        originElement.textContent = uri.displayHostPort || data.loginOrigin;
-      } catch (ex) {
-        originElement.textContent = data.loginOrigin;
-      }
     }
 
     _onOverflow() {}
@@ -1089,6 +1076,23 @@
     _onUnderflow() {}
 
     handleOverUnderflow() {}
+  }
+
+  class MozAutocompleteLoginRichlistitem extends MozAutocompleteTwoLineRichlistitem {
+    static get inheritedAttributes() {
+      return {
+        // getLabelAt:
+        ".line1-label": "text=ac-value",
+        // Don't inherit ac-label with getCommentAt since the label is JSON.
+      };
+    }
+
+    _adjustAcItem() {
+      super._adjustAcItem();
+
+      let details = JSON.parse(this.getAttribute("ac-label"));
+      this.querySelector(".line2-label").textContent = details.comment;
+    }
   }
 
   customElements.define(
@@ -1116,8 +1120,16 @@
   );
 
   customElements.define(
-    "autocomplete-richlistitem-login-with-origin",
-    MozAutocompleteRichlistitemLoginWithOrigin,
+    "autocomplete-two-line-richlistitem",
+    MozAutocompleteTwoLineRichlistitem,
+    {
+      extends: "richlistitem",
+    }
+  );
+
+  customElements.define(
+    "autocomplete-login-richlistitem",
+    MozAutocompleteLoginRichlistitem,
     {
       extends: "richlistitem",
     }

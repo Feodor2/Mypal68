@@ -10,8 +10,8 @@
 #include "nsISocketTransportService.h"
 #include "nsISocketTransport.h"
 #include "nsThreadUtils.h"
-#include "nsIOutputStream.h"
 #include "nsNetCID.h"
+#include "nsTArray.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -92,7 +92,7 @@ nsresult nsFtpControlConnection::Connect(nsIProxyInfo* proxyInfo,
       do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &rv);
   if (NS_FAILED(rv)) return rv;
 
-  rv = sts->CreateTransport(nullptr, 0, mHost, mPort, proxyInfo,
+  rv = sts->CreateTransport(nsTArray<nsCString>(), mHost, mPort, proxyInfo,
                             getter_AddRefs(mSocket));  // the command transport
   if (NS_FAILED(rv)) return rv;
 

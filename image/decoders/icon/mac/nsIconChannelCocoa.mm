@@ -4,20 +4,18 @@
 
 #include "nsContentUtils.h"
 #include "nsIconChannel.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/EndianUtils.h"
 #include "nsIIconURI.h"
-#include "nsIServiceManager.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsString.h"
 #include "nsMimeTypes.h"
 #include "nsMemory.h"
-#include "nsIStringStream.h"
 #include "nsIURL.h"
 #include "nsNetCID.h"
 #include "nsIPipe.h"
 #include "nsIOutputStream.h"
-#include "nsIMIMEService.h"
 #include "nsCExternalHandlerService.h"
 #include "nsILocalFileMac.h"
 #include "nsIFileURL.h"
@@ -183,7 +181,7 @@ nsIconChannel::AsyncOpen(nsIStreamListener* aListener) {
   MOZ_ASSERT(
       !mLoadInfo || mLoadInfo->GetSecurityMode() == 0 || mLoadInfo->GetInitialSecurityCheckDone() ||
           (mLoadInfo->GetSecurityMode() == nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
-           nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal())),
+           mLoadInfo->LoadingPrincipal() && mLoadInfo->LoadingPrincipal()->IsSystemPrincipal()),
       "security flags in loadInfo but doContentSecurityCheck() not called");
 
   nsCOMPtr<nsIInputStream> inStream;

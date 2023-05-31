@@ -47,7 +47,7 @@
 #include "nsRegion.h"                // for nsIntRegion
 #include "nsString.h"                // for nsCString
 #include "nsTArray.h"                // for nsTArray
-#include "nsTArrayForwardDeclare.h"  // for InfallibleTArray
+#include "nsTArrayForwardDeclare.h"  // for nsTArray
 #include "nscore.h"                  // for nsACString, nsAString
 #include "mozilla/Logging.h"         // for PRLogModuleInfo
 #include "nsIWidget.h"  // For plugin window configuration information structs
@@ -385,6 +385,12 @@ class LayerManager : public FrameRecorder {
   virtual void StorePluginWidgetConfigurations(
       const nsTArray<nsIWidget::Configuration>& aConfigurations) {}
   bool IsSnappingEffectiveTransforms() { return mSnapEffectiveTransforms; }
+
+  /**
+   * Returns true if the underlying platform can properly support layers with
+   * SurfaceMode::SURFACE_COMPONENT_ALPHA.
+   */
+  static bool LayersComponentAlphaEnabled();
 
   /**
    * Returns true if this LayerManager can properly support layers with

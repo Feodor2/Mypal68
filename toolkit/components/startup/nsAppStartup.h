@@ -10,7 +10,6 @@
 #include "nsIObserver.h"
 #include "nsWeakReference.h"
 
-#include "nsINativeAppSupport.h"
 #include "nsIAppShell.h"
 #include "mozilla/Attributes.h"
 

@@ -409,7 +409,7 @@ InternalPrompt.prototype = {
     return ok;
   },
 
-  select: function select(aTitle, aText, aCount, aSelectList, aOutSelection) {
+  select: function select(aTitle, aText, aSelectList, aOutSelection) {
     let p = this._getPrompt(aTitle, aText, [PromptUtils.getLocaleString("OK")]);
     p.addMenulist({ values: aSelectList });
     let data = this.showPrompt(p);
@@ -907,32 +907,27 @@ var PromptUtils = {
     if (isProxy) {
       text = this.bundle.formatStringFromName(
         "EnterLoginForProxy3",
-        [realm, displayHost],
-        2
+        [realm, displayHost]
       );
     } else if (isPassOnly) {
       text = this.bundle.formatStringFromName(
         "EnterPasswordFor",
-        [username, displayHost],
-        2
+        [username, displayHost]
       );
     } else if (isCrossOrig) {
       text = this.bundle.formatStringFromName(
         "EnterUserPasswordForCrossOrigin2",
-        [displayHost],
-        1
+        [displayHost]
       );
     } else if (!realm) {
       text = this.bundle.formatStringFromName(
         "EnterUserPasswordFor2",
-        [displayHost],
-        1
+        [displayHost]
       );
     } else {
       text = this.bundle.formatStringFromName(
         "EnterLoginForRealm3",
-        [realm, displayHost],
-        2
+        [realm, displayHost]
       );
     }
 

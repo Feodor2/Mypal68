@@ -12,15 +12,15 @@
 #include "mozilla/Logging.h"
 #include "mozilla/MruCache.h"
 #include "mozilla/Pair.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_extensions.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozIThirdPartyUtil.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindowInner.h"
 #include "nsICookiePermission.h"
 #include "nsICookieService.h"
-#include "nsIDocShell.h"
 #include "nsIHttpChannelInternal.h"
-#include "nsIIOService.h"
 #include "nsIParentChannel.h"
 #include "nsIPermission.h"
 #include "nsPermissionManager.h"
@@ -28,7 +28,6 @@
 #include "nsIScriptError.h"
 #include "nsIURI.h"
 #include "nsIURIFixup.h"
-#include "nsIURL.h"
 #include "nsIWebProgressListener.h"
 #include "nsNetUtil.h"
 #include "nsPIDOMWindow.h"
@@ -68,24 +67,22 @@ UniquePtr<nsTArray<AntiTrackingCommon::AntiTrackingSettingsChangedCallback>>
     gSettingsChangedCallbacks;
 
 bool GetParentPrincipalAndTrackingOrigin(
-    nsGlobalWindowInner* a3rdPartyTrackingWindow,
+    nsGlobalWindowInner* a3rdPartyTrackingWindow, uint32_t aBehavior,
     nsIPrincipal** aTopLevelStoragePrincipal, nsACString& aTrackingOrigin,
     nsIURI** aTrackingURI, nsIPrincipal** aTrackingPrincipal) {
-  if (!nsContentUtils::IsThirdPartyTrackingResourceWindow(
-          a3rdPartyTrackingWindow)) {
-    return false;
-  }
-
   Document* doc = a3rdPartyTrackingWindow->GetDocument();
   // Make sure storage access isn't disabled
-  if (doc && (doc->StorageAccessSandboxed() ||
-              nsContentUtils::IsInPrivateBrowsing(doc))) {
+  if (doc && (doc->StorageAccessSandboxed())) {
     return false;
   }
 
   // Now we need the principal and the origin of the parent window.
   nsCOMPtr<nsIPrincipal> topLevelStoragePrincipal =
-      a3rdPartyTrackingWindow->GetTopLevelStorageAreaPrincipal();
+      // Use the "top-level storage area principal" behaviour in reject tracker
+      // mode only.
+      (aBehavior == nsICookieService::BEHAVIOR_REJECT_TRACKER)
+          ? a3rdPartyTrackingWindow->GetTopLevelStorageAreaPrincipal()
+          : a3rdPartyTrackingWindow->GetTopLevelAntiTrackingPrincipal();
   if (!topLevelStoragePrincipal) {
     LOG(("No top-level storage area principal at hand"));
     return false;
@@ -217,10 +214,7 @@ int32_t CookiesBehavior(nsILoadInfo* aLoadInfo,
 
   // WebExtensions 3rd party URI always get BEHAVIOR_ACCEPT as cookieBehavior,
   // this is semantically equivalent to the principal having a AddonPolicy().
-  bool is3rdPartyMozExt = false;
-  if (NS_SUCCEEDED(
-          a3rdPartyURI->SchemeIs("moz-extension", &is3rdPartyMozExt)) &&
-      is3rdPartyMozExt) {
+  if (a3rdPartyURI->SchemeIs("moz-extension")) {
     return nsICookieService::BEHAVIOR_ACCEPT;
   }
 
@@ -311,25 +305,20 @@ ContentBlockingAllowListCache& GetContentBlockingAllowListCache() {
   return cache;
 }
 
-bool CheckContentBlockingAllowList(nsIURI* aTopWinURI,
+bool CheckContentBlockingAllowList(nsIPrincipal* aTopWinPrincipal,
                                    bool aIsPrivateBrowsing) {
   bool isAllowed = false;
   nsresult rv = AntiTrackingCommon::IsOnContentBlockingAllowList(
-      aTopWinURI, aIsPrivateBrowsing, AntiTrackingCommon::eStorageChecks,
-      isAllowed);
+      aTopWinPrincipal, aIsPrivateBrowsing, isAllowed);
   if (NS_SUCCEEDED(rv) && isAllowed) {
-    LOG_SPEC(
-        ("The top-level window (%s) is on the content blocking allow list, "
-         "bail out early",
-         _spec),
-        aTopWinURI);
+    LOG(
+        ("The top-level window is on the content blocking allow list, "
+         "bail out early"));
     return true;
   }
   if (NS_FAILED(rv)) {
-    LOG_SPEC(
-        ("Checking the content blocking allow list for %s failed with %" PRIx32,
-         _spec, static_cast<uint32_t>(rv)),
-        aTopWinURI);
+    LOG(("Checking the content blocking allow list for failed with %" PRIx32,
+         static_cast<uint32_t>(rv)));
   }
   return false;
 }
@@ -344,15 +333,13 @@ bool CheckContentBlockingAllowList(nsPIDOMWindowInner* aWindow) {
     return entry.Data().mResult;
   }
 
-  nsPIDOMWindowOuter* top = aWindow->GetScriptableTop();
-  if (top) {
-    nsIURI* topWinURI = top->GetDocumentURI();
-    Document* doc = top->GetExtantDoc();
-    bool isPrivateBrowsing =
-        doc ? nsContentUtils::IsInPrivateBrowsing(doc) : false;
+  nsPIDOMWindowOuter* top = aWindow->GetInProcessScriptableTop();
+  Document* doc = top ? top->GetExtantDoc() : nullptr;
+  if (doc) {
+    bool isPrivateBrowsing = nsContentUtils::IsInPrivateBrowsing(doc);
 
-    const bool result =
-        CheckContentBlockingAllowList(topWinURI, isPrivateBrowsing);
+    const bool result = CheckContentBlockingAllowList(
+        doc->GetContentBlockingAllowListPrincipal(), isPrivateBrowsing);
 
     entry.Set(ContentBlockingAllowListEntry(aWindow, result));
 
@@ -376,28 +363,12 @@ bool CheckContentBlockingAllowList(nsIHttpChannel* aChannel) {
     return entry.Data().mResult;
   }
 
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-  nsContentPolicyType contentPolicyType =
-      loadInfo->GetExternalContentPolicyType();
-
-  nsCOMPtr<nsIURI> uri;
-
-  // This is the top-level request. Let's use the channel URI.
-  if (contentPolicyType == nsIContentPolicy::TYPE_DOCUMENT) {
-    nsresult rv = NS_GetFinalChannelURI(aChannel, getter_AddRefs(uri));
-    if (NS_WARN_IF(NS_FAILED(rv)) || !uri) {
-      LOG(
-          ("Could not check the content blocking allow list because the "
-           "channel URI is not accessible"));
-      entry.Set(ContentBlockingAllowListEntry(aChannel, false));
-      return false;
-    }
-  } else {
-    nsCOMPtr<nsIHttpChannelInternal> chan = do_QueryInterface(aChannel);
-    MOZ_ASSERT(chan);
-
-    nsresult rv = chan->GetTopWindowURI(getter_AddRefs(uri));
-    if (NS_FAILED(rv) || !uri) {
+  nsCOMPtr<nsIPrincipal> principal;
+  nsCOMPtr<nsIHttpChannelInternal> httpChan = do_QueryInterface(aChannel);
+  if (httpChan) {
+    nsresult rv = httpChan->GetContentBlockingAllowListPrincipal(
+        getter_AddRefs(principal));
+    if (NS_FAILED(rv) || !principal) {
       LOG(
           ("Could not check the content blocking allow list because the top "
            "window wasn't accessible"));
@@ -406,10 +377,8 @@ bool CheckContentBlockingAllowList(nsIHttpChannel* aChannel) {
     }
   }
 
-  MOZ_ASSERT(uri);
-
   const bool result =
-      CheckContentBlockingAllowList(uri, NS_UsePrivateBrowsing(aChannel));
+      CheckContentBlockingAllowList(principal, NS_UsePrivateBrowsing(aChannel));
   entry.Set(ContentBlockingAllowListEntry(aChannel, result));
   return result;
 }
@@ -423,6 +392,8 @@ void ReportBlockingToConsole(nsPIDOMWindowOuter* aWindow, nsIURI* aURI,
           nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION ||
       aRejectedReason ==
           nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER ||
+      aRejectedReason ==
+          nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN ||
       aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL ||
       aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN);
 
@@ -482,14 +453,14 @@ void ReportBlockingToConsole(nsPIDOMWindowOuter* aWindow, nsIURI* aURI,
                 urifixup->CreateExposableURI(uri, getter_AddRefs(exposableURI));
             NS_ENSURE_SUCCESS_VOID(rv);
 
-            NS_ConvertUTF8toUTF16 spec(exposableURI->GetSpecOrDefault());
-            const char16_t* params[] = {spec.get()};
+            AutoTArray<nsString, 1> params;
+            CopyUTF8toUTF16(exposableURI->GetSpecOrDefault(),
+                            *params.AppendElement());
 
             nsContentUtils::ReportToConsole(
                 nsIScriptError::warningFlag, category, doc,
-                nsContentUtils::eNECKO_PROPERTIES, message, params,
-                ArrayLength(params), nullptr, sourceLine, lineNumber,
-                columnNumber);
+                nsContentUtils::eNECKO_PROPERTIES, message, params, nullptr,
+                sourceLine, lineNumber, columnNumber);
           }),
       kMaxConsoleOutputDelayMs, EventQueuePriority::Idle);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -533,9 +504,8 @@ void ReportUnblockingToConsole(
               return;
             }
 
-            const char16_t* params[] = {origin.BeginReading(),
-                                        trackingOrigin.BeginReading(),
-                                        grantedOrigin.BeginReading()};
+            // Not adding grantedOrigin yet because we may not want it later.
+            AutoTArray<nsString, 3> params = {origin, trackingOrigin};
             const char* messageWithDifferentOrigin = nullptr;
             const char* messageWithSameOrigin = nullptr;
 
@@ -548,7 +518,7 @@ void ReportUnblockingToConsole(
                 break;
 
               case AntiTrackingCommon::eOpenerAfterUserInteraction:
-                MOZ_FALLTHROUGH;
+                [[fallthrough]];
               case AntiTrackingCommon::eOpener:
                 messageWithDifferentOrigin =
                     "CookieAllowedForOriginOnTrackerByHeuristic";
@@ -561,13 +531,14 @@ void ReportUnblockingToConsole(
                   nsIScriptError::warningFlag,
                   NS_LITERAL_CSTRING("Content Blocking"), doc,
                   nsContentUtils::eNECKO_PROPERTIES, messageWithSameOrigin,
-                  params, 2, nullptr, sourceLine, lineNumber, columnNumber);
+                  params, nullptr, sourceLine, lineNumber, columnNumber);
             } else {
+              params.AppendElement(grantedOrigin);
               nsContentUtils::ReportToConsole(
                   nsIScriptError::warningFlag,
                   NS_LITERAL_CSTRING("Content Blocking"), doc,
                   nsContentUtils::eNECKO_PROPERTIES, messageWithDifferentOrigin,
-                  params, 3, nullptr, sourceLine, lineNumber, columnNumber);
+                  params, nullptr, sourceLine, lineNumber, columnNumber);
             }
           }),
       kMaxConsoleOutputDelayMs, EventQueuePriority::Idle);
@@ -590,7 +561,7 @@ already_AddRefed<nsPIDOMWindowOuter> GetTopWindow(nsPIDOMWindowInner* aWindow) {
   nsCOMPtr<nsPIDOMWindowOuter> pwin;
   auto* outer = nsGlobalWindowOuter::Cast(aWindow->GetOuterWindow());
   if (outer) {
-    pwin = outer->GetScriptableTop();
+    pwin = outer->GetInProcessScriptableTop();
   }
 
   if (!pwin) {
@@ -600,6 +571,41 @@ already_AddRefed<nsPIDOMWindowOuter> GetTopWindow(nsPIDOMWindowInner* aWindow) {
   return pwin.forget();
 }
 
+class TemporaryAccessGrantCacheKey : public PLDHashEntryHdr {
+ public:
+  typedef Pair<nsCOMPtr<nsIPrincipal>, nsCString> KeyType;
+  typedef const KeyType* KeyTypePointer;
+
+  explicit TemporaryAccessGrantCacheKey(KeyTypePointer aKey)
+      : mPrincipal(aKey->first()), mType(aKey->second()) {}
+  TemporaryAccessGrantCacheKey(TemporaryAccessGrantCacheKey&& aOther) = default;
+
+  ~TemporaryAccessGrantCacheKey() = default;
+
+  KeyType GetKey() const { return MakePair(mPrincipal, mType); }
+  bool KeyEquals(KeyTypePointer aKey) const {
+    return !!mPrincipal == !!aKey->first() && mType == aKey->second() &&
+           (mPrincipal ? (mPrincipal->Equals(aKey->first())) : true);
+  }
+
+  static KeyTypePointer KeyToPointer(KeyType& aKey) { return &aKey; }
+  static PLDHashNumber HashKey(KeyTypePointer aKey) {
+    if (!aKey) {
+      return 0;
+    }
+
+    BasePrincipal* bp = BasePrincipal::Cast(aKey->first());
+    return HashGeneric(bp->GetOriginNoSuffixHash(), bp->GetOriginSuffixHash(),
+                       HashString(aKey->second()));
+  }
+
+  enum { ALLOW_MEMMOVE = true };
+
+ private:
+  nsCOMPtr<nsIPrincipal> mPrincipal;
+  nsCString mType;
+};
+
 class TemporaryAccessGrantObserver final : public nsIObserver {
  public:
   NS_DECL_ISUPPORTS
@@ -607,18 +613,33 @@ class TemporaryAccessGrantObserver final : public nsIObserver {
 
   static void Create(nsPermissionManager* aPM, nsIPrincipal* aPrincipal,
                      const nsACString& aType) {
-    nsCOMPtr<nsITimer> timer;
-    RefPtr<TemporaryAccessGrantObserver> observer =
-        new TemporaryAccessGrantObserver(aPM, aPrincipal, aType);
-    nsresult rv = NS_NewTimerWithObserver(getter_AddRefs(timer), observer,
-                                          24 * 60 * 60 * 1000,  // 24 hours
-                                          nsITimer::TYPE_ONE_SHOT);
+    MOZ_ASSERT(XRE_IsParentProcess());
 
-    if (NS_SUCCEEDED(rv)) {
-      observer->SetTimer(timer);
-    } else {
-      timer->Cancel();
+    if (!sObservers) {
+      sObservers = MakeUnique<ObserversTable>();
     }
+    Unused << sObservers
+                  ->LookupForAdd(MakePair(nsCOMPtr<nsIPrincipal>(aPrincipal),
+                                          nsCString(aType)))
+                  .OrInsert([&]() -> nsITimer* {
+                    // Only create a new observer if we don't have a matching
+                    // entry in our hashtable.
+                    nsCOMPtr<nsITimer> timer;
+                    RefPtr<TemporaryAccessGrantObserver> observer =
+                        new TemporaryAccessGrantObserver(aPM, aPrincipal,
+                                                         aType);
+                    nsresult rv = NS_NewTimerWithObserver(
+                        getter_AddRefs(timer), observer,
+                        24 * 60 * 60 * 1000,  // 24 hours
+                        nsITimer::TYPE_ONE_SHOT);
+
+                    if (NS_SUCCEEDED(rv)) {
+                      observer->SetTimer(timer);
+                      return timer;
+                    }
+                    timer->Cancel();
+                    return nullptr;
+                  });
   }
 
   void SetTimer(nsITimer* aTimer) {
@@ -643,11 +664,17 @@ class TemporaryAccessGrantObserver final : public nsIObserver {
   ~TemporaryAccessGrantObserver() = default;
 
  private:
+  typedef nsDataHashtable<TemporaryAccessGrantCacheKey, nsCOMPtr<nsITimer>>
+      ObserversTable;
+  static UniquePtr<ObserversTable> sObservers;
   nsCOMPtr<nsITimer> mTimer;
   RefPtr<nsPermissionManager> mPM;
   nsCOMPtr<nsIPrincipal> mPrincipal;
   nsCString mType;
 };
+
+UniquePtr<TemporaryAccessGrantObserver::ObserversTable>
+    TemporaryAccessGrantObserver::sObservers;
 
 NS_IMPL_ISUPPORTS(TemporaryAccessGrantObserver, nsIObserver)
 
@@ -656,6 +683,9 @@ TemporaryAccessGrantObserver::Observe(nsISupports* aSubject, const char* aTopic,
                                       const char16_t* aData) {
   if (strcmp(aTopic, NS_TIMER_CALLBACK_TOPIC) == 0) {
     Unused << mPM->RemoveFromPrincipal(mPrincipal, mType);
+
+    MOZ_ASSERT(sObservers);
+    sObservers->Remove(MakePair(mPrincipal, mType));
   } else if (strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0) {
     nsCOMPtr<nsIObserverService> observerService =
         mozilla::services::GetObserverService();
@@ -666,6 +696,7 @@ TemporaryAccessGrantObserver::Observe(nsISupports* aSubject, const char* aTopic,
       mTimer->Cancel();
       mTimer = nullptr;
     }
+    sObservers.reset();
   }
 
   return NS_OK;
@@ -741,6 +772,102 @@ void SettingsChangeObserver::RunAntiTrackingSettingsChangedCallbacks() {
   }
 }
 
+bool CheckAntiTrackingPermission(nsIPrincipal* aPrincipal,
+                                 const nsAutoCString& aType,
+                                 bool aIsInPrivateBrowsing,
+                                 uint32_t* aRejectedReason,
+                                 uint32_t aBlockedReason,
+                                 nsIURI* aPrincipalURI) {
+  nsPermissionManager* permManager = nsPermissionManager::GetInstance();
+  if (NS_WARN_IF(!permManager)) {
+    LOG(("Failed to obtain the permission manager"));
+    return false;
+  }
+
+  uint32_t result = 0;
+  if (aIsInPrivateBrowsing) {
+    LOG_SPEC(("Querying the permissions for private modei looking for a "
+              "permission of type %s for %s",
+              aType.get(), _spec),
+             aPrincipalURI);
+    nsTArray<RefPtr<nsIPermission>> permissions;
+    nsresult rv = permManager->GetAllForPrincipal(aPrincipal, permissions);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      LOG(("Failed to get the list of permissions"));
+      return false;
+    }
+
+    bool found = false;
+    for (const auto& permission : permissions) {
+      if (!permission) {
+        LOG(("Couldn't get the permission for unknown reasons"));
+        continue;
+      }
+
+      nsAutoCString permissionType;
+      if (NS_SUCCEEDED(permission->GetType(permissionType)) &&
+          permissionType != aType) {
+        LOG(("Non-matching permission type: %s", aType.get()));
+        continue;
+      }
+
+      uint32_t capability = 0;
+      if (NS_SUCCEEDED(permission->GetCapability(&capability)) &&
+          capability != nsIPermissionManager::ALLOW_ACTION) {
+        LOG(("Non-matching permission capability: %d", capability));
+        continue;
+      }
+
+      uint32_t expirationType = 0;
+      if (NS_SUCCEEDED(permission->GetExpireType(&expirationType)) &&
+          expirationType != nsIPermissionManager ::EXPIRE_SESSION) {
+        LOG(("Non-matching permission expiration type: %d", expirationType));
+        continue;
+      }
+
+      int64_t expirationTime = 0;
+      if (NS_SUCCEEDED(permission->GetExpireTime(&expirationTime)) &&
+          expirationTime != 0) {
+        LOG(("Non-matching permission expiration time: %" PRId64,
+             expirationTime));
+        continue;
+      }
+
+      LOG(("Found a matching permission"));
+      found = true;
+    }
+
+    if (!found) {
+      if (aRejectedReason) {
+        *aRejectedReason = aBlockedReason;
+      }
+      return false;
+    }
+  } else {
+    nsresult rv = permManager->TestPermissionWithoutDefaultsFromPrincipal(
+        aPrincipal, aType, &result);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      LOG(("Failed to test the permission"));
+      return false;
+    }
+
+    LOG_SPEC(
+        ("Testing permission type %s for %s resulted in %d (%s)", aType.get(),
+         _spec, int(result),
+         result == nsIPermissionManager::ALLOW_ACTION ? "success" : "failure"),
+        aPrincipalURI);
+
+    if (result != nsIPermissionManager::ALLOW_ACTION) {
+      if (aRejectedReason) {
+        *aRejectedReason = aBlockedReason;
+      }
+      return false;
+    }
+  }
+
+  return true;
+}
+
 }  // namespace
 
 /* static */ RefPtr<AntiTrackingCommon::StorageAccessGrantPromise>
@@ -772,14 +899,20 @@ AntiTrackingCommon::AddFirstPartyStorageAccessGrantedFor(
     LOG(("Parent window has no doc"));
     return StorageAccessGrantPromise::CreateAndReject(false, __func__);
   }
-  auto cookieBehavior = parentDoc->CookieSettings()->GetCookieBehavior();
-  if (cookieBehavior != nsICookieService::BEHAVIOR_REJECT_TRACKER) {
+  int32_t behavior = parentDoc->CookieSettings()->GetCookieBehavior();
+
+  if (!parentDoc->CookieSettings()->GetRejectThirdPartyTrackers()) {
     LOG(
         ("Disabled by network.cookie.cookieBehavior pref (%d), bailing out "
          "early",
-         cookieBehavior));
+         behavior));
     return StorageAccessGrantPromise::CreateAndResolve(true, __func__);
   }
+
+  MOZ_ASSERT(
+      behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
+      behavior ==
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
 
   if (CheckContentBlockingAllowList(aParentWindow)) {
     return StorageAccessGrantPromise::CreateAndResolve(true, __func__);
@@ -817,18 +950,42 @@ AntiTrackingCommon::AddFirstPartyStorageAccessGrantedFor(
       return StorageAccessGrantPromise::CreateAndReject(false, __func__);
     }
 
-    // We are a 3rd party source.
-  } else if (!GetParentPrincipalAndTrackingOrigin(
-                 parentWindow, getter_AddRefs(topLevelStoragePrincipal),
-                 trackingOrigin, getter_AddRefs(trackingURI),
-                 getter_AddRefs(trackingPrincipal))) {
-    LOG(
-        ("Error while computing the parent principal and tracking origin, "
-         "bailing out early"));
-    return StorageAccessGrantPromise::CreateAndReject(false, __func__);
+  } else {
+    // We should be a 3rd party source.
+    bool isThirdParty = false;
+    if (behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER) {
+      isThirdParty =
+          nsContentUtils::IsThirdPartyTrackingResourceWindow(parentWindow);
+    } else if (behavior == nsICookieService::
+                               BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
+      isThirdParty = nsContentUtils::IsThirdPartyWindowOrChannel(
+          parentWindow, nullptr, nullptr);
+    }
+
+    if (!isThirdParty) {
+      if (behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER) {
+        LOG(("Our window isn't a third-party tracking window"));
+      } else if (behavior ==
+                 nsICookieService::
+                     BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
+        LOG(("Our window isn't a third-party window"));
+      }
+      return StorageAccessGrantPromise::CreateAndReject(false, __func__);
+    }
+
+    if (!GetParentPrincipalAndTrackingOrigin(
+            parentWindow, behavior, getter_AddRefs(topLevelStoragePrincipal),
+            trackingOrigin, getter_AddRefs(trackingURI),
+            getter_AddRefs(trackingPrincipal))) {
+      LOG(
+          ("Error while computing the parent principal and tracking origin, "
+           "bailing out early"));
+      return StorageAccessGrantPromise::CreateAndReject(false, __func__);
+    }
   }
 
-  nsCOMPtr<nsPIDOMWindowOuter> topOuterWindow = outerParentWindow->GetTop();
+  nsCOMPtr<nsPIDOMWindowOuter> topOuterWindow =
+      outerParentWindow->GetInProcessTop();
   nsGlobalWindowOuter* topWindow = nsGlobalWindowOuter::Cast(topOuterWindow);
   if (NS_WARN_IF(!topWindow)) {
     LOG(("No top outer window."));
@@ -1064,16 +1221,27 @@ AntiTrackingCommon::SaveFirstPartyStorageAccessGrantedForOriginOnParentProcess(
 }
 
 // static
-bool AntiTrackingCommon::IsStorageAccessPermission(nsIPermission* aPermission,
-                                                   nsIPrincipal* aPrincipal) {
-  MOZ_ASSERT(aPermission);
-  MOZ_ASSERT(aPrincipal);
+bool AntiTrackingCommon::CreateStoragePermissionKey(nsIPrincipal* aPrincipal,
+                                                    nsACString& aKey) {
+  if (!aPrincipal) {
+    return false;
+  }
 
   nsAutoCString origin;
   nsresult rv = aPrincipal->GetOriginNoSuffix(origin);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return false;
   }
+
+  CreatePermissionKey(origin, aKey);
+  return true;
+}
+
+// static
+bool AntiTrackingCommon::IsStorageAccessPermission(nsIPermission* aPermission,
+                                                   nsIPrincipal* aPrincipal) {
+  MOZ_ASSERT(aPermission);
+  MOZ_ASSERT(aPrincipal);
 
   // The permission key may belong either to a tracking origin on the same
   // origin as the granted origin, or on another origin as the granted origin
@@ -1086,10 +1254,13 @@ bool AntiTrackingCommon::IsStorageAccessPermission(nsIPermission* aPermission,
   // shorter permission key and will then do a prefix match on the type of the
   // input permission to see if it is a storage access permission or not.
   nsAutoCString permissionKey;
-  CreatePermissionKey(origin, permissionKey);
+  bool result = CreateStoragePermissionKey(aPrincipal, permissionKey);
+  if (NS_WARN_IF(!result)) {
+    return false;
+  }
 
   nsAutoCString type;
-  rv = aPermission->GetType(type);
+  nsresult rv = aPermission->GetType(type);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return false;
   }
@@ -1125,7 +1296,7 @@ bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
     return false;
   }
 
-  nsCOMPtr<nsPIDOMWindowOuter> topOuterWindow = outerWindow->GetTop();
+  nsCOMPtr<nsPIDOMWindowOuter> topOuterWindow = outerWindow->GetInProcessTop();
   nsGlobalWindowOuter* topWindow = nsGlobalWindowOuter::Cast(topOuterWindow);
   if (NS_WARN_IF(!topWindow)) {
     LOG(("No top outer window"));
@@ -1182,8 +1353,11 @@ bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
 
   // As a performance optimization, we only perform this check for
   // BEHAVIOR_REJECT_FOREIGN and BEHAVIOR_LIMIT_FOREIGN.  For
-  // BEHAVIOR_REJECT_TRACKER, third-partiness is implicily checked later below.
-  if (behavior != nsICookieService::BEHAVIOR_REJECT_TRACKER) {
+  // BEHAVIOR_REJECT_TRACKER and BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN,
+  // third-partiness is implicily checked later below.
+  if (behavior != nsICookieService::BEHAVIOR_REJECT_TRACKER &&
+      behavior !=
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN) {
     // Let's check if this is a 3rd party context.
     if (!nsContentUtils::IsThirdPartyWindowOrChannel(aWindow, nullptr, aURI)) {
       LOG(("Our window isn't a third-party window"));
@@ -1202,11 +1376,33 @@ bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
     return false;
   }
 
-  MOZ_ASSERT(behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER);
+  MOZ_ASSERT(
+      behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
+      behavior ==
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
 
-  if (!nsContentUtils::IsThirdPartyTrackingResourceWindow(aWindow)) {
-    LOG(("Our window isn't a third-party tracking window"));
-    return true;
+  uint32_t blockedReason =
+      nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER;
+
+  if (behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER) {
+    if (!nsContentUtils::IsThirdPartyTrackingResourceWindow(aWindow)) {
+      LOG(("Our window isn't a third-party tracking window"));
+      return true;
+    }
+  } else {
+    MOZ_ASSERT(behavior ==
+               nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
+    if (nsContentUtils::IsThirdPartyTrackingResourceWindow(aWindow)) {
+      // fall through
+    } else if (nsContentUtils::IsThirdPartyWindowOrChannel(aWindow, nullptr,
+                                                           aURI)) {
+      LOG(("We're in the third-party context, storage should be partitioned"));
+      // fall through, but remember that we're partitioning.
+      blockedReason = nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN;
+    } else {
+      LOG(("Our window isn't a third-party window, storage is allowed"));
+      return true;
+    }
   }
 
 #ifdef DEBUG
@@ -1228,10 +1424,11 @@ bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
   nsCOMPtr<nsIURI> trackingURI;
   nsAutoCString trackingOrigin;
   if (!GetParentPrincipalAndTrackingOrigin(
-          nsGlobalWindowInner::Cast(aWindow), getter_AddRefs(parentPrincipal),
-          trackingOrigin, getter_AddRefs(trackingURI), nullptr)) {
+          nsGlobalWindowInner::Cast(aWindow), behavior,
+          getter_AddRefs(parentPrincipal), trackingOrigin,
+          getter_AddRefs(trackingURI), nullptr)) {
     LOG(("Failed to obtain the parent principal and the tracking origin"));
-    *aRejectedReason = nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER;
+    *aRejectedReason = blockedReason;
     return false;
   }
   Unused << parentPrincipal->GetURI(getter_AddRefs(parentPrincipalURI));
@@ -1251,35 +1448,13 @@ bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
     return true;
   }
 
-  nsPermissionManager* permManager = nsPermissionManager::GetInstance();
-  if (NS_WARN_IF(!permManager)) {
-    LOG(("Failed to obtain the permission manager"));
-    return false;
-  }
-
-  uint32_t result = 0;
-  rv = permManager->TestPermissionFromPrincipal(parentPrincipal, type, &result);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    LOG(("Failed to test the permission"));
-    return false;
-  }
-
-  LOG_SPEC(
-      ("Testing permission type %s for %s resulted in %d (%s)", type.get(),
-       _spec, int(result),
-       result == nsIPermissionManager::ALLOW_ACTION ? "success" : "failure"),
-      parentPrincipalURI);
-
-  if (result != nsIPermissionManager::ALLOW_ACTION) {
-    *aRejectedReason = nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER;
-    return false;
-  }
-
-  return true;
+  return CheckAntiTrackingPermission(
+      parentPrincipal, type, nsContentUtils::IsInPrivateBrowsing(document),
+      aRejectedReason, blockedReason, parentPrincipalURI);
 }
 
 bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
-    nsIHttpChannel* aChannel, nsIURI* aURI, uint32_t* aRejectedReason) {
+    nsIChannel* aChannel, nsIURI* aURI, uint32_t* aRejectedReason) {
   MOZ_ASSERT(aURI);
   MOZ_ASSERT(aChannel);
 
@@ -1318,6 +1493,8 @@ bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
     toplevelPrincipal = loadInfo->LoadingPrincipal();
   }
 
+  nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
+
   // If we don't have a loading principal and this is a document channel, we are
   // a top-level window!
   if (!toplevelPrincipal) {
@@ -1326,8 +1503,10 @@ bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
          "channel"
          " that belongs to a top-level window"));
     bool isDocument = false;
-    rv = aChannel->GetIsMainDocumentChannel(&isDocument);
-    if (NS_SUCCEEDED(rv) && isDocument) {
+    if (httpChannel) {
+      rv = httpChannel->GetIsMainDocumentChannel(&isDocument);
+    }
+    if (httpChannel && NS_SUCCEEDED(rv) && isDocument) {
       rv = ssm->GetChannelResultPrincipal(aChannel,
                                           getter_AddRefs(toplevelPrincipal));
       if (NS_SUCCEEDED(rv)) {
@@ -1401,7 +1580,7 @@ bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
     return true;
   }
 
-  if (CheckContentBlockingAllowList(aChannel)) {
+  if (httpChannel && CheckContentBlockingAllowList(httpChannel)) {
     return true;
   }
 
@@ -1439,15 +1618,42 @@ bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
     return false;
   }
 
-  MOZ_ASSERT(behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER);
+  MOZ_ASSERT(
+      behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER ||
+      behavior ==
+          nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
+
+  uint32_t blockedReason =
+      nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER;
 
   // Not a tracker.
-  if (!aChannel->IsThirdPartyTrackingResource()) {
-    LOG(("Our channel isn't a third-party tracking channel"));
-    return true;
+  if (behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER) {
+    if (httpChannel && !httpChannel->IsThirdPartyTrackingResource()) {
+      LOG(("Our channel isn't a third-party tracking channel"));
+      return true;
+    }
+  } else {
+    MOZ_ASSERT(behavior ==
+               nsICookieService::BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN);
+    if (httpChannel && httpChannel->IsThirdPartyTrackingResource()) {
+      // fall through
+    } else if (nsContentUtils::IsThirdPartyWindowOrChannel(nullptr, aChannel,
+                                                           aURI)) {
+      LOG(("We're in the third-party context, storage should be partitioned"));
+      // fall through but remember that we're partitioning.
+      blockedReason = nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN;
+    } else {
+      LOG(("Our channel isn't a third-party channel, storage is allowed"));
+      return true;
+    }
   }
 
-  nsIPrincipal* parentPrincipal = loadInfo->GetTopLevelStorageAreaPrincipal();
+  // Only use the "top-level storage area principal" behaviour for reject
+  // tracker mode only.
+  nsIPrincipal* parentPrincipal =
+      (behavior == nsICookieService::BEHAVIOR_REJECT_TRACKER)
+          ? loadInfo->GetTopLevelStorageAreaPrincipal()
+          : loadInfo->GetTopLevelPrincipal();
   if (!parentPrincipal) {
     LOG(("No top-level storage area principal at hand"));
 
@@ -1455,7 +1661,7 @@ bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
     // window.
     if (loadInfo->GetTopLevelPrincipal()) {
       LOG(("Parent window is the top-level window, bail out early"));
-      *aRejectedReason = nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER;
+      *aRejectedReason = blockedReason;
       return false;
     }
 
@@ -1498,32 +1704,16 @@ bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
   nsAutoCString type;
   CreatePermissionKey(trackingOrigin, origin, type);
 
-  nsPermissionManager* permManager = nsPermissionManager::GetInstance();
-  if (NS_WARN_IF(!permManager)) {
-    LOG(("Failed to obtain the permission manager"));
-    return false;
-  }
-
-  uint32_t result = 0;
-  rv = permManager->TestPermissionWithoutDefaultsFromPrincipal(parentPrincipal,
-                                                               type, &result);
+  uint32_t privateBrowsingId = 0;
+  rv = channelPrincipal->GetPrivateBrowsingId(&privateBrowsingId);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    LOG(("Failed to test the permission"));
+    LOG(("Failed to get the channel principal's private browsing ID"));
     return false;
   }
 
-  LOG_SPEC(
-      ("Testing permission type %s for %s resulted in %d (%s)", type.get(),
-       _spec, int(result),
-       result == nsIPermissionManager::ALLOW_ACTION ? "success" : "failure"),
-      parentPrincipalURI);
-
-  if (result != nsIPermissionManager::ALLOW_ACTION) {
-    *aRejectedReason = nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER;
-    return false;
-  }
-
-  return true;
+  return CheckAntiTrackingPermission(parentPrincipal, type, !!privateBrowsingId,
+                                     aRejectedReason, blockedReason,
+                                     parentPrincipalURI);
 }
 
 bool AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
@@ -1566,9 +1756,9 @@ bool AntiTrackingCommon::MaybeIsFirstPartyStorageAccessGrantedFor(
     return false;
   }
 
-  auto cookieBehavior = parentDocument->CookieSettings()->GetCookieBehavior();
-  if (cookieBehavior != nsICookieService::BEHAVIOR_REJECT_TRACKER) {
-    LOG(("Disabled by the pref (%d), bail out early", cookieBehavior));
+  if (!parentDocument->CookieSettings()->GetRejectThirdPartyTrackers()) {
+    LOG(("Disabled by the pref (%d), bail out early",
+         parentDocument->CookieSettings()->GetCookieBehavior()));
     return true;
   }
 
@@ -1601,76 +1791,35 @@ bool AntiTrackingCommon::MaybeIsFirstPartyStorageAccessGrantedFor(
     return false;
   }
 
+  nsIPrincipal* parentPrincipal = parentDocument->NodePrincipal();
+  nsCOMPtr<nsIURI> parentPrincipalURI;
+  Unused << parentPrincipal->GetURI(getter_AddRefs(parentPrincipalURI));
+
   nsAutoCString type;
   CreatePermissionKey(origin, type);
 
-  nsPermissionManager* permManager = nsPermissionManager::GetInstance();
-  if (NS_WARN_IF(!permManager)) {
-    LOG(("Failed to obtain the permission manager"));
-    return false;
-  }
-
-  uint32_t result = 0;
-  rv = permManager->TestPermissionWithoutDefaultsFromPrincipal(
-      parentDocument->NodePrincipal(), type, &result);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    LOG(("Failed to test the permission"));
-    return false;
-  }
-
-  if (MOZ_LOG_TEST(gAntiTrackingLog, LogLevel::Debug)) {
-    nsCOMPtr<nsIURI> parentPrincipalURI;
-    Unused << parentDocument->NodePrincipal()->GetURI(
-        getter_AddRefs(parentPrincipalURI));
-    LOG_SPEC(
-        ("Testing permission type %s for %s resulted in %d (%s)", type.get(),
-         _spec, int(result),
-         result == nsIPermissionManager::ALLOW_ACTION ? "success" : "failure"),
-        parentPrincipalURI);
-  }
-
-  return result == nsIPermissionManager::ALLOW_ACTION;
+  return CheckAntiTrackingPermission(
+      parentPrincipal, type,
+      nsContentUtils::IsInPrivateBrowsing(parentDocument), nullptr, 0,
+      parentPrincipalURI);
 }
 
 nsresult AntiTrackingCommon::IsOnContentBlockingAllowList(
-    nsIURI* aTopWinURI, bool aIsPrivateBrowsing,
-    AntiTrackingCommon::ContentBlockingAllowListPurpose aPurpose,
+    nsIPrincipal* aTopWinPrincipal, bool aIsPrivateBrowsing,
     bool& aIsAllowListed) {
   aIsAllowListed = false;
 
-  // For storage checks, check the storage pref, and for annotations checks,
-  // check the corresponding pref as well.  This allows each set of checks to
-  // be disabled individually if needed.
-  if ((aPurpose == eStorageChecks &&
-       !StaticPrefs::browser_contentblocking_allowlist_storage_enabled()) ||
-      (aPurpose == eTrackingAnnotations &&
-       !StaticPrefs::browser_contentblocking_allowlist_annotations_enabled()) ||
-      (aPurpose == eFingerprinting &&
-       !StaticPrefs::privacy_trackingprotection_fingerprinting_enabled()) ||
-      (aPurpose == eCryptomining &&
-       !StaticPrefs::privacy_trackingprotection_cryptomining_enabled())) {
-    LOG(
-        ("Attempting to check the content blocking allow list aborted because "
-         "the third-party cookies UI has been disabled."));
+  if (!aTopWinPrincipal) {
+    // Nothing to do!
     return NS_OK;
   }
 
+  nsCOMPtr<nsIURI> uri;
+  Unused << aTopWinPrincipal->GetURI(getter_AddRefs(uri));
+
   LOG_SPEC(("Deciding whether the user has overridden content blocking for %s",
             _spec),
-           aTopWinURI);
-
-  // Take the host/port portion so we can allowlist by site. Also ignore the
-  // scheme, since users who put sites on the allowlist probably don't expect
-  // allowlisting to depend on scheme.
-  nsAutoCString escaped(NS_LITERAL_CSTRING("https://"));
-  nsAutoCString temp;
-  nsresult rv = aTopWinURI ? aTopWinURI->GetHostPort(temp) : NS_ERROR_FAILURE;
-  // GetHostPort returns an empty string (with a success error code) for file://
-  // URIs.
-  if (NS_FAILED(rv) || temp.IsEmpty()) {
-    return rv;  // normal for some loads, no need to print a warning
-  }
-  escaped.Append(temp);
+           uri);
 
   nsPermissionManager* permManager = nsPermissionManager::GetInstance();
   NS_ENSURE_TRUE(permManager, NS_ERROR_FAILURE);
@@ -1681,21 +1830,19 @@ nsresult AntiTrackingCommon::IsOnContentBlockingAllowList(
       {NS_LITERAL_CSTRING("trackingprotection"), false},
       {NS_LITERAL_CSTRING("trackingprotection-pb"), true}};
 
-  auto topWinURI = PromiseFlatCString(escaped);
   for (size_t i = 0; i < ArrayLength(types); ++i) {
     if (aIsPrivateBrowsing != types[i].second()) {
       continue;
     }
 
     uint32_t permissions = nsIPermissionManager::UNKNOWN_ACTION;
-    rv = permManager->TestPermissionOriginNoSuffix(topWinURI, types[i].first(),
-                                                   &permissions);
+    nsresult rv = permManager->TestPermissionFromPrincipal(
+        aTopWinPrincipal, types[i].first(), &permissions);
     NS_ENSURE_SUCCESS(rv, rv);
 
     if (permissions == nsIPermissionManager::ALLOW_ACTION) {
       aIsAllowListed = true;
-      LOG(("Found user override type %s for %s", types[i].first().get(),
-           topWinURI.get()));
+      LOG(("Found user override type %s", types[i].first().get()));
       // Stop checking the next permisson type if we decided to override.
       break;
     }
@@ -1708,6 +1855,107 @@ nsresult AntiTrackingCommon::IsOnContentBlockingAllowList(
   return NS_OK;
 }
 
+/* static */ void AntiTrackingCommon::ComputeContentBlockingAllowListPrincipal(
+    nsIPrincipal* aDocumentPrincipal, nsIPrincipal** aPrincipal) {
+  MOZ_ASSERT(aPrincipal);
+
+  auto returnInputArgument =
+      MakeScopeExit([&] { NS_IF_ADDREF(*aPrincipal = aDocumentPrincipal); });
+
+  BasePrincipal* bp = BasePrincipal::Cast(aDocumentPrincipal);
+  if (!bp || !bp->IsCodebasePrincipal()) {
+    // If we have something other than a content principal, just return what we
+    // have.  This includes the case where we were passed a nullptr.
+    return;
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = aDocumentPrincipal->GetURI(getter_AddRefs(uri));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  // Take the host/port portion so we can allowlist by site. Also ignore the
+  // scheme, since users who put sites on the allowlist probably don't expect
+  // allowlisting to depend on scheme.
+  nsAutoCString escaped(NS_LITERAL_CSTRING("https://"));
+  nsAutoCString temp;
+  rv = uri->GetHostPort(temp);
+  // view-source URIs will be handled by the next block.
+  if (NS_FAILED(rv) && !uri->SchemeIs("view-source")) {
+    // Normal for some loads, no need to print a warning
+    return;
+  }
+
+  // GetHostPort returns an empty string (with a success error code) for file://
+  // URIs.
+  if (temp.IsEmpty()) {
+    // In this case we want to make sure that our allow list principal would be
+    // computed as null.
+    returnInputArgument.release();
+    *aPrincipal = nullptr;
+    return;
+  }
+  escaped.Append(temp);
+
+  rv = NS_NewURI(getter_AddRefs(uri), escaped);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  nsCOMPtr<nsIPrincipal> principal = BasePrincipal::CreateCodebasePrincipal(
+      uri, aDocumentPrincipal->OriginAttributesRef());
+  if (NS_WARN_IF(!principal)) {
+    return;
+  }
+
+  returnInputArgument.release();
+  principal.forget(aPrincipal);
+}
+
+/* static */ void
+AntiTrackingCommon::RecomputeContentBlockingAllowListPrincipal(
+    nsIURI* aURIBeingLoaded, const OriginAttributes& aAttrs,
+    nsIPrincipal** aPrincipal) {
+  MOZ_ASSERT(aPrincipal);
+
+  auto returnInputArgument = MakeScopeExit([&] { *aPrincipal = nullptr; });
+
+  // Take the host/port portion so we can allowlist by site. Also ignore the
+  // scheme, since users who put sites on the allowlist probably don't expect
+  // allowlisting to depend on scheme.
+  nsAutoCString escaped(NS_LITERAL_CSTRING("https://"));
+  nsAutoCString temp;
+  nsresult rv = aURIBeingLoaded->GetHostPort(temp);
+  // view-source URIs will be handled by the next block.
+  if (NS_FAILED(rv) && !aURIBeingLoaded->SchemeIs("view-source")) {
+    // Normal for some loads, no need to print a warning
+    return;
+  }
+
+  // GetHostPort returns an empty string (with a success error code) for file://
+  // URIs.
+  if (temp.IsEmpty()) {
+    return;
+  }
+  escaped.Append(temp);
+
+  nsCOMPtr<nsIURI> uri;
+  rv = NS_NewURI(getter_AddRefs(uri), escaped);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return;
+  }
+
+  nsCOMPtr<nsIPrincipal> principal =
+      BasePrincipal::CreateCodebasePrincipal(uri, aAttrs);
+  if (NS_WARN_IF(!principal)) {
+    return;
+  }
+
+  returnInputArgument.release();
+  principal.forget(aPrincipal);
+}
+
 /* static */
 void AntiTrackingCommon::NotifyBlockingDecision(nsIChannel* aChannel,
                                                 BlockingDecision aDecision,
@@ -1718,6 +1966,8 @@ void AntiTrackingCommon::NotifyBlockingDecision(nsIChannel* aChannel,
           nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION ||
       aRejectedReason ==
           nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER ||
+      aRejectedReason ==
+          nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN ||
       aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL ||
       aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN);
   MOZ_ASSERT(aDecision == BlockingDecision::eBlock ||
@@ -1786,6 +2036,8 @@ void AntiTrackingCommon::NotifyBlockingDecision(nsPIDOMWindowInner* aWindow,
           nsIWebProgressListener::STATE_COOKIES_BLOCKED_BY_PERMISSION ||
       aRejectedReason ==
           nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER ||
+      aRejectedReason ==
+          nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN ||
       aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL ||
       aRejectedReason == nsIWebProgressListener::STATE_COOKIES_BLOCKED_FOREIGN);
   MOZ_ASSERT(aDecision == BlockingDecision::eBlock ||

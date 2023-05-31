@@ -9,7 +9,7 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["LoginFormFactory"];
+const EXPORTED_SYMBOLS = ["LoginFormFactory"];
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -30,7 +30,7 @@ XPCOMUtils.defineLazyGetter(this, "log", () => {
   return LoginHelper.createLogger("LoginFormFactory");
 });
 
-var LoginFormFactory = {
+this.LoginFormFactory = {
   /**
    * WeakMap of the root element of a LoginForm to the LoginForm representing its fields.
    *

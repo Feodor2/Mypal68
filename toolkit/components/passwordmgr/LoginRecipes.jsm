@@ -4,7 +4,7 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["LoginRecipesContent", "LoginRecipesParent"];
+const EXPORTED_SYMBOLS = ["LoginRecipesContent", "LoginRecipesParent"];
 
 const REQUIRED_KEYS = ["hosts"];
 const OPTIONAL_KEYS = [
@@ -215,7 +215,7 @@ LoginRecipesParent.prototype = {
   },
 };
 
-var LoginRecipesContent = {
+this.LoginRecipesContent = {
   _recipeCache: new WeakMap(),
 
   _clearRecipeCache() {

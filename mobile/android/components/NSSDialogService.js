@@ -62,8 +62,7 @@ NSSDialogs.prototype = {
     let escapedArgList = Array.from(argList, x => this.escapeHTML(x));
     return this.bundle.formatStringFromName(
       aName,
-      escapedArgList,
-      escapedArgList.length
+      escapedArgList
     );
   },
 

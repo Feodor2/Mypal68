@@ -16,7 +16,7 @@ add_task(async function test_login_added() {
     guid: "70",
     username: "jared",
     password: "deraj",
-    hostname: "https://www.example.com",
+    origin: "https://www.example.com",
   };
   let browser = gBrowser.selectedBrowser;
   browser.messageManager.sendAsyncMessage("AboutLogins:LoginAdded", login);
@@ -38,7 +38,7 @@ add_task(async function test_login_modified() {
     guid: "70",
     username: "jared@example.com",
     password: "deraj",
-    hostname: "https://www.example.com",
+    origin: "https://www.example.com",
   };
   let browser = gBrowser.selectedBrowser;
   browser.messageManager.sendAsyncMessage("AboutLogins:LoginModified", login);
@@ -61,7 +61,7 @@ add_task(async function test_login_removed() {
     guid: "70",
     username: "jared@example.com",
     password: "deraj",
-    hostname: "https://www.example.com",
+    origin: "https://www.example.com",
   };
   let browser = gBrowser.selectedBrowser;
   browser.messageManager.sendAsyncMessage("AboutLogins:LoginRemoved", login);

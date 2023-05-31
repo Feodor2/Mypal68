@@ -142,8 +142,8 @@ bool IsIgnoredIPv6(const InterfaceAddress& ip) {
 
 // These addresses are used as the targets to find out the default local address
 // on a multi-homed endpoint. They are actually DNS servers.
-const char kPublicIPv4Host[] = "8.8.8.8";
-const char kPublicIPv6Host[] = "2001:4860:4860::8888";
+const char kPublicIPv4Host[] = "0.0.0.0";
+const char kPublicIPv6Host[] = "0:0:0::0";
 const int kPublicPort = 53;  // DNS port.
 
 std::string MakeNetworkKey(const std::string& name, const IPAddress& prefix,

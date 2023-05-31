@@ -61,7 +61,7 @@ void ClientSingleTiledLayerBuffer::DiscardBuffers() {
 
 SurfaceDescriptorTiles
 ClientSingleTiledLayerBuffer::GetSurfaceDescriptorTiles() {
-  InfallibleTArray<TileDescriptor> tiles;
+  nsTArray<TileDescriptor> tiles;
 
   TileDescriptor tileDesc = mTile.GetTileDescriptor();
   tiles.AppendElement(tileDesc);

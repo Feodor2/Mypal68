@@ -208,7 +208,6 @@
                     </hbox>
                     <description class="indent">
                       <html:span class="tail-with-learn-more" data-l10n-id="content-blocking-warning-description"></html:span>
-                      <label class="content-blocking-warning-learn-how" data-l10n-id="content-blocking-learn-how" is="text-link"/>
                     </description>
                   </vbox>
                 </vbox>
@@ -261,16 +260,12 @@
                             class="content-blocking-checkbox" flex="1"
                             data-l10n-id="content-blocking-cookies-label"
                             aria-describedby="contentBlockingCustomDesc"
-                            preference="network.cookie.cookieBehavior"
-                            onsyncfrompreference="return gPrivacyPane.readBlockCookies();"
-                            onsynctopreference="return gPrivacyPane.writeBlockCookies();"/>
+                            preference="network.cookie.cookieBehavior"/>
                   <vbox>
                     <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
                     <hbox>
                       <menulist id="blockCookiesMenu"
-                                preference="network.cookie.cookieBehavior"
-                                onsyncfrompreference="return gPrivacyPane.readBlockCookiesFrom();"
-                                onsynctopreference="return gPrivacyPane.writeBlockCookiesFrom();">
+                                preference="network.cookie.cookieBehavior">
                         <menupopup>
                           <menuitem data-l10n-id="sitedata-option-block-trackers" value="trackers"/>
                           <menuitem data-l10n-id="sitedata-option-block-unvisited" value="unvisited"/>
@@ -327,7 +322,6 @@
                   </hbox>
                   <description class="indent">
                     <html:span class="tail-with-learn-more" data-l10n-id="content-blocking-warning-description"></html:span>
-                    <label class="content-blocking-warning-learn-how" data-l10n-id="content-blocking-learn-how" is="text-link"/>
                   </description>
                 </vbox>
               </vbox>
@@ -367,8 +361,6 @@
         <checkbox id="deleteOnClose"
                   data-l10n-id="sitedata-delete-on-close"
                   preference="network.cookie.lifetimePolicy"
-                  onsyncfrompreference="return gPrivacyPane.readDeleteOnClose();"
-                  onsynctopreference="return gPrivacyPane.writeDeleteOnClose();"
                   flex="1" />
       </hbox>
     </vbox>
@@ -418,40 +410,50 @@
 </groupbox>
 
 <!-- Passwords -->
-<groupbox id="passwordsGroup" orient="vertical" data-category="panePrivacy" hidden="true">
+<groupbox id="passwordsGroup" orient="vertical" data-category="panePrivacy" data-subcategory="logins" hidden="true">
   <label><html:h2 data-l10n-id="logins-header"/></label>
 
   <vbox id="passwordSettings">
-    <hbox id="savePasswordsBox">
-      <checkbox id="savePasswords"
-                data-l10n-id="forms-ask-to-save-logins"
-                preference="signon.rememberSignons"
-                onsyncfrompreference="return gPrivacyPane.readSavePasswords();"
-                flex="1" />
-      <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
-      <hbox>
-        <button id="passwordExceptions"
-                is="highlightable-button"
-                class="accessory-button"
-                data-l10n-id="forms-exceptions"
-                preference="pref.privacy.disable_button.view_passwords_exceptions"
-                search-l10n-ids="
-                  permissions-address,
-                  permissions-exceptions-saved-logins-window.title,
-                  permissions-exceptions-saved-logins-desc,
-                "/>
-      </hbox>
-    </hbox>
-    <hbox id="showPasswordBox" pack="end">
-      <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
-      <hbox>
-        <button id="showPasswords"
-                is="highlightable-button"
-                class="accessory-button"
-                data-l10n-id="forms-saved-logins"
-                search-l10n-ids="forms-saved-logins.label"
-                preference="pref.privacy.disable_button.view_passwords"/>
-      </hbox>
+    <hbox>
+      <vbox flex="1">
+        <hbox>
+          <checkbox id="savePasswords"
+                    data-l10n-id="forms-ask-to-save-logins"
+                    preference="signon.rememberSignons"
+                    flex="1" />
+        </hbox>
+        <hbox class="indent" id="generatePasswordsBox" flex="1">
+          <checkbox id="generatePasswords"
+                    data-l10n-id="forms-generate-passwords"
+                    search-l10n-ids="forms-generate-passwords.label"
+                    preference="signon.generation.enabled"
+                    flex="1" />
+        </hbox>
+      </vbox>
+      <vbox>
+        <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
+        <hbox>
+          <button id="passwordExceptions"
+                  is="highlightable-button"
+                  class="accessory-button"
+                  data-l10n-id="forms-exceptions"
+                  preference="pref.privacy.disable_button.view_passwords_exceptions"
+                  search-l10n-ids="
+                    permissions-address,
+                    permissions-exceptions-saved-logins-window.title,
+                    permissions-exceptions-saved-logins-desc,
+                  "/>
+        </hbox>
+        <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
+        <hbox pack="end">
+          <button id="showPasswords"
+                  is="highlightable-button"
+                  class="accessory-button"
+                  data-l10n-id="forms-saved-logins"
+                  search-l10n-ids="forms-saved-logins.label"
+                  preference="pref.privacy.disable_button.view_passwords"/>
+        </hbox>
+      </vbox>
     </hbox>
   </vbox>
   <hbox id="masterPasswordRow">
@@ -531,17 +533,14 @@
           <vbox class="indent">
             <checkbox id="rememberHistory"
                       data-l10n-id="history-remember-browser-option"
-                      onsyncfrompreference="return gPrivacyPane.ensurePrivacyMicroControlUncheckedWhenDisabled(this)"
                       preference="places.history.enabled"/>
             <checkbox id="rememberForms"
                       data-l10n-id="history-remember-search-option"
-                      onsyncfrompreference="return gPrivacyPane.ensurePrivacyMicroControlUncheckedWhenDisabled(this)"
                       preference="browser.formfill.enable"/>
             <hbox id="clearDataBox"
                   align="center">
               <checkbox id="alwaysClear"
                         preference="privacy.sanitize.sanitizeOnShutdown"
-                        onsyncfrompreference="return gPrivacyPane.ensurePrivacyMicroControlUncheckedWhenDisabled(this)"
                         data-l10n-id="history-clear-on-close-option"
                         flex="1" />
             </hbox>
@@ -708,38 +707,40 @@
                 " />
       </hbox>
     </hbox>
-  </vbox>
 
-  <vbox id="notificationsDoNotDisturbBox" hidden="true">
-    <checkbox id="notificationsDoNotDisturb" class="indent"/>
+    <vbox id="notificationsDoNotDisturbBox" hidden="true">
+      <checkbox id="notificationsDoNotDisturb" class="indent"/>
+    </vbox>
+
+    <hbox id="autoplaySettingsRow" align="center" role="group" aria-labelledby="autoplayPermissionsLabel">
+      <description flex="1">
+        <image class="autoplay-icon permission-icon" />
+        <separator orient="vertical" class="thin"/>
+        <label id="autoplayPermissionsLabel"
+               data-l10n-id="permissions-autoplay"/>
+      </description>
+      <hbox pack="end">
+        <button id="autoplaySettingsButton"
+                is="highlightable-button"
+                class="accessory-button"
+                data-l10n-id="permissions-autoplay-settings"
+                search-l10n-ids="
+                  permissions-remove.label,
+                  permissions-remove-all.label,
+                  permissions-button-cancel.label,
+                  permissions-button-ok.label,
+                  permissions-site-autoplay-window.title,
+                  permissions-site-autoplay-desc,
+                " />
+      </hbox>
+    </hbox>
   </vbox>
 
   <separator flex="1"/>
 
-  <hbox align="start" id="autoplayMediaCheckboxWrapper">
-    <checkbox id="autoplayMediaCheckbox"
-              data-l10n-id="permissions-block-autoplay-media2"
-              flex="1" />
-    <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
-    <hbox>
-      <button id="autoplayMediaPolicyButton"
-              is="highlightable-button"
-              class="accessory-button"
-              data-l10n-id="permissions-block-autoplay-media-exceptions"
-              search-l10n-ids="permissions-address,
-                               permissions-button-cancel.label,
-                               permissions-button-ok.label,
-                               permissions-exceptions-autoplay-media-window2.title,
-                               permissions-exceptions-autoplay-media-desc2
-                               " />
-    </hbox>
-  </hbox>
-
   <hbox data-subcategory="permissions-block-popups">
     <checkbox id="popupPolicy" preference="dom.disable_open_during_load"
               data-l10n-id="permissions-block-popups"
-              onsyncfrompreference="return gPrivacyPane.updateButtons('popupPolicyButton',
-                                         'dom.disable_open_during_load');"
               flex="1" />
     <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
     <hbox>
@@ -761,7 +762,6 @@
     <checkbox id="warnAddonInstall"
               data-l10n-id="permissions-addon-install-warning"
               preference="xpinstall.whitelist.required"
-              onsyncfrompreference="return gPrivacyPane.readWarnAddonInstall();"
               flex="1" />
     <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
     <hbox>
@@ -830,15 +830,6 @@
                  useoriginprincipal="true"
                  class="learnMore" is="text-link"
                  data-l10n-id="collection-studies-link"/>
-        </hbox>
-
-        <hbox align="center">
-          <checkbox id="addonRecommendationEnabled"
-                    class="tail-with-learn-more"
-                    data-l10n-id="addon-recommendations"/>
-          <label id="addonRecommendationLearnMore"
-                 class="learnMore" is="text-link"
-                 data-l10n-id="addon-recommendations-link"/>
         </hbox>
       </vbox>
     </description>
@@ -910,8 +901,6 @@
   <hbox align="start">
     <checkbox id="enableOCSP"
               data-l10n-id="certs-enable-ocsp"
-              onsyncfrompreference="return gPrivacyPane.readEnableOCSP();"
-              onsynctopreference="return gPrivacyPane.writeEnableOCSP();"
               preference="security.OCSP.enabled"
               flex="1" />
     <vbox>

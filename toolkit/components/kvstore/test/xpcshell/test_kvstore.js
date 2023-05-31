@@ -7,6 +7,7 @@ const { KeyValueService } = ChromeUtils.import(
   "resource://gre/modules/kvstore.jsm"
 );
 const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 function run_test() {
   do_get_profile();
@@ -115,6 +116,24 @@ add_task(async function putGetHasDelete() {
   Assert.strictEqual(await database.get("double-key"), null);
   Assert.strictEqual(await database.get("string-key"), null);
   Assert.strictEqual(await database.get("bool-key"), null);
+});
+
+add_task(async function putWithResizing() {
+  const databaseDir = await makeDatabaseDir("putWithResizing");
+  const database = await KeyValueService.getOrCreate(databaseDir, "db");
+
+  // The default store size is 1MB, putting key/value pairs bigger than that
+  // would trigger auto resizing.
+  const base = "A humongous string in 32 bytes!!";
+  const val1M = base.repeat(32768);
+  const val2M = val1M.repeat(2);
+  Assert.strictEqual(await database.put("A-1M-value", val1M), undefined);
+  Assert.strictEqual(await database.put("A-2M-value", val2M), undefined);
+  Assert.strictEqual(await database.put("A-32B-value", base), undefined);
+
+  Assert.strictEqual(await database.get("A-1M-value"), val1M);
+  Assert.strictEqual(await database.get("A-2M-value"), val2M);
+  Assert.strictEqual(await database.get("A-32B-value"), base);
 });
 
 add_task(async function largeNumbers() {
@@ -236,6 +255,51 @@ add_task(async function writeManyPutOnly() {
   // writeMany with a map
   const mapPairs = new Map(arrayPairs);
   await test_helper(mapPairs);
+});
+
+add_task(async function writeManyLargePairsWithResizing() {
+  const databaseDir = await makeDatabaseDir("writeManyWithResizing");
+  const database = await KeyValueService.getOrCreate(databaseDir, "db");
+
+  // The default store size is 1MB, putting key/value pairs bigger than that
+  // would trigger auto resizing.
+  const base = "A humongous string in 32 bytes!!";
+  const val1M = base.repeat(32768);
+  const val2M = val1M.repeat(2);
+
+  // writeMany with an object
+  const pairs = {
+    "A-1M-value": val1M,
+    "A-32B-value": base,
+    "A-2M-value": val2M,
+  };
+
+  Assert.strictEqual(await database.writeMany(pairs), undefined);
+
+  Assert.strictEqual(await database.get("A-1M-value"), val1M);
+  Assert.strictEqual(await database.get("A-2M-value"), val2M);
+  Assert.strictEqual(await database.get("A-32B-value"), base);
+});
+
+add_task(async function writeManySmallPairsWithResizing() {
+  const databaseDir = await makeDatabaseDir("writeManyWithResizing");
+  const database = await KeyValueService.getOrCreate(databaseDir, "db");
+
+  // The default store size is 1MB, putting key/value pairs bigger than that
+  // would trigger auto resizing.
+  const base = "A humongous string in 32 bytes!!";
+  const val1K = base.repeat(32);
+  // writeMany with a key/value generator
+  function* pairMaker() {
+    for (let i = 0; i < 1024; i++) {
+      yield [`key-${i}`, val1K];
+    }
+  }
+
+  Assert.strictEqual(await database.writeMany(pairMaker()), undefined);
+  for (let i = 0; i < 1024; i++) {
+    Assert.ok(await database.has(`key-${i}`));
+  }
 });
 
 add_task(async function writeManyDeleteOnly() {
@@ -520,4 +584,29 @@ add_task(async function enumeration() {
   await database.delete("double-key");
   await database.delete("string-key");
   await database.delete("bool-key");
+});
+
+add_task(async function migration() {
+  const currentDir = await OS.File.getCurrentDirectory();
+  const databaseDir = await makeDatabaseDir("migration");
+
+  // We're testing migration from a different architecture to our own,
+  // so we choose the 32-bit database if we're a 64-bit build, and vice-versa.
+  const testEnvDir = Services.appinfo.is64Bit ? "test-env-32" : "test-env-64";
+
+  await OS.File.copy(
+    OS.Path.join(currentDir, "data", testEnvDir, "data.mdb"),
+    OS.Path.join(databaseDir, "data.mdb")
+  );
+  await OS.File.copy(
+    OS.Path.join(currentDir, "data", testEnvDir, "lock.mdb"),
+    OS.Path.join(databaseDir, "lock.mdb")
+  );
+
+  const database = await KeyValueService.getOrCreate(databaseDir, "db");
+
+  Assert.strictEqual(await database.get("int-key"), 1234);
+  Assert.strictEqual(await database.get("double-key"), 56.78);
+  Assert.strictEqual(await database.get("string-key"), "Héllo, wőrld!");
+  Assert.strictEqual(await database.get("bool-key"), true);
 });

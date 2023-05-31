@@ -148,9 +148,6 @@ var view = {
   },
   setCellValue(row, col, value) {},
   setCellText(row, col, value) {},
-  performAction(action) {},
-  performActionOnRow(action, row) {},
-  performActionOnCell(action, row, col) {},
   isSeparator(index) {
     return false;
   },
@@ -708,7 +705,6 @@ async function ModifyPref(entry) {
         window,
         title,
         entry.prefCol,
-        2,
         [false, true],
         check
       )

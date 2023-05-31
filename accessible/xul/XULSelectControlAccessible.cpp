@@ -9,8 +9,6 @@
 
 #include "nsIDOMXULSelectCntrlItemEl.h"
 #include "nsIDOMXULMultSelectCntrlEl.h"
-#include "nsIMutableArray.h"
-#include "nsIServiceManager.h"
 
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
@@ -48,7 +46,7 @@ void XULSelectControlAccessible::SelectedItems(nsTArray<Accessible*>* aItems) {
     int32_t length = 0;
     xulMultiSelect->GetSelectedCount(&length);
     for (int32_t index = 0; index < length; index++) {
-      RefPtr<Element> element;
+      RefPtr<dom::Element> element;
       xulMultiSelect->MultiGetSelectedItem(index, getter_AddRefs(element));
       Accessible* item = mDoc->GetAccessible(element);
       if (item) aItems->AppendElement(item);
@@ -56,7 +54,7 @@ void XULSelectControlAccessible::SelectedItems(nsTArray<Accessible*>* aItems) {
   } else {  // Single select?
     nsCOMPtr<nsIDOMXULSelectControlElement> selectControl =
         mSelectControl->AsXULSelectControl();
-    RefPtr<Element> element;
+    RefPtr<dom::Element> element;
     selectControl->GetSelectedItem(getter_AddRefs(element));
     if (element) {
       Accessible* item = mDoc->GetAccessible(element);
@@ -69,7 +67,7 @@ Accessible* XULSelectControlAccessible::GetSelectedItem(uint32_t aIndex) {
   nsCOMPtr<nsIDOMXULMultiSelectControlElement> multiSelectControl =
       mSelectControl->AsXULMultiSelectControl();
 
-  RefPtr<Element> element;
+  RefPtr<dom::Element> element;
   if (multiSelectControl) {
     multiSelectControl->MultiGetSelectedItem(aIndex, getter_AddRefs(element));
   } else if (aIndex == 0) {
@@ -208,7 +206,7 @@ bool XULSelectControlAccessible::SelectAll() {
 Accessible* XULSelectControlAccessible::CurrentItem() const {
   if (!mSelectControl) return nullptr;
 
-  RefPtr<Element> currentItemElm;
+  RefPtr<dom::Element> currentItemElm;
   nsCOMPtr<nsIDOMXULMultiSelectControlElement> multiSelectControl =
       mSelectControl->AsXULMultiSelectControl();
   if (multiSelectControl) {
@@ -232,7 +230,7 @@ Accessible* XULSelectControlAccessible::CurrentItem() const {
 void XULSelectControlAccessible::SetCurrentItem(const Accessible* aItem) {
   if (!mSelectControl) return;
 
-  nsCOMPtr<Element> itemElm = aItem->Elm();
+  nsCOMPtr<dom::Element> itemElm = aItem->Elm();
   nsCOMPtr<nsIDOMXULMultiSelectControlElement> multiSelectControl =
       itemElm->AsXULMultiSelectControl();
   if (multiSelectControl) {

@@ -436,7 +436,6 @@ class Predictor final : public nsINetworkPredictor,
 
   nsCOMPtr<nsICacheStorageService> mCacheStorageService;
 
-  nsCOMPtr<nsIIOService> mIOService;
   nsCOMPtr<nsISpeculativeConnect> mSpeculativeService;
 
   nsCOMPtr<nsIURI> mStartupURI;

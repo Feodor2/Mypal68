@@ -15,7 +15,6 @@
 #include "mozilla/gfx/2D.h"
 #include "Decoder.h"
 #include "gfxColor.h"
-#include "imgITools.h"
 #include "nsCOMPtr.h"
 #include "SurfacePipe.h"
 #include "SurfacePipeFactory.h"

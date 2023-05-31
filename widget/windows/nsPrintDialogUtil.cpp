@@ -29,7 +29,6 @@ WIN_LIBS=                                       \
 #include "mozilla/BackgroundHangMonitor.h"
 #include "nsIWebBrowserPrint.h"
 #include "nsString.h"
-#include "nsIServiceManager.h"
 #include "nsReadableUtils.h"
 #include "nsIPrintSettings.h"
 #include "nsIPrintSettingsWin.h"

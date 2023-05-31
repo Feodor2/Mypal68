@@ -8,8 +8,8 @@
 #  include "mozilla/gfx/2D.h"
 #  include "mozilla/layers/Compositor.h"
 #  include "mozilla/layers/Effects.h"
+#  include "mozilla/StaticPrefs_layers.h"
 #  include "mozilla/TimeStamp.h"
-#  include "gfxPrefs.h"
 #  include <math.h>
 #  include "GeckoProfiler.h"
 
@@ -333,7 +333,7 @@ static void RunCompositorBench(Compositor* aCompositor,
 
 void CompositorBench(Compositor* aCompositor, const gfx::IntRect& aScreenRect) {
   static bool sRanBenchmark = false;
-  bool wantBenchmark = gfxPrefs::LayersBenchEnabled();
+  bool wantBenchmark = StaticPrefs::layers_bench_enabled();
   if (wantBenchmark && !sRanBenchmark) {
     RunCompositorBench(aCompositor, aScreenRect);
   }

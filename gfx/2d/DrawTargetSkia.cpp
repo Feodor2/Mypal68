@@ -40,8 +40,6 @@
 #  include "ScaledFontDWrite.h"
 #endif
 
-using namespace std;
-
 namespace mozilla {
 namespace gfx {
 

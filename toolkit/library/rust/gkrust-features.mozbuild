@@ -2,15 +2,14 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-gkrust_features = ['servo', 'bindgen']
+gkrust_features = []
 
 if CONFIG['MOZ_DEBUG']:
     gkrust_features += ['gecko_debug']
 
-if CONFIG['MOZ_BUILD_WEBRENDER']:
-    gkrust_features += ['quantum_render']
-    if CONFIG['MOZ_WEBRENDER_DEBUGGER']:
-        gkrust_features += ['webrender_debugger']
+gkrust_features += ['quantum_render']
+if CONFIG['MOZ_WEBRENDER_DEBUGGER']:
+    gkrust_features += ['webrender_debugger']
 
 if CONFIG['MOZ_PULSEAUDIO']:
     gkrust_features += ['cubeb_pulse_rust']

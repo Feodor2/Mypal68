@@ -39,11 +39,8 @@ class OffTheBooksMutex : public detail::MutexImpl, BlockingResourceBase {
    *          If success, a valid Mutex* which must be destroyed
    *          by Mutex::DestroyMutex()
    **/
-  explicit OffTheBooksMutex(
-      const char* aName,
-      recordreplay::Behavior aRecorded = recordreplay::Behavior::Preserve)
-      : detail::MutexImpl(aRecorded),
-        BlockingResourceBase(aName, eMutex)
+  explicit OffTheBooksMutex(const char* aName)
+      : BlockingResourceBase(aName, eMutex)
 #ifdef DEBUG
         ,
         mOwningThread(nullptr)
@@ -122,9 +119,7 @@ class OffTheBooksMutex : public detail::MutexImpl, BlockingResourceBase {
  */
 class Mutex : public OffTheBooksMutex {
  public:
-  explicit Mutex(const char* aName, recordreplay::Behavior aRecorded =
-                                        recordreplay::Behavior::Preserve)
-      : OffTheBooksMutex(aName, aRecorded) {
+  explicit Mutex(const char* aName) : OffTheBooksMutex(aName) {
     MOZ_COUNT_CTOR(Mutex);
   }
 
@@ -199,7 +194,7 @@ class MOZ_RAII BaseAutoLock {
   BaseAutoLock();
   BaseAutoLock(BaseAutoLock&);
   BaseAutoLock& operator=(BaseAutoLock&);
-  static void* operator new(size_t) CPP_THROW_NEW;
+  static void* operator new(size_t) noexcept(true);
 
   friend class BaseAutoUnlock<T>;
 
@@ -240,7 +235,7 @@ class MOZ_RAII BaseAutoUnlock {
   BaseAutoUnlock();
   BaseAutoUnlock(BaseAutoUnlock&);
   BaseAutoUnlock& operator=(BaseAutoUnlock&);
-  static void* operator new(size_t) CPP_THROW_NEW;
+  static void* operator new(size_t) noexcept(true);
 
   T mLock;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER

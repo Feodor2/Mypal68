@@ -108,17 +108,9 @@ class BackgroundChildImpl : public PBackgroundChild {
   virtual bool DeallocPBackgroundStorageChild(
       PBackgroundStorageChild* aActor) override;
 
-  virtual PPendingIPCBlobChild* AllocPPendingIPCBlobChild(
-      const IPCBlob& aBlob) override;
-
-  virtual bool DeallocPPendingIPCBlobChild(
-      PPendingIPCBlobChild* aActor) override;
-
-  virtual PIPCBlobInputStreamChild* AllocPIPCBlobInputStreamChild(
-      const nsID& aID, const uint64_t& aSize) override;
-
-  virtual bool DeallocPIPCBlobInputStreamChild(
-      PIPCBlobInputStreamChild* aActor) override;
+  virtual already_AddRefed<PIPCBlobInputStreamChild>
+  AllocPIPCBlobInputStreamChild(const nsID& aID,
+                                const uint64_t& aSize) override;
 
   virtual PTemporaryIPCBlobChild* AllocPTemporaryIPCBlobChild() override;
 
@@ -223,12 +215,6 @@ class BackgroundChildImpl : public PBackgroundChild {
 
   virtual bool DeallocPQuotaChild(PQuotaChild* aActor) override;
 
-  virtual PFileSystemRequestChild* AllocPFileSystemRequestChild(
-      const FileSystemParams&) override;
-
-  virtual bool DeallocPFileSystemRequestChild(
-      PFileSystemRequestChild*) override;
-
   // Gamepad API Background IPC
   virtual PGamepadEventChannelChild* AllocPGamepadEventChannelChild() override;
 
@@ -252,12 +238,6 @@ class BackgroundChildImpl : public PBackgroundChild {
 
   virtual bool DeallocPWebAuthnTransactionChild(
       PWebAuthnTransactionChild* aActor) override;
-
-  virtual PHttpBackgroundChannelChild* AllocPHttpBackgroundChannelChild(
-      const uint64_t& aChannelId) override;
-
-  virtual bool DeallocPHttpBackgroundChannelChild(
-      PHttpBackgroundChannelChild* aActor) override;
 
   virtual PMIDIPortChild* AllocPMIDIPortChild(
       const MIDIPortInfo& aPortInfo, const bool& aSysexEnabled) override;
@@ -288,6 +268,11 @@ class BackgroundChildImpl : public PBackgroundChild {
 
   virtual bool DeallocPEndpointForReportChild(
       PEndpointForReportChild* aActor) override;
+
+  virtual dom::PMediaTransportChild* AllocPMediaTransportChild() override;
+
+  virtual bool DeallocPMediaTransportChild(
+      dom::PMediaTransportChild* aActor) override;
 };
 
 class BackgroundChildImpl::ThreadLocal final {

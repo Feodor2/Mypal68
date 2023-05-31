@@ -19,10 +19,7 @@
 #include "nsHttpNegotiateAuth.h"
 
 #include "nsIHttpAuthenticableChannel.h"
-#include "nsIProxiedChannel.h"
 #include "nsIAuthModule.h"
-#include "nsIServiceManager.h"
-#include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 #include "nsIProxyInfo.h"
 #include "nsIURI.h"

@@ -8,8 +8,7 @@ namespace mozilla {
 
 namespace detail {
 
-Atomic<uint32_t, SequentiallyConsistent, recordreplay::Behavior::DontPreserve>
-    gChaosModeCounter(0);
+Atomic<uint32_t, SequentiallyConsistent> gChaosModeCounter(0);
 ChaosFeature gChaosFeatures = None;
 
 } /* namespace detail */

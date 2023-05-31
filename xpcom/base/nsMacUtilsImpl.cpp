@@ -9,7 +9,6 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsCOMPtr.h"
 #include "nsIFile.h"
-#include "nsIProperties.h"
 #include "nsServiceManagerUtils.h"
 #include "nsXULAppAPI.h"
 #include "prenv.h"

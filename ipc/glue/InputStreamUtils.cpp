@@ -21,7 +21,6 @@
 #include "nsIAsyncOutputStream.h"
 #include "nsID.h"
 #include "nsIPipe.h"
-#include "nsIXULRuntime.h"
 #include "nsMIMEInputStream.h"
 #include "nsMultiplexInputStream.h"
 #include "nsNetCID.h"

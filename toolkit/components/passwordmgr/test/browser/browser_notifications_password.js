@@ -61,8 +61,8 @@ add_task(async function test_edit_password() {
     if (testCase.usernameInPageExists) {
       Services.logins.addLogin(
         LoginTestUtils.testData.formLogin({
-          hostname: "https://example.com",
-          formSubmitURL: "https://example.com",
+          origin: "https://example.com",
+          formActionOrigin: "https://example.com",
           username: testCase.usernameInPage,
           password: testCase.passwordInStorage,
         })
@@ -72,8 +72,8 @@ add_task(async function test_edit_password() {
     if (testCase.usernameChangedToExists) {
       Services.logins.addLogin(
         LoginTestUtils.testData.formLogin({
-          hostname: "https://example.com",
-          formSubmitURL: "https://example.com",
+          origin: "https://example.com",
+          formActionOrigin: "https://example.com",
           username: testCase.usernameChangedTo,
           password: testCase.passwordChangedTo,
         })

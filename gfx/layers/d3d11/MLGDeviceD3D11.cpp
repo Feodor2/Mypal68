@@ -18,7 +18,7 @@
 #include "MLGShaders.h"
 #include "TextureD3D11.h"
 #include "gfxConfig.h"
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs_layers.h"
 
 namespace mozilla {
 namespace layers {
@@ -26,7 +26,6 @@ namespace layers {
 using namespace mozilla::gfx;
 using namespace mozilla::widget;
 using namespace mozilla::layers::mlg;
-using namespace std;
 
 // Defined in CompositorD3D11.cpp.
 bool CanUsePartialPresents(ID3D11Device* aDevice);
@@ -230,7 +229,7 @@ bool MLGSwapChainD3D11::Initialize(CompositorWidget* aWidget) {
   }
 
   RefPtr<IDXGIFactory2> dxgiFactory2;
-  if (gfxPrefs::Direct3D11UseDoubleBuffering() &&
+  if (StaticPrefs::gfx_direct3d11_use_double_buffering() &&
       SUCCEEDED(dxgiFactory->QueryInterface(dxgiFactory2.StartAssignment())) &&
       dxgiFactory2 && IsWin10OrLater() && XRE_IsGPUProcess()) {
     // DXGI_SCALING_NONE is not available on Windows 7 with the Platform Update:
@@ -319,7 +318,7 @@ RefPtr<MLGRenderTarget> MLGSwapChainD3D11::AcquireBackBuffer() {
 
   if (!mRT) {
     MLGRenderTargetFlags flags = MLGRenderTargetFlags::Default;
-    if (gfxPrefs::AdvancedLayersEnableDepthBuffer()) {
+    if (StaticPrefs::layers_mlgpu_enable_depth_buffer_AtStartup()) {
       flags |= MLGRenderTargetFlags::ZBuffer;
     }
 

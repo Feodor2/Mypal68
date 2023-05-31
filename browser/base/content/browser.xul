@@ -272,9 +272,6 @@
            aria-labelledby="editBookmarkPanelTitle">
       <box class="panel-header">
         <label id="editBookmarkPanelTitle"/>
-        <toolbarbutton id="editBookmarkPanelInfoButton" oncommand="StarUI.toggleRecommendation();" >
-          <image/>
-        </toolbarbutton>
       </box>
       <html:div id="editBookmarkPanelInfoArea">
         <html:div id="editBookmarkPanelRecommendation"></html:div>
@@ -953,14 +950,6 @@
               </box>
               <hbox id="page-action-buttons" context="pageActionContextMenu">
                 <toolbartabstop/>
-                <hbox id="contextual-feature-recommendation" role="button" hidden="true">
-                  <hbox id="cfr-label-container">
-                    <label id="cfr-label"/>
-                  </hbox>
-                  <image id="cfr-button"
-                         class="urlbar-icon urlbar-page-action"
-                         role="presentation"/>
-                </hbox>
                 <hbox id="userContext-icons" hidden="true">
                   <label id="userContext-label"/>
                   <image id="userContext-indicator"/>

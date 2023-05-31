@@ -8,6 +8,7 @@
 #include "InputData.h"           // for MultiTouchInput
 #include "mozilla/RefCounted.h"  // for RefCounted
 #include "mozilla/RefPtr.h"      // for RefPtr
+#include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/gfx/Matrix.h"  // for Matrix4x4
 #include "mozilla/layers/APZUtils.h"
 #include "mozilla/layers/LayersTypes.h"  // for TouchBehaviorFlags
@@ -105,9 +106,9 @@ class InputBlockState : public RefCounted<InputBlockState> {
 
   // The APZC that was actually scrolled by events in this input block.
   // This is used in configurations where a single input block is only
-  // allowed to scroll a single APZC (configurations where gfxPrefs::
-  // APZAllowImmediateHandoff() is false).
-  // Set the first time an input event in this block scrolls an APZC.
+  // allowed to scroll a single APZC (configurations where
+  // StaticPrefs::apz_allow_immediate_handoff() is false). Set the first time an
+  // input event in this block scrolls an APZC.
   RefPtr<AsyncPanZoomController> mScrolledApzc;
 
  protected:

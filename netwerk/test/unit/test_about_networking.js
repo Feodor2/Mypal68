@@ -53,8 +53,7 @@ add_test(function test_sockets() {
   let threadManager = Cc["@mozilla.org/thread-manager;1"].getService();
 
   let transport = sts.createTransport(
-    null,
-    0,
+    [],
     "127.0.0.1",
     gServerSocket.port,
     null

@@ -35,14 +35,6 @@ XPCOMUtils.defineLazyGetter(this, "PageMenuChild", () => {
   return new tmp.PageMenuChild();
 });
 
-XPCOMUtils.defineLazyGetter(this, "ReferrerInfo", () =>
-  Components.Constructor(
-    "@mozilla.org/referrer-info;1",
-    "nsIReferrerInfo",
-    "init"
-  )
-);
-
 const messageListeners = {
   "ContextMenu:BookmarkFrame": function(aMessage) {
     let frame = this.getTarget(aMessage).ownerDocument;
@@ -529,8 +521,6 @@ class ContextMenuChild extends ActorChild {
       mozDocumentURIIfNotForErrorPages: docLocation,
       characterSet: charSet,
       baseURI,
-      referrer,
-      referrerPolicy,
     } = doc;
     docLocation = docLocation && docLocation.spec;
     let frameOuterWindowID = WebNavigationFrames.getFrameId(doc.defaultView);
@@ -540,15 +530,6 @@ class ContextMenuChild extends ActorChild {
 
     // The same-origin check will be done in nsContextMenu.openLinkInTab.
     let parentAllowsMixedContent = !!this.docShell.mixedContentChannel;
-
-    // Get referrer attribute from clicked link and parse it
-    let referrerAttrValue = Services.netUtils.parseAttributePolicyString(
-      aEvent.composedTarget.getAttribute("referrerpolicy")
-    );
-
-    if (referrerAttrValue !== Ci.nsIHttpChannel.REFERRER_POLICY_UNSET) {
-      referrerPolicy = referrerAttrValue;
-    }
 
     let disableSetDesktopBg = null;
 
@@ -602,6 +583,13 @@ class ContextMenuChild extends ActorChild {
     let principal = null;
     let customMenuItems = null;
 
+    let referrerInfo = Cc["@mozilla.org/referrer-info;1"].createInstance(
+      Ci.nsIReferrerInfo
+    );
+    referrerInfo.initWithNode(
+      context.onLink ? context.link : aEvent.composedTarget
+    );
+
     let targetAsCPOW = context.target;
     if (targetAsCPOW) {
       this._cleanContext();
@@ -641,7 +629,7 @@ class ContextMenuChild extends ActorChild {
       charSet,
       baseURI,
       isRemote,
-      referrer,
+      referrerInfo,
       editFlags,
       principal,
       spellInfo,
@@ -650,7 +638,6 @@ class ContextMenuChild extends ActorChild {
       loginFillInfo,
       selectionInfo,
       userContextId,
-      referrerPolicy,
       customMenuItems,
       contentDisposition,
       frameOuterWindowID,
@@ -659,12 +646,37 @@ class ContextMenuChild extends ActorChild {
       parentAllowsMixedContent,
     };
 
+    if (context.inFrame && !context.inSrcdocFrame) {
+      data.frameReferrerInfo = E10SUtils.serializeReferrerInfo(
+        doc.referrerInfo
+      );
+    }
+
+    // In the case "onLink" we may have to send target referrerInfo. This object
+    // may be used to in saveMedia function.
+    if (context.onLink) {
+      let targetReferrerInfo = Cc[
+        "@mozilla.org/referrer-info;1"
+      ].createInstance(Ci.nsIReferrerInfo);
+
+      targetReferrerInfo.initWithNode(aEvent.composedTarget);
+      data.targetReferrerInfo = E10SUtils.serializeReferrerInfo(
+        targetReferrerInfo
+      );
+    }
+
     Services.obs.notifyObservers(
       { wrappedJSObject: data },
       "on-prepare-contextmenu"
     );
 
     if (isRemote) {
+      data.referrerInfo = E10SUtils.serializeReferrerInfo(data.referrerInfo);
+      if (data.frameReferrerInfo) {
+        data.frameReferrerInfo =
+          E10SUtils.serializeReferrerInfo(data.frameReferrerInfo);
+      }
+
       this.mm.sendAsyncMessage("contextmenu", data, {
         targetAsCPOW,
       });
@@ -677,18 +689,6 @@ class ContextMenuChild extends ActorChild {
       delete data.disableSetDesktopBg;
 
       data.context.targetAsCPOW = targetAsCPOW;
-
-      data.referrerInfo = new ReferrerInfo(
-        referrerPolicy,
-        !context.linkHasNoReferrer,
-        data.documentURIObject
-      );
-      data.frameReferrerInfo = new ReferrerInfo(
-        referrerPolicy,
-        !context.linkHasNoReferrer,
-        referrer ? Services.io.newURI(referrer) : null
-      );
-
       mainWin.setContextMenuContentData(data);
     }
   }
@@ -834,7 +834,6 @@ class ContextMenuChild extends ActorChild {
 
     context.link = null;
     context.linkDownload = "";
-    context.linkHasNoReferrer = false;
     context.linkProtocol = "";
     context.linkTextStr = "";
     context.linkURL = "";
@@ -865,9 +864,10 @@ class ContextMenuChild extends ActorChild {
     context.target = node;
 
     context.principal = context.target.ownerDocument.nodePrincipal;
-    // Bug 965637, query the CSP from the doc instead of the Principal
+    context.storagePrincipal =
+      context.target.ownerDocument.effectiveStoragePrincipal;
     context.csp = E10SUtils.serializeCSP(
-      context.target.ownerDocument.nodePrincipal.csp
+      context.target.ownerDocument.csp
     );
 
     context.frameOuterWindowID = WebNavigationFrames.getFrameId(
@@ -1105,7 +1105,6 @@ class ContextMenuChild extends ActorChild {
           context.onMailtoLink = context.linkProtocol == "mailto";
           context.onMozExtLink = context.linkProtocol == "moz-extension";
           context.onSaveableLink = this._isLinkSaveable(context.link);
-          context.linkHasNoReferrer = BrowserUtils.linkHasNoReferrer(elem);
 
           try {
             if (elem.download) {

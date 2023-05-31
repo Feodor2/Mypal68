@@ -79,7 +79,7 @@ impl Iterator for RepetitionIterator {
 
         let repetition = Repetition {
             origin: self.current_origin,
-            edge_flags: edge_flags,
+            edge_flags,
         };
 
         self.current_origin.x += self.stride.width;
@@ -573,7 +573,7 @@ mod tests {
         visible_rect: &LayoutRect,
         device_image_rect: &DeviceIntRect,
         device_tile_size: i32,
-        callback: &mut FnMut(&LayoutRect, TileOffset, EdgeAaSegmentMask),
+        callback: &mut dyn FnMut(&LayoutRect, TileOffset, EdgeAaSegmentMask),
     ) {
         let mut coverage = LayoutRect::zero();
         let mut seen_tiles = HashSet::new();

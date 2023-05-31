@@ -312,7 +312,6 @@ class DataChannelConnection final : public net::NeckoTargetHolder
 #endif
 
   bool mSendInterleaved = false;
-  bool mPpidFragmentation = false;
   bool mMaxMessageSizeSet = false;
   uint64_t mMaxMessageSize = 0;
   bool mAllocateEven = false;
@@ -607,7 +606,7 @@ class DataChannelOnMessageAvailable : public Runnable {
         // If we've disconnected, make sure we close all the streams - from
         // mainthread!
         mConnection->CloseAll();
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
       case ON_CHANNEL_CREATED:
       case ON_CONNECTION:
         // WeakPtr - only used/modified/nulled from MainThread so we can use a

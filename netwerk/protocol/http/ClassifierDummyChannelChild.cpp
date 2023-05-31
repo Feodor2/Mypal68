@@ -5,7 +5,6 @@
 #include "ClassifierDummyChannelChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/URIUtils.h"
-#include "nsIChannel.h"
 #include "nsIURI.h"
 
 namespace mozilla {
@@ -31,13 +30,18 @@ bool ClassifierDummyChannelChild::Create(
   nsresult topWindowURIResult =
       httpChannelInternal->GetTopWindowURI(getter_AddRefs(topWindowURI));
 
+  nsCOMPtr<nsIPrincipal> principal;
+  nsresult rv = httpChannelInternal->GetContentBlockingAllowListPrincipal(
+      getter_AddRefs(principal));
+  MOZ_ALWAYS_SUCCEEDS(rv);
+
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   Maybe<LoadInfoArgs> loadInfoArgs;
   mozilla::ipc::LoadInfoToLoadInfoArgs(loadInfo, &loadInfoArgs);
 
   PClassifierDummyChannelChild* actor =
       gNeckoChild->SendPClassifierDummyChannelConstructor(
-          aURI, topWindowURI, topWindowURIResult, loadInfoArgs);
+          aURI, topWindowURI, principal, topWindowURIResult, loadInfoArgs);
   if (!actor) {
     return false;
   }

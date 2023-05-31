@@ -20,7 +20,6 @@
 #include "nsNetUtil.h"
 #include "mozilla/net/DNS.h"
 #include "nsISocketTransport.h"
-#include "nsISSLSocketControl.h"
 #include "mozilla/Services.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/net/DashboardTypes.h"
@@ -33,7 +32,6 @@
 #include <algorithm>
 #include "mozilla/ChaosMode.h"
 #include "mozilla/Unused.h"
-#include "nsIURI.h"
 #include "nsIXPConnect.h"
 
 #include "mozilla/Move.h"
@@ -2882,21 +2880,39 @@ void nsHttpConnectionMgr::OnMsgCompleteUpgrade(int32_t, ARefBase* param) {
        conn.get(), data->mUpgradeListener.get(), data->mJsWrapped));
 
   if (!conn) {
-    return;
-  }
+    // Delay any error reporting to happen in transportAvailableFunc
+    rv = NS_ERROR_UNEXPECTED;
+  } else {
+    MOZ_ASSERT(!data->mSocketTransport);
+    rv = conn->TakeTransport(getter_AddRefs(data->mSocketTransport),
+                             getter_AddRefs(data->mSocketIn),
+                             getter_AddRefs(data->mSocketOut));
 
-  MOZ_ASSERT(!data->mSocketTransport);
-  rv = conn->TakeTransport(getter_AddRefs(data->mSocketTransport),
-                           getter_AddRefs(data->mSocketIn),
-                           getter_AddRefs(data->mSocketOut));
-
-  if (NS_FAILED(rv)) {
-    return;
+    if (NS_FAILED(rv)) {
+      LOG(("  conn->TakeTransport failed with %" PRIx32,
+           static_cast<uint32_t>(rv)));
+    }
   }
 
   RefPtr<nsCompleteUpgradeData> upgradeData(data);
-  auto transportAvailableFunc = [upgradeData{std::move(upgradeData)}]() {
-    nsresult rv = upgradeData->mUpgradeListener->OnTransportAvailable(
+  auto transportAvailableFunc = [upgradeData{std::move(upgradeData)},
+                                 aRv(rv)]() {
+    // Handle any potential previous errors first
+    // and call OnUpgradeFailed if necessary.
+    nsresult rv = aRv;
+
+    if (NS_FAILED(rv)) {
+      rv = upgradeData->mUpgradeListener->OnUpgradeFailed(rv);
+      if (NS_FAILED(rv)) {
+        LOG(
+            ("nsHttpConnectionMgr::OnMsgCompleteUpgrade OnUpgradeFailed failed."
+             " listener=%p\n",
+             upgradeData->mUpgradeListener.get()));
+      }
+      return;
+    }
+
+    rv = upgradeData->mUpgradeListener->OnTransportAvailable(
         upgradeData->mSocketTransport, upgradeData->mSocketIn,
         upgradeData->mSocketOut);
     if (NS_FAILED(rv)) {
@@ -3979,15 +3995,14 @@ nsresult nsHttpConnectionMgr::nsHalfOpenSocket::SetupStreams(
 
   MOZ_ASSERT(mEnt);
   nsresult rv;
-  const char* socketTypes[1];
-  uint32_t typeCount = 0;
+  nsTArray<nsCString> socketTypes;
   const nsHttpConnectionInfo* ci = mEnt->mConnInfo;
   if (ci->FirstHopSSL()) {
-    socketTypes[typeCount++] = "ssl";
+    socketTypes.AppendElement(NS_LITERAL_CSTRING("ssl"));
   } else {
-    socketTypes[typeCount] = gHttpHandler->DefaultSocketType();
-    if (socketTypes[typeCount]) {
-      typeCount++;
+    const nsCString& defaultType = gHttpHandler->DefaultSocketType();
+    if (!defaultType.IsVoid()) {
+      socketTypes.AppendElement(defaultType);
     }
   }
 
@@ -4008,9 +4023,8 @@ nsresult nsHttpConnectionMgr::nsHalfOpenSocket::SetupStreams(
   nsCOMPtr<nsIRoutedSocketTransportService> routedSTS(do_QueryInterface(sts));
   if (routedSTS) {
     rv = routedSTS->CreateRoutedTransport(
-        socketTypes, typeCount, ci->GetOrigin(), ci->OriginPort(),
-        ci->GetRoutedHost(), ci->RoutedPort(), ci->ProxyInfo(),
-        getter_AddRefs(socketTransport));
+        socketTypes, ci->GetOrigin(), ci->OriginPort(), ci->GetRoutedHost(),
+        ci->RoutedPort(), ci->ProxyInfo(), getter_AddRefs(socketTransport));
   } else {
     if (!ci->GetRoutedHost().IsEmpty()) {
       // There is a route requested, but the legacy nsISocketTransportService
@@ -4023,9 +4037,8 @@ nsresult nsHttpConnectionMgr::nsHalfOpenSocket::SetupStreams(
            this, ci->RoutedHost(), ci->RoutedPort()));
     }
 
-    rv = sts->CreateTransport(socketTypes, typeCount, ci->GetOrigin(),
-                              ci->OriginPort(), ci->ProxyInfo(),
-                              getter_AddRefs(socketTransport));
+    rv = sts->CreateTransport(socketTypes, ci->GetOrigin(), ci->OriginPort(),
+                              ci->ProxyInfo(), getter_AddRefs(socketTransport));
   }
   NS_ENSURE_SUCCESS(rv, rv);
 

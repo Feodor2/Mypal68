@@ -115,6 +115,25 @@ const allCertificateUsages = {
 
 const NO_FLAGS = 0;
 
+// Convert a string to an array of bytes consisting of the char code at each
+// index.
+function stringToArray(s) {
+  let a = [];
+  for (let i = 0; i < s.length; i++) {
+    a.push(s.charCodeAt(i));
+  }
+  return a;
+}
+
+// Converts an array of bytes to a JS string using fromCharCode on each byte.
+function arrayToString(a) {
+  let s = "";
+  for (let b of a) {
+    s += String.fromCharCode(b);
+  }
+  return s;
+}
+
 // Commonly certificates are represented as PEM. The format is roughly as
 // follows:
 //
@@ -465,7 +484,7 @@ function add_connection_test(
     let sts = Cc["@mozilla.org/network/socket-transport-service;1"].getService(
       Ci.nsISocketTransportService
     );
-    this.transport = sts.createTransport(["ssl"], 1, host, REMOTE_PORT, null);
+    this.transport = sts.createTransport(["ssl"], host, REMOTE_PORT, null);
     // See bug 1129771 - attempting to connect to [::1] when the server is
     // listening on 127.0.0.1 causes frequent failures on OS X 10.10.
     this.transport.connectionFlags |= Ci.nsISocketTransport.DISABLE_IPV6;
@@ -566,13 +585,12 @@ function add_connection_test(
 }
 
 function _getBinaryUtil(binaryUtilName) {
-  let utilBin = Services.dirsvc.get("CurProcD", Ci.nsIFile);
-  // On macOS, CurProcD is .../Contents/Resources, and most binary utilities
-  // are located there, but certutil is in .../Contents/MacOS, so we have to
-  // change the path accordingly.
-  if (Services.appinfo.OS === "Darwin" && binaryUtilName === "certutil") {
-    utilBin = utilBin.parent;
-    utilBin.append("MacOS");
+  let utilBin = Services.dirsvc.get("GreD", Ci.nsIFile);
+  // On macOS, GreD is .../Contents/Resources, and most binary utilities
+  // are located there, but certutil is in GreBinD (or .../Contents/MacOS),
+  // so we have to change the path accordingly.
+  if (binaryUtilName === "certutil") {
+    utilBin = Services.dirsvc.get("GreBinD", Ci.nsIFile);
   }
   utilBin.append(binaryUtilName + mozinfo.bin_suffix);
   // If we're testing locally, the above works. If not, the server executable
@@ -639,7 +657,7 @@ function _setupTLSServerTest(serverBinName, certsPath, addDefaultRoot) {
   certDir.append(`${certsPath}`);
   Assert.ok(certDir.exists(), `certificate folder (${certsPath}) should exist`);
   // Using "sql:" causes the SQL DB to be used so we can run tests on Android.
-  process.run(false, ["sql:" + certDir.path], 1);
+  process.run(false, ["sql:" + certDir.path, Services.appinfo.processID], 2);
 
   registerCleanupFunction(function() {
     process.kill();
@@ -818,25 +836,6 @@ function stopOCSPResponder(responder) {
     responder.stop(resolve);
   });
 }
-
-// A prototype for a fake, error-free secInfo
-var FakeTransportSecurityInfo = function(certificate) {
-  this.serverCert = certificate;
-};
-
-FakeTransportSecurityInfo.prototype = {
-  serverCert: null,
-  cipherName: null,
-  keyLength: 2048,
-  isDomainMismatch: false,
-  isNotValidAtThisTime: false,
-  isUntrusted: false,
-  isExtendedValidation: false,
-  getInterface(aIID) {
-    return this.QueryInterface(aIID);
-  },
-  QueryInterface: ChromeUtils.generateQI(["nsITransportSecurityInfo"]),
-};
 
 // Utility functions for adding tests relating to certificate error overrides
 

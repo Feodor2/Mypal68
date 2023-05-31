@@ -15,27 +15,22 @@
 #include "nsHttpChannel.h"
 #include "nsHttpChannelAuthProvider.h"
 #include "nsHttpHandler.h"
-#include "nsIApplicationCacheService.h"
 #include "nsIApplicationCacheContainer.h"
 #include "nsICacheStorageService.h"
 #include "nsICacheStorage.h"
 #include "nsICacheEntry.h"
-#include "nsICaptivePortalService.h"
-#include "nsICookieService.h"
 #include "nsICryptoHash.h"
+#include "nsIEffectiveTLDService.h"
+#include "nsIHttpHeaderVisitor.h"
 #include "nsINetworkInterceptController.h"
-#include "nsINSSErrorsService.h"
 #include "nsIStringBundle.h"
 #include "nsIStreamListenerTee.h"
 #include "nsISeekableStream.h"
-#include "nsILoadGroupChild.h"
 #include "nsIProtocolProxyService2.h"
-#include "nsIURIClassifier.h"
 #include "nsMimeTypes.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsIURL.h"
-#include "nsIURIMutator.h"
 #include "nsIStreamTransportService.h"
 #include "prnetdb.h"
 #include "nsEscape.h"
@@ -44,7 +39,6 @@
 #include "nsDNSPrefetch.h"
 #include "nsChannelClassifier.h"
 #include "nsIRedirectResultListener.h"
-#include "mozIThirdPartyUtil.h"
 #include "mozilla/TimeStamp.h"
 #include "nsError.h"
 #include "nsPrintfCString.h"
@@ -55,15 +49,18 @@
 #include "nsIConsoleService.h"
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "nsISSLSocketControl.h"
+#include "mozilla/StaticPrefs_browser.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "sslt.h"
 #include "nsContentUtils.h"
 #include "nsContentSecurityManager.h"
 #include "nsIClassOfService.h"
-#include "nsIPermissionManager.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptError.h"
 #include "nsIScriptSecurityManager.h"
@@ -72,9 +69,7 @@
 #include "LoadContextInfo.h"
 #include "netCore.h"
 #include "nsHttpTransaction.h"
-#include "nsICacheEntryDescriptor.h"
 #include "nsICancelable.h"
-#include "nsIHttpChannelAuthProvider.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIPrompt.h"
 #include "nsInputStreamPump.h"
@@ -108,10 +103,6 @@
 #include "HttpChannelParent.h"
 #include "HttpChannelParentListener.h"
 #include "InterceptedHttpChannel.h"
-#include "nsIBufferedStreams.h"
-#include "nsIFileStreams.h"
-#include "nsIMIMEInputStream.h"
-#include "nsIMultiplexInputStream.h"
 #include "../../cache2/CacheFileUtils.h"
 #include "../../cache2/CacheHashUtils.h"
 #include "nsINetworkLinkService.h"
@@ -119,9 +110,9 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/net/AsyncUrlChannelClassifier.h"
+#include "mozilla/net/CookieSettings.h"
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
-#include "nsIWebNavigation.h"
 #include "HttpTrafficAnalyzer.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/WindowGlobalParent.h"
@@ -527,11 +518,8 @@ nsresult nsHttpChannel::OnBeforeConnect() {
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
-  bool isHttps = false;
-  rv = mURI->SchemeIs("https", &isHttps);
-  NS_ENSURE_SUCCESS(rv, rv);
   nsCOMPtr<nsIPrincipal> resultPrincipal;
-  if (!isHttps && mLoadInfo) {
+  if (!mURI->SchemeIs("https") && mLoadInfo) {
     nsContentUtils::GetSecurityManager()->GetChannelResultPrincipal(
         this, getter_AddRefs(resultPrincipal));
   }
@@ -539,15 +527,12 @@ nsresult nsHttpChannel::OnBeforeConnect() {
   if (!NS_GetOriginAttributes(this, originAttributes)) {
     return NS_ERROR_FAILURE;
   }
-  bool isHttp = false;
-  rv = mURI->SchemeIs("http", &isHttp);
-  NS_ENSURE_SUCCESS(rv, rv);
 
   // At this point it is no longer possible to call
   // HttpBaseChannel::UpgradeToSecure.
   mUpgradableToSecure = false;
   bool shouldUpgrade = mUpgradeToSecure;
-  if (isHttp) {
+  if (mURI->SchemeIs("http")) {
     if (!shouldUpgrade) {
       // Make sure http channel is released on main thread.
       // See bug 1539148 for details.
@@ -719,10 +704,7 @@ nsresult nsHttpChannel::ConnectOnTailUnblock() {
   SpeculativeConnect();
 
   // open a cache entry for this channel...
-  bool isHttps = false;
-  rv = mURI->SchemeIs("https", &isHttps);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = OpenCacheEntry(isHttps);
+  rv = OpenCacheEntry(mURI->SchemeIs("https"));
 
   // do not continue if asyncOpenCacheEntry is in progress
   if (AwaitingCacheCallbacks()) {
@@ -1405,14 +1387,13 @@ nsresult ProcessXCTO(nsHttpChannel* aChannel, nsIURI* aURI,
     // since we are getting here, the XCTO header was sent;
     // a non matching value most likely means a mistake happenend;
     // e.g. sending 'nosnif' instead of 'nosniff', let's log a warning.
-    NS_ConvertUTF8toUTF16 char16_header(contentTypeOptionsHeader);
-    const char16_t* params[] = {char16_header.get()};
+    AutoTArray<nsString, 1> params;
+    CopyUTF8toUTF16(contentTypeOptionsHeader, *params.AppendElement());
     RefPtr<Document> doc;
     aLoadInfo->GetLoadingDocument(getter_AddRefs(doc));
     nsContentUtils::ReportToConsole(
         nsIScriptError::warningFlag, NS_LITERAL_CSTRING("XCTO"), doc,
-        nsContentUtils::eSECURITY_PROPERTIES, "XCTOHeaderValueMissing", params,
-        ArrayLength(params));
+        nsContentUtils::eSECURITY_PROPERTIES, "XCTOHeaderValueMissing", params);
     return NS_OK;
   }
 
@@ -1565,19 +1546,8 @@ nsresult EnsureMIMEOfScript(nsHttpChannel* aChannel, nsIURI* aURI,
   }
 
   if (block) {
-    // Instead of consulting Preferences::GetBool() all the time we
-    // can cache the result to speed things up.
-    static bool sCachedBlockScriptWithWrongMime = false;
-    static bool sIsInited = false;
-    if (!sIsInited) {
-      sIsInited = true;
-      Preferences::AddBoolVarCache(&sCachedBlockScriptWithWrongMime,
-                                   "security.block_script_with_wrong_mime",
-                                   true);
-    }
-
     // Do not block the load if the feature is not enabled.
-    if (!sCachedBlockScriptWithWrongMime) {
+    if (!StaticPrefs::security_block_script_with_wrong_mime()) {
       return NS_OK;
     }
 
@@ -1630,24 +1600,25 @@ nsresult EnsureMIMEOfScript(nsHttpChannel* aChannel, nsIURI* aURI,
   // We restrict importScripts() in worker code to JavaScript MIME types.
   nsContentPolicyType internalType = aLoadInfo->InternalContentPolicyType();
   if (internalType == nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS) {
-    // Instead of consulting Preferences::GetBool() all the time we
-    // can cache the result to speed things up.
-    static bool sCachedBlockImportScriptsWithWrongMime = false;
-    static bool sIsInited = false;
-    if (!sIsInited) {
-      sIsInited = true;
-      Preferences::AddBoolVarCache(
-          &sCachedBlockImportScriptsWithWrongMime,
-          "security.block_importScripts_with_wrong_mime", true);
-    }
-
     // Do not block the load if the feature is not enabled.
-    if (!sCachedBlockImportScriptsWithWrongMime) {
+    if (!StaticPrefs::security_block_importScripts_with_wrong_mime()) {
       return NS_OK;
     }
 
     ReportMimeTypeMismatch(aChannel, "BlockImportScriptsWithWrongMimeType",
                            aURI, contentType, Report::Error);
+    return NS_ERROR_CORRUPTED_CONTENT;
+  }
+
+  if (internalType == nsIContentPolicy::TYPE_INTERNAL_WORKER ||
+      internalType == nsIContentPolicy::TYPE_INTERNAL_SHARED_WORKER) {
+    // Do not block the load if the feature is not enabled.
+    if (!StaticPrefs::security_block_Worker_with_wrong_mime()) {
+      return NS_OK;
+    }
+
+    ReportMimeTypeMismatch(aChannel, "BlockWorkerWithWrongMimeType", aURI,
+                           contentType, Report::Error);
     return NS_ERROR_CORRUPTED_CONTENT;
   }
 
@@ -2165,18 +2136,15 @@ nsresult nsHttpChannel::ProcessSingleSecurityHeader(
  *             it's an HTTPS connection.
  */
 nsresult nsHttpChannel::ProcessSecurityHeaders() {
-  nsresult rv;
-  bool isHttps = false;
-  rv = mURI->SchemeIs("https", &isHttps);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   // If this channel is not loading securely, STS or PKP doesn't do anything.
   // In the case of HSTS, the upgrade to HTTPS takes place earlier in the
   // channel load process.
-  if (!isHttps) return NS_OK;
+  if (!mURI->SchemeIs("https")) {
+    return NS_OK;
+  }
 
   nsAutoCString asciiHost;
-  rv = mURI->GetAsciiHost(asciiHost);
+  nsresult rv = mURI->GetAsciiHost(asciiHost);
   NS_ENSURE_SUCCESS(rv, NS_OK);
 
   // If the channel is not a hostname, but rather an IP, do not process STS
@@ -2325,10 +2293,10 @@ void nsHttpChannel::ProcessAltService() {
   OriginAttributes originAttributes;
   NS_GetOriginAttributes(this, originAttributes);
 
-  AltSvcMapping::ProcessHeader(altSvc, scheme, originHost, originPort,
-                               mUsername, GetTopWindowOrigin(),
-                               mPrivateBrowsing, callbacks, proxyInfo,
-                               mCaps & NS_HTTP_DISALLOW_SPDY, originAttributes);
+  AltSvcMapping::ProcessHeader(
+      altSvc, scheme, originHost, originPort, mUsername, GetTopWindowOrigin(),
+      mPrivateBrowsing, IsIsolated(), callbacks, proxyInfo,
+      mCaps & NS_HTTP_DISALLOW_SPDY, originAttributes);
 }
 
 nsresult nsHttpChannel::ProcessResponse() {
@@ -2472,7 +2440,7 @@ nsresult nsHttpChannel::ContinueProcessResponse1() {
       (httpStatus != 407)) {
     nsAutoCString cookie;
     if (NS_SUCCEEDED(mResponseHead->GetHeader(nsHttp::Set_Cookie, cookie))) {
-      SetCookie(cookie.get());
+      SetCookie(cookie);
     }
 
     // Given a successful connection, process any STS or PKP data that's
@@ -2724,7 +2692,7 @@ nsresult nsHttpChannel::ContinueProcessResponse3(nsresult rv) {
     case 429:
       // Do not cache 425 and 429.
       CloseCacheEntry(false);
-      MOZ_FALLTHROUGH;  // process normally
+      [[fallthrough]];  // process normally
     default:
       rv = ProcessNormal();
       MaybeInvalidateCacheEntryForSubsequentGet();
@@ -2836,11 +2804,7 @@ nsresult nsHttpChannel::ContinueProcessResponse4(nsresult rv) {
   bool doNotRender = DoNotRender3xxBody(rv);
 
   if (rv == NS_ERROR_DOM_BAD_URI && mRedirectURI) {
-    bool isHTTP = false;
-    if (NS_FAILED(mRedirectURI->SchemeIs("http", &isHTTP))) isHTTP = false;
-    if (!isHTTP && NS_FAILED(mRedirectURI->SchemeIs("https", &isHTTP)))
-      isHTTP = false;
-
+    bool isHTTP = mRedirectURI->SchemeIs("http") || mRedirectURI->SchemeIs("https");
     if (!isHTTP) {
       // This was a blocked attempt to redirect and subvert the system by
       // redirecting to another protocol (perhaps javascript:)
@@ -4006,6 +3970,9 @@ nsresult nsHttpChannel::OpenCacheEntryInternal(
   if (mIsTRRServiceChannel) {
     extension.Append("TRR");
   }
+  if (mRequestHead.IsHead()) {
+    extension.Append("HEAD");
+  }
 
   if (IsIsolated()) {
     auto& topWindowOrigin = GetTopWindowOrigin();
@@ -4175,6 +4142,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry,
     // The cached response does not contain an entity.  We can only reuse
     // the response if the current request is also HEAD.
     if (!mRequestHead.IsHead()) {
+      *aResult = ENTRY_NOT_WANTED;
       return NS_OK;
     }
   }
@@ -4311,9 +4279,7 @@ nsHttpChannel::OnCacheEntryCheck(nsICacheEntry* entry,
     }
   }
 
-  bool isHttps = false;
-  rv = mURI->SchemeIs("https", &isHttps);
-  NS_ENSURE_SUCCESS(rv, rv);
+  bool isHttps = mURI->SchemeIs("https");
 
   bool doValidation = false;
   bool doBackgroundValidation = false;
@@ -4738,10 +4704,7 @@ nsresult nsHttpChannel::OnOfflineCacheEntryAvailable(
            " looking for a regular cache entry",
            this));
 
-      bool isHttps = false;
-      rv = mURI->SchemeIs("https", &isHttps);
-      NS_ENSURE_SUCCESS(rv, rv);
-
+      bool isHttps = mURI->SchemeIs("https");
       rv = OpenCacheEntryInternal(isHttps, nullptr,
                                   false /* don't allow appcache lookups */);
       if (NS_FAILED(rv)) {
@@ -4920,11 +4883,7 @@ nsresult nsHttpChannel::OpenCacheInputStream(nsICacheEntry* cacheEntry,
                                              bool checkingAppCacheEntry) {
   nsresult rv;
 
-  bool isHttps = false;
-  rv = mURI->SchemeIs("https", &isHttps);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  if (isHttps) {
+  if (mURI->SchemeIs("https")) {
     rv = cacheEntry->GetSecurityInfo(getter_AddRefs(mCachedSecurityInfo));
     if (NS_FAILED(rv)) {
       LOG(("failed to parse security-info [channel=%p, entry=%p]", this,
@@ -5396,9 +5355,8 @@ void nsHttpChannel::UpdateInhibitPersistentCachingFlag() {
   if (mResponseHead->NoStore()) mLoadFlags |= INHIBIT_PERSISTENT_CACHING;
 
   // Only cache SSL content on disk if the pref is set
-  bool isHttps;
   if (!gHttpHandler->IsPersistentHttpsCachingEnabled() &&
-      NS_SUCCEEDED(mURI->SchemeIs("https", &isHttps)) && isHttps) {
+      mURI->SchemeIs("https")) {
     mLoadFlags |= INHIBIT_PERSISTENT_CACHING;
   }
 }
@@ -5874,10 +5832,16 @@ nsresult nsHttpChannel::ContinueProcessRedirectionAfterFallback(nsresult rv) {
   if (profiler_is_active()) {
     int32_t priority = PRIORITY_NORMAL;
     GetPriority(&priority);
+
+    TimingStruct timings;
+    if (mTransaction) {
+      timings = mTransaction->Timings();
+    }
+
     profiler_add_network_marker(
         mURI, priority, mChannelId, NetworkLoadType::LOAD_REDIRECT,
         mLastStatusReported, TimeStamp::Now(), mLogicalOffset,
-        mCacheDisposition, nullptr, mRedirectURI);
+        mCacheDisposition, &timings, mRedirectURI);
   }
 #endif
 
@@ -6286,7 +6250,8 @@ nsHttpChannel::AsyncOpen(nsIStreamListener* aListener) {
           mLoadInfo->GetInitialSecurityCheckDone() ||
           (mLoadInfo->GetSecurityMode() ==
                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
-           nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal())),
+           mLoadInfo->LoadingPrincipal() &&
+           mLoadInfo->LoadingPrincipal()->IsSystemPrincipal()),
       "security flags in loadInfo but doContentSecurityCheck() not called");
 
   LOG(("nsHttpChannel::AsyncOpen [this=%p]\n", this));
@@ -6485,10 +6450,9 @@ nsresult nsHttpChannel::BeginConnect() {
   nsAutoCString host;
   nsAutoCString scheme;
   int32_t port = -1;
-  bool isHttps = false;
+  bool isHttps = mURI->SchemeIs("https");
 
   rv = mURI->GetScheme(scheme);
-  if (NS_SUCCEEDED(rv)) rv = mURI->SchemeIs("https", &isHttps);
   if (NS_SUCCEEDED(rv)) rv = mURI->GetAsciiHost(host);
   if (NS_SUCCEEDED(rv)) rv = mURI->GetPort(&port);
   if (NS_SUCCEEDED(rv)) mURI->GetUsername(mUsername);
@@ -6540,7 +6504,8 @@ nsresult nsHttpChannel::BeginConnect() {
       AltSvcMapping::AcceptableProxy(proxyInfo) &&
       (scheme.EqualsLiteral("http") || scheme.EqualsLiteral("https")) &&
       (mapping = gHttpHandler->GetAltServiceMapping(
-           scheme, host, port, mPrivateBrowsing, originAttributes))) {
+           scheme, host, port, mPrivateBrowsing, IsIsolated(),
+           GetTopWindowOrigin(), originAttributes))) {
     LOG(("nsHttpChannel %p Alt Service Mapping Found %s://%s:%d [%s]\n", this,
          scheme.get(), mapping->AlternateHost().get(), mapping->AlternatePort(),
          mapping->HashKey().get()));
@@ -7944,7 +7909,12 @@ nsresult nsHttpChannel::ContinueOnStopRequestAfterAuthRetry(
     nsresult rv = gHttpHandler->ConnMgr()->CompleteUpgrade(
         aTransWithStickyConn, mUpgradeProtocolCallback);
     if (NS_FAILED(rv)) {
-      LOG(("  CompleteUpgrade failed with %08x", static_cast<uint32_t>(rv)));
+      LOG(("  CompleteUpgrade failed with %" PRIx32,
+           static_cast<uint32_t>(rv)));
+
+      // This ensures that WebSocketChannel::OnStopRequest will be
+      // called with an error so the session is properly aborted.
+      aStatus = rv;
     }
   }
 
@@ -9548,25 +9518,25 @@ void nsHttpChannel::SetOriginHeader() {
   if (mRequestHead.IsGet() || mRequestHead.IsHead()) {
     return;
   }
+  nsresult rv;
+
   nsAutoCString existingHeader;
   Unused << mRequestHead.GetHeader(nsHttp::Origin, existingHeader);
   if (!existingHeader.IsEmpty()) {
     LOG(("nsHttpChannel::SetOriginHeader Origin header already present"));
+    nsCOMPtr<nsIURI> uri;
+    rv = NS_NewURI(getter_AddRefs(uri), existingHeader);
+    if (NS_SUCCEEDED(rv) &&
+        ReferrerInfo::ShouldSetNullOriginHeader(this, uri)) {
+      LOG(("nsHttpChannel::SetOriginHeader null Origin by Referrer-Policy"));
+      rv = mRequestHead.SetHeader(nsHttp::Origin, NS_LITERAL_CSTRING("null"),
+                                  false /* merge */);
+      MOZ_ASSERT(NS_SUCCEEDED(rv));
+    }
     return;
   }
 
-  DebugOnly<nsresult> rv;
-
-  // Instead of consulting Preferences::GetInt() all the time we
-  // can cache the result to speed things up.
-  static int32_t sSendOriginHeader = 0;
-  static bool sIsInited = false;
-  if (!sIsInited) {
-    sIsInited = true;
-    Preferences::AddIntVarCache(&sSendOriginHeader,
-                                "network.http.sendOriginHeader");
-  }
-  if (sSendOriginHeader == 0) {
+  if (StaticPrefs::network_http_sendOriginHeader() == 0) {
     // Origin header suppressed by user setting
     return;
   }
@@ -9574,31 +9544,25 @@ void nsHttpChannel::SetOriginHeader() {
   nsCOMPtr<nsIURI> referrer;
   mLoadInfo->TriggeringPrincipal()->GetURI(getter_AddRefs(referrer));
 
-  nsAutoCString origin("null");
-  if (referrer && dom::ReferrerInfo::IsReferrerSchemeAllowed(referrer)) {
-    nsContentUtils::GetASCIIOrigin(referrer, origin);
+  if (!referrer || !dom::ReferrerInfo::IsReferrerSchemeAllowed(referrer)) {
+    return;
   }
 
-  // Restrict Origin to same-origin loads if requested by user or leaving from
-  // .onion
-  if (sSendOriginHeader == 1) {
+  nsAutoCString origin("null");
+  nsContentUtils::GetASCIIOrigin(referrer, origin);
+
+  // Restrict Origin to same-origin loads if requested by user
+  if (StaticPrefs::network_http_sendOriginHeader() == 1) {
     nsAutoCString currentOrigin;
     nsContentUtils::GetASCIIOrigin(mURI, currentOrigin);
     if (!origin.EqualsIgnoreCase(currentOrigin.get())) {
       // Origin header suppressed by user setting
       return;
     }
-  } else if (dom::ReferrerInfo::HideOnionReferrerSource()) {
-    nsAutoCString host;
-    if (referrer && NS_SUCCEEDED(referrer->GetAsciiHost(host)) &&
-        StringEndsWith(host, NS_LITERAL_CSTRING(".onion"))) {
-      nsAutoCString currentOrigin;
-      nsContentUtils::GetASCIIOrigin(mURI, currentOrigin);
-      if (!origin.EqualsIgnoreCase(currentOrigin.get())) {
-        // Origin header is suppressed by .onion
-        return;
-      }
-    }
+  }
+
+  if (ReferrerInfo::ShouldSetNullOriginHeader(this, referrer)) {
+    origin.AssignLiteral("null");
   }
 
   rv = mRequestHead.SetHeader(nsHttp::Origin, origin, false /* merge */);
@@ -10189,8 +10153,14 @@ nsresult nsHttpChannel::RedirectToInterceptedChannel() {
 }
 
 void nsHttpChannel::ReEvaluateReferrerAfterTrackingStatusIsKnown() {
-  if (StaticPrefs::network_cookie_cookieBehavior() ==
-      nsICookieService::BEHAVIOR_REJECT_TRACKER) {
+  nsCOMPtr<nsICookieSettings> cs;
+  if (mLoadInfo) {
+    Unused << mLoadInfo->GetCookieSettings(getter_AddRefs(cs));
+  }
+  if (!cs) {
+    cs = net::CookieSettings::Create();
+  }
+  if (cs->GetRejectThirdPartyTrackers()) {
     bool isPrivate =
         mLoadInfo && mLoadInfo->GetOriginAttributes().mPrivateBrowsingId > 0;
     // If our referrer has been set before, and our referrer policy is unset
@@ -10198,15 +10168,15 @@ void nsHttpChannel::ReEvaluateReferrerAfterTrackingStatusIsKnown() {
     // tracking channel, we may need to set our referrer with referrer policy
     // once again to ensure our defaults properly take effect now.
     if (mReferrerInfo) {
-      dom::ReferrerInfo* referrerInfo =
-          static_cast<dom::ReferrerInfo*>(mReferrerInfo.get());
+      ReferrerInfo* referrerInfo =
+          static_cast<ReferrerInfo*>(mReferrerInfo.get());
 
       if (referrerInfo->IsPolicyOverrided() &&
-          referrerInfo->GetReferrerPolicy() ==
+          referrerInfo->ReferrerPolicy() ==
               ReferrerInfo::GetDefaultReferrerPolicy(nullptr, nullptr,
                                                      isPrivate)) {
         nsCOMPtr<nsIReferrerInfo> newReferrerInfo =
-            referrerInfo->CloneWithNewPolicy(RP_Unset);
+            referrerInfo->CloneWithNewPolicy(ReferrerPolicy::_empty);
         SetReferrerInfo(newReferrerInfo, false, true);
       }
     }

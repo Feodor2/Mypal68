@@ -6,7 +6,6 @@
 #define mozilla_storage_mozStorageAsyncStatementJSHelper_h_
 
 #include "nsIXPCScriptable.h"
-#include "nsIXPConnect.h"
 
 namespace mozilla {
 namespace storage {

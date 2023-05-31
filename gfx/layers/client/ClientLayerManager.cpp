@@ -5,9 +5,11 @@
 #include "ClientLayerManager.h"
 #include "GeckoProfiler.h"       // for AUTO_PROFILER_LABEL
 #include "gfxEnv.h"              // for gfxEnv
-#include "gfxPrefs.h"            // for gfxPrefs::LayersTile...
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT, etc
 #include "mozilla/Hal.h"
+#include "mozilla/StaticPrefs_apz.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/dom/BrowserChild.h"  // for BrowserChild
 #include "mozilla/dom/TabGroup.h"      // for TabGroup
 #include "mozilla/hal_sandbox/PHal.h"  // for ScreenConfiguration
@@ -242,7 +244,7 @@ bool ClientLayerManager::BeginTransactionWithTarget(gfxContext* aTarget,
     // enabled in this process; it may be enabled in the parent process,
     // and the parent process expects unique sequence numbers.
     ++mPaintSequenceNumber;
-    if (gfxPrefs::APZTestLoggingEnabled()) {
+    if (StaticPrefs::apz_test_logging_enabled()) {
       mApzTestData.StartNewPaint(mPaintSequenceNumber);
     }
   }
@@ -278,7 +280,7 @@ bool ClientLayerManager::EndTransactionInternal(
   AUTO_PROFILER_TRACING("Paint", "Rasterize", GRAPHICS);
 
   Maybe<TimeStamp> startTime;
-  if (gfxPrefs::LayersDrawFPS()) {
+  if (StaticPrefs::layers_acceleration_draw_fps()) {
     startTime = Some(TimeStamp::Now());
   }
 
@@ -308,7 +310,7 @@ bool ClientLayerManager::EndTransactionInternal(
 
   // Skip the painting if the device is in device-reset status.
   if (!gfxPlatform::GetPlatform()->DidRenderingDeviceReset()) {
-    if (gfxPrefs::AlwaysPaint() && XRE_IsContentProcess()) {
+    if (StaticPrefs::gfx_content_always_paint() && XRE_IsContentProcess()) {
       TimeStamp start = TimeStamp::Now();
       root->RenderLayer();
       mLastPaintTime = TimeStamp::Now() - start;
@@ -436,7 +438,7 @@ CompositorBridgeChild* ClientLayerManager::GetRemoteRenderer() {
 }
 
 CompositorBridgeChild* ClientLayerManager::GetCompositorBridgeChild() {
-  if (!XRE_IsParentProcess() && !recordreplay::IsRecordingOrReplaying()) {
+  if (!XRE_IsParentProcess()) {
     return CompositorBridgeChild::Get();
   }
   return GetRemoteRenderer();
@@ -459,8 +461,6 @@ void ClientLayerManager::DidComposite(TransactionId aTransactionId,
                                       const TimeStamp& aCompositeStart,
                                       const TimeStamp& aCompositeEnd) {
   if (!mWidget) {
-    // When recording/replaying this manager may have already been destroyed.
-    MOZ_ASSERT(recordreplay::IsRecordingOrReplaying());
     return;
   }
 
@@ -543,7 +543,7 @@ float ClientLayerManager::RequestProperty(const nsAString& aProperty) {
 
 void ClientLayerManager::StartNewRepaintRequest(
     SequenceNumber aSequenceNumber) {
-  if (gfxPrefs::APZTestLoggingEnabled()) {
+  if (StaticPrefs::apz_test_logging_enabled()) {
     mApzTestData.StartNewRepaintRequest(aSequenceNumber);
   }
 }
@@ -613,7 +613,7 @@ void ClientLayerManager::FlushRendering() {
   if (mWidget) {
     if (CompositorBridgeChild* remoteRenderer = mWidget->GetRemoteRenderer()) {
       if (mWidget->SynchronouslyRepaintOnResize() ||
-          gfxPrefs::LayersForceSynchronousResize()) {
+          StaticPrefs::layers_force_synchronous_resize()) {
         remoteRenderer->SendFlushRendering();
       } else {
         remoteRenderer->SendFlushRenderingAsync();
@@ -694,7 +694,7 @@ void ClientLayerManager::ForwardTransaction(bool aScheduleComposite) {
     refreshStart = mTransactionStart;
   }
 
-  if (gfxPrefs::AlwaysPaint() && XRE_IsContentProcess()) {
+  if (StaticPrefs::gfx_content_always_paint() && XRE_IsContentProcess()) {
     mForwarder->SendPaintTime(mLatestTransactionId, mLastPaintTime);
   }
 
@@ -864,7 +864,7 @@ ClientLayerManager::CreatePersistentBufferProvider(const gfx::IntSize& aSize,
   // instead of being sent to the compositor, in which case rendering into
   // shared memory is wasteful.
   if (IsCompositingCheap() &&
-      gfxPrefs::PersistentBufferProviderSharedEnabled()) {
+      StaticPrefs::layers_shared_buffer_provider_enabled()) {
     RefPtr<PersistentBufferProvider> provider =
         PersistentBufferProviderShared::Create(aSize, aFormat,
                                                AsShadowForwarder());

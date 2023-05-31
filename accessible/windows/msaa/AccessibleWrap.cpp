@@ -29,13 +29,11 @@
 #  include "Logging.h"
 #endif
 
-#include "nsIMutableArray.h"
 #include "nsIFrame.h"
 #include "nsIScrollableFrame.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "mozilla/dom/BrowserParent.h"
-#include "nsIServiceManager.h"
 #include "nsNameSpaceManager.h"
 #include "nsTextFormatter.h"
 #include "nsView.h"
@@ -44,7 +42,6 @@
 #include "nsArrayUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ReverseIterator.h"
-#include "nsIXULRuntime.h"
 #include "mozilla/mscom/AsyncInvoker.h"
 #include "mozilla/mscom/Interceptor.h"
 

@@ -16,7 +16,6 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "nsContentUtils.h"
-#include "nsICertOverrideService.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIPrompt.h"
 #include "nsIProtocolProxyService.h"
@@ -215,8 +214,7 @@ OCSPRequest::Run() {
   }
 
   nsCOMPtr<nsIURI> uri;
-  nsresult rv =
-      NS_NewURI(getter_AddRefs(uri), mAIALocation, nullptr, nullptr, ios);
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), mAIALocation);
   if (NS_FAILED(rv)) {
     return NotifyDone(NS_ERROR_MALFORMED_URI, lock);
   }
@@ -561,13 +559,10 @@ void PK11PasswordPromptRunnable::RunOnTargetThread() {
   if (PK11_IsInternal(mSlot)) {
     rv = GetPIPNSSBundleString("CertPassPromptDefault", promptString);
   } else {
-    NS_ConvertUTF8toUTF16 tokenName(PK11_GetTokenName(mSlot));
-    const char16_t* formatStrings[] = {
-        tokenName.get(),
-    };
-    rv =
-        PIPBundleFormatStringFromName("CertPassPrompt", formatStrings,
-                                      ArrayLength(formatStrings), promptString);
+    AutoTArray<nsString, 1> formatStrings = {
+        NS_ConvertUTF8toUTF16(PK11_GetTokenName(mSlot))};
+    rv = PIPBundleFormatStringFromName("CertPassPrompt", formatStrings,
+                                       promptString);
   }
   if (NS_FAILED(rv)) {
     return;

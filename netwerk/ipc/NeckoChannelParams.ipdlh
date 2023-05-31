@@ -79,6 +79,7 @@ struct LoadInfoArgs
   bool                        browserWouldUpgradeInsecureRequests;
   bool                        forceAllowDataURI;
   bool                        allowInsecureRedirectToDataURI;
+  bool                        bypassCORSChecks;
   bool                        skipContentPolicyCheckForWebRequest;
   bool                        forceInheritPrincipalDropped;
   uint64_t                    innerWindowID;
@@ -91,6 +92,7 @@ struct LoadInfoArgs
   bool                        initialSecurityCheckDone;
   bool                        isInThirdPartyContext;
   bool                        isDocshellReload;
+  bool                        isFormSubmission;
   bool                        sendCSPViolationEvents;
   OriginAttributes            originAttributes;
   RedirectHistoryEntryInfo[]  redirectChainIncludingInternalRedirects;
@@ -137,6 +139,7 @@ struct LoadInfoArgs
   bool                        isFromProcessingFrameAttributes;
   CookieSettingsArgs cookieSettings;
   uint32_t                    requestBlockingReason;
+  CSPInfo?                    cspToInheritInfo;
 };
 
 /**
@@ -152,6 +155,11 @@ struct ParentLoadInfoForwarderArgs
   // the parent and needs to be mirrored to the child so that security
   // checks can pass.
   bool allowInsecureRedirectToDataURI;
+
+  // WebExtextensions WebRequest API allows extentions to redirect a channel
+  // Before the CORS-preflight was fetched, which can lead into unexpeced CORS blocks.
+  // We can set this to skip the Cors Checks for the old Channel.
+  bool bypassCORSChecks;
 
   // The ServiceWorker controller that may be set in the parent when
   // interception occurs.
@@ -214,11 +222,9 @@ struct HttpChannelOpenArgs
   URIParams?                  original;
   URIParams?                  doc;
   nsIReferrerInfo             referrerInfo;
-  URIParams?                  originalReferrer;
-  uint32_t                    originalReferrerPolicy;
-  uint32_t                    referrerPolicy;
   URIParams?                  apiRedirectTo;
   URIParams?                  topWindowURI;
+  OptionalPrincipalInfo       contentBlockingAllowListPrincipal;
   uint32_t                    loadFlags;
   RequestHeaderTuples         requestHeaders;
   nsCString                   requestMethod;
@@ -327,7 +333,7 @@ struct CookieStruct
   bool      isHttpOnly;
   bool      isSession;
   bool      isSecure;
-  int8_t    sameSite;
+  int32_t   sameSite;
 };
 
 } // namespace ipc

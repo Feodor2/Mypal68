@@ -12,7 +12,6 @@
 #include "nsAccessibilityService.h"
 #include "Platform.h"
 #include "RootAccessibleWrap.h"
-#include "xpcAccessibleDocument.h"
 
 #ifdef A11Y_LOG
 #  include "Logging.h"
@@ -447,7 +446,7 @@ DocAccessible* DocManager::CreateDocOrRootAccessible(Document* aDocument) {
   if (!isRootDoc) {
     // XXXaaronl: ideally we would traverse the presshell chain. Since there's
     // no easy way to do that, we cheat and use the document hierarchy.
-    parentDocAcc = GetDocAccessible(aDocument->GetParentDocument());
+    parentDocAcc = GetDocAccessible(aDocument->GetInProcessParentDocument());
     NS_ASSERTION(parentDocAcc, "Can't create an accessible for the document!");
     if (!parentDocAcc) return nullptr;
   }

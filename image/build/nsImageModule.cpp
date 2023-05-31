@@ -11,7 +11,6 @@
 #include "ShutdownTracker.h"
 #include "SurfaceCache.h"
 
-#include "gfxPrefs.h"
 #include "imgLoader.h"
 
 using namespace mozilla::image;
@@ -23,9 +22,6 @@ nsresult mozilla::image::EnsureModuleInitialized() {
   if (sInitialized) {
     return NS_OK;
   }
-
-  // Make sure the preferences are initialized
-  gfxPrefs::GetSingleton();
 
   mozilla::image::ShutdownTracker::Initialize();
   mozilla::image::ImageFactory::Initialize();

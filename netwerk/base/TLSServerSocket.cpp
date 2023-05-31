@@ -9,7 +9,6 @@
 #include "nsComponentManagerUtils.h"
 #include "nsDependentSubstring.h"
 #include "nsIServerSocket.h"
-#include "nsITimer.h"
 #include "nsIX509Cert.h"
 #include "nsIX509CertDB.h"
 #include "nsNetCID.h"

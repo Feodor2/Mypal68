@@ -90,11 +90,6 @@ pref("app.update.timerFirstInterval", 30000);
 // The interval to check for updates (app.update.interval) is defined in
 // firefox-branding.js
 
-// Alternative windowtype for an application update user interface window. When
-// a window with this windowtype is open the application update service won't
-// open the normal application update user interface window.
-pref("app.update.altwindowtype", "Browser:About");
-
 // Enables some extra Application Update Logging (can reduce performance)
 pref("app.update.log", false);
 // Causes Application Update Logging to be sent to a file in the profile
@@ -108,9 +103,6 @@ pref("app.update.log.file", false);
 // the failure.
 pref("app.update.backgroundMaxErrors", 10);
 
-// Whether or not to use the doorhanger application update UI.
-pref("app.update.doorhanger", false);
-
 // Ids of the links to the "What's new" update documentation
 pref("app.update.link.updateAvailableWhatsNew", "update-available-whats-new");
 pref("app.update.link.updateManualWhatsNew", "update-manual-whats-new");
@@ -123,20 +115,7 @@ pref("app.update.download.promptMaxAttempts", 2);
 // download a fresh installer.
 pref("app.update.elevation.promptMaxAttempts", 2);
 
-// If set to true, the Update Service will automatically download updates if the
-// user can apply updates. This pref is no longer used on Windows, except as the
-// default value to migrate to the new location that this data is now stored
-// (which is in a file in the update directory). Because of this, this pref
-// should no longer be used directly. Instead, getAppUpdateAutoEnabled and
-// getAppUpdateAutoEnabled from UpdateUtils.jsm should be used.
-#ifndef XP_WIN
-pref("app.update.auto", false);
-#endif
-
-// If set to true, the Update Service will present no UI for any event.
-pref("app.update.silent", false);
-
-// app.update.badgeWaitTime is in branding section
+pref("app.update.auto", 0);
 
 // If set to true, the Update Service will apply updates in the background
 // when it finishes downloading them.
@@ -147,11 +126,9 @@ pref("app.update.url", "");
 // app.update.url.manual is in branding section
 // app.update.url.details is in branding section
 
+// app.update.badgeWaitTime is in branding section
 // app.update.interval is in branding section
 // app.update.promptWaitTime is in branding section
-
-// Show the Update Checking/Ready UI when the user was idle for x seconds
-pref("app.update.idletime", 60);
 
 // Whether or not to attempt using the service for updates.
 #ifdef MOZ_MAINTENANCE_SERVICE
@@ -486,6 +463,9 @@ pref("browser.tabs.remote.separatePrivilegedContentProcess", true);
 #endif
 
 #ifdef NIGHTLY_BUILD
+// allow_eval_with_system_principal is enabled on Firefox Desktop only at this
+// point in time
+pref("security.allow_eval_with_system_principal", false);
 pref("browser.tabs.remote.useHTTPResponseProcessSelection", true);
 #else
 // Disabled outside of nightly due to bug 1554217
@@ -653,7 +633,6 @@ pref("mousewheel.with_meta.action", 1); // win key on Win, Super/Hyper on Linux
 pref("mousewheel.with_control.action",3);
 pref("mousewheel.with_win.action", 1);
 
-pref("browser.xul.error_pages.enabled", true);
 pref("browser.xul.error_pages.expert_bad_cert", false);
 pref("browser.xul.error_pages.show_safe_browsing_details_on_load", false);
 
@@ -932,10 +911,6 @@ pref("places.frecency.unvisitedTypedBonus", 200);
 // 2 - pre-populate site URL and pre-fetch certificate
 pref("browser.ssl_override_behavior", 2);
 
-// True if the user should be prompted when a web application supports
-// offline apps.
-pref("browser.offline-apps.notify", true);
-
 // if true, use full page zoom instead of text zoom
 pref("browser.zoom.full", true);
 
@@ -981,9 +956,6 @@ pref("security.certerrors.mitm.auto_enable_enterprise_roots", false);
 
 // Whether to start the private browsing mode at application startup
 pref("browser.privatebrowsing.autostart", false);
-
-// Whether to show the new private browsing UI with in-content search box.
-pref("browser.privatebrowsing.searchUI", true);
 
 // Whether the bookmark panel should be shown when bookmarking a page.
 pref("browser.bookmarks.editDialog.showForNewBookmarks", true);
@@ -1176,7 +1148,6 @@ pref("services.sync.prefs.sync.addons.ignoreUserEnabledChanges", true);
 // uncompromised Sync-connected devices.
 pref("services.sync.prefs.sync.browser.contentblocking.category", true);
 pref("services.sync.prefs.sync.browser.contentblocking.features.strict", true);
-pref("services.sync.prefs.sync.browser.contentblocking.introCount", true);
 pref("services.sync.prefs.sync.browser.crashReports.unsubmittedCheck.autoSubmit2", true);
 pref("services.sync.prefs.sync.browser.ctrlTab.recentlyUsedOrder", true);
 pref("services.sync.prefs.sync.browser.download.useDownloadDir", true);
@@ -1286,18 +1257,8 @@ pref("browser.newtabpage.activity-stream.debug", false);
 
 pref("browser.library.activity-stream.enabled", false);
 
-// The remote FxA root content URL for the Activity Stream firstrun page.
-pref("browser.newtabpage.activity-stream.fxaccounts.endpoint", "");
-
 // The pref that controls if the search shortcuts experiment is on
 pref("browser.newtabpage.activity-stream.improvesearch.topSiteSearchShortcuts", false);
-
-// ASRouter provider configuration
-pref("browser.newtabpage.activity-stream.asrouter.providers.cfr", "");
-// This url, if changed, MUST continue to point to an https url. Pulling arbitrary content to inject into
-// this page over http opens us up to a man-in-the-middle attack that we'd rather not face. If you are a downstream
-// repackager of this code using an alternate snippet url, please keep your users safe
-pref("browser.newtabpage.activity-stream.asrouter.providers.snippets", "");
 
 // The pref controls if search hand-off is enabled for Activity Stream.
 #ifdef NIGHTLY_BUILD
@@ -1455,14 +1416,6 @@ pref("identity.fxaccounts.commands.missed.fetch_interval", 86400);
 pref("ui.key.menuAccessKeyFocuses", true);
 #endif
 
-#ifdef NIGHTLY_BUILD
-pref("media.eme.vp9-in-mp4.enabled", true);
-#else
-pref("media.eme.vp9-in-mp4.enabled", false);
-#endif
-
-pref("media.eme.hdcp-policy-check.enabled", false);
-
 // Whether we should run a test-pattern through EME GMPs before assuming they'll
 // decode H.264.
 pref("media.gmp.trial-create.enabled", true);
@@ -1486,7 +1439,7 @@ pref("media.gmp-gmpopenh264.enabled", true);
 // Switch block autoplay logic to v2, and enable UI.
 pref("media.autoplay.enabled.user-gestures-needed", true);
 // Set Firefox to block autoplay, asking for permission by default.
-pref("media.autoplay.default", 1); // 0=Allowed, 1=Blocked
+pref("media.autoplay.default", 1); // 0=Allowed, 1=Blocked, 5=All Blocked
 
 #ifdef NIGHTLY_BUILD
 // Block WebAudio from playing automatically.
@@ -1552,9 +1505,6 @@ pref("privacy.trackingprotection.cryptomining.enabled", true);
 
 pref("dom.storage_access.enabled", true);
 
-pref("dom.storage_access.auto_grants", true);
-pref("dom.storage_access.max_concurrent_auto_grants", 5);
-
 // Define a set of default features for the Content Blocking UI.
 pref("browser.contentblocking.trackingprotection.control-center.ui.enabled", true);
 
@@ -1583,6 +1533,7 @@ pref("browser.contentblocking.fingerprinting.preferences.ui.enabled", true);
 //     "cookieBehavior2": cookie behaviour BEHAVIOR_REJECT
 //     "cookieBehavior3": cookie behaviour BEHAVIOR_LIMIT_FOREIGN
 //     "cookieBehavior4": cookie behaviour BEHAVIOR_REJECT_TRACKER
+//     "cookieBehavior5": cookie behaviour BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN
 // One value from each section must be included in the browser.contentblocking.features.strict pref.
 pref("browser.contentblocking.features.strict", "tp,tpPrivate,cookieBehavior4,cm,fp");
 
@@ -1597,18 +1548,10 @@ pref("browser.contentblocking.rejecttrackers.reportBreakage.enabled", true);
 
 pref("browser.contentblocking.reportBreakage.url", "data:text/plain,");
 
-pref("browser.contentblocking.introCount", 0);
-
-pref("browser.contentblocking.maxIntroCount", 0);
-// 1800 = 30 min in seconds
-pref("browser.contentblocking.introDelaySeconds", 1800);
-
 // Enables the new Protections Panel.
 #ifdef NIGHTLY_BUILD
 pref("browser.protections_panel.enabled", true);
 #endif
-
-pref("privacy.trackingprotection.introURL", "data:text/plain,");
 
 // Always enable newtab segregation using containers
 pref("privacy.usercontext.about_newtab_segregation.enabled", true);
@@ -1711,10 +1654,17 @@ pref("browser.migrate.chrome.history.maxAgeInDays", 180);
 // Enable browser frames for use on desktop.  Only exposed to chrome callers.
 pref("dom.mozBrowserFramesEnabled", true);
 
+pref("signon.generation.available", true);
+pref("signon.generation.enabled", true);
 pref("signon.schemeUpgrades", true);
 pref("signon.privateBrowsingCapture.enabled", true);
 pref("signon.showAutoCompleteFooter", true);
+#ifdef NIGHTLY_BUILD
+pref("signon.management.page.enabled", true);
+pref("signon.management.overrideURI", "about:logins?filter=%DOMAIN%");
+#else
 pref("signon.management.page.enabled", false);
+#endif
 
 // Enable the "Simplify Page" feature in Print Preview. This feature
 // is disabled by default in toolkit.
@@ -1740,52 +1690,10 @@ pref("browser.crashReports.unsubmittedCheck.enabled", false);
 pref("browser.crashReports.unsubmittedCheck.chancesUntilSuppress", 4);
 pref("browser.crashReports.unsubmittedCheck.autoSubmit2", false);
 
-// Preferences for the form autofill system extension
-// The truthy values of "extensions.formautofill.available" are "on" and "detect",
-// any other value means autofill isn't available.
-// "detect" means it's enabled if conditions defined in the extension are met.
-#ifdef NIGHTLY_BUILD
-pref("extensions.formautofill.available", "on");
-#else
-pref("extensions.formautofill.available", "detect");
-#endif
-pref("extensions.formautofill.creditCards.available", false);
-pref("extensions.formautofill.addresses.enabled", true);
-pref("extensions.formautofill.creditCards.enabled", true);
-// Pref for shield/heartbeat to recognize users who have used Credit Card
-// Autofill. The valid values can be:
-// 0: none
-// 1: submitted a manually-filled credit card form (but didn't see the doorhanger
-//    because of a duplicate profile in the storage)
-// 2: saw the doorhanger
-// 3: submitted an autofill'ed credit card form
-pref("extensions.formautofill.creditCards.used", 0);
-pref("extensions.formautofill.firstTimeUse", true);
-pref("extensions.formautofill.heuristics.enabled", true);
-// Whether the user enabled the OS re-auth dialog.
-pref("extensions.formautofill.reauth.enabled", false);
-pref("extensions.formautofill.section.enabled", true);
-pref("extensions.formautofill.loglevel", "Warn");
-
-#ifdef NIGHTLY_BUILD
-// Comma separated list of countries Form Autofill is available in.
-pref("extensions.formautofill.supportedCountries", "US,CA,DE");
-pref("extensions.formautofill.supportRTL", true);
-#else
-pref("extensions.formautofill.supportedCountries", "US");
-pref("extensions.formautofill.supportRTL", false);
-#endif
-
 // Whether or not to restore a session with lazy-browser tabs.
 pref("browser.sessionstore.restore_tabs_lazily", true);
 
 pref("browser.suppress_first_window_animation", true);
-
-// Preference that allows individual users to disable Screenshots.
-pref("extensions.screenshots.disabled", false);
-// Preference that allows individual users to leave Screenshots enabled, but
-// disable uploading to the server.
-pref("extensions.screenshots.upload-disabled", false);
 
 // URL for Learn More link for browser error logging in preferences
 pref("browser.chrome.errorReporter.infoURL",

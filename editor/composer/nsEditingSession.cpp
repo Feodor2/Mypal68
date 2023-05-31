@@ -17,24 +17,20 @@
 #include "nsContentUtils.h"
 #include "nsDebug.h"  // for NS_ENSURE_SUCCESS, etc
 #include "nsEditingSession.h"
-#include "nsError.h"               // for NS_ERROR_FAILURE, NS_OK, etc
-#include "nsIChannel.h"            // for nsIChannel
-#include "nsIContentViewer.h"      // for nsIContentViewer
-#include "nsIControllers.h"        // for nsIControllers
-#include "nsID.h"                  // for NS_GET_IID, etc
-#include "nsHTMLDocument.h"        // for nsHTMLDocument
-#include "nsIDOMWindow.h"          // for nsIDOMWindow
-#include "nsIDocShell.h"           // for nsIDocShell
-#include "mozilla/dom/Document.h"  // for Document
-#include "nsIDocumentStateListener.h"
+#include "nsError.h"                     // for NS_ERROR_FAILURE, NS_OK, etc
+#include "nsIChannel.h"                  // for nsIChannel
+#include "nsIContentViewer.h"            // for nsIContentViewer
+#include "nsIControllers.h"              // for nsIControllers
+#include "nsID.h"                        // for NS_GET_IID, etc
+#include "nsHTMLDocument.h"              // for nsHTMLDocument
+#include "nsIDocShell.h"                 // for nsIDocShell
+#include "mozilla/dom/Document.h"        // for Document
 #include "nsIEditor.h"                   // for nsIEditor
-#include "nsIHTMLDocument.h"             // for nsIHTMLDocument, etc
 #include "nsIInterfaceRequestorUtils.h"  // for do_GetInterface
 #include "nsIPlaintextEditor.h"          // for nsIPlaintextEditor, etc
 #include "nsIRefreshURI.h"               // for nsIRefreshURI
 #include "nsIRequest.h"                  // for nsIRequest
 #include "nsITimer.h"                    // for nsITimer, etc
-#include "nsITransactionManager.h"       // for nsITransactionManager
 #include "nsIWeakReference.h"            // for nsISupportsWeakReference, etc
 #include "nsIWebNavigation.h"            // for nsIWebNavigation
 #include "nsIWebProgress.h"              // for nsIWebProgress, etc
@@ -310,11 +306,8 @@ nsEditingSession::SetupEditorOnWindow(mozIDOMWindowProxy* aWindow) {
     doc->FlushPendingNotifications(mozilla::FlushType::Frames);
     if (mMakeWholeDocumentEditable) {
       doc->SetEditableFlag(true);
-      nsCOMPtr<nsIHTMLDocument> htmlDocument = do_QueryInterface(doc);
-      if (htmlDocument) {
-        // Enable usage of the execCommand API
-        htmlDocument->SetEditingState(nsIHTMLDocument::eDesignMode);
-      }
+      // Enable usage of the execCommand API
+      doc->SetEditingState(Document::EditingState::eDesignMode);
     }
   }
   bool needHTMLController = false;
@@ -356,7 +349,14 @@ nsEditingSession::SetupEditorOnWindow(mozIDOMWindowProxy* aWindow) {
   if (mEditorStatus != eEditorCreationInProgress) {
     RefPtr<ComposerCommandsUpdater> updater = mComposerCommandsUpdater;
     updater->NotifyDocumentCreated();
-    return NS_ERROR_FAILURE;
+
+    // At this point we have made a final decision that we don't support
+    // editing the current document.  This is an internal failure state, but
+    // we return NS_OK to avoid throwing an exception from the designMode
+    // setter for web compatibility.  The document editing APIs will tell the
+    // developer if editing has been disabled because we're in a document type
+    // that doesn't support editing.
+    return NS_OK;
   }
 
   // Create editor and do other things
@@ -502,8 +502,7 @@ nsEditingSession::TearDownEditorOnWindow(mozIDOMWindowProxy* aWindow) {
   auto* window = nsPIDOMWindowOuter::From(aWindow);
 
   RefPtr<Document> doc = window->GetDoc();
-  nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(doc);
-  bool stopEditing = htmlDoc && htmlDoc->IsEditingOn();
+  bool stopEditing = doc && doc->IsEditingOn();
   if (stopEditing) {
     RemoveWebProgressListener(window);
   }
@@ -513,7 +512,7 @@ nsEditingSession::TearDownEditorOnWindow(mozIDOMWindowProxy* aWindow) {
 
   RefPtr<HTMLEditor> htmlEditor = docShell->GetHTMLEditor();
   if (stopEditing) {
-    htmlDoc->TearingDownEditor();
+    doc->TearingDownEditor();
   }
 
   if (mComposerCommandsUpdater && htmlEditor) {
@@ -535,10 +534,7 @@ nsEditingSession::TearDownEditorOnWindow(mozIDOMWindowProxy* aWindow) {
 
     if (mMakeWholeDocumentEditable) {
       doc->SetEditableFlag(false);
-      nsCOMPtr<nsIHTMLDocument> htmlDocument = do_QueryInterface(doc);
-      if (htmlDocument) {
-        htmlDocument->SetEditingState(nsIHTMLDocument::eOff);
-      }
+      doc->SetEditingState(Document::EditingState::eOff);
     }
   }
 
@@ -630,7 +626,7 @@ nsEditingSession::OnStateChange(nsIWebProgress* aWebProgress,
         RefPtr<Document> doc = piWindow->GetDoc();
         nsHTMLDocument* htmlDoc =
             doc && doc->IsHTMLOrXHTML() ? doc->AsHTMLDocument() : nullptr;
-        if (htmlDoc && htmlDoc->IsWriting()) {
+        if (htmlDoc && doc->IsWriting()) {
           nsAutoString designMode;
           htmlDoc->GetDesignMode(designMode);
 
@@ -750,7 +746,8 @@ nsEditingSession::OnLocationChange(nsIWebProgress* aWebProgress,
   NS_ENSURE_TRUE(docShell, NS_ERROR_FAILURE);
 
   RefPtr<nsCommandManager> commandManager = docShell->GetCommandManager();
-  return commandManager->CommandStatusChanged("obs_documentLocationChanged");
+  commandManager->CommandStatusChanged("obs_documentLocationChanged");
+  return NS_OK;
 }
 
 /*---------------------------------------------------------------------------

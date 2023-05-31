@@ -66,8 +66,7 @@ class ThrottledEventQueue final : public nsISerialEventTarget {
  public:
   // Create a ThrottledEventQueue for the given target.
   static already_AddRefed<ThrottledEventQueue> Create(
-      nsISerialEventTarget* aBaseTarget,
-      const char* aName,
+      nsISerialEventTarget* aBaseTarget, const char* aName,
       uint32_t aPriority = nsIRunnablePriority::PRIORITY_NORMAL);
 
   // Determine if there are any events pending in the queue.
@@ -75,6 +74,8 @@ class ThrottledEventQueue final : public nsISerialEventTarget {
 
   // Determine how many events are pending in the queue.
   uint32_t Length() const;
+
+  already_AddRefed<nsIRunnable> GetEvent();
 
   // Block the current thread until the queue is empty. This may not be called
   // on the main thread or the base target. The ThrottledEventQueue must not be

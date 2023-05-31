@@ -22,16 +22,13 @@
 #include "nsIAutoCompleteSimpleResult.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
-#include "nsIServiceManager.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsPIDOMWindow.h"
-#include "nsIWebNavigation.h"
 #include "nsIContentViewer.h"
 #include "nsIContent.h"
 #include "nsRect.h"
-#include "nsILoginAutoCompleteSearch.h"
 #include "nsToolkitCompsCID.h"
 #include "nsEmbedCID.h"
 #include "nsContentUtils.h"
@@ -297,7 +294,8 @@ nsFormFillController::MarkAsLoginManagerField(HTMLInputElement* aInput) {
   }
 
   if (!mLoginManagerAC) {
-    mLoginManagerAC = do_GetService("@mozilla.org/login-manager/autocompletesearch;1");
+    mLoginManagerAC =
+        do_GetService("@mozilla.org/login-manager/autocompletesearch;1");
   }
 
   return NS_OK;
@@ -706,7 +704,8 @@ nsFormFillController::StartSearch(const nsAString& aSearchString,
     // MarkAsLoginManagerField wasn't called because password manager is
     // disabled.
     if (!mLoginManagerAC) {
-      mLoginManagerAC = do_GetService("@mozilla.org/login-manager/autocompletesearch;1");
+      mLoginManagerAC =
+          do_GetService("@mozilla.org/login-manager/autocompletesearch;1");
     }
 
     if (NS_WARN_IF(!mLoginManagerAC)) {
@@ -716,7 +715,8 @@ nsFormFillController::StartSearch(const nsAString& aSearchString,
     // XXX aPreviousResult shouldn't ever be a historyResult type, since we're
     // not letting satchel manage the field?
     mLastListener = aListener;
-    rv = mLoginManagerAC->StartSearch(aSearchString, aPreviousResult, mFocusedInput, this);
+    rv = mLoginManagerAC->StartSearch(aSearchString, aPreviousResult,
+                                      mFocusedInput, this);
     NS_ENSURE_SUCCESS(rv, rv);
   } else {
     MOZ_LOG(sLogger, LogLevel::Debug, ("StartSearch: non-login field"));
@@ -1096,7 +1096,7 @@ nsresult nsFormFillController::KeyPress(Event* aEvent) {
         break;
       }
     }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case KeyboardEvent_Binding::DOM_VK_UP:
     case KeyboardEvent_Binding::DOM_VK_DOWN:
     case KeyboardEvent_Binding::DOM_VK_LEFT:
@@ -1420,7 +1420,7 @@ int32_t nsFormFillController::GetIndexOfDocShell(nsIDocShell* aDocShell) {
   // Recursively check the parent docShell of this one
   nsCOMPtr<nsIDocShellTreeItem> treeItem = aDocShell;
   nsCOMPtr<nsIDocShellTreeItem> parentItem;
-  treeItem->GetParent(getter_AddRefs(parentItem));
+  treeItem->GetInProcessParent(getter_AddRefs(parentItem));
   if (parentItem) {
     nsCOMPtr<nsIDocShell> parentShell = do_QueryInterface(parentItem);
     return GetIndexOfDocShell(parentShell);

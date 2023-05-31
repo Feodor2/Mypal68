@@ -755,7 +755,7 @@ class IceTestPeer : public sigslot::has_slots<> {
       ice_ctx_->SetControlling(offerer_ ? NrIceCtx::ICE_CONTROLLING
                                         : NrIceCtx::ICE_CONTROLLED);
       // Now start checks
-      res = ice_ctx_->StartChecks(offerer_);
+      res = ice_ctx_->StartChecks();
       ASSERT_TRUE(NS_SUCCEEDED(res));
     }
   }
@@ -807,7 +807,7 @@ class IceTestPeer : public sigslot::has_slots<> {
       // stream might have gone away before the trickle timer popped
       return NS_OK;
     }
-    return stream->ParseTrickleCandidate(candidate, ufrag);
+    return stream->ParseTrickleCandidate(candidate, ufrag, "");
   }
 
   void DumpCandidate(std::string which, const NrIceCandidate& cand) {
@@ -950,7 +950,7 @@ class IceTestPeer : public sigslot::has_slots<> {
         NS_DISPATCH_SYNC);
     // Now start checks
     test_utils_->sts_target()->Dispatch(
-        WrapRunnableRet(&res, ice_ctx_, &NrIceCtx::StartChecks, offerer_),
+        WrapRunnableRet(&res, ice_ctx_, &NrIceCtx::StartChecks),
         NS_DISPATCH_SYNC);
     ASSERT_TRUE(NS_SUCCEEDED(res));
   }
@@ -999,7 +999,8 @@ class IceTestPeer : public sigslot::has_slots<> {
         if (GetStream_s(i) == stream) {
           ASSERT_GT(remote_->stream_counter_, i);
           nsresult res =
-              remote_->GetStream_s(i)->ParseTrickleCandidate(candidate, ufrag);
+              remote_->GetStream_s(i)->ParseTrickleCandidate(candidate, ufrag,
+                                                             "");
           ASSERT_TRUE(NS_SUCCEEDED(res));
           return;
         }
@@ -1217,16 +1218,19 @@ class IceTestPeer : public sigslot::has_slots<> {
     candidate_filter_ = filter;
   }
 
-  void ParseCandidate_s(size_t i, const std::string& candidate) {
+  void ParseCandidate_s(size_t i, const std::string& candidate,
+                        const std::string& mdns_addr) {
     auto media_stream = GetStream_s(i);
     ASSERT_TRUE(media_stream.get())
     << "No such stream " << i;
-    media_stream->ParseTrickleCandidate(candidate, "");
+    media_stream->ParseTrickleCandidate(candidate, "", mdns_addr);
   }
 
-  void ParseCandidate(size_t i, const std::string& candidate) {
+  void ParseCandidate(size_t i, const std::string& candidate,
+                      const std::string &mdns_addr) {
     test_utils_->sts_target()->Dispatch(
-        WrapRunnable(this, &IceTestPeer::ParseCandidate_s, i, candidate),
+        WrapRunnable(this, &IceTestPeer::ParseCandidate_s, i, candidate,
+                     mdns_addr),
         NS_DISPATCH_SYNC);
   }
 
@@ -2269,13 +2273,6 @@ TEST_F(WebRtcIceGatherTest, TestGatherTcpDisabled) {
   Gather();
   ASSERT_FALSE(StreamHasMatchingCandidate(0, " TCP "));
   ASSERT_TRUE(StreamHasMatchingCandidate(0, " UDP "));
-}
-
-// Verify that a bogus candidate doesn't cause crashes on the
-// main thread. See bug 856433.
-TEST_F(WebRtcIceGatherTest, TestBogusCandidate) {
-  Gather();
-  peer_->ParseCandidate(0, kBogusIceCandidate);
 }
 
 TEST_F(WebRtcIceGatherTest, VerifyTestStunServer) {
@@ -3605,6 +3602,46 @@ TEST_F(WebRtcIceConnectTest, TestRLogConnector) {
     RLogConnector::GetInstance()->Filter(substring, 0, &logs);
     ASSERT_NE(0U, logs.size());
   }
+}
+
+// Verify that a bogus candidate doesn't cause crashes on the
+// main thread. See bug 856433.
+TEST_F(WebRtcIceConnectTest, TestBogusCandidate) {
+  AddStream(1);
+  Gather();
+  ConnectTrickle();
+  p1_->ParseCandidate(0, kBogusIceCandidate, "");
+
+  std::vector<NrIceCandidatePair> pairs;
+  nsresult res = p1_->GetCandidatePairs(0, &pairs);
+  ASSERT_EQ(NS_OK, res);
+  ASSERT_EQ(0U, pairs.size());
+}
+
+TEST_F(WebRtcIceConnectTest, TestNonMDNSCandidate) {
+  AddStream(1);
+  Gather();
+  ConnectTrickle();
+  p1_->ParseCandidate(0, kUnreachableHostIceCandidate, "");
+
+  std::vector<NrIceCandidatePair> pairs;
+  nsresult res = p1_->GetCandidatePairs(0, &pairs);
+  ASSERT_EQ(NS_OK, res);
+  ASSERT_EQ(1U, pairs.size());
+  ASSERT_EQ(pairs[0].remote.mdns_addr, "");
+}
+
+TEST_F(WebRtcIceConnectTest, TestMDNSCandidate) {
+  AddStream(1);
+  Gather();
+  ConnectTrickle();
+  p1_->ParseCandidate(0, kUnreachableHostIceCandidate, "host.local");
+
+  std::vector<NrIceCandidatePair> pairs;
+  nsresult res = p1_->GetCandidatePairs(0, &pairs);
+  ASSERT_EQ(NS_OK, res);
+  ASSERT_EQ(1U, pairs.size());
+  ASSERT_EQ(pairs[0].remote.mdns_addr, "host.local");
 }
 
 TEST_F(WebRtcIcePrioritizerTest, TestPrioritizer) {

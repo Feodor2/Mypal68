@@ -22,7 +22,11 @@ add_task(async function subDomains() {
 
   // Domains and data
   let uriA = Services.io.newURI("https://www.mozilla.org");
-  Services.perms.add(uriA, "cookie", Ci.nsICookiePermission.ACCESS_SESSION);
+  PermissionTestUtils.add(
+    uriA,
+    "cookie",
+    Ci.nsICookiePermission.ACCESS_SESSION
+  );
 
   Services.cookies.add(
     uriA.host,
@@ -34,13 +38,13 @@ add_task(async function subDomains() {
     false,
     Date.now() + 24000 * 60 * 60,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
 
   await createIndexedDB(uriA.host, {});
 
   let uriB = Services.io.newURI("https://mozilla.org");
-  Services.perms.add(uriB, "cookie", Ci.nsICookiePermission.ACCESS_ALLOW);
+  PermissionTestUtils.add(uriB, "cookie", Ci.nsICookiePermission.ACCESS_ALLOW);
 
   Services.cookies.add(
     uriB.host,
@@ -52,7 +56,7 @@ add_task(async function subDomains() {
     false,
     Date.now() + 24000 * 60 * 60,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
 
   await createIndexedDB(uriB.host, {});
@@ -85,8 +89,8 @@ add_task(async function subDomains() {
   );
 
   // Cleaning up permissions
-  Services.perms.remove(uriA, "cookie");
-  Services.perms.remove(uriB, "cookie");
+  PermissionTestUtils.remove(uriA, "cookie");
+  PermissionTestUtils.remove(uriB, "cookie");
 });
 
 // session only cookie life-time, 2 domains (mozilla.org, www.mozilla.org),
@@ -108,7 +112,7 @@ add_task(async function subDomains() {
 
   // Domains and data
   let uriA = Services.io.newURI("https://sub.mozilla.org");
-  Services.perms.add(uriA, "cookie", Ci.nsICookiePermission.ACCESS_ALLOW);
+  PermissionTestUtils.add(uriA, "cookie", Ci.nsICookiePermission.ACCESS_ALLOW);
 
   Services.cookies.add(
     uriA.host,
@@ -120,7 +124,7 @@ add_task(async function subDomains() {
     false,
     Date.now() + 24000 * 60 * 60,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
 
   await createIndexedDB(uriA.host, {});
@@ -137,7 +141,7 @@ add_task(async function subDomains() {
     false,
     Date.now() + 24000 * 60 * 60,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
 
   await createIndexedDB(uriB.host, {});
@@ -170,5 +174,5 @@ add_task(async function subDomains() {
   );
 
   // Cleaning up permissions
-  Services.perms.remove(uriA, "cookie");
+  PermissionTestUtils.remove(uriA, "cookie");
 });

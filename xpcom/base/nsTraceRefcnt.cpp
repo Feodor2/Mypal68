@@ -181,10 +181,6 @@ static const char kStaticCtorDtorWarning[] =
     "XPCOM objects created/destroyed from static ctor/dtor";
 
 static void AssertActivityIsLegal() {
-  if (recordreplay::IsRecordingOrReplaying()) {
-    // Avoid recorded events in the TLS accesses below.
-    return;
-  }
   if (gActivityTLS == BAD_TLS_INDEX || PR_GetThreadPrivate(gActivityTLS)) {
     if (PR_GetEnv("MOZ_FATAL_STATIC_XPCOM_CTORS_DTORS")) {
       MOZ_CRASH_UNSAFE(kStaticCtorDtorWarning);
@@ -487,7 +483,7 @@ static intptr_t GetSerialNumber(void* aPtr, bool aCreate) {
         "it.");
   }
 
-  auto record = entry.OrInsert([]() { return new SerialNumberRecord(); });
+  auto& record = entry.OrInsert([]() { return new SerialNumberRecord(); });
   WalkTheStackSavingLocations(record->allocationStack);
   if (gLogJSStacks) {
     record->SaveJSStack();
@@ -594,12 +590,6 @@ static void InitTraceLog() {
     return;
   }
   gInitialized = true;
-
-  // Don't trace refcounts while recording or replaying, these are not
-  // required to match up between the two executions.
-  if (mozilla::recordreplay::IsRecordingOrReplaying()) {
-    return;
-  }
 
   bool defined =
       InitLog(ENVVAR("XPCOM_MEM_BLOAT_LOG"), "bloat/leaks", &gBloatLog);

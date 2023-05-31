@@ -7,7 +7,6 @@
 #include "nsIInputStream.h"
 #include "nsIOutputStream.h"
 #include "nsMimeTypes.h"
-#include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 
 #include "nsCRT.h"

@@ -1,6 +1,6 @@
 /* import-globals-from antitracking_head.js */
 
-AntiTracking.runTest(
+AntiTracking.runTestInNormalAndPrivateMode(
   "sessionStorage",
   async _ => {
     let shouldThrow =
@@ -40,7 +40,7 @@ AntiTracking.runTest(
   0
 );
 
-AntiTracking.runTest(
+AntiTracking.runTestInNormalAndPrivateMode(
   "sessionStorage and Storage Access API",
   async _ => {
     /* import-globals-from storageAccessAPIHelpers.js */

@@ -162,7 +162,8 @@ inline bool isInIgnoredNamespaceForImplicitCtor(const Decl *Declaration) {
          Name == "dwarf2reader" ||      // dwarf2reader
          Name == "arm_ex_to_module" ||  // arm_ex_to_module
          Name == "testing" ||           // gtest
-         Name == "Json";                // jsoncpp
+         Name == "Json" ||              // jsoncpp
+         Name == "v8";                  // irregexp
 }
 
 inline bool isInIgnoredNamespaceForImplicitConversion(const Decl *Declaration) {

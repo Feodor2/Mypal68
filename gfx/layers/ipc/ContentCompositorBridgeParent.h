@@ -39,6 +39,7 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
   mozilla::ipc::IPCResult RecvWillClose() override { return IPC_OK(); }
   mozilla::ipc::IPCResult RecvPause() override { return IPC_OK(); }
   mozilla::ipc::IPCResult RecvResume() override { return IPC_OK(); }
+  mozilla::ipc::IPCResult RecvResumeAsync() override { return IPC_OK(); }
   mozilla::ipc::IPCResult RecvNotifyChildCreated(
       const LayersId& child, CompositorOptions* aOptions) override;
   mozilla::ipc::IPCResult RecvMapAndNotifyChildCreated(
@@ -72,8 +73,7 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
     return IPC_OK();
   }
   mozilla::ipc::IPCResult RecvStopFrameTimeRecording(
-      const uint32_t& aStartIndex,
-      InfallibleTArray<float>* intervals) override {
+      const uint32_t& aStartIndex, nsTArray<float>* intervals) override {
     return IPC_OK();
   }
 

@@ -11,8 +11,6 @@
 #include "mozilla/TimeStamp.h"
 #include "nsHashKeys.h"
 #include "nsContentUtils.h"
-#include "nsIConsoleService.h"
-#include "nsIScriptError.h"
 #include "nsPrintfCString.h"
 #include "nsQueryObject.h"
 #include "nsRefPtrHashtable.h"
@@ -185,12 +183,6 @@ Timers::Timers() : mTimers(dom::RootingCx()) {
 
   mTimers = JS::NewMapObject(jsapi.cx());
   MOZ_RELEASE_ASSERT(mTimers);
-
-  // Telemetry is disabled when recording/replaying, so don't report errors
-  // when it is used.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    mSuppressErrors = true;
-  }
 }
 
 JSObject* Timers::Get(JSContext* aCx, const nsAString& aHistogram,

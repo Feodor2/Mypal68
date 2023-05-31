@@ -31,7 +31,7 @@ runInParent(function addLogins() {
   let login2 = new nsLoginInfo("http://example.org", "http://example.org", null,
                                "name1", "passHTTP", "uname", "pword");
 
-  // Different HTTP login to upgrade with secure formSubmitURL
+  // Different HTTP login to upgrade with secure formActionOrigin
   let login3 = new nsLoginInfo("http://example.org", "https://example.org", null,
                                "name2", "passHTTPtoHTTPS", "uname", "pword");
 

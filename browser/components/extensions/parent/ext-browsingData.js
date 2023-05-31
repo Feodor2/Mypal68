@@ -73,7 +73,6 @@ const clearCookies = async function(options) {
           cookie.host,
           cookie.name,
           cookie.path,
-          false,
           cookie.originAttributes
         );
 
@@ -114,8 +113,11 @@ const clearIndexedDB = async function(options) {
         let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
           item.origin
         );
-        let scheme = principal.URI.scheme;
-        if (scheme == "http" || scheme == "https" || scheme == "file") {
+        if (
+          principal.schemeIs("http") ||
+          principal.schemeIs("https") ||
+          principal.schemeIs("file")
+        ) {
           promises.push(
             new Promise((resolve, reject) => {
               let clearRequest = quotaManagerService.clearStoragesForPrincipal(

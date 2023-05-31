@@ -4,7 +4,7 @@
 
 #include "AddonContentPolicy.h"
 
-#include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/dom/nsCSPContext.h"
 #include "nsCOMPtr.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentTypeParser.h"
@@ -109,11 +109,8 @@ AddonContentPolicy::ShouldLoad(nsIURI* aContentLocation, nsILoadInfo* aLoadInfo,
 
   // Only apply this policy to requests from documents loaded from
   // moz-extension URLs, or to resources being loaded from moz-extension URLs.
-  bool equals;
-  if (!((NS_SUCCEEDED(aContentLocation->SchemeIs("moz-extension", &equals)) &&
-         equals) ||
-        (NS_SUCCEEDED(requestOrigin->SchemeIs("moz-extension", &equals)) &&
-         equals))) {
+  if (!(aContentLocation->SchemeIs("moz-extension") ||
+        requestOrigin->SchemeIs("moz-extension"))) {
     return NS_OK;
   }
 
@@ -276,8 +273,9 @@ class CSPValidator final : public nsCSPSrcVisitor {
 
   template <typename... T>
   inline void FormatError(const char* aName, const T... aParams) {
-    const char16_t* params[] = {mDirective.get(), aParams.get()...};
-    FormatErrorParams(aName, params, MOZ_ARRAY_LENGTH(params));
+    AutoTArray<nsString, sizeof...(aParams) + 1> params = {mDirective,
+                                                           aParams...};
+    FormatErrorParams(aName, params);
   };
 
  private:
@@ -332,14 +330,13 @@ class CSPValidator final : public nsCSPSrcVisitor {
     return stringBundle.forget();
   };
 
-  void FormatErrorParams(const char* aName, const char16_t** aParams,
-                         int32_t aLength) {
+  void FormatErrorParams(const char* aName, const nsTArray<nsString>& aParams) {
     nsresult rv = NS_ERROR_FAILURE;
 
     nsCOMPtr<nsIStringBundle> stringBundle = GetStringBundle();
 
     if (stringBundle) {
-      rv = stringBundle->FormatStringFromName(aName, aParams, aLength, mError);
+      rv = stringBundle->FormatStringFromName(aName, aParams, mError);
     }
 
     if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -395,10 +392,12 @@ AddonContentPolicy::ValidateAddonCSP(const nsAString& aPolicyString,
   RefPtr<BasePrincipal> principal =
       BasePrincipal::CreateCodebasePrincipal(NS_ConvertUTF16toUTF8(url));
 
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  rv = principal->EnsureCSP(nullptr, getter_AddRefs(csp));
+  nsCOMPtr<nsIURI> selfURI;
+  principal->GetURI(getter_AddRefs(selfURI));
+  RefPtr<nsCSPContext> csp = new nsCSPContext();
+  rv =
+      csp->SetRequestContextWithPrincipal(principal, selfURI, EmptyString(), 0);
   NS_ENSURE_SUCCESS(rv, rv);
-
   csp->AppendPolicy(aPolicyString, false, false);
 
   const nsCSPPolicy* policy = csp->GetPolicy(0);

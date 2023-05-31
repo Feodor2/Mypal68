@@ -8,7 +8,6 @@
 #include "DocAccessible.h"
 #include "xpcAccEvents.h"
 #include "States.h"
-#include "xpcAccessibleDocument.h"
 
 #include "mozilla/EventStateManager.h"
 #include "mozilla/dom/Selection.h"

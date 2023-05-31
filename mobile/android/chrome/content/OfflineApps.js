@@ -4,76 +4,9 @@
 "use strict";
 
 var OfflineApps = {
-  offlineAppRequested: function(aContentWindow) {
-    if (!Services.prefs.getBoolPref("browser.offline-apps.notify")) {
-      return;
-    }
-
-    let tab = BrowserApp.getTabForWindow(aContentWindow);
-    let currentURI = aContentWindow.document.documentURIObject;
-
-    // Don't bother showing UI if the user has already made a decision
-    if (
-      Services.perms.testExactPermission(currentURI, "offline-app") !=
-      Services.perms.UNKNOWN_ACTION
-    ) {
-      return;
-    }
-
-    try {
-      if (Services.prefs.getBoolPref("offline-apps.allow_by_default")) {
-        // All pages can use offline capabilities, no need to ask the user
-        return;
-      }
-    } catch (e) {
-      // This pref isn't set by default, ignore failures
-    }
-
-    let host = currentURI.asciiHost;
-    let notificationID = "offline-app-requested-" + host;
-
-    let strings = Strings.browser;
-    let buttons = [
-      {
-        label: strings.GetStringFromName("offlineApps.dontAllow2"),
-        callback: function(aChecked) {
-          if (aChecked) {
-            OfflineApps.disallowSite(aContentWindow.document);
-          }
-        },
-      },
-      {
-        label: strings.GetStringFromName("offlineApps.allow"),
-        callback: function() {
-          OfflineApps.allowSite(aContentWindow.document);
-        },
-        positive: true,
-      },
-    ];
-
-    let requestor = BrowserApp.manifest
-      ? "'" + BrowserApp.manifest.name + "'"
-      : host;
-    let message = strings.formatStringFromName(
-      "offlineApps.ask",
-      [requestor],
-      1
-    );
-    let options = {
-      checkbox: Strings.browser.GetStringFromName("offlineApps.dontAskAgain"),
-    };
-    NativeWindow.doorhanger.show(
-      message,
-      notificationID,
-      buttons,
-      tab.id,
-      options
-    );
-  },
-
   allowSite: function(aDocument) {
-    Services.perms.add(
-      aDocument.documentURIObject,
+    Services.perms.addFromPrincipal(
+      aDocument.nodePrincipal,
       "offline-app",
       Services.perms.ALLOW_ACTION
     );
@@ -85,8 +18,8 @@ var OfflineApps = {
   },
 
   disallowSite: function(aDocument) {
-    Services.perms.add(
-      aDocument.documentURIObject,
+    Services.perms.addFromPrincipal(
+      aDocument.nodePrincipal,
       "offline-app",
       Services.perms.DENY_ACTION
     );

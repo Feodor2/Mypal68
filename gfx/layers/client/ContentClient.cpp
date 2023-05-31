@@ -7,7 +7,7 @@
 #include "gfxContext.h"             // for gfxContext, etc
 #include "gfxPlatform.h"            // for gfxPlatform
 #include "gfxEnv.h"                 // for gfxEnv
-#include "gfxPrefs.h"               // for gfxPrefs
+
 #include "gfxPoint.h"               // for IntSize, gfxPoint
 #include "gfxUtils.h"               // for gfxUtils
 #include "ipc/ShadowLayers.h"       // for ShadowLayerForwarder
@@ -36,8 +36,6 @@
 
 #include <utility>
 #include <vector>
-
-using namespace std;
 
 namespace mozilla {
 
@@ -574,7 +572,7 @@ class RemoteBufferReadbackProcessor : public TextureReadbackSink {
  private:
   nsTArray<ReadbackProcessor::Update> mReadbackUpdates;
   // This array is used to keep the layers alive until the callback.
-  vector<RefPtr<Layer>> mLayerRefs;
+  std::vector<RefPtr<Layer>> mLayerRefs;
 
   IntRect mBufferRect;
   nsIntPoint mBufferRotation;

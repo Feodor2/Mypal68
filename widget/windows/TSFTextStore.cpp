@@ -21,7 +21,6 @@
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/WindowsVersion.h"
-#include "nsIXULRuntime.h"
 #include "nsWindow.h"
 #include "nsPrintfCString.h"
 
@@ -4806,7 +4805,7 @@ bool TSFTextStore::MaybeHackNoErrorLayoutBugs(LONG& aACPStart, LONG& aACPEnd) {
         MOZ_ASSERT(TSFStaticSink::IsATOKReferringNativeCaretActive());
         return false;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case TextInputProcessorID::eATOK2016:
     case TextInputProcessorID::eATOKUnknown:
       if (!TSFPrefs::DoNotReturnNoLayoutErrorToATOKOfCompositionString()) {

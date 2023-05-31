@@ -78,11 +78,6 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "URICountListener",
-  "resource:///modules/BrowserUsageTelemetry.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "PermissionUITelemetry",
   "resource:///modules/PermissionUITelemetry.jsm"
 );
@@ -390,8 +385,8 @@ var PermissionPromptPrototype = {
       // If we're reading and setting permissions, then we need
       // to check to see if we already have a permission setting
       // for this particular principal.
-      let { state } = SitePermissions.get(
-        requestingURI,
+      let { state } = SitePermissions.getForPrincipal(
+        this.principal,
         this.permissionKey,
         this.browser
       );
@@ -424,7 +419,7 @@ var PermissionPromptPrototype = {
     } else if (this.permissionKey) {
       // If we're reading a permission which already has a temporary value,
       // see if we can use the temporary value.
-      let { state } = SitePermissions.get(
+      let { state } = SitePermissions.getForPrincipal(
         null,
         this.permissionKey,
         this.browser
@@ -474,8 +469,8 @@ var PermissionPromptPrototype = {
               if (PrivateBrowsingUtils.isBrowserPrivate(this.browser)) {
                 scope = SitePermissions.SCOPE_SESSION;
               }
-              SitePermissions.set(
-                this.principal.URI,
+              SitePermissions.setForPrincipal(
+                this.principal,
                 this.permissionKey,
                 promptAction.action,
                 scope
@@ -484,8 +479,8 @@ var PermissionPromptPrototype = {
               // Temporarily store BLOCK permissions only
               // SitePermissions does not consider subframes when storing temporary
               // permissions on a tab, thus storing ALLOW could be exploited.
-              SitePermissions.set(
-                this.principal.URI,
+              SitePermissions.setForPrincipal(
+                this.principal,
                 this.permissionKey,
                 promptAction.action,
                 SitePermissions.SCOPE_TEMPORARY,
@@ -512,7 +507,7 @@ var PermissionPromptPrototype = {
               // Temporarily store BLOCK permissions.
               // We don't consider subframes when storing temporary
               // permissions on a tab, thus storing ALLOW could be exploited.
-              SitePermissions.set(
+              SitePermissions.setForPrincipal(
                 null,
                 this.permissionKey,
                 promptAction.action,
@@ -569,8 +564,8 @@ var PermissionPromptPrototype = {
           if (PrivateBrowsingUtils.isBrowserPrivate(browser)) {
             scope = SitePermissions.SCOPE_SESSION;
           }
-          SitePermissions.set(
-            principal.URI,
+          SitePermissions.setForPrincipal(
+            principal,
             this.permissionKey,
             promptAction.action,
             scope
@@ -750,7 +745,7 @@ GeolocationPermissionPrompt.prototype = {
       name: this.principalName,
     };
 
-    if (this.principal.URI.schemeIs("file")) {
+    if (this.principal.schemeIs("file")) {
       options.checkbox = { show: false };
     } else {
       // Don't offer "always remember" action in PB mode
@@ -777,14 +772,13 @@ GeolocationPermissionPrompt.prototype = {
   },
 
   get message() {
-    if (this.principal.URI.schemeIs("file")) {
+    if (this.principal.schemeIs("file")) {
       return gBrowserBundle.GetStringFromName("geolocation.shareWithFile3");
     }
 
     return gBrowserBundle.formatStringFromName(
       "geolocation.shareWithSite3",
-      ["<>"],
-      1
+      ["<>"]
     );
   },
 
@@ -868,8 +862,7 @@ DesktopNotificationPermissionPrompt.prototype = {
   get message() {
     return gBrowserBundle.formatStringFromName(
       "webNotifications.receiveFromSite2",
-      ["<>"],
-      1
+      ["<>"]
     );
   },
 
@@ -966,8 +959,7 @@ PersistentStoragePermissionPrompt.prototype = {
   get message() {
     return gBrowserBundle.formatStringFromName(
       "persistentStorage.allowWithSite",
-      ["<>"],
-      1
+      ["<>"]
     );
   },
 
@@ -1040,7 +1032,7 @@ MIDIPermissionPrompt.prototype = {
       name: this.principalName,
     };
 
-    if (this.principal.URI.schemeIs("file")) {
+    if (this.principal.schemeIs("file")) {
       options.checkbox = { show: false };
     } else {
       // Don't offer "always remember" action in PB mode
@@ -1068,7 +1060,7 @@ MIDIPermissionPrompt.prototype = {
 
   get message() {
     let message;
-    if (this.principal.URI.schemeIs("file")) {
+    if (this.principal.schemeIs("file")) {
       if (this.isSysexPerm) {
         message = gBrowserBundle.formatStringFromName(
           "midi.shareSysexWithFile.message"
@@ -1081,14 +1073,12 @@ MIDIPermissionPrompt.prototype = {
     } else if (this.isSysexPerm) {
       message = gBrowserBundle.formatStringFromName(
         "midi.shareSysexWithSite.message",
-        ["<>"],
-        1
+        ["<>"]
       );
     } else {
       message = gBrowserBundle.formatStringFromName(
         "midi.shareWithSite.message",
-        ["<>"],
-        1
+        ["<>"]
       );
     }
     return message;
@@ -1114,17 +1104,6 @@ PermissionUI.MIDIPermissionPrompt = MIDIPermissionPrompt;
 
 function StorageAccessPermissionPrompt(request) {
   this.request = request;
-
-  XPCOMUtils.defineLazyPreferenceGetter(
-    this,
-    "_autoGrants",
-    "dom.storage_access.auto_grants"
-  );
-  XPCOMUtils.defineLazyPreferenceGetter(
-    this,
-    "_maxConcurrentAutoGrants",
-    "dom.storage_access.max_concurrent_auto_grants"
-  );
 }
 
 StorageAccessPermissionPrompt.prototype = {
@@ -1176,17 +1155,12 @@ StorageAccessPermissionPrompt.prototype = {
   get message() {
     return gBrowserBundle.formatStringFromName(
       "storageAccess.message",
-      ["<>", "{}"],
-      2
+      ["<>", "{}"]
     );
   },
 
   get promptActions() {
     let self = this;
-
-    let storageAccessHistogram = Services.telemetry.getHistogramById(
-      "STORAGE_ACCESS_API_UI"
-    );
 
     return [
       {
@@ -1198,7 +1172,6 @@ StorageAccessPermissionPrompt.prototype = {
         ),
         action: Ci.nsIPermissionManager.DENY_ACTION,
         callback(state) {
-          storageAccessHistogram.add("Deny");
           self.cancel();
         },
       },
@@ -1209,7 +1182,6 @@ StorageAccessPermissionPrompt.prototype = {
         ),
         action: Ci.nsIPermissionManager.ALLOW_ACTION,
         callback(state) {
-          storageAccessHistogram.add("Allow");
           self.allow({ "storage-access": "allow" });
         },
       },
@@ -1222,7 +1194,6 @@ StorageAccessPermissionPrompt.prototype = {
         ),
         action: Ci.nsIPermissionManager.ALLOW_ACTION,
         callback(state) {
-          storageAccessHistogram.add("AllowOnAnySite");
           self.allow({ "storage-access": "allow-on-any-site" });
         },
       },
@@ -1231,60 +1202,6 @@ StorageAccessPermissionPrompt.prototype = {
 
   get topLevelPrincipal() {
     return this.request.topLevelPrincipal;
-  },
-
-  get maxConcurrentAutomaticGrants() {
-    // one percent of the number of top-levels origins visited in the current
-    // session (but not to exceed 24 hours), or the value of the
-    // dom.storage_access.max_concurrent_auto_grants preference, whichever is
-    // higher.
-    return Math.max(
-      Math.max(
-        Math.floor(URICountListener.uniqueDomainsVisitedInPast24Hours / 100),
-        this._maxConcurrentAutoGrants
-      ),
-      0
-    );
-  },
-
-  getOriginsThirdPartyHasAccessTo(thirdPartyOrigin) {
-    let prefix = `3rdPartyStorage^${thirdPartyOrigin}`;
-    let perms = Services.perms.getAllWithTypePrefix(prefix);
-    let origins = new Set();
-    while (perms.length) {
-      let perm = perms.shift();
-      // Let's make sure that we're not looking at a permission for
-      // https://exampletracker.company when we mean to look for the
-      // permisison for https://exampletracker.com!
-      if (perm.type != prefix && !perm.type.startsWith(`${prefix}^`)) {
-        continue;
-      }
-      origins.add(perm.principal.origin);
-    }
-    return origins.size;
-  },
-
-  onBeforeShow() {
-    let storageAccessHistogram = Services.telemetry.getHistogramById(
-      "STORAGE_ACCESS_API_UI"
-    );
-
-    storageAccessHistogram.add("Request");
-
-    let thirdPartyOrigin = this.request.principal.origin;
-    if (
-      this._autoGrants &&
-      this.getOriginsThirdPartyHasAccessTo(thirdPartyOrigin) <
-        this.maxConcurrentAutomaticGrants
-    ) {
-      // Automatically accept the prompt
-      this.allow({ "storage-access": "allow-auto-grant" });
-
-      storageAccessHistogram.add("AllowAutomatically");
-
-      return false;
-    }
-    return true;
   },
 };
 

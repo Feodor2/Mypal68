@@ -36,11 +36,6 @@ using mozilla::dom::ContentParent;
 #include "AndroidGraphics.h"
 #include "JavaExceptions.h"
 
-#include "nsIBaseWindow.h"
-#include "nsIBrowserDOMWindow.h"
-#include "nsIDOMChromeWindow.h"
-#include "nsIObserverService.h"
-#include "nsISupportsPrimitives.h"
 #include "nsIWidgetListener.h"
 #include "nsIWindowWatcher.h"
 #include "nsIXULWindow.h"
@@ -85,11 +80,8 @@ using mozilla::dom::ContentParent;
 #include "MotionEvent.h"
 #include "ScreenHelperAndroid.h"
 
-#include "imgIEncoder.h"
-
 #include "nsString.h"
 #include "GeckoProfiler.h"  // For AUTO_PROFILER_LABEL
-#include "nsIXULRuntime.h"
 #include "nsPrintfCString.h"
 
 #include "mozilla/ipc/Shmem.h"
@@ -1741,11 +1733,9 @@ nsWindow* nsWindow::FindTopLevel() {
   return this;
 }
 
-nsresult nsWindow::SetFocus(bool aRaise) {
-  nsWindow* top = FindTopLevel();
-  top->BringToFront();
-
-  return NS_OK;
+void nsWindow::SetFocus(Raise) {
+  // FIXME: Shouldn't this account for the argument?
+  FindTopLevel()->BringToFront();
 }
 
 void nsWindow::BringToFront() {

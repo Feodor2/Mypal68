@@ -1,3 +1,5 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
+/* vim: set ts=2 et sw=2 tw=80 filetype=javascript: */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -9,7 +11,7 @@
 
 "use strict";
 
-var EXPORTED_SYMBOLS = ["LoginImport"];
+const EXPORTED_SYMBOLS = ["LoginImport"];
 
 // Globals
 
@@ -36,7 +38,7 @@ ChromeUtils.defineModuleGetter(
  * @param aPath
  *        String containing the file path of the SQLite login database.
  */
-var LoginImport = function(aStore, aPath) {
+this.LoginImport = function(aStore, aPath) {
   this.store = aStore;
   this.path = aPath;
 };

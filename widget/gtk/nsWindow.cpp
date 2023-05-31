@@ -10,6 +10,7 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RefPtr.h"
+#include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/TouchEvents.h"
@@ -69,14 +70,10 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/Likely.h"
 #include "mozilla/Preferences.h"
-#include "nsIPrefService.h"
-#include "nsIServiceManager.h"
 #include "nsGfxCIID.h"
 #include "nsGtkUtils.h"
-#include "nsIObserverService.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "nsIIdleServiceInternal.h"
-#include "nsIPropertyBag2.h"
 #include "GLContext.h"
 #include "gfx2DGlue.h"
 
@@ -414,6 +411,7 @@ nsWindow::nsWindow() {
 
 #ifdef MOZ_WAYLAND
   mNeedsUpdatingEGLSurface = false;
+  mCompositorInitiallyPaused = false;
 #endif
 
   if (!gGlobalsInitialized) {
@@ -1468,20 +1466,20 @@ guint32 nsWindow::GetLastUserInputTime() {
   return timestamp;
 }
 
-nsresult nsWindow::SetFocus(bool aRaise) {
+void nsWindow::SetFocus(Raise aRaise) {
   // Make sure that our owning widget has focus.  If it doesn't try to
   // grab it.  Note that we don't set our focus flag in this case.
 
-  LOGFOCUS(("  SetFocus %d [%p]\n", aRaise, (void*)this));
+  LOGFOCUS(("  SetFocus %d [%p]\n", aRaise == Raise::Yes, (void*)this));
 
   GtkWidget* owningWidget = GetMozContainerWidget();
-  if (!owningWidget) return NS_ERROR_FAILURE;
+  if (!owningWidget) return;
 
   // Raise the window if someone passed in true and the prefs are
   // set properly.
   GtkWidget* toplevelWidget = gtk_widget_get_toplevel(owningWidget);
 
-  if (gRaiseWindows && aRaise && toplevelWidget &&
+  if (gRaiseWindows && aRaise == Raise::Yes && toplevelWidget &&
       !gtk_widget_has_focus(owningWidget) &&
       !gtk_widget_has_focus(toplevelWidget)) {
     GtkWidget* top_window = GetToplevelWidget();
@@ -1493,10 +1491,10 @@ nsresult nsWindow::SetFocus(bool aRaise) {
   }
 
   RefPtr<nsWindow> owningWindow = get_window_for_gtk_widget(owningWidget);
-  if (!owningWindow) return NS_ERROR_FAILURE;
+  if (!owningWindow) return;
 
-  if (aRaise) {
-    // aRaise == true means request toplevel activation.
+  if (aRaise == Raise::Yes) {
+    // means request toplevel activation.
 
     // This is asynchronous.
     // If and when the window manager accepts the request, then the focus
@@ -1515,12 +1513,11 @@ nsresult nsWindow::SetFocus(bool aRaise) {
 
       if (GTKToolkit) GTKToolkit->SetFocusTimestamp(0);
     }
-
-    return NS_OK;
+    return;
   }
 
-  // aRaise == false means that keyboard events should be dispatched
-  // from this widget.
+  // aRaise == No means that keyboard events should be dispatched from this
+  // widget.
 
   // Ensure owningWidget is the focused GtkWidget within its toplevel window.
   //
@@ -1539,7 +1536,7 @@ nsresult nsWindow::SetFocus(bool aRaise) {
   // If this is the widget that already has focus, return.
   if (gFocusWindow == this) {
     LOGFOCUS(("  already have focus [%p]\n", (void*)this));
-    return NS_OK;
+    return;
   }
 
   // Set this window to be the focused child window
@@ -1550,8 +1547,6 @@ nsresult nsWindow::SetFocus(bool aRaise) {
   }
 
   LOGFOCUS(("  widget now has focus in SetFocus() [%p]\n", (void*)this));
-
-  return NS_OK;
 }
 
 LayoutDeviceIntRect nsWindow::GetScreenBounds() {
@@ -2086,8 +2081,10 @@ void nsWindow::WaylandEGLSurfaceForceRedraw() {
   if (CompositorBridgeChild* remoteRenderer = GetRemoteRenderer()) {
     MOZ_ASSERT(mCompositorWidgetDelegate);
     if (mCompositorWidgetDelegate) {
+      mCompositorInitiallyPaused = false;
       mNeedsUpdatingEGLSurface = false;
       mCompositorWidgetDelegate->RequestsUpdatingEGLSurface();
+      remoteRenderer->SendResumeAsync();
     }
     remoteRenderer->SendForcePresent();
   }
@@ -3695,6 +3692,7 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
       mContainer = MOZ_CONTAINER(container);
 #ifdef MOZ_WAYLAND
       if (!mIsX11Display && ComputeShouldAccelerate()) {
+        mCompositorInitiallyPaused = true;
         RefPtr<nsWindow> self(this);
         moz_container_set_initial_draw_callback(mContainer, [self]() -> void {
           self->mNeedsUpdatingEGLSurface = true;

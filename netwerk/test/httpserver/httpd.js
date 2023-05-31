@@ -1530,9 +1530,10 @@ RequestReader.prototype = {
             " excess=" +
             (data.length - count)
         );
+        data.length = count;
 
         var bos = new BinaryOutputStream(this._metadata._bodyOutputStream);
-        bos.writeByteArray(data, count);
+        bos.writeByteArray(data);
         this._contentLength -= count;
       }
 
@@ -2859,7 +2860,7 @@ ServerHandler.prototype = {
                 ", expected " +
                 chunkSize
             );
-            output.writeByteArray(data, data.length);
+            output.writeByteArray(data);
             if (count === 0) {
               fis.close();
               response.finish();

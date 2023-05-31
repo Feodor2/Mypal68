@@ -14,6 +14,7 @@
 #include "nsNetUtil.h"
 #include "nsReadableUtils.h"
 
+#include "mozilla/BasePrincipal.h"
 #include "nsICachingChannel.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptError.h"
@@ -23,7 +24,6 @@
 #include "nsIEncodedChannel.h"
 #include "nsIApplicationCacheChannel.h"
 #include "nsIMutableArray.h"
-#include "nsIURIMutator.h"
 #include "nsEscape.h"
 #include "nsStreamListenerWrapper.h"
 #include "nsISecurityConsoleMessage.h"
@@ -33,6 +33,7 @@
 #include "nsCRT.h"
 #include "nsContentUtils.h"
 #include "nsIMutableArray.h"
+#include "nsIURIMutator.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsIObserverService.h"
 #include "nsIProtocolProxyService.h"
@@ -56,7 +57,6 @@
 #include "LoadInfo.h"
 #include "nsISSLSocketControl.h"
 #include "mozilla/Telemetry.h"
-#include "nsIURL.h"
 #include "nsIConsoleService.h"
 #include "mozilla/BinarySearch.h"
 #include "mozilla/DebugOnly.h"
@@ -67,14 +67,11 @@
 #include "mozilla/Tokenizer.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsIMIMEInputStream.h"
-#include "nsIXULRuntime.h"
 #include "nsICacheInfoChannel.h"
 #include "nsIDOMWindowUtils.h"
-#include "nsIURIFixup.h"
 #include "nsHttpChannel.h"
 #include "nsRedirectHistoryEntry.h"
 #include "nsServerTiming.h"
-#include "nsIURIMutator.h"
 #include "mozilla/Tokenizer.h"
 
 #include <algorithm>
@@ -294,6 +291,7 @@ void HttpBaseChannel::ReleaseMainThreadOnlyReferences() {
   arrayToRelease.AppendElement(mProxyURI.forget());
   arrayToRelease.AppendElement(mPrincipal.forget());
   arrayToRelease.AppendElement(mTopWindowURI.forget());
+  arrayToRelease.AppendElement(mContentBlockingAllowListPrincipal.forget());
   arrayToRelease.AppendElement(mListener.forget());
   arrayToRelease.AppendElement(mCompressListener.forget());
 
@@ -350,12 +348,9 @@ nsresult HttpBaseChannel::Init(nsIURI* aURI, uint32_t aCaps,
   // Construct connection info object
   nsAutoCString host;
   int32_t port = -1;
-  bool isHTTPS = false;
+  bool isHTTPS = mURI->SchemeIs("https");
 
-  nsresult rv = mURI->SchemeIs("https", &isHTTPS);
-  if (NS_FAILED(rv)) return rv;
-
-  rv = mURI->GetAsciiHost(host);
+  nsresult rv = mURI->GetAsciiHost(host);
   if (NS_FAILED(rv)) return rv;
 
   // Reject the URL if it doesn't specify a host
@@ -1223,9 +1218,7 @@ HttpBaseChannel::DoApplyContentConversions(nsIStreamListener* aNextListener,
       break;
     }
 
-    bool isHTTPS = false;
-    mURI->SchemeIs("https", &isHTTPS);
-    if (gHttpHandler->IsAcceptableEncoding(val, isHTTPS)) {
+    if (gHttpHandler->IsAcceptableEncoding(val, mURI->SchemeIs("https"))) {
       nsCOMPtr<nsIStreamConverterService> serv;
       rv = gHttpHandler->GetStreamConverterService(getter_AddRefs(serv));
 
@@ -1911,10 +1904,12 @@ HttpBaseChannel::RedirectTo(nsIURI* targetURI) {
   NS_ENSURE_FALSE(mOnStartRequestCalled, NS_ERROR_NOT_AVAILABLE);
 
   mAPIRedirectToURI = targetURI;
-  // Only Web Extensions are allowed to redirect a channel to a data:
-  // URI. To avoid any bypasses after the channel was flagged by
+  // Only Web Extensions are allowed to redirect a channel to a data URI
+  // and to bypass CORS for early redirects.
+  // To avoid any bypasses after the channel was flagged by
   // the WebRequst API, we are dropping the flag here.
   if (mLoadInfo) {
+    mLoadInfo->SetBypassCORSChecks(false);
     mLoadInfo->SetAllowInsecureRedirectToDataURI(false);
   }
   return NS_OK;
@@ -2057,6 +2052,12 @@ nsresult HttpBaseChannel::GetTopWindowURI(nsIURI* aURIBeingLoaded,
         }
       }
 #endif
+
+      if (!mContentBlockingAllowListPrincipal) {
+        Unused << util->GetContentBlockingAllowListPrincipalFromWindow(
+            win, aURIBeingLoaded,
+            getter_AddRefs(mContentBlockingAllowListPrincipal));
+      }
     }
   }
   NS_IF_ADDREF(*aTopWindowURI = mTopWindowURI);
@@ -2068,6 +2069,27 @@ HttpBaseChannel::GetDocumentURI(nsIURI** aDocumentURI) {
   NS_ENSURE_ARG_POINTER(aDocumentURI);
   *aDocumentURI = mDocumentURI;
   NS_IF_ADDREF(*aDocumentURI);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::GetContentBlockingAllowListPrincipal(
+    nsIPrincipal** aPrincipal) {
+  NS_ENSURE_ARG_POINTER(aPrincipal);
+  if (!mContentBlockingAllowListPrincipal) {
+    if (!mTopWindowURI) {
+      // If mTopWindowURI is null, it's possible that these two fields haven't
+      // been initialized yet.  GetTopWindowURI will lazily initilize both
+      // fields for us.
+      nsCOMPtr<nsIURI> throwAway;
+      Unused << GetTopWindowURI(getter_AddRefs(throwAway));
+    } else {
+      // Otherwise, the content blocking allow list principal is null (which is
+      // possible), so just return what we have...
+    }
+  }
+  nsCOMPtr<nsIPrincipal> copy = mContentBlockingAllowListPrincipal;
+  copy.forget(aPrincipal);
   return NS_OK;
 }
 
@@ -2112,22 +2134,24 @@ HttpBaseChannel::GetResponseVersion(uint32_t* major, uint32_t* minor) {
   return NS_OK;
 }
 
-void HttpBaseChannel::NotifySetCookie(char const* aCookie) {
+void HttpBaseChannel::NotifySetCookie(const nsACString& aCookie) {
   nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
   if (obs) {
     nsAutoString cookie;
-    CopyASCIItoUTF16(mozilla::MakeStringSpan(aCookie), cookie);
     obs->NotifyObservers(static_cast<nsIChannel*>(this),
-                         "http-on-response-set-cookie", cookie.get());
+                         "http-on-response-set-cookie",
+                         NS_ConvertASCIItoUTF16(aCookie).get());
   }
 }
 
 NS_IMETHODIMP
-HttpBaseChannel::SetCookie(const char* aCookieHeader) {
+HttpBaseChannel::SetCookie(const nsACString& aCookieHeader) {
   if (mLoadFlags & LOAD_ANONYMOUS) return NS_OK;
 
   // empty header isn't an error
-  if (!(aCookieHeader && *aCookieHeader)) return NS_OK;
+  if (aCookieHeader.IsEmpty()) {
+    return NS_OK;
+  }
 
   nsICookieService* cs = gHttpHandler->GetCookieService();
   NS_ENSURE_TRUE(cs, NS_ERROR_FAILURE);
@@ -2136,7 +2160,7 @@ HttpBaseChannel::SetCookie(const char* aCookieHeader) {
   // empty date is not an error
   Unused << mResponseHead->GetHeader(nsHttp::Date, date);
   nsresult rv = cs->SetCookieStringFromHttp(mURI, nullptr, nullptr,
-                                            aCookieHeader, date.get(), this);
+                                            aCookieHeader, date, this);
   if (NS_SUCCEEDED(rv)) {
     NotifySetCookie(aCookieHeader);
   }
@@ -2850,7 +2874,8 @@ void HttpBaseChannel::AssertPrivateBrowsingId() {
   // We skip testing of favicon loading here since it could be triggered by XUL
   // image which uses SystemPrincipal. The SystemPrincpal doesn't have
   // mPrivateBrowsingId.
-  if (nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal()) &&
+  if (mLoadInfo->LoadingPrincipal() &&
+      mLoadInfo->LoadingPrincipal()->IsSystemPrincipal() &&
       mLoadInfo->InternalContentPolicyType() ==
           nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON) {
     return;
@@ -2902,10 +2927,6 @@ already_AddRefed<nsILoadInfo> HttpBaseChannel::CloneLoadInfoForRedirect(
     MOZ_ASSERT(
         docShellAttrs.mUserContextId == attrs.mUserContextId,
         "docshell and necko should have the same userContextId attribute.");
-    MOZ_ASSERT(
-        docShellAttrs.mInIsolatedMozBrowser == attrs.mInIsolatedMozBrowser,
-        "docshell and necko should have the same inIsolatedMozBrowser "
-        "attribute.");
     MOZ_ASSERT(
         docShellAttrs.mPrivateBrowsingId == attrs.mPrivateBrowsingId,
         "docshell and necko should have the same privateBrowsingId attribute.");
@@ -3039,11 +3060,11 @@ void HttpBaseChannel::AddCookiesToRequest() {
   }
 
   bool useCookieService = (XRE_IsParentProcess());
-  nsCString cookie;
+  nsAutoCString cookie;
   if (useCookieService) {
     nsICookieService* cs = gHttpHandler->GetCookieService();
     if (cs) {
-      cs->GetCookieStringFromHttp(mURI, nullptr, this, getter_Copies(cookie));
+      cs->GetCookieStringFromHttp(mURI, nullptr, this, cookie);
     }
 
     if (cookie.IsEmpty()) {
@@ -3126,8 +3147,7 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
   // set, then allow the flag to apply to the redirected channel as well.
   // since we force set INHIBIT_PERSISTENT_CACHING on all HTTPS channels,
   // we only need to check if the original channel was using SSL.
-  bool usingSSL = false;
-  rv = mURI->SchemeIs("https", &usingSSL);
+  bool usingSSL = mURI->SchemeIs("https");
   if (NS_SUCCEEDED(rv) && usingSSL) newLoadFlags &= ~INHIBIT_PERSISTENT_CACHING;
 
   // Do not pass along LOAD_CHECK_OFFLINE_CACHE
@@ -3222,8 +3242,31 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
   }
 
   if (mReferrerInfo) {
-    rv = httpChannel->SetReferrerInfo(mReferrerInfo);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    dom::ReferrerPolicy referrerPolicy = dom::ReferrerPolicy::_empty;
+    nsAutoCString tRPHeaderCValue;
+    Unused << GetResponseHeader(NS_LITERAL_CSTRING("referrer-policy"),
+                                tRPHeaderCValue);
+    NS_ConvertUTF8toUTF16 tRPHeaderValue(tRPHeaderCValue);
+
+    if (!tRPHeaderValue.IsEmpty()) {
+      referrerPolicy =
+          dom::ReferrerInfo::ReferrerPolicyFromHeaderString(tRPHeaderValue);
+    }
+
+    DebugOnly<nsresult> success;
+    if (referrerPolicy != dom::ReferrerPolicy::_empty) {
+      // We may reuse computed referrer in redirect, so if referrerPolicy
+      // changes, we must not use the old computed value, and have to compute
+      // again.
+      nsCOMPtr<nsIReferrerInfo> referrerInfo =
+          dom::ReferrerInfo::CreateFromOtherAndPolicyOverride(mReferrerInfo,
+                                                              referrerPolicy);
+      success = httpChannel->SetReferrerInfoWithoutClone(referrerInfo);
+      MOZ_ASSERT(NS_SUCCEEDED(success));
+    } else {
+      success = httpChannel->SetReferrerInfo(mReferrerInfo);
+      MOZ_ASSERT(NS_SUCCEEDED(success));
+    }
   }
 
   // convey the mAllowSTS flags
@@ -3280,6 +3323,9 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
     RefPtr<nsHttpChannel> realChannel;
     CallQueryInterface(newChannel, realChannel.StartAssignment());
     if (realChannel) {
+      realChannel->SetContentBlockingAllowListPrincipal(
+          mContentBlockingAllowListPrincipal);
+
       rv = realChannel->SetTopWindowURI(mTopWindowURI);
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }
@@ -4240,8 +4286,7 @@ HttpBaseChannel::GetNativeServerTiming(
     nsTArray<nsCOMPtr<nsIServerTiming>>& aServerTiming) {
   aServerTiming.Clear();
 
-  bool isHTTPS = false;
-  if (NS_SUCCEEDED(mURI->SchemeIs("https", &isHTTPS)) && isHTTPS) {
+  if (mURI->SchemeIs("https")) {
     ParseServerTimingHeader(mResponseHead, aServerTiming);
     ParseServerTimingHeader(mResponseTrailers, aServerTiming);
   }

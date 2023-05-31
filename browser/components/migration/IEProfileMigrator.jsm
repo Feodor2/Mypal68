@@ -224,7 +224,7 @@ IE7FormPasswords.prototype = {
           logins.push({
             username: ieLogin.username,
             password: ieLogin.password,
-            hostname: ieLogin.url,
+            origin: ieLogin.url,
             timeCreated: ieLogin.creation,
           });
         }

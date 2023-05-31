@@ -55,7 +55,7 @@
 #include "gfx2DGlue.h"
 #include "gfxEnv.h"
 #include "gfxPlatform.h"
-#include "gfxPrefs.h"
+
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Logging.h"
 #include "mozilla/MathAlgorithms.h"
@@ -84,7 +84,6 @@
 #include "prenv.h"
 
 #include "mozilla/WidgetTraceEvent.h"
-#include "nsIAppShell.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIKeyEventInPluginCallback.h"
 #include "nsITheme.h"
@@ -93,7 +92,6 @@
 #include "imgIContainer.h"
 #include "nsIFile.h"
 #include "nsIRollupListener.h"
-#include "nsIServiceManager.h"
 #include "nsIClipboard.h"
 #include "WinMouseScrollHandler.h"
 #include "nsFontMetrics.h"
@@ -114,8 +112,6 @@
 #include "nsWindowsDllInterceptor.h"
 #include "nsLayoutUtils.h"
 #include "nsView.h"
-#include "nsIWindowMediator.h"
-#include "nsIServiceManager.h"
 #include "nsWindowGfx.h"
 #include "gfxWindowsPlatform.h"
 #include "gfxDWriteFonts.h"
@@ -130,7 +126,6 @@
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/Touch.h"
 #include "mozilla/gfx/2D.h"
-#include "nsIAppStartup.h"
 #include "mozilla/WindowsVersion.h"
 #include "mozilla/TextEvents.h"  // For WidgetKeyboardEvent
 #include "mozilla/TextEventDispatcherListener.h"
@@ -179,7 +174,6 @@
 #include "nsWindowDefs.h"
 
 #include "nsCrashOnException.h"
-#include "nsIXULRuntime.h"
 
 #include "nsIContent.h"
 
@@ -2176,25 +2170,24 @@ bool nsWindow::IsEnabled() const {
  *
  **************************************************************/
 
-nsresult nsWindow::SetFocus(bool aRaise) {
+void nsWindow::SetFocus(Raise aRaise) {
   if (mWnd) {
 #ifdef WINSTATE_DEBUG_OUTPUT
     if (mWnd == WinUtils::GetTopLevelHWND(mWnd)) {
       MOZ_LOG(gWindowsLog, LogLevel::Info,
-              ("*** SetFocus: [  top] raise=%d\n", aRaise));
+              ("*** SetFocus: [  top] raise=%d\n", aRaise == Raise::Yes));
     } else {
       MOZ_LOG(gWindowsLog, LogLevel::Info,
-              ("*** SetFocus: [child] raise=%d\n", aRaise));
+              ("*** SetFocus: [child] raise=%d\n", aRaise == Raise::Yes));
     }
 #endif
     // Uniconify, if necessary
     HWND toplevelWnd = WinUtils::GetTopLevelHWND(mWnd);
-    if (aRaise && ::IsIconic(toplevelWnd)) {
+    if (aRaise == Raise::Yes && ::IsIconic(toplevelWnd)) {
       ::ShowWindow(toplevelWnd, SW_RESTORE);
     }
     ::SetFocus(mWnd);
   }
-  return NS_OK;
 }
 
 /**************************************************************
@@ -3392,7 +3385,7 @@ void* nsWindow::GetNativeData(uint32_t aDataType) {
       if (pseudoIMEContext) {
         return pseudoIMEContext;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     }
     case NS_NATIVE_TSF_THREAD_MGR:
     case NS_NATIVE_TSF_CATEGORY_MGR:
@@ -4205,7 +4198,8 @@ bool nsWindow::DispatchMouseEvent(EventMessage aEventMessage, WPARAM wParam,
       // Messages should be only at topLevel window.
       && nsWindowType::eWindowType_toplevel == mWindowType
       // Currently this scheme is used only when pointer events is enabled.
-      && gfxPrefs::PointerEventsEnabled() && InkCollector::sInkCollector) {
+      && StaticPrefs::dom_w3c_pointer_events_enabled() &&
+      InkCollector::sInkCollector) {
     InkCollector::sInkCollector->SetTarget(mWnd);
     InkCollector::sInkCollector->SetPointerId(pointerId);
   }
@@ -5876,16 +5870,11 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
         int32_t action = LOWORD(wParam);
         if (action == UIS_SET || action == UIS_CLEAR) {
           int32_t flags = HIWORD(wParam);
-          UIStateChangeType showAccelerators = UIStateChangeType_NoChange;
           UIStateChangeType showFocusRings = UIStateChangeType_NoChange;
-          if (flags & UISF_HIDEACCEL)
-            showAccelerators = (action == UIS_SET) ? UIStateChangeType_Clear
-                                                   : UIStateChangeType_Set;
           if (flags & UISF_HIDEFOCUS)
             showFocusRings = (action == UIS_SET) ? UIStateChangeType_Clear
                                                  : UIStateChangeType_Set;
-
-          NotifyUIStateChanged(showAccelerators, showFocusRings);
+          NotifyUIStateChanged(showFocusRings);
         }
       }
 
@@ -7649,7 +7638,7 @@ bool nsWindow::DealWithPopups(HWND aWnd, UINT aMessage, WPARAM aWParam,
         // compatibility mouse events will do it instead.
         return false;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case WM_LBUTTONDOWN:
     case WM_RBUTTONDOWN:
     case WM_MBUTTONDOWN:

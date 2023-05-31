@@ -14,6 +14,12 @@ const SLOW_AUTOPLAY_PAGE =
     "https://example.com"
   ) + "browser_autoplay_blocked_slow.sjs";
 
+const MUTED_AUTOPLAY_PAGE =
+  getRootDirectory(gTestPath).replace(
+    "chrome://mochitests/content",
+    "https://example.com"
+  ) + "browser_autoplay_muted.html";
+
 const AUTOPLAY_PREF = "media.autoplay.default";
 const AUTOPLAY_PERM = "autoplay-media";
 
@@ -107,23 +113,24 @@ add_task(async function testMainViewVisible() {
     is(labels[0].textContent, labelText, "Correct value");
 
     let menulist = document.getElementById("identity-popup-popup-menulist");
-    Assert.equal(menulist.label, "Block");
+    Assert.equal(menulist.label, "Block Audio");
 
     await EventUtils.synthesizeMouseAtCenter(menulist, { type: "mousedown" });
-    await BrowserTestUtils.waitForCondition(() => {
-      return menulist.getElementsByTagName("menuitem")[0].label === "Allow";
+    await TestUtils.waitForCondition(() => {
+      return menulist.getElementsByTagName("menuitem")[0].label === "Allow Audio and Video";
     });
 
     let menuitem = menulist.getElementsByTagName("menuitem")[0];
-    Assert.equal(menuitem.getAttribute("label"), "Allow");
+    Assert.equal(menuitem.getAttribute("label"), "Allow Audio and Video");
 
     menuitem.click();
     menulist.menupopup.hidePopup();
     await closeIdentityPopup();
 
     let uri = Services.io.newURI(AUTOPLAY_PAGE);
-    let state = SitePermissions.get(uri, AUTOPLAY_PERM).state;
-    Assert.equal(state, SitePermissions.ALLOW);
+    let state = PermissionTestUtils.getPermissionObject(uri, AUTOPLAY_PERM)
+      .capability;
+    Assert.equal(state, Services.perms.ALLOW_ACTION);
   });
 
   Services.perms.removeAll();
@@ -132,27 +139,50 @@ add_task(async function testMainViewVisible() {
 add_task(async function testGloballyBlockedOnNewWindow() {
   Services.prefs.setIntPref(AUTOPLAY_PREF, Ci.nsIAutoplay.BLOCKED);
 
-  let uri = Services.io.newURI(AUTOPLAY_PAGE);
+  let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
+    AUTOPLAY_PAGE
+  );
 
-  let tab = await BrowserTestUtils.openNewForegroundTab(gBrowser, uri.spec);
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    AUTOPLAY_PAGE
+  );
   await blockedIconShown();
 
-  Assert.deepEqual(SitePermissions.get(uri, AUTOPLAY_PERM, tab.linkedBrowser), {
-    state: SitePermissions.BLOCK,
-    scope: SitePermissions.SCOPE_PERSISTENT,
-  });
+  Assert.deepEqual(
+    SitePermissions.getForPrincipal(
+      principal,
+      AUTOPLAY_PERM,
+      tab.linkedBrowser
+    ),
+    {
+      state: SitePermissions.BLOCK,
+      scope: SitePermissions.SCOPE_PERSISTENT,
+    }
+  );
 
   let promiseWin = BrowserTestUtils.waitForNewWindow();
   gBrowser.replaceTabWithWindow(tab);
   let win = await promiseWin;
   tab = win.gBrowser.selectedTab;
 
-  Assert.deepEqual(SitePermissions.get(uri, AUTOPLAY_PERM, tab.linkedBrowser), {
-    state: SitePermissions.BLOCK,
-    scope: SitePermissions.SCOPE_PERSISTENT,
-  });
+  Assert.deepEqual(
+    SitePermissions.getForPrincipal(
+      principal,
+      AUTOPLAY_PERM,
+      tab.linkedBrowser
+    ),
+    {
+      state: SitePermissions.BLOCK,
+      scope: SitePermissions.SCOPE_PERSISTENT,
+    }
+  );
 
-  SitePermissions.remove(uri, AUTOPLAY_PERM, tab.linkedBrowser);
+  SitePermissions.removeFromPrincipal(
+    principal,
+    AUTOPLAY_PERM,
+    tab.linkedBrowser
+  );
   await BrowserTestUtils.closeWindow(win);
 });
 
@@ -184,6 +214,7 @@ add_task(async function testChangingBlockingSettingDuringNavigation() {
   Services.prefs.setIntPref(AUTOPLAY_PREF, Ci.nsIAutoplay.BLOCKED);
 
   await BrowserTestUtils.withNewTab("about:home", async function(browser) {
+    await blockedIconHidden();
     await BrowserTestUtils.loadURI(browser, AUTOPLAY_PAGE);
     await blockedIconShown();
     Services.prefs.setIntPref(AUTOPLAY_PREF, Ci.nsIAutoplay.ALLOWED);
@@ -233,5 +264,31 @@ add_task(async function testSlowLoadingPage() {
   BrowserTestUtils.removeTab(tab1);
   BrowserTestUtils.removeTab(tab2);
 
+  Services.perms.removeAll();
+});
+
+add_task(async function testBlockedAll() {
+  Services.prefs.setIntPref(AUTOPLAY_PREF, Ci.nsIAutoplay.BLOCKED_ALL);
+
+  await BrowserTestUtils.withNewTab("about:home", async function(browser) {
+    await blockedIconHidden();
+    await BrowserTestUtils.loadURI(browser, MUTED_AUTOPLAY_PAGE);
+    await blockedIconShown();
+
+    await openIdentityPopup();
+
+    let menulist = document.getElementById("identity-popup-popup-menulist");
+    await EventUtils.synthesizeMouseAtCenter(menulist, { type: "mousedown" });
+    await TestUtils.waitForCondition(() => {
+      return menulist.getElementsByTagName("menuitem")[1].label === "Block Audio";
+    });
+
+    let menuitem = menulist.getElementsByTagName("menuitem")[0];
+    menuitem.click();
+    menulist.menupopup.hidePopup();
+    await closeIdentityPopup();
+    gBrowser.reload();
+    await blockedIconHidden();
+  });
   Services.perms.removeAll();
 });

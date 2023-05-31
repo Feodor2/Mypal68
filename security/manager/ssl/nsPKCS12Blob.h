@@ -6,7 +6,6 @@
 #define nsPKCS12Blob_h
 
 #include "nsCOMPtr.h"
-#include "nsIMutableArray.h"
 #include "nsString.h"
 #include "p12.h"
 #include "seccomon.h"
@@ -25,7 +24,8 @@ class nsPKCS12Blob {
                           uint32_t& error);
 
   // PKCS#12 Export
-  nsresult ExportToFile(nsIFile* file, nsIX509Cert** certs, int numCerts,
+  nsresult ExportToFile(nsIFile* file,
+                        const nsTArray<RefPtr<nsIX509Cert>>& certs,
                         const nsAString& password, uint32_t& error);
 
  private:

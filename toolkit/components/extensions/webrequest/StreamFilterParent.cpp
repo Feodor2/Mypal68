@@ -10,7 +10,6 @@
 #include "mozilla/net/ChannelEventQueue.h"
 #include "nsHttpChannel.h"
 #include "nsIChannel.h"
-#include "nsIHttpChannelInternal.h"
 #include "nsIInputStream.h"
 #include "nsITraceableChannel.h"
 #include "nsProxyRelease.h"
@@ -697,7 +696,7 @@ void StreamFilterParent::ActorDestroy(ActorDestroyReason aWhy) {
   }
 }
 
-void StreamFilterParent::DeallocPStreamFilterParent() {
+void StreamFilterParent::ActorDealloc() {
   RefPtr<StreamFilterParent> self = dont_AddRef(this);
 }
 

@@ -11,7 +11,7 @@ const brandBundle = Services.strings.createBundle(
 const brandName = brandBundle.GetStringFromName("brandShortName");
 
 function getString(key, ...params) {
-  return searchBundle.formatStringFromName(key, params, params.length);
+  return searchBundle.formatStringFromName(key, params);
 }
 
 function AddSearchProvider(...args) {

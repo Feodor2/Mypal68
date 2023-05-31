@@ -2,18 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifdef MOZ_MEMORY
-#  define MOZ_MEMORY_IMPL
-#  include "mozmemory_wrap.h"
-#  define MALLOC_FUNCS MALLOC_FUNCS_MALLOC
-// See mozmemory_wrap.h for more details. This file is part of libmozglue, so
-// it needs to use _impl suffixes.
-#  define MALLOC_DECL(name, return_type, ...) \
-    MOZ_MEMORY_API return_type name##_impl(__VA_ARGS__);
-#  include "malloc_decls.h"
-#  include "mozilla/mozalloc.h"
-#endif
-
 // We need Windows 8 functions and structures to be able to verify SHA-256.
 #if defined(_WIN32_WINNT)
 #  undef _WIN32_WINNT
@@ -310,8 +298,8 @@ bool SignedBinary::VerifySignature(const wchar_t* aFilePath) {
 
   static const mozilla::DynamicallyLinkedFunctionPtr<decltype(
       &::CryptCATAdminReleaseCatalogContext)>
-    pCryptCATAdminReleaseCatalogContext(L"wintrust.dll",
-                                        "CryptCATAdminReleaseCatalogContext");
+      pCryptCATAdminReleaseCatalogContext(L"wintrust.dll",
+                                          "CryptCATAdminReleaseCatalogContext");
   if (!pCryptCATAdminReleaseCatalogContext) {
     return false;
   }
@@ -324,10 +312,10 @@ bool SignedBinary::VerifySignature(const wchar_t* aFilePath) {
 
   // We can't use UniquePtr for this because the deleter function requires two
   // parameters.
-  auto cleanCatInfoHdl = mozilla::MakeScopeExit(
-    [rawCatAdmin, catInfoHdl]() -> void {
-    pCryptCATAdminReleaseCatalogContext(rawCatAdmin, catInfoHdl, 0);
-  });
+  auto cleanCatInfoHdl =
+      mozilla::MakeScopeExit([rawCatAdmin, catInfoHdl]() -> void {
+        pCryptCATAdminReleaseCatalogContext(rawCatAdmin, catInfoHdl, 0);
+      });
 
   // We found a catalog! Now query for the path to the catalog file.
 

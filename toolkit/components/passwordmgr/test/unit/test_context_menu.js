@@ -1,4 +1,4 @@
-/*
+/**
  * Test the password manager context menu.
  */
 
@@ -30,21 +30,21 @@ add_task(async function test_contextMenuAddAndRemoveLogins() {
   const DOCUMENT_CONTENT = "<form><input id='pw' type=password></form>";
   const INPUT_QUERY = "input[type='password']";
 
-  let testHostnames = [
+  let testOrigins = [
     "http://www.example.com",
     "http://www2.example.com",
     "http://www3.example.com",
     "http://empty.example.com",
   ];
 
-  for (let hostname of testHostnames) {
-    info("test for hostname: " + hostname);
+  for (let origin of testOrigins) {
+    info("test for origin: " + origin);
     // Get expected logins for this test.
-    let logins = getExpectedLogins(hostname);
+    let logins = getExpectedLogins(origin);
 
     // Create the logins menuitems fragment.
     let { fragment, document } = createLoginsFragment(
-      hostname,
+      origin,
       DOCUMENT_CONTENT,
       INPUT_QUERY
     );
@@ -88,13 +88,13 @@ function createLoginsFragment(url, content, elementQuery) {
     ownerDocument: document,
   };
 
-  let URI = Services.io.newURI(url);
+  let formOrigin = LoginHelper.getLoginOrigin(url);
   return {
     document,
     fragment: LoginManagerContextMenu.addLoginsToMenu(
       inputElement,
       browser,
-      URI
+      formOrigin
     ),
   };
 }
@@ -105,8 +105,8 @@ function createLoginsFragment(url, content, elementQuery) {
  */
 function checkLoginItems(logins, items) {
   function findDuplicates(unfilteredLoginList) {
-    var seen = new Set();
-    var duplicates = new Set();
+    let seen = new Set();
+    let duplicates = new Set();
     for (let login of unfilteredLoginList) {
       if (seen.has(login.username)) {
         duplicates.add(login.username);
@@ -154,12 +154,12 @@ function checkLoginItems(logins, items) {
 }
 
 /**
- * Gets the list of expected logins for a hostname.
+ * Gets the list of expected logins for an origin.
  */
-function getExpectedLogins(hostname) {
+function getExpectedLogins(origin) {
   return Services.logins
     .getAllLogins()
-    .filter(entry => entry.hostname === hostname);
+    .filter(entry => entry.origin === origin);
 }
 
 function loginList() {

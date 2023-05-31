@@ -10,7 +10,6 @@
 #include "gtest/MozGtestFriend.h"
 #include "js/ProfilingCategory.h"
 #include "js/ProfilingFrameIterator.h"
-#include "js/TrackedOptimizationInfo.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/HashTable.h"
 #include "mozilla/Maybe.h"

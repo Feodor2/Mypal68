@@ -10,7 +10,7 @@
 #include "sigslot.h"
 #include "transportlayer.h"  // Need the State enum
 #include "dtlsidentity.h"    // For DtlsDigest
-#include "mozilla/dom/PeerConnectionImplEnumsBinding.h"
+#include "mozilla/dom/RTCPeerConnectionBinding.h"
 #include "mozilla/dom/RTCConfigurationBinding.h"
 #include "nricectx.h"               // Need some enums
 #include "nsDOMNavigationTiming.h"  // DOMHighResTimeStamp
@@ -78,6 +78,9 @@ class MediaTransportHandler {
                                           const std::string& aLocalPwd,
                                           size_t aComponentCount) = 0;
 
+  virtual void SetTargetForDefaultLocalAddressLookup(
+      const std::string& aTargetIp, uint16_t aTargetPort) = 0;
+
   // We set default-route-only as late as possible because it depends on what
   // capture permissions have been granted on the window, which could easily
   // change between Init (ie; when the PC is created) and StartIceGathering
@@ -98,7 +101,7 @@ class MediaTransportHandler {
   virtual void RemoveTransportsExcept(
       const std::set<std::string>& aTransportIds) = 0;
 
-  virtual void StartIceChecks(bool aIsControlling, bool aIsOfferer,
+  virtual void StartIceChecks(bool aIsControlling,
                               const std::vector<std::string>& aIceOptions) = 0;
 
   virtual void SendPacket(const std::string& aTransportId,
@@ -120,8 +123,8 @@ class MediaTransportHandler {
 
   sigslot::signal2<const std::string&, const CandidateInfo&> SignalCandidate;
   sigslot::signal1<const std::string&> SignalAlpnNegotiated;
-  sigslot::signal1<dom::PCImplIceGatheringState> SignalGatheringStateChange;
-  sigslot::signal1<dom::PCImplIceConnectionState> SignalConnectionStateChange;
+  sigslot::signal1<dom::RTCIceGatheringState> SignalGatheringStateChange;
+  sigslot::signal1<dom::RTCIceConnectionState> SignalConnectionStateChange;
 
   sigslot::signal2<const std::string&, MediaPacket&> SignalPacketReceived;
   sigslot::signal2<const std::string&, MediaPacket&> SignalEncryptedSending;
@@ -137,8 +140,8 @@ class MediaTransportHandler {
   void OnCandidate(const std::string& aTransportId,
                    const CandidateInfo& aCandidateInfo);
   void OnAlpnNegotiated(const std::string& aAlpn);
-  void OnGatheringStateChange(dom::PCImplIceGatheringState aState);
-  void OnConnectionStateChange(dom::PCImplIceConnectionState aState);
+  void OnGatheringStateChange(dom::RTCIceGatheringState aState);
+  void OnConnectionStateChange(dom::RTCIceConnectionState aState);
   void OnPacketReceived(const std::string& aTransportId, MediaPacket& aPacket);
   void OnEncryptedSending(const std::string& aTransportId,
                           MediaPacket& aPacket);

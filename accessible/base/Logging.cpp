@@ -14,12 +14,10 @@
 #include "nsDocShellLoadTypes.h"
 #include "nsIChannel.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsISelectionController.h"
 #include "nsTraceRefcnt.h"
 #include "nsIWebProgress.h"
 #include "prenv.h"
 #include "nsIDocShellTreeItem.h"
-#include "nsIURI.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLBodyElement.h"
@@ -119,7 +117,7 @@ static void LogDocShellTree(dom::Document* aDocumentNode) {
   if (aDocumentNode->IsActive()) {
     nsCOMPtr<nsIDocShellTreeItem> treeItem(aDocumentNode->GetDocShell());
     nsCOMPtr<nsIDocShellTreeItem> parentTreeItem;
-    treeItem->GetParent(getter_AddRefs(parentTreeItem));
+    treeItem->GetInProcessParent(getter_AddRefs(parentTreeItem));
     nsCOMPtr<nsIDocShellTreeItem> rootTreeItem;
     treeItem->GetRootTreeItem(getter_AddRefs(rootTreeItem));
     printf("docshell hierarchy, parent: %p, root: %p, is tab document: %s;",
@@ -180,7 +178,7 @@ static void LogDocLoadGroup(dom::Document* aDocumentNode) {
 }
 
 static void LogDocParent(dom::Document* aDocumentNode) {
-  dom::Document* parentDoc = aDocumentNode->GetParentDocument();
+  dom::Document* parentDoc = aDocumentNode->GetInProcessParentDocument();
   printf("parent DOM document: %p", static_cast<void*>(parentDoc));
   if (parentDoc) {
     printf(", parent acc document: %p",

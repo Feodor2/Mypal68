@@ -6,7 +6,6 @@
 #define mozilla_a11y_ImageAccessibleWrap_h__
 
 #include "ImageAccessible.h"
-#include "ia2AccessibleImage.h"
 
 namespace mozilla {
 namespace a11y {

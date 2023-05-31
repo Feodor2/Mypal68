@@ -21,12 +21,10 @@
 #include "mozilla/dom/Document.h"
 #include "nsIDragService.h"
 #include "nsIDragSession.h"
-#include "nsIEditor.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeItem.h"
 #include "nsIPrincipal.h"
 #include "nsIFormControl.h"
-#include "nsIPlaintextEditor.h"
 #include "nsISupportsPrimitives.h"
 #include "nsITransferable.h"
 #include "nsIVariant.h"
@@ -72,9 +70,6 @@ nsresult TextEditor::PrepareToInsertContent(
   if (aDoDeleteSelection) {
     AutoTrackDOMPoint tracker(RangeUpdaterRef(), &pointToInsert);
     nsresult rv = DeleteSelectionAsSubAction(eNone, eStrip);
-    if (NS_WARN_IF(Destroyed())) {
-      return NS_ERROR_EDITOR_DESTROYED;
-    }
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -147,9 +142,10 @@ nsresult TextEditor::InsertTextFromTransferable(
   }
 
   // Try to scroll the selection into view if the paste/drop succeeded
-  ScrollSelectionIntoView(false);
-
-  return NS_OK;
+  nsresult rv = ScrollSelectionFocusIntoView();
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                       "ScrollSelectionFocusIntoView() failed");
+  return rv;
 }
 
 nsresult TextEditor::OnDrop(DragEvent* aDropEvent) {
@@ -352,14 +348,17 @@ nsresult TextEditor::OnDrop(DragEvent* aDropEvent) {
     }
   }
 
-  ScrollSelectionIntoView(false);
-
-  return NS_OK;
+  nsresult rv = ScrollSelectionFocusIntoView();
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                       "ScrollSelectionFocusIntoView() failed");
+  return rv;
 }
 
 nsresult TextEditor::PasteAsAction(int32_t aClipboardType,
-                                   bool aDispatchPasteEvent) {
-  AutoEditActionDataSetter editActionData(*this, EditAction::ePaste);
+                                   bool aDispatchPasteEvent,
+                                   nsIPrincipal* aPrincipal) {
+  AutoEditActionDataSetter editActionData(*this, EditAction::ePaste,
+                                          aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -413,9 +412,10 @@ nsresult TextEditor::PasteAsAction(int32_t aClipboardType,
   return NS_OK;
 }
 
-NS_IMETHODIMP
-TextEditor::PasteTransferable(nsITransferable* aTransferable) {
-  AutoEditActionDataSetter editActionData(*this, EditAction::ePaste);
+nsresult TextEditor::PasteTransferableAsAction(nsITransferable* aTransferable,
+                                               nsIPrincipal* aPrincipal) {
+  AutoEditActionDataSetter editActionData(*this, EditAction::ePaste,
+                                          aPrincipal);
   if (NS_WARN_IF(!editActionData.CanHandle())) {
     return NS_ERROR_NOT_INITIALIZED;
   }
@@ -439,9 +439,10 @@ TextEditor::PasteTransferable(nsITransferable* aTransferable) {
 }
 
 bool TextEditor::CanPaste(int32_t aClipboardType) const {
-  // Always enable the paste command when inside of a HTML or XHTML document.
+  // Always enable the paste command when inside of a HTML or XHTML document,
+  // but if the document is chrome, let it control it.
   RefPtr<Document> doc = GetDocument();
-  if (doc && doc->IsHTMLOrXHTML()) {
+  if (doc && doc->IsHTMLOrXHTML() && !nsContentUtils::IsChromeDoc(doc)) {
     return true;
   }
 

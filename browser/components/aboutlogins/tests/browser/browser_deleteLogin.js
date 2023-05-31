@@ -1,21 +1,6 @@
 /* Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/publicdomain/zero/1.0/ */
 
-let gLogins = [
-  {
-    guid: "70a",
-    username: "jared",
-    password: "deraj",
-    hostname: "https://www.example.com",
-  },
-  {
-    guid: "70b",
-    username: "firefox",
-    password: "xoferif",
-    hostname: "https://www.example.com",
-  },
-];
-
 add_task(async function setup() {
   await BrowserTestUtils.openNewForegroundTab({
     gBrowser,
@@ -24,13 +9,14 @@ add_task(async function setup() {
   registerCleanupFunction(() => {
     BrowserTestUtils.removeTab(gBrowser.selectedTab);
   });
+  TEST_LOGIN1 = await addLogin(TEST_LOGIN1);
+  TEST_LOGIN2 = await addLogin(TEST_LOGIN2);
 });
 
 add_task(async function test_show_logins() {
   let browser = gBrowser.selectedBrowser;
-  browser.messageManager.sendAsyncMessage("AboutLogins:AllLogins", gLogins);
 
-  await ContentTask.spawn(browser, gLogins, async logins => {
+  await ContentTask.spawn(browser, [TEST_LOGIN1, TEST_LOGIN2], async logins => {
     let loginList = Cu.waiveXrays(content.document.querySelector("login-list"));
     let loginFound = await ContentTaskUtils.waitForCondition(() => {
       return (
@@ -56,21 +42,30 @@ add_task(async function test_login_item() {
       );
     }
   );
-  await ContentTask.spawn(browser, gLogins, async logins => {
+  await ContentTask.spawn(browser, [TEST_LOGIN1, TEST_LOGIN2], async logins => {
     let loginList = content.document.querySelector("login-list");
-    let loginListItems = loginList.shadowRoot.querySelectorAll(
-      "login-list-item"
+    let loginListItem = loginList.shadowRoot.querySelector(
+      ".login-list-item[data-guid]"
     );
-    loginListItems[0].click();
+    info("Clicking on the first login");
+    loginListItem.click();
 
     let loginItem = Cu.waiveXrays(content.document.querySelector("login-item"));
     let loginItemPopulated = await ContentTaskUtils.waitForCondition(() => {
-      return loginItem._login.guid == loginListItems[0].getAttribute("guid");
+      return loginItem._login.guid == loginListItem.dataset.guid;
     }, "Waiting for login item to get populated");
     ok(loginItemPopulated, "The login item should get populated");
 
     let deleteButton = loginItem.shadowRoot.querySelector(".delete-button");
     deleteButton.click();
+
+    let confirmDeleteDialog = Cu.waiveXrays(
+      content.document.querySelector("confirm-delete-dialog")
+    );
+    let confirmButton = confirmDeleteDialog.shadowRoot.querySelector(
+      ".confirm-button"
+    );
+    confirmButton.click();
   });
   ok(
     deleteLoginMessageReceived,

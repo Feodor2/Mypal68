@@ -12,7 +12,7 @@ extern crate winit;
 mod boilerplate;
 
 use crate::boilerplate::{Example, HandyDandyRectBuilder};
-use euclid::TypedScale;
+use euclid::Scale;
 use gleam::gl;
 use webrender::api::*;
 use webrender::api::units::*;
@@ -92,7 +92,7 @@ impl App {
             pipeline_id,
             content_rect: LayoutRect::new(
                 LayoutPoint::zero(),
-                device_size.to_f32() / TypedScale::new(device_pixel_ratio),
+                device_size.to_f32() / Scale::new(device_pixel_ratio),
             ),
             color,
         };
@@ -183,9 +183,9 @@ impl Example for App {
 
     fn get_image_handlers(
         &mut self,
-        gl: &gl::Gl,
-    ) -> (Option<Box<webrender::ExternalImageHandler>>,
-          Option<Box<webrender::OutputImageHandler>>) {
+        gl: &dyn gl::Gl,
+    ) -> (Option<Box<dyn webrender::ExternalImageHandler>>,
+          Option<Box<dyn webrender::OutputImageHandler>>) {
         let texture_id = gl.gen_textures(1)[0];
 
         gl.bind_texture(gl::TEXTURE_2D, texture_id);

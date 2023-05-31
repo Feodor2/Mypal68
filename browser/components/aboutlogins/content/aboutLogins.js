@@ -9,10 +9,18 @@ document.addEventListener(
   () => {
     gElements.loginList = document.querySelector("login-list");
     gElements.loginItem = document.querySelector("login-item");
+    gElements.loginFilter = document.querySelector("login-filter");
+
+    let { searchParams } = new URL(document.location);
+    if (searchParams.get("filter")) {
+      gElements.loginFilter.value = searchParams.get("filter");
+    }
 
     document.dispatchEvent(
       new CustomEvent("AboutLoginsInit", { bubbles: true })
     );
+
+    gElements.loginFilter.focus();
   },
   { once: true }
 );
@@ -25,6 +33,7 @@ window.addEventListener("AboutLoginsChromeToContent", event => {
     }
     case "LoginAdded": {
       gElements.loginList.loginAdded(event.detail.value);
+      gElements.loginItem.loginAdded(event.detail.value);
       break;
     }
     case "LoginModified": {

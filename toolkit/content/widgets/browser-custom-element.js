@@ -55,6 +55,12 @@
 
       this.onPageHide = this.onPageHide.bind(this);
 
+      this.isNavigating = false;
+
+      this._documentURI = null;
+      this._characterSet = null;
+      this._documentContentType = null;
+
       /**
        * These are managed by the tabbrowser:
        */
@@ -285,7 +291,13 @@
 
       this._contentPrincipal = null;
 
+      this._contentStoragePrincipal = null;
+
+      this._contentBlockingAllowListPrincipal = null;
+
       this._csp = null;
+
+      this._referrerInfo = null;
 
       this._contentRequestContextID = null;
 
@@ -402,6 +414,16 @@
         return this._documentContentType;
       }
       return this.contentDocument ? this.contentDocument.contentType : null;
+    }
+
+    set documentContentType(aContentType) {
+      if (aContentType != null) {
+        if (this.isRemoteBrowser) {
+          this._documentContentType = aContentType;
+        } else {
+          this.contentDocument.documentContentType = aContentType;
+        }
+      }
     }
 
     set sameProcessAsFrameLoader(val) {
@@ -677,18 +699,34 @@
         : this.docShell.mayEnableCharacterEncodingMenu;
     }
 
+    set mayEnableCharacterEncodingMenu(aMayEnable) {
+      if (this.isRemoteBrowser) {
+        this._mayEnableCharacterEncodingMenu = aMayEnable;
+      }
+    }
+
     get contentPrincipal() {
       return this.isRemoteBrowser
         ? this._contentPrincipal
         : this.contentDocument.nodePrincipal;
     }
 
+    get contentStoragePrincipal() {
+      return this.isRemoteBrowser
+        ? this._contentStoragePrincipal
+        : this.contentDocument.effectiveStoragePrincipal;
+    }
+
+    get contentBlockingAllowListPrincipal() {
+      return this.isRemoteBrowser
+        ? this._contentBlockingAllowListPrincipal
+        : this.contentDocument.contentBlockingAllowListPrincipal;
+    }
+
     get csp() {
-      // After Bug 965637 we can query the csp directly from the contentDocument
-      // instead of contentDocument.nodePrincipal.
       return this.isRemoteBrowser
         ? this._csp
-        : this.contentDocument.nodePrincipal.csp;
+        : this.contentDocument.csp;
     }
 
     get contentRequestContextID() {
@@ -700,18 +738,6 @@
       } catch (e) {
         return null;
       }
-    }
-
-    set showWindowResizer(val) {
-      if (val) {
-        this.setAttribute("showresizer", "true");
-      } else {
-        this.removeAttribute("showresizer");
-      }
-    }
-
-    get showWindowResizer() {
-      return this.getAttribute("showresizer") == "true";
     }
 
     set fullZoom(val) {
@@ -730,6 +756,12 @@
       } else {
         this.markupDocumentViewer.fullZoom = val;
       }
+    }
+
+    get referrerInfo() {
+      return this.isRemoteBrowser
+        ? this._referrerInfo
+        : this.contentDocument.referrerInfo;
     }
 
     get fullZoom() {
@@ -849,11 +881,11 @@
 
     _wrapURIChangeCall(fn) {
       if (!this.isRemoteBrowser) {
-        this.inLoadURI = true;
+        this.isNavigating = true;
         try {
           fn();
         } finally {
-          this.inLoadURI = false;
+          this.isNavigating = false;
         }
       } else {
         fn();
@@ -1089,12 +1121,12 @@
       if (!transientState) {
         this._audioMuted = true;
       }
-      this.messageManager.sendAsyncMessage("AudioPlayback", { type: "mute" });
+      this.frameLoader.browsingContext.notifyMediaMutedChanged(true);
     }
 
     unmute() {
       this._audioMuted = false;
-      this.messageManager.sendAsyncMessage("AudioPlayback", { type: "unmute" });
+      this.frameLoader.browsingContext.notifyMediaMutedChanged(false);
     }
 
     pauseMedia(disposable) {
@@ -1137,7 +1169,7 @@
 
     didStartLoadSinceLastUserTyping() {
       return (
-        !this.inLoadURI &&
+        !this.isNavigating &&
         this.urlbarChangeTracker._startedLoadSinceLastUserTyping
       );
     }
@@ -1182,8 +1214,6 @@
           this
         );
 
-        // browser-child messages, such as Content:LocationChange, are handled in
-        // RemoteWebProgress, ensure it is loaded and ready.
         let jsm = "resource://gre/modules/RemoteWebProgress.jsm";
         let { RemoteWebProgressManager } = ChromeUtils.import(jsm, {});
 
@@ -1533,6 +1563,16 @@
       }
     }
 
+    updateSecurityUIForSecurityChange(aSecurityInfo, aState, aIsSecureContext) {
+      if (this.isRemoteBrowser && this.messageManager) {
+        // Invoking this getter triggers the generation of the underlying object,
+        // which we need to access with ._securityUI, because .securityUI returns
+        // a wrapper that makes _update inaccessible.
+        void this.securityUI;
+        this._securityUI._update(aSecurityInfo, aState, aIsSecureContext);
+      }
+    }
+
     updateSecurityUIForContentBlockingEvent(aEvent) {
       if (this.isRemoteBrowser && this.messageManager) {
         // Invoking this getter triggers the generation of the underlying object,
@@ -1545,6 +1585,76 @@
 
     get remoteWebProgressManager() {
       return this._remoteWebProgressManager;
+    }
+
+    updateForStateChange(aCharset, aDocumentURI, aContentType) {
+      if (this.isRemoteBrowser && this.messageManager) {
+        if (aCharset != null) {
+          this._characterSet = aCharset;
+        }
+
+        if (aDocumentURI != null) {
+          this._documentURI = aDocumentURI;
+        }
+
+        if (aContentType != null) {
+          this._documentContentType = aContentType;
+        }
+      }
+    }
+
+    updateWebNavigationForLocationChange(aCanGoBack, aCanGoForward) {
+      if (this.isRemoteBrowser && this.messageManager) {
+        let remoteWebNav = this._remoteWebNavigationImpl;
+        remoteWebNav.canGoBack = aCanGoBack;
+        remoteWebNav.canGoForward = aCanGoForward;
+      }
+    }
+
+    updateForLocationChange(
+      aLocation,
+      aCharset,
+      aMayEnableCharacterEncodingMenu,
+      aCharsetAutodetected,
+      aDocumentURI,
+      aTitle,
+      aContentPrincipal,
+      aContentStoragePrincipal,
+      aContentBlockingAllowListPrincipal,
+      aCSP,
+      aReferrerInfo,
+      aIsSynthetic,
+      aInnerWindowID,
+      aHaveRequestContextID,
+      aRequestContextID,
+      aContentType
+    ) {
+      if (this.isRemoteBrowser && this.messageManager) {
+        if (aCharset != null) {
+          this._characterSet = aCharset;
+          this._mayEnableCharacterEncodingMenu = aMayEnableCharacterEncodingMenu;
+          this._charsetAutodetected = aCharsetAutodetected;
+        }
+
+        if (aContentType != null) {
+          this._documentContentType = aContentType;
+        }
+
+        this._remoteWebNavigationImpl._currentURI = aLocation;
+        this._documentURI = aDocumentURI;
+        this._contentTitle = aTitle;
+        this._imageDocument = null;
+        this._contentPrincipal = aContentPrincipal;
+        this._contentStoragePrincipal = aContentStoragePrincipal;
+        this._contentBlockingAllowListPrincipal = aContentBlockingAllowListPrincipal;
+        this._csp = aCSP;
+        this._referrerInfo = aReferrerInfo;
+        this._isSyntheticDocument = aIsSynthetic;
+        this._innerWindowID = aInnerWindowID;
+        this._contentRequestContextID = aHaveRequestContextID
+          ? aRequestContextID
+          : null;
+      }
     }
 
     purgeSessionHistory() {
@@ -1564,7 +1674,7 @@
       this.messageManager.sendAsyncMessage("Browser:PurgeSessionHistory");
     }
 
-    createAboutBlankContentViewer(aPrincipal) {
+    createAboutBlankContentViewer(aPrincipal, aStoragePrincipal) {
       if (this.isRemoteBrowser) {
         // Ensure that the content process has the permissions which are
         // needed to create a document with the given principal.
@@ -1579,7 +1689,7 @@
         // Create the about blank content viewer in the content process
         this.messageManager.sendAsyncMessage(
           "Browser:CreateAboutBlank",
-          aPrincipal
+          { principal: aPrincipal, storagePrincipal: aStoragePrincipal }
         );
         return;
       }
@@ -1587,7 +1697,11 @@
         aPrincipal,
         this.contentPrincipal
       );
-      this.docShell.createAboutBlankContentViewer(principal);
+      let storagePrincipal = BrowserUtils.principalWithMatchingOA(
+        aStoragePrincipal,
+        this.contentStoragePrincipal
+      );
+      this.docShell.createAboutBlankContentViewer(principal, storagePrincipal);
     }
 
     stopScroll() {
@@ -1865,6 +1979,8 @@
             "_characterSet",
             "_mayEnableCharacterEncodingMenu",
             "_contentPrincipal",
+            "_contentStoragePrincipal",
+            "_contentBlockingAllowListPrincipal",
             "_imageDocument",
             "_fullZoom",
             "_textZoom",

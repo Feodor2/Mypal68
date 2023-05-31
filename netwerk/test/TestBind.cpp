@@ -8,7 +8,6 @@
 #include "nsISocketTransport.h"
 #include "nsIServerSocket.h"
 #include "nsIAsyncInputStream.h"
-#include "nsINetAddr.h"
 #include "mozilla/net/DNS.h"
 #include "prerror.h"
 #include "nsComponentManagerUtils.h"
@@ -131,8 +130,9 @@ TEST(TestBind, MainTest)
 
   for (int32_t tried = 0; tried < 100; tried++) {
     nsCOMPtr<nsISocketTransport> client;
-    rv = sts->CreateTransport(nullptr, 0, NS_LITERAL_CSTRING("127.0.0.1"),
-                              serverPort, nullptr, getter_AddRefs(client));
+    rv = sts->CreateTransport(nsTArray<nsCString>(),
+                              NS_LITERAL_CSTRING("127.0.0.1"), serverPort,
+                              nullptr, getter_AddRefs(client));
     ASSERT_TRUE(NS_SUCCEEDED(rv));
 
     // Bind to a port. It's possible that we are binding to a port that is

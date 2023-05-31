@@ -178,4 +178,8 @@ class nsGkAtoms {
 #undef GK_ATOM
 };
 
+inline bool nsAtom::IsEmpty() const {
+  return this == nsGkAtoms::_empty;
+}
+
 #endif /* nsGkAtoms_h___ */

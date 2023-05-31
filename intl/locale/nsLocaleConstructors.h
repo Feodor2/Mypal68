@@ -8,7 +8,6 @@
 #include "nsCollation.h"
 #include "nsCollationCID.h"
 #include "mozilla/ModuleUtils.h"
-#include "nsIServiceManager.h"
 #include "LocaleService.h"
 #include "OSPreferences.h"
 

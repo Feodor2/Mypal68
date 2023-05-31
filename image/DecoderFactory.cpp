@@ -4,7 +4,6 @@
 
 #include "DecoderFactory.h"
 
-#include "gfxPrefs.h"
 #include "nsMimeTypes.h"
 #include "mozilla/RefPtr.h"
 
@@ -73,7 +72,8 @@ DecoderType DecoderFactory::GetDecoderType(const char* aMimeType) {
     type = DecoderType::ICON;
 
     // WebP
-  } else if (!strcmp(aMimeType, IMAGE_WEBP) && gfxPrefs::ImageWebPEnabled()) {
+  } else if (!strcmp(aMimeType, IMAGE_WEBP) &&
+             StaticPrefs::image_webp_enabled()) {
     type = DecoderType::WEBP;
   }
 

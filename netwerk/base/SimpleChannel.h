@@ -7,6 +7,9 @@
 
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/UniquePtr.h"
+#include "nsBaseChannel.h"
+#include "nsIChildChannel.h"
+#include "mozilla/net/PSimpleChannelChild.h"
 #include "nsCOMPtr.h"
 
 class nsIChannel;
@@ -61,6 +64,36 @@ class SimpleChannelCallbacksImpl final : public SimpleChannelCallbacks {
   F1 mStartAsyncRead;
   F2 mOpenContentStream;
   RefPtr<T> mContext;
+};
+
+class SimpleChannel : public nsBaseChannel {
+ public:
+  explicit SimpleChannel(UniquePtr<SimpleChannelCallbacks>&& aCallbacks);
+
+ protected:
+  virtual ~SimpleChannel() = default;
+
+  virtual nsresult OpenContentStream(bool async, nsIInputStream** streamOut,
+                                     nsIChannel** channel) override;
+
+  virtual nsresult BeginAsyncRead(nsIStreamListener* listener,
+                                  nsIRequest** request) override;
+
+ private:
+  UniquePtr<SimpleChannelCallbacks> mCallbacks;
+};
+
+class SimpleChannelChild final : public SimpleChannel,
+                                 public nsIChildChannel,
+                                 public PSimpleChannelChild {
+ public:
+  explicit SimpleChannelChild(UniquePtr<SimpleChannelCallbacks>&& aCallbacks);
+
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_NSICHILDCHANNEL
+
+ private:
+  virtual ~SimpleChannelChild() = default;
 };
 
 already_AddRefed<nsIChannel> NS_NewSimpleChannelInternal(

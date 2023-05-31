@@ -90,10 +90,10 @@ inline nscoord NSToCoordRound(double aValue) {
 inline nscoord NSToCoordRoundWithClamp(float aValue) {
 #ifndef NS_COORD_IS_FLOAT
   // Bounds-check before converting out of float, to avoid overflow
-  if (aValue >= nscoord_MAX) {
+  if (aValue >= float(nscoord_MAX)) {
     return nscoord_MAX;
   }
-  if (aValue <= nscoord_MIN) {
+  if (aValue <= float(nscoord_MIN)) {
     return nscoord_MIN;
   }
 #endif
@@ -236,10 +236,10 @@ inline nscoord NSToCoordFloor(double aValue) { return nscoord(floor(aValue)); }
 inline nscoord NSToCoordFloorClamped(float aValue) {
 #ifndef NS_COORD_IS_FLOAT
   // Bounds-check before converting out of float, to avoid overflow
-  if (aValue >= nscoord_MAX) {
+  if (aValue >= float(nscoord_MAX)) {
     return nscoord_MAX;
   }
-  if (aValue <= nscoord_MIN) {
+  if (aValue <= float(nscoord_MIN)) {
     return nscoord_MIN;
   }
 #endif
@@ -282,10 +282,10 @@ inline nscoord NSToCoordTrunc(double aValue) {
 inline nscoord NSToCoordTruncClamped(float aValue) {
 #ifndef NS_COORD_IS_FLOAT
   // Bounds-check before converting out of float, to avoid overflow
-  if (aValue >= nscoord_MAX) {
+  if (aValue >= float(nscoord_MAX)) {
     return nscoord_MAX;
   }
-  if (aValue <= nscoord_MIN) {
+  if (aValue <= float(nscoord_MIN)) {
     return nscoord_MIN;
   }
 #endif
@@ -295,10 +295,10 @@ inline nscoord NSToCoordTruncClamped(float aValue) {
 inline nscoord NSToCoordTruncClamped(double aValue) {
 #ifndef NS_COORD_IS_FLOAT
   // Bounds-check before converting out of double, to avoid overflow
-  if (aValue >= nscoord_MAX) {
+  if (aValue >= float(nscoord_MAX)) {
     return nscoord_MAX;
   }
-  if (aValue <= nscoord_MIN) {
+  if (aValue <= float(nscoord_MIN)) {
     return nscoord_MIN;
   }
 #endif

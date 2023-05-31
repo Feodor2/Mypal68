@@ -8,20 +8,15 @@
 #include "nsMimeTypes.h"
 #include "nsNetUtil.h"
 #include "nsEscape.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
-#include "nsIViewSourceChannel.h"
 #include "nsContentUtils.h"
 #include "nsProxyRelease.h"
 #include "nsContentSecurityManager.h"
 
-#include "nsIScriptSecurityManager.h"
-#include "nsIPrincipal.h"
 #include "nsIFileURL.h"
 
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Preferences.h"
-#include "nsIBrowserChild.h"
 #include "private/pprio.h"
 #include "nsInputStreamPump.h"
 #include "nsThreadUtils.h"
@@ -61,9 +56,7 @@ static LazyLogModule gJarProtocolLog("nsJarProtocol");
 
 class nsJARInputThunk : public nsIInputStream {
  public:
-  // Preserve refcount changes when record/replaying, as otherwise the thread
-  // which destroys the thunk may vary between recording and replaying.
-  NS_DECL_THREADSAFE_ISUPPORTS_WITH_RECORDING(recordreplay::Behavior::Preserve)
+  NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIINPUTSTREAM
 
   nsJARInputThunk(nsIZipReader* zipReader, nsIURI* fullJarURI,
@@ -222,11 +215,11 @@ nsresult nsJARChannel::Init(nsIURI* uri) {
   // Prevent loading jar:javascript URIs (see bug 290982).
   nsCOMPtr<nsIURI> innerURI;
   rv = mJarURI->GetJARFile(getter_AddRefs(innerURI));
-  if (NS_FAILED(rv)) return rv;
-  bool isJS;
-  rv = innerURI->SchemeIs("javascript", &isJS);
-  if (NS_FAILED(rv)) return rv;
-  if (isJS) {
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  if (innerURI->SchemeIs("javascript")) {
     NS_WARNING("blocking jar:javascript:");
     return NS_ERROR_INVALID_ARG;
   }
@@ -861,7 +854,8 @@ nsJARChannel::AsyncOpen(nsIStreamListener* aListener) {
           mLoadInfo->GetInitialSecurityCheckDone() ||
           (mLoadInfo->GetSecurityMode() ==
                nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL &&
-           nsContentUtils::IsSystemPrincipal(mLoadInfo->LoadingPrincipal())),
+           mLoadInfo->LoadingPrincipal() &&
+           mLoadInfo->LoadingPrincipal()->IsSystemPrincipal()),
       "security flags in loadInfo but doContentSecurityCheck() not called");
 
   NS_ENSURE_ARG_POINTER(listener);

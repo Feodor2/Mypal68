@@ -4,7 +4,7 @@
 
 #include "VRDisplayLocal.h"
 #include "VRThread.h"
-#include "gfxPrefs.h"
+
 #include "gfxVR.h"
 #include "ipc/VRLayerParent.h"
 #include "mozilla/dom/GamepadBinding.h"  // For GamepadMappingType

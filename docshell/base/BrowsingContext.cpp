@@ -609,7 +609,7 @@ static const RemoteLocationProxy sSingleton;
 // so JSObject::swap can swap it with CrossCompartmentWrappers without requiring
 // malloc.
 template <>
-const js::Class RemoteLocationProxy::Base::sClass =
+const JSClass RemoteLocationProxy::Base::sClass =
     PROXY_CLASS_DEF("Proxy", JSCLASS_HAS_RESERVED_SLOTS(2));
 
 void BrowsingContext::Location(JSContext* aCx,
@@ -808,9 +808,9 @@ void BrowsingContext::Transaction::Apply(BrowsingContext* aBrowsingContext,
 }
 
 BrowsingContext::IPCInitializer BrowsingContext::GetIPCInitializer() {
-  MOZ_ASSERT(
-      !mozilla::Preferences::GetBool("fission.preserve_browsing_contexts", false) ||
-      IsContent());
+  MOZ_ASSERT(!mozilla::Preferences::GetBool(
+                 "fission.preserve_browsing_contexts", false) ||
+             IsContent());
 
   IPCInitializer init;
   init.mId = Id();
@@ -883,7 +883,7 @@ void BrowsingContext::DidSetIsActivatedByUserGesture(ContentParent* aSource) {
 
 namespace ipc {
 
-void IPDLParamTraits<dom::BrowsingContext>::Write(
+void IPDLParamTraits<dom::BrowsingContext*>::Write(
     IPC::Message* aMsg, IProtocol* aActor, dom::BrowsingContext* aParam) {
   uint64_t id = aParam ? aParam->Id() : 0;
   WriteIPDLParam(aMsg, aActor, id);
@@ -896,7 +896,7 @@ void IPDLParamTraits<dom::BrowsingContext>::Write(
   }
 }
 
-bool IPDLParamTraits<dom::BrowsingContext>::Read(
+bool IPDLParamTraits<dom::BrowsingContext*>::Read(
     const IPC::Message* aMsg, PickleIterator* aIter, IProtocol* aActor,
     RefPtr<dom::BrowsingContext>* aResult) {
   uint64_t id = 0;

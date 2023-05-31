@@ -69,7 +69,7 @@ add_task(async function test_cookies() {
     false,
     expiration,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
 
   await promiseStartupManager();

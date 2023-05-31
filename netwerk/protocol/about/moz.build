@@ -9,6 +9,7 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'necko_about'
 
 EXPORTS += [
+    'nsAboutProtocolHandler.h',
     'nsAboutProtocolUtils.h',
 ]
 

@@ -17,7 +17,6 @@
 #include "nsXULAppAPI.h"
 
 using namespace mozilla;
-using namespace std;
 
 // We rely on invariants about the lifetime of the transport:
 //
@@ -145,7 +144,7 @@ void ProcessLink::SendMessage(Message* msg) {
         nsDependentCString(msg->name()));
     CrashReporter::AnnotateCrashReport(
         CrashReporter::Annotation::IPCMessageSize,
-        static_cast<int>(msg->size()));
+        static_cast<unsigned int>(msg->size()));
     MOZ_CRASH("IPC message size is too large");
   }
 

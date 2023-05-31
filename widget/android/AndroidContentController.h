@@ -9,7 +9,6 @@
 #include "mozilla/EventForwards.h"  // for Modifiers
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TimeStamp.h"
-#include "nsIDOMWindowUtils.h"
 #include "nsTArray.h"
 #include "nsWindow.h"
 

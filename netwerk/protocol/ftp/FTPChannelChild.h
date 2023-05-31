@@ -18,7 +18,7 @@
 #include "nsIEventTarget.h"
 
 #include "nsIStreamListener.h"
-#include "PrivateBrowsingChannel.h"
+#include "mozilla/net/PrivateBrowsingChannel.h"
 
 class nsIEventTarget;
 

@@ -322,6 +322,7 @@ typename nsTSubstring<T>::size_type nsTSubstring<T>::Capacity() const {
       capacity = (hdr->StorageSize() / sizeof(char_type)) - 1;
     }
   } else if (this->mDataFlags & DataFlags::INLINE) {
+    MOZ_ASSERT(this->mClassFlags & ClassFlags::INLINE);
     capacity = AsAutoString(this)->mInlineCapacity;
   } else if (this->mDataFlags & DataFlags::OWNED) {
     // we don't store the capacity of an adopted buffer because that would
@@ -649,45 +650,6 @@ bool nsTSubstring<T>::Replace(index_type aCutStart, size_type aCutLength,
 
   if (aLength > 0) {
     char_traits::copy(this->mData + aCutStart, aData, aLength);
-  }
-
-  return true;
-}
-
-template <typename T>
-void nsTSubstring<T>::ReplaceASCII(index_type aCutStart, size_type aCutLength,
-                                   const char* aData, size_type aLength) {
-  if (!ReplaceASCII(aCutStart, aCutLength, aData, aLength, mozilla::fallible)) {
-    AllocFailed(this->Length() - aCutLength + 1);
-  }
-}
-
-template <typename T>
-bool nsTSubstring<T>::ReplaceASCII(index_type aCutStart, size_type aCutLength,
-                                   const char* aData, size_type aLength,
-                                   const fallible_t& aFallible) {
-  if (aLength == size_type(-1)) {
-    aLength = strlen(aData);
-  }
-
-  // A Unicode string can't depend on an ASCII string buffer,
-  // so this dependence check only applies to CStrings.
-#ifdef CharT_is_char
-  if (this->IsDependentOn(aData, aData + aLength)) {
-    nsTAutoString_CharT temp(aData, aLength);
-    return Replace(aCutStart, aCutLength, temp, aFallible);
-  }
-#endif
-
-  aCutStart = XPCOM_MIN(aCutStart, this->Length());
-
-  bool ok = ReplacePrep(aCutStart, aCutLength, aLength);
-  if (!ok) {
-    return false;
-  }
-
-  if (aLength > 0) {
-    char_traits::copyASCII(this->mData + aCutStart, aData, aLength);
   }
 
   return true;
@@ -1049,6 +1011,13 @@ template <typename T>
 bool nsTStringRepr<T>::EqualsASCII(const char* aData) const {
   return char_traits::compareASCIINullTerminated(this->mData, this->mLength,
                                                  aData) == 0;
+}
+
+template <typename T>
+bool nsTStringRepr<T>::EqualsLatin1(const char* aData,
+                                    const size_type aLength) const {
+  return (this->mLength == aLength) &&
+         char_traits::equalsLatin1(this->mData, aData, aLength);
 }
 
 template <typename T>

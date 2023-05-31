@@ -15,7 +15,6 @@
 #include "nsQueryObject.h"
 #include "nsTreeColumns.h"
 
-#include "nsIMutableArray.h"
 #include "nsPersistentProperties.h"
 #include "nsITreeSelection.h"
 #include "nsComponentManagerUtils.h"

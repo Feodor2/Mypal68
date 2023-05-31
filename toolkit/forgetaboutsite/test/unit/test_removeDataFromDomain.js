@@ -52,7 +52,7 @@ function add_cookie(aDomain) {
     false,
     COOKIE_EXPIRY,
     {},
-    Ci.nsICookie2.SAMESITE_UNSET
+    Ci.nsICookie.SAMESITE_UNSET
   );
   check_cookie_exists(aDomain, true);
 }

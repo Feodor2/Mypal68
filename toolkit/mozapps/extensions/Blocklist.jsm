@@ -27,14 +27,6 @@ ChromeUtils.defineModuleGetter(
   "AddonManagerPrivate",
   "resource://gre/modules/AddonManager.jsm"
 );
-// The remote settings updater is the new system in charge of fetching remote data
-// securely and efficiently. It will replace the current XML-based system.
-// See Bug 1257565 and Bug 1252456.
-ChromeUtils.defineModuleGetter(
-  this,
-  "BlocklistClients",
-  "resource://services-common/blocklist-clients.js"
-);
 ChromeUtils.defineModuleGetter(
   this,
   "CertUtils",
@@ -2983,10 +2975,6 @@ let BlocklistRS = {
     ExtensionBlocklistRS._onUpdate();
     PluginBlocklistRS._onUpdate();
   },
-
-  initializeClients() {
-    BlocklistClients.initialize();
-  },
 };
 
 const kSharedAPIs = [
@@ -3016,12 +3004,6 @@ let Blocklist = {
     Services.prefs.addObserver("extensions.blocklist.", this);
     Services.prefs.addObserver(PREF_EM_LOGGING_ENABLED, this);
 
-    // Instantiate Remote Settings clients for blocklists.
-    // Their initialization right here serves two purposes:
-    // - Make sure they are instantiated (it's cheap) in order to be included in the synchronization process;
-    // - Ensure that onecrl and other consumers in there are loaded.
-    // Ideally, this should happen only when BlocklistRS is initialized.
-    BlocklistRS.initializeClients();
     // Define forwarding functions:
     for (let k of kSharedAPIs) {
       this[k] = (...args) => this._impl[k](...args);

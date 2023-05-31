@@ -74,7 +74,7 @@ class MOZ_STACK_CLASS Monitor2AutoLock {
   Monitor2AutoLock();
   Monitor2AutoLock(const Monitor2AutoLock&);
   Monitor2AutoLock& operator=(const Monitor2AutoLock&);
-  static void* operator new(size_t) CPP_THROW_NEW;
+  static void* operator new(size_t) noexcept(true);
 
   friend class Monitor2AutoUnlock;
 
@@ -105,7 +105,7 @@ class MOZ_STACK_CLASS Monitor2AutoUnlock {
   Monitor2AutoUnlock();
   Monitor2AutoUnlock(const Monitor2AutoUnlock&);
   Monitor2AutoUnlock& operator=(const Monitor2AutoUnlock&);
-  static void* operator new(size_t) CPP_THROW_NEW;
+  static void* operator new(size_t) noexcept(true);
 
   Monitor2* mMonitor;
 };

@@ -5,6 +5,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/UniquePtrExtensions.h"
+#include "mozilla/Utf8.h"
 #include "mozilla/WindowsVersion.h"
 
 #include "nsCOMPtr.h"
@@ -18,7 +19,6 @@
 #include "nsNativeCharsetUtils.h"
 
 #include "nsSimpleEnumerator.h"
-#include "nsIComponentManager.h"
 #include "prio.h"
 #include "private/pprio.h"  // To get PR_ImportFile
 #include "nsHashKeys.h"
@@ -50,8 +50,8 @@
 #include "nsXPCOMCIDInternal.h"
 #include "nsThreadUtils.h"
 #include "nsXULAppAPI.h"
-
 #include "nsIWindowMediator.h"
+
 #include "mozIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsIWidget.h"
@@ -2954,7 +2954,7 @@ nsLocalFile::GetPersistentDescriptor(nsACString& aPersistentDescriptor) {
 
 NS_IMETHODIMP
 nsLocalFile::SetPersistentDescriptor(const nsACString& aPersistentDescriptor) {
-  if (IsUTF8(aPersistentDescriptor)) {
+  if (IsUtf8(aPersistentDescriptor)) {
     return InitWithPath(NS_ConvertUTF8toUTF16(aPersistentDescriptor));
   } else {
     return InitWithNativePath(aPersistentDescriptor);

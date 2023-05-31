@@ -17,7 +17,6 @@
 #include "nsIClassInfoImpl.h"
 #include "nsNetCID.h"
 #include "nsError.h"
-#include "nsIScriptSecurityManager.h"
 #include "ContentPrincipal.h"
 #include "nsScriptSecurityManager.h"
 #include "pratom.h"
@@ -130,20 +129,6 @@ nsresult NullPrincipal::GetScriptLocation(nsACString& aStr) {
  */
 
 uint32_t NullPrincipal::GetHashValue() { return (NS_PTR_TO_INT32(this) >> 2); }
-
-NS_IMETHODIMP
-NullPrincipal::SetCsp(nsIContentSecurityPolicy* aCsp) {
-  // Never destroy an existing CSP on the principal.
-  // This method should only be called in rare cases.
-
-  MOZ_ASSERT(!mCSP, "do not destroy an existing CSP");
-  if (mCSP) {
-    return NS_ERROR_ALREADY_INITIALIZED;
-  }
-
-  mCSP = aCsp;
-  return NS_OK;
-}
 
 NS_IMETHODIMP
 NullPrincipal::GetURI(nsIURI** aURI) {

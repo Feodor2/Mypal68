@@ -14,7 +14,7 @@ function run_test() {
       false,
       time,
       {},
-      Ci.nsICookie2.SAMESITE_UNSET
+      Ci.nsICookie.SAMESITE_UNSET
     );
     const now = Math.floor(new Date().getTime() / 1000);
 

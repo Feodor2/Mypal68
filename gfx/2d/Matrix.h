@@ -46,6 +46,15 @@ class BaseMatrix {
     T components[6];
   };
 
+  template <class T2>
+  explicit BaseMatrix(const BaseMatrix<T2>& aOther)
+      : _11(aOther._11),
+        _12(aOther._12),
+        _21(aOther._21),
+        _22(aOther._22),
+        _31(aOther._31),
+        _32(aOther._32) {}
+
   MOZ_ALWAYS_INLINE BaseMatrix Copy() const { return BaseMatrix<T>(*this); }
 
   friend std::ostream& operator<<(std::ostream& aStream,
@@ -535,6 +544,26 @@ class Matrix4x4Typed {
   Matrix4x4Typed(const Matrix4x4Typed& aOther) {
     memcpy(components, aOther.components, sizeof(components));
   }
+
+  template <class T2>
+  explicit Matrix4x4Typed(
+      const Matrix4x4Typed<SourceUnits, TargetUnits, T2>& aOther)
+      : _11(aOther._11),
+        _12(aOther._12),
+        _13(aOther._13),
+        _14(aOther._14),
+        _21(aOther._21),
+        _22(aOther._22),
+        _23(aOther._23),
+        _24(aOther._24),
+        _31(aOther._31),
+        _32(aOther._32),
+        _33(aOther._33),
+        _34(aOther._34),
+        _41(aOther._41),
+        _42(aOther._42),
+        _43(aOther._43),
+        _44(aOther._44) {}
 
   union {
     struct {
@@ -1153,8 +1182,8 @@ class Matrix4x4Typed {
 
   template <typename NewTargetUnits>
   Matrix4x4Typed<SourceUnits, NewTargetUnits, T> operator*(
-      const Matrix4x4Typed<TargetUnits, NewTargetUnits>& aMatrix) const {
-    Matrix4x4Typed<SourceUnits, NewTargetUnits> matrix;
+      const Matrix4x4Typed<TargetUnits, NewTargetUnits, T>& aMatrix) const {
+    Matrix4x4Typed<SourceUnits, NewTargetUnits, T> matrix;
 
     matrix._11 = _11 * aMatrix._11 + _12 * aMatrix._21 + _13 * aMatrix._31 +
                  _14 * aMatrix._41;

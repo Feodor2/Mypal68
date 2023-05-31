@@ -8,10 +8,8 @@
 #include "nsIChannel.h"
 #include "nsIClassOfService.h"
 #include "nsIContentPolicy.h"
-#include "nsIEventTarget.h"
 #include "nsIIOService.h"
 #include "nsILoadInfo.h"
-#include "nsIProtocolProxyService.h"
 #include "nsIURIMutator.h"
 #include "nsProxyRelease.h"
 #include "nsString.h"
@@ -339,6 +337,22 @@ WebrtcProxyChannel::OnTransportAvailable(nsISocketTransport* aTransport,
   mSocketIn->AsyncWait(this, 0, 0, nullptr);
 
   InvokeOnConnected();
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+WebrtcProxyChannel::OnUpgradeFailed(nsresult aErrorCode) {
+  LOG(("WebrtcProxyChannel::OnUpgradeFailed %p\n", this));
+  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
+  MOZ_ASSERT(!mTransport, "already called transport available on webrtc proxy");
+
+  if (mClosed) {
+    LOG(("WebrtcProxyChannel::OnUpgradeFailed %p closed\n", this));
+    return NS_OK;
+  }
+
+  CloseWithReason(aErrorCode);
 
   return NS_OK;
 }

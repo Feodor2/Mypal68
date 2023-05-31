@@ -256,17 +256,6 @@ BrowserCLH.prototype = {
     );
 
     aWindow.addEventListener(
-      "DOMAutoComplete",
-      event => {
-        if (shouldIgnoreLoginManagerEvent(event)) {
-          return;
-        }
-        this.LoginManagerContent.onDOMAutoComplete(event);
-      },
-      options
-    );
-
-    aWindow.addEventListener(
       "pageshow",
       event => {
         // XXXbz what about non-HTML documents??

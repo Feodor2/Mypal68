@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Image.h"
-#include "gfxPrefs.h"
+
 #include "Layers.h"  // for LayerManager
 #include "nsRefreshDriver.h"
 #include "nsContentUtils.h"
@@ -409,9 +409,7 @@ void ImageResource::NotifyDrawingObservers() {
     return;
   }
 
-  bool match = false;
-  if ((NS_FAILED(mURI->SchemeIs("resource", &match)) || !match) &&
-      (NS_FAILED(mURI->SchemeIs("chrome", &match)) || !match)) {
+  if (!mURI->SchemeIs("resource") && !mURI->SchemeIs("chrome")) {
     return;
   }
 

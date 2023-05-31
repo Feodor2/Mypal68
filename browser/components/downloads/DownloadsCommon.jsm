@@ -156,8 +156,7 @@ var DownloadsCommon = {
           // Convert "arguments" to a real array before calling into XPCOM.
           return sb.formatStringFromName(
             stringName,
-            Array.from(arguments),
-            arguments.length
+            Array.from(arguments)
           );
         };
       } else if (stringName in kDownloadsStringsRequiringPluralForm) {
@@ -165,8 +164,7 @@ var DownloadsCommon = {
           // Convert "arguments" to a real array before calling into XPCOM.
           let formattedString = sb.formatStringFromName(
             stringName,
-            Array.from(arguments),
-            arguments.length
+            Array.from(arguments)
           );
           return PluralForm.get(aCount, formattedString);
         };

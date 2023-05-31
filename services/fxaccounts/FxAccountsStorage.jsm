@@ -572,7 +572,7 @@ LoginManagerStorage.prototype = {
       );
       let login = new loginInfo(
         FXA_PWDMGR_HOST,
-        null, // aFormSubmitURL,
+        null, // aFormActionOrigin,
         FXA_PWDMGR_REALM, // aHttpRealm,
         uid, // aUsername
         JSON.stringify(contents), // aPassword

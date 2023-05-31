@@ -4,14 +4,11 @@
 
 #include "nsCOMPtr.h"
 #include "nsPIDOMWindow.h"
-#include "nsIDocShell.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIBaseWindow.h"
 #include "nsIWidget.h"
 
 #include "nsIStringBundle.h"
 #include "nsString.h"
-#include "nsIServiceManager.h"
 #include "nsCOMArray.h"
 #include "nsIFile.h"
 #include "nsEnumeratorUtils.h"

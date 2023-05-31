@@ -6,7 +6,6 @@
 #define nsProxyRelease_h__
 
 #include "nsIEventTarget.h"
-#include "nsIThread.h"
 #include "nsCOMPtr.h"
 #include "nsAutoPtr.h"
 #include "MainThreadUtils.h"
@@ -126,8 +125,10 @@ template <class T>
 inline NS_HIDDEN_(void)
     NS_ProxyRelease(const char* aName, nsIEventTarget* aTarget,
                     already_AddRefed<T> aDoomed, bool aAlwaysProxy = false) {
-  ::detail::ProxyReleaseChooser<mozilla::IsBaseOf<nsISupports, T>::value>::
-      ProxyRelease(aName, aTarget, std::move(aDoomed), aAlwaysProxy);
+  ::detail::ProxyReleaseChooser<
+      std::is_base_of<nsISupports, T>::value>::ProxyRelease(aName, aTarget,
+                                                            std::move(aDoomed),
+                                                            aAlwaysProxy);
 }
 
 /**

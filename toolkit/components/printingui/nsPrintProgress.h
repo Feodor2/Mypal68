@@ -6,13 +6,14 @@
 #define __nsPrintProgress_h
 
 #include "nsIPrintProgress.h"
-#include "nsIPrintingPromptService.h"
+#include "nsIPrintSettings.h"
 
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
-#include "nsIDOMWindow.h"
-#include "nsIObserver.h"
 #include "nsString.h"
+
+class nsIDOMWindow;
+class nsIObserver;
 
 class nsPrintProgress : public nsIPrintProgress {
  public:

@@ -6,7 +6,9 @@
 "use strict";
 
 function run_test() {
-  let defaultBranch = Services.prefs.getDefaultBranch(BROWSER_SEARCH_PREF);
+  let defaultBranch = Services.prefs.getDefaultBranch(
+    SearchUtils.BROWSER_SEARCH_PREF
+  );
   defaultBranch.setCharPref("ignoredJAREngines", "engine");
   Services.prefs
     .getDefaultBranch("")

@@ -4,7 +4,6 @@
 
 #include "IDecodingTask.h"
 
-#include "gfxPrefs.h"
 #include "nsThreadUtils.h"
 
 #include "Decoder.h"

@@ -54,15 +54,15 @@ extern uint32_t gGlyphExtentsSetupFallBackToTight;
 #endif
 
 bool gfxTextRun::GlyphRunIterator::NextRun() {
-  uint32_t glyphRunCount;
+  int32_t glyphRunCount;
   if (mTextRun->mHasGlyphRunArray) {
     glyphRunCount = mTextRun->mGlyphRunArray.Length();
-    if (mNextIndex >= glyphRunCount) {
+    if (mNextIndex >= glyphRunCount || mNextIndex < 0) {
       return false;
     }
     mGlyphRun = &mTextRun->mGlyphRunArray[mNextIndex];
   } else {
-    if (mNextIndex > 0 || !mTextRun->mSingleGlyphRun.mFont) {
+    if (mNextIndex != 0 || !mTextRun->mSingleGlyphRun.mFont) {
       return false;
     }
     glyphRunCount = 1;
@@ -73,14 +73,18 @@ bool gfxTextRun::GlyphRunIterator::NextRun() {
     return false;
   }
 
-  mStringStart = std::max(mStartOffset, mGlyphRun->mCharacterOffset);
-  uint32_t last =
-      mNextIndex + 1 < glyphRunCount
+  uint32_t glyphRunEndOffset =
+      mNextIndex + 1 < (int32_t)glyphRunCount
           ? mTextRun->mGlyphRunArray[mNextIndex + 1].mCharacterOffset
           : mTextRun->GetLength();
-  mStringEnd = std::min(mEndOffset, last);
 
-  ++mNextIndex;
+  if (glyphRunEndOffset <= mStartOffset) {
+    return false;
+  }
+
+  mStringEnd = std::min(mEndOffset, glyphRunEndOffset);
+  mStringStart = std::max(mStartOffset, mGlyphRun->mCharacterOffset);
+  mNextIndex += mDirection;
   return true;
 }
 
@@ -862,7 +866,7 @@ uint32_t gfxTextRun::BreakAndMeasureText(
     gfxFloat* aTrimWhitespace, bool aWhitespaceCanHang, Metrics* aMetrics,
     gfxFont::BoundingBoxType aBoundingBoxType, DrawTarget* aRefDrawTarget,
     bool* aUsedHyphenation, uint32_t* aLastBreak, bool aCanWordWrap,
-    gfxBreakPriority* aBreakPriority) {
+    bool aCanWhitespaceWrap, gfxBreakPriority* aBreakPriority) {
   aMaxLength = std::min(aMaxLength, GetLength() - aStart);
 
   NS_ASSERTION(aStart + aMaxLength <= GetLength(), "Substring out of range");
@@ -982,7 +986,16 @@ uint32_t gfxTextRun::BreakAndMeasureText(
                           mCharacterGlyphs[i].IsClusterStart() &&
                           *aBreakPriority <= gfxBreakPriority::eWordWrapBreak;
 
-      if (atBreak || wordWrapping) {
+      bool whitespaceWrapping = false;
+      if (i > aStart) {
+        // The spec says the breaking opportunity is *after* whitespace.
+        auto const& g = mCharacterGlyphs[i - 1];
+        whitespaceWrapping =
+            aCanWhitespaceWrap &&
+            (g.CharIsSpace() || g.CharIsTab() || g.CharIsNewline());
+      }
+
+      if (atBreak || wordWrapping || whitespaceWrapping) {
         gfxFloat hyphenatedAdvance = advance;
         if (atHyphenationBreak) {
           hyphenatedAdvance += aProvider->GetHyphenWidth();
@@ -995,8 +1008,9 @@ uint32_t gfxTextRun::BreakAndMeasureText(
           lastBreakTrimmableChars = trimmableChars;
           lastBreakTrimmableAdvance = trimmableAdvance;
           lastBreakUsedHyphenation = atHyphenationBreak;
-          *aBreakPriority = atBreak ? gfxBreakPriority::eNormalBreak
-                                    : gfxBreakPriority::eWordWrapBreak;
+          *aBreakPriority = (atBreak || whitespaceWrapping)
+                                ? gfxBreakPriority::eNormalBreak
+                                : gfxBreakPriority::eWordWrapBreak;
         }
 
         width += advance;
@@ -1882,7 +1896,7 @@ void gfxFontGroup::FamilyFace::CheckState(bool& aSkipDrawing) {
       case gfxUserFontEntry::STATUS_FAILED:
         SetInvalid();
         // fall-thru to the default case
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
       default:
         SetLoading(false);
     }

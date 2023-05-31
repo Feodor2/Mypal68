@@ -6,122 +6,147 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; object-src 'none'; script-src resource: chrome:; connect-src https:; img-src https: data: blob:; style-src 'unsafe-inline';"/>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; object-src 'none'; script-src resource: chrome:; img-src data: blob:;"/>
     <title data-l10n-id="about-logins-page-title"></title>
     <link rel="localization" href="preview/aboutLogins.ftl">
-    <script defer="defer" src="chrome://browser/content/aboutlogins/components/reflected-fluent-element.js"></script>
-    <script defer="defer" src="chrome://browser/content/aboutlogins/components/copy-to-clipboard-button.js"></script>
-    <script defer="defer" src="chrome://browser/content/aboutlogins/components/login-filter.js"></script>
-    <script defer="defer" src="chrome://browser/content/aboutlogins/components/login-item.js"></script>
-    <script defer="defer" src="chrome://browser/content/aboutlogins/components/login-list.js"></script>
-    <script defer="defer" src="chrome://browser/content/aboutlogins/components/login-list-item.js"></script>
-    <script defer="defer" src="chrome://browser/content/aboutlogins/components/modal-input.js"></script>
+    <script type="module" src="chrome://browser/content/aboutlogins/components/confirm-delete-dialog.js"></script>
+    <script type="module" src="chrome://browser/content/aboutlogins/components/login-filter.js"></script>
+    <script type="module" src="chrome://browser/content/aboutlogins/components/login-item.js"></script>
+    <script type="module" src="chrome://browser/content/aboutlogins/components/login-list.js"></script>
+    <script type="module" src="chrome://browser/content/aboutlogins/components/login-list-item.js"></script>
+    <script type="module" src="chrome://browser/content/aboutlogins/components/menu-button.js"></script>
     <script defer="defer" src="chrome://browser/content/aboutlogins/aboutLogins.js"></script>
     <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
     <link rel="stylesheet" href="chrome://browser/content/aboutlogins/aboutLogins.css">
+    <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
+    <link rel="icon" href="chrome://browser/content/aboutlogins/icons/favicon.svg">
   </head>
   <body>
     <header>
-      <login-filter data-l10n-id="login-filter"
-                    data-l10n-attrs="placeholder"></login-filter>
+      <login-filter></login-filter>
+      <menu-button></menu-button>
     </header>
-    <login-list data-l10n-id="login-list"
-                data-l10n-attrs="count"
-                data-l10n-args='{"count": 0}'></login-list>
-    <login-item data-l10n-id="login-item"
-                data-l10n-args='{"timeCreated": 0, "timeChanged": 0, "timeUsed": 0}'
-                data-l10n-attrs="cancel-button,
-                                 copy-password-button,
-                                 copy-username-button,
-                                 copied-password-button,
-                                 copied-username-button,
-                                 delete-button,
-                                 edit-button,
-                                 hostname-label,
-                                 modal-input-reveal-checkbox-hide,
-                                 modal-input-reveal-checkbox-show,
-                                 open-site-button,
-                                 password-label,
-                                 save-changes-button,
-                                 time-created,
-                                 time-changed,
-                                 time-used,
-                                 username-label"></login-item>
+    <login-list></login-list>
+    <login-item></login-item>
+    <confirm-delete-dialog hidden></confirm-delete-dialog>
+
+    <template id="confirm-delete-dialog-template">
+      <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
+      <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
+      <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/confirm-delete-dialog.css">
+      <div class="overlay">
+        <div class="container" role="dialog" aria-labelledby="title" aria-describedby="message">
+          <div class="title-bar">
+            <h1 class="title" id="title" data-l10n-id="confirm-delete-dialog-title"></h1>
+            <button class="dismiss-button" data-l10n-id="confirm-delete-dialog-dismiss-button"></button>
+          </div>
+          <div class="content">
+            <p class="message" id="message" data-l10n-id="confirm-delete-dialog-message"></p>
+          </div>
+          <div class="buttons">
+            <button class="cancel-button" data-l10n-id="confirm-delete-dialog-cancel-button"></button>
+            <button class="confirm-button" data-l10n-id="confirm-delete-dialog-confirm-button"></button>
+          </div>
+        </div>
+      </div>
+    </template>
 
     <template id="login-list-template">
       <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
+      <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/login-list.css">
       <div class="meta">
-        <span class="count"></span>
+        <label for="login-sort">
+          <span data-l10n-id="login-list-sort-label-text"></span>
+          <select id="login-sort">
+            <option data-l10n-id="login-list-name-option" value="name"/>
+            <option data-l10n-id="login-list-last-used-option" value="last-used"/>
+            <option data-l10n-id="login-list-last-changed-option" value="last-changed"/>
+          </select>
+        </label>
+        <span class="count" data-l10n-id="login-list-count" data-l10n-args='{"count": 0}'></span>
       </div>
-      <ol>
+      <ol role="listbox" tabindex="0" data-l10n-id="login-list">
       </ol>
+      <button class="create-login-button" data-l10n-id="create-login-button"></button>
     </template>
 
     <template id="login-list-item-template">
-      <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
-      <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/login-list-item.css">
-      <span class="hostname"></span>
-      <span class="username"></span>
+      <li class="login-list-item">
+        <span class="title"></span>
+        <span class="username"></span>
+      </li>
     </template>
 
     <template id="login-item-template">
       <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
+      <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/login-item.css">
       <div class="header">
-        <h2 class="title"></h2>
-        <button class="edit-button"></button>
-        <button class="delete-button"></button>
+        <h2 class="title">
+          <span class="login-item-title"></span>
+          <span class="new-login-title" data-l10n-id="login-item-new-login-title"></span>
+        </h2>
+        <button class="edit-button alternate-button" data-l10n-id="login-item-edit-button"></button>
+        <button class="delete-button alternate-button" data-l10n-id="login-item-delete-button"></button>
       </div>
-      <div class="detail-row">
-        <label>
-          <span class="hostname-label field-label"></span>
-          <span class="hostname"/>
-        </label>
-        <button class="open-site-button"></button>
-      </div>
-      <div class="detail-row">
-        <label>
-          <span class="username-label field-label"></span>
-          <modal-input name="username"/>
-        </label>
-        <copy-to-clipboard-button class="copy-username-button"></copy-to-clipboard-button>
-      </div>
-      <div class="detail-row">
-        <label>
-          <span class="password-label field-label"></span>
-          <modal-input type="password" name="password"/>
-        </label>
-        <copy-to-clipboard-button class="copy-password-button"></copy-to-clipboard-button>
-      </div>
-      <p class="time-created meta-info"></p>
-      <p class="time-changed meta-info"></p>
-      <p class="time-used meta-info"></p>
-      <button class="save-changes-button"></button>
-      <button class="cancel-button"></button>
+      <form>
+        <div class="detail-row">
+          <label class="detail-cell">
+            <span class="origin-label field-label" data-l10n-id="login-item-origin-label"></span>
+            <input type="url" name="origin" class="origin-input" required data-l10n-id="login-item-origin"/>
+          </label>
+          <button class="open-site-button" data-l10n-id="login-item-open-site-button"></button>
+        </div>
+        <div class="detail-row">
+          <label class="detail-cell">
+            <span class="username-label field-label" data-l10n-id="login-item-username-label"></span>
+            <input type="text" name="username" data-l10n-id="login-item-username"/>
+          </label>
+          <button class="copy-button copy-username-button" data-copy-login-property="username">
+            <span class="copied-button-text" data-l10n-id="login-item-copied-username-button-text"></span>
+            <span class="copy-button-text" data-l10n-id="login-item-copy-username-button-text"></span>
+          </button>
+        </div>
+        <div class="detail-row">
+          <label class="detail-cell">
+            <span class="password-label field-label" data-l10n-id="login-item-password-label"></span>
+            <div class="reveal-password-wrapper">
+              <input type="password" name="password" required/>
+              <input type="checkbox"
+                     class="reveal-password-checkbox"
+                     data-l10n-id="login-item-password-reveal-checkbox"/>
+            </div>
+          </label>
+          <button class="copy-button copy-password-button" data-copy-login-property="password">
+            <span class="copied-button-text" data-l10n-id="login-item-copied-password-button-text"></span>
+            <span class="copy-button-text" data-l10n-id="login-item-copy-password-button-text"></span>
+          </button>
+        </div>
+        <p class="time-created meta-info" data-l10n-id="login-item-time-created" data-l10n-args='{"timeCreated": 0}'></p>
+        <p class="time-changed meta-info" data-l10n-id="login-item-time-changed" data-l10n-args='{"timeChanged": 0}'></p>
+        <p class="time-used meta-info" data-l10n-id="login-item-time-used" data-l10n-args='{"timeUsed": 0}'></p>
+        <button class="save-changes-button" data-l10n-id="login-item-save-changes-button"></button>
+        <button class="cancel-button" data-l10n-id="login-item-cancel-button"></button>
+      </form>
     </template>
 
     <template id="login-filter-template">
       <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
+      <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
       <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/login-filter.css">
-      <input type="text"/>
+      <input data-l10n-id="login-filter" class="filter" type="text"/>
     </template>
 
-    <template id="modal-input-template">
+    <template id="menu-button-template">
       <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
-      <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/modal-input.css">
-      <span class="locked-value"></span>
-      <input type="text" class="unlocked-value"/>
-      <input type="checkbox" class="reveal-checkbox"/>
-    </template>
-
-    <template id="copy-to-clipboard-button-template">
-      <link rel="stylesheet" href="chrome://global/skin/in-content/common.css">
-      <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/copy-to-clipboard-button.css">
-      <button class="copy-button">
-        <span class="copied-button-text"></span>
-        <span class="copy-button-text"></span>
-      </button>
+      <link rel="stylesheet" href="chrome://browser/content/aboutlogins/common.css">
+      <link rel="stylesheet" href="chrome://browser/content/aboutlogins/components/menu-button.css">
+      <button class="menu-button alternate-button" data-l10n-id="menu"></button>
+      <ul class="menu" role="menu" hidden>
+        <button role="menuitem" class="menuitem-button menuitem-import alternate-button" hidden data-supported-platforms="Win32" data-event-name="AboutLoginsImport" data-l10n-id="menu-menuitem-import"></button>
+        <button role="menuitem" class="menuitem-button menuitem-preferences alternate-button" data-event-name="AboutLoginsOpenPreferences" data-l10n-id="menu-menuitem-preferences"></button>
+      </ul>
     </template>
   </body>
 </html>

@@ -19,9 +19,7 @@ add_task(function setup() {
     "https://autocomplete:8888",
     null,
     "tempuser1",
-    "temppass1",
-    "",
-    ""
+    "temppass1"
   );
 
   let login2 = new nsLoginInfo(
@@ -29,9 +27,7 @@ add_task(function setup() {
     "https://autocomplete:8888",
     null,
     "testuser2",
-    "testpass2",
-    "",
-    ""
+    "testpass2"
   );
 
   Services.logins.addLogin(login1);

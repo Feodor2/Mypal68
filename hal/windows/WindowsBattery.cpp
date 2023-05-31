@@ -7,6 +7,7 @@
 #include "nsITimer.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/battery/Constants.h"
+#include "nsComponentManagerUtils.h"
 
 #include <windows.h>
 #include "mozilla/WindowsVersion.h"

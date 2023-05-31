@@ -10,7 +10,6 @@
 
 #include "gfx2DGlue.h"
 #include "nsIObserverService.h"
-#include "nsIServiceManager.h"
 #include "nsIFrame.h"
 #include "nsIContent.h"
 #include "nsViewManager.h"
@@ -41,7 +40,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsWindow.h"
 
 #ifdef MOZ_X11
@@ -808,6 +807,7 @@ class SystemCairoClipper : public ClipExporter {
 
   void MoveTo(const Point& aPoint) override {
     cairo_move_to(mContext, aPoint.x / mScaleFactor, aPoint.y / mScaleFactor);
+    mBeginPoint = aPoint;
     mCurrentPoint = aPoint;
   }
 
@@ -841,15 +841,15 @@ class SystemCairoClipper : public ClipExporter {
                 aAntiClockwise);
   }
 
-  void Close() override { cairo_close_path(mContext); }
+  void Close() override {
+    cairo_close_path(mContext);
+    mCurrentPoint = mBeginPoint;
+  }
 
   void EndClip() override { cairo_clip(mContext); }
 
-  Point CurrentPoint() const override { return mCurrentPoint; }
-
  private:
   cairo_t* mContext;
-  Point mCurrentPoint;
   gint mScaleFactor;
 };
 
@@ -1366,7 +1366,7 @@ LayoutDeviceIntMargin nsNativeThemeGTK::GetWidgetBorder(
       // GetWidgetBorder to pad up the widget's internals; other menuitems
       // will need to fall through and use the default case as before.
       if (IsRegularMenuItem(aFrame)) break;
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     default: {
       GetCachedWidgetBorder(aFrame, aAppearance, direction, &result);
     }
@@ -1831,7 +1831,7 @@ nsNativeThemeGTK::ThemeSupportsWidget(nsPresContext* aPresContext,
       if (aFrame && aFrame->GetWritingMode().IsVertical()) {
         return false;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
 
     case StyleAppearance::Button:
     case StyleAppearance::ButtonFocus:

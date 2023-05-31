@@ -915,6 +915,26 @@ function check_mozextension_query() {
   Assert.equal(uri.query, "u=https%3A%2F%2Fnews.ycombinator.com%2F");
 }
 
+function check_resolve() {
+  let base = gIoService.newURI("http://example.com");
+  let uri = gIoService.newURI("tel::+371 27028456", "utf-8", base);
+  Assert.equal(uri.spec, "tel::+371 27028456");
+}
+
+function test_extra_protocols() {
+  let url = gIoService.newURI("dweb://example.com/test");
+  Assert.equal(url.host, "example.com");
+  url = gIoService.newURI(
+    "dat://41f8a987cfeba80a037e51cc8357d513b62514de36f2f9b3d3eeec7a8fb3b5a5/"
+  );
+  Assert.equal(
+    url.host,
+    "41f8a987cfeba80a037e51cc8357d513b62514de36f2f9b3d3eeec7a8fb3b5a5"
+  );
+  url = gIoService.newURI("dat://example.com/test");
+  Assert.equal(url.host, "example.com");
+}
+
 // TEST MAIN FUNCTION
 // ------------------
 function run_test() {
@@ -922,6 +942,8 @@ function run_test() {
   check_space_escaping();
   check_schemeIsNull();
   check_mozextension_query();
+  check_resolve();
+  test_extra_protocols();
 
   // UTF-8 check - From bug 622981
   // ASCII

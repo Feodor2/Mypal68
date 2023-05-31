@@ -5,7 +5,6 @@
 #include "nsIMacDockSupport.h"
 #include "nsIStandaloneNativeMenu.h"
 #include "nsITaskbarProgress.h"
-#include "nsITimer.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsNativeThemeCocoa.h"

@@ -139,7 +139,7 @@ class HostIPCAllocator : public ISurfaceAllocator {
                              uint64_t aTransactionId) = 0;
 
   virtual void SendAsyncMessage(
-      const InfallibleTArray<AsyncParentMessageData>& aMessage) = 0;
+      const nsTArray<AsyncParentMessageData>& aMessage) = 0;
 
   virtual void SendPendingAsyncMessages();
 

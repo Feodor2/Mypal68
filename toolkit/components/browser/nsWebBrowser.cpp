@@ -15,19 +15,14 @@
 // Interfaces Needed
 #include "gfxContext.h"
 #include "nsReadableUtils.h"
-#include "nsIComponentManager.h"
-#include "nsIDOMWindow.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIWebBrowserChrome.h"
 #include "nsPIDOMWindow.h"
 #include "nsIWebProgress.h"
 #include "nsIWebProgressListener.h"
-#include "nsIURIContentListener.h"
-#include "nsISHistoryListener.h"
 #include "nsIURI.h"
 #include "nsIWebBrowserPersist.h"
-#include "nsIServiceManager.h"
 #include "nsFocusManager.h"
 #include "Layers.h"
 #include "nsILoadContext.h"
@@ -343,13 +338,13 @@ nsWebBrowser::GetItemType(int32_t* aItemType) {
 }
 
 NS_IMETHODIMP
-nsWebBrowser::GetParent(nsIDocShellTreeItem** aParent) {
+nsWebBrowser::GetInProcessParent(nsIDocShellTreeItem** aParent) {
   *aParent = nullptr;
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsWebBrowser::GetSameTypeParent(nsIDocShellTreeItem** aParent) {
+nsWebBrowser::GetInProcessSameTypeParent(nsIDocShellTreeItem** aParent) {
   *aParent = nullptr;
 
   return NS_OK;
@@ -361,28 +356,31 @@ nsWebBrowser::GetRootTreeItem(nsIDocShellTreeItem** aRootTreeItem) {
   *aRootTreeItem = static_cast<nsIDocShellTreeItem*>(this);
 
   nsCOMPtr<nsIDocShellTreeItem> parent;
-  NS_ENSURE_SUCCESS(GetParent(getter_AddRefs(parent)), NS_ERROR_FAILURE);
+  NS_ENSURE_SUCCESS(GetInProcessParent(getter_AddRefs(parent)),
+                    NS_ERROR_FAILURE);
   while (parent) {
     *aRootTreeItem = parent;
-    NS_ENSURE_SUCCESS((*aRootTreeItem)->GetParent(getter_AddRefs(parent)),
-                      NS_ERROR_FAILURE);
+    NS_ENSURE_SUCCESS(
+        (*aRootTreeItem)->GetInProcessParent(getter_AddRefs(parent)),
+        NS_ERROR_FAILURE);
   }
   NS_ADDREF(*aRootTreeItem);
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsWebBrowser::GetSameTypeRootTreeItem(nsIDocShellTreeItem** aRootTreeItem) {
+nsWebBrowser::GetInProcessSameTypeRootTreeItem(
+    nsIDocShellTreeItem** aRootTreeItem) {
   NS_ENSURE_ARG_POINTER(aRootTreeItem);
   *aRootTreeItem = static_cast<nsIDocShellTreeItem*>(this);
 
   nsCOMPtr<nsIDocShellTreeItem> parent;
-  NS_ENSURE_SUCCESS(GetSameTypeParent(getter_AddRefs(parent)),
+  NS_ENSURE_SUCCESS(GetInProcessSameTypeParent(getter_AddRefs(parent)),
                     NS_ERROR_FAILURE);
   while (parent) {
     *aRootTreeItem = parent;
     NS_ENSURE_SUCCESS(
-        (*aRootTreeItem)->GetSameTypeParent(getter_AddRefs(parent)),
+        (*aRootTreeItem)->GetInProcessSameTypeParent(getter_AddRefs(parent)),
         NS_ERROR_FAILURE);
   }
   NS_ADDREF(*aRootTreeItem);
@@ -443,7 +441,7 @@ nsWebBrowser::SetTreeOwner(nsIDocShellTreeOwner* aTreeOwner) {
 //*****************************************************************************
 
 NS_IMETHODIMP
-nsWebBrowser::GetChildCount(int32_t* aChildCount) {
+nsWebBrowser::GetInProcessChildCount(int32_t* aChildCount) {
   NS_ENSURE_ARG_POINTER(aChildCount);
   *aChildCount = 0;
   return NS_OK;
@@ -460,7 +458,8 @@ nsWebBrowser::RemoveChild(nsIDocShellTreeItem* aChild) {
 }
 
 NS_IMETHODIMP
-nsWebBrowser::GetChildAt(int32_t aIndex, nsIDocShellTreeItem** aChild) {
+nsWebBrowser::GetInProcessChildAt(int32_t aIndex,
+                                  nsIDocShellTreeItem** aChild) {
   return NS_ERROR_UNEXPECTED;
 }
 
@@ -736,20 +735,18 @@ nsWebBrowser::SetProgressListener(nsIWebProgressListener* aProgressListener) {
 
 NS_IMETHODIMP
 nsWebBrowser::SaveURI(nsIURI* aURI, nsIPrincipal* aPrincipal,
-                      uint32_t aCacheKey, nsIURI* aReferrer,
-                      uint32_t aReferrerPolicy, nsIInputStream* aPostData,
-                      const char* aExtraHeaders, nsISupports* aFile,
-                      nsILoadContext* aPrivacyContext) {
+                      uint32_t aCacheKey, nsIReferrerInfo* aReferrerInfo,
+                      nsIInputStream* aPostData, const char* aExtraHeaders,
+                      nsISupports* aFile, nsILoadContext* aPrivacyContext) {
   return SavePrivacyAwareURI(
-      aURI, aPrincipal, aCacheKey, aReferrer, aReferrerPolicy, aPostData,
-      aExtraHeaders, aFile,
-      aPrivacyContext && aPrivacyContext->UsePrivateBrowsing());
+      aURI, aPrincipal, aCacheKey, aReferrerInfo, aPostData, aExtraHeaders,
+      aFile, aPrivacyContext && aPrivacyContext->UsePrivateBrowsing());
 }
 
 NS_IMETHODIMP
 nsWebBrowser::SavePrivacyAwareURI(nsIURI* aURI, nsIPrincipal* aPrincipal,
-                                  uint32_t aCacheKey, nsIURI* aReferrer,
-                                  uint32_t aReferrerPolicy,
+                                  uint32_t aCacheKey,
+                                  nsIReferrerInfo* aReferrerInfo,
                                   nsIInputStream* aPostData,
                                   const char* aExtraHeaders, nsISupports* aFile,
                                   bool aIsPrivate) {
@@ -782,9 +779,9 @@ nsWebBrowser::SavePrivacyAwareURI(nsIURI* aURI, nsIPrincipal* aPrincipal,
   mPersist->SetPersistFlags(mPersistFlags);
   mPersist->GetCurrentState(&mPersistCurrentState);
 
-  rv = mPersist->SavePrivacyAwareURI(uri, aPrincipal, aCacheKey, aReferrer,
-                                     aReferrerPolicy, aPostData, aExtraHeaders,
-                                     aFile, aIsPrivate);
+  rv = mPersist->SavePrivacyAwareURI(uri, aPrincipal, aCacheKey, aReferrerInfo,
+                                     aPostData, aExtraHeaders, aFile,
+                                     aIsPrivate);
   if (NS_FAILED(rv)) {
     mPersist = nullptr;
   }

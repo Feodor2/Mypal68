@@ -12,6 +12,7 @@ const { ActorChild } = ChromeUtils.import(
 const { LoginHelper } = ChromeUtils.import(
   "resource://gre/modules/LoginHelper.jsm"
 );
+
 ChromeUtils.defineModuleGetter(
   this,
   "AppConstants",
@@ -45,10 +46,24 @@ class AboutLoginsChild extends ActorChild {
         );
         break;
       }
+      case "AboutLoginsCreateLogin": {
+        this.mm.sendAsyncMessage("AboutLogins:CreateLogin", {
+          login: event.detail,
+        });
+        break;
+      }
       case "AboutLoginsDeleteLogin": {
         this.mm.sendAsyncMessage("AboutLogins:DeleteLogin", {
           login: event.detail,
         });
+        break;
+      }
+      case "AboutLoginsImport": {
+        this.mm.sendAsyncMessage("AboutLogins:Import");
+        break;
+      }
+      case "AboutLoginsOpenPreferences": {
+        this.mm.sendAsyncMessage("AboutLogins:OpenPreferences");
         break;
       }
       case "AboutLoginsOpenSite": {

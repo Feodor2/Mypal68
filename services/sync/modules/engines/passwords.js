@@ -134,14 +134,14 @@ PasswordEngine.prototype = {
     }
 
     let logins = Services.logins.findLogins(
-      login.hostname,
-      login.formSubmitURL,
+      login.origin,
+      login.formActionOrigin,
       login.httpRealm
     );
 
     await Async.promiseYield(); // Yield back to main thread after synchronous operation.
 
-    // Look for existing logins that match the hostname, but ignore the password.
+    // Look for existing logins that match the origin, but ignore the password.
     for (let local of logins) {
       if (login.matches(local, true) && local instanceof Ci.nsILoginMetaInfo) {
         return local.guid;
@@ -247,7 +247,7 @@ PasswordStore.prototype = {
     for (let i = 0; i < logins.length; i++) {
       // Skip over Weave password/passphrase entries.
       let metaInfo = logins[i].QueryInterface(Ci.nsILoginMetaInfo);
-      if (Utils.getSyncCredentialsHosts().has(metaInfo.hostname)) {
+      if (Utils.getSyncCredentialsHosts().has(metaInfo.origin)) {
         continue;
       }
 
@@ -289,8 +289,8 @@ PasswordStore.prototype = {
       return record;
     }
 
-    record.hostname = login.hostname;
-    record.formSubmitURL = login.formSubmitURL;
+    record.hostname = login.origin;
+    record.formSubmitURL = login.formActionOrigin;
     record.httpRealm = login.httpRealm;
     record.username = login.username;
     record.password = login.password;
@@ -317,7 +317,7 @@ PasswordStore.prototype = {
         JSON.stringify(login.httpRealm) +
         "; " +
         "formSubmitURL: " +
-        JSON.stringify(login.formSubmitURL)
+        JSON.stringify(login.formActionOrigin)
     );
     Services.logins.addLogin(login);
   },
@@ -411,7 +411,7 @@ PasswordTracker.prototype = {
   },
 
   async _trackLogin(login) {
-    if (Utils.getSyncCredentialsHosts().has(login.hostname)) {
+    if (Utils.getSyncCredentialsHosts().has(login.origin)) {
       // Skip over Weave password/passphrase changes.
       return false;
     }
@@ -442,7 +442,7 @@ class PasswordValidator extends CollectionValidator {
     let syncHosts = Utils.getSyncCredentialsHosts();
     let result = logins
       .map(l => l.QueryInterface(Ci.nsILoginMetaInfo))
-      .filter(l => !syncHosts.has(l.hostname));
+      .filter(l => !syncHosts.has(l.origin));
     return Promise.resolve(result);
   }
 

@@ -26,7 +26,6 @@
 #include "nsIDocumentLoader.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
-#include "nsIDOMWindow.h"
 #include "nsIDOMChromeWindow.h"
 #include "nsIPrompt.h"
 #include "nsIScriptObjectPrincipal.h"
@@ -34,7 +33,6 @@
 #include "nsIScreenManager.h"
 #include "nsIScriptContext.h"
 #include "nsIObserverService.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsXPCOM.h"
 #include "nsIURI.h"
 #include "nsIWebBrowser.h"
@@ -42,10 +40,8 @@
 #include "nsIWebNavigation.h"
 #include "nsIWindowCreator.h"
 #include "nsIWindowCreator2.h"
-#include "nsIXPConnect.h"
 #include "nsIXULRuntime.h"
 #include "nsPIDOMWindow.h"
-#include "nsIContentViewer.h"
 #include "nsIWindowProvider.h"
 #include "nsIMutableArray.h"
 #include "nsIDOMStorageManager.h"
@@ -57,6 +53,7 @@
 #include "nsIPrefService.h"
 #include "nsSandboxFlags.h"
 #include "nsSimpleEnumerator.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/Preferences.h"
@@ -390,7 +387,7 @@ static bool CheckUserContextCompatibility(nsIDocShell* aDocShell) {
 
   // DocShell can have UsercontextID set but loading a document with system
   // principal. In this case, we consider everything ok.
-  if (nsContentUtils::IsSystemPrincipal(subjectPrincipal)) {
+  if (subjectPrincipal->IsSystemPrincipal()) {
     return true;
   }
 
@@ -617,7 +614,7 @@ nsresult nsWindowWatcher::OpenWindowInternal(
     if (NS_FAILED(rv)) {
       return rv;
     }
-    uriToLoad->SchemeIs("chrome", &uriToLoadIsChrome);
+    uriToLoadIsChrome = uriToLoad->SchemeIs("chrome");
   }
 
   bool nameSpecified = false;
@@ -852,7 +849,8 @@ nsresult nsWindowWatcher::OpenWindowInternal(
 
       nsCOMPtr<nsPIDOMWindowInner> parentTopInnerWindow;
       if (parentWindow) {
-        nsCOMPtr<nsPIDOMWindowOuter> parentTopWindow = parentWindow->GetTop();
+        nsCOMPtr<nsPIDOMWindowOuter> parentTopWindow =
+            parentWindow->GetInProcessTop();
         if (parentTopWindow) {
           parentTopInnerWindow = parentTopWindow->GetCurrentInnerWindow();
         }
@@ -1026,7 +1024,16 @@ nsresult nsWindowWatcher::OpenWindowInternal(
     // this call already happened when the window was created, but
     // SetInitialPrincipalToSubject is safe to call multiple times.
     if (newWindow) {
-      newWindow->SetInitialPrincipalToSubject();
+      nsCOMPtr<nsIContentSecurityPolicy> cspToInheritForAboutBlank;
+      nsCOMPtr<mozIDOMWindowProxy> targetOpener = newWindow->GetOpener();
+      nsCOMPtr<nsIDocShell> openerDocShell(do_GetInterface(targetOpener));
+      if (openerDocShell) {
+        RefPtr<Document> openerDoc =
+            static_cast<nsDocShell*>(openerDocShell.get())->GetDocument();
+        cspToInheritForAboutBlank = openerDoc ? openerDoc->GetCsp() : nullptr;
+      }
+      newWindow->SetInitialPrincipalToSubject(cspToInheritForAboutBlank);
+
       if (aIsPopupSpam) {
         nsGlobalWindowOuter* globalWin = nsGlobalWindowOuter::Cast(newWindow);
         MOZ_ASSERT(!globalWin->IsPopupSpamWindow(),
@@ -1093,28 +1100,18 @@ nsresult nsWindowWatcher::OpenWindowInternal(
         doc = parentWindow->GetExtantDoc();
       }
       if (doc) {
-        nsCOMPtr<nsIReferrerInfo> referrerInfo =
-            new ReferrerInfo(doc->GetDocumentURI(), doc->GetReferrerPolicy());
+        nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+        referrerInfo->InitWithDocument(doc);
         loadState->SetReferrerInfo(referrerInfo);
       }
     }
   }
 
-  // Currently we query the CSP from the principal of the inner window.
-  // After Bug 965637 we can query the CSP directly from the inner window.
-  // Further, if the JS context is null, then the subjectPrincipal falls
-  // back to being the SystemPrincipal (see above) and the SystemPrincipal
-  // can currently not hold a CSP. We use the same semantics here.
   if (loadState && cx) {
     nsGlobalWindowInner* win = xpc::CurrentWindowOrNull(cx);
     if (win) {
-      nsCOMPtr<nsIPrincipal> principal = win->GetPrincipal();
-      if (principal) {
-        nsCOMPtr<nsIContentSecurityPolicy> csp;
-        rv = principal->GetCsp(getter_AddRefs(csp));
-        NS_ENSURE_SUCCESS(rv, rv);
-        loadState->SetCsp(csp);
-      }
+      nsCOMPtr<nsIContentSecurityPolicy> csp = win->GetCsp();
+      loadState->SetCsp(csp);
     }
   }
 
@@ -1239,7 +1236,7 @@ nsresult nsWindowWatcher::OpenWindowInternal(
       // Reset popup state while opening a modal dialog, and firing
       // events about the dialog, to prevent the current state from
       // being active the whole time a modal dialog is open.
-      nsAutoPopupStatePusher popupStatePusher(PopupBlocker::openAbused);
+      AutoPopupStatePusher popupStatePusher(PopupBlocker::openAbused);
 
       newChrome->ShowAsModal();
     }

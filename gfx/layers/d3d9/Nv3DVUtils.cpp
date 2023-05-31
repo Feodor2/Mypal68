@@ -5,8 +5,6 @@
 #include "mozilla/DebugOnly.h"
 
 #include "Nv3DVUtils.h"
-#include "nsIConsoleService.h"
-#include "nsIServiceManager.h"
 #include <initguid.h>
 
 DEFINE_GUID(CLSID_NV3DVStreaming, 0xf7747266, 0x777d, 0x4f61, 0xa1, 0x75, 0xdd,

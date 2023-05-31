@@ -6,10 +6,10 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/NullPrincipal.h"
 #include "nsMimeTypes.h"
-#include "nsIURL.h"
 #include "nsXULAppAPI.h"
 #include "AndroidBridge.h"
 #include "nsIconChannel.h"
+#include "nsIIconURI.h"
 #include "nsIStringStream.h"
 #include "nsNetUtil.h"
 #include "nsComponentManagerUtils.h"
@@ -36,7 +36,7 @@ static nsresult CallRemoteGetIconForExtension(const nsACString& aFileExt,
   NS_ENSURE_TRUE(aBuf != nullptr, NS_ERROR_NULL_POINTER);
 
   // An array has to be used to get data from remote process
-  InfallibleTArray<uint8_t> bits;
+  nsTArray<uint8_t> bits;
   uint32_t bufSize = aIconSize * aIconSize * 4;
 
   if (!ContentChild::GetSingleton()->SendGetIconForExtension(

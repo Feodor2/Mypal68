@@ -10,6 +10,7 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/TimeStamp.h"
 
 #include "mozilla/layers/CompositorOGL.h"
@@ -19,15 +20,13 @@
 
 #include "gfxContext.h"
 #include "gfxUtils.h"
-#include "gfxPrefs.h"
+
 #include "nsIWidget.h"
 
 #include "GLContext.h"
 #include "GLContextProvider.h"
 #include "GLReadTexImageHelper.h"
 
-#include "nsIServiceManager.h"
-#include "nsIConsoleService.h"
 
 #include <memory>
 #include "mozilla/LinkedList.h"
@@ -41,7 +40,6 @@
 #include "nsNetCID.h"
 #include "nsIOutputStream.h"
 #include "nsIAsyncInputStream.h"
-#include "nsIEventTarget.h"
 #include "nsProxyRelease.h"
 #include <list>
 
@@ -1418,7 +1416,7 @@ LayerScopeWebSocketManager::LayerScopeWebSocketManager()
   NS_NewNamedThread("LayerScope", getter_AddRefs(mDebugSenderThread));
 
   mServerSocket = do_CreateInstance(NS_SERVERSOCKET_CONTRACTID);
-  int port = gfxPrefs::LayerScopePort();
+  int port = StaticPrefs::gfx_layerscope_port();
   mServerSocket->Init(port, false, -1);
   mServerSocket->AsyncListen(new SocketListener);
 }
@@ -1463,7 +1461,7 @@ NS_IMETHODIMP LayerScopeWebSocketManager::SocketListener::OnSocketAccepted(
 // ----------------------------------------------
 /*static*/
 void LayerScope::Init() {
-  if (!gfxPrefs::LayerScopeEnabled() || XRE_IsGPUProcess()) {
+  if (!StaticPrefs::gfx_layerscope_enabled() || XRE_IsGPUProcess()) {
     return;
   }
 
@@ -1561,7 +1559,7 @@ bool LayerScope::CheckSendable() {
   // Only compositor threads check LayerScope status
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread() || gIsGtest);
 
-  if (!gfxPrefs::LayerScopeEnabled()) {
+  if (!StaticPrefs::gfx_layerscope_enabled()) {
     return false;
   }
   if (!gLayerScopeManager.GetSocketManager()) {

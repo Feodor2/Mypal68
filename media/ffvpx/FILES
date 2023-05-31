@@ -586,7 +586,6 @@
 ./libavutil/cpu_internal.h
 ./libavutil/crc.c
 ./libavutil/crc.h
-./libavutil/cuda_check.h
 ./libavutil/dict.c
 ./libavutil/dynarray.h
 ./libavutil/eval.h

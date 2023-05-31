@@ -5,50 +5,57 @@
 #include "StoragePrincipalHelper.h"
 
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
+#include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/ScopeExit.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StorageAccess.h"
 #include "nsContentUtils.h"
-#include "nsIHttpChannel.h"
 
 namespace mozilla {
 
 namespace {
 
-already_AddRefed<nsIURI> MaybeGetFirstPartyURI(nsIChannel* aChannel) {
+bool ChooseOriginAttributes(nsIChannel* aChannel, OriginAttributes& aAttrs) {
   MOZ_ASSERT(aChannel);
 
-  if (!StaticPrefs::privacy_storagePrincipal_enabledForTrackers()) {
-    return nullptr;
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+  nsCOMPtr<nsICookieSettings> cs;
+  if (NS_FAILED(loadInfo->GetCookieSettings(getter_AddRefs(cs)))) {
+    return false;
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
+  if (NS_FAILED(rv)) {
+    return false;
+  }
+
+  uint32_t rejectedReason = 0;
+  if (AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
+          aChannel, uri, &rejectedReason)) {
+    return false;
   }
 
   // Let's use the storage principal only if we need to partition the cookie
-  // jar.
-  nsContentUtils::StorageAccess access =
-      nsContentUtils::StorageAllowedForChannel(aChannel);
-  if (access != nsContentUtils::StorageAccess::ePartitionedOrDeny) {
-    return nullptr;
+  // jar.  We use the lower-level AntiTrackingCommon API here to ensure this
+  // check doesn't send notifications.
+  if (!ShouldPartitionStorage(rejectedReason) ||
+      !StoragePartitioningEnabled(rejectedReason, cs)) {
+    return false;
   }
 
-  nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
-  if (!httpChannel) {
-    return nullptr;
-  }
-
-  MOZ_ASSERT(httpChannel->IsThirdPartyTrackingResource());
-
-  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   nsCOMPtr<nsIPrincipal> toplevelPrincipal = loadInfo->GetTopLevelPrincipal();
   if (!toplevelPrincipal) {
-    return nullptr;
+    return false;
   }
 
   nsCOMPtr<nsIURI> principalURI;
-  nsresult rv = toplevelPrincipal->GetURI(getter_AddRefs(principalURI));
+  rv = toplevelPrincipal->GetURI(getter_AddRefs(principalURI));
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return nullptr;
+    return false;
   }
 
-  return principalURI.forget();
+  aAttrs.SetFirstPartyDomain(false, principalURI, true /* aForced */);
+  return true;
 }
 
 }  // namespace
@@ -66,16 +73,15 @@ nsresult StoragePrincipalHelper::Create(nsIChannel* aChannel,
     storagePrincipal.forget(aStoragePrincipal);
   });
 
-  nsCOMPtr<nsIURI> principalURI = MaybeGetFirstPartyURI(aChannel);
-  if (!principalURI) {
+  OriginAttributes attrs = aPrincipal->OriginAttributesRef();
+  if (!ChooseOriginAttributes(aChannel, attrs)) {
     return NS_OK;
   }
 
   scopeExit.release();
 
   nsCOMPtr<nsIPrincipal> storagePrincipal =
-      BasePrincipal::Cast(aPrincipal)
-          ->CloneForcingFirstPartyDomain(principalURI);
+      BasePrincipal::Cast(aPrincipal)->CloneForcingOriginAttributes(attrs);
 
   storagePrincipal.forget(aStoragePrincipal);
   return NS_OK;
@@ -86,13 +92,7 @@ nsresult StoragePrincipalHelper::PrepareOriginAttributes(
     nsIChannel* aChannel, OriginAttributes& aOriginAttributes) {
   MOZ_ASSERT(aChannel);
 
-  nsCOMPtr<nsIURI> principalURI = MaybeGetFirstPartyURI(aChannel);
-  if (!principalURI) {
-    return NS_OK;
-  }
-
-  aOriginAttributes.SetFirstPartyDomain(false, principalURI,
-                                        true /* aForced */);
+  ChooseOriginAttributes(aChannel, aOriginAttributes);
   return NS_OK;
 }
 
@@ -114,21 +114,8 @@ bool StoragePrincipalHelper::VerifyValidStoragePrincipalInfoForPrincipalInfo(
     if (!spInfo.attrs().EqualsIgnoringFPD(pInfo.attrs()) ||
         spInfo.originNoSuffix() != pInfo.originNoSuffix() ||
         spInfo.spec() != pInfo.spec() || spInfo.domain() != pInfo.domain() ||
-        spInfo.baseDomain() != pInfo.baseDomain() ||
-        spInfo.securityPolicies().Length() !=
-            pInfo.securityPolicies().Length()) {
+        spInfo.baseDomain() != pInfo.baseDomain()) {
       return false;
-    }
-
-    for (uint32_t i = 0; i < spInfo.securityPolicies().Length(); ++i) {
-      if (spInfo.securityPolicies()[i].policy() !=
-              pInfo.securityPolicies()[i].policy() ||
-          spInfo.securityPolicies()[i].reportOnlyFlag() !=
-              pInfo.securityPolicies()[i].reportOnlyFlag() ||
-          spInfo.securityPolicies()[i].deliveredViaMetaTagFlag() !=
-              pInfo.securityPolicies()[i].deliveredViaMetaTagFlag()) {
-        return false;
-      }
     }
 
     return true;

@@ -6,7 +6,6 @@
 #include "HashStore.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsIFile.h"
-#include "nsIThread.h"
 #include "string.h"
 #include "gtest/gtest.h"
 #include "nsThreadUtils.h"

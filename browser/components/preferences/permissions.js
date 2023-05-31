@@ -28,10 +28,6 @@ const permissionExceptionsL10n = {
     window: "permissions-exceptions-addons-window",
     description: "permissions-exceptions-addons-desc",
   },
-  "autoplay-media": {
-    window: "permissions-exceptions-autoplay-media-window2",
-    description: "permissions-exceptions-autoplay-media-desc2",
-  },
 };
 
 function Permission(principal, type, capability) {
@@ -303,7 +299,7 @@ var gPermissionManager = {
 
   _loadPermissions() {
     // load permissions into a table.
-    for (let nextPermission of Services.perms.enumerator) {
+    for (let nextPermission of Services.perms.all) {
       this._addPermissionToList(nextPermission);
     }
   },

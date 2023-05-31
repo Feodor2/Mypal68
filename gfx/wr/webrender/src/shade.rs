@@ -2,9 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use crate::batch::{BatchKey, BatchKind, BrushBatchKind};
+use crate::batch::{BatchKey, BatchKind, BrushBatchKind, BatchFeatures};
 use crate::device::{Device, Program, ShaderError};
-use euclid::{Transform3D};
+use euclid::default::Transform3D;
 use crate::glyph_rasterizer::GlyphFormat;
 use crate::renderer::{
     desc,
@@ -47,6 +47,7 @@ pub const IMAGE_BUFFER_KINDS: [ImageBufferKind; 4] = [
     ImageBufferKind::Texture2DArray,
 ];
 
+const ADVANCED_BLEND_FEATURE: &str = "ADVANCED_BLEND";
 const ALPHA_FEATURE: &str = "ALPHA_PASS";
 const DEBUG_OVERDRAW_FEATURE: &str = "DEBUG_OVERDRAW";
 const DITHERING_FEATURE: &str = "DITHERING";
@@ -191,6 +192,7 @@ impl LazilyCompiledShader {
                 VertexArrayKind::Border => &desc::BORDER,
                 VertexArrayKind::Scale => &desc::SCALE,
                 VertexArrayKind::Resolve => &desc::RESOLVE,
+                VertexArrayKind::SvgFilter => &desc::SVG_FILTER,
             };
 
             device.link_program(program, vertex_descriptor)?;
@@ -258,6 +260,7 @@ impl LazilyCompiledShader {
 struct BrushShader {
     opaque: LazilyCompiledShader,
     alpha: LazilyCompiledShader,
+    advanced_blend: Option<LazilyCompiledShader>,
     dual_source: Option<LazilyCompiledShader>,
     debug_overdraw: LazilyCompiledShader,
 }
@@ -268,6 +271,7 @@ impl BrushShader {
         device: &mut Device,
         features: &[&'static str],
         precache_flags: ShaderPrecacheFlags,
+        advanced_blend: bool,
         dual_source: bool,
         use_pixel_local_storage: bool,
     ) -> Result<Self, ShaderError> {
@@ -292,6 +296,25 @@ impl BrushShader {
             device,
             precache_flags,
         )?;
+
+        let advanced_blend = if advanced_blend &&
+            device.get_capabilities().supports_advanced_blend_equation
+        {
+            let mut advanced_blend_features = alpha_features.to_vec();
+            advanced_blend_features.push(ADVANCED_BLEND_FEATURE);
+
+            let shader = LazilyCompiledShader::new(
+                ShaderKind::Brush,
+                name,
+                &advanced_blend_features,
+                device,
+                precache_flags,
+            )?;
+
+            Some(shader)
+        } else {
+            None
+        };
 
         // If using PLS, we disable all subpixel AA implicitly. Subpixel AA is always
         // disabled on mobile devices anyway, due to uncertainty over the subpixel
@@ -327,6 +350,7 @@ impl BrushShader {
         Ok(BrushShader {
             opaque,
             alpha,
+            advanced_blend,
             dual_source,
             debug_overdraw,
         })
@@ -341,8 +365,12 @@ impl BrushShader {
             BlendMode::PremultipliedAlpha |
             BlendMode::PremultipliedDestOut |
             BlendMode::SubpixelConstantTextColor(..) |
-            BlendMode::SubpixelWithBgColor |
-            BlendMode::Advanced(_) => &mut self.alpha,
+            BlendMode::SubpixelWithBgColor => &mut self.alpha,
+            BlendMode::Advanced(_) => {
+                self.advanced_blend
+                    .as_mut()
+                    .expect("bug: no advanced blend shader loaded")
+            }
             BlendMode::SubpixelDualSource => {
                 self.dual_source
                     .as_mut()
@@ -354,6 +382,9 @@ impl BrushShader {
     fn deinit(self, device: &mut Device) {
         self.opaque.deinit(device);
         self.alpha.deinit(device);
+        if let Some(advanced_blend) = self.advanced_blend {
+            advanced_blend.deinit(device);
+        }
         if let Some(dual_source) = self.dual_source {
             dual_source.deinit(device);
         }
@@ -478,14 +509,15 @@ pub struct Shaders {
     pub cs_blur_rgba8: LazilyCompiledShader,
     pub cs_border_segment: LazilyCompiledShader,
     pub cs_border_solid: LazilyCompiledShader,
-    pub cs_scale_a8: LazilyCompiledShader,
-    pub cs_scale_rgba8: LazilyCompiledShader,
+    pub cs_scale: LazilyCompiledShader,
     pub cs_line_decoration: LazilyCompiledShader,
     pub cs_gradient: LazilyCompiledShader,
+    pub cs_svg_filter: LazilyCompiledShader,
 
     // Brush shaders
     brush_solid: BrushShader,
     brush_image: Vec<Option<BrushShader>>,
+    brush_fast_image: Vec<Option<BrushShader>>,
     brush_blend: BrushShader,
     brush_mix_blend: BrushShader,
     brush_yuv_image: Vec<Option<BrushShader>>,
@@ -534,7 +566,8 @@ impl Shaders {
             device,
             &[],
             options.precache_flags,
-            false,
+            false /* advanced blend */,
+            false /* dual source */,
             use_pixel_local_storage,
         )?;
 
@@ -543,7 +576,8 @@ impl Shaders {
             device,
             &[],
             options.precache_flags,
-            false,
+            false /* advanced blend */,
+            false /* dual source */,
             use_pixel_local_storage,
         )?;
 
@@ -552,7 +586,8 @@ impl Shaders {
             device,
             &[],
             options.precache_flags,
-            false,
+            false /* advanced blend */,
+            false /* dual source */,
             use_pixel_local_storage,
         )?;
 
@@ -565,7 +600,8 @@ impl Shaders {
                &[]
             },
             options.precache_flags,
-            false,
+            false /* advanced blend */,
+            false /* dual source */,
             use_pixel_local_storage,
         )?;
 
@@ -578,7 +614,8 @@ impl Shaders {
                &[]
             },
             options.precache_flags,
-            false,
+            false /* advanced blend */,
+            false /* dual source */,
             use_pixel_local_storage,
         )?;
 
@@ -594,6 +631,14 @@ impl Shaders {
             ShaderKind::Cache(VertexArrayKind::Blur),
             "cs_blur",
             &["COLOR_TARGET"],
+            device,
+            options.precache_flags,
+        )?;
+
+        let cs_svg_filter = LazilyCompiledShader::new(
+            ShaderKind::Cache(VertexArrayKind::SvgFilter),
+            "cs_svg_filter",
+            &[],
             device,
             options.precache_flags,
         )?;
@@ -652,18 +697,10 @@ impl Shaders {
             pls_precache_flags,
         )?;
 
-        let cs_scale_a8 = LazilyCompiledShader::new(
+        let cs_scale = LazilyCompiledShader::new(
             ShaderKind::Cache(VertexArrayKind::Scale),
             "cs_scale",
-            &["ALPHA_TARGET"],
-            device,
-            options.precache_flags,
-        )?;
-
-        let cs_scale_rgba8 = LazilyCompiledShader::new(
-            ShaderKind::Cache(VertexArrayKind::Scale),
-            "cs_scale",
-            &["COLOR_TARGET"],
+            &[],
             device,
             options.precache_flags,
         )?;
@@ -705,25 +742,45 @@ impl Shaders {
         // All image configuration.
         let mut image_features = Vec::new();
         let mut brush_image = Vec::new();
+        let mut brush_fast_image = Vec::new();
         // PrimitiveShader is not clonable. Use push() to initialize the vec.
         for _ in 0 .. IMAGE_BUFFER_KINDS.len() {
             brush_image.push(None);
+            brush_fast_image.push(None);
         }
         for buffer_kind in 0 .. IMAGE_BUFFER_KINDS.len() {
-            if IMAGE_BUFFER_KINDS[buffer_kind].has_platform_support(&gl_type) {
-                let feature_string = IMAGE_BUFFER_KINDS[buffer_kind].get_feature_string();
-                if feature_string != "" {
-                    image_features.push(feature_string);
-                }
-                brush_image[buffer_kind] = Some(BrushShader::new(
-                    "brush_image",
-                    device,
-                    &image_features,
-                    options.precache_flags,
-                    options.allow_dual_source_blending,
-                    use_pixel_local_storage,
-                )?);
+            if !IMAGE_BUFFER_KINDS[buffer_kind].has_platform_support(&gl_type) {
+                continue;
             }
+
+            let feature_string = IMAGE_BUFFER_KINDS[buffer_kind].get_feature_string();
+            if feature_string != "" {
+                image_features.push(feature_string);
+            }
+
+            brush_fast_image[buffer_kind] = Some(BrushShader::new(
+                "brush_image",
+                device,
+                &image_features,
+                options.precache_flags,
+                options.allow_advanced_blend_equation,
+                options.allow_dual_source_blending,
+                use_pixel_local_storage,
+            )?);
+
+            image_features.push("REPETITION");
+            image_features.push("ANTIALIASING");
+
+            brush_image[buffer_kind] = Some(BrushShader::new(
+                "brush_image",
+                device,
+                &image_features,
+                options.precache_flags,
+                options.allow_advanced_blend_equation,
+                options.allow_dual_source_blending,
+                use_pixel_local_storage,
+            )?);
+
             image_features.clear();
         }
 
@@ -747,7 +804,8 @@ impl Shaders {
                     device,
                     &yuv_features,
                     options.precache_flags,
-                    false,
+                    false /* advanced blend */,
+                    false /* dual source */,
                     use_pixel_local_storage,
                 )?;
                 let index = Self::get_yuv_shader_index(
@@ -797,10 +855,11 @@ impl Shaders {
             cs_line_decoration,
             cs_gradient,
             cs_border_solid,
-            cs_scale_a8,
-            cs_scale_rgba8,
+            cs_scale,
+            cs_svg_filter,
             brush_solid,
             brush_image,
+            brush_fast_image,
             brush_blend,
             brush_mix_blend,
             brush_yuv_image,
@@ -822,7 +881,7 @@ impl Shaders {
         (buffer_kind as usize)
     }
 
-    pub fn get(&mut self, key: &BatchKey, debug_flags: DebugFlags) -> &mut LazilyCompiledShader {
+    pub fn get(&mut self, key: &BatchKey, features: BatchFeatures, debug_flags: DebugFlags) -> &mut LazilyCompiledShader {
         match key.kind {
             BatchKind::SplitComposite => {
                 &mut self.ps_split_composite
@@ -833,9 +892,18 @@ impl Shaders {
                         &mut self.brush_solid
                     }
                     BrushBatchKind::Image(image_buffer_kind) => {
-                        self.brush_image[image_buffer_kind as usize]
-                            .as_mut()
-                            .expect("Unsupported image shader kind")
+                        if features.contains(BatchFeatures::ANTIALIASING) ||
+                            features.contains(BatchFeatures::REPETITION) ||
+                            !features.contains(BatchFeatures::ALPHA_PASS) {
+
+                            self.brush_image[image_buffer_kind as usize]
+                                .as_mut()
+                                .expect("Unsupported image shader kind")
+                        } else {
+                            self.brush_fast_image[image_buffer_kind as usize]
+                                .as_mut()
+                                .expect("Unsupported image shader kind")
+                        }
                     }
                     BrushBatchKind::Blend => {
                         &mut self.brush_blend
@@ -870,10 +938,10 @@ impl Shaders {
     }
 
     pub fn deinit(self, device: &mut Device) {
-        self.cs_scale_a8.deinit(device);
-        self.cs_scale_rgba8.deinit(device);
+        self.cs_scale.deinit(device);
         self.cs_blur_a8.deinit(device);
         self.cs_blur_rgba8.deinit(device);
+        self.cs_svg_filter.deinit(device);
         self.brush_solid.deinit(device);
         self.brush_blend.deinit(device);
         self.brush_mix_blend.deinit(device);
@@ -888,6 +956,11 @@ impl Shaders {
         self.ps_text_run.deinit(device);
         self.ps_text_run_dual_source.deinit(device);
         for shader in self.brush_image {
+            if let Some(shader) = shader {
+                shader.deinit(device);
+            }
+        }
+        for shader in self.brush_fast_image {
             if let Some(shader) = shader {
                 shader.deinit(device);
             }

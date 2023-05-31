@@ -36,7 +36,8 @@
           "tasktracer",
           "threads",
           "trackopts",
-          "jstracer"
+          "jstracer",
+          "jsallocations"
         ]
       },
       {
@@ -123,6 +124,13 @@
         "name": "getProfileAsArrayBuffer",
         "type": "function",
         "description": "Gathers the profile data from the current profiling session. The returned promise resolves to an array buffer that contains a JSON string.",
+        "async": true,
+        "parameters": []
+      },
+      {
+        "name": "getProfileAsGzippedArrayBuffer",
+        "type": "function",
+        "description": "Gathers the profile data from the current profiling session. The returned promise resolves to an array buffer that contains a gzipped JSON string.",
         "async": true,
         "parameters": []
       },

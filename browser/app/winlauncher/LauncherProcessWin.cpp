@@ -26,7 +26,7 @@
 #include "DllBlocklistWin.h"
 #include "ErrorHandler.h"
 #include "LaunchUnelevated.h"
-#include "ProcThreadAttributes.h"
+//#include "ProcThreadAttributes.h"
 
 #if defined(MOZ_LAUNCHER_PROCESS)
 #  include "mozilla/LauncherRegistryInfo.h"
@@ -68,13 +68,13 @@ SetProcessMitigationPolicy(PROCESS_MITIGATION_POLICY aMitigationPolicy,
  * Any mitigation policies that should be set on the browser process should go
  * here.
  */
-static void SetMitigationPolicies(mozilla::ProcThreadAttributes& aAttrs,
+/*static void SetMitigationPolicies(mozilla::ProcThreadAttributes& aAttrs,
                                   const bool aIsSafeMode) {
   if (mozilla::IsWin10AnniversaryUpdateOrLater()) {
     aAttrs.AddMitigationPolicy(
         PROCESS_CREATION_MITIGATION_POLICY_IMAGE_LOAD_PREFER_SYSTEM32_ALWAYS_ON);
   }
-}
+}*/
 
 static mozilla::LauncherFlags ProcessCmdLine(int& aArgc, wchar_t* aArgv[]) {
   mozilla::LauncherFlags result = mozilla::LauncherFlags::eNone;
@@ -158,11 +158,11 @@ static mozilla::Maybe<bool> RunAsLauncherProcess(int& argc, wchar_t** argv) {
   bool runAsLauncher = DoLauncherProcessChecks(argc, argv);
 
 #if defined(MOZ_LAUNCHER_PROCESS)
-  bool forceLauncher = runAsLauncher &&
-                       mozilla::CheckArg(argc, argv, L"force-launcher",
-                                         static_cast<const wchar_t**>(nullptr),
-                                         mozilla::CheckArgFlag::RemoveArg) ==
-                       mozilla::ARG_FOUND;
+  bool forceLauncher =
+      runAsLauncher &&
+      mozilla::CheckArg(argc, argv, L"force-launcher",
+                        static_cast<const wchar_t**>(nullptr),
+                        mozilla::CheckArgFlag::RemoveArg) == mozilla::ARG_FOUND;
 
   mozilla::LauncherRegistryInfo::ProcessType desiredType =
       runAsLauncher ? mozilla::LauncherRegistryInfo::ProcessType::Launcher
@@ -278,40 +278,19 @@ Maybe<int> LauncherMain(int& argc, wchar_t* argv[],
     return Nothing();
   }
 
-  ProcThreadAttributes attrs;
-  SetMitigationPolicies(attrs, isSafeMode.value());
-
-  HANDLE stdHandles[] = {::GetStdHandle(STD_INPUT_HANDLE),
-                         ::GetStdHandle(STD_OUTPUT_HANDLE),
-                         ::GetStdHandle(STD_ERROR_HANDLE)};
-
-  attrs.AddInheritableHandles(stdHandles);
-
   DWORD creationFlags = CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT;
 
   STARTUPINFOW si;
-  LauncherResult<bool> attrsOk = attrs.AssignTo(si);
-  if (attrsOk.isErr()) {
-    HandleLauncherError(attrsOk);
-    return Nothing();
-  }
+  ZeroMemory(&si, sizeof(STARTUPINFOW));
+  si.cb = sizeof(STARTUPINFOW);
+  si.dwFlags |= STARTF_USESTDHANDLES;
+  si.hStdInput = ::GetStdHandle(STD_INPUT_HANDLE);
+  si.hStdOutput = ::GetStdHandle(STD_OUTPUT_HANDLE);
+  si.hStdError = ::GetStdHandle(STD_ERROR_HANDLE);
 
   BOOL inheritHandles = FALSE;
 
-  if (attrsOk.unwrap()) {
-    //creationFlags |= EXTENDED_STARTUPINFO_PRESENT;
-
-    if (attrs.HasInheritableHandles()) {
-      si.dwFlags |= STARTF_USESTDHANDLES;
-      si.hStdInput = stdHandles[0];
-      si.hStdOutput = stdHandles[1];
-      si.hStdError = stdHandles[2];
-
-      // Since attrsOk == true, we have successfully set the handle inheritance
-      // whitelist policy, so only the handles added to attrs will be inherited.
-      inheritHandles = TRUE;
-    }
-  }
+  //inheritHandles = TRUE;
 
   PROCESS_INFORMATION pi = {};
   BOOL createOk;

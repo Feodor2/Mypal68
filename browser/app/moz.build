@@ -69,19 +69,19 @@ if CONFIG['OS_ARCH'] == 'WINNT':
     RCINCLUDE = 'splash.rc'
     DEFINES['MOZ_PHOENIX'] = True
     DIRS += [
-        'winlauncher',
+#        'winlauncher',
     ]
     USE_LIBS += [
-        'winlauncher',
+#        'winlauncher',
     ]
     LOCAL_INCLUDES += [
-        '/browser/app/winlauncher',
+#        '/browser/app/winlauncher',
     ]
     DELAYLOAD_DLLS += [
-        'oleaut32.dll',
-        'ole32.dll',
-        'rpcrt4.dll',
-        'version.dll',
+#        'oleaut32.dll',
+#        'ole32.dll',
+#        'rpcrt4.dll',
+#        'version.dll',
     ]
 
 if CONFIG['MOZ_SANDBOX'] and CONFIG['OS_ARCH'] == 'Darwin':

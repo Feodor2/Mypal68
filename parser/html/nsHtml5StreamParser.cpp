@@ -18,8 +18,8 @@
 #include "nsIDocShell.h"
 #include "nsIScriptError.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
 #include "mozilla/SystemGroup.h"
+#include "mozilla/StaticPrefs_html5.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "nsHtml5Highlighter.h"
 #include "expat_config.h"
@@ -34,6 +34,7 @@
 #include "mozilla/SchedulerGroup.h"
 #include "nsJSEnvironment.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/DebuggerUtilsBinding.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -230,9 +231,6 @@ nsHtml5StreamParser::nsHtml5StreamParser(nsHtml5TreeOpExecutor* aExecutor,
 nsHtml5StreamParser::~nsHtml5StreamParser() {
   NS_ASSERTION(NS_IsMainThread(), "Wrong thread!");
   mTokenizer->end();
-  if (recordreplay::IsRecordingOrReplaying()) {
-    recordreplay::EndContentParse(this);
-  }
 #ifdef DEBUG
   {
     mozilla::MutexAutoLock flushTimerLock(mFlushTimerMutex);
@@ -293,25 +291,30 @@ nsHtml5StreamParser::Notify(const char* aCharset, nsDetectionConfident aConf) {
 }
 
 void nsHtml5StreamParser::SetViewSourceTitle(nsIURI* aURL) {
-  if (recordreplay::IsRecordingOrReplaying()) {
-    nsAutoCString spec;
-    aURL->GetSpec(spec);
-    recordreplay::BeginContentParse(this, spec.get(), "text/html");
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsIDocShell* docshell = mExecutor->GetDocument()->GetDocShell();
+  if (docshell && docshell->GetWatchedByDevtools()) {
+    mURIToSendToDevtools = aURL;
+
+    nsID uuid;
+    nsresult rv = nsContentUtils::GenerateUUIDInPlace(uuid);
+    if (!NS_FAILED(rv)) {
+      char buffer[NSID_LENGTH];
+      uuid.ToProvidedString(buffer);
+      mUUIDForDevtools = NS_ConvertASCIItoUTF16(buffer);
+    }
   }
 
   if (aURL) {
     nsCOMPtr<nsIURI> temp;
-    bool isViewSource;
-    aURL->SchemeIs("view-source", &isViewSource);
-    if (isViewSource) {
+    if (aURL->SchemeIs("view-source")) {
       nsCOMPtr<nsINestedURI> nested = do_QueryInterface(aURL);
       nested->GetInnerURI(getter_AddRefs(temp));
     } else {
       temp = aURL;
     }
-    bool isData;
-    temp->SchemeIs("data", &isData);
-    if (isData) {
+    if (temp->SchemeIs("data")) {
       // Avoid showing potentially huge data: URLs. The three last bytes are
       // UTF-8 for an ellipsis.
       mViewSourceTitle.AssignLiteral("data:\xE2\x80\xA6");
@@ -777,6 +780,56 @@ nsresult nsHtml5StreamParser::SniffStreamBytes(
   return NS_OK;
 }
 
+class AddContentRunnable : public Runnable {
+ public:
+  AddContentRunnable(const nsAString& aParserID, nsIURI* aURI,
+                     Span<const char16_t> aData, bool aComplete)
+      : Runnable("AddContent") {
+    nsAutoCString spec;
+    aURI->GetSpec(spec);
+    mData.mUri.Construct(NS_ConvertUTF8toUTF16(spec));
+    mData.mParserID.Construct(aParserID);
+    mData.mContents.Construct(aData.Elements(), aData.Length());
+    mData.mComplete.Construct(aComplete);
+  }
+
+  NS_IMETHOD Run() override {
+    nsAutoString json;
+    if (!mData.ToJSON(json)) {
+      return NS_ERROR_FAILURE;
+    }
+
+    nsCOMPtr<nsIObserverService> obsService = services::GetObserverService();
+    if (obsService) {
+      obsService->NotifyObservers(nullptr, "devtools-html-content",
+                                  PromiseFlatString(json).get());
+    }
+
+    return NS_OK;
+  }
+
+  HTMLContent mData;
+};
+
+inline void nsHtml5StreamParser::OnNewContent(Span<const char16_t> aData) {
+  if (mURIToSendToDevtools) {
+    NS_DispatchToMainThread(new AddContentRunnable(mUUIDForDevtools,
+                                                   mURIToSendToDevtools,
+                                                   aData,
+                                                   /* aComplete */ false));
+  }
+}
+
+inline void nsHtml5StreamParser::OnContentComplete() {
+  if (mURIToSendToDevtools) {
+    NS_DispatchToMainThread(new AddContentRunnable(mUUIDForDevtools,
+                                                   mURIToSendToDevtools,
+                                                   Span<const char16_t>(),
+                                                   /* aComplete */ true));
+    mURIToSendToDevtools = nullptr;
+  }
+}
+
 nsresult nsHtml5StreamParser::WriteStreamBytes(
     Span<const uint8_t> aFromSegment) {
   NS_ASSERTION(IsParserThread(), "Wrong thread!");
@@ -797,8 +850,8 @@ nsresult nsHtml5StreamParser::WriteStreamBytes(
     bool hadErrors;
     Tie(result, read, written, hadErrors) =
         mUnicodeDecoder->DecodeToUTF16(src, dst, false);
-    if (!mDecodingLocalFileAsUTF8 && recordreplay::IsRecordingOrReplaying()) {
-      recordreplay::AddContentParseData16(this, dst.data(), written);
+    if (!mDecodingLocalFileAsUTF8) {
+      OnNewContent(dst.To(written));
     }
     if (hadErrors && !mHasHadErrors) {
       if (mDecodingLocalFileAsUTF8) {
@@ -859,13 +912,12 @@ void nsHtml5StreamParser::CommitLocalFileToUTF8() {
   mCharsetSource = kCharsetFromFileURLGuess;
   mTreeBuilder->SetDocumentCharset(mEncoding, mCharsetSource);
 
-  if (recordreplay::IsRecordingOrReplaying()) {
-    nsHtml5OwningUTF16Buffer* buffer = mLastBuffer;
-    while (buffer) {
-      recordreplay::AddContentParseData16(
-          this, buffer->getBuffer() + buffer->getStart(), buffer->getLength());
-      buffer = buffer->next;
-    }
+  nsHtml5OwningUTF16Buffer* buffer = mFirstBuffer;
+  while (buffer) {
+    Span<const char16_t> data(buffer->getBuffer() + buffer->getStart(),
+                              buffer->getLength());
+    OnNewContent(data);
+    buffer = buffer->next;
   }
 }
 
@@ -917,9 +969,7 @@ nsresult nsHtml5StreamParser::OnStartRequest(nsIRequest* aRequest) {
       nsCOMPtr<nsIURI> originalURI;
       rv = channel->GetOriginalURI(getter_AddRefs(originalURI));
       if (NS_SUCCEEDED(rv)) {
-        bool originalIsResource;
-        originalURI->SchemeIs("resource", &originalIsResource);
-        if (originalIsResource) {
+        if (originalURI->SchemeIs("resource")) {
           mCharsetSource = kCharsetFromBuiltIn;
           mEncoding = UTF_8_ENCODING;
         } else {
@@ -927,9 +977,7 @@ nsresult nsHtml5StreamParser::OnStartRequest(nsIRequest* aRequest) {
           rv = channel->GetURI(getter_AddRefs(currentURI));
           if (NS_SUCCEEDED(rv)) {
             nsCOMPtr<nsIURI> innermost = NS_GetInnermostURI(currentURI);
-            bool innermostIsFile;
-            innermost->SchemeIs("file", &innermostIsFile);
-            mDecodingLocalFileAsUTF8 = innermostIsFile;
+            mDecodingLocalFileAsUTF8 = innermost->SchemeIs("file");
           }
         }
       }
@@ -1071,6 +1119,10 @@ void nsHtml5StreamParser::DoStopRequest() {
                      "Stream ended without being open.");
   mTokenizerMutex.AssertCurrentThreadOwns();
 
+  auto guard = MakeScopeExit([&] {
+      OnContentComplete();
+    });
+
   if (IsTerminated()) {
     return;
   }
@@ -1107,8 +1159,8 @@ void nsHtml5StreamParser::DoStopRequest() {
     bool hadErrors;
     Tie(result, read, written, hadErrors) =
         mUnicodeDecoder->DecodeToUTF16(src, dst, true);
-    if (!mDecodingLocalFileAsUTF8 && recordreplay::IsRecordingOrReplaying()) {
-      recordreplay::AddContentParseData16(this, dst.data(), written);
+    if (!mDecodingLocalFileAsUTF8) {
+      OnNewContent(dst.To(written));
     }
     if (hadErrors && !mHasHadErrors) {
       if (mDecodingLocalFileAsUTF8) {
@@ -1698,7 +1750,7 @@ void nsHtml5StreamParser::ContinueAfterScripts(nsHtml5Tokenizer* aTokenizer,
       nsContentUtils::ReportToConsole(
           nsIScriptError::warningFlag, NS_LITERAL_CSTRING("DOM Events"),
           mExecutor->GetDocument(), nsContentUtils::eDOM_PROPERTIES,
-          "SpeculationFailed", nullptr, 0, nullptr, EmptyString(),
+          "SpeculationFailed", nsTArray<nsString>(), nullptr, EmptyString(),
           speculation->GetStartLineNumber());
 
       nsHtml5OwningUTF16Buffer* buffer = mFirstBuffer->next;

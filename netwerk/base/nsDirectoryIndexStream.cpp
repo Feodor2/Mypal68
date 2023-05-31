@@ -15,7 +15,6 @@
 #include "nsDirectoryIndexStream.h"
 #include "mozilla/Logging.h"
 #include "prtime.h"
-#include "nsISimpleEnumerator.h"
 #ifdef THREADSAFE_I18N
 #  include "nsCollationCID.h"
 #  include "nsICollation.h"

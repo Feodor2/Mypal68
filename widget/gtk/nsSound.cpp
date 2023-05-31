@@ -12,7 +12,6 @@
 
 #include "HeadlessSound.h"
 #include "nsIURL.h"
-#include "nsIFileURL.h"
 #include "nsNetUtil.h"
 #include "nsIChannel.h"
 #include "nsCOMPtr.h"
@@ -310,9 +309,8 @@ NS_IMETHODIMP nsSound::Play(nsIURL* aURL) {
 
   if (!libcanberra) return NS_ERROR_NOT_AVAILABLE;
 
-  bool isFile;
-  nsresult rv = aURL->SchemeIs("file", &isFile);
-  if (NS_SUCCEEDED(rv) && isFile) {
+  nsresult rv;
+  if (aURL->SchemeIs("file")) {
     ca_context* ctx = ca_context_get_default();
     if (!ctx) {
       return NS_ERROR_OUT_OF_MEMORY;

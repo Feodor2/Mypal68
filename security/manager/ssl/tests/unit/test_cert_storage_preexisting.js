@@ -1,3 +1,4 @@
+/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -49,5 +50,16 @@ add_task(
       );
     });
     Assert.equal(hasPriorCertData, true, "should have prior cert data");
+
+    let hasPriorCRLiteData = await new Promise(resolve => {
+      certStorage.hasPriorData(
+        Ci.nsICertStorage.DATA_TYPE_CRLITE,
+        (rv, hasPriorData) => {
+          Assert.equal(rv, Cr.NS_OK, "hasPriorData should succeed");
+          resolve(hasPriorData);
+        }
+      );
+    });
+    Assert.equal(hasPriorCRLiteData, true, "should have prior cert data");
   }
 );

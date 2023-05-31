@@ -287,7 +287,7 @@ function prompt(
   let request = {
     callID: aCallID,
     windowID: aWindowID,
-    origin: aContentWindow.origin,
+    origin: aContentWindow.document.nodePrincipal.origin,
     documentURI: aContentWindow.document.documentURI,
     secure: aSecure,
     isHandlingUserInput: aIsHandlingUserInput,

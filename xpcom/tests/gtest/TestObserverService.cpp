@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsISupports.h"
-#include "nsIComponentManager.h"
 #include "nsIObserverService.h"
 #include "nsIObserver.h"
 #include "nsISimpleEnumerator.h"

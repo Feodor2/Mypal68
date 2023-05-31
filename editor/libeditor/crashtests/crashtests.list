@@ -101,6 +101,7 @@ load 1423767.html
 needs-focus load 1423776.html
 needs-focus load 1424450.html
 load 1425091.html
+load 1426709.html
 load 1441619.html
 load 1443664.html
 skip-if(Android) needs-focus load 1444630.html
@@ -108,5 +109,9 @@ load 1446451.html
 asserts(0-2) load 1464251.html # assertion is that mutation event listener modifies content
 pref(layout.accessiblecaret.enabled,true) load 1470926.html
 load 1525481.html
+load 1533913.html
 load 1534394.html
+load 1547897.html
 load 1547898.html
+load 1556799.html
+load 1574544.html

@@ -5,7 +5,6 @@
 #ifndef __nsClipboardWayland_h_
 #define __nsClipboardWayland_h_
 
-#include "nsIClipboard.h"
 #include "mozwayland/mozwayland.h"
 #include "wayland/gtk-primary-selection-client-protocol.h"
 

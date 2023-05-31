@@ -739,8 +739,7 @@ var Utils = {
     );
     return syncStrings.formatStringFromName(
       "client.name2",
-      [user, brandName, system],
-      3
+      [user, brandName, system]
     );
   },
 

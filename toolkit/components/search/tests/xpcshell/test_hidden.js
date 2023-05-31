@@ -23,7 +23,7 @@ add_task(async function setup() {
       },
     });
   Services.prefs
-    .getDefaultBranch(BROWSER_SEARCH_PREF)
+    .getDefaultBranch(SearchUtils.BROWSER_SEARCH_PREF)
     .setCharPref(kUrlPref, url);
 
   Assert.ok(!Services.search.isInitialized);
@@ -68,7 +68,7 @@ add_task(async function invalid_engine() {
       },
     });
   Services.prefs
-    .getDefaultBranch(BROWSER_SEARCH_PREF)
+    .getDefaultBranch(SearchUtils.BROWSER_SEARCH_PREF)
     .setCharPref(kUrlPref, url);
 
   await asyncReInit({ waitForRegionFetch: true });

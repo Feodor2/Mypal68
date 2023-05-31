@@ -39,6 +39,7 @@ function openWindowWithUserContextId(userContextId, isPrivate) {
 
   args.appendElement(Services.scriptSecurityManager.getSystemPrincipal());
   args.appendElement(Services.scriptSecurityManager.getSystemPrincipal());
+  args.appendElement(Services.scriptSecurityManager.getSystemPrincipal());
 
   let windowPromise = BrowserTestUtils.waitForNewWindow({ url: TEST_URI });
   Services.ww.openWindow(

@@ -45,8 +45,7 @@ var ConsoleAPI = {
 
       let body = bundle.formatStringFromName(
         "stacktrace.outputMessage",
-        [filename, functionName, lineNumber],
-        3
+        [filename, functionName, lineNumber]
       );
       body += "\n";
       args.forEach(function(aFrame) {
@@ -70,8 +69,7 @@ var ConsoleAPI = {
       );
       let body = bundle.formatStringFromName(
         "timer.start",
-        [aMessage.arguments.name],
-        1
+        [aMessage.arguments.name]
       );
       Services.console.logStringMessage(body);
     } else if (aMessage.level == "timeEnd" && aMessage.arguments) {
@@ -80,8 +78,7 @@ var ConsoleAPI = {
       );
       let body = bundle.formatStringFromName(
         "timer.end",
-        [aMessage.arguments.name, aMessage.arguments.duration],
-        2
+        [aMessage.arguments.name, aMessage.arguments.duration]
       );
       Services.console.logStringMessage(body);
     } else if (

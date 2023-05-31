@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGLinearGradientElement : SVGGradientElement {
   [Constant]
   readonly attribute SVGAnimatedLength x1;

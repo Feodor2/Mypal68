@@ -3,8 +3,13 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-[Constructor]
+[Exposed=Window]
 interface XPathEvaluator {
+  constructor();
+};
+XPathEvaluator includes XPathEvaluatorMixin;
+
+interface mixin XPathEvaluatorMixin {
   [NewObject, Throws]
   XPathExpression createExpression(DOMString expression,
                                    optional XPathNSResolver? resolver = null);

@@ -37,9 +37,7 @@
 #include "WebGLStrongTypes.h"
 
 // Generated
-#include "nsIDOMEventListener.h"
 #include "nsICanvasRenderingContextInternal.h"
-#include "nsIObserver.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "nsWrapperCache.h"
 #include "nsLayoutUtils.h"
@@ -791,13 +789,13 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
    private:
     static size_t ComputeAndReturnLength(const viewT& view) {
       view.ComputeLengthAndData();
-      return view.LengthAllowShared();
+      return view.Length();
     }
 
    public:
     explicit Arr(const viewT& view)
         : elemCount(ComputeAndReturnLength(view)),
-          elemBytes(view.DataAllowShared()) {}
+          elemBytes(view.Data()) {}
 
     explicit Arr(const dom::Sequence<elemT>& seq)
         : elemCount(seq.Length()), elemBytes(seq.Elements()) {}
@@ -981,8 +979,6 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
                      GLuint srcElemCountOverride = 0);
   void BufferSubData(GLenum target, WebGLsizeiptr dstByteOffset,
                      const dom::ArrayBuffer& src);
-  void BufferSubData(GLenum target, WebGLsizeiptr dstByteOffset,
-                     const dom::SharedArrayBuffer& src);
 
   already_AddRefed<WebGLBuffer> CreateBuffer();
   void DeleteBuffer(WebGLBuffer* buf);
@@ -1983,6 +1979,8 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   bool BindDefaultFBForRead();
 
   // --
+
+  bool ShouldResistFingerprinting() const;
 
  public:
   void LoseOldestWebGLContextIfLimitExceeded();

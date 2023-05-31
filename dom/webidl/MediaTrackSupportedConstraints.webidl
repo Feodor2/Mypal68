@@ -21,7 +21,7 @@ dictionary MediaTrackSupportedConstraints {
     boolean latency;            // to be supported
     boolean channelCount = true;
     boolean deviceId = true;
-    boolean groupId;            // to be supported
+    boolean groupId = true;
 
     // Mozilla-specific extensions:
 

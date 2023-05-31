@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGAnimatedBoolean {
            attribute boolean baseVal;
   readonly attribute boolean animVal;

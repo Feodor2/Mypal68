@@ -17,13 +17,12 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SystemGroup.h"
 #include "mozilla/Telemetry.h"
 #include "nsContentUtils.h"
 #include "nsINetworkLinkService.h"
 #include "nsIObserverService.h"
-#include "nsIPrincipal.h"
 #include "nsPrintfCString.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
@@ -159,7 +158,7 @@ class MediaCache {
   // file backing will be provided.
   static RefPtr<MediaCache> GetMediaCache(int64_t aContentLength);
 
-  nsIEventTarget* OwnerThread() const { return sThread; }
+  nsISerialEventTarget* OwnerThread() const { return sThread; }
 
   // Brutally flush the cache contents. Main thread only.
   void Flush();
@@ -299,18 +298,11 @@ class MediaCache {
       LOG("~MediaCache(Global file-backed MediaCache)");
       // This is the file-backed MediaCache, reset the global pointer.
       gMediaCache = nullptr;
-      // Only gather "MEDIACACHE" telemetry for the file-based cache.
       LOG("MediaCache::~MediaCache(this=%p) MEDIACACHE_WATERMARK_KB=%u", this,
           unsigned(mIndexWatermark * MediaCache::BLOCK_SIZE / 1024));
-      Telemetry::Accumulate(
-          Telemetry::HistogramID::MEDIACACHE_WATERMARK_KB,
-          uint32_t(mIndexWatermark * MediaCache::BLOCK_SIZE / 1024));
       LOG("MediaCache::~MediaCache(this=%p) "
           "MEDIACACHE_BLOCKOWNERS_WATERMARK=%u",
           this, unsigned(mBlockOwnersWatermark));
-      Telemetry::Accumulate(
-          Telemetry::HistogramID::MEDIACACHE_BLOCKOWNERS_WATERMARK,
-          mBlockOwnersWatermark);
     } else {
       LOG("~MediaCache(Memory-backed MediaCache %p)", this);
     }
@@ -324,19 +316,19 @@ class MediaCache {
 
   static size_t CacheSize() {
     MOZ_ASSERT(sThread->IsOnCurrentThread());
-    return sOnCellular ? StaticPrefs::MediaCacheCellularSize()
-                       : StaticPrefs::MediaCacheSize();
+    return sOnCellular ? StaticPrefs::media_cache_size_cellular()
+                       : StaticPrefs::media_cache_size();
   }
 
   static size_t ReadaheadLimit() {
     MOZ_ASSERT(sThread->IsOnCurrentThread());
-    return sOnCellular ? StaticPrefs::MediaCacheCellularReadaheadLimit()
-                       : StaticPrefs::MediaCacheReadaheadLimit();
+    return sOnCellular ? StaticPrefs::media_cache_readahead_limit_cellular()
+                       : StaticPrefs::media_cache_readahead_limit();
   }
 
   static size_t ResumeThreshold() {
-    return sOnCellular ? StaticPrefs::MediaCacheCellularResumeThreshold()
-                       : StaticPrefs::MediaCacheResumeThreshold();
+    return sOnCellular ? StaticPrefs::media_cache_resume_threshold_cellular()
+                       : StaticPrefs::media_cache_resume_threshold();
   }
 
   // Find a free or reusable block and return its index. If there are no
@@ -788,7 +780,7 @@ RefPtr<MediaCache> MediaCache::GetMediaCache(int64_t aContentLength) {
 
   if (aContentLength > 0 &&
       aContentLength <=
-          int64_t(StaticPrefs::MediaMemoryCacheMaxSize()) * 1024) {
+          int64_t(StaticPrefs::media_memory_cache_max_size()) * 1024) {
     // Small-enough resource, use a new memory-backed MediaCache.
     RefPtr<MediaBlockCacheBase> bc = new MemoryBlockCache(aContentLength);
     nsresult rv = bc->Init();
@@ -2200,17 +2192,18 @@ bool MediaCacheStream::AreAllStreamsForResourceSuspended(AutoLock& aLock) {
   return true;
 }
 
-void MediaCacheStream::Close() {
+RefPtr<GenericPromise> MediaCacheStream::Close() {
   MOZ_ASSERT(NS_IsMainThread());
   if (!mMediaCache) {
-    return;
+    return GenericPromise::CreateAndResolve(true, __func__);
   }
-  OwnerThread()->Dispatch(NS_NewRunnableFunction(
-      "MediaCacheStream::Close",
-      [this, client = RefPtr<ChannelMediaResource>(mClient)]() {
-        AutoLock lock(mMediaCache->Monitor());
-        CloseInternal(lock);
-      }));
+
+  return InvokeAsync(OwnerThread(), "MediaCacheStream::Close",
+                     [this, client = RefPtr<ChannelMediaResource>(mClient)] {
+                       AutoLock lock(mMediaCache->Monitor());
+                       CloseInternal(lock);
+                       return GenericPromise::CreateAndResolve(true, __func__);
+                     });
 }
 
 void MediaCacheStream::CloseInternal(AutoLock& aLock) {
@@ -2649,8 +2642,6 @@ nsresult MediaCacheStream::Init(int64_t aContentLength) {
     LOG("MediaCacheStream::Init(this=%p) "
         "MEDIACACHESTREAM_NOTIFIED_LENGTH=%" PRIu32,
         this, length);
-    Telemetry::Accumulate(
-        Telemetry::HistogramID::MEDIACACHESTREAM_NOTIFIED_LENGTH, length);
 
     mStreamLength = aContentLength;
   }
@@ -2740,7 +2731,7 @@ void MediaCacheStream::InitAsCloneInternal(MediaCacheStream* aOriginal) {
   lock.Broadcast();
 }
 
-nsIEventTarget* MediaCacheStream::OwnerThread() const {
+nsISerialEventTarget* MediaCacheStream::OwnerThread() const {
   return mMediaCache->OwnerThread();
 }
 

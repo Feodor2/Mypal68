@@ -23,6 +23,7 @@
 #include "mozilla/RestyleManager.h"
 #include "mozilla/ServoBindings.h"  // Servo_GetProperties_Overriding_Animation
 #include "mozilla/ServoStyleSet.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/StyleAnimationValue.h"
 #include "mozilla/TypeTraits.h"  // For std::forward<>
 #include "nsContentUtils.h"
@@ -71,7 +72,7 @@ bool EffectCompositor::AllowCompositorAnimationsOnFrame(
   }
 
   if (!nsLayoutUtils::AreAsyncAnimationsEnabled()) {
-    if (nsLayoutUtils::IsAnimationLoggingEnabled()) {
+    if (StaticPrefs::layers_offmainthreadcomposition_log_animations()) {
       nsCString message;
       message.AppendLiteral(
           "Performance warning: Async animations are "
@@ -392,6 +393,26 @@ class EffectCompositeOrderComparator {
 };
 }  // namespace
 
+static void ComposeSortedEffects(
+    const nsTArray<KeyframeEffect*>& aSortedEffects,
+    const EffectSet* aEffectSet, EffectCompositor::CascadeLevel aCascadeLevel,
+    RawServoAnimationValueMap* aAnimationValues) {
+  // If multiple animations affect the same property, animations with higher
+  // composite order (priority) override or add to animations with lower
+  // priority.
+  nsCSSPropertyIDSet propertiesToSkip;
+  if (aEffectSet) {
+    propertiesToSkip =
+        aCascadeLevel == EffectCompositor::CascadeLevel::Animations
+            ? aEffectSet->PropertiesForAnimationsLevel().Inverse()
+            : aEffectSet->PropertiesForAnimationsLevel();
+  }
+
+  for (KeyframeEffect* effect : aSortedEffects) {
+    effect->GetAnimation()->ComposeStyle(*aAnimationValues, propertiesToSkip);
+  }
+}
+
 bool EffectCompositor::GetServoAnimationRule(
     const dom::Element* aElement, PseudoStyleType aPseudoType,
     CascadeLevel aCascadeLevel, RawServoAnimationValueMap* aAnimationValues) {
@@ -415,18 +436,63 @@ bool EffectCompositor::GetServoAnimationRule(
   }
   sortedEffectList.Sort(EffectCompositeOrderComparator());
 
-  // If multiple animations affect the same property, animations with higher
-  // composite order (priority) override or add or animations with lower
-  // priority.
-  const nsCSSPropertyIDSet propertiesToSkip =
-      aCascadeLevel == CascadeLevel::Animations
-          ? effectSet->PropertiesForAnimationsLevel().Inverse()
-          : effectSet->PropertiesForAnimationsLevel();
-  for (KeyframeEffect* effect : sortedEffectList) {
-    effect->GetAnimation()->ComposeStyle(*aAnimationValues, propertiesToSkip);
-  }
+  ComposeSortedEffects(sortedEffectList, effectSet, aCascadeLevel,
+                       aAnimationValues);
 
   MOZ_ASSERT(effectSet == EffectSet::GetEffectSet(aElement, aPseudoType),
+             "EffectSet should not change while composing style");
+
+  return true;
+}
+
+bool EffectCompositor::ComposeServoAnimationRuleForEffect(
+    KeyframeEffect& aEffect, CascadeLevel aCascadeLevel,
+    RawServoAnimationValueMap* aAnimationValues) {
+  MOZ_ASSERT(aAnimationValues);
+  MOZ_ASSERT(mPresContext && mPresContext->IsDynamic(),
+             "Should not be in print preview");
+
+  Maybe<NonOwningAnimationTarget> target = aEffect.GetTarget();
+  if (!target) {
+    return false;
+  }
+
+  // Don't try to compose animations for elements in documents without a pres
+  // shell (e.g. XMLHttpRequest documents).
+  if (!nsContentUtils::GetPresShellForContent(target->mElement)) {
+    return false;
+  }
+
+  // GetServoAnimationRule is called as part of the regular style resolution
+  // where the cascade results are updated in the pre-traversal as needed.
+  // This function, however, is only called when committing styles so we
+  // need to ensure the cascade results are up-to-date manually.
+  EffectCompositor::MaybeUpdateCascadeResults(target->mElement,
+                                              target->mPseudoType);
+
+  EffectSet* effectSet =
+      EffectSet::GetEffectSet(target->mElement, target->mPseudoType);
+
+  // Get a list of effects sorted by composite order up to and including
+  // |aEffect|, even if it is not in the EffectSet.
+  auto comparator = EffectCompositeOrderComparator();
+  nsTArray<KeyframeEffect*> sortedEffectList(effectSet ? effectSet->Count() + 1
+                                                       : 1);
+  if (effectSet) {
+    for (KeyframeEffect* effect : *effectSet) {
+      if (comparator.LessThan(effect, &aEffect)) {
+        sortedEffectList.AppendElement(effect);
+      }
+    }
+    sortedEffectList.Sort(comparator);
+  }
+  sortedEffectList.AppendElement(&aEffect);
+
+  ComposeSortedEffects(sortedEffectList, effectSet, aCascadeLevel,
+                       aAnimationValues);
+
+  MOZ_ASSERT(effectSet ==
+                 EffectSet::GetEffectSet(target->mElement, target->mPseudoType),
              "EffectSet should not change while composing style");
 
   return true;
@@ -858,6 +924,55 @@ bool EffectCompositor::PreTraverseInSubtree(ServoTraversalFlags aFlags,
   }
 
   return foundElementsNeedingRestyle;
+}
+
+void EffectCompositor::NoteElementForReducing(
+    const NonOwningAnimationTarget& aTarget) {
+  if (!StaticPrefs::dom_animations_api_autoremove_enabled()) {
+    return;
+  }
+
+  Unused << mElementsToReduce.put(
+      OwningAnimationTarget{aTarget.mElement, aTarget.mPseudoType});
+}
+
+static void ReduceEffectSet(EffectSet& aEffectSet) {
+  // Get a list of effects sorted by composite order.
+  nsTArray<KeyframeEffect*> sortedEffectList(aEffectSet.Count());
+  for (KeyframeEffect* effect : aEffectSet) {
+    sortedEffectList.AppendElement(effect);
+  }
+  sortedEffectList.Sort(EffectCompositeOrderComparator());
+
+  nsCSSPropertyIDSet setProperties;
+
+  // Iterate in reverse
+  for (auto iter = sortedEffectList.rbegin(); iter != sortedEffectList.rend();
+       ++iter) {
+    MOZ_ASSERT(*iter && (*iter)->GetAnimation(),
+               "Effect in an EffectSet should have an animation");
+    KeyframeEffect& effect = **iter;
+    Animation& animation = *effect.GetAnimation();
+    if (animation.IsRemovable() &&
+        effect.GetPropertySet().IsSubsetOf(setProperties)) {
+      animation.Remove();
+    } else if (animation.IsReplaceable()) {
+      setProperties |= effect.GetPropertySet();
+    }
+  }
+}
+
+void EffectCompositor::ReduceAnimations() {
+  for (auto iter = mElementsToReduce.iter(); !iter.done(); iter.next()) {
+    const OwningAnimationTarget& target = iter.get();
+    EffectSet* effectSet =
+        EffectSet::GetEffectSet(target.mElement, target.mPseudoType);
+    if (effectSet) {
+      ReduceEffectSet(*effectSet);
+    }
+  }
+
+  mElementsToReduce.clear();
 }
 
 }  // namespace mozilla

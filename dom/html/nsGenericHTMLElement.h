@@ -13,9 +13,9 @@
 #include "nsContentCreatorFunctions.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
+#include "mozilla/dom/Element.h"
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/ValidityState.h"
-#include "mozilla/dom/Element.h"
 
 class nsDOMTokenList;
 class nsIFormControlFrame;
@@ -33,6 +33,7 @@ class EventStates;
 class TextEditor;
 class PresState;
 namespace dom {
+class ElementInternals;
 class HTMLFormElement;
 class HTMLMenuElement;
 }  // namespace dom
@@ -224,6 +225,10 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
     return IsNodeInternal(aFirst, aArgs...);
   }
 
+  // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-attachinternals
+  already_AddRefed<mozilla::dom::ElementInternals> AttachInternals(
+      ErrorResult& aRv);
+
  protected:
   virtual ~nsGenericHTMLElement() {}
 
@@ -238,10 +243,8 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
 
  public:
   // Implementation for nsIContent
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
 
   virtual bool IsFocusableInternal(int32_t* aTabIndex,
                                    bool aWithMouse) override {
@@ -787,6 +790,18 @@ class nsGenericHTMLElement : public nsGenericHTMLElementBase {
   }
 
   /**
+   * Gets the unsigned integer-value of an attribute that is stored as a
+   * dimension (i.e. could be an integer or a percentage), returns specified
+   * default value if the attribute isn't set or isn't set to a dimension. Only
+   * works for attributes in null namespace.
+   *
+   * @param aAttr    name of attribute.
+   * @param aDefault default-value to return if attribute isn't set.
+   */
+  uint32_t GetDimensionAttrAsUnsignedInt(nsAtom* aAttr,
+                                         uint32_t aDefault) const;
+
+  /**
    * Sets value of attribute to specified double. Only works for attributes
    * in null namespace.
    *
@@ -931,10 +946,8 @@ class nsGenericHTMLFormElement : public nsGenericHTMLElement,
   virtual bool AllowDrop() override { return true; }
 
   // nsIContent
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
   virtual IMEState GetDesiredIMEState() override;
   virtual mozilla::EventStates IntrinsicState() const override;
 

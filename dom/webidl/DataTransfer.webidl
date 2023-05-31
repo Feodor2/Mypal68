@@ -6,8 +6,10 @@
  * http://www.whatwg.org/specs/web-apps/current-work/#the-datatransfer-interface
  */
 
-[Constructor]
+[Exposed=Window]
 interface DataTransfer {
+  constructor();
+
            attribute DOMString dropEffect;
            attribute DOMString effectAllowed;
 
@@ -47,7 +49,7 @@ partial interface DataTransfer {
    * @param element drag source to use
    * @throws NO_MODIFICATION_ALLOWED_ERR if the item cannot be modified
    */
-  [Throws, UseCounter]
+  [Throws]
   void addElement(Element element);
 
   /**
@@ -68,7 +70,6 @@ partial interface DataTransfer {
    * Values other than 'default' are indentical to setting mozCursor to
    * 'auto'.
    */
-  [UseCounter]
   attribute DOMString mozCursor;
 
   /**
@@ -145,14 +146,12 @@ partial interface DataTransfer {
    * false otherwise, including when the drop has been rejected by its target.
    * This property is only relevant for the dragend event.
    */
-  [UseCounter]
   readonly attribute boolean mozUserCancelled;
 
   /**
    * The node that the mouse was pressed over to begin the drag. For external
    * drags, or if the caller cannot access this node, this will be null.
    */
-  [UseCounter]
   readonly attribute Node? mozSourceNode;
 
   /**

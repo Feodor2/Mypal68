@@ -5,10 +5,11 @@
 #include "ScriptLoadRequest.h"
 
 #include "mozilla/HoldDropJSObjects.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Unused.h"
+#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
 #include "nsContentUtils.h"
-#include "nsICacheInfoChannel.h"
 #include "ScriptLoadRequest.h"
 #include "ScriptSettings.h"
 
@@ -24,9 +25,10 @@ NS_IMPL_CYCLE_COLLECTION(ScriptFetchOptions, mElement, mTriggeringPrincipal)
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(ScriptFetchOptions, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(ScriptFetchOptions, Release)
 
-ScriptFetchOptions::ScriptFetchOptions(
-    mozilla::CORSMode aCORSMode, mozilla::net::ReferrerPolicy aReferrerPolicy,
-    nsIScriptElement* aElement, nsIPrincipal* aTriggeringPrincipal)
+ScriptFetchOptions::ScriptFetchOptions(mozilla::CORSMode aCORSMode,
+                                       ReferrerPolicy aReferrerPolicy,
+                                       nsIScriptElement* aElement,
+                                       nsIPrincipal* aTriggeringPrincipal)
     : mCORSMode(aCORSMode),
       mReferrerPolicy(aReferrerPolicy),
       mIsPreload(false),
@@ -168,7 +170,11 @@ void ScriptLoadRequest::SetUnknownDataType() {
 void ScriptLoadRequest::SetTextSource() {
   MOZ_ASSERT(IsUnknownDataType());
   mDataType = DataType::eTextSource;
-  mScriptData.emplace(VariantType<ScriptTextBuffer>());
+  if (StaticPrefs::dom_script_loader_external_scripts_utf8_parsing_enabled()) {
+    mScriptData.emplace(VariantType<ScriptTextBuffer<Utf8Unit>>());
+  } else {
+    mScriptData.emplace(VariantType<ScriptTextBuffer<char16_t>>());
+  }
 }
 
 void ScriptLoadRequest::SetBinASTSource() {
@@ -190,12 +196,7 @@ bool ScriptLoadRequest::ShouldAcceptBinASTEncoding() const {
 #ifdef JS_BUILD_BINAST
   // We accept the BinAST encoding if we're using a secure connection.
 
-  bool isHTTPS = false;
-  nsresult rv = mURI->SchemeIs("https", &isHTTPS);
-  MOZ_ASSERT(NS_SUCCEEDED(rv));
-  Unused << rv;
-
-  if (!isHTTPS) {
+  if (!mURI->SchemeIs("https")) {
     return false;
   }
 
@@ -214,7 +215,7 @@ bool ScriptLoadRequest::ShouldAcceptBinASTEncoding() const {
 
 void ScriptLoadRequest::ClearScriptSource() {
   if (IsTextSource()) {
-    ScriptText().clearAndFree();
+    ClearScriptText();
   } else if (IsBinASTSource()) {
     ScriptBinASTData().clearAndFree();
   }

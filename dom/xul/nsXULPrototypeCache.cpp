@@ -6,7 +6,6 @@
 
 #include "plstr.h"
 #include "nsXULPrototypeDocument.h"
-#include "nsIServiceManager.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
 
@@ -15,7 +14,6 @@
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsIObserverService.h"
-#include "nsIStringStream.h"
 #include "nsIStorageStream.h"
 
 #include "nsAppDirectoryServiceDefs.h"
@@ -119,7 +117,9 @@ nsXULPrototypeDocument* nsXULPrototypeCache::GetPrototype(nsIURI* aURI) {
   NS_GetURIWithoutRef(aURI, getter_AddRefs(uriWithoutRef));
 
   nsXULPrototypeDocument* protoDoc = mPrototypeTable.GetWeak(uriWithoutRef);
-  if (protoDoc) return protoDoc;
+  if (protoDoc) {
+    return protoDoc;
+  }
 
   nsresult rv = BeginCaching(aURI);
   if (NS_FAILED(rv)) return nullptr;
@@ -127,7 +127,9 @@ nsXULPrototypeDocument* nsXULPrototypeCache::GetPrototype(nsIURI* aURI) {
   // No prototype in XUL memory cache. Spin up the cache Service.
   nsCOMPtr<nsIObjectInputStream> ois;
   rv = GetInputStream(aURI, getter_AddRefs(ois));
-  if (NS_FAILED(rv)) return nullptr;
+  if (NS_FAILED(rv)) {
+    return nullptr;
+  }
 
   RefPtr<nsXULPrototypeDocument> newProto;
   rv = NS_NewXULPrototypeDocument(getter_AddRefs(newProto));

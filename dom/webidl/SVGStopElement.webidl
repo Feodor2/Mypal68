@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGStopElement : SVGElement {
   [Constant]
   readonly attribute SVGAnimatedNumber offset;

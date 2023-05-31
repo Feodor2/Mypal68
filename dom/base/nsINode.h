@@ -10,7 +10,6 @@
 #include "nsCOMPtr.h"              // for member, local
 #include "nsGkAtoms.h"             // for nsGkAtoms::baseURIProperty
 #include "mozilla/dom/NodeInfo.h"  // member (in nsCOMPtr)
-#include "nsIVariant.h"            // for use in GetUserData()
 #include "nsIWeakReference.h"
 #include "nsNodeInfoManager.h"  // for use in NodePrincipal()
 #include "nsPropertyTable.h"    // for typedefs
@@ -35,9 +34,12 @@
 
 class AttrArray;
 class nsAttrChildContentList;
+template <typename T>
+class nsCOMArray;
 class nsDOMAttributeMap;
 class nsIAnimationObserver;
 class nsIContent;
+class nsIContentSecurityPolicy;
 class nsIFrame;
 class nsIHTMLCollection;
 class nsIMutationObserver;
@@ -80,6 +82,7 @@ class DOMQuad;
 class DOMRectReadOnly;
 class Element;
 class EventHandlerNonNull;
+class MutationObservers;
 template <typename T>
 class Optional;
 class OwningNodeOrString;
@@ -350,7 +353,7 @@ class nsINode : public mozilla::dom::EventTarget {
   // always safe to call no matter which object it was invoked on.
   void AddSizeOfIncludingThis(nsWindowSizes& aSizes, size_t* aNodeSize) const;
 
-  friend class nsNodeUtils;
+  friend class mozilla::dom::MutationObservers;
   friend class nsNodeWeakReference;
   friend class nsNodeSupportsWeakRefTearoff;
   friend class AttrArray;
@@ -389,6 +392,11 @@ class nsINode : public mozilla::dom::EventTarget {
     return IsElement() || IsDocument() || IsDocumentFragment();
   }
 
+  /**
+   * Returns true if the node is a HTMLTemplate element.
+   */
+  bool IsTemplateElement() const { return IsHTMLElement(nsGkAtoms::_template); }
+
   bool IsSlotable() const { return IsElement() || IsText(); }
 
   /**
@@ -413,6 +421,20 @@ class nsINode : public mozilla::dom::EventTarget {
   bool IsDocumentFragment() const {
     return NodeType() == DOCUMENT_FRAGMENT_NODE;
   }
+
+  /**
+   * https://dom.spec.whatwg.org/#concept-tree-inclusive-descendant
+   *
+   * @param aNode must not be nullptr.
+   */
+  bool IsInclusiveDescendantOf(const nsINode* aNode) const;
+
+  /**
+   * https://dom.spec.whatwg.org/#concept-shadow-including-inclusive-descendant
+   *
+   * @param aNode must not be nullptr.
+   */
+  bool IsShadowIncludingInclusiveDescendantOf(const nsINode* aNode) const;
 
   /**
    * Return this node as a document fragment. Asserts IsDocumentFragment().
@@ -455,6 +477,13 @@ class nsINode : public mozilla::dom::EventTarget {
       const;  // Implemented in Document.h
 
   /**
+   * Returns the first child of a node or the first child of
+   * a template element's content if the provided node is a
+   * template element.
+   */
+  nsIContent* GetFirstChildOfTemplateOrNode();
+
+  /**
    * Return the scope chain parent for this node, for use in things
    * like event handler compilation.  Returning null means to use the
    * global object as the scope chain parent.
@@ -464,9 +493,11 @@ class nsINode : public mozilla::dom::EventTarget {
   MOZ_CAN_RUN_SCRIPT mozilla::dom::Element* GetParentFlexElement();
 
   /**
-   * Return whether the node is an Element node
+   * Return whether the node is an Element node. Faster than using `NodeType()`.
    */
   bool IsElement() const { return GetBoolFlag(NodeIsElement); }
+
+  virtual bool IsTextControlElement() const { return false; }
 
   /**
    * Return this node as an Element.  Should only be used for nodes
@@ -577,13 +608,15 @@ class nsINode : public mozilla::dom::EventTarget {
    *
    * For all other cases OwnerDoc and GetOwnerDocument behave identically.
    */
-  Document* OwnerDoc() const { return mNodeInfo->GetDocument(); }
+  Document* OwnerDoc() const MOZ_NONNULL_RETURN {
+    return mNodeInfo->GetDocument();
+  }
 
   /**
    * Return the "owner document" of this node as an nsINode*.  Implemented
    * in Document.h.
    */
-  inline nsINode* OwnerDocAsNode() const;
+  inline nsINode* OwnerDocAsNode() const MOZ_NONNULL_RETURN;
 
   /**
    * Returns true if the content has an ancestor that is a document.
@@ -626,6 +659,11 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   mozilla::dom::DocumentOrShadowRoot* GetUncomposedDocOrConnectedShadowRoot()
       const;
+
+  /**
+   * To be called when reference count of the node drops to zero.
+   */
+  void LastRelease();
 
   /**
    * The values returned by this function are the ones defined for
@@ -853,6 +891,11 @@ class nsINode : public mozilla::dom::EventTarget {
   }
 
   /**
+   * Return the CSP of this node's document, if any.
+   */
+  nsIContentSecurityPolicy* GetCsp() const;
+
+  /**
    * Get the parent nsIContent for this node.
    * @return the parent, or null if no parent or the parent is not an nsIContent
    */
@@ -869,11 +912,7 @@ class nsINode : public mozilla::dom::EventTarget {
    */
   nsINode* GetParentNode() const { return mParent; }
 
-  /**
-   * This is similar to above, but in case 'this' is ShadowRoot, we return its
-   * host element.
-   */
-  nsINode* GetParentOrHostNode() const;
+  nsINode* GetParentOrShadowHostNode() const;
 
   enum FlattenedParentType { eNotForStyle, eForStyle };
 
@@ -931,6 +970,12 @@ class nsINode : public mozilla::dom::EventTarget {
   virtual mozilla::EventListenerManager* GetExistingListenerManager()
       const override;
   virtual mozilla::EventListenerManager* GetOrCreateListenerManager() override;
+
+  mozilla::Maybe<mozilla::dom::EventCallbackDebuggerNotificationType>
+  GetDebuggerNotificationType() const override {
+    return mozilla::Some(
+        mozilla::dom::EventCallbackDebuggerNotificationType::Node);
+  }
 
   bool ComputeDefaultWantsUntrusted(mozilla::ErrorResult& aRv) final;
 
@@ -1004,6 +1049,95 @@ class nsINode : public mozilla::dom::EventTarget {
       s->mMutationObservers.RemoveElement(aMutationObserver);
     }
   }
+
+ private:
+  /**
+   * Walks aNode, its attributes and, if aDeep is true, its descendant nodes.
+   * If aClone is true the nodes will be cloned. If aNewNodeInfoManager is
+   * not null, it is used to create new nodeinfos for the nodes. Also reparents
+   * the XPConnect wrappers for the nodes into aReparentScope if non-null.
+   * aNodesWithProperties will be filled with all the nodes that have
+   * properties.
+   *
+   * @param aNode Node to adopt/clone.
+   * @param aClone If true the node will be cloned and the cloned node will
+   *               be returned.
+   * @param aDeep If true the function will be called recursively on
+   *              descendants of the node
+   * @param aNewNodeInfoManager The nodeinfo manager to use to create new
+   *                            nodeinfos for aNode and its attributes and
+   *                            descendants. May be null if the nodeinfos
+   *                            shouldn't be changed.
+   * @param aReparentScope Scope into which wrappers should be reparented, or
+   *                             null if no reparenting should be done.
+   * @param aNodesWithProperties All nodes (from amongst aNode and its
+   *                             descendants) with properties. If aClone is
+   *                             true every node will be followed by its
+   *                             clone. Null can be passed to prevent this from
+   *                             being populated.
+   * @param aParent If aClone is true the cloned node will be appended to
+   *                aParent's children. May be null. If not null then aNode
+   *                must be an nsIContent.
+   * @param aError The error, if any.
+   *
+   * @return If aClone is true then the cloned node will be returned,
+   *          unless an error occurred.  In error conditions, null
+   *          will be returned.
+   */
+  static already_AddRefed<nsINode> CloneAndAdopt(
+      nsINode* aNode, bool aClone, bool aDeep,
+      nsNodeInfoManager* aNewNodeInfoManager,
+      JS::Handle<JSObject*> aReparentScope,
+      nsCOMArray<nsINode>* aNodesWithProperties, nsINode* aParent,
+      mozilla::ErrorResult& aError);
+
+ public:
+  /**
+   * Walks the node, its attributes and descendant nodes. If aNewNodeInfoManager
+   * is not null, it is used to create new nodeinfos for the nodes. Also
+   * reparents the XPConnect wrappers for the nodes into aReparentScope if
+   * non-null. aNodesWithProperties will be filled with all the nodes that have
+   * properties.
+   *
+   * @param aNewNodeInfoManager The nodeinfo manager to use to create new
+   *                            nodeinfos for the node and its attributes and
+   *                            descendants. May be null if the nodeinfos
+   *                            shouldn't be changed.
+   * @param aReparentScope New scope for the wrappers, or null if no reparenting
+   *                       should be done.
+   * @param aNodesWithProperties All nodes (from amongst the node and its
+   *                             descendants) with properties.
+   * @param aError The error, if any.
+   */
+  void Adopt(nsNodeInfoManager* aNewNodeInfoManager,
+             JS::Handle<JSObject*> aReparentScope,
+             nsCOMArray<nsINode>& aNodesWithProperties,
+             mozilla::ErrorResult& aError);
+
+  /**
+   * Clones the node, its attributes and, if aDeep is true, its descendant nodes
+   * If aNewNodeInfoManager is not null, it is used to create new nodeinfos for
+   * the clones. aNodesWithProperties will be filled with all the nodes that
+   * have properties, and every node in it will be followed by its clone.
+   *
+   * @param aDeep If true the function will be called recursively on
+   *              descendants of the node
+   * @param aNewNodeInfoManager The nodeinfo manager to use to create new
+   *                            nodeinfos for the node and its attributes and
+   *                            descendants. May be null if the nodeinfos
+   *                            shouldn't be changed.
+   * @param aNodesWithProperties All nodes (from amongst the node and its
+   *                             descendants) with properties. Every node will
+   *                             be followed by its clone. Null can be passed to
+   *                             prevent this from being used.
+   * @param aError The error, if any.
+   *
+   * @return The newly created node.  Null in error conditions.
+   */
+  already_AddRefed<nsINode> Clone(bool aDeep,
+                                  nsNodeInfoManager* aNewNodeInfoManager,
+                                  nsCOMArray<nsINode>* aNodesWithProperties,
+                                  mozilla::ErrorResult& aError);
 
   /**
    * Clones this node. This needs to be overriden by all node classes. aNodeInfo
@@ -1197,14 +1331,12 @@ class nsINode : public mozilla::dom::EventTarget {
   /**
    * Get the base URI for any relative URIs within this piece of
    * content. Generally, this is the document's base URI, but certain
-   * content carries a local base for backward compatibility, and XML
-   * supports setting a per-node base URI.
+   * content carries a local base for backward compatibility.
    *
-   * @return the base URI
+   * @return the base URI.  May return null.
    */
-  virtual already_AddRefed<nsIURI> GetBaseURI(
-      bool aTryUseXHRDocBaseURI = false) const = 0;
-  already_AddRefed<nsIURI> GetBaseURIObject() const;
+  virtual nsIURI* GetBaseURI(bool aTryUseXHRDocBaseURI = false) const = 0;
+  nsIURI* GetBaseURIObject() const;
 
   /**
    * Return true if the node may be apz aware. There are two cases. One is that
@@ -1304,10 +1436,9 @@ class nsINode : public mozilla::dom::EventTarget {
 
   nsIContent* GetNextNodeImpl(const nsINode* aRoot,
                               const bool aSkipChildren) const {
-    // Can't use nsContentUtils::ContentIsDescendantOf here, since we
-    // can't include it here.
 #ifdef DEBUG
     if (aRoot) {
+      // TODO: perhaps nsINode::IsInclusiveDescendantOf could be used instead.
       const nsINode* cur = this;
       for (; cur; cur = cur->GetParentNode())
         if (cur == aRoot) break;
@@ -1347,10 +1478,9 @@ class nsINode : public mozilla::dom::EventTarget {
    * null if there are no more nsIContents to traverse.
    */
   nsIContent* GetPreviousContent(const nsINode* aRoot = nullptr) const {
-    // Can't use nsContentUtils::ContentIsDescendantOf here, since we
-    // can't include it here.
 #ifdef DEBUG
     if (aRoot) {
+      // TODO: perhaps nsINode::IsInclusiveDescendantOf could be used instead.
       const nsINode* cur = this;
       for (; cur; cur = cur->GetParentNode())
         if (cur == aRoot) break;
@@ -1397,6 +1527,8 @@ class nsINode : public mozilla::dom::EventTarget {
     ElementMayHaveStyle,
     // Set if the element has a name attribute set.
     ElementHasName,
+    // Set if the element has a part attribute set.
+    ElementHasPart,
     // Set if the element might have a contenteditable attribute set.
     ElementMayHaveContentEditableAttr,
     // Set if the node is the common ancestor of the start/end nodes of a Range
@@ -1449,6 +1581,9 @@ class nsINode : public mozilla::dom::EventTarget {
     ElementMayHaveAnonymousChildren,
     // Set if element has CustomElementData.
     ElementHasCustomElementData,
+    // Set if the element was created from prototype cache and
+    // its l10n attributes haven't been changed.
+    ElementCreatedFromPrototypeAndHasUnmodifiedL10n,
     // Guard value
     BooleanFlagCount
   };
@@ -1490,6 +1625,7 @@ class nsINode : public mozilla::dom::EventTarget {
   void SetMayHaveClass() { SetBoolFlag(ElementMayHaveClass); }
   bool MayHaveStyle() const { return GetBoolFlag(ElementMayHaveStyle); }
   bool HasName() const { return GetBoolFlag(ElementHasName); }
+  bool HasPartAttribute() const { return GetBoolFlag(ElementHasPart); }
   bool MayHaveContentEditableAttr() const {
     return GetBoolFlag(ElementMayHaveContentEditableAttr);
   }
@@ -1585,6 +1721,16 @@ class nsINode : public mozilla::dom::EventTarget {
     return GetBoolFlag(ElementHasCustomElementData);
   }
 
+  void SetElementCreatedFromPrototypeAndHasUnmodifiedL10n() {
+    SetBoolFlag(ElementCreatedFromPrototypeAndHasUnmodifiedL10n);
+  }
+  bool HasElementCreatedFromPrototypeAndHasUnmodifiedL10n() {
+    return GetBoolFlag(ElementCreatedFromPrototypeAndHasUnmodifiedL10n);
+  }
+  void ClearElementCreatedFromPrototypeAndHasUnmodifiedL10n() {
+    ClearBoolFlag(ElementCreatedFromPrototypeAndHasUnmodifiedL10n);
+  }
+
  protected:
   void SetParentIsContent(bool aValue) { SetBoolFlag(ParentIsContent, aValue); }
   void SetIsInDocument() { SetBoolFlag(IsInDocument); }
@@ -1597,6 +1743,7 @@ class nsINode : public mozilla::dom::EventTarget {
   void SetMayHaveStyle() { SetBoolFlag(ElementMayHaveStyle); }
   void SetHasName() { SetBoolFlag(ElementHasName); }
   void ClearHasName() { ClearBoolFlag(ElementHasName); }
+  void SetHasPartAttribute(bool aPart) { SetBoolFlag(ElementHasPart, aPart); }
   void SetMayHaveContentEditableAttr() {
     SetBoolFlag(ElementMayHaveContentEditableAttr);
   }

@@ -30,7 +30,7 @@ class PointerEvent : public MouseEvent {
 
   static already_AddRefed<PointerEvent> Constructor(
       const GlobalObject& aGlobal, const nsAString& aType,
-      const PointerEventInit& aParam, ErrorResult& aRv);
+      const PointerEventInit& aParam);
 
   static already_AddRefed<PointerEvent> Constructor(
       EventTarget* aOwner, const nsAString& aType,

@@ -34,6 +34,8 @@ class MouseEvent : public UIEvent {
 
   int32_t ScreenX(CallerType aCallerType);
   int32_t ScreenY(CallerType aCallerType);
+  int32_t PageX() const;
+  int32_t PageY() const;
   int32_t ClientX();
   int32_t ClientY();
   int32_t OffsetX();
@@ -60,8 +62,7 @@ class MouseEvent : public UIEvent {
   }
   static already_AddRefed<MouseEvent> Constructor(const GlobalObject& aGlobal,
                                                   const nsAString& aType,
-                                                  const MouseEventInit& aParam,
-                                                  ErrorResult& aRv);
+                                                  const MouseEventInit& aParam);
   int32_t MovementX() { return GetMovementPoint().x; }
   int32_t MovementY() { return GetMovementPoint().y; }
   float MozPressure() const;

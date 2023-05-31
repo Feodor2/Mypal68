@@ -6,6 +6,7 @@
  * http://www.whatwg.org/specs/web-apps/current-work/#texttrackcuelist
  */
 
+[Exposed=Window]
 interface TextTrackCueList {
   readonly attribute unsigned long length;
   getter VTTCue (unsigned long index);

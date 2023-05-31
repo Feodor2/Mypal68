@@ -63,26 +63,26 @@ bool SingleLineTextInputTypeBase::IsValueMissing() const {
   return IsValueEmpty();
 }
 
-bool SingleLineTextInputTypeBase::HasPatternMismatch() const {
+Maybe<bool> SingleLineTextInputTypeBase::HasPatternMismatch() const {
   if (!mInputElement->HasPatternAttribute()) {
-    return false;
+    return Some(false);
   }
 
   nsAutoString pattern;
   if (!mInputElement->GetAttr(kNameSpaceID_None, nsGkAtoms::pattern, pattern)) {
-    return false;
+    return Some(false);
   }
 
   nsAutoString value;
   GetNonFileValueInternal(value);
 
   if (value.IsEmpty()) {
-    return false;
+    return Some(false);
   }
 
   Document* doc = mInputElement->OwnerDoc();
-
-  return !nsContentUtils::IsPatternMatching(value, pattern, doc);
+  Maybe<bool> result = nsContentUtils::IsPatternMatching(value, pattern, doc);
+  return result ? Some(!*result) : Nothing();
 }
 
 /* input type=url */
@@ -114,8 +114,9 @@ bool URLInputType::HasTypeMismatch() const {
 }
 
 nsresult URLInputType::GetTypeMismatchMessage(nsAString& aMessage) {
-  return nsContentUtils::GetLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidURL", aMessage);
+  return nsContentUtils::GetMaybeLocalizedString(
+      nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidURL",
+      mInputElement->OwnerDoc(), aMessage);
 }
 
 /* input type=email */
@@ -152,13 +153,15 @@ bool EmailInputType::HasBadInput() const {
 }
 
 nsresult EmailInputType::GetTypeMismatchMessage(nsAString& aMessage) {
-  return nsContentUtils::GetLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidEmail", aMessage);
+  return nsContentUtils::GetMaybeLocalizedString(
+      nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidEmail",
+      mInputElement->OwnerDoc(), aMessage);
 }
 
 nsresult EmailInputType::GetBadInputMessage(nsAString& aMessage) {
-  return nsContentUtils::GetLocalizedString(
-      nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidEmail", aMessage);
+  return nsContentUtils::GetMaybeLocalizedString(
+      nsContentUtils::eDOM_PROPERTIES, "FormValidationInvalidEmail",
+      mInputElement->OwnerDoc(), aMessage);
 }
 
 /* static */

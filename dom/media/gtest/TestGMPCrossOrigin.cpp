@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "gtest/gtest.h"
-#include "nsIObserverService.h"
 #include "mozilla/StaticPtr.h"
 #include "GMPTestMonitor.h"
 #include "GMPVideoDecoderProxy.h"
@@ -13,8 +12,6 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/DebugOnly.h"
 #include "nsThreadUtils.h"
-
-using namespace std;
 
 using namespace mozilla;
 using namespace mozilla::gmp;

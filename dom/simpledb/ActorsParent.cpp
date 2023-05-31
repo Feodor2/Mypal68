@@ -1117,7 +1117,8 @@ nsresult OpenOp::SendToIOThread() {
     return NS_ERROR_FAILURE;
   }
 
-  mFileStream = new FileStream(PERSISTENCE_TYPE_DEFAULT, mGroup, mOrigin);
+  mFileStream = new FileStream(PERSISTENCE_TYPE_DEFAULT, mGroup, mOrigin,
+                               mozilla::dom::quota::Client::SDB);
 
   QuotaManager* quotaManager = QuotaManager::Get();
   MOZ_ASSERT(quotaManager);
@@ -1148,9 +1149,9 @@ nsresult OpenOp::DatabaseWork() {
   MOZ_ASSERT(quotaManager);
 
   nsCOMPtr<nsIFile> dbDirectory;
-  nsresult rv = quotaManager->EnsureOriginIsInitialized(
+  nsresult rv = quotaManager->EnsureStorageAndOriginIsInitialized(
       PERSISTENCE_TYPE_DEFAULT, mSuffix, mGroup, mOrigin,
-      getter_AddRefs(dbDirectory));
+      mozilla::dom::quota::Client::SDB, getter_AddRefs(dbDirectory));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -1673,7 +1674,7 @@ nsresult QuotaClient::GetUsageForOrigin(PersistenceType aPersistenceType,
 
     MOZ_ASSERT(fileSize >= 0);
 
-    aUsageInfo->AppendToDatabaseUsage(uint64_t(fileSize));
+    aUsageInfo->AppendToDatabaseUsage(Some(uint64_t(fileSize)));
   }
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;

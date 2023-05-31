@@ -75,6 +75,7 @@ class ConsoleListener;
 class ClonedMessageData;
 class BrowserChild;
 class GetFilesHelperChild;
+enum class MediaControlActions : uint32_t;
 
 class ContentChild final : public PContentChild,
                            public nsIWindowProvider,
@@ -173,7 +174,7 @@ class ContentChild final : public PContentChild,
       Endpoint<PCompositorManagerChild>&& aCompositor,
       Endpoint<PImageBridgeChild>&& aImageBridge,
       Endpoint<PVRManagerChild>&& aVRBridge,
-      Endpoint<PVideoDecoderManagerChild>&& aVideoManager,
+      Endpoint<PRemoteDecoderManagerChild>&& aVideoManager,
       nsTArray<uint32_t>&& namespaces);
 
   mozilla::ipc::IPCResult RecvRequestPerformanceMetrics(const nsID& aID);
@@ -182,7 +183,7 @@ class ContentChild final : public PContentChild,
       Endpoint<PCompositorManagerChild>&& aCompositor,
       Endpoint<PImageBridgeChild>&& aImageBridge,
       Endpoint<PVRManagerChild>&& aVRBridge,
-      Endpoint<PVideoDecoderManagerChild>&& aVideoManager,
+      Endpoint<PRemoteDecoderManagerChild>&& aVideoManager,
       nsTArray<uint32_t>&& namespaces);
 
   mozilla::ipc::IPCResult RecvAudioDefaultDeviceChange();
@@ -192,12 +193,8 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvSetProcessSandbox(
       const Maybe<FileDescriptor>& aBroker);
 
-  bool DeallocPBrowserChild(PBrowserChild*);
-
-  PIPCBlobInputStreamChild* AllocPIPCBlobInputStreamChild(
+  already_AddRefed<PIPCBlobInputStreamChild> AllocPIPCBlobInputStreamChild(
       const nsID& aID, const uint64_t& aSize);
-
-  bool DeallocPIPCBlobInputStreamChild(PIPCBlobInputStreamChild* aActor);
 
   PHalChild* AllocPHalChild();
   bool DeallocPHalChild(PHalChild*);
@@ -267,21 +264,6 @@ class ContentChild final : public PContentChild,
 
   bool DeallocPPSMContentDownloaderChild(
       PPSMContentDownloaderChild* aDownloader);
-
-  PExternalHelperAppChild* AllocPExternalHelperAppChild(
-      const Maybe<URIParams>& uri,
-      const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
-      const nsCString& aMimeContentType, const nsCString& aContentDisposition,
-      const uint32_t& aContentDispositionHint,
-      const nsString& aContentDispositionFilename, const bool& aForceSave,
-      const int64_t& aContentLength, const bool& aWasFileChannel,
-      const Maybe<URIParams>& aReferrer, PBrowserChild* aBrowser);
-
-  bool DeallocPExternalHelperAppChild(PExternalHelperAppChild* aService);
-
-  PHandlerServiceChild* AllocPHandlerServiceChild();
-
-  bool DeallocPHandlerServiceChild(PHandlerServiceChild*);
 
   PMediaChild* AllocPMediaChild();
 
@@ -521,14 +503,6 @@ class ContentChild final : public PContentChild,
 
   PBrowserOrId GetBrowserOrId(BrowserChild* aBrowserChild);
 
-  POfflineCacheUpdateChild* AllocPOfflineCacheUpdateChild(
-      const URIParams& manifestURI, const URIParams& documentURI,
-      const PrincipalInfo& aLoadingPrincipalInfo, const bool& stickDocument,
-      const CookieSettingsArgs& aCookieSettingsArgs);
-
-  bool DeallocPOfflineCacheUpdateChild(
-      POfflineCacheUpdateChild* offlineCacheUpdate);
-
   PWebrtcGlobalChild* AllocPWebrtcGlobalChild();
 
   bool DeallocPWebrtcGlobalChild(PWebrtcGlobalChild* aActor);
@@ -665,6 +639,12 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvStartDelayedAutoplayMediaComponents(
       BrowsingContext* aContext);
+
+  mozilla::ipc::IPCResult RecvSetMediaMuted(BrowsingContext* aContext,
+                                            bool aMuted);
+
+  mozilla::ipc::IPCResult RecvUpdateMediaAction(BrowsingContext* aContext,
+                                                MediaControlActions aAction);
 
   void HoldBrowsingContextGroup(BrowsingContextGroup* aBCG);
 

@@ -13,6 +13,7 @@
 #include "mozilla/dom/ServiceWorkerManager.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/ipc/BackgroundUtils.h"
+#include "mozilla/StorageAccess.h"
 #include "mozilla/SystemGroup.h"
 #include "nsIGlobalObject.h"
 #include "nsString.h"
@@ -20,6 +21,7 @@
 namespace mozilla {
 namespace dom {
 
+using mozilla::ipc::CSPInfo;
 using mozilla::ipc::PrincipalInfo;
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Clients);
@@ -86,8 +88,7 @@ already_AddRefed<Promise> Clients::Get(const nsAString& aClientID,
             NS_ENSURE_TRUE_VOID(holder->GetParentObject());
             RefPtr<Client> client = new Client(
                 holder->GetParentObject(), aResult.get_ClientInfoAndState());
-            if (client->GetStorageAccess() ==
-                nsContentUtils::StorageAccess::eAllow) {
+            if (client->GetStorageAccess() == StorageAccess::eAllow) {
               outerPromise->MaybeResolve(std::move(client));
               return;
             }
@@ -167,8 +168,7 @@ already_AddRefed<Promise> Clients::MatchAll(const ClientQueryOptions& aOptions,
         for (const ClientInfoAndState& value :
              aResult.get_ClientList().values()) {
           RefPtr<Client> client = new Client(global, value);
-          if (client->GetStorageAccess() !=
-              nsContentUtils::StorageAccess::eAllow) {
+          if (client->GetStorageAccess() != StorageAccess::eAllow) {
             storageDenied = true;
             continue;
           }
@@ -216,11 +216,10 @@ already_AddRefed<Promise> Clients::OpenWindow(const nsAString& aURL,
   }
 
   const PrincipalInfo& principalInfo = workerPrivate->GetPrincipalInfo();
-  const nsTArray<mozilla::ipc::ContentSecurityPolicy>& cspInfos =
-      workerPrivate->GetCSPInfos();
+  const CSPInfo& cspInfo = workerPrivate->GetCSPInfo();
   nsCString baseURL = workerPrivate->GetLocationInfo().mHref;
 
-  ClientOpenWindowArgs args(principalInfo, cspInfos,
+  ClientOpenWindowArgs args(principalInfo, Some(cspInfo),
                             NS_ConvertUTF16toUTF8(aURL), baseURL);
 
   nsCOMPtr<nsIGlobalObject> global = mGlobal;

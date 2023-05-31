@@ -119,7 +119,7 @@ class WebMDemuxer : public MediaDataDemuxer,
   nsresult GetNextPacket(TrackInfo::TrackType aType,
                          MediaRawDataQueue* aSamples);
 
-  nsresult Reset(TrackInfo::TrackType aType);
+  void Reset(TrackInfo::TrackType aType);
 
   // Pushes a packet to the front of the audio packet queue.
   void PushAudioPacket(NesteggPacketHolder* aItem);
@@ -265,7 +265,7 @@ class WebMTrackDemuxer : public MediaTrackDemuxer,
  private:
   friend class WebMDemuxer;
   ~WebMTrackDemuxer();
-  void UpdateSamples(nsTArray<RefPtr<MediaRawData>>& aSamples);
+  void UpdateSamples(const nsTArray<RefPtr<MediaRawData>>& aSamples);
   void SetNextKeyFrameTime();
   nsresult NextSample(RefPtr<MediaRawData>& aData);
   RefPtr<WebMDemuxer> mParent;

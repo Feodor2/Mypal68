@@ -10,8 +10,10 @@
  * and create derivative works of this document.
  */
 
-[HTMLConstructor]
-interface HTMLTableCaptionElement : HTMLElement {};
+[Exposed=Window]
+interface HTMLTableCaptionElement : HTMLElement {
+  [HTMLConstructor] constructor();
+};
 
 partial interface HTMLTableCaptionElement {
            [CEReactions, SetterThrows]

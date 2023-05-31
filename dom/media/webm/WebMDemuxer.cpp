@@ -230,13 +230,12 @@ already_AddRefed<MediaTrackDemuxer> WebMDemuxer::GetTrackDemuxer(
   return e.forget();
 }
 
-nsresult WebMDemuxer::Reset(TrackInfo::TrackType aType) {
+void WebMDemuxer::Reset(TrackInfo::TrackType aType) {
   if (aType == TrackInfo::kVideoTrack) {
     mVideoPackets.Reset();
   } else {
     mAudioPackets.Reset();
   }
-  return NS_OK;
 }
 
 nsresult WebMDemuxer::ReadMetadata() {
@@ -897,9 +896,7 @@ nsresult WebMDemuxer::SeekInternal(TrackInfo::TrackType aType,
   uint32_t trackToSeek = mHasVideo ? mVideoTrack : mAudioTrack;
   uint64_t target = aTarget.ToNanoseconds();
 
-  if (NS_FAILED(Reset(aType))) {
-    return NS_ERROR_FAILURE;
-  }
+  Reset(aType);
 
   if (mSeekPreroll) {
     uint64_t startTime = 0;
@@ -1100,15 +1097,19 @@ RefPtr<WebMTrackDemuxer::SamplesPromise> WebMTrackDemuxer::GetSamples(
     if (mNeedKeyframe && !sample->mKeyframe) {
       continue;
     }
+    if (!sample->HasValidTime()) {
+      return SamplesPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_DEMUXER_ERR,
+                                             __func__);
+    }
     mNeedKeyframe = false;
-    samples->mSamples.AppendElement(sample);
+    samples->AppendSample(sample);
     aNumSamples--;
   }
 
-  if (samples->mSamples.IsEmpty()) {
+  if (samples->GetSamples().IsEmpty()) {
     return SamplesPromise::CreateAndReject(rv, __func__);
   } else {
-    UpdateSamples(samples->mSamples);
+    UpdateSamples(samples->GetSamples());
     return SamplesPromise::CreateAndResolve(samples, __func__);
   }
 }
@@ -1184,7 +1185,8 @@ void WebMTrackDemuxer::Reset() {
   }
 }
 
-void WebMTrackDemuxer::UpdateSamples(nsTArray<RefPtr<MediaRawData>>& aSamples) {
+void WebMTrackDemuxer::UpdateSamples(
+    const nsTArray<RefPtr<MediaRawData>>& aSamples) {
   for (const auto& sample : aSamples) {
     if (sample->mCrypto.IsEncrypted()) {
       UniquePtr<MediaRawDataWriter> writer(sample->CreateWriter());

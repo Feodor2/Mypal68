@@ -3,7 +3,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-[Func="IsChromeOrXBL"]
+[Func="IsChromeOrXBL",
+ Exposed=Window]
 interface BoxObject {
   readonly attribute Element? element;
 

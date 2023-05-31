@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGFEColorMatrixElement : SVGElement {
 
   // Color Matrix Types
@@ -26,4 +27,4 @@ interface SVGFEColorMatrixElement : SVGElement {
   readonly attribute SVGAnimatedNumberList values;
 };
 
-SVGFEColorMatrixElement implements SVGFilterPrimitiveStandardAttributes;
+SVGFEColorMatrixElement includes SVGFilterPrimitiveStandardAttributes;

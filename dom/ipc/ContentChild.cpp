@@ -20,9 +20,9 @@
 #include "mozilla/ProcessHangMonitorIPC.h"
 #include "mozilla/RemoteDecoderManagerChild.h"
 #include "mozilla/Unused.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TelemetryIPC.h"
-#include "mozilla/VideoDecoderManagerChild.h"
+#include "mozilla/RemoteDecoderManagerChild.h"
 #include "mozilla/devtools/HeapSnapshotTempFileHelperChild.h"
 #include "mozilla/docshell/OfflineCacheUpdateChild.h"
 #include "mozilla/dom/BrowsingContext.h"
@@ -31,7 +31,6 @@
 #include "mozilla/dom/ClientOpenWindowOpActors.h"
 #include "mozilla/dom/ChildProcessMessageManager.h"
 #include "mozilla/dom/ContentProcessMessageManager.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DataTransfer.h"
 #include "mozilla/dom/DocGroup.h"
@@ -80,7 +79,6 @@
 #include "mozilla/PerformanceUtils.h"
 #include "mozilla/plugins/PluginInstanceParent.h"
 #include "mozilla/plugins/PluginModuleParent.h"
-#include "mozilla/recordreplay/ParentIPC.h"
 #include "mozilla/widget/ScreenManager.h"
 #include "mozilla/widget/WidgetMessageUtils.h"
 #include "nsBaseDragService.h"
@@ -94,9 +92,7 @@
 #include "nsQueryObject.h"
 #include "imgLoader.h"
 #include "GMPServiceChild.h"
-#include "nsISimpleEnumerator.h"
 #include "nsIStringBundle.h"
-#include "nsIWorkerDebuggerManager.h"
 #include "nsGeolocation.h"
 
 #if !defined(XP_WIN)
@@ -130,12 +126,10 @@
 #include "nsIConsoleListener.h"
 #include "nsIContentViewer.h"
 #include "nsICycleCollectorListener.h"
-#include "nsIIdlePeriod.h"
 #include "nsIDragService.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIMemoryReporter.h"
 #include "nsIMemoryInfoDumper.h"
-#include "nsIMutable.h"
 #include "nsIObserverService.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsMemoryInfoDumper.h"
@@ -174,7 +168,6 @@
 #include "nsChromeRegistryContent.h"
 #include "nsFrameMessageManager.h"
 
-#include "nsIGeolocationProvider.h"
 #include "mozilla/dom/PCycleCollectWithLogsChild.h"
 
 #include "nsIScriptSecurityManager.h"
@@ -221,6 +214,7 @@
 #endif
 
 #include "mozilla/dom/File.h"
+#include "mozilla/dom/MediaController.h"
 #include "mozilla/dom/PPresentationChild.h"
 #include "mozilla/dom/PresentationIPCService.h"
 #include "mozilla/ipc/InputStreamUtils.h"
@@ -661,12 +655,6 @@ bool ContentChild::Init(MessageLoop* aIOLoop, base::ProcessId aParentPid,
     return false;
   }
 
-  // Middleman processes use a special channel for forwarding messages to
-  // their own children.
-  if (recordreplay::IsMiddleman()) {
-    SetMiddlemanIPCChannel(recordreplay::parent::ChannelToUIProcess());
-  }
-
   if (!Open(aChannel, aParentPid, aIOLoop)) {
     return false;
   }
@@ -782,8 +770,7 @@ static nsresult GetCreateWindowParams(mozIDOMWindowProxy* aParent,
 
   nsCOMPtr<nsIReferrerInfo> referrerInfo;
   if (aForceNoReferrer) {
-    referrerInfo = new ReferrerInfo(
-        nullptr, mozilla::net::ReferrerPolicy::RP_Unset, false);
+    referrerInfo = new ReferrerInfo(nullptr, ReferrerPolicy::_empty, false);
   }
   if (aLoadState && !referrerInfo) {
     referrerInfo = aLoadState->GetReferrerInfo();
@@ -794,8 +781,7 @@ static nsresult GetCreateWindowParams(mozIDOMWindowProxy* aParent,
     nsCOMPtr<nsIPrincipal> nullPrincipal =
         NullPrincipal::CreateWithoutOriginAttributes();
     if (!referrerInfo) {
-      referrerInfo =
-          new ReferrerInfo(nullptr, mozilla::net::ReferrerPolicy::RP_Unset);
+      referrerInfo = new ReferrerInfo(nullptr, ReferrerPolicy::_empty);
     }
 
     referrerInfo.swap(*aReferrerInfo);
@@ -806,10 +792,7 @@ static nsresult GetCreateWindowParams(mozIDOMWindowProxy* aParent,
   nsCOMPtr<Document> doc = opener->GetDoc();
   NS_ADDREF(*aTriggeringPrincipal = doc->NodePrincipal());
 
-  // Currently we query the CSP from the doc->NodePrincipal(). After
-  // Bug 965637 we can query the CSP from the doc directly.
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  doc->NodePrincipal()->GetCsp(getter_AddRefs(csp));
+  nsCOMPtr<nsIContentSecurityPolicy> csp = doc->GetCsp();
   if (csp) {
     csp.forget(aCsp);
   }
@@ -821,8 +804,8 @@ static nsresult GetCreateWindowParams(mozIDOMWindowProxy* aParent,
   }
 
   if (!referrerInfo) {
-    referrerInfo =
-        new ReferrerInfo(doc->GetDocBaseURI(), doc->GetReferrerPolicy());
+    referrerInfo = new ReferrerInfo();
+    referrerInfo->InitWithDocument(doc);
   }
 
   referrerInfo.swap(*aReferrerInfo);
@@ -969,10 +952,8 @@ nsresult ContentChild::ProvideWindowCommon(
     return NS_ERROR_ABORT;
   }
 
-  // Open a remote endpoint for our PBrowser actor. DeallocPBrowserChild
-  // releases the ref taken.
-  ManagedEndpoint<PBrowserParent> parentEp =
-      OpenPBrowserEndpoint(do_AddRef(newChild).take());
+  // Open a remote endpoint for our PBrowser actor.
+  ManagedEndpoint<PBrowserParent> parentEp = OpenPBrowserEndpoint(newChild);
   if (NS_WARN_IF(!parentEp.IsValid())) {
     return NS_ERROR_ABORT;
   }
@@ -993,7 +974,7 @@ nsresult ContentChild::ProvideWindowCommon(
   nsCOMPtr<nsPIDOMWindowInner> parentTopInnerWindow;
   if (aParent) {
     nsCOMPtr<nsPIDOMWindowOuter> parentTopWindow =
-        nsPIDOMWindowOuter::From(aParent)->GetTop();
+        nsPIDOMWindowOuter::From(aParent)->GetInProcessTop();
     if (parentTopWindow) {
       parentTopInnerWindow = parentTopWindow->GetCurrentInnerWindow();
     }
@@ -1201,7 +1182,7 @@ void ContentChild::LaunchRDDProcess() {
         Endpoint<PRemoteDecoderManagerChild> endpoint;
         Unused << SendLaunchRDDProcess(&rv, &endpoint);
         if (rv == NS_OK) {
-          RemoteDecoderManagerChild::InitForContent(std::move(endpoint));
+          RemoteDecoderManagerChild::InitForRDDProcess(std::move(endpoint));
         }
       }));
   task.Wait();
@@ -1283,12 +1264,8 @@ void ContentChild::InitXPCOM(
   RecvBidiKeyboardNotify(aXPCOMInit.isLangRTL(),
                          aXPCOMInit.haveBidiKeyboards());
 
-  // Create the CPOW manager as soon as possible. Middleman processes don't use
-  // CPOWs, because their recording child will also have a CPOW manager that
-  // communicates with the UI process.
-  if (!recordreplay::IsMiddleman()) {
-    SendPJavaScriptConstructor();
-  }
+  // Create the CPOW manager as soon as possible.
+  SendPJavaScriptConstructor();
 
   if (aXPCOMInit.domainPolicy().active()) {
     nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
@@ -1334,8 +1311,6 @@ void ContentChild::InitXPCOM(
 
   // Set the dynamic scalar definitions for this process.
   TelemetryIPC::AddDynamicScalarDefinitions(aXPCOMInit.dynamicScalarDefs());
-
-  DOMPrefs::Initialize();
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvRequestMemoryReport(
@@ -1458,7 +1433,7 @@ mozilla::ipc::IPCResult ContentChild::RecvInitRendering(
     Endpoint<PCompositorManagerChild>&& aCompositor,
     Endpoint<PImageBridgeChild>&& aImageBridge,
     Endpoint<PVRManagerChild>&& aVRBridge,
-    Endpoint<PVideoDecoderManagerChild>&& aVideoManager,
+    Endpoint<PRemoteDecoderManagerChild>&& aVideoManager,
     nsTArray<uint32_t>&& namespaces) {
   MOZ_ASSERT(namespaces.Length() == 3);
 
@@ -1482,7 +1457,7 @@ mozilla::ipc::IPCResult ContentChild::RecvInitRendering(
   if (!gfx::VRManagerChild::InitForContent(std::move(aVRBridge))) {
     return GetResultForRenderingInitFailure(aVRBridge.OtherPid());
   }
-  VideoDecoderManagerChild::InitForContent(std::move(aVideoManager));
+  RemoteDecoderManagerChild::InitForGPUProcess(std::move(aVideoManager));
 
 #if defined(XP_MACOSX) && !defined(MOZ_SANDBOX)
   // Close all current connections to the WindowServer. This ensures that the
@@ -1500,7 +1475,7 @@ mozilla::ipc::IPCResult ContentChild::RecvReinitRendering(
     Endpoint<PCompositorManagerChild>&& aCompositor,
     Endpoint<PImageBridgeChild>&& aImageBridge,
     Endpoint<PVRManagerChild>&& aVRBridge,
-    Endpoint<PVideoDecoderManagerChild>&& aVideoManager,
+    Endpoint<PRemoteDecoderManagerChild>&& aVideoManager,
     nsTArray<uint32_t>&& namespaces) {
   MOZ_ASSERT(namespaces.Length() == 3);
   nsTArray<RefPtr<BrowserChild>> tabs = BrowserChild::GetAll();
@@ -1535,7 +1510,7 @@ mozilla::ipc::IPCResult ContentChild::RecvReinitRendering(
     }
   }
 
-  VideoDecoderManagerChild::InitForContent(std::move(aVideoManager));
+  RemoteDecoderManagerChild::InitForGPUProcess(std::move(aVideoManager));
   return IPC_OK();
 }
 
@@ -1592,8 +1567,7 @@ static bool StartMacOSContentSandbox() {
   }
 
   // If the sandbox is already enabled, there's nothing more to do here.
-  if (Preferences::GetBool("security.sandbox.content.mac.earlyinit") &&
-      !recordreplay::IsRecordingOrReplaying()) {
+  if (Preferences::GetBool("security.sandbox.content.mac.earlyinit")) {
     return true;
   }
 
@@ -1761,11 +1735,7 @@ static void FirstIdle(void) {
   MOZ_ASSERT(gFirstIdleTask);
   gFirstIdleTask = nullptr;
 
-  // When recording or replaying, the middleman process will send this message
-  // instead.
-  if (!recordreplay::IsRecordingOrReplaying()) {
-    ContentChild::GetSingleton()->SendFirstIdle();
-  }
+  ContentChild::GetSingleton()->SendFirstIdle();
 }
 
 mozilla::jsipc::PJavaScriptChild* ContentChild::AllocPJavaScriptChild() {
@@ -1816,10 +1786,8 @@ mozilla::ipc::IPCResult ContentChild::RecvConstructBrowser(
       BrowserChild::Create(this, aTabId, aSameTabGroupAs, tc.GetTabContext(),
                            aBrowsingContext, aChromeFlags);
 
-  // Bind the created BrowserChild to IPC to actually link the actor. The ref
-  // here is released in DeallocPBrowserChild.
-  if (NS_WARN_IF(!BindPBrowserEndpoint(std::move(aBrowserEp),
-                                       do_AddRef(browserChild).take()))) {
+  // Bind the created BrowserChild to IPC to actually link the actor.
+  if (NS_WARN_IF(!BindPBrowserEndpoint(std::move(aBrowserEp), browserChild))) {
     return IPC_FAIL(this, "BindPBrowserEndpoint failed");
   }
 
@@ -1871,27 +1839,12 @@ bool ContentChild::DeallocPFileDescriptorSetChild(
   return true;
 }
 
-bool ContentChild::DeallocPBrowserChild(PBrowserChild* aIframe) {
-  BrowserChild* child = static_cast<BrowserChild*>(aIframe);
-  NS_RELEASE(child);
-  return true;
-}
-
-PIPCBlobInputStreamChild* ContentChild::AllocPIPCBlobInputStreamChild(
-    const nsID& aID, const uint64_t& aSize) {
-  // IPCBlobInputStreamChild is refcounted. Here it's created and in
-  // DeallocPIPCBlobInputStreamChild is released.
-
+already_AddRefed<PIPCBlobInputStreamChild>
+ContentChild::AllocPIPCBlobInputStreamChild(const nsID& aID,
+                                            const uint64_t& aSize) {
   RefPtr<IPCBlobInputStreamChild> actor =
       new IPCBlobInputStreamChild(aID, aSize);
-  return actor.forget().take();
-}
-
-bool ContentChild::DeallocPIPCBlobInputStreamChild(
-    PIPCBlobInputStreamChild* aActor) {
-  RefPtr<IPCBlobInputStreamChild> actor =
-      dont_AddRef(static_cast<IPCBlobInputStreamChild*>(aActor));
-  return true;
+  return actor.forget();
 }
 
 mozilla::PRemoteSpellcheckEngineChild*
@@ -1985,9 +1938,6 @@ jsipc::CPOWManager* ContentChild::GetCPOWManager() {
   if (PJavaScriptChild* c =
           LoneManagedOrNullAsserts(ManagedPJavaScriptChild())) {
     return CPOWManagerFor(c);
-  }
-  if (recordreplay::IsMiddleman()) {
-    return nullptr;
   }
   return CPOWManagerFor(SendPJavaScriptConstructor());
 }
@@ -2097,39 +2047,6 @@ bool ContentChild::DeallocPPSMContentDownloaderChild(
     PPSMContentDownloaderChild* aListener) {
   auto* listener = static_cast<PSMContentDownloaderChild*>(aListener);
   RefPtr<PSMContentDownloaderChild> child = dont_AddRef(listener);
-  return true;
-}
-
-PExternalHelperAppChild* ContentChild::AllocPExternalHelperAppChild(
-    const Maybe<URIParams>& uri,
-    const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
-    const nsCString& aMimeContentType, const nsCString& aContentDisposition,
-    const uint32_t& aContentDispositionHint,
-    const nsString& aContentDispositionFilename, const bool& aForceSave,
-    const int64_t& aContentLength, const bool& aWasFileChannel,
-    const Maybe<URIParams>& aReferrer, PBrowserChild* aBrowser) {
-  auto* child = new ExternalHelperAppChild();
-  child->AddRef();
-  return child;
-}
-
-bool ContentChild::DeallocPExternalHelperAppChild(
-    PExternalHelperAppChild* aService) {
-  ExternalHelperAppChild* child =
-      static_cast<ExternalHelperAppChild*>(aService);
-  child->Release();
-  return true;
-}
-
-PHandlerServiceChild* ContentChild::AllocPHandlerServiceChild() {
-  auto* actor = new HandlerServiceChild();
-  actor->AddRef();
-  return actor;
-}
-
-bool ContentChild::DeallocPHandlerServiceChild(
-    PHandlerServiceChild* aHandlerServiceChild) {
-  static_cast<HandlerServiceChild*>(aHandlerServiceChild)->Release();
   return true;
 }
 
@@ -2811,22 +2728,6 @@ mozilla::ipc::IPCResult ContentChild::RecvUnregisterSheet(
   return IPC_OK();
 }
 
-POfflineCacheUpdateChild* ContentChild::AllocPOfflineCacheUpdateChild(
-    const URIParams& manifestURI, const URIParams& documentURI,
-    const PrincipalInfo& aLoadingPrincipalInfo, const bool& stickDocument,
-    const CookieSettingsArgs& aCookieSettingsArgs) {
-  MOZ_CRASH("unused");
-  return nullptr;
-}
-
-bool ContentChild::DeallocPOfflineCacheUpdateChild(
-    POfflineCacheUpdateChild* actor) {
-  OfflineCacheUpdateChild* offlineCacheUpdate =
-      static_cast<OfflineCacheUpdateChild*>(actor);
-  NS_RELEASE(offlineCacheUpdate);
-  return true;
-}
-
 mozilla::ipc::IPCResult ContentChild::RecvDomainSetChanged(
     const uint32_t& aSetType, const uint32_t& aChangeType,
     const Maybe<URIParams>& aDomain) {
@@ -3138,13 +3039,6 @@ uint64_t NextWindowID() {
   MOZ_RELEASE_ASSERT(windowID < (uint64_t(1) << kWindowIDWindowBits));
   uint64_t windowBits = windowID & ((uint64_t(1) << kWindowIDWindowBits) - 1);
 
-  // Make sure that the middleman process doesn't generate WindowIDs which
-  // conflict with the process it's wrapping (which shares a ContentParentID
-  // with it).
-  if (recordreplay::IsMiddleman()) {
-    windowBits |= uint64_t(1) << (kWindowIDWindowBits - 1);
-  }
-
   return (processBits << kWindowIDWindowBits) | windowBits;
 }
 
@@ -3442,9 +3336,11 @@ nsresult ContentChild::AsyncOpenAnonymousTemporaryFile(
 
 mozilla::ipc::IPCResult ContentChild::RecvSetPermissionsWithKey(
     const nsCString& aPermissionKey, nsTArray<IPC::Permission>&& aPerms) {
-  nsCOMPtr<nsIPermissionManager> permissionManager =
-      services::GetPermissionManager();
-  permissionManager->SetPermissionsWithKey(aPermissionKey, aPerms);
+  RefPtr<nsPermissionManager> permManager = nsPermissionManager::GetInstance();
+  if (permManager) {
+    permManager->SetPermissionsWithKey(aPermissionKey, aPerms);
+  }
+
   return IPC_OK();
 }
 
@@ -3531,12 +3427,6 @@ mozilla::ipc::IPCResult ContentChild::RecvAddDynamicScalars(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult ContentChild::RecvSaveRecording(
-    const FileDescriptor& aFile) {
-  recordreplay::parent::SaveRecording(aFile);
-  return IPC_OK();
-}
-
 mozilla::ipc::IPCResult ContentChild::RecvCrossProcessRedirect(
     const uint32_t& aRegistrarId, nsIURI* aURI, const uint32_t& aNewLoadFlags,
     const Maybe<LoadInfoArgs>& aLoadInfo, const uint64_t& aChannelId,
@@ -3607,6 +3497,26 @@ mozilla::ipc::IPCResult ContentChild::RecvStartDelayedAutoplayMediaComponents(
     BrowsingContext* aContext) {
   MOZ_ASSERT(aContext);
   aContext->StartDelayedAutoplayMediaComponents();
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult ContentChild::RecvSetMediaMuted(
+    BrowsingContext* aContext, bool aMuted) {
+  MOZ_ASSERT(aContext);
+  nsCOMPtr<nsPIDOMWindowOuter> window = aContext->GetDOMWindow();
+  if (window) {
+    window->SetAudioMuted(aMuted);
+  }
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult ContentChild::RecvUpdateMediaAction(
+    BrowsingContext* aContext, MediaControlActions aAction) {
+  MOZ_ASSERT(aContext);
+  nsCOMPtr<nsPIDOMWindowOuter> window = aContext->GetDOMWindow();
+  if (window) {
+    window->UpdateMediaAction(aAction);
+  }
   return IPC_OK();
 }
 

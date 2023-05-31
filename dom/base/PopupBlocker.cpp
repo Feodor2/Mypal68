@@ -3,9 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/PopupBlocker.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TimeStamp.h"
 #include "nsXULPopupManager.h"
@@ -142,7 +143,7 @@ bool PopupBlocker::TryUsePopupOpeningToken(nsIPrincipal* aPrincipal) {
     return true;
   }
 
-  if (aPrincipal && nsContentUtils::IsSystemPrincipal(aPrincipal)) {
+  if (aPrincipal && aPrincipal->IsSystemPrincipal()) {
     return true;
   }
 
@@ -183,7 +184,7 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
     case eBasicEventClass:
       // For these following events only allow popups if they're
       // triggered while handling user input. See
-      // PresShell::EventHandler::PrepareToDispatchEvent() for details.
+      // EventStateManager::IsUserInteractionEvent() for details.
       if (EventStateManager::IsHandlingUserInput()) {
         abuse = PopupBlocker::openBlocked;
         switch (aEvent->mMessage) {
@@ -205,7 +206,7 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
     case eEditorInputEventClass:
       // For this following event only allow popups if it's triggered
       // while handling user input. See
-      // PresShell::EventHandler::PrepareToDispatchEvent() for details.
+      // EventStateManager::IsUserInteractionEvent() for details.
       if (EventStateManager::IsHandlingUserInput()) {
         abuse = PopupBlocker::openBlocked;
         switch (aEvent->mMessage) {
@@ -222,7 +223,7 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
     case eInputEventClass:
       // For this following event only allow popups if it's triggered
       // while handling user input. See
-      // PresShell::EventHandler::PrepareToDispatchEvent() for details.
+      // EventStateManager::IsUserInteractionEvent() for details.
       if (EventStateManager::IsHandlingUserInput()) {
         abuse = PopupBlocker::openBlocked;
         switch (aEvent->mMessage) {
@@ -368,7 +369,7 @@ PopupBlocker::PopupControlState PopupBlocker::GetEventPopupControlState(
     case eFormEventClass:
       // For these following events only allow popups if they're
       // triggered while handling user input. See
-      // PresShell::EventHandler::PrepareToDispatchEvent() for details.
+      // EventStateManager::IsUserInteractionEvent() for details.
       if (EventStateManager::IsHandlingUserInput()) {
         abuse = PopupBlocker::openBlocked;
         switch (aEvent->mMessage) {
@@ -442,14 +443,14 @@ void PopupBlocker::ResetLastExternalProtocolIframeAllowed() {
 }  // namespace dom
 }  // namespace mozilla
 
-nsAutoPopupStatePusherInternal::nsAutoPopupStatePusherInternal(
+AutoPopupStatePusherInternal::AutoPopupStatePusherInternal(
     mozilla::dom::PopupBlocker::PopupControlState aState, bool aForce)
     : mOldState(
           mozilla::dom::PopupBlocker::PushPopupControlState(aState, aForce)) {
   mozilla::dom::PopupBlocker::PopupStatePusherCreated();
 }
 
-nsAutoPopupStatePusherInternal::~nsAutoPopupStatePusherInternal() {
+AutoPopupStatePusherInternal::~AutoPopupStatePusherInternal() {
   mozilla::dom::PopupBlocker::PopPopupControlState(mOldState);
   mozilla::dom::PopupBlocker::PopupStatePusherDestroyed();
 }

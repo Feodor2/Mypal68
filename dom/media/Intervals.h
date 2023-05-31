@@ -223,6 +223,12 @@ class Interval {
            (aOther.mStart - aOther.mFuzz <= mEnd + mFuzz);
   }
 
+  // Returns true if the two intervals intersect with this being on the right
+  // of aOther, ignoring fuzz.
+  bool TouchesOnRightStrict(const SelfType& aOther) const {
+    return aOther.mStart <= mStart && mStart <= aOther.mEnd;
+  }
+
   T mStart;
   T mEnd;
   T mFuzz;
@@ -298,8 +304,12 @@ class IntervalSet {
   }
 
   SelfType& Add(const SelfType& aIntervals) {
-    mIntervals.AppendElements(aIntervals.mIntervals);
-    Normalize();
+    if (aIntervals.mIntervals.Length() == 1) {
+      Add(aIntervals.mIntervals[0]);
+    } else {
+      mIntervals.AppendElements(aIntervals.mIntervals);
+      Normalize();
+    }
     return *this;
   }
 
@@ -377,12 +387,26 @@ class IntervalSet {
   }
 
   // Excludes an interval from an IntervalSet.
-  // This is done by inverting aInterval within the bounds of mIntervals
-  // and then doing the intersection.
   SelfType& operator-=(const ElemType& aInterval) {
     if (aInterval.IsEmpty() || mIntervals.IsEmpty()) {
       return *this;
     }
+    if (mIntervals.Length() == 1 &&
+        mIntervals[0].TouchesOnRightStrict(aInterval)) {
+      // Fast path when we're removing from the front of a set with a
+      // single interval. This is common for the buffered time ranges
+      // we see on Twitch.
+      if (aInterval.mEnd >= mIntervals[0].mEnd) {
+        mIntervals.RemoveElementAt(0);
+      } else {
+        mIntervals[0].mStart = aInterval.mEnd;
+        mIntervals[0].mFuzz = std::max(mIntervals[0].mFuzz, aInterval.mFuzz);
+      }
+      return *this;
+    }
+
+    // General case performed by inverting aInterval within the bounds of
+    // mIntervals and then doing the intersection.
     T firstEnd = std::max(mIntervals[0].mStart, aInterval.mStart);
     T secondStart = std::min(mIntervals.LastElement().mEnd, aInterval.mEnd);
     ElemType startInterval(mIntervals[0].mStart, firstEnd);
@@ -603,7 +627,7 @@ class IntervalSet {
     for (auto& interval : mIntervals) {
       interval.SetFuzz(aFuzz);
     }
-    Normalize();
+    MergeOverlappingIntervals();
   }
 
   static const IndexType NoIndex = IndexType(-1);
@@ -647,27 +671,32 @@ class IntervalSet {
 
  private:
   void Normalize() {
-    if (mIntervals.Length() >= 2) {
-      ContainerType normalized;
-
-      mIntervals.Sort(CompareIntervals());
-
-      // This merges the intervals.
-      ElemType current(mIntervals[0]);
-      for (IndexType i = 1; i < mIntervals.Length(); i++) {
-        ElemType& interval = mIntervals[i];
-        if (current.Touches(interval)) {
-          current = current.Span(interval);
-        } else {
-          normalized.AppendElement(std::move(current));
-          current = std::move(interval);
-        }
-      }
-      normalized.AppendElement(std::move(current));
-
-      mIntervals.Clear();
-      mIntervals.AppendElements(std::move(normalized));
+    if (mIntervals.Length() < 2) {
+      return;
     }
+    mIntervals.Sort(CompareIntervals());
+    MergeOverlappingIntervals();
+  }
+
+  void MergeOverlappingIntervals() {
+    if (mIntervals.Length() < 2) {
+      return;
+    }
+
+    // This merges the intervals in place.
+    IndexType read = 0;
+    IndexType write = 0;
+    while (read < mIntervals.Length()) {
+      ElemType current(mIntervals[read]);
+      read++;
+      while (read < mIntervals.Length() && current.Touches(mIntervals[read])) {
+        current = current.Span(mIntervals[read]);
+        read++;
+      }
+      mIntervals[write] = current;
+      write++;
+    }
+    mIntervals.SetLength(write);
   }
 
   struct CompareIntervals {

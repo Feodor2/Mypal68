@@ -12,8 +12,10 @@
  * and create derivative works of this document.
  */
 
-[HTMLConstructor]
+[Exposed=Window]
 interface HTMLIFrameElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, SetterThrows, Pure]
            attribute DOMString src;
   [CEReactions, SetterThrows, Pure]
@@ -66,13 +68,13 @@ partial interface HTMLIFrameElement {
            attribute boolean mozbrowser;
 };
 
-HTMLIFrameElement implements MozFrameLoaderOwner;
-HTMLIFrameElement implements BrowserElement;
+HTMLIFrameElement includes MozFrameLoaderOwner;
+HTMLIFrameElement includes BrowserElement;
 
-// https://wicg.github.io/feature-policy/#policy
+// https://w3c.github.io/webappsec-feature-policy/#idl-index
 partial interface HTMLIFrameElement {
   [SameObject, Pref="dom.security.featurePolicy.webidl.enabled"]
-  readonly attribute Policy policy;
+  readonly attribute FeaturePolicy featurePolicy;
 
   [CEReactions, SetterThrows, Pure, Pref="dom.security.featurePolicy.enabled"]
            attribute DOMString allow;

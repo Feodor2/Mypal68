@@ -10,7 +10,7 @@
 #include "mozilla/dom/WorkerNavigator.h"
 #include "mozilla/dom/WorkerNavigatorBinding.h"
 #include "mozilla/dom/network/Connection.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_privacy.h"
 
 #include "nsProxyRelease.h"
 #include "nsRFPService.h"
@@ -24,13 +24,15 @@
 
 #include "mozilla/dom/Navigator.h"
 
+#include "mozilla/webgpu/Instance.h"
+
 namespace mozilla {
 namespace dom {
 
 using namespace workerinternals;
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(WorkerNavigator, mStorageManager,
-                                      mConnection, mMediaCapabilities);
+                                      mConnection, mMediaCapabilities, mWebGpu);
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(WorkerNavigator, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(WorkerNavigator, Release)
@@ -205,6 +207,19 @@ dom::MediaCapabilities* WorkerNavigator::MediaCapabilities() {
     mMediaCapabilities = new dom::MediaCapabilities(global);
   }
   return mMediaCapabilities;
+}
+
+webgpu::Instance* WorkerNavigator::Gpu() {
+  if (!mWebGpu) {
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    MOZ_ASSERT(workerPrivate);
+
+    nsIGlobalObject* global = workerPrivate->GlobalScope();
+    MOZ_ASSERT(global);
+
+    mWebGpu = webgpu::Instance::Create(global);
+  }
+  return mWebGpu;
 }
 
 }  // namespace dom

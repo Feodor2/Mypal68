@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGFEMorphologyElement : SVGElement {
 
   // Morphology Operators
@@ -26,4 +27,4 @@ interface SVGFEMorphologyElement : SVGElement {
   readonly attribute SVGAnimatedNumber radiusY;
 };
 
-SVGFEMorphologyElement implements SVGFilterPrimitiveStandardAttributes;
+SVGFEMorphologyElement includes SVGFilterPrimitiveStandardAttributes;

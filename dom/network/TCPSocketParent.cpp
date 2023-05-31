@@ -14,14 +14,13 @@
 #include "mozilla/HoldDropJSObjects.h"
 #include "nsISocketTransportService.h"
 #include "nsISocketTransport.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsNetUtil.h"
 
 namespace IPC {
 
 // Defined in TCPSocketChild.cpp
 extern bool DeserializeArrayBuffer(JSContext* aCx,
-                                   const InfallibleTArray<uint8_t>& aBuffer,
+                                   const nsTArray<uint8_t>& aBuffer,
                                    JS::MutableHandle<JS::Value> aVal);
 
 }  // namespace IPC
@@ -41,8 +40,7 @@ using namespace net;
 
 namespace dom {
 
-static void FireInteralError(TCPSocketParent* aActor,
-                             uint32_t aLineNo) {
+static void FireInteralError(TCPSocketParent* aActor, uint32_t aLineNo) {
   MOZ_ASSERT(aActor->IPCOpen());
 
   mozilla::Unused << aActor->SendCallback(
@@ -109,13 +107,12 @@ mozilla::ipc::IPCResult TCPSocketParent::RecvOpenBind(
 
   nsCOMPtr<nsISocketTransport> socketTransport;
   if (aUseSSL) {
-    const char* socketTypes[1];
-    socketTypes[0] = "ssl";
-    rv = sts->CreateTransport(socketTypes, 1, aRemoteHost, aRemotePort, nullptr,
+    AutoTArray<nsCString, 1> socketTypes = {NS_LITERAL_CSTRING("ssl")};
+    rv = sts->CreateTransport(socketTypes, aRemoteHost, aRemotePort, nullptr,
                               getter_AddRefs(socketTransport));
   } else {
-    rv = sts->CreateTransport(nullptr, 0, aRemoteHost, aRemotePort, nullptr,
-                              getter_AddRefs(socketTransport));
+    rv = sts->CreateTransport(nsTArray<nsCString>(), aRemoteHost, aRemotePort,
+                              nullptr, getter_AddRefs(socketTransport));
   }
 
   if (NS_FAILED(rv)) {
@@ -208,7 +205,7 @@ mozilla::ipc::IPCResult TCPSocketParent::RecvData(
     bool allowed;
     MOZ_ASSERT(aData.type() == SendableData::TArrayOfuint8_t,
                "Unsupported data type for filtering");
-    const InfallibleTArray<uint8_t>& data(aData.get_ArrayOfuint8_t());
+    const nsTArray<uint8_t>& data(aData.get_ArrayOfuint8_t());
     nsresult nsrv =
         mFilter->FilterPacket(&addr, data.Elements(), data.Length(),
                               nsISocketFilter::SF_OUTGOING, &allowed);
@@ -271,7 +268,7 @@ void TCPSocketParent::FireEvent(const nsAString& aType,
 
 void TCPSocketParent::FireArrayBufferDataEvent(nsTArray<uint8_t>& aBuffer,
                                                TCPReadyState aReadyState) {
-  InfallibleTArray<uint8_t> arr;
+  nsTArray<uint8_t> arr;
   arr.SwapElements(aBuffer);
 
   if (mFilter) {

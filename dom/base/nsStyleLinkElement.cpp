@@ -36,14 +36,14 @@ nsStyleLinkElement::SheetInfo::SheetInfo(
     const Document& aDocument, nsIContent* aContent,
     already_AddRefed<nsIURI> aURI,
     already_AddRefed<nsIPrincipal> aTriggeringPrincipal,
-    mozilla::net::ReferrerPolicy aReferrerPolicy, mozilla::CORSMode aCORSMode,
-    const nsAString& aTitle, const nsAString& aMedia,
-    HasAlternateRel aHasAlternateRel, IsInline aIsInline,
-    IsExplicitlyEnabled aIsExplicitlyEnabled)
+    already_AddRefed<nsIReferrerInfo> aReferrerInfo,
+    mozilla::CORSMode aCORSMode, const nsAString& aTitle,
+    const nsAString& aMedia, HasAlternateRel aHasAlternateRel,
+    IsInline aIsInline, IsExplicitlyEnabled aIsExplicitlyEnabled)
     : mContent(aContent),
       mURI(aURI),
       mTriggeringPrincipal(aTriggeringPrincipal),
-      mReferrerPolicy(aReferrerPolicy),
+      mReferrerInfo(aReferrerInfo),
       mCORSMode(aCORSMode),
       mTitle(aTitle),
       mMedia(aMedia),
@@ -52,10 +52,7 @@ nsStyleLinkElement::SheetInfo::SheetInfo(
       mIsExplicitlyEnabled(aIsExplicitlyEnabled) {
   MOZ_ASSERT(!mIsInline || aContent);
   MOZ_ASSERT_IF(aContent, aContent->OwnerDoc() == &aDocument);
-
-  if (mReferrerPolicy == net::ReferrerPolicy::RP_Unset) {
-    mReferrerPolicy = aDocument.GetReferrerPolicy();
-  }
+  MOZ_ASSERT(mReferrerInfo);
 
   if (!mIsInline && aContent && aContent->IsElement()) {
     aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::integrity,
@@ -309,8 +306,6 @@ nsStyleLinkElement::DoUpdateStyleSheet(Document* aOldDocument,
     return Update{};
   }
 
-  MOZ_ASSERT(info->mReferrerPolicy != net::RP_Unset ||
-             info->mReferrerPolicy == doc->GetReferrerPolicy());
   if (!info->mURI && !info->mIsInline) {
     // If href is empty and this is not inline style then just bail
     return Update{};
@@ -328,9 +323,8 @@ nsStyleLinkElement::DoUpdateStyleSheet(Document* aOldDocument,
     MOZ_ASSERT(thisContent->IsElement());
     nsresult rv = NS_OK;
     if (!nsStyleUtil::CSPAllowsInlineStyle(
-            thisContent->AsElement(), thisContent->NodePrincipal(),
-            info->mTriggeringPrincipal, doc->GetDocumentURI(), mLineNumber,
-            mColumnNumber, text, &rv)) {
+            thisContent->AsElement(), doc, info->mTriggeringPrincipal,
+            mLineNumber, mColumnNumber, text, &rv)) {
       if (NS_FAILED(rv)) {
         return Err(rv);
       }

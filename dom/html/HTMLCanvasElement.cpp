@@ -4,21 +4,21 @@
 
 #include "mozilla/dom/HTMLCanvasElement.h"
 
-#include "gfxPrefs.h"
 #include "ImageEncoder.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "Layers.h"
-#include "MediaSegment.h"
+#include "MediaTrackGraph.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/CanvasCaptureMediaStream.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/HTMLCanvasElementBinding.h"
-#include "mozilla/dom/MediaStreamTrack.h"
+#include "mozilla/dom/VideoStreamTrack.h"
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/EventDispatcher.h"
@@ -33,10 +33,7 @@
 #include "nsContentUtils.h"
 #include "nsDisplayList.h"
 #include "nsDOMJSUtils.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsITimer.h"
-#include "nsIWritablePropertyBag2.h"
-#include "nsIXPConnect.h"
 #include "nsJSUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsMathUtils.h"
@@ -600,7 +597,10 @@ void HTMLCanvasElement::ToDataURL(JSContext* aCx, const nsAString& aType,
     return;
   }
 
-  aRv = ToDataURLImpl(aCx, aSubjectPrincipal, aType, aParams, aDataURL);
+  nsresult rv = ToDataURLImpl(aCx, aSubjectPrincipal, aType, aParams, aDataURL);
+  if (NS_FAILED(rv)) {
+    aDataURL.AssignLiteral("data:,");
+  }
 }
 
 void HTMLCanvasElement::SetMozPrintCallback(PrintCallback* aCallback) {
@@ -674,24 +674,18 @@ already_AddRefed<CanvasCaptureMediaStream> HTMLCanvasElement::CaptureStream(
     return nullptr;
   }
 
-  RefPtr<CanvasCaptureMediaStream> stream =
-      CanvasCaptureMediaStream::CreateSourceStream(window, this);
-  if (!stream) {
-    aRv.Throw(NS_ERROR_FAILURE);
-    return nullptr;
-  }
+  auto stream = MakeRefPtr<CanvasCaptureMediaStream>(window, this);
 
-  TrackID videoTrackId = 1;
   nsCOMPtr<nsIPrincipal> principal = NodePrincipal();
-  nsresult rv = stream->Init(aFrameRate, videoTrackId, principal);
+  nsresult rv = stream->Init(aFrameRate, principal);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
     return nullptr;
   }
 
   RefPtr<MediaStreamTrack> track =
-      stream->CreateDOMTrack(videoTrackId, MediaSegment::VIDEO,
-                             new CanvasCaptureTrackSource(principal, stream));
+      new VideoStreamTrack(window, stream->GetSourceStream(),
+                           new CanvasCaptureTrackSource(principal, stream));
   stream->AddTrackInternal(track);
 
   // Check site-specific permission and display prompt if appropriate.
@@ -850,7 +844,7 @@ already_AddRefed<File> HTMLCanvasElement::MozGetAsFile(
   OwnerDoc()->WarnOnceAbout(Document::eMozGetAsFile);
 
   // do a trust check if this is a write-only canvas
-  if (mWriteOnly && !nsContentUtils::IsSystemPrincipal(&aSubjectPrincipal)) {
+  if (mWriteOnly && !aSubjectPrincipal.IsSystemPrincipal()) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return nullptr;
   }
@@ -1204,8 +1198,8 @@ nsresult HTMLCanvasElement::RegisterFrameCaptureListener(
       return NS_ERROR_FAILURE;
     }
 
-    while (doc->GetParentDocument()) {
-      doc = doc->GetParentDocument();
+    while (doc->GetInProcessParentDocument()) {
+      doc = doc->GetInProcessParentDocument();
     }
 
     nsPresContext* context = doc->GetPresContext();

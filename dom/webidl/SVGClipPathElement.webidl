@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGClipPathElement : SVGElement {
   [Constant]
   readonly attribute SVGAnimatedEnumeration clipPathUnits;

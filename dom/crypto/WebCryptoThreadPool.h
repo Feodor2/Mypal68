@@ -7,7 +7,6 @@
 
 #include "mozilla/Mutex.h"
 #include "nsIObserver.h"
-#include "nsIObserverService.h"
 #include "nsIThreadPool.h"
 
 namespace mozilla {

@@ -18,20 +18,15 @@
 #include "nsIController.h"
 #include "nsIControllers.h"
 #include "nsXULElement.h"
-#include "nsIURI.h"
 #include "nsFocusManager.h"
 #include "nsIFormControl.h"
-#include "nsIDOMEventListener.h"
 #include "nsPIDOMWindow.h"
 #include "nsPIWindowRoot.h"
-#include "nsIDOMWindow.h"
-#include "nsIServiceManager.h"
 #include "nsIScriptError.h"
 #include "nsIWeakReferenceUtils.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsGkAtoms.h"
-#include "nsIXPConnect.h"
 #include "nsDOMCID.h"
 #include "nsUnicharUtils.h"
 #include "nsCRT.h"
@@ -108,20 +103,6 @@ nsXBLPrototypeHandler::nsXBLPrototypeHandler(Element* aHandlerElement,
 
   // Make sure our prototype is initialized.
   ConstructPrototype(aHandlerElement);
-}
-
-nsXBLPrototypeHandler::nsXBLPrototypeHandler(ShortcutKeyData* aKeyData)
-    : mHandlerText(nullptr),
-      mLineNumber(0),
-      mReserved(XBLReservedKey_False),
-      mNextHandler(nullptr),
-      mPrototypeBinding(nullptr) {
-  Init();
-
-  ConstructPrototype(nullptr, aKeyData->event, nullptr, nullptr,
-                     aKeyData->command, aKeyData->keycode, aKeyData->key,
-                     aKeyData->modifiers, nullptr, nullptr, nullptr, nullptr,
-                     nullptr);
 }
 
 nsXBLPrototypeHandler::nsXBLPrototypeHandler(nsXBLPrototypeBinding* aBinding)
@@ -948,11 +929,14 @@ void nsXBLPrototypeHandler::ReportKeyConflict(const char16_t* aKey,
 
   nsAutoString id;
   aKeyElement->GetAttr(kNameSpaceID_None, nsGkAtoms::id, id);
-  const char16_t* params[] = {aKey, aModifiers, id.get()};
+  AutoTArray<nsString, 3> params;
+  params.AppendElement(aKey);
+  params.AppendElement(aModifiers);
+  params.AppendElement(id);
   nsContentUtils::ReportToConsole(
       nsIScriptError::warningFlag, NS_LITERAL_CSTRING("XBL Prototype Handler"),
-      doc, nsContentUtils::eXBL_PROPERTIES, aMessageName, params,
-      ArrayLength(params), nullptr, EmptyString(), mLineNumber);
+      doc, nsContentUtils::eXBL_PROPERTIES, aMessageName, params, nullptr,
+      EmptyString(), mLineNumber);
 }
 
 bool nsXBLPrototypeHandler::ModifiersMatchMask(

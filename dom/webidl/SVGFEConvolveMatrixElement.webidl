@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGFEConvolveMatrixElement : SVGElement {
 
   // Edge Mode Values
@@ -43,4 +44,4 @@ interface SVGFEConvolveMatrixElement : SVGElement {
   readonly attribute SVGAnimatedBoolean preserveAlpha;
 };
 
-SVGFEConvolveMatrixElement implements SVGFilterPrimitiveStandardAttributes;
+SVGFEConvolveMatrixElement includes SVGFilterPrimitiveStandardAttributes;

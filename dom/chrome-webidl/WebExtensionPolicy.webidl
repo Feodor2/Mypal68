@@ -11,8 +11,11 @@ callback WebExtensionLocalizeCallback = DOMString (DOMString unlocalizedText);
  * Defines the platform-level policies for a WebExtension, including its
  * permissions and the characteristics of its moz-extension: URLs.
  */
-[Constructor(WebExtensionInit options), ChromeOnly, Exposed=Window]
+[ChromeOnly, Exposed=Window]
 interface WebExtensionPolicy {
+  [Throws]
+  constructor(WebExtensionInit options);
+
   /**
    * The add-on's internal ID, as specified in its manifest.json file or its
    * XPI signature.
@@ -39,6 +42,12 @@ interface WebExtensionPolicy {
    */
   [Constant]
   readonly attribute DOMString name;
+
+  /**
+   * Whether the extension has access to privileged features
+   */
+  [Constant]
+  readonly attribute boolean isPrivileged;
 
   /**
    * The content security policy string to apply to all pages loaded from the
@@ -210,6 +219,8 @@ dictionary WebExtensionInit {
   required DOMString baseURL;
 
   DOMString name = "";
+
+  boolean isPrivileged = false;
 
   required WebExtensionLocalizeCallback localizeCallback;
 

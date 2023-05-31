@@ -6,7 +6,7 @@
 #include "mozilla/dom/FeaturePolicy.h"
 #include "mozilla/dom/FeaturePolicyViolationReportBody.h"
 #include "mozilla/dom/ReportingUtils.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/Document.h"
 #include "nsIURIFixup.h"
 
@@ -90,7 +90,7 @@ bool FeaturePolicyUtils::IsFeatureAllowed(Document* aDocument,
     return true;
   }
 
-  FeaturePolicy* policy = aDocument->Policy();
+  FeaturePolicy* policy = aDocument->FeaturePolicy();
   MOZ_ASSERT(policy);
 
   if (policy->AllowsFeatureInternal(aFeatureName, policy->DefaultOrigin())) {
@@ -134,7 +134,7 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
     return;
   }
 
-  nsAutoCString fileName;
+  nsAutoString fileName;
   Nullable<int32_t> lineNumber;
   Nullable<int32_t> columnNumber;
   uint32_t line = 0;
@@ -150,9 +150,9 @@ void FeaturePolicyUtils::ReportViolation(Document* aDocument,
   }
 
   RefPtr<FeaturePolicyViolationReportBody> body =
-      new FeaturePolicyViolationReportBody(
-          window, aFeatureName, NS_ConvertUTF8toUTF16(fileName), lineNumber,
-          columnNumber, NS_LITERAL_STRING("enforce"));
+      new FeaturePolicyViolationReportBody(window, aFeatureName, fileName,
+                                           lineNumber, columnNumber,
+                                           NS_LITERAL_STRING("enforce"));
 
   ReportingUtils::Report(window, nsGkAtoms::featurePolicyViolation,
                          NS_LITERAL_STRING("default"),

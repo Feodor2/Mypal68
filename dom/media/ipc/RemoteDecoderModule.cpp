@@ -6,7 +6,7 @@
 #include "base/thread.h"
 #include "mozilla/dom/ContentChild.h"  // for launching RDD w/ ContentChild
 #include "mozilla/layers/SynchronousTask.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SyncRunnable.h"
 
 #ifdef MOZ_AV1
@@ -33,11 +33,11 @@ bool RemoteDecoderModule::SupportsMimeType(
   bool supports = false;
 
 #ifdef MOZ_AV1
-  if (StaticPrefs::MediaAv1Enabled()) {
+  if (StaticPrefs::media_av1_enabled()) {
     supports |= AOMDecoder::IsAV1(aMimeType);
   }
 #endif
-  if (StaticPrefs::MediaRddVorbisEnabled()) {
+  if (StaticPrefs::media_rdd_vorbis_enabled()) {
     supports |= VorbisDataDecoder::IsVorbis(aMimeType);
   }
 
@@ -69,8 +69,9 @@ void RemoteDecoderModule::LaunchRDDProcessIfNeeded() {
   if (mManagerThread) {
     RefPtr<Runnable> task = NS_NewRunnableFunction(
         "RemoteDecoderModule::LaunchRDDProcessIfNeeded-CheckSend", [&]() {
-          if (RemoteDecoderManagerChild::GetSingleton()) {
-            needsLaunch = !RemoteDecoderManagerChild::GetSingleton()->CanSend();
+          if (RemoteDecoderManagerChild::GetRDDProcessSingleton()) {
+            needsLaunch =
+                !RemoteDecoderManagerChild::GetRDDProcessSingleton()->CanSend();
           }
         });
     SyncRunnable::DispatchToThread(mManagerThread, task);

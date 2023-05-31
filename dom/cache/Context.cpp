@@ -11,7 +11,6 @@
 #include "mozilla/dom/cache/ManagerId.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozIStorageConnection.h"
-#include "nsIFile.h"
 #include "nsIPrincipal.h"
 #include "nsIRunnable.h"
 #include "nsThreadUtils.h"
@@ -231,10 +230,14 @@ void Context::QuotaInitRunnable::OpenDirectory() {
 
 void Context::QuotaInitRunnable::DirectoryLockAcquired(DirectoryLock* aLock) {
   NS_ASSERT_OWNINGTHREAD(QuotaInitRunnable);
+  MOZ_DIAGNOSTIC_ASSERT(aLock);
   MOZ_DIAGNOSTIC_ASSERT(mState == STATE_WAIT_FOR_DIRECTORY_LOCK);
   MOZ_DIAGNOSTIC_ASSERT(!mDirectoryLock);
 
   mDirectoryLock = aLock;
+
+  MOZ_DIAGNOSTIC_ASSERT(mDirectoryLock->Id() >= 0);
+  mQuotaInfo.mDirectoryLockId = mDirectoryLock->Id();
 
   if (mCanceled) {
     Complete(NS_ERROR_ABORT);
@@ -385,9 +388,10 @@ Context::QuotaInitRunnable::Run() {
 
       QuotaManager* qm = QuotaManager::Get();
       MOZ_DIAGNOSTIC_ASSERT(qm);
-      nsresult rv = qm->EnsureOriginIsInitialized(
+      nsresult rv = qm->EnsureStorageAndOriginIsInitialized(
           PERSISTENCE_TYPE_DEFAULT, mQuotaInfo.mSuffix, mQuotaInfo.mGroup,
-          mQuotaInfo.mOrigin, getter_AddRefs(mQuotaInfo.mDir));
+          mQuotaInfo.mOrigin, quota::Client::DOMCACHE,
+          getter_AddRefs(mQuotaInfo.mDir));
       if (NS_FAILED(rv)) {
         resolver->Resolve(rv);
         break;

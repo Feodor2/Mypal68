@@ -21,7 +21,6 @@
 #include "nsNPAPIPlugin.h"
 #include "nsPluginsDirUtils.h"
 
-#include "nsILocalFileMac.h"
 #include "mozilla/UniquePtr.h"
 
 #include "nsCocoaFeatures.h"

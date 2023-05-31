@@ -34,8 +34,7 @@ class UIEvent : public Event {
 
   static already_AddRefed<UIEvent> Constructor(const GlobalObject& aGlobal,
                                                const nsAString& aType,
-                                               const UIEventInit& aParam,
-                                               ErrorResult& aRv);
+                                               const UIEventInit& aParam);
 
   virtual JSObject* WrapObjectInternal(
       JSContext* aCx, JS::Handle<JSObject*> aGivenProto) override {
@@ -60,9 +59,6 @@ class UIEvent : public Event {
   int32_t LayerX() const { return GetLayerPoint().x; }
 
   int32_t LayerY() const { return GetLayerPoint().y; }
-
-  int32_t PageX() const;
-  int32_t PageY() const;
 
   virtual uint32_t Which(CallerType aCallerType = CallerType::System) {
     MOZ_ASSERT(mEvent->mClass != eKeyboardEventClass,

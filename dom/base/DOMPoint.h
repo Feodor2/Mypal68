@@ -5,6 +5,7 @@
 #ifndef MOZILLA_DOMPOINT_H_
 #define MOZILLA_DOMPOINT_H_
 
+#include "js/StructuredClone.h"
 #include "nsWrapperCache.h"
 #include "nsISupports.h"
 #include "nsCycleCollectionParticipant.h"
@@ -13,23 +14,25 @@
 #include "nsCOMPtr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 
+class nsIGlobalObject;
+
 namespace mozilla {
 namespace dom {
 
 class GlobalObject;
 struct DOMPointInit;
+struct DOMMatrixInit;
 
 class DOMPointReadOnly : public nsWrapperCache {
  public:
-  DOMPointReadOnly(nsISupports* aParent, double aX, double aY, double aZ,
-                   double aW)
+  explicit DOMPointReadOnly(nsISupports* aParent, double aX = 0.0,
+                            double aY = 0.0, double aZ = 0.0, double aW = 1.0)
       : mParent(aParent), mX(aX), mY(aY), mZ(aZ), mW(aW) {}
 
   static already_AddRefed<DOMPointReadOnly> FromPoint(
       const GlobalObject& aGlobal, const DOMPointInit& aParams);
   static already_AddRefed<DOMPointReadOnly> Constructor(
-      const GlobalObject& aGlobal, double aX, double aY, double aZ, double aW,
-      ErrorResult& aRV);
+      const GlobalObject& aGlobal, double aX, double aY, double aZ, double aW);
 
   NS_INLINE_DECL_CYCLE_COLLECTING_NATIVE_REFCOUNTING(DOMPointReadOnly)
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(DOMPointReadOnly)
@@ -39,12 +42,26 @@ class DOMPointReadOnly : public nsWrapperCache {
   double Z() const { return mZ; }
   double W() const { return mW; }
 
+  already_AddRefed<DOMPoint> MatrixTransform(const DOMMatrixInit& aInit,
+                                             ErrorResult& aRv);
+
   nsISupports* GetParentObject() const { return mParent; }
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
 
+  bool WriteStructuredClone(JSContext* aCx,
+                            JSStructuredCloneWriter* aWriter) const;
+
+  static already_AddRefed<DOMPointReadOnly> ReadStructuredClone(
+      JSContext* aCx, nsIGlobalObject* aGlobal,
+      JSStructuredCloneReader* aReader);
+
  protected:
   virtual ~DOMPointReadOnly() {}
+
+  // Shared implementation of ReadStructuredClone for DOMPoint and
+  // DOMPointReadOnly.
+  bool ReadStructuredClone(JSStructuredCloneReader* aReader);
 
   nsCOMPtr<nsISupports> mParent;
   double mX, mY, mZ, mW;
@@ -60,10 +77,15 @@ class DOMPoint final : public DOMPointReadOnly {
                                               const DOMPointInit& aParams);
   static already_AddRefed<DOMPoint> Constructor(const GlobalObject& aGlobal,
                                                 double aX, double aY, double aZ,
-                                                double aW, ErrorResult& aRV);
+                                                double aW);
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
+
+  static already_AddRefed<DOMPoint> ReadStructuredClone(
+      JSContext* aCx, nsIGlobalObject* aGlobal,
+      JSStructuredCloneReader* aReader);
+  using DOMPointReadOnly::ReadStructuredClone;
 
   void SetX(double aX) { mX = aX; }
   void SetY(double aY) { mY = aY; }

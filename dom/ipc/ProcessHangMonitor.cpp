@@ -10,6 +10,7 @@
 
 #include "mozilla/Atomics.h"
 #include "mozilla/BackgroundHangMonitor.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/CancelContentJSOptionsBinding.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Element.h"
@@ -20,6 +21,7 @@
 #include "mozilla/Monitor2.h"
 #include "mozilla/plugins/PluginBridge.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/Unused.h"
 #include "mozilla/WeakPtr.h"
 
@@ -136,11 +138,7 @@ class HangMonitorChild : public PProcessHangMonitorChild,
  private:
   void ShutdownOnThread();
 
-  // Ordering of this atomic is not preserved while recording/replaying, as it
-  // may be accessed during the JS interrupt callback.
-  static Atomic<HangMonitorChild*, SequentiallyConsistent,
-                recordreplay::Behavior::DontPreserve>
-      sInstance;
+  static Atomic<HangMonitorChild*, SequentiallyConsistent> sInstance;
 
   const RefPtr<ProcessHangMonitor> mHangMonitor;
   Monitor2 mMonitor;
@@ -174,9 +172,7 @@ class HangMonitorChild : public PProcessHangMonitorChild,
   Atomic<bool> mPaintWhileInterruptingJSActive;
 };
 
-Atomic<HangMonitorChild*, SequentiallyConsistent,
-       recordreplay::Behavior::DontPreserve>
-    HangMonitorChild::sInstance;
+Atomic<HangMonitorChild*, SequentiallyConsistent> HangMonitorChild::sInstance;
 
 /* Parent process objects */
 
@@ -303,11 +299,7 @@ class HangMonitorParent : public PProcessHangMonitorParent,
   nsDataHashtable<nsUint32HashKey, nsString> mBrowserCrashDumpIds;
   Mutex mBrowserCrashDumpHashLock;
   mozilla::ipc::TaskFactory<HangMonitorParent> mMainThreadTaskFactory;
-
-  static bool sShouldPaintWhileInterruptingJS;
 };
-
-bool HangMonitorParent::sShouldPaintWhileInterruptingJS = true;
 
 }  // namespace
 
@@ -315,8 +307,6 @@ bool HangMonitorParent::sShouldPaintWhileInterruptingJS = true;
 
 HangMonitorChild::HangMonitorChild(ProcessHangMonitor* aMonitor)
     : mHangMonitor(aMonitor),
-      // Ordering of this atomic is not preserved while recording/replaying, as
-      // it may be accessed during the JS interrupt callback.
       mMonitor("HangMonitorChild lock"),
       mSentReport(false),
       mTerminateScript(false),
@@ -346,13 +336,6 @@ HangMonitorChild::~HangMonitorChild() {
 
 bool HangMonitorChild::InterruptCallback() {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
-
-  // The interrupt callback is triggered at non-deterministic points when
-  // recording/replaying, so don't perform any operations that can interact
-  // with the recording.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    return true;
-  }
 
   bool paintWhileInterruptingJS;
   bool paintWhileInterruptingJSForce;
@@ -692,13 +675,6 @@ HangMonitorParent::HangMonitorParent(ProcessHangMonitor* aMonitor)
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
   mReportHangs =
       mozilla::Preferences::GetBool("dom.ipc.reportProcessHangs", false);
-
-  static bool sInited = false;
-  if (!sInited) {
-    sInited = true;
-    Preferences::AddBoolVarCache(&sShouldPaintWhileInterruptingJS,
-                                 "browser.tabs.remote.force-paint", true);
-  }
 }
 
 HangMonitorParent::~HangMonitorParent() {
@@ -750,7 +726,7 @@ void HangMonitorParent::PaintWhileInterruptingJS(
     dom::BrowserParent* aTab, bool aForceRepaint,
     const LayersObserverEpoch& aEpoch) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
-  if (sShouldPaintWhileInterruptingJS) {
+  if (StaticPrefs::browser_tabs_remote_force_paint()) {
     TabId id = aTab->GetTabId();
     Dispatch(NewNonOwningRunnableMethod<TabId, bool, LayersObserverEpoch>(
         "HangMonitorParent::PaintWhileInterruptingJSOnThread", this,

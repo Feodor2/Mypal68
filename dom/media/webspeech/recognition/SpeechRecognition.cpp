@@ -16,7 +16,7 @@
 #include "mozilla/MediaManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 
 #include "AudioSegment.h"
 #include "MediaEnginePrefs.h"
@@ -25,6 +25,7 @@
 #include "mozilla/dom/SpeechRecognitionEvent.h"
 #include "nsContentUtils.h"
 #include "mozilla/dom/Document.h"
+#include "nsIAsyncShutdown.h"
 #include "nsIObserverService.h"
 #include "nsIPermissionManager.h"
 #include "nsIPrincipal.h"
@@ -86,7 +87,7 @@ already_AddRefed<nsISpeechRecognitionService> GetSpeechRecognitionService(
     speechRecognitionService = DEFAULT_RECOGNITION_SERVICE;
   }
 
-  if (StaticPrefs::MediaWebspeechTextFakeRecognitionService()) {
+  if (StaticPrefs::media_webspeech_test_fake_recognition_service()) {
     speechRecognitionServiceCID =
         NS_SPEECH_RECOGNITION_SERVICE_CONTRACTID_PREFIX "fake";
   } else {
@@ -140,7 +141,7 @@ SpeechRecognition::SpeechRecognition(nsPIDOMWindowInner* aOwnerWindow)
       mMaxAlternatives(1) {
   SR_LOG("created SpeechRecognition");
 
-  if (StaticPrefs::MediaWebspeechTestEnable()) {
+  if (StaticPrefs::media_webspeech_test_enable()) {
     nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
     obs->AddObserver(this, SPEECH_RECOGNITION_TEST_EVENT_REQUEST_TOPIC, false);
     obs->AddObserver(this, SPEECH_RECOGNITION_TEST_END_TOPIC, false);
@@ -192,9 +193,9 @@ bool SpeechRecognition::IsAuthorized(JSContext* aCx, JSObject* aGlobal) {
       (speechRecognition == nsIPermissionManager::ALLOW_ACTION);
 
   return (hasPermission ||
-          StaticPrefs::MediaWebspeechRecognitionForceEnable() ||
-          StaticPrefs::MediaWebspeechTestEnable()) &&
-         StaticPrefs::MediaWebspeechRecognitionEnable();
+          StaticPrefs::media_webspeech_recognition_force_enable() ||
+          StaticPrefs::media_webspeech_test_enable()) &&
+         StaticPrefs::media_webspeech_recognition_enable();
 }
 
 already_AddRefed<SpeechRecognition> SpeechRecognition::Constructor(
@@ -542,7 +543,7 @@ void SpeechRecognition::NotifyError(SpeechEvent* aEvent) {
  **************************************/
 NS_IMETHODIMP
 SpeechRecognition::StartRecording(RefPtr<AudioStreamTrack>& aTrack) {
-  // hold a reference so that the underlying stream
+  // hold a reference so that the underlying track
   // doesn't get Destroy()'ed
   mTrack = aTrack;
 
@@ -567,7 +568,7 @@ NS_IMETHODIMP
 SpeechRecognition::StopRecording() {
   if (mShutdownBlocker) {
     // Block shutdown until the speech track listener has been removed from the
-    // MSG, as it holds a reference to us, and we reference the world, which we
+    // MTG, as it holds a reference to us, and we reference the world, which we
     // don't want to leak.
     mSpeechListener->mRemovedPromise->Then(
         GetCurrentThreadSerialEventTarget(), __func__,
@@ -606,7 +607,7 @@ SpeechRecognition::Observe(nsISupports* aSubject, const char* aTopic,
     nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
     obs->RemoveObserver(this, SPEECH_RECOGNITION_TEST_EVENT_REQUEST_TOPIC);
     obs->RemoveObserver(this, SPEECH_RECOGNITION_TEST_END_TOPIC);
-  } else if (StaticPrefs::MediaWebspeechTextFakeFsmEvents() &&
+  } else if (StaticPrefs::media_webspeech_test_fake_fsm_events() &&
              !strcmp(aTopic, SPEECH_RECOGNITION_TEST_EVENT_REQUEST_TOPIC)) {
     ProcessTestEventRequest(aSubject, nsDependentString(aData));
   }
@@ -624,7 +625,7 @@ void SpeechRecognition::ProcessTestEventRequest(nsISupports* aSubject,
         SpeechRecognitionErrorCode::Audio_capture,  // TODO different codes?
         NS_LITERAL_STRING("AUDIO_ERROR test event"));
   } else {
-    NS_ASSERTION(StaticPrefs::MediaWebspeechTextFakeRecognitionService(),
+    NS_ASSERTION(StaticPrefs::media_webspeech_test_fake_recognition_service(),
                  "Got request for fake recognition service event, but "
                  "media.webspeech.test.fake_recognition_service is unset");
 
@@ -929,7 +930,7 @@ AudioSegment* SpeechRecognition::CreateAudioSegment(
 
 void SpeechRecognition::FeedAudioData(already_AddRefed<SharedBuffer> aSamples,
                                       uint32_t aDuration,
-                                      MediaStreamTrackListener* aProvider,
+                                      MediaTrackListener* aProvider,
                                       TrackRate aTrackRate) {
   NS_ASSERTION(!NS_IsMainThread(),
                "FeedAudioData should not be called in the main thread");

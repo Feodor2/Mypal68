@@ -20,7 +20,7 @@ JSObject* JSWindowActorChild::WrapObject(JSContext* aCx,
   return JSWindowActorChild_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-WindowGlobalChild* JSWindowActorChild::Manager() const { return mManager; }
+WindowGlobalChild* JSWindowActorChild::GetManager() const { return mManager; }
 
 void JSWindowActorChild::Init(const nsAString& aName,
                               WindowGlobalChild* aManager) {
@@ -102,6 +102,14 @@ BrowsingContext* JSWindowActorChild::GetBrowsingContext(ErrorResult& aRv) {
   }
 
   return mManager->BrowsingContext();
+}
+
+nsIDocShell* JSWindowActorChild::GetDocShell(ErrorResult& aRv) {
+  if (BrowsingContext* bc = GetBrowsingContext(aRv)) {
+    return bc->GetDocShell();
+  }
+
+  return nullptr;
 }
 
 Nullable<WindowProxyHolder> JSWindowActorChild::GetContentWindow(

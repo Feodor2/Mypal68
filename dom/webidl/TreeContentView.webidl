@@ -2,7 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-[Func="IsChromeOrXBL"]
+[Func="IsChromeOrXBL",
+ Exposed=Window]
 interface TreeContentView
 {
   /**
@@ -16,4 +17,4 @@ interface TreeContentView
    */
   long getIndexOfItem(Element? item);
 };
-TreeContentView implements TreeView;
+TreeContentView includes TreeView;

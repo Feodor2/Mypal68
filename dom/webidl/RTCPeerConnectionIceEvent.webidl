@@ -11,8 +11,10 @@ dictionary RTCPeerConnectionIceEventInit : EventInit {
 };
 
 [Pref="media.peerconnection.enabled",
- Constructor(DOMString type,
-             optional RTCPeerConnectionIceEventInit eventInitDict)]
+ Exposed=Window]
 interface RTCPeerConnectionIceEvent : Event {
+  constructor(DOMString type,
+              optional RTCPeerConnectionIceEventInit eventInitDict = {});
+
   readonly attribute RTCIceCandidate? candidate;
 };

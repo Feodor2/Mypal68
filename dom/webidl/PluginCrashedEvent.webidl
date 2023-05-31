@@ -3,9 +3,13 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-[Constructor(DOMString type, optional PluginCrashedEventInit eventInitDict), ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface PluginCrashedEvent : Event
 {
+  constructor(DOMString type,
+              optional PluginCrashedEventInit eventInitDict = {});
+
   readonly attribute unsigned long pluginID;
   readonly attribute DOMString pluginDumpID;
   readonly attribute DOMString pluginName;

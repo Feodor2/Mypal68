@@ -12,7 +12,6 @@
 #include "gfxContext.h"
 #include "gfxCrashReporterUtils.h"
 #include "gfxPattern.h"
-#include "gfxPrefs.h"
 #include "gfxUtils.h"
 #include "MozFramebuffer.h"
 #include "GLBlitHelper.h"
@@ -29,22 +28,20 @@
 #include "mozilla/dom/HTMLVideoElement.h"
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/dom/WebGLContextEvent.h"
+#include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/EnumeratedArrayCycleCollection.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ProcessPriorityManager.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/Telemetry.h"
 #include "nsContentUtils.h"
 #include "nsDisplayList.h"
 #include "nsError.h"
 #include "nsIClassInfoImpl.h"
-#include "nsIConsoleService.h"
 #include "nsIGfxInfo.h"
-#include "nsIObserverService.h"
-#include "nsIVariant.h"
 #include "nsIWidget.h"
-#include "nsIXPConnect.h"
 #include "nsServiceManagerUtils.h"
 #include "SVGObserverUtils.h"
 #include "prenv.h"
@@ -96,7 +93,8 @@ using namespace mozilla::layers;
 
 WebGLContextOptions::WebGLContextOptions() {
   // Set default alpha state based on preference.
-  if (gfxPrefs::WebGLDefaultNoAlpha()) alpha = false;
+  alpha = !StaticPrefs::webgl_default_no_alpha();
+  antialias = StaticPrefs::webgl_default_antialias();
 }
 
 bool WebGLContextOptions::operator==(const WebGLContextOptions& r) const {
@@ -115,18 +113,18 @@ bool WebGLContextOptions::operator==(const WebGLContextOptions& r) const {
 WebGLContext::WebGLContext()
     : gl(mGL_OnlyClearInDestroyResourcesAndContext)  // const reference
       ,
-      mMaxPerfWarnings(gfxPrefs::WebGLMaxPerfWarnings()),
+      mMaxPerfWarnings(StaticPrefs::webgl_perf_max_warnings()),
       mNumPerfWarnings(0),
       mMaxAcceptableFBStatusInvals(
-          gfxPrefs::WebGLMaxAcceptableFBStatusInvals()),
+          StaticPrefs::webgl_perf_max_acceptable_fb_status_invals()),
       mDataAllocGLCallCount(0),
       mEmptyTFO(0),
       mContextLossHandler(this),
       mNeedsFakeNoAlpha(false),
       mNeedsFakeNoDepth(false),
       mNeedsFakeNoStencil(false),
-      mAllowFBInvalidation(gfxPrefs::WebGLFBInvalidation()),
-      mMsaaSamples((uint8_t)gfxPrefs::WebGLMsaaSamples()) {
+      mAllowFBInvalidation(StaticPrefs::webgl_allow_fb_invalidation()),
+      mMsaaSamples((uint8_t)StaticPrefs::webgl_msaa_samples()) {
   mGeneration = 0;
   mInvalidated = false;
   mCapturedFrameInvalidated = false;
@@ -162,7 +160,7 @@ WebGLContext::WebGLContext()
   mAlreadyWarnedAboutFakeVertexAttrib0 = false;
   mAlreadyWarnedAboutViewportLargerThanDest = false;
 
-  mMaxWarnings = gfxPrefs::WebGLMaxWarningsPerContext();
+  mMaxWarnings = StaticPrefs::webgl_max_warnings_per_context();
   if (mMaxWarnings < -1) {
     GenerateWarning(
         "webgl.max-warnings-per-context size is too large (seems like a "
@@ -347,7 +345,6 @@ WebGLContext::SetContextOptions(JSContext* cx, JS::Handle<JS::Value> options,
   newOpts.stencil = attributes.mStencil;
   newOpts.depth = attributes.mDepth;
   newOpts.premultipliedAlpha = attributes.mPremultipliedAlpha;
-  newOpts.antialias = attributes.mAntialias;
   newOpts.preserveDrawingBuffer = attributes.mPreserveDrawingBuffer;
   newOpts.failIfMajorPerformanceCaveat =
       attributes.mFailIfMajorPerformanceCaveat;
@@ -356,13 +353,16 @@ WebGLContext::SetContextOptions(JSContext* cx, JS::Handle<JS::Value> options,
   if (attributes.mAlpha.WasPassed()) {
     newOpts.alpha = attributes.mAlpha.Value();
   }
+  if (attributes.mAntialias.WasPassed()) {
+    newOpts.antialias = attributes.mAntialias.Value();
+  }
 
   // Don't do antialiasing if we've disabled MSAA.
-  if (!gfxPrefs::MSAALevel()) {
+  if (!mMsaaSamples) {
     newOpts.antialias = false;
   }
 
-  if (!gfxPrefs::WebGLForceMSAA()) {
+  if (newOpts.antialias && !StaticPrefs::webgl_msaa_force()) {
     const nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
 
     nsCString blocklistId;
@@ -435,17 +435,6 @@ bool WebGLContext::CreateAndInitGL(
     return false;
   }
 
-  // WebGL can't be used when recording/replaying.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    FailureReason reason;
-    reason.info =
-        "Can't use WebGL when recording or replaying "
-        "(https://bugzil.la/1506467).";
-    out_failReasons->push_back(reason);
-    GenerateWarning("%s", reason.info.BeginReading());
-    return false;
-  }
-
   // WebGL2 is separately blocked:
   if (IsWebGL2()) {
     const nsCOMPtr<nsIGfxInfo> gfxInfo = services::GetGfxInfo();
@@ -474,36 +463,50 @@ bool WebGLContext::CreateAndInitGL(
 
   if (IsWebGL2()) {
     flags |= gl::CreateContextFlags::PREFER_ES3;
-  } else if (!gfxPrefs::WebGL1AllowCoreProfile()) {
+  } else if (!StaticPrefs::webgl_1_allow_core_profiles()) {
     flags |= gl::CreateContextFlags::REQUIRE_COMPAT_PROFILE;
   }
 
-  switch (mOptions.powerPreference) {
-    case dom::WebGLPowerPreference::Low_power:
-      break;
+  {
+    bool highPower = false;
+    switch (mOptions.powerPreference) {
+      case dom::WebGLPowerPreference::Low_power:
+        highPower = false;
+        break;
 
-    case dom::WebGLPowerPreference::High_performance:
+      case dom::WebGLPowerPreference::High_performance:
+        highPower = true;
+        break;
+
+        // Eventually add a heuristic, but for now default to high-performance.
+        // We can even make it dynamic by holding on to a
+        // ForceDiscreteGPUHelperCGL iff we decide it's a high-performance
+        // application:
+        // - Non-trivial canvas size
+        // - Many draw calls
+        // - Same origin with root page (try to stem bleeding from WebGL
+        // ads/trackers)
+      default:
+        highPower = true;
+        if (StaticPrefs::webgl_default_low_power()) {
+          highPower = false;
+        } else if (mCanvasElement && !mCanvasElement->GetParentNode()) {
+          GenerateWarning(
+              "WebGLContextAttributes.powerPreference: 'default' when <canvas>"
+              " has no parent Element defaults to 'low-power'.");
+          highPower = false;
+        }
+        break;
+    }
+
+    // If "Use hardware acceleration when available" option is disabled:
+    if (!gfxConfig::IsEnabled(Feature::HW_COMPOSITING)) {
+      highPower = false;
+    }
+
+    if (highPower) {
       flags |= gl::CreateContextFlags::HIGH_POWER;
-      break;
-
-      // Eventually add a heuristic, but for now default to high-performance.
-      // We can even make it dynamic by holding on to a
-      // ForceDiscreteGPUHelperCGL iff we decide it's a high-performance
-      // application:
-      // - Non-trivial canvas size
-      // - Many draw calls
-      // - Same origin with root page (try to stem bleeding from WebGL
-      // ads/trackers)
-    default:
-      if (!gfxPrefs::WebGLDefaultLowPower()) {
-        flags |= gl::CreateContextFlags::HIGH_POWER;
-      }
-      break;
-  }
-
-  // If "Use hardware acceleration when available" option is disabled:
-  if (!gfxConfig::IsEnabled(Feature::HW_COMPOSITING)) {
-    flags &= ~gl::CreateContextFlags::HIGH_POWER;
+    }
   }
 
 #ifdef XP_MACOSX
@@ -540,12 +543,12 @@ bool WebGLContext::CreateAndInitGL(
   tryNativeGL = false;
   tryANGLE = true;
 
-  if (gfxPrefs::WebGLDisableWGL()) {
+  if (StaticPrefs::webgl_disable_wgl()) {
     tryNativeGL = false;
   }
 
-  if (gfxPrefs::WebGLDisableANGLE() || PR_GetEnv("MOZ_WEBGL_FORCE_OPENGL") ||
-      useEGL) {
+  if (StaticPrefs::webgl_disable_angle() ||
+      PR_GetEnv("MOZ_WEBGL_FORCE_OPENGL") || useEGL) {
     tryNativeGL = true;
     tryANGLE = false;
   }
@@ -800,7 +803,7 @@ WebGLContext::SetDimensions(int32_t signedWidth, int32_t signedHeight) {
   // pick up the old generation.
   ++mGeneration;
 
-  bool disabled = gfxPrefs::WebGLDisabled();
+  bool disabled = StaticPrefs::webgl_disabled();
 
   // TODO: When we have software webgl support we should use that instead.
   disabled |= gfxPlatform::InSafeMode();
@@ -816,7 +819,7 @@ WebGLContext::SetDimensions(int32_t signedWidth, int32_t signedHeight) {
     return NS_ERROR_FAILURE;
   }
 
-  if (gfxPrefs::WebGLDisableFailIfMajorPerformanceCaveat()) {
+  if (StaticPrefs::webgl_disable_fail_if_major_performance_caveat()) {
     mOptions.failIfMajorPerformanceCaveat = false;
   }
 
@@ -833,7 +836,7 @@ WebGLContext::SetDimensions(int32_t signedWidth, int32_t signedHeight) {
   }
 
   // Alright, now let's start trying.
-  bool forceEnabled = gfxPrefs::WebGLForceEnabled();
+  bool forceEnabled = StaticPrefs::webgl_force_enabled();
   ScopedGfxFeatureReporter reporter("WebGL", forceEnabled);
 
   MOZ_ASSERT(!gl);
@@ -965,8 +968,9 @@ WebGLContext::SetDimensions(int32_t signedWidth, int32_t signedHeight) {
 }
 
 void WebGLContext::LoseOldestWebGLContextIfLimitExceeded() {
-  const auto maxWebGLContexts = gfxPrefs::WebGLMaxContexts();
-  auto maxWebGLContextsPerPrincipal = gfxPrefs::WebGLMaxContextsPerPrincipal();
+  const auto maxWebGLContexts = StaticPrefs::webgl_max_contexts();
+  auto maxWebGLContextsPerPrincipal =
+      StaticPrefs::webgl_max_contexts_per_principal();
 
   // maxWebGLContextsPerPrincipal must be less than maxWebGLContexts
   MOZ_ASSERT(maxWebGLContextsPerPrincipal <= maxWebGLContexts);
@@ -1269,7 +1273,7 @@ void WebGLContext::GetContextAttributes(
   result.mAlpha.Construct(mOptions.alpha);
   result.mDepth = mOptions.depth;
   result.mStencil = mOptions.stencil;
-  result.mAntialias = mOptions.antialias;
+  result.mAntialias.Construct(mOptions.antialias);
   result.mPremultipliedAlpha = mOptions.premultipliedAlpha;
   result.mPreserveDrawingBuffer = mOptions.preserveDrawingBuffer;
   result.mFailIfMajorPerformanceCaveat = mOptions.failIfMajorPerformanceCaveat;
@@ -1328,7 +1332,7 @@ ScopedPrepForResourceClear::~ScopedPrepForResourceClear() {
 // -
 
 void WebGLContext::OnEndOfFrame() const {
-  if (gfxPrefs::WebGLSpewFrameAllocs()) {
+  if (StaticPrefs::webgl_perf_spew_frame_allocs()) {
     GeneratePerfWarning("[webgl.perf.spew-frame-allocs] %" PRIu64
                         " data allocations this frame.",
                         mDataAllocGLCallCount);
@@ -2223,8 +2227,8 @@ bool WebGLContext::ValidateArrayBufferView(const dom::ArrayBufferView& view,
                                            uint8_t** const out_bytes,
                                            size_t* const out_byteLen) const {
   view.ComputeLengthAndData();
-  uint8_t* const bytes = view.DataAllowShared();
-  const size_t byteLen = view.LengthAllowShared();
+  uint8_t* const bytes = view.Data();
+  const size_t byteLen = view.Length();
 
   const auto& elemSize = SizeOfViewElem(view);
 
@@ -2330,6 +2334,25 @@ bool WebGLContext::ValidateDeleteObject(
   if (object->IsDeleteRequested()) return false;
 
   return true;
+}
+
+bool WebGLContext::ShouldResistFingerprinting() const {
+  if (NS_IsMainThread()) {
+    if (mCanvasElement) {
+      // If we're constructed from a canvas element
+      return nsContentUtils::ShouldResistFingerprinting(GetOwnerDoc());
+    }
+    if (mOffscreenCanvas->GetOwnerGlobal()) {
+      // If we're constructed from an offscreen canvas
+      return nsContentUtils::ShouldResistFingerprinting(
+          mOffscreenCanvas->GetOwnerGlobal()->PrincipalOrNull());
+    }
+    // Last resort, just check the global preference
+    return nsContentUtils::ShouldResistFingerprinting();
+  }
+  dom::WorkerPrivate* workerPrivate = dom::GetCurrentThreadWorkerPrivate();
+  MOZ_ASSERT(workerPrivate);
+  return nsContentUtils::ShouldResistFingerprinting(workerPrivate);
 }
 
 // --

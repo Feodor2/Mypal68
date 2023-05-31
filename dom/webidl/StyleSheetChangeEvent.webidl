@@ -3,9 +3,13 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-[ChromeOnly, Constructor(DOMString type, optional StyleSheetChangeEventInit eventInitDict)]
+[ChromeOnly,
+ Exposed=Window]
 interface StyleSheetChangeEvent : Event
 {
+  constructor(DOMString type,
+              optional StyleSheetChangeEventInit eventInitDict = {});
+
   readonly attribute CSSStyleSheet? stylesheet;
   readonly attribute boolean documentSheet;
 };

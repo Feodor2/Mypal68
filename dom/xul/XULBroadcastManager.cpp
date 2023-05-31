@@ -16,7 +16,7 @@ struct BroadcastListener {
 };
 
 struct BroadcasterMapEntry : public PLDHashEntryHdr {
-  Element* mBroadcaster;  // [WEAK]
+  mozilla::dom::Element* mBroadcaster;  // [WEAK]
   nsTArray<BroadcastListener*>
       mListeners;  // [OWNING] of BroadcastListener objects
 };

@@ -8,7 +8,6 @@
 #include "nsXULElement.h"
 
 #include "nsAutoPtr.h"
-#include "nsIServiceManager.h"
 #include "nsMathUtils.h"
 #include "SVGImageContext.h"
 
@@ -35,7 +34,6 @@
 #include "nsColor.h"
 #include "nsGfxCIID.h"
 #include "nsIDocShell.h"
-#include "nsIDOMWindow.h"
 #include "nsPIDOMWindow.h"
 #include "nsDisplayList.h"
 #include "nsFocusManager.h"
@@ -50,7 +48,6 @@
 #include "gfxPlatform.h"
 #include "gfxFont.h"
 #include "gfxBlur.h"
-#include "gfxPrefs.h"
 #include "gfxTextRun.h"
 #include "gfxUtils.h"
 
@@ -67,6 +64,7 @@
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/Array.h"  // JS::GetArrayLength
 #include "js/Conversions.h"
 #include "js/HeapAPI.h"
 #include "js/Warnings.h"  // JS::WarnASCII
@@ -75,6 +73,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
+#include "mozilla/dom/DOMMatrix.h"
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/dom/ImageData.h"
 #include "mozilla/dom/PBrowserParent.h"
@@ -92,6 +91,7 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ServoBindings.h"
+#include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
@@ -108,7 +108,6 @@
 #include "mozilla/dom/SVGMatrix.h"
 #include "mozilla/FloatingPoint.h"
 #include "nsGlobalWindow.h"
-#include "nsIScreenManager.h"
 #include "nsFilterInstance.h"
 #include "nsDeviceContext.h"
 #include "nsFontMetrics.h"
@@ -691,7 +690,7 @@ void CanvasPattern::SetTransform(SVGMatrix& aMatrix) {
   mTransform = ToMatrix(aMatrix.GetMatrix());
 }
 
-void CanvasGradient::AddColorStop(float aOffset, const nsAString& aColorstr,
+void CanvasGradient::AddColorStop(float aOffset, const nsACString& aColorstr,
                                   ErrorResult& aRv) {
   if (aOffset < 0.0 || aOffset > 1.0) {
     aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
@@ -704,7 +703,6 @@ void CanvasGradient::AddColorStop(float aOffset, const nsAString& aColorstr,
   nscolor color;
   bool ok = ServoCSSParser::ComputeColor(styleSet, NS_RGB(0, 0, 0), aColorstr,
                                          &color);
-
   if (!ok) {
     aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
     return;
@@ -979,7 +977,7 @@ JSObject* CanvasRenderingContext2D::WrapObject(
   return CanvasRenderingContext2D_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-bool CanvasRenderingContext2D::ParseColor(const nsAString& aString,
+bool CanvasRenderingContext2D::ParseColor(const nsACString& aString,
                                           nscolor* aColor) {
   Document* document = mCanvasElement ? mCanvasElement->OwnerDoc() : nullptr;
   css::Loader* loader = document ? document->CSSLoader() : nullptr;
@@ -1000,7 +998,7 @@ bool CanvasRenderingContext2D::ParseColor(const nsAString& aString,
     RefPtr<ComputedStyle> canvasStyle =
         nsComputedDOMStyle::GetComputedStyle(mCanvasElement, nullptr);
     if (canvasStyle) {
-      *aColor = canvasStyle->StyleColor()->mColor.ToColor();
+      *aColor = canvasStyle->StyleText()->mColor.ToColor();
     }
     // Beware that the presShell could be gone here.
   }
@@ -1059,7 +1057,7 @@ void CanvasRenderingContext2D::SetStyleFromString(const nsAString& aStr,
   MOZ_ASSERT(!aStr.IsVoid());
 
   nscolor color;
-  if (!ParseColor(aStr, &color)) {
+  if (!ParseColor(NS_ConvertUTF16toUTF8(aStr), &color)) {
     return;
   }
 
@@ -1230,8 +1228,9 @@ bool CanvasRenderingContext2D::EnsureTarget(const gfx::Rect* aCoveredRect,
   }
 
   // Check that the dimensions are sane
-  if (mWidth > gfxPrefs::MaxCanvasSize() ||
-      mHeight > gfxPrefs::MaxCanvasSize() || mWidth < 0 || mHeight < 0) {
+  if (mWidth > StaticPrefs::gfx_canvas_max_size() ||
+      mHeight > StaticPrefs::gfx_canvas_max_size() || mWidth < 0 ||
+      mHeight < 0) {
     SetErrorState();
     return false;
   }
@@ -1785,6 +1784,18 @@ void CanvasRenderingContext2D::Transform(double aM11, double aM12, double aM21,
   SetTransformInternal(newMatrix);
 }
 
+already_AddRefed<DOMMatrix> CanvasRenderingContext2D::GetTransform(
+    ErrorResult& aError) {
+  EnsureTarget();
+  if (!IsTargetValid()) {
+    aError.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+  RefPtr<DOMMatrix> matrix =
+      new DOMMatrix(GetParentObject(), mTarget->GetTransform());
+  return matrix.forget();
+}
+
 void CanvasRenderingContext2D::SetTransform(double aM11, double aM12,
                                             double aM21, double aM22,
                                             double aDx, double aDy,
@@ -1796,6 +1807,21 @@ void CanvasRenderingContext2D::SetTransform(double aM11, double aM12,
   }
 
   SetTransformInternal(Matrix(aM11, aM12, aM21, aM22, aDx, aDy));
+}
+
+void CanvasRenderingContext2D::SetTransform(const DOMMatrix2DInit& aInit,
+                                            ErrorResult& aError) {
+  TransformWillUpdate();
+  if (!IsTargetValid()) {
+    aError.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  RefPtr<DOMMatrixReadOnly> matrix =
+      DOMMatrixReadOnly::FromMatrix(GetParentObject(), aInit, aError);
+  if (!aError.Failed()) {
+    SetTransformInternal(Matrix(*(matrix->GetInternal2D())));
+  }
 }
 
 void CanvasRenderingContext2D::SetTransformInternal(const Matrix& aTransform) {
@@ -1838,7 +1864,7 @@ static void MatrixToJSObject(JSContext* aCx, const Matrix& aMatrix,
 static bool ObjectToMatrix(JSContext* aCx, JS::Handle<JSObject*> aObj,
                            Matrix& aMatrix, ErrorResult& aError) {
   uint32_t length;
-  if (!JS_GetArrayLength(aCx, aObj, &length) || length != 6) {
+  if (!JS::GetArrayLength(aCx, aObj, &length) || length != 6) {
     // Not an array-like thing or wrong size
     aError.Throw(NS_ERROR_INVALID_ARG);
     return false;
@@ -1920,7 +1946,7 @@ void CanvasRenderingContext2D::GetMozCurrentTransformInverse(
   Matrix ctm = mTarget->GetTransform();
 
   if (!ctm.Invert()) {
-    double NaN = JS_GetNaNValue(aCx).toDouble();
+    double NaN = JS::GenericNaN();
     ctm = Matrix(NaN, NaN, NaN, NaN, NaN, NaN);
   }
 
@@ -2132,7 +2158,7 @@ already_AddRefed<CanvasPattern> CanvasRenderingContext2D::CreatePattern(
 //
 void CanvasRenderingContext2D::SetShadowColor(const nsAString& aShadowColor) {
   nscolor color;
-  if (!ParseColor(aShadowColor, &color)) {
+  if (!ParseColor(NS_ConvertUTF16toUTF8(aShadowColor), &color)) {
     return;
   }
 
@@ -2146,9 +2172,11 @@ void CanvasRenderingContext2D::SetShadowColor(const nsAString& aShadowColor) {
 static already_AddRefed<RawServoDeclarationBlock> CreateDeclarationForServo(
     nsCSSPropertyID aProperty, const nsAString& aPropertyValue,
     Document* aDocument) {
+  nsCOMPtr<nsIReferrerInfo> referrerInfo =
+      ReferrerInfo::CreateForInternalCSSResources(aDocument);
+
   RefPtr<URLExtraData> data = new URLExtraData(
-      aDocument->GetDocBaseURI(), aDocument->GetDocumentURI(),
-      aDocument->NodePrincipal(), aDocument->GetReferrerPolicy());
+      aDocument->GetDocBaseURI(), referrerInfo, aDocument->NodePrincipal());
 
   ServoCSSParser::ParsingEnvironment env(
       data, aDocument->GetCompatibilityMode(), aDocument->CSSLoader());
@@ -2266,7 +2294,7 @@ static already_AddRefed<ComputedStyle> ResolveFilterStyleForServo(
 }
 
 bool CanvasRenderingContext2D::ParseFilter(
-    const nsAString& aString, nsTArray<nsStyleFilter>& aFilterChain,
+    const nsAString& aString, StyleOwnedSlice<StyleFilter>& aFilterChain,
     ErrorResult& aError) {
   if (!mCanvasElement && !mDocShell) {
     NS_WARNING(
@@ -2301,14 +2329,14 @@ bool CanvasRenderingContext2D::ParseFilter(
 
 void CanvasRenderingContext2D::SetFilter(const nsAString& aFilter,
                                          ErrorResult& aError) {
-  nsTArray<nsStyleFilter> filterChain;
+  StyleOwnedSlice<StyleFilter> filterChain;
   if (ParseFilter(aFilter, filterChain, aError)) {
     CurrentState().filterString = aFilter;
-    filterChain.SwapElements(CurrentState().filterChain);
+    CurrentState().filterChain = std::move(filterChain);
     if (mCanvasElement) {
       CurrentState().autoSVGFiltersObserver =
           SVGObserverUtils::ObserveFiltersForCanvasContext(
-              this, mCanvasElement, CurrentState().filterChain);
+              this, mCanvasElement, CurrentState().filterChain.AsSpan());
       UpdateFilter();
     }
   }
@@ -2375,7 +2403,8 @@ void CanvasRenderingContext2D::UpdateFilter() {
       (mCanvasElement && mCanvasElement->IsWriteOnly());
 
   CurrentState().filter = nsFilterInstance::GetFilterDescription(
-      mCanvasElement, CurrentState().filterChain, sourceGraphicIsTainted,
+      mCanvasElement, CurrentState().filterChain.AsSpan(),
+      sourceGraphicIsTainted,
       CanvasUserSpaceMetrics(
           GetSize(), CurrentState().fontFont, CurrentState().fontLanguage,
           CurrentState().fontExplicitLanguage, presShell->GetPresContext()),
@@ -2837,7 +2866,7 @@ bool CanvasRenderingContext2D::DrawCustomFocusRing(
 
   HTMLCanvasElement* canvas = GetCanvas();
 
-  if (!canvas || !nsContentUtils::ContentIsDescendantOf(&aElement, canvas)) {
+  if (!canvas || !aElement.IsInclusiveDescendantOf(canvas)) {
     return false;
   }
 
@@ -4236,6 +4265,11 @@ CanvasRenderingContext2D::CachedSurfaceFromElement(Element* aElement) {
     return res;
   }
 
+  if (NS_FAILED(imgRequest->GetHadCrossOriginRedirects(
+          &res.mHadCrossOriginRedirects))) {
+    return res;
+  }
+
   res.mSourceSurface = CanvasImageCache::LookupAllCanvas(aElement);
   if (!res.mSourceSurface) {
     return res;
@@ -4246,10 +4280,11 @@ CanvasRenderingContext2D::CachedSurfaceFromElement(Element* aElement) {
     res.mCORSUsed = corsmode != imgIRequest::CORS_NONE;
   }
 
-  res.mSize = res.mSourceSurface->GetSize();
+  res.mSize = res.mIntrinsicSize = res.mSourceSurface->GetSize();
   res.mPrincipal = principal.forget();
   res.mImageRequest = imgRequest.forget();
-  res.mIsWriteOnly = CheckWriteOnlySecurity(res.mCORSUsed, res.mPrincipal);
+  res.mIsWriteOnly = CheckWriteOnlySecurity(res.mCORSUsed, res.mPrincipal,
+                                            res.mHadCrossOriginRedirects);
 
   return res;
 }
@@ -4288,6 +4323,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
 
   RefPtr<SourceSurface> srcSurf;
   gfx::IntSize imgSize;
+  gfx::IntSize intrinsicImgSize;
 
   Element* element = nullptr;
 
@@ -4320,7 +4356,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
       SetWriteOnly();
     }
 
-    imgSize = gfx::IntSize(imageBitmap.Width(), imageBitmap.Height());
+    imgSize = intrinsicImgSize =
+        gfx::IntSize(imageBitmap.Width(), imageBitmap.Height());
   } else {
     if (aImage.IsHTMLImageElement()) {
       HTMLImageElement* img = &aImage.GetAsHTMLImageElement();
@@ -4335,7 +4372,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
       element = video;
     }
 
-    srcSurf = CanvasImageCache::LookupCanvas(element, mCanvasElement, &imgSize);
+    srcSurf = CanvasImageCache::LookupCanvas(element, mCanvasElement, &imgSize,
+                                             &intrinsicImgSize);
   }
 
   nsLayoutUtils::DirectDrawInfo drawInfo;
@@ -4365,18 +4403,7 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
     }
 
     imgSize = res.mSize;
-
-    // Scale sw/sh based on aspect ratio
-    if (aImage.IsHTMLVideoElement()) {
-      HTMLVideoElement* video = &aImage.GetAsHTMLVideoElement();
-      int32_t displayWidth = video->VideoWidth();
-      int32_t displayHeight = video->VideoHeight();
-      if (displayWidth == 0 || displayHeight == 0) {
-        return;
-      }
-      aSw *= (double)imgSize.width / (double)displayWidth;
-      aSh *= (double)imgSize.height / (double)displayHeight;
-    }
+    intrinsicImgSize = res.mIntrinsicSize;
 
     if (mCanvasElement) {
       CanvasUtils::DoDrawImageSecurityCheck(mCanvasElement, res.mPrincipal,
@@ -4386,7 +4413,8 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
     if (res.mSourceSurface) {
       if (res.mImageRequest) {
         CanvasImageCache::NotifyDrawImage(element, mCanvasElement,
-                                          res.mSourceSurface, imgSize);
+                                          res.mSourceSurface, imgSize,
+                                          intrinsicImgSize);
       }
       srcSurf = res.mSourceSurface;
     } else {
@@ -4396,8 +4424,10 @@ void CanvasRenderingContext2D::DrawImage(const CanvasImageSource& aImage,
 
   if (aOptional_argc == 0) {
     aSx = aSy = 0.0;
-    aDw = aSw = (double)imgSize.width;
-    aDh = aSh = (double)imgSize.height;
+    aSw = (double)imgSize.width;
+    aSh = (double)imgSize.height;
+    aDw = (double)intrinsicImgSize.width;
+    aDh = (double)intrinsicImgSize.height;
   } else if (aOptional_argc == 2) {
     aSx = aSy = 0.0;
     aSw = (double)imgSize.width;
@@ -4630,7 +4660,7 @@ void CanvasRenderingContext2D::GetGlobalCompositeOperation(
 
 void CanvasRenderingContext2D::DrawWindow(nsGlobalWindowInner& aWindow,
                                           double aX, double aY, double aW,
-                                          double aH, const nsAString& aBgColor,
+                                          double aH, const nsACString& aBgColor,
                                           uint32_t aFlags,
                                           ErrorResult& aError) {
   if (int32_t(aW) == 0 || int32_t(aH) == 0) {
@@ -5409,13 +5439,13 @@ JSObject* CanvasPath::WrapObject(JSContext* aCx,
 }
 
 already_AddRefed<CanvasPath> CanvasPath::Constructor(
-    const GlobalObject& aGlobal, ErrorResult& aRv) {
+    const GlobalObject& aGlobal) {
   RefPtr<CanvasPath> path = new CanvasPath(aGlobal.GetAsSupports());
   return path.forget();
 }
 
 already_AddRefed<CanvasPath> CanvasPath::Constructor(
-    const GlobalObject& aGlobal, CanvasPath& aCanvasPath, ErrorResult& aRv) {
+    const GlobalObject& aGlobal, CanvasPath& aCanvasPath) {
   RefPtr<gfx::Path> tempPath = aCanvasPath.GetPath(
       CanvasWindingRule::Nonzero,
       gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget().get());
@@ -5426,11 +5456,10 @@ already_AddRefed<CanvasPath> CanvasPath::Constructor(
 }
 
 already_AddRefed<CanvasPath> CanvasPath::Constructor(
-    const GlobalObject& aGlobal, const nsAString& aPathString,
-    ErrorResult& aRv) {
+    const GlobalObject& aGlobal, const nsAString& aPathString) {
   RefPtr<gfx::Path> tempPath = SVGContentUtils::GetPath(aPathString);
   if (!tempPath) {
-    return Constructor(aGlobal, aRv);
+    return Constructor(aGlobal);
   }
 
   RefPtr<CanvasPath> path =
@@ -5582,21 +5611,28 @@ void CanvasPath::BezierTo(const gfx::Point& aCP1, const gfx::Point& aCP2,
   mPathBuilder->BezierTo(aCP1, aCP2, aCP3);
 }
 
-void CanvasPath::AddPath(CanvasPath& aCanvasPath,
-                         const Optional<NonNull<SVGMatrix>>& aMatrix) {
+void CanvasPath::AddPath(CanvasPath& aCanvasPath, const DOMMatrix2DInit& aInit,
+                         ErrorResult& aError) {
   RefPtr<gfx::Path> tempPath = aCanvasPath.GetPath(
       CanvasWindingRule::Nonzero,
       gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget().get());
 
-  if (aMatrix.WasPassed()) {
-    const SVGMatrix& m = aMatrix.Value();
-    Matrix transform(m.A(), m.B(), m.C(), m.D(), m.E(), m.F());
+  RefPtr<DOMMatrixReadOnly> matrix =
+      DOMMatrixReadOnly::FromMatrix(GetParentObject(), aInit, aError);
+  if (aError.Failed()) {
+    return;
+  }
 
-    if (!transform.IsIdentity()) {
-      RefPtr<PathBuilder> tempBuilder =
-          tempPath->TransformedCopyToBuilder(transform, FillRule::FILL_WINDING);
-      tempPath = tempBuilder->Finish();
-    }
+  Matrix transform(*(matrix->GetInternal2D()));
+
+  if (!transform.IsFinite()) {
+    return;
+  }
+
+  if (!transform.IsIdentity()) {
+    RefPtr<PathBuilder> tempBuilder =
+        tempPath->TransformedCopyToBuilder(transform, FillRule::FILL_WINDING);
+    tempPath = tempBuilder->Finish();
   }
 
   EnsurePathBuilder();  // in case a path is added to itself
@@ -5658,7 +5694,8 @@ size_t BindingJSObjectMallocBytes(CanvasRenderingContext2D* aContext) {
   int32_t height = aContext->GetHeight();
 
   // TODO: Bug 1552137: No memory will be allocated if either dimension is
-  // greater than gfxPrefs::MaxCanvasSize(). We should check this here too.
+  // greater than gfxPrefs::gfx_canvas_max_size(). We should check this here
+  // too.
 
   CheckedInt<uint32_t> bytes = CheckedInt<uint32_t>(width) * height * 4;
   if (!bytes.isValid()) {

@@ -196,7 +196,7 @@ const DummyUIService = {
   abortPayment: abortRequest,
   completePayment: completeRequest,
   updatePayment: updateRequest,
-  closePayment: function(requestId) {},
+  closePayment(requestId) {},
   QueryInterface: ChromeUtils.generateQI([Ci.nsIPaymentUIService]),
 };
 

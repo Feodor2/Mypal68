@@ -31,7 +31,6 @@
 #include "nsIInterfaceRequestor.h"
 #include "nsIObserver.h"
 #include "nsIRemoteTab.h"
-#include "nsIThreadInternal.h"
 #include "nsIDOMGeoPositionCallback.h"
 #include "nsIDOMGeoPositionErrorCallback.h"
 #include "nsRefPtrHashtable.h"
@@ -295,11 +294,6 @@ class ContentParent final : public PContentParent,
   // Let managees query if it is safe to send messages.
   bool IsDestroyed() const { return !mIPCOpen; }
 
-  mozilla::ipc::IPCResult RecvOpenRecordReplayChannel(
-      const uint32_t& channelId, FileDescriptor* connection);
-  mozilla::ipc::IPCResult RecvCreateReplayingProcess(
-      const uint32_t& aChannelId);
-
   mozilla::ipc::IPCResult RecvCreateGMPService();
 
   mozilla::ipc::IPCResult RecvLoadPlugin(
@@ -482,7 +476,7 @@ class ContentParent final : public PContentParent,
 
   nsTArray<TabContext> GetManagedTabContext();
 
-  POfflineCacheUpdateParent* AllocPOfflineCacheUpdateParent(
+  already_AddRefed<POfflineCacheUpdateParent> AllocPOfflineCacheUpdateParent(
       const URIParams& aManifestURI, const URIParams& aDocumentURI,
       const PrincipalInfo& aLoadingPrincipalInfo, const bool& aStickDocument,
       const CookieSettingsArgs& aCookieSettingsArgs);
@@ -492,8 +486,6 @@ class ContentParent final : public PContentParent,
       const URIParams& aDocumentURI, const PrincipalInfo& aLoadingPrincipal,
       const bool& stickDocument,
       const CookieSettingsArgs& aCookieSettingsArgs) override;
-
-  bool DeallocPOfflineCacheUpdateParent(POfflineCacheUpdateParent* aActor);
 
   mozilla::ipc::IPCResult RecvSetOfflinePermission(
       const IPC::Principal& principal);
@@ -680,20 +672,13 @@ class ContentParent final : public PContentParent,
       nsIReferrerInfo* aReferrerInfo, bool aLoadUri,
       nsIContentSecurityPolicy* aCsp);
 
-  enum RecordReplayState { eNotRecordingOrReplaying, eRecording, eReplaying };
-
   explicit ContentParent(int32_t aPluginID)
-      : ContentParent(nullptr, EmptyString(), eNotRecordingOrReplaying,
-                      EmptyString(), aPluginID) {}
-  ContentParent(ContentParent* aOpener, const nsAString& aRemoteType,
-                RecordReplayState aRecordReplayState = eNotRecordingOrReplaying,
-                const nsAString& aRecordingFile = EmptyString())
-      : ContentParent(aOpener, aRemoteType, aRecordReplayState, aRecordingFile,
-                      nsFakePluginTag::NOT_JSPLUGIN) {}
+      : ContentParent(nullptr, EmptyString(), aPluginID) {}
+  ContentParent(ContentParent* aOpener, const nsAString& aRemoteType)
+      : ContentParent(aOpener, aRemoteType, nsFakePluginTag::NOT_JSPLUGIN) {}
 
   ContentParent(ContentParent* aOpener, const nsAString& aRemoteType,
-                RecordReplayState aRecordReplayState,
-                const nsAString& aRecordingFile, int32_t aPluginID);
+                int32_t aPluginID);
 
   // Launch the subprocess and associated initialization.
   // Returns false if the process fails to start.
@@ -820,25 +805,10 @@ class ContentParent final : public PContentParent,
 
   bool DeallocPRemoteSpellcheckEngineParent(PRemoteSpellcheckEngineParent*);
 
-  PBrowserParent* AllocPBrowserParent(const TabId& aTabId,
-                                      const TabId& aSameTabGroupAs,
-                                      const IPCTabContext& aContext,
-                                      const uint32_t& aChromeFlags,
-                                      const ContentParentId& aCpId,
-                                      BrowsingContext* aBrowsingContext,
-                                      const bool& aIsForBrowser);
-
-  bool DeallocPBrowserParent(PBrowserParent* frame);
-
   mozilla::ipc::IPCResult RecvConstructPopupBrowser(
       ManagedEndpoint<PBrowserParent>&& actor, const TabId& tabId,
       const IPCTabContext& context, BrowsingContext* aBrowsingContext,
       const uint32_t& chromeFlags);
-
-  PIPCBlobInputStreamParent* AllocPIPCBlobInputStreamParent(
-      const nsID& aID, const uint64_t& aSize);
-
-  bool DeallocPIPCBlobInputStreamParent(PIPCBlobInputStreamParent* aActor);
 
   mozilla::ipc::IPCResult RecvIsSecureURI(
       const uint32_t& aType, const URIParams& aURI, const uint32_t& aFlags,
@@ -876,7 +846,7 @@ class ContentParent final : public PContentParent,
   bool DeallocPPSMContentDownloaderParent(
       PPSMContentDownloaderParent* aDownloader);
 
-  PExternalHelperAppParent* AllocPExternalHelperAppParent(
+  already_AddRefed<PExternalHelperAppParent> AllocPExternalHelperAppParent(
       const Maybe<URIParams>& aUri,
       const Maybe<mozilla::net::LoadInfoArgs>& aLoadInfoArgs,
       const nsCString& aMimeContentType, const nsCString& aContentDisposition,
@@ -884,8 +854,6 @@ class ContentParent final : public PContentParent,
       const nsString& aContentDispositionFilename, const bool& aForceSave,
       const int64_t& aContentLength, const bool& aWasFileChannel,
       const Maybe<URIParams>& aReferrer, PBrowserParent* aBrowser);
-
-  bool DeallocPExternalHelperAppParent(PExternalHelperAppParent* aService);
 
   mozilla::ipc::IPCResult RecvPExternalHelperAppConstructor(
       PExternalHelperAppParent* actor, const Maybe<URIParams>& uri,
@@ -896,9 +864,7 @@ class ContentParent final : public PContentParent,
       const int64_t& aContentLength, const bool& aWasFileChannel,
       const Maybe<URIParams>& aReferrer, PBrowserParent* aBrowser) override;
 
-  PHandlerServiceParent* AllocPHandlerServiceParent();
-
-  bool DeallocPHandlerServiceParent(PHandlerServiceParent*);
+  already_AddRefed<PHandlerServiceParent> AllocPHandlerServiceParent();
 
   PMediaParent* AllocPMediaParent();
 
@@ -1083,15 +1049,6 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvCreateAudioIPCConnection(
       CreateAudioIPCConnectionResolver&& aResolver);
 
-  mozilla::ipc::IPCResult RecvKeygenProcessValue(const nsString& oldValue,
-                                                 const nsString& challenge,
-                                                 const nsString& keytype,
-                                                 const nsString& keyparams,
-                                                 nsString* newValue);
-
-  mozilla::ipc::IPCResult RecvKeygenProvideContent(
-      nsString* aAttribute, nsTArray<nsString>* aContent);
-
   PFileDescriptorSetParent* AllocPFileDescriptorSetParent(
       const mozilla::ipc::FileDescriptor&);
 
@@ -1172,6 +1129,10 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvBHRThreadHang(const HangDetails& aHangDetails);
 
+  mozilla::ipc::IPCResult RecvAutomaticStorageAccessCanBeGranted(
+      const Principal& aPrincipal,
+      AutomaticStorageAccessCanBeGrantedResolver&& aResolver);
+
   mozilla::ipc::IPCResult RecvFirstPartyStorageAccessGrantedForOrigin(
       const Principal& aParentPrincipal, const Principal& aTrackingPrincipal,
       const nsCString& aTrackingOrigin, const nsCString& aGrantedOrigin,
@@ -1180,6 +1141,12 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvStoreUserInteractionAsPermission(
       const Principal& aPrincipal);
+
+  mozilla::ipc::IPCResult RecvNotifyMediaActiveChanged(
+      BrowsingContext* aContext, bool aActive);
+
+  mozilla::ipc::IPCResult RecvNotifyMediaAudibleChanged(
+      BrowsingContext* aContext, bool aAudible);
 
   // Notify the ContentChild to enable the input event prioritization when
   // initializing.
@@ -1199,16 +1166,12 @@ class ContentParent final : public PContentParent,
                                const bool& aMinimizeMemoryUsage,
                                const Maybe<FileDescriptor>& aDMDFile) override;
 
-  nsresult SaveRecording(nsIFile* aFile, bool* aRetval);
-
-  bool IsRecordingOrReplaying() const {
-    return mRecordReplayState != eNotRecordingOrReplaying;
-  }
-
   void OnBrowsingContextGroupSubscribe(BrowsingContextGroup* aGroup);
   void OnBrowsingContextGroupUnsubscribe(BrowsingContextGroup* aGroup);
 
   void UpdateNetworkLinkType();
+
+  static bool ShouldSyncPreference(const char16_t* aData);
 
  private:
   // Released in ActorDestroy; deliberately not exposed to the CC.
@@ -1266,16 +1229,6 @@ class ContentParent final : public PContentParent,
   LifecycleState mLifecycleState;
 
   bool mIsForBrowser;
-
-  // Whether this process is recording or replaying its execution, and any
-  // associated recording file.
-  RecordReplayState mRecordReplayState;
-  nsString mRecordingFile;
-
-  // When recording or replaying, the child process is a middleman. This vector
-  // stores any replaying children we have spawned on behalf of that middleman,
-  // indexed by their record/replay channel ID.
-  Vector<mozilla::ipc::GeckoChildProcessHost*> mReplayingChildren;
 
   // These variables track whether we've called Close() and KillHard() on our
   // channel.

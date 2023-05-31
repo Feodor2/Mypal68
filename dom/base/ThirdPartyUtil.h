@@ -5,13 +5,16 @@
 #ifndef ThirdPartyUtil_h__
 #define ThirdPartyUtil_h__
 
-#include "nsCOMPtr.h"
-#include "nsString.h"
 #include "mozIThirdPartyUtil.h"
-#include "nsEffectiveTLDService.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/dom/Document.h"
+#include "nsCOMPtr.h"
+#include "nsEffectiveTLDService.h"
+#include "nsString.h"
+#include "nsPIDOMWindow.h"
 
 class nsIURI;
+class nsPIDOMWindowOuter;
 
 class ThirdPartyUtil final : public mozIThirdPartyUtil {
  public:
@@ -34,15 +37,7 @@ class ThirdPartyUtil final : public mozIThirdPartyUtil {
   nsresult IsThirdPartyInternal(const nsCString& aFirstDomain,
                                 nsIURI* aSecondURI, bool* aResult);
 
-  nsCString GetBaseDomainFromWindow(nsPIDOMWindowOuter* aWindow) {
-    mozilla::dom::Document* doc = aWindow ? aWindow->GetExtantDoc() : nullptr;
-
-    if (!doc) {
-      return EmptyCString();
-    }
-
-    return doc->GetBaseDomain();
-  }
+  nsCString GetBaseDomainFromWindow(nsPIDOMWindowOuter* aWindow);
 
   RefPtr<nsEffectiveTLDService> mTLDService;
 };

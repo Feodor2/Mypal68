@@ -15,30 +15,22 @@
 #include "nsNPAPIPluginInstance.h"
 #include "nsPluginInstanceOwner.h"
 #include "nsObjectLoadingContent.h"
-#include "nsIHTTPHeaderListener.h"
-#include "nsIHttpHeaderVisitor.h"
 #include "nsIObserverService.h"
 #include "nsIHttpProtocolHandler.h"
 #include "nsIHttpChannel.h"
 #include "nsIUploadChannel.h"
-#include "nsIByteRangeRequest.h"
 #include "nsIStreamListener.h"
 #include "nsIInputStream.h"
-#include "nsIOutputStream.h"
-#include "nsIURL.h"
 #include "nsTArray.h"
 #include "nsReadableUtils.h"
-#include "nsIStreamConverterService.h"
 #include "nsIFile.h"
 #if defined(XP_MACOSX)
 #  include "nsILocalFileMac.h"
 #endif
 #include "nsISeekableStream.h"
 #include "nsNetUtil.h"
-#include "nsIFileStreams.h"
 #include "nsISimpleEnumerator.h"
 #include "nsIStringStream.h"
-#include "nsIProgressEventSink.h"
 #include "mozilla/dom/Document.h"
 #include "nsPluginLogging.h"
 #include "nsIScriptChannel.h"
@@ -57,25 +49,22 @@
 #include "mozilla/LoadInfo.h"
 #include "mozilla/plugins/PluginBridge.h"
 #include "mozilla/plugins/PluginTypes.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/ipc/URIUtils.h"
 
 #include "nsEnumeratorUtils.h"
 #include "nsXPCOM.h"
 #include "nsXPCOMCID.h"
-#include "nsISupportsPrimitives.h"
 
 #include "nsXULAppAPI.h"
 #include "nsIXULRuntime.h"
 
 // for the dialog
-#include "nsIWindowWatcher.h"
-#include "nsIDOMWindow.h"
 
 #include "nsNetCID.h"
 #include "mozilla/Sprintf.h"
 #include "nsThreadUtils.h"
-#include "nsIInputStreamTee.h"
 #include "nsQueryObject.h"
 
 #include "nsDirectoryServiceDefs.h"
@@ -750,12 +739,6 @@ nsresult nsPluginHost::InstantiatePluginInstance(
     return NS_ERROR_FAILURE;
   }
 
-  // Plugins are not supported when recording or replaying executions.
-  // See bug 1483232.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    return NS_ERROR_FAILURE;
-  }
-
   RefPtr<nsPluginInstanceOwner> instanceOwner = new nsPluginInstanceOwner();
   if (!instanceOwner) {
     return NS_ERROR_OUT_OF_MEMORY;
@@ -1104,7 +1087,7 @@ nsPluginHost::GetPluginTags(nsTArray<RefPtr<nsIPluginTag>>& aResults) {
 }
 
 nsPluginTag* nsPluginHost::FindPreferredPlugin(
-    const InfallibleTArray<nsPluginTag*>& matches) {
+    const nsTArray<nsPluginTag*>& matches) {
   // We prefer the plugin with the highest version number.
   /// XXX(johns): This seems to assume the only time multiple plugins will have
   ///             the same MIME type is if they're multiple versions of the same
@@ -1178,7 +1161,7 @@ nsPluginTag* nsPluginHost::FindNativePluginForType(const nsACString& aMimeType,
 
   LoadPlugins();
 
-  InfallibleTArray<nsPluginTag*> matchingPlugins;
+  nsTArray<nsPluginTag*> matchingPlugins;
 
   nsPluginTag* plugin = mPlugins;
   while (plugin) {
@@ -1201,7 +1184,7 @@ nsPluginTag* nsPluginHost::FindNativePluginForExtension(
 
   LoadPlugins();
 
-  InfallibleTArray<nsPluginTag*> matchingPlugins;
+  nsTArray<nsPluginTag*> matchingPlugins;
   nsCString matchingMime;  // Don't mutate aMimeType unless returning a match
   nsPluginTag* plugin = mPlugins;
 
@@ -1361,7 +1344,7 @@ nsresult nsPluginHost::GetPlugin(const nsACString& aMimeType,
 
 // Normalize 'host' to ACE.
 nsresult nsPluginHost::NormalizeHostname(nsCString& host) {
-  if (IsASCII(host)) {
+  if (IsAscii(host)) {
     ToLowerCase(host);
     return NS_OK;
   }
@@ -1379,9 +1362,10 @@ nsresult nsPluginHost::NormalizeHostname(nsCString& host) {
 // any of them have a base domain in common with 'domain'; if so, append them
 // to the 'result' array. If 'firstMatchOnly' is true, return after finding the
 // first match.
-nsresult nsPluginHost::EnumerateSiteData(
-    const nsACString& domain, const InfallibleTArray<nsCString>& sites,
-    InfallibleTArray<nsCString>& result, bool firstMatchOnly) {
+nsresult nsPluginHost::EnumerateSiteData(const nsACString& domain,
+                                         const nsTArray<nsCString>& sites,
+                                         nsTArray<nsCString>& result,
+                                         bool firstMatchOnly) {
   NS_ASSERTION(!domain.IsVoid(), "null domain string");
 
   nsresult rv;
@@ -1604,7 +1588,7 @@ class ClearDataFromSitesClosure : public nsIClearSiteDataCallback,
 
   // Callback from NPP_GetSitesWithData, kick the iteration off to clear the
   // data
-  NS_IMETHOD SitesWithData(InfallibleTArray<nsCString>& sites) override {
+  NS_IMETHOD SitesWithData(nsTArray<nsCString>& sites) override {
     // Enumerate the sites and build a list of matches.
     nsresult rv = host->EnumerateSiteData(domain, sites, matches, false);
     Callback(rv);
@@ -1613,7 +1597,7 @@ class ClearDataFromSitesClosure : public nsIClearSiteDataCallback,
 
   nsCString domain;
   nsCOMPtr<nsIClearSiteDataCallback> callback;
-  InfallibleTArray<nsCString> matches;
+  nsTArray<nsCString> matches;
   nsIPluginTag* tag;
   uint64_t flags;
   int64_t maxAge;
@@ -1700,13 +1684,13 @@ class GetSitesClosure : public nsIGetSitesWithDataCallback {
         keepWaiting(true),
         retVal(NS_ERROR_NOT_INITIALIZED) {}
 
-  NS_IMETHOD SitesWithData(InfallibleTArray<nsCString>& sites) override {
+  NS_IMETHOD SitesWithData(nsTArray<nsCString>& sites) override {
     retVal = HandleGetSites(sites);
     keepWaiting = false;
     return NS_OK;
   }
 
-  nsresult HandleGetSites(InfallibleTArray<nsCString>& sites) {
+  nsresult HandleGetSites(nsTArray<nsCString>& sites) {
     // If there's no data, we're done.
     if (sites.IsEmpty()) {
       result = false;
@@ -1721,7 +1705,7 @@ class GetSitesClosure : public nsIGetSitesWithDataCallback {
     }
 
     // Enumerate the sites and determine if there's a match.
-    InfallibleTArray<nsCString> matches;
+    nsTArray<nsCString> matches;
     nsresult rv = host->EnumerateSiteData(domain, sites, matches, true);
     NS_ENSURE_SUCCESS(rv, rv);
 
@@ -3046,7 +3030,6 @@ nsresult nsPluginHost::NewPluginURLStream(
     const char* aHeadersData, uint32_t aHeadersDataLen) {
   nsCOMPtr<nsIURI> url;
   nsAutoString absUrl;
-  nsresult rv;
 
   if (aURL.Length() <= 0) return NS_OK;
 
@@ -3054,13 +3037,12 @@ nsresult nsPluginHost::NewPluginURLStream(
   // in case aURL is relative
   RefPtr<nsPluginInstanceOwner> owner = aInstance->GetOwner();
   if (owner) {
-    nsCOMPtr<nsIURI> baseURI = owner->GetBaseURI();
-    rv = NS_MakeAbsoluteURI(absUrl, aURL, baseURI);
+    NS_MakeAbsoluteURI(absUrl, aURL, owner->GetBaseURI());
   }
 
   if (absUrl.IsEmpty()) absUrl.Assign(aURL);
 
-  rv = NS_NewURI(getter_AddRefs(url), absUrl);
+  nsresult rv = NS_NewURI(getter_AddRefs(url), absUrl);
   NS_ENSURE_SUCCESS(rv, rv);
 
   RefPtr<nsPluginStreamListenerPeer> listenerPeer =
@@ -3114,7 +3096,7 @@ nsresult nsPluginHost::NewPluginURLStream(
       // errors about malformed requests if we include it in POSTs. See
       // bug 724465.
       nsCOMPtr<nsIURI> referer;
-      net::ReferrerPolicy referrerPolicy = net::RP_Unset;
+      dom::ReferrerPolicy referrerPolicy = dom::ReferrerPolicy::_empty;
 
       nsCOMPtr<nsIObjectLoadingContent> olc = do_QueryInterface(element);
       if (olc) olc->GetSrcURI(getter_AddRefs(referer));
@@ -3123,11 +3105,11 @@ nsresult nsPluginHost::NewPluginURLStream(
         if (!doc) {
           return NS_ERROR_FAILURE;
         }
-        referer = doc->GetDocumentURI();
+        referer = doc->GetDocumentURIAsReferrer();
         referrerPolicy = doc->GetReferrerPolicy();
       }
       nsCOMPtr<nsIReferrerInfo> referrerInfo =
-          new mozilla::dom::ReferrerInfo(referer, referrerPolicy);
+          new dom::ReferrerInfo(referer, referrerPolicy);
       rv = httpChannel->SetReferrerInfoWithoutClone(referrerInfo);
       NS_ENSURE_SUCCESS(rv, rv);
     }

@@ -18,18 +18,16 @@
 #include "nsIClassOfService.h"
 #include "nsIHttpProtocolHandler.h"
 #include "nsIContentPolicy.h"
-#include "nsIContentSecurityPolicy.h"
 #include "nsContentPolicyUtils.h"
 #include "nsISupportsPriority.h"
-#include "nsICachingChannel.h"
 #include "nsIWebProtocolHandlerRegistrar.h"
-#include "nsICookiePermission.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsContentUtils.h"
 #include "nsUnicharUtils.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/Telemetry.h"
 #include "BatteryManager.h"
 #include "mozilla/dom/CredentialsContainer.h"
@@ -64,12 +62,9 @@
 #include "nsStringStream.h"
 #include "nsComponentManagerUtils.h"
 #include "nsICookieService.h"
-#include "nsIStringStream.h"
 #include "nsIHttpChannel.h"
-#include "nsIHttpChannelInternal.h"
 #include "nsStreamUtils.h"
 #include "WidgetUtils.h"
-#include "nsIPresentationService.h"
 #include "nsIScriptError.h"
 #include "ReferrerInfo.h"
 
@@ -80,7 +75,6 @@
 #include "mozilla/dom/MediaDevices.h"
 #include "MediaManager.h"
 
-#include "nsIDOMGlobalPropertyInitializer.h"
 #include "nsJSUtils.h"
 
 #include "mozilla/dom/NavigatorBinding.h"
@@ -100,6 +94,8 @@
 #include "mozilla/EMEUtils.h"
 #include "mozilla/DetailedPromise.h"
 #include "mozilla/Unused.h"
+
+#include "mozilla/webgpu/Instance.h"
 
 namespace mozilla {
 namespace dom {
@@ -152,6 +148,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaDevices)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mServiceWorkerContainer)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaCapabilities)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAddonManager)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWebGpu)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaKeySystemAccessManager)
@@ -222,6 +220,10 @@ void Navigator::Invalidate() {
   }
 
   mMediaCapabilities = nullptr;
+
+  mAddonManager = nullptr;
+
+  mWebGpu = nullptr;
 }
 
 void Navigator::GetUserAgent(nsAString& aUserAgent, CallerType aCallerType,
@@ -536,26 +538,8 @@ void Navigator::GetBuildID(nsAString& aBuildID, CallerType aCallerType,
       return;
     }
 
-    nsAutoCString host;
-    bool isHTTPS = false;
-    if (mWindow) {
-      nsCOMPtr<Document> doc = mWindow->GetDoc();
-      if (doc) {
-        nsIURI* uri = doc->GetDocumentURI();
-        if (uri) {
-          MOZ_ALWAYS_SUCCEEDS(uri->SchemeIs("https", &isHTTPS));
-          if (isHTTPS) {
-            MOZ_ALWAYS_SUCCEEDS(uri->GetHost(host));
-          }
-        }
-      }
-    }
-
-    // Spoof the buildID on pages not loaded from "https://*.mozilla.org".
-    if (!isHTTPS || !StringEndsWith(host, NS_LITERAL_CSTRING(".mozilla.org"))) {
-      aBuildID.AssignLiteral(LEGACY_BUILD_ID);
-      return;
-    }
+    aBuildID.AssignLiteral(LEGACY_BUILD_ID);
+    return;
   }
 
   nsCOMPtr<nsIXULAppInfo> appInfo =
@@ -847,7 +831,8 @@ void Navigator::CheckProtocolHandlerAllowed(const nsAString& aScheme,
   // If the uri doesn't contain '%s', it won't be a good handler - the %s
   // gets replaced with the handled URI.
   if (!FindInReadable(NS_LITERAL_CSTRING("%s"), spec)) {
-    aRv.ThrowDOMException(NS_ERROR_DOM_SYNTAX_ERR);
+    aRv.ThrowDOMException(NS_ERROR_DOM_SYNTAX_ERR,
+                          "Handler URI does not contain \"%s\".");
     return;
   }
 
@@ -956,9 +941,6 @@ void Navigator::RegisterProtocolHandler(const nsAString& aScheme,
   }
 
   nsCOMPtr<Document> doc = mWindow->GetDoc();
-  if (!mWindow->IsSecureContext()) {
-    doc->WarnOnceAbout(Document::eRegisterProtocolHandlerInsecure);
-  }
 
   // Determine if doc is allowed to assign this handler
   nsIURI* docURI = doc->GetDocumentURIObject();
@@ -1049,6 +1031,12 @@ BeaconStreamListener::OnDataAvailable(nsIRequest* aRequest,
 bool Navigator::SendBeacon(const nsAString& aUrl,
                            const Nullable<fetch::BodyInit>& aData,
                            ErrorResult& aRv) {
+
+  if (!Preferences::GetBool("beacon.enabled", false)) {
+      aRv = NS_OK;
+      return true;
+  }
+
   if (aData.IsNull()) {
     return SendBeaconInternal(aUrl, nullptr, eBeaconTypeOther, aRv);
   }
@@ -1118,10 +1106,7 @@ bool Navigator::SendBeaconInternal(const nsAString& aUrl,
   }
 
   // Spec disallows any schemes save for HTTP/HTTPs
-  bool isValidScheme;
-  if (!(NS_SUCCEEDED(uri->SchemeIs("http", &isValidScheme)) && isValidScheme) &&
-      !(NS_SUCCEEDED(uri->SchemeIs("https", &isValidScheme)) &&
-        isValidScheme)) {
+  if (!uri->SchemeIs("http") && !uri->SchemeIs("https")) {
     aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>(NS_LITERAL_STRING("Beacon"),
                                                aUrl);
     return false;
@@ -1150,8 +1135,8 @@ bool Navigator::SendBeaconInternal(const nsAString& aUrl,
     return false;
   }
 
-  nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      new ReferrerInfo(doc->GetDocumentURI(), doc->GetReferrerPolicy());
+  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+  referrerInfo->InitWithDocument(doc);
   rv = httpChannel->SetReferrerInfoWithoutClone(referrerInfo);
   MOZ_ASSERT(NS_SUCCEEDED(rv));
 
@@ -1273,20 +1258,6 @@ void Navigator::MozGetUserMediaDevices(
       mWindow->GetOuterWindow()->GetCurrentInnerWindow() != mWindow) {
     aRv.Throw(NS_ERROR_NOT_AVAILABLE);
     return;
-  }
-  if (Document* doc = mWindow->GetExtantDoc()) {
-    if (!mWindow->IsSecureContext()) {
-      doc->SetDocumentAndPageUseCounter(
-          eUseCounter_custom_MozGetUserMediaInsec);
-    }
-    nsINode* node = doc;
-    while ((node = nsContentUtils::GetCrossDocParentNode(node))) {
-      if (NS_FAILED(nsContentUtils::CheckSameOrigin(doc, node))) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_MozGetUserMediaXOrigin);
-        break;
-      }
-    }
   }
   RefPtr<MediaManager> manager = MediaManager::Get();
   // XXXbz aOnError seems to be unused?
@@ -1670,13 +1641,36 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
                                  bool aIsCallerChrome, nsAString& aUserAgent) {
   MOZ_ASSERT(NS_IsMainThread());
 
+  nsAutoCString host,ua;
+  nsAutoString override;
+  nsresult rv;
+  nsCOMPtr<nsIPrefBranch> prefBranch;
+  nsCOMPtr<nsIPrefService> prefService =
+      do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+  prefService->GetBranch("general.useragent.override.",
+                   getter_AddRefs(prefBranch));
+  if (prefBranch) {
+    nsCOMPtr<Document> doc = aWindow->GetDoc();
+    if (doc) {
+      nsIURI* uri = doc->GetDocumentURI();
+      if (uri) {
+        MOZ_ALWAYS_SUCCEEDS(uri->GetHost(host));
+        rv = prefBranch->GetCharPref(host.get(), ua);
+        if (NS_SUCCEEDED(rv)) {
+           CopyASCIItoUTF16(ua, aUserAgent);
+           return NS_OK;
+        }
+      }
+    }
+  }
+
+
   // We will skip the override and pass to httpHandler to get spoofed userAgent
   // when 'privacy.resistFingerprinting' is true.
   if (!aIsCallerChrome &&
       !nsContentUtils::ShouldResistFingerprinting(aCallerPrincipal)) {
-    nsAutoString override;
-    nsresult rv =
-        mozilla::Preferences::GetString("general.useragent.override", override);
+    rv = mozilla::Preferences::GetString("general.useragent.override", override);
 
     if (NS_SUCCEEDED(rv)) {
       aUserAgent = override;
@@ -1695,14 +1689,12 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
     return NS_OK;
   }
 
-  nsresult rv;
   nsCOMPtr<nsIHttpProtocolHandler> service(
       do_GetService(NS_NETWORK_PROTOCOL_CONTRACTID_PREFIX "http", &rv));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  nsAutoCString ua;
   rv = service->GetUserAgent(ua);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -1759,21 +1751,17 @@ already_AddRefed<Promise> Navigator::RequestMediaKeySystemAccess(
                                                 mWindow->IsSecureContext())
                     .get());
 
-  Telemetry::Accumulate(Telemetry::MEDIA_EME_SECURE_CONTEXT,
-                        mWindow->IsSecureContext());
-
   if (!mWindow->IsSecureContext()) {
     Document* doc = mWindow->GetExtantDoc();
-    nsString uri;
+    AutoTArray<nsString, 1> params;
+    nsString* uri = params.AppendElement();
     if (doc) {
-      Unused << doc->GetDocumentURI(uri);
+      Unused << doc->GetDocumentURI(*uri);
     }
-    const char16_t* params[] = {uri.get()};
-    nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                    NS_LITERAL_CSTRING("Media"), doc,
-                                    nsContentUtils::eDOM_PROPERTIES,
-                                    "MediaEMEInsecureContextDeprecatedWarning",
-                                    params, ArrayLength(params));
+    nsContentUtils::ReportToConsole(
+        nsIScriptError::warningFlag, NS_LITERAL_CSTRING("Media"), doc,
+        nsContentUtils::eDOM_PROPERTIES,
+        "MediaEMEInsecureContextDeprecatedWarning", params);
   }
 
   Document* doc = mWindow->GetExtantDoc();
@@ -1831,6 +1819,31 @@ Clipboard* Navigator::Clipboard() {
     mClipboard = new dom::Clipboard(GetWindow());
   }
   return mClipboard;
+}
+
+AddonManager* Navigator::GetMozAddonManager(ErrorResult& aRv) {
+  if (!mAddonManager) {
+    nsPIDOMWindowInner* win = GetWindow();
+    if (!win) {
+      aRv.Throw(NS_ERROR_UNEXPECTED);
+      return nullptr;
+    }
+
+    mAddonManager = ConstructJSImplementation<AddonManager>(
+        "@mozilla.org/addon-web-api/manager;1", win->AsGlobal(), aRv);
+    if (aRv.Failed()) {
+      return nullptr;
+    }
+  }
+
+  return mAddonManager;
+}
+
+webgpu::Instance* Navigator::Gpu() {
+  if (!mWebGpu) {
+    mWebGpu = webgpu::Instance::Create(GetWindow()->AsGlobal());
+  }
+  return mWebGpu;
 }
 
 /* static */

@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGNumberList {
   readonly attribute unsigned long numberOfItems;
   [Throws]

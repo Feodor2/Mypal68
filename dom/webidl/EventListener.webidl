@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 callback interface EventListener {
   void handleEvent(Event event);
 };

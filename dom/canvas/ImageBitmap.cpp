@@ -4,7 +4,6 @@
 
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/CheckedInt.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/HTMLMediaElementBinding.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/Promise.h"
@@ -768,8 +767,10 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
 
   // Check security.
   nsCOMPtr<nsIPrincipal> principal = aVideoEl.GetCurrentVideoPrincipal();
+  bool hadCrossOriginRedirects = aVideoEl.HadCrossOriginRedirects();
   bool CORSUsed = aVideoEl.GetCORSMode() != CORS_NONE;
-  bool writeOnly = CheckWriteOnlySecurity(CORSUsed, principal);
+  bool writeOnly =
+      CheckWriteOnlySecurity(CORSUsed, principal, hadCrossOriginRedirects);
 
   // Create ImageBitmap.
   RefPtr<layers::Image> data = aVideoEl.GetCurrentImage();
@@ -1080,11 +1081,11 @@ class CreateImageBitmapFromBlob final : public CancelableRunnable,
         mCropRect(aCropRect),
         mOriginalCropRect(aCropRect),
         mMainThreadEventTarget(aMainThreadEventTarget),
-        mThread(GetCurrentVirtualThread()) {}
+        mThread(PR_GetCurrentThread()) {}
 
   virtual ~CreateImageBitmapFromBlob() {}
 
-  bool IsCurrentThread() const { return mThread == GetCurrentVirtualThread(); }
+  bool IsCurrentThread() const { return mThread == PR_GetCurrentThread(); }
 
   // Called on the owning thread.
   nsresult StartMimeTypeAndDecodeAndCropBlob();
@@ -1193,10 +1194,18 @@ already_AddRefed<Promise> ImageBitmap::Create(
     return nullptr;
   }
 
-  if (aCropRect.isSome() &&
-      (aCropRect->Width() == 0 || aCropRect->Height() == 0)) {
-    aRv.Throw(NS_ERROR_RANGE_ERR);
-    return promise.forget();
+  if (aCropRect.isSome()) {
+    if (aCropRect->Width() == 0) {
+      aRv.ThrowRangeError(
+          u"The crop rect width passed to createImageBitmap must be nonzero");
+      return promise.forget();
+    }
+
+    if (aCropRect->Height() == 0) {
+      aRv.ThrowRangeError(
+          u"The crop rect height passed to createImageBitmap must be nonzero");
+      return promise.forget();
+    }
   }
 
   RefPtr<ImageBitmap> imageBitmap;

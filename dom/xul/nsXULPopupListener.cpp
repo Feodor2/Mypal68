@@ -16,11 +16,10 @@
 #include "nsIScriptContext.h"
 #include "mozilla/dom/Document.h"
 #include "nsServiceManagerUtils.h"
-#include "nsIPrincipal.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsLayoutUtils.h"
 #include "mozilla/ReflowInput.h"
 #include "nsIObjectLoadingContent.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/Preferences.h"
@@ -133,7 +132,7 @@ nsresult nsXULPopupListener::HandleEvent(Event* aEvent) {
       // The user wants his contextmenus.  Let's make sure that this is a
       // website and not chrome since there could be places in chrome which
       // don't want contextmenus.
-      if (!nsContentUtils::IsSystemPrincipal(targetContent->NodePrincipal())) {
+      if (!targetContent->NodePrincipal()->IsSystemPrincipal()) {
         // This isn't chrome.  Cancel the preventDefault() and
         // let the event go forth.
         preventDefault = false;

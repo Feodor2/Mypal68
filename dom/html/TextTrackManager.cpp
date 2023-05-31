@@ -115,7 +115,6 @@ TextTrackManager::TextTrackManager(HTMLMediaElement* aMediaElement)
       mTimeMarchesOnDispatched(false),
       mUpdateCueDisplayDispatched(false),
       performedTrackSelection(false),
-      mCueTelemetryReported(false),
       mShutdown(false) {
   nsISupports* parentObject = mMediaElement->OwnerDoc()->GetParentObject();
 
@@ -280,7 +279,6 @@ void TextTrackManager::NotifyCueAdded(TextTrackCue& aCue) {
     mNewCues->AddCue(aCue);
   }
   MaybeRunTimeMarchesOn();
-  ReportTelemetryForCue();
 }
 
 void TextTrackManager::NotifyCueRemoved(TextTrackCue& aCue) {
@@ -310,6 +308,8 @@ void TextTrackManager::PopulatePendingList() {
 
 void TextTrackManager::AddListeners() {
   if (mMediaElement) {
+    mMediaElement->AddEventListener(NS_LITERAL_STRING("resizecaption"), this,
+                                    false, false);
     mMediaElement->AddEventListener(NS_LITERAL_STRING("resizevideocontrols"),
                                     this, false, false);
     mMediaElement->AddEventListener(NS_LITERAL_STRING("seeked"), this, false,
@@ -415,14 +415,20 @@ TextTrackManager::HandleEvent(Event* aEvent) {
 
   nsAutoString type;
   aEvent->GetType(type);
-  if (type.EqualsLiteral("resizevideocontrols") ||
-      type.EqualsLiteral("seeked")) {
+  WEBVTT_LOG("Handle event %s", NS_ConvertUTF16toUTF8(type).get());
+
+  const bool setDirty = type.EqualsLiteral("seeked") ||
+                        type.EqualsLiteral("resizecaption") ||
+                        type.EqualsLiteral("resizevideocontrols");
+  const bool updateDisplay = type.EqualsLiteral("controlbarchange") ||
+                             type.EqualsLiteral("resizecaption");
+
+  if (setDirty) {
     for (uint32_t i = 0; i < mTextTracks->Length(); i++) {
       ((*mTextTracks)[i])->SetCuesDirty();
     }
   }
-
-  if (type.EqualsLiteral("controlbarchange")) {
+  if (updateDisplay) {
     UpdateCueDisplay();
   }
 
@@ -842,16 +848,6 @@ void TextTrackManager::ReportTelemetryForTrack(TextTrack* aTextTrack) const {
 
   TextTrackKind kind = aTextTrack->Kind();
   Telemetry::Accumulate(Telemetry::WEBVTT_TRACK_KINDS, uint32_t(kind));
-}
-
-void TextTrackManager::ReportTelemetryForCue() {
-  MOZ_ASSERT(NS_IsMainThread());
-  MOZ_ASSERT(!mNewCues->IsEmpty());
-
-  if (!mCueTelemetryReported) {
-    Telemetry::Accumulate(Telemetry::WEBVTT_USED_VTT_CUES, 1);
-    mCueTelemetryReported = true;
-  }
 }
 
 bool TextTrackManager::IsLoaded() {

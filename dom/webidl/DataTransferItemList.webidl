@@ -6,6 +6,7 @@
  * https://html.spec.whatwg.org/multipage/interaction.html#the-datatransferitemlist-interface
  */
 
+[Exposed=Window]
 interface DataTransferItemList {
   readonly attribute unsigned long length;
   getter DataTransferItem (unsigned long index);

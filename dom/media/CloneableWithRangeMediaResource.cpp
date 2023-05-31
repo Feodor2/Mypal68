@@ -147,7 +147,9 @@ nsresult CloneableWithRangeMediaResource::Open(
   return NS_OK;
 }
 
-nsresult CloneableWithRangeMediaResource::Close() { return NS_OK; }
+RefPtr<GenericPromise> CloneableWithRangeMediaResource::Close() {
+  return GenericPromise::CreateAndResolve(true, __func__);
+}
 
 already_AddRefed<nsIPrincipal>
 CloneableWithRangeMediaResource::GetCurrentPrincipal() {
@@ -161,6 +163,20 @@ CloneableWithRangeMediaResource::GetCurrentPrincipal() {
 
   secMan->GetChannelResultPrincipal(mChannel, getter_AddRefs(principal));
   return principal.forget();
+}
+
+bool CloneableWithRangeMediaResource::HadCrossOriginRedirects() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsCOMPtr<nsITimedChannel> timedChannel = do_QueryInterface(mChannel);
+  if (!timedChannel) {
+    return false;
+  }
+
+  bool allRedirectsSameOrigin = false;
+  return NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOrigin(
+             &allRedirectsSameOrigin)) &&
+         !allRedirectsSameOrigin;
 }
 
 nsresult CloneableWithRangeMediaResource::ReadFromCache(char* aBuffer,

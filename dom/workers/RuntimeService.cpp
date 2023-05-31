@@ -5,17 +5,10 @@
 #include "RuntimeService.h"
 
 #include "nsAutoPtr.h"
-#include "nsIChannel.h"
 #include "nsIContentSecurityPolicy.h"
-#include "nsICookieService.h"
 #include "mozilla/dom/Document.h"
-#include "nsIDOMChromeWindow.h"
-#include "nsIEffectiveTLDService.h"
 #include "nsIObserverService.h"
-#include "nsIPrincipal.h"
 #include "nsIScriptContext.h"
-#include "nsIScriptError.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIStreamTransportService.h"
 #include "nsISupportsPriority.h"
 #include "nsITimer.h"
@@ -55,7 +48,6 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/Navigator.h"
 #include "mozilla/Monitor2.h"
-#include "mozilla/StaticPrefs.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollector.h"
 #include "nsDOMJSUtils.h"
@@ -70,7 +62,7 @@
 #include "xpcpublic.h"
 
 #if defined(XP_MACOSX)
-# include "nsMacUtilsImpl.h"
+#  include "nsMacUtilsImpl.h"
 #endif
 
 #include "Principal.h"
@@ -97,9 +89,6 @@ namespace workerinternals {
 
 // The size of the worker runtime heaps in bytes. May be changed via pref.
 #define WORKER_DEFAULT_RUNTIME_HEAPSIZE 32 * 1024 * 1024
-
-// The size of the generational GC nursery for workers, in bytes.
-#define WORKER_DEFAULT_NURSERY_SIZE 1 * 1024 * 1024
 
 // The size of the worker JS allocation threshold in MB. May be changed via
 // pref.
@@ -137,6 +126,9 @@ static_assert(MAX_WORKERS_PER_DOMAIN >= 1,
 #define GC_REQUEST_OBSERVER_TOPIC "child-gc-request"
 #define CC_REQUEST_OBSERVER_TOPIC "child-cc-request"
 #define MEMORY_PRESSURE_OBSERVER_TOPIC "memory-pressure"
+#define LOW_MEMORY_DATA "low-memory"
+#define LOW_MEMORY_ONGOING_DATA "low-memory-ongoing"
+#define MEMORY_PRESSURE_STOP_OBSERVER_TOPIC "memory-pressure-stop"
 
 #define BROADCAST_ALL_WORKERS(_func, ...)                         \
   PR_BEGIN_MACRO                                                  \
@@ -281,7 +273,12 @@ void LoadContextOptions(const char* aPrefName, void* /* aClosure */) {
   // Context options.
   JS::ContextOptions contextOptions;
   contextOptions.setAsmJS(GetWorkerPref<bool>(NS_LITERAL_CSTRING("asmjs")))
+#ifdef FUZZING
+      .setFuzzing(GetWorkerPref<bool>(NS_LITERAL_CSTRING("fuzzing.enabled")))
+#endif
       .setWasm(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm")))
+      .setWasmForTrustedPrinciples(
+          GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_trustedprincipals")))
       .setWasmBaseline(
           GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_baselinejit")))
       .setWasmIon(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_ionjit")))
@@ -289,21 +286,19 @@ void LoadContextOptions(const char* aPrefName, void* /* aClosure */) {
       .setWasmCranelift(
           GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_cranelift")))
 #endif
+#ifdef ENABLE_WASM_MULTI_VALUE
+      .setWasmMultiValue(
+          GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_multi_value")))
+#endif
 #ifdef ENABLE_WASM_REFTYPES
       .setWasmGc(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_gc")))
 #endif
       .setWasmVerbose(GetWorkerPref<bool>(NS_LITERAL_CSTRING("wasm_verbose")))
       .setThrowOnAsmJSValidationFailure(GetWorkerPref<bool>(
           NS_LITERAL_CSTRING("throw_on_asmjs_validation_failure")))
-      .setBaseline(GetWorkerPref<bool>(NS_LITERAL_CSTRING("baselinejit")))
-      .setIon(GetWorkerPref<bool>(NS_LITERAL_CSTRING("ion")))
-      .setNativeRegExp(GetWorkerPref<bool>(NS_LITERAL_CSTRING("native_regexp")))
-      .setAsyncStack(GetWorkerPref<bool>(NS_LITERAL_CSTRING("asyncstack")))
-      .setWerror(GetWorkerPref<bool>(NS_LITERAL_CSTRING("werror")))
-#ifdef FUZZING
-      .setFuzzing(GetWorkerPref<bool>(NS_LITERAL_CSTRING("fuzzing.enabled")))
-#endif
-      .setExtraWarnings(GetWorkerPref<bool>(NS_LITERAL_CSTRING("strict")));
+      .setSourcePragmas(
+          GetWorkerPref<bool>(NS_LITERAL_CSTRING("source_pragmas")))
+      .setAsyncStack(GetWorkerPref<bool>(NS_LITERAL_CSTRING("asyncstack")));
 
   nsCOMPtr<nsIXULRuntime> xr = do_GetService("@mozilla.org/xre/runtime;1");
   if (xr) {
@@ -431,14 +426,6 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
       continue;
     }
 
-    matchName.RebindLiteral(PREF_MEM_OPTIONS_PREFIX "high_water_mark");
-    if (memPrefName == matchName || (gRuntimeServiceDuringInit && index == 1)) {
-      int32_t prefValue = GetWorkerPref(matchName, 128);
-      UpdateOtherJSGCMemoryOption(rts, JSGC_MAX_MALLOC_BYTES,
-                                  uint32_t(prefValue) * 1024 * 1024);
-      continue;
-    }
-
     matchName.RebindLiteral(PREF_MEM_OPTIONS_PREFIX
                             "gc_high_frequency_time_limit_ms");
     if (memPrefName == matchName || (gRuntimeServiceDuringInit && index == 2)) {
@@ -456,34 +443,32 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
     }
 
     matchName.RebindLiteral(PREF_MEM_OPTIONS_PREFIX
-                            "gc_high_frequency_heap_growth_min");
+                            "gc_high_frequency_large_heap_growth");
     if (memPrefName == matchName || (gRuntimeServiceDuringInit && index == 4)) {
       UpdateCommonJSGCMemoryOption(rts, matchName,
-                                   JSGC_HIGH_FREQUENCY_HEAP_GROWTH_MIN);
+                                   JSGC_HIGH_FREQUENCY_LARGE_HEAP_GROWTH);
       continue;
     }
 
     matchName.RebindLiteral(PREF_MEM_OPTIONS_PREFIX
-                            "gc_high_frequency_heap_growth_max");
+                            "gc_high_frequency_small_heap_growth");
     if (memPrefName == matchName || (gRuntimeServiceDuringInit && index == 5)) {
       UpdateCommonJSGCMemoryOption(rts, matchName,
-                                   JSGC_HIGH_FREQUENCY_HEAP_GROWTH_MAX);
+                                   JSGC_HIGH_FREQUENCY_SMALL_HEAP_GROWTH);
       continue;
     }
 
     matchName.RebindLiteral(PREF_MEM_OPTIONS_PREFIX
-                            "gc_high_frequency_low_limit_mb");
+                            "gc_small_heap_size_max_mb");
     if (memPrefName == matchName || (gRuntimeServiceDuringInit && index == 6)) {
-      UpdateCommonJSGCMemoryOption(rts, matchName,
-                                   JSGC_HIGH_FREQUENCY_LOW_LIMIT);
+      UpdateCommonJSGCMemoryOption(rts, matchName, JSGC_SMALL_HEAP_SIZE_MAX);
       continue;
     }
 
     matchName.RebindLiteral(PREF_MEM_OPTIONS_PREFIX
-                            "gc_high_frequency_high_limit_mb");
+                            "gc_large_heap_size_min_mb");
     if (memPrefName == matchName || (gRuntimeServiceDuringInit && index == 7)) {
-      UpdateCommonJSGCMemoryOption(rts, matchName,
-                                   JSGC_HIGH_FREQUENCY_HIGH_LIMIT);
+      UpdateCommonJSGCMemoryOption(rts, matchName, JSGC_LARGE_HEAP_SIZE_MIN);
       continue;
     }
 
@@ -499,25 +484,7 @@ void LoadJSGCMemoryOptions(const char* aPrefName, void* /* aClosure */) {
       int32_t prefValue = GetWorkerPref(matchName, -1);
       uint32_t value =
           (prefValue <= 0 || prefValue >= 100000) ? 0 : uint32_t(prefValue);
-      UpdateOtherJSGCMemoryOption(rts, JSGC_SLICE_TIME_BUDGET, value);
-      continue;
-    }
-
-    matchName.RebindLiteral(PREF_MEM_OPTIONS_PREFIX "gc_dynamic_heap_growth");
-    if (memPrefName == matchName ||
-        (gRuntimeServiceDuringInit && index == 10)) {
-      bool prefValue = GetWorkerPref(matchName, false);
-      UpdateOtherJSGCMemoryOption(rts, JSGC_DYNAMIC_HEAP_GROWTH,
-                                  prefValue ? 0 : 1);
-      continue;
-    }
-
-    matchName.RebindLiteral(PREF_MEM_OPTIONS_PREFIX "gc_dynamic_mark_slice");
-    if (memPrefName == matchName ||
-        (gRuntimeServiceDuringInit && index == 11)) {
-      bool prefValue = GetWorkerPref(matchName, false);
-      UpdateOtherJSGCMemoryOption(rts, JSGC_DYNAMIC_MARK_SLICE,
-                                  prefValue ? 0 : 1);
+      UpdateOtherJSGCMemoryOption(rts, JSGC_SLICE_TIME_BUDGET_MS, value);
       continue;
     }
 
@@ -557,13 +524,6 @@ bool InterruptCallback(JSContext* aCx) {
   WorkerPrivate* worker = GetWorkerPrivateFromContext(aCx);
   MOZ_ASSERT(worker);
 
-  // As with the main thread, the interrupt callback is triggered
-  // non-deterministically when recording/replaying, so return early to avoid
-  // performing any recorded events.
-  if (recordreplay::IsRecordingOrReplaying()) {
-    return true;
-  }
-
   // Now is a good time to turn on profiling if it's pending.
   PROFILER_JS_INTERRUPT_CALLBACK();
 
@@ -596,19 +556,13 @@ class LogViolationDetailsRunnable final : public WorkerMainThreadRunnable {
   ~LogViolationDetailsRunnable() {}
 };
 
-bool ContentSecurityPolicyAllows(JSContext* aCx, JS::HandleValue aValue) {
+bool ContentSecurityPolicyAllows(JSContext* aCx, JS::HandleString aCode) {
   WorkerPrivate* worker = GetWorkerPrivateFromContext(aCx);
   worker->AssertIsOnWorkerThread();
 
   if (worker->GetReportCSPViolations()) {
-    JS::Rooted<JSString*> jsString(aCx, JS::ToString(aCx, aValue));
-    if (NS_WARN_IF(!jsString)) {
-      JS_ClearPendingException(aCx);
-      return false;
-    }
-
     nsAutoJSString scriptSample;
-    if (NS_WARN_IF(!scriptSample.init(aCx, jsString))) {
+    if (NS_WARN_IF(!scriptSample.init(aCx, aCode))) {
       JS_ClearPendingException(aCx);
       return false;
     }
@@ -821,21 +775,19 @@ static bool PreserveWrapper(JSContext* cx, JS::HandleObject obj) {
   return mozilla::dom::TryPreserveWrapper(obj);
 }
 
+static bool IsWorkerDebuggerGlobalOrSandbox(JSObject* aGlobal) {
+  return IsWorkerDebuggerGlobal(aGlobal) || IsWorkerDebuggerSandbox(aGlobal);
+}
+
 JSObject* Wrap(JSContext* cx, JS::HandleObject existing, JS::HandleObject obj) {
   JS::RootedObject targetGlobal(cx, JS::CurrentGlobalOrNull(cx));
-  if (!IsWorkerDebuggerGlobal(targetGlobal) &&
-      !IsWorkerDebuggerSandbox(targetGlobal)) {
-    JS_ReportErrorASCII(
-        cx, "There should be no edges from the debuggee to the debugger.");
-    return nullptr;
-  }
 
   // Note: the JS engine unwraps CCWs before calling this callback.
   JS::RootedObject originGlobal(cx, JS::GetNonCCWObjectGlobal(obj));
 
   const js::Wrapper* wrapper = nullptr;
-  if (IsWorkerDebuggerGlobal(originGlobal) ||
-      IsWorkerDebuggerSandbox(originGlobal)) {
+  if (IsWorkerDebuggerGlobalOrSandbox(targetGlobal) &&
+      IsWorkerDebuggerGlobalOrSandbox(originGlobal)) {
     wrapper = &js::CrossCompartmentWrapper::singleton;
   } else {
     wrapper = &js::OpaqueCrossCompartmentWrapper::singleton;
@@ -963,8 +915,7 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
 
   nsresult Initialize(JSRuntime* aParentRuntime) {
     nsresult rv = CycleCollectedJSContext::Initialize(
-        aParentRuntime, WORKER_DEFAULT_RUNTIME_HEAPSIZE,
-        WORKER_DEFAULT_NURSERY_SIZE);
+        aParentRuntime, WORKER_DEFAULT_RUNTIME_HEAPSIZE);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -972,7 +923,7 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
     JSContext* cx = Context();
 
     js::SetPreserveWrapperCallback(cx, PreserveWrapper);
-    JS_InitDestroyPrincipalsCallback(cx, DestroyWorkerPrincipals);
+    JS_InitDestroyPrincipalsCallback(cx, WorkerPrincipal::Destroy);
     JS_SetWrapObjectCallbacks(cx, &WrapObjectCallbacks);
     if (mWorkerPrivate->IsDedicatedWorker()) {
       JS_SetFutexCanWait(cx);
@@ -1015,6 +966,11 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
 
   bool IsSystemCaller() const override {
     return mWorkerPrivate->UsesSystemPrincipal();
+  }
+
+  void ReportError(JSErrorReport* aReport,
+                   JS::ConstUTF8CharsZ aToStringResult) override {
+    mWorkerPrivate->ReportError(Context(), aToStringResult, aReport);
   }
 
   WorkerPrivate* GetWorkerPrivate() const { return mWorkerPrivate; }
@@ -1439,11 +1395,7 @@ bool RuntimeService::ScheduleWorker(WorkerPrivate* aWorkerPrivate) {
     }
   }
 
-  int32_t priority = aWorkerPrivate->IsChromeWorker()
-                         ? nsISupportsPriority::PRIORITY_NORMAL
-                         : nsISupportsPriority::PRIORITY_LOW;
-
-  if (NS_FAILED(thread->SetPriority(priority))) {
+  if (NS_FAILED(thread->SetPriority(nsISupportsPriority::PRIORITY_NORMAL))) {
     NS_WARNING("Could not set the thread's priority!");
   }
 
@@ -1609,14 +1561,11 @@ nsresult RuntimeService::Init() {
   // We assume atomic 32bit reads/writes. If this assumption doesn't hold on
   // some wacky platform then the worst that could happen is that the close
   // handler will run for a slightly different amount of time.
-  if (NS_FAILED(Preferences::AddIntVarCache(
-          &sDefaultJSSettings.content.maxScriptRuntime,
-          PREF_MAX_SCRIPT_RUN_TIME_CONTENT, MAX_SCRIPT_RUN_TIME_SEC)) ||
-      NS_FAILED(Preferences::AddIntVarCache(
-          &sDefaultJSSettings.chrome.maxScriptRuntime,
-          PREF_MAX_SCRIPT_RUN_TIME_CHROME, -1))) {
-    NS_WARNING("Failed to register timeout cache!");
-  }
+  Preferences::AddIntVarCache(&sDefaultJSSettings.content.maxScriptRuntime,
+                              PREF_MAX_SCRIPT_RUN_TIME_CONTENT,
+                              MAX_SCRIPT_RUN_TIME_SEC);
+  Preferences::AddIntVarCache(&sDefaultJSSettings.chrome.maxScriptRuntime,
+                              PREF_MAX_SCRIPT_RUN_TIME_CHROME, -1);
 
   int32_t maxPerDomain =
       Preferences::GetInt(PREF_WORKERS_MAX_PER_DOMAIN, MAX_WORKERS_PER_DOMAIN);
@@ -2028,8 +1977,7 @@ void RuntimeService::PropagateFirstPartyStorageAccessGranted(
   MOZ_ASSERT(aWindow);
   MOZ_ASSERT_IF(
       aWindow->GetExtantDoc(),
-      aWindow->GetExtantDoc()->CookieSettings()->GetCookieBehavior() ==
-          nsICookieService::BEHAVIOR_REJECT_TRACKER);
+      aWindow->GetExtantDoc()->CookieSettings()->GetRejectThirdPartyTrackers());
 
   nsTArray<WorkerPrivate*> workers;
   GetWorkersForWindow(aWindow, workers);
@@ -2121,6 +2069,10 @@ void RuntimeService::UpdateAllWorkerGCZeal() {
 }
 #endif
 
+void RuntimeService::SetLowMemoryStateAllWorkers(bool aState) {
+  BROADCAST_ALL_WORKERS(SetLowMemoryState, aState);
+}
+
 void RuntimeService::GarbageCollectAllWorkers(bool aShrinking) {
   BROADCAST_ALL_WORKERS(GarbageCollect, aShrinking);
 }
@@ -2200,9 +2152,22 @@ RuntimeService::Observe(nsISupports* aSubject, const char* aTopic,
     return NS_OK;
   }
   if (!strcmp(aTopic, MEMORY_PRESSURE_OBSERVER_TOPIC)) {
+    nsDependentString data(aData);
+    // Don't continue to GC/CC if we are in an ongoing low-memory state since
+    // its very slow and it likely won't help us anyway.
+    if (data.EqualsLiteral(LOW_MEMORY_ONGOING_DATA)) {
+      return NS_OK;
+    }
+    if (data.EqualsLiteral(LOW_MEMORY_DATA)) {
+      SetLowMemoryStateAllWorkers(true);
+    }
     GarbageCollectAllWorkers(/* shrinking = */ true);
     CycleCollectAllWorkers();
     MemoryPressureAllWorkers();
+    return NS_OK;
+  }
+  if (!strcmp(aTopic, MEMORY_PRESSURE_STOP_OBSERVER_TOPIC)) {
+    SetLowMemoryStateAllWorkers(false);
     return NS_OK;
   }
   if (!strcmp(aTopic, NS_IOSERVICE_OFFLINE_STATUS_TOPIC)) {
@@ -2429,8 +2394,7 @@ void PropagateFirstPartyStorageAccessGrantedToWorkers(
   AssertIsOnMainThread();
   MOZ_ASSERT_IF(
       aWindow->GetExtantDoc(),
-      aWindow->GetExtantDoc()->CookieSettings()->GetCookieBehavior() ==
-          nsICookieService::BEHAVIOR_REJECT_TRACKER);
+      aWindow->GetExtantDoc()->CookieSettings()->GetRejectThirdPartyTrackers());
 
   RuntimeService* runtime = RuntimeService::GetService();
   if (runtime) {

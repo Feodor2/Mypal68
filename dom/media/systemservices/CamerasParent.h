@@ -5,7 +5,7 @@
 #ifndef mozilla_CamerasParent_h
 #define mozilla_CamerasParent_h
 
-#include "nsIObserver.h"
+#include "nsIAsyncShutdown.h"
 #include "VideoEngine.h"
 #include "mozilla/camera/PCamerasParent.h"
 #include "mozilla/ipc/Shmem.h"

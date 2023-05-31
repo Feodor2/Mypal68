@@ -6,7 +6,8 @@
  */
 
 [ChromeOnly,
- JSImplementation="@mozilla.org/dom/createofferrequest;1"]
+ JSImplementation="@mozilla.org/dom/createofferrequest;1",
+ Exposed=Window]
 interface CreateOfferRequest {
   readonly attribute unsigned long long windowID;
   readonly attribute unsigned long long innerWindowID;

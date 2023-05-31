@@ -4,6 +4,7 @@
 
 #include "nsMathMLElement.h"
 #include "base/compiler_specific.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/TextUtils.h"
@@ -36,27 +37,28 @@ NS_IMPL_ISUPPORTS_INHERITED(nsMathMLElement, nsMathMLElementBase, Link)
 static nsresult WarnDeprecated(const char16_t* aDeprecatedAttribute,
                                const char16_t* aFavoredAttribute,
                                Document* aDocument) {
-  const char16_t* argv[] = {aDeprecatedAttribute, aFavoredAttribute};
+  AutoTArray<nsString, 2> argv;
+  argv.AppendElement(aDeprecatedAttribute);
+  argv.AppendElement(aFavoredAttribute);
   return nsContentUtils::ReportToConsole(
       nsIScriptError::warningFlag, NS_LITERAL_CSTRING("MathML"), aDocument,
-      nsContentUtils::eMATHML_PROPERTIES, "DeprecatedSupersededBy", argv, 2);
+      nsContentUtils::eMATHML_PROPERTIES, "DeprecatedSupersededBy", argv);
 }
 
 static nsresult ReportLengthParseError(const nsString& aValue,
                                        Document* aDocument) {
-  const char16_t* arg = aValue.get();
+  AutoTArray<nsString, 1> arg = {aValue};
   return nsContentUtils::ReportToConsole(
       nsIScriptError::errorFlag, NS_LITERAL_CSTRING("MathML"), aDocument,
-      nsContentUtils::eMATHML_PROPERTIES, "LengthParsingError", &arg, 1);
+      nsContentUtils::eMATHML_PROPERTIES, "LengthParsingError", arg);
 }
 
 static nsresult ReportParseErrorNoTag(const nsString& aValue, nsAtom* aAtom,
                                       Document* aDocument) {
-  const char16_t* argv[] = {aValue.get(), aAtom->GetUTF16String()};
+  AutoTArray<nsString, 2> argv = {aValue, nsDependentAtomString(aAtom)};
   return nsContentUtils::ReportToConsole(
       nsIScriptError::errorFlag, NS_LITERAL_CSTRING("MathML"), aDocument,
-      nsContentUtils::eMATHML_PROPERTIES, "AttributeParsingErrorNoTag", argv,
-      2);
+      nsContentUtils::eMATHML_PROPERTIES, "AttributeParsingErrorNoTag", argv);
 }
 
 nsMathMLElement::nsMathMLElement(
@@ -71,32 +73,32 @@ nsMathMLElement::nsMathMLElement(
       ALLOW_THIS_IN_INITIALIZER_LIST(Link(this)),
       mIncrementScriptLevel(false) {}
 
-nsresult nsMathMLElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                     nsIContent* aBindingParent) {
+nsresult nsMathMLElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   Link::ResetLinkState(false, Link::ElementHasHref());
 
-  nsresult rv =
-      nsMathMLElementBase::BindToTree(aDocument, aParent, aBindingParent);
+  nsresult rv = nsMathMLElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (aDocument) {
-    aDocument->RegisterPendingLinkUpdate(this);
+  // FIXME(emilio): Probably should be composed, this uses all the other link
+  // infrastructure.
+  if (Document* doc = aContext.GetUncomposedDoc()) {
+    doc->RegisterPendingLinkUpdate(this);
   }
 
   // Set the bit in the document for telemetry.
-  if (Document* doc = GetComposedDoc()) {
+  if (Document* doc = aContext.GetComposedDoc()) {
     doc->SetMathMLEnabled();
   }
 
   return rv;
 }
 
-void nsMathMLElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void nsMathMLElement::UnbindFromTree(bool aNullParent) {
   // Without removing the link state we risk a dangling pointer
   // in the mStyledLinks hashtable
   Link::ResetLinkState(false, Link::ElementHasHref());
 
-  nsMathMLElementBase::UnbindFromTree(aDeep, aNullParent);
+  nsMathMLElementBase::UnbindFromTree(aNullParent);
 }
 
 bool nsMathMLElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
@@ -926,12 +928,11 @@ bool nsMathMLElement::IsLink(nsIURI** aURI) const {
   }
 
   if (hasHref) {
-    nsCOMPtr<nsIURI> baseURI = GetBaseURI();
     // Get absolute URI
     nsAutoString hrefStr;
     href->ToString(hrefStr);
     nsContentUtils::NewURIWithDocumentCharset(aURI, hrefStr, OwnerDoc(),
-                                              baseURI);
+                                              GetBaseURI());
     // must promise out param is non-null if we return true
     return !!*aURI;
   }

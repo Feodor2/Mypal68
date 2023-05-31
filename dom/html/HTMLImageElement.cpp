@@ -4,45 +4,37 @@
 
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/HTMLImageElementBinding.h"
+#include "mozilla/dom/BindContext.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
 #include "nsPresContext.h"
 #include "nsMappedAttributes.h"
 #include "nsSize.h"
-#include "mozilla/dom/Document.h"
 #include "nsImageFrame.h"
 #include "nsIScriptContext.h"
-#include "nsIURL.h"
-#include "nsIIOService.h"
-#include "nsIServiceManager.h"
 #include "nsContentUtils.h"
 #include "nsContainerFrame.h"
 #include "nsNodeInfoManager.h"
 #include "mozilla/MouseEvents.h"
 #include "nsContentPolicyUtils.h"
-#include "nsIDOMWindow.h"
 #include "nsFocusManager.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/MutationEventBinding.h"
 #include "nsAttrValueOrString.h"
 #include "imgLoader.h"
-#include "Image.h"
 
 // Responsive images!
 #include "mozilla/dom/HTMLSourceElement.h"
 #include "mozilla/dom/ResponsiveImageSelector.h"
 
 #include "imgIContainer.h"
-#include "imgILoader.h"
 #include "imgINotificationObserver.h"
 #include "imgRequestProxy.h"
 
-#include "nsILoadGroup.h"
-
+#include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/MappedDeclarations.h"
-#include "mozilla/net/ReferrerPolicy.h"
 
 #include "nsLayoutUtils.h"
 
@@ -72,11 +64,11 @@ namespace dom {
 // Calls LoadSelectedImage on host element unless it has been superseded or
 // canceled -- this is the synchronous section of "update the image data".
 // https://html.spec.whatwg.org/multipage/embedded-content.html#update-the-image-data
-class ImageLoadTask : public Runnable {
+class ImageLoadTask : public MicroTaskRunnable {
  public:
   ImageLoadTask(HTMLImageElement* aElement, bool aAlwaysLoad,
                 bool aUseUrgentStartForChannel)
-      : Runnable("dom::ImageLoadTask"),
+      : MicroTaskRunnable(),
         mElement(aElement),
         mAlwaysLoad(aAlwaysLoad),
         mUseUrgentStartForChannel(aUseUrgentStartForChannel) {
@@ -84,14 +76,18 @@ class ImageLoadTask : public Runnable {
     mDocument->BlockOnload();
   }
 
-  NS_IMETHOD Run() override {
+  virtual void Run(AutoSlowOperation& aAso) override {
     if (mElement->mPendingImageLoadTask == this) {
       mElement->mPendingImageLoadTask = nullptr;
       mElement->mUseUrgentStartForChannel = mUseUrgentStartForChannel;
       mElement->LoadSelectedImage(true, true, mAlwaysLoad);
     }
     mDocument->UnblockOnload(false);
-    return NS_OK;
+  }
+
+  virtual bool Suppressed() override {
+    nsIGlobalObject* global = mElement->GetOwnerGlobal();
+    return global && global->IsInSyncOperation();
   }
 
   bool AlwaysLoad() { return mAlwaysLoad; }
@@ -415,7 +411,7 @@ void HTMLImageElement::AfterMaybeChangeAttr(
   } else if (aName == nsGkAtoms::referrerpolicy &&
              aNamespaceID == kNameSpaceID_None && aNotify) {
     ReferrerPolicy referrerPolicy = GetImageReferrerPolicy();
-    if (!InResponsiveMode() && referrerPolicy != RP_Unset &&
+    if (!InResponsiveMode() && referrerPolicy != ReferrerPolicy::_empty &&
         aValueMaybeChanged &&
         referrerPolicy != ReferrerPolicyFromAttr(aOldValue)) {
       // XXX: Bug 1076583 - We still use the older synchronous algorithm
@@ -489,22 +485,17 @@ bool HTMLImageElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
   return false;
 }
 
-nsresult HTMLImageElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                      nsIContent* aBindingParent) {
-  nsresult rv =
-      nsGenericHTMLElement::BindToTree(aDocument, aParent, aBindingParent);
+nsresult HTMLImageElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsImageLoadingContent::BindToTree(aDocument, aParent, aBindingParent);
+  nsImageLoadingContent::BindToTree(aContext, aParent);
 
-  if (aParent) {
-    UpdateFormOwner();
-  }
+  UpdateFormOwner();
 
   if (HaveSrcsetOrInPicture()) {
-    Document* doc = GetComposedDoc();
-    if (doc && !mInDocResponsiveContent) {
-      doc->AddResponsiveContent(this);
+    if (IsInComposedDoc() && !mInDocResponsiveContent) {
+      aContext.OwnerDoc().AddResponsiveContent(this);
       mInDocResponsiveContent = true;
     }
 
@@ -535,7 +526,7 @@ nsresult HTMLImageElement::BindToTree(Document* aDocument, nsIContent* aParent,
     // If loading is temporarily disabled, don't even launch MaybeLoadImage.
     // Otherwise MaybeLoadImage may run later when someone has reenabled
     // loading.
-    if (LoadingEnabled() && OwnerDoc()->ShouldLoadImages()) {
+    if (LoadingEnabled() && aContext.OwnerDoc().ShouldLoadImages()) {
       nsContentUtils::AddScriptRunner(
           NewRunnableMethod<bool>("dom::HTMLImageElement::MaybeLoadImage", this,
                                   &HTMLImageElement::MaybeLoadImage, false));
@@ -545,7 +536,7 @@ nsresult HTMLImageElement::BindToTree(Document* aDocument, nsIContent* aParent,
   return rv;
 }
 
-void HTMLImageElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void HTMLImageElement::UnbindFromTree(bool aNullParent) {
   if (mForm) {
     if (aNullParent || !FindAncestorForm(mForm)) {
       ClearForm(true);
@@ -559,8 +550,8 @@ void HTMLImageElement::UnbindFromTree(bool aDeep, bool aNullParent) {
     mInDocResponsiveContent = false;
   }
 
-  nsImageLoadingContent::UnbindFromTree(aDeep, aNullParent);
-  nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);
+  nsImageLoadingContent::UnbindFromTree(aNullParent);
+  nsGenericHTMLElement::UnbindFromTree(aNullParent);
 }
 
 void HTMLImageElement::UpdateFormOwner() {
@@ -792,7 +783,7 @@ void HTMLImageElement::QueueImageLoadTask(bool aAlwaysLoad) {
   // The task checks this to determine if it was the last
   // queued event, and so earlier tasks are implicitly canceled.
   mPendingImageLoadTask = task;
-  nsContentUtils::RunInStableState(task.forget());
+  CycleCollectedJSContext::Get()->DispatchToMicroTask(task.forget());
 }
 
 bool HTMLImageElement::HaveSrcsetOrInPicture() {
@@ -1204,16 +1195,6 @@ void HTMLImageElement::DestroyContent() {
 
 void HTMLImageElement::MediaFeatureValuesChanged() {
   QueueImageLoadTask(false);
-}
-
-void HTMLImageElement::FlushUseCounters() {
-  nsCOMPtr<imgIRequest> request;
-  GetRequest(CURRENT_REQUEST, getter_AddRefs(request));
-
-  nsCOMPtr<imgIContainer> container;
-  request->GetImage(getter_AddRefs(container));
-
-  static_cast<image::Image*>(container.get())->ReportUseCounters();
 }
 
 }  // namespace dom

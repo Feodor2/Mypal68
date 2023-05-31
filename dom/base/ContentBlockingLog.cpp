@@ -4,19 +4,23 @@
 
 #include "ContentBlockingLog.h"
 
+#include "nsStringStream.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/RandomNum.h"
+#include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StaticPrefs_telemetry.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "mozilla/XorShift128PlusRNG.h"
 
+namespace mozilla {
+
 static LazyLogModule gContentBlockingLog("ContentBlockingLog");
 #define LOG(fmt, ...) \
-  MOZ_LOG(gContentBlockingLog, mozilla::LogLevel::Debug, (fmt, ##__VA_ARGS__))
+  MOZ_LOG(gContentBlockingLog, LogLevel::Debug, (fmt, ##__VA_ARGS__))
 
-typedef mozilla::Telemetry::OriginMetricID OriginMetricID;
+typedef Telemetry::OriginMetricID OriginMetricID;
 
-namespace mozilla {
 namespace dom {
 
 // randomly choose 1% users included in the content blocking measurement
@@ -64,7 +68,7 @@ static bool IsReportingPerUserEnabled() {
 
 static bool IsReportingPerDocumentEnabled() {
   constexpr double boundary =
-      kRatioReportDocument * std::numeric_limits<uint64_t>::max();
+      kRatioReportDocument * double(std::numeric_limits<uint64_t>::max());
   Maybe<uint64_t> randomNum = RandomUint64();
   return randomNum.isSome() && randomNum.value() <= boundary;
 }

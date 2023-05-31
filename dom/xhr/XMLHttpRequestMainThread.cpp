@@ -9,6 +9,7 @@
 #  include <unistd.h>
 #endif
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
@@ -32,6 +33,9 @@
 #include "mozilla/LoadInfo.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/MemoryReporting.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_network.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/dom/ProgressEvent.h"
 #include "nsIJARChannel.h"
 #include "nsIJARURI.h"
@@ -46,8 +50,6 @@
 #include "nsIAuthPrompt.h"
 #include "nsIAuthPrompt2.h"
 #include "nsIClassOfService.h"
-#include "nsIOutputStream.h"
-#include "nsISupportsPrimitives.h"
 #include "nsISupportsPriority.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsStreamUtils.h"
@@ -56,21 +58,15 @@
 #include "nsIUploadChannel2.h"
 #include "nsXPCOM.h"
 #include "nsIDOMEventListener.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsIVariant.h"
 #include "nsVariant.h"
 #include "nsIScriptError.h"
-#include "nsIStreamConverterService.h"
 #include "nsICachingChannel.h"
 #include "nsContentUtils.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
-#include "nsIHTMLDocument.h"
-#include "nsIStorageStream.h"
 #include "nsIPromptFactory.h"
 #include "nsIWindowWatcher.h"
 #include "nsIConsoleService.h"
-#include "nsIContentSecurityPolicy.h"
 #include "nsAsyncRedirectVerifyHelper.h"
 #include "nsStringBuffer.h"
 #include "nsIFileChannel.h"
@@ -324,7 +320,7 @@ void XMLHttpRequestMainThread::SetRequestObserver(
   mRequestObserver = aObserver;
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(XMLHttpRequestMainThread)
+NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(XMLHttpRequestMainThread)
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(XMLHttpRequestMainThread,
                                                   XMLHttpRequestEventTarget)
@@ -418,16 +414,16 @@ size_t XMLHttpRequestMainThread::SizeOfEventTargetIncludingThis(
   // - lots
 }
 
-static void LogMessage(const char* aWarning, nsPIDOMWindowInner* aWindow,
-                       const char16_t** aParams = nullptr,
-                       uint32_t aParamCount = 0) {
+static void LogMessage(
+    const char* aWarning, nsPIDOMWindowInner* aWindow,
+    const nsTArray<nsString>& aParams = nsTArray<nsString>()) {
   nsCOMPtr<Document> doc;
   if (aWindow) {
     doc = aWindow->GetExtantDoc();
   }
   nsContentUtils::ReportToConsole(
       nsIScriptError::warningFlag, NS_LITERAL_CSTRING("DOM"), doc,
-      nsContentUtils::eDOM_PROPERTIES, aWarning, aParams, aParamCount);
+      nsContentUtils::eDOM_PROPERTIES, aWarning, aParams);
 }
 
 Document* XMLHttpRequestMainThread::GetResponseXML(ErrorResult& aRv) {
@@ -631,7 +627,7 @@ void XMLHttpRequestMainThread::SetResponseType(
 
   if (mState == XMLHttpRequest_Binding::LOADING ||
       mState == XMLHttpRequest_Binding::DONE) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE);
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE_RESPONSE_TYPE);
     return;
   }
 
@@ -645,7 +641,7 @@ void XMLHttpRequestMainThread::SetResponseType(
   }
 
   // Set the responseType attribute's value to the given value.
-  mResponseType = aResponseType;
+  SetResponseTypeRaw(aResponseType);
 }
 
 void XMLHttpRequestMainThread::GetResponse(
@@ -1082,9 +1078,8 @@ void XMLHttpRequestMainThread::GetAllResponseHeaders(
 
   // Don't provide Content-Length for data URIs
   nsCOMPtr<nsIURI> uri;
-  bool isDataURI;
   if (NS_FAILED(mChannel->GetURI(getter_AddRefs(uri))) ||
-      NS_FAILED(uri->SchemeIs("data", &isDataURI)) || !isDataURI) {
+      !uri->SchemeIs("data")) {
     int64_t length;
     if (NS_SUCCEEDED(mChannel->GetContentLength(&length))) {
       aResponseHeaders.AppendLiteral("Content-Length: ");
@@ -1295,7 +1290,7 @@ XMLHttpRequestMainThread::GetCurrentJARChannel() {
 }
 
 bool XMLHttpRequestMainThread::IsSystemXHR() const {
-  return mIsSystem || nsContentUtils::IsSystemPrincipal(mPrincipal);
+  return mIsSystem || mPrincipal->IsSystemPrincipal();
 }
 
 bool XMLHttpRequestMainThread::InUploadPhase() const {
@@ -1375,7 +1370,7 @@ nsresult XMLHttpRequestMainThread::Open(const nsACString& aMethod,
   }
 
   // Steps 5-6
-  nsCOMPtr<nsIURI> baseURI;
+  nsIURI* baseURI = nullptr;
   if (mBaseURI) {
     baseURI = mBaseURI;
   } else if (responsibleDocument) {
@@ -1980,7 +1975,7 @@ XMLHttpRequestMainThread::OnStartRequest(nsIRequest* request) {
       mResponseXML->SetSuppressParserErrorConsoleMessages(true);
     }
 
-    if (nsContentUtils::IsSystemPrincipal(mPrincipal)) {
+    if (mPrincipal->IsSystemPrincipal()) {
       mResponseXML->ForceEnableXULXBL();
     }
 
@@ -2008,7 +2003,9 @@ XMLHttpRequestMainThread::OnStartRequest(nsIRequest* request) {
     NS_ENSURE_SUCCESS(rv, rv);
 
     // the spec requires the response document.referrer to be the empty string
-    mResponseXML->SetReferrer(NS_LITERAL_CSTRING(""));
+    nsCOMPtr<nsIReferrerInfo> referrerInfo =
+        new ReferrerInfo(nullptr, mResponseXML->ReferrerPolicy());
+    mResponseXML->SetReferrerInfo(referrerInfo);
 
     mXMLParserStreamListener = listener;
     rv = mXMLParserStreamListener->OnStartRequest(request);
@@ -2256,22 +2253,15 @@ void XMLHttpRequestMainThread::ChangeStateToDone(bool aWasSync) {
     mChannel->GetLoadFlags(&loadFlags);
     if (loadFlags & nsIRequest::LOAD_BACKGROUND) {
       nsPIDOMWindowInner* owner = GetOwner();
-      Document* doc = owner ? owner->GetExtantDoc() : nullptr;
-      doc = doc ? doc->GetTopLevelContentDocument() : nullptr;
-      if (doc &&
-          (doc->GetReadyStateEnum() > Document::READYSTATE_UNINITIALIZED &&
-           doc->GetReadyStateEnum() < Document::READYSTATE_COMPLETE)) {
-        nsPIDOMWindowInner* topWin = doc->GetInnerWindow();
-        if (topWin) {
-          MOZ_ASSERT(!mDelayedDoneNotifier);
-          RefPtr<XMLHttpRequestDoneNotifier> notifier =
-              new XMLHttpRequestDoneNotifier(this);
-          mDelayedDoneNotifier = notifier;
-          topWin->AddAfterLoadRunner(notifier);
-          NS_DispatchToCurrentThreadQueue(notifier.forget(), 5000,
-                                          EventQueuePriority::Idle);
-          return;
-        }
+      nsPIDOMWindowInner* topWin =
+          owner ? owner->GetWindowForDeprioritizedLoadRunner() : nullptr;
+      if (topWin) {
+        MOZ_ASSERT(!mDelayedDoneNotifier);
+        RefPtr<XMLHttpRequestDoneNotifier> notifier =
+            new XMLHttpRequestDoneNotifier(this);
+        mDelayedDoneNotifier = notifier;
+        topWin->AddDeprioritizedLoadRunner(notifier);
+        return;
       }
     }
   }
@@ -2337,7 +2327,7 @@ nsresult XMLHttpRequestMainThread::CreateChannel() {
 
   nsSecurityFlags secFlags;
   nsLoadFlags loadFlags = nsIRequest::LOAD_BACKGROUND;
-  if (nsContentUtils::IsSystemPrincipal(mPrincipal)) {
+  if (mPrincipal->IsSystemPrincipal()) {
     // When chrome is loading we want to make sure to sandbox any potential
     // result document. We also want to allow cross-origin loads.
     secFlags = nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL |
@@ -2427,12 +2417,8 @@ void XMLHttpRequestMainThread::MaybeLowerChannelPriority() {
   }
 
   JSContext* cx = jsapi.cx();
-  nsAutoCString fileNameString;
-  if (!nsJSUtils::GetCallingLocation(cx, fileNameString)) {
-    return;
-  }
 
-  if (!doc->IsScriptTracking(fileNameString)) {
+  if (!doc->IsScriptTracking(cx)) {
     return;
   }
 
@@ -2484,10 +2470,9 @@ nsresult XMLHttpRequestMainThread::InitiateFetch(
     if (!IsSystemXHR()) {
       nsCOMPtr<nsPIDOMWindowInner> owner = GetOwner();
       nsCOMPtr<Document> doc = owner ? owner->GetExtantDoc() : nullptr;
-      mozilla::net::ReferrerPolicy referrerPolicy =
-          doc ? doc->GetReferrerPolicy() : mozilla::net::RP_Unset;
-      nsContentUtils::SetFetchReferrerURIWithPolicy(
-          mPrincipal, doc, httpChannel, referrerPolicy);
+      nsCOMPtr<nsIReferrerInfo> referrerInfo =
+          ReferrerInfo::CreateForFetch(mPrincipal, doc);
+      Unused << httpChannel->SetReferrerInfoWithoutClone(referrerInfo);
     }
 
     // Some extensions override the http protocol handler and provide their own
@@ -2860,7 +2845,7 @@ nsresult XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
 
   mIsMappedArrayBuffer = false;
   if (mResponseType == XMLHttpRequestResponseType::Arraybuffer &&
-      IsMappedArrayBufferEnabled()) {
+      StaticPrefs::dom_mapped_arraybuffer_enabled()) {
     nsCOMPtr<nsIURI> uri;
     nsAutoCString scheme;
 
@@ -2891,7 +2876,7 @@ nsresult XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
 
     if (GetOwner()) {
       if (nsCOMPtr<nsPIDOMWindowOuter> topWindow =
-              GetOwner()->GetOuterWindow()->GetTop()) {
+              GetOwner()->GetOuterWindow()->GetInProcessTop()) {
         if (nsCOMPtr<nsPIDOMWindowInner> topInner =
                 topWindow->GetCurrentInnerWindow()) {
           mSuspendedDoc = topWindow->GetExtantDoc();
@@ -2956,34 +2941,6 @@ nsresult XMLHttpRequestMainThread::SendInternal(const BodyExtractorBase* aBody,
   return rv;
 }
 
-/* static */
-bool XMLHttpRequestMainThread::IsMappedArrayBufferEnabled() {
-  static bool sMappedArrayBufferAdded = false;
-  static bool sIsMappedArrayBufferEnabled;
-
-  if (!sMappedArrayBufferAdded) {
-    Preferences::AddBoolVarCache(&sIsMappedArrayBufferEnabled,
-                                 "dom.mapped_arraybuffer.enabled", true);
-    sMappedArrayBufferAdded = true;
-  }
-
-  return sIsMappedArrayBufferEnabled;
-}
-
-/* static */
-bool XMLHttpRequestMainThread::IsLowercaseResponseHeader() {
-  static bool sLowercaseResponseHeaderAdded = false;
-  static bool sIsLowercaseResponseHeaderEnabled;
-
-  if (!sLowercaseResponseHeaderAdded) {
-    Preferences::AddBoolVarCache(&sIsLowercaseResponseHeaderEnabled,
-                                 "dom.xhr.lowercase_header.enabled", false);
-    sLowercaseResponseHeaderAdded = true;
-  }
-
-  return sIsLowercaseResponseHeaderEnabled;
-}
-
 // http://dvcs.w3.org/hg/xhr/raw-file/tip/Overview.html#dom-xmlhttprequest-setrequestheader
 void XMLHttpRequestMainThread::SetRequestHeader(const nsACString& aName,
                                                 const nsACString& aValue,
@@ -3016,10 +2973,9 @@ void XMLHttpRequestMainThread::SetRequestHeader(const nsACString& aName,
   bool isPrivilegedCaller = IsSystemXHR();
   bool isForbiddenHeader = nsContentUtils::IsForbiddenRequestHeader(aName);
   if (!isPrivilegedCaller && isForbiddenHeader) {
-    NS_ConvertUTF8toUTF16 name(aName);
-    const char16_t* params[] = {name.get()};
-    LogMessage("ForbiddenHeaderWarning", GetOwner(), params,
-               ArrayLength(params));
+    AutoTArray<nsString, 1> params;
+    CopyUTF8toUTF16(aName, *params.AppendElement());
+    LogMessage("ForbiddenHeaderWarning", GetOwner(), params);
     return;
   }
 
@@ -3111,7 +3067,7 @@ void XMLHttpRequestMainThread::OverrideMimeType(const nsAString& aMimeType,
 
   if (mState == XMLHttpRequest_Binding::LOADING ||
       mState == XMLHttpRequest_Binding::DONE) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE);
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE_OVERRIDE_MIME_TYPE);
     return;
   }
 
@@ -3573,14 +3529,6 @@ NS_IMPL_ISUPPORTS(XMLHttpRequestMainThread::nsHeaderVisitor,
 NS_IMETHODIMP XMLHttpRequestMainThread::nsHeaderVisitor::VisitHeader(
     const nsACString& header, const nsACString& value) {
   if (mXHR.IsSafeHeader(header, mHttpChannel)) {
-    if (!IsLowercaseResponseHeader()) {
-      if (!mHeaderList.InsertElementSorted(HeaderEntry(header, value),
-                                           fallible)) {
-        return NS_ERROR_OUT_OF_MEMORY;
-      }
-      return NS_OK;
-    }
-
     nsAutoCString lowerHeader(header);
     ToLowerCase(lowerHeader);
     if (!mHeaderList.InsertElementSorted(HeaderEntry(lowerHeader, value),

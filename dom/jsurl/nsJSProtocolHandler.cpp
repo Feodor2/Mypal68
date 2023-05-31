@@ -15,44 +15,40 @@
 #include "nsNetUtil.h"
 
 #include "nsIStreamListener.h"
-#include "nsIComponentManager.h"
-#include "nsIServiceManager.h"
 #include "nsIURI.h"
 #include "nsIScriptContext.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIPrincipal.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIWindowMediator.h"
 #include "nsPIDOMWindow.h"
-#include "nsIConsoleService.h"
 #include "nsEscape.h"
 #include "nsIWebNavigation.h"
 #include "nsIDocShell.h"
 #include "nsIContentViewer.h"
-#include "nsIXPConnect.h"
 #include "nsContentUtils.h"
 #include "nsJSUtils.h"
 #include "nsThreadUtils.h"
 #include "nsIScriptChannel.h"
 #include "mozilla/dom/Document.h"
-#include "nsILoadInfo.h"
 #include "nsIObjectInputStream.h"
 #include "nsIObjectOutputStream.h"
 #include "nsITextToSubURI.h"
 #include "nsIWritablePropertyBag2.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsSandboxFlags.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/PopupBlocker.h"
-#include "nsILoadInfo.h"
 #include "nsContentSecurityManager.h"
 
+#include "mozilla/LoadInfo.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/ipc/URIUtils.h"
 
+using mozilla::IsAscii;
 using mozilla::dom::AutoEntryScript;
 
 static NS_DEFINE_CID(kJSURICID, NS_JSURI_CID);
@@ -128,6 +124,25 @@ static nsIScriptGlobalObject* GetGlobalObject(nsIChannel* aChannel) {
   return global;
 }
 
+static bool AllowedByCSP(nsIContentSecurityPolicy* aCSP) {
+  if (!aCSP) {
+    return true;
+  }
+
+  bool allowsInlineScript = true;
+  nsresult rv = aCSP->GetAllowsInline(nsIContentPolicy::TYPE_SCRIPT,
+                                      EmptyString(),  // aNonce
+                                      true,           // aParserCreated
+                                      nullptr,        // aElement,
+                                      nullptr,        // nsICSPEventListener
+                                      EmptyString(),  // aContent
+                                      0,              // aLineNumber
+                                      0,              // aColumnNumber
+                                      &allowsInlineScript);
+
+  return (NS_SUCCEEDED(rv) && allowsInlineScript);
+}
+
 nsresult nsJSThunk::EvaluateScript(
     nsIChannel* aChannel,
     mozilla::dom::PopupBlocker::PopupControlState aPopupState,
@@ -143,8 +158,8 @@ nsresult nsJSThunk::EvaluateScript(
   nsCOMPtr<nsISupports> owner;
   aChannel->GetOwner(getter_AddRefs(owner));
   nsCOMPtr<nsIPrincipal> principal = do_QueryInterface(owner);
+  nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   if (!principal) {
-    nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
     if (loadInfo->GetForceInheritPrincipal()) {
       principal = loadInfo->FindPrincipalToInherit(aChannel);
     } else {
@@ -157,27 +172,14 @@ nsresult nsJSThunk::EvaluateScript(
 
   nsresult rv;
 
-  // CSP check: javascript: URIs disabled unless "inline" scripts are
-  // allowed.
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  rv = principal->GetCsp(getter_AddRefs(csp));
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (csp) {
-    bool allowsInlineScript = true;
-    rv = csp->GetAllowsInline(nsIContentPolicy::TYPE_SCRIPT,
-                              EmptyString(),  // aNonce
-                              true,           // aParserCreated
-                              nullptr,        // aElement,
-                              nullptr,        // nsICSPEventListener
-                              EmptyString(),  // aContent
-                              0,              // aLineNumber
-                              0,              // aColumnNumber
-                              &allowsInlineScript);
-
-    // return early if inline scripts are not allowed
-    if (!allowsInlineScript) {
-      return NS_ERROR_DOM_RETVAL_UNDEFINED;
-    }
+  // CSP check: javascript: URIs are disabled unless "inline" scripts
+  // are allowed by both the CSP of the thing that started the load
+  // (which is the CSPToInherit of the loadinfo) and the CSP of the
+  // target document.  The target document check is performed below,
+  // once we have determined the target document.
+  nsCOMPtr<nsIContentSecurityPolicy> csp = loadInfo->GetCspToInherit();
+  if (!AllowedByCSP(csp)) {
+    return NS_ERROR_DOM_RETVAL_UNDEFINED;
   }
 
   // Get the global object we should be running on.
@@ -185,16 +187,6 @@ nsresult nsJSThunk::EvaluateScript(
   if (!global) {
     return NS_ERROR_FAILURE;
   }
-
-  // Sandboxed document check: javascript: URI's are disabled
-  // in a sandboxed document unless 'allow-scripts' was specified.
-  mozilla::dom::Document* doc = aOriginalInnerWindow->GetExtantDoc();
-  if (doc && doc->HasScriptsBlockedBySandbox()) {
-    return NS_ERROR_DOM_RETVAL_UNDEFINED;
-  }
-
-  // Push our popup control state
-  nsAutoPopupStatePusher popupStatePusher(aPopupState);
 
   // Make sure we still have the same inner window as we used to.
   nsCOMPtr<nsPIDOMWindowOuter> win = do_QueryInterface(global);
@@ -204,13 +196,42 @@ nsresult nsJSThunk::EvaluateScript(
     return NS_ERROR_UNEXPECTED;
   }
 
-  nsCOMPtr<nsIScriptGlobalObject> innerGlobal = do_QueryInterface(innerWin);
+  mozilla::dom::Document* targetDoc = innerWin->GetExtantDoc();
 
-  mozilla::DebugOnly<nsCOMPtr<nsIDOMWindow>> domWindow(
-      do_QueryInterface(global, &rv));
-  if (NS_FAILED(rv)) {
-    return NS_ERROR_FAILURE;
+  if (targetDoc) {
+    // Sandboxed document check: javascript: URI execution is disabled
+    // in a sandboxed document unless 'allow-scripts' was specified.
+    if (targetDoc->HasScriptsBlockedBySandbox()) {
+      return NS_ERROR_DOM_RETVAL_UNDEFINED;
+    }
+
+    // Perform a Security check against the CSP of the document we are
+    // running against. javascript: URIs are disabled unless "inline"
+    // scripts are allowed. We only do that if targetDoc->NodePrincipal()
+    // subsumes loadInfo->TriggeringPrincipal(). If it doesn't, then
+    // someone more-privileged (our UI or an extension) started the
+    // load and hence the load should not be subject to the target
+    // document's CSP.
+    //
+    // The "more privileged" assumption is safe, because if the triggering
+    // principal does not subsume targetDoc->NodePrincipal() we won't run the
+    // script at all.  More precisely, we test that "principal" subsumes the
+    // target's principal, but "principal" should never be higher-privilege
+    // than the triggering principal here: it's either the triggering
+    // principal, or the principal of the document we started the load
+    // against if the triggering principal is system.
+    if (targetDoc->NodePrincipal()->Subsumes(loadInfo->TriggeringPrincipal())) {
+      nsCOMPtr<nsIContentSecurityPolicy> targetCSP = targetDoc->GetCsp();
+      if (!AllowedByCSP(targetCSP)) {
+        return NS_ERROR_DOM_RETVAL_UNDEFINED;
+      }
+    }
   }
+
+  // Push our popup control state
+  AutoPopupStatePusher popupStatePusher(aPopupState);
+
+  nsCOMPtr<nsIScriptGlobalObject> innerGlobal = do_QueryInterface(innerWin);
 
   // So far so good: get the script context from its owner.
   nsCOMPtr<nsIScriptContext> scriptContext = global->GetContext();
@@ -242,7 +263,7 @@ nsresult nsJSThunk::EvaluateScript(
   }
 
   // Fail if someone tries to execute in a global with system principal.
-  if (nsContentUtils::IsSystemPrincipal(objectPrincipal)) {
+  if (objectPrincipal->IsSystemPrincipal()) {
     return NS_ERROR_DOM_SECURITY_ERR;
   }
 
@@ -568,7 +589,8 @@ nsJSChannel::AsyncOpen(nsIStreamListener* aListener) {
     nsLoadFlags loadFlags;
     mStreamChannel->GetLoadFlags(&loadFlags);
     if (loadFlags & LOAD_DOCUMENT_URI) {
-      mDocumentOnloadBlockedOn = mDocumentOnloadBlockedOn->GetParentDocument();
+      mDocumentOnloadBlockedOn =
+          mDocumentOnloadBlockedOn->GetInProcessParentDocument();
     }
   }
   if (mDocumentOnloadBlockedOn) {
@@ -1014,27 +1036,11 @@ bool nsJSChannel::GetIsDocumentLoad() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-nsJSProtocolHandler::nsJSProtocolHandler() {}
+nsJSProtocolHandler::nsJSProtocolHandler() = default;
 
-nsresult nsJSProtocolHandler::Init() { return NS_OK; }
-
-nsJSProtocolHandler::~nsJSProtocolHandler() {}
+nsJSProtocolHandler::~nsJSProtocolHandler() = default;
 
 NS_IMPL_ISUPPORTS(nsJSProtocolHandler, nsIProtocolHandler)
-
-nsresult nsJSProtocolHandler::Create(nsISupports* aOuter, REFNSIID aIID,
-                                     void** aResult) {
-  if (aOuter) return NS_ERROR_NO_AGGREGATION;
-
-  nsJSProtocolHandler* ph = new nsJSProtocolHandler();
-  NS_ADDREF(ph);
-  nsresult rv = ph->Init();
-  if (NS_SUCCEEDED(rv)) {
-    rv = ph->QueryInterface(aIID, aResult);
-  }
-  NS_RELEASE(ph);
-  return rv;
-}
 
 /* static */ nsresult nsJSProtocolHandler::EnsureUTF8Spec(
     const nsCString& aSpec, const char* aCharset, nsACString& aUTF8Spec) {
@@ -1051,7 +1057,7 @@ nsresult nsJSProtocolHandler::Create(nsISupports* aOuter, REFNSIID aIID,
                                         uStr);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (!IsASCII(uStr)) {
+  if (!IsAscii(uStr)) {
     rv = NS_EscapeURL(NS_ConvertUTF16toUTF8(uStr),
                       esc_AlwaysCopy | esc_OnlyNonASCII, aUTF8Spec,
                       mozilla::fallible);
@@ -1082,11 +1088,6 @@ nsJSProtocolHandler::GetProtocolFlags(uint32_t* result) {
             URI_LOADABLE_BY_ANYONE | URI_NON_PERSISTABLE |
             URI_OPENING_EXECUTES_SCRIPT;
   return NS_OK;
-}
-NS_IMETHODIMP
-nsJSProtocolHandler::NewURI(const nsACString& aSpec, const char* aCharset,
-                            nsIURI* aBaseURI, nsIURI** result) {
-  return nsJSProtocolHandler::CreateNewURI(aSpec, aCharset, aBaseURI, result);
 }
 
 /* static */ nsresult nsJSProtocolHandler::CreateNewURI(const nsACString& aSpec,

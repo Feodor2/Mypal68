@@ -119,13 +119,10 @@ void MediaKeySession::UpdateKeyStatusMap() {
     nsAutoCString message(
         nsPrintfCString("MediaKeySession[%p,'%s'] key statuses change {", this,
                         NS_ConvertUTF16toUTF8(mSessionId).get()));
-    using IntegerType = typename std::underlying_type<MediaKeyStatus>::type;
     for (const CDMCaps::KeyStatus& status : keyStatuses) {
       message.Append(nsPrintfCString(
           " (%s,%s)", ToHexString(status.mId).get(),
-          MediaKeyStatusValues::strings[static_cast<IntegerType>(
-                                            status.mStatus)]
-              .value));
+          nsCString(MediaKeyStatusValues::GetString(status.mStatus)).get()));
     }
     message.AppendLiteral(" }");
     // Use %s so we aren't exposing random strings to printf interpolation.
@@ -230,10 +227,8 @@ already_AddRefed<Promise> MediaKeySession::GenerateRequest(
   // If initDataType is the empty string, return a promise rejected
   // with a newly created TypeError.
   if (aInitDataType.IsEmpty()) {
-    promise->MaybeReject(
-        NS_ERROR_DOM_TYPE_ERR,
-        NS_LITERAL_CSTRING(
-            "Empty initDataType passed to MediaKeySession.generateRequest()"));
+    promise->MaybeRejectWithTypeError(
+        u"Empty initDataType passed to MediaKeySession.generateRequest()");
     EME_LOG(
         "MediaKeySession[%p,'%s'] GenerateRequest() failed, empty initDataType",
         this, NS_ConvertUTF16toUTF8(mSessionId).get());
@@ -245,10 +240,8 @@ already_AddRefed<Promise> MediaKeySession::GenerateRequest(
   nsTArray<uint8_t> data;
   CopyArrayBufferViewOrArrayBufferData(aInitData, data);
   if (data.IsEmpty()) {
-    promise->MaybeReject(
-        NS_ERROR_DOM_TYPE_ERR,
-        NS_LITERAL_CSTRING(
-            "Empty initData passed to MediaKeySession.generateRequest()"));
+    promise->MaybeRejectWithTypeError(
+        u"Empty initData passed to MediaKeySession.generateRequest()");
     EME_LOG("MediaKeySession[%p,'%s'] GenerateRequest() failed, empty initData",
             this, NS_ConvertUTF16toUTF8(mSessionId).get());
     return promise.forget();
@@ -285,10 +278,8 @@ already_AddRefed<Promise> MediaKeySession::GenerateRequest(
   if (!ValidateInitData(data, aInitDataType)) {
     // If the preceding step failed, reject promise with a newly created
     // TypeError.
-    promise->MaybeReject(
-        NS_ERROR_DOM_TYPE_ERR,
-        NS_LITERAL_CSTRING("initData sanitization failed in "
-                           "MediaKeySession.generateRequest()"));
+    promise->MaybeRejectWithTypeError(
+        u"initData sanitization failed in MediaKeySession.generateRequest()");
     EME_LOG(
         "MediaKeySession[%p,'%s'] GenerateRequest() initData sanitization "
         "failed",
@@ -357,9 +348,8 @@ already_AddRefed<Promise> MediaKeySession::Load(const nsAString& aSessionId,
   // 4. If sessionId is the empty string, return a promise rejected with a newly
   // created TypeError.
   if (aSessionId.IsEmpty()) {
-    promise->MaybeReject(
-        NS_ERROR_DOM_TYPE_ERR,
-        NS_LITERAL_CSTRING("Trying to load a session with empty session ID"));
+    promise->MaybeRejectWithTypeError(
+        u"Trying to load a session with empty session ID");
     // "The sessionId parameter is empty."
     EME_LOG("MediaKeySession[%p,''] Load() failed, no sessionId", this);
     return promise.forget();
@@ -369,9 +359,8 @@ already_AddRefed<Promise> MediaKeySession::Load(const nsAString& aSessionId,
   // on this object's session type is false, return a promise rejected with
   // a newly created TypeError.
   if (mSessionType == MediaKeySessionType::Temporary) {
-    promise->MaybeReject(
-        NS_ERROR_DOM_TYPE_ERR,
-        NS_LITERAL_CSTRING("Trying to load() into a non-persistent session"));
+    promise->MaybeRejectWithTypeError(
+        u"Trying to load() into a non-persistent session");
     EME_LOG(
         "MediaKeySession[%p,''] Load() failed, can't load in a non-persistent "
         "session",
@@ -435,10 +424,8 @@ already_AddRefed<Promise> MediaKeySession::Update(
   }
   CopyArrayBufferViewOrArrayBufferData(aResponse, data);
   if (data.IsEmpty()) {
-    promise->MaybeReject(
-        NS_ERROR_DOM_TYPE_ERR,
-        NS_LITERAL_CSTRING(
-            "Empty response buffer passed to MediaKeySession.update()"));
+    promise->MaybeRejectWithTypeError(
+        u"Empty response buffer passed to MediaKeySession.update()");
     EME_LOG("MediaKeySession[%p,'%s'] Update() failed, empty response buffer",
             this, NS_ConvertUTF16toUTF8(mSessionId).get());
     return promise.forget();
@@ -576,7 +563,7 @@ void MediaKeySession::DispatchKeyMessage(MediaKeyMessageType aMessageType,
     EME_LOG(
         "MediaKeySession[%p,'%s'] DispatchKeyMessage() type=%s message='%s'",
         this, NS_ConvertUTF16toUTF8(mSessionId).get(),
-        MediaKeyMessageTypeValues::strings[uint32_t(aMessageType)].value,
+        nsCString(MediaKeyMessageTypeValues::GetString(aMessageType)).get(),
         ToHexString(aMessage).get());
   }
 
@@ -646,9 +633,7 @@ void MediaKeySession::SetOnmessage(EventHandlerNonNull* aCallback) {
 }
 
 nsCString ToCString(MediaKeySessionType aType) {
-  using IntegerType = typename std::underlying_type<MediaKeySessionType>::type;
-  auto idx = static_cast<IntegerType>(aType);
-  return nsDependentCString(MediaKeySessionTypeValues::strings[idx].value);
+  return nsCString(MediaKeySessionTypeValues::GetString(aType));
 }
 
 nsString ToString(MediaKeySessionType aType) {

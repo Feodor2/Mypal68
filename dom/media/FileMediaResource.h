@@ -22,10 +22,11 @@ class FileMediaResource : public BaseMediaResource {
 
   // Main thread
   nsresult Open(nsIStreamListener** aStreamListener) override;
-  nsresult Close() override;
+  RefPtr<GenericPromise> Close() override;
   void Suspend(bool aCloseImmediately) override {}
   void Resume() override {}
   already_AddRefed<nsIPrincipal> GetCurrentPrincipal() override;
+  bool HadCrossOriginRedirects() override;
   nsresult ReadFromCache(char* aBuffer, int64_t aOffset,
                          uint32_t aCount) override;
 

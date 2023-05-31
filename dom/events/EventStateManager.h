@@ -18,8 +18,6 @@
 #include "Units.h"
 #include "WheelHandlingHelper.h"  // for WheelDeltaAdjustmentStrategy
 
-#define NS_USER_INTERACTION_INTERVAL 5000  // ms
-
 class nsFrameLoader;
 class nsIContent;
 class nsIDocShell;
@@ -240,6 +238,12 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   nsresult SetCursor(StyleCursorKind aCursor, imgIContainer* aContainer,
                      const Maybe<gfx::IntPoint>& aHotspot, nsIWidget* aWidget,
                      bool aLockCursor);
+
+  /**
+   * Returns true if the event is considered as user interaction event. I.e.,
+   * enough obvious input to allow to open popup, etc. Otherwise, returns false.
+   */
+  static bool IsUserInteractionEvent(const WidgetEvent* aEvent);
 
   /**
    * StartHandlingUserInput() is called when we start to handle a user input.
@@ -1260,6 +1264,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   static int32_t sUserKeyboardEventDepth;
 
   static bool sNormalLMouseEventInProcess;
+  static int16_t sCurrentMouseBtn;
 
   static EventStateManager* sActiveESM;
 
@@ -1283,19 +1288,13 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
  */
 class MOZ_RAII AutoHandlingUserInputStatePusher final {
  public:
-  AutoHandlingUserInputStatePusher(bool aIsHandlingUserInput,
-                                   WidgetEvent* aEvent,
-                                   dom::Document* aDocument);
+  explicit AutoHandlingUserInputStatePusher(bool aIsHandlingUserInput,
+                                            WidgetEvent* aEvent = nullptr);
   ~AutoHandlingUserInputStatePusher();
 
  protected:
-  RefPtr<dom::Document> mMouseButtonEventHandlingDocument;
   EventMessage mMessage;
   bool mIsHandlingUserInput;
-
-  bool NeedsToResetFocusManagerMouseButtonHandlingState() const {
-    return mMessage == eMouseDown || mMessage == eMouseUp;
-  }
 };
 
 }  // namespace mozilla

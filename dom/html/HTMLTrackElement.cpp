@@ -5,10 +5,6 @@
 #include "mozilla/dom/HTMLTrackElement.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLMediaElement.h"
-#ifdef XP_WIN
-// HTMLTrackElement.webidl defines ERROR, but so does windows.h:
-#  undef ERROR
-#endif
 #include "WebVTTListener.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/dom/HTMLTrackElementBinding.h"
@@ -20,17 +16,10 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
-#include "nsIAsyncVerifyRedirectCallback.h"
-#include "nsICachingChannel.h"
-#include "nsIChannelEventSink.h"
 #include "nsIContentPolicy.h"
-#include "nsIContentSecurityPolicy.h"
 #include "mozilla/dom/Document.h"
-#include "nsIHttpChannel.h"
-#include "nsIInterfaceRequestor.h"
 #include "nsILoadGroup.h"
 #include "nsIObserver.h"
-#include "nsIStreamListener.h"
 #include "nsISupportsImpl.h"
 #include "nsISupportsPrimitives.h"
 #include "nsMappedAttributes.h"
@@ -333,14 +322,12 @@ void HTMLTrackElement::LoadResource(RefPtr<WebVTTListener>&& aWebVTTListener) {
   doc->Dispatch(TaskCategory::Other, runnable.forget());
 }
 
-nsresult HTMLTrackElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                      nsIContent* aBindingParent) {
-  nsresult rv =
-      nsGenericHTMLElement::BindToTree(aDocument, aParent, aBindingParent);
+nsresult HTMLTrackElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   LOG(LogLevel::Debug, ("Track Element bound to tree."));
-  auto* parent = HTMLMediaElement::FromNodeOrNull(aParent);
+  auto* parent = HTMLMediaElement::FromNode(aParent);
   if (!parent) {
     return NS_OK;
   }
@@ -365,7 +352,7 @@ nsresult HTMLTrackElement::BindToTree(Document* aDocument, nsIContent* aParent,
   return NS_OK;
 }
 
-void HTMLTrackElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void HTMLTrackElement::UnbindFromTree(bool aNullParent) {
   if (mMediaParent && aNullParent) {
     // mTrack can be null if HTMLTrackElement::LoadResource has never been
     // called.
@@ -376,7 +363,7 @@ void HTMLTrackElement::UnbindFromTree(bool aDeep, bool aNullParent) {
     mMediaParent = nullptr;
   }
 
-  nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);
+  nsGenericHTMLElement::UnbindFromTree(aNullParent);
 }
 
 uint16_t HTMLTrackElement::ReadyState() const {

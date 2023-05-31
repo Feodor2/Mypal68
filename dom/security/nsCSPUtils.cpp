@@ -8,9 +8,9 @@
 #include "nsCSPUtils.h"
 #include "nsDebug.h"
 #include "nsIConsoleService.h"
+#include "nsIChannel.h"
 #include "nsICryptoHash.h"
 #include "nsIScriptError.h"
-#include "nsIServiceManager.h"
 #include "nsIStringBundle.h"
 #include "nsIURL.h"
 #include "nsReadableUtils.h"
@@ -82,8 +82,36 @@ void CSP_PercentDecodeStr(const nsAString& aEncStr, nsAString& outDecStr) {
   }
 }
 
-void CSP_GetLocalizedStr(const char* aName, const char16_t** aParams,
-                         uint32_t aLength, nsAString& outResult) {
+// The Content Security Policy should be inherited for
+// local schemes like: "about", "blob", "data", or "filesystem".
+// see: https://w3c.github.io/webappsec-csp/#initialize-document-csp
+bool CSP_ShouldResponseInheritCSP(nsIChannel* aChannel) {
+  if (!aChannel) {
+    return false;
+  }
+
+  nsCOMPtr<nsIURI> uri;
+  nsresult rv = aChannel->GetURI(getter_AddRefs(uri));
+  NS_ENSURE_SUCCESS(rv, false);
+
+  bool isAbout = uri->SchemeIs("about");
+  if (isAbout) {
+    nsAutoCString aboutSpec;
+    rv = uri->GetSpec(aboutSpec);
+    NS_ENSURE_SUCCESS(rv, false);
+    // also allow about:blank#foo
+    if (StringBeginsWith(aboutSpec, NS_LITERAL_CSTRING("about:blank")) ||
+        StringBeginsWith(aboutSpec, NS_LITERAL_CSTRING("about:srcdoc"))) {
+      return true;
+    }
+  }
+
+  return uri->SchemeIs("blob") || uri->SchemeIs("data") ||
+         uri->SchemeIs("filesystem") || uri->SchemeIs("javascript");
+}
+
+void CSP_GetLocalizedStr(const char* aName, const nsTArray<nsString>& aParams,
+                         nsAString& outResult) {
   nsCOMPtr<nsIStringBundle> keyStringBundle;
   nsCOMPtr<nsIStringBundleService> stringBundleService =
       mozilla::services::GetStringBundleService();
@@ -98,7 +126,7 @@ void CSP_GetLocalizedStr(const char* aName, const char16_t** aParams,
   if (!keyStringBundle) {
     return;
   }
-  keyStringBundle->FormatStringFromName(aName, aParams, aLength, outResult);
+  keyStringBundle->FormatStringFromName(aName, aParams, outResult);
 }
 
 void CSP_LogStrMessage(const nsAString& aMsg) {
@@ -169,14 +197,14 @@ void CSP_LogMessage(const nsAString& aMessage, const nsAString& aSourceName,
 /**
  * Combines CSP_LogMessage and CSP_GetLocalizedStr into one call.
  */
-void CSP_LogLocalizedStr(const char* aName, const char16_t** aParams,
-                         uint32_t aLength, const nsAString& aSourceName,
+void CSP_LogLocalizedStr(const char* aName, const nsTArray<nsString>& aParams,
+                         const nsAString& aSourceName,
                          const nsAString& aSourceLine, uint32_t aLineNumber,
                          uint32_t aColumnNumber, uint32_t aFlags,
                          const nsACString& aCategory, uint64_t aInnerWindowID,
                          bool aFromPrivateWindow) {
   nsAutoString logMsg;
-  CSP_GetLocalizedStr(aName, aParams, aLength, logMsg);
+  CSP_GetLocalizedStr(aName, aParams, logMsg);
   CSP_LogMessage(logMsg, aSourceName, aSourceLine, aLineNumber, aColumnNumber,
                  aFlags, aCategory, aInnerWindowID, aFromPrivateWindow);
 }
@@ -233,6 +261,8 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_DTD:
     case nsIContentPolicy::TYPE_OTHER:
     case nsIContentPolicy::TYPE_SPECULATIVE:
+    case nsIContentPolicy::TYPE_INTERNAL_DTD:
+    case nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD:
       return nsIContentSecurityPolicy::DEFAULT_SRC_DIRECTIVE;
 
     // csp shold not block top level loads, e.g. in case
@@ -615,14 +645,8 @@ bool nsCSPHostSrc::permits(nsIURI* aUri, const nsAString& aNonce,
     // future compatibility we support it in CSP according to the spec,
     // see: 4.2.2 Matching Source Expressions Note, that whitelisting any of
     // these schemes would call nsCSPSchemeSrc::permits().
-    bool isBlobScheme =
-        (NS_SUCCEEDED(aUri->SchemeIs("blob", &isBlobScheme)) && isBlobScheme);
-    bool isDataScheme =
-        (NS_SUCCEEDED(aUri->SchemeIs("data", &isDataScheme)) && isDataScheme);
-    bool isFileScheme =
-        (NS_SUCCEEDED(aUri->SchemeIs("filesystem", &isFileScheme)) &&
-         isFileScheme);
-    if (isBlobScheme || isDataScheme || isFileScheme) {
+    if (aUri->SchemeIs("blob") || aUri->SchemeIs("data") ||
+        aUri->SchemeIs("filesystem")) {
       return false;
     }
 

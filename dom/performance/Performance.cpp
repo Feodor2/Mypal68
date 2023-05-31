@@ -15,6 +15,7 @@
 #include "PerformanceResourceTiming.h"
 #include "PerformanceService.h"
 #include "PerformanceWorker.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/PerformanceBinding.h"
 #include "mozilla/dom/PerformanceEntryEvent.h"
@@ -51,9 +52,8 @@ already_AddRefed<Performance> Performance::CreateForMainThread(
     nsDOMNavigationTiming* aDOMTiming, nsITimedChannel* aChannel) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  RefPtr<Performance> performance =
-      new PerformanceMainThread(aWindow, aDOMTiming, aChannel,
-                                nsContentUtils::IsSystemPrincipal(aPrincipal));
+  RefPtr<Performance> performance = new PerformanceMainThread(
+      aWindow, aDOMTiming, aChannel, aPrincipal->IsSystemPrincipal());
   return performance.forget();
 }
 
@@ -92,10 +92,7 @@ DOMHighResTimeStamp Performance::Now() {
     return rawTime;
   }
 
-  const double maxResolutionMs = 0.020;
-  DOMHighResTimeStamp minimallyClamped =
-      floor(rawTime / maxResolutionMs) * maxResolutionMs;
-  return nsRFPService::ReduceTimePrecisionAsMSecs(minimallyClamped,
+  return nsRFPService::ReduceTimePrecisionAsMSecs(rawTime,
                                                   GetRandomTimelineSeed());
 }
 
@@ -279,6 +276,8 @@ void Performance::Measure(const nsAString& aName,
 
   if (aStartMark.WasPassed()) {
     startTime = ResolveTimestampFromName(aStartMark.Value(), aRv);
+    startTime = nsRFPService::ReduceTimePrecisionAsMSecs(
+        startTime, GetRandomTimelineSeed());
     if (NS_WARN_IF(aRv.Failed())) {
       return;
     }
@@ -291,6 +290,8 @@ void Performance::Measure(const nsAString& aName,
 
   if (aEndMark.WasPassed()) {
     endTime = ResolveTimestampFromName(aEndMark.Value(), aRv);
+    endTime = nsRFPService::ReduceTimePrecisionAsMSecs(endTime,
+                                                       GetRandomTimelineSeed());
     if (NS_WARN_IF(aRv.Failed())) {
       return;
     }

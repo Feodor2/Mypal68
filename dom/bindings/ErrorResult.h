@@ -162,44 +162,15 @@ class TErrorResult {
   operator const ErrorResult&() const;
   operator OOMReporter&();
 
-  void MOZ_MUST_RETURN_FROM_CALLER Throw(nsresult rv) {
+  // This method is deprecated.  Consumers should ThrowDOMException if they are
+  // throwing a DOMException.  If they have a random nsresult which may or may
+  // not correspond to a DOMException type, they should consider using an
+  // appropriate DOMException-type nsresult with an informative message and
+  // calling ThrowDOMException.
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG Throw(nsresult rv) {
     MOZ_ASSERT(NS_FAILED(rv), "Please don't try throwing success");
     AssignErrorCode(rv);
   }
-
-  // This method acts identically to the `Throw` method, however, it does not
-  // have the MOZ_MUST_RETURN_FROM_CALLER static analysis annotation. It is
-  // intended to be used in situations when additional work needs to be
-  // performed in the calling function after the Throw method is called.
-  //
-  // In general you should prefer using `Throw`, and returning after an error,
-  // for example:
-  //
-  //   if (condition) {
-  //     aRv.Throw(NS_ERROR_FAILURE);
-  //     return;
-  //   }
-  //
-  // or
-  //
-  //   if (condition) {
-  //     aRv.Throw(NS_ERROR_FAILURE);
-  //   }
-  //   return;
-  //
-  // However, if you need to do some other work after throwing, such as:
-  //
-  //   if (condition) {
-  //     aRv.ThrowWithCustomCleanup(NS_ERROR_FAILURE);
-  //   }
-  //   // Do some important clean-up work which couldn't happen earlier.
-  //   // We want to do this clean-up work in both the success and failure
-  //   cases. CleanUpImportantState(); return;
-  //
-  // Then you'll need to use ThrowWithCustomCleanup to get around the static
-  // analysis, which would complain that you are doing work after the call to
-  // `Throw()`.
-  void ThrowWithCustomCleanup(nsresult rv) { Throw(rv); }
 
   // Duplicate our current state on the given TErrorResult object.  Any
   // existing errors or messages on the target will be suppressed before
@@ -280,15 +251,47 @@ class TErrorResult {
   void StealExceptionFromJSContext(JSContext* cx);
 
   template <dom::ErrNum errorNumber, typename... Ts>
-  void ThrowTypeError(Ts&&... messageArgs) {
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
+  ThrowTypeError(Ts&&... messageArgs) {
     ThrowErrorWithMessage<errorNumber>(NS_ERROR_INTERNAL_ERRORRESULT_TYPEERROR,
                                        std::forward<Ts>(messageArgs)...);
   }
 
+  // To be used when throwing a TypeError with a completely custom
+  // message string that's only used in one spot.
+  inline void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
+  ThrowTypeError(const nsAString& aMessage) {
+    this->template ThrowTypeError<dom::MSG_ONE_OFF_TYPEERR>(aMessage);
+  }
+
+  // To be used when throwing a TypeError with a completely custom
+  // message string that's a string literal that's only used in one spot.
+  template <int N>
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
+  ThrowTypeError(const char16_t (&aMessage)[N]) {
+    ThrowTypeError(nsLiteralString(aMessage));
+  }
+
   template <dom::ErrNum errorNumber, typename... Ts>
-  void ThrowRangeError(Ts&&... messageArgs) {
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
+  ThrowRangeError(Ts&&... messageArgs) {
     ThrowErrorWithMessage<errorNumber>(NS_ERROR_INTERNAL_ERRORRESULT_RANGEERROR,
                                        std::forward<Ts>(messageArgs)...);
+  }
+
+  // To be used when throwing a RangeError with a completely custom
+  // message string that's only used in one spot.
+  inline void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
+  ThrowRangeError(const nsAString& aMessage) {
+    this->template ThrowRangeError<dom::MSG_ONE_OFF_RANGEERR>(aMessage);
+  }
+
+  // To be used when throwing a RangeError with a completely custom
+  // message string that's a string literal that's only used in one spot.
+  template <int N>
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
+  ThrowRangeError(const char16_t (&aMessage)[N]) {
+    ThrowRangeError(nsLiteralString(aMessage));
   }
 
   bool IsErrorWithMessage() const {
@@ -306,7 +309,8 @@ class TErrorResult {
   // The exn argument to ThrowJSException can be in any compartment.  It does
   // not have to be in the compartment of cx.  If someone later uses it, they
   // will wrap it into whatever compartment they're working in, as needed.
-  void ThrowJSException(JSContext* cx, JS::Handle<JS::Value> exn);
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
+  ThrowJSException(JSContext* cx, JS::Handle<JS::Value> exn);
   bool IsJSException() const {
     return ErrorCode() == NS_ERROR_INTERNAL_ERRORRESULT_JS_EXCEPTION;
   }
@@ -316,8 +320,76 @@ class TErrorResult {
   // nsresult will be used.  The passed-in string must be UTF-8.  The nsresult
   // passed in must be one we create DOMExceptions for; otherwise you may get an
   // XPConnect Exception.
-  void ThrowDOMException(nsresult rv,
-                         const nsACString& message = EmptyCString());
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
+  ThrowDOMException(nsresult rv, const nsACString& message);
+
+  // Same thing, but using a string literal.
+  template <int N>
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
+  ThrowDOMException(nsresult rv, const char (&aMessage)[N]) {
+    ThrowDOMException(rv, nsLiteralCString(aMessage));
+  }
+
+  // Facilities for throwing specific spec-defined DOMExceptions.
+#define DOMEXCEPTION(name, err)                                \
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG Throw##name( \
+      const nsACString& aMessage) {                            \
+    ThrowDOMException(err, aMessage);                          \
+  }                                                            \
+                                                               \
+  template <int N>                                             \
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG Throw##name( \
+      const char(&aMessage)[N]) {                              \
+    ThrowDOMException(err, aMessage);                          \
+  }
+
+  // XXXbz This list sort of duplicates the DOM4_MSG_DEF bits of domerr.msg,
+  // except that has various extra errors that are not in specs
+  // (e.g. InvalidPointerId) and has multiple definitions for the same error
+  // name using different messages, which we don't need because we get the
+  // message passed in.  We should try to convert all consumers of the "extra"
+  // error codes in there to these APIs, remove the extra bits, and just
+  // include domerr.msg here.
+  DOMEXCEPTION(IndexSizeError, NS_ERROR_DOM_INDEX_SIZE_ERR)
+  // We don't have a DOMStringSizeError and it's deprecated anyway.
+  DOMEXCEPTION(HierarchyRequestError, NS_ERROR_DOM_HIERARCHY_REQUEST_ERR)
+  DOMEXCEPTION(WrongDocumentError, NS_ERROR_DOM_WRONG_DOCUMENT_ERR)
+  DOMEXCEPTION(InvalidCharacterError, NS_ERROR_DOM_INVALID_CHARACTER_ERR)
+  // We don't have a NoDataAllowedError and it's deprecated anyway.
+  DOMEXCEPTION(NoModificationAllowedError,
+               NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR)
+  DOMEXCEPTION(NotFoundError, NS_ERROR_DOM_NOT_FOUND_ERR)
+  DOMEXCEPTION(NotSupportedError, NS_ERROR_DOM_NOT_SUPPORTED_ERR)
+  DOMEXCEPTION(InUseAttributeError, NS_ERROR_DOM_INUSE_ATTRIBUTE_ERR)
+  DOMEXCEPTION(InvalidStateError, NS_ERROR_DOM_INVALID_STATE_ERR)
+  DOMEXCEPTION(SyntaxError, NS_ERROR_DOM_SYNTAX_ERR)
+  DOMEXCEPTION(InvalidModificationError, NS_ERROR_DOM_INVALID_MODIFICATION_ERR)
+  DOMEXCEPTION(NamespaceError, NS_ERROR_DOM_NAMESPACE_ERR)
+  DOMEXCEPTION(InvalidAccessError, NS_ERROR_DOM_INVALID_ACCESS_ERR)
+  // We don't have a ValidationError and it's deprecated anyway.
+  DOMEXCEPTION(TypeMismatchError, NS_ERROR_DOM_TYPE_MISMATCH_ERR)
+  DOMEXCEPTION(SecurityError, NS_ERROR_DOM_SECURITY_ERR)
+  DOMEXCEPTION(NetworkError, NS_ERROR_DOM_NETWORK_ERR)
+  DOMEXCEPTION(AbortError, NS_ERROR_DOM_ABORT_ERR)
+  DOMEXCEPTION(URLMismatchError, NS_ERROR_DOM_URL_MISMATCH_ERR)
+  DOMEXCEPTION(QuotaExceededError, NS_ERROR_DOM_QUOTA_EXCEEDED_ERR)
+  DOMEXCEPTION(TimeoutError, NS_ERROR_DOM_TIMEOUT_ERR)
+  DOMEXCEPTION(InvalidNodeTypeError, NS_ERROR_DOM_INVALID_NODE_TYPE_ERR)
+  DOMEXCEPTION(DataCloneError, NS_ERROR_DOM_DATA_CLONE_ERR)
+  DOMEXCEPTION(EncodingError, NS_ERROR_DOM_ENCODING_NOT_SUPPORTED_ERR)
+  DOMEXCEPTION(NotReadableError, NS_ERROR_DOM_FILE_NOT_READABLE_ERR)
+  DOMEXCEPTION(UnknownError, NS_ERROR_DOM_UNKNOWN_ERR)
+  DOMEXCEPTION(ConstraintError, NS_ERROR_DOM_INDEXEDDB_CONSTRAINT_ERR)
+  DOMEXCEPTION(DataError, NS_ERROR_DOM_DATA_ERR)
+  DOMEXCEPTION(TransactionInactiveError,
+               NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR)
+  DOMEXCEPTION(ReadOnlyError, NS_ERROR_DOM_INDEXEDDB_READ_ONLY_ERR)
+  DOMEXCEPTION(VersionError, NS_ERROR_DOM_INDEXEDDB_VERSION_ERR)
+  DOMEXCEPTION(OperationError, NS_ERROR_DOM_OPERATION_ERR)
+  DOMEXCEPTION(NotAllowedError, NS_ERROR_DOM_NOT_ALLOWED_ERR)
+
+#undef DOMEXCEPTION
+
   bool IsDOMException() const {
     return ErrorCode() == NS_ERROR_INTERNAL_ERRORRESULT_DOMEXCEPTION;
   }
@@ -325,7 +397,8 @@ class TErrorResult {
   // Flag on the TErrorResult that whatever needs throwing has been
   // thrown on the JSContext already and we should not mess with it.
   // If nothing was thrown, this becomes an uncatchable exception.
-  void NoteJSContextException(JSContext* aCx);
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
+  NoteJSContextException(JSContext* aCx);
 
   // Check whether the TErrorResult says to just throw whatever is on
   // the JSContext already.
@@ -334,7 +407,7 @@ class TErrorResult {
   }
 
   // Support for uncatchable exceptions.
-  void MOZ_MUST_RETURN_FROM_CALLER ThrowUncatchableException() {
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG ThrowUncatchableException() {
     Throw(NS_ERROR_UNCATCHABLE_EXCEPTION);
   }
   bool IsUncatchableException() const {
@@ -358,7 +431,7 @@ class TErrorResult {
 
   // Backwards-compat to make conversion simpler.  We don't call
   // Throw() here because people can easily pass success codes to
-  // this.
+  // this.  This operator is deprecated and ideally shouldn't be used.
   void operator=(nsresult rv) { AssignErrorCode(rv); }
 
   bool Failed() const { return NS_FAILED(mResult); }
@@ -589,6 +662,7 @@ class ErrorResult : public binding_danger::TErrorResult<
 
   explicit ErrorResult(nsresult aRv) : BaseErrorResult(aRv) {}
 
+  // This operator is deprecated and ideally shouldn't be used.
   void operator=(nsresult rv) { BaseErrorResult::operator=(rv); }
 
   ErrorResult& operator=(ErrorResult&& aRHS) {
@@ -649,6 +723,7 @@ class CopyableErrorResult
 
   explicit CopyableErrorResult(nsresult aRv) : BaseErrorResult(aRv) {}
 
+  // This operator is deprecated and ideally shouldn't be used.
   void operator=(nsresult rv) { BaseErrorResult::operator=(rv); }
 
   CopyableErrorResult& operator=(CopyableErrorResult&& aRHS) {
@@ -707,7 +782,9 @@ class OOMReporterInstantiator;
 
 class OOMReporter : private dom::binding_detail::FastErrorResult {
  public:
-  void ReportOOM() { Throw(NS_ERROR_OUT_OF_MEMORY); }
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG ReportOOM() {
+    Throw(NS_ERROR_OUT_OF_MEMORY);
+  }
 
  private:
   // OOMReporterInstantiator is a friend so it can call our constructor and

@@ -38,17 +38,18 @@ class JSWindowActorChild final : public JSWindowActor {
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
 
-  static already_AddRefed<JSWindowActorChild> Constructor(GlobalObject& aGlobal,
-                                                          ErrorResult& aRv) {
+  static already_AddRefed<JSWindowActorChild> Constructor(
+      GlobalObject& aGlobal) {
     return MakeAndAddRef<JSWindowActorChild>();
   }
 
-  WindowGlobalChild* Manager() const;
+  WindowGlobalChild* GetManager() const;
   void Init(const nsAString& aName, WindowGlobalChild* aManager);
   void StartDestroy();
   void AfterDestroy();
   Document* GetDocument(ErrorResult& aRv);
   BrowsingContext* GetBrowsingContext(ErrorResult& aRv);
+  nsIDocShell* GetDocShell(ErrorResult& aRv);
   Nullable<WindowProxyHolder> GetContentWindow(ErrorResult& aRv);
 
  protected:

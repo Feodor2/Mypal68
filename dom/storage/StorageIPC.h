@@ -68,6 +68,7 @@ class LocalStorageCacheChild final : public PBackgroundLocalStorageCacheChild {
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
   mozilla::ipc::IPCResult RecvObserve(const PrincipalInfo& aPrincipalInfo,
+                                      const PrincipalInfo& aCachePrincipalInfo,
                                       const uint32_t& aPrivateBrowsingId,
                                       const nsString& aDocumentURI,
                                       const nsString& aKey,
@@ -213,11 +214,13 @@ class LocalStorageCacheParent final
 
  public:
   // Created in AllocPBackgroundLocalStorageCacheParent.
-  LocalStorageCacheParent(const PrincipalInfo& aPrincipalInfo,
+  LocalStorageCacheParent(const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
                           const nsACString& aOriginKey,
                           uint32_t aPrivateBrowsingId);
 
   NS_INLINE_DECL_REFCOUNTING(mozilla::dom::LocalStorageCacheParent)
+
+  const PrincipalInfo& PrincipalInfo() const { return mPrincipalInfo; }
 
  private:
   // Reference counted.
@@ -338,8 +341,8 @@ class StorageDBParent final : public PBackgroundStorageParent {
   mozilla::ipc::IPCResult RecvPreload(const nsCString& aOriginSuffix,
                                       const nsCString& aOriginNoSuffix,
                                       const uint32_t& aAlreadyLoadedCount,
-                                      InfallibleTArray<nsString>* aKeys,
-                                      InfallibleTArray<nsString>* aValues,
+                                      nsTArray<nsString>* aKeys,
+                                      nsTArray<nsString>* aValues,
                                       nsresult* aRv) override;
   mozilla::ipc::IPCResult RecvAsyncGetUsage(
       const nsCString& aOriginNoSuffix) override;

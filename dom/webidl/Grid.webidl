@@ -18,7 +18,8 @@ enum GridDeclaration { "explicit", "implicit" };
  */
 enum GridTrackState { "static", "repeat", "removed" };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface Grid
 {
   readonly attribute GridDimension rows;
@@ -27,14 +28,16 @@ interface Grid
   readonly attribute sequence<GridArea> areas;
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface GridDimension
 {
   readonly attribute GridLines lines;
   readonly attribute GridTracks tracks;
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface GridLines
 {
   readonly attribute unsigned long length;
@@ -46,7 +49,8 @@ interface GridLines
   getter GridLine? item(unsigned long index);
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface GridLine
 {
   /**
@@ -89,7 +93,8 @@ interface GridLine
   readonly attribute long negativeNumber;
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface GridTracks
 {
   readonly attribute unsigned long length;
@@ -101,7 +106,8 @@ interface GridTracks
   getter GridTrack? item(unsigned long index);
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface GridTrack
 {
   readonly attribute double start;
@@ -110,7 +116,8 @@ interface GridTrack
   readonly attribute GridTrackState state;
 };
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface GridArea
 {
   readonly attribute DOMString name;

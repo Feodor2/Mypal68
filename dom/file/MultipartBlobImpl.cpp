@@ -13,8 +13,6 @@
 #include "nsTArray.h"
 #include "nsJSUtils.h"
 #include "nsContentUtils.h"
-#include "nsIScriptError.h"
-#include "nsIXPConnect.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -281,43 +279,6 @@ void MultipartBlobImpl::SetLengthAndModifiedDate(ErrorResult& aRv) {
     // mLastModificationDate is an absolute timestamp so we supply a zero
     // context mix-in
   }
-}
-
-nsresult MultipartBlobImpl::SetMutable(bool aMutable) {
-  nsresult rv;
-
-  // This looks a little sketchy since BlobImpl objects are supposed to be
-  // threadsafe. However, we try to enforce that all BlobImpl objects must be
-  // set to immutable *before* being passed to another thread, so this should
-  // be safe.
-  if (!aMutable && !mImmutable && !mBlobImpls.IsEmpty()) {
-    for (uint32_t index = 0, count = mBlobImpls.Length(); index < count;
-         index++) {
-      rv = mBlobImpls[index]->SetMutable(aMutable);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-    }
-  }
-
-  rv = BaseBlobImpl::SetMutable(aMutable);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  MOZ_ASSERT_IF(!aMutable, mImmutable);
-
-  return NS_OK;
-}
-
-bool MultipartBlobImpl::MayBeClonedToOtherThreads() const {
-  for (uint32_t i = 0; i < mBlobImpls.Length(); ++i) {
-    if (!mBlobImpls[i]->MayBeClonedToOtherThreads()) {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 size_t MultipartBlobImpl::GetAllocationSize() const {

@@ -10,8 +10,10 @@
  * and create derivative works of this document.
  */
 
-[HTMLConstructor]
+[Exposed=Window]
 interface HTMLTableRowElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   readonly attribute long rowIndex;
   readonly attribute long sectionRowIndex;
   readonly attribute HTMLCollection cells;

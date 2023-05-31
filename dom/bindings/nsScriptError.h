@@ -63,8 +63,8 @@ class nsScriptErrorBase : public nsIScriptError {
   void InitializationHelper(const nsAString& message,
                             const nsAString& sourceLine, uint32_t lineNumber,
                             uint32_t columnNumber, uint32_t flags,
-                            const nsACString& category,
-                            uint64_t aInnerWindowID);
+                            const nsACString& category, uint64_t aInnerWindowID,
+                            bool aFromChromeContext);
 
   nsCOMArray<nsIScriptErrorNote> mNotes;
   nsString mMessage;
@@ -81,7 +81,6 @@ class nsScriptErrorBase : public nsIScriptError {
   uint64_t mOuterWindowID;
   uint64_t mInnerWindowID;
   int64_t mTimeStamp;
-  uint64_t mTimeWarpTarget;
   // mInitializedOnMainThread, mIsFromPrivateWindow and mIsFromChromeContext are
   // set on the main thread from InitializeOnMainThread().
   mozilla::Atomic<bool> mInitializedOnMainThread;

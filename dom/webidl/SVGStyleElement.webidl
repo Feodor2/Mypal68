@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGStyleElement : SVGElement {
   [SetterThrows]
   attribute DOMString xmlspace; // Spec claims this should be on SVGElement
@@ -19,5 +20,5 @@ interface SVGStyleElement : SVGElement {
   [SetterThrows]
   attribute DOMString title;
 };
-SVGStyleElement implements LinkStyle;
+SVGStyleElement includes LinkStyle;
 

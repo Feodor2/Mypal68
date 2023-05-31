@@ -9,8 +9,12 @@
  * W3C liability, trademark and document use rules apply.
  */
 
-[Constructor(DOMString type, optional MediaKeyNeededEventInit eventInitDict)]
+[Exposed=Window]
 interface MediaEncryptedEvent : Event {
+  [Throws]
+  constructor(DOMString type,
+              optional MediaKeyNeededEventInit eventInitDict = {});
+
   readonly attribute DOMString initDataType;
   [Throws]
   readonly attribute ArrayBuffer? initData;

@@ -5,7 +5,7 @@
 
 #include "chrome/common/process_watcher.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 
 #include "ProcessUtils.h"
 #include "RDDChild.h"
@@ -64,6 +64,7 @@ bool RDDProcessHost::Launch(StringVector aExtraOpts) {
 
   if (!GeckoChildProcessHost::AsyncLaunch(aExtraOpts)) {
     mLaunchPhase = LaunchPhase::Complete;
+    mPrefSerializer = nullptr;
     return false;
   }
   return true;
@@ -74,7 +75,7 @@ bool RDDProcessHost::WaitForLaunch() {
     return !!mRDDChild;
   }
 
-  int32_t timeoutMs = StaticPrefs::MediaRddProcessStartupTimeoutMs();
+  int32_t timeoutMs = StaticPrefs::media_rdd_process_startup_timeout_ms();
 
   // If one of the following environment variables are set we can
   // effectively ignore the timeout - as we can guarantee the RDD

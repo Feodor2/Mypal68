@@ -14,11 +14,9 @@
 #include "js/SourceText.h"
 #include "js/TracingAPI.h"
 #include "mozilla/Attributes.h"
-#include "nsIServiceManager.h"
 #include "nsAtom.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "nsIControllers.h"
-#include "nsIDOMXULMultSelectCntrlEl.h"
 #include "nsIURI.h"
 #include "nsLayoutCID.h"
 #include "AttrArray.h"
@@ -133,17 +131,18 @@ class nsXULPrototypeNode {
 
 class nsXULPrototypeElement : public nsXULPrototypeNode {
  public:
-  nsXULPrototypeElement()
+  explicit nsXULPrototypeElement(mozilla::dom::NodeInfo* aNodeInfo = nullptr)
       : nsXULPrototypeNode(eType_Element),
-        mNumAttributes(0),
+        mNodeInfo(aNodeInfo),
         mHasIdAttribute(false),
         mHasClassAttribute(false),
         mHasStyleAttribute(false),
-        mAttributes(nullptr),
         mIsAtom(nullptr) {}
 
+ private:
   virtual ~nsXULPrototypeElement() { Unlink(); }
 
+ public:
   virtual void ReleaseSubtree() override {
     for (int32_t i = mChildren.Length() - 1; i >= 0; i--) {
       if (mChildren[i].get()) mChildren[i]->ReleaseSubtree();
@@ -172,25 +171,21 @@ class nsXULPrototypeElement : public nsXULPrototypeNode {
 
   RefPtr<mozilla::dom::NodeInfo> mNodeInfo;
 
-  uint32_t mNumAttributes : 29;
   uint32_t mHasIdAttribute : 1;
   uint32_t mHasClassAttribute : 1;
   uint32_t mHasStyleAttribute : 1;
-  nsXULPrototypeAttribute* mAttributes;  // [OWNER]
+  nsTArray<nsXULPrototypeAttribute> mAttributes;  // [OWNER]
   RefPtr<nsAtom> mIsAtom;
 };
-
-namespace mozilla {
-namespace dom {
-class XULDocument;
-}  // namespace dom
-}  // namespace mozilla
 
 class nsXULPrototypeScript : public nsXULPrototypeNode {
  public:
   explicit nsXULPrototypeScript(uint32_t aLineNo);
+
+ private:
   virtual ~nsXULPrototypeScript();
 
+ public:
   virtual nsresult Serialize(
       nsIObjectOutputStream* aStream, nsXULPrototypeDocument* aProtoDoc,
       const nsTArray<RefPtr<mozilla::dom::NodeInfo>>* aNodeInfos) override;
@@ -243,8 +238,10 @@ class nsXULPrototypeText : public nsXULPrototypeNode {
  public:
   nsXULPrototypeText() : nsXULPrototypeNode(eType_Text) {}
 
+ private:
   virtual ~nsXULPrototypeText() {}
 
+ public:
   virtual nsresult Serialize(
       nsIObjectOutputStream* aStream, nsXULPrototypeDocument* aProtoDoc,
       const nsTArray<RefPtr<mozilla::dom::NodeInfo>>* aNodeInfos) override;
@@ -260,8 +257,10 @@ class nsXULPrototypePI : public nsXULPrototypeNode {
  public:
   nsXULPrototypePI() : nsXULPrototypeNode(eType_PI) {}
 
+ private:
   virtual ~nsXULPrototypePI() {}
 
+ public:
   virtual nsresult Serialize(
       nsIObjectOutputStream* aStream, nsXULPrototypeDocument* aProtoDoc,
       const nsTArray<RefPtr<mozilla::dom::NodeInfo>>* aNodeInfos) override;
@@ -327,9 +326,8 @@ class nsXULElement : public nsStyledElement {
   virtual nsresult PreHandleEvent(
       mozilla::EventChainVisitor& aVisitor) override;
   // nsIContent
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep, bool aNullParent) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent) override;
   virtual void DestroyContent() override;
   virtual void DoneAddingChildren(bool aHaveNotified) override;
 
@@ -349,7 +347,7 @@ class nsXULElement : public nsStyledElement {
                                 bool aIsTrustedEvent) override;
   void ClickWithInputSource(uint16_t aInputSource, bool aIsTrustedEvent);
 
-  nsIContent* GetBindingParent() const final { return mBindingParent; }
+  Element* GetBindingParent() const final { return mBindingParent; }
 
   virtual bool IsNodeOfType(uint32_t aFlags) const override;
   virtual bool IsFocusableInternal(int32_t* aTabIndex,
@@ -368,7 +366,7 @@ class nsXULElement : public nsStyledElement {
   // This function should ONLY be used by BindToTree implementations.
   // The function exists solely because XUL elements store the binding
   // parent as a member instead of in the slots, as Element does.
-  void SetXULBindingParent(nsIContent* aBindingParent) {
+  void SetXULBindingParent(Element* aBindingParent) {
     mBindingParent = aBindingParent;
   }
 
@@ -541,7 +539,7 @@ class nsXULElement : public nsStyledElement {
    * The nearest enclosing content node with a binding
    * that created us.
    */
-  nsCOMPtr<nsIContent> mBindingParent;
+  RefPtr<Element> mBindingParent;
 
   /**
    * Abandon our prototype linkage, and copy all attributes locally
@@ -570,8 +568,8 @@ class nsXULElement : public nsStyledElement {
   /**
    * Add a listener for the specified attribute, if appropriate.
    */
-  void AddListenerFor(const nsAttrName& aName);
-  void MaybeAddPopupListener(nsAtom* aLocalName);
+  void AddListenerForAttributeIfNeeded(const nsAttrName& aName);
+  void AddListenerForAttributeIfNeeded(nsAtom* aLocalName);
 
   nsIWidget* GetWindowWidget();
 

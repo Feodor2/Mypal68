@@ -42,6 +42,7 @@ DIRS += [
     'commandhandler',
     'credentialmanagement',
     'crypto',
+    'debugger',
     'encoding',
     'events',
     'fetch',

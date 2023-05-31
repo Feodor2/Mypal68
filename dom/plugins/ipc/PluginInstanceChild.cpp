@@ -37,12 +37,10 @@ using mozilla::gfx::SharedDIBSurface;
 #include "ImageContainer.h"
 
 using namespace mozilla;
-using mozilla::ipc::ProcessChild;
 using namespace mozilla::plugins;
 using namespace mozilla::layers;
 using namespace mozilla::gfx;
 using namespace mozilla::widget;
-using namespace std;
 
 #ifdef MOZ_WIDGET_GTK
 
@@ -118,10 +116,10 @@ static RefPtr<DrawTarget> CreateDrawTargetForSurface(gfxASurface* aSurface) {
 
 bool PluginInstanceChild::sIsIMEComposing = false;
 
-PluginInstanceChild::PluginInstanceChild(
-    const NPPluginFuncs* aPluginIface, const nsCString& aMimeType,
-    const InfallibleTArray<nsCString>& aNames,
-    const InfallibleTArray<nsCString>& aValues)
+PluginInstanceChild::PluginInstanceChild(const NPPluginFuncs* aPluginIface,
+                                         const nsCString& aMimeType,
+                                         const nsTArray<nsCString>& aNames,
+                                         const nsTArray<nsCString>& aValues)
     : mPluginIface(aPluginIface),
       mMimeType(aMimeType),
       mNames(aNames),
@@ -2503,7 +2501,7 @@ void PluginInstanceChild::NPN_URLRedirectResponse(void* notifyData,
     return;
   }
 
-  InfallibleTArray<PStreamNotifyChild*> notifyStreams;
+  nsTArray<PStreamNotifyChild*> notifyStreams;
   ManagedPStreamNotifyChild(notifyStreams);
   uint32_t notifyStreamCount = notifyStreams.Length();
   for (uint32_t i = 0; i < notifyStreamCount; i++) {
@@ -3961,7 +3959,7 @@ void PluginInstanceChild::Destroy() {
   SetProp(mPluginWindowHWND, kPluginIgnoreSubclassProperty, (HANDLE)1);
 #endif
 
-  InfallibleTArray<PBrowserStreamChild*> streams;
+  nsTArray<PBrowserStreamChild*> streams;
   ManagedPBrowserStreamChild(streams);
 
   // First make sure none of these streams become deleted

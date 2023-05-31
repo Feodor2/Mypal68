@@ -14,11 +14,12 @@ class BufferRecycleBin;
 
 namespace mozilla {
 
+class KnowsCompositorVideo;
 using mozilla::ipc::IPCResult;
 
-class RemoteVideoDecoderChild final : public RemoteDecoderChild {
+class RemoteVideoDecoderChild : public RemoteDecoderChild {
  public:
-  explicit RemoteVideoDecoderChild();
+  explicit RemoteVideoDecoderChild(bool aRecreatedOnCrash = false);
 
   MOZ_IS_CLASS_INIT
   MediaResult InitIPDL(const VideoInfo& aVideoInfo, float aFramerate,
@@ -33,11 +34,24 @@ class RemoteVideoDecoderChild final : public RemoteDecoderChild {
   RefPtr<mozilla::layers::BufferRecycleBin> mBufferRecycleBin;
 };
 
+class GpuRemoteVideoDecoderChild final : public RemoteVideoDecoderChild {
+ public:
+  explicit GpuRemoteVideoDecoderChild();
+
+  MOZ_IS_CLASS_INIT
+  MediaResult InitIPDL(const VideoInfo& aVideoInfo, float aFramerate,
+                       const CreateDecoderParams::OptionSet& aOptions,
+                       const layers::TextureFactoryIdentifier& aIdentifier);
+
+  IPCResult RecvOutput(const DecodedOutputIPDL& aDecodedData) override;
+};
+
 class RemoteVideoDecoderParent final : public RemoteDecoderParent {
  public:
   RemoteVideoDecoderParent(RemoteDecoderManagerParent* aParent,
                            const VideoInfo& aVideoInfo, float aFramerate,
                            const CreateDecoderParams::OptionSet& aOptions,
+                           const layers::TextureFactoryIdentifier& aIdentifier,
                            TaskQueue* aManagerTaskQueue,
                            TaskQueue* aDecodeTaskQueue, bool* aSuccess,
                            nsCString* aErrorDescription);
@@ -53,6 +67,8 @@ class RemoteVideoDecoderParent final : public RemoteDecoderParent {
   // passed a deserialized VideoInfo from RecvPRemoteDecoderConstructor
   // which is destroyed when RecvPRemoteDecoderConstructor returns.
   const VideoInfo mVideoInfo;
+
+  RefPtr<KnowsCompositorVideo> mKnowsCompositor;
 };
 
 }  // namespace mozilla

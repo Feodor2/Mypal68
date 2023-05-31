@@ -19,7 +19,7 @@ enum FlexPhysicalDirection {
   "vertical-bt",
 };
 
-[ChromeOnly]
+[ChromeOnly, Exposed=Window]
 interface Flex
 {
   sequence<FlexLineValues> getLines();
@@ -50,7 +50,7 @@ interface Flex
  */
 enum FlexLineGrowthState { "shrinking", "growing" };
 
-[ChromeOnly]
+[ChromeOnly, Exposed=Window]
 interface FlexLineValues
 {
   readonly attribute FlexLineGrowthState growthState;
@@ -78,7 +78,7 @@ enum FlexItemClampState {
   "unclamped", "clamped_to_min", "clamped_to_max"
 };
 
-[ChromeOnly]
+[ChromeOnly, Exposed=Window]
 interface FlexItemValues
 {
   readonly attribute Node? node;

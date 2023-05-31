@@ -146,8 +146,8 @@ class DeleteOrphanedBodyAction final : public Action {
     mDeletedBodyIdList.AppendElement(aBodyId);
   }
 
-  virtual void RunOnTarget(Resolver* aResolver, const QuotaInfo& aQuotaInfo,
-                           Data*) override {
+  void RunOnTarget(Resolver* aResolver, const QuotaInfo& aQuotaInfo,
+                   Data*) override {
     MOZ_DIAGNOSTIC_ASSERT(aResolver);
     MOZ_DIAGNOSTIC_ASSERT(aQuotaInfo.mDir);
 
@@ -1458,7 +1458,15 @@ class Manager::OpenStreamAction final : public Manager::BaseAction {
   }
 
   virtual void Complete(Listener* aListener, ErrorResult&& aRv) override {
-    mResolver(std::move(mBodyStream));
+    if (aRv.Failed()) {
+      // Ignore the reason for fail and just pass a null input stream to let it
+      // fail.
+      aRv.SuppressException();
+      mResolver(nullptr);
+    } else {
+      mResolver(std::move(mBodyStream));
+    }
+
     mResolver = nullptr;
   }
 

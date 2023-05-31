@@ -14,7 +14,7 @@ include "GMPMessageUtils.h";
 namespace mozilla {
 namespace gmp {
 
-intr protocol PGMPVideoEncoder
+intr refcounted protocol PGMPVideoEncoder
 {
   manager PGMPContent;
 child:

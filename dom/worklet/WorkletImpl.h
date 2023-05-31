@@ -7,6 +7,7 @@
 
 #include "MainThreadUtils.h"
 #include "mozilla/OriginAttributes.h"
+#include "mozilla/ipc/PBackgroundSharedTypes.h"
 
 class nsPIDOMWindowInner;
 class nsIPrincipal;
@@ -24,31 +25,15 @@ class WorkletThread;
 
 class WorkletLoadInfo {
  public:
-  WorkletLoadInfo(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal);
-  ~WorkletLoadInfo();
+  explicit WorkletLoadInfo(nsPIDOMWindowInner* aWindow);
 
   uint64_t OuterWindowID() const { return mOuterWindowID; }
   uint64_t InnerWindowID() const { return mInnerWindowID; }
-
-  const OriginAttributes& OriginAttributesRef() const {
-    return mOriginAttributes;
-  }
-
-  nsIPrincipal* Principal() const {
-    MOZ_ASSERT(NS_IsMainThread());
-    return mPrincipal;
-  }
 
  private:
   // Modified only in constructor.
   uint64_t mOuterWindowID;
   const uint64_t mInnerWindowID;
-  const OriginAttributes mOriginAttributes;
-  // Accessed on only worklet parent thread.
-  nsCOMPtr<nsIPrincipal> mPrincipal;
-
-  friend class WorkletImpl;
-  friend class WorkletThread;
 };
 
 /**
@@ -69,6 +54,11 @@ class WorkletImpl {
 
   virtual nsresult SendControlMessage(already_AddRefed<nsIRunnable> aRunnable);
 
+  nsIPrincipal* Principal() const {
+    MOZ_ASSERT(NS_IsMainThread());
+    return mPrincipal;
+  }
+
   void NotifyWorkletFinished();
 
   // Execution thread only.
@@ -77,6 +67,10 @@ class WorkletImpl {
   // Any thread.
 
   const WorkletLoadInfo& LoadInfo() const { return mWorkletLoadInfo; }
+  const OriginAttributes& OriginAttributesRef() const {
+    return mPrincipalInfo.get_NullPrincipalInfo().attrs();
+  }
+  const ipc::PrincipalInfo& PrincipalInfo() const { return mPrincipalInfo; }
 
  protected:
   WorkletImpl(nsPIDOMWindowInner* aWindow, nsIPrincipal* aPrincipal);
@@ -84,9 +78,12 @@ class WorkletImpl {
 
   virtual already_AddRefed<dom::WorkletGlobalScope> ConstructGlobalScope() = 0;
 
-  // The only WorkletLoadInfo member modified is mPrincipal which is accessed
-  // on only the parent thread.
-  WorkletLoadInfo mWorkletLoadInfo;
+  // Modified only in constructor.
+  ipc::PrincipalInfo mPrincipalInfo;
+  // Accessed on only worklet parent thread.
+  nsCOMPtr<nsIPrincipal> mPrincipal;
+
+  const WorkletLoadInfo mWorkletLoadInfo;
 
   // Parent thread only.
   RefPtr<dom::WorkletThread> mWorkletThread;

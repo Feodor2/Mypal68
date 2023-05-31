@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGAnimatedAngle {
   [Constant]
   readonly attribute SVGAngle baseVal;

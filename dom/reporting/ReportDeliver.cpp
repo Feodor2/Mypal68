@@ -15,6 +15,7 @@
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIGlobalObject.h"
+#include "nsIXPConnect.h"
 #include "nsNetUtil.h"
 #include "nsStringStream.h"
 
@@ -193,9 +194,7 @@ void SendReport(ReportDeliver::ReportData& aReportData,
 
   // URL and fragments
   nsCOMPtr<nsIURI> uri;
-  rv = NS_NewURI(getter_AddRefs(uri),
-                 NS_ConvertUTF8toUTF16(aReportData.mEndpointURL), nullptr,
-                 nullptr);
+  rv = NS_NewURI(getter_AddRefs(uri), aReportData.mEndpointURL);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }

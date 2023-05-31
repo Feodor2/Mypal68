@@ -9,8 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
-[NoInterfaceObject]
-interface SVGFilterPrimitiveStandardAttributes {
+interface mixin SVGFilterPrimitiveStandardAttributes {
   [Constant]
   readonly attribute SVGAnimatedLength x;
   [Constant]

@@ -7,6 +7,7 @@
 #include "ActorsChild.h"
 #include "IPCBlobInputStreamThread.h"
 #include "LocalStorageCommon.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/ThreadEventQueue.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/ipc/BackgroundChild.h"
@@ -60,7 +61,7 @@ class NestedEventTargetWrapper final : public nsISerialEventTarget {
       : mNestedEventTarget(aNestedEventTarget), mDisconnected(false) {}
 
  private:
-  ~NestedEventTargetWrapper() {}
+  ~NestedEventTargetWrapper() = default;
 
   NS_DECL_THREADSAFE_ISUPPORTS
 
@@ -177,7 +178,7 @@ class RequestHelper final : public Runnable, public LSRequestChildCallback {
   nsresult StartAndReturnResponse(LSRequestResponse& aResponse);
 
  private:
-  ~RequestHelper() {}
+  ~RequestHelper() = default;
 
   nsresult Start();
 
@@ -243,8 +244,7 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
   MOZ_ASSERT(aWindow);
   MOZ_ASSERT(aStorage);
   MOZ_ASSERT(NextGenLocalStorageEnabled());
-  MOZ_ASSERT(nsContentUtils::StorageAllowedForWindow(aWindow) !=
-             nsContentUtils::StorageAccess::eDeny);
+  MOZ_ASSERT(StorageAllowedForWindow(aWindow) != StorageAccess::eDeny);
 
   nsCOMPtr<nsIScriptObjectPrincipal> sop = do_QueryInterface(aWindow);
   MOZ_ASSERT(sop);
@@ -259,7 +259,7 @@ nsresult LSObject::CreateForWindow(nsPIDOMWindowInner* aWindow,
     return NS_ERROR_FAILURE;
   }
 
-  if (nsContentUtils::IsSystemPrincipal(principal)) {
+  if (principal->IsSystemPrincipal()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
@@ -474,9 +474,16 @@ LSRequestChild* LSObject::StartRequest(nsIEventTarget* aMainEventTarget,
     return nullptr;
   }
 
-  LSRequestChild* actor = new LSRequestChild(aCallback);
+  LSRequestChild* actor = new LSRequestChild();
 
-  backgroundActor->SendPBackgroundLSRequestConstructor(actor, aParams);
+  if (!backgroundActor->SendPBackgroundLSRequestConstructor(actor, aParams)) {
+    return nullptr;
+  }
+
+  // Must set callback after calling SendPBackgroundLSRequestConstructor since
+  // it can be called synchronously when SendPBackgroundLSRequestConstructor
+  // fails.
+  actor->SetCallback(aCallback);
 
   return actor;
 }

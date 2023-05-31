@@ -25,21 +25,22 @@
 interface URI;
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-navigator-object
-[HeaderFile="Navigator.h"]
+[HeaderFile="Navigator.h",
+ Exposed=Window]
 interface Navigator {
   // objects implementing this interface also implement the interfaces given below
 };
-Navigator implements NavigatorID;
-Navigator implements NavigatorLanguage;
-Navigator implements NavigatorOnLine;
-Navigator implements NavigatorContentUtils;
-Navigator implements NavigatorStorageUtils;
-Navigator implements NavigatorConcurrentHardware;
-Navigator implements NavigatorStorage;
-Navigator implements NavigatorAutomationInformation;
+Navigator includes NavigatorID;
+Navigator includes NavigatorLanguage;
+Navigator includes NavigatorOnLine;
+Navigator includes NavigatorContentUtils;
+Navigator includes NavigatorStorageUtils;
+Navigator includes NavigatorConcurrentHardware;
+Navigator includes NavigatorStorage;
+Navigator includes NavigatorAutomationInformation;
+Navigator includes GPUProvider;
 
-[NoInterfaceObject, Exposed=(Window,Worker)]
-interface NavigatorID {
+interface mixin NavigatorID {
   // WebKit/Blink/Trident/Presto support this (hardcoded "Mozilla").
   [Constant, Cached, Throws]
   readonly attribute DOMString appCodeName; // constant "Mozilla"
@@ -59,8 +60,7 @@ interface NavigatorID {
   boolean taintEnabled(); // constant false
 };
 
-[NoInterfaceObject, Exposed=(Window,Worker)]
-interface NavigatorLanguage {
+interface mixin NavigatorLanguage {
 
   // These two attributes are cached because this interface is also implemented
   // by Workernavigator and this way we don't have to go back to the
@@ -73,13 +73,11 @@ interface NavigatorLanguage {
   readonly attribute sequence<DOMString> languages;
 };
 
-[NoInterfaceObject, Exposed=(Window,Worker)]
-interface NavigatorOnLine {
+interface mixin NavigatorOnLine {
   readonly attribute boolean onLine;
 };
 
-[NoInterfaceObject]
-interface NavigatorContentUtils {
+interface mixin NavigatorContentUtils {
   // content handler registration
   [Throws, ChromeOnly]
   void checkProtocolHandlerAllowed(DOMString scheme, URI handlerURI, URI documentURI);
@@ -94,14 +92,13 @@ interface NavigatorContentUtils {
   //void unregisterContentHandler(DOMString mimeType, DOMString url);
 };
 
-[SecureContext, NoInterfaceObject, Exposed=(Window,Worker)]
-interface NavigatorStorage {
-  [Func="mozilla::dom::DOMPrefs::dom_storageManager_enabled"]
+[SecureContext]
+interface mixin NavigatorStorage {
+  [Pref="dom.storageManager.enabled"]
   readonly attribute StorageManager storage;
 };
 
-[NoInterfaceObject]
-interface NavigatorStorageUtils {
+interface mixin NavigatorStorageUtils {
   // NOT IMPLEMENTED
   //void yieldForStorageUpdates();
 };
@@ -126,12 +123,11 @@ partial interface Navigator {
 };
 
 // http://www.w3.org/TR/geolocation-API/#geolocation_interface
-[NoInterfaceObject]
-interface NavigatorGeolocation {
+interface mixin NavigatorGeolocation {
   [Throws, Pref="geo.enabled"]
   readonly attribute Geolocation geolocation;
 };
-Navigator implements NavigatorGeolocation;
+Navigator includes NavigatorGeolocation;
 
 // http://www.w3.org/TR/battery-status/#navigatorbattery-interface
 partial interface Navigator {
@@ -193,6 +189,12 @@ partial interface Navigator {
   boolean javaEnabled();
 };
 
+// Addon manager bits
+partial interface Navigator {
+  [Throws, Func="mozilla::AddonManagerWebAPI::IsAPIEnabled"]
+  readonly attribute AddonManager mozAddonManager;
+};
+
 // NetworkInformation
 partial interface Navigator {
   [Throws, Pref="dom.netinfo.enabled"]
@@ -230,7 +232,7 @@ partial interface Navigator {
 // http://webaudio.github.io/web-midi-api/#requestmidiaccess
 partial interface Navigator {
   [Throws, Pref="dom.webmidi.enabled"]
-  Promise<MIDIAccess> requestMIDIAccess(optional MIDIOptions options);
+  Promise<MIDIAccess> requestMIDIAccess(optional MIDIOptions options = {});
 };
 
 callback NavigatorUserMediaSuccessCallback = void (MediaStream stream);
@@ -243,8 +245,7 @@ partial interface Navigator {
   // Deprecated. Use mediaDevices.getUserMedia instead.
   [Deprecated="NavigatorGetUserMedia", Throws,
    Func="Navigator::HasUserMediaSupport",
-   NeedsCallerType,
-   UseCounter]
+   NeedsCallerType]
   void mozGetUserMedia(MediaStreamConstraints constraints,
                        NavigatorUserMediaSuccessCallback successCallback,
                        NavigatorUserMediaErrorCallback errorCallback);
@@ -276,7 +277,7 @@ partial interface Navigator {
 };
 
 partial interface Navigator {
-  [Throws, Pref="beacon.enabled"]
+  [Throws]
   boolean sendBeacon(DOMString url,
                      optional BodyInit? data = null);
 };
@@ -298,8 +299,7 @@ partial interface Navigator {
                               sequence<MediaKeySystemConfiguration> supportedConfigurations);
 };
 
-[NoInterfaceObject, Exposed=(Window,Worker)]
-interface NavigatorConcurrentHardware {
+interface mixin NavigatorConcurrentHardware {
   readonly attribute unsigned long long hardwareConcurrency;
 };
 
@@ -310,8 +310,7 @@ partial interface Navigator {
 };
 
 // https://w3c.github.io/webdriver/webdriver-spec.html#interface
-[NoInterfaceObject]
-interface NavigatorAutomationInformation {
+interface mixin NavigatorAutomationInformation {
   [Pref="dom.webdriver.enabled"]
   readonly attribute boolean webdriver;
 };

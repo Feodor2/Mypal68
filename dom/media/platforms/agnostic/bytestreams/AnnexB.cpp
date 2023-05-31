@@ -34,7 +34,7 @@ Result<Ok, nsresult> AnnexB::ConvertSampleToAnnexB(
   BufferReader reader(aSample->Data(), aSample->Size());
 
   nsTArray<uint8_t> tmp;
-  ByteWriter writer(tmp);
+  ByteWriter<BigEndian> writer(tmp);
 
   while (reader.Remaining() >= 4) {
     uint32_t nalLen;
@@ -205,7 +205,30 @@ static Result<Ok, nsresult> FindStartCode(BufferReader& aBr,
   return Ok();
 }
 
-static Result<mozilla::Ok, nsresult> ParseNALUnits(ByteWriter& aBw,
+/* static */
+void AnnexB::ParseNALEntries(const Span<const uint8_t>& aSpan,
+                             nsTArray<AnnexB::NALEntry>& aEntries) {
+  BufferReader reader(aSpan.data(), aSpan.Length());
+  size_t startSize;
+  auto rv = FindStartCode(reader, startSize);
+  size_t startOffset = reader.Offset();
+  if (rv.isOk()) {
+    while (FindStartCode(reader, startSize).isOk()) {
+      int64_t offset = reader.Offset();
+      int64_t sizeNAL = offset - startOffset - startSize;
+      aEntries.AppendElement(AnnexB::NALEntry(startOffset, sizeNAL));
+      reader.Seek(startOffset);
+      reader.Read(sizeNAL + startSize);
+      startOffset = offset;
+    }
+  }
+  int64_t sizeNAL = reader.Remaining();
+  if (sizeNAL) {
+    aEntries.AppendElement(AnnexB::NALEntry(startOffset, sizeNAL));
+  }
+}
+
+static Result<mozilla::Ok, nsresult> ParseNALUnits(ByteWriter<BigEndian>& aBw,
                                                    BufferReader& aBr) {
   size_t startSize;
 
@@ -242,7 +265,7 @@ bool AnnexB::ConvertSampleToAVCC(mozilla::MediaRawData* aSample) {
   }
 
   nsTArray<uint8_t> nalu;
-  ByteWriter writer(nalu);
+  ByteWriter<BigEndian> writer(nalu);
   BufferReader reader(aSample->Data(), aSample->Size());
 
   if (ParseNALUnits(writer, reader).isErr()) {
@@ -280,7 +303,7 @@ Result<mozilla::Ok, nsresult> AnnexB::ConvertSampleTo4BytesAVCC(
     return Ok();
   }
   nsTArray<uint8_t> dest;
-  ByteWriter writer(dest);
+  ByteWriter<BigEndian> writer(dest);
   BufferReader reader(aSample->Data(), aSample->Size());
   while (reader.Remaining() > nalLenSize) {
     uint32_t nalLen;

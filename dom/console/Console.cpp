@@ -7,9 +7,9 @@
 #include "mozilla/dom/ConsoleBinding.h"
 #include "ConsoleCommon.h"
 
+#include "js/Array.h"  // JS::GetArrayLength, JS::NewArrayObject
 #include "mozilla/dom/BlobBinding.h"
 #include "mozilla/dom/Document.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/Exceptions.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FunctionBinding.h"
@@ -24,8 +24,9 @@
 #include "mozilla/dom/WorkletGlobalScope.h"
 #include "mozilla/dom/WorkletImpl.h"
 #include "mozilla/dom/WorkletThread.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Maybe.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_devtools.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsGlobalWindow.h"
@@ -39,12 +40,10 @@
 #include "mozilla/TimestampTimelineMarker.h"
 
 #include "nsIConsoleAPIStorage.h"
-#include "nsIDOMWindowUtils.h"
 #include "nsIException.h"  // for nsIStackFrame
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsILoadContext.h"
 #include "nsISensitiveInfoHiddenURI.h"
-#include "nsIServiceManager.h"
 #include "nsISupportsPrimitives.h"
 #include "nsIWebNavigation.h"
 #include "nsIXPConnect.h"
@@ -281,8 +280,7 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
   bool CustomWriteHandler(JSContext* aCx, JSStructuredCloneWriter* aWriter,
                           JS::Handle<JSObject*> aObj) override {
     RefPtr<Blob> blob;
-    if (NS_SUCCEEDED(UNWRAP_OBJECT(Blob, aObj, blob)) &&
-        blob->Impl()->MayBeClonedToOtherThreads()) {
+    if (NS_SUCCEEDED(UNWRAP_OBJECT(Blob, aObj, blob))) {
       if (NS_WARN_IF(!JS_WriteUint32Pair(aWriter, CONSOLE_TAG_BLOB,
                                          mClonedData.mBlobs.Length()))) {
         return false;
@@ -326,7 +324,7 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
     JS::Rooted<JSObject*> argumentsObj(aCx, &argumentsValue.toObject());
 
     uint32_t length;
-    if (!JS_GetArrayLength(aCx, argumentsObj, &length)) {
+    if (!JS::GetArrayLength(aCx, argumentsObj, &length)) {
       return;
     }
 
@@ -355,7 +353,7 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
     ConsoleCommon::ClearException ce(aCx);
 
     JS::Rooted<JSObject*> arguments(
-        aCx, JS_NewArrayObject(aCx, aArguments.Length()));
+        aCx, JS::NewArrayObject(aCx, aArguments.Length()));
     if (NS_WARN_IF(!arguments)) {
       return false;
     }
@@ -400,7 +398,7 @@ class ConsoleRunnable : public StructuredCloneHolderBase {
     }
 
     uint32_t length;
-    if (!JS_GetArrayLength(aCx, argumentsObj, &length)) {
+    if (!JS::GetArrayLength(aCx, argumentsObj, &length)) {
       return;
     }
 
@@ -501,8 +499,8 @@ class ConsoleCallDataWorkletRunnable final : public ConsoleWorkletRunnable {
   void RunOnMainThread() override {
     AutoSafeJSContext cx;
 
-    JSObject* sandbox = mConsoleData->GetOrCreateSandbox(
-        cx, mWorkletImpl->LoadInfo().Principal());
+    JSObject* sandbox =
+        mConsoleData->GetOrCreateSandbox(cx, mWorkletImpl->Principal());
     JS::Rooted<JSObject*> global(cx, sandbox);
     if (NS_WARN_IF(!global)) {
       return;
@@ -639,8 +637,6 @@ class ConsoleWorkerRunnable : public WorkerProxyToMainThreadRunnable,
   bool ForMessaging() const override { return true; }
 
   RefPtr<MainThreadConsoleData> mConsoleData;
-
-  ConsoleStructuredCloneData mClonedData;
 };
 
 // This runnable appends a CallData object into the Console queue running on
@@ -732,8 +728,8 @@ class ConsoleProfileWorkletRunnable final : public ConsoleWorkletRunnable {
 
     AutoSafeJSContext cx;
 
-    JSObject* sandbox = mConsoleData->GetOrCreateSandbox(
-        cx, mWorkletImpl->LoadInfo().Principal());
+    JSObject* sandbox =
+        mConsoleData->GetOrCreateSandbox(cx, mWorkletImpl->Principal());
     JS::Rooted<JSObject*> global(cx, sandbox);
     if (NS_WARN_IF(!global)) {
       return;
@@ -785,7 +781,7 @@ class ConsoleProfileWorkerRunnable final : public ConsoleWorkerRunnable {
   nsString mAction;
 };
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(Console)
+NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(Console)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Console)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
@@ -1320,7 +1316,7 @@ void Console::MethodInternal(JSContext* aCx, MethodName aMethodName,
       callData->SetAddonId(principal);
 
 #ifdef DEBUG
-      if (!nsContentUtils::IsSystemPrincipal(principal)) {
+      if (!principal->IsSystemPrincipal()) {
         nsCOMPtr<nsIWebNavigation> webNav = do_GetInterface(mGlobal);
         if (webNav) {
           nsCOMPtr<nsILoadContext> loadContext = do_QueryInterface(webNav);
@@ -1337,7 +1333,7 @@ void Console::MethodInternal(JSContext* aCx, MethodName aMethodName,
   } else if (WorkletThread::IsOnWorkletThread()) {
     nsCOMPtr<WorkletGlobalScope> global = do_QueryInterface(mGlobal);
     MOZ_ASSERT(global);
-    oa = global->Impl()->LoadInfo().OriginAttributesRef();
+    oa = global->Impl()->OriginAttributesRef();
   } else {
     WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(workerPrivate);

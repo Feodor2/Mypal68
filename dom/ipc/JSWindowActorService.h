@@ -49,7 +49,7 @@ class JSWindowActorProtocol final : public nsIObserver,
       ErrorResult& aRv);
 
   struct Sided {
-    nsCString mModuleURI;
+    Maybe<nsCString> mModuleURI;
   };
 
   struct ParentSide : public Sided {};

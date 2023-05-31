@@ -5,7 +5,7 @@
 #include "mozilla/dom/ChannelMergerNode.h"
 #include "mozilla/dom/ChannelMergerNodeBinding.h"
 #include "AudioNodeEngine.h"
-#include "AudioNodeStream.h"
+#include "AudioNodeTrack.h"
 
 namespace mozilla {
 namespace dom {
@@ -17,10 +17,12 @@ class ChannelMergerNodeEngine final : public AudioNodeEngine {
     MOZ_ASSERT(NS_IsMainThread());
   }
 
-  void ProcessBlocksOnPorts(AudioNodeStream* aStream,
-                            const OutputChunks& aInput, OutputChunks& aOutput,
+  void ProcessBlocksOnPorts(AudioNodeTrack* aTrack,
+                            Span<const AudioBlock> aInput,
+                            Span<AudioBlock> aOutput,
                             bool* aFinished) override {
-    MOZ_ASSERT(aInput.Length() >= 1, "Should have one or more input ports");
+    MOZ_ASSERT(aInput.Length() == InputCount());
+    MOZ_ASSERT(aOutput.Length() == 1, "Should have only one output port");
 
     // Get the number of output channels, and allocate it
     size_t channelCount = InputCount();
@@ -57,9 +59,9 @@ ChannelMergerNode::ChannelMergerNode(AudioContext* aContext,
     : AudioNode(aContext, 1, ChannelCountMode::Explicit,
                 ChannelInterpretation::Speakers),
       mInputCount(aInputCount) {
-  mStream = AudioNodeStream::Create(aContext, new ChannelMergerNodeEngine(this),
-                                    AudioNodeStream::NO_STREAM_FLAGS,
-                                    aContext->Graph());
+  mTrack =
+      AudioNodeTrack::Create(aContext, new ChannelMergerNodeEngine(this),
+                             AudioNodeTrack::NO_TRACK_FLAGS, aContext->Graph());
 }
 
 /* static */

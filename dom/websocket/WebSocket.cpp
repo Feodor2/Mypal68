@@ -9,6 +9,7 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "mozilla/Atomics.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/net/WebSocketChannel.h"
 #include "mozilla/dom/File.h"
@@ -16,6 +17,7 @@
 #include "mozilla/dom/MessageEventBinding.h"
 #include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/dom/nsCSPUtils.h"
+#include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/WorkerPrivate.h"
@@ -26,10 +28,8 @@
 #include "mozilla/LoadInfo.h"
 #include "nsGlobalWindow.h"
 #include "nsIScriptGlobalObject.h"
-#include "nsIDOMWindow.h"
 #include "mozilla/dom/Document.h"
 #include "nsXPCOM.h"
-#include "nsIXPConnect.h"
 #include "nsContentUtils.h"
 #include "nsError.h"
 #include "nsICookieSettings.h"
@@ -43,7 +43,6 @@
 #include "nsIConsoleService.h"
 #include "mozilla/dom/CloseEvent.h"
 #include "mozilla/net/WebSocketEventService.h"
-#include "nsICryptoHash.h"
 #include "nsJSUtils.h"
 #include "nsIScriptError.h"
 #include "nsNetUtil.h"
@@ -141,8 +140,7 @@ class WebSocketImpl final : public nsIInterfaceRequestor,
 
   nsresult ConsoleError();
   void PrintErrorOnConsole(const char* aBundleURI, const char* aError,
-                           const char16_t** aFormatStrings,
-                           uint32_t aFormatStringsLen);
+                           nsTArray<nsString>&& aFormatStrings);
 
   nsresult DoOnMessageAvailable(const nsACString& aMsg, bool isBinary);
 
@@ -296,20 +294,17 @@ class PrintErrorOnConsoleRunnable final : public WorkerMainThreadRunnable {
  public:
   PrintErrorOnConsoleRunnable(WebSocketImpl* aImpl, const char* aBundleURI,
                               const char* aError,
-                              const char16_t** aFormatStrings,
-                              uint32_t aFormatStringsLen)
+                              nsTArray<nsString>&& aFormatStrings)
       : WorkerMainThreadRunnable(
             aImpl->mWorkerRef->Private(),
             NS_LITERAL_CSTRING("WebSocket :: print error on console")),
         mImpl(aImpl),
         mBundleURI(aBundleURI),
         mError(aError),
-        mFormatStrings(aFormatStrings),
-        mFormatStringsLen(aFormatStringsLen) {}
+        mFormatStrings(std::move(aFormatStrings)) {}
 
   bool MainThreadRun() override {
-    mImpl->PrintErrorOnConsole(mBundleURI, mError, mFormatStrings,
-                               mFormatStringsLen);
+    mImpl->PrintErrorOnConsole(mBundleURI, mError, std::move(mFormatStrings));
     return true;
   }
 
@@ -319,16 +314,14 @@ class PrintErrorOnConsoleRunnable final : public WorkerMainThreadRunnable {
 
   const char* mBundleURI;
   const char* mError;
-  const char16_t** mFormatStrings;
-  uint32_t mFormatStringsLen;
+  nsTArray<nsString> mFormatStrings;
 };
 
 }  // namespace
 
 void WebSocketImpl::PrintErrorOnConsole(const char* aBundleURI,
                                         const char* aError,
-                                        const char16_t** aFormatStrings,
-                                        uint32_t aFormatStringsLen) {
+                                        nsTArray<nsString>&& aFormatStrings) {
   // This method must run on the main thread.
 
   if (!NS_IsMainThread()) {
@@ -336,7 +329,7 @@ void WebSocketImpl::PrintErrorOnConsole(const char* aBundleURI,
 
     RefPtr<PrintErrorOnConsoleRunnable> runnable =
         new PrintErrorOnConsoleRunnable(this, aBundleURI, aError,
-                                        aFormatStrings, aFormatStringsLen);
+                                        std::move(aFormatStrings));
     ErrorResult rv;
     runnable->Dispatch(Killing, rv);
     // XXXbz this seems totally broken.  We should be propagating this out, but
@@ -366,9 +359,8 @@ void WebSocketImpl::PrintErrorOnConsole(const char* aBundleURI,
 
   // Localize the error message
   nsAutoString message;
-  if (aFormatStrings) {
-    rv = strBundle->FormatStringFromName(aError, aFormatStrings,
-                                         aFormatStringsLen, message);
+  if (!aFormatStrings.IsEmpty()) {
+    rv = strBundle->FormatStringFromName(aError, aFormatStrings, message);
   } else {
     rv = strBundle->GetStringFromName(aError, message);
   }
@@ -528,17 +520,15 @@ nsresult WebSocketImpl::ConsoleError() {
     }
   }
 
-  NS_ConvertUTF8toUTF16 specUTF16(mURI);
-  const char16_t* formatStrings[] = {specUTF16.get()};
+  nsTArray<nsString> formatStrings;
+  CopyUTF8toUTF16(mURI, *formatStrings.AppendElement());
 
   if (mWebSocket->ReadyState() < WebSocket::OPEN) {
     PrintErrorOnConsole("chrome://global/locale/appstrings.properties",
-                        "connectionFailure", formatStrings,
-                        ArrayLength(formatStrings));
+                        "connectionFailure", std::move(formatStrings));
   } else {
     PrintErrorOnConsole("chrome://global/locale/appstrings.properties",
-                        "netInterrupt", formatStrings,
-                        ArrayLength(formatStrings));
+                        "netInterrupt", std::move(formatStrings));
   }
   /// todo some specific errors - like for message too large
   return NS_OK;
@@ -1185,7 +1175,8 @@ class AsyncOpenRunnable final : public WebSocketMainThreadRunnable {
     }
 
     uint64_t windowID = 0;
-    nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetScriptableTop();
+    nsCOMPtr<nsPIDOMWindowOuter> topWindow =
+        aWindow->GetInProcessScriptableTop();
     nsCOMPtr<nsPIDOMWindowInner> topInner;
     if (topWindow) {
       topInner = topWindow->GetCurrentInnerWindow();
@@ -1407,7 +1398,8 @@ already_AddRefed<WebSocket> WebSocket::ConstructorCommon(
     }
 
     uint64_t windowID = 0;
-    nsCOMPtr<nsPIDOMWindowOuter> topWindow = outerWindow->GetScriptableTop();
+    nsCOMPtr<nsPIDOMWindowOuter> topWindow =
+        outerWindow->GetInProcessScriptableTop();
     nsCOMPtr<nsPIDOMWindowInner> topInner;
     if (topWindow) {
       topInner = topWindow->GetCurrentInnerWindow();
@@ -1565,7 +1557,7 @@ nsresult WebSocketImpl::Init(JSContext* aCx, nsIPrincipal* aLoadingPrincipal,
   }
 
   mPrivateBrowsing = !!aPrincipal->OriginAttributesRef().mPrivateBrowsingId;
-  mIsChromeContext = nsContentUtils::IsSystemPrincipal(aPrincipal);
+  mIsChromeContext = aPrincipal->IsSystemPrincipal();
 
   // parses the url
   rv = ParseURL(aURL);
@@ -1622,7 +1614,8 @@ nsresult WebSocketImpl::Init(JSContext* aCx, nsIPrincipal* aLoadingPrincipal,
   if (!mIsServerSide && !mSecure && originDoc &&
       originDoc->GetUpgradeInsecureRequests(false)) {
     // let's use the old specification before the upgrade for logging
-    NS_ConvertUTF8toUTF16 reportSpec(mURI);
+    AutoTArray<nsString, 2> params;
+    CopyUTF8toUTF16(mURI, *params.AppendElement());
 
     // upgrade the request from ws:// to wss:// and mark as secure
     mURI.ReplaceSubstring("ws://", "wss://");
@@ -1631,8 +1624,8 @@ nsresult WebSocketImpl::Init(JSContext* aCx, nsIPrincipal* aLoadingPrincipal,
     }
     mSecure = true;
 
-    const char16_t* params[] = {reportSpec.get(), u"wss"};
-    CSP_LogLocalizedStr("upgradeInsecureRequest", params, ArrayLength(params),
+    params.AppendElement(NS_LITERAL_STRING("wss"));
+    CSP_LogLocalizedStr("upgradeInsecureRequest", params,
                         EmptyString(),  // aSourceFile
                         EmptyString(),  // aScriptSample
                         0,              // aLineNumber
@@ -1645,20 +1638,11 @@ nsresult WebSocketImpl::Init(JSContext* aCx, nsIPrincipal* aLoadingPrincipal,
   // Don't allow https:// to open ws://
   if (!mIsServerSide && !mSecure &&
       !Preferences::GetBool("network.websocket.allowInsecureFromHTTPS",
-                            false)) {
-    nsCOMPtr<nsIURI> originURI;
-    if (aLoadingPrincipal) {
-      aLoadingPrincipal->GetURI(getter_AddRefs(originURI));
-    }
-
-    if (originURI) {
-      bool originIsHttps = false;
-      rv = originURI->SchemeIs("https", &originIsHttps);
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      if (originIsHttps) {
-        return NS_ERROR_DOM_SECURITY_ERR;
-      }
+                            false) &&
+      !nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackHost(
+          mAsciiHost)) {
+    if (aLoadingPrincipal->SchemeIs("https")) {
+      return NS_ERROR_DOM_SECURITY_ERR;
     }
   }
 
@@ -1681,11 +1665,11 @@ nsresult WebSocketImpl::Init(JSContext* aCx, nsIPrincipal* aLoadingPrincipal,
   return NS_OK;
 }
 
-nsresult WebSocketImpl::AsyncOpen(nsIPrincipal* aPrincipal,
-                                  uint64_t aInnerWindowID,
-                                  nsITransportProvider* aTransportProvider,
-                                  const nsACString& aNegotiatedExtensions,
-                                  UniquePtr<SerializedStackHolder> aOriginStack) {
+nsresult WebSocketImpl::AsyncOpen(
+    nsIPrincipal* aPrincipal, uint64_t aInnerWindowID,
+    nsITransportProvider* aTransportProvider,
+    const nsACString& aNegotiatedExtensions,
+    UniquePtr<SerializedStackHolder> aOriginStack) {
   MOZ_ASSERT(NS_IsMainThread(), "Not running on main thread");
   MOZ_ASSERT_IF(!aTransportProvider, aNegotiatedExtensions.IsEmpty());
 
@@ -2725,7 +2709,7 @@ nsresult WebSocketImpl::GetLoadingPrincipal(nsIPrincipal** aPrincipal) {
     }
 
     nsCOMPtr<nsPIDOMWindowOuter> parentWindow =
-        innerWindow->GetScriptableParent();
+        innerWindow->GetInProcessScriptableParent();
     if (NS_WARN_IF(!parentWindow)) {
       return NS_ERROR_DOM_SECURITY_ERR;
     }
@@ -2750,7 +2734,8 @@ nsresult WebSocketImpl::GetLoadingPrincipal(nsIPrincipal** aPrincipal) {
         break;
       }
 
-      if (parentWindow->GetScriptableTop() == innerWindow->GetScriptableTop()) {
+      if (parentWindow->GetInProcessScriptableTop() ==
+          innerWindow->GetInProcessScriptableTop()) {
         break;
       }
 

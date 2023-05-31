@@ -3,6 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface WindowRoot : EventTarget {
 };

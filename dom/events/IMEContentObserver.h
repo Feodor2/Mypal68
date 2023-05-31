@@ -55,8 +55,6 @@ class IMEContentObserver final : public nsStubMutationObserver,
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
-  NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTEWILLCHANGE
-  NS_DECL_NSIMUTATIONOBSERVER_ATTRIBUTECHANGED
   NS_DECL_NSIREFLOWOBSERVER
 
   // nsIScrollObserver
@@ -482,7 +480,6 @@ class IMEContentObserver final : public nsStubMutationObserver,
   EventStateManager* mESM;
 
   const IMENotificationRequests* mIMENotificationRequests;
-  uint32_t mPreAttrChangeLength;
   uint32_t mSuppressNotifications;
   int64_t mPreCharacterDataChangeLength;
 

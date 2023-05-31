@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGFETurbulenceElement : SVGElement {
 
   // Turbulence Types
@@ -35,4 +36,4 @@ interface SVGFETurbulenceElement : SVGElement {
   readonly attribute SVGAnimatedEnumeration type;
 };
 
-SVGFETurbulenceElement implements SVGFilterPrimitiveStandardAttributes;
+SVGFETurbulenceElement includes SVGFilterPrimitiveStandardAttributes;

@@ -20,7 +20,6 @@
 #include "nsGkAtoms.h"
 #include "nsCOMArray.h"
 #include "nsNameSpaceManager.h"
-#include "nsNodeUtils.h"
 #include "nsTextNode.h"
 #include "mozAutoDocUpdate.h"
 #include "nsWrapperCacheInlines.h"
@@ -92,8 +91,7 @@ NS_INTERFACE_TABLE_HEAD(Attr)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_CYCLE_COLLECTING_ADDREF(Attr)
-NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE(
-    Attr, nsNodeUtils::LastRelease(this))
+NS_IMPL_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE(Attr, LastRelease())
 
 void Attr::SetMap(nsDOMAttributeMap* aMap) {
   if (mAttrMap && !aMap && sInitialized) {
@@ -180,7 +178,7 @@ nsresult Attr::Clone(dom::NodeInfo* aNodeInfo, nsINode** aResult) const {
   return NS_OK;
 }
 
-already_AddRefed<nsIURI> Attr::GetBaseURI(bool aTryUseXHRDocBaseURI) const {
+nsIURI* Attr::GetBaseURI(bool aTryUseXHRDocBaseURI) const {
   Element* parent = GetElement();
 
   return parent ? parent->GetBaseURI(aTryUseXHRDocBaseURI) : nullptr;

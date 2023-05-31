@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from WebIDL import IDLImplementsStatement
+from WebIDL import IDLIncludesStatement
 import os
 from collections import defaultdict
 
@@ -13,6 +13,9 @@ class DescriptorProvider:
     """
     A way of getting descriptors for interface names.  Subclasses must
     have a getDescriptor method callable with the interface name only.
+
+    Subclasses must also have a getConfig() method that returns a
+    Configuration.
     """
     def __init__(self):
         pass
@@ -46,68 +49,65 @@ class Configuration(DescriptorProvider):
         self.descriptors = []
         self.interfaces = {}
         self.descriptorsByName = {}
-        self.optimizedOutDescriptorNames = set()
+        self.dictionariesByName = {}
         self.generatedEvents = generatedEvents
         self.maxProtoChainLength = 0
         for thing in parseData:
-            if isinstance(thing, IDLImplementsStatement):
+            if isinstance(thing, IDLIncludesStatement):
                 # Our build system doesn't support dep build involving
-                # addition/removal of "implements" statements that appear in a
+                # addition/removal of "includes" statements that appear in a
                 # different .webidl file than their LHS interface.  Make sure we
                 # don't have any of those.  See similar block below for partial
                 # interfaces!
                 #
                 # But whitelist a RHS that is LegacyQueryInterface,
                 # since people shouldn't be adding any of those.
-                if (thing.implementor.filename() != thing.filename() and
-                    thing.implementee.identifier.name != "LegacyQueryInterface"):
+                if (thing.interface.filename() != thing.filename() and
+                    thing.mixin.identifier.name != "LegacyQueryInterface"):
                     raise TypeError(
                         "The binding build system doesn't really support "
-                        "'implements' statements which don't appear in the "
+                        "'includes' statements which don't appear in the "
                         "file in which the left-hand side of the statement is "
                         "defined.  Don't do this unless your right-hand side "
                         "is LegacyQueryInterface.\n"
                         "%s\n"
                         "%s" %
-                        (thing.location, thing.implementor.location))
+                        (thing.location, thing.interface.location))
 
             assert not thing.isType()
 
-            if not thing.isInterface() and not thing.isNamespace():
+            if (not thing.isInterface() and not thing.isNamespace() and
+                not thing.isInterfaceMixin()):
                 continue
-            iface = thing
             # Our build system doesn't support dep builds involving
-            # addition/removal of partial interfaces that appear in a different
-            # .webidl file than the interface they are extending.  Make sure we
-            # don't have any of those.  See similar block above for "implements"
+            # addition/removal of partial interfaces/namespaces/mixins that
+            # appear in a different .webidl file than the
+            # interface/namespace/mixin they are extending.  Make sure we don't
+            # have any of those.  See similar block above for "includes"
             # statements!
-            if not iface.isExternal():
-                for partialIface in iface.getPartialInterfaces():
-                    if (partialIface.filename() != iface.filename() and
-                        # Unfortunately, NavigatorProperty does exactly the
-                        # thing we're trying to prevent here.  I'm not sure how
-                        # to deal with that, short of effectively requiring a
-                        # clobber when NavigatorProperty is added/removed and
-                        # whitelisting the things it outputs here as
-                        # restrictively as I can.
-                        (partialIface.identifier.name != "Navigator" or
-                         len(partialIface.members) != 1 or
-                         partialIface.members[0].location != partialIface.location or
-                         partialIface.members[0].identifier.location.filename() !=
-                           "<builtin>")):
+            if not thing.isExternal():
+                for partial in thing.getPartials():
+                    if partial.filename() != thing.filename():
                         raise TypeError(
                             "The binding build system doesn't really support "
-                            "partial interfaces which don't appear in the "
-                            "file in which the interface they are extending is "
+                            "partial interfaces/namespaces/mixins which don't "
+                            "appear in the file in which the "
+                            "interface/namespace/mixin they are extending is "
                             "defined.  Don't do this.\n"
                             "%s\n"
                             "%s" %
-                            (partialIface.location, iface.location))
+                            (partial.location, thing.location))
+
+            # The rest of the logic doesn't apply to mixins.
+            if thing.isInterfaceMixin():
+                continue
+
+            iface = thing
+            if not iface.isExternal():
                 if not (iface.getExtendedAttribute("ChromeOnly") or
                         iface.getExtendedAttribute("Func") == ["IsChromeOrXBL"] or
                         iface.getExtendedAttribute("Func") == ["nsContentUtils::IsCallerChromeOrFuzzingEnabled"] or
-                        not (iface.hasInterfaceObject() or
-                             iface.isNavigatorProperty()) or
+                        not iface.hasInterfaceObject() or
                         isInWebIDLRoot(iface.filename())):
                     raise TypeError(
                         "Interfaces which are exposed to the web may only be "
@@ -116,18 +116,12 @@ class Configuration(DescriptorProvider):
                         "if you do not want it exposed to the web.\n"
                         "%s" %
                         (webRoots, iface.location))
+
             self.interfaces[iface.identifier.name] = iface
-            if iface.identifier.name not in config:
-                # Completely skip consequential interfaces with no descriptor
-                # if they have no interface object because chances are we
-                # don't need to do anything interesting with them.
-                if iface.isConsequential() and not iface.hasInterfaceObject():
-                    self.optimizedOutDescriptorNames.add(iface.identifier.name)
-                    continue
-                entry = {}
-            else:
-                entry = config[iface.identifier.name]
+
+            entry = config.get(iface.identifier.name, {})
             assert not isinstance(entry, list)
+
             desc = Descriptor(self, iface, entry)
             self.descriptors.append(desc)
             # Setting up descriptorsByName while iterating through interfaces
@@ -148,6 +142,8 @@ class Configuration(DescriptorProvider):
         self.enums = [e for e in parseData if e.isEnum()]
 
         self.dictionaries = [d for d in parseData if d.isDictionary()]
+        self.dictionariesByName = { d.identifier.name: d for d in self.dictionaries }
+
         self.callbacks = [c for c in parseData if
                           c.isCallback() and not c.isInterface()]
 
@@ -164,15 +160,7 @@ class Configuration(DescriptorProvider):
         self.unionsPerFilename = defaultdict(list)
 
         for (t, _) in getAllTypes(self.descriptors, self.dictionaries, self.callbacks):
-            while True:
-                if t.isRecord():
-                    t = t.inner
-                elif t.unroll() != t:
-                    t = t.unroll()
-                elif t.isPromise():
-                    t = t.promiseInnerType()
-                else:
-                    break
+            t = findInnermostType(t)
             if t.isUnion():
                 filenamesForUnion = self.filenamesPerUnion[t.name]
                 if t.filename() not in filenamesForUnion:
@@ -211,6 +199,14 @@ class Configuration(DescriptorProvider):
                     self.unionsPerFilename[uniqueFilenameForUnion].append(t)
                     filenamesForUnion.add(t.filename())
 
+        for d in getDictionariesConvertedToJS(self.descriptors, self.dictionaries,
+                                              self.callbacks):
+            d.needsConversionToJS = True
+
+        for d in getDictionariesConvertedFromJS(self.descriptors, self.dictionaries,
+                                                self.callbacks):
+            d.needsConversionFromJS = True
+
     def getInterface(self, ifname):
         return self.interfaces[ifname]
 
@@ -219,7 +215,7 @@ class Configuration(DescriptorProvider):
         curr = self.descriptors
         # Collect up our filters, because we may have a webIDLFile filter that
         # we always want to apply first.
-        tofilter = []
+        tofilter = [ (lambda x: x.interface.isExternal(), False) ]
         for key, val in filters.iteritems():
             if key == 'webIDLFile':
                 # Special-case this part to make it fast, since most of our
@@ -229,21 +225,15 @@ class Configuration(DescriptorProvider):
                 curr = self.descriptorsByFile.get(val, [])
                 continue
             elif key == 'hasInterfaceObject':
-                getter = lambda x: (not x.interface.isExternal() and
-                                    x.interface.hasInterfaceObject())
+                getter = lambda x: x.interface.hasInterfaceObject()
             elif key == 'hasInterfacePrototypeObject':
-                getter = lambda x: (not x.interface.isExternal() and
-                                    x.interface.hasInterfacePrototypeObject())
+                getter = lambda x: x.interface.hasInterfacePrototypeObject()
             elif key == 'hasInterfaceOrInterfacePrototypeObject':
                 getter = lambda x: x.hasInterfaceOrInterfacePrototypeObject()
             elif key == 'isCallback':
                 getter = lambda x: x.interface.isCallback()
-            elif key == 'isExternal':
-                getter = lambda x: x.interface.isExternal()
             elif key == 'isJSImplemented':
                 getter = lambda x: x.interface.isJSImplemented()
-            elif key == 'isNavigatorProperty':
-                getter = lambda x: x.interface.isNavigatorProperty()
             elif key == 'isExposedInAnyWorker':
                 getter = lambda x: x.interface.isExposedInAnyWorker()
             elif key == 'isExposedInWorkerDebugger':
@@ -252,6 +242,8 @@ class Configuration(DescriptorProvider):
                 getter = lambda x: x.interface.isExposedInAnyWorklet()
             elif key == 'isExposedInWindow':
                 getter = lambda x: x.interface.isExposedInWindow()
+            elif key == 'isSerializable':
+                getter = lambda x: x.interface.isSerializable()
             else:
                 # Have to watch out: just closing over "key" is not enough,
                 # since we're about to mutate its value
@@ -282,13 +274,19 @@ class Configuration(DescriptorProvider):
         if d:
             return d
 
-        if interfaceName in self.optimizedOutDescriptorNames:
-            raise NoSuchDescriptorError(
-                "No descriptor for '%s', which is a mixin ([NoInterfaceObject] "
-                "and a consequential interface) without an explicit "
-                "Bindings.conf annotation." % interfaceName)
-
         raise NoSuchDescriptorError("For " + interfaceName + " found no matches")
+
+    def getConfig(self):
+        return self
+
+    def getDictionariesConvertibleToJS(self):
+        return filter(lambda d: d.needsConversionToJS, self.dictionaries)
+
+    def getDictionariesConvertibleFromJS(self):
+        return filter(lambda d: d.needsConversionFromJS, self.dictionaries)
+
+    def getDictionaryIfExists(self, dictionaryName):
+        return self.dictionariesByName.get(dictionaryName, None)
 
 
 class NoSuchDescriptorError(TypeError):
@@ -298,8 +296,6 @@ class NoSuchDescriptorError(TypeError):
 
 def methodReturnsJSObject(method):
     assert method.isMethod()
-    if method.returnsPromise():
-        return True
 
     for signature in method.signatures():
         returnType = signature[0]
@@ -401,10 +397,17 @@ class Descriptor(DescriptorProvider):
 
         # If we're concrete, we need to crawl our ancestor interfaces and mark
         # them as having a concrete descendant.
-        self.concrete = (not self.interface.isExternal() and
-                         not self.interface.isCallback() and
-                         not self.interface.isNamespace() and
-                         desc.get('concrete', True))
+        concreteDefault = (not self.interface.isExternal() and
+                           not self.interface.isCallback() and
+                           not self.interface.isNamespace() and
+                           # We're going to assume that leaf interfaces are
+                           # concrete; otherwise what's the point?  Also
+                           # interfaces with constructors had better be
+                           # concrete; otherwise how can you construct them?
+                           (not self.interface.hasChildInterfaces() or
+                            self.interface.ctor() is not None))
+
+        self.concrete = desc.get('concrete', concreteDefault)
         self.hasUnforgeableMembers = (self.concrete and
                                       any(MemberIsUnforgeable(m, self) for m in
                                           self.interface.members))
@@ -553,32 +556,28 @@ class Descriptor(DescriptorProvider):
             for attribute in ['implicitJSContext']:
                 addExtendedAttribute(attribute, desc.get(attribute, {}))
 
-        if self.interface.identifier.name == 'Navigator':
-            for m in self.interface.members:
-                if m.isAttr() and m.navigatorObjectGetter:
-                    # These getters call ConstructNavigatorObject to construct
-                    # the value, and ConstructNavigatorObject needs a JSContext.
-                    self.extendedAttributes['all'].setdefault(m.identifier.name, []).append('implicitJSContext')
-
-        self._binaryNames = desc.get('binaryNames', {})
-        self._binaryNames.setdefault('__legacycaller', 'LegacyCall')
-        self._binaryNames.setdefault('__stringifier', 'Stringify')
+        self._binaryNames = {}
 
         if not self.interface.isExternal():
-            def isTestInterface(iface):
-                return (iface.identifier.name in ["TestInterface",
-                                                  "TestJSImplInterface",
-                                                  "TestRenamedInterface"])
-
-            for member in self.interface.members:
-                if not member.isAttr() and not member.isMethod():
-                    continue
+            def maybeAddBinaryName(member):
                 binaryName = member.getExtendedAttribute("BinaryName")
                 if binaryName:
                     assert isinstance(binaryName, list)
                     assert len(binaryName) == 1
                     self._binaryNames.setdefault(member.identifier.name,
                                                  binaryName[0])
+            for member in self.interface.members:
+                if not member.isAttr() and not member.isMethod():
+                    continue
+                maybeAddBinaryName(member);
+
+            ctor = self.interface.ctor()
+            if ctor:
+                maybeAddBinaryName(ctor)
+
+        # Some default binary names for cases when nothing else got set.
+        self._binaryNames.setdefault('__legacycaller', 'LegacyCall')
+        self._binaryNames.setdefault('__stringifier', 'Stringify')
 
         # Build the prototype chain.
         self.prototypeChain = []
@@ -603,19 +602,11 @@ class Descriptor(DescriptorProvider):
         return self.getDescriptor(self.prototypeChain[-2]).name
 
     def hasInterfaceOrInterfacePrototypeObject(self):
-
-        # Forward-declared interfaces don't need either interface object or
-        # interface prototype object as they're going to use QI.
-        if self.interface.isExternal():
-            return False
-
-        return self.interface.hasInterfaceObject() or self.interface.hasInterfacePrototypeObject()
+        return (self.interface.hasInterfaceObject() or
+                self.interface.hasInterfacePrototypeObject())
 
     @property
     def hasNamedPropertiesObject(self):
-        if self.interface.isExternal():
-            return False
-
         return self.isGlobal() and self.supportsNamedProperties()
 
     def getExtendedAttributes(self, member, getter=False, setter=False):
@@ -661,9 +652,11 @@ class Descriptor(DescriptorProvider):
         if member.isMethod():
             # JSObject-returning [NewObject] methods must be fallible,
             # since they have to (fallibly) allocate the new JSObject.
-            if (member.getExtendedAttribute("NewObject") and
-                methodReturnsJSObject(member)):
-                throws = True
+            if member.getExtendedAttribute("NewObject"):
+                if member.returnsPromise():
+                    throws = True
+                elif methodReturnsJSObject(member):
+                    canOOM = True
             attrs = self.extendedAttributes['all'].get(name, [])
             maybeAppendInfallibleToAttrs(attrs, throws)
             maybeAppendCanOOMToAttrs(attrs, canOOM)
@@ -721,7 +714,7 @@ class Descriptor(DescriptorProvider):
     def isMaybeCrossOriginObject(self):
         # If we're isGlobal and have cross-origin members, we're a Window, and
         # that's not a cross-origin object.  The WindowProxy is.
-        return self.interface.hasCrossOriginMembers and not self.isGlobal()
+        return self.concrete and self.interface.hasCrossOriginMembers and not self.isGlobal()
 
     def needsHeaderInclude(self):
         """
@@ -773,8 +766,7 @@ class Descriptor(DescriptorProvider):
         Returns true if this is the primary interface for a global object
         of some sort.
         """
-        return (self.interface.getExtendedAttribute("Global") or
-                self.interface.getExtendedAttribute("PrimaryGlobal"))
+        return self.interface.getExtendedAttribute("Global")
 
     @property
     def namedPropertiesEnumerable(self):
@@ -792,8 +784,7 @@ class Descriptor(DescriptorProvider):
 
     @property
     def registersGlobalNamesOnWindow(self):
-        return (not self.interface.isExternal() and
-                self.interface.hasInterfaceObject() and
+        return (self.interface.hasInterfaceObject() and
                 self.interface.isExposedInWindow() and
                 self.register)
 
@@ -803,12 +794,18 @@ class Descriptor(DescriptorProvider):
         """
         return self.config.getDescriptor(interfaceName)
 
+    def getConfig(self):
+        return self.config
+
 
 # Some utility methods
-def getTypesFromDescriptor(descriptor):
+def getTypesFromDescriptor(descriptor, includeArgs=True, includeReturns=True):
     """
-    Get all argument and return types for all members of the descriptor
+    Get argument and/or return types for all members of the descriptor.  By
+    default returns all argument types (which includes types of writable
+    attributes) and all return types (which includes types of all attributes).
     """
+    assert(includeArgs or includeReturns) # Must want _something_.
     members = [m for m in descriptor.interface.members]
     if descriptor.interface.ctor():
         members.append(descriptor.interface.ctor())
@@ -818,29 +815,53 @@ def getTypesFromDescriptor(descriptor):
     for s in signatures:
         assert len(s) == 2
         (returnType, arguments) = s
-        types.append(returnType)
-        types.extend(a.type for a in arguments)
+        if includeReturns:
+            types.append(returnType)
+        if includeArgs:
+            types.extend(a.type for a in arguments)
 
-    types.extend(a.type for a in members if a.isAttr())
+    types.extend(a.type for a in members if
+                 (a.isAttr() and (includeReturns or
+                                  (includeArgs and not a.readonly))))
 
     if descriptor.interface.maplikeOrSetlikeOrIterable:
         maplikeOrSetlikeOrIterable = descriptor.interface.maplikeOrSetlikeOrIterable
-        if maplikeOrSetlikeOrIterable.hasKeyType():
-            types.append(maplikeOrSetlikeOrIterable.keyType)
-        if maplikeOrSetlikeOrIterable.hasValueType():
-            types.append(maplikeOrSetlikeOrIterable.valueType)
-    return types
-
-
-def getFlatTypes(types):
-    retval = set()
-    for type in types:
-        type = type.unroll()
-        if type.isUnion():
-            retval |= set(type.flatMemberTypes)
+        if maplikeOrSetlikeOrIterable.isMaplike():
+            # The things we expand into may or may not correctly indicate in
+            # their formal IDL types what things we have as return values.  For
+            # example, "keys" returns the moral equivalent of sequence<keyType>
+            # but just claims to return "object".  Similarly, "values" returns
+            # the moral equivalent of sequence<valueType> but claims to return
+            # "object".  And due to bug 1155340, "get" claims to return "any"
+            # instead of the right type.  So let's just manually work around
+            # that lack of specificity.  For our arguments, we already enforce
+            # the right types at the IDL level, so those will get picked up
+            # correctly.
+            assert maplikeOrSetlikeOrIterable.hasKeyType()
+            assert maplikeOrSetlikeOrIterable.hasValueType()
+            if includeReturns:
+                types.append(maplikeOrSetlikeOrIterable.keyType)
+                types.append(maplikeOrSetlikeOrIterable.valueType)
+        elif maplikeOrSetlikeOrIterable.isSetlike():
+            assert maplikeOrSetlikeOrIterable.hasKeyType()
+            assert maplikeOrSetlikeOrIterable.hasValueType()
+            assert maplikeOrSetlikeOrIterable.keyType == maplikeOrSetlikeOrIterable.valueType
+            # As in the maplike case, we don't always declare our return values
+            # quite correctly.
+            if includeReturns:
+                types.append(maplikeOrSetlikeOrIterable.keyType)
         else:
-            retval.add(type)
-    return retval
+            assert maplikeOrSetlikeOrIterable.isIterable()
+            # As in the maplike/setlike cases we don't do a good job of
+            # declaring our actual return types, while our argument types, if
+            # any, are declared fine.
+            if includeReturns:
+                if maplikeOrSetlikeOrIterable.hasKeyType():
+                    types.append(maplikeOrSetlikeOrIterable.keyType)
+                if maplikeOrSetlikeOrIterable.hasValueType():
+                    types.append(maplikeOrSetlikeOrIterable.valueType)
+
+    return types
 
 
 def getTypesFromDictionary(dictionary):
@@ -889,3 +910,131 @@ def iteratorNativeType(descriptor):
     iterableDecl = descriptor.interface.maplikeOrSetlikeOrIterable
     assert iterableDecl.isPairIterator()
     return "mozilla::dom::IterableIterator<%s>" % descriptor.nativeType
+
+
+def findInnermostType(t):
+    """
+    Find the innermost type of the given type, unwrapping Promise and Record
+    types, as well as everything that unroll() unwraps.
+    """
+    while True:
+        if t.isRecord():
+            t = t.inner
+        elif t.unroll() != t:
+            t = t.unroll()
+        elif t.isPromise():
+            t = t.promiseInnerType()
+        else:
+            return t
+
+
+def getDependentDictionariesFromDictionary(d):
+    """
+    Find all the dictionaries contained in the given dictionary, as ancestors or
+    members.  This returns a generator.
+    """
+    while d:
+        yield d
+        for member in d.members:
+            for next in getDictionariesFromType(member.type):
+                yield next
+        d = d.parent
+
+
+def getDictionariesFromType(type):
+    """
+    Find all the dictionaries contained in type.  This can be used to find
+    dictionaries that need conversion to JS (by looking at types that get
+    converted to JS) or dictionaries that need conversion from JS (by looking at
+    types that get converted from JS).
+
+    This returns a generator.
+    """
+    type = findInnermostType(type)
+    if type.isUnion():
+        # Look for dictionaries in all the member types
+        for t in type.flatMemberTypes:
+            for next in getDictionariesFromType(t):
+                yield next
+    elif type.isDictionary():
+        # Find the dictionaries that are itself, any of its ancestors, or
+        # contained in any of its member types.
+        for d in getDependentDictionariesFromDictionary(type.inner):
+            yield d
+
+
+def getDictionariesConvertedToJS(descriptors, dictionaries, callbacks):
+    for desc in descriptors:
+        if desc.interface.isExternal():
+            continue
+
+        if desc.interface.isJSImplemented():
+            # For a JS-implemented interface, we need to-JS
+            # conversions for all the types involved.
+            for t in getTypesFromDescriptor(desc):
+                for d in getDictionariesFromType(t):
+                    yield d
+        elif desc.interface.isCallback():
+            # For callbacks we only want to include the arguments, since that's
+            # where the to-JS conversion happens.
+            for t in getTypesFromDescriptor(desc, includeReturns=False):
+                for d in getDictionariesFromType(t):
+                    yield d
+        else:
+            # For normal interfaces, we only want to include return values,
+            # since that's where to-JS conversion happens.
+            for t in getTypesFromDescriptor(desc, includeArgs=False):
+                for d in getDictionariesFromType(t):
+                    yield d
+
+    for callback in callbacks:
+        # We only want to look at the arguments
+        sig = callback.signatures()[0]
+        for arg in sig[1]:
+            for d in getDictionariesFromType(arg.type):
+                yield d
+
+    for dictionary in dictionaries:
+        if dictionary.needsConversionToJS:
+            # It's explicitly flagged as needing to-JS conversion, and all its
+            # dependent dictionaries will need to-JS conversion too.
+            for d in getDependentDictionariesFromDictionary(dictionary):
+                yield d
+
+
+def getDictionariesConvertedFromJS(descriptors, dictionaries, callbacks):
+    for desc in descriptors:
+        if desc.interface.isExternal():
+            continue
+
+        if desc.interface.isJSImplemented():
+            # For a JS-implemented interface, we need from-JS conversions for
+            # all the types involved.
+            for t in getTypesFromDescriptor(desc):
+                for d in getDictionariesFromType(t):
+                    yield d
+        elif desc.interface.isCallback():
+            # For callbacks we only want to include the return value, since
+            # that's where teh from-JS conversion happens.
+            for t in getTypesFromDescriptor(desc, includeArgs=False):
+                for d in getDictionariesFromType(t):
+                    yield d
+        else:
+            # For normal interfaces, we only want to include arguments values,
+            # since that's where from-JS conversion happens.
+            for t in getTypesFromDescriptor(desc, includeReturns=False):
+                for d in getDictionariesFromType(t):
+                    yield d
+
+    for callback in callbacks:
+        # We only want to look at the return value
+        sig = callback.signatures()[0]
+        for d in getDictionariesFromType(sig[0]):
+            yield d
+
+    for dictionary in dictionaries:
+        if dictionary.needsConversionFromJS:
+            # It's explicitly flagged as needing from-JS conversion, and all its
+            # dependent dictionaries will need from-JS conversion too.
+            for d in getDependentDictionariesFromDictionary(dictionary):
+                yield d

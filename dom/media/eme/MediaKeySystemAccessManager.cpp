@@ -9,7 +9,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsIObserverService.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/DetailedPromise.h"
 #ifdef XP_WIN
 #  include "mozilla/WindowsVersion.h"
@@ -73,16 +73,14 @@ void MediaKeySystemAccessManager::Request(
           NS_ConvertUTF16toUTF8(aKeySystem).get());
 
   if (aKeySystem.IsEmpty()) {
-    aPromise->MaybeReject(NS_ERROR_DOM_TYPE_ERR,
-                          NS_LITERAL_CSTRING("Key system string is empty"));
+    aPromise->MaybeRejectWithTypeError(u"Key system string is empty");
     // Don't notify DecoderDoctor, as there's nothing we or the user can
     // do to fix this situation; the site is using the API wrong.
     return;
   }
   if (aConfigs.IsEmpty()) {
-    aPromise->MaybeReject(
-        NS_ERROR_DOM_TYPE_ERR,
-        NS_LITERAL_CSTRING("Candidate MediaKeySystemConfigs is empty"));
+    aPromise->MaybeRejectWithTypeError(
+        u"Candidate MediaKeySystemConfigs is empty");
     // Don't notify DecoderDoctor, as there's nothing we or the user can
     // do to fix this situation; the site is using the API wrong.
     return;
@@ -101,7 +99,7 @@ void MediaKeySystemAccessManager::Request(
     return;
   }
 
-  if (!StaticPrefs::MediaEmeEnabled() && !IsClearkeyKeySystem(aKeySystem)) {
+  if (!StaticPrefs::media_eme_enabled() && !IsClearkeyKeySystem(aKeySystem)) {
     // EME disabled by user, send notification to chrome so UI can inform user.
     // Clearkey is allowed even when EME is disabled because we want the pref
     // "media.eme.enabled" only taking effect on proprietary DRMs.
@@ -125,7 +123,8 @@ void MediaKeySystemAccessManager::Request(
       "MediaKeySystemAccess::GetKeySystemStatus(%s) "
       "result=%s msg='%s'",
       NS_ConvertUTF16toUTF8(aKeySystem).get(),
-      MediaKeySystemStatusValues::strings[(size_t)status].value, message.get());
+      nsCString(MediaKeySystemStatusValues::GetString(status)).get(),
+      message.get());
   LogToBrowserConsole(NS_ConvertUTF8toUTF16(msg));
 
   if (status == MediaKeySystemStatus::Cdm_not_installed &&
@@ -171,15 +170,14 @@ void MediaKeySystemAccessManager::Request(
       [&](const char* aMsgName) {
         EME_LOG("Logging deprecation warning '%s' to WebConsole.", aMsgName);
         warnings.Put(aMsgName, true);
-        nsString uri;
+        AutoTArray<nsString, 1> params;
+        nsString& uri = *params.AppendElement();
         if (doc) {
           Unused << doc->GetDocumentURI(uri);
         }
-        const char16_t* params[] = {uri.get()};
-        nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                        NS_LITERAL_CSTRING("Media"), doc,
-                                        nsContentUtils::eDOM_PROPERTIES,
-                                        aMsgName, params, ArrayLength(params));
+        nsContentUtils::ReportToConsole(
+            nsIScriptError::warningFlag, NS_LITERAL_CSTRING("Media"), doc,
+            nsContentUtils::eDOM_PROPERTIES, aMsgName, params);
       };
 
   bool isPrivateBrowsing =
@@ -194,25 +192,6 @@ void MediaKeySystemAccessManager::Request(
     aPromise->MaybeResolve(access);
     diagnostics.StoreMediaKeySystemAccess(mWindow->GetExtantDoc(), aKeySystem,
                                           true, __func__);
-
-    // Accumulate telemetry to report whether we hit deprecation warnings.
-    if (warnings.Get("MediaEMENoCapabilitiesDeprecatedWarning")) {
-      Telemetry::Accumulate(
-          Telemetry::HistogramID::MEDIA_EME_REQUEST_DEPRECATED_WARNINGS, 1);
-      EME_LOG(
-          "MEDIA_EME_REQUEST_DEPRECATED_WARNINGS "
-          "MediaEMENoCapabilitiesDeprecatedWarning");
-    } else if (warnings.Get("MediaEMENoCodecsDeprecatedWarning")) {
-      Telemetry::Accumulate(
-          Telemetry::HistogramID::MEDIA_EME_REQUEST_DEPRECATED_WARNINGS, 2);
-      EME_LOG(
-          "MEDIA_EME_REQUEST_DEPRECATED_WARNINGS "
-          "MediaEMENoCodecsDeprecatedWarning");
-    } else {
-      Telemetry::Accumulate(
-          Telemetry::HistogramID::MEDIA_EME_REQUEST_DEPRECATED_WARNINGS, 0);
-      EME_LOG("MEDIA_EME_REQUEST_DEPRECATED_WARNINGS No warnings");
-    }
     return;
   }
   // Not to inform user, because nothing to do if the corresponding keySystem

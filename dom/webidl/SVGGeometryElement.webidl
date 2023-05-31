@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGGeometryElement : SVGGraphicsElement {
   [SameObject]
   readonly attribute SVGAnimatedNumber pathLength;

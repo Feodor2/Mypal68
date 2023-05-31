@@ -11,7 +11,6 @@
 #include "mozilla/Unused.h"
 
 #include "nsContentUtils.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsISupportsPrimitives.h"
 #include "nsThreadUtils.h"
 #include "nsHashPropertyBag.h"
@@ -319,7 +318,9 @@ AudioPlaybackConfig AudioChannelService::GetMediaConfig(
   AudioPlaybackConfig config(1.0, false, nsISuspendedTypes::NONE_SUSPENDED);
 
   if (!aWindow) {
-    config.SetConfig(0.0, true, nsISuspendedTypes::SUSPENDED_BLOCK);
+    config.mVolume = 0.0;
+    config.mMuted = true;
+    config.mSuspend = nsISuspendedTypes::SUSPENDED_BLOCK;
     return config;
   }
 
@@ -336,6 +337,7 @@ AudioPlaybackConfig AudioChannelService::GetMediaConfig(
       config.mSuspend = winData->mOwningAudioFocus
                             ? config.mSuspend
                             : nsISuspendedTypes::SUSPENDED_STOP_DISPOSABLE;
+      config.mCapturedAudio = winData->mIsAudioCaptured;
     }
 
     config.mVolume *= window->GetAudioVolume();
@@ -344,7 +346,8 @@ AudioPlaybackConfig AudioChannelService::GetMediaConfig(
       config.mSuspend = window->GetMediaSuspend();
     }
 
-    nsCOMPtr<nsPIDOMWindowOuter> win = window->GetScriptableParentOrNull();
+    nsCOMPtr<nsPIDOMWindowOuter> win =
+        window->GetInProcessScriptableParentOrNull();
     if (!win) {
       break;
     }
@@ -404,7 +407,8 @@ AudioChannelService::Observe(nsISupports* aSubject, const char* aTopic,
       nsTObserverArray<AudioChannelAgent*>::ForwardIterator iter(
           winData->mAgents);
       while (iter.HasMore()) {
-        iter.GetNext()->WindowVolumeChanged();
+        iter.GetNext()->WindowVolumeChanged(winData->mConfig.mVolume,
+                                            winData->mConfig.mMuted);
       }
     }
   }
@@ -417,7 +421,7 @@ void AudioChannelService::RefreshAgents(
     const std::function<void(AudioChannelAgent*)>& aFunc) {
   MOZ_ASSERT(aWindow);
 
-  nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetScriptableTop();
+  nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetInProcessScriptableTop();
   if (!topWindow) {
     return;
   }
@@ -433,9 +437,11 @@ void AudioChannelService::RefreshAgents(
   }
 }
 
-void AudioChannelService::RefreshAgentsVolume(nsPIDOMWindowOuter* aWindow) {
-  RefreshAgents(aWindow,
-                [](AudioChannelAgent* agent) { agent->WindowVolumeChanged(); });
+void AudioChannelService::RefreshAgentsVolume(nsPIDOMWindowOuter* aWindow,
+                                              float aVolume, bool aMuted) {
+  RefreshAgents(aWindow, [aVolume, aMuted](AudioChannelAgent* agent) {
+    agent->WindowVolumeChanged(aVolume, aMuted);
+  });
 }
 
 void AudioChannelService::RefreshAgentsSuspend(nsPIDOMWindowOuter* aWindow,
@@ -456,7 +462,7 @@ void AudioChannelService::SetWindowAudioCaptured(nsPIDOMWindowOuter* aWindow,
            "aCapture = %d\n",
            aWindow, aCapture));
 
-  nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetScriptableTop();
+  nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetInProcessScriptableTop();
   if (!topWindow) {
     return;
   }
@@ -513,7 +519,7 @@ AudioChannelService::AudioChannelWindow* AudioChannelService::GetWindowData(
 bool AudioChannelService::IsWindowActive(nsPIDOMWindowOuter* aWindow) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  auto* window = nsPIDOMWindowOuter::From(aWindow)->GetScriptableTop();
+  auto* window = nsPIDOMWindowOuter::From(aWindow)->GetInProcessScriptableTop();
   if (!window) {
     return false;
   }
@@ -544,7 +550,7 @@ void AudioChannelService::NotifyMediaResumedFromBlock(
     nsPIDOMWindowOuter* aWindow) {
   MOZ_ASSERT(aWindow);
 
-  nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetScriptableTop();
+  nsCOMPtr<nsPIDOMWindowOuter> topWindow = aWindow->GetInProcessScriptableTop();
   if (!topWindow) {
     return;
   }
@@ -713,7 +719,6 @@ void AudioChannelService::AudioChannelWindow::AppendAgent(
 
   RequestAudioFocus(aAgent);
   AppendAgentAndIncreaseAgentsNum(aAgent);
-  AudioCapturedChanged(aAgent, AudioCaptureState::eCapturing);
   if (aAudible == AudibleState::eAudible) {
     AudioAudibleChanged(aAgent, AudibleState::eAudible,
                         AudibleChangedReasons::eDataAudibleChanged);
@@ -728,7 +733,6 @@ void AudioChannelService::AudioChannelWindow::RemoveAgent(
   MOZ_ASSERT(aAgent);
 
   RemoveAgentAndReduceAgentsNum(aAgent);
-  AudioCapturedChanged(aAgent, AudioCaptureState::eNotCapturing);
   AudioAudibleChanged(aAgent, AudibleState::eNotAudible,
                       AudibleChangedReasons::ePauseStateChanged);
 }
@@ -781,15 +785,6 @@ void AudioChannelService::AudioChannelWindow::RemoveAgentAndReduceAgentsNum(
 
   if (mConfig.mNumberOfAgents == 0) {
     NotifyChannelActive(aAgent->WindowID(), false);
-  }
-}
-
-void AudioChannelService::AudioChannelWindow::AudioCapturedChanged(
-    AudioChannelAgent* aAgent, AudioCaptureState aCapture) {
-  MOZ_ASSERT(aAgent);
-
-  if (mIsAudioCaptured) {
-    aAgent->WindowAudioCaptureChanged(aAgent->InnerWindowID(), aCapture);
   }
 }
 

@@ -3,12 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/CSPMessageUtils.h"
-#include "nsISerializable.h"
 #include "nsSerializationHelper.h"
 
 namespace IPC {
 
-void ParamTraits<nsIContentSecurityPolicy>::Write(
+void ParamTraits<nsIContentSecurityPolicy*>::Write(
     Message* aMsg, nsIContentSecurityPolicy* aParam) {
   bool isNull = !aParam;
   WriteParam(aMsg, isNull);
@@ -26,7 +25,7 @@ void ParamTraits<nsIContentSecurityPolicy>::Write(
   WriteParam(aMsg, cspString);
 }
 
-bool ParamTraits<nsIContentSecurityPolicy>::Read(
+bool ParamTraits<nsIContentSecurityPolicy*>::Read(
     const Message* aMsg, PickleIterator* aIter,
     RefPtr<nsIContentSecurityPolicy>* aResult) {
   bool isNull;

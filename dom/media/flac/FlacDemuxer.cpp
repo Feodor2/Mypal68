@@ -117,7 +117,12 @@ class FrameHeader {
     for (uint32_t i = 0; i < br.BitCount() / 8; i++) {
       crc = CRC8Table[crc ^ aPacket[i]];
     }
-    mValid = crc == br.ReadBits(8);
+    mValid =
+#ifdef FUZZING
+        true;
+#else
+        crc == br.ReadBits(8);
+#endif
     mSize = br.BitCount() / 8;
 
     if (mValid) {
@@ -484,7 +489,11 @@ class FrameParser {
     while (buf < end) {
       crc = CRC16Table[((uint8_t)crc) ^ *buf++] ^ (crc >> 8);
     }
+#ifdef FUZZING
+    return true;
+#else
     return !crc;
+#endif
   }
 
   const uint16_t CRC16Table[256] = {
@@ -802,16 +811,19 @@ RefPtr<FlacTrackDemuxer::SamplesPromise> FlacTrackDemuxer::GetSamples(
   while (aNumSamples--) {
     RefPtr<MediaRawData> frame(GetNextFrame(FindNextFrame()));
     if (!frame) break;
-
-    frames->mSamples.AppendElement(frame);
+    if (!frame->HasValidTime()) {
+      return SamplesPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_DEMUXER_ERR,
+                                             __func__);
+    }
+    frames->AppendSample(frame);
   }
 
   LOGV("GetSamples() End mSamples.Length=%zu aNumSamples=%d offset=%" PRId64
        " mParsedFramesDuration=%f mTotalFrameLen=%" PRIu64,
-       frames->mSamples.Length(), aNumSamples, GetResourceOffset(),
+       frames->GetSamples().Length(), aNumSamples, GetResourceOffset(),
        mParsedFramesDuration.ToSeconds(), mTotalFrameLen);
 
-  if (frames->mSamples.IsEmpty()) {
+  if (frames->GetSamples().IsEmpty()) {
     return SamplesPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_END_OF_STREAM,
                                            __func__);
   }

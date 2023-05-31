@@ -30,6 +30,9 @@ interface IDBTransaction : EventTarget {
     IDBObjectStore objectStore (DOMString name);
 
     [Throws]
+    void           commit();
+
+    [Throws]
     void           abort();
 
                 attribute EventHandler       onabort;

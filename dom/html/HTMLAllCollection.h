@@ -13,12 +13,12 @@
 #include <stdint.h>
 
 class nsContentList;
-class nsHTMLDocument;
 class nsINode;
 
 namespace mozilla {
 namespace dom {
 
+class Document;
 class Element;
 class OwningHTMLCollectionOrElement;
 template <typename>
@@ -30,7 +30,7 @@ class HTMLAllCollection final : public nsISupports, public nsWrapperCache {
   ~HTMLAllCollection();
 
  public:
-  explicit HTMLAllCollection(nsHTMLDocument* aDocument);
+  explicit HTMLAllCollection(mozilla::dom::Document* aDocument);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(HTMLAllCollection)
@@ -78,7 +78,7 @@ class HTMLAllCollection final : public nsISupports, public nsWrapperCache {
    */
   Element* Item(uint32_t aIndex);
 
-  RefPtr<nsHTMLDocument> mDocument;
+  RefPtr<mozilla::dom::Document> mDocument;
   RefPtr<nsContentList> mCollection;
   nsRefPtrHashtable<nsStringHashKey, nsContentList> mNamedMap;
 };

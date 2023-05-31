@@ -39,8 +39,10 @@ class FlushRejections : public CancelableRunnable {
       return;
     }
     sDispatched.set(true);
-    SystemGroup::Dispatch(TaskCategory::Other,
-                          do_AddRef(new FlushRejections()));
+
+    // Dispatch the runnable to the current thread where
+    // the Promise was rejected, e.g. workers or worklets.
+    NS_DispatchToCurrentThread(new FlushRejections());
   }
 
   static void FlushSync() {
@@ -263,14 +265,20 @@ void PromiseDebugging::FlushUncaughtRejectionsInternal() {
       continue;
     }
 
+    bool suppressReporting = false;
     for (size_t j = 0; j < observers.Length(); ++j) {
       RefPtr<UncaughtRejectionObserver> obs =
           static_cast<UncaughtRejectionObserver*>(observers[j].get());
 
-      obs->OnLeftUncaught(promise, IgnoreErrors());
+      if (obs->OnLeftUncaught(promise, IgnoreErrors())) {
+        suppressReporting = true;
+      }
     }
-    JSAutoRealm ar(cx, promise);
-    Promise::ReportRejectedPromise(cx, promise);
+
+    if (!suppressReporting) {
+      JSAutoRealm ar(cx, promise);
+      Promise::ReportRejectedPromise(cx, promise);
+    }
   }
   storage->mUncaughtRejections.clear();
 

@@ -8,6 +8,7 @@
 
 #include "nsNodeInfoManager.h"
 
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/NodeInfo.h"
@@ -17,7 +18,6 @@
 #include "nsString.h"
 #include "nsAtom.h"
 #include "nsIPrincipal.h"
-#include "nsIURI.h"
 #include "nsContentUtils.h"
 #include "nsReadableUtils.h"
 #include "nsGkAtoms.h"
@@ -80,26 +80,26 @@ NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(nsNodeInfoManager, Release)
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_BEGIN(nsNodeInfoManager)
   if (tmp->mDocument) {
-    return NS_CYCLE_COLLECTION_PARTICIPANT(Document)->CanSkip(tmp->mDocument,
-                                                              aRemovingAllowed);
+    return NS_CYCLE_COLLECTION_PARTICIPANT(mozilla::dom::Document)
+        ->CanSkip(tmp->mDocument, aRemovingAllowed);
   }
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_END
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_BEGIN(nsNodeInfoManager)
   if (tmp->mDocument) {
-    return NS_CYCLE_COLLECTION_PARTICIPANT(Document)->CanSkipInCC(
-        tmp->mDocument);
+    return NS_CYCLE_COLLECTION_PARTICIPANT(mozilla::dom::Document)
+        ->CanSkipInCC(tmp->mDocument);
   }
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_IN_CC_END
 
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_BEGIN(nsNodeInfoManager)
   if (tmp->mDocument) {
-    return NS_CYCLE_COLLECTION_PARTICIPANT(Document)->CanSkipThis(
-        tmp->mDocument);
+    return NS_CYCLE_COLLECTION_PARTICIPANT(mozilla::dom::Document)
+        ->CanSkipThis(tmp->mDocument);
   }
 NS_IMPL_CYCLE_COLLECTION_CAN_SKIP_THIS_END
 
-nsresult nsNodeInfoManager::Init(Document* aDocument) {
+nsresult nsNodeInfoManager::Init(mozilla::dom::Document* aDocument) {
   MOZ_ASSERT(!mPrincipal, "Being inited when we already have a principal?");
 
   mPrincipal = NullPrincipal::CreateWithoutOriginAttributes();
@@ -315,7 +315,7 @@ void nsNodeInfoManager::RemoveNodeInfo(NodeInfo* aNodeInfo) {
 }
 
 static bool IsSystemOrAddonPrincipal(nsIPrincipal* aPrincipal) {
-  return nsContentUtils::IsSystemPrincipal(aPrincipal) ||
+  return aPrincipal->IsSystemPrincipal() ||
          BasePrincipal::Cast(aPrincipal)->AddonPolicy();
 }
 
@@ -356,8 +356,8 @@ bool nsNodeInfoManager::InternalMathMLEnabled() {
   // If the mathml.disabled pref. is true, convert all MathML nodes into
   // disabled MathML nodes by swapping the namespace.
   nsNameSpaceManager* nsmgr = nsNameSpaceManager::GetInstance();
-  bool conclusion = ((nsmgr && !nsmgr->mMathMLDisabled) ||
-                     nsContentUtils::IsSystemPrincipal(mPrincipal));
+  bool conclusion =
+      ((nsmgr && !nsmgr->mMathMLDisabled) || mPrincipal->IsSystemPrincipal());
   mMathMLEnabled = Some(conclusion);
   return conclusion;
 }

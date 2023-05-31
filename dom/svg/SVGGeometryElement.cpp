@@ -7,7 +7,6 @@
 #include "DOMSVGPoint.h"
 #include "gfxPlatform.h"
 #include "nsCOMPtr.h"
-#include "nsComputedDOMStyle.h"
 #include "SVGAnimatedLength.h"
 #include "nsSVGUtils.h"
 #include "mozilla/dom/SVGLengthBinding.h"
@@ -113,14 +112,11 @@ FillRule SVGGeometryElement::GetFillRule() {
   FillRule fillRule =
       FillRule::FILL_WINDING;  // Equivalent to StyleFillRule::Nonzero
 
-  RefPtr<ComputedStyle> computedStyle =
-      nsComputedDOMStyle::GetComputedStyleNoFlush(this, nullptr);
+  if (auto* f = GetPrimaryFrame()) {
+    MOZ_ASSERT(f->StyleSVG()->mFillRule == StyleFillRule::Nonzero ||
+               f->StyleSVG()->mFillRule == StyleFillRule::Evenodd);
 
-  if (computedStyle) {
-    MOZ_ASSERT(computedStyle->StyleSVG()->mFillRule == StyleFillRule::Nonzero ||
-               computedStyle->StyleSVG()->mFillRule == StyleFillRule::Evenodd);
-
-    if (computedStyle->StyleSVG()->mFillRule == StyleFillRule::Evenodd) {
+    if (f->StyleSVG()->mFillRule == StyleFillRule::Evenodd) {
       fillRule = FillRule::FILL_EVEN_ODD;
     }
   } else {

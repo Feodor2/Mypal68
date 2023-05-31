@@ -11,10 +11,13 @@
 
 enum RecordingState { "inactive", "recording", "paused" };
 
-[Constructor(MediaStream stream, optional MediaRecorderOptions options),
- Constructor(AudioNode node, optional unsigned long output = 0,
-             optional MediaRecorderOptions options)]
+[Exposed=Window]
 interface MediaRecorder : EventTarget {
+  [Throws]
+  constructor(MediaStream stream, optional MediaRecorderOptions options = {});
+  [Throws]
+  constructor(AudioNode node, optional unsigned long output = 0,
+              optional MediaRecorderOptions options = {});
 
   readonly attribute MediaStream stream;
 
@@ -37,7 +40,7 @@ interface MediaRecorder : EventTarget {
   attribute EventHandler onwarning;
 
   [Throws]
-  void start(optional long timeSlice);
+  void start(optional unsigned long timeslice);
 
   [Throws]
   void stop();

@@ -16,7 +16,6 @@
 #include "nsPluginsDir.h"
 #include "nsPluginDirServiceProvider.h"
 #include "nsWeakReference.h"
-#include "nsIPrompt.h"
 #include "MainThreadUtils.h"
 #include "nsTArray.h"
 #include "nsINamed.h"
@@ -233,9 +232,8 @@ class nsPluginHost final : public nsIPluginHost,
   void CreateWidget(nsPluginInstanceOwner* aOwner);
 
   nsresult EnumerateSiteData(const nsACString& domain,
-                             const InfallibleTArray<nsCString>& sites,
-                             InfallibleTArray<nsCString>& result,
-                             bool firstMatchOnly);
+                             const nsTArray<nsCString>& sites,
+                             nsTArray<nsCString>& result, bool firstMatchOnly);
 
   nsresult SendPluginsToContent();
   nsresult SetPluginsInContent(
@@ -256,8 +254,7 @@ class nsPluginHost final : public nsIPluginHost,
                                   nsPluginInstanceOwner* aOwner);
 
   // FIXME-jsplugins comment here about when things may be fake
-  nsPluginTag* FindPreferredPlugin(
-      const InfallibleTArray<nsPluginTag*>& matches);
+  nsPluginTag* FindPreferredPlugin(const nsTArray<nsPluginTag*>& matches);
 
   // Find a plugin for the given type.  If aIncludeFake is true a fake plugin
   // will be preferred if one exists; otherwise a fake plugin will never be

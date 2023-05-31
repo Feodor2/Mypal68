@@ -6,6 +6,7 @@
  * http://www.whatwg.org/specs/web-apps/current-work/#beforeunloadevent
  */
 
+[Exposed=Window]
 interface BeforeUnloadEvent : Event {
   attribute DOMString returnValue;
 };

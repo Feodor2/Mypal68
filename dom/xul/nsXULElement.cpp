@@ -9,8 +9,9 @@
 #include "nsAtom.h"
 #include "nsIBaseWindow.h"
 #include "nsIDOMEventListener.h"
-#include "nsIDOMXULCommandDispatcher.h"
+#include "nsIDOMXULControlElement.h"
 #include "nsIDOMXULSelectCntrlItemEl.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/EventListenerManager.h"
@@ -27,10 +28,6 @@
 #include "nsIObjectOutputStream.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptContext.h"
-#include "nsIScriptError.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsIServiceManager.h"
-#include "nsIURL.h"
 #include "nsViewManager.h"
 #include "nsIWidget.h"
 #include "nsLayoutCID.h"
@@ -39,7 +36,6 @@
 #include "nsStyleConsts.h"
 #include "nsString.h"
 #include "nsXULControllers.h"
-#include "nsIBoxObject.h"
 #include "nsPIBoxObject.h"
 #include "XULDocument.h"
 #include "nsXULPopupListener.h"
@@ -51,7 +47,6 @@
 #include "nsJSPrincipals.h"
 #include "nsDOMAttributeMap.h"
 #include "nsGkAtoms.h"
-#include "nsNodeUtils.h"
 #include "nsFrameLoader.h"
 #include "mozilla/Logging.h"
 #include "nsIControllers.h"
@@ -61,7 +56,6 @@
 #include "nsIController.h"
 #include "nsQueryObject.h"
 #include <algorithm>
-#include "nsIDOMChromeWindow.h"
 
 #include "nsReadableUtils.h"
 #include "nsIFrame.h"
@@ -72,6 +66,7 @@
 #include "mozAutoDocUpdate.h"
 #include "nsCCUncollectableMarker.h"
 #include "nsICSSDeclaration.h"
+#include "nsIXPConnect.h"
 #include "nsLayoutUtils.h"
 #include "XULFrameElement.h"
 #include "XULMenuElement.h"
@@ -84,6 +79,7 @@
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/dom/XULCommandEvent.h"
+#include "mozilla/GlobalKeyListener.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -199,13 +195,13 @@ already_AddRefed<nsXULElement> nsXULElement::CreateFromPrototype(
       // Check each attribute on the prototype to see if we need to do
       // any additional processing and hookup that would otherwise be
       // done 'automagically' by SetAttr().
-      for (uint32_t i = 0; i < aPrototype->mNumAttributes; ++i) {
-        element->AddListenerFor(aPrototype->mAttributes[i].mName);
+      for (const auto& attribute : aPrototype->mAttributes) {
+        element->AddListenerForAttributeIfNeeded(attribute.mName);
       }
     }
 
     if (aIsRoot && aPrototype->mNodeInfo->Equals(nsGkAtoms::window)) {
-      for (uint32_t i = 0; i < aPrototype->mNumAttributes; ++i) {
+      for (size_t i = 0; i < aPrototype->mAttributes.Length(); ++i) {
         if (aPrototype->mAttributes[i].mName.Equals(nsGkAtoms::windowtype)) {
           element->MaybeUpdatePrivateLifetime();
         }
@@ -307,52 +303,11 @@ nsresult nsXULElement::Clone(mozilla::dom::NodeInfo* aNodeInfo,
   RefPtr<mozilla::dom::NodeInfo> ni = aNodeInfo;
   RefPtr<nsXULElement> element = Construct(ni.forget());
 
-  nsresult rv = element->mAttrs.EnsureCapacityToClone(mAttrs);
+  nsresult rv = const_cast<nsXULElement*>(this)->CopyInnerTo(
+      element, ReparseAttributes::No);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Note that we're _not_ copying mControllers.
-
-  uint32_t count = mAttrs.AttrCount();
-  rv = NS_OK;
-  for (uint32_t i = 0; i < count; ++i) {
-    const nsAttrName* originalName = mAttrs.AttrNameAt(i);
-    const nsAttrValue* originalValue = mAttrs.AttrAt(i);
-    nsAttrValue attrValue;
-
-    // Style rules need to be cloned.
-    if (originalValue->Type() == nsAttrValue::eCSSDeclaration) {
-      DeclarationBlock* decl = originalValue->GetCSSDeclarationValue();
-      RefPtr<DeclarationBlock> declClone = decl->Clone();
-
-      nsString stringValue;
-      originalValue->ToString(stringValue);
-
-      attrValue.SetTo(declClone.forget(), &stringValue);
-    } else {
-      attrValue.SetTo(*originalValue);
-    }
-
-    bool oldValueSet;
-    if (originalName->IsAtom()) {
-      rv = element->mAttrs.SetAndSwapAttr(originalName->Atom(), attrValue,
-                                          &oldValueSet);
-    } else {
-      rv = element->mAttrs.SetAndSwapAttr(originalName->NodeInfo(), attrValue,
-                                          &oldValueSet);
-    }
-    NS_ENSURE_SUCCESS(rv, rv);
-    element->AddListenerFor(*originalName);
-    if (originalName->Equals(nsGkAtoms::id) &&
-        !originalValue->IsEmptyString()) {
-      element->SetHasID();
-    }
-    if (originalName->Equals(nsGkAtoms::_class)) {
-      element->SetMayHaveClass();
-    }
-    if (originalName->Equals(nsGkAtoms::style)) {
-      element->SetMayHaveStyle();
-    }
-  }
 
   element.forget(aResult);
   return rv;
@@ -577,30 +532,26 @@ bool nsXULElement::PerformAccesskey(bool aKeyCausesActivation,
 
 //----------------------------------------------------------------------
 
-void nsXULElement::AddListenerFor(const nsAttrName& aName) {
+void nsXULElement::AddListenerForAttributeIfNeeded(nsAtom* aLocalName) {
   // If appropriate, add a popup listener and/or compile the event
   // handler. Called when we change the element's document, create a
   // new element, change an attribute's value, etc.
-  // Eventlistenener-attributes are always in the null namespace
-  if (aName.IsAtom()) {
-    nsAtom* attr = aName.Atom();
-    MaybeAddPopupListener(attr);
-    if (nsContentUtils::IsEventAttributeName(attr, EventNameType_XUL)) {
-      nsAutoString value;
-      GetAttr(kNameSpaceID_None, attr, value);
-      SetEventHandler(attr, value, true);
-    }
-  }
-}
-
-void nsXULElement::MaybeAddPopupListener(nsAtom* aLocalName) {
-  // If appropriate, add a popup listener. Called when we change the
-  // element's document, create a new element, change an attribute's
-  // value, etc.
+  // Eventlistenener-attributes are always in the null namespace.
   if (aLocalName == nsGkAtoms::menu || aLocalName == nsGkAtoms::contextmenu ||
       // XXXdwh popup and context are deprecated
       aLocalName == nsGkAtoms::popup || aLocalName == nsGkAtoms::context) {
     AddPopupListener(aLocalName);
+  }
+  if (nsContentUtils::IsEventAttributeName(aLocalName, EventNameType_XUL)) {
+    nsAutoString value;
+    GetAttr(kNameSpaceID_None, aLocalName, value);
+    SetEventHandler(aLocalName, value, true);
+  }
+}
+
+void nsXULElement::AddListenerForAttributeIfNeeded(const nsAttrName& aName) {
+  if (aName.IsAtom()) {
+    AddListenerForAttributeIfNeeded(aName.Atom());
   }
 }
 
@@ -619,7 +570,7 @@ void nsXULElement::UpdateEditableState(bool aNotify) {
 
 class XULInContentErrorReporter : public Runnable {
  public:
-  explicit XULInContentErrorReporter(Document* aDocument)
+  explicit XULInContentErrorReporter(Document& aDocument)
       : mozilla::Runnable("XULInContentErrorReporter"), mDocument(aDocument) {}
 
   NS_IMETHOD Run() override {
@@ -628,7 +579,7 @@ class XULInContentErrorReporter : public Runnable {
   }
 
  private:
-  nsCOMPtr<Document> mDocument;
+  OwningNonNull<Document> mDocument;
 };
 
 static bool NeedTooltipSupport(const nsXULElement& aXULElement) {
@@ -642,20 +593,25 @@ static bool NeedTooltipSupport(const nsXULElement& aXULElement) {
          aXULElement.GetBoolAttr(nsGkAtoms::tooltiptext);
 }
 
-nsresult nsXULElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                  nsIContent* aBindingParent) {
-  if (!aBindingParent && aDocument && !aDocument->IsLoadedAsInteractiveData() &&
-      !aDocument->AllowXULXBL() &&
-      !aDocument->HasWarnedAbout(Document::eImportXULIntoContent)) {
-    nsContentUtils::AddScriptRunner(new XULInContentErrorReporter(aDocument));
-  }
-
-  nsresult rv = nsStyledElement::BindToTree(aDocument, aParent, aBindingParent);
+nsresult nsXULElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = nsStyledElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  Document* doc = GetComposedDoc();
+  Document& doc = aContext.OwnerDoc();
+
+  // FIXME(emilio): Could use IsInComposedDoc().
+  if (!aContext.GetBindingParent() && IsInUncomposedDoc() &&
+      !doc.IsLoadedAsInteractiveData() && !doc.AllowXULXBL() &&
+      !doc.HasWarnedAbout(Document::eImportXULIntoContent)) {
+    nsContentUtils::AddScriptRunner(new XULInContentErrorReporter(doc));
+  }
+
+  if (!IsInComposedDoc()) {
+    return rv;
+  }
+
 #ifdef DEBUG
-  if (doc && !doc->AllowXULXBL() && !doc->IsUnstyledDocument()) {
+  if (!doc.AllowXULXBL() && !doc.IsUnstyledDocument()) {
     // To save CPU cycles and memory, non-XUL documents only load the user
     // agent style sheet rules for a minimal set of XUL elements such as
     // 'scrollbar' that may be created implicitly for their content (those
@@ -675,29 +631,28 @@ nsresult nsXULElement::BindToTree(Document* aDocument, nsIContent* aParent,
   }
 #endif
 
-  if (doc && NodeInfo()->Equals(nsGkAtoms::keyset, kNameSpaceID_XUL)) {
+  if (NodeInfo()->Equals(nsGkAtoms::keyset, kNameSpaceID_XUL)) {
     // Create our XUL key listener and hook it up.
-    nsXBLService::AttachGlobalKeyHandler(this);
+    XULKeySetGlobalKeyListener::AttachKeyHandler(this);
   }
 
-  if (doc && NeedTooltipSupport(*this)) {
+  if (NeedTooltipSupport(*this)) {
     AddTooltipSupport();
   }
 
-  if (doc && XULBroadcastManager::MayNeedListener(*this)) {
-    if (!doc->HasXULBroadcastManager()) {
-      doc->InitializeXULBroadcastManager();
+  if (XULBroadcastManager::MayNeedListener(*this)) {
+    if (!doc.HasXULBroadcastManager()) {
+      doc.InitializeXULBroadcastManager();
     }
-    XULBroadcastManager* broadcastManager = doc->GetXULBroadcastManager();
+    XULBroadcastManager* broadcastManager = doc.GetXULBroadcastManager();
     broadcastManager->AddListener(this);
   }
-
   return rv;
 }
 
-void nsXULElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void nsXULElement::UnbindFromTree(bool aNullParent) {
   if (NodeInfo()->Equals(nsGkAtoms::keyset, kNameSpaceID_XUL)) {
-    nsXBLService::DetachGlobalKeyHandler(this);
+    XULKeySetGlobalKeyListener::DetachKeyHandler(this);
   }
 
   if (NeedTooltipSupport(*this)) {
@@ -728,7 +683,7 @@ void nsXULElement::UnbindFromTree(bool aDeep, bool aNullParent) {
     slots->mControllers = nullptr;
   }
 
-  nsStyledElement::UnbindFromTree(aDeep, aNullParent);
+  nsStyledElement::UnbindFromTree(aNullParent);
 }
 
 void nsXULElement::DoneAddingChildren(bool aHaveNotified) {
@@ -823,19 +778,7 @@ nsresult nsXULElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                     bool aNotify) {
   if (aNamespaceID == kNameSpaceID_None) {
     if (aValue) {
-      // Add popup and event listeners. We can't call AddListenerFor since
-      // the attribute isn't set yet.
-      MaybeAddPopupListener(aName);
-      if (nsContentUtils::IsEventAttributeName(aName, EventNameType_XUL)) {
-        if (aValue->Type() == nsAttrValue::eString) {
-          SetEventHandler(aName, aValue->GetStringValue(), true);
-        } else {
-          nsAutoString body;
-          aValue->ToString(body);
-          SetEventHandler(aName, body, true);
-        }
-      }
-
+      AddListenerForAttributeIfNeeded(aName);
       Document* document = GetUncomposedDoc();
 
       // Hide chrome if needed
@@ -1242,9 +1185,9 @@ nsresult nsXULElement::MakeHeavyweight(nsXULPrototypeElement* aPrototype) {
     return NS_OK;
   }
 
-  uint32_t i;
+  size_t i;
   nsresult rv;
-  for (i = 0; i < aPrototype->mNumAttributes; ++i) {
+  for (i = 0; i < aPrototype->mAttributes.Length(); ++i) {
     nsXULPrototypeAttribute* protoattr = &aPrototype->mAttributes[i];
     nsAttrValue attrValue;
 
@@ -1475,8 +1418,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(nsXULPrototypeNode)
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mNodeInfo");
     cb.NoteNativeChild(elem->mNodeInfo,
                        NS_CYCLE_COLLECTION_PARTICIPANT(NodeInfo));
-    uint32_t i;
-    for (i = 0; i < elem->mNumAttributes; ++i) {
+    size_t i;
+    for (i = 0; i < elem->mAttributes.Length(); ++i) {
       const nsAttrName& name = elem->mAttributes[i].mName;
       if (!name.IsAtom()) {
         NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb,
@@ -1529,14 +1472,14 @@ nsresult nsXULPrototypeElement::Serialize(
   }
 
   // Write Attributes
-  tmp = aStream->Write32(mNumAttributes);
+  tmp = aStream->Write32(mAttributes.Length());
   if (NS_FAILED(tmp)) {
     rv = tmp;
   }
 
   nsAutoString attributeValue;
-  uint32_t i;
-  for (i = 0; i < mNumAttributes; ++i) {
+  size_t i;
+  for (i = 0; i < mAttributes.Length(); ++i) {
     RefPtr<mozilla::dom::NodeInfo> ni;
     if (mAttributes[i].mName.IsAtom()) {
       ni = mNodeInfo->NodeInfoManager()->GetNodeInfo(
@@ -1638,16 +1581,13 @@ nsresult nsXULPrototypeElement::Deserialize(
   // Read Attributes
   rv = aStream->Read32(&number);
   if (NS_WARN_IF(NS_FAILED(rv))) return rv;
-  mNumAttributes = int32_t(number);
+  int32_t attributes = int32_t(number);
 
-  if (mNumAttributes > 0) {
-    mAttributes = new (fallible) nsXULPrototypeAttribute[mNumAttributes];
-    if (!mAttributes) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+  if (attributes > 0) {
+    mAttributes.AppendElements(attributes);
 
     nsAutoString attributeValue;
-    for (uint32_t i = 0; i < mNumAttributes; ++i) {
+    for (size_t i = 0; i < mAttributes.Length(); ++i) {
       rv = aStream->Read32(&number);
       if (NS_WARN_IF(NS_FAILED(rv))) return rv;
       mozilla::dom::NodeInfo* ni = aNodeInfos->SafeElementAt(number, nullptr);
@@ -1746,7 +1686,7 @@ nsresult nsXULPrototypeElement::Deserialize(
 nsresult nsXULPrototypeElement::SetAttrAt(uint32_t aPos,
                                           const nsAString& aValue,
                                           nsIURI* aDocumentURI) {
-  MOZ_ASSERT(aPos < mNumAttributes, "out-of-bounds");
+  MOZ_ASSERT(aPos < mAttributes.Length(), "out-of-bounds");
 
   // WARNING!!
   // This code is largely duplicated in nsXULElement::SetAttr.
@@ -1798,8 +1738,11 @@ nsresult nsXULPrototypeElement::SetAttrAt(uint32_t aPos,
     // as has been discussed, the CSP should be checked here to see if
     // inline styles are allowed to be applied.
     // XXX No specific specs talk about xul and referrer policy, pass Unset
-    RefPtr<URLExtraData> data = new URLExtraData(
-        aDocumentURI, aDocumentURI, principal, mozilla::net::RP_Unset);
+    nsCOMPtr<nsIReferrerInfo> referrerInfo =
+        new ReferrerInfo(aDocumentURI, ReferrerPolicy::_empty);
+
+    RefPtr<URLExtraData> data =
+        new URLExtraData(aDocumentURI, referrerInfo, principal);
     RefPtr<DeclarationBlock> declaration = DeclarationBlock::FromCssText(
         aValue, data, eCompatibility_FullStandards, nullptr);
     if (declaration) {
@@ -1820,9 +1763,7 @@ nsresult nsXULPrototypeElement::SetAttrAt(uint32_t aPos,
 }
 
 void nsXULPrototypeElement::Unlink() {
-  mNumAttributes = 0;
-  delete[] mAttributes;
-  mAttributes = nullptr;
+  mAttributes.Clear();
   mChildren.Clear();
 }
 
@@ -1881,12 +1822,9 @@ nsresult nsXULPrototypeScript::Serialize(
 
 nsresult nsXULPrototypeScript::SerializeOutOfLine(
     nsIObjectOutputStream* aStream, nsXULPrototypeDocument* aProtoDoc) {
-  nsresult rv = NS_ERROR_NOT_IMPLEMENTED;
-
-  bool isChrome = false;
-  if (NS_FAILED(mSrcURI->SchemeIs("chrome", &isChrome)) || !isChrome)
+  if (!mSrcURI->SchemeIs("chrome"))
     // Don't cache scripts that don't come from chrome uris.
-    return rv;
+    return NS_ERROR_NOT_IMPLEMENTED;
 
   nsXULPrototypeCache* cache = nsXULPrototypeCache::GetInstance();
   if (!cache) return NS_ERROR_OUT_OF_MEMORY;
@@ -1904,7 +1842,7 @@ nsresult nsXULPrototypeScript::SerializeOutOfLine(
   if (exists) return NS_OK;
 
   nsCOMPtr<nsIObjectOutputStream> oos;
-  rv = cache->GetOutputStream(mSrcURI, getter_AddRefs(oos));
+  nsresult rv = cache->GetOutputStream(mSrcURI, getter_AddRefs(oos));
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsresult tmp = Serialize(oos, aProtoDoc, nullptr);
@@ -1994,13 +1932,9 @@ nsresult nsXULPrototypeScript::DeserializeOutOfLine(
         rv = Deserialize(objectInput, aProtoDoc, nullptr, nullptr);
 
       if (NS_SUCCEEDED(rv)) {
-        if (useXULCache && mSrcURI) {
-          bool isChrome = false;
-          mSrcURI->SchemeIs("chrome", &isChrome);
-          if (isChrome) {
-            JS::Rooted<JSScript*> script(RootingCx(), GetScriptObject());
-            cache->PutScript(mSrcURI, script);
-          }
+        if (useXULCache && mSrcURI && mSrcURI->SchemeIs("chrome")) {
+          JS::Rooted<JSScript*> script(RootingCx(), GetScriptObject());
+          cache->PutScript(mSrcURI, script);
         }
         cache->FinishInputStream(mSrcURI);
       } else {

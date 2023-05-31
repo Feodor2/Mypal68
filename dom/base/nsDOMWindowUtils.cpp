@@ -44,6 +44,7 @@
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TouchEvents.h"
@@ -54,7 +55,6 @@
 #include "nsComputedDOMStyle.h"
 #include "nsCSSProps.h"
 #include "nsIDocShell.h"
-#include "nsIContentViewer.h"
 #include "mozilla/StyleAnimationValue.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileBinding.h"
@@ -67,7 +67,6 @@
 #endif
 
 #include "Layers.h"
-#include "gfxPrefs.h"
 
 #include "mozilla/dom/AudioDeviceInfo.h"
 #include "mozilla/dom/Element.h"
@@ -86,7 +85,6 @@
 #include "nsPrintfCString.h"
 #include "nsViewportInfo.h"
 #include "nsIFormControl.h"
-#include "nsIScriptError.h"
 //#include "nsWidgetsCID.h"
 #include "FrameLayerBuilder.h"
 #include "nsDisplayList.h"
@@ -96,15 +94,11 @@
 #include "nsIInterfaceRequestorUtils.h"
 #include "GeckoProfiler.h"
 #include "mozilla/Preferences.h"
-#include "nsIStyleSheetService.h"
 #include "nsContentPermissionHelper.h"
 #include "nsCSSPseudoElements.h"  // for PseudoStyleType
 #include "nsNetUtil.h"
-#include "HTMLImageElement.h"
 #include "HTMLCanvasElement.h"
-#include "mozilla/css/ImageLoader.h"
 #include "mozilla/layers/IAPZCTreeManager.h"  // for layers::ZoomToRectBehavior
-#include "mozilla/dom/Document.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/StyleSheetInlines.h"
@@ -468,7 +462,7 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
                         new DisplayPortPropertyData(displayport, aPriority),
                         nsINode::DeleteProperty<DisplayPortPropertyData>);
 
-  if (gfxPrefs::LayoutUseContainersForRootFrames()) {
+  if (StaticPrefs::layout_scroll_root_frame_containers()) {
     nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame();
     if (rootScrollFrame && aElement == rootScrollFrame->GetContent() &&
         nsLayoutUtils::UsesAsyncScrolling(rootScrollFrame)) {
@@ -2007,7 +2001,8 @@ nsDOMWindowUtils::GetVisitedDependentComputedStyle(
   }
 
   static_cast<nsComputedDOMStyle*>(decl.get())->SetExposeVisitedStyle(true);
-  nsresult rv = decl->GetPropertyValue(aPropertyName, aResult);
+  nsresult rv =
+      decl->GetPropertyValue(NS_ConvertUTF16toUTF8(aPropertyName), aResult);
   static_cast<nsComputedDOMStyle*>(decl.get())->SetExposeVisitedStyle(false);
 
   return rv;
@@ -2140,16 +2135,6 @@ nsDOMWindowUtils::GetUsingAdvancedLayers(bool* retval) {
   if (KnowsCompositor* fwd = mgr->AsKnowsCompositor()) {
     *retval = fwd->GetTextureFactoryIdentifier().mUsingAdvancedLayers;
   }
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::GetIsWebRenderBuilt(bool* retval) {
-#ifdef MOZ_BUILD_WEBRENDER
-  *retval = true;
-#else
-  *retval = false;
-#endif
   return NS_OK;
 }
 
@@ -2531,7 +2516,8 @@ nsDOMWindowUtils::ComputeAnimationDistance(Element* aElement,
                                            double* aResult) {
   NS_ENSURE_ARG_POINTER(aElement);
 
-  nsCSSPropertyID property = nsCSSProps::LookupProperty(aProperty);
+  nsCSSPropertyID property =
+      nsCSSProps::LookupProperty(NS_ConvertUTF16toUTF8(aProperty));
   if (property == eCSSProperty_UNKNOWN || nsCSSProps::IsShorthand(property)) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
@@ -2558,7 +2544,8 @@ nsDOMWindowUtils::GetUnanimatedComputedStyle(Element* aElement,
     return NS_ERROR_INVALID_ARG;
   }
 
-  nsCSSPropertyID propertyID = nsCSSProps::LookupProperty(aProperty);
+  nsCSSPropertyID propertyID =
+      nsCSSProps::LookupProperty(NS_ConvertUTF16toUTF8(aProperty));
   if (propertyID == eCSSProperty_UNKNOWN ||
       nsCSSProps::IsShorthand(propertyID)) {
     return NS_ERROR_INVALID_ARG;
@@ -3867,31 +3854,6 @@ nsDOMWindowUtils::TriggerDeviceReset() {
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::ForceUseCounterFlush(nsINode* aNode) {
-  NS_ENSURE_ARG_POINTER(aNode);
-
-  if (nsCOMPtr<Document> doc = do_QueryInterface(aNode)) {
-    mozilla::css::ImageLoader* loader = doc->StyleImageLoader();
-    loader->FlushUseCounters();
-
-    // Flush the document and any external documents that it depends on.
-    const auto reportKind =
-        Document::UseCounterReportKind::eIncludeExternalResources;
-    doc->ReportUseCounters(reportKind);
-    return NS_OK;
-  }
-
-  if (nsCOMPtr<nsIContent> content = do_QueryInterface(aNode)) {
-    if (HTMLImageElement* img = HTMLImageElement::FromNode(content)) {
-      img->FlushUseCounters();
-      return NS_OK;
-    }
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsDOMWindowUtils::HasRuleProcessorUsedByMultipleStyleSets(uint32_t aSheetType,
                                                           bool* aRetVal) {
   PresShell* presShell = GetPresShell();
@@ -4149,20 +4111,4 @@ nsDOMWindowUtils::GetSystemFont(nsACString& aFontName) {
   widget->GetSystemFont(fontName);
   aFontName.Assign(fontName);
   return NS_OK;
-}
-
-NS_IMETHODIMP
-nsDOMWindowUtils::IsCssPropertyRecordedInUseCounter(const nsACString& aPropName,
-                                                    bool* aRecorded) {
-  *aRecorded = false;
-
-  Document* doc = GetDocument();
-  if (!doc || !doc->GetStyleUseCounters()) {
-    return NS_ERROR_FAILURE;
-  }
-
-  bool knownProp = false;
-  *aRecorded = Servo_IsCssPropertyRecordedInUseCounter(
-      doc->GetStyleUseCounters(), &aPropName, &knownProp);
-  return knownProp ? NS_OK : NS_ERROR_FAILURE;
 }

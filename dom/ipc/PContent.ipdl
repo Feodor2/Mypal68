@@ -38,7 +38,6 @@ include protocol PPresentation;
 include protocol PURLClassifier;
 include protocol PURLClassifierLocal;
 include protocol PVRManager;
-include protocol PVideoDecoderManager;
 include protocol PRemoteDecoderManager;
 include protocol PProfiler;
 include protocol PScriptCache;
@@ -102,6 +101,7 @@ using base::SharedMemoryHandle from "base/shared_memory.h";
 using mozilla::ipc::SharedMemoryBasic::Handle from "mozilla/ipc/SharedMemoryBasic.h";
 using mozilla::fontlist::Pointer from "SharedFontList.h";
 using gfxSparseBitSet from "gfxFontUtils.h";
+using mozilla::dom::MediaControlActions from "ipc/MediaControlIPC.h";
 
 union ChromeRegistryItem
 {
@@ -224,7 +224,7 @@ struct JSWindowActorInfo
 {
   nsString name;
   bool allFrames;
-  nsCString url;
+  nsCString? url;
 
   JSWindowActorEventDecl[] events;
   nsCString[] observers;
@@ -411,7 +411,7 @@ child:
       Endpoint<PCompositorManagerChild> compositor,
       Endpoint<PImageBridgeChild> imageBridge,
       Endpoint<PVRManagerChild> vr,
-      Endpoint<PVideoDecoderManagerChild> video,
+      Endpoint<PRemoteDecoderManagerChild> video,
       uint32_t[] namespaces);
 
     // Re-create the rendering stack using the given endpoints. This is sent
@@ -421,7 +421,7 @@ child:
       Endpoint<PCompositorManagerChild> compositor,
       Endpoint<PImageBridgeChild> bridge,
       Endpoint<PVRManagerChild> vr,
-      Endpoint<PVideoDecoderManagerChild> video,
+      Endpoint<PRemoteDecoderManagerChild> video,
       uint32_t[] namespaces);
 
     async AudioDefaultDeviceChange();
@@ -772,9 +772,6 @@ child:
      */
     async PClientOpenWindowOp(ClientOpenWindowArgs aArgs);
 
-    /* Save the execution up to the current point in a recording process. */
-    async SaveRecording(FileDescriptor file);
-
     // This message is sent to content processes, and triggers the creation of a
     // new HttpChannelChild that will be connected to the parent channel
     // represented by registrarId.
@@ -794,16 +791,23 @@ child:
     */
     async StartDelayedAutoplayMediaComponents(BrowsingContext aContext);
 
+    /**
+    * This method is used to notifty content process to mute or unmute media.
+    */
+    async SetMediaMuted(BrowsingContext aContext, bool aMuted);
+
+    /**
+     * This method is used to apply the media action to outer window in the
+     * content process, such as play, pause, stop ..e.t.c.
+     */
+    async UpdateMediaAction(BrowsingContext aContext, MediaControlActions aAction);
+
     // Begin subscribing to a new BrowsingContextGroup, sending down the current
     // value for every individual BrowsingContext.
     async RegisterBrowsingContextGroup(BrowsingContextInitializer[] aInits);
 
 parent:
     async InitBackground(Endpoint<PBackgroundParent> aEndpoint);
-
-    sync OpenRecordReplayChannel(uint32_t channelId)
-        returns (FileDescriptor connection);
-    async CreateReplayingProcess(uint32_t channelId);
 
     async CreateGMPService();
 
@@ -1032,23 +1036,6 @@ parent:
 
     async RequestAnonymousTemporaryFile(uint64_t aID);
 
-    /**
-     * Keygen requires us to call it after a <keygen> element is parsed and
-     * before one is submitted. This is urgent because an extension might use
-     * a CPOW to synchronously submit a keygen element.
-     */
-    nested(inside_cpow) sync KeygenProcessValue(nsString oldValue,
-                                                nsString challenge,
-                                                nsString keytype,
-                                                nsString keyparams)
-        returns (nsString newValue);
-
-    /**
-     * Called to provide the options for <keygen> elements.
-     */
-    sync KeygenProvideContent()
-        returns (nsString aAttribute, nsString[] aContent);
-
     /** Clear RemoteFrameInfo of the given tab id. */
     async UnregisterRemoteFrame(TabId tabId,
                                 ContentParentId cpId,
@@ -1091,8 +1078,7 @@ parent:
 
     /**
      * Sets "offline-app" permission for the principal.  Called when we hit
-     * a web app with the manifest attribute in <html> and
-     * offline-apps.allow_by_default is set to true.
+     * a web app with the manifest attribute in <html>
      */
     async SetOfflinePermission(Principal principal);
 
@@ -1371,6 +1357,13 @@ parent:
     async AddPerformanceMetrics(nsID aID, PerformanceInfo[] aMetrics);
 
     /*
+     * Determines whether storage access can be granted automatically by the
+     * storage access API without showing a user prompt.
+     */
+    async AutomaticStorageAccessCanBeGranted(Principal aPrincipal)
+          returns (bool success);
+
+    /*
      * A 3rd party tracking origin (aTrackingOrigin) has received the permission
      * granted to have access to aGrantedOrigin when loaded by aParentPrincipal.
      */
@@ -1382,6 +1375,18 @@ parent:
           returns (bool unused);
 
     async StoreUserInteractionAsPermission(Principal aPrincipal);
+
+   /**
+    * When media started or stopped in content process, we have to notify the
+    * chrome process in order to know which tab is playing media.
+    */
+    async NotifyMediaActiveChanged(BrowsingContext aContext, bool aActive);
+
+   /**
+    * When media became audible or inaudible in content process, we have to
+    * notify chrome process in order to which tab is audible.
+    */
+    async NotifyMediaAudibleChanged(BrowsingContext aContext, bool aAudible);
 
 both:
     async CommitBrowsingContextTransaction(BrowsingContext aContext,

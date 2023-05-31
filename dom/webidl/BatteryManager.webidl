@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface BatteryManager : EventTarget {
     readonly attribute boolean             charging;
     readonly attribute unrestricted double chargingTime;

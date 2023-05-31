@@ -6,7 +6,8 @@
 interface XULCommandDispatcher;
 interface MozObserver;
 
-[Func="IsChromeOrXBL"]
+[Func="IsChromeOrXBL",
+ Exposed=Window]
 interface XULDocument : Document {
 
 };

@@ -7,6 +7,7 @@
  */
 
 // https://drafts.csswg.org/css-conditional/#the-cssconditionrule-interface
+[Exposed=Window]
 interface CSSConditionRule : CSSGroupingRule {
   [SetterThrows]
   attribute DOMString conditionText;

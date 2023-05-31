@@ -5,11 +5,8 @@
 #include "txMozillaXSLTProcessor.h"
 #include "nsContentCID.h"
 #include "nsError.h"
-#include "nsIChannel.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Document.h"
-#include "nsIIOService.h"
-#include "nsILoadGroup.h"
 #include "nsIStringBundle.h"
 #include "nsIURI.h"
 #include "nsMemory.h"
@@ -26,7 +23,6 @@
 #include "jsapi.h"
 #include "txExprParser.h"
 #include "nsErrorService.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsJSUtils.h"
 #include "nsIXPConnect.h"
 #include "nsVariant.h"
@@ -894,7 +890,7 @@ uint32_t txMozillaXSLTProcessor::Flags(SystemCallerGuarantee) { return mFlags; }
 NS_IMETHODIMP
 txMozillaXSLTProcessor::LoadStyleSheet(nsIURI* aUri,
                                        Document* aLoaderDocument) {
-  mozilla::net::ReferrerPolicy refpol = mozilla::net::RP_Unset;
+  mozilla::dom::ReferrerPolicy refpol = mozilla::dom::ReferrerPolicy::_empty;
   if (mStylesheetDocument) {
     refpol = mStylesheetDocument->GetReferrerPolicy();
   }
@@ -937,7 +933,7 @@ void txMozillaXSLTProcessor::reportError(nsresult aResult,
     nsCOMPtr<nsIStringBundleService> sbs =
         mozilla::services::GetStringBundleService();
     if (sbs) {
-      nsAutoString errorText;
+      nsString errorText;
       sbs->FormatStatusMessage(aResult, EmptyString().get(), errorText);
 
       nsAutoString errorMessage;
@@ -945,12 +941,11 @@ void txMozillaXSLTProcessor::reportError(nsresult aResult,
       sbs->CreateBundle(XSLT_MSGS_URL, getter_AddRefs(bundle));
 
       if (bundle) {
-        const char16_t* error[] = {errorText.get()};
+        AutoTArray<nsString, 1> error = {errorText};
         if (mStylesheet) {
-          bundle->FormatStringFromName("TransformError", error, 1,
-                                       errorMessage);
+          bundle->FormatStringFromName("TransformError", error, errorMessage);
         } else {
-          bundle->FormatStringFromName("LoadingError", error, 1, errorMessage);
+          bundle->FormatStringFromName("LoadingError", error, errorMessage);
         }
       }
       mErrorText.Assign(errorMessage);
@@ -1099,7 +1094,7 @@ DocGroup* txMozillaXSLTProcessor::GetDocGroup() const {
 
 /* static */
 already_AddRefed<txMozillaXSLTProcessor> txMozillaXSLTProcessor::Constructor(
-    const GlobalObject& aGlobal, mozilla::ErrorResult& aRv) {
+    const GlobalObject& aGlobal) {
   RefPtr<txMozillaXSLTProcessor> processor =
       new txMozillaXSLTProcessor(aGlobal.GetAsSupports());
   return processor.forget();

@@ -12,14 +12,22 @@
 #include "FileInfo.h"
 #include "IDBMutableFile.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
+#include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/File.h"
-#include "nsIInputStream.h"
 
 namespace mozilla {
 namespace dom {
 namespace indexedDB {
 
-inline StructuredCloneFile::StructuredCloneFile() : mType(eBlob) {
+inline StructuredCloneFile::StructuredCloneFile(FileType aType,
+                                                RefPtr<Blob> aBlob)
+    : mBlob{std::move(aBlob)}, mType{aType} {
+  MOZ_COUNT_CTOR(StructuredCloneFile);
+}
+
+inline StructuredCloneFile::StructuredCloneFile(
+    RefPtr<IDBMutableFile> aMutableFile)
+    : mMutableFile{std::move(aMutableFile)}, mType{eMutableFile} {
   MOZ_COUNT_CTOR(StructuredCloneFile);
 }
 
@@ -45,25 +53,28 @@ inline StructuredCloneReadInfo::StructuredCloneReadInfo()
           JS::StructuredCloneScope::DifferentProcessForIndexedDB) {}
 
 inline StructuredCloneReadInfo::StructuredCloneReadInfo(
-    StructuredCloneReadInfo&& aCloneReadInfo)
-    : mData(std::move(aCloneReadInfo.mData)) {
-  MOZ_ASSERT(&aCloneReadInfo != this);
+    JSStructuredCloneData&& aData, nsTArray<StructuredCloneFile> aFiles,
+    IDBDatabase* aDatabase, bool aHasPreprocessInfo)
+    : mData{std::move(aData)},
+      mFiles{std::move(aFiles)},
+      mDatabase{aDatabase},
+      mHasPreprocessInfo{aHasPreprocessInfo} {
+  MOZ_COUNT_CTOR(StructuredCloneReadInfo);
+}
+
+#ifdef NS_BUILD_REFCNT_LOGGING
+inline StructuredCloneReadInfo::StructuredCloneReadInfo(
+    StructuredCloneReadInfo&& aOther) noexcept
+    : mData(std::move(aOther.mData)) {
+  MOZ_ASSERT(&aOther != this);
   MOZ_COUNT_CTOR(StructuredCloneReadInfo);
 
   mFiles.Clear();
-  mFiles.SwapElements(aCloneReadInfo.mFiles);
-  mDatabase = aCloneReadInfo.mDatabase;
-  aCloneReadInfo.mDatabase = nullptr;
-  mHasPreprocessInfo = aCloneReadInfo.mHasPreprocessInfo;
-  aCloneReadInfo.mHasPreprocessInfo = false;
-}
-
-inline StructuredCloneReadInfo::StructuredCloneReadInfo(
-    SerializedStructuredCloneReadInfo&& aCloneReadInfo)
-    : mData(std::move(aCloneReadInfo.data().data)),
-      mDatabase(nullptr),
-      mHasPreprocessInfo(aCloneReadInfo.hasPreprocessInfo()) {
-  MOZ_COUNT_CTOR(StructuredCloneReadInfo);
+  mFiles.SwapElements(aOther.mFiles);
+  mDatabase = aOther.mDatabase;
+  aOther.mDatabase = nullptr;
+  mHasPreprocessInfo = aOther.mHasPreprocessInfo;
+  aOther.mHasPreprocessInfo = false;
 }
 
 inline StructuredCloneReadInfo::~StructuredCloneReadInfo() {
@@ -71,18 +82,19 @@ inline StructuredCloneReadInfo::~StructuredCloneReadInfo() {
 }
 
 inline StructuredCloneReadInfo& StructuredCloneReadInfo::operator=(
-    StructuredCloneReadInfo&& aCloneReadInfo) {
-  MOZ_ASSERT(&aCloneReadInfo != this);
+    StructuredCloneReadInfo&& aOther) noexcept {
+  MOZ_ASSERT(&aOther != this);
 
-  mData = std::move(aCloneReadInfo.mData);
+  mData = std::move(aOther.mData);
   mFiles.Clear();
-  mFiles.SwapElements(aCloneReadInfo.mFiles);
-  mDatabase = aCloneReadInfo.mDatabase;
-  aCloneReadInfo.mDatabase = nullptr;
-  mHasPreprocessInfo = aCloneReadInfo.mHasPreprocessInfo;
-  aCloneReadInfo.mHasPreprocessInfo = false;
+  mFiles.SwapElements(aOther.mFiles);
+  mDatabase = aOther.mDatabase;
+  aOther.mDatabase = nullptr;
+  mHasPreprocessInfo = aOther.mHasPreprocessInfo;
+  aOther.mHasPreprocessInfo = false;
   return *this;
 }
+#endif
 
 inline size_t StructuredCloneReadInfo::Size() const {
   size_t size = mData.Size();
@@ -94,6 +106,24 @@ inline size_t StructuredCloneReadInfo::Size() const {
   }
 
   return size;
+}
+
+template <typename E, typename Map>
+RefPtr<DOMStringList> CreateSortedDOMStringList(const nsTArray<E>& aArray,
+                                                const Map& aMap) {
+  auto list = MakeRefPtr<DOMStringList>();
+
+  if (!aArray.IsEmpty()) {
+    nsTArray<nsString>& mapped = list->StringArray();
+    mapped.SetCapacity(aArray.Length());
+
+    std::transform(aArray.cbegin(), aArray.cend(), MakeBackInserter(mapped),
+                   aMap);
+
+    mapped.Sort();
+  }
+
+  return list;
 }
 
 }  // namespace indexedDB

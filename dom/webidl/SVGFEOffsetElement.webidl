@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGFEOffsetElement : SVGElement {
   [Constant]
   readonly attribute SVGAnimatedString in1;
@@ -18,4 +19,4 @@ interface SVGFEOffsetElement : SVGElement {
   readonly attribute SVGAnimatedNumber dy;
 };
 
-SVGFEOffsetElement implements SVGFilterPrimitiveStandardAttributes;
+SVGFEOffsetElement includes SVGFilterPrimitiveStandardAttributes;

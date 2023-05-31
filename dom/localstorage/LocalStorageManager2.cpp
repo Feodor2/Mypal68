@@ -173,9 +173,11 @@ NS_IMPL_ISUPPORTS(LocalStorageManager2, nsIDOMStorageManager,
 
 NS_IMETHODIMP
 LocalStorageManager2::PrecacheStorage(nsIPrincipal* aPrincipal,
+                                      nsIPrincipal* aStoragePrincipal,
                                       Storage** _retval) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aPrincipal);
+  MOZ_ASSERT(aStoragePrincipal);
   MOZ_ASSERT(_retval);
 
   // This method was created as part of the e10s-ification of the old LS
@@ -354,11 +356,16 @@ LSRequestChild* LocalStorageManager2::StartRequest(
     return nullptr;
   }
 
-  auto actor = new LSRequestChild(aCallback);
+  auto actor = new LSRequestChild();
 
   if (!backgroundActor->SendPBackgroundLSRequestConstructor(actor, aParams)) {
     return nullptr;
   }
+
+  // Must set callback after calling SendPBackgroundLSRequestConstructor since
+  // it can be called synchronously when SendPBackgroundLSRequestConstructor
+  // fails.
+  actor->SetCallback(aCallback);
 
   return actor;
 }
@@ -374,14 +381,19 @@ nsresult LocalStorageManager2::StartSimpleRequest(
     return NS_ERROR_FAILURE;
   }
 
-  RefPtr<SimpleRequestResolver> resolver = new SimpleRequestResolver(aPromise);
-
-  auto actor = new LSSimpleRequestChild(resolver);
+  auto actor = new LSSimpleRequestChild();
 
   if (!backgroundActor->SendPBackgroundLSSimpleRequestConstructor(actor,
                                                                   aParams)) {
     return NS_ERROR_FAILURE;
   }
+
+  RefPtr<SimpleRequestResolver> resolver = new SimpleRequestResolver(aPromise);
+
+  // Must set callback after calling SendPBackgroundLSRequestConstructor since
+  // it can be called synchronously when SendPBackgroundLSRequestConstructor
+  // fails.
+  actor->SetCallback(resolver);
 
   return NS_OK;
 }

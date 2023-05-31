@@ -85,7 +85,7 @@ InternalRequest::InternalRequest(const nsACString& aURL,
       mContentPolicyType(nsIContentPolicy::TYPE_FETCH),
       mReferrer(NS_LITERAL_STRING(kFETCH_CLIENT_REFERRER_STR)),
       mReferrerPolicy(ReferrerPolicy::_empty),
-      mEnvironmentReferrerPolicy(net::RP_Unset),
+      mEnvironmentReferrerPolicy(ReferrerPolicy::_empty),
       mMode(RequestMode::No_cors),
       mCredentialsMode(RequestCredentials::Omit),
       mResponseTainting(LoadTainting::Basic),
@@ -120,7 +120,7 @@ InternalRequest::InternalRequest(
       mContentPolicyType(aContentPolicyType),
       mReferrer(aReferrer),
       mReferrerPolicy(aReferrerPolicy),
-      mEnvironmentReferrerPolicy(net::RP_Unset),
+      mEnvironmentReferrerPolicy(ReferrerPolicy::_empty),
       mMode(aMode),
       mCredentialsMode(aRequestCredentials),
       mResponseTainting(LoadTainting::Basic),
@@ -252,6 +252,8 @@ RequestDestination InternalRequest::MapContentPolicyTypeToRequestDestination(
       destination = RequestDestination::_empty;
       break;
     case nsIContentPolicy::TYPE_DTD:
+    case nsIContentPolicy::TYPE_INTERNAL_DTD:
+    case nsIContentPolicy::TYPE_INTERNAL_FORCE_ALLOWED_DTD:
       destination = RequestDestination::_empty;
       break;
     case nsIContentPolicy::TYPE_FONT:

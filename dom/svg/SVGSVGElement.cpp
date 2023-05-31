@@ -5,6 +5,7 @@
 #include "mozilla/dom/SVGSVGElement.h"
 
 #include "mozilla/ContentEvents.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/SVGSVGElementBinding.h"
 #include "mozilla/dom/SVGMatrix.h"
 #include "mozilla/dom/SVGRect.h"
@@ -364,15 +365,14 @@ SMILTimeContainer* SVGSVGElement::GetTimedDocumentRoot() {
 }
 //----------------------------------------------------------------------
 // SVGElement
-nsresult SVGSVGElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                   nsIContent* aBindingParent) {
+nsresult SVGSVGElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   SMILAnimationController* smilController = nullptr;
 
-  if (aDocument) {
-    smilController = aDocument->GetAnimationController();
-    if (smilController) {
+  // FIXME(emilio, bug 1555948): Should probably use composed doc.
+  if (Document* doc = aContext.GetUncomposedDoc()) {
+    if ((smilController = doc->GetAnimationController())) {
       // SMIL is enabled in this document
-      if (WillBeOutermostSVG(aParent, aBindingParent)) {
+      if (WillBeOutermostSVG(aParent, aContext.GetBindingParent())) {
         // We'll be the outermost <svg> element.  We'll need a time container.
         if (!mTimedDocumentRoot) {
           mTimedDocumentRoot = new SMILTimeContainer();
@@ -387,8 +387,7 @@ nsresult SVGSVGElement::BindToTree(Document* aDocument, nsIContent* aParent,
     }
   }
 
-  nsresult rv =
-      SVGGraphicsElement::BindToTree(aDocument, aParent, aBindingParent);
+  nsresult rv = SVGGraphicsElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (mTimedDocumentRoot && smilController) {
@@ -402,12 +401,12 @@ nsresult SVGSVGElement::BindToTree(Document* aDocument, nsIContent* aParent,
   return rv;
 }
 
-void SVGSVGElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void SVGSVGElement::UnbindFromTree(bool aNullParent) {
   if (mTimedDocumentRoot) {
     mTimedDocumentRoot->SetParent(nullptr);
   }
 
-  SVGGraphicsElement::UnbindFromTree(aDeep, aNullParent);
+  SVGGraphicsElement::UnbindFromTree(aNullParent);
 }
 
 SVGAnimatedTransformList* SVGSVGElement::GetAnimatedTransformList(
@@ -483,9 +482,9 @@ void SVGSVGElement::FlushImageTransformInvalidation() {
 //----------------------------------------------------------------------
 // implementation helpers
 
-bool SVGSVGElement::WillBeOutermostSVG(nsIContent* aParent,
-                                       nsIContent* aBindingParent) const {
-  nsIContent* parent = aBindingParent ? aBindingParent : aParent;
+bool SVGSVGElement::WillBeOutermostSVG(nsINode& aParent,
+                                       Element* aBindingParent) const {
+  nsINode* parent = aBindingParent ? aBindingParent : &aParent;
 
   while (parent && parent->IsSVGElement()) {
     if (parent->IsSVGElement(nsGkAtoms::foreignObject)) {

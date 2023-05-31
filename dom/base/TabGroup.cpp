@@ -14,8 +14,6 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/ThrottledEventQueue.h"
 #include "nsIDocShell.h"
-#include "nsIEffectiveTLDService.h"
-#include "nsIURI.h"
 
 namespace mozilla {
 namespace dom {
@@ -79,13 +77,11 @@ void TabGroup::EnsureThrottledEventQueues() {
   for (size_t i = 0; i < size_t(TaskCategory::Count); i++) {
     TaskCategory category = static_cast<TaskCategory>(i);
     if (category == TaskCategory::Worker) {
-      mEventTargets[i] =
-          ThrottledEventQueue::Create(mEventTargets[i],
-                                      "TabGroup worker queue");
+      mEventTargets[i] = ThrottledEventQueue::Create(mEventTargets[i],
+                                                     "TabGroup worker queue");
     } else if (category == TaskCategory::Timer) {
       mEventTargets[i] =
-          ThrottledEventQueue::Create(mEventTargets[i],
-                                      "TabGroup timer queue");
+          ThrottledEventQueue::Create(mEventTargets[i], "TabGroup timer queue");
     }
   }
 }
@@ -111,11 +107,6 @@ TabGroup* TabGroup::GetFromWindow(mozIDOMWindowProxy* aWindow) {
 /* static */
 TabGroup* TabGroup::GetFromActor(BrowserChild* aBrowserChild) {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
-
-  // Middleman processes do not assign event targets to their tab children.
-  if (recordreplay::IsMiddleman()) {
-    return GetChromeTabGroup();
-  }
 
   nsCOMPtr<nsIEventTarget> target =
       aBrowserChild->Manager()->GetEventTargetFor(aBrowserChild);
@@ -215,7 +206,7 @@ nsresult TabGroup::FindItemWithName(const nsAString& aName,
 
   for (nsPIDOMWindowOuter* outerWindow : mWindows) {
     // Ignore non-toplevel windows
-    if (outerWindow->GetScriptableParentOrNull()) {
+    if (outerWindow->GetInProcessScriptableParentOrNull()) {
       continue;
     }
 
@@ -225,7 +216,7 @@ nsresult TabGroup::FindItemWithName(const nsAString& aName,
     }
 
     nsCOMPtr<nsIDocShellTreeItem> root;
-    docshell->GetSameTypeRootTreeItem(getter_AddRefs(root));
+    docshell->GetInProcessSameTypeRootTreeItem(getter_AddRefs(root));
     MOZ_RELEASE_ASSERT(docshell == root);
     if (root && aRequestor != root) {
       root->FindItemWithName(aName, aRequestor, aOriginalRequestor,
@@ -245,7 +236,7 @@ nsTArray<nsPIDOMWindowOuter*> TabGroup::GetTopLevelWindows() const {
 
   for (nsPIDOMWindowOuter* outerWindow : mWindows) {
     if (outerWindow->GetDocShell() &&
-        !outerWindow->GetScriptableParentOrNull()) {
+        !outerWindow->GetInProcessScriptableParentOrNull()) {
       array.AppendElement(outerWindow);
     }
   }
@@ -300,6 +291,46 @@ bool TabGroup::IsBackground() const {
 #endif
 
   return mForegroundCount == 0;
+}
+
+nsresult TabGroup::QueuePostMessageEvent(
+    already_AddRefed<nsIRunnable>&& aRunnable) {
+  if (StaticPrefs::dom_separate_event_queue_for_post_message_enabled()) {
+    if (!mPostMessageEventQueue) {
+      nsCOMPtr<nsISerialEventTarget> target = GetMainThreadSerialEventTarget();
+      mPostMessageEventQueue = ThrottledEventQueue::Create(
+          target, "PostMessage Queue",
+          nsIRunnablePriority::PRIORITY_DEFERRED_TIMERS);
+      nsresult rv = mPostMessageEventQueue->SetIsPaused(false);
+      MOZ_ALWAYS_SUCCEEDS(rv);
+    }
+
+    // Ensure the queue is enabled
+    if (mPostMessageEventQueue->IsPaused()) {
+      nsresult rv = mPostMessageEventQueue->SetIsPaused(false);
+      MOZ_ALWAYS_SUCCEEDS(rv);
+    }
+
+    if (mPostMessageEventQueue) {
+      mPostMessageEventQueue->Dispatch(std::move(aRunnable),
+                                       NS_DISPATCH_NORMAL);
+      return NS_OK;
+    }
+  }
+  return NS_ERROR_FAILURE;
+}
+
+void TabGroup::FlushPostMessageEvents() {
+  if (StaticPrefs::dom_separate_event_queue_for_post_message_enabled()) {
+    if (mPostMessageEventQueue) {
+      nsresult rv = mPostMessageEventQueue->SetIsPaused(true);
+      MOZ_ALWAYS_SUCCEEDS(rv);
+      nsCOMPtr<nsIRunnable> event;
+      while ((event = mPostMessageEventQueue->GetEvent())) {
+        Dispatch(TaskCategory::Other, event.forget());
+      }
+    }
+  }
 }
 
 uint32_t TabGroup::Count(bool aActiveOnly) const {

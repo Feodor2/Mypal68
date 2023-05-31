@@ -9,7 +9,8 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGZoomAndPan {
 };
 
-SVGZoomAndPan implements SVGZoomAndPanValues;
+SVGZoomAndPan includes SVGZoomAndPanValues;

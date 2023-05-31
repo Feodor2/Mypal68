@@ -5,8 +5,6 @@
 #include "IndexedDatabaseManager.h"
 
 #include "chrome/common/ipc_channel.h"  // for IPC::Channel::kMaximumMessageSize
-#include "nsIConsoleService.h"
-#include "nsIDOMWindow.h"
 #include "nsIScriptError.h"
 #include "nsIScriptGlobalObject.h"
 
@@ -60,8 +58,8 @@ using namespace mozilla::ipc;
 
 class FileManagerInfo {
  public:
-  already_AddRefed<FileManager> GetFileManager(PersistenceType aPersistenceType,
-                                               const nsAString& aName) const;
+  MOZ_MUST_USE RefPtr<FileManager> GetFileManager(
+      PersistenceType aPersistenceType, const nsAString& aName) const;
 
   void AddFileManager(FileManager* aFileManager);
 
@@ -111,6 +109,14 @@ const int32_t kDefaultDataThresholdBytes = 1024 * 1024;  // 1MB
 // The maximal size of a serialized object to be transfered through IPC.
 const int32_t kDefaultMaxSerializedMsgSize = IPC::Channel::kMaximumMessageSize;
 
+// The maximum number of records to preload (in addition to the one requested by
+// the child).
+//
+// TODO: The current number was chosen for no particular reason. Telemetry
+// should be added to determine whether this is a reasonable number for an
+// overwhelming majority of cases.
+const int32_t kDefaultMaxPreloadExtraRecords = 64;
+
 #define IDB_PREF_BRANCH_ROOT "dom.indexedDB."
 
 const char kTestingPref[] = IDB_PREF_BRANCH_ROOT "testing";
@@ -121,6 +127,9 @@ const char kPrefMaxSerilizedMsgSize[] =
     IDB_PREF_BRANCH_ROOT "maxSerializedMsgSize";
 const char kPrefErrorEventToSelfError[] =
     IDB_PREF_BRANCH_ROOT "errorEventToSelfError";
+const char kPreprocessingPref[] = IDB_PREF_BRANCH_ROOT "preprocessing";
+const char kPrefMaxPreloadExtraRecords[] =
+    IDB_PREF_BRANCH_ROOT "maxPreloadExtraRecords";
 
 #define IDB_PREF_LOGGING_BRANCH_ROOT IDB_PREF_BRANCH_ROOT "logging."
 
@@ -145,6 +154,8 @@ Atomic<bool> gFileHandleEnabled(false);
 Atomic<bool> gPrefErrorEventToSelfError(false);
 Atomic<int32_t> gDataThresholdBytes(0);
 Atomic<int32_t> gMaxSerializedMsgSize(0);
+Atomic<bool> gPreprocessingEnabled(false);
+Atomic<int32_t> gMaxPreloadExtraRecords(0);
 
 void AtomicBoolPrefChangedCallback(const char* aPrefName,
                                    Atomic<bool>* aClosure) {
@@ -179,6 +190,28 @@ void MaxSerializedMsgSizePrefChangeCallback(const char* aPrefName,
   gMaxSerializedMsgSize =
       Preferences::GetInt(aPrefName, kDefaultMaxSerializedMsgSize);
   MOZ_ASSERT(gMaxSerializedMsgSize > 0);
+}
+
+void MaxPreloadExtraRecordsPrefChangeCallback(const char* aPrefName,
+                                              void* aClosure) {
+  MOZ_ASSERT(NS_IsMainThread());
+  MOZ_ASSERT(!strcmp(aPrefName, kPrefMaxPreloadExtraRecords));
+  MOZ_ASSERT(!aClosure);
+
+  gMaxPreloadExtraRecords =
+      Preferences::GetInt(aPrefName, kDefaultMaxPreloadExtraRecords);
+  MOZ_ASSERT(gMaxPreloadExtraRecords >= 0);
+
+  // TODO: We could also allow setting a negative value to preload all available
+  // records, but this doesn't seem to be too useful in general, and it would
+  // require adaptations in ActorsParent.cpp
+}
+
+auto DatabaseNameMatchPredicate(const nsAString* const aName) {
+  MOZ_ASSERT(aName);
+  return [aName](const auto& fileManager) {
+    return fileManager->DatabaseName() == *aName;
+  };
 }
 
 }  // namespace
@@ -279,6 +312,13 @@ nsresult IndexedDatabaseManager::Init() {
   Preferences::RegisterCallbackAndCall(MaxSerializedMsgSizePrefChangeCallback,
                                        kPrefMaxSerilizedMsgSize);
 
+  Preferences::RegisterCallbackAndCall(AtomicBoolPrefChangedCallback,
+                                       kPreprocessingPref,
+                                       &gPreprocessingEnabled);
+
+  Preferences::RegisterCallbackAndCall(MaxPreloadExtraRecordsPrefChangeCallback,
+                                       kPrefMaxPreloadExtraRecords);
+
   nsAutoCString acceptLang;
   Preferences::GetLocalizedCString("intl.accept_languages", acceptLang);
 
@@ -333,6 +373,9 @@ void IndexedDatabaseManager::Destroy() {
 
   Preferences::UnregisterCallback(MaxSerializedMsgSizePrefChangeCallback,
                                   kPrefMaxSerilizedMsgSize);
+
+  Preferences::UnregisterCallback(AtomicBoolPrefChangedCallback,
+                                  kPreprocessingPref, &gPreprocessingEnabled);
 
   delete this;
 }
@@ -615,13 +658,31 @@ uint32_t IndexedDatabaseManager::MaxSerializedMsgSize() {
   return gMaxSerializedMsgSize;
 }
 
+// static
+bool IndexedDatabaseManager::PreprocessingEnabled() {
+  MOZ_ASSERT(gDBManager,
+             "PreprocessingEnabled() called before indexedDB has been "
+             "initialized!");
+
+  return gPreprocessingEnabled;
+}
+
+// static
+int32_t IndexedDatabaseManager::MaxPreloadExtraRecords() {
+  MOZ_ASSERT(gDBManager,
+             "MaxPreloadExtraRecords() called before indexedDB has been "
+             "initialized!");
+
+  return gMaxPreloadExtraRecords;
+}
+
 void IndexedDatabaseManager::ClearBackgroundActor() {
   MOZ_ASSERT(NS_IsMainThread());
 
   mBackgroundActor = nullptr;
 }
 
-already_AddRefed<FileManager> IndexedDatabaseManager::GetFileManager(
+RefPtr<FileManager> IndexedDatabaseManager::GetFileManager(
     PersistenceType aPersistenceType, const nsACString& aOrigin,
     const nsAString& aDatabaseName) {
   AssertIsOnIOThread();
@@ -631,10 +692,7 @@ already_AddRefed<FileManager> IndexedDatabaseManager::GetFileManager(
     return nullptr;
   }
 
-  RefPtr<FileManager> fileManager =
-      info->GetFileManager(aPersistenceType, aDatabaseName);
-
-  return fileManager.forget();
+  return info->GetFileManager(aPersistenceType, aDatabaseName);
 }
 
 void IndexedDatabaseManager::AddFileManager(FileManager* aFileManager) {
@@ -800,23 +858,17 @@ const nsCString& IndexedDatabaseManager::GetLocale() {
   return idbManager->mLocale;
 }
 
-already_AddRefed<FileManager> FileManagerInfo::GetFileManager(
+RefPtr<FileManager> FileManagerInfo::GetFileManager(
     PersistenceType aPersistenceType, const nsAString& aName) const {
   AssertIsOnIOThread();
 
-  const nsTArray<RefPtr<FileManager> >& managers =
-      GetImmutableArray(aPersistenceType);
+  const auto& managers = GetImmutableArray(aPersistenceType);
 
-  for (uint32_t i = 0; i < managers.Length(); i++) {
-    const RefPtr<FileManager>& fileManager = managers[i];
+  const auto end = managers.cend();
+  const auto foundIt =
+      std::find_if(managers.cbegin(), end, DatabaseNameMatchPredicate(&aName));
 
-    if (fileManager->DatabaseName() == aName) {
-      RefPtr<FileManager> result = fileManager;
-      return result.forget();
-    }
-  }
-
-  return nullptr;
+  return foundIt != end ? *foundIt : nullptr;
 }
 
 void FileManagerInfo::AddFileManager(FileManager* aFileManager) {
@@ -864,15 +916,14 @@ void FileManagerInfo::InvalidateAndRemoveFileManager(
     PersistenceType aPersistenceType, const nsAString& aName) {
   AssertIsOnIOThread();
 
-  nsTArray<RefPtr<FileManager> >& managers = GetArray(aPersistenceType);
+  auto& managers = GetArray(aPersistenceType);
+  const auto end = managers.cend();
+  const auto foundIt =
+      std::find_if(managers.cbegin(), end, DatabaseNameMatchPredicate(&aName));
 
-  for (uint32_t i = 0; i < managers.Length(); i++) {
-    RefPtr<FileManager>& fileManager = managers[i];
-    if (fileManager->DatabaseName() == aName) {
-      fileManager->Invalidate();
-      managers.RemoveElementAt(i);
-      return;
-    }
+  if (foundIt != end) {
+    (*foundIt)->Invalidate();
+    managers.RemoveElementAt(foundIt.GetIndex());
   }
 }
 

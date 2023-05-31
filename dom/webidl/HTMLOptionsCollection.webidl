@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface HTMLOptionsCollection : HTMLCollection {
   [CEReactions, SetterThrows]
   attribute unsigned long length;

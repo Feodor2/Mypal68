@@ -127,27 +127,28 @@ void SVGScriptElement::FreezeExecutionAttrs(Document* aOwnerDoc) {
 
     // Empty src should be treated as invalid URL.
     if (!src.IsEmpty()) {
-      nsCOMPtr<nsIURI> baseURI = GetBaseURI();
-      NS_NewURI(getter_AddRefs(mUri), src, nullptr, baseURI);
+      NS_NewURI(getter_AddRefs(mUri), src, nullptr, GetBaseURI());
 
       if (!mUri) {
-        const char16_t* params[] = {isHref ? u"href" : u"xlink:href",
-                                    src.get()};
+        AutoTArray<nsString, 2> params = {isHref
+                                              ? NS_LITERAL_STRING("href")
+                                              : NS_LITERAL_STRING("xlink:href"),
+                                          src};
 
         nsContentUtils::ReportToConsole(
             nsIScriptError::warningFlag, NS_LITERAL_CSTRING("SVG"), OwnerDoc(),
             nsContentUtils::eDOM_PROPERTIES, "ScriptSourceInvalidUri", params,
-            ArrayLength(params), nullptr, EmptyString(), GetScriptLineNumber(),
+            nullptr, EmptyString(), GetScriptLineNumber(),
             GetScriptColumnNumber());
       }
     } else {
-      const char16_t* params[] = {isHref ? u"href" : u"xlink:href"};
+      AutoTArray<nsString, 1> params = {
+          isHref ? NS_LITERAL_STRING("href") : NS_LITERAL_STRING("xlink:href")};
 
       nsContentUtils::ReportToConsole(
           nsIScriptError::warningFlag, NS_LITERAL_CSTRING("SVG"), OwnerDoc(),
-          nsContentUtils::eDOM_PROPERTIES, "ScriptSourceEmpty", params,
-          ArrayLength(params), nullptr, EmptyString(), GetScriptLineNumber(),
-          GetScriptColumnNumber());
+          nsContentUtils::eDOM_PROPERTIES, "ScriptSourceEmpty", params, nullptr,
+          EmptyString(), GetScriptLineNumber(), GetScriptColumnNumber());
     }
 
     // At this point mUri will be null for invalid URLs.
@@ -178,13 +179,12 @@ SVGElement::StringAttributesInfo SVGScriptElement::GetStringInfo() {
 //----------------------------------------------------------------------
 // nsIContent methods
 
-nsresult SVGScriptElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                      nsIContent* aBindingParent) {
-  nsresult rv =
-      SVGScriptElementBase::BindToTree(aDocument, aParent, aBindingParent);
+nsresult SVGScriptElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = SVGScriptElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (aDocument) {
+  // FIXME(emilio, bug 1555949): Should be IsInComposedDoc().
+  if (IsInUncomposedDoc()) {
     MaybeProcessScript();
   }
 

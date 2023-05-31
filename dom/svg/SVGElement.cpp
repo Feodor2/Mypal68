@@ -5,6 +5,7 @@
 #include "mozilla/dom/SVGElement.h"
 
 #include "mozilla/dom/MutationEventBinding.h"
+#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/SVGElementBinding.h"
 #include "mozilla/dom/SVGGeometryElement.h"
 #include "mozilla/dom/SVGLengthBinding.h"
@@ -223,9 +224,8 @@ nsresult SVGElement::Init() {
 //----------------------------------------------------------------------
 // nsIContent methods
 
-nsresult SVGElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                nsIContent* aBindingParent) {
-  nsresult rv = SVGElementBase::BindToTree(aDocument, aParent, aBindingParent);
+nsresult SVGElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = SVGElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (!MayHaveStyle()) {
@@ -281,9 +281,7 @@ nsresult SVGElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
   if (IsEventAttributeName(aName) && aValue) {
     MOZ_ASSERT(aValue->Type() == nsAttrValue::eString,
                "Expected string value for script body");
-    nsresult rv =
-        SetEventHandler(GetEventNameForAttr(aName), aValue->GetStringValue());
-    NS_ENSURE_SUCCESS(rv, rv);
+    SetEventHandler(GetEventNameForAttr(aName), aValue->GetStringValue());
   }
 
   return SVGElementBase::AfterSetAttr(aNamespaceID, aName, aValue, aOldValue,
@@ -1025,8 +1023,8 @@ namespace {
 
 class MOZ_STACK_CLASS MappedAttrParser {
  public:
-  MappedAttrParser(css::Loader* aLoader, nsIURI* aDocURI,
-                   already_AddRefed<nsIURI> aBaseURI, SVGElement* aElement);
+  MappedAttrParser(css::Loader* aLoader, nsIURI* aBaseURI,
+                   SVGElement* aElement);
   ~MappedAttrParser();
 
   // Parses a mapped attribute value.
@@ -1043,8 +1041,6 @@ class MOZ_STACK_CLASS MappedAttrParser {
   // -----------
   css::Loader* mLoader;
 
-  // Arguments for nsCSSParser::ParseProperty
-  nsIURI* mDocURI;
   nsCOMPtr<nsIURI> mBaseURI;
 
   // Declaration for storing parsed values (lazily initialized)
@@ -1054,13 +1050,9 @@ class MOZ_STACK_CLASS MappedAttrParser {
   SVGElement* mElement;
 };
 
-MappedAttrParser::MappedAttrParser(css::Loader* aLoader, nsIURI* aDocURI,
-                                   already_AddRefed<nsIURI> aBaseURI,
+MappedAttrParser::MappedAttrParser(css::Loader* aLoader, nsIURI* aBaseURI,
                                    SVGElement* aElement)
-    : mLoader(aLoader),
-      mDocURI(aDocURI),
-      mBaseURI(aBaseURI),
-      mElement(aElement) {}
+    : mLoader(aLoader), mBaseURI(aBaseURI), mElement(aElement) {}
 
 MappedAttrParser::~MappedAttrParser() {
   MOZ_ASSERT(!mDecl,
@@ -1076,38 +1068,23 @@ void MappedAttrParser::ParseMappedAttrValue(nsAtom* aMappedAttrName,
 
   // Get the nsCSSPropertyID ID for our mapped attribute.
   nsCSSPropertyID propertyID =
-      nsCSSProps::LookupProperty(nsDependentAtomString(aMappedAttrName));
+      nsCSSProps::LookupProperty(nsAtomCString(aMappedAttrName));
   if (propertyID != eCSSProperty_UNKNOWN) {
     bool changed = false;  // outparam for ParseProperty.
     NS_ConvertUTF16toUTF8 value(aMappedAttrValue);
+
     // FIXME (bug 1343964): Figure out a better solution for sending the base
     // uri to servo
+    nsCOMPtr<nsIReferrerInfo> referrerInfo =
+        ReferrerInfo::CreateForSVGResources(mElement->OwnerDoc());
+
     RefPtr<URLExtraData> data =
-        new URLExtraData(mBaseURI, mDocURI, mElement->NodePrincipal(),
-                         mElement->OwnerDoc()->GetReferrerPolicy());
+        new URLExtraData(mBaseURI, referrerInfo, mElement->NodePrincipal());
     changed = Servo_DeclarationBlock_SetPropertyById(
         mDecl->Raw(), propertyID, &value, false, data,
         ParsingMode::AllowUnitlessLength,
         mElement->OwnerDoc()->GetCompatibilityMode(), mLoader, {});
 
-    if (changed) {
-      // The normal reporting of use counters by the nsCSSParser won't happen
-      // since it doesn't have a sheet.
-      if (nsCSSProps::IsShorthand(propertyID)) {
-        CSSPROPS_FOR_SHORTHAND_SUBPROPERTIES(subprop, propertyID,
-                                             CSSEnabledState::ForAllContent) {
-          UseCounter useCounter = nsCSSProps::UseCounterFor(*subprop);
-          if (useCounter != eUseCounter_UNKNOWN) {
-            mElement->OwnerDoc()->SetDocumentAndPageUseCounter(useCounter);
-          }
-        }
-      } else {
-        UseCounter useCounter = nsCSSProps::UseCounterFor(propertyID);
-        if (useCounter != eUseCounter_UNKNOWN) {
-          mElement->OwnerDoc()->SetDocumentAndPageUseCounter(useCounter);
-        }
-      }
-    }
     return;
   }
   MOZ_ASSERT(aMappedAttrName == nsGkAtoms::lang,
@@ -1140,8 +1117,7 @@ void SVGElement::UpdateContentDeclarationBlock() {
   }
 
   Document* doc = OwnerDoc();
-  MappedAttrParser mappedAttrParser(doc->CSSLoader(), doc->GetDocumentURI(),
-                                    GetBaseURI(), this);
+  MappedAttrParser mappedAttrParser(doc->CSSLoader(), GetBaseURI(), this);
 
   for (uint32_t i = 0; i < attrCount; ++i) {
     const nsAttrName* attrName = mAttrs.AttrNameAt(i);
@@ -1253,7 +1229,8 @@ nsAttrValue SVGElement::WillChangeValue(nsAtom* aName) {
   uint8_t modType =
       attrValue ? static_cast<uint8_t>(MutationEvent_Binding::MODIFICATION)
                 : static_cast<uint8_t>(MutationEvent_Binding::ADDITION);
-  nsNodeUtils::AttributeWillChange(this, kNameSpaceID_None, aName, modType);
+  MutationObservers::NotifyAttributeWillChange(this, kNameSpaceID_None, aName,
+                                               modType);
 
   // This is not strictly correct--the attribute value parameter for
   // BeforeSetAttr should reflect the value that *will* be set but that implies
@@ -1994,13 +1971,13 @@ void SVGElement::DidAnimateTransformList(int32_t aModType) {
     nsAtom* transformAttr = GetTransformListAttrName();
     frame->AttributeChanged(kNameSpaceID_None, transformAttr, aModType);
     // When script changes the 'transform' attribute, Element::SetAttrAndNotify
-    // will call nsNodeUtils::AttributeChanged, under which
+    // will call MutationObservers::NotifyAttributeChanged, under which
     // SVGTransformableElement::GetAttributeChangeHint will be called and an
     // appropriate change event posted to update our frame's overflow rects.
     // The SetAttrAndNotify doesn't happen for transform changes caused by
     // 'animateTransform' though (and sending out the mutation events that
-    // nsNodeUtils::AttributeChanged dispatches would be inappropriate
-    // anyway), so we need to post the change event ourself.
+    // MutationObservers::NotifyAttributeChanged dispatches would be
+    // inappropriate anyway), so we need to post the change event ourself.
     nsChangeHint changeHint = GetAttributeChangeHint(transformAttr, aModType);
     if (changeHint) {
       nsLayoutUtils::PostRestyleEvent(this, RestyleHint{0}, changeHint);
@@ -2107,11 +2084,11 @@ void SVGElement::StringListAttributesInfo::Reset(uint8_t aAttrEnum) {
 nsresult SVGElement::ReportAttributeParseFailure(Document* aDocument,
                                                  nsAtom* aAttribute,
                                                  const nsAString& aValue) {
-  const nsString& attributeValue = PromiseFlatString(aValue);
-  const char16_t* strings[] = {aAttribute->GetUTF16String(),
-                               attributeValue.get()};
+  AutoTArray<nsString, 2> strings;
+  strings.AppendElement(nsDependentAtomString(aAttribute));
+  strings.AppendElement(aValue);
   return SVGContentUtils::ReportToConsole(aDocument, "AttributeParseWarning",
-                                          strings, ArrayLength(strings));
+                                          strings);
 }
 
 void SVGElement::RecompileScriptEventListeners() {
@@ -2312,6 +2289,21 @@ void SVGElement::FlushAnimations() {
   Document* doc = GetComposedDoc();
   if (doc && doc->HasAnimationController()) {
     doc->GetAnimationController()->FlushResampleRequests();
+  }
+}
+
+void SVGElement::AddSizeOfExcludingThis(nsWindowSizes& aSizes,
+                                        size_t* aNodeSize) const {
+  Element::AddSizeOfExcludingThis(aSizes, aNodeSize);
+
+  // These are owned by the element and not referenced from the stylesheets.
+  // They're referenced from the rule tree, but the rule nodes don't measure
+  // their style source (since they're non-owning), so unconditionally reporting
+  // them even though it's a refcounted object is ok.
+  if (mContentDeclarationBlock) {
+    aSizes.mLayoutSvgMappedDeclarations +=
+        mContentDeclarationBlock->SizeofIncludingThis(
+            aSizes.mState.mMallocSizeOf);
   }
 }
 

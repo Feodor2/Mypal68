@@ -34,10 +34,12 @@ struct InitTemporaryStorageParams
 {
 };
 
-struct InitOriginParams
+struct InitStorageAndOriginParams
 {
   PrincipalInfo principalInfo;
   PersistenceType persistenceType;
+  Type clientType;
+  bool clientTypeIsExplicit;
 };
 
 struct AllUsageParams
@@ -48,7 +50,7 @@ struct AllUsageParams
 struct OriginUsageParams
 {
   PrincipalInfo principalInfo;
-  bool getGroupUsage;
+  bool fromMemory;
 };
 
 union UsageRequestParams
@@ -100,7 +102,12 @@ struct PersistParams
   PrincipalInfo principalInfo;
 };
 
-struct ListInitializedOriginsParams
+struct EstimateParams
+{
+  PrincipalInfo principalInfo;
+};
+
+struct ListOriginsParams
 {
 };
 
@@ -108,7 +115,7 @@ union RequestParams
 {
   InitParams;
   InitTemporaryStorageParams;
-  InitOriginParams;
+  InitStorageAndOriginParams;
   ClearOriginParams;
   ResetOriginParams;
   ClearDataParams;
@@ -116,7 +123,8 @@ union RequestParams
   ResetAllParams;
   PersistedParams;
   PersistParams;
-  ListInitializedOriginsParams;
+  EstimateParams;
+  ListOriginsParams;
 };
 
 protocol PQuota

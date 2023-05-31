@@ -4,6 +4,7 @@
 
 #include "mozilla/dom/cache/Cache.h"
 
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "mozilla/dom/Headers.h"
 #include "mozilla/dom/InternalResponse.h"
 #include "mozilla/dom/Promise.h"
@@ -13,9 +14,8 @@
 #include "mozilla/dom/CacheBinding.h"
 #include "mozilla/dom/cache/AutoUtils.h"
 #include "mozilla/dom/cache/CacheChild.h"
-#include "mozilla/dom/cache/CacheWorkerHolder.h"
+#include "mozilla/dom/cache/CacheWorkerRef.h"
 #include "mozilla/dom/cache/ReadStream.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
@@ -78,9 +78,8 @@ static bool IsValidPutResponseStatus(Response& aResponse,
                                      ErrorResult& aRv) {
   if ((aPolicy == PutStatusPolicy::RequireOK && !aResponse.Ok()) ||
       aResponse.Status() == 206) {
-    uint32_t t = static_cast<uint32_t>(aResponse.Type());
-    NS_ConvertASCIItoUTF16 type(ResponseTypeValues::strings[t].value,
-                                ResponseTypeValues::strings[t].length);
+    NS_ConvertASCIItoUTF16 type(
+        ResponseTypeValues::GetString(aResponse.Type()));
     nsAutoString status;
     status.AppendInt(aResponse.Status());
     nsAutoString url;
@@ -95,19 +94,19 @@ static bool IsValidPutResponseStatus(Response& aResponse,
 }  // namespace
 
 // Helper class to wait for Add()/AddAll() fetch requests to complete and
-// then perform a PutAll() with the responses.  This class holds a WorkerHolder
+// then perform a PutAll() with the responses.  This class holds a WorkerRef
 // to keep the Worker thread alive.  This is mainly to ensure that Add/AddAll
 // act the same as other Cache operations that directly create a CacheOpChild
 // actor.
 class Cache::FetchHandler final : public PromiseNativeHandler {
  public:
-  FetchHandler(CacheWorkerHolder* aWorkerHolder, Cache* aCache,
+  FetchHandler(CacheWorkerRef* aWorkerRef, Cache* aCache,
                nsTArray<RefPtr<Request>>&& aRequestList, Promise* aPromise)
-      : mWorkerHolder(aWorkerHolder),
+      : mWorkerRef(aWorkerRef),
         mCache(aCache),
         mRequestList(std::move(aRequestList)),
         mPromise(aPromise) {
-    MOZ_ASSERT_IF(!NS_IsMainThread(), mWorkerHolder);
+    MOZ_ASSERT_IF(!NS_IsMainThread(), mWorkerRef);
     MOZ_DIAGNOSTIC_ASSERT(mCache);
     MOZ_DIAGNOSTIC_ASSERT(mPromise);
   }
@@ -117,8 +116,8 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
     NS_ASSERT_OWNINGTHREAD(FetchHandler);
 
     // Stop holding the worker alive when we leave this method.
-    RefPtr<CacheWorkerHolder> workerHolder;
-    workerHolder.swap(mWorkerHolder);
+    RefPtr<CacheWorkerRef> workerRef;
+    workerRef.swap(mWorkerRef);
 
     // Promise::All() passed an array of fetch() Promises should give us
     // an Array of Response objects.  The following code unwraps these
@@ -128,7 +127,7 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
     responseList.SetCapacity(mRequestList.Length());
 
     bool isArray;
-    if (NS_WARN_IF(!JS_IsArrayObject(aCx, aValue, &isArray) || !isArray)) {
+    if (NS_WARN_IF(!JS::IsArrayObject(aCx, aValue, &isArray) || !isArray)) {
       Fail();
       return;
     }
@@ -136,7 +135,7 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
     JS::Rooted<JSObject*> obj(aCx, &aValue.toObject());
 
     uint32_t length;
-    if (NS_WARN_IF(!JS_GetArrayLength(aCx, obj, &length))) {
+    if (NS_WARN_IF(!JS::GetArrayLength(aCx, obj, &length))) {
       Fail();
       return;
     }
@@ -213,13 +212,9 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
  private:
   ~FetchHandler() {}
 
-  void Fail() {
-    ErrorResult rv;
-    rv.ThrowTypeError<MSG_FETCH_FAILED>();
-    mPromise->MaybeReject(rv);
-  }
+  void Fail() { mPromise->MaybeRejectWithTypeError<MSG_FETCH_FAILED>(); }
 
-  RefPtr<CacheWorkerHolder> mWorkerHolder;
+  RefPtr<CacheWorkerRef> mWorkerRef;
   RefPtr<Cache> mCache;
   nsTArray<RefPtr<Request>> mRequestList;
   RefPtr<Promise> mPromise;
@@ -367,9 +362,8 @@ already_AddRefed<Promise> Cache::AddAll(
         return nullptr;
       }
     } else {
-      requestOrString.SetAsUSVString().Rebind(
-          aRequestList[i].GetAsUSVString().Data(),
-          aRequestList[i].GetAsUSVString().Length());
+      requestOrString.SetAsUSVString().ShareOrDependUpon(
+          aRequestList[i].GetAsUSVString());
     }
 
     RefPtr<Request> request =
@@ -575,7 +569,7 @@ already_AddRefed<Promise> Cache::AddAll(
   }
 
   RefPtr<FetchHandler> handler = new FetchHandler(
-      mActor->GetWorkerHolder(), this, std::move(aRequestList), promise);
+      mActor->GetWorkerRef(), this, std::move(aRequestList), promise);
 
   RefPtr<Promise> fetchPromise =
       Promise::All(aGlobal.Context(), fetchList, aRv);

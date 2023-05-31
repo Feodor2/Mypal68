@@ -17,8 +17,11 @@ dictionary AnalyserOptions : AudioNodeOptions {
 };
 
 [Pref="dom.webaudio.enabled",
- Constructor(BaseAudioContext context, optional AnalyserOptions options)]
+ Exposed=Window]
 interface AnalyserNode : AudioNode {
+    [Throws]
+    constructor(BaseAudioContext context,
+                optional AnalyserOptions options = {});
 
     // Real-time frequency-domain data
     void getFloatFrequencyData(Float32Array array);
@@ -44,4 +47,4 @@ interface AnalyserNode : AudioNode {
 };
 
 // Mozilla extension
-AnalyserNode implements AudioNodePassThrough;
+AnalyserNode includes AudioNodePassThrough;

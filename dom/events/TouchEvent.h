@@ -100,8 +100,7 @@ class TouchEvent : public UIEvent {
 
   static already_AddRefed<TouchEvent> Constructor(const GlobalObject& aGlobal,
                                                   const nsAString& aType,
-                                                  const TouchEventInit& aParam,
-                                                  ErrorResult& aRv);
+                                                  const TouchEventInit& aParam);
 
  protected:
   ~TouchEvent() {}

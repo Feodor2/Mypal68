@@ -7,6 +7,7 @@
 
 callback FileCallback = void (File file);
 
+[Exposed=Window]
 interface FileSystemFileEntry : FileSystemEntry {
     [BinaryName="GetFile"]
     void file (FileCallback successCallback,

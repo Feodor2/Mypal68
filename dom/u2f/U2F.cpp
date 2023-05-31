@@ -9,7 +9,6 @@
 #include "mozilla/dom/WebAuthnTransactionChild.h"
 #include "mozilla/dom/WebAuthnUtil.h"
 #include "nsContentUtils.h"
-#include "nsIEffectiveTLDService.h"
 #include "nsNetUtil.h"
 #include "nsURLParsers.h"
 
@@ -309,14 +308,7 @@ static const JSFunctionSpec register_spec = JS_FNSPEC(
 void U2F::GetRegister(JSContext* aCx,
                       JS::MutableHandle<JSObject*> aRegisterFunc,
                       ErrorResult& aRv) {
-  JS::Rooted<JSString*> str(aCx, JS_AtomizeAndPinString(aCx, "register"));
-  if (!str) {
-    aRv.NoteJSContextException(aCx);
-    return;
-  }
-
-  JS::Rooted<jsid> id(aCx, INTERNED_STRING_TO_JSID(aCx, str));
-  JSFunction* fun = JS::NewFunctionFromSpec(aCx, &register_spec, id);
+  JSFunction* fun = JS::NewFunctionFromSpec(aCx, &register_spec);
   if (!fun) {
     aRv.NoteJSContextException(aCx);
     return;
@@ -497,14 +489,7 @@ static const JSFunctionSpec sign_spec =
 
 void U2F::GetSign(JSContext* aCx, JS::MutableHandle<JSObject*> aSignFunc,
                   ErrorResult& aRv) {
-  JS::Rooted<JSString*> str(aCx, JS_AtomizeAndPinString(aCx, "sign"));
-  if (!str) {
-    aRv.NoteJSContextException(aCx);
-    return;
-  }
-
-  JS::Rooted<jsid> id(aCx, INTERNED_STRING_TO_JSID(aCx, str));
-  JSFunction* fun = JS::NewFunctionFromSpec(aCx, &sign_spec, id);
+  JSFunction* fun = JS::NewFunctionFromSpec(aCx, &sign_spec);
   if (!fun) {
     aRv.NoteJSContextException(aCx);
     return;

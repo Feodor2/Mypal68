@@ -6,17 +6,16 @@
 #define mozilla_dom_FetchDriver_h
 
 #include "nsIChannelEventSink.h"
-#include "nsICacheInfoChannel.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIStreamListener.h"
 #include "nsIThreadRetargetableStreamListener.h"
 #include "mozilla/ConsoleReportCollector.h"
 #include "mozilla/dom/AbortSignal.h"
+#include "mozilla/dom/SerializedStackHolder.h"
 #include "mozilla/dom/SRIMetadata.h"
 #include "mozilla/RefPtr.h"
 
 #include "mozilla/DebugOnly.h"
-#include "mozilla/net/ReferrerPolicy.h"
 
 class nsIConsoleReportCollector;
 class nsICookieSettings;
@@ -113,9 +112,13 @@ class FetchDriver final : public nsIStreamListener,
 
   void SetController(const Maybe<ServiceWorkerDescriptor>& aController);
 
-  void SetWorkerScript(const nsACString& aWorkerScirpt) {
-    MOZ_ASSERT(!aWorkerScirpt.IsEmpty());
-    mWorkerScript = aWorkerScirpt;
+  void SetWorkerScript(const nsACString& aWorkerScript) {
+    MOZ_ASSERT(!aWorkerScript.IsEmpty());
+    mWorkerScript = aWorkerScript;
+  }
+
+  void SetOriginStack(UniquePtr<SerializedStackHolder>&& aOriginStack) {
+    mOriginStack = std::move(aOriginStack);
   }
 
   // AbortFollower
@@ -143,6 +146,7 @@ class FetchDriver final : public nsIStreamListener,
 
   SRIMetadata mSRIMetadata;
   nsCString mWorkerScript;
+  UniquePtr<SerializedStackHolder> mOriginStack;
 
   // This is written once in OnStartRequest on the main thread and then
   // written/read in OnDataAvailable() on any thread.  Necko guarantees
@@ -177,7 +181,7 @@ class FetchDriver final : public nsIStreamListener,
 
   void SetRequestHeaders(nsIHttpChannel* aChannel) const;
 
-  nsresult FinishOnStopRequest(AlternativeDataStreamListener* aAltDataListener);
+  void FinishOnStopRequest(AlternativeDataStreamListener* aAltDataListener);
 };
 
 }  // namespace dom

@@ -19,8 +19,7 @@ NS_INTERFACE_MAP_END
 
 /* static */
 already_AddRefed<TestingDeprecatedInterface>
-TestingDeprecatedInterface::Constructor(const GlobalObject& aGlobal,
-                                        ErrorResult& aRv) {
+TestingDeprecatedInterface::Constructor(const GlobalObject& aGlobal) {
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
   MOZ_ASSERT(global);
 

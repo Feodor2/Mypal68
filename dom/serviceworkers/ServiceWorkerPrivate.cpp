@@ -14,7 +14,6 @@
 #include "nsINetworkInterceptController.h"
 #include "nsIPushErrorReporter.h"
 #include "nsISupportsImpl.h"
-#include "nsITimedChannel.h"
 #include "nsIUploadChannel2.h"
 #include "nsNetUtil.h"
 #include "nsProxyRelease.h"
@@ -40,7 +39,7 @@
 #include "mozilla/dom/ipc/StructuredCloneData.h"
 #include "mozilla/net/CookieSettings.h"
 #include "mozilla/net/NeckoChannelParams.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Unused.h"
 #include "nsIReferrerInfo.h"
 
@@ -463,6 +462,7 @@ class SendMessageEventRunnable final : public ExtendableEventWorkerRunnable {
     bool deserializationFailed = rv.ErrorCodeIs(NS_ERROR_DOM_DATA_CLONE_ERR);
 
     if (!deserializationFailed && NS_WARN_IF(rv.Failed())) {
+      rv.SuppressException();
       return true;
     }
 
@@ -486,18 +486,14 @@ class SendMessageEventRunnable final : public ExtendableEventWorkerRunnable {
     init.mSource.SetValue().SetAsClient() =
         new Client(sgo, mClientInfoAndState);
 
-    rv = NS_OK;
+    rv.SuppressException();
     RefPtr<EventTarget> target = aWorkerPrivate->GlobalScope();
     RefPtr<ExtendableMessageEvent> extendableEvent =
         ExtendableMessageEvent::Constructor(
             target,
             deserializationFailed ? NS_LITERAL_STRING("messageerror")
                                   : NS_LITERAL_STRING("message"),
-            init, rv);
-    if (NS_WARN_IF(rv.Failed())) {
-      rv.SuppressException();
-      return false;
-    }
+            init);
 
     extendableEvent->SetTrusted(true);
 
@@ -1091,10 +1087,7 @@ class SendNotificationEventRunnable final
     nei.mCancelable = false;
 
     RefPtr<NotificationEvent> event =
-        NotificationEvent::Constructor(target, mEventName, nei, result);
-    if (NS_WARN_IF(result.Failed())) {
-      return false;
-    }
+        NotificationEvent::Constructor(target, mEventName, nei);
 
     event->SetTrusted(true);
 
@@ -1174,7 +1167,7 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
   nsContentPolicyType mContentPolicyType;
   nsCOMPtr<nsIInputStream> mUploadStream;
   int64_t mUploadStreamContentLength;
-  nsCString mReferrer;
+  nsAutoString mReferrer;
   ReferrerPolicy mReferrerPolicy;
   nsString mIntegrity;
   const bool mIsNonSubresourceRequest;
@@ -1207,7 +1200,7 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
         mRequestCredentials(RequestCredentials::Same_origin),
         mContentPolicyType(nsIContentPolicy::TYPE_INVALID),
         mUploadStreamContentLength(-1),
-        mReferrer(kFETCH_CLIENT_REFERRER_STR),
+        mReferrer(NS_LITERAL_STRING(kFETCH_CLIENT_REFERRER_STR)),
         mReferrerPolicy(ReferrerPolicy::_empty),
         mIsNonSubresourceRequest(aIsNonSubresourceRequest) {
     MOZ_ASSERT(aWorkerPrivate);
@@ -1253,48 +1246,12 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
     nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(channel);
     MOZ_ASSERT(httpChannel, "How come we don't have an HTTP channel?");
 
-    mReferrer = EmptyCString();
-    uint32_t referrerPolicy = 0;
+    mReferrerPolicy = ReferrerPolicy::_empty;
+    mReferrer = EmptyString();
     nsCOMPtr<nsIReferrerInfo> referrerInfo = httpChannel->GetReferrerInfo();
     if (referrerInfo) {
-      referrerPolicy = referrerInfo->GetReferrerPolicy();
-      nsCOMPtr<nsIURI> computedReferrer = referrerInfo->GetComputedReferrer();
-      if (computedReferrer) {
-        rv = computedReferrer->GetSpec(mReferrer);
-        NS_ENSURE_SUCCESS(rv, rv);
-      }
-    }
-    switch (referrerPolicy) {
-      case nsIHttpChannel::REFERRER_POLICY_UNSET:
-        mReferrerPolicy = ReferrerPolicy::_empty;
-        break;
-      case nsIHttpChannel::REFERRER_POLICY_NO_REFERRER:
-        mReferrerPolicy = ReferrerPolicy::No_referrer;
-        break;
-      case nsIHttpChannel::REFERRER_POLICY_ORIGIN:
-        mReferrerPolicy = ReferrerPolicy::Origin;
-        break;
-      case nsIHttpChannel::REFERRER_POLICY_NO_REFERRER_WHEN_DOWNGRADE:
-        mReferrerPolicy = ReferrerPolicy::No_referrer_when_downgrade;
-        break;
-      case nsIHttpChannel::REFERRER_POLICY_ORIGIN_WHEN_XORIGIN:
-        mReferrerPolicy = ReferrerPolicy::Origin_when_cross_origin;
-        break;
-      case nsIHttpChannel::REFERRER_POLICY_UNSAFE_URL:
-        mReferrerPolicy = ReferrerPolicy::Unsafe_url;
-        break;
-      case nsIHttpChannel::REFERRER_POLICY_SAME_ORIGIN:
-        mReferrerPolicy = ReferrerPolicy::Same_origin;
-        break;
-      case nsIHttpChannel::REFERRER_POLICY_STRICT_ORIGIN_WHEN_XORIGIN:
-        mReferrerPolicy = ReferrerPolicy::Strict_origin_when_cross_origin;
-        break;
-      case nsIHttpChannel::REFERRER_POLICY_STRICT_ORIGIN:
-        mReferrerPolicy = ReferrerPolicy::Strict_origin;
-        break;
-      default:
-        MOZ_ASSERT_UNREACHABLE("Invalid Referrer Policy enum value?");
-        break;
+      mReferrerPolicy = referrerInfo->ReferrerPolicy();
+      Unused << referrerInfo->GetComputedReferrerSpec(mReferrer);
     }
 
     rv = httpChannel->GetRequestMethod(mMethod);
@@ -1426,9 +1383,8 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
     }
     RefPtr<InternalRequest> internalReq = new InternalRequest(
         mSpec, mFragment, mMethod, internalHeaders.forget(), mCacheMode,
-        mRequestMode, mRequestRedirect, mRequestCredentials,
-        NS_ConvertUTF8toUTF16(mReferrer), mReferrerPolicy, mContentPolicyType,
-        mIntegrity);
+        mRequestMode, mRequestRedirect, mRequestCredentials, mReferrer,
+        mReferrerPolicy, mContentPolicyType, mIntegrity);
     internalReq->SetBody(mUploadStream, mUploadStreamContentLength);
     // For Telemetry, note that this Request object was created by a Fetch
     // event.
@@ -1485,12 +1441,8 @@ class FetchEventRunnable : public ExtendableFunctionalEventWorkerRunnable,
     }
 
     init.mIsReload = mIsReload;
-    RefPtr<FetchEvent> event = FetchEvent::Constructor(
-        globalObj, NS_LITERAL_STRING("fetch"), init, result);
-    if (NS_WARN_IF(result.Failed())) {
-      result.SuppressException();
-      return false;
-    }
+    RefPtr<FetchEvent> event =
+        FetchEvent::Constructor(globalObj, NS_LITERAL_STRING("fetch"), init);
 
     event->PostInit(mInterceptedChannel, mRegistration, mScriptSpec);
     event->SetTrusted(true);
@@ -1673,8 +1625,7 @@ nsresult ServiceWorkerPrivate::SpawnWorkerIfNeeded(WakeUpReason aWhy,
   Unused << NS_WARN_IF(!IndexedDatabaseManager::GetOrCreate());
 
   WorkerLoadInfo info;
-  nsresult rv = NS_NewURI(getter_AddRefs(info.mBaseURI), mInfo->ScriptSpec(),
-                          nullptr, nullptr);
+  nsresult rv = NS_NewURI(getter_AddRefs(info.mBaseURI), mInfo->ScriptSpec());
 
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -1700,27 +1651,8 @@ nsresult ServiceWorkerPrivate::SpawnWorkerIfNeeded(WakeUpReason aWhy,
     return rv;
   }
 
-  nsCOMPtr<nsIURI> uri;
-  rv = mInfo->Principal()->GetURI(getter_AddRefs(uri));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  if (NS_WARN_IF(!uri)) {
-    return NS_ERROR_FAILURE;
-  }
-
-  // Create a pristine codebase principal to avoid any possibility of inheriting
-  // CSP values.  The principal on the registration may be polluted with CSP
-  // from the registering page or other places the principal is passed.  If
-  // bug 965637 is ever fixed this can be removed.
-  info.mPrincipal =
-      BasePrincipal::CreateCodebasePrincipal(uri, mInfo->GetOriginAttributes());
-  if (NS_WARN_IF(!info.mPrincipal)) {
-    return NS_ERROR_FAILURE;
-  }
+  info.mPrincipal = mInfo->Principal();
   info.mLoadingPrincipal = info.mPrincipal;
-
   // StoragePrincipal for ServiceWorkers is equal to mPrincipal because, at the
   // moment, ServiceWorkers are not exposed in partitioned contexts.
   info.mStoragePrincipal = info.mPrincipal;
@@ -1728,15 +1660,18 @@ nsresult ServiceWorkerPrivate::SpawnWorkerIfNeeded(WakeUpReason aWhy,
   info.mCookieSettings = mozilla::net::CookieSettings::Create();
   MOZ_ASSERT(info.mCookieSettings);
 
-  info.mStorageAccess = nsContentUtils::StorageAllowedForServiceWorker(
-      info.mPrincipal, info.mCookieSettings);
+  info.mStorageAccess =
+      StorageAllowedForServiceWorker(info.mPrincipal, info.mCookieSettings);
 
   info.mOriginAttributes = mInfo->GetOriginAttributes();
 
-  // Verify that we don't have any CSP on pristine principal.
+  // Verify that we don't have any CSP on pristine client.
 #ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
   nsCOMPtr<nsIContentSecurityPolicy> csp;
-  Unused << info.mPrincipal->GetCsp(getter_AddRefs(csp));
+  if (info.mChannel) {
+    nsCOMPtr<nsILoadInfo> loadinfo = info.mChannel->LoadInfo();
+    csp = loadinfo->GetCsp();
+  }
   MOZ_DIAGNOSTIC_ASSERT(!csp);
 #endif
 
@@ -1747,8 +1682,8 @@ nsresult ServiceWorkerPrivate::SpawnWorkerIfNeeded(WakeUpReason aWhy,
 
   WorkerPrivate::OverrideLoadInfoLoadGroup(info, info.mPrincipal);
 
-  rv = info.SetPrincipalsOnMainThread(info.mPrincipal, info.mStoragePrincipal,
-                                      info.mLoadGroup);
+  rv = info.SetPrincipalsAndCSPOnMainThread(
+      info.mPrincipal, info.mStoragePrincipal, info.mLoadGroup, nullptr);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

@@ -14,13 +14,13 @@
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "nsIFile.h"
-#include "nsISimpleEnumerator.h"
 #include "nsThreadUtils.h"
 
 namespace {
 
 using mozilla::Atomic;
 using mozilla::MutexAutoLock;
+using mozilla::Some;
 using mozilla::Unused;
 using mozilla::dom::ContentParentId;
 using mozilla::dom::cache::DirPaddingFile;
@@ -28,46 +28,73 @@ using mozilla::dom::cache::Manager;
 using mozilla::dom::cache::QuotaInfo;
 using mozilla::dom::quota::AssertIsOnIOThread;
 using mozilla::dom::quota::Client;
+using mozilla::dom::quota::PERSISTENCE_TYPE_DEFAULT;
 using mozilla::dom::quota::PersistenceType;
 using mozilla::dom::quota::QuotaManager;
 using mozilla::dom::quota::UsageInfo;
 using mozilla::ipc::AssertIsOnBackgroundThread;
 
-static nsresult GetBodyUsage(nsIFile* aDir, const Atomic<bool>& aCanceled,
-                             UsageInfo* aUsageInfo) {
+static nsresult GetBodyUsage(nsIFile* aMorgueDir, const Atomic<bool>& aCanceled,
+                             UsageInfo* aUsageInfo, const bool aInitializing) {
   AssertIsOnIOThread();
 
   nsCOMPtr<nsIDirectoryEnumerator> entries;
-  nsresult rv = aDir->GetDirectoryEntries(getter_AddRefs(entries));
+  nsresult rv = aMorgueDir->GetDirectoryEntries(getter_AddRefs(entries));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
-  nsCOMPtr<nsIFile> file;
-  while (NS_SUCCEEDED(rv = entries->GetNextFile(getter_AddRefs(file))) &&
-         file && !aCanceled) {
+  nsCOMPtr<nsIFile> bodyDir;
+  while (NS_SUCCEEDED(rv = entries->GetNextFile(getter_AddRefs(bodyDir))) &&
+         bodyDir && !aCanceled) {
+    if (NS_WARN_IF(QuotaManager::IsShuttingDown())) {
+      return NS_ERROR_ABORT;
+    }
     bool isDir;
-    rv = file->IsDirectory(&isDir);
+    rv = bodyDir->IsDirectory(&isDir);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
 
-    if (isDir) {
-      rv = GetBodyUsage(file, aCanceled, aUsageInfo);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
+    if (!isDir) {
+      QuotaInfo dummy;
+      mozilla::DebugOnly<nsresult> result =
+          RemoveNsIFile(dummy, bodyDir, /* aTrackQuota */ false);
+      // Try to remove the unexpected files, and keep moving on even if it fails
+      // because it might be created by virus or the operation system
+      MOZ_ASSERT(NS_SUCCEEDED(result));
       continue;
     }
 
-    int64_t fileSize;
-    rv = file->GetFileSize(&fileSize);
+    const QuotaInfo dummy;
+    const auto getUsage = [&aUsageInfo](nsIFile* bodyFile,
+                                        const nsACString& leafName,
+                                        bool& fileDeleted) {
+      MOZ_DIAGNOSTIC_ASSERT(bodyFile);
+      Unused << leafName;
+
+      int64_t fileSize;
+      nsresult rv = bodyFile->GetFileSize(&fileSize);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+      MOZ_DIAGNOSTIC_ASSERT(fileSize >= 0);
+      aUsageInfo->AppendToFileUsage(Some(fileSize));
+
+      fileDeleted = false;
+
+      return NS_OK;
+    };
+    rv = mozilla::dom::cache::BodyTraverseFiles(dummy, bodyDir, getUsage,
+                                                /* aCanRemoveFiles */
+                                                aInitializing,
+                                                /* aTrackQuota */ false);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
-    MOZ_DIAGNOSTIC_ASSERT(fileSize >= 0);
-
-    aUsageInfo->AppendToFileUsage(fileSize);
+  }
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
   }
 
   return NS_OK;
@@ -82,10 +109,19 @@ static nsresult LockedGetPaddingSizeFromDB(nsIFile* aDir,
 
   *aPaddingSizeOut = 0;
 
-  nsCOMPtr<mozIStorageConnection> conn;
   QuotaInfo quotaInfo;
   quotaInfo.mGroup = aGroup;
   quotaInfo.mOrigin = aOrigin;
+  // quotaInfo.mDirectoryLockId must be -1 (which is default for new QuotaInfo)
+  // because this method should only be called from QuotaClient::InitOrigin
+  // (via QuotaClient::GetUsageForOriginInternal) when the temporary storage
+  // hasn't been initialized yet. At that time, the in-memory objects (e.g.
+  // OriginInfo) are only being created so it doesn't make sense to tunnel
+  // quota information to TelemetryVFS to get corresponding QuotaObject instance
+  // for the SQLite file).
+  MOZ_DIAGNOSTIC_ASSERT(quotaInfo.mDirectoryLockId == -1);
+
+  nsCOMPtr<mozIStorageConnection> conn;
   nsresult rv = mozilla::dom::cache::OpenDBConnection(quotaInfo, aDir,
                                                       getter_AddRefs(conn));
   if (rv == NS_ERROR_FILE_NOT_FOUND ||
@@ -381,42 +417,64 @@ class CacheQuotaClient final : public Client {
     nsresult rv = qm->GetDirectoryForOrigin(aPersistenceType, aOrigin,
                                             getter_AddRefs(dir));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError,
+      REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
                                    Cache_GetDirForOri);
       return rv;
     }
 
     rv = dir->Append(NS_LITERAL_STRING(DOMCACHE_DIRECTORY_NAME));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError, Cache_Append);
+      REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
+                                   Cache_Append);
       return rv;
     }
+
+    bool useCachedValue = false;
 
     int64_t paddingSize = 0;
     {
       // If the tempoary file still exists after locking, it means the previous
-      // action fails, so restore the padding file.
+      // action failed, so restore the padding file.
       MutexAutoLock lock(mDirPaddingFileMutex);
 
       if (mozilla::dom::cache::DirectoryPaddingFileExists(
               dir, DirPaddingFile::TMP_FILE) ||
           NS_WARN_IF(NS_FAILED(mozilla::dom::cache::LockedDirectoryPaddingGet(
               dir, &paddingSize)))) {
-        rv = LockedGetPaddingSizeFromDB(dir, aGroup, aOrigin, &paddingSize);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kInternalError,
-                                       Cache_GetPaddingSize);
-          return rv;
+        if (aInitializing) {
+          rv = LockedGetPaddingSizeFromDB(dir, aGroup, aOrigin, &paddingSize);
+          if (NS_WARN_IF(NS_FAILED(rv))) {
+            REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaInternalError,
+                                         Cache_GetPaddingSize);
+            return rv;
+          }
+        } else {
+          // We can't open the database at this point, since it can be already
+          // used by Cache IO thread. Use the cached value instead. (In theory,
+          // we could check if the database is actually used by Cache IO thread
+          // at this moment, but it's probably not worth additional complexity.)
+
+          useCachedValue = true;
         }
       }
     }
 
-    aUsageInfo->AppendToFileUsage(paddingSize);
+    if (useCachedValue) {
+      uint64_t usage;
+      if (qm->GetUsageForClient(PERSISTENCE_TYPE_DEFAULT, aGroup, aOrigin,
+                                Client::DOMCACHE, usage)) {
+        aUsageInfo->AppendToDatabaseUsage(Some(usage));
+      }
+
+      return NS_OK;
+    }
+
+    aUsageInfo->AppendToFileUsage(Some(paddingSize));
 
     nsCOMPtr<nsIDirectoryEnumerator> entries;
     rv = dir->GetDirectoryEntries(getter_AddRefs(entries));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError,
+      REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
                                    Cache_GetDirEntries);
       return rv;
     }
@@ -424,10 +482,14 @@ class CacheQuotaClient final : public Client {
     nsCOMPtr<nsIFile> file;
     while (NS_SUCCEEDED(rv = entries->GetNextFile(getter_AddRefs(file))) &&
            file && !aCanceled) {
+      if (NS_WARN_IF(QuotaManager::IsShuttingDown())) {
+        return NS_ERROR_ABORT;
+      }
+
       nsAutoString leafName;
       rv = file->GetLeafName(leafName);
       if (NS_WARN_IF(NS_FAILED(rv))) {
-        REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError,
+        REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
                                      Cache_GetLeafName);
         return rv;
       }
@@ -435,17 +497,19 @@ class CacheQuotaClient final : public Client {
       bool isDir;
       rv = file->IsDirectory(&isDir);
       if (NS_WARN_IF(NS_FAILED(rv))) {
-        REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError,
+        REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
                                      Cache_IsDirectory);
         return rv;
       }
 
       if (isDir) {
         if (leafName.EqualsLiteral("morgue")) {
-          rv = GetBodyUsage(file, aCanceled, aUsageInfo);
+          rv = GetBodyUsage(file, aCanceled, aUsageInfo, aInitializing);
           if (NS_WARN_IF(NS_FAILED(rv))) {
-            REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError,
-                                         Cache_GetBodyUsage);
+            if (rv != NS_ERROR_ABORT) {
+              REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
+                                           Cache_GetBodyUsage);
+            }
             return rv;
           }
         } else {
@@ -469,13 +533,13 @@ class CacheQuotaClient final : public Client {
         int64_t fileSize;
         rv = file->GetFileSize(&fileSize);
         if (NS_WARN_IF(NS_FAILED(rv))) {
-          REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kExternalError,
+          REPORT_TELEMETRY_ERR_IN_INIT(aInitializing, kQuotaExternalError,
                                        Cache_GetFileSize);
           return rv;
         }
         MOZ_DIAGNOSTIC_ASSERT(fileSize >= 0);
 
-        aUsageInfo->AppendToDatabaseUsage(fileSize);
+        aUsageInfo->AppendToDatabaseUsage(Some(fileSize));
         continue;
       }
 
@@ -486,6 +550,9 @@ class CacheQuotaClient final : public Client {
       }
 
       NS_WARNING("Unknown Cache file found!");
+    }
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
     }
 
     return NS_OK;

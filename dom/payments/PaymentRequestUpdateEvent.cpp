@@ -34,7 +34,7 @@ PaymentRequestUpdateEvent::Constructor(
 already_AddRefed<PaymentRequestUpdateEvent>
 PaymentRequestUpdateEvent::Constructor(
     const GlobalObject& aGlobal, const nsAString& aType,
-    const PaymentRequestUpdateEventInit& aEventInitDict, ErrorResult& aRv) {
+    const PaymentRequestUpdateEventInit& aEventInitDict) {
   nsCOMPtr<mozilla::dom::EventTarget> owner =
       do_QueryInterface(aGlobal.GetAsSupports());
   return Constructor(owner, aType, aEventInitDict);
@@ -62,8 +62,9 @@ void PaymentRequestUpdateEvent::ResolvedCallback(JSContext* aCx,
   // Converting value to a PaymentDetailsUpdate dictionary
   RootedDictionary<PaymentDetailsUpdate> details(aCx);
   if (!details.Init(aCx, aValue)) {
-    mRequest->AbortUpdate(NS_ERROR_TYPE_ERR);
-    JS_ClearPendingException(aCx);
+    ErrorResult rv;
+    rv.StealExceptionFromJSContext(aCx);
+    mRequest->AbortUpdate(rv);
     return;
   }
 
@@ -72,9 +73,9 @@ void PaymentRequestUpdateEvent::ResolvedCallback(JSContext* aCx,
   // dispatched when shippingAddress/shippingOption is changed, and it also
   // means Options.RequestShipping must be true while creating the corresponding
   // PaymentRequest.
-  nsresult rv =
-      mRequest->IsValidDetailsUpdate(details, true /*aRequestShipping*/);
-  if (NS_FAILED(rv)) {
+  ErrorResult rv;
+  mRequest->IsValidDetailsUpdate(details, true /*aRequestShipping*/, rv);
+  if (rv.Failed()) {
     mRequest->AbortUpdate(rv);
     return;
   }

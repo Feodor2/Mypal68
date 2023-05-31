@@ -14,18 +14,17 @@
 #include "mozilla/dom/nsCSPService.h"
 #include "nsContentPolicy.h"
 #include "nsIURI.h"
-#include "nsIDocShell.h"
-#include "nsIDOMWindow.h"
 #include "nsIBrowserChild.h"
 #include "nsIContent.h"
 #include "nsIImageLoadingContent.h"
-#include "nsILoadContext.h"
 #include "nsCOMArray.h"
 #include "nsContentUtils.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "nsIContentSecurityPolicy.h"
 #include "mozilla/dom/TabGroup.h"
 #include "mozilla/TaskCategory.h"
+
+class nsIDOMWindow;
 
 using mozilla::LogLevel;
 
@@ -68,7 +67,6 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
                                              int16_t* decision) {
   nsContentPolicyType contentType = loadInfo->InternalContentPolicyType();
   nsCOMPtr<nsISupports> requestingContext = loadInfo->GetLoadingContext();
-  nsCOMPtr<nsIPrincipal> requestPrincipal = loadInfo->TriggeringPrincipal();
   nsCOMPtr<nsIURI> requestingLocation;
   nsCOMPtr<nsIPrincipal> loadingPrincipal = loadInfo->LoadingPrincipal();
   if (loadingPrincipal) {
@@ -96,18 +94,17 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
    * iframes with an image as src. Get the uri from the dom node.
    * See bug 254510
    */
-  if (!requestingLocation) {
-    nsCOMPtr<mozilla::dom::Document> doc;
-    nsCOMPtr<nsIContent> node = do_QueryInterface(requestingContext);
-    if (node) {
-      doc = node->OwnerDoc();
-    }
-    if (!doc) {
-      doc = do_QueryInterface(requestingContext);
-    }
-    if (doc) {
-      requestingLocation = doc->GetDocumentURI();
-    }
+  nsCOMPtr<mozilla::dom::Document> doc;
+  nsCOMPtr<nsIContent> node = do_QueryInterface(requestingContext);
+  if (node) {
+    doc = node->OwnerDoc();
+  }
+  if (!doc) {
+    doc = do_QueryInterface(requestingContext);
+  }
+
+  if (!requestingLocation && doc) {
+    requestingLocation = doc->GetDocumentURI();
   }
 
   nsContentPolicyType externalType =
@@ -127,9 +124,8 @@ inline nsresult nsContentPolicy::CheckPolicy(CPMethod policyMethod,
     window = do_QueryInterface(requestingContext);
   }
 
-  if (requestPrincipal) {
-    nsCOMPtr<nsIContentSecurityPolicy> csp;
-    requestPrincipal->GetCsp(getter_AddRefs(csp));
+  if (doc) {
+    nsCOMPtr<nsIContentSecurityPolicy> csp = doc->GetCsp();
     if (csp && window) {
       csp->EnsureEventTarget(
           window->EventTargetFor(mozilla::TaskCategory::Other));

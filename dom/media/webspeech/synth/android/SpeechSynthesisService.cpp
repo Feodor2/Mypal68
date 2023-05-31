@@ -11,6 +11,7 @@
 #include "mozilla/dom/nsSynthVoiceRegistry.h"
 #include "mozilla/jni/Utils.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_media.h"
 
 #define ALOG(args...) \
   __android_log_print(ANDROID_LOG_INFO, "GeckoSpeechSynthesis", ##args)
@@ -48,7 +49,7 @@ NS_IMPL_ISUPPORTS(SpeechSynthesisService, nsISpeechService)
 void SpeechSynthesisService::Setup() {
   ALOG("SpeechSynthesisService::Setup");
 
-  if (!Preferences::GetBool("media.webspeech.synth.enabled") ||
+  if (!StaticPrefs::media_webspeech_synth_enabled() ||
       Preferences::GetBool("media.webspeech.synth.test")) {
     return;
   }

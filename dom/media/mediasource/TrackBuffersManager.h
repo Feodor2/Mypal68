@@ -16,6 +16,7 @@
 #include "MediaDataDemuxer.h"
 #include "MediaResult.h"
 #include "MediaSourceDecoder.h"
+#include "MediaSpan.h"
 #include "SourceBufferTask.h"
 #include "TimeUnits.h"
 #include "nsAutoPtr.h"
@@ -201,7 +202,7 @@ class TrackBuffersManager
 
   // The input buffer as per
   // http://w3c.github.io/media-source/index.html#sourcebuffer-input-buffer
-  RefPtr<MediaByteBuffer> mInputBuffer;
+  Maybe<MediaSpan> mInputBuffer;
   // Buffer full flag as per
   // https://w3c.github.io/media-source/#sourcebuffer-buffer-full-flag. Accessed
   // on both the main thread and the task queue.
@@ -222,13 +223,14 @@ class TrackBuffersManager
   nsAutoPtr<ContainerParser> mParser;
 
   // Demuxer objects and methods.
-  void AppendDataToCurrentInputBuffer(MediaByteBuffer* aData);
+  void AppendDataToCurrentInputBuffer(const MediaSpan& aData);
+
   RefPtr<MediaByteBuffer> mInitData;
   // Temporary input buffer to handle partial media segment header.
   // We store the current input buffer content into it should we need to
   // reinitialize the demuxer once we have some samples and a discontinuity is
   // detected.
-  RefPtr<MediaByteBuffer> mPendingInputBuffer;
+  Maybe<MediaSpan> mPendingInputBuffer;
   RefPtr<SourceBufferResource> mCurrentInputBuffer;
   RefPtr<MediaDataDemuxer> mInputDemuxer;
   // Length already processed in current media segment.

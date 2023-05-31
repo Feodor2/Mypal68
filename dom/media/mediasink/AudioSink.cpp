@@ -4,12 +4,13 @@
 
 #include "AudioSink.h"
 #include "AudioConverter.h"
+#include "AudioDeviceInfo.h"
 #include "MediaQueue.h"
 #include "VideoUtils.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "nsPrintfCString.h"
 
 namespace mozilla {
@@ -32,9 +33,11 @@ using media::TimeUnit;
 
 AudioSink::AudioSink(AbstractThread* aThread,
                      MediaQueue<AudioData>& aAudioQueue,
-                     const TimeUnit& aStartTime, const AudioInfo& aInfo)
+                     const TimeUnit& aStartTime, const AudioInfo& aInfo,
+                     AudioDeviceInfo* aAudioDevice)
     : mStartTime(aStartTime),
       mInfo(aInfo),
+      mAudioDevice(aAudioDevice),
       mPlaying(true),
       mMonitor("AudioSink"),
       mWritten(0),
@@ -45,7 +48,7 @@ AudioSink::AudioSink(AbstractThread* aThread,
       mFramesParsed(0),
       mIsAudioDataAudible(false),
       mAudioQueue(aAudioQueue) {
-  bool resampling = StaticPrefs::MediaResamplingEnabled();
+  bool resampling = StaticPrefs::media_resampling_enabled();
 
   if (resampling) {
     mOutputRate = 48000;
@@ -179,9 +182,9 @@ nsresult AudioSink::InitializeAudioStream(const PlaybackParams& aParams) {
   // The layout map used here is already processed by mConverter with
   // mOutputChannels into SMPTE format, so there is no need to worry if
   // StaticPrefs::accessibility_monoaudio_enable() or
-  // StaticPrefs::MediaForcestereoEnabled() is applied.
+  // StaticPrefs::media_forcestereo_enabled() is applied.
   nsresult rv = mAudioStream->Init(mOutputChannels, channelMap, mOutputRate,
-                                   aParams.mSink);
+                                   mAudioDevice);
   if (NS_FAILED(rv)) {
     mAudioStream->Shutdown();
     mAudioStream = nullptr;

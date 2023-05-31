@@ -9,25 +9,20 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGElement : Element {
            attribute DOMString id;
 
   [Constant]
   readonly attribute SVGAnimatedString className;
-  [SameObject] readonly attribute DOMStringMap dataset;
-  [PutForwards=cssText, Constant]
-  readonly attribute CSSStyleDeclaration style;
 
   readonly attribute SVGSVGElement? ownerSVGElement;
   readonly attribute SVGElement? viewportElement;
-
-  [SetterThrows, Pure]
-        attribute long tabIndex;
-  [Throws] void blur();
 };
 
-SVGElement implements GlobalEventHandlers;
-SVGElement implements HTMLOrSVGOrXULElementMixin;
-SVGElement implements DocumentAndElementEventHandlers;
-SVGElement implements TouchEventHandlers;
-SVGElement implements OnErrorEventHandlerForNodes;
+SVGElement includes GlobalEventHandlers;
+SVGElement includes HTMLOrForeignElement;
+SVGElement includes DocumentAndElementEventHandlers;
+SVGElement includes ElementCSSInlineStyle;
+SVGElement includes TouchEventHandlers;
+SVGElement includes OnErrorEventHandlerForNodes;

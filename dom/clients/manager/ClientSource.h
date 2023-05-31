@@ -14,6 +14,7 @@
 #  undef PostMessage
 #endif
 
+class nsIContentSecurityPolicy;
 class nsIDocShell;
 class nsIGlobalObject;
 class nsISerialEventTarget;
@@ -145,6 +146,11 @@ class ClientSource final : public ClientThing<ClientSourceChild> {
   nsresult SnapshotState(ClientState* aStateOut);
 
   nsISerialEventTarget* EventTarget() const;
+
+  void SetCsp(nsIContentSecurityPolicy* aCsp);
+  void SetPreloadCsp(nsIContentSecurityPolicy* aPreloadCSP);
+  void SetCspInfo(const mozilla::ipc::CSPInfo& aCSPInfo);
+  const Maybe<mozilla::ipc::CSPInfo>& GetCspInfo();
 
   void Traverse(nsCycleCollectionTraversalCallback& aCallback,
                 const char* aName, uint32_t aFlags);

@@ -241,10 +241,9 @@ void HTMLOptionElement::SetText(const nsAString& aText, ErrorResult& aRv) {
   aRv = nsContentUtils::SetNodeTextContent(this, aText, true);
 }
 
-nsresult HTMLOptionElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                       nsIContent* aBindingParent) {
-  nsresult rv =
-      nsGenericHTMLElement::BindToTree(aDocument, aParent, aBindingParent);
+nsresult HTMLOptionElement::BindToTree(BindContext& aContext,
+                                       nsINode& aParent) {
+  nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Our new parent might change :disabled/:enabled state.
@@ -253,8 +252,8 @@ nsresult HTMLOptionElement::BindToTree(Document* aDocument, nsIContent* aParent,
   return NS_OK;
 }
 
-void HTMLOptionElement::UnbindFromTree(bool aDeep, bool aNullParent) {
-  nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);
+void HTMLOptionElement::UnbindFromTree(bool aNullParent) {
+  nsGenericHTMLElement::UnbindFromTree(aNullParent);
 
   // Our previous parent could have been involved in :disabled/:enabled state.
   UpdateDisabledState(false);

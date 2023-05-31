@@ -8,6 +8,7 @@
 #include "mozilla/dom/nsSynthVoiceRegistry.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "nsEscape.h"
 #include "nsISupports.h"
 #include "nsPrintfCString.h"
@@ -279,7 +280,7 @@ SpeechDispatcherService::SpeechDispatcherService()
     : mInitialized(false), mSpeechdClient(nullptr) {}
 
 void SpeechDispatcherService::Init() {
-  if (!Preferences::GetBool("media.webspeech.synth.enabled") ||
+  if (!StaticPrefs::media_webspeech_synth_enabled() ||
       Preferences::GetBool("media.webspeech.synth.test")) {
     return;
   }

@@ -49,6 +49,7 @@ const isFennec =
 // IMPORTANT: Do not change this list without review from
 //            a JavaScript Engine peer!
 var ecmaGlobals = [
+  { name: "AggregateError", insecureContext: true },
   { name: "Array", insecureContext: true },
   { name: "ArrayBuffer", insecureContext: true },
   { name: "Atomics", insecureContext: true, disabled: true },
@@ -129,6 +130,8 @@ var interfaceNamesInGlobalScope = [
   { name: "AbortController", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "AbortSignal", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "AbstractRange", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "AnalyserNode", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -312,8 +315,6 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "DocumentType", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  { name: "DOMError", insecureContext: true },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "DOMException", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "DOMImplementation", insecureContext: true },
@@ -350,6 +351,8 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Element", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "ElementInternals", insecureContext: true, nightly: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ErrorEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Event", insecureContext: true },
@@ -383,6 +386,8 @@ var interfaceNamesInGlobalScope = [
   { name: "FocusEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "FormData", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "FormDataEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "FontFace", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -910,6 +915,8 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "ProgressEvent", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "PromiseRejectionEvent", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PublicKeyCredential" },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PushManager", insecureContext: true, fennec: true },
@@ -1009,6 +1016,8 @@ var interfaceNamesInGlobalScope = [
   { name: "SpeechSynthesisVoice", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "SpecialPowers", insecureContext: true },
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  { name: "StaticRange", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "StereoPannerNode", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

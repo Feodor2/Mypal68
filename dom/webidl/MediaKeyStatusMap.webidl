@@ -19,6 +19,7 @@ enum MediaKeyStatus {
   "internal-error"
 };
 
+[Exposed=Window]
 interface MediaKeyStatusMap {
   iterable<ArrayBuffer,MediaKeyStatus>;
   readonly attribute unsigned long size;

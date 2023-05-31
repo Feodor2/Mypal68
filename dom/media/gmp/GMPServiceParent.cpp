@@ -8,11 +8,12 @@
 #include "base/task.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/Logging.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/ContentParent.h"
 #include "GMPParent.h"
 #include "GMPVideoDecoderParent.h"
 #include "nsAutoPtr.h"
+#include "nsIAsyncShutdown.h"
 #include "nsIObserverService.h"
 #include "GeckoChildProcessHost.h"
 #include "mozilla/Preferences.h"
@@ -21,7 +22,6 @@
 #include "nsXPCOMPrivate.h"
 #include "mozilla/Services.h"
 #include "nsNativeCharsetUtils.h"
-#include "nsIConsoleService.h"
 #include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
 #include "runnable_utils.h"
@@ -34,7 +34,6 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsHashKeys.h"
 #include "nsIFile.h"
-#include "nsISimpleEnumerator.h"
 #include "nsIXULRuntime.h"
 #include "GMPDecoderModule.h"
 #include <limits>
@@ -772,7 +771,7 @@ already_AddRefed<GMPParent> GeckoMediaPluginServiceParent::SelectPluginForAPI(
 RefPtr<GMPParent> CreateGMPParent(AbstractThread* aMainThread) {
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   if (!SandboxInfo::Get().CanSandboxMedia()) {
-    if (!StaticPrefs::MediaGmpInsecureAllow()) {
+    if (!StaticPrefs::media_gmp_insecure_allow()) {
       NS_WARNING("Denying media plugin load due to lack of sandboxing.");
       return nullptr;
     }
@@ -787,13 +786,12 @@ already_AddRefed<GMPParent> GeckoMediaPluginServiceParent::ClonePlugin(
   MOZ_ASSERT(aOriginal);
 
   RefPtr<GMPParent> gmp = CreateGMPParent(mMainThread);
-  nsresult rv = gmp ? gmp->CloneFrom(aOriginal) : NS_ERROR_NOT_AVAILABLE;
-
-  if (NS_FAILED(rv)) {
+  if (!gmp) {
     NS_WARNING("Can't Create GMPParent");
     return nullptr;
   }
 
+  gmp->CloneFrom(aOriginal);
   return gmp.forget();
 }
 

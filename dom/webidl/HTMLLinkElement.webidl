@@ -11,8 +11,10 @@
  */
 
 // http://www.whatwg.org/specs/web-apps/current-work/#the-link-element
-[HTMLConstructor]
+[Exposed=Window]
 interface HTMLLinkElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
   [CEReactions, SetterThrows, Pure]
            attribute boolean disabled;
   [CEReactions, SetterNeedsSubjectPrincipal=NonSystem, SetterThrows, Pure]
@@ -33,7 +35,7 @@ interface HTMLLinkElement : HTMLElement {
            attribute DOMString referrerPolicy;
   [PutForwards=value] readonly attribute DOMTokenList sizes;
 };
-HTMLLinkElement implements LinkStyle;
+HTMLLinkElement includes LinkStyle;
 
 // http://www.whatwg.org/specs/web-apps/current-work/#other-elements,-attributes-and-apis
 partial interface HTMLLinkElement {

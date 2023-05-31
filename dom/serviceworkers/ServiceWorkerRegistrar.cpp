@@ -7,7 +7,7 @@
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/net/MozURL.h"
 
-#include "mozIThirdPartyUtil.h"
+#include "nsIAsyncShutdown.h"
 #include "nsIEventTarget.h"
 #include "nsIInputStream.h"
 #include "nsILineInputStream.h"
@@ -118,11 +118,8 @@ nsresult CreatePrincipalInfo(nsILineInputStream* aStream,
     return rv;
   }
 
-  // CSP will be applied during the script load.
-  nsTArray<mozilla::ipc::ContentSecurityPolicy> policies;
   aEntry->principal() = mozilla::ipc::ContentPrincipalInfo(
-      attrs, origin, aEntry->scope(), Nothing(), std::move(policies),
-      baseDomain);
+      attrs, origin, aEntry->scope(), Nothing(), baseDomain);
 
   return NS_OK;
 }

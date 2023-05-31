@@ -10,6 +10,7 @@
  * and create derivative works of this document.
  */
 
+[Exposed=Window]
 interface HTMLMediaElement : HTMLElement {
 
   // error state
@@ -111,7 +112,7 @@ partial interface HTMLMediaElement {
   [Func="HasDebuggerOrTabsPrivilege", NewObject]
   Promise<DOMString> mozRequestDebugLog();
 
-  [Pref="media.test.dumpDebugInfo"]
+  //[Pref="media.test.dumpDebugInfo"]
   Promise<void> mozDumpDebugInfo();
 
   attribute MediaStream? srcObject;

@@ -6,6 +6,7 @@
 #include "nsPIDOMWindow.h"
 #include "nsTArray.h"
 #include "nsVariant.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/GamepadBinding.h"
 
 namespace mozilla {

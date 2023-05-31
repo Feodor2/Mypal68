@@ -270,7 +270,7 @@ nsresult OpusTrackEncoder::GetEncodedTrack(EncodedFrameContainer& aData) {
       return NS_OK;
     }
 
-    // Pad |mLookahead| samples to the end of source stream to prevent lost of
+    // Pad |mLookahead| samples to the end of source track to prevent lost of
     // original data, the pcm duration will be calculated at rate 48K later.
     if (mEndOfStream && !mEosSetInEncoder) {
       mEosSetInEncoder = true;
@@ -288,7 +288,7 @@ nsresult OpusTrackEncoder::GetEncodedTrack(EncodedFrameContainer& aData) {
       AudioChunk chunk = *iter;
 
       // Chunk to the required frame size.
-      StreamTime frameToCopy = chunk.GetDuration();
+      TrackTime frameToCopy = chunk.GetDuration();
       if (frameToCopy > framesToFetch - frameCopied) {
         frameToCopy = framesToFetch - frameCopied;
       }

@@ -32,6 +32,7 @@ class nsPIDOMWindowInner;
 namespace mozilla {
 class DOMEventTargetHelper;
 namespace dom {
+class DebuggerNotificationManager;
 class ServiceWorker;
 class ServiceWorkerRegistration;
 class ServiceWorkerRegistrationDescriptor;
@@ -137,6 +138,16 @@ class nsIGlobalObject : public nsISupports,
           aFunc) const;
 
   virtual bool IsInSyncOperation() { return false; }
+
+  virtual mozilla::dom::DebuggerNotificationManager*
+  GetOrCreateDebuggerNotificationManager() {
+    return nullptr;
+  }
+
+  virtual mozilla::dom::DebuggerNotificationManager*
+  GetExistingDebuggerNotificationManager() {
+    return nullptr;
+  }
 
   virtual mozilla::Maybe<mozilla::dom::ClientInfo> GetClientInfo() const;
 

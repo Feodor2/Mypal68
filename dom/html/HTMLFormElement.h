@@ -7,7 +7,6 @@
 
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/HTMLFormSubmission.h"
 #include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsIForm.h"
@@ -31,6 +30,7 @@ class EventChainPreVisitor;
 namespace dom {
 class HTMLFormControlsCollection;
 class HTMLImageElement;
+class FormData;
 
 class HTMLFormElement final : public nsGenericHTMLElement,
                               public nsIWebProgressListener,
@@ -92,10 +92,8 @@ class HTMLFormElement final : public nsGenericHTMLElement,
   void WillHandleEvent(EventChainPostVisitor& aVisitor) override;
   virtual nsresult PostHandleEvent(EventChainPostVisitor& aVisitor) override;
 
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
   virtual nsresult BeforeSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                  const nsAttrValueOrString* aValue,
                                  bool aNotify) override;
@@ -264,25 +262,19 @@ class HTMLFormElement final : public nsGenericHTMLElement,
    *
    * @note Do not call this method if novalidate/formnovalidate is used.
    * @note This method might disappear with bug 592124, hopefuly.
+   * @see
+   * https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#interactively-validate-the-constraints
    */
   bool CheckValidFormSubmission();
 
   /**
-   * Check whether submission can proceed for this form.  This basically
-   * implements steps 1-4 (more or less) of
-   * <https://html.spec.whatwg.org/multipage/forms.html#concept-form-submit>.
-   * aSubmitter, if not null, is the "submitter" from that algorithm.  Therefore
-   * it must be a valid submit control.
-   */
-  bool SubmissionCanProceed(Element* aSubmitter);
-
-  /**
-   * Walk over the form elements and call SubmitNamesValues() on them to get
-   * their data pumped into the FormSubmitter.
+   * Contruct the entry list to get their data pumped into the FormData and
+   * fire a `formdata` event with the entry list in formData attribute.
+   * <https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-form-data-set>
    *
-   * @param aFormSubmission the form submission object
+   * @param aFormData the form data object
    */
-  nsresult WalkFormElements(HTMLFormSubmission* aFormSubmission);
+  nsresult ConstructEntryList(FormData* aFormData);
 
   /**
    * Whether the submission of this form has been ever prevented because of
@@ -359,6 +351,15 @@ class HTMLFormElement final : public nsGenericHTMLElement,
 
   int32_t Length();
 
+  /**
+   * Check whether submission can proceed for this form then fire submit event.
+   * This basically implements steps 1-6 (more or less) of
+   * <https://html.spec.whatwg.org/multipage/forms.html#concept-form-submit>.
+   * @param aSubmitter If not null, is the "submitter" from that algorithm.
+   *                   Therefore it must be a valid submit control.
+   */
+  MOZ_CAN_RUN_SCRIPT void MaybeSubmit(Element* aSubmitter);
+  MOZ_CAN_RUN_SCRIPT void MaybeReset(Element* aSubmitter);
   void Submit(ErrorResult& aRv);
   void Reset();
 
@@ -475,7 +476,7 @@ class HTMLFormElement final : public nsGenericHTMLElement,
 
   /**
    * Check the form validity following this algorithm:
-   * http://www.whatwg.org/specs/web-apps/current-work/#statically-validate-the-constraints
+   * https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#statically-validate-the-constraints
    *
    * @param aInvalidElements [out] parameter containing the list of unhandled
    * invalid controls.
@@ -597,8 +598,13 @@ class HTMLFormElement final : public nsGenericHTMLElement,
    * being invalid.
    */
   bool mEverTriedInvalidSubmit;
+  /** Whether we are constructing entry list */
+  bool mIsConstructingEntryList;
+  /** Whether we are firing submission event */
+  bool mIsFiringSubmissionEvents;
 
  private:
+  NotNull<const Encoding*> GetSubmitEncoding();
   ~HTMLFormElement();
 };
 

@@ -137,7 +137,7 @@ nsCSSPropertyID SMILCompositor::GetCSSPropertyToAnimate() const {
   }
 
   nsCSSPropertyID propID =
-      nsCSSProps::LookupProperty(nsDependentAtomString(mKey.mAttributeName));
+      nsCSSProps::LookupProperty(nsAtomCString(mKey.mAttributeName));
 
   if (!SMILCSSProperty::IsPropertyAnimatable(propID)) {
     return eCSSProperty_UNKNOWN;

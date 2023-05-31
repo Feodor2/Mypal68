@@ -13,6 +13,8 @@ enum CSSBoxType { "margin", "border", "padding", "content" };
 dictionary BoxQuadOptions {
   CSSBoxType box = "border";
   GeometryNode relativeTo;
+  [ChromeOnly]
+  boolean createFramesForSuppressedWhitespace = true;
 };
 
 dictionary ConvertCoordinateOptions {
@@ -20,18 +22,17 @@ dictionary ConvertCoordinateOptions {
   CSSBoxType toBox = "border";
 };
 
-[NoInterfaceObject]
-interface GeometryUtils {
+interface mixin GeometryUtils {
   [Throws, Func="nsINode::HasBoxQuadsSupport", NeedsCallerType]
-  sequence<DOMQuad> getBoxQuads(optional BoxQuadOptions options);
+  sequence<DOMQuad> getBoxQuads(optional BoxQuadOptions options = {});
   [Throws, Pref="layout.css.convertFromNode.enabled", NeedsCallerType]
-  DOMQuad convertQuadFromNode(DOMQuad quad, GeometryNode from, optional ConvertCoordinateOptions options);
+  DOMQuad convertQuadFromNode(DOMQuad quad, GeometryNode from, optional ConvertCoordinateOptions options = {});
   [Throws, Pref="layout.css.convertFromNode.enabled", NeedsCallerType]
-  DOMQuad convertRectFromNode(DOMRectReadOnly rect, GeometryNode from, optional ConvertCoordinateOptions options);
+  DOMQuad convertRectFromNode(DOMRectReadOnly rect, GeometryNode from, optional ConvertCoordinateOptions options = {});
   [Throws, Pref="layout.css.convertFromNode.enabled", NeedsCallerType]
-  DOMPoint convertPointFromNode(DOMPointInit point, GeometryNode from, optional ConvertCoordinateOptions options);
+  DOMPoint convertPointFromNode(DOMPointInit point, GeometryNode from, optional ConvertCoordinateOptions options = {});
 };
 
-// PseudoElement implements GeometryUtils;
+// PseudoElement includes GeometryUtils;
 
 typedef (Text or Element /* or PseudoElement */ or Document) GeometryNode;

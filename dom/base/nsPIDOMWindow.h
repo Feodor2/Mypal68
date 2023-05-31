@@ -29,6 +29,7 @@ class nsGlobalWindowOuter;
 class nsIArray;
 class nsIChannel;
 class nsIContent;
+class nsIContentSecurityPolicy;
 class nsICSSDeclaration;
 class nsIDocShell;
 class nsDocShellLoadState;
@@ -68,6 +69,7 @@ class TimeoutManager;
 class WindowGlobalChild;
 class CustomElementRegistry;
 enum class CallerType : uint32_t;
+enum class MediaControlActions : uint32_t;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -172,8 +174,17 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   inline bool IsHandlingResizeEvent() const;
 
   // Note: not related to IsLoading.  Set to false if there's an error, etc.
-  void SetActiveLoadingState(bool aIsActiveLoading);
-  void AddAfterLoadRunner(nsIRunnable* aRunner);
+  virtual void SetActiveLoadingState(bool aIsActiveLoading) = 0;
+
+  nsPIDOMWindowInner* GetWindowForDeprioritizedLoadRunner();
+
+  /**
+   * The runnable will be called once there is idle time, or the top level
+   * page has been loaded or if a timeout has fired.
+   * Must be called only on the top level window, the one
+   * GetWindowForDeprioritizedLoadRunner returns.
+   */
+  virtual void AddDeprioritizedLoadRunner(nsIRunnable* aRunner) = 0;
 
   bool AddAudioContext(mozilla::dom::AudioContext* aAudioContext);
   void RemoveAudioContext(mozilla::dom::AudioContext* aAudioContext);
@@ -324,6 +335,10 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   mozilla::Maybe<mozilla::dom::ClientState> GetClientState() const;
   mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor> GetController() const;
 
+  void SetCsp(nsIContentSecurityPolicy* aCsp);
+  void SetPreloadCsp(nsIContentSecurityPolicy* aPreloadCsp);
+  nsIContentSecurityPolicy* GetCsp();
+
   void NoteCalledRegisterForServiceWorkerScope(const nsACString& aScope);
 
   void NoteDOMContentLoaded();
@@ -333,8 +348,8 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   virtual mozilla::dom::CustomElementRegistry* CustomElements() = 0;
 
   // XXX: This is called on inner windows
-  virtual nsPIDOMWindowOuter* GetScriptableTop() = 0;
-  virtual nsPIDOMWindowOuter* GetScriptableParent() = 0;
+  virtual nsPIDOMWindowOuter* GetInProcessScriptableTop() = 0;
+  virtual nsPIDOMWindowOuter* GetInProcessScriptableParent() = 0;
   virtual already_AddRefed<nsPIWindowRoot> GetTopWindowRoot() = 0;
 
   mozilla::dom::EventTarget* GetChromeEventHandler() const {
@@ -663,8 +678,6 @@ class nsPIDOMWindowInner : public mozIDOMWindow {
   // This will be non-null during the full lifetime of the window, initialized
   // during SetNewDocument, and cleared during FreeInnerObjects.
   RefPtr<mozilla::dom::WindowGlobalChild> mWindowGlobalChild;
-
-  nsTArray<nsCOMPtr<nsIRunnable>> mAfterLoadRunners;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsPIDOMWindowInner, NS_PIDOMWINDOWINNER_IID)
@@ -708,10 +721,9 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   bool IsRootOuterWindow() { return mIsRootOuterWindow; }
 
   /**
-   * Set initial keyboard indicator state for accelerators and focus rings.
+   * Set initial keyboard indicator state for focus rings.
    */
-  void SetInitialKeyboardIndicators(UIStateChangeType aShowAccelerators,
-                                    UIStateChangeType aShowFocusRings);
+  void SetInitialKeyboardIndicators(UIStateChangeType aShowFocusRings);
 
   // Internal getter/setter for the frame element, this version of the
   // getter crosses chrome boundaries whereas the public scriptable
@@ -739,6 +751,8 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
 
   void MaybeActiveMediaComponents();
 
+  void UpdateMediaAction(const mozilla::dom::MediaControlActions aAction);
+
   void SetServiceWorkersTestingEnabled(bool aEnabled);
   bool GetServiceWorkersTestingEnabled();
 
@@ -761,24 +775,25 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
    * This function does not cross chrome-content boundaries, so if this
    * window's parent is of a different type, |top| will return this window.
    *
-   * When script reads the top property, we run GetScriptableTop, which
-   * will not cross an <iframe mozbrowser> boundary.
+   * When script reads the top property, we run GetInProcessScriptableTop,
+   * which will not cross an <iframe mozbrowser> boundary.
    *
    * In contrast, C++ calls to GetTop are forwarded to GetRealTop, which
    * ignores <iframe mozbrowser> boundaries.
    */
 
-  virtual already_AddRefed<nsPIDOMWindowOuter> GetTop() = 0;  // Outer only
-  virtual already_AddRefed<nsPIDOMWindowOuter> GetParent() = 0;
-  virtual nsPIDOMWindowOuter* GetScriptableTop() = 0;
-  virtual nsPIDOMWindowOuter* GetScriptableParent() = 0;
+  virtual already_AddRefed<nsPIDOMWindowOuter>
+  GetInProcessTop() = 0;  // Outer only
+  virtual already_AddRefed<nsPIDOMWindowOuter> GetInProcessParent() = 0;
+  virtual nsPIDOMWindowOuter* GetInProcessScriptableTop() = 0;
+  virtual nsPIDOMWindowOuter* GetInProcessScriptableParent() = 0;
   virtual already_AddRefed<nsPIWindowRoot> GetTopWindowRoot() = 0;
 
   /**
-   * Behaves identically to GetScriptableParent except that it returns null
-   * if GetScriptableParent would return this window.
+   * Behaves identically to GetInProcessScriptableParent except that it
+   * returns null if GetInProcessScriptableParent would return this window.
    */
-  virtual nsPIDOMWindowOuter* GetScriptableParentOrNull() = 0;
+  virtual nsPIDOMWindowOuter* GetInProcessScriptableParentOrNull() = 0;
 
   virtual bool IsTopLevelWindowActive() = 0;
 
@@ -819,8 +834,8 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   }
 
   // Set the window up with an about:blank document with the current subject
-  // principal.
-  virtual void SetInitialPrincipalToSubject() = 0;
+  // principal and potentially a CSP.
+  virtual void SetInitialPrincipalToSubject(nsIContentSecurityPolicy* aCSP) = 0;
 
   // Returns an object containing the window's state.  This also suspends
   // all running timeouts in the window.
@@ -952,8 +967,7 @@ class nsPIDOMWindowOuter : public mozIDOMWindowProxy {
   /**
    * Set the keyboard indicator state for accelerators and focus rings.
    */
-  virtual void SetKeyboardIndicators(UIStateChangeType aShowAccelerators,
-                                     UIStateChangeType aShowFocusRings) = 0;
+  virtual void SetKeyboardIndicators(UIStateChangeType aShowFocusRings) = 0;
 
   /**
    * Indicates that the page in the window has been hidden. This is used to

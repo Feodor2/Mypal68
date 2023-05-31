@@ -7,6 +7,7 @@
 
 #include "jsapi.h"
 #include "js/StructuredClone.h"
+#include "js/WasmModule.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Move.h"
 #include "mozilla/UniquePtr.h"
@@ -36,8 +37,9 @@ class StructuredCloneHolderBase {
  public:
   typedef JS::StructuredCloneScope StructuredCloneScope;
 
-  StructuredCloneHolderBase(StructuredCloneScope aScope =
-                                StructuredCloneScope::SameProcessSameThread);
+  StructuredCloneHolderBase(
+      StructuredCloneScope aScope =
+          StructuredCloneScope::SameProcessDifferentThread);
   virtual ~StructuredCloneHolderBase();
 
   // Note, it is unsafe to std::move() a StructuredCloneHolderBase since a raw
@@ -256,6 +258,11 @@ class StructuredCloneHolder : public StructuredCloneHolderBase {
   static bool WriteFullySerializableObjects(JSContext* aCx,
                                             JSStructuredCloneWriter* aWriter,
                                             JS::Handle<JSObject*> aObj);
+
+  // Helper functions for reading and writing strings.
+  static bool ReadString(JSStructuredCloneReader* aReader, nsString& aString);
+  static bool WriteString(JSStructuredCloneWriter* aWriter,
+                          const nsString& aString);
 
   static const JSStructuredCloneCallbacks sCallbacks;
 

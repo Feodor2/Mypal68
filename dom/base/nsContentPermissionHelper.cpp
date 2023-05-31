@@ -513,7 +513,7 @@ nsContentPermissionRequester::GetOnVisibilityChange(
 static nsIPrincipal* GetTopLevelPrincipal(nsPIDOMWindowInner* aWindow) {
   MOZ_ASSERT(aWindow);
 
-  nsPIDOMWindowOuter* top = aWindow->GetScriptableTop();
+  nsPIDOMWindowOuter* top = aWindow->GetInProcessScriptableTop();
   if (!top) {
     return nullptr;
   }
@@ -1024,7 +1024,7 @@ void RemotePermissionRequest::DoAllow(JS::HandleValue aChoices) {
 
 // PContentPermissionRequestChild
 mozilla::ipc::IPCResult RemotePermissionRequest::RecvNotifyResult(
-    const bool& aAllow, InfallibleTArray<PermissionChoice>&& aChoices) {
+    const bool& aAllow, nsTArray<PermissionChoice>&& aChoices) {
   Destroy();
 
   if (aAllow && mWindow->IsCurrentInnerWindow()) {

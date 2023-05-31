@@ -15,8 +15,10 @@ dictionary VRDisplayEventInit : EventInit {
 };
 
 [Pref="dom.vr.enabled",
- Constructor(DOMString type, VRDisplayEventInit eventInitDict)]
+ Exposed=Window]
 interface VRDisplayEvent : Event {
+  constructor(DOMString type, VRDisplayEventInit eventInitDict);
+
   readonly attribute VRDisplay display;
   readonly attribute VRDisplayEventReason? reason;
 };

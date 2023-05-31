@@ -329,9 +329,6 @@ with Files("WebGL*"):
 with Files("WebGPU*"):
     BUG_COMPONENT = ("Core", "Canvas: WebGL")
 
-with Files("WebKitCSSMatrix.webidl"):
-    BUG_COMPONENT = ("Core", "DOM: CSS Object Model")
-
 with Files("Webrtc*"):
     BUG_COMPONENT = ("Core", "WebRTC")
 
@@ -359,6 +356,7 @@ PREPROCESSED_WEBIDL_FILES = [
 WEBIDL_FILES = [
     'AbortController.webidl',
     'AbortSignal.webidl',
+    'AbstractRange.webidl',
     'AbstractWorker.webidl',
     'AddonManager.webidl',
     'AnalyserNode.webidl',
@@ -465,11 +463,9 @@ WEBIDL_FILES = [
     'Directory.webidl',
     'Document.webidl',
     'DocumentFragment.webidl',
-    'DocumentL10n.webidl',
     'DocumentOrShadowRoot.webidl',
     'DocumentTimeline.webidl',
     'DocumentType.webidl',
-    'DOMError.webidl',
     'DOMException.webidl',
     'DOMImplementation.webidl',
     'DOMMatrix.webidl',
@@ -485,6 +481,7 @@ WEBIDL_FILES = [
     'DragEvent.webidl',
     'DynamicsCompressorNode.webidl',
     'Element.webidl',
+    'ElementInternals.webidl',
     'Event.webidl',
     'EventHandler.webidl',
     'EventListener.webidl',
@@ -632,7 +629,6 @@ WEBIDL_FILES = [
     'KeyframeAnimationOptions.webidl',
     'KeyframeEffect.webidl',
     'KeyIdsInitData.webidl',
-    'L10nUtils.webidl',
     'LegacyQueryInterface.webidl',
     'LinkStyle.webidl',
     'LoadURIOptions.webidl',
@@ -660,7 +656,6 @@ WEBIDL_FILES = [
     'MediaStreamError.webidl',
     'MediaStreamTrack.webidl',
     'MediaStreamTrackAudioSourceNode.webidl',
-    'MediaTrackConstraintSet.webidl',
     'MediaTrackSettings.webidl',
     'MediaTrackSupportedConstraints.webidl',
     'MerchantValidationEvent.webidl',
@@ -745,6 +740,7 @@ WEBIDL_FILES = [
     'PushSubscriptionOptions.webidl',
     'RadioNodeList.webidl',
     'Range.webidl',
+    'ReferrerPolicy.webidl',
     'Reporting.webidl',
     'Request.webidl',
     'ResizeObserver.webidl',
@@ -766,6 +762,7 @@ WEBIDL_FILES = [
     'SocketCommon.webidl',
     'SourceBuffer.webidl',
     'SourceBufferList.webidl',
+    'StaticRange.webidl',
     'StereoPannerNode.webidl',
     'Storage.webidl',
     'StorageEvent.webidl',
@@ -930,8 +927,6 @@ WEBIDL_FILES = [
     'WebGL2RenderingContext.webidl',
     'WebGLRenderingContext.webidl',
     'WebGPU.webidl',
-    'WebGPUExtras.webidl',
-    'WebKitCSSMatrix.webidl',
     'WebSocket.webidl',
     'WheelEvent.webidl',
     'WidevineCDMManifest.webidl',
@@ -963,7 +958,6 @@ WEBIDL_FILES = [
 if CONFIG['MOZ_WEBRTC']:
     WEBIDL_FILES += [
         'PeerConnectionImpl.webidl',
-        'PeerConnectionImplEnums.webidl',
         'PeerConnectionObserver.webidl',
         'PeerConnectionObserverEnums.webidl',
         'RTCCertificate.webidl',
@@ -1044,10 +1038,12 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     'DeviceProximityEvent.webidl',
     'ErrorEvent.webidl',
     'FontFaceSetLoadEvent.webidl',
+    'FormDataEvent.webidl',
     'FrameCrashedEvent.webidl',
     'GamepadAxisMoveEvent.webidl',
     'GamepadButtonEvent.webidl',
     'GamepadEvent.webidl',
+    'GPUUncapturedErrorEvent.webidl',
     'HashChangeEvent.webidl',
     'HiddenPluginEvent.webidl',
     'ImageCaptureErrorEvent.webidl',

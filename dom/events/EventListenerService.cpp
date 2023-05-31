@@ -12,7 +12,6 @@
 #include "mozilla/dom/ScriptSettings.h"
 #include "nsArrayUtils.h"
 #include "nsCOMArray.h"
-#include "nsIXPConnect.h"
 #include "nsJSUtils.h"
 #include "nsMemory.h"
 #include "nsServiceManagerUtils.h"

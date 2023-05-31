@@ -6,7 +6,6 @@
 #include "mozilla/dom/BarPropBinding.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindow.h"
-#include "nsIDocShell.h"
 #include "nsIScrollable.h"
 #include "nsIWebBrowserChrome.h"
 

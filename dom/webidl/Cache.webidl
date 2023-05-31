@@ -10,12 +10,12 @@
 // https://slightlyoff.github.io/ServiceWorker/spec/service_worker/index.html#cache
 
 [Exposed=(Window,Worker),
- Func="mozilla::dom::DOMPrefs::dom_caches_enabled"]
+ Pref="dom.caches.enabled"]
 interface Cache {
   [NewObject]
-  Promise<Response> match(RequestInfo request, optional CacheQueryOptions options);
+  Promise<Response> match(RequestInfo request, optional CacheQueryOptions options = {});
   [NewObject]
-  Promise<sequence<Response>> matchAll(optional RequestInfo request, optional CacheQueryOptions options);
+  Promise<sequence<Response>> matchAll(optional RequestInfo request, optional CacheQueryOptions options = {});
   [NewObject, NeedsCallerType]
   Promise<void> add(RequestInfo request);
   [NewObject, NeedsCallerType]
@@ -23,9 +23,9 @@ interface Cache {
   [NewObject]
   Promise<void> put(RequestInfo request, Response response);
   [NewObject]
-  Promise<boolean> delete(RequestInfo request, optional CacheQueryOptions options);
+  Promise<boolean> delete(RequestInfo request, optional CacheQueryOptions options = {});
   [NewObject]
-  Promise<sequence<Request>> keys(optional RequestInfo request, optional CacheQueryOptions options);
+  Promise<sequence<Request>> keys(optional RequestInfo request, optional CacheQueryOptions options = {});
 };
 
 dictionary CacheQueryOptions {

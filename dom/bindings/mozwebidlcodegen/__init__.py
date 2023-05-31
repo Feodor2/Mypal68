@@ -5,7 +5,7 @@
 # This module contains code for managing WebIDL files and bindings for
 # the build system.
 
-from __future__ import unicode_literals
+from __future__ import print_function, unicode_literals
 
 import errno
 import hashlib
@@ -79,9 +79,15 @@ class WebIDLCodegenManagerState(dict):
        A dictionary defining files that influence all processing. Keys
        are full filenames. Values are hexidecimal SHA-1 from the last
        processing time.
+
+    dictionaries_convertible_to_js
+       A set of names of dictionaries that are convertible to JS.
+
+    dictionaries_convertible_from_js
+       A set of names of dictionaries that are convertible from JS.
     """
 
-    VERSION = 1
+    VERSION = 3
 
     def __init__(self, fh=None):
         self['version'] = self.VERSION
@@ -106,6 +112,12 @@ class WebIDLCodegenManagerState(dict):
             self['webidls'][k]['inputs'] = set(v['inputs'])
             self['webidls'][k]['outputs'] = set(v['outputs'])
 
+        self['dictionaries_convertible_to_js'] = set(
+            state['dictionaries_convertible_to_js'])
+
+        self['dictionaries_convertible_from_js'] = set(
+            state['dictionaries_convertible_from_js'])
+
     def dump(self, fh):
         """Dump serialized state to a file handle."""
         normalized = deepcopy(self)
@@ -114,6 +126,12 @@ class WebIDLCodegenManagerState(dict):
             # Convert sets to lists because JSON doesn't support sets.
             normalized['webidls'][k]['outputs'] = sorted(v['outputs'])
             normalized['webidls'][k]['inputs'] = sorted(v['inputs'])
+
+        normalized['dictionaries_convertible_to_js'] = sorted(
+            self['dictionaries_convertible_to_js'])
+
+        normalized['dictionaries_convertible_from_js'] = sorted(
+            self['dictionaries_convertible_from_js'])
 
         json.dump(normalized, fh, sort_keys=True)
 
@@ -136,6 +154,8 @@ class WebIDLCodegenManager(LoggingMixin):
         'RegisterWorkletBindings.h',
         'UnionConversions.h',
         'UnionTypes.h',
+        'WebIDLPrefs.h',
+        'WebIDLSerializable.h',
     }
 
     # Global parser derived definition files.
@@ -146,6 +166,8 @@ class WebIDLCodegenManager(LoggingMixin):
         'RegisterWorkletBindings.cpp',
         'UnionTypes.cpp',
         'PrototypeList.cpp',
+        'WebIDLPrefs.cpp',
+        'WebIDLSerializable.cpp',
     }
 
     def __init__(self, config_path, webidl_root, inputs, exported_header_dir,
@@ -264,6 +286,10 @@ class WebIDLCodegenManager(LoggingMixin):
             changed_inputs = self._compute_changed_inputs()
 
         self._state['global_depends'] = global_hashes
+        self._state['dictionaries_convertible_to_js'] = set(
+            d.identifier.name for d in self._config.getDictionariesConvertibleToJS())
+        self._state['dictionaries_convertible_from_js'] = set(
+            d.identifier.name for d in self._config.getDictionariesConvertibleFromJS())
 
         # Generate bindings from .webidl files.
         for filename in sorted(changed_inputs):
@@ -310,7 +336,7 @@ class WebIDLCodegenManager(LoggingMixin):
 
         example_paths = self._example_paths(interface)
         for path in example_paths:
-            print "Generating %s" % path
+            print("Generating {}".format(path))
 
         return self._maybe_write_codegen(root, *example_paths)
 
@@ -420,6 +446,23 @@ class WebIDLCodegenManager(LoggingMixin):
         for v in self._state['webidls'].values():
             if any(dep for dep in v['inputs'] if dep in changed_inputs):
                 changed_inputs.add(v['filename'])
+
+        # Now check for changes to the set of dictionaries that are convertible to JS
+        oldDictionariesConvertibleToJS = self._state['dictionaries_convertible_to_js']
+        newDictionariesConvertibleToJS = self._config.getDictionariesConvertibleToJS()
+        newNames = set(d.identifier.name for d in newDictionariesConvertibleToJS)
+        changedDictionaryNames = oldDictionariesConvertibleToJS ^ newNames
+
+        # Now check for changes to the set of dictionaries that are convertible from JS
+        oldDictionariesConvertibleFromJS = self._state['dictionaries_convertible_from_js']
+        newDictionariesConvertibleFromJS = self._config.getDictionariesConvertibleFromJS()
+        newNames = set(d.identifier.name for d in newDictionariesConvertibleFromJS)
+        changedDictionaryNames |= oldDictionariesConvertibleFromJS ^ newNames
+
+        for name in changedDictionaryNames:
+            d = self._config.getDictionaryIfExists(name)
+            if d:
+                changed_inputs.add(d.filename())
 
         # Only use paths that are known to our current state.
         # This filters out files that were deleted or changed type (e.g. from

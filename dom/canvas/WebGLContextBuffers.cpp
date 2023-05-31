@@ -330,7 +330,7 @@ void WebGLContext::BufferData(GLenum target,
   const auto& src = maybeSrc.Value();
 
   src.ComputeLengthAndData();
-  BufferDataImpl(target, src.LengthAllowShared(), src.DataAllowShared(), usage);
+  BufferDataImpl(target, src.Length(), src.Data(), usage);
 }
 
 void WebGLContext::BufferData(GLenum target, const dom::ArrayBufferView& src,
@@ -371,8 +371,8 @@ void WebGLContext::BufferSubData(GLenum target, WebGLsizeiptr dstByteOffset,
   if (IsContextLost()) return;
 
   src.ComputeLengthAndData();
-  BufferSubDataImpl(target, dstByteOffset, src.LengthAllowShared(),
-                    src.DataAllowShared());
+  BufferSubDataImpl(target, dstByteOffset, src.Length(),
+                    src.Data());
 }
 
 void WebGLContext::BufferSubData(GLenum target, WebGLsizeiptr dstByteOffset,

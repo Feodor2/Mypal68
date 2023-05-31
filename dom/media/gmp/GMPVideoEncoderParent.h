@@ -27,7 +27,9 @@ class GMPVideoEncoderParent : public GMPVideoEncoderProxy,
   friend class PGMPVideoEncoderParent;
 
  public:
-  NS_INLINE_DECL_REFCOUNTING(GMPVideoEncoderParent)
+  // Mark AddRef and Release as `final`, as they overload pure virtual
+  // implementations in PGMPVideoEncoderParent.
+  NS_INLINE_DECL_REFCOUNTING(GMPVideoEncoderParent, final)
 
   explicit GMPVideoEncoderParent(GMPContentParent* aPlugin);
 
@@ -66,7 +68,7 @@ class GMPVideoEncoderParent : public GMPVideoEncoderProxy,
   void ActorDestroy(ActorDestroyReason aWhy) override;
   mozilla::ipc::IPCResult RecvEncoded(
       const GMPVideoEncodedFrameData& aEncodedFrame,
-      InfallibleTArray<uint8_t>&& aCodecSpecificInfo) override;
+      nsTArray<uint8_t>&& aCodecSpecificInfo) override;
   mozilla::ipc::IPCResult RecvError(const GMPErr& aError) override;
   mozilla::ipc::IPCResult RecvShutdown() override;
   mozilla::ipc::IPCResult RecvParentShmemForPool(Shmem&& aFrameBuffer) override;

@@ -8,20 +8,14 @@
 #include "nsIXMLContentSink.h"
 #include "nsPresContext.h"
 #include "nsIContent.h"
-#include "nsIContentViewer.h"
 #include "nsIDocShell.h"
 #include "nsHTMLParts.h"
-#include "nsIComponentManager.h"
-#include "nsIBaseWindow.h"
-#include "nsIDOMWindow.h"
 #include "nsCOMPtr.h"
 #include "nsString.h"
 #include "nsIHttpChannelInternal.h"
 #include "nsIURI.h"
-#include "nsIServiceManager.h"
 #include "nsNetUtil.h"
 #include "nsError.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIPrincipal.h"
 #include "nsLayoutCID.h"
 #include "mozilla/dom/Attr.h"
@@ -32,13 +26,11 @@
 #include "nsThreadUtils.h"
 #include "nsJSUtils.h"
 #include "nsCRT.h"
-#include "nsIAuthPrompt.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentPolicyUtils.h"
-#include "nsNodeUtils.h"
 #include "nsIConsoleService.h"
 #include "nsIScriptError.h"
-#include "nsIHTMLDocument.h"
+#include "nsHTMLDocument.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/Encoding.h"
@@ -119,10 +111,8 @@ nsresult NS_NewDOMDocument(Document** aInstancePtrResult,
   }
 
   if (isHTML) {
-    nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(d);
-    NS_ASSERTION(htmlDoc, "HTML Document doesn't implement nsIHTMLDocument?");
-    htmlDoc->SetCompatibilityMode(eCompatibility_FullStandards);
-    htmlDoc->SetIsXHTML(isXHTML);
+    d->SetCompatibilityMode(eCompatibility_FullStandards);
+    d->AsHTMLDocument()->SetIsXHTML(isXHTML);
   }
   d->SetLoadedAsData(aLoadedAsData);
   d->SetDocumentURI(aDocumentURI);
@@ -313,12 +303,11 @@ bool XMLDocument::Load(const nsAString& aUrl, CallerType aCallerType,
     return false;
   }
 
-  if (nsContentUtils::IsSystemPrincipal(principal)) {
+  if (principal->IsSystemPrincipal()) {
     // We're called from chrome, check to make sure the URI we're
     // about to load is also chrome.
 
-    bool isChrome = false;
-    if (NS_FAILED(uri->SchemeIs("chrome", &isChrome)) || !isChrome) {
+    if (!uri->SchemeIs("chrome")) {
       nsAutoString error;
       error.AssignLiteral(
           "Cross site loading using document.load is no "

@@ -34,7 +34,7 @@ class MediaStreamAudioDestinationNode final : public AudioNode {
 
   uint16_t NumberOfOutputs() const final { return 0; }
 
-  void DestroyMediaStream() override;
+  void DestroyMediaTrack() override;
 
   DOMMediaStream* DOMStream() const { return mDOMStream; }
 
@@ -50,7 +50,6 @@ class MediaStreamAudioDestinationNode final : public AudioNode {
   ~MediaStreamAudioDestinationNode() = default;
 
   RefPtr<DOMMediaStream> mDOMStream;
-  RefPtr<MediaInputPort> mPort;
 };
 
 }  // namespace dom

@@ -15,7 +15,7 @@
 #include "GMPUtils.h"
 #include "mozilla/dom/MediaKeyMessageEventBinding.h"
 #include "mozilla/gmp/GMPTypes.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Unused.h"
 #include "AnnexB.h"
 #include "H264.h"
@@ -31,7 +31,7 @@ ChromiumCDMParent::ChromiumCDMParent(GMPContentParent* aContentParent,
                                      uint32_t aPluginId)
     : mPluginId(aPluginId),
       mContentParent(aContentParent),
-      mVideoShmemLimit(StaticPrefs::MediaEmeChromiumApiVideoShmems()) {
+      mVideoShmemLimit(StaticPrefs::media_eme_chromium_api_video_shmems()) {
   GMP_LOG(
       "ChromiumCDMParent::ChromiumCDMParent(this=%p, contentParent=%p, id=%u)",
       this, aContentParent, aPluginId);

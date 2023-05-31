@@ -200,7 +200,7 @@ class nsAttrValue {
   inline int32_t GetIntegerValue() const;
   bool GetColorValue(nscolor& aColor) const;
   inline int16_t GetEnumValue() const;
-  inline float GetPercentValue() const;
+  inline double GetPercentValue() const;
   inline mozilla::AtomArray* GetAtomArrayValue() const;
   inline mozilla::DeclarationBlock* GetCSSDeclarationValue() const;
   inline nsIURI* GetURLValue() const;
@@ -301,16 +301,33 @@ class nsAttrValue {
                       const EnumTable* aDefaultValue = nullptr);
 
   /**
-   * Parse a string into an integer. Can optionally parse percent (n%).
-   * This method explicitly sets a lower bound of zero on the element,
-   * whether it be percent or raw integer.
+   * Parse a string into a dimension value.  This is similar to
+   * https://html.spec.whatwg.org/multipage/#rules-for-parsing-dimension-values
+   * but drops the fractional part of the value for now, until we figure out how
+   * to store that in our nsAttrValue.
    *
-   * @param aString the string to parse
+   * The resulting value (if the parse succeeds) is one of eInteger,
+   * eDoubleValue, or ePercent, depending on whether we found a fractional part
+   * and whether we found '%' at the end of the value.
+   *
+   * @param aInput the string to parse
    * @return whether the value could be parsed
-   *
-   * @see http://www.whatwg.org/html/#rules-for-parsing-dimension-values
    */
-  bool ParseSpecialIntValue(const nsAString& aString);
+  bool ParseHTMLDimension(const nsAString& aInput) {
+    return DoParseHTMLDimension(aInput, false);
+  }
+
+  /**
+   * Parse a string into a nonzero dimension value.  This implements
+   * https://html.spec.whatwg.org/multipage/#rules-for-parsing-non-zero-dimension-values
+   * subject to the same constraints as ParseHTMLDimension above.
+   *
+   * @param aInput the string to parse
+   * @return whether the value could be parsed
+   */
+  bool ParseNonzeroHTMLDimension(const nsAString& aInput) {
+    return DoParseHTMLDimension(aInput, true);
+  }
 
   /**
    * Parse a string value into an integer.
@@ -454,6 +471,9 @@ class nsAttrValue {
   inline void SetPtrValueAndType(void* aValue, ValueBaseType aType);
   void SetIntValueAndType(int32_t aValue, ValueType aType,
                           const nsAString* aStringValue);
+  // aType can be ePercent or eDoubleValue.
+  void SetDoubleValueAndType(double aValue, ValueType aType,
+                             const nsAString* aStringValue);
   void SetColorValue(nscolor aColor, const nsAString& aString);
   void SetMiscAtomOrString(const nsAString* aValue);
   void ResetMiscAtomOrString();
@@ -484,6 +504,15 @@ class nsAttrValue {
 
   static nsTArray<const EnumTable*>* sEnumTableArray;
   static MiscContainer* sMiscContainerCache;
+
+  /**
+   * Helper for ParseHTMLDimension and ParseNonzeroHTMLDimension.
+   *
+   * @param aInput the string to parse
+   * @param aEnsureNonzero whether to fail the parse if the value is 0
+   * @return whether the value could be parsed
+   */
+  bool DoParseHTMLDimension(const nsAString& aInput, bool aEnsureNonzero);
 
   uintptr_t mBits;
 };

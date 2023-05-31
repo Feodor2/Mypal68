@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include "mozilla/Decimal.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 #include "nsIConstraintValidation.h"
 #include "nsString.h"
@@ -50,7 +51,8 @@ class InputType {
   virtual bool IsTooShort() const;
   virtual bool IsValueMissing() const;
   virtual bool HasTypeMismatch() const;
-  virtual bool HasPatternMismatch() const;
+  // May return Nothing() if the JS engine failed to evaluate the regex.
+  virtual mozilla::Maybe<bool> HasPatternMismatch() const;
   virtual bool IsRangeOverflow() const;
   virtual bool IsRangeUnderflow() const;
   virtual bool HasStepMismatch(bool aUseZeroIfValueNaN) const;
@@ -124,7 +126,7 @@ class InputType {
    * Setting the input element's value.
    *
    * @param aValue      String to set.
-   * @param aFlags      See nsTextEditorState::SetValueFlags.
+   * @param aFlags      See TextControlState::SetValueFlags.
    */
   MOZ_CAN_RUN_SCRIPT
   nsresult SetValueInternal(const nsAString& aValue, uint32_t aFlags);

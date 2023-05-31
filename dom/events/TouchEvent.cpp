@@ -6,8 +6,9 @@
 #include "mozilla/dom/TouchEvent.h"
 #include "mozilla/dom/Touch.h"
 #include "mozilla/dom/TouchListBinding.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TouchEvents.h"
 #include "nsContentUtils.h"
 #include "nsIDocShell.h"
@@ -276,7 +277,7 @@ bool TouchEvent::PrefEnabled(nsIDocShell* aDocShell) {
 // static
 bool TouchEvent::LegacyAPIEnabled(JSContext* aCx, JSObject* aGlobal) {
   nsIPrincipal* principal = nsContentUtils::SubjectPrincipal(aCx);
-  bool isSystem = principal && nsContentUtils::IsSystemPrincipal(principal);
+  bool isSystem = principal && principal->IsSystemPrincipal();
 
   nsIDocShell* docShell = nullptr;
   if (aGlobal) {
@@ -301,7 +302,7 @@ bool TouchEvent::LegacyAPIEnabled(nsIDocShell* aDocShell,
 // static
 already_AddRefed<TouchEvent> TouchEvent::Constructor(
     const GlobalObject& aGlobal, const nsAString& aType,
-    const TouchEventInit& aParam, ErrorResult& aRv) {
+    const TouchEventInit& aParam) {
   nsCOMPtr<EventTarget> t = do_QueryInterface(aGlobal.GetAsSupports());
   RefPtr<TouchEvent> e = new TouchEvent(t, nullptr, nullptr);
   bool trusted = e->Init(t);

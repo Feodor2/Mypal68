@@ -16,11 +16,9 @@
 #include "nsCOMArray.h"
 #include "nsIURI.h"
 #include "nsIStreamListener.h"
-#include "nsIStreamLoader.h"
 #include "nsICSSLoaderObserver.h"
 
 #include "mozilla/Attributes.h"
-#include "mozilla/dom/ScriptLoader.h"
 
 #include "js/TracingAPI.h"
 #include "js/TypeDecls.h"

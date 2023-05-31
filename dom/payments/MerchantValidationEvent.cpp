@@ -7,14 +7,15 @@
 #include "mozilla/dom/PaymentRequest.h"
 #include "mozilla/dom/Location.h"
 #include "mozilla/dom/URL.h"
+#include "mozilla/ResultExtensions.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
-#include "nsContentUtils.h"
 
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_INHERITED(MerchantValidationEvent, Event, mRequest)
+NS_IMPL_CYCLE_COLLECTION_INHERITED(MerchantValidationEvent, Event,
+                                   mValidationURL, mRequest)
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(MerchantValidationEvent, Event)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
@@ -42,7 +43,8 @@ already_AddRefed<MerchantValidationEvent> MerchantValidationEvent::Constructor(
   RefPtr<MerchantValidationEvent> e = new MerchantValidationEvent(aOwner);
   bool trusted = e->Init(aOwner);
   e->InitEvent(aType, aEventInitDict.mBubbles, aEventInitDict.mCancelable);
-  if (!e->init(aEventInitDict, aRv)) {
+  e->init(aEventInitDict, aRv);
+  if (aRv.Failed()) {
     return nullptr;
   }
   e->SetTrusted(trusted);
@@ -50,16 +52,14 @@ already_AddRefed<MerchantValidationEvent> MerchantValidationEvent::Constructor(
   return e.forget();
 }
 
-bool MerchantValidationEvent::init(
+void MerchantValidationEvent::init(
     const MerchantValidationEventInit& aEventInitDict, ErrorResult& aRv) {
   // Check methodName is valid
   if (!aEventInitDict.mMethodName.IsEmpty()) {
-    nsString errMsg;
-    auto rv = PaymentRequest::IsValidPaymentMethodIdentifier(
-        aEventInitDict.mMethodName, errMsg);
-    if (NS_FAILED(rv)) {
-      aRv.ThrowRangeError<MSG_ILLEGAL_RANGE_PR_CONSTRUCTOR>(errMsg);
-      return false;
+    PaymentRequest::IsValidPaymentMethodIdentifier(aEventInitDict.mMethodName,
+                                                   aRv);
+    if (aRv.Failed()) {
+      return;
     }
   }
   SetMethodName(aEventInitDict.mMethodName);
@@ -67,29 +67,16 @@ bool MerchantValidationEvent::init(
   auto doc = window->GetExtantDoc();
   if (!doc) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
-    return false;
+    return;
   }
-  auto principal = doc->NodePrincipal();
 
-  nsCOMPtr<nsIURI> baseURI;
-  principal->GetURI(getter_AddRefs(baseURI));
-
-  nsresult rv;
-  nsCOMPtr<nsIURI> validationUri;
-  rv = NS_NewURI(getter_AddRefs(validationUri), aEventInitDict.mValidationURL,
-                 nullptr, baseURI, nsContentUtils::GetIOService());
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    aRv.ThrowTypeError<MSG_INVALID_URL>(aEventInitDict.mValidationURL);
-    return false;
+  Result<nsCOMPtr<nsIURI>, nsresult> rv =
+      doc->ResolveWithBaseURI(aEventInitDict.mValidationURL);
+  if (rv.isErr()) {
+    aRv.Throw(rv.unwrapErr());
+    return;
   }
-  nsAutoCString utf8href;
-  rv = validationUri->GetSpec(utf8href);
-  if (NS_FAILED(rv)) {
-    aRv.Throw(NS_ERROR_DOM_BAD_URI);
-    return false;
-  }
-  CopyUTF8toUTF16(utf8href, mValidationURL);
-  return true;
+  mValidationURL = rv.unwrap();
 }
 
 MerchantValidationEvent::MerchantValidationEvent(EventTarget* aOwner)
@@ -160,11 +147,11 @@ void MerchantValidationEvent::SetRequest(PaymentRequest* aRequest) {
 }
 
 void MerchantValidationEvent::GetValidationURL(nsAString& aValidationURL) {
-  aValidationURL.Assign(mValidationURL);
-}
-
-void MerchantValidationEvent::SetValidationURL(nsAString& aValidationURL) {
-  mValidationURL.Assign(aValidationURL);
+  nsAutoCString utf8href;
+  nsresult rv = mValidationURL->GetSpec(utf8href);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
+  Unused << rv;
+  aValidationURL.Assign(NS_ConvertUTF8toUTF16(utf8href));
 }
 
 void MerchantValidationEvent::GetMethodName(nsAString& aMethodName) {
@@ -175,7 +162,7 @@ void MerchantValidationEvent::SetMethodName(const nsAString& aMethodName) {
   mMethodName.Assign(aMethodName);
 }
 
-MerchantValidationEvent::~MerchantValidationEvent() {}
+MerchantValidationEvent::~MerchantValidationEvent() = default;
 
 JSObject* MerchantValidationEvent::WrapObjectInternal(
     JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {

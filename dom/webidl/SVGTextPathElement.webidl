@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGTextPathElement : SVGTextContentElement {
 
   // textPath Method Types
@@ -29,5 +30,5 @@ interface SVGTextPathElement : SVGTextContentElement {
   readonly attribute SVGAnimatedEnumeration spacing;
 };
 
-SVGTextPathElement implements SVGURIReference;
+SVGTextPathElement includes SVGURIReference;
 

@@ -7,7 +7,6 @@
 
 #include "nsCOMPtr.h"
 
-#include "nsIDOMEventListener.h"
 #include "nsITransferable.h"
 
 class nsPIDOMWindowOuter;

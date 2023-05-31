@@ -8,7 +8,8 @@
 
 /***** Interfaces to Data *****/
 
-[SecureContext, Pref="security.webauth.webauthn"]
+[SecureContext, Pref="security.webauth.webauthn",
+ Exposed=Window]
 interface PublicKeyCredential : Credential {
     [SameObject] readonly attribute ArrayBuffer              rawId;
     [SameObject] readonly attribute AuthenticatorResponse    response;
@@ -22,17 +23,20 @@ partial interface PublicKeyCredential {
     static Promise<boolean> isExternalCTAP2SecurityKeySupported();
 };
 
-[SecureContext, Pref="security.webauth.webauthn"]
+[SecureContext, Pref="security.webauth.webauthn",
+ Exposed=Window]
 interface AuthenticatorResponse {
     [SameObject] readonly attribute ArrayBuffer clientDataJSON;
 };
 
-[SecureContext, Pref="security.webauth.webauthn"]
+[SecureContext, Pref="security.webauth.webauthn",
+ Exposed=Window]
 interface AuthenticatorAttestationResponse : AuthenticatorResponse {
     [SameObject] readonly attribute ArrayBuffer attestationObject;
 };
 
-[SecureContext, Pref="security.webauth.webauthn"]
+[SecureContext, Pref="security.webauth.webauthn",
+ Exposed=Window]
 interface AuthenticatorAssertionResponse : AuthenticatorResponse {
     [SameObject] readonly attribute ArrayBuffer      authenticatorData;
     [SameObject] readonly attribute ArrayBuffer      signature;
@@ -53,11 +57,11 @@ dictionary PublicKeyCredentialCreationOptions {
 
     unsigned long                                timeout;
     sequence<PublicKeyCredentialDescriptor>      excludeCredentials = [];
-    // FIXME: bug 1493860: should this "= null" be here?
-    AuthenticatorSelectionCriteria               authenticatorSelection = null;
+    // FIXME: bug 1493860: should this "= {}" be here?
+    AuthenticatorSelectionCriteria               authenticatorSelection = {};
     AttestationConveyancePreference              attestation = "none";
-    // FIXME: bug 1493860: should this "= null" be here?
-    AuthenticationExtensionsClientInputs         extensions = null;
+    // FIXME: bug 1493860: should this "= {}" be here?
+    AuthenticationExtensionsClientInputs         extensions = {};
 };
 
 dictionary PublicKeyCredentialEntity {
@@ -103,8 +107,8 @@ dictionary PublicKeyCredentialRequestOptions {
     USVString                            rpId;
     sequence<PublicKeyCredentialDescriptor> allowCredentials = [];
     UserVerificationRequirement          userVerification = "preferred";
-    // FIXME: bug 1493860: should this "= null" be here?
-    AuthenticationExtensionsClientInputs extensions = null;
+    // FIXME: bug 1493860: should this "= {}" be here?
+    AuthenticationExtensionsClientInputs extensions = {};
 };
 
 // TODO - Use partial dictionaries when bug 1436329 is fixed.
@@ -130,14 +134,15 @@ dictionary AuthenticationExtensionsClientOutputs {
 
 typedef record<DOMString, DOMString> AuthenticationExtensionsAuthenticatorInputs;
 
+[GenerateToJSON]
 dictionary CollectedClientData {
     required DOMString           type;
     required DOMString           challenge;
     required DOMString           origin;
     required DOMString           hashAlgorithm;
     DOMString                    tokenBindingId;
-    // FIXME: bug 1493860: should this "= null" be here?
-    AuthenticationExtensionsClientInputs clientExtensions = null;
+    // FIXME: bug 1493860: should this "= {}" be here?
+    AuthenticationExtensionsClientInputs clientExtensions = {};
     AuthenticationExtensionsAuthenticatorInputs authenticatorExtensions;
 };
 

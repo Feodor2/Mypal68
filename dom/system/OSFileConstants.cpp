@@ -64,7 +64,6 @@
 #include "nsIObserver.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsIXULRuntime.h"
-#include "nsIPropertyBag2.h"
 #include "nsXPCOMCIDInternal.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
@@ -79,7 +78,6 @@
 #include "mozilla/UniquePtr.h"
 
 #include "OSFileConstants.h"
-#include "nsIOSFileConstantsService.h"
 #include "nsZipArchive.h"
 
 #if defined(__DragonFly__) || defined(__FreeBSD__) || defined(__NetBSD__) || \

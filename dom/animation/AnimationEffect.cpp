@@ -7,6 +7,7 @@
 
 #include "mozilla/dom/Animation.h"
 #include "mozilla/dom/KeyframeEffect.h"
+#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/AnimationUtils.h"
 #include "mozilla/FloatingPoint.h"
 
@@ -77,7 +78,7 @@ void AnimationEffect::SetSpecifiedTiming(TimingParams&& aTiming) {
     mAnimation->NotifyEffectTimingUpdated();
 
     if (mAnimation->IsRelevant()) {
-      nsNodeUtils::AnimationChanged(mAnimation);
+      MutationObservers::NotifyAnimationChanged(mAnimation);
     }
 
     if (AsKeyframeEffect()) {
@@ -180,9 +181,9 @@ ComputedTiming AnimationEffect::GetComputedTimingAt(
   // Determine the 0-based index of the current iteration.
   // https://drafts.csswg.org/web-animations/#current-iteration
   result.mCurrentIteration =
-      (result.mIterations >= UINT64_MAX &&
+      (result.mIterations >= double(UINT64_MAX) &&
        result.mPhase == ComputedTiming::AnimationPhase::After) ||
-              overallProgress >= UINT64_MAX
+              overallProgress >= double(UINT64_MAX)
           ? UINT64_MAX  // In GetComputedTimingDictionary(),
                         // we will convert this into Infinity
           : static_cast<uint64_t>(overallProgress);

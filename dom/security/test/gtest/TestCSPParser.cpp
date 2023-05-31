@@ -10,7 +10,6 @@
 #include "nsIContentSecurityPolicy.h"
 #include "nsNetUtil.h"
 #include "mozilla/dom/nsCSPContext.h"
-#include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 #include "nsStringFwd.h"
 

@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorResult.h"
 #include "TCPSocket.h"
 #include "TCPServerSocket.h"
@@ -21,7 +22,6 @@
 #include "nsIInputStream.h"
 #include "nsIBinaryInputStream.h"
 #include "nsIScriptableInputStream.h"
-#include "nsIInputStreamPump.h"
 #include "nsIAsyncInputStream.h"
 #include "nsISupportsPrimitives.h"
 #include "nsITransport.h"
@@ -235,16 +235,15 @@ nsresult TCPSocket::Init() {
   nsCOMPtr<nsISocketTransportService> sts =
       do_GetService("@mozilla.org/network/socket-transport-service;1");
 
-  const char* socketTypes[1];
+  AutoTArray<nsCString, 1> socketTypes;
   if (mSsl) {
-    socketTypes[0] = "ssl";
+    socketTypes.AppendElement(NS_LITERAL_CSTRING("ssl"));
   } else {
-    socketTypes[0] = "starttls";
+    socketTypes.AppendElement(NS_LITERAL_CSTRING("starttls"));
   }
   nsCOMPtr<nsISocketTransport> transport;
-  nsresult rv =
-      sts->CreateTransport(socketTypes, 1, NS_ConvertUTF16toUTF8(mHost), mPort,
-                           nullptr, getter_AddRefs(transport));
+  nsresult rv = sts->CreateTransport(socketTypes, NS_ConvertUTF16toUTF8(mHost),
+                                     mPort, nullptr, getter_AddRefs(transport));
   NS_ENSURE_SUCCESS(rv, rv);
 
   return InitWithUnconnectedTransport(transport);
@@ -480,7 +479,7 @@ TCPSocket::FireEvent(const nsAString& aType) {
 
 NS_IMETHODIMP
 TCPSocket::FireDataArrayEvent(const nsAString& aType,
-                              const InfallibleTArray<uint8_t>& buffer) {
+                              const nsTArray<uint8_t>& buffer) {
   AutoJSAPI api;
   if (NS_WARN_IF(!api.Init(GetOwnerGlobal()))) {
     return NS_ERROR_FAILURE;
@@ -1057,6 +1056,5 @@ TCPSocket::Observe(nsISupports* aSubject, const char* aTopic,
 /* static */
 bool TCPSocket::ShouldTCPSocketExist(JSContext* aCx, JSObject* aGlobal) {
   JS::Rooted<JSObject*> global(aCx, aGlobal);
-  return nsContentUtils::IsSystemPrincipal(
-      nsContentUtils::ObjectPrincipal(global));
+  return nsContentUtils::ObjectPrincipal(global)->IsSystemPrincipal();
 }

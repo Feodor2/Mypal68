@@ -3,12 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ThirdPartyUtil.h"
+#include "nsDocShell.h"
+#include "nsGlobalWindowOuter.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
 #include "nsIChannel.h"
-#include "nsIServiceManager.h"
 #include "nsIHttpChannelInternal.h"
-#include "nsIDOMWindow.h"
 #include "nsILoadContext.h"
 #include "nsIPrincipal.h"
 #include "nsIScriptObjectPrincipal.h"
@@ -16,10 +16,12 @@
 #include "nsReadableUtils.h"
 #include "nsThreadUtils.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/TextUtils.h"
 #include "mozilla/Unused.h"
-#include "nsPIDOMWindow.h"
+#include "nsGlobalWindowOuter.h"
 
 NS_IMPL_ISUPPORTS(ThirdPartyUtil, mozIThirdPartyUtil)
 
@@ -90,6 +92,16 @@ nsresult ThirdPartyUtil::IsThirdPartyInternal(const nsCString& aFirstDomain,
   return NS_OK;
 }
 
+nsCString ThirdPartyUtil::GetBaseDomainFromWindow(nsPIDOMWindowOuter* aWindow) {
+  mozilla::dom::Document* doc = aWindow ? aWindow->GetExtantDoc() : nullptr;
+
+  if (!doc) {
+    return EmptyCString();
+  }
+
+  return doc->GetBaseDomain();
+}
+
 NS_IMETHODIMP
 ThirdPartyUtil::GetPrincipalFromWindow(mozIDOMWindowProxy* aWin,
                                        nsIPrincipal** result) {
@@ -125,6 +137,43 @@ ThirdPartyUtil::GetURIFromWindow(mozIDOMWindowProxy* aWin, nsIURI** result) {
   return rv;
 }
 
+NS_IMETHODIMP
+ThirdPartyUtil::GetContentBlockingAllowListPrincipalFromWindow(
+    mozIDOMWindowProxy* aWin, nsIURI* aURIBeingLoaded, nsIPrincipal** result) {
+  nsPIDOMWindowOuter* outerWindow = nsPIDOMWindowOuter::From(aWin);
+  nsPIDOMWindowInner* innerWindow = outerWindow->GetCurrentInnerWindow();
+  Document* doc = innerWindow ? innerWindow->GetExtantDoc() : nullptr;
+  if (!doc) {
+    return GetPrincipalFromWindow(aWin, result);
+  }
+
+  nsCOMPtr<nsIPrincipal> principal =
+      doc->GetContentBlockingAllowListPrincipal();
+  if (aURIBeingLoaded && principal && principal->GetIsNullPrincipal()) {
+    // If we have an initial principal during navigation, recompute it to get
+    // the real content blocking allow list principal.
+    nsIDocShell* docShell = doc->GetDocShell();
+    OriginAttributes attrs =
+        docShell ? nsDocShell::Cast(docShell)->GetOriginAttributes()
+                 : OriginAttributes();
+    principal =
+        doc->RecomputeContentBlockingAllowListPrincipal(aURIBeingLoaded, attrs);
+  }
+
+  if (!principal || !principal->GetIsCodebasePrincipal()) {
+    // This is for compatibility with GetURIFromWindow.  Null principals are
+    // explicitly special cased there.  GetURI returns nullptr for
+    // SystemPrincipal and ExpandedPrincipal.
+    LOG(
+        ("ThirdPartyUtil::GetContentBlockingAllowListPrincipalFromWindow can't "
+         "use null principal\n"));
+    return NS_ERROR_INVALID_ARG;
+  }
+
+  principal.forget(result);
+  return NS_OK;
+}
+
 // Determine if aFirstURI is third party with respect to aSecondURI. See docs
 // for mozIThirdPartyUtil.
 NS_IMETHODIMP
@@ -151,27 +200,17 @@ ThirdPartyUtil::IsThirdPartyWindow(mozIDOMWindowProxy* aWindow, nsIURI* aURI,
 
   bool result;
 
-  nsCString bottomDomain =
-      GetBaseDomainFromWindow(nsPIDOMWindowOuter::From(aWindow));
-  if (bottomDomain.IsEmpty()) {
-    // We may have an about:blank window here.  Fall back to the slower code
-    // path which is principal aware.
-    nsCOMPtr<nsIURI> currentURI;
-    nsresult rv = GetURIFromWindow(aWindow, getter_AddRefs(currentURI));
+  // Ignore about:blank URIs here since they have no domain and attempting to
+  // compare against them will fail.
+  if (aURI && !NS_IsAboutBlank(aURI)) {
+    nsCOMPtr<nsIPrincipal> prin;
+    nsresult rv = GetPrincipalFromWindow(aWindow, getter_AddRefs(prin));
+    NS_ENSURE_SUCCESS(rv, rv);
+    // Determine whether aURI is foreign with respect to the current principal.
+    rv = prin->IsThirdPartyURI(aURI, &result);
     if (NS_FAILED(rv)) {
       return rv;
     }
-
-    rv = GetBaseDomain(currentURI, bottomDomain);
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
-  }
-
-  if (aURI) {
-    // Determine whether aURI is foreign with respect to currentURI.
-    nsresult rv = IsThirdPartyInternal(bottomDomain, aURI, &result);
-    if (NS_FAILED(rv)) return rv;
 
     if (result) {
       *aResult = true;
@@ -181,9 +220,9 @@ ThirdPartyUtil::IsThirdPartyWindow(mozIDOMWindowProxy* aWindow, nsIURI* aURI,
 
   nsPIDOMWindowOuter* current = nsPIDOMWindowOuter::From(aWindow);
   do {
-    // We use GetScriptableParent rather than GetParent because we consider
-    // <iframe mozbrowser> to be a top-level frame.
-    nsPIDOMWindowOuter* parent = current->GetScriptableParent();
+    // We use GetInProcessScriptableParent rather than GetParent because we
+    // consider <iframe mozbrowser> to be a top-level frame.
+    nsPIDOMWindowOuter* parent = current->GetInProcessScriptableParent();
     // We don't use SameCOMIdentity here since we know that nsPIDOMWindowOuter
     // is only implemented by nsGlobalWindowOuter, so different objects of that
     // type will not have different nsISupports COM identities, and checking the
@@ -195,20 +234,17 @@ ThirdPartyUtil::IsThirdPartyWindow(mozIDOMWindowProxy* aWindow, nsIURI* aURI,
       return NS_OK;
     }
 
-    nsCString parentDomain = GetBaseDomainFromWindow(parent);
-    if (parentDomain.IsEmpty()) {
-      // We may have an about:blank window here.  Fall back to the slower code
-      // path which is principal aware.
-      nsCOMPtr<nsIURI> parentURI;
-      nsresult rv = GetURIFromWindow(parent, getter_AddRefs(parentURI));
-      NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsIPrincipal> currentPrincipal;
+    nsresult rv =
+        GetPrincipalFromWindow(current, getter_AddRefs(currentPrincipal));
+    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsIPrincipal> parentPrincipal;
+    rv = GetPrincipalFromWindow(parent, getter_AddRefs(parentPrincipal));
+    NS_ENSURE_SUCCESS(rv, rv);
 
-      rv = IsThirdPartyInternal(bottomDomain, parentURI, &result);
-      if (NS_FAILED(rv)) {
-        return rv;
-      }
-    } else {
-      result = IsThirdPartyInternal(bottomDomain, parentDomain);
+    rv = currentPrincipal->IsThirdPartyPrincipal(parentPrincipal, &result);
+    if (NS_FAILED(rv)) {
+      return rv;
     }
 
     if (result) {
@@ -273,18 +309,11 @@ ThirdPartyUtil::IsThirdPartyChannel(nsIChannel* aChannel, nsIURI* aURI,
                                 nsIContentPolicy::TYPE_DOCUMENT) {
         // Check if the channel itself is third-party to its own requestor.
         // Unforunately, we have to go through the loading principal.
-        nsCOMPtr<nsIURI> parentURI;
-        rv = loadInfo->LoadingPrincipal()->GetURI(getter_AddRefs(parentURI));
-        if (NS_SUCCEEDED(rv) && parentURI) {
-          // We may have a principal like the system principal here which does
-          // not have a URI.
-          rv = IsThirdPartyInternal(channelDomain, parentURI, &parentIsThird);
-          if (NS_FAILED(rv)) {
-            return rv;
-          }
-        } else {
-          // Found a principal with no URI, assuming third-party request
-          parentIsThird = true;
+
+        rv = loadInfo->LoadingPrincipal()->IsThirdPartyURI(channelURI,
+                                                           &parentIsThird);
+        if (NS_FAILED(rv)) {
+          return rv;
         }
       }
     } else {
@@ -365,12 +394,8 @@ ThirdPartyUtil::GetBaseDomain(nsIURI* aHostURI, nsACString& aBaseDomain) {
   // only way we can get a base domain consisting of the empty string, which
   // means we can safely perform foreign tests on such URIs where "not foreign"
   // means "the involved URIs are all file://".
-  if (aBaseDomain.IsEmpty()) {
-    bool isFileURI = false;
-    aHostURI->SchemeIs("file", &isFileURI);
-    if (!isFileURI) {
-      return NS_ERROR_INVALID_ARG;
-    }
+  if (aBaseDomain.IsEmpty() && !aHostURI->SchemeIs("file")) {
+    return NS_ERROR_INVALID_ARG;
   }
 
   return NS_OK;
@@ -380,7 +405,7 @@ NS_IMETHODIMP
 ThirdPartyUtil::GetBaseDomainFromSchemeHost(const nsACString& aScheme,
                                             const nsACString& aAsciiHost,
                                             nsACString& aBaseDomain) {
-  MOZ_DIAGNOSTIC_ASSERT(IsASCII(aAsciiHost));
+  MOZ_DIAGNOSTIC_ASSERT(IsAscii(aAsciiHost));
 
   // Get the base domain. this will fail if the host contains a leading dot,
   // more than one trailing dot, or is otherwise malformed.

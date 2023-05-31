@@ -39,7 +39,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(SimpleGlobalObject)
   NS_INTERFACE_MAP_ENTRY(nsIGlobalObject)
 NS_INTERFACE_MAP_END
 
-static void SimpleGlobal_finalize(js::FreeOp* fop, JSObject* obj) {
+static void SimpleGlobal_finalize(JSFreeOp* fop, JSObject* obj) {
   SimpleGlobalObject* globalObject =
       static_cast<SimpleGlobalObject*>(JS_GetPrivate(obj));
   if (globalObject) {
@@ -57,7 +57,7 @@ static size_t SimpleGlobal_moved(JSObject* obj, JSObject* old) {
   return 0;
 }
 
-static const js::ClassOps SimpleGlobalClassOps = {
+static const JSClassOps SimpleGlobalClassOps = {
     nullptr,
     nullptr,
     nullptr,
@@ -74,14 +74,14 @@ static const js::ClassOps SimpleGlobalClassOps = {
 static const js::ClassExtension SimpleGlobalClassExtension = {
     SimpleGlobal_moved};
 
-const js::Class SimpleGlobalClass = {
-    "",
-    JSCLASS_GLOBAL_FLAGS | JSCLASS_HAS_PRIVATE |
-        JSCLASS_PRIVATE_IS_NSISUPPORTS | JSCLASS_FOREGROUND_FINALIZE,
-    &SimpleGlobalClassOps,
-    JS_NULL_CLASS_SPEC,
-    &SimpleGlobalClassExtension,
-    JS_NULL_OBJECT_OPS};
+const JSClass SimpleGlobalClass = {"",
+                                   JSCLASS_GLOBAL_FLAGS | JSCLASS_HAS_PRIVATE |
+                                       JSCLASS_PRIVATE_IS_NSISUPPORTS |
+                                       JSCLASS_FOREGROUND_FINALIZE,
+                                   &SimpleGlobalClassOps,
+                                   JS_NULL_CLASS_SPEC,
+                                   &SimpleGlobalClassExtension,
+                                   JS_NULL_OBJECT_OPS};
 
 // static
 JSObject* SimpleGlobalObject::Create(GlobalType globalType,
@@ -109,10 +109,10 @@ JSObject* SimpleGlobalObject::Create(GlobalType globalType,
       nsCOMPtr<nsIPrincipal> principal =
           NullPrincipal::CreateWithoutOriginAttributes();
       options.creationOptions().setTrace(xpc::TraceXPCGlobal);
-      global = xpc::CreateGlobalObject(cx, js::Jsvalify(&SimpleGlobalClass),
+      global = xpc::CreateGlobalObject(cx, &SimpleGlobalClass,
                                        nsJSPrincipals::get(principal), options);
     } else {
-      global = JS_NewGlobalObject(cx, js::Jsvalify(&SimpleGlobalClass), nullptr,
+      global = JS_NewGlobalObject(cx, &SimpleGlobalClass, nullptr,
                                   JS::DontFireOnNewGlobalHook, options);
     }
 

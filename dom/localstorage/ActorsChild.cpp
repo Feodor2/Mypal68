@@ -151,8 +151,7 @@ mozilla::ipc::IPCResult LSObserverChild::RecvObserve(
  * LocalStorageRequestChild
  ******************************************************************************/
 
-LSRequestChild::LSRequestChild(LSRequestChildCallback* aCallback)
-    : mCallback(aCallback), mFinishing(false) {
+LSRequestChild::LSRequestChild() : mFinishing(false) {
   AssertIsOnOwningThread();
 
   MOZ_COUNT_CTOR(LSRequestChild);
@@ -160,8 +159,18 @@ LSRequestChild::LSRequestChild(LSRequestChildCallback* aCallback)
 
 LSRequestChild::~LSRequestChild() {
   AssertIsOnOwningThread();
+  MOZ_ASSERT(!mCallback);
 
   MOZ_COUNT_DTOR(LSRequestChild);
+}
+
+void LSRequestChild::SetCallback(LSRequestChildCallback* aCallback) {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(aCallback);
+  MOZ_ASSERT(!mCallback);
+  MOZ_ASSERT(Manager());
+
+  mCallback = aCallback;
 }
 
 bool LSRequestChild::Finishing() const {
@@ -172,6 +181,14 @@ bool LSRequestChild::Finishing() const {
 
 void LSRequestChild::ActorDestroy(ActorDestroyReason aWhy) {
   AssertIsOnOwningThread();
+
+  if (mCallback) {
+    MOZ_ASSERT(aWhy != Deletion);
+
+    mCallback->OnResponse(NS_ERROR_FAILURE);
+
+    mCallback = nullptr;
+  }
 }
 
 mozilla::ipc::IPCResult LSRequestChild::Recv__delete__(
@@ -180,6 +197,8 @@ mozilla::ipc::IPCResult LSRequestChild::Recv__delete__(
   MOZ_ASSERT(mCallback);
 
   mCallback->OnResponse(aResponse);
+
+  mCallback = nullptr;
 
   return IPC_OK();
 }
@@ -200,30 +219,49 @@ mozilla::ipc::IPCResult LSRequestChild::RecvReady() {
  * LSSimpleRequestChild
  ******************************************************************************/
 
-LSSimpleRequestChild::LSSimpleRequestChild(
-    LSSimpleRequestChildCallback* aCallback)
-    : mCallback(aCallback) {
+LSSimpleRequestChild::LSSimpleRequestChild() {
   AssertIsOnOwningThread();
-  MOZ_ASSERT(aCallback);
 
   MOZ_COUNT_CTOR(LSSimpleRequestChild);
 }
 
 LSSimpleRequestChild::~LSSimpleRequestChild() {
   AssertIsOnOwningThread();
+  MOZ_ASSERT(!mCallback);
 
   MOZ_COUNT_DTOR(LSSimpleRequestChild);
 }
 
+void LSSimpleRequestChild::SetCallback(
+    LSSimpleRequestChildCallback* aCallback) {
+  AssertIsOnOwningThread();
+  MOZ_ASSERT(aCallback);
+  MOZ_ASSERT(!mCallback);
+  MOZ_ASSERT(Manager());
+
+  mCallback = aCallback;
+}
+
 void LSSimpleRequestChild::ActorDestroy(ActorDestroyReason aWhy) {
   AssertIsOnOwningThread();
+
+  if (mCallback) {
+    MOZ_ASSERT(aWhy != Deletion);
+
+    mCallback->OnResponse(NS_ERROR_FAILURE);
+
+    mCallback = nullptr;
+  }
 }
 
 mozilla::ipc::IPCResult LSSimpleRequestChild::Recv__delete__(
     const LSSimpleRequestResponse& aResponse) {
   AssertIsOnOwningThread();
+  MOZ_ASSERT(mCallback);
 
   mCallback->OnResponse(aResponse);
+
+  mCallback = nullptr;
 
   return IPC_OK();
 }

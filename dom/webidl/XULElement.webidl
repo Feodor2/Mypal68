@@ -5,8 +5,11 @@
 
 interface XULControllers;
 
-[HTMLConstructor, Func="IsChromeOrXBL"]
+[Func="IsChromeOrXBL",
+ Exposed=Window]
 interface XULElement : Element {
+  [HTMLConstructor] constructor();
+
   // Layout properties
   [SetterThrows]
   attribute DOMString align;
@@ -78,16 +81,9 @@ interface XULElement : Element {
   [Throws]
   readonly attribute BoxObject?                 boxObject;
 
-  [SetterThrows]
-  attribute long tabIndex;
-  [Throws]
-  void                      blur();
   [NeedsCallerType]
   void                      click();
   void                      doCommand();
-
-  [Constant]
-  readonly attribute CSSStyleDeclaration style;
 
   // Returns true if this is a menu-type element that has a menu
   // frame associated with it.
@@ -98,7 +94,8 @@ interface XULElement : Element {
   void openMenu(boolean open);
 };
 
-XULElement implements GlobalEventHandlers;
-XULElement implements HTMLOrSVGOrXULElementMixin;
-XULElement implements TouchEventHandlers;
-XULElement implements OnErrorEventHandlerForNodes;
+XULElement includes GlobalEventHandlers;
+XULElement includes HTMLOrForeignElement;
+XULElement includes ElementCSSInlineStyle;
+XULElement includes TouchEventHandlers;
+XULElement includes OnErrorEventHandlerForNodes;

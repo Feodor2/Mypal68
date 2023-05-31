@@ -18,11 +18,9 @@
 #include "nsILoadContext.h"
 #include "nsIPrivateBrowsingChannel.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIComponentRegistrar.h"
 #include "nsIStorageStream.h"
 #include "nsISeekableStream.h"
 #include "nsIHttpChannel.h"
-#include "nsIHttpChannelInternal.h"
 #include "nsIEncodedChannel.h"
 #include "nsIUploadChannel.h"
 #include "nsICacheInfoChannel.h"
@@ -37,20 +35,13 @@
 
 #include "nsIURL.h"
 #include "nsIFileURL.h"
-#include "nsIURIMutator.h"
 #include "nsIWebProgressListener.h"
 #include "nsIAuthPrompt.h"
 #include "nsIPrompt.h"
-#include "nsISHEntry.h"
-#include "nsIWebPageDescriptor.h"
 #include "nsIFormControl.h"
 #include "nsContentUtils.h"
 
-#include "nsIImageLoadingContent.h"
-
 #include "ftpCore.h"
-#include "nsITransport.h"
-#include "nsISocketTransport.h"
 #include "nsIStringBundle.h"
 #include "nsIProtocolHandler.h"
 
@@ -366,18 +357,17 @@ NS_IMETHODIMP nsWebBrowserPersist::SetProgressListener(
 
 NS_IMETHODIMP nsWebBrowserPersist::SaveURI(
     nsIURI* aURI, nsIPrincipal* aPrincipal, uint32_t aCacheKey,
-    nsIURI* aReferrer, uint32_t aReferrerPolicy, nsIInputStream* aPostData,
+    nsIReferrerInfo* aReferrerInfo, nsIInputStream* aPostData,
     const char* aExtraHeaders, nsISupports* aFile,
     nsILoadContext* aPrivacyContext) {
   bool isPrivate = aPrivacyContext && aPrivacyContext->UsePrivateBrowsing();
-  return SavePrivacyAwareURI(aURI, aPrincipal, aCacheKey, aReferrer,
-                             aReferrerPolicy, aPostData, aExtraHeaders, aFile,
-                             isPrivate);
+  return SavePrivacyAwareURI(aURI, aPrincipal, aCacheKey, aReferrerInfo,
+                             aPostData, aExtraHeaders, aFile, isPrivate);
 }
 
 NS_IMETHODIMP nsWebBrowserPersist::SavePrivacyAwareURI(
     nsIURI* aURI, nsIPrincipal* aPrincipal, uint32_t aCacheKey,
-    nsIURI* aReferrer, uint32_t aReferrerPolicy, nsIInputStream* aPostData,
+    nsIReferrerInfo* aReferrerInfo, nsIInputStream* aPostData,
     const char* aExtraHeaders, nsISupports* aFile, bool aIsPrivate) {
   NS_ENSURE_TRUE(mFirstAndOnlyUse, NS_ERROR_FAILURE);
   mFirstAndOnlyUse = false;  // Stop people from reusing this object!
@@ -390,8 +380,8 @@ NS_IMETHODIMP nsWebBrowserPersist::SavePrivacyAwareURI(
   // SaveURI doesn't like broken uris.
   mPersistFlags |= PERSIST_FLAGS_FAIL_ON_BROKEN_LINKS;
   rv = SaveURIInternal(aURI, aPrincipal, nsIContentPolicy::TYPE_SAVEAS_DOWNLOAD,
-                       aCacheKey, aReferrer, aReferrerPolicy, aPostData,
-                       aExtraHeaders, fileAsURI, false, aIsPrivate);
+                       aCacheKey, aReferrerInfo, aPostData, aExtraHeaders,
+                       fileAsURI, false, aIsPrivate);
   return NS_FAILED(rv) ? rv : NS_OK;
 }
 
@@ -566,12 +556,9 @@ void nsWebBrowserPersist::SerializeNextFile() {
         break;
       }
 
-      // The Referrer Policy doesn't matter here since the referrer is
-      // nullptr.
       rv = SaveURIInternal(uri, data->mTriggeringPrincipal,
-                           data->mContentPolicyType, 0, nullptr,
-                           mozilla::net::RP_Unset, nullptr, nullptr, fileAsURI,
-                           true, mIsPrivate);
+                           data->mContentPolicyType, 0, nullptr, nullptr,
+                           nullptr, fileAsURI, true, mIsPrivate);
       // If SaveURIInternal fails, then it will have called EndDownload,
       // which means that |data| is no longer valid memory. We MUST bail.
       if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -1088,15 +1075,15 @@ nsresult nsWebBrowserPersist::SendErrorStatusChange(bool aIsReadError,
   // Get the file path or spec from the supplied URI
   nsCOMPtr<nsIFile> file;
   GetLocalFileFromURI(aURI, getter_AddRefs(file));
-  nsAutoString path;
+  AutoTArray<nsString, 1> strings;
   nsresult rv;
   if (file) {
-    file->GetPath(path);
+    file->GetPath(*strings.AppendElement());
   } else {
     nsAutoCString fileurl;
     rv = aURI->GetSpec(fileurl);
     NS_ENSURE_SUCCESS(rv, rv);
-    AppendUTF8toUTF16(fileurl, path);
+    CopyUTF8toUTF16(fileurl, *strings.AppendElement());
   }
 
   const char* msgId;
@@ -1143,9 +1130,7 @@ nsresult nsWebBrowserPersist::SendErrorStatusChange(bool aIsReadError,
   NS_ENSURE_TRUE(NS_SUCCEEDED(rv) && bundle, NS_ERROR_FAILURE);
 
   nsAutoString msgText;
-  const char16_t* strings[1];
-  strings[0] = path.get();
-  rv = bundle->FormatStringFromName(msgId, strings, 1, msgText);
+  rv = bundle->FormatStringFromName(msgId, strings, msgText);
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
   mProgressListener->OnStatusChange(nullptr, aRequest, aResult, msgText.get());
@@ -1215,7 +1200,7 @@ nsresult nsWebBrowserPersist::AppendPathToURI(nsIURI* aURI,
 nsresult nsWebBrowserPersist::SaveURIInternal(
     nsIURI* aURI, nsIPrincipal* aTriggeringPrincipal,
     nsContentPolicyType aContentPolicyType, uint32_t aCacheKey,
-    nsIURI* aReferrer, uint32_t aReferrerPolicy, nsIInputStream* aPostData,
+    nsIReferrerInfo* aReferrerInfo, nsIInputStream* aPostData,
     const char* aExtraHeaders, nsIURI* aFile, bool aCalcFileExt,
     bool aIsPrivate) {
   NS_ENSURE_ARG_POINTER(aURI);
@@ -1269,12 +1254,9 @@ nsresult nsWebBrowserPersist::SaveURIInternal(
   // Set the referrer, post data and headers if any
   nsCOMPtr<nsIHttpChannel> httpChannel(do_QueryInterface(inputChannel));
   if (httpChannel) {
-    // Referrer
-    if (aReferrer) {
-      nsCOMPtr<nsIReferrerInfo> referrerInfo =
-          new ReferrerInfo(aReferrer, aReferrerPolicy);
-      rv = httpChannel->SetReferrerInfoWithoutClone(referrerInfo);
-      MOZ_ASSERT(NS_SUCCEEDED(rv));
+    if (aReferrerInfo) {
+      DebugOnly<nsresult> success = httpChannel->SetReferrerInfo(aReferrerInfo);
+      MOZ_ASSERT(NS_SUCCEEDED(success));
     }
 
     // Post data

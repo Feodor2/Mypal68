@@ -108,7 +108,7 @@ class DeviceMotionEvent final : public Event {
 
   static already_AddRefed<DeviceMotionEvent> Constructor(
       const GlobalObject& aGlobal, const nsAString& aType,
-      const DeviceMotionEventInit& aEventInitDict, ErrorResult& aRv);
+      const DeviceMotionEventInit& aEventInitDict);
 
  protected:
   ~DeviceMotionEvent() {}

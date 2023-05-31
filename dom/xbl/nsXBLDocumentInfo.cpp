@@ -12,8 +12,6 @@
 #include "jsapi.h"
 #include "jsfriendapi.h"
 #include "nsIURI.h"
-#include "nsIConsoleService.h"
-#include "nsIScriptError.h"
 #include "nsIChromeRegistry.h"
 #include "nsIPrincipal.h"
 #include "nsJSPrincipals.h"
@@ -236,7 +234,7 @@ nsresult nsXBLDocumentInfo::ReadPrototypeBindings(nsIURI* aURI,
 
 nsresult nsXBLDocumentInfo::WritePrototypeBindings() {
   // Only write out bindings with the system principal
-  if (!nsContentUtils::IsSystemPrincipal(mDocument->NodePrincipal()))
+  if (!mDocument->NodePrincipal()->IsSystemPrincipal())
     return NS_OK;
 
   nsAutoCString spec(kXBLCachePrefix);

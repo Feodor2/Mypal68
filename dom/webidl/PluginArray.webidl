@@ -3,7 +3,8 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
-[LegacyUnenumerableNamedProperties]
+[LegacyUnenumerableNamedProperties,
+ Exposed=Window]
 interface PluginArray {
   [NeedsCallerType]
   readonly attribute unsigned long length;

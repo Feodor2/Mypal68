@@ -25,7 +25,7 @@ static LazyLogModule sPEMLog("PlatformEncoderModule");
 
 class PlatformEncoderModule {
  public:
-  NS_INLINE_DECL_REFCOUNTING(PlatformEncoderModule)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(PlatformEncoderModule)
 
   virtual already_AddRefed<MediaDataEncoder> CreateVideoEncoder(
       const CreateEncoderParams& aParams) const {
@@ -245,7 +245,7 @@ struct MOZ_STACK_CLASS CreateEncoderParams final {
         mFramerate(aFramerate),
         mBitrate(aBitrate) {
     MOZ_ASSERT(mTaskQueue);
-    Set(std::forward<Ts>(aCodecSpecific)...);
+    Set(std::forward<const Ts>(aCodecSpecific)...);
   }
 
   const TrackInfo& mConfig;
@@ -259,7 +259,7 @@ struct MOZ_STACK_CLASS CreateEncoderParams final {
  private:
   template <typename T>
   void Set(const T&& aCodecSpecific) {
-    mCodecSpecific.emplace(std::forward<T>(aCodecSpecific));
+    mCodecSpecific.emplace(std::forward<const T>(aCodecSpecific));
   }
 };
 

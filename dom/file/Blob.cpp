@@ -6,6 +6,9 @@
 #include "File.h"
 #include "MemoryBlobImpl.h"
 #include "mozilla/dom/BlobBinding.h"
+#include "mozilla/dom/BodyStream.h"
+#include "mozilla/dom/WorkerCommon.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "MultipartBlobImpl.h"
 #include "nsIInputStream.h"
 #include "nsPIDOMWindow.h"
@@ -33,9 +36,8 @@ NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(Blob)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
-  NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIMutable)
+  NS_INTERFACE_MAP_ENTRY(nsISupports)
   NS_INTERFACE_MAP_ENTRY_CONCRETE(Blob)
-  NS_INTERFACE_MAP_ENTRY(nsIMutable)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
 NS_INTERFACE_MAP_END
 
@@ -93,7 +95,7 @@ Blob::Blob(nsISupports* aParent, BlobImpl* aImpl)
   MOZ_ASSERT(mImpl);
 }
 
-Blob::~Blob() {}
+Blob::~Blob() = default;
 
 bool Blob::IsFile() const { return mImpl->IsFile(); }
 
@@ -183,12 +185,6 @@ nsresult Blob::GetSendInfo(nsIInputStream** aBody, uint64_t* aContentLength,
   return mImpl->GetSendInfo(aBody, aContentLength, aContentType, aCharset);
 }
 
-NS_IMETHODIMP
-Blob::GetMutable(bool* aMutable) { return mImpl->GetMutable(aMutable); }
-
-NS_IMETHODIMP
-Blob::SetMutable(bool aMutable) { return mImpl->SetMutable(aMutable); }
-
 JSObject* Blob::WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {
   return Blob_Binding::Wrap(aCx, this, aGivenProto);
 }
@@ -235,6 +231,124 @@ size_t BindingJSObjectMallocBytes(Blob* aBlob) {
   JS::AutoSuppressGCAnalysis nogc;
 
   return aBlob->GetAllocationSize();
+}
+
+already_AddRefed<Promise> Blob::Text(ErrorResult& aRv) {
+  return ConsumeBody(BodyConsumer::CONSUME_TEXT, aRv);
+}
+
+already_AddRefed<Promise> Blob::ArrayBuffer(ErrorResult& aRv) {
+  return ConsumeBody(BodyConsumer::CONSUME_ARRAYBUFFER, aRv);
+}
+
+already_AddRefed<Promise> Blob::ConsumeBody(
+    BodyConsumer::ConsumeType aConsumeType, ErrorResult& aRv) {
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mParent);
+  if (NS_WARN_IF(!global)) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIEventTarget> mainThreadEventTarget;
+  if (!NS_IsMainThread()) {
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    MOZ_ASSERT(workerPrivate);
+    mainThreadEventTarget = workerPrivate->MainThreadEventTarget();
+  } else {
+    mainThreadEventTarget = global->EventTargetFor(TaskCategory::Other);
+  }
+
+  MOZ_ASSERT(mainThreadEventTarget);
+
+  nsCOMPtr<nsIInputStream> inputStream;
+  CreateInputStream(getter_AddRefs(inputStream), aRv);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return nullptr;
+  }
+
+  return BodyConsumer::Create(global, mainThreadEventTarget, inputStream,
+                              nullptr, aConsumeType, VoidCString(),
+                              VoidString(), VoidCString(),
+                              MutableBlobStorage::eOnlyInMemory, aRv);
+}
+
+namespace {
+
+class BlobBodyStreamHolder final : public BodyStreamHolder {
+ public:
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(BlobBodyStreamHolder,
+                                                         BodyStreamHolder)
+
+  BlobBodyStreamHolder() { mozilla::HoldJSObjects(this); }
+
+  void NullifyStream() override {
+    mozilla::DropJSObjects(this);
+    mStream = nullptr;
+  }
+
+  void MarkAsRead() override {}
+
+  void SetReadableStreamBody(JSObject* aBody) override {
+    MOZ_ASSERT(aBody);
+    mStream = aBody;
+  }
+
+  JSObject* GetReadableStreamBody() override { return mStream; }
+
+  // Public to make trace happy.
+  JS::Heap<JSObject*> mStream;
+
+ protected:
+  virtual ~BlobBodyStreamHolder() { NullifyStream(); }
+};
+
+NS_IMPL_CYCLE_COLLECTION_CLASS(BlobBodyStreamHolder)
+
+NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(BlobBodyStreamHolder,
+                                               BodyStreamHolder)
+  NS_IMPL_CYCLE_COLLECTION_TRACE_JS_MEMBER_CALLBACK(mStream)
+NS_IMPL_CYCLE_COLLECTION_TRACE_END
+
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INHERITED(BlobBodyStreamHolder,
+                                                  BodyStreamHolder)
+NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
+
+NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(BlobBodyStreamHolder,
+                                                BodyStreamHolder)
+  tmp->NullifyStream();
+NS_IMPL_CYCLE_COLLECTION_UNLINK_END
+
+NS_IMPL_ADDREF_INHERITED(BlobBodyStreamHolder, BodyStreamHolder)
+NS_IMPL_RELEASE_INHERITED(BlobBodyStreamHolder, BodyStreamHolder)
+
+NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(BlobBodyStreamHolder)
+NS_INTERFACE_MAP_END_INHERITING(BodyStreamHolder)
+
+}  // anonymous namespace
+
+void Blob::Stream(JSContext* aCx, JS::MutableHandle<JSObject*> aStream,
+                  ErrorResult& aRv) {
+  nsCOMPtr<nsIInputStream> stream;
+  CreateInputStream(getter_AddRefs(stream), aRv);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
+  }
+
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(GetParentObject());
+  if (NS_WARN_IF(!global)) {
+    aRv.Throw(NS_ERROR_FAILURE);
+    return;
+  }
+
+  RefPtr<BlobBodyStreamHolder> holder = new BlobBodyStreamHolder();
+
+  BodyStream::Create(aCx, holder, global, stream, aRv);
+  if (NS_WARN_IF(aRv.Failed())) {
+    return;
+  }
+
+  aStream.set(holder->GetReadableStreamBody());
 }
 
 }  // namespace dom

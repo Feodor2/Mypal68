@@ -67,8 +67,7 @@ class FileReader final : public DOMEventTargetHelper,
                                JS::Handle<JSObject*> aGivenProto) override;
 
   // WebIDL
-  static already_AddRefed<FileReader> Constructor(const GlobalObject& aGlobal,
-                                                  ErrorResult& aRv);
+  static already_AddRefed<FileReader> Constructor(const GlobalObject& aGlobal);
   void ReadAsArrayBuffer(JSContext* aCx, Blob& aBlob, ErrorResult& aRv) {
     ReadFileContent(aBlob, EmptyString(), FILE_AS_ARRAYBUFFER, aRv);
   }
@@ -132,7 +131,7 @@ class FileReader final : public DOMEventTargetHelper,
   nsresult GetAsDataURL(Blob* aBlob, const char* aFileData, uint32_t aDataLen,
                         nsAString& aResult);
 
-  nsresult OnLoadEnd(nsresult aStatus);
+  void OnLoadEnd(nsresult aStatus);
 
   void StartProgressEventTimer();
   void ClearProgressEventTimer();

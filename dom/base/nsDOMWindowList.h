@@ -27,7 +27,7 @@ class nsDOMWindowList final {
     EnsureFresh();
     nsCOMPtr<nsIDocShellTreeItem> item;
     if (mDocShellNode) {
-      mDocShellNode->GetChildAt(aIndex, getter_AddRefs(item));
+      mDocShellNode->GetInProcessChildAt(aIndex, getter_AddRefs(item));
     }
     return item.forget();
   }

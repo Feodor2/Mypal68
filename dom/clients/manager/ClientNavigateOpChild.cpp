@@ -225,18 +225,11 @@ RefPtr<ClientOpPromise> ClientNavigateOpChild::DoNavigate(
   }
 
   RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(url);
-  nsCOMPtr<nsIReferrerInfo> referrerInfo =
-      new ReferrerInfo(doc->GetDocumentURI(), doc->GetReferrerPolicy());
+  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+  referrerInfo->InitWithDocument(doc);
   loadState->SetTriggeringPrincipal(principal);
 
-  // Currently we query the CSP from the principal, which is the
-  // doc->NodePrincipal(). After Bug 965637 we can query the CSP
-  // from the doc directly.
-  if (principal) {
-    nsCOMPtr<nsIContentSecurityPolicy> csp;
-    principal->GetCsp(getter_AddRefs(csp));
-    loadState->SetCsp(csp);
-  }
+  loadState->SetCsp(doc->GetCsp());
 
   loadState->SetReferrerInfo(referrerInfo);
   loadState->SetLoadType(LOAD_STOP_CONTENT);

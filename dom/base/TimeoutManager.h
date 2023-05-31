@@ -9,7 +9,6 @@
 #include "nsTArray.h"
 
 class nsIEventTarget;
-class nsITimeoutHandler;
 class nsITimer;
 class nsGlobalWindowInner;
 
@@ -20,6 +19,7 @@ class PerformanceCounter;
 namespace dom {
 
 class TimeoutExecutor;
+class TimeoutHandler;
 
 // This class manages the timeouts in a Window's setTimeout/setInterval pool.
 class TimeoutManager final {
@@ -41,7 +41,7 @@ class TimeoutManager final {
     return !mTimeouts.IsEmpty() || !mIdleTimeouts.IsEmpty();
   }
 
-  nsresult SetTimeout(nsITimeoutHandler* aHandler, int32_t interval,
+  nsresult SetTimeout(TimeoutHandler* aHandler, int32_t interval,
                       bool aIsInterval, mozilla::dom::Timeout::Reason aReason,
                       int32_t* aReturn);
   void ClearTimeout(int32_t aTimerId, mozilla::dom::Timeout::Reason aReason);
@@ -77,9 +77,6 @@ class TimeoutManager final {
   // This should be called by nsGlobalWindow when the window might have moved
   // to the background or foreground.
   void UpdateBackgroundState();
-
-  // Initialize TimeoutManager before the first time it is accessed.
-  static void Initialize();
 
   // The document finished loading
   void OnDocumentLoaded();

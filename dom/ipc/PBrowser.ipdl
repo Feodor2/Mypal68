@@ -23,9 +23,11 @@ include JavaScriptTypes;
 include URIParams;
 include PPrintingTypes;
 include PTabContext;
+include PBackgroundSharedTypes;
 
 include "mozilla/GfxMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
+include "mozilla/ipc/TransportSecurityInfoUtils.h";
 
 using moveonly mozilla::gfx::PaintFragment from "mozilla/gfx/CrossProcessPaint.h";
 using mozilla::gfx::Matrix4x4 from "mozilla/gfx/Matrix.h";
@@ -83,6 +85,7 @@ using mozilla::FontRange from "ipc/nsGUIEventIPC.h";
 using mozilla::a11y::IAccessibleHolder from "mozilla/a11y/IPCTypes.h";
 using mozilla::OriginAttributes from "mozilla/ipc/BackgroundUtils.h";
 using refcounted class mozilla::dom::BrowsingContext from "mozilla/dom/BrowsingContext.h";
+using refcounted class nsITransportSecurityInfo from "nsITransportSecurityInfo.h";
 
 namespace mozilla {
 namespace dom {
@@ -115,6 +118,42 @@ struct RequestData
   nsCString matchedList;
 };
 
+struct WebProgressStateChangeData
+{
+  bool isNavigating;
+  bool mayEnableCharacterEncodingMenu;
+
+  // The following fields are only set when the aStateFlags param passed with
+  // this struct is |nsIWebProgress.STATE_STOP|.
+  nsString contentType;
+  nsString charset;
+  nsIURI documentURI;
+};
+
+struct WebProgressLocationChangeData
+{
+  bool isNavigating;
+  bool isSyntheticDocument;
+  bool mayEnableCharacterEncodingMenu;
+  bool charsetAutodetected;
+  nsString contentType;
+  nsString title;
+  nsString charset;
+  nsIURI documentURI;
+  nsIPrincipal contentPrincipal;
+  nsIPrincipal contentStoragePrincipal;
+  nsIPrincipal contentBlockingAllowListPrincipal;
+  nsIContentSecurityPolicy csp;
+  nsIReferrerInfo referrerInfo;
+  uint64_t? requestContextID;
+};
+
+struct WebProgressSecurityChangeData
+{
+  nsITransportSecurityInfo securityInfo;
+  bool isSecureContext;
+};
+
 /**
  * A PBrowser manages a maximal locally connected subtree of BrowsingContexts
  * in a content process.
@@ -122,7 +161,7 @@ struct RequestData
  * See `dom/docs/Fission-IPC-Diagram.svg` for an overview of the DOM IPC
  * actors.
  */
-nested(upto inside_cpow) sync protocol PBrowser
+nested(upto inside_cpow) sync refcounted protocol PBrowser
 {
     manager PContent;
 
@@ -541,27 +580,45 @@ parent:
     async RegisterProtocolHandler(nsString scheme, nsIURI handlerURI, nsString title,
                                   nsIURI documentURI);
 
+    async OnStateChange(WebProgressData? aWebProgressData,
+                        RequestData aRequestData, uint32_t aStateFlags,
+                        nsresult aStatus,
+                        WebProgressStateChangeData? aStateChangeData);
+
     async OnProgressChange(WebProgressData? aWebProgressData,
                            RequestData aRequestData, int32_t aCurSelfProgress,
                            int32_t aMaxSelfProgress, int32_t aCurTotalProgress,
                            int32_t aMaxTotalProgress);
 
+    async OnLocationChange(WebProgressData? aWebProgressData,
+                           RequestData aRequestData, nsIURI aLocation,
+                           uint32_t aFlags, bool aCanGoBack,
+                           bool aCanGoForward,
+                           WebProgressLocationChangeData? aLocationChangeData);
+
     async OnStatusChange(WebProgressData? aWebProgressData,
                          RequestData aRequestData, nsresult aStatus,
                          nsString aMessage);
 
+    async OnSecurityChange(WebProgressData? aWebProgressData,
+                           RequestData aRequestData, uint32_t aState,
+                           WebProgressSecurityChangeData? aSecurityChangeData);
+
     async OnContentBlockingEvent(WebProgressData? aWebProgressData,
                                  RequestData aRequestData, uint32_t aEvent);
+
+    async NavigationFinished();
 
     async SessionStoreUpdate(nsCString? aDocShellCaps,
                              bool? aPrivatedMode,
                              nsCString[] aPositions,
                              int32_t[] aPositionDescendants,
-                             uint32_t aFlushId);
+                             uint32_t aFlushId,
+                             bool aIsFinal);
 
 child:
     async NativeSynthesisResponse(uint64_t aObserverId, nsCString aResponse);
-    async FlushTabState(uint32_t aFlushId);
+    async FlushTabState(uint32_t aFlushId, bool aIsFinal);
 
 parent:
 
@@ -617,9 +674,9 @@ parent:
      * This function is used to notify the parent that it should display a
      * canvas permission prompt.
      *
-     * @param aFirstPartyURI first party of the tab that is requesting access.
+     * @param aOrigin origin string of the document that is requesting access.
      */
-    async ShowCanvasPermissionPrompt(nsCString aFirstPartyURI,
+    async ShowCanvasPermissionPrompt(nsCString aOrigin,
                                      bool aHideDoorHanger);
 
     sync SetSystemFont(nsCString aFontName);
@@ -662,8 +719,7 @@ child:
 
     async ParentActivated(bool aActivated);
 
-    async SetKeyboardIndicators(UIStateChangeType showAccelerators,
-                                UIStateChangeType showFocusRings);
+    async SetKeyboardIndicators(UIStateChangeType showFocusRings);
 
     /**
      * StopIMEStateManagement() is called when the process loses focus and

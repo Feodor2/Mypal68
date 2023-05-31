@@ -4,6 +4,7 @@
 
 #include "AllocationPolicy.h"
 
+#include "ImageContainer.h"
 #include "MediaInfo.h"
 #include "PDMFactory.h"
 #include "mozilla/ClearOnShutdown.h"

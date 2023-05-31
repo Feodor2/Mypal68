@@ -9,8 +9,9 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGSymbolElement : SVGElement {
 };
 
-SVGSymbolElement implements SVGFitToViewBox;
-SVGSymbolElement implements SVGTests;
+SVGSymbolElement includes SVGFitToViewBox;
+SVGSymbolElement includes SVGTests;

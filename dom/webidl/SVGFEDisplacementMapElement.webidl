@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGFEDisplacementMapElement : SVGElement {
 
   // Channel Selectors
@@ -30,4 +31,4 @@ interface SVGFEDisplacementMapElement : SVGElement {
   readonly attribute SVGAnimatedEnumeration yChannelSelector;
 };
 
-SVGFEDisplacementMapElement implements SVGFilterPrimitiveStandardAttributes;
+SVGFEDisplacementMapElement includes SVGFilterPrimitiveStandardAttributes;

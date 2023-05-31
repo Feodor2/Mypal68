@@ -15,8 +15,6 @@ EXPORTS.mozilla.dom += [
     'WorkerDebugger.h',
     'WorkerDebuggerManager.h',
     'WorkerError.h',
-    'WorkerHolder.h',
-    'WorkerHolderToken.h',
     'WorkerLoadInfo.h',
     'WorkerLocation.h',
     'WorkerNavigator.h',
@@ -24,6 +22,7 @@ EXPORTS.mozilla.dom += [
     'WorkerRef.h',
     'WorkerRunnable.h',
     'WorkerScope.h',
+    'WorkerStatus.h',
 ]
 
 # Private stuff.
@@ -55,8 +54,6 @@ UNIFIED_SOURCES += [
     'WorkerDebuggerManager.cpp',
     'WorkerError.cpp',
     'WorkerEventTarget.cpp',
-    'WorkerHolder.cpp',
-    'WorkerHolderToken.cpp',
     'WorkerLoadInfo.cpp',
     'WorkerLocation.cpp',
     'WorkerNavigator.cpp',

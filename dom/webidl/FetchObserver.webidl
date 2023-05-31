@@ -3,6 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+[Exposed=Window]
 callback interface ObserverCallback {
   void handleEvent(FetchObserver observer);
 };
@@ -15,7 +16,7 @@ enum FetchState {
 };
 
 [Exposed=(Window,Worker),
- Func="mozilla::dom::DOMPrefs::dom_fetchObserver_enabled"]
+ Pref="dom.fetchObserver.enabled"]
 interface FetchObserver : EventTarget {
   readonly attribute FetchState state;
 

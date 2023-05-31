@@ -10,8 +10,11 @@
  * and create derivative works of this document.
  */
 
-[OverrideBuiltins, LegacyUnenumerableNamedProperties, HTMLConstructor]
+[OverrideBuiltins, LegacyUnenumerableNamedProperties,
+ Exposed=Window]
 interface HTMLFormElement : HTMLElement {
+  [HTMLConstructor] constructor();
+
            [CEReactions, Pure, SetterThrows]
            attribute DOMString acceptCharset;
            [CEReactions, Pure, SetterThrows]

@@ -9,6 +9,7 @@
 #include "mozilla/dom/Document.h"
 #include "nsIHttpChannel.h"
 #include "nsSerializationHelper.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/net/HttpBaseChannel.h"
 #include "mozilla/ipc/ChannelInfo.h"
 #include "nsNetUtil.h"
@@ -45,8 +46,7 @@ void ChannelInfo::InitFromChromeGlobal(nsIGlobalObject* aGlobal) {
   MOZ_ASSERT(!mInited, "Cannot initialize the object twice");
   MOZ_ASSERT(aGlobal);
 
-  MOZ_RELEASE_ASSERT(
-      nsContentUtils::IsSystemPrincipal(aGlobal->PrincipalOrNull()));
+  MOZ_RELEASE_ASSERT(aGlobal->PrincipalOrNull()->IsSystemPrincipal());
 
   mSecurityInfo.Truncate();
   mInited = true;

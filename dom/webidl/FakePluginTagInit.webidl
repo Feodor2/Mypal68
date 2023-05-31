@@ -11,6 +11,7 @@
  * Other information is optional, though having usable niceName is highly
  * recommended.
  */
+[GenerateInit]
 dictionary FakePluginTagInit {
   required DOMString handlerURI;
   required sequence<FakePluginMimeEntry> mimeEntries;

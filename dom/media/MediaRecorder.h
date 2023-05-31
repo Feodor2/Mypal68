@@ -14,11 +14,10 @@
 #define MAX_ALLOW_MEMORY_BUFFER 1024000
 namespace mozilla {
 
-class AudioNodeStream;
+class AudioNodeTrack;
 class DOMMediaStream;
 class ErrorResult;
 struct MediaRecorderOptions;
-class MediaStream;
 class GlobalObject;
 
 namespace dom {
@@ -48,7 +47,7 @@ class MediaRecorder final : public DOMEventTargetHelper,
  public:
   class Session;
 
-  MediaRecorder(DOMMediaStream& aSourceMediaStream,
+  MediaRecorder(DOMMediaStream& aSourceMediaTrack,
                 nsPIDOMWindowInner* aOwnerWindow);
   MediaRecorder(AudioNode& aSrcAudioNode, uint32_t aSrcOutput,
                 nsPIDOMWindowInner* aOwnerWindow);
@@ -69,7 +68,7 @@ class MediaRecorder final : public DOMEventTargetHelper,
   // raise a dataavailable event containing the Blob of collected data on every
   // timeSlice milliseconds. If timeSlice isn't provided, UA should call the
   // RequestData to obtain the Blob data, also set the mTimeSlice to zero.
-  void Start(const Optional<int32_t>& timeSlice, ErrorResult& aResult);
+  void Start(const Optional<uint32_t>& timeSlice, ErrorResult& aResult);
   // Stop the recording activiy. Including stop the Media Encoder thread,
   // un-hook the mediaStreamListener to encoder.
   void Stop(ErrorResult& aResult);

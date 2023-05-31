@@ -25,6 +25,7 @@
 #include "mozilla/Logging.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsThreadUtils.h"
+#include "mozilla/StaticPrefs_content.h"
 
 class nsIURI;
 class nsIChannel;
@@ -88,7 +89,7 @@ class nsContentSink : public nsICSSLoaderObserver,
   NS_DECL_NSINAMED
 
   // nsICSSLoaderObserver
-  NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet, bool aWasAlternate,
+  NS_IMETHOD StyleSheetLoaded(mozilla::StyleSheet* aSheet, bool aWasDeferred,
                               nsresult aStatus) override;
 
   virtual nsresult ProcessMETATag(nsIContent* aContent);
@@ -114,8 +115,6 @@ class nsContentSink : public nsICSSLoaderObserver,
   bool IsTimeToNotify();
   bool LinkContextIsOurDocument(const nsAString& aAnchor);
   bool Decode5987Format(nsAString& aEncoded);
-
-  static void InitializeStatics();
 
  protected:
   nsContentSink();
@@ -163,9 +162,9 @@ class nsContentSink : public nsICSSLoaderObserver,
                                               const nsAString& aMedia,
                                               const nsAString& aReferrerPolicy);
 
-  void PrefetchPreloadHref(const nsAString& aHref, nsINode* aSource,
-                           uint32_t aLinkTypes, const nsAString& aAs,
-                           const nsAString& aType, const nsAString& aMedia);
+  void PrefetchPreloadHref(const nsAString& aHref, uint32_t aLinkTypes,
+                           const nsAString& aAs, const nsAString& aType,
+                           const nsAString& aMedia);
 
   // For PrefetchDNS() aHref can either be the usual
   // URI format or of the form "//www.hostname.com" without a scheme.
@@ -254,7 +253,7 @@ class nsContentSink : public nsICSSLoaderObserver,
       return 1000;
     }
 
-    return sNotificationInterval;
+    return mozilla::StaticPrefs::content_notify_interval();
   }
 
   virtual nsresult FlushTags() = 0;
@@ -265,7 +264,9 @@ class nsContentSink : public nsICSSLoaderObserver,
 
   void DoProcessLinkHeader();
 
-  void StopDeflecting() { mDeflectedCount = sPerfDeflectCount; }
+  void StopDeflecting() {
+    mDeflectedCount = mozilla::StaticPrefs::content_sink_perf_deflect_count();
+  }
 
  protected:
   RefPtr<Document> mDocument;
@@ -333,31 +334,6 @@ class nsContentSink : public nsICSSLoaderObserver,
 
   nsRevocableEventPtr<nsRunnableMethod<nsContentSink, void, false> >
       mProcessLinkHeaderEvent;
-
-  // Do we notify based on time?
-  static bool sNotifyOnTimer;
-  // Back off timer notification after count.
-  static int32_t sBackoffCount;
-  // Notification interval in microseconds
-  static int32_t sNotificationInterval;
-  // How many times to deflect in interactive/perf modes
-  static int32_t sInteractiveDeflectCount;
-  static int32_t sPerfDeflectCount;
-  // 0 = don't check for pending events
-  // 1 = don't deflect if there are pending events
-  // 2 = bail if there are pending events
-  static int32_t sPendingEventMode;
-  // How often to probe for pending events. 1=every token
-  static int32_t sEventProbeRate;
-  // How long to stay off the event loop in interactive/perf modes
-  static int32_t sInteractiveParseTime;
-  static int32_t sPerfParseTime;
-  // How long to be in interactive mode after an event
-  static int32_t sInteractiveTime;
-  // How long to stay in perf mode after initial loading
-  static int32_t sInitialPerfTime;
-  // Should we switch between perf-mode and interactive-mode
-  static int32_t sEnablePerfMode;
 };
 
 #endif  // _nsContentSink_h_

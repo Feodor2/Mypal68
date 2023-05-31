@@ -16,6 +16,9 @@ class AudioWorkletImpl;
 
 namespace dom {
 
+class AudioWorkletProcessorConstructor;
+class StructuredCloneHolder;
+
 class AudioWorkletGlobalScope final : public WorkletGlobalScope {
  public:
   NS_DECL_ISUPPORTS_INHERITED
@@ -28,7 +31,8 @@ class AudioWorkletGlobalScope final : public WorkletGlobalScope {
                         JS::MutableHandle<JSObject*> aReflector) override;
 
   void RegisterProcessor(JSContext* aCx, const nsAString& aName,
-                         VoidFunction& aProcessorCtor, ErrorResult& aRv);
+                         AudioWorkletProcessorConstructor& aProcessorCtor,
+                         ErrorResult& aRv);
 
   WorkletImpl* Impl() const override;
 
@@ -37,6 +41,13 @@ class AudioWorkletGlobalScope final : public WorkletGlobalScope {
   double CurrentTime() const;
 
   float SampleRate() const;
+
+  // If successful, returns true and sets aRetProcessor, which will be in the
+  // compartment for the realm of this global.  Returns false on failure.
+  MOZ_CAN_RUN_SCRIPT
+  bool ConstructProcessor(const nsAString& aName,
+                          NotNull<StructuredCloneHolder*> aOptionsSerialization,
+                          JS::MutableHandle<JSObject*> aRetProcessor);
 
  private:
   ~AudioWorkletGlobalScope() = default;
@@ -54,7 +65,7 @@ class AudioWorkletGlobalScope final : public WorkletGlobalScope {
   double mCurrentTime;
   float mSampleRate;
 
-  typedef nsRefPtrHashtable<nsStringHashKey, VoidFunction>
+  typedef nsRefPtrHashtable<nsStringHashKey, AudioWorkletProcessorConstructor>
       NodeNameToProcessorDefinitionMap;
   NodeNameToProcessorDefinitionMap mNameToProcessorMap;
 };

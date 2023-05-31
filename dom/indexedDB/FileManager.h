@@ -43,19 +43,19 @@ class FileManager final {
   bool mInvalidated;
 
  public:
-  static already_AddRefed<nsIFile> GetFileForId(nsIFile* aDirectory,
-                                                int64_t aId);
+  static MOZ_MUST_USE nsCOMPtr<nsIFile> GetFileForId(nsIFile* aDirectory,
+                                                     int64_t aId);
 
-  static already_AddRefed<nsIFile> GetCheckedFileForId(nsIFile* aDirectory,
-                                                       int64_t aId);
+  static MOZ_MUST_USE nsCOMPtr<nsIFile> GetCheckedFileForId(nsIFile* aDirectory,
+                                                            int64_t aId);
 
   static nsresult InitDirectory(nsIFile* aDirectory, nsIFile* aDatabaseFile,
-                                PersistenceType aPersistenceType,
-                                const nsACString& aGroup,
                                 const nsACString& aOrigin,
                                 uint32_t aTelemetryId);
 
-  static nsresult GetUsage(nsIFile* aDirectory, uint64_t* aUsage);
+  static nsresult GetUsage(nsIFile* aDirectory, Maybe<uint64_t>& aUsage);
+
+  static nsresult GetUsage(nsIFile* aDirectory, uint64_t& aUsage);
 
   FileManager(PersistenceType aPersistenceType, const nsACString& aGroup,
               const nsACString& aOrigin, const nsAString& aDatabaseName,
@@ -77,17 +77,17 @@ class FileManager final {
 
   nsresult Invalidate();
 
-  already_AddRefed<nsIFile> GetDirectory();
+  MOZ_MUST_USE nsCOMPtr<nsIFile> GetDirectory();
 
-  already_AddRefed<nsIFile> GetCheckedDirectory();
+  MOZ_MUST_USE nsCOMPtr<nsIFile> GetCheckedDirectory();
 
-  already_AddRefed<nsIFile> GetJournalDirectory();
+  MOZ_MUST_USE nsCOMPtr<nsIFile> GetJournalDirectory();
 
-  already_AddRefed<nsIFile> EnsureJournalDirectory();
+  MOZ_MUST_USE nsCOMPtr<nsIFile> EnsureJournalDirectory();
 
-  already_AddRefed<FileInfo> GetFileInfo(int64_t aId);
+  MOZ_MUST_USE RefPtr<FileInfo> GetFileInfo(int64_t aId) const;
 
-  already_AddRefed<FileInfo> GetNewFileInfo();
+  MOZ_MUST_USE RefPtr<FileInfo> GetNewFileInfo();
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FileManager)
 

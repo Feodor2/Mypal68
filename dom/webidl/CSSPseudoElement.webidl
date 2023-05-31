@@ -9,11 +9,12 @@
  * liability, trademark and document use rules apply.
  */
 
-[Func="Document::IsWebAnimationsGetAnimationsEnabled"]
+[Func="Document::IsWebAnimationsGetAnimationsEnabled",
+ Exposed=Window]
 interface CSSPseudoElement {
   readonly attribute DOMString type;
   readonly attribute Element element;
 };
 
 // https://drafts.csswg.org/web-animations/#extensions-to-the-pseudoelement-interface
-CSSPseudoElement implements Animatable;
+CSSPseudoElement includes Animatable;

@@ -6,18 +6,17 @@
 #define mozilla_dom_HTMLTextAreaElement_h
 
 #include "mozilla/Attributes.h"
-#include "nsITextControlElement.h"
+#include "mozilla/TextControlElement.h"
+#include "mozilla/TextControlState.h"
+#include "mozilla/TextEditor.h"
+#include "mozilla/dom/HTMLFormElement.h"
+#include "mozilla/dom/HTMLInputElementBinding.h"
 #include "nsIControllers.h"
 #include "nsCOMPtr.h"
 #include "nsGenericHTMLElement.h"
 #include "nsStubMutationObserver.h"
 #include "nsIConstraintValidation.h"
-#include "mozilla/dom/HTMLFormElement.h"
-#include "mozilla/dom/HTMLInputElementBinding.h"
 #include "nsGkAtoms.h"
-
-#include "mozilla/TextEditor.h"
-#include "nsTextEditorState.h"
 
 class nsIControllers;
 class nsPresContext;
@@ -33,8 +32,7 @@ namespace dom {
 
 class HTMLFormSubmission;
 
-class HTMLTextAreaElement final : public nsGenericHTMLFormElementWithState,
-                                  public nsITextControlElement,
+class HTMLTextAreaElement final : public TextControlElement,
                                   public nsStubMutationObserver,
                                   public nsIConstraintValidation {
  public:
@@ -68,46 +66,46 @@ class HTMLTextAreaElement final : public nsGenericHTMLFormElementWithState,
 
   virtual EventStates IntrinsicState() const override;
 
-  // nsITextControlElemet
-  NS_IMETHOD SetValueChanged(bool aValueChanged) override;
-  NS_IMETHOD_(bool) IsSingleLineTextControl() const override;
-  NS_IMETHOD_(bool) IsTextArea() const override;
-  NS_IMETHOD_(bool) IsPasswordTextControl() const override;
-  NS_IMETHOD_(int32_t) GetCols() override;
-  NS_IMETHOD_(int32_t) GetWrapCols() override;
-  NS_IMETHOD_(int32_t) GetRows() override;
-  NS_IMETHOD_(void) GetDefaultValueFromContent(nsAString& aValue) override;
-  NS_IMETHOD_(bool) ValueChanged() const override;
-  NS_IMETHOD_(void)
-  GetTextEditorValue(nsAString& aValue, bool aIgnoreWrap) const override;
-  NS_IMETHOD_(mozilla::TextEditor*) GetTextEditor() override;
-  NS_IMETHOD_(mozilla::TextEditor*) GetTextEditorWithoutCreation() override;
-  NS_IMETHOD_(nsISelectionController*) GetSelectionController() override;
-  NS_IMETHOD_(nsFrameSelection*) GetConstFrameSelection() override;
-  NS_IMETHOD BindToFrame(nsTextControlFrame* aFrame) override;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  NS_IMETHOD_(void) UnbindFromFrame(nsTextControlFrame* aFrame) override;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  NS_IMETHOD CreateEditor() override;
-  NS_IMETHOD_(void) UpdateOverlayTextVisibility(bool aNotify) override;
-  NS_IMETHOD_(bool) GetPlaceholderVisibility() override;
-  NS_IMETHOD_(bool) GetPreviewVisibility() override;
-  NS_IMETHOD_(void) SetPreviewValue(const nsAString& aValue) override;
-  NS_IMETHOD_(void) GetPreviewValue(nsAString& aValue) override;
-  NS_IMETHOD_(void) EnablePreview() override;
-  NS_IMETHOD_(bool) IsPreviewEnabled() override;
-  NS_IMETHOD_(void) InitializeKeyboardEventListeners() override;
-  NS_IMETHOD_(void) OnValueChanged(bool aNotify, ValueChangeKind) override;
+  // TextControlElement
+  virtual nsresult SetValueChanged(bool aValueChanged) override;
+  virtual bool IsSingleLineTextControl() const override;
+  virtual bool IsTextArea() const override;
+  virtual bool IsPasswordTextControl() const override;
+  virtual int32_t GetCols() override;
+  virtual int32_t GetWrapCols() override;
+  virtual int32_t GetRows() override;
+  virtual void GetDefaultValueFromContent(nsAString& aValue) override;
+  virtual bool ValueChanged() const override;
+  virtual void GetTextEditorValue(nsAString& aValue,
+                                  bool aIgnoreWrap) const override;
+  MOZ_CAN_RUN_SCRIPT virtual TextEditor* GetTextEditor() override;
+  virtual TextEditor* GetTextEditorWithoutCreation() override;
+  virtual nsISelectionController* GetSelectionController() override;
+  virtual nsFrameSelection* GetConstFrameSelection() override;
+  virtual TextControlState* GetTextControlState() const override {
+    return mState;
+  }
+  virtual nsresult BindToFrame(nsTextControlFrame* aFrame) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual void UnbindFromFrame(
+      nsTextControlFrame* aFrame) override;
+  MOZ_CAN_RUN_SCRIPT virtual nsresult CreateEditor() override;
+  virtual void UpdateOverlayTextVisibility(bool aNotify) override;
+  virtual bool GetPlaceholderVisibility() override;
+  virtual bool GetPreviewVisibility() override;
+  virtual void SetPreviewValue(const nsAString& aValue) override;
+  virtual void GetPreviewValue(nsAString& aValue) override;
+  virtual void EnablePreview() override;
+  virtual bool IsPreviewEnabled() override;
+  virtual void InitializeKeyboardEventListeners() override;
+  virtual void OnValueChanged(bool aNotify, ValueChangeKind) override;
   virtual void GetValueFromSetRangeText(nsAString& aValue) override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual nsresult SetValueFromSetRangeText(const nsAString& aValue) override;
-  NS_IMETHOD_(bool) HasCachedSelection() override;
+  virtual bool HasCachedSelection() override;
 
   // nsIContent
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
   virtual bool ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                               const nsAString& aValue,
                               nsIPrincipal* aMaybeScriptedPrincipal,
@@ -147,7 +145,7 @@ class HTMLTextAreaElement final : public nsGenericHTMLFormElementWithState,
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
 
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLTextAreaElement,
-                                           nsGenericHTMLFormElementWithState)
+                                           TextControlElement)
 
   // nsIConstraintValidation
   bool IsTooLong();
@@ -169,7 +167,7 @@ class HTMLTextAreaElement final : public nsGenericHTMLFormElementWithState,
   void SetAutofocus(bool aAutoFocus, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::autofocus, aAutoFocus, aError);
   }
-  uint32_t Cols() { return GetIntAttr(nsGkAtoms::cols, DEFAULT_COLS); }
+  uint32_t Cols() { return GetUnsignedIntAttr(nsGkAtoms::cols, DEFAULT_COLS); }
   void SetCols(uint32_t aCols, ErrorResult& aError) {
     uint32_t cols = aCols ? aCols : DEFAULT_COLS;
     SetUnsignedIntAttr(nsGkAtoms::cols, cols, DEFAULT_COLS, aError);
@@ -222,7 +220,9 @@ class HTMLTextAreaElement final : public nsGenericHTMLFormElementWithState,
   void SetRequired(bool aRequired, ErrorResult& aError) {
     SetHTMLBoolAttr(nsGkAtoms::required, aRequired, aError);
   }
-  uint32_t Rows() { return GetIntAttr(nsGkAtoms::rows, DEFAULT_ROWS_TEXTAREA); }
+  uint32_t Rows() {
+    return GetUnsignedIntAttr(nsGkAtoms::rows, DEFAULT_ROWS_TEXTAREA);
+  }
   void SetRows(uint32_t aRows, ErrorResult& aError) {
     uint32_t rows = aRows ? aRows : DEFAULT_ROWS_TEXTAREA;
     SetUnsignedIntAttr(nsGkAtoms::rows, rows, DEFAULT_ROWS_TEXTAREA, aError);
@@ -235,6 +235,12 @@ class HTMLTextAreaElement final : public nsGenericHTMLFormElementWithState,
   void GetDefaultValue(nsAString& aDefaultValue, ErrorResult& aError);
   void SetDefaultValue(const nsAString& aDefaultValue, ErrorResult& aError);
   void GetValue(nsAString& aValue);
+  /**
+   * ValueEquals() is designed for internal use so that aValue shouldn't
+   * include \r character.  It should be handled before calling this with
+   * nsContentUtils::PlatformToDOMLineBreaks().
+   */
+  bool ValueEquals(const nsAString& aValue) const;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   void SetValue(const nsAString& aValue, ErrorResult& aError);
 
@@ -260,7 +266,10 @@ class HTMLTextAreaElement final : public nsGenericHTMLFormElementWithState,
   // XPCOM adapter function widely used throughout code, leaving it as is.
   nsresult GetControllers(nsIControllers** aResult);
 
-  nsIEditor* GetEditor() { return mState.GetTextEditor(); }
+  nsIEditor* GetEditor() {
+    MOZ_ASSERT(mState);
+    return mState->GetTextEditor();
+  }
 
   bool IsInputEventTarget() const { return true; }
 
@@ -268,7 +277,7 @@ class HTMLTextAreaElement final : public nsGenericHTMLFormElementWithState,
   void SetUserInput(const nsAString& aValue, nsIPrincipal& aSubjectPrincipal);
 
  protected:
-  virtual ~HTMLTextAreaElement() {}
+  virtual ~HTMLTextAreaElement();
 
   // get rid of the compiler warning
   using nsGenericHTMLFormElementWithState::IsSingleLineTextControl;
@@ -304,7 +313,7 @@ class HTMLTextAreaElement final : public nsGenericHTMLFormElementWithState,
   nsString mFocusedValue;
 
   /** The state of the text editor (selection controller and the editor) **/
-  nsTextEditorState mState;
+  TextControlState* mState;
 
   NS_IMETHOD SelectAll(nsPresContext* aPresContext);
   /**
@@ -320,7 +329,7 @@ class HTMLTextAreaElement final : public nsGenericHTMLFormElementWithState,
    * Setting the value.
    *
    * @param aValue      String to set.
-   * @param aFlags      See nsTextEditorState::SetValueFlags.
+   * @param aFlags      See TextControlState::SetValueFlags.
    */
   MOZ_CAN_RUN_SCRIPT
   nsresult SetValueInternal(const nsAString& aValue, uint32_t aFlags);

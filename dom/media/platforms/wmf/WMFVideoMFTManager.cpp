@@ -20,11 +20,11 @@
 #include "WMFDecoderModule.h"
 #include "WMFUtils.h"
 #include "gfx2DGlue.h"
-#include "gfxPrefs.h"
 #include "gfxWindowsPlatform.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Logging.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/WindowsVersion.h"
@@ -174,28 +174,6 @@ WMFVideoMFTManager::~WMFVideoMFTManager() {
   if (mDXVA2Manager) {
     DeleteOnMainThread(mDXVA2Manager);
   }
-
-  // Record whether the video decoder successfully decoded, or output null
-  // samples but did/didn't recover.
-  uint32_t telemetry =
-      (mNullOutputCount == 0)
-          ? 0
-          : (mGotValidOutputAfterNullOutput && mGotExcessiveNullOutput)
-                ? 1
-                : mGotExcessiveNullOutput
-                      ? 2
-                      : mGotValidOutputAfterNullOutput ? 3 : 4;
-
-  nsCOMPtr<nsIRunnable> task = NS_NewRunnableFunction(
-      "WMFVideoMFTManager::~WMFVideoMFTManager", [=]() -> void {
-        LOG(nsPrintfCString(
-                "Reporting telemetry VIDEO_MFT_OUTPUT_NULL_SAMPLES=%d",
-                telemetry)
-                .get());
-        Telemetry::Accumulate(
-            Telemetry::HistogramID::VIDEO_MFT_OUTPUT_NULL_SAMPLES, telemetry);
-      });
-  SystemGroup::Dispatch(TaskCategory::Other, task.forget());
 }
 
 const GUID& WMFVideoMFTManager::GetMFTGUID() {
@@ -441,11 +419,11 @@ class CreateDXVAManagerEvent : public Runnable {
     NS_ASSERTION(NS_IsMainThread(), "Must be on main thread.");
     const bool deblacklistingForTelemetry =
         XRE_IsGPUProcess() &&
-        gfxPrefs::PDMWMFDeblacklistingForTelemetryInGPUProcess();
+        StaticPrefs::media_wmf_deblacklisting_for_telemetry_in_gpu_process();
     nsACString* failureReason = &mFailureReason;
     nsCString secondFailureReason;
     if (mBackend == LayersBackend::LAYERS_D3D11 &&
-        gfxPrefs::PDMWMFAllowD3D11() && IsWin8OrLater()) {
+        StaticPrefs::media_wmf_dxva_d3d11_enabled() && IsWin8OrLater()) {
       const nsCString& blacklistedDLL = FindD3D11BlacklistedDLL();
       if (!deblacklistingForTelemetry && !blacklistedDLL.IsEmpty()) {
         failureReason->AppendPrintf("D3D11 blacklisted with DLL %s",
@@ -513,7 +491,8 @@ bool WMFVideoMFTManager::InitializeDXVA() {
 }
 
 MediaResult WMFVideoMFTManager::ValidateVideoInfo() {
-  if (mStreamType != H264 || gfxPrefs::PDMWMFAllowUnsupportedResolutions()) {
+  if (mStreamType != H264 ||
+      StaticPrefs::media_wmf_allow_unsupported_resolutions()) {
     return NS_OK;
   }
 
@@ -584,8 +563,8 @@ MediaResult WMFVideoMFTManager::InitInternal() {
     attr->SetUINT32(CODECAPI_AVDecNumWorkerThreads,
                     WMFDecoderModule::GetNumDecoderThreads());
     bool lowLatency =
-        (gfxPrefs::PDMWMFLowLatencyEnabled() || IsWin10OrLater()) &&
-        !gfxPrefs::PDMWMFLowLatencyForceDisabled();
+        (StaticPrefs::media_wmf_low_latency_enabled() || IsWin10OrLater()) &&
+        !StaticPrefs::media_wmf_low_latency_force_disabled();
     if (mLowLatency || lowLatency) {
       hr = attr->SetUINT32(CODECAPI_AVLowLatencyMode, TRUE);
       if (SUCCEEDED(hr)) {
@@ -1147,7 +1126,7 @@ nsCString WMFVideoMFTManager::GetDescriptionName() const {
   bool hw = IsHardwareAccelerated(failureReason);
   return nsPrintfCString("wmf %s video decoder - %s",
                          hw ? "hardware" : "software",
-                         hw ? gfxPrefs::PDMWMFUseNV12Format() &&
+                         hw ? StaticPrefs::media_wmf_use_nv12_format() &&
                                       gfx::DeviceManagerDx::Get()->CanUseNV12()
                                   ? "nv12"
                                   : "rgba32"

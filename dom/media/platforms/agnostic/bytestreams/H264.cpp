@@ -534,7 +534,7 @@ class SPSNALIterator {
 
 static int32_t ConditionDimension(float aValue) {
   // This will exclude NaNs and too-big values.
-  if (aValue > 1.0 && aValue <= INT32_MAX / 2) {
+  if (aValue > 1.0 && aValue <= float(INT32_MAX) / 2) {
     return int32_t(aValue);
   }
   return 0;
@@ -998,11 +998,11 @@ uint32_t H264::ComputeMaxRefFrames(const mozilla::MediaByteBuffer* aExtraData) {
 
   // SPS content
   nsTArray<uint8_t> sps;
-  ByteWriter spsw(sps);
+  ByteWriter<BigEndian> spsw(sps);
   int numSps = 0;
   // PPS content
   nsTArray<uint8_t> pps;
-  ByteWriter ppsw(pps);
+  ByteWriter<BigEndian> ppsw(pps);
   int numPps = 0;
 
   int nalLenSize = ((*aSample->mExtraData)[4] & 3) + 1;

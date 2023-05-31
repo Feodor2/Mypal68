@@ -28,16 +28,11 @@ using namespace mozilla::ipc;
 
 namespace {
 
-already_AddRefed<IDBFileRequest> GenerateFileRequest(
-    IDBFileHandle* aFileHandle) {
+RefPtr<IDBFileRequest> GenerateFileRequest(IDBFileHandle* aFileHandle) {
   MOZ_ASSERT(aFileHandle);
   aFileHandle->AssertIsOnOwningThread();
 
-  RefPtr<IDBFileRequest> fileRequest =
-      IDBFileRequest::Create(aFileHandle, /* aWrapAsDOMRequest */ false);
-  MOZ_ASSERT(fileRequest);
-
-  return fileRequest.forget();
+  return IDBFileRequest::Create(aFileHandle, /* aWrapAsDOMRequest */ false);
 }
 
 }  // namespace
@@ -78,8 +73,8 @@ IDBFileHandle::~IDBFileHandle() {
 }
 
 // static
-already_AddRefed<IDBFileHandle> IDBFileHandle::Create(
-    IDBMutableFile* aMutableFile, FileMode aMode) {
+RefPtr<IDBFileHandle> IDBFileHandle::Create(IDBMutableFile* aMutableFile,
+                                            FileMode aMode) {
   MOZ_ASSERT(aMutableFile);
   aMutableFile->AssertIsOnOwningThread();
   MOZ_ASSERT(aMode == FileMode::Readonly || aMode == FileMode::Readwrite);
@@ -98,7 +93,7 @@ already_AddRefed<IDBFileHandle> IDBFileHandle::Create(
 
   aMutableFile->RegisterFileHandle(fileHandle);
 
-  return fileHandle.forget();
+  return fileHandle;
 }
 
 // static
@@ -191,17 +186,13 @@ void IDBFileHandle::FireCompleteOrAbortEvents(bool aAborted) {
   mFiredCompleteOrAbort = true;
 #endif
 
-  RefPtr<Event> event;
-  if (aAborted) {
-    event = CreateGenericEvent(this, nsDependentString(kAbortEventType),
-                               eDoesBubble, eNotCancelable);
-  } else {
-    event = CreateGenericEvent(this, nsDependentString(kCompleteEventType),
-                               eDoesNotBubble, eNotCancelable);
-  }
-  if (NS_WARN_IF(!event)) {
-    return;
-  }
+  // TODO: Why is it necessary to create the Event on the heap at all?
+  const auto event = CreateGenericEvent(
+      this,
+      aAborted ? nsDependentString(kAbortEventType)
+               : nsDependentString(kCompleteEventType),
+      aAborted ? eDoesBubble : eDoesNotBubble, eNotCancelable);
+  MOZ_ASSERT(event);
 
   IgnoredErrorResult rv;
   DispatchEvent(*event, rv);
@@ -258,7 +249,7 @@ void IDBFileHandle::Abort() {
   }
 }
 
-already_AddRefed<IDBFileRequest> IDBFileHandle::GetMetadata(
+RefPtr<IDBFileRequest> IDBFileHandle::GetMetadata(
     const IDBFileMetadataParameters& aParameters, ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
@@ -269,7 +260,7 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::GetMetadata(
 
   // Argument checking for get metadata.
   if (!aParameters.mSize && !aParameters.mLastModified) {
-    aRv.ThrowTypeError<MSG_METADATA_NOT_CONFIGURED>();
+    aRv.ThrowTypeError(u"Either size or lastModified should be true.");
     return nullptr;
   }
 
@@ -282,15 +273,15 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::GetMetadata(
   params.size() = aParameters.mSize;
   params.lastModified() = aParameters.mLastModified;
 
-  RefPtr<IDBFileRequest> fileRequest = GenerateFileRequest(this);
+  auto fileRequest = GenerateFileRequest(this);
 
   StartRequest(fileRequest, params);
 
-  return fileRequest.forget();
+  return fileRequest;
 }
 
-already_AddRefed<IDBFileRequest> IDBFileHandle::Truncate(
-    const Optional<uint64_t>& aSize, ErrorResult& aRv) {
+RefPtr<IDBFileRequest> IDBFileHandle::Truncate(const Optional<uint64_t>& aSize,
+                                               ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
   // State checking for write
@@ -320,7 +311,7 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::Truncate(
   FileRequestTruncateParams params;
   params.offset() = location;
 
-  RefPtr<IDBFileRequest> fileRequest = GenerateFileRequest(this);
+  auto fileRequest = GenerateFileRequest(this);
 
   StartRequest(fileRequest, params);
 
@@ -328,10 +319,10 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::Truncate(
     mLocation = aSize.Value();
   }
 
-  return fileRequest.forget();
+  return fileRequest;
 }
 
-already_AddRefed<IDBFileRequest> IDBFileHandle::Flush(ErrorResult& aRv) {
+RefPtr<IDBFileRequest> IDBFileHandle::Flush(ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
   // State checking for write
@@ -346,11 +337,11 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::Flush(ErrorResult& aRv) {
 
   FileRequestFlushParams params;
 
-  RefPtr<IDBFileRequest> fileRequest = GenerateFileRequest(this);
+  auto fileRequest = GenerateFileRequest(this);
 
   StartRequest(fileRequest, params);
 
-  return fileRequest.forget();
+  return fileRequest;
 }
 
 void IDBFileHandle::Abort(ErrorResult& aRv) {
@@ -390,7 +381,7 @@ bool IDBFileHandle::CheckStateAndArgumentsForRead(uint64_t aSize,
 
   // Argument checking for read
   if (!aSize) {
-    aRv.ThrowTypeError<MSG_INVALID_READ_SIZE>();
+    aRv.ThrowTypeError(u"0 (Zero) is not a valid read size.");
     return false;
   }
 
@@ -433,10 +424,9 @@ bool IDBFileHandle::CheckWindow() {
   return GetOwner();
 }
 
-already_AddRefed<IDBFileRequest> IDBFileHandle::Read(uint64_t aSize,
-                                                     bool aHasEncoding,
-                                                     const nsAString& aEncoding,
-                                                     ErrorResult& aRv) {
+RefPtr<IDBFileRequest> IDBFileHandle::Read(uint64_t aSize, bool aHasEncoding,
+                                           const nsAString& aEncoding,
+                                           ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
   // State and argument checking for read
@@ -453,7 +443,7 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::Read(uint64_t aSize,
   params.offset() = mLocation;
   params.size() = aSize;
 
-  RefPtr<IDBFileRequest> fileRequest = GenerateFileRequest(this);
+  auto fileRequest = GenerateFileRequest(this);
   if (aHasEncoding) {
     fileRequest->SetEncoding(aEncoding);
   }
@@ -462,10 +452,10 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::Read(uint64_t aSize,
 
   mLocation += aSize;
 
-  return fileRequest.forget();
+  return fileRequest;
 }
 
-already_AddRefed<IDBFileRequest> IDBFileHandle::WriteOrAppend(
+RefPtr<IDBFileRequest> IDBFileHandle::WriteOrAppend(
     const StringOrArrayBufferOrArrayBufferViewOrBlob& aValue, bool aAppend,
     ErrorResult& aRv) {
   AssertIsOnOwningThread();
@@ -486,8 +476,9 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::WriteOrAppend(
   return WriteOrAppend(aValue.GetAsBlob(), aAppend, aRv);
 }
 
-already_AddRefed<IDBFileRequest> IDBFileHandle::WriteOrAppend(
-    const nsAString& aValue, bool aAppend, ErrorResult& aRv) {
+RefPtr<IDBFileRequest> IDBFileHandle::WriteOrAppend(const nsAString& aValue,
+                                                    bool aAppend,
+                                                    ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
   // State checking for write or append
@@ -513,8 +504,9 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::WriteOrAppend(
   return WriteInternal(stringData, dataLength, aAppend, aRv);
 }
 
-already_AddRefed<IDBFileRequest> IDBFileHandle::WriteOrAppend(
-    const ArrayBuffer& aValue, bool aAppend, ErrorResult& aRv) {
+RefPtr<IDBFileRequest> IDBFileHandle::WriteOrAppend(const ArrayBuffer& aValue,
+                                                    bool aAppend,
+                                                    ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
   // State checking for write or append
@@ -547,7 +539,7 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::WriteOrAppend(
   return WriteInternal(stringData, dataLength, aAppend, aRv);
 }
 
-already_AddRefed<IDBFileRequest> IDBFileHandle::WriteOrAppend(
+RefPtr<IDBFileRequest> IDBFileHandle::WriteOrAppend(
     const ArrayBufferView& aValue, bool aAppend, ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
@@ -581,8 +573,8 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::WriteOrAppend(
   return WriteInternal(stringData, dataLength, aAppend, aRv);
 }
 
-already_AddRefed<IDBFileRequest> IDBFileHandle::WriteOrAppend(
-    Blob& aValue, bool aAppend, ErrorResult& aRv) {
+RefPtr<IDBFileRequest> IDBFileHandle::WriteOrAppend(Blob& aValue, bool aAppend,
+                                                    ErrorResult& aRv) {
   AssertIsOnOwningThread();
 
   // State checking for write or append
@@ -623,7 +615,7 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::WriteOrAppend(
   return WriteInternal(blobData, dataLength, aAppend, aRv);
 }
 
-already_AddRefed<IDBFileRequest> IDBFileHandle::WriteInternal(
+RefPtr<IDBFileRequest> IDBFileHandle::WriteInternal(
     const FileRequestData& aData, uint64_t aDataLength, bool aAppend,
     ErrorResult& aRv) {
   AssertIsOnOwningThread();
@@ -639,7 +631,7 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::WriteInternal(
   params.data() = aData;
   params.dataLength() = aDataLength;
 
-  RefPtr<IDBFileRequest> fileRequest = GenerateFileRequest(this);
+  auto fileRequest = GenerateFileRequest(this);
   MOZ_ASSERT(fileRequest);
 
   StartRequest(fileRequest, params);
@@ -650,7 +642,7 @@ already_AddRefed<IDBFileRequest> IDBFileHandle::WriteInternal(
     mLocation += aDataLength;
   }
 
-  return fileRequest.forget();
+  return fileRequest;
 }
 
 void IDBFileHandle::SendFinish() {

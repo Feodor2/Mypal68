@@ -10,9 +10,11 @@
 #include "nsCRT.h"
 #include "nsIParserUtils.h"
 
-void ConvertBufToPlainText(nsString& aConBuf, int aFlag) {
+const uint32_t kDefaultWrapColumn = 72;
+
+void ConvertBufToPlainText(nsString& aConBuf, int aFlag, uint32_t aWrapColumn) {
   nsCOMPtr<nsIParserUtils> utils = do_GetService(NS_PARSERUTILS_CONTRACTID);
-  utils->ConvertToPlainText(aConBuf, aFlag, 72, aConBuf);
+  utils->ConvertToPlainText(aConBuf, aFlag, aWrapColumn, aConBuf);
 }
 
 // Test for ASCII with format=flowed; delsp=yes
@@ -28,11 +30,13 @@ TEST(PlainTextSerializer, ASCIIWithFlowedDelSp)
       "Firefox Firefox Firefox Firefox"
       "</body></html>");
 
-  ConvertBufToPlainText(test, nsIDocumentEncoder::OutputFormatted |
-                                  nsIDocumentEncoder::OutputCRLineBreak |
-                                  nsIDocumentEncoder::OutputLFLineBreak |
-                                  nsIDocumentEncoder::OutputFormatFlowed |
-                                  nsIDocumentEncoder::OutputFormatDelSp);
+  ConvertBufToPlainText(test,
+                        nsIDocumentEncoder::OutputFormatted |
+                            nsIDocumentEncoder::OutputCRLineBreak |
+                            nsIDocumentEncoder::OutputLFLineBreak |
+                            nsIDocumentEncoder::OutputFormatFlowed |
+                            nsIDocumentEncoder::OutputFormatDelSp,
+                        kDefaultWrapColumn);
 
   // create result case
   result.AssignLiteral(
@@ -57,11 +61,13 @@ TEST(PlainTextSerializer, CJKWithFlowedDelSp)
   }
   test.AppendLiteral("</body></html>");
 
-  ConvertBufToPlainText(test, nsIDocumentEncoder::OutputFormatted |
-                                  nsIDocumentEncoder::OutputCRLineBreak |
-                                  nsIDocumentEncoder::OutputLFLineBreak |
-                                  nsIDocumentEncoder::OutputFormatFlowed |
-                                  nsIDocumentEncoder::OutputFormatDelSp);
+  ConvertBufToPlainText(test,
+                        nsIDocumentEncoder::OutputFormatted |
+                            nsIDocumentEncoder::OutputCRLineBreak |
+                            nsIDocumentEncoder::OutputLFLineBreak |
+                            nsIDocumentEncoder::OutputFormatFlowed |
+                            nsIDocumentEncoder::OutputFormatDelSp,
+                        kDefaultWrapColumn);
 
   // create result case
   for (uint32_t i = 0; i < 36; i++) {
@@ -95,7 +101,8 @@ TEST(PlainTextSerializer, CJKWithDisallowLineBreaking)
                             nsIDocumentEncoder::OutputCRLineBreak |
                             nsIDocumentEncoder::OutputLFLineBreak |
                             nsIDocumentEncoder::OutputFormatFlowed |
-                            nsIDocumentEncoder::OutputDisallowLineBreaking);
+                            nsIDocumentEncoder::OutputDisallowLineBreaking,
+                        kDefaultWrapColumn);
 
   // create result case
   for (uint32_t i = 0; i < 400; i++) {
@@ -123,10 +130,12 @@ TEST(PlainTextSerializer, PreformatFlowedQuotes)
       "&gt;&gt; Firefox Firefox Firefox Firefox<br>"
       "</span></body></html>");
 
-  ConvertBufToPlainText(test, nsIDocumentEncoder::OutputFormatted |
-                                  nsIDocumentEncoder::OutputCRLineBreak |
-                                  nsIDocumentEncoder::OutputLFLineBreak |
-                                  nsIDocumentEncoder::OutputFormatFlowed);
+  ConvertBufToPlainText(test,
+                        nsIDocumentEncoder::OutputFormatted |
+                            nsIDocumentEncoder::OutputCRLineBreak |
+                            nsIDocumentEncoder::OutputLFLineBreak |
+                            nsIDocumentEncoder::OutputFormatFlowed,
+                        kDefaultWrapColumn);
 
   // create result case
   result.AssignLiteral(
@@ -149,7 +158,7 @@ TEST(PlainTextSerializer, PrettyPrintedHtml)
                      "  first<br>" NS_LINEBREAK "  second<br>" NS_LINEBREAK
                      "</body>" NS_LINEBREAK "</html>");
 
-  ConvertBufToPlainText(test, 0);
+  ConvertBufToPlainText(test, 0, kDefaultWrapColumn);
   ASSERT_TRUE(test.EqualsLiteral("first" NS_LINEBREAK "second" NS_LINEBREAK))
   << "Wrong prettyprinted html to text serialization";
 }
@@ -162,7 +171,7 @@ TEST(PlainTextSerializer, PreElement)
                      "  second" NS_LINEBREAK "</pre>" NS_LINEBREAK
                      "</body>" NS_LINEBREAK "</html>");
 
-  ConvertBufToPlainText(test, 0);
+  ConvertBufToPlainText(test, 0, kDefaultWrapColumn);
   ASSERT_TRUE(test.EqualsLiteral("  first" NS_LINEBREAK
                                  "  second" NS_LINEBREAK NS_LINEBREAK))
   << "Wrong prettyprinted html to text serialization";
@@ -177,7 +186,7 @@ TEST(PlainTextSerializer, BlockElement)
                      "  second" NS_LINEBREAK "</div>" NS_LINEBREAK
                      "</body>" NS_LINEBREAK "</html>");
 
-  ConvertBufToPlainText(test, 0);
+  ConvertBufToPlainText(test, 0, kDefaultWrapColumn);
   ASSERT_TRUE(test.EqualsLiteral("first" NS_LINEBREAK "second" NS_LINEBREAK))
   << "Wrong prettyprinted html to text serialization";
 }
@@ -186,14 +195,15 @@ TEST(PlainTextSerializer, PreWrapElementForThunderbird)
 {
   // This test examines the magic pre-wrap setup that Thunderbird relies on.
   nsString test;
-  test.AppendLiteral(
-      "<html>" NS_LINEBREAK
-      "<body style=\"white-space: pre-wrap; width: 10ch;\">" NS_LINEBREAK
-      "<pre>" NS_LINEBREAK "  first line is too long" NS_LINEBREAK
-      "  second line is even loooonger  " NS_LINEBREAK "</pre>" NS_LINEBREAK
-      "</body>" NS_LINEBREAK "</html>");
+  test.AppendLiteral("<html>" NS_LINEBREAK
+                     "<body style=\"white-space: pre-wrap;\">" NS_LINEBREAK
+                     "<pre>" NS_LINEBREAK
+                     "  first line is too long" NS_LINEBREAK
+                     "  second line is even loooonger  " NS_LINEBREAK
+                     "</pre>" NS_LINEBREAK "</body>" NS_LINEBREAK "</html>");
 
-  ConvertBufToPlainText(test, nsIDocumentEncoder::OutputWrap);
+  const uint32_t wrapColumn = 10;
+  ConvertBufToPlainText(test, nsIDocumentEncoder::OutputWrap, wrapColumn);
   // "\n\n  first\nline is\ntoo long\n  second\nline is\neven\nloooonger\n\n\n"
   ASSERT_TRUE(test.EqualsLiteral(
       NS_LINEBREAK NS_LINEBREAK
@@ -209,7 +219,38 @@ TEST(PlainTextSerializer, Simple)
   test.AppendLiteral(
       "<html><base>base</base><head><span>span</span></head>"
       "<body>body</body></html>");
-  ConvertBufToPlainText(test, 0);
+  ConvertBufToPlainText(test, 0, kDefaultWrapColumn);
   ASSERT_TRUE(test.EqualsLiteral("basespanbody"))
   << "Wrong html to text serialization";
+}
+
+TEST(PlainTextSerializer, OneHundredAndOneOL)
+{
+  nsAutoString test;
+  test.AppendLiteral(
+      "<html>"
+      "<body>"
+      "<ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><"
+      "ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><"
+      "ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><"
+      "ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><"
+      "ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><"
+      "ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol><ol></ol></ol></ol></"
+      "ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></"
+      "ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></"
+      "ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></"
+      "ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></"
+      "ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></"
+      "ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></"
+      "ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></ol></"
+      "ol></ol><li>X</li></ol>"
+      "</body>"
+      "</html>");
+
+  ConvertBufToPlainText(test, nsIDocumentEncoder::OutputFormatted,
+                        kDefaultWrapColumn);
+
+  nsAutoString expected;
+  expected.AppendLiteral(" 1. X" NS_LINEBREAK);
+  ASSERT_EQ(test, expected);
 }

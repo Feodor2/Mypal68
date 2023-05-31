@@ -11,6 +11,7 @@
  */
 
 // https://drafts.csswg.org/cssom/#the-cssrule-interface
+[Exposed=Window]
 interface CSSRule {
 
   const unsigned short STYLE_RULE = 1;

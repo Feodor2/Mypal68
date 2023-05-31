@@ -11,7 +11,6 @@
 
 #include "mozilla/MemoryReporting.h"
 #include "nsIContent.h"  // for nsLinkState
-#include "nsIContentPolicy.h"
 
 namespace mozilla {
 

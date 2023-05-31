@@ -50,7 +50,7 @@ PaymentMethodChangeEvent::Constructor(
 already_AddRefed<PaymentMethodChangeEvent>
 PaymentMethodChangeEvent::Constructor(
     const GlobalObject& aGlobal, const nsAString& aType,
-    const PaymentMethodChangeEventInit& aEventInitDict, ErrorResult& aRv) {
+    const PaymentMethodChangeEventInit& aEventInitDict) {
   nsCOMPtr<mozilla::dom::EventTarget> owner =
       do_QueryInterface(aGlobal.GetAsSupports());
   RefPtr<PaymentMethodChangeEvent> e = new PaymentMethodChangeEvent(owner);

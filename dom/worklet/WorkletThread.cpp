@@ -19,12 +19,12 @@ namespace {
 // The size of the worklet runtime heaps in bytes.
 #define WORKLET_DEFAULT_RUNTIME_HEAPSIZE 32 * 1024 * 1024
 
-// The size of the generational GC nursery for worklet, in bytes.
-#define WORKLET_DEFAULT_NURSERY_SIZE 1 * 1024 * 1024
-
 // The C stack size. We use the same stack size on all platforms for
 // consistency.
 const uint32_t kWorkletStackSize = 256 * sizeof(size_t) * 1024;
+
+// Half the size of the actual C stack, to be safe.
+#define WORKLET_CONTEXT_NATIVE_STACK_LIMIT 128 * sizeof(size_t) * 1024
 
 // Helper functions
 
@@ -33,11 +33,6 @@ bool PreserveWrapper(JSContext* aCx, JS::HandleObject aObj) {
   MOZ_ASSERT(aObj);
   MOZ_ASSERT(mozilla::dom::IsDOMObject(aObj));
   return mozilla::dom::TryPreserveWrapper(aObj);
-}
-
-void DestroyWorkletPrincipals(JSPrincipals* aPrincipals) {
-  MOZ_ASSERT_UNREACHABLE(
-      "Worklet principals refcount should never fall below one");
 }
 
 JSObject* Wrap(JSContext* aCx, JS::HandleObject aExisting,
@@ -85,7 +80,7 @@ class WorkletJSRuntime final : public mozilla::CycleCollectedJSRuntime {
     // destructor will trigger a final GC.  The nsCycleCollector_collect()
     // call can be skipped in this GC as ~CycleCollectedJSContext removes the
     // context from |this|.
-    if (aStatus == JSGC_END && !Contexts().isEmpty()) {
+    if (aStatus == JSGC_END && GetContext()) {
       nsCycleCollector_collect(nullptr);
     }
   }
@@ -123,8 +118,7 @@ class WorkletJSContext final : public CycleCollectedJSContext {
     MOZ_ASSERT(!NS_IsMainThread());
 
     nsresult rv = CycleCollectedJSContext::Initialize(
-        aParentRuntime, WORKLET_DEFAULT_RUNTIME_HEAPSIZE,
-        WORKLET_DEFAULT_NURSERY_SIZE);
+        aParentRuntime, WORKLET_DEFAULT_RUNTIME_HEAPSIZE);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -132,7 +126,7 @@ class WorkletJSContext final : public CycleCollectedJSContext {
     JSContext* cx = Context();
 
     js::SetPreserveWrapperCallback(cx, PreserveWrapper);
-    JS_InitDestroyPrincipalsCallback(cx, DestroyWorkletPrincipals);
+    JS_InitDestroyPrincipalsCallback(cx, WorkletPrincipals::Destroy);
     JS_SetWrapObjectCallbacks(cx, &WrapObjectCallbacks);
     JS_SetFutexCanWait(cx);
 
@@ -162,7 +156,48 @@ class WorkletJSContext final : public CycleCollectedJSContext {
     // Currently no support for special system worklet privileges.
     return false;
   }
+
+  void ReportError(JSErrorReport* aReport,
+                   JS::ConstUTF8CharsZ aToStringResult) override;
+
+  uint64_t GetCurrentWorkletWindowID() {
+    JSObject* global = JS::CurrentGlobalOrNull(Context());
+    if (NS_WARN_IF(!global)) {
+      return 0;
+    }
+    nsIGlobalObject* nativeGlobal = xpc::NativeGlobal(global);
+    nsCOMPtr<WorkletGlobalScope> workletGlobal =
+        do_QueryInterface(nativeGlobal);
+    if (NS_WARN_IF(!workletGlobal)) {
+      return 0;
+    }
+    return workletGlobal->Impl()->LoadInfo().InnerWindowID();
+  }
 };
+
+void WorkletJSContext::ReportError(JSErrorReport* aReport,
+                                   JS::ConstUTF8CharsZ aToStringResult) {
+  RefPtr<xpc::ErrorReport> xpcReport = new xpc::ErrorReport();
+  xpcReport->Init(aReport, aToStringResult.c_str(), IsSystemCaller(),
+                  GetCurrentWorkletWindowID());
+  RefPtr<AsyncErrorReporter> reporter = new AsyncErrorReporter(xpcReport);
+
+  JSContext* cx = Context();
+  JS::Rooted<JS::Value> exn(cx);
+  if (JS_GetPendingException(cx, &exn)) {
+    JS::Rooted<JSObject*> exnStack(cx, JS::GetPendingExceptionStack(cx));
+    JS_ClearPendingException(cx);
+    JS::Rooted<JSObject*> stack(cx);
+    JS::Rooted<JSObject*> stackGlobal(cx);
+    xpc::FindExceptionStackForConsoleReport(nullptr, exn, exnStack, &stack,
+                                            &stackGlobal);
+    if (stack) {
+      reporter->SerializeStack(cx, stack);
+    }
+  }
+
+  NS_DispatchToMainThread(reporter);
+}
 
 // This is the first runnable to be dispatched. It calls the RunEventLoop() so
 // basically everything happens into this runnable. The reason behind this
@@ -287,12 +322,14 @@ void WorkletThread::EnsureCycleCollectedJSContext(JSRuntime* aParentRuntime) {
 
   // FIXME: JS_SetDefaultLocale
   // FIXME: JSSettings
-  // FIXME: JS_SetNativeStackQuota
   // FIXME: JS_SetSecurityCallbacks
   // FIXME: JS::SetAsyncTaskCallbacks
   // FIXME: JS_AddInterruptCallback
   // FIXME: JS::SetCTypesActivityCallback
   // FIXME: JS_SetGCZeal
+
+  JS_SetNativeStackQuota(context->Context(),
+                         WORKLET_CONTEXT_NATIVE_STACK_LIMIT);
 
   if (!JS::InitSelfHostedCode(context->Context())) {
     // TODO: error propagation
@@ -330,7 +367,7 @@ void WorkletThread::Terminate() {
 }
 
 void WorkletThread::TerminateInternal() {
-  AssertIsOnWorkletThread();
+  MOZ_ASSERT(!CycleCollectedJSContext::Get() || IsOnWorkletThread());
 
   mExitLoop = true;
 

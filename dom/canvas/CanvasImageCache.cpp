@@ -12,6 +12,7 @@
 #include "mozilla/dom/HTMLCanvasElement.h"
 #include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_canvas.h"
 #include "mozilla/SystemGroup.h"
 #include "mozilla/gfx/2D.h"
 #include "gfx2DGlue.h"
@@ -41,7 +42,8 @@ struct ImageCacheEntryData {
       : mImage(aOther.mImage),
         mCanvas(aOther.mCanvas),
         mSourceSurface(aOther.mSourceSurface),
-        mSize(aOther.mSize) {}
+        mSize(aOther.mSize),
+        mIntrinsicSize(aOther.mIntrinsicSize) {}
   explicit ImageCacheEntryData(const ImageCacheKey& aKey)
       : mImage(aKey.mImage), mCanvas(aKey.mCanvas) {}
 
@@ -54,6 +56,7 @@ struct ImageCacheEntryData {
   // Value
   RefPtr<SourceSurface> mSourceSurface;
   IntSize mSize;
+  IntSize mIntrinsicSize;
   nsExpirationState mState;
 };
 
@@ -114,9 +117,6 @@ class AllCanvasImageCacheEntry : public PLDHashEntryHdr {
   nsCOMPtr<imgIContainer> mImage;
   RefPtr<SourceSurface> mSourceSurface;
 };
-
-static bool sPrefsInitialized = false;
-static int32_t sCanvasImageCacheLimit = 0;
 
 class ImageCacheObserver;
 
@@ -216,11 +216,6 @@ ImageCache::ImageCache()
           GENERATION_MS, "ImageCache",
           SystemGroup::EventTargetFor(TaskCategory::Other)),
       mTotal(0) {
-  if (!sPrefsInitialized) {
-    sPrefsInitialized = true;
-    Preferences::AddIntVarCache(&sCanvasImageCacheLimit,
-                                "canvas.image.cache.limit", 0);
-  }
   mImageCacheObserver = new ImageCacheObserver(this);
   MOZ_RELEASE_ASSERT(mImageCacheObserver,
                      "GFX: Can't alloc ImageCacheObserver");
@@ -256,7 +251,8 @@ static already_AddRefed<imgIContainer> GetImageContainer(dom::Element* aImage) {
 void CanvasImageCache::NotifyDrawImage(Element* aImage,
                                        HTMLCanvasElement* aCanvas,
                                        SourceSurface* aSource,
-                                       const IntSize& aSize) {
+                                       const IntSize& aSize,
+                                       const IntSize& aIntrinsicSize) {
   if (!gImageCache) {
     gImageCache = new ImageCache();
     nsContentUtils::RegisterShutdownObserver(
@@ -283,6 +279,7 @@ void CanvasImageCache::NotifyDrawImage(Element* aImage,
     gImageCache->AddObject(entry->mData);
     entry->mData->mSourceSurface = aSource;
     entry->mData->mSize = aSize;
+    entry->mData->mIntrinsicSize = aIntrinsicSize;
     gImageCache->mTotal += entry->mData->SizeInBytes();
 
     AllCanvasImageCacheEntry* allEntry =
@@ -292,11 +289,15 @@ void CanvasImageCache::NotifyDrawImage(Element* aImage,
     }
   }
 
-  if (!sCanvasImageCacheLimit) return;
+  if (!StaticPrefs::canvas_image_cache_limit()) {
+    return;
+  }
 
   // Expire the image cache early if its larger than we want it to be.
-  while (gImageCache->mTotal > size_t(sCanvasImageCacheLimit))
+  while (gImageCache->mTotal >
+         size_t(StaticPrefs::canvas_image_cache_limit())) {
     gImageCache->AgeOneGeneration();
+  }
 }
 
 SourceSurface* CanvasImageCache::LookupAllCanvas(Element* aImage) {
@@ -320,7 +321,8 @@ SourceSurface* CanvasImageCache::LookupAllCanvas(Element* aImage) {
 
 SourceSurface* CanvasImageCache::LookupCanvas(Element* aImage,
                                               HTMLCanvasElement* aCanvas,
-                                              IntSize* aSizeOut) {
+                                              IntSize* aSizeOut,
+                                              IntSize* aIntrinsicSizeOut) {
   if (!gImageCache) {
     return nullptr;
   }
@@ -340,6 +342,7 @@ SourceSurface* CanvasImageCache::LookupCanvas(Element* aImage,
 
   gImageCache->MarkUsed(entry->mData);
   *aSizeOut = entry->mData->mSize;
+  *aIntrinsicSizeOut = entry->mData->mIntrinsicSize;
   return entry->mData->mSourceSurface;
 }
 

@@ -218,15 +218,13 @@ PresentationControlService.prototype = {
 
         socketTransport = sts.createTransport(
           ["ssl"],
-          1,
           aDeviceInfo.address,
           aDeviceInfo.port,
           null
         );
       } else {
         socketTransport = sts.createTransport(
-          null,
-          0,
+          [],
           aDeviceInfo.address,
           aDeviceInfo.port,
           null

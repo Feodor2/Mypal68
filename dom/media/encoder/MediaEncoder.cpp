@@ -6,12 +6,12 @@
 
 #include <algorithm>
 #include "AudioNodeEngine.h"
-#include "AudioNodeStream.h"
+#include "AudioNodeTrack.h"
 #include "DriftCompensation.h"
 #include "GeckoProfiler.h"
 #include "MediaDecoder.h"
-#include "MediaStreamGraphImpl.h"
-#include "MediaStreamListener.h"
+#include "MediaTrackGraphImpl.h"
+#include "MediaTrackListener.h"
 #include "mozilla/dom/AudioNode.h"
 #include "mozilla/dom/AudioStreamTrack.h"
 #include "mozilla/dom/MediaStreamTrack.h"
@@ -20,11 +20,10 @@
 #include "mozilla/Logging.h"
 #include "mozilla/media/MediaUtils.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/Unused.h"
-#include "nsIPrincipal.h"
 #include "nsMimeTypes.h"
 #include "nsThreadUtils.h"
 #include "OggWriter.h"
@@ -49,7 +48,7 @@ namespace mozilla {
 using namespace dom;
 using namespace media;
 
-class MediaEncoder::AudioTrackListener : public DirectMediaStreamTrackListener {
+class MediaEncoder::AudioTrackListener : public DirectMediaTrackListener {
  public:
   AudioTrackListener(DriftCompensator* aDriftCompensator,
                      AudioTrackEncoder* aEncoder, TaskQueue* aEncoderThread)
@@ -84,7 +83,7 @@ class MediaEncoder::AudioTrackListener : public DirectMediaStreamTrackListener {
     }
   }
 
-  void NotifyQueuedChanges(MediaStreamGraph* aGraph, StreamTime aTrackOffset,
+  void NotifyQueuedChanges(MediaTrackGraph* aGraph, TrackTime aTrackOffset,
                            const MediaSegment& aQueuedMedia) override {
     TRACE_COMMENT("Encoder %p", mEncoder.get());
     MOZ_ASSERT(mEncoder);
@@ -114,7 +113,7 @@ class MediaEncoder::AudioTrackListener : public DirectMediaStreamTrackListener {
     Unused << rv;
   }
 
-  void NotifyEnded() override {
+  void NotifyEnded(MediaTrackGraph* aGraph) override {
     MOZ_ASSERT(mEncoder);
     MOZ_ASSERT(mEncoderThread);
 
@@ -129,7 +128,7 @@ class MediaEncoder::AudioTrackListener : public DirectMediaStreamTrackListener {
     Unused << rv;
   }
 
-  void NotifyRemoved() override {
+  void NotifyRemoved(MediaTrackGraph* aGraph) override {
     if (!mShutdown) {
       nsresult rv = mEncoderThread->Dispatch(
           NewRunnableMethod("mozilla::AudioTrackEncoder::NotifyEndOfStream",
@@ -157,7 +156,7 @@ class MediaEncoder::AudioTrackListener : public DirectMediaStreamTrackListener {
   RefPtr<TaskQueue> mEncoderThread;
 };
 
-class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
+class MediaEncoder::VideoTrackListener : public DirectMediaTrackListener {
  public:
   VideoTrackListener(VideoTrackEncoder* aEncoder, TaskQueue* aEncoderThread)
       : mDirectConnected(false),
@@ -191,7 +190,7 @@ class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
     }
   }
 
-  void NotifyQueuedChanges(MediaStreamGraph* aGraph, StreamTime aTrackOffset,
+  void NotifyQueuedChanges(MediaTrackGraph* aGraph, TrackTime aTrackOffset,
                            const MediaSegment& aQueuedMedia) override {
     TRACE_COMMENT("Encoder %p", mEncoder.get());
     MOZ_ASSERT(mEncoder);
@@ -218,8 +217,7 @@ class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
     Unused << rv;
   }
 
-  void NotifyRealtimeTrackData(MediaStreamGraph* aGraph,
-                               StreamTime aTrackOffset,
+  void NotifyRealtimeTrackData(MediaTrackGraph* aGraph, TrackTime aTrackOffset,
                                const MediaSegment& aMedia) override {
     TRACE_COMMENT("Encoder %p", mEncoder.get());
     MOZ_ASSERT(mEncoder);
@@ -248,7 +246,8 @@ class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
     Unused << rv;
   }
 
-  void NotifyEnabledStateChanged(bool aEnabled) override {
+  void NotifyEnabledStateChanged(MediaTrackGraph* aGraph,
+                                 bool aEnabled) override {
     MOZ_ASSERT(mEncoder);
     MOZ_ASSERT(mEncoderThread);
 
@@ -270,7 +269,7 @@ class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
     Unused << rv;
   }
 
-  void NotifyEnded() override {
+  void NotifyEnded(MediaTrackGraph* aGraph) override {
     MOZ_ASSERT(mEncoder);
     MOZ_ASSERT(mEncoderThread);
 
@@ -285,7 +284,7 @@ class MediaEncoder::VideoTrackListener : public DirectMediaStreamTrackListener {
     Unused << rv;
   }
 
-  void NotifyRemoved() override {
+  void NotifyRemoved(MediaTrackGraph* aGraph) override {
     if (!mShutdown) {
       nsresult rv = mEncoderThread->Dispatch(
           NewRunnableMethod("mozilla::VideoTrackEncoder::NotifyEndOfStream",
@@ -433,17 +432,17 @@ MediaEncoder::MediaEncoder(TaskQueue* aEncoderThread,
 
 MediaEncoder::~MediaEncoder() { MOZ_ASSERT(mListeners.IsEmpty()); }
 
-void MediaEncoder::RunOnGraph(already_AddRefed<Runnable> aRunnable) {
-  MediaStreamGraphImpl* graph;
-  if (mAudioTrack) {
-    graph = mAudioTrack->GraphImpl();
-  } else if (mVideoTrack) {
-    graph = mVideoTrack->GraphImpl();
-  } else if (mPipeStream) {
-    graph = mPipeStream->GraphImpl();
-  } else {
-    MOZ_CRASH("No graph");
+void MediaEncoder::EnsureGraphTrackFrom(MediaTrack* aTrack) {
+  if (mGraphTrack) {
+    return;
   }
+  MOZ_DIAGNOSTIC_ASSERT(!aTrack->IsDestroyed());
+  mGraphTrack = MakeAndAddRef<SharedDummyTrack>(
+      aTrack->GraphImpl()->CreateSourceTrack(MediaSegment::VIDEO));
+}
+
+void MediaEncoder::RunOnGraph(already_AddRefed<Runnable> aRunnable) {
+  MOZ_ASSERT(mGraphTrack);
   class Message : public ControlMessage {
    public:
     explicit Message(already_AddRefed<Runnable> aRunnable)
@@ -451,46 +450,48 @@ void MediaEncoder::RunOnGraph(already_AddRefed<Runnable> aRunnable) {
     void Run() override { mRunnable->Run(); }
     const RefPtr<Runnable> mRunnable;
   };
-  graph->AppendMessage(MakeUnique<Message>(std::move(aRunnable)));
+  mGraphTrack->mTrack->GraphImpl()->AppendMessage(
+      MakeUnique<Message>(std::move(aRunnable)));
 }
 
 void MediaEncoder::Suspend() {
   RunOnGraph(NS_NewRunnableFunction(
-      "MediaEncoder::Suspend",
+      "MediaEncoder::Suspend (graph)",
       [thread = mEncoderThread, audio = mAudioEncoder, video = mVideoEncoder] {
-        if (audio) {
-          nsresult rv = thread->Dispatch(
-              NewRunnableMethod("AudioTrackEncoder::Suspend", audio,
-                                &AudioTrackEncoder::Suspend));
-          MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-          Unused << rv;
-        }
-        if (video) {
-          nsresult rv = thread->Dispatch(NewRunnableMethod<TimeStamp>(
-              "VideoTrackEncoder::Suspend", video, &VideoTrackEncoder::Suspend,
-              TimeStamp::Now()));
-          MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-          Unused << rv;
+        if (NS_FAILED(thread->Dispatch(
+                NS_NewRunnableFunction("MediaEncoder::Suspend (encoder)",
+                                       [audio, video, now = TimeStamp::Now()] {
+                                         if (audio) {
+                                           audio->Suspend();
+                                         }
+                                         if (video) {
+                                           video->Suspend(now);
+                                         }
+                                       })))) {
+          // RunOnGraph added an extra async step, and now `thread` has shut
+          // down.
+          return;
         }
       }));
 }
 
 void MediaEncoder::Resume() {
   RunOnGraph(NS_NewRunnableFunction(
-      "MediaEncoder::Resume",
+      "MediaEncoder::Resume (graph)",
       [thread = mEncoderThread, audio = mAudioEncoder, video = mVideoEncoder] {
-        if (audio) {
-          nsresult rv = thread->Dispatch(NewRunnableMethod(
-              "AudioTrackEncoder::Resume", audio, &AudioTrackEncoder::Resume));
-          MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-          Unused << rv;
-        }
-        if (video) {
-          nsresult rv = thread->Dispatch(NewRunnableMethod<TimeStamp>(
-              "VideoTrackEncoder::Resume", video, &VideoTrackEncoder::Resume,
-              TimeStamp::Now()));
-          MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-          Unused << rv;
+        if (NS_FAILED(thread->Dispatch(
+                NS_NewRunnableFunction("MediaEncoder::Resume (encoder)",
+                                       [audio, video, now = TimeStamp::Now()] {
+                                         if (audio) {
+                                           audio->Resume();
+                                         }
+                                         if (video) {
+                                           video->Resume(now);
+                                         }
+                                       })))) {
+          // RunOnGraph added an extra async step, and now `thread` has shut
+          // down.
+          return;
         }
       }));
 }
@@ -503,30 +504,30 @@ void MediaEncoder::ConnectAudioNode(AudioNode* aNode, uint32_t aOutput) {
     return;
   }
 
-  // Only AudioNodeStream of kind EXTERNAL_OUTPUT stores output audio data in
-  // the track (see AudioNodeStream::AdvanceOutputSegment()). That means track
-  // union stream in recorder session won't be able to copy data from the
-  // stream of non-destination node. Create a pipe stream in this case.
+  // Only AudioNodeTrack of kind EXTERNAL_OUTPUT stores output audio data in
+  // the track (see AudioNodeTrack::AdvanceOutputSegment()). That means
+  // forwarding input track in recorder session won't be able to copy data from
+  // the track of non-destination node. Create a pipe track in this case.
   if (aNode->NumberOfOutputs() > 0) {
     AudioContext* ctx = aNode->Context();
     AudioNodeEngine* engine = new AudioNodeEngine(nullptr);
-    AudioNodeStream::Flags flags = AudioNodeStream::EXTERNAL_OUTPUT |
-                                   AudioNodeStream::NEED_MAIN_THREAD_FINISHED;
-    mPipeStream = AudioNodeStream::Create(ctx, engine, flags, ctx->Graph());
-    AudioNodeStream* ns = aNode->GetStream();
+    AudioNodeTrack::Flags flags = AudioNodeTrack::EXTERNAL_OUTPUT |
+                                  AudioNodeTrack::NEED_MAIN_THREAD_ENDED;
+    mPipeTrack = AudioNodeTrack::Create(ctx, engine, flags, ctx->Graph());
+    AudioNodeTrack* ns = aNode->GetTrack();
     if (ns) {
-      mInputPort = mPipeStream->AllocateInputPort(aNode->GetStream(), TRACK_ANY,
-                                                  TRACK_ANY, 0, aOutput);
+      mInputPort = mPipeTrack->AllocateInputPort(aNode->GetTrack(), 0, aOutput);
     }
   }
 
   mAudioNode = aNode;
 
-  if (mPipeStream) {
-    mPipeStream->AddTrackListener(mAudioListener, AudioNodeStream::AUDIO_TRACK);
+  if (mPipeTrack) {
+    mPipeTrack->AddListener(mAudioListener);
+    EnsureGraphTrackFrom(mPipeTrack);
   } else {
-    mAudioNode->GetStream()->AddTrackListener(mAudioListener,
-                                              AudioNodeStream::AUDIO_TRACK);
+    mAudioNode->GetTrack()->AddListener(mAudioListener);
+    EnsureGraphTrackFrom(mAudioNode->GetTrack());
   }
 }
 
@@ -534,9 +535,11 @@ void MediaEncoder::ConnectMediaStreamTrack(MediaStreamTrack* aTrack) {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (aTrack->Ended()) {
-    NS_ASSERTION(false, "Cannot connect ended track");
+    MOZ_ASSERT_UNREACHABLE("Cannot connect ended track");
     return;
   }
+
+  EnsureGraphTrackFrom(aTrack->GetTrack());
 
   if (AudioStreamTrack* audio = aTrack->AsAudioStreamTrack()) {
     if (!mAudioEncoder) {
@@ -553,7 +556,7 @@ void MediaEncoder::ConnectMediaStreamTrack(MediaStreamTrack* aTrack) {
     }
 
     mAudioTrack = audio;
-    // With full duplex we don't risk having audio come in late to the MSG
+    // With full duplex we don't risk having audio come in late to the MTG
     // so we won't need a direct listener.
     const bool enableDirectListener =
         !Preferences::GetBool("media.navigator.audio.full_duplex", false);
@@ -635,33 +638,76 @@ already_AddRefed<MediaEncoder> MediaEncoder::CreateEncoder(
   }
 #ifdef MOZ_WEBM_ENCODER
   else if (MediaEncoder::IsWebMEncoderEnabled() &&
-           (aMIMEType.EqualsLiteral(VIDEO_WEBM) ||
-            (aTrackTypes & ContainerWriter::CREATE_VIDEO_TRACK))) {
+           aMIMEType.EqualsLiteral(VIDEO_WEBM)) {
     if (aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK &&
         MediaDecoder::IsOpusEnabled()) {
       audioEncoder = MakeAndAddRef<OpusTrackEncoder>(aTrackRate);
-      NS_ENSURE_TRUE(audioEncoder, nullptr);
     }
-    if (Preferences::GetBool("media.recorder.video.frame_drops", true)) {
-      videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
-          driftCompensator, aTrackRate, FrameDroppingMode::ALLOW);
-    } else {
-      videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
-          driftCompensator, aTrackRate, FrameDroppingMode::DISALLOW);
+    if (aTrackTypes & ContainerWriter::CREATE_VIDEO_TRACK) {
+      if (Preferences::GetBool("media.recorder.video.frame_drops", true)) {
+        videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
+            driftCompensator, aTrackRate, FrameDroppingMode::ALLOW);
+      } else {
+        videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
+            driftCompensator, aTrackRate, FrameDroppingMode::DISALLOW);
+      }
     }
     writer = MakeUnique<WebMWriter>(aTrackTypes);
-    NS_ENSURE_TRUE(writer, nullptr);
-    NS_ENSURE_TRUE(videoEncoder, nullptr);
+    mimeType = NS_LITERAL_STRING(VIDEO_WEBM);
+  } else if (MediaEncoder::IsWebMEncoderEnabled() &&
+             aMIMEType.EqualsLiteral(AUDIO_WEBM) &&
+             aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK) {
+    if (aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK &&
+        MediaDecoder::IsOpusEnabled()) {
+      audioEncoder = MakeAndAddRef<OpusTrackEncoder>(aTrackRate);
+    }
+    if (aTrackTypes & ContainerWriter::CREATE_VIDEO_TRACK) {
+      if (Preferences::GetBool("media.recorder.video.frame_drops", true)) {
+        videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
+            driftCompensator, aTrackRate, FrameDroppingMode::ALLOW);
+      } else {
+        videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
+            driftCompensator, aTrackRate, FrameDroppingMode::DISALLOW);
+      }
+      mimeType = NS_LITERAL_STRING(VIDEO_WEBM);
+    } else {
+      mimeType = NS_LITERAL_STRING(AUDIO_WEBM);
+    }
+    writer = MakeUnique<WebMWriter>(aTrackTypes);
+  }
+#endif  // MOZ_WEBM_ENCODER
+  else if (MediaDecoder::IsOggEnabled() && MediaDecoder::IsOpusEnabled() &&
+           aMIMEType.EqualsLiteral(AUDIO_OGG) &&
+           aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK) {
+    writer = MakeUnique<OggWriter>();
+    audioEncoder = MakeAndAddRef<OpusTrackEncoder>(aTrackRate);
+    mimeType = NS_LITERAL_STRING(AUDIO_OGG);
+  }
+#ifdef MOZ_WEBM_ENCODER
+  else if (MediaEncoder::IsWebMEncoderEnabled() &&
+           (aTrackTypes & ContainerWriter::CREATE_VIDEO_TRACK ||
+            !MediaDecoder::IsOggEnabled())) {
+    if (aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK &&
+        MediaDecoder::IsOpusEnabled()) {
+      audioEncoder = MakeAndAddRef<OpusTrackEncoder>(aTrackRate);
+    }
+    if (aTrackTypes & ContainerWriter::CREATE_VIDEO_TRACK) {
+      if (Preferences::GetBool("media.recorder.video.frame_drops", true)) {
+        videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
+            driftCompensator, aTrackRate, FrameDroppingMode::ALLOW);
+      } else {
+        videoEncoder = MakeAndAddRef<VP8TrackEncoder>(
+            driftCompensator, aTrackRate, FrameDroppingMode::DISALLOW);
+      }
+    }
+    writer = MakeUnique<WebMWriter>(aTrackTypes);
     mimeType = NS_LITERAL_STRING(VIDEO_WEBM);
   }
 #endif  // MOZ_WEBM_ENCODER
   else if (MediaDecoder::IsOggEnabled() && MediaDecoder::IsOpusEnabled() &&
-           (aMIMEType.EqualsLiteral(AUDIO_OGG) ||
-            (aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK))) {
+           aTrackTypes & ContainerWriter::CREATE_AUDIO_TRACK) {
     writer = MakeUnique<OggWriter>();
     audioEncoder = MakeAndAddRef<OpusTrackEncoder>(aTrackRate);
-    NS_ENSURE_TRUE(writer, nullptr);
-    NS_ENSURE_TRUE(audioEncoder, nullptr);
     mimeType = NS_LITERAL_STRING(AUDIO_OGG);
   } else {
     LOG(LogLevel::Error,
@@ -670,7 +716,8 @@ already_AddRefed<MediaEncoder> MediaEncoder::CreateEncoder(
   }
 
   LOG(LogLevel::Info,
-      ("Create encoder result:a[%p](%u bps) v[%p](%u bps) w[%p] mimeType = %s.",
+      ("Create encoder result:a[%p](%u bps) v[%p](%u bps) w[%p] mimeType = "
+       "%s.",
        audioEncoder.get(), aAudioBitrate, videoEncoder.get(), aVideoBitrate,
        writer.get(), NS_ConvertUTF16toUTF8(mimeType).get()));
 
@@ -799,7 +846,8 @@ nsresult MediaEncoder::GetEncodedData(
     }
   }
 
-  // In audio only or video only case, let unavailable track's flag to be true.
+  // In audio only or video only case, let unavailable track's flag to be
+  // true.
   bool isAudioCompleted = !mAudioEncoder || mAudioEncoder->IsEncodingComplete();
   bool isVideoCompleted = !mVideoEncoder || mVideoEncoder->IsEncodingComplete();
   rv = mWriter->GetContainerData(
@@ -963,17 +1011,15 @@ void MediaEncoder::Stop() {
   MOZ_ASSERT(NS_IsMainThread());
 
   if (mAudioNode) {
-    mAudioNode->GetStream()->RemoveTrackListener(mAudioListener,
-                                                 AudioNodeStream::AUDIO_TRACK);
+    mAudioNode->GetTrack()->RemoveListener(mAudioListener);
     if (mInputPort) {
       mInputPort->Destroy();
       mInputPort = nullptr;
     }
-    if (mPipeStream) {
-      mPipeStream->RemoveTrackListener(mAudioListener,
-                                       AudioNodeStream::AUDIO_TRACK);
-      mPipeStream->Destroy();
-      mPipeStream = nullptr;
+    if (mPipeTrack) {
+      mPipeTrack->RemoveListener(mAudioListener);
+      mPipeTrack->Destroy();
+      mPipeTrack = nullptr;
     }
     mAudioNode = nullptr;
   }
@@ -989,7 +1035,7 @@ void MediaEncoder::Stop() {
 
 #ifdef MOZ_WEBM_ENCODER
 bool MediaEncoder::IsWebMEncoderEnabled() {
-  return StaticPrefs::MediaEncoderWebMEnabled();
+  return StaticPrefs::media_encoder_webm_enabled();
 }
 #endif
 

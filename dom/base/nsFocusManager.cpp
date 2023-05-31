@@ -13,8 +13,6 @@
 #include "nsContentUtils.h"
 #include "ContentParent.h"
 #include "nsPIDOMWindow.h"
-#include "nsIDOMChromeWindow.h"
-#include "nsIHTMLDocument.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIFormControl.h"
@@ -35,9 +33,9 @@
 #include "nsIObserverService.h"
 #include "nsIObjectFrame.h"
 #include "nsBindingManager.h"
-#include "nsStyleCoord.h"
 #include "BrowserChild.h"
 #include "nsFrameLoader.h"
+#include "nsHTMLDocument.h"
 #include "nsNumberControlFrame.h"
 #include "nsNetUtil.h"
 #include "nsRange.h"
@@ -369,6 +367,12 @@ NS_IMETHODIMP
 nsFocusManager::GetActiveWindow(mozIDOMWindowProxy** aWindow) {
   NS_IF_ADDREF(*aWindow = mActiveWindow);
   return NS_OK;
+}
+
+void nsFocusManager::FocusWindow(nsPIDOMWindowOuter* aWindow) {
+  if (RefPtr<nsFocusManager> fm = sInstance) {
+    fm->SetFocusedWindow(aWindow);
+  }
 }
 
 NS_IMETHODIMP
@@ -964,7 +968,7 @@ nsFocusManager::WindowHidden(mozIDOMWindowProxy* aWindow) {
         mFocusedWindow ? mFocusedWindow->GetDocShell() : nullptr;
     if (dsti) {
       nsCOMPtr<nsIDocShellTreeItem> parentDsti;
-      dsti->GetParent(getter_AddRefs(parentDsti));
+      dsti->GetInProcessParent(getter_AddRefs(parentDsti));
       if (parentDsti) {
         if (nsCOMPtr<nsPIDOMWindowOuter> parentWindow = parentDsti->GetWindow())
           parentWindow->SetFocusedElement(nullptr);
@@ -1094,7 +1098,7 @@ void nsFocusManager::EnsureCurrentWidgetFocused() {
   if (!widget) {
     return;
   }
-  widget->SetFocus(false);
+  widget->SetFocus(nsIWidget::Raise::No);
 }
 
 bool ActivateOrDeactivateChild(BrowserParent* aParent, void* aArg) {
@@ -1179,7 +1183,7 @@ void nsFocusManager::SetFocusInner(Element* aNewContent, int32_t aFlags,
     if (beingDestroyed) return;
 
     nsCOMPtr<nsIDocShellTreeItem> parentDsti;
-    docShell->GetParent(getter_AddRefs(parentDsti));
+    docShell->GetInProcessParent(getter_AddRefs(parentDsti));
     docShell = do_QueryInterface(parentDsti);
   }
 
@@ -1349,7 +1353,7 @@ bool nsFocusManager::IsSameOrAncestor(nsPIDOMWindowOuter* aPossibleAncestor,
   while (dsti) {
     if (dsti == ancestordsti) return true;
     nsCOMPtr<nsIDocShellTreeItem> parentDsti;
-    dsti->GetParent(getter_AddRefs(parentDsti));
+    dsti->GetInProcessParent(getter_AddRefs(parentDsti));
     dsti.swap(parentDsti);
   }
 
@@ -1370,13 +1374,13 @@ already_AddRefed<nsPIDOMWindowOuter> nsFocusManager::GetCommonAncestor(
   do {
     parents1.AppendElement(dsti1);
     nsCOMPtr<nsIDocShellTreeItem> parentDsti1;
-    dsti1->GetParent(getter_AddRefs(parentDsti1));
+    dsti1->GetInProcessParent(getter_AddRefs(parentDsti1));
     dsti1.swap(parentDsti1);
   } while (dsti1);
   do {
     parents2.AppendElement(dsti2);
     nsCOMPtr<nsIDocShellTreeItem> parentDsti2;
-    dsti2->GetParent(getter_AddRefs(parentDsti2));
+    dsti2->GetInProcessParent(getter_AddRefs(parentDsti2));
     dsti2.swap(parentDsti2);
   } while (dsti2);
 
@@ -1410,7 +1414,7 @@ void nsFocusManager::AdjustWindowFocus(nsPIDOMWindowOuter* aWindow,
     nsCOMPtr<nsIDocShellTreeItem> dsti = window->GetDocShell();
     if (!dsti) return;
     nsCOMPtr<nsIDocShellTreeItem> parentDsti;
-    dsti->GetParent(getter_AddRefs(parentDsti));
+    dsti->GetInProcessParent(getter_AddRefs(parentDsti));
     if (!parentDsti) {
       return;
     }
@@ -1630,13 +1634,12 @@ bool nsFocusManager::Blur(nsPIDOMWindowOuter* aWindowToClear,
         } else {
           // note that the presshell's widget is being retrieved here, not the
           // one for the object frame.
-          nsViewManager* vm = presShell->GetViewManager();
-          if (vm) {
+          if (nsViewManager* vm = presShell->GetViewManager()) {
             nsCOMPtr<nsIWidget> widget;
             vm->GetRootWidget(getter_AddRefs(widget));
             if (widget) {
               // set focus to the top level window but don't raise it.
-              widget->SetFocus(false);
+              widget->SetFocus(nsIWidget::Raise::No);
             }
           }
         }
@@ -1826,11 +1829,10 @@ void nsFocusManager::Focus(nsPIDOMWindowOuter* aWindow, Element* aElement,
     if (objectFrame) objectFrameWidget = objectFrame->GetWidget();
   }
   if (aAdjustWidgets && !objectFrameWidget && !sTestMode) {
-    nsViewManager* vm = presShell->GetViewManager();
-    if (vm) {
+    if (nsViewManager* vm = presShell->GetViewManager()) {
       nsCOMPtr<nsIWidget> widget;
       vm->GetRootWidget(getter_AddRefs(widget));
-      if (widget) widget->SetFocus(false);
+      if (widget) widget->SetFocus(nsIWidget::Raise::No);
     }
   }
 
@@ -1883,8 +1885,9 @@ void nsFocusManager::Focus(nsPIDOMWindowOuter* aWindow, Element* aElement,
       // that we might no longer be in the same document, due to the events we
       // fired above when aIsNewDocument.
       if (presShell->GetDocument() == aElement->GetComposedDoc()) {
-        if (aAdjustWidgets && objectFrameWidget && !sTestMode)
-          objectFrameWidget->SetFocus(false);
+        if (aAdjustWidgets && objectFrameWidget && !sTestMode) {
+          objectFrameWidget->SetFocus(nsIWidget::Raise::No);
+        }
 
         // if the object being focused is a remote browser, activate remote
         // content
@@ -1916,11 +1919,12 @@ void nsFocusManager::Focus(nsPIDOMWindowOuter* aWindow, Element* aElement,
     // the root widget.
     if (aAdjustWidgets && objectFrameWidget && mFocusedWindow == aWindow &&
         mFocusedElement == nullptr && !sTestMode) {
-      nsViewManager* vm = presShell->GetViewManager();
-      if (vm) {
+      if (nsViewManager* vm = presShell->GetViewManager()) {
         nsCOMPtr<nsIWidget> widget;
         vm->GetRootWidget(getter_AddRefs(widget));
-        if (widget) widget->SetFocus(false);
+        if (widget) {
+          widget->SetFocus(nsIWidget::Raise::No);
+        }
       }
     }
 
@@ -2194,11 +2198,10 @@ void nsFocusManager::RaiseWindow(nsPIDOMWindowOuter* aWindow) {
     return;
   }
 
-  nsViewManager* vm = presShell->GetViewManager();
-  if (vm) {
+  if (nsViewManager* vm = presShell->GetViewManager()) {
     nsCOMPtr<nsIWidget> widget;
     vm->GetRootWidget(getter_AddRefs(widget));
-    if (widget) widget->SetFocus(true);
+    if (widget) widget->SetFocus(nsIWidget::Raise::Yes);
   }
 #else
   nsCOMPtr<nsIBaseWindow> treeOwnerAsWin =
@@ -2206,7 +2209,7 @@ void nsFocusManager::RaiseWindow(nsPIDOMWindowOuter* aWindow) {
   if (treeOwnerAsWin) {
     nsCOMPtr<nsIWidget> widget;
     treeOwnerAsWin->GetMainWidget(getter_AddRefs(widget));
-    if (widget) widget->SetFocus(true);
+    if (widget) widget->SetFocus(nsIWidget::Raise::Yes);
   }
 #endif
 }
@@ -2246,10 +2249,11 @@ void nsFocusManager::UpdateCaret(bool aMoveCaretToFocus, bool aUpdateVisibility,
   focusedDocShell->GetEditable(&isEditable);
 
   if (isEditable) {
-    nsCOMPtr<nsIHTMLDocument> doc = do_QueryInterface(presShell->GetDocument());
+    Document* doc = presShell->GetDocument();
 
     bool isContentEditableDoc =
-        doc && doc->GetEditingState() == nsIHTMLDocument::eContentEditable;
+        doc &&
+        doc->GetEditingState() == Document::EditingState::eContentEditable;
 
     bool isFocusEditable = aContent && aContent->HasFlag(NODE_IS_EDITABLE);
     if (!isContentEditableDoc || isFocusEditable) return;
@@ -2306,7 +2310,8 @@ void nsFocusManager::MoveCaretToFocus(PresShell* aPresShell,
           newRange->SetStartBefore(*aContent, IgnoreErrors());
           newRange->SetEndBefore(*aContent, IgnoreErrors());
         }
-        domSelection->AddRange(*newRange, IgnoreErrors());
+        domSelection->AddRangeAndSelectFramesAndNotifyListeners(*newRange,
+                                                                IgnoreErrors());
         domSelection->CollapseToStart(IgnoreErrors());
       }
     }
@@ -2703,11 +2708,11 @@ nsresult nsFocusManager::DetermineElementToMoveFocus(
       // The common case here is the urlbar where focus is on the anonymous
       // input inside the textbox, but the retargetdocumentfocus attribute
       // refers to the textbox. The Contains check will return false and the
-      // ContentIsDescendantOf check will return true in this case.
-      if (retargetElement && (retargetElement == startContent ||
-                              (!retargetElement->Contains(startContent) &&
-                               nsContentUtils::ContentIsDescendantOf(
-                                   startContent, retargetElement)))) {
+      // IsInclusiveDescendantOf check will return true in this case.
+      if (retargetElement &&
+          (retargetElement == startContent ||
+           (!retargetElement->Contains(startContent) &&
+            startContent->IsInclusiveDescendantOf(retargetElement)))) {
         startContent = rootContent;
       }
     }
@@ -3838,8 +3843,7 @@ Element* nsFocusManager::GetRootForFocus(nsPIDOMWindowOuter* aWindow,
   }
 
   // Finally, check if this is a frameset
-  nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(aDocument);
-  if (htmlDoc) {
+  if (aDocument && aDocument->IsHTMLOrXHTML()) {
     Element* htmlChild = aDocument->GetHtmlChildElement(nsGkAtoms::frameset);
     if (htmlChild) {
       // In document navigation mode, return the frameset so that navigation
@@ -4013,7 +4017,7 @@ void nsFocusManager::SetFocusedWindowInternal(nsPIDOMWindowOuter* aWindow) {
   if (aWindow && aWindow != mFocusedWindow) {
     const TimeStamp now(TimeStamp::Now());
     for (Document* doc = aWindow->GetExtantDoc(); doc;
-         doc = doc->GetParentDocument()) {
+         doc = doc->GetInProcessParentDocument()) {
       doc->SetLastFocusTime(now);
     }
   }

@@ -24,6 +24,8 @@ namespace dom {
 namespace cache {
 
 using mozilla::dom::quota::AssertIsOnIOThread;
+using mozilla::dom::quota::Client;
+using mozilla::dom::quota::IntCString;
 using mozilla::dom::quota::PERSISTENCE_TYPE_DEFAULT;
 using mozilla::dom::quota::PersistenceType;
 
@@ -120,6 +122,7 @@ void DBAction::RunOnTarget(Resolver* aResolver, const QuotaInfo& aQuotaInfo,
 nsresult DBAction::OpenConnection(const QuotaInfo& aQuotaInfo, nsIFile* aDBDir,
                                   mozIStorageConnection** aConnOut) {
   MOZ_ASSERT(!NS_IsMainThread());
+  MOZ_DIAGNOSTIC_ASSERT(aQuotaInfo.mDirectoryLockId >= 0);
   MOZ_DIAGNOSTIC_ASSERT(aDBDir);
   MOZ_DIAGNOSTIC_ASSERT(aConnOut);
 
@@ -165,6 +168,7 @@ void SyncDBAction::RunWithDBOnTarget(Resolver* aResolver,
 nsresult OpenDBConnection(const QuotaInfo& aQuotaInfo, nsIFile* aDBDir,
                           mozIStorageConnection** aConnOut) {
   MOZ_ASSERT(!NS_IsMainThread());
+  MOZ_DIAGNOSTIC_ASSERT(aQuotaInfo.mDirectoryLockId >= -1);
   MOZ_DIAGNOSTIC_ASSERT(aDBDir);
   MOZ_DIAGNOSTIC_ASSERT(aConnOut);
 
@@ -205,15 +209,16 @@ nsresult OpenDBConnection(const QuotaInfo& aQuotaInfo, nsIFile* aDBDir,
 
   nsCOMPtr<nsIFileURL> dbFileUrl;
 
-  nsAutoCString type;
-  PersistenceTypeToText(PERSISTENCE_TYPE_DEFAULT, type);
+  const nsCString directoryLockIdClause =
+      aQuotaInfo.mDirectoryLockId >= 0
+          ? NS_LITERAL_CSTRING("&directoryLockId=") +
+                IntCString(aQuotaInfo.mDirectoryLockId)
+          : EmptyCString();
 
-  rv = NS_MutateURI(mutator)
-           .SetQuery(NS_LITERAL_CSTRING("persistenceType=") + type +
-                     NS_LITERAL_CSTRING("&group=") + aQuotaInfo.mGroup +
-                     NS_LITERAL_CSTRING("&origin=") + aQuotaInfo.mOrigin +
-                     NS_LITERAL_CSTRING("&cache=private"))
-           .Finalize(dbFileUrl);
+  rv =
+      NS_MutateURI(mutator)
+          .SetQuery(NS_LITERAL_CSTRING("cache=private") + directoryLockIdClause)
+          .Finalize(dbFileUrl);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }

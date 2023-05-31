@@ -7,11 +7,8 @@
 #include "nsAutoPtr.h"
 #include "nsContentUtils.h"
 #include "nsIConsoleReportCollector.h"
-#include "nsIHttpChannelInternal.h"
 #include "nsINetworkInterceptController.h"
-#include "nsIOutputStream.h"
 #include "nsIScriptError.h"
-#include "nsITimedChannel.h"
 #include "mozilla/Encoding.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
@@ -137,7 +134,7 @@ void FetchEvent::PostInit(
 /*static*/
 already_AddRefed<FetchEvent> FetchEvent::Constructor(
     const GlobalObject& aGlobal, const nsAString& aType,
-    const FetchEventInit& aOptions, ErrorResult& aRv) {
+    const FetchEventInit& aOptions) {
   RefPtr<EventTarget> owner = do_QueryObject(aGlobal.GetAsSupports());
   MOZ_ASSERT(owner);
   RefPtr<FetchEvent> e = new FetchEvent(owner);
@@ -371,7 +368,7 @@ class StartResponse final : public Runnable {
       // Synthetic response. The buck stops at the worker script.
       url = mScriptSpec;
     }
-    rv = NS_NewURI(getter_AddRefs(uri), url, nullptr, nullptr);
+    rv = NS_NewURI(getter_AddRefs(uri), url);
     NS_ENSURE_SUCCESS(rv, false);
     int16_t decision = nsIContentPolicy::ACCEPT;
     rv = NS_CheckContentLoadPolicy(uri, aLoadInfo, EmptyCString(), &decision);
@@ -620,9 +617,8 @@ void RespondWithHandler::ResolvedCallback(JSContext* aCx,
 
   if (response->Type() == ResponseType::Opaque &&
       mRequestMode != RequestMode::No_cors) {
-    uint32_t mode = static_cast<uint32_t>(mRequestMode);
-    NS_ConvertASCIItoUTF16 modeString(RequestModeValues::strings[mode].value,
-                                      RequestModeValues::strings[mode].length);
+    NS_ConvertASCIItoUTF16 modeString(
+        RequestModeValues::GetString(mRequestMode));
 
     autoCancel.SetCancelMessage(
         NS_LITERAL_CSTRING("BadOpaqueInterceptionRequestModeWithURL"),
@@ -846,7 +842,7 @@ namespace {
 class WaitUntilHandler final : public PromiseNativeHandler {
   WorkerPrivate* mWorkerPrivate;
   const nsCString mScope;
-  nsCString mSourceSpec;
+  nsString mSourceSpec;
   uint32_t mLine;
   uint32_t mColumn;
   nsString mRejectValue;
@@ -875,7 +871,7 @@ class WaitUntilHandler final : public PromiseNativeHandler {
   void RejectedCallback(JSContext* aCx, JS::Handle<JS::Value> aValue) override {
     mWorkerPrivate->AssertIsOnWorkerThread();
 
-    nsCString spec;
+    nsString spec;
     uint32_t line = 0;
     uint32_t column = 0;
     nsContentUtils::ExtractErrorValues(aCx, aValue, spec, &line, &column,
@@ -916,9 +912,8 @@ class WaitUntilHandler final : public PromiseNativeHandler {
     // because there is no documeny yet, and the navigation is no longer
     // being intercepted.
 
-    swm->ReportToAllClients(mScope, message, NS_ConvertUTF8toUTF16(mSourceSpec),
-                            EmptyString(), mLine, mColumn,
-                            nsIScriptError::errorFlag);
+    swm->ReportToAllClients(mScope, message, mSourceSpec, EmptyString(), mLine,
+                            mColumn, nsIScriptError::errorFlag);
   }
 };
 
@@ -1174,15 +1169,15 @@ void ExtendableMessageEvent::GetSource(
 /* static */
 already_AddRefed<ExtendableMessageEvent> ExtendableMessageEvent::Constructor(
     const GlobalObject& aGlobal, const nsAString& aType,
-    const ExtendableMessageEventInit& aOptions, ErrorResult& aRv) {
+    const ExtendableMessageEventInit& aOptions) {
   nsCOMPtr<EventTarget> t = do_QueryInterface(aGlobal.GetAsSupports());
-  return Constructor(t, aType, aOptions, aRv);
+  return Constructor(t, aType, aOptions);
 }
 
 /* static */
 already_AddRefed<ExtendableMessageEvent> ExtendableMessageEvent::Constructor(
     mozilla::dom::EventTarget* aEventTarget, const nsAString& aType,
-    const ExtendableMessageEventInit& aOptions, ErrorResult& aRv) {
+    const ExtendableMessageEventInit& aOptions) {
   RefPtr<ExtendableMessageEvent> event =
       new ExtendableMessageEvent(aEventTarget);
 
@@ -1212,7 +1207,7 @@ void ExtendableMessageEvent::GetPorts(nsTArray<RefPtr<MessagePort>>& aPorts) {
   aPorts = mPorts;
 }
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(ExtendableMessageEvent)
+NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(ExtendableMessageEvent)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(ExtendableMessageEvent, Event)
   tmp->mData.setUndefined();

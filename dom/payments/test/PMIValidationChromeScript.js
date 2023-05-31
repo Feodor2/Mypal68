@@ -11,10 +11,10 @@ const paymentSrv = Cc[
 ].getService(Ci.nsIPaymentRequestService);
 
 const UIService = {
-  showPayment: function(requestId) {
+  showPayment(requestId) {
     paymentSrv.changeShippingOption(requestId, "");
   },
-  abortPayment: function(requestId) {
+  abortPayment(requestId) {
     let abortResponse = Cc[
       "@mozilla.org/dom/payments/payment-abort-action-response;1"
     ].createInstance(Ci.nsIPaymentAbortActionResponse);
@@ -23,7 +23,7 @@ const UIService = {
       abortResponse.QueryInterface(Ci.nsIPaymentActionResponse)
     );
   },
-  completePayment: function(requestId) {
+  completePayment(requestId) {
     const completeResponse = Cc[
       "@mozilla.org/dom/payments/payment-complete-action-response;1"
     ].createInstance(Ci.nsIPaymentCompleteActionResponse);
@@ -35,7 +35,7 @@ const UIService = {
       completeResponse.QueryInterface(Ci.nsIPaymentActionResponse)
     );
   },
-  updatePayment: function(requestId) {
+  updatePayment(requestId) {
     const showResponseData = Cc[
       "@mozilla.org/dom/payments/general-response-data;1"
     ].createInstance(Ci.nsIGeneralResponseData);
@@ -59,7 +59,7 @@ const UIService = {
       showResponse.QueryInterface(Ci.nsIPaymentActionResponse)
     );
   },
-  closePayment: function(requestId) {},
+  closePayment(requestId) {},
   QueryInterface: ChromeUtils.generateQI([Ci.nsIPaymentUIService]),
 };
 

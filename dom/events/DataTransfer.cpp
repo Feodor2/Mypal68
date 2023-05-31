@@ -3,9 +3,11 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/CheckedInt.h"
-
+#include "mozilla/Span.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "DataTransfer.h"
 
 #include "nsISupportsPrimitives.h"
@@ -26,6 +28,7 @@
 #include "nsIScriptContext.h"
 #include "mozilla/dom/Document.h"
 #include "nsIScriptGlobalObject.h"
+#include "nsIXPConnect.h"
 #include "nsVariant.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/DataTransferBinding.h"
@@ -80,22 +83,6 @@ enum CustomClipboardTypeId {
   eCustomClipboardTypeId_String
 };
 
-// The dom.events.dataTransfer.protected.enabled preference controls whether or
-// not the `protected` dataTransfer state is enabled. If the `protected`
-// dataTransfer stae is disabled, then the DataTransfer will be read-only
-// whenever it should be protected, and will not be disconnected after a drag
-// event is completed.
-static bool PrefProtected() {
-  static bool sInitialized = false;
-  static bool sValue = false;
-  if (!sInitialized) {
-    sInitialized = true;
-    Preferences::AddBoolVarCache(&sValue,
-                                 "dom.events.dataTransfer.protected.enabled");
-  }
-  return sValue;
-}
-
 static DataTransfer::Mode ModeForEvent(EventMessage aEventMessage) {
   switch (aEventMessage) {
     case eCut:
@@ -112,8 +99,9 @@ static DataTransfer::Mode ModeForEvent(EventMessage aEventMessage) {
       // the DataTransfer, rather than just the type information.
       return DataTransfer::Mode::ReadOnly;
     default:
-      return PrefProtected() ? DataTransfer::Mode::Protected
-                             : DataTransfer::Mode::ReadOnly;
+      return StaticPrefs::dom_events_dataTransfer_protected_enabled()
+                 ? DataTransfer::Mode::Protected
+                 : DataTransfer::Mode::ReadOnly;
   }
 }
 
@@ -247,7 +235,7 @@ DataTransfer::~DataTransfer() {}
 
 // static
 already_AddRefed<DataTransfer> DataTransfer::Constructor(
-    const GlobalObject& aGlobal, ErrorResult& aRv) {
+    const GlobalObject& aGlobal) {
   RefPtr<DataTransfer> transfer =
       new DataTransfer(aGlobal.GetAsSupports(), eCopy, /* is external */ false,
                        /* clipboard type */ -1);
@@ -562,8 +550,7 @@ nsresult DataTransfer::GetDataAtInternal(const nsAString& aFormat,
   }
 
   // If we have chrome only content, and we aren't chrome, don't allow access
-  if (!nsContentUtils::IsSystemPrincipal(aSubjectPrincipal) &&
-      item->ChromeOnly()) {
+  if (!aSubjectPrincipal->IsSystemPrincipal() && item->ChromeOnly()) {
     return NS_OK;
   }
 
@@ -606,7 +593,7 @@ void DataTransfer::MozGetDataAt(JSContext* aCx, const nsAString& aFormat,
 bool DataTransfer::PrincipalMaySetData(const nsAString& aType,
                                        nsIVariant* aData,
                                        nsIPrincipal* aPrincipal) {
-  if (!nsContentUtils::IsSystemPrincipal(aPrincipal)) {
+  if (!aPrincipal->IsSystemPrincipal()) {
     DataTransferItem::eKind kind = DataTransferItem::KindFromData(aData);
     if (kind == DataTransferItem::KIND_OTHER) {
       NS_WARNING("Disallowing adding non string/file types to DataTransfer");
@@ -1103,8 +1090,12 @@ already_AddRefed<nsITransferable> DataTransfer::GetTransferable(
                 totalCustomLength = 0;
                 continue;
               }
-              rv = stream->WriteBytes((const char*)type.get(),
-                                      formatLength.value());
+              MOZ_ASSERT(formatLength.isValid() &&
+                             formatLength.value() ==
+                                 type.Length() * sizeof(nsString::char_type),
+                         "Why is formatLength off?");
+              rv = stream->WriteBytes(
+                  AsBytes(MakeSpan(type.BeginReading(), type.Length())));
               if (NS_WARN_IF(NS_FAILED(rv))) {
                 totalCustomLength = 0;
                 continue;
@@ -1114,7 +1105,13 @@ already_AddRefed<nsITransferable> DataTransfer::GetTransferable(
                 totalCustomLength = 0;
                 continue;
               }
-              rv = stream->WriteBytes((const char*)data.get(), lengthInBytes);
+              // XXXbz it's not obvious to me that lengthInBytes is the actual
+              // length of "data" if the variant contained an nsISupportsString
+              // as VTYPE_INTERFACE, say.  We used lengthInBytes above for
+              // sizing, so just keep doing that.
+              rv = stream->WriteBytes(MakeSpan(
+                  reinterpret_cast<const uint8_t*>(data.BeginReading()),
+                  lengthInBytes));
               if (NS_WARN_IF(NS_FAILED(rv))) {
                 totalCustomLength = 0;
                 continue;
@@ -1268,7 +1265,7 @@ bool DataTransfer::ConvertFromVariant(nsIVariant* aVariant,
 
 void DataTransfer::Disconnect() {
   SetMode(Mode::Protected);
-  if (PrefProtected()) {
+  if (StaticPrefs::dom_events_dataTransfer_protected_enabled()) {
     ClearAll();
   }
 }
@@ -1569,7 +1566,8 @@ void DataTransfer::FillInExternalCustomTypes(nsIVariant* aData, uint32_t aIndex,
 }
 
 void DataTransfer::SetMode(DataTransfer::Mode aMode) {
-  if (!PrefProtected() && aMode == Mode::Protected) {
+  if (!StaticPrefs::dom_events_dataTransfer_protected_enabled() &&
+      aMode == Mode::Protected) {
     mMode = Mode::ReadOnly;
   } else {
     mMode = aMode;

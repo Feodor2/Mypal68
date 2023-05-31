@@ -10,7 +10,6 @@
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/dom/RemoteWorkerController.h"
 #include "nsIConsoleReportCollector.h"
-#include "nsINetworkInterceptController.h"
 #include "nsIPrincipal.h"
 #include "nsProxyRelease.h"
 

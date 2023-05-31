@@ -5,7 +5,7 @@
 #include "mozilla/dom/ChannelSplitterNode.h"
 #include "mozilla/dom/ChannelSplitterNodeBinding.h"
 #include "AudioNodeEngine.h"
-#include "AudioNodeStream.h"
+#include "AudioNodeTrack.h"
 
 namespace mozilla {
 namespace dom {
@@ -17,12 +17,13 @@ class ChannelSplitterNodeEngine final : public AudioNodeEngine {
     MOZ_ASSERT(NS_IsMainThread());
   }
 
-  void ProcessBlocksOnPorts(AudioNodeStream* aStream,
-                            const OutputChunks& aInput, OutputChunks& aOutput,
+  void ProcessBlocksOnPorts(AudioNodeTrack* aTrack,
+                            Span<const AudioBlock> aInput,
+                            Span<AudioBlock> aOutput,
                             bool* aFinished) override {
     MOZ_ASSERT(aInput.Length() == 1, "Should only have one input port");
+    MOZ_ASSERT(aOutput.Length() == OutputCount());
 
-    aOutput.SetLength(OutputCount());
     for (uint16_t i = 0; i < OutputCount(); ++i) {
       if (i < aInput[0].ChannelCount()) {
         // Split out existing channels
@@ -47,9 +48,9 @@ ChannelSplitterNode::ChannelSplitterNode(AudioContext* aContext,
     : AudioNode(aContext, aOutputCount, ChannelCountMode::Explicit,
                 ChannelInterpretation::Discrete),
       mOutputCount(aOutputCount) {
-  mStream = AudioNodeStream::Create(
-      aContext, new ChannelSplitterNodeEngine(this),
-      AudioNodeStream::NO_STREAM_FLAGS, aContext->Graph());
+  mTrack =
+      AudioNodeTrack::Create(aContext, new ChannelSplitterNodeEngine(this),
+                             AudioNodeTrack::NO_TRACK_FLAGS, aContext->Graph());
 }
 
 /* static */

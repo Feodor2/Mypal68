@@ -118,7 +118,7 @@ void MouseEvent::InitializeExtraMouseEventDictionaryMembers(
 
 already_AddRefed<MouseEvent> MouseEvent::Constructor(
     const GlobalObject& aGlobal, const nsAString& aType,
-    const MouseEventInit& aParam, ErrorResult& aRv) {
+    const MouseEventInit& aParam) {
   nsCOMPtr<EventTarget> t = do_QueryInterface(aGlobal.GetAsSupports());
   RefPtr<MouseEvent> e = new MouseEvent(t, nullptr, nullptr);
   bool trusted = e->Init(t);
@@ -238,6 +238,34 @@ int32_t MouseEvent::ScreenY(CallerType aCallerType) {
   }
 
   return Event::GetScreenCoords(mPresContext, mEvent, mEvent->mRefPoint).y;
+}
+
+int32_t MouseEvent::PageX() const {
+  if (mEvent->mFlags.mIsPositionless) {
+    return 0;
+  }
+
+  if (mPrivateDataDuplicated) {
+    return mPagePoint.x;
+  }
+
+  return Event::GetPageCoords(mPresContext, mEvent, mEvent->mRefPoint,
+                              mClientPoint)
+      .x;
+}
+
+int32_t MouseEvent::PageY() const {
+  if (mEvent->mFlags.mIsPositionless) {
+    return 0;
+  }
+
+  if (mPrivateDataDuplicated) {
+    return mPagePoint.y;
+  }
+
+  return Event::GetPageCoords(mPresContext, mEvent, mEvent->mRefPoint,
+                              mClientPoint)
+      .y;
 }
 
 int32_t MouseEvent::ClientX() {

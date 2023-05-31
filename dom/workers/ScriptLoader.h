@@ -6,7 +6,6 @@
 #define mozilla_dom_workers_scriptloader_h__
 
 #include "mozilla/dom/WorkerCommon.h"
-#include "nsIContentPolicy.h"
 #include "nsStringFwd.h"
 
 class nsIPrincipal;
@@ -34,7 +33,7 @@ nsresult ChannelFromScriptURLMainThread(
     nsIPrincipal* aPrincipal, Document* aParentDoc, nsILoadGroup* aLoadGroup,
     nsIURI* aScriptURL, const Maybe<ClientInfo>& aClientInfo,
     nsContentPolicyType aContentPolicyType, nsICookieSettings* aCookieSettings,
-    nsIChannel** aChannel);
+    nsIReferrerInfo* aReferrerInfo, nsIChannel** aChannel);
 
 nsresult ChannelFromScriptURLWorkerThread(JSContext* aCx,
                                           WorkerPrivate* aParent,

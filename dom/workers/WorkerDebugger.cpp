@@ -480,7 +480,7 @@ RefPtr<PerformanceInfoPromise> WorkerDebugger::ReportPerformanceInfo() {
   if (win) {
     nsPIDOMWindowOuter* outer = win->GetOuterWindow();
     if (outer) {
-      top = outer->GetTop();
+      top = outer->GetInProcessTop();
       if (top) {
         windowID = top->WindowID();
         isTopLevel = outer->IsTopLevelWindow();

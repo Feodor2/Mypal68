@@ -8,7 +8,6 @@
 #include "nsAtom.h"
 #include "nsString.h"
 #include "nsString.h"
-#include "nsIServiceManager.h"
 #include "nsContentUtils.h"  // For NS_CONTENT_DELETE_LIST_MEMBER.
 #include "nsCycleCollectionParticipant.h"
 

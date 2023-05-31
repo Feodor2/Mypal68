@@ -4,6 +4,7 @@
 
 #include "MLSFallback.h"
 #include "nsGeoPosition.h"
+#include "nsComponentManagerUtils.h"
 #include "nsIGeolocationProvider.h"
 #include "nsServiceManagerUtils.h"
 

@@ -6,30 +6,14 @@
 #include "FFmpegLog.h"
 #include "mozilla/PodOperations.h"
 #ifdef MOZ_FFMPEG
-#  include "mozilla/StaticPrefs.h"
+#  include "mozilla/StaticPrefs_media.h"
 #endif
 #include "mozilla/Types.h"
 #include "PlatformDecoderModule.h"
 #include "prlink.h"
-#include "mozilla/StaticPrefs.h"
 
 #define AV_LOG_DEBUG 48
 #define AV_LOG_INFO 32
-
-enum AVHWDeviceType {
-    AV_HWDEVICE_TYPE_NONE,
-    AV_HWDEVICE_TYPE_VDPAU,
-    AV_HWDEVICE_TYPE_CUDA,
-    AV_HWDEVICE_TYPE_VAAPI,
-    AV_HWDEVICE_TYPE_DXVA2,
-    AV_HWDEVICE_TYPE_QSV,
-    AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
-    AV_HWDEVICE_TYPE_D3D11VA,
-    AV_HWDEVICE_TYPE_DRM,
-    AV_HWDEVICE_TYPE_OPENCL,
-    AV_HWDEVICE_TYPE_MEDIACODEC,
-    AV_HWDEVICE_TYPE_VULKAN,
-};
 
 namespace mozilla {
 
@@ -46,8 +30,6 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
     return LinkResult::NoAVCodecVersion;
   }
 
-  mdev_ctx=NULL;
-
   uint32_t version = avcodec_version();
   uint32_t macro = (version >> 16) & 0xFFu;
   mVersion = static_cast<int>(macro);
@@ -63,7 +45,7 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
     }
 #ifdef MOZ_FFMPEG
     if (version < (54u << 16 | 35u << 8 | 1u) &&
-        !StaticPrefs::MediaLibavcodecAllowObsolete()) {
+        !StaticPrefs::media_libavcodec_allow_obsolete()) {
       // Refuse any libavcodec version prior to 54.35.1.
       // (Unless media.libavcodec.allow-obsolete==true)
       Unlink();
@@ -157,9 +139,6 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
   AV_FUNC(avcodec_free_frame, AV_FUNC_54)
   AV_FUNC(avcodec_send_packet, AV_FUNC_58)
   AV_FUNC(avcodec_receive_frame, AV_FUNC_58)
-  AV_FUNC(av_buffer_ref, AV_FUNC_AVUTIL_ALL)
-  AV_FUNC(av_buffer_unref, AV_FUNC_AVUTIL_ALL)
-  AV_FUNC(av_hwdevice_ctx_create, AV_FUNC_AVUTIL_ALL)
   AV_FUNC_OPTION(av_rdft_init, AV_FUNC_AVCODEC_ALL)
   AV_FUNC_OPTION(av_rdft_calc, AV_FUNC_AVCODEC_ALL)
   AV_FUNC_OPTION(av_rdft_end, AV_FUNC_AVCODEC_ALL)
@@ -185,10 +164,6 @@ FFmpegLibWrapper::LinkResult FFmpegLibWrapper::Link() {
     av_log_set_level(0);
   }
 
-  if (StaticPrefs::MediaFFmpegHwaccType()>=0) {
-    if (av_hwdevice_ctx_create(&mdev_ctx, StaticPrefs::MediaFFmpegHwaccType(), NULL, NULL, 0)>=0) av_buffer_ref(mdev_ctx);
-  }
-
   return LinkResult::Success;
 }
 
@@ -200,7 +175,6 @@ void FFmpegLibWrapper::Unlink() {
     av_lockmgr_register(nullptr);
   }
   if (mAVUtilLib && mAVUtilLib != mAVCodecLib) {
-    av_buffer_unref(&mdev_ctx);
     PR_UnloadLibrary(mAVUtilLib);
   }
   if (mAVCodecLib) {

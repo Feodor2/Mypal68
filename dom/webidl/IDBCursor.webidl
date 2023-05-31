@@ -17,6 +17,7 @@ enum IDBCursorDirection {
 interface IDBCursor {
     readonly    attribute (IDBObjectStore or IDBIndex) source;
 
+    [BinaryName="getDirection"]
     readonly    attribute IDBCursorDirection           direction;
 
     [Throws]

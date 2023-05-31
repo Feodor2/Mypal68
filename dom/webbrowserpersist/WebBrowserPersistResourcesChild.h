@@ -8,7 +8,6 @@
 #include "mozilla/PWebBrowserPersistResourcesChild.h"
 
 #include "nsIWebBrowserPersistDocument.h"
-#include "nsIContentPolicy.h"
 
 namespace mozilla {
 

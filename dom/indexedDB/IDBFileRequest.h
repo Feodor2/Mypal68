@@ -11,9 +11,6 @@
 #include "nsCycleCollectionParticipant.h"
 #include "nsString.h"
 
-template <class>
-struct already_AddRefed;
-
 namespace mozilla {
 
 class EventChainPreVisitor;
@@ -33,8 +30,8 @@ class IDBFileRequest final : public DOMRequest {
  public:
   class ResultCallback;
 
-  static already_AddRefed<IDBFileRequest> Create(IDBFileHandle* aFileHandle,
-                                                 bool aWrapAsDOMRequest);
+  static MOZ_MUST_USE RefPtr<IDBFileRequest> Create(IDBFileHandle* aFileHandle,
+                                                    bool aWrapAsDOMRequest);
 
   void SetEncoding(const nsAString& aEncoding) {
     mEncoding = aEncoding;
@@ -88,7 +85,7 @@ class NS_NO_VTABLE IDBFileRequest::ResultCallback {
                              JS::MutableHandle<JS::Value> aResult) = 0;
 
  protected:
-  ResultCallback() {}
+  ResultCallback() = default;
 };
 
 }  // namespace dom

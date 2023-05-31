@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsIServiceManager.h"
 #include "UDPSocketParent.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIUDPSocket.h"
@@ -14,7 +13,6 @@
 #include "mozilla/net/NeckoCommon.h"
 #include "mozilla/net/PNeckoParent.h"
 #include "nsIPermissionManager.h"
-#include "nsIScriptSecurityManager.h"
 #include "mozilla/ipc/PBackgroundParent.h"
 #include "mtransport/runnable_utils.h"
 
@@ -338,7 +336,7 @@ mozilla::ipc::IPCResult UDPSocketParent::RecvOutgoingData(
     }
 
     bool allowed;
-    const InfallibleTArray<uint8_t>& data(aData.get_ArrayOfuint8_t());
+    const nsTArray<uint8_t>& data(aData.get_ArrayOfuint8_t());
     rv = mFilter->FilterPacket(&aAddr.get_NetAddr(), data.Elements(),
                                data.Length(), nsISocketFilter::SF_OUTGOING,
                                &allowed);
@@ -364,21 +362,19 @@ mozilla::ipc::IPCResult UDPSocketParent::RecvOutgoingData(
   return IPC_OK();
 }
 
-void UDPSocketParent::Send(const InfallibleTArray<uint8_t>& aData,
+void UDPSocketParent::Send(const nsTArray<uint8_t>& aData,
                            const UDPSocketAddr& aAddr) {
   nsresult rv;
   uint32_t count;
   switch (aAddr.type()) {
     case UDPSocketAddr::TUDPAddressInfo: {
       const UDPAddressInfo& addrInfo(aAddr.get_UDPAddressInfo());
-      rv = mSocket->Send(addrInfo.addr(), addrInfo.port(), aData.Elements(),
-                         aData.Length(), &count);
+      rv = mSocket->Send(addrInfo.addr(), addrInfo.port(), aData, &count);
       break;
     }
     case UDPSocketAddr::TNetAddr: {
       const NetAddr& addr(aAddr.get_NetAddr());
-      rv = mSocket->SendWithAddress(&addr, aData.Elements(), aData.Length(),
-                                    &count);
+      rv = mSocket->SendWithAddress(&addr, aData, &count);
       break;
     }
     default:
@@ -527,7 +523,7 @@ UDPSocketParent::OnPacketReceived(nsIUDPSocket* aSocket,
     FireInternalError(__LINE__);
     return NS_ERROR_OUT_OF_MEMORY;
   }
-  InfallibleTArray<uint8_t> infallibleArray;
+  nsTArray<uint8_t> infallibleArray;
   infallibleArray.SwapElements(fallibleArray);
 
   // compose callback

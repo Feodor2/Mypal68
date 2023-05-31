@@ -38,8 +38,10 @@ dictionary PannerOptions : AudioNodeOptions {
 };
 
 [Pref="dom.webaudio.enabled",
- Constructor(BaseAudioContext context, optional PannerOptions options)]
+ Exposed=Window]
 interface PannerNode : AudioNode {
+    [Throws]
+    constructor(BaseAudioContext context, optional PannerOptions options = {});
 
     // Default for stereo is equalpower
     attribute PanningModelType panningModel;
@@ -76,5 +78,5 @@ interface PannerNode : AudioNode {
 };
 
 // Mozilla extension
-PannerNode implements AudioNodePassThrough;
+PannerNode includes AudioNodePassThrough;
 

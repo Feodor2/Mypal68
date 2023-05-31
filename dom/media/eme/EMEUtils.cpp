@@ -49,14 +49,6 @@ void CopyArrayBufferViewOrArrayBufferData(
   aOutData.AppendElements(data.mData, data.mLength);
 }
 
-void CopyArrayBufferViewOrArrayBufferData(const dom::ArrayBuffer& aBuffer,
-                                          nsTArray<uint8_t>& aOutData) {
-  JS::AutoCheckCannotGC nogc;
-  aBuffer.ComputeLengthAndData();
-  aOutData.Clear();
-  aOutData.AppendElements(aBuffer.Data(), aBuffer.Length());
-}
-
 bool IsClearkeyKeySystem(const nsAString& aKeySystem) {
   return aKeySystem.EqualsLiteral(EME_KEY_SYSTEM_CLEARKEY);
 }

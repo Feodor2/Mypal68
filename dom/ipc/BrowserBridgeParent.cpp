@@ -30,11 +30,10 @@ nsresult BrowserBridgeParent::Init(const nsString& aPresentationURL,
   // FIXME: This should actually use a non-bogus TabContext, probably inherited
   // from our Manager().
   OriginAttributes attrs;
-  attrs.mInIsolatedMozBrowser = false;
   attrs.SyncAttributesWithPrivateBrowsing(false);
   MutableTabContext tabContext;
-  tabContext.SetTabContext(false, 0, UIStateChangeType_Set,
-                           UIStateChangeType_Set, attrs, aPresentationURL);
+  tabContext.SetTabContext(false, 0, UIStateChangeType_Set, attrs,
+                           aPresentationURL);
 
   ProcessPriority initialPriority = PROCESS_PRIORITY_FOREGROUND;
 
@@ -63,10 +62,9 @@ nsresult BrowserBridgeParent::Init(const nsString& aPresentationURL,
       new BrowserParent(constructorSender, tabId, tabContext, aBrowsingContext,
                         aChromeFlags, this));
 
-  // Open a remote endpoint for our PBrowser actor. DeallocPBrowserParent
-  // releases the ref taken.
+  // Open a remote endpoint for our PBrowser actor.
   ManagedEndpoint<PBrowserChild> childEp =
-      constructorSender->OpenPBrowserEndpoint(do_AddRef(browserParent).take());
+      constructorSender->OpenPBrowserEndpoint(browserParent);
   if (NS_WARN_IF(!childEp.IsValid())) {
     MOZ_ASSERT(false, "Browser Open Endpoint Failed");
     return NS_ERROR_FAILURE;

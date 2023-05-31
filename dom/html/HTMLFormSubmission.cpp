@@ -22,19 +22,14 @@
 #include "nsLinebreakConverter.h"
 #include "nsEscape.h"
 #include "nsUnicharUtils.h"
-#include "nsIMultiplexInputStream.h"
 #include "nsIMIMEInputStream.h"
-#include "nsIMIMEService.h"
-#include "nsIConsoleService.h"
 #include "nsIScriptError.h"
-#include "nsIStringBundle.h"
 #include "nsCExternalHandlerService.h"
-#include "nsIFileStreams.h"
 #include "nsContentUtils.h"
 
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/File.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 namespace mozilla {
 namespace dom {
@@ -42,11 +37,10 @@ namespace dom {
 namespace {
 
 void SendJSWarning(Document* aDocument, const char* aWarningName,
-                   const char16_t** aWarningArgs, uint32_t aWarningArgsLen) {
-  nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                  NS_LITERAL_CSTRING("HTML"), aDocument,
-                                  nsContentUtils::eFORMS_PROPERTIES,
-                                  aWarningName, aWarningArgs, aWarningArgsLen);
+                   const nsTArray<nsString>& aWarningArgs) {
+  nsContentUtils::ReportToConsole(
+      nsIScriptError::warningFlag, NS_LITERAL_CSTRING("HTML"), aDocument,
+      nsContentUtils::eFORMS_PROPERTIES, aWarningName, aWarningArgs);
 }
 
 void RetrieveFileName(Blob* aBlob, nsAString& aFilename) {
@@ -156,7 +150,7 @@ nsresult FSURLEncoded::AddNameValuePair(const nsAString& aName,
 nsresult FSURLEncoded::AddNameBlobOrNullPair(const nsAString& aName,
                                              Blob* aBlob) {
   if (!mWarnedFileControl) {
-    SendJSWarning(mDocument, "ForgotFileEnctypeWarning", nullptr, 0);
+    SendJSWarning(mDocument, "ForgotFileEnctypeWarning", nsTArray<nsString>());
     mWarnedFileControl = true;
   }
 
@@ -220,11 +214,10 @@ void HandleMailtoSubject(nsCString& aPath) {
     nsresult rv = nsContentUtils::GetLocalizedString(
         nsContentUtils::eBRAND_PROPERTIES, "brandShortName", brandName);
     if (NS_FAILED(rv)) return;
-    const char16_t* formatStrings[] = {brandName.get()};
     nsAutoString subjectStr;
     rv = nsContentUtils::FormatLocalizedString(
-        nsContentUtils::eFORMS_PROPERTIES, "DefaultFormSubject", formatStrings,
-        subjectStr);
+        subjectStr, nsContentUtils::eFORMS_PROPERTIES, "DefaultFormSubject",
+        brandName);
     if (NS_FAILED(rv)) return;
     aPath.AppendLiteral("subject=");
     nsCString subjectStrEscaped;
@@ -245,9 +238,7 @@ nsresult FSURLEncoded::GetEncodedSubmission(nsIURI* aURI,
   *aPostDataStream = nullptr;
 
   if (mMethod == NS_FORM_METHOD_POST) {
-    bool isMailto = false;
-    aURI->SchemeIs("mailto", &isMailto);
-    if (isMailto) {
+    if (aURI->SchemeIs("mailto")) {
       nsAutoCString path;
       rv = aURI->GetPathQueryRef(path);
       NS_ENSURE_SUCCESS(rv, rv);
@@ -283,10 +274,7 @@ nsresult FSURLEncoded::GetEncodedSubmission(nsIURI* aURI,
 
   } else {
     // Get the full query string
-    bool schemeIsJavaScript;
-    rv = aURI->SchemeIs("javascript", &schemeIsJavaScript);
-    NS_ENSURE_SUCCESS(rv, rv);
-    if (schemeIsJavaScript) {
+    if (aURI->SchemeIs("javascript")) {
       return NS_OK;
     }
 
@@ -666,9 +654,7 @@ nsresult FSTextPlain::GetEncodedSubmission(nsIURI* aURI,
   // XXX HACK We are using the standard URL mechanism to give the body to the
   // mailer instead of passing the post data stream to it, since that sounds
   // hard.
-  bool isMailto = false;
-  aURI->SchemeIs("mailto", &isMailto);
-  if (isMailto) {
+  if (aURI->SchemeIs("mailto")) {
     nsAutoCString path;
     rv = aURI->GetPathQueryRef(path);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -727,11 +713,11 @@ EncodingFormSubmission::EncodingFormSubmission(
   if (!aEncoding->CanEncodeEverything()) {
     nsAutoCString name;
     aEncoding->Name(name);
-    NS_ConvertUTF8toUTF16 nameUtf16(name);
-    const char16_t* namePtr = nameUtf16.get();
+    AutoTArray<nsString, 1> args;
+    CopyUTF8toUTF16(name, *args.AppendElement());
     SendJSWarning(
         aOriginatingElement ? aOriginatingElement->GetOwnerDocument() : nullptr,
-        "CannotEncodeAllUnicode", &namePtr, 1);
+        "CannotEncodeAllUnicode", args);
   }
 }
 
@@ -762,40 +748,6 @@ nsresult EncodingFormSubmission::EncodeVal(const nsAString& aStr,
 
 namespace {
 
-NotNull<const Encoding*> GetSubmitEncoding(nsGenericHTMLElement* aForm) {
-  nsAutoString acceptCharsetValue;
-  aForm->GetAttr(kNameSpaceID_None, nsGkAtoms::acceptcharset,
-                 acceptCharsetValue);
-
-  int32_t charsetLen = acceptCharsetValue.Length();
-  if (charsetLen > 0) {
-    int32_t offset = 0;
-    int32_t spPos = 0;
-    // get charset from charsets one by one
-    do {
-      spPos = acceptCharsetValue.FindChar(char16_t(' '), offset);
-      int32_t cnt = ((-1 == spPos) ? (charsetLen - offset) : (spPos - offset));
-      if (cnt > 0) {
-        nsAutoString uCharset;
-        acceptCharsetValue.Mid(uCharset, offset, cnt);
-
-        auto encoding = Encoding::ForLabelNoReplacement(uCharset);
-        if (encoding) {
-          return WrapNotNull(encoding);
-        }
-      }
-      offset = spPos + 1;
-    } while (spPos != -1);
-  }
-  // if there are no accept-charset or all the charset are not supported
-  // Get the charset from document
-  Document* doc = aForm->GetComposedDoc();
-  if (doc) {
-    return doc->GetDocumentCharacterSet();
-  }
-  return UTF_8_ENCODING;
-}
-
 void GetEnumAttr(nsGenericHTMLElement* aContent, nsAtom* atom,
                  int32_t* aValue) {
   const nsAttrValue* value = aContent->GetParsedAttr(atom);
@@ -809,7 +761,7 @@ void GetEnumAttr(nsGenericHTMLElement* aContent, nsAtom* atom,
 /* static */
 nsresult HTMLFormSubmission::GetFromForm(
     HTMLFormElement* aForm, nsGenericHTMLElement* aOriginatingElement,
-    HTMLFormSubmission** aFormSubmission) {
+    NotNull<const Encoding*>& aEncoding, HTMLFormSubmission** aFormSubmission) {
   // Get all the information necessary to encode the form data
   NS_ASSERTION(aForm->GetComposedDoc(),
                "Should have doc if we're building submission!");
@@ -822,9 +774,7 @@ nsresult HTMLFormSubmission::GetFromForm(
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Check if CSP allows this form-action
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  rv = aForm->NodePrincipal()->GetCsp(getter_AddRefs(csp));
-  NS_ENSURE_SUCCESS(rv, rv);
+  nsCOMPtr<nsIContentSecurityPolicy> csp = aForm->GetCsp();
   if (csp) {
     bool permitsFormAction = true;
 
@@ -874,22 +824,20 @@ nsresult HTMLFormSubmission::GetFromForm(
     GetEnumAttr(aForm, nsGkAtoms::method, &method);
   }
 
-  // Get encoding
-  auto encoding = GetSubmitEncoding(aForm)->OutputEncoding();
-
   // Choose encoder
   if (method == NS_FORM_METHOD_POST && enctype == NS_FORM_ENCTYPE_MULTIPART) {
-    *aFormSubmission = new FSMultipartFormData(actionURL, target, encoding,
+    *aFormSubmission = new FSMultipartFormData(actionURL, target, aEncoding,
                                                aOriginatingElement);
   } else if (method == NS_FORM_METHOD_POST &&
              enctype == NS_FORM_ENCTYPE_TEXTPLAIN) {
     *aFormSubmission =
-        new FSTextPlain(actionURL, target, encoding, aOriginatingElement);
+        new FSTextPlain(actionURL, target, aEncoding, aOriginatingElement);
   } else {
     Document* doc = aForm->OwnerDoc();
     if (enctype == NS_FORM_ENCTYPE_MULTIPART ||
         enctype == NS_FORM_ENCTYPE_TEXTPLAIN) {
-      nsAutoString enctypeStr;
+      AutoTArray<nsString, 1> args;
+      nsString& enctypeStr = *args.AppendElement();
       if (aOriginatingElement &&
           aOriginatingElement->HasAttr(kNameSpaceID_None,
                                        nsGkAtoms::formenctype)) {
@@ -898,10 +846,10 @@ nsresult HTMLFormSubmission::GetFromForm(
       } else {
         aForm->GetAttr(kNameSpaceID_None, nsGkAtoms::enctype, enctypeStr);
       }
-      const char16_t* enctypeStrPtr = enctypeStr.get();
-      SendJSWarning(doc, "ForgotPostWarning", &enctypeStrPtr, 1);
+
+      SendJSWarning(doc, "ForgotPostWarning", args);
     }
-    *aFormSubmission = new FSURLEncoded(actionURL, target, encoding, method,
+    *aFormSubmission = new FSURLEncoded(actionURL, target, aEncoding, method,
                                         doc, aOriginatingElement);
   }
 

@@ -7,7 +7,7 @@
 #include "mozilla/Unused.h"
 #include "mozilla/dom/cache/ActorUtils.h"
 #include "mozilla/dom/cache/CacheTypes.h"
-#include "mozilla/dom/cache/CacheWorkerHolder.h"
+#include "mozilla/dom/cache/CacheWorkerRef.h"
 #include "mozilla/dom/cache/ReadStream.h"
 #include "mozilla/ipc/FileDescriptorSetChild.h"
 #include "mozilla/ipc/IPCStreamUtils.h"
@@ -48,7 +48,7 @@ CacheStreamControlChild::~CacheStreamControlChild() {
 void CacheStreamControlChild::StartDestroy() {
   NS_ASSERT_OWNINGTHREAD(CacheStreamControlChild);
   // This can get called twice under some circumstances.  For example, if the
-  // actor is added to a CacheWorkerHolder that has already been notified and
+  // actor is added to a CacheWorkerRef that has already been notified and
   // the Cache actor has no mListener.
   if (mDestroyStarted) {
     return;
@@ -108,7 +108,7 @@ void CacheStreamControlChild::OpenStream(const nsID& aId,
   // rejection here in many cases, we must handle the case where the
   // MozPromise resolve runnable is already in the event queue when the
   // worker wants to shut down.
-  RefPtr<CacheWorkerHolder> holder = GetWorkerHolder();
+  RefPtr<CacheWorkerRef> holder = GetWorkerRef();
 
   SendOpenStream(aId)->Then(
       GetCurrentThreadSerialEventTarget(), __func__,
@@ -143,7 +143,7 @@ void CacheStreamControlChild::AssertOwningThread() {
 void CacheStreamControlChild::ActorDestroy(ActorDestroyReason aReason) {
   NS_ASSERT_OWNINGTHREAD(CacheStreamControlChild);
   CloseAllReadStreamsWithoutReporting();
-  RemoveWorkerHolder();
+  RemoveWorkerRef();
 }
 
 mozilla::ipc::IPCResult CacheStreamControlChild::RecvClose(const nsID& aId) {

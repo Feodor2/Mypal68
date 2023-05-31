@@ -6,7 +6,7 @@
 #define MOZILLA_RESOURCEQUEUE_H_
 
 #include "nsDeque.h"
-#include "MediaData.h"
+#include "MediaSpan.h"
 
 namespace mozilla {
 
@@ -24,9 +24,10 @@ class ErrorResult;
 // timepoint.
 
 struct ResourceItem {
-  explicit ResourceItem(MediaByteBuffer* aData);
+  ResourceItem(const MediaSpan& aData, uint64_t aOffset);
   size_t SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const;
-  RefPtr<MediaByteBuffer> mData;
+  MediaSpan mData;
+  uint64_t mOffset;
 };
 
 class ResourceQueue : private nsDeque {
@@ -43,13 +44,13 @@ class ResourceQueue : private nsDeque {
   // Copies aCount bytes from aOffset in the queue into aDest.
   void CopyData(uint64_t aOffset, uint32_t aCount, char* aDest);
 
-  void AppendItem(MediaByteBuffer* aData);
+  void AppendItem(const MediaSpan& aData);
 
   // Tries to evict at least aSizeToEvict from the queue up until
   // aOffset. Returns amount evicted.
-  uint32_t Evict(uint64_t aOffset, uint32_t aSizeToEvict, ErrorResult& aRv);
+  uint32_t Evict(uint64_t aOffset, uint32_t aSizeToEvict);
 
-  uint32_t EvictBefore(uint64_t aOffset, ErrorResult& aRv);
+  uint32_t EvictBefore(uint64_t aOffset);
 
   uint32_t EvictAll();
 
@@ -59,6 +60,8 @@ class ResourceQueue : private nsDeque {
   void Dump(const char* aPath);
 #endif
 
+  const uint8_t* GetContiguousAccess(int64_t aOffset, size_t aSize);
+
  private:
   ResourceItem* ResourceAt(uint32_t aIndex) const;
 
@@ -67,7 +70,7 @@ class ResourceQueue : private nsDeque {
   // the resource at the given index returned if it is not null.  If
   // no such resource exists, returns GetSize() and aOffset is
   // untouched.
-  uint32_t GetAtOffset(uint64_t aOffset, uint32_t* aResourceOffset);
+  uint32_t GetAtOffset(uint64_t aOffset, uint32_t* aResourceOffset) const;
 
   ResourceItem* PopFront();
 

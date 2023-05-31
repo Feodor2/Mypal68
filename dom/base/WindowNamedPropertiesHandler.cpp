@@ -115,11 +115,11 @@ bool WindowNamedPropertiesHandler::getOwnPropDescriptor(
   }
 
   // The rest of this function is for HTML documents only.
-  nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(win->GetExtantDoc());
-  if (!htmlDoc) {
+  Document* doc = win->GetExtantDoc();
+  if (!doc || !doc->IsHTMLOrXHTML()) {
     return true;
   }
-  nsHTMLDocument* document = static_cast<nsHTMLDocument*>(htmlDoc.get());
+  nsHTMLDocument* document = doc->AsHTMLDocument();
 
   JS::Rooted<JS::Value> v(aCx);
   Element* element = document->GetElementById(str);
@@ -148,7 +148,8 @@ bool WindowNamedPropertiesHandler::defineProperty(
     JS::Handle<JS::PropertyDescriptor> aDesc,
     JS::ObjectOpResult& result) const {
   ErrorResult rv;
-  rv.ThrowTypeError<MSG_DEFINEPROPERTY_ON_GSP>();
+  rv.ThrowTypeError(
+      u"Not allowed to define a property on the named properties object.");
   MOZ_ALWAYS_TRUE(rv.MaybeSetPendingException(aCx));
   return false;
 }
@@ -195,11 +196,11 @@ bool WindowNamedPropertiesHandler::ownPropNames(
   }
 
   names.Clear();
-  nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(win->GetExtantDoc());
-  if (!htmlDoc) {
+  Document* doc = win->GetExtantDoc();
+  if (!doc || !doc->IsHTMLOrXHTML()) {
     return true;
   }
-  nsHTMLDocument* document = static_cast<nsHTMLDocument*>(htmlDoc.get());
+  nsHTMLDocument* document = doc->AsHTMLDocument();
   // Document names are enumerable, so we want to get them no matter what flags
   // is.
   document->GetSupportedNames(names);
@@ -235,16 +236,16 @@ static const DOMIfaceAndProtoJSClass WindowNamedPropertiesClass = {
 // static
 JSObject* WindowNamedPropertiesHandler::Create(JSContext* aCx,
                                                JS::Handle<JSObject*> aProto) {
+  js::ProxyOptions options;
+  options.setClass(&WindowNamedPropertiesClass.mBase);
+
   // Note: since the scope polluter proxy lives on the window's prototype
   // chain, it needs a singleton type to avoid polluting type information
   // for properties on the window.
-  js::ProxyOptions options;
-  options.setSingleton(true);
-  options.setClass(&WindowNamedPropertiesClass.mBase);
-
-  JS::Rooted<JSObject*> gsp(aCx);
-  gsp = js::NewProxyObject(aCx, WindowNamedPropertiesHandler::getInstance(),
-                           JS::NullHandleValue, aProto, options);
+  JS::Rooted<JSObject*> gsp(
+      aCx, js::NewSingletonProxyObject(
+               aCx, WindowNamedPropertiesHandler::getInstance(),
+               JS::NullHandleValue, aProto, options));
   if (!gsp) {
     return nullptr;
   }

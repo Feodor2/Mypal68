@@ -16,7 +16,6 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/XSLTProcessorBinding.h"
-#include "mozilla/net/ReferrerPolicy.h"
 
 class nsINode;
 class nsIURI;
@@ -84,7 +83,7 @@ class txMozillaXSLTProcessor final : public nsIDocumentTransformer,
   mozilla::dom::DocGroup* GetDocGroup() const;
 
   static already_AddRefed<txMozillaXSLTProcessor> Constructor(
-      const mozilla::dom::GlobalObject& aGlobal, mozilla::ErrorResult& aRv);
+      const mozilla::dom::GlobalObject& aGlobal);
 
   void ImportStylesheet(nsINode& stylesheet, mozilla::ErrorResult& aRv);
   already_AddRefed<mozilla::dom::DocumentFragment> TransformToFragment(
@@ -159,7 +158,7 @@ class txMozillaXSLTProcessor final : public nsIDocumentTransformer,
 
 extern nsresult TX_LoadSheet(nsIURI* aUri, txMozillaXSLTProcessor* aProcessor,
                              mozilla::dom::Document* aLoaderDocument,
-                             mozilla::net::ReferrerPolicy aReferrerPolicy);
+                             mozilla::dom::ReferrerPolicy aReferrerPolicy);
 
 extern nsresult TX_CompileStylesheet(nsINode* aNode,
                                      txMozillaXSLTProcessor* aProcessor,

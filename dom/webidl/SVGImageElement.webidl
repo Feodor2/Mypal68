@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGImageElement : SVGGraphicsElement {
   [Constant]
   readonly attribute SVGAnimatedLength x;
@@ -26,6 +27,6 @@ interface SVGImageElement : SVGGraphicsElement {
   Promise<void> decode();
 };
 
-SVGImageElement implements MozImageLoadingContent;
-SVGImageElement implements SVGURIReference;
+SVGImageElement includes MozImageLoadingContent;
+SVGImageElement includes SVGURIReference;
 

@@ -183,10 +183,8 @@ already_AddRefed<DetailedPromise> MediaKeys::SetServerCertificate(
   nsTArray<uint8_t> data;
   CopyArrayBufferViewOrArrayBufferData(aCert, data);
   if (data.IsEmpty()) {
-    promise->MaybeReject(
-        NS_ERROR_DOM_TYPE_ERR,
-        NS_LITERAL_CSTRING(
-            "Empty certificate passed to MediaKeys.setServerCertificate()"));
+    promise->MaybeRejectWithTypeError(
+        u"Empty certificate passed to MediaKeys.setServerCertificate()");
     return promise.forget();
   }
 
@@ -281,7 +279,12 @@ void MediaKeys::RejectPromise(PromiseId aId, nsresult aExceptionCode,
   }
 
   MOZ_ASSERT(NS_FAILED(aExceptionCode));
-  promise->MaybeReject(aExceptionCode, aReason);
+  if (aExceptionCode == NS_ERROR_DOM_TYPE_ERR) {
+    // This is supposed to be a TypeError, not a DOMException.
+    promise->MaybeRejectWithTypeError(NS_ConvertUTF8toUTF16(aReason));
+  } else {
+    promise->MaybeReject(aExceptionCode, aReason);
+  }
 
   if (mCreatePromiseId == aId) {
     // Note: This will probably destroy the MediaKeys object!
@@ -420,7 +423,8 @@ already_AddRefed<DetailedPromise> MediaKeys::Init(ErrorResult& aRv) {
         NS_LITERAL_CSTRING("Couldn't get top-level window in MediaKeys::Init"));
     return promise.forget();
   }
-  nsCOMPtr<nsPIDOMWindowOuter> top = window->GetOuterWindow()->GetTop();
+  nsCOMPtr<nsPIDOMWindowOuter> top =
+      window->GetOuterWindow()->GetInProcessTop();
   if (!top || !top->GetExtantDoc()) {
     promise->MaybeReject(
         NS_ERROR_DOM_INVALID_STATE_ERR,
@@ -629,12 +633,9 @@ void MediaKeys::GetSessionsInfo(nsString& sessionsInfo) {
       nsString keyID = keyStatusMap->GetKeyIDAsHexString(i);
       sessionsInfo.AppendLiteral("(kid=");
       sessionsInfo.Append(keyID);
-      using IntegerType = typename std::underlying_type<MediaKeyStatus>::type;
-      auto idx = static_cast<IntegerType>(keyStatusMap->GetValueAtIndex(i));
-      const char* keyStatus = MediaKeyStatusValues::strings[idx].value;
       sessionsInfo.AppendLiteral(" status=");
-      sessionsInfo.Append(
-          NS_ConvertUTF8toUTF16((nsDependentCString(keyStatus))));
+      sessionsInfo.AppendASCII(
+          MediaKeyStatusValues::GetString(keyStatusMap->GetValueAtIndex(i)));
       sessionsInfo.AppendLiteral(")");
     }
     sessionsInfo.AppendLiteral(")");

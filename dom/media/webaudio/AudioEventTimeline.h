@@ -18,7 +18,7 @@
 
 namespace mozilla {
 
-class AudioNodeStream;
+class AudioNodeTrack;
 
 namespace dom {
 
@@ -30,14 +30,14 @@ struct AudioTimelineEvent final {
     ExponentialRamp,
     SetTarget,
     SetValueCurve,
-    Stream,
+    Track,
     Cancel
   };
 
   AudioTimelineEvent(Type aType, double aTime, float aValue,
                      double aTimeConstant = 0.0, double aDuration = 0.0,
                      const float* aCurve = nullptr, uint32_t aCurveLength = 0);
-  explicit AudioTimelineEvent(AudioNodeStream* aStream);
+  explicit AudioTimelineEvent(AudioNodeTrack* aTrack);
   AudioTimelineEvent(const AudioTimelineEvent& rhs);
   ~AudioTimelineEvent();
 
@@ -72,7 +72,7 @@ struct AudioTimelineEvent final {
   // duration of D, we sample the buffer at floor(mCurveLength*(T-T0)/D)
   // if T<T0+D, and just take the last sample in the buffer otherwise.
   float* mCurve;
-  RefPtr<AudioNodeStream> mStream;
+  RefPtr<AudioNodeTrack> mTrack;
   double mTimeConstant;
   double mDuration;
 #ifdef DEBUG
@@ -126,7 +126,9 @@ class AudioEventTimeline {
       return false;
     }
     if (!WebAudioUtils::IsTimeValid(aEvent.mTimeConstant)) {
-      aRv.ThrowRangeError<MSG_INVALID_AUDIOPARAM_EXPONENTIAL_CONSTANT_ERROR>();
+      aRv.ThrowRangeError(
+          u"The exponential constant passed to setTargetAtTime must be "
+          u"non-negative.");
       return false;
     }
 
@@ -136,7 +138,9 @@ class AudioEventTimeline {
         return false;
       }
       if (aEvent.mDuration <= 0) {
-        aRv.ThrowRangeError<MSG_INVALID_CURVE_DURATION_ERROR>();
+        aRv.ThrowRangeError(
+            u"The curve duration for setValueCurveAtTime must be strictly "
+            u"positive.");
         return false;
       }
     }
@@ -169,7 +173,9 @@ class AudioEventTimeline {
     // Make sure that invalid values are not used for exponential curves
     if (aEvent.mType == AudioTimelineEvent::ExponentialRamp) {
       if (aEvent.mValue <= 0.f) {
-        aRv.ThrowRangeError<MSG_INVALID_AUDIOPARAM_EXPONENTIAL_VALUE_ERROR>();
+        aRv.ThrowRangeError(
+            u"The value passed to exponentialRampToValueAtTime must be "
+            u"positive.");
         return false;
       }
       const AudioTimelineEvent* previousEvent =

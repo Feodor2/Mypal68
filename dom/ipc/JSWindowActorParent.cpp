@@ -17,7 +17,7 @@ JSObject* JSWindowActorParent::WrapObject(JSContext* aCx,
   return JSWindowActorParent_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-WindowGlobalParent* JSWindowActorParent::Manager() const { return mManager; }
+WindowGlobalParent* JSWindowActorParent::GetManager() const { return mManager; }
 
 void JSWindowActorParent::Init(const nsAString& aName,
                                WindowGlobalParent* aManager) {
@@ -81,6 +81,16 @@ void JSWindowActorParent::SendRawMessage(const JSWindowActorMessageMeta& aMeta,
     aRv.Throw(NS_ERROR_UNEXPECTED);
     return;
   }
+}
+
+CanonicalBrowsingContext* JSWindowActorParent::GetBrowsingContext(
+    ErrorResult& aRv) {
+  if (!mManager) {
+    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    return nullptr;
+  }
+
+  return mManager->BrowsingContext();
 }
 
 void JSWindowActorParent::StartDestroy() {

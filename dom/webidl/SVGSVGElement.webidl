@@ -11,6 +11,7 @@
 
 interface SVGViewSpec;
 
+[Exposed=Window]
 interface SVGSVGElement : SVGGraphicsElement {
 
   [Constant]
@@ -24,7 +25,6 @@ interface SVGSVGElement : SVGGraphicsElement {
   // readonly attribute SVGRect viewport;
   readonly attribute boolean useCurrentView;
   // readonly attribute SVGViewSpec currentView;
-  [UseCounter]
            attribute float currentScale;
   readonly attribute SVGPoint currentTranslate;
 
@@ -63,10 +63,9 @@ interface SVGSVGElement : SVGGraphicsElement {
   SVGTransform createSVGTransform();
   [NewObject]
   SVGTransform createSVGTransformFromMatrix(SVGMatrix matrix);
-  [UseCounter]
   Element? getElementById(DOMString elementId);
 };
 
-SVGSVGElement implements SVGFitToViewBox;
-SVGSVGElement implements SVGZoomAndPanValues;
+SVGSVGElement includes SVGFitToViewBox;
+SVGSVGElement includes SVGZoomAndPanValues;
 

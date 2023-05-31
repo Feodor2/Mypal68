@@ -11,6 +11,7 @@
 #include "js/Value.h"  // must come before js/RootingAPI.h
 #include "js/RootingAPI.h"
 #include "js/TracingAPI.h"
+#include "jsfriendapi.h"
 
 namespace mozilla {
 namespace dom {
@@ -80,10 +81,6 @@ static_assert(sizeof(void*) == 4, "Only support 32-bit and 64-bit");
  * A number of the methods are implemented in nsWrapperCacheInlines.h because we
  * have to include some JS headers that don't play nicely with the rest of the
  * codebase. Include nsWrapperCacheInlines.h if you need to call those methods.
- *
- * When recording or replaying an execution, wrapper caches are instrumented so
- * that they behave consistently even if the GC executes at different points
- * and collects different objects.
  */
 
 class nsWrapperCache {
@@ -100,11 +97,10 @@ class nsWrapperCache {
   {
   }
   ~nsWrapperCache() {
-    // Clear any JS root associated with this cache while replaying.
-    if (mozilla::recordreplay::IsReplaying()) {
-      mozilla::recordreplay::SetWeakPointerJSRoot(this, nullptr);
-    }
-    MOZ_ASSERT(!PreservingWrapper(),
+    // Preserved wrappers should never end up getting cleared, but this can
+    // happen during shutdown when a leaked wrapper object is finalized, causing
+    // its wrapper to be cleared.
+    MOZ_ASSERT(!PreservingWrapper() || js::RuntimeIsBeingDestroyed(),
                "Destroying cache with a preserved wrapper!");
   }
 
@@ -140,23 +136,6 @@ class nsWrapperCache {
    * escape.
    */
   JSObject* GetWrapperMaybeDead() const {
-    // Keep track of accesses on the cache when recording or replaying an
-    // execution. Accesses during a GC (when thread events are disallowed)
-    // fetch the underlying object without making sure the returned value
-    // is consistent between recording and replay.
-    if (mozilla::recordreplay::IsRecordingOrReplaying() &&
-        !mozilla::recordreplay::AreThreadEventsDisallowed() &&
-        !mozilla::recordreplay::HasDivergedFromRecording()) {
-      bool success = mozilla::recordreplay::RecordReplayValue(!!mWrapper);
-      if (mozilla::recordreplay::IsReplaying()) {
-        if (success) {
-          MOZ_RELEASE_ASSERT(mWrapper);
-        } else {
-          const_cast<nsWrapperCache*>(this)->ClearWrapper();
-        }
-      }
-    }
-
     return mWrapper;
   }
 
@@ -181,7 +160,11 @@ class nsWrapperCache {
    * Clear the cache.
    */
   void ClearWrapper() {
-    MOZ_ASSERT(!PreservingWrapper(), "Clearing a preserved wrapper!");
+    // Preserved wrappers should never end up getting cleared, but this can
+    // happen during shutdown when a leaked wrapper object is finalized, causing
+    // its wrapper to be cleared.
+    MOZ_ASSERT(!PreservingWrapper() || js::RuntimeIsBeingDestroyed(),
+               "Clearing a preserved wrapper!");
     SetWrapperJSObject(nullptr);
   }
 
@@ -196,12 +179,20 @@ class nsWrapperCache {
   }
 
   /**
+   * Update the wrapper when the object moves between globals.
+   */
+  template <typename T>
+  void UpdateWrapperForNewGlobal(T* aScriptObjectHolder, JSObject* aNewWrapper);
+
+  /**
    * Update the wrapper if the object it contains is moved.
    *
    * This method must be called from the objectMovedOp class extension hook for
    * any wrapper cached object.
    */
   void UpdateWrapper(JSObject* aNewObject, const JSObject* aOldObject) {
+    MOZ_ASSERT(js::GetObjectZoneFromAnyThread(aNewObject) ==
+               js::GetObjectZoneFromAnyThread(aOldObject));
     if (mWrapper) {
       MOZ_ASSERT(mWrapper == aOldObject);
       mWrapper = aNewObject;
@@ -250,7 +241,7 @@ class nsWrapperCache {
 
   void TraceWrapper(const TraceCallbacks& aCallbacks, void* aClosure) {
     if (PreservingWrapper() && mWrapper) {
-      aCallbacks.Trace(&mWrapper, "Preserved wrapper", aClosure);
+      aCallbacks.Trace(this, "Preserved wrapper", aClosure);
     }
   }
 
@@ -311,8 +302,8 @@ class nsWrapperCache {
       return;
     }
 
-    GetWrapper();  // Read barrier for incremental GC.
-    HoldJSObjects(aScriptObjectHolder, aTracer);
+    JSObject* wrapper = GetWrapper();  // Read barrier for incremental GC.
+    HoldJSObjects(aScriptObjectHolder, aTracer, JS::GetObjectZone(wrapper));
     SetPreservingWrapper(true);
 #ifdef DEBUG
     // Make sure the cycle collector will be able to traverse to the wrapper.
@@ -322,13 +313,13 @@ class nsWrapperCache {
 
   void ReleaseWrapper(void* aScriptObjectHolder);
 
- protected:
   void TraceWrapper(JSTracer* aTrc, const char* name) {
     if (mWrapper) {
       js::UnsafeTraceManuallyBarrieredEdge(aTrc, &mWrapper, name);
     }
   }
 
+ protected:
   void PoisonWrapper() {
     if (mWrapper) {
       // Set the pointer to a value that will cause a crash if it is
@@ -359,7 +350,8 @@ class nsWrapperCache {
     mFlags &= ~aFlagsToUnset;
   }
 
-  void HoldJSObjects(void* aScriptObjectHolder, nsScriptObjectTracer* aTracer);
+  void HoldJSObjects(void* aScriptObjectHolder, nsScriptObjectTracer* aTracer,
+                     JS::Zone* aZone);
 
 #ifdef DEBUG
  public:

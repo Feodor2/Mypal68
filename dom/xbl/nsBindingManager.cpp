@@ -7,10 +7,7 @@
 #include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsXBLService.h"
-#include "nsIInputStream.h"
 #include "nsIURI.h"
-#include "nsIURL.h"
-#include "nsIChannel.h"
 #include "nsString.h"
 #include "plstr.h"
 #include "nsIContent.h"
@@ -31,8 +28,6 @@
 #ifdef MOZ_XUL
 #  include "nsXULPrototypeCache.h"
 #endif
-
-#include "nsIWeakReference.h"
 
 #include "nsWrapperCacheInlines.h"
 #include "nsIXPConnect.h"

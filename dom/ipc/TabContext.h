@@ -45,15 +45,6 @@ class TabContext {
   bool IsMozBrowserElement() const;
 
   /**
-   * Does this TabContext correspond to an isolated mozbrowser?
-   *
-   * <iframe mozbrowser> is a mozbrowser element, but <xul:browser> is not.
-   * <iframe mozbrowser noisolation> does not count as isolated since isolation
-   * is disabled.  Isolation can only be disabled by chrome pages.
-   */
-  bool IsIsolatedMozBrowserElement() const;
-
-  /**
    * Does this TabContext correspond to a mozbrowser?  This is equivalent to
    * IsMozBrowserElement().  Returns false for <xul:browser>, which isn't a
    * mozbrowser.
@@ -78,7 +69,6 @@ class TabContext {
    */
   const nsAString& PresentationURL() const;
 
-  UIStateChangeType ShowAccelerators() const;
   UIStateChangeType ShowFocusRings() const;
 
  protected:
@@ -104,7 +94,6 @@ class TabContext {
   void SetPrivateBrowsingAttributes(bool aIsPrivateBrowsing);
 
   bool SetTabContext(bool aIsMozBrowserElement, uint64_t aChromeOuterWindowID,
-                     UIStateChangeType aShowAccelerators,
                      UIStateChangeType aShowFocusRings,
                      const OriginAttributes& aOriginAttributes,
                      const nsAString& aPresentationURL);
@@ -162,9 +151,8 @@ class TabContext {
   nsString mPresentationURL;
 
   /**
-   * Keyboard indicator state (focus rings, accelerators).
+   * Keyboard indicator state (focus rings).
    */
-  UIStateChangeType mShowAccelerators;
   UIStateChangeType mShowFocusRings;
 };
 
@@ -180,13 +168,12 @@ class MutableTabContext : public TabContext {
   }
 
   bool SetTabContext(bool aIsMozBrowserElement, uint64_t aChromeOuterWindowID,
-                     UIStateChangeType aShowAccelerators,
                      UIStateChangeType aShowFocusRings,
                      const OriginAttributes& aOriginAttributes,
                      const nsAString& aPresentationURL = EmptyString()) {
     return TabContext::SetTabContext(aIsMozBrowserElement, aChromeOuterWindowID,
-                                     aShowAccelerators, aShowFocusRings,
-                                     aOriginAttributes, aPresentationURL);
+                                     aShowFocusRings, aOriginAttributes,
+                                     aPresentationURL);
   }
 
   bool SetTabContextForJSPluginFrame(uint32_t aJSPluginID) {

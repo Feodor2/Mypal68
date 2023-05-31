@@ -9,7 +9,6 @@
 #include "nsISupports.h"
 #include "nsTArray.h"
 #include "nsWrapperCache.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/PerformanceEntryBinding.h"
 
 namespace mozilla {

@@ -11,7 +11,6 @@
 #include "nsComponentManagerUtils.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIInputStream.h"
-#include "nsIWebVTTParserWrapper.h"
 
 namespace mozilla {
 namespace dom {

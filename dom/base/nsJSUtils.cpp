@@ -12,15 +12,16 @@
 #include "nsJSUtils.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
+#include "js/BinASTFormat.h"  // JS::BinASTFormat
 #include "js/CompilationAndEvaluation.h"
+#include "js/Date.h"
+#include "js/Modules.h"  // JS::CompileModule, JS::GetModuleScript, JS::Module{Instantiate,Evaluate}
 #include "js/OffThreadScriptCompilation.h"
 #include "js/SourceText.h"
 #include "nsIScriptContext.h"
 #include "nsIScriptElement.h"
 #include "nsIScriptGlobalObject.h"
-#include "nsIXPConnect.h"
 #include "nsCOMPtr.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsPIDOMWindow.h"
 #include "GeckoProfiler.h"
 #include "nsJSPrincipals.h"
@@ -29,10 +30,11 @@
 #include "nsGlobalWindow.h"
 #include "nsXBLPrototypeBinding.h"
 #include "mozilla/CycleCollectedJSContext.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/BindingUtils.h"
-#include "mozilla/dom/Date.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/Utf8.h"  // mozilla::Utf8Unit
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -199,8 +201,9 @@ nsresult nsJSUtils::ExecutionContext::JoinCompile(
   return NS_OK;
 }
 
-nsresult nsJSUtils::ExecutionContext::Compile(
-    JS::CompileOptions& aCompileOptions, JS::SourceText<char16_t>& aSrcBuf) {
+template <typename Unit>
+nsresult nsJSUtils::ExecutionContext::InternalCompile(
+    JS::CompileOptions& aCompileOptions, JS::SourceText<Unit>& aSrcBuf) {
   if (mSkip) {
     return mRv;
   }
@@ -216,7 +219,6 @@ nsresult nsJSUtils::ExecutionContext::Compile(
       mScopeChain.length() == 0
           ? JS::Compile(mCx, aCompileOptions, aSrcBuf)
           : JS::CompileForNonSyntacticScope(mCx, aCompileOptions, aSrcBuf);
-
   if (!mScript) {
     mSkip = true;
     mRv = EvaluationExceptionToNSResult(mCx);
@@ -230,6 +232,16 @@ nsresult nsJSUtils::ExecutionContext::Compile(
   }
 
   return NS_OK;
+}
+
+nsresult nsJSUtils::ExecutionContext::Compile(
+    JS::CompileOptions& aCompileOptions, JS::SourceText<char16_t>& aSrcBuf) {
+  return InternalCompile(aCompileOptions, aSrcBuf);
+}
+
+nsresult nsJSUtils::ExecutionContext::Compile(
+    JS::CompileOptions& aCompileOptions, JS::SourceText<Utf8Unit>& aSrcBuf) {
+  return InternalCompile(aCompileOptions, aSrcBuf);
 }
 
 nsresult nsJSUtils::ExecutionContext::Compile(
@@ -340,7 +352,8 @@ nsresult nsJSUtils::ExecutionContext::DecodeBinAST(
   mWantsReturnValue = !aCompileOptions.noScriptRval;
 #  endif
 
-  mScript.set(JS::DecodeBinAST(mCx, aCompileOptions, aBuf, aLength));
+  mScript.set(JS::DecodeBinAST(mCx, aCompileOptions, aBuf, aLength,
+                               JS::BinASTFormat::Multipart));
 
   if (!mScript) {
     mSkip = true;
@@ -444,11 +457,11 @@ nsresult nsJSUtils::ExecutionContext::ExecScript(
   return NS_OK;
 }
 
-nsresult nsJSUtils::CompileModule(JSContext* aCx,
-                                  JS::SourceText<char16_t>& aSrcBuf,
-                                  JS::Handle<JSObject*> aEvaluationGlobal,
-                                  JS::CompileOptions& aCompileOptions,
-                                  JS::MutableHandle<JSObject*> aModule) {
+template <typename Unit>
+static nsresult CompileJSModule(JSContext* aCx, JS::SourceText<Unit>& aSrcBuf,
+                                JS::Handle<JSObject*> aEvaluationGlobal,
+                                JS::CompileOptions& aCompileOptions,
+                                JS::MutableHandle<JSObject*> aModule) {
   AUTO_PROFILER_LABEL("nsJSUtils::CompileModule", JS);
   MOZ_ASSERT(aCx == nsContentUtils::GetCurrentJSContext());
   MOZ_ASSERT(aSrcBuf.get());
@@ -460,11 +473,31 @@ nsresult nsJSUtils::CompileModule(JSContext* aCx,
 
   NS_ENSURE_TRUE(xpc::Scriptability::Get(aEvaluationGlobal).Allowed(), NS_OK);
 
-  if (!JS::CompileModule(aCx, aCompileOptions, aSrcBuf, aModule)) {
+  JSObject* module = JS::CompileModule(aCx, aCompileOptions, aSrcBuf);
+  if (!module) {
     return NS_ERROR_FAILURE;
   }
 
+  aModule.set(module);
   return NS_OK;
+}
+
+nsresult nsJSUtils::CompileModule(JSContext* aCx,
+                                  JS::SourceText<char16_t>& aSrcBuf,
+                                  JS::Handle<JSObject*> aEvaluationGlobal,
+                                  JS::CompileOptions& aCompileOptions,
+                                  JS::MutableHandle<JSObject*> aModule) {
+  return CompileJSModule(aCx, aSrcBuf, aEvaluationGlobal, aCompileOptions,
+                         aModule);
+}
+
+nsresult nsJSUtils::CompileModule(JSContext* aCx,
+                                  JS::SourceText<Utf8Unit>& aSrcBuf,
+                                  JS::Handle<JSObject*> aEvaluationGlobal,
+                                  JS::CompileOptions& aCompileOptions,
+                                  JS::MutableHandle<JSObject*> aModule) {
+  return CompileJSModule(aCx, aSrcBuf, aEvaluationGlobal, aCompileOptions,
+                         aModule);
 }
 
 nsresult nsJSUtils::InitModuleSourceElement(JSContext* aCx,
@@ -577,11 +610,21 @@ bool nsJSUtils::GetScopeChainForXBL(
 /* static */
 void nsJSUtils::ResetTimeZone() { JS::ResetTimeZone(); }
 
+/* static */
+bool nsJSUtils::DumpEnabled() {
+#if defined(DEBUG) || defined(MOZ_ENABLE_JS_DUMP)
+  return true;
+#else
+  return StaticPrefs::browser_dom_window_dump_enabled();
+#endif
+}
+
 //
 // nsDOMJSUtils.h
 //
 
-bool nsAutoJSString::init(const JS::Value& v) {
+template <typename T>
+bool nsTAutoJSString<T>::init(const JS::Value& v) {
   // Note: it's okay to use danger::GetJSContext here instead of AutoJSAPI,
   // because the init() call below is careful not to run script (for instance,
   // it only calls JS::ToString for non-object values).
@@ -590,6 +633,8 @@ bool nsAutoJSString::init(const JS::Value& v) {
     JS_ClearPendingException(cx);
     return false;
   }
-
   return true;
 }
+
+template bool nsTAutoJSString<char16_t>::init(const JS::Value&);
+template bool nsTAutoJSString<char>::init(const JS::Value&);

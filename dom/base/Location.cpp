@@ -16,11 +16,9 @@
 #include "nsNetUtil.h"
 #include "nsCOMPtr.h"
 #include "nsEscape.h"
-#include "nsIDOMWindow.h"
 #include "nsPresContext.h"
 #include "nsError.h"
 #include "nsReadableUtils.h"
-#include "nsITextToSubURI.h"
 #include "nsJSUtils.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindow.h"
@@ -67,7 +65,7 @@ already_AddRefed<nsDocShellLoadState> Location::CheckURL(
 
   nsCOMPtr<nsIPrincipal> triggeringPrincipal;
   nsCOMPtr<nsIURI> sourceURI;
-  net::ReferrerPolicy referrerPolicy = net::RP_Unset;
+  ReferrerPolicy referrerPolicy = ReferrerPolicy::_empty;
 
   // Get security manager.
   nsIScriptSecurityManager* ssm = nsContentUtils::GetSecurityManager();
@@ -130,13 +128,8 @@ already_AddRefed<nsDocShellLoadState> Location::CheckURL(
       // cleaner, but given that we need to start using Source Browsing
       // Context for referrer (see Bug 960639) this may be wasted effort at
       // this stage.
-      if (principalURI) {
-        bool isNullPrincipalScheme;
-        rv = principalURI->SchemeIs(NS_NULLPRINCIPAL_SCHEME,
-                                    &isNullPrincipalScheme);
-        if (NS_SUCCEEDED(rv) && !isNullPrincipalScheme) {
-          sourceURI = principalURI;
-        }
+      if (principalURI && !principalURI->SchemeIs(NS_NULLPRINCIPAL_SCHEME)) {
+        sourceURI = principalURI;
       }
     }
   } else {
@@ -148,15 +141,9 @@ already_AddRefed<nsDocShellLoadState> Location::CheckURL(
   RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(aURI);
 
   loadState->SetTriggeringPrincipal(triggeringPrincipal);
-
-  // Currently we query the CSP from the triggeringPrincipal, which is the
-  // doc->NodePrincipal() in case there is a doc. In that case we can query
-  // the CSP directly from the doc after Bug 965637. In case there is no doc,
-  // then we also do not need to query the CSP, because only documents can have
-  // a CSP attached.
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  triggeringPrincipal->GetCsp(getter_AddRefs(csp));
-  loadState->SetCsp(csp);
+  if (doc) {
+    loadState->SetCsp(doc->GetCsp());
+  }
 
   if (sourceURI) {
     nsCOMPtr<nsIReferrerInfo> referrerInfo =
@@ -673,19 +660,7 @@ void Location::SetProtocol(const nsAString& aProtocol,
     return;
   }
 
-  bool isHttp;
-  aRv = uri->SchemeIs("http", &isHttp);
-  if (NS_WARN_IF(aRv.Failed())) {
-    return;
-  }
-
-  bool isHttps;
-  aRv = uri->SchemeIs("https", &isHttps);
-  if (NS_WARN_IF(aRv.Failed())) {
-    return;
-  }
-
-  if (!isHttp && !isHttps) {
+  if (!uri->SchemeIs("http") && !uri->SchemeIs("https")) {
     // No-op, per spec.
     return;
   }
@@ -814,7 +789,7 @@ void Location::Assign(const nsAString& aUrl, nsIPrincipal& aSubjectPrincipal,
   DoSetHref(aUrl, aSubjectPrincipal, false, aRv);
 }
 
-already_AddRefed<nsIURI> Location::GetSourceBaseURL() {
+nsIURI* Location::GetSourceBaseURL() {
   Document* doc = GetEntryDocument();
   // If there's no entry document, we either have no Script Entry Point or one
   // that isn't a DOM Window.  This doesn't generally happen with the DOM, but

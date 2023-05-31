@@ -6,13 +6,11 @@
 #include "nsIAuthPrompt.h"
 #include "mozilla/dom/Document.h"
 #include "nsIExpatSink.h"
-#include "nsIChannelEventSink.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsILoadGroup.h"
 #include "nsIParser.h"
 #include "nsCharsetSource.h"
 #include "nsIRequestObserver.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsContentPolicyUtils.h"
 #include "nsIStreamConverterService.h"
 #include "nsSyncLoadService.h"
@@ -30,7 +28,6 @@
 #include "txXMLUtils.h"
 #include "nsAttrName.h"
 #include "nsIScriptError.h"
-#include "nsIURL.h"
 #include "nsError.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Element.h"
@@ -40,7 +37,7 @@
 #include "ReferrerInfo.h"
 
 using namespace mozilla;
-using mozilla::net::ReferrerPolicy;
+using mozilla::dom::ReferrerPolicy;
 
 static NS_DEFINE_CID(kCParserCID, NS_PARSER_CID);
 
@@ -248,8 +245,7 @@ txStylesheetSink::OnStartRequest(nsIRequest* aRequest) {
   // sniffing themselves.
   nsCOMPtr<nsIURI> uri;
   channel->GetURI(getter_AddRefs(uri));
-  bool sniff;
-  if (NS_SUCCEEDED(uri->SchemeIs("file", &sniff)) && sniff &&
+  if (uri->SchemeIs("file") &&
       contentType.EqualsLiteral(UNKNOWN_CONTENT_TYPE)) {
     nsresult rv;
     nsCOMPtr<nsIStreamConverterService> serv =
@@ -591,17 +587,11 @@ nsresult TX_CompileStylesheet(nsINode* aNode,
   // If we move GetBaseURI to nsINode this can be simplified.
   nsCOMPtr<Document> doc = aNode->OwnerDoc();
 
-  nsCOMPtr<nsIURI> uri;
-  if (aNode->IsContent()) {
-    uri = aNode->AsContent()->GetBaseURI();
-  } else {
-    NS_ASSERTION(aNode->IsDocument(), "not a doc");
-    uri = aNode->AsDocument()->GetBaseURI();
-  }
-  NS_ENSURE_TRUE(uri, NS_ERROR_FAILURE);
+  nsIURI* nodeBaseURI = aNode->GetBaseURI();
+  NS_ENSURE_TRUE(nodeBaseURI, NS_ERROR_FAILURE);
 
   nsAutoCString spec;
-  uri->GetSpec(spec);
+  nodeBaseURI->GetSpec(spec);
   NS_ConvertUTF8toUTF16 baseURI(spec);
 
   nsIURI* docUri = doc->GetDocumentURI();
@@ -609,6 +599,7 @@ nsresult TX_CompileStylesheet(nsINode* aNode,
 
   // We need to remove the ref, a URI with a ref would mean that we have an
   // embedded stylesheet.
+  nsCOMPtr<nsIURI> uri;
   NS_GetURIWithoutRef(docUri, getter_AddRefs(uri));
   NS_ENSURE_TRUE(uri, NS_ERROR_FAILURE);
 

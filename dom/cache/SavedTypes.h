@@ -12,7 +12,6 @@
 #include "mozilla/dom/cache/Types.h"
 #include "nsCOMPtr.h"
 #include "nsID.h"
-#include "nsIOutputStream.h"
 
 namespace mozilla {
 namespace dom {

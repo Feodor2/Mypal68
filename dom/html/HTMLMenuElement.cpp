@@ -133,10 +133,9 @@ bool HTMLMenuElement::CanLoadIcon(nsIContent* aContent,
 
   Document* doc = aContent->OwnerDoc();
 
-  nsCOMPtr<nsIURI> baseURI = aContent->GetBaseURI();
   nsCOMPtr<nsIURI> uri;
   nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(uri), aIcon, doc,
-                                            baseURI);
+                                            aContent->GetBaseURI());
 
   if (!uri) {
     return false;

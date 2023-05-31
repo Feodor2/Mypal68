@@ -8,7 +8,6 @@
 #include "LocalStorageCache.h"
 #include "LocalStorageManager.h"
 
-#include "nsIEffectiveTLDService.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsAppDirectoryServiceDefs.h"
 #include "nsThreadUtils.h"
@@ -16,8 +15,6 @@
 #include "mozStorageCID.h"
 #include "mozStorageHelper.h"
 #include "mozIStorageService.h"
-#include "mozIStorageBindingParamsArray.h"
-#include "mozIStorageBindingParams.h"
 #include "mozIStorageValueArray.h"
 #include "mozIStorageFunction.h"
 #include "mozilla/BasePrincipal.h"
@@ -311,8 +308,7 @@ bool StorageDBThread::ShouldPreloadOrigin(const nsACString& aOrigin) {
   return mOriginsHavingData.Contains(aOrigin);
 }
 
-void StorageDBThread::GetOriginsHavingData(
-    InfallibleTArray<nsCString>* aOrigins) {
+void StorageDBThread::GetOriginsHavingData(nsTArray<nsCString>* aOrigins) {
   Monitor2AutoLock monitor(mThreadObserver->GetMonitor());
   for (auto iter = mOriginsHavingData.Iter(); !iter.Done(); iter.Next()) {
     aOrigins->AppendElement(iter.Get()->GetKey());
@@ -361,7 +357,7 @@ nsresult StorageDBThread::InsertDBOp(StorageDBThread::DBOperation* aOperation) {
         aOperation->Finalize(NS_OK);
         return NS_OK;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
 
     case DBOperation::opGetUsage:
       if (aOperation->Type() == DBOperation::opPreloadUrgent) {

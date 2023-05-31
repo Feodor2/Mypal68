@@ -11,7 +11,7 @@
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "nsRect.h"
 #include "nsIImageLoadingContent.h"
 #include "nsGenericHTMLElement.h"
@@ -22,7 +22,6 @@
 #include "nsIFrame.h"
 #include "nsGkAtoms.h"
 #include "imgIRequest.h"
-#include "imgILoader.h"
 #include "imgIContainer.h"
 #include "imgINotificationObserver.h"
 #include "nsPresContext.h"
@@ -575,14 +574,13 @@ nsresult ImageDocument::OnLoadComplete(imgIRequest* aRequest,
   UpdateTitleAndCharset();
 
   // mImageContent can be null if the document is already destroyed
-  if (NS_FAILED(aStatus) && mStringBundle && mImageContent) {
+  if (NS_FAILED(aStatus) && mImageContent) {
     nsAutoCString src;
     mDocumentURI->GetSpec(src);
-    NS_ConvertUTF8toUTF16 srcString(src);
-    const char16_t* formatString[] = {srcString.get()};
+    AutoTArray<nsString, 1> formatString;
+    CopyUTF8toUTF16(src, *formatString.AppendElement());
     nsAutoString errorMsg;
-    mStringBundle->FormatStringFromName("InvalidImage", formatString, 1,
-                                        errorMsg);
+    FormatStringFromName("InvalidImage", formatString, errorMsg);
 
     mImageContent->SetAttr(kNameSpaceID_None, nsGkAtoms::alt, errorMsg, false);
   }
@@ -782,11 +780,10 @@ void ImageDocument::UpdateTitleAndCharset() {
 
   nsAutoString status;
   if (mImageIsResized) {
-    nsAutoString ratioStr;
-    ratioStr.AppendInt(NSToCoordFloor(GetRatio() * 100));
+    AutoTArray<nsString, 1> formatString;
+    formatString.AppendElement()->AppendInt(NSToCoordFloor(GetRatio() * 100));
 
-    const char16_t* formatString[1] = {ratioStr.get()};
-    mStringBundle->FormatStringFromName("ScaledImage", formatString, 1, status);
+    FormatStringFromName("ScaledImage", formatString, status);
   }
 
   static const char* const formatNames[4] = {

@@ -36,7 +36,7 @@ MediaResult RemoteAudioDecoderChild::InitIPDL(
     const AudioInfo& aAudioInfo,
     const CreateDecoderParams::OptionSet& aOptions) {
   RefPtr<RemoteDecoderManagerChild> manager =
-      RemoteDecoderManagerChild::GetSingleton();
+      RemoteDecoderManagerChild::GetRDDProcessSingleton();
 
   // The manager isn't available because RemoteDecoderManagerChild has been
   // initialized with null end points and we don't want to decode video on RDD
@@ -54,8 +54,9 @@ MediaResult RemoteAudioDecoderChild::InitIPDL(
   mIPDLSelfRef = this;
   bool success = false;
   nsCString errorDescription;
-  if (manager->SendPRemoteDecoderConstructor(this, aAudioInfo, aOptions,
-                                             &success, &errorDescription)) {
+  layers::TextureFactoryIdentifier defaultIdent;
+  if (manager->SendPRemoteDecoderConstructor(
+          this, aAudioInfo, aOptions, defaultIdent, &success, &errorDescription)) {
     mCanSend = true;
   }
 

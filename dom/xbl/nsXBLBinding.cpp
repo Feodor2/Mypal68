@@ -5,15 +5,13 @@
 #include "nsCOMPtr.h"
 #include "nsAtom.h"
 #include "nsXBLDocumentInfo.h"
-#include "nsIInputStream.h"
 #include "nsNameSpaceManager.h"
 #include "nsIURI.h"
-#include "nsIURL.h"
-#include "nsIChannel.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "plstr.h"
 #include "nsIContent.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 #include "ChildIterator.h"
@@ -25,13 +23,11 @@
 #include "mozilla/dom/XMLDocument.h"
 #include "jsapi.h"
 #include "nsXBLService.h"
-#include "nsIXPConnect.h"
 #include "nsIScriptContext.h"
 #include "nsCRT.h"
 
 // Event listeners
 #include "mozilla/EventListenerManager.h"
-#include "nsIDOMEventListener.h"
 #include "nsAttrName.h"
 
 #include "nsGkAtoms.h"
@@ -40,11 +36,8 @@
 
 #include "nsXBLPrototypeBinding.h"
 #include "nsXBLBinding.h"
-#include "nsIPrincipal.h"
-#include "nsIScriptSecurityManager.h"
 #include "mozilla/dom/XBLChildrenElement.h"
 
-#include "nsNodeUtils.h"
 #include "nsJSUtils.h"
 
 #include "mozilla/DeferredFinalize.h"
@@ -163,13 +156,15 @@ void nsXBLBinding::BindAnonymousContent(nsIContent* aAnonParent,
   // (2) The children's parent back pointer should not be to this synthetic root
   // but should instead point to the enclosing parent element.
   Document* doc = aElement->GetUncomposedDoc();
+  Element* element = aElement->AsElement();
 
   nsAutoScriptBlocker scriptBlocker;
+  BindContext context(*this, *element);
   for (nsIContent* child = aAnonParent->GetFirstChild(); child;
        child = child->GetNextSibling()) {
     child->UnbindFromTree();
     child->SetFlags(NODE_IS_ANONYMOUS_ROOT);
-    nsresult rv = child->BindToTree(doc, aElement, mBoundElement);
+    nsresult rv = child->BindToTree(context, *element);
     if (NS_FAILED(rv)) {
       // Oh, well... Just give up.
       // XXXbz This really shouldn't be a void method!
@@ -199,7 +194,7 @@ void nsXBLBinding::UnbindAnonymousContent(Document* aDocument,
   nsCOMPtr<nsIContent> anonParent = aAnonParent;
   for (nsIContent* child = aAnonParent->GetFirstChild(); child;
        child = child->GetNextSibling()) {
-    child->UnbindFromTree(true, aNullParent);
+    child->UnbindFromTree(aNullParent);
   }
 }
 
@@ -231,9 +226,9 @@ void nsXBLBinding::GenerateAnonymousContent() {
   if (hasContent) {
     Document* doc = mBoundElement->OwnerDoc();
 
-    nsCOMPtr<nsINode> clonedNode = nsNodeUtils::Clone(
-        content, true, doc->NodeInfoManager(), nullptr, IgnoreErrors());
-    // FIXME: Bug 1399558, Why is this code OK assuming that nsNodeUtils::Clone
+    nsCOMPtr<nsINode> clonedNode =
+        content->Clone(true, doc->NodeInfoManager(), nullptr, IgnoreErrors());
+    // FIXME: Bug 1399558, Why is this code OK assuming that nsINode::Clone
     // never fails?
     mContent = clonedNode->AsElement();
 
@@ -874,7 +869,6 @@ nsresult nsXBLBinding::DoInitJSClass(JSContext* cx, JS::Handle<JSObject*> obj,
     nsXBLDocumentInfo* docInfo = aProtoBinding->XBLDocumentInfo();
     ::JS_SetPrivate(proto, docInfo);
     NS_ADDREF(docInfo);
-    RecordReplayRegisterDeferredFinalize(docInfo);
     JS_SetReservedSlot(proto, 0, JS::PrivateValue(aProtoBinding));
 
     // Next, enter the realm of the property holder, wrap the proto, and

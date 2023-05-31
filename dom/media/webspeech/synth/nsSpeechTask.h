@@ -6,7 +6,7 @@
 #define mozilla_dom_nsSpeechTask_h
 
 #include "SpeechSynthesisUtterance.h"
-#include "nsIAudioChannelAgent.h"
+#include "AudioChannelAgent.h"
 #include "nsISpeechService.h"
 
 namespace mozilla {
@@ -17,12 +17,10 @@ namespace dom {
 
 class SpeechSynthesisUtterance;
 class SpeechSynthesis;
-class SynthStreamListener;
 
 class nsSpeechTask : public nsISpeechTask,
                      public nsIAudioChannelAgentCallback,
                      public nsSupportsWeakReference {
-  friend class SynthStreamListener;
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -57,6 +55,14 @@ class nsSpeechTask : public nsISpeechTask,
   bool IsPrePaused() { return mPrePaused; }
 
   bool IsChrome() { return mIsChrome; }
+
+  enum { STATE_PENDING, STATE_SPEAKING, STATE_ENDED };
+
+  uint32_t GetState() const { return mState; }
+
+  bool IsSpeaking() const { return mState == STATE_SPEAKING; }
+
+  bool IsPending() const { return mState == STATE_PENDING; }
 
  protected:
   virtual ~nsSpeechTask();
@@ -101,13 +107,15 @@ class nsSpeechTask : public nsISpeechTask,
 
   nsCOMPtr<nsISpeechTaskCallback> mCallback;
 
-  nsCOMPtr<nsIAudioChannelAgent> mAudioChannelAgent;
+  RefPtr<mozilla::dom::AudioChannelAgent> mAudioChannelAgent;
 
   RefPtr<SpeechSynthesis> mSpeechSynthesis;
 
   nsString mChosenVoiceURI;
 
   bool mIsChrome;
+
+  uint32_t mState;
 };
 
 }  // namespace dom

@@ -7,7 +7,6 @@
 #include "FlushType.h"
 #include "nsCOMPtr.h"
 #include "mozilla/dom/Document.h"
-#include "nsIDOMWindow.h"
 #include "nsIDocShell.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIScriptGlobalObject.h"
@@ -44,7 +43,7 @@ uint32_t nsDOMWindowList::GetLength() {
   NS_ENSURE_TRUE(mDocShellNode, 0);
 
   int32_t length;
-  nsresult rv = mDocShellNode->GetChildCount(&length);
+  nsresult rv = mDocShellNode->GetInProcessChildCount(&length);
   NS_ENSURE_SUCCESS(rv, 0);
 
   return uint32_t(length);

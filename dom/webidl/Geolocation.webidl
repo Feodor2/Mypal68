@@ -15,17 +15,18 @@ dictionary PositionOptions {
   [Clamp] unsigned long maximumAge = 0;
 };
 
-[NoInterfaceObject]
+[NoInterfaceObject,
+ Exposed=Window]
 interface Geolocation {
   [Throws, NeedsCallerType]
   void getCurrentPosition(PositionCallback successCallback,
                           optional PositionErrorCallback? errorCallback = null,
-                          optional PositionOptions options);
+                          optional PositionOptions options = {});
 
   [Throws, NeedsCallerType]
   long watchPosition(PositionCallback successCallback,
                      optional PositionErrorCallback? errorCallback = null,
-                     optional PositionOptions options);
+                     optional PositionOptions options = {});
 
   void clearWatch(long watchId);
 };

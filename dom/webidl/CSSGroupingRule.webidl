@@ -7,6 +7,7 @@
  */
 
 // https://drafts.csswg.org/cssom/#cssgroupingrule
+[Exposed=Window]
 interface CSSGroupingRule : CSSRule {
   [SameObject] readonly attribute CSSRuleList cssRules;
   [Throws]

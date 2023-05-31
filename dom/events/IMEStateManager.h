@@ -351,7 +351,6 @@ class IMEStateManager {
 
   static bool sIsGettingNewIMEState;
   static bool sCheckForIMEUnawareWebApps;
-  static bool sInputModeSupported;
 
   class MOZ_STACK_CLASS GettingNewIMEStateBlocker final {
    public:

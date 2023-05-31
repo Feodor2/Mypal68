@@ -7,6 +7,7 @@
  */
 
 // https://drafts.csswg.org/cssom/#the-cssstylerule-interface
+[Exposed=Window]
 interface CSSStyleRule : CSSRule {
   attribute DOMString selectorText;
   [SameObject, PutForwards=cssText] readonly attribute CSSStyleDeclaration style;

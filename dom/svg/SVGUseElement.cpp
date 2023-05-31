@@ -17,7 +17,6 @@
 #include "mozilla/URLExtraData.h"
 #include "SVGObserverUtils.h"
 #include "nsSVGUseFrame.h"
-#include "mozilla/net/ReferrerPolicy.h"
 
 NS_IMPL_NS_NEW_SVG_ELEMENT(Use)
 
@@ -147,18 +146,16 @@ nsresult SVGUseElement::Clone(dom::NodeInfo* aNodeInfo,
   return NS_FAILED(rv1) ? rv1 : rv2;
 }
 
-nsresult SVGUseElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                   nsIContent* aBindingParent) {
-  nsresult rv =
-      SVGUseElementBase::BindToTree(aDocument, aParent, aBindingParent);
+nsresult SVGUseElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = SVGUseElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   TriggerReclone();
   return NS_OK;
 }
 
-void SVGUseElement::UnbindFromTree(bool aDeep, bool aNullParent) {
-  SVGUseElementBase::UnbindFromTree(aDeep, aNullParent);
+void SVGUseElement::UnbindFromTree(bool aNullParent) {
+  SVGUseElementBase::UnbindFromTree(aNullParent);
   OwnerDoc()->UnscheduleSVGUseElementShadowTreeUpdate(*this);
 }
 
@@ -240,8 +237,8 @@ bool SVGUseElement::IsCyclicReferenceTo(const Element& aTarget) const {
   if (mOriginal && mOriginal->IsCyclicReferenceTo(aTarget)) {
     return true;
   }
-  for (nsINode* parent = GetParentOrHostNode(); parent;
-       parent = parent->GetParentOrHostNode()) {
+  for (nsINode* parent = GetParentOrShadowHostNode(); parent;
+       parent = parent->GetParentOrShadowHostNode()) {
     if (parent == &aTarget) {
       return true;
     }
@@ -313,8 +310,8 @@ void SVGUseElement::UpdateShadowTree() {
                                              ? nullptr
                                              : OwnerDoc()->NodeInfoManager();
 
-    nsCOMPtr<nsINode> newNode = nsNodeUtils::Clone(
-        targetElement, true, nodeInfoManager, nullptr, IgnoreErrors());
+    nsCOMPtr<nsINode> newNode =
+        targetElement->Clone(true, nodeInfoManager, nullptr, IgnoreErrors());
     if (!newNode) {
       return;
     }
@@ -332,11 +329,13 @@ void SVGUseElement::UpdateShadowTree() {
                                mLengthAttributes[ATTR_HEIGHT]);
   }
 
-  // The specs do not say which referrer policy we should use, pass RP_Unset for
-  // now
-  mContentURLData = new URLExtraData(
-      baseURI.forget(), do_AddRef(OwnerDoc()->GetDocumentURI()),
-      do_AddRef(NodePrincipal()), mozilla::net::RP_Unset);
+  // Bug 1415044 the specs do not say which referrer information we should use.
+  // This may change if there's any spec comes out.
+  nsCOMPtr<nsIReferrerInfo> referrerInfo = new mozilla::dom::ReferrerInfo();
+  referrerInfo->InitWithNode(this);
+
+  mContentURLData = new URLExtraData(baseURI.forget(), referrerInfo.forget(),
+                                     do_AddRef(NodePrincipal()));
 
   targetElement->AddMutationObserver(this);
 }
@@ -418,10 +417,10 @@ void SVGUseElement::LookupHref() {
   nsCOMPtr<nsIURI> targetURI;
   nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(targetURI), href,
                                             GetComposedDoc(), baseURI);
-  // Bug 1415044 to investigate which referrer we should use
-  mReferencedElementTracker.ResetToURIFragmentID(
-      this, targetURI, OwnerDoc()->GetDocumentURI(),
-      OwnerDoc()->GetReferrerPolicy());
+  nsCOMPtr<nsIReferrerInfo> referrerInfo =
+      ReferrerInfo::CreateForSVGResources(OwnerDoc());
+
+  mReferencedElementTracker.ResetToURIFragmentID(this, targetURI, referrerInfo);
 }
 
 void SVGUseElement::TriggerReclone() {

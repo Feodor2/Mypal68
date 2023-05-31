@@ -12,8 +12,6 @@
 #include "mozilla/dom/indexedDB/PermissionRequestBase.h"
 #include "mozilla/dom/PBrowserParent.h"
 
-template <class>
-struct already_AddRefed;
 class nsIPrincipal;
 
 namespace mozilla {
@@ -50,7 +48,7 @@ bool DeallocPBackgroundIndexedDBUtilsParent(
 
 bool RecvFlushPendingFileDeletions();
 
-already_AddRefed<mozilla::dom::quota::Client> CreateQuotaClient();
+RefPtr<mozilla::dom::quota::Client> CreateQuotaClient();
 
 FileHandleThreadPool* GetFileHandleThreadPool();
 

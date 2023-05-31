@@ -38,8 +38,7 @@ ValueExtractor.prototype = {
         this.console.warn(
           this.domBundle.formatStringFromName(
             "ManifestInvalidType",
-            [objectName, property, expectedType],
-            3
+            [objectName, property, expectedType]
           )
         );
       }
@@ -62,8 +61,7 @@ ValueExtractor.prototype = {
       this.console.warn(
         this.domBundle.formatStringFromName(
           "ManifestInvalidCSSColor",
-          [spec.property, value],
-          2
+          [spec.property, value]
         )
       );
     }
@@ -79,8 +77,7 @@ ValueExtractor.prototype = {
         console.warn(
           this.domBundle.formatStringFromName(
             "ManifestLangIsInvalid",
-            [spec.property, value],
-            2
+            [spec.property, value]
           )
         );
       }

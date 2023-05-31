@@ -12,7 +12,7 @@
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/StyleAnimationValue.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/TimingParams.h"
 #include "mozilla/dom/BaseKeyframeTypesBinding.h"  // For FastBaseKeyframe etc.
 #include "mozilla/dom/Document.h"  // For Document::AreWebAnimationsImplicitKeyframesEnabled
@@ -365,8 +365,8 @@ static void GetKeyframeListFromKeyframeSequence(JSContext* aCx,
   // Check that the keyframes are loosely sorted and with values all
   // between 0% and 100%.
   if (!HasValidOffsets(aResult)) {
-    aRv.ThrowTypeError<dom::MSG_INVALID_KEYFRAME_OFFSETS>();
     aResult.Clear();
+    aRv.ThrowTypeError<dom::MSG_INVALID_KEYFRAME_OFFSETS>();
     return;
   }
 }
@@ -500,7 +500,7 @@ static bool GetPropertyValuesPairs(JSContext* aCx,
     return false;
   }
   for (size_t i = 0, n = ids.length(); i < n; i++) {
-    nsAutoJSString propName;
+    nsAutoJSCString propName;
     if (!propName.init(aCx, ids[i])) {
       return false;
     }
@@ -591,14 +591,13 @@ static bool AppendValueAsString(JSContext* aCx, nsTArray<nsString>& aValues,
 static void ReportInvalidPropertyValueToConsole(
     nsCSSPropertyID aProperty, const nsAString& aInvalidPropertyValue,
     dom::Document* aDoc) {
-  const nsString& invalidValue = PromiseFlatString(aInvalidPropertyValue);
-  const NS_ConvertASCIItoUTF16 propertyName(
-      nsCSSProps::GetStringValue(aProperty));
-  const char16_t* params[] = {invalidValue.get(), propertyName.get()};
+  AutoTArray<nsString, 2> params;
+  params.AppendElement(aInvalidPropertyValue);
+  CopyASCIItoUTF16(nsCSSProps::GetStringValue(aProperty),
+                   *params.AppendElement());
   nsContentUtils::ReportToConsole(
       nsIScriptError::warningFlag, NS_LITERAL_CSTRING("Animation"), aDoc,
-      nsContentUtils::eDOM_PROPERTIES, "InvalidKeyframePropertyValue", params,
-      ArrayLength(params));
+      nsContentUtils::eDOM_PROPERTIES, "InvalidKeyframePropertyValue", params);
 }
 
 /**
@@ -1057,8 +1056,8 @@ static void GetKeyframeListFromPropertyIndexedKeyframe(
   // offsets are thrown before exceptions arising from invalid easings, we check
   // the offsets here.
   if (!HasValidOffsets(aResult)) {
-    aRv.ThrowTypeError<dom::MSG_INVALID_KEYFRAME_OFFSETS>();
     aResult.Clear();
+    aRv.ThrowTypeError<dom::MSG_INVALID_KEYFRAME_OFFSETS>();
     return;
   }
 

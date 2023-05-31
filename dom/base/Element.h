@@ -12,7 +12,6 @@
 #define mozilla_dom_Element_h__
 
 #include "AttrArray.h"
-#include "DOMIntersectionObserver.h"
 #include "nsAttrValue.h"
 #include "nsAttrValueInlines.h"
 #include "nsChangeHint.h"
@@ -20,7 +19,6 @@
 #include "nsDOMAttributeMap.h"
 #include "nsINodeList.h"
 #include "nsIScrollableFrame.h"
-#include "nsNodeUtils.h"
 #include "nsPresContext.h"
 #include "Units.h"
 #include "mozilla/Attributes.h"
@@ -81,7 +79,7 @@ namespace css {
 struct URLValue;
 }  // namespace css
 namespace dom {
-struct AnimationFilter;
+struct GetAnimationsOptions;
 struct ScrollIntoViewOptions;
 struct ScrollToOptions;
 class DOMIntersectionObserver;
@@ -351,7 +349,7 @@ class Element : public FragmentOrElement {
    * notify the document's pres context, so that the style changes will be
    * noticed.
    */
-  nsresult SetSMILOverrideStyleDeclaration(DeclarationBlock* aDeclaration);
+  void SetSMILOverrideStyleDeclaration(DeclarationBlock&);
 
   /**
    * Returns a new SMILAttr that allows the caller to animate the given
@@ -457,7 +455,7 @@ class Element : public FragmentOrElement {
     }
   }
 
-  bool GetBindingURL(Document* aDocument, css::URLValue** aResult);
+  mozilla::StyleUrlOrNone GetBindingURL(Document* aDocument);
 
   Directionality GetComputedDirectionality() const;
 
@@ -650,10 +648,9 @@ class Element : public FragmentOrElement {
 
   void UpdateEditableState(bool aNotify) override;
 
-  nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                      nsIContent* aBindingParent) override;
+  nsresult BindToTree(BindContext&, nsINode& aParent) override;
 
-  void UnbindFromTree(bool aDeep = true, bool aNullParent = true) override;
+  void UnbindFromTree(bool aNullParent = true) override;
 
   /**
    * Normalizes an attribute name and returns it as a nodeinfo if an attribute
@@ -1336,7 +1333,7 @@ class Element : public FragmentOrElement {
   // Note: GetAnimations will flush style while GetAnimationsUnsorted won't.
   // Callers must keep this element alive because flushing style may destroy
   // this element.
-  void GetAnimations(const AnimationFilter& filter,
+  void GetAnimations(const GetAnimationsOptions& aOptions,
                      nsTArray<RefPtr<Animation>>& aAnimations);
   static void GetAnimationsUnsorted(Element* aElement,
                                     PseudoStyleType aPseudoType,
@@ -1360,8 +1357,8 @@ class Element : public FragmentOrElement {
    * @param aValue the JS to attach
    * @param aDefer indicates if deferred execution is allowed
    */
-  nsresult SetEventHandler(nsAtom* aEventName, const nsAString& aValue,
-                           bool aDefer = true);
+  void SetEventHandler(nsAtom* aEventName, const nsAString& aValue,
+                       bool aDefer = true);
 
   /**
    * Do whatever needs to be done when the mouse leaves a link
@@ -1403,6 +1400,14 @@ class Element : public FragmentOrElement {
   bool IsDisplayContents() const {
     return HasServoData() && Servo_Element_IsDisplayContents(this);
   }
+
+  /*
+   * https://html.spec.whatwg.org/#being-rendered
+   *
+   * With a gotcha for display contents:
+   *   https://github.com/whatwg/html/issues/1837
+   */
+  bool IsRendered() const { return GetPrimaryFrame() || IsDisplayContents(); }
 
   const nsAttrValue* GetParsedAttr(const nsAtom* aAttr) const {
     return mAttrs.GetAttr(aAttr);
@@ -1459,7 +1464,11 @@ class Element : public FragmentOrElement {
    *
    * If you change this, change also the similar method in Link.
    */
-  virtual void NodeInfoChanged(Document* aOldDoc) {}
+  virtual void NodeInfoChanged(Document* aOldDoc) {
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    AssertInvariantsOnNodeInfoChange();
+#endif
+  }
 
   /**
    * Parse a string into an nsAttrValue for a CORS attribute.  This
@@ -1486,7 +1495,7 @@ class Element : public FragmentOrElement {
   /**
    * Locate a TextEditor rooted at this content node, if there is one.
    */
-  mozilla::TextEditor* GetTextEditorInternal();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY mozilla::TextEditor* GetTextEditorInternal();
 
   /**
    * Gets value of boolean attribute. Only works for attributes in null
@@ -1579,8 +1588,8 @@ class Element : public FragmentOrElement {
    */
   float FontSizeInflation();
 
-  net::ReferrerPolicy GetReferrerPolicyAsEnum();
-  net::ReferrerPolicy ReferrerPolicyFromAttr(const nsAttrValue* aValue);
+  ReferrerPolicy GetReferrerPolicyAsEnum();
+  ReferrerPolicy ReferrerPolicyFromAttr(const nsAttrValue* aValue);
 
   /*
    * Helpers for .dataset.  This is implemented on Element, though only some
@@ -1768,15 +1777,11 @@ class Element : public FragmentOrElement {
    *        principal is directly responsible for the attribute change.
    * @param aNotify Whether we plan to notify document observers.
    */
-  // Note that this is inlined so that when subclasses call it it gets
-  // inlined.  Those calls don't go through a vtable.
   virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,
                                 const nsAttrValue* aValue,
                                 const nsAttrValue* aOldValue,
                                 nsIPrincipal* aMaybeScriptedPrincipal,
-                                bool aNotify) {
-    return NS_OK;
-  }
+                                bool aNotify);
 
   /**
    * This function shall be called just before the id attribute changes. It will
@@ -1905,13 +1910,19 @@ class Element : public FragmentOrElement {
       nsAtom* aAtom,
       const DOMTokenListSupportedTokenArray aSupportedTokens = nullptr);
 
+  enum class ReparseAttributes { No, Yes };
   /**
    * Copy attributes and state to another element
    * @param aDest the object to copy to
    */
-  nsresult CopyInnerTo(Element* aDest);
+  nsresult CopyInnerTo(Element* aDest,
+                       ReparseAttributes = ReparseAttributes::Yes);
 
  private:
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+  void AssertInvariantsOnNodeInfoChange();
+#endif
+
   /**
    * Slow path for GetClasses, this should only be called for SVG elements.
    */

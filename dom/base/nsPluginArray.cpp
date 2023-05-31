@@ -10,7 +10,6 @@
 
 #include "nsMimeTypeArray.h"
 #include "Navigator.h"
-#include "nsIDocShell.h"
 #include "nsIWebNavigation.h"
 #include "nsPluginHost.h"
 #include "nsPluginTags.h"

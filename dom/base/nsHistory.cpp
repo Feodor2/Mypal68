@@ -12,11 +12,9 @@
 #include "nsPresContext.h"
 #include "nsIDocShell.h"
 #include "nsIWebNavigation.h"
-#include "nsIURI.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsReadableUtils.h"
 #include "nsContentUtils.h"
-#include "nsISHistory.h"
 #include "mozilla/dom/Location.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
@@ -294,7 +292,7 @@ already_AddRefed<ChildSHistory> nsHistory::GetSessionHistory() const {
 
   // Get the root DocShell from it
   nsCOMPtr<nsIDocShellTreeItem> root;
-  docShell->GetSameTypeRootTreeItem(getter_AddRefs(root));
+  docShell->GetInProcessSameTypeRootTreeItem(getter_AddRefs(root));
   nsCOMPtr<nsIWebNavigation> webNav(do_QueryInterface(root));
   NS_ENSURE_TRUE(webNav, nullptr);
 

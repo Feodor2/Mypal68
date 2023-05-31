@@ -7,6 +7,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Likely.h"
+#include "mozilla/TextUtils.h"
 
 #include "jsapi.h"
 #include "js/Proxy.h"
@@ -151,7 +152,7 @@ class ShadowingDOMProxyHandler : public DOMProxyHandler {
 };
 
 inline bool IsDOMProxy(JSObject* obj) {
-  const js::Class* clasp = js::GetObjectClass(obj);
+  const JSClass* clasp = js::GetObjectClass(obj);
   return clasp->isProxy() &&
          js::GetProxyHandler(obj)->family() == &DOMProxyHandler::family;
 }
@@ -182,16 +183,14 @@ inline uint32_t GetArrayIndexFromId(JS::Handle<jsid> id) {
   }
 
   JSLinearString* str = js::AtomToLinearString(JSID_TO_ATOM(id));
-  char16_t s;
-  {
-    JS::AutoCheckCannotGC nogc;
-    if (js::LinearStringHasLatin1Chars(str)) {
-      s = *js::GetLatin1LinearStringChars(nogc, str);
-    } else {
-      s = *js::GetTwoByteLinearStringChars(nogc, str);
-    }
+  if (MOZ_UNLIKELY(js::GetLinearStringLength(str) == 0)) {
+    return UINT32_MAX;
   }
-  if (MOZ_LIKELY((unsigned)s >= 'a' && (unsigned)s <= 'z')) return UINT32_MAX;
+
+  char16_t firstChar = js::GetLinearStringCharAt(str, 0);
+  if (MOZ_LIKELY(IsAsciiLowercaseAlpha(firstChar))) {
+    return UINT32_MAX;
+  }
 
   uint32_t i;
   return js::StringIsArrayIndex(str, &i) ? i : UINT32_MAX;

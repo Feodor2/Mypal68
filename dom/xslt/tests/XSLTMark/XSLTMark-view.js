@@ -7,7 +7,7 @@ var view = {
   testArray: null,
   mCurrent: null,
 
-  browseForConfig: function() {
+  browseForConfig() {
     enablePrivilege("UniversalXPConnect");
     var fp = Cc["@mozilla.org/filepicker;1"].createInstance(nsIFilePicker);
     fp.init(window, "XSLTMark Description File", nsIFilePicker.modeOpen);
@@ -27,7 +27,7 @@ var view = {
     return true;
   },
 
-  parseConfig: function() {
+  parseConfig() {
     this.testArray = new Array();
     var test;
     if (!this.configUrl) {
@@ -56,7 +56,7 @@ var view = {
     }
   },
 
-  onLoad: function() {
+  onLoad() {
     this.mCurrentStatus = document.getElementById("currentStatus");
     this.mCurrentProgress = document.getElementById("currentProgress");
     this.mTotalProgress = document.getElementById("totalProgress");
@@ -65,7 +65,7 @@ var view = {
     this.mDetail = true;
   },
 
-  progress: function(aTitle, aTime, aProgress) {
+  progress(aTitle, aTime, aProgress) {
     // dump20(aTitle);
     // dump20(aTime);
     // dump20(aProgress);
@@ -75,7 +75,7 @@ var view = {
     // dump("\n");
   },
 
-  done: function(aTitle) {
+  done(aTitle) {
     // dump(aTitle + " is finished.\n");
     this.mCurrent++;
     this.mCurrentProgress.value = 0;
@@ -98,14 +98,14 @@ var view = {
     );
   },
 
-  onStop: function() {
+  onStop() {
     clearTimeout(gTimeout);
     this.mCurrentProgress.value = 0;
     this.mTotalProgress.value = 0;
     this.mCurrentStatus.value = "stopped";
   },
 
-  displayTest: function(aTitle) {
+  displayTest(aTitle) {
     this.mTimes = new Array();
     aTitle += "\t";
     this.mCurrentStatus.value = aTitle;
@@ -115,13 +115,13 @@ var view = {
     }
   },
 
-  displayDetailTime: function(aTime) {
+  displayDetailTime(aTime) {
     if (this.mDetail) {
       this.mDetailOutput.value += aTime + " ms\t";
     }
   },
 
-  displayTotalTime: function() {
+  displayTotalTime() {
     var sum = 0;
     for (k = 0; k < this.mTimes.length; k++) {
       sum += this.mTimes[k];
@@ -140,7 +140,7 @@ var view = {
     }
   },
 
-  runBenchmark: function() {
+  runBenchmark() {
     enablePrivilege("UniversalXPConnect");
     if (!this.testArray) {
       if (!this.configUrl) {

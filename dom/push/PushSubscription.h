@@ -14,7 +14,6 @@
 #include "mozilla/RefPtr.h"
 
 #include "mozilla/dom/BindingDeclarations.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/PushSubscriptionBinding.h"
 #include "mozilla/dom/PushSubscriptionOptionsBinding.h"
 #include "mozilla/dom/TypedArray.h"

@@ -13,6 +13,7 @@ dictionary SocketElement {
   double received = 0;
 };
 
+[GenerateConversionToJS]
 dictionary SocketsDict {
   sequence<SocketElement> sockets;
   double sent = 0;
@@ -39,6 +40,7 @@ dictionary HttpConnectionElement {
   sequence<HalfOpenInfoDict> halfOpens;
 };
 
+[GenerateConversionToJS]
 dictionary HttpConnDict {
   sequence<HttpConnectionElement> connections;
 };
@@ -52,6 +54,7 @@ dictionary WebSocketElement {
   boolean encrypted = false;
 };
 
+[GenerateConversionToJS]
 dictionary WebSocketDict {
   sequence<WebSocketElement> websockets;
 };
@@ -64,16 +67,19 @@ dictionary DnsCacheEntry {
   boolean trr = false;
 };
 
+[GenerateConversionToJS]
 dictionary DNSCacheDict {
   sequence<DnsCacheEntry> entries;
 };
 
+[GenerateConversionToJS]
 dictionary DNSLookupDict {
   sequence<DOMString> address;
   DOMString error = "";
   boolean answer = false;
 };
 
+[GenerateConversionToJS]
 dictionary ConnStatusDict {
   DOMString status = "";
 };
@@ -84,6 +90,7 @@ dictionary RcwnPerfStats {
   unsigned long stddevLong = 0;
 };
 
+[GenerateConversionToJS]
 dictionary RcwnStatus {
   unsigned long totalNetworkRequests = 0;
   unsigned long rcwnCacheWonCount = 0;

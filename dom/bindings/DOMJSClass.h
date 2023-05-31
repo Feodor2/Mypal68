@@ -14,10 +14,14 @@
 #include "mozilla/Likely.h"
 
 #include "mozilla/dom/PrototypeList.h"  // auto-generated
+#include "mozilla/dom/WebIDLPrefs.h"    // auto-generated
 
 #include "mozilla/dom/JSSlots.h"
 
 class nsCycleCollectionParticipant;
+struct JSStructuredCloneReader;
+struct JSStructuredCloneWriter;
+class nsIGlobalObject;
 
 // All DOM globals must have a slot at DOM_PROTOTYPE_SLOT.
 #define DOM_PROTOTYPE_SLOT JSCLASS_GLOBAL_SLOT_COUNT
@@ -108,21 +112,13 @@ static const uint32_t AudioWorkletGlobalScope = 1u << 7;
 
 struct PrefableDisablers {
   inline bool isEnabled(JSContext* cx, JS::Handle<JSObject*> obj) const {
-    // Reading "enabled" on a worker thread is technically undefined behavior,
-    // because it's written only on main threads, with no barriers of any sort.
-    // So we want to avoid doing that.  But we don't particularly want to make
-    // expensive NS_IsMainThread calls here.
-    //
-    // The good news is that "enabled" is only written for things that have a
-    // Pref annotation, and such things can never be exposed on non-Window
-    // globals; our IDL parser enforces that.  So as long as we check our
-    // exposure set before checking "enabled" we will be ok.
     if (nonExposedGlobals &&
         IsNonExposedGlobal(cx, JS::GetNonCCWObjectGlobal(obj),
                            nonExposedGlobals)) {
       return false;
     }
-    if (!enabled) {
+    if (prefIndex != WebIDLPrefIndex::NoPref &&
+        !sWebIDLPrefs[uint16_t(prefIndex)]()) {
       return false;
     }
     if (secureContext && !IsSecureContextOrObjectIsFromSecureContext(cx, obj)) {
@@ -134,9 +130,8 @@ struct PrefableDisablers {
     return true;
   }
 
-  // A boolean indicating whether this set of specs is enabled. Not const
-  // because it will change at runtime if the corresponding pref is changed.
-  bool enabled;
+  // Index into the array of StaticPrefs
+  const WebIDLPrefIndex prefIndex;
 
   // A boolean indicating whether a Secure Context is required.
   const bool secureContext;
@@ -162,7 +157,7 @@ struct Prefable {
 
   // Things that can disable this set of specs. |nullptr| means "cannot be
   // disabled".
-  PrefableDisablers* const disablers;
+  const PrefableDisablers* const disablers;
 
   // Array of specs, terminated in whatever way is customary for T.
   // Null to indicate a end-of-array for Prefable, when such an
@@ -399,12 +394,29 @@ typedef JSObject* (*ProtoGetter)(JSContext* aCx);
  */
 typedef JS::Handle<JSObject*> (*ProtoHandleGetter)(JSContext* aCx);
 
+/**
+ * Serializes a WebIDL object for structured cloning.  aObj may not be in the
+ * compartment of aCx in cases when we were working with a cross-compartment
+ * wrapper.  aObj is expected to be an object of the DOMJSClass that we got the
+ * serializer from.
+ */
+typedef bool (*WebIDLSerializer)(JSContext* aCx,
+                                 JSStructuredCloneWriter* aWriter,
+                                 JS::Handle<JSObject*> aObj);
+
+/**
+ * Deserializes a WebIDL object from a structured clone serialization.
+ */
+typedef JSObject* (*WebIDLDeserializer)(JSContext* aCx,
+                                        nsIGlobalObject* aGlobal,
+                                        JSStructuredCloneReader* aReader);
+
 // Special JSClass for reflected DOM objects.
 struct DOMJSClass {
   // It would be nice to just inherit from JSClass, but that precludes pure
   // compile-time initialization of the form |DOMJSClass = {...};|, since C++
   // only allows brace initialization for aggregate/POD types.
-  const js::Class mBase;
+  const JSClass mBase;
 
   // A list of interfaces that this object implements, in order of decreasing
   // derivedness.
@@ -429,25 +441,25 @@ struct DOMJSClass {
   // the CC participant by QI'ing in that case).
   nsCycleCollectionParticipant* mParticipant;
 
+  // The serializer for this class if the relevant object is [Serializable].
+  // Null otherwise.
+  WebIDLSerializer mSerializer;
+
   static const DOMJSClass* FromJSClass(const JSClass* base) {
     MOZ_ASSERT(base->flags & JSCLASS_IS_DOMJSCLASS);
     return reinterpret_cast<const DOMJSClass*>(base);
   }
 
-  static const DOMJSClass* FromJSClass(const js::Class* base) {
-    return FromJSClass(Jsvalify(base));
-  }
-
-  const JSClass* ToJSClass() const { return Jsvalify(&mBase); }
+  const JSClass* ToJSClass() const { return &mBase; }
 };
 
 // Special JSClass for DOM interface and interface prototype objects.
 struct DOMIfaceAndProtoJSClass {
-  // It would be nice to just inherit from js::Class, but that precludes pure
+  // It would be nice to just inherit from JSClass, but that precludes pure
   // compile-time initialization of the form
   // |DOMJSInterfaceAndPrototypeClass = {...};|, since C++ only allows brace
   // initialization for aggregate/POD types.
-  const js::Class mBase;
+  const JSClass mBase;
 
   // Either eInterface, eInterfacePrototype, eGlobalInterfacePrototype or
   // eNamedPropertiesObject.
@@ -473,11 +485,8 @@ struct DOMIfaceAndProtoJSClass {
     MOZ_ASSERT(base->flags & JSCLASS_IS_DOMIFACEANDPROTOJSCLASS);
     return reinterpret_cast<const DOMIfaceAndProtoJSClass*>(base);
   }
-  static const DOMIfaceAndProtoJSClass* FromJSClass(const js::Class* base) {
-    return FromJSClass(Jsvalify(base));
-  }
 
-  const JSClass* ToJSClass() const { return Jsvalify(&mBase); }
+  const JSClass* ToJSClass() const { return &mBase; }
 };
 
 class ProtoAndIfaceCache;

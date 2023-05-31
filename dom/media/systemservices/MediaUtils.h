@@ -12,8 +12,8 @@
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/UniquePtr.h"
-#include "nsCOMPtr.h"
 #include "nsIAsyncShutdown.h"
+#include "nsCOMPtr.h"
 #include "nsISupportsImpl.h"
 #include "nsThreadUtils.h"
 
@@ -112,6 +112,16 @@ class Refcountable : public T, public RefcountableBase {
 
   NS_METHOD_(MozExternalRefCountType) Release() {
     return RefcountableBase::Release();
+  }
+
+  Refcountable<T>& operator=(T&& aOther) {
+    T::operator=(std::move(aOther));
+    return *this;
+  }
+
+  Refcountable<T>& operator=(T& aOther) {
+    T::operator=(aOther);
+    return *this;
   }
 
  private:

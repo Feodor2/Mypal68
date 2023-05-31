@@ -10,7 +10,8 @@
  */
 
 [Pref="media.webspeech.recognition.enable",
- Func="SpeechRecognition::IsAuthorized"]
+ Func="SpeechRecognition::IsAuthorized",
+ Exposed=Window]
 interface SpeechRecognitionAlternative {
     readonly attribute DOMString transcript;
     readonly attribute float confidence;

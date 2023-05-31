@@ -17,7 +17,6 @@
 #include "nsNameSpaceManager.h"
 #include "nsString.h"
 #include "nsUnicharUtils.h"
-#include "nsIServiceManager.h"
 #include "nsIDocumentEncoder.h"
 #include "nsGkAtoms.h"
 #include "nsIURI.h"
@@ -58,7 +57,8 @@ NS_IMETHODIMP
 nsXHTMLContentSerializer::Init(uint32_t aFlags, uint32_t aWrapColumn,
                                const Encoding* aEncoding, bool aIsCopying,
                                bool aRewriteEncodingDeclaration,
-                               bool* aNeedsPreformatScanning) {
+                               bool* aNeedsPreformatScanning,
+                               nsAString& aOutput) {
   // The previous version of the HTML serializer did implicit wrapping
   // when there is no flags, so we keep wrapping in order to keep
   // compatibility with the existing calling code
@@ -70,7 +70,7 @@ nsXHTMLContentSerializer::Init(uint32_t aFlags, uint32_t aWrapColumn,
   nsresult rv;
   rv = nsXMLContentSerializer::Init(aFlags, aWrapColumn, aEncoding, aIsCopying,
                                     aRewriteEncodingDeclaration,
-                                    aNeedsPreformatScanning);
+                                    aNeedsPreformatScanning, aOutput);
   NS_ENSURE_SUCCESS(rv, rv);
 
   mRewriteEncodingDeclaration = aRewriteEncodingDeclaration;
@@ -107,8 +107,9 @@ bool nsXHTMLContentSerializer::HasLongLines(const nsString& text,
 
 NS_IMETHODIMP
 nsXHTMLContentSerializer::AppendText(nsIContent* aText, int32_t aStartOffset,
-                                     int32_t aEndOffset, nsAString& aStr) {
+                                     int32_t aEndOffset) {
   NS_ENSURE_ARG(aText);
+  NS_ENSURE_STATE(mOutput);
 
   nsAutoString data;
   nsresult rv;
@@ -117,22 +118,24 @@ nsXHTMLContentSerializer::AppendText(nsIContent* aText, int32_t aStartOffset,
   if (NS_FAILED(rv)) return NS_ERROR_FAILURE;
 
   if (mDoRaw || PreLevel() > 0) {
-    NS_ENSURE_TRUE(AppendToStringConvertLF(data, aStr), NS_ERROR_OUT_OF_MEMORY);
+    NS_ENSURE_TRUE(AppendToStringConvertLF(data, *mOutput),
+                   NS_ERROR_OUT_OF_MEMORY);
   } else if (mDoFormat) {
-    NS_ENSURE_TRUE(AppendToStringFormatedWrapped(data, aStr),
+    NS_ENSURE_TRUE(AppendToStringFormatedWrapped(data, *mOutput),
                    NS_ERROR_OUT_OF_MEMORY);
   } else if (mDoWrap) {
-    NS_ENSURE_TRUE(AppendToStringWrapped(data, aStr), NS_ERROR_OUT_OF_MEMORY);
+    NS_ENSURE_TRUE(AppendToStringWrapped(data, *mOutput),
+                   NS_ERROR_OUT_OF_MEMORY);
   } else {
     int32_t lastNewlineOffset = kNotFound;
     if (HasLongLines(data, lastNewlineOffset)) {
       // We have long lines, rewrap
       mDoWrap = true;
-      bool result = AppendToStringWrapped(data, aStr);
+      bool result = AppendToStringWrapped(data, *mOutput);
       mDoWrap = false;
       NS_ENSURE_TRUE(result, NS_ERROR_OUT_OF_MEMORY);
     } else {
-      NS_ENSURE_TRUE(AppendToStringConvertLF(data, aStr),
+      NS_ENSURE_TRUE(AppendToStringConvertLF(data, *mOutput),
                      NS_ERROR_OUT_OF_MEMORY);
     }
   }
@@ -206,8 +209,6 @@ bool nsXHTMLContentSerializer::SerializeAttributes(
     PushNameSpaceDecl(aTagPrefix, aTagNamespaceURI, aOriginalElement);
   }
 
-  NS_NAMED_LITERAL_STRING(_mozStr, "_moz");
-
   count = aElement->GetAttrCount();
 
   // Now serialize each of the attributes
@@ -250,15 +251,6 @@ bool nsXHTMLContentSerializer::SerializeAttributes(
     bool isJS = false;
 
     if (kNameSpaceID_XHTML == contentNamespaceID) {
-      //
-      // Filter out special case of <br type="_moz"> or <br _moz*>,
-      // used by the editor.  Bug 16988.  Yuck.
-      //
-      if (namespaceID == kNameSpaceID_None && aTagName == nsGkAtoms::br &&
-          attrName == nsGkAtoms::type && StringBeginsWith(valueStr, _mozStr)) {
-        continue;
-      }
-
       if (mIsCopying && mIsFirstChildOfOL && (aTagName == nsGkAtoms::li) &&
           (attrName == nsGkAtoms::value)) {
         // This is handled separately in SerializeLIValueAttribute()
@@ -275,7 +267,7 @@ bool nsXHTMLContentSerializer::SerializeAttributes(
           // but that gets more complicated since we have to
           // search the tag list for CODEBASE as well.
           // For now, just leave them relative.
-          nsCOMPtr<nsIURI> uri = aElement->GetBaseURI();
+          nsIURI* uri = aElement->GetBaseURI();
           if (uri) {
             nsAutoString absURI;
             rv = NS_MakeAbsoluteURI(absURI, valueStr, uri);
@@ -384,10 +376,10 @@ void nsXHTMLContentSerializer::AfterElementEnd(nsIContent* aContent,
 }
 
 NS_IMETHODIMP
-nsXHTMLContentSerializer::AppendDocumentStart(Document* aDocument,
-                                              nsAString& aStr) {
-  if (!mBodyOnly)
-    return nsXMLContentSerializer::AppendDocumentStart(aDocument, aStr);
+nsXHTMLContentSerializer::AppendDocumentStart(Document* aDocument) {
+  if (!mBodyOnly) {
+    return nsXMLContentSerializer::AppendDocumentStart(aDocument);
+  }
 
   return NS_OK;
 }
@@ -419,6 +411,7 @@ bool nsXHTMLContentSerializer::CheckElementStart(Element* aElement,
 }
 
 bool nsXHTMLContentSerializer::CheckElementEnd(Element* aElement,
+                                               Element* aOriginalElement,
                                                bool& aForceFormat,
                                                nsAString& aStr) {
   NS_ASSERTION(!mIsHTMLSerializer,
@@ -437,7 +430,8 @@ bool nsXHTMLContentSerializer::CheckElementEnd(Element* aElement,
   }
 
   bool dummyFormat;
-  return nsXMLContentSerializer::CheckElementEnd(aElement, dummyFormat, aStr);
+  return nsXMLContentSerializer::CheckElementEnd(aElement, aOriginalElement,
+                                                 dummyFormat, aStr);
 }
 
 bool nsXHTMLContentSerializer::AppendAndTranslateEntities(

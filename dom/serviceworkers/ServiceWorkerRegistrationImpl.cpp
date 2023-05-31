@@ -5,7 +5,6 @@
 #include "ServiceWorkerRegistrationImpl.h"
 
 #include "ipc/ErrorIPCUtils.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/PromiseWorkerProxy.h"
 #include "mozilla/dom/PushManagerBinding.h"
@@ -28,7 +27,6 @@
 
 #include "mozilla/dom/Document.h"
 #include "nsIServiceWorkerManager.h"
-#include "nsISupportsPrimitives.h"
 #include "nsPIDOMWindow.h"
 #include "nsContentUtils.h"
 

@@ -6,45 +6,31 @@
 
 #include "ImageContainer.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/BlobBinding.h"
-#include "mozilla/dom/CryptoKey.h"
 #include "mozilla/dom/StructuredCloneBlob.h"
 #include "mozilla/dom/Directory.h"
 #include "mozilla/dom/DirectoryBinding.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileList.h"
 #include "mozilla/dom/FileListBinding.h"
 #include "mozilla/dom/FormData.h"
 #include "mozilla/dom/ImageBitmap.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
-#include "mozilla/dom/ImageData.h"
-#include "mozilla/dom/ImageDataBinding.h"
-#include "mozilla/dom/StructuredClone.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/MessagePortBinding.h"
 #include "mozilla/dom/OffscreenCanvas.h"
 #include "mozilla/dom/OffscreenCanvasBinding.h"
 #include "mozilla/dom/PMessagePort.h"
 #include "mozilla/dom/StructuredCloneTags.h"
-#include "mozilla/dom/StructuredCloneTester.h"
-#include "mozilla/dom/StructuredCloneTesterBinding.h"
-#include "mozilla/dom/SubtleCryptoBinding.h"
 #include "mozilla/dom/ToJSValue.h"
-#include "mozilla/dom/URLSearchParams.h"
-#include "mozilla/dom/URLSearchParamsBinding.h"
-#include "mozilla/dom/WebCryptoCommon.h"
+#include "mozilla/dom/WebIDLSerializable.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "MultipartBlobImpl.h"
 #include "nsQueryObject.h"
-
-#ifdef MOZ_WEBRTC
-#  include "mozilla/dom/RTCCertificate.h"
-#  include "mozilla/dom/RTCCertificateBinding.h"
-#endif
 
 using namespace mozilla::ipc;
 
@@ -117,6 +103,26 @@ bool StructuredCloneCallbacksCanTransfer(JSContext* aCx,
 
 void StructuredCloneCallbacksError(JSContext* aCx, uint32_t aErrorId) {
   NS_WARNING("Failed to clone data.");
+}
+
+void AssertTagValues() {
+  static_assert(SCTAG_DOM_IMAGEDATA == 0xffff8007 &&
+                    SCTAG_DOM_DOMPOINT == 0xffff8008 &&
+                    SCTAG_DOM_DOMPOINTREADONLY == 0xffff8009 &&
+                    SCTAG_DOM_CRYPTOKEY == 0xffff800a &&
+                    SCTAG_DOM_NULL_PRINCIPAL == 0xffff800b &&
+                    SCTAG_DOM_SYSTEM_PRINCIPAL == 0xffff800c &&
+                    SCTAG_DOM_CONTENT_PRINCIPAL == 0xffff800d &&
+                    SCTAG_DOM_DOMQUAD == 0xffff800e &&
+                    SCTAG_DOM_RTCCERTIFICATE == 0xffff800f &&
+                    SCTAG_DOM_DOMRECT == 0xffff8010 &&
+                    SCTAG_DOM_DOMRECTREADONLY == 0xffff8011 &&
+                    SCTAG_DOM_EXPANDED_PRINCIPAL == 0xffff8012 &&
+                    SCTAG_DOM_DOMMATRIX == 0xffff8013 &&
+                    SCTAG_DOM_URLSEARCHPARAMS == 0xffff8014 &&
+                    SCTAG_DOM_DOMMATRIXREADONLY == 0xffff8015 &&
+                    SCTAG_DOM_STRUCTUREDCLONETESTER == 0xffff8018,
+                "Something has changed the sctag values. This is wrong!");
 }
 
 }  // anonymous namespace
@@ -247,10 +253,6 @@ void StructuredCloneHolder::Write(JSContext* aCx, JS::Handle<JS::Value> aValue,
                                   JS::Handle<JS::Value> aTransfer,
                                   JS::CloneDataPolicy cloneDataPolicy,
                                   ErrorResult& aRv) {
-  MOZ_ASSERT_IF(
-      mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread,
-      mCreationEventTarget->IsOnCurrentThread());
-
   if (!StructuredCloneHolderBase::Write(aCx, aValue, aTransfer,
                                         cloneDataPolicy)) {
     aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
@@ -261,9 +263,6 @@ void StructuredCloneHolder::Write(JSContext* aCx, JS::Handle<JS::Value> aValue,
 void StructuredCloneHolder::Read(nsISupports* aParent, JSContext* aCx,
                                  JS::MutableHandle<JS::Value> aValue,
                                  ErrorResult& aRv) {
-  MOZ_ASSERT_IF(
-      mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread,
-      mCreationEventTarget->IsOnCurrentThread());
   MOZ_ASSERT(aParent);
 
   mozilla::AutoRestore<nsISupports*> guard(mParent);
@@ -298,10 +297,6 @@ void StructuredCloneHolder::ReadFromBuffer(nsISupports* aParent, JSContext* aCx,
                                            uint32_t aAlgorithmVersion,
                                            JS::MutableHandle<JS::Value> aValue,
                                            ErrorResult& aRv) {
-  MOZ_ASSERT_IF(
-      mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread,
-      mCreationEventTarget->IsOnCurrentThread());
-
   MOZ_ASSERT(!mBuffer, "ReadFromBuffer() must be called without a Write().");
 
   mozilla::AutoRestore<nsISupports*> guard(mParent);
@@ -318,36 +313,17 @@ void StructuredCloneHolder::ReadFromBuffer(nsISupports* aParent, JSContext* aCx,
 /* static */
 JSObject* StructuredCloneHolder::ReadFullySerializableObjects(
     JSContext* aCx, JSStructuredCloneReader* aReader, uint32_t aTag) {
-  if (aTag == SCTAG_DOM_IMAGEDATA) {
-    return ReadStructuredCloneImageData(aCx, aReader);
+  AssertTagValues();
+
+  nsIGlobalObject* global = xpc::CurrentNativeGlobal(aCx);
+  if (!global) {
+    return nullptr;
   }
 
-  if (aTag == SCTAG_DOM_WEBCRYPTO_KEY || aTag == SCTAG_DOM_URLSEARCHPARAMS) {
-    nsIGlobalObject* global = xpc::CurrentNativeGlobal(aCx);
-    if (!global) {
-      return nullptr;
-    }
-
-    // Prevent the return value from being trashed by a GC during ~nsRefPtr.
-    JS::Rooted<JSObject*> result(aCx);
-    {
-      if (aTag == SCTAG_DOM_WEBCRYPTO_KEY) {
-        RefPtr<CryptoKey> key = new CryptoKey(global);
-        if (!key->ReadStructuredClone(aReader)) {
-          result = nullptr;
-        } else {
-          result = key->WrapObject(aCx, nullptr);
-        }
-      } else if (aTag == SCTAG_DOM_URLSEARCHPARAMS) {
-        RefPtr<URLSearchParams> usp = new URLSearchParams(global);
-        if (!usp->ReadStructuredClone(aReader)) {
-          result = nullptr;
-        } else {
-          result = usp->WrapObject(aCx, nullptr);
-        }
-      }
-    }
-    return result;
+  WebIDLDeserializer deserializer =
+      LookupDeserializer(StructuredCloneTags(aTag));
+  if (deserializer) {
+    return deserializer(aCx, global, aReader);
   }
 
   if (aTag == SCTAG_DOM_NULL_PRINCIPAL || aTag == SCTAG_DOM_SYSTEM_PRINCIPAL ||
@@ -376,35 +352,6 @@ JSObject* StructuredCloneHolder::ReadFullySerializableObjects(
     return result.toObjectOrNull();
   }
 
-#ifdef MOZ_WEBRTC
-  if (aTag == SCTAG_DOM_RTC_CERTIFICATE) {
-    if (!NS_IsMainThread()) {
-      return nullptr;
-    }
-
-    nsIGlobalObject* global = xpc::CurrentNativeGlobal(aCx);
-    if (!global) {
-      return nullptr;
-    }
-
-    // Prevent the return value from being trashed by a GC during ~nsRefPtr.
-    JS::Rooted<JSObject*> result(aCx);
-    {
-      RefPtr<RTCCertificate> cert = new RTCCertificate(global);
-      if (!cert->ReadStructuredClone(aReader)) {
-        result = nullptr;
-      } else {
-        result = cert->WrapObject(aCx, nullptr);
-      }
-    }
-    return result;
-  }
-#endif
-
-  if (aTag == SCTAG_DOM_STRUCTURED_CLONE_TESTER) {
-    return StructuredCloneTester::ReadStructuredClone(aCx, aReader);
-  }
-
   // Don't know what this is. Bail.
   xpc::Throw(aCx, NS_ERROR_DOM_DATA_CLONE_ERR);
   return nullptr;
@@ -414,60 +361,18 @@ JSObject* StructuredCloneHolder::ReadFullySerializableObjects(
 bool StructuredCloneHolder::WriteFullySerializableObjects(
     JSContext* aCx, JSStructuredCloneWriter* aWriter,
     JS::Handle<JSObject*> aObj) {
-  JS::Rooted<JSObject*> obj(aCx, aObj);
+  AssertTagValues();
 
-  // See if this is a ImageData object.
-  {
-    ImageData* imageData = nullptr;
-    if (NS_SUCCEEDED(UNWRAP_OBJECT(ImageData, &obj, imageData))) {
-      return WriteStructuredCloneImageData(aCx, aWriter, imageData);
-    }
+  // Window and Location are not serializable, so it's OK to just do a static
+  // unwrap here.
+  JS::Rooted<JSObject*> obj(aCx, js::CheckedUnwrapStatic(aObj));
+  if (!obj) {
+    return xpc::Throw(aCx, NS_ERROR_DOM_DATA_CLONE_ERR);
   }
 
-  // Handle URLSearchParams cloning
-  {
-    URLSearchParams* usp = nullptr;
-    if (NS_SUCCEEDED(UNWRAP_OBJECT(URLSearchParams, &obj, usp))) {
-      return JS_WriteUint32Pair(aWriter, SCTAG_DOM_URLSEARCHPARAMS, 0) &&
-             usp->WriteStructuredClone(aWriter);
-    }
-  }
-
-  // Handle Key cloning
-  {
-    CryptoKey* key = nullptr;
-    if (NS_SUCCEEDED(UNWRAP_OBJECT(CryptoKey, &obj, key))) {
-      return JS_WriteUint32Pair(aWriter, SCTAG_DOM_WEBCRYPTO_KEY, 0) &&
-             key->WriteStructuredClone(aWriter);
-    }
-  }
-
-#ifdef MOZ_WEBRTC
-  {
-    // Handle WebRTC Certificate cloning
-    RTCCertificate* cert = nullptr;
-    if (NS_SUCCEEDED(UNWRAP_OBJECT(RTCCertificate, &obj, cert))) {
-      MOZ_ASSERT(NS_IsMainThread());
-      return JS_WriteUint32Pair(aWriter, SCTAG_DOM_RTC_CERTIFICATE, 0) &&
-             cert->WriteStructuredClone(aWriter);
-    }
-  }
-#endif
-
-  // StructuredCloneTester - testing only
-  {
-    StructuredCloneTester* sct = nullptr;
-    if (NS_SUCCEEDED(UNWRAP_OBJECT(StructuredCloneTester, &obj, sct))) {
-      MOZ_ASSERT(StaticPrefs::dom_testing_structuredclonetester_enabled());
-
-      // "Fail" serialization
-      if (!sct->Serializable()) {
-        xpc::Throw(aCx, NS_ERROR_DOM_DATA_CLONE_ERR);
-        return false;
-      }
-
-      return sct->WriteStructuredClone(aWriter);
-    }
+  const DOMJSClass* domClass = GetDOMClass(obj);
+  if (domClass && domClass->mSerializer) {
+    return domClass->mSerializer(aCx, aWriter, obj);
   }
 
   if (NS_IsMainThread() && xpc::IsReflector(obj, aCx)) {
@@ -483,6 +388,30 @@ bool StructuredCloneHolder::WriteFullySerializableObjects(
   // Don't know what this is
   xpc::Throw(aCx, NS_ERROR_DOM_DATA_CLONE_ERR);
   return false;
+}
+
+/* static */
+bool StructuredCloneHolder::ReadString(JSStructuredCloneReader* aReader,
+                                       nsString& aString) {
+  uint32_t length, zero;
+  if (!JS_ReadUint32Pair(aReader, &length, &zero)) {
+    return false;
+  }
+
+  if (NS_WARN_IF(!aString.SetLength(length, fallible))) {
+    return false;
+  }
+  size_t charSize = sizeof(nsString::char_type);
+  return JS_ReadBytes(aReader, (void*)aString.BeginWriting(),
+                      length * charSize);
+}
+
+/* static */
+bool StructuredCloneHolder::WriteString(JSStructuredCloneWriter* aWriter,
+                                        const nsString& aString) {
+  size_t charSize = sizeof(nsString::char_type);
+  return JS_WriteUint32Pair(aWriter, aString.Length(), 0) &&
+         JS_WriteBytes(aWriter, aString.get(), aString.Length() * charSize);
 }
 
 namespace {
@@ -505,8 +434,6 @@ JSObject* ReadBlob(JSContext* aCx, uint32_t aIndex,
     // pointer while destructors are running.
     RefPtr<BlobImpl> blobImpl = aHolder->BlobImpls()[aIndex];
 
-    MOZ_ALWAYS_SUCCEEDS(blobImpl->SetMutable(false));
-
     RefPtr<Blob> blob = Blob::Create(aHolder->ParentDuringRead(), blobImpl);
     if (!ToJSValue(aCx, blob, &val)) {
       return nullptr;
@@ -522,14 +449,7 @@ bool WriteBlob(JSStructuredCloneWriter* aWriter, Blob* aBlob,
   MOZ_ASSERT(aBlob);
   MOZ_ASSERT(aHolder);
 
-  if (JS_GetStructuredCloneScope(aWriter) !=
-          JS::StructuredCloneScope::SameProcessSameThread &&
-      !aBlob->Impl()->MayBeClonedToOtherThreads()) {
-    return false;
-  }
-
   RefPtr<BlobImpl> blobImpl = aBlob->Impl();
-  MOZ_ALWAYS_SUCCEEDS(blobImpl->SetMutable(false));
 
   // We store the position of the blobImpl in the array as index.
   if (JS_WriteUint32Pair(aWriter, SCTAG_DOM_BLOB,
@@ -641,8 +561,6 @@ JSObject* ReadFileList(JSContext* aCx, JSStructuredCloneReader* aReader,
       RefPtr<BlobImpl> blobImpl = aHolder->BlobImpls()[pos];
       MOZ_ASSERT(blobImpl->IsFile());
 
-      MOZ_ALWAYS_SUCCEEDS(blobImpl->SetMutable(false));
-
       RefPtr<File> file = File::Create(aHolder->ParentDuringRead(), blobImpl);
       if (!fileList->Append(file)) {
         return nullptr;
@@ -678,7 +596,6 @@ bool WriteFileList(JSStructuredCloneWriter* aWriter, FileList* aFileList,
 
   for (uint32_t i = 0; i < aFileList->Length(); ++i) {
     RefPtr<BlobImpl> blobImpl = aFileList->Item(i)->Impl();
-    MOZ_ALWAYS_SUCCEEDS(blobImpl->SetMutable(false));
     blobImpls.AppendElement(blobImpl);
   }
 
@@ -701,7 +618,7 @@ JSObject* ReadFormData(JSContext* aCx, JSStructuredCloneReader* aReader,
     Optional<nsAString> thirdArg;
     for (uint32_t i = 0; i < aCount; ++i) {
       nsAutoString name;
-      if (!ReadString(aReader, name)) {
+      if (!StructuredCloneHolder::ReadString(aReader, name)) {
         return nullptr;
       }
 
@@ -719,7 +636,6 @@ JSObject* ReadFormData(JSContext* aCx, JSStructuredCloneReader* aReader,
         MOZ_ASSERT(indexOrLengthOfString < aHolder->BlobImpls().Length());
 
         RefPtr<BlobImpl> blobImpl = aHolder->BlobImpls()[indexOrLengthOfString];
-        MOZ_ALWAYS_SUCCEEDS(blobImpl->SetMutable(false));
 
         RefPtr<Blob> blob = Blob::Create(aHolder->ParentDuringRead(), blobImpl);
         MOZ_ASSERT(blob);
@@ -805,7 +721,7 @@ bool WriteFormData(JSStructuredCloneWriter* aWriter, FormData* aFormData,
                       const OwningBlobOrDirectoryOrUSVString& aValue,
                       void* aClosure) {
       Closure* closure = static_cast<Closure*>(aClosure);
-      if (!WriteString(closure->mWriter, aName)) {
+      if (!StructuredCloneHolder::WriteString(closure->mWriter, aName)) {
         return false;
       }
 
@@ -816,7 +732,6 @@ bool WriteFormData(JSStructuredCloneWriter* aWriter, FormData* aFormData,
         }
 
         RefPtr<BlobImpl> blobImpl = aValue.GetAsBlob()->Impl();
-        MOZ_ALWAYS_SUCCEEDS(blobImpl->SetMutable(false));
 
         closure->mHolder->BlobImpls().AppendElement(blobImpl);
         return true;
@@ -847,9 +762,7 @@ JSObject* ReadWasmModule(JSContext* aCx, uint32_t aIndex,
   MOZ_ASSERT(aHolder);
   MOZ_ASSERT(
       aHolder->CloneScope() ==
-          StructuredCloneHolder::StructuredCloneScope::SameProcessSameThread ||
-      aHolder->CloneScope() == StructuredCloneHolder::StructuredCloneScope::
-                                   SameProcessDifferentThread);
+      StructuredCloneHolder::StructuredCloneScope::SameProcessDifferentThread);
 #ifdef FUZZING
   if (aIndex >= aHolder->WasmModules().Length()) {
     return nullptr;
@@ -868,9 +781,7 @@ bool WriteWasmModule(JSStructuredCloneWriter* aWriter,
   MOZ_ASSERT(aHolder);
   MOZ_ASSERT(
       aHolder->CloneScope() ==
-          StructuredCloneHolder::StructuredCloneScope::SameProcessSameThread ||
-      aHolder->CloneScope() == StructuredCloneHolder::StructuredCloneScope::
-                                   SameProcessDifferentThread);
+      StructuredCloneHolder::StructuredCloneScope::SameProcessDifferentThread);
 
   // We store the position of the wasmModule in the array as index.
   if (JS_WriteUint32Pair(aWriter, SCTAG_DOM_WASM,
@@ -946,9 +857,8 @@ JSObject* StructuredCloneHolder::CustomReadHandler(
   }
 
   if (aTag == SCTAG_DOM_IMAGEBITMAP &&
-      (mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread ||
-       mStructuredCloneScope ==
-           StructuredCloneScope::SameProcessDifferentThread)) {
+      mStructuredCloneScope ==
+          StructuredCloneScope::SameProcessDifferentThread) {
     // Get the current global object.
     // This can be null.
     JS::RootedObject result(aCx);
@@ -966,9 +876,8 @@ JSObject* StructuredCloneHolder::CustomReadHandler(
   }
 
   if (aTag == SCTAG_DOM_WASM &&
-      (mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread ||
-       mStructuredCloneScope ==
-           StructuredCloneScope::SameProcessDifferentThread)) {
+      mStructuredCloneScope ==
+          StructuredCloneScope::SameProcessDifferentThread) {
     return ReadWasmModule(aCx, aIndex, this);
   }
 
@@ -1021,9 +930,8 @@ bool StructuredCloneHolder::CustomWriteHandler(JSContext* aCx,
   }
 
   // See if this is an ImageBitmap object.
-  if (mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread ||
-      mStructuredCloneScope ==
-          StructuredCloneScope::SameProcessDifferentThread) {
+  if (mStructuredCloneScope ==
+      StructuredCloneScope::SameProcessDifferentThread) {
     ImageBitmap* imageBitmap = nullptr;
     if (NS_SUCCEEDED(UNWRAP_OBJECT(ImageBitmap, &obj, imageBitmap))) {
       return ImageBitmap::WriteStructuredClone(aWriter, GetSurfaces(),
@@ -1040,9 +948,8 @@ bool StructuredCloneHolder::CustomWriteHandler(JSContext* aCx,
   }
 
   // See if this is a WasmModule.
-  if ((mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread ||
-       mStructuredCloneScope ==
-           StructuredCloneScope::SameProcessDifferentThread) &&
+  if (mStructuredCloneScope ==
+          StructuredCloneScope::SameProcessDifferentThread &&
       JS::IsWasmModuleObject(obj)) {
     RefPtr<JS::WasmModule> module = JS::GetWasmModule(obj);
     MOZ_ASSERT(module);
@@ -1099,9 +1006,8 @@ bool StructuredCloneHolder::CustomReadTransferHandler(
   }
 
   if (aTag == SCTAG_DOM_CANVAS &&
-      (mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread ||
-       mStructuredCloneScope ==
-           StructuredCloneScope::SameProcessDifferentThread)) {
+      mStructuredCloneScope ==
+          StructuredCloneScope::SameProcessDifferentThread) {
     MOZ_ASSERT(aContent);
     OffscreenCanvasCloneData* data =
         static_cast<OffscreenCanvasCloneData*>(aContent);
@@ -1121,9 +1027,8 @@ bool StructuredCloneHolder::CustomReadTransferHandler(
   }
 
   if (aTag == SCTAG_DOM_IMAGEBITMAP &&
-      (mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread ||
-       mStructuredCloneScope ==
-           StructuredCloneScope::SameProcessDifferentThread)) {
+      mStructuredCloneScope ==
+          StructuredCloneScope::SameProcessDifferentThread) {
     MOZ_ASSERT(aContent);
     ImageBitmapCloneData* data = static_cast<ImageBitmapCloneData*>(aContent);
     nsCOMPtr<nsIGlobalObject> parent = do_QueryInterface(mParent);
@@ -1174,9 +1079,8 @@ bool StructuredCloneHolder::CustomWriteTransferHandler(
       return true;
     }
 
-    if (mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread ||
-        mStructuredCloneScope ==
-            StructuredCloneScope::SameProcessDifferentThread) {
+    if (mStructuredCloneScope ==
+        StructuredCloneScope::SameProcessDifferentThread) {
       OffscreenCanvas* canvas = nullptr;
       rv = UNWRAP_OBJECT(OffscreenCanvas, &obj, canvas);
       if (NS_SUCCEEDED(rv)) {
@@ -1240,9 +1144,8 @@ void StructuredCloneHolder::CustomFreeTransferHandler(
   }
 
   if (aTag == SCTAG_DOM_CANVAS &&
-      (mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread ||
-       mStructuredCloneScope ==
-           StructuredCloneScope::SameProcessDifferentThread)) {
+      mStructuredCloneScope ==
+          StructuredCloneScope::SameProcessDifferentThread) {
     MOZ_ASSERT(aContent);
     OffscreenCanvasCloneData* data =
         static_cast<OffscreenCanvasCloneData*>(aContent);
@@ -1251,9 +1154,8 @@ void StructuredCloneHolder::CustomFreeTransferHandler(
   }
 
   if (aTag == SCTAG_DOM_IMAGEBITMAP &&
-      (mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread ||
-       mStructuredCloneScope ==
-           StructuredCloneScope::SameProcessDifferentThread)) {
+      mStructuredCloneScope ==
+          StructuredCloneScope::SameProcessDifferentThread) {
     MOZ_ASSERT(aContent);
     ImageBitmapCloneData* data = static_cast<ImageBitmapCloneData*>(aContent);
     delete data;
@@ -1276,9 +1178,8 @@ bool StructuredCloneHolder::CustomCanTransferHandler(
       return true;
     }
 
-    if (mStructuredCloneScope == StructuredCloneScope::SameProcessSameThread ||
-        mStructuredCloneScope ==
-            StructuredCloneScope::SameProcessDifferentThread) {
+    if (mStructuredCloneScope ==
+        StructuredCloneScope::SameProcessDifferentThread) {
       OffscreenCanvas* canvas = nullptr;
       rv = UNWRAP_OBJECT(OffscreenCanvas, &obj, canvas);
       if (NS_SUCCEEDED(rv)) {

@@ -78,7 +78,7 @@ class PrototypeDocumentContentSink final : public nsIStreamLoaderObserver,
   virtual void ContinueInterruptedParsingAsync() override;
 
   // nsICSSLoaderObserver
-  NS_IMETHOD StyleSheetLoaded(StyleSheet* aSheet, bool aWasAlternate,
+  NS_IMETHOD StyleSheetLoaded(StyleSheet* aSheet, bool aWasDeferred,
                               nsresult aStatus) override;
 
   // nsIOffThreadScriptReceiver

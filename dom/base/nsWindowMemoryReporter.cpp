@@ -224,14 +224,15 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
                                  nsISupports* aData, bool aAnonymize) {
   nsAutoCString windowPath("explicit/");
 
-  // Avoid calling aWindow->GetTop() if there's no outer window.  It will work
-  // just fine, but will spew a lot of warnings.
+  // Avoid calling aWindow->GetInProcessTop() if there's no outer window.  It
+  // will work just fine, but will spew a lot of warnings.
   nsGlobalWindowOuter* top = nullptr;
   nsCOMPtr<nsIURI> location;
   if (aWindow->GetOuterWindow()) {
     // Our window should have a null top iff it has a null docshell.
-    MOZ_ASSERT(!!aWindow->GetTopInternal() == !!aWindow->GetDocShell());
-    top = aWindow->GetTopInternal();
+    MOZ_ASSERT(!!aWindow->GetInProcessTopInternal() ==
+               !!aWindow->GetDocShell());
+    top = aWindow->GetInProcessTopInternal();
     if (top) {
       location = GetWindowURI(top);
     }
@@ -330,6 +331,9 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
   REPORT_SIZE("/layout/style-sheets", mLayoutStyleSheetsSize,
               "Memory used by document style sheets within a window.");
 
+  REPORT_SIZE("/layout/svg-mapped-declarations", mLayoutSvgMappedDeclarations,
+              "Memory used by mapped declarations of SVG elements");
+
   REPORT_SIZE("/layout/shadow-dom/style-sheets",
               mLayoutShadowDomStyleSheetsSize,
               "Memory used by Shadow DOM style sheets within a window.");
@@ -414,12 +418,6 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
   REPORT_SIZE("/layout/line-boxes", mArenaSizes.mLineBoxes,
               "Memory used by line boxes within a window.");
 
-  REPORT_SIZE("/layout/rule-nodes", mArenaSizes.mRuleNodes,
-              "Memory used by CSS rule nodes within a window.");
-
-  REPORT_SIZE("/layout/style-contexts", mArenaSizes.mComputedStyles,
-              "Memory used by ComputedStyles within a window.");
-
   // There are many different kinds of style structs, but it is likely that
   // only a few matter. Implement a cutoff so we don't bloat about:memory with
   // many uninteresting entries.
@@ -446,7 +444,7 @@ static void CollectWindowReports(nsGlobalWindowInner* aWindow,
     aWindowTotalSizes->mArenaSizes.NS_ARENA_SIZES_FIELD(classname) += size; \
   }
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
 
@@ -643,19 +641,11 @@ nsWindowMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
          windowTotalSizes.mArenaSizes.mLineBoxes,
          "This is the sum of all windows' 'layout/line-boxes' numbers.");
 
-  REPORT("window-objects/layout/rule-nodes",
-         windowTotalSizes.mArenaSizes.mRuleNodes,
-         "This is the sum of all windows' 'layout/rule-nodes' numbers.");
-
-  REPORT("window-objects/layout/style-contexts",
-         windowTotalSizes.mArenaSizes.mComputedStyles,
-         "This is the sum of all windows' 'layout/style-contexts' numbers.");
-
   size_t frameTotal = 0;
 #define FRAME_ID(classname, ...) \
   frameTotal += windowTotalSizes.mArenaSizes.NS_ARENA_SIZES_FIELD(classname);
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
 
@@ -805,10 +795,10 @@ void nsWindowMemoryReporter::CheckForGhostWindows(
 
   // Populate nonDetachedTabGroups.
   for (auto iter = windowsById->Iter(); !iter.Done(); iter.Next()) {
-    // Null outer window implies null top, but calling GetTop() when there's no
-    // outer window causes us to spew debug warnings.
+    // Null outer window implies null top, but calling GetInProcessTop() when
+    // there's no outer window causes us to spew debug warnings.
     nsGlobalWindowInner* window = iter.UserData();
-    if (!window->GetOuterWindow() || !window->GetTopInternal()) {
+    if (!window->GetOuterWindow() || !window->GetInProcessTopInternal()) {
       // This window is detached, so we don't care about its tab group.
       continue;
     }
@@ -833,12 +823,12 @@ void nsWindowMemoryReporter::CheckForGhostWindows(
 
     nsPIDOMWindowInner* window = nsPIDOMWindowInner::From(iwindow);
 
-    // Avoid calling GetTop() if we have no outer window.  Nothing will break if
-    // we do, but it will spew debug output, which can cause our test logs to
-    // overflow.
+    // Avoid calling GetInProcessTop() if we have no outer window.  Nothing
+    // will break if we do, but it will spew debug output, which can cause our
+    // test logs to overflow.
     nsCOMPtr<nsPIDOMWindowOuter> top;
     if (window->GetOuterWindow()) {
-      top = window->GetOuterWindow()->GetTop();
+      top = window->GetOuterWindow()->GetInProcessTop();
     }
 
     if (top) {

@@ -7,7 +7,6 @@
 
 #include "nsHashKeys.h"
 #include "nsISupportsImpl.h"
-#include "nsIPrincipal.h"
 #include "nsTHashtable.h"
 #include "nsString.h"
 
@@ -21,6 +20,7 @@ class nsPIDOMWindowOuter;
 
 namespace mozilla {
 class AbstractThread;
+class ThrottledEventQueue;
 namespace dom {
 class Document;
 class BrowserChild;
@@ -141,6 +141,10 @@ class TabGroup final : public SchedulerGroup,
   // can be throttled.
   static bool HasOnlyThrottableTabs();
 
+  nsresult QueuePostMessageEvent(already_AddRefed<nsIRunnable>&& aRunnable);
+
+  void FlushPostMessageEvents();
+
  private:
   virtual AbstractThread* AbstractMainThreadForImpl(
       TaskCategory aCategory) override;
@@ -164,6 +168,10 @@ class TabGroup final : public SchedulerGroup,
   uint32_t mForegroundCount;
 
   static LinkedList<TabGroup>* sTabGroups;
+
+  // A queue to store postMessage events during page load, the queue will be
+  // flushed once the page is loaded
+  RefPtr<mozilla::ThrottledEventQueue> mPostMessageEventQueue;
 };
 
 }  // namespace dom

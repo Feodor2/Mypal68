@@ -14,6 +14,8 @@ dictionary DocumentTimelineOptions {
 };
 
 [Func="Document::AreWebAnimationsTimelinesEnabled",
- Constructor (optional DocumentTimelineOptions options)]
+ Exposed=Window]
 interface DocumentTimeline : AnimationTimeline {
+  [Throws]
+  constructor(optional DocumentTimelineOptions options = {});
 };

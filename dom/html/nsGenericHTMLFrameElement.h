@@ -12,7 +12,6 @@
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsGenericHTMLElement.h"
-#include "nsIDOMEventListener.h"
 #include "nsIMozBrowserFrame.h"
 
 namespace mozilla {
@@ -60,10 +59,8 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
   // nsIContent
   virtual bool IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
                                int32_t* aTabIndex) override;
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
   virtual void DestroyContent() override;
 
   nsresult CopyInnerTo(mozilla::dom::Element* aDest);
@@ -87,9 +84,6 @@ class nsGenericHTMLFrameElement : public nsGenericHTMLElement,
   void PresetOpenerWindow(const mozilla::dom::Nullable<
                               mozilla::dom::WindowProxyHolder>& aOpenerWindow,
                           mozilla::ErrorResult& aRv);
-
-  static void InitStatics();
-  static bool BrowserFramesEnabled();
 
   /**
    * Helper method to map a HTML 'scrolling' attribute value to a nsIScrollable

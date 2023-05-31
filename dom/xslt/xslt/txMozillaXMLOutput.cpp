@@ -15,11 +15,9 @@
 #include "nsUnicharUtils.h"
 #include "nsGkAtoms.h"
 #include "txLog.h"
-#include "nsIConsoleService.h"
 #include "nsNameSpaceManager.h"
 #include "txStringUtils.h"
 #include "txURIUtils.h"
-#include "nsIHTMLDocument.h"
 #include "nsIStyleSheetLinkingElement.h"
 #include "nsIDocumentTransformer.h"
 #include "mozilla/StyleSheetInlines.h"
@@ -811,9 +809,8 @@ nsresult txMozillaXMLOutput::createResultDocument(const nsAString& aName,
 
   // Do this after calling OnDocumentCreated to ensure that the
   // PresShell/PresContext has been hooked up and get notified.
-  nsCOMPtr<nsIHTMLDocument> htmlDoc = do_QueryInterface(mDocument);
-  if (htmlDoc) {
-    htmlDoc->SetCompatibilityMode(eCompatibility_FullStandards);
+  if (mDocument) {
+    mDocument->SetCompatibilityMode(eCompatibility_FullStandards);
   }
 
   // Add a doc-type if requested

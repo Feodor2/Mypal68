@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef WEBGPU_ShaderModule_H_
-#define WEBGPU_ShaderModule_H_
+#ifndef GPU_ShaderModule_H_
+#define GPU_ShaderModule_H_
 
 #include "nsWrapperCache.h"
 #include "ObjectModel.h"
@@ -13,9 +13,10 @@ namespace webgpu {
 
 class Device;
 
-class ShaderModule final : public ChildOf<Device> {
+class ShaderModule final : public ObjectBase, public ChildOf<Device> {
  public:
-  WEBGPU_DECL_GOOP(ShaderModule)
+  GPU_DECL_CYCLE_COLLECTION(ShaderModule)
+  GPU_DECL_JS_WRAP(ShaderModule)
 
  private:
   ShaderModule() = delete;
@@ -25,4 +26,4 @@ class ShaderModule final : public ChildOf<Device> {
 }  // namespace webgpu
 }  // namespace mozilla
 
-#endif  // WEBGPU_ShaderModule_H_
+#endif  // GPU_ShaderModule_H_

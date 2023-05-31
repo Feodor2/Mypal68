@@ -47,6 +47,8 @@ class MediaSourceDecoder : public MediaDecoder,
 
   already_AddRefed<nsIPrincipal> GetCurrentPrincipal() override;
 
+  bool HadCrossOriginRedirects() override;
+
   bool IsTransportSeekable() override { return true; }
 
   // Returns a string describing the state of the MediaSource internal

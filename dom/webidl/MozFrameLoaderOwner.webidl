@@ -15,8 +15,17 @@ dictionary RemotenessOptions {
   boolean replaceBrowsingContext = false;
 };
 
-[NoInterfaceObject]
-interface MozFrameLoaderOwner {
+/**
+ * A mixin included by elements that are 'browsing context containers'
+ * in HTML5 terms (that is, elements such as iframe that creates a new
+ * browsing context):
+ *
+ * https://html.spec.whatwg.org/#browsing-context-container
+ *
+ * Objects including this mixin must implement nsFrameLoaderOwner in
+ * native C++ code.
+ */
+interface mixin MozFrameLoaderOwner {
   [ChromeOnly]
   readonly attribute FrameLoader? frameLoader;
 
@@ -33,5 +42,5 @@ interface MozFrameLoaderOwner {
   void swapFrameLoaders(HTMLIFrameElement aOtherLoaderOwner);
 
   [ChromeOnly, Throws]
-  void changeRemoteness(optional RemotenessOptions aOptions);
+  void changeRemoteness(optional RemotenessOptions aOptions = {});
 };

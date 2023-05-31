@@ -31,10 +31,9 @@ XMLStylesheetProcessingInstruction::~XMLStylesheetProcessingInstruction() {}
 
 // nsIContent
 
-nsresult XMLStylesheetProcessingInstruction::BindToTree(
-    Document* aDocument, nsIContent* aParent, nsIContent* aBindingParent) {
-  nsresult rv =
-      ProcessingInstruction::BindToTree(aDocument, aParent, aBindingParent);
+nsresult XMLStylesheetProcessingInstruction::BindToTree(BindContext& aContext,
+                                                        nsINode& aParent) {
+  nsresult rv = ProcessingInstruction::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
   void (XMLStylesheetProcessingInstruction::*update)() =
@@ -45,11 +44,10 @@ nsresult XMLStylesheetProcessingInstruction::BindToTree(
   return rv;
 }
 
-void XMLStylesheetProcessingInstruction::UnbindFromTree(bool aDeep,
-                                                        bool aNullParent) {
+void XMLStylesheetProcessingInstruction::UnbindFromTree(bool aNullParent) {
   nsCOMPtr<Document> oldDoc = GetUncomposedDoc();
 
-  ProcessingInstruction::UnbindFromTree(aDeep, aNullParent);
+  ProcessingInstruction::UnbindFromTree(aNullParent);
   Unused << UpdateStyleSheetInternal(oldDoc, nullptr);
 }
 
@@ -124,12 +122,15 @@ XMLStylesheetProcessingInstruction::GetStyleSheetInfo() {
   auto encoding = doc->GetDocumentCharacterSet();
   nsCOMPtr<nsIURI> uri;
   NS_NewURI(getter_AddRefs(uri), href, encoding, baseURL);
+  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+  referrerInfo->InitWithDocument(doc);
+
   return Some(SheetInfo{
       *doc,
       this,
       uri.forget(),
       nullptr,
-      net::RP_Unset,
+      referrerInfo.forget(),
       CORS_NONE,
       title,
       media,

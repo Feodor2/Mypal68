@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface NodeIterator {
   [Constant]
   readonly attribute Node root;

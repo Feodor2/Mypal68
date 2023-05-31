@@ -14,7 +14,7 @@
 #include "mozilla/dom/cache/Cache.h"
 #include "mozilla/dom/cache/CacheChild.h"
 #include "mozilla/dom/cache/CacheStorageChild.h"
-#include "mozilla/dom/cache/CacheWorkerHolder.h"
+#include "mozilla/dom/cache/CacheWorkerRef.h"
 #include "mozilla/dom/cache/PCacheChild.h"
 #include "mozilla/dom/cache/ReadStream.h"
 #include "mozilla/dom/cache/TypeUtils.h"
@@ -24,11 +24,11 @@
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 #include "mozilla/dom/Document.h"
 #include "nsIGlobalObject.h"
-#include "nsIScriptSecurityManager.h"
+#include "nsMixedContentBlocker.h"
 #include "nsURLParsers.h"
 
 namespace mozilla {
@@ -130,8 +130,7 @@ bool IsTrusted(const PrincipalInfo& aPrincipalInfo, bool aTestingPrefEnabled) {
 
   nsDependentCSubstring hostname(url + authPos + hostPos, hostLen);
 
-  return hostname.EqualsLiteral("localhost") ||
-         hostname.EqualsLiteral("127.0.0.1") || hostname.EqualsLiteral("::1");
+  return nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackHost(hostname);
 }
 
 }  // namespace
@@ -187,15 +186,16 @@ already_AddRefed<CacheStorage> CacheStorage::CreateOnWorker(
     return ref.forget();
   }
 
-  RefPtr<CacheWorkerHolder> workerHolder = CacheWorkerHolder::Create(
-      aWorkerPrivate, CacheWorkerHolder::AllowIdleShutdownStart);
-  if (!workerHolder) {
+  RefPtr<CacheWorkerRef> workerRef =
+      CacheWorkerRef::Create(aWorkerPrivate, CacheWorkerRef::eIPCWorkerRef);
+  if (!workerRef) {
     NS_WARNING("Worker thread is shutting down.");
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
 
-  const PrincipalInfo& principalInfo = aWorkerPrivate->GetPrincipalInfo();
+  const PrincipalInfo& principalInfo =
+      aWorkerPrivate->GetEffectiveStoragePrincipalInfo();
 
   if (NS_WARN_IF(!QuotaManager::IsPrincipalInfoValid(principalInfo))) {
     aRv.Throw(NS_ERROR_FAILURE);
@@ -227,7 +227,7 @@ already_AddRefed<CacheStorage> CacheStorage::CreateOnWorker(
   }
 
   RefPtr<CacheStorage> ref =
-      new CacheStorage(aNamespace, aGlobal, principalInfo, workerHolder);
+      new CacheStorage(aNamespace, aGlobal, principalInfo, workerRef);
   return ref.forget();
 }
 
@@ -265,7 +265,7 @@ bool CacheStorage::DefineCaches(JSContext* aCx, JS::Handle<JSObject*> aGlobal) {
 
 CacheStorage::CacheStorage(Namespace aNamespace, nsIGlobalObject* aGlobal,
                            const PrincipalInfo& aPrincipalInfo,
-                           CacheWorkerHolder* aWorkerHolder)
+                           CacheWorkerRef* aWorkerRef)
     : mNamespace(aNamespace),
       mGlobal(aGlobal),
       mPrincipalInfo(MakeUnique<PrincipalInfo>(aPrincipalInfo)),
@@ -281,10 +281,10 @@ CacheStorage::CacheStorage(Namespace aNamespace, nsIGlobalObject* aGlobal,
     return;
   }
 
-  // WorkerHolder ownership is passed to the CacheStorageChild actor and any
-  // actors it may create.  The WorkerHolder will keep the worker thread alive
+  // WorkerRef ownership is passed to the CacheStorageChild actor and any
+  // actors it may create.  The WorkerRef will keep the worker thread alive
   // until the actors can gracefully shutdown.
-  CacheStorageChild* newActor = new CacheStorageChild(this, aWorkerHolder);
+  CacheStorageChild* newActor = new CacheStorageChild(this, aWorkerRef);
   PCacheStorageChild* constructedActor = actor->SendPCacheStorageConstructor(
       newActor, mNamespace, *mPrincipalInfo);
 
@@ -467,9 +467,8 @@ already_AddRefed<CacheStorage> CacheStorage::Constructor(
   static_assert(
       CHROME_ONLY_NAMESPACE == (uint32_t)CacheStorageNamespace::Chrome,
       "Chrome namespace should match webidl Chrome enum");
-  static_assert(
-      NUMBER_OF_NAMESPACES == (uint32_t)CacheStorageNamespace::EndGuard_,
-      "Number of namespace should match webidl endguard enum");
+  static_assert(NUMBER_OF_NAMESPACES == CacheStorageNamespaceValues::Count,
+                "Number of namespace should match webidl count");
 
   Namespace ns = static_cast<Namespace>(aNamespace);
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
@@ -565,7 +564,7 @@ OpenMode CacheStorage::GetOpenMode() const {
 bool CacheStorage::HasStorageAccess() const {
   NS_ASSERT_OWNINGTHREAD(CacheStorage);
 
-  nsContentUtils::StorageAccess access;
+  StorageAccess access;
 
   if (NS_IsMainThread()) {
     nsCOMPtr<nsPIDOMWindowInner> window = do_QueryInterface(mGlobal);
@@ -573,7 +572,7 @@ bool CacheStorage::HasStorageAccess() const {
       return true;
     }
 
-    access = nsContentUtils::StorageAllowedForWindow(window);
+    access = StorageAllowedForWindow(window);
   } else {
     WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
     MOZ_ASSERT(workerPrivate);
@@ -581,7 +580,7 @@ bool CacheStorage::HasStorageAccess() const {
     access = workerPrivate->StorageAccess();
   }
 
-  return access > nsContentUtils::StorageAccess::ePrivateBrowsing;
+  return access > StorageAccess::ePrivateBrowsing;
 }
 
 }  // namespace cache

@@ -5,7 +5,6 @@
 #include "WebGLContext.h"
 #include "WebGLContextUtils.h"
 #include "WebGLExtensions.h"
-#include "gfxPrefs.h"
 #include "GLContext.h"
 
 #include "nsString.h"
@@ -61,6 +60,7 @@ namespace mozilla {
     WEBGL_EXTENSION_IDENTIFIER(WEBGL_debug_shaders)
     WEBGL_EXTENSION_IDENTIFIER(WEBGL_depth_texture)
     WEBGL_EXTENSION_IDENTIFIER(WEBGL_draw_buffers)
+    WEBGL_EXTENSION_IDENTIFIER(WEBGL_explicit_present)
     WEBGL_EXTENSION_IDENTIFIER(WEBGL_lose_context)
 
 #undef WEBGL_EXTENSION_IDENTIFIER
@@ -80,7 +80,7 @@ bool WebGLContext::IsExtensionSupported(dom::CallerType callerType,
     allowPrivilegedExts = true;
   }
 
-  if (gfxPrefs::WebGLPrivilegedExtensionsEnabled()) {
+  if (StaticPrefs::webgl_enable_privileged_extensions()) {
     allowPrivilegedExts = true;
   }
 
@@ -106,18 +106,7 @@ bool WebGLContext::IsExtensionSupported(dom::CallerType callerType,
 bool WebGLContext::IsExtensionSupported(WebGLExtensionID ext) const {
   if (mDisableExtensions) return false;
 
-  bool shouldResistFingerprinting =
-      mCanvasElement ?
-                     // If we're constructed from a canvas element
-          nsContentUtils::ShouldResistFingerprinting(GetOwnerDoc())
-                     :
-                     // If we're constructed from an offscreen canvas
-          (mOffscreenCanvas->GetOwnerGlobal()
-               ? nsContentUtils::ShouldResistFingerprinting(
-                     mOffscreenCanvas->GetOwnerGlobal()->PrincipalOrNull())
-               :
-               // Last resort, just check the global preference
-               nsContentUtils::ShouldResistFingerprinting());
+  bool shouldResistFingerprinting = ShouldResistFingerprinting();
 
   switch (ext) {
     // In alphabetical order
@@ -223,6 +212,9 @@ bool WebGLContext::IsExtensionSupported(WebGLExtensionID ext) const {
 
     case WebGLExtensionID::WEBGL_draw_buffers:
       return WebGLExtensionDrawBuffers::IsSupported(this);
+
+    case WebGLExtensionID::WEBGL_explicit_present:
+      return WebGLExtensionExplicitPresent::IsSupported(this);
 
     case WebGLExtensionID::WEBGL_lose_context:
       // We always support this extension.
@@ -421,6 +413,9 @@ void WebGLContext::EnableExtension(WebGLExtensionID ext) {
       break;
     case WebGLExtensionID::WEBGL_draw_buffers:
       obj = new WebGLExtensionDrawBuffers(this);
+      break;
+    case WebGLExtensionID::WEBGL_explicit_present:
+      obj = new WebGLExtensionExplicitPresent(this);
       break;
     case WebGLExtensionID::WEBGL_lose_context:
       obj = new WebGLExtensionLoseContext(this);

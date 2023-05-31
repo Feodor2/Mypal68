@@ -145,7 +145,7 @@ class DOMException : public Exception {
 
   static already_AddRefed<DOMException> Constructor(
       GlobalObject& /* unused */, const nsAString& aMessage,
-      const Optional<nsAString>& aName, ErrorResult& aError);
+      const Optional<nsAString>& aName);
 
   uint16_t Code() const { return mCode; }
 

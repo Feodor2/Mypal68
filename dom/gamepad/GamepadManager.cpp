@@ -15,15 +15,14 @@
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPtr.h"
 
 #include "nsAutoPtr.h"
 #include "nsContentUtils.h"
 #include "nsGlobalWindow.h"
-#include "nsIDOMWindow.h"
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
-#include "nsIServiceManager.h"
 #include "nsThreadUtils.h"
 #include "VRManagerChild.h"
 #include "mozilla/Services.h"
@@ -37,10 +36,6 @@ namespace mozilla {
 namespace dom {
 
 namespace {
-
-const char* kGamepadEnabledPref = "dom.gamepad.enabled";
-const char* kGamepadEventsEnabledPref =
-    "dom.gamepad.non_standard_events.enabled";
 
 const nsTArray<RefPtr<nsGlobalWindowInner>>::index_type NoIndex =
     nsTArray<RefPtr<nsGlobalWindowInner>>::NoIndex;
@@ -61,9 +56,9 @@ GamepadManager::GamepadManager()
       mPromiseID(0) {}
 
 nsresult GamepadManager::Init() {
-  mEnabled = IsAPIEnabled();
+  mEnabled = StaticPrefs::dom_gamepad_enabled();
   mNonstandardEventsEnabled =
-      Preferences::GetBool(kGamepadEventsEnabledPref, false);
+      StaticPrefs::dom_gamepad_non_standard_events_enabled();
   nsCOMPtr<nsIObserverService> observerService =
       mozilla::services::GetObserverService();
 
@@ -408,11 +403,6 @@ already_AddRefed<GamepadManager> GamepadManager::GetService() {
 
   RefPtr<GamepadManager> service(gGamepadManagerSingleton);
   return service.forget();
-}
-
-// static
-bool GamepadManager::IsAPIEnabled() {
-  return Preferences::GetBool(kGamepadEnabledPref, false);
 }
 
 bool GamepadManager::MaybeWindowHasSeenGamepad(nsGlobalWindowInner* aWindow,

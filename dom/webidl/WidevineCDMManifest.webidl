@@ -3,6 +3,7 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+[GenerateInitFromJSON]
 dictionary WidevineCDMManifest {
   required DOMString name;
   required DOMString description;

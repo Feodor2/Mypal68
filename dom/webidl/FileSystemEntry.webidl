@@ -5,6 +5,7 @@
  * https://wicg.github.io/entries-api/#idl-index
  */
 
+[Exposed=Window]
 interface FileSystemEntry {
     readonly attribute boolean isFile;
     readonly attribute boolean isDirectory;

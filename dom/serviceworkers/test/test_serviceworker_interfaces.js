@@ -22,6 +22,7 @@
 // IMPORTANT: Do not change this list without review from
 //            a JavaScript Engine peer!
 var ecmaGlobals = [
+  "AggregateError",
   "Array",
   "ArrayBuffer",
   { name: "Atomics", disabled: true },
@@ -103,9 +104,21 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "Directory",
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  "DOMError",
-  // IMPORTANT: Do not change this list without review from a DOM peer!
   "DOMException",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "DOMMatrix",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "DOMMatrixReadOnly",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "DOMPoint",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "DOMPointReadOnly",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "DOMQuad",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "DOMRect",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "DOMRectReadOnly",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "DOMRequest",
   // IMPORTANT: Do not change this list without review from a DOM peer!
@@ -194,6 +207,8 @@ var interfaceNamesInGlobalScope = [
   "PerformanceServerTiming",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   "ProgressEvent",
+  // IMPORTANT: Do not change this list without review from a DOM peer!
+  "PromiseRejectionEvent",
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PushEvent", fennec: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!

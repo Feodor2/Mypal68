@@ -8,14 +8,17 @@
 #include "nsCOMPtr.h"
 #include "nsWrapperCache.h"
 
-struct AudioWorkletNodeOptions;
-class ErrorResult;
-class GlobalObject;
-class MessagePort;
 class nsIGlobalObject;
 
 namespace mozilla {
+
+class ErrorResult;
+
 namespace dom {
+
+struct AudioWorkletNodeOptions;
+class GlobalObject;
+class MessagePort;
 
 class AudioWorkletProcessor final : public nsWrapperCache {
  public:
@@ -23,8 +26,7 @@ class AudioWorkletProcessor final : public nsWrapperCache {
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_NATIVE_CLASS(AudioWorkletProcessor)
 
   static already_AddRefed<AudioWorkletProcessor> Constructor(
-      const GlobalObject& aGlobal, const AudioWorkletNodeOptions& aOptions,
-      ErrorResult& aRv);
+      const GlobalObject& aGlobal, const AudioWorkletNodeOptions& aOptions);
 
   nsIGlobalObject* GetParentObject() const { return mParent; }
 

@@ -15,7 +15,7 @@ class FileSystemParams;
 class FileSystemTaskParentBase;
 
 class FileSystemRequestParent final : public PFileSystemRequestParent {
-  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FileSystemRequestParent)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FileSystemRequestParent, final)
 
  public:
   FileSystemRequestParent();

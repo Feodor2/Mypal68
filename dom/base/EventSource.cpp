@@ -37,7 +37,6 @@
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIAsyncVerifyRedirectCallback.h"
 #include "nsIScriptError.h"
-#include "nsIContentSecurityPolicy.h"
 #include "nsContentUtils.h"
 #include "mozilla/Preferences.h"
 #include "xpcpublic.h"
@@ -112,8 +111,7 @@ class EventSourceImpl final : public nsIObserver,
   static void TimerCallback(nsITimer* aTimer, void* aClosure);
 
   nsresult PrintErrorOnConsole(const char* aBundleURI, const char* aError,
-                               const char16_t** aFormatStrings,
-                               uint32_t aFormatStringsLen);
+                               const nsTArray<nsString>& aFormatStrings);
   nsresult ConsoleError();
 
   static nsresult StreamReaderFunc(nsIInputStream* aInputStream, void* aClosure,
@@ -794,11 +792,7 @@ EventSourceImpl::AsyncOnChannelRedirect(
   rv = NS_GetFinalChannelURI(aNewChannel, getter_AddRefs(newURI));
   NS_ENSURE_SUCCESS(rv, rv);
 
-  bool isValidScheme =
-      (NS_SUCCEEDED(newURI->SchemeIs("http", &isValidScheme)) &&
-       isValidScheme) ||
-      (NS_SUCCEEDED(newURI->SchemeIs("https", &isValidScheme)) &&
-       isValidScheme);
+  bool isValidScheme = newURI->SchemeIs("http") || newURI->SchemeIs("https");
 
   rv = mEventSource->CheckCurrentGlobalCorrectness();
   if (NS_FAILED(rv) || !isValidScheme) {
@@ -937,8 +931,8 @@ nsresult EventSourceImpl::SetupReferrerInfo() {
   MOZ_ASSERT(!IsShutDown());
   nsCOMPtr<Document> doc = mEventSource->GetDocumentIfCurrent();
   if (doc) {
-    nsCOMPtr<nsIReferrerInfo> referrerInfo =
-        new ReferrerInfo(doc->GetDocumentURI(), doc->GetReferrerPolicy());
+    nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+    referrerInfo->InitWithDocument(doc);
     nsresult rv = mHttpChannel->SetReferrerInfoWithoutClone(referrerInfo);
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -952,9 +946,7 @@ nsresult EventSourceImpl::InitChannelAndRequestEventSource() {
     return NS_ERROR_ABORT;
   }
 
-  bool isValidScheme =
-      (NS_SUCCEEDED(mSrc->SchemeIs("http", &isValidScheme)) && isValidScheme) ||
-      (NS_SUCCEEDED(mSrc->SchemeIs("https", &isValidScheme)) && isValidScheme);
+  bool isValidScheme = mSrc->SchemeIs("http") || mSrc->SchemeIs("https");
 
   nsresult rv = mEventSource->CheckCurrentGlobalCorrectness();
   if (NS_FAILED(rv) || !isValidScheme) {
@@ -1158,10 +1150,9 @@ nsresult EventSourceImpl::SetReconnectionTimeout() {
   return NS_OK;
 }
 
-nsresult EventSourceImpl::PrintErrorOnConsole(const char* aBundleURI,
-                                              const char* aError,
-                                              const char16_t** aFormatStrings,
-                                              uint32_t aFormatStringsLen) {
+nsresult EventSourceImpl::PrintErrorOnConsole(
+    const char* aBundleURI, const char* aError,
+    const nsTArray<nsString>& aFormatStrings) {
   AssertIsOnMainThread();
   MOZ_ASSERT(!IsShutDown());
   nsCOMPtr<nsIStringBundleService> bundleService =
@@ -1183,9 +1174,8 @@ nsresult EventSourceImpl::PrintErrorOnConsole(const char* aBundleURI,
 
   // Localize the error message
   nsAutoString message;
-  if (aFormatStrings) {
-    rv = strBundle->FormatStringFromName(aError, aFormatStrings,
-                                         aFormatStringsLen, message);
+  if (!aFormatStrings.IsEmpty()) {
+    rv = strBundle->FormatStringFromName(aError, aFormatStrings, message);
   } else {
     rv = strBundle->GetStringFromName(aError, message);
   }
@@ -1210,17 +1200,15 @@ nsresult EventSourceImpl::ConsoleError() {
   nsresult rv = mSrc->GetSpec(targetSpec);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  NS_ConvertUTF8toUTF16 specUTF16(targetSpec);
-  const char16_t* formatStrings[] = {specUTF16.get()};
+  AutoTArray<nsString, 1> formatStrings;
+  CopyUTF8toUTF16(targetSpec, *formatStrings.AppendElement());
 
   if (ReadyState() == CONNECTING) {
     rv = PrintErrorOnConsole("chrome://global/locale/appstrings.properties",
-                             "connectionFailure", formatStrings,
-                             ArrayLength(formatStrings));
+                             "connectionFailure", formatStrings);
   } else {
     rv = PrintErrorOnConsole("chrome://global/locale/appstrings.properties",
-                             "netInterrupt", formatStrings,
-                             ArrayLength(formatStrings));
+                             "netInterrupt", formatStrings);
   }
   NS_ENSURE_SUCCESS(rv, rv);
 

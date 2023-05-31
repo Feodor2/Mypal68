@@ -26,19 +26,15 @@ using mozilla::DefaultXDisplay;
 #include "nsIStringStream.h"
 #include "nsNetUtil.h"
 #include "mozilla/Preferences.h"
-#include "nsIDocShellTreeItem.h"
-#include "nsIWebBrowserChrome.h"
 #include "nsLayoutUtils.h"
 #include "nsIPluginWidget.h"
 #include "nsViewManager.h"
-#include "nsIDocShellTreeOwner.h"
 #include "nsIAppShell.h"
 #include "nsIObjectLoadingContent.h"
 #include "nsObjectLoadingContent.h"
 #include "nsAttrName.h"
 #include "nsIFocusManager.h"
 #include "nsFocusManager.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIScrollableFrame.h"
 #include "nsIDocShell.h"
 #include "ImageContainer.h"
@@ -400,11 +396,9 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
     unitarget.AssignASCII(aTarget);  // XXX could this be nonascii?
   }
 
-  nsCOMPtr<nsIURI> baseURI = GetBaseURI();
-
   // Create an absolute URL
   nsCOMPtr<nsIURI> uri;
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), aURL, baseURI);
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), aURL, GetBaseURI());
   NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
 
   nsCOMPtr<nsIInputStream> headersDataStream;
@@ -422,7 +416,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
 
   int32_t blockPopups =
       Preferences::GetInt("privacy.popups.disable_from_plugins");
-  nsAutoPopupStatePusher popupStatePusher(
+  AutoPopupStatePusher popupStatePusher(
       (PopupBlocker::PopupControlState)blockPopups);
 
   // if security checks (in particular CheckLoadURIWithPrincipal) needs
@@ -440,10 +434,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::GetURL(
         NullPrincipal::CreateWithInheritedAttributes(content->NodePrincipal());
   }
 
-  // Currently we query the CSP from the NodePrincipal. After Bug 965637
-  // we can query the CSP from the doc directly (content->OwerDoc()).
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  content->NodePrincipal()->GetCsp(getter_AddRefs(csp));
+  nsCOMPtr<nsIContentSecurityPolicy> csp = content->GetCsp();
 
   rv = nsDocShell::Cast(container)->OnLinkClick(
       content, uri, unitarget, VoidString(), aPostStream, headersDataStream,
@@ -2817,7 +2808,8 @@ NS_IMETHODIMP nsPluginInstanceOwner::CreateWidget(void) {
       // created in chrome.
       if (XRE_IsContentProcess()) {
         if (nsCOMPtr<nsPIDOMWindowOuter> window = doc->GetWindow()) {
-          if (nsCOMPtr<nsPIDOMWindowOuter> topWindow = window->GetTop()) {
+          if (nsCOMPtr<nsPIDOMWindowOuter> topWindow =
+                  window->GetInProcessTop()) {
             dom::BrowserChild* tc = dom::BrowserChild::GetFrom(topWindow);
             if (tc) {
               // This returns a PluginWidgetProxy which remotes a number of
@@ -3166,7 +3158,7 @@ void nsPluginInstanceOwner::SetFrame(nsPluginFrame* aFrame) {
 
   // If we already have a frame that is changing or going away...
   if (mPluginFrame) {
-    if (content && content->OwnerDoc() && content->OwnerDoc()->GetWindow()) {
+    if (content && content->OwnerDoc()->GetWindow()) {
       nsCOMPtr<EventTarget> windowRoot =
           content->OwnerDoc()->GetWindow()->GetTopWindowRoot();
       if (windowRoot) {
@@ -3227,7 +3219,7 @@ NS_IMETHODIMP nsPluginInstanceOwner::PrivateModeChanged(bool aEnabled) {
   return mInstance ? mInstance->PrivateModeStateChanged(aEnabled) : NS_OK;
 }
 
-already_AddRefed<nsIURI> nsPluginInstanceOwner::GetBaseURI() const {
+nsIURI* nsPluginInstanceOwner::GetBaseURI() const {
   nsCOMPtr<nsIContent> content = do_QueryReferent(mContent);
   if (!content) {
     return nullptr;

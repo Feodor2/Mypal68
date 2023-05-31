@@ -12,7 +12,6 @@
 #include "nsReadableUtils.h"
 #include "nsXBLProtoImplField.h"
 #include "nsIScriptContext.h"
-#include "nsIURI.h"
 #include "nsXBLSerialize.h"
 #include "nsXBLPrototypeBinding.h"
 #include "mozilla/CycleCollectedJSContext.h"

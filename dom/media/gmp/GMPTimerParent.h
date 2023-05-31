@@ -11,7 +11,6 @@
 #include "nsClassHashtable.h"
 #include "nsHashKeys.h"
 #include "mozilla/Monitor2.h"
-#include "nsIThread.h"
 
 namespace mozilla {
 namespace gmp {

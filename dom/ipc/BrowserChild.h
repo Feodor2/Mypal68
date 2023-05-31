@@ -16,7 +16,6 @@
 #include "nsIDOMEventListener.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIWindowProvider.h"
-#include "nsIDOMWindow.h"
 #include "nsIDocShell.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsFrameMessageManager.h"
@@ -41,10 +40,9 @@
 #include "PuppetWidget.h"
 #include "mozilla/layers/GeckoContentController.h"
 #include "nsDeque.h"
-#include "nsISHistoryListener.h"
 
 class nsBrowserStatusFilter;
-class nsIDOMWindowUtils;
+class nsIDOMWindow;
 class nsIHttpChannel;
 class nsIRequest;
 class nsISerialEventTarget;
@@ -394,7 +392,8 @@ class BrowserChild final : public BrowserChildBase,
       const WidgetTouchEvent& aEvent, const ScrollableLayerGuid& aGuid,
       const uint64_t& aInputBlockId, const nsEventStatus& aApzResponse);
 
-  mozilla::ipc::IPCResult RecvFlushTabState(const uint32_t& aFlushId);
+  mozilla::ipc::IPCResult RecvFlushTabState(const uint32_t& aFlushId,
+                                            const bool& aIsFinal);
 
   mozilla::ipc::IPCResult RecvNativeSynthesisResponse(
       const uint64_t& aObserverId, const nsCString& aResponse);
@@ -688,7 +687,7 @@ class BrowserChild final : public BrowserChildBase,
     return *sVisibleTabs;
   }
 
-  bool UpdateSessionStore(uint32_t aFlushId);
+  bool UpdateSessionStore(uint32_t aFlushId, bool aIsFinal = false);
 
  protected:
   virtual ~BrowserChild();
@@ -696,12 +695,6 @@ class BrowserChild final : public BrowserChildBase,
   PWindowGlobalChild* AllocPWindowGlobalChild(const WindowGlobalInit& aInit);
 
   bool DeallocPWindowGlobalChild(PWindowGlobalChild* aActor);
-
-  PBrowserBridgeChild* AllocPBrowserBridgeChild(
-      const nsString& aName, const nsString& aRemoteType,
-      BrowsingContext* aBrowsingContext, const uint32_t& aChromeFlags);
-
-  bool DeallocPBrowserBridgeChild(PBrowserBridgeChild* aActor);
 
   mozilla::ipc::IPCResult RecvDestroy();
 
@@ -730,7 +723,6 @@ class BrowserChild final : public BrowserChildBase,
   mozilla::ipc::IPCResult RecvParentActivated(const bool& aActivated);
 
   mozilla::ipc::IPCResult RecvSetKeyboardIndicators(
-      const UIStateChangeType& aShowAccelerators,
       const UIStateChangeType& aShowFocusRings);
 
   mozilla::ipc::IPCResult RecvStopIMEStateManagement();
@@ -912,6 +904,8 @@ class BrowserChild final : public BrowserChildBase,
   PDocAccessibleChild* mTopLevelDocAccessibleChild;
 #endif
   bool mCoalesceMouseMoveEvents;
+
+  bool mShouldSendWebProgressEventsToParent;
 
   // In some circumstances, a DocShell might be in a state where it is
   // "blocked", and we should not attempt to change its active state or

@@ -6,7 +6,6 @@
 #include "nsFakeSynthServices.h"
 #include "nsPrintfCString.h"
 #include "SharedBuffer.h"
-#include "nsISimpleEnumerator.h"
 
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/dom/nsSynthVoiceRegistry.h"

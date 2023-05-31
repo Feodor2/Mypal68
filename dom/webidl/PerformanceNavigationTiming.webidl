@@ -16,6 +16,7 @@ enum NavigationType {
   "prerender"
 };
 
+[Exposed=Window]
 interface PerformanceNavigationTiming : PerformanceResourceTiming {
   readonly        attribute DOMHighResTimeStamp unloadEventStart;
   readonly        attribute DOMHighResTimeStamp unloadEventEnd;

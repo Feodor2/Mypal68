@@ -15,8 +15,11 @@
 interface nsISupports;
 
 /* Must be created first. Observer events will be dispatched on the thread provided */
-[ChromeOnly, Constructor]
+[ChromeOnly,
+ Exposed=Window]
 interface PeerConnectionImpl  {
+  constructor();
+
   /* Must be called first. Observer events dispatched on the thread provided */
   [Throws]
   void initialize(PeerConnectionObserver observer, Window window,
@@ -25,7 +28,7 @@ interface PeerConnectionImpl  {
 
   /* JSEP calls */
   [Throws]
-  void createOffer(optional RTCOfferOptions options);
+  void createOffer(optional RTCOfferOptions options = {});
   [Throws]
   void createAnswer();
   [Throws]
@@ -115,9 +118,9 @@ interface PeerConnectionImpl  {
   readonly attribute DOMString currentRemoteDescription;
   readonly attribute DOMString pendingRemoteDescription;
 
-  readonly attribute PCImplIceConnectionState iceConnectionState;
-  readonly attribute PCImplIceGatheringState iceGatheringState;
-  readonly attribute PCImplSignalingState signalingState;
+  readonly attribute RTCIceConnectionState iceConnectionState;
+  readonly attribute RTCIceGatheringState iceGatheringState;
+  readonly attribute RTCSignalingState signalingState;
   attribute DOMString id;
 
   [SetterThrows]

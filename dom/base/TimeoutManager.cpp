@@ -6,16 +6,16 @@
 #include "nsGlobalWindow.h"
 #include "mozilla/Logging.h"
 #include "mozilla/PerformanceCounter.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/ThrottledEventQueue.h"
 #include "mozilla/TimeStamp.h"
-#include "nsIDocShell.h"
 #include "nsINamed.h"
-#include "nsITimeoutHandler.h"
 #include "mozilla/dom/DocGroup.h"
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/TabGroup.h"
+#include "mozilla/dom/TimeoutHandler.h"
 #include "TimeoutExecutor.h"
 #include "TimeoutBudgetManager.h"
 #include "mozilla/net/WebSocketEventService.h"
@@ -31,30 +31,6 @@ LazyLogModule gTimeoutLog("Timeout");
 
 static int32_t gRunningTimeoutDepth = 0;
 
-// The default shortest interval/timeout we permit
-#define DEFAULT_MIN_CLAMP_TIMEOUT_VALUE 4                   // 4ms
-#define DEFAULT_MIN_BACKGROUND_TIMEOUT_VALUE 1000           // 1000ms
-#define DEFAULT_MIN_TRACKING_TIMEOUT_VALUE 4                // 4ms
-#define DEFAULT_MIN_TRACKING_BACKGROUND_TIMEOUT_VALUE 1000  // 1000ms
-static int32_t gMinClampTimeoutValue = 0;
-static int32_t gMinBackgroundTimeoutValue = 0;
-static int32_t gMinTrackingTimeoutValue = 0;
-static int32_t gMinTrackingBackgroundTimeoutValue = 0;
-static int32_t gTimeoutThrottlingDelay = 0;
-
-#define DEFAULT_BACKGROUND_BUDGET_REGENERATION_FACTOR 100  // 1ms per 100ms
-#define DEFAULT_FOREGROUND_BUDGET_REGENERATION_FACTOR 1    // 1ms per 1ms
-#define DEFAULT_BACKGROUND_THROTTLING_MAX_BUDGET 50        // 50ms
-#define DEFAULT_FOREGROUND_THROTTLING_MAX_BUDGET -1        // infinite
-#define DEFAULT_BUDGET_THROTTLING_MAX_DELAY 15000          // 15s
-#define DEFAULT_ENABLE_BUDGET_TIMEOUT_THROTTLING false
-static int32_t gBackgroundBudgetRegenerationFactor = 0;
-static int32_t gForegroundBudgetRegenerationFactor = 0;
-static int32_t gBackgroundThrottlingMaxBudget = 0;
-static int32_t gForegroundThrottlingMaxBudget = 0;
-static int32_t gBudgetThrottlingMaxDelay = 0;
-static bool gEnableBudgetTimeoutThrottling = false;
-
 // static
 const uint32_t TimeoutManager::InvalidFiringId = 0;
 
@@ -68,10 +44,11 @@ double GetRegenerationFactor(bool aIsBackground) {
   // equal to time passed. At this rate we regenerate 1ms/ms. If it is
   // 0.01 the amount regenerated is 1% of time passed. At this rate we
   // regenerate 1ms/100ms, etc.
-  double denominator =
-      std::max(aIsBackground ? gBackgroundBudgetRegenerationFactor
-                             : gForegroundBudgetRegenerationFactor,
-               1);
+  double denominator = std::max(
+      aIsBackground
+          ? StaticPrefs::dom_timeout_background_budget_regeneration_rate()
+          : StaticPrefs::dom_timeout_foreground_budget_regeneration_rate(),
+      1);
   return 1.0 / denominator;
 }
 
@@ -82,8 +59,10 @@ TimeDuration GetMaxBudget(bool aIsBackground) {
   // Returns how high a budget can be regenerated before being
   // clamped. If this value is less or equal to zero,
   // TimeDuration::Forever() is implied.
-  int32_t maxBudget = aIsBackground ? gBackgroundThrottlingMaxBudget
-                                    : gForegroundThrottlingMaxBudget;
+  int32_t maxBudget =
+      aIsBackground
+          ? StaticPrefs::dom_timeout_background_throttling_max_budget()
+          : StaticPrefs::dom_timeout_foreground_throttling_max_budget();
   return maxBudget > 0 ? TimeDuration::FromMilliseconds(maxBudget)
                        : TimeDuration::Forever();
 }
@@ -94,10 +73,12 @@ TimeDuration GetMinBudget(bool aIsBackground) {
   // that budget using the regeneration factor. This number is
   // expected to be negative.
   return TimeDuration::FromMilliseconds(
-      -gBudgetThrottlingMaxDelay /
-      std::max(aIsBackground ? gBackgroundBudgetRegenerationFactor
-                             : gForegroundBudgetRegenerationFactor,
-               1));
+      -StaticPrefs::dom_timeout_budget_throttling_max_delay() /
+      std::max(
+          aIsBackground
+              ? StaticPrefs::dom_timeout_background_budget_regeneration_rate()
+              : StaticPrefs::dom_timeout_foreground_budget_regeneration_rate(),
+          1));
 }
 }  // namespace
 
@@ -234,7 +215,8 @@ TimeDuration TimeoutManager::MinSchedulingDelay() const {
   // factor used is the rate of budget regeneration.
   //
   // We clamp the delay to be less than or equal to
-  // gBudgetThrottlingMaxDelay to not entirely starve the timeouts.
+  // "dom.timeout.budget_throttling_max_delay" to not entirely starve
+  // the timeouts.
   //
   // Consider these examples assuming we should throttle using
   // budgets:
@@ -257,7 +239,8 @@ TimeDuration TimeoutManager::MinSchedulingDelay() const {
   // then we will compute the minimum delay:
   // max(1000, - (- 15) * 1/0.01) = max(1000, 1500) = 1500
   TimeDuration unthrottled =
-      isBackground ? TimeDuration::FromMilliseconds(gMinBackgroundTimeoutValue)
+      isBackground ? TimeDuration::FromMilliseconds(
+                         StaticPrefs::dom_min_background_timeout_value())
                    : TimeDuration();
   if (BudgetThrottlingEnabled(isBackground) &&
       mExecutionBudget < TimeDuration()) {
@@ -324,8 +307,9 @@ TimeDuration TimeoutManager::CalculateDelay(Timeout* aTimeout) const {
   TimeDuration result = aTimeout->mInterval;
 
   if (aTimeout->mNestingLevel >= DOM_CLAMP_TIMEOUT_NESTING_LEVEL) {
-    result = TimeDuration::Max(
-        result, TimeDuration::FromMilliseconds(gMinClampTimeoutValue));
+    uint32_t minTimeoutValue = StaticPrefs::dom_min_timeout_value();
+    result = TimeDuration::Max(result,
+                               TimeDuration::FromMilliseconds(minTimeoutValue));
   }
 
   return result;
@@ -411,30 +395,12 @@ void TimeoutManager::UpdateBudget(const TimeStamp& aNow,
   mLastBudgetUpdate = aNow;
 }
 
-#define DEFAULT_TIMEOUT_THROTTLING_DELAY \
-  -1  // Only positive integers cause us to introduce a delay for
-      // timeout throttling.
-
 // The longest interval (as PRIntervalTime) we permit, or that our
 // timer code can handle, really. See DELAY_INTERVAL_LIMIT in
 // nsTimerImpl.h for details.
 #define DOM_MAX_TIMEOUT_VALUE DELAY_INTERVAL_LIMIT
 
 uint32_t TimeoutManager::sNestingLevel = 0;
-
-namespace {
-
-// The maximum number of milliseconds to allow consecutive timer callbacks
-// to run in a single event loop runnable.
-#define DEFAULT_MAX_CONSECUTIVE_CALLBACKS_MILLISECONDS 4
-uint32_t gMaxConsecutiveCallbacksMilliseconds;
-
-// Only propagate the open window click permission if the setTimeout() is equal
-// to or less than this value.
-#define DEFAULT_DISABLE_OPEN_CLICK_DELAY 0
-int32_t gDisableOpenClickDelay;
-
-}  // anonymous namespace
 
 TimeoutManager::TimeoutManager(nsGlobalWindowInner& aWindow,
                                uint32_t aMaxIdleDeferMS)
@@ -475,50 +441,6 @@ TimeoutManager::~TimeoutManager() {
           ("TimeoutManager %p destroyed\n", this));
 }
 
-/* static */
-void TimeoutManager::Initialize() {
-  Preferences::AddIntVarCache(&gMinClampTimeoutValue, "dom.min_timeout_value",
-                              DEFAULT_MIN_CLAMP_TIMEOUT_VALUE);
-  Preferences::AddIntVarCache(&gMinBackgroundTimeoutValue,
-                              "dom.min_background_timeout_value",
-                              DEFAULT_MIN_BACKGROUND_TIMEOUT_VALUE);
-  Preferences::AddIntVarCache(&gMinTrackingTimeoutValue,
-                              "dom.min_tracking_timeout_value",
-                              DEFAULT_MIN_TRACKING_TIMEOUT_VALUE);
-  Preferences::AddIntVarCache(&gMinTrackingBackgroundTimeoutValue,
-                              "dom.min_tracking_background_timeout_value",
-                              DEFAULT_MIN_TRACKING_BACKGROUND_TIMEOUT_VALUE);
-  Preferences::AddIntVarCache(&gTimeoutThrottlingDelay,
-                              "dom.timeout.throttling_delay",
-                              DEFAULT_TIMEOUT_THROTTLING_DELAY);
-
-  Preferences::AddUintVarCache(&gMaxConsecutiveCallbacksMilliseconds,
-                               "dom.timeout.max_consecutive_callbacks_ms",
-                               DEFAULT_MAX_CONSECUTIVE_CALLBACKS_MILLISECONDS);
-
-  Preferences::AddIntVarCache(&gDisableOpenClickDelay,
-                              "dom.disable_open_click_delay",
-                              DEFAULT_DISABLE_OPEN_CLICK_DELAY);
-  Preferences::AddIntVarCache(&gBackgroundBudgetRegenerationFactor,
-                              "dom.timeout.background_budget_regeneration_rate",
-                              DEFAULT_BACKGROUND_BUDGET_REGENERATION_FACTOR);
-  Preferences::AddIntVarCache(&gForegroundBudgetRegenerationFactor,
-                              "dom.timeout.foreground_budget_regeneration_rate",
-                              DEFAULT_FOREGROUND_BUDGET_REGENERATION_FACTOR);
-  Preferences::AddIntVarCache(&gBackgroundThrottlingMaxBudget,
-                              "dom.timeout.background_throttling_max_budget",
-                              DEFAULT_BACKGROUND_THROTTLING_MAX_BUDGET);
-  Preferences::AddIntVarCache(&gForegroundThrottlingMaxBudget,
-                              "dom.timeout.foreground_throttling_max_budget",
-                              DEFAULT_FOREGROUND_THROTTLING_MAX_BUDGET);
-  Preferences::AddIntVarCache(&gBudgetThrottlingMaxDelay,
-                              "dom.timeout.budget_throttling_max_delay",
-                              DEFAULT_BUDGET_THROTTLING_MAX_DELAY);
-  Preferences::AddBoolVarCache(&gEnableBudgetTimeoutThrottling,
-                               "dom.timeout.enable_budget_timer_throttling",
-                               DEFAULT_ENABLE_BUDGET_TIMEOUT_THROTTLING);
-}
-
 uint32_t TimeoutManager::GetTimeoutId(Timeout::Reason aReason) {
   switch (aReason) {
     case Timeout::Reason::eIdleCallbackTimeout:
@@ -531,9 +453,9 @@ uint32_t TimeoutManager::GetTimeoutId(Timeout::Reason aReason) {
 
 bool TimeoutManager::IsRunningTimeout() const { return mRunningTimeout; }
 
-nsresult TimeoutManager::SetTimeout(nsITimeoutHandler* aHandler,
-                                    int32_t interval, bool aIsInterval,
-                                    Timeout::Reason aReason, int32_t* aReturn) {
+nsresult TimeoutManager::SetTimeout(TimeoutHandler* aHandler, int32_t interval,
+                                    bool aIsInterval, Timeout::Reason aReason,
+                                    int32_t* aReturn) {
   // If we don't have a document (we could have been unloaded since
   // the call to setTimeout was made), do nothing.
   nsCOMPtr<Document> doc = mWindow.GetExtantDoc();
@@ -592,7 +514,7 @@ nsresult TimeoutManager::SetTimeout(nsITimeoutHandler* aHandler,
     // This is checking |interval|, not realInterval, on purpose,
     // because our lower bound for |realInterval| could be pretty high
     // in some cases.
-    if (interval <= gDisableOpenClickDelay) {
+    if (interval <= StaticPrefs::dom_disable_open_click_delay()) {
       timeout->mPopupState = PopupBlocker::GetPopupControlState();
     }
   }
@@ -707,7 +629,7 @@ void TimeoutManager::RunTimeout(const TimeStamp& aNow,
 
   // Limit the overall time spent in RunTimeout() to reduce jank.
   uint32_t totalTimeLimitMS =
-      std::max(1u, gMaxConsecutiveCallbacksMilliseconds);
+      std::max(1u, StaticPrefs::dom_timeout_max_consecutive_callbacks_ms());
   const TimeDuration totalTimeLimit =
       TimeDuration::Min(TimeDuration::FromMilliseconds(totalTimeLimitMS),
                         TimeDuration::Max(TimeDuration(), mExecutionBudget));
@@ -1335,8 +1257,9 @@ bool TimeoutManager::BudgetThrottlingEnabled(bool aIsBackground) const {
   // Note that we allow both foreground and background to be
   // considered for budget throttling. What determines if they are if
   // budget throttling is enabled is the max budget.
-  if ((aIsBackground ? gBackgroundThrottlingMaxBudget
-                     : gForegroundThrottlingMaxBudget) < 0) {
+  if ((aIsBackground
+           ? StaticPrefs::dom_timeout_background_throttling_max_budget()
+           : StaticPrefs::dom_timeout_foreground_throttling_max_budget()) < 0) {
     return false;
   }
 
@@ -1371,7 +1294,8 @@ void TimeoutManager::StartThrottlingTimeouts() {
   MOZ_DIAGNOSTIC_ASSERT(!mThrottleTimeouts);
   mThrottleTimeouts = true;
   mThrottleTrackingTimeouts = true;
-  mBudgetThrottleTimeouts = gEnableBudgetTimeoutThrottling;
+  mBudgetThrottleTimeouts =
+      StaticPrefs::dom_timeout_enable_budget_timer_throttling();
   mThrottleTimeoutsTimer = nullptr;
 }
 
@@ -1385,7 +1309,7 @@ void TimeoutManager::OnDocumentLoaded() {
 }
 
 void TimeoutManager::MaybeStartThrottleTimeout() {
-  if (gTimeoutThrottlingDelay <= 0 || mWindow.IsDying() ||
+  if (StaticPrefs::dom_timeout_throttling_delay() <= 0 || mWindow.IsDying() ||
       mWindow.IsSuspended()) {
     return;
   }
@@ -1394,13 +1318,13 @@ void TimeoutManager::MaybeStartThrottleTimeout() {
 
   MOZ_LOG(gTimeoutLog, LogLevel::Debug,
           ("TimeoutManager %p delaying tracking timeout throttling by %dms\n",
-           this, gTimeoutThrottlingDelay));
+           this, StaticPrefs::dom_timeout_throttling_delay()));
 
   nsCOMPtr<nsITimerCallback> callback = new ThrottleTimeoutsCallback(&mWindow);
 
   NS_NewTimerWithCallback(getter_AddRefs(mThrottleTimeoutsTimer), callback,
-                          gTimeoutThrottlingDelay, nsITimer::TYPE_ONE_SHOT,
-                          EventTarget());
+                          StaticPrefs::dom_timeout_throttling_delay(),
+                          nsITimer::TYPE_ONE_SHOT, EventTarget());
 }
 
 void TimeoutManager::BeginSyncOperation() {

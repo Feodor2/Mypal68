@@ -15,6 +15,7 @@
 #  include "nsCOMPtr.h"
 #  include "nsThreadUtils.h"
 #  include "soundtouch/SoundTouchFactory.h"
+#  include "WavDumper.h"
 
 #  if defined(XP_WIN)
 #    include "mozilla/audio/AudioNotificationReceiver.h"
@@ -306,8 +307,7 @@ class AudioStream final
   AudioClock mAudioClock;
   soundtouch::SoundTouch* mTimeStretcher;
 
-  // Output file for dumping audio
-  FILE* mDumpFile;
+  WavDumper mDumpFile;
 
   // Owning reference to a cubeb_stream.
   UniquePtr<cubeb_stream, CubebDestroyPolicy> mCubebStream;

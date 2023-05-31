@@ -6,9 +6,11 @@
  * https://html.spec.whatwg.org/#broadcastchannel
  */
 
-[Constructor(DOMString channel),
- Exposed=(Window,Worker)]
+[Exposed=(Window,Worker)]
 interface BroadcastChannel : EventTarget {
+  [Throws]
+  constructor(DOMString channel);
+
   readonly attribute DOMString name;
 
   [Throws]

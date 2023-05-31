@@ -19,10 +19,8 @@
 #include "nsXBLProtoImplField.h"
 #include "nsXBLPrototypeBinding.h"
 #include "nsContentUtils.h"
-#include "nsIConsoleService.h"
 #include "nsIScriptError.h"
 #include "nsNodeInfoManager.h"
-#include "nsIPrincipal.h"
 #include "mozilla/dom/Element.h"
 
 using namespace mozilla;
@@ -169,16 +167,13 @@ nsresult nsXBLContentSink::ReportUnexpectedElement(nsAtom* aElementName,
   // instead of just letting the XML sink build the content model like
   // we do...
   mState = eXBL_Error;
-  nsAutoString elementName;
-  aElementName->ToString(elementName);
-
-  const char16_t* params[] = {elementName.get()};
+  AutoTArray<nsString, 1> params;
+  aElementName->ToString(*params.AppendElement());
 
   return nsContentUtils::ReportToConsole(
       nsIScriptError::errorFlag, NS_LITERAL_CSTRING("XBL Content Sink"),
       mDocument, nsContentUtils::eXBL_PROPERTIES, "UnexpectedElement", params,
-      ArrayLength(params), nullptr, EmptyString() /* source line */,
-      aLineNumber);
+      nullptr, EmptyString() /* source line */, aLineNumber);
 }
 
 void nsXBLContentSink::AddMember(nsXBLProtoImplMember* aMember) {
@@ -346,12 +341,7 @@ bool nsXBLContentSink::OnOpenContainer(const char16_t** aAtts,
 
     nsIURI* uri = mDocument->GetDocumentURI();
 
-    bool isChrome = false;
-    bool isRes = false;
-
-    uri->SchemeIs("chrome", &isChrome);
-    uri->SchemeIs("resource", &isRes);
-    mIsChromeOrResource = isChrome || isRes;
+    mIsChromeOrResource = uri->SchemeIs("chrome") || uri->SchemeIs("resource");
 
     mState = eXBL_InBindings;
   } else if (aTagName == nsGkAtoms::binding) {
@@ -480,8 +470,8 @@ nsresult nsXBLContentSink::ConstructBinding(uint32_t aLineNumber) {
   } else {
     nsContentUtils::ReportToConsole(
         nsIScriptError::errorFlag, NS_LITERAL_CSTRING("XBL Content Sink"),
-        nullptr, nsContentUtils::eXBL_PROPERTIES, "MissingIdAttr", nullptr, 0,
-        mDocumentURI, EmptyString(), aLineNumber);
+        nullptr, nsContentUtils::eXBL_PROPERTIES, "MissingIdAttr",
+        nsTArray<nsString>(), mDocumentURI, EmptyString(), aLineNumber);
   }
 
   return rv;
@@ -565,7 +555,8 @@ void nsXBLContentSink::ConstructHandler(const char16_t** aAtts,
     nsContentUtils::ReportToConsole(
         nsIScriptError::errorFlag, NS_LITERAL_CSTRING("XBL Content Sink"),
         mDocument, nsContentUtils::eXBL_PROPERTIES, "CommandNotInChrome",
-        nullptr, 0, nullptr, EmptyString() /* source line */, aLineNumber);
+        nsTArray<nsString>(), nullptr, EmptyString() /* source line */,
+        aLineNumber);
     return;  // Don't even make this handler.
   }
 
@@ -614,7 +605,7 @@ void nsXBLContentSink::ConstructImplementation(const char16_t** aAtts) {
     } else if (localName == nsGkAtoms::implements) {
       // Only allow implementation of interfaces via XBL if the principal of
       // our XBL document is the system principal.
-      if (nsContentUtils::IsSystemPrincipal(mDocument->NodePrincipal())) {
+      if (mDocument->NodePrincipal()->IsSystemPrincipal()) {
         mBinding->ConstructInterfaceTable(nsDependentString(aAtts[1]));
       }
     }
@@ -745,9 +736,8 @@ nsresult nsXBLContentSink::CreateElement(
   // nsXBLPrototypeBinding::ReadContentNode.
 
   *aAppendContent = true;
-  RefPtr<nsXULPrototypeElement> prototype = new nsXULPrototypeElement();
-
-  prototype->mNodeInfo = aNodeInfo;
+  RefPtr<nsXULPrototypeElement> prototype =
+      new nsXULPrototypeElement(aNodeInfo);
 
   AddAttributesToXULPrototype(aAtts, aAttsCount, prototype);
 
@@ -777,11 +767,8 @@ nsresult nsXBLContentSink::AddAttributesToXULPrototype(
   // Create storage for the attributes
   nsXULPrototypeAttribute* attrs = nullptr;
   if (aAttsCount > 0) {
-    attrs = new nsXULPrototypeAttribute[aAttsCount];
+    attrs = aElement->mAttributes.AppendElements(aAttsCount);
   }
-
-  aElement->mAttributes = attrs;
-  aElement->mNumAttributes = aAttsCount;
 
   // Copy the attributes into the prototype
   RefPtr<nsAtom> prefix, localName;

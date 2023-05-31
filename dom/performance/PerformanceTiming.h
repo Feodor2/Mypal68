@@ -6,7 +6,8 @@
 #define mozilla_dom_PerformanceTiming_h
 
 #include "mozilla/Attributes.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/BasePrincipal.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsContentUtils.h"
 #include "nsDOMNavigationTiming.h"
 #include "nsRFPService.h"

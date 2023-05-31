@@ -15,7 +15,7 @@
 namespace mozilla {
 namespace dom {
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(MessageEvent)
+NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(MessageEvent)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN_INHERITED(MessageEvent, Event)
   tmp->mData.setUndefined();
@@ -84,7 +84,7 @@ void MessageEvent::GetSource(
 /* static */
 already_AddRefed<MessageEvent> MessageEvent::Constructor(
     const GlobalObject& aGlobal, const nsAString& aType,
-    const MessageEventInit& aParam, ErrorResult& aRv) {
+    const MessageEventInit& aParam) {
   nsCOMPtr<EventTarget> t = do_QueryInterface(aGlobal.GetAsSupports());
   return Constructor(t, aType, aParam);
 }

@@ -12,7 +12,7 @@
 #include "MediaInfo.h"
 #include "PDMFactory.h"
 #include "VPXDecoder.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
 
 namespace mozilla {
@@ -528,7 +528,7 @@ bool MediaChangeMonitor::CanRecycleDecoder() const {
   AssertOnTaskQueue();
 
   MOZ_ASSERT(mDecoder);
-  return StaticPrefs::MediaDecoderRecycleEnabled() &&
+  return StaticPrefs::media_decoder_recycle_enabled() &&
          mDecoder->SupportDecoderRecycling();
 }
 

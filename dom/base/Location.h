@@ -109,12 +109,6 @@ class Location final : public nsISupports, public nsWrapperCache {
   void SetHash(const nsAString& aHash, nsIPrincipal& aSubjectPrincipal,
                ErrorResult& aError);
 
-  void Stringify(nsAString& aRetval, nsIPrincipal& aSubjectPrincipal,
-                 ErrorResult& aError) {
-    // GetHref checks CallerSubsumes.
-    GetHref(aRetval, aSubjectPrincipal, aError);
-  }
-
   nsPIDOMWindowInner* GetParentObject() const { return mInnerWindow; }
 
   virtual JSObject* WrapObject(JSContext* aCx,
@@ -150,7 +144,7 @@ class Location final : public nsISupports, public nsWrapperCache {
 
   // Get the base URL we should be using for our relative URL
   // resolution for SetHref/Assign/Replace.
-  already_AddRefed<nsIURI> GetSourceBaseURL();
+  nsIURI* GetSourceBaseURL();
 
   // Check whether it's OK to load the given url with the given subject
   // principal, and if so construct the right nsDocShellLoadInfo for the load

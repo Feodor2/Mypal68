@@ -29,11 +29,11 @@ function log(msg) {
 const autoplayPermission = "autoplay-media";
 
 async function pushAutoplayAllowedPermission() {
-  return new Promise((resolve, reject) => {
-    SpecialPowers.pushPermissions([{
-      'type': autoplayPermission,
-      'allow': true,
-      'context': document
-    }], resolve);
-  });
+  return SpecialPowers.pushPermissions([
+    {
+      type: autoplayPermission,
+      allow: true,
+      context: document,
+    },
+  ]);
 }

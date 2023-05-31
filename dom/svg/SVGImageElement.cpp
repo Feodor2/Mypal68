@@ -107,7 +107,7 @@ already_AddRefed<Promise> SVGImageElement::Decode(ErrorResult& aRv) {
 
 nsresult SVGImageElement::LoadSVGImage(bool aForce, bool aNotify) {
   // resolve href attribute
-  nsCOMPtr<nsIURI> baseURI = GetBaseURI();
+  nsIURI* baseURI = GetBaseURI();
 
   nsAutoString href;
   if (mStringAttributes[HREF].IsExplicitlySet()) {
@@ -182,13 +182,11 @@ void SVGImageElement::MaybeLoadSVGImage() {
   }
 }
 
-nsresult SVGImageElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                     nsIContent* aBindingParent) {
-  nsresult rv =
-      SVGImageElementBase::BindToTree(aDocument, aParent, aBindingParent);
+nsresult SVGImageElement::BindToTree(BindContext& aContext, nsINode& aParent) {
+  nsresult rv = SVGImageElementBase::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsImageLoadingContent::BindToTree(aDocument, aParent, aBindingParent);
+  nsImageLoadingContent::BindToTree(aContext, aParent);
 
   if (mStringAttributes[HREF].IsExplicitlySet() ||
       mStringAttributes[XLINK_HREF].IsExplicitlySet()) {
@@ -200,9 +198,9 @@ nsresult SVGImageElement::BindToTree(Document* aDocument, nsIContent* aParent,
   return rv;
 }
 
-void SVGImageElement::UnbindFromTree(bool aDeep, bool aNullParent) {
-  nsImageLoadingContent::UnbindFromTree(aDeep, aNullParent);
-  SVGImageElementBase::UnbindFromTree(aDeep, aNullParent);
+void SVGImageElement::UnbindFromTree(bool aNullParent) {
+  nsImageLoadingContent::UnbindFromTree(aNullParent);
+  SVGImageElementBase::UnbindFromTree(aNullParent);
 }
 
 EventStates SVGImageElement::IntrinsicState() const {

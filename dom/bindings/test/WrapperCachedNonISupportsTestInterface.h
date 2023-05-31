@@ -25,6 +25,8 @@ class WrapperCachedNonISupportsTestInterface final : public nsWrapperCache {
  public:
   WrapperCachedNonISupportsTestInterface() {}
 
+  static already_AddRefed<WrapperCachedNonISupportsTestInterface> Constructor(const GlobalObject& aGlobalObject);
+
  protected:
   ~WrapperCachedNonISupportsTestInterface() {}
 

@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGMarkerElement : SVGElement {
 
   // Marker Unit Types
@@ -41,5 +42,5 @@ interface SVGMarkerElement : SVGElement {
   void setOrientToAngle(SVGAngle angle);
 };
 
-SVGMarkerElement implements SVGFitToViewBox;
+SVGMarkerElement includes SVGFitToViewBox;
 

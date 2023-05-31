@@ -7,7 +7,6 @@
 #include <algorithm>
 #include "DOMSVGAnimatedNumberList.h"
 #include "DOMSVGAnimatedLength.h"
-#include "imgIContainer.h"
 #include "nsGkAtoms.h"
 #include "nsCOMPtr.h"
 #include "nsIFrame.h"

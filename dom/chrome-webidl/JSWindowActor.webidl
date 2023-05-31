@@ -4,8 +4,7 @@
 
 interface nsISupports;
 
-[NoInterfaceObject]
-interface JSWindowActor {
+interface mixin JSWindowActor {
   [Throws]
   void sendAsyncMessage(DOMString messageName,
                         optional any obj,
@@ -17,15 +16,34 @@ interface JSWindowActor {
                          optional any transfers);
 };
 
-[ChromeOnly, ChromeConstructor]
+[ChromeOnly, Exposed=Window]
 interface JSWindowActorParent {
-  readonly attribute WindowGlobalParent manager;
-};
-JSWindowActorParent implements JSWindowActor;
+  [ChromeOnly]
+  constructor();
 
-[ChromeOnly, ChromeConstructor]
+  /**
+   * Actor initialization occurs after the constructor is called but before the
+   * first message is delivered. Until the actor is initialized, accesses to
+   * manager will fail.
+   */
+  readonly attribute WindowGlobalParent? manager;
+
+  [Throws]
+  readonly attribute CanonicalBrowsingContext? browsingContext;
+};
+JSWindowActorParent includes JSWindowActor;
+
+[ChromeOnly, Exposed=Window]
 interface JSWindowActorChild {
-  readonly attribute WindowGlobalChild manager;
+  [ChromeOnly]
+  constructor();
+
+  /**
+   * Actor initialization occurs after the constructor is called but before the
+   * first message is delivered. Until the actor is initialized, accesses to
+   * manager will fail.
+   */
+  readonly attribute WindowGlobalChild? manager;
 
   [Throws]
   readonly attribute Document? document;
@@ -33,29 +51,119 @@ interface JSWindowActorChild {
   [Throws]
   readonly attribute BrowsingContext? browsingContext;
 
-  // NOTE: As this returns a window proxy, it may not be currently referencing
-  // the document associated with this JSWindowActor. Generally prefer using
-  // `document`.
+  [Throws]
+  readonly attribute nsIDocShell? docShell;
+
+  /**
+   * NOTE: As this returns a window proxy, it may not be currently referencing
+   * the document associated with this JSWindowActor. Generally prefer using
+   * `document`.
+   */
   [Throws]
   readonly attribute WindowProxy? contentWindow;
 };
-JSWindowActorChild implements JSWindowActor;
+JSWindowActorChild includes JSWindowActor;
 
-// WebIDL callback interface version of the nsIObserver interface for use when
-// calling the observe method on JSWindowActors.
-//
-// NOTE: This isn't marked as ChromeOnly, as it has no interface object, and
-// thus cannot be conditionally exposed.
+/**
+ * WebIDL callback interface version of the nsIObserver interface for use when
+ * calling the observe method on JSWindowActors.
+ *
+ * NOTE: This isn't marked as ChromeOnly, as it has no interface object, and
+ * thus cannot be conditionally exposed.
+ */
+[Exposed=Window]
 callback interface MozObserverCallback {
   void observe(nsISupports subject, ByteString topic, DOMString? data);
 };
 
-// WebIDL callback interface calling the `willDestroy` and `didDestroy`
-// method on JSWindowActors.
+/**
+ * WebIDL callback interface calling the `willDestroy` and `didDestroy`
+ * method on JSWindowActors.
+ */
 [MOZ_CAN_RUN_SCRIPT_BOUNDARY]
 callback MozActorDestroyCallback = void();
 
+/**
+ * The willDestroy method, if present, will be called at the last opportunity
+ * to send messages to the remote side, giving implementers the chance to clean
+ * up and send final messages.
+ * The didDestroy method, if present, will be called after the actor is no
+ * longer able to receive any more messages.
+ *
+ * NOTE: Messages may be received between willDestroy and didDestroy, but they
+ * may not be sent.
+ */
+[GenerateInit]
 dictionary MozActorDestroyCallbacks {
   [ChromeOnly] MozActorDestroyCallback willDestroy;
   [ChromeOnly] MozActorDestroyCallback didDestroy;
+};
+
+/**
+ * Used by ChromeUtils.registerWindowActor() to register JS window actor.
+ */
+dictionary WindowActorOptions {
+  /**
+   * If this is set to `true`, allow this actor to be created for subframes,
+   * and not just toplevel window globals.
+   */
+  boolean allFrames = false;
+
+  /**
+   * If this is set to `true`, allow this actor to be created for window
+   * globals loaded in chrome browsing contexts, such as those used to load the
+   * tabbrowser.
+   */
+  boolean includeChrome = false;
+
+  /**
+   * An array of URL match patterns (as accepted by the MatchPattern
+   * class in MatchPattern.webidl) which restrict which pages the actor
+   * may be instantiated for. If this is defined, only documents URL which match
+   * are allowed to have the given actor created for them. Other
+   * documents will fail to have their actor constructed, returning nullptr.
+   */
+  sequence<DOMString> matches;
+
+  /**
+   * Optional list of regular expressions for remoteTypes which are
+   * allowed to instantiate this actor. If not passed, all content
+   * processes are allowed to instantiate the actor.
+   */
+  sequence<DOMString> remoteTypes;
+
+  /** This fields are used for configuring individual sides of the actor. */
+  WindowActorSidedOptions parent = {};
+  WindowActorChildOptions child = {};
+};
+
+dictionary WindowActorSidedOptions {
+  /**
+   * The JSM path which should be loaded for the actor on this side.
+   * If not passed, the specified side cannot receive messages, but may send
+   * them using `sendAsyncMessage` or `sendQuery`.
+   */
+  ByteString moduleURI;
+};
+
+dictionary WindowActorChildOptions : WindowActorSidedOptions {
+  /**
+   * Events which this actor wants to be listening to. When these events fire,
+   * it will trigger actor creation, and then forward the event to the actor.
+   *
+   * NOTE: `once` option is not support due to we register listeners in a shared
+   * location.
+   */
+  record<DOMString, AddEventListenerOptions> events;
+
+ /**
+  * An array of observer topics to listen to. An observer will be added for each
+  * topic in the list.
+  *
+  * Observer notifications in the list use nsGlobalWindowInner object as their
+  * subject, and the events will only be dispatched to the corresponding window
+  * actor. If additional observer notification's subjects are needed, please
+  * file a bug for that.
+  **/
+  sequence<ByteString> observers;
 };

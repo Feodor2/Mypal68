@@ -69,15 +69,16 @@ struct ParamTraits<mozilla::dom::indexedDB::KeyPath> {
 template <>
 struct ParamTraits<mozilla::dom::IDBCursor::Direction>
     : public ContiguousEnumSerializer<
-          mozilla::dom::IDBCursor::Direction, mozilla::dom::IDBCursor::NEXT,
-          mozilla::dom::IDBCursor::DIRECTION_INVALID> {};
+          mozilla::dom::IDBCursor::Direction,
+          mozilla::dom::IDBCursor::Direction::Next,
+          mozilla::dom::IDBCursor::Direction::EndGuard_> {};
 
 template <>
 struct ParamTraits<mozilla::dom::IDBTransaction::Mode>
     : public ContiguousEnumSerializer<
           mozilla::dom::IDBTransaction::Mode,
-          mozilla::dom::IDBTransaction::READ_ONLY,
-          mozilla::dom::IDBTransaction::MODE_INVALID> {};
+          mozilla::dom::IDBTransaction::Mode::ReadOnly,
+          mozilla::dom::IDBTransaction::Mode::Invalid> {};
 
 }  // namespace IPC
 

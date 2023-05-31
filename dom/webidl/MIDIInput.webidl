@@ -6,7 +6,8 @@
  * https://webaudio.github.io/web-midi-api/
  */
 
-[SecureContext, Pref="dom.webmidi.enabled"]
+[SecureContext, Pref="dom.webmidi.enabled",
+ Exposed=Window]
 interface MIDIInput : MIDIPort {
   attribute EventHandler onmidimessage;
 };

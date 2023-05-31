@@ -6,7 +6,6 @@
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/StaticPtr.h"
-#include "mozIGeckoMediaPluginService.h"
 #include "mozIGeckoMediaPluginChromeService.h"
 #include "nsCOMPtr.h"
 #include "GMPParent.h"

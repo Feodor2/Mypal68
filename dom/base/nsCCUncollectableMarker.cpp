@@ -255,10 +255,10 @@ void MarkDocShell(nsIDocShellTreeItem* aNode, bool aCleanupJS) {
   }
 
   int32_t i, childCount;
-  aNode->GetChildCount(&childCount);
+  aNode->GetInProcessChildCount(&childCount);
   for (i = 0; i < childCount; ++i) {
     nsCOMPtr<nsIDocShellTreeItem> child;
-    aNode->GetChildAt(i, getter_AddRefs(child));
+    aNode->GetInProcessChildAt(i, getter_AddRefs(child));
     MarkDocShell(child, aCleanupJS);
   }
 }
@@ -385,7 +385,7 @@ nsresult nsCCUncollectableMarker::Observe(nsISupports* aSubject,
     eDone = 5
   };
 
-  static_assert(eDone == NS_MAJOR_FORGET_SKIPPABLE_CALLS,
+  static_assert(eDone == kMajorForgetSkippableCalls,
                 "There must be one forgetSkippable call per cleanup state.");
 
   static uint32_t sFSState = eDone;

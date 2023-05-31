@@ -8,7 +8,6 @@
 #include "txExpr.h"
 #include "txCore.h"
 #include "nsCollationCID.h"
-#include "nsIServiceManager.h"
 
 #define kAscending (1 << 0)
 #define kUpperFirst (1 << 1)

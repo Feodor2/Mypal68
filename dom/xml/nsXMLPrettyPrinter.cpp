@@ -5,13 +5,10 @@
 #include "nsXMLPrettyPrinter.h"
 #include "nsContentUtils.h"
 #include "nsICSSDeclaration.h"
-#include "nsIObserver.h"
 #include "nsSyncLoadService.h"
 #include "nsPIDOMWindow.h"
-#include "nsIServiceManager.h"
 #include "nsNetUtil.h"
 #include "mozilla/dom/Element.h"
-#include "nsIScriptSecurityManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/Document.h"
 #include "nsVariant.h"
@@ -68,7 +65,7 @@ nsresult nsXMLPrettyPrinter::PrettyPrint(Document* aDocument,
   rv = nsSyncLoadService::LoadDocument(
       xslUri, nsIContentPolicy::TYPE_XSLT, nsContentUtils::GetSystemPrincipal(),
       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL, nullptr,
-      aDocument->CookieSettings(), true, mozilla::net::RP_Unset,
+      aDocument->CookieSettings(), true, ReferrerPolicy::_empty,
       getter_AddRefs(xslDocument));
   NS_ENSURE_SUCCESS(rv, rv);
 

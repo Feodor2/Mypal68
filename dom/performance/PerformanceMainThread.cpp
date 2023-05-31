@@ -4,8 +4,7 @@
 
 #include "PerformanceMainThread.h"
 #include "PerformanceNavigation.h"
-#include "mozilla/StaticPrefs.h"
-#include "nsICacheInfoChannel.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 namespace mozilla {
 namespace dom {

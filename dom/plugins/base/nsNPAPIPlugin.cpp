@@ -18,7 +18,6 @@
 #include "nsNPAPIPluginInstance.h"
 #include "nsNPAPIPluginStreamListener.h"
 #include "nsPluginStreamListenerPeer.h"
-#include "nsIServiceManager.h"
 #include "nsThreadUtils.h"
 #include "mozilla/CycleCollectedJSContext.h"  // for nsAutoMicroTask
 #include "mozilla/Preferences.h"
@@ -41,10 +40,8 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/ToJSValue.h"
-#include "nsIXULRuntime.h"
 #include "nsIXPConnect.h"
 
-#include "nsIObserverService.h"
 #include <prinrval.h>
 
 #ifdef MOZ_WIDGET_COCOA
@@ -63,10 +60,6 @@
 
 #include "nsJSUtils.h"
 #include "nsJSNPRuntime.h"
-#include "nsIHttpAuthManager.h"
-#include "nsICookieService.h"
-#include "nsILoadContext.h"
-#include "nsIDocShell.h"
 
 #include "nsNetUtil.h"
 #include "nsNetCID.h"
@@ -91,7 +84,6 @@ using mozilla::plugins::PluginModuleContentParent;
 #  endif
 #endif
 
-#include "nsIAudioChannelAgent.h"
 #include "AudioChannelService.h"
 
 using namespace mozilla;
@@ -750,7 +742,7 @@ NPUTF8* _utf8fromidentifier(NPIdentifier id) {
 
   JSString* str = NPIdentifierToString(id);
   nsAutoString autoStr;
-  AssignJSFlatString(autoStr, JS_ASSERT_STRING_IS_FLAT(str));
+  AssignJSLinearString(autoStr, JS_ASSERT_STRING_IS_LINEAR(str));
 
   return ToNewUTF8String(autoStr);
 }
@@ -964,9 +956,7 @@ bool _evaluate(NPP npp, NPObject* npobj, NPString* script, NPVariant* result) {
     // chrome code anyways.
 
     uri = doc->GetDocumentURI();
-    bool isChrome = false;
-
-    if (uri && NS_SUCCEEDED(uri->SchemeIs("chrome", &isChrome)) && isChrome) {
+    if (uri && uri->SchemeIs("chrome")) {
       uri->GetSpec(specStr);
       spec = specStr.get();
     } else {
@@ -1501,7 +1491,7 @@ NPError _getvalue(NPP npp, NPNVariable variable, void* result) {
       // old XPCOM objects, no longer supported, but null out the out
       // param to avoid crashing plugins that still try to use this.
       *(nsISupports**)result = nullptr;
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
 
     default:
       NPN_PLUGIN_LOG(PLUGIN_LOG_NORMAL,

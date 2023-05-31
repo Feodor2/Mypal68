@@ -10,7 +10,6 @@
 #include "nsIMutableArray.h"
 #include "mozilla/dom/PContentPermissionRequestChild.h"
 #include "mozilla/dom/ipc/IdType.h"
-#include "nsIDOMEventListener.h"
 
 // Microsoft's API Name hackery sucks
 // XXXbz Doing this in a header is a gigantic footgun. See
@@ -230,7 +229,7 @@ class RemotePermissionRequest final
   // because we don't have MOZ_CAN_RUN_SCRIPT bits in IPC code yet.
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvNotifyResult(
-      const bool& aAllow, InfallibleTArray<PermissionChoice>&& aChoices);
+      const bool& aAllow, nsTArray<PermissionChoice>&& aChoices);
 
   mozilla::ipc::IPCResult RecvGetVisibility();
 

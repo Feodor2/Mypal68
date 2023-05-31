@@ -77,12 +77,13 @@ class SVGElement : public SVGElementBase  // nsIContent
   // nsISupports
   NS_INLINE_DECL_REFCOUNTING_INHERITED(SVGElement, SVGElementBase)
 
+  NS_DECL_ADDSIZEOFEXCLUDINGTHIS
+
   void DidAnimateClass();
 
   // nsIContent interface methods
 
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
 
   virtual nsChangeHint GetAttributeChangeHint(const nsAtom* aAttribute,
                                               int32_t aModType) const override;

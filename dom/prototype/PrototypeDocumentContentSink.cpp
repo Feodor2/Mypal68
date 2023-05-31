@@ -9,7 +9,6 @@
 #include "nsIContent.h"
 #include "nsIURI.h"
 #include "nsNetUtil.h"
-#include "nsIDocShell.h"
 #include "nsIStyleSheetLinkingElement.h"
 #include "nsHTMLParts.h"
 #include "nsCRT.h"
@@ -20,30 +19,21 @@
 #include "nsDocElementCreatedNotificationRunner.h"
 #include "nsIScriptContext.h"
 #include "nsNameSpaceManager.h"
-#include "nsIServiceManager.h"
-#include "nsIScriptSecurityManager.h"
-#include "nsIContentViewer.h"
 #include "nsIScriptError.h"
 #include "prtime.h"
 #include "mozilla/Logging.h"
 #include "nsRect.h"
-#include "nsIWebNavigation.h"
 #include "nsIScriptElement.h"
 #include "nsStyleLinkElement.h"
 #include "nsReadableUtils.h"
 #include "nsUnicharUtils.h"
-#include "nsICookieService.h"
-#include "nsIPrompt.h"
 #include "nsIChannel.h"
-#include "nsIPrincipal.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsIContentPolicy.h"
 #include "nsContentPolicyUtils.h"
 #include "nsError.h"
-#include "nsNodeUtils.h"
 #include "nsIScriptGlobalObject.h"
-#include "nsIHTMLDocument.h"
 #include "mozAutoDocUpdate.h"
 #include "nsMimeTypes.h"
 #include "nsHtml5SVGLoadDispatcher.h"
@@ -565,12 +555,12 @@ nsresult PrototypeDocumentContentSink::ResumeWalkInternal() {
           // outside the prolog, like it used to. Issue a warning.
 
           if (piProto->mTarget.EqualsLiteral("xml-stylesheet")) {
-            const char16_t* params[] = {piProto->mTarget.get()};
+            AutoTArray<nsString, 1> params = {piProto->mTarget};
 
             nsContentUtils::ReportToConsole(
                 nsIScriptError::warningFlag, NS_LITERAL_CSTRING("XUL Document"),
                 nullptr, nsContentUtils::eXUL_PROPERTIES, "PINotInProlog",
-                params, ArrayLength(params), docURI);
+                params, docURI);
           }
 
           nsIContent* parent = element.get();
@@ -1053,6 +1043,10 @@ nsresult PrototypeDocumentContentSink::CreateElementFromPrototype(
     }
   }
 
+  if (result->HasAttr(kNameSpaceID_None, nsGkAtoms::datal10nid)) {
+    mDocument->mL10nProtoElements.Put(result, aPrototype);
+    result->SetElementCreatedFromPrototypeAndHasUnmodifiedL10n();
+  }
   result.forget(aResult);
 
   return NS_OK;
@@ -1062,7 +1056,7 @@ nsresult PrototypeDocumentContentSink::AddAttributes(
     nsXULPrototypeElement* aPrototype, Element* aElement) {
   nsresult rv;
 
-  for (uint32_t i = 0; i < aPrototype->mNumAttributes; ++i) {
+  for (size_t i = 0; i < aPrototype->mAttributes.Length(); ++i) {
     nsXULPrototypeAttribute* protoattr = &(aPrototype->mAttributes[i]);
     nsAutoString valueStr;
     protoattr->mValue.ToString(valueStr);

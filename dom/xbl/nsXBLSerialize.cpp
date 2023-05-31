@@ -6,7 +6,6 @@
 
 #include "jsfriendapi.h"
 #include "nsXBLPrototypeBinding.h"
-#include "nsIXPConnect.h"
 #include "nsContentUtils.h"
 
 using namespace mozilla;

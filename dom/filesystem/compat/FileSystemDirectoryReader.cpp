@@ -5,6 +5,7 @@
 #include "FileSystemDirectoryReader.h"
 #include "CallbackRunnables.h"
 #include "FileSystemFileEntry.h"
+#include "js/Array.h"  // JS::NewArrayObject
 #include "mozilla/dom/FileBinding.h"
 #include "mozilla/dom/FileSystemUtils.h"
 #include "mozilla/dom/Directory.h"
@@ -44,7 +45,7 @@ class PromiseHandler final : public PromiseNativeHandler {
     JS::Rooted<JSObject*> obj(aCx, &aValue.toObject());
 
     uint32_t length;
-    if (NS_WARN_IF(!JS_GetArrayLength(aCx, obj, &length))) {
+    if (NS_WARN_IF(!JS::GetArrayLength(aCx, obj, &length))) {
       return;
     }
 

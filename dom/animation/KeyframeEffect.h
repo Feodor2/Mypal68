@@ -72,7 +72,7 @@ struct AnimationProperty {
 
   Maybe<AnimationPerformanceWarning> mPerformanceWarning;
 
-  InfallibleTArray<AnimationPropertySegment> mSegments;
+  nsTArray<AnimationPropertySegment> mSegments;
 
   // The copy constructor/assignment doesn't copy mIsRunningOnCompositor and
   // mPerformanceWarning.
@@ -99,7 +99,7 @@ struct AnimationProperty {
   }
 
   void SetPerformanceWarning(const AnimationPerformanceWarning& aWarning,
-                             const Element* aElement);
+                             const dom::Element* aElement);
 };
 
 struct ElementPropertyTransition;
@@ -181,9 +181,15 @@ class KeyframeEffect : public AnimationEffect {
   void SetKeyframes(nsTArray<Keyframe>&& aKeyframes,
                     const ComputedStyle* aStyle);
 
+  // Returns the set of properties affected by this effect regardless of
+  // whether any of these properties is overridden by an !important rule.
+  nsCSSPropertyIDSet GetPropertySet() const;
+
   // Returns true if the effect includes a property in |aPropertySet| regardless
-  // of whether any property in the set is overridden by !important rule.
-  bool HasAnimationOfPropertySet(const nsCSSPropertyIDSet& aPropertySet) const;
+  // of whether any property in the set is overridden by an !important rule.
+  bool HasAnimationOfPropertySet(const nsCSSPropertyIDSet& aPropertySet) const {
+    return GetPropertySet().Intersects(aPropertySet);
+  }
 
   // GetEffectiveAnimationOfProperty returns AnimationProperty corresponding
   // to a given CSS property if the effect includes the property and the
@@ -237,9 +243,7 @@ class KeyframeEffect : public AnimationEffect {
   nsCSSPropertyIDSet GetPropertiesForCompositor(EffectSet& aEffects,
                                                 const nsIFrame* aFrame) const;
 
-  const InfallibleTArray<AnimationProperty>& Properties() const {
-    return mProperties;
-  }
+  const nsTArray<AnimationProperty>& Properties() const { return mProperties; }
 
   // Update |mProperties| by recalculating from |mKeyframes| using
   // |aComputedStyle| to resolve specified values.

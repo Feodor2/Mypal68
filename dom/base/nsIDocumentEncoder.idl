@@ -191,17 +191,6 @@ interface nsIDocumentEncoder : nsISupports
   const unsigned long OutputIgnoreMozDirty = (1 << 22);
 
   /**
-   * Output the content of non-text elements as the placehodler character
-   * U+FFFC (OBJECT REPLACEMENT CHARACTER, only for serializing to plaintext).
-   */
-  const unsigned long OutputNonTextContentAsPlaceholder = (1 << 23);
-
-  /**
-   * Don't Strip ending spaces from a line (only for serializing to plaintext).
-   */
-  const unsigned long OutputDontRemoveLineEndingSpaces = (1 << 24);
-
-  /**
    * Serialize in a way that is suitable for copying a plaintext version of the
    * document to the clipboard.  This can for example cause line endings to be
    * injected at preformatted block element boundaries.
@@ -230,6 +219,7 @@ interface nsIDocumentEncoder : nsISupports
 
   /**
    * Initialize with a pointer to the document and the mime type.
+   * Resets wrap column to 72 and resets node fixup.
    * @param aDocument Document to encode.
    * @param aMimeType MimeType to use. May also be set by SetMimeType.
    * @param aFlags Flags to use while encoding. May also be set by SetFlags.
@@ -287,7 +277,7 @@ interface nsIDocumentEncoder : nsISupports
 
   /**
    *  Set a wrap column.  This may have no effect in some types of encoders.
-   * @param aWrapColumn Column to which to wrap.
+   * @param aWrapColumn Column to which to wrap. If 0, wrapping is disabled.
    */
   void setWrapColumn(in unsigned long aWrapColumn);
 

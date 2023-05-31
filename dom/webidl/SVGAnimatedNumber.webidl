@@ -9,6 +9,7 @@
  * W3C liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGAnimatedNumber {
            attribute float baseVal;
   readonly attribute float animVal;

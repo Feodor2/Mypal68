@@ -114,6 +114,15 @@ void nsDOMTokenList::IndexedGetter(uint32_t aIndex, bool& aFound,
   }
 }
 
+void nsDOMTokenList::GetValue(nsAString& aResult) {
+  if (!mElement) {
+    aResult.Truncate();
+    return;
+  }
+
+  mElement->GetAttr(kNameSpaceID_None, mAttrAtom, aResult);
+}
+
 void nsDOMTokenList::SetValue(const nsAString& aValue, ErrorResult& rv) {
   if (!mElement) {
     return;
@@ -371,15 +380,6 @@ bool nsDOMTokenList::Supports(const nsAString& aToken, ErrorResult& aError) {
   }
 
   return false;
-}
-
-void nsDOMTokenList::Stringify(nsAString& aResult) {
-  if (!mElement) {
-    aResult.Truncate();
-    return;
-  }
-
-  mElement->GetAttr(kNameSpaceID_None, mAttrAtom, aResult);
 }
 
 DocGroup* nsDOMTokenList::GetDocGroup() const {

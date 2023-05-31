@@ -23,7 +23,6 @@
 #include "nsIPrincipal.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsISizeOfEventTarget.h"
-#include "nsIXPConnect.h"
 #include "nsIInputStream.h"
 #include "nsIContentSecurityPolicy.h"
 #include "mozilla/Assertions.h"
@@ -298,14 +297,6 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
   void UnsuppressEventHandlingAndResume();
 
-  // Check pref "dom.mapped_arraybuffer.enabled" to make sure ArrayBuffer is
-  // supported.
-  static bool IsMappedArrayBufferEnabled();
-
-  // Check pref "dom.xhr.lowercase_header.enabled" to make sure lowercased
-  // response header is supported.
-  static bool IsLowercaseResponseHeader();
-
   void MaybeLowerChannelPriority();
 
  public:
@@ -371,6 +362,10 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
 
   virtual void SetResponseType(XMLHttpRequestResponseType aType,
                                ErrorResult& aRv) override;
+
+  void SetResponseTypeRaw(XMLHttpRequestResponseType aType) {
+    mResponseType = aType;
+  }
 
   virtual void GetResponse(JSContext* aCx,
                            JS::MutableHandle<JS::Value> aResponse,
@@ -520,7 +515,26 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
       }
 
       bool operator<(const HeaderEntry& aOther) const {
-        return mName < aOther.mName;
+        uint32_t selfLen = mName.Length();
+        uint32_t otherLen = aOther.mName.Length();
+        uint32_t min = XPCOM_MIN(selfLen, otherLen);
+        for (uint32_t i = 0; i < min; ++i) {
+          unsigned char self = mName[i];
+          unsigned char other = aOther.mName[i];
+          MOZ_ASSERT(!(self >= 'A' && self <= 'Z'));
+          MOZ_ASSERT(!(other >= 'A' && other <= 'Z'));
+          if (self == other) {
+            continue;
+          }
+          if (self >= 'a' && self <= 'z') {
+            self -= 0x20;
+          }
+          if (other >= 'a' && other <= 'z') {
+            other -= 0x20;
+          }
+          return self < other;
+        }
+        return selfLen < otherLen;
       }
     };
 

@@ -10,7 +10,6 @@
 #include "WebBrowserPersistDocumentParent.h"
 #include "nsCOMPtr.h"
 #include "nsIWebBrowserPersistDocument.h"
-#include "nsIContentPolicy.h"
 
 namespace mozilla {
 

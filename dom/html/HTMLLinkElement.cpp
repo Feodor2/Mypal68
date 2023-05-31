@@ -10,6 +10,7 @@
 #include "mozilla/EventStates.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/dom/BindContext.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/HTMLLinkElementBinding.h"
 #include "nsContentUtils.h"
@@ -20,7 +21,6 @@
 #include "mozilla/dom/Document.h"
 #include "nsINode.h"
 #include "nsIStyleSheetLinkingElement.h"
-#include "nsIURL.h"
 #include "nsPIDOMWindow.h"
 #include "nsReadableUtils.h"
 #include "nsStyleConsts.h"
@@ -114,17 +114,15 @@ bool HTMLLinkElement::HasDeferredDNSPrefetchRequest() {
   return HasFlag(HTML_LINK_DNS_PREFETCH_DEFERRED);
 }
 
-nsresult HTMLLinkElement::BindToTree(Document* aDocument, nsIContent* aParent,
-                                     nsIContent* aBindingParent) {
+nsresult HTMLLinkElement::BindToTree(BindContext& aContext, nsINode& aParent) {
   Link::ResetLinkState(false, Link::ElementHasHref());
 
-  nsresult rv =
-      nsGenericHTMLElement::BindToTree(aDocument, aParent, aBindingParent);
+  nsresult rv = nsGenericHTMLElement::BindToTree(aContext, aParent);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (Document* doc = GetComposedDoc()) {
-    if (!doc->NodePrincipal()->IsSystemPrincipal()) {
-      doc->RegisterPendingLinkUpdate(this);
+  if (IsInComposedDoc()) {
+    if (!aContext.OwnerDoc().NodePrincipal()->IsSystemPrincipal()) {
+      aContext.OwnerDoc().RegisterPendingLinkUpdate(this);
     }
     TryDNSPrefetchOrPreconnectOrPrefetchOrPreloadOrPrerender();
   }
@@ -134,12 +132,15 @@ nsresult HTMLLinkElement::BindToTree(Document* aDocument, nsIContent* aParent,
   nsContentUtils::AddScriptRunner(
       NewRunnableMethod("dom::HTMLLinkElement::BindToTree", this, update));
 
-  if (aDocument && AttrValueIs(kNameSpaceID_None, nsGkAtoms::rel,
-                               nsGkAtoms::localization, eIgnoreCase)) {
-    aDocument->LocalizationLinkAdded(this);
+  // FIXME(emilio, bug 1555947): Why does this use the uncomposed doc but the
+  // attribute change code the composed doc?
+  if (IsInUncomposedDoc() &&
+      AttrValueIs(kNameSpaceID_None, nsGkAtoms::rel, nsGkAtoms::localization,
+                  eIgnoreCase)) {
+    aContext.OwnerDoc().LocalizationLinkAdded(this);
   }
 
-  CreateAndDispatchEvent(aDocument, NS_LITERAL_STRING("DOMLinkAdded"));
+  LinkAdded();
 
   return rv;
 }
@@ -152,7 +153,7 @@ void HTMLLinkElement::LinkRemoved() {
   CreateAndDispatchEvent(OwnerDoc(), NS_LITERAL_STRING("DOMLinkRemoved"));
 }
 
-void HTMLLinkElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void HTMLLinkElement::UnbindFromTree(bool aNullParent) {
   // Cancel any DNS prefetches
   // Note: Must come before ResetLinkState.  If called after, it will recreate
   // mCachedURI based on data that is invalid - due to a call to GetHostname.
@@ -180,7 +181,7 @@ void HTMLLinkElement::UnbindFromTree(bool aDeep, bool aNullParent) {
   }
 
   CreateAndDispatchEvent(oldDoc, NS_LITERAL_STRING("DOMLinkRemoved"));
-  nsGenericHTMLElement::UnbindFromTree(aDeep, aNullParent);
+  nsGenericHTMLElement::UnbindFromTree(aNullParent);
 
   Unused << UpdateStyleSheetInternal(oldDoc, oldShadowRoot);
 }
@@ -449,12 +450,14 @@ Maybe<nsStyleLinkElement::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
 
   nsCOMPtr<nsIURI> uri = Link::GetURI();
   nsCOMPtr<nsIPrincipal> prin = mTriggeringPrincipal;
+  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+  referrerInfo->InitWithNode(this);
   return Some(SheetInfo{
       *OwnerDoc(),
       this,
       uri.forget(),
       prin.forget(),
-      GetReferrerPolicyAsEnum(),
+      referrerInfo.forget(),
       GetCORSMode(),
       title,
       media,

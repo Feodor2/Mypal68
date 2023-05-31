@@ -53,7 +53,7 @@ TimeStamp Client::LastFocusTime() const {
   return mData->state().get_IPCClientWindowState().lastFocusTime();
 }
 
-nsContentUtils::StorageAccess Client::GetStorageAccess() const {
+StorageAccess Client::GetStorageAccess() const {
   ClientState state(ClientState::FromIPC(mData->state()));
   return state.GetStorageAccess();
 }

@@ -18,7 +18,7 @@ class BrowsingContext;
  */
 class BrowserBridgeChild : public PBrowserBridgeChild {
  public:
-  NS_INLINE_DECL_REFCOUNTING(BrowserBridgeChild);
+  NS_INLINE_DECL_REFCOUNTING(BrowserBridgeChild, final);
 
   BrowserChild* Manager() {
     MOZ_ASSERT(mIPCOpen);

@@ -11,6 +11,7 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Logging.h"
@@ -20,7 +21,6 @@
 #include "nsINamed.h"
 #include "nsIObserverService.h"
 #include "StaticPtr.h"
-#include "nsIMozBrowserFrame.h"
 #include "nsIObserver.h"
 #include "nsITimer.h"
 #include "nsIPropertyBag2.h"
@@ -141,9 +141,6 @@ class ProcessPriorityManagerImpl final : public nsIObserver,
   void TabActivityChanged(BrowserParent* aBrowserParent, bool aIsActive);
 
  private:
-  static bool sPrefsEnabled;
-  static bool sRemoteTabsDisabled;
-  static bool sTestMode;
   static bool sPrefListenersRegistered;
   static bool sInitialized;
   static StaticRefPtr<ProcessPriorityManagerImpl> sSingleton;
@@ -290,12 +287,6 @@ class ParticularProcessPriorityManager final : public WakeLockObserver,
 /* static */
 bool ProcessPriorityManagerImpl::sInitialized = false;
 /* static */
-bool ProcessPriorityManagerImpl::sPrefsEnabled = false;
-/* static */
-bool ProcessPriorityManagerImpl::sRemoteTabsDisabled = true;
-/* static */
-bool ProcessPriorityManagerImpl::sTestMode = false;
-/* static */
 bool ProcessPriorityManagerImpl::sPrefListenersRegistered = false;
 /* static */
 StaticRefPtr<ProcessPriorityManagerImpl> ProcessPriorityManagerImpl::sSingleton;
@@ -320,12 +311,15 @@ void ProcessPriorityManagerImpl::PrefChangedCallback(const char* aPref,
 
 /* static */
 bool ProcessPriorityManagerImpl::PrefsEnabled() {
-  return sPrefsEnabled && hal::SetProcessPrioritySupported() &&
-         !sRemoteTabsDisabled;
+  return StaticPrefs::dom_ipc_processPriorityManager_enabled() &&
+         hal::SetProcessPrioritySupported() &&
+         !StaticPrefs::dom_ipc_tabs_disabled();
 }
 
 /* static */
-bool ProcessPriorityManagerImpl::TestMode() { return sTestMode; }
+bool ProcessPriorityManagerImpl::TestMode() {
+  return StaticPrefs::dom_ipc_processPriorityManager_testMode();
+}
 
 /* static */
 void ProcessPriorityManagerImpl::StaticInit() {
@@ -337,14 +331,6 @@ void ProcessPriorityManagerImpl::StaticInit() {
   if (!XRE_IsParentProcess()) {
     sInitialized = true;
     return;
-  }
-
-  if (!sPrefListenersRegistered) {
-    Preferences::AddBoolVarCache(&sPrefsEnabled,
-                                 "dom.ipc.processPriorityManager.enabled");
-    Preferences::AddBoolVarCache(&sRemoteTabsDisabled, "dom.ipc.tabs.disabled");
-    Preferences::AddBoolVarCache(&sTestMode,
-                                 "dom.ipc.processPriorityManager.testMode");
   }
 
   // If IPC tabs aren't enabled at startup, don't bother with any of this.

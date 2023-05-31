@@ -73,14 +73,15 @@ struct IndexKeyCursorResponse
   Key objectKey;
 };
 
+// TODO: All cursor responses must be arrays!
 union CursorResponse
 {
   void_t;
   nsresult;
   ObjectStoreCursorResponse[];
-  ObjectStoreKeyCursorResponse;
-  IndexCursorResponse;
-  IndexKeyCursorResponse;
+  ObjectStoreKeyCursorResponse[];
+  IndexCursorResponse[];
+  IndexKeyCursorResponse[];
 };
 
 protocol PBackgroundIDBCursor
@@ -90,7 +91,8 @@ protocol PBackgroundIDBCursor
 parent:
   async DeleteMe();
 
-  async Continue(CursorRequestParams params);
+  async Continue(CursorRequestParams params, Key currentKey,
+                 Key currentObjectStoreKey);
 
 child:
   async __delete__();

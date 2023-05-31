@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGFECompositeElement : SVGElement {
 
   // Composite Operators
@@ -36,4 +37,4 @@ interface SVGFECompositeElement : SVGElement {
   readonly attribute SVGAnimatedNumber k4;
 };
 
-SVGFECompositeElement implements SVGFilterPrimitiveStandardAttributes;
+SVGFECompositeElement includes SVGFilterPrimitiveStandardAttributes;

@@ -12,16 +12,12 @@
 #include "nsDocShell.h"
 #include "nsIWebProgressListener.h"
 #include "nsContentUtils.h"
-#include "nsIRequest.h"
 #include "mozilla/dom/Document.h"
-#include "nsIContentViewer.h"
 #include "nsIChannel.h"
-#include "nsIHttpChannel.h"
 #include "nsIParentChannel.h"
 #include "mozilla/Preferences.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsISecureBrowserUI.h"
-#include "nsIDocumentLoader.h"
 #include "nsIWebNavigation.h"
 #include "nsLoadGroup.h"
 #include "nsIScriptError.h"
@@ -33,10 +29,13 @@
 #include "nsISiteSecurityService.h"
 #include "prnetdb.h"
 
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/Logging.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/ipc/URIUtils.h"
+#include "mozilla/net/DNS.h"
 
 using namespace mozilla;
 
@@ -88,7 +87,7 @@ class nsMixedContentEvent : public Runnable {
       return NS_OK;
     }
     nsCOMPtr<nsIDocShellTreeItem> sameTypeRoot;
-    docShell->GetSameTypeRootTreeItem(getter_AddRefs(sameTypeRoot));
+    docShell->GetInProcessSameTypeRootTreeItem(getter_AddRefs(sameTypeRoot));
     NS_ASSERTION(
         sameTypeRoot,
         "No document shell root tree item from document shell tree item!");
@@ -255,12 +254,12 @@ static void LogMixedContentMessage(
     }
   }
 
-  NS_ConvertUTF8toUTF16 locationSpecUTF16(aContentLocation->GetSpecOrDefault());
-  const char16_t* strings[] = {locationSpecUTF16.get()};
+  AutoTArray<nsString, 1> strings;
+  CopyUTF8toUTF16(aContentLocation->GetSpecOrDefault(),
+                  *strings.AppendElement());
   nsContentUtils::ReportToConsole(severityFlag, messageCategory, aRootDoc,
                                   nsContentUtils::eSECURITY_PROPERTIES,
-                                  messageLookupKey.get(), strings,
-                                  ArrayLength(strings));
+                                  messageLookupKey.get(), strings);
 }
 
 /* nsIChannelEventSink implementation
@@ -308,7 +307,7 @@ nsMixedContentBlocker::AsyncOnChannelRedirect(
   if (requestingPrincipal) {
     // We check to see if the loadingPrincipal is systemPrincipal and return
     // early if it is
-    if (nsContentUtils::IsSystemPrincipal(requestingPrincipal)) {
+    if (requestingPrincipal->IsSystemPrincipal()) {
       return NS_OK;
     }
   }
@@ -368,31 +367,46 @@ nsMixedContentBlocker::ShouldLoad(nsIURI* aContentLocation,
   return rv;
 }
 
-bool nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackURL(nsIURI* aURL) {
-  nsAutoCString host;
-  nsresult rv = aURL->GetHost(host);
-  NS_ENSURE_SUCCESS(rv, false);
+bool nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackHost(
+    const nsACString& aAsciiHost) {
+  if (aAsciiHost.EqualsLiteral("::1") ||
+      aAsciiHost.EqualsLiteral("localhost")) {
+    return true;
+  }
 
-  // We could also allow 'localhost' (if we can guarantee that it resolves
-  // to a loopback address), but Chrome doesn't support it as of writing. For
-  // web compat, lets only allow what Chrome allows.
-  // see also https://bugzilla.mozilla.org/show_bug.cgi?id=1220810
-  return host.EqualsLiteral("127.0.0.1") || host.EqualsLiteral("::1") ||
-         host.EqualsLiteral("localhost");
+  PRNetAddr tempAddr;
+  memset(&tempAddr, 0, sizeof(PRNetAddr));
+
+  if (PR_StringToNetAddr(PromiseFlatCString(aAsciiHost).get(), &tempAddr) !=
+      PR_SUCCESS) {
+    return false;
+  }
+
+  using namespace mozilla::net;
+  NetAddr addr;
+  PRNetAddrToNetAddr(&tempAddr, &addr);
+
+  // Step 4 of
+  // https://w3c.github.io/webappsec-secure-contexts/#is-origin-trustworthy says
+  // we should only consider [::1]/128 as a potentially trustworthy IPv6
+  // address, whereas for IPv4 127.0.0.1/8 are considered as potentially
+  // trustworthy.  We already handled "[::1]" above, so all that's remained to
+  // handle here are IPv4 loopback addresses.
+  return IsIPAddrV4(&addr) && IsLoopBackAddress(&addr);
+}
+
+bool nsMixedContentBlocker::IsPotentiallyTrustworthyLoopbackURL(nsIURI* aURL) {
+  nsAutoCString asciiHost;
+  nsresult rv = aURL->GetAsciiHost(asciiHost);
+  NS_ENSURE_SUCCESS(rv, false);
+  return IsPotentiallyTrustworthyLoopbackHost(asciiHost);
 }
 
 /* Maybe we have a .onion URL. Treat it as whitelisted as well if
  * `dom.securecontext.whitelist_onions` is `true`.
  */
 bool nsMixedContentBlocker::IsPotentiallyTrustworthyOnion(nsIURI* aURL) {
-  static bool sInited = false;
-  static bool sWhiteListOnions = false;
-  if (!sInited) {
-    Preferences::AddBoolVarCache(&sWhiteListOnions,
-                                 "dom.securecontext.whitelist_onions");
-    sInited = true;
-  }
-  if (!sWhiteListOnions) {
+  if (!StaticPrefs::dom_securecontext_whitelist_onions()) {
     return false;
   }
 
@@ -690,7 +704,7 @@ nsresult nsMixedContentBlocker::ShouldLoad(
   // 2) if aRequestingContext yields a principal but no location, we check if
   // its a system principal.
   if (principal && !requestingLocation) {
-    if (nsContentUtils::IsSystemPrincipal(principal)) {
+    if (principal->IsSystemPrincipal()) {
       *aDecision = ACCEPT;
       return NS_OK;
     }
@@ -728,7 +742,6 @@ nsresult nsMixedContentBlocker::ShouldLoad(
 
   // Check the parent scheme. If it is not an HTTPS page then mixed content
   // restrictions do not apply.
-  bool parentIsHttps;
   nsCOMPtr<nsIURI> innerRequestingLocation =
       NS_GetInnermostURI(requestingLocation);
   if (!innerRequestingLocation) {
@@ -737,12 +750,7 @@ nsresult nsMixedContentBlocker::ShouldLoad(
     return NS_OK;
   }
 
-  nsresult rv = innerRequestingLocation->SchemeIs("https", &parentIsHttps);
-  if (NS_FAILED(rv)) {
-    NS_ERROR("requestingLocation->SchemeIs failed");
-    *aDecision = REJECT_REQUEST;
-    return NS_OK;
-  }
+  bool parentIsHttps = innerRequestingLocation->SchemeIs("https");
   if (!parentIsHttps) {
     *aDecision = ACCEPT;
     return NS_OK;
@@ -760,19 +768,14 @@ nsresult nsMixedContentBlocker::ShouldLoad(
     // innerContentLocation doesn't map to the secure URI flags checked above.
     // Assert this for sanity's sake
 #ifdef DEBUG
-    bool isHttpsScheme = false;
-    rv = innerContentLocation->SchemeIs("https", &isHttpsScheme);
-    NS_ENSURE_SUCCESS(rv, rv);
+    bool isHttpsScheme = innerContentLocation->SchemeIs("https");
     MOZ_ASSERT(!isHttpsScheme);
 #endif
     *aDecision = REJECT_REQUEST;
     return NS_OK;
   }
 
-  bool isHttpScheme = false;
-  rv = innerContentLocation->SchemeIs("http", &isHttpScheme);
-  NS_ENSURE_SUCCESS(rv, rv);
-
+  bool isHttpScheme = innerContentLocation->SchemeIs("http");
   if (isHttpScheme && IsPotentiallyTrustworthyOrigin(innerContentLocation)) {
     *aDecision = ACCEPT;
     return NS_OK;
@@ -817,13 +820,14 @@ nsresult nsMixedContentBlocker::ShouldLoad(
   if (document->GetBlockAllMixedContent(isPreload)) {
     // log a message to the console before returning.
     nsAutoCString spec;
-    rv = aContentLocation->GetSpec(spec);
+    nsresult rv = aContentLocation->GetSpec(spec);
     NS_ENSURE_SUCCESS(rv, rv);
-    NS_ConvertUTF8toUTF16 reportSpec(spec);
 
-    const char16_t* params[] = {reportSpec.get()};
+    AutoTArray<nsString, 1> params;
+    CopyUTF8toUTF16(spec, *params.AppendElement());
+
     CSP_LogLocalizedStr(
-        "blockAllMixedContent", params, ArrayLength(params),
+        "blockAllMixedContent", params,
         EmptyString(),  // aSourceFile
         EmptyString(),  // aScriptSample
         0,              // aLineNumber
@@ -840,7 +844,7 @@ nsresult nsMixedContentBlocker::ShouldLoad(
   bool rootHasSecureConnection = false;
   bool allowMixedContent = false;
   bool isRootDocShell = false;
-  rv = docShell->GetAllowMixedContentAndConnectionData(
+  nsresult rv = docShell->GetAllowMixedContentAndConnectionData(
       &rootHasSecureConnection, &allowMixedContent, &isRootDocShell);
   if (NS_FAILED(rv)) {
     *aDecision = REJECT_REQUEST;
@@ -849,7 +853,7 @@ nsresult nsMixedContentBlocker::ShouldLoad(
 
   // Get the sameTypeRoot tree item from the docshell
   nsCOMPtr<nsIDocShellTreeItem> sameTypeRoot;
-  docShell->GetSameTypeRootTreeItem(getter_AddRefs(sameTypeRoot));
+  docShell->GetInProcessSameTypeRootTreeItem(getter_AddRefs(sameTypeRoot));
   NS_ASSERTION(sameTypeRoot, "No root tree item from docshell!");
 
   // When navigating an iframe, the iframe may be https
@@ -881,12 +885,7 @@ nsresult nsMixedContentBlocker::ShouldLoad(
         return NS_OK;
       }
 
-      if (NS_FAILED(innerParentURI->SchemeIs("https", &httpsParentExists))) {
-        // if getting the scheme fails, assume there is a https parent and
-        // break.
-        httpsParentExists = true;
-        break;
-      }
+      httpsParentExists = innerParentURI->SchemeIs("https");
 
       // When the parent and the root are the same, we have traversed all the
       // way up the same type docshell tree.  Break out of the while loop.
@@ -896,7 +895,8 @@ nsresult nsMixedContentBlocker::ShouldLoad(
 
       // update the parent to the grandparent.
       nsCOMPtr<nsIDocShellTreeItem> newParentTreeItem;
-      parentTreeItem->GetSameTypeParent(getter_AddRefs(newParentTreeItem));
+      parentTreeItem->GetInProcessSameTypeParent(
+          getter_AddRefs(newParentTreeItem));
       parentTreeItem = newParentTreeItem;
     }  // end while loop.
 
@@ -966,7 +966,6 @@ nsresult nsMixedContentBlocker::ShouldLoad(
     if (!sBlockMixedObjectSubrequest) {
       rootDoc->WarnOnceAbout(Document::eMixedDisplayObjectSubrequest);
     }
-    rootDoc->SetHasMixedContentObjectSubrequest(true);
   }
 
   // If the content is display content, and the pref says display content should

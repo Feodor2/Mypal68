@@ -10,6 +10,7 @@
 // For UnrestrictedDoubleOrKeyframeAnimationOptions;
 #include "mozilla/dom/CSSPseudoElement.h"
 #include "mozilla/dom/KeyframeEffectBinding.h"
+#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/AnimationUtils.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/ComputedStyleInlines.h"
@@ -21,7 +22,9 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/ServoBindings.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
 #include "mozilla/TypeTraits.h"
 #include "Layers.h"              // For Layer
 #include "nsComputedDOMStyle.h"  // nsComputedDOMStyle::GetComputedStyle
@@ -31,7 +34,6 @@
 #include "nsCSSPseudoElements.h"    // For PseudoStyleType
 #include "nsDOMMutationObserver.h"  // For nsAutoAnimationMutationBatch
 #include "nsIFrame.h"
-#include "nsIScriptError.h"
 #include "nsPresContextInlines.h"
 #include "nsRefreshDriver.h"
 
@@ -46,7 +48,7 @@ void AnimationProperty::SetPerformanceWarning(
   mPerformanceWarning = Some(aWarning);
 
   nsAutoString localizedString;
-  if (nsLayoutUtils::IsAnimationLoggingEnabled() &&
+  if (StaticPrefs::layers_offmainthreadcomposition_log_animations() &&
       mPerformanceWarning->ToLocalizedString(localizedString)) {
     nsAutoCString logMessage = NS_ConvertUTF16toUTF8(localizedString);
     AnimationUtils::LogAsyncAnimationFailure(logMessage, aElement);
@@ -105,7 +107,7 @@ void KeyframeEffect::SetIterationComposite(
   }
 
   if (mAnimation && mAnimation->IsRelevant()) {
-    nsNodeUtils::AnimationChanged(mAnimation);
+    MutationObservers::NotifyAnimationChanged(mAnimation);
   }
 
   mEffectOptions.mIterationComposite = aIterationComposite;
@@ -124,7 +126,7 @@ void KeyframeEffect::SetComposite(const CompositeOperation& aComposite) {
   mEffectOptions.mComposite = aComposite;
 
   if (mAnimation && mAnimation->IsRelevant()) {
-    nsNodeUtils::AnimationChanged(mAnimation);
+    MutationObservers::NotifyAnimationChanged(mAnimation);
   }
 
   if (mTarget) {
@@ -145,7 +147,7 @@ void KeyframeEffect::NotifySpecifiedTimingUpdated() {
     mAnimation->NotifyEffectTimingUpdated();
 
     if (mAnimation->IsRelevant()) {
-      nsNodeUtils::AnimationChanged(mAnimation);
+      MutationObservers::NotifyAnimationChanged(mAnimation);
     }
 
     RequestRestyle(EffectCompositor::RestyleType::Layer);
@@ -238,7 +240,7 @@ void KeyframeEffect::SetKeyframes(nsTArray<Keyframe>&& aKeyframes,
   KeyframeUtils::DistributeKeyframes(mKeyframes);
 
   if (mAnimation && mAnimation->IsRelevant()) {
-    nsNodeUtils::AnimationChanged(mAnimation);
+    MutationObservers::NotifyAnimationChanged(mAnimation);
   }
 
   // We need to call UpdateProperties() unless the target element doesn't have
@@ -315,7 +317,7 @@ nsCSSPropertyIDSet KeyframeEffect::GetPropertiesForCompositor(
 
   nsCSSPropertyIDSet properties;
 
-  if (!IsInEffect() && !IsCurrent()) {
+  if (!mAnimation || !mAnimation->IsRelevant()) {
     return properties;
   }
 
@@ -340,14 +342,14 @@ nsCSSPropertyIDSet KeyframeEffect::GetPropertiesForCompositor(
   return properties;
 }
 
-bool KeyframeEffect::HasAnimationOfPropertySet(
-    const nsCSSPropertyIDSet& aPropertySet) const {
+nsCSSPropertyIDSet KeyframeEffect::GetPropertySet() const {
+  nsCSSPropertyIDSet result;
+
   for (const AnimationProperty& property : mProperties) {
-    if (aPropertySet.HasProperty(property.mProperty)) {
-      return true;
-    }
+    result.AddProperty(property.mProperty);
   }
-  return false;
+
+  return result;
 }
 
 #ifdef DEBUG
@@ -415,6 +417,10 @@ void KeyframeEffect::UpdateProperties(const ComputedStyle* aStyle) {
   CalculateCumulativeChangeHint(aStyle);
 
   MarkCascadeNeedsUpdate();
+
+  if (mAnimation) {
+    mAnimation->NotifyEffectPropertiesUpdated();
+  }
 
   RequestRestyle(EffectCompositor::RestyleType::Layer);
 }
@@ -573,13 +579,10 @@ void KeyframeEffect::ComposeStyle(RawServoAnimationValueMap& aComposeResult,
   if (HasPropertiesThatMightAffectOverflow()) {
     nsPresContext* presContext =
         nsContentUtils::GetContextForContent(mTarget->mElement);
-    if (presContext) {
+    EffectSet* effectSet =
+        EffectSet::GetEffectSet(mTarget->mElement, mTarget->mPseudoType);
+    if (presContext && effectSet) {
       TimeStamp now = presContext->RefreshDriver()->MostRecentRefresh();
-      EffectSet* effectSet =
-          EffectSet::GetEffectSet(mTarget->mElement, mTarget->mPseudoType);
-      MOZ_ASSERT(effectSet,
-                 "ComposeStyle should only be called on an effect "
-                 "that is part of an effect set");
       effectSet->UpdateLastOverflowAnimationSyncTime(now);
     }
   }
@@ -790,7 +793,9 @@ void KeyframeEffect::UpdateTargetRegistration() {
   // something calls Animation::UpdateRelevance. Whenever our timing changes,
   // we should be notifying our Animation before calling this, so
   // Animation::IsRelevant() should be up-to-date by the time we get here.
-  MOZ_ASSERT(isRelevant == IsCurrent() || IsInEffect(),
+  MOZ_ASSERT(isRelevant ==
+                 ((IsCurrent() || IsInEffect()) && mAnimation &&
+                  mAnimation->ReplaceState() != AnimationReplaceState::Removed),
              "Out of date Animation::IsRelevant value");
 
   if (isRelevant && !mInEffectSet) {
@@ -976,7 +981,7 @@ void KeyframeEffect::SetTarget(
 
     nsAutoAnimationMutationBatch mb(mTarget->mElement->OwnerDoc());
     if (mAnimation) {
-      nsNodeUtils::AnimationRemoved(mAnimation);
+      MutationObservers::NotifyAnimationRemoved(mAnimation);
     }
   }
 
@@ -993,9 +998,13 @@ void KeyframeEffect::SetTarget(
 
     nsAutoAnimationMutationBatch mb(mTarget->mElement->OwnerDoc());
     if (mAnimation) {
-      nsNodeUtils::AnimationAdded(mAnimation);
+      MutationObservers::NotifyAnimationAdded(mAnimation);
       mAnimation->ReschedulePendingTasks();
     }
+  }
+
+  if (mAnimation) {
+    mAnimation->NotifyEffectTargetUpdated();
   }
 }
 
@@ -1723,6 +1732,11 @@ bool KeyframeEffect::ContainsAnimatedScale(const nsIFrame* aFrame) const {
              "We should be passed a frame that supports transforms");
 
   if (!IsCurrent()) {
+    return false;
+  }
+
+  if (!mAnimation ||
+      mAnimation->ReplaceState() == AnimationReplaceState::Removed) {
     return false;
   }
 

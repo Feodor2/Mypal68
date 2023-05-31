@@ -5,7 +5,7 @@
 
 typedef any StructuredClonable;
 
-[ChromeOnly]
+[ChromeOnly, Exposed=Window]
 interface MozSharedMapChangeEvent : Event {
   [Cached, Constant]
   readonly attribute sequence<DOMString> changedKeys;
@@ -15,7 +15,7 @@ dictionary MozSharedMapChangeEventInit : EventInit {
   required sequence<DOMString> changedKeys;
 };
 
-[ChromeOnly]
+[ChromeOnly, Exposed=Window]
 interface MozSharedMap : EventTarget {
   boolean has(DOMString name);
 
@@ -25,7 +25,7 @@ interface MozSharedMap : EventTarget {
   iterable<DOMString, StructuredClonable>;
 };
 
-[ChromeOnly]
+[ChromeOnly, Exposed=Window]
 interface MozWritableSharedMap : MozSharedMap {
   /**
    * Sets the given key to the given structured-clonable value. The value is

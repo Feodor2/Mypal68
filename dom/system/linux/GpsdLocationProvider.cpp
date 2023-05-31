@@ -232,7 +232,7 @@ class GpsdLocationProvider::PollRunnable final : public Runnable {
           if (!IsNaN(gpsData.fix.altitude)) {
             alt = gpsData.fix.altitude;
           }
-          MOZ_FALLTHROUGH;
+          [[fallthrough]];
         case MODE_2D:
           if (!IsNaN(gpsData.fix.latitude)) {
             lat = gpsData.fix.latitude;
@@ -282,13 +282,13 @@ class GpsdLocationProvider::PollRunnable final : public Runnable {
   static int ErrnoToError(int aErrno) {
     switch (aErrno) {
       case EACCES:
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
       case EPERM:
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
       case EROFS:
         return PositionError_Binding::PERMISSION_DENIED;
       case ETIME:
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
       case ETIMEDOUT:
         return PositionError_Binding::TIMEOUT;
       default:

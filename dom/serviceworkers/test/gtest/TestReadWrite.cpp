@@ -281,10 +281,9 @@ TEST(ServiceWorkerRegistrar, TestWriteData)
       nsAutoCString spec;
       spec.AppendPrintf("spec write %d", i);
 
-      nsTArray<mozilla::ipc::ContentSecurityPolicy> policies;
       reg.principal() = mozilla::ipc::ContentPrincipalInfo(
           mozilla::OriginAttributes(i % 2), spec, spec, mozilla::Nothing(),
-          std::move(policies), spec);
+          spec);
 
       swr->TestRegisterServiceWorker(reg);
     }
@@ -886,10 +885,9 @@ TEST(ServiceWorkerRegistrar, TestDedupeWrite)
       nsAutoCString spec;
       spec.AppendPrintf("spec write dedupe/%d", i);
 
-      nsTArray<mozilla::ipc::ContentSecurityPolicy> policies;
       reg.principal() = mozilla::ipc::ContentPrincipalInfo(
           mozilla::OriginAttributes(false), spec, spec, mozilla::Nothing(),
-          std::move(policies), spec);
+          spec);
 
       swr->TestRegisterServiceWorker(reg);
     }

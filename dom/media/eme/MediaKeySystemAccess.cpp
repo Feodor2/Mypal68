@@ -6,7 +6,7 @@
 #include "mozilla/dom/MediaKeySystemAccessBinding.h"
 #include "mozilla/dom/MediaKeySession.h"
 #include "mozilla/Preferences.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "MediaContainerType.h"
 #include "nsMimeTypes.h"
 #ifdef XP_WIN
@@ -14,7 +14,6 @@
 #endif
 #include "nsContentCID.h"
 #include "nsServiceManagerUtils.h"
-#include "mozIGeckoMediaPluginService.h"
 #include "VideoUtils.h"
 #include "mozilla/Services.h"
 #include "nsIObserverService.h"
@@ -112,7 +111,8 @@ static MediaKeySystemStatus EnsureCDMInstalled(const nsAString& aKeySystem,
 /* static */
 MediaKeySystemStatus MediaKeySystemAccess::GetKeySystemStatus(
     const nsAString& aKeySystem, nsACString& aOutMessage) {
-  MOZ_ASSERT(StaticPrefs::MediaEmeEnabled() || IsClearkeyKeySystem(aKeySystem));
+  MOZ_ASSERT(StaticPrefs::media_eme_enabled() ||
+             IsClearkeyKeySystem(aKeySystem));
 
   if (IsClearkeyKeySystem(aKeySystem)) {
     return EnsureCDMInstalled(aKeySystem, aOutMessage);
@@ -252,7 +252,7 @@ static nsTArray<KeySystemConfig> GetSupportedKeySystems() {
       clearkey.mPersistentState = KeySystemFeatureSupport::Requestable;
       clearkey.mDistinctiveIdentifier = KeySystemFeatureSupport::Prohibited;
       clearkey.mSessionTypes.AppendElement(MediaKeySessionType::Temporary);
-      if (StaticPrefs::MediaClearkeyPersistentLicenseEnabled()) {
+      if (StaticPrefs::media_clearkey_persistent_license_enabled()) {
         clearkey.mSessionTypes.AppendElement(
             MediaKeySessionType::Persistent_license);
       }
@@ -269,9 +269,7 @@ static nsTArray<KeySystemConfig> GetSupportedKeySystems() {
       clearkey.mMP4.SetCanDecrypt(EME_CODEC_AAC);
       clearkey.mMP4.SetCanDecrypt(EME_CODEC_FLAC);
       clearkey.mMP4.SetCanDecrypt(EME_CODEC_OPUS);
-      if (Preferences::GetBool("media.eme.vp9-in-mp4.enabled", false)) {
-        clearkey.mMP4.SetCanDecrypt(EME_CODEC_VP9);
-      }
+      clearkey.mMP4.SetCanDecrypt(EME_CODEC_VP9);
       clearkey.mWebM.SetCanDecrypt(EME_CODEC_VORBIS);
       clearkey.mWebM.SetCanDecrypt(EME_CODEC_OPUS);
       clearkey.mWebM.SetCanDecrypt(EME_CODEC_VP8);
@@ -361,9 +359,7 @@ static nsTArray<KeySystemConfig> GetSupportedKeySystems() {
       }
 #else
       widevine.mMP4.SetCanDecryptAndDecode(EME_CODEC_H264);
-      if (Preferences::GetBool("media.eme.vp9-in-mp4.enabled", false)) {
-        widevine.mMP4.SetCanDecryptAndDecode(EME_CODEC_VP9);
-      }
+      widevine.mMP4.SetCanDecryptAndDecode(EME_CODEC_VP9);
       widevine.mWebM.SetCanDecrypt(EME_CODEC_VORBIS);
       widevine.mWebM.SetCanDecrypt(EME_CODEC_OPUS);
       widevine.mWebM.SetCanDecryptAndDecode(EME_CODEC_VP8);
@@ -1119,9 +1115,7 @@ static nsCString ToCString(const nsString& aString) {
 
 static nsCString ToCString(const MediaKeysRequirement aValue) {
   nsCString str("'");
-  str.Append(nsDependentCString(
-      MediaKeysRequirementValues::strings[static_cast<uint32_t>(aValue)]
-          .value));
+  str.AppendASCII(MediaKeysRequirementValues::GetString(aValue));
   str.AppendLiteral("'");
   return str;
 }

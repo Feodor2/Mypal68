@@ -11,10 +11,8 @@
 #include "mozilla/MediaManager.h"
 #include "MediaTrackConstraints.h"
 #include "nsContentUtils.h"
-#include "nsIEventTarget.h"
 #include "nsINamed.h"
 #include "nsIScriptGlobalObject.h"
-#include "nsIPermissionManager.h"
 #include "nsPIDOMWindow.h"
 #include "nsQueryObject.h"
 
@@ -69,23 +67,6 @@ static bool IsSameOriginWithAllParentDocs(nsINode* aDoc) {
 already_AddRefed<Promise> MediaDevices::GetUserMedia(
     const MediaStreamConstraints& aConstraints, CallerType aCallerType,
     ErrorResult& aRv) {
-  if (RefPtr<nsPIDOMWindowInner> owner = GetOwner()) {
-    if (Document* doc = owner->GetExtantDoc()) {
-      if (!owner->IsSecureContext()) {
-        doc->SetDocumentAndPageUseCounter(eUseCounter_custom_GetUserMediaInsec);
-      }
-      if (!IsSameOriginWithAllParentDocs(doc)) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_GetUserMediaXOrigin);
-      }
-      Document* topDoc = doc->GetTopLevelContentDocument();
-      IgnoredErrorResult ignored;
-      if (topDoc && !topDoc->HasFocus(ignored)) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_GetUserMediaUnfocused);
-      }
-    }
-  }
   RefPtr<Promise> p = Promise::Create(GetParentObject(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
@@ -115,20 +96,6 @@ already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
                                                          ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (RefPtr<nsPIDOMWindowInner> owner = GetOwner()) {
-    if (Document* doc = owner->GetExtantDoc()) {
-      if (!owner->IsSecureContext()) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_EnumerateDevicesInsec);
-      }
-      Document* topDoc = doc->GetTopLevelContentDocument();
-      IgnoredErrorResult ignored;
-      if (topDoc && !topDoc->HasFocus(ignored)) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_EnumerateDevicesUnfocused);
-      }
-    }
-  }
   RefPtr<Promise> p = Promise::Create(GetParentObject(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
@@ -146,6 +113,10 @@ already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
             }
             auto windowId = window->WindowID();
             nsTArray<RefPtr<MediaDeviceInfo>> infos;
+            bool allowLabel =
+                aDevices->Length() == 0 ||
+                MediaManager::Get()->IsActivelyCapturingOrHasAPermission(
+                    windowId);
             for (auto& device : *aDevices) {
               MOZ_ASSERT(device->mKind == dom::MediaDeviceKind::Audioinput ||
                          device->mKind == dom::MediaDeviceKind::Videoinput ||
@@ -153,8 +124,7 @@ already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
               // Include name only if page currently has a gUM stream active
               // or persistent permissions (audio or video) have been granted
               nsString label;
-              if (MediaManager::Get()->IsActivelyCapturingOrHasAPermission(
-                      windowId) ||
+              if (allowLabel ||
                   Preferences::GetBool("media.navigator.permission.disabled",
                                        false)) {
                 label = device->mName;
@@ -177,14 +147,6 @@ already_AddRefed<Promise> MediaDevices::EnumerateDevices(CallerType aCallerType,
 already_AddRefed<Promise> MediaDevices::GetDisplayMedia(
     const DisplayMediaStreamConstraints& aConstraints, CallerType aCallerType,
     ErrorResult& aRv) {
-  if (RefPtr<nsPIDOMWindowInner> owner = GetOwner()) {
-    if (Document* doc = owner->GetExtantDoc()) {
-      if (!IsSameOriginWithAllParentDocs(doc)) {
-        doc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_GetDisplayMediaXOrigin);
-      }
-    }
-  }
   RefPtr<Promise> p = Promise::Create(GetParentObject(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;

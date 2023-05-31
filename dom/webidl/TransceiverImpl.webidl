@@ -13,9 +13,11 @@
  */
 
 // Constructed by PeerConnectionImpl::CreateTransceiverImpl.
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface TransceiverImpl {
   MediaStreamTrack getReceiveTrack();
+  void setReceiveTrackMuted(boolean muted);
   [Throws]
   void syncWithJS(RTCRtpTransceiver transceiver);
 };

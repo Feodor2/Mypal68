@@ -8,11 +8,9 @@
 #include "nsCOMPtr.h"
 #include "nsNetUtil.h"
 #include "nsXBLService.h"
-#include "nsXBLWindowKeyHandler.h"
 #include "nsIInputStream.h"
 #include "nsNameSpaceManager.h"
 #include "nsIURI.h"
-#include "nsIURL.h"
 #include "nsIChannel.h"
 #include "nsString.h"
 #include "plstr.h"
@@ -22,7 +20,6 @@
 #include "nsContentCID.h"
 #include "mozilla/dom/XMLDocument.h"
 #include "nsGkAtoms.h"
-#include "nsIObserverService.h"
 #include "nsXBLContentSink.h"
 #include "nsXBLBinding.h"
 #include "nsXBLPrototypeBinding.h"
@@ -36,7 +33,6 @@
 
 #include "nsIDocumentObserver.h"
 #include "nsFrameManager.h"
-#include "nsIScriptSecurityManager.h"
 #include "nsIScriptError.h"
 #include "nsXBLSerialize.h"
 
@@ -81,12 +77,12 @@ static bool IsAncestorBinding(Document* aDocument, nsIURI* aChildBindingURI,
       if (bindingRecursion < NS_MAX_XBL_BINDING_RECURSION) {
         continue;
       }
-      NS_ConvertUTF8toUTF16 bindingURI(aChildBindingURI->GetSpecOrDefault());
-      const char16_t* params[] = {bindingURI.get()};
+      AutoTArray<nsString, 1> params;
+      CopyUTF8toUTF16(aChildBindingURI->GetSpecOrDefault(),
+                      *params.AppendElement());
       nsContentUtils::ReportToConsole(
           nsIScriptError::warningFlag, NS_LITERAL_CSTRING("XBL"), aDocument,
-          nsContentUtils::eXBL_PROPERTIES, "TooDeepBindingRecursion", params,
-          ArrayLength(params));
+          nsContentUtils::eXBL_PROPERTIES, "TooDeepBindingRecursion", params);
       return true;
     }
   }
@@ -292,10 +288,10 @@ nsresult nsXBLStreamListener::HandleEvent(Event* aEvent) {
             "An XBL file is malformed. Did you forget the XBL namespace on the "
             "bindings tag?");
       }
-      nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
-                                      NS_LITERAL_CSTRING("XBL"), nullptr,
-                                      nsContentUtils::eXBL_PROPERTIES,
-                                      "MalformedXBL", nullptr, 0, documentURI);
+      nsContentUtils::ReportToConsole(
+          nsIScriptError::warningFlag, NS_LITERAL_CSTRING("XBL"), nullptr,
+          nsContentUtils::eXBL_PROPERTIES, "MalformedXBL", nsTArray<nsString>(),
+          documentURI);
       return NS_ERROR_FAILURE;
     }
 
@@ -339,12 +335,7 @@ nsXBLService::~nsXBLService(void) {}
 
 // static
 bool nsXBLService::IsChromeOrResourceURI(nsIURI* aURI) {
-  bool isChrome = false;
-  bool isResource = false;
-  if (NS_SUCCEEDED(aURI->SchemeIs("chrome", &isChrome)) &&
-      NS_SUCCEEDED(aURI->SchemeIs("resource", &isResource)))
-    return (isChrome || isResource);
-  return false;
+  return aURI->SchemeIs("chrome") || aURI->SchemeIs("resource");
 }
 
 // Servo avoids wasting work styling subtrees of elements with XBL bindings by
@@ -418,16 +409,10 @@ class MOZ_RAII AutoStyleElement {
 };
 
 static bool IsSystemOrChromeURLPrincipal(nsIPrincipal* aPrincipal) {
-  if (nsContentUtils::IsSystemPrincipal(aPrincipal)) {
+  if (aPrincipal->IsSystemPrincipal()) {
     return true;
   }
-
-  nsCOMPtr<nsIURI> uri;
-  aPrincipal->GetURI(getter_AddRefs(uri));
-  NS_ENSURE_TRUE(uri, false);
-
-  bool isChrome = false;
-  return NS_SUCCEEDED(uri->SchemeIs("chrome", &isChrome)) && isChrome;
+  return aPrincipal->SchemeIs("chrome");
 }
 
 // This function loads a particular XBL file and installs all of the bindings
@@ -460,7 +445,7 @@ nsresult nsXBLService::LoadBindings(Element* aElement, nsIURI* aURL,
   // in AllowXULXBL() documents in content process in production without
   // knowing.
   if (XRE_IsContentProcess() &&
-      IsSystemOrChromeURLPrincipal(aOriginPrincipal) && aElement->OwnerDoc() &&
+      IsSystemOrChromeURLPrincipal(aOriginPrincipal) &&
       !aElement->OwnerDoc()->AllowXULXBL()) {
     MOZ_ASSERT(false, "Unexpected XBL binding used in the content process");
   }
@@ -550,84 +535,6 @@ void nsXBLService::FlushStyleBindings(Element* aElement) {
   }
 }
 
-//
-// AttachGlobalKeyHandler
-//
-// Creates a new key handler and prepares to listen to key events on the given
-// event receiver (either a document or an content node). If the receiver is
-// content, then extra work needs to be done to hook it up to the document (XXX
-// WHY??)
-//
-nsresult nsXBLService::AttachGlobalKeyHandler(EventTarget* aTarget) {
-  // check if the receiver is a content node (not a document), and hook
-  // it to the document if that is the case.
-  nsCOMPtr<EventTarget> piTarget = aTarget;
-  nsCOMPtr<nsIContent> contentNode(do_QueryInterface(aTarget));
-  if (contentNode) {
-    // Only attach if we're really in a document
-    nsCOMPtr<Document> doc = contentNode->GetUncomposedDoc();
-    if (doc) piTarget = doc;  // We're a XUL keyset. Attach to our document.
-  }
-
-  if (!piTarget) return NS_ERROR_FAILURE;
-
-  EventListenerManager* manager = piTarget->GetOrCreateListenerManager();
-  if (!manager) return NS_ERROR_FAILURE;
-
-  // the listener already exists, so skip this
-  if (contentNode && contentNode->GetProperty(nsGkAtoms::listener))
-    return NS_OK;
-
-  Element* elt = Element::FromNodeOrNull(contentNode);
-
-  // Create the key handler
-  RefPtr<nsXBLWindowKeyHandler> handler =
-      NS_NewXBLWindowKeyHandler(elt, piTarget);
-
-  handler->InstallKeyboardEventListenersTo(manager);
-
-  if (contentNode)
-    return contentNode->SetProperty(nsGkAtoms::listener,
-                                    handler.forget().take(),
-                                    nsPropertyTable::SupportsDtorFunc, true);
-
-  // The reference to the handler will be maintained by the event target,
-  // and, if there is a content node, the property.
-  return NS_OK;
-}
-
-//
-// DetachGlobalKeyHandler
-//
-// Removes a key handler added by DeatchGlobalKeyHandler.
-//
-nsresult nsXBLService::DetachGlobalKeyHandler(EventTarget* aTarget) {
-  nsCOMPtr<EventTarget> piTarget = aTarget;
-  nsCOMPtr<nsIContent> contentNode(do_QueryInterface(aTarget));
-  if (!contentNode)  // detaching is only supported for content nodes
-    return NS_ERROR_FAILURE;
-
-  // Only attach if we're really in a document
-  nsCOMPtr<Document> doc = contentNode->GetUncomposedDoc();
-  if (doc) piTarget = doc;
-
-  if (!piTarget) return NS_ERROR_FAILURE;
-
-  EventListenerManager* manager = piTarget->GetOrCreateListenerManager();
-  if (!manager) return NS_ERROR_FAILURE;
-
-  nsIDOMEventListener* handler = static_cast<nsIDOMEventListener*>(
-      contentNode->GetProperty(nsGkAtoms::listener));
-  if (!handler) return NS_ERROR_FAILURE;
-
-  static_cast<nsXBLWindowKeyHandler*>(handler)
-      ->RemoveKeyboardEventListenersFrom(manager);
-
-  contentNode->DeleteProperty(nsGkAtoms::listener);
-
-  return NS_OK;
-}
-
 // Internal helper methods /////////////////////////////////////////////////////
 
 nsresult nsXBLService::BindingReady(nsIContent* aBoundElement, nsIURI* aURI,
@@ -681,10 +588,7 @@ static bool MayBindToContent(nsXBLPrototypeBinding* aProtoBinding,
   // they end up with a null principal (rather than inheriting the document's
   // principal), which causes them to fail the check above.
   if (nsContentUtils::AllowXULXBLForPrincipal(aBoundElement->NodePrincipal())) {
-    bool isDataURI = false;
-    nsresult rv = aURI->SchemeIs("data", &isDataURI);
-    NS_ENSURE_SUCCESS(rv, false);
-    if (isDataURI) {
+    if (aURI->SchemeIs("data")) {
       return true;
     }
   }
@@ -769,14 +673,15 @@ nsresult nsXBLService::GetBinding(nsIContent* aBoundElement, nsIURI* aURI,
         rv = aDontExtendURIs[index]->Equals(baseBindingURI, &equal);
         NS_ENSURE_SUCCESS(rv, rv);
         if (equal) {
-          NS_ConvertUTF8toUTF16 protoSpec(
-              protoBinding->BindingURI()->GetSpecOrDefault());
-          NS_ConvertUTF8toUTF16 baseSpec(baseBindingURI->GetSpecOrDefault());
-          const char16_t* params[] = {protoSpec.get(), baseSpec.get()};
+          AutoTArray<nsString, 2> params;
+          CopyUTF8toUTF16(protoBinding->BindingURI()->GetSpecOrDefault(),
+                          *params.AppendElement());
+          CopyUTF8toUTF16(baseBindingURI->GetSpecOrDefault(),
+                          *params.AppendElement());
           nsContentUtils::ReportToConsole(
               nsIScriptError::warningFlag, NS_LITERAL_CSTRING("XBL"), nullptr,
               nsContentUtils::eXBL_PROPERTIES, "CircularExtendsBinding", params,
-              ArrayLength(params), boundDocument->GetDocumentURI());
+              boundDocument->GetDocumentURI());
           return NS_ERROR_ILLEGAL_VALUE;
         }
       }
@@ -910,9 +815,9 @@ nsresult nsXBLService::LoadBindingDocumentInfo(nsIContent* aBoundElement,
     // document.
 
     // Always load chrome synchronously
-    bool chrome;
-    if (NS_SUCCEEDED(documentURI->SchemeIs("chrome", &chrome)) && chrome)
+    if (documentURI->SchemeIs("chrome")) {
       aForceSyncLoad = true;
+    }
 
     nsCOMPtr<Document> document;
     rv = FetchBindingDocument(aBoundElement, aBoundDocument, documentURI,

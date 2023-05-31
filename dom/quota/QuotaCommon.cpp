@@ -12,15 +12,58 @@ namespace {
 
 LazyLogModule gLogger("QuotaManager");
 
+void AnonymizeCString(nsACString& aCString, uint32_t aStart) {
+  MOZ_ASSERT(!aCString.IsEmpty());
+  MOZ_ASSERT(aStart < aCString.Length());
+
+  char* iter = aCString.BeginWriting() + aStart;
+  char* end = aCString.EndWriting();
+
+  while (iter != end) {
+    char c = *iter;
+
+    if (IsAsciiAlpha(c)) {
+      *iter = 'a';
+    } else if (IsAsciiDigit(c)) {
+      *iter = 'D';
+    }
+
+    ++iter;
+  }
+}
+
 }  // namespace
 
+const char kQuotaGenericDelimiter = '|';
+
 #ifdef NIGHTLY_BUILD
-NS_NAMED_LITERAL_CSTRING(kInternalError, "internal");
-NS_NAMED_LITERAL_CSTRING(kExternalError, "external");
+NS_NAMED_LITERAL_CSTRING(kQuotaInternalError, "internal");
+NS_NAMED_LITERAL_CSTRING(kQuotaExternalError, "external");
 #endif
 
 LogModule* GetQuotaManagerLogger() { return gLogger; }
 
+void AnonymizeCString(nsACString& aCString) {
+  if (aCString.IsEmpty()) {
+    return;
+  }
+  AnonymizeCString(aCString, /* aStart */ 0);
+}
+
+void AnonymizeOriginString(nsACString& aOriginString) {
+  if (aOriginString.IsEmpty()) {
+    return;
+  }
+
+  int32_t start = aOriginString.FindChar(':');
+  if (start < 0) {
+    start = 0;
+  }
+
+  AnonymizeCString(aOriginString, start);
+}
+
 }  // namespace quota
 }  // namespace dom
 }  // namespace mozilla
+

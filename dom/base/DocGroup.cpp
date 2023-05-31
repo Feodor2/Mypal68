@@ -7,9 +7,9 @@
 #include "mozilla/dom/TabGroup.h"
 #include "mozilla/AbstractThread.h"
 #include "mozilla/PerformanceUtils.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/ThrottledEventQueue.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
-#include "nsIDocShell.h"
 #include "nsDOMMutationObserver.h"
 #include "nsProxyRelease.h"
 #if defined(XP_WIN)
@@ -63,6 +63,10 @@ DocGroup::~DocGroup() {
   }
 
   mTabGroup->mDocGroups.RemoveEntry(mKey);
+
+  if (mIframePostMessageQueue) {
+    FlushIframePostMessageQueue();
+  }
 }
 
 RefPtr<PerformanceInfoPromise> DocGroup::ReportPerformanceInfo() {
@@ -99,7 +103,7 @@ RefPtr<PerformanceInfoPromise> DocGroup::ReportPerformanceInfo() {
     if (!win) {
       continue;
     }
-    top = win->GetTop();
+    top = win->GetInProcessTop();
     if (!top) {
       continue;
     }
@@ -184,6 +188,57 @@ void DocGroup::SignalSlotChange(HTMLSlotElement& aSlot) {
   }
 
   sPendingDocGroups->AppendElement(this);
+}
+
+bool DocGroup::TryToLoadIframesInBackground() {
+  return StaticPrefs::dom_separate_event_queue_for_post_message_enabled() &&
+         StaticPrefs::dom_cross_origin_iframes_loaded_in_background();
+}
+
+nsresult DocGroup::QueueIframePostMessages(
+    already_AddRefed<nsIRunnable>&& aRunnable, uint64_t aWindowId) {
+  if (DocGroup::TryToLoadIframesInBackground()) {
+    if (!mIframePostMessageQueue) {
+      nsCOMPtr<nsISerialEventTarget> target = GetMainThreadSerialEventTarget();
+      mIframePostMessageQueue = ThrottledEventQueue::Create(
+          target, "Background Loading Iframe PostMessage Queue",
+          nsIRunnablePriority::PRIORITY_DEFERRED_TIMERS);
+      nsresult rv = mIframePostMessageQueue->SetIsPaused(true);
+      MOZ_ALWAYS_SUCCEEDS(rv);
+    }
+
+    // Ensure the queue is disabled. Unlike the postMessageEvent queue in
+    // TabGroup, this postMessage queue should always be paused, because if
+    // we leave it open, the postMessage may get dispatched to an unloaded
+    // iframe
+    MOZ_ASSERT(mIframePostMessageQueue);
+    MOZ_ASSERT(mIframePostMessageQueue->IsPaused());
+
+    mIframesUsedPostMessageQueue.PutEntry(aWindowId);
+
+    mIframePostMessageQueue->Dispatch(std::move(aRunnable), NS_DISPATCH_NORMAL);
+    return NS_OK;
+  }
+  return NS_ERROR_FAILURE;
+}
+
+void DocGroup::TryFlushIframePostMessages(uint64_t aWindowId) {
+  if (DocGroup::TryToLoadIframesInBackground()) {
+    mIframesUsedPostMessageQueue.RemoveEntry(aWindowId);
+    if (mIframePostMessageQueue && mIframesUsedPostMessageQueue.IsEmpty()) {
+      MOZ_ASSERT(mIframePostMessageQueue->IsPaused());
+      nsresult rv = mIframePostMessageQueue->SetIsPaused(true);
+      MOZ_ALWAYS_SUCCEEDS(rv);
+      FlushIframePostMessageQueue();
+    }
+  }
+}
+
+void DocGroup::FlushIframePostMessageQueue() {
+  nsCOMPtr<nsIRunnable> event;
+  while ((event = mIframePostMessageQueue->GetEvent())) {
+    Dispatch(TaskCategory::Other, event.forget());
+  }
 }
 
 void DocGroup::MoveSignalSlotListTo(nsTArray<RefPtr<HTMLSlotElement>>& aDest) {

@@ -5,6 +5,7 @@
 #ifndef mozilla_dom_Promise_h
 #define mozilla_dom_Promise_h
 
+#include "js/Promise.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Move.h"
@@ -87,6 +88,13 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
   void MaybeReject(JS::Handle<JS::Value> aValue) {
     MaybeSomething(aValue, &Promise::MaybeReject);
   }
+
+  // This method is deprecated.  Consumers should MaybeRejectWithDOMException if
+  // they are rejecting with a DOMException, or use one of the other
+  // MaybeReject* methods otherwise.  If they have a random nsresult which may
+  // or may not correspond to a DOMException type, they should consider using an
+  // appropriate DOMException-type nsresult with an informative message and
+  // calling MaybeRejectWithDOMException.
   inline void MaybeReject(nsresult aArg) {
     MOZ_ASSERT(NS_FAILED(aArg));
     MaybeSomething(aArg, &Promise::MaybeReject);
@@ -104,6 +112,54 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
   void MaybeResolveWithClone(JSContext* aCx, JS::Handle<JS::Value> aValue);
   void MaybeRejectWithClone(JSContext* aCx, JS::Handle<JS::Value> aValue);
 
+  // Facilities for rejecting with various spec-defined exception values.
+  inline void MaybeRejectWithDOMException(nsresult rv,
+                                          const nsACString& aMessage) {
+    ErrorResult res;
+    res.ThrowDOMException(rv, aMessage);
+    MaybeReject(res);
+  }
+  template <int N>
+  void MaybeRejectWithDOMException(nsresult rv, const char (&aMessage)[N]) {
+    MaybeRejectWithDOMException(rv, nsLiteralCString(aMessage));
+  }
+
+  template <ErrNum errorNumber, typename... Ts>
+  void MaybeRejectWithTypeError(Ts&&... aMessageArgs) {
+    ErrorResult res;
+    res.ThrowTypeError<errorNumber>(std::forward<Ts>(aMessageArgs)...);
+    MaybeReject(res);
+  }
+
+  inline void MaybeRejectWithTypeError(const nsAString& aMessage) {
+    ErrorResult res;
+    res.ThrowTypeError(aMessage);
+    MaybeReject(res);
+  }
+
+  template <int N>
+  void MaybeRejectWithTypeError(const char16_t (&aMessage)[N]) {
+    MaybeRejectWithTypeError(nsLiteralString(aMessage));
+  }
+
+  template <ErrNum errorNumber, typename... Ts>
+  void MaybeRejectWithRangeError(Ts&&... aMessageArgs) {
+    ErrorResult res;
+    res.ThrowRangeError<errorNumber>(std::forward<Ts>(aMessageArgs)...);
+    MaybeReject(res);
+  }
+
+  inline void MaybeRejectWithRangeError(const nsAString& aMessage) {
+    ErrorResult res;
+    res.ThrowRangeError(aMessage);
+    MaybeReject(res);
+  }
+
+  template <int N>
+  void MaybeRejectWithRangeError(const char16_t (&aMessage)[N]) {
+    MaybeRejectWithRangeError(nsLiteralString(aMessage));
+  }
+
   // DO NOT USE MaybeRejectBrokenly with in new code.  Promises should be
   // rejected with Error instances.
   // Note: MaybeRejectBrokenly is a template so we can use it with DOMException
@@ -115,6 +171,15 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
   void MaybeRejectBrokenly(const T& aArg);  // Not implemented by default; see
                                             // specializations in the .cpp for
                                             // the T values we support.
+
+  // Mark a settled promise as already handled so that rejections will not
+  // be reported as unhandled.
+  void SetSettledPromiseIsHandled() {
+    AutoEntryScript aes(mGlobal, "Set settled promise handled");
+    JSContext* cx = aes.cx();
+    JS::RootedObject promiseObj(cx, mPromiseObj);
+    JS::SetSettledPromiseIsHandled(cx, promiseObj);
+  }
 
   // WebIDL
 
@@ -224,12 +289,11 @@ class Promise : public nsISupports, public SupportsWeakPtr<Promise> {
 
   virtual ~Promise();
 
-  // Do JS-wrapping after Promise creation.  Passing null for aDesiredProto will
-  // use the default prototype for the sort of Promise we have.
+  // Do JS-wrapping after Promise creation.
   // Pass ePropagateUserInteraction for aPropagateUserInteraction if you want
   // the promise resolve handler to be called as if we were handling user
   // input events in case we are currently handling user input events.
-  void CreateWrapper(JS::Handle<JSObject*> aDesiredProto, ErrorResult& aRv,
+  void CreateWrapper(ErrorResult& aRv,
                      PropagateUserInteraction aPropagateUserInteraction =
                          eDontPropagateUserInteraction);
 

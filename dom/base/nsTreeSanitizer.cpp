@@ -13,6 +13,7 @@
 #include "mozilla/dom/DocumentFragment.h"
 #include "mozilla/dom/SRIMetadata.h"
 #include "mozilla/NullPrincipal.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsCSSPropertyID.h"
 #include "nsUnicharInputStream.h"
 #include "nsAttrName.h"
@@ -88,6 +89,7 @@ const nsStaticAtom* const kElementsHTML[] = {
   nsGkAtoms::input,
   nsGkAtoms::ins,
   nsGkAtoms::kbd,
+  nsGkAtoms::keygen,
   nsGkAtoms::label,
   nsGkAtoms::legend,
   nsGkAtoms::li,
@@ -968,8 +970,7 @@ bool nsTreeSanitizer::MustFlatten(int32_t aNamespace, nsAtom* aLocal) {
     }
     if (mDropForms &&
         (nsGkAtoms::form == aLocal || nsGkAtoms::input == aLocal ||
-         nsGkAtoms::keygen == aLocal || nsGkAtoms::option == aLocal ||
-         nsGkAtoms::optgroup == aLocal)) {
+         nsGkAtoms::option == aLocal || nsGkAtoms::optgroup == aLocal)) {
       return true;
     }
     if (mFullDocument &&
@@ -1069,15 +1070,16 @@ void nsTreeSanitizer::SanitizeStyleSheet(const nsAString& aOriginal,
                                          Document* aDocument,
                                          nsIURI* aBaseURI) {
   aSanitized.Truncate();
+  RefPtr<nsIReferrerInfo> referrer =
+      ReferrerInfo::CreateForInternalCSSResources(aDocument);
   if (StaticPrefs::layout_css_moz_binding_content_enabled() ||
       aDocument->IsDocumentURISchemeChrome()) {
     // aSanitized will hold the permitted CSS text.
     // -moz-binding is blacklisted.
     bool didSanitize = false;
     // Create a sheet to hold the parsed CSS
-    RefPtr<StyleSheet> sheet =
-        new StyleSheet(mozilla::css::eAuthorSheetFeatures, CORS_NONE,
-                       aDocument->GetReferrerPolicy(), SRIMetadata());
+    RefPtr<StyleSheet> sheet = new StyleSheet(mozilla::css::eAuthorSheetFeatures,
+                                              CORS_NONE, SRIMetadata());
     sheet->SetURIs(aDocument->GetDocumentURI(), nullptr, aBaseURI);
     sheet->SetPrincipal(aDocument->NodePrincipal());
     sheet->ParseSheetSync(aDocument->CSSLoader(),
@@ -1087,6 +1089,8 @@ void nsTreeSanitizer::SanitizeStyleSheet(const nsAString& aOriginal,
     // Mark the sheet as complete.
     MOZ_ASSERT(!sheet->HasForcedUniqueInner(),
                "should not get a forced unique inner during parsing");
+
+    NS_ConvertUTF16toUTF8 style(aOriginal);
     sheet->SetComplete();
     // Loop through all the rules found in the CSS text
     ErrorResult err;
@@ -1141,9 +1145,7 @@ void nsTreeSanitizer::SanitizeStyleSheet(const nsAString& aOriginal,
 
   NS_ConvertUTF16toUTF8 style(aOriginal);
   RefPtr<URLExtraData> extraData =
-      new URLExtraData(aBaseURI, aDocument->GetDocumentURI(),
-                       aDocument->NodePrincipal(),
-                       aDocument->GetReferrerPolicy());
+      new URLExtraData(aBaseURI, referrer, aDocument->NodePrincipal());
   auto sanitizationKind = StyleSanitizationKind::Standard;
   RefPtr<RawServoStyleSheetContents> contents =
       Servo_StyleSheet_FromUTF8Bytes(
@@ -1153,7 +1155,7 @@ void nsTreeSanitizer::SanitizeStyleSheet(const nsAString& aOriginal,
           css::SheetParsingMode::eAuthorSheetFeatures, extraData.get(),
           /* line_number_offset = */ 0, aDocument->GetCompatibilityMode(),
           /* reusable_sheets = */ nullptr,
-          /* use_counters = */ nullptr, sanitizationKind, &aSanitized)
+          sanitizationKind, &aSanitized)
           .Consume();
 
   if (mLogRemovals && aSanitized.Length() != aOriginal.Length()) {
@@ -1311,9 +1313,9 @@ bool nsTreeSanitizer::SanitizeURL(mozilla::dom::Element* aElement,
   nsIScriptSecurityManager* secMan = nsContentUtils::GetSecurityManager();
   uint32_t flags = nsIScriptSecurityManager::DISALLOW_INHERIT_PRINCIPAL;
 
-  nsCOMPtr<nsIURI> baseURI = aElement->GetBaseURI();
   nsCOMPtr<nsIURI> attrURI;
-  nsresult rv = NS_NewURI(getter_AddRefs(attrURI), v, nullptr, baseURI);
+  nsresult rv =
+      NS_NewURI(getter_AddRefs(attrURI), v, nullptr, aElement->GetBaseURI());
   if (NS_SUCCEEDED(rv)) {
     if (mCidEmbedsOnly && kNameSpaceID_None == aNamespace) {
       if (nsGkAtoms::src == aLocalName || nsGkAtoms::background == aLocalName) {
@@ -1408,9 +1410,8 @@ void nsTreeSanitizer::SanitizeChildren(nsINode* aRoot) {
         nsContentUtils::GetNodeTextContent(node, false, styleText);
 
         nsAutoString sanitizedStyle;
-        nsCOMPtr<nsIURI> baseURI = node->GetBaseURI();
         SanitizeStyleSheet(styleText, sanitizedStyle, aRoot->OwnerDoc(),
-                           baseURI);
+                           node->GetBaseURI());
         nsContentUtils::SetNodeTextContent(node, sanitizedStyle, true);
 
         AllowedAttributes allowed;

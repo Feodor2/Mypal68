@@ -33,7 +33,6 @@
 #include "ImageContainer.h"
 #include "GLContext.h"
 #include "GLContextProvider.h"
-#include "gfxPrefs.h"
 #include "LayersLogging.h"
 #include "mozilla/layers/TextureWrapperImage.h"
 #include "mozilla/layers/TextureClientRecycleAllocator.h"
@@ -162,9 +161,8 @@ bool PluginInstanceParent::InitMetadata(const nsACString& aMimeType,
   if (!owner) {
     return false;
   }
-  nsCOMPtr<nsIURI> baseUri(owner->GetBaseURI());
   return NS_SUCCEEDED(
-      NS_MakeAbsoluteURI(mSrcAttribute, aSrcAttribute, baseUri));
+      NS_MakeAbsoluteURI(mSrcAttribute, aSrcAttribute, owner->GetBaseURI()));
 }
 
 void PluginInstanceParent::ActorDestroy(ActorDestroyReason why) {
@@ -312,14 +310,14 @@ PluginInstanceParent::AnswerNPN_GetValue_NPNVdocumentOrigin(nsCString* value,
 }
 
 static inline bool AllowDirectBitmapSurfaceDrawing() {
-  if (!gfxPrefs::PluginAsyncDrawingEnabled()) {
+  if (!StaticPrefs::dom_ipc_plugins_asyncdrawing_enabled()) {
     return false;
   }
   return gfxPlatform::GetPlatform()->SupportsPluginDirectBitmapDrawing();
 }
 
 static inline bool AllowDirectDXGISurfaceDrawing() {
-  if (!gfxPrefs::PluginAsyncDrawingEnabled()) {
+  if (!StaticPrefs::dom_ipc_plugins_asyncdrawing_enabled()) {
     return false;
   }
 #if defined(XP_WIN)

@@ -17,6 +17,10 @@ TEST_HARNESS_FILES.xpcshell.dom.quota.test += [
     'test/head-shared.js',
 ]
 
+TEST_HARNESS_FILES.xpcshell.dom.quota.test.unit += [
+    'test/unit/head-shared.js',
+]
+
 TEST_DIRS += ['test/gtest']
 
 XPIDL_SOURCES += [
@@ -55,6 +59,7 @@ XPCOM_MANIFESTS += [
 UNIFIED_SOURCES += [
     'ActorsChild.cpp',
     'ActorsParent.cpp',
+    'Client.cpp',
     'FileStreams.cpp',
     'MemoryOutputStream.cpp',
     'nsIndexedDBProtocolHandler.cpp',

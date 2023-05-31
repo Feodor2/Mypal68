@@ -13,7 +13,7 @@
 #include "VPXDecoder.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/Move.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
 #include "mozilla/dom/DOMMozPromiseRequestHolder.h"
 #include "mozilla/dom/MediaCapabilitiesBinding.h"
@@ -165,7 +165,8 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
     // describing a single media codec. Otherwise, it MUST contain no
     // parameters.
     if (videoTracks.Length() != 1) {
-      promise->MaybeReject(NS_ERROR_DOM_TYPE_ERR);
+      promise->MaybeRejectWithTypeError<MSG_NO_CODECS_PARAMETER>(
+          NS_ConvertUTF8toUTF16(videoContainer->OriginalString()));
       return promise.forget();
     }
     MOZ_DIAGNOSTIC_ASSERT(videoTracks.ElementAt(0),
@@ -180,7 +181,8 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
     // describing a single media codec. Otherwise, it MUST contain no
     // parameters.
     if (audioTracks.Length() != 1) {
-      promise->MaybeReject(NS_ERROR_DOM_TYPE_ERR);
+      promise->MaybeRejectWithTypeError<MSG_NO_CODECS_PARAMETER>(
+          NS_ConvertUTF8toUTF16(audioContainer->OriginalString()));
       return promise.forget();
     }
     MOZ_DIAGNOSTIC_ASSERT(audioTracks.ElementAt(0),
@@ -532,7 +534,7 @@ already_AddRefed<layers::KnowsCompositor> MediaCapabilities::GetCompositor() {
 }
 
 bool MediaCapabilities::Enabled(JSContext* aCx, JSObject* aGlobal) {
-  return StaticPrefs::MediaCapabilitiesEnabled();
+  return StaticPrefs::media_media_capabilities_enabled();
 }
 
 JSObject* MediaCapabilities::WrapObject(JSContext* aCx,

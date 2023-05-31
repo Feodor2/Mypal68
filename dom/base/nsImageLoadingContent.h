@@ -19,10 +19,8 @@
 #include "nsIImageLoadingContent.h"
 #include "nsIRequest.h"
 #include "mozilla/ErrorResult.h"
-#include "nsIContentPolicy.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/Promise.h"
-#include "mozilla/net/ReferrerPolicy.h"
 #include "nsAttrValue.h"
 
 class nsIURI;
@@ -33,6 +31,7 @@ class imgRequestProxy;
 namespace mozilla {
 class AsyncEventDispatcher;
 namespace dom {
+struct BindContext;
 class Document;
 class Element;
 }  // namespace dom
@@ -44,6 +43,7 @@ class Element;
 #endif
 
 class nsImageLoadingContent : public nsIImageLoadingContent {
+ protected:
   template <typename T>
   using Maybe = mozilla::Maybe<T>;
   using Nothing = mozilla::Nothing;
@@ -211,12 +211,11 @@ class nsImageLoadingContent : public nsIImageLoadingContent {
    */
   virtual mozilla::CORSMode GetCORSMode();
 
-  virtual mozilla::net::ReferrerPolicy GetImageReferrerPolicy();
+  virtual mozilla::dom::ReferrerPolicy GetImageReferrerPolicy();
 
   // Subclasses are *required* to call BindToTree/UnbindFromTree.
-  void BindToTree(mozilla::dom::Document* aDocument, nsIContent* aParent,
-                  nsIContent* aBindingParent);
-  void UnbindFromTree(bool aDeep, bool aNullParent);
+  void BindToTree(mozilla::dom::BindContext&, nsINode& aParent);
+  void UnbindFromTree(bool aNullParent);
 
   nsresult OnLoadComplete(imgIRequest* aRequest, nsresult aStatus);
   void OnUnlockedDraw();

@@ -6,11 +6,13 @@
 #define _mozilla_dom_ClientInfo_h
 
 #include "mozilla/dom/ClientBinding.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/UniquePtr.h"
 
 namespace mozilla {
 
 namespace ipc {
+class CSPInfo;
 class PrincipalInfo;
 }  // namespace ipc
 
@@ -85,6 +87,12 @@ class ClientInfo final {
   // Get a main-thread nsIPrincipal for the client.  This may return nullptr
   // if the PrincipalInfo() fails to deserialize for some reason.
   nsCOMPtr<nsIPrincipal> GetPrincipal() const;
+
+  const Maybe<mozilla::ipc::CSPInfo>& GetCspInfo() const;
+  void SetCspInfo(const mozilla::ipc::CSPInfo& aCSPInfo);
+
+  const Maybe<mozilla::ipc::CSPInfo>& GetPreloadCspInfo() const;
+  void SetPreloadCspInfo(const mozilla::ipc::CSPInfo& aPreloadCSPInfo);
 };
 
 }  // namespace dom

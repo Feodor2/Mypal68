@@ -14,9 +14,6 @@
 #include "mozilla/dom/MediaDeviceInfo.h"
 #include "mozilla/Logging.h"
 #include "nsIComponentRegistrar.h"
-#include "nsIPrefService.h"
-#include "nsIPrefBranch.h"
-#include "nsITabSource.h"
 #include "prenv.h"
 
 #ifdef XP_WIN

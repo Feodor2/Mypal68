@@ -22,7 +22,8 @@ enum MIDIPortConnectionState {
   "pending"
 };
 
-[SecureContext, Pref="dom.webmidi.enabled"]
+[SecureContext, Pref="dom.webmidi.enabled",
+ Exposed=Window]
 interface MIDIPort : EventTarget {
   readonly attribute DOMString    id;
   readonly attribute DOMString?   manufacturer;

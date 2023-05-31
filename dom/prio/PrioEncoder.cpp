@@ -107,7 +107,7 @@ nsresult PrioEncoder::EncodeNative(const nsCString& aBatchID,
   }
 
   if (aData.Length() > gNumBooleans) {
-    return NS_ERROR_RANGE_ERR;
+    return NS_ERROR_INVALID_ARG;
   }
 
   PrioConfig prioConfig = PrioConfig_new(

@@ -29,8 +29,11 @@ dictionary BiquadFilterOptions : AudioNodeOptions {
 };
 
 [Pref="dom.webaudio.enabled",
- Constructor(BaseAudioContext context, optional BiquadFilterOptions options)]
+ Exposed=Window]
 interface BiquadFilterNode : AudioNode {
+    [Throws]
+    constructor(BaseAudioContext context,
+                optional BiquadFilterOptions options = {});
 
     attribute BiquadFilterType type;
     readonly attribute AudioParam frequency; // in Hertz
@@ -38,6 +41,7 @@ interface BiquadFilterNode : AudioNode {
     readonly attribute AudioParam Q; // Quality factor
     readonly attribute AudioParam gain; // in Decibels
 
+    [Throws]
     void getFrequencyResponse(Float32Array frequencyHz,
                               Float32Array magResponse,
                               Float32Array phaseResponse);
@@ -45,5 +49,5 @@ interface BiquadFilterNode : AudioNode {
 };
 
 // Mozilla extension
-BiquadFilterNode implements AudioNodePassThrough;
+BiquadFilterNode includes  AudioNodePassThrough;
 

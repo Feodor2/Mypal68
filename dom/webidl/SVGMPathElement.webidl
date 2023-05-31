@@ -9,8 +9,9 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGMPathElement : SVGElement {
 };
 
-SVGMPathElement implements SVGURIReference;
+SVGMPathElement includes SVGURIReference;
 

@@ -7,7 +7,6 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "jsfriendapi.h"
 #include "nsIScriptGlobalObject.h"
-#include "nsIXPConnect.h"
 #include "nsIScriptContext.h"
 #include "nsPIDOMWindow.h"
 #include "nsJSUtils.h"
@@ -31,7 +30,7 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTING_ADDREF(CallbackObject)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(CallbackObject)
 
-NS_IMPL_CYCLE_COLLECTION_CLASS(CallbackObject)
+NS_IMPL_CYCLE_COLLECTION_MULTI_ZONE_JSHOLDER_CLASS(CallbackObject)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(CallbackObject)
   tmp->ClearJSReferences();
@@ -155,10 +154,8 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
 
   JSObject* wrappedCallback = aCallback->CallbackPreserveColor();
   if (!wrappedCallback) {
-    aRv.ThrowDOMException(
-        NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        NS_LITERAL_CSTRING(
-            "Cannot execute callback from a nuked compartment."));
+    aRv.ThrowDOMException(NS_ERROR_DOM_NOT_SUPPORTED_ERR,
+                          "Cannot execute callback from a nuked compartment.");
     return;
   }
 
@@ -180,8 +177,8 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
       if (!win->HasActiveDocument()) {
         aRv.ThrowDOMException(
             NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-            NS_LITERAL_CSTRING("Refusing to execute function from window "
-                               "whose document is no longer active."));
+            "Refusing to execute function from window whose document is no "
+            "longer active.");
         return;
       }
       globalObject = win;
@@ -207,8 +204,7 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
   if (!globalObject->HasJSGlobal()) {
     aRv.ThrowDOMException(
         NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        NS_LITERAL_CSTRING("Refusing to execute function from global which is "
-                           "being torn down."));
+        "Refusing to execute function from global which is being torn down.");
     return;
   }
 
@@ -224,8 +220,8 @@ CallbackObject::CallSetup::CallSetup(CallbackObject* aCallback,
     if (!incumbent->HasJSGlobal()) {
       aRv.ThrowDOMException(
           NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-          NS_LITERAL_CSTRING("Refusing to execute function because our "
-                             "incumbent global is being torn down."));
+          "Refusing to execute function because our incumbent global is being "
+          "torn down.");
       return;
     }
     mAutoIncumbentScript.emplace(incumbent);
@@ -340,7 +336,7 @@ CallbackObject::CallSetup::~CallSetup() {
 
         // IsJSContextException shouldn't be true anymore because we will report
         // the exception on the JSContext ... so throw something else.
-        mErrorResult.ThrowWithCustomCleanup(NS_ERROR_UNEXPECTED);
+        mErrorResult.Throw(NS_ERROR_UNEXPECTED);
       }
     }
   }

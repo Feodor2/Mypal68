@@ -48,7 +48,7 @@ class MessageEvent final : public Event {
 
   static already_AddRefed<MessageEvent> Constructor(
       const GlobalObject& aGlobal, const nsAString& aType,
-      const MessageEventInit& aEventInit, ErrorResult& aRv);
+      const MessageEventInit& aEventInit);
 
   static already_AddRefed<MessageEvent> Constructor(
       EventTarget* aEventTarget, const nsAString& aType,

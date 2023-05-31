@@ -7,6 +7,7 @@
 #include "BrowserChild.h"
 
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -34,7 +35,7 @@ void CoalescedMouseData::Coalesce(const WidgetMouseEvent& aEvent,
   }
 
   if (aEvent.mMessage == eMouseMove &&
-      PointerEventHandler::IsPointerEventEnabled()) {
+      StaticPrefs::dom_w3c_pointer_events_enabled()) {
     // PointerEvent::getCoalescedEvents is only applied to pointermove events.
     if (!mCoalescedInputEvent->mCoalescedWidgetEvents) {
       mCoalescedInputEvent->mCoalescedWidgetEvents =

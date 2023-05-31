@@ -16,7 +16,6 @@
 #include "nsIContent.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIDocShell.h"
-#include "nsIDOMWindow.h"
 #include "nsIFrame.h"
 #include "prtime.h"
 
@@ -71,8 +70,7 @@ UIEvent::UIEvent(EventTarget* aOwner, nsPresContext* aPresContext,
 // static
 already_AddRefed<UIEvent> UIEvent::Constructor(const GlobalObject& aGlobal,
                                                const nsAString& aType,
-                                               const UIEventInit& aParam,
-                                               ErrorResult& aRv) {
+                                               const UIEventInit& aParam) {
   nsCOMPtr<EventTarget> t = do_QueryInterface(aGlobal.GetAsSupports());
   RefPtr<UIEvent> e = new UIEvent(t, nullptr, nullptr);
   bool trusted = e->Init(t);
@@ -130,34 +128,6 @@ void UIEvent::InitUIEvent(const nsAString& typeArg, bool canBubbleArg,
 
   mDetail = detailArg;
   mView = viewArg ? viewArg->GetOuterWindow() : nullptr;
-}
-
-int32_t UIEvent::PageX() const {
-  if (mEvent->mFlags.mIsPositionless) {
-    return 0;
-  }
-
-  if (mPrivateDataDuplicated) {
-    return mPagePoint.x;
-  }
-
-  return Event::GetPageCoords(mPresContext, mEvent, mEvent->mRefPoint,
-                              mClientPoint)
-      .x;
-}
-
-int32_t UIEvent::PageY() const {
-  if (mEvent->mFlags.mIsPositionless) {
-    return 0;
-  }
-
-  if (mPrivateDataDuplicated) {
-    return mPagePoint.y;
-  }
-
-  return Event::GetPageCoords(mPresContext, mEvent, mEvent->mRefPoint,
-                              mClientPoint)
-      .y;
 }
 
 already_AddRefed<nsINode> UIEvent::GetRangeParent() {

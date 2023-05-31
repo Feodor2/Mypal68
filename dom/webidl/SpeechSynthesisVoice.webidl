@@ -9,7 +9,8 @@
  * liability, trademark and document use rules apply.
  */
 
-[Pref="media.webspeech.synth.enabled"]
+[Pref="media.webspeech.synth.enabled",
+ Exposed=Window]
 interface SpeechSynthesisVoice {
   readonly attribute DOMString voiceURI;
   readonly attribute DOMString name;

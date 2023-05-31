@@ -17,7 +17,6 @@
 #include "nsClassHashtable.h"
 #include "nsRefPtrHashtable.h"
 #include "nsIObserver.h"
-#include "nsIPrefService.h"
 #include "nsIPrefBranch.h"
 
 #include "nsIDOMNavigatorUserMedia.h"
@@ -89,7 +88,7 @@ class MediaDevice : public nsIMediaDevice {
                     const MediaEnginePrefs& aPrefs,
                     const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
                     const char** aOutBadConstraint);
-  void SetTrack(const RefPtr<SourceMediaStream>& aStream, TrackID aTrackID,
+  void SetTrack(const RefPtr<SourceMediaTrack>& aTrack,
                 const PrincipalHandle& aPrincipal);
   nsresult Start();
   nsresult Reconfigure(const dom::MediaTrackConstraints& aConstraints,
@@ -98,10 +97,6 @@ class MediaDevice : public nsIMediaDevice {
   nsresult FocusOnSelectedSource();
   nsresult Stop();
   nsresult Deallocate();
-
-  void Pull(const RefPtr<SourceMediaStream>& aStream, TrackID aTrackID,
-            StreamTime aEndOfAppendedData, StreamTime aDesiredTime,
-            const PrincipalHandle& aPrincipal);
 
   void GetSettings(dom::MediaTrackSettings& aOutSettings) const;
 
@@ -126,6 +121,7 @@ class MediaDevice : public nsIMediaDevice {
   const RefPtr<AudioDeviceInfo> mSinkInfo;
   const dom::MediaDeviceKind mKind;
   const bool mScary;
+  const bool mIsFake;
   const nsString mType;
   const nsString mName;
   const nsString mID;
@@ -206,7 +202,7 @@ class MediaManager final : public nsIMediaManagerService,
                           dom::MediaStreamError& aError);
   MOZ_CAN_RUN_SCRIPT
   static void CallOnSuccess(GetUserMediaSuccessCallback& aCallback,
-                            DOMMediaStream& aStream);
+                            DOMMediaStream& aTrack);
 
   typedef nsTArray<RefPtr<MediaDevice>> MediaDeviceSet;
   typedef media::Refcountable<MediaDeviceSet> MediaDeviceSetRefCnt;
@@ -278,7 +274,18 @@ class MediaManager final : public nsIMediaManagerService,
                                const uint64_t aWindowId);
   static already_AddRefed<nsIWritableVariant> ToJSArray(
       MediaDeviceSet& aDevices);
-  static void GuessVideoDeviceGroupIDs(MediaManager::MediaDeviceSet& aDevices);
+
+  /**
+   * This function tries to guess the group id for a video device in aDevices
+   * based on the device name. If the name of only one audio device in aAudios
+   * contains the name of the video device, then, this video device will take
+   * the group id of the audio device. Since this is a guess we try to minimize
+   * the probability of false positive. If we fail to find a correlation we
+   * leave the video group id untouched. In that case the group id will be the
+   * video device name.
+   */
+  static void GuessVideoDeviceGroupIDs(MediaDeviceSet& aDevices,
+                                       const MediaDeviceSet& aAudios);
 
  private:
   enum class DeviceEnumerationType : uint8_t {

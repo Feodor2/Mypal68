@@ -4,7 +4,7 @@
 
 #define ENABLE_SET_CUBEB_BACKEND 1
 #include "GraphDriver.h"
-#include "MediaStreamGraphImpl.h"
+#include "MediaTrackGraphImpl.h"
 
 #include "gmock/gmock.h"
 #include "gtest/gtest-printers.h"
@@ -19,18 +19,18 @@
 using ::testing::Return;
 using namespace mozilla;
 
-RefPtr<MediaStreamGraphImpl> MakeMSGImpl() {
-  return MakeRefPtr<MediaStreamGraphImpl>(MediaStreamGraph::AUDIO_THREAD_DRIVER,
-                                          MediaStreamGraph::DIRECT_DRIVER,
-                                          44100, 2, nullptr);
+RefPtr<MediaTrackGraphImpl> MakeMTGImpl() {
+  return MakeRefPtr<MediaTrackGraphImpl>(MediaTrackGraph::AUDIO_THREAD_DRIVER,
+                                         MediaTrackGraph::DIRECT_DRIVER, 44100,
+                                         2, nullptr);
 }
 
-TEST(TestAudioCallbackDriver, Revive)
+TEST(TestAudioCallbackDriver, StartStop)
 {
   MockCubeb* mock = new MockCubeb();
   mozilla::CubebUtils::ForceSetCubebContext(mock->AsCubebContext());
 
-  RefPtr<MediaStreamGraphImpl> graph = MakeMSGImpl();
+  RefPtr<MediaTrackGraphImpl> graph = MakeMTGImpl();
   EXPECT_TRUE(!!graph->mDriver) << "AudioCallbackDriver created.";
 
   AudioCallbackDriver* driver = graph->mDriver->AsAudioCallbackDriver();
@@ -43,24 +43,15 @@ TEST(TestAudioCallbackDriver, Revive)
   EXPECT_TRUE(driver->ThreadRunning()) << "Verify thread is running";
   EXPECT_TRUE(driver->IsStarted()) << "Verify thread is started";
 
-  driver->Shutdown();
-  EXPECT_FALSE(driver->ThreadRunning()) << "Verify thread is not running";
-  EXPECT_FALSE(driver->IsStarted()) << "Verify thread is not started";
-
-  driver->Revive();
-  std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  EXPECT_TRUE(driver->ThreadRunning()) << "Verify thread is running";
-  EXPECT_TRUE(driver->IsStarted()) << "Verify thread is started";
-
   // This will block untill all events has been executed.
   driver->AsAudioCallbackDriver()->Shutdown();
   EXPECT_FALSE(driver->ThreadRunning()) << "Verify thread is not running";
   EXPECT_FALSE(driver->IsStarted()) << "Verify thread is not started";
 
-  // This is required because the MSG and the driver hold references between
+  // This is required because the MTG and the driver hold references between
   // each other. The driver has a reference to SharedThreadPool which would
   // block for ever if it was not cleared. The same logic exists in
-  // MediaStreamGraphShutDownRunnable
+  // MediaTrackGraphShutDownRunnable
   graph->mDriver = nullptr;
 }
 #undef ENABLE_SET_CUBEB_BACKEND

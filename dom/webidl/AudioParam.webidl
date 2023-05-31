@@ -14,7 +14,8 @@ enum AutomationRate {
     "k-rate"
 };
 
-[Pref="dom.webaudio.enabled"]
+[Pref="dom.webaudio.enabled",
+ Exposed=Window]
 interface AudioParam {
 
                     attribute float value;
@@ -58,5 +59,5 @@ partial interface AudioParam {
 partial interface AudioParam {
   // This attribute is used for mochitest only.
   [ChromeOnly]
-  readonly attribute boolean isStreamSuspended;
+  readonly attribute boolean isTrackSuspended;
 };

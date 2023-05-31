@@ -3,12 +3,15 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 #include "XULPersist.h"
+#include "nsIStringEnumerator.h"
+#include "nsIXULWindow.h"
 
 #ifdef MOZ_NEW_XULSTORE
 #  include "mozilla/XULStore.h"
 #else
 #  include "nsIXULStore.h"
 #endif
+#include "mozilla/BasePrincipal.h"
 
 namespace mozilla {
 namespace dom {
@@ -17,7 +20,7 @@ static bool ShouldPersistAttribute(Element* aElement, nsAtom* aAttribute) {
   if (aElement->IsXULElement(nsGkAtoms::window)) {
     // This is not an element of the top document, its owner is
     // not an nsXULWindow. Persist it.
-    if (aElement->OwnerDoc()->GetParentDocument()) {
+    if (aElement->OwnerDoc()->GetInProcessParentDocument()) {
       return true;
     }
     // The following attributes of xul:window should be handled in
@@ -78,7 +81,7 @@ void XULPersist::Persist(Element* aElement, int32_t aNameSpaceID,
     return;
   }
   // For non-chrome documents, persistance is simply broken
-  if (!nsContentUtils::IsSystemPrincipal(mDocument->NodePrincipal())) {
+  if (!mDocument->NodePrincipal()->IsSystemPrincipal()) {
     return;
   }
 
@@ -148,7 +151,7 @@ nsresult XULPersist::ApplyPersistentAttributes() {
     return NS_ERROR_NOT_AVAILABLE;
   }
   // For non-chrome documents, persistance is simply broken
-  if (!nsContentUtils::IsSystemPrincipal(mDocument->NodePrincipal())) {
+  if (!mDocument->NodePrincipal()->IsSystemPrincipal()) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 

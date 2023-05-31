@@ -70,7 +70,7 @@ class AudioBlock : private AudioChunk {
 
   ThreadSharedObject* GetBuffer() const { return mBuffer; }
   void SetBuffer(ThreadSharedObject* aNewBuffer);
-  void SetNull(StreamTime aDuration) {
+  void SetNull(TrackTime aDuration) {
     MOZ_ASSERT(aDuration == WEBAUDIO_BLOCK_SIZE);
     SetBuffer(nullptr);
     mChannelData.Clear();
@@ -102,7 +102,7 @@ class AudioBlock : private AudioChunk {
 
     for (uint32_t i = 0, length = mChannelData.Length(); i < length; ++i) {
       const float* channel = static_cast<const float*>(mChannelData[i]);
-      for (StreamTime frame = 0; frame < mDuration; ++frame) {
+      for (TrackTime frame = 0; frame < mDuration; ++frame) {
         if (fabs(channel[frame]) >= FLT_MIN) {
           return false;
         }

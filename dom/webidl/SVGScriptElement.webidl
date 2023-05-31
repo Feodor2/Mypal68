@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGScriptElement : SVGElement {
   [SetterThrows]
   attribute DOMString type;
@@ -18,5 +19,5 @@ interface SVGScriptElement : SVGElement {
   attribute DOMString? crossOrigin;
 };
 
-SVGScriptElement implements SVGURIReference;
+SVGScriptElement includes SVGURIReference;
 

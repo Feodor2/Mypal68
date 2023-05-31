@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ServiceWorkerScriptCache.h"
+
+#include "js/Array.h"  // JS::GetArrayLength
 #include "mozilla/SystemGroup.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/CacheBinding.h"
@@ -16,13 +18,13 @@
 #include "mozilla/ipc/PBackgroundSharedTypes.h"
 #include "mozilla/net/CookieSettings.h"
 #include "nsICacheInfoChannel.h"
-#include "nsIHttpChannelInternal.h"
 #include "nsIStreamLoader.h"
 #include "nsIThreadRetargetableRequest.h"
+#include "nsIUUIDGenerator.h"
+#include "nsIXPConnect.h"
 
 #include "nsIInputStreamPump.h"
 #include "nsIPrincipal.h"
-#include "nsIScriptError.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
@@ -388,7 +390,7 @@ class CompareManager final : public PromiseNativeHandler {
     }
 
     uint32_t len = 0;
-    if (!JS_GetArrayLength(aCx, obj, &len)) {
+    if (!JS::GetArrayLength(aCx, obj, &len)) {
       return;
     }
 
@@ -557,7 +559,7 @@ class CompareManager final : public PromiseNativeHandler {
         new Response(aCache->GetGlobalObject(), ir, nullptr);
 
     RequestOrUSVString request;
-    request.SetAsUSVString().Rebind(aCN->URL().Data(), aCN->URL().Length());
+    request.SetAsUSVString().ShareOrDependUpon(aCN->URL());
 
     // For now we have to wait until the Put Promise is fulfilled before we can
     // continue since Cache does not yet support starting a read that is being
@@ -619,7 +621,7 @@ nsresult CompareNetwork::Initialize(nsIPrincipal* aPrincipal,
   MOZ_ASSERT(NS_IsMainThread());
 
   nsCOMPtr<nsIURI> uri;
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), aURL, nullptr, nullptr);
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), aURL);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -980,7 +982,7 @@ nsresult CompareCache::Initialize(Cache* const aCache, const nsAString& aURL) {
   jsapi.Init();
 
   RequestOrUSVString request;
-  request.SetAsUSVString().Rebind(aURL.Data(), aURL.Length());
+  request.SetAsUSVString().ShareOrDependUpon(aURL);
   ErrorResult error;
   CacheQueryOptions params;
   RefPtr<Promise> promise = aCache->Match(jsapi.cx(), request, params, error);

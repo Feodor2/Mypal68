@@ -51,9 +51,8 @@ class XULFrameElement final : public nsXULElement, public nsFrameLoaderOwner {
                         mozilla::ErrorResult& rv);
 
   // nsIContent
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep, bool aNullParent) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent) override;
   virtual void DestroyContent() override;
 
   virtual nsresult AfterSetAttr(int32_t aNamespaceID, nsAtom* aName,

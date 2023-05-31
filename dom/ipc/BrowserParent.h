@@ -136,10 +136,6 @@ class BrowserParent final : public PBrowserParent,
 
   static TabId GetTabIdFrom(nsIDocShell* docshell);
 
-  static bool AreRecordReplayTabsActive() {
-    return gNumActiveRecordReplayTabs != 0;
-  }
-
   const TabId GetTabId() const { return mTabId; }
 
   ContentParent* Manager() const { return mManager; }
@@ -276,31 +272,54 @@ class BrowserParent final : public PBrowserParent,
                                                       const nsString& aTitle,
                                                       nsIURI* aDocURI);
 
+  mozilla::ipc::IPCResult RecvOnStateChange(
+      const Maybe<WebProgressData>& awebProgressData,
+      const RequestData& aRequestData, const uint32_t aStateFlags,
+      const nsresult aStatus,
+      const Maybe<WebProgressStateChangeData>& aStateChangeData);
+
   mozilla::ipc::IPCResult RecvOnProgressChange(
       const Maybe<WebProgressData>& aWebProgressData,
       const RequestData& aRequestData, const int32_t aCurSelfProgress,
       const int32_t aMaxSelfProgress, const int32_t aCurTotalProgres,
       const int32_t aMaxTotalProgress);
 
+  mozilla::ipc::IPCResult RecvOnLocationChange(
+      const Maybe<WebProgressData>& aWebProgressData,
+      const RequestData& aRequestData, nsIURI* aLocation, const uint32_t aFlags,
+      const bool aCanGoBack, const bool aCanGoForward,
+      const Maybe<WebProgressLocationChangeData>& aLocationChangeData);
+
   mozilla::ipc::IPCResult RecvOnStatusChange(
       const Maybe<WebProgressData>& aWebProgressData,
       const RequestData& aRequestData, const nsresult aStatus,
       const nsString& aMessage);
 
+  mozilla::ipc::IPCResult RecvOnSecurityChange(
+      const Maybe<WebProgressData>& aWebProgressData,
+      const RequestData& aRequestData, const uint32_t aState,
+      const Maybe<WebProgressSecurityChangeData>& aSecurityChangeData);
+
   mozilla::ipc::IPCResult RecvOnContentBlockingEvent(
       const Maybe<WebProgressData>& aWebProgressData,
       const RequestData& aRequestData, const uint32_t& aEvent);
 
+  mozilla::ipc::IPCResult RecvNavigationFinished();
+
+  bool GetWebProgressListener(nsIBrowser** aOutBrowser,
+                              nsIWebProgress** aOutManager,
+                              nsIWebProgressListener** aOutListener);
+
   void ReconstructWebProgressAndRequest(
       nsIWebProgress* aManager, const Maybe<WebProgressData>& aWebProgressData,
-      const RequestData& aRequestData,
-      nsCOMPtr<nsIWebProgress>& aOutWebProgress,
-      nsCOMPtr<nsIRequest>& aOutRequest);
+      const RequestData& aRequestData, nsIWebProgress** aOutWebProgress,
+      nsIRequest** aOutRequest);
 
   mozilla::ipc::IPCResult RecvSessionStoreUpdate(
       const Maybe<nsCString>& aDocShellCaps, const Maybe<bool>& aPrivatedMode,
       const nsTArray<nsCString>& aPositions,
-      const nsTArray<int32_t>& aPositionDescendants, const uint32_t& aFlushId);
+      const nsTArray<int32_t>& aPositionDescendants, const uint32_t& aFlushId,
+      const bool& aIsFinal);
 
   mozilla::ipc::IPCResult RecvBrowserFrameOpenWindow(
       PBrowserParent* aOpener, const nsString& aURL, const nsString& aName,
@@ -448,11 +467,9 @@ class BrowserParent final : public PBrowserParent,
   virtual mozilla::ipc::IPCResult RecvPWindowGlobalConstructor(
       PWindowGlobalParent* aActor, const WindowGlobalInit& aInit) override;
 
-  PBrowserBridgeParent* AllocPBrowserBridgeParent(
+  already_AddRefed<PBrowserBridgeParent> AllocPBrowserBridgeParent(
       const nsString& aPresentationURL, const nsString& aRemoteType,
       BrowsingContext* aBrowsingContext, const uint32_t& aChromeFlags);
-
-  bool DeallocPBrowserBridgeParent(PBrowserBridgeParent* aActor);
 
   virtual mozilla::ipc::IPCResult RecvPBrowserBridgeConstructor(
       PBrowserBridgeParent* aActor, const nsString& aPresentationURL,
@@ -714,7 +731,7 @@ class BrowserParent final : public PBrowserParent,
                                             const int32_t& aCy);
 
   mozilla::ipc::IPCResult RecvShowCanvasPermissionPrompt(
-      const nsCString& aFirstPartyURI, const bool& aHideDoorHanger);
+      const nsCString& aOrigin, const bool& aHideDoorHanger);
 
   mozilla::ipc::IPCResult RecvSetSystemFont(const nsCString& aFontName);
   mozilla::ipc::IPCResult RecvGetSystemFont(nsCString* aFontName);
@@ -911,15 +928,6 @@ class BrowserParent final : public PBrowserParent,
   // was not ready to handle it. We will resend it when the next time we fire a
   // mouse event and the BrowserChild is ready.
   bool mIsMouseEnterIntoWidgetEventSuppressed;
-
-  // How many record/replay tabs have active docshells in this process.
-  static size_t gNumActiveRecordReplayTabs;
-
-  // Whether this tab is contributing to gNumActiveRecordReplayTabs.
-  bool mIsActiveRecordReplayTab;
-
-  // Update whether this is an active record/replay tab.
-  void SetIsActiveRecordReplayTab(bool aIsActive);
 };
 
 struct MOZ_STACK_CLASS BrowserParent::AutoUseNewTab final {

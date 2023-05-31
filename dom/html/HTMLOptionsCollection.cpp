@@ -19,7 +19,6 @@
 #include "mozilla/dom/Document.h"
 #include "nsIFormControlFrame.h"
 #include "nsIForm.h"
-#include "nsIFormProcessor.h"
 #include "nsLayoutUtils.h"
 #include "nsMappedAttributes.h"
 #include "nsServiceManagerUtils.h"

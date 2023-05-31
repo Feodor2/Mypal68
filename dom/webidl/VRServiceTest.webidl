@@ -6,7 +6,8 @@
  */
 
 [Pref="dom.vr.test.enabled",
- HeaderFile="mozilla/dom/VRServiceTest.h"]
+ HeaderFile="mozilla/dom/VRServiceTest.h",
+ Exposed=Window]
 interface VRMockDisplay {
   void setEyeResolution(unsigned long aRenderWidth, unsigned long aRenderHeight);
   void setEyeParameter(VREye eye, double offsetX, double offsetY, double offsetZ,
@@ -20,7 +21,8 @@ interface VRMockDisplay {
 };
 
 [Pref="dom.vr.test.enabled",
- HeaderFile="mozilla/dom/VRServiceTest.h"]
+ HeaderFile="mozilla/dom/VRServiceTest.h",
+ Exposed=Window]
 interface VRMockController {
   void newButtonEvent(unsigned long button, boolean pressed);
   void newAxisMoveEvent(unsigned long axis, double value);
@@ -30,7 +32,8 @@ interface VRMockController {
 };
 
 [Pref="dom.vr.test.enabled",
- HeaderFile="mozilla/dom/VRServiceTest.h"]
+ HeaderFile="mozilla/dom/VRServiceTest.h",
+ Exposed=Window]
 interface VRServiceTest {
   [Throws, NewObject]
   Promise<VRMockDisplay> attachVRDisplay(DOMString id);

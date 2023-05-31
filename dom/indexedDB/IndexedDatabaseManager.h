@@ -93,11 +93,17 @@ class IndexedDatabaseManager final {
 
   static uint32_t MaxSerializedMsgSize();
 
+  static bool PreprocessingEnabled();
+
+  // The maximum number of extra entries to preload in an Cursor::OpenOp or
+  // Cursor::ContinueOp.
+  static int32_t MaxPreloadExtraRecords();
+
   void ClearBackgroundActor();
 
-  already_AddRefed<FileManager> GetFileManager(PersistenceType aPersistenceType,
-                                               const nsACString& aOrigin,
-                                               const nsAString& aDatabaseName);
+  MOZ_MUST_USE RefPtr<FileManager> GetFileManager(
+      PersistenceType aPersistenceType, const nsACString& aOrigin,
+      const nsAString& aDatabaseName);
 
   void AddFileManager(FileManager* aFileManager);
 

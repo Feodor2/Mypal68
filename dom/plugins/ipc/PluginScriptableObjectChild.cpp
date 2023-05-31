@@ -689,8 +689,8 @@ mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerHasMethod(
 }
 
 mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerInvoke(
-    const PluginIdentifier& aId, InfallibleTArray<Variant>&& aArgs,
-    Variant* aResult, bool* aSuccess) {
+    const PluginIdentifier& aId, nsTArray<Variant>&& aArgs, Variant* aResult,
+    bool* aSuccess) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
@@ -758,7 +758,7 @@ mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerInvoke(
 }
 
 mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerInvokeDefault(
-    InfallibleTArray<Variant>&& aArgs, Variant* aResult, bool* aSuccess) {
+    nsTArray<Variant>&& aArgs, Variant* aResult, bool* aSuccess) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
@@ -961,7 +961,7 @@ mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerRemoveProperty(
 }
 
 mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerEnumerate(
-    InfallibleTArray<PluginIdentifier>* aProperties, bool* aSuccess) {
+    nsTArray<PluginIdentifier>* aProperties, bool* aSuccess) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 
@@ -998,7 +998,7 @@ mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerEnumerate(
 }
 
 mozilla::ipc::IPCResult PluginScriptableObjectChild::AnswerConstruct(
-    InfallibleTArray<Variant>&& aArgs, Variant* aResult, bool* aSuccess) {
+    nsTArray<Variant>&& aArgs, Variant* aResult, bool* aSuccess) {
   AssertPluginThread();
   PluginInstanceChild::AutoStackHelper guard(mInstance);
 

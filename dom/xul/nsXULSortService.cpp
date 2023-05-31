@@ -9,7 +9,6 @@
 #include "nsCOMArray.h"
 #include "nsCOMPtr.h"
 #include "nsIContent.h"
-#include "nsIServiceManager.h"
 #include "nsGkAtoms.h"
 #include "nsNameSpaceManager.h"
 #include "nsXULContentUtils.h"
@@ -24,6 +23,7 @@
 
 #include "mozilla/dom/Element.h"
 
+using mozilla::dom::Element;
 const unsigned long SORT_COMPARECASE = 0x0001;
 const unsigned long SORT_INTEGER = 0x0100;
 

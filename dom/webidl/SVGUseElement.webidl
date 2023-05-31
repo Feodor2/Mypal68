@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGUseElement : SVGGraphicsElement {
   [Constant]
   readonly attribute SVGAnimatedLength x;
@@ -22,4 +23,4 @@ interface SVGUseElement : SVGGraphicsElement {
   //readonly attribute SVGElementInstance animatedInstanceRoot;
 };
 
-SVGUseElement implements SVGURIReference;
+SVGUseElement includes SVGURIReference;

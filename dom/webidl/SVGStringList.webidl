@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGStringList {
   readonly attribute unsigned long length;
   readonly attribute unsigned long numberOfItems;

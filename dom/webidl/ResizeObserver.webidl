@@ -15,12 +15,14 @@ dictionary ResizeObserverOptions {
     ResizeObserverBoxOptions box = "content-box";
 };
 
-[Constructor(ResizeObserverCallback callback),
- Exposed=Window,
+[Exposed=Window,
  Pref="layout.css.resizeobserver.enabled"]
 interface ResizeObserver {
     [Throws]
-    void observe(Element target, optional ResizeObserverOptions options);
+    constructor(ResizeObserverCallback callback);
+
+    [Throws]
+    void observe(Element target, optional ResizeObserverOptions options = {});
     [Throws]
     void unobserve(Element target);
     void disconnect();
@@ -28,8 +30,8 @@ interface ResizeObserver {
 
 callback ResizeObserverCallback = void (sequence<ResizeObserverEntry> entries, ResizeObserver observer);
 
-[Constructor(Element target),
- Pref="layout.css.resizeobserver.enabled"]
+[Pref="layout.css.resizeobserver.enabled",
+ Exposed=Window]
 interface ResizeObserverEntry {
     readonly attribute Element target;
     readonly attribute DOMRectReadOnly contentRect;
@@ -37,7 +39,8 @@ interface ResizeObserverEntry {
     readonly attribute ResizeObserverSize contentBoxSize;
 };
 
-[Pref="layout.css.resizeobserver.enabled"]
+[Pref="layout.css.resizeobserver.enabled",
+ Exposed=Window]
 interface ResizeObserverSize {
     readonly attribute unrestricted double inlineSize;
     readonly attribute unrestricted double blockSize;

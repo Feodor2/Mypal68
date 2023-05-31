@@ -217,12 +217,8 @@ nsresult ConvertDetailsUpdate(JSContext* aCx,
 
 void ConvertOptions(const PaymentOptions& aOptions,
                     IPCPaymentOptions& aIPCOption) {
-  uint8_t shippingTypeIndex = static_cast<uint8_t>(aOptions.mShippingType);
-  nsString shippingType(NS_LITERAL_STRING("shipping"));
-  if (shippingTypeIndex < ArrayLength(PaymentShippingTypeValues::strings)) {
-    shippingType.AssignASCII(
-        PaymentShippingTypeValues::strings[shippingTypeIndex].value);
-  }
+  NS_ConvertASCIItoUTF16 shippingType(
+      PaymentShippingTypeValues::GetString(aOptions.mShippingType));
   aIPCOption =
       IPCPaymentOptions(aOptions.mRequestPayerName, aOptions.mRequestPayerEmail,
                         aOptions.mRequestPayerPhone, aOptions.mRequestShipping,
@@ -498,7 +494,8 @@ nsresult PaymentRequestManager::CreatePayment(
 
   nsCOMPtr<nsPIDOMWindowOuter> outerWindow = aWindow->GetOuterWindow();
   MOZ_ASSERT(outerWindow);
-  if (nsCOMPtr<nsPIDOMWindowOuter> topOuterWindow = outerWindow->GetTop()) {
+  if (nsCOMPtr<nsPIDOMWindowOuter> topOuterWindow =
+          outerWindow->GetInProcessTop()) {
     outerWindow = topOuterWindow;
   }
   uint64_t topOuterWindowId = outerWindow->WindowID();
@@ -543,11 +540,8 @@ nsresult PaymentRequestManager::CompletePayment(
   if (aTimedOut) {
     completeStatusString.AssignLiteral("timeout");
   } else {
-    uint8_t completeIndex = static_cast<uint8_t>(aComplete);
-    if (completeIndex < ArrayLength(PaymentCompleteValues::strings)) {
-      completeStatusString.AssignASCII(
-          PaymentCompleteValues::strings[completeIndex].value);
-    }
+    completeStatusString.AssignASCII(
+        PaymentCompleteValues::GetString(aComplete));
   }
 
   nsAutoString requestId;
@@ -643,31 +637,30 @@ nsresult PaymentRequestManager::RespondPayment(
     }
     case IPCPaymentActionResponse::TIPCPaymentShowActionResponse: {
       const IPCPaymentShowActionResponse& response = aResponse;
-      nsresult rejectedReason = NS_ERROR_DOM_ABORT_ERR;
+      ErrorResult rejectedReason;
       ResponseData responseData;
       ConvertResponseData(response.data(), responseData);
       switch (response.status()) {
         case nsIPaymentActionResponse::PAYMENT_ACCEPTED: {
-          rejectedReason = NS_OK;
           break;
         }
         case nsIPaymentActionResponse::PAYMENT_REJECTED: {
-          rejectedReason = NS_ERROR_DOM_ABORT_ERR;
+          rejectedReason.Throw(NS_ERROR_DOM_ABORT_ERR);
           break;
         }
         case nsIPaymentActionResponse::PAYMENT_NOTSUPPORTED: {
-          rejectedReason = NS_ERROR_DOM_NOT_SUPPORTED_ERR;
+          rejectedReason.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
           break;
         }
         default: {
-          rejectedReason = NS_ERROR_UNEXPECTED;
+          rejectedReason.Throw(NS_ERROR_UNEXPECTED);
           break;
         }
       }
       aRequest->RespondShowPayment(response.methodName(), responseData,
                                    response.payerName(), response.payerEmail(),
                                    response.payerPhone(), rejectedReason);
-      if (NS_FAILED(rejectedReason)) {
+      if (rejectedReason.Failed()) {
         NotifyRequestDone(aRequest);
       }
       break;

@@ -18,7 +18,6 @@
 #include "mozilla/Services.h"
 #include "nsNativeCharsetUtils.h"
 #include "nsIXULAppInfo.h"
-#include "nsIConsoleService.h"
 #include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
 #include "runnable_utils.h"
@@ -30,8 +29,6 @@
 #include "nsDirectoryServiceUtils.h"
 #include "nsDirectoryServiceDefs.h"
 #include "nsHashKeys.h"
-#include "nsIFile.h"
-#include "nsISimpleEnumerator.h"
 #include "nsThreadUtils.h"
 #include "GMPCrashHelper.h"
 

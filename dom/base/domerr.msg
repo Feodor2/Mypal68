@@ -34,7 +34,6 @@ DOM4_MSG_DEF(NotAllowedError, "The request is not allowed by the user agent or t
 
 /* XXX Should be JavaScript native TypeError */
 DOM4_MSG_DEF(TypeError, "The method parameter is missing or invalid.", NS_ERROR_TYPE_ERR)
-DOM4_MSG_DEF(RangeError, "The method parameter is out of valid range.", NS_ERROR_RANGE_ERR)
 
 /* StringEncoding API errors from http://wiki.whatwg.org/wiki/StringEncoding */
 DOM4_MSG_DEF(EncodingError, "The given encoding is not supported.", NS_ERROR_DOM_ENCODING_NOT_SUPPORTED_ERR)
@@ -158,7 +157,8 @@ DOM4_MSG_DEF(SyntaxError, "Invalid header name.", NS_ERROR_DOM_INVALID_HEADER_NA
 DOM4_MSG_DEF(InvalidStateError, "XMLHttpRequest has an invalid context.", NS_ERROR_DOM_INVALID_STATE_XHR_HAS_INVALID_CONTEXT)
 DOM4_MSG_DEF(InvalidStateError, "XMLHttpRequest state must be OPENED.", NS_ERROR_DOM_INVALID_STATE_XHR_MUST_BE_OPENED)
 DOM4_MSG_DEF(InvalidStateError, "XMLHttpRequest must not be sending.", NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_SENDING)
-DOM4_MSG_DEF(InvalidStateError, "XMLHttpRequest state must not be LOADING or DONE.", NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE)
+DOM4_MSG_DEF(InvalidStateError, "Cannot set 'responseType' property on XMLHttpRequest after 'send()' (when its state is LOADING or DONE).", NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE_RESPONSE_TYPE)
+DOM4_MSG_DEF(InvalidStateError, "Cannot call 'overrideMimeType()' on XMLHttpRequest after 'send()' (when its state is LOADING or DONE).", NS_ERROR_DOM_INVALID_STATE_XHR_MUST_NOT_BE_LOADING_OR_DONE_OVERRIDE_MIME_TYPE)
 DOM4_MSG_DEF(InvalidStateError, "responseXML is only available if responseType is '' or 'document'.", NS_ERROR_DOM_INVALID_STATE_XHR_HAS_WRONG_RESPONSETYPE_FOR_RESPONSEXML)
 DOM4_MSG_DEF(InvalidStateError, "responseText is only available if responseType is '' or 'text'.", NS_ERROR_DOM_INVALID_STATE_XHR_HAS_WRONG_RESPONSETYPE_FOR_RESPONSETEXT)
 DOM4_MSG_DEF(InvalidAccessError, "synchronous XMLHttpRequests do not support timeout and responseType.", NS_ERROR_DOM_INVALID_ACCESS_XHR_TIMEOUT_AND_RESPONSETYPE_UNSUPPORTED_FOR_SYNC)
@@ -167,3 +167,11 @@ DOM4_MSG_DEF(InvalidAccessError, "synchronous XMLHttpRequests do not support tim
 DOM4_MSG_DEF(EncodingError, "Node bound to inactive document.", NS_ERROR_DOM_IMAGE_INACTIVE_DOCUMENT)
 DOM4_MSG_DEF(EncodingError, "Invalid image request.", NS_ERROR_DOM_IMAGE_INVALID_REQUEST)
 DOM4_MSG_DEF(EncodingError, "Invalid encoded image data.", NS_ERROR_DOM_IMAGE_BROKEN)
+
+/* Editing command errors. */
+DOM4_MSG_DEF(InvalidStateError, "execCommand is only supported on HTML documents.", NS_ERROR_DOM_INVALID_STATE_DOCUMENT_EXEC_COMMAND)
+DOM4_MSG_DEF(InvalidStateError, "queryCommandEnabled is only supported on HTML documents.", NS_ERROR_DOM_INVALID_STATE_DOCUMENT_QUERY_COMMAND_ENABLED)
+DOM4_MSG_DEF(InvalidStateError, "queryCommandIndeterm is only supported on HTML documents.", NS_ERROR_DOM_INVALID_STATE_DOCUMENT_QUERY_COMMAND_INDETERM)
+DOM4_MSG_DEF(InvalidStateError, "queryCommandState is only supported on HTML documents.", NS_ERROR_DOM_INVALID_STATE_DOCUMENT_QUERY_COMMAND_STATE)
+DOM4_MSG_DEF(InvalidStateError, "queryCommandSupported is only supported on HTML documents.", NS_ERROR_DOM_INVALID_STATE_DOCUMENT_QUERY_COMMAND_SUPPORTED)
+DOM4_MSG_DEF(InvalidStateError, "queryCommandValue is only supported on HTML documents.", NS_ERROR_DOM_INVALID_STATE_DOCUMENT_QUERY_COMMAND_VALUE)

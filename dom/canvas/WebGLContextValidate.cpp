@@ -7,12 +7,11 @@
 #include <algorithm>
 #include "GLSLANG/ShaderLang.h"
 #include "CanvasUtils.h"
-#include "gfxPrefs.h"
 #include "GLContext.h"
 #include "jsfriendapi.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/Preferences.h"
-#include "nsIObserverService.h"
+#include "mozilla/StaticPrefs_webgl.h"
 #include "nsPrintfCString.h"
 #include "WebGLActiveInfo.h"
 #include "WebGLBuffer.h"
@@ -287,9 +286,11 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
     return false;
   }
 
-  mDisableExtensions = gfxPrefs::WebGLDisableExtensions();
-  mLoseContextOnMemoryPressure = gfxPrefs::WebGLLoseContextOnMemoryPressure();
-  mCanLoseContextInForeground = gfxPrefs::WebGLCanLoseContextInForeground();
+  mDisableExtensions = StaticPrefs::webgl_disable_extensions();
+  mLoseContextOnMemoryPressure =
+      StaticPrefs::webgl_lose_context_on_memory_pressure();
+  mCanLoseContextInForeground =
+      StaticPrefs::webgl_can_lose_context_in_foreground();
 
   // These are the default values, see 6.2 State tables in the
   // OpenGL ES 2.0.25 spec.
@@ -470,20 +471,8 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
   gl->fGetFloatv(driverPName, mGLAliasedPointSizeRange);
 
   ////////////////
-  bool shouldResistFingerprinting =
-      mCanvasElement ?
-                     // If we're constructed from a canvas element
-          nsContentUtils::ShouldResistFingerprinting(GetOwnerDoc())
-                     :
-                     // If we're constructed from an offscreen canvas
-          (mOffscreenCanvas->GetOwnerGlobal()
-               ? nsContentUtils::ShouldResistFingerprinting(
-                     mOffscreenCanvas->GetOwnerGlobal()->PrincipalOrNull())
-               :
-               // Last resort, just check the global preference
-               nsContentUtils::ShouldResistFingerprinting());
 
-  if (gfxPrefs::WebGLMinCapabilityMode()) {
+  if (StaticPrefs::webgl_min_capability_mode()) {
     bool ok = true;
 
     ok &= RestrictCap(&mGLMaxVertexTextureImageUnits,
@@ -516,7 +505,7 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
     }
 
     mDisableFragHighP = true;
-  } else if (shouldResistFingerprinting) {
+  } else if (ShouldResistFingerprinting()) {
     bool ok = true;
 
     ok &= RestrictCap(&mGLMaxTextureSize, kCommonMaxTextureSize);
@@ -660,7 +649,7 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
 
   mNeedsIndexValidation =
       !gl->IsSupported(gl::GLFeature::robust_buffer_access_behavior);
-  switch (gfxPrefs::WebGLForceIndexValidation()) {
+  switch (StaticPrefs::webgl_force_index_validation()) {
     case -1:
       mNeedsIndexValidation = false;
       break;
@@ -668,7 +657,7 @@ bool WebGLContext::InitAndValidateGL(FailureReason* const out_failReason) {
       mNeedsIndexValidation = true;
       break;
     default:
-      MOZ_ASSERT(gfxPrefs::WebGLForceIndexValidation() == 0);
+      MOZ_ASSERT(StaticPrefs::webgl_force_index_validation() == 0);
       break;
   }
 

@@ -447,8 +447,8 @@ class RTCPeerConnection {
     // is set to true or false based on the presence of the "trickle" ice-option
     this._canTrickle = null;
 
-    // States
-    this._iceGatheringState = this._iceConnectionState = "new";
+    // So we can record telemetry on state transitions
+    this._iceConnectionState = "new";
 
     this._hasStunServer = this._hasTurnServer = false;
     this._iceGatheredRelayCandidates = false;
@@ -854,7 +854,7 @@ class RTCPeerConnection {
       e.message,
       e.fileName,
       e.lineNumber,
-      Ci.nsIScriptError.exceptionFlag
+      Ci.nsIScriptError.errorFlag
     );
 
     // Safely call onerror directly if present (necessary for testing)
@@ -1510,23 +1510,21 @@ class RTCPeerConnection {
   _processTrackAdditionsAndRemovals() {
     const removeList = [];
     const addList = [];
-    const muteTracks = [];
+    const muteTransceiverReceiveTracks = [];
     const trackEventInits = [];
 
     for (const transceiver of this._transceivers) {
       transceiver.receiver.processTrackAdditionsAndRemovals(transceiver, {
         removeList,
         addList,
-        muteTracks,
+        muteTransceiverReceiveTracks,
         trackEventInits,
       });
     }
 
-    muteTracks.forEach(track => {
+    muteTransceiverReceiveTracks.forEach(transceiver => {
       // Check this as late as possible, in case JS has messed with this state.
-      if (!track.muted) {
-        track.mutedChanged(true);
-      }
+      transceiver.setReceiveTrackMuted(true);
     });
 
     for (const { stream, track } of removeList) {
@@ -1754,7 +1752,7 @@ class RTCPeerConnection {
     this._impl.id = s;
   }
   get iceGatheringState() {
-    return this._iceGatheringState;
+    return this._pc.iceGatheringState;
   }
   get iceConnectionState() {
     return this._iceConnectionState;
@@ -1766,21 +1764,16 @@ class RTCPeerConnection {
     if (this._closed) {
       return "closed";
     }
-    return {
-      SignalingInvalid: "",
-      SignalingStable: "stable",
-      SignalingHaveLocalOffer: "have-local-offer",
-      SignalingHaveRemoteOffer: "have-remote-offer",
-      SignalingHaveLocalPranswer: "have-local-pranswer",
-      SignalingHaveRemotePranswer: "have-remote-pranswer",
-      SignalingClosed: "closed",
-    }[this._impl.signalingState];
+    return this._impl.signalingState;
   }
 
-  changeIceGatheringState(state) {
-    this._iceGatheringState = state;
+  handleIceGatheringStateChange() {
     _globalPCList.notifyLifecycleObservers(this, "icegatheringstatechange");
     this.dispatchEvent(new this._win.Event("icegatheringstatechange"));
+    if (this.iceGatheringState === "complete") {
+      this.dispatchEvent(new this._win.RTCPeerConnectionIceEvent(
+        "icecandidate", { candidate: null }));
+    }
   }
 
   changeIceConnectionState(state) {
@@ -2019,8 +2012,6 @@ class PeerConnectionObserver {
         sdpMLineIndex,
         usernameFragment,
       });
-    } else {
-      candidate = null;
     }
     this.dispatchEvent(
       new win.RTCPeerConnectionIceEvent("icecandidate", { candidate })
@@ -2057,29 +2048,6 @@ class PeerConnectionObserver {
     if (pc.iceConnectionState === iceConnectionState) {
       return;
     }
-    if (pc.iceConnectionState === "new") {
-      var checking_histogram = Services.telemetry.getHistogramById(
-        "WEBRTC_ICE_CHECKING_RATE"
-      );
-      if (iceConnectionState === "checking") {
-        checking_histogram.add(true);
-      } else if (iceConnectionState === "failed") {
-        checking_histogram.add(false);
-      }
-    } else if (pc.iceConnectionState === "checking") {
-      var success_histogram = Services.telemetry.getHistogramById(
-        "WEBRTC_ICE_SUCCESS_RATE"
-      );
-      if (
-        iceConnectionState === "completed" ||
-        iceConnectionState === "connected"
-      ) {
-        success_histogram.add(true);
-        pc._pcTelemetry.recordConnected();
-      } else if (iceConnectionState === "failed") {
-        success_histogram.add(false);
-      }
-    }
 
     if (iceConnectionState === "failed") {
       if (!pc._hasStunServer) {
@@ -2100,29 +2068,6 @@ class PeerConnectionObserver {
     }
 
     pc.changeIceConnectionState(iceConnectionState);
-  }
-
-  // This method is responsible for updating iceGatheringState. This
-  // state is defined in the WebRTC specification as follows:
-  //
-  // iceGatheringState:
-  // ------------------
-  //   new        The object was just created, and no networking has occurred
-  //              yet.
-  //
-  //   gathering  The ICE agent is in the process of gathering candidates for
-  //              this RTCPeerConnection.
-  //
-  //   complete   The ICE agent has completed gathering. Events such as adding
-  //              a new interface or a new TURN server will cause the state to
-  //              go back to gathering.
-  //
-  handleIceGatheringStateChange(gatheringState) {
-    let pc = this._dompc;
-    if (pc.iceGatheringState === gatheringState) {
-      return;
-    }
-    pc.changeIceGatheringState(gatheringState);
   }
 
   onStateChange(state) {
@@ -2148,7 +2093,7 @@ class PeerConnectionObserver {
         break;
 
       case "IceGatheringState":
-        this.handleIceGatheringStateChange(this._dompc._pc.iceGatheringState);
+        this._dompc.handleIceGatheringStateChange();
         break;
 
       default:
@@ -2513,7 +2458,7 @@ class RTCRtpReceiver {
 
   processTrackAdditionsAndRemovals(
     transceiver,
-    { removeList, addList, muteTracks, trackEventInits }
+    { removeList, addList, muteTransceiverReceiveTracks, trackEventInits }
   ) {
     const receiver = this.__DOM_IMPL__;
     const track = this.track;
@@ -2533,7 +2478,7 @@ class RTCRtpReceiver {
         // New track, set in case streamsAdded is empty
         needsTrackEvent = true;
       } else {
-        muteTracks.push(track);
+        muteTransceiverReceiveTracks.push(this._transceiverImpl);
       }
     }
 

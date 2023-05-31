@@ -12,8 +12,6 @@
 #include "prenv.h"
 
 #include "nsDocShell.h"
-#include "nsIDOMMozBrowserFrame.h"
-#include "nsIDOMWindow.h"
 #include "nsIContentInlines.h"
 #include "nsIContentViewer.h"
 #include "mozilla/dom/Document.h"
@@ -26,7 +24,6 @@
 #include "nsIBaseWindow.h"
 #include "nsIBrowser.h"
 #include "nsContentUtils.h"
-#include "nsIXPConnect.h"
 #include "nsUnicharUtils.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptSecurityManager.h"
@@ -37,10 +34,8 @@
 #include "nsIScrollableFrame.h"
 #include "nsSubDocumentFrame.h"
 #include "nsError.h"
-#include "nsISHistory.h"
 #include "nsIXULWindow.h"
 #include "nsIMozBrowserFrame.h"
-#include "nsISHistory.h"
 #include "nsIScriptError.h"
 #include "nsGlobalWindow.h"
 #include "nsHTMLDocument.h"
@@ -53,7 +48,6 @@
 #include "ReferrerInfo.h"
 
 #include "nsIURI.h"
-#include "nsIURL.h"
 #include "nsNetUtil.h"
 
 #include "nsGkAtoms.h"
@@ -71,6 +65,7 @@
 #include "BrowserParent.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/ExpandedPrincipal.h"
 #include "mozilla/GuardObjects.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/NullPrincipal.h"
@@ -403,10 +398,7 @@ void nsFrameLoader::LoadFrame(bool aOriginalSrc) {
   if (isSrcdoc) {
     src.AssignLiteral("about:srcdoc");
     principal = mOwnerContent->NodePrincipal();
-    // Currently the NodePrincipal holds the CSP for a document. After
-    // Bug 965637 we can query the CSP from mOwnerContent->OwnerDoc()
-    // instead of mOwnerContent->NodePrincipal().
-    mOwnerContent->NodePrincipal()->GetCsp(getter_AddRefs(csp));
+    csp = mOwnerContent->GetCsp();
   } else {
     GetURL(src, getter_AddRefs(principal), getter_AddRefs(csp));
 
@@ -423,10 +415,7 @@ void nsFrameLoader::LoadFrame(bool aOriginalSrc) {
       }
       src.AssignLiteral("about:blank");
       principal = mOwnerContent->NodePrincipal();
-      // Currently the NodePrincipal holds the CSP for a document. After
-      // Bug 965637 we can query the CSP from mOwnerContent->OwnerDoc()
-      // instead of mOwnerContent->NodePrincipal().
-      mOwnerContent->NodePrincipal()->GetCsp(getter_AddRefs(csp));
+      csp = mOwnerContent->GetCsp();
     }
   }
 
@@ -440,7 +429,7 @@ void nsFrameLoader::LoadFrame(bool aOriginalSrc) {
     return;
   }
 
-  nsCOMPtr<nsIURI> base_uri = mOwnerContent->GetBaseURI();
+  nsIURI* base_uri = mOwnerContent->GetBaseURI();
   auto encoding = doc->GetDocumentCharacterSet();
 
   nsCOMPtr<nsIURI> uri;
@@ -518,8 +507,7 @@ void nsFrameLoader::ResumeLoad(uint64_t aPendingSwitchID) {
   mURIToLoad = nullptr;
   mPendingSwitchID = aPendingSwitchID;
   mTriggeringPrincipal = mOwnerContent->NodePrincipal();
-  // NOTE: This can be gotten off of the document after bug 965637.
-  mOwnerContent->NodePrincipal()->GetCsp(getter_AddRefs(mCsp));
+  mCsp = mOwnerContent->GetCsp();
 
   nsresult rv = doc->InitializeFrameLoader(this);
   if (NS_FAILED(rv)) {
@@ -625,22 +613,16 @@ nsresult nsFrameLoader::ReallyStartLoadingInternal() {
   }
 
   // If we have an explicit CSP, we set it. If not, we only query it from
-  // the NodePrincipal in case there was no explicit triggeringPrincipal.
+  // the document in case there was no explicit triggeringPrincipal.
   // Otherwise it's possible that the original triggeringPrincipal did not
   // have a CSP which causes the CSP on the Principal and explicit CSP
   // to be out of sync.
   if (mCsp) {
     loadState->SetCsp(mCsp);
   } else if (!mTriggeringPrincipal) {
-    // Currently the NodePrincipal holds the CSP for a document. After
-    // Bug 965637 we can query the CSP from mOwnerContent->OwnerDoc()
-    // instead of mOwnerContent->NodePrincipal().
-    nsCOMPtr<nsIContentSecurityPolicy> csp;
-    mOwnerContent->NodePrincipal()->GetCsp(getter_AddRefs(csp));
+    nsCOMPtr<nsIContentSecurityPolicy> csp = mOwnerContent->GetCsp();
     loadState->SetCsp(csp);
   }
-
-  nsCOMPtr<nsIURI> referrer;
 
   nsAutoString srcdoc;
   bool isSrcdoc =
@@ -648,43 +630,13 @@ nsresult nsFrameLoader::ReallyStartLoadingInternal() {
       mOwnerContent->GetAttr(kNameSpaceID_None, nsGkAtoms::srcdoc, srcdoc);
 
   if (isSrcdoc) {
-    nsAutoString referrerStr;
-    mOwnerContent->OwnerDoc()->GetReferrer(referrerStr);
-    rv = NS_NewURI(getter_AddRefs(referrer), referrerStr);
-
     loadState->SetSrcdocData(srcdoc);
-    nsCOMPtr<nsIURI> baseURI = mOwnerContent->GetBaseURI();
-    loadState->SetBaseURI(baseURI);
-  } else {
-    rv = mOwnerContent->NodePrincipal()->GetURI(getter_AddRefs(referrer));
-    NS_ENSURE_SUCCESS(rv, rv);
+    loadState->SetBaseURI(mOwnerContent->GetBaseURI());
   }
 
-  // Use referrer as long as it is not an NullPrincipalURI.
-  // We could add a method such as GetReferrerURI to principals to make this
-  // cleaner, but given that we need to start using Source Browsing Context for
-  // referrer (see Bug 960639) this may be wasted effort at this stage.
-  if (referrer) {
-    bool isNullPrincipalScheme;
-    rv = referrer->SchemeIs(NS_NULLPRINCIPAL_SCHEME, &isNullPrincipalScheme);
-    if (NS_SUCCEEDED(rv) && !isNullPrincipalScheme) {
-      // get referrer policy for this iframe:
-      // first load document wide policy, then
-      // load iframe referrer attribute if enabled in preferences
-      // per element referrer overrules document wide referrer if enabled
-      net::ReferrerPolicy referrerPolicy =
-          mOwnerContent->OwnerDoc()->GetReferrerPolicy();
-      HTMLIFrameElement* iframe = HTMLIFrameElement::FromNode(mOwnerContent);
-      if (iframe) {
-        net::ReferrerPolicy iframeReferrerPolicy =
-            iframe->GetReferrerPolicyAsEnum();
-        if (iframeReferrerPolicy != net::RP_Unset) {
-          referrerPolicy = iframeReferrerPolicy;
-        }
-      }
-      loadState->SetReferrerInfo(new ReferrerInfo(referrer, referrerPolicy));
-    }
-  }
+  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+  referrerInfo->InitWithNode(mOwnerContent);
+  loadState->SetReferrerInfo(referrerInfo);
 
   // Default flags:
   int32_t flags = nsIWebNavigation::LOAD_FLAGS_NONE;
@@ -776,10 +728,10 @@ static void SetTreeOwnerAndChromeEventHandlerOnDocshellTree(
   aItem->SetTreeOwner(aOwner);
 
   int32_t childCount = 0;
-  aItem->GetChildCount(&childCount);
+  aItem->GetInProcessChildCount(&childCount);
   for (int32_t i = 0; i < childCount; ++i) {
     nsCOMPtr<nsIDocShellTreeItem> item;
-    aItem->GetChildAt(i, getter_AddRefs(item));
+    aItem->GetInProcessChildAt(i, getter_AddRefs(item));
     if (aHandler) {
       nsCOMPtr<nsIDocShell> shell(do_QueryInterface(item));
       shell->SetChromeEventHandler(aHandler);
@@ -807,7 +759,7 @@ static bool CheckDocShellType(mozilla::dom::Element* aOwnerContent,
   }
 
   nsCOMPtr<nsIDocShellTreeItem> parent;
-  aDocShell->GetParent(getter_AddRefs(parent));
+  aDocShell->GetInProcessParent(getter_AddRefs(parent));
 
   return parent && parent->ItemType() == aDocShell->ItemType();
 }
@@ -842,11 +794,11 @@ void nsFrameLoader::AddTreeItemToTreeOwner(nsIDocShellTreeItem* aItem,
 static bool AllDescendantsOfType(nsIDocShellTreeItem* aParentItem,
                                  int32_t aType) {
   int32_t childCount = 0;
-  aParentItem->GetChildCount(&childCount);
+  aParentItem->GetInProcessChildCount(&childCount);
 
   for (int32_t i = 0; i < childCount; ++i) {
     nsCOMPtr<nsIDocShellTreeItem> kid;
-    aParentItem->GetChildAt(i, getter_AddRefs(kid));
+    aParentItem->GetInProcessChildAt(i, getter_AddRefs(kid));
 
     if (kid->ItemType() != aType || !AllDescendantsOfType(kid, aType)) {
       return false;
@@ -1198,11 +1150,6 @@ nsresult nsFrameLoader::SwapWithOtherRemoteLoader(
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
-  if (mBrowserParent->IsIsolatedMozBrowserElement() !=
-      aOther->mBrowserParent->IsIsolatedMozBrowserElement()) {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
   // When we swap docShells, maybe we have to deal with a new page created just
   // for this operation. In this case, the browser code should already have set
   // the correct userContextId attribute value in the owning element, but our
@@ -1382,20 +1329,35 @@ class MOZ_RAII AutoResetInFrameSwap final {
     // Fire pageshow events on still-loading pages, and then fire pagehide
     // events.  Note that we do NOT fire these in the normal way, but just fire
     // them on the chrome event handlers.
-    nsContentUtils::FirePageShowEvent(mThisDocShell, mThisEventTarget, false);
-    nsContentUtils::FirePageShowEvent(mOtherDocShell, mOtherEventTarget, false);
-    nsContentUtils::FirePageHideEvent(mThisDocShell, mThisEventTarget);
-    nsContentUtils::FirePageHideEvent(mOtherDocShell, mOtherEventTarget);
+    nsContentUtils::FirePageShowEventForFrameLoaderSwap(
+        mThisDocShell, mThisEventTarget, false);
+    nsContentUtils::FirePageShowEventForFrameLoaderSwap(
+        mOtherDocShell, mOtherEventTarget, false);
+    nsContentUtils::FirePageHideEventForFrameLoaderSwap(mThisDocShell,
+                                                        mThisEventTarget);
+    nsContentUtils::FirePageHideEventForFrameLoaderSwap(mOtherDocShell,
+                                                        mOtherEventTarget);
   }
 
   ~AutoResetInFrameSwap() {
-    nsContentUtils::FirePageShowEvent(mThisDocShell, mThisEventTarget, true);
-    nsContentUtils::FirePageShowEvent(mOtherDocShell, mOtherEventTarget, true);
+    nsContentUtils::FirePageShowEventForFrameLoaderSwap(mThisDocShell,
+                                                        mThisEventTarget, true);
+    nsContentUtils::FirePageShowEventForFrameLoaderSwap(
+        mOtherDocShell, mOtherEventTarget, true);
 
     mThisFrameLoader->mInSwap = false;
     mOtherFrameLoader->mInSwap = false;
     mThisDocShell->SetInFrameSwap(false);
     mOtherDocShell->SetInFrameSwap(false);
+
+    // This is needed to get visibility state right in cases when we swapped a
+    // visible tab (foreground in visible window) with a non-visible tab.
+    if (RefPtr<Document> doc = mThisDocShell->GetDocument()) {
+      doc->UpdateVisibilityState();
+    }
+    if (RefPtr<Document> doc = mOtherDocShell->GetDocument()) {
+      doc->UpdateVisibilityState();
+    }
   }
 
  private:
@@ -1495,8 +1457,10 @@ nsresult nsFrameLoader::SwapWithOtherLoader(nsFrameLoader* aOther,
   // frameloaders that don't correspond to root same-type docshells,
   // unless both roots have session history disabled.
   nsCOMPtr<nsIDocShellTreeItem> ourRootTreeItem, otherRootTreeItem;
-  ourDocshell->GetSameTypeRootTreeItem(getter_AddRefs(ourRootTreeItem));
-  otherDocshell->GetSameTypeRootTreeItem(getter_AddRefs(otherRootTreeItem));
+  ourDocshell->GetInProcessSameTypeRootTreeItem(
+      getter_AddRefs(ourRootTreeItem));
+  otherDocshell->GetInProcessSameTypeRootTreeItem(
+      getter_AddRefs(otherRootTreeItem));
   nsCOMPtr<nsIWebNavigation> ourRootWebnav = do_QueryInterface(ourRootTreeItem);
   nsCOMPtr<nsIWebNavigation> otherRootWebnav =
       do_QueryInterface(otherRootTreeItem);
@@ -1540,8 +1504,8 @@ nsresult nsFrameLoader::SwapWithOtherLoader(nsFrameLoader* aOther,
   // Note: it's OK to have null treeowners.
 
   nsCOMPtr<nsIDocShellTreeItem> ourParentItem, otherParentItem;
-  ourDocshell->GetParent(getter_AddRefs(ourParentItem));
-  otherDocshell->GetParent(getter_AddRefs(otherParentItem));
+  ourDocshell->GetInProcessParent(getter_AddRefs(ourParentItem));
+  otherDocshell->GetInProcessParent(getter_AddRefs(otherParentItem));
   if (!ourParentItem || !otherParentItem) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -1580,9 +1544,10 @@ nsresult nsFrameLoader::SwapWithOtherLoader(nsFrameLoader* aOther,
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
-  nsCOMPtr<Document> ourParentDocument = ourChildDocument->GetParentDocument();
+  nsCOMPtr<Document> ourParentDocument =
+      ourChildDocument->GetInProcessParentDocument();
   nsCOMPtr<Document> otherParentDocument =
-      otherChildDocument->GetParentDocument();
+      otherChildDocument->GetInProcessParentDocument();
 
   // Make sure to swap docshells between the two frames.
   Document* ourDoc = ourContent->GetComposedDoc();
@@ -1598,11 +1563,6 @@ nsresult nsFrameLoader::SwapWithOtherLoader(nsFrameLoader* aOther,
   PresShell* ourPresShell = ourDoc->GetPresShell();
   PresShell* otherPresShell = otherDoc->GetPresShell();
   if (!ourPresShell || !otherPresShell) {
-    return NS_ERROR_NOT_IMPLEMENTED;
-  }
-
-  if (ourDocshell->GetIsIsolatedMozBrowserElement() !=
-      otherDocshell->GetIsIsolatedMozBrowserElement()) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
 
@@ -1796,6 +1756,9 @@ void nsFrameLoader::StartDestroy() {
   }
   mDestroyCalled = true;
 
+  // request a tabStateFlush before tab is closed
+  RequestTabStateFlush(/*flushId*/ 0, /*isFinal*/ true);
+
   // After this point, we return an error when trying to send a message using
   // the message manager on the frame.
   if (mMessageManager) {
@@ -1842,7 +1805,7 @@ void nsFrameLoader::StartDestroy() {
   if (mIsTopLevelContent) {
     if (GetDocShell()) {
       nsCOMPtr<nsIDocShellTreeItem> parentItem;
-      GetDocShell()->GetParent(getter_AddRefs(parentItem));
+      GetDocShell()->GetInProcessParent(getter_AddRefs(parentItem));
       nsCOMPtr<nsIDocShellTreeOwner> owner = do_GetInterface(parentItem);
       if (owner) {
         owner->ContentShellRemoved(GetDocShell());
@@ -2016,24 +1979,6 @@ void nsFrameLoader::SetOwnerContent(Element* aContent) {
 bool nsFrameLoader::OwnerIsMozBrowserFrame() {
   nsCOMPtr<nsIMozBrowserFrame> browserFrame = do_QueryInterface(mOwnerContent);
   return browserFrame ? browserFrame->GetReallyIsBrowser() : false;
-}
-
-bool nsFrameLoader::OwnerIsIsolatedMozBrowserFrame() {
-  nsCOMPtr<nsIMozBrowserFrame> browserFrame = do_QueryInterface(mOwnerContent);
-  if (!browserFrame) {
-    return false;
-  }
-
-  if (!OwnerIsMozBrowserFrame()) {
-    return false;
-  }
-
-  bool isolated = browserFrame->GetIsolated();
-  if (isolated) {
-    return true;
-  }
-
-  return false;
 }
 
 bool nsFrameLoader::ShouldUseRemoteProcess() {
@@ -2217,8 +2162,7 @@ nsresult nsFrameLoader::MaybeCreateDocShell() {
   //
   // For example, firstPartyDomain is computed from top-level document, it
   // doesn't exist in the top-level docshell.
-  if (parentIsContent &&
-      !nsContentUtils::IsSystemPrincipal(doc->NodePrincipal()) &&
+  if (parentIsContent && !doc->NodePrincipal()->IsSystemPrincipal() &&
       !OwnerIsMozBrowserFrame()) {
     OriginAttributes oa = doc->NodePrincipal()->OriginAttributesRef();
 
@@ -2230,9 +2174,6 @@ nsresult nsFrameLoader::MaybeCreateDocShell() {
     MOZ_ASSERT(
         attrs.mUserContextId == oa.mUserContextId,
         "docshell and document should have the same userContextId attribute.");
-    MOZ_ASSERT(attrs.mInIsolatedMozBrowser == oa.mInIsolatedMozBrowser,
-               "docshell and document should have the same "
-               "inIsolatedMozBrowser attribute.");
     MOZ_ASSERT(attrs.mPrivateBrowsingId == oa.mPrivateBrowsingId,
                "docshell and document should have the same privateBrowsingId "
                "attribute.");
@@ -2241,11 +2182,10 @@ nsresult nsFrameLoader::MaybeCreateDocShell() {
   }
 
   if (OwnerIsMozBrowserFrame()) {
-    attrs.mInIsolatedMozBrowser = OwnerIsIsolatedMozBrowserFrame();
     docShell->SetFrameType(nsIDocShell::FRAME_TYPE_BROWSER);
   } else {
     nsCOMPtr<nsIDocShellTreeItem> parentCheck;
-    docShell->GetSameTypeParent(getter_AddRefs(parentCheck));
+    docShell->GetInProcessSameTypeParent(getter_AddRefs(parentCheck));
     if (!!parentCheck) {
       docShell->SetIsFrame();
     }
@@ -2341,16 +2281,12 @@ void nsFrameLoader::GetURL(nsString& aURI, nsIPrincipal** aTriggeringPrincipal,
                            nsIContentSecurityPolicy** aCsp) {
   aURI.Truncate();
   // Within this function we default to using the NodePrincipal as the
-  // triggeringPrincipal and the CSP of the document, currently stored
-  // on the NodePrincipal. After Bug 965637 we can query the CSP from
-  // mOwnerContent->OwnerDoc() instead of mOwnerContent->NodePrincipal().
+  // triggeringPrincipal and the CSP of the document.
   // Expanded Principals however override the CSP of the document, hence
   // if frame->GetSrcTriggeringPrincipal() returns a valid principal, we
-  // have to query the CSP from that Principal. Note that even after
-  // Bug 965637, Expanded Principals will hold their own CSP.
+  // have to query the CSP from that Principal.
   nsCOMPtr<nsIPrincipal> triggeringPrincipal = mOwnerContent->NodePrincipal();
-  nsCOMPtr<nsIContentSecurityPolicy> csp;
-  mOwnerContent->NodePrincipal()->GetCsp(getter_AddRefs(csp));
+  nsCOMPtr<nsIContentSecurityPolicy> csp = mOwnerContent->GetCsp();
 
   if (mOwnerContent->IsHTMLElement(nsGkAtoms::object)) {
     mOwnerContent->GetAttr(kNameSpaceID_None, nsGkAtoms::data, aURI);
@@ -2361,7 +2297,11 @@ void nsFrameLoader::GetURL(nsString& aURI, nsIPrincipal** aTriggeringPrincipal,
       nsCOMPtr<nsIPrincipal> srcPrincipal = frame->GetSrcTriggeringPrincipal();
       if (srcPrincipal) {
         triggeringPrincipal = srcPrincipal;
-        triggeringPrincipal->GetCsp(getter_AddRefs(csp));
+        nsCOMPtr<nsIExpandedPrincipal> ep =
+            do_QueryInterface(triggeringPrincipal);
+        if (ep) {
+          csp = ep->GetCsp();
+        }
       }
     }
   }
@@ -2401,7 +2341,7 @@ nsresult nsFrameLoader::CheckForRecursiveLoad(nsIURI* aURI) {
   // Bug 8065: Don't exceed some maximum depth in content frames
   // (MAX_DEPTH_CONTENT_FRAMES)
   nsCOMPtr<nsIDocShellTreeItem> parentAsItem;
-  GetDocShell()->GetSameTypeParent(getter_AddRefs(parentAsItem));
+  GetDocShell()->GetInProcessSameTypeParent(getter_AddRefs(parentAsItem));
   int32_t depth = 0;
   while (parentAsItem) {
     ++depth;
@@ -2415,7 +2355,7 @@ nsresult nsFrameLoader::CheckForRecursiveLoad(nsIURI* aURI) {
 
     nsCOMPtr<nsIDocShellTreeItem> temp;
     temp.swap(parentAsItem);
-    temp->GetSameTypeParent(getter_AddRefs(parentAsItem));
+    temp->GetInProcessSameTypeParent(getter_AddRefs(parentAsItem));
   }
 
   // Bug 136580: Check for recursive frame loading excluding about:srcdoc URIs.
@@ -2433,7 +2373,7 @@ nsresult nsFrameLoader::CheckForRecursiveLoad(nsIURI* aURI) {
     }
   }
   int32_t matchCount = 0;
-  GetDocShell()->GetSameTypeParent(getter_AddRefs(parentAsItem));
+  GetDocShell()->GetInProcessSameTypeParent(getter_AddRefs(parentAsItem));
   while (parentAsItem) {
     // Check the parent URI with the URI we're loading
     nsCOMPtr<nsIWebNavigation> parentAsNav(do_QueryInterface(parentAsItem));
@@ -2460,7 +2400,7 @@ nsresult nsFrameLoader::CheckForRecursiveLoad(nsIURI* aURI) {
     }
     nsCOMPtr<nsIDocShellTreeItem> temp;
     temp.swap(parentAsItem);
-    temp->GetSameTypeParent(getter_AddRefs(parentAsItem));
+    temp->GetInProcessSameTypeParent(getter_AddRefs(parentAsItem));
   }
 
   return NS_OK;
@@ -2946,7 +2886,7 @@ nsresult nsFrameLoader::DoSendAsyncMessage(JSContext* aCx,
       MOZ_CRASH();
       return NS_ERROR_DOM_DATA_CLONE_ERR;
     }
-    InfallibleTArray<mozilla::jsipc::CpowEntry> cpows;
+    nsTArray<mozilla::jsipc::CpowEntry> cpows;
     jsipc::CPOWManager* mgr = cp->GetCPOWManager();
     if (aCpows && (!mgr || !mgr->Wrap(aCx, aCpows, &cpows))) {
       return NS_ERROR_UNEXPECTED;
@@ -3130,7 +3070,7 @@ void nsFrameLoader::AttributeChanged(mozilla::dom::Element* aElement,
   }
 
   nsCOMPtr<nsIDocShellTreeItem> parentItem;
-  GetDocShell()->GetParent(getter_AddRefs(parentItem));
+  GetDocShell()->GetInProcessParent(getter_AddRefs(parentItem));
   if (!parentItem) {
     return;
   }
@@ -3185,16 +3125,16 @@ void nsFrameLoader::RequestUpdatePosition(ErrorResult& aRv) {
   }
 }
 
-bool nsFrameLoader::RequestTabStateFlush(uint32_t aFlushId) {
+bool nsFrameLoader::RequestTabStateFlush(uint32_t aFlushId, bool aIsFinal) {
   if (mSessionStoreListener) {
-    mSessionStoreListener->ForceFlushFromParent(aFlushId);
+    mSessionStoreListener->ForceFlushFromParent(aFlushId, aIsFinal);
     // No async ipc call is involved in parent only case
     return false;
   }
 
   // If remote browsing (e10s), handle this with the BrowserParent.
   if (mBrowserParent) {
-    Unused << mBrowserParent->SendFlushTabState(aFlushId);
+    Unused << mBrowserParent->SendFlushTabState(aFlushId, aIsFinal);
     return true;
   }
 
@@ -3249,7 +3189,7 @@ void nsFrameLoader::Print(uint64_t aOuterWindowID,
 
 already_AddRefed<mozilla::dom::Promise> nsFrameLoader::DrawSnapshot(
     double aX, double aY, double aW, double aH, double aScale,
-    const nsAString& aBackgroundColor, mozilla::ErrorResult& aRv) {
+    const nsACString& aBackgroundColor, mozilla::ErrorResult& aRv) {
   RefPtr<nsIGlobalObject> global = GetOwnerContent()->GetOwnerGlobal();
   RefPtr<Promise> promise = Promise::Create(global, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
@@ -3420,7 +3360,6 @@ void nsFrameLoader::MaybeUpdatePrimaryBrowserParent(
 nsresult nsFrameLoader::GetNewTabContext(MutableTabContext* aTabContext,
                                          nsIURI* aURI) {
   OriginAttributes attrs;
-  attrs.mInIsolatedMozBrowser = OwnerIsIsolatedMozBrowserFrame();
   nsresult rv;
 
   // set the userContextId on the attrs before we pass them into
@@ -3439,7 +3378,6 @@ nsresult nsFrameLoader::GetNewTabContext(MutableTabContext* aTabContext,
   bool isPrivate = parentContext->UsePrivateBrowsing();
   attrs.SyncAttributesWithPrivateBrowsing(isPrivate);
 
-  UIStateChangeType showAccelerators = UIStateChangeType_NoChange;
   UIStateChangeType showFocusRings = UIStateChangeType_NoChange;
   uint64_t chromeOuterWindowID = 0;
 
@@ -3447,8 +3385,6 @@ nsresult nsFrameLoader::GetNewTabContext(MutableTabContext* aTabContext,
   if (doc) {
     nsCOMPtr<nsPIWindowRoot> root = nsContentUtils::GetWindowRoot(doc);
     if (root) {
-      showAccelerators = root->ShowAccelerators() ? UIStateChangeType_Set
-                                                  : UIStateChangeType_Clear;
       showFocusRings = root->ShowFocusRings() ? UIStateChangeType_Set
                                               : UIStateChangeType_Clear;
 
@@ -3460,8 +3396,8 @@ nsresult nsFrameLoader::GetNewTabContext(MutableTabContext* aTabContext,
   }
 
   bool tabContextUpdated = aTabContext->SetTabContext(
-      OwnerIsMozBrowserFrame(), chromeOuterWindowID, showAccelerators,
-      showFocusRings, attrs, presentationURLStr);
+      OwnerIsMozBrowserFrame(), chromeOuterWindowID, showFocusRings, attrs,
+      presentationURLStr);
   NS_ENSURE_STATE(tabContextUpdated);
 
   return NS_OK;

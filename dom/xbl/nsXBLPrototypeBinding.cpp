@@ -6,12 +6,9 @@
 
 #include "nsCOMPtr.h"
 #include "nsAtom.h"
-#include "nsIInputStream.h"
 #include "nsNameSpaceManager.h"
 #include "nsIURI.h"
 #include "nsIURIMutator.h"
-#include "nsIURL.h"
-#include "nsIChannel.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
 #include "nsNetUtil.h"
@@ -33,7 +30,6 @@
 #include "nsContentUtils.h"
 #include "nsTextFragment.h"
 #include "nsTextNode.h"
-#include "nsIScriptError.h"
 
 #include "mozilla/dom/CDATASection.h"
 #include "mozilla/dom/CharacterData.h"
@@ -1011,17 +1007,13 @@ nsresult nsXBLPrototypeBinding::ReadContentNode(nsIObjectInputStream* aStream,
   if (namespaceID == kNameSpaceID_XUL) {
     nsIURI* documentURI = aDocument->GetDocumentURI();
 
-    RefPtr<nsXULPrototypeElement> prototype = new nsXULPrototypeElement();
-
-    prototype->mNodeInfo = nodeInfo;
+    RefPtr<nsXULPrototypeElement> prototype =
+        new nsXULPrototypeElement(nodeInfo);
 
     nsXULPrototypeAttribute* attrs = nullptr;
     if (attrCount > 0) {
-      attrs = new nsXULPrototypeAttribute[attrCount];
+      attrs = prototype->mAttributes.AppendElements(attrCount);
     }
-
-    prototype->mAttributes = attrs;
-    prototype->mNumAttributes = attrCount;
 
     for (uint32_t i = 0; i < attrCount; i++) {
       rv = ReadNamespace(aStream, namespaceID);

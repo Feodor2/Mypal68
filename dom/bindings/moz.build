@@ -30,7 +30,6 @@ EXPORTS.mozilla.dom += [
     'CallbackFunction.h',
     'CallbackInterface.h',
     'CallbackObject.h',
-    'Date.h',
     'DOMJSClass.h',
     'DOMJSProxyHandler.h',
     'DOMString.h',
@@ -48,7 +47,6 @@ EXPORTS.mozilla.dom += [
     'RootedDictionary.h',
     'SimpleGlobalObject.h',
     'SpiderMonkeyInterface.h',
-    'StructuredClone.h',
     'ToJSValue.h',
     'TypedArray.h',
     'UnionMember.h',
@@ -102,7 +100,6 @@ UNIFIED_SOURCES += [
     'BindingUtils.cpp',
     'CallbackInterface.cpp',
     'CallbackObject.cpp',
-    'Date.cpp',
     'DOMJSProxyHandler.cpp',
     'Exceptions.cpp',
     'IterableIterator.cpp',
@@ -112,10 +109,6 @@ UNIFIED_SOURCES += [
     'SimpleGlobalObject.cpp',
     'ToJSValue.cpp',
     'WebIDLGlobalNameHash.cpp',
-]
-
-SOURCES += [
-    'StructuredClone.cpp',
 ]
 
 # Some tests, including those for for maplike and setlike, require bindings
@@ -178,10 +171,10 @@ if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     ]
 
 if CONFIG['COMPILE_ENVIRONMENT']:
-    GENERATED_FILES += ['CSS2Properties.webidl']
-    css_props = GENERATED_FILES['CSS2Properties.webidl']
-    css_props.script = 'GenerateCSS2PropertiesWebIDL.py:generate'
-    css_props.inputs = [
-        '/dom/webidl/CSS2Properties.webidl.in',
-        '!/layout/style/ServoCSSPropList.py',
-    ]
+    GeneratedFile('CSS2Properties.webidl',
+                  script='GenerateCSS2PropertiesWebIDL.py',
+                  entry_point='generate',
+                  inputs=[
+                      '/dom/webidl/CSS2Properties.webidl.in',
+                      '!/layout/style/ServoCSSPropList.py',
+                  ])

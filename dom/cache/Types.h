@@ -31,6 +31,9 @@ struct QuotaInfo {
   nsCString mSuffix;
   nsCString mGroup;
   nsCString mOrigin;
+  int64_t mDirectoryLockId;
+
+  QuotaInfo() : mDirectoryLockId(-1) {}
 };
 
 typedef std::function<void(nsCOMPtr<nsIInputStream>&&)> InputStreamResolver;

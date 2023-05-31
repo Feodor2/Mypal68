@@ -17,7 +17,6 @@
 #include "nsContentList.h"
 #include "mozilla/dom/Element.h"
 #include "nsClassHashtable.h"
-#include "nsNodeUtils.h"
 #include "nsWrapperCache.h"
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/MutationEventBinding.h"

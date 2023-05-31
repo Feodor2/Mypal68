@@ -11,7 +11,7 @@ namespace dom {
 
 DeprecationReportBody::DeprecationReportBody(
     nsPIDOMWindowInner* aWindow, const nsAString& aId,
-    const Nullable<Date>& aDate, const nsAString& aMessage,
+    const Nullable<uint64_t>& aDate, const nsAString& aMessage,
     const nsAString& aSourceFile, const Nullable<uint32_t>& aLineNumber,
     const Nullable<uint32_t>& aColumnNumber)
     : ReportBody(aWindow),
@@ -33,7 +33,7 @@ JSObject* DeprecationReportBody::WrapObject(JSContext* aCx,
 
 void DeprecationReportBody::GetId(nsAString& aId) const { aId = mId; }
 
-Nullable<Date> DeprecationReportBody::GetAnticipatedRemoval() const {
+Nullable<uint64_t> DeprecationReportBody::GetAnticipatedRemoval() const {
   return mDate;
 }
 

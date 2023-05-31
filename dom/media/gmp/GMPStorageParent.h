@@ -26,9 +26,8 @@ class GMPStorageParent : public PGMPStorageParent {
  protected:
   mozilla::ipc::IPCResult RecvOpen(const nsCString& aRecordName) override;
   mozilla::ipc::IPCResult RecvRead(const nsCString& aRecordName) override;
-  mozilla::ipc::IPCResult RecvWrite(
-      const nsCString& aRecordName,
-      InfallibleTArray<uint8_t>&& aBytes) override;
+  mozilla::ipc::IPCResult RecvWrite(const nsCString& aRecordName,
+                                    nsTArray<uint8_t>&& aBytes) override;
   mozilla::ipc::IPCResult RecvClose(const nsCString& aRecordName) override;
   void ActorDestroy(ActorDestroyReason aWhy) override;
 

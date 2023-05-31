@@ -16,7 +16,7 @@
 #include "nsContentUtils.h"
 #include "nsNetUtil.h"
 #include "nsThreadUtils.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 
 using namespace mozilla::java;
 
@@ -94,7 +94,7 @@ size_t HLSDecoder::sAllocatedInstances = 0;
 RefPtr<HLSDecoder> HLSDecoder::Create(MediaDecoderInit& aInit) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  return sAllocatedInstances < StaticPrefs::MediaHlsMaxAllocations()
+  return sAllocatedInstances < StaticPrefs::media_hls_max_allocations()
              ? new HLSDecoder(aInit)
              : nullptr;
 }
@@ -128,7 +128,7 @@ MediaDecoderStateMachine* HLSDecoder::CreateStateMachine() {
 }
 
 bool HLSDecoder::IsEnabled() {
-  return StaticPrefs::MediaHlsEnabled() && (jni::GetAPIVersion() >= 16);
+  return StaticPrefs::media_hls_enabled() && (jni::GetAPIVersion() >= 16);
 }
 
 bool HLSDecoder::IsSupportedType(const MediaContainerType& aContainerType) {
@@ -178,6 +178,12 @@ already_AddRefed<nsIPrincipal> HLSDecoder::GetCurrentPrincipal() {
   MOZ_ASSERT(NS_IsMainThread());
   // Bug 1478843
   return nullptr;
+}
+
+bool HLSDecoder::HadCrossOriginRedirects() {
+  MOZ_ASSERT(NS_IsMainThread());
+  // Bug 1478843
+  return false;
 }
 
 void HLSDecoder::Play() {

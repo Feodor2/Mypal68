@@ -21,8 +21,11 @@ dictionary WaveShaperOptions : AudioNodeOptions {
 };
 
 [Pref="dom.webaudio.enabled",
- Constructor(BaseAudioContext context, optional WaveShaperOptions options)]
+ Exposed=Window]
 interface WaveShaperNode : AudioNode {
+  [Throws]
+  constructor(BaseAudioContext context,
+              optional WaveShaperOptions options = {});
 
       [Cached, Pure, SetterThrows]
       attribute Float32Array? curve;
@@ -31,5 +34,5 @@ interface WaveShaperNode : AudioNode {
 };
 
 // Mozilla extension
-WaveShaperNode implements AudioNodePassThrough;
+WaveShaperNode includes AudioNodePassThrough;
 

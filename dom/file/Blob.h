@@ -9,9 +9,9 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/BlobImpl.h"
+#include "mozilla/dom/BodyConsumer.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsCOMPtr.h"
-#include "nsIMutable.h"
 #include "nsWrapperCache.h"
 #include "nsWeakReference.h"
 
@@ -23,6 +23,7 @@ namespace dom {
 struct BlobPropertyBag;
 class File;
 class OwningArrayBufferViewOrArrayBufferOrBlobOrUSVString;
+class Promise;
 
 #define NS_DOM_BLOB_IID                              \
   {                                                  \
@@ -31,14 +32,10 @@ class OwningArrayBufferViewOrArrayBufferOrBlobOrUSVString;
     }                                                \
   }
 
-class Blob : public nsIMutable,
-             public nsSupportsWeakReference,
-             public nsWrapperCache {
+class Blob : public nsSupportsWeakReference, public nsWrapperCache {
  public:
-  NS_DECL_NSIMUTABLE
-
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_AMBIGUOUS(Blob, nsIMutable)
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Blob)
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_DOM_BLOB_IID)
 
   typedef OwningArrayBufferViewOrArrayBufferOrBlobOrUSVString BlobPart;
@@ -118,12 +115,20 @@ class Blob : public nsIMutable,
   nsresult GetSendInfo(nsIInputStream** aBody, uint64_t* aContentLength,
                        nsACString& aContentType, nsACString& aCharset) const;
 
+  void Stream(JSContext* aCx, JS::MutableHandle<JSObject*> aStream,
+              ErrorResult& aRv);
+  already_AddRefed<Promise> Text(ErrorResult& aRv);
+  already_AddRefed<Promise> ArrayBuffer(ErrorResult& aRv);
+
  protected:
   // File constructor should never be used directly. Use Blob::Create instead.
   Blob(nsISupports* aParent, BlobImpl* aImpl);
   virtual ~Blob();
 
   virtual bool HasFileInterface() const { return false; }
+
+  already_AddRefed<Promise> ConsumeBody(BodyConsumer::ConsumeType aConsumeType,
+                                        ErrorResult& aRv);
 
   // The member is the real backend implementation of this File/Blob.
   // It's thread-safe and not CC-able and it's the only element that is moved
@@ -145,7 +150,7 @@ size_t BindingJSObjectMallocBytes(Blob* aBlob);
 }  // namespace mozilla
 
 inline nsISupports* ToSupports(mozilla::dom::Blob* aBlob) {
-  return static_cast<nsIMutable*>(aBlob);
+  return static_cast<nsISupportsWeakReference*>(aBlob);
 }
 
 #endif  // mozilla_dom_Blob_h

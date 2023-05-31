@@ -8,7 +8,7 @@
 #include "MediaFormatReader.h"
 #include "BaseMediaResource.h"
 #include "MediaShutdownManager.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "VideoUtils.h"
 
 namespace mozilla {
@@ -176,11 +176,6 @@ already_AddRefed<ChannelMediaDecoder> ChannelMediaDecoder::Create(
     return decoder.forget();
   }
 
-  if (DecoderTraits::IsHttpLiveStreamingType(type)) {
-    // We don't have an HLS decoder.
-    Telemetry::Accumulate(Telemetry::MEDIA_HLS_DECODER_SUCCESS, false);
-  }
-
   return nullptr;
 }
 
@@ -223,11 +218,25 @@ void ChannelMediaDecoder::Shutdown() {
   mResourceCallback->Disconnect();
   MediaDecoder::Shutdown();
 
-  // Force any outstanding seek and byterange requests to complete
-  // to prevent shutdown from deadlocking.
   if (mResource) {
-    mResource->Close();
+    // Force any outstanding seek and byterange requests to complete
+    // to prevent shutdown from deadlocking.
+    mResourceClosePromise = mResource->Close();
   }
+}
+
+void ChannelMediaDecoder::ShutdownInternal() {
+  if (!mResourceClosePromise) {
+    MediaShutdownManager::Instance().Unregister(this);
+    return;
+  }
+
+  mResourceClosePromise->Then(
+      AbstractMainThread(), __func__,
+      [self = RefPtr<ChannelMediaDecoder>(this)] {
+        MediaShutdownManager::Instance().Unregister(self);
+      });
+  return;
 }
 
 nsresult ChannelMediaDecoder::Load(nsIChannel* aChannel,
@@ -465,7 +474,7 @@ bool ChannelMediaDecoder::ShouldThrottleDownload(
 
   int64_t length = aStats.mTotalBytes;
   if (length > 0 &&
-      length <= int64_t(StaticPrefs::MediaMemoryCacheMaxSize()) * 1024) {
+      length <= int64_t(StaticPrefs::media_memory_cache_max_size()) * 1024) {
     // Don't throttle the download of small resources. This is to speed
     // up seeking, as seeks into unbuffered ranges would require starting
     // up a new HTTP transaction, which adds latency.
@@ -496,6 +505,11 @@ void ChannelMediaDecoder::AddSizeOfResources(ResourceSizes* aSizes) {
 already_AddRefed<nsIPrincipal> ChannelMediaDecoder::GetCurrentPrincipal() {
   MOZ_ASSERT(NS_IsMainThread());
   return mResource ? mResource->GetCurrentPrincipal() : nullptr;
+}
+
+bool ChannelMediaDecoder::HadCrossOriginRedirects() {
+  MOZ_ASSERT(NS_IsMainThread());
+  return mResource ? mResource->HadCrossOriginRedirects() : false;
 }
 
 bool ChannelMediaDecoder::IsTransportSeekable() {

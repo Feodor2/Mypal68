@@ -8,7 +8,8 @@
  * event, which fires at a window when painting has happened in
  * that window.
  */
-[ChromeOnly]
+[ChromeOnly,
+ Exposed=Window]
 interface NotifyPaintEvent : Event
 {
   /**

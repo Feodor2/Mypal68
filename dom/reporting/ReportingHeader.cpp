@@ -4,13 +4,14 @@
 
 #include "mozilla/dom/ReportingHeader.h"
 
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "js/JSON.h"
 #include "mozilla/dom/ReportingBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/Services.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPtr.h"
 #include "nsContentUtils.h"
 #include "nsIEffectiveTLDService.h"
@@ -270,13 +271,13 @@ void ReportingHeader::ReportingFromChannel(nsIHttpChannel* aChannel) {
     MOZ_ASSERT(endpoints);
 
     bool isArray = false;
-    if (!JS_IsArrayObject(cx, endpoints, &isArray) || !isArray) {
+    if (!JS::IsArrayObject(cx, endpoints, &isArray) || !isArray) {
       LogToConsoleIncompleteItem(aChannel, aURI, groupName);
       continue;
     }
 
     uint32_t endpointsLength;
-    if (!JS_GetArrayLength(cx, endpoints, &endpointsLength) ||
+    if (!JS::GetArrayLength(cx, endpoints, &endpointsLength) ||
         endpointsLength == 0) {
       LogToConsoleIncompleteItem(aChannel, aURI, groupName);
       continue;

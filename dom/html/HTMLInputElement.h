@@ -6,24 +6,23 @@
 #define mozilla_dom_HTMLInputElement_h
 
 #include "mozilla/Attributes.h"
-#include "nsGenericHTMLElement.h"
-#include "nsImageLoadingContent.h"
-#include "nsITextControlElement.h"
-#include "nsITimer.h"
-#include "nsCOMPtr.h"
-#include "nsIConstraintValidation.h"
+#include "mozilla/Decimal.h"
+#include "mozilla/TextControlElement.h"
+#include "mozilla/TextControlState.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/Variant.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/HTMLFormElement.h"  // for HasEverTriedInvalidSubmit()
 #include "mozilla/dom/HTMLInputElementBinding.h"
 #include "mozilla/dom/Promise.h"
 #include "mozilla/dom/UnionTypes.h"
+#include "nsGenericHTMLElement.h"
+#include "nsImageLoadingContent.h"
+#include "nsCOMPtr.h"
+#include "nsIConstraintValidation.h"
 #include "nsIFilePicker.h"
 #include "nsIContentPrefService2.h"
-#include "mozilla/Decimal.h"
 #include "nsContentUtils.h"
-#include "nsTextEditorState.h"
-#include "mozilla/Variant.h"
 #include "SingleLineTextInputTypes.h"
 #include "NumericInputTypes.h"
 #include "CheckableInputTypes.h"
@@ -115,9 +114,8 @@ class UploadLastDir final : public nsIObserver, public nsSupportsWeakReference {
   };
 };
 
-class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
+class HTMLInputElement final : public TextControlElement,
                                public nsImageLoadingContent,
-                               public nsITextControlElement,
                                public nsIConstraintValidation {
   friend class AfterSetFilesOrDirectoriesCallback;
   friend class DispatchChangeEventCallback;
@@ -198,10 +196,8 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   MOZ_CAN_RUN_SCRIPT
   void SetValueOfRangeForUserEvent(Decimal aValue);
 
-  virtual nsresult BindToTree(Document* aDocument, nsIContent* aParent,
-                              nsIContent* aBindingParent) override;
-  virtual void UnbindFromTree(bool aDeep = true,
-                              bool aNullParent = true) override;
+  virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
+  virtual void UnbindFromTree(bool aNullParent = true) override;
 
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual void DoneCreatingElement() override;
@@ -214,40 +210,49 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   virtual void RemoveStates(EventStates aStates) override;
 
  public:
-  // nsITextControlElement
-  NS_IMETHOD SetValueChanged(bool aValueChanged) override;
-  NS_IMETHOD_(bool) IsSingleLineTextControl() const override;
-  NS_IMETHOD_(bool) IsTextArea() const override;
-  NS_IMETHOD_(bool) IsPasswordTextControl() const override;
-  NS_IMETHOD_(int32_t) GetCols() override;
-  NS_IMETHOD_(int32_t) GetWrapCols() override;
-  NS_IMETHOD_(int32_t) GetRows() override;
-  NS_IMETHOD_(void) GetDefaultValueFromContent(nsAString& aValue) override;
-  NS_IMETHOD_(bool) ValueChanged() const override;
-  NS_IMETHOD_(void)
-  GetTextEditorValue(nsAString& aValue, bool aIgnoreWrap) const override;
-  NS_IMETHOD_(mozilla::TextEditor*) GetTextEditor() override;
-  NS_IMETHOD_(mozilla::TextEditor*) GetTextEditorWithoutCreation() override;
-  NS_IMETHOD_(nsISelectionController*) GetSelectionController() override;
-  NS_IMETHOD_(nsFrameSelection*) GetConstFrameSelection() override;
-  NS_IMETHOD BindToFrame(nsTextControlFrame* aFrame) override;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  NS_IMETHOD_(void) UnbindFromFrame(nsTextControlFrame* aFrame) override;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  NS_IMETHOD CreateEditor() override;
-  NS_IMETHOD_(void) UpdateOverlayTextVisibility(bool aNotify) override;
-  NS_IMETHOD_(void) SetPreviewValue(const nsAString& aValue) override;
-  NS_IMETHOD_(void) GetPreviewValue(nsAString& aValue) override;
-  NS_IMETHOD_(void) EnablePreview() override;
-  NS_IMETHOD_(bool) IsPreviewEnabled() override;
-  NS_IMETHOD_(bool) GetPlaceholderVisibility() override;
-  NS_IMETHOD_(bool) GetPreviewVisibility() override;
-  NS_IMETHOD_(void) InitializeKeyboardEventListeners() override;
-  NS_IMETHOD_(void) OnValueChanged(bool aNotify, ValueChangeKind) override;
+  // TextControlElement
+  virtual nsresult SetValueChanged(bool aValueChanged) override;
+  virtual bool IsSingleLineTextControl() const override;
+  virtual bool IsTextArea() const override;
+  virtual bool IsPasswordTextControl() const override;
+  virtual int32_t GetCols() override;
+  virtual int32_t GetWrapCols() override;
+  virtual int32_t GetRows() override;
+  virtual void GetDefaultValueFromContent(nsAString& aValue) override;
+  virtual bool ValueChanged() const override;
+  virtual void GetTextEditorValue(nsAString& aValue,
+                                  bool aIgnoreWrap) const override;
+  MOZ_CAN_RUN_SCRIPT TextEditor* GetTextEditor() override;
+  virtual TextEditor* GetTextEditorWithoutCreation() override;
+  virtual nsISelectionController* GetSelectionController() override;
+  virtual nsFrameSelection* GetConstFrameSelection() override;
+  virtual TextControlState* GetTextControlState() const override {
+    return GetEditorState();
+  }
+  virtual nsresult BindToFrame(nsTextControlFrame* aFrame) override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual void UnbindFromFrame(
+      nsTextControlFrame* aFrame) override;
+  MOZ_CAN_RUN_SCRIPT virtual nsresult CreateEditor() override;
+  virtual void UpdateOverlayTextVisibility(bool aNotify) override;
+  virtual void SetPreviewValue(const nsAString& aValue) override;
+  virtual void GetPreviewValue(nsAString& aValue) override;
+  virtual void EnablePreview() override;
+  virtual bool IsPreviewEnabled() override;
+  virtual bool GetPlaceholderVisibility() override;
+  virtual bool GetPreviewVisibility() override;
+  virtual void InitializeKeyboardEventListeners() override;
+  virtual void OnValueChanged(bool aNotify, ValueChangeKind) override;
   virtual void GetValueFromSetRangeText(nsAString& aValue) override;
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual nsresult SetValueFromSetRangeText(const nsAString& aValue) override;
-  NS_IMETHOD_(bool) HasCachedSelection() override;
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual nsresult SetValueFromSetRangeText(
+      const nsAString& aValue) override;
+  virtual bool HasCachedSelection() override;
+
+  /**
+   * TextEditorValueEquals() is designed for internal use so that aValue
+   * shouldn't include \r character.  It should be handled before calling this
+   * with nsContentUtils::PlatformToDOMLineBreaks().
+   */
+  bool TextEditorValueEquals(const nsAString& aValue) const;
 
   // Methods for nsFormFillController so it can do selection operations on input
   // types the HTML spec doesn't support them on, like "email".
@@ -288,8 +293,7 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
-  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLInputElement,
-                                           nsGenericHTMLFormElementWithState)
+  NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(HTMLInputElement, TextControlElement)
 
   static UploadLastDir* gUploadLastDir;
   // create and destroy the static UploadLastDir object for remembering
@@ -314,7 +318,7 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
     MOZ_ASSERT(mType == NS_FORM_INPUT_NUMBER);
     mSelectionCached = false;
   }
-  nsTextEditorState::SelectionProperties& GetSelectionProperties() {
+  TextControlState::SelectionProperties& GetSelectionProperties() {
     MOZ_ASSERT(mType == NS_FORM_INPUT_NUMBER);
     return mSelectionProperties;
   }
@@ -326,7 +330,7 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   bool IsTooShort();
   bool IsValueMissing() const;
   bool HasTypeMismatch() const;
-  bool HasPatternMismatch() const;
+  mozilla::Maybe<bool> HasPatternMismatch() const;
   bool IsRangeOverflow() const;
   bool IsRangeUnderflow() const;
   bool HasStepMismatch(bool aUseZeroIfValueNaN = false) const;
@@ -650,9 +654,11 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
                 ErrorResult& aRv);
   void GetValue(nsAString& aValue, CallerType aCallerType);
 
-  Nullable<Date> GetValueAsDate(ErrorResult& aRv);
+  void GetValueAsDate(JSContext* aCx, JS::MutableHandle<JSObject*> aObj,
+                      ErrorResult& aRv);
 
-  void SetValueAsDate(const Nullable<Date>& aDate, ErrorResult& aRv);
+  void SetValueAsDate(JSContext* aCx, JS::Handle<JSObject*> aObj,
+                      ErrorResult& aRv);
 
   double ValueAsNumber() const {
     return DoesValueAsNumberApply() ? GetValueAsDecimal().toDouble()
@@ -841,8 +847,6 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   void UpdateEntries(
       const nsTArray<OwningFileOrDirectory>& aFilesOrDirectories);
 
-  static void Shutdown();
-
   /**
    * Returns if the required attribute applies for the current type.
    */
@@ -865,7 +869,7 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
                              JS::Handle<JSObject*> aGivenProto) override;
 
   // Pull IsSingleLineTextControl into our scope, otherwise it'd be hidden
-  // by the nsITextControlElement version.
+  // by the TextControlElement version.
   using nsGenericHTMLFormElementWithState::IsSingleLineTextControl;
 
   /**
@@ -916,7 +920,7 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
    * @param aValue      String to set.
    * @param aOldValue   Previous value before setting aValue.
                         If previous value is unknown, aOldValue can be nullptr.
-   * @param aFlags      See nsTextEditorState::SetValueFlags.
+   * @param aFlags      See TextControlState::SetValueFlags.
    */
   MOZ_CAN_RUN_SCRIPT
   nsresult SetValueInternal(const nsAString& aValue, const nsAString* aOldValue,
@@ -1080,7 +1084,7 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   bool DoesAutocompleteApply() const;
 
   void FreeData();
-  nsTextEditorState* GetEditorState() const;
+  TextControlState* GetEditorState() const;
 
   mozilla::TextEditor* GetTextEditorFromState();
 
@@ -1379,11 +1383,6 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   static bool IsDateTimeInputType(uint8_t aType);
 
   /**
-   * Flushes the layout frame tree to make sure we have up-to-date frames.
-   */
-  void FlushFrames();
-
-  /**
    * Returns true if the element should prevent dispatching another DOMActivate.
    * This is used in situations where the anonymous subtree should already have
    * sent a DOMActivate and prevents firing more than once.
@@ -1456,7 +1455,7 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
     /**
      * The state of the text editor associated with the text/password input
      */
-    nsTextEditorState* mState;
+    TextControlState* mState;
   } mInputData;
 
   struct FileData;
@@ -1488,9 +1487,9 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   /**
    * The selection properties cache for number controls.  This is needed because
    * the number controls don't recycle their text field, so the normal cache in
-   * nsTextEditorState cannot do its job.
+   * TextControlState cannot do its job.
    */
-  nsTextEditorState::SelectionProperties mSelectionProperties;
+  TextControlState::SelectionProperties mSelectionProperties;
 
   /**
    * The triggering principal for the src attribute.
@@ -1598,28 +1597,10 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
   static bool IsDateTimeTypeSupported(uint8_t aDateTimeInputType);
 
   /**
-   * Checks preference "dom.webkitBlink.filesystem.enabled" to determine if
-   * webkitEntries should be supported.
-   */
-  static bool IsWebkitFileSystemEnabled();
-
-  /**
-   * Checks preference "dom.input.dirpicker" to determine if file and directory
-   * entries API should be supported.
-   */
-  static bool IsDirPickerEnabled();
-
-  /**
    * Checks preference "dom.experimental_forms" to determine if experimental
    * implementation of input element should be enabled.
    */
   static bool IsExperimentalFormsEnabled();
-
-  /**
-   * Checks preference "dom.forms.datetime" to determine if input date and time
-   * should be supported.
-   */
-  static bool IsInputDateTimeEnabled();
 
   /**
    * Checks preference "dom.forms.datetime.others" to determine if input week,
@@ -1678,11 +1659,6 @@ class HTMLInputElement final : public nsGenericHTMLFormElementWithState,
     nsCOMPtr<nsIFilePicker> mFilePicker;
     RefPtr<HTMLInputElement> mInput;
   };
-
-  static void ReleaseTextEditorState(nsTextEditorState* aState);
-
-  static nsTextEditorState* sCachedTextEditorState;
-  static bool sShutdown;
 };
 
 }  // namespace dom

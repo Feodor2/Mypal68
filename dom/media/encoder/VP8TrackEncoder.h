@@ -42,11 +42,13 @@ class VP8TrackEncoder : public VideoTrackEncoder {
  private:
   // Get the EncodeOperation for next target frame.
   EncodeOperation GetNextEncodeOperation(TimeDuration aTimeElapsed,
-                                         StreamTime aProcessedDuration);
+                                         TrackTime aProcessedDuration);
 
   // Get the encoded data from encoder to aData.
-  // Return value: false if the vpx_codec_get_cx_data returns null
-  //               for EOS detection.
+  // Return value: NS_ERROR_NOT_AVAILABABLE if the vpx_codec_get_cx_data returns
+  //                                        null for EOS detection.
+  //               NS_OK if some data was appended to aData.
+  //               An error nsresult otherwise.
   nsresult GetEncodedPartitions(EncodedFrameContainer& aData);
 
   // Prepare the input data to the mVPXImageWrapper for encoding.
@@ -65,7 +67,7 @@ class VP8TrackEncoder : public VideoTrackEncoder {
                                   vpx_codec_enc_cfg_t& config);
 
   // Encoded timestamp.
-  StreamTime mEncodedTimestamp = 0;
+  TrackTime mEncodedTimestamp = 0;
 
   // Total duration in mTrackRate extracted by GetEncodedPartitions().
   CheckedInt64 mExtractedDuration;
@@ -83,7 +85,7 @@ class VP8TrackEncoder : public VideoTrackEncoder {
   /**
    * A duration of non-key frames in milliseconds.
    */
-  StreamTime mDurationSinceLastKeyframe = 0;
+  TrackTime mDurationSinceLastKeyframe = 0;
 
   /**
    * A local segment queue which takes the raw data out from mRawSegment in the

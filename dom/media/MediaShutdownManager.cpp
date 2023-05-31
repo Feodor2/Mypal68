@@ -8,6 +8,7 @@
 
 #include "MediaDecoder.h"
 #include "MediaShutdownManager.h"
+#include "nsIAsyncShutdown.h"
 
 namespace mozilla {
 

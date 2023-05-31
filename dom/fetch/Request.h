@@ -5,7 +5,6 @@
 #ifndef mozilla_dom_Request_h
 #define mozilla_dom_Request_h
 
-#include "nsIContentPolicy.h"
 #include "nsISupportsImpl.h"
 #include "nsWrapperCache.h"
 
@@ -22,11 +21,10 @@ class Headers;
 class InternalHeaders;
 class RequestOrUSVString;
 
-class Request final : public nsISupports,
-                      public FetchBody<Request>,
-                      public nsWrapperCache {
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
-  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(Request)
+class Request final : public FetchBody<Request>, public nsWrapperCache {
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS_INHERITED(Request,
+                                                         FetchBody<Request>)
 
  public:
   Request(nsIGlobalObject* aOwner, InternalRequest* aRequest,

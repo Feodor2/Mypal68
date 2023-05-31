@@ -12,7 +12,6 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/ThreadSafeWeakPtr.h"
 #include "nsStringFwd.h"
-#include "TrackID.h"
 
 namespace mozilla {
 
@@ -27,7 +26,7 @@ class PrincipalInfo;
 
 class MediaEnginePhotoCallback;
 class MediaEnginePrefs;
-class SourceMediaStream;
+class SourceMediaTrack;
 
 /**
  * Callback interface for TakePhoto(). Either PhotoComplete() or PhotoError()
@@ -77,12 +76,12 @@ class MediaEngineSourceInterface {
   virtual nsString GetName() const = 0;
 
   /**
-   * Gets the UUID of this device.
+   * Gets the raw (non-anonymous) UUID of this device.
    */
   virtual nsCString GetUUID() const = 0;
 
   /**
-   * Gets the Group id of this device.
+   * Gets the raw Group id of this device.
    */
   virtual nsString GetGroupId() const = 0;
 
@@ -109,18 +108,16 @@ class MediaEngineSourceInterface {
    */
   virtual nsresult Allocate(const dom::MediaTrackConstraints& aConstraints,
                             const MediaEnginePrefs& aPrefs,
-                            const nsString& aDeviceId,
                             const mozilla::ipc::PrincipalInfo& aPrincipalInfo,
                             const char** aOutBadConstraint) = 0;
 
   /**
-   * Called by MediaEngine when a SourceMediaStream and TrackID have been
-   * provided for the source to feed data to.
+   * Called by MediaEngine when a SourceMediaTrack has been provided for the
+   * source to feed data to.
    *
    * This must be called before Start.
    */
-  virtual void SetTrack(const RefPtr<SourceMediaStream>& aStream,
-                        TrackID aTrackID,
+  virtual void SetTrack(const RefPtr<SourceMediaTrack>& aTrack,
                         const PrincipalHandle& aPrincipal) = 0;
 
   /**
@@ -161,7 +158,6 @@ class MediaEngineSourceInterface {
    */
   virtual nsresult Reconfigure(const dom::MediaTrackConstraints& aConstraints,
                                const MediaEnginePrefs& aPrefs,
-                               const nsString& aDeviceId,
                                const char** aOutBadConstraint) = 0;
 
   /**
@@ -202,8 +198,8 @@ class MediaEngineSourceInterface {
    * calculate this device's ranking as a choice.
    */
   virtual uint32_t GetBestFitnessDistance(
-      const nsTArray<const NormalizedConstraintSet*>& aConstraintSets,
-      const nsString& aDeviceId) const = 0;
+      const nsTArray<const NormalizedConstraintSet*>& aConstraintSets)
+      const = 0;
 
   /**
    * Returns the current settings of the underlying device.
@@ -260,8 +256,12 @@ class MediaEngineSource : public MediaEngineSourceInterface {
   // to tell the caller to fallback to other methods.
   nsresult TakePhoto(MediaEnginePhotoCallback* aCallback) override;
 
-  // Makes aOutSettings empty by default.
-  void GetSettings(dom::MediaTrackSettings& aOutSettings) const override;
+  // Returns a default distance of 0 for devices that don't have capabilities.
+  uint32_t GetBestFitnessDistance(
+      const nsTArray<const NormalizedConstraintSet*>& aConstraintSets)
+      const override {
+    return 0;
+  }
 
  protected:
   virtual ~MediaEngineSource();

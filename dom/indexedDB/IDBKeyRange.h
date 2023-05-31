@@ -50,28 +50,29 @@ class IDBKeyRange : public nsISupports {
 
   // aCx is allowed to be null, but only if aVal.isUndefined().
   static void FromJSVal(JSContext* aCx, JS::Handle<JS::Value> aVal,
-                        IDBKeyRange** aKeyRange, ErrorResult& aRv);
+                        RefPtr<IDBKeyRange>* aKeyRange, ErrorResult& aRv);
 
-  static already_AddRefed<IDBKeyRange> FromSerialized(
+  static MOZ_MUST_USE RefPtr<IDBKeyRange> FromSerialized(
       const indexedDB::SerializedKeyRange& aKeyRange);
 
-  static already_AddRefed<IDBKeyRange> Only(const GlobalObject& aGlobal,
-                                            JS::Handle<JS::Value> aValue,
-                                            ErrorResult& aRv);
+  static MOZ_MUST_USE RefPtr<IDBKeyRange> Only(const GlobalObject& aGlobal,
+                                               JS::Handle<JS::Value> aValue,
+                                               ErrorResult& aRv);
 
-  static already_AddRefed<IDBKeyRange> LowerBound(const GlobalObject& aGlobal,
-                                                  JS::Handle<JS::Value> aValue,
-                                                  bool aOpen, ErrorResult& aRv);
+  static MOZ_MUST_USE RefPtr<IDBKeyRange> LowerBound(
+      const GlobalObject& aGlobal, JS::Handle<JS::Value> aValue, bool aOpen,
+      ErrorResult& aRv);
 
-  static already_AddRefed<IDBKeyRange> UpperBound(const GlobalObject& aGlobal,
-                                                  JS::Handle<JS::Value> aValue,
-                                                  bool aOpen, ErrorResult& aRv);
+  static MOZ_MUST_USE RefPtr<IDBKeyRange> UpperBound(
+      const GlobalObject& aGlobal, JS::Handle<JS::Value> aValue, bool aOpen,
+      ErrorResult& aRv);
 
-  static already_AddRefed<IDBKeyRange> Bound(const GlobalObject& aGlobal,
-                                             JS::Handle<JS::Value> aLower,
-                                             JS::Handle<JS::Value> aUpper,
-                                             bool aLowerOpen, bool aUpperOpen,
-                                             ErrorResult& aRv);
+  static MOZ_MUST_USE RefPtr<IDBKeyRange> Bound(const GlobalObject& aGlobal,
+                                                JS::Handle<JS::Value> aLower,
+                                                JS::Handle<JS::Value> aUpper,
+                                                bool aLowerOpen,
+                                                bool aUpperOpen,
+                                                ErrorResult& aRv);
 
   void AssertIsOnOwningThread() const { NS_ASSERT_OWNINGTHREAD(IDBKeyRange); }
 
@@ -85,15 +86,10 @@ class IDBKeyRange : public nsISupports {
 
   indexedDB::Key& Upper() { return mIsOnly ? mLower : mUpper; }
 
-  bool Includes(JSContext* aCx, JS::Handle<JS::Value> aKey,
+  bool Includes(JSContext* aCx, JS::Handle<JS::Value> aValue,
                 ErrorResult& aRv) const;
 
   bool IsOnly() const { return mIsOnly; }
-
-  void GetBindingClause(const nsACString& aKeyColumnName,
-                        nsACString& _retval) const;
-
-  nsresult BindToStatement(mozIStorageStatement* aStatement) const;
 
   void DropJSObjects();
 
@@ -127,7 +123,7 @@ class IDBLocaleAwareKeyRange final : public IDBKeyRange {
   ~IDBLocaleAwareKeyRange();
 
  public:
-  static already_AddRefed<IDBLocaleAwareKeyRange> Bound(
+  static MOZ_MUST_USE RefPtr<IDBLocaleAwareKeyRange> Bound(
       const GlobalObject& aGlobal, JS::Handle<JS::Value> aLower,
       JS::Handle<JS::Value> aUpper, bool aLowerOpen, bool aUpperOpen,
       ErrorResult& aRv);

@@ -9,7 +9,6 @@
 #include <iterator>
 
 #include "MediaEngineSource.h"
-#include "nsIScriptError.h"
 #include "mozilla/dom/MediaStreamTrackBinding.h"
 #include "mozilla/MediaManager.h"
 
@@ -315,8 +314,7 @@ FlattenedConstraints::FlattenedConstraints(const NormalizedConstraints& aOther)
 
 // MediaEngine helper
 //
-// The full algorithm for all devices. Sources that don't list capabilities
-// need to fake it and hardcode some by populating mHardcodedCapabilities above.
+// The full algorithm for all devices.
 //
 // Fitness distance returned as integer math * 1000. Infinity = UINT32_MAX
 
@@ -337,12 +335,6 @@ bool MediaConstraintsHelper::SomeSettingsFit(
     }
   }
   return false;
-}
-
-/* static */
-uint32_t MediaConstraintsHelper::GetMinimumFitnessDistance(
-    const NormalizedConstraintSet& aConstraints, const nsString& aDeviceId) {
-  return FitnessDistance(aDeviceId, aConstraints.mDeviceId);
 }
 
 template <class ValueType, class NormalizedRange>
@@ -387,13 +379,14 @@ uint32_t MediaConstraintsHelper::FeasibilityDistance(
 
 /* static */
 uint32_t MediaConstraintsHelper::FitnessDistance(
-    const nsString& aN, const NormalizedConstraintSet::StringRange& aParams) {
+    const Maybe<nsString>& aN,
+    const NormalizedConstraintSet::StringRange& aParams) {
   if (!aParams.mExact.empty() &&
-      aParams.mExact.find(aN) == aParams.mExact.end()) {
+      (aN.isNothing() || aParams.mExact.find(*aN) == aParams.mExact.end())) {
     return UINT32_MAX;
   }
   if (!aParams.mIdeal.empty() &&
-      aParams.mIdeal.find(aN) == aParams.mIdeal.end()) {
+      (aN.isNothing() || aParams.mIdeal.find(*aN) == aParams.mIdeal.end())) {
     return 1000;
   }
   return 0;
@@ -482,6 +475,13 @@ uint32_t MediaConstraintsHelper::FitnessDistance(
   }
   {
     NormalizedConstraints fresh(empty);
+    fresh.mGroupId = c.mGroupId;
+    if (!SomeSettingsFit(fresh, aDevices)) {
+      return "groupId";
+    }
+  }
+  {
+    NormalizedConstraints fresh(empty);
     fresh.mWidth = c.mWidth;
     if (!SomeSettingsFit(fresh, aDevices)) {
       return "width";
@@ -513,13 +513,16 @@ uint32_t MediaConstraintsHelper::FitnessDistance(
 
 /* static */ const char* MediaConstraintsHelper::FindBadConstraint(
     const NormalizedConstraints& aConstraints,
-    const RefPtr<MediaEngineSource>& aMediaEngineSource,
-    const nsString& aDeviceId) {
+    const RefPtr<MediaEngineSource>& aMediaEngineSource) {
+  NormalizedConstraints c(aConstraints);
+  NormalizedConstraints empty((dom::MediaTrackConstraints()));
+  c.mDeviceId = empty.mDeviceId;
+  c.mGroupId = empty.mGroupId;
   AutoTArray<RefPtr<MediaDevice>, 1> devices;
   devices.AppendElement(MakeRefPtr<MediaDevice>(
-      aMediaEngineSource, aMediaEngineSource->GetName(), aDeviceId,
-      aMediaEngineSource->GetGroupId(), NS_LITERAL_STRING("")));
-  return FindBadConstraint(aConstraints, devices);
+      aMediaEngineSource, aMediaEngineSource->GetName(), NS_LITERAL_STRING(""),
+      NS_LITERAL_STRING(""), NS_LITERAL_STRING("")));
+  return FindBadConstraint(c, devices);
 }
 
 static void LogConstraintStringRange(
@@ -578,6 +581,7 @@ void MediaConstraintsHelper::LogConstraints(
     LogConstraintStringRange(c.mMediaSource);
     LogConstraintStringRange(c.mFacingMode);
     LogConstraintStringRange(c.mDeviceId);
+    LogConstraintStringRange(c.mGroupId);
     LogConstraintRange(c.mEchoCancellation);
     LogConstraintRange(c.mAutoGainControl);
     LogConstraintRange(c.mNoiseSuppression);

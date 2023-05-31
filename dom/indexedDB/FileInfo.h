@@ -48,10 +48,10 @@ class FileInfo {
 
   virtual int64_t Id() const = 0;
 
-  static already_AddRefed<nsIFile> GetFileForFileInfo(FileInfo* aFileInfo);
+  static nsCOMPtr<nsIFile> GetFileForFileInfo(FileInfo* aFileInfo);
 
  protected:
-  virtual ~FileInfo();
+  virtual ~FileInfo() = default;
 
  private:
   void UpdateReferences(
@@ -68,7 +68,7 @@ class NS_NO_VTABLE FileInfo::CustomCleanupCallback {
   virtual nsresult Cleanup(FileManager* aFileManager, int64_t aId) = 0;
 
  protected:
-  CustomCleanupCallback() {}
+  CustomCleanupCallback() = default;
 };
 
 }  // namespace indexedDB

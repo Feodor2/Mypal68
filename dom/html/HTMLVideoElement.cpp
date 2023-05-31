@@ -15,11 +15,6 @@
 #include "ImageContainer.h"
 #include "VideoFrameContainer.h"
 
-#include "nsIScriptSecurityManager.h"
-#include "nsIXPConnect.h"
-
-#include "nsITimer.h"
-
 #include "FrameStatistics.h"
 #include "MediaError.h"
 #include "MediaDecoder.h"
@@ -31,6 +26,7 @@
 #include "mozilla/dom/TimeRanges.h"
 #include "mozilla/dom/VideoPlaybackQuality.h"
 #include "mozilla/dom/VideoStreamTrack.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/Unused.h"
 
 #include <algorithm>
@@ -47,9 +43,6 @@ nsGenericHTMLElement* NS_NewHTMLVideoElement(
 
 namespace mozilla {
 namespace dom {
-
-static bool sVideoStatsEnabled;
-static bool sCloneElementVisuallyTesting;
 
 nsresult HTMLVideoElement::Clone(mozilla::dom::NodeInfo* aNodeInfo,
                                  nsINode** aResult) const {
@@ -149,7 +142,7 @@ bool HTMLVideoElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                       nsIPrincipal* aMaybeScriptedPrincipal,
                                       nsAttrValue& aResult) {
   if (aAttribute == nsGkAtoms::width || aAttribute == nsGkAtoms::height) {
-    return aResult.ParseSpecialIntValue(aValue);
+    return aResult.ParseHTMLDimension(aValue);
   }
 
   return HTMLMediaElement::ParseAttribute(aNamespaceID, aAttribute, aValue,
@@ -178,14 +171,14 @@ nsMapRuleToAttributesFunc HTMLVideoElement::GetAttributeMappingFunction()
   return &MapAttributesIntoRule;
 }
 
-void HTMLVideoElement::UnbindFromTree(bool aDeep, bool aNullParent) {
+void HTMLVideoElement::UnbindFromTree(bool aNullParent) {
   if (mVisualCloneSource) {
     mVisualCloneSource->EndCloningVisually();
   } else if (mVisualCloneTarget) {
     EndCloningVisually();
   }
 
-  HTMLMediaElement::UnbindFromTree(aDeep, aNullParent);
+  HTMLMediaElement::UnbindFromTree(aNullParent);
 }
 
 nsresult HTMLVideoElement::SetAcceptHeader(nsIHttpChannel* aChannel) {
@@ -384,13 +377,13 @@ void HTMLVideoElement::ReleaseVideoWakeLockIfExists() {
 bool HTMLVideoElement::SetVisualCloneTarget(
     HTMLVideoElement* aVisualCloneTarget) {
   MOZ_DIAGNOSTIC_ASSERT(
-      !aVisualCloneTarget || !aVisualCloneTarget->mUnboundFromTree,
+      !aVisualCloneTarget || aVisualCloneTarget->IsInComposedDoc(),
       "Can't set the clone target to a disconnected video "
       "element.");
   MOZ_DIAGNOSTIC_ASSERT(!mVisualCloneSource,
                         "Can't clone a video element that is already a clone.");
   if (!aVisualCloneTarget ||
-      (!aVisualCloneTarget->mUnboundFromTree && !mVisualCloneSource)) {
+      (aVisualCloneTarget->IsInComposedDoc() && !mVisualCloneSource)) {
     mVisualCloneTarget = aVisualCloneTarget;
     return true;
   }
@@ -400,14 +393,14 @@ bool HTMLVideoElement::SetVisualCloneTarget(
 bool HTMLVideoElement::SetVisualCloneSource(
     HTMLVideoElement* aVisualCloneSource) {
   MOZ_DIAGNOSTIC_ASSERT(
-      !aVisualCloneSource || !aVisualCloneSource->mUnboundFromTree,
+      !aVisualCloneSource || aVisualCloneSource->IsInComposedDoc(),
       "Can't set the clone source to a disconnected video "
       "element.");
   MOZ_DIAGNOSTIC_ASSERT(!mVisualCloneTarget,
                         "Can't clone a video element that is already a "
                         "clone.");
   if (!aVisualCloneSource ||
-      (!aVisualCloneSource->mUnboundFromTree && !mVisualCloneTarget)) {
+      (aVisualCloneSource->IsInComposedDoc() && !mVisualCloneTarget)) {
     mVisualCloneSource = aVisualCloneSource;
     return true;
   }
@@ -415,15 +408,9 @@ bool HTMLVideoElement::SetVisualCloneSource(
 }
 
 /* static */
-void HTMLVideoElement::InitStatics() {
-  Preferences::AddBoolVarCache(&sVideoStatsEnabled,
-                               "media.video_stats.enabled");
-  Preferences::AddBoolVarCache(&sCloneElementVisuallyTesting,
-                               "media.cloneElementVisually.testing");
+bool HTMLVideoElement::IsVideoStatsEnabled() {
+  return StaticPrefs::media_video_stats_enabled();
 }
-
-/* static */
-bool HTMLVideoElement::IsVideoStatsEnabled() { return sVideoStatsEnabled; }
 
 double HTMLVideoElement::TotalPlayTime() const {
   double total = 0.0;
@@ -450,11 +437,11 @@ double HTMLVideoElement::TotalPlayTime() const {
 
 void HTMLVideoElement::CloneElementVisually(HTMLVideoElement& aTargetVideo,
                                             ErrorResult& rv) {
-  MOZ_ASSERT(!mUnboundFromTree,
+  MOZ_ASSERT(IsInComposedDoc(),
              "Can't clone a video that's not bound to a DOM tree.");
-  MOZ_ASSERT(!aTargetVideo.mUnboundFromTree,
+  MOZ_ASSERT(aTargetVideo.IsInComposedDoc(),
              "Can't clone to a video that's not bound to a DOM tree.");
-  if (mUnboundFromTree || aTargetVideo.mUnboundFromTree) {
+  if (!IsInComposedDoc() || !aTargetVideo.IsInComposedDoc()) {
     rv.Throw(NS_ERROR_UNEXPECTED);
     return;
   }
@@ -484,7 +471,7 @@ void HTMLVideoElement::CloneElementVisually(HTMLVideoElement& aTargetVideo,
 
   aTargetVideo.SetMediaInfo(mMediaInfo);
 
-  if (IsInComposedDoc() && !sCloneElementVisuallyTesting) {
+  if (IsInComposedDoc() && !StaticPrefs::media_cloneElementVisually_testing()) {
     NotifyUAWidgetSetupOrChange();
   }
 
@@ -503,12 +490,10 @@ void HTMLVideoElement::MaybeBeginCloningVisually() {
   }
 
   if (mDecoder) {
-    MediaDecoderStateMachine* mdsm = mDecoder->GetStateMachine();
     VideoFrameContainer* container =
         mVisualCloneTarget->GetVideoFrameContainer();
-    if (mdsm && container) {
-      mdsm->SetSecondaryVideoContainer(container);
-      mDecoder->SetCloningVisually(true);
+    if (container) {
+      mDecoder->SetSecondaryVideoContainer(container);
     }
   } else if (mSrcStream) {
     VideoFrameContainer* container =
@@ -523,11 +508,7 @@ void HTMLVideoElement::EndCloningVisually() {
   MOZ_ASSERT(mVisualCloneTarget);
 
   if (mDecoder) {
-    MediaDecoderStateMachine* mdsm = mDecoder->GetStateMachine();
-    if (mdsm) {
-      mdsm->SetSecondaryVideoContainer(nullptr);
-      mDecoder->SetCloningVisually(false);
-    }
+    mDecoder->SetSecondaryVideoContainer(nullptr);
   } else if (mSrcStream) {
     VideoFrameContainer* container =
         mVisualCloneTarget->GetVideoFrameContainer();
@@ -540,7 +521,7 @@ void HTMLVideoElement::EndCloningVisually() {
   Unused << mVisualCloneTarget->SetVisualCloneSource(nullptr);
   Unused << SetVisualCloneTarget(nullptr);
 
-  if (IsInComposedDoc() && !sCloneElementVisuallyTesting) {
+  if (IsInComposedDoc() && !StaticPrefs::media_cloneElementVisually_testing()) {
     NotifyUAWidgetSetupOrChange();
   }
 }

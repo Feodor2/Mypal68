@@ -9,6 +9,7 @@
  * liability, trademark and document use rules apply.
  */
 
+[Exposed=Window]
 interface SVGTextContentElement : SVGGraphicsElement {
 
   // lengthAdjust Types
@@ -33,7 +34,7 @@ interface SVGTextContentElement : SVGGraphicsElement {
   SVGRect getExtentOfChar(unsigned long charnum);
   [Throws]
   float getRotationOfChar(unsigned long charnum);
-  long getCharNumAtPosition(SVGPoint point);
+  long getCharNumAtPosition(optional DOMPointInit point = {});
   [Throws]
   void selectSubString(unsigned long charnum, unsigned long nchars);
 };

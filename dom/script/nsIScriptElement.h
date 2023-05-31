@@ -14,7 +14,7 @@
 #include "nsIContent.h"
 #include "nsContentCreatorFunctions.h"
 #include "mozilla/CORSMode.h"
-#include "mozilla/net/ReferrerPolicy.h"
+#include "ReferrerInfo.h"
 
 // Must be kept in sync with xpcom/rust/xpcom/src/interfaces/nonidl.rs
 #define NS_ISCRIPTELEMENT_IID                        \
@@ -239,8 +239,8 @@ class nsIScriptElement : public nsIScriptLoaderObserver {
   /**
    * Get referrer policy of the script element
    */
-  virtual mozilla::net::ReferrerPolicy GetReferrerPolicy() {
-    return mozilla::net::RP_Unset;
+  virtual mozilla::dom::ReferrerPolicy GetReferrerPolicy() {
+    return mozilla::dom::ReferrerPolicy::_empty;
   }
 
   /**

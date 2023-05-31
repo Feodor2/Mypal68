@@ -11,7 +11,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
 #include "nsComponentManagerUtils.h"
-#include "nsIObserverService.h"
+#include "nsIPresentationDeviceProvider.h"
 #include "nsIWritablePropertyBag2.h"
 #include "nsServiceManagerUtils.h"
 #include "nsTCPDeviceInfo.h"

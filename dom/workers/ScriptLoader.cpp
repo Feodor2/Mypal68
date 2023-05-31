@@ -5,13 +5,13 @@
 #include "ScriptLoader.h"
 
 #include <algorithm>
+#include <type_traits>
 
 #include "nsIChannel.h"
 #include "nsIContentPolicy.h"
 #include "nsIContentSecurityPolicy.h"
 #include "nsIDocShell.h"
 #include "nsIHttpChannel.h"
-#include "nsIHttpChannelInternal.h"
 #include "nsIInputStreamPump.h"
 #include "nsIIOService.h"
 #include "nsIOService.h"
@@ -22,6 +22,7 @@
 #include "nsIStreamListenerTee.h"
 #include "nsIThreadRetargetableRequest.h"
 #include "nsIURI.h"
+#include "nsIXPConnect.h"
 
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -31,7 +32,6 @@
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
 #include "nsDocShellCID.h"
-#include "nsISupportsPrimitives.h"
 #include "nsNetUtil.h"
 #include "nsIPipe.h"
 #include "nsIOutputStream.h"
@@ -68,9 +68,10 @@
 #include "mozilla/dom/SRILogHelper.h"
 #include "mozilla/dom/ServiceWorkerBinding.h"
 #include "mozilla/dom/ServiceWorkerManager.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/UniquePtr.h"
 #include "Principal.h"
-#include "WorkerHolder.h"
 #include "WorkerPrivate.h"
 #include "WorkerRunnable.h"
 #include "WorkerScope.h"
@@ -131,7 +132,8 @@ nsresult ChannelFromScriptURL(
     const Maybe<ServiceWorkerDescriptor>& aController, bool aIsMainScript,
     WorkerScriptType aWorkerScriptType,
     nsContentPolicyType aMainScriptContentPolicyType, nsLoadFlags aLoadFlags,
-    nsICookieSettings* aCookieSettings, nsIChannel** aChannel) {
+    nsICookieSettings* aCookieSettings, nsIReferrerInfo* aReferrerInfo,
+    nsIChannel** aChannel) {
   AssertIsOnMainThread();
 
   nsresult rv;
@@ -153,10 +155,7 @@ nsresult ChannelFromScriptURL(
       principal, uri, true /* aInheritForAboutBlank */,
       false /* aForceInherit */);
 
-  bool isData = false;
-  rv = uri->SchemeIs("data", &isData);
-  NS_ENSURE_SUCCESS(rv, rv);
-
+  bool isData = uri->SchemeIs("data");
   bool isURIUniqueOrigin =
       net::nsIOService::IsDataURIUniqueOpaqueOrigin() && isData;
   if (inheritAttrs && !isURIUniqueOrigin) {
@@ -244,13 +243,13 @@ nsresult ChannelFromScriptURL(
     }
   }
 
-  if (nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(channel)) {
-    mozilla::net::ReferrerPolicy referrerPolicy =
-        parentDoc ? parentDoc->GetReferrerPolicy() : mozilla::net::RP_Unset;
-    rv = nsContentUtils::SetFetchReferrerURIWithPolicy(
-        principal, parentDoc, httpChannel, referrerPolicy);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+  if (aReferrerInfo) {
+    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(channel);
+    if (httpChannel) {
+      rv = httpChannel->SetReferrerInfo(aReferrerInfo);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
     }
   }
 
@@ -259,19 +258,16 @@ nsresult ChannelFromScriptURL(
 }
 
 struct ScriptLoadInfo {
-  ScriptLoadInfo()
-      : mScriptTextBuf(nullptr),
-        mScriptTextLength(0),
-        mLoadResult(NS_ERROR_NOT_INITIALIZED),
-        mLoadingFinished(false),
-        mExecutionScheduled(false),
-        mExecutionResult(false),
-        mCacheStatus(Uncached),
-        mLoadFlags(nsIRequest::LOAD_NORMAL) {}
+  ScriptLoadInfo() {
+    MOZ_ASSERT(mScriptIsUTF8 == false, "set by member initializer");
+    MOZ_ASSERT(mScriptLength == 0, "set by member initializer");
+    mScript.mUTF16 = nullptr;
+  }
 
   ~ScriptLoadInfo() {
-    if (mScriptTextBuf) {
-      js_free(mScriptTextBuf);
+    if (void* data = mScriptIsUTF8 ? static_cast<void*>(mScript.mUTF8)
+                                   : static_cast<void*>(mScript.mUTF16)) {
+      js_free(data);
     }
   }
 
@@ -293,13 +289,41 @@ struct ScriptLoadInfo {
 
   nsCOMPtr<nsIChannel> mChannel;
   Maybe<ClientInfo> mReservedClientInfo;
-  char16_t* mScriptTextBuf;
-  size_t mScriptTextLength;
+  nsresult mLoadResult = NS_ERROR_NOT_INITIALIZED;
 
-  nsresult mLoadResult;
-  bool mLoadingFinished;
-  bool mExecutionScheduled;
-  bool mExecutionResult;
+  // If |mScriptIsUTF8|, then |mUTF8| is active, otherwise |mUTF16| is active.
+  union {
+    char16_t* mUTF16;
+    Utf8Unit* mUTF8;
+  } mScript;
+  size_t mScriptLength = 0;  // in code units
+  bool mScriptIsUTF8 = false;
+
+  bool ScriptTextIsNull() const {
+    return mScriptIsUTF8 ? mScript.mUTF8 == nullptr : mScript.mUTF16 == nullptr;
+  }
+
+  void InitUTF8Script() {
+    MOZ_ASSERT(ScriptTextIsNull());
+    MOZ_ASSERT(mScriptLength == 0);
+
+    mScriptIsUTF8 = true;
+    mScript.mUTF8 = nullptr;
+    mScriptLength = 0;
+  }
+
+  void InitUTF16Script() {
+    MOZ_ASSERT(ScriptTextIsNull());
+    MOZ_ASSERT(mScriptLength == 0);
+
+    mScriptIsUTF8 = false;
+    mScript.mUTF16 = nullptr;
+    mScriptLength = 0;
+  }
+
+  bool mLoadingFinished = false;
+  bool mExecutionScheduled = false;
+  bool mExecutionResult = false;
 
   enum CacheStatus {
     // By default a normal script is just loaded from the network. But for
@@ -321,9 +345,9 @@ struct ScriptLoadInfo {
     Cancel
   };
 
-  CacheStatus mCacheStatus;
+  CacheStatus mCacheStatus = Uncached;
 
-  nsLoadFlags mLoadFlags;
+  nsLoadFlags mLoadFlags = nsIRequest::LOAD_NORMAL;
 
   Maybe<bool> mMutedErrorFlag;
 
@@ -741,8 +765,7 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
     mozilla::dom::RequestOrUSVString request;
 
     MOZ_ASSERT(!loadInfo.mFullURL.IsEmpty());
-    request.SetAsUSVString().Rebind(loadInfo.mFullURL.Data(),
-                                    loadInfo.mFullURL.Length());
+    request.SetAsUSVString().ShareOrDependUpon(loadInfo.mFullURL);
 
     // This JSContext will not end up executing JS code because here there are
     // no ReadableStreams involved.
@@ -842,8 +865,7 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
     // thread) explicitly, so that we can use the stack to notify the net
     // monitor about every script we load.
     if (mOriginStack) {
-      ConvertSerializedStackToJSON(std::move(mOriginStack),
-                                   mOriginStackJSON);
+      ConvertSerializedStackToJSON(std::move(mOriginStack), mOriginStackJSON);
     }
 
     if (!mWorkerPrivate->IsServiceWorker() || IsDebuggerScript()) {
@@ -962,11 +984,20 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
         return rv;
       }
 
-      rv = ChannelFromScriptURL(
-          principal, parentDoc, mWorkerPrivate, loadGroup, ios, secMan, url,
-          mClientInfo, mController, IsMainWorkerScript(), mWorkerScriptType,
-          mWorkerPrivate->ContentPolicyType(), loadFlags,
-          mWorkerPrivate->CookieSettings(), getter_AddRefs(channel));
+      nsCOMPtr<nsIReferrerInfo> referrerInfo =
+          ReferrerInfo::CreateForFetch(principal, nullptr);
+      if (parentWorker && !IsMainWorkerScript()) {
+        referrerInfo =
+            static_cast<ReferrerInfo*>(referrerInfo.get())
+                ->CloneWithNewPolicy(parentWorker->GetReferrerPolicy());
+      }
+
+      rv = ChannelFromScriptURL(principal, parentDoc, mWorkerPrivate, loadGroup,
+                                ios, secMan, url, mClientInfo, mController,
+                                IsMainWorkerScript(), mWorkerScriptType,
+                                mWorkerPrivate->ContentPolicyType(), loadFlags,
+                                mWorkerPrivate->CookieSettings(), referrerInfo,
+                                getter_AddRefs(channel));
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
@@ -1127,21 +1158,31 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
 
     // Use the regular ScriptLoader for this grunt work! Should be just fine
     // because we're running on the main thread.
-    // Unlike <script> tags, Worker scripts are always decoded as UTF-8,
-    // per spec. So we explicitly pass in the charset hint.
-    rv = ScriptLoader::ConvertToUTF16(
-        aLoadInfo.mChannel, aString, aStringLen, NS_LITERAL_STRING("UTF-8"),
-        parentDoc, aLoadInfo.mScriptTextBuf, aLoadInfo.mScriptTextLength);
+    // Worker scripts are always decoded as UTF-8 per spec. Passing null for a
+    // channel and UTF-8 for the hint will always interpret |aString| as UTF-8.
+    if (StaticPrefs::dom_worker_script_loader_utf8_parsing_enabled()) {
+      aLoadInfo.InitUTF8Script();
+      rv = ScriptLoader::ConvertToUTF8(
+          nullptr, aString, aStringLen, NS_LITERAL_STRING("UTF-8"), parentDoc,
+          aLoadInfo.mScript.mUTF8, aLoadInfo.mScriptLength);
+    } else {
+      aLoadInfo.InitUTF16Script();
+      rv = ScriptLoader::ConvertToUTF16(
+          nullptr, aString, aStringLen, NS_LITERAL_STRING("UTF-8"), parentDoc,
+          aLoadInfo.mScript.mUTF16, aLoadInfo.mScriptLength);
+    }
     if (NS_FAILED(rv)) {
       return rv;
     }
 
-    if (!aLoadInfo.mScriptTextLength && !aLoadInfo.mScriptTextBuf) {
+    if (aLoadInfo.ScriptTextIsNull()) {
+      if (aLoadInfo.mScriptLength != 0) {
+        return NS_ERROR_FAILURE;
+      }
+
       nsContentUtils::ReportToConsole(
           nsIScriptError::warningFlag, NS_LITERAL_CSTRING("DOM"), parentDoc,
           nsContentUtils::eDOM_PROPERTIES, "EmptyWorkerSourceWarning");
-    } else if (!aLoadInfo.mScriptTextBuf) {
-      return NS_ERROR_FAILURE;
     }
 
     // Figure out what we actually loaded.
@@ -1182,7 +1223,7 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
       // URL must exactly match the final worker script URL in order to
       // properly set the referrer header on fetch/xhr requests.  If bug 1340694
       // is ever fixed this can be removed.
-      rv = mWorkerPrivate->SetPrincipalsFromChannel(channel);
+      rv = mWorkerPrivate->SetPrincipalsAndCSPFromChannel(channel);
       NS_ENSURE_SUCCESS(rv, rv);
 
       nsCOMPtr<nsIContentSecurityPolicy> csp = mWorkerPrivate->GetCSP();
@@ -1198,7 +1239,7 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
         }
       }
 
-      mWorkerPrivate->SetReferrerPolicyFromHeaderValue(tRPHeaderCValue);
+      mWorkerPrivate->UpdateReferrerInfoFromHeader(tRPHeaderCValue);
 
       WorkerPrivate* parent = mWorkerPrivate->GetParent();
       if (parent) {
@@ -1255,15 +1296,23 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
     // May be null.
     Document* parentDoc = mWorkerPrivate->GetDocument();
 
-    MOZ_ASSERT(!loadInfo.mScriptTextBuf);
+    MOZ_ASSERT(loadInfo.ScriptTextIsNull());
 
-    nsresult rv = ScriptLoader::ConvertToUTF16(
-        nullptr, aString, aStringLen, NS_LITERAL_STRING("UTF-8"), parentDoc,
-        loadInfo.mScriptTextBuf, loadInfo.mScriptTextLength);
+    nsresult rv;
+    if (StaticPrefs::dom_worker_script_loader_utf8_parsing_enabled()) {
+      loadInfo.InitUTF8Script();
+      rv = ScriptLoader::ConvertToUTF8(
+          nullptr, aString, aStringLen, NS_LITERAL_STRING("UTF-8"), parentDoc,
+          loadInfo.mScript.mUTF8, loadInfo.mScriptLength);
+    } else {
+      loadInfo.InitUTF16Script();
+      rv = ScriptLoader::ConvertToUTF16(
+          nullptr, aString, aStringLen, NS_LITERAL_STRING("UTF-8"), parentDoc,
+          loadInfo.mScript.mUTF16, loadInfo.mScriptLength);
+    }
     if (NS_SUCCEEDED(rv) && IsMainWorkerScript()) {
       nsCOMPtr<nsIURI> finalURI;
-      rv = NS_NewURI(getter_AddRefs(finalURI), loadInfo.mFullURL, nullptr,
-                     nullptr);
+      rv = NS_NewURI(getter_AddRefs(finalURI), loadInfo.mFullURL);
       if (NS_SUCCEEDED(rv)) {
         mWorkerPrivate->SetBaseURI(finalURI);
       }
@@ -1277,7 +1326,9 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
       MOZ_DIAGNOSTIC_ASSERT(equal);
 
       nsCOMPtr<nsIContentSecurityPolicy> csp;
-      MOZ_ALWAYS_SUCCEEDS(responsePrincipal->GetCsp(getter_AddRefs(csp)));
+      if (parentDoc) {
+        csp = parentDoc->GetCsp();
+      }
       MOZ_DIAGNOSTIC_ASSERT(!csp);
 #endif
 
@@ -1294,16 +1345,15 @@ class ScriptLoaderRunnable final : public nsIRunnable, public nsINamed {
       // XXX: force the storagePrincipal to be equal to the response one. This
       // is OK for now because we don't want to expose storagePrincipal
       // functionality in ServiceWorkers yet.
-      rv = mWorkerPrivate->SetPrincipalsOnMainThread(
-          responsePrincipal, responsePrincipal, loadGroup);
+      rv = mWorkerPrivate->SetPrincipalsAndCSPOnMainThread(
+          responsePrincipal, responsePrincipal, loadGroup, nullptr);
       MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
 
       rv = mWorkerPrivate->SetCSPFromHeaderValues(aCSPHeaderValue,
                                                   aCSPReportOnlyHeaderValue);
       MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
 
-      mWorkerPrivate->SetReferrerPolicyFromHeaderValue(
-          aReferrerPolicyHeaderValue);
+      mWorkerPrivate->UpdateReferrerInfoFromHeader(aReferrerPolicyHeaderValue);
     }
 
     if (NS_SUCCEEDED(rv)) {
@@ -1613,8 +1663,7 @@ void CacheScriptLoader::Load(Cache* aCache) {
   CopyUTF8toUTF16(spec, mLoadInfo.mFullURL);
 
   mozilla::dom::RequestOrUSVString request;
-  request.SetAsUSVString().Rebind(mLoadInfo.mFullURL.Data(),
-                                  mLoadInfo.mFullURL.Length());
+  request.SetAsUSVString().ShareOrDependUpon(mLoadInfo.mFullURL);
 
   mozilla::dom::CacheQueryOptions params;
 
@@ -1831,15 +1880,21 @@ class ChannelGetterRunnable final : public WorkerMainThreadRunnable {
     clientInfo.emplace(mClientInfo);
 
     nsCOMPtr<nsIChannel> channel;
+    nsCOMPtr<nsIReferrerInfo> referrerInfo =
+        ReferrerInfo::CreateForFetch(mLoadInfo.mLoadingPrincipal, nullptr);
+    mLoadInfo.mReferrerInfo =
+        static_cast<ReferrerInfo*>(referrerInfo.get())
+            ->CloneWithNewPolicy(mWorkerPrivate->GetReferrerPolicy());
+
     mResult = workerinternals::ChannelFromScriptURLMainThread(
         mLoadInfo.mLoadingPrincipal, parentDoc, mLoadInfo.mLoadGroup, url,
         clientInfo,
         // Nested workers are always dedicated.
         nsIContentPolicy::TYPE_INTERNAL_WORKER, mLoadInfo.mCookieSettings,
-        getter_AddRefs(channel));
+        mLoadInfo.mReferrerInfo, getter_AddRefs(channel));
     NS_ENSURE_SUCCESS(mResult, true);
 
-    mResult = mLoadInfo.SetPrincipalsFromChannel(channel);
+    mResult = mLoadInfo.SetPrincipalsAndCSPFromChannel(channel);
     NS_ENSURE_SUCCESS(mResult, true);
 
     mLoadInfo.mChannel = channel.forget();
@@ -1886,6 +1941,10 @@ bool ScriptExecutorRunnable::PreRun(WorkerPrivate* aWorkerPrivate) {
   MOZ_ASSERT(mFirstIndex == 0);
   MOZ_ASSERT(!mScriptLoader.mRv.Failed());
 
+  // Move the CSP from the workerLoadInfo in the corresponding Client
+  // where the CSP code expects it!
+  aWorkerPrivate->StoreCSPOnClient();
+
   AutoJSAPI jsapi;
   jsapi.Init();
 
@@ -1904,6 +1963,29 @@ bool ScriptExecutorRunnable::PreRun(WorkerPrivate* aWorkerPrivate) {
   }
 
   return true;
+}
+
+template <typename Unit>
+static bool EvaluateScriptData(JSContext* aCx,
+                               const JS::CompileOptions& aOptions,
+                               Unit*& aScriptData, size_t aScriptLength) {
+  static_assert(std::is_same<Unit, char16_t>::value ||
+                    std::is_same<Unit, Utf8Unit>::value,
+                "inferred units must be UTF-8 or UTF-16");
+
+  // Transfer script data to a local variable.
+  Unit* script = nullptr;
+  std::swap(script, aScriptData);
+
+  // Transfer the local to appropriate |SourceText|.
+  JS::SourceText<Unit> srcBuf;
+  if (!srcBuf.init(aCx, script, aScriptLength,
+                   JS::SourceOwnership::TakeOwnership)) {
+    return false;
+  }
+
+  JS::Rooted<JS::Value> unused(aCx);
+  return Evaluate(aCx, aOptions, srcBuf, &unused);
 }
 
 bool ScriptExecutorRunnable::WorkerRun(JSContext* aCx,
@@ -1964,24 +2046,22 @@ bool ScriptExecutorRunnable::WorkerRun(JSContext* aCx,
     MOZ_ASSERT(loadInfo.mMutedErrorFlag.isSome());
     options.setMutedErrors(loadInfo.mMutedErrorFlag.valueOr(true));
 
-    // Pass ownership of the data, first to local variables, then to the
-    // UniqueTwoByteChars moved into the |init| function.
-    size_t dataLength = 0;
-    char16_t* data = nullptr;
-
-    std::swap(dataLength, loadInfo.mScriptTextLength);
-    std::swap(data, loadInfo.mScriptTextBuf);
-
-    JS::SourceText<char16_t> srcBuf;
-    if (!srcBuf.init(aCx, JS::UniqueTwoByteChars(data), dataLength)) {
-      mScriptLoader.mRv.StealExceptionFromJSContext(aCx);
-      return true;
-    }
-
     // Our ErrorResult still shouldn't be a failure.
     MOZ_ASSERT(!mScriptLoader.mRv.Failed(), "Who failed it and why?");
-    JS::Rooted<JS::Value> unused(aCx);
-    if (!JS::Evaluate(aCx, options, srcBuf, &unused)) {
+
+    // Transfer script length to a local variable, encoding-agnostically.
+    size_t scriptLength = 0;
+    std::swap(scriptLength, loadInfo.mScriptLength);
+
+    // This transfers script data out of the active arm of |loadInfo.mScript|.
+    bool successfullyEvaluated =
+        loadInfo.mScriptIsUTF8
+            ? EvaluateScriptData(aCx, options, loadInfo.mScript.mUTF8,
+                                 scriptLength)
+            : EvaluateScriptData(aCx, options, loadInfo.mScript.mUTF16,
+                                 scriptLength);
+    MOZ_ASSERT(loadInfo.ScriptTextIsNull());
+    if (!successfullyEvaluated) {
       mScriptLoader.mRv.StealExceptionFromJSContext(aCx);
       return true;
     }
@@ -2058,10 +2138,10 @@ void ScriptExecutorRunnable::ShutdownScriptLoader(JSContext* aCx,
     if (mScriptLoader.mRv.Failed()) {
       if (aMutedError && mScriptLoader.mRv.IsJSException()) {
         LogExceptionToConsole(aCx, aWorkerPrivate);
-        mScriptLoader.mRv.ThrowWithCustomCleanup(NS_ERROR_DOM_NETWORK_ERR);
+        mScriptLoader.mRv.Throw(NS_ERROR_DOM_NETWORK_ERR);
       }
     } else {
-      mScriptLoader.mRv.ThrowWithCustomCleanup(NS_ERROR_DOM_INVALID_STATE_ERR);
+      mScriptLoader.mRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     }
   }
 
@@ -2119,8 +2199,8 @@ void LoadAllScripts(WorkerPrivate* aWorkerPrivate,
   }
 
   RefPtr<ScriptLoaderRunnable> loader = new ScriptLoaderRunnable(
-      aWorkerPrivate, std::move(aOriginStack), syncLoopTarget, aLoadInfos, clientInfo,
-      controller, aIsMainScript, aWorkerScriptType, aRv);
+      aWorkerPrivate, std::move(aOriginStack), syncLoopTarget, aLoadInfos,
+      clientInfo, controller, aIsMainScript, aWorkerScriptType, aRv);
 
   NS_ASSERTION(aLoadInfos.IsEmpty(), "Should have swapped!");
 
@@ -2153,7 +2233,8 @@ nsresult ChannelFromScriptURLMainThread(
     nsIPrincipal* aPrincipal, Document* aParentDoc, nsILoadGroup* aLoadGroup,
     nsIURI* aScriptURL, const Maybe<ClientInfo>& aClientInfo,
     nsContentPolicyType aMainScriptContentPolicyType,
-    nsICookieSettings* aCookieSettings, nsIChannel** aChannel) {
+    nsICookieSettings* aCookieSettings, nsIReferrerInfo* aReferrerInfo,
+    nsIChannel** aChannel) {
   AssertIsOnMainThread();
 
   nsCOMPtr<nsIIOService> ios(do_GetIOService());
@@ -2165,7 +2246,7 @@ nsresult ChannelFromScriptURLMainThread(
       aPrincipal, aParentDoc, nullptr, aLoadGroup, ios, secMan, aScriptURL,
       aClientInfo, Maybe<ServiceWorkerDescriptor>(), true, WorkerScript,
       aMainScriptContentPolicyType, nsIRequest::LOAD_NORMAL, aCookieSettings,
-      aChannel);
+      aReferrerInfo, aChannel);
 }
 
 nsresult ChannelFromScriptURLWorkerThread(JSContext* aCx,

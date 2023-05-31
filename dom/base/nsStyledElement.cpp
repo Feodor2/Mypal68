@@ -9,8 +9,9 @@
 #include "nsAttrValueInlines.h"
 #include "mozilla/dom/ElementInlines.h"
 #include "mozilla/dom/MutationEventBinding.h"
+#include "mozilla/dom/MutationObservers.h"
 #include "mozilla/InternalMutationEvent.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsDOMCSSDeclaration.h"
 #include "nsDOMCSSAttrDeclaration.h"
 #include "nsServiceManagerUtils.h"
@@ -94,8 +95,8 @@ void nsStyledElement::InlineStyleDeclarationWillChange(
   aData.mModType =
       modification ? static_cast<uint8_t>(MutationEvent_Binding::MODIFICATION)
                    : static_cast<uint8_t>(MutationEvent_Binding::ADDITION);
-  nsNodeUtils::AttributeWillChange(this, kNameSpaceID_None, nsGkAtoms::style,
-                                   aData.mModType);
+  MutationObservers::NotifyAttributeWillChange(
+      this, kNameSpaceID_None, nsGkAtoms::style, aData.mModType);
 
   // XXXsmaug In order to make attribute handling more consistent, consider to
   //         call BeforeSetAttr and pass kCallAfterSetAttr to
@@ -183,9 +184,9 @@ void nsStyledElement::ParseStyleAttribute(const nsAString& aValue,
   Document* doc = OwnerDoc();
   bool isNativeAnon = IsInNativeAnonymousSubtree();
 
-  if (!isNativeAnon && !nsStyleUtil::CSPAllowsInlineStyle(
-                           this, NodePrincipal(), aMaybeScriptedPrincipal,
-                           doc->GetDocumentURI(), 0, 0, aValue, nullptr))
+  if (!isNativeAnon &&
+      !nsStyleUtil::CSPAllowsInlineStyle(this, doc, aMaybeScriptedPrincipal, 0,
+                                         0, aValue, nullptr))
     return;
 
   if (aForceInDataDoc || !doc->IsLoadedAsData() || GetExistingStyle() ||

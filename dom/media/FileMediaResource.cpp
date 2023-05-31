@@ -10,6 +10,7 @@
 #include "nsContentUtils.h"
 #include "nsIFileChannel.h"
 #include "nsIFileStreams.h"
+#include "nsITimedChannel.h"
 #include "nsNetUtil.h"
 
 namespace mozilla {
@@ -93,7 +94,7 @@ nsresult FileMediaResource::Open(nsIStreamListener** aStreamListener) {
   return NS_OK;
 }
 
-nsresult FileMediaResource::Close() {
+RefPtr<GenericPromise> FileMediaResource::Close() {
   NS_ASSERTION(NS_IsMainThread(), "Only call on main thread");
 
   // Since mChennel is only accessed by main thread, there is no necessary to
@@ -103,7 +104,7 @@ nsresult FileMediaResource::Close() {
     mChannel = nullptr;
   }
 
-  return NS_OK;
+  return GenericPromise::CreateAndResolve(true, __func__);
 }
 
 already_AddRefed<nsIPrincipal> FileMediaResource::GetCurrentPrincipal() {
@@ -114,6 +115,20 @@ already_AddRefed<nsIPrincipal> FileMediaResource::GetCurrentPrincipal() {
   if (!secMan || !mChannel) return nullptr;
   secMan->GetChannelResultPrincipal(mChannel, getter_AddRefs(principal));
   return principal.forget();
+}
+
+bool FileMediaResource::HadCrossOriginRedirects() {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  nsCOMPtr<nsITimedChannel> timedChannel = do_QueryInterface(mChannel);
+  if (!timedChannel) {
+    return false;
+  }
+
+  bool allRedirectsSameOrigin = false;
+  return NS_SUCCEEDED(timedChannel->GetAllRedirectsSameOrigin(
+             &allRedirectsSameOrigin)) &&
+         !allRedirectsSameOrigin;
 }
 
 nsresult FileMediaResource::ReadFromCache(char* aBuffer, int64_t aOffset,

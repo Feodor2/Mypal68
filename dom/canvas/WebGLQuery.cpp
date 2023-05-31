@@ -4,7 +4,6 @@
 
 #include "WebGLQuery.h"
 
-#include "gfxPrefs.h"
 #include "GLContext.h"
 #include "mozilla/dom/WebGL2RenderingContextBinding.h"
 #include "nsContentUtils.h"
@@ -116,7 +115,7 @@ void WebGLQuery::GetQueryParameter(GLenum pname,
 
   // We must usually wait for an event loop before the query can be available.
   const bool canBeAvailable =
-      (mCanBeAvailable || gfxPrefs::WebGLImmediateQueries());
+      (mCanBeAvailable || StaticPrefs::webgl_allow_immediate_queries());
   if (!canBeAvailable) {
     if (pname == LOCAL_GL_QUERY_RESULT_AVAILABLE) {
       retval.set(JS::BooleanValue(false));
@@ -141,7 +140,7 @@ void WebGLQuery::GetQueryParameter(GLenum pname,
             gl->fGetQueryObjectui64v(mGLName, pname, &val);
             break;
           }
-          MOZ_FALLTHROUGH;
+          [[fallthrough]];
 
         default:
           gl->fGetQueryObjectuiv(mGLName, LOCAL_GL_QUERY_RESULT, (GLuint*)&val);

@@ -506,7 +506,7 @@ class DesktopInstance(GeckoInstance):
         "app.update.disabledForTesting": True,
         # !!! For backward compatibility up to Firefox 64. Only remove
         # when this Firefox version is no longer supported by the client !!!
-        "app.update.auto": False,
+        "app.update.auto": 0,
 
         # Don't show the content blocking introduction panel
         # We use a larger number than the default 22 to have some buffer

@@ -1,6 +1,8 @@
 from __future__ import absolute_import, unicode_literals
+from six import reraise
 
 import os
+import requests
 import sys
 import threading
 import time
@@ -13,13 +15,6 @@ from mozrunner.errors import RunnerNotStartedError
 
 # need this so raptor imports work both from /raptor and via mach
 here = os.path.abspath(os.path.dirname(__file__))
-if os.environ.get('SCRIPTSPATH', None) is not None:
-    # in production it is env SCRIPTS_PATH
-    mozharness_dir = os.environ['SCRIPTSPATH']
-else:
-    # locally it's in source tree
-    mozharness_dir = os.path.join(here, '../../mozharness')
-sys.path.insert(0, mozharness_dir)
 
 from raptor.raptor import RaptorDesktopFirefox, RaptorDesktopChrome, RaptorAndroid
 
@@ -83,8 +78,6 @@ def test_start_and_stop_server(raptor):
 
 def test_server_wait_states(raptor):
     import datetime
-
-    import requests
 
     def post_state():
         requests.post("http://127.0.0.1:%s/" % raptor.control_server.port,
@@ -172,7 +165,7 @@ def test_start_browser(get_binary, app):
 
     if thread.exc is not None:
         exc, value, tb = thread.exc
-        raise exc, value, tb
+        reraise(exc, value, tb)
 
     assert not raptor.runner.is_running()
     assert raptor.runner.returncode is not None

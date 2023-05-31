@@ -319,9 +319,18 @@ function run_test(
 
 # A test for failure to load a test due to an error other than a syntax error
 LOAD_ERROR_OTHER_ERROR = '''
-function run_test() {
-    1 = "foo"; // invalid assignment left-hand side
-};
+"use strict";
+no_such_var = "foo"; // assignment to undeclared variable
+'''
+
+# A test that crashes outright.
+TEST_CRASHING = '''
+function run_test () {
+  Components.utils.import("resource://gre/modules/ctypes.jsm", this);
+  let zero = new ctypes.intptr_t(8);
+  let badptr = ctypes.cast(zero, ctypes.PointerType(ctypes.int32_t));
+  badptr.contents;
+}
 '''
 
 # A test for asynchronous cleanup functions
@@ -933,6 +942,20 @@ add_test({
         self.assertEquals(1, self.x.passCount)
         self.assertEquals(0, self.x.failCount)
 
+    def testCrashLogging(self):
+        """
+        Test that a crashing test process logs a failure.
+        """
+        self.writeFile("test_crashes.js", TEST_CRASHING)
+        self.writeManifest(["test_crashes.js"])
+
+        self.assertTestResult(False)
+        self.assertEquals(1, self.x.testCount)
+        self.assertEquals(0, self.x.passCount)
+        self.assertEquals(1, self.x.failCount)
+        if substs.get('MOZ_CRASHREPORTER'):
+            self.assertInLog("\nPROCESS-CRASH")
+
     def testLogCorrectFileName(self):
         """
         Make sure a meaningful filename and line number is logged
@@ -1195,7 +1218,7 @@ add_test({
 
         self.assertTestResult(False)
         self.assertInLog(TEST_FAIL_STRING)
-        self.assertInLog("ReferenceError: invalid assignment left-hand side at")
+        self.assertInLog("ReferenceError: assignment to undeclared variable")
         self.assertInLog("test_error.js:3")
         self.assertNotInLog(TEST_PASS_STRING)
 

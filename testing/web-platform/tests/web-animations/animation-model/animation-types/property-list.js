@@ -413,15 +413,6 @@ const gCSSProperties = {
       { type: 'discrete', options: [ [ 'auto', '1px' ] ] }
     ]
   },
-  'content': {
-    // https://drafts.csswg.org/css-content-3/#propdef-content
-    types: [
-      { type: 'discrete', options: [ [ '"a"', '"b"' ] ] }
-    ],
-    setup: t => {
-      return getPseudoElement(t, 'before');
-    }
-  },
   'counter-increment': {
     // https://drafts.csswg.org/css-lists-3/#propdef-counter-increment
     types: [
@@ -993,6 +984,10 @@ const gCSSProperties = {
     types: [
     ]
   },
+  'offset-distance': {
+    // https://drafts.fxtf.org/motion-1/#offset-distance-property
+    types: [ 'lengthPercentageOrCalc' ]
+  },
   'offset-path': {
     // https://drafts.fxtf.org/motion-1/#offset-path-property
     types: [
@@ -1301,7 +1296,7 @@ const gCSSProperties = {
   'text-emphasis-style': {
     // http://dev.w3.org/csswg/css-text-decor-3/#propdef-text-emphasis-style
     types: [
-      { type: 'discrete', options: [ [ 'filled circle', 'open dot' ] ] }
+      { type: 'discrete', options: [ [ 'circle', 'open dot' ] ] }
     ]
   },
   'text-indent': {
@@ -1431,13 +1426,11 @@ const gCSSProperties = {
 };
 
 function testAnimationSamples(animation, idlName, testSamples) {
-  const type = animation.effect.target.type;
-  const target = animation.effect.target.constructor.name === 'CSSPseudoElement'
-                 ? animation.effect.target.element
-                 : animation.effect.target;
+  const pseudoType = animation.effect.pseudoElement;
+  const target = animation.effect.target;
   for (const testSample of testSamples) {
     animation.currentTime = testSample.time;
-    assert_equals(getComputedStyle(target, type)[idlName],
+    assert_equals(getComputedStyle(target, pseudoType)[idlName],
                   testSample.expected,
                   `The value should be ${testSample.expected}` +
                   ` at ${testSample.time}ms`);
@@ -1452,10 +1445,8 @@ function toOrderedArray(string) {
 // don't specify an order for serializing computed values.
 // This test is for such the property.
 function testAnimationSamplesWithAnyOrder(animation, idlName, testSamples) {
-  const type = animation.effect.target.type;
-  const target = animation.effect.target.constructor.name === 'CSSPseudoElement'
-                 ? animation.effect.target.element
-                 : animation.effect.target;
+  const type = animation.effect.pseudoElement;
+  const target = animation.effect.target;
   for (const testSample of testSamples) {
     animation.currentTime = testSample.time;
 

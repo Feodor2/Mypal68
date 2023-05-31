@@ -1,5 +1,5 @@
 use base64::DecodeError;
-use hyper::StatusCode;
+use http::StatusCode;
 use serde::ser::{Serialize, Serializer};
 use serde_json;
 use std::borrow::Cow;
@@ -325,7 +325,7 @@ impl Error for WebDriverError {
         self.error_code()
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         None
     }
 }
@@ -354,8 +354,8 @@ impl From<DecodeError> for WebDriverError {
     }
 }
 
-impl From<Box<Error>> for WebDriverError {
-    fn from(err: Box<Error>) -> WebDriverError {
+impl From<Box<dyn Error>> for WebDriverError {
+    fn from(err: Box<dyn Error>) -> WebDriverError {
         WebDriverError::new(ErrorStatus::UnknownError, err.description().to_string())
     }
 }

@@ -196,9 +196,12 @@ promise_test(async testCase => {
   txn2.commit();
 
   // Exercise the IndexedDB transaction ordering by executing one with a
-  // different scope.
-  const txn3 = db.transaction(['not_books'], 'readwrite');
-  txn3.objectStore('not_books').put({'title': 'not_title'}, 'key');
+  // different scope. A readonly transaction is used here because
+  // implementations are not required to run non-overlapping readwrite
+  // transactions in parallel, and some implementations (ex: Firefox)
+  // will not.
+  const txn3 = db.transaction(['not_books'], 'readonly');
+  txn3.objectStore('not_books').getAllKeys();
   txn3.oncomplete = function() {
     releaseTxnFunction();
   }
@@ -288,5 +291,5 @@ promise_test(async testCase => {
   assert_equals(getRequest1.result.title, 'title1');
   assert_equals(getRequest2.result.title, 'title2');
   db.close();
-}, 'Transactions that handle all errors properly should be behave as ' +
+}, 'Transactions that handle all errors properly should behave as ' +
    'expected when an explicit commit is called in an onerror handler.');

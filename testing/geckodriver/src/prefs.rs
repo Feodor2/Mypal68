@@ -17,6 +17,9 @@ lazy_static! {
         // Make sure Shield doesn't hit the network.
         ("app.normandy.api_url", Pref::new("")),
 
+        // Disable automatic downloading of new releases
+        ("app.update.auto", Pref::new(false)),
+
         // Disable Firefox old build background check
         ("app.update.checkInstallTime", Pref::new(false)),
 

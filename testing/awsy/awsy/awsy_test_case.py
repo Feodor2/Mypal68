@@ -172,7 +172,7 @@ class AwsyTestCase(MarionetteTestCase):
         try:
             result = self.marionette.execute_async_script(
                 gc_script, script_timeout=180000)
-        except JavascriptException, e:
+        except JavascriptException as e:
             self.logger.error("GC JavaScript error: %s" % e)
         except ScriptTimeoutException:
             self.logger.error("GC timed out")
@@ -222,7 +222,7 @@ class AwsyTestCase(MarionetteTestCase):
                 checkpoint_script, script_timeout=60000)
             if finished:
                 checkpoint = checkpoint_path
-        except JavascriptException, e:
+        except JavascriptException as e:
             self.logger.error("Checkpoint JavaScript error: %s" % e)
         except ScriptTimeoutException:
             self.logger.error("Memory report timed out")
@@ -290,7 +290,7 @@ class AwsyTestCase(MarionetteTestCase):
                 for f in incomplete:
                     os.remove(os.path.join(tmpdir, f))
 
-        except JavascriptException, e:
+        except JavascriptException as e:
             self.logger.error("DMD JavaScript error: %s" % e)
         except ScriptTimeoutException:
             self.logger.error("DMD timed out")

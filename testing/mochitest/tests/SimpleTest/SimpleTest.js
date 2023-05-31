@@ -1255,7 +1255,7 @@ SimpleTest.finish = function() {
  *   message, errorMessage, sourceName, sourceLine, category:
  *     string or regexp
  *   lineNumber, columnNumber: number
- *   isScriptError, isWarning, isException, isStrict: boolean
+ *   isScriptError, isWarning: boolean
  * Strings, numbers, and booleans must compare equal to the named
  * property of the Nth console message.  Regexps must match.  Any
  * fields present in the message but not in the pattern object are ignored.
@@ -1314,7 +1314,7 @@ SimpleTest.monitorConsole = function (continuation, msgs, forbidUnexpectedMsgs) 
   }
 
   var counter = 0;
-  var assertionLabel = msgs.toSource();
+  var assertionLabel = JSON.stringify(msgs);
   function listener(msg) {
     if (msg.message === "SENTINEL" && !msg.isScriptError) {
       is(counter, msgs.length,

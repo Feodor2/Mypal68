@@ -4,7 +4,7 @@
 // Source: Web Share API - Level 1 (https://wicg.github.io/web-share/)
 
 partial interface Navigator {
-  [SecureContext] Promise<void> share(optional ShareData data);
+  [SecureContext] Promise<void> share(optional ShareData data = {});
 };
 
 dictionary ShareData {

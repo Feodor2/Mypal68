@@ -410,8 +410,6 @@ SPConsoleListener.prototype = {
       isScriptError: false,
       isConsoleEvent: false,
       isWarning: false,
-      isException: false,
-      isStrict: false,
     };
     if (msg instanceof Ci.nsIScriptError) {
       m.errorMessage = msg.errorMessage;
@@ -425,8 +423,6 @@ SPConsoleListener.prototype = {
       m.innerWindowID = msg.innerWindowID;
       m.isScriptError = true;
       m.isWarning = (msg.flags & Ci.nsIScriptError.warningFlag) === 1;
-      m.isException = (msg.flags & Ci.nsIScriptError.exceptionFlag) === 1;
-      m.isStrict = (msg.flags & Ci.nsIScriptError.strictFlag) === 1;
     } else if (topic === "console-api-log-event") {
       // This is a dom/console event.
       let unwrapped = msg.wrappedJSObject;
@@ -1027,13 +1023,18 @@ SpecialPowersAPI.prototype = {
         }
       }
       this._permissionsUndoStack.push(cleanupPermissions);
-      this._pendingPermissions.push([
-        pendingPermissions,
-        this._delayCallbackTwice(callback),
-      ]);
-      this._applyPermissions();
+      await new Promise(resolve => {
+        this._pendingPermissions.push([
+          pendingPermissions,
+          this._delayCallbackTwice(resolve),
+        ]);
+        this._applyPermissions();
+      });
     } else {
-      this._setTimeout(callback);
+      await this.promiseTimeout();
+    }
+    if (callback) {
+      callback();
     }
   },
 
@@ -2486,6 +2487,10 @@ SpecialPowersAPI.prototype = {
 
   doCommand(window, cmd) {
     return this._getDocShell(window).doCommand(cmd);
+  },
+
+  isCommandEnabled(window, cmd) {
+    return this._getDocShell(window).isCommandEnabled(cmd);
   },
 
   setCommandNode(window, node) {

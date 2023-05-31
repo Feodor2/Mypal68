@@ -2,6 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+from __future__ import absolute_import
 import os
 import sys
 
@@ -105,4 +106,4 @@ class UpdateTestRunner(FirefoxUITestRunner):
         # If exceptions happened, re-throw the last one
         if self.exc_info:
             ex_type, exception, tb = self.exc_info
-            raise ex_type, exception, tb
+            raise ex_type(exception).with_traceback(tb)

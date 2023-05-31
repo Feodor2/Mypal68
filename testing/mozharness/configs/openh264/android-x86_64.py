@@ -29,7 +29,11 @@ config = {
     'min_sdk': 16,
     'operating_system': 'android',
     'partial_env': {
-        'PATH': ('%(abs_work_dir)s/src/android-sdk-linux/tools:'
-                 '%(abs_work_dir)s/src/clang/bin/:%(PATH)s'),
+        'CXXFLAGS': '-stdlib=libstdc++',
+        'LDFLAGS': '-stdlib=libstdc++',
+        'PATH': ('{MOZ_FETCHES_DIR}/android-sdk-linux/tools:'
+                 '{MOZ_FETCHES_DIR}/clang/bin:'
+                 '{MOZ_FETCHES_DIR}/nasm:%(PATH)s'
+                 .format(MOZ_FETCHES_DIR=os.environ['MOZ_FETCHES_DIR'])),
     },
 }

@@ -47,7 +47,7 @@ add_task(
 
     await new Promise(async resolve => {
       await threadClient.stepIn();
-      threadClient.addOneTimeListener("paused", (event, packet) => {
+      threadClient.once("paused", (packet) => {
         equal(packet.type, "paused");
         // Before fixing bug 785689, the type was resumeLimit.
         equal(packet.why.type, "debuggerStatement");

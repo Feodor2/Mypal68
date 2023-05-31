@@ -9,7 +9,7 @@ const { render } = require("enzyme");
 const Provider = createFactory(require("react-redux").Provider);
 
 const ConsoleOutput = createFactory(
-  require("devtools/client/webconsole/components/ConsoleOutput")
+  require("devtools/client/webconsole/components/Output/ConsoleOutput")
 );
 const serviceContainer = require("devtools/client/webconsole/test/fixtures/serviceContainer");
 const { setupStore } = require("devtools/client/webconsole/test/helpers");

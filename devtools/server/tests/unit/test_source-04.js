@@ -39,7 +39,7 @@ add_task(
       // Ensure that the breakpoint was properly applied to the JSScipt loaded
       // in the first global.
       let pausedOne = false;
-      threadClient.addOneTimeListener("paused", function(event, packet) {
+      threadClient.once("paused", function(packet) {
         pausedOne = true;
         resume(threadClient);
       });
@@ -60,7 +60,7 @@ add_task(
       // Ensure that the breakpoint was properly applied to the JSScipt loaded
       // in the second global.
       let pausedTwo = false;
-      threadClient.addOneTimeListener("paused", function(event, packet) {
+      threadClient.once("paused", function(packet) {
         pausedTwo = true;
         resume(threadClient);
       });

@@ -29,6 +29,10 @@ devtools.jar:
     content/performance/index.xul (performance/index.xul)
     content/performance-new/index.xhtml (performance-new/index.xhtml)
     content/performance-new/frame-script.js (performance-new/frame-script.js)
+    content/performance-new/popup/icons/capture-profile-icon.svg (performance-new/popup/icons/capture-profile-icon.svg)
+    content/performance-new/popup/initializer.js (performance-new/popup/initializer.js)
+    content/performance-new/popup/popup.css (performance-new/popup/popup.css)
+    content/performance-new/popup/popup.html (performance-new/popup/popup.html)
     content/memory/index.xhtml (memory/index.xhtml)
     content/framework/toolbox-window.xul (framework/toolbox-window.xul)
     content/framework/toolbox-options.xhtml (framework/toolbox-options.xhtml)
@@ -46,15 +50,15 @@ devtools.jar:
     content/shared/widgets/cubic-bezier.css (shared/widgets/cubic-bezier.css)
     content/shared/widgets/filter-widget.css (shared/widgets/filter-widget.css)
     content/shared/widgets/spectrum.css (shared/widgets/spectrum.css)
-    content/aboutdebugging/aboutdebugging.xhtml (aboutdebugging/aboutdebugging.xhtml)
-    content/aboutdebugging/aboutdebugging.css (aboutdebugging/aboutdebugging.css)
     content/aboutdebugging-new/index.html (aboutdebugging-new/index.html)
     content/aboutdebugging-new/aboutdebugging.css (aboutdebugging-new/aboutdebugging.css)
-    content/responsive.html/index.xhtml (responsive.html/index.xhtml)
+    content/responsive/index.xhtml (responsive/index.xhtml)
     content/dom/index.html (dom/index.html)
     content/dom/main.js (dom/main.js)
+#ifdef ACCESSIBILITY
     content/accessibility/index.html (accessibility/index.html)
     content/accessibility/main.js (accessibility/main.js)
+#endif
 %   skin devtools classic/1.0 %skin/
     skin/devtools-browser.css (themes/devtools-browser.css)
     skin/dark-theme.css (themes/dark-theme.css)
@@ -62,7 +66,9 @@ devtools.jar:
     skin/toolbars.css (themes/toolbars.css)
     skin/toolbox.css (themes/toolbox.css)
     skin/tooltips.css (themes/tooltips.css)
+#ifdef ACCESSIBILITY
     skin/images/accessibility.svg (themes/images/accessibility.svg)
+#endif
     skin/images/add.svg (themes/images/add.svg)
     skin/images/alert.svg (themes/images/alert.svg)
     skin/images/alert-tiny.svg (themes/images/alert-tiny.svg)
@@ -105,9 +111,10 @@ devtools.jar:
     skin/images/command-paintflashing.svg (themes/images/command-paintflashing.svg)
     skin/images/command-screenshot.svg (themes/images/command-screenshot.svg)
     skin/images/command-responsivemode.svg (themes/images/command-responsivemode.svg)
-    skin/images/command-replay.svg (themes/images/command-replay.svg)
     skin/images/command-pick.svg (themes/images/command-pick.svg)
+#ifdef ACCESSIBILITY
     skin/images/command-pick-accessibility.svg (themes/images/command-pick-accessibility.svg)
+#endif
     skin/images/command-frames.svg (themes/images/command-frames.svg)
     skin/images/command-console.svg (themes/images/command-console.svg)
     skin/images/command-eyedropper.svg (themes/images/command-eyedropper.svg)
@@ -166,7 +173,6 @@ devtools.jar:
     skin/images/datastore.svg (themes/images/datastore.svg)
     skin/images/globe.svg (themes/images/globe.svg)
     skin/images/next.svg (themes/images/next.svg)
-    skin/images/next-circle.svg (themes/images/next-circle.svg)
     skin/images/folder.svg (themes/images/folder.svg)
     skin/images/sad-face.svg (themes/images/sad-face.svg)
     skin/images/shape-swatch.svg (themes/images/shape-swatch.svg)
@@ -180,7 +186,9 @@ devtools.jar:
     skin/images/tool-scratchpad.svg (themes/images/tool-scratchpad.svg)
     skin/images/tool-memory.svg (themes/images/tool-memory.svg)
     skin/images/tool-dom.svg (themes/images/tool-dom.svg)
+#ifdef ACCESSIBILITY
     skin/images/tool-accessibility.svg (themes/images/tool-accessibility.svg)
+#endif
     skin/images/tool-application.svg (themes/images/tool-application.svg)
     skin/images/close.svg (themes/images/close.svg)
     skin/images/clear.svg (themes/images/clear.svg)

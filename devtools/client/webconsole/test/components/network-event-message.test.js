@@ -11,11 +11,11 @@ const { createFactory } = require("devtools/client/shared/vendor/react");
 
 // Components under test.
 const NetworkEventMessage = createFactory(
-  require("devtools/client/webconsole/components/message-types/NetworkEventMessage")
+  require("devtools/client/webconsole/components/Output/message-types/NetworkEventMessage")
 );
 const {
   INDENT_WIDTH,
-} = require("devtools/client/webconsole/components/MessageIndent");
+} = require("devtools/client/webconsole/components/Output/MessageIndent");
 
 // Test fakes.
 const {

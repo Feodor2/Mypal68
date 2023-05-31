@@ -350,14 +350,6 @@ function TargetMixin(parentClass) {
       return !this.window;
     }
 
-    get canRewind() {
-      return this.traits.canRewind;
-    }
-
-    isReplayEnabled() {
-      return this.canRewind && this.isLocalTab;
-    }
-
     getExtensionPathName(url) {
       // Return the url if the target is not a webextension.
       if (!this.isWebExtension) {
@@ -431,13 +423,13 @@ function TargetMixin(parentClass) {
       );
       this.threadClient = threadClient;
 
-      this.threadClient.addListener("newSource", this._onNewSource);
+      this.threadClient.on("newSource", this._onNewSource);
 
       return [response, threadClient];
     }
 
     // Listener for "newSource" event fired by the thread actor
-    _onNewSource(type, packet) {
+    _onNewSource(packet) {
       this.emit("source-updated", packet);
     }
 
@@ -465,7 +457,7 @@ function TargetMixin(parentClass) {
      * Setup listeners for remote debugging, updating existing ones as necessary.
      */
     _setupRemoteListeners() {
-      this.client.addListener("closed", this.destroy);
+      this.client.on("closed", this.destroy);
 
       this.on("tabDetached", this.destroy);
     }
@@ -475,12 +467,12 @@ function TargetMixin(parentClass) {
      */
     _teardownRemoteListeners() {
       // Remove listeners set in _setupRemoteListeners
-      this.client.removeListener("closed", this.destroy);
+      this.client.off("closed", this.destroy);
       this.off("tabDetached", this.destroy);
 
       // Remove listeners set in attachThread
       if (this.threadClient) {
-        this.threadClient.removeListener("newSource", this._onNewSource);
+        this.threadClient.off("newSource", this._onNewSource);
       }
 
       // Remove listeners set in attachConsole
@@ -559,8 +551,13 @@ function TargetMixin(parentClass) {
 
         if (this.isLocalTab) {
           // We started with a local tab and created the client ourselves, so we
-          // should close it.
-          await this._client.close();
+          // should close it. Ignore any errors while closing, since there is
+          // not much that can be done at this point.
+          try {
+            await this._client.close();
+          } catch (e) {
+            console.warn(`Error while closing client: ${e.message}`);
+          }
 
           // Not all targets supports attach/detach. For example content process doesn't.
           // Also ensure that the front is still active before trying to do the request.

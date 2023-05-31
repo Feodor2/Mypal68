@@ -148,13 +148,8 @@ var UI = {
       "devtools.webide.zoom"
     );
 
-    // If the new about:debugging is enabled, show a deprecation message to encourage
-    // users to open the new Remote Debugging
-    if (
-      Services.prefs.getBoolPref("devtools.aboutdebugging.new-enabled", false)
-    ) {
-      this.showDeprecationMessage();
-    }
+    // Show the deprecation message to encourage users to open the new Remote Debugging
+    this.showDeprecationMessage();
 
     gDevToolsBrowser.isWebIDEInitialized.resolve();
   },
@@ -250,8 +245,7 @@ var UI = {
     if (project) {
       window.document.title = Strings.formatStringFromName(
         "title_app",
-        [project.name],
-        1
+        [project.name]
       );
     } else {
       window.document.title = Strings.GetStringFromName("title_noApp");
@@ -343,8 +337,7 @@ var UI = {
     if (l10nArgs.length > 0) {
       text = Strings.formatStringFromName(
         l10nProperty,
-        l10nArgs,
-        l10nArgs.length
+        l10nArgs
       );
     } else {
       text = Strings.GetStringFromName(l10nProperty);

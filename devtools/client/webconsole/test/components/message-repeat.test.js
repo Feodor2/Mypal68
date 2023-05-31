@@ -6,7 +6,7 @@ const expect = require("expect");
 const { render } = require("enzyme");
 const { createFactory } = require("devtools/client/shared/vendor/react");
 const MessageRepeat = createFactory(
-  require("devtools/client/webconsole/components/MessageRepeat")
+  require("devtools/client/webconsole/components/Output/MessageRepeat")
 );
 
 describe("MessageRepeat component:", () => {

@@ -36,7 +36,7 @@ class RemoteClientManager {
     if (runtimeInfo) {
       this._runtimeInfoMap.set(key, runtimeInfo);
     }
-    client.addOneTimeListener("closed", this._onClientClosed);
+    client.once("closed", this._onClientClosed);
   }
 
   // See JSDoc for id, type from setClient.
@@ -120,7 +120,7 @@ class RemoteClientManager {
   _removeClientByKey(key) {
     const client = this._clients.get(key);
     if (client) {
-      client.removeListener("closed", this._onClientClosed);
+      client.off("closed", this._onClientClosed);
       this._clients.delete(key);
       this._runtimeInfoMap.delete(key);
     }

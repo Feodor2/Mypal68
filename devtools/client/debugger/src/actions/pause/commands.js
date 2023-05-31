@@ -126,34 +126,6 @@ export function resume(cx: ThreadContext) {
   };
 }
 
-/**
- * rewind
- * @memberof actions/pause
- * @static
- * @returns {Function} {@link command}
- */
-export function rewind(cx: ThreadContext) {
-  return ({ dispatch, getState }: ThunkArgs) => {
-    if (cx.isPaused) {
-      return dispatch(command(cx, "rewind"));
-    }
-  };
-}
-
-/**
- * reverseStepOver
- * @memberof actions/pause
- * @static
- * @returns {Function} {@link command}
- */
-export function reverseStepOver(cx: ThreadContext) {
-  return ({ dispatch, getState }: ThunkArgs) => {
-    if (cx.isPaused) {
-      return dispatch(astCommand(cx, "reverseStepOver"));
-    }
-  };
-}
-
 /*
  * Checks for await or yield calls on the paused line
  * This avoids potentially expensive parser calls when we are likely

@@ -36,7 +36,7 @@ const BLACK_BOXED_URL = "http://example.com/blackboxme.js";
 const SOURCE_URL = "http://example.com/source.js";
 
 function test_black_box() {
-  gClient.addOneTimeListener("paused", async function(event, packet) {
+  gClient.once("paused", async function(packet) {
     gThreadClient.setBreakpoint({ sourceUrl: BLACK_BOXED_URL, line: 2 }, {});
     gThreadClient.resume().then(test_black_box_breakpoint);
   });
@@ -80,7 +80,7 @@ function test_black_box_breakpoint() {
 
     await blackBox(sourceFront);
 
-    gClient.addOneTimeListener("paused", function(event, packet) {
+    gClient.once("paused", function(packet) {
       Assert.equal(
         packet.why.type,
         "debuggerStatement",
@@ -96,7 +96,7 @@ function test_black_box_breakpoint() {
 
 async function test_unblack_box_breakpoint(sourceFront) {
   await unBlackBox(sourceFront);
-  gClient.addOneTimeListener("paused", function(event, packet) {
+  gClient.once("paused", function(packet) {
     Assert.equal(
       packet.why.type,
       "breakpoint",
@@ -105,7 +105,7 @@ async function test_unblack_box_breakpoint(sourceFront) {
 
     // We will hit the debugger statement on resume, so do this
     // nastiness to skip over it.
-    gClient.addOneTimeListener("paused", async () => {
+    gClient.once("paused", async () => {
       await gThreadClient.resume();
       finishClient(gClient);
     });

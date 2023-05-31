@@ -21,7 +21,6 @@ const INSPECTOR_L10N = new LocalizationHelper(
   "devtools/client/locales/inspector.properties"
 );
 
-const { getStr } = require("./utils/l10n");
 const { parseFontVariationAxes } = require("./utils/font-utils");
 const { updateFonts } = require("./actions/fonts");
 const {
@@ -29,13 +28,11 @@ const {
   resetFontEditor,
   setEditorDisabled,
   updateAxis,
-  updateCustomInstance,
   updateFontEditor,
   updateFontProperty,
 } = require("./actions/font-editor");
 const { updatePreviewText } = require("./actions/font-options");
 
-const CUSTOM_INSTANCE_NAME = getStr("fontinspector.customInstanceName");
 const FONT_PROPERTIES = [
   "font-family",
   "font-optical-sizing",
@@ -63,8 +60,6 @@ class FontInspector {
     this.cssProperties = inspector.cssProperties;
     this.document = window.document;
     this.inspector = inspector;
-    // Set of unique keyword values supported by designated font properties.
-    this.keywordValues = new Set(this.getFontPropertyValueKeywords());
     // Selected node in the markup view. For text nodes, this points to their parent node
     // element. Font faces and font properties for this node will be shown in the editor.
     this.node = null;
@@ -80,7 +75,6 @@ class FontInspector {
     // certain cascade circumstances and platform support. @see `getWriterForAxis(axis)`
     this.writers = new Map();
 
-    this.snapshotChanges = debounce(this.snapshotChanges, 100, this);
     this.syncChanges = debounce(this.syncChanges, 100, this);
     this.onInstanceChange = this.onInstanceChange.bind(this);
     this.onNewNode = this.onNewNode.bind(this);
@@ -99,6 +93,38 @@ class FontInspector {
     );
 
     this.init();
+  }
+
+  /**
+   * Map CSS font property names to a list of values that should be skipped when consuming
+   * font properties from CSS rules. The skipped values are mostly keyword values like
+   * `bold`, `initial`, `unset`. Computed values will be used instead of such keywords.
+   *
+   * @return {Map}
+   */
+  get skipValuesMap() {
+    if (!this._skipValuesMap) {
+      this._skipValuesMap = new Map();
+
+      for (const property of FONT_PROPERTIES) {
+        const values = this.cssProperties.getValues(property);
+
+        switch (property) {
+          case "line-height":
+          case "letter-spacing":
+            // There's special handling for "normal" so remove it from the skip list.
+            this.skipValuesMap.set(
+              property,
+              values.filter(value => value !== "normal")
+            );
+            break;
+          default:
+            this.skipValuesMap.set(property, values);
+        }
+      }
+    }
+
+    return this._skipValuesMap;
   }
 
   init() {
@@ -152,6 +178,7 @@ class FontInspector {
    * @return {Number}
    *         Converted numeric value.
    */
+  /* eslint-disable complexity */
   async convertUnits(property, value, fromUnit, toUnit) {
     if (value !== parseFloat(value)) {
       throw TypeError(
@@ -270,6 +297,7 @@ class FontInspector {
     // Round pixel values.
     return Math.round(out);
   }
+  /* eslint-enable complexity */
 
   /**
    * Destruction function called when the inspector is destroyed. Removes event listeners
@@ -310,17 +338,6 @@ class FontInspector {
           : "";
     }
 
-    // Convert computed value for line-height from pixels to unitless.
-    // If it is not overwritten by an explicit line-height CSS declaration,
-    // this will be the implicit value shown in the editor.
-
-    properties["line-height"] = await this.convertUnits(
-      "line-height",
-      parseFloat(properties["line-height"]),
-      "px",
-      ""
-    );
-
     // Then, replace with enabled font properties found on any of the rules that apply.
     for (const rule of this.ruleView.rules) {
       if (rule.inherited) {
@@ -330,7 +347,7 @@ class FontInspector {
       for (const textProp of rule.textProps) {
         if (
           FONT_PROPERTIES.includes(textProp.name) &&
-          !this.keywordValues.has(textProp.value) &&
+          !this.skipValuesMap.get(textProp.name).includes(textProp.value) &&
           !textProp.value.includes("calc(") &&
           !textProp.value.includes("var(") &&
           !textProp.overridden &&
@@ -342,31 +359,6 @@ class FontInspector {
     }
 
     return properties;
-  }
-
-  /**
-   * Get an array of keyword values supported by the following CSS properties:
-   * - font-size
-   * - font-weight
-   * - font-stretch
-   * - letter-spacing
-   * - line-height
-   *
-   * This list is used to filter out values when reading CSS font properties from rules.
-   * Computed styles will be used instead of any of these values.
-   *
-   * @return {Array}
-   */
-  getFontPropertyValueKeywords() {
-    return [
-      "font-size",
-      "font-weight",
-      "font-stretch",
-      "letter-spacing",
-      "line-height",
-    ].reduce((acc, property) => {
-      return acc.concat(this.cssProperties.getValues(property));
-    }, []);
   }
 
   async getFontsForNode(node, options) {
@@ -712,9 +704,6 @@ class FontInspector {
    */
   onAxisUpdate(tag, value) {
     this.store.dispatch(updateAxis(tag, value));
-    this.store.dispatch(applyInstance(CUSTOM_INSTANCE_NAME, null));
-    this.snapshotChanges();
-
     const writer = this.getWriterForProperty(tag);
     writer(value.toString());
   }
@@ -976,15 +965,6 @@ class FontInspector {
     this.inspector.emit("fonteditor-updated");
     // Listen to manual changes in the Rule view that could update the Font Editor state
     this.ruleView.on("property-value-updated", this.onRulePropertyUpdated);
-  }
-
-  /**
-   * Capture the state of all variation axes. Allows the user to return to this state with
-   * the "Custom" instance after they've selected a font-defined named variation instance.
-   * This method is debounced. See constructor.
-   */
-  snapshotChanges() {
-    this.store.dispatch(updateCustomInstance());
   }
 
   async update() {

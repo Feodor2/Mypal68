@@ -81,16 +81,16 @@ function waitForFramesUpdated(target, matchFn) {
 function collectFrameUpdates({ client }, matchFn) {
   const collected = [];
 
-  const listener = (evt, data) => {
+  const listener = (data) => {
     if (matchFn(data)) {
       collected.push(data);
     }
   };
 
-  client.addListener("frameUpdate", listener);
+  client.on("frameUpdate", listener);
   let unsubscribe = () => {
     unsubscribe = null;
-    client.removeListener("frameUpdate", listener);
+    client.off("frameUpdate", listener);
     return collected;
   };
 

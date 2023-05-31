@@ -7,7 +7,6 @@ module.exports = {
   "globals": {
     "exports": true,
     "isWorker": true,
-    "isReplaying": true,
     "loader": true,
     "module": true,
     "reportError": true,
@@ -199,7 +198,7 @@ module.exports = {
     // Require camel case names
     "camelcase": ["error", { "properties": "never" }],
     // Warn about cyclomatic complexity in functions.
-    "complexity": ["error", 53],
+    "complexity": ["error", 40],
     // Don't warn for inconsistent naming when capturing this (not so important
     // with auto-binding fat arrow functions).
     "consistent-this": "off",

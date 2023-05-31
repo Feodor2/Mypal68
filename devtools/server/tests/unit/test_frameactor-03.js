@@ -34,8 +34,8 @@ function run_test() {
 }
 
 function test_pause_frame() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet1) {
-    gThreadClient.addOneTimeListener("paused", function(event, packet2) {
+  gThreadClientgThreadClient.once("paused", function(packet1) {
+    gThreadClientgThreadClient.once("paused", function(packet2) {
       const poppedFrames = packet2.poppedFrames;
       Assert.equal(typeof poppedFrames, typeof []);
       Assert.ok(poppedFrames.includes(packet1.frame.actor));

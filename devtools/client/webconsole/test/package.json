@@ -1,9 +1,6 @@
 {
   "name": "webconsole-tests",
   "version": "0.0.1",
-  "engines": {
-    "node": ">=8.9.4"
-  },
   "scripts": {
     "//": [
       "Here's the script to run tests with `npm test`. Here's what it does: ",
@@ -14,7 +11,8 @@
       " * Finally we require mocha-test-setup where we configure Enzyme and",
       "   intercept require() calls with require-hacker and modify them if needed."
     ],
-    "test": "mocha \"./{,@(components|middleware|store|utils)/**/}*.test.js\" -r mock-local-storage -r jsdom-global/register -r ./mocha-test-setup.js"
+    "test": "mocha \"./{,@(components|middleware|store|utils)/**/}*.test.js\" -r mock-local-storage -r jsdom-global/register -r ./mocha-test-setup.js",
+    "test-ci": "mocha \"./{,@(components|middleware|store|utils)/**/}*.test.js\" -r mock-local-storage -r jsdom-global/register -r ./mocha-test-setup.js --reporter json"
   },
   "dependencies": {
     "devtools-modules": "0.0.37",

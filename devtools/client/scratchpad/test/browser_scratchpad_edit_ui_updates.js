@@ -125,7 +125,7 @@ function runTests() {
   };
 
   const firstShow = function() {
-    ok(!cutItem.hasAttribute("disabled"), "cut menuitem is enabled");
+    ok(cutItem.hasAttribute("disabled"), "cut menuitem is disabled");
     closeMenu(firstHide);
   };
 
@@ -158,7 +158,7 @@ function runTests() {
   };
 
   const showAfterCut = function() {
-    ok(!cutItem.hasAttribute("disabled"), "cut menuitem is enabled after cut");
+    ok(cutItem.hasAttribute("disabled"), "cut menuitem is disabled after cut");
     ok(
       !pasteItem.hasAttribute("disabled"),
       "paste menuitem is enabled after cut"
@@ -180,8 +180,8 @@ function runTests() {
 
   const showAfterPaste = function() {
     ok(
-      !cutItem.hasAttribute("disabled"),
-      "cut menuitem is enabled after paste"
+      cutItem.hasAttribute("disabled"),
+      "cut menuitem is disabled after paste"
     );
     ok(
       !pasteItem.hasAttribute("disabled"),

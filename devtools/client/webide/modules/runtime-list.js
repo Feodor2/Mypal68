@@ -151,8 +151,7 @@ RuntimeList.prototype = {
     const noUSBNode = doc.querySelector("#runtime-panel-nousbdevice");
     noADBExtensionNode.textContent = Strings.formatStringFromName(
       "runtimePanel_noadbextension",
-      ["ADB Extension"],
-      1
+      ["ADB Extension"]
     );
 
     if (adbAddon.status === ADB_ADDON_STATES.INSTALLED) {

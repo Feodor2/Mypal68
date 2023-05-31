@@ -52,7 +52,7 @@ async function testPrincipal(options, globalPrincipal, debuggeeHasXrays) {
 function test({ threadClient, debuggee }, testOptions) {
   const { global } = testOptions;
   return new Promise(function(resolve) {
-    threadClient.addOneTimeListener("paused", async function(event, packet) {
+    threadClient.once("paused", async function(packet) {
       // Get the grips.
       const [
         proxyGrip,

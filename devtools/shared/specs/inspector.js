@@ -328,6 +328,14 @@ const walkerSpec = generateActorSpec({
         actor: RetVal("layout"),
       },
     },
+    getParentGridNode: {
+      request: {
+        node: Arg(0, "nullable:domnode"),
+      },
+      response: {
+        node: RetVal("nullable:domnode"),
+      },
+    },
     getOffsetParent: {
       request: {
         node: Arg(0, "nullable:domnode"),
@@ -343,6 +351,15 @@ const walkerSpec = generateActorSpec({
       response: {
         value: RetVal("boolean"),
       },
+    },
+    setMutationBreakpoints: {
+      request: {
+        node: Arg(0, "nullable:domnode"),
+        subtree: Option(1, "nullable:boolean"),
+        removal: Option(1, "nullable:boolean"),
+        attribute: Option(1, "nullable:boolean"),
+      },
+      response: {},
     },
   },
 });

@@ -976,17 +976,23 @@ async function getFilterState(hud) {
 
   for (const button of buttons) {
     const classes = new Set(button.classList.values());
-    const checked = classes.has("checked");
-
-    classes.delete("devtools-button");
-    classes.delete("checked");
-
+    classes.delete("devtools-togglebutton");
     const category = classes.values().next().value;
 
-    result[category] = checked;
+    result[category] = button.getAttribute("aria-pressed") === "true";
   }
 
   return result;
+}
+
+/**
+ * Return the filter input element.
+ *
+ * @param {Object} hud
+ * @return {HTMLInputElement}
+ */
+function getFilterInput(hud) {
+  return hud.ui.outputNode.querySelector(".devtools-searchbox input");
 }
 
 /**
@@ -1003,7 +1009,8 @@ async function getFilterState(hud) {
  *            debug: true,
  *            css: false,
  *            netxhr: false,
- *            net: false
+ *            net: false,
+ *            text: ""
  *          }
  */
 async function setFilterState(hud, settings) {
@@ -1011,8 +1018,21 @@ async function setFilterState(hud, settings) {
   const filterBar = outputNode.querySelector(".webconsole-filterbar-secondary");
 
   for (const category in settings) {
-    const setActive = settings[category];
+    const value = settings[category];
     const button = filterBar.querySelector(`.${category}`);
+
+    if (category === "text") {
+      const filterInput = getFilterInput(hud);
+      filterInput.focus();
+      filterInput.select();
+      if (!value) {
+        EventUtils.synthesizeKey("KEY_Delete");
+      } else {
+        EventUtils.sendString(value);
+      }
+      await waitFor(() => filterInput.value === value);
+      continue;
+    }
 
     if (!button) {
       ok(
@@ -1023,18 +1043,20 @@ async function setFilterState(hud, settings) {
     }
 
     info(
-      `Setting the ${category} category to ${
-        setActive ? "checked" : "disabled"
-      }`
+      `Setting the ${category} category to ${value ? "checked" : "disabled"}`
     );
 
-    const isChecked = button.classList.contains("checked");
+    const isPressed = button.getAttribute("aria-pressed");
 
-    if (setActive !== isChecked) {
+    if ((!value && isPressed === "true") || (value && isPressed !== "true")) {
       button.click();
 
       await waitFor(() => {
-        return button.classList.contains("checked") === setActive;
+        const pressed = button.getAttribute("aria-pressed");
+        if (!value) {
+          return pressed === "false" || pressed === null;
+        }
+        return pressed === "true";
       });
     }
   }
@@ -1412,6 +1434,12 @@ function checkConsoleOutputForWarningGroup(hud, expectedMessages) {
       }
 
       expectedMessage = expectedMessage.replace("| ", "");
+    } else {
+      is(
+        message.querySelector(".indent").getAttribute("data-indent"),
+        "0",
+        "The message has the expected indent"
+      );
     }
 
     ok(
@@ -1450,4 +1478,49 @@ async function checkMessageStack(hud, text, frameLines) {
       `Found line ${frameLines[i]} for frame #${i}`
     );
   }
+}
+
+/**
+ * Reload the content page.
+ * @returns {Promise} A promise that will return when the page is fully loaded (i.e., the
+ *                    `load` event was fired).
+ */
+function reloadPage() {
+  const onLoad = BrowserTestUtils.waitForContentEvent(
+    gBrowser.selectedBrowser,
+    "load",
+    true
+  );
+  ContentTask.spawn(gBrowser.selectedBrowser, null, () => {
+    content.location.reload();
+  });
+  return onLoad;
+}
+
+/**
+ * Check if the editor mode is enabled (i.e. .webconsole-app has the expected class).
+ *
+ * @param {WebConsole} hud
+ * @returns {Boolean}
+ */
+function isEditorModeEnabled(hud) {
+  const { outputNode } = hud.ui;
+  const appNode = outputNode.querySelector(".webconsole-app");
+  return appNode.classList.contains("jsterm-editor");
+}
+
+/**
+ * Toggle the layout between in-line and editor.
+ *
+ * @param {WebConsole} hud
+ * @returns {Promise} A promise that resolves once the layout change was rendered.
+ */
+function toggleLayout(hud) {
+  const isMacOS = Services.appinfo.OS === "Darwin";
+  const enabled = isEditorModeEnabled(hud);
+
+  EventUtils.synthesizeKey("b", {
+    [isMacOS ? "metaKey" : "ctrlKey"]: true,
+  });
+  return waitFor(() => isEditorModeEnabled(hud) === !enabled);
 }

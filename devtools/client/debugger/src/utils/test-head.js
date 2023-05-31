@@ -15,7 +15,7 @@ import reducers from "../reducers";
 import actions from "../actions";
 import * as selectors from "../selectors";
 import { getHistory } from "../test/utils/history";
-import { parserWorker } from "../test/tests-setup";
+import { parserWorker, evaluationsParser } from "../test/tests-setup";
 import configureStore from "../actions/utils/create-store";
 import sourceQueue from "../utils/source-queue";
 import type { Source, OriginalSourceData, GeneratedSourceData } from "../types";
@@ -44,6 +44,7 @@ function createStore(client: any, initialState: any = {}, sourceMapsMock: any) {
         client,
         sourceMaps: sourceMapsMock !== undefined ? sourceMapsMock : sourceMaps,
         parser: parserWorker,
+        evaluationsParser,
       };
     },
   })(combineReducers(reducers), initialState);
@@ -145,6 +146,7 @@ function createMakeSource(): (
         introductionType: props.introductionType || null,
         introductionUrl: props.introductionUrl || null,
         isBlackBoxed: !!props.isBlackBoxed,
+        extensionName: null,
       },
     };
   };
@@ -256,6 +258,15 @@ function getTelemetryEvents(eventName: string) {
   return window.dbg._telemetry.events[eventName] || [];
 }
 
+function waitATick(callback: Function): Promise<*> {
+  return new Promise(resolve => {
+    setTimeout(() => {
+      callback();
+      resolve();
+    });
+  });
+}
+
 export {
   actions,
   selectors,
@@ -274,4 +285,5 @@ export {
   waitForState,
   watchForState,
   getHistory,
+  waitATick,
 };

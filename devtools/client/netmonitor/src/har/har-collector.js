@@ -36,19 +36,19 @@ HarCollector.prototype = {
   // Connection
 
   start: function() {
-    this.debuggerClient.addListener("serverNetworkEvent", this.onNetworkEvent);
-    this.debuggerClient.addListener(
+    this.debuggerClient.on("serverNetworkEvent", this.onNetworkEvent);
+    this.debuggerClient.on(
       "networkEventUpdate",
       this.onNetworkEventUpdate
     );
   },
 
   stop: function() {
-    this.debuggerClient.removeListener(
+    this.debuggerClient.off(
       "serverNetworkEvent",
       this.onNetworkEvent
     );
-    this.debuggerClient.removeListener(
+    this.debuggerClient.off(
       "networkEventUpdate",
       this.onNetworkEventUpdate
     );
@@ -165,13 +165,13 @@ HarCollector.prototype = {
 
   // Event Handlers
 
-  onNetworkEvent: function(type, packet) {
+  onNetworkEvent: function(packet) {
     // Skip events from different console actors.
     if (packet.from != this.webConsoleClient.actor) {
       return;
     }
 
-    trace.log("HarCollector.onNetworkEvent; " + type, packet);
+    trace.log("HarCollector.onNetworkEvent; " + packet.type, packet);
 
     const { actor, startedDateTime, method, url, isXHR } = packet.eventActor;
     const startTime = Date.parse(startedDateTime);
@@ -206,7 +206,7 @@ HarCollector.prototype = {
     this.items.push(file);
   },
 
-  onNetworkEventUpdate: function(type, packet) {
+  onNetworkEventUpdate: function(packet) {
     const actor = packet.from;
 
     // Skip events from unknown actors (not in the list).

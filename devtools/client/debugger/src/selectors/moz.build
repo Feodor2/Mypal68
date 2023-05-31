@@ -13,6 +13,7 @@ CompiledModules(
     'getCallStackFrames.js',
     'inComponent.js',
     'index.js',
+    'isLineInScope.js',
     'isSelectedFrameVisible.js',
     'pause.js',
     'visibleBreakpoints.js',

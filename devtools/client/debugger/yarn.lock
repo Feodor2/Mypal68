@@ -432,9 +432,10 @@
   version "10.5.5"
   resolved "https://registry.yarnpkg.com/@types/node/-/node-10.5.5.tgz#8e84d24e896cd77b0d4f73df274027e3149ec2ba"
 
-"@types/node@^7.0.52":
-  version "7.0.68"
-  resolved "https://registry.yarnpkg.com/@types/node/-/node-7.0.68.tgz#f468d9a4407259faa64b472f64d795ff85d51a77"
+"@types/node@^12.12.21":
+  version "12.12.29"
+  resolved "https://registry.yarnpkg.com/@types/node/-/node-12.12.29.tgz#46275f028b4e463b9ac5fefc1d08bc66cc193f25"
+  integrity sha512-yo8Qz0ygADGFptISDj3pOC9wXfln/5pQaN/ysDIzOaAWXt73cNHmtEC8zSO2Y+kse/txmwIAJzkYZ5fooaS5DQ==
 
 abab@^1.0.4:
   version "1.0.4"
@@ -3273,14 +3274,12 @@ devtools-config@^0.0.16:
 devtools-connection@^1.0.7:
   version "1.0.7"
   resolved "https://registry.yarnpkg.com/devtools-connection/-/devtools-connection-1.0.7.tgz#16f23256f842dce339038cdc273c49c473ef83e0"
-  integrity sha512-SrBHnM4nVhTrSfI4WnqcmppDOwB5iQvoEjqVNpwv63puGdKGtcdfWqv4+4gqfRYKHrdGB8tJfWJV2n+EyXb1Xw==
 
-devtools-contextmenu@~1.0.6:
-  version "1.0.6"
-  resolved "https://registry.yarnpkg.com/devtools-contextmenu/-/devtools-contextmenu-1.0.6.tgz#db31a6e5c90a7efeeb84fd156bd312633e642006"
-  integrity sha512-5hYcY0RHkFeStvpA+Kyg1K5n0KuCuAntzHGID0xmwJsSjNrU5fs4gEEVk6BAOtW92IMSpdJ8qA8LIi+s6LkQXQ==
+devtools-contextmenu@~1.0.8:
+  version "1.0.8"
+  resolved "https://registry.yarnpkg.com/devtools-contextmenu/-/devtools-contextmenu-1.0.8.tgz#de57a1afd2324cf48dc251e3e44e3fea1ef9581a"
   dependencies:
-    devtools-modules "~1.1.3"
+    devtools-modules "~1.1.4"
 
 devtools-environment@^0.0.5:
   version "0.0.5"
@@ -3290,10 +3289,9 @@ devtools-environment@^0.0.6:
   version "0.0.6"
   resolved "https://registry.yarnpkg.com/devtools-environment/-/devtools-environment-0.0.6.tgz#11584f5b1ead784c2356d8da647a630fed591a4e"
 
-devtools-launchpad@^0.0.153:
-  version "0.0.153"
-  resolved "https://registry.yarnpkg.com/devtools-launchpad/-/devtools-launchpad-0.0.153.tgz#e310d4dfd67206b1ad2f59aabd2cffe885ae97ef"
-  integrity sha512-i4v+Wf0ia9eGAryEKKMGvPfGvdj4WMLsNYxMmWUnfMNqGitlgyFxD3f5oZO7yNQgY6iX7P5vczxceJILsag57g==
+devtools-launchpad@^0.0.155:
+  version "0.0.155"
+  resolved "https://registry.yarnpkg.com/devtools-launchpad/-/devtools-launchpad-0.0.155.tgz#61b8f3b329df761c6fe82ac619a5bec789049fd0"
   dependencies:
     amd-loader "0.0.8"
     autoprefixer "^7.1.2"
@@ -3319,11 +3317,11 @@ devtools-launchpad@^0.0.153:
     debug "^3.1.0"
     devtools-config "^0.0.16"
     devtools-connection "^1.0.7"
-    devtools-contextmenu "~1.0.6"
+    devtools-contextmenu "~1.0.8"
     devtools-environment "^0.0.5"
     devtools-license-check "^0.7.0"
     devtools-mc-assets "^0.0.7"
-    devtools-modules "~1.1.3"
+    devtools-modules "~1.1.4"
     devtools-sprintf-js "^1.0.3"
     express "^4.13.4"
     express-static "^1.2.5"
@@ -3411,10 +3409,9 @@ devtools-modules@~1.1.0:
     devtools-services "0.0.1"
     punycode "^2.1.0"
 
-devtools-modules@~1.1.3:
-  version "1.1.3"
-  resolved "https://registry.yarnpkg.com/devtools-modules/-/devtools-modules-1.1.3.tgz#4fbeee232263794bd3dd5b314c1a0ae28d76ea6f"
-  integrity sha512-2bwfU72vwDcPCzLgXcK/rdtsmi9oWV764vxKttQdY43a7euwo94oCWOKfTOEXJG6HVgxMlYk87+/8QN9ELz9jQ==
+devtools-modules@~1.1.4:
+  version "1.1.4"
+  resolved "https://registry.yarnpkg.com/devtools-modules/-/devtools-modules-1.1.4.tgz#1a3089118a06225d28572e4890cd6dc0b64308a8"
   dependencies:
     devtools-services "0.0.1"
     punycode "^2.1.0"
@@ -3510,7 +3507,6 @@ domelementtype@1, domelementtype@^1.3.0:
 domelementtype@^1.3.1:
   version "1.3.1"
   resolved "https://registry.yarnpkg.com/domelementtype/-/domelementtype-1.3.1.tgz#d048c44b37b0d10a7f2a3d5fee3f4333d790481f"
-  integrity sha512-BSKB+TSpMpFI/HOxCNr1O8aMOTZ8hT3pM3GQ0w/mWRmkhEDSFJkkyzz4XQsBV44BChwGkrDfMyjVD0eA2aFV3w==
 
 domelementtype@~1.1.1:
   version "1.1.3"
@@ -3871,7 +3867,6 @@ eslint-config-prettier@^4.0.0:
 eslint-import-resolver-node@^0.3.2:
   version "0.3.2"
   resolved "https://registry.yarnpkg.com/eslint-import-resolver-node/-/eslint-import-resolver-node-0.3.2.tgz#58f15fb839b8d0576ca980413476aab2472db66a"
-  integrity sha512-sfmTqJfPSizWu4aymbPr4Iidp5yKm8yDkHp+Ir3YiTHiiDfxh69mOUsmiqW6RZ9zRXFaF64GtYmN7e+8GHBv6Q==
   dependencies:
     debug "^2.6.9"
     resolve "^1.5.0"
@@ -3879,7 +3874,6 @@ eslint-import-resolver-node@^0.3.2:
 eslint-module-utils@^2.3.0:
   version "2.3.0"
   resolved "https://registry.yarnpkg.com/eslint-module-utils/-/eslint-module-utils-2.3.0.tgz#546178dab5e046c8b562bbb50705e2456d7bda49"
-  integrity sha512-lmDJgeOOjk8hObTysjqH7wyMi+nsHwwvfBykwfhjR1LNdd7C2uFJBvx4OpWYpXOw4df1yE1cDEVd1yLHitk34w==
   dependencies:
     debug "^2.6.8"
     pkg-dir "^2.0.0"
@@ -3903,7 +3897,6 @@ eslint-plugin-flowtype@^3.0.0:
 eslint-plugin-import@^2.16.0:
   version "2.16.0"
   resolved "https://registry.yarnpkg.com/eslint-plugin-import/-/eslint-plugin-import-2.16.0.tgz#97ac3e75d0791c4fac0e15ef388510217be7f66f"
-  integrity sha512-z6oqWlf1x5GkHIFgrSvtmudnqM6Q60KM4KvpWi5ubonMjycLjndvd5+8VAZIsTlHC03djdgJuyKG6XO577px6A==
   dependencies:
     contains-path "^0.1.0"
     debug "^2.6.9"
@@ -3944,7 +3937,6 @@ eslint-plugin-mozilla@1.1.3:
 eslint-plugin-mozilla@1.2.1:
   version "1.2.1"
   resolved "https://registry.yarnpkg.com/eslint-plugin-mozilla/-/eslint-plugin-mozilla-1.2.1.tgz#8aa80dca43bd45f300188d4ee53bc5a983aac0ba"
-  integrity sha512-i6SAWTPgKI6T50L6Gy41efR3StjPGR3IWkFOW/4aGsJtpl+OmJVaOmUfhp5PGis3ZbDisNvQ/vzLiNicAWC7nw==
   dependencies:
     htmlparser2 "3.10.1"
     ini-parser "0.0.2"
@@ -4623,7 +4615,6 @@ flatten@^1.0.2:
 flow-bin@0.97.0:
   version "0.97.0"
   resolved "https://registry.yarnpkg.com/flow-bin/-/flow-bin-0.97.0.tgz#036ffcfc27503367a9d906ec9d843a0aa6f6bb83"
-  integrity sha512-jXjD05gkatLuC4+e28frH1hZoRwr1iASP6oJr61Q64+kR4kmzaS+AdFBhYgoYS5kpoe4UzwDebWK8ETQFNh00w==
 
 flush-write-stream@^1.0.0:
   version "1.0.3"
@@ -5371,7 +5362,6 @@ htmlparser2@3.10.0:
 htmlparser2@3.10.1:
   version "3.10.1"
   resolved "https://registry.yarnpkg.com/htmlparser2/-/htmlparser2-3.10.1.tgz#bd679dc3f59897b6a34bb10749c855bb53a9392f"
-  integrity sha512-IgieNijUMbkDovyoKObU1DUhm1iwNYE/fuifEoEHfd1oZKZDaONBSkal7Y01shxsM49R4XaMdGez3WnF9UfiCQ==
   dependencies:
     domelementtype "^1.3.1"
     domhandler "^2.3.0"
@@ -8270,7 +8260,6 @@ path-parse@^1.0.5:
 path-parse@^1.0.6:
   version "1.0.6"
   resolved "https://registry.yarnpkg.com/path-parse/-/path-parse-1.0.6.tgz#d62dbb5679405d72c4737ec58600e9ddcf06d24c"
-  integrity sha512-GSmOT2EbHrINBf9SR7CDELwlJ8AENk3Qn7OikK4nFYAu3Ote2+JYNVvkpAEQm3/TLNEJFD/xZJjzyxg3KBWOzw==
 
 path-to-regexp@0.1.7:
   version "0.1.7"
@@ -9394,7 +9383,6 @@ readable-stream@^3.0.6:
 readable-stream@^3.1.1:
   version "3.3.0"
   resolved "https://registry.yarnpkg.com/readable-stream/-/readable-stream-3.3.0.tgz#cb8011aad002eb717bf040291feba8569c986fb9"
-  integrity sha512-EsI+s3k3XsW+fU8fQACLN59ky34AZ14LoeVZpYwmZvldCFo0r0gnelwF2TcMjLor/BTL5aDJVBMkss0dthToPw==
   dependencies:
     inherits "^2.0.3"
     string_decoder "^1.1.1"
@@ -10137,7 +10125,6 @@ resolve@^1.1.6, resolve@^1.2.0, resolve@^1.3.2, resolve@^1.5.0:
 resolve@^1.9.0:
   version "1.10.0"
   resolved "https://registry.yarnpkg.com/resolve/-/resolve-1.10.0.tgz#3bdaaeaf45cc07f375656dfd2e54ed0810b101ba"
-  integrity sha512-3sUr9aq5OfSg2S9pNtPA9hL1FVEAjvfOC4leW0SNf/mpnaakz2a9femSd6LqAww2RaFctwyf1lCqnTHuF1rxDg==
   dependencies:
     path-parse "^1.0.6"
 
@@ -11816,11 +11803,12 @@ warning@^3.0.0:
   dependencies:
     loose-envify "^1.0.0"
 
-wasmparser@^0.7.0:
-  version "0.7.0"
-  resolved "https://registry.yarnpkg.com/wasmparser/-/wasmparser-0.7.0.tgz#00662784c220ec55cd656c6261057a0c25de361b"
+wasmparser@^0.10.0:
+  version "0.10.0"
+  resolved "https://registry.yarnpkg.com/wasmparser/-/wasmparser-0.10.0.tgz#246d14762a636d6d4166394dbc980617f2c75dbd"
+  integrity sha512-p/zfClkMLRrhNJjtkRJ9QjnI+9J+rpWqQfUYWt/AF/8yOhG524eWndASZ48cmCaYKqzzsjHf1k0fH+ji5vKZyQ==
   dependencies:
-    "@types/node" "^7.0.52"
+    "@types/node" "^12.12.21"
 
 watch@~0.18.0:
   version "0.18.0"

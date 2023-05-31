@@ -34,6 +34,8 @@ registerCleanupFunction(function() {
   UrlClassifierTestUtils.cleanupTestTrackers();
 });
 
+pushPref("devtools.webconsole.groupWarningMessages", false);
+
 add_task(async function testContentBlockingMessage() {
   await UrlClassifierTestUtils.addTestTrackers();
 

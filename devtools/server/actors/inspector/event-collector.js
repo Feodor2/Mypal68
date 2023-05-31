@@ -16,7 +16,9 @@ const {
   isNativeAnonymous,
 } = require("devtools/shared/layout/utils");
 const Debugger = require("Debugger");
-const ReplayInspector = require("devtools/server/actors/replay/inspector");
+const {
+  EXCLUDED_LISTENER,
+} = require("devtools/server/actors/inspector/constants");
 
 // eslint-disable-next-line
 const JQUERY_LIVE_REGEX = /return typeof \w+.*.event\.triggered[\s\S]*\.event\.(dispatch|handle).*arguments/;
@@ -255,6 +257,7 @@ class MainEventCollector {
    *         An array of unfiltered event listeners or an empty array
    */
   getDOMListeners(node) {
+    let listeners;
     if (
       typeof node.nodeName !== "undefined" &&
       node.nodeName.toLowerCase() === "html"
@@ -265,9 +268,15 @@ class MainEventCollector {
       const docListeners =
         Services.els.getListenerInfoFor(node.parentNode) || [];
 
-      return [...winListeners, ...docElementListeners, ...docListeners];
+      listeners = [...winListeners, ...docElementListeners, ...docListeners];
+    } else {
+      listeners = Services.els.getListenerInfoFor(node) || [];
     }
-    return Services.els.getListenerInfoFor(node) || [];
+
+    return listeners.filter(listener => {
+      const obj = this.unwrap(listener.listenerObject);
+      return !obj || !obj[EXCLUDED_LISTENER];
+    });
   }
 
   getJQuery(node) {
@@ -392,6 +401,7 @@ class DOMEventCollector extends MainEventCollector {
  * Get or detect jQuery events.
  */
 class JQueryEventCollector extends MainEventCollector {
+  /* eslint-disable complexity */
   getListeners(node, { checkOnly } = {}) {
     const jQuery = this.getJQuery(node);
     const handlers = [];
@@ -483,12 +493,14 @@ class JQueryEventCollector extends MainEventCollector {
     }
     return handlers;
   }
+  /* eslint-enable complexity */
 }
 
 /**
  * Get or detect jQuery live events.
  */
 class JQueryLiveEventCollector extends MainEventCollector {
+  /* eslint-disable complexity */
   getListeners(node, { checkOnly } = {}) {
     const jQuery = this.getJQuery(node);
     const handlers = [];
@@ -581,6 +593,7 @@ class JQueryLiveEventCollector extends MainEventCollector {
     }
     return handlers;
   }
+  /* eslint-enable complexity */
 
   normalizeListener(handlerDO) {
     function isFunctionInProxy(funcDO) {
@@ -882,24 +895,20 @@ class EventCollector {
    *             native: false
    *           }
    */
+  /* eslint-disable complexity */
   processHandlerForEvent(listenerArray, listener, dbg) {
     let globalDO;
 
     try {
       const { capturing, handler } = listener;
 
-      let listenerDO;
-      if (isReplaying) {
-        listenerDO = ReplayInspector.getDebuggerObject(handler);
-      } else {
-        const global = Cu.getGlobalForObject(handler);
+      const global = Cu.getGlobalForObject(handler);
 
-        // It is important that we recreate the globalDO for each handler because
-        // their global object can vary e.g. resource:// URLs on a video control. If
-        // we don't do this then all chrome listeners simply display "native code."
-        globalDO = dbg.addDebuggee(global);
-        listenerDO = globalDO.makeDebuggeeValue(handler);
-      }
+      // It is important that we recreate the globalDO for each handler because
+      // their global object can vary e.g. resource:// URLs on a video control. If
+      // we don't do this then all chrome listeners simply display "native code."
+      globalDO = dbg.addDebuggee(global);
+      let listenerDO = globalDO.makeDebuggeeValue(handler);
 
       const { normalizeListener } = listener;
 
@@ -1040,6 +1049,7 @@ class EventCollector {
       }
     }
   }
+  /* eslint-enable complexity */
 }
 
 exports.EventCollector = EventCollector;

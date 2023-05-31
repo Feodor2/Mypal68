@@ -37,7 +37,7 @@ add_task(
     ];
     for (const data of tests) {
       await new Promise(function(resolve) {
-        threadClient.addOneTimeListener("paused", async function(
+        threadClient.once("paused", async function(packet) {
           event,
           packet
         ) {

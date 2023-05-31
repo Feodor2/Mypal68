@@ -5,9 +5,7 @@
 include('../templates.mozbuild')
 
 DIRS += [
-    'aboutdebugging',
     'aboutdebugging-new',
-    'accessibility',
     'application',
     'debugger',
     'dom',
@@ -20,7 +18,7 @@ DIRS += [
     'performance',
     'performance-new',
     'preferences',
-    'responsive.html',
+    'responsive',
     'scratchpad',
     'shared',
     'storage',
@@ -28,13 +26,20 @@ DIRS += [
     'themes',
     'webconsole',
     'webide',
-    'webreplay',
 ]
+
+if CONFIG['ACCESSIBILITY']:
+    DIRS += [
+        'accessibility',
+    ]
 
 JAR_MANIFESTS += ['jar.mn']
 
-DevToolsModules(
+DevToolsModulesP(
     'definitions.js',
+)
+
+DevToolsModules(
     'menus.js',
 )
 

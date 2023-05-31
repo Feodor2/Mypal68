@@ -140,7 +140,11 @@ async function performTests() {
     prefix + "0",
     "completeNode has expected value"
   );
-  EventUtils.synthesizeKey("KEY_Home");
+  if (Services.appinfo.OS == "Darwin") {
+    EventUtils.synthesizeKey("a", { ctrlKey: true });
+  } else {
+    EventUtils.synthesizeKey("KEY_Home");
+  }
   checkInputCompletionValue(
     hud,
     "",

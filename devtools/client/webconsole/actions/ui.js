@@ -18,6 +18,9 @@ const {
   SIDEBAR_CLOSE,
   SPLIT_CONSOLE_CLOSE_BUTTON_TOGGLE,
   TIMESTAMPS_TOGGLE,
+  WARNING_GROUPS_TOGGLE,
+  FILTERBAR_DISPLAY_MODE_SET,
+  EDITOR_TOGGLE,
 } = require("devtools/client/webconsole/constants");
 
 function persistToggle() {
@@ -50,6 +53,13 @@ function timestampsToggle(visible) {
   };
 }
 
+function warningGroupsToggle(value) {
+  return {
+    type: WARNING_GROUPS_TOGGLE,
+    value,
+  };
+}
+
 function selectNetworkMessageTab(id) {
   return {
     type: SELECT_NETWORK_MESSAGE_TAB,
@@ -63,7 +73,7 @@ function initialize() {
   };
 }
 
-function sidebarClose(show) {
+function sidebarClose() {
   return {
     type: SIDEBAR_CLOSE,
   };
@@ -73,6 +83,16 @@ function splitConsoleCloseButtonToggle(shouldDisplayButton) {
   return {
     type: SPLIT_CONSOLE_CLOSE_BUTTON_TOGGLE,
     shouldDisplayButton,
+  };
+}
+
+function editorToggle() {
+  return ({ dispatch, getState, prefsService }) => {
+    dispatch({
+      type: EDITOR_TOGGLE,
+    });
+    const uiState = getAllUi(getState());
+    prefsService.setBoolPref(PREFS.UI.EDITOR, uiState.editor);
   };
 }
 
@@ -111,8 +131,17 @@ function reverseSearchInputToggle({ initialValue } = {}) {
   };
 }
 
+function filterBarDisplayModeSet(displayMode) {
+  return {
+    type: FILTERBAR_DISPLAY_MODE_SET,
+    displayMode,
+  };
+}
+
 module.exports = {
   contentMessagesToggle,
+  editorToggle,
+  filterBarDisplayModeSet,
   initialize,
   persistToggle,
   reverseSearchInputToggle,
@@ -122,4 +151,5 @@ module.exports = {
   sidebarClose,
   splitConsoleCloseButtonToggle,
   timestampsToggle,
+  warningGroupsToggle,
 };

@@ -14,6 +14,9 @@ const {
   SIDEBAR_CLOSE,
   SPLIT_CONSOLE_CLOSE_BUTTON_TOGGLE,
   TIMESTAMPS_TOGGLE,
+  FILTERBAR_DISPLAY_MODE_SET,
+  FILTERBAR_DISPLAY_MODES,
+  EDITOR_TOGGLE,
 } = require("devtools/client/webconsole/constants");
 
 const { PANELS } = require("devtools/client/netmonitor/src/constants");
@@ -33,6 +36,7 @@ const UiState = overrides =>
         reverseSearchInputVisible: false,
         reverseSearchInitialValue: "",
         editor: false,
+        filterBarDisplayMode: FILTERBAR_DISPLAY_MODES.WIDE,
       },
       overrides
     )
@@ -70,6 +74,16 @@ function ui(state = UiState(), action) {
         ...state,
         reverseSearchInputVisible: !state.reverseSearchInputVisible,
         reverseSearchInitialValue: action.initialValue || "",
+      };
+    case FILTERBAR_DISPLAY_MODE_SET:
+      return {
+        ...state,
+        filterBarDisplayMode: action.displayMode,
+      };
+    case EDITOR_TOGGLE:
+      return {
+        ...state,
+        editor: !state.editor,
       };
   }
 

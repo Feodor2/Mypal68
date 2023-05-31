@@ -20,6 +20,7 @@ loader.lazyRequireGetter(
 loader.lazyRequireGetter(this, "asyncStorage", "devtools/shared/async-storage");
 
 const DEFAULT_HIGHLIGHTER_COLOR = "#9400FF";
+const SUBGRID_PARENT_ALPHA = 0.5;
 
 /**
  * Highlighters overlay is a singleton managing all highlighters in the Inspector.
@@ -33,7 +34,9 @@ class HighlightersOverlay {
     this.inspector = inspector;
     this.inspectorFront = this.inspector.inspector;
     this.store = this.inspector.store;
-    this.telemetry = inspector.telemetry;
+    this.target = this.inspector.target;
+    this.telemetry = this.inspector.telemetry;
+    this.walker = this.inspector.walker;
     this.maxGridHighlighters = Services.prefs.getIntPref(
       "devtools.gridinspector.maxHighlighters"
     );
@@ -43,9 +46,15 @@ class HighlightersOverlay {
     this.highlighters = {};
     // Map of grid container NodeFront to their instantiated grid highlighter actors.
     this.gridHighlighters = new Map();
+    // Map of parent grid container NodeFront to their instantiated grid highlighter
+    // actors.
+    this.parentGridHighlighters = new Map();
     // Array of reusable grid highlighters that have been instantiated and are not
     // associated with any NodeFront.
     this.extraGridHighlighterPool = [];
+
+    // Map of grid container NodeFront to their parent grid container.
+    this.subgridToParentMap = new Map();
 
     // Boolean flag to keep track of whether or not the telemetry timer for the grid
     // highlighter active time is active. We keep track of this to avoid re-starting a
@@ -98,10 +107,21 @@ class HighlightersOverlay {
 
     // Add inspector events, not specific to a given view.
     this.inspector.on("markupmutation", this.onMarkupMutation);
-    this.inspector.walker.on("display-change", this.onDisplayChange);
-    this.inspector.target.on("will-navigate", this.onWillNavigate);
+    this.target.on("will-navigate", this.onWillNavigate);
+    this.walker.on("display-change", this.onDisplayChange);
 
     EventEmitter.decorate(this);
+  }
+
+  async canGetParentGridNode() {
+    if (this._canGetParentGridNode === undefined) {
+      this._canGetParentGridNode = await this.target.actorHasMethod(
+        "domwalker",
+        "getParentGridNode"
+      );
+    }
+
+    return this._canGetParentGridNode;
   }
 
   /**
@@ -285,8 +305,8 @@ class HighlightersOverlay {
     let hostname;
     try {
       hostname =
-        parseURL(this.inspector.target.url).hostname ||
-        parseURL(this.inspector.target.url).protocol;
+        parseURL(this.target.url).hostname ||
+        parseURL(this.target.url).protocol;
     } catch (e) {
       this._handleRejection(e);
     }
@@ -368,7 +388,7 @@ class HighlightersOverlay {
 
     try {
       // Save flexbox highlighter state.
-      const { url } = this.inspector.target;
+      const { url } = this.target;
       const selector = await node.getUniqueSelector();
       this.state.flexbox = { selector, options, url };
       this.flexboxHighlighterShown = node;
@@ -482,7 +502,8 @@ class HighlightersOverlay {
     const { grids, highlighterSettings } = this.store.getState();
     const grid = grids.find(g => g.nodeFront === nodeFront);
     const color = grid ? grid.color : DEFAULT_HIGHLIGHTER_COLOR;
-    return Object.assign({}, highlighterSettings, { color });
+    const zIndex = grid ? grid.zIndex : 0;
+    return Object.assign({}, highlighterSettings, { color, zIndex });
   }
 
   /**
@@ -511,7 +532,7 @@ class HighlightersOverlay {
    *         The NodeFront of the grid container element to highlight.
    * @param  {Object} options
    *         Object used for passing options to the grid highlighter.
-   * @param. {String} trigger
+   * @param  {String} trigger
    *         String name matching "grid", "markup" or "rule" to indicate where the
    *         grid highlighter was toggled on from. "grid" represents the grid view.
    *         "markup" represents the markup view. "rule" represents the rule view.
@@ -531,6 +552,18 @@ class HighlightersOverlay {
         // any additional grid highlighters.
         return;
       }
+    } else if (this.parentGridHighlighters.has(node)) {
+      // A translucent parent grid container is being highlighted, hide the translucent
+      // highlight of the parent grid container.
+      await this.hideGridHighlighter(node);
+    }
+
+    if (node.displayType === "subgrid" && (await this.canGetParentGridNode())) {
+      // Show a translucent highlight of the parent grid container if the given node is
+      // a subgrid and the parent grid container is not highlighted.
+      const parentGridNode = await this.walker.getParentGridNode(node);
+      this.subgridToParentMap.set(node, parentGridNode);
+      await this.showParentGridHighlighter(parentGridNode);
     }
 
     const highlighter = await this._getGridHighlighter(node);
@@ -566,7 +599,7 @@ class HighlightersOverlay {
 
     try {
       // Save grid highlighter state.
-      const { url } = this.inspector.target;
+      const { url } = this.target;
       const selector = await node.getUniqueSelector();
       this.state.grids.set(node, { selector, options, url });
 
@@ -579,24 +612,75 @@ class HighlightersOverlay {
   }
 
   /**
+   * Show the grid highlighter for the given parent grid container element.
+   *
+   * @param  {NodeFront} node
+   *         The NodeFront of the parent grid container element to highlight.
+   */
+  async showParentGridHighlighter(node) {
+    if (this.gridHighlighters.has(node)) {
+      // Parent grid container already highlighted.
+      return;
+    }
+
+    const highlighter = await this._getGridHighlighter(node, true);
+    if (!highlighter) {
+      return;
+    }
+
+    await highlighter.show(node, {
+      ...this.getGridHighlighterSettings(node),
+      globalAlpha: SUBGRID_PARENT_ALPHA,
+    });
+  }
+
+  /**
    * Hide the grid highlighter for the given grid container element.
    *
    * @param  {NodeFront} node
    *         The NodeFront of the grid container element to unhighlight.
    */
   async hideGridHighlighter(node) {
-    if (!this.gridHighlighters.has(node)) {
+    let highlighter;
+
+    if (this.gridHighlighters.has(node)) {
+      highlighter = this.gridHighlighters.get(node);
+      this.gridHighlighters.delete(node);
+    } else if (this.parentGridHighlighters.has(node)) {
+      highlighter = this.parentGridHighlighters.get(node);
+      this.parentGridHighlighters.delete(node);
+    } else {
       return;
     }
 
     // Hide the highlighter and put it in the pool of extra grid highlighters
     // so that it can be reused.
-    const highlighter = this.gridHighlighters.get(node);
     await highlighter.hide();
     this.extraGridHighlighterPool.push(highlighter);
-
     this.state.grids.delete(node);
-    this.gridHighlighters.delete(node);
+
+    // Given node was a subgrid, remove its entry from the subgridToParentMap and
+    // hide its parent grid container highlight.
+    if (this.subgridToParentMap.has(node)) {
+      const parentGridNode = this.subgridToParentMap.get(node);
+      this.subgridToParentMap.delete(node);
+      await this.hideParentGridHighlighter(parentGridNode);
+    }
+
+    // Check if the given node matches any of the subgrid's parent grid container.
+    // Since the subgrid and its parent grid container were previously both highlighted
+    // and the parent grid container (the given node) has just been hidden, show a
+    // translucent highlight of the parent grid container.
+    for (const highlightedNode of this.gridHighlighters.keys()) {
+      const parentGridNode = await this.walker.getParentGridNode(
+        highlightedNode
+      );
+      if (node === parentGridNode) {
+        this.subgridToParentMap.set(highlightedNode, node);
+        await this.showParentGridHighlighter(node);
+        break;
+      }
+    }
 
     this._toggleRuleViewIcon(node, false, ".ruleview-grid");
 
@@ -612,6 +696,32 @@ class HighlightersOverlay {
     // Emit the NodeFront of the grid container element that the grid highlighter was
     // hidden for.
     this.emit("grid-highlighter-hidden", node);
+  }
+
+  /**
+   * Hide the parent grid highlighter for the given parent grid container element.
+   *
+   * @param  {NodeFront} node
+   *         The NodeFront of the parent grid container element to unhiglight.
+   */
+  async hideParentGridHighlighter(node) {
+    // Before hiding the parent grid highlighter, check if there are any other subgrids
+    // highlighted with the same parent grid container.
+    for (const parentGridNode of this.subgridToParentMap.values()) {
+      if (parentGridNode === node) {
+        // Don't hide the parent grid highlighter if another subgrid is highlighted
+        // with the given parent node.
+        return;
+      }
+    }
+
+    const highlighter = this.parentGridHighlighters.get(node);
+    if (highlighter) {
+      await highlighter.hide();
+      this.extraGridHighlighterPool.push(highlighter);
+    }
+    this.state.grids.delete(node);
+    this.parentGridHighlighters.delete(node);
   }
 
   /**
@@ -758,15 +868,14 @@ class HighlightersOverlay {
   async restoreState(name, state, showFunction) {
     const { selector, options, url } = state;
 
-    if (!selector || url !== this.inspector.target.url) {
+    if (!selector || url !== this.target.url) {
       // Bail out if no selector was saved, or if we are on a different page.
       this.emit(`${name}-state-restored`, { restored: false });
       return;
     }
 
-    const walker = this.inspector.walker;
-    const rootNode = await walker.getRootNode();
-    const nodeFront = await walker.querySelector(rootNode, selector);
+    const rootNode = await this.walker.getRootNode();
+    const nodeFront = await this.walker.querySelector(rootNode, selector);
 
     if (nodeFront) {
       if (options.hoverPoint) {
@@ -857,10 +966,14 @@ class HighlightersOverlay {
    *
    * @param  {NodeFront} node
    *         The NodeFront of the grid container element to highlight.
+   * @param  {Boolean} isParent
+   *         Whether or not the given node is a parent grid container element.
    * @return {Promise} that resolves to the grid highlighter front.
    */
-  async _getGridHighlighter(node) {
-    if (this.gridHighlighters.has(node)) {
+  async _getGridHighlighter(node, isParent) {
+    if (isParent && this.parentGridHighlighters.has(node)) {
+      return this.parentGridHighlighters.get(node);
+    } else if (this.gridHighlighters.has(node)) {
       return this.gridHighlighters.get(node);
     }
 
@@ -884,7 +997,12 @@ class HighlightersOverlay {
       return null;
     }
 
-    this.gridHighlighters.set(node, highlighter);
+    if (isParent) {
+      this.parentGridHighlighters.set(node, highlighter);
+    } else {
+      this.gridHighlighters.set(node, highlighter);
+    }
+
     return highlighter;
   }
 
@@ -986,7 +1104,7 @@ class HighlightersOverlay {
     }
 
     try {
-      const isInTree = await this.inspector.walker.isInDOMTree(node);
+      const isInTree = await this.walker.isInDOMTree(node);
       if (!isInTree) {
         hideHighlighter(node);
       }
@@ -1148,8 +1266,15 @@ class HighlightersOverlay {
       if (
         display !== "grid" &&
         display !== "inline-grid" &&
-        this.gridHighlighters.has(node)
+        (this.gridHighlighters.has(node) ||
+          this.parentGridHighlighters.has(node))
       ) {
+        await this.hideGridHighlighter(node);
+        return;
+      }
+
+      // Hide the grid highlighter if the node is no longer a subgrid.
+      if (display !== "subgrid" && this.subgridToParentMap.has(node)) {
         await this.hideGridHighlighter(node);
         return;
       }
@@ -1248,6 +1373,10 @@ class HighlightersOverlay {
       await this._hideHighlighterIfDeadNode(node, this.hideGridHighlighter);
     }
 
+    for (const node of this.parentGridHighlighters.keys()) {
+      await this._hideHighlighterIfDeadNode(node, this.hideGridHighlighter);
+    }
+
     await this._hideHighlighterIfDeadNode(
       this.flexboxHighlighterShown,
       this.hideFlexboxHighlighter
@@ -1274,7 +1403,13 @@ class HighlightersOverlay {
       this.extraGridHighlighterPool.push(highlighter);
     }
 
+    for (const highlighter of this.parentGridHighlighters.values()) {
+      this.extraGridHighlighterPool.push(highlighter);
+    }
+
     this.gridHighlighters.clear();
+    this.parentGridHighlighters.clear();
+    this.subgridToParentMap.clear();
 
     this.boxModelHighlighterShown = null;
     this.flexboxHighlighterShown = null;
@@ -1306,13 +1441,19 @@ class HighlightersOverlay {
       highlighter.finalize();
     }
 
+    for (const highlighter of this.parentGridHighlighters.values()) {
+      highlighter.finalize();
+    }
+
     for (const highlighter of this.extraGridHighlighterPool) {
       highlighter.finalize();
     }
 
     this.gridHighlighters.clear();
+    this.parentGridHighlighters.clear();
 
     this.gridHighlighters = null;
+    this.parentGridHighlighters = null;
     this.extraGridHighlighterPool = null;
   }
 
@@ -1336,18 +1477,26 @@ class HighlightersOverlay {
    */
   destroy() {
     this.inspector.off("markupmutation", this.onMarkupMutation);
-    this.inspector.target.off("will-navigate", this.onWillNavigate);
+    this.target.off("will-navigate", this.onWillNavigate);
+    this.walker.off("display-change", this.onDisplayChange);
 
     this.destroyEditors();
     this.destroyGridHighlighters();
     this.destroyHighlighters();
 
+    this.subgridToParentMap.clear();
+
+    this._canGetParentGridNode = null;
     this._lastHovered = null;
 
     this.inspector = null;
     this.inspectorFront = null;
     this.state = null;
     this.store = null;
+    this.subgridToParentMap = null;
+    this.target = null;
+    this.telemetry = null;
+    this.walker = null;
 
     this.boxModelHighlighterShown = null;
     this.flexboxHighlighterShown = null;

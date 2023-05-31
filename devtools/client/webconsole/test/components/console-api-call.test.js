@@ -14,7 +14,7 @@ const { setupStore } = require("devtools/client/webconsole/test/helpers");
 
 // Components under test.
 const ConsoleApiCall = createFactory(
-  require("devtools/client/webconsole/components/message-types/ConsoleApiCall")
+  require("devtools/client/webconsole/components/Output/message-types/ConsoleApiCall")
 );
 const {
   MESSAGE_OPEN,
@@ -22,7 +22,7 @@ const {
 } = require("devtools/client/webconsole/constants");
 const {
   INDENT_WIDTH,
-} = require("devtools/client/webconsole/components/MessageIndent");
+} = require("devtools/client/webconsole/components/Output/MessageIndent");
 const { prepareMessage } = require("devtools/client/webconsole/utils/messages");
 
 // Test fakes.

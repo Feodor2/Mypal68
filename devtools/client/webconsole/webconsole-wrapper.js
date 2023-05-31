@@ -19,6 +19,7 @@ const {
   createContextMenu,
 } = require("devtools/client/webconsole/utils/context-menu");
 const { configureStore } = require("devtools/client/webconsole/store");
+const { PREFS } = require("devtools/client/webconsole/constants");
 
 const {
   isPacketPrivate,
@@ -65,6 +66,8 @@ class WebConsoleWrapper {
     this.document = document;
 
     this.init = this.init.bind(this);
+    this.dispatchPaused = this.dispatchPaused.bind(this);
+    this.dispatchProgress = this.dispatchProgress.bind(this);
 
     this.queuedMessageAdds = [];
     this.queuedMessageUpdates = [];
@@ -307,14 +310,10 @@ class WebConsoleWrapper {
       };
 
       if (this.toolbox) {
-        this.toolbox.threadClient.addListener(
-          "paused",
-          this.dispatchPaused.bind(this)
-        );
-        this.toolbox.threadClient.addListener(
-          "progress",
-          this.dispatchProgress.bind(this)
-        );
+        this.toolbox.threadClient.on("paused", this.dispatchPaused);
+        this.toolbox.threadClient.on("progress", this.dispatchProgress);
+
+        const { highlight, unhighlight } = this.toolbox.getHighlighter(true);
 
         Object.assign(serviceContainer, {
           onViewSourceInDebugger: frame => {
@@ -370,19 +369,8 @@ class WebConsoleWrapper {
           sourceMapService: this.toolbox
             ? this.toolbox.sourceMapURLService
             : null,
-          highlightDomElement: async (grip, options = {}) => {
-            await this.toolbox.initInspector();
-            if (!this.toolbox.highlighter) {
-              return null;
-            }
-            const nodeFront = await this.toolbox.walker.gripToNodeFront(grip);
-            return this.toolbox.highlighter.highlight(nodeFront, options);
-          },
-          unHighlightDomElement: (forceHide = false) => {
-            return this.toolbox.highlighter
-              ? this.toolbox.highlighter.unhighlight(forceHide)
-              : null;
-          },
+          highlightDomElement: highlight,
+          unHighlightDomElement: unhighlight,
           openNodeInInspector: async grip => {
             await this.toolbox.initInspector();
             const onSelectInspector = this.toolbox.selectTool(
@@ -423,17 +411,34 @@ class WebConsoleWrapper {
       const jstermCodeMirror =
         prefs.jstermCodeMirror && !Services.appinfo.accessibilityEnabled;
       const autocomplete = prefs.autocomplete;
+      const editorFeatureEnabled = prefs.editor;
+
+      this.prefsObservers = new Map();
+      this.prefsObservers.set(PREFS.UI.MESSAGE_TIMESTAMP, () => {
+        const enabled = Services.prefs.getBoolPref(PREFS.UI.MESSAGE_TIMESTAMP);
+        store.dispatch(actions.timestampsToggle(enabled));
+      });
+
+      this.prefsObservers.set(PREFS.FEATURES.GROUP_WARNINGS, () => {
+        const enabled = Services.prefs.getBoolPref(
+          PREFS.FEATURES.GROUP_WARNINGS
+        );
+        store.dispatch(actions.warningGroupsToggle(enabled));
+      });
+
+      for (const [pref, observer] of this.prefsObservers) {
+        Services.prefs.addObserver(pref, observer);
+      }
 
       const app = App({
-        attachRefToWebConsoleUI,
         serviceContainer,
         webConsoleUI,
         onFirstMeaningfulPaint: resolve,
         closeSplitConsole: this.closeSplitConsole.bind(this),
         jstermCodeMirror,
         autocomplete,
-        hideShowContentMessagesCheckbox:
-          !webConsoleUI.isBrowserConsole || !prefs.filterContentMessages,
+        editorFeatureEnabled,
+        hideShowContentMessagesCheckbox: !webConsoleUI.isBrowserConsole,
       });
 
       // Render the root Application component.
@@ -547,17 +552,13 @@ class WebConsoleWrapper {
     store.dispatch(actions.privateMessagesClear());
   }
 
-  dispatchTimestampsToggle(enabled) {
-    store.dispatch(actions.timestampsToggle(enabled));
-  }
-
-  dispatchPaused(_, packet) {
+  dispatchPaused(packet) {
     if (packet.executionPoint) {
       store.dispatch(actions.setPauseExecutionPoint(packet.executionPoint));
     }
   }
 
-  dispatchProgress(_, packet) {
+  dispatchProgress(packet) {
     const { executionPoint, recording } = packet;
     const point = recording ? null : executionPoint;
     store.dispatch(actions.setPauseExecutionPoint(point));
@@ -738,6 +739,14 @@ class WebConsoleWrapper {
   // Called by pushing close button.
   closeSplitConsole() {
     this.toolbox.closeSplitConsole();
+  }
+
+  destroy() {
+    if (this.prefsObservers) {
+      for (const [pref, observer] of this.prefsObservers) {
+        Services.prefs.removeObserver(pref, observer);
+      }
+    }
   }
 }
 

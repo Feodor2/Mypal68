@@ -28,7 +28,7 @@ pref("devtools.webconsole.groupWarningMessages", false);
 pref("devtools.webconsole.input.editor", false);
 pref("devtools.webconsole.input.autocomplete", true);
 pref("devtools.browserconsole.contentMessages", true);
-pref("devtools.browserconsole.filterContentMessages", false);
+pref("devtools.webconsole.features.editor", true);
 
 global.loader = {
   lazyServiceGetter: () => {},
@@ -65,6 +65,14 @@ global.indexedDB = {open: () => ({})};
 // with prior versions, we add it to the global object if it is not defined there.
 if (!global.URLSearchParams) {
   global.URLSearchParams = require("url").URLSearchParams;
+}
+
+if (!global.ResizeObserver) {
+  global.ResizeObserver = class ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
 }
 
 // Mock ChromeUtils.

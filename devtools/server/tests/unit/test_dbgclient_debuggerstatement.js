@@ -10,7 +10,7 @@ const xpcInspector = Cc["@mozilla.org/jsinspector;1"].getService(
 add_task(
   threadClientTest(async ({ threadClient, debuggee, client, targetFront }) => {
     await new Promise(resolve => {
-      threadClient.addListener("paused", function(event, packet) {
+      threadClient.on("paused", function(packet) {
         Assert.equal(threadClient.state, "paused");
         // Reach around the protocol to check that the debuggee is in the state
         // we expect.

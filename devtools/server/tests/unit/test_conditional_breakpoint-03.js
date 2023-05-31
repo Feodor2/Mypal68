@@ -5,7 +5,8 @@
 "use strict";
 
 /**
- * Check conditional breakpoint when condition throws and make sure it pauses
+ * If pauseOnExceptions is checked, when condition throws,
+ * make sure conditional breakpoint pauses.
  */
 
 var gDebuggee;
@@ -30,11 +31,21 @@ function run_test() {
 }
 
 function test_simple_breakpoint() {
-  gThreadClient.addOneTimeListener("paused", async function(event, packet) {
+  gThreadClient.once("paused", async function(packet) {
     const source = await getSourceById(gThreadClient, packet.frame.where.actor);
+
+    gThreadClient.pauseOnExceptions(true, false);
     const location = { sourceUrl: source.url, line: 3 };
     gThreadClient.setBreakpoint(location, { condition: "throw new Error()" });
-    gThreadClient.addOneTimeListener("paused", function(event, packet) {
+    gThreadClient.once("paused", async function(packet) {
+      // Check the return value.
+      Assert.equal(packet.why.type, "exception");
+      Assert.equal(packet.frame.where.line, 1);
+
+      // Step over twice.
+      await stepOver(gThreadClient);
+      packet = await stepOver(gThreadClient);
+
       // Check the return value.
       Assert.equal(packet.why.type, "breakpointConditionThrown");
       Assert.equal(packet.frame.where.line, 3);

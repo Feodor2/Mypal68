@@ -33,12 +33,13 @@ import type { Modifiers, SearchResults } from "../../reducers/file-search";
 import SearchInput from "../shared/SearchInput";
 import { debounce } from "lodash";
 import "./SearchBar.css";
+import { PluralForm } from "devtools-modules";
 
 import type SourceEditor from "../../utils/editor/source-editor";
 
 function getShortcuts() {
-  const searchAgainKey = L10N.getStr("sourceSearch.search.again.key2");
-  const searchAgainPrevKey = L10N.getStr("sourceSearch.search.againPrev.key2");
+  const searchAgainKey = L10N.getStr("sourceSearch.search.again.key3");
+  const searchAgainPrevKey = L10N.getStr("sourceSearch.search.againPrev.key3");
   const searchKey = L10N.getStr("sourceSearch.search.key2");
 
   return {
@@ -53,6 +54,7 @@ type State = {
   selectedResultIndex: number,
   count: number,
   index: number,
+  inputFocused: boolean,
 };
 
 type Props = {
@@ -82,6 +84,7 @@ class SearchBar extends Component<Props, State> {
       selectedResultIndex: 0,
       count: 0,
       index: -1,
+      inputFocused: false,
     };
   }
 
@@ -146,7 +149,7 @@ class SearchBar extends Component<Props, State> {
       e.stopPropagation();
       e.preventDefault();
     }
-    this.setState({ query: "" });
+    this.setState({ query: "", inputFocused: false });
   };
 
   toggleSearch = (e: SyntheticKeyboardEvent<HTMLElement>) => {
@@ -162,10 +165,10 @@ class SearchBar extends Component<Props, State> {
       const query = editor.codeMirror.getSelection() || this.state.query;
 
       if (query !== "") {
-        this.setState({ query });
+        this.setState({ query, inputFocused: true });
         this.doSearch(query);
       } else {
-        this.setState({ query: "" });
+        this.setState({ query: "", inputFocused: true });
       }
     }
   };
@@ -196,6 +199,14 @@ class SearchBar extends Component<Props, State> {
     this.setState({ query: e.target.value });
 
     return this.doSearch(e.target.value);
+  };
+
+  onFocus = (e: SyntheticFocusEvent<HTMLElement>) => {
+    this.setState({ inputFocused: true });
+  };
+
+  onBlur = (e: SyntheticFocusEvent<HTMLElement>) => {
+    this.setState({ inputFocused: false });
   };
 
   onKeyDown = (e: any) => {
@@ -229,10 +240,14 @@ class SearchBar extends Component<Props, State> {
     }
 
     if (index == -1) {
-      return L10N.getFormatStr("sourceSearch.resultsSummary1", count);
+      const resultsSummaryString = L10N.getStr("sourceSearch.resultsSummary1");
+      return PluralForm.get(count, resultsSummaryString).replace("#1", count);
     }
 
-    return L10N.getFormatStr("editor.searchResults", matchIndex + 1, count);
+    const searchResultsString = L10N.getStr("editor.searchResults1");
+    return PluralForm.get(count, searchResultsString)
+      .replace("#1", count)
+      .replace("%d", matchIndex + 1);
   }
 
   renderSearchModifiers = () => {
@@ -241,7 +256,7 @@ class SearchBar extends Component<Props, State> {
 
     function SearchModBtn({ modVal, className, svgName, tooltip }) {
       const preppedClass = classnames(className, {
-        active: modifiers && modifiers.get(modVal),
+        active: modifiers && modifiers[modVal],
       });
       return (
         <button
@@ -320,11 +335,14 @@ class SearchBar extends Component<Props, State> {
           summaryMsg={this.buildSummaryMsg()}
           isLoading={false}
           onChange={this.onChange}
+          onFocus={this.onFocus}
+          onBlur={this.onBlur}
           showErrorEmoji={this.shouldShowErrorEmoji()}
           onKeyDown={this.onKeyDown}
           onHistoryScroll={this.onHistoryScroll}
           handleNext={e => this.traverseResults(e, false)}
           handlePrev={e => this.traverseResults(e, true)}
+          shouldFocus={this.state.inputFocused}
           showClose={false}
         />
         <div className="search-bottom-bar">

@@ -25,6 +25,8 @@ import type {
   Range,
 } from "../../types";
 
+import type { EventListenerCategoryList } from "../../actions/types";
+
 type URL = string;
 
 /**
@@ -94,6 +96,7 @@ export type SourcePayload = {
   sourceMapURL: URL | null,
   introductionUrl: URL | null,
   introductionType: string | null,
+  extensionName: string | null,
 };
 
 /**
@@ -346,8 +349,6 @@ export type ThreadClient = {
   stepIn: Function => Promise<*>,
   stepOver: Function => Promise<*>,
   stepOut: Function => Promise<*>,
-  rewind: Function => Promise<*>,
-  reverseStepOver: Function => Promise<*>,
   breakOnNext: () => Promise<*>,
   // FIXME: unclear if SourceId or ActorId here
   source: ({ actor: SourceId }) => SourceClient,
@@ -361,7 +362,7 @@ export type ThreadClient = {
   eventListeners: () => Promise<*>,
   getFrames: (number, number) => FramesResponse,
   getEnvironment: (frame: Frame) => Promise<*>,
-  addListener: (string, Function) => void,
+  on: (string, Function) => void,
   getSources: () => Promise<SourcesPacket>,
   reconfigure: ({ observeAsmJS: boolean }) => Promise<*>,
   getLastPausePacket: () => ?PausedPacket,
@@ -369,7 +370,8 @@ export type ThreadClient = {
   actor: ActorId,
   request: (payload: Object) => Promise<*>,
   url: string,
-  setEventListenerBreakpoints: (string[]) => void,
+  setActiveEventBreakpoints: (string[]) => void,
+  getAvailableEventBreakpoints: () => Promise<EventListenerCategoryList>,
   skipBreakpoints: boolean => Promise<{| skip: boolean |}>,
 };
 

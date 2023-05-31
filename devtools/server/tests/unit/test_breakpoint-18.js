@@ -15,13 +15,13 @@ add_task(
       debuggee.console = { log: x => void x };
 
       // Inline all paused listeners as promises won't resolve when paused
-      client.addOneTimeListener("paused", async (event1, packet1) => {
+      threadClient.once("paused", async (packet1) => {
         await setBreakpoint(packet1, threadClient, client);
 
-        client.addOneTimeListener("paused", (event2, { why }) => {
+        threadClient.once("paused", ({ why }) => {
           Assert.equal(why.type, "breakpoint");
 
-          client.addOneTimeListener("paused", (event3, packet3) => {
+          threadClient.once("paused", (packet3) => {
             testDbgStatement(packet3);
             resolve();
           });
@@ -48,7 +48,7 @@ add_task(
 function setBreakpoint(packet, threadClient, client) {
   return new Promise(async resolve => {
     const source = await getSourceById(threadClient, packet.frame.where.actor);
-    client.addOneTimeListener("resumed", resolve);
+    threadClient.once("resumed", resolve);
 
     threadClient.setBreakpoint({ sourceUrl: source.url, line: 3 }, {});
     threadClient.resume();

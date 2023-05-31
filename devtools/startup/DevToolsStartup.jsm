@@ -13,6 +13,7 @@
  * - Inject the wrench icon in toolbar customization, which is used
  *   by the "Web Developer" list displayed in the hamburger menu,
  * - Register the JSON Viewer protocol handler.
+ * - Inject the profiler recording button in toolbar customization.
  *
  * Only once any of these entry point is fired, this module ensures starting
  * core modules like 'devtools-browser.js' that hooks the browser windows
@@ -29,6 +30,8 @@ const kDebuggerPrefs = [
 const DEVTOOLS_ENABLED_PREF = "devtools.enabled";
 
 const DEVTOOLS_POLICY_DISABLED_PREF = "devtools.policy.disabled";
+const PROFILER_POPUP_ENABLED_PREF = "devtools.performance.popup.enabled";
+const WEBIDE_ENABLED_PREF = "devtools.webide.enabled";
 
 const { XPCOMUtils } = ChromeUtils.import(
   "resource://gre/modules/XPCOMUtils.jsm"
@@ -59,7 +62,11 @@ ChromeUtils.defineModuleGetter(
   "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm"
 );
-
+ChromeUtils.defineModuleGetter(
+  this, "ProfilerMenuButton",
+ "resource://devtools/client/performance-new/popup/menu-button.jsm"
+);
+ 
 // We don't want to spend time initializing the full loader here so we create
 // our own lazy require.
 XPCOMUtils.defineLazyGetter(this, "Telemetry", function() {
@@ -110,12 +117,6 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
         "toggleToolboxF12.commandkey"
       ),
       modifiers: "", // F12 is the only one without modifiers
-    },
-    // Open WebIDE window
-    {
-      id: "webide",
-      shortcut: KeyShortcutsBundle.GetStringFromName("webide.commandkey"),
-      modifiers: "shift",
     },
     // Open the Browser Toolbox
     {
@@ -193,6 +194,7 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
       shortcut: KeyShortcutsBundle.GetStringFromName("dom.commandkey"),
       modifiers,
     },
+#ifdef ACCESSIBILITY
     // Key for opening the Accessibility Panel
     {
       toolId: "accessibility",
@@ -201,6 +203,7 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
       ),
       modifiers: "shift",
     },
+#endif
   ];
 
   if (isMac) {
@@ -213,12 +216,61 @@ XPCOMUtils.defineLazyGetter(this, "KeyShortcuts", function() {
     });
   }
 
+  // Only add the WebIDE shortcut if WebIDE is enabled.
+  const isWebIDEEnabled = Services.prefs.getBoolPref(
+    WEBIDE_ENABLED_PREF,
+    false
+  );
+  if (isWebIDEEnabled) {
+    // Open WebIDE window
+    shortcuts.push({
+      id: "webide",
+      shortcut: KeyShortcutsBundle.GetStringFromName("webide.commandkey"),
+      modifiers: "shift",
+    });
+  }
+
+  if (isProfilerButtonEnabled()) {
+    shortcuts.push(...getProfilerKeyShortcuts());
+  }
+
   return shortcuts;
+});
+
+function getProfilerKeyShortcuts() {
+  return [
+    // Start/stop the profiler
+    {
+      id: "profilerStartStop",
+      shortcut: KeyShortcutsBundle.GetStringFromName("profilerStartStop.commandkey"),
+      modifiers: "control,shift",
+    },
+    // Capture a profile
+    {
+      id: "profilerCapture",
+      shortcut: KeyShortcutsBundle.GetStringFromName("profilerCapture.commandkey"),
+      modifiers: "control,shift",
+    },
+  ];
+}
+
+/**
+ * Instead of loading the ProfilerMenuButton.jsm file, provide an independent check
+ * to see if it is turned on.
+ */
+function isProfilerButtonEnabled() {
+  return Services.prefs.getBoolPref(PROFILER_POPUP_ENABLED_PREF, false);
+}
+
+XPCOMUtils.defineLazyGetter(this, "ProfilerPopupBackground", function() {
+  return ChromeUtils.import(
+    "resource://devtools/client/performance-new/popup/background.jsm");
 });
 
 function DevToolsStartup() {
   this.onEnabledPrefChanged = this.onEnabledPrefChanged.bind(this);
   this.onWindowReady = this.onWindowReady.bind(this);
+  this.toggleProfilerKeyShortcuts = this.toggleProfilerKeyShortcuts.bind(this);
 }
 
 DevToolsStartup.prototype = {
@@ -248,6 +300,12 @@ DevToolsStartup.prototype = {
    */
   developerToggleCreated: false,
 
+  /**
+   * Flag that indicates if the profiler recording popup was already added to
+   * customizableUI.
+   */
+  profilerRecordingButtonCreated: false,
+
   isDisabledByPolicy: function() {
     return Services.prefs.getBoolPref(DEVTOOLS_POLICY_DISABLED_PREF, false);
   },
@@ -259,9 +317,9 @@ DevToolsStartup.prototype = {
     const isInitialLaunch =
       cmdLine.state == Ci.nsICommandLine.STATE_INITIAL_LAUNCH;
     if (isInitialLaunch) {
-      // Execute only on first launch of this browser instance.
-      const hasDevToolsFlag = flags.console || flags.devtools || flags.debugger;
-      this.setupEnabledPref(hasDevToolsFlag);
+      // Enable devtools for all users on startup (onboarding experiment from Bug 1408969
+      // is over).
+      Services.prefs.setBoolPref(DEVTOOLS_ENABLED_PREF, true);
 
       // Store devtoolsFlag to check it later in onWindowReady.
       this.devtoolsFlag = flags.devtools;
@@ -271,10 +329,14 @@ DevToolsStartup.prototype = {
         "browser-delayed-startup-finished"
       );
 
-      if (AppConstants.MOZ_DEV_EDITION && !this.isDisabledByPolicy()) {
-        // On DevEdition, the developer toggle is displayed by default in the navbar area
-        // and should be created before the first paint.
-        this.hookDeveloperToggle();
+      if (!this.isDisabledByPolicy()) {
+        if (AppConstants.MOZ_DEV_EDITION) {
+          // On DevEdition, the developer toggle is displayed by default in the navbar
+          // area and should be created before the first paint.
+          this.hookDeveloperToggle();
+        }
+
+        this.hookProfilerRecordingButton();
       }
 
       // Update menu items when devtools.enabled changes.
@@ -372,26 +434,6 @@ DevToolsStartup.prototype = {
         this.sendEntryPointTelemetry("CommandLine");
       }
     }
-
-    // Wait until we get a window before sending a ping to telemetry to avoid slowing down
-    // the startup phase.
-    this.pingOnboardingTelemetry();
-  },
-
-  /**
-   * Check if the user is being flagged as DevTools users or not. This probe should only
-   * be logged once per profile.
-   */
-  pingOnboardingTelemetry() {
-    // Only ping telemetry once per profile.
-    const alreadyLoggedPref = "devtools.onboarding.telemetry.logged";
-    if (Services.prefs.getBoolPref(alreadyLoggedPref)) {
-      return;
-    }
-
-    const scalarId = "devtools.onboarding.is_devtools_user";
-    this.telemetry.scalarSet(scalarId, this.isDevToolsUser());
-    Services.prefs.setBoolPref(alreadyLoggedPref, true);
   },
 
   /**
@@ -408,6 +450,7 @@ DevToolsStartup.prototype = {
     // initialized before the first browser-delayed-startup-finished event is received.
     // We use a dedicated flag because we still need to hook the developer toggle.
     this.hookDeveloperToggle();
+    this.hookProfilerRecordingButton();
 
     // The developer menu hook only needs to be added if devtools have not been
     // initialized yet.
@@ -506,6 +549,22 @@ DevToolsStartup.prototype = {
     this.developerToggleCreated = true;
   },
 
+  /**
+   * Dynamically register a profiler recording button in the
+   * customization menu. You can use this button by right clicking
+   * on Firefox toolbar and dragging it from the customization panel
+   * to the toolbar. (i.e. this isn't displayed by default to users.)
+   */
+  hookProfilerRecordingButton() {
+    if (this.profilerRecordingButtonCreated) {
+      return;
+    }
+    this.profilerRecordingButtonCreated = true;
+    if (isProfilerButtonEnabled()) {
+      ProfilerMenuButton.initialize();
+    }
+  },
+
   /*
    * We listen to the "Web Developer" system menu, which is under "Tools" main item.
    * This menu item is hardcoded empty in Firefox UI. We listen for its opening to
@@ -583,51 +642,6 @@ DevToolsStartup.prototype = {
     return selfXssCount > 0;
   },
 
-  /**
-   * Depending on some runtime parameters (command line arguments as well as existing
-   * preferences), the DEVTOOLS_ENABLED_PREF might be forced to true.
-   *
-   * @param {Boolean} hasDevToolsFlag
-   *        true if any DevTools command line argument was passed when starting Firefox.
-   */
-  setupEnabledPref(hasDevToolsFlag) {
-    // Read the current experiment state.
-    const experimentState = Services.prefs.getCharPref(
-      "devtools.onboarding.experiment"
-    );
-    const isRegularExperiment = experimentState == "on";
-    const isForcedExperiment = experimentState == "force";
-    const isInExperiment = isRegularExperiment || isForcedExperiment;
-
-    // Force devtools.enabled to true for users that are not part of the experiment.
-    if (!isInExperiment) {
-      Services.prefs.setBoolPref(DEVTOOLS_ENABLED_PREF, true);
-      return;
-    }
-
-    // Force devtools.enabled to false once for each experiment user.
-    if (!Services.prefs.getBoolPref("devtools.onboarding.experiment.flipped")) {
-      Services.prefs.setBoolPref(DEVTOOLS_ENABLED_PREF, false);
-      Services.prefs.setBoolPref(
-        "devtools.onboarding.experiment.flipped",
-        true
-      );
-    }
-
-    if (Services.prefs.getBoolPref(DEVTOOLS_ENABLED_PREF)) {
-      // Nothing to do if DevTools are already enabled.
-      return;
-    }
-
-    // We only consider checking the actual isDevToolsUser() if the user is in the
-    // "regular" experiment group.
-    const isDevToolsUser = isRegularExperiment && this.isDevToolsUser();
-
-    if (hasDevToolsFlag || isDevToolsUser) {
-      Services.prefs.setBoolPref(DEVTOOLS_ENABLED_PREF, true);
-    }
-  },
-
   hookKeyShortcuts(window) {
     const doc = window.document;
 
@@ -640,20 +654,90 @@ DevToolsStartup.prototype = {
     const keyset = doc.createXULElement("keyset");
     keyset.setAttribute("id", "devtoolsKeyset");
 
-    for (const key of KeyShortcuts) {
-      const xulKey = this.createKey(doc, key, () => this.onKey(window, key));
-      keyset.appendChild(xulKey);
-    }
+    this.attachKeys(doc, KeyShortcuts, keyset);
 
     // Appending a <key> element is not always enough. The <keyset> needs
     // to be detached and reattached to make sure the <key> is taken into
     // account (see bug 832984).
     const mainKeyset = doc.getElementById("mainKeyset");
     mainKeyset.parentNode.insertBefore(keyset, mainKeyset);
+
+    // Watch for the profiler to enable or disable the profiler popup, then toggle
+    // the keyboard shortcuts on and off.
+    Services.prefs.addObserver(PROFILER_POPUP_ENABLED_PREF,
+      this.toggleProfilerKeyShortcuts);
+  },
+
+  /**
+   * This method attaches on the key elements to the devtools keyset.
+   */
+  attachKeys(doc, keyShortcuts, keyset = doc.getElementById("devtoolsKeyset")) {
+    const window = doc.defaultView;
+    for (const key of keyShortcuts) {
+      const xulKey = this.createKey(doc, key, () => this.onKey(window, key));
+      keyset.appendChild(xulKey);
+    }
+  },
+
+  /**
+   * This method removes keys from the devtools keyset.
+   */
+  removeKeys(doc, keyShortcuts) {
+    for (const key of keyShortcuts) {
+      const keyElement = doc.getElementById(this.getKeyElementId(key));
+      if (keyElement) {
+        keyElement.remove();
+      }
+    }
+  },
+
+  /**
+   * We only want to have the keyboard shortcuts active when the menu button is on.
+   * This function either adds or removes the elements.
+   */
+  toggleProfilerKeyShortcuts() {
+    const isEnabled = isProfilerButtonEnabled();
+    const profilerKeyShortcuts = getProfilerKeyShortcuts();
+    for (const { document } of Services.wm.getEnumerator(null)) {
+      const devtoolsKeyset = document.getElementById("devtoolsKeyset");
+      const mainKeyset = document.getElementById("mainKeyset");
+
+      if (!devtoolsKeyset || !mainKeyset) {
+        // There may not be devtools keyset on this window.
+        continue;
+      }
+
+      if (isEnabled) {
+        this.attachKeys(document, profilerKeyShortcuts);
+      } else {
+        this.removeKeys(document, profilerKeyShortcuts);
+      }
+      // Appending a <key> element is not always enough. The <keyset> needs
+      // to be detached and reattached to make sure the <key> is taken into
+      // account (see bug 832984).
+      mainKeyset.parentNode.insertBefore(devtoolsKeyset, mainKeyset);
+    }
+
+    if (!isEnabled) {
+      // Ensure the profiler isn't left profiling in the background.
+      ProfilerPopupBackground.stopProfiler();
+    }
   },
 
   async onKey(window, key) {
     try {
+      // The profiler doesn't care if DevTools is loaded, so provide a quick check
+      // first to bail out of checking if DevTools is available.
+      switch (key.id) {
+        case "profilerStartStop": {
+          ProfilerPopupBackground.toggleProfiler();
+          return;
+        }
+        case "profilerCapture": {
+          ProfilerPopupBackground.captureProfile();
+          return;
+        }
+      }
       if (!Services.prefs.getBoolPref(DEVTOOLS_ENABLED_PREF)) {
         const id = key.toolId || key.id;
         this.openInstallPage("KeyShortcut", id);
@@ -673,13 +757,23 @@ DevToolsStartup.prototype = {
     }
   },
 
+  getKeyElementId({ id, toolId }) {
+    return "key_" + (id || toolId);
+  },
+
   // Create a <xul:key> DOM Element
-  createKey(doc, { id, toolId, shortcut, modifiers: mod }, oncommand) {
+  createKey(doc, key, oncommand) {
+    const { shortcut, modifiers: mod } = key;
     const k = doc.createXULElement("key");
-    k.id = "key_" + (id || toolId);
+    k.id = this.getKeyElementId(key);
 
     if (shortcut.startsWith("VK_")) {
       k.setAttribute("keycode", shortcut);
+      if (shortcut.match(/^VK_\d$/)) {
+        // Add the event keydown attribute to ensure that shortcuts work for combinations
+        // such as ctrl shift 1.
+        k.setAttribute("event", "keydown");
+      }
     } else {
       k.setAttribute("key", shortcut);
     }

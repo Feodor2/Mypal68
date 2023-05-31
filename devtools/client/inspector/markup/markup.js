@@ -1259,6 +1259,18 @@ MarkupView.prototype = {
     this.inspector.selection.nodeFront.scrollIntoView();
   },
 
+  async toggleMutationBreakpoint(name) {
+    if (!this.inspector.selection.isElementNode()) {
+      return;
+    }
+
+    const nodeFront = this.inspector.selection.nodeFront;
+    const mutationBreakpoints = nodeFront.mutationBreakpoints;
+    await this.walker.setMutationBreakpoints(nodeFront, {
+      [name]: !mutationBreakpoints[name],
+    });
+  },
+
   /**
    * If an editable item is focused, select its container.
    */
@@ -1370,7 +1382,8 @@ MarkupView.prototype = {
         type === "characterData" ||
         type === "customElementDefined" ||
         type === "events" ||
-        type === "pseudoClassLock"
+        type === "pseudoClassLock" ||
+        type === "mutationBreakpoint"
       ) {
         container.update();
       } else if (

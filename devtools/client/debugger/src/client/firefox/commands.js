@@ -16,7 +16,6 @@ import type {
   BreakpointLocation,
   BreakpointOptions,
   PendingLocation,
-  EventListenerBreakpoints,
   Frame,
   FrameId,
   GeneratedSourceData,
@@ -36,12 +35,18 @@ import type {
   SourcesPacket,
 } from "./types";
 
+import type {
+  EventListenerCategoryList,
+  EventListenerActiveList,
+} from "../../actions/types";
+
 let workerClients: Object;
 let threadClient: ThreadClient;
 let tabTarget: TabTarget;
 let debuggerClient: DebuggerClient;
 let sourceActors: { [ActorId]: SourceId };
 let breakpoints: { [string]: Object };
+let eventBreakpoints: ?EventListenerActiveList;
 let supportsWasm: boolean;
 
 let shouldWaitForWorkers = false;
@@ -143,14 +148,6 @@ function stepOut(thread: string): Promise<*> {
   return lookupThreadClient(thread).stepOut();
 }
 
-function rewind(thread: string): Promise<*> {
-  return lookupThreadClient(thread).rewind();
-}
-
-function reverseStepOver(thread: string): Promise<*> {
-  return lookupThreadClient(thread).reverseStepOver();
-}
-
 function breakOnNext(thread: string): Promise<*> {
   return lookupThreadClient(thread).breakOnNext();
 }
@@ -191,23 +188,6 @@ function detachWorkers() {
   }
 }
 
-function maybeGenerateLogGroupId(options) {
-  if (options.logValue && tabTarget.traits && tabTarget.traits.canRewind) {
-    return { ...options, logGroupId: `logGroup-${Math.random()}` };
-  }
-  return options;
-}
-
-function maybeClearLogpoint(location: BreakpointLocation) {
-  const bp = breakpoints[locationKey(location)];
-  if (bp && bp.options.logGroupId && tabTarget.activeConsole) {
-    tabTarget.activeConsole.emit(
-      "clearLogpointMessages",
-      bp.options.logGroupId
-    );
-  }
-}
-
 function hasBreakpoint(location: BreakpointLocation) {
   return !!breakpoints[locationKey(location)];
 }
@@ -216,8 +196,6 @@ async function setBreakpoint(
   location: BreakpointLocation,
   options: BreakpointOptions
 ) {
-  maybeClearLogpoint(location);
-  options = maybeGenerateLogGroupId(options);
   breakpoints[locationKey(location)] = { location, options };
 
   // We have to be careful here to atomically initiate the setBreakpoint() call
@@ -233,7 +211,6 @@ async function setBreakpoint(
 }
 
 async function removeBreakpoint(location: PendingLocation) {
-  maybeClearLogpoint((location: any));
   delete breakpoints[locationKey((location: any))];
 
   // Delay waiting on this promise, for the same reason as in setBreakpoint.
@@ -361,8 +338,18 @@ function interrupt(thread: string): Promise<*> {
   return lookupThreadClient(thread).interrupt();
 }
 
-function setEventListenerBreakpoints(eventTypes: EventListenerBreakpoints) {
-  // TODO: Figure out what sendpoint we want to hit
+async function setEventListenerBreakpoints(ids: string[]) {
+  eventBreakpoints = ids;
+
+  await threadClient.setActiveEventBreakpoints(ids);
+  await forEachWorkerThread(thread => thread.setActiveEventBreakpoints(ids));
+}
+
+// eslint-disable-next-line
+async function getEventListenerBreakpointTypes(): Promise<
+  EventListenerCategoryList
+> {
+  return threadClient.getAvailableEventBreakpoints();
 }
 
 function pauseGrip(thread: string, func: Function): ObjectClient {
@@ -396,6 +383,7 @@ async function fetchWorkers(): Promise<Worker[]> {
   if (features.windowlessWorkers) {
     const options = {
       breakpoints,
+      eventBreakpoints,
       observeAsmJS: true,
     };
 
@@ -412,7 +400,12 @@ async function fetchWorkers(): Promise<Worker[]> {
     for (const actor of workerNames) {
       if (!workerClients[actor]) {
         const client = newWorkerClients[actor].thread;
-        getSources(client);
+
+        // This runs in the background and populates some data, but we also
+        // want to allow it to fail quietly. For instance, it is pretty easy
+        // for source clients to throw during the fetch if their thread
+        // shuts down, and this would otherwise cause test failures.
+        getSources(client).catch(e => console.error(e));
       }
     }
 
@@ -498,8 +491,6 @@ const clientCommands = {
   stepIn,
   stepOut,
   stepOver,
-  rewind,
-  reverseStepOver,
   breakOnNext,
   sourceContents,
   getSourceForActor,
@@ -525,6 +516,7 @@ const clientCommands = {
   sendPacket,
   setSkipPausing,
   setEventListenerBreakpoints,
+  getEventListenerBreakpointTypes,
   waitForWorkers,
   detachWorkers,
   hasWasmSupport,

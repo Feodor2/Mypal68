@@ -13,6 +13,9 @@ if CONFIG['MOZ_DEVTOOLS'] == 'all':
     EXTRA_JS_MODULES += [
         'AboutDebuggingRegistration.jsm',
         'AboutDevToolsToolboxRegistration.jsm',
+    ]
+
+    EXTRA_PP_JS_MODULES += [
         'DevToolsStartup.jsm',
     ]
 

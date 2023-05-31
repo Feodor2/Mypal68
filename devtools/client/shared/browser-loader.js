@@ -3,10 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-const loaders = ChromeUtils.import(
-  "resource://devtools/shared/base-loader.js",
-  null
-);
+const loaders = ChromeUtils.import("resource://devtools/shared/base-loader.js");
 const { devtools, loader } = ChromeUtils.import(
   "resource://devtools/shared/Loader.jsm"
 );
@@ -33,8 +30,10 @@ const BROWSER_BASED_DIRS = [
   "resource://devtools/client/inspector/fonts",
   "resource://devtools/client/inspector/grids",
   "resource://devtools/client/inspector/layout",
+  "resource://devtools/client/inspector/markup",
   "resource://devtools/client/jsonview",
   "resource://devtools/client/netmonitor/src/utils",
+  "resource://devtools/client/shared/fluent-l10n",
   "resource://devtools/client/shared/source-map",
   "resource://devtools/client/shared/redux",
   "resource://devtools/client/shared/vendor",

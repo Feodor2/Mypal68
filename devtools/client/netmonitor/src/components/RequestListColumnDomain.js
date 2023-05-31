@@ -4,14 +4,15 @@
 
 "use strict";
 
-const { Component } = require("devtools/client/shared/vendor/react");
-const dom = require("devtools/client/shared/vendor/react-dom-factories");
+const {
+  Component,
+  createFactory,
+} = require("devtools/client/shared/vendor/react");
+const { td } = require("devtools/client/shared/vendor/react-dom-factories");
 const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
 const { getFormattedIPAndPort } = require("../utils/format-utils");
-const { L10N } = require("../utils/l10n");
 const { propertiesEqual } = require("../utils/request-utils");
-
-const { div } = dom;
+const SecurityState = createFactory(require("./SecurityState"));
 
 const UPDATED_DOMAIN_PROPS = ["remoteAddress", "securityState", "urlDetails"];
 
@@ -33,45 +34,22 @@ class RequestListColumnDomain extends Component {
 
   render() {
     const { item, onSecurityIconMouseDown } = this.props;
+
     const {
       remoteAddress,
       remotePort,
-      securityState,
       urlDetails: { host, isLocal },
     } = item;
-    const iconClassList = ["requests-security-state-icon"];
-    let iconTitle;
+
     const title =
       host +
       (remoteAddress
         ? ` (${getFormattedIPAndPort(remoteAddress, remotePort)})`
         : "");
 
-    let realSecurityState = securityState;
-
-    // Locally delivered files such as http://localhost and file:// paths
-    // are considered to have been delivered securely.
-    if (isLocal) {
-      realSecurityState = "secure";
-    }
-
-    if (realSecurityState) {
-      iconClassList.push(`security-state-${realSecurityState}`);
-      iconTitle = L10N.getStr(`netmonitor.security.state.${realSecurityState}`);
-    }
-
-    return dom.td(
+    return td(
       { className: "requests-list-column requests-list-domain", title },
-      div({
-        className: iconClassList.join(" "),
-        onMouseDown: onSecurityIconMouseDown,
-        title: iconTitle,
-      }),
-      item.isThirdPartyTrackingResource &&
-        div({
-          className: "tracking-resource",
-          title: L10N.getStr("netmonitor.trackingResource.tooltip"),
-        }),
+      SecurityState({ item, onSecurityIconMouseDown, isLocal }),
       host
     );
   }

@@ -11,28 +11,21 @@ registerCleanupFunction(() => {
 add_task(
   threadClientTest(async ({ threadClient, debuggee }) => {
     return new Promise(resolve => {
-      const bigIntEnabled = Services.prefs.getBoolPref(
-        "javascript.options.bigint"
-      );
-      threadClient.addOneTimeListener("paused", function(event, packet) {
+      threadClient.once("paused", function(packet) {
         const args = packet.frame.arguments;
 
         Assert.equal(args[0].class, "Object");
 
         const objClient = threadClient.pauseGrip(args[0]);
         objClient.getPrototypeAndProperties(function(response) {
-          const { a, b, c, d } = response.ownProperties;
+          const { a, b, c, d, e, f, g } = response.ownProperties;
           testPropertyType(a, "Infinity");
           testPropertyType(b, "-Infinity");
           testPropertyType(c, "NaN");
           testPropertyType(d, "-0");
-
-          if (bigIntEnabled) {
-            const { e, f, g } = response.ownProperties;
-            testPropertyType(e, "BigInt");
-            testPropertyType(f, "BigInt");
-            testPropertyType(g, "BigInt");
-          }
+          testPropertyType(e, "BigInt");
+          testPropertyType(f, "BigInt");
+          testPropertyType(g, "BigInt");
 
           threadClient.resume().then(resolve);
         });
@@ -48,14 +41,10 @@ add_task(
       b: -Infinity,
       c: NaN,
       d: -0,
-      ${
-        bigIntEnabled
-          ? `e: 1n,
+      e: 1n,
       f: -2n,
-      g: 0n,`
-          : ``
-      }
-    })`);
+      g: 0n,
+      })`);
     });
   })
 );

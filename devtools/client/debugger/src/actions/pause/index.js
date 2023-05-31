@@ -15,8 +15,6 @@ export {
   stepOver,
   stepOut,
   resume,
-  rewind,
-  reverseStepOver,
 } from "./commands";
 export { fetchScopes } from "./fetchScopes";
 export { paused } from "./paused";
@@ -28,3 +26,4 @@ export { pauseOnExceptions } from "./pauseOnExceptions";
 export { selectFrame } from "./selectFrame";
 export { toggleSkipPausing } from "./skipPausing";
 export { toggleMapScopes } from "./mapScopes";
+export { setExpandedScope } from "./expandScopes";

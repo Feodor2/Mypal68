@@ -19,23 +19,29 @@ const {
 } = require("devtools/client/shared/redux/visibility-handler-connect");
 
 const actions = require("devtools/client/webconsole/actions/index");
+const {
+  FILTERBAR_DISPLAY_MODES,
+} = require("devtools/client/webconsole/constants");
 const ConsoleOutput = createFactory(
-  require("devtools/client/webconsole/components/ConsoleOutput")
+  require("devtools/client/webconsole/components/Output/ConsoleOutput")
 );
 const FilterBar = createFactory(
-  require("devtools/client/webconsole/components/FilterBar")
+  require("devtools/client/webconsole/components/FilterBar/FilterBar")
 );
 const SideBar = createFactory(
   require("devtools/client/webconsole/components/SideBar")
 );
 const ReverseSearchInput = createFactory(
-  require("devtools/client/webconsole/components/ReverseSearchInput")
+  require("devtools/client/webconsole/components/Input/ReverseSearchInput")
+);
+const EditorToolbar = createFactory(
+  require("devtools/client/webconsole/components/Input/EditorToolbar")
 );
 const JSTerm = createFactory(
-  require("devtools/client/webconsole/components/JSTerm")
+  require("devtools/client/webconsole/components/Input/JSTerm")
 );
 const ConfirmDialog = createFactory(
-  require("devtools/client/webconsole/components/ConfirmDialog")
+  require("devtools/client/webconsole/components/Input/ConfirmDialog")
 );
 const NotificationBox = createFactory(
   require("devtools/client/shared/components/NotificationBox").NotificationBox
@@ -64,7 +70,6 @@ const isMacOS = Services.appinfo.OS === "Darwin";
 class App extends Component {
   static get propTypes() {
     return {
-      attachRefToWebConsoleUI: PropTypes.func.isRequired,
       dispatch: PropTypes.func.isRequired,
       webConsoleUI: PropTypes.object.isRequired,
       notifications: PropTypes.object,
@@ -78,6 +83,11 @@ class App extends Component {
       reverseSearchInitialValue: PropTypes.string,
       editorMode: PropTypes.bool,
       hideShowContentMessagesCheckbox: PropTypes.bool,
+      sidebarVisible: PropTypes.bool.isRequired,
+      filterBarDisplayMode: PropTypes.oneOf([
+        ...Object.values(FILTERBAR_DISPLAY_MODES),
+      ]).isRequired,
+      editorFeatureEnabled: PropTypes.bool.isRequired,
     };
   }
 
@@ -90,7 +100,7 @@ class App extends Component {
   }
 
   onKeyDown(event) {
-    const { dispatch, webConsoleUI } = this.props;
+    const { dispatch, webConsoleUI, editorFeatureEnabled } = this.props;
 
     if (
       (!isMacOS && event.key === "F9") ||
@@ -100,6 +110,16 @@ class App extends Component {
         webConsoleUI.jsterm && webConsoleUI.jsterm.getSelectedText();
       dispatch(actions.reverseSearchInputToggle({ initialValue }));
       event.stopPropagation();
+    }
+
+    if (
+      editorFeatureEnabled &&
+      event.key.toLowerCase() === "b" &&
+      ((isMacOS && event.metaKey) || (!isMacOS && event.ctrlKey))
+    ) {
+      event.stopPropagation();
+      event.preventDefault();
+      dispatch(actions.editorToggle());
     }
   }
 
@@ -215,7 +235,6 @@ class App extends Component {
 
   render() {
     const {
-      attachRefToWebConsoleUI,
       webConsoleUI,
       notifications,
       onFirstMeaningfulPaint,
@@ -225,6 +244,8 @@ class App extends Component {
       autocomplete,
       reverseSearchInitialValue,
       editorMode,
+      filterBarDisplayMode,
+      sidebarVisible,
       hideShowContentMessagesCheckbox,
     } = this.props;
 
@@ -254,12 +275,12 @@ class App extends Component {
         },
       },
       div(
-        { className: "webconsole-flex-wrapper" },
+        { className: "webconsole-wrapper" },
         FilterBar({
           hidePersistLogsCheckbox: webConsoleUI.isBrowserConsole,
           hideShowContentMessagesCheckbox,
-          attachRefToWebConsoleUI,
           closeSplitConsole,
+          displayMode: filterBarDisplayMode,
         }),
         ConsoleOutput({
           serviceContainer,
@@ -269,6 +290,10 @@ class App extends Component {
           id: "webconsole-notificationbox",
           wrapping: true,
           notifications,
+        }),
+        EditorToolbar({
+          editorMode,
+          webConsoleUI,
         }),
         JSTerm({
           webConsoleUI,
@@ -287,6 +312,7 @@ class App extends Component {
       ),
       SideBar({
         serviceContainer,
+        visible: sidebarVisible,
       }),
       ConfirmDialog({
         webConsoleUI,
@@ -302,6 +328,8 @@ const mapStateToProps = state => ({
   reverseSearchInputVisible: state.ui.reverseSearchInputVisible,
   reverseSearchInitialValue: state.ui.reverseSearchInitialValue,
   editorMode: state.ui.editor,
+  sidebarVisible: state.ui.sidebarVisible,
+  filterBarDisplayMode: state.ui.filterBarDisplayMode,
 });
 
 const mapDispatchToProps = dispatch => ({

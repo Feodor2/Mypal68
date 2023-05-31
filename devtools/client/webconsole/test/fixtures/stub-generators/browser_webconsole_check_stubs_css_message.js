@@ -3,8 +3,6 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/osfile.jsm", {});
-
 add_task(async function() {
   const generatedStubs = await generateCssMessageStubs();
 

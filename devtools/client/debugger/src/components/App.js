@@ -19,7 +19,6 @@ import {
   getActiveSearch,
   getQuickOpenEnabled,
   getOrientation,
-  getCanRewind,
 } from "../selectors";
 
 import type { OrientationType } from "../reducers/types";
@@ -67,7 +66,6 @@ type Props = {
   endPanelCollapsed: boolean,
   activeSearch: ActiveSearchType,
   quickOpenEnabled: boolean,
-  canRewind: boolean,
   setActiveSearch: typeof actions.setActiveSearch,
   closeActiveSearch: typeof actions.closeActiveSearch,
   closeProjectSearch: typeof actions.closeProjectSearch,
@@ -119,7 +117,7 @@ class App extends Component<Props, State> {
     ];
     searchKeys.forEach(key => shortcuts.on(key, this.toggleQuickOpenModal));
 
-    shortcuts.on(L10N.getStr("gotoLineModal.key2"), (_, e) =>
+    shortcuts.on(L10N.getStr("gotoLineModal.key3"), (_, e) =>
       this.toggleQuickOpenModal(_, e, ":")
     );
 
@@ -141,7 +139,7 @@ class App extends Component<Props, State> {
     ];
     searchKeys.forEach(key => shortcuts.off(key, this.toggleQuickOpenModal));
 
-    shortcuts.off(L10N.getStr("gotoLineModal.key2"), this.toggleQuickOpenModal);
+    shortcuts.off(L10N.getStr("gotoLineModal.key3"), this.toggleQuickOpenModal);
 
     shortcuts.off("Escape", this.onEscape);
   }
@@ -326,9 +324,9 @@ class App extends Component<Props, State> {
   }
 
   render() {
-    const { quickOpenEnabled, canRewind } = this.props;
+    const { quickOpenEnabled } = this.props;
     return (
-      <div className={classnames("debugger", { "can-rewind": canRewind })}>
+      <div className={classnames("debugger")}>
         <A11yIntention>
           {this.renderLayout()}
           {quickOpenEnabled === true && (
@@ -350,7 +348,6 @@ App.childContextTypes = {
 };
 
 const mapStateToProps = state => ({
-  canRewind: getCanRewind(state),
   selectedSource: getSelectedSource(state),
   startPanelCollapsed: getPaneCollapse(state, "start"),
   endPanelCollapsed: getPaneCollapse(state, "end"),

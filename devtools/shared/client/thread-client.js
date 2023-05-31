@@ -4,12 +4,9 @@
 
 "use strict";
 
-const {
-  arg,
-  DebuggerClient,
-} = require("devtools/shared/client/debugger-client");
-const eventSource = require("devtools/shared/client/event-source");
-const { ThreadStateTypes } = require("devtools/shared/client/constants");
+const {arg, DebuggerClient} = require("devtools/shared/client/debugger-client");
+const EventEmitter = require("devtools/shared/event-emitter");
+const {ThreadStateTypes} = require("devtools/shared/client/constants");
 
 loader.lazyRequireGetter(
   this,
@@ -75,44 +72,36 @@ ThreadClient.prototype = {
    *        An object with a type property set to the appropriate limit (next,
    *        step, or finish) per the remote debugging protocol specification.
    *        Use null to specify no limit.
-   * @param bool aRewind
-   *        Whether execution should rewind until the limit is reached, rather
-   *        than proceeding forwards. This parameter has no effect if the
-   *        server does not support rewinding.
    */
-  _doResume: DebuggerClient.requester(
-    {
-      type: "resume",
-      resumeLimit: arg(0),
-      rewind: arg(1),
+  _doResume: DebuggerClient.requester({
+    type: "resume",
+    resumeLimit: arg(0),
+  }, {
+    before: function(packet) {
+      this._assertPaused("resume");
+
+      // Put the client in a tentative "resuming" state so we can prevent
+      // further requests that should only be sent in the paused state.
+      this._previousState = this._state;
+      this._state = "resuming";
+
+      return packet;
     },
-    {
-      before: function(packet) {
-        this._assertPaused("resume");
-
-        // Put the client in a tentative "resuming" state so we can prevent
-        // further requests that should only be sent in the paused state.
-        this._previousState = this._state;
-        this._state = "resuming";
-
-        return packet;
-      },
-      after: function(response) {
-        if (response.error && this._state == "resuming") {
-          // There was an error resuming, update the state to the new one
-          // reported by the server, if given (only on wrongState), otherwise
-          // reset back to the previous state.
-          if (response.state) {
-            this._state = ThreadStateTypes[response.state];
-          } else {
-            this._state = this._previousState;
-          }
+    after: function(response) {
+      if (response.error && this._state == "resuming") {
+        // There was an error resuming, update the state to the new one
+        // reported by the server, if given (only on wrongState), otherwise
+        // reset back to the previous state.
+        if (response.state) {
+          this._state = ThreadStateTypes[response.state];
+        } else {
+          this._state = this._previousState;
         }
-        delete this._previousState;
-        return response;
-      },
-    }
-  ),
+      }
+      delete this._previousState;
+      return response;
+    },
+  }),
 
   /**
    * Reconfigure the thread actor.
@@ -129,7 +118,7 @@ ThreadClient.prototype = {
    * Resume a paused thread.
    */
   resume: function() {
-    return this._doResume(null, false);
+    return this._doResume(null);
   },
 
   /**
@@ -137,42 +126,28 @@ ThreadClient.prototype = {
    *
    */
   resumeThenPause: function() {
-    return this._doResume({ type: "break" }, false);
-  },
-
-  /**
-   * Rewind a thread until a breakpoint is hit.
-   */
-  rewind: function() {
-    return this._doResume(null, true);
+    return this._doResume({ type: "break" });
   },
 
   /**
    * Step over a function call.
    */
   stepOver: function() {
-    return this._doResume({ type: "next" }, false);
+    return this._doResume({ type: "next" });
   },
 
   /**
    * Step into a function call.
    */
   stepIn: function() {
-    return this._doResume({ type: "step" }, false);
+    return this._doResume({ type: "step" });
   },
 
   /**
    * Step out of a function call.
    */
   stepOut: function() {
-    return this._doResume({ type: "finish" }, false);
-  },
-
-  /**
-   * Rewind step over a function call.
-   */
-  reverseStepOver: function() {
-    return this._doResume({ type: "next" }, true);
+    return this._doResume({ type: "finish" });
   },
 
   /**
@@ -230,17 +205,14 @@ ThreadClient.prototype = {
   /**
    * Detach from the thread actor.
    */
-  detach: DebuggerClient.requester(
-    {
-      type: "detach",
+  detach: DebuggerClient.requester({
+    type: "detach",
+  }, {
+    after: function(response) {
+      this.client.unregisterClient(this);
+      return response;
     },
-    {
-      after: function(response) {
-        this.client.unregisterClient(this);
-        return response;
-      },
-    }
-  ),
+  }),
 
   /**
    * Promote multiple pause-lifetime object actors to thread-lifetime ones.
@@ -432,6 +404,6 @@ ThreadClient.prototype = {
   events: ["newSource", "progress"],
 };
 
-eventSource(ThreadClient.prototype);
+EventEmitter.decorate(ThreadClient.prototype);
 
 module.exports = ThreadClient;

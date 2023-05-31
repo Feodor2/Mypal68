@@ -48,18 +48,22 @@ class GridList extends PureComponent {
           id: "grid-list",
           className: "devtools-monospace",
         },
-        grids.map(grid =>
-          GridItem({
-            key: grid.id,
-            getSwatchColorPickerTooltip,
-            grid,
-            onHideBoxModelHighlighter,
-            onSetGridOverlayColor,
-            onShowBoxModelHighlighterForNode,
-            onToggleGridHighlighter,
-            setSelectedNode,
-          })
-        )
+        grids
+          // Skip subgrids since they are rendered by their parent grids in GridItem.
+          .filter(grid => !grid.isSubgrid)
+          .map(grid =>
+            GridItem({
+              key: grid.id,
+              getSwatchColorPickerTooltip,
+              grid,
+              grids,
+              onHideBoxModelHighlighter,
+              onSetGridOverlayColor,
+              onShowBoxModelHighlighterForNode,
+              onToggleGridHighlighter,
+              setSelectedNode,
+            })
+          )
       )
     );
   }

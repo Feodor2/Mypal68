@@ -224,12 +224,12 @@ const silenceWorkerUpdates = function() {
   };
   setMockedModule(
     mock,
-    "devtools/client/aboutdebugging-new/src/modules/workers-listener"
+    "devtools/client/shared/workers-listener"
   );
 
   registerCleanupFunction(() => {
     removeMockedModule(
-      "devtools/client/aboutdebugging-new/src/modules/workers-listener"
+      "devtools/client/shared/workers-listener"
     );
   });
 };

@@ -3,8 +3,6 @@
 
 "use strict";
 
-ChromeUtils.import("resource://gre/modules/osfile.jsm", {});
-
 add_task(async function() {
   const fileContent = await generatePageErrorStubs();
   const filePath = OS.Path.join(`${BASE_PATH}/stubs`, "pageError.js");

@@ -5,7 +5,9 @@
 "use strict";
 
 const {
+  createElement,
   createRef,
+  Fragment,
   PureComponent,
 } = require("devtools/client/shared/vendor/react");
 const dom = require("devtools/client/shared/vendor/react-dom-factories");
@@ -32,6 +34,7 @@ class GridItem extends PureComponent {
     return {
       getSwatchColorPickerTooltip: PropTypes.func.isRequired,
       grid: PropTypes.shape(Types.grid).isRequired,
+      grids: PropTypes.arrayOf(PropTypes.shape(Types.grid)).isRequired,
       onHideBoxModelHighlighter: PropTypes.func.isRequired,
       onSetGridOverlayColor: PropTypes.func.isRequired,
       onShowBoxModelHighlighterForNode: PropTypes.func.isRequired,
@@ -105,6 +108,34 @@ class GridItem extends PureComponent {
     nodeFront.scrollIntoView().catch(e => console.error(e));
   }
 
+  renderSubgrids() {
+    const { grid, grids } = this.props;
+
+    if (!grid.subgrids.length) {
+      return null;
+    }
+
+    const subgrids = grids.filter(g => grid.subgrids.includes(g.id));
+
+    return dom.ul(
+      {},
+      subgrids.map(g => {
+        return createElement(GridItem, {
+          key: g.id,
+          getSwatchColorPickerTooltip: this.props.getSwatchColorPickerTooltip,
+          grid: g,
+          grids,
+          onHideBoxModelHighlighter: this.props.onHideBoxModelHighlighter,
+          onSetGridOverlayColor: this.props.onSetGridOverlayColor,
+          onShowBoxModelHighlighterForNode: this.props
+            .onShowBoxModelHighlighterForNode,
+          onToggleGridHighlighter: this.props.onToggleGridHighlighter,
+          setSelectedNode: this.props.setSelectedNode,
+        });
+      })
+    );
+  }
+
   render() {
     const {
       grid,
@@ -112,46 +143,52 @@ class GridItem extends PureComponent {
       onShowBoxModelHighlighterForNode,
     } = this.props;
 
-    return dom.li(
-      {},
-      dom.label(
+    return createElement(
+      Fragment,
+      null,
+      dom.li(
         {},
-        dom.input({
-          checked: grid.highlighted,
-          disabled: grid.disabled,
-          type: "checkbox",
-          value: grid.id,
-          onChange: this.onGridCheckboxClick,
+        dom.label(
+          {},
+          dom.input({
+            checked: grid.highlighted,
+            disabled: grid.disabled,
+            type: "checkbox",
+            value: grid.id,
+            onChange: this.onGridCheckboxClick,
+          }),
+          Rep({
+            defaultRep: Rep.ElementNode,
+            mode: MODE.TINY,
+            object: translateNodeFrontToGrip(grid.nodeFront),
+            onDOMNodeMouseOut: () => onHideBoxModelHighlighter(),
+            onDOMNodeMouseOver: () =>
+              onShowBoxModelHighlighterForNode(grid.nodeFront),
+            onInspectIconClick: () =>
+              this.onGridInspectIconClick(grid.nodeFront),
+          })
+        ),
+        dom.div({
+          className: "layout-color-swatch",
+          ref: this.swatchEl,
+          style: {
+            backgroundColor: grid.color,
+          },
+          title: grid.color,
         }),
-        Rep({
-          defaultRep: Rep.ElementNode,
-          mode: MODE.TINY,
-          object: translateNodeFrontToGrip(grid.nodeFront),
-          onDOMNodeMouseOut: () => onHideBoxModelHighlighter(),
-          onDOMNodeMouseOver: () =>
-            onShowBoxModelHighlighterForNode(grid.nodeFront),
-          onInspectIconClick: () => this.onGridInspectIconClick(grid.nodeFront),
-        })
+        // The SwatchColorPicker relies on the nextSibling of the swatch element to apply
+        // the selected color. This is why we use a span in display: none for now.
+        // Ideally we should modify the SwatchColorPickerTooltip to bypass this
+        // requirement. See https://bugzilla.mozilla.org/show_bug.cgi?id=1341578
+        dom.span(
+          {
+            className: "layout-color-value",
+            ref: this.colorValueEl,
+          },
+          grid.color
+        )
       ),
-      dom.div({
-        className: "layout-color-swatch",
-        ref: this.swatchEl,
-        style: {
-          backgroundColor: grid.color,
-        },
-        title: grid.color,
-      }),
-      // The SwatchColorPicker relies on the nextSibling of the swatch element to apply
-      // the selected color. This is why we use a span in display: none for now.
-      // Ideally we should modify the SwatchColorPickerTooltip to bypass this
-      // requirement. See https://bugzilla.mozilla.org/show_bug.cgi?id=1341578
-      dom.span(
-        {
-          className: "layout-color-value",
-          ref: this.colorValueEl,
-        },
-        grid.color
-      )
+      this.renderSubgrids()
     );
   }
 }

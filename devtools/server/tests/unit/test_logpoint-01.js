@@ -41,7 +41,7 @@ function test_simple_breakpoint() {
     },
   };
 
-  gThreadClient.addOneTimeListener("paused", async function(event, packet) {
+  gThreadClient.once("paused", async function(packet) {
     const source = await getSourceById(gThreadClient, packet.frame.where.actor);
 
     // Set a logpoint which should invoke console.log.
@@ -67,6 +67,7 @@ function test_simple_breakpoint() {
                    1);
   /* eslint-enable */
 
+  Assert.equal(lastMessage.level, "logPoint");
   Assert.equal(lastMessage.arguments[0], "three");
   finishClient(gClient);
 }

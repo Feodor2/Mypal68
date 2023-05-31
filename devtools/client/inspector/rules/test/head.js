@@ -915,3 +915,19 @@ async function runInactiveCSSTests(view, inspector, tests) {
     }
   }
 }
+
+/**
+ * Return the checkbox element from the Rules view corresponding
+ * to the given pseudo-class.
+ *
+ * @param  {Object} view
+ *         Instance of RuleView.
+ * @param  {String} pseudo
+ *         Pseudo-class, like :hover, :active, :focus, etc.
+ * @return {HTMLElement}
+ */
+function getPseudoClassCheckbox(view, pseudo) {
+  return view.pseudoClassCheckboxes.filter(
+    checkbox => checkbox.value === pseudo
+  )[0];
+}

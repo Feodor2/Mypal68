@@ -31,6 +31,7 @@ import type { List } from "immutable";
 import type { ActiveSearchType } from "../reducers/types";
 import type { StatusType } from "../reducers/project-text-search";
 import type { Context } from "../types";
+import { PluralForm } from "devtools-modules";
 
 import "./ProjectSearch.css";
 
@@ -56,6 +57,7 @@ type Item = Result | Match;
 
 type State = {
   inputValue: string,
+  inputFocused: boolean,
   focusedItem: ?Item,
 };
 
@@ -89,6 +91,7 @@ export class ProjectSearch extends Component<Props, State> {
     super(props);
     this.state = {
       inputValue: this.props.query || "",
+      inputFocused: false,
       focusedItem: null,
     };
   }
@@ -177,7 +180,11 @@ export class ProjectSearch extends Component<Props, State> {
   };
 
   onEnterPress = () => {
-    if (!this.isProjectSearchEnabled() || !this.state.focusedItem) {
+    if (
+      !this.isProjectSearchEnabled() ||
+      !this.state.focusedItem ||
+      this.state.inputFocused
+    ) {
       return;
     }
     if (this.state.focusedItem.type === "MATCH") {
@@ -274,9 +281,12 @@ export class ProjectSearch extends Component<Props, State> {
   };
 
   renderSummary = () => {
-    return this.props.query !== ""
-      ? L10N.getFormatStr("sourceSearch.resultsSummary1", this.getResultCount())
-      : "";
+    if (this.props.query !== "") {
+      const resultsSummaryString = L10N.getStr("sourceSearch.resultsSummary2");
+      const count = this.getResultCount();
+      return PluralForm.get(count, resultsSummaryString).replace("#1", count);
+    }
+    return "";
   };
 
   shouldShowErrorEmoji() {
@@ -295,6 +305,8 @@ export class ProjectSearch extends Component<Props, State> {
         summaryMsg={this.renderSummary()}
         isLoading={status === statusType.fetching}
         onChange={this.inputOnChange}
+        onFocus={() => this.setState({ inputFocused: true })}
+        onBlur={() => this.setState({ inputFocused: false })}
         onKeyDown={this.onKeyDown}
         onHistoryScroll={this.onHistoryScroll}
         handleClose={

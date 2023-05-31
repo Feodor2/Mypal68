@@ -35,7 +35,7 @@ function run_test() {
 }
 
 function test_pause_frame() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+  gThreadClient.once("paused", function(packet) {
     gThreadClient.getFrames(0, null).then(function(frameResponse) {
       Assert.equal(frameResponse.frames.length, 5);
       // Now wait for the next pause, after which the three
@@ -45,7 +45,7 @@ function test_pause_frame() {
         .map(frame => frame.actor);
       expectPopped.sort();
 
-      gThreadClient.addOneTimeListener("paused", function(event, pausePacket) {
+      gThreadClient.once("paused", function(packet) {
         const popped = pausePacket.poppedFrames.sort();
         Assert.equal(popped.length, 3);
         for (let i = 0; i < 3; i++) {

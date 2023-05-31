@@ -27,7 +27,13 @@ async function performTests() {
   const hud = await openNewTabAndConsole(TEST_URI);
   info("Web Console opened");
   const outputScroller = hud.ui.outputScroller;
-  await waitFor(() => findMessages(hud, "").length == 100);
+  await waitFor(
+    () => findMessages(hud, "").length == 100,
+    "waiting for all the messages to be displayed",
+    100,
+    1000
+  );
+
   let currentPosition = outputScroller.scrollTop;
   const bottom = currentPosition;
   hud.jsterm.focus();
@@ -92,13 +98,13 @@ async function performTests() {
   info("try ctrl-f to focus filter");
   synthesizeKeyShortcut(WCUL10n.getStr("webconsole.find.key"));
   ok(!isInputFocused(hud), "input is not focused");
-  ok(hasFocus(hud.ui.filterBox), "filter input is focused");
+  ok(hasFocus(getFilterInput(hud)), "filter input is focused");
 
   info("try ctrl-f when filter is already focused");
   synthesizeKeyShortcut(WCUL10n.getStr("webconsole.find.key"));
   ok(!isInputFocused(hud), "input is not focused");
   is(
-    hud.ui.filterBox,
+    getFilterInput(hud),
     outputScroller.ownerDocument.activeElement,
     "filter input is focused"
   );

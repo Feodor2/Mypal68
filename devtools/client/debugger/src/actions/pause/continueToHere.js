@@ -7,10 +7,9 @@
 import {
   getSelectedSource,
   getSelectedFrame,
-  getCanRewind,
 } from "../../selectors";
 import { addHiddenBreakpoint } from "../breakpoints";
-import { resume, rewind } from "./commands";
+import { resume } from "./commands";
 
 import type { ThunkArgs } from "../types";
 import type { ThreadContext } from "../../types";
@@ -33,9 +32,6 @@ export function continueToHere(
       return;
     }
 
-    const action =
-      getCanRewind(getState()) && line < debugLine ? rewind : resume;
-
     await dispatch(
       addHiddenBreakpoint(cx, {
         line,
@@ -44,6 +40,6 @@ export function continueToHere(
       })
     );
 
-    dispatch(action(cx));
+    dispatch(resume(cx));
   };
 }

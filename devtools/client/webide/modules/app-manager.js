@@ -146,8 +146,7 @@ var AppManager = (exports.AppManager = {
       if (l10nArgs.length > 0) {
         text = Strings.formatStringFromName(
           l10nProperty,
-          l10nArgs,
-          l10nArgs.length
+          l10nArgs
         );
       } else {
         text = Strings.GetStringFromName(l10nProperty);

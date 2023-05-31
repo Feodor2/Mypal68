@@ -371,8 +371,8 @@ class GridInspector {
         !highlighted &&
         this.maxHighlighters > 1 &&
         this.highlighters.gridHighlighters.size === this.maxHighlighters;
-
-      grids.push({
+      const isSubgrid = grid.isSubgrid;
+      const gridData = {
         id: i,
         actorID: grid.actorID,
         color,
@@ -380,14 +380,54 @@ class GridInspector {
         direction: grid.direction,
         gridFragments: grid.gridFragments,
         highlighted,
+        isSubgrid,
         nodeFront,
+        parentNodeActorID: null,
+        subgrids: [],
         writingMode: grid.writingMode,
-      });
+      };
+
+      if (
+        isSubgrid &&
+        (await this.inspector.target.actorHasMethod(
+          "domwalker",
+          "getParentGridNode"
+        ))
+      ) {
+        let parentGridNodeFront;
+
+        try {
+          parentGridNodeFront = await this.walker.getParentGridNode(nodeFront);
+        } catch (e) {
+          // This call might fail if called asynchrously after the toolbox is finished
+          // closing.
+          return;
+        }
+
+        if (!parentGridNodeFront) {
+          return;
+        }
+
+        const parentIndex = grids.findIndex(
+          g => g.nodeFront.actorID === parentGridNodeFront.actorID
+        );
+        gridData.parentNodeActorID = parentGridNodeFront.actorID;
+        grids[parentIndex].subgrids.push(gridData.id);
+      }
+
+      grids.push(gridData);
+    }
+
+    // We need to make sure that nested subgrids are displayed above their parent grid
+    // containers, so update the z-index of each grid before rendering them.
+    for (const root of grids.filter(g => !g.parentNodeActorID)) {
+      this._updateZOrder(grids, root);
     }
 
     this.store.dispatch(updateGrids(grids));
     this.inspector.emit("grid-panel-updated");
   }
+
   /**
    * Handler for "grid-highlighter-shown" events emitted from the
    * HighlightersOverlay. Passes nodefront and event name to handleHighlighterChange.
@@ -538,10 +578,18 @@ class GridInspector {
         customGridColors[hostname][grid.id] = color;
         await asyncStorage.setItem("gridInspectorHostColors", customGridColors);
 
+        if (!this.isPanelVisible()) {
+          // This call might fail if called asynchrously after the toolbox is finished
+          // closing.
+          return;
+        }
+
         // If the grid for which the color was updated currently has a highlighter, update
         // the color.
-        if (grid.highlighted) {
+        if (this.highlighters.gridHighlighters.has(node)) {
           this.highlighters.showGridHighlighter(node);
+        } else if (this.highlighters.parentGridHighlighters.has(node)) {
+          this.highlighters.showParentGridHighlighter(node);
         }
       }
     }
@@ -675,6 +723,26 @@ class GridInspector {
       if (grid.highlighted) {
         this.highlighters.showGridHighlighter(grid.nodeFront);
       }
+    }
+  }
+
+  /**
+   * Set z-index of each grids so that nested subgrids are always above their parent grid
+   * container.
+   *
+   * @param {Array} grids
+   *        A list of grid data.
+   * @param {Object} parent
+   *        A grid data of parent.
+   * @param {Number} zIndex
+   *        z-index for the parent.
+   */
+  _updateZOrder(grids, parent, zIndex = 0) {
+    parent.zIndex = zIndex;
+
+    for (const childIndex of parent.subgrids) {
+      // Recurse into children grids.
+      this._updateZOrder(grids, grids[childIndex], zIndex + 1);
     }
   }
 }

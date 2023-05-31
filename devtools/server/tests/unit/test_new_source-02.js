@@ -35,19 +35,17 @@ function run_test() {
 }
 
 function test_simple_new_source() {
-  gThreadClient.addOneTimeListener("paused", function() {
-    gThreadClient.addOneTimeListener("newSource", async function(
+  gThreadClient.once("paused", function(packet) {
+    gThreadClient.once("newSource", async function(packet2) {
       event2,
       packet2
     ) {
       // The "stopMe" eval source is emitted first.
-      Assert.equal(event2, "newSource");
       Assert.equal(packet2.type, "newSource");
       Assert.ok(!!packet2.source);
       Assert.ok(packet2.source.introductionType, "eval");
 
-      gThreadClient.addOneTimeListener("newSource", function(event, packet) {
-        Assert.equal(event, "newSource");
+      gThreadClient.once("newSource", function(packet) {
         Assert.equal(packet.type, "newSource");
         dump(JSON.stringify(packet, null, 2));
         Assert.ok(!!packet.source);

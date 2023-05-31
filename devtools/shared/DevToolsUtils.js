@@ -8,7 +8,7 @@
 
 /* General utilities used throughout devtools. */
 
-var { Cc, Ci, Cu, components } = require("chrome");
+var { Ci, Cc, Cu, components } = require("chrome");
 var Services = require("Services");
 var flags = require("./flags");
 var {
@@ -464,8 +464,7 @@ Object.defineProperty(exports, "assert", {
  */
 exports.defineLazyModuleGetter = function(object, name, resource, symbol) {
   this.defineLazyGetter(object, name, function() {
-    const temp = {};
-    ChromeUtils.import(resource, temp);
+    const temp = ChromeUtils.import(resource);
     return temp[symbol || name];
   });
 };
@@ -556,6 +555,7 @@ function mainThreadFetch(
       ).loadGroup;
     }
 
+    /* eslint-disable complexity */
     const onResponse = (stream, status, request) => {
       if (!components.isSuccessCode(status)) {
         reject(new Error(`Failed to fetch ${url}. Code ${status}.`));
@@ -621,9 +621,21 @@ function mainThreadFetch(
         }
         const unicodeSource = NetworkHelper.convertToUnicode(source, charset);
 
+        // Look for any source map URL in the response.
+        let sourceMapURL;
+        try {
+          sourceMapURL = request.getResponseHeader("SourceMap");
+        } catch (e) {}
+        if (!sourceMapURL) {
+          try {
+            sourceMapURL = request.getResponseHeader("X-SourceMap");
+          } catch (e) {}
+        }
+
         resolve({
           content: unicodeSource,
           contentType: request.contentType,
+          sourceMapURL,
         });
       } catch (ex) {
         const uri = request.originalURI;
@@ -796,6 +808,58 @@ exports.saveAs = async function(parentWindow, dataArray, fileName = "") {
 
   await OS.File.writeAtomic(returnFile.path, dataArray, {
     tmpPath: returnFile.path + ".tmp",
+  });
+};
+
+/**
+ * Show file picker and return the file user selected.
+ *
+ * @param nsIWindow parentWindow
+ *        Optional parent window. If null the parent window of the file picker
+ *        will be the window of the attached input element.
+ * @param AString suggestedFilename
+ *        The suggested filename when toSave is true.
+ *
+ * @return Promise
+ *         A promise that is resolved after the file is selected by the file picker
+ */
+exports.showSaveFileDialog = function(parentWindow, suggestedFilename) {
+  const fp = Cc["@mozilla.org/filepicker;1"].createInstance(Ci.nsIFilePicker);
+
+  if (suggestedFilename) {
+    fp.defaultString = suggestedFilename;
+  }
+
+  fp.init(parentWindow, null, fp.modeSave);
+  fp.appendFilters(fp.filterAll);
+
+  return new Promise((resolve, reject) => {
+    fp.open(result => {
+      if (result == Ci.nsIFilePicker.returnCancel) {
+        reject();
+      } else {
+        resolve(fp.file);
+      }
+    });
+  });
+};
+
+/**
+ * Open the file at the given path for writing.
+ *
+ * @param {String} filePath
+ */
+exports.saveFileStream = function(filePath, istream) {
+  return new Promise((resolve, reject) => {
+    const ostream = FileUtils.openSafeFileOutputStream(filePath);
+    NetUtil.asyncCopy(istream, ostream, status => {
+      if (!components.isSuccessCode(status)) {
+        reject(new Error(`Could not save "${filePath}"`));
+        return;
+      }
+      FileUtils.closeSafeFileOutputStream(ostream);
+      resolve();
+    });
   });
 };
 

@@ -24,7 +24,6 @@ loader.lazyRequireGetter(
 
 const ZoomKeys = require("devtools/client/shared/zoom-keys");
 
-const PREF_MESSAGE_TIMESTAMP = "devtools.webconsole.timestampMessages";
 const PREF_SIDEBAR_ENABLED = "devtools.webconsole.sidebarToggle";
 
 /**
@@ -45,7 +44,6 @@ class WebConsoleUI {
     this.isBrowserConsole = this.hud._browserConsole;
     this.window = this.hud.iframeWindow;
 
-    this._onToolboxPrefChanged = this._onToolboxPrefChanged.bind(this);
     this._onPanelSelected = this._onPanelSelected.bind(this);
     this._onChangeSplitConsoleState = this._onChangeSplitConsoleState.bind(
       this
@@ -71,12 +69,6 @@ class WebConsoleUI {
     this._initUI();
     await this._initConnection();
     await this.wrapper.init();
-    // Toggle the timestamp on preference change
-    Services.prefs.addObserver(
-      PREF_MESSAGE_TIMESTAMP,
-      this._onToolboxPrefChanged
-    );
-    this._onToolboxPrefChanged();
 
     const id = WebConsoleUtils.supportsString(this.hudId);
     if (Services.obs) {
@@ -89,14 +81,14 @@ class WebConsoleUI {
       return this._destroyer.promise;
     }
     this._destroyer = defer();
-    Services.prefs.removeObserver(
-      PREF_MESSAGE_TIMESTAMP,
-      this._onToolboxPrefChanged
-    );
     this.React = this.ReactDOM = this.FrameView = null;
     if (this.jsterm) {
       this.jsterm.destroy();
       this.jsterm = null;
+    }
+
+    if (this.wrapper) {
+      this.wrapper.destroy();
     }
 
     const toolbox = gDevTools.getToolbox(this.hud.target);
@@ -291,11 +283,6 @@ class WebConsoleUI {
       window: this.window,
     });
 
-    shortcuts.on(l10n.getStr("webconsole.find.key"), event => {
-      this.filterBox.focus();
-      event.preventDefault();
-    });
-
     let clearShortcut;
     if (AppConstants.platform === "macosx") {
       const alternativaClearShortcut = l10n.getStr(
@@ -359,14 +346,6 @@ class WebConsoleUI {
     if (this.proxy) {
       this.proxy.releaseActor(actor);
     }
-  }
-
-  /**
-   * Called when the message timestamp pref changes.
-   */
-  _onToolboxPrefChanged() {
-    const newValue = Services.prefs.getBoolPref(PREF_MESSAGE_TIMESTAMP);
-    this.wrapper.dispatchTimestampsToggle(newValue);
   }
 
   /**

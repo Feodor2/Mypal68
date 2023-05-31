@@ -29,15 +29,39 @@ function log(msg, data) {
 function logThreadEvents(dbg, event) {
   const thread = dbg.toolbox.threadClient;
 
-  thread.addListener(event, function onEvent(eventName, ...args) {
-    info(`Thread event '${eventName}' fired.`);
+  thread.on(event, function onEvent(...args) {
+    info(`Thread event '${event}' fired.`);
   });
 }
 
-async function waitFor(condition) {
-  await BrowserTestUtils.waitForCondition(condition, "waitFor", 10, 500);
-  return condition();
-}
+/**
+ * Wait for a predicate to return a result.
+ *
+ * @param function condition
+ *        Invoked once in a while until it returns a truthy value. This should be an
+ *        idempotent function, since we have to run it a second time after it returns
+ *        true in order to return the value.
+ * @param string message [optional]
+ *        A message to output if the condition fails.
+ * @param number interval [optional]
+ *        How often the predicate is invoked, in milliseconds.
+ * @return object
+ *         A promise that is resolved with the result of the condition.
+ */
+async function waitFor(
+  condition,
+  message = "waitFor",
+  interval = 10,
+  maxTries = 500
+) {
+  await BrowserTestUtils.waitForCondition(
+    condition,
+    message,
+    interval,
+    maxTries
+  );
+   return condition();
+ }
 
 // Wait until an action of `type` is dispatched. This is different
 // then `waitForDispatch` because it doesn't wait for async actions
@@ -90,28 +114,6 @@ function waitForDispatch(dbg, actionType, eventRepeat = 1) {
       run: (dispatch, getState, action) => {
         resolve(action);
       }
-    });
-  });
-}
-
-/**
- * Waits for specific thread events.
- *
- * @memberof mochitest/waits
- * @param {Object} dbg
- * @param {String} eventName
- * @return {Promise}
- * @static
- */
-function waitForThreadEvents(dbg, eventName) {
-  info(`Waiting for thread event '${eventName}' to fire.`);
-  const thread = dbg.toolbox.threadClient;
-
-  return new Promise(function(resolve, reject) {
-    thread.addListener(eventName, function onEvent(eventName, ...args) {
-      info(`Thread event '${eventName}' fired.`);
-      thread.removeListener(eventName, onEvent);
-      resolve.apply(resolve, args);
     });
   });
 }
@@ -524,7 +526,6 @@ function isSelectedFrameSelected(dbg, state) {
  */
 async function clearDebuggerPreferences() {
   asyncStorage.clear();
-  Services.prefs.clearUserPref("devtools.recordreplay.enabled");
   Services.prefs.clearUserPref("devtools.debugger.pause-on-exceptions");
   Services.prefs.clearUserPref("devtools.debugger.pause-on-caught-exceptions");
   Services.prefs.clearUserPref("devtools.debugger.ignore-caught-exceptions");
@@ -1056,8 +1057,9 @@ const keyMappings = {
   quickOpenFunc: { code: "o", modifiers: cmdShift },
   quickOpenLine: { code: ":", modifiers: cmdOrCtrl },
   fileSearch: { code: "f", modifiers: cmdOrCtrl },
-  fileSearchNext: { code: "g", modifiers: cmdOrCtrl },
+  fileSearchNext: { code: "g", modifiers: { metaKey: true } },
   fileSearchPrev: { code: "g", modifiers: cmdShift },
+  goToLine: { code: "g", modifiers: { ctrlKey: true } },
   Enter: { code: "VK_RETURN" },
   ShiftEnter: { code: "VK_RETURN", modifiers: shiftOrAlt },
   AltEnter: {

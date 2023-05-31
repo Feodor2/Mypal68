@@ -160,10 +160,6 @@ const proto = {
       g.ownPropertyLength = getArrayLength(this.obj);
     } else if (isStorage(g)) {
       g.ownPropertyLength = getStorageLength(this.obj);
-    } else if (isReplaying) {
-      // When replaying we can get the number of properties directly, to avoid
-      // needing to enumerate all of them.
-      g.ownPropertyLength = this.obj.getOwnPropertyNamesCount();
     } else {
       try {
         g.ownPropertyLength = this.obj.getOwnPropertyNames().length;
@@ -178,7 +174,7 @@ const proto = {
     // If Cu is not defined, we are running on a worker thread, where xrays
     // don't exist. The raw object will be null/unavailable when interacting
     // with a replaying execution.
-    if (raw && Cu) {
+    if (Cu) {
       raw = Cu.unwaiveXrays(raw);
     }
 
@@ -365,13 +361,6 @@ const proto = {
 
     // Do not search safe getters in unsafe objects.
     if (!DevToolsUtils.isSafeDebuggerObject(obj)) {
-      return safeGetterValues;
-    }
-
-    // Do not search for safe getters while replaying. While this would be nice
-    // to support, it involves a lot of back-and-forth between processes and
-    // would be better to do entirely in the replaying process.
-    if (isReplaying) {
       return safeGetterValues;
     }
 

@@ -66,8 +66,7 @@ function runTests(sw) {
           statusBarField.textContent,
           sp.strings.formatStringFromName(
             "scratchpad.statusBarLineCol",
-            [line + 1, ch + 1],
-            2
+            [line + 1, ch + 1]
           ),
           "statusbar text is correct (" + statusBarField.textContent + ")"
         );

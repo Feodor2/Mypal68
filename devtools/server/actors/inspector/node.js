@@ -8,6 +8,7 @@ const { Cu } = require("chrome");
 const Services = require("Services");
 const InspectorUtils = require("InspectorUtils");
 const protocol = require("devtools/shared/protocol");
+const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
 const { nodeSpec, nodeListSpec } = require("devtools/shared/specs/node");
 
 loader.lazyRequireGetter(
@@ -142,7 +143,6 @@ const SUBGRID_ENABLED = Services.prefs.getBoolPref(
   "layout.css.grid-template-subgrid-value.enabled"
 );
 
-const PSEUDO_CLASSES = [":hover", ":active", ":focus", ":focus-within"];
 const FONT_FAMILY_PREVIEW_TEXT = "The quick brown fox jumps over the lazy dog";
 const FONT_FAMILY_PREVIEW_TEXT_SIZE = 20;
 
@@ -250,6 +250,7 @@ const NodeActor = protocol.ActorClassWithSpec(nodeSpec, {
       isShadowHost: isShadowHost(this.rawNode),
       isDirectShadowHostChild: isDirectShadowHostChild(this.rawNode),
       pseudoClassLocks: this.writePseudoClassLocks(),
+      mutationBreakpoints: this.walker.getMutationBreakpoints(this),
 
       isDisplayed: this.isDisplayed,
       isInHTMLDocument:

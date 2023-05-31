@@ -199,7 +199,7 @@ add_task(async function() {
         ]) {
           is(
             actual.bounds[boundProp],
-            expected.bounds[boundProp],
+            expected.getBounds()[boundProp],
             boundProp +
               " bound is equal to the one returned by getBoxQuads for " +
               region +

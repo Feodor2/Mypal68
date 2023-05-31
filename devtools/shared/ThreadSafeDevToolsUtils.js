@@ -87,7 +87,7 @@ exports.reportException = function reportException(who, exception) {
   dump(msg + "\n");
 
   if (typeof console !== "undefined" && console && console.error) {
-    console.error(msg);
+    console.error(exception);
   }
 };
 

@@ -31,8 +31,11 @@ const BASE_PATH =
   env.get("MOZ_DEVELOPER_REPO_DIR") +
   "/devtools/client/webconsole/test/fixtures";
 
+const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
+
 const cachedPackets = {};
 
+/* eslint-disable complexity */
 function getCleanedPacket(key, packet) {
   if (Object.keys(cachedPackets).includes(key)) {
     return cachedPackets[key];
@@ -74,6 +77,10 @@ function getCleanedPacket(key, packet) {
 
     if (res.actor) {
       res.actor = existingPacket.actor;
+    }
+
+    if (res.channelId) {
+      res.channelId = existingPacket.channelId;
     }
 
     if (res.message) {
@@ -293,6 +300,7 @@ function getCleanedPacket(key, packet) {
   cachedPackets[key] = res;
   return res;
 }
+/* eslint-enable complexity */
 
 function formatPacket(key, packet) {
   const stringifiedPacket = JSON.stringify(
@@ -402,7 +410,7 @@ async function generateConsoleApiStubs() {
 
   Services.prefs.clearUserPref(PREFS.FILTER.LOG);
 
-  await closeTabAndToolbox();
+  await closeTabAndToolbox().catch(() => {});
   return formatFile(stubs, "ConsoleMessage");
 }
 

@@ -1484,6 +1484,7 @@ const asyncStorage = __webpack_require__(427);
 const SourceUtils = __webpack_require__(428);
 const Telemetry = __webpack_require__(429);
 const { getUnicodeHostname, getUnicodeUrlPath, getUnicodeUrl } = __webpack_require__(430);
+const PluralForm = __webpack_require__(501);
 
 module.exports = {
   KeyShortcuts,
@@ -1495,7 +1496,8 @@ module.exports = {
   Telemetry,
   getUnicodeHostname,
   getUnicodeUrlPath,
-  getUnicodeUrl
+  getUnicodeUrl,
+  PluralForm
 };
 
 /***/ }),
@@ -2138,10 +2140,6 @@ var _tabs = __webpack_require__(438);
 
 var reactAriaComponentsTabs = _interopRequireWildcard(_tabs);
 
-var _reselect = __webpack_require__(444);
-
-var reselect = _interopRequireWildcard(_reselect);
-
 var _classnames = __webpack_require__(67);
 
 var _classnames2 = _interopRequireDefault(_classnames);
@@ -2162,25 +2160,6 @@ function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj;
 // (eg. "my-module/Test") which is why they are nested in "vendored".
 // The keys of the vendored object should match the module names
 // !!! Should remain synchronized with .babel/transform-mc.js !!!
-
-// $FlowIgnore
-const vendored = exports.vendored = {
-  classnames: _classnames2.default,
-  "devtools-components": devtoolsComponents,
-  "devtools-config": devtoolsConfig,
-  "devtools-contextmenu": devtoolsContextmenu,
-  "devtools-environment": devtoolsEnvironment,
-  "devtools-modules": devtoolsModules,
-  "devtools-splitter": _devtoolsSplitter2.default,
-  "devtools-utils": devtoolsUtils,
-  "fuzzaldrin-plus": fuzzaldrinPlus,
-  "lodash-move": _lodashMove2.default,
-  "react-aria-components/src/tabs": reactAriaComponentsTabs,
-  "react-transition-group/Transition": transition,
-  reselect
-};
-
-// Modules imported without destructuring
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at <http://mozilla.org/MPL/2.0/>. */
@@ -2198,6 +2177,24 @@ const vendored = exports.vendored = {
  */
 
 // Modules imported with destructuring
+const vendored = exports.vendored = {
+  classnames: _classnames2.default,
+  "devtools-components": devtoolsComponents,
+  "devtools-config": devtoolsConfig,
+  "devtools-contextmenu": devtoolsContextmenu,
+  "devtools-environment": devtoolsEnvironment,
+  "devtools-modules": devtoolsModules,
+  "devtools-splitter": _devtoolsSplitter2.default,
+  "devtools-utils": devtoolsUtils,
+  "fuzzaldrin-plus": fuzzaldrinPlus,
+  "lodash-move": _lodashMove2.default,
+  "react-aria-components/src/tabs": reactAriaComponentsTabs,
+  "react-transition-group/Transition": transition
+};
+
+// Modules imported without destructuring
+
+// $FlowIgnore
 
 /***/ }),
 
@@ -5575,138 +5572,6 @@ function uniqueId() {
 
 /***/ }),
 
-/***/ 444:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
-/* harmony export (immutable) */ __webpack_exports__["defaultMemoize"] = defaultMemoize;
-/* harmony export (immutable) */ __webpack_exports__["createSelectorCreator"] = createSelectorCreator;
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "createSelector", function() { return createSelector; });
-/* harmony export (immutable) */ __webpack_exports__["createStructuredSelector"] = createStructuredSelector;
-function defaultEqualityCheck(a, b) {
-  return a === b;
-}
-
-function areArgumentsShallowlyEqual(equalityCheck, prev, next) {
-  if (prev === null || next === null || prev.length !== next.length) {
-    return false;
-  }
-
-  // Do this in a for loop (and not a `forEach` or an `every`) so we can determine equality as fast as possible.
-  var length = prev.length;
-  for (var i = 0; i < length; i++) {
-    if (!equalityCheck(prev[i], next[i])) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-function defaultMemoize(func) {
-  var equalityCheck = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : defaultEqualityCheck;
-
-  var lastArgs = null;
-  var lastResult = null;
-  // we reference arguments instead of spreading them for performance reasons
-  return function () {
-    if (!areArgumentsShallowlyEqual(equalityCheck, lastArgs, arguments)) {
-      // apply arguments instead of spreading for performance.
-      lastResult = func.apply(null, arguments);
-    }
-
-    lastArgs = arguments;
-    return lastResult;
-  };
-}
-
-function getDependencies(funcs) {
-  var dependencies = Array.isArray(funcs[0]) ? funcs[0] : funcs;
-
-  if (!dependencies.every(function (dep) {
-    return typeof dep === 'function';
-  })) {
-    var dependencyTypes = dependencies.map(function (dep) {
-      return typeof dep;
-    }).join(', ');
-    throw new Error('Selector creators expect all input-selectors to be functions, ' + ('instead received the following types: [' + dependencyTypes + ']'));
-  }
-
-  return dependencies;
-}
-
-function createSelectorCreator(memoize) {
-  for (var _len = arguments.length, memoizeOptions = Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
-    memoizeOptions[_key - 1] = arguments[_key];
-  }
-
-  return function () {
-    for (var _len2 = arguments.length, funcs = Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
-      funcs[_key2] = arguments[_key2];
-    }
-
-    var recomputations = 0;
-    var resultFunc = funcs.pop();
-    var dependencies = getDependencies(funcs);
-
-    var memoizedResultFunc = memoize.apply(undefined, [function () {
-      recomputations++;
-      // apply arguments instead of spreading for performance.
-      return resultFunc.apply(null, arguments);
-    }].concat(memoizeOptions));
-
-    // If a selector is called with the exact same arguments we don't need to traverse our dependencies again.
-    var selector = memoize(function () {
-      var params = [];
-      var length = dependencies.length;
-
-      for (var i = 0; i < length; i++) {
-        // apply arguments instead of spreading and mutate a local list of params for performance.
-        params.push(dependencies[i].apply(null, arguments));
-      }
-
-      // apply arguments instead of spreading for performance.
-      return memoizedResultFunc.apply(null, params);
-    });
-
-    selector.resultFunc = resultFunc;
-    selector.dependencies = dependencies;
-    selector.recomputations = function () {
-      return recomputations;
-    };
-    selector.resetRecomputations = function () {
-      return recomputations = 0;
-    };
-    return selector;
-  };
-}
-
-var createSelector = createSelectorCreator(defaultMemoize);
-
-function createStructuredSelector(selectors) {
-  var selectorCreator = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : createSelector;
-
-  if (typeof selectors !== 'object') {
-    throw new Error('createStructuredSelector expects first argument to be an object ' + ('where each property is a selector, instead received a ' + typeof selectors));
-  }
-  var objectKeys = Object.keys(selectors);
-  return selectorCreator(objectKeys.map(function (key) {
-    return selectors[key];
-  }), function () {
-    for (var _len3 = arguments.length, values = Array(_len3), _key3 = 0; _key3 < _len3; _key3++) {
-      values[_key3] = arguments[_key3];
-    }
-
-    return values.reduce(function (composition, value, index) {
-      composition[objectKeys[index]] = value;
-      return composition;
-    }, {});
-  });
-}
-
-/***/ }),
-
 /***/ 445:
 /***/ (function(module, exports, __webpack_require__) {
 
@@ -6107,6 +5972,168 @@ module.exports = __WEBPACK_EXTERNAL_MODULE_490__;
 /***/ (function(module, exports) {
 
 module.exports = __WEBPACK_EXTERNAL_MODULE_491__;
+
+/***/ }),
+
+/***/ 501:
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+
+
+/* This Source Code Form is subject to the terms of the Mozilla Public
+* License, v. 2.0. If a copy of the MPL was not distributed with this
+* file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+// These are the available plural functions that give the appropriate index
+// based on the plural rule number specified. The first element is the number
+// of plural forms and the second is the function to figure out the index.
+const gFunctions = [
+// 0: Chinese
+[1, n => 0],
+// 1: English
+[2, n => n != 1 ? 1 : 0],
+// 2: French
+[2, n => n > 1 ? 1 : 0],
+// 3: Latvian
+[3, n => n % 10 == 1 && n % 100 != 11 ? 1 : n % 10 == 0 ? 0 : 2],
+// 4: Scottish Gaelic
+[4, n => n == 1 || n == 11 ? 0 : n == 2 || n == 12 ? 1 : n > 0 && n < 20 ? 2 : 3],
+// 5: Romanian
+[3, n => n == 1 ? 0 : n == 0 || n % 100 > 0 && n % 100 < 20 ? 1 : 2],
+// 6: Lithuanian
+[3, n => n % 10 == 1 && n % 100 != 11 ? 0 : n % 10 >= 2 && (n % 100 < 10 || n % 100 >= 20) ? 2 : 1],
+// 7: Russian
+[3, n => n % 10 == 1 && n % 100 != 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2],
+// 8: Slovak
+[3, n => n == 1 ? 0 : n >= 2 && n <= 4 ? 1 : 2],
+// 9: Polish
+[3, n => n == 1 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2],
+// 10: Slovenian
+[4, n => n % 100 == 1 ? 0 : n % 100 == 2 ? 1 : n % 100 == 3 || n % 100 == 4 ? 2 : 3],
+// 11: Irish Gaeilge
+[5, n => n == 1 ? 0 : n == 2 ? 1 : n >= 3 && n <= 6 ? 2 : n >= 7 && n <= 10 ? 3 : 4],
+// 12: Arabic
+[6, n => n == 0 ? 5 : n == 1 ? 0 : n == 2 ? 1 : n % 100 >= 3 && n % 100 <= 10 ? 2 : n % 100 >= 11 && n % 100 <= 99 ? 3 : 4],
+// 13: Maltese
+[4, n => n == 1 ? 0 : n == 0 || n % 100 > 0 && n % 100 <= 10 ? 1 : n % 100 > 10 && n % 100 < 20 ? 2 : 3],
+// 14: Unused
+[3, n => n % 10 == 1 ? 0 : n % 10 == 2 ? 1 : 2],
+// 15: Icelandic, Macedonian
+[2, n => n % 10 == 1 && n % 100 != 11 ? 0 : 1],
+// 16: Breton
+[5, n => n % 10 == 1 && n % 100 != 11 && n % 100 != 71 && n % 100 != 91 ? 0 : n % 10 == 2 && n % 100 != 12 && n % 100 != 72 && n % 100 != 92 ? 1 : (n % 10 == 3 || n % 10 == 4 || n % 10 == 9) && n % 100 != 13 && n % 100 != 14 && n % 100 != 19 && n % 100 != 73 && n % 100 != 74 && n % 100 != 79 && n % 100 != 93 && n % 100 != 94 && n % 100 != 99 ? 2 : n % 1000000 == 0 && n != 0 ? 3 : 4],
+// 17: Shuar
+[2, n => n != 0 ? 1 : 0],
+// 18: Welsh
+[6, n => n == 0 ? 0 : n == 1 ? 1 : n == 2 ? 2 : n == 3 ? 3 : n == 6 ? 4 : 5],
+// 19: Bosnian, Croatian, Serbian
+[3, n => n % 10 == 1 && n % 100 != 11 ? 0 : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 1 : 2]];
+
+const PluralForm = {
+  /**
+   * Get the correct plural form of a word based on the number
+   *
+   * @param aNum
+   *        The number to decide which plural form to use
+   * @param aWords
+   *        A semi-colon (;) separated string of words to pick the plural form
+   * @return The appropriate plural form of the word
+   */
+  get get() {
+    // This method will lazily load to avoid perf when it is first needed and
+    // creates getPluralForm function. The function it creates is based on the
+    // value of pluralRule specified in the intl stringbundle.
+    // See: http://developer.mozilla.org/en/docs/Localization_and_Plurals
+
+    // Delete the getters to be overwritten
+    delete this.numForms;
+    delete this.get;
+
+    // Make the plural form get function and set it as the default get
+    [this.get, this.numForms] = this.makeGetter(this.ruleNum);
+    return this.get;
+  },
+
+  /**
+   * Create a pair of plural form functions for the given plural rule number.
+   *
+   * @param aRuleNum
+   *        The plural rule number to create functions
+   * @return A pair: [function that gets the right plural form,
+   *                  function that returns the number of plural forms]
+   */
+  makeGetter: function (aRuleNum) {
+    // Default to "all plural" if the value is out of bounds or invalid
+    if (aRuleNum < 0 || aRuleNum >= gFunctions.length || isNaN(aRuleNum)) {
+      log(["Invalid rule number: ", aRuleNum, " -- defaulting to 0"]);
+      aRuleNum = 0;
+    }
+
+    // Get the desired pluralRule function
+    let [numForms, pluralFunc] = gFunctions[aRuleNum];
+
+    // Return functions that give 1) the number of forms and 2) gets the right
+    // plural form
+    return [function (aNum, aWords) {
+      // Figure out which index to use for the semi-colon separated words
+      let index = pluralFunc(aNum ? Number(aNum) : 0);
+      let words = aWords ? aWords.split(/;/) : [""];
+
+      // Explicitly check bounds to avoid strict warnings
+      let ret = index < words.length ? words[index] : undefined;
+
+      // Check for array out of bounds or empty strings
+      if (ret == undefined || ret == "") {
+        // Display a message in the error console
+        log(["Index #", index, " of '", aWords, "' for value ", aNum, " is invalid -- plural rule #", aRuleNum, ";"]);
+
+        // Default to the first entry (which might be empty, but not undefined)
+        ret = words[0];
+      }
+
+      return ret;
+    }, () => numForms];
+  },
+
+  /**
+   * Get the number of forms for the current plural rule
+   *
+   * @return The number of forms
+   */
+  get numForms() {
+    // We lazily load numForms, so trigger the init logic with get()
+    this.get();
+    return this.numForms;
+  },
+
+  /**
+   * Get the plural rule number from the intl stringbundle
+   *
+   * @return The plural rule number
+   */
+  get ruleNum() {
+    try {
+      return parseInt(L10N.getStr("pluralRule"), 10);
+    } catch (e) {
+      // Fallback to English if the pluralRule property is not available.
+      return 1;
+    }
+  }
+};
+
+/**
+ * Private helper function to log errors to the error console and command line
+ *
+ * @param aMsg
+ *        Error message to log or an array of strings to concat
+ */
+function log(aMsg) {
+  let msg = "plural-form.js: " + (aMsg.join ? aMsg.join("") : aMsg);
+  console.log(msg + "\n");
+}
+
+module.exports = PluralForm;
 
 /***/ }),
 

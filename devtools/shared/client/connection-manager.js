@@ -316,7 +316,7 @@ Connection.prototype = {
           return;
         }
         this._client = new DebuggerClient(transport);
-        this._client.addOneTimeListener("closed", this._onDisconnected);
+        this._client.once("closed", this._onDisconnected);
         this._client.connect().then(this._onConnected);
       },
       e => {

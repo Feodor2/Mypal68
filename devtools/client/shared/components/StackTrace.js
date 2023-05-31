@@ -53,6 +53,10 @@ class StackTrace extends Component {
       sourceMapService,
     } = this.props;
 
+    if (!stacktrace) {
+      return null;
+    }
+
     const frames = [];
     stacktrace.forEach((s, i) => {
       if (s.asyncCause) {

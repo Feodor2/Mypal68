@@ -7,7 +7,6 @@
 const EventEmitter = require("devtools/shared/event-emitter");
 const { LocalizationHelper, ELLIPSIS } = require("devtools/shared/l10n");
 const KeyShortcuts = require("devtools/client/shared/key-shortcuts");
-const JSOL = require("devtools/client/shared/vendor/jsol");
 const { KeyCodes } = require("devtools/client/shared/keycodes");
 const { getUnicodeHostname } = require("devtools/client/shared/unicode-url");
 
@@ -39,12 +38,13 @@ loader.lazyRequireGetter(
   "validator",
   "devtools/client/shared/vendor/stringvalidator/validator"
 );
+loader.lazyRequireGetter(this, "JSON5", "devtools/client/shared/vendor/json5");
 
 /**
  * Localization convenience methods.
  */
 const STORAGE_STRINGS = "devtools/client/locales/storage.properties";
-const L10N = new LocalizationHelper(STORAGE_STRINGS);
+const L10N = new LocalizationHelper(STORAGE_STRINGS, true);
 
 const GENERIC_VARIABLES_VIEW_SETTINGS = {
   lazyEmpty: true,
@@ -72,6 +72,7 @@ const COOKIE_KEY_MAP = {
   isHttpOnly: "HttpOnly",
   creationTime: "CreationTime",
   lastAccessed: "LastAccessed",
+  sameSite: "SameSite",
 };
 
 const SAFE_HOSTS_PREFIXES_REGEX = /^(about:|https?:|file:|moz-extension:)/;
@@ -953,7 +954,7 @@ class StorageUI {
 
     let obj = null;
     try {
-      obj = JSOL.parse(value);
+      obj = JSON5.parse(value);
     } catch (ex) {
       obj = null;
     }
@@ -1163,8 +1164,15 @@ class StorageUI {
       columns[f.name] = f.name;
       let columnName;
       try {
+        let name = f.name;
+
         // Path key names for l10n in the case of a string change.
-        const name = f.name === "keyPath" ? "keyPath2" : f.name;
+        switch (f.name) {
+          case "creationTime":
+          case "keyPath":
+            name = `${f.name}2`;
+            break;
+        }
 
         columnName = L10N.getStr("table.headers." + type + "." + name);
       } catch (e) {

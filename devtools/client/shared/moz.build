@@ -10,6 +10,7 @@ TEST_HARNESS_FILES.xpcshell.devtools.client.shared.test += [
 
 DIRS += [
     'components',
+    'fluent-l10n',
     'redux',
     'remote-debugging',
     'source-map',
@@ -55,6 +56,7 @@ DevToolsModules(
     'view-source.js',
     'WeakMapMap.js',
     'webgl-utils.js',
+    'workers-listener.js',
     'zoom-keys.js',
 )
 

@@ -589,8 +589,6 @@ var NetworkHelper = {
      *      => state === "weak"
      */
 
-    securityInfo.QueryInterface(Ci.nsITransportSecurityInfo);
-
     const wpl = Ci.nsIWebProgressListener;
     const NSSErrorsService = Cc["@mozilla.org/nss_errors_service;1"].getService(
       Ci.nsINSSErrorsService

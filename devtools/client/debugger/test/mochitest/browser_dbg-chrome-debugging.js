@@ -23,10 +23,10 @@ function initDebuggerClient() {
   return new DebuggerClient(transport);
 }
 
-function onNewSource(event, packet) {
+function onNewSource(packet) {
   if (packet.source.url.startsWith("chrome:")) {
     ok(true, "Received a new chrome source: " + packet.source.url);
-    gThreadClient.removeListener("newSource", onNewSource);
+    gThreadClient.off("newSource", onNewSource);
     gNewChromeSource.resolve();
   }
 }
@@ -58,7 +58,7 @@ add_task(async function() {
   gBrowser.selectedTab = BrowserTestUtils.addTab(gBrowser, "about:mozilla");
 
   // listen for a new source and global
-  gThreadClient.addListener("newSource", onNewSource);
+  gThreadClient.on("newSource", onNewSource);
   await gNewChromeSource.promise;
 
   await resumeAndCloseConnection();

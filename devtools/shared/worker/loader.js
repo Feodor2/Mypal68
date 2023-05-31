@@ -4,7 +4,7 @@
 
 "use strict";
 
-/* global worker */
+/* global worker, DebuggerNotificationObserver */
 
 // A CommonJS module loader that is designed to run inside a worker debugger.
 // We can't simply use the SDK module loader, because it relies heavily on
@@ -493,7 +493,7 @@ var {
 
     const reportError = Cu.reportError;
 
-    const Timer = ChromeUtils.import("resource://gre/modules/Timer.jsm", null);
+    const Timer = ChromeUtils.import("resource://gre/modules/Timer.jsm");
 
     const setImmediate = function(callback) {
       Timer.setTimeout(callback, 0);
@@ -563,7 +563,6 @@ this.worker = new WorkerDebuggerLoader({
   createSandbox: createSandbox,
   globals: {
     isWorker: true,
-    isReplaying: false,
     dump: dump,
     loader: loader,
     reportError: reportError,
@@ -585,6 +584,7 @@ this.worker = new WorkerDebuggerLoader({
     chrome: chrome,
     xpcInspector: xpcInspector,
     ChromeUtils: ChromeUtils,
+    DebuggerNotificationObserver: DebuggerNotificationObserver,
   },
   paths: {
     // ⚠ DISCUSSION ON DEV-DEVELOPER-TOOLS REQUIRED BEFORE MODIFYING ⚠

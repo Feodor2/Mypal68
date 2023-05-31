@@ -1012,7 +1012,7 @@ VariablesView.prototype = {
 
   /**
    * Gets the owner document holding this view.
-   * @return nsIHTMLDocument
+   * @return HTMLDocument
    */
   get document() {
     return this._document || (this._document = this._parent.ownerDocument);
@@ -2145,7 +2145,7 @@ Scope.prototype = {
 
   /**
    * Gets the owner document holding this scope.
-   * @return nsIHTMLDocument
+   * @return HTMLDocument
    */
   get document() {
     return this._document || (this._document = this.ownerView.document);

@@ -4,7 +4,7 @@
 
 const {
   getAllMessagesUiById,
-  getAllMessagesTableDataById,
+  getAllMessagesPayloadById,
   getAllNetworkMessagesUpdateById,
   getAllRepeatById,
   getCurrentGroup,
@@ -12,9 +12,6 @@ const {
   getAllMessagesById,
   getVisibleMessages,
 } = require("devtools/client/webconsole/selectors/messages");
-const {
-  ensureExecutionPoint,
-} = require("devtools/client/webconsole/reducers/messages");
 
 const {
   clonePacket,
@@ -43,15 +40,10 @@ describe("Message reducer:", () => {
     it("adds a message to an empty store", () => {
       const { dispatch, getState } = setupStore();
 
-      // Retrieve the store before adding the message to not pollute the
-      // ensureExecutionPoint results.
-      const state = getState();
-
       const packet = stubPackets.get("console.log('foobar', 'test')");
       dispatch(actions.messagesAdd([packet]));
 
       const message = stubPreparedMessages.get("console.log('foobar', 'test')");
-      ensureExecutionPoint(state.messages, message);
 
       expect(getFirstMessage(getState())).toEqual(message);
     });
@@ -283,7 +275,7 @@ describe("Message reducer:", () => {
       expect(getVisibleMessages(state).length).toBe(0);
       expect(getAllMessagesUiById(state).length).toBe(0);
       expect(getGroupsById(state).size).toBe(0);
-      expect(getAllMessagesTableDataById(state).size).toBe(0);
+      expect(getAllMessagesPayloadById(state).size).toBe(0);
       expect(getCurrentGroup(state)).toBe(null);
       expect(getAllRepeatById(state)).toEqual({});
     });
@@ -1027,26 +1019,26 @@ describe("Message reducer:", () => {
     });
   });
 
-  describe("messagesTableDataById", () => {
-    it("resets messagesTableDataById in response to MESSAGES_CLEAR action", () => {
+  describe("messagesPayloadById", () => {
+    it("resets messagesPayloadById in response to MESSAGES_CLEAR action", () => {
       const { dispatch, getState } = setupStore([
         "console.table(['a', 'b', 'c'])",
       ]);
 
       const data = Symbol("tableData");
       dispatch(
-        actions.messageTableDataReceive(getFirstMessage(getState()).id, data)
+        actions.messageUpdatePayload(getFirstMessage(getState()).id, data)
       );
-      const table = getAllMessagesTableDataById(getState());
+      const table = getAllMessagesPayloadById(getState());
       expect(table.size).toBe(1);
       expect(table.get(getFirstMessage(getState()).id)).toBe(data);
 
       dispatch(actions.messagesClear());
 
-      expect(getAllMessagesTableDataById(getState()).size).toBe(0);
+      expect(getAllMessagesPayloadById(getState()).size).toBe(0);
     });
 
-    it("cleans the messagesTableDataById property when messages are pruned", () => {
+    it("cleans the messagesPayloadById property when messages are pruned", () => {
       const { dispatch, getState } = setupStore([], {
         storeOptions: {
           logLimit: 2,
@@ -1068,10 +1060,10 @@ describe("Message reducer:", () => {
       const tableData1 = Symbol();
       const tableData2 = Symbol();
       const [id1, id2] = [...messages.keys()];
-      dispatch(actions.messageTableDataReceive(id1, tableData1));
-      dispatch(actions.messageTableDataReceive(id2, tableData2));
+      dispatch(actions.messageUpdatePayload(id1, tableData1));
+      dispatch(actions.messageUpdatePayload(id2, tableData2));
 
-      let table = getAllMessagesTableDataById(getState());
+      let table = getAllMessagesPayloadById(getState());
       expect(table.size).toBe(2);
 
       // This addition will remove the first table message.
@@ -1079,7 +1071,7 @@ describe("Message reducer:", () => {
         actions.messagesAdd([stubPackets.get("console.log(undefined)")])
       );
 
-      table = getAllMessagesTableDataById(getState());
+      table = getAllMessagesPayloadById(getState());
       expect(table.size).toBe(1);
       expect(table.get(id2)).toBe(tableData2);
 
@@ -1088,7 +1080,7 @@ describe("Message reducer:", () => {
         actions.messagesAdd([stubPackets.get("console.log('foobar', 'test')")])
       );
 
-      expect(getAllMessagesTableDataById(getState()).size).toBe(0);
+      expect(getAllMessagesPayloadById(getState()).size).toBe(0);
     });
   });
 

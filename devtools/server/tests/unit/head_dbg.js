@@ -8,9 +8,8 @@ var CC = Components.Constructor;
 
 // Populate AppInfo before anything (like the shared loader) accesses
 // System.appinfo, which is a lazy getter.
-const _appInfo = {};
-ChromeUtils.import("resource://testing-common/AppInfo.jsm", _appInfo);
-_appInfo.updateAppInfo({
+const appInfo = ChromeUtils.import("resource://testing-common/AppInfo.jsm");
+appInfo.updateAppInfo({
   ID: "devtools@tests.mozilla.org",
   name: "devtools-tests",
   version: "1",
@@ -34,6 +33,7 @@ Services.prefs.setBoolPref("devtools.debugger.log", true);
 // Enable remote debugging for the relevant tests.
 Services.prefs.setBoolPref("devtools.debugger.remote-enabled", true);
 
+const makeDebugger = require("devtools/server/actors/utils/make-debugger");
 const DevToolsUtils = require("devtools/shared/DevToolsUtils");
 const {
   ActorRegistry,
@@ -306,23 +306,17 @@ function testExceptionHook(ex) {
   return undefined;
 }
 
-// Convert an nsIScriptError 'flags' value into an appropriate string.
-function scriptErrorFlagsToKind(flags) {
-  let kind;
-  if (flags & Ci.nsIScriptError.warningFlag) {
-    kind = "warning";
+// Convert an nsIScriptError 'logLevel' value into an appropriate string.
+function scriptErrorLogLevel(message) {
+  switch (message.logLevel) {
+    case Ci.nsIConsoleMessage.info:
+      return "info";
+    case Ci.nsIConsoleMessage.warn:
+      return "warning";
+    default:
+      Assert.equal(message.logLevel, Ci.nsIConsoleMessage.error);
+      return "error";
   }
-  if (flags & Ci.nsIScriptError.exceptionFlag) {
-    kind = "exception";
-  } else {
-    kind = "error";
-  }
-
-  if (flags & Ci.nsIScriptError.strictFlag) {
-    kind = "strict " + kind;
-  }
-
-  return kind;
 }
 
 // Register a console listener, so console messages don't just disappear
@@ -342,7 +336,7 @@ var listener = {
             ":" +
             message.lineNumber +
             ": " +
-            scriptErrorFlagsToKind(message.flags) +
+            scriptErrorLogLevel(message) +
             ": " +
             message.errorMessage
         );
@@ -429,7 +423,6 @@ async function attachTestThread(client, title, callback = () => {}) {
     autoBlackBox: true,
   });
   Assert.equal(threadClient.state, "paused", "Thread client is paused");
-  Assert.equal(response.type, "paused");
   Assert.ok("why" in response);
   Assert.equal(response.why.type, "attached");
   callback(response, targetFront, threadClient);
@@ -443,7 +436,6 @@ async function attachTestThread(client, title, callback = () => {}) {
 async function attachTestTabAndResume(client, title, callback = () => {}) {
   const { targetFront, threadClient } = await attachTestThread(client, title);
   const response = await threadClient.resume();
-  Assert.equal(response.type, "resumed");
   callback(response, targetFront, threadClient);
   return { targetFront, threadClient };
 }
@@ -656,25 +648,25 @@ const assert = Assert.ok.bind(Assert);
 /**
  * Create a promise that is resolved on the next occurence of the given event.
  *
- * @param DebuggerClient client
+ * @param ThreadClient threadClient
  * @param String event
  * @param Function predicate
  * @returns Promise
  */
-function waitForEvent(client, type, predicate) {
+function waitForEvent(threadClient, type, predicate) {
   if (!predicate) {
-    return client.addOneTimeListener(type);
+    return threadClient.once(type);
   }
 
   return new Promise(function(resolve) {
-    function listener(type, packet) {
+    function listener(packet) {
       if (!predicate(packet)) {
         return;
       }
-      client.removeListener(listener);
+      threadClient.off(type, listener);
       resolve(packet);
     }
-    client.addListener(type, listener);
+    threadClient.on(type, listener);
   });
 }
 

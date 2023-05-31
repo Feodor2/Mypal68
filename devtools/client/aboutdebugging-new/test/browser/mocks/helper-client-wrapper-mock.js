@@ -33,23 +33,23 @@ function createClientMock() {
     _preferences: {},
     contentProcessFronts: [],
     serviceWorkerRegistrationFronts: [],
-    addOneTimeListener: (evt, listener) => {
+    once: (evt, listener) => {
       eventEmitter.once(evt, listener);
     },
-    addListener: (evt, listener) => {
+    on: (evt, listener) => {
       eventEmitter.on(evt, listener);
     },
-    removeListener: (evt, listener) => {
+    off: (evt, listener) => {
       eventEmitter.off(evt, listener);
     },
     client: {
-      addOneTimeListener: (evt, listener) => {
+      once: (evt, listener) => {
         eventEmitter.once(evt, listener);
       },
-      addListener: (evt, listener) => {
+      on: (evt, listener) => {
         eventEmitter.on(evt, listener);
       },
-      removeListener: (evt, listener) => {
+      off: (evt, listener) => {
         eventEmitter.off(evt, listener);
       },
     },

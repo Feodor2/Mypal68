@@ -13,7 +13,7 @@ const Provider = createFactory(require("react-redux").Provider);
 
 // Components under test.
 const ConsoleApiCall = createFactory(
-  require("devtools/client/webconsole/components/message-types/ConsoleApiCall")
+  require("devtools/client/webconsole/components/Output/message-types/ConsoleApiCall")
 );
 
 const { prepareMessage } = require("devtools/client/webconsole/utils/messages");

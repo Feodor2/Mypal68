@@ -6107,7 +6107,6 @@ exports.SourceNode = __webpack_require__(94).SourceNode;
 /***/ 89:
 /***/ (function(module, exports) {
 
-/* -*- Mode: js; js-indent-level: 2; -*- */
 /*
  * Copyright 2011 Mozilla Foundation and contributors
  * Licensed under the New BSD license. See LICENSE or:
@@ -6181,7 +6180,6 @@ exports.decode = function (charCode) {
 /***/ 90:
 /***/ (function(module, exports, __webpack_require__) {
 
-/* -*- Mode: js; js-indent-level: 2; -*- */
 /*
  * Copyright 2014 Mozilla Foundation and contributors
  * Licensed under the New BSD license. See LICENSE or:
@@ -6267,7 +6265,6 @@ exports.MappingList = MappingList;
 /***/ 91:
 /***/ (function(module, exports, __webpack_require__) {
 
-/* -*- Mode: js; js-indent-level: 2; -*- */
 /*
  * Copyright 2011 Mozilla Foundation and contributors
  * Licensed under the New BSD license. See LICENSE or:
@@ -7356,7 +7353,6 @@ exports.IndexedSourceMapConsumer = IndexedSourceMapConsumer;
 /***/ 92:
 /***/ (function(module, exports) {
 
-/* -*- Mode: js; js-indent-level: 2; -*- */
 /*
  * Copyright 2011 Mozilla Foundation and contributors
  * Licensed under the New BSD license. See LICENSE or:
@@ -7474,7 +7470,6 @@ exports.search = function search(aNeedle, aHaystack, aCompare, aBias) {
 /***/ 93:
 /***/ (function(module, exports) {
 
-/* -*- Mode: js; js-indent-level: 2; -*- */
 /*
  * Copyright 2011 Mozilla Foundation and contributors
  * Licensed under the New BSD license. See LICENSE or:
@@ -7595,7 +7590,6 @@ exports.quickSort = function (ary, comparator) {
 /***/ 94:
 /***/ (function(module, exports, __webpack_require__) {
 
-/* -*- Mode: js; js-indent-level: 2; -*- */
 /*
  * Copyright 2011 Mozilla Foundation and contributors
  * Licensed under the New BSD license. See LICENSE or:

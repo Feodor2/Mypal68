@@ -3,19 +3,22 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 DIRS += [
-    'accessibility',
     'addon',
     'emulation',
     'highlighters',
     'inspector',
     'network-monitor',
     'object',
-    'replay',
     'targets',
     'utils',
     'webconsole',
     'worker',
 ]
+
+if CONFIG['ACCESSIBILITY']:
+    DIRS += [
+        'accessibility',
+    ]
 
 DevToolsModules(
     'actor-registry.js',
@@ -37,8 +40,6 @@ DevToolsModules(
     'highlighters.js',
     'layout.js',
     'memory.js',
-    'network-event.js',
-    'network-monitor.js',
     'object.js',
     'pause-scoped.js',
     'perf.js',

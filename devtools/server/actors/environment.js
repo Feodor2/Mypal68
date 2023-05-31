@@ -47,6 +47,8 @@ const EnvironmentActor = ActorClassWithSpec(environmentSpec, {
       form.type = this.obj.type;
     }
 
+    form.scopeKind = this.obj.scopeKind;
+
     // Does this environment have a parent?
     if (this.obj.parent) {
       form.parent = this.threadActor

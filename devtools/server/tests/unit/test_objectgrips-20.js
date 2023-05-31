@@ -251,7 +251,7 @@ async function test_object_grip(
   } = testData;
 
   return new Promise((resolve, reject) => {
-    threadClient.addOneTimeListener("paused", async function(event, packet) {
+    threadClient.once("paused", async function(packet) {
       const [grip] = packet.frame.arguments;
 
       const objClient = threadClient.pauseGrip(grip);

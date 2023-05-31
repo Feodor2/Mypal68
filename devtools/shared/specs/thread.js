@@ -30,6 +30,8 @@ const threadSpec = generateActorSpec({
     progress: {
       recording: Option(0, "json"),
       executionPoint: Option(0, "json"),
+      unscannedRegions: Option(0, "json"),
+      cachedPoints: Option(0, "json"),
     },
   },
 
@@ -52,7 +54,6 @@ const threadSpec = generateActorSpec({
     resume: {
       request: {
         resumeLimit: Arg(0, "nullable:json"),
-        rewind: Arg(1, "boolean"),
       },
       response: RetVal("nullable:json"),
     },

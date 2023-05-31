@@ -111,7 +111,7 @@ const EXPECTED_CONTENT = String.fromCharCode(
 );
 
 function test_source() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+  gThreadClient.once("paused", function(packet) {
     gThreadClient.getSources().then(function(response) {
       Assert.ok(!!response);
       Assert.ok(!!response.sources);

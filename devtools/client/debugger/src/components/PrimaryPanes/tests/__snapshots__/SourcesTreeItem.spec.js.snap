@@ -7,6 +7,7 @@ Object {
     key="mdn.com/one.js"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title=""
   >
     <span
       className="img no-arrow"
@@ -14,6 +15,7 @@ Object {
     <Connect(SourceIcon)
       source={
         Object {
+          "extensionName": null,
           "id": "server1.conn13.child1/39",
           "introductionType": undefined,
           "introductionUrl": null,
@@ -37,6 +39,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -46,6 +49,7 @@ Object {
       "focusItem": [MockFunction],
       "item": Object {
         "contents": Object {
+          "extensionName": null,
           "id": "server1.conn13.child1/39",
           "introductionType": undefined,
           "introductionUrl": null,
@@ -64,6 +68,7 @@ Object {
       "setExpanded": [MockFunction],
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -95,6 +100,7 @@ Object {
           item={
             Object {
               "contents": Object {
+                "extensionName": null,
                 "id": "server1.conn13.child1/39",
                 "introductionType": undefined,
                 "introductionUrl": null,
@@ -115,6 +121,7 @@ Object {
           setProjectDirectoryRoot={[MockFunction]}
           source={
             Object {
+              "extensionName": null,
               "id": "server1.conn13.child1/39",
               "introductionType": undefined,
               "introductionUrl": null,
@@ -142,6 +149,7 @@ Object {
           className="node"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title=""
         >
           <span
             className="img no-arrow"
@@ -149,6 +157,7 @@ Object {
           <Connect(SourceIcon)
             source={
               Object {
+                "extensionName": null,
                 "id": "server1.conn13.child1/39",
                 "introductionType": undefined,
                 "introductionUrl": null,
@@ -180,6 +189,7 @@ Object {
     "focusItem": [MockFunction],
     "item": Object {
       "contents": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -198,6 +208,7 @@ Object {
     "setExpanded": [MockFunction],
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
+      "extensionName": null,
       "id": "server1.conn13.child1/39",
       "introductionType": undefined,
       "introductionUrl": null,
@@ -225,6 +236,7 @@ Object {
     key="http://mdn.com/one.js"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title="url"
   >
     <span
       className="img no-arrow"
@@ -232,6 +244,7 @@ Object {
     <Connect(SourceIcon)
       source={
         Object {
+          "extensionName": null,
           "id": "server1.conn13.child1/39",
           "introductionType": undefined,
           "introductionUrl": null,
@@ -260,6 +273,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -270,6 +284,7 @@ Object {
       "hasMatchingGeneratedSource": true,
       "item": Object {
         "contents": Object {
+          "extensionName": null,
           "id": "server1.conn13.child1/39",
           "introductionType": undefined,
           "introductionUrl": null,
@@ -289,6 +304,7 @@ Object {
       "setExpanded": [MockFunction],
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -321,6 +337,7 @@ Object {
           item={
             Object {
               "contents": Object {
+                "extensionName": null,
                 "id": "server1.conn13.child1/39",
                 "introductionType": undefined,
                 "introductionUrl": null,
@@ -342,6 +359,7 @@ Object {
           setProjectDirectoryRoot={[MockFunction]}
           source={
             Object {
+              "extensionName": null,
               "id": "server1.conn13.child1/39",
               "introductionType": undefined,
               "introductionUrl": null,
@@ -369,6 +387,7 @@ Object {
           className="node"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title="url"
         >
           <span
             className="img no-arrow"
@@ -376,6 +395,7 @@ Object {
           <Connect(SourceIcon)
             source={
               Object {
+                "extensionName": null,
                 "id": "server1.conn13.child1/39",
                 "introductionType": undefined,
                 "introductionUrl": null,
@@ -413,6 +433,7 @@ Object {
     "hasMatchingGeneratedSource": true,
     "item": Object {
       "contents": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -432,6 +453,7 @@ Object {
     "setExpanded": [MockFunction],
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
+      "extensionName": null,
       "id": "server1.conn13.child1/39",
       "introductionType": undefined,
       "introductionUrl": null,
@@ -459,6 +481,7 @@ Object {
     key="root"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title="url"
   >
     <span
       className="img no-arrow"
@@ -466,6 +489,7 @@ Object {
     <Connect(SourceIcon)
       source={
         Object {
+          "extensionName": null,
           "id": "server1.conn13.child1/39",
           "introductionType": undefined,
           "introductionUrl": null,
@@ -489,6 +513,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -499,6 +524,7 @@ Object {
       "focusItem": [MockFunction],
       "item": Object {
         "contents": Object {
+          "extensionName": null,
           "id": "server1.conn13.child1/39",
           "introductionType": undefined,
           "introductionUrl": null,
@@ -518,6 +544,7 @@ Object {
       "setExpanded": [MockFunction],
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -550,6 +577,7 @@ Object {
           item={
             Object {
               "contents": Object {
+                "extensionName": null,
                 "id": "server1.conn13.child1/39",
                 "introductionType": undefined,
                 "introductionUrl": null,
@@ -571,6 +599,7 @@ Object {
           setProjectDirectoryRoot={[MockFunction]}
           source={
             Object {
+              "extensionName": null,
               "id": "server1.conn13.child1/39",
               "introductionType": undefined,
               "introductionUrl": null,
@@ -598,6 +627,7 @@ Object {
           className="node"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title="url"
         >
           <span
             className="img no-arrow"
@@ -605,6 +635,7 @@ Object {
           <Connect(SourceIcon)
             source={
               Object {
+                "extensionName": null,
                 "id": "server1.conn13.child1/39",
                 "introductionType": undefined,
                 "introductionUrl": null,
@@ -637,6 +668,7 @@ Object {
     "focusItem": [MockFunction],
     "item": Object {
       "contents": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -656,6 +688,7 @@ Object {
     "setExpanded": [MockFunction],
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
+      "extensionName": null,
       "id": "server1.conn13.child1/39",
       "introductionType": undefined,
       "introductionUrl": null,
@@ -683,6 +716,7 @@ Object {
     key="root"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title=""
   >
     <AccessibleImage
       className="arrow"
@@ -701,6 +735,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -720,6 +755,7 @@ Object {
       "setExpanded": [MockFunction],
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -763,6 +799,7 @@ Object {
           setProjectDirectoryRoot={[MockFunction]}
           source={
             Object {
+              "extensionName": null,
               "id": "server1.conn13.child1/39",
               "introductionType": undefined,
               "introductionUrl": null,
@@ -790,6 +827,7 @@ Object {
           className="node"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title=""
         >
           <AccessibleImage
             className="arrow"
@@ -826,6 +864,7 @@ Object {
     "setExpanded": [MockFunction],
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
+      "extensionName": null,
       "id": "server1.conn13.child1/39",
       "introductionType": undefined,
       "introductionUrl": null,
@@ -853,6 +892,7 @@ Object {
     key="root"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title=""
   >
     <AccessibleImage
       className="arrow"
@@ -871,6 +911,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -891,6 +932,7 @@ Object {
       "setExpanded": [MockFunction],
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -935,6 +977,7 @@ Object {
           setProjectDirectoryRoot={[MockFunction]}
           source={
             Object {
+              "extensionName": null,
               "id": "server1.conn13.child1/39",
               "introductionType": undefined,
               "introductionUrl": null,
@@ -962,6 +1005,7 @@ Object {
           className="node focused"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title=""
         >
           <AccessibleImage
             className="arrow"
@@ -999,6 +1043,7 @@ Object {
     "setExpanded": [MockFunction],
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
+      "extensionName": null,
       "id": "server1.conn13.child1/39",
       "introductionType": undefined,
       "introductionUrl": null,
@@ -1026,6 +1071,7 @@ Object {
     key="domain/subfolder"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title=""
   >
     <AccessibleImage
       className="arrow expanded"
@@ -1044,6 +1090,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -1113,6 +1160,7 @@ Object {
           className="node focused"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title=""
         >
           <AccessibleImage
             className="arrow expanded"
@@ -1167,6 +1215,7 @@ Object {
     key="ng://"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title=""
   >
     <AccessibleImage
       className="arrow"
@@ -1185,6 +1234,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -1203,6 +1253,7 @@ Object {
       "setExpanded": [MockFunction],
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -1245,6 +1296,7 @@ Object {
           setProjectDirectoryRoot={[MockFunction]}
           source={
             Object {
+              "extensionName": null,
               "id": "server1.conn13.child1/39",
               "introductionType": undefined,
               "introductionUrl": null,
@@ -1272,6 +1324,7 @@ Object {
           className="node"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title=""
         >
           <AccessibleImage
             className="arrow"
@@ -1307,6 +1360,7 @@ Object {
     "setExpanded": [MockFunction],
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
+      "extensionName": null,
       "id": "server1.conn13.child1/39",
       "introductionType": undefined,
       "introductionUrl": null,
@@ -1334,6 +1388,7 @@ Object {
     key="domain/subfolder"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title=""
   >
     <AccessibleImage
       className="arrow"
@@ -1352,6 +1407,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -1417,6 +1473,7 @@ Object {
           className="node"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title=""
         >
           <AccessibleImage
             className="arrow"
@@ -1469,6 +1526,7 @@ Object {
     key="domain/subfolder"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title=""
   >
     <AccessibleImage
       className="arrow expanded"
@@ -1487,6 +1545,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -1556,6 +1615,7 @@ Object {
           className="node"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title=""
         >
           <AccessibleImage
             className="arrow expanded"
@@ -1610,6 +1670,7 @@ Object {
     key="moz-extension://e37c3c08-beac-a04b-8032-c4f699a1a856"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title=""
   >
     <AccessibleImage
       className="arrow"
@@ -1628,6 +1689,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -1647,6 +1709,7 @@ Object {
       "setExpanded": [MockFunction],
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -1690,6 +1753,7 @@ Object {
           setProjectDirectoryRoot={[MockFunction]}
           source={
             Object {
+              "extensionName": null,
               "id": "server1.conn13.child1/39",
               "introductionType": undefined,
               "introductionUrl": null,
@@ -1717,6 +1781,7 @@ Object {
           className="node"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title=""
         >
           <AccessibleImage
             className="arrow"
@@ -1753,6 +1818,7 @@ Object {
     "setExpanded": [MockFunction],
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
+      "extensionName": null,
       "id": "server1.conn13.child1/39",
       "introductionType": undefined,
       "introductionUrl": null,
@@ -1780,6 +1846,7 @@ Object {
     key="webpack://"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title=""
   >
     <AccessibleImage
       className="arrow"
@@ -1798,6 +1865,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -1816,6 +1884,7 @@ Object {
       "setExpanded": [MockFunction],
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -1858,6 +1927,7 @@ Object {
           setProjectDirectoryRoot={[MockFunction]}
           source={
             Object {
+              "extensionName": null,
               "id": "server1.conn13.child1/39",
               "introductionType": undefined,
               "introductionUrl": null,
@@ -1885,6 +1955,7 @@ Object {
           className="node"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title=""
         >
           <AccessibleImage
             className="arrow"
@@ -1920,6 +1991,7 @@ Object {
     "setExpanded": [MockFunction],
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
+      "extensionName": null,
       "id": "server1.conn13.child1/39",
       "introductionType": undefined,
       "introductionUrl": null,
@@ -1947,6 +2019,7 @@ Object {
     key="http://mdn.com/one.js"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title="url"
   >
     <span
       className="img no-arrow"
@@ -1954,6 +2027,7 @@ Object {
     <Connect(SourceIcon)
       source={
         Object {
+          "extensionName": null,
           "id": "server1.conn13.child1/39",
           "introductionType": undefined,
           "introductionUrl": null,
@@ -1977,6 +2051,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -1986,6 +2061,7 @@ Object {
       "focusItem": [MockFunction],
       "item": Object {
         "contents": Object {
+          "extensionName": null,
           "id": "server1.conn13.child1/39",
           "introductionType": undefined,
           "introductionUrl": null,
@@ -2005,6 +2081,7 @@ Object {
       "setExpanded": [MockFunction],
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -2036,6 +2113,7 @@ Object {
           item={
             Object {
               "contents": Object {
+                "extensionName": null,
                 "id": "server1.conn13.child1/39",
                 "introductionType": undefined,
                 "introductionUrl": null,
@@ -2057,6 +2135,7 @@ Object {
           setProjectDirectoryRoot={[MockFunction]}
           source={
             Object {
+              "extensionName": null,
               "id": "server1.conn13.child1/39",
               "introductionType": undefined,
               "introductionUrl": null,
@@ -2084,6 +2163,7 @@ Object {
           className="node"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title="url"
         >
           <span
             className="img no-arrow"
@@ -2091,6 +2171,7 @@ Object {
           <Connect(SourceIcon)
             source={
               Object {
+                "extensionName": null,
                 "id": "server1.conn13.child1/39",
                 "introductionType": undefined,
                 "introductionUrl": null,
@@ -2122,6 +2203,7 @@ Object {
     "focusItem": [MockFunction],
     "item": Object {
       "contents": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -2141,6 +2223,7 @@ Object {
     "setExpanded": [MockFunction],
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
+      "extensionName": null,
       "id": "server1.conn13.child1/39",
       "introductionType": undefined,
       "introductionUrl": null,
@@ -2168,6 +2251,7 @@ Object {
     key="mdn.com/one.js"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title=""
   >
     <span
       className="img no-arrow"
@@ -2175,6 +2259,7 @@ Object {
     <Connect(SourceIcon)
       source={
         Object {
+          "extensionName": null,
           "id": "server1.conn13.child1/39",
           "introductionType": undefined,
           "introductionUrl": null,
@@ -2198,6 +2283,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -2209,6 +2295,7 @@ Object {
       "focused": true,
       "item": Object {
         "contents": Object {
+          "extensionName": null,
           "id": "server1.conn13.child1/39",
           "introductionType": undefined,
           "introductionUrl": null,
@@ -2227,6 +2314,7 @@ Object {
       "setExpanded": [MockFunction],
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -2260,6 +2348,7 @@ Object {
           item={
             Object {
               "contents": Object {
+                "extensionName": null,
                 "id": "server1.conn13.child1/39",
                 "introductionType": undefined,
                 "introductionUrl": null,
@@ -2280,6 +2369,7 @@ Object {
           setProjectDirectoryRoot={[MockFunction]}
           source={
             Object {
+              "extensionName": null,
               "id": "server1.conn13.child1/39",
               "introductionType": undefined,
               "introductionUrl": null,
@@ -2307,6 +2397,7 @@ Object {
           className="node focused"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title=""
         >
           <span
             className="img no-arrow"
@@ -2314,6 +2405,7 @@ Object {
           <Connect(SourceIcon)
             source={
               Object {
+                "extensionName": null,
                 "id": "server1.conn13.child1/39",
                 "introductionType": undefined,
                 "introductionUrl": null,
@@ -2347,6 +2439,7 @@ Object {
     "focused": true,
     "item": Object {
       "contents": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -2365,6 +2458,7 @@ Object {
     "setExpanded": [MockFunction],
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
+      "extensionName": null,
       "id": "server1.conn13.child1/39",
       "introductionType": undefined,
       "introductionUrl": null,
@@ -2392,6 +2486,7 @@ Object {
     key="mdn.com/external%20file"
     onClick={[Function]}
     onContextMenu={[Function]}
+    title="url"
   >
     <span
       className="img no-arrow"
@@ -2399,6 +2494,7 @@ Object {
     <Connect(SourceIcon)
       source={
         Object {
+          "extensionName": null,
           "id": "server1.conn13.child1/39",
           "introductionType": undefined,
           "introductionUrl": null,
@@ -2422,6 +2518,7 @@ Object {
   "instance": SourceTreeItem {
     "addCollapseExpandAllOptions": [Function],
     "context": Object {},
+    "handleDownloadFile": [Function],
     "onClick": [Function],
     "onContextMenu": [Function],
     "props": Object {
@@ -2431,6 +2528,7 @@ Object {
       "focusItem": [MockFunction],
       "item": Object {
         "contents": Object {
+          "extensionName": null,
           "id": "server1.conn13.child1/39",
           "introductionType": undefined,
           "introductionUrl": null,
@@ -2450,6 +2548,7 @@ Object {
       "setExpanded": [MockFunction],
       "setProjectDirectoryRoot": [MockFunction],
       "source": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -2481,6 +2580,7 @@ Object {
           item={
             Object {
               "contents": Object {
+                "extensionName": null,
                 "id": "server1.conn13.child1/39",
                 "introductionType": undefined,
                 "introductionUrl": null,
@@ -2502,6 +2602,7 @@ Object {
           setProjectDirectoryRoot={[MockFunction]}
           source={
             Object {
+              "extensionName": null,
               "id": "server1.conn13.child1/39",
               "introductionType": undefined,
               "introductionUrl": null,
@@ -2529,6 +2630,7 @@ Object {
           className="node"
           onClick={[Function]}
           onContextMenu={[Function]}
+          title="url"
         >
           <span
             className="img no-arrow"
@@ -2536,6 +2638,7 @@ Object {
           <Connect(SourceIcon)
             source={
               Object {
+                "extensionName": null,
                 "id": "server1.conn13.child1/39",
                 "introductionType": undefined,
                 "introductionUrl": null,
@@ -2567,6 +2670,7 @@ Object {
     "focusItem": [MockFunction],
     "item": Object {
       "contents": Object {
+        "extensionName": null,
         "id": "server1.conn13.child1/39",
         "introductionType": undefined,
         "introductionUrl": null,
@@ -2586,6 +2690,7 @@ Object {
     "setExpanded": [MockFunction],
     "setProjectDirectoryRoot": [MockFunction],
     "source": Object {
+      "extensionName": null,
       "id": "server1.conn13.child1/39",
       "introductionType": undefined,
       "introductionUrl": null,

@@ -6,7 +6,9 @@
 
 // Test getDisplayString.
 
-ChromeUtils.import("resource://testing-common/PromiseTestUtils.jsm", this);
+const { PromiseTestUtils } = ChromeUtils.import(
+  "resource://testing-common/PromiseTestUtils.jsm"
+);
 
 var gDebuggee;
 var gClient;
@@ -158,7 +160,7 @@ function test_display_string() {
 
   PromiseTestUtils.expectUncaughtRejection(/Error/);
 
-  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+  gThreadClient.once("paused", function(packet) {
     const args = packet.frame.arguments;
 
     (function loop() {

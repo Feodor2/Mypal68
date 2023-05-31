@@ -34,7 +34,7 @@ add_task(async function() {
     "chrome://global/locale/appstrings.properties"
   );
   let domain = TEST_URL_2.match(/^http:\/\/(.*)\/$/)[1];
-  let errorMsg = bundle.formatStringFromName("connectionFailure", [domain], 1);
+  let errorMsg = bundle.formatStringFromName("connectionFailure", [domain]);
   is(
     await getDisplayedNodeTextContent("#errorShortDescText", inspector),
     errorMsg,
@@ -45,7 +45,7 @@ add_task(async function() {
   await navigateTo(inspector, TEST_URL_3);
 
   domain = TEST_URL_3.match(/^http:\/\/(.*)\/$/)[1];
-  errorMsg = bundle.formatStringFromName("dnsNotFound2", [domain], 1);
+  errorMsg = bundle.formatStringFromName("dnsNotFound2", [domain]);
   is(
     await getDisplayedNodeTextContent("#errorShortDescText", inspector),
     errorMsg,

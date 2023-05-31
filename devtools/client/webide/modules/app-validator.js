@@ -77,8 +77,7 @@ AppValidator.checkManifest = function(manifestURL) {
     } catch (e) {
       error = strings.formatStringFromName(
         "validator.invalidManifestURL",
-        [manifestURL],
-        1
+        [manifestURL]
       );
       return reject(error);
     }
@@ -90,8 +89,7 @@ AppValidator.checkManifest = function(manifestURL) {
       } catch (e) {
         error = strings.formatStringFromName(
           "validator.invalidManifestJSON",
-          [e, manifestURL],
-          2
+          [e, manifestURL]
         );
         reject(error);
       }
@@ -102,8 +100,7 @@ AppValidator.checkManifest = function(manifestURL) {
     req.onerror = function() {
       error = strings.formatStringFromName(
         "validator.noAccessManifestURL",
-        [req.statusText, manifestURL],
-        2
+        [req.statusText, manifestURL]
       );
       reject(error);
     };
@@ -113,8 +110,7 @@ AppValidator.checkManifest = function(manifestURL) {
     } catch (e) {
       error = strings.formatStringFromName(
         "validator.noAccessManifestURL",
-        [e, manifestURL],
-        2
+        [e, manifestURL]
       );
       reject(error);
     }
@@ -190,8 +186,7 @@ AppValidator.prototype._getManifest = function() {
       this.error(
         strings.formatStringFromName(
           "validator.invalidHostedManifestURL",
-          [manifestURL, e.message],
-          2
+          [manifestURL, e.message]
         )
       );
       return Promise.resolve(null);
@@ -200,8 +195,7 @@ AppValidator.prototype._getManifest = function() {
     this.error(
       strings.formatStringFromName(
         "validator.invalidProjectType",
-        [this.type],
-        1
+        [this.type]
       )
     );
     return Promise.resolve(null);
@@ -239,8 +233,7 @@ AppValidator.prototype.validateLaunchPath = function(manifest) {
       this.error(
         strings.formatStringFromName(
           "validator.nonAbsoluteLaunchPath",
-          [manifest.launch_path],
-          1
+          [manifest.launch_path]
         )
       );
       resolve();
@@ -260,8 +253,7 @@ AppValidator.prototype.validateLaunchPath = function(manifest) {
       this.error(
         strings.formatStringFromName(
           "validator.accessFailedLaunchPath",
-          [origin + path],
-          1
+          [origin + path]
         )
       );
       return resolve();
@@ -277,8 +269,7 @@ AppValidator.prototype.validateLaunchPath = function(manifest) {
       this.error(
         strings.formatStringFromName(
           "validator.accessFailedLaunchPath",
-          [indexURL],
-          1
+          [indexURL]
         )
       );
       return resolve();
@@ -288,8 +279,7 @@ AppValidator.prototype.validateLaunchPath = function(manifest) {
         this.error(
           strings.formatStringFromName(
             "validator.accessFailedLaunchPathBadHttpCode",
-            [indexURL, req.status],
-            2
+            [indexURL, req.status]
           )
         );
       }
@@ -299,8 +289,7 @@ AppValidator.prototype.validateLaunchPath = function(manifest) {
       this.error(
         strings.formatStringFromName(
           "validator.accessFailedLaunchPath",
-          [indexURL],
-          1
+          [indexURL]
         )
       );
       resolve();
@@ -312,8 +301,7 @@ AppValidator.prototype.validateLaunchPath = function(manifest) {
       this.error(
         strings.formatStringFromName(
           "validator.accessFailedLaunchPath",
-          [indexURL],
-          1
+          [indexURL]
         )
       );
       resolve();
@@ -325,7 +313,7 @@ AppValidator.prototype.validateType = function(manifest) {
   const appType = manifest.type || "web";
   if (!["web", "privileged", "certified"].includes(appType)) {
     this.error(
-      strings.formatStringFromName("validator.invalidAppType", [appType], 1)
+      strings.formatStringFromName("validator.invalidAppType", [appType])
     );
   } else if (
     this.type == "hosted" &&
@@ -334,8 +322,7 @@ AppValidator.prototype.validateType = function(manifest) {
     this.error(
       strings.formatStringFromName(
         "validator.invalidHostedPriviledges",
-        [appType],
-        1
+        [appType]
       )
     );
   }

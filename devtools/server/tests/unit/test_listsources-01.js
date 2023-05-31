@@ -39,7 +39,7 @@ function run_test() {
 }
 
 function test_simple_listsources() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+  gThreadClient.once("paused", function(packet) {
     gThreadClient.getSources().then(function(response) {
       Assert.ok(
         response.sources.some(function(s) {

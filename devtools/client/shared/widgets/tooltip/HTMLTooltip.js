@@ -290,7 +290,9 @@ const getRelativeRect = function(node, relativeTo) {
   // Width and Height can be taken from the rect.
   const { width, height } = node.getBoundingClientRect();
 
-  const quadBounds = node.getBoxQuads({ relativeTo })[0].getBounds();
+  const quadBounds = node
+    .getBoxQuads({ relativeTo, createFramesForSuppressedWhitespace: false })[0]
+    .getBounds();
   const top = quadBounds.top;
   const left = quadBounds.left;
 

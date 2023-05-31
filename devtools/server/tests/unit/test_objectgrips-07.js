@@ -16,7 +16,7 @@ registerCleanupFunction(() => {
 add_task(
   threadClientTest(async ({ threadClient, debuggee, client }) => {
     return new Promise(resolve => {
-      threadClient.addOneTimeListener("paused", function(event, packet) {
+      threadClient.once("paused", function(packet) {
         const [f, s, ne, e] = packet.frame.arguments;
         const [
           fClient,

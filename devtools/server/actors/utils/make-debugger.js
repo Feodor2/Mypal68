@@ -6,7 +6,6 @@
 
 const EventEmitter = require("devtools/shared/event-emitter");
 const Debugger = require("Debugger");
-const ReplayDebugger = require("../replay/debugger");
 
 const { reportException } = require("devtools/shared/DevToolsUtils");
 
@@ -58,23 +57,42 @@ const { reportException } = require("devtools/shared/DevToolsUtils");
 module.exports = function makeDebugger({
   findDebuggees,
   shouldAddNewGlobalAsDebuggee,
-}) {
-  const dbg = isReplaying ? new ReplayDebugger() : new Debugger();
+} = {}) {
+  const dbg = new Debugger();
   EventEmitter.decorate(dbg);
 
   dbg.allowUnobservedAsmJS = true;
   dbg.uncaughtExceptionHook = reportDebuggerHookException;
 
-  dbg.onNewGlobalObject = function(global) {
+  function onNewDebuggee(global) {
+    if (dbg.onNewDebuggee) {
+      dbg.onNewDebuggee(global);
+    }
+  }
+
+  const onNewGlobalObject = function(global) {
     if (shouldAddNewGlobalAsDebuggee(global)) {
       safeAddDebuggee(this, global);
+      onNewDebuggee(global);
     }
   };
 
+  dbg.onNewGlobalObject = onNewGlobalObject;
   dbg.addDebuggees = function() {
     for (const global of findDebuggees(this)) {
       safeAddDebuggee(this, global);
+      onNewDebuggee(global);
     }
+  };
+
+  dbg.disable = function() {
+    dbg.removeAllDebuggees();
+    dbg.onNewGlobalObject = undefined;
+  };
+
+  dbg.enable = function() {
+    dbg.addDebuggees();
+    dbg.onNewGlobalObject = onNewGlobalObject;
   };
 
   return dbg;

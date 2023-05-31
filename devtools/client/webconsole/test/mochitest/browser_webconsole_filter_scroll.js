@@ -27,16 +27,12 @@ add_task(async function() {
   info(
     "Filter out some messages and check that the scroll position is not impacted"
   );
-  const filterInput = hud.ui.outputNode.querySelector(".text-filter");
-
-  filterInput.value = "init-";
-  filterInput.focus();
   let onMessagesFiltered = waitFor(
     () => !findMessage(hud, "init-1"),
     null,
     200
   );
-  EventUtils.sendString("9");
+  await setFilterState(hud, { text: "init-9" });
   await onMessagesFiltered;
   ok(
     isScrolledToBottom(outputContainer),
@@ -51,8 +47,7 @@ add_task(async function() {
     null,
     200
   );
-  filterInput.select();
-  EventUtils.synthesizeKey("KEY_Delete");
+  await setFilterState(hud, { text: "" });
   await onMessagesUnFiltered;
   ok(
     isScrolledToBottom(outputContainer),
@@ -62,10 +57,8 @@ add_task(async function() {
   info("Scroll up");
   outputContainer.scrollTop = 0;
 
-  filterInput.value = "init-";
-  filterInput.focus();
+  await setFilterState(hud, { text: "init-9" });
   onMessagesFiltered = waitFor(() => !findMessage(hud, "init-1"), null, 200);
-  EventUtils.sendString("9");
   await onMessagesFiltered;
   is(
     outputContainer.scrollTop,
@@ -77,8 +70,7 @@ add_task(async function() {
     "Clear the text filter and check that the scroll position is not impacted"
   );
   onMessagesUnFiltered = waitFor(() => findMessage(hud, "init-1"), null, 200);
-  filterInput.select();
-  EventUtils.synthesizeKey("KEY_Delete");
+  await setFilterState(hud, { text: "" });
   await onMessagesUnFiltered;
   is(
     outputContainer.scrollTop,

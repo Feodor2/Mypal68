@@ -7,7 +7,7 @@ const expect = require("expect");
 const { render } = require("enzyme");
 
 // Components under test.
-const WarningGroup = require("devtools/client/webconsole/components/message-types/WarningGroup");
+const WarningGroup = require("devtools/client/webconsole/components/Output/message-types/WarningGroup");
 const {
   MESSAGE_SOURCE,
   MESSAGE_TYPE,
@@ -79,9 +79,12 @@ describe("WarningGroup component:", () => {
     const firstMessage = stubPreparedMessages.get(
       "ReferenceError: asdf is not defined"
     );
+    firstMessage.messageText =
+      "The resource at “https://evil.com” was blocked.";
+    firstMessage.category = "cookieBlockedPermission";
     const type = MESSAGE_TYPE.CONTENT_BLOCKING_GROUP;
     const message = createWarningGroupMessage(
-      `${type}-${firstMessage.innerWindowID}`,
+      `${firstMessage.type}-${firstMessage.innerWindowID}`,
       type,
       firstMessage
     );
@@ -95,7 +98,7 @@ describe("WarningGroup component:", () => {
     );
 
     expect(wrapper.find(".message-body").text()).toBe(
-      "Content blocked messages 24"
+      "The resource at “<URL>” was blocked. 24"
     );
     expect(wrapper.find(".arrow[aria-expanded=false]")).toExist();
   });

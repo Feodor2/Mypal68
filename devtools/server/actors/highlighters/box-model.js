@@ -14,14 +14,19 @@ const {
   isNodeValid,
   moveInfobar,
 } = require("./utils/markup");
+const { PSEUDO_CLASSES } = require("devtools/shared/css/constants");
 const {
   getCurrentZoom,
   setIgnoreLayoutChanges,
 } = require("devtools/shared/layout/utils");
 const {
   getNodeDisplayName,
+  getNodeGridFlexType,
 } = require("devtools/server/actors/inspector/utils");
 const nodeConstants = require("devtools/shared/dom-node-constants");
+const { LocalizationHelper } = require("devtools/shared/l10n");
+const STRINGS_URI = "devtools/shared/locales/highlighters.properties";
+const L10N = new LocalizationHelper(STRINGS_URI);
 
 // Note that the order of items in this array is important because it is used
 // for drawing the BoxModelHighlighter's path elements correctly.
@@ -29,8 +34,6 @@ const BOX_MODEL_REGIONS = ["margin", "border", "padding", "content"];
 const BOX_MODEL_SIDES = ["top", "right", "bottom", "left"];
 // Width of boxmodelhighlighter guides
 const GUIDE_STROKE_WIDTH = 1;
-// FIXME: add ":visited" and ":link" after bug 713106 is fixed
-const PSEUDO_CLASSES = [":hover", ":active", ":focus", ":focus-within"];
 
 /**
  * The BoxModelHighlighter draws the box model regions on top of a node.
@@ -84,6 +87,8 @@ const PSEUDO_CLASSES = [":hover", ":active", ":focus", ":focus-within"];
  *           <span class="box-model-infobar-id">Node id</span>
  *           <span class="box-model-infobar-classes">.someClass</span>
  *           <span class="box-model-infobar-pseudo-classes">:hover</span>
+ *           <span class="box-model-infobar-grid-type">Grid Type</span>
+ *           <span class="box-model-infobar-flex-type">Flex Type</span>
  *         </div>
  *       </div>
  *       <div class="box-model-infobar-arrow box-model-infobar-arrow-bottom"/>
@@ -257,6 +262,26 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       attributes: {
         class: "infobar-dimensions",
         id: "infobar-dimensions",
+      },
+      prefix: this.ID_CLASS_PREFIX,
+    });
+
+    createNode(this.win, {
+      nodeType: "span",
+      parent: texthbox,
+      attributes: {
+        class: "infobar-grid-type",
+        id: "infobar-grid-type",
+      },
+      prefix: this.ID_CLASS_PREFIX,
+    });
+
+    createNode(this.win, {
+      nodeType: "span",
+      parent: texthbox,
+      attributes: {
+        class: "infobar-flex-type",
+        id: "infobar-flex-type",
       },
       prefix: this.ID_CLASS_PREFIX,
     });
@@ -786,13 +811,32 @@ class BoxModelHighlighter extends AutoRefreshHighlighter {
       " \u00D7 " +
       parseFloat((height / zoom).toPrecision(6));
 
+    const { grid: gridType, flex: flexType } = getNodeGridFlexType(node);
+    const gridLayoutTextType = this._getLayoutTextType("gridType", gridType);
+    const flexLayoutTextType = this._getLayoutTextType("flexType", flexType);
+
     this.getElement("infobar-tagname").setTextContent(displayName);
     this.getElement("infobar-id").setTextContent(id);
     this.getElement("infobar-classes").setTextContent(classList);
     this.getElement("infobar-pseudo-classes").setTextContent(pseudos);
     this.getElement("infobar-dimensions").setTextContent(dim);
+    this.getElement("infobar-grid-type").setTextContent(gridLayoutTextType);
+    this.getElement("infobar-flex-type").setTextContent(flexLayoutTextType);
 
     this._moveInfobar();
+  }
+
+  _getLayoutTextType(layoutTypeKey, { isContainer, isItem }) {
+    if (!isContainer && !isItem) {
+      return "";
+    }
+    if (isContainer && !isItem) {
+      return L10N.getStr(`${layoutTypeKey}.container`);
+    }
+    if (!isContainer && isItem) {
+      return L10N.getStr(`${layoutTypeKey}.item`);
+    }
+    return L10N.getStr(`${layoutTypeKey}.dual`);
   }
 
   _getPseudoClasses(node) {

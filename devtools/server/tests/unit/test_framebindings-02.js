@@ -35,7 +35,7 @@ function run_test() {
 }
 
 function test_pause_frame() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet) {
+  gThreadClient.once("paused", function(packet) {
     let parentEnv = packet.frame.environment.parent;
     const bindings = parentEnv.bindings;
     const args = bindings.arguments;
@@ -67,6 +67,7 @@ function test_pause_frame() {
       var a = 1;
       var b = true;
       var c = { a: "a" };
+      eval("");
       debugger;
     }
     stopMe(42, true, "nasu", null, undefined, { foo: "bar" });

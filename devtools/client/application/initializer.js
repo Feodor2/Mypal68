@@ -21,11 +21,17 @@ const Provider = createFactory(
   require("devtools/client/shared/vendor/react-redux").Provider
 );
 const { bindActionCreators } = require("devtools/client/shared/vendor/redux");
-const { L10nRegistry } = require("resource://gre/modules/L10nRegistry.jsm");
-const Services = require("Services");
+const { l10n } = require("./src/modules/l10n");
 
 const { configureStore } = require("./src/create-store");
 const actions = require("./src/actions/index");
+
+const { WorkersListener } =
+  require("devtools/client/shared/workers-listener");
+
+// NOTE: this API may change names for these functions. See Bug 1531349.
+const { addMultiE10sListener, isMultiE10s, removeMultiE10sListener } =
+  require("devtools/shared/multi-e10s-helper");
 
 const App = createFactory(require("./src/components/App"));
 
@@ -37,6 +43,7 @@ window.Application = {
   async bootstrap({ toolbox, panel }) {
     this.updateWorkers = this.updateWorkers.bind(this);
     this.updateDomain = this.updateDomain.bind(this);
+    this.updateCanDebugWorkers = this.updateCanDebugWorkers.bind(this);
 
     this.mount = document.querySelector("#mount");
     this.toolbox = toolbox;
@@ -51,47 +58,26 @@ window.Application = {
         return toolbox.selectTool(toolId);
       },
     };
-    this.toolbox.target.on("workerListChanged", this.updateWorkers);
-    this.client.mainRoot.on(
-      "serviceWorkerRegistrationListChanged",
-      this.updateWorkers
-    );
-    this.client.mainRoot.on("processListChanged", this.updateWorkers);
-    this.client.mainRoot.onFront("serviceWorkerRegistration", front => {
-      this.serviceWorkerRegistrationFronts.push(front);
-      front.on("push-subscription-modified", this.updateWorkers);
-      front.on("registration-changed", this.updateWorkers);
-    });
-    this.toolbox.target.on("navigate", this.updateDomain);
 
+    this.workersListener = new WorkersListener(this.client.mainRoot);
+    this.workersListener.addListener(this.updateWorkers);
+    this.toolbox.target.on("navigate", this.updateDomain);
+    addMultiE10sListener(this.updateCanDebugWorkers);
+
+    // start up updates for the initial state
     this.updateDomain();
+    this.updateCanDebugWorkers();
     await this.updateWorkers();
 
-    const fluentBundles = await this.createFluentBundles();
+    await l10n.init(["devtools/application.ftl"]);
 
     // Render the root Application component.
-    const app = App({ client: this.client, fluentBundles, serviceContainer });
+    const app = App({
+      client: this.client,
+      fluentBundles: l10n.getBundles(),
+      serviceContainer,
+    });
     render(Provider({ store: this.store }, app), this.mount);
-  },
-
-  /**
-   * Retrieve message contexts for the current locales, and return them as an array of
-   * FluentBundles elements.
-   */
-  async createFluentBundles() {
-    const locales = Services.locale.appLocalesAsBCP47;
-    const generator = L10nRegistry.generateBundles(locales, [
-      "devtools/application.ftl",
-    ]);
-
-    // Return value of generateBundles is a generator and should be converted to
-    // a sync iterable before using it with React.
-    const contexts = [];
-    for await (const message of generator) {
-      contexts.push(message);
-    }
-
-    return contexts;
   },
 
   async updateWorkers() {
@@ -99,27 +85,20 @@ window.Application = {
     this.actions.updateWorkers(service);
   },
 
-  removeRegistrationFrontListeners() {
-    for (const front of this.serviceWorkerRegistrationFronts) {
-      front.off("push-subscription-modified", this.updateWorkers);
-      front.off("registration-changed", this.updateWorkers);
-    }
-    this.serviceWorkerRegistrationFronts = [];
-  },
-
   updateDomain() {
     this.actions.updateDomain(this.toolbox.target.url);
   },
 
+  updateCanDebugWorkers() {
+    // NOTE: this API may change names for this function. See Bug 1531349.
+    const canDebugWorkers = !isMultiE10s();
+    this.actions.updateCanDebugWorkers(canDebugWorkers);
+  },
+
   destroy() {
-    this.toolbox.target.off("workerListChanged", this.updateWorkers);
-    this.client.mainRoot.off(
-      "serviceWorkerRegistrationListChanged",
-      this.updateWorkers
-    );
-    this.client.mainRoot.off("processListChanged", this.updateWorkers);
-    this.removeRegistrationFrontListeners();
+    this.workersListener.removeListener();
     this.toolbox.target.off("navigate", this.updateDomain);
+    removeMultiE10sListener(this.updateCanDebugWorkers);
 
     unmountComponentAtNode(this.mount);
     this.mount = null;

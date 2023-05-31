@@ -1096,8 +1096,7 @@ var Scratchpad = {
         this.notificationBox.appendNotification(
           this.strings.formatStringFromName(
             "importFromFile.convert.failed",
-            [charset],
-            1
+            [charset]
           ),
           "file-import-convert-failed",
           null,
@@ -1150,8 +1149,7 @@ var Scratchpad = {
           if (!content) {
             const message = this.strings.formatStringFromName(
               "importFromFile.convert.failed",
-              [charsets.join(", ")],
-              1
+              [charsets.join(", ")]
             );
             this.notificationBox.appendNotification(
               message,
@@ -1657,8 +1655,7 @@ var Scratchpad = {
     const { line, ch } = this.editor.getCursor();
     statusBarField.textContent = this.strings.formatStringFromName(
       "scratchpad.statusBarLineCol",
-      [line + 1, ch + 1],
-      2
+      [line + 1, ch + 1]
     );
   },
 
@@ -1706,8 +1703,7 @@ var Scratchpad = {
           document.getElementById("sp-key-display"),
           true
         ),
-      ],
-      3
+      ]
     );
 
     let args = window.arguments;
@@ -1755,8 +1751,7 @@ var Scratchpad = {
         const okstring = this.strings.GetStringFromName("selfxss.okstring");
         const msg = this.strings.formatStringFromName(
           "selfxss.msg",
-          [okstring],
-          1
+          [okstring]
         );
         this._onPaste = pasteHandlerGen(
           this.editor.container.contentDocument.body,
@@ -2315,7 +2310,8 @@ ScratchpadSidebar.prototype = {
               return this._scratchpad.webConsoleClient.longString(actor);
             },
             releaseActor: actor => {
-              this._scratchpad.debuggerClient.release(actor);
+              // Ignore release failure, since the object actor may have been already GC.
+              this._scratchpad.debuggerClient.release(actor).catch(() => {});
             },
           });
         }

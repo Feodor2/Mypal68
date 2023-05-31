@@ -47,13 +47,19 @@ export async function onConnect(connection: any, actions: Object) {
     skipBreakpoints: prefs.skipPausing,
   });
 
+  // Retrieve possible event listener breakpoints
+  actions.getEventListenerBreakpointTypes().catch(e => console.error(e));
+
+  // Initialize the event breakpoints on the thread up front so that
+  // they are active once attached.
+  actions.addEventListenerBreakpoints([]).catch(e => console.error(e));
+
   // In Firefox, we need to initially request all of the sources. This
   // usually fires off individual `newSource` notifications as the
   // debugger finds them, but there may be existing sources already in
   // the debugger (if it's paused already, or if loading the page from
   // bfcache) so explicity fire `newSource` events for all returned
   // sources.
-  const sourceInfo = await clientCommands.fetchSources();
   const traits = tabTarget.traits;
   await actions.connect(
     tabTarget.url,
@@ -61,14 +67,19 @@ export async function onConnect(connection: any, actions: Object) {
     traits && traits.canRewind,
     tabTarget.isWebExtension
   );
-  await actions.newGeneratedSources(sourceInfo);
+
+  const fetched = clientCommands
+    .fetchSources()
+    .then(sources => actions.newGeneratedSources(sources));
 
   // If the threadClient is already paused, make sure to show a
   // paused state.
   const pausedPacket = threadClient.getLastPausePacket();
   if (pausedPacket) {
-    clientEvents.paused(threadClient, "paused", pausedPacket);
+    clientEvents.paused(threadClient, pausedPacket);
   }
+
+  return fetched;
 }
 
 export { createObjectClient, clientCommands, clientEvents };

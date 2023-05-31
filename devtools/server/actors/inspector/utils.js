@@ -62,6 +62,36 @@ const getNodeDisplayName = function(rawNode) {
   return (rawNode.prefix ? rawNode.prefix + ":" : "") + rawNode.localName;
 };
 
+/**
+ * Returns flex and grid information about a DOM node.
+ * In particular is it a grid flex/container and/or item?
+ *
+ * @param  {DOMNode} node
+ *         The node for which then information is required
+ * @return {Object}
+ *         An object like { grid: { isContainer, isItem }, flex: { isContainer, isItem } }
+ */
+function getNodeGridFlexType(node) {
+  return {
+    grid: getNodeGridType(node),
+    flex: getNodeFlexType(node),
+  };
+}
+
+function getNodeFlexType(node) {
+  return {
+    isContainer: node.getAsFlexContainer && !!node.getAsFlexContainer(),
+    isItem: !!node.parentFlexElement,
+  };
+}
+
+function getNodeGridType(node) {
+  return {
+    isContainer: node.getGridFragments && node.getGridFragments().length,
+    isItem: !!findGridParentContainerForNode(node),
+  };
+}
+
 function nodeDocument(node) {
   if (Cu.isDeadWrapper(node)) {
     return null;
@@ -162,7 +192,9 @@ function nodeHasSize(node) {
     return false;
   }
 
-  const quads = node.getBoxQuads();
+  const quads = node.getBoxQuads({
+    createFramesForSuppressedWhitespace: false,
+  });
   return quads.some(quad => {
     const bounds = quad.getBounds();
     return bounds.width && bounds.height;
@@ -347,11 +379,42 @@ function getClosestBackgroundImage(node) {
   return "none";
 }
 
+/**
+ * If the provided node is a grid item, then return its parent grid.
+ *
+ * @param  {DOMNode} node
+ *         The node that is supposedly a grid item.
+ * @return {DOMNode|null}
+ *         The parent grid if found, null otherwise.
+ */
+function findGridParentContainerForNode(node) {
+  try {
+    while ((node = node.parentNode)) {
+      const display = node.ownerGlobal.getComputedStyle(node).display;
+
+      if (display.includes("grid")) {
+        return node;
+      } else if (display === "contents") {
+        // Continue walking up the tree since the parent node is a content element.
+        continue;
+      }
+
+      break;
+    }
+  } catch (e) {
+    // Getting the parentNode can fail when the supplied node is in shadow DOM.
+  }
+
+  return null;
+}
+
 module.exports = {
   allAnonymousContentTreeWalkerFilter,
+  findGridParentContainerForNode,
   getClosestBackgroundColor,
   getClosestBackgroundImage,
   getNodeDisplayName,
+  getNodeGridFlexType,
   imageToImageData,
   isNodeDead,
   nodeDocument,

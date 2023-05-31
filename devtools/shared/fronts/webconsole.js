@@ -47,7 +47,7 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
 
     this.on("evaluationResult", this.onEvaluationResult);
     this.on("serverNetworkEvent", this.onNetworkEvent);
-    this._client.addListener("networkEventUpdate", this.onNetworkEventUpdate);
+    this._client.on("networkEventUpdate", this.onNetworkEventUpdate);
   }
 
   getNetworkRequest(actorId) {
@@ -98,6 +98,7 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
       isThirdPartyTrackingResource: actor.isThirdPartyTrackingResource,
       referrerPolicy: actor.referrerPolicy,
       blockedReason: actor.blockedReason,
+      channelId: actor.channelId,
     };
     this._networkRequests.set(actor.actor, networkInfo);
 
@@ -114,7 +115,7 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
    * @param object packet
    *        The message received from the server.
    */
-  _onNetworkEventUpdate(type, packet) {
+  _onNetworkEventUpdate(packet) {
     const networkInfo = this.getNetworkRequest(packet.from);
     if (!networkInfo) {
       return;
@@ -172,20 +173,6 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
    * @param object [options={}]
    *        Options for evaluation:
    *
-   *        - bindObjectActor: an ObjectActor ID. The OA holds a reference to
-   *        a Debugger.Object that wraps a content object. This option allows
-   *        you to bind |_self| to the D.O of the given OA, during string
-   *        evaluation.
-   *
-   *        See: Debugger.Object.executeInGlobalWithBindings() for information
-   *        about bindings.
-   *
-   *        Use case: the variable view needs to update objects and it does so
-   *        by knowing the ObjectActor it inspects and binding |_self| to the
-   *        D.O of the OA. As such, variable view sends strings like these for
-   *        eval:
-   *          _self["prop"] = value;
-   *
    *        - frameActor: a FrameActor ID. The FA holds a reference to
    *        a Debugger.Frame. This option allows you to evaluate the string in
    *        the frame of the given FA.
@@ -204,7 +191,6 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
   evaluateJS(string, opts = {}) {
     const options = {
       text: string,
-      bindObjectActor: opts.bindObjectActor,
       frameActor: opts.frameActor,
       url: opts.url,
       selectedNodeActor: opts.selectedNodeActor,
@@ -220,7 +206,6 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
   evaluateJSAsync(string, opts = {}) {
     const options = {
       text: string,
-      bindObjectActor: opts.bindObjectActor,
       frameActor: opts.frameActor,
       url: opts.url,
       selectedNodeActor: opts.selectedNodeActor,
@@ -491,7 +476,7 @@ class WebConsoleFront extends FrontClassWithSpec(webconsoleSpec) {
     }
     this.off("evaluationResult", this.onEvaluationResult);
     this.off("serverNetworkEvent", this.onNetworkEvent);
-    this._client.removeListener(
+    this._client.off(
       "networkEventUpdate",
       this.onNetworkEventUpdate
     );

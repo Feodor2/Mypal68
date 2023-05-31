@@ -15,7 +15,7 @@ const TEST_DATA = [
   {
     functionDisplayName: "returnPromise/<",
     line: 21,
-    column: 37,
+    column: 44,
   },
   {
     functionDisplayName: "returnPromise",

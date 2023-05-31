@@ -34,8 +34,8 @@ function run_test() {
 }
 
 function test_pause_frame() {
-  gThreadClient.addOneTimeListener("paused", function(event, packet1) {
-    gThreadClient.addOneTimeListener("paused", function(event, packet2) {
+  gThreadClientgThreadClient.once("paused", function(packet1) {
+    gThreadClient.gThreadClient.once("paused", function(packet2) {
       Assert.equal(packet1.frame.actor, packet2.frame.actor);
       gThreadClient.resume().then(function() {
         finishClient(gClient);

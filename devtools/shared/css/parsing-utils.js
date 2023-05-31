@@ -23,6 +23,7 @@ loader.lazyRequireGetter(
 const SELECTOR_ATTRIBUTE = (exports.SELECTOR_ATTRIBUTE = 1);
 const SELECTOR_ELEMENT = (exports.SELECTOR_ELEMENT = 2);
 const SELECTOR_PSEUDO_CLASS = (exports.SELECTOR_PSEUDO_CLASS = 3);
+const CSS_BLOCKS = { "(": ")", "[": "]", "{": "}" };
 
 // When commenting out a declaration, we put this character into the
 // comment opener so that future parses of the commented text know to
@@ -283,6 +284,7 @@ function cssTrim(str) {
  *        rewriteDeclarations, and skip the usual name-checking
  *        heuristic.
  */
+/* eslint-disable complexity */
 function parseDeclarationsInternal(
   isCssPropertyKnown,
   inputString,
@@ -298,6 +300,12 @@ function parseDeclarationsInternal(
 
   let declarations = [getEmptyDeclaration()];
   let lastProp = declarations[0];
+
+  // This tracks the various CSS blocks the current token is in currently.
+  // This is a stack we push to when a block is opened, and we pop from when a block is
+  // closed. Within a block, colons and semicolons don't advance the way they do outside
+  // of blocks.
+  let currentBlocks = [];
 
   // This tracks the "!important" parsing state.  The states are:
   // 0 - haven't seen anything
@@ -335,7 +343,22 @@ function parseDeclarationsInternal(
       importantWS = true;
     }
 
-    if (token.tokenType === "symbol" && token.text === ":") {
+    if (
+      token.tokenType === "symbol" &&
+      currentBlocks[currentBlocks.length - 1] === token.text
+    ) {
+      // Closing the last block that was opened.
+      currentBlocks.pop();
+      current += token.text;
+    } else if (token.tokenType === "symbol" && CSS_BLOCKS[token.text]) {
+      // Opening a new block.
+      currentBlocks.push(CSS_BLOCKS[token.text]);
+      current += token.text;
+    } else if (token.tokenType === "function") {
+      // Opening a function is like opening a new block, so push one to the stack.
+      currentBlocks.push(CSS_BLOCKS["("]);
+      current += token.text + "(";
+    } else if (token.tokenType === "symbol" && token.text === ":") {
       // Either way, a "!important" we've seen is no longer valid now.
       importantState = 0;
       importantWS = false;
@@ -344,6 +367,7 @@ function parseDeclarationsInternal(
         lastProp.name = cssTrim(current);
         lastProp.colonOffsets = [token.startOffset, token.endOffset];
         current = "";
+        currentBlocks = [];
 
         // When parsing a comment body, if the left-hand-side is not a
         // valid property name, then drop it and stop parsing.
@@ -360,13 +384,18 @@ function parseDeclarationsInternal(
         // with colons)
         current += ":";
       }
-    } else if (token.tokenType === "symbol" && token.text === ";") {
+    } else if (
+      token.tokenType === "symbol" &&
+      token.text === ";" &&
+      !currentBlocks.length
+    ) {
       lastProp.terminator = "";
       // When parsing a comment, if the name hasn't been set, then we
       // have probably just seen an ordinary semicolon used in text,
       // so drop this and stop parsing.
       if (inComment && !lastProp.name) {
         current = "";
+        currentBlocks = [];
         break;
       }
       if (importantState === 2) {
@@ -379,6 +408,7 @@ function parseDeclarationsInternal(
       }
       lastProp.value = cssTrim(current);
       current = "";
+      currentBlocks = [];
       importantState = 0;
       importantWS = false;
       declarations.push(getEmptyDeclaration());
@@ -475,6 +505,7 @@ function parseDeclarationsInternal(
 
   return declarations;
 }
+/* eslint-enable complexity */
 
 /**
  * Returns an array of CSS declarations given a string.
@@ -561,6 +592,7 @@ function parseNamedDeclarations(
  * @return {Array} an array of objects with the following signature:
  *         [{ "value": string, "type": integer }, ...]
  */
+/* eslint-disable complexity */
 function parsePseudoClassesAndAttributes(value) {
   if (!value) {
     throw new Error("empty input string");
@@ -646,6 +678,7 @@ function parsePseudoClassesAndAttributes(value) {
 
   return result;
 }
+/* eslint-enable complexity */
 
 /**
  * Expects a single CSS value to be passed as the input and parses the value

@@ -24,7 +24,7 @@ add_task(async function() {
   await clickContainer(textFront, inspector);
   is(
     inspector.markup.doc.activeElement,
-    getContainerForNodeFront(textFront, inspector).editor.value,
+    getContainerForNodeFront(textFront, inspector).editor.textNode.valuePreRef.current,
     "The currently focused element is the node's text content"
   );
 

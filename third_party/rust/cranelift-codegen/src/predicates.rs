@@ -1,7 +1,7 @@
 //! Predicate functions for testing instruction fields.
 //!
 //! This module defines functions that are used by the instruction predicates defined by
-//! `cranelift-codegen/meta-python/cdsl/predicates.py` classes.
+//! `cranelift-codegen/meta/src/cdsl/instructions.rs` classes.
 //!
 //! The predicates the operate on integer fields use `Into<i64>` as a shared trait bound. This
 //! bound is implemented by all the native integer types as well as `Imm64`.
@@ -10,6 +10,12 @@
 //! dead code warning.
 
 use crate::ir;
+
+/// Check that an integer value is zero.
+#[allow(dead_code)]
+pub fn is_zero_int<T: Into<i64>>(x: T) -> bool {
+    x.into() == 0
+}
 
 /// Check that a 64-bit floating point value is zero.
 #[allow(dead_code)]
@@ -23,6 +29,18 @@ pub fn is_zero_64_bit_float<T: Into<ir::immediates::Ieee64>>(x: T) -> bool {
 pub fn is_zero_32_bit_float<T: Into<ir::immediates::Ieee32>>(x: T) -> bool {
     let x32 = x.into();
     x32.bits() == 0
+}
+
+/// Check that a 128-bit vector contains all zeroes.
+#[allow(dead_code)]
+pub fn is_all_zeroes_128_bit<'b, T: PartialEq<&'b [u8; 16]>>(x: T) -> bool {
+    x.eq(&&[0; 16])
+}
+
+/// Check that a 128-bit vector contains all ones.
+#[allow(dead_code)]
+pub fn is_all_ones_128_bit<'b, T: PartialEq<&'b [u8; 16]>>(x: T) -> bool {
+    x.eq(&&[0xff; 16])
 }
 
 /// Check that `x` is the same as `y`.
@@ -102,5 +120,20 @@ mod tests {
         assert!(is_signed_int(x2, 16, 2));
         assert!(!is_signed_int(x1, 16, 4));
         assert!(!is_signed_int(x2, 16, 4));
+    }
+
+    #[test]
+    fn is_all_zeroes() {
+        assert!(is_all_zeroes_128_bit(&[0; 16]));
+        assert!(is_all_zeroes_128_bit(vec![
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+        ]));
+        assert!(!is_all_zeroes_128_bit(&[1; 16]));
+    }
+
+    #[test]
+    fn is_all_ones() {
+        assert!(!is_all_ones_128_bit(&[0; 16]));
+        assert!(is_all_ones_128_bit(&[0xff; 16]));
     }
 }

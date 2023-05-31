@@ -17,17 +17,17 @@
 use std::boxed::Box;
 use std::vec::Vec;
 
-use limits::{
+use crate::limits::{
     MAX_WASM_FUNCTIONS, MAX_WASM_FUNCTION_LOCALS, MAX_WASM_STRING_SIZE, MAX_WASM_TABLE_ENTRIES,
 };
 
-use primitives::{
+use crate::primitives::{
     BinaryReaderError, CustomSectionKind, ExternalKind, FuncType, GlobalType,
     ImportSectionEntryType, LinkingType, MemoryType, Naming, Operator, RelocType, Result,
     SectionCode, TableType, Type,
 };
 
-use readers::{
+use crate::readers::{
     CodeSectionReader, Data, DataKind, DataSectionReader, Element, ElementItems, ElementKind,
     ElementSectionReader, Export, ExportSectionReader, FunctionBody, FunctionSectionReader, Global,
     GlobalSectionReader, Import, ImportSectionReader, LinkingSectionReader, MemorySectionReader,
@@ -35,7 +35,7 @@ use readers::{
     RelocSectionReader, Section, SectionReader, TableSectionReader, TypeSectionReader,
 };
 
-use binary_reader::{BinaryReader, Range};
+use crate::binary_reader::{BinaryReader, Range};
 
 const MAX_DATA_CHUNK_SIZE: usize = MAX_WASM_STRING_SIZE;
 
@@ -269,8 +269,12 @@ impl<'a> Parser<'a> {
                 .original_position();
         }
         match self.section_reader {
-            ParserSectionReader::CodeSectionReader(ref reader) => return reader.original_position(),
-            ParserSectionReader::DataSectionReader(ref reader) => return reader.original_position(),
+            ParserSectionReader::CodeSectionReader(ref reader) => {
+                return reader.original_position()
+            }
+            ParserSectionReader::DataSectionReader(ref reader) => {
+                return reader.original_position()
+            }
             ParserSectionReader::ElementSectionReader(ref reader) => {
                 return reader.original_position();
             }
@@ -292,8 +296,12 @@ impl<'a> Parser<'a> {
             ParserSectionReader::TableSectionReader(ref reader) => {
                 return reader.original_position();
             }
-            ParserSectionReader::TypeSectionReader(ref reader) => return reader.original_position(),
-            ParserSectionReader::NameSectionReader(ref reader) => return reader.original_position(),
+            ParserSectionReader::TypeSectionReader(ref reader) => {
+                return reader.original_position()
+            }
+            ParserSectionReader::NameSectionReader(ref reader) => {
+                return reader.original_position()
+            }
             ParserSectionReader::LinkingSectionReader(ref reader) => {
                 return reader.original_position();
             }

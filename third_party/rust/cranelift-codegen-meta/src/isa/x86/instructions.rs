@@ -1,21 +1,33 @@
 #![allow(non_snake_case)]
 
 use crate::cdsl::formats::FormatRegistry;
-use crate::cdsl::inst::{InstructionBuilder as Inst, InstructionGroup};
+use crate::cdsl::instructions::{
+    AllInstructions, InstructionBuilder as Inst, InstructionGroup, InstructionGroupBuilder,
+};
 use crate::cdsl::operands::{create_operand as operand, create_operand_doc as operand_doc};
 use crate::cdsl::types::ValueType;
 use crate::cdsl::typevar::{Interval, TypeSetBuilder, TypeVar};
+use crate::shared::immediates::Immediates;
 use crate::shared::types;
 
-pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
-    let mut ig = InstructionGroup::new("x86", "x86 specific instruction set");
+pub(crate) fn define(
+    mut all_instructions: &mut AllInstructions,
+    format_registry: &FormatRegistry,
+    immediates: &Immediates,
+) -> InstructionGroup {
+    let mut ig = InstructionGroupBuilder::new(
+        "x86",
+        "x86 specific instruction set",
+        &mut all_instructions,
+        format_registry,
+    );
 
     let iflags: &TypeVar = &ValueType::Special(types::Flag::IFlags.into()).into();
 
     let iWord = &TypeVar::new(
         "iWord",
         "A scalar integer machine word",
-        TypeSetBuilder::new().ints(32..64).finish(),
+        TypeSetBuilder::new().ints(32..64).build(),
     );
     let nlo = &operand_doc("nlo", iWord, "Low part of numerator");
     let nhi = &operand_doc("nhi", iWord, "High part of numerator");
@@ -39,8 +51,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         )
         .operands_in(vec![nlo, nhi, d])
         .operands_out(vec![q, r])
-        .can_trap(true)
-        .finish(format_registry),
+        .can_trap(true),
     );
 
     ig.push(
@@ -59,8 +70,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         )
         .operands_in(vec![nlo, nhi, d])
         .operands_out(vec![q, r])
-        .can_trap(true)
-        .finish(format_registry),
+        .can_trap(true),
     );
 
     let argL = &operand("argL", iWord);
@@ -79,8 +89,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         "#,
         )
         .operands_in(vec![argL, argR])
-        .operands_out(vec![resLo, resHi])
-        .finish(format_registry),
+        .operands_out(vec![resLo, resHi]),
     );
 
     ig.push(
@@ -94,8 +103,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         "#,
         )
         .operands_in(vec![argL, argR])
-        .operands_out(vec![resLo, resHi])
-        .finish(format_registry),
+        .operands_out(vec![resLo, resHi]),
     );
 
     let Float = &TypeVar::new(
@@ -104,7 +112,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         TypeSetBuilder::new()
             .floats(Interval::All)
             .simd_lanes(Interval::All)
-            .finish(),
+            .build(),
     );
     let IntTo = &TypeVar::new(
         "IntTo",
@@ -112,7 +120,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         TypeSetBuilder::new()
             .ints(32..64)
             .simd_lanes(Interval::All)
-            .finish(),
+            .build(),
     );
     let x = &operand("x", Float);
     let a = &operand("a", IntTo);
@@ -131,8 +139,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         "#,
         )
         .operands_in(vec![x])
-        .operands_out(vec![a])
-        .finish(format_registry),
+        .operands_out(vec![a]),
     );
 
     let x = &operand("x", Float);
@@ -146,7 +153,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         Floating point minimum with x86 semantics.
 
         This is equivalent to the C ternary operator `x < y ? x : y` which
-        differs from :inst:`fmin` when either operand is NaN or when comparing
+        differs from `fmin` when either operand is NaN or when comparing
         +0.0 to -0.0.
 
         When the two operands don't compare as LT, `y` is returned unchanged,
@@ -154,8 +161,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         "#,
         )
         .operands_in(vec![x, y])
-        .operands_out(vec![a])
-        .finish(format_registry),
+        .operands_out(vec![a]),
     );
 
     ig.push(
@@ -165,7 +171,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         Floating point maximum with x86 semantics.
 
         This is equivalent to the C ternary operator `x > y ? x : y` which
-        differs from :inst:`fmax` when either operand is NaN or when comparing
+        differs from `fmax` when either operand is NaN or when comparing
         +0.0 to -0.0.
 
         When the two operands don't compare as GT, `y` is returned unchanged,
@@ -173,8 +179,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         "#,
         )
         .operands_in(vec![x, y])
-        .operands_out(vec![a])
-        .finish(format_registry),
+        .operands_out(vec![a]),
     );
 
     let x = &operand("x", iWord);
@@ -193,8 +198,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         )
         .operands_in(vec![x])
         .other_side_effects(true)
-        .can_store(true)
-        .finish(format_registry),
+        .can_store(true),
     );
 
     ig.push(
@@ -212,8 +216,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
         )
         .operands_out(vec![x])
         .other_side_effects(true)
-        .can_load(true)
-        .finish(format_registry),
+        .can_load(true),
     );
 
     let y = &operand("y", iWord);
@@ -233,8 +236,7 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
     "#,
         )
         .operands_in(vec![x])
-        .operands_out(vec![y, rflags])
-        .finish(format_registry),
+        .operands_out(vec![y, rflags]),
     );
 
     ig.push(
@@ -246,9 +248,144 @@ pub fn define(format_registry: &FormatRegistry) -> InstructionGroup {
     "#,
         )
         .operands_in(vec![x])
-        .operands_out(vec![y, rflags])
-        .finish(format_registry),
+        .operands_out(vec![y, rflags]),
     );
 
-    ig
+    let uimm8 = &immediates.uimm8;
+    let TxN = &TypeVar::new(
+        "TxN",
+        "A SIMD vector type",
+        TypeSetBuilder::new()
+            .ints(Interval::All)
+            .floats(Interval::All)
+            .bools(Interval::All)
+            .simd_lanes(Interval::All)
+            .includes_scalars(false)
+            .build(),
+    );
+    let a = &operand_doc("a", TxN, "A vector value (i.e. held in an XMM register)");
+    let b = &operand_doc("b", TxN, "A vector value (i.e. held in an XMM register)");
+    let i = &operand_doc("i", uimm8, "An ordering operand controlling the copying of data from the source to the destination; see PSHUFD in Intel manual for details");
+
+    ig.push(
+        Inst::new(
+            "x86_pshufd",
+            r#"
+    Packed Shuffle Doublewords -- copies data from either memory or lanes in an extended
+    register and re-orders the data according to the passed immediate byte.
+    "#,
+        )
+        .operands_in(vec![a, i]) // TODO allow copying from memory here (need more permissive type than TxN)
+        .operands_out(vec![a]),
+    );
+
+    ig.push(
+        Inst::new(
+            "x86_pshufb",
+            r#"
+    Packed Shuffle Bytes -- re-orders data in an extended register using a shuffle
+    mask from either memory or another extended register
+    "#,
+        )
+        .operands_in(vec![a, b]) // TODO allow re-ordering from memory here (need more permissive type than TxN)
+        .operands_out(vec![a]),
+    );
+
+    let Idx = &operand_doc("Idx", uimm8, "Lane index");
+    let x = &operand("x", TxN);
+    let a = &operand("a", &TxN.lane_of());
+
+    ig.push(
+        Inst::new(
+            "x86_pextr",
+            r#"
+        Extract lane ``Idx`` from ``x``.
+        The lane index, ``Idx``, is an immediate value, not an SSA value. It
+        must indicate a valid lane index for the type of ``x``.
+        "#,
+        )
+        .operands_in(vec![x, Idx])
+        .operands_out(vec![a]),
+    );
+
+    let IBxN = &TypeVar::new(
+        "IBxN",
+        "A SIMD vector type containing only booleans and integers",
+        TypeSetBuilder::new()
+            .ints(Interval::All)
+            .bools(Interval::All)
+            .simd_lanes(Interval::All)
+            .includes_scalars(false)
+            .build(),
+    );
+    let x = &operand("x", IBxN);
+    let y = &operand_doc("y", &IBxN.lane_of(), "New lane value");
+    let a = &operand("a", IBxN);
+
+    ig.push(
+        Inst::new(
+            "x86_pinsr",
+            r#"
+        Insert ``y`` into ``x`` at lane ``Idx``.
+        The lane index, ``Idx``, is an immediate value, not an SSA value. It
+        must indicate a valid lane index for the type of ``x``.
+        "#,
+        )
+        .operands_in(vec![x, Idx, y])
+        .operands_out(vec![a]),
+    );
+
+    let FxN = &TypeVar::new(
+        "FxN",
+        "A SIMD vector type containing floats",
+        TypeSetBuilder::new()
+            .floats(Interval::All)
+            .simd_lanes(Interval::All)
+            .includes_scalars(false)
+            .build(),
+    );
+    let x = &operand("x", FxN);
+    let y = &operand_doc("y", &FxN.lane_of(), "New lane value");
+    let a = &operand("a", FxN);
+
+    ig.push(
+        Inst::new(
+            "x86_insertps",
+            r#"
+        Insert a lane of ``y`` into ``x`` at using ``Idx`` to encode both which lane the value is
+        extracted from and which it is inserted to. This is similar to x86_pinsr but inserts
+        floats, which are already stored in an XMM register.
+        "#,
+        )
+        .operands_in(vec![x, Idx, y])
+        .operands_out(vec![a]),
+    );
+
+    let x = &operand("x", FxN);
+    let y = &operand("y", FxN);
+    let a = &operand("a", FxN);
+
+    ig.push(
+        Inst::new(
+            "x86_movsd",
+            r#"
+        Move the low 64 bits of the float vector ``y`` to the low 64 bits of float vector ``x``
+        "#,
+        )
+        .operands_in(vec![x, y])
+        .operands_out(vec![a]),
+    );
+
+    ig.push(
+        Inst::new(
+            "x86_movlhps",
+            r#"
+        Move the low 64 bits of the float vector ``y`` to the high 64 bits of float vector ``x``
+        "#,
+        )
+        .operands_in(vec![x, y])
+        .operands_out(vec![a]),
+    );
+
+    ig.build()
 }

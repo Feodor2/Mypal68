@@ -17,15 +17,15 @@ use std::boxed::Box;
 use std::str;
 use std::vec::Vec;
 
-use limits::{
+use crate::limits::{
     MAX_WASM_FUNCTION_LOCALS, MAX_WASM_FUNCTION_PARAMS, MAX_WASM_FUNCTION_RETURNS,
     MAX_WASM_FUNCTION_SIZE, MAX_WASM_STRING_SIZE,
 };
 
-use primitives::{
+use crate::primitives::{
     BinaryReaderError, BrTable, CustomSectionKind, ExternalKind, FuncType, GlobalType, Ieee32,
     Ieee64, LinkingType, MemoryImmediate, MemoryType, NameType, Operator, RelocType,
-    ResizableLimits, Result, SIMDLineIndex, SectionCode, TableType, Type, V128,
+    ResizableLimits, Result, SIMDLaneIndex, SectionCode, TableType, Type, TypeOrFuncType, V128,
 };
 
 const MAX_WASM_BR_TABLE_SIZE: usize = MAX_WASM_FUNCTION_SIZE;
@@ -249,7 +249,7 @@ impl<'a> BinaryReader<'a> {
         let returns_len = self.read_var_u32()? as usize;
         if returns_len > MAX_WASM_FUNCTION_RETURNS {
             return Err(BinaryReaderError {
-                message: "function params size is out of bound",
+                message: "function returns size is out of bound",
                 offset: self.original_position() - 1,
             });
         }
@@ -416,6 +416,23 @@ impl<'a> BinaryReader<'a> {
         Ok(b)
     }
 
+    pub fn read_var_u8(&mut self) -> Result<u32> {
+        // Optimization for single byte i32.
+        let byte = self.read_u8()?;
+        if (byte & 0x80) == 0 {
+            return Ok(byte);
+        }
+
+        let result = (self.read_u8()? << 7) | (byte & 0x7F);
+        if result >= 0x100 {
+            return Err(BinaryReaderError {
+                message: "Invalid var_u8",
+                offset: self.original_position() - 1,
+            });
+        }
+        Ok(result)
+    }
+
     pub fn read_var_u32(&mut self) -> Result<u32> {
         // Optimization for single byte i32.
         let byte = self.read_u8()?;
@@ -517,6 +534,38 @@ impl<'a> BinaryReader<'a> {
         Ok((result << ashift) >> ashift)
     }
 
+    pub fn read_var_s33(&mut self) -> Result<i64> {
+        // Optimization for single byte.
+        let byte = self.read_u8()?;
+        if (byte & 0x80) == 0 {
+            return Ok(((byte as i8) << 1) as i64 >> 1);
+        }
+
+        let mut result = (byte & 0x7F) as i64;
+        let mut shift = 7;
+        loop {
+            let byte = self.read_u8()?;
+            result |= ((byte & 0x7F) as i64) << shift;
+            if shift >= 25 {
+                let continuation_bit = (byte & 0x80) != 0;
+                let sign_and_unused_bit = (byte << 1) as i8 >> (33 - shift);
+                if continuation_bit || (sign_and_unused_bit != 0 && sign_and_unused_bit != -1) {
+                    return Err(BinaryReaderError {
+                        message: "Invalid var_i33",
+                        offset: self.original_position() - 1,
+                    });
+                }
+                return Ok(result);
+            }
+            shift += 7;
+            if (byte & 0x80) == 0 {
+                break;
+            }
+        }
+        let ashift = 64 - shift;
+        Ok((result << ashift) >> ashift)
+    }
+
     pub fn read_var_i64(&mut self) -> Result<i64> {
         let mut result: i64 = 0;
         let mut shift = 0;
@@ -590,6 +639,9 @@ impl<'a> BinaryReader<'a> {
             },
             0x02 => Operator::I64Wait {
                 memarg: self.read_memarg_of_align(3)?,
+            },
+            0x03 => Operator::Fence {
+                flags: self.read_u8()? as u8,
             },
             0x10 => Operator::I32AtomicLoad {
                 memarg: self.read_memarg_of_align(2)?,
@@ -790,19 +842,36 @@ impl<'a> BinaryReader<'a> {
         })
     }
 
+    fn read_blocktype(&mut self) -> Result<TypeOrFuncType> {
+        let position = self.position;
+        if let Ok(ty) = self.read_type() {
+            Ok(TypeOrFuncType::Type(ty))
+        } else {
+            self.position = position;
+            let idx = self.read_var_s33()?;
+            if idx < 0 || idx > (core::u32::MAX as i64) {
+                return Err(BinaryReaderError {
+                    message: "invalid function type",
+                    offset: position,
+                });
+            }
+            Ok(TypeOrFuncType::FuncType(idx as u32))
+        }
+    }
+
     pub fn read_operator(&mut self) -> Result<Operator<'a>> {
         let code = self.read_u8()? as u8;
         Ok(match code {
             0x00 => Operator::Unreachable,
             0x01 => Operator::Nop,
             0x02 => Operator::Block {
-                ty: self.read_type()?,
+                ty: self.read_blocktype()?,
             },
             0x03 => Operator::Loop {
-                ty: self.read_type()?,
+                ty: self.read_blocktype()?,
             },
             0x04 => Operator::If {
-                ty: self.read_type()?,
+                ty: self.read_blocktype()?,
             },
             0x05 => Operator::Else,
             0x0b => Operator::End,
@@ -1184,15 +1253,15 @@ impl<'a> BinaryReader<'a> {
         })
     }
 
-    fn read_line_index(&mut self, max: u32) -> Result<SIMDLineIndex> {
+    fn read_lane_index(&mut self, max: u32) -> Result<SIMDLaneIndex> {
         let index = self.read_u8()?;
         if index >= max {
             return Err(BinaryReaderError {
-                message: "line index out of range",
+                message: "lane index out of range",
                 offset: self.original_position() - 1,
             });
         }
-        Ok(index as SIMDLineIndex)
+        Ok(index as SIMDLaneIndex)
     }
 
     fn read_v128(&mut self) -> Result<V128> {
@@ -1202,7 +1271,7 @@ impl<'a> BinaryReader<'a> {
     }
 
     fn read_0xfd_operator(&mut self) -> Result<Operator<'a>> {
-        let code = self.read_u8()? as u8;
+        let code = self.read_var_u8()? as u8;
         Ok(match code {
             0x00 => Operator::V128Load {
                 memarg: self.read_memarg()?,
@@ -1213,60 +1282,53 @@ impl<'a> BinaryReader<'a> {
             0x02 => Operator::V128Const {
                 value: self.read_v128()?,
             },
-            0x03 => {
-                let mut lines = [0 as SIMDLineIndex; 16];
-                for i in 0..16 {
-                    lines[i] = self.read_line_index(32)?
-                }
-                Operator::V8x16Shuffle { lines }
-            }
             0x04 => Operator::I8x16Splat,
             0x05 => Operator::I8x16ExtractLaneS {
-                line: self.read_line_index(16)?,
+                lane: self.read_lane_index(16)?,
             },
             0x06 => Operator::I8x16ExtractLaneU {
-                line: self.read_line_index(16)?,
+                lane: self.read_lane_index(16)?,
             },
             0x07 => Operator::I8x16ReplaceLane {
-                line: self.read_line_index(16)?,
+                lane: self.read_lane_index(16)?,
             },
             0x08 => Operator::I16x8Splat,
             0x09 => Operator::I16x8ExtractLaneS {
-                line: self.read_line_index(8)?,
+                lane: self.read_lane_index(8)?,
             },
             0x0a => Operator::I16x8ExtractLaneU {
-                line: self.read_line_index(8)?,
+                lane: self.read_lane_index(8)?,
             },
             0x0b => Operator::I16x8ReplaceLane {
-                line: self.read_line_index(8)?,
+                lane: self.read_lane_index(8)?,
             },
             0x0c => Operator::I32x4Splat,
             0x0d => Operator::I32x4ExtractLane {
-                line: self.read_line_index(4)?,
+                lane: self.read_lane_index(4)?,
             },
             0x0e => Operator::I32x4ReplaceLane {
-                line: self.read_line_index(4)?,
+                lane: self.read_lane_index(4)?,
             },
             0x0f => Operator::I64x2Splat,
             0x10 => Operator::I64x2ExtractLane {
-                line: self.read_line_index(2)?,
+                lane: self.read_lane_index(2)?,
             },
             0x11 => Operator::I64x2ReplaceLane {
-                line: self.read_line_index(2)?,
+                lane: self.read_lane_index(2)?,
             },
             0x12 => Operator::F32x4Splat,
             0x13 => Operator::F32x4ExtractLane {
-                line: self.read_line_index(4)?,
+                lane: self.read_lane_index(4)?,
             },
             0x14 => Operator::F32x4ReplaceLane {
-                line: self.read_line_index(4)?,
+                lane: self.read_lane_index(4)?,
             },
             0x15 => Operator::F64x2Splat,
             0x16 => Operator::F64x2ExtractLane {
-                line: self.read_line_index(2)?,
+                lane: self.read_lane_index(2)?,
             },
             0x17 => Operator::F64x2ReplaceLane {
-                line: self.read_line_index(2)?,
+                lane: self.read_lane_index(2)?,
             },
             0x18 => Operator::I8x16Eq,
             0x19 => Operator::I8x16Ne,
@@ -1384,6 +1446,26 @@ impl<'a> BinaryReader<'a> {
             0xb0 => Operator::F32x4ConvertUI32x4,
             0xb1 => Operator::F64x2ConvertSI64x2,
             0xb2 => Operator::F64x2ConvertUI64x2,
+            0xc0 => Operator::V8x16Swizzle,
+            0x03 | 0xc1 => {
+                let mut lanes = [0 as SIMDLaneIndex; 16];
+                for i in 0..16 {
+                    lanes[i] = self.read_lane_index(32)?
+                }
+                Operator::V8x16Shuffle { lanes }
+            }
+            0xc2 => Operator::I8x16LoadSplat {
+                memarg: self.read_memarg_of_align(0)?,
+            },
+            0xc3 => Operator::I16x8LoadSplat {
+                memarg: self.read_memarg_of_align(1)?,
+            },
+            0xc4 => Operator::I32x4LoadSplat {
+                memarg: self.read_memarg_of_align(2)?,
+            },
+            0xc5 => Operator::I64x2LoadSplat {
+                memarg: self.read_memarg_of_align(3)?,
+            },
             _ => {
                 return Err(BinaryReaderError {
                     message: "Unknown 0xfd opcode",

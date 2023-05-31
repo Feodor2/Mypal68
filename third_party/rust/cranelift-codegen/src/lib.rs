@@ -41,7 +41,6 @@
     )
 )]
 #![no_std]
-#![cfg_attr(not(feature = "std"), feature(alloc))]
 
 #[cfg(not(feature = "std"))]
 #[macro_use]
@@ -57,7 +56,7 @@ use std::collections::{hash_map, HashMap, HashSet};
 
 pub use crate::context::Context;
 pub use crate::legalizer::legalize_function;
-pub use crate::value_label::ValueLabelsRanges;
+pub use crate::value_label::{ValueLabelsRanges, ValueLocRange};
 pub use crate::verifier::verify_function;
 pub use crate::write::write_function;
 
@@ -95,7 +94,7 @@ mod nan_canonicalization;
 mod partition_slice;
 mod postopt;
 mod predicates;
-mod ref_slice;
+mod redundant_reload_remover;
 mod regalloc;
 mod result;
 mod scoped_hash_map;

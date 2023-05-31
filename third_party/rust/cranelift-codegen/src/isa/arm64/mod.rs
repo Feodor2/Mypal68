@@ -39,7 +39,7 @@ fn isa_constructor(
     triple: Triple,
     shared_flags: shared_settings::Flags,
     builder: shared_settings::Builder,
-) -> Box<TargetIsa> {
+) -> Box<dyn TargetIsa> {
     Box::new(Isa {
         triple,
         isa_flags: settings::Flags::new(&shared_flags, builder),
@@ -106,13 +106,21 @@ impl TargetIsa for Isa {
         func: &ir::Function,
         inst: ir::Inst,
         divert: &mut regalloc::RegDiversions,
-        sink: &mut CodeSink,
+        sink: &mut dyn CodeSink,
     ) {
-        binemit::emit_inst(func, inst, divert, sink)
+        binemit::emit_inst(func, inst, divert, sink, self)
     }
 
     fn emit_function_to_memory(&self, func: &ir::Function, sink: &mut MemoryCodeSink) {
-        emit_function(func, binemit::emit_inst, sink)
+        emit_function(func, binemit::emit_inst, sink, self)
+    }
+
+    fn unsigned_add_overflow_condition(&self) -> ir::condcodes::IntCC {
+        ir::condcodes::IntCC::UnsignedLessThan
+    }
+
+    fn unsigned_sub_overflow_condition(&self) -> ir::condcodes::IntCC {
+        ir::condcodes::IntCC::UnsignedGreaterThanOrEqual
     }
 }
 

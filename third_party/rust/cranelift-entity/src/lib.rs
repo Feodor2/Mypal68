@@ -51,7 +51,6 @@
     )
 )]
 #![no_std]
-#![cfg_attr(not(feature = "std"), feature(alloc))]
 
 #[cfg(not(feature = "std"))]
 #[macro_use]
@@ -126,7 +125,7 @@ macro_rules! entity_impl {
 
         impl $crate::__core::fmt::Debug for $entity {
             fn fmt(&self, f: &mut $crate::__core::fmt::Formatter) -> $crate::__core::fmt::Result {
-                (self as &$crate::__core::fmt::Display).fmt(f)
+                (self as &dyn $crate::__core::fmt::Display).fmt(f)
             }
         }
     };

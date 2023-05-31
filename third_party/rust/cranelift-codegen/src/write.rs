@@ -5,6 +5,7 @@
 
 use crate::entity::SecondaryMap;
 use crate::ir::entities::AnyEntity;
+use crate::ir::immediates::V128Imm;
 use crate::ir::{
     DataFlowGraph, DisplayFunctionAnnotations, Ebb, Function, Inst, SigRef, Type, Value, ValueDef,
     ValueLoc,
@@ -22,9 +23,9 @@ pub trait FuncWriter {
     /// Write the extended basic block header for the current function.
     fn write_ebb_header(
         &mut self,
-        w: &mut Write,
+        w: &mut dyn Write,
         func: &Function,
-        isa: Option<&TargetIsa>,
+        isa: Option<&dyn TargetIsa>,
         ebb: Ebb,
         indent: usize,
     ) -> fmt::Result;
@@ -32,10 +33,10 @@ pub trait FuncWriter {
     /// Write the given `inst` to `w`.
     fn write_instruction(
         &mut self,
-        w: &mut Write,
+        w: &mut dyn Write,
         func: &Function,
         aliases: &SecondaryMap<Value, Vec<Value>>,
-        isa: Option<&TargetIsa>,
+        isa: Option<&dyn TargetIsa>,
         inst: Inst,
         indent: usize,
     ) -> fmt::Result;
@@ -43,7 +44,7 @@ pub trait FuncWriter {
     /// Write the preamble to `w`. By default, this uses `write_entity_definition`.
     fn write_preamble(
         &mut self,
-        w: &mut Write,
+        w: &mut dyn Write,
         func: &Function,
         regs: Option<&RegInfo>,
     ) -> Result<bool, fmt::Error> {
@@ -53,7 +54,7 @@ pub trait FuncWriter {
     /// Default impl of `write_preamble`
     fn super_preamble(
         &mut self,
-        w: &mut Write,
+        w: &mut dyn Write,
         func: &Function,
         regs: Option<&RegInfo>,
     ) -> Result<bool, fmt::Error> {
@@ -108,10 +109,10 @@ pub trait FuncWriter {
     /// Write an entity definition defined in the preamble to `w`.
     fn write_entity_definition(
         &mut self,
-        w: &mut Write,
+        w: &mut dyn Write,
         func: &Function,
         entity: AnyEntity,
-        value: &fmt::Display,
+        value: &dyn fmt::Display,
     ) -> fmt::Result {
         self.super_entity_definition(w, func, entity, value)
     }
@@ -120,10 +121,10 @@ pub trait FuncWriter {
     #[allow(unused_variables)]
     fn super_entity_definition(
         &mut self,
-        w: &mut Write,
+        w: &mut dyn Write,
         func: &Function,
         entity: AnyEntity,
-        value: &fmt::Display,
+        value: &dyn fmt::Display,
     ) -> fmt::Result {
         writeln!(w, "    {} = {}", entity, value)
     }
@@ -135,10 +136,10 @@ pub struct PlainWriter;
 impl FuncWriter for PlainWriter {
     fn write_instruction(
         &mut self,
-        w: &mut Write,
+        w: &mut dyn Write,
         func: &Function,
         aliases: &SecondaryMap<Value, Vec<Value>>,
-        isa: Option<&TargetIsa>,
+        isa: Option<&dyn TargetIsa>,
         inst: Inst,
         indent: usize,
     ) -> fmt::Result {
@@ -147,9 +148,9 @@ impl FuncWriter for PlainWriter {
 
     fn write_ebb_header(
         &mut self,
-        w: &mut Write,
+        w: &mut dyn Write,
         func: &Function,
-        isa: Option<&TargetIsa>,
+        isa: Option<&dyn TargetIsa>,
         ebb: Ebb,
         indent: usize,
     ) -> fmt::Result {
@@ -160,7 +161,7 @@ impl FuncWriter for PlainWriter {
 /// Write `func` to `w` as equivalent text.
 /// Use `isa` to emit ISA-dependent annotations.
 pub fn write_function(
-    w: &mut Write,
+    w: &mut dyn Write,
     func: &Function,
     annotations: &DisplayFunctionAnnotations,
 ) -> fmt::Result {
@@ -184,7 +185,7 @@ fn alias_map(func: &Function) -> SecondaryMap<Value, Vec<Value>> {
 /// pretty_function_error is passed as 'closure' to add error decoration.
 pub fn decorate_function<FW: FuncWriter>(
     func_w: &mut FW,
-    w: &mut Write,
+    w: &mut dyn Write,
     func: &Function,
     annotations: &DisplayFunctionAnnotations,
 ) -> fmt::Result {
@@ -210,7 +211,7 @@ pub fn decorate_function<FW: FuncWriter>(
 //
 // Function spec.
 
-fn write_spec(w: &mut Write, func: &Function, regs: Option<&RegInfo>) -> fmt::Result {
+fn write_spec(w: &mut dyn Write, func: &Function, regs: Option<&RegInfo>) -> fmt::Result {
     write!(w, "{}{}", func.name, func.signature.display(regs))
 }
 
@@ -218,7 +219,12 @@ fn write_spec(w: &mut Write, func: &Function, regs: Option<&RegInfo>) -> fmt::Re
 //
 // Basic blocks
 
-fn write_arg(w: &mut Write, func: &Function, regs: Option<&RegInfo>, arg: Value) -> fmt::Result {
+fn write_arg(
+    w: &mut dyn Write,
+    func: &Function,
+    regs: Option<&RegInfo>,
+    arg: Value,
+) -> fmt::Result {
     write!(w, "{}: {}", arg, func.dfg.value_type(arg))?;
     let loc = func.locations[arg];
     if loc.is_assigned() {
@@ -235,9 +241,9 @@ fn write_arg(w: &mut Write, func: &Function, regs: Option<&RegInfo>, arg: Value)
 ///    ebb10(v4: f64, v5: b1):
 ///
 pub fn write_ebb_header(
-    w: &mut Write,
+    w: &mut dyn Write,
     func: &Function,
-    isa: Option<&TargetIsa>,
+    isa: Option<&dyn TargetIsa>,
     ebb: Ebb,
     indent: usize,
 ) -> fmt::Result {
@@ -263,7 +269,7 @@ pub fn write_ebb_header(
     writeln!(w, "):")
 }
 
-fn write_valueloc(w: &mut Write, loc: &ValueLoc, regs: &RegInfo) -> fmt::Result {
+fn write_valueloc(w: &mut dyn Write, loc: &ValueLoc, regs: &RegInfo) -> fmt::Result {
     match loc {
         ValueLoc::Reg(r) => write!(w, "{}", regs.display_regunit(*r)),
         ValueLoc::Stack(ss) => write!(w, "{}", ss),
@@ -272,7 +278,7 @@ fn write_valueloc(w: &mut Write, loc: &ValueLoc, regs: &RegInfo) -> fmt::Result 
 }
 
 fn write_value_range_markers(
-    w: &mut Write,
+    w: &mut dyn Write,
     val_ranges: &ValueLabelsRanges,
     regs: &RegInfo,
     offset: u32,
@@ -306,7 +312,7 @@ fn write_value_range_markers(
 
 fn decorate_ebb<FW: FuncWriter>(
     func_w: &mut FW,
-    w: &mut Write,
+    w: &mut dyn Write,
     func: &Function,
     aliases: &SecondaryMap<Value, Vec<Value>>,
     annotations: &DisplayFunctionAnnotations,
@@ -385,7 +391,7 @@ fn type_suffix(func: &Function, inst: Inst) -> Option<Type> {
 
 /// Write out any aliases to the given target, including indirect aliases
 fn write_value_aliases(
-    w: &mut Write,
+    w: &mut dyn Write,
     aliases: &SecondaryMap<Value, Vec<Value>>,
     target: Value,
     indent: usize,
@@ -402,10 +408,10 @@ fn write_value_aliases(
 }
 
 fn write_instruction(
-    w: &mut Write,
+    w: &mut dyn Write,
     func: &Function,
     aliases: &SecondaryMap<Value, Vec<Value>>,
-    isa: Option<&TargetIsa>,
+    isa: Option<&dyn TargetIsa>,
     inst: Inst,
     indent: usize,
 ) -> fmt::Result {
@@ -472,9 +478,9 @@ fn write_instruction(
 
 /// Write the operands of `inst` to `w` with a prepended space.
 pub fn write_operands(
-    w: &mut Write,
+    w: &mut dyn Write,
     dfg: &DataFlowGraph,
-    isa: Option<&TargetIsa>,
+    isa: Option<&dyn TargetIsa>,
     inst: Inst,
 ) -> fmt::Result {
     let pool = &dfg.value_lists;
@@ -499,6 +505,20 @@ pub fn write_operands(
         NullAry { .. } => write!(w, " "),
         InsertLane { lane, args, .. } => write!(w, " {}, {}, {}", args[0], lane, args[1]),
         ExtractLane { lane, arg, .. } => write!(w, " {}, {}", arg, lane),
+        UnaryConst {
+            constant_handle, ..
+        } => {
+            let data = dfg.constants.get(constant_handle);
+            let v128 = V128Imm::from(&data[..]);
+            write!(w, " {}", v128)
+        }
+        Shuffle { mask, args, .. } => {
+            let data = dfg.immediates.get(mask).expect(
+                "Expected the shuffle mask to already be inserted into the immediates table",
+            );
+            let v128 = V128Imm::from(&data[..]);
+            write!(w, " {}, {}, {}", args[0], args[1], v128)
+        }
         IntCompare { cond, args, .. } => write!(w, " {} {}, {}", cond, args[0], args[1]),
         IntCompareImm { cond, arg, imm, .. } => write!(w, " {} {}, {}", cond, arg, imm),
         IntCond { cond, arg, .. } => write!(w, " {} {}", cond, arg),
@@ -659,6 +679,14 @@ pub fn write_operands(
                 write!(w, " %{} -> %{}", src, dst)
             }
         }
+        CopyToSsa { src, .. } => {
+            if let Some(isa) = isa {
+                let regs = isa.register_info();
+                write!(w, " {}", regs.display_regunit(src))
+            } else {
+                write!(w, " %{}", src)
+            }
+        }
         RegSpill { arg, src, dst, .. } => {
             if let Some(isa) = isa {
                 let regs = isa.register_info();
@@ -687,7 +715,7 @@ pub fn write_operands(
 }
 
 /// Write EBB args using optional parantheses.
-fn write_ebb_args(w: &mut Write, args: &[Value]) -> fmt::Result {
+fn write_ebb_args(w: &mut dyn Write, args: &[Value]) -> fmt::Result {
     if args.is_empty() {
         Ok(())
     } else {

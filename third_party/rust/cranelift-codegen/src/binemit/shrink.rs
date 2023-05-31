@@ -13,14 +13,16 @@ use crate::timing;
 use log::debug;
 
 /// Pick the smallest valid encodings for instructions.
-pub fn shrink_instructions(func: &mut Function, isa: &TargetIsa) {
+pub fn shrink_instructions(func: &mut Function, isa: &dyn TargetIsa) {
     let _tt = timing::shrink_instructions();
 
     let encinfo = isa.encoding_info();
     let mut divert = RegDiversions::new();
 
     for ebb in func.layout.ebbs() {
-        divert.clear();
+        // Load diversions from predecessors.
+        divert.at_ebb(&func.entry_diversions, ebb);
+
         for inst in func.layout.ebb_insts(ebb) {
             let enc = func.encodings[inst];
             if enc.is_legal() {
@@ -33,11 +35,12 @@ pub fn shrink_instructions(func: &mut Function, isa: &TargetIsa) {
                 //
                 // TODO: Eventually, we want the register allocator to avoid leaving these special
                 // instructions behind, but for now, just temporarily avoid trying to shrink them.
-                match func.dfg[inst] {
+                let inst_data = &func.dfg[inst];
+                match inst_data {
                     InstructionData::RegMove { .. }
                     | InstructionData::RegFill { .. }
                     | InstructionData::RegSpill { .. } => {
-                        divert.apply(&func.dfg[inst]);
+                        divert.apply(inst_data);
                         continue;
                     }
                     _ => (),

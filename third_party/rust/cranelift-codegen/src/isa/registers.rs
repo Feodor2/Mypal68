@@ -17,19 +17,19 @@ pub type RegUnit = u16;
 /// The size of this type is determined by the target ISA that has the most register units defined.
 /// Currently that is arm32 which has 64+16 units.
 ///
-/// This type should be coordinated with meta-python/cdsl/registers.py.
+/// This type should be coordinated with meta/src/cdsl/regs.rs.
 pub type RegUnitMask = [u32; 3];
 
 /// A bit mask indexed by register classes.
 ///
 /// The size of this type is determined by the ISA with the most register classes.
 ///
-/// This type should be coordinated with meta-python/cdsl/isa.py.
+/// This type should be coordinated with meta/src/cdsl/regs.rs.
 pub type RegClassMask = u32;
 
 /// Guaranteed maximum number of top-level register classes with pressure tracking in any ISA.
 ///
-/// This can be increased, but should be coordinated with meta-python/cdsl/isa.py.
+/// This can be increased, but should be coordinated with meta/src/cdsl/regs.rs.
 pub const MAX_TRACKED_TOPRCS: usize = 4;
 
 /// The register units in a target ISA are divided into disjoint register banks. Each bank covers a
@@ -37,7 +37,7 @@ pub const MAX_TRACKED_TOPRCS: usize = 4;
 ///
 /// The `RegBank` struct provides a static description of a register bank.
 pub struct RegBank {
-    /// The name of this register bank as defined in the ISA's `registers.py` file.
+    /// The name of this register bank as defined in the ISA's DSL definition.
     pub name: &'static str,
 
     /// The first register unit in this bank.
@@ -154,6 +154,12 @@ pub struct RegClassData {
 
     /// The global `RegInfo` instance containing this register class.
     pub info: &'static RegInfo,
+
+    /// The "pinned" register of the associated register bank.
+    ///
+    /// This register must be non-volatile (callee-preserved) and must not be the fixed
+    /// output register of any instruction.
+    pub pinned_reg: Option<RegUnit>,
 }
 
 impl RegClassData {
@@ -200,6 +206,15 @@ impl RegClassData {
     /// Does this register class contain `regunit`?
     pub fn contains(&self, regunit: RegUnit) -> bool {
         self.mask[(regunit / 32) as usize] & (1u32 << (regunit % 32)) != 0
+    }
+
+    /// If the pinned register is used, is the given regunit the pinned register of this class?
+    #[inline]
+    pub fn is_pinned_reg(&self, enabled: bool, regunit: RegUnit) -> bool {
+        enabled
+            && self
+                .pinned_reg
+                .map_or(false, |pinned_reg| pinned_reg == regunit)
     }
 }
 

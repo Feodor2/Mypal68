@@ -119,7 +119,7 @@ impl FontCollection {
     }
 
     // Find a font matching the given font descriptor in this
-    // font collection.  
+    // font collection.
     pub fn get_font_from_descriptor(&self, desc: &FontDescriptor) -> Option<Font> {
         if let Some(family) = self.get_font_family_by_name(&desc.family_name) {
             let font = family.get_first_matching_font(desc.weight, desc.stretch, desc.style);

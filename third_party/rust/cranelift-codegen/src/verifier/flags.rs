@@ -1,6 +1,6 @@
 //! Verify CPU flags values.
 
-use crate::entity::{SecondaryMap, SparseSet};
+use crate::entity::{EntitySet, SecondaryMap};
 use crate::flowgraph::{BasicBlock, ControlFlowGraph};
 use crate::ir;
 use crate::ir::instructions::BranchInfo;
@@ -24,7 +24,7 @@ use crate::verifier::{VerifierErrors, VerifierStepResult};
 pub fn verify_flags(
     func: &ir::Function,
     cfg: &ControlFlowGraph,
-    isa: Option<&isa::TargetIsa>,
+    isa: Option<&dyn isa::TargetIsa>,
     errors: &mut VerifierErrors,
 ) -> VerifierStepResult<()> {
     let _tt = timing::verify_flags();
@@ -50,7 +50,7 @@ impl<'a> FlagsVerifier<'a> {
     fn check(&mut self, errors: &mut VerifierErrors) -> VerifierStepResult<()> {
         // List of EBBs that need to be processed. EBBs may be re-added to this list when we detect
         // that one of their successor blocks needs a live-in flags value.
-        let mut worklist = SparseSet::new();
+        let mut worklist = EntitySet::with_capacity(self.func.layout.ebb_capacity());
         for ebb in self.func.layout.ebbs() {
             worklist.insert(ebb);
         }

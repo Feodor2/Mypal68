@@ -7,6 +7,8 @@ use crate::ir::{
 use crate::isa::{CallConv, RegUnit, TargetIsa};
 use core::fmt;
 use core::str::FromStr;
+#[cfg(feature = "enable-serde")]
+use serde::{Deserialize, Serialize};
 
 /// The name of a runtime library routine.
 ///
@@ -16,7 +18,8 @@ use core::str::FromStr;
 /// convention in the embedding VM's runtime library.
 ///
 /// This list is likely to grow over time.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "enable-serde", derive(Serialize, Deserialize))]
 pub enum LibCall {
     /// probe for stack overflow. These are emitted for functions which need
     /// when the `probestack_enabled` setting is true.
@@ -105,11 +108,13 @@ impl LibCall {
 /// If there is an existing reference, use it, otherwise make a new one.
 pub fn get_libcall_funcref(
     libcall: LibCall,
+    call_conv: CallConv,
     func: &mut Function,
     inst: Inst,
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
 ) -> FuncRef {
-    find_funcref(libcall, func).unwrap_or_else(|| make_funcref_for_inst(libcall, func, inst, isa))
+    find_funcref(libcall, func)
+        .unwrap_or_else(|| make_funcref_for_inst(libcall, call_conv, func, inst, isa))
 }
 
 /// Get a function reference for the probestack function in `func`.
@@ -119,7 +124,7 @@ pub fn get_probestack_funcref(
     func: &mut Function,
     reg_type: Type,
     arg_reg: RegUnit,
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
 ) -> FuncRef {
     find_funcref(LibCall::Probestack, func)
         .unwrap_or_else(|| make_funcref_for_probestack(func, reg_type, arg_reg, isa))
@@ -147,7 +152,7 @@ fn make_funcref_for_probestack(
     func: &mut Function,
     reg_type: Type,
     arg_reg: RegUnit,
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
 ) -> FuncRef {
     let mut sig = Signature::new(CallConv::Probestack);
     let rax = AbiParam::special_reg(reg_type, ArgumentPurpose::Normal, arg_reg);
@@ -161,11 +166,12 @@ fn make_funcref_for_probestack(
 /// Create a funcref for `libcall` with a signature matching `inst`.
 fn make_funcref_for_inst(
     libcall: LibCall,
+    call_conv: CallConv,
     func: &mut Function,
     inst: Inst,
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
 ) -> FuncRef {
-    let mut sig = Signature::new(isa.default_call_conv());
+    let mut sig = Signature::new(call_conv);
     for &v in func.dfg.inst_args(inst) {
         sig.params.push(AbiParam::new(func.dfg.value_type(v)));
     }
@@ -173,11 +179,24 @@ fn make_funcref_for_inst(
         sig.returns.push(AbiParam::new(func.dfg.value_type(v)));
     }
 
+    if call_conv.extends_baldrdash() {
+        // Adds the special VMContext parameter to the signature.
+        sig.params.push(AbiParam::special(
+            isa.pointer_type(),
+            ArgumentPurpose::VMContext,
+        ));
+    }
+
     make_funcref(libcall, func, sig, isa)
 }
 
 /// Create a funcref for `libcall`.
-fn make_funcref(libcall: LibCall, func: &mut Function, sig: Signature, isa: &TargetIsa) -> FuncRef {
+fn make_funcref(
+    libcall: LibCall,
+    func: &mut Function,
+    sig: Signature,
+    isa: &dyn TargetIsa,
+) -> FuncRef {
     let sigref = func.import_signature(sig);
 
     func.import_function(ExtFuncData {

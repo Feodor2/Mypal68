@@ -5,8 +5,9 @@
 // http://opensource.org/licenses/MIT>, at your option. This file may not be
 // copied, modified, or distributed except according to those terms.
 
+use crate::raw_mutex::RawMutex;
+use core::num::NonZeroUsize;
 use lock_api::{self, GetThreadId};
-use raw_mutex::RawMutex;
 
 /// Implementation of the `GetThreadId` trait for `lock_api::ReentrantMutex`.
 pub struct RawThreadId;
@@ -14,11 +15,14 @@ pub struct RawThreadId;
 unsafe impl GetThreadId for RawThreadId {
     const INIT: RawThreadId = RawThreadId;
 
-    fn nonzero_thread_id(&self) -> usize {
+    fn nonzero_thread_id(&self) -> NonZeroUsize {
         // The address of a thread-local variable is guaranteed to be unique to the
         // current thread, and is also guaranteed to be non-zero.
         thread_local!(static KEY: u8 = unsafe { ::std::mem::uninitialized() });
-        KEY.with(|x| x as *const _ as usize)
+        KEY.with(|x| {
+            NonZeroUsize::new(x as *const _ as usize)
+                .expect("thread-local variable address is null")
+        })
     }
 }
 
@@ -40,8 +44,7 @@ pub type ReentrantMutex<T> = lock_api::ReentrantMutex<RawMutex, RawThreadId, T>;
 ///
 /// The data protected by the mutex can be accessed through this guard via its
 /// `Deref` implementation.
-pub type ReentrantMutexGuard<'a, T> =
-    lock_api::ReentrantMutexGuard<'a, RawMutex, RawThreadId, T>;
+pub type ReentrantMutexGuard<'a, T> = lock_api::ReentrantMutexGuard<'a, RawMutex, RawThreadId, T>;
 
 /// An RAII mutex guard returned by `ReentrantMutexGuard::map`, which can point to a
 /// subfield of the protected data.
@@ -55,10 +58,13 @@ pub type MappedReentrantMutexGuard<'a, T> =
 
 #[cfg(test)]
 mod tests {
+    use crate::ReentrantMutex;
     use std::cell::RefCell;
     use std::sync::Arc;
     use std::thread;
-    use ReentrantMutex;
+
+    #[cfg(feature = "serde")]
+    use bincode::{deserialize, serialize};
 
     #[test]
     fn smoke() {
@@ -103,8 +109,9 @@ mod tests {
         thread::spawn(move || {
             let lock = m2.try_lock();
             assert!(lock.is_none());
-        }).join()
-            .unwrap();
+        })
+        .join()
+        .unwrap();
         let _lock3 = m.try_lock();
     }
 
@@ -113,14 +120,18 @@ mod tests {
         let mutex = ReentrantMutex::new(vec![0u8, 10]);
 
         assert_eq!(format!("{:?}", mutex), "ReentrantMutex { data: [0, 10] }");
-        assert_eq!(
-            format!("{:#?}", mutex),
-            "ReentrantMutex {
-    data: [
-        0,
-        10
-    ]
-}"
-        );
+    }
+
+    #[cfg(feature = "serde")]
+    #[test]
+    fn test_serde() {
+        let contents: Vec<u8> = vec![0, 1, 2];
+        let mutex = ReentrantMutex::new(contents.clone());
+
+        let serialized = serialize(&mutex).unwrap();
+        let deserialized: ReentrantMutex<Vec<u8>> = deserialize(&serialized).unwrap();
+
+        assert_eq!(*(mutex.lock()), *(deserialized.lock()));
+        assert_eq!(contents, *(deserialized.lock()));
     }
 }

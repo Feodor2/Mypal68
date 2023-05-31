@@ -16,10 +16,13 @@
 use crate::bitset::BitSet;
 use crate::cursor::{Cursor, FuncCursor};
 use crate::flowgraph::ControlFlowGraph;
-use crate::ir::types::I32;
+use crate::ir::types::{I32, I64};
 use crate::ir::{self, InstBuilder, MemFlags};
 use crate::isa::TargetIsa;
+use crate::predicates;
 use crate::timing;
+use std::collections::BTreeSet;
+use std::vec::Vec;
 
 mod boundary;
 mod call;
@@ -35,31 +38,78 @@ use self::heap::expand_heap_addr;
 use self::libcall::expand_as_libcall;
 use self::table::expand_table_addr;
 
-/// Legalize `inst` for `isa`. Return true if any changes to the code were
-/// made; return false if the instruction was successfully encoded as is.
+enum LegalizeInstResult {
+    Done,
+    Legalized,
+    SplitLegalizePending,
+}
+
+/// Legalize `inst` for `isa`.
 fn legalize_inst(
     inst: ir::Inst,
     pos: &mut FuncCursor,
     cfg: &mut ControlFlowGraph,
-    isa: &TargetIsa,
-) -> bool {
+    isa: &dyn TargetIsa,
+) -> LegalizeInstResult {
     let opcode = pos.func.dfg[inst].opcode();
 
     // Check for ABI boundaries that need to be converted to the legalized signature.
     if opcode.is_call() {
         if boundary::handle_call_abi(inst, pos.func, cfg) {
-            return true;
+            return LegalizeInstResult::Legalized;
         }
     } else if opcode.is_return() {
         if boundary::handle_return_abi(inst, pos.func, cfg) {
-            return true;
+            return LegalizeInstResult::Legalized;
         }
     } else if opcode.is_branch() {
         split::simplify_branch_arguments(&mut pos.func.dfg, inst);
+    } else if opcode == ir::Opcode::Isplit {
+        pos.use_srcloc(inst);
+
+        let arg = match pos.func.dfg[inst] {
+            ir::InstructionData::Unary { arg, .. } => pos.func.dfg.resolve_aliases(arg),
+            _ => panic!("Expected isplit: {}", pos.func.dfg.display_inst(inst, None)),
+        };
+
+        match pos.func.dfg.value_def(arg) {
+            ir::ValueDef::Result(inst, _num) => {
+                if let ir::InstructionData::Binary {
+                    opcode: ir::Opcode::Iconcat,
+                    ..
+                } = pos.func.dfg[inst]
+                {
+                    // `arg` was created by an `iconcat` instruction.
+                } else {
+                    // `arg` was not created by an `iconcat` instruction. Don't try to resolve it,
+                    // as otherwise `split::isplit` will re-insert the original `isplit`, causing
+                    // an endless loop.
+                    return LegalizeInstResult::SplitLegalizePending;
+                }
+            }
+            ir::ValueDef::Param(_ebb, _num) => {}
+        }
+
+        let res = pos.func.dfg.inst_results(inst).to_vec();
+        assert_eq!(res.len(), 2);
+        let (resl, resh) = (res[0], res[1]); // Prevent borrowck error
+
+        // Remove old isplit
+        pos.func.dfg.clear_results(inst);
+        pos.remove_inst();
+
+        let curpos = pos.position();
+        let srcloc = pos.srcloc();
+        let (xl, xh) = split::isplit(pos.func, cfg, curpos, srcloc, arg);
+
+        pos.func.dfg.change_to_alias(resl, xl);
+        pos.func.dfg.change_to_alias(resh, xh);
+
+        return LegalizeInstResult::Legalized;
     }
 
     match pos.func.update_encoding(inst, isa) {
-        Ok(()) => false,
+        Ok(()) => LegalizeInstResult::Done,
         Err(action) => {
             // We should transform the instruction into legal equivalents.
             // If the current instruction was replaced, we need to double back and revisit
@@ -68,12 +118,16 @@ fn legalize_inst(
             // There's a risk of infinite looping here if the legalization patterns are
             // unsound. Should we attempt to detect that?
             if action(inst, pos.func, cfg, isa) {
-                return true;
+                return LegalizeInstResult::Legalized;
             }
 
             // We don't have any pattern expansion for this instruction either.
             // Try converting it to a library call as a last resort.
-            expand_as_libcall(inst, pos.func, isa)
+            if expand_as_libcall(inst, pos.func, isa) {
+                LegalizeInstResult::Legalized
+            } else {
+                LegalizeInstResult::Done
+            }
         }
     }
 }
@@ -83,7 +137,7 @@ fn legalize_inst(
 /// - Transform any instructions that don't have a legal representation in `isa`.
 /// - Fill out `func.encodings`.
 ///
-pub fn legalize_function(func: &mut ir::Function, cfg: &mut ControlFlowGraph, isa: &TargetIsa) {
+pub fn legalize_function(func: &mut ir::Function, cfg: &mut ControlFlowGraph, isa: &dyn TargetIsa) {
     let _tt = timing::legalize();
     debug_assert!(cfg.is_valid());
 
@@ -93,22 +147,40 @@ pub fn legalize_function(func: &mut ir::Function, cfg: &mut ControlFlowGraph, is
 
     let mut pos = FuncCursor::new(func);
 
+    // This must be a set to prevent trying to legalize `isplit` and `vsplit` twice in certain cases.
+    let mut pending_splits = BTreeSet::new();
+
     // Process EBBs in layout order. Some legalization actions may split the current EBB or append
     // new ones to the end. We need to make sure we visit those new EBBs too.
-    while let Some(_ebb) = pos.next_ebb() {
+    while let Some(ebb) = pos.next_ebb() {
+        split::split_ebb_params(pos.func, cfg, ebb);
+
         // Keep track of the cursor position before the instruction being processed, so we can
         // double back when replacing instructions.
         let mut prev_pos = pos.position();
 
         while let Some(inst) = pos.next_inst() {
-            if legalize_inst(inst, &mut pos, cfg, isa) {
-                // Go back and legalize the inserted return value conversion instructions.
-                pos.set_position(prev_pos);
-            } else {
+            match legalize_inst(inst, &mut pos, cfg, isa) {
                 // Remember this position in case we need to double back.
-                prev_pos = pos.position();
+                LegalizeInstResult::Done => prev_pos = pos.position(),
+
+                // Go back and legalize the inserted return value conversion instructions.
+                LegalizeInstResult::Legalized => pos.set_position(prev_pos),
+
+                // The argument of a `isplit` or `vsplit` instruction didn't resolve to a
+                // `iconcat` or `vconcat` instruction. Try again after legalizing the rest of
+                // the instructions.
+                LegalizeInstResult::SplitLegalizePending => {
+                    pending_splits.insert(inst);
+                }
             }
         }
+    }
+
+    // Try legalizing `isplit` and `vsplit` instructions, which could not previously be legalized.
+    for inst in pending_splits {
+        pos.goto_inst(inst);
+        legalize_inst(inst, &mut pos, cfg, isa);
     }
 
     // Now that we've lowered all br_tables, we don't need the jump tables anymore.
@@ -117,19 +189,19 @@ pub fn legalize_function(func: &mut ir::Function, cfg: &mut ControlFlowGraph, is
     }
 }
 
-// Include legalization patterns that were generated by `gen_legalizer.py` from the `XForms` in
-// `cranelift-codegen/meta-python/base/legalize.py`.
+// Include legalization patterns that were generated by `gen_legalizer.rs` from the
+// `TransformGroup` in `cranelift-codegen/meta/shared/legalize.rs`.
 //
 // Concretely, this defines private functions `narrow()`, and `expand()`.
 include!(concat!(env!("OUT_DIR"), "/legalizer.rs"));
 
 /// Custom expansion for conditional trap instructions.
-/// TODO: Add CFG support to the Python patterns so we won't have to do this.
+/// TODO: Add CFG support to the Rust DSL patterns so we won't have to do this.
 fn expand_cond_trap(
     inst: ir::Inst,
     func: &mut ir::Function,
     cfg: &mut ControlFlowGraph,
-    _isa: &TargetIsa,
+    _isa: &dyn TargetIsa,
 ) {
     // Parse the instruction.
     let trapz;
@@ -149,29 +221,45 @@ fn expand_cond_trap(
     // Split the EBB after `inst`:
     //
     //     trapnz arg
+    //     ..
     //
     // Becomes:
     //
-    //     brz arg, new_ebb
-    //     trap
-    //   new_ebb:
+    //     brz arg, new_ebb_resume
+    //     jump new_ebb_trap
     //
+    //   new_ebb_trap:
+    //     trap
+    //
+    //   new_ebb_resume:
+    //     ..
     let old_ebb = func.layout.pp_ebb(inst);
-    let new_ebb = func.dfg.make_ebb();
+    let new_ebb_trap = func.dfg.make_ebb();
+    let new_ebb_resume = func.dfg.make_ebb();
+
+    // Replace trap instruction by the inverted condition.
     if trapz {
-        func.dfg.replace(inst).brnz(arg, new_ebb, &[]);
+        func.dfg.replace(inst).brnz(arg, new_ebb_resume, &[]);
     } else {
-        func.dfg.replace(inst).brz(arg, new_ebb, &[]);
+        func.dfg.replace(inst).brz(arg, new_ebb_resume, &[]);
     }
 
+    // Add jump instruction after the inverted branch.
     let mut pos = FuncCursor::new(func).after_inst(inst);
     pos.use_srcloc(inst);
+    pos.ins().jump(new_ebb_trap, &[]);
+
+    // Insert the new label and the unconditional trap terminator.
+    pos.insert_ebb(new_ebb_trap);
     pos.ins().trap(code);
-    pos.insert_ebb(new_ebb);
+
+    // Insert the new label and resume the execution when the trap fails.
+    pos.insert_ebb(new_ebb_resume);
 
     // Finally update the CFG.
     cfg.recompute_ebb(pos.func, old_ebb);
-    cfg.recompute_ebb(pos.func, new_ebb);
+    cfg.recompute_ebb(pos.func, new_ebb_resume);
+    cfg.recompute_ebb(pos.func, new_ebb_trap);
 }
 
 /// Jump tables.
@@ -179,7 +267,7 @@ fn expand_br_table(
     inst: ir::Inst,
     func: &mut ir::Function,
     cfg: &mut ControlFlowGraph,
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
 ) {
     if isa.flags().jump_tables_enabled() {
         expand_br_table_jt(inst, func, cfg, isa);
@@ -193,7 +281,7 @@ fn expand_br_table_jt(
     inst: ir::Inst,
     func: &mut ir::Function,
     cfg: &mut ControlFlowGraph,
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
 ) {
     use crate::ir::condcodes::IntCC;
 
@@ -207,31 +295,57 @@ fn expand_br_table_jt(
         _ => panic!("Expected br_table: {}", func.dfg.display_inst(inst, None)),
     };
 
-    let table_size = func.jump_tables[table].len();
-    let addr_ty = isa.pointer_type();
-    let entry_ty = I32;
+    // Rewrite:
+    //
+    //     br_table $idx, default_ebb, $jt
+    //
+    // To:
+    //
+    //     $oob = ifcmp_imm $idx, len($jt)
+    //     brif uge $oob, default_ebb
+    //     jump fallthrough_ebb
+    //
+    //   fallthrough_ebb:
+    //     $base = jump_table_base.i64 $jt
+    //     $rel_addr = jump_table_entry.i64 $idx, $base, 4, $jt
+    //     $addr = iadd $base, $rel_addr
+    //     indirect_jump_table_br $addr, $jt
+
+    let ebb = func.layout.pp_ebb(inst);
+    let jump_table_ebb = func.dfg.make_ebb();
 
     let mut pos = FuncCursor::new(func).at_inst(inst);
     pos.use_srcloc(inst);
 
-    // Bounds check
+    // Bounds check.
+    let table_size = pos.func.jump_tables[table].len() as i64;
     let oob = pos
         .ins()
-        .icmp_imm(IntCC::UnsignedGreaterThanOrEqual, arg, table_size as i64);
+        .icmp_imm(IntCC::UnsignedGreaterThanOrEqual, arg, table_size);
 
     pos.ins().brnz(oob, default_ebb, &[]);
+    pos.ins().jump(jump_table_ebb, &[]);
+    pos.insert_ebb(jump_table_ebb);
+
+    let addr_ty = isa.pointer_type();
+
+    let arg = if pos.func.dfg.value_type(arg) == addr_ty {
+        arg
+    } else {
+        pos.ins().uextend(addr_ty, arg)
+    };
 
     let base_addr = pos.ins().jump_table_base(addr_ty, table);
     let entry = pos
         .ins()
-        .jump_table_entry(addr_ty, arg, base_addr, entry_ty.bytes() as u8, table);
+        .jump_table_entry(arg, base_addr, I32.bytes() as u8, table);
 
     let addr = pos.ins().iadd(base_addr, entry);
     pos.ins().indirect_jump_table_br(addr, table);
 
-    let ebb = pos.current_ebb().unwrap();
     pos.remove_inst();
     cfg.recompute_ebb(pos.func, ebb);
+    cfg.recompute_ebb(pos.func, jump_table_ebb);
 }
 
 /// Expand br_table to series of conditionals.
@@ -239,7 +353,7 @@ fn expand_br_table_conds(
     inst: ir::Inst,
     func: &mut ir::Function,
     cfg: &mut ControlFlowGraph,
-    _isa: &TargetIsa,
+    _isa: &dyn TargetIsa,
 ) {
     use crate::ir::condcodes::IntCC;
 
@@ -253,8 +367,18 @@ fn expand_br_table_conds(
         _ => panic!("Expected br_table: {}", func.dfg.display_inst(inst, None)),
     };
 
+    let ebb = func.layout.pp_ebb(inst);
+
     // This is a poor man's jump table using just a sequence of conditional branches.
     let table_size = func.jump_tables[table].len();
+    let mut cond_failed_ebb = vec![];
+    if table_size >= 1 {
+        cond_failed_ebb = std::vec::Vec::with_capacity(table_size - 1);
+        for _ in 0..table_size - 1 {
+            cond_failed_ebb.push(func.dfg.make_ebb());
+        }
+    }
+
     let mut pos = FuncCursor::new(func).at_inst(inst);
     pos.use_srcloc(inst);
 
@@ -262,14 +386,21 @@ fn expand_br_table_conds(
         let dest = pos.func.jump_tables[table].as_slice()[i];
         let t = pos.ins().icmp_imm(IntCC::Equal, arg, i as i64);
         pos.ins().brnz(t, dest, &[]);
+        // Jump to the next case.
+        if i < table_size - 1 {
+            pos.ins().jump(cond_failed_ebb[i], &[]);
+            pos.insert_ebb(cond_failed_ebb[i]);
+        }
     }
 
     // `br_table` jumps to the default destination if nothing matches
     pos.ins().jump(default_ebb, &[]);
 
-    let ebb = pos.current_ebb().unwrap();
     pos.remove_inst();
     cfg.recompute_ebb(pos.func, ebb);
+    for failed_ebb in cond_failed_ebb.into_iter() {
+        cfg.recompute_ebb(pos.func, failed_ebb);
+    }
 }
 
 /// Expand the select instruction.
@@ -280,7 +411,7 @@ fn expand_select(
     inst: ir::Inst,
     func: &mut ir::Function,
     cfg: &mut ControlFlowGraph,
-    _isa: &TargetIsa,
+    _isa: &dyn TargetIsa,
 ) {
     let (ctrl, tval, fval) = match func.dfg[inst] {
         ir::InstructionData::Ternary {
@@ -315,7 +446,7 @@ fn expand_br_icmp(
     inst: ir::Inst,
     func: &mut ir::Function,
     cfg: &mut ControlFlowGraph,
-    _isa: &TargetIsa,
+    _isa: &dyn TargetIsa,
 ) {
     let (cond, a, b, destination, ebb_args) = match func.dfg[inst] {
         ir::InstructionData::BranchIcmp {
@@ -350,7 +481,7 @@ fn expand_fconst(
     inst: ir::Inst,
     func: &mut ir::Function,
     _cfg: &mut ControlFlowGraph,
-    _isa: &TargetIsa,
+    _isa: &dyn TargetIsa,
 ) {
     let ty = func.dfg.value_type(func.dfg.first_result(inst));
     debug_assert!(!ty.is_vector(), "Only scalar fconst supported: {}", ty);
@@ -378,7 +509,7 @@ fn expand_stack_load(
     inst: ir::Inst,
     func: &mut ir::Function,
     _cfg: &mut ControlFlowGraph,
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
 ) {
     let ty = func.dfg.value_type(func.dfg.first_result(inst));
     let addr_ty = isa.pointer_type();
@@ -410,7 +541,7 @@ fn expand_stack_store(
     inst: ir::Inst,
     func: &mut ir::Function,
     _cfg: &mut ControlFlowGraph,
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
 ) {
     let addr_ty = isa.pointer_type();
 
@@ -437,4 +568,100 @@ fn expand_stack_store(
     mflags.set_notrap();
     mflags.set_aligned();
     pos.func.dfg.replace(inst).store(mflags, val, addr, 0);
+}
+
+/// Split a load into two parts before `iconcat`ing the result together.
+fn narrow_load(
+    inst: ir::Inst,
+    func: &mut ir::Function,
+    _cfg: &mut ControlFlowGraph,
+    _isa: &dyn TargetIsa,
+) {
+    let mut pos = FuncCursor::new(func).at_inst(inst);
+    pos.use_srcloc(inst);
+
+    let (ptr, offset, flags) = match pos.func.dfg[inst] {
+        ir::InstructionData::Load {
+            opcode: ir::Opcode::Load,
+            arg,
+            offset,
+            flags,
+        } => (arg, offset, flags),
+        _ => panic!("Expected load: {}", pos.func.dfg.display_inst(inst, None)),
+    };
+
+    let res_ty = pos.func.dfg.ctrl_typevar(inst);
+    let small_ty = res_ty.half_width().expect("Can't narrow load");
+
+    let al = pos.ins().load(small_ty, flags, ptr, offset);
+    let ah = pos.ins().load(
+        small_ty,
+        flags,
+        ptr,
+        offset.try_add_i64(8).expect("load offset overflow"),
+    );
+    pos.func.dfg.replace(inst).iconcat(al, ah);
+}
+
+/// Split a store into two parts after `isplit`ing the value.
+fn narrow_store(
+    inst: ir::Inst,
+    func: &mut ir::Function,
+    _cfg: &mut ControlFlowGraph,
+    _isa: &dyn TargetIsa,
+) {
+    let mut pos = FuncCursor::new(func).at_inst(inst);
+    pos.use_srcloc(inst);
+
+    let (val, ptr, offset, flags) = match pos.func.dfg[inst] {
+        ir::InstructionData::Store {
+            opcode: ir::Opcode::Store,
+            args,
+            offset,
+            flags,
+        } => (args[0], args[1], offset, flags),
+        _ => panic!("Expected store: {}", pos.func.dfg.display_inst(inst, None)),
+    };
+
+    let (al, ah) = pos.ins().isplit(val);
+    pos.ins().store(flags, al, ptr, offset);
+    pos.ins().store(
+        flags,
+        ah,
+        ptr,
+        offset.try_add_i64(8).expect("store offset overflow"),
+    );
+    pos.remove_inst();
+}
+
+/// Expands an illegal iconst value by splitting it into two.
+fn narrow_iconst(
+    inst: ir::Inst,
+    func: &mut ir::Function,
+    _cfg: &mut ControlFlowGraph,
+    isa: &dyn TargetIsa,
+) {
+    let imm: i64 = if let ir::InstructionData::UnaryImm {
+        opcode: ir::Opcode::Iconst,
+        imm,
+    } = &func.dfg[inst]
+    {
+        (*imm).into()
+    } else {
+        panic!("unexpected instruction in narrow_iconst");
+    };
+
+    let mut pos = FuncCursor::new(func).at_inst(inst);
+    pos.use_srcloc(inst);
+
+    let ty = pos.func.dfg.ctrl_typevar(inst);
+    if isa.pointer_bits() == 32 && ty == I64 {
+        let low = pos.ins().iconst(I32, imm & 0xffffffff);
+        let high = pos.ins().iconst(I32, imm >> 32);
+        // The instruction has as many results as iconcat, so no need to replace them.
+        pos.func.dfg.replace(inst).iconcat(low, high);
+        return;
+    }
+
+    unimplemented!("missing encoding or legalization for iconst.{:?}", ty);
 }

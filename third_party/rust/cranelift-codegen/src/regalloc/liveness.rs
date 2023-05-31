@@ -181,7 +181,7 @@ use crate::ir::dfg::ValueDef;
 use crate::ir::{Ebb, Function, Inst, Layout, ProgramPoint, Value};
 use crate::isa::{EncInfo, OperandConstraint, TargetIsa};
 use crate::regalloc::affinity::Affinity;
-use crate::regalloc::liverange::{LiveRange, LiveRangeContext, LiveRangeForest};
+use crate::regalloc::liverange::{LiveRange, LiveRangeForest};
 use crate::timing;
 use core::mem;
 use core::ops::Index;
@@ -195,7 +195,7 @@ type LiveRangeSet = SparseMap<Value, LiveRange>;
 fn get_or_create<'a>(
     lrset: &'a mut LiveRangeSet,
     value: Value,
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
     func: &Function,
     encinfo: &EncInfo,
 ) -> &'a mut LiveRange {
@@ -314,14 +314,14 @@ impl Liveness {
         }
     }
 
+    /// Current forest storage.
+    pub fn forest(&self) -> &LiveRangeForest {
+        &self.forest
+    }
+
     /// Current live ranges.
     pub fn ranges(&self) -> &LiveRangeSet {
         &self.ranges
-    }
-
-    /// Get a context needed for working with a `LiveRange`.
-    pub fn context<'a>(&'a self, layout: &'a Layout) -> LiveRangeContext<'a, Layout> {
-        LiveRangeContext::new(layout, &self.forest)
     }
 
     /// Clear all data structures in this liveness analysis.
@@ -389,7 +389,7 @@ impl Liveness {
 
     /// Compute the live ranges of all SSA values used in `func`.
     /// This clears out any existing analysis stored in this data structure.
-    pub fn compute(&mut self, isa: &TargetIsa, func: &mut Function, cfg: &ControlFlowGraph) {
+    pub fn compute(&mut self, isa: &dyn TargetIsa, func: &mut Function, cfg: &ControlFlowGraph) {
         let _tt = timing::ra_liveness();
         self.ranges.clear();
 

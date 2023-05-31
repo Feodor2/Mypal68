@@ -13,7 +13,7 @@ use crate::cursor::{Cursor, EncCursor};
 use crate::dominator_tree::DominatorTree;
 use crate::entity::{SparseMap, SparseMapValue};
 use crate::ir::{AbiParam, ArgumentLoc, InstBuilder};
-use crate::ir::{Ebb, Function, Inst, InstructionData, Opcode, Value};
+use crate::ir::{Ebb, Function, Inst, InstructionData, Opcode, Value, ValueLoc};
 use crate::isa::RegClass;
 use crate::isa::{ConstraintKind, EncInfo, Encoding, RecipeConstraints, TargetIsa};
 use crate::regalloc::affinity::Affinity;
@@ -65,7 +65,7 @@ impl Reload {
     /// Run the reload algorithm over `func`.
     pub fn run(
         &mut self,
-        isa: &TargetIsa,
+        isa: &dyn TargetIsa,
         func: &mut Function,
         domtree: &DominatorTree,
         liveness: &mut Liveness,
@@ -211,6 +211,53 @@ impl<'a> Context<'a> {
         debug_assert!(self.candidates.is_empty());
         self.find_candidates(inst, constraints);
 
+        // If we find a copy from a stack slot to the same stack slot, replace
+        // it with a `copy_nop` but otherwise ignore it.  In particular, don't
+        // generate a reload immediately followed by a spill.  The `copy_nop`
+        // has a zero-length encoding, so will disappear at emission time.
+        if let InstructionData::Unary {
+            opcode: Opcode::Copy,
+            arg,
+        } = self.cur.func.dfg[inst]
+        {
+            let dst_vals = self.cur.func.dfg.inst_results(inst);
+            if dst_vals.len() == 1 {
+                let dst_val = dst_vals[0];
+                let can_transform = match (
+                    self.cur.func.locations[arg],
+                    self.cur.func.locations[dst_val],
+                ) {
+                    (ValueLoc::Stack(src_slot), ValueLoc::Stack(dst_slot)) => {
+                        src_slot == dst_slot && {
+                            let src_ty = self.cur.func.dfg.value_type(arg);
+                            let dst_ty = self.cur.func.dfg.value_type(dst_val);
+                            debug_assert!(src_ty == dst_ty);
+                            // This limits the transformation to copies of the
+                            // types: I128 I64 I32 I16 I8 F64 and F32, since that's
+                            // the set of `copy_nop` encodings available.
+                            src_ty.is_int() || src_ty.is_float()
+                        }
+                    }
+                    _ => false,
+                };
+                if can_transform {
+                    // Convert the instruction into a `copy_nop`.
+                    self.cur.func.dfg.replace(inst).copy_nop(arg);
+                    let ok = self.cur.func.update_encoding(inst, self.cur.isa).is_ok();
+                    debug_assert!(ok, "copy_nop encoding missing for this type");
+
+                    // And move on to the next insn.
+                    self.reloads.clear();
+                    let _ = tracker.process_inst(inst, &self.cur.func.dfg, self.liveness);
+                    self.cur.next_inst();
+                    self.candidates.clear();
+                    return;
+                }
+            }
+        }
+
+        // Deal with all instructions not special-cased by the immediately
+        // preceding fragment.
         if let InstructionData::Unary {
             opcode: Opcode::Copy,
             ..
@@ -419,7 +466,7 @@ fn handle_abi_args(
     abi_types: &[AbiParam],
     var_args: &[Value],
     offset: usize,
-    isa: &TargetIsa,
+    isa: &dyn TargetIsa,
     liveness: &Liveness,
 ) {
     debug_assert_eq!(abi_types.len(), var_args.len());

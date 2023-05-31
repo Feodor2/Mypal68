@@ -40,7 +40,7 @@ fn isa_constructor(
     triple: Triple,
     shared_flags: shared_settings::Flags,
     builder: shared_settings::Builder,
-) -> Box<TargetIsa> {
+) -> Box<dyn TargetIsa> {
     let level1 = match triple.pointer_width().unwrap() {
         PointerWidth::U16 => panic!("16-bit RISC-V unrecognized"),
         PointerWidth::U32 => &enc_tables::LEVEL1_RV32[..],
@@ -113,13 +113,21 @@ impl TargetIsa for Isa {
         func: &ir::Function,
         inst: ir::Inst,
         divert: &mut regalloc::RegDiversions,
-        sink: &mut CodeSink,
+        sink: &mut dyn CodeSink,
     ) {
-        binemit::emit_inst(func, inst, divert, sink)
+        binemit::emit_inst(func, inst, divert, sink, self)
     }
 
     fn emit_function_to_memory(&self, func: &ir::Function, sink: &mut MemoryCodeSink) {
-        emit_function(func, binemit::emit_inst, sink)
+        emit_function(func, binemit::emit_inst, sink, self)
+    }
+
+    fn unsigned_add_overflow_condition(&self) -> ir::condcodes::IntCC {
+        unimplemented!()
+    }
+
+    fn unsigned_sub_overflow_condition(&self) -> ir::condcodes::IntCC {
+        unimplemented!()
     }
 }
 
@@ -133,7 +141,7 @@ mod tests {
     use std::string::{String, ToString};
     use target_lexicon::triple;
 
-    fn encstr(isa: &isa::TargetIsa, enc: Result<isa::Encoding, isa::Legalize>) -> String {
+    fn encstr(isa: &dyn isa::TargetIsa, enc: Result<isa::Encoding, isa::Legalize>) -> String {
         match enc {
             Ok(e) => isa.encoding_info().display(e).to_string(),
             Err(_) => "no encoding".to_string(),

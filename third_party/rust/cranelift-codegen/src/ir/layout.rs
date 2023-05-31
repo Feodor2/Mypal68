@@ -60,6 +60,11 @@ impl Layout {
         self.first_ebb = None;
         self.last_ebb = None;
     }
+
+    /// Returns the capacity of the `EbbData` map.
+    pub fn ebb_capacity(&self) -> usize {
+        self.ebbs.capacity()
+    }
 }
 
 /// Sequence numbers.
@@ -693,7 +698,7 @@ impl Layout {
 
 #[derive(Clone, Debug, Default)]
 struct InstNode {
-    // The Ebb containing this instruction, or `None` if the instruction is not yet inserted.
+    /// The Ebb containing this instruction, or `None` if the instruction is not yet inserted.
     ebb: PackedOption<Ebb>,
     prev: PackedOption<Inst>,
     next: PackedOption<Inst>,

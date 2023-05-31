@@ -5,7 +5,7 @@ use crate::ir;
 use crate::ir::builder::ReplaceBuilder;
 use crate::ir::extfunc::ExtFuncData;
 use crate::ir::instructions::{BranchInfo, CallInfo, InstructionData};
-use crate::ir::types;
+use crate::ir::{types, ConstantPool, Immediate};
 use crate::ir::{
     Ebb, FuncRef, Inst, SigRef, Signature, Type, Value, ValueLabelAssignments, ValueList,
     ValueListPool,
@@ -19,13 +19,14 @@ use core::mem;
 use core::ops::{Index, IndexMut};
 use core::u16;
 use std::collections::HashMap;
+use std::vec::Vec;
 
 /// A data flow graph defines all instructions and extended basic blocks in a function as well as
 /// the data flow dependencies between them. The DFG also tracks values which can be either
 /// instruction results or EBB parameters.
 ///
 /// The layout of EBBs in the function and of instructions in each EBB is recorded by the
-/// `FunctionLayout` data structure which form the other half of the function representation.
+/// `Layout` data structure which forms the other half of the function representation.
 ///
 #[derive(Clone)]
 pub struct DataFlowGraph {
@@ -67,6 +68,12 @@ pub struct DataFlowGraph {
 
     /// Saves Value labels.
     pub values_labels: Option<HashMap<Value, ValueLabelAssignments>>,
+
+    /// Constants used within the function
+    pub constants: ConstantPool,
+
+    /// Stores large immediates that otherwise will not fit on InstructionData
+    pub immediates: PrimaryMap<Immediate, Vec<u8>>,
 }
 
 impl DataFlowGraph {
@@ -81,6 +88,8 @@ impl DataFlowGraph {
             signatures: PrimaryMap::new(),
             ext_funcs: PrimaryMap::new(),
             values_labels: None,
+            constants: ConstantPool::new(),
+            immediates: PrimaryMap::new(),
         }
     }
 
@@ -94,6 +103,8 @@ impl DataFlowGraph {
         self.signatures.clear();
         self.ext_funcs.clear();
         self.values_labels = None;
+        self.constants.clear();
+        self.immediates.clear();
     }
 
     /// Get the total number of instructions created in this function, whether they are currently
@@ -426,7 +437,7 @@ impl DataFlowGraph {
     }
 
     /// Returns an object that displays `inst`.
-    pub fn display_inst<'a, I: Into<Option<&'a TargetIsa>>>(
+    pub fn display_inst<'a, I: Into<Option<&'a dyn TargetIsa>>>(
         &'a self,
         inst: Inst,
         isa: I,
@@ -909,7 +920,7 @@ impl EbbData {
 }
 
 /// Object that can display an instruction.
-pub struct DisplayInst<'a>(&'a DataFlowGraph, Option<&'a TargetIsa>, Inst);
+pub struct DisplayInst<'a>(&'a DataFlowGraph, Option<&'a dyn TargetIsa>, Inst);
 
 impl<'a> fmt::Display for DisplayInst<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1234,7 +1245,6 @@ mod tests {
 
     #[test]
     fn aliases() {
-        use crate::ir::condcodes::IntCC;
         use crate::ir::InstBuilder;
 
         let mut func = Function::new();
@@ -1249,7 +1259,7 @@ mod tests {
         assert_eq!(pos.func.dfg.resolve_aliases(v1), v1);
 
         let arg0 = pos.func.dfg.append_ebb_param(ebb0, types::I32);
-        let (s, c) = pos.ins().iadd_cout(v1, arg0);
+        let (s, c) = pos.ins().iadd_ifcout(v1, arg0);
         let iadd = match pos.func.dfg.value_def(s) {
             ValueDef::Result(i, 0) => i,
             _ => panic!(),
@@ -1259,9 +1269,9 @@ mod tests {
         pos.func.dfg.clear_results(iadd);
         pos.func.dfg.attach_result(iadd, s);
 
-        // Replace `iadd_cout` with a normal `iadd` and an `icmp`.
+        // Replace `iadd_ifcout` with a normal `iadd` and an `ifcmp`.
         pos.func.dfg.replace(iadd).iadd(v1, arg0);
-        let c2 = pos.ins().icmp(IntCC::UnsignedLessThan, s, v1);
+        let c2 = pos.ins().ifcmp(s, v1);
         pos.func.dfg.change_to_alias(c, c2);
 
         assert_eq!(pos.func.dfg.resolve_aliases(c2), c2);

@@ -13,10 +13,12 @@
  * limitations under the License.
  */
 
+use core::result;
 use std::boxed::Box;
-use std::error::Error;
 use std::fmt;
-use std::result;
+
+#[cfg(feature = "std")]
+use std::error::Error;
 
 #[derive(Debug, Copy, Clone)]
 pub struct BinaryReaderError {
@@ -26,6 +28,7 @@ pub struct BinaryReaderError {
 
 pub type Result<T> = result::Result<T, BinaryReaderError>;
 
+#[cfg(feature = "std")]
 impl Error for BinaryReaderError {}
 
 impl fmt::Display for BinaryReaderError {
@@ -46,7 +49,7 @@ pub enum CustomSectionKind {
 
 /// Section code as defined [here].
 ///
-/// [here]: https://webassembly.github.io/spec/binary/modules.html#sections
+/// [here]: https://webassembly.github.io/spec/core/binary/modules.html#sections
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SectionCode<'a> {
     Custom {
@@ -69,7 +72,7 @@ pub enum SectionCode<'a> {
 
 /// Types as defined [here].
 ///
-/// [here]: https://webassembly.github.io/spec/syntax/types.html#types
+/// [here]: https://webassembly.github.io/spec/core/syntax/types.html#types
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Type {
     I32,
@@ -81,11 +84,25 @@ pub enum Type {
     AnyRef,
     Func,
     EmptyBlockType,
+    Null,
+}
+
+/// Either a value type or a function type.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TypeOrFuncType {
+    /// A value type.
+    ///
+    /// When used as the type for a block, this type is the optional result
+    /// type: `[] -> [t?]`.
+    Type(Type),
+
+    /// A function type (referenced as an index into the types section).
+    FuncType(u32),
 }
 
 /// External types as defined [here].
 ///
-/// [here]: https://webassembly.github.io/spec/syntax/types.html#external-types
+/// [here]: https://webassembly.github.io/spec/core/syntax/types.html#external-types
 #[derive(Debug, Copy, Clone)]
 pub enum ExternalKind {
     Function,
@@ -211,18 +228,18 @@ impl V128 {
     }
 }
 
-pub type SIMDLineIndex = u8;
+pub type SIMDLaneIndex = u8;
 
 /// Instructions as defined [here].
 ///
-/// [here]: https://webassembly.github.io/spec/binary/instructions.html
+/// [here]: https://webassembly.github.io/spec/core/binary/instructions.html
 #[derive(Debug)]
 pub enum Operator<'a> {
     Unreachable,
     Nop,
-    Block { ty: Type },
-    Loop { ty: Type },
-    If { ty: Type },
+    Block { ty: TypeOrFuncType },
+    Loop { ty: TypeOrFuncType },
+    If { ty: TypeOrFuncType },
     Else,
     End,
     Br { relative_depth: u32 },
@@ -428,6 +445,7 @@ pub enum Operator<'a> {
     Wake { memarg: MemoryImmediate },
     I32Wait { memarg: MemoryImmediate },
     I64Wait { memarg: MemoryImmediate },
+    Fence { flags: u8 },
     I32AtomicLoad { memarg: MemoryImmediate },
     I64AtomicLoad { memarg: MemoryImmediate },
     I32AtomicLoad8U { memarg: MemoryImmediate },
@@ -497,27 +515,26 @@ pub enum Operator<'a> {
     V128Load { memarg: MemoryImmediate },
     V128Store { memarg: MemoryImmediate },
     V128Const { value: V128 },
-    V8x16Shuffle { lines: [SIMDLineIndex; 16] },
     I8x16Splat,
-    I8x16ExtractLaneS { line: SIMDLineIndex },
-    I8x16ExtractLaneU { line: SIMDLineIndex },
-    I8x16ReplaceLane { line: SIMDLineIndex },
+    I8x16ExtractLaneS { lane: SIMDLaneIndex },
+    I8x16ExtractLaneU { lane: SIMDLaneIndex },
+    I8x16ReplaceLane { lane: SIMDLaneIndex },
     I16x8Splat,
-    I16x8ExtractLaneS { line: SIMDLineIndex },
-    I16x8ExtractLaneU { line: SIMDLineIndex },
-    I16x8ReplaceLane { line: SIMDLineIndex },
+    I16x8ExtractLaneS { lane: SIMDLaneIndex },
+    I16x8ExtractLaneU { lane: SIMDLaneIndex },
+    I16x8ReplaceLane { lane: SIMDLaneIndex },
     I32x4Splat,
-    I32x4ExtractLane { line: SIMDLineIndex },
-    I32x4ReplaceLane { line: SIMDLineIndex },
+    I32x4ExtractLane { lane: SIMDLaneIndex },
+    I32x4ReplaceLane { lane: SIMDLaneIndex },
     I64x2Splat,
-    I64x2ExtractLane { line: SIMDLineIndex },
-    I64x2ReplaceLane { line: SIMDLineIndex },
+    I64x2ExtractLane { lane: SIMDLaneIndex },
+    I64x2ReplaceLane { lane: SIMDLaneIndex },
     F32x4Splat,
-    F32x4ExtractLane { line: SIMDLineIndex },
-    F32x4ReplaceLane { line: SIMDLineIndex },
+    F32x4ExtractLane { lane: SIMDLaneIndex },
+    F32x4ReplaceLane { lane: SIMDLaneIndex },
     F64x2Splat,
-    F64x2ExtractLane { line: SIMDLineIndex },
-    F64x2ReplaceLane { line: SIMDLineIndex },
+    F64x2ExtractLane { lane: SIMDLaneIndex },
+    F64x2ReplaceLane { lane: SIMDLaneIndex },
     I8x16Eq,
     I8x16Ne,
     I8x16LtS,
@@ -634,4 +651,10 @@ pub enum Operator<'a> {
     F32x4ConvertUI32x4,
     F64x2ConvertSI64x2,
     F64x2ConvertUI64x2,
+    V8x16Swizzle,
+    V8x16Shuffle { lanes: [SIMDLaneIndex; 16] },
+    I8x16LoadSplat { memarg: MemoryImmediate },
+    I16x8LoadSplat { memarg: MemoryImmediate },
+    I32x4LoadSplat { memarg: MemoryImmediate },
+    I64x2LoadSplat { memarg: MemoryImmediate },
 }

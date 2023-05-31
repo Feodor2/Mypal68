@@ -66,7 +66,7 @@ use crate::timing;
 use core::fmt;
 use failure_derive::Fail;
 use std::boxed::Box;
-use target_lexicon::{Architecture, PointerWidth, Triple};
+use target_lexicon::{triple, Architecture, PointerWidth, Triple};
 
 #[cfg(feature = "riscv")]
 mod riscv;
@@ -88,40 +88,39 @@ pub mod registers;
 mod stack;
 
 /// Returns a builder that can create a corresponding `TargetIsa`
-/// or `Err(LookupError::Unsupported)` if not enabled.
+/// or `Err(LookupError::SupportDisabled)` if not enabled.
 macro_rules! isa_builder {
-    ($name:ident, $feature:tt) => {{
+    ($name: ident, $feature: tt, $triple: ident) => {{
         #[cfg(feature = $feature)]
-        fn $name(triple: Triple) -> Result<Builder, LookupError> {
-            Ok($name::isa_builder(triple))
-        };
-        #[cfg(not(feature = $feature))]
-        fn $name(_triple: Triple) -> Result<Builder, LookupError> {
-            Err(LookupError::Unsupported)
+        {
+            Ok($name::isa_builder($triple))
         }
-        $name
+        #[cfg(not(feature = $feature))]
+        {
+            Err(LookupError::SupportDisabled)
+        }
     }};
+}
+
+/// Look for an ISA for the given `triple`.
+/// Return a builder that can create a corresponding `TargetIsa`.
+pub fn lookup(triple: Triple) -> Result<Builder, LookupError> {
+    match triple.architecture {
+        Architecture::Riscv32 | Architecture::Riscv64 => isa_builder!(riscv, "riscv", triple),
+        Architecture::I386 | Architecture::I586 | Architecture::I686 | Architecture::X86_64 => {
+            isa_builder!(x86, "x86", triple)
+        }
+        Architecture::Arm { .. } => isa_builder!(arm32, "arm32", triple),
+        Architecture::Aarch64 { .. } => isa_builder!(arm64, "arm64", triple),
+        _ => Err(LookupError::Unsupported),
+    }
 }
 
 /// Look for a supported ISA with the given `name`.
 /// Return a builder that can create a corresponding `TargetIsa`.
-pub fn lookup(triple: Triple) -> Result<Builder, LookupError> {
-    match triple.architecture {
-        Architecture::Riscv32 | Architecture::Riscv64 => isa_builder!(riscv, "riscv")(triple),
-        Architecture::I386 | Architecture::I586 | Architecture::I686 | Architecture::X86_64 => {
-            isa_builder!(x86, "x86")(triple)
-        }
-        Architecture::Thumbv6m
-        | Architecture::Thumbv7em
-        | Architecture::Thumbv7m
-        | Architecture::Arm
-        | Architecture::Armv4t
-        | Architecture::Armv5te
-        | Architecture::Armv7
-        | Architecture::Armv7s => isa_builder!(arm32, "arm32")(triple),
-        Architecture::Aarch64 => isa_builder!(arm64, "arm64")(triple),
-        _ => Err(LookupError::Unsupported),
-    }
+pub fn lookup_by_name(name: &str) -> Result<Builder, LookupError> {
+    use std::str::FromStr;
+    lookup(triple!(name))
 }
 
 /// Describes reason for target lookup failure
@@ -141,13 +140,13 @@ pub enum LookupError {
 pub struct Builder {
     triple: Triple,
     setup: settings::Builder,
-    constructor: fn(Triple, settings::Flags, settings::Builder) -> Box<TargetIsa>,
+    constructor: fn(Triple, settings::Flags, settings::Builder) -> Box<dyn TargetIsa>,
 }
 
 impl Builder {
     /// Combine the ISA-specific settings with the provided ISA-independent settings and allocate a
     /// fully configured `TargetIsa` trait object.
-    pub fn finish(self, shared_flags: settings::Flags) -> Box<TargetIsa> {
+    pub fn finish(self, shared_flags: settings::Flags) -> Box<dyn TargetIsa> {
         (self.constructor)(self.triple, shared_flags, self.setup)
     }
 }
@@ -167,7 +166,7 @@ impl settings::Configurable for Builder {
 ///
 /// The `Encodings` iterator returns a legalization function to call.
 pub type Legalize =
-    fn(ir::Inst, &mut ir::Function, &mut flowgraph::ControlFlowGraph, &TargetIsa) -> bool;
+    fn(ir::Inst, &mut ir::Function, &mut flowgraph::ControlFlowGraph, &dyn TargetIsa) -> bool;
 
 /// This struct provides information that a frontend may need to know about a target to
 /// produce Cranelift IR for the target.
@@ -343,7 +342,7 @@ pub trait TargetIsa: fmt::Display + Sync {
         let word_size = StackSize::from(self.pointer_bytes());
 
         // Account for the SpiderMonkey standard prologue pushes.
-        if func.signature.call_conv == CallConv::Baldrdash {
+        if func.signature.call_conv.extends_baldrdash() {
             let bytes = StackSize::from(self.flags().baldrdash_prologue_words()) * word_size;
             let mut ss = ir::StackSlotData::new(ir::StackSlotKind::IncomingArg, bytes);
             ss.offset = Some(-(bytes as StackOffset));
@@ -367,9 +366,15 @@ pub trait TargetIsa: fmt::Display + Sync {
         func: &ir::Function,
         inst: ir::Inst,
         divert: &mut regalloc::RegDiversions,
-        sink: &mut binemit::CodeSink,
+        sink: &mut dyn binemit::CodeSink,
     );
 
     /// Emit a whole function into memory.
     fn emit_function_to_memory(&self, func: &ir::Function, sink: &mut binemit::MemoryCodeSink);
+
+    /// IntCC condition for Unsigned Addition Overflow (Carry).
+    fn unsigned_add_overflow_condition(&self) -> ir::condcodes::IntCC;
+
+    /// IntCC condition for Unsigned Subtraction Overflow (Borrow/Carry).
+    fn unsigned_sub_overflow_condition(&self) -> ir::condcodes::IntCC;
 }

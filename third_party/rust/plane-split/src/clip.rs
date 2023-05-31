@@ -1,10 +1,10 @@
 use {Intersection, NegativeHemisphereError, Plane, Polygon};
 
-use euclid::{Trig, TypedRect, TypedScale, TypedTransform3D, TypedVector3D};
+use euclid::{Trig, Rect, Scale, Transform3D, Vector3D};
 use euclid::approxeq::ApproxEq;
 use num_traits::{Float, One, Zero};
 
-use std::{fmt, mem, ops};
+use std::{fmt, iter, mem, ops};
 
 
 /// A helper object to clip polygons by a number of planes.
@@ -38,35 +38,35 @@ impl<
 
     /// Extract the clipping planes that define the frustum for a given transformation.
     pub fn frustum_planes<V>(
-        t: &TypedTransform3D<T, U, V>,
-        bounds: Option<TypedRect<T, V>>,
+        t: &Transform3D<T, U, V>,
+        bounds: Option<Rect<T, V>>,
     ) -> Result<impl Iterator<Item = Plane<T, U>>, NegativeHemisphereError> {
-        let mw = TypedVector3D::new(t.m14, t.m24, t.m34);
+        let mw = Vector3D::new(t.m14, t.m24, t.m34);
         let plane_positive = Plane::from_unnormalized(mw, t.m44)?;
 
         let bounds_iter_maybe = match bounds {
             Some(bounds) => {
-                let mx = TypedVector3D::new(t.m11, t.m21, t.m31);
+                let mx = Vector3D::new(t.m11, t.m21, t.m31);
                 let left = bounds.origin.x;
                 let plane_left = Plane::from_unnormalized(
-                    mx - mw * TypedScale::new(left),
+                    mx - mw * Scale::new(left),
                     t.m41 - t.m44 * left,
                 )?;
                 let right = bounds.origin.x + bounds.size.width;
                 let plane_right = Plane::from_unnormalized(
-                    mw * TypedScale::new(right) - mx,
+                    mw * Scale::new(right) - mx,
                     t.m44 * right - t.m41,
                 )?;
 
-                let my = TypedVector3D::new(t.m12, t.m22, t.m32);
+                let my = Vector3D::new(t.m12, t.m22, t.m32);
                 let top = bounds.origin.y;
                 let plane_top = Plane::from_unnormalized(
-                    my - mw * TypedScale::new(top),
+                    my - mw * Scale::new(top),
                     t.m42 - t.m44 * top,
                 )?;
                 let bottom = bounds.origin.y + bounds.size.height;
                 let plane_bottom = Plane::from_unnormalized(
-                    mw * TypedScale::new(bottom) - my,
+                    mw * Scale::new(bottom) - my,
                     t.m44 * bottom - t.m42,
                 )?;
 
@@ -104,18 +104,27 @@ impl<
             mem::swap(&mut self.results, &mut self.temp);
 
             for mut poly in self.temp.drain(..) {
-                if let Intersection::Inside(line) = poly.intersect_plane(clip) {
-                    let (res1, res2) = poly.split_with_normal(&line, &clip.normal);
-                    self.results.extend(
-                        res1
-                            .into_iter()
-                            .chain(res2)
-                            .filter(|p| clip.signed_distance_sum_to(p) > T::zero())
-                    );
-                }
-                // Note: if the intersection has happened, the `poly` will now
-                // contain the remainder of the original polygon.
-                if clip.signed_distance_sum_to(&poly) > T::zero() {
+                let dist = match poly.intersect_plane(clip) {
+                    Intersection::Inside(line) => {
+                        let (res1, res2) = poly.split_with_normal(&line, &clip.normal);
+                        self.results.extend(
+                            iter::once(poly)
+                                .chain(res1)
+                                .chain(res2)
+                                .filter(|p| clip.signed_distance_sum_to(p) > T::zero())
+                        );
+                        continue
+                    }
+                    Intersection::Coplanar => {
+                        let ndot = poly.plane.normal.dot(clip.normal);
+                        clip.offset - ndot * poly.plane.offset
+                    }
+                    Intersection::Outside => {
+                        clip.signed_distance_sum_to(&poly)
+                    }
+                };
+
+                if dist > T::zero() {
                     self.results.push(poly);
                 }
             }
@@ -130,8 +139,8 @@ impl<
     pub fn clip_transformed<'a, V>(
         &'a mut self,
         polygon: Polygon<T, U>,
-        transform: &'a TypedTransform3D<T, U, V>,
-        bounds: Option<TypedRect<T, V>>,
+        transform: &'a Transform3D<T, U, V>,
+        bounds: Option<Rect<T, V>>,
     ) -> Result<impl 'a + Iterator<Item = Polygon<T, V>>, NegativeHemisphereError>
     where
         T: Trig,

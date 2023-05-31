@@ -25,12 +25,19 @@ pub struct BlockingError {
 /// calls complete. The maximum value is specified when creating a thread pool
 /// using [`Builder::max_blocking`][build]
 ///
+/// NB: The entire task that called `blocking` is blocked whenever the supplied
+/// closure blocks, even if you have used future combinators such as `select` -
+/// the other futures in this task will not make progress until the closure
+/// returns.
+/// If this is not desired, ensure that `blocking` runs in its own task (e.g.
+/// using `futures::sync::oneshot::spawn`).
+///
 /// [build]: struct.Builder.html#method.max_blocking
 ///
 /// # Return
 ///
-/// When the blocking closure is executed, `Ok(T)` is returned, where `T` is the
-/// closure's return value.
+/// When the blocking closure is executed, `Ok(Ready(T))` is returned, where
+/// `T` is the closure's return value.
 ///
 /// If the thread pool has shutdown, `Err` is returned.
 ///
@@ -115,7 +122,8 @@ pub struct BlockingError {
 /// }
 /// ```
 pub fn blocking<F, T>(f: F) -> Poll<T, BlockingError>
-where F: FnOnce() -> T,
+where
+    F: FnOnce() -> T,
 {
     let res = Worker::with_current(|worker| {
         let worker = match worker {
@@ -141,8 +149,7 @@ where F: FnOnce() -> T,
     // back ownership of the worker if the worker handoff didn't complete yet.
     Worker::with_current(|worker| {
         // Worker must be set since it was above.
-        worker.unwrap()
-            .transition_from_blocking();
+        worker.unwrap().transition_from_blocking();
     });
 
     // Return the result

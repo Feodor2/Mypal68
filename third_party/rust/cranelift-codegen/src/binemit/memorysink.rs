@@ -13,9 +13,11 @@
 //! that a `MemoryCodeSink` will always write binary machine code to raw memory. It forwards any
 //! relocations to a `RelocSink` trait object. Relocations are less frequent than the
 //! `CodeSink::put*` methods, so the performance impact of the virtual callbacks is less severe.
-
-use super::{Addend, CodeOffset, CodeSink, Reloc};
-use crate::ir::{ExternalName, JumpTable, SourceLoc, TrapCode};
+use super::{Addend, CodeInfo, CodeOffset, CodeSink, Reloc};
+use crate::binemit::stackmap::Stackmap;
+use crate::ir::entities::Value;
+use crate::ir::{ConstantOffset, ExternalName, Function, JumpTable, SourceLoc, TrapCode};
+use crate::isa::TargetIsa;
 use core::ptr::write_unaligned;
 
 /// A `CodeSink` that writes binary machine code directly into memory.
@@ -30,12 +32,15 @@ use core::ptr::write_unaligned;
 /// Note that `MemoryCodeSink` writes multi-byte values in the native byte order of the host. This
 /// is not the right thing to do for cross compilation.
 pub struct MemoryCodeSink<'a> {
+    /// Pointer to start of sink's preallocated memory.
     data: *mut u8,
+    /// Offset is isize because its major consumer needs it in that form.
     offset: isize,
-    /// Size of the machine code portion of output
-    pub code_size: isize,
-    relocs: &'a mut RelocSink,
-    traps: &'a mut TrapSink,
+    relocs: &'a mut dyn RelocSink,
+    traps: &'a mut dyn TrapSink,
+    stackmaps: &'a mut dyn StackmapSink,
+    /// Information about the generated code and read-only data.
+    pub info: CodeInfo,
 }
 
 impl<'a> MemoryCodeSink<'a> {
@@ -43,13 +48,24 @@ impl<'a> MemoryCodeSink<'a> {
     ///
     /// This function is unsafe since `MemoryCodeSink` does not perform bounds checking on the
     /// memory buffer, and it can't guarantee that the `data` pointer is valid.
-    pub unsafe fn new(data: *mut u8, relocs: &'a mut RelocSink, traps: &'a mut TrapSink) -> Self {
+    pub unsafe fn new(
+        data: *mut u8,
+        relocs: &'a mut dyn RelocSink,
+        traps: &'a mut dyn TrapSink,
+        stackmaps: &'a mut dyn StackmapSink,
+    ) -> Self {
         Self {
             data,
             offset: 0,
-            code_size: 0,
+            info: CodeInfo {
+                code_size: 0,
+                jumptables_size: 0,
+                rodata_size: 0,
+                total_size: 0,
+            },
             relocs,
             traps,
+            stackmaps,
         }
     }
 }
@@ -62,6 +78,9 @@ pub trait RelocSink {
     /// Add a relocation referencing an external symbol at the current offset.
     fn reloc_external(&mut self, _: CodeOffset, _: Reloc, _: &ExternalName, _: Addend);
 
+    /// Add a relocation referencing a constant.
+    fn reloc_constant(&mut self, _: CodeOffset, _: Reloc, _: ConstantOffset);
+
     /// Add a relocation referencing a jump table.
     fn reloc_jt(&mut self, _: CodeOffset, _: Reloc, _: JumpTable);
 }
@@ -69,10 +88,20 @@ pub trait RelocSink {
 /// A trait for receiving trap codes and offsets.
 ///
 /// If you don't need information about possible traps, you can use the
-/// [`NullTrapSink`](binemit/trait.TrapSink.html) implementation.
+/// [`NullTrapSink`](NullTrapSink) implementation.
 pub trait TrapSink {
     /// Add trap information for a specific offset.
     fn trap(&mut self, _: CodeOffset, _: SourceLoc, _: TrapCode);
+}
+
+impl<'a> MemoryCodeSink<'a> {
+    fn write<T>(&mut self, x: T) {
+        unsafe {
+            #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_ptr_alignment))]
+            write_unaligned(self.data.offset(self.offset) as *mut T, x);
+            self.offset += std::mem::size_of::<T>() as isize;
+        }
+    }
 }
 
 impl<'a> CodeSink for MemoryCodeSink<'a> {
@@ -81,34 +110,19 @@ impl<'a> CodeSink for MemoryCodeSink<'a> {
     }
 
     fn put1(&mut self, x: u8) {
-        unsafe {
-            write_unaligned(self.data.offset(self.offset), x);
-        }
-        self.offset += 1;
+        self.write(x);
     }
 
     fn put2(&mut self, x: u16) {
-        unsafe {
-            #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_ptr_alignment))]
-            write_unaligned(self.data.offset(self.offset) as *mut u16, x);
-        }
-        self.offset += 2;
+        self.write(x);
     }
 
     fn put4(&mut self, x: u32) {
-        unsafe {
-            #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_ptr_alignment))]
-            write_unaligned(self.data.offset(self.offset) as *mut u32, x);
-        }
-        self.offset += 4;
+        self.write(x);
     }
 
     fn put8(&mut self, x: u64) {
-        unsafe {
-            #[cfg_attr(feature = "cargo-clippy", allow(clippy::cast_ptr_alignment))]
-            write_unaligned(self.data.offset(self.offset) as *mut u64, x);
-        }
-        self.offset += 8;
+        self.write(x);
     }
 
     fn reloc_ebb(&mut self, rel: Reloc, ebb_offset: CodeOffset) {
@@ -121,6 +135,11 @@ impl<'a> CodeSink for MemoryCodeSink<'a> {
         self.relocs.reloc_external(ofs, rel, name, addend);
     }
 
+    fn reloc_constant(&mut self, rel: Reloc, constant_offset: ConstantOffset) {
+        let ofs = self.offset();
+        self.relocs.reloc_constant(ofs, rel, constant_offset);
+    }
+
     fn reloc_jt(&mut self, rel: Reloc, jt: JumpTable) {
         let ofs = self.offset();
         self.relocs.reloc_jt(ofs, rel, jt);
@@ -131,9 +150,35 @@ impl<'a> CodeSink for MemoryCodeSink<'a> {
         self.traps.trap(ofs, srcloc, code);
     }
 
-    fn begin_rodata(&mut self) {
-        self.code_size = self.offset;
+    fn begin_jumptables(&mut self) {
+        self.info.code_size = self.offset();
     }
+
+    fn begin_rodata(&mut self) {
+        self.info.jumptables_size = self.offset() - self.info.code_size;
+    }
+
+    fn end_codegen(&mut self) {
+        self.info.rodata_size = self.offset() - (self.info.jumptables_size + self.info.code_size);
+        self.info.total_size = self.offset();
+    }
+
+    fn add_stackmap(&mut self, val_list: &[Value], func: &Function, isa: &dyn TargetIsa) {
+        let ofs = self.offset();
+        let stackmap = Stackmap::from_values(&val_list, func, isa);
+        self.stackmaps.add_stackmap(ofs, stackmap);
+    }
+}
+
+/// A `RelocSink` implementation that does nothing, which is convenient when
+/// compiling code that does not relocate anything.
+pub struct NullRelocSink {}
+
+impl RelocSink for NullRelocSink {
+    fn reloc_ebb(&mut self, _: u32, _: Reloc, _: u32) {}
+    fn reloc_external(&mut self, _: u32, _: Reloc, _: &ExternalName, _: i64) {}
+    fn reloc_constant(&mut self, _: CodeOffset, _: Reloc, _: ConstantOffset) {}
+    fn reloc_jt(&mut self, _: u32, _: Reloc, _: JumpTable) {}
 }
 
 /// A `TrapSink` implementation that does nothing, which is convenient when
@@ -142,4 +187,17 @@ pub struct NullTrapSink {}
 
 impl TrapSink for NullTrapSink {
     fn trap(&mut self, _offset: CodeOffset, _srcloc: SourceLoc, _code: TrapCode) {}
+}
+
+/// A trait for emitting stackmaps.
+pub trait StackmapSink {
+    /// Output a bitmap of the stack representing the live reference variables at this code offset.
+    fn add_stackmap(&mut self, _: CodeOffset, _: Stackmap);
+}
+
+/// Placeholder StackmapSink that does nothing.
+pub struct NullStackmapSink {}
+
+impl StackmapSink for NullStackmapSink {
+    fn add_stackmap(&mut self, _: CodeOffset, _: Stackmap) {}
 }

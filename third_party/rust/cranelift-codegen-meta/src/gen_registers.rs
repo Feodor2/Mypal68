@@ -56,6 +56,7 @@ fn gen_regclass(isa: &TargetIsa, reg_class: &RegClass, fmt: &mut Formatter) {
         fmtln!(fmt, "first: {},", reg_bank.first_unit + reg_class.start);
         fmtln!(fmt, "subclasses: {:#x},", reg_class.subclass_mask());
         fmtln!(fmt, "mask: [{}],", mask);
+        fmtln!(fmt, "pinned_reg: {:?},", reg_bank.pinned_reg);
         fmtln!(fmt, "info: &INFO,");
     });
     fmtln!(fmt, "};");
@@ -132,7 +133,7 @@ fn gen_isa(isa: &TargetIsa, fmt: &mut Formatter) {
     fmtln!(fmt, "}");
 }
 
-pub fn generate(isa: &TargetIsa, filename: &str, out_dir: &str) -> Result<(), error::Error> {
+pub(crate) fn generate(isa: &TargetIsa, filename: &str, out_dir: &str) -> Result<(), error::Error> {
     let mut fmt = Formatter::new();
     gen_isa(&isa, &mut fmt);
     fmt.update_file(filename, out_dir)?;

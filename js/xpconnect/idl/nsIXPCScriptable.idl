@@ -12,10 +12,6 @@
 
 #include "js/TypeDecls.h"
 
-struct JSFreeOp;
-namespace js {
-struct Class;
-}
 %}
 
 interface nsIXPConnectWrappedNative;
@@ -25,7 +21,6 @@ interface nsIXPConnectWrappedNative;
 [ptr] native JSValPtr(JS::Value);
 [ptr] native JSFreeOpPtr(JSFreeOp);
 [ref] native JSCallArgsRef(const JS::CallArgs);
-[ptr] native jsClassPtr(const js::Class);
 [ptr] native JSClassPtr(const JSClass);
       native JSMutableHandleIdVector(JS::MutableHandleIdVector);
 
@@ -66,7 +61,6 @@ interface nsIXPCScriptable : nsISupports
 {
     readonly attribute AUTF8String className;
     [notxpcom,nostdcall] uint32_t getScriptableFlags();
-    [notxpcom,nostdcall] jsClassPtr getClass();
     [notxpcom,nostdcall] JSClassPtr getJSClass();
 
     void   preCreate(in nsISupports nativeObj, in JSContextPtr cx,

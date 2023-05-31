@@ -45,9 +45,7 @@ class BaselineInspector {
     MOZ_ASSERT(script);
   }
 
-  bool hasICScript() const { return script->hasICScript(); }
-
-  ICScript* icScript() const;
+  JitScript* jitScript() const;
 
  private:
 #ifdef DEBUG
@@ -60,11 +58,8 @@ class BaselineInspector {
   template <typename ICInspectorType>
   ICInspectorType makeICInspector(jsbytecode* pc,
                                   ICStub::Kind expectedFallbackKind) {
-    ICEntry* ent = nullptr;
-    if (hasICScript()) {
-      ent = &icEntryFromPC(pc);
-      MOZ_ASSERT(ent->fallbackStub()->kind() == expectedFallbackKind);
-    }
+    ICEntry* ent = &icEntryFromPC(pc);
+    MOZ_ASSERT(ent->fallbackStub()->kind() == expectedFallbackKind);
     return ICInspectorType(this, pc, ent);
   }
 
@@ -98,7 +93,6 @@ class BaselineInspector {
 
   JSObject* getTemplateObject(jsbytecode* pc);
   JSObject* getTemplateObjectForNative(jsbytecode* pc, Native native);
-  JSObject* getTemplateObjectForClassHook(jsbytecode* pc, const Class* clasp);
 
   // Sometimes the group a template object will have is known, even if the
   // object itself isn't.

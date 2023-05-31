@@ -20,8 +20,8 @@ class SavedFrame : public NativeObject {
   static const ClassSpec classSpec_;
 
  public:
-  static const Class class_;
-  static const Class protoClass_;
+  static const JSClass class_;
+  static const JSClass protoClass_;
   static const JSPropertySpec protoAccessors[];
   static const JSFunctionSpec protoFunctions[];
   static const JSFunctionSpec staticFunctions[];
@@ -39,7 +39,7 @@ class SavedFrame : public NativeObject {
   static bool parentProperty(JSContext* cx, unsigned argc, Value* vp);
   static bool toStringMethod(JSContext* cx, unsigned argc, Value* vp);
 
-  static void finalize(FreeOp* fop, JSObject* obj);
+  static void finalize(JSFreeOp* fop, JSObject* obj);
 
   // Convenient getters for SavedFrame's reserved slots for use from C++.
   JSAtom* getSource();
@@ -50,6 +50,7 @@ class SavedFrame : public NativeObject {
   JSAtom* getAsyncCause();
   SavedFrame* getParent() const;
   JSPrincipals* getPrincipals();
+  bool getMutedErrors();
   bool isSelfHosted(JSContext* cx);
   bool isWasm();
 
@@ -104,8 +105,7 @@ class SavedFrame : public NativeObject {
   struct Lookup;
   struct HashPolicy;
 
-  typedef JS::GCHashSet<WeakHeapPtr<SavedFrame*>, HashPolicy,
-                        SystemAllocPolicy>
+  typedef JS::GCHashSet<WeakHeapPtr<SavedFrame*>, HashPolicy, SystemAllocPolicy>
       Set;
 
  private:
@@ -121,8 +121,9 @@ class SavedFrame : public NativeObject {
   void initFunctionDisplayName(JSAtom* maybeName);
   void initAsyncCause(JSAtom* maybeCause);
   void initParent(SavedFrame* maybeParent);
-  void initPrincipalsAlreadyHeld(JSPrincipals* principals);
-  void initPrincipals(JSPrincipals* principals);
+  void initPrincipalsAlreadyHeldAndMutedErrors(JSPrincipals* principals,
+                                               bool mutedErrors);
+  void initPrincipalsAndMutedErrors(JSPrincipals* principals, bool mutedErrors);
 
   enum {
     // The reserved slots in the SavedFrame class.
@@ -141,16 +142,16 @@ class SavedFrame : public NativeObject {
 };
 
 struct SavedFrame::HashPolicy {
-  typedef SavedFrame::Lookup Lookup;
-  typedef MovableCellHasher<SavedFrame*> SavedFramePtrHasher;
-  typedef PointerHasher<JSPrincipals*> JSPrincipalsPtrHasher;
+  using Lookup = SavedFrame::Lookup;
+  using SavedFramePtrHasher = MovableCellHasher<SavedFrame*>;
+  using JSPrincipalsPtrHasher = PointerHasher<JSPrincipals*>;
 
   static bool hasHash(const Lookup& l);
   static bool ensureHash(const Lookup& l);
   static HashNumber hash(const Lookup& lookup);
   static bool match(SavedFrame* existing, const Lookup& lookup);
 
-  typedef WeakHeapPtr<SavedFrame*> Key;
+  using Key = WeakHeapPtr<SavedFrame*>;
   static void rekey(Key& key, const Key& newKey);
 };
 
@@ -193,6 +194,13 @@ struct ReconstructedSavedFramePrincipals : public JSPrincipals {
 
   MOZ_MUST_USE bool write(JSContext* cx,
                           JSStructuredCloneWriter* writer) override {
+    MOZ_ASSERT(false,
+               "ReconstructedSavedFramePrincipals should never be exposed to "
+               "embedders");
+    return false;
+  }
+
+  bool isSystemOrAddonPrincipal() override {
     MOZ_ASSERT(false,
                "ReconstructedSavedFramePrincipals should never be exposed to "
                "embedders");

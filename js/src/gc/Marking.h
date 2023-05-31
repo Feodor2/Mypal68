@@ -20,7 +20,6 @@ class JSTracer;
 namespace js {
 class BaseShape;
 class GCMarker;
-class LazyScript;
 class NativeObject;
 class ObjectGroup;
 class Shape;
@@ -31,22 +30,13 @@ class JitCode;
 }  // namespace jit
 
 #ifdef DEBUG
-// Return true if this trace is happening on behalf of gray buffering during
-// the marking phase of incremental GC.
-bool IsBufferGrayRootsTracer(JSTracer* trc);
-
-bool IsUnmarkGrayTracer(JSTracer* trc);
+bool IsTracerKind(JSTracer* trc, JS::CallbackTracer::TracerKind kind);
 #endif
 
 namespace gc {
 
-class Arena;
 struct Cell;
 class TenuredCell;
-
-/*** Special Cases ***/
-
-void PushArena(GCMarker* gcmarker, Arena* arena);
 
 /*** Liveness ***/
 
@@ -61,14 +51,7 @@ void PushArena(GCMarker* gcmarker, Arena* arena);
 // separate implementations.
 
 template <typename T>
-bool IsMarkedInternal(JSRuntime* rt, T* thing);
-template <typename T>
 bool IsMarkedInternal(JSRuntime* rt, T** thing);
-
-template <typename T>
-bool IsMarkedBlackInternal(JSRuntime* rt, T* thing);
-template <typename T>
-bool IsMarkedBlackInternal(JSRuntime* rt, T** thing);
 
 template <typename T>
 bool IsAboutToBeFinalizedInternal(T* thingp);
@@ -87,22 +70,9 @@ inline bool IsMarkedUnbarriered(JSRuntime* rt, T* thingp) {
 // zones that are not currently being collected or are owned by another runtime
 // are always reported as being marked.
 template <typename T>
-inline bool IsMarked(JSRuntime* rt, WriteBarriered<T>* thingp) {
+inline bool IsMarked(JSRuntime* rt, BarrieredBase<T>* thingp) {
   return IsMarkedInternal(rt,
                           ConvertToBase(thingp->unsafeUnbarrieredForTracing()));
-}
-
-// Report whether a GC thing has been marked black.
-template <typename T>
-inline bool IsMarkedBlackUnbarriered(JSRuntime* rt, T* thingp) {
-  return IsMarkedBlackInternal(rt, ConvertToBase(thingp));
-}
-
-// Report whether a GC thing has been marked black.
-template <typename T>
-inline bool IsMarkedBlack(JSRuntime* rt, WriteBarriered<T>* thingp) {
-  return IsMarkedBlackInternal(
-      rt, ConvertToBase(thingp->unsafeUnbarrieredForTracing()));
 }
 
 template <typename T>
@@ -111,7 +81,7 @@ inline bool IsAboutToBeFinalizedUnbarriered(T* thingp) {
 }
 
 template <typename T>
-inline bool IsAboutToBeFinalized(WriteBarriered<T>* thingp) {
+inline bool IsAboutToBeFinalized(const WriteBarriered<T>* thingp) {
   return IsAboutToBeFinalizedInternal(
       ConvertToBase(thingp->unsafeUnbarrieredForTracing()));
 }
@@ -124,6 +94,8 @@ inline bool IsAboutToBeFinalized(ReadBarriered<T>* thingp) {
 
 bool IsAboutToBeFinalizedDuringSweep(TenuredCell& tenured);
 
+inline bool IsAboutToBeFinalizedDuringMinorSweep(Cell* cell);
+
 inline Cell* ToMarkable(const Value& v) {
   if (v.isGCThing()) {
     return (Cell*)v.toGCThing();
@@ -132,6 +104,8 @@ inline Cell* ToMarkable(const Value& v) {
 }
 
 inline Cell* ToMarkable(Cell* cell) { return cell; }
+
+bool UnmarkGrayGCThingUnchecked(JSRuntime* rt, JS::GCCellPtr thing);
 
 } /* namespace gc */
 

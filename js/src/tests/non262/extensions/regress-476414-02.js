@@ -1,5 +1,4 @@
 // |reftest| skip-if(!xulRuntime.shell) slow
-/* -*- Mode: C++; tab-width: 2; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -35,18 +34,12 @@ function tryRunning(f, code)
   } catch(runError) {}
 }
 var realFunction = Function;
-var realUneval = uneval;
 var realToString = toString;
-var realToSource = toSource;
 function tryEnsureSanity()
 {
   delete Function;
-  delete uneval;
-  delete toSource;
   delete toString;
   Function = realFunction;
-  uneval = realUneval;
-  toSource = realToSource;
   toString = realToString;
 }
 for (let iters = 0; iters < 2000; ++iters) { 

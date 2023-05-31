@@ -4,6 +4,8 @@
 
 #include "jit/arm64/Lowering-arm64.h"
 
+#include "mozilla/MathAlgorithms.h"
+
 #include "jit/arm64/Assembler-arm64.h"
 #include "jit/Lowering.h"
 #include "jit/MIR.h"
@@ -201,8 +203,28 @@ void LIRGeneratorARM64::lowerDivI(MDiv* div) {
     return;
   }
 
-  // TODO (Bug 1523568): Implement the division-avoidance paths when rhs is
-  // constant.
+  if (div->rhs()->isConstant()) {
+    LAllocation lhs = useRegister(div->lhs());
+    int32_t rhs = div->rhs()->toConstant()->toInt32();
+    int32_t shift = mozilla::FloorLog2(mozilla::Abs(rhs));
+
+    if (rhs != 0 && uint32_t(1) << shift == mozilla::Abs(rhs)) {
+      LDivPowTwoI* lir = new (alloc()) LDivPowTwoI(lhs, shift, rhs < 0);
+      if (div->fallible()) {
+        assignSnapshot(lir, Bailout_DoubleOutput);
+      }
+      define(lir, div);
+      return;
+    }
+    if (rhs != 0) {
+      LDivConstantI* lir = new (alloc()) LDivConstantI(lhs, rhs, temp());
+      if (div->fallible()) {
+        assignSnapshot(lir, Bailout_DoubleOutput);
+      }
+      define(lir, div);
+      return;
+    }
+  }
 
   LDivI* lir = new (alloc())
       LDivI(useRegister(div->lhs()), useRegister(div->rhs()), temp());
@@ -290,6 +312,15 @@ void LIRGeneratorARM64::lowerUrshD(MUrsh* mir) {
   define(lir, mir);
 }
 
+void LIRGeneratorARM64::lowerPowOfTwoI(MPow* mir) {
+  int32_t base = mir->input()->toConstant()->toInt32();
+  MDefinition* power = mir->power();
+
+  auto* lir = new (alloc()) LPowOfTwoI(base, useRegister(power));
+  assignSnapshot(lir, Bailout_PrecisionLoss);
+  define(lir, mir);
+}
+
 void LIRGenerator::visitWasmNeg(MWasmNeg* ins) {
   switch (ins->type()) {
     case MIRType::Int32:
@@ -308,8 +339,26 @@ void LIRGenerator::visitWasmNeg(MWasmNeg* ins) {
 
 void LIRGeneratorARM64::lowerUDiv(MDiv* div) {
   LAllocation lhs = useRegister(div->lhs());
-  // TODO (Bug 1523568): Implement the division-avoidance paths when rhs is
-  // constant.
+  if (div->rhs()->isConstant()) {
+    int32_t rhs = div->rhs()->toConstant()->toInt32();
+    int32_t shift = mozilla::FloorLog2(mozilla::Abs(rhs));
+
+    if (rhs != 0 && uint32_t(1) << shift == mozilla::Abs(rhs)) {
+      LDivPowTwoI* lir = new (alloc()) LDivPowTwoI(lhs, shift, false);
+      if (div->fallible()) {
+        assignSnapshot(lir, Bailout_DoubleOutput);
+      }
+      define(lir, div);
+      return;
+    }
+
+    LUDivConstantI* lir = new (alloc()) LUDivConstantI(lhs, rhs, temp());
+    if (div->fallible()) {
+      assignSnapshot(lir, Bailout_DoubleOutput);
+    }
+    define(lir, div);
+    return;
+  }
 
   // Generate UDiv
   LAllocation rhs = useRegister(div->rhs());
@@ -463,14 +512,11 @@ void LIRGenerator::visitSubstr(MSubstr* ins) {
   assignSafepoint(lir, ins);
 }
 
-void LIRGenerator::visitRandom(MRandom* ins) {
-  LRandom* lir = new (alloc()) LRandom(temp(), temp(), temp());
-  defineFixed(lir, ins, LFloatReg(ReturnDoubleReg));
-}
-
 void LIRGenerator::visitWasmTruncateToInt64(MWasmTruncateToInt64* ins) {
   MOZ_CRASH("NYI");
 }
+
+void LIRGenerator::visitWasmHeapBase(MWasmHeapBase* ins) { MOZ_CRASH("NYI"); }
 
 void LIRGenerator::visitWasmLoad(MWasmLoad* ins) { MOZ_CRASH("NYI"); }
 

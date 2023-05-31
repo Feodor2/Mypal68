@@ -34,7 +34,11 @@ class FloatRegisters : public FloatRegistersMIPSShared {
   static Encoding FromName(const char* name);
 
   static const uint32_t Total = 32 * NumTypes;
+#ifdef MIPSR6
+  static const uint32_t Allocatable = 60;
+#else
   static const uint32_t Allocatable = 62;
+#endif
   // When saving all registers we only need to do is save double registers.
   static const uint32_t TotalPhys = 32;
 
@@ -69,8 +73,13 @@ class FloatRegisters : public FloatRegistersMIPSShared {
 
   static const SetType WrapperMask = VolatileMask;
 
+#ifdef MIPSR6
+  static const SetType NonAllocatableMask =
+      ((1U << FloatRegisters::f23) | (1U << FloatRegisters::f24)) * Spread;
+#else
   static const SetType NonAllocatableMask =
       (1U << FloatRegisters::f23) * Spread;
+#endif
 
   static const SetType AllocatableMask = AllMask & ~NonAllocatableMask;
 };

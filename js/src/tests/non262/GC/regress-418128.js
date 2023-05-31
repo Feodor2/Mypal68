@@ -23,7 +23,6 @@ function test()
   obj[id] = { valueOf: unrooter };
   print(obj[id]++);
   gc();
-  print(uneval(obj));
 
   function unrooter()
   {

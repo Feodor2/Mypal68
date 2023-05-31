@@ -270,6 +270,8 @@ class AssemblerX86Shared : public AssemblerShared {
   CompactBufferWriter dataRelocations_;
 
   void writeDataRelocation(ImmGCPtr ptr) {
+    // Raw GC pointer relocations and Value relocations both end up in
+    // Assembler::TraceDataRelocations.
     if (ptr.value) {
       if (gc::IsInsideNursery(ptr.value)) {
         embedsNurseryPointers_ = true;
@@ -281,8 +283,8 @@ class AssemblerX86Shared : public AssemblerShared {
  protected:
   X86Encoding::BaseAssemblerSpecific masm;
 
-  typedef X86Encoding::JmpSrc JmpSrc;
-  typedef X86Encoding::JmpDst JmpDst;
+  using JmpSrc = X86Encoding::JmpSrc;
+  using JmpDst = X86Encoding::JmpDst;
 
  public:
   AssemblerX86Shared() {
@@ -377,9 +379,9 @@ class AssemblerX86Shared : public AssemblerShared {
 
   static void StaticAsserts() {
     // DoubleConditionBits should not interfere with x86 condition codes.
-    JS_STATIC_ASSERT(!((Equal | NotEqual | Above | AboveOrEqual | Below |
-                        BelowOrEqual | Parity | NoParity) &
-                       DoubleConditionBits));
+    static_assert(!((Equal | NotEqual | Above | AboveOrEqual | Below |
+                     BelowOrEqual | Parity | NoParity) &
+                    DoubleConditionBits));
   }
 
   static Condition InvertCondition(Condition cond);
@@ -419,7 +421,7 @@ class AssemblerX86Shared : public AssemblerShared {
 
   void setPrinter(Sprinter* sp) { masm.setPrinter(sp); }
 
-  static const Register getStackPointer() { return StackPointer; }
+  Register getStackPointer() const { return StackPointer; }
 
   void executableCopy(void* buffer);
   void processCodeLabels(uint8_t* rawCode);
@@ -924,35 +926,11 @@ class AssemblerX86Shared : public AssemblerShared {
     return j;
   }
 
-  JmpSrc jSrc(Condition cond, RepatchLabel* label) {
-    JmpSrc j = masm.jCC(static_cast<X86Encoding::Condition>(cond));
-    if (label->bound()) {
-      // The jump can be immediately patched to the correct destination.
-      masm.linkJump(j, JmpDst(label->offset()));
-    } else {
-      label->use(j.offset());
-    }
-    return j;
-  }
-  JmpSrc jmpSrc(RepatchLabel* label) {
-    JmpSrc j = masm.jmp();
-    if (label->bound()) {
-      // The jump can be immediately patched to the correct destination.
-      masm.linkJump(j, JmpDst(label->offset()));
-    } else {
-      // Thread the jump list through the unpatched jump targets.
-      label->use(j.offset());
-    }
-    return j;
-  }
-
  public:
   void nop() { masm.nop(); }
   void nop(size_t n) { masm.insert_nop(n); }
   void j(Condition cond, Label* label) { jSrc(cond, label); }
   void jmp(Label* label) { jmpSrc(label); }
-  void j(Condition cond, RepatchLabel* label) { jSrc(cond, label); }
-  void jmp(RepatchLabel* label) { jmpSrc(label); }
 
   void jmp(const Operand& op) {
     switch (op.kind()) {
@@ -981,14 +959,6 @@ class AssemblerX86Shared : public AssemblerShared {
         masm.linkJump(jmp, dst);
         jmp = next;
       } while (more);
-    }
-    label->bind(dst.offset());
-  }
-  void bind(RepatchLabel* label) {
-    JmpDst dst(masm.label());
-    if (label->used()) {
-      JmpSrc jmp(label->offset());
-      masm.linkJump(jmp, dst);
     }
     label->bind(dst.offset());
   }
@@ -1109,7 +1079,10 @@ class AssemblerX86Shared : public AssemblerShared {
   static bool HasLZCNT() { return CPUInfo::IsLZCNTPresent(); }
   static bool SupportsFloatingPoint() { return CPUInfo::IsSSE2Present(); }
   static bool SupportsUnalignedAccesses() { return true; }
-  static bool SupportsSimd() { return CPUInfo::IsSSE2Present(); }
+  static bool SupportsFastUnalignedAccesses() { return true; }
+  static bool SupportsSimd() {
+    return js::jit::SupportsSimd && CPUInfo::IsSSE2Present();
+  }
   static bool HasAVX() { return CPUInfo::IsAVXPresent(); }
 
   static bool HasRoundInstruction(RoundingMode mode) {
@@ -1177,10 +1150,6 @@ class AssemblerX86Shared : public AssemblerShared {
       default:
         MOZ_CRASH("unexpected operand kind");
     }
-  }
-  CodeOffset cmplWithPatch(Imm32 rhs, Register lhs) {
-    masm.cmpl_i32r(rhs.value, lhs.encoding());
-    return CodeOffset(masm.currentOffset());
   }
   void cmpw(Register rhs, Register lhs) {
     masm.cmpw_rr(rhs.encoding(), lhs.encoding());
@@ -1642,6 +1611,7 @@ class AssemblerX86Shared : public AssemblerShared {
   void bsfl(const Register& src, const Register& dest) {
     masm.bsfl_rr(src.encoding(), dest.encoding());
   }
+  void bswapl(Register reg) { masm.bswapl_r(reg.encoding()); }
   void popcntl(const Register& src, const Register& dest) {
     masm.popcntl_rr(src.encoding(), dest.encoding());
   }
@@ -1721,6 +1691,9 @@ class AssemblerX86Shared : public AssemblerShared {
     masm.roll_ir(imm.value, dest.encoding());
   }
   void roll_cl(Register dest) { masm.roll_CLr(dest.encoding()); }
+  void rolw(const Imm32 imm, Register dest) {
+    masm.rolw_ir(imm.value, dest.encoding());
+  }
   void rorl(const Imm32 imm, Register dest) {
     masm.rorl_ir(imm.value, dest.encoding());
   }
@@ -3701,9 +3674,6 @@ class AssemblerX86Shared : public AssemblerShared {
         MOZ_CRASH("unexpected operand kind");
     }
   }
-
-  // Defined for compatibility with ARM's assembler
-  uint32_t actualIndex(uint32_t x) { return x; }
 
   void flushBuffer() {}
 

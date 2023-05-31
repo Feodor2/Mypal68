@@ -95,9 +95,6 @@ class OptimizationInfo {
   // Toggles whether Truncation based on Range Analysis is used.
   bool autoTruncate_;
 
-  // Toggles whether sincos is used.
-  bool sincos_;
-
   // Toggles whether sink is used.
   bool sink_;
 
@@ -177,7 +174,6 @@ class OptimizationInfo {
         rangeAnalysis_(false),
         reordering_(false),
         autoTruncate_(false),
-        sincos_(false),
         sink_(false),
         registerAllocator_(RegisterAllocator_Backtracking),
         inlineMaxBytecodePerCallSiteHelperThread_(0),
@@ -225,8 +221,6 @@ class OptimizationInfo {
   bool autoTruncateEnabled() const {
     return autoTruncate_ && rangeAnalysisEnabled();
   }
-
-  bool sincosEnabled() const { return sincos_ && !JitOptions.disableSincos; }
 
   bool sinkEnabled() const { return sink_ && !JitOptions.disableSink; }
 

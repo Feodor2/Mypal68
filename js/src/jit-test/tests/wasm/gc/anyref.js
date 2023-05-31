@@ -20,9 +20,9 @@ assertErrorMessage(() => wasmEvalText(`(module
         i32.const 0
         ref.null
         i32.const 42
-        select
+        select (result anyref)
     )
-)`), CompileError, /select operand types/);
+)`), CompileError, /type mismatch/);
 
 assertErrorMessage(() => wasmEvalText(`(module
     (func (result i32)
@@ -41,10 +41,10 @@ let simpleTests = [
     "(module (func $test (local anyref)))",
     "(module (func $test (param anyref)))",
     "(module (func $test (result anyref) (ref.null)))",
-    "(module (func $test (block anyref (unreachable)) unreachable))",
-    "(module (func $test (local anyref) (result i32) (ref.is_null (local.get 0))))",
-    `(module (import "a" "b" (param anyref)))`,
-    `(module (import "a" "b" (result anyref)))`,
+    "(module (func $test (block (result anyref) (unreachable)) unreachable))",
+    "(module (func $test (result i32) (local anyref) (ref.is_null (local.get 0))))",
+    `(module (import "a" "b" (func (param anyref))))`,
+    `(module (import "a" "b" (func (result anyref))))`,
     `(module (global anyref (ref.null)))`,
     `(module (global (mut anyref) (ref.null)))`,
 ];
@@ -62,7 +62,7 @@ let { exports } = wasmEvalText(`(module
         ref.is_null
     )
 
-    (func $sum (result i32) (param i32)
+    (func $sum (param i32) (result i32)
         local.get 0
         i32.const 42
         i32.add
@@ -94,19 +94,19 @@ assertEq(exports.is_null_local(), 1);
 // Anyref param and result in wasm functions.
 
 exports = wasmEvalText(`(module
-    (func (export "is_null") (result i32) (param $ref anyref)
+    (func (export "is_null") (param $ref anyref) (result i32)
         local.get $ref
         ref.is_null
     )
 
-    (func (export "ref_or_null") (result anyref) (param $ref anyref) (param $selector i32)
+    (func (export "ref_or_null") (param $ref anyref) (param $selector i32) (result anyref)
         local.get $ref
         ref.null
         local.get $selector
-        select
+        select (result anyref)
     )
 
-    (func $recursive (export "nested") (result anyref) (param $ref anyref) (param $i i32)
+    (func $recursive (export "nested") (param $ref anyref) (param $i i32) (result anyref)
         ;; i == 10 => ret $ref
         local.get $i
         i32.const 10
@@ -173,11 +173,11 @@ function assertJoin(body) {
     assertEq(val.i, -1);
 }
 
-assertJoin("(block anyref local.get $ref)");
-assertJoin("(block $out anyref local.get $ref br $out)");
-assertJoin("(loop anyref local.get $ref)");
+assertJoin("(block (result anyref) local.get $ref)");
+assertJoin("(block $out (result anyref) local.get $ref br $out)");
+assertJoin("(loop (result anyref) local.get $ref)");
 
-assertJoin(`(block $out anyref (loop $top anyref
+assertJoin(`(block $out (result anyref) (loop $top (result anyref)
     local.get $i
     i32.const 1
     i32.add
@@ -207,7 +207,7 @@ assertJoin(`(block $out (loop $top
     )) unreachable
 `);
 
-assertJoin(`(block $out anyref (loop $top
+assertJoin(`(block $out (result anyref) (loop $top
     local.get $ref
     local.get $i
     i32.const 1
@@ -220,7 +220,7 @@ assertJoin(`(block $out anyref (loop $top
     ) unreachable)
 `);
 
-assertJoin(`(block $out anyref (block $unreachable anyref (loop $top
+assertJoin(`(block $out (result anyref) (block $unreachable (result anyref) (loop $top
     local.get $ref
     local.get $i
     i32.const 1
@@ -236,7 +236,7 @@ exports = wasmEvalText(`(module
         local.get $lhs
         local.get $rhs
         local.get $i
-        select
+        select (result anyref)
     )
 )`).exports;
 
@@ -286,8 +286,8 @@ let imports = {
 };
 
 exports = wasmEvalText(`(module
-    (import $ret "funcs" "ret" (result anyref))
-    (import $param "funcs" "param" (param anyref))
+    (import "funcs" "ret" (func $ret (result anyref)))
+    (import "funcs" "param" (func $param (param anyref)))
 
     (func (export "param") (param $x anyref) (param $y anyref)
         local.get $y
@@ -314,8 +314,8 @@ assertEq(exports.ret(), imports.myBaguette);
 // Check lazy stubs generation.
 
 exports = wasmEvalText(`(module
-    (import $mirror "funcs" "mirror" (param anyref) (result anyref))
-    (import $augment "funcs" "augment" (param anyref) (result anyref))
+    (import "funcs" "mirror" (func $mirror (param anyref) (result anyref)))
+    (import "funcs" "augment" (func $augment (param anyref) (result anyref)))
 
     (global $count_f (mut i32) (i32.const 0))
     (global $count_g (mut i32) (i32.const 0))
@@ -347,7 +347,7 @@ exports = wasmEvalText(`(module
     (func (export "call_indirect") (param $i i32) (param $ref anyref) (result anyref)
         local.get $ref
         local.get $i
-        call_indirect $table_type
+        call_indirect (type $table_type)
     )
 
     (func (export "count_f") (result i32) global.get $count_f)

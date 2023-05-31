@@ -84,14 +84,14 @@ void Symbol::dump() {
 void Symbol::dump(js::GenericPrinter& out) {
   if (isWellKnownSymbol()) {
     // All the well-known symbol names are ASCII.
-    description_->dumpCharsNoNewline(out);
+    description()->dumpCharsNoNewline(out);
   } else if (code_ == SymbolCode::InSymbolRegistry ||
              code_ == SymbolCode::UniqueSymbol) {
     out.printf(code_ == SymbolCode::InSymbolRegistry ? "Symbol.for("
                                                      : "Symbol(");
 
-    if (description_) {
-      description_->dumpCharsNoNewline(out);
+    if (description()) {
+      description()->dumpCharsNoNewline(out);
     } else {
       out.printf("undefined");
     }
@@ -101,6 +101,11 @@ void Symbol::dump(js::GenericPrinter& out) {
     if (code_ == SymbolCode::UniqueSymbol) {
       out.printf("@%p", (void*)this);
     }
+  } else if (code_ == SymbolCode::PrivateNameSymbol) {
+    MOZ_ASSERT(description());
+    out.putChar('#');
+    description()->dumpCharsNoNewline(out);
+    out.printf("@%p", (void*)this);
   } else {
     out.printf("<Invalid Symbol code=%u>", unsigned(code_));
   }
@@ -114,9 +119,8 @@ bool js::SymbolDescriptiveString(JSContext* cx, Symbol* sym,
   if (!sb.append("Symbol(")) {
     return false;
   }
-  RootedString str(cx, sym->description());
-  if (str) {
-    if (!sb.append(str)) {
+  if (JSAtom* desc = sym->description()) {
+    if (!sb.append(desc)) {
       return false;
     }
   }
@@ -125,7 +129,7 @@ bool js::SymbolDescriptiveString(JSContext* cx, Symbol* sym,
   }
 
   // step 6
-  str = sb.finishString();
+  JSString* str = sb.finishString();
   if (!str) {
     return false;
   }

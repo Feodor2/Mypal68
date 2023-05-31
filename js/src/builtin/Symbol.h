@@ -10,8 +10,6 @@
 
 namespace js {
 
-class GlobalObject;
-
 class SymbolObject : public NativeObject {
   /* Stores this Symbol object's [[PrimitiveValue]]. */
   static const unsigned PRIMITIVE_VALUE_SLOT = 0;
@@ -19,10 +17,8 @@ class SymbolObject : public NativeObject {
  public:
   static const unsigned RESERVED_SLOTS = 1;
 
-  static const Class class_;
-
-  static JSObject* initClass(JSContext* cx, Handle<GlobalObject*> global,
-                             bool defineMembers);
+  static const JSClass class_;
+  static const JSClass& protoClass_;
 
   /*
    * Creates a new Symbol object boxing the given primitive Symbol.  The
@@ -61,12 +57,8 @@ class SymbolObject : public NativeObject {
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
   static const JSFunctionSpec staticMethods[];
+  static const ClassSpec classSpec_;
 };
-
-extern JSObject* InitSymbolClass(JSContext* cx, Handle<GlobalObject*> global);
-
-extern JSObject* InitBareSymbolCtor(JSContext* cx,
-                                    Handle<GlobalObject*> global);
 
 } /* namespace js */
 

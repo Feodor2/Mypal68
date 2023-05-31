@@ -18,10 +18,10 @@
 #include "jsnum.h"
 
 #include "builtin/Array.h"
-#include "gc/Zone.h"
 #include "jit/AtomicOperations.h"
 #include "js/Conversions.h"
 #include "js/Value.h"
+#include "util/Memory.h"
 #include "vm/BigIntType.h"
 #include "vm/JSContext.h"
 #include "vm/NativeObject.h"
@@ -415,7 +415,7 @@ class ElementSpecific {
       // Attempt fast-path infallible conversion of dense elements up to
       // the first potentially side-effectful lookup or conversion.
       uint32_t bound =
-          Min(source->as<NativeObject>().getDenseInitializedLength(), len);
+          std::min(source->as<NativeObject>().getDenseInitializedLength(), len);
 
       SharedMem<T*> dest =
           target->dataPointerEither().template cast<T*>() + offset;
@@ -447,7 +447,7 @@ class ElementSpecific {
         return false;
       }
 
-      len = Min(len, target->length());
+      len = std::min(len, target->length());
       if (i >= len) {
         break;
       }
@@ -690,12 +690,12 @@ class ElementSpecific {
       return true;
     }
 
-    if (std::is_same<T, int64_t>::value) {
+    if (std::is_same_v<T, int64_t>) {
       JS_TRY_VAR_OR_RETURN_FALSE(cx, *result, ToBigInt64(cx, v));
       return true;
     }
 
-    if (std::is_same<T, uint64_t>::value) {
+    if (std::is_same_v<T, uint64_t>) {
       JS_TRY_VAR_OR_RETURN_FALSE(cx, *result, ToBigUint64(cx, v));
       return true;
     }

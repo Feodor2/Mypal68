@@ -6,6 +6,7 @@
 
 #include "builtin/DataViewObject.h"
 #include "gc/Nursery.h"
+#include "js/SharedArrayBuffer.h"
 #include "vm/JSContext.h"
 #include "vm/TypedArrayObject.h"
 
@@ -58,16 +59,6 @@ void ArrayBufferViewObject::notifyBufferDetached() {
   setFixedSlot(BYTEOFFSET_SLOT, Int32Value(0));
 
   setPrivate(nullptr);
-}
-
-uint8_t* ArrayBufferViewObject::dataPointerUnshared(
-    const JS::AutoRequireNoGC& nogc) {
-  return static_cast<uint8_t*>(dataPointerUnshared());
-}
-
-void ArrayBufferViewObject::setDataPointerUnshared(uint8_t* data) {
-  MOZ_ASSERT(!isSharedMemory());
-  setPrivate(data);
 }
 
 /* static */
@@ -256,4 +247,12 @@ JS_FRIEND_API void js::GetArrayBufferViewLengthAndData(JSObject* obj,
   *isSharedMemory = view.isSharedMemory();
   *data = static_cast<uint8_t*>(
       view.dataPointerEither().unwrap(/*safe - caller sees isShared flag*/));
+}
+
+JS_PUBLIC_API bool JS::IsArrayBufferViewShared(JSObject* obj) {
+  ArrayBufferViewObject* view = obj->maybeUnwrapAs<ArrayBufferViewObject>();
+  if (!view) {
+    return false;
+  }
+  return view->isSharedMemory();
 }

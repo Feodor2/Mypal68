@@ -300,6 +300,15 @@ void LIRGeneratorMIPSShared::lowerUrshD(MUrsh* mir) {
   define(lir, mir);
 }
 
+void LIRGeneratorMIPSShared::lowerPowOfTwoI(MPow* mir) {
+  int32_t base = mir->input()->toConstant()->toInt32();
+  MDefinition* power = mir->power();
+
+  auto* lir = new (alloc()) LPowOfTwoI(base, useRegister(power));
+  assignSnapshot(lir, Bailout_PrecisionLoss);
+  define(lir, mir);
+}
+
 void LIRGenerator::visitWasmNeg(MWasmNeg* ins) {
   if (ins->type() == MIRType::Int32) {
     define(new (alloc()) LNegI(useRegisterAtStart(ins->input())), ins);
@@ -309,6 +318,11 @@ void LIRGenerator::visitWasmNeg(MWasmNeg* ins) {
     MOZ_ASSERT(ins->type() == MIRType::Double);
     define(new (alloc()) LNegD(useRegisterAtStart(ins->input())), ins);
   }
+}
+
+void LIRGenerator::visitWasmHeapBase(MWasmHeapBase* ins) {
+  auto* lir = new (alloc()) LWasmHeapBase(LAllocation());
+  define(lir, ins);
 }
 
 void LIRGenerator::visitWasmLoad(MWasmLoad* ins) {

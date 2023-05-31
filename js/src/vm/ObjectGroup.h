@@ -9,7 +9,7 @@
 
 #include "ds/IdValuePair.h"
 #include "gc/Barrier.h"
-#include "gc/GCTrace.h"
+#include "gc/GCProbes.h"
 #include "js/CharacterEncoding.h"
 #include "js/GCHashTable.h"
 #include "js/TypeDecls.h"
@@ -26,6 +26,7 @@ class AutoClearTypeInferenceStateOnOOM;
 class AutoSweepObjectGroup;
 class CompilerConstraintList;
 class ObjectGroupRealm;
+class PlainObject;
 
 namespace gc {
 void MergeRealms(JS::Realm* source, JS::Realm* target);
@@ -45,12 +46,6 @@ enum NewObjectKind {
    * singleton and is allocated in the tenured heap.
    */
   SingletonObject,
-
-  /*
-   * CrossCompartmentWrappers use the common Proxy class, but are allowed
-   * to have nursery lifetime.
-   */
-  NurseryAllocatedProxy,
 
   /*
    * Objects which will not benefit from being allocated in the nursery
@@ -87,15 +82,15 @@ class ObjectGroup : public gc::TenuredCell {
   class Property;
 
  private:
-  /* Class shared by objects in this group. */
-  const Class* clasp_;  // set by constructor
+  /* Class shared by objects in this group stored in header. */
+  using HeaderWithJSClass = gc::CellHeaderWithNonGCPointer<const JSClass>;
+  HeaderWithJSClass headerAndClasp_;
 
   /* Prototype shared by objects in this group. */
   GCPtr<TaggedProto> proto_;  // set by constructor
 
   /* Realm shared by objects in this group. */
-  JS::Realm* realm_;
-  ;  // set by constructor
+  JS::Realm* realm_;  // set by constructor
 
   /* Flags for this group. */
   ObjectGroupFlags flags_;  // set by constructor
@@ -151,7 +146,8 @@ class ObjectGroup : public gc::TenuredCell {
 
  private:
   static inline uint32_t offsetOfClasp() {
-    return offsetof(ObjectGroup, clasp_);
+    return offsetof(ObjectGroup, headerAndClasp_) +
+           HeaderWithJSClass::offsetOfPtr();
   }
 
   static inline uint32_t offsetOfProto() {
@@ -171,13 +167,12 @@ class ObjectGroup : public gc::TenuredCell {
   }
 
   friend class gc::GCRuntime;
-  friend class gc::GCTrace;
 
   // See JSObject::offsetOfGroup() comment.
   friend class js::jit::MacroAssembler;
 
  public:
-  const Class* clasp() const { return clasp_; }
+  const JSClass* clasp() const { return headerAndClasp_.ptr(); }
 
   bool hasDynamicPrototype() const { return proto_.isDynamic(); }
 
@@ -234,7 +229,7 @@ class ObjectGroup : public gc::TenuredCell {
   };
 
  private:
-  void setAddendum(AddendumKind kind, void* addendum, bool writeBarrier = true);
+  void setAddendum(AddendumKind kind, void* addendum, bool isSweeping = false);
 
   AddendumKind addendumKind() const {
     return (AddendumKind)((flags_ & OBJECT_FLAG_ADDENDUM_MASK) >>
@@ -248,7 +243,7 @@ class ObjectGroup : public gc::TenuredCell {
     return nullptr;
   }
 
-  void detachNewScript(bool writeBarrier, ObjectGroup* replacement);
+  void detachNewScript(bool isSweeping, ObjectGroup* replacement);
 
   ObjectGroupFlags flagsDontCheckGeneration() const { return flags_; }
 
@@ -315,6 +310,7 @@ class ObjectGroup : public gc::TenuredCell {
   }
 
   void setInterpretedFunction(JSFunction* fun) {
+    MOZ_ASSERT(!gc::IsInsideNursery(reinterpret_cast<gc::Cell*>(fun)));
     setAddendum(Addendum_InterpretedFunction, fun);
   }
 
@@ -323,7 +319,7 @@ class ObjectGroup : public gc::TenuredCell {
     // Identifier for this property, JSID_VOID for the aggregate integer
     // index property, or JSID_EMPTY for properties holding constraints
     // listening to changes in the group's state.
-    GCPtrId id;
+    const GCPtrId id;
 
     // Possible own types for this property.
     HeapTypeSet types;
@@ -337,7 +333,7 @@ class ObjectGroup : public gc::TenuredCell {
   };
 
  public:
-  inline ObjectGroup(const Class* clasp, TaggedProto proto, JS::Realm* realm,
+  inline ObjectGroup(const JSClass* clasp, TaggedProto proto, JS::Realm* realm,
                      ObjectGroupFlags initialFlags);
 
   inline bool hasAnyFlags(const AutoSweepObjectGroup& sweep,
@@ -430,9 +426,10 @@ class ObjectGroup : public gc::TenuredCell {
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
-  void finalize(FreeOp* fop);
+  void finalize(JSFreeOp* fop);
 
   static const JS::TraceKind TraceKind = JS::TraceKind::ObjectGroup;
+  const gc::CellHeader& cellHeader() const { return headerAndClasp_; }
 
  public:
   const ObjectGroupFlags* addressOfFlags() const { return &flags_; }
@@ -445,8 +442,8 @@ class ObjectGroup : public gc::TenuredCell {
                                    uint32_t count);
 
   static void staticAsserts() {
-    JS_STATIC_ASSERT(offsetof(ObjectGroup, proto_) ==
-                     offsetof(js::shadow::ObjectGroup, proto));
+    static_assert(offsetof(ObjectGroup, proto_) ==
+                  offsetof(js::shadow::ObjectGroup, proto));
   }
 
  public:
@@ -461,22 +458,29 @@ class ObjectGroup : public gc::TenuredCell {
   static bool useSingletonForAllocationSite(JSScript* script, jsbytecode* pc,
                                             JSProtoKey key);
 
+ public:
   // Static accessors for ObjectGroupRealm NewTable.
 
-  static ObjectGroup* defaultNewGroup(JSContext* cx, const Class* clasp,
+  static ObjectGroup* defaultNewGroup(JSContext* cx, const JSClass* clasp,
                                       TaggedProto proto,
                                       JSObject* associated = nullptr);
-  static ObjectGroup* lazySingletonGroup(JSContext* cx, ObjectGroup* oldGroup,
-                                         const Class* clasp, TaggedProto proto);
+
+  // For use in creating a singleton group without needing to replace an
+  // existing group.
+  static ObjectGroup* lazySingletonGroup(JSContext* cx, ObjectGroupRealm& realm,
+                                         JS::Realm* objectRealm,
+                                         const JSClass* clasp,
+                                         TaggedProto proto);
+
+  // For use in replacing an already-existing group with a singleton group.
+  static inline ObjectGroup* lazySingletonGroup(JSContext* cx,
+                                                ObjectGroup* oldGroup,
+                                                const JSClass* clasp,
+                                                TaggedProto proto);
 
   static void setDefaultNewGroupUnknown(JSContext* cx, ObjectGroupRealm& realm,
-                                        const js::Class* clasp,
+                                        const JSClass* clasp,
                                         JS::HandleObject obj);
-
-#ifdef DEBUG
-  static bool hasDefaultNewGroup(JSObject* proto, const Class* clasp,
-                                 ObjectGroup* group);
-#endif
 
   // Static accessors for ObjectGroupRealm ArrayObjectTable and
   // PlainObjectTable.
@@ -542,7 +546,8 @@ class ObjectGroupRealm {
   struct PlainObjectKey;
   struct PlainObjectEntry;
   struct PlainObjectTableSweepPolicy {
-    static bool needsSweep(PlainObjectKey* key, PlainObjectEntry* entry);
+    static bool traceWeak(JSTracer* trc, PlainObjectKey* key,
+                          PlainObjectEntry* entry);
   };
   using PlainObjectTable =
       JS::GCHashMap<PlainObjectKey, PlainObjectEntry, PlainObjectKey,
@@ -569,7 +574,8 @@ class ObjectGroupRealm {
       associated_ = associated;
     }
 
-    MOZ_ALWAYS_INLINE ObjectGroup* lookup(const Class* clasp, TaggedProto proto,
+    MOZ_ALWAYS_INLINE ObjectGroup* lookup(const JSClass* clasp,
+                                          TaggedProto proto,
                                           JSObject* associated);
   } defaultNewGroupCache = {};
 
@@ -616,16 +622,13 @@ class ObjectGroupRealm {
   static ObjectGroupRealm& get(const ObjectGroup* group);
   static ObjectGroupRealm& getForNewObject(JSContext* cx);
 
-  void replaceAllocationSiteGroup(JSScript* script, jsbytecode* pc,
-                                  JSProtoKey kind, ObjectGroup* group);
-
-  void removeDefaultNewGroup(const Class* clasp, TaggedProto proto,
+  void removeDefaultNewGroup(const JSClass* clasp, TaggedProto proto,
                              JSObject* associated);
-  void replaceDefaultNewGroup(const Class* clasp, TaggedProto proto,
+  void replaceDefaultNewGroup(const JSClass* clasp, TaggedProto proto,
                               JSObject* associated, ObjectGroup* group);
 
   static ObjectGroup* makeGroup(JSContext* cx, JS::Realm* realm,
-                                const Class* clasp, Handle<TaggedProto> proto,
+                                const JSClass* clasp, Handle<TaggedProto> proto,
                                 ObjectGroupFlags initialFlags = 0);
 
   static ObjectGroup* getStringSplitStringGroup(JSContext* cx);
@@ -638,7 +641,7 @@ class ObjectGroupRealm {
 
   void clearTables();
 
-  void sweep();
+  void traceWeak(JSTracer* trc);
 
   void purge() { defaultNewGroupCache.purge(); }
 

@@ -1,5 +1,4 @@
 // |reftest| skip-if(!xulRuntime.shell)
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /*
  * Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/licenses/publicdomain/
@@ -86,9 +85,10 @@ assertThrowsInstanceOf(() => setSharedObject(new WebAssembly.Memory({initial: 1,
 // We can store wasm modules
 
 var mod = new WebAssembly.Module(wasmTextToBinary(`(module
+                                                    (import "m" "f" (func (param i32) (result i32)))
                                                     (func (export "hi") (result i32)
                                                      (i32.const 37))
-                                                    (import "m" "f" (param i32) (result i32)))`));
+                                                    )`));
 
 setSharedObject(mod);
 

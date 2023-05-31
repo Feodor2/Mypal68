@@ -13,10 +13,10 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/Move.h"
 #include "mozilla/Tuple.h"
-#include "mozilla/TypeTraits.h"
 #include "mozilla/Utf8.h"
 #include "mozilla/Variant.h"
 
+#include <type_traits>
 #include <utility>
 
 #include "frontend/BCEParserHandle.h"
@@ -30,7 +30,7 @@ namespace detail {
 template <template <class Parser> class GetThis,
           template <class This> class MemberFunction, typename... Args>
 struct InvokeMemberFunction {
-  mozilla::Tuple<typename mozilla::Decay<Args>::Type...> args;
+  mozilla::Tuple<std::decay_t<Args>...> args;
 
   template <class This, size_t... Indices>
   auto matchInternal(This* obj, std::index_sequence<Indices...>) -> decltype(
@@ -70,11 +70,6 @@ struct GetTokenStream {
 template <class Parser>
 struct ParserOptions {
   static constexpr auto get() { return &Parser::options; }
-};
-
-template <class Parser>
-struct ParserNewObjectBox {
-  static constexpr auto get() { return &Parser::newObjectBox; }
 };
 
 template <class TokenStream>
@@ -143,13 +138,6 @@ class EitherParser : public BCEParserHandle {
     InvokeMemberFunction<detail::GetParser, detail::ParserOptions>
         optionsMatcher;
     return parser.match(std::move(optionsMatcher));
-  }
-
-  ObjectBox* newObjectBox(JSObject* obj) final {
-    InvokeMemberFunction<detail::GetParser, detail::ParserNewObjectBox,
-                         JSObject*>
-        matcher{obj};
-    return parser.match(std::move(matcher));
   }
 
   void computeLineAndColumn(uint32_t offset, uint32_t* line,

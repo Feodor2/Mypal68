@@ -16,7 +16,9 @@
 #ifndef wasm_validate_h
 #define wasm_validate_h
 
-#include "mozilla/TypeTraits.h"
+#include <type_traits>
+
+#include "ds/Bitmap.h"
 
 #include "wasm/WasmTypes.h"
 
@@ -36,7 +38,7 @@ struct SectionRange {
   }
 };
 
-typedef Maybe<SectionRange> MaybeSectionRange;
+using MaybeSectionRange = Maybe<SectionRange>;
 
 // CompilerEnvironment holds any values that will be needed to compute
 // compilation parameters once the module's feature opt-in sections have been
@@ -64,29 +66,35 @@ struct CompilerEnvironment {
       Tier tier_;
       OptimizedBackend optimizedBackend_;
       DebugEnabled debug_;
+      bool refTypes_;
       bool gcTypes_;
+      bool multiValues_;
+      bool hugeMemory_;
+      bool bigInt_;
     };
   };
 
  public:
-  // Retain a reference to the CompileArgs.  A subsequent computeParameters()
+  // Retain a reference to the CompileArgs. A subsequent computeParameters()
   // will compute all parameters from the CompileArgs and additional values.
   explicit CompilerEnvironment(const CompileArgs& args);
 
   // Save the provided values for mode, tier, and debug, and the initial value
-  // for gcTypes.  A subsequent computeParameters() will compute the final
-  // value of gcTypes.
+  // for gcTypes/refTypes. A subsequent computeParameters() will compute the
+  // final value of gcTypes/refTypes.
   CompilerEnvironment(CompileMode mode, Tier tier,
                       OptimizedBackend optimizedBackend,
-                      DebugEnabled debugEnabled, bool gcTypesConfigured);
+                      DebugEnabled debugEnabled, bool multiValueConfigured,
+                      bool refTypesConfigured, bool gcTypesConfigured,
+                      bool hugeMemory, bool bigIntConfigured);
 
   // Compute any remaining compilation parameters.
-  void computeParameters(Decoder& d, bool gcFeatureOptIn);
+  void computeParameters(Decoder& d);
 
   // Compute any remaining compilation parameters.  Only use this method if
   // the CompilerEnvironment was created with values for mode, tier, and
   // debug.
-  void computeParameters(bool gcFeatureOptIn);
+  void computeParameters();
 
   bool isComputed() const { return state_ == Computed; }
   CompileMode mode() const {
@@ -109,6 +117,22 @@ struct CompilerEnvironment {
     MOZ_ASSERT(isComputed());
     return gcTypes_;
   }
+  bool refTypes() const {
+    MOZ_ASSERT(isComputed());
+    return refTypes_;
+  }
+  bool multiValues() const {
+    MOZ_ASSERT(isComputed());
+    return multiValues_;
+  }
+  bool hugeMemory() const {
+    MOZ_ASSERT(isComputed());
+    return hugeMemory_;
+  }
+  bool bigInt() const {
+    MOZ_ASSERT(isComputed());
+    return bigInt_;
+  }
 };
 
 // ModuleEnvironment contains all the state necessary to process or render
@@ -130,15 +154,6 @@ struct ModuleEnvironment {
 
   // Module fields decoded from the module environment (or initialized while
   // validating an asm.js module) and immutable during compilation:
-#ifdef ENABLE_WASM_GC
-  // `gcFeatureOptIn` reflects the presence in a module of a GcFeatureOptIn
-  // section.  This variable will be removed eventually, allowing it to be
-  // replaced everywhere by the value true.
-  //
-  // The flag is used in the value of gcTypesEnabled(), which controls whether
-  // struct types and associated instructions are accepted during validation.
-  bool gcFeatureOptIn;
-#endif
   Maybe<uint32_t> dataCount;
   MemoryUsage memoryUsage;
   uint32_t minMemoryLength;
@@ -155,6 +170,7 @@ struct ModuleEnvironment {
   Maybe<uint32_t> startFuncIndex;
   ElemSegmentVector elemSegments;
   MaybeSectionRange codeSection;
+  SparseBitmap validForRefFunc;
 
   // Fields decoded as part of the wasm module tail:
   DataSegmentEnvVector dataSegments;
@@ -163,20 +179,15 @@ struct ModuleEnvironment {
   Maybe<Name> moduleName;
   NameVector funcNames;
 
-  explicit ModuleEnvironment(bool gcTypesConfigured,
-                             CompilerEnvironment* compilerEnv,
+  explicit ModuleEnvironment(CompilerEnvironment* compilerEnv,
                              Shareable sharedMemoryEnabled,
                              ModuleKind kind = ModuleKind::Wasm)
       : kind(kind),
         sharedMemoryEnabled(sharedMemoryEnabled),
         compilerEnv(compilerEnv),
-#ifdef ENABLE_WASM_GC
-        gcFeatureOptIn(false),
-#endif
         memoryUsage(MemoryUsage::None),
         minMemoryLength(0),
-        numStructTypes(0) {
-  }
+        numStructTypes(0) {}
 
   Tier tier() const { return compilerEnv->tier(); }
   OptimizedBackend optimizedBackend() const {
@@ -192,11 +203,20 @@ struct ModuleEnvironment {
     return funcTypes.length() - funcImportGlobalDataOffsets.length();
   }
   bool gcTypesEnabled() const { return compilerEnv->gcTypes(); }
+  bool refTypesEnabled() const { return compilerEnv->refTypes(); }
+  bool multiValuesEnabled() const { return compilerEnv->multiValues(); }
+  bool bigIntEnabled() const { return compilerEnv->bigInt(); }
   bool usesMemory() const { return memoryUsage != MemoryUsage::None; }
   bool usesSharedMemory() const { return memoryUsage == MemoryUsage::Shared; }
   bool isAsmJS() const { return kind == ModuleKind::AsmJS; }
   bool debugEnabled() const {
     return compilerEnv->debug() == DebugEnabled::True;
+  }
+  bool hugeMemoryEnabled() const {
+    return !isAsmJS() && compilerEnv->hugeMemory();
+  }
+  uint32_t funcMaxResults() const {
+    return multiValuesEnabled() ? MaxResults : 1;
   }
   bool funcIsImport(uint32_t funcIndex) const {
     return funcIndex < funcImportGlobalDataOffsets.length();
@@ -204,23 +224,75 @@ struct ModuleEnvironment {
   bool isRefSubtypeOf(ValType one, ValType two) const {
     MOZ_ASSERT(one.isReference());
     MOZ_ASSERT(two.isReference());
-#if defined(ENABLE_WASM_REFTYPES)
-#  if defined(ENABLE_WASM_GC)
-    return one == two || two == ValType::AnyRef || one == ValType::NullRef ||
-           (one.isRef() && two.isRef() && gcTypesEnabled() &&
-            isStructPrefixOf(two, one));
-#  else
-    return one == two || two == ValType::AnyRef || one == ValType::NullRef;
-#  endif
-#else
-    return one == two;
+    // Anything's a subtype of itself.
+    if (one == two) {
+      return true;
+    }
+    // Anything's a subtype of AnyRef.
+    if (two.isAnyRef()) {
+      return true;
+    }
+    // NullRef is a subtype of nullable types.
+    if (one.isNullRef()) {
+      return two.isNullable();
+    }
+#if defined(ENABLE_WASM_GC)
+    // Struct One is a subtype of struct Two if Two is a prefix of One.
+    if (gcTypesEnabled() && isStructType(one) && isStructType(two)) {
+      return isStructPrefixOf(two, one);
+    }
 #endif
+    return false;
+  }
+  bool isStructType(ValType t) const {
+    return t.isTypeIndex() && types[t.refType().typeIndex()].isStructType();
   }
 
  private:
   bool isStructPrefixOf(ValType a, ValType b) const {
-    const StructType& other = types[a.refTypeIndex()].structType();
-    return types[b.refTypeIndex()].structType().hasPrefix(other);
+    const StructType& other = types[a.refType().typeIndex()].structType();
+    return types[b.refType().typeIndex()].structType().hasPrefix(other);
+  }
+};
+
+// ElemSegmentFlags provides methods for decoding and encoding the flags field
+// of an element segment. This is needed as the flags field has a non-trivial
+// encoding that is effectively split into independent `kind` and `payload`
+// enums.
+class ElemSegmentFlags {
+  enum class Flags : uint32_t {
+    Passive = 0x1,
+    WithIndexOrDeclared = 0x2,
+    ElemExpression = 0x4,
+    // Below this line are convenient combinations of flags
+    KindMask = Passive | WithIndexOrDeclared,
+    PayloadMask = ElemExpression,
+    AllFlags = Passive | WithIndexOrDeclared | ElemExpression,
+  };
+  uint32_t encoded_;
+
+  explicit ElemSegmentFlags(uint32_t encoded) : encoded_(encoded) {}
+
+ public:
+  ElemSegmentFlags(ElemSegmentKind kind, ElemSegmentPayload payload) {
+    encoded_ = uint32_t(kind) | uint32_t(payload);
+  }
+
+  static Maybe<ElemSegmentFlags> construct(uint32_t encoded) {
+    if (encoded > uint32_t(Flags::AllFlags)) {
+      return Nothing();
+    }
+    return Some(ElemSegmentFlags(encoded));
+  }
+
+  uint32_t encoded() const { return encoded_; }
+
+  ElemSegmentKind kind() const {
+    return static_cast<ElemSegmentKind>(encoded_ & uint32_t(Flags::KindMask));
+  }
+  ElemSegmentPayload payload() const {
+    return static_cast<ElemSegmentPayload>(encoded_ &
+                                           uint32_t(Flags::PayloadMask));
   }
 };
 
@@ -328,38 +400,25 @@ class Encoder {
   MOZ_MUST_USE bool writeVarS64(int64_t i) { return writeVarS<int64_t>(i); }
   MOZ_MUST_USE bool writeValType(ValType type) {
     static_assert(size_t(TypeCode::Limit) <= UINT8_MAX, "fits");
-    MOZ_ASSERT(size_t(type.code()) < size_t(TypeCode::Limit));
-    if (type.isRef()) {
-      return writeFixedU8(uint8_t(TypeCode::Ref)) &&
-             writeVarU32(type.refTypeIndex());
+    if (type.isTypeIndex()) {
+      return writeFixedU8(uint8_t(TypeCode::OptRef)) &&
+             writeVarU32(type.refType().typeIndex());
     }
-    return writeFixedU8(uint8_t(type.code()));
+    TypeCode tc = UnpackTypeCodeType(type.packed());
+    MOZ_ASSERT(size_t(tc) < size_t(TypeCode::Limit));
+    return writeFixedU8(uint8_t(tc));
   }
-  MOZ_MUST_USE bool writeBlockType(ExprType type) {
-    static_assert(size_t(TypeCode::Limit) <= UINT8_MAX, "fits");
-    MOZ_ASSERT(size_t(type.code()) < size_t(TypeCode::Limit));
-    if (type.isRef()) {
-      return writeFixedU8(uint8_t(ExprType::Ref)) &&
-             writeVarU32(type.refTypeIndex());
+  MOZ_MUST_USE bool writeOp(Opcode opcode) {
+    // The Opcode constructor has asserted that `opcode` is meaningful, so no
+    // further correctness checking is necessary here.
+    uint32_t bits = opcode.bits();
+    if (!writeFixedU8(bits & 255)) {
+      return false;
     }
-    return writeFixedU8(uint8_t(type.code()));
-  }
-  MOZ_MUST_USE bool writeOp(Op op) {
-    static_assert(size_t(Op::Limit) == 256, "fits");
-    MOZ_ASSERT(size_t(op) < size_t(Op::Limit));
-    return writeFixedU8(uint8_t(op));
-  }
-  MOZ_MUST_USE bool writeOp(MiscOp op) {
-    MOZ_ASSERT(size_t(op) < size_t(MiscOp::Limit));
-    return writeFixedU8(uint8_t(Op::MiscPrefix)) && writeVarU32(uint32_t(op));
-  }
-  MOZ_MUST_USE bool writeOp(ThreadOp op) {
-    MOZ_ASSERT(size_t(op) < size_t(ThreadOp::Limit));
-    return writeFixedU8(uint8_t(Op::ThreadPrefix)) && writeVarU32(uint32_t(op));
-  }
-  MOZ_MUST_USE bool writeOp(MozOp op) {
-    MOZ_ASSERT(size_t(op) < size_t(MozOp::Limit));
-    return writeFixedU8(uint8_t(Op::MozPrefix)) && writeVarU32(uint32_t(op));
+    if (opcode.isOp()) {
+      return true;
+    }
+    return writeVarU32(bits >> 8);
   }
 
   // Fixed-length encodings that allow back-patching.
@@ -476,7 +535,7 @@ class Decoder {
 
   template <typename SInt>
   MOZ_MUST_USE bool readVarS(SInt* out) {
-    using UInt = typename mozilla::MakeUnsigned<SInt>::Type;
+    using UInt = std::make_unsigned_t<SInt>;
     const unsigned numBits = sizeof(SInt) * CHAR_BIT;
     const unsigned remainderBits = numBits % 7;
     const unsigned numBitsInSevens = numBits - remainderBits;
@@ -565,6 +624,16 @@ class Decoder {
   const uint8_t* begin() const { return beg_; }
   const uint8_t* end() const { return end_; }
 
+  // Peek at the next byte, if it exists, without advancing the position.
+
+  bool peekByte(uint8_t* byte) {
+    if (done()) {
+      return false;
+    }
+    *byte = *cur_;
+    return true;
+  }
+
   // Fixed-size encoding operations simply copy the literal bytes (without
   // attempting to align).
 
@@ -587,35 +656,43 @@ class Decoder {
   MOZ_MUST_USE ValType uncheckedReadValType() {
     uint8_t code = uncheckedReadFixedU8();
     switch (code) {
-      case uint8_t(ValType::Ref):
-        return ValType(ValType::Code(code), uncheckedReadVarU32());
+      case uint8_t(TypeCode::OptRef):
+        return RefType::fromTypeIndex(uncheckedReadVarU32());
+      case uint8_t(TypeCode::AnyRef):
+      case uint8_t(TypeCode::FuncRef):
+      case uint8_t(TypeCode::NullRef):
+        return RefType::fromTypeCode(TypeCode(code));
       default:
-        return ValType::Code(code);
+        return ValType::fromNonRefTypeCode(TypeCode(code));
     }
   }
-  MOZ_MUST_USE bool readValType(uint32_t numTypes, bool gcTypesEnabled,
-                                ValType* type) {
+  MOZ_MUST_USE bool readValType(uint32_t numTypes, bool refTypesEnabled,
+                                bool gcTypesEnabled, ValType* type) {
     static_assert(uint8_t(TypeCode::Limit) <= UINT8_MAX, "fits");
     uint8_t code;
     if (!readFixedU8(&code)) {
       return false;
     }
     switch (code) {
-      case uint8_t(ValType::I32):
-      case uint8_t(ValType::F32):
-      case uint8_t(ValType::F64):
-      case uint8_t(ValType::I64):
-        *type = ValType::Code(code);
+      case uint8_t(TypeCode::I32):
+      case uint8_t(TypeCode::F32):
+      case uint8_t(TypeCode::F64):
+      case uint8_t(TypeCode::I64):
+        *type = ValType::fromNonRefTypeCode(TypeCode(code));
         return true;
 #ifdef ENABLE_WASM_REFTYPES
-      case uint8_t(ValType::FuncRef):
-      case uint8_t(ValType::AnyRef):
-        *type = ValType::Code(code);
+      case uint8_t(TypeCode::FuncRef):
+      case uint8_t(TypeCode::AnyRef):
+      case uint8_t(TypeCode::NullRef):
+        if (!refTypesEnabled) {
+          return fail("reference types not enabled");
+        }
+        *type = RefType::fromTypeCode(TypeCode(code));
         return true;
 #  ifdef ENABLE_WASM_GC
-      case uint8_t(ValType::Ref): {
+      case uint8_t(TypeCode::OptRef): {
         if (!gcTypesEnabled) {
-          return fail("(ref T) types not enabled");
+          return fail("(optref T) types not enabled");
         }
         uint32_t typeIndex;
         if (!readVarU32(&typeIndex)) {
@@ -624,7 +701,7 @@ class Decoder {
         if (typeIndex >= numTypes) {
           return fail("ref index out of range");
         }
-        *type = ValType(ValType::Code(code), typeIndex);
+        *type = RefType::fromTypeIndex(typeIndex);
         return true;
       }
 #  endif
@@ -633,27 +710,15 @@ class Decoder {
         return fail("bad type");
     }
   }
-  MOZ_MUST_USE bool readValType(const TypeDefVector& types, bool gcTypesEnabled,
+  MOZ_MUST_USE bool readValType(const TypeDefVector& types,
+                                bool refTypesEnabled, bool gcTypesEnabled,
                                 ValType* type) {
-    if (!readValType(types.length(), gcTypesEnabled, type)) {
+    if (!readValType(types.length(), refTypesEnabled, gcTypesEnabled, type)) {
       return false;
     }
-    if (type->isRef() && !types[type->refTypeIndex()].isStructType()) {
-      return fail("ref does not reference a struct type");
-    }
-    return true;
-  }
-  MOZ_MUST_USE bool readBlockType(uint8_t* code, uint32_t* refTypeIndex) {
-    static_assert(size_t(TypeCode::Limit) <= UINT8_MAX, "fits");
-    if (!readFixedU8(code)) {
-      return false;
-    }
-    if (*code == uint8_t(TypeCode::Ref)) {
-      if (!readVarU32(refTypeIndex)) {
-        return false;
-      }
-    } else {
-      *refTypeIndex = NoRefTypeIndex;
+    if (type->isTypeIndex() &&
+        !types[type->refType().typeIndex()].isStructType()) {
+      return fail("type index does not reference a struct type");
     }
     return true;
   }
@@ -787,7 +852,7 @@ MOZ_MUST_USE bool DecodeValidatedLocalEntries(Decoder& d,
 // This validates the entries.
 
 MOZ_MUST_USE bool DecodeLocalEntries(Decoder& d, const TypeDefVector& types,
-                                     bool gcTypesEnabled,
+                                     bool refTypesEnabled, bool gcTypesEnabled,
                                      ValTypeVector* locals);
 
 // Returns whether the given [begin, end) prefix of a module's bytecode starts a

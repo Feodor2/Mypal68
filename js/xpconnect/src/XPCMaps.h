@@ -21,6 +21,18 @@
 // no virtuals in the maps - all the common stuff inlined
 // templates could be used to good effect here.
 
+/***************************************************************************/
+// default initial sizes for maps (hashtables)
+
+#define XPC_JS_MAP_LENGTH 32
+
+#define XPC_NATIVE_MAP_LENGTH 8
+#define XPC_NATIVE_PROTO_MAP_LENGTH 8
+#define XPC_DYING_NATIVE_PROTO_MAP_LENGTH 8
+#define XPC_NATIVE_INTERFACE_MAP_LENGTH 32
+#define XPC_NATIVE_SET_MAP_LENGTH 32
+#define XPC_WRAPPER_MAP_LENGTH 8
+
 /*************************/
 
 class JSObject2WrappedJSMap {
@@ -29,9 +41,7 @@ class JSObject2WrappedJSMap {
                           InfallibleAllocPolicy>;
 
  public:
-  static JSObject2WrappedJSMap* newMap(int length) {
-    return new JSObject2WrappedJSMap(length);
-  }
+  JSObject2WrappedJSMap() = default;
 
   inline nsXPCWrappedJS* Find(JSObject* Obj) {
     MOZ_ASSERT(Obj, "bad param");
@@ -87,9 +97,7 @@ class JSObject2WrappedJSMap {
   size_t SizeOfWrappedJS(mozilla::MallocSizeOf mallocSizeOf) const;
 
  private:
-  explicit JSObject2WrappedJSMap(size_t length) : mTable(length) {}
-
-  Map mTable;
+  Map mTable{XPC_JS_MAP_LENGTH};
 };
 
 /*************************/
@@ -101,7 +109,7 @@ class Native2WrappedNativeMap {
     XPCWrappedNative* value;
   };
 
-  static Native2WrappedNativeMap* newMap(int length);
+  Native2WrappedNativeMap();
 
   inline XPCWrappedNative* Find(nsISupports* Obj) const {
     MOZ_ASSERT(Obj, "bad param");
@@ -125,18 +133,6 @@ class Native2WrappedNativeMap {
     return wrapper;
   }
 
-  inline void Remove(XPCWrappedNative* wrapper) {
-    MOZ_ASSERT(wrapper, "bad param");
-#ifdef DEBUG
-    XPCWrappedNative* wrapperInMap = Find(wrapper->GetIdentityObject());
-    MOZ_ASSERT(!wrapperInMap || wrapperInMap == wrapper,
-               "About to remove a different wrapper with the same "
-               "nsISupports identity! This will most likely cause serious "
-               "problems!");
-#endif
-    mTable.Remove(wrapper->GetIdentityObject());
-  }
-
   inline void Clear() { mTable.Clear(); }
 
   inline uint32_t Count() { return mTable.EntryCount(); }
@@ -144,10 +140,6 @@ class Native2WrappedNativeMap {
   PLDHashTable::Iterator Iter() { return mTable.Iter(); }
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
-
- private:
-  Native2WrappedNativeMap();  // no implementation
-  explicit Native2WrappedNativeMap(int size);
 
  private:
   PLDHashTable mTable;
@@ -164,7 +156,7 @@ class IID2NativeInterfaceMap {
     static const struct PLDHashTableOps sOps;
   };
 
-  static IID2NativeInterfaceMap* newMap(int length);
+  IID2NativeInterfaceMap();
 
   inline XPCNativeInterface* Find(REFNSIID iid) const {
     auto entry = static_cast<Entry*>(mTable.Search(&iid));
@@ -198,10 +190,6 @@ class IID2NativeInterfaceMap {
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
  private:
-  IID2NativeInterfaceMap();  // no implementation
-  explicit IID2NativeInterfaceMap(int size);
-
- private:
   PLDHashTable mTable;
 };
 
@@ -219,7 +207,7 @@ class ClassInfo2NativeSetMap {
     static void Clear(PLDHashTable* aTable, PLDHashEntryHdr* aEntry);
   };
 
-  static ClassInfo2NativeSetMap* newMap(int length);
+  ClassInfo2NativeSetMap();
 
   inline XPCNativeSet* Find(nsIClassInfo* info) const {
     auto entry = static_cast<Entry*>(mTable.Search(info));
@@ -254,10 +242,6 @@ class ClassInfo2NativeSetMap {
   size_t ShallowSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf);
 
  private:
-  ClassInfo2NativeSetMap();  // no implementation
-  explicit ClassInfo2NativeSetMap(int size);
-
- private:
   PLDHashTable mTable;
 };
 
@@ -270,7 +254,7 @@ class ClassInfo2WrappedNativeProtoMap {
     XPCWrappedNativeProto* value;
   };
 
-  static ClassInfo2WrappedNativeProtoMap* newMap(int length);
+  ClassInfo2WrappedNativeProtoMap();
 
   inline XPCWrappedNativeProto* Find(nsIClassInfo* info) const {
     auto entry = static_cast<Entry*>(mTable.Search(info));
@@ -292,11 +276,6 @@ class ClassInfo2WrappedNativeProtoMap {
     return proto;
   }
 
-  inline void Remove(nsIClassInfo* info) {
-    MOZ_ASSERT(info, "bad param");
-    mTable.Remove(info);
-  }
-
   inline void Clear() { mTable.Clear(); }
 
   inline uint32_t Count() { return mTable.EntryCount(); }
@@ -304,10 +283,6 @@ class ClassInfo2WrappedNativeProtoMap {
   PLDHashTable::Iterator Iter() { return mTable.Iter(); }
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
-
- private:
-  ClassInfo2WrappedNativeProtoMap();  // no implementation
-  explicit ClassInfo2WrappedNativeProtoMap(int size);
 
  private:
   PLDHashTable mTable;
@@ -325,7 +300,7 @@ class NativeSetMap {
     static const struct PLDHashTableOps sOps;
   };
 
-  static NativeSetMap* newMap(int length);
+  NativeSetMap();
 
   inline XPCNativeSet* Find(XPCNativeSetKey* key) const {
     auto entry = static_cast<Entry*>(mTable.Search(key));
@@ -373,10 +348,6 @@ class NativeSetMap {
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
  private:
-  NativeSetMap();  // no implementation
-  explicit NativeSetMap(int size);
-
- private:
   PLDHashTable mTable;
 };
 
@@ -384,9 +355,9 @@ class NativeSetMap {
 
 class XPCWrappedNativeProtoMap {
  public:
-  typedef PLDHashEntryStub Entry;
+  using Entry = PLDHashEntryStub;
 
-  static XPCWrappedNativeProtoMap* newMap(int length);
+  XPCWrappedNativeProtoMap();
 
   inline XPCWrappedNativeProto* Add(XPCWrappedNativeProto* proto) {
     MOZ_ASSERT(proto, "bad param");
@@ -402,18 +373,9 @@ class XPCWrappedNativeProtoMap {
     return proto;
   }
 
-  inline void Remove(XPCWrappedNativeProto* proto) {
-    MOZ_ASSERT(proto, "bad param");
-    mTable.Remove(proto);
-  }
-
   inline uint32_t Count() { return mTable.EntryCount(); }
 
   PLDHashTable::Iterator Iter() { return mTable.Iter(); }
-
- private:
-  XPCWrappedNativeProtoMap();  // no implementation
-  explicit XPCWrappedNativeProtoMap(int size);
 
  private:
   PLDHashTable mTable;
@@ -427,9 +389,7 @@ class JSObject2JSObjectMap {
                             js::SystemAllocPolicy>;
 
  public:
-  static JSObject2JSObjectMap* newMap(int length) {
-    return new JSObject2JSObjectMap(length);
-  }
+  JSObject2JSObjectMap() = default;
 
   inline JSObject* Find(JSObject* key) {
     MOZ_ASSERT(key, "bad param");
@@ -465,9 +425,7 @@ class JSObject2JSObjectMap {
   void Sweep() { mTable.sweep(); }
 
  private:
-  explicit JSObject2JSObjectMap(size_t length) : mTable(length) {}
-
-  Map mTable;
+  Map mTable{XPC_WRAPPER_MAP_LENGTH};
 };
 
 #endif /* xpcmaps_h___ */

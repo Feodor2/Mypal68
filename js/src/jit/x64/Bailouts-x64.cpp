@@ -4,6 +4,8 @@
 
 #include "jit/Bailouts.h"
 
+#include "vm/JSScript-inl.h"
+
 using namespace js;
 using namespace js::jit;
 

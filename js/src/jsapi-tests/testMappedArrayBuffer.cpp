@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "jsfriendapi.h"
+#include "js/Array.h"        // JS::NewArrayObject
 #include "js/ArrayBuffer.h"  // JS::{{Create,Release}MappedArrayBufferContents,DetachArrayBuffer,GetArrayBuffer{ByteLength,Data},Is{,Detached,Mapped}ArrayBufferObject,NewMappedArrayBufferWithContents,StealArrayBufferContents}
 #include "js/StructuredClone.h"
 #include "jsapi-tests/tests.h"
@@ -129,7 +130,7 @@ bool TestCloneObject() {
   JS::RootedObject obj1(cx, CreateNewObject(8, 12));
   CHECK(obj1);
   JSAutoStructuredCloneBuffer cloned_buffer(
-      JS::StructuredCloneScope::SameProcessSameThread, nullptr, nullptr);
+      JS::StructuredCloneScope::SameProcessDifferentThread, nullptr, nullptr);
   JS::RootedValue v1(cx, JS::ObjectValue(*obj1));
   CHECK(cloned_buffer.write(cx, v1, nullptr, nullptr));
   JS::RootedValue v2(cx);
@@ -163,12 +164,12 @@ bool TestTransferObject() {
   }
 
   JS::RootedObject obj(
-      cx, JS_NewArrayObject(cx, JS::HandleValueArray::subarray(argv, 0, 1)));
+      cx, JS::NewArrayObject(cx, JS::HandleValueArray::subarray(argv, 0, 1)));
   CHECK(obj);
   JS::RootedValue transferable(cx, JS::ObjectValue(*obj));
 
   JSAutoStructuredCloneBuffer cloned_buffer(
-      JS::StructuredCloneScope::SameProcessSameThread, nullptr, nullptr);
+      JS::StructuredCloneScope::SameProcessDifferentThread, nullptr, nullptr);
   CHECK(cloned_buffer.write(cx, v1, transferable,
                             JS::CloneDataPolicy().denySharedArrayBuffer(),
                             nullptr, nullptr));

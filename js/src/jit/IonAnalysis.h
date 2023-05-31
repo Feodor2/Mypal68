@@ -10,6 +10,9 @@
 #include "jit/JitAllocPolicy.h"
 
 namespace js {
+
+class PlainObject;
+
 namespace jit {
 
 class MBasicBlock;
@@ -45,6 +48,8 @@ MOZ_MUST_USE bool EliminateDeadResumePointOperands(MIRGenerator* mir,
 
 MOZ_MUST_USE bool EliminateDeadCode(MIRGenerator* mir, MIRGraph& graph);
 
+MOZ_MUST_USE bool FoldLoadsWithUnbox(MIRGenerator* mir, MIRGraph& graph);
+
 MOZ_MUST_USE bool ApplyTypeInformation(MIRGenerator* mir, MIRGraph& graph);
 
 void RenumberBlocks(MIRGraph& graph);
@@ -55,8 +60,6 @@ MOZ_MUST_USE bool AccountForCFGChanges(MIRGenerator* mir, MIRGraph& graph,
 
 MOZ_MUST_USE bool RemoveUnmarkedBlocks(MIRGenerator* mir, MIRGraph& graph,
                                        uint32_t numMarkedBlocks);
-
-MOZ_MUST_USE bool CreateMIRRootList(IonBuilder& builder);
 
 void ClearDominatorTree(MIRGraph& graph);
 
@@ -160,7 +163,7 @@ MCompare* ConvertLinearInequality(TempAllocator& alloc, MBasicBlock* block,
 
 MOZ_MUST_USE bool AnalyzeNewScriptDefiniteProperties(
     JSContext* cx, DPAConstraintInfo& constraintInfo, HandleFunction fun,
-    ObjectGroup* group, HandlePlainObject baseobj,
+    ObjectGroup* group, Handle<PlainObject*> baseobj,
     Vector<TypeNewScriptInitializer>* initializerList);
 
 MOZ_MUST_USE bool AnalyzeArgumentsUsage(JSContext* cx, JSScript* script);
@@ -169,7 +172,9 @@ bool DeadIfUnused(const MDefinition* def);
 
 bool IsDiscardable(const MDefinition* def);
 
-void DumpMIRExpressions(MIRGraph& graph);
+class CompileInfo;
+void DumpMIRExpressions(MIRGraph& graph, const CompileInfo& info,
+                        const char* phase);
 
 }  // namespace jit
 }  // namespace js

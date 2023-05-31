@@ -20,7 +20,7 @@ namespace jit {
 template <typename MemoryView>
 class EmulateStateOf {
  private:
-  typedef typename MemoryView::BlockState BlockState;
+  using BlockState = typename MemoryView::BlockState;
 
   MIRGenerator* mir_;
   MIRGraph& graph_;
@@ -107,7 +107,8 @@ static bool IsObjectEscaped(MInstruction* ins, JSObject* objDefault = nullptr);
 // Returns False if the lambda is not escaped and if it is optimizable by
 // ScalarReplacementOfObject.
 static bool IsLambdaEscaped(MInstruction* lambda, JSObject* obj) {
-  MOZ_ASSERT(lambda->isLambda() || lambda->isLambdaArrow());
+  MOZ_ASSERT(lambda->isLambda() || lambda->isLambdaArrow() ||
+             lambda->isFunctionWithProto());
   JitSpewDef(JitSpew_Escape, "Check lambda\n", lambda);
   JitSpewIndent spewIndent(JitSpew_Escape);
 
@@ -198,15 +199,16 @@ static bool IsObjectEscaped(MInstruction* ins, JSObject* objDefault) {
 
       case MDefinition::Opcode::Slots: {
 #ifdef DEBUG
-        // Assert that MSlots are only used by MStoreSlot and MLoadSlot.
+        // Assert that MSlots are only used by MStoreDynamicSlot and
+        // MLoadDynamicSlot.
         MSlots* ins = def->toSlots();
         MOZ_ASSERT(ins->object() != 0);
         for (MUseIterator i(ins->usesBegin()); i != ins->usesEnd(); i++) {
           // toDefinition should normally never fail, since they don't get
           // captured by resume points.
           MDefinition* def = (*i)->consumer()->toDefinition();
-          MOZ_ASSERT(def->op() == MDefinition::Opcode::StoreSlot ||
-                     def->op() == MDefinition::Opcode::LoadSlot);
+          MOZ_ASSERT(def->op() == MDefinition::Opcode::StoreDynamicSlot ||
+                     def->op() == MDefinition::Opcode::LoadDynamicSlot);
         }
 #endif
         break;
@@ -241,7 +243,8 @@ static bool IsObjectEscaped(MInstruction* ins, JSObject* objDefault) {
       }
 
       case MDefinition::Opcode::Lambda:
-      case MDefinition::Opcode::LambdaArrow: {
+      case MDefinition::Opcode::LambdaArrow:
+      case MDefinition::Opcode::FunctionWithProto: {
         if (IsLambdaEscaped(def->toInstruction(), obj)) {
           JitSpewDef(JitSpew_Escape, "is indirectly escaped by\n", def);
           return true;
@@ -266,7 +269,7 @@ static bool IsObjectEscaped(MInstruction* ins, JSObject* objDefault) {
 
 class ObjectMemoryView : public MDefinitionVisitorDefaultNoop {
  public:
-  typedef MObjectState BlockState;
+  using BlockState = MObjectState;
   static const char phaseName[];
 
  private:
@@ -305,13 +308,14 @@ class ObjectMemoryView : public MDefinitionVisitorDefaultNoop {
   void visitStoreFixedSlot(MStoreFixedSlot* ins);
   void visitLoadFixedSlot(MLoadFixedSlot* ins);
   void visitPostWriteBarrier(MPostWriteBarrier* ins);
-  void visitStoreSlot(MStoreSlot* ins);
-  void visitLoadSlot(MLoadSlot* ins);
+  void visitStoreDynamicSlot(MStoreDynamicSlot* ins);
+  void visitLoadDynamicSlot(MLoadDynamicSlot* ins);
   void visitGuardShape(MGuardShape* ins);
   void visitGuardObjectGroup(MGuardObjectGroup* ins);
   void visitFunctionEnvironment(MFunctionEnvironment* ins);
   void visitLambda(MLambda* ins);
   void visitLambdaArrow(MLambdaArrow* ins);
+  void visitFunctionWithProto(MFunctionWithProto* ins);
 
  private:
   void visitObjectGuard(MInstruction* ins, MDefinition* operand);
@@ -470,7 +474,8 @@ void ObjectMemoryView::assertSuccess() {
 
     // The only remaining uses would be removed by DCE, which will also
     // recover the object on bailouts.
-    MOZ_ASSERT(def->isSlots() || def->isLambda() || def->isLambdaArrow());
+    MOZ_ASSERT(def->isSlots() || def->isLambda() || def->isLambdaArrow() ||
+               def->isFunctionWithProto());
     MOZ_ASSERT(!def->hasDefUses());
   }
 }
@@ -549,7 +554,7 @@ void ObjectMemoryView::visitPostWriteBarrier(MPostWriteBarrier* ins) {
   ins->block()->discard(ins);
 }
 
-void ObjectMemoryView::visitStoreSlot(MStoreSlot* ins) {
+void ObjectMemoryView::visitStoreDynamicSlot(MStoreDynamicSlot* ins) {
   // Skip stores made on other objects.
   MSlots* slots = ins->slots()->toSlots();
   if (slots->object() != obj_) {
@@ -580,7 +585,7 @@ void ObjectMemoryView::visitStoreSlot(MStoreSlot* ins) {
   ins->block()->discard(ins);
 }
 
-void ObjectMemoryView::visitLoadSlot(MLoadSlot* ins) {
+void ObjectMemoryView::visitLoadDynamicSlot(MLoadDynamicSlot* ins) {
   // Skip loads made on other objects.
   MSlots* slots = ins->slots()->toSlots();
   if (slots->object() != obj_) {
@@ -642,6 +647,10 @@ void ObjectMemoryView::visitFunctionEnvironment(MFunctionEnvironment* ins) {
     if (input->toLambdaArrow()->environmentChain() != obj_) {
       return;
     }
+  } else if (input->isFunctionWithProto()) {
+    if (input->toFunctionWithProto()->environmentChain() != obj_) {
+      return;
+    }
   } else {
     return;
   }
@@ -664,6 +673,14 @@ void ObjectMemoryView::visitLambda(MLambda* ins) {
 }
 
 void ObjectMemoryView::visitLambdaArrow(MLambdaArrow* ins) {
+  if (ins->environmentChain() != obj_) {
+    return;
+  }
+
+  ins->setIncompleteObject();
+}
+
+void ObjectMemoryView::visitFunctionWithProto(MFunctionWithProto* ins) {
   if (ins->environmentChain() != obj_) {
     return;
   }
@@ -898,7 +915,7 @@ static bool IsArrayEscaped(MInstruction* ins, MInstruction* newArray) {
 // replace all reference of the allocation by the MArrayState definition.
 class ArrayMemoryView : public MDefinitionVisitorDefaultNoop {
  public:
-  typedef MArrayState BlockState;
+  using BlockState = MArrayState;
   static const char* phaseName;
 
  private:

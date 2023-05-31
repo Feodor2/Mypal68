@@ -13,10 +13,7 @@
 #include "vm/Realm.h"
 #include "vm/Shape.h"
 
-#ifdef MOZ_VTUNE
-
-namespace js {
-namespace vtune {
+namespace js::vtune {
 
 // VTune internals are not known to be threadsafe.
 static Mutex* VTuneMutex = nullptr;
@@ -161,7 +158,4 @@ void UnmarkBytes(void* bytes, unsigned size) {
   if (ok != 1) printf("[!] VTune Integration: Failed to unload method.\n");
 }
 
-}  // namespace vtune
-}  // namespace js
-
-#endif  // MOZ_VTUNE
+}  // namespace js::vtune

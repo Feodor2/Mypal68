@@ -16,7 +16,7 @@ namespace jsipc {
 
 class WrapperOwner : public virtual JavaScriptShared {
  public:
-  typedef mozilla::ipc::IProtocol::ActorDestroyReason ActorDestroyReason;
+  using ActorDestroyReason = mozilla::ipc::IProtocol::ActorDestroyReason;
 
   WrapperOwner();
 
@@ -64,7 +64,6 @@ class WrapperOwner : public virtual JavaScriptShared {
   nsresult instanceOf(JSObject* obj, const nsID* id, bool* bp);
 
   bool toString(JSContext* cx, JS::HandleObject callee, JS::CallArgs& args);
-  bool DOMQI(JSContext* cx, JS::HandleObject callee, JS::CallArgs& args);
 
   /*
    * Check that |obj| is a DOM wrapper whose prototype chain contains

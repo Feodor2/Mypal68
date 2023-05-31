@@ -98,7 +98,6 @@
 #include "PLDHashTable.h"
 #include "nscore.h"
 #include "nsXPCOM.h"
-#include "nsAutoPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsDebug.h"
 #include "nsISupports.h"
@@ -129,7 +128,6 @@
 #include "nsIConsoleService.h"
 
 #include "nsVariant.h"
-#include "nsIProperty.h"
 #include "nsCOMArray.h"
 #include "nsTArray.h"
 #include "nsBaseHashtable.h"
@@ -166,18 +164,6 @@ class Exception;
 }  // namespace mozilla
 
 /***************************************************************************/
-// default initial sizes for maps (hashtables)
-
-#define XPC_JS_MAP_LENGTH 32
-
-#define XPC_NATIVE_MAP_LENGTH 8
-#define XPC_NATIVE_PROTO_MAP_LENGTH 8
-#define XPC_DYING_NATIVE_PROTO_MAP_LENGTH 8
-#define XPC_NATIVE_INTERFACE_MAP_LENGTH 32
-#define XPC_NATIVE_SET_MAP_LENGTH 32
-#define XPC_WRAPPER_MAP_LENGTH 8
-
-/***************************************************************************/
 // data declarations...
 extern const char XPC_EXCEPTION_CONTRACTID[];
 extern const char XPC_CONSOLE_CONTRACTID[];
@@ -194,7 +180,7 @@ extern const char XPC_XPCONNECT_CONTRACTID[];
 
 // If IS_WN_CLASS for the JSClass of an object is true, the object is a
 // wrappednative wrapper, holding the XPCWrappedNative in its private slot.
-static inline bool IS_WN_CLASS(const js::Class* clazz) {
+static inline bool IS_WN_CLASS(const JSClass* clazz) {
   return clazz->isWrappedNative();
 }
 
@@ -311,7 +297,7 @@ class XPCJSContext final : public mozilla::CycleCollectedJSContext,
                            public mozilla::LinkedListElement<XPCJSContext> {
  public:
   static void InitTLS();
-  static XPCJSContext* NewXPCJSContext(XPCJSContext* aPrimaryContext);
+  static XPCJSContext* NewXPCJSContext();
   static XPCJSContext* Get();
 
   XPCJSRuntime* Runtime() const;
@@ -405,6 +391,7 @@ class XPCJSContext final : public mozilla::CycleCollectedJSContext,
     IDX_COLUMNNUMBER,
     IDX_STACK,
     IDX_MESSAGE,
+    IDX_ERRORS,
     IDX_LASTINDEX,
     IDX_THEN,
     IDX_ISINSTANCE,
@@ -423,7 +410,7 @@ class XPCJSContext final : public mozilla::CycleCollectedJSContext,
   XPCJSContext();
 
   MOZ_IS_CLASS_INIT
-  nsresult Initialize(XPCJSContext* aPrimaryContext);
+  nsresult Initialize();
 
   XPCCallContext* mCallContext;
   AutoMarkingPtr* mAutoRoots;
@@ -482,21 +469,21 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
   void AssertInvalidWrappedJSNotInTable(nsXPCWrappedJS* wrapper) const;
 
   JSObject2WrappedJSMap* GetMultiCompartmentWrappedJSMap() const {
-    return mWrappedJSMap;
+    return mWrappedJSMap.get();
   }
 
   IID2NativeInterfaceMap* GetIID2NativeInterfaceMap() const {
-    return mIID2NativeInterfaceMap;
+    return mIID2NativeInterfaceMap.get();
   }
 
   ClassInfo2NativeSetMap* GetClassInfo2NativeSetMap() const {
-    return mClassInfo2NativeSetMap;
+    return mClassInfo2NativeSetMap.get();
   }
 
-  NativeSetMap* GetNativeSetMap() const { return mNativeSetMap; }
+  NativeSetMap* GetNativeSetMap() const { return mNativeSetMap.get(); }
 
   XPCWrappedNativeProtoMap* GetDyingWrappedNativeProtoMap() const {
-    return mDyingWrappedNativeProtoMap;
+    return mDyingWrappedNativeProtoMap.get();
   }
 
   XPCWrappedNativeScopeList& GetWrappedNativeScopes() {
@@ -505,10 +492,10 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
 
   bool InitializeStrings(JSContext* cx);
 
-  virtual bool DescribeCustomObjects(JSObject* aObject, const js::Class* aClasp,
+  virtual bool DescribeCustomObjects(JSObject* aObject, const JSClass* aClasp,
                                      char (&aName)[72]) const override;
   virtual bool NoteCustomGCThingXPCOMChildren(
-      const js::Class* aClasp, JSObject* aObj,
+      const JSClass* aClasp, JSObject* aObj,
       nsCycleCollectionTraversalCallback& aCb) const override;
 
   /**
@@ -591,15 +578,13 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
   void Initialize(JSContext* cx);
   void Shutdown(JSContext* cx) override;
 
-  void ReleaseIncrementally(nsTArray<nsISupports*>& array);
-
   static const char* const mStrings[XPCJSContext::IDX_TOTAL_COUNT];
   jsid mStrIDs[XPCJSContext::IDX_TOTAL_COUNT];
   JS::Value mStrJSVals[XPCJSContext::IDX_TOTAL_COUNT];
 
   struct Hasher {
-    typedef RefPtr<mozilla::BasePrincipal> Key;
-    typedef Key Lookup;
+    using Key = RefPtr<mozilla::BasePrincipal>;
+    using Lookup = Key;
     static uint32_t hash(const Lookup& l) { return l->GetOriginNoSuffixHash(); }
     static bool match(const Key& k, const Lookup& l) {
       return k->FastEquals(l);
@@ -617,13 +602,13 @@ class XPCJSRuntime final : public mozilla::CycleCollectedJSRuntime {
                         Hasher, js::SystemAllocPolicy, SweepPolicy>
       Principal2JSObjectMap;
 
-  JSObject2WrappedJSMap* mWrappedJSMap;
-  IID2NativeInterfaceMap* mIID2NativeInterfaceMap;
-  ClassInfo2NativeSetMap* mClassInfo2NativeSetMap;
-  NativeSetMap* mNativeSetMap;
+  mozilla::UniquePtr<JSObject2WrappedJSMap> mWrappedJSMap;
+  mozilla::UniquePtr<IID2NativeInterfaceMap> mIID2NativeInterfaceMap;
+  mozilla::UniquePtr<ClassInfo2NativeSetMap> mClassInfo2NativeSetMap;
+  mozilla::UniquePtr<NativeSetMap> mNativeSetMap;
   Principal2JSObjectMap mUAWidgetScopeMap;
   XPCWrappedNativeScopeList mWrappedNativeScopes;
-  XPCWrappedNativeProtoMap* mDyingWrappedNativeProtoMap;
+  mozilla::UniquePtr<XPCWrappedNativeProtoMap> mDyingWrappedNativeProtoMap;
   bool mGCIsRunning;
   nsTArray<nsISupports*> mNativesToReleaseArray;
   bool mDoingFinalization;
@@ -793,12 +778,12 @@ class MOZ_STACK_CLASS XPCCallContext final {
 // These are the various JSClasses and callbacks whose use that required
 // visibility from more than one .cpp file.
 
-extern const js::Class XPC_WN_NoHelper_JSClass;
-extern const js::Class XPC_WN_Proto_JSClass;
-extern const js::Class XPC_WN_Tearoff_JSClass;
+extern const JSClass XPC_WN_NoHelper_JSClass;
+extern const JSClass XPC_WN_Proto_JSClass;
+extern const JSClass XPC_WN_Tearoff_JSClass;
 #define XPC_WN_TEAROFF_RESERVED_SLOTS 1
 #define XPC_WN_TEAROFF_FLAT_OBJECT_SLOT 0
-extern const js::Class XPC_WN_NoHelper_Proto_JSClass;
+extern const JSClass XPC_WN_NoHelper_Proto_JSClass;
 
 extern bool XPC_WN_CallMethod(JSContext* cx, unsigned argc, JS::Value* vp);
 
@@ -814,11 +799,11 @@ class XPCWrappedNativeScope final
   XPCJSRuntime* GetRuntime() const { return XPCJSRuntime::Get(); }
 
   Native2WrappedNativeMap* GetWrappedNativeMap() const {
-    return mWrappedNativeMap;
+    return mWrappedNativeMap.get();
   }
 
   ClassInfo2WrappedNativeProtoMap* GetWrappedNativeProtoMap() const {
-    return mWrappedNativeProtoMap;
+    return mWrappedNativeProtoMap.get();
   }
 
   nsXPCComponentsBase* GetComponents() const { return mComponents; }
@@ -894,7 +879,7 @@ class XPCWrappedNativeScope final
                         JS::HandleObject aFirstGlobal);
   virtual ~XPCWrappedNativeScope();
 
-  nsAutoPtr<JSObject2JSObjectMap> mWaiverWrapperMap;
+  mozilla::UniquePtr<JSObject2JSObjectMap> mWaiverWrapperMap;
 
   JS::Compartment* Compartment() const { return mCompartment; }
 
@@ -919,8 +904,8 @@ class XPCWrappedNativeScope final
   XPCWrappedNativeScope() = delete;
 
  private:
-  Native2WrappedNativeMap* mWrappedNativeMap;
-  ClassInfo2WrappedNativeProtoMap* mWrappedNativeProtoMap;
+  mozilla::UniquePtr<Native2WrappedNativeMap> mWrappedNativeMap;
+  mozilla::UniquePtr<ClassInfo2WrappedNativeProtoMap> mWrappedNativeProtoMap;
   RefPtr<nsXPCComponentsBase> mComponents;
   JS::Compartment* mCompartment;
 
@@ -1084,7 +1069,7 @@ class XPCNativeInterface final {
       : mInfo(aInfo), mName(aName), mMemberCount(0) {}
   ~XPCNativeInterface();
 
-  void* operator new(size_t, void* p) CPP_THROW_NEW { return p; }
+  void* operator new(size_t, void* p) noexcept(true) { return p; }
 
   XPCNativeInterface(const XPCNativeInterface& r) = delete;
   XPCNativeInterface& operator=(const XPCNativeInterface& r) = delete;
@@ -1124,7 +1109,7 @@ class MOZ_STACK_CLASS XPCNativeSetKey final {
   // |addition| inserted after existing interfaces. |addition| must
   // not already be present in |baseSet|.
   explicit XPCNativeSetKey(XPCNativeSet* baseSet, XPCNativeInterface* addition);
-  ~XPCNativeSetKey() {}
+  ~XPCNativeSetKey() = default;
 
   XPCNativeSet* GetBaseSet() const { return mBaseSet; }
   XPCNativeInterface* GetAddition() const { return mAddition; }
@@ -1205,7 +1190,7 @@ class XPCNativeSet final {
 
   XPCNativeSet() : mMemberCount(0), mInterfaceCount(0) {}
   ~XPCNativeSet();
-  void* operator new(size_t, void* p) CPP_THROW_NEW { return p; }
+  void* operator new(size_t, void* p) noexcept(true) { return p; }
 
   static void DestroyInstance(XPCNativeSet* inst);
 
@@ -1244,7 +1229,7 @@ class XPCWrappedNativeProto final {
 
   nsIXPCScriptable* GetScriptable() const { return mScriptable; }
 
-  void JSProtoObjectFinalized(js::FreeOp* fop, JSObject* obj);
+  void JSProtoObjectFinalized(JSFreeOp* fop, JSObject* obj);
   void JSProtoObjectMoved(JSObject* obj, const JSObject* old);
 
   void SystemIsBeingShutDown();
@@ -1553,7 +1538,7 @@ class XPCWrappedNative final : public nsIXPConnectWrappedNative {
  private:
   enum {
     // Flags bits for mFlatJSObject:
-    FLAT_JS_OBJECT_VALID = JS_BIT(0)
+    FLAT_JS_OBJECT_VALID = js::Bit(0)
   };
 
   bool Init(JSContext* cx, nsIXPCScriptable* scriptable);
@@ -1868,7 +1853,7 @@ class XPCConvert {
                              const void* buf, const nsXPTType& type,
                              const nsID* iid, uint32_t count, nsresult* pErr);
 
-  typedef std::function<void*(uint32_t*)> ArrayAllocFixupLen;
+  using ArrayAllocFixupLen = std::function<void*(uint32_t*)>;
 
   /**
    * Convert a JS::Value into a native array.
@@ -2125,11 +2110,11 @@ class TypedAutoMarkingPtr : public AutoMarkingPtr {
   T* mPtr;
 };
 
-typedef TypedAutoMarkingPtr<XPCWrappedNative> AutoMarkingWrappedNativePtr;
-typedef TypedAutoMarkingPtr<XPCWrappedNativeTearOff>
-    AutoMarkingWrappedNativeTearOffPtr;
-typedef TypedAutoMarkingPtr<XPCWrappedNativeProto>
-    AutoMarkingWrappedNativeProtoPtr;
+using AutoMarkingWrappedNativePtr = TypedAutoMarkingPtr<XPCWrappedNative>;
+using AutoMarkingWrappedNativeTearOffPtr =
+    TypedAutoMarkingPtr<XPCWrappedNativeTearOff>;
+using AutoMarkingWrappedNativeProtoPtr =
+    TypedAutoMarkingPtr<XPCWrappedNativeProto>;
 
 /***************************************************************************/
 namespace xpc {
@@ -2213,7 +2198,7 @@ class XPCVariant : public nsIVariant {
   void RemovePurple() { mRefCnt.RemovePurple(); }
 
  protected:
-  virtual ~XPCVariant() {}
+  virtual ~XPCVariant() = default;
 
   bool InitializeData(JSContext* cx);
 
@@ -2278,6 +2263,7 @@ struct GlobalProperties {
   bool CSS : 1;
   bool CSSRule : 1;
   bool Directory : 1;
+  bool DOMException : 1;
   bool DOMParser : 1;
   bool Element : 1;
   bool Event : 1;
@@ -2700,7 +2686,7 @@ class CompartmentPrivate {
   // Whether SystemIsBeingShutDown has been called on this compartment.
   bool wasShutdown;
 
-  JSObject2WrappedJSMap* GetWrappedJSMap() const { return mWrappedJSMap; }
+  JSObject2WrappedJSMap* GetWrappedJSMap() const { return mWrappedJSMap.get(); }
   void UpdateWeakPointersAfterGC();
 
   void SystemIsBeingShutDown();
@@ -2723,9 +2709,9 @@ class CompartmentPrivate {
   XPCWrappedNativeScope* GetScope() { return mScope.get(); }
 
  private:
-  JSObject2WrappedJSMap* mWrappedJSMap;
+  mozilla::UniquePtr<JSObject2WrappedJSMap> mWrappedJSMap;
 
-  // Cache holding proxy objects for Window objects (and their Location oject)
+  // Cache holding proxy objects for Window objects (and their Location object)
   // that are loaded in a different process.
   RemoteProxyMap mRemoteProxies;
 

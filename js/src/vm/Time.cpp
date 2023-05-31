@@ -12,11 +12,11 @@
 #ifdef SOLARIS
 #  define _REENTRANT 1
 #endif
+#include <algorithm>
 #include <string.h>
 #include <time.h>
 
 #include "jstypes.h"
-#include "jsutil.h"
 
 #ifdef XP_WIN
 #  include <windef.h>
@@ -24,9 +24,6 @@
 #  include <crtdbg.h>   /* for _CrtSetReportMode */
 #  include <mmsystem.h> /* for timeBegin/EndPeriod */
 #  include <stdlib.h>   /* for _set_invalid_parameter_handler */
-
-#  include "prinit.h"
-
 #endif
 
 #ifdef XP_UNIX
@@ -51,7 +48,7 @@ int64_t PRMJ_Now() {
 
   // We check the FuzzyFox clock in case it was recently disabled, to prevent
   // time from going backwards.
-  return js::Max(PRMJ_NowImpl(), mozilla::TimeStamp::NowFuzzyTime());
+  return std::max(PRMJ_NowImpl(), mozilla::TimeStamp::NowFuzzyTime());
 }
 
 #if defined(XP_UNIX)
@@ -247,7 +244,7 @@ static int64_t PRMJ_NowImpl() {
 }
 #endif
 
-#if !ENABLE_INTL_API || MOZ_SYSTEM_ICU
+#if !JS_HAS_INTL_API || MOZ_SYSTEM_ICU
 #  ifdef XP_WIN
 static void PRMJ_InvalidParameterHandler(const wchar_t* expression,
                                          const wchar_t* function,
@@ -395,4 +392,4 @@ size_t PRMJ_FormatTime(char* buf, size_t buflen, const char* fmt,
 #  endif
   return result;
 }
-#endif /* !ENABLE_INTL_API || MOZ_SYSTEM_ICU */
+#endif /* !JS_HAS_INTL_API || MOZ_SYSTEM_ICU */

@@ -4,11 +4,12 @@
 
 #include "jit/RematerializedFrame.h"
 
+#include <algorithm>
 #include <utility>
 
+#include "debugger/DebugAPI.h"
 #include "jit/JitFrames.h"
 #include "vm/ArgumentsObject.h"
-#include "vm/Debugger.h"
 
 #include "jit/JitFrames-inl.h"
 #include "vm/EnvironmentObject-inl.h"
@@ -59,7 +60,7 @@ RematerializedFrame* RematerializedFrame::New(JSContext* cx, uint8_t* top,
                                               MaybeReadFallback& fallback) {
   unsigned numFormals =
       iter.isFunctionFrame() ? iter.calleeTemplate()->nargs() : 0;
-  unsigned argSlots = Max(numFormals, iter.numActualArgs());
+  unsigned argSlots = std::max(numFormals, iter.numActualArgs());
   unsigned extraSlots = argSlots + iter.script()->nfixed();
 
   // One Value slot is included in sizeof(RematerializedFrame), so we can
@@ -193,9 +194,9 @@ void RematerializedFrame::dump() {
 
     for (unsigned i = 0; i < numActualArgs(); i++) {
       if (i < numFormalArgs()) {
-        fprintf(stderr, "  formal (arg %d): ", i);
+        fprintf(stderr, "  formal (arg %u): ", i);
       } else {
-        fprintf(stderr, "  overflown (arg %d): ", i);
+        fprintf(stderr, "  overflown (arg %u): ", i);
       }
 #ifdef DEBUG
       DumpValue(argv()[i]);
@@ -205,7 +206,7 @@ void RematerializedFrame::dump() {
     }
 
     for (unsigned i = 0; i < script()->nfixed(); i++) {
-      fprintf(stderr, "  local %d: ", i);
+      fprintf(stderr, "  local %u: ", i);
 #ifdef DEBUG
       DumpValue(locals()[i]);
 #else

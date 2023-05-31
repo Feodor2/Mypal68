@@ -9,6 +9,7 @@
 
 #include "jsfriendapi.h"
 
+#include "js/Array.h"  // JS::IsArrayAnswer
 #include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
 
@@ -74,18 +75,18 @@ class JS_FRIEND_API Wrapper;
  * very different kinds of object in SpiderMonkey.
  *
  * 1.  Native objects cover most objects and contain both internal slots and
- *     properties. ClassOps and ObjectOps may be used to override certain
+ *     properties. JSClassOps and ObjectOps may be used to override certain
  *     default behaviors.
  *
  * 2.  Proxy objects are composed of internal slots and a ProxyHandler. The
  *     handler contains C++ methods that can implement these standard (and
- *     non-standard) internal methods. ClassOps and ObjectOps for the base
+ *     non-standard) internal methods. JSClassOps and ObjectOps for the base
  *     ProxyObject invoke the handler methods as appropriate.
  *
- * 3.  Objects with custom layouts like TypedObjects. These rely on ClassOps
+ * 3.  Objects with custom layouts like TypedObjects. These rely on JSClassOps
  *     and ObjectOps to implement internal methods.
  *
- * Native objects with custom ClassOps / ObjectOps are used when the object
+ * Native objects with custom JSClassOps / ObjectOps are used when the object
  * behaves very similar to a normal object such as the ArrayObject and it's
  * length property. Most usages wrapping a C++ or other type should prefer
  * using a Proxy. Using the proxy approach makes it much easier to create an
@@ -373,7 +374,7 @@ class JS_FRIEND_API BaseProxyHandler {
   virtual bool isScripted() const { return false; }
 };
 
-extern JS_FRIEND_DATA const js::Class ProxyClass;
+extern JS_FRIEND_DATA const JSClass ProxyClass;
 
 inline bool IsProxy(const JSObject* obj) {
   return GetObjectClass(obj)->isProxy();
@@ -552,19 +553,11 @@ inline bool IsScriptedProxy(const JSObject* obj) {
 class MOZ_STACK_CLASS ProxyOptions {
  protected:
   /* protected constructor for subclass */
-  explicit ProxyOptions(bool singletonArg, bool lazyProtoArg = false)
-      : singleton_(singletonArg),
-        lazyProto_(lazyProtoArg),
-        clasp_(&ProxyClass) {}
+  explicit ProxyOptions(bool lazyProtoArg)
+      : lazyProto_(lazyProtoArg), clasp_(&ProxyClass) {}
 
  public:
-  ProxyOptions() : singleton_(false), lazyProto_(false), clasp_(&ProxyClass) {}
-
-  bool singleton() const { return singleton_; }
-  ProxyOptions& setSingleton(bool flag) {
-    singleton_ = flag;
-    return *this;
-  }
+  ProxyOptions() : ProxyOptions(false) {}
 
   bool lazyProto() const { return lazyProto_; }
   ProxyOptions& setLazyProto(bool flag) {
@@ -572,19 +565,22 @@ class MOZ_STACK_CLASS ProxyOptions {
     return *this;
   }
 
-  const Class* clasp() const { return clasp_; }
-  ProxyOptions& setClass(const Class* claspArg) {
+  const JSClass* clasp() const { return clasp_; }
+  ProxyOptions& setClass(const JSClass* claspArg) {
     clasp_ = claspArg;
     return *this;
   }
 
  private:
-  bool singleton_;
   bool lazyProto_;
-  const Class* clasp_;
+  const JSClass* clasp_;
 };
 
 JS_FRIEND_API JSObject* NewProxyObject(
+    JSContext* cx, const BaseProxyHandler* handler, HandleValue priv,
+    JSObject* proto, const ProxyOptions& options = ProxyOptions());
+
+JS_FRIEND_API JSObject* NewSingletonProxyObject(
     JSContext* cx, const BaseProxyHandler* handler, HandleValue priv,
     JSObject* proto, const ProxyOptions& options = ProxyOptions());
 
@@ -692,7 +688,7 @@ inline void assertEnteredPolicy(JSContext* cx, JSObject* obj, jsid id,
                                 BaseProxyHandler::Action act) {}
 #endif
 
-extern JS_FRIEND_DATA const js::ClassOps ProxyClassOps;
+extern JS_FRIEND_DATA const JSClassOps ProxyClassOps;
 extern JS_FRIEND_DATA const js::ClassExtension ProxyClassExtension;
 extern JS_FRIEND_DATA const js::ObjectOps ProxyObjectOps;
 
@@ -723,14 +719,17 @@ constexpr unsigned CheckProxyFlags() {
   return Flags;
 }
 
-#define PROXY_CLASS_DEF(name, flags)                                       \
+#define PROXY_CLASS_DEF_WITH_CLASS_SPEC(name, flags, classSpec)            \
   {                                                                        \
     name,                                                                  \
-        js::Class::NON_NATIVE | JSCLASS_IS_PROXY |                         \
+        JSClass::NON_NATIVE | JSCLASS_IS_PROXY |                           \
             JSCLASS_DELAY_METADATA_BUILDER | js::CheckProxyFlags<flags>(), \
-        &js::ProxyClassOps, JS_NULL_CLASS_SPEC, &js::ProxyClassExtension,  \
+        &js::ProxyClassOps, classSpec, &js::ProxyClassExtension,           \
         &js::ProxyObjectOps                                                \
   }
+
+#define PROXY_CLASS_DEF(name, flags) \
+  PROXY_CLASS_DEF_WITH_CLASS_SPEC(name, flags, JS_NULL_CLASS_SPEC)
 
 } /* namespace js */
 

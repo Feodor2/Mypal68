@@ -54,11 +54,15 @@ void MacroAssembler::move32To64SignExtend(Register src, Register64 dest) {
   ma_sll(dest.reg, src, Imm32(0));
 }
 
+void MacroAssembler::move32ZeroExtendToPtr(Register src, Register dest) {
+  ma_dext(dest, src, Imm32(0), Imm32(32));
+}
+
 // ===============================================================
 // Load instructions
 
 void MacroAssembler::load32SignExtendToPtr(const Address& src, Register dest) {
-  loadPtr(src, dest);
+  load32(src, dest);
 }
 
 // ===============================================================
@@ -223,8 +227,12 @@ void MacroAssembler::sub64(Imm64 imm, Register64 dest) {
 void MacroAssembler::mul64(Imm64 imm, const Register64& dest) {
   MOZ_ASSERT(dest.reg != ScratchRegister);
   mov(ImmWord(imm.value), ScratchRegister);
+#ifdef MIPSR6
+  as_dmulu(dest.reg, ScratchRegister, dest.reg);
+#else
   as_dmultu(dest.reg, ScratchRegister);
   as_mflo(dest.reg);
+#endif
 }
 
 void MacroAssembler::mul64(Imm64 imm, const Register64& dest,
@@ -236,8 +244,12 @@ void MacroAssembler::mul64(Imm64 imm, const Register64& dest,
 void MacroAssembler::mul64(const Register64& src, const Register64& dest,
                            const Register temp) {
   MOZ_ASSERT(temp == InvalidReg);
+#ifdef MIPSR6
+  as_dmulu(dest.reg, src.reg, dest.reg);
+#else
   as_dmultu(dest.reg, src.reg);
   as_mflo(dest.reg);
+#endif
 }
 
 void MacroAssembler::mul64(const Operand& src, const Register64& dest,
@@ -461,16 +473,7 @@ void MacroAssembler::branch64(Condition cond, const Address& lhs,
 
 void MacroAssembler::branchPrivatePtr(Condition cond, const Address& lhs,
                                       Register rhs, Label* label) {
-#if defined(JS_UNALIGNED_PRIVATE_VALUES)
   branchPtr(cond, lhs, rhs, label);
-#else
-  if (rhs != ScratchRegister) {
-    movePtr(rhs, ScratchRegister);
-  }
-  // Instead of unboxing lhs, box rhs and do direct comparison with lhs.
-  rshiftPtr(Imm32(1), ScratchRegister);
-  branchPtr(cond, lhs, ScratchRegister, label);
-#endif
 }
 
 template <class L>
@@ -559,12 +562,6 @@ void MacroAssembler::branchTestSymbol(Condition cond, const ValueOperand& value,
   branchTestSymbol(cond, scratch2, label);
 }
 
-void MacroAssembler::branchTestBigInt(Condition cond, Register tag,
-                                      Label* label) {
-  MOZ_ASSERT(cond == Equal || cond == NotEqual);
-  ma_b(tag, ImmTag(JSVAL_TAG_BIGINT), label, cond);
-}
-
 void MacroAssembler::branchTestBigInt(Condition cond, const BaseIndex& address,
                                       Label* label) {
   SecondScratchRegisterScope scratch2(*this);
@@ -584,9 +581,8 @@ void MacroAssembler::branchTestBigIntTruthy(bool b, const ValueOperand& value,
                                             Label* label) {
   SecondScratchRegisterScope scratch2(*this);
   unboxBigInt(value, scratch2);
-  loadPtr(Address(scratch2, BigInt::offsetOfLengthSignAndReservedBits()),
-          scratch2);
-  ma_b(scratch2, ImmWord(0), label, b ? NotEqual : Equal);
+  load32(Address(scratch2, BigInt::offsetOfDigitLength()), scratch2);
+  ma_b(scratch2, Imm32(0), label, b ? NotEqual : Equal);
 }
 
 void MacroAssembler::branchTestNull(Condition cond, const ValueOperand& value,
@@ -667,13 +663,23 @@ inline void MacroAssembler::cmpPtrSet(Assembler::Condition cond, Address lhs,
 template <>
 inline void MacroAssembler::cmpPtrSet(Assembler::Condition cond, Register lhs,
                                       Address rhs, Register dest) {
+  MOZ_ASSERT(lhs != ScratchRegister);
   loadPtr(rhs, ScratchRegister);
   cmpPtrSet(cond, lhs, ScratchRegister, dest);
 }
 
 template <>
+inline void MacroAssembler::cmpPtrSet(Assembler::Condition cond, Address lhs,
+                                      Register rhs, Register dest) {
+  MOZ_ASSERT(rhs != ScratchRegister);
+  loadPtr(lhs, ScratchRegister);
+  cmpPtrSet(cond, ScratchRegister, rhs, dest);
+}
+
+template <>
 inline void MacroAssembler::cmp32Set(Assembler::Condition cond, Register lhs,
                                      Address rhs, Register dest) {
+  MOZ_ASSERT(lhs != ScratchRegister);
   load32(rhs, ScratchRegister);
   cmp32Set(cond, lhs, ScratchRegister, dest);
 }
@@ -681,20 +687,13 @@ inline void MacroAssembler::cmp32Set(Assembler::Condition cond, Register lhs,
 template <>
 inline void MacroAssembler::cmp32Set(Assembler::Condition cond, Address lhs,
                                      Register rhs, Register dest) {
+  MOZ_ASSERT(rhs != ScratchRegister);
   load32(lhs, ScratchRegister);
   cmp32Set(cond, ScratchRegister, rhs, dest);
 }
 
 void MacroAssemblerMIPS64Compat::incrementInt32Value(const Address& addr) {
   asMasm().add32(Imm32(1), addr);
-}
-
-void MacroAssemblerMIPS64Compat::computeEffectiveAddress(
-    const BaseIndex& address, Register dest) {
-  computeScaledAddress(address, dest);
-  if (address.offset) {
-    asMasm().addPtr(Imm32(address.offset), dest);
-  }
 }
 
 void MacroAssemblerMIPS64Compat::retn(Imm32 n) {

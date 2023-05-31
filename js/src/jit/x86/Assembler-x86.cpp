@@ -5,6 +5,7 @@
 #include "jit/x86/Assembler-x86.h"
 
 #include "gc/Marking.h"
+#include "util/Memory.h"
 
 using namespace js;
 using namespace js::jit;
@@ -17,6 +18,7 @@ ABIArg ABIArgGenerator::next(MIRType type) {
     case MIRType::Float32:
     case MIRType::Pointer:
     case MIRType::RefOrNull:
+    case MIRType::StackResults:
       current_ = ABIArg(stackOffset_);
       stackOffset_ += sizeof(uint32_t);
       break;
@@ -45,7 +47,7 @@ ABIArg ABIArgGenerator::next(MIRType type) {
   return current_;
 }
 
-void Assembler::executableCopy(uint8_t* buffer, bool flushICache) {
+void Assembler::executableCopy(uint8_t* buffer) {
   AssemblerX86Shared::executableCopy(buffer);
   for (RelativePatch& rp : jumps_) {
     X86Encoding::SetRel32(buffer + rp.offset, rp.target);

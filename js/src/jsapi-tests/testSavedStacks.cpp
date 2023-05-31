@@ -6,7 +6,6 @@
 #include "mozilla/Utf8.h"        // mozilla::Utf8Unit
 
 #include "jsfriendapi.h"
-#include "builtin/String.h"
 
 #include "builtin/TestingFunctions.h"
 #include "js/CompilationAndEvaluation.h"  // JS::Evaluate
@@ -163,7 +162,7 @@ BEGIN_TEST(testSavedStacks_ErrorStackSpiderMonkey) {
       "@filename.js:7:2\n";
   JSLinearString* lin = stack->ensureLinear(cx);
   CHECK(lin);
-  CHECK(js::StringEqualsAscii(lin, SpiderMonkeyStack));
+  CHECK(js::StringEqualsLiteral(lin, SpiderMonkeyStack));
 
   return true;
 }
@@ -195,7 +194,7 @@ BEGIN_TEST(testSavedStacks_ErrorStackV8) {
       "    at filename.js:7:2";
   JSLinearString* lin = stack->ensureLinear(cx);
   CHECK(lin);
-  CHECK(js::StringEqualsAscii(lin, V8Stack));
+  CHECK(js::StringEqualsLiteral(lin, V8Stack));
 
   return true;
 }
@@ -237,7 +236,7 @@ BEGIN_TEST(testSavedStacks_selfHostedFrames) {
   CHECK(result == JS::SavedFrameResult::Ok);
   JSLinearString* lin = str->ensureLinear(cx);
   CHECK(lin);
-  CHECK(js::StringEqualsAscii(lin, "filename.js"));
+  CHECK(js::StringEqualsLiteral(lin, "filename.js"));
 
   // Source, including self-hosted frames
   result = JS::GetSavedFrameSource(cx, principals, selfHostedFrame, &str,
@@ -245,7 +244,7 @@ BEGIN_TEST(testSavedStacks_selfHostedFrames) {
   CHECK(result == JS::SavedFrameResult::Ok);
   lin = str->ensureLinear(cx);
   CHECK(lin);
-  CHECK(js::StringEqualsAscii(lin, "self-hosted"));
+  CHECK(js::StringEqualsLiteral(lin, "self-hosted"));
 
   // Line
   uint32_t line = 123;
@@ -267,7 +266,7 @@ BEGIN_TEST(testSavedStacks_selfHostedFrames) {
   CHECK(result == JS::SavedFrameResult::Ok);
   lin = str->ensureLinear(cx);
   CHECK(lin);
-  CHECK(js::StringEqualsAscii(lin, "one"));
+  CHECK(js::StringEqualsLiteral(lin, "one"));
 
   // Parent
   JS::RootedObject parent(cx);
@@ -290,7 +289,7 @@ BEGIN_TEST(testSavedStacks_selfHostedFrames) {
   CHECK(result == JS::SavedFrameResult::Ok);
   lin = str->ensureLinear(cx);
   CHECK(lin);
-  CHECK(js::StringEqualsAscii(lin, "filename.js"));
+  CHECK(js::StringEqualsLiteral(lin, "filename.js"));
 
   return true;
 }

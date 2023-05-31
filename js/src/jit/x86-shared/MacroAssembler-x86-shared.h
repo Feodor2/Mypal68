@@ -32,7 +32,7 @@ class MacroAssemblerX86Shared : public Assembler {
   // knows what to use instead of copying these data structures.
   template <class T>
   struct Constant {
-    typedef T Pod;
+    using Pod = T;
 
     T value;
     UsesVector uses;
@@ -81,10 +81,14 @@ class MacroAssemblerX86Shared : public Assembler {
  public:
   using Assembler::call;
 
-  MacroAssemblerX86Shared() {}
+  MacroAssemblerX86Shared() = default;
 
   bool appendRawCode(const uint8_t* code, size_t numBytes) {
     return masm.appendRawCode(code, numBytes);
+  }
+
+  void addToPCRel4(uint32_t offset, int32_t bias) {
+    return masm.addToPCRel4(offset, bias);
   }
 
   // Evaluate srcDest = minmax<isMax>{Float32,Double}(srcDest, second).
@@ -137,9 +141,7 @@ class MacroAssemblerX86Shared : public Assembler {
   void cmp32(const Operand& lhs, Imm32 rhs) { cmpl(rhs, lhs); }
   void cmp32(const Operand& lhs, Register rhs) { cmpl(rhs, lhs); }
   void cmp32(Register lhs, const Operand& rhs) { cmpl(rhs, lhs); }
-  CodeOffset cmp32WithPatch(Register lhs, Imm32 rhs) {
-    return cmplWithPatch(rhs, lhs);
-  }
+
   void atomic_inc32(const Operand& addr) { lock_incl(addr); }
   void atomic_dec32(const Operand& addr) { lock_decl(addr); }
 
@@ -164,7 +166,7 @@ class MacroAssemblerX86Shared : public Assembler {
   void jump(Label* label) { jmp(label); }
   void jump(JitCode* code) { jmp(code); }
   void jump(TrampolinePtr code) { jmp(ImmPtr(code.value)); }
-  void jump(RepatchLabel* label) { jmp(label); }
+  void jump(ImmPtr ptr) { jmp(ptr); }
   void jump(Register reg) { jmp(Operand(reg)); }
   void jump(const Address& addr) { jmp(Operand(addr)); }
 
@@ -281,9 +283,17 @@ class MacroAssemblerX86Shared : public Assembler {
   void load16ZeroExtend(const BaseIndex& src, Register dest) {
     movzwl(Operand(src), dest);
   }
+  template <typename S>
+  void load16UnalignedZeroExtend(const S& src, Register dest) {
+    load16ZeroExtend(src, dest);
+  }
   template <typename S, typename T>
   void store16(const S& src, const T& dest) {
     movw(src, Operand(dest));
+  }
+  template <typename S, typename T>
+  void store16Unaligned(const S& src, const T& dest) {
+    store16(src, dest);
   }
   void load16SignExtend(const Operand& src, Register dest) {
     movswl(src, dest);
@@ -294,17 +304,29 @@ class MacroAssemblerX86Shared : public Assembler {
   void load16SignExtend(const BaseIndex& src, Register dest) {
     movswl(Operand(src), dest);
   }
+  template <typename S>
+  void load16UnalignedSignExtend(const S& src, Register dest) {
+    load16SignExtend(src, dest);
+  }
   void load32(const Address& address, Register dest) {
     movl(Operand(address), dest);
   }
   void load32(const BaseIndex& src, Register dest) { movl(Operand(src), dest); }
   void load32(const Operand& src, Register dest) { movl(src, dest); }
+  template <typename S>
+  void load32Unaligned(const S& src, Register dest) {
+    load32(src, dest);
+  }
   template <typename S, typename T>
   void store32(const S& src, const T& dest) {
     movl(src, Operand(dest));
   }
   template <typename S, typename T>
   void store32_NoSecondScratch(const S& src, const T& dest) {
+    store32(src, dest);
+  }
+  template <typename S, typename T>
+  void store32Unaligned(const S& src, const T& dest) {
     store32(src, dest);
   }
   void loadDouble(const Address& src, FloatRegister dest) { vmovsd(src, dest); }
@@ -885,6 +907,22 @@ class MacroAssemblerX86Shared : public Assembler {
     j(Assembler::NotEqual, fail);
   }
 
+  void truncateDoubleToInt32(FloatRegister src, Register dest, Label* fail) {
+    // vcvttsd2si returns 0x80000000 on failure. Test for it by
+    // subtracting 1 and testing overflow. The other possibility is to test
+    // equality for INT_MIN after a comparison, but 1 costs fewer bytes to
+    // materialize.
+    vcvttsd2si(src, dest);
+    cmp32(dest, Imm32(1));
+    j(Assembler::Overflow, fail);
+  }
+  void truncateFloat32ToInt32(FloatRegister src, Register dest, Label* fail) {
+    // Same trick as explained in the above comment.
+    vcvttss2si(src, dest);
+    cmp32(dest, Imm32(1));
+    j(Assembler::Overflow, fail);
+  }
+
   inline void clampIntToUint8(Register reg);
 
   bool maybeInlineDouble(double d, FloatRegister dest) {
@@ -997,8 +1035,6 @@ class MacroAssemblerX86Shared : public Assembler {
   void checkStackAlignment() {
     // Exists for ARM compatibility.
   }
-
-  CodeOffset labelForPatch() { return CodeOffset(size()); }
 
   void abiret() { ret(); }
 

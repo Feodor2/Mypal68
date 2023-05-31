@@ -1,3 +1,7 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+
 # Pretty-printers for GCCellPtr values.
 
 import gdb
@@ -24,12 +28,11 @@ class GCCellPtrTypeCache(object):
         kind('Object',      'JSObject')
         kind('String',      'JSString')
         kind('Symbol',      'JS::Symbol')
-        kind('Script',      'JSScript')
+        kind('Script',      'js::BaseScript')
         kind('Shape',       'js::Shape')
         kind('ObjectGroup', 'js::ObjectGroup')
         kind('BaseShape',   'js::BaseShape')
         kind('JitCode',     'js::jit::JitCode')
-        kind('LazyScript',  'js::LazyScript')
         self.kind_to_type = kind_to_type
 
         self.Null = e['JS::TraceKind::Null']

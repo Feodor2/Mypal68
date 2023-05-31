@@ -1,6 +1,7 @@
-/#include "jsfriendapi.h"
+#include "jsfriendapi.h"
 
 #include "builtin/TestingFunctions.h"
+#include "js/Array.h"        // JS::NewArrayObject
 #include "js/ArrayBuffer.h"  // JS::{GetArrayBuffer{ByteLength,Data},IsArrayBufferObject,NewArrayBuffer{,WithContents},StealArrayBufferContents}
 #include "js/MemoryFunctions.h"
 #include "jsapi-tests/tests.h"
@@ -256,10 +257,10 @@ BEGIN_TEST(testArrayBuffer_serializeExternal) {
 
   JS::RootedValue v(cx, JS::ObjectValue(*externalBuffer));
   JS::RootedObject transferMap(cx,
-                               JS_NewArrayObject(cx, JS::HandleValueArray(v)));
+                               JS::NewArrayObject(cx, JS::HandleValueArray(v)));
   CHECK(transferMap);
 
-  JS::AutoValueArray<2> args(cx);
+  JS::RootedValueArray<2> args(cx);
   args[0].setObject(*externalBuffer);
   args[1].setObject(*transferMap);
 

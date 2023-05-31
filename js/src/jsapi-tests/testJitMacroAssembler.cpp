@@ -41,12 +41,13 @@ static bool Execute(JSContext* cx, MacroAssembler& masm) {
     return false;
   }
 
-  Linker linker(masm, "Test");
+  Linker linker(masm);
   JitCode* code = linker.newCode(cx, CodeKind::Other);
   if (!code) {
     return false;
   }
-  if (!ExecutableAllocator::makeExecutable(code->raw(), code->bufferSize())) {
+  if (!ExecutableAllocator::makeExecutableAndFlushICache(code->raw(),
+                                                         code->bufferSize())) {
     return false;
   }
 
@@ -237,7 +238,7 @@ bool shiftTest(JSContext* cx, const char* name,
       Register rhs = rightHandSides.takeAny();
 
       // You can only use shift as the same reg if the values are the same
-      if (lhsOutput == rhs && lhsInput != rhsInput) {
+      if (lhsOutput == rhs && *lhsInput != *rhsInput) {
         continue;
       }
 
@@ -252,9 +253,11 @@ bool shiftTest(JSContext* cx, const char* name,
       masm.branch32(Assembler::NotEqual, AbsoluteAddress(result), lhsOutput,
                     &outputFail);
 
-      // Ensure RHS was not clobbered
-      masm.branch32(Assembler::NotEqual, AbsoluteAddress(rhsInput), rhs,
-                    &clobberRhs);
+      // Ensure RHS was not clobbered, unless it's also the output register.
+      if (lhsOutput != rhs) {
+        masm.branch32(Assembler::NotEqual, AbsoluteAddress(rhsInput), rhs,
+                      &clobberRhs);
+      }
 
       if (lhsOutput != ecx && rhs != ecx) {
         // If neither lhsOutput nor rhs is ecx, make sure ecx has been

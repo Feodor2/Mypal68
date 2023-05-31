@@ -111,7 +111,6 @@ END_TEST(testProfileStrings_isCalledWithInterpreter)
 
 BEGIN_TEST(testProfileStrings_isCalledWithJIT) {
   CHECK(initialize(cx));
-  JS::ContextOptionsRef(cx).setBaseline(true).setIon(true);
 
   EXEC("function g() { var p = new Prof(); p.test_fn(); }");
   EXEC("function f() { g(); }");
@@ -148,7 +147,6 @@ END_TEST(testProfileStrings_isCalledWithJIT)
 
 BEGIN_TEST(testProfileStrings_isCalledWhenError) {
   CHECK(initialize(cx));
-  JS::ContextOptionsRef(cx).setBaseline(true).setIon(true);
 
   EXEC("function check2() { throw 'a'; }");
 
@@ -171,7 +169,6 @@ END_TEST(testProfileStrings_isCalledWhenError)
 
 BEGIN_TEST(testProfileStrings_worksWhenEnabledOnTheFly) {
   CHECK(initialize(cx));
-  JS::ContextOptionsRef(cx).setBaseline(true).setIon(true);
 
   EXEC("function b(p) { p.test_fn(); }");
   EXEC("function a() { var p = new Prof(); p.enable(); b(p); }");

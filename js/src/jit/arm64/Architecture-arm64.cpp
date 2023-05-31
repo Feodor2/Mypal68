@@ -6,6 +6,8 @@
 
 #include <cstring>
 
+#include "jit/arm64/vixl/Cpu-vixl.h"
+#include "jit/FlushICache.h"  // js::jit::FlushICache
 #include "jit/RegisterSets.h"
 
 namespace js {
@@ -24,22 +26,22 @@ Registers::Code Registers::FromName(const char* name) {
   }
 
   for (uint32_t i = 0; i < Total; i++) {
-    if (strcmp(GetName(Code(i)), name) == 0) {
+    if (strcmp(GetName(i), name) == 0) {
       return Code(i);
     }
   }
 
-  return invalid_reg;
+  return Invalid;
 }
 
 FloatRegisters::Code FloatRegisters::FromName(const char* name) {
   for (size_t i = 0; i < Total; i++) {
-    if (strcmp(GetName(Code(i)), name) == 0) {
+    if (strcmp(GetName(i), name) == 0) {
       return Code(i);
     }
   }
 
-  return invalid_fpreg;
+  return Invalid;
 }
 
 FloatRegisterSet FloatRegister::ReduceSetForPush(const FloatRegisterSet& s) {
@@ -48,10 +50,6 @@ FloatRegisterSet FloatRegister::ReduceSetForPush(const FloatRegisterSet& s) {
     ret.addUnchecked(FromCode((*iter).encoding()));
   }
   return ret.set();
-}
-
-uint32_t FloatRegister::GetSizeInBytes(const FloatRegisterSet& s) {
-  return s.size() * sizeof(double);
 }
 
 uint32_t FloatRegister::GetPushSizeInBytes(const FloatRegisterSet& s) {
@@ -65,6 +63,10 @@ uint32_t FloatRegister::getRegisterDumpOffsetInBytes() {
 }
 
 uint32_t GetARM64Flags() { return 0; }
+
+void FlushICache(void* code, size_t size) {
+  vixl::CPU::EnsureIAndDCacheCoherency(code, size);
+}
 
 }  // namespace jit
 }  // namespace js

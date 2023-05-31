@@ -366,6 +366,9 @@ restart:
     case ParseNodeKind::AssignExpr:
     case ParseNodeKind::AddAssignExpr:
     case ParseNodeKind::SubAssignExpr:
+    case ParseNodeKind::CoalesceAssignExpr:
+    case ParseNodeKind::OrAssignExpr:
+    case ParseNodeKind::AndAssignExpr:
     case ParseNodeKind::BitOrAssignExpr:
     case ParseNodeKind::BitXorAssignExpr:
     case ParseNodeKind::BitAndAssignExpr:
@@ -430,8 +433,9 @@ restart:
       *result = false;
       return true;
 
-    case ParseNodeKind::Limit:  // invalid sentinel value
-      MOZ_CRASH("unexpected ParseNodeKind::Limit in node");
+    case ParseNodeKind::LastUnused:
+    case ParseNodeKind::Limit:
+      MOZ_CRASH("unexpected sentinel ParseNodeKind in node");
   }
 
   MOZ_CRASH("invalid node kind");
@@ -461,7 +465,7 @@ static bool FoldType(JSContext* cx, FullParseHandler* handler, ParseNode** pnp,
 
       case ParseNodeKind::StringExpr:
         if (pn->isKind(ParseNodeKind::NumberExpr)) {
-          JSAtom* atom = NumberToAtom(cx, pn->as<NumericLiteral>().value());
+          JSAtom* atom = pn->as<NumericLiteral>().toAtom(cx);
           if (!atom) {
             return false;
           }
@@ -502,8 +506,7 @@ static Truthiness Boolish(ParseNode* pn) {
                  : Falsy;
 
     case ParseNodeKind::BigIntExpr:
-      return (pn->as<BigIntLiteral>().box()->value()->isZero()) ? Falsy
-                                                                : Truthy;
+      return (pn->as<BigIntLiteral>().isZero()) ? Falsy : Truthy;
 
     case ParseNodeKind::StringExpr:
     case ParseNodeKind::TemplateStringExpr:
@@ -544,8 +547,7 @@ static bool SimplifyCondition(JSContext* cx, FullParseHandler* handler,
   // constant-folded.
 
   ParseNode* node = *nodePtr;
-  Truthiness t = Boolish(node);
-  if (t != Unknown) {
+  if (Truthiness t = Boolish(node); t != Unknown) {
     // We can turn function nodes into constant nodes here, but mutating
     // function nodes is tricky --- in particular, mutating a function node
     // that appears on a method list corrupts the method list. However,
@@ -1096,12 +1098,13 @@ static bool FoldElement(JSContext* cx, FullParseHandler* handler,
       name = atom->asPropertyName();
     }
   } else if (key->isKind(ParseNodeKind::NumberExpr)) {
-    double number = key->as<NumericLiteral>().value();
+    auto* numeric = &key->as<NumericLiteral>();
+    double number = numeric->value();
     if (number != ToUint32(number)) {
       // Optimization 2: We have something like expr[3.14]. The number
       // isn't an array index, so it converts to a string ("3.14"),
       // enabling optimization 3 below.
-      JSAtom* atom = NumberToAtom(cx, number);
+      JSAtom* atom = numeric->toAtom(cx);
       if (!atom) {
         return false;
       }

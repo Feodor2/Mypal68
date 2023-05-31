@@ -1,5 +1,4 @@
 // |reftest| skip-if(!xulRuntime.shell)
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 /*
  * Any copyright is dedicated to the Public Domain.
  * http://creativecommons.org/licenses/publicdomain/
@@ -59,16 +58,30 @@ let sab = new SharedArrayBuffer(16);
     }
 }
 
-// Check against TypedArray on non-shared memory cases.
+// Check against TypedArray on non-shared memory and wrong view types cases.
 
 {
-    let views = [Int8Array, Uint8Array, Int16Array, Uint16Array, Int32Array, Uint32Array];
+    let views = [Int8Array, Uint8Array, Int16Array, Uint16Array, Uint32Array,
+      Uint8ClampedArray, Float32Array, Float64Array];
 
     for ( let View of views ) {
 	let view = new View(ab);
 
 	assertThrowsInstanceOf(() => Atomics.wait(view, 0, 0), TypeError);
 	assertThrowsInstanceOf(() => Atomics.wake(view, 0), TypeError);
+    }
+}
+
+// Check against TypedArray on non-shared memory and correct view types cases.
+
+{
+    let views = [Int32Array];
+
+    for ( let View of views ) {
+        let view = new View(ab);
+
+        assertThrowsInstanceOf(() => Atomics.wait(view, 0, 0), TypeError);
+        assertEq(Atomics.wake(view, 0, 0), 0);
     }
 }
 

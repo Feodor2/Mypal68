@@ -5,6 +5,7 @@
 #include "jit/x64/Assembler-x64.h"
 
 #include "gc/Marking.h"
+#include "util/Memory.h"
 
 using namespace js;
 using namespace js::jit;
@@ -24,7 +25,7 @@ ABIArgGenerator::ABIArgGenerator()
 
 ABIArg ABIArgGenerator::next(MIRType type) {
 #if defined(XP_WIN)
-  JS_STATIC_ASSERT(NumIntArgRegs == NumFloatArgRegs);
+  static_assert(NumIntArgRegs == NumFloatArgRegs);
   if (regIndex_ == NumIntArgRegs) {
     if (IsSimdType(type)) {
       // On Win64, >64 bit args need to be passed by reference, but wasm
@@ -44,6 +45,7 @@ ABIArg ABIArgGenerator::next(MIRType type) {
     case MIRType::Int64:
     case MIRType::Pointer:
     case MIRType::RefOrNull:
+    case MIRType::StackResults:
       current_ = ABIArg(IntArgRegs[regIndex_++]);
       break;
     case MIRType::Float32:
@@ -74,6 +76,7 @@ ABIArg ABIArgGenerator::next(MIRType type) {
     case MIRType::Int64:
     case MIRType::Pointer:
     case MIRType::RefOrNull:
+    case MIRType::StackResults:
       if (intRegIndex_ == NumIntArgRegs) {
         current_ = ABIArg(stackOffset_);
         stackOffset_ += sizeof(uint64_t);
@@ -153,23 +156,6 @@ size_t Assembler::addPatchableJump(JmpSrc src, RelocationKind reloc) {
   return index;
 }
 
-/* static */
-uint8_t* Assembler::PatchableJumpAddress(JitCode* code, size_t index) {
-  // The assembler stashed the offset into the code of the fragments used
-  // for far jumps at the start of the relocation table.
-  uint32_t jumpOffset = *(uint32_t*)code->jumpRelocTable();
-  jumpOffset += index * SizeOfJumpTableEntry;
-
-  MOZ_ASSERT(jumpOffset + SizeOfExtendedJump <= code->instructionsSize());
-  return code->raw() + jumpOffset;
-}
-
-/* static */
-void Assembler::PatchJumpEntry(uint8_t* entry, uint8_t* target) {
-  uint8_t** index = (uint8_t**)(entry + SizeOfExtendedJump - sizeof(void*));
-  *index = target;
-}
-
 void Assembler::finish() {
   if (oom()) {
     return;
@@ -213,7 +199,7 @@ void Assembler::finish() {
   }
 }
 
-void Assembler::executableCopy(uint8_t* buffer, bool flushICache) {
+void Assembler::executableCopy(uint8_t* buffer) {
   AssemblerX86Shared::executableCopy(buffer);
 
   for (size_t i = 0; i < jumps_.length(); i++) {

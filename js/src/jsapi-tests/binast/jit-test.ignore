@@ -980,7 +980,6 @@ debug/Script-getOffsetsCoverage-02.js
 debug/Script-getOffsetsCoverage-03.js
 debug/Script-getOffsetsCoverage-04.js
 debug/Script-getOffsetsCoverage-bug1233178.js
-debug/Script-getSuccessorOrPredecessorOffsets-01.js
 debug/Script-isInCatchScope.js
 debug/Script-isModule-01.js
 debug/Script-isModule-02.js
@@ -1041,7 +1040,6 @@ debug/bug1397385.js
 debug/bug1404710.js
 debug/bug1432764.js
 debug/bug1437537.js
-debug/bug1479429.js
 debug/bug911065.js
 debug/class-01.js
 debug/class-02.js

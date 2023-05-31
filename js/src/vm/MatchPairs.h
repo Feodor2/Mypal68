@@ -64,6 +64,7 @@ class MatchPairs {
 
   void forgetArray() { pairs_ = nullptr; }
 
+ public:
   void checkAgainst(size_t inputLength) {
 #ifdef DEBUG
     for (size_t i = 0; i < pairCount_; i++) {
@@ -77,7 +78,6 @@ class MatchPairs {
 #endif
   }
 
- public:
   /* Querying functions in the style of RegExpStatics. */
   bool empty() const { return pairCount_ == 0; }
   size_t pairCount() const {

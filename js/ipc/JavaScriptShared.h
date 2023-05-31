@@ -9,6 +9,7 @@
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "mozilla/jsipc/PJavaScript.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "js/GCHashTable.h"
 #include "nsJSUtils.h"
 
@@ -76,7 +77,7 @@ class JavaScriptShared;
 // ObjectId do that, but doing so would weaken our type invariants, so we just
 // reimplement it manually.
 struct ObjectIdHasher {
-  typedef ObjectId Lookup;
+  using Lookup = ObjectId;
   static js::HashNumber hash(const Lookup& l) {
     return mozilla::HashGeneric(l.serialize());
   }
@@ -143,10 +144,10 @@ class JavaScriptShared : public CPOWManager {
   void decref();
   void incref();
 
-  bool Unwrap(JSContext* cx, const InfallibleTArray<CpowEntry>& aCpows,
+  bool Unwrap(JSContext* cx, const nsTArray<CpowEntry>& aCpows,
               JS::MutableHandleObject objp) override;
   bool Wrap(JSContext* cx, JS::HandleObject aObj,
-            InfallibleTArray<CpowEntry>* outCpows) override;
+            nsTArray<CpowEntry>* outCpows) override;
 
  protected:
   bool toVariant(JSContext* cx, JS::HandleValue from, JSVariant* to);
@@ -193,8 +194,13 @@ class JavaScriptShared : public CPOWManager {
   }
 #endif
 
-  static bool LoggingEnabled() { return sLoggingEnabled; }
-  static bool StackLoggingEnabled() { return sStackLoggingEnabled; }
+  static bool LoggingEnabled() {
+    return sLoggingEnabledByEnvVar || StaticPrefs::dom_ipc_cpows_log_enabled();
+  }
+  static bool StackLoggingEnabled() {
+    return sStackLoggingEnabledByEnvVar ||
+           StaticPrefs::dom_ipc_cpows_log_stack();
+  }
 
   friend class Logging;
 
@@ -236,8 +242,8 @@ class JavaScriptShared : public CPOWManager {
   }
 
   static bool sLoggingInitialized;
-  static bool sLoggingEnabled;
-  static bool sStackLoggingEnabled;
+  static bool sLoggingEnabledByEnvVar;
+  static bool sStackLoggingEnabledByEnvVar;
 };
 
 }  // namespace jsipc

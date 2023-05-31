@@ -17,9 +17,9 @@ function get_pre_check(operand, op)
     "    "+operand+" = I;\n"+
     "    let tmp = "+op+op+operand+";\n"+
     "    if ("+operand+" !== Number(I) "+op+" 1)\n"+
-    "        throw Error('"+op+op+operand+" case 1 for '+uneval(I));\n"+
+    "        throw Error('"+op+op+operand+" case 1 for '+JSON.stringify(I));\n"+
     "    if (tmp !== "+operand+")\n"+
-    "        throw Error('"+op+op+operand+" case 2 for '+uneval(I));\n"+
+    "        throw Error('"+op+op+operand+" case 2 for '+JSON.stringify(I));\n"+
     "}\n";    
 }
 
@@ -29,9 +29,9 @@ function get_post_check(operand, op)
     "    "+operand+" = I;\n"+
     "    let tmp = "+operand+op+op+";\n"+
     "    if ("+operand+" !== Number(I) "+op+" 1)\n"+
-    "        throw Error('"+operand+op+op+" case 1 for '+uneval(I));\n"+
+    "        throw Error('"+operand+op+op+" case 1 for '+JSON.stringify(I));\n"+
     "    if (tmp !== Number(I))\n"+
-    "        throw Error('"+op+op+operand+" case 2 for '+uneval(I));\n"+
+    "        throw Error('"+op+op+operand+" case 2 for '+JSON.stringify(I));\n"+
     "}\n";    
 }
 

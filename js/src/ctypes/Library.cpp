@@ -15,8 +15,7 @@
 
 using JS::AutoStableStringChars;
 
-namespace js {
-namespace ctypes {
+namespace js::ctypes {
 
 /*******************************************************************************
 ** JSAPI function prototypes
@@ -33,10 +32,19 @@ static bool Declare(JSContext* cx, unsigned argc, Value* vp);
 ** JSObject implementation
 *******************************************************************************/
 
-typedef Rooted<JSFlatString*> RootedFlatString;
-
 static const JSClassOps sLibraryClassOps = {
-    nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, Library::Finalize};
+    nullptr,            // addProperty
+    nullptr,            // delProperty
+    nullptr,            // enumerate
+    nullptr,            // newEnumerate
+    nullptr,            // resolve
+    nullptr,            // mayResolve
+    Library::Finalize,  // finalize
+    nullptr,            // call
+    nullptr,            // hasInstance
+    nullptr,            // construct
+    nullptr,            // trace
+};
 
 static const JSClass sLibraryClass = {
     "Library",
@@ -105,18 +113,18 @@ JSObject* Library::Create(JSContext* cx, HandleValue path,
   }
 
   PRLibSpec libSpec;
-  RootedFlatString pathStr(cx, JS_FlattenString(cx, path.toString()));
+  RootedLinearString pathStr(cx, JS_EnsureLinearString(cx, path.toString()));
   if (!pathStr) {
     return nullptr;
   }
 #ifdef XP_WIN
   // On Windows, converting to native charset may corrupt path string.
   // So, we have to use Unicode path directly.
-  AutoStableStringChars pathStrChars(cx);
-  if (!pathStrChars.initTwoByte(cx, pathStr)) {
+  JS::UniqueTwoByteChars pathZeroTerminated(JS_CopyStringCharsZ(cx, pathStr));
+  if (!pathZeroTerminated) {
     return nullptr;
   }
-  char16ptr_t pathChars = pathStrChars.twoByteChars();
+  char16ptr_t pathChars = pathZeroTerminated.get();
   libSpec.value.pathname_u = pathChars;
   libSpec.type = PR_LibSpec_PathnameU;
 #else
@@ -148,8 +156,8 @@ JSObject* Library::Create(JSContext* cx, HandleValue path,
       return nullptr;
     }
 
-    JS::DeflateStringToUTF8Buffer(
-        pathStr, mozilla::RangedPtr<char>(pathBytes.get(), nbytes), &nbytes);
+    nbytes = JS::DeflateStringToUTF8Buffer(
+        pathStr, mozilla::MakeSpan(pathBytes.get(), nbytes));
     pathBytes[nbytes] = 0;
   }
 
@@ -392,5 +400,4 @@ bool Library::Declare(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-}  // namespace ctypes
-}  // namespace js
+}  // namespace js::ctypes

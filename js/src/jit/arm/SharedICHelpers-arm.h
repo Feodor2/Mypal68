@@ -33,7 +33,7 @@ inline void EmitCallIC(MacroAssembler& masm, const ICEntry* entry,
 
   // Load stubcode pointer from the ICStub.
   // R2 won't be active when we call ICs, so we can use r0.
-  MOZ_ASSERT(R2 == ValueOperand(r1, r0));
+  static_assert(R2 == ValueOperand(r1, r0));
   masm.loadPtr(Address(ICStubReg, ICStub::offsetOfStubCode()), r0);
 
   // Call the stubcode via a direct branch-and-link.
@@ -50,7 +50,7 @@ inline void EmitEnterTypeMonitorIC(
 
   // Load stubcode pointer from BaselineStubEntry.
   // R2 won't be active when we call ICs, so we can use r0.
-  MOZ_ASSERT(R2 == ValueOperand(r1, r0));
+  static_assert(R2 == ValueOperand(r1, r0));
   masm.loadPtr(Address(ICStubReg, ICStub::offsetOfStubCode()), r0);
 
   // Jump to the stubcode.
@@ -99,7 +99,7 @@ inline void EmitStubGuardFailure(MacroAssembler& masm) {
   masm.loadPtr(Address(ICStubReg, ICStub::offsetOfNext()), ICStubReg);
 
   // Return address is already loaded, just jump to the next stubcode.
-  MOZ_ASSERT(ICTailCallReg == lr);
+  static_assert(ICTailCallReg == lr);
   masm.jump(Address(ICStubReg, ICStub::offsetOfStubCode()));
 }
 

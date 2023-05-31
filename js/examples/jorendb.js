@@ -244,7 +244,7 @@ function evalCommand(expr) {
 }
 
 function quitCommand() {
-    dbg.enabled = false;
+    dbg.removeAllDebuggees();
     quit(0);
 }
 
@@ -297,16 +297,10 @@ function doPrint(expr, style) {
               ? debuggeeGlobalWrapper.executeInGlobalWithBindings(expr, debuggeeValues)
               : focusedFrame.evalWithBindings(expr, debuggeeValues));
     if (cv === null) {
-        if (!dbg.enabled)
-            return [cv];
         print("Debuggee died.");
     } else if ('return' in cv) {
-        if (!dbg.enabled)
-            return [undefined];
         showDebuggeeValue(cv.return, style);
     } else {
-        if (!dbg.enabled)
-            return [cv];
         print("Exception caught. (To rethrow it, type 'throw'.)");
         lastExc = cv.throw;
         showDebuggeeValue(lastExc, style);
@@ -321,7 +315,7 @@ function printCommand(rest) {
 function keysCommand(rest) { return doPrint("Object.keys(" + rest + ")"); }
 
 function detachCommand() {
-    dbg.enabled = false;
+    dbg.removeAllDebuggees();
     return [undefined];
 }
 
@@ -352,14 +346,10 @@ function throwCommand(rest) {
     } else {
         var cv = saveExcursion(function () { return focusedFrame.eval(rest); });
         if (cv === null) {
-            if (!dbg.enabled)
-                return [cv];
             print("Debuggee died while determining what to throw. Stopped.");
         } else if ('return' in cv) {
             return [{throw: cv.return}];
         } else {
-            if (!dbg.enabled)
-                return [cv];
             print("Exception determining what to throw. Stopped.");
             showDebuggeeValue(cv.throw);
         }
@@ -436,14 +426,10 @@ function forcereturnCommand(rest) {
     } else {
         var cv = saveExcursion(function () { return f.eval(rest); });
         if (cv === null) {
-            if (!dbg.enabled)
-                return [cv];
             print("Debuggee died while determining what to forcereturn. Stopped.");
         } else if ('return' in cv) {
             return [{return: cv.return}];
         } else {
-            if (!dbg.enabled)
-                return [cv];
             print("Error determining what to forcereturn. Stopped.");
             showDebuggeeValue(cv.throw);
         }

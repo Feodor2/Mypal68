@@ -74,19 +74,8 @@ struct Principals final : public JSPrincipals {
     MOZ_ASSERT(false, "not imlemented");
     return false;
   }
-};
 
-class AutoDropPrincipals {
-  JSContext* cx;
-  JSPrincipals* principals;
-
- public:
-  AutoDropPrincipals(JSContext* cx, JSPrincipals* principals)
-      : cx(cx), principals(principals) {
-    JS_HoldPrincipals(principals);
-  }
-
-  ~AutoDropPrincipals() { JS_DropPrincipals(cx, principals); }
+  bool isSystemOrAddonPrincipal() override { return true; }
 };
 
 static void DestroyPrincipals(JSPrincipals* principals) {
@@ -97,13 +86,11 @@ static void DestroyPrincipals(JSPrincipals* principals) {
 BEGIN_TEST(test_cloneScriptWithPrincipals) {
   JS_InitDestroyPrincipalsCallback(cx, DestroyPrincipals);
 
-  JSPrincipals* principalsA = new Principals();
-  AutoDropPrincipals dropA(cx, principalsA);
-  JSPrincipals* principalsB = new Principals();
-  AutoDropPrincipals dropB(cx, principalsB);
+  JS::AutoHoldPrincipals principalsA(cx, new Principals());
+  JS::AutoHoldPrincipals principalsB(cx, new Principals());
 
-  JS::RootedObject A(cx, createGlobal(principalsA));
-  JS::RootedObject B(cx, createGlobal(principalsB));
+  JS::RootedObject A(cx, createGlobal(principalsA.get()));
+  JS::RootedObject B(cx, createGlobal(principalsB.get()));
 
   CHECK(A);
   CHECK(B);
@@ -133,7 +120,7 @@ BEGIN_TEST(test_cloneScriptWithPrincipals) {
     JSScript* script;
     CHECK(script = JS_GetFunctionScript(cx, fun));
 
-    CHECK(JS_GetScriptPrincipals(script) == principalsA);
+    CHECK(JS_GetScriptPrincipals(script) == principalsA.get());
     CHECK(obj = JS_GetFunctionObject(fun));
   }
 
@@ -150,7 +137,7 @@ BEGIN_TEST(test_cloneScriptWithPrincipals) {
     JSScript* script;
     CHECK(script = JS_GetFunctionScript(cx, fun));
 
-    CHECK(JS_GetScriptPrincipals(script) == principalsB);
+    CHECK(JS_GetScriptPrincipals(script) == principalsB.get());
 
     JS::RootedValue v(cx);
     JS::RootedValue arg(cx, JS::Int32Value(1));
@@ -162,7 +149,7 @@ BEGIN_TEST(test_cloneScriptWithPrincipals) {
     CHECK(JS_ObjectIsFunction(funobj));
     CHECK(fun = JS_ValueToFunction(cx, v));
     CHECK(script = JS_GetFunctionScript(cx, fun));
-    CHECK(JS_GetScriptPrincipals(script) == principalsB);
+    CHECK(JS_GetScriptPrincipals(script) == principalsB.get());
   }
 
   return true;

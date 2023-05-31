@@ -12,6 +12,7 @@
 #  include "jit/PerfSpewer.h"
 #endif
 #include "jit/VMFunctions.h"
+#include "vm/JitActivation.h"  // js::jit::JitActivation
 #include "vm/Realm.h"
 
 #include "jit/MacroAssembler-inl.h"
@@ -100,7 +101,7 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
   const Address slot_token(sp, offsetof(EnterJITStack, token));
   const Address slot_vp(sp, offsetof(EnterJITStack, vp));
 
-  MOZ_ASSERT(OsrFrameReg == r3);
+  static_assert(OsrFrameReg == r3);
 
   Assembler* aasm = &masm;
 
@@ -864,7 +865,7 @@ bool JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm,
       break;
 
     case Type_Double:
-      if (cx->runtime()->jitSupportsFloatingPoint) {
+      if (JitOptions.supportsFloatingPoint) {
         masm.loadDouble(Address(sp, 0), ReturnDoubleReg);
       } else {
         masm.assumeUnreachable(
@@ -898,7 +899,7 @@ uint32_t JitRuntime::generatePreBarrier(JSContext* cx, MacroAssembler& masm,
 
   masm.pushReturnAddress();
 
-  MOZ_ASSERT(PreBarrierReg == r1);
+  static_assert(PreBarrierReg == r1);
   Register temp1 = r2;
   Register temp2 = r3;
   Register temp3 = r4;
@@ -916,7 +917,7 @@ uint32_t JitRuntime::generatePreBarrier(JSContext* cx, MacroAssembler& masm,
   masm.pop(temp1);
 
   LiveRegisterSet save;
-  if (cx->runtime()->jitSupportsFloatingPoint) {
+  if (JitOptions.supportsFloatingPoint) {
     save.set() =
         RegisterSet(GeneralRegisterSet(Registers::VolatileMask),
                     FloatRegisterSet(FloatRegisters::VolatileDoubleMask));

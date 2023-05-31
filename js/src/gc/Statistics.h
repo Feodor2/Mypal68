@@ -9,6 +9,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/IntegerRange.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/TimeStamp.h"
 
 #include "jspubtd.h"
@@ -58,6 +59,13 @@ enum Stat {
   // being tenured.
   STAT_NURSERY_STRING_REALMS_DISABLED,
 
+  // Number of BigInts tenured.
+  STAT_BIGINTS_TENURED,
+
+  // Number of realms that had nursery BigInts disabled due to large numbers
+  // being tenured.
+  STAT_NURSERY_BIGINT_REALMS_DISABLED,
+
   STAT_LIMIT
 };
 
@@ -88,6 +96,11 @@ struct ZoneGCStats {
   }
 
   ZoneGCStats() = default;
+};
+
+struct Trigger {
+  size_t amount = 0;
+  size_t threshold = 0;
 };
 
 #define FOR_EACH_GC_PROFILE_TIME(_)                                 \
@@ -135,7 +148,7 @@ struct Statistics {
 
   static MOZ_MUST_USE bool initialize();
 
-  explicit Statistics(JSRuntime* rt);
+  explicit Statistics(gc::GCRuntime* gc);
   ~Statistics();
 
   Statistics(const Statistics&) = delete;
@@ -200,11 +213,10 @@ struct Statistics {
 
   uint32_t getStat(Stat s) const { return stats[s]; }
 
-  void recordTrigger(double amount, double threshold) {
-    triggerAmount = amount;
-    triggerThreshold = threshold;
-    thresholdTriggered = true;
+  void recordTrigger(size_t amount, size_t threshold) {
+    recordedTrigger = mozilla::Some(Trigger{amount, threshold});
   }
+  bool hasTrigger() const { return recordedTrigger.isSome(); }
 
   void noteNurseryAlloc() { allocsSinceMinorGC.nursery++; }
 
@@ -243,25 +255,22 @@ struct Statistics {
   static const size_t MAX_SUSPENDED_PHASES = MAX_PHASE_NESTING * 3;
 
   struct SliceData {
-    SliceData(SliceBudget budget, JS::GCReason reason, TimeStamp start,
-              size_t startFaults, gc::State initialState)
-        : budget(budget),
-          reason(reason),
-          initialState(initialState),
-          finalState(gc::State::NotActive),
-          resetReason(gc::AbortReason::None),
-          start(start),
-          startFaults(startFaults),
-          endFaults(0) {}
+    SliceData(SliceBudget budget, mozilla::Maybe<Trigger> trigger,
+              JS::GCReason reason, TimeStamp start, size_t startFaults,
+              gc::State initialState);
 
     SliceBudget budget;
-    JS::GCReason reason;
-    gc::State initialState, finalState;
-    gc::AbortReason resetReason;
-    TimeStamp start, end;
-    size_t startFaults, endFaults;
+    JS::GCReason reason = JS::GCReason::NO_REASON;
+    mozilla::Maybe<Trigger> trigger;
+    gc::State initialState = gc::State::NotActive;
+    gc::State finalState = gc::State::NotActive;
+    gc::AbortReason resetReason = gc::AbortReason::None;
+    TimeStamp start;
+    TimeStamp end;
+    size_t startFaults = 0;
+    size_t endFaults = 0;
     PhaseTimeTable phaseTimes;
-    PhaseTimeTable parallelTimes;
+    PhaseTimeTable maxParallelTimes;
 
     TimeDuration duration() const { return end - start; }
     bool wasReset() const { return resetReason != gc::AbortReason::None; }
@@ -294,7 +303,7 @@ struct Statistics {
   UniqueChars renderJsonSlice(size_t sliceNum) const;
 
   // Return JSON for the previous nursery collection.
-  UniqueChars renderNurseryJson(JSRuntime* rt) const;
+  UniqueChars renderNurseryJson() const;
 
 #ifdef DEBUG
   // Print a logging message.
@@ -304,7 +313,7 @@ struct Statistics {
 #endif
 
  private:
-  JSRuntime* runtime;
+  gc::GCRuntime* const gc;
 
   /* File used for MOZ_GCTIMER output. */
   FILE* gcTimerFile;
@@ -334,13 +343,10 @@ struct Statistics {
 
   /* Total time in a given phase for this GC. */
   PhaseTimeTable phaseTimes;
-  PhaseTimeTable parallelTimes;
 
   /* Number of events of this type for this GC. */
-  EnumeratedArray<
-      Count, COUNT_LIMIT,
-      mozilla::Atomic<uint32_t, mozilla::ReleaseAcquire,
-                      mozilla::recordreplay::Behavior::DontPreserve>>
+  EnumeratedArray<Count, COUNT_LIMIT,
+                  mozilla::Atomic<uint32_t, mozilla::ReleaseAcquire>>
       counts;
 
   /* Other GC statistics. */
@@ -359,11 +365,12 @@ struct Statistics {
   size_t preHeapSize;
   size_t postHeapSize;
 
-  /* If the GC was triggered by exceeding some threshold, record the
-   * threshold and the value that exceeded it. */
-  bool thresholdTriggered;
-  double triggerAmount;
-  double triggerThreshold;
+  /*
+   * If a GC slice was triggered by exceeding some threshold, record the
+   * threshold and the value that exceeded it. This happens before the slice
+   * starts so this is recorded here first and then transferred to SliceData.
+   */
+  mozilla::Maybe<Trigger> recordedTrigger;
 
   /* GC numbers as of the beginning of the collection. */
   uint64_t startingMinorGCNumber;
@@ -414,6 +421,8 @@ struct Statistics {
   bool enableProfiling_;
   ProfileDurations totalTimes_;
   uint64_t sliceCount_;
+
+  JSContext* context();
 
   Phase currentPhase() const;
   Phase lookupChildPhase(PhaseKind phaseKind) const;

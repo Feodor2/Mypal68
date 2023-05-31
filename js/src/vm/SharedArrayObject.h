@@ -47,8 +47,8 @@ class FutexWaiter;
 class SharedArrayRawBuffer {
  private:
   mozilla::Atomic<uint32_t, mozilla::ReleaseAcquire> refcount_;
-  Mutex lock_;
-  uint32_t length_;
+  mozilla::Atomic<uint32_t, mozilla::SequentiallyConsistent> length_;
+  Mutex growLock_;
   uint32_t maxSize_;
   size_t mappedSize_;  // Does not include the page for the header
   bool preparedForWasm_;
@@ -67,8 +67,8 @@ class SharedArrayRawBuffer {
   SharedArrayRawBuffer(uint8_t* buffer, uint32_t length, uint32_t maxSize,
                        size_t mappedSize, bool preparedForWasm)
       : refcount_(1),
-        lock_(mutexid::SharedArrayGrow),
         length_(length),
+        growLock_(mutexid::SharedArrayGrow),
         maxSize_(maxSize),
         mappedSize_(mappedSize),
         preparedForWasm_(preparedForWasm),
@@ -84,13 +84,16 @@ class SharedArrayRawBuffer {
     SharedArrayRawBuffer* buf;
 
    public:
-    explicit Lock(SharedArrayRawBuffer* buf) : buf(buf) { buf->lock_.lock(); }
-    ~Lock() { buf->lock_.unlock(); }
+    explicit Lock(SharedArrayRawBuffer* buf) : buf(buf) {
+      buf->growLock_.lock();
+    }
+    ~Lock() { buf->growLock_.unlock(); }
   };
 
   // max must be Something for wasm, Nothing for other uses
-  static SharedArrayRawBuffer* Allocate(uint32_t initial,
-                                        const mozilla::Maybe<uint32_t>& max);
+  static SharedArrayRawBuffer* Allocate(
+      uint32_t length, const mozilla::Maybe<uint32_t>& maxSize,
+      const mozilla::Maybe<size_t>& mappedSize);
 
   // This may be called from multiple threads.  The caller must take
   // care of mutual exclusion.
@@ -106,21 +109,20 @@ class SharedArrayRawBuffer {
     return SharedMem<uint8_t*>::shared(ptr + sizeof(SharedArrayRawBuffer));
   }
 
-  uint32_t byteLength(const Lock&) const { return length_; }
+  static const SharedArrayRawBuffer* fromDataPtr(const uint8_t* dataPtr) {
+    return reinterpret_cast<const SharedArrayRawBuffer*>(
+        dataPtr - sizeof(SharedArrayRawBuffer));
+  }
+
+  uint32_t volatileByteLength() const { return length_; }
 
   uint32_t maxSize() const { return maxSize_; }
 
   size_t mappedSize() const { return mappedSize_; }
 
-#ifndef WASM_HUGE_MEMORY
-  uint32_t boundsCheckLimit() const { return mappedSize_ - wasm::GuardSize; }
-#endif
-
   bool isWasm() const { return preparedForWasm_; }
 
-#ifndef WASM_HUGE_MEMORY
   void tryGrowMaxSizeInPlace(uint32_t deltaMaxSize);
-#endif
 
   bool wasmGrowToSizeInPlace(const Lock&, uint32_t newLength);
 
@@ -167,8 +169,8 @@ class SharedArrayBufferObject : public ArrayBufferObjectMaybeShared {
 
   static const uint8_t RESERVED_SLOTS = 2;
 
-  static const Class class_;
-  static const Class protoClass_;
+  static const JSClass class_;
+  static const JSClass protoClass_;
 
   static bool byteLengthGetter(JSContext* cx, unsigned argc, Value* vp);
 
@@ -185,7 +187,7 @@ class SharedArrayBufferObject : public ArrayBufferObjectMaybeShared {
                                       uint32_t length,
                                       HandleObject proto = nullptr);
 
-  static void Finalize(FreeOp* fop, JSObject* obj);
+  static void Finalize(JSFreeOp* fop, JSObject* obj);
 
   static void addSizeOfExcludingThis(JSObject* obj,
                                      mozilla::MallocSizeOf mallocSizeOf,
@@ -231,12 +233,9 @@ class SharedArrayBufferObject : public ArrayBufferObjectMaybeShared {
 
   size_t wasmMappedSize() const { return rawBufferObject()->mappedSize(); }
 
-#ifndef WASM_HUGE_MEMORY
-  uint32_t wasmBoundsCheckLimit() const;
-#endif
-
  private:
-  void acceptRawBuffer(SharedArrayRawBuffer* buffer, uint32_t length);
+  MOZ_MUST_USE bool acceptRawBuffer(SharedArrayRawBuffer* buffer,
+                                    uint32_t length);
   void dropRawBuffer();
 };
 
@@ -246,10 +245,10 @@ bool IsSharedArrayBuffer(JSObject* o);
 
 SharedArrayBufferObject& AsSharedArrayBuffer(HandleObject o);
 
-typedef Rooted<SharedArrayBufferObject*> RootedSharedArrayBufferObject;
-typedef Handle<SharedArrayBufferObject*> HandleSharedArrayBufferObject;
-typedef MutableHandle<SharedArrayBufferObject*>
-    MutableHandleSharedArrayBufferObject;
+using RootedSharedArrayBufferObject = Rooted<SharedArrayBufferObject*>;
+using HandleSharedArrayBufferObject = Handle<SharedArrayBufferObject*>;
+using MutableHandleSharedArrayBufferObject =
+    MutableHandle<SharedArrayBufferObject*>;
 
 }  // namespace js
 

@@ -5,6 +5,9 @@
 #include "gc/AtomMarking.h"
 
 #include "mozilla/Assertions.h"
+
+#include <type_traits>
+
 #include "vm/Realm.h"
 
 #include "gc/Heap-inl.h"
@@ -29,8 +32,7 @@ inline bool ThingIsPermanent(JS::Symbol* symbol) {
 template <typename T, bool Fallible>
 MOZ_ALWAYS_INLINE bool AtomMarkingRuntime::inlinedMarkAtomInternal(
     JSContext* cx, T* thing) {
-  static_assert(mozilla::IsSame<T, JSAtom>::value ||
-                    mozilla::IsSame<T, JS::Symbol>::value,
+  static_assert(std::is_same_v<T, JSAtom> || std::is_same_v<T, JS::Symbol>,
                 "Should only be called with JSAtom* or JS::Symbol* argument");
 
   MOZ_ASSERT(thing);
@@ -58,7 +60,7 @@ MOZ_ALWAYS_INLINE bool AtomMarkingRuntime::inlinedMarkAtomInternal(
     cx->zone()->markedAtoms().setBit(bit);
   }
 
-  if (!cx->helperThread()) {
+  if (!cx->isHelperThreadContext()) {
     // Trigger a read barrier on the atom, in case there is an incremental
     // GC in progress. This is necessary if the atom is being marked
     // because a reference to it was obtained from another zone which is

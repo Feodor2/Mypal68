@@ -14,11 +14,13 @@
 #include <utility>
 
 #include "jsapi.h"
+#include "jsfriendapi.h"
 
 #include "js/AllocPolicy.h"
 #include "js/HashTable.h"
 #include "js/TraceLoggerAPI.h"
 #include "js/TypeDecls.h"
+#include "js/Utility.h"
 #include "js/Vector.h"
 #include "threading/LockGuard.h"
 #include "vm/MutexIDs.h"
@@ -215,6 +217,39 @@ class TraceLoggerEventPayload {
   }
 };
 
+// Data structures used to collect per function statistics for spewing
+struct ScriptStats {
+  struct EventData {
+    uint32_t time;
+    uint32_t count;
+  };
+
+  EventData events_[TraceLogger_Last];
+
+  char* scriptName;
+  uint32_t selfTime;
+
+  explicit ScriptStats(char* scriptName_)
+      : scriptName(scriptName_), selfTime(0) {
+    for (EventData& entry : events_) {
+      entry.time = 0;
+      entry.count = 0;
+    }
+  }
+
+  ~ScriptStats() {
+    JS::FreePolicy freePolicy;
+    freePolicy(scriptName);
+  }
+};
+
+typedef HashMap<char*, UniquePtr<ScriptStats>, mozilla::CStringHasher,
+                SystemAllocPolicy>
+    ScriptMap;
+
+typedef Vector<UniquePtr<ScriptStats>, 0, SystemAllocPolicy> SortedStatsVector;
+typedef Vector<uint32_t, 0, js::SystemAllocPolicy> EventVector;
+
 // Per thread trace logger state.
 class TraceLoggerThread : public mozilla::LinkedListElement<TraceLoggerThread> {
 #ifdef JS_TRACE_LOGGING
@@ -225,28 +260,28 @@ class TraceLoggerThread : public mozilla::LinkedListElement<TraceLoggerThread> {
   friend JS::TraceLoggerColNoImpl;
 
  private:
-  uint32_t enabled_;
-  bool failed;
+  JSContext* cx_;
+  uint32_t enabled_ = 0;
+  bool failed_ = false;
 
-  UniquePtr<TraceLoggerGraph> graph;
-
-  ContinuousSpace<EventEntry> events;
+  UniquePtr<TraceLoggerGraph> graph_;
+  ContinuousSpace<EventEntry> events_;
 
   // Every time the events get flushed, this count is increased by one.
   // Together with events.lastEntryId(), this gives an unique id for every
   // event.
-  uint32_t iteration_;
+  uint32_t iteration_ = 0;
 
 #  ifdef DEBUG
-  typedef Vector<uint32_t, 1, js::SystemAllocPolicy> GraphStack;
-  GraphStack graphStack;
+  EventVector graphStack_;
 #  endif
 
- public:
-  AutoTraceLog* top;
+  JS::UniqueChars threadName_ = nullptr;
 
-  TraceLoggerThread()
-      : enabled_(0), failed(false), graph(), iteration_(0), top(nullptr) {}
+ public:
+  AutoTraceLog* top_ = nullptr;
+
+  explicit TraceLoggerThread(JSContext* cx) : cx_(cx) {}
 
   bool init();
   ~TraceLoggerThread();
@@ -277,12 +312,12 @@ class TraceLoggerThread : public mozilla::LinkedListElement<TraceLoggerThread> {
                                   size_t* num) {
     EventEntry* start;
     if (iteration_ == *lastIteration) {
-      MOZ_ASSERT(*lastSize <= events.size());
-      *num = events.size() - *lastSize;
-      start = events.data() + *lastSize;
+      MOZ_ASSERT(*lastSize <= events_.size());
+      *num = events_.size() - *lastSize;
+      start = events_.data() + *lastSize;
     } else {
-      *num = events.size();
-      start = events.data();
+      *num = events_.size();
+      start = events_.data();
     }
 
     getIterationAndSize(lastIteration, lastSize);
@@ -291,25 +326,29 @@ class TraceLoggerThread : public mozilla::LinkedListElement<TraceLoggerThread> {
 
   void getIterationAndSize(uint32_t* iteration, uint32_t* size) const {
     *iteration = iteration_;
-    *size = events.size();
+    *size = events_.size();
   }
 
   bool lostEvents(uint32_t lastIteration, uint32_t lastSize) {
     // If still logging in the same iteration, there are no lost events.
     if (lastIteration == iteration_) {
-      MOZ_ASSERT(lastSize <= events.size());
+      MOZ_ASSERT(lastSize <= events_.size());
       return false;
     }
 
     // If we are in the next consecutive iteration we are only sure we
     // didn't lose any events when the lastSize equals the maximum size
     // 'events' can get.
-    if (lastIteration == iteration_ - 1 && lastSize == events.maxSize()) {
+    if (lastIteration == iteration_ - 1 && lastSize == events_.maxSize()) {
       return false;
     }
 
     return true;
   }
+
+  bool collectTraceLoggerStats(ScriptMap& map);
+  bool sortTraceLoggerStats(ScriptMap& map, SortedStatsVector& sorted_map);
+  void spewTraceLoggerStats();
 
  private:
   const char* maybeEventText(uint32_t id);
@@ -353,15 +392,15 @@ class TraceLoggerThreadState {
 #ifdef JS_TRACE_LOGGING
   friend JS::TraceLoggerDictionaryImpl;
 #  ifdef DEBUG
-  bool initialized;
+  bool initialized = false;
 #  endif
 
   bool enabledTextIds[TraceLogger_Last];
-  bool mainThreadEnabled;
-  bool helperThreadEnabled;
-  bool graphEnabled;
-  bool graphFileEnabled;
-  bool spewErrors;
+  bool mainThreadEnabled = false;
+  bool helperThreadEnabled = false;
+  bool graphEnabled = false;
+  bool graphFileEnabled = false;
+  bool spewErrors = false;
   mozilla::LinkedList<TraceLoggerThread> threadLoggers;
 
   // Any events that carry a payload are saved in this hash map.
@@ -373,7 +412,8 @@ class TraceLoggerThreadState {
 
   // The dictionary vector is used to store all of the custom event strings
   // that are referenced by the payload objects.
-  typedef mozilla::Vector<UniqueChars, 0, SystemAllocPolicy> DictionaryVector;
+  typedef mozilla::Vector<JS::UniqueChars, 0, SystemAllocPolicy>
+      DictionaryVector;
 
   // All payload strings are hashed and saved as a key in the payloadDictionary
   // hash table.  The values are indices to the dictionaryData vector where the
@@ -387,8 +427,8 @@ class TraceLoggerThreadState {
   StringHashToDictionaryMap payloadDictionary;
   DictionaryVector dictionaryData;
 
-  uint32_t nextTextId;
-  uint32_t nextDictionaryId;
+  uint32_t nextTextId = TraceLogger_Last;
+  uint32_t nextDictionaryId = 0;
 
  public:
   mozilla::TimeStamp startTime;
@@ -398,24 +438,13 @@ class TraceLoggerThreadState {
     return delta.ToMicroseconds();
   }
 
+  JS::UniqueChars getFullScriptName(uint32_t textId);
+
   // Mutex to guard the data structures used to hold the payload data:
   // textIdPayloads, payloadDictionary & dictionaryData.
   Mutex lock;
 
-  TraceLoggerThreadState()
-      :
-#  ifdef DEBUG
-        initialized(false),
-#  endif
-        mainThreadEnabled(false),
-        helperThreadEnabled(false),
-        graphEnabled(false),
-        graphFileEnabled(false),
-        spewErrors(false),
-        nextTextId(TraceLogger_Last),
-        nextDictionaryId(0),
-        lock(js::mutexid::TraceLoggerThreadState) {
-  }
+  TraceLoggerThreadState() : lock(js::mutexid::TraceLoggerThreadState) {}
 
   bool init();
   ~TraceLoggerThreadState();
@@ -424,9 +453,11 @@ class TraceLoggerThreadState {
   void enableIonLogging();
   void enableFrontendLogging();
 
+  void spewTraceLoggerStats();
+
   void clear();
   bool remapDictionaryEntries(
-      mozilla::Vector<UniqueChars, 0, SystemAllocPolicy>* newDictionary,
+      mozilla::Vector<JS::UniqueChars, 0, SystemAllocPolicy>* newDictionary,
       uint32_t* newNextDictionaryId);
 
   TraceLoggerThread* forCurrentThread(JSContext* cx);
@@ -619,8 +650,8 @@ class MOZ_RAII AutoTraceLog {
     if (logger) {
       logger->startEvent(event);
 
-      prev = logger->top;
-      logger->top = this;
+      prev = logger->top_;
+      logger->top_ = this;
     }
   }
 
@@ -632,15 +663,15 @@ class MOZ_RAII AutoTraceLog {
     if (logger) {
       logger->startEvent(id);
 
-      prev = logger->top;
-      logger->top = this;
+      prev = logger->top_;
+      logger->top_ = this;
     }
   }
 
   ~AutoTraceLog() {
     if (logger) {
-      while (this != logger->top) {
-        logger->top->stop();
+      while (this != logger->top_) {
+        logger->top_->stop();
       }
       stop();
     }
@@ -657,8 +688,8 @@ class MOZ_RAII AutoTraceLog {
       }
     }
 
-    if (logger->top == this) {
-      logger->top = prev;
+    if (logger->top_ == this) {
+      logger->top_ = prev;
     }
   }
 #else

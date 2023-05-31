@@ -8,12 +8,24 @@
 
 #include "gc/Statistics.h"
 #include "vm/ArgumentsObject.h"
+#include "vm/JSContext.h"
+#include "vm/MutexIDs.h"
 #include "vm/Runtime.h"
 
 #include "gc/GC-inl.h"
 
 using namespace js;
 using namespace js::gc;
+
+JS_PUBLIC_API void js::gc::LockStoreBuffer(StoreBuffer* sb) {
+  MOZ_ASSERT(sb);
+  sb->lock();
+}
+
+JS_PUBLIC_API void js::gc::UnlockStoreBuffer(StoreBuffer* sb) {
+  MOZ_ASSERT(sb);
+  sb->unlock();
+}
 
 bool StoreBuffer::WholeCellBuffer::init() {
   MOZ_ASSERT(!head_);
@@ -53,16 +65,21 @@ void StoreBuffer::GenericBuffer::trace(JSTracer* trc) {
 }
 
 StoreBuffer::StoreBuffer(JSRuntime* rt, const Nursery& nursery)
-    : bufferVal(this),
-      bufferCell(this),
-      bufferSlot(this),
+    : lock_(mutexid::StoreBuffer),
+      bufferVal(this, JS::GCReason::FULL_VALUE_BUFFER),
+      bufStrCell(this, JS::GCReason::FULL_CELL_PTR_STR_BUFFER),
+      bufBigIntCell(this, JS::GCReason::FULL_CELL_PTR_BIGINT_BUFFER),
+      bufObjCell(this, JS::GCReason::FULL_CELL_PTR_OBJ_BUFFER),
+      bufferSlot(this, JS::GCReason::FULL_SLOT_BUFFER),
       bufferWholeCell(this),
       bufferGeneric(this),
-      cancelIonCompilations_(false),
       runtime_(rt),
       nursery_(nursery),
       aboutToOverflow_(false),
-      enabled_(false)
+      enabled_(false),
+      cancelIonCompilations_(false),
+      hasTypeSetPointers_(false),
+      mayHavePointersToDeadCells_(false)
 #ifdef DEBUG
       ,
       mEntered(false)
@@ -72,7 +89,9 @@ StoreBuffer::StoreBuffer(JSRuntime* rt, const Nursery& nursery)
 
 void StoreBuffer::checkEmpty() const {
   MOZ_ASSERT(bufferVal.isEmpty());
-  MOZ_ASSERT(bufferCell.isEmpty());
+  MOZ_ASSERT(bufStrCell.isEmpty());
+  MOZ_ASSERT(bufBigIntCell.isEmpty());
+  MOZ_ASSERT(bufObjCell.isEmpty());
   MOZ_ASSERT(bufferSlot.isEmpty());
   MOZ_ASSERT(bufferWholeCell.isEmpty());
   MOZ_ASSERT(bufferGeneric.isEmpty());
@@ -112,9 +131,13 @@ void StoreBuffer::clear() {
 
   aboutToOverflow_ = false;
   cancelIonCompilations_ = false;
+  hasTypeSetPointers_ = false;
+  mayHavePointersToDeadCells_ = false;
 
   bufferVal.clear();
-  bufferCell.clear();
+  bufStrCell.clear();
+  bufBigIntCell.clear();
+  bufObjCell.clear();
   bufferSlot.clear();
   bufferWholeCell.clear();
   bufferGeneric.clear();
@@ -131,7 +154,9 @@ void StoreBuffer::setAboutToOverflow(JS::GCReason reason) {
 void StoreBuffer::addSizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf,
                                          JS::GCSizes* sizes) {
   sizes->storeBufferVals += bufferVal.sizeOfExcludingThis(mallocSizeOf);
-  sizes->storeBufferCells += bufferCell.sizeOfExcludingThis(mallocSizeOf);
+  sizes->storeBufferCells += bufStrCell.sizeOfExcludingThis(mallocSizeOf) +
+                             bufBigIntCell.sizeOfExcludingThis(mallocSizeOf) +
+                             bufObjCell.sizeOfExcludingThis(mallocSizeOf);
   sizes->storeBufferSlots += bufferSlot.sizeOfExcludingThis(mallocSizeOf);
   sizes->storeBufferWholeCells +=
       bufferWholeCell.sizeOfExcludingThis(mallocSizeOf);
@@ -189,5 +214,4 @@ void StoreBuffer::WholeCellBuffer::clear() {
 }
 
 template struct StoreBuffer::MonoTypeBuffer<StoreBuffer::ValueEdge>;
-template struct StoreBuffer::MonoTypeBuffer<StoreBuffer::CellPtrEdge>;
 template struct StoreBuffer::MonoTypeBuffer<StoreBuffer::SlotsEdge>;

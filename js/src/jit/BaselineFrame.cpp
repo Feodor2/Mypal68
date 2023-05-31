@@ -4,9 +4,11 @@
 
 #include "jit/BaselineFrame-inl.h"
 
+#include <algorithm>
+
+#include "debugger/DebugAPI.h"
 #include "jit/BaselineJIT.h"
 #include "jit/Ion.h"
-#include "vm/Debugger.h"
 #include "vm/EnvironmentObject.h"
 
 #include "jit/JitFrames-inl.h"
@@ -31,7 +33,7 @@ void BaselineFrame::trace(JSTracer* trc, const JSJitFrameIter& frameIterator) {
   if (isFunctionFrame()) {
     TraceRoot(trc, &thisArgument(), "baseline-this");
 
-    unsigned numArgs = js::Max(numActualArgs(), numFormalArgs());
+    unsigned numArgs = std::max(numActualArgs(), numFormalArgs());
     TraceRootRange(trc, numArgs + isConstructing(), argv(), "baseline-args");
   }
 
@@ -64,20 +66,23 @@ void BaselineFrame::trace(JSTracer* trc, const JSJitFrameIter& frameIterator) {
   frameIterator.baselineScriptAndPc(nullptr, &pc);
   size_t nlivefixed = script->calculateLiveFixed(pc);
 
-  // NB: It is possible that numValueSlots() could be zero, even if nfixed is
-  // nonzero.  This is the case if the function has an early stack check.
-  if (numValueSlots() == 0) {
+  uint32_t numValueSlots = frameIterator.baselineFrameNumValueSlots();
+
+  // NB: It is possible that numValueSlots could be zero, even if nfixed is
+  // nonzero.  This is the case when we're initializing the environment chain or
+  // failed the prologue stack check.
+  if (numValueSlots == 0) {
     return;
   }
 
-  MOZ_ASSERT(nfixed <= numValueSlots());
+  MOZ_ASSERT(nfixed <= numValueSlots);
 
   if (nfixed == nlivefixed) {
     // All locals are live.
-    TraceLocals(this, trc, 0, numValueSlots());
+    TraceLocals(this, trc, 0, numValueSlots);
   } else {
     // Trace operand stack.
-    TraceLocals(this, trc, nfixed, numValueSlots());
+    TraceLocals(this, trc, nfixed, numValueSlots);
 
     // Clear dead block-scoped locals.
     while (nfixed > nlivefixed) {
@@ -93,11 +98,6 @@ void BaselineFrame::trace(JSTracer* trc, const JSJitFrameIter& frameIterator) {
   }
 }
 
-bool BaselineFrame::isNonGlobalEvalFrame() const {
-  return isEvalFrame() &&
-         script()->enclosingScope()->as<EvalScope>().isNonGlobal();
-}
-
 bool BaselineFrame::initFunctionEnvironmentObjects(JSContext* cx) {
   return js::InitFunctionEnvironmentObjects(cx, this);
 }
@@ -106,11 +106,26 @@ bool BaselineFrame::pushVarEnvironment(JSContext* cx, HandleScope scope) {
   return js::PushVarEnvironmentObject(cx, scope, this);
 }
 
-void BaselineFrame::setInterpreterPC(jsbytecode* pc) {
-  uint32_t pcOffset = script()->pcToOffset(pc);
-  ICScript* icScript = script()->icScript();
+void BaselineFrame::setInterpreterFields(JSScript* script, jsbytecode* pc) {
+  uint32_t pcOffset = script->pcToOffset(pc);
+  JitScript* jitScript = script->jitScript();
+  interpreterScript_ = script;
   interpreterPC_ = pc;
-  interpreterICEntry_ = icScript->interpreterICEntryFromPCOffset(pcOffset);
+  interpreterICEntry_ = jitScript->interpreterICEntryFromPCOffset(pcOffset);
+}
+
+void BaselineFrame::setInterpreterFieldsForPrologue(JSScript* script) {
+  JitScript* jitScript = script->jitScript();
+  interpreterScript_ = script;
+  interpreterPC_ = script->code();
+  if (jitScript->numICEntries() > 0) {
+    interpreterICEntry_ = &jitScript->icEntry(0);
+  } else {
+    // If the script does not have any ICEntries (possible for non-function
+    // scripts) the interpreterICEntry_ field won't be used. Just set it to
+    // nullptr.
+    interpreterICEntry_ = nullptr;
+  }
 }
 
 bool BaselineFrame::initForOsr(InterpreterFrame* fp, uint32_t numStackValues) {
@@ -138,20 +153,15 @@ bool BaselineFrame::initForOsr(InterpreterFrame* fp, uint32_t numStackValues) {
   jsbytecode* pc = interpActivation->asInterpreter()->regs().pc;
   MOZ_ASSERT(fp->script()->containsPC(pc));
 
-  if (!fp->script()->hasBaselineScript()) {
-    // If we don't have a BaselineScript, we are doing OSR into the Baseline
-    // Interpreter. Initialize Baseline Interpreter fields. We can get the pc
-    // from the C++ interpreter's activation, we just have to skip the
-    // JitActivation.
-    flags_ |= BaselineFrame::RUNNING_IN_INTERPRETER;
-    interpreterScript_ = fp->script();
-    setInterpreterPC(pc);
-  }
+  // We are doing OSR into the Baseline Interpreter. We can get the pc from the
+  // C++ interpreter's activation, we just have to skip the JitActivation.
+  flags_ |= BaselineFrame::RUNNING_IN_INTERPRETER;
+  setInterpreterFields(pc);
 
-  frameSize_ = BaselineFrame::FramePointerOffset + BaselineFrame::Size() +
-               numStackValues * sizeof(Value);
-
-  MOZ_ASSERT(numValueSlots() == numStackValues);
+#ifdef DEBUG
+  debugFrameSize_ = frameSizeForNumValueSlots(numStackValues);
+  MOZ_ASSERT(debugNumValueSlots() == numStackValues);
+#endif
 
   for (uint32_t i = 0; i < numStackValues; i++) {
     *valueSlot(i) = fp->slots()[i];
@@ -160,17 +170,9 @@ bool BaselineFrame::initForOsr(InterpreterFrame* fp, uint32_t numStackValues) {
   if (fp->isDebuggee()) {
     // For debuggee frames, update any Debugger.Frame objects for the
     // InterpreterFrame to point to the BaselineFrame.
-
-    // The caller pushed a fake (nullptr) return address, so ScriptFrameIter
-    // can't use it to determine the frame's bytecode pc. Set an override pc so
-    // frame iteration can use that.
-    setOverridePc(pc);
-
-    if (!Debugger::handleBaselineOsr(cx, fp, this)) {
+    if (!DebugAPI::handleBaselineOsr(cx, fp, this)) {
       return false;
     }
-
-    clearOverridePc();
     setIsDebuggee();
   }
 

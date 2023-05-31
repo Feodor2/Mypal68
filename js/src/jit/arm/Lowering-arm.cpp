@@ -469,6 +469,15 @@ void LIRGeneratorARM::lowerUrshD(MUrsh* mir) {
   define(lir, mir);
 }
 
+void LIRGeneratorARM::lowerPowOfTwoI(MPow* mir) {
+  int32_t base = mir->input()->toConstant()->toInt32();
+  MDefinition* power = mir->power();
+
+  auto* lir = new (alloc()) LPowOfTwoI(base, useRegister(power));
+  assignSnapshot(lir, Bailout_PrecisionLoss);
+  define(lir, mir);
+}
+
 void LIRGenerator::visitWasmNeg(MWasmNeg* ins) {
   if (ins->type() == MIRType::Int32) {
     define(new (alloc()) LNegI(useRegisterAtStart(ins->input())), ins);
@@ -541,6 +550,11 @@ void LIRGenerator::visitWasmUnsignedToFloat32(MWasmUnsignedToFloat32* ins) {
   MOZ_ASSERT(ins->input()->type() == MIRType::Int32);
   LWasmUint32ToFloat32* lir =
       new (alloc()) LWasmUint32ToFloat32(useRegisterAtStart(ins->input()));
+  define(lir, ins);
+}
+
+void LIRGenerator::visitWasmHeapBase(MWasmHeapBase* ins) {
+  auto* lir = new (alloc()) LWasmHeapBase(LAllocation());
   define(lir, ins);
 }
 
@@ -855,7 +869,7 @@ void LIRGenerator::visitWasmCompareExchangeHeap(MWasmCompareExchangeHeap* ins) {
   }
 
   MOZ_ASSERT(ins->access().type() < Scalar::Float32);
-  MOZ_ASSERT(HasLDSTREXBHD(), "by HasCompilerSupport() constraints");
+  MOZ_ASSERT(HasLDSTREXBHD(), "by HasPlatformSupport() constraints");
 
   LWasmCompareExchangeHeap* lir = new (alloc())
       LWasmCompareExchangeHeap(useRegister(base), useRegister(ins->oldValue()),
@@ -878,7 +892,7 @@ void LIRGenerator::visitWasmAtomicExchangeHeap(MWasmAtomicExchangeHeap* ins) {
   }
 
   MOZ_ASSERT(ins->access().type() < Scalar::Float32);
-  MOZ_ASSERT(HasLDSTREXBHD(), "by HasCompilerSupport() constraints");
+  MOZ_ASSERT(HasLDSTREXBHD(), "by HasPlatformSupport() constraints");
 
   const LAllocation base = useRegister(ins->base());
   const LAllocation value = useRegister(ins->value());
@@ -898,7 +912,7 @@ void LIRGenerator::visitWasmAtomicBinopHeap(MWasmAtomicBinopHeap* ins) {
   }
 
   MOZ_ASSERT(ins->access().type() < Scalar::Float32);
-  MOZ_ASSERT(HasLDSTREXBHD(), "by HasCompilerSupport() constraints");
+  MOZ_ASSERT(HasLDSTREXBHD(), "by HasPlatformSupport() constraints");
 
   MDefinition* base = ins->base();
   MOZ_ASSERT(base->type() == MIRType::Int32);
@@ -925,11 +939,6 @@ void LIRGenerator::visitSubstr(MSubstr* ins) {
               useRegister(ins->length()), temp(), temp(), tempByteOpRegister());
   define(lir, ins);
   assignSafepoint(lir, ins);
-}
-
-void LIRGenerator::visitRandom(MRandom* ins) {
-  LRandom* lir = new (alloc()) LRandom(temp(), temp(), temp(), temp(), temp());
-  defineFixed(lir, ins, LFloatReg(ReturnDoubleReg));
 }
 
 void LIRGenerator::visitWasmTruncateToInt64(MWasmTruncateToInt64* ins) {

@@ -28,7 +28,7 @@ class BackstagePass : public nsIGlobalObject,
   virtual nsIPrincipal* GetPrincipal() override { return mPrincipal; }
 
   virtual nsIPrincipal* GetEffectiveStoragePrincipal() override {
-    return nullptr;
+    return mPrincipal;
   }
 
   JSObject* GetGlobalJSObject() override;
@@ -42,7 +42,7 @@ class BackstagePass : public nsIGlobalObject,
       : mPrincipal(prin), mWrapper(nullptr) {}
 
  private:
-  virtual ~BackstagePass() {}
+  virtual ~BackstagePass() = default;
 
   nsCOMPtr<nsIPrincipal> mPrincipal;
   XPCWrappedNative* mWrapper;

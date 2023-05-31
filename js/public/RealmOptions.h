@@ -49,6 +49,16 @@ enum class CompartmentSpecifier {
 };
 
 /**
+ * Specification for whether weak refs should be enabled and if so whether the
+ * FinalizationRegistry.cleanupSome method should be present.
+ */
+enum class WeakRefSpecifier {
+  Disabled,
+  EnabledWithCleanupSome,
+  EnabledWithoutCleanupSome
+};
+
+/**
  * RealmCreationOptions specifies options relevant to creating a new realm, that
  * are either immutable characteristics of that realm or that are discarded
  * after the realm has been created.
@@ -132,21 +142,59 @@ class JS_PUBLIC_API RealmCreationOptions {
     return *this;
   }
 
-  bool getBigIntEnabled() const { return bigint_; }
-  RealmCreationOptions& setBigIntEnabled(bool flag) {
-    bigint_ = flag;
+  bool getReadableByteStreamsEnabled() const { return readableByteStreams_; }
+  RealmCreationOptions& setReadableByteStreamsEnabled(bool flag) {
+    readableByteStreams_ = flag;
     return *this;
   }
 
-  bool getFieldsEnabled() const { return fields_; }
-  RealmCreationOptions& setFieldsEnabled(bool flag) {
-    fields_ = flag;
+  bool getBYOBStreamReadersEnabled() const { return byobStreamReaders_; }
+  RealmCreationOptions& setBYOBStreamReadersEnabled(bool enabled) {
+    byobStreamReaders_ = enabled;
     return *this;
   }
 
-  bool getAwaitFixEnabled() const { return awaitFix_; }
-  RealmCreationOptions& setAwaitFixEnabled(bool flag) {
-    awaitFix_ = flag;
+  bool getWritableStreamsEnabled() const { return writableStreams_; }
+  RealmCreationOptions& setWritableStreamsEnabled(bool enabled) {
+    writableStreams_ = enabled;
+    return *this;
+  }
+
+  bool getReadableStreamPipeToEnabled() const { return readableStreamPipeTo_; }
+  RealmCreationOptions& setReadableStreamPipeToEnabled(bool enabled) {
+    readableStreamPipeTo_ = enabled;
+    return *this;
+  }
+
+  WeakRefSpecifier getWeakRefsEnabled() const { return weakRefs_; }
+  RealmCreationOptions& setWeakRefsEnabled(WeakRefSpecifier spec) {
+    weakRefs_ = spec;
+    return *this;
+  }
+
+  bool getToSourceEnabled() const { return toSource_; }
+  RealmCreationOptions& setToSourceEnabled(bool flag) {
+    toSource_ = flag;
+    return *this;
+  }
+
+  bool getPropertyErrorMessageFixEnabled() const {
+    return propertyErrorMessageFix_;
+  }
+  RealmCreationOptions& setPropertyErrorMessageFixEnabled(bool flag) {
+    propertyErrorMessageFix_ = flag;
+    return *this;
+  }
+
+  bool getIteratorHelpersEnabled() const { return iteratorHelpers_; }
+  RealmCreationOptions& setIteratorHelpersEnabled(bool flag) {
+    iteratorHelpers_ = flag;
+    return *this;
+  }
+
+  bool getPrivateClassFieldsEnabled() const { return privateClassFields_; }
+  RealmCreationOptions& setPrivateClassFieldsEnabled(bool flag) {
+    privateClassFields_ = flag;
     return *this;
   }
 
@@ -160,12 +208,6 @@ class JS_PUBLIC_API RealmCreationOptions {
     return *this;
   }
 
-  bool clampAndJitterTime() const { return clampAndJitterTime_; }
-  RealmCreationOptions& setClampAndJitterTime(bool flag) {
-    clampAndJitterTime_ = flag;
-    return *this;
-  }
-
  private:
   JSTraceOp traceGlobal_ = nullptr;
   CompartmentSpecifier compSpec_ = CompartmentSpecifier::NewCompartmentAndZone;
@@ -173,17 +215,22 @@ class JS_PUBLIC_API RealmCreationOptions {
     Compartment* comp_;
     Zone* zone_;
   };
+  WeakRefSpecifier weakRefs_ = WeakRefSpecifier::Disabled;
   bool invisibleToDebugger_ = false;
   bool mergeable_ = false;
   bool preserveJitCode_ = false;
   bool cloneSingletons_ = false;
   bool sharedMemoryAndAtomics_ = false;
   bool streams_ = false;
-  bool bigint_ = false;
-  bool fields_ = false;
-  bool awaitFix_ = false;
+  bool readableByteStreams_ = false;
+  bool byobStreamReaders_ = false;
+  bool writableStreams_ = false;
+  bool readableStreamPipeTo_ = false;
+  bool toSource_ = false;
+  bool propertyErrorMessageFix_ = false;
+  bool iteratorHelpers_ = false;
+  bool privateClassFields_ = false;
   bool secureContext_ = false;
-  bool clampAndJitterTime_ = true;
 };
 
 /**
@@ -205,6 +252,12 @@ class JS_PUBLIC_API RealmBehaviors {
   bool disableLazyParsing() const { return disableLazyParsing_; }
   RealmBehaviors& setDisableLazyParsing(bool flag) {
     disableLazyParsing_ = flag;
+    return *this;
+  }
+
+  bool clampAndJitterTime() const { return clampAndJitterTime_; }
+  RealmBehaviors& setClampAndJitterTime(bool flag) {
+    clampAndJitterTime_ = flag;
     return *this;
   }
 
@@ -231,9 +284,6 @@ class JS_PUBLIC_API RealmBehaviors {
     Mode mode_;
   };
 
-  bool extraWarnings(JSContext* cx) const;
-  Override& extraWarningsOverride() { return extraWarningsOverride_; }
-
   bool getSingletonsAsTemplates() const { return singletonsAsTemplates_; }
   RealmBehaviors& setSingletonsAsValues() {
     singletonsAsTemplates_ = false;
@@ -252,7 +302,7 @@ class JS_PUBLIC_API RealmBehaviors {
  private:
   bool discardSource_ = false;
   bool disableLazyParsing_ = false;
-  Override extraWarningsOverride_ = {};
+  bool clampAndJitterTime_ = true;
 
   // To XDR singletons, we need to ensure that all singletons are all used as
   // templates, by making JSOP_OBJECT return a clone of the JSScript

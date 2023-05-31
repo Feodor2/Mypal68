@@ -36,11 +36,11 @@ class IonICStub {
 
   uint8_t* stubDataStart();
 
-  void setNext(IonICStub* next, JitCode* nextCode) {
+  void setNext(IonICStub* next, uint8_t* nextCodeRaw) {
     MOZ_ASSERT(!next_);
-    MOZ_ASSERT(next && nextCode);
+    MOZ_ASSERT(next && nextCodeRaw);
     next_ = next;
-    nextCodeRaw_ = nextCode->raw();
+    nextCodeRaw_ = nextCodeRaw;
   }
 
   // Null out pointers when we unlink stubs, to ensure we never use
@@ -64,6 +64,7 @@ class IonInstanceOfIC;
 class IonCompareIC;
 class IonUnaryArithIC;
 class IonBinaryArithIC;
+class IonToPropertyKeyIC;
 
 class IonIC {
   // This either points at the OOL path for the fallback path, or the code for
@@ -73,15 +74,17 @@ class IonIC {
   // The first optimized stub, or nullptr.
   IonICStub* firstStub_;
 
-  // The address stubs should jump to when done.
-  CodeLocationLabel rejoinLabel_;
-
-  // The OOL path that calls the IC's update function.
-  CodeLocationLabel fallbackLabel_;
-
   // Location of this IC, nullptr for idempotent caches.
   JSScript* script_;
   jsbytecode* pc_;
+
+  // The offset of the rejoin location in the IonScript's code (stubs jump to
+  // this location).
+  uint32_t rejoinOffset_;
+
+  // The offset of the OOL path in the IonScript's code that calls the IC's
+  // update function.
+  uint32_t fallbackOffset_;
 
   CacheKind kind_;
   bool idempotent_ : 1;
@@ -91,10 +94,10 @@ class IonIC {
   explicit IonIC(CacheKind kind)
       : codeRaw_(nullptr),
         firstStub_(nullptr),
-        rejoinLabel_(),
-        fallbackLabel_(),
         script_(nullptr),
         pc_(nullptr),
+        rejoinOffset_(0),
+        fallbackOffset_(0),
         kind_(kind),
         idempotent_(false),
         state_() {}
@@ -118,13 +121,11 @@ class IonIC {
     return pc_;
   }
 
-  CodeLocationLabel rejoinLabel() const { return rejoinLabel_; }
-
   // Discard all stubs.
-  void discardStubs(Zone* zone);
+  void discardStubs(Zone* zone, IonScript* ionScript);
 
   // Discard all stubs and reset the ICState.
-  void reset(Zone* zone);
+  void reset(Zone* zone, IonScript* ionScript);
 
   ICState& state() { return state_; }
 
@@ -134,10 +135,15 @@ class IonIC {
   bool idempotent() const { return idempotent_; }
   void setIdempotent() { idempotent_ = true; }
 
-  void setFallbackLabel(CodeOffset fallbackLabel) {
-    fallbackLabel_ = fallbackLabel;
+  void setFallbackOffset(CodeOffset offset) {
+    fallbackOffset_ = offset.offset();
   }
-  void setRejoinLabel(CodeOffset rejoinLabel) { rejoinLabel_ = rejoinLabel; }
+  void setRejoinOffset(CodeOffset offset) { rejoinOffset_ = offset.offset(); }
+
+  void resetCodeRaw(IonScript* ionScript);
+
+  uint8_t* fallbackAddr(IonScript* ionScript) const;
+  uint8_t* rejoinAddr(IonScript* ionScript) const;
 
   IonGetPropertyIC* asGetPropertyIC() {
     MOZ_ASSERT(kind_ == CacheKind::GetProp || kind_ == CacheKind::GetElem);
@@ -188,14 +194,16 @@ class IonIC {
     MOZ_ASSERT(kind_ == CacheKind::BinaryArith);
     return (IonBinaryArithIC*)this;
   }
-
-  void updateBaseAddress(JitCode* code);
+  IonToPropertyKeyIC* asToPropertyKeyIC() {
+    MOZ_ASSERT(kind_ == CacheKind::ToPropertyKey);
+    return (IonToPropertyKeyIC*)this;
+  }
 
   // Returns the Register to use as scratch when entering IC stubs. This
   // should either be an output register or a temp.
   Register scratchRegisterForEntryJump();
 
-  void trace(JSTracer* trc);
+  void trace(JSTracer* trc, IonScript* ionScript);
 
   void attachCacheIRStub(JSContext* cx, const CacheIRWriter& writer,
                          CacheKind kind, IonScript* ionScript, bool* attached,
@@ -280,8 +288,6 @@ class IonSetPropertyIC : public IonIC {
 
   Register object_;
   Register temp_;
-  FloatRegister maybeTempDouble_;
-  FloatRegister maybeTempFloat32_;
   ConstantOrRegister id_;
   ConstantOrRegister rhs_;
   bool strict_ : 1;
@@ -291,8 +297,7 @@ class IonSetPropertyIC : public IonIC {
 
  public:
   IonSetPropertyIC(CacheKind kind, LiveRegisterSet liveRegs, Register object,
-                   Register temp, FloatRegister maybeTempDouble,
-                   FloatRegister maybeTempFloat32, const ConstantOrRegister& id,
+                   Register temp, const ConstantOrRegister& id,
                    const ConstantOrRegister& rhs, bool strict,
                    bool needsPostBarrier, bool needsTypeBarrier,
                    bool guardHoles)
@@ -300,8 +305,6 @@ class IonSetPropertyIC : public IonIC {
         liveRegs_(liveRegs),
         object_(object),
         temp_(temp),
-        maybeTempDouble_(maybeTempDouble),
-        maybeTempFloat32_(maybeTempFloat32),
         id_(id),
         rhs_(rhs),
         strict_(strict),
@@ -315,8 +318,6 @@ class IonSetPropertyIC : public IonIC {
   ConstantOrRegister rhs() const { return rhs_; }
 
   Register temp() const { return temp_; }
-  FloatRegister maybeTempDouble() const { return maybeTempDouble_; }
-  FloatRegister maybeTempFloat32() const { return maybeTempFloat32_; }
 
   bool strict() const { return strict_; }
   bool needsPostBarrier() const { return needsPostBarrier_; }
@@ -534,6 +535,28 @@ class IonUnaryArithIC : public IonIC {
 
   static MOZ_MUST_USE bool update(JSContext* cx, HandleScript outerScript,
                                   IonUnaryArithIC* stub, HandleValue val,
+                                  MutableHandleValue res);
+};
+
+class IonToPropertyKeyIC : public IonIC {
+  LiveRegisterSet liveRegs_;
+  ValueOperand input_;
+  ValueOperand output_;
+
+ public:
+  IonToPropertyKeyIC(LiveRegisterSet liveRegs, ValueOperand input,
+                     ValueOperand output)
+      : IonIC(CacheKind::ToPropertyKey),
+        liveRegs_(liveRegs),
+        input_(input),
+        output_(output) {}
+
+  LiveRegisterSet liveRegs() const { return liveRegs_; }
+  ValueOperand input() const { return input_; }
+  ValueOperand output() const { return output_; }
+
+  static MOZ_MUST_USE bool update(JSContext* cx, HandleScript outerScript,
+                                  IonToPropertyKeyIC* ic, HandleValue val,
                                   MutableHandleValue res);
 };
 

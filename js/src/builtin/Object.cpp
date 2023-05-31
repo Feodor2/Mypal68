@@ -5,21 +5,28 @@
 #include "builtin/Object.h"
 
 #include "mozilla/MaybeOneOf.h"
+#include "mozilla/Range.h"
+#include "mozilla/RangedPtr.h"
+
+#include <algorithm>
 
 #include "builtin/BigInt.h"
 #include "builtin/Eval.h"
 #include "builtin/SelfHostingDefines.h"
-#include "builtin/String.h"
 #include "frontend/BytecodeCompiler.h"
 #include "jit/InlinableNatives.h"
 #include "js/PropertySpec.h"
 #include "js/UniquePtr.h"
 #include "util/StringBuffer.h"
+#include "util/Text.h"
 #include "vm/AsyncFunction.h"
 #include "vm/DateObject.h"
 #include "vm/EqualityOperations.h"  // js::SameValue
+#include "vm/ErrorObject.h"
 #include "vm/JSContext.h"
+#include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/RegExpObject.h"
+#include "vm/ToSource.h"  // js::ValueToSource
 
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -32,6 +39,9 @@
 using namespace js;
 
 using js::frontend::IsIdentifier;
+
+using mozilla::Range;
+using mozilla::RangedPtr;
 
 bool js::obj_construct(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -136,12 +146,14 @@ static bool obj_toSource(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 template <typename CharT>
-static bool Consume(const CharT*& s, const CharT* e, const char* chars) {
+static bool Consume(RangedPtr<const CharT>& s, RangedPtr<const CharT> e,
+                    const char* chars) {
+  MOZ_ASSERT(s <= e);
   size_t len = strlen(chars);
-  if (s + len >= e) {
+  if (e - s < len) {
     return false;
   }
-  if (!EqualChars(s, chars, len)) {
+  if (!EqualChars(s.get(), chars, len)) {
     return false;
   }
   s += len;
@@ -149,8 +161,21 @@ static bool Consume(const CharT*& s, const CharT* e, const char* chars) {
 }
 
 template <typename CharT>
-static void ConsumeSpaces(const CharT*& s, const CharT* e) {
-  while (*s == ' ' && s < e) {
+static bool ConsumeUntil(RangedPtr<const CharT>& s, RangedPtr<const CharT> e,
+                         char16_t ch) {
+  MOZ_ASSERT(s <= e);
+  const CharT* result = js_strchr_limit(s.get(), ch, e.get());
+  if (!result) {
+    return false;
+  }
+  s += result - s.get();
+  MOZ_ASSERT(*s == ch);
+  return true;
+}
+
+template <typename CharT>
+static void ConsumeSpaces(RangedPtr<const CharT>& s, RangedPtr<const CharT> e) {
+  while (s < e && *s == ' ') {
     s++;
   }
 }
@@ -160,11 +185,11 @@ static void ConsumeSpaces(const CharT*& s, const CharT* e) {
  * between '(function $name' and ')'.
  */
 template <typename CharT>
-static bool ArgsAndBodySubstring(mozilla::Range<const CharT> chars,
-                                 size_t* outOffset, size_t* outLen) {
-  const CharT* const start = chars.begin().get();
-  const CharT* s = start;
-  const CharT* e = chars.end().get();
+static bool ArgsAndBodySubstring(Range<const CharT> chars, size_t* outOffset,
+                                 size_t* outLen) {
+  const RangedPtr<const CharT> start = chars.begin();
+  RangedPtr<const CharT> s = start;
+  RangedPtr<const CharT> e = chars.end();
 
   if (s == e) {
     return false;
@@ -200,21 +225,21 @@ static bool ArgsAndBodySubstring(mozilla::Range<const CharT> chars,
 
   // Jump over the function's name.
   if (Consume(s, e, "[")) {
-    s = js_strchr_limit(s, ']', e);
-    if (!s) {
+    if (!ConsumeUntil(s, e, ']')) {
       return false;
     }
-    s++;
+    s++;  // Skip ']'.
     ConsumeSpaces(s, e);
-    if (*s != '(') {
+    if (s >= e || *s != '(') {
       return false;
     }
   } else {
-    s = js_strchr_limit(s, '(', e);
-    if (!s) {
+    if (!ConsumeUntil(s, e, '(')) {
       return false;
     }
   }
+
+  MOZ_ASSERT(*s == '(');
 
   *outOffset = s - start;
   *outLen = e - s;
@@ -518,7 +543,7 @@ static bool GetBuiltinTagSlow(JSContext* cx, HandleObject obj,
 }
 
 static MOZ_ALWAYS_INLINE JSString* GetBuiltinTagFast(JSObject* obj,
-                                                     const Class* clasp,
+                                                     const JSClass* clasp,
                                                      JSContext* cx) {
   MOZ_ASSERT(clasp == obj->getClass());
   MOZ_ASSERT(!clasp->isProxy());
@@ -597,7 +622,7 @@ bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   RootedString builtinTag(cx);
-  const Class* clasp = obj->getClass();
+  const JSClass* clasp = obj->getClass();
   if (MOZ_UNLIKELY(clasp->isProxy())) {
     if (!GetBuiltinTagSlow(cx, obj, &builtinTag)) {
       return false;
@@ -667,7 +692,7 @@ bool js::obj_toString(JSContext* cx, unsigned argc, Value* vp) {
 }
 
 JSString* js::ObjectClassToString(JSContext* cx, HandleObject obj) {
-  const Class* clasp = obj->getClass();
+  const JSClass* clasp = obj->getClass();
 
   if (JSString* tag = GetBuiltinTagFast(obj, clasp, cx)) {
     return tag;
@@ -972,7 +997,8 @@ PlainObject* js::ObjectCreateImpl(JSContext* cx, HandleObject proto,
     return NewObjectWithGroup<PlainObject>(cx, ngroup, allocKind, newKind);
   }
 
-  return NewObjectWithGivenProto<PlainObject>(cx, proto, allocKind, newKind);
+  return NewObjectWithGivenProtoAndKinds<PlainObject>(cx, proto, allocKind,
+                                                      newKind);
 }
 
 PlainObject* js::ObjectCreateWithTemplate(JSContext* cx,
@@ -1402,9 +1428,9 @@ static bool TryEnumerableOwnPropertiesNative(JSContext* cx, HandleObject obj,
       }
     }
 
-    // The (non-indexed) properties were visited in reverse iteration
-    // order, call Reverse() to ensure they appear in iteration order.
-    Reverse(properties.begin() + elements, properties.end());
+    // The (non-indexed) properties were visited in reverse iteration order,
+    // call std::reverse() to ensure they appear in iteration order.
+    std::reverse(properties.begin() + elements, properties.end());
   } else {
     MOZ_ASSERT(kind == EnumerableOwnPropertiesKind::Values ||
                kind == EnumerableOwnPropertiesKind::KeysAndValues);
@@ -1711,7 +1737,7 @@ bool js::GetOwnPropertyKeys(JSContext* cx, HandleObject obj, unsigned flags,
 
 // ES2018 draft rev c164be80f7ea91de5526b33d54e5c9321ed03d3f
 // 19.1.2.9 Object.getOwnPropertyNames ( O )
-bool js::obj_getOwnPropertyNames(JSContext* cx, unsigned argc, Value* vp) {
+static bool obj_getOwnPropertyNames(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   RootedObject obj(cx, ToObject(cx, args.get(0)));
@@ -1861,33 +1887,9 @@ static bool obj_isSealed(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-static bool ProtoGetter(JSContext* cx, unsigned argc, Value* vp) {
+bool js::obj_setProto(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-
-  RootedValue thisv(cx, args.thisv());
-  if (thisv.isPrimitive()) {
-    if (thisv.isNullOrUndefined()) {
-      ReportIncompatible(cx, args);
-      return false;
-    }
-
-    if (!BoxNonStrictThis(cx, thisv, &thisv)) {
-      return false;
-    }
-  }
-
-  RootedObject obj(cx, &thisv.toObject());
-  RootedObject proto(cx);
-  if (!GetPrototype(cx, obj, &proto)) {
-    return false;
-  }
-
-  args.rval().setObjectOrNull(proto);
-  return true;
-}
-
-static bool ProtoSetter(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
+  MOZ_ASSERT(args.length() == 1);
 
   HandleValue thisv = args.thisv();
   if (thisv.isNullOrUndefined()) {
@@ -1900,14 +1902,13 @@ static bool ProtoSetter(JSContext* cx, unsigned argc, Value* vp) {
     return true;
   }
 
-  Rooted<JSObject*> obj(cx, &args.thisv().toObject());
-
   /* Do nothing if __proto__ isn't being set to an object or null. */
-  if (args.length() == 0 || !args[0].isObjectOrNull()) {
+  if (!args[0].isObjectOrNull()) {
     args.rval().setUndefined();
     return true;
   }
 
+  Rooted<JSObject*> obj(cx, &args.thisv().toObject());
   Rooted<JSObject*> newProto(cx, args[0].toObjectOrNull());
   if (!SetPrototype(cx, obj, newProto)) {
     return false;
@@ -1932,7 +1933,9 @@ static const JSFunctionSpec object_methods[] = {
     JS_FS_END};
 
 static const JSPropertySpec object_properties[] = {
-    JS_PSGS("__proto__", ProtoGetter, ProtoSetter, 0), JS_PS_END};
+    JS_SELF_HOSTED_GETSET("__proto__", "$ObjectProtoGetter",
+                          "$ObjectProtoSetter", 0),
+    JS_PS_END};
 
 static const JSFunctionSpec object_static_methods[] = {
     JS_FN("assign", obj_assign, 2, 0),
@@ -1987,7 +1990,7 @@ static JSObject* CreateObjectPrototype(JSContext* cx, JSProtoKey key) {
    * prototype of the created object.
    */
   RootedPlainObject objectProto(
-      cx, NewObjectWithGivenProto<PlainObject>(cx, nullptr, SingletonObject));
+      cx, NewSingletonObjectWithGivenProto<PlainObject>(cx, nullptr));
   if (!objectProto) {
     return nullptr;
   }
@@ -2065,8 +2068,8 @@ static const ClassSpec PlainObjectClassSpec = {
     object_methods,          object_properties,
     FinishObjectClassInit};
 
-const Class PlainObject::class_ = {js_Object_str,
-                                   JSCLASS_HAS_CACHED_PROTO(JSProto_Object),
-                                   JS_NULL_CLASS_OPS, &PlainObjectClassSpec};
+const JSClass PlainObject::class_ = {js_Object_str,
+                                     JSCLASS_HAS_CACHED_PROTO(JSProto_Object),
+                                     JS_NULL_CLASS_OPS, &PlainObjectClassSpec};
 
-const Class* const js::ObjectClassPtr = &PlainObject::class_;
+const JSClass* const js::ObjectClassPtr = &PlainObject::class_;

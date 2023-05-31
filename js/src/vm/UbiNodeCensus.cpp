@@ -6,9 +6,9 @@
 
 #include "builtin/MapObject.h"
 #include "js/CharacterEncoding.h"
-#include "js/StableStringChars.h"
 #include "util/Text.h"
 #include "vm/JSContext.h"
+#include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/Printer.h"
 #include "vm/Realm.h"
 
@@ -1149,7 +1149,7 @@ JS_PUBLIC_API CountTypePtr ParseBreakdown(JSContext* cx,
     return nullptr;
   }
 
-  if (StringEqualsAscii(by, "count")) {
+  if (StringEqualsLiteral(by, "count")) {
     RootedValue countValue(cx), bytesValue(cx);
     if (!GetProperty(cx, breakdown, breakdown, cx->names().count,
                      &countValue) ||
@@ -1176,20 +1176,7 @@ JS_PUBLIC_API CountTypePtr ParseBreakdown(JSContext* cx,
         return nullptr;
       }
 
-      JSFlatString* flat = labelString->ensureFlat(cx);
-      if (!flat) {
-        return nullptr;
-      }
-
-      AutoStableStringChars chars(cx);
-      if (!chars.initTwoByte(cx, flat)) {
-        return nullptr;
-      }
-
-      // Since flat strings are null-terminated, and AutoStableStringChars
-      // null- terminates if it needs to make a copy, we know that
-      // chars.twoByteChars() is null-terminated.
-      labelUnique = DuplicateString(cx, chars.twoByteChars());
+      labelUnique = JS_CopyStringCharsZ(cx, labelString);
       if (!labelUnique) {
         return nullptr;
       }
@@ -1200,11 +1187,11 @@ JS_PUBLIC_API CountTypePtr ParseBreakdown(JSContext* cx,
     return simple;
   }
 
-  if (StringEqualsAscii(by, "bucket")) {
+  if (StringEqualsLiteral(by, "bucket")) {
     return CountTypePtr(cx->new_<BucketCount>());
   }
 
-  if (StringEqualsAscii(by, "objectClass")) {
+  if (StringEqualsLiteral(by, "objectClass")) {
     CountTypePtr thenType(ParseChildBreakdown(cx, breakdown, cx->names().then));
     if (!thenType) {
       return nullptr;
@@ -1219,7 +1206,7 @@ JS_PUBLIC_API CountTypePtr ParseBreakdown(JSContext* cx,
     return CountTypePtr(cx->new_<ByObjectClass>(thenType, otherType));
   }
 
-  if (StringEqualsAscii(by, "coarseType")) {
+  if (StringEqualsLiteral(by, "coarseType")) {
     CountTypePtr objectsType(
         ParseChildBreakdown(cx, breakdown, cx->names().objects));
     if (!objectsType) {
@@ -1250,7 +1237,7 @@ JS_PUBLIC_API CountTypePtr ParseBreakdown(JSContext* cx,
         objectsType, scriptsType, stringsType, otherType, domNodeType));
   }
 
-  if (StringEqualsAscii(by, "internalType")) {
+  if (StringEqualsLiteral(by, "internalType")) {
     CountTypePtr thenType(ParseChildBreakdown(cx, breakdown, cx->names().then));
     if (!thenType) {
       return nullptr;
@@ -1259,7 +1246,7 @@ JS_PUBLIC_API CountTypePtr ParseBreakdown(JSContext* cx,
     return CountTypePtr(cx->new_<ByUbinodeType>(thenType));
   }
 
-  if (StringEqualsAscii(by, "descriptiveType")) {
+  if (StringEqualsLiteral(by, "descriptiveType")) {
     CountTypePtr thenType(ParseChildBreakdown(cx, breakdown, cx->names().then));
     if (!thenType) {
       return nullptr;
@@ -1267,7 +1254,7 @@ JS_PUBLIC_API CountTypePtr ParseBreakdown(JSContext* cx,
     return CountTypePtr(cx->new_<ByDomObjectClass>(thenType));
   }
 
-  if (StringEqualsAscii(by, "allocationStack")) {
+  if (StringEqualsLiteral(by, "allocationStack")) {
     CountTypePtr thenType(ParseChildBreakdown(cx, breakdown, cx->names().then));
     if (!thenType) {
       return nullptr;
@@ -1281,7 +1268,7 @@ JS_PUBLIC_API CountTypePtr ParseBreakdown(JSContext* cx,
     return CountTypePtr(cx->new_<ByAllocationStack>(thenType, noStackType));
   }
 
-  if (StringEqualsAscii(by, "filename")) {
+  if (StringEqualsLiteral(by, "filename")) {
     CountTypePtr thenType(ParseChildBreakdown(cx, breakdown, cx->names().then));
     if (!thenType) {
       return nullptr;

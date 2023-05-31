@@ -16,53 +16,27 @@ namespace JS {
 class JS_PUBLIC_API ContextOptions {
  public:
   ContextOptions()
-      : baseline_(true),
-        ion_(true),
-        asmJS_(true),
+      : asmJS_(true),
         wasm_(true),
+        wasmForTrustedPrinciples_(true),
         wasmVerbose_(false),
         wasmBaseline_(true),
         wasmIon_(true),
-#ifdef ENABLE_WASM_CRANELIFT
         wasmCranelift_(false),
-#endif
-#ifdef ENABLE_WASM_GC
         wasmGc_(false),
-#endif
+        wasmMultiValue_(false),
         testWasmAwaitTier2_(false),
+#ifdef ENABLE_WASM_BIGINT
+        enableWasmBigInt_(true),
+#endif
         throwOnAsmJSValidationFailure_(false),
-        nativeRegExp_(true),
+        disableIon_(false),
         asyncStack_(true),
+        sourcePragmas_(true),
         throwOnDebuggeeWouldRun_(true),
         dumpStackOnDebuggeeWouldRun_(false),
-        werror_(false),
         strictMode_(false),
-        extraWarnings_(false)
-#ifdef FUZZING
-        ,
-        fuzzing_(false)
-#endif
-  {
-  }
-
-  bool baseline() const { return baseline_; }
-  ContextOptions& setBaseline(bool flag) {
-    baseline_ = flag;
-    return *this;
-  }
-  ContextOptions& toggleBaseline() {
-    baseline_ = !baseline_;
-    return *this;
-  }
-
-  bool ion() const { return ion_; }
-  ContextOptions& setIon(bool flag) {
-    ion_ = flag;
-    return *this;
-  }
-  ContextOptions& toggleIon() {
-    ion_ = !ion_;
-    return *this;
+        fuzzing_(false) {
   }
 
   bool asmJS() const { return asmJS_; }
@@ -85,6 +59,12 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
+  bool wasmForTrustedPrinciples() const { return wasmForTrustedPrinciples_; }
+  ContextOptions& setWasmForTrustedPrinciples(bool flag) {
+    wasmForTrustedPrinciples_ = flag;
+    return *this;
+  }
+
   bool wasmVerbose() const { return wasmVerbose_; }
   ContextOptions& setWasmVerbose(bool flag) {
     wasmVerbose_ = flag;
@@ -103,13 +83,9 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
-#ifdef ENABLE_WASM_CRANELIFT
   bool wasmCranelift() const { return wasmCranelift_; }
-  ContextOptions& setWasmCranelift(bool flag) {
-    wasmCranelift_ = flag;
-    return *this;
-  }
-#endif
+  // Defined out-of-line because it depends on a compile-time option
+  ContextOptions& setWasmCranelift(bool flag);
 
   bool testWasmAwaitTier2() const { return testWasmAwaitTier2_; }
   ContextOptions& setTestWasmAwaitTier2(bool flag) {
@@ -117,13 +93,21 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
-#ifdef ENABLE_WASM_GC
-  bool wasmGc() const { return wasmGc_; }
-  ContextOptions& setWasmGc(bool flag) {
-    wasmGc_ = flag;
+#ifdef ENABLE_WASM_BIGINT
+  bool isWasmBigIntEnabled() const { return enableWasmBigInt_; }
+  ContextOptions& setWasmBigIntEnabled(bool flag) {
+    enableWasmBigInt_ = flag;
     return *this;
   }
 #endif
+
+  bool wasmGc() const { return wasmGc_; }
+  // Defined out-of-line because it depends on a compile-time option
+  ContextOptions& setWasmGc(bool flag);
+
+  bool wasmMultiValue() const { return wasmMultiValue_; }
+  // Defined out-of-line because it depends on a compile-time option
+  ContextOptions& setWasmMultiValue(bool flag);
 
   bool throwOnAsmJSValidationFailure() const {
     return throwOnAsmJSValidationFailure_;
@@ -137,15 +121,25 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
-  bool nativeRegExp() const { return nativeRegExp_; }
-  ContextOptions& setNativeRegExp(bool flag) {
-    nativeRegExp_ = flag;
+  // Override to allow disabling Ion for this context irrespective of the
+  // process-wide Ion-enabled setting. This must be set right after creating
+  // the context.
+  bool disableIon() const { return disableIon_; }
+  ContextOptions& setDisableIon() {
+    disableIon_ = true;
     return *this;
   }
 
   bool asyncStack() const { return asyncStack_; }
   ContextOptions& setAsyncStack(bool flag) {
     asyncStack_ = flag;
+    return *this;
+  }
+
+  // Enable/disable support for parsing '//(#@) source(Mapping)?URL=' pragmas.
+  bool sourcePragmas() const { return sourcePragmas_; }
+  ContextOptions& setSourcePragmas(bool flag) {
+    sourcePragmas_ = flag;
     return *this;
   }
 
@@ -163,16 +157,6 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
-  bool werror() const { return werror_; }
-  ContextOptions& setWerror(bool flag) {
-    werror_ = flag;
-    return *this;
-  }
-  ContextOptions& toggleWerror() {
-    werror_ = !werror_;
-    return *this;
-  }
-
   bool strictMode() const { return strictMode_; }
   ContextOptions& setStrictMode(bool flag) {
     strictMode_ = flag;
@@ -183,63 +167,41 @@ class JS_PUBLIC_API ContextOptions {
     return *this;
   }
 
-  bool extraWarnings() const { return extraWarnings_; }
-  ContextOptions& setExtraWarnings(bool flag) {
-    extraWarnings_ = flag;
-    return *this;
-  }
-  ContextOptions& toggleExtraWarnings() {
-    extraWarnings_ = !extraWarnings_;
-    return *this;
-  }
-
-#ifdef FUZZING
   bool fuzzing() const { return fuzzing_; }
-  ContextOptions& setFuzzing(bool flag) {
-    fuzzing_ = flag;
-    return *this;
-  }
-#endif
+  // Defined out-of-line because it depends on a compile-time option
+  ContextOptions& setFuzzing(bool flag);
 
   void disableOptionsForSafeMode() {
-    setBaseline(false);
-    setIon(false);
     setAsmJS(false);
     setWasm(false);
     setWasmBaseline(false);
     setWasmIon(false);
-#ifdef ENABLE_WASM_GC
     setWasmGc(false);
-#endif
-    setNativeRegExp(false);
+    setWasmMultiValue(false);
   }
 
  private:
-  bool baseline_ : 1;
-  bool ion_ : 1;
   bool asmJS_ : 1;
   bool wasm_ : 1;
+  bool wasmForTrustedPrinciples_ : 1;
   bool wasmVerbose_ : 1;
   bool wasmBaseline_ : 1;
   bool wasmIon_ : 1;
-#ifdef ENABLE_WASM_CRANELIFT
   bool wasmCranelift_ : 1;
-#endif
-#ifdef ENABLE_WASM_GC
   bool wasmGc_ : 1;
-#endif
+  bool wasmMultiValue_ : 1;
   bool testWasmAwaitTier2_ : 1;
+#ifdef ENABLE_WASM_BIGINT
+  bool enableWasmBigInt_ : 1;
+#endif
   bool throwOnAsmJSValidationFailure_ : 1;
-  bool nativeRegExp_ : 1;
+  bool disableIon_ : 1;
   bool asyncStack_ : 1;
+  bool sourcePragmas_ : 1;
   bool throwOnDebuggeeWouldRun_ : 1;
   bool dumpStackOnDebuggeeWouldRun_ : 1;
-  bool werror_ : 1;
   bool strictMode_ : 1;
-  bool extraWarnings_ : 1;
-#ifdef FUZZING
   bool fuzzing_ : 1;
-#endif
 };
 
 JS_PUBLIC_API ContextOptions& ContextOptionsRef(JSContext* cx);

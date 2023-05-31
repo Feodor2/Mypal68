@@ -45,6 +45,7 @@ enum JSExnType {
   JSEXN_ERR,
   JSEXN_FIRST = JSEXN_ERR,
   JSEXN_INTERNALERR,
+  JSEXN_AGGREGATEERR,
   JSEXN_EVALERR,
   JSEXN_RANGEERR,
   JSEXN_REFERENCEERR,
@@ -104,6 +105,10 @@ class JSErrorBase {
   // the error number, e.g. see js.msg.
   unsigned errorNumber;
 
+  // Points to JSErrorFormatString::name.
+  // This string must never be freed.
+  const char* errorMessageName;
+
  private:
   bool ownsMessage_ : 1;
 
@@ -114,6 +119,7 @@ class JSErrorBase {
         lineno(0),
         column(0),
         errorNumber(0),
+        errorMessageName(nullptr),
         ownsMessage_(false) {}
 
   ~JSErrorBase() { freeMessage(); }
@@ -215,14 +221,14 @@ class JSErrorReport : public JSErrorBase {
   // Associated notes, or nullptr if there's no note.
   js::UniquePtr<JSErrorNotes> notes;
 
-  // error/warning, etc.
-  unsigned flags;
-
   // One of the JSExnType constants.
   int16_t exnType;
 
   // See the comment in TransitiveCompileOptions.
   bool isMuted : 1;
+
+  // This error report is actually a warning.
+  bool isWarning_ : 1;
 
  private:
   bool ownsLinebuf_ : 1;
@@ -233,9 +239,9 @@ class JSErrorReport : public JSErrorBase {
         linebufLength_(0),
         tokenOffset_(0),
         notes(nullptr),
-        flags(0),
         exnType(0),
         isMuted(false),
+        isWarning_(false),
         ownsLinebuf_(false) {}
 
   ~JSErrorReport() { freeLinebuf(); }
@@ -252,29 +258,10 @@ class JSErrorReport : public JSErrorBase {
   void initBorrowedLinebuf(const char16_t* linebufArg, size_t linebufLengthArg,
                            size_t tokenOffsetArg);
 
+  bool isWarning() const { return isWarning_; }
+
  private:
   void freeLinebuf();
 };
-
-/*
- * JSErrorReport flag values.  These may be freely composed.
- */
-#define JSREPORT_ERROR 0x0     /* pseudo-flag for default case */
-#define JSREPORT_WARNING 0x1   /* reported via JS::Warn* */
-#define JSREPORT_EXCEPTION 0x2 /* exception was thrown */
-#define JSREPORT_STRICT 0x4    /* error or warning due to strict option */
-
-#define JSREPORT_USER_1 0x8 /* user-defined flag */
-
-/*
- * If JSREPORT_EXCEPTION is set, then a JavaScript-catchable exception
- * has been thrown for this runtime error, and the host should ignore it.
- * Exception-aware hosts should also check for JS_IsExceptionPending if
- * JS_ExecuteScript returns failure, and signal or propagate the exception, as
- * appropriate.
- */
-#define JSREPORT_IS_WARNING(flags) (((flags)&JSREPORT_WARNING) != 0)
-#define JSREPORT_IS_EXCEPTION(flags) (((flags)&JSREPORT_EXCEPTION) != 0)
-#define JSREPORT_IS_STRICT(flags) (((flags)&JSREPORT_STRICT) != 0)
 
 #endif /* js_ErrorReport_h */

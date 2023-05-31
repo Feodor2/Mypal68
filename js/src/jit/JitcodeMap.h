@@ -8,7 +8,7 @@
 #include "jit/CompactBuffer.h"
 #include "jit/CompileInfo.h"
 #include "jit/ExecutableAllocator.h"
-#include "jit/OptimizationTracking.h"
+#include "jit/shared/Assembler-shared.h"
 
 namespace js {
 namespace jit {
@@ -121,8 +121,16 @@ class JitcodeGlobalEntry {
   friend class JitcodeGlobalTable;
 
  public:
-  enum Kind { INVALID = 0, Ion, Baseline, IonCache, Dummy, Query, LIMIT };
-  JS_STATIC_ASSERT(LIMIT <= 8);
+  enum Kind {
+    INVALID = 0,
+    Ion,
+    Baseline,
+    BaselineInterpreter,
+    Dummy,
+    Query,
+    LIMIT
+  };
+  static_assert(LIMIT <= 8);
 
   struct BytecodeLocation {
     JSScript* script;
@@ -194,7 +202,6 @@ class JitcodeGlobalEntry {
     template <class ShouldTraceProvider>
     bool traceJitcode(JSTracer* trc);
     bool isJitcodeMarkedFromAnyThread(JSRuntime* rt);
-    bool isJitcodeAboutToBeFinalized();
   };
 
   struct IonEntry : public BaseEntry {
@@ -204,29 +211,6 @@ class JitcodeGlobalEntry {
     // points somewhere inside the region memory space, and not to the start
     // of the memory space.
     JitcodeIonTable* regionTable_;
-
-    // optsRegionTable_ points to the table within the compact
-    // optimizations map indexing all regions that have tracked
-    // optimization attempts. optsTypesTable_ is the tracked typed info
-    // associated with the attempts vectors; it is the same length as the
-    // attempts table. optsAttemptsTable_ is the table indexing those
-    // attempts vectors.
-    //
-    // All pointers point into the same block of memory; the beginning of
-    // the block is optRegionTable_->payloadStart().
-    const IonTrackedOptimizationsRegionTable* optsRegionTable_;
-    const IonTrackedOptimizationsTypesTable* optsTypesTable_;
-    const IonTrackedOptimizationsAttemptsTable* optsAttemptsTable_;
-
-    // The types table above records type sets, which have been gathered
-    // into one vector here.
-    IonTrackedTypeVector* optsAllTypes_;
-
-    // Linked list pointers to allow traversing through all entries that
-    // could possibly contain nursery pointers. Note that the contained
-    // pointers can be mutated into nursery pointers at any time.
-    IonEntry* prevNursery_;
-    IonEntry* nextNursery_;
 
     struct ScriptNamePair {
       JSScript* script;
@@ -258,22 +242,6 @@ class JitcodeGlobalEntry {
       BaseEntry::init(Ion, code, nativeStartAddr, nativeEndAddr);
       regionTable_ = regionTable;
       scriptList_ = scriptList;
-      optsRegionTable_ = nullptr;
-      optsTypesTable_ = nullptr;
-      optsAllTypes_ = nullptr;
-      optsAttemptsTable_ = nullptr;
-      prevNursery_ = nextNursery_ = nullptr;
-    }
-
-    void initTrackedOptimizations(
-        const IonTrackedOptimizationsRegionTable* regionTable,
-        const IonTrackedOptimizationsTypesTable* typesTable,
-        const IonTrackedOptimizationsAttemptsTable* attemptsTable,
-        IonTrackedTypeVector* allTypes) {
-      optsRegionTable_ = regionTable;
-      optsTypesTable_ = typesTable;
-      optsAttemptsTable_ = attemptsTable;
-      optsAllTypes_ = allTypes;
     }
 
     SizedScriptList* sizedScriptList() const { return scriptList_; }
@@ -312,45 +280,6 @@ class JitcodeGlobalEntry {
 
     uint32_t callStackAtAddr(void* ptr, const char** results,
                              uint32_t maxResults) const;
-
-    void youngestFrameLocationAtAddr(void* ptr, JSScript** script,
-                                     jsbytecode** pc) const;
-
-    bool hasTrackedOptimizations() const { return !!optsRegionTable_; }
-
-    const IonTrackedOptimizationsRegionTable* trackedOptimizationsRegionTable()
-        const {
-      MOZ_ASSERT(hasTrackedOptimizations());
-      return optsRegionTable_;
-    }
-
-    uint8_t numOptimizationAttempts() const {
-      MOZ_ASSERT(hasTrackedOptimizations());
-      return optsAttemptsTable_->numEntries();
-    }
-
-    IonTrackedOptimizationsAttempts trackedOptimizationAttempts(uint8_t index) {
-      MOZ_ASSERT(hasTrackedOptimizations());
-      return optsAttemptsTable_->entry(index);
-    }
-
-    IonTrackedOptimizationsTypeInfo trackedOptimizationTypeInfo(uint8_t index) {
-      MOZ_ASSERT(hasTrackedOptimizations());
-      return optsTypesTable_->entry(index);
-    }
-
-    const IonTrackedTypeVector* allTrackedTypes() {
-      MOZ_ASSERT(hasTrackedOptimizations());
-      return optsAllTypes_;
-    }
-
-    mozilla::Maybe<uint8_t> trackedOptimizationIndexAtAddr(
-        void* ptr, uint32_t* entryOffsetOut);
-
-    void forEachOptimizationAttempt(
-        uint8_t index, JS::ForEachTrackedOptimizationAttemptOp& op);
-    void forEachOptimizationTypeInfo(
-        uint8_t index, IonTrackedOptimizationsTypeInfo::ForEachOpAdapter& op);
 
     template <class ShouldTraceProvider>
     bool trace(JSTracer* trc);
@@ -403,58 +332,29 @@ class JitcodeGlobalEntry {
     uint32_t callStackAtAddr(void* ptr, const char** results,
                              uint32_t maxResults) const;
 
-    void youngestFrameLocationAtAddr(void* ptr, JSScript** script,
-                                     jsbytecode** pc) const;
-
     template <class ShouldTraceProvider>
     bool trace(JSTracer* trc);
     void sweepChildren();
     bool isMarkedFromAnyThread(JSRuntime* rt);
   };
 
-  struct IonCacheEntry : public BaseEntry {
-    void* rejoinAddr_;
-    JS::TrackedOutcome trackedOutcome_;
-
-    void init(JitCode* code, void* nativeStartAddr, void* nativeEndAddr,
-              void* rejoinAddr, JS::TrackedOutcome trackedOutcome) {
-      MOZ_ASSERT(rejoinAddr != nullptr);
-      BaseEntry::init(IonCache, code, nativeStartAddr, nativeEndAddr);
-      rejoinAddr_ = rejoinAddr;
-      trackedOutcome_ = trackedOutcome;
+  struct BaselineInterpreterEntry : public BaseEntry {
+    void init(JitCode* code, void* nativeStartAddr, void* nativeEndAddr) {
+      BaseEntry::init(BaselineInterpreter, code, nativeStartAddr,
+                      nativeEndAddr);
     }
-
-    void* rejoinAddr() const { return rejoinAddr_; }
-    JS::TrackedOutcome trackedOutcome() const { return trackedOutcome_; }
 
     void destroy() {}
 
-    void* canonicalNativeAddrFor() const;
+    void* canonicalNativeAddrFor(void* ptr) const;
 
-    MOZ_MUST_USE bool callStackAtAddr(JSRuntime* rt, void* ptr,
+    MOZ_MUST_USE bool callStackAtAddr(void* ptr,
                                       BytecodeLocationVector& results,
                                       uint32_t* depth) const;
 
-    uint32_t callStackAtAddr(JSRuntime* rt, void* ptr, const char** results,
+    uint32_t callStackAtAddr(void* ptr, const char** results,
                              uint32_t maxResults) const;
 
-    void youngestFrameLocationAtAddr(JSRuntime* rt, void* ptr,
-                                     JSScript** script, jsbytecode** pc) const;
-
-    bool hasTrackedOptimizations() const { return true; }
-    mozilla::Maybe<uint8_t> trackedOptimizationIndexAtAddr(
-        JSRuntime* rt, void* ptr, uint32_t* entryOffsetOut);
-    void forEachOptimizationAttempt(
-        JSRuntime* rt, uint8_t index,
-        JS::ForEachTrackedOptimizationAttemptOp& op);
-    void forEachOptimizationTypeInfo(
-        JSRuntime* rt, uint8_t index,
-        IonTrackedOptimizationsTypeInfo::ForEachOpAdapter& op);
-
-    template <class ShouldTraceProvider>
-    bool trace(JSTracer* trc);
-    void sweepChildren(JSRuntime* rt);
-    bool isMarkedFromAnyThread(JSRuntime* rt);
   };
 
   // Dummy entries are created for jitcode generated when profiling is not
@@ -482,11 +382,6 @@ class JitcodeGlobalEntry {
       return 0;
     }
 
-    void youngestFrameLocationAtAddr(JSRuntime* rt, void* ptr,
-                                     JSScript** script, jsbytecode** pc) const {
-      *script = nullptr;
-      *pc = nullptr;
-    }
   };
 
   // QueryEntry is never stored in the table, just used for queries
@@ -515,8 +410,8 @@ class JitcodeGlobalEntry {
     // Baseline jitcode.
     BaselineEntry baseline_;
 
-    // IonCache stubs.
-    IonCacheEntry ionCache_;
+    // BaselineInterpreter code.
+    BaselineInterpreterEntry baselineInterpreter_;
 
     // Dummy entries.
     DummyEntry dummy_;
@@ -538,9 +433,9 @@ class JitcodeGlobalEntry {
     baseline_ = baseline;
   }
 
-  explicit JitcodeGlobalEntry(const IonCacheEntry& ionCache)
+  explicit JitcodeGlobalEntry(const BaselineInterpreterEntry& baselineInterp)
       : JitcodeGlobalEntry() {
-    ionCache_ = ionCache;
+    baselineInterpreter_ = baselineInterp;
   }
 
   explicit JitcodeGlobalEntry(const DummyEntry& dummy) : JitcodeGlobalEntry() {
@@ -565,8 +460,8 @@ class JitcodeGlobalEntry {
       case Baseline:
         baselineEntry().destroy();
         break;
-      case IonCache:
-        ionCacheEntry().destroy();
+      case BaselineInterpreter:
+        baselineInterpreterEntry().destroy();
         break;
       case Dummy:
         dummyEntry().destroy();
@@ -618,7 +513,7 @@ class JitcodeGlobalEntry {
   bool isValid() const { return (kind() > INVALID) && (kind() < LIMIT); }
   bool isIon() const { return kind() == Ion; }
   bool isBaseline() const { return kind() == Baseline; }
-  bool isIonCache() const { return kind() == IonCache; }
+  bool isBaselineInterpreter() const { return kind() == BaselineInterpreter; }
   bool isDummy() const { return kind() == Dummy; }
   bool isQuery() const { return kind() == Query; }
 
@@ -634,9 +529,9 @@ class JitcodeGlobalEntry {
     MOZ_ASSERT(isBaseline());
     return baseline_;
   }
-  IonCacheEntry& ionCacheEntry() {
-    MOZ_ASSERT(isIonCache());
-    return ionCache_;
+  BaselineInterpreterEntry& baselineInterpreterEntry() {
+    MOZ_ASSERT(isBaselineInterpreter());
+    return baselineInterpreter_;
   }
   DummyEntry& dummyEntry() {
     MOZ_ASSERT(isDummy());
@@ -659,9 +554,9 @@ class JitcodeGlobalEntry {
     MOZ_ASSERT(isBaseline());
     return baseline_;
   }
-  const IonCacheEntry& ionCacheEntry() const {
-    MOZ_ASSERT(isIonCache());
-    return ionCache_;
+  const BaselineInterpreterEntry& baselineInterpreterEntry() const {
+    MOZ_ASSERT(isBaselineInterpreter());
+    return baselineInterpreter_;
   }
   const DummyEntry& dummyEntry() const {
     MOZ_ASSERT(isDummy());
@@ -678,8 +573,6 @@ class JitcodeGlobalEntry {
         return ionEntry().canonicalNativeAddrFor(ptr);
       case Baseline:
         return baselineEntry().canonicalNativeAddrFor(ptr);
-      case IonCache:
-        return ionCacheEntry().canonicalNativeAddrFor();
       case Dummy:
         return dummyEntry().canonicalNativeAddrFor(rt, ptr);
       default:
@@ -701,8 +594,8 @@ class JitcodeGlobalEntry {
         return ionEntry().callStackAtAddr(ptr, results, depth);
       case Baseline:
         return baselineEntry().callStackAtAddr(ptr, results, depth);
-      case IonCache:
-        return ionCacheEntry().callStackAtAddr(rt, ptr, results, depth);
+      case BaselineInterpreter:
+        return baselineInterpreterEntry().callStackAtAddr(ptr, results, depth);
       case Dummy:
         return dummyEntry().callStackAtAddr(rt, ptr, results, depth);
       default:
@@ -718,30 +611,15 @@ class JitcodeGlobalEntry {
         return ionEntry().callStackAtAddr(ptr, results, maxResults);
       case Baseline:
         return baselineEntry().callStackAtAddr(ptr, results, maxResults);
-      case IonCache:
-        return ionCacheEntry().callStackAtAddr(rt, ptr, results, maxResults);
+      case BaselineInterpreter:
+        return baselineInterpreterEntry().callStackAtAddr(ptr, results,
+                                                          maxResults);
       case Dummy:
         return dummyEntry().callStackAtAddr(rt, ptr, results, maxResults);
       default:
         MOZ_CRASH("Invalid JitcodeGlobalEntry kind.");
     }
     return false;
-  }
-
-  void youngestFrameLocationAtAddr(JSRuntime* rt, void* ptr, JSScript** script,
-                                   jsbytecode** pc) const {
-    switch (kind()) {
-      case Ion:
-        return ionEntry().youngestFrameLocationAtAddr(ptr, script, pc);
-      case Baseline:
-        return baselineEntry().youngestFrameLocationAtAddr(ptr, script, pc);
-      case IonCache:
-        return ionCacheEntry().youngestFrameLocationAtAddr(rt, ptr, script, pc);
-      case Dummy:
-        return dummyEntry().youngestFrameLocationAtAddr(rt, ptr, script, pc);
-      default:
-        MOZ_CRASH("Invalid JitcodeGlobalEntry kind.");
-    }
   }
 
   // Figure out the number of the (JSScript*, jsbytecode*) pairs that are active
@@ -753,89 +631,6 @@ class JitcodeGlobalEntry {
                      const JitcodeGlobalEntry& ent2);
   int compareTo(const JitcodeGlobalEntry& other) {
     return compare(*this, other);
-  }
-
-  bool hasTrackedOptimizations() const {
-    switch (kind()) {
-      case Ion:
-        return ionEntry().hasTrackedOptimizations();
-      case IonCache:
-        return ionCacheEntry().hasTrackedOptimizations();
-      case Baseline:
-      case Dummy:
-        break;
-      default:
-        MOZ_CRASH("Invalid JitcodeGlobalEntry kind.");
-    }
-    return false;
-  }
-
-  bool canHoldNurseryPointers() const {
-    return isIon() && ionEntry().hasTrackedOptimizations();
-  }
-
-  mozilla::Maybe<uint8_t> trackedOptimizationIndexAtAddr(
-      JSRuntime* rt, void* addr, uint32_t* entryOffsetOut) {
-    switch (kind()) {
-      case Ion:
-        return ionEntry().trackedOptimizationIndexAtAddr(addr, entryOffsetOut);
-      case IonCache:
-        return ionCacheEntry().trackedOptimizationIndexAtAddr(rt, addr,
-                                                              entryOffsetOut);
-      case Baseline:
-      case Dummy:
-        break;
-      default:
-        MOZ_CRASH("Invalid JitcodeGlobalEntry kind.");
-    }
-    return mozilla::Nothing();
-  }
-
-  void forEachOptimizationAttempt(JSRuntime* rt, uint8_t index,
-                                  JS::ForEachTrackedOptimizationAttemptOp& op) {
-    switch (kind()) {
-      case Ion:
-        ionEntry().forEachOptimizationAttempt(index, op);
-        return;
-      case IonCache:
-        ionCacheEntry().forEachOptimizationAttempt(rt, index, op);
-        return;
-      case Baseline:
-      case Dummy:
-        break;
-      default:
-        MOZ_CRASH("Invalid JitcodeGlobalEntry kind.");
-    }
-  }
-
-  void forEachOptimizationTypeInfo(
-      JSRuntime* rt, uint8_t index,
-      IonTrackedOptimizationsTypeInfo::ForEachOpAdapter& op) {
-    switch (kind()) {
-      case Ion:
-        ionEntry().forEachOptimizationTypeInfo(index, op);
-        return;
-      case IonCache:
-        ionCacheEntry().forEachOptimizationTypeInfo(rt, index, op);
-        return;
-      case Baseline:
-      case Dummy:
-        break;
-      default:
-        MOZ_CRASH("Invalid JitcodeGlobalEntry kind.");
-    }
-  }
-
-  IonTrackedOptimizationsAttempts trackedOptimizationAttempts(uint8_t index) {
-    return ionEntry().trackedOptimizationAttempts(index);
-  }
-
-  IonTrackedOptimizationsTypeInfo trackedOptimizationTypeInfo(uint8_t index) {
-    return ionEntry().trackedOptimizationTypeInfo(index);
-  }
-
-  const IonTrackedTypeVector* allTrackedTypes() {
-    return ionEntry().allTrackedTypes();
   }
 
   Zone* zone() { return baseEntry().jitcode()->zone(); }
@@ -850,9 +645,7 @@ class JitcodeGlobalEntry {
       case Baseline:
         tracedAny |= baselineEntry().trace<ShouldTraceProvider>(trc);
         break;
-      case IonCache:
-        tracedAny |= ionCacheEntry().trace<ShouldTraceProvider>(trc);
-        break;
+      case BaselineInterpreter:
       case Dummy:
         break;
       default:
@@ -869,9 +662,7 @@ class JitcodeGlobalEntry {
       case Baseline:
         baselineEntry().sweepChildren();
         break;
-      case IonCache:
-        ionCacheEntry().sweepChildren(rt);
-        break;
+      case BaselineInterpreter:
       case Dummy:
         break;
       default:
@@ -888,8 +679,6 @@ class JitcodeGlobalEntry {
         return ionEntry().isMarkedFromAnyThread(rt);
       case Baseline:
         return baselineEntry().isMarkedFromAnyThread(rt);
-      case IonCache:
-        return ionCacheEntry().isMarkedFromAnyThread(rt);
       case Dummy:
         break;
       default:
@@ -940,7 +729,6 @@ class JitcodeGlobalTable {
   JitcodeGlobalEntry* freeEntries_;
   uint32_t rand_;
   uint32_t skiplistSize_;
-  JitcodeGlobalEntry::IonEntry* nurseryEntries_;
 
   JitcodeGlobalEntry* startTower_[JitcodeSkiplistTower::MAX_HEIGHT];
   JitcodeSkiplistTower* freeTowers_[JitcodeSkiplistTower::MAX_HEIGHT];
@@ -950,8 +738,7 @@ class JitcodeGlobalTable {
       : alloc_(LIFO_CHUNK_SIZE),
         freeEntries_(nullptr),
         rand_(0),
-        skiplistSize_(0),
-        nurseryEntries_(nullptr) {
+        skiplistSize_(0) {
     for (unsigned i = 0; i < JitcodeSkiplistTower::MAX_HEIGHT; i++) {
       startTower_[i] = nullptr;
     }
@@ -959,20 +746,14 @@ class JitcodeGlobalTable {
       freeTowers_[i] = nullptr;
     }
   }
-  ~JitcodeGlobalTable() {}
+  ~JitcodeGlobalTable() = default;
 
   bool empty() const { return skiplistSize_ == 0; }
 
   JitcodeGlobalEntry* lookup(void* ptr) { return lookupInternal(ptr); }
 
-  JitcodeGlobalEntry& lookupInfallible(void* ptr) {
-    JitcodeGlobalEntry* entry = lookupInternal(ptr);
-    MOZ_ASSERT(entry);
-    return *entry;
-  }
-
-  const JitcodeGlobalEntry& lookupForSamplerInfallible(
-      void* ptr, JSRuntime* rt, uint64_t samplePosInBuffer);
+  const JitcodeGlobalEntry* lookupForSampler(void* ptr, JSRuntime* rt,
+                                             uint64_t samplePosInBuffer);
 
   MOZ_MUST_USE bool addEntry(const JitcodeGlobalEntry::IonEntry& entry) {
     return addEntry(JitcodeGlobalEntry(entry));
@@ -980,7 +761,8 @@ class JitcodeGlobalTable {
   MOZ_MUST_USE bool addEntry(const JitcodeGlobalEntry::BaselineEntry& entry) {
     return addEntry(JitcodeGlobalEntry(entry));
   }
-  MOZ_MUST_USE bool addEntry(const JitcodeGlobalEntry::IonCacheEntry& entry) {
+  MOZ_MUST_USE bool addEntry(
+      const JitcodeGlobalEntry::BaselineInterpreterEntry& entry) {
     return addEntry(JitcodeGlobalEntry(entry));
   }
   MOZ_MUST_USE bool addEntry(const JitcodeGlobalEntry::DummyEntry& entry) {
@@ -992,9 +774,8 @@ class JitcodeGlobalTable {
                     JSRuntime* rt);
 
   void setAllEntriesAsExpired();
-  void traceForMinorGC(JSTracer* trc);
   MOZ_MUST_USE bool markIteratively(GCMarker* marker);
-  void sweep(JSRuntime* rt);
+  void traceWeak(JSRuntime* rt, JSTracer* trc);
 
  private:
   MOZ_MUST_USE bool addEntry(const JitcodeGlobalEntry& entry);
@@ -1024,33 +805,6 @@ class JitcodeGlobalTable {
 #else
   void verifySkiplist() {}
 #endif
-
-  void addToNurseryList(JitcodeGlobalEntry::IonEntry* entry) {
-    MOZ_ASSERT(entry->prevNursery_ == nullptr);
-    MOZ_ASSERT(entry->nextNursery_ == nullptr);
-
-    entry->nextNursery_ = nurseryEntries_;
-    if (nurseryEntries_) {
-      nurseryEntries_->prevNursery_ = entry;
-    }
-    nurseryEntries_ = entry;
-  }
-
-  void removeFromNurseryList(JitcodeGlobalEntry::IonEntry* entry) {
-    // Splice out of list to be scanned on a minor GC.
-    if (entry->prevNursery_) {
-      entry->prevNursery_->nextNursery_ = entry->nextNursery_;
-    }
-    if (entry->nextNursery_) {
-      entry->nextNursery_->prevNursery_ = entry->prevNursery_;
-    }
-
-    if (nurseryEntries_ == entry) {
-      nurseryEntries_ = entry->nextNursery_;
-    }
-
-    entry->prevNursery_ = entry->nextNursery_ = nullptr;
-  }
 
  public:
   class Range {

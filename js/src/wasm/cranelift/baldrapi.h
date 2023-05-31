@@ -18,7 +18,7 @@
 //
 // This file is input to Rust's bindgen, so as to create primitive APIs for the
 // Cranelift pipeline to access compilation metadata. The actual Rust API then
-// wraps these primitive APIs.  See src/baldrdash.rs.
+// wraps these primitive APIs.  See src/bindings/mod.rs.
 //
 // This file can be included in SpiderMonkey's C++ code, where all the prefixes
 // must be obeyed.  The purpose of the prefixes is to avoid type confusion.  See
@@ -63,8 +63,10 @@ struct CraneliftStaticEnvironment {
   bool hasBmi1;
   bool hasBmi2;
   bool hasLzcnt;
+  bool platformIsWindows;
   size_t staticMemoryBound;
   size_t memoryGuardSize;
+  size_t memoryBaseTlsOffset;
   size_t instanceTlsOffset;
   size_t interruptTlsOffset;
   size_t cxTlsOffset;
@@ -134,8 +136,21 @@ struct CraneliftCompiledFunc {
   size_t framePushed;
   bool containsCalls;
 
-  size_t codeSize;
+  // The compiled code comprises machine code, relocatable jump tables, and
+  // copyable read-only data, concatenated without padding.  The "...Size"
+  // members give the sizes of the individual sections.  The code starts at
+  // offsets 0; the other offsets can be derived from the sizes.
   const uint8_t* code;
+  size_t codeSize;
+  size_t jumptablesSize;
+  size_t rodataSize;
+  size_t totalSize;
+
+  // Relocation information for instructions that reference into the jump tables
+  // and read-only data segments.  The relocation information is
+  // machine-specific.
+  size_t numRodataRelocs;
+  const uint32_t* rodataRelocs;
 };
 
 // Possible constant values for initializing globals.
@@ -198,7 +213,8 @@ size_t table_tlsOffset(const js::wasm::TableDesc*);
 
 size_t funcType_numArgs(const js::wasm::FuncTypeWithId*);
 const BD_ValType* funcType_args(const js::wasm::FuncTypeWithId*);
-js::wasm::TypeCode funcType_retType(const js::wasm::FuncTypeWithId*);
+size_t funcType_numResults(const js::wasm::FuncTypeWithId*);
+const BD_ValType* funcType_results(const js::wasm::FuncTypeWithId*);
 js::wasm::FuncTypeIdDescKind funcType_idKind(const js::wasm::FuncTypeWithId*);
 size_t funcType_idImmediate(const js::wasm::FuncTypeWithId*);
 size_t funcType_idTlsOffset(const js::wasm::FuncTypeWithId*);

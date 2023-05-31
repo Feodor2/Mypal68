@@ -15,6 +15,7 @@
 
 #include "wasm/WasmFrameIter.h"
 
+#include "vm/JitActivation.h"  // js::jit::JitActivation
 #include "wasm/WasmInstance.h"
 #include "wasm/WasmStubs.h"
 
@@ -461,7 +462,7 @@ static void GenerateCallablePrologue(MacroAssembler& masm, uint32_t* entry) {
 
     *entry = masm.currentOffset();
 
-    MOZ_ASSERT(BeforePushRetAddr == 0);
+    static_assert(BeforePushRetAddr == 0);
     masm.push(lr);
 #  else
     *entry = masm.currentOffset();
@@ -699,7 +700,7 @@ void wasm::GenerateJitEntryPrologue(MacroAssembler& masm, Offsets* offsets) {
     AutoForbidPoolsAndNops afp(&masm,
                                /* number of instructions in scope = */ 2);
     offsets->begin = masm.currentOffset();
-    MOZ_ASSERT(BeforePushRetAddr == 0);
+    static_assert(BeforePushRetAddr == 0);
     masm.push(lr);
 #elif defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
     offsets->begin = masm.currentOffset();
@@ -708,7 +709,7 @@ void wasm::GenerateJitEntryPrologue(MacroAssembler& masm, Offsets* offsets) {
     AutoForbidPoolsAndNops afp(&masm,
                                /* number of instructions in scope = */ 3);
     offsets->begin = masm.currentOffset();
-    MOZ_ASSERT(BeforePushRetAddr == 0);
+    static_assert(BeforePushRetAddr == 0);
     // Subtract from SP first as SP must be aligned before offsetting.
     masm.Sub(sp, sp, 8);
     masm.storePtr(lr, Address(masm.getStackPointer(), 0));
@@ -754,8 +755,7 @@ ProfilingFrameIterator::ProfilingFrameIterator(const JitActivation& activation)
   initFromExitFP(activation.wasmExitFP());
 }
 
-ProfilingFrameIterator::ProfilingFrameIterator(const JitActivation& activation,
-                                               const Frame* fp)
+ProfilingFrameIterator::ProfilingFrameIterator(const Frame* fp)
     : code_(nullptr),
       codeRange_(nullptr),
       callerFP_(nullptr),
@@ -1260,8 +1260,13 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
     case SymbolicAddress::CallImport_F64:
     case SymbolicAddress::CallImport_FuncRef:
     case SymbolicAddress::CallImport_AnyRef:
+    case SymbolicAddress::CallImport_NullRef:
     case SymbolicAddress::CoerceInPlace_ToInt32:
     case SymbolicAddress::CoerceInPlace_ToNumber:
+#ifdef ENABLE_WASM_BIGINT
+    case SymbolicAddress::CoerceInPlace_ToBigInt:
+#endif
+    case SymbolicAddress::BoxValue_Anyref:
       MOZ_ASSERT(!NeedsBuiltinThunk(func),
                  "not in sync with NeedsBuiltinThunk");
       break;
@@ -1296,6 +1301,10 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
       return "call to native i32.div_s (in wasm)";
     case SymbolicAddress::aeabi_uidivmod:
       return "call to native i32.div_u (in wasm)";
+#endif
+#ifdef ENABLE_WASM_BIGINT
+    case SymbolicAddress::AllocateBigInt:
+      return "call to native Allocate<BigInt, NoGC> (in wasm)";
 #endif
     case SymbolicAddress::ModD:
       return "call to asm.js native f64 % (mod)";
@@ -1350,10 +1359,12 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
     case SymbolicAddress::ReportInt64JSCall:
       return "jit call to int64 wasm function";
     case SymbolicAddress::MemCopy:
+    case SymbolicAddress::MemCopyShared:
       return "call to native memory.copy function";
     case SymbolicAddress::DataDrop:
       return "call to native data.drop function";
     case SymbolicAddress::MemFill:
+    case SymbolicAddress::MemFillShared:
       return "call to native memory.fill function";
     case SymbolicAddress::MemInit:
       return "call to native memory.init function";
@@ -1373,6 +1384,10 @@ static const char* ThunkedNativeToDescription(SymbolicAddress func) {
       return "call to native table.set function";
     case SymbolicAddress::TableSize:
       return "call to native table.size function";
+    case SymbolicAddress::RefFunc:
+      return "call to native ref.func function";
+    case SymbolicAddress::PreBarrierFiltering:
+      return "call to native filtering GC prebarrier (in wasm)";
     case SymbolicAddress::PostBarrier:
       return "call to native GC postbarrier (in wasm)";
     case SymbolicAddress::PostBarrierFiltering:

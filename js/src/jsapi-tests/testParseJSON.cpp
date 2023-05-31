@@ -5,8 +5,7 @@
 #include <limits>
 #include <string.h>
 
-#include "builtin/String.h"
-
+#include "js/Array.h"  // JS::IsArrayObject
 #include "js/JSON.h"
 #include "js/MemoryFunctions.h"
 #include "js/Printf.h"
@@ -78,7 +77,7 @@ BEGIN_TEST(testParseJSON_success) {
   expected.setDouble(std::numeric_limits<double>::infinity());
   CHECK(TryParse(cx, "9e99999", expected));
 
-  JS::Rooted<JSFlatString*> str(cx);
+  JS::Rooted<JSLinearString*> str(cx);
 
   const char16_t emptystr[] = {'\0'};
   str = js::NewStringCopyN<CanGC>(cx, emptystr, 0);
@@ -117,7 +116,7 @@ BEGIN_TEST(testParseJSON_success) {
   CHECK(Parse(cx, "[]", &v));
   CHECK(v.isObject());
   obj = &v.toObject();
-  CHECK(JS_IsArrayObject(cx, obj, &isArray));
+  CHECK(JS::IsArrayObject(cx, obj, &isArray));
   CHECK(isArray);
   CHECK(JS_GetProperty(cx, obj, "length", &v2));
   CHECK(v2.isInt32(0));
@@ -125,7 +124,7 @@ BEGIN_TEST(testParseJSON_success) {
   CHECK(Parse(cx, "[1]", &v));
   CHECK(v.isObject());
   obj = &v.toObject();
-  CHECK(JS_IsArrayObject(cx, obj, &isArray));
+  CHECK(JS::IsArrayObject(cx, obj, &isArray));
   CHECK(isArray);
   CHECK(JS_GetProperty(cx, obj, "0", &v2));
   CHECK(v2.isInt32(1));
@@ -136,13 +135,13 @@ BEGIN_TEST(testParseJSON_success) {
   CHECK(Parse(cx, "{}", &v));
   CHECK(v.isObject());
   obj = &v.toObject();
-  CHECK(JS_IsArrayObject(cx, obj, &isArray));
+  CHECK(JS::IsArrayObject(cx, obj, &isArray));
   CHECK(!isArray);
 
   CHECK(Parse(cx, "{ \"f\": 17 }", &v));
   CHECK(v.isObject());
   obj = &v.toObject();
-  CHECK(JS_IsArrayObject(cx, obj, &isArray));
+  CHECK(JS::IsArrayObject(cx, obj, &isArray));
   CHECK(!isArray);
   CHECK(JS_GetProperty(cx, obj, "f", &v2));
   CHECK(v2.isInt32(17));
@@ -151,7 +150,7 @@ BEGIN_TEST(testParseJSON_success) {
 }
 
 template <size_t N>
-static JSFlatString* NewString(JSContext* cx, const char16_t (&chars)[N]) {
+static JSLinearString* NewString(JSContext* cx, const char16_t (&chars)[N]) {
   return js::NewStringCopyN<CanGC>(cx, chars, N);
 }
 

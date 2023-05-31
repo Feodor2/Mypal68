@@ -11,7 +11,6 @@ var expect = 'No Crash';
 printBugNumber(BUGNUMBER);
 printStatus (summary);
 
-options('strict');
 
 var code = "var bar1=new Array();\n" +
   "bar1[0]='foo';\n" +

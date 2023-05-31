@@ -13,24 +13,19 @@
  * limitations under the License.
  */
 
-extern crate cranelift_codegen;
-extern crate cranelift_wasm;
-#[macro_use]
-extern crate target_lexicon;
 #[macro_use]
 extern crate log;
-extern crate env_logger;
 
-mod baldrapi; // Low-level C API, ignore this.
-mod baldrdash; // High-level Rust API, use this.
+mod bindings; // High-level bindings for C++ data structures.
 mod compile; // Cranelift function compiler.
-mod cpu; // CPU detection and `TargetISA` configuration.
+mod isa; // `TargetISA` configuration.
 mod utils; // Helpers for other source files.
 mod wasm2clif; // WebAssembly to Cranelift translation callbacks.
 
-use baldrdash::{CompiledFunc, FuncCompileInput, ModuleEnvironment, StaticEnvironment};
-use compile::BatchCompiler;
 use std::ptr;
+
+use crate::bindings::{CompiledFunc, FuncCompileInput, ModuleEnvironment, StaticEnvironment};
+use crate::compile::BatchCompiler;
 
 #[no_mangle]
 pub extern "C" fn cranelift_initialize() {
@@ -52,7 +47,7 @@ pub extern "C" fn cranelift_initialize() {
 #[no_mangle]
 pub unsafe extern "C" fn cranelift_compiler_create<'a, 'b>(
     static_env: *const StaticEnvironment,
-    env: *const baldrapi::CraneliftModuleEnvironment,
+    env: *const bindings::LowLevelModuleEnvironment,
 ) -> *mut BatchCompiler<'a, 'b> {
     let env = env.as_ref().unwrap();
     let static_env = static_env.as_ref().unwrap();
@@ -91,12 +86,14 @@ pub unsafe extern "C" fn cranelift_compile_function(
     let data = data.as_ref().unwrap();
 
     if let Err(e) = compiler.translate_wasm(data) {
-        error!("Wasm translation error: {}\n{}", e, compiler);
+        error!("Wasm translation error: {}\n", e);
+        info!("Translated function: {}", compiler);
         return false;
     };
 
     if let Err(e) = compiler.compile() {
-        error!("Cranelift compilation error: {}\n{}", e, compiler);
+        error!("Cranelift compilation error: {}\n", e);
+        info!("Compiled function: {}", compiler);
         return false;
     };
 

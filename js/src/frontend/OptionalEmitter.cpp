@@ -1,6 +1,4 @@
-/* -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 2 -*-
- * vim: set ts=8 sts=2 et sw=2 tw=80:
- * This Source Code Form is subject to the terms of the Mozilla Public
+/* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
@@ -28,7 +26,7 @@ bool OptionalEmitter::emitJumpShortCircuit() {
     return false;
   }
 
-  if (!bce_->emit1(JSOP_NOT)) {
+  if (!bce_->emit1(JSOp::Not)) {
     //              [stack] OBJ UNDEFINED-OR-NULL
     return false;
   }
@@ -37,7 +35,7 @@ bool OptionalEmitter::emitJumpShortCircuit() {
     return false;
   }
 
-  if (!bce_->emitJump(JSOP_GOTO, &jumpShortCircuit_)) {
+  if (!bce_->emitJump(JSOp::Goto, &jumpShortCircuit_)) {
     //              [stack] UNDEFINED-OR-NULL
     return false;
   }
@@ -56,7 +54,7 @@ bool OptionalEmitter::emitJumpShortCircuitForCall() {
              state_ == State::ShortCircuitForCall);
   int32_t depth = bce_->bytecodeSection().stackDepth();
   MOZ_ASSERT(initialDepth_ + 2 == depth);
-  if (!bce_->emit1(JSOP_SWAP)) {
+  if (!bce_->emit1(JSOp::Swap)) {
     //              [stack] THIS CALLEE
     return false;
   }
@@ -67,7 +65,7 @@ bool OptionalEmitter::emitJumpShortCircuitForCall() {
     return false;
   }
 
-  if (!bce_->emit1(JSOP_NOT)) {
+  if (!bce_->emit1(JSOp::Not)) {
     //              [stack] THIS CALLEE UNDEFINED-OR-NULL
     return false;
   }
@@ -76,12 +74,12 @@ bool OptionalEmitter::emitJumpShortCircuitForCall() {
     return false;
   }
 
-  if (!bce_->emit1(JSOP_POP)) {
+  if (!bce_->emit1(JSOp::Pop)) {
     //              [stack] THIS
     return false;
   }
 
-  if (!bce_->emitJump(JSOP_GOTO, &jumpShortCircuit_)) {
+  if (!bce_->emitJump(JSOp::Goto, &jumpShortCircuit_)) {
     //              [stack] UNDEFINED-OR-NULL
     return false;
   }
@@ -92,7 +90,7 @@ bool OptionalEmitter::emitJumpShortCircuitForCall() {
 
   bce_->bytecodeSection().setStackDepth(depth);
 
-  if (!bce_->emit1(JSOP_SWAP)) {
+  if (!bce_->emit1(JSOp::Swap)) {
     //              [stack] THIS CALLEE
     return false;
   }
@@ -112,7 +110,7 @@ bool OptionalEmitter::emitOptionalJumpTarget(JSOp op,
 
   // if we get to this point, it means that the optional chain did not short
   // circuit, so we should skip the short circuiting bytecode.
-  if (!bce_->emitJump(JSOP_GOTO, &jumpFinish_)) {
+  if (!bce_->emitJump(JSOp::Goto, &jumpFinish_)) {
     //              [stack] # if call
     //              [stack] CALLEE THIS
     //              [stack] # otherwise, if defined
@@ -130,7 +128,7 @@ bool OptionalEmitter::emitOptionalJumpTarget(JSOp op,
   // reset stack depth to the depth when we jumped
   bce_->bytecodeSection().setStackDepth(initialDepth_ + 1);
 
-  if (!bce_->emit1(JSOP_POP)) {
+  if (!bce_->emit1(JSOp::Pop)) {
     //              [stack]
     return false;
   }

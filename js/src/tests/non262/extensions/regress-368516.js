@@ -18,8 +18,7 @@ function test()
   printBugNumber(BUGNUMBER);
   printStatus (summary);
  
-  var bomchars = ['\uFFFE',
-                  '\uFEFF'];
+  var bomchars = ['\uFEFF'];
 
   for (var i = 0; i < bomchars.length; i++)
   {

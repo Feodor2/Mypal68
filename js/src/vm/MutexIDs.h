@@ -10,7 +10,8 @@
 // Central definition point for mutex ordering.
 //
 // Mutexes can only be acquired in increasing order. This prevents the
-// possibility of deadlock.
+// possibility of deadlock. Mutexes with the same order cannot be held
+// at the same time.
 
 #define FOR_EACH_MUTEX(_)             \
   _(TestMutex, 100)                   \
@@ -27,6 +28,7 @@
   _(GlobalHelperThreadState, 300)     \
                                       \
   _(GCLock, 400)                      \
+  _(StoreBuffer, 400)                 \
                                       \
   _(SharedImmutableStringsCache, 500) \
   _(FutexThread, 500)                 \
@@ -54,9 +56,10 @@
   _(WasmStreamStatus, 500)            \
   _(WasmRuntimeInstances, 500)        \
   _(WasmSignalInstallState, 500)      \
+  _(WasmHugeMemoryEnabled, 500)       \
   _(MemoryTracker, 500)               \
                                       \
-  _(IcuTimeZoneStateMutex, 600)       \
+  _(IrregexpLazyStatic, 600)          \
   _(ThreadId, 600)                    \
   _(WasmCodeSegmentMap, 600)          \
   _(TraceLoggerGraphState, 600)       \

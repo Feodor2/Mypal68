@@ -146,8 +146,9 @@ void LIRGeneratorX86Shared::lowerMulI(MMul* mul, MDefinition* lhs,
                                       MDefinition* rhs) {
   // Note: If we need a negative zero check, lhs is used twice.
   LAllocation lhsCopy = mul->canBeNegativeZero() ? use(lhs) : LAllocation();
-  LMulI* lir =
-      new (alloc()) LMulI(useRegisterAtStart(lhs), useOrConstant(rhs), lhsCopy);
+  LMulI* lir = new (alloc()) LMulI(
+      useRegisterAtStart(lhs),
+      lhs != rhs ? useOrConstant(rhs) : useOrConstantAtStart(rhs), lhsCopy);
   if (mul->fallible()) {
     assignSnapshot(lir, Bailout_DoubleOutput);
   }
@@ -171,12 +172,16 @@ void LIRGeneratorX86Shared::lowerDivI(MDiv* div) {
     if (rhs != 0 && uint32_t(1) << shift == Abs(rhs)) {
       LAllocation lhs = useRegisterAtStart(div->lhs());
       LDivPowTwoI* lir;
-      if (!div->canBeNegativeDividend()) {
+      // When truncated with maybe a non-zero remainder, we have to round the
+      // result toward 0. This requires an extra register to round up/down
+      // whether the left-hand-side is signed.
+      bool needRoundNeg = div->canBeNegativeDividend() && div->isTruncated();
+      if (!needRoundNeg) {
         // Numerator is unsigned, so does not need adjusting.
         lir = new (alloc()) LDivPowTwoI(lhs, lhs, shift, rhs < 0);
       } else {
-        // Numerator is signed, and needs adjusting, and an extra
-        // lhs copy register is needed.
+        // Numerator might be signed, and needs adjusting, and an extra lhs copy
+        // is needed to round the result of the integer division towards zero.
         lir = new (alloc())
             LDivPowTwoI(lhs, useRegister(div->lhs()), shift, rhs < 0);
       }
@@ -426,6 +431,17 @@ void LIRGeneratorX86Shared::lowerUrshD(MUrsh* mir) {
       rhs->isConstant() ? useOrConstant(rhs) : useFixed(rhs, ecx);
 
   LUrshD* lir = new (alloc()) LUrshD(lhsUse, rhsAlloc, tempCopy(lhs, 0));
+  define(lir, mir);
+}
+
+void LIRGeneratorX86Shared::lowerPowOfTwoI(MPow* mir) {
+  int32_t base = mir->input()->toConstant()->toInt32();
+  MDefinition* power = mir->power();
+
+  // shift operator should be in register ecx;
+  // x86 can't shift a non-ecx register.
+  auto* lir = new (alloc()) LPowOfTwoI(base, useFixed(power, ecx));
+  assignSnapshot(lir, Bailout_PrecisionLoss);
   define(lir, mir);
 }
 

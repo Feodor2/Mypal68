@@ -39,7 +39,17 @@ enum class SectionId {
   GcFeatureOptIn = 42  // Arbitrary, but fits in 7 bits
 };
 
+// WebAssembly type encodings are all single-byte negative SLEB128s, hence:
+//  forall tc:TypeCode. ((tc & SLEB128SignMask) == SLEB128SignBit
+static const uint8_t SLEB128SignMask = 0xc0;
+static const uint8_t SLEB128SignBit = 0x40;
+
 enum class TypeCode {
+
+  // If more "simple primitive" (non-reference, non-constructor,
+  // non-special-purpose) types are added here then you MUST update
+  // LowestPrimitiveTypeCode, below.
+
   I32 = 0x7f,  // SLEB128(-0x01)
   I64 = 0x7e,  // SLEB128(-0x02)
   F32 = 0x7d,  // SLEB128(-0x03)
@@ -49,25 +59,31 @@ enum class TypeCode {
   FuncRef = 0x70,  // SLEB128(-0x10)
 
   // A reference to any type.
-  AnyRef = 0x6f,
+  AnyRef = 0x6f,  // SLEB128(-0x11)
+
+  // A null reference.
+  NullRef = 0x6e,  // SLEB128(-0x12)
 
   // Type constructor for reference types.
-  Ref = 0x6e,
+  OptRef = 0x6c,
 
   // Type constructor for function types
   Func = 0x60,  // SLEB128(-0x20)
 
   // Type constructor for structure types - unofficial
-  Struct = 0x50,  // SLEB128(-0x30)
+  Struct = 0x5f,  // SLEB128(-0x21)
 
-  // Special code representing the block signature ()->()
+  // The 'empty' case of blocktype.
   BlockVoid = 0x40,  // SLEB128(-0x40)
-
-  // Type designator for null - unofficial, will not appear in the binary format
-  NullRef = 0x39,
 
   Limit = 0x80
 };
+
+// This is the lowest-valued TypeCode that is a primitive type, used in
+// UnpackTypeCodeTypeAbstracted().  If primitive typecodes are added below any
+// reference typecode then the logic in that function MUST change.
+
+static constexpr TypeCode LowestPrimitiveTypeCode = TypeCode::F64;
 
 enum class FuncTypeIdDescKind { None, Immediate, Global };
 
@@ -133,10 +149,22 @@ enum class MemoryTableFlags {
 
 enum class MemoryMasks { AllowUnshared = 0x1, AllowShared = 0x3 };
 
-enum class InitializerKind {
+enum class DataSegmentKind {
   Active = 0x00,
   Passive = 0x01,
-  ActiveWithIndex = 0x02
+  ActiveWithMemoryIndex = 0x02
+};
+
+enum class ElemSegmentKind : uint32_t {
+  Active = 0x0,
+  Passive = 0x1,
+  ActiveWithTableIndex = 0x2,
+  Declared = 0x3,
+};
+
+enum class ElemSegmentPayload : uint32_t {
+  ExternIndex = 0x0,
+  ElemExpression = 0x4,
 };
 
 enum class Op {
@@ -159,7 +187,8 @@ enum class Op {
 
   // Parametric operators
   Drop = 0x1a,
-  Select = 0x1b,
+  SelectNumeric = 0x1b,
+  SelectTyped = 0x1c,
 
   // Variable access
   GetLocal = 0x20,
@@ -341,14 +370,16 @@ enum class Op {
   I64Extend16S = 0xc3,
   I64Extend32S = 0xc4,
 
-  // GC ops
+  // Reference types
   RefNull = 0xd0,
   RefIsNull = 0xd1,
   RefFunc = 0xd2,
 
-  RefEq = 0xf0,  // Unofficial + experimental
+  // GC (experimental)
+  RefEq = 0xd5,
 
-  FirstPrefix = 0xfc,
+  FirstPrefix = 0xfb,
+  GcPrefix = 0xfb,
   MiscPrefix = 0xfc,
   ThreadPrefix = 0xfe,
   MozPrefix = 0xff,
@@ -357,6 +388,17 @@ enum class Op {
 };
 
 inline bool IsPrefixByte(uint8_t b) { return b >= uint8_t(Op::FirstPrefix); }
+
+// Opcodes in the GC opcode space.
+enum class GcOp {
+  // Structure operations
+  StructNew = 0x00,
+  StructGet = 0x03,
+  StructSet = 0x06,
+  StructNarrow = 0x07,
+
+  Limit
+};
 
 // Opcodes in the "miscellaneous" opcode space.
 enum class MiscOp {
@@ -384,12 +426,6 @@ enum class MiscOp {
   TableSize = 0x10,
   TableFill = 0x11,
 
-  // Structure operations.  Note, these are unofficial.
-  StructNew = 0x50,
-  StructGet = 0x51,
-  StructSet = 0x52,
-  StructNarrow = 0x53,
-
   Limit
 };
 
@@ -399,6 +435,7 @@ enum class ThreadOp {
   Wake = 0x00,
   I32Wait = 0x01,
   I64Wait = 0x02,
+  Fence = 0x03,
 
   // Load and store
   I32AtomicLoad = 0x10,
@@ -545,8 +582,7 @@ enum class FieldFlags { Mutable = 0x01, AllowedMask = 0x01 };
 
 static const unsigned MaxTypes = 1000000;
 static const unsigned MaxFuncs = 1000000;
-static const unsigned MaxTables =
-    100000;  // TODO: get this into the shared limits spec
+static const unsigned MaxTables = 100000;
 static const unsigned MaxImports = 100000;
 static const unsigned MaxExports = 100000;
 static const unsigned MaxGlobals = 1000000;
@@ -555,6 +591,9 @@ static const unsigned MaxElemSegments = 10000000;
 static const unsigned MaxTableLength = 10000000;
 static const unsigned MaxLocals = 50000;
 static const unsigned MaxParams = 1000;
+// The actual maximum results may be `1` if multi-value is not enabled. Check
+// `env->funcMaxResults()` to get the correct value for a module.
+static const unsigned MaxResults = 1000;
 static const unsigned MaxStructFields = 1000;
 static const unsigned MaxMemoryMaximumPages = 65536;
 static const unsigned MaxStringBytes = 100000;
@@ -567,6 +606,12 @@ static const unsigned MaxTableInitialLength = 10000000;
 static const unsigned MaxBrTableElems = 1000000;
 static const unsigned MaxMemoryInitialPages = 16384;
 static const unsigned MaxCodeSectionBytes = MaxModuleBytes;
+static const unsigned MaxResultsForJitEntry = 1;
+static const unsigned MaxResultsForJitExit = 1;
+static const unsigned MaxResultsForJitInlineCall = MaxResultsForJitEntry;
+// The maximum number of results of a function call or block that may be
+// returned in registers.
+static const unsigned MaxRegisterResults = 1;
 
 // A magic value of the FramePointer to indicate after a return to the entry
 // stub that an exception has been caught and that we should throw.

@@ -74,4 +74,3 @@ function test()
     reportCompare(expectedvalues[i], actualvalues[i], statusitems[i]);
   }
 }
-

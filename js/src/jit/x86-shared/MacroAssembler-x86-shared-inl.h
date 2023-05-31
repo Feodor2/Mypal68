@@ -119,6 +119,21 @@ void MacroAssembler::popcnt32(Register input, Register output, Register tmp) {
 }
 
 // ===============================================================
+// Swap instructions
+
+void MacroAssembler::swap16SignExtend(Register reg) {
+  rolw(Imm32(8), reg);
+  movswl(reg, reg);
+}
+
+void MacroAssembler::swap16ZeroExtend(Register reg) {
+  rolw(Imm32(8), reg);
+  movzwl(reg, reg);
+}
+
+void MacroAssembler::swap32(Register reg) { bswapl(reg); }
+
+// ===============================================================
 // Arithmetic instructions
 
 void MacroAssembler::add32(Register src, Register dest) { addl(src, dest); }
@@ -244,11 +259,11 @@ void MacroAssembler::absDouble(FloatRegister src, FloatRegister dest) {
 }
 
 void MacroAssembler::sqrtFloat32(FloatRegister src, FloatRegister dest) {
-  vsqrtss(src, src, dest);
+  vsqrtss(src, dest, dest);
 }
 
 void MacroAssembler::sqrtDouble(FloatRegister src, FloatRegister dest) {
-  vsqrtsd(src, src, dest);
+  vsqrtsd(src, dest, dest);
 }
 
 void MacroAssembler::minFloat32(FloatRegister other, FloatRegister srcDest,
@@ -310,65 +325,15 @@ void MacroAssembler::lshift32(Register shift, Register srcDest) {
   shll_cl(srcDest);
 }
 
-// All the shift instructions have the same requirement; the shift amount
-// must be in ecx. In order to handle arbitrary input registers, we divide this
-// operation into phases:
-//
-// [PUSH]     Preserve any registers which may be clobbered
-// [MOVE]     Move the shift to ecx and the amount to be shifted to an
-//            arbitrarily chosen preserved register that is not ecx.
-// [SHIFT]    Do the shift operation
-// [MOVE]     Move the result back to the destination
-// [POP]      Restore the registers which were preserved.
-inline void FlexibleShift32(MacroAssembler& masm, Register shift,
-                            Register srcDest, bool left,
-                            bool arithmetic = false) {
-  // Choose an arbitrary register that's not ecx
-  Register internalSrcDest = (srcDest != ecx) ? srcDest : ebx;
-  MOZ_ASSERT(internalSrcDest != ecx);
-
-  // Add registers we may clobber and want to ensure are restored as live, and
-  // remove what we definitely clobber (the destination)
-  LiveRegisterSet preserve;
-
-  if (shift != ecx) {
-    preserve.add(ecx);
-  }
-  preserve.add(internalSrcDest);
-
-  preserve.takeUnchecked(srcDest);
-
-  // [PUSH]
-  masm.PushRegsInMask(preserve);
-
-  // [MOVE]
-  masm.moveRegPair(shift, srcDest, ecx, internalSrcDest);
-  if (masm.oom()) {
-    return;
-  }
-
-  // [SHIFT]
-  if (left) {
-    masm.lshift32(ecx, internalSrcDest);
-  } else {
-    if (arithmetic) {
-      masm.rshift32Arithmetic(ecx, internalSrcDest);
-    } else {
-      masm.rshift32(ecx, internalSrcDest);
-    }
-  }
-
-  // [MOVE]
-  if (internalSrcDest != srcDest) {
-    masm.mov(internalSrcDest, srcDest);
-  }
-
-  // [POP]
-  masm.PopRegsInMask(preserve);
-}
-
 void MacroAssembler::flexibleLshift32(Register shift, Register srcDest) {
-  FlexibleShift32(*this, shift, srcDest, true);
+  if (shift == ecx) {
+    shll_cl(srcDest);
+  } else {
+    // Shift amount must be in ecx.
+    xchg(shift, ecx);
+    shll_cl(shift == srcDest ? ecx : srcDest == ecx ? shift : srcDest);
+    xchg(shift, ecx);
+  }
 }
 
 void MacroAssembler::rshift32(Register shift, Register srcDest) {
@@ -377,7 +342,14 @@ void MacroAssembler::rshift32(Register shift, Register srcDest) {
 }
 
 void MacroAssembler::flexibleRshift32(Register shift, Register srcDest) {
-  FlexibleShift32(*this, shift, srcDest, false, false);
+  if (shift == ecx) {
+    shrl_cl(srcDest);
+  } else {
+    // Shift amount must be in ecx.
+    xchg(shift, ecx);
+    shrl_cl(shift == srcDest ? ecx : srcDest == ecx ? shift : srcDest);
+    xchg(shift, ecx);
+  }
 }
 
 void MacroAssembler::rshift32Arithmetic(Register shift, Register srcDest) {
@@ -387,7 +359,14 @@ void MacroAssembler::rshift32Arithmetic(Register shift, Register srcDest) {
 
 void MacroAssembler::flexibleRshift32Arithmetic(Register shift,
                                                 Register srcDest) {
-  FlexibleShift32(*this, shift, srcDest, false, true);
+  if (shift == ecx) {
+    sarl_cl(srcDest);
+  } else {
+    // Shift amount must be in ecx.
+    xchg(shift, ecx);
+    sarl_cl(shift == srcDest ? ecx : srcDest == ecx ? shift : srcDest);
+    xchg(shift, ecx);
+  }
 }
 
 void MacroAssembler::lshift32(Imm32 shift, Register srcDest) {
@@ -585,6 +564,20 @@ template <typename T>
 void MacroAssembler::branchMul32(Condition cond, T src, Register dest,
                                  Label* label) {
   mul32(src, dest);
+  j(cond, label);
+}
+
+template <typename T>
+void MacroAssembler::branchRshift32(Condition cond, T src, Register dest,
+                                    Label* label) {
+  MOZ_ASSERT(cond == Zero || cond == NonZero);
+  rshift32(src, dest);
+  j(cond, label);
+}
+
+void MacroAssembler::branchNeg32(Condition cond, Register reg, Label* label) {
+  MOZ_ASSERT(cond == Overflow);
+  neg32(reg);
   j(cond, label);
 }
 
@@ -819,6 +812,11 @@ void MacroAssembler::branchTestSymbol(Condition cond, Register tag,
   branchTestSymbolImpl(cond, tag, label);
 }
 
+void MacroAssembler::branchTestSymbol(Condition cond, const Address& address,
+                                      Label* label) {
+  branchTestSymbolImpl(cond, address, label);
+}
+
 void MacroAssembler::branchTestSymbol(Condition cond, const BaseIndex& address,
                                       Label* label) {
   branchTestSymbolImpl(cond, address, label);
@@ -839,6 +837,11 @@ void MacroAssembler::branchTestSymbolImpl(Condition cond, const T& t,
 void MacroAssembler::branchTestBigInt(Condition cond, Register tag,
                                       Label* label) {
   branchTestBigIntImpl(cond, tag, label);
+}
+
+void MacroAssembler::branchTestBigInt(Condition cond, const Address& address,
+                                      Label* label) {
+  branchTestBigIntImpl(cond, address, label);
 }
 
 void MacroAssembler::branchTestBigInt(Condition cond, const BaseIndex& address,
@@ -927,6 +930,12 @@ void MacroAssembler::branchTestGCThing(Condition cond, const Address& address,
 void MacroAssembler::branchTestGCThing(Condition cond, const BaseIndex& address,
                                        Label* label) {
   branchTestGCThingImpl(cond, address, label);
+}
+
+void MacroAssembler::branchTestGCThing(Condition cond,
+                                       const ValueOperand& value,
+                                       Label* label) {
+  branchTestGCThingImpl(cond, value, label);
 }
 
 template <typename T>

@@ -7,6 +7,8 @@
 
 #include "mozilla/Variant.h"
 
+#include <type_traits>
+
 #include "js/GCPolicyAPI.h"
 #include "js/RootingAPI.h"
 #include "js/TracingAPI.h"
@@ -112,8 +114,7 @@ struct GCPolicy<mozilla::Variant<Ts...>> {
 
   static bool isValid(const mozilla::Variant<Ts...>& v) {
     return v.match([](auto& v) {
-      return GCPolicy<
-          typename mozilla::RemoveReference<decltype(v)>::Type>::isValid(v);
+      return GCPolicy<std::remove_reference_t<decltype(v)>>::isValid(v);
     });
   }
 };

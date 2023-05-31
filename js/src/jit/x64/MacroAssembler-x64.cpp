@@ -10,6 +10,8 @@
 #include "jit/JitRealm.h"
 #include "jit/MacroAssembler.h"
 #include "jit/MoveEmitter.h"
+#include "util/Memory.h"
+#include "vm/JitActivation.h"  // js::jit::JitActivation
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -182,7 +184,7 @@ void MacroAssemblerX64::handleFailureWithHandlerTail(void* handler,
   jmp(Operand(rax));
 
   // If we found a finally block, this must be a baseline frame. Push
-  // two values expected by JSOP_RETSUB: BooleanValue(true) and the
+  // two values expected by JSOp::Retsub: BooleanValue(true) and the
   // exception.
   bind(&finally);
   ValueOperand exception = ValueOperand(rcx);
@@ -424,7 +426,7 @@ void MacroAssembler::moveValue(const TypedOrValueRegister& src,
     convertFloat32ToDouble(freg, scratch);
     freg = scratch;
   }
-  vmovq(freg, dest.valueReg());
+  boxDouble(freg, dest, freg);
 }
 
 void MacroAssembler::moveValue(const ValueOperand& src,
@@ -465,45 +467,18 @@ void MacroAssembler::branchPtrInNurseryChunk(Condition cond, Register ptr,
            Imm32(int32_t(gc::ChunkLocation::Nursery)), label);
 }
 
-void MacroAssembler::branchValueIsNurseryObject(Condition cond,
-                                                ValueOperand value,
-                                                Register temp, Label* label) {
-  MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
-  MOZ_ASSERT(temp != InvalidReg);
-
-  Label done;
-  branchTestObject(Assembler::NotEqual, value,
-                   cond == Assembler::Equal ? &done : label);
-
-  unboxObject(value, temp);
-  orPtr(Imm32(gc::ChunkMask), temp);
-  branch32(cond, Address(temp, gc::ChunkLocationOffsetFromLastByte),
-           Imm32(int32_t(gc::ChunkLocation::Nursery)), label);
-
-  bind(&done);
-}
-
 template <typename T>
 void MacroAssembler::branchValueIsNurseryCellImpl(Condition cond,
                                                   const T& value, Register temp,
                                                   Label* label) {
   MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
   MOZ_ASSERT(temp != InvalidReg);
-  Label done, checkAddress, checkObjectAddress;
 
-  Register tag = temp;
-  splitTag(value, tag);
-  branchTestObject(Assembler::Equal, tag, &checkObjectAddress);
-  branchTestString(Assembler::NotEqual, tag,
-                   cond == Assembler::Equal ? &done : label);
+  Label done;
+  branchTestGCThing(Assembler::NotEqual, value,
+                    cond == Assembler::Equal ? &done : label);
 
-  unboxString(value, temp);
-  jump(&checkAddress);
-
-  bind(&checkObjectAddress);
-  unboxObject(value, temp);
-
-  bind(&checkAddress);
+  unboxGCThingForGCBarrier(value, temp);
   orPtr(Imm32(gc::ChunkMask), temp);
   branch32(cond, Address(temp, gc::ChunkLocationOffsetFromLastByte),
            Imm32(int32_t(gc::ChunkLocation::Nursery)), label);
@@ -540,7 +515,7 @@ void MacroAssembler::storeUnboxedValue(const ConstantOrRegister& value,
                                        MIRType valueType, const T& dest,
                                        MIRType slotType) {
   if (valueType == MIRType::Double) {
-    storeDouble(value.reg().typedReg().fpu(), dest);
+    boxDouble(value.reg().typedReg().fpu(), dest);
     return;
   }
 
@@ -576,6 +551,12 @@ template void MacroAssembler::storeUnboxedValue(const ConstantOrRegister& value,
 template void MacroAssembler::storeUnboxedValue(
     const ConstantOrRegister& value, MIRType valueType,
     const BaseObjectElementIndex& dest, MIRType slotType);
+
+void MacroAssembler::PushBoxed(FloatRegister reg) {
+  subq(Imm32(sizeof(double)), StackPointer);
+  boxDouble(reg, Address(StackPointer, 0));
+  adjustFrame(sizeof(double));
+}
 
 // ========================================================================
 // wasm support
@@ -1044,6 +1025,18 @@ void MacroAssembler::atomicFetchOp64(const Synchronization& sync, AtomicOp op,
                                      Register64 value, const Address& mem,
                                      Register64 temp, Register64 output) {
   AtomicFetchOp64(*this, nullptr, op, value.reg, mem, temp.reg, output.reg);
+}
+
+CodeOffset MacroAssembler::moveNearAddressWithPatch(Register dest) {
+  return leaRipRelative(dest);
+}
+
+void MacroAssembler::patchNearAddressMove(CodeLocationLabel loc,
+                                          CodeLocationLabel target) {
+  ptrdiff_t off = target - loc;
+  MOZ_ASSERT(off > ptrdiff_t(INT32_MIN));
+  MOZ_ASSERT(off < ptrdiff_t(INT32_MAX));
+  PatchWrite_Imm32(loc, Imm32(off));
 }
 
 //}}} check_macroassembler_style

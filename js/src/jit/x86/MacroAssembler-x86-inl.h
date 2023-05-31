@@ -86,6 +86,10 @@ void MacroAssembler::move32To64SignExtend(Register src, Register64 dest) {
   masm.cdq();
 }
 
+void MacroAssembler::move32ZeroExtendToPtr(Register src, Register dest) {
+  movl(src, dest);
+}
+
 // ===============================================================
 // Load instructions
 
@@ -149,6 +153,15 @@ void MacroAssembler::xor64(Register64 src, Register64 dest) {
 void MacroAssembler::xorPtr(Register src, Register dest) { xorl(src, dest); }
 
 void MacroAssembler::xorPtr(Imm32 imm, Register dest) { xorl(imm, dest); }
+
+// ===============================================================
+// Swap instructions
+
+void MacroAssembler::swap64(Register64 reg) {
+  bswapl(reg.low);
+  bswapl(reg.high);
+  xchgl(reg.low, reg.high);
+}
 
 // ===============================================================
 // Arithmetic functions
@@ -890,6 +903,12 @@ void MacroAssembler::cmp32MovePtr(Condition cond, Register lhs, Imm32 rhs,
   cmovCCl(cond, Operand(src), dest);
 }
 
+void MacroAssembler::cmp32LoadPtr(Condition cond, const Address& lhs, Imm32 rhs,
+                                  const Address& src, Register dest) {
+  cmp32(lhs, rhs);
+  cmovCCl(cond, Operand(src), dest);
+}
+
 void MacroAssembler::test32LoadPtr(Condition cond, const Address& addr,
                                    Imm32 mask, const Address& src,
                                    Register dest) {
@@ -1021,6 +1040,43 @@ void MacroAssembler::truncateDoubleToUInt64(Address src, Address dest,
   store32(temp, HighWord(dest));
 
   bind(&done);
+}
+
+template <typename T>
+void MacroAssemblerX86::fallibleUnboxPtrImpl(const T& src, Register dest,
+                                             JSValueType type, Label* fail) {
+  switch (type) {
+    case JSVAL_TYPE_OBJECT:
+      asMasm().branchTestObject(Assembler::NotEqual, src, fail);
+      break;
+    case JSVAL_TYPE_STRING:
+      asMasm().branchTestString(Assembler::NotEqual, src, fail);
+      break;
+    case JSVAL_TYPE_SYMBOL:
+      asMasm().branchTestSymbol(Assembler::NotEqual, src, fail);
+      break;
+    case JSVAL_TYPE_BIGINT:
+      asMasm().branchTestBigInt(Assembler::NotEqual, src, fail);
+      break;
+    default:
+      MOZ_CRASH("Unexpected type");
+  }
+  unboxNonDouble(src, dest, type);
+}
+
+void MacroAssembler::fallibleUnboxPtr(const ValueOperand& src, Register dest,
+                                      JSValueType type, Label* fail) {
+  fallibleUnboxPtrImpl(src, dest, type, fail);
+}
+
+void MacroAssembler::fallibleUnboxPtr(const Address& src, Register dest,
+                                      JSValueType type, Label* fail) {
+  fallibleUnboxPtrImpl(src, dest, type, fail);
+}
+
+void MacroAssembler::fallibleUnboxPtr(const BaseIndex& src, Register dest,
+                                      JSValueType type, Label* fail) {
+  fallibleUnboxPtrImpl(src, dest, type, fail);
 }
 
 //}}} check_macroassembler_style

@@ -39,9 +39,6 @@ class EmitterScope;
 class MOZ_STACK_CLASS ForOfEmitter {
   BytecodeEmitter* bce_;
 
-  // The source note index for SRC_FOR_OF.
-  unsigned noteIndex_ = 0;
-
 #ifdef DEBUG
   // The stack depth before emitting IteratorNext code inside loop.
   int32_t loopDepth_ = 0;
@@ -49,9 +46,6 @@ class MOZ_STACK_CLASS ForOfEmitter {
 
   bool allowSelfHostedIter_;
   IteratorKind iterKind_;
-
-  // Jump from into JSOP_LOOPENTRY.
-  JumpList initialJump_;
 
   mozilla::Maybe<ForOfLoopControl> loopInfo_;
 

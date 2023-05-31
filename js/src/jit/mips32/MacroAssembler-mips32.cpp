@@ -15,6 +15,8 @@
 #include "jit/mips32/Simulator-mips32.h"
 #include "jit/MoveEmitter.h"
 #include "jit/SharedICRegisters.h"
+#include "util/Memory.h"
+#include "vm/JitActivation.h"  // js::jit::JitActivation
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -819,7 +821,7 @@ void MacroAssemblerMIPS::ma_lid(FloatRegister dest, double value) {
     uint32_t hi;
   };
   DoubleStruct intStruct = mozilla::BitwiseCast<DoubleStruct>(value);
-#if MOZ_BIG_ENDIAN
+#if MOZ_BIG_ENDIAN()
   mozilla::Swap(intStruct.hi, intStruct.lo);
 #endif
 
@@ -1072,7 +1074,7 @@ void MacroAssemblerMIPSCompat::loadPrivate(const Address& address,
 void MacroAssemblerMIPSCompat::loadUnalignedDouble(
     const wasm::MemoryAccessDesc& access, const BaseIndex& src, Register temp,
     FloatRegister dest) {
-  MOZ_ASSERT(MOZ_LITTLE_ENDIAN, "Wasm-only; wasm is disabled on big-endian.");
+  MOZ_ASSERT(MOZ_LITTLE_ENDIAN(), "Wasm-only; wasm is disabled on big-endian.");
   computeScaledAddress(src, SecondScratchReg);
 
   BufferOffset load;
@@ -1103,7 +1105,7 @@ void MacroAssemblerMIPSCompat::loadUnalignedDouble(
 void MacroAssemblerMIPSCompat::loadUnalignedFloat32(
     const wasm::MemoryAccessDesc& access, const BaseIndex& src, Register temp,
     FloatRegister dest) {
-  MOZ_ASSERT(MOZ_LITTLE_ENDIAN, "Wasm-only; wasm is disabled on big-endian.");
+  MOZ_ASSERT(MOZ_LITTLE_ENDIAN(), "Wasm-only; wasm is disabled on big-endian.");
   computeScaledAddress(src, SecondScratchReg);
   BufferOffset load;
   if (Imm16::IsInSignedRange(src.offset) &&
@@ -1225,7 +1227,7 @@ void MacroAssemblerMIPSCompat::storePtr(Register src, AbsoluteAddress dest) {
 void MacroAssemblerMIPSCompat::storeUnalignedFloat32(
     const wasm::MemoryAccessDesc& access, FloatRegister src, Register temp,
     const BaseIndex& dest) {
-  MOZ_ASSERT(MOZ_LITTLE_ENDIAN, "Wasm-only; wasm is disabled on big-endian.");
+  MOZ_ASSERT(MOZ_LITTLE_ENDIAN(), "Wasm-only; wasm is disabled on big-endian.");
   computeScaledAddress(dest, SecondScratchReg);
   moveFromFloat32(src, temp);
 
@@ -1246,7 +1248,7 @@ void MacroAssemblerMIPSCompat::storeUnalignedFloat32(
 void MacroAssemblerMIPSCompat::storeUnalignedDouble(
     const wasm::MemoryAccessDesc& access, FloatRegister src, Register temp,
     const BaseIndex& dest) {
-  MOZ_ASSERT(MOZ_LITTLE_ENDIAN, "Wasm-only; wasm is disabled on big-endian.");
+  MOZ_ASSERT(MOZ_LITTLE_ENDIAN(), "Wasm-only; wasm is disabled on big-endian.");
   computeScaledAddress(dest, SecondScratchReg);
 
   BufferOffset store;
@@ -1366,6 +1368,11 @@ void MacroAssemblerMIPSCompat::unboxDouble(const Address& src,
   moveToDoubleHi(ScratchRegister, dest);
 }
 
+void MacroAssemblerMIPSCompat::unboxDouble(const BaseIndex& src,
+                                           FloatRegister dest) {
+  loadDouble(src, dest);
+}
+
 void MacroAssemblerMIPSCompat::unboxString(const ValueOperand& operand,
                                            Register dest) {
   ma_move(dest, operand.payloadReg());
@@ -1375,12 +1382,26 @@ void MacroAssemblerMIPSCompat::unboxString(const Address& src, Register dest) {
   ma_lw(dest, Address(src.base, src.offset + PAYLOAD_OFFSET));
 }
 
+void MacroAssemblerMIPSCompat::unboxBigInt(const ValueOperand& operand,
+                                           Register dest) {
+  ma_move(dest, operand.payloadReg());
+}
+
+void MacroAssemblerMIPSCompat::unboxBigInt(const Address& src, Register dest) {
+  ma_lw(dest, Address(src.base, src.offset + PAYLOAD_OFFSET));
+}
+
 void MacroAssemblerMIPSCompat::unboxObject(const ValueOperand& src,
                                            Register dest) {
   ma_move(dest, src.payloadReg());
 }
 
 void MacroAssemblerMIPSCompat::unboxObject(const Address& src, Register dest) {
+  ma_lw(dest, Address(src.base, src.offset + PAYLOAD_OFFSET));
+}
+
+void MacroAssemblerMIPSCompat::unboxObjectOrNull(const Address& src,
+                                                 Register dest) {
   ma_lw(dest, Address(src.base, src.offset + PAYLOAD_OFFSET));
 }
 
@@ -1397,11 +1418,6 @@ void MacroAssemblerMIPSCompat::unboxValue(const ValueOperand& src,
   } else if (src.payloadReg() != dest.gpr()) {
     ma_move(dest.gpr(), src.payloadReg());
   }
-}
-
-void MacroAssemblerMIPSCompat::unboxPrivate(const ValueOperand& src,
-                                            Register dest) {
-  ma_move(dest, src.payloadReg());
 }
 
 void MacroAssemblerMIPSCompat::boxDouble(FloatRegister src,
@@ -1524,18 +1540,6 @@ void MacroAssemblerMIPSCompat::moveData(const Value& val, Register data) {
   } else {
     ma_li(data, Imm32(val.toNunboxPayload()));
   }
-}
-
-CodeOffsetJump MacroAssemblerMIPSCompat::jumpWithPatch(RepatchLabel* label) {
-  // Only one branch per label.
-  MOZ_ASSERT(!label->used());
-
-  BufferOffset bo = nextOffset();
-  label->use(bo.getOffset());
-  ma_liPatchable(ScratchRegister, Imm32(LabelBase::INVALID_OFFSET));
-  as_jr(ScratchRegister);
-  as_nop();
-  return CodeOffsetJump(bo.getOffset());
 }
 
 /////////////////////////////////////////////////////////////////
@@ -1731,7 +1735,7 @@ void MacroAssemblerMIPSCompat::checkStackAlignment() {
 
 void MacroAssemblerMIPSCompat::alignStackPointer() {
   movePtr(StackPointer, SecondScratchReg);
-  asMasm().subPtr(Imm32(sizeof(uintptr_t)), StackPointer);
+  asMasm().subPtr(Imm32(sizeof(intptr_t)), StackPointer);
   asMasm().andPtr(Imm32(~(ABIStackAlignment - 1)), StackPointer);
   storePtr(SecondScratchReg, Address(StackPointer, 0));
 }
@@ -1802,7 +1806,7 @@ void MacroAssemblerMIPSCompat::handleFailureWithHandlerTail(
   jump(a0);
 
   // If we found a finally block, this must be a baseline frame. Push
-  // two values expected by JSOP_RETSUB: BooleanValue(true) and the
+  // two values expected by JSOp::Retsub: BooleanValue(true) and the
   // exception.
   bind(&finally);
   ValueOperand exception = ValueOperand(a1, a2);
@@ -2180,13 +2184,12 @@ void MacroAssembler::branchValueIsNurseryCell(Condition cond,
                                               const Address& address,
                                               Register temp, Label* label) {
   MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
-  Label done, checkAddress;
 
-  branchTestObject(Assembler::Equal, address, &checkAddress);
-  branchTestString(Assembler::NotEqual, address,
-                   cond == Assembler::Equal ? &done : label);
+  Label done;
 
-  bind(&checkAddress);
+  branchTestGCThing(Assembler::NotEqual, address,
+                    cond == Assembler::Equal ? &done : label);
+
   loadPtr(address, temp);
   branchPtrInNurseryChunk(cond, temp, InvalidReg, label);
 
@@ -2198,25 +2201,10 @@ void MacroAssembler::branchValueIsNurseryCell(Condition cond,
                                               Label* label) {
   MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
 
-  Label done, checkAddress;
-  branchTestObject(Assembler::Equal, value, &checkAddress);
-  branchTestString(Assembler::NotEqual, value,
-                   cond == Assembler::Equal ? &done : label);
-
-  bind(&checkAddress);
-  branchPtrInNurseryChunk(cond, value.payloadReg(), temp, label);
-
-  bind(&done);
-}
-
-void MacroAssembler::branchValueIsNurseryObject(Condition cond,
-                                                ValueOperand value,
-                                                Register temp, Label* label) {
-  MOZ_ASSERT(cond == Assembler::Equal || cond == Assembler::NotEqual);
   Label done;
 
-  branchTestObject(Assembler::NotEqual, value,
-                   cond == Assembler::Equal ? &done : label);
+  branchTestGCThing(Assembler::NotEqual, value,
+                    cond == Assembler::Equal ? &done : label);
   branchPtrInNurseryChunk(cond, value.payloadReg(), temp, label);
 
   bind(&done);
@@ -2271,6 +2259,8 @@ template void MacroAssembler::storeUnboxedValue(const ConstantOrRegister& value,
 template void MacroAssembler::storeUnboxedValue(
     const ConstantOrRegister& value, MIRType valueType,
     const BaseObjectElementIndex& dest, MIRType slotType);
+
+void MacroAssembler::PushBoxed(FloatRegister reg) { Push(reg); }
 
 void MacroAssembler::wasmBoundsCheck(Condition cond, Register index,
                                      Register boundsCheckLimit, Label* label) {
@@ -2461,7 +2451,7 @@ void MacroAssemblerMIPSCompat::wasmStoreI64Impl(
     const wasm::MemoryAccessDesc& access, Register64 value, Register memoryBase,
     Register ptr, Register ptrScratch, Register tmp) {
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
   MOZ_ASSERT_IF(offset, ptrScratch != InvalidReg);
 
   // Maybe add the offset.
@@ -2758,6 +2748,14 @@ void MacroAssembler::convertUInt64ToDouble(Register64 src, FloatRegister dest,
                                            Register temp) {
   MOZ_ASSERT(temp == Register::Invalid());
   convertUInt32ToDouble(src.high, dest);
+  loadConstantDouble(TO_DOUBLE_HIGH_SCALE, ScratchDoubleReg);
+  mulDouble(ScratchDoubleReg, dest);
+  convertUInt32ToDouble(src.low, ScratchDoubleReg);
+  addDouble(ScratchDoubleReg, dest);
+}
+
+void MacroAssembler::convertInt64ToDouble(Register64 src, FloatRegister dest) {
+  convertInt32ToDouble(src.high, dest);
   loadConstantDouble(TO_DOUBLE_HIGH_SCALE, ScratchDoubleReg);
   mulDouble(ScratchDoubleReg, dest);
   convertUInt32ToDouble(src.low, ScratchDoubleReg);

@@ -51,11 +51,10 @@ function wasmCompile(text) {
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $x i32)))
-      (func (export "f") (param (ref $box)) (unreachable)))`),
+      (func (export "f") (param (ref opt $box)) (unreachable)))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertEq(typeof wasmCompile(
     `(module
@@ -66,11 +65,10 @@ assertEq(typeof wasmCompile(
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $x i32)))
-      (func (export "f") (result (ref $box)) (ref.null)))`),
+      (func (export "f") (result (ref opt $box)) (ref.null)))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertEq(typeof wasmCompile(
     `(module
@@ -81,49 +79,45 @@ assertEq(typeof wasmCompile(
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $x i32)))
-      (import "m" "f" (param (ref $box))))`),
+      (import "m" "f" (func (param (ref opt $box)))))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertEq(typeof wasmCompile(
     `(module
-      (import "m" "f" (param anyref)))`),
+      (import "m" "f" (func (param anyref))))`),
          "object");
 
 // Imported function can't return ref type, but anyref is OK.
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $x i32)))
-      (import "m" "f" (param i32) (result (ref $box))))`),
+      (import "m" "f" (func (param i32) (result (ref opt $box)))))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertEq(typeof wasmCompile(
     `(module
-      (import "m" "f" (param i32) (result anyref)))`),
+      (import "m" "f" (func (param i32) (result anyref))))`),
          "object");
 
 // Imported global can't be of Ref type (irrespective of mutability), though anyref is OK.
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $val i32)))
-      (import "m" "g" (global (mut (ref $box)))))`),
+      (import "m" "g" (global (mut (ref opt $box)))))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $val i32)))
-      (import "m" "g" (global (ref $box))))`),
+      (import "m" "g" (global (ref opt $box))))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertEq(typeof wasmCompile(
     `(module
@@ -139,19 +133,17 @@ assertEq(typeof wasmCompile(
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $val i32)))
-      (global $boxg (export "box") (mut (ref $box)) (ref.null)))`),
+      (global $boxg (export "box") (mut (ref opt $box)) (ref.null)))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $val i32)))
-      (global $boxg (export "box") (ref $box) (ref.null)))`),
+      (global $boxg (export "box") (ref opt $box) (ref.null)))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertEq(typeof wasmCompile(
     `(module
@@ -167,23 +159,21 @@ assertEq(typeof wasmCompile(
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $val i32)))
       (table (export "tbl") 1 funcref)
       (elem (i32.const 0) $f1)
-      (func $f1 (param (ref $box)) (unreachable)))`),
+      (func $f1 (param (ref opt $box)) (unreachable)))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $val i32)))
       (table (export "tbl") 1 funcref)
       (elem (i32.const 0) $f1)
-      (func $f1 (result (ref $box)) (ref.null)))`),
+      (func $f1 (result (ref opt $box)) (ref.null)))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertEq(typeof wasmCompile(
     `(module
@@ -203,23 +193,21 @@ assertEq(typeof wasmCompile(
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $val i32)))
       (import "m" "tbl" (table 1 funcref))
       (elem (i32.const 0) $f1)
-      (func $f1 (param (ref $box)) (unreachable)))`),
+      (func $f1 (param (ref opt $box)) (unreachable)))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $val i32)))
       (import "m" "tbl" (table 1 funcref))
       (elem (i32.const 0) $f1)
-      (func $f1 (result (ref $box)) (ref.null)))`),
+      (func $f1 (result (ref opt $box)) (ref.null)))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertEq(typeof wasmCompile(
     `(module
@@ -239,32 +227,30 @@ assertEq(typeof wasmCompile(
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $val i32)))
-      (type $fn (func (param (ref $box))))
+      (type $fn (func (param (ref opt $box))))
       (table (export "tbl") 1 funcref)
       (func (param i32)
-       (call_indirect $fn (ref.null) (local.get 0))))`),
+       (call_indirect (type $fn) (ref.null) (local.get 0))))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $val i32)))
-      (type $fn (func (result (ref $box))))
+      (type $fn (func (result (ref opt $box))))
       (table (export "tbl") 1 funcref)
-      (func (param i32) (result (ref $box))
-       (call_indirect $fn (local.get 0))))`),
+      (func (param i32) (result (ref opt $box))
+       (call_indirect (type $fn) (local.get 0))))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertEq(typeof wasmCompile(
     `(module
       (type $fn (func (param anyref)))
       (table (export "tbl") 1 funcref)
       (func (param i32)
-       (call_indirect $fn (ref.null) (local.get 0))))`),
+       (call_indirect (type $fn) (ref.null) (local.get 0))))`),
          "object");
 
 assertEq(typeof wasmCompile(
@@ -272,39 +258,37 @@ assertEq(typeof wasmCompile(
       (type $fn (func (result anyref)))
       (table (export "tbl") 1 funcref)
       (func (param i32) (result anyref)
-       (call_indirect $fn (local.get 0))))`),
+       (call_indirect (type $fn) (local.get 0))))`),
          "object");
 
 // Can't call via imported table with type that is exposed for Ref, though anyref is OK.
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $val i32)))
-      (type $fn (func (param (ref $box))))
+      (type $fn (func (param (ref opt $box))))
       (import "m" "tbl" (table 1 funcref))
       (func (param i32)
-       (call_indirect $fn (ref.null) (local.get 0))))`),
+       (call_indirect (type $fn) (ref.null) (local.get 0))))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertErrorMessage(() => wasmCompile(
     `(module
-      (gc_feature_opt_in 3)
       (type $box (struct (field $val i32)))
-      (type $fn (func (result (ref $box))))
+      (type $fn (func (result (ref opt $box))))
       (import "m" "tbl" (table 1 funcref))
-      (func (param i32) (result (ref $box))
-       (call_indirect $fn (local.get 0))))`),
+      (func (param i32) (result (ref opt $box))
+       (call_indirect (type $fn) (local.get 0))))`),
                    WebAssembly.CompileError,
-                   /cannot expose reference type/);
+                   /cannot expose indexed reference type/);
 
 assertEq(typeof wasmCompile(
     `(module
       (type $fn (func (param anyref)))
       (import "m" "tbl" (table 1 funcref))
       (func (param i32)
-       (call_indirect $fn (ref.null) (local.get 0))))`),
+       (call_indirect (type $fn) (ref.null) (local.get 0))))`),
          "object");
 
 assertEq(typeof wasmCompile(
@@ -312,7 +296,7 @@ assertEq(typeof wasmCompile(
       (type $fn (func (result anyref)))
       (import "m" "tbl" (table 1 funcref))
       (func (param i32) (result anyref)
-       (call_indirect $fn (local.get 0))))`),
+       (call_indirect (type $fn) (local.get 0))))`),
          "object");
 
 // We can call via a private table with a type that is exposed for Ref.
@@ -320,14 +304,13 @@ assertEq(typeof wasmCompile(
 {
     let m = wasmCompile(
         `(module
-          (gc_feature_opt_in 3)
           (type $box (struct (field $val i32)))
-          (type $fn (func (param (ref $box)) (result i32)))
+          (type $fn (func (param (ref opt $box)) (result i32)))
           (table 1 funcref)
           (elem (i32.const 0) $f1)
-          (func $f1 (param (ref $box)) (result i32) (i32.const 37))
+          (func $f1 (param (ref opt $box)) (result i32) (i32.const 37))
           (func (export "f") (param i32) (result i32)
-           (call_indirect $fn (ref.null) (local.get 0))))`);
+           (call_indirect (type $fn) (ref.null) (local.get 0))))`);
     let i = new WebAssembly.Instance(m).exports;
     assertEq(i.f(0), 37);
 }

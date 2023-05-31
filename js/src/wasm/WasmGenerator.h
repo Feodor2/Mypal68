@@ -103,7 +103,7 @@ struct CompileTaskState {
   }
 };
 
-typedef ExclusiveWaitableData<CompileTaskState> ExclusiveCompileTaskState;
+using ExclusiveCompileTaskState = ExclusiveWaitableData<CompileTaskState>;
 
 // A CompileTask holds a batch of input functions that are to be compiled on a
 // helper thread as well as, eventually, the results of compilation.
@@ -119,11 +119,12 @@ struct CompileTask : public RunnableTask {
               size_t defaultChunkSize)
       : env(env), state(state), lifo(defaultChunkSize) {}
 
-  virtual ~CompileTask(){};
+  virtual ~CompileTask() = default;
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
   void runTask() override;
+  ThreadType threadType() override { return ThreadType::THREAD_TYPE_WASM; }
 };
 
 // A ModuleGenerator encapsulates the creation of a wasm module. During the

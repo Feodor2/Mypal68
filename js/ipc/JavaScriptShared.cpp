@@ -96,8 +96,8 @@ void ObjectToIdMap::remove(JSObject* obj) { table_.remove(obj); }
 void ObjectToIdMap::clear() { table_.clear(); }
 
 bool JavaScriptShared::sLoggingInitialized;
-bool JavaScriptShared::sLoggingEnabled;
-bool JavaScriptShared::sStackLoggingEnabled;
+bool JavaScriptShared::sLoggingEnabledByEnvVar;
+bool JavaScriptShared::sStackLoggingEnabledByEnvVar;
 
 JavaScriptShared::JavaScriptShared()
     : refcount_(1), nextSerialNumber_(1), nextCPOWNumber_(1) {
@@ -105,13 +105,9 @@ JavaScriptShared::JavaScriptShared()
     sLoggingInitialized = true;
 
     if (PR_GetEnv("MOZ_CPOW_LOG")) {
-      sLoggingEnabled = true;
-      sStackLoggingEnabled = strstr(PR_GetEnv("MOZ_CPOW_LOG"), "stacks");
-    } else {
-      Preferences::AddBoolVarCache(&sLoggingEnabled,
-                                   "dom.ipc.cpows.log.enabled", false);
-      Preferences::AddBoolVarCache(&sStackLoggingEnabled,
-                                   "dom.ipc.cpows.log.stack", false);
+      sLoggingEnabledByEnvVar = true;
+      sStackLoggingEnabledByEnvVar =
+          !!strstr(PR_GetEnv("MOZ_CPOW_LOG"), "stacks");
     }
   }
 }
@@ -583,8 +579,7 @@ JSObject* JavaScriptShared::fromObjectOrNullVariant(
 }
 
 CrossProcessCpowHolder::CrossProcessCpowHolder(
-    dom::CPOWManagerGetter* managerGetter,
-    const InfallibleTArray<CpowEntry>& cpows)
+    dom::CPOWManagerGetter* managerGetter, const nsTArray<CpowEntry>& cpows)
     : js_(nullptr), cpows_(cpows), unwrapped_(false) {
   // Only instantiate the CPOW manager if we might need it later.
   if (cpows.Length()) {
@@ -600,13 +595,7 @@ CrossProcessCpowHolder::~CrossProcessCpowHolder() {
     // the corresponding part of the CPOW in the other process
     // will eventually be collected. The scope for this object
     // doesn't really matter, because it immediately becomes
-    // garbage. Ignore this for middleman processes used when
-    // recording or replaying, as they do not have a CPOW manager
-    // and the message will also be received in the recording
-    // process.
-    if (recordreplay::IsMiddleman()) {
-      return;
-    }
+    // garbage.
     AutoJSAPI jsapi;
     if (!jsapi.Init(xpc::PrivilegedJunkScope())) {
       return;
@@ -628,12 +617,8 @@ bool CrossProcessCpowHolder::ToObject(JSContext* cx,
   return js_->Unwrap(cx, cpows_, objp);
 }
 
-bool JavaScriptShared::Unwrap(JSContext* cx,
-                              const InfallibleTArray<CpowEntry>& aCpows,
+bool JavaScriptShared::Unwrap(JSContext* cx, const nsTArray<CpowEntry>& aCpows,
                               JS::MutableHandleObject objp) {
-  // Middleman processes never operate on CPOWs.
-  MOZ_ASSERT(!recordreplay::IsMiddleman());
-
   objp.set(nullptr);
 
   if (!aCpows.Length()) {
@@ -665,7 +650,7 @@ bool JavaScriptShared::Unwrap(JSContext* cx,
 }
 
 bool JavaScriptShared::Wrap(JSContext* cx, HandleObject aObj,
-                            InfallibleTArray<CpowEntry>* outCpows) {
+                            nsTArray<CpowEntry>* outCpows) {
   if (!aObj) {
     return true;
   }

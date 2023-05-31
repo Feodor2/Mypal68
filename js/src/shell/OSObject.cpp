@@ -23,7 +23,6 @@
 // For JSFunctionSpecWithHelp
 #include "jsfriendapi.h"
 
-#include "builtin/String.h"
 #include "gc/FreeOp.h"
 #include "js/CharacterEncoding.h"
 #include "js/Conversions.h"
@@ -136,8 +135,8 @@ JSString* ResolvePath(JSContext* cx, HandleString filenameStr,
     // The docs say it can return EINVAL, but the compiler says it's void
     _splitpath(scriptFilename.get(), nullptr, buffer, nullptr, nullptr);
 #else
-    strncpy(buffer, scriptFilename.get(), PATH_MAX + 1);
-    if (buffer[PATH_MAX] != '\0') {
+    strncpy(buffer, scriptFilename.get(), PATH_MAX);
+    if (buffer[PATH_MAX - 1] != '\0') {
       return nullptr;
     }
 
@@ -196,6 +195,11 @@ JSObject* FileAsTypedArray(JSContext* cx, JS::HandleString pathnameStr) {
       }
       JS_ReportErrorUTF8(cx, "can't seek start of %s", pathname.get());
     } else {
+      if (len > ArrayBufferObject::MaxBufferByteLength) {
+        JS_ReportErrorUTF8(cx, "file %s is too large for a Uint8Array",
+                           pathname.get());
+        return nullptr;
+      }
       obj = JS_NewUint8Array(cx, len);
       if (!obj) {
         return nullptr;
@@ -287,7 +291,7 @@ static bool ReadFile(JSContext* cx, unsigned argc, Value* vp,
       return false;
     }
     bool match;
-    if (!JS_StringEqualsAscii(cx, opt, "binary", &match)) {
+    if (!JS_StringEqualsLiteral(cx, opt, "binary", &match)) {
       return false;
     }
     if (match) {
@@ -415,7 +419,7 @@ class FileObject : public NativeObject {
   enum : uint32_t { FILE_SLOT = 0, NUM_SLOTS };
 
  public:
-  static const js::Class class_;
+  static const JSClass class_;
 
   static FileObject* create(JSContext* cx, RCFile* file) {
     FileObject* obj = js::NewBuiltinClassInstance<FileObject>(cx);
@@ -423,17 +427,17 @@ class FileObject : public NativeObject {
       return nullptr;
     }
 
-    obj->setRCFile(file);
+    InitReservedSlot(obj, FILE_SLOT, file, MemoryUse::FileObjectFile);
     file->acquire();
     return obj;
   }
 
-  static void finalize(FreeOp* fop, JSObject* obj) {
+  static void finalize(JSFreeOp* fop, JSObject* obj) {
     FileObject* fileObj = &obj->as<FileObject>();
     RCFile* file = fileObj->rcFile();
+    fop->removeCellMemory(obj, sizeof(*file), MemoryUse::FileObjectFile);
     if (file->release()) {
-      fileObj->setRCFile(nullptr);
-      fop->delete_(file);
+      fop->deleteUntracked(file);
     }
   }
 
@@ -453,28 +457,23 @@ class FileObject : public NativeObject {
     return reinterpret_cast<RCFile*>(
         js::GetReservedSlot(this, FILE_SLOT).toPrivate());
   }
-
- private:
-  void setRCFile(RCFile* file) {
-    js::SetReservedSlot(this, FILE_SLOT, PrivateValue(file));
-  }
 };
 
-static const js::ClassOps FileObjectClassOps = {
-    nullptr,              /* addProperty */
-    nullptr,              /* delProperty */
-    nullptr,              /* enumerate */
-    nullptr,              /* newEnumerate */
-    nullptr,              /* resolve */
-    nullptr,              /* mayResolve */
-    FileObject::finalize, /* finalize */
-    nullptr,              /* call */
-    nullptr,              /* hasInstance */
-    nullptr,              /* construct */
-    nullptr               /* trace */
+static const JSClassOps FileObjectClassOps = {
+    nullptr,               // addProperty
+    nullptr,               // delProperty
+    nullptr,               // enumerate
+    nullptr,               // newEnumerate
+    nullptr,               // resolve
+    nullptr,               // mayResolve
+    FileObject::finalize,  // finalize
+    nullptr,               // call
+    nullptr,               // hasInstance
+    nullptr,               // construct
+    nullptr,               // trace
 };
 
-const js::Class FileObject::class_ = {
+const JSClass FileObject::class_ = {
     "File",
     JSCLASS_HAS_RESERVED_SLOTS(FileObject::NUM_SLOTS) |
         JSCLASS_FOREGROUND_FINALIZE,

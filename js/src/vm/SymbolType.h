@@ -32,7 +32,8 @@ namespace JS {
 class Symbol : public js::gc::TenuredCell {
  private:
   // User description of symbol. Also meets gc::Cell requirements.
-  JSAtom* description_;
+  using HeaderWithAtom = js::gc::CellHeaderWithTenuredGCPointer<JSAtom>;
+  HeaderWithAtom headerAndDescription_;
 
   SymbolCode code_;
 
@@ -41,7 +42,7 @@ class Symbol : public js::gc::TenuredCell {
   js::HashNumber hash_;
 
   Symbol(SymbolCode code, js::HashNumber hash, JSAtom* desc)
-      : description_(desc), code_(code), hash_(hash) {}
+      : headerAndDescription_(desc), code_(code), hash_(hash) {}
 
   Symbol(const Symbol&) = delete;
   void operator=(const Symbol&) = delete;
@@ -64,7 +65,7 @@ class Symbol : public js::gc::TenuredCell {
                       js::HandleString description);
   static Symbol* for_(JSContext* cx, js::HandleString description);
 
-  JSAtom* description() const { return description_; }
+  JSAtom* description() const { return headerAndDescription_.ptr(); }
   SymbolCode code() const { return code_; }
   js::HashNumber hash() const { return hash_; }
 
@@ -81,13 +82,16 @@ class Symbol : public js::gc::TenuredCell {
     return code_ == SymbolCode::toStringTag || code_ == SymbolCode::toPrimitive;
   }
 
+  // Symbol created for the #PrivateName syntax.
+  bool isPrivateName() const { return code_ == SymbolCode::PrivateNameSymbol; }
+
   static const JS::TraceKind TraceKind = JS::TraceKind::Symbol;
+  const js::gc::CellHeader& cellHeader() const { return headerAndDescription_; }
+
   inline void traceChildren(JSTracer* trc) {
-    if (description_) {
-      js::TraceManuallyBarrieredEdge(trc, &description_, "description");
-    }
+    js::TraceNullableEdge(trc, &headerAndDescription_, "symbol description");
   }
-  inline void finalize(js::FreeOp*) {}
+  inline void finalize(JSFreeOp*) {}
 
   static MOZ_ALWAYS_INLINE void writeBarrierPre(Symbol* thing) {
     if (thing && !thing->isWellKnownSymbol()) {
@@ -111,8 +115,8 @@ namespace js {
 
 /* Hash policy used by the SymbolRegistry. */
 struct HashSymbolsByDescription {
-  typedef JS::Symbol* Key;
-  typedef JSAtom* Lookup;
+  using Key = JS::Symbol*;
+  using Lookup = JSAtom*;
 
   static HashNumber hash(Lookup l) { return HashNumber(l->hash()); }
   static bool match(Key sym, Lookup l) { return sym->description() == l; }
@@ -139,7 +143,7 @@ class SymbolRegistry
     : public GCHashSet<WeakHeapPtrSymbol, HashSymbolsByDescription,
                        SystemAllocPolicy> {
  public:
-  SymbolRegistry() {}
+  SymbolRegistry() = default;
 };
 
 // ES6 rev 27 (2014 Aug 24) 19.4.3.3

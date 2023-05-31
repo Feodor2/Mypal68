@@ -7,6 +7,7 @@
 
 #include "jit/TemplateObject.h"
 
+#include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/RegExpObject.h"
 
 namespace js {
@@ -32,10 +33,6 @@ inline bool TemplateObject::isTypedArrayObject() const {
 
 inline bool TemplateObject::isRegExpObject() const {
   return obj_->is<RegExpObject>();
-}
-
-inline bool TemplateObject::isInlineTypedObject() const {
-  return obj_->is<InlineTypedObject>();
 }
 
 inline bool TemplateObject::isCallObject() const {

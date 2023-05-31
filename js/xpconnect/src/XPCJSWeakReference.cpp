@@ -9,7 +9,7 @@
 
 using namespace JS;
 
-xpcJSWeakReference::xpcJSWeakReference() {}
+xpcJSWeakReference::xpcJSWeakReference() = default;
 
 NS_IMPL_ISUPPORTS(xpcJSWeakReference, xpcIJSWeakReference)
 

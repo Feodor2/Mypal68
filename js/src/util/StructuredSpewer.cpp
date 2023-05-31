@@ -36,20 +36,16 @@ const StructuredSpewer::NameArray StructuredSpewer::names_ = {
 
 bool StructuredSpewer::ensureInitializationAttempted() {
   if (!outputInitializationAttempted_) {
-    // We cannot call getenv during record replay, so disable
-    // the spewer.
-    if (!mozilla::recordreplay::IsRecordingOrReplaying()) {
-      char filename[2048] = {0};
-      // For ease of use with Treeherder
-      if (getenv("SPEW_UPLOAD") && getenv("MOZ_UPLOAD_DIR")) {
-        SprintfLiteral(filename, "%s/spew_output", getenv("MOZ_UPLOAD_DIR"));
-      } else if (getenv("SPEW_FILE")) {
-        SprintfLiteral(filename, "%s", getenv("SPEW_FILE"));
-      } else {
-        SprintfLiteral(filename, "%s/spew_output", DEFAULT_SPEW_DIRECTORY);
-      }
-      tryToInitializeOutput(filename);
+    char filename[2048] = {0};
+    // For ease of use with Treeherder
+    if (getenv("SPEW_UPLOAD") && getenv("MOZ_UPLOAD_DIR")) {
+      SprintfLiteral(filename, "%s/spew_output", getenv("MOZ_UPLOAD_DIR"));
+    } else if (getenv("SPEW_FILE")) {
+      SprintfLiteral(filename, "%s", getenv("SPEW_FILE"));
+    } else {
+      SprintfLiteral(filename, "%s/spew_output", DEFAULT_SPEW_DIRECTORY);
     }
+    tryToInitializeOutput(filename);
     // We can't use the intialization state of the Fprinter, as it is not
     // marked as initialized in a case where we cannot open the output, so
     // we track the attempt separately.
@@ -60,25 +56,22 @@ bool StructuredSpewer::ensureInitializationAttempted() {
 }
 
 void StructuredSpewer::tryToInitializeOutput(const char* path) {
-  static mozilla::Atomic<uint32_t, mozilla::ReleaseAcquire,
-                         mozilla::recordreplay::Behavior::DontPreserve>
-      threadCounter;
+  static mozilla::Atomic<uint32_t, mozilla::ReleaseAcquire> threadCounter;
 
   char suffix_path[2048] = {0};
-  SprintfLiteral(suffix_path, "%s.%d.%d", path, getpid(), threadCounter++);
+  SprintfLiteral(suffix_path, "%s.%d.%u", path, getpid(), threadCounter++);
 
   if (!output_.init(suffix_path)) {
     // Returning here before we've emplaced the JSONPrinter
     // means this is effectively disabled, but fail earlier
     // we also disable all the bits
-    selectedChannels_.disableAll();
+    selectedChannels_.disableAllChannels();
     return;
   }
 
   // These logs are structured as a JSON array.
   output_.put("[");
   json_.emplace(output_);
-  return;
 }
 
 // Treat pattern like a glob, and return true if pattern exists
@@ -91,7 +84,7 @@ static bool MatchJSScript(JSScript* script, const char* pattern) {
   }
 
   char signature[2048] = {0};
-  SprintfLiteral(signature, "%s:%d:%d", script->filename(), script->lineno(),
+  SprintfLiteral(signature, "%s:%u:%u", script->filename(), script->lineno(),
                  script->column());
 
   // Trivial containment match.
@@ -100,12 +93,11 @@ static bool MatchJSScript(JSScript* script, const char* pattern) {
   return result != nullptr;
 }
 
-/* static */
 bool StructuredSpewer::enabled(JSScript* script) {
-  // We cannot call getenv under record/replay.
-  if (mozilla::recordreplay::IsRecordingOrReplaying()) {
+  if (!spewingEnabled_) {
     return false;
   }
+
   static const char* pattern = getenv("SPEW_FILTER");
   if (!pattern || MatchJSScript(script, pattern)) {
     return true;
@@ -118,7 +110,7 @@ bool StructuredSpewer::enabled(JSContext* cx, const JSScript* script,
   if (script && !script->spewEnabled()) {
     return false;
   }
-  return cx->spewer().filter().enabled(channel);
+  return cx->spewer().enabled(channel);
 }
 
 // Attempt to setup a common header for objects based on script/channel.
@@ -146,7 +138,7 @@ void StructuredSpewer::spew(JSContext* cx, SpewChannel channel, const char* fmt,
                             ...) {
   // Because we don't have a script here, use the singleton's
   // filter to determine if the channel is active.
-  if (!cx->spewer().filter().enabled(channel)) {
+  if (!cx->spewer().enabled(channel)) {
     return;
   }
 
@@ -182,6 +174,10 @@ void StructuredSpewer::parseSpewFlags(const char* flags) {
 
 #  undef CHECK_CHANNEL
 
+  if (ContainsFlag(flags, "AtStartup")) {
+    enableSpewing();
+  }
+
   if (ContainsFlag(flags, "help")) {
     printf(
         "\n"
@@ -190,11 +186,16 @@ void StructuredSpewer::parseSpewFlags(const char* flags) {
         "  help               Dump this help message\n"
         "  all|*              Enable all the below channels\n"
         "  channel[,channel]  Enable the selected channels from below\n"
+        "  AtStartup          Enable spewing at browser startup instead\n"
+        "                     of when gecko profiling starts."
         "\n"
         " Channels: \n"
         "\n"
         // List Channels
         "  BaselineICStats    Dump the IC Entry counters during Ion analysis\n"
+        "  ScriptStats        Dump statistics collected by tracelogger that\n"
+        "                     is aggregated by script. Requires\n"
+        "                     JS_TRACE_LOGGING=1\n"
         // End Channel list
         "\n\n"
         "By default output goes to a file called spew_output.$PID.$THREAD\n"

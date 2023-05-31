@@ -14,6 +14,7 @@
 #include "mozilla/MemoryChecking.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Span.h"
+#include "mozilla/TemplateLib.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Utf8.h"
 
@@ -36,6 +37,7 @@
 #include "js/UniquePtr.h"
 #include "util/StringBuffer.h"
 #include "util/Unicode.h"
+#include "vm/FrameIter.h"  // js::{,NonBuiltin}FrameIter
 #include "vm/HelperThreads.h"
 #include "vm/JSAtom.h"
 #include "vm/JSContext.h"
@@ -230,7 +232,8 @@ bool IsIdentifierNameOrPrivateName(const Latin1Char* chars, size_t length) {
     return false;
   }
 
-  if (char16_t(*chars) == '#') {
+  // Skip over any private name marker.
+  if (*chars == '#') {
     ++chars;
     --length;
   }
@@ -272,7 +275,10 @@ bool IsIdentifierNameOrPrivateName(const char16_t* chars, size_t length) {
   uint32_t codePoint;
 
   codePoint = GetSingleCodePoint(&p, end);
+
+  // Skip over any private name marker.
   if (codePoint == '#') {
+    // The identifier part of a private name mustn't be empty.
     if (length == 1) {
       return false;
     }
@@ -351,14 +357,13 @@ PropertyName* TokenStreamAnyChars::reservedWordToPropertyName(
   return nullptr;
 }
 
-TokenStreamAnyChars::SourceCoords::SourceCoords(JSContext* cx,
-                                                uint32_t initialLineNumber,
-                                                uint32_t initialOffset)
+SourceCoords::SourceCoords(JSContext* cx, uint32_t initialLineNumber,
+                           uint32_t initialOffset)
     : lineStartOffsets_(cx), initialLineNum_(initialLineNumber), lastIndex_(0) {
   // This is actually necessary!  Removing it causes compile errors on
   // GCC and clang.  You could try declaring this:
   //
-  //   const uint32_t TokenStreamAnyChars::SourceCoords::MAX_PTR;
+  //   const uint32_t SourceCoords::MAX_PTR;
   //
   // which fixes the GCC/clang error, but causes bustage on Windows.  Sigh.
   //
@@ -373,8 +378,8 @@ TokenStreamAnyChars::SourceCoords::SourceCoords(JSContext* cx,
   lineStartOffsets_.infallibleAppend(maxPtr);
 }
 
-MOZ_ALWAYS_INLINE bool TokenStreamAnyChars::SourceCoords::add(
-    uint32_t lineNum, uint32_t lineStartOffset) {
+MOZ_ALWAYS_INLINE bool SourceCoords::add(uint32_t lineNum,
+                                         uint32_t lineStartOffset) {
   uint32_t index = indexFromLineNumber(lineNum);
   uint32_t sentinelIndex = lineStartOffsets_.length() - 1;
 
@@ -387,8 +392,8 @@ MOZ_ALWAYS_INLINE bool TokenStreamAnyChars::SourceCoords::add(
     // Otherwise return false to tell TokenStream about OOM.
     uint32_t maxPtr = MAX_PTR;
     if (!lineStartOffsets_.append(maxPtr)) {
-      static_assert(mozilla::IsSame<decltype(lineStartOffsets_.allocPolicy()),
-                                    TempAllocPolicy&>::value,
+      static_assert(std::is_same_v<decltype(lineStartOffsets_.allocPolicy()),
+                                   TempAllocPolicy&>,
                     "this function's caller depends on it reporting an "
                     "error on failure, as TempAllocPolicy ensures");
       return false;
@@ -405,8 +410,7 @@ MOZ_ALWAYS_INLINE bool TokenStreamAnyChars::SourceCoords::add(
   return true;
 }
 
-MOZ_ALWAYS_INLINE bool TokenStreamAnyChars::SourceCoords::fill(
-    const TokenStreamAnyChars::SourceCoords& other) {
+MOZ_ALWAYS_INLINE bool SourceCoords::fill(const SourceCoords& other) {
   MOZ_ASSERT(lineStartOffsets_[0] == other.lineStartOffsets_[0]);
   MOZ_ASSERT(lineStartOffsets_.back() == MAX_PTR);
   MOZ_ASSERT(other.lineStartOffsets_.back() == MAX_PTR);
@@ -428,7 +432,7 @@ MOZ_ALWAYS_INLINE bool TokenStreamAnyChars::SourceCoords::fill(
 }
 
 MOZ_ALWAYS_INLINE uint32_t
-TokenStreamAnyChars::SourceCoords::indexFromOffset(uint32_t offset) const {
+SourceCoords::indexFromOffset(uint32_t offset) const {
   uint32_t iMin, iMax, iMid;
 
   if (lineStartOffsets_[lastIndex_] <= offset) {
@@ -484,32 +488,21 @@ TokenStreamAnyChars::SourceCoords::indexFromOffset(uint32_t offset) const {
   return iMin;
 }
 
-TokenStreamAnyChars::SourceCoords::LineToken
-TokenStreamAnyChars::SourceCoords::lineToken(uint32_t offset) const {
+SourceCoords::LineToken SourceCoords::lineToken(uint32_t offset) const {
   return LineToken(indexFromOffset(offset), offset);
 }
 
 TokenStreamAnyChars::TokenStreamAnyChars(JSContext* cx,
                                          const ReadOnlyCompileOptions& options,
                                          StrictModeGetter* smg)
-    : srcCoords(cx, options.lineno, options.scriptSourceOffset),
-#if JS_COLUMN_DIMENSION_IS_CODE_POINTS()
-      longLineColumnInfo_(cx),
-#endif  // JS_COLUMN_DIMENSION_IS_CODE_POINTS()
+    : cx(cx),
       options_(options),
-      tokens(),
-      cursor_(0),
-      lookahead(),
-      lineno(options.lineno),
-      flags(),
-      linebase(0),
-      prevLinebase(size_t(-1)),
+      strictModeGetter_(smg),
       filename_(options.filename()),
-      displayURL_(nullptr),
-      sourceMapURL_(nullptr),
-      cx(cx),
-      mutedErrors(options.mutedErrors()),
-      strictModeGetter(smg) {
+      longLineColumnInfo_(cx),
+      srcCoords(cx, options.lineno, options.scriptSourceOffset),
+      lineno(options.lineno),
+      mutedErrors(options.mutedErrors()) {
   // |isExprEnding| was initially zeroed: overwrite the true entries here.
   isExprEnding[size_t(TokenKind::Comma)] = true;
   isExprEnding[size_t(TokenKind::Semi)] = true;
@@ -520,11 +513,11 @@ TokenStreamAnyChars::TokenStreamAnyChars(JSContext* cx,
 }
 
 template <typename Unit>
-TokenStreamCharsBase<Unit>::TokenStreamCharsBase(JSContext* cx,
-                                                 const Unit* units,
-                                                 size_t length,
-                                                 size_t startOffset)
-    : TokenStreamCharsShared(cx), sourceUnits(units, length, startOffset) {}
+TokenStreamCharsBase<Unit>::TokenStreamCharsBase(
+    JSContext* cx, CompilationInfo* compilationInfo, const Unit* units,
+    size_t length, size_t startOffset)
+    : TokenStreamCharsShared(cx, compilationInfo),
+      sourceUnits(units, length, startOffset) {}
 
 template <>
 MOZ_MUST_USE bool TokenStreamCharsBase<char16_t>::
@@ -589,15 +582,15 @@ MOZ_MUST_USE bool TokenStreamCharsBase<Utf8Unit>::
 
 template <typename Unit, class AnyCharsAccess>
 TokenStreamSpecific<Unit, AnyCharsAccess>::TokenStreamSpecific(
-    JSContext* cx, const ReadOnlyCompileOptions& options, const Unit* units,
-    size_t length)
-    : TokenStreamChars<Unit, AnyCharsAccess>(cx, units, length,
+    JSContext* cx, CompilationInfo* compilationInfo,
+    const ReadOnlyCompileOptions& options, const Unit* units, size_t length)
+    : TokenStreamChars<Unit, AnyCharsAccess>(cx, compilationInfo, units, length,
                                              options.scriptSourceOffset) {}
 
 bool TokenStreamAnyChars::checkOptions() {
   // Constrain starting columns to half of the range of a signed 32-bit value,
   // to avoid overflow.
-  if (options().column >= mozilla::MaxValue<int32_t>::value / 2 + 1) {
+  if (options().column >= std::numeric_limits<int32_t>::max() / 2 + 1) {
     reportErrorNoOffset(JSMSG_BAD_COLUMN_NUMBER);
     return false;
   }
@@ -619,8 +612,7 @@ void TokenStreamAnyChars::reportErrorNoOffsetVA(unsigned errorNumber,
   ErrorMetadata metadata;
   computeErrorMetadataNoOffset(&metadata);
 
-  ReportCompileError(cx, std::move(metadata), nullptr, JSREPORT_ERROR,
-                     errorNumber, args);
+  ReportCompileErrorLatin1(cx, std::move(metadata), nullptr, errorNumber, args);
 }
 
 // Use the fastest available getc.
@@ -690,8 +682,6 @@ inline void SourceUnits<Utf8Unit>::assertNextCodePoint(
 
 #endif  // DEBUG
 
-#if JS_COLUMN_DIMENSION_IS_CODE_POINTS()
-
 static MOZ_ALWAYS_INLINE void RetractPointerToCodePointBoundary(
     const Utf8Unit** ptr, const Utf8Unit* limit) {
   MOZ_ASSERT(*ptr <= limit);
@@ -702,14 +692,14 @@ static MOZ_ALWAYS_INLINE void RetractPointerToCodePointBoundary(
   }
 
   // Otherwise rewind past trailing units to the start of the code point.
-#  ifdef DEBUG
+#ifdef DEBUG
   size_t retracted = 0;
-#  endif
+#endif
   while (MOZ_UNLIKELY(IsTrailingUnit((*ptr)[0]))) {
     --*ptr;
-#  ifdef DEBUG
+#ifdef DEBUG
     retracted++;
-#  endif
+#endif
   }
 
   MOZ_ASSERT(retracted < 4,
@@ -792,6 +782,12 @@ uint32_t TokenStreamAnyChars::computePartialColumn(
 
   const uint32_t offsetInLine = offset - start;
 
+  // We won't add an entry to |longLineColumnInfo_| for lines where the maximum
+  // column has offset less than this value.  The most common (non-minified)
+  // long line length is likely 80ch, maybe 100ch, so we use that, rounded up to
+  // the next power of two for efficient division/multiplication below.
+  constexpr uint32_t ColumnChunkLength = mozilla::tl::RoundUpPow2<100>::value;
+
   // The index within any associated |Vector<ChunkInfo>| of |offset|'s chunk.
   const uint32_t chunkIndex = offsetInLine / ColumnChunkLength;
   if (chunkIndex == 0) {
@@ -833,9 +829,9 @@ uint32_t TokenStreamAnyChars::computePartialColumn(
   const Unit* const limit = sourceUnits.codeUnitPtrAt(offset);
 
   auto RetractedOffsetOfChunk = [
-#  ifdef DEBUG
+#ifdef DEBUG
                                     this,
-#  endif
+#endif
                                     start, limit,
                                     &sourceUnits](uint32_t index) {
     MOZ_ASSERT(index < this->lastChunkVectorForLine_->length());
@@ -846,12 +842,12 @@ uint32_t TokenStreamAnyChars::computePartialColumn(
     const Unit* actualPtr = naivePtr;
     RetractPointerToCodePointBoundary(&actualPtr, limit);
 
-#  ifdef DEBUG
+#ifdef DEBUG
     if ((*this->lastChunkVectorForLine_)[index].unitsType() ==
         UnitsType::GuaranteedSingleUnit) {
       MOZ_ASSERT(naivePtr == actualPtr, "miscomputed unitsType value");
     }
-#  endif
+#endif
 
     return naiveOffset - PointerRangeSize(actualPtr, naivePtr);
   };
@@ -913,10 +909,10 @@ uint32_t TokenStreamAnyChars::computePartialColumn(
       MOZ_ASSERT(begin < chunkLimit);
       MOZ_ASSERT(chunkLimit <= limit);
 
-      static_assert(ColumnChunkLength > SourceUnitTraits<Unit>::maxUnitsLength,
-                    "chunk length in code units must be able to contain the "
-                    "largest encoding of a code point, for retracting below to "
-                    "never underflow");
+      static_assert(
+          ColumnChunkLength > SourceUnitTraits<Unit>::maxUnitsLength - 1,
+          "any retraction below is assumed to never underflow to the "
+          "preceding chunk, even for the longest code point");
 
       // Prior tokenizing ensured that [begin, limit) is validly encoded, and
       // |begin < chunkLimit|, so any retraction here can't underflow.
@@ -949,8 +945,6 @@ uint32_t TokenStreamAnyChars::computePartialColumn(
   return ColumnFromPartial(partialOffset, partialColumn, unitsType);
 }
 
-#endif  // JS_COLUMN_DIMENSION_IS_CODE_POINTS()
-
 template <typename Unit, class AnyCharsAccess>
 uint32_t GeneralTokenStreamChars<Unit, AnyCharsAccess>::computeColumn(
     LineToken lineToken, uint32_t offset) const {
@@ -959,12 +953,7 @@ uint32_t GeneralTokenStreamChars<Unit, AnyCharsAccess>::computeColumn(
   const TokenStreamAnyChars& anyChars = anyCharsAccess();
 
   uint32_t partialCols =
-#if JS_COLUMN_DIMENSION_IS_CODE_POINTS()
-      anyChars.computePartialColumn(lineToken, offset, this->sourceUnits)
-#else
-      offset - anyChars.lineStart(lineToken)
-#endif  // JS_COLUMN_DIMENSION_IS_CODE_POINTS()
-      ;
+      anyChars.computePartialColumn(lineToken, offset, this->sourceUnits);
 
   return (lineToken.isFirstLine() ? anyChars.options_.column : 0) + partialCols;
 }
@@ -1039,8 +1028,8 @@ MOZ_COLD void TokenStreamChars<Utf8Unit, AnyCharsAccess>::internalEncodingError(
       break;
     }
 
-    ReportCompileError(anyChars.cx, std::move(err), std::move(notes),
-                       JSREPORT_ERROR, errorNumber, &args);
+    ReportCompileErrorLatin1(anyChars.cx, std::move(err), std::move(notes),
+                             errorNumber, &args);
   } while (false);
 
   va_end(args);
@@ -1599,7 +1588,7 @@ bool TokenStreamAnyChars::fillExceptingContext(ErrorMetadata* err,
 
   // If this TokenStreamAnyChars doesn't have location information, try to
   // get it from the caller.
-  if (!filename_ && !cx->helperThread()) {
+  if (!filename_ && !cx->isHelperThreadContext()) {
     NonBuiltinFrameIter iter(cx, FrameIter::FOLLOW_DEBUGGER_EVAL_PREV_LINK,
                              cx->realm()->principals());
     if (!iter.done() && iter.filename()) {
@@ -1731,21 +1720,22 @@ bool TokenStreamCharsBase<Unit>::addLineOfContext(ErrorMetadata* err,
   // always the case for Unit=char16_t), the UTF-16 offsets are exactly the
   // encoded offsets.  Otherwise we must convert offset/length from UTF-8 to
   // UTF-16.
-  if (std::is_same<Unit, char16_t>::value) {
+  if constexpr (std::is_same_v<Unit, char16_t>) {
     MOZ_ASSERT(utf16WindowLength == encodedWindowLength,
                "UTF-16 to UTF-16 shouldn't change window length");
     err->tokenOffset = encodedTokenOffset;
     err->lineLength = encodedWindowLength;
   } else {
-    MOZ_ASSERT((std::is_same<Unit, Utf8Unit>::value),
-               "should only see UTF-8 here");
+    static_assert(std::is_same_v<Unit, Utf8Unit>, "should only see UTF-8 here");
 
     bool simple = utf16WindowLength == encodedWindowLength;
+#ifdef DEBUG
+    auto isAscii = [](Unit u) { return IsAscii(u); };
     MOZ_ASSERT(std::all_of(encodedWindow, encodedWindow + encodedWindowLength,
-                           IsAscii<Unit>) == simple,
+                           isAscii) == simple,
                "equal window lengths in UTF-8 should correspond only to "
                "wholly-ASCII text");
-
+#endif
     if (simple) {
       err->tokenOffset = encodedTokenOffset;
       err->lineLength = encodedWindowLength;
@@ -1990,7 +1980,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getDirective(
     }
 
     if (MOZ_LIKELY(isAsciiCodePoint(unit))) {
-      if (unicode::IsSpaceOrBOM2(unit)) {
+      if (unicode::IsSpace(AssertedCast<Latin1Char>(unit))) {
         break;
       }
 
@@ -2014,13 +2004,13 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getDirective(
     // This ignores encoding errors: subsequent caller-side code to
     // handle the remaining source text in the comment will do so.
     PeekedCodePoint<Unit> peeked = this->sourceUnits.peekCodePoint();
-    if (peeked.isNone() || unicode::IsSpaceOrBOM2(peeked.codePoint())) {
+    if (peeked.isNone() || unicode::IsSpace(peeked.codePoint())) {
       break;
     }
 
     MOZ_ASSERT(!IsLineTerminator(peeked.codePoint()),
-               "!IsSpaceOrBOM2 must imply !IsLineTerminator or else we'll "
-               "fail to maintain line-info/flags for EOL");
+               "!IsSpace must imply !IsLineTerminator or else we'll fail to "
+               "maintain line-info/flags for EOL");
     this->sourceUnits.consumeKnownCodePoint(peeked);
 
     if (!appendCodePointToCharBuffer(peeked.codePoint())) {
@@ -2149,8 +2139,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::putIdentInCharBuffer(
 
     uint32_t codePoint;
     if (MOZ_LIKELY(isAsciiCodePoint(unit))) {
-      if (unicode::IsIdentifierPart(char16_t(unit)) ||
-          (char16_t(unit) == '#')) {
+      if (unicode::IsIdentifierPart(char16_t(unit)) || unit == '#') {
         if (!this->charBuffer.append(unit)) {
           return false;
         }
@@ -2264,17 +2253,10 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::identifierName(
 
   noteBadToken.release();
   if (visibility == NameVisibility::Private) {
-    MOZ_ASSERT(identStart[0] == static_cast<Unit>('#'),
-               "Private identifier starts with #");
     newPrivateNameToken(atom->asPropertyName(), start, modifier, out);
-
-    if (!anyCharsAccess().options().fieldsEnabledOption) {
-      errorAt(start.offset(), JSMSG_FIELDS_NOT_SUPPORTED);
-      return false;
-    }
-  } else {
-    newNameToken(atom->asPropertyName(), start, modifier, out);
+    return true;
   }
+  newNameToken(atom->asPropertyName(), start, modifier, out);
   return true;
 }
 
@@ -2406,24 +2388,36 @@ template <typename Unit, class AnyCharsAccess>
 MOZ_MUST_USE MOZ_ALWAYS_INLINE bool
 TokenStreamSpecific<Unit, AnyCharsAccess>::matchInteger(
     IsIntegerUnit isIntegerUnit, int32_t* nextUnit) {
+  int32_t unit = getCodeUnit();
+  if (!isIntegerUnit(unit)) {
+    *nextUnit = unit;
+    return true;
+  }
+  return matchIntegerAfterFirstDigit(isIntegerUnit, nextUnit);
+}
+
+template <typename Unit, class AnyCharsAccess>
+MOZ_MUST_USE MOZ_ALWAYS_INLINE bool
+TokenStreamSpecific<Unit, AnyCharsAccess>::matchIntegerAfterFirstDigit(
+    IsIntegerUnit isIntegerUnit, int32_t* nextUnit) {
   int32_t unit;
   while (true) {
     unit = getCodeUnit();
     if (isIntegerUnit(unit)) {
       continue;
     }
-#ifdef NIGHTLY_BUILD
     if (unit != '_') {
       break;
     }
     unit = getCodeUnit();
     if (!isIntegerUnit(unit)) {
-      error(JSMSG_MISSING_DIGIT_AFTER_SEPARATOR);
+      if (unit == '_') {
+        error(JSMSG_NUMBER_MULTIPLE_ADJACENT_UNDERSCORES);
+      } else {
+        error(JSMSG_NUMBER_END_WITH_UNDERSCORE);
+      }
       return false;
     }
-#else
-    break;
-#endif /* NIGHTLY_BUILD */
   }
 
   *nextUnit = unit;
@@ -2440,7 +2434,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::decimalNumber(
 
   // Consume integral component digits.
   if (IsAsciiDigit(unit)) {
-    if (!matchInteger(IsAsciiDigit, &unit)) {
+    if (!matchIntegerAfterFirstDigit(IsAsciiDigit, &unit)) {
       return false;
     }
   }
@@ -2459,7 +2453,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::decimalNumber(
                            this->sourceUnits.addressOfNextCodeUnit(), &dval)) {
       return false;
     }
-  } else if (unit == 'n' && anyCharsAccess().options().bigIntEnabledOption) {
+  } else if (unit == 'n') {
     isBigInt = true;
     unit = peekCodeUnit();
   } else {
@@ -2486,7 +2480,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::decimalNumber(
       }
 
       // Consume exponential digits.
-      if (!matchInteger(IsAsciiDigit, &unit)) {
+      if (!matchIntegerAfterFirstDigit(IsAsciiDigit, &unit)) {
         return false;
       }
     }
@@ -2633,6 +2627,8 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::regexpLiteral(
       flag = RegExpFlag::IgnoreCase;
     } else if (unit == 'm') {
       flag = RegExpFlag::Multiline;
+    } else if (unit == 's') {
+      flag = RegExpFlag::DotAll;
     } else if (unit == 'u') {
       flag = RegExpFlag::Unicode;
     } else if (unit == 'y') {
@@ -2661,7 +2657,6 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::regexpLiteral(
 template <typename Unit, class AnyCharsAccess>
 MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::bigIntLiteral(
     TokenStart start, Modifier modifier, TokenKind* out) {
-  MOZ_ASSERT(anyCharsAccess().options().bigIntEnabledOption);
   MOZ_ASSERT(this->sourceUnits.previousCodeUnit() == toUnit('n'));
   MOZ_ASSERT(this->sourceUnits.offset() > start.offset());
   uint32_t length = this->sourceUnits.offset() - start.offset();
@@ -2675,12 +2670,10 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::bigIntLiteral(
     // binary, octal, decimal, or hex digits.  Already checked by caller, as
     // the "n" indicating bigint comes at the end.
     MOZ_ASSERT(isAsciiCodePoint(unit));
-#ifdef NIGHTLY_BUILD
     // Skip over any separators.
     if (unit == '_') {
       continue;
     }
-#endif
     if (!this->appendCodePointToCharBuffer(unit)) {
       return false;
     }
@@ -2739,12 +2732,11 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
     }
 
     if (MOZ_UNLIKELY(!isAsciiCodePoint(unit))) {
-      // Non-ASCII code points can only be identifiers or whitespace.
-      // It would be nice to compute these *after* discarding whitespace,
-      // but IN A WORLD where |unicode::IsSpaceOrBOM2| requires consuming
-      // a variable number of code points, it's easier to assume it's an
-      // identifier and maybe do a little wasted work, than to unget and
-      // compute and reget if whitespace.
+      // Non-ASCII code points can only be identifiers or whitespace.  It would
+      // be nice to compute these *after* discarding whitespace, but IN A WORLD
+      // where |unicode::IsSpace| requires consuming a variable number of code
+      // units, it's easier to assume it's an identifier and maybe do a little
+      // wasted work, than to unget and compute and reget if whitespace.
       TokenStart start(this->sourceUnits, 0);
       const Unit* identStart = this->sourceUnits.addressOfNextCodeUnit();
 
@@ -2756,7 +2748,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
       }
 
       char32_t cp = peeked.codePoint();
-      if (unicode::IsSpaceOrBOM2(cp)) {
+      if (unicode::IsSpace(cp)) {
         this->sourceUnits.consumeKnownCodePoint(peeked);
         if (IsLineTerminator(cp)) {
           if (!updateLineInfoForEOL()) {
@@ -2892,7 +2884,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
         // one past the '0x'
         numStart = this->sourceUnits.addressOfNextCodeUnit() - 1;
 
-        if (!matchInteger(IsAsciiHexDigit, &unit)) {
+        if (!matchIntegerAfterFirstDigit(IsAsciiHexDigit, &unit)) {
           return badToken();
         }
       } else if (unit == 'b' || unit == 'B') {
@@ -2908,7 +2900,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
         // one past the '0b'
         numStart = this->sourceUnits.addressOfNextCodeUnit() - 1;
 
-        if (!matchInteger(IsAsciiBinary, &unit)) {
+        if (!matchIntegerAfterFirstDigit(IsAsciiBinary, &unit)) {
           return badToken();
         }
       } else if (unit == 'o' || unit == 'O') {
@@ -2924,7 +2916,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
         // one past the '0o'
         numStart = this->sourceUnits.addressOfNextCodeUnit() - 1;
 
-        if (!matchInteger(IsAsciiOctal, &unit)) {
+        if (!matchIntegerAfterFirstDigit(IsAsciiOctal, &unit)) {
           return badToken();
         }
       } else if (IsAsciiDigit(unit)) {
@@ -2946,23 +2938,19 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
           unit = getCodeUnit();
         } while (IsAsciiDigit(unit));
 
-#ifdef NIGHTLY_BUILD
         if (unit == '_') {
           error(JSMSG_SEPARATOR_IN_ZERO_PREFIXED_NUMBER);
           return badToken();
         }
-#endif /* NIGHTLY_BUILD */
 
         if (nonOctalDecimalIntegerLiteral) {
           // Use the decimal scanner for the rest of the number.
           return decimalNumber(unit, start, numStart, modifier, ttp);
         }
-#ifdef NIGHTLY_BUILD
       } else if (unit == '_') {
         // Give a more explicit error message when '_' is used after '0'.
         error(JSMSG_SEPARATOR_IN_ZERO_PREFIXED_NUMBER);
         return badToken();
-#endif /* NIGHTLY_BUILD */
       } else {
         // '0' not followed by [XxBbOo0-9_];  scan as a decimal number.
         numStart = this->sourceUnits.addressOfNextCodeUnit() - 1;
@@ -2972,7 +2960,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
         return decimalNumber(unit, start, numStart, modifier, ttp);
       }
 
-      if (unit == 'n' && anyCharsAccess().options().bigIntEnabledOption) {
+      if (unit == 'n') {
         if (isLegacyOctalOrNoctal) {
           error(JSMSG_BIGINT_INVALID_SYNTAX);
           return badToken();
@@ -3033,13 +3021,13 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
     // smallest type possible to assist the C++ compiler.
     switch (AssertedCast<uint8_t>(CodeUnitValue(toUnit(unit)))) {
       case '.':
-        unit = getCodeUnit();
-        if (IsAsciiDigit(unit)) {
+        if (IsAsciiDigit(peekCodeUnit())) {
           return decimalNumber('.', start,
-                               this->sourceUnits.addressOfNextCodeUnit() - 2,
+                               this->sourceUnits.addressOfNextCodeUnit() - 1,
                                modifier, ttp);
         }
 
+        unit = getCodeUnit();
         if (unit == '.') {
           if (matchCodeUnit('.')) {
             simpleKind = TokenKind::TripleDot;
@@ -3055,14 +3043,20 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
         break;
 
       case '#': {
-        TokenStart start(this->sourceUnits, -1);
-        const Unit* identStart = this->sourceUnits.addressOfNextCodeUnit() - 1;
-        IdentifierEscapes sawEscape;
-        if (!matchIdentifierStart(&sawEscape)) {
-          return badToken();
+        if (options().privateClassFields) {
+          TokenStart start(this->sourceUnits, -1);
+          const Unit* identStart =
+              this->sourceUnits.addressOfNextCodeUnit() - 1;
+          IdentifierEscapes sawEscape;
+          if (!matchIdentifierStart(&sawEscape)) {
+            return badToken();
+          }
+          return identifierName(start, identStart, sawEscape, modifier,
+                                NameVisibility::Private, ttp);
         }
-        return identifierName(start, identStart, sawEscape, modifier,
-                              NameVisibility::Private, ttp);
+        ungetCodeUnit(unit);
+        error(JSMSG_PRIVATE_FIELDS_NOT_SUPPORTED);
+        return badToken();
       }
 
       case '=':
@@ -3105,7 +3099,7 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
 
       case '|':
         if (matchCodeUnit('|')) {
-          simpleKind = TokenKind::Or;
+          simpleKind = matchCodeUnit('=') ? TokenKind::OrAssign : TokenKind::Or;
 #ifdef ENABLE_PIPELINE_OPERATOR
         } else if (matchCodeUnit('>')) {
           simpleKind = TokenKind::Pipeline;
@@ -3123,7 +3117,8 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
 
       case '&':
         if (matchCodeUnit('&')) {
-          simpleKind = TokenKind::And;
+          simpleKind =
+              matchCodeUnit('=') ? TokenKind::AndAssign : TokenKind::And;
         } else {
           simpleKind =
               matchCodeUnit('=') ? TokenKind::BitAndAssign : TokenKind::BitAnd;
@@ -3144,9 +3139,11 @@ MOZ_MUST_USE bool TokenStreamSpecific<Unit, AnyCharsAccess>::getTokenInternal(
             ungetCodeUnit(unit);
             simpleKind = TokenKind::OptionalChain;
           }
+        } else if (matchCodeUnit('?')) {
+          simpleKind = matchCodeUnit('=') ? TokenKind::CoalesceAssign
+                                          : TokenKind::Coalesce;
         } else {
-          simpleKind =
-              matchCodeUnit('?') ? TokenKind::Coalesce : TokenKind::Hook;
+          simpleKind = TokenKind::Hook;
         }
         break;
 
@@ -3436,7 +3433,7 @@ bool TokenStreamSpecific<Unit, AnyCharsAccess>::getStringOrTemplateToken(
 
         case '\r':
           matchLineTerminator('\n');
-          MOZ_FALLTHROUGH;
+          [[fallthrough]];
         case '\n': {
           // LineContinuation represents no code points.  We're manually
           // consuming a LineTerminatorSequence, so we must manually

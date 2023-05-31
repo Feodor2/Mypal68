@@ -36,7 +36,7 @@ Operand CodeGeneratorX64::ToOperand64(const LInt64Allocation& a64) {
   if (a.isGeneralReg()) {
     return Operand(a.toGeneralReg()->reg());
   }
-  return Operand(masm.getStackPointer(), ToStackOffset(a));
+  return Operand(ToAddress(a));
 }
 
 FrameSizeClass FrameSizeClass::FromDepth(uint32_t frameDepth) {
@@ -64,46 +64,51 @@ void CodeGenerator::visitBox(LBox* box) {
 void CodeGenerator::visitUnbox(LUnbox* unbox) {
   MUnbox* mir = unbox->mir();
 
+  Register result = ToRegister(unbox->output());
+
   if (mir->fallible()) {
     const ValueOperand value = ToValue(unbox, LUnbox::Input);
-    Assembler::Condition cond;
+    Label bail;
     switch (mir->type()) {
       case MIRType::Int32:
-        cond = masm.testInt32(Assembler::NotEqual, value);
+        masm.fallibleUnboxInt32(value, result, &bail);
         break;
       case MIRType::Boolean:
-        cond = masm.testBoolean(Assembler::NotEqual, value);
+        masm.fallibleUnboxBoolean(value, result, &bail);
         break;
       case MIRType::Object:
-        cond = masm.testObject(Assembler::NotEqual, value);
+        masm.fallibleUnboxObject(value, result, &bail);
         break;
       case MIRType::String:
-        cond = masm.testString(Assembler::NotEqual, value);
+        masm.fallibleUnboxString(value, result, &bail);
         break;
       case MIRType::Symbol:
-        cond = masm.testSymbol(Assembler::NotEqual, value);
+        masm.fallibleUnboxSymbol(value, result, &bail);
         break;
       case MIRType::BigInt:
-        cond = masm.testBigInt(Assembler::NotEqual, value);
+        masm.fallibleUnboxBigInt(value, result, &bail);
         break;
       default:
         MOZ_CRASH("Given MIRType cannot be unboxed.");
     }
-    bailoutIf(cond, unbox->snapshot());
-  } else {
-#ifdef DEBUG
-    Operand input = ToOperand(unbox->getOperand(LUnbox::Input));
-    JSValueTag tag = MIRTypeToTag(mir->type());
-    Label ok;
-    masm.splitTag(input, ScratchReg);
-    masm.branch32(Assembler::Equal, ScratchReg, Imm32(tag), &ok);
-    masm.assumeUnreachable("Infallible unbox type mismatch");
-    masm.bind(&ok);
-#endif
+    bailoutFrom(&bail, unbox->snapshot());
+    return;
   }
 
+  // Infallible unbox.
+
   Operand input = ToOperand(unbox->getOperand(LUnbox::Input));
-  Register result = ToRegister(unbox->output());
+
+#ifdef DEBUG
+  // Assert the types match.
+  JSValueTag tag = MIRTypeToTag(mir->type());
+  Label ok;
+  masm.splitTag(input, ScratchReg);
+  masm.branch32(Assembler::Equal, ScratchReg, Imm32(tag), &ok);
+  masm.assumeUnreachable("Infallible unbox type mismatch");
+  masm.bind(&ok);
+#endif
+
   switch (mir->type()) {
     case MIRType::Int32:
       masm.unboxInt32(input, result);
@@ -135,7 +140,7 @@ void CodeGenerator::visitCompareB(LCompareB* lir) {
   const LAllocation* rhs = lir->rhs();
   const Register output = ToRegister(lir->output());
 
-  MOZ_ASSERT(mir->jsop() == JSOP_STRICTEQ || mir->jsop() == JSOP_STRICTNE);
+  MOZ_ASSERT(mir->jsop() == JSOp::StrictEq || mir->jsop() == JSOp::StrictNe);
 
   // Load boxed boolean in ScratchReg.
   ScratchRegisterScope scratch(masm);
@@ -156,7 +161,7 @@ void CodeGenerator::visitCompareBAndBranch(LCompareBAndBranch* lir) {
   const ValueOperand lhs = ToValue(lir, LCompareBAndBranch::Lhs);
   const LAllocation* rhs = lir->rhs();
 
-  MOZ_ASSERT(mir->jsop() == JSOP_STRICTEQ || mir->jsop() == JSOP_STRICTNE);
+  MOZ_ASSERT(mir->jsop() == JSOp::StrictEq || mir->jsop() == JSOp::StrictNe);
 
   // Load boxed boolean in ScratchReg.
   ScratchRegisterScope scratch(masm);
@@ -191,8 +196,8 @@ void CodeGenerator::visitCompareBitwiseAndBranch(
   const ValueOperand lhs = ToValue(lir, LCompareBitwiseAndBranch::LhsInput);
   const ValueOperand rhs = ToValue(lir, LCompareBitwiseAndBranch::RhsInput);
 
-  MOZ_ASSERT(mir->jsop() == JSOP_EQ || mir->jsop() == JSOP_STRICTEQ ||
-             mir->jsop() == JSOP_NE || mir->jsop() == JSOP_STRICTNE);
+  MOZ_ASSERT(mir->jsop() == JSOp::Eq || mir->jsop() == JSOp::StrictEq ||
+             mir->jsop() == JSOp::Ne || mir->jsop() == JSOp::StrictNe);
 
   masm.cmpPtr(lhs.valueReg(), rhs.valueReg());
   emitBranch(JSOpToCondition(mir->compareType(), mir->jsop()), lir->ifTrue(),
@@ -393,12 +398,17 @@ void CodeGeneratorX64::wasmStore(const wasm::MemoryAccessDesc& access,
   }
 }
 
+void CodeGenerator::visitWasmHeapBase(LWasmHeapBase* ins) {
+  MOZ_ASSERT(ins->tlsPtr()->isBogus());
+  masm.movePtr(HeapReg, ToRegister(ins->output()));
+}
+
 template <typename T>
 void CodeGeneratorX64::emitWasmLoad(T* ins) {
   const MWasmLoad* mir = ins->mir();
 
   uint32_t offset = mir->access().offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
 
   const LAllocation* ptr = ins->ptr();
   Operand srcAddr = ptr->isBogus()
@@ -422,7 +432,7 @@ void CodeGeneratorX64::emitWasmStore(T* ins) {
   const wasm::MemoryAccessDesc& access = mir->access();
 
   uint32_t offset = access.offset();
-  MOZ_ASSERT(offset < wasm::OffsetGuardLimit);
+  MOZ_ASSERT(offset < wasm::MaxOffsetGuardLimit);
 
   const LAllocation* value = ins->getOperand(ins->ValueIndex);
   const LAllocation* ptr = ins->ptr();

@@ -1,5 +1,4 @@
 // |reftest| slow skip-if(!xulRuntime.shell)
-// -*- Mode: C++; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*-
 // Any copyright is dedicated to the Public Domain.
 // http://creativecommons.org/licenses/publicdomain/
 
@@ -78,7 +77,7 @@ function compareProperties(a, b, stack, path) {
                 pa.splice(i, 1);
                 i--;
             } else {
-                throw new Error("non-enumerable clone property " + uneval(pa[i][0]) + " " + path);
+                throw new Error("non-enumerable clone property " + propname + " " + path);
             }
         }
     }

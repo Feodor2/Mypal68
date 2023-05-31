@@ -12,6 +12,7 @@
 #include "frontend/ParseNode.h"
 #include "frontend/ParseNodeVisitor.h"
 #include "frontend/SharedContext.h"
+#include "util/Poison.h"
 #include "util/StringBuffer.h"
 #include "vm/JSFunction.h"
 
@@ -196,7 +197,7 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
           // Record the ParseNodeKind::PropertyDefinition/Shorthand but skip the
           // ParseNodeKind::Object so we're not flagged as a contributor.
           pos--;
-          MOZ_FALLTHROUGH;
+          [[fallthrough]];
 
         default:
           // Save any other nodes we encounter on the way up.
@@ -217,7 +218,7 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
   MOZ_MUST_USE bool resolveFun(FunctionNode* funNode,
                                MutableHandleAtom retAtom) {
     MOZ_ASSERT(funNode != nullptr);
-    RootedFunction fun(cx_, funNode->funbox()->function());
+    FunctionBox* funbox = funNode->funbox();
 
     MOZ_ASSERT(buf_.empty());
     auto resetBuf = mozilla::MakeScopeExit([&] { buf_.clear(); });
@@ -225,14 +226,15 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
     retAtom.set(nullptr);
 
     // If the function already has a name, use that.
-    if (fun->displayAtom() != nullptr) {
+    if (funbox->displayAtom() != nullptr) {
       if (prefix_ == nullptr) {
-        retAtom.set(fun->displayAtom());
+        retAtom.set(funbox->displayAtom());
         return true;
       }
       if (!buf_.append(prefix_) || !buf_.append('/') ||
-          !buf_.append(fun->displayAtom()))
+          !buf_.append(funbox->displayAtom())) {
         return false;
+      }
       retAtom.set(buf_.finishAtom());
       return !!retAtom;
     }
@@ -283,7 +285,8 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
             return false;
           }
         } else {
-          MOZ_ASSERT(left->isKind(ParseNodeKind::ComputedName));
+          MOZ_ASSERT(left->isKind(ParseNodeKind::ComputedName) ||
+                     left->isKind(ParseNodeKind::BigIntExpr));
         }
       } else {
         // Don't have consecutive '<' characters, and also don't start
@@ -315,7 +318,7 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
     // Skip assigning the guessed name if the function has a (dynamically)
     // computed inferred name.
     if (!funNode->isDirectRHSAnonFunction()) {
-      fun->setGuessedAtom(retAtom);
+      funbox->setGuessedAtom(retAtom);
     }
     return true;
   }
@@ -455,7 +458,7 @@ class NameResolver : public ParseNodeVisitor<NameResolver> {
     MOZ_ASSERT(initialParents == nparents_, "nparents imbalance detected");
     MOZ_ASSERT(parents_[initialParents] == pn,
                "pushed child shouldn't change underneath us");
-    AlwaysPoison(&parents_[initialParents], 0xFF,
+    AlwaysPoison(&parents_[initialParents], JS_OOB_PARSE_NODE_PATTERN,
                  sizeof(parents_[initialParents]), MemCheckKind::MakeUndefined);
 
     return ok;

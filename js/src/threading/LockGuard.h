@@ -5,6 +5,8 @@
 #ifndef threading_LockGuard_h
 #define threading_LockGuard_h
 
+#include "mozilla/Attributes.h"
+
 namespace js {
 
 template <typename Mutex>

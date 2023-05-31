@@ -6,7 +6,6 @@
 
 #include "nsContentUtils.h"
 #include "BackstagePass.h"
-#include "nsIPrincipal.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
 

@@ -5,6 +5,7 @@
 #include "jit/CompileWrappers.h"
 
 #include "gc/GC.h"
+#include "gc/Heap.h"
 #include "jit/Ion.h"
 #include "jit/JitRealm.h"
 
@@ -36,10 +37,6 @@ GeckoProfilerRuntime& CompileRuntime::geckoProfiler() {
   return runtime()->geckoProfiler();
 }
 
-bool CompileRuntime::jitSupportsFloatingPoint() {
-  return runtime()->jitSupportsFloatingPoint;
-}
-
 bool CompileRuntime::hadOutOfMemory() { return runtime()->hadOutOfMemory; }
 
 bool CompileRuntime::profilingScripts() { return runtime()->profilingScripts; }
@@ -52,12 +49,6 @@ const PropertyName* CompileRuntime::emptyString() {
 
 const StaticStrings& CompileRuntime::staticStrings() {
   return *runtime()->staticStrings;
-}
-
-const Value& CompileRuntime::NaNValue() { return runtime()->NaNValue; }
-
-const Value& CompileRuntime::positiveInfinityValue() {
-  return runtime()->positiveInfinityValue;
 }
 
 const WellKnownSymbols& CompileRuntime::wellKnownSymbols() {
@@ -84,12 +75,6 @@ const void* CompileRuntime::addressOfZone() {
   return runtime()->mainContextFromAnyThread()->addressOfZone();
 }
 
-#ifdef DEBUG
-bool CompileRuntime::isInsideNursery(gc::Cell* cell) {
-  return UninlinedIsInsideNursery(cell);
-}
-#endif
-
 const DOMCallbacks* CompileRuntime::DOMcallbacks() {
   return runtime()->DOMcallbacks;
 }
@@ -110,8 +95,8 @@ CompileRuntime* CompileZone::runtime() {
 bool CompileZone::isAtomsZone() { return zone()->isAtomsZone(); }
 
 #ifdef DEBUG
-const void* CompileZone::addressOfIonBailAfter() {
-  return zone()->runtimeFromAnyThread()->jitRuntime()->addressOfIonBailAfter();
+const void* CompileRuntime::addressOfIonBailAfterCounter() {
+  return runtime()->jitRuntime()->addressOfIonBailAfterCounter();
 }
 #endif
 
@@ -132,6 +117,11 @@ void* CompileZone::addressOfStringNurseryPosition() {
   return zone()->runtimeFromAnyThread()->gc.addressOfNurseryPosition();
 }
 
+void* CompileZone::addressOfBigIntNurseryPosition() {
+  // Objects and BigInts share a nursery, for now at least.
+  return zone()->runtimeFromAnyThread()->gc.addressOfNurseryPosition();
+}
+
 const void* CompileZone::addressOfNurseryCurrentEnd() {
   return zone()->runtimeFromAnyThread()->gc.addressOfNurseryCurrentEnd();
 }
@@ -146,24 +136,34 @@ const void* CompileZone::addressOfStringNurseryCurrentEnd() {
   return zone()->runtimeFromAnyThread()->gc.addressOfStringNurseryCurrentEnd();
 }
 
+const void* CompileZone::addressOfBigIntNurseryCurrentEnd() {
+  // Similar to Strings, BigInts also share the nursery with other nursery
+  // allocatable things.
+  return zone()->runtimeFromAnyThread()->gc.addressOfBigIntNurseryCurrentEnd();
+}
+
 uint32_t* CompileZone::addressOfNurseryAllocCount() {
   return zone()->runtimeFromAnyThread()->gc.addressOfNurseryAllocCount();
 }
 
 bool CompileZone::canNurseryAllocateStrings() {
-  return nurseryExists() &&
-         zone()->runtimeFromAnyThread()->gc.nursery().canAllocateStrings() &&
+  return zone()->runtimeFromAnyThread()->gc.nursery().canAllocateStrings() &&
          zone()->allocNurseryStrings;
 }
 
-bool CompileZone::nurseryExists() {
-  return zone()->runtimeFromAnyThread()->gc.nursery().exists();
+bool CompileZone::canNurseryAllocateBigInts() {
+  return zone()->runtimeFromAnyThread()->gc.nursery().canAllocateBigInts() &&
+         zone()->allocNurseryBigInts;
 }
 
 void CompileZone::setMinorGCShouldCancelIonCompilations() {
   MOZ_ASSERT(CurrentThreadCanAccessZone(zone()));
   JSRuntime* rt = zone()->runtimeFromMainThread();
   rt->gc.storeBuffer().setShouldCancelIonCompilations();
+}
+
+uintptr_t CompileZone::nurseryCellHeader(JS::TraceKind kind) {
+  return gc::NurseryCellHeader::MakeValue(zone(), kind);
 }
 
 JS::Realm* CompileRealm::realm() { return reinterpret_cast<JS::Realm*>(this); }
@@ -223,4 +223,7 @@ JitCompileOptions::JitCompileOptions(JSContext* cx) {
       cx->runtime()->geckoProfiler().enabled() &&
       cx->runtime()->geckoProfiler().slowAssertionsEnabled();
   offThreadCompilationAvailable_ = OffThreadCompilationAvailable(cx);
+#ifdef DEBUG
+  ionBailAfterEnabled_ = cx->runtime()->jitRuntime()->ionBailAfterEnabled();
+#endif
 }

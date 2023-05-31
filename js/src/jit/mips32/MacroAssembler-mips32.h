@@ -32,7 +32,7 @@ static_assert(1 << defaultShift == sizeof(JS::Value),
               "The defaultShift is wrong");
 
 static const uint32_t LOW_32_MASK = (1LL << 32) - 1;
-#if MOZ_LITTLE_ENDIAN
+#if MOZ_LITTLE_ENDIAN()
 static const int32_t LOW_32_OFFSET = 0;
 static const int32_t HIGH_32_OFFSET = 4;
 #else
@@ -313,12 +313,13 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
 
   void jump(JitCode* code) { branch(code); }
 
-  void jump(TrampolinePtr code) {
-    auto target = ImmPtr(code.value);
+  void jump(ImmPtr ptr) {
     BufferOffset bo = m_buffer.nextOffset();
-    addPendingJump(bo, target, RelocationKind::HARDCODED);
-    ma_jump(target);
+    addPendingJump(bo, ptr, RelocationKind::HARDCODED);
+    ma_jump(ptr);
   }
+
+  void jump(TrampolinePtr code) { jump(ImmPtr(code.value)); }
 
   void negl(Register reg) { ma_negu(reg, reg); }
 
@@ -336,17 +337,23 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
   void unboxBoolean(const Address& src, Register dest);
   void unboxDouble(const ValueOperand& operand, FloatRegister dest);
   void unboxDouble(const Address& src, FloatRegister dest);
+  void unboxDouble(const BaseIndex& src, FloatRegister dest);
   void unboxString(const ValueOperand& operand, Register dest);
   void unboxString(const Address& src, Register dest);
+  void unboxBigInt(const ValueOperand& operand, Register dest);
+  void unboxBigInt(const Address& src, Register dest);
   void unboxObject(const ValueOperand& src, Register dest);
   void unboxObject(const Address& src, Register dest);
   void unboxObject(const BaseIndex& src, Register dest) {
     unboxNonDouble(src, dest, JSVAL_TYPE_OBJECT);
   }
+  void unboxObjectOrNull(const Address& src, Register dest);
   void unboxValue(const ValueOperand& src, AnyRegister dest, JSValueType);
-  void unboxPrivate(const ValueOperand& src, Register dest);
 
-  void unboxGCThingForPreBarrierTrampoline(const Address& src, Register dest) {
+  void unboxGCThingForGCBarrier(const Address& src, Register dest) {
+    unboxObject(src, dest);
+  }
+  void unboxGCThingForGCBarrier(const ValueOperand& src, Register dest) {
     unboxObject(src, dest);
   }
 
@@ -427,8 +434,6 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
 
  public:
   void moveValue(const Value& val, Register type, Register data);
-
-  CodeOffsetJump jumpWithPatch(RepatchLabel* label);
 
   void loadUnboxedValue(Address address, MIRType type, AnyRegister dest) {
     if (dest.isFloat()) {
@@ -525,7 +530,7 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
 
   void pushValue(ValueOperand val);
   void popValue(ValueOperand val);
-#if MOZ_LITTLE_ENDIAN
+#if MOZ_LITTLE_ENDIAN()
   void pushValue(const Value& val) {
     push(Imm32(val.toNunboxTag()));
     if (val.isGCThing()) {
@@ -593,16 +598,41 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
   void load16SignExtend(const Address& address, Register dest);
   void load16SignExtend(const BaseIndex& src, Register dest);
 
+  template <typename S>
+  void load16UnalignedSignExtend(const S& src, Register dest) {
+    MOZ_CRASH("NYI");
+  }
+
   void load16ZeroExtend(const Address& address, Register dest);
   void load16ZeroExtend(const BaseIndex& src, Register dest);
+
+  template <typename S>
+  void load16UnalignedZeroExtend(const S& src, Register dest) {
+    MOZ_CRASH("NYI");
+  }
 
   void load32(const Address& address, Register dest);
   void load32(const BaseIndex& address, Register dest);
   void load32(AbsoluteAddress address, Register dest);
   void load32(wasm::SymbolicAddress address, Register dest);
+
+  template <typename S>
+  void load32Unaligned(const S& src, Register dest) {
+    MOZ_CRASH("NYI");
+  }
+
   void load64(const Address& address, Register64 dest) {
     load32(LowWord(address), dest.low);
     load32(HighWord(address), dest.high);
+  }
+  void load64(const BaseIndex& address, Register64 dest) {
+    load32(LowWord(address), dest.low);
+    load32(HighWord(address), dest.high);
+  }
+
+  template <typename S>
+  void load64Unaligned(const S& src, Register64 dest) {
+    MOZ_CRASH("NYI");
   }
 
   void loadPtr(const Address& address, Register dest);
@@ -630,6 +660,11 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
   void store16(Register src, const BaseIndex& address);
   void store16(Imm32 imm, const BaseIndex& address);
 
+  template <typename S, typename T>
+  void store16Unaligned(const S& src, const T& dest) {
+    MOZ_CRASH("NYI");
+  }
+
   void store32(Register src, AbsoluteAddress address);
   void store32(Register src, const Address& address);
   void store32(Register src, const BaseIndex& address);
@@ -642,7 +677,16 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
     store32(src, address);
   }
 
+  template <typename S, typename T>
+  void store32Unaligned(const S& src, const T& dest) {
+    MOZ_CRASH("NYI");
+  }
+
   void store64(Register64 src, Address address) {
+    store32(src.low, Address(address.base, address.offset + LOW_32_OFFSET));
+    store32(src.high, Address(address.base, address.offset + HIGH_32_OFFSET));
+  }
+  void store64(Register64 src, const BaseIndex& address) {
     store32(src.low, Address(address.base, address.offset + LOW_32_OFFSET));
     store32(src.high, Address(address.base, address.offset + HIGH_32_OFFSET));
   }
@@ -650,6 +694,15 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
   void store64(Imm64 imm, Address address) {
     store32(imm.low(), Address(address.base, address.offset + LOW_32_OFFSET));
     store32(imm.hi(), Address(address.base, address.offset + HIGH_32_OFFSET));
+  }
+  void store64(Imm64 imm, const BaseIndex& address) {
+    store32(imm.low(), Address(address.base, address.offset + LOW_32_OFFSET));
+    store32(imm.hi(), Address(address.base, address.offset + HIGH_32_OFFSET));
+  }
+
+  template <typename S, typename T>
+  void store64Unaligned(const S& src, const T& dest) {
+    MOZ_CRASH("NYI");
   }
 
   template <typename T>
@@ -708,8 +761,6 @@ class MacroAssemblerMIPSCompat : public MacroAssemblerMIPS {
   Condition ma_cmp64(Condition cond, Register64 lhs, Imm64 val, Register dest);
 
  public:
-  CodeOffset labelForPatch() { return CodeOffset(nextOffset().getOffset()); }
-
   void lea(Operand addr, Register dest) {
     ma_addu(dest, addr.baseReg(), Imm32(addr.disp()));
   }

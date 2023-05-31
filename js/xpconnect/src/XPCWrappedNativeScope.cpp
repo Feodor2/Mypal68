@@ -13,7 +13,6 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Unused.h"
-#include "nsIXULRuntime.h"
 #include "mozJSComponentLoader.h"
 
 #include "mozilla/dom/BindingUtils.h"
@@ -62,9 +61,9 @@ static bool RemoteXULForbidsXBLScope(HandleObject aFirstGlobal) {
 
 XPCWrappedNativeScope::XPCWrappedNativeScope(JS::Compartment* aCompartment,
                                              JS::HandleObject aFirstGlobal)
-    : mWrappedNativeMap(Native2WrappedNativeMap::newMap(XPC_NATIVE_MAP_LENGTH)),
+    : mWrappedNativeMap(mozilla::MakeUnique<Native2WrappedNativeMap>()),
       mWrappedNativeProtoMap(
-          ClassInfo2WrappedNativeProtoMap::newMap(XPC_NATIVE_PROTO_MAP_LENGTH)),
+          mozilla::MakeUnique<ClassInfo2WrappedNativeProtoMap>()),
       mComponents(nullptr),
       mCompartment(aCompartment) {
 #ifdef DEBUG
@@ -230,7 +229,7 @@ JSObject* GetUAWidgetScope(JSContext* cx, JSObject* contentScopeArg) {
   JSAutoRealm ar(cx, contentScope);
   nsIPrincipal* principal = GetObjectPrincipal(contentScope);
 
-  if (nsContentUtils::IsSystemPrincipal(principal)) {
+  if (principal->IsSystemPrincipal()) {
     return JS::GetNonCCWObjectGlobal(contentScope);
   }
 
@@ -261,10 +260,8 @@ XPCWrappedNativeScope::~XPCWrappedNativeScope() {
   // We can do additional cleanup assertions here...
 
   MOZ_ASSERT(0 == mWrappedNativeMap->Count(), "scope has non-empty map");
-  delete mWrappedNativeMap;
 
   MOZ_ASSERT(0 == mWrappedNativeProtoMap->Count(), "scope has non-empty map");
-  delete mWrappedNativeProtoMap;
 
   // This should not be necessary, since the Components object should die
   // with the scope but just in case.
@@ -484,7 +481,7 @@ void XPCWrappedNativeScope::DebugDump(int16_t depth) {
   XPC_LOG_ALWAYS(("mCompartment @ %p", mCompartment));
 
   XPC_LOG_ALWAYS(("mWrappedNativeMap @ %p with %d wrappers(s)",
-                  mWrappedNativeMap, mWrappedNativeMap->Count()));
+                  mWrappedNativeMap.get(), mWrappedNativeMap->Count()));
   // iterate contexts...
   if (depth && mWrappedNativeMap->Count()) {
     XPC_LOG_INDENT();
@@ -496,7 +493,8 @@ void XPCWrappedNativeScope::DebugDump(int16_t depth) {
   }
 
   XPC_LOG_ALWAYS(("mWrappedNativeProtoMap @ %p with %d protos(s)",
-                  mWrappedNativeProtoMap, mWrappedNativeProtoMap->Count()));
+                  mWrappedNativeProtoMap.get(),
+                  mWrappedNativeProtoMap->Count()));
   // iterate contexts...
   if (depth && mWrappedNativeProtoMap->Count()) {
     XPC_LOG_INDENT();

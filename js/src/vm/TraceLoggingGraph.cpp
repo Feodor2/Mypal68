@@ -15,8 +15,6 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ScopeExit.h"
 
-#include "builtin/String.h"
-
 #include "js/Printf.h"
 #include "js/UniquePtr.h"
 #include "threading/LockGuard.h"
@@ -157,8 +155,8 @@ uint32_t TraceLoggerGraphState::nextLoggerId() {
 
   int written = fprintf(
       out,
-      "{\"tree\":\"tl-tree.%u.%d.tl\", \"events\":\"tl-event.%u.%d.tl\", "
-      "\"dict\":\"tl-dict.%u.%d.json\", \"treeFormat\":\"64,64,31,1,32\"",
+      "{\"tree\":\"tl-tree.%u.%u.tl\", \"events\":\"tl-event.%u.%u.tl\", "
+      "\"dict\":\"tl-dict.%u.%u.json\", \"treeFormat\":\"64,64,31,1,32\"",
       pid_, numLoggers, pid_, numLoggers, pid_, numLoggers);
 
   if (written > 0) {
@@ -233,7 +231,7 @@ bool TraceLoggerGraph::init(uint64_t startTimestamp, bool graphFileEnabled) {
     uint32_t pid = traceLoggerGraphState->pid();
 
     js::UniqueChars dictFilename =
-        AllocTraceLogFilename("tl-dict.%u.%d.json", pid, loggerId);
+        AllocTraceLogFilename("tl-dict.%u.%u.json", pid, loggerId);
     dictFile = fopen(dictFilename.get(), "w");
     if (!dictFile) {
       return false;
@@ -244,7 +242,7 @@ bool TraceLoggerGraph::init(uint64_t startTimestamp, bool graphFileEnabled) {
     });
 
     js::UniqueChars treeFilename =
-        AllocTraceLogFilename("tl-tree.%u.%d.tl", pid, loggerId);
+        AllocTraceLogFilename("tl-tree.%u.%u.tl", pid, loggerId);
     treeFile = fopen(treeFilename.get(), "w+b");
     if (!treeFile) {
       return false;
@@ -255,7 +253,7 @@ bool TraceLoggerGraph::init(uint64_t startTimestamp, bool graphFileEnabled) {
     });
 
     js::UniqueChars eventFilename =
-        AllocTraceLogFilename("tl-event.%u.%d.tl", pid, loggerId);
+        AllocTraceLogFilename("tl-event.%u.%u.tl", pid, loggerId);
     eventFile = fopen(eventFilename.get(), "wb");
     if (!eventFile) {
       return false;

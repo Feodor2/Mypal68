@@ -73,14 +73,18 @@ void usecontainer(T* value) {
   if (value) asm("");
 }
 
+Cell* cell() {
+  static Cell c;
+  return &c;
+}
+
 Cell* f() {
   GCInDestructor kaboom;
 
-  Cell cell;
-  Cell* cell1 = &cell;
-  Cell* cell2 = &cell;
-  Cell* cell3 = &cell;
-  Cell* cell4 = &cell;
+  Cell* cell1 = cell();
+  Cell* cell2 = cell();
+  Cell* cell3 = cell();
+  Cell* cell4 = cell();
   {
     AutoSuppressGC nogc;
     suppressedFunction();
@@ -96,7 +100,7 @@ Cell* f() {
     AutoSuppressGC nogc;
   }
   usecell(cell3);
-  Cell* cell5 = &cell;
+  Cell* cell5 = cell();
   usecell(cell5);
 
   {
@@ -117,7 +121,7 @@ Cell* f() {
   }
 
   // Hazard in return value due to ~GCInDestructor
-  Cell* cell6 = &cell;
+  Cell* cell6 = cell();
   return cell6;
 }
 

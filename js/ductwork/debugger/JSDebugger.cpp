@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "JSDebugger.h"
-#include "nsIXPConnect.h"
 #include "nsThreadUtils.h"
 #include "jsapi.h"
 #include "jsfriendapi.h"
@@ -20,14 +19,13 @@
     }                                                \
   }
 
-namespace mozilla {
-namespace jsdebugger {
+namespace mozilla::jsdebugger {
 
 NS_IMPL_ISUPPORTS(JSDebugger, IJSDebugger)
 
-JSDebugger::JSDebugger() {}
+JSDebugger::JSDebugger() = default;
 
-JSDebugger::~JSDebugger() {}
+JSDebugger::~JSDebugger() = default;
 
 NS_IMETHODIMP
 JSDebugger::AddClass(JS::Handle<JS::Value> global, JSContext* cx) {
@@ -50,23 +48,7 @@ JSDebugger::AddClass(JS::Handle<JS::Value> global, JSContext* cx) {
     return NS_ERROR_FAILURE;
   }
 
-  if (recordreplay::IsRecordingOrReplaying() || recordreplay::IsMiddleman()) {
-    if (!recordreplay::DefineRecordReplayControlObject(cx, obj)) {
-      return NS_ERROR_FAILURE;
-    }
-  } else {
-    // Define an empty RecordReplayControl object, to avoid reference errors in
-    // scripts that run in normal processes. DefineRecordReplayControlObject
-    // can't be called in normal processes.
-    JS::RootedObject staticObject(cx, JS_NewObject(cx, nullptr));
-    if (!staticObject ||
-        !JS_DefineProperty(cx, obj, "RecordReplayControl", staticObject, 0)) {
-      return NS_ERROR_FAILURE;
-    }
-  }
-
   return NS_OK;
 }
 
-}  // namespace jsdebugger
-}  // namespace mozilla
+}  // namespace mozilla::jsdebugger

@@ -20,6 +20,7 @@
 #include "mozilla/ThreadLocal.h"
 
 #include "threading/Thread.h"
+#include "vm/JitActivation.h"  // js::jit::JitActivation
 #include "vm/Realm.h"
 #include "vm/Runtime.h"
 #include "wasm/WasmInstance.h"
@@ -992,11 +993,6 @@ void wasm::EnsureEagerProcessSignalHandlers() {
   // If there is no JIT, then there should be no Wasm signal handlers.
   return;
 #endif
-
-  // Signal handlers are currently disabled when recording or replaying.
-  if (mozilla::recordreplay::IsRecordingOrReplaying()) {
-    return;
-  }
 
 #if defined(ANDROID) && defined(MOZ_LINKER)
   // Signal handling is broken on some android systems.

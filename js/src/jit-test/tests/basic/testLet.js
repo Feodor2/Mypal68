@@ -8,7 +8,7 @@ function test(str, arg, result)
 
     var fun = new Function('x', str);
 
-    var got = fun.toSource();
+    var got = `(${fun.toString()})`;
     var expect = '(function anonymous(x\n) {\n' + str + '\n})';
     if (got !== expect) {
         print("GOT:    " + got);
@@ -22,7 +22,7 @@ function test(str, arg, result)
     // test xdr by cloning a cross-compartment function
     var code = "(function (x) { " + str + " })";
     var c = clone(otherGlobal.evaluate(code));
-    assertEq(c.toSource(), eval(code).toSource());
+    assertEq(c.toString(), eval(code).toString());
 
     var got = fun(arg);
     var expect = result;

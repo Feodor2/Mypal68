@@ -18,9 +18,6 @@ function test()
   printBugNumber(BUGNUMBER);
   printStatus (summary);
 
-  options("strict");
-  options("werror");
-
   expect = 'toString called';
   actual = 'toString not called';
   try

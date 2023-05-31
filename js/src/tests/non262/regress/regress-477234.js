@@ -1,5 +1,4 @@
 // |reftest| slow
-/* -*- indent-tabs-mode: nil; js-indent-level: 2 -*- */
 /* This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
@@ -28,12 +27,6 @@ function test()
          "  enumerable: true, configurable: true," +
          "  get: function(){}" +
          "});");
-    var a = uneval;
-    delete uneval;
-    uneval = a;
-    var b = toSource;
-    delete toSource;
-    toSource = b;
     var c = toString;
     delete toString;
     toString = c;

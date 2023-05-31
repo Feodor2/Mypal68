@@ -17,7 +17,6 @@
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/DOMException.h"
 #include "mozilla/dom/DOMExceptionBinding.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/MozQueryInterface.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 
@@ -218,7 +217,7 @@ namespace {
 class WrappedJSNamed final : public nsINamed {
   nsCString mName;
 
-  ~WrappedJSNamed() {}
+  ~WrappedJSNamed() = default;
 
  public:
   NS_DECL_ISUPPORTS
@@ -655,7 +654,7 @@ nsresult nsXPCWrappedJS::CheckForException(XPCCallContext& ccx,
     }
 
     if (reportable) {
-      if (DOMPrefs::DumpEnabled()) {
+      if (nsJSUtils::DumpEnabled()) {
         static const char line[] =
             "************************************************************\n";
         static const char preamble[] =
@@ -778,17 +777,9 @@ nsXPCWrappedJS::CallMethod(uint16_t methodIndex, const nsXPTMethodInfo* info,
 
   const nsXPTInterfaceInfo* interfaceInfo = GetInfo();
   JS::RootedId id(cx);
-  const char* name;
-  nsAutoCString symbolName;
-  if (info->IsSymbol()) {
-    info->GetSymbolDescription(cx, symbolName);
-    name = symbolName.get();
-    id = SYMBOL_TO_JSID(info->GetSymbol(cx));
-  } else {
-    name = info->GetName();
-    if (!AtomizeAndPinJSString(cx, id.get(), name)) {
-      return NS_ERROR_FAILURE;
-    }
+  const char* name = info->NameOrDescription();
+  if (!info->GetId(cx, id.get())) {
+    return NS_ERROR_FAILURE;
   }
 
   // We now need to enter the realm of the actual JSObject* we are pointing at.
@@ -1094,7 +1085,7 @@ pre_call_clean_up:
 static const JSClass XPCOutParamClass = {"XPCOutParam", 0, JS_NULL_CLASS_OPS};
 
 bool xpc::IsOutObject(JSContext* cx, JSObject* obj) {
-  return js::GetObjectJSClass(obj) == &XPCOutParamClass;
+  return js::GetObjectClass(obj) == &XPCOutParamClass;
 }
 
 JSObject* xpc::NewOutObject(JSContext* cx) {

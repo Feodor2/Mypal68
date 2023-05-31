@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 (function(global) {
+  const undefined = void 0;
 
   /*
    * completesNormally(CODE) returns true if evaluating CODE (as eval
@@ -150,9 +151,12 @@
   global.assertDeepEq = (function(){
     var call = Function.prototype.call,
       Array_isArray = Array.isArray,
+      Array_includes = call.bind(Array.prototype.includes),
       Map_ = Map,
       Error_ = Error,
       Symbol_ = Symbol,
+      Symbol_keyFor = Symbol.keyFor,
+      Symbol_description = call.bind(Object.getOwnPropertyDescriptor(Symbol.prototype, "description").get),
       Map_has = call.bind(Map.prototype.has),
       Map_get = call.bind(Map.prototype.get),
       Map_set = call.bind(Map.prototype.set),
@@ -162,8 +166,7 @@
       Object_hasOwnProperty = call.bind(Object.prototype.hasOwnProperty),
       Object_getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor,
       Object_isExtensible = Object.isExtensible,
-      Object_getOwnPropertyNames = Object.getOwnPropertyNames,
-      uneval_ = uneval;
+      Object_getOwnPropertyNames = Object.getOwnPropertyNames;
 
     // Return true iff ES6 Type(v) isn't Object.
     // Note that `typeof document.all === "undefined"`.
@@ -219,7 +222,7 @@
       }
 
       function failPropList(na, nb, msg) {
-        throw Error_("got own properties " + uneval_(na) + ", expected " + uneval_(nb) +
+        throw Error_("got own properties " + JSON.stringify(na) + ", expected " + JSON.stringify(nb) +
                (msg ? " " + msg : ""));
       }
 
@@ -243,7 +246,7 @@
             db = Object_getOwnPropertyDescriptor(b, name);
           var pmsg = at(msg, /^[_$A-Za-z0-9]+$/.test(name)
                      ? /0|[1-9][0-9]*/.test(name) ? "[" + name + "]" : "." + name
-                     : "[" + uneval_(name) + "]");
+                     : "[" + JSON.stringify(name) + "]");
           assertSameValue(da.configurable, db.configurable, at(pmsg, ".[[Configurable]]"));
           assertSameValue(da.enumerable, db.enumerable, at(pmsg, ".[[Enumerable]]"));
           if (Object_hasOwnProperty(da, "value")) {
@@ -259,6 +262,28 @@
         }
       };
 
+      const wellKnownSymbols = Reflect.ownKeys(Symbol)
+                                      .map(key => Symbol[key])
+                                      .filter(value => typeof value === "symbol");
+
+      // The standard doesn't offer a convenient way to distinguish well-known
+      // symbols from user-created symbols.
+      function isSimilarSymbol(a, b) {
+        // Fast path for same symbols.
+        if (a === b) {
+          return true;
+        }
+
+        // 1. Symbol descriptions must match.
+        // 2. Either both symbols are in the registry or none is.
+        // 3. Neither symbol must be a well-known symbol, because those are
+        //    already handled through the fast path.
+        return Symbol_description(a) === Symbol_description(b) &&
+               Symbol_keyFor(a) === Symbol_keyFor(b) &&
+               !Array_includes(wellKnownSymbols, a) &&
+               !Array_includes(wellKnownSymbols, b);
+      }
+
       var ab = new Map_();
       var bpath = new Map_();
 
@@ -268,12 +293,9 @@
           // Symbol("x") !== Symbol("x") but
           // assertDeepEq(Symbol("x"), Symbol("x")) should pass.
           if (typeof b !== "symbol") {
-            throw Error_("got " + uneval_(a) + ", expected " + uneval_(b) + " " + path);
-          } else if (uneval_(a) !== uneval_(b)) {
-            // We lamely use uneval_ to distinguish well-known symbols
-            // from user-created symbols. The standard doesn't offer
-            // a convenient way to do it.
-            throw Error_("got " + uneval_(a) + ", expected " + uneval_(b) + " " + path);
+            throw Error_("got " + String(a) + ", expected " + String(b) + " " + path);
+          } else if (!isSimilarSymbol(a, b)) {
+            throw Error_("got " + String(a) + ", expected " + String(b) + " " + path);
           } else if (Map_has(ab, a)) {
             assertSameValue(Map_get(ab, a), b, path);
           } else if (Map_has(bpath, b)) {
@@ -287,7 +309,7 @@
         } else if (isPrimitive(a)) {
           assertSameValue(a, b, path);
         } else if (isPrimitive(b)) {
-          throw Error_("got " + Object_toString(a) + ", expected " + uneval_(b) + " " + path);
+          throw Error_("got " + Object_toString(a) + ", expected " + String(b) + " " + path);
         } else if (Map_has(ab, a)) {
           assertSameValue(Map_get(ab, a), b, path);
         } else if (Map_has(bpath, b)) {

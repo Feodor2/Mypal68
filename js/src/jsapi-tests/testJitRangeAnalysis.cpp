@@ -138,7 +138,7 @@ BEGIN_TEST(testJitRangeAnalysis_MathSignBeta) {
   entry->add(c0);
   MConstant* cm0 = MConstant::New(func.alloc, DoubleValue(-0.0));
   entry->add(cm0);
-  MCompare* cmp = MCompare::New(func.alloc, p, c0, JSOP_LT);
+  MCompare* cmp = MCompare::New(func.alloc, p, c0, JSOp::Lt);
   cmp->setCompareType(MCompare::Compare_Double);
   entry->add(cmp);
   entry->end(MTest::New(func.alloc, cmp, thenBlock, elseBlock));
@@ -156,7 +156,7 @@ BEGIN_TEST(testJitRangeAnalysis_MathSignBeta) {
   // else
   // {
   //   if (p >= 0)
-  MCompare* elseCmp = MCompare::New(func.alloc, p, c0, JSOP_GE);
+  MCompare* elseCmp = MCompare::New(func.alloc, p, c0, JSOp::Ge);
   elseCmp->setCompareType(MCompare::Compare_Double);
   elseBlock->add(elseCmp);
   elseBlock->end(MTest::New(func.alloc, elseCmp, elseThenBlock, elseElseBlock));
@@ -239,7 +239,7 @@ BEGIN_TEST(testJitRangeAnalysis_StrictCompareBeta) {
   entry->add(p);
   MConstant* c0 = MConstant::New(func.alloc, DoubleValue(0.0));
   entry->add(c0);
-  MCompare* cmp = MCompare::New(func.alloc, p, c0, JSOP_STRICTEQ);
+  MCompare* cmp = MCompare::New(func.alloc, p, c0, JSOp::StrictEq);
   entry->add(cmp);
   entry->end(MTest::New(func.alloc, cmp, thenBlock, elseBlock));
 
@@ -263,7 +263,7 @@ BEGIN_TEST(testJitRangeAnalysis_StrictCompareBeta) {
   // If range analysis inserts a beta node for p, it will be able to compute
   // a meaningful range for p + -0.
 
-  // We can't do beta node insertion with STRICTEQ and a non-numeric
+  // We can't do beta node insertion with StrictEq and a non-numeric
   // comparison though.
   MCompare::CompareType nonNumerics[] = {
       MCompare::Compare_Unknown, MCompare::Compare_Object,
@@ -343,3 +343,16 @@ BEGIN_TEST(testJitRangeAnalysis_shiftRight) {
   return true;
 }
 END_TEST(testJitRangeAnalysis_shiftRight)
+
+BEGIN_TEST(testJitRangeAnalysis_MathCeil) {
+  MinimalAlloc func;
+
+  Range* n0_5 = Range::NewDoubleSingletonRange(func.alloc, -0.5);
+  Range* n0_5Ceil = Range::ceil(func.alloc, n0_5);
+
+  CHECK(n0_5Ceil);
+  CHECK(n0_5Ceil->canBeNegativeZero());
+
+  return true;
+}
+END_TEST(testJitRangeAnalysis_MathCeil)

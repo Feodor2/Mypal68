@@ -26,7 +26,7 @@ function test()
       town[i] = [ si, "x" + si, "y" + si, "z" + si ];
     }
 
-    return "town=" + uneval(town) + ";function f() {}";
+    return "town=" + JSON.stringify(town) + ";function f() {}";
   }
 
   if (typeof document != "undefined")

@@ -11,6 +11,7 @@
 #endif
 #include "jit/arm64/SharedICHelpers-arm64.h"
 #include "jit/VMFunctions.h"
+#include "vm/JitActivation.h"  // js::jit::JitActivation
 
 #include "jit/MacroAssembler-inl.h"
 
@@ -36,7 +37,7 @@ void JitRuntime::generateEnterJIT(JSContext* cx, MacroAssembler& masm) {
       IntArgReg6;                      // EnterJitData::osrNumStackValues.
   const Register reg_vp = IntArgReg7;  // Address of EnterJitData::result.
 
-  MOZ_ASSERT(OsrFrameReg == IntArgReg3);
+  static_assert(OsrFrameReg == IntArgReg3);
 
   // During the pushes below, use the normal stack pointer.
   masm.SetStackPointer64(sp);
@@ -701,7 +702,7 @@ bool JitRuntime::generateVMWrapper(JSContext* cx, MacroAssembler& masm,
       break;
 
     case Type_Double:
-      MOZ_ASSERT(cx->runtime()->jitSupportsFloatingPoint);
+      MOZ_ASSERT(JitOptions.supportsFloatingPoint);
       masm.Ldr(ARMFPRegister(ReturnDoubleReg, 64),
                MemOperand(masm.GetStackPointer64()));
       masm.freeStack(sizeof(double));
@@ -736,7 +737,7 @@ uint32_t JitRuntime::generatePreBarrier(JSContext* cx, MacroAssembler& masm,
                                         MIRType type) {
   uint32_t offset = startTrampolineCode(masm);
 
-  MOZ_ASSERT(PreBarrierReg == r1);
+  static_assert(PreBarrierReg == r1);
   Register temp1 = r2;
   Register temp2 = r3;
   Register temp3 = r4;

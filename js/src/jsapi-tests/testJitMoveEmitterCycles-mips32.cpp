@@ -118,7 +118,7 @@ static js::jit::JitCode* linkAndAllocate(JSContext* cx,
                                          js::jit::MacroAssembler* masm) {
   using namespace js;
   using namespace js::jit;
-  Linker l(*masm, "test");
+  Linker l(*masm);
   return l.newCode(cx, CodeKind::Ion);
 }
 
@@ -131,7 +131,6 @@ BEGIN_TEST(testJitMoveEmitterCycles_simple) {
   LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
   TempAllocator alloc(&lifo);
   JitContext jc(cx, &alloc);
-  AutoFlushICache afc("test");
 
   StackMacroAssembler masm;
   MoveEmitter mover(masm);
@@ -172,7 +171,6 @@ BEGIN_TEST(testJitMoveEmitterCycles_autogen) {
   LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
   TempAllocator alloc(&lifo);
   JitContext jc(cx, &alloc);
-  AutoFlushICache afc("test");
   StackMacroAssembler masm;
   MoveEmitter mover(masm);
   MoveResolver mr;
@@ -265,7 +263,6 @@ BEGIN_TEST(testJitMoveEmitterCycles_autogen2) {
   LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
   TempAllocator alloc(&lifo);
   JitContext jc(cx, &alloc);
-  AutoFlushICache afc("test");
   StackMacroAssembler masm;
   MoveEmitter mover(masm);
   MoveResolver mr;
@@ -371,7 +368,6 @@ BEGIN_TEST(testJitMoveEmitterCycles_autogen3) {
   LifoAlloc lifo(LIFO_ALLOC_PRIMARY_CHUNK_SIZE);
   TempAllocator alloc(&lifo);
   JitContext jc(cx, &alloc);
-  AutoFlushICache afc("test");
   StackMacroAssembler masm;
   MoveEmitter mover(masm);
   MoveResolver mr;

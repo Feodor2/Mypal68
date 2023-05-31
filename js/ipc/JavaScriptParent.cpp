@@ -6,6 +6,7 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ScriptSettings.h"
 #include "nsJSUtils.h"
+#include "nsIConsoleService.h"
 #include "nsIScriptError.h"
 #include "jsfriendapi.h"
 #include "js/Proxy.h"
@@ -13,8 +14,8 @@
 #include "js/Wrapper.h"
 #include "xpcprivate.h"
 #include "mozilla/Casting.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
-#include "nsAutoPtr.h"
 
 using namespace js;
 using namespace JS;
@@ -35,14 +36,7 @@ JavaScriptParent::~JavaScriptParent() {
 }
 
 static bool ForbidUnsafeBrowserCPOWs() {
-  static bool result;
-  static bool cached = false;
-  if (!cached) {
-    cached = true;
-    Preferences::AddBoolVarCache(
-        &result, "dom.ipc.cpows.forbid-unsafe-from-browser", false);
-  }
-  return result;
+  return StaticPrefs::dom_ipc_cpows_forbid_unsafe_from_browser();
 }
 
 bool JavaScriptParent::allowMessage(JSContext* cx) {

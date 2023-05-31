@@ -42,6 +42,7 @@
 
 #include "builtin/DataViewObject.h"
 #include "builtin/MapObject.h"
+#include "js/Array.h"        // JS::GetArrayLength, JS::IsArrayObject
 #include "js/ArrayBuffer.h"  // JS::{ArrayBufferHasData,DetachArrayBuffer,IsArrayBufferObject,New{,Mapped}ArrayBufferWithContents,ReleaseMappedArrayBufferContents}
 #include "js/Date.h"
 #include "js/GCHashTable.h"
@@ -50,6 +51,7 @@
 #include "js/Wrapper.h"
 #include "vm/BigIntType.h"
 #include "vm/JSContext.h"
+#include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/RegExpObject.h"
 #include "vm/SavedFrame.h"
 #include "vm/SharedArrayObject.h"
@@ -170,11 +172,11 @@ namespace js {
 
 template <typename T, typename AllocPolicy>
 struct BufferIterator {
-  typedef mozilla::BufferList<AllocPolicy> BufferList;
+  using BufferList = mozilla::BufferList<AllocPolicy>;
 
   explicit BufferIterator(const BufferList& buffer)
       : mBuffer(buffer), mIter(buffer.Iter()) {
-    JS_STATIC_ASSERT(8 % sizeof(T) == 0);
+    static_assert(8 % sizeof(T) == 0);
   }
 
   explicit BufferIterator(const JSStructuredCloneData& data)
@@ -371,8 +373,8 @@ class SCInput {
 
  private:
   void staticAssertions() {
-    JS_STATIC_ASSERT(sizeof(char16_t) == 2);
-    JS_STATIC_ASSERT(sizeof(uint32_t) == 4);
+    static_assert(sizeof(char16_t) == 2);
+    static_assert(sizeof(uint32_t) == 4);
   }
 
   JSContext* cx;
@@ -408,7 +410,6 @@ struct JSStructuredCloneReader {
 
   BigInt* readBigInt(uint32_t data);
 
-  bool checkDouble(double d);
   MOZ_MUST_USE bool readTypedArray(uint32_t arrayType, uint32_t nelems,
                                    MutableHandleValue vp, bool v1Read = false);
   MOZ_MUST_USE bool readDataView(uint32_t byteLength, MutableHandleValue vp);
@@ -424,8 +425,8 @@ struct JSStructuredCloneReader {
   SCInput& in;
 
   // The widest scope that the caller will accept, where
-  // SameProcessSameThread is the widest (it can store anything it wants) and
-  // DifferentProcess is the narrowest (it cannot contain pointers and must
+  // SameProcessDifferentThread is the widest (it can store anything it wants)
+  // and DifferentProcess is the narrowest (it cannot contain pointers and must
   // be valid cross-process.)
   JS::StructuredCloneScope allowedScope;
 
@@ -548,13 +549,6 @@ struct JSStructuredCloneWriter {
 
   struct TransferableObjectsHasher : public DefaultHasher<JSObject*> {
     static inline HashNumber hash(const Lookup& l) {
-      // Iteration order of the transferable objects table must be
-      // preserved during recording/replaying, as the callbacks used
-      // during transfer may interact with the recording. Just use the
-      // same hash number for all elements to ensure this.
-      if (mozilla::recordreplay::IsRecordingOrReplaying()) {
-        return 0;
-      }
       return DefaultHasher<JSObject*>::hash(l);
     }
   };
@@ -577,9 +571,9 @@ JS_FRIEND_API uint64_t js::GetSCOffset(JSStructuredCloneWriter* writer) {
   return writer->output().count() * sizeof(uint64_t);
 }
 
-JS_STATIC_ASSERT(SCTAG_END_OF_BUILTIN_TYPES <= JS_SCTAG_USER_MIN);
-JS_STATIC_ASSERT(JS_SCTAG_USER_MIN <= JS_SCTAG_USER_MAX);
-JS_STATIC_ASSERT(Scalar::Int8 == 0);
+static_assert(SCTAG_END_OF_BUILTIN_TYPES <= JS_SCTAG_USER_MIN);
+static_assert(JS_SCTAG_USER_MIN <= JS_SCTAG_USER_MAX);
+static_assert(Scalar::Int8 == 0);
 
 static void ReportDataCloneError(JSContext* cx,
                                  const JSStructuredCloneCallbacks* callbacks,
@@ -711,14 +705,11 @@ void SCInput::getPair(uint64_t data, uint32_t* tagp, uint32_t* datap) {
 }
 
 bool SCInput::readDouble(double* p) {
-  union {
-    uint64_t u;
-    double d;
-  } pun;
-  if (!read(&pun.u)) {
+  uint64_t u;
+  if (!read(&u)) {
     return false;
   }
-  *p = CanonicalizeNaN(pun.d);
+  *p = CanonicalizeNaN(mozilla::BitwiseCast<double>(u));
   return true;
 }
 
@@ -748,7 +739,7 @@ bool SCInput::readArray(T* p, size_t nelems) {
     return true;
   }
 
-  JS_STATIC_ASSERT(sizeof(uint64_t) % sizeof(T) == 0);
+  static_assert(sizeof(uint64_t) % sizeof(T) == 0);
 
   // Fail if nelems is so huge that computing the full size will overflow.
   mozilla::CheckedInt<size_t> size =
@@ -832,8 +823,8 @@ bool SCOutput::writeDouble(double d) {
 
 template <class T>
 bool SCOutput::writeArray(const T* p, size_t nelems) {
-  JS_STATIC_ASSERT(8 % sizeof(T) == 0);
-  JS_STATIC_ASSERT(sizeof(uint64_t) % sizeof(T) == 0);
+  static_assert(8 % sizeof(T) == 0);
+  static_assert(sizeof(uint64_t) % sizeof(T) == 0);
 
   if (nelems == 0) {
     return true;
@@ -997,7 +988,7 @@ void JSStructuredCloneData::discardTransferables() {
   }
 }
 
-JS_STATIC_ASSERT(JSString::MAX_LENGTH < UINT32_MAX);
+static_assert(JSString::MAX_LENGTH < UINT32_MAX);
 
 JSStructuredCloneWriter::~JSStructuredCloneWriter() {
   // Free any transferable data left lying around in the buffer
@@ -1024,7 +1015,7 @@ bool JSStructuredCloneWriter::parseTransferable() {
   JSContext* cx = context();
   RootedObject array(cx, &transferable.toObject());
   bool isArray;
-  if (!JS_IsArrayObject(cx, array, &isArray)) {
+  if (!JS::IsArrayObject(cx, array, &isArray)) {
     return false;
   }
   if (!isArray) {
@@ -1032,7 +1023,7 @@ bool JSStructuredCloneWriter::parseTransferable() {
   }
 
   uint32_t length;
-  if (!JS_GetArrayLength(cx, array, &length)) {
+  if (!JS::GetArrayLength(cx, array, &length)) {
     return false;
   }
 
@@ -1164,7 +1155,7 @@ inline void JSStructuredCloneWriter::checkStack() {
   // To avoid making serialization O(n^2), limit stack-checking at 10.
   const size_t MAX = 10;
 
-  size_t limit = Min(counts.length(), MAX);
+  size_t limit = std::min(counts.length(), MAX);
   MOZ_ASSERT(objs.length() == counts.length());
   size_t total = 0;
   for (size_t i = 0; i < limit; i++) {
@@ -1427,7 +1418,7 @@ bool JSStructuredCloneWriter::traverseObject(HandleObject obj, ESClass cls) {
   // Write the header for obj.
   if (cls == ESClass::Array) {
     uint32_t length = 0;
-    if (!JS_GetArrayLength(context(), obj, &length)) {
+    if (!JS::GetArrayLength(context(), obj, &length)) {
       return false;
     }
 
@@ -1571,6 +1562,11 @@ bool JSStructuredCloneWriter::traverseSavedFrame(HandleObject obj) {
 
   RootedValue val(context());
 
+  val = BooleanValue(savedFrame->getMutedErrors());
+  if (!startWrite(val)) {
+    return false;
+  }
+
   context()->markAtom(savedFrame->getSource());
   val = StringValue(savedFrame->getSource());
   if (!startWrite(val)) {
@@ -1710,6 +1706,7 @@ bool JSStructuredCloneWriter::startWrite(HandleValue v) {
       case ESClass::SetIterator:
       case ESClass::Arguments:
       case ESClass::Error:
+      case ESClass::Function:
         break;
 
       case ESClass::Other: {
@@ -2005,26 +2002,6 @@ bool JSStructuredCloneWriter::write(HandleValue v) {
   return transferOwnership();
 }
 
-bool JSStructuredCloneReader::checkDouble(double d) {
-  if (!JS::IsCanonicalized(d)) {
-    JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
-                              JSMSG_SC_BAD_SERIALIZED_DATA, "unrecognized NaN");
-    return false;
-  }
-  return true;
-}
-
-template <typename CharT>
-static UniquePtr<CharT[], JS::FreePolicy> AllocateChars(JSContext* cx,
-                                                        size_t len) {
-  // We're going to null-terminate!
-  auto p = cx->make_pod_array<CharT>(len + 1);
-  if (p) {
-    p[len] = CharT(0);
-  }
-  return p;
-}
-
 template <typename CharT>
 JSString* JSStructuredCloneReader::readStringImpl(uint32_t nchars) {
   if (nchars > JSString::MAX_LENGTH) {
@@ -2042,20 +2019,14 @@ JSString* JSStructuredCloneReader::readStringImpl(uint32_t nchars) {
 }
 
 JSString* JSStructuredCloneReader::readString(uint32_t data) {
-  uint32_t nchars = data & JS_BITMASK(31);
+  uint32_t nchars = data & BitMask(31);
   bool latin1 = data & (1 << 31);
   return latin1 ? readStringImpl<Latin1Char>(nchars)
                 : readStringImpl<char16_t>(nchars);
 }
 
 BigInt* JSStructuredCloneReader::readBigInt(uint32_t data) {
-  if (!context()->realm()->creationOptions().getBigIntEnabled()) {
-    JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
-                              JSMSG_SC_BIGINT_DISABLED);
-    return nullptr;
-  }
-
-  size_t length = data & JS_BITMASK(31);
+  size_t length = data & BitMask(31);
   bool isNegative = data & (1 << 31);
   if (length == 0) {
     return BigInt::zero(context());
@@ -2418,10 +2389,10 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp) {
 
     case SCTAG_NUMBER_OBJECT: {
       double d;
-      if (!in.readDouble(&d) || !checkDouble(d)) {
+      if (!in.readDouble(&d)) {
         return false;
       }
-      vp.setDouble(d);
+      vp.setDouble(CanonicalizeNaN(d));
       if (!PrimitiveToObject(context(), vp)) {
         return false;
       }
@@ -2443,7 +2414,7 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp) {
 
     case SCTAG_DATE_OBJECT: {
       double d;
-      if (!in.readDouble(&d) || !checkDouble(d)) {
+      if (!in.readDouble(&d)) {
         return false;
       }
       JS::ClippedTime t = JS::TimeClip(d);
@@ -2592,10 +2563,7 @@ bool JSStructuredCloneReader::startRead(MutableHandleValue vp) {
     default: {
       if (tag <= SCTAG_FLOAT_MAX) {
         double d = ReinterpretPairAsDouble(tag, data);
-        if (!checkDouble(d)) {
-          return false;
-        }
-        vp.setNumber(d);
+        vp.setNumber(CanonicalizeNaN(d));
         break;
       }
 
@@ -2653,7 +2621,13 @@ bool JSStructuredCloneReader::readHeader() {
     storedScope = JS::StructuredCloneScope::DifferentProcessForIndexedDB;
   }
 
-  if (storedScope < JS::StructuredCloneScope::SameProcessSameThread ||
+  // Backward compatibility with old structured clone buffers. Value '0' was
+  // used for SameProcessSameThread scope.
+  if ((int)storedScope == 0) {
+    storedScope = JS::StructuredCloneScope::SameProcessDifferentThread;
+  }
+
+  if (storedScope < JS::StructuredCloneScope::SameProcessDifferentThread ||
       storedScope > JS::StructuredCloneScope::DifferentProcessForIndexedDB) {
     JS_ReportErrorNumberASCII(context(), GetErrorMessage, nullptr,
                               JSMSG_SC_BAD_SERIALIZED_DATA,
@@ -2835,12 +2809,36 @@ JSObject* JSStructuredCloneReader::readSavedFrame(uint32_t principalsTag) {
                               "bad SavedFrame principals");
     return nullptr;
   }
-  savedFrame->initPrincipalsAlreadyHeld(principals);
 
+  RootedValue mutedErrors(context());
   RootedValue source(context());
-  if (!startRead(&source) || !source.isString()) {
-    return nullptr;
+  {
+    // Read a |mutedErrors| boolean followed by a |source| string.
+    // The |mutedErrors| boolean is present in all new structured-clone data,
+    // but in older data it will be absent and only the |source| string will be
+    // found.
+    if (!startRead(&mutedErrors)) {
+      return nullptr;
+    }
+
+    if (mutedErrors.isBoolean()) {
+      if (!startRead(&source) || !source.isString()) {
+        return nullptr;
+      }
+    } else if (mutedErrors.isString()) {
+      // Backwards compatibility: Handle missing |mutedErrors| boolean,
+      // this is actually just a |source| string.
+      source = mutedErrors;
+      mutedErrors.setBoolean(true);  // Safe default value.
+    } else {
+      // Invalid type.
+      return nullptr;
+    }
   }
+
+  savedFrame->initPrincipalsAlreadyHeldAndMutedErrors(principals,
+                                                      mutedErrors.toBoolean());
+
   auto atomSource = AtomizeString(context(), source.toString());
   if (!atomSource) {
     return nullptr;
@@ -3081,7 +3079,7 @@ JS_PUBLIC_API bool JS_StructuredClone(
   const JSStructuredCloneCallbacks* callbacks = optionalCallbacks;
 
   JSAutoStructuredCloneBuffer buf(
-      JS::StructuredCloneScope::SameProcessSameThread, callbacks, closure);
+      JS::StructuredCloneScope::SameProcessDifferentThread, callbacks, closure);
   {
     if (value.isObject()) {
       RootedObject obj(cx, &value.toObject());

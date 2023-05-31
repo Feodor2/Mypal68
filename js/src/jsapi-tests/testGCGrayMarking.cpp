@@ -2,8 +2,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "gc/Heap.h"
-#include "gc/Verifier.h"
+#include <algorithm>
+
 #include "gc/WeakMap.h"
 #include "gc/Zone.h"
 #include "js/Proxy.h"
@@ -11,6 +11,12 @@
 
 using namespace js;
 using namespace js::gc;
+
+static constexpr CellColor AllCellColors[] = {CellColor::White, CellColor::Gray,
+                                              CellColor::Black};
+
+static constexpr CellColor MarkedCellColors[] = {CellColor::Gray,
+                                                 CellColor::Black};
 
 namespace js {
 
@@ -152,22 +158,20 @@ bool TestMarking() {
   return true;
 }
 
-static const CellColor DontMark = CellColor::White;
+static constexpr CellColor DontMark = CellColor::White;
 
 enum MarkKeyOrDelegate : bool { MarkKey = true, MarkDelegate = false };
 
 bool TestJSWeakMaps() {
   for (auto keyOrDelegateColor : MarkedCellColors) {
     for (auto mapColor : MarkedCellColors) {
-      for (auto markKeyOrDelegate : { MarkKey, MarkDelegate }) {
-        CellColor expected = ExpectedWeakMapValueColor(keyOrDelegateColor,
-                                                       mapColor);
+      for (auto markKeyOrDelegate : {MarkKey, MarkDelegate}) {
+        CellColor expected = std::min(keyOrDelegateColor, mapColor);
         CHECK(TestJSWeakMap(markKeyOrDelegate, keyOrDelegateColor, mapColor,
                             expected));
 #ifdef JS_GC_ZEAL
-        CHECK(TestJSWeakMapWithGrayUnmarking(markKeyOrDelegate,
-                                             keyOrDelegateColor, mapColor,
-                                             expected));
+        CHECK(TestJSWeakMapWithGrayUnmarking(
+            markKeyOrDelegate, keyOrDelegateColor, mapColor, expected));
 #endif
       }
     }
@@ -184,16 +188,15 @@ bool TestInternalWeakMaps() {
         continue;
       }
 
-      CellColor keyOrDelegateColor =
-          ExpectedKeyAndDelegateColor(keyMarkColor, delegateMarkColor);
-      CellColor expected = ExpectedWeakMapValueColor(keyOrDelegateColor,
-                                                     CellColor::Black);
+      // The map is black. The delegate marks its key via wrapper preservation.
+      // The key maps its delegate and the value. Thus, all three end up the
+      // maximum of the key and delegate colors.
+      CellColor expected = std::max(keyMarkColor, delegateMarkColor);
       CHECK(TestInternalWeakMap(keyMarkColor, delegateMarkColor, expected));
 
 #ifdef JS_GC_ZEAL
       CHECK(TestInternalWeakMapWithGrayUnmarking(keyMarkColor,
-                                                 delegateMarkColor,
-                                                 expected));
+                                                 delegateMarkColor, expected));
 #endif
     }
   }
@@ -239,9 +242,9 @@ bool TestJSWeakMap(MarkKeyOrDelegate markKey, CellColor weakMapMarkColor,
 
     ClearGrayRoots();
 
-    CHECK(GetCellColor(weakMap) == weakMapMarkColor);
-    CHECK(GetCellColor(keyOrDelegate) == keyOrDelegateMarkColor);
-    CHECK(GetCellColor(value) == expectedValueColor);
+    CHECK(weakMap->color() == weakMapMarkColor);
+    CHECK(keyOrDelegate->color() == keyOrDelegateMarkColor);
+    CHECK(value->color() == expectedValueColor);
   }
 
   return true;
@@ -295,9 +298,9 @@ bool TestJSWeakMapWithGrayUnmarking(MarkKeyOrDelegate markKey,
 
     ClearGrayRoots();
 
-    CHECK(GetCellColor(weakMap) == weakMapMarkColor);
-    CHECK(GetCellColor(keyOrDelegate) == keyOrDelegateMarkColor);
-    CHECK(GetCellColor(value) == expectedValueColor);
+    CHECK(weakMap->color() == weakMapMarkColor);
+    CHECK(keyOrDelegate->color() == keyOrDelegateMarkColor);
+    CHECK(value->color() == expectedValueColor);
   }
 
   JS_UnsetGCZeal(cx, uint8_t(ZealMode::YieldWhileGrayMarking));
@@ -307,11 +310,11 @@ bool TestJSWeakMapWithGrayUnmarking(MarkKeyOrDelegate markKey,
 
 static void MaybeExposeObject(JSObject* object, CellColor color) {
   if (color == CellColor::Black) {
-      JS::ExposeObjectToActiveJS(object);
+    JS::ExposeObjectToActiveJS(object);
   }
 }
 
-#endif // JS_GC_ZEAL
+#endif  // JS_GC_ZEAL
 
 bool CreateJSWeakMapObjects(JSObject** weakMapOut, JSObject** keyOut,
                             JSObject** valueOut) {
@@ -368,9 +371,9 @@ bool TestInternalWeakMap(CellColor keyMarkColor, CellColor delegateMarkColor,
 
     ClearGrayRoots();
 
-    CHECK(GetCellColor(key) == expectedColor);
-    CHECK(GetCellColor(delegate) == expectedColor);
-    CHECK(GetCellColor(value) == expectedColor);
+    CHECK(key->color() == expectedColor);
+    CHECK(delegate->color() == expectedColor);
+    CHECK(value->color() == expectedColor);
   }
 
   return true;
@@ -420,9 +423,9 @@ bool TestInternalWeakMapWithGrayUnmarking(CellColor keyMarkColor,
 
     ClearGrayRoots();
 
-    CHECK(GetCellColor(key) == expectedColor);
-    CHECK(GetCellColor(delegate) == expectedColor);
-    CHECK(GetCellColor(value) == expectedColor);
+    CHECK(key->color() == expectedColor);
+    CHECK(delegate->color() == expectedColor);
+    CHECK(value->color() == expectedColor);
   }
 
   JS_UnsetGCZeal(cx, uint8_t(ZealMode::YieldWhileGrayMarking));
@@ -430,7 +433,7 @@ bool TestInternalWeakMapWithGrayUnmarking(CellColor keyMarkColor,
   return true;
 }
 
-#endif // JS_GC_ZEAL
+#endif  // JS_GC_ZEAL
 
 bool CreateInternalWeakMapObjects(UniquePtr<GCManagedObjectWeakMap>* weakMapOut,
                                   JSObject** keyOut, JSObject** valueOut) {
@@ -604,8 +607,8 @@ struct ColorCheckFunctor {
 
     // Shapes and symbols are never marked gray.
     jsid id = shape->propid();
-    if (JSID_IS_GCTHING(id) &&
-        !CheckCellColor(JSID_TO_GCTHING(id).asCell(), MarkColor::Black)) {
+    if (id.isGCThing() &&
+        !CheckCellColor(id.toGCCellPtr().asCell(), MarkColor::Black)) {
       return false;
     }
 

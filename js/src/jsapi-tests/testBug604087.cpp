@@ -9,7 +9,7 @@
 #include "vm/JSObject.h"
 #include "vm/ProxyObject.h"
 
-const js::Class OuterWrapperClass = PROXY_CLASS_DEF(
+const JSClass OuterWrapperClass = PROXY_CLASS_DEF(
     "Proxy", JSCLASS_HAS_RESERVED_SLOTS(1) /* additional class flags */);
 
 static JSObject* wrap(JSContext* cx, JS::HandleObject toWrap,
@@ -41,9 +41,9 @@ BEGIN_TEST(testBug604087) {
 
   js::WrapperOptions options;
   options.setClass(&OuterWrapperClass);
-  options.setSingleton(true);
   JS::RootedObject outerObj(
-      cx, js::Wrapper::New(cx, global, &js::Wrapper::singleton, options));
+      cx,
+      js::Wrapper::NewSingleton(cx, global, &js::Wrapper::singleton, options));
   JS::RealmOptions globalOptions;
   JS::RootedObject compartment2(
       cx, JS_NewGlobalObject(cx, getGlobalClass(), nullptr,
@@ -74,7 +74,8 @@ BEGIN_TEST(testBug604087) {
   JS::RootedObject next(cx);
   {
     JSAutoRealm ar(cx, compartment2);
-    next = js::Wrapper::New(cx, compartment2, &js::Wrapper::singleton, options);
+    next = js::Wrapper::NewSingleton(cx, compartment2, &js::Wrapper::singleton,
+                                     options);
     CHECK(next);
   }
 

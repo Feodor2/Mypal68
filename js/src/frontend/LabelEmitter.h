@@ -10,7 +10,9 @@
 
 #include "jstypes.h"                             // JS_PUBLIC_API
 #include "frontend/BytecodeControlStructures.h"  // LabelControl
+#include "frontend/BytecodeOffset.h"             // BytecodeOffset
 #include "frontend/JumpList.h"                   // JumpList
+#include "js/TypeDecls.h"                        // JSAtom
 
 class JS_PUBLIC_API JSAtom;
 
@@ -31,9 +33,6 @@ struct BytecodeEmitter;
 //
 class MOZ_STACK_CLASS LabelEmitter {
   BytecodeEmitter* bce_;
-
-  // The offset of the JSOP_LABEL.
-  ptrdiff_t top_ = 0;
 
   mozilla::Maybe<LabelControl> controlInfo_;
 
@@ -59,7 +58,7 @@ class MOZ_STACK_CLASS LabelEmitter {
  public:
   explicit LabelEmitter(BytecodeEmitter* bce) : bce_(bce) {}
 
-  MOZ_MUST_USE bool emitLabel(HandleAtom name);
+  void emitLabel(HandleAtom name);
   MOZ_MUST_USE bool emitEnd();
 };
 

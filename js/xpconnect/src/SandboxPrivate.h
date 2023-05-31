@@ -31,7 +31,6 @@ class SandboxPrivate : public nsIGlobalObject,
     // The type used to cast to void needs to match the one in GetPrivate.
     nsIScriptObjectPrincipal* sop =
         static_cast<nsIScriptObjectPrincipal*>(sbp.forget().take());
-    mozilla::RecordReplayRegisterDeferredFinalizeThing(nullptr, nullptr, sop);
     JS_SetPrivate(global, sop);
   }
 
@@ -43,7 +42,7 @@ class SandboxPrivate : public nsIGlobalObject,
 
   nsIPrincipal* GetPrincipal() override { return mPrincipal; }
 
-  nsIPrincipal* GetEffectiveStoragePrincipal() override { return nullptr; }
+  nsIPrincipal* GetEffectiveStoragePrincipal() override { return mPrincipal; }
 
   JSObject* GetGlobalJSObject() override { return GetWrapper(); }
   JSObject* GetGlobalJSObjectPreserveColor() const override {
@@ -65,7 +64,7 @@ class SandboxPrivate : public nsIGlobalObject,
  private:
   explicit SandboxPrivate(nsIPrincipal* principal) : mPrincipal(principal) {}
 
-  virtual ~SandboxPrivate() {}
+  virtual ~SandboxPrivate() = default;
 
   nsCOMPtr<nsIPrincipal> mPrincipal;
 };

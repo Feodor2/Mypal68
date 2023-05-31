@@ -25,17 +25,22 @@ class AutoUnlockGC;
  */
 class MOZ_RAII AutoLockGC {
  public:
-  explicit AutoLockGC(JSRuntime* rt MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
-      : runtime_(rt) {
+  explicit AutoLockGC(gc::GCRuntime* gc MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+      : gc(gc) {
     MOZ_GUARD_OBJECT_NOTIFIER_INIT;
     lock();
+  }
+  explicit AutoLockGC(JSRuntime* rt MOZ_GUARD_OBJECT_NOTIFIER_PARAM)
+      : AutoLockGC(&rt->gc) {
+    MOZ_GUARD_OBJECT_NOTIFIER_INIT;
   }
 
   ~AutoLockGC() { lockGuard_.reset(); }
 
+ protected:
   void lock() {
     MOZ_ASSERT(lockGuard_.isNothing());
-    lockGuard_.emplace(runtime_->gc.lock);
+    lockGuard_.emplace(gc->lock);
   }
 
   void unlock() {
@@ -43,18 +48,18 @@ class MOZ_RAII AutoLockGC {
     lockGuard_.reset();
   }
 
- protected:
   js::LockGuard<js::Mutex>& guard() { return lockGuard_.ref(); }
 
-  JSRuntime* runtime() const { return runtime_; }
+  gc::GCRuntime* const gc;
 
  private:
-  JSRuntime* runtime_;
   mozilla::Maybe<js::LockGuard<js::Mutex>> lockGuard_;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 
   AutoLockGC(const AutoLockGC&) = delete;
   AutoLockGC& operator=(const AutoLockGC&) = delete;
+
+  friend class AutoUnlockGC;  // For lock/unlock.
 };
 
 /*
@@ -63,8 +68,8 @@ class MOZ_RAII AutoLockGC {
  */
 class MOZ_RAII AutoLockGCBgAlloc : public AutoLockGC {
  public:
-  explicit AutoLockGCBgAlloc(JSRuntime* rt)
-      : AutoLockGC(rt), startBgAlloc(false) {}
+  explicit AutoLockGCBgAlloc(gc::GCRuntime* gc) : AutoLockGC(gc) {}
+  explicit AutoLockGCBgAlloc(JSRuntime* rt) : AutoLockGCBgAlloc(&rt->gc) {}
 
   ~AutoLockGCBgAlloc() {
     unlock();
@@ -75,7 +80,7 @@ class MOZ_RAII AutoLockGCBgAlloc : public AutoLockGC {
      * the GC lock.
      */
     if (startBgAlloc) {
-      runtime()->gc.startBackgroundAllocTaskIfIdle();  // Ignore failure.
+      gc->startBackgroundAllocTaskIfIdle();
     }
   }
 
@@ -90,7 +95,7 @@ class MOZ_RAII AutoLockGCBgAlloc : public AutoLockGC {
  private:
   // true if we should start a background chunk allocation task after the
   // lock is released.
-  bool startBgAlloc;
+  bool startBgAlloc = false;
 };
 
 class MOZ_RAII AutoUnlockGC {

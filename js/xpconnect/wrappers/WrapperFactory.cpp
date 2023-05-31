@@ -78,8 +78,7 @@ JSObject* WrapperFactory::CreateXrayWaiver(JSContext* cx, HandleObject obj,
   // Add the new waiver to the map. It's important that we only ever have
   // one waiver for the lifetime of the target object.
   if (!scope->mWaiverWrapperMap) {
-    scope->mWaiverWrapperMap =
-        JSObject2JSObjectMap::newMap(XPC_WRAPPER_MAP_LENGTH);
+    scope->mWaiverWrapperMap = mozilla::MakeUnique<JSObject2JSObjectMap>();
   }
   if (!scope->mWaiverWrapperMap->Add(cx, obj, waiver)) {
     return nullptr;
@@ -700,8 +699,9 @@ static bool FixWaiverAfterTransplant(JSContext* cx, HandleObject oldWaiver,
   // cross-compartment wrapper (which should have no waiver). On the other hand,
   // in the !crossCompartmentTransplant case we know one already exists.
   // CreateXrayWaiver asserts all this.
-  JSObject* newWaiver = WrapperFactory::CreateXrayWaiver(
-      cx, newobj, /* allowExisting = */ !crossCompartmentTransplant);
+  RootedObject newWaiver(
+      cx, WrapperFactory::CreateXrayWaiver(
+              cx, newobj, /* allowExisting = */ !crossCompartmentTransplant));
   if (!newWaiver) {
     return false;
   }

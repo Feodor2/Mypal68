@@ -11,6 +11,7 @@
 #include "mozilla/Maybe.h"
 
 #include "gc/Zone.h"
+#include "vm/Runtime.h"
 
 #include "gc/ArenaList-inl.h"
 
@@ -106,12 +107,11 @@ class ArenaCellIter {
         arenaAddr(nullptr),
         thing(0),
         traceKind(JS::TraceKind::Null),
-        initialized(false) {}
-
-  explicit ArenaCellIter(Arena* arena)
-      : initialized(false) {
-    init(arena);
+        initialized(false) {
+    span.initAsEmpty();
   }
+
+  explicit ArenaCellIter(Arena* arena) : initialized(false) { init(arena); }
 
   void init(Arena* arena) {
     MOZ_ASSERT(!initialized);
@@ -179,7 +179,7 @@ class ZoneAllCellIter<TenuredCell> {
 
  protected:
   // For use when a subclass wants to insert some setup before init().
-  ZoneAllCellIter() {}
+  ZoneAllCellIter() = default;
 
   void init(JS::Zone* zone, AllocKind kind) {
     MOZ_ASSERT_IF(IsNurseryAllocable(kind),
@@ -393,9 +393,7 @@ class ZoneCellIter : protected ZoneAllCellIter<T> {
     return cell;
   }
 
-  T* get() const {
-    return reinterpret_cast<T*>(getCell());
-  }
+  T* get() const { return reinterpret_cast<T*>(getCell()); }
 
   TenuredCell* unbarrieredGetCell() const { return Base::getCell(); }
   T* unbarrieredGet() const { return Base::get(); }

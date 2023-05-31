@@ -17,6 +17,7 @@
 #define wasm_gc_h
 
 #include "jit/MacroAssembler.h"
+#include "util/Memory.h"
 
 namespace js {
 namespace wasm {
@@ -43,10 +44,12 @@ struct StackMap final {
   // as to limit its range to 11 bits, where
   // 11 == ceil(log2(MaxParams * sizeof-biggest-param-type-in-words))
   //
-  // The map may also cover a ref-typed DebugFrame.  If so that can be noted,
-  // since users of the map need to trace pointers in such a DebugFrame.
+  // The stackmap may also cover a DebugFrame (all DebugFrames which may
+  // potentially contain live pointers into the JS heap get a map).  If so that
+  // can be noted, since users of the map need to trace pointers in a
+  // DebugFrame.
   //
-  // Finally, for sanity checking only, for stack maps associated with a wasm
+  // Finally, for sanity checking only, for stackmaps associated with a wasm
   // trap exit stub, the number of words used by the trap exit stub save area
   // is also noted.  This is used in Instance::traceFrame to check that the
   // TrapExitDummyValue is in the expected place in the frame.
@@ -60,8 +63,11 @@ struct StackMap final {
   // Where is Frame* relative to the top?  This is an offset in words.
   uint32_t frameOffsetFromTop : 11;
 
-  // Notes the presence of a ref-typed DebugFrame.
-  uint32_t hasRefTypedDebugFrame : 1;
+  // Notes the presence of a DebugFrame with possibly-live references.  A
+  // DebugFrame may or may not contain GC-managed data; in situations when it is
+  // possible that any pointers in the DebugFrame are non-null, the DebugFrame
+  // gets a stackmap.
+  uint32_t hasDebugFrameWithLiveRefs : 1;
 
  private:
   static constexpr uint32_t maxMappedWords = (1 << 30) - 1;
@@ -74,7 +80,7 @@ struct StackMap final {
       : numMappedWords(numMappedWords),
         numExitStubWords(0),
         frameOffsetFromTop(0),
-        hasRefTypedDebugFrame(0) {
+        hasDebugFrameWithLiveRefs(0) {
     const uint32_t nBitmap = calcNBitmap(numMappedWords);
     memset(bitmap, 0, nBitmap * sizeof(bitmap[0]));
   }
@@ -110,11 +116,11 @@ struct StackMap final {
     frameOffsetFromTop = nWords;
   }
 
-  // If the frame described by this StackMap includes a DebugFrame for a
-  // ref-typed return value, call here to record that fact.
-  void setHasRefTypedDebugFrame() {
-    MOZ_ASSERT(hasRefTypedDebugFrame == 0);
-    hasRefTypedDebugFrame = 1;
+  // If the frame described by this StackMap includes a DebugFrame, call here to
+  // record that fact.
+  void setHasDebugFrameWithLiveRefs() {
+    MOZ_ASSERT(hasDebugFrameWithLiveRefs == 0);
+    hasDebugFrameWithLiveRefs = 1;
   }
 
   inline void setBit(uint32_t bitIndex) {
@@ -192,6 +198,7 @@ class StackMaps {
   }
   bool empty() const { return mapping_.empty(); }
   size_t length() const { return mapping_.length(); }
+  Maplet* getRef(size_t i) { return &mapping_[i]; }
   Maplet get(size_t i) const { return mapping_[i]; }
   Maplet move(size_t i) {
     Maplet m = mapping_[i];
@@ -278,12 +285,7 @@ static inline size_t StackArgAreaSizeUnaligned(
   MOZ_ASSERT(saSig.argTypes[saSig.numArgs] == MIRType::None /*the end marker*/);
 
   ItemsAndLength itemsAndLength(saSig.argTypes, saSig.numArgs);
-
-  ABIArgIter<ItemsAndLength> i(itemsAndLength);
-  while (!i.done()) {
-    i++;
-  }
-  return i.stackBytesConsumedSoFar();
+  return StackArgAreaSizeUnaligned(itemsAndLength);
 }
 
 static inline size_t AlignStackArgAreaSize(size_t unalignedSize) {
@@ -295,13 +297,45 @@ static inline size_t StackArgAreaSizeAligned(const T& argTypes) {
   return AlignStackArgAreaSize(StackArgAreaSizeUnaligned(argTypes));
 }
 
+// A stackmap creation helper.  Create a stackmap from a vector of booleans.
+// The caller owns the resulting stackmap.
+
+typedef Vector<bool, 128, SystemAllocPolicy> StackMapBoolVector;
+
+wasm::StackMap* ConvertStackMapBoolVectorToStackMap(
+    const StackMapBoolVector& vec, bool hasRefs);
+
+// Generate a stackmap for a function's stack-overflow-at-entry trap, with
+// the structure:
+//
+//    <reg dump area>
+//    |       ++ <space reserved before trap, if any>
+//    |               ++ <space for Frame>
+//    |                       ++ <inbound arg area>
+//    |                                           |
+//    Lowest Addr                                 Highest Addr
+//
+// The caller owns the resulting stackmap.  This assumes a grow-down stack.
+//
+// For non-debug builds, if the stackmap would contain no pointers, no
+// stackmap is created, and nullptr is returned.  For a debug build, a
+// stackmap is always created and returned.
+//
+// The "space reserved before trap" is the space reserved by
+// MacroAssembler::wasmReserveStackChecked, in the case where the frame is
+// "small", as determined by that function.
+MOZ_MUST_USE bool CreateStackMapForFunctionEntryTrap(
+    const ArgTypeVector& argTypes, const MachineState& trapExitLayout,
+    size_t trapExitLayoutWords, size_t nBytesReservedBeforeTrap,
+    size_t nInboundStackArgBytes, wasm::StackMap** result);
+
 // At a resumable wasm trap, the machine's registers are saved on the stack by
 // (code generated by) GenerateTrapExit().  This function writes into |args| a
 // vector of booleans describing the ref-ness of the saved integer registers.
 // |args[0]| corresponds to the low addressed end of the described section of
 // the save area.
 MOZ_MUST_USE bool GenerateStackmapEntriesForTrapExit(
-    const ValTypeVector& args, const MachineState& trapExitLayout,
+    const ArgTypeVector& args, const MachineState& trapExitLayout,
     const size_t trapExitLayoutNumWords, ExitStubMapVector* extras);
 
 // Shared write barrier code.

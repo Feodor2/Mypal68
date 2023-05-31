@@ -16,6 +16,7 @@
 #ifndef wasm_module_h
 #define wasm_module_h
 
+#include "js/WasmModule.h"
 #include "js/BuildId.h"
 
 #include "wasm/WasmCode.h"
@@ -29,7 +30,7 @@ struct CompileArgs;
 // In the context of wasm, the OptimizedEncodingListener specifically is
 // listening for the completion of tier-2.
 
-typedef RefPtr<JS::OptimizedEncodingListener> Tier2Listener;
+using Tier2Listener = RefPtr<JS::OptimizedEncodingListener>;
 
 // A struct containing the typed, imported values that are harvested from the
 // import object and passed to Module::instantiate(). This struct must be
@@ -108,6 +109,10 @@ class Module : public JS::WasmModule {
 
   mutable Atomic<bool> testingTier2Active_;
 
+  // Cached malloc allocation size for GC memory tracking.
+
+  size_t gcMallocBytesExcludingCode_;
+
   bool instantiateFunctions(JSContext* cx,
                             const JSFunctionVector& funcImports) const;
   bool instantiateMemory(JSContext* cx,
@@ -126,7 +131,6 @@ class Module : public JS::WasmModule {
   bool instantiateGlobals(JSContext* cx, const ValVector& globalImportValues,
                           WasmGlobalObjectVector& globalObjs) const;
   bool initSegments(JSContext* cx, HandleWasmInstanceObject instance,
-                    const JSFunctionVector& funcImports,
                     HandleWasmMemoryObject memory,
                     const ValVector& globalImportValues) const;
   SharedCode getDebugEnabledCode() const;
@@ -158,6 +162,7 @@ class Module : public JS::WasmModule {
         testingTier2Active_(false) {
     MOZ_ASSERT_IF(metadata().debugEnabled,
                   debugUnlinkedCode_ && debugLinkData_);
+    initGCMallocBytesExcludingCode();
   }
   ~Module() override;
 
@@ -202,28 +207,32 @@ class Module : public JS::WasmModule {
 
   // JS API and JS::WasmModule implementation:
 
-  JSObject* createObject(JSContext* cx) override;
+  JSObject* createObject(JSContext* cx) const override;
+  JSObject* createObjectForAsmJS(JSContext* cx) const override;
 
   // about:memory reporting:
 
   void addSizeOfMisc(MallocSizeOf mallocSizeOf, Metadata::SeenSet* seenMetadata,
-                     ShareableBytes::SeenSet* seenBytes,
                      Code::SeenSet* seenCode, size_t* code, size_t* data) const;
+
+  // GC malloc memory tracking:
+
+  void initGCMallocBytesExcludingCode();
+  size_t gcMallocBytesExcludingCode() const {
+    return gcMallocBytesExcludingCode_;
+  }
 
   // Generated code analysis support:
 
   bool extractCode(JSContext* cx, Tier tier, MutableHandleValue vp) const;
 };
 
-typedef RefPtr<Module> MutableModule;
-typedef RefPtr<const Module> SharedModule;
+using MutableModule = RefPtr<Module>;
+using SharedModule = RefPtr<const Module>;
 
 // JS API implementations:
 
 MOZ_MUST_USE bool GetOptimizedEncodingBuildId(JS::BuildIdCharVector* buildId);
-
-RefPtr<JS::WasmModule> DeserializeModule(PRFileDesc* bytecode,
-                                         UniqueChars filename, unsigned line);
 
 }  // namespace wasm
 }  // namespace js

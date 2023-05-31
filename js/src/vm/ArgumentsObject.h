@@ -8,6 +8,7 @@
 #include "mozilla/MemoryReporting.h"
 
 #include "gc/Barrier.h"
+#include "util/BitArray.h"
 #include "vm/NativeObject.h"
 
 namespace js {
@@ -56,7 +57,7 @@ class RareArgumentsData {
 // modification.
 struct ArgumentsData {
   /*
-   * numArgs = Max(numFormalArgs, numActualArgs)
+   * numArgs = std::max(numFormalArgs, numActualArgs)
    * The array 'args' has numArgs elements.
    */
   uint32_t numArgs;
@@ -317,7 +318,7 @@ class ArgumentsObject : public NativeObject {
    *    forwarding when the value is the magic forwarding value;
    *  - VM argument access should use arg(i) which will assert that the
    *    value is not the magic forwarding value (since, if such forwarding was
-   *    needed, the frontend should have emitted JSOP_GETALIASEDVAR).
+   *    needed, the frontend should have emitted JSOp::GetAliasedVar).
    */
   const Value& element(uint32_t i) const;
 
@@ -372,7 +373,7 @@ class ArgumentsObject : public NativeObject {
                             : 0);
   }
 
-  static void finalize(FreeOp* fop, JSObject* obj);
+  static void finalize(JSFreeOp* fop, JSObject* obj);
   static void trace(JSTracer* trc, JSObject* obj);
   static size_t objectMoved(JSObject* dst, JSObject* src);
 
@@ -390,11 +391,11 @@ class ArgumentsObject : public NativeObject {
     // normal magic values (those with a JSWhyMagic) and uint32 magic
     // values, we add the maximum JSWhyMagic value to the slot
     // number. This is safe as ARGS_LENGTH_MAX is well below UINT32_MAX.
-    JS_STATIC_ASSERT(UINT32_MAX - JS_WHY_MAGIC_COUNT > ARGS_LENGTH_MAX);
+    static_assert(UINT32_MAX - JS_WHY_MAGIC_COUNT > ARGS_LENGTH_MAX);
     return JS::MagicValueUint32(slot + JS_WHY_MAGIC_COUNT);
   }
   static uint32_t SlotFromMagicScopeSlotValue(const Value& v) {
-    JS_STATIC_ASSERT(UINT32_MAX - JS_WHY_MAGIC_COUNT > ARGS_LENGTH_MAX);
+    static_assert(UINT32_MAX - JS_WHY_MAGIC_COUNT > ARGS_LENGTH_MAX);
     return v.magicUint32() - JS_WHY_MAGIC_COUNT;
   }
   static bool IsMagicScopeSlotValue(const Value& v) {
@@ -411,12 +412,12 @@ class ArgumentsObject : public NativeObject {
 };
 
 class MappedArgumentsObject : public ArgumentsObject {
-  static const ClassOps classOps_;
+  static const JSClassOps classOps_;
   static const ClassExtension classExt_;
   static const ObjectOps objectOps_;
 
  public:
-  static const Class class_;
+  static const JSClass class_;
 
   JSFunction& callee() const {
     return getFixedSlot(CALLEE_SLOT).toObject().as<JSFunction>();
@@ -443,11 +444,11 @@ class MappedArgumentsObject : public ArgumentsObject {
 };
 
 class UnmappedArgumentsObject : public ArgumentsObject {
-  static const ClassOps classOps_;
+  static const JSClassOps classOps_;
   static const ClassExtension classExt_;
 
  public:
-  static const Class class_;
+  static const JSClass class_;
 
  private:
   static bool obj_enumerate(JSContext* cx, HandleObject obj);

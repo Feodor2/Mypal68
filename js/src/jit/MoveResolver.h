@@ -9,6 +9,7 @@
 #include "jit/JitAllocPolicy.h"
 #include "jit/Registers.h"
 #include "jit/RegisterSets.h"
+#include "jit/shared/Assembler-shared.h"
 
 namespace js {
 namespace jit {
@@ -56,9 +57,10 @@ class MoveOperand {
       kind_ = REG;
     }
   }
+  explicit MoveOperand(const Address& addr, Kind kind = MEMORY)
+      : MoveOperand(AsRegister(addr.base), addr.offset, kind) {}
   MoveOperand(MacroAssembler& masm, const ABIArg& arg);
-  MoveOperand(const MoveOperand& other)
-      : kind_(other.kind_), code_(other.code_), disp_(other.disp_) {}
+  MoveOperand(const MoveOperand& other) = default;
   bool isFloatReg() const { return kind_ == FLOAT_REG; }
   bool isGeneralReg() const { return kind_ == REG; }
   bool isGeneralRegPair() const {
@@ -253,7 +255,7 @@ class MoveResolver {
     }
   };
 
-  typedef InlineList<MoveResolver::PendingMove>::iterator PendingMoveIterator;
+  using PendingMoveIterator = InlineList<MoveResolver::PendingMove>::iterator;
 
   js::Vector<MoveOp, 16, SystemAllocPolicy> orderedMoves_;
   int numCycles_;

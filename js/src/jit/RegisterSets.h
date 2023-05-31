@@ -17,7 +17,7 @@ namespace js {
 namespace jit {
 
 struct AnyRegister {
-  typedef uint8_t Code;
+  using Code = uint8_t;
 
   static const uint8_t Total = Registers::Total + FloatRegisters::Total;
   static const uint8_t Invalid = UINT8_MAX;
@@ -121,6 +121,9 @@ class ValueOperand {
 
   constexpr Register typeReg() const { return type_; }
   constexpr Register payloadReg() const { return payload_; }
+  constexpr Register64 toRegister64() const {
+    return Register64(typeReg(), payloadReg());
+  }
   constexpr bool aliases(Register reg) const {
     return type_ == reg || payload_ == reg;
   }
@@ -139,6 +142,7 @@ class ValueOperand {
   explicit constexpr ValueOperand(Register value) : value_(value) {}
 
   constexpr Register valueReg() const { return value_; }
+  constexpr Register64 toRegister64() const { return Register64(valueReg()); }
   constexpr bool aliases(Register reg) const { return value_ == reg; }
   constexpr Register payloadOrValueReg() const { return valueReg(); }
   constexpr bool operator==(const ValueOperand& o) const {
@@ -248,8 +252,8 @@ class ConstantOrRegister {
 template <typename T>
 class TypedRegisterSet {
  public:
-  typedef T RegType;
-  typedef typename T::SetType SetType;
+  using RegType = T;
+  using SetType = typename T::SetType;
 
  private:
   SetType bits_;
@@ -337,8 +341,8 @@ class TypedRegisterSet {
   uint32_t getPushSizeInBytes() const { return T::GetPushSizeInBytes(*this); }
 };
 
-typedef TypedRegisterSet<Register> GeneralRegisterSet;
-typedef TypedRegisterSet<FloatRegister> FloatRegisterSet;
+using GeneralRegisterSet = TypedRegisterSet<Register>;
+using FloatRegisterSet = TypedRegisterSet<FloatRegister>;
 
 class AnyRegisterIterator;
 
@@ -349,7 +353,7 @@ class RegisterSet {
   friend class AnyRegisterIterator;
 
  public:
-  RegisterSet() {}
+  RegisterSet() = default;
   constexpr RegisterSet(const GeneralRegisterSet& gpr,
                         const FloatRegisterSet& fpu)
       : gpr_(gpr), fpu_(fpu) {}
@@ -471,9 +475,9 @@ class LiveSet;
 template <typename Set>
 class AllocatableSetAccessors {
  public:
-  typedef Set RegSet;
-  typedef typename RegSet::RegType RegType;
-  typedef typename RegSet::SetType SetType;
+  using RegSet = Set;
+  using RegType = typename RegSet::RegType;
+  using SetType = typename RegSet::SetType;
 
  protected:
   RegSet set_;
@@ -504,9 +508,9 @@ class AllocatableSetAccessors {
 template <>
 class AllocatableSetAccessors<RegisterSet> {
  public:
-  typedef RegisterSet RegSet;
-  typedef AnyRegister RegType;
-  typedef char SetType;
+  using RegSet = RegisterSet;
+  using RegType = AnyRegister;
+  using SetType = char;
 
  protected:
   RegisterSet set_;
@@ -553,9 +557,9 @@ class AllocatableSetAccessors<RegisterSet> {
 template <typename Set>
 class LiveSetAccessors {
  public:
-  typedef Set RegSet;
-  typedef typename RegSet::RegType RegType;
-  typedef typename RegSet::SetType SetType;
+  using RegSet = Set;
+  using RegType = typename RegSet::RegType;
+  using SetType = typename RegSet::SetType;
 
  protected:
   RegSet set_;
@@ -581,9 +585,9 @@ class LiveSetAccessors {
 template <>
 class LiveSetAccessors<RegisterSet> {
  public:
-  typedef RegisterSet RegSet;
-  typedef AnyRegister RegType;
-  typedef char SetType;
+  using RegSet = RegisterSet;
+  using RegType = AnyRegister;
+  using SetType = char;
 
  protected:
   RegisterSet set_;
@@ -629,7 +633,7 @@ class LiveSetAccessors<RegisterSet> {
 // |takeAny| variants.
 template <class Accessors, typename Set>
 class SpecializedRegSet : public Accessors {
-  typedef Accessors Parent;
+  using Parent = Accessors;
 
  public:
   DEFINE_ACCESSOR_CONSTRUCTORS_(SpecializedRegSet)
@@ -738,7 +742,7 @@ class SpecializedRegSet : public Accessors {
 // Specialization of the accessors for the RegisterSet aggregate.
 template <class Accessors>
 class SpecializedRegSet<Accessors, RegisterSet> : public Accessors {
-  typedef Accessors Parent;
+  using Parent = Accessors;
 
  public:
   DEFINE_ACCESSOR_CONSTRUCTORS_(SpecializedRegSet)
@@ -853,8 +857,8 @@ class SpecializedRegSet<Accessors, RegisterSet> : public Accessors {
 };
 
 // Interface which is common to all register set implementations. It overloads
-// |add|, |take| and |takeUnchecked| methods for types such as |ValueOperand|
-// and |TypedOrValueRegister|.
+// |add|, |take| and |takeUnchecked| methods for types such as |ValueOperand|,
+// |TypedOrValueRegister|, and |Register64|.
 template <class Accessors, typename Set>
 class CommonRegSet : public SpecializedRegSet<Accessors, Set> {
   typedef SpecializedRegSet<Accessors, Set> Parent;
@@ -879,6 +883,14 @@ class CommonRegSet : public SpecializedRegSet<Accessors, Set> {
 #  error "Bad architecture"
 #endif
   }
+  void add(Register64 reg) {
+#if JS_BITS_PER_WORD == 32
+    add(reg.high);
+    add(reg.low);
+#else
+    add(reg.reg);
+#endif
+  }
 
   using Parent::addUnchecked;
   void addUnchecked(ValueOperand value) {
@@ -889,6 +901,14 @@ class CommonRegSet : public SpecializedRegSet<Accessors, Set> {
     addUnchecked(value.valueReg());
 #else
 #  error "Bad architecture"
+#endif
+  }
+  void addUnchecked(Register64 reg) {
+#if JS_BITS_PER_WORD == 32
+    take(reg.high);
+    take(reg.low);
+#else
+    take(reg.reg);
 #endif
   }
 
@@ -918,6 +938,14 @@ class CommonRegSet : public SpecializedRegSet<Accessors, Set> {
       take(reg.typedReg());
     }
   }
+  void take(Register64 reg) {
+#if JS_BITS_PER_WORD == 32
+    take(reg.high);
+    take(reg.low);
+#else
+    take(reg.reg);
+#endif
+  }
 
   using Parent::takeUnchecked;
   void takeUnchecked(ValueOperand value) {
@@ -936,6 +964,14 @@ class CommonRegSet : public SpecializedRegSet<Accessors, Set> {
     } else if (reg.hasTyped()) {
       takeUnchecked(reg.typedReg());
     }
+  }
+  void takeUnchecked(Register64 reg) {
+#if JS_BITS_PER_WORD == 32
+    takeUnchecked(reg.high);
+    takeUnchecked(reg.low);
+#else
+    takeUnchecked(reg.reg);
+#endif
   }
 };
 
@@ -1005,13 +1041,13 @@ class AllocatableSet<RegisterSet>
 #undef DEFINE_ACCESSOR_CONSTRUCTORS_FOR_REGISTERSET_
 #undef DEFINE_ACCESSOR_CONSTRUCTORS_
 
-typedef AllocatableSet<GeneralRegisterSet> AllocatableGeneralRegisterSet;
-typedef AllocatableSet<FloatRegisterSet> AllocatableFloatRegisterSet;
-typedef AllocatableSet<RegisterSet> AllocatableRegisterSet;
+using AllocatableGeneralRegisterSet = AllocatableSet<GeneralRegisterSet>;
+using AllocatableFloatRegisterSet = AllocatableSet<FloatRegisterSet>;
+using AllocatableRegisterSet = AllocatableSet<RegisterSet>;
 
-typedef LiveSet<GeneralRegisterSet> LiveGeneralRegisterSet;
-typedef LiveSet<FloatRegisterSet> LiveFloatRegisterSet;
-typedef LiveSet<RegisterSet> LiveRegisterSet;
+using LiveGeneralRegisterSet = LiveSet<GeneralRegisterSet>;
+using LiveFloatRegisterSet = LiveSet<FloatRegisterSet>;
+using LiveRegisterSet = LiveSet<RegisterSet>;
 
 // iterates in whatever order happens to be convenient.
 // Use TypedRegisterBackwardIterator or TypedRegisterForwardIterator if a
@@ -1078,14 +1114,14 @@ class TypedRegisterForwardIterator {
   T operator*() const { return regset_.template getFirst<RegTypeName::Any>(); }
 };
 
-typedef TypedRegisterIterator<Register> GeneralRegisterIterator;
-typedef TypedRegisterIterator<FloatRegister> FloatRegisterIterator;
-typedef TypedRegisterBackwardIterator<Register> GeneralRegisterBackwardIterator;
-typedef TypedRegisterBackwardIterator<FloatRegister>
-    FloatRegisterBackwardIterator;
-typedef TypedRegisterForwardIterator<Register> GeneralRegisterForwardIterator;
-typedef TypedRegisterForwardIterator<FloatRegister>
-    FloatRegisterForwardIterator;
+using GeneralRegisterIterator = TypedRegisterIterator<Register>;
+using FloatRegisterIterator = TypedRegisterIterator<FloatRegister>;
+using GeneralRegisterBackwardIterator = TypedRegisterBackwardIterator<Register>;
+using FloatRegisterBackwardIterator =
+    TypedRegisterBackwardIterator<FloatRegister>;
+using GeneralRegisterForwardIterator = TypedRegisterForwardIterator<Register>;
+using FloatRegisterForwardIterator =
+    TypedRegisterForwardIterator<FloatRegister>;
 
 class AnyRegisterIterator {
   GeneralRegisterIterator geniter_;
@@ -1101,8 +1137,7 @@ class AnyRegisterIterator {
       : geniter_(set.gpr_), floatiter_(set.fpu_) {}
   explicit AnyRegisterIterator(const LiveSet<RegisterSet>& set)
       : geniter_(set.gprs()), floatiter_(set.fpus()) {}
-  AnyRegisterIterator(const AnyRegisterIterator& other)
-      : geniter_(other.geniter_), floatiter_(other.floatiter_) {}
+  AnyRegisterIterator(const AnyRegisterIterator& other) = default;
   bool more() const { return geniter_.more() || floatiter_.more(); }
   AnyRegisterIterator& operator++() {
     if (geniter_.more()) {

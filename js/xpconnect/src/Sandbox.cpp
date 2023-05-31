@@ -8,6 +8,7 @@
 
 #include "AccessCheck.h"
 #include "jsfriendapi.h"
+#include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "js/CharacterEncoding.h"
 #include "js/CompilationAndEvaluation.h"
 #include "js/PropertySpec.h"
@@ -34,8 +35,8 @@
 #include "mozilla/dom/CSSBinding.h"
 #include "mozilla/dom/CSSRuleBinding.h"
 #include "mozilla/dom/DirectoryBinding.h"
+#include "mozilla/dom/DOMExceptionBinding.h"
 #include "mozilla/dom/DOMParserBinding.h"
-#include "mozilla/dom/DOMPrefs.h"
 #include "mozilla/dom/ElementBinding.h"
 #include "mozilla/dom/EventBinding.h"
 #include "mozilla/dom/IndexedDatabaseManager.h"
@@ -123,7 +124,7 @@ already_AddRefed<nsIXPCComponents_utils_Sandbox> xpc::NewSandboxConstructor() {
 }
 
 static bool SandboxDump(JSContext* cx, unsigned argc, Value* vp) {
-  if (!DOMPrefs::DumpEnabled()) {
+  if (!nsJSUtils::DumpEnabled()) {
     return true;
   }
 
@@ -410,7 +411,7 @@ static bool SandboxCloneInto(JSContext* cx, unsigned argc, Value* vp) {
   return xpc::CloneInto(cx, args[0], args[1], options, args.rval());
 }
 
-static void sandbox_finalize(js::FreeOp* fop, JSObject* obj) {
+static void sandbox_finalize(JSFreeOp* fop, JSObject* obj) {
   nsIScriptObjectPrincipal* sop =
       static_cast<nsIScriptObjectPrincipal*>(xpc_GetJSPrivate(obj));
   if (!sop) {
@@ -439,25 +440,25 @@ static size_t sandbox_moved(JSObject* obj, JSObject* old) {
 #define XPCONNECT_SANDBOX_CLASS_METADATA_SLOT \
   (XPCONNECT_GLOBAL_EXTRA_SLOT_OFFSET)
 
-static const js::ClassOps SandboxClassOps = {
-    nullptr,
-    nullptr,
-    nullptr,
-    JS_NewEnumerateStandardClasses,
-    JS_ResolveStandardClass,
-    JS_MayResolveStandardClass,
-    sandbox_finalize,
-    nullptr,
-    nullptr,
-    nullptr,
-    JS_GlobalObjectTraceHook,
+static const JSClassOps SandboxClassOps = {
+    nullptr,                         // addProperty
+    nullptr,                         // delProperty
+    nullptr,                         // enumerate
+    JS_NewEnumerateStandardClasses,  // newEnumerate
+    JS_ResolveStandardClass,         // resolve
+    JS_MayResolveStandardClass,      // mayResolve
+    sandbox_finalize,                // finalize
+    nullptr,                         // call
+    nullptr,                         // hasInstance
+    nullptr,                         // construct
+    JS_GlobalObjectTraceHook,        // trace
 };
 
 static const js::ClassExtension SandboxClassExtension = {
-    sandbox_moved /* objectMovedOp */
+    sandbox_moved,  // objectMovedOp
 };
 
-static const js::Class SandboxClass = {
+static const JSClass SandboxClass = {
     "Sandbox",
     XPCONNECT_GLOBAL_FLAGS_WITH_EXTRA_SLOTS(1) | JSCLASS_FOREGROUND_FINALIZE,
     &SandboxClassOps,
@@ -470,14 +471,14 @@ static const JSFunctionSpec SandboxFunctions[] = {
     JS_FN("importFunction", SandboxImport, 1, 0), JS_FS_END};
 
 bool xpc::IsSandbox(JSObject* obj) {
-  const js::Class* clasp = js::GetObjectClass(obj);
+  const JSClass* clasp = js::GetObjectClass(obj);
   return clasp == &SandboxClass;
 }
 
 /***************************************************************************/
-nsXPCComponents_utils_Sandbox::nsXPCComponents_utils_Sandbox() {}
+nsXPCComponents_utils_Sandbox::nsXPCComponents_utils_Sandbox() = default;
 
-nsXPCComponents_utils_Sandbox::~nsXPCComponents_utils_Sandbox() {}
+nsXPCComponents_utils_Sandbox::~nsXPCComponents_utils_Sandbox() = default;
 
 NS_IMPL_QUERY_INTERFACE(nsXPCComponents_utils_Sandbox,
                         nsIXPCComponents_utils_Sandbox, nsIXPCScriptable)
@@ -805,7 +806,7 @@ bool SandboxProxyHandler::enumerate(JSContext* cx, JS::Handle<JSObject*> proxy,
 
 bool xpc::GlobalProperties::Parse(JSContext* cx, JS::HandleObject obj) {
   uint32_t length;
-  bool ok = JS_GetArrayLength(cx, obj, &length);
+  bool ok = JS::GetArrayLength(cx, obj, &length);
   NS_ENSURE_TRUE(ok, false);
   for (uint32_t i = 0; i < length; i++) {
     RootedValue nameValue(cx);
@@ -815,68 +816,70 @@ bool xpc::GlobalProperties::Parse(JSContext* cx, JS::HandleObject obj) {
       JS_ReportErrorASCII(cx, "Property names must be strings");
       return false;
     }
-    JSFlatString* nameStr = JS_FlattenString(cx, nameValue.toString());
+    JSLinearString* nameStr = JS_EnsureLinearString(cx, nameValue.toString());
     if (!nameStr) {
       return false;
     }
-    if (JS_FlatStringEqualsAscii(nameStr, "Blob")) {
+    if (JS_LinearStringEqualsLiteral(nameStr, "Blob")) {
       Blob = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "ChromeUtils")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "ChromeUtils")) {
       ChromeUtils = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "CSS")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "CSS")) {
       CSS = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "CSSRule")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "CSSRule")) {
       CSSRule = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "Directory")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Directory")) {
       Directory = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "DOMParser")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "DOMException")) {
+      DOMException = true;
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "DOMParser")) {
       DOMParser = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "Element")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Element")) {
       Element = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "Event")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Event")) {
       Event = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "File")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "File")) {
       File = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "FileReader")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "FileReader")) {
       FileReader = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "FormData")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "FormData")) {
       FormData = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "InspectorUtils")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "InspectorUtils")) {
       InspectorUtils = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "MessageChannel")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "MessageChannel")) {
       MessageChannel = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "Node")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "Node")) {
       Node = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "NodeFilter")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "NodeFilter")) {
       NodeFilter = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "PromiseDebugging")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "PromiseDebugging")) {
       PromiseDebugging = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "TextDecoder")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "TextDecoder")) {
       TextDecoder = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "TextEncoder")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "TextEncoder")) {
       TextEncoder = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "URL")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "URL")) {
       URL = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "URLSearchParams")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "URLSearchParams")) {
       URLSearchParams = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "XMLHttpRequest")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "XMLHttpRequest")) {
       XMLHttpRequest = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "XMLSerializer")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "XMLSerializer")) {
       XMLSerializer = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "atob")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "atob")) {
       atob = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "btoa")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "btoa")) {
       btoa = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "caches")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "caches")) {
       caches = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "crypto")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "crypto")) {
       crypto = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "fetch")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "fetch")) {
       fetch = true;
-    } else if (JS_FlatStringEqualsAscii(nameStr, "indexedDB")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "indexedDB")) {
       indexedDB = true;
 #ifdef MOZ_WEBRTC
-    } else if (JS_FlatStringEqualsAscii(nameStr, "rtcIdentityProvider")) {
+    } else if (JS_LinearStringEqualsLiteral(nameStr, "rtcIdentityProvider")) {
       rtcIdentityProvider = true;
 #endif
     } else {
@@ -917,8 +920,13 @@ bool xpc::GlobalProperties::Define(JSContext* cx, JS::HandleObject obj) {
   if (Directory && !dom::Directory_Binding::GetConstructorObject(cx))
     return false;
 
-  if (DOMParser && !dom::DOMParser_Binding::GetConstructorObject(cx))
+  if (DOMException && !dom::DOMException_Binding::GetConstructorObject(cx)) {
     return false;
+  }
+
+  if (DOMParser && !dom::DOMParser_Binding::GetConstructorObject(cx)) {
+    return false;
+  }
 
   if (Element && !dom::Element_Binding::GetConstructorObject(cx)) return false;
 
@@ -1043,9 +1051,6 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
   // creationOptions.setSecureContext(true).
 
   bool isSystemPrincipal = principal->IsSystemPrincipal();
-  if (isSystemPrincipal) {
-    creationOptions.setClampAndJitterTime(false);
-  }
 
   xpc::SetPrefableRealmOptions(realmOptions);
   if (options.sameZoneAs) {
@@ -1068,10 +1073,14 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
 
   realmOptions.behaviors().setDiscardSource(options.discardSource);
 
-  const js::Class* clasp = &SandboxClass;
+  if (isSystemPrincipal) {
+    realmOptions.behaviors().setClampAndJitterTime(false);
+  }
 
-  RootedObject sandbox(cx, xpc::CreateGlobalObject(cx, js::Jsvalify(clasp),
-                                                   principal, realmOptions));
+  const JSClass* clasp = &SandboxClass;
+
+  RootedObject sandbox(
+      cx, xpc::CreateGlobalObject(cx, clasp, principal, realmOptions));
   if (!sandbox) {
     return NS_ERROR_FAILURE;
   }
@@ -1150,9 +1159,9 @@ nsresult xpc::CreateSandboxObject(JSContext* cx, MutableHandleValue vp,
           JS_ReportErrorASCII(cx, "Sandbox must subsume sandboxPrototype");
           return NS_ERROR_INVALID_ARG;
         }
-        const js::Class* unwrappedClass = js::GetObjectClass(unwrappedProto);
+        const JSClass* unwrappedClass = js::GetObjectClass(unwrappedProto);
         useSandboxProxy = IS_WN_CLASS(unwrappedClass) ||
-                          mozilla::dom::IsDOMClass(Jsvalify(unwrappedClass));
+                          mozilla::dom::IsDOMClass(unwrappedClass);
       }
 
       if (useSandboxProxy) {
@@ -1299,7 +1308,7 @@ static bool GetExpandedPrincipal(JSContext* cx, HandleObject arrayObj,
   MOZ_ASSERT(out);
   uint32_t length;
 
-  if (!JS_GetArrayLength(cx, arrayObj, &length)) {
+  if (!JS::GetArrayLength(cx, arrayObj, &length)) {
     return false;
   }
   if (!length) {
@@ -1630,7 +1639,7 @@ bool SandboxOptions::ParseGlobalProperties() {
 
   RootedObject ctors(mCx, &value.toObject());
   bool isArray;
-  if (!JS_IsArrayObject(mCx, ctors, &isArray)) {
+  if (!JS::IsArrayObject(mCx, ctors, &isArray)) {
     return false;
   }
   if (!isArray) {
@@ -1757,7 +1766,7 @@ nsresult nsXPCComponents_utils_Sandbox::CallOrConstruct(
   } else if (args[0].isObject()) {
     RootedObject obj(cx, &args[0].toObject());
     bool isArray;
-    if (!JS_IsArrayObject(cx, obj, &isArray)) {
+    if (!JS::IsArrayObject(cx, obj, &isArray)) {
       ok = false;
     } else if (isArray) {
       if (options.userContextId != 0) {

@@ -29,11 +29,8 @@ static const JSClass* getGlobalClass() {
 static JSObject* jsfuzz_createGlobal(JSContext* cx, JSPrincipals* principals) {
   /* Create the global object. */
   JS::RealmOptions options;
-  options.creationOptions()
-      .setStreamsEnabled(true)
-      .setBigIntEnabled(true)
-      .setFieldsEnabled(false)
-      .setAwaitFixEnabled(true);
+  options.creationOptions().setStreamsEnabled(true).setWeakRefsEnabled(
+      JS::WeakRefSpecifier::EnabledWithCleanupSome);
   return JS_NewGlobalObject(cx, getGlobalClass(), principals,
                             JS::FireOnNewGlobalHook, options);
 }

@@ -9,10 +9,12 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/MathAlgorithms.h"
 
+#include <algorithm>
+
 #include "jit/arm/Architecture-arm.h"
 #include "jit/arm/disasm/Disasm-arm.h"
 #include "jit/CompactBuffer.h"
-#include "jit/IonCode.h"
+#include "jit/JitCode.h"
 #include "jit/JitRealm.h"
 #include "jit/shared/Assembler-shared.h"
 #include "jit/shared/Disassembler-shared.h"
@@ -180,6 +182,11 @@ static constexpr Register WasmTableCallScratchReg0 = ABINonArgReg0;
 static constexpr Register WasmTableCallScratchReg1 = ABINonArgReg1;
 static constexpr Register WasmTableCallSigReg = ABINonArgReg2;
 static constexpr Register WasmTableCallIndexReg = ABINonArgReg3;
+
+// Register used as a scratch along the return path in the fast js -> wasm stub
+// code.  This must not overlap ReturnReg, JSReturnOperand, or WasmTlsReg.  It
+// must be a volatile register.
+static constexpr Register WasmJitEntryReturnScratch = r5;
 
 static constexpr Register PreBarrierReg = r1;
 
@@ -1037,8 +1044,6 @@ inline Imm32 Imm64::firstHalf() const { return low(); }
 
 inline Imm32 Imm64::secondHalf() const { return hi(); }
 
-void PatchJump(CodeLocationJump& jump_, CodeLocationLabel label);
-
 class InstructionIterator {
  private:
   Instruction* inst_;
@@ -1191,8 +1196,6 @@ class Assembler : public AssemblerShared {
 
  public:
   void resetCounter();
-  uint32_t actualIndex(uint32_t) const;
-  static uint8_t* PatchableJumpAddress(JitCode* code, uint32_t index);
   static uint32_t NopFill;
   static uint32_t GetNopFill();
   static uint32_t AsmPoolMaxOffset;
@@ -1262,6 +1265,8 @@ class Assembler : public AssemblerShared {
   }
 
   void writeDataRelocation(BufferOffset offset, ImmGCPtr ptr) {
+    // Raw GC pointer relocations and Value relocations both end up in
+    // Assembler::TraceDataRelocations.
     if (ptr.value) {
       if (gc::IsInsideNursery(ptr.value)) {
         embedsNurseryPointers_ = true;
@@ -1294,7 +1299,7 @@ class Assembler : public AssemblerShared {
 #endif
   }
 
-  static const Register getStackPointer() { return StackPointer; }
+  Register getStackPointer() const { return StackPointer; }
 
  private:
   bool isFinished;
@@ -1382,6 +1387,10 @@ class Assembler : public AssemblerShared {
                       SBit s = LeaveCC, Condition c = Always);
   BufferOffset as_orr(Register dest, Register src1, Operand2 op2,
                       SBit s = LeaveCC, Condition c = Always);
+  // Reverse byte operations:
+  BufferOffset as_rev(Register dest, Register src, Condition c = Always);
+  BufferOffset as_rev16(Register dest, Register src, Condition c = Always);
+  BufferOffset as_revsh(Register dest, Register src, Condition c = Always);
   // Mathematical operations:
   BufferOffset as_adc(Register dest, Register src1, Operand2 op2,
                       SBit s = LeaveCC, Condition c = Always);
@@ -1469,11 +1478,6 @@ class Assembler : public AssemblerShared {
   // Load a 32 bit immediate from a pool into a register.
   BufferOffset as_Imm32Pool(Register dest, uint32_t value,
                             Condition c = Always);
-  // Make a patchable jump that can target the entire 32 bit address space.
-  BufferOffset as_BranchPool(uint32_t value, RepatchLabel* label,
-                             const LabelDoc& documentation,
-                             ARMBuffer::PoolEntry* pe = nullptr,
-                             Condition c = Always);
 
   // Load a 64 bit floating point immediate from a pool into a register.
   BufferOffset as_FImm64Pool(VFPRegister dest, double value,
@@ -1644,7 +1648,6 @@ class Assembler : public AssemblerShared {
   // Label operations.
   bool nextLink(BufferOffset b, BufferOffset* next);
   void bind(Label* label, BufferOffset boff = BufferOffset());
-  void bind(RepatchLabel* label);
   uint32_t currentOffset() { return nextOffset().getOffset(); }
   void retarget(Label* label, Label* target);
   // I'm going to pretend this doesn't exist for now.
@@ -1672,6 +1675,7 @@ class Assembler : public AssemblerShared {
 
   static bool SupportsFloatingPoint() { return HasVFP(); }
   static bool SupportsUnalignedAccesses() { return HasARMv7(); }
+  static bool SupportsFastUnalignedAccesses() { return false; }
   static bool SupportsSimd() { return js::jit::SupportsSimd; }
 
   static bool HasRoundInstruction(RoundingMode mode) { return false; }
@@ -1701,7 +1705,7 @@ class Assembler : public AssemblerShared {
 
   // Copy the assembly code to the given buffer, and perform any pending
   // relocations relying on the target address.
-  void executableCopy(uint8_t* buffer, bool flushICache = true);
+  void executableCopy(uint8_t* buffer);
 
   // Actual assembly emitting functions.
 
@@ -1768,8 +1772,8 @@ class Assembler : public AssemblerShared {
     dtmDelta = dtmDelta ? dtmDelta : 1;
     // The operand for the vstr/vldr instruction is the lowest register in the
     // range.
-    int low = Min(dtmLastReg, vdtmFirstReg);
-    int high = Max(dtmLastReg, vdtmFirstReg);
+    int low = std::min(dtmLastReg, vdtmFirstReg);
+    int high = std::max(dtmLastReg, vdtmFirstReg);
     // Fencepost problem.
     int len = high - low + 1;
     // vdtm can only transfer 16 registers at once.  If we need to transfer
@@ -1781,7 +1785,7 @@ class Assembler : public AssemblerShared {
     int adjustHigh = dtmLoadStore == IsStore ? -1 : 0;
     while (len > 0) {
       // Limit the instruction to 16 registers.
-      int curLen = Min(len, 16);
+      int curLen = std::min(len, 16);
       // If it is a store, we want to start at the high end and move down
       // (e.g. vpush d16-d31; vpush d0-d15).
       int curStart = (dtmLoadStore == IsStore) ? high - curLen + 1 : low;
@@ -1839,14 +1843,6 @@ class Assembler : public AssemblerShared {
   void leaveNoPool();
   void enterNoNops();
   void leaveNoNops();
-  // This should return a BOffImm, but we didn't want to require everyplace
-  // that used the AssemblerBuffer to make that class.
-  static ptrdiff_t GetBranchOffset(const Instruction* i);
-  static void RetargetNearBranch(Instruction* i, int offset, Condition cond,
-                                 bool final = true);
-  static void RetargetNearBranch(Instruction* i, int offset, bool final = true);
-  static void RetargetFarBranch(Instruction* i, uint8_t** slot, uint8_t* dest,
-                                Condition cond);
 
   static void WritePoolHeader(uint8_t* start, Pool* p, bool isNatural);
   static void WritePoolGuard(BufferOffset branch, Instruction* inst,
@@ -1938,7 +1934,7 @@ class Instruction {
 };  // Instruction
 
 // Make sure that it is the right size.
-JS_STATIC_ASSERT(sizeof(Instruction) == 4);
+static_assert(sizeof(Instruction) == 4);
 
 inline void InstructionIterator::advanceRaw(ptrdiff_t instructions) {
   inst_ = inst_ + instructions;
@@ -1959,7 +1955,7 @@ class InstDTR : public Instruction {
   static bool IsTHIS(const Instruction& i);
   static InstDTR* AsTHIS(const Instruction& i);
 };
-JS_STATIC_ASSERT(sizeof(InstDTR) == sizeof(Instruction));
+static_assert(sizeof(InstDTR) == sizeof(Instruction));
 
 class InstLDR : public InstDTR {
  public:
@@ -1988,7 +1984,7 @@ class InstLDR : public InstDTR {
     return (uint32_t*)raw() + offset + 2;
   }
 };
-JS_STATIC_ASSERT(sizeof(InstDTR) == sizeof(InstLDR));
+static_assert(sizeof(InstDTR) == sizeof(InstLDR));
 
 class InstNOP : public Instruction {
  public:
@@ -2020,7 +2016,7 @@ class InstBranchReg : public Instruction {
   // Make sure we are branching to a pre-known register
   bool checkDest(Register dest);
 };
-JS_STATIC_ASSERT(sizeof(InstBranchReg) == sizeof(Instruction));
+static_assert(sizeof(InstBranchReg) == sizeof(Instruction));
 
 // Branching to an immediate offset, or calling an immediate offset
 class InstBranchImm : public Instruction {
@@ -2038,7 +2034,7 @@ class InstBranchImm : public Instruction {
 
   void extractImm(BOffImm* dest);
 };
-JS_STATIC_ASSERT(sizeof(InstBranchImm) == sizeof(Instruction));
+static_assert(sizeof(InstBranchImm) == sizeof(Instruction));
 
 // Very specific branching instructions.
 class InstBXReg : public InstBranchReg {
@@ -2092,7 +2088,7 @@ class InstMovWT : public Instruction {
   static bool IsTHIS(Instruction& i);
   static InstMovWT* AsTHIS(Instruction& i);
 };
-JS_STATIC_ASSERT(sizeof(InstMovWT) == sizeof(Instruction));
+static_assert(sizeof(InstMovWT) == sizeof(Instruction));
 
 class InstMovW : public InstMovWT {
  public:
@@ -2241,7 +2237,7 @@ static inline uint32_t GetIntArgStackDisp(uint32_t usedIntArgs,
   MOZ_ASSERT(UseHardFpABI());
   MOZ_ASSERT(usedIntArgs >= NumIntArgRegs);
   uint32_t doubleSlots =
-      Max(0, (int32_t)usedFloatArgs - (int32_t)NumFloatArgRegs);
+      std::max(0, (int32_t)usedFloatArgs - (int32_t)NumFloatArgRegs);
   doubleSlots *= 2;
   int intSlots = usedIntArgs - NumIntArgRegs;
   return (intSlots + doubleSlots + *padding) * sizeof(intptr_t);

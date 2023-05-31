@@ -36,8 +36,6 @@ function check(desc, actual, expected)
   reportCompare(expected, actual, desc);
 }
 
-/* -*- Mode: C; tab-width: 8; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
-
 // Apply FUNCNAME to ARGS, and check against EXPECTED.
 // Expect a loop containing such a call to be traced.
 // FUNCNAME and ARGS are both strings.

@@ -18,8 +18,8 @@
 //! The code here deals with adapting the `cranelift_wasm` module to the specifics of BaldrMonkey's
 //! internal data structures.
 
-use baldrdash as bd;
-use compile::{symbolic_function_name, wasm_function_name};
+use std::collections::HashMap;
+
 use cranelift_codegen::cursor::{Cursor, FuncCursor};
 use cranelift_codegen::entity::{EntityRef, PrimaryMap, SecondaryMap};
 use cranelift_codegen::ir;
@@ -29,9 +29,11 @@ use cranelift_codegen::isa::{CallConv, TargetFrontendConfig, TargetIsa};
 use cranelift_codegen::packed_option::PackedOption;
 use cranelift_wasm::{
     FuncEnvironment, FuncIndex, GlobalIndex, GlobalVariable, MemoryIndex, ReturnMode,
-    SignatureIndex, TableIndex, WasmResult,
+    SignatureIndex, TableIndex, WasmError, WasmResult,
 };
-use std::collections::HashMap;
+
+use crate::bindings;
+use crate::compile::{symbolic_function_name, wasm_function_name};
 
 /// Get the integer type used for representing pointers on this platform.
 fn native_pointer_type() -> ir::Type {
@@ -68,8 +70,12 @@ fn uimm64(offset: usize) -> ir::immediates::Uimm64 {
 }
 
 /// Initialize a `Signature` from a wasm signature.
-fn init_sig_from_wsig(sig: &mut ir::Signature, wsig: bd::FuncTypeWithId) -> WasmResult<()> {
-    sig.clear(CallConv::Baldrdash);
+fn init_sig_from_wsig(
+    call_conv: CallConv,
+    wsig: bindings::FuncTypeWithId,
+) -> WasmResult<ir::Signature> {
+    let mut sig = ir::Signature::new(call_conv);
+
     for arg in wsig.args()? {
         sig.params.push(ir::AbiParam::new(arg));
     }
@@ -91,25 +97,24 @@ fn init_sig_from_wsig(sig: &mut ir::Signature, wsig: bd::FuncTypeWithId) -> Wasm
         ir::ArgumentPurpose::VMContext,
     ));
 
-    Ok(())
+    Ok(sig)
 }
 
 /// Initialize the signature `sig` to match the function with `index` in `env`.
 pub fn init_sig(
-    sig: &mut ir::Signature,
-    env: &bd::ModuleEnvironment,
+    env: &bindings::ModuleEnvironment,
+    call_conv: CallConv,
     func_index: FuncIndex,
-) -> WasmResult<bd::FuncTypeWithId> {
+) -> WasmResult<ir::Signature> {
     let wsig = env.function_signature(func_index);
-    init_sig_from_wsig(sig, wsig)?;
-    Ok(wsig)
+    init_sig_from_wsig(call_conv, wsig)
 }
 
 /// A `TargetIsa` and `ModuleEnvironment` joined so we can implement `FuncEnvironment`.
 pub struct TransEnv<'a, 'b, 'c> {
-    isa: &'a TargetIsa,
-    env: &'b bd::ModuleEnvironment<'b>,
-    static_env: &'c bd::StaticEnvironment,
+    isa: &'a dyn TargetIsa,
+    env: &'b bindings::ModuleEnvironment<'b>,
+    static_env: &'c bindings::StaticEnvironment,
 
     /// Information about the function pointer tables `self.env` knowns about. Indexed by table
     /// index.
@@ -155,9 +160,9 @@ pub struct TransEnv<'a, 'b, 'c> {
 
 impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
     pub fn new(
-        isa: &'a TargetIsa,
-        env: &'b bd::ModuleEnvironment,
-        static_env: &'c bd::StaticEnvironment,
+        isa: &'a dyn TargetIsa,
+        env: &'b bindings::ModuleEnvironment,
+        static_env: &'c bindings::StaticEnvironment,
     ) -> Self {
         TransEnv {
             isa,
@@ -248,7 +253,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
         };
         let ga = pos.ins().global_value(native_pointer_type(), gv);
         pos.ins()
-            .load(native_pointer_type(), ir::MemFlags::new(), ga, 0)
+            .load(native_pointer_type(), ir::MemFlags::trusted(), ga, 0)
     }
 
     /// Generate code that loads the current instance pointer.
@@ -269,7 +274,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
         };
         let ga = pos.ins().global_value(native_pointer_type(), gv);
         pos.ins()
-            .load(native_pointer_type(), ir::MemFlags::new(), ga, 0)
+            .load(ir::types::I32, ir::MemFlags::trusted(), ga, 0)
     }
 
     /// Get a `FuncRef` for the given symbolic address.
@@ -277,7 +282,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
     fn symbolic_funcref<MKSIG: FnOnce() -> ir::Signature>(
         &mut self,
         func: &mut ir::Function,
-        sym: bd::SymbolicAddress,
+        sym: bindings::SymbolicAddress,
         make_sig: MKSIG,
     ) -> (ir::FuncRef, ir::SigRef) {
         let symidx = sym as usize;
@@ -311,6 +316,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
                 })
                 .into();
         }
+
         if self.realm_addr.is_none() {
             let vmctx = self.get_vmctx_gv(&mut pos.func);
             self.realm_addr = pos
@@ -324,10 +330,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
         }
 
         let ptr = native_pointer_type();
-        let mut flags = ir::MemFlags::new();
-        flags.set_aligned();
-        flags.set_notrap();
-
+        let flags = ir::MemFlags::trusted();
         let cx_addr_val = pos.ins().global_value(ptr, self.cx_addr.unwrap());
         let cx = pos.ins().load(ptr, flags, cx_addr_val, 0);
         let realm_addr_val = pos.ins().global_value(ptr, self.realm_addr.unwrap());
@@ -340,10 +343,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
     /// an external table.
     fn switch_to_indirect_callee_realm(&mut self, pos: &mut FuncCursor, vmctx: ir::Value) {
         let ptr = native_pointer_type();
-        let mut flags = ir::MemFlags::new();
-        flags.set_aligned();
-        flags.set_notrap();
-
+        let flags = ir::MemFlags::trusted();
         let cx = pos
             .ins()
             .load(ptr, flags, vmctx, offset32(self.static_env.cxTlsOffset));
@@ -363,10 +363,7 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
         gv_addr: ir::Value,
     ) {
         let ptr = native_pointer_type();
-        let mut flags = ir::MemFlags::new();
-        flags.set_aligned();
-        flags.set_notrap();
-
+        let flags = ir::MemFlags::trusted();
         let cx = pos
             .ins()
             .load(ptr, flags, vmctx, offset32(self.static_env.cxTlsOffset));
@@ -378,6 +375,24 @@ impl<'a, 'b, 'c> TransEnv<'a, 'b, 'c> {
         );
         pos.ins()
             .store(flags, realm, cx, offset32(self.static_env.realmCxOffset));
+    }
+
+    fn load_pinned_reg(&self, pos: &mut FuncCursor, vmctx: ir::Value) {
+        if cfg!(feature = "cranelift_x86") && cfg!(target_pointer_width = "64") {
+            let heap_base = pos.ins().load(
+                native_pointer_type(),
+                ir::MemFlags::trusted(),
+                vmctx,
+                self.static_env.memoryBaseTlsOffset as i32,
+            );
+            pos.ins().set_pinned_reg(heap_base);
+        }
+    }
+
+    fn reload_tls_and_pinned_regs(&mut self, pos: &mut FuncCursor) {
+        let vmctx_gv = self.get_vmctx_gv(&mut pos.func);
+        let vmctx = pos.ins().global_value(native_pointer_type(), vmctx_gv);
+        self.load_pinned_reg(pos, vmctx);
     }
 }
 
@@ -410,13 +425,15 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         let offset = global.tls_offset();
 
         // Some globals are represented as a pointer to the actual data, in which case we
-        // must do an extra dereference to get to them.
+        // must do an extra dereference to get to them.  Also, in that case, the pointer
+        // itself is immutable, so we mark it `readonly` here to assist Cranelift in commoning
+        // up what would otherwise be multiple adjacent reads of the value.
         let (base_gv, offset) = if global.is_indirect() {
             let gv = func.create_global_value(ir::GlobalValueData::Load {
                 base: vmctx_gv,
                 offset: offset32(offset),
                 global_type: native_pointer_type(),
-                readonly: false,
+                readonly: true,
             });
             (gv, 0.into())
         } else {
@@ -433,7 +450,13 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
     }
 
     fn make_heap(&mut self, func: &mut ir::Function, index: MemoryIndex) -> WasmResult<ir::Heap> {
-        assert_eq!(index.index(), 0, "Only one WebAssembly memory supported");
+        // Currently, Baldrdash doesn't support multiple memories.
+        if index.index() != 0 {
+            return Err(WasmError::Unsupported(
+                "only one wasm memory supported".to_string(),
+            ));
+        }
+
         // Get the address of the `TlsData::memoryBase` field.
         let base_addr = self.get_vmctx_gv(func);
         // Get the `TlsData::memoryBase` field. We assume this is never modified during execution
@@ -477,11 +500,10 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         func: &mut ir::Function,
         index: SignatureIndex,
     ) -> WasmResult<ir::SigRef> {
-        let mut sigdata = ir::Signature::new(CallConv::Baldrdash);
         let wsig = self.env.signature(index);
-        init_sig_from_wsig(&mut sigdata, wsig)?;
+        let mut sigdata = init_sig_from_wsig(self.static_env.call_conv(), wsig)?;
 
-        if wsig.id_kind() != bd::FuncTypeIdDescKind::None {
+        if wsig.id_kind() != bindings::FuncTypeIdDescKind::None {
             // A signature to be used for an indirect call also takes a signature id.
             sigdata.params.push(ir::AbiParam::special(
                 native_pointer_type(),
@@ -526,8 +548,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         index: FuncIndex,
     ) -> WasmResult<ir::FuncRef> {
         // Create a signature.
-        let mut sigdata = ir::Signature::new(CallConv::Baldrdash);
-        init_sig(&mut sigdata, &self.env, index)?;
+        let sigdata = init_sig(&self.env, self.static_env.call_conv(), index)?;
         let signature = func.import_signature(sigdata);
 
         Ok(func.import_function(ir::ExtFuncData {
@@ -549,26 +570,30 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
     ) -> WasmResult<ir::Inst> {
         let wsig = self.env.signature(sig_index);
 
-        // Currently, WebAssembly doesn't support multiple tables. That may change.
-        assert_eq!(table_index.index(), 0);
+        // Currently, Baldrdash doesn't support multiple tables.
+        if table_index.index() != 0 {
+            return Err(WasmError::Unsupported(
+                "only one wasm table supported".to_string(),
+            ));
+        }
         let wtable = self.get_table(pos.func, table_index);
 
         // Follows `MacroAssembler::wasmCallIndirect`:
 
         // 1. Materialize the signature ID.
         let sigid_value = match wsig.id_kind() {
-            bd::FuncTypeIdDescKind::None => None,
-            bd::FuncTypeIdDescKind::Immediate => {
+            bindings::FuncTypeIdDescKind::None => None,
+            bindings::FuncTypeIdDescKind::Immediate => {
                 // The signature is represented as an immediate pointer-sized value.
                 let imm = wsig.id_immediate() as i64;
                 Some(pos.ins().iconst(native_pointer_type(), imm))
             }
-            bd::FuncTypeIdDescKind::Global => {
+            bindings::FuncTypeIdDescKind::Global => {
                 let gv = self.sig_global(pos.func, wsig.id_tls_offset());
                 let addr = pos.ins().global_value(native_pointer_type(), gv);
                 Some(
                     pos.ins()
-                        .load(native_pointer_type(), ir::MemFlags::new(), addr, 0),
+                        .load(native_pointer_type(), ir::MemFlags::trusted(), addr, 0),
                 )
             }
         };
@@ -600,7 +625,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         let entry = pos.ins().iadd(tbase, callee_scaled);
         let callee_func = pos
             .ins()
-            .load(native_pointer_type(), ir::MemFlags::new(), entry, 0);
+            .load(native_pointer_type(), ir::MemFlags::trusted(), entry, 0);
 
         // Check for a null callee.
         pos.ins()
@@ -609,19 +634,20 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         // Handle external tables, set up environment.
         // A function table call could redirect execution to another module with a different realm,
         // so switch to this realm just in case.
-        let vmctx = pos.ins().load(
+        let callee_vmctx = pos.ins().load(
             native_pointer_type(),
-            ir::MemFlags::new(),
+            ir::MemFlags::trusted(),
             entry,
             native_pointer_size(),
         );
-        self.switch_to_indirect_callee_realm(&mut pos, vmctx);
+        self.switch_to_indirect_callee_realm(&mut pos, callee_vmctx);
+        self.load_pinned_reg(&mut pos, callee_vmctx);
 
         // First the wasm args.
         let mut args = ir::ValueList::default();
         args.push(callee_func, &mut pos.func.dfg.value_lists);
         args.extend(call_args.iter().cloned(), &mut pos.func.dfg.value_lists);
-        args.push(vmctx, &mut pos.func.dfg.value_lists);
+        args.push(callee_vmctx, &mut pos.func.dfg.value_lists);
         if let Some(sigid) = sigid_value {
             args.push(sigid, &mut pos.func.dfg.value_lists);
         }
@@ -630,7 +656,10 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
             .ins()
             .CallIndirect(ir::Opcode::CallIndirect, ir::types::INVALID, sig_ref, args)
             .0;
+
         self.switch_to_wasm_tls_realm(&mut pos);
+        self.reload_tls_and_pinned_regs(&mut pos);
+
         Ok(call)
     }
 
@@ -654,18 +683,19 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
 
             // We need the first two pointer-sized fields from the `FuncImportTls` struct: `code`
             // and `tls`.
-            let fit_code = pos
-                .ins()
-                .load(native_pointer_type(), ir::MemFlags::new(), gv_addr, 0);
+            let fit_code =
+                pos.ins()
+                    .load(native_pointer_type(), ir::MemFlags::trusted(), gv_addr, 0);
             let fit_tls = pos.ins().load(
                 native_pointer_type(),
-                ir::MemFlags::new(),
+                ir::MemFlags::trusted(),
                 gv_addr,
                 native_pointer_size(),
             );
 
             // Switch to the callee's realm.
             self.switch_to_import_realm(&mut pos, fit_tls, gv_addr);
+            self.load_pinned_reg(&mut pos, fit_tls);
 
             // The `tls` field is the VM context pointer for the callee.
             args.push(fit_tls, &mut pos.func.dfg.value_lists);
@@ -681,6 +711,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
                 .CallIndirect(ir::Opcode::CallIndirect, ir::types::INVALID, sig, args)
                 .0;
             self.switch_to_wasm_tls_realm(&mut pos);
+            self.reload_tls_and_pinned_regs(&mut pos);
             Ok(call)
         } else {
             // This is a call to a local function.
@@ -708,9 +739,10 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
     ) -> WasmResult<ir::Value> {
         // We emit a call to `uint32_t memoryGrow_i32(Instance* instance, uint32_t delta)` via a
         // stub.
+        let call_conv = self.static_env.call_conv();
         let (fnref, sigref) =
-            self.symbolic_funcref(pos.func, bd::SymbolicAddress::MemoryGrow, || {
-                let mut sig = ir::Signature::new(CallConv::Baldrdash);
+            self.symbolic_funcref(pos.func, bindings::SymbolicAddress::MemoryGrow, || {
+                let mut sig = ir::Signature::new(call_conv);
                 sig.params.push(ir::AbiParam::new(native_pointer_type()));
                 sig.params.push(ir::AbiParam::new(ir::types::I32).uext());
                 sig.params.push(ir::AbiParam::special(
@@ -734,6 +766,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
             .ins()
             .call_indirect(sigref, addr, &[instance, val, vmctx]);
         self.switch_to_wasm_tls_realm(&mut pos);
+        self.reload_tls_and_pinned_regs(&mut pos);
         Ok(pos.func.dfg.first_result(call))
     }
 
@@ -744,9 +777,10 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         _heap: ir::Heap,
     ) -> WasmResult<ir::Value> {
         // We emit a call to `uint32_t memorySize_i32(Instance* instance)` via a stub.
+        let call_conv = self.static_env.call_conv();
         let (fnref, sigref) =
-            self.symbolic_funcref(pos.func, bd::SymbolicAddress::MemorySize, || {
-                let mut sig = ir::Signature::new(CallConv::Baldrdash);
+            self.symbolic_funcref(pos.func, bindings::SymbolicAddress::MemorySize, || {
+                let mut sig = ir::Signature::new(call_conv);
                 sig.params.push(ir::AbiParam::new(native_pointer_type()));
                 sig.params.push(ir::AbiParam::special(
                     native_pointer_type(),
@@ -765,6 +799,7 @@ impl<'a, 'b, 'c> FuncEnvironment for TransEnv<'a, 'b, 'c> {
         let addr = pos.ins().func_addr(native_pointer_type(), fnref);
         let call = pos.ins().call_indirect(sigref, addr, &[instance, vmctx]);
         self.switch_to_wasm_tls_realm(&mut pos);
+        self.reload_tls_and_pinned_regs(&mut pos);
         Ok(pos.func.dfg.first_result(call))
     }
 
@@ -793,7 +828,11 @@ struct TableInfo {
 
 impl TableInfo {
     /// Create a TableInfo and its global variable in `func`.
-    pub fn new(wtab: bd::TableDesc, func: &mut ir::Function, vmctx: ir::GlobalValue) -> TableInfo {
+    pub fn new(
+        wtab: bindings::TableDesc,
+        func: &mut ir::Function,
+        vmctx: ir::GlobalValue,
+    ) -> TableInfo {
         // Create the global variable.
         let offset = wtab.tls_offset();
         assert!(offset < i32::max_value() as usize);

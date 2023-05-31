@@ -5,6 +5,8 @@
 #ifndef gc_HashUtil_h
 #define gc_HashUtil_h
 
+#include <type_traits>
+
 #include "gc/Zone.h"
 #include "vm/JSContext.h"
 
@@ -72,8 +74,7 @@ struct DependentAddPtr {
 template <typename T, typename Lookup>
 inline auto MakeDependentAddPtr(const JSContext* cx, T& table,
                                 const Lookup& lookup) {
-  using Ptr =
-      DependentAddPtr<typename mozilla::RemoveReference<decltype(table)>::Type>;
+  using Ptr = DependentAddPtr<std::remove_reference_t<decltype(table)>>;
   return Ptr(cx, table, lookup);
 }
 

@@ -86,7 +86,7 @@ function reinitializeRegistry() {
         global_i32: 666,
         global_f32: 666,
         global_f64: 666,
-        table: new WebAssembly.Table({initial: 10, maximum: 20, element: 'funcref'}),
+        table: new WebAssembly.Table({initial: 10, maximum: 20, element: 'anyfunc'}),
         memory: new WebAssembly.Memory({initial: 1, maximum: 2})
     };
     let handler = {
@@ -270,7 +270,7 @@ function assert_uninstantiable(bytes) {
         assert_true(result.isError(), 'expected error result');
         if (result.isError()) {
             let e = result.value;
-            assert_true(e instanceof WebAssembly.RuntimeError, `expected runtime error, observed ${e}:`);
+            assert_true(e instanceof WebAssembly.LinkError || e instanceof WebAssembly.RuntimeError, `expected link or runtime error, observed ${e}:`);
         }
     }, "A wast module that is uninstantiable.");
 }

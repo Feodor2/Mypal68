@@ -6,7 +6,6 @@
 
 #include "gc/GCLock.h"
 #include "gc/GCRuntime.h"
-#include "gc/Heap.h"
 
 #include "jsapi-tests/tests.h"
 
@@ -16,7 +15,7 @@ BEGIN_TEST(testGCChunkPool) {
 
   // Create.
   for (int i = 0; i < N; ++i) {
-    js::gc::Chunk* chunk = js::gc::Chunk::allocate(cx->runtime());
+    js::gc::Chunk* chunk = js::gc::Chunk::allocate(&cx->runtime()->gc);
     CHECK(chunk);
     pool.push(chunk);
   }

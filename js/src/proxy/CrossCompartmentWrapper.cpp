@@ -8,6 +8,7 @@
 #include "js/Wrapper.h"
 #include "proxy/DeadObjectProxy.h"
 #include "vm/Iteration.h"
+#include "vm/Runtime.h"
 #include "vm/WrapperObject.h"
 
 #include "gc/Nursery-inl.h"
@@ -397,7 +398,7 @@ JS_FRIEND_API void js::NukeCrossCompartmentWrapperIfExists(
   MOZ_ASSERT(!target->is<CrossCompartmentWrapperObject>());
   auto ptr = source->lookupWrapper(target);
   if (ptr) {
-    JSObject* wrapper = &ptr->value().get().toObject();
+    JSObject* wrapper = ptr->value().get();
     NukeCrossCompartmentWrapper(cx, wrapper);
   }
 }
@@ -445,11 +446,9 @@ JS_FRIEND_API bool js::NukeCrossCompartmentWrappers(
          target->compartment() == c.get() && NukedAllRealms(c.get()));
 
     // Iterate only the wrappers that have target compartment matched unless
-    // |nukeAll| is true. The string wrappers that we're not interested in
-    // won't be iterated, we can exclude them easily because they have
-    // compartment nullptr. Use Maybe to avoid copying from conditionally
-    // initializing NonStringWrapperEnum.
-    mozilla::Maybe<Compartment::NonStringWrapperEnum> e;
+    // |nukeAll| is true. Use Maybe to avoid copying from conditionally
+    // initializing ObjectWrapperEnum.
+    mozilla::Maybe<Compartment::ObjectWrapperEnum> e;
     if (MOZ_LIKELY(!nukeAll)) {
       e.emplace(c, target->compartment());
     } else {
@@ -457,19 +456,13 @@ JS_FRIEND_API bool js::NukeCrossCompartmentWrappers(
       c.get()->nukedOutgoingWrappers = true;
     }
     for (; !e->empty(); e->popFront()) {
-      // Skip debugger references because NukeCrossCompartmentWrapper()
-      // doesn't know how to nuke them yet, see bug 1084626 for more
-      // information.
-      const CrossCompartmentKey& k = e->front().key();
-      if (!k.is<JSObject*>()) {
-        continue;
-      }
+      JSObject* key = e->front().key();
 
       AutoWrapperRooter wobj(cx, WrapperValue(*e));
 
-      // Unwrap from the wrapped object in CrossCompartmentKey instead of
-      // the wrapper, this could save us a bit of time.
-      JSObject* wrapped = UncheckedUnwrap(k.as<JSObject*>());
+      // Unwrap from the wrapped object in key instead of the wrapper, this
+      // could save us a bit of time.
+      JSObject* wrapped = UncheckedUnwrap(key);
 
       // Don't nuke wrappers for objects in other realms in the target
       // compartment unless nukeAll is set because in that case we want to nuke
@@ -544,7 +537,6 @@ void js::RemapWrapper(JSContext* cx, JSObject* wobjArg,
   MOZ_ASSERT(origTarget);
   MOZ_ASSERT(!JS_IsDeadWrapper(origTarget),
              "We don't want a dead proxy in the wrapper map");
-  Value origv = ObjectValue(*origTarget);
   JS::Compartment* wcompartment = wobj->compartment();
   MOZ_ASSERT(wcompartment != newTarget->compartment());
 
@@ -554,12 +546,12 @@ void js::RemapWrapper(JSContext* cx, JSObject* wobjArg,
   // for the same target), we must not have an existing wrapper for the new
   // target, otherwise this will break.
   MOZ_ASSERT_IF(origTarget != newTarget,
-                !wcompartment->lookupWrapper(ObjectValue(*newTarget)));
+                !wcompartment->lookupWrapper(newTarget));
 
   // The old value should still be in the cross-compartment wrapper map, and
   // the lookup should return wobj.
-  WrapperMap::Ptr p = wcompartment->lookupWrapper(origv);
-  MOZ_ASSERT(&p->value().unsafeGet()->toObject() == wobj);
+  ObjectWrapperMap::Ptr p = wcompartment->lookupWrapper(origTarget);
+  MOZ_ASSERT(*p->value().unsafeGet() == wobj);
   wcompartment->removeWrapper(p);
 
   // When we remove origv from the wrapper map, its wrapper, wobj, must
@@ -571,7 +563,7 @@ void js::RemapWrapper(JSContext* cx, JSObject* wobjArg,
   Realm* wrealm = wobj->nonCCWRealm();
 
   // First, we wrap it in the new compartment. We try to use the existing
-  // wrapper, |wobj|, since it's been nuked anyway. The wrap() function has
+  // wrapper, |wobj|, since it's been nuked anyway. The rewrap() function has
   // the choice to reuse |wobj| or not.
   RootedObject tobj(cx, newTarget);
   AutoRealmUnchecked ar(cx, wrealm);
@@ -580,7 +572,7 @@ void js::RemapWrapper(JSContext* cx, JSObject* wobjArg,
     oomUnsafe.crash("js::RemapWrapper");
   }
 
-  // If wrap() reused |wobj|, it will have overwritten it and returned with
+  // If rewrap() reused |wobj|, it will have overwritten it and returned with
   // |tobj == wobj|. Otherwise, |tobj| will point to a new wrapper and |wobj|
   // will still be nuked. In the latter case, we replace |wobj| with the
   // contents of the new wrapper in |tobj|.
@@ -591,15 +583,17 @@ void js::RemapWrapper(JSContext* cx, JSObject* wobjArg,
     JSObject::swap(cx, wobj, tobj);
   }
 
-  // Before swapping, this wrapper came out of wrap(), which enforces the
+  // Before swapping, this wrapper came out of rewrap(), which enforces the
   // invariant that the wrapper in the map points directly to the key.
   MOZ_ASSERT(Wrapper::wrappedObject(wobj) == newTarget);
+
+  // Update the incremental weakmap marking state.
+  wobj->zone()->afterAddDelegate(wobj);
 
   // Update the entry in the compartment's wrapper map to point to the old
   // wrapper, which has now been updated (via reuse or swap).
   MOZ_ASSERT(wobj->is<WrapperObject>());
-  if (!wcompartment->putWrapper(cx, CrossCompartmentKey(newTarget),
-                                ObjectValue(*wobj))) {
+  if (!wcompartment->putWrapper(cx, newTarget, wobj)) {
     oomUnsafe.crash("js::RemapWrapper");
   }
 }
@@ -607,18 +601,15 @@ void js::RemapWrapper(JSContext* cx, JSObject* wobjArg,
 // Remap all cross-compartment wrappers pointing to |oldTarget| to point to
 // |newTarget|. All wrappers are recomputed.
 JS_FRIEND_API bool js::RemapAllWrappersForObject(JSContext* cx,
-                                                 JSObject* oldTargetArg,
-                                                 JSObject* newTargetArg) {
-  MOZ_ASSERT(!IsInsideNursery(oldTargetArg));
-  MOZ_ASSERT(!IsInsideNursery(newTargetArg));
-
-  RootedValue origv(cx, ObjectValue(*oldTargetArg));
-  RootedObject newTarget(cx, newTargetArg);
+                                                 HandleObject oldTarget,
+                                                 HandleObject newTarget) {
+  MOZ_ASSERT(!IsInsideNursery(oldTarget));
+  MOZ_ASSERT(!IsInsideNursery(newTarget));
 
   AutoWrapperVector toTransplant(cx);
 
   for (CompartmentsIter c(cx->runtime()); !c.done(); c.next()) {
-    if (WrapperMap::Ptr wp = c->lookupWrapper(origv)) {
+    if (ObjectWrapperMap::Ptr wp = c->lookupWrapper(oldTarget)) {
       // We found a wrapper. Remember and root it.
       if (!toTransplant.append(WrapperValue(wp))) {
         return false;
@@ -627,7 +618,7 @@ JS_FRIEND_API bool js::RemapAllWrappersForObject(JSContext* cx,
   }
 
   for (const WrapperValue& v : toTransplant) {
-    RemapWrapper(cx, &v.toObject(), newTarget);
+    RemapWrapper(cx, v, newTarget);
   }
 
   return true;
@@ -645,21 +636,16 @@ JS_FRIEND_API bool js::RecomputeWrappers(
       continue;
     }
 
-    if (!evictedNursery && c->hasNurseryAllocatedWrapperEntries(targetFilter)) {
+    if (!evictedNursery &&
+        c->hasNurseryAllocatedObjectWrapperEntries(targetFilter)) {
       cx->runtime()->gc.evictNursery();
       evictedNursery = true;
     }
 
-    // Iterate over the wrappers, filtering appropriately.
-    for (Compartment::NonStringWrapperEnum e(c, targetFilter); !e.empty();
+    // Iterate over object wrappers, filtering appropriately.
+    for (Compartment::ObjectWrapperEnum e(c, targetFilter); !e.empty();
          e.popFront()) {
-      // Filter out non-objects.
-      CrossCompartmentKey& k = e.front().mutableKey();
-      if (!k.is<JSObject*>()) {
-        continue;
-      }
-
-      // Add it to the list.
+      // Add the wrapper to the list.
       if (!toRecompute.append(WrapperValue(e))) {
         return false;
       }
@@ -667,8 +653,7 @@ JS_FRIEND_API bool js::RecomputeWrappers(
   }
 
   // Recompute all the wrappers in the list.
-  for (const WrapperValue& v : toRecompute) {
-    JSObject* wrapper = &v.toObject();
+  for (const WrapperValue& wrapper : toRecompute) {
     JSObject* wrapped = Wrapper::wrappedObject(wrapper);
     RemapWrapper(cx, wrapper, wrapped);
   }

@@ -65,9 +65,9 @@ const unusedValuesError = /unused values not explicitly dropped by end of block/
 function jsify(wasmVal) {
     if (wasmVal === 'nan')
         return NaN;
-    if (wasmVal === 'infinity')
+    if (wasmVal === 'inf')
         return Infinity;
-    if (wasmVal === '-infinity')
+    if (wasmVal === '-inf')
         return Infinity;
     if (wasmVal === '-0')
         return -0;
@@ -96,6 +96,11 @@ function _augmentSrc(src, assertions) {
          i64.reinterpret/f64
          i64.const ${expected}
          i64.eq`;
+                    break;
+                case 'i32':
+                    newSrc += `
+         i32.const ${expected}
+         i32.eq`;
                     break;
                 case 'i64':
                     newSrc += `

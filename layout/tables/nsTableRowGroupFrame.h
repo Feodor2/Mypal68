@@ -65,6 +65,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
   virtual void AppendFrames(ChildListID aListID,
                             nsFrameList& aFrameList) override;
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 
@@ -342,7 +343,7 @@ class nsTableRowGroupFrame final : public nsContainerFrame,
 
   void PlaceChild(nsPresContext* aPresContext,
                   TableRowGroupReflowInput& aReflowInput, nsIFrame* aKidFrame,
-                  mozilla::WritingMode aWM,
+                  const ReflowInput& aKidReflowInput, mozilla::WritingMode aWM,
                   const mozilla::LogicalPoint& aKidPosition,
                   const nsSize& aContainerSize, ReflowOutput& aDesiredSize,
                   const nsRect& aOriginalKidRect,

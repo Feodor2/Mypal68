@@ -25,8 +25,6 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
 #include "nsImageMap.h"
-#include "nsIURL.h"
-#include "nsILoadGroup.h"
 #include "nsContainerFrame.h"
 #include "nsCSSRendering.h"
 #include "nsNameSpaceManager.h"
@@ -34,7 +32,6 @@
 #include "nsTransform2D.h"
 #include "nsITheme.h"
 
-#include "nsIServiceManager.h"
 #include "nsIURI.h"
 #include "nsThreadUtils.h"
 #include "nsDisplayList.h"
@@ -236,16 +233,17 @@ void nsImageBoxFrame::UpdateImage() {
           mContent, getter_AddRefs(triggeringPrincipal), contentPolicyType,
           &requestContextID);
 
-      nsCOMPtr<nsIURI> baseURI = mContent->GetBaseURI();
       nsCOMPtr<nsIURI> uri;
       nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(uri), src, doc,
-                                                baseURI);
+                                                mContent->GetBaseURI());
       if (uri) {
+        nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
+        referrerInfo->InitWithNode(mContent);
+
         nsresult rv = nsContentUtils::LoadImage(
             uri, mContent, doc, triggeringPrincipal, requestContextID,
-            doc->GetDocumentURIAsReferrer(), doc->GetReferrerPolicy(),
-            mListener, mLoadFlags, EmptyString(), getter_AddRefs(mImageRequest),
-            contentPolicyType);
+            referrerInfo, mListener, mLoadFlags, EmptyString(),
+            getter_AddRefs(mImageRequest), contentPolicyType);
 
         if (NS_SUCCEEDED(rv) && mImageRequest) {
           nsLayoutUtils::RegisterImageRequestIfAnimated(
@@ -614,7 +612,7 @@ void nsImageBoxFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
 
   // Fetch our subrect.
   const nsStyleList* myList = StyleList();
-  mSubRect = myList->mImageRegion;  // before |mSuppressStyleCheck| test!
+  mSubRect = myList->GetImageRegion();  // before |mSuppressStyleCheck| test!
 
   if (mUseSrcAttr || mSuppressStyleCheck)
     return;  // No more work required, since the image isn't specified by style.
@@ -672,28 +670,28 @@ nsSize nsImageBoxFrame::GetXULPrefSize(nsBoxLayoutState& aState) {
   bool widthSet, heightSet;
   nsIFrame::AddXULPrefSize(this, size, widthSet, heightSet);
   NS_ASSERTION(
-      size.width != NS_INTRINSICSIZE && size.height != NS_INTRINSICSIZE,
+      size.width != NS_UNCONSTRAINEDSIZE && size.height != NS_UNCONSTRAINEDSIZE,
       "non-intrinsic size expected");
 
   nsSize minSize = GetXULMinSize(aState);
   nsSize maxSize = GetXULMaxSize(aState);
 
   if (!widthSet && !heightSet) {
-    if (minSize.width != NS_INTRINSICSIZE)
+    if (minSize.width != NS_UNCONSTRAINEDSIZE)
       minSize.width -= borderPadding.LeftRight();
-    if (minSize.height != NS_INTRINSICSIZE)
+    if (minSize.height != NS_UNCONSTRAINEDSIZE)
       minSize.height -= borderPadding.TopBottom();
-    if (maxSize.width != NS_INTRINSICSIZE)
+    if (maxSize.width != NS_UNCONSTRAINEDSIZE)
       maxSize.width -= borderPadding.LeftRight();
-    if (maxSize.height != NS_INTRINSICSIZE)
+    if (maxSize.height != NS_UNCONSTRAINEDSIZE)
       maxSize.height -= borderPadding.TopBottom();
 
     size = nsLayoutUtils::ComputeAutoSizeWithIntrinsicDimensions(
         minSize.width, minSize.height, maxSize.width, maxSize.height,
         intrinsicSize.width, intrinsicSize.height);
-    NS_ASSERTION(
-        size.width != NS_INTRINSICSIZE && size.height != NS_INTRINSICSIZE,
-        "non-intrinsic size expected");
+    NS_ASSERTION(size.width != NS_UNCONSTRAINEDSIZE &&
+                     size.height != NS_UNCONSTRAINEDSIZE,
+                 "non-intrinsic size expected");
     size.width += borderPadding.LeftRight();
     size.height += borderPadding.TopBottom();
     return size;

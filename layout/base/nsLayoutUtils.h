@@ -10,15 +10,14 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/StaticPrefs_nglayout.h"
 #include "mozilla/TypedEnumBits.h"
+#include "mozilla/UniquePtr.h"
 #include "nsBoundingMetrics.h"
-#include "nsChangeHint.h"
 #include "mozilla/layout/FrameChildList.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "nsThreadUtils.h"
 #include "nsCSSPropertyIDSet.h"
-#include "nsStyleCoord.h"
-#include "nsStyleConsts.h"
 #include "nsGkAtoms.h"
 #include "mozilla/gfx/2D.h"
 #include "Units.h"
@@ -45,6 +44,7 @@ class nsIScrollableFrame;
 class nsRegion;
 class nsDisplayListBuilder;
 enum class nsDisplayListBuilderMode : uint8_t;
+enum nsChangeHint : uint32_t;
 class nsDisplayItem;
 class nsFontMetrics;
 class nsFontFaceList;
@@ -53,7 +53,6 @@ class nsBlockFrame;
 class nsContainerFrame;
 class nsView;
 class nsIFrame;
-class nsStyleCoord;
 class nsPIDOMWindowOuter;
 class imgIRequest;
 struct nsStyleFont;
@@ -119,6 +118,8 @@ struct DisplayPortMarginsPropertyData {
 struct MotionPathData {
   gfx::Point mTranslate;
   float mRotate;
+  // The delta value between transform-origin and offset-anchor.
+  gfx::Point mShift;
 };
 
 }  // namespace mozilla
@@ -132,12 +133,6 @@ enum class DrawStringFlags {
   ForceHorizontal = 0x1  // Forces the text to be drawn horizontally.
 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(DrawStringFlags)
-
-enum class ReparentingDirection {
-  Backwards,
-  Forwards,
-  Variable  // Could be either of the above; take most pessimistic action.
-};
 
 /**
  * nsLayoutUtils is a namespace class used for various helper
@@ -1099,7 +1094,7 @@ class nsLayoutUtils {
                                         const nsRect& aTestRect);
 
   static bool MaybeCreateDisplayPortInFirstScrollFrameEncountered(
-      nsIFrame* aFrame, nsDisplayListBuilder& aBuilder);
+      nsIFrame* aFrame, nsDisplayListBuilder* aBuilder);
 
   enum class PaintFrameFlags : uint32_t {
     InTransform = 0x01,
@@ -2156,11 +2151,16 @@ class nsLayoutUtils {
 
     /* The size of the surface */
     mozilla::gfx::IntSize mSize;
+    /* The size the surface is intended to be rendered at */
+    mozilla::gfx::IntSize mIntrinsicSize;
     /* The principal associated with the element whose surface was returned.
        If there is a surface, this will never be null. */
     nsCOMPtr<nsIPrincipal> mPrincipal;
     /* The image request, if the element is an nsIImageLoadingContent */
     nsCOMPtr<imgIRequest> mImageRequest;
+    /* True if cross-origins redirects have been done in order to load this
+     * resource */
+    bool mHadCrossOriginRedirects;
     /* Whether the element was "write only", that is, the bits should not be
      * exposed to content */
     bool mIsWriteOnly;
@@ -2243,8 +2243,8 @@ class nsLayoutUtils {
   static mozilla::dom::Element* GetEditableRootContentByContentEditable(
       mozilla::dom::Document* aDocument);
 
-  static void AddExtraBackgroundItems(nsDisplayListBuilder& aBuilder,
-                                      nsDisplayList& aList, nsIFrame* aFrame,
+  static void AddExtraBackgroundItems(nsDisplayListBuilder* aBuilder,
+                                      nsDisplayList* aList, nsIFrame* aFrame,
                                       const nsRect& aCanvasArea,
                                       const nsRegion& aVisibleRegion,
                                       nscolor aBackstop);
@@ -2262,7 +2262,8 @@ class nsLayoutUtils {
    * want to maintain a mapping from gfxFontEntry to InspectorFontFace
    * records, so use a temporary hashtable for that.
    */
-  typedef nsTArray<nsAutoPtr<mozilla::dom::InspectorFontFace>> UsedFontFaceList;
+  typedef nsTArray<mozilla::UniquePtr<mozilla::dom::InspectorFontFace>>
+      UsedFontFaceList;
   typedef nsDataHashtable<nsPtrHashKey<gfxFontEntry>,
                           mozilla::dom::InspectorFontFace*>
       UsedFontFaceTable;
@@ -2365,11 +2366,6 @@ class nsLayoutUtils {
   static bool AreAsyncAnimationsEnabled();
 
   /**
-   * Checks if we should warn about animations that can't be async
-   */
-  static bool IsAnimationLoggingEnabled();
-
-  /**
    * Checks if retained display lists are enabled.
    */
   static bool AreRetainedDisplayListsEnabled();
@@ -2395,20 +2391,6 @@ class nsLayoutUtils {
    * possible.
    */
   static bool GPUImageScalingEnabled();
-
-  /**
-   * Checks whether we want to layerize animated images whenever possible.
-   */
-  static bool AnimatedImageLayersEnabled();
-
-  /**
-   * Checks whether support for inter-character ruby is enabled.
-   */
-  static bool IsInterCharacterRubyEnabled();
-
-  static bool InterruptibleReflowEnabled() {
-    return sInterruptibleReflowEnabled;
-  }
 
   /**
    * Unions the overflow areas of the children of aFrame with aOverflowAreas.
@@ -2455,78 +2437,10 @@ class nsLayoutUtils {
   static bool FontSizeInflationEnabled(nsPresContext* aPresContext);
 
   /**
-   * See comment above "font.size.inflation.maxRatio" in
-   * modules/libpref/src/init/all.js .
-   */
-  static uint32_t FontSizeInflationMaxRatio() {
-    return sFontSizeInflationMaxRatio;
-  }
-
-  /**
-   * See comment above "font.size.inflation.emPerLine" in
-   * modules/libpref/src/init/all.js .
-   */
-  static uint32_t FontSizeInflationEmPerLine() {
-    return sFontSizeInflationEmPerLine;
-  }
-
-  /**
-   * See comment above "font.size.inflation.minTwips" in
-   * modules/libpref/src/init/all.js .
-   */
-  static uint32_t FontSizeInflationMinTwips() {
-    return sFontSizeInflationMinTwips;
-  }
-
-  /**
-   * See comment above "font.size.inflation.lineThreshold" in
-   * modules/libpref/src/init/all.js .
-   */
-  static uint32_t FontSizeInflationLineThreshold() {
-    return sFontSizeInflationLineThreshold;
-  }
-
-  static bool FontSizeInflationForceEnabled() {
-    return sFontSizeInflationForceEnabled;
-  }
-
-  static bool FontSizeInflationDisabledInMasterProcess() {
-    return sFontSizeInflationDisabledInMasterProcess;
-  }
-
-  /**
-   * See comment above "font.size.systemFontScale" in
-   * modules/libpref/init/all.js.
-   */
-  static float SystemFontScale() { return sSystemFontScale / 100.0f; }
-
-  static float MaxZoom() { return sZoomMaxPercent / 100.0f; }
-
-  static float MinZoom() { return sZoomMinPercent / 100.0f; }
-
-  static bool SVGTransformBoxEnabled() { return sSVGTransformBoxEnabled; }
-
-  static uint32_t IdlePeriodDeadlineLimit() { return sIdlePeriodDeadlineLimit; }
-
-  static uint32_t QuiescentFramesBeforeIdlePeriod() {
-    return sQuiescentFramesBeforeIdlePeriod;
-  }
-
-  /**
-   * See comment above "font.size.inflation.mappingIntercept" in
-   * modules/libpref/src/init/all.js .
-   */
-  static int32_t FontSizeInflationMappingIntercept() {
-    return sFontSizeInflationMappingIntercept;
-  }
-
-  /**
    * Returns true if the nglayout.debug.invalidation pref is set to true.
-   * Note that sInvalidationDebuggingIsEnabled is declared outside this function
-   * to allow it to be accessed an manipulated from breakpoint conditions.
    */
   static bool InvalidationDebuggingIsEnabled() {
-    return sInvalidationDebuggingIsEnabled ||
+    return mozilla::StaticPrefs::nglayout_debug_invalidation() ||
            getenv("MOZ_DUMP_INVALIDATION") != 0;
   }
 
@@ -2819,7 +2733,7 @@ class nsLayoutUtils {
    * Returns true if there is a displayport on an async scrollable scrollframe
    * after this call, either because one was just added or it already existed.
    */
-  static bool MaybeCreateDisplayPort(nsDisplayListBuilder& aBuilder,
+  static bool MaybeCreateDisplayPort(nsDisplayListBuilder* aBuilder,
                                      nsIFrame* aScrollFrame,
                                      RepaintMode aRepaintMode);
 
@@ -2837,8 +2751,6 @@ class nsLayoutUtils {
    * ancestor.
    */
   static void ExpireDisplayPortOnAsyncScrollableAncestor(nsIFrame* aFrame);
-
-  static bool IsOutlineStyleAutoEnabled();
 
   static void SetBSizeFromFontMetrics(
       const nsIFrame* aFrame, mozilla::ReflowOutput& aMetrics,
@@ -3066,22 +2978,6 @@ class nsLayoutUtils {
       const nsIFrame* aFrame);
 
  private:
-  static uint32_t sFontSizeInflationEmPerLine;
-  static uint32_t sFontSizeInflationMinTwips;
-  static uint32_t sFontSizeInflationLineThreshold;
-  static int32_t sFontSizeInflationMappingIntercept;
-  static uint32_t sFontSizeInflationMaxRatio;
-  static bool sFontSizeInflationForceEnabled;
-  static bool sFontSizeInflationDisabledInMasterProcess;
-  static uint32_t sSystemFontScale;
-  static uint32_t sZoomMaxPercent;
-  static uint32_t sZoomMinPercent;
-  static bool sInvalidationDebuggingIsEnabled;
-  static bool sInterruptibleReflowEnabled;
-  static bool sSVGTransformBoxEnabled;
-  static uint32_t sIdlePeriodDeadlineLimit;
-  static uint32_t sQuiescentFramesBeforeIdlePeriod;
-
   /**
    * Helper function for LogTestDataForPaint().
    */
@@ -3218,7 +3114,7 @@ class nsSetAttrRunnable : public mozilla::Runnable {
 
   NS_DECL_NSIRUNNABLE
 
-  RefPtr<Element> mElement;
+  RefPtr<mozilla::dom::Element> mElement;
   RefPtr<nsAtom> mAttrName;
   nsAutoString mValue;
 };
@@ -3229,7 +3125,7 @@ class nsUnsetAttrRunnable : public mozilla::Runnable {
 
   NS_DECL_NSIRUNNABLE
 
-  RefPtr<Element> mElement;
+  RefPtr<mozilla::dom::Element> mElement;
   RefPtr<nsAtom> mAttrName;
 };
 

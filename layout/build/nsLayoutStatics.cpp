@@ -111,6 +111,7 @@
 #include "mozilla/HTMLEditorController.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/StaticPresData.h"
+#include "mozilla/dom/Document.h"
 #include "mozilla/dom/IPCBlobInputStreamStorage.h"
 #include "mozilla/dom/WebIDLGlobalNameHash.h"
 #include "mozilla/dom/U2FTokenManager.h"
@@ -241,19 +242,15 @@ nsresult nsLayoutStatics::Initialize() {
   MediaManager::StartupInit();
   CubebUtils::InitLibrary();
 
-  nsContentSink::InitializeStatics();
   nsHtml5Module::InitializeStatics();
   mozilla::dom::FallbackEncoding::Initialize();
   nsLayoutUtils::Initialize();
   PointerEventHandler::InitializeStatics();
   TouchManager::InitializeStatics();
 
-  nsCORSListenerProxy::Startup();
-
   nsWindowMemoryReporter::Init();
 
   SVGElementFactory::Init();
-  nsSVGUtils::Init();
 
   ProcessPriorityManager::Init();
 
@@ -261,9 +258,6 @@ nsresult nsLayoutStatics::Initialize() {
 
   nsCookieService::AppClearDataObserverInit();
   nsApplicationCacheService::AppClearDataObserverInit();
-
-  HTMLVideoElement::InitStatics();
-  nsGenericHTMLFrameElement::InitStatics();
 
 #ifdef MOZ_XUL
   nsMenuBarListener::InitializeStatics();
@@ -299,7 +293,6 @@ nsresult nsLayoutStatics::Initialize() {
   if (XRE_IsParentProcess()) {
     // On content process we initialize these components when PContentChild is
     // fully initialized.
-    mozilla::dom::DOMPrefs::Initialize();
     mozilla::dom::RemoteWorkerService::Initialize();
     // This one should be initialized on the parent only
     mozilla::dom::BrowserParent::InitializeStatics();
@@ -333,6 +326,7 @@ void nsLayoutStatics::Shutdown() {
     URLExtraData::ReleaseDummy();
   }
 
+  Document::Shutdown();
   nsMessageManagerScriptExecutor::Shutdown();
   nsFocusManager::Shutdown();
 #ifdef MOZ_XUL

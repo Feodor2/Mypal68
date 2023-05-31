@@ -48,7 +48,6 @@
 #include "mozilla/Unused.h"
 #include "gfx2DGlue.h"
 #include "mozilla/widget/nsAutoRollup.h"
-#include "nsILayoutHistoryState.h"
 
 #ifdef XP_WIN
 #  define COMBOBOX_ROLLUP_CONSUME_EVENT 0
@@ -435,10 +434,10 @@ void nsComboboxControlFrame::ReflowDropdown(nsPresContext* aPresContext,
 
   // Allow the child to move/size/change-visibility its view if it's currently
   // dropped down
-  int32_t flags = mDroppedDown
-                      ? 0
-                      : NS_FRAME_NO_MOVE_FRAME | NS_FRAME_NO_VISIBILITY |
-                            NS_FRAME_NO_SIZE_VIEW;
+  ReflowChildFlags flags = mDroppedDown ? ReflowChildFlags::Default
+                                        : ReflowChildFlags::NoMoveFrame |
+                                              ReflowChildFlags::NoVisibility |
+                                              ReflowChildFlags::NoSizeView;
 
   // XXX Can this be different from the dropdown's writing mode?
   // That would be odd!
@@ -714,8 +713,9 @@ nscoord nsComboboxControlFrame::GetIntrinsicISize(
         presContext, aRenderingContext, GetWritingMode());
   }
 
+  const bool isContainSize = StyleDisplay()->IsContainSize();
   nscoord displayISize = 0;
-  if (MOZ_LIKELY(mDisplayFrame)) {
+  if (MOZ_LIKELY(mDisplayFrame) && !isContainSize) {
     displayISize = nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
                                                         mDisplayFrame, aType);
   }
@@ -725,13 +725,15 @@ nscoord nsComboboxControlFrame::GetIntrinsicISize(
     bool isUsingOverlayScrollbars =
         LookAndFeel::GetInt(LookAndFeel::eIntID_UseOverlayScrollbars) != 0;
     if (aType == nsLayoutUtils::MIN_ISIZE) {
-      dropdownContentISize = mDropdownFrame->GetMinISize(aRenderingContext);
+      dropdownContentISize =
+          isContainSize ? 0 : mDropdownFrame->GetMinISize(aRenderingContext);
       if (isUsingOverlayScrollbars) {
         dropdownContentISize += scrollbarWidth;
       }
     } else {
       NS_ASSERTION(aType == nsLayoutUtils::PREF_ISIZE, "Unexpected type");
-      dropdownContentISize = mDropdownFrame->GetPrefISize(aRenderingContext);
+      dropdownContentISize =
+          isContainSize ? 0 : mDropdownFrame->GetPrefISize(aRenderingContext);
       if (isUsingOverlayScrollbars) {
         dropdownContentISize += scrollbarWidth;
       }
@@ -1228,7 +1230,7 @@ void nsComboboxDisplayFrame::Reflow(nsPresContext* aPresContext,
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   ReflowInput state(aReflowInput);
-  if (state.ComputedBSize() == NS_INTRINSICSIZE) {
+  if (state.ComputedBSize() == NS_UNCONSTRAINEDSIZE) {
     float inflation = nsLayoutUtils::FontSizeInflationFor(mComboBox);
     // We intentionally use the combobox frame's style here, which has
     // the 'line-height' specified by the author, if any.
@@ -1492,7 +1494,7 @@ void nsComboboxControlFrame::PaintFocus(DrawTarget& aDrawTarget, nsPoint aPt) {
 
   StrokeOptions strokeOptions;
   nsLayoutUtils::InitDashPattern(strokeOptions, StyleBorderStyle::Dotted);
-  ColorPattern color(ToDeviceColor(StyleColor()->mColor));
+  ColorPattern color(ToDeviceColor(StyleText()->mColor));
   nscoord onePixel = nsPresContext::CSSPixelsToAppUnits(1);
   clipRect.width -= onePixel;
   clipRect.height -= onePixel;

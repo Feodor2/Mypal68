@@ -8,7 +8,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsIContentViewer.h"
 
-#include "nsIServiceManager.h"
 #include "nsAtom.h"
 #include "nsQuickSort.h"
 
@@ -21,7 +20,6 @@
 #include "nsLayoutCID.h"
 static NS_DEFINE_CID(kLayoutDebuggerCID, NS_LAYOUT_DEBUGGER_CID);
 
-#include "nsISelectionController.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/Preferences.h"
@@ -270,15 +268,15 @@ static void DumpAWebShell(nsIDocShellTreeItem* aShellItem, FILE* out,
 
   fprintf(out, "%p '", static_cast<void*>(aShellItem));
   aShellItem->GetName(name);
-  aShellItem->GetSameTypeParent(getter_AddRefs(parent));
+  aShellItem->GetInProcessSameTypeParent(getter_AddRefs(parent));
   fputs(NS_LossyConvertUTF16toASCII(name).get(), out);
   fprintf(out, "' parent=%p <\n", static_cast<void*>(parent));
 
   ++aIndent;
-  aShellItem->GetChildCount(&n);
+  aShellItem->GetInProcessChildCount(&n);
   for (i = 0; i < n; ++i) {
     nsCOMPtr<nsIDocShellTreeItem> child;
-    aShellItem->GetChildAt(i, getter_AddRefs(child));
+    aShellItem->GetInProcessChildAt(i, getter_AddRefs(child));
     if (child) {
       DumpAWebShell(child, out, aIndent);
     }
@@ -310,10 +308,10 @@ static void DumpContentRecur(nsIDocShell* aDocShell, FILE* out) {
     }
     // dump the frames of the sub documents
     int32_t i, n;
-    aDocShell->GetChildCount(&n);
+    aDocShell->GetInProcessChildCount(&n);
     for (i = 0; i < n; ++i) {
       nsCOMPtr<nsIDocShellTreeItem> child;
-      aDocShell->GetChildAt(i, getter_AddRefs(child));
+      aDocShell->GetInProcessChildAt(i, getter_AddRefs(child));
       nsCOMPtr<nsIDocShell> childAsShell(do_QueryInterface(child));
       if (child) {
         DumpContentRecur(childAsShell, out);
@@ -344,10 +342,10 @@ static void DumpFramesRecur(nsIDocShell* aDocShell, FILE* out) {
 
   // dump the frames of the sub documents
   int32_t i, n;
-  aDocShell->GetChildCount(&n);
+  aDocShell->GetInProcessChildCount(&n);
   for (i = 0; i < n; ++i) {
     nsCOMPtr<nsIDocShellTreeItem> child;
-    aDocShell->GetChildAt(i, getter_AddRefs(child));
+    aDocShell->GetInProcessChildAt(i, getter_AddRefs(child));
     nsCOMPtr<nsIDocShell> childAsShell(do_QueryInterface(child));
     if (childAsShell) {
       DumpFramesRecur(childAsShell, out);
@@ -378,10 +376,10 @@ static void DumpViewsRecur(nsIDocShell* aDocShell, FILE* out) {
 
   // dump the views of the sub documents
   int32_t i, n;
-  aDocShell->GetChildCount(&n);
+  aDocShell->GetInProcessChildCount(&n);
   for (i = 0; i < n; i++) {
     nsCOMPtr<nsIDocShellTreeItem> child;
-    aDocShell->GetChildAt(i, getter_AddRefs(child));
+    aDocShell->GetInProcessChildAt(i, getter_AddRefs(child));
     nsCOMPtr<nsIDocShell> childAsShell(do_QueryInterface(child));
     if (childAsShell) {
       DumpViewsRecur(childAsShell, out);

@@ -9,6 +9,7 @@
 
 #include "mozilla/Poison.h"
 #include "nsDebug.h"
+#include "nsDisplayList.h"
 #include "nsPrintfCString.h"
 #include "FrameLayerBuilder.h"
 #include "mozilla/ArrayUtils.h"
@@ -147,7 +148,7 @@ void nsPresArena<ArenaSize>::AddSizeOfExcludingThis(
     aSizes.mArenaSizes.NS_ARENA_SIZES_FIELD(classname) += totalSize; \
     break;
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
       case eArenaObjectID_nsLineBox:

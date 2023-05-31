@@ -36,7 +36,7 @@ extern crate to_shmem_derive;
 #[cfg(feature = "servo")]
 extern crate webrender_api;
 #[cfg(feature = "servo")]
-pub use webrender_api::DevicePixel;
+pub use webrender_api::units::DevicePixel;
 
 use cssparser::{CowRcStr, Token};
 use selectors::parser::SelectorParseErrorKind;
@@ -152,8 +152,6 @@ pub enum StyleParseErrorKind<'i> {
 
     /// The property declaration was for an unknown property.
     UnknownProperty(CowRcStr<'i>),
-    /// An unknown vendor-specific identifier was encountered.
-    UnknownVendorProperty,
     /// The property declaration was for a disabled experimental property.
     ExperimentalProperty,
     /// The property declaration contained an invalid color value.

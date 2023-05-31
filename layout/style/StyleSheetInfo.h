@@ -7,10 +7,10 @@
 
 #include "mozilla/css/SheetParsingMode.h"
 #include "mozilla/dom/SRIMetadata.h"
-#include "mozilla/net/ReferrerPolicy.h"
 #include "mozilla/CORSMode.h"
 
 #include "nsIURI.h"
+#include "nsIReferrerInfo.h"
 
 class nsIPrincipal;
 struct nsLayoutStylesheetCacheShm;
@@ -23,10 +23,9 @@ struct URLExtraData;
  * Struct for data common to CSSStyleSheetInner and ServoStyleSheet.
  */
 struct StyleSheetInfo final {
-  typedef net::ReferrerPolicy ReferrerPolicy;
+  typedef dom::ReferrerPolicy ReferrerPolicy;
 
-  StyleSheetInfo(CORSMode aCORSMode, ReferrerPolicy aReferrerPolicy,
-                 const dom::SRIMetadata& aIntegrity,
+  StyleSheetInfo(CORSMode aCORSMode, const dom::SRIMetadata& aIntegrity,
                  css::SheetParsingMode aParsingMode);
 
   // FIXME(emilio): aCopy should be const.
@@ -48,9 +47,9 @@ struct StyleSheetInfo final {
   nsCOMPtr<nsIURI> mBaseURI;           // for resolving relative URIs
   nsCOMPtr<nsIPrincipal> mPrincipal;
   CORSMode mCORSMode;
-  // The Referrer Policy of a stylesheet is used for its child sheets, so it is
-  // stored here.
-  ReferrerPolicy mReferrerPolicy;
+  // The ReferrerInfo of a stylesheet is used for its child sheets and loads
+  // come from this stylesheet, so it is stored here.
+  nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
   dom::SRIMetadata mIntegrity;
 
   // Pointer to start of linked list of child sheets. This is all fundamentally

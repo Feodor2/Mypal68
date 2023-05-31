@@ -40,9 +40,10 @@ class Element;
  */
 class ServoRestyleState {
  public:
-  ServoRestyleState(ServoStyleSet& aStyleSet, nsStyleChangeList& aChangeList,
-                    nsTArray<nsIFrame*>& aPendingWrapperRestyles,
-                    nsTArray<nsIFrame*>& aPendingScrollAnchorSuppressions)
+  ServoRestyleState(
+      ServoStyleSet& aStyleSet, nsStyleChangeList& aChangeList,
+      nsTArray<nsIFrame*>& aPendingWrapperRestyles,
+      nsTArray<RefPtr<dom::Element>>& aPendingScrollAnchorSuppressions)
       : mStyleSet(aStyleSet),
         mChangeList(aChangeList),
         mPendingWrapperRestyles(aPendingWrapperRestyles),
@@ -138,8 +139,8 @@ class ServoRestyleState {
   //
   // This doesn't handle nested reframes. We'd need to rework quite some code to
   // do that, and so far it doesn't seem to be a problem in practice.
-  void AddPendingScrollAnchorSuppression(nsIFrame* aFrame) {
-    mPendingScrollAnchorSuppressions.AppendElement(aFrame);
+  void AddPendingScrollAnchorSuppression(dom::Element* aElement) {
+    mPendingScrollAnchorSuppressions.AppendElement(aElement);
   }
 
  private:
@@ -171,7 +172,7 @@ class ServoRestyleState {
   // before descendants.
   nsTArray<nsIFrame*>& mPendingWrapperRestyles;
 
-  nsTArray<nsIFrame*>& mPendingScrollAnchorSuppressions;
+  nsTArray<RefPtr<dom::Element>>& mPendingScrollAnchorSuppressions;
 
   // Since we're given a possibly-nonempty mPendingWrapperRestyles to start
   // with, we need to keep track of where the part of it we're responsible for
@@ -372,8 +373,6 @@ class RestyleManager {
   // ::first-line.
   void ReparentComputedStyleForFirstLine(nsIFrame*);
 
-  bool HasPendingRestyleAncestor(dom::Element* aElement) const;
-
   /**
    * Performs a Servo animation-only traversal to compute style for all nodes
    * with the animation-only dirty bit in the document.
@@ -417,8 +416,8 @@ class RestyleManager {
   // b) When the style before sending the animation to the compositor exactly
   // the same as the current style
   static void AddLayerChangesForAnimation(
-      nsIFrame* aFrame, nsIContent* aContent, nsChangeHint aHintForThisFrame,
-      nsStyleChangeList& aChangeListToProcess);
+      nsIFrame* aStyleFrame, nsIFrame* aPrimaryFrame, Element* aElement,
+      nsChangeHint aHintForThisFrame, nsStyleChangeList& aChangeListToProcess);
 
   /**
    * Whether to clear all the style data (including the element itself), or just

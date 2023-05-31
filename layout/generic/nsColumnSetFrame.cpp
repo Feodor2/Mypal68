@@ -9,6 +9,7 @@
 #include "mozilla/ColumnUtils.h"
 #include "mozilla/Logging.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/ToString.h"
 #include "nsCSSRendering.h"
 
@@ -112,7 +113,7 @@ NS_IMPL_FRAMEARENA_HELPERS(nsColumnSetFrame)
 nsColumnSetFrame::nsColumnSetFrame(ComputedStyle* aStyle,
                                    nsPresContext* aPresContext)
     : nsContainerFrame(aStyle, aPresContext, kClassID),
-      mLastBalanceBSize(NS_INTRINSICSIZE) {}
+      mLastBalanceBSize(NS_UNCONSTRAINEDSIZE) {}
 
 void nsColumnSetFrame::ForEachColumnRule(
     const std::function<void(const nsRect& lineRect)>& aSetLineRect,
@@ -251,8 +252,8 @@ void nsColumnSetFrame::CreateBorderRenderers(
 }
 
 static nscoord GetAvailableContentISize(const ReflowInput& aReflowInput) {
-  if (aReflowInput.AvailableISize() == NS_INTRINSICSIZE) {
-    return NS_INTRINSICSIZE;
+  if (aReflowInput.AvailableISize() == NS_UNCONSTRAINEDSIZE) {
+    return NS_UNCONSTRAINEDSIZE;
   }
 
   WritingMode wm = aReflowInput.GetWritingMode();
@@ -263,8 +264,8 @@ static nscoord GetAvailableContentISize(const ReflowInput& aReflowInput) {
 
 nscoord nsColumnSetFrame::GetAvailableContentBSize(
     const ReflowInput& aReflowInput) const {
-  if (aReflowInput.AvailableBSize() == NS_INTRINSICSIZE) {
-    return NS_INTRINSICSIZE;
+  if (aReflowInput.AvailableBSize() == NS_UNCONSTRAINEDSIZE) {
+    return NS_UNCONSTRAINEDSIZE;
   }
 
   WritingMode wm = aReflowInput.GetWritingMode();
@@ -292,7 +293,7 @@ nsColumnSetFrame::ReflowConfig nsColumnSetFrame::ChooseColumnStrategy(
 
   const nsStyleColumn* colStyle = StyleColumn();
   nscoord availContentISize = GetAvailableContentISize(aReflowInput);
-  if (aReflowInput.ComputedISize() != NS_INTRINSICSIZE) {
+  if (aReflowInput.ComputedISize() != NS_UNCONSTRAINEDSIZE) {
     availContentISize = aReflowInput.ComputedISize();
   }
 
@@ -303,17 +304,17 @@ nsColumnSetFrame::ReflowConfig nsColumnSetFrame::ChooseColumnStrategy(
   // computed block-size if we have an unconstrained available block-size.
   nscoord computedBSize =
       GetEffectiveComputedBSize(aReflowInput, consumedBSize);
-  nscoord colBSize = GetAvailableContentBSize(aReflowInput);
 
-  if (aReflowInput.ComputedBSize() != NS_INTRINSICSIZE) {
-    colBSize = aReflowInput.ComputedBSize();
-  } else if (aReflowInput.ComputedMaxBSize() != NS_INTRINSICSIZE) {
-    colBSize = std::min(colBSize, aReflowInput.ComputedMaxBSize());
-  } else if (StaticPrefs::layout_css_column_span_enabled() &&
-             aReflowInput.mCBReflowInput->ComputedMaxBSize() !=
-                 NS_INTRINSICSIZE) {
-    colBSize =
-        std::min(colBSize, aReflowInput.mCBReflowInput->ComputedMaxBSize());
+  nscoord colBSize;
+  if (StaticPrefs::layout_css_column_span_enabled()) {
+    colBSize = aReflowInput.AvailableBSize();
+  } else {
+    colBSize = GetAvailableContentBSize(aReflowInput);
+    if (aReflowInput.ComputedBSize() != NS_UNCONSTRAINEDSIZE) {
+      colBSize = aReflowInput.ComputedBSize();
+    } else if (aReflowInput.ComputedMaxBSize() != NS_UNCONSTRAINEDSIZE) {
+      colBSize = std::min(colBSize, aReflowInput.ComputedMaxBSize());
+    }
   }
 
   nscoord colGap =
@@ -343,7 +344,7 @@ nsColumnSetFrame::ReflowConfig nsColumnSetFrame::ChooseColumnStrategy(
     // available width. Compute max number of columns that fit in
     // availContentISize, satisfying colGap*(maxColumns - 1) +
     // colISize*maxColumns <= availContentISize
-    if (availContentISize != NS_INTRINSICSIZE && colGap + colISize > 0 &&
+    if (availContentISize != NS_UNCONSTRAINEDSIZE && colGap + colISize > 0 &&
         numColumns > 0) {
       // This expression uses truncated rounding, which is what we
       // want
@@ -352,11 +353,11 @@ nsColumnSetFrame::ReflowConfig nsColumnSetFrame::ChooseColumnStrategy(
                    (availContentISize + colGap) / (colGap + colISize));
       numColumns = std::max(1, std::min(numColumns, maxColumns));
     }
-  } else if (numColumns > 0 && availContentISize != NS_INTRINSICSIZE) {
+  } else if (numColumns > 0 && availContentISize != NS_UNCONSTRAINEDSIZE) {
     nscoord iSizeMinusGaps = availContentISize - colGap * (numColumns - 1);
     colISize = iSizeMinusGaps / numColumns;
   } else {
-    colISize = NS_INTRINSICSIZE;
+    colISize = NS_UNCONSTRAINEDSIZE;
   }
   // Take care of the situation where there's only one column but it's
   // still too wide
@@ -364,7 +365,8 @@ nsColumnSetFrame::ReflowConfig nsColumnSetFrame::ChooseColumnStrategy(
 
   nscoord expectedISizeLeftOver = 0;
 
-  if (colISize != NS_INTRINSICSIZE && availContentISize != NS_INTRINSICSIZE) {
+  if (colISize != NS_UNCONSTRAINEDSIZE &&
+      availContentISize != NS_UNCONSTRAINEDSIZE) {
     // distribute leftover space
 
     // First, determine how many columns will be showing if the column
@@ -416,12 +418,6 @@ nsColumnSetFrame::ReflowConfig nsColumnSetFrame::ChooseColumnStrategy(
     colBSize = std::max(colBSize, nsPresContext::CSSPixelsToAppUnits(1));
   }
 
-  COLUMN_SET_LOG(
-      "%s: numColumns=%d, colISize=%d, expectedISizeLeftOver=%d,"
-      " colBSize=%d, colGap=%d, isBalancing %d",
-      __func__, numColumns, colISize, expectedISizeLeftOver, colBSize, colGap,
-      isBalancing);
-
   ReflowConfig config;
   config.mBalanceColCount = numColumns;
   config.mColISize = colISize;
@@ -429,17 +425,24 @@ nsColumnSetFrame::ReflowConfig nsColumnSetFrame::ChooseColumnStrategy(
   config.mColGap = colGap;
   config.mColMaxBSize = colBSize;
   config.mIsBalancing = isBalancing;
-  config.mKnownFeasibleBSize = NS_INTRINSICSIZE;
+  config.mKnownFeasibleBSize = NS_UNCONSTRAINEDSIZE;
   config.mKnownInfeasibleBSize = 0;
   config.mComputedBSize = computedBSize;
   config.mConsumedBSize = consumedBSize;
+
+  COLUMN_SET_LOG(
+      "%s: this=%p, mBalanceColCount=%d, mColISize=%d, "
+      "mExpectedISizeLeftOver=%d, mColGap=%d, mColMaxBSize=%d, mIsBalancing=%d",
+      __func__, this, config.mBalanceColCount, config.mColISize,
+      config.mExpectedISizeLeftOver, config.mColGap, config.mColMaxBSize,
+      config.mIsBalancing);
 
   return config;
 }
 
 static void MarkPrincipalChildrenDirty(nsIFrame* aFrame) {
   for (nsIFrame* childFrame : aFrame->PrincipalChildList()) {
-    childFrame->AddStateBits(NS_FRAME_IS_DIRTY);
+    childFrame->MarkSubtreeDirty();
   }
 }
 
@@ -557,9 +560,9 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
   ColumnBalanceData colData;
   bool allFit = true;
   WritingMode wm = GetWritingMode();
-  bool isRTL = !wm.IsBidiLTR();
-  bool shrinkingBSize = mLastBalanceBSize > aConfig.mColMaxBSize;
-  bool changingBSize = mLastBalanceBSize != aConfig.mColMaxBSize;
+  const bool isRTL = !wm.IsBidiLTR();
+  const bool shrinkingBSize = mLastBalanceBSize > aConfig.mColMaxBSize;
+  const bool changingBSize = mLastBalanceBSize != aConfig.mColMaxBSize;
 
   COLUMN_SET_LOG(
       "%s: Doing column reflow pass: mLastBalanceBSize=%d,"
@@ -570,9 +573,7 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
 
   DrainOverflowColumns();
 
-  const bool colBSizeChanged = mLastBalanceBSize != aConfig.mColMaxBSize;
-
-  if (colBSizeChanged) {
+  if (changingBSize) {
     mLastBalanceBSize = aConfig.mColMaxBSize;
     // XXX Seems like this could fire if incremental reflow pushed the column
     // set down so we reflow incrementally with a different available height.
@@ -602,6 +603,11 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
   // will be adjusted later, after our correct contentSize is known.
   nsSize containerSize = aReflowInput.ComputedSizeAsContainerIfConstrained();
 
+  const nscoord computedBSize =
+      StaticPrefs::layout_css_column_span_enabled()
+          ? aReflowInput.mParentReflowInput->ComputedBSize()
+          : aReflowInput.ComputedBSize();
+
   // For RTL, since the columns might not fill the frame exactly, we
   // need to account for the slop. Otherwise we'll waste time moving the
   // columns by some tiny amount
@@ -611,10 +617,10 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
   //     confine it to the legacy horizontal-rl case
   if (!wm.IsVertical() && isRTL) {
     nscoord availISize = aReflowInput.AvailableISize();
-    if (aReflowInput.ComputedISize() != NS_INTRINSICSIZE) {
+    if (aReflowInput.ComputedISize() != NS_UNCONSTRAINEDSIZE) {
       availISize = aReflowInput.ComputedISize();
     }
-    if (availISize != NS_INTRINSICSIZE) {
+    if (availISize != NS_UNCONSTRAINEDSIZE) {
       childOrigin.I(wm) =
           containerSize.width - borderPadding.Left(wm) - availISize;
 
@@ -623,10 +629,13 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
   }
 
   int columnCount = 0;
-  int contentBEnd = 0;
+  nscoord contentBEnd = 0;
   bool reflowNext = false;
 
   while (child) {
+    const bool isMeasuringFeasibleContentBSize =
+        aUnboundedLastColumn && columnCount == aConfig.mBalanceColCount - 1;
+
     // Try to skip reflowing the child. We can't skip if the child is dirty. We
     // also can't skip if the next column is dirty, because the next column's
     // first line(s) might be pullable back to this column. We can't skip if
@@ -637,16 +646,23 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
     // content from its next sibling. (Note that it might be the last
     // column, but not be the last child because the desired number of columns
     // has changed.)
-    bool skipIncremental = !aReflowInput.ShouldReflowAllKids() &&
-                           !NS_SUBTREE_DIRTY(child) &&
-                           child->GetNextSibling() &&
-                           !(aUnboundedLastColumn &&
-                             columnCount == aConfig.mBalanceColCount - 1) &&
-                           !NS_SUBTREE_DIRTY(child->GetNextSibling());
+    bool skipIncremental =
+        !aReflowInput.ShouldReflowAllKids() && !NS_SUBTREE_DIRTY(child) &&
+        child->GetNextSibling() && !isMeasuringFeasibleContentBSize &&
+        !NS_SUBTREE_DIRTY(child->GetNextSibling());
+
     // If column-fill is auto (not the default), then we might need to
     // move content between columns for any change in column block-size.
+    //
+    // The same is true if we have a non-'auto' computed block-size.
+    //
+    // FIXME: It's not clear to me why it's *ever* valid to have
+    // skipIncremental be true when changingBSize is true, since it
+    // seems like a child broken over multiple columns might need to
+    // change the size of the fragment in each column.
     if (skipIncremental && changingBSize &&
-        StyleColumn()->mColumnFill == StyleColumnFill::Auto) {
+        (StyleColumn()->mColumnFill == StyleColumnFill::Auto ||
+         computedBSize != NS_UNCONSTRAINEDSIZE)) {
       skipIncremental = false;
     }
     // If we need to pull up content from the prev-in-flow then this is not just
@@ -706,18 +722,22 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
                      ToString(aStatus).c_str());
     } else {
       LogicalSize availSize(wm, aConfig.mColISize, aConfig.mColMaxBSize);
-      if (aUnboundedLastColumn && columnCount == aConfig.mBalanceColCount - 1) {
-        availSize.BSize(wm) = GetAvailableContentBSize(aReflowInput);
+      if (isMeasuringFeasibleContentBSize) {
+        availSize.BSize(wm) = StaticPrefs::layout_css_column_span_enabled()
+                                  ? NS_UNCONSTRAINEDSIZE
+                                  : GetAvailableContentBSize(aReflowInput);
+
+        COLUMN_SET_LOG(
+            "%s: Measuring content block-size, change available block-size "
+            "from %d to %d",
+            __func__, aConfig.mColMaxBSize, availSize.BSize(wm));
       }
 
-      LogicalSize computedSize =
-          StaticPrefs::layout_css_column_span_enabled()
-              ? aReflowInput.mCBReflowInput->ComputedSize(wm)
-              : aReflowInput.ComputedSize(wm);
+      if (reflowNext) {
+        child->MarkSubtreeDirty();
+      }
 
-      if (reflowNext) child->AddStateBits(NS_FRAME_IS_DIRTY);
-
-      LogicalSize kidCBSize(wm, availSize.ISize(wm), computedSize.BSize(wm));
+      LogicalSize kidCBSize(wm, availSize.ISize(wm), computedBSize);
       ReflowInput kidReflowInput(PresContext(), aReflowInput, child, availSize,
                                  Some(kidCBSize));
       kidReflowInput.mFlags.mIsTopOfPage = true;
@@ -726,7 +746,7 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
 
       // We need to reflow any float placeholders, even if our column block-size
       // hasn't changed.
-      kidReflowInput.mFlags.mMustReflowPlaceholders = !colBSizeChanged;
+      kidReflowInput.mFlags.mMustReflowPlaceholders = !changingBSize;
 
       COLUMN_SET_LOG(
           "%s: Reflowing child #%d %p: availSize=(%d,%d), kidCBSize=(%d,%d)",
@@ -758,7 +778,7 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
               kidReflowInput.ComputedLogicalMargin().BStart(wm));
       aStatus.Reset();
       ReflowChild(child, PresContext(), kidDesiredSize, kidReflowInput, wm,
-                  origin, containerSize, 0, aStatus);
+                  origin, containerSize, ReflowChildFlags::Default, aStatus);
 
       reflowNext = aStatus.NextInFlowNeedsReflow();
 
@@ -788,7 +808,8 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
       NS_FRAME_TRACE_REFLOW_OUT("Column::Reflow", aStatus);
 
       FinishReflowChild(child, PresContext(), kidDesiredSize, &kidReflowInput,
-                        wm, childOrigin, containerSize, 0);
+                        wm, childOrigin, containerSize,
+                        ReflowChildFlags::Default);
 
       childContentBEnd = nsLayoutUtils::CalculateContentBEnd(wm, child);
       if (childContentBEnd > aConfig.mColMaxBSize) {
@@ -857,7 +878,7 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
       if (columnCount >= aConfig.mBalanceColCount - 1) {
         // No more columns allowed here. Stop.
         aStatus.SetNextInFlowNeedsReflow();
-        kidNextInFlow->AddStateBits(NS_FRAME_IS_DIRTY);
+        kidNextInFlow->MarkSubtreeDirty();
         // Move any of our leftover columns to our overflow list. Our
         // next-in-flow will eventually pick them up.
         const nsFrameList& continuationColumns =
@@ -903,7 +924,7 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
     // Otherwise, when we go to mark dirty bits on |child|'s ancestors we'll
     // bail out immediately, since it'll already have a dirty bit.
     for (; child; child = child->GetNextSibling()) {
-      child->AddStateBits(NS_FRAME_IS_DIRTY);
+      child->MarkSubtreeDirty();
     }
   }
 
@@ -912,37 +933,60 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
   contentSize.BSize(wm) = std::max(contentSize.BSize(wm), contentBEnd);
   mLastFrameStatus = aStatus;
 
-  // Apply computed and min/max values
-  if (aConfig.mComputedBSize != NS_INTRINSICSIZE) {
-    if (aReflowInput.AvailableBSize() != NS_INTRINSICSIZE) {
+  if (StaticPrefs::layout_css_column_span_enabled()) {
+    MOZ_ASSERT(borderPadding.IsAllZero(),
+               "Only our parent ColumnSetWrapper can have border and padding!");
+
+    if (computedBSize != NS_UNCONSTRAINEDSIZE && !HasColumnSpanSiblings()) {
+      NS_ASSERTION(aReflowInput.AvailableBSize() != NS_UNCONSTRAINEDSIZE,
+                   "Available block-size should be constrained because it's "
+                   "restricted by the computed block-size when our reflow "
+                   "input is created in nsBlockFrame::ReflowBlockFrame()!");
+
+      // If a) our parent ColumnSetWrapper has constrained block-size
+      // (nsBlockFrame::ReflowBlockFrame() applies the block-size constraint
+      // when creating BlockReflowInput for ColumnSetFrame); and b) we are the
+      // sole ColumnSet or the last ColumnSet continuation split by column-spans
+      // in a ColumnSetWrapper, extend our block-size to consume the available
+      // block-size so that the column-rules are drawn to the content block-end
+      // edge of the multicol container.
       contentSize.BSize(wm) =
-          std::min(contentSize.BSize(wm), aConfig.mComputedBSize);
-    } else {
-      contentSize.BSize(wm) = aConfig.mComputedBSize;
+          std::max(contentSize.BSize(wm), aReflowInput.AvailableBSize());
     }
-  } else if (aReflowInput.mStyleDisplay->IsContainSize()) {
-    // If we are intrinsically sized, but are size contained,
-    // we need to behave as if we have no contents. Our BSize
-    // should be zero or minBSize if specified.
-    contentSize.BSize(wm) = aReflowInput.ApplyMinMaxBSize(0);
   } else {
-    // We add the "consumed" block-size back in so that we're applying
-    // constraints to the correct bSize value, then subtract it again
-    // after we've finished with the min/max calculation. This prevents us from
-    // having a last continuation that is smaller than the min bSize. but which
-    // has prev-in-flows, trigger a larger bSize than actually required.
-    contentSize.BSize(wm) = aReflowInput.ApplyMinMaxBSize(
-        contentSize.BSize(wm), aConfig.mConsumedBSize);
-  }
-  if (aReflowInput.ComputedISize() != NS_INTRINSICSIZE) {
-    contentSize.ISize(wm) = aReflowInput.ComputedISize();
-  } else {
-    contentSize.ISize(wm) =
-        aReflowInput.ApplyMinMaxISize(contentSize.ISize(wm));
+    // Apply computed and min/max values
+    if (aConfig.mComputedBSize != NS_UNCONSTRAINEDSIZE) {
+      if (aReflowInput.AvailableBSize() != NS_UNCONSTRAINEDSIZE) {
+        contentSize.BSize(wm) =
+            std::min(contentSize.BSize(wm), aConfig.mComputedBSize);
+      } else {
+        contentSize.BSize(wm) = aConfig.mComputedBSize;
+      }
+    } else if (aReflowInput.mStyleDisplay->IsContainSize()) {
+      // If we are intrinsically sized, but are size contained,
+      // we need to behave as if we have no contents. Our BSize
+      // should be zero or minBSize if specified.
+      contentSize.BSize(wm) = aReflowInput.ApplyMinMaxBSize(0);
+    } else {
+      // We add the "consumed" block-size back in so that we're applying
+      // constraints to the correct bSize value, then subtract it again
+      // after we've finished with the min/max calculation. This prevents us
+      // from having a last continuation that is smaller than the min bSize. but
+      // which has prev-in-flows, trigger a larger bSize than actually required.
+      contentSize.BSize(wm) = aReflowInput.ApplyMinMaxBSize(
+          contentSize.BSize(wm), aConfig.mConsumedBSize);
+    }
+    if (aReflowInput.ComputedISize() != NS_UNCONSTRAINEDSIZE) {
+      contentSize.ISize(wm) = aReflowInput.ComputedISize();
+    } else {
+      contentSize.ISize(wm) =
+          aReflowInput.ApplyMinMaxISize(contentSize.ISize(wm));
+    }
+
+    contentSize.ISize(wm) += borderPadding.IStartEnd(wm);
+    contentSize.BSize(wm) += borderPadding.BStartEnd(wm);
   }
 
-  contentSize.ISize(wm) += borderPadding.IStartEnd(wm);
-  contentSize.BSize(wm) += borderPadding.BStartEnd(wm);
   aDesiredSize.SetSize(wm, contentSize);
   aDesiredSize.mOverflowAreas = overflowRects;
   aDesiredSize.UnionOverflowAreasWithDesiredBounds();
@@ -963,8 +1007,11 @@ nsColumnSetFrame::ColumnBalanceData nsColumnSetFrame::ReflowChildren(
 
   colData.mFeasible =
       allFit && aStatus.IsFullyComplete() && !aStatus.IsTruncated();
-  COLUMN_SET_LOG("%s: Done column reflow pass: %s", __func__,
-                 colData.mFeasible ? "Feasible :)" : "Infeasible :(");
+  COLUMN_SET_LOG(
+      "%s: Done column reflow pass: %s, mMaxBSize=%d, mSumBSize=%d, "
+      "mMaxOverflowingBSize=%d",
+      __func__, colData.mFeasible ? "Feasible :)" : "Infeasible :(",
+      colData.mMaxBSize, colData.mSumBSize, colData.mMaxOverflowingBSize);
 
   return colData;
 }
@@ -1000,10 +1047,6 @@ void nsColumnSetFrame::FindBestBalanceBSize(const ReflowInput& aReflowInput,
                                             ReflowOutput& aDesiredSize,
                                             bool aUnboundedLastColumn,
                                             nsReflowStatus& aStatus) {
-  nsMargin bp = aReflowInput.ComputedPhysicalBorderPadding();
-  bp.ApplySkipSides(GetSkipSides());
-  bp.bottom = aReflowInput.ComputedPhysicalBorderPadding().bottom;
-
   nscoord availableContentBSize = GetAvailableContentBSize(aReflowInput);
 
   // Termination of the algorithm below is guaranteed because
@@ -1037,6 +1080,7 @@ void nsColumnSetFrame::FindBestBalanceBSize(const ReflowInput& aReflowInput,
     } else {
       aConfig.mKnownInfeasibleBSize =
           std::max(aConfig.mKnownInfeasibleBSize, mLastBalanceBSize);
+
       // If a column didn't fit in its available block-size, then its current
       // block-size must be the minimum block-size for unbreakable content in
       // the column, and therefore no smaller block-size can be feasible.
@@ -1048,12 +1092,18 @@ void nsColumnSetFrame::FindBestBalanceBSize(const ReflowInput& aReflowInput,
         // mMaxBSize is feasible.
         aConfig.mKnownFeasibleBSize =
             std::min(aConfig.mKnownFeasibleBSize, aColData.mMaxBSize);
+
+        NS_ASSERTION(!StaticPrefs::layout_css_column_span_enabled() ||
+                         mLastFrameStatus.IsComplete(),
+                     "Last column should be complete if the available "
+                     "block-size is unconstrained!");
       }
     }
 
-    COLUMN_SET_LOG("%s: KnownInfeasibleBSize=%d, KnownFeasibleBSize=%d",
-                   __func__, aConfig.mKnownInfeasibleBSize,
-                   aConfig.mKnownFeasibleBSize);
+    COLUMN_SET_LOG(
+        "%s: this=%p, mKnownInfeasibleBSize=%d, mKnownFeasibleBSize=%d",
+        __func__, this, aConfig.mKnownInfeasibleBSize,
+        aConfig.mKnownFeasibleBSize);
 
     if (aConfig.mKnownInfeasibleBSize >= aConfig.mKnownFeasibleBSize - 1) {
       // aConfig.mKnownFeasibleBSize is where we want to be
@@ -1061,6 +1111,8 @@ void nsColumnSetFrame::FindBestBalanceBSize(const ReflowInput& aReflowInput,
     }
 
     if (aConfig.mKnownInfeasibleBSize >= availableContentBSize) {
+      // There's no feasible block-size to fit our contents. We may need to
+      // reflow one more time after this loop.
       break;
     }
 
@@ -1088,7 +1140,7 @@ void nsColumnSetFrame::FindBestBalanceBSize(const ReflowInput& aReflowInput,
       // Sanitize it
       nextGuess = clamped(nextGuess, aConfig.mKnownInfeasibleBSize + 1,
                           aConfig.mKnownFeasibleBSize - 1);
-    } else if (aConfig.mKnownFeasibleBSize == NS_INTRINSICSIZE) {
+    } else if (aConfig.mKnownFeasibleBSize == NS_UNCONSTRAINEDSIZE) {
       // This can happen when we had a next-in-flow so we didn't
       // want to do an unbounded block-size measuring step. Let's just increase
       // from the infeasible block-size by some reasonable amount.
@@ -1121,7 +1173,38 @@ void nsColumnSetFrame::FindBestBalanceBSize(const ReflowInput& aReflowInput,
     if (aConfig.mKnownInfeasibleBSize >= availableContentBSize) {
       aConfig.mColMaxBSize = availableContentBSize;
       if (mLastBalanceBSize == availableContentBSize) {
-        skip = true;
+        if (StaticPrefs::layout_css_column_span_enabled()) {
+          // If we end up here, we have a constrained available content
+          // block-size, and our last column's block-size exceeds it. Also, if
+          // this is the first balancing iteration, the last column is given
+          // unconstrained available block-size, so it has a fully complete
+          // reflow status. Therefore, we always want to reflow again at the
+          // available content block-size to get a valid layout and a correct
+          // reflow status (likely an *incomplete* status) so that our column
+          // container can be fragmented if needed.
+
+          if (aReflowInput.mFlags.mColumnSetWrapperHasNoBSizeLeft) {
+            // If our column container has a constrained block-size (either in a
+            // paginated context or in a nested column container), and is going
+            // to consume all its computed block-size in this fragment, then our
+            // column container has no block-size left to contain our
+            // next-in-flows. We have to give up balancing, and create our
+            // own overflow columns.
+            //
+            // We don't want to create overflow columns immediately when our
+            // content doesn't fit since this changes our reflow status from
+            // incomplete to complete. Valid reasons include 1) the outer column
+            // container might do column balancing, and it can enlarge the
+            // available content block-size so that the nested one could fit its
+            // content in next balancing iteration; or 2) the outer column
+            // container is filling columns sequentially, and may have more
+            // inline-size to create more column boxes for the nested column
+            // container's next-in-flows.
+            aConfig = ChooseColumnStrategy(aReflowInput, true);
+          }
+        } else {
+          skip = true;
+        }
       }
     } else {
       aConfig.mColMaxBSize = aConfig.mKnownFeasibleBSize;
@@ -1153,9 +1236,12 @@ void nsColumnSetFrame::Reflow(nsPresContext* aPresContext,
   MOZ_ASSERT_IF(StaticPrefs::layout_css_column_span_enabled(),
                 aReflowInput.mCBReflowInput->mFrame->StyleColumn()
                     ->IsColumnContainerStyle());
+  MOZ_ASSERT_IF(
+      StaticPrefs::layout_css_column_span_enabled(),
+      aReflowInput.mParentReflowInput->mFrame->IsColumnSetWrapperFrame());
 
   // Our children depend on our block-size if we have a fixed block-size.
-  if (aReflowInput.ComputedBSize() != NS_AUTOHEIGHT) {
+  if (aReflowInput.ComputedBSize() != NS_UNCONSTRAINEDSIZE) {
     AddStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
   } else {
     RemoveStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
@@ -1175,8 +1261,8 @@ void nsColumnSetFrame::Reflow(nsPresContext* aPresContext,
   nsOverflowAreas ocBounds;
   nsReflowStatus ocStatus;
   if (GetPrevInFlow()) {
-    ReflowOverflowContainerChildren(aPresContext, aReflowInput, ocBounds, 0,
-                                    ocStatus);
+    ReflowOverflowContainerChildren(aPresContext, aReflowInput, ocBounds,
+                                    ReflowChildFlags::Default, ocStatus);
   }
 
   //------------ Handle Incremental Reflow -----------------
@@ -1273,6 +1359,7 @@ void nsColumnSetFrame::AppendFrames(ChildListID aListID,
 }
 
 void nsColumnSetFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                                    const nsLineList::iterator* aPrevFrameLine,
                                     nsFrameList& aFrameList) {
   MOZ_CRASH("unsupported operation");
 }

@@ -47,7 +47,7 @@ nsFloatManager::nsFloatManager(PresShell* aPresShell, WritingMode aWM)
 nsFloatManager::~nsFloatManager() { MOZ_COUNT_DTOR(nsFloatManager); }
 
 // static
-void* nsFloatManager::operator new(size_t aSize) CPP_THROW_NEW {
+void* nsFloatManager::operator new(size_t aSize) noexcept(true) {
   if (sCachedFloatManagerCount > 0) {
     // We have cached unused instances of this class, return a cached
     // instance in stead of always creating a new one.
@@ -449,11 +449,8 @@ nsresult nsFloatManager::List(FILE* out) const {
 }
 #endif
 
-nscoord nsFloatManager::ClearFloats(nscoord aBCoord, StyleClear aBreakType,
-                                    uint32_t aFlags) const {
-  if (!(aFlags & DONT_CLEAR_PUSHED_FLOATS) && ClearContinues(aBreakType)) {
-    return nscoord_MAX;
-  }
+nscoord nsFloatManager::ClearFloats(nscoord aBCoord,
+                                    StyleClear aBreakType) const {
   if (!HasAnyFloats()) {
     return aBCoord;
   }
@@ -2279,10 +2276,6 @@ nsFloatManager::FloatInfo::FloatInfo(nsIFrame* aFrame, nscoord aLineLeft,
       // No need to create shape info.
       return;
 
-    case StyleShapeSourceType::URL:
-      MOZ_ASSERT_UNREACHABLE("shape-outside doesn't have URL source type!");
-      return;
-
     case StyleShapeSourceType::Path:
       MOZ_ASSERT_UNREACHABLE("shape-outside doesn't have Path source type!");
       return;
@@ -2445,10 +2438,10 @@ LogicalRect nsFloatManager::ShapeInfo::ComputeShapeBoxRect(
   switch (aShapeOutside.GetReferenceBox()) {
     case StyleGeometryBox::ContentBox:
       rect.Deflate(aWM, aFrame->GetLogicalUsedPadding(aWM));
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case StyleGeometryBox::PaddingBox:
       rect.Deflate(aWM, aFrame->GetLogicalUsedBorder(aWM));
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case StyleGeometryBox::BorderBox:
       rect.Deflate(aWM, aFrame->GetLogicalUsedMargin(aWM));
       break;

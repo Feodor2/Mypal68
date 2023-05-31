@@ -6,10 +6,8 @@
 
 #include "mozilla/Attributes.h"
 #include "celldata.h"
-#include "imgIContainer.h"
 #include "nscore.h"
 #include "nsContainerFrame.h"
-#include "nsStyleCoord.h"
 #include "nsStyleConsts.h"
 #include "nsCellMap.h"
 #include "nsGkAtoms.h"
@@ -35,11 +33,6 @@ class StackingContextHelper;
 }  // namespace mozilla
 
 struct BCPropertyData;
-
-static inline bool IsTableCell(mozilla::LayoutFrameType frameType) {
-  return frameType == mozilla::LayoutFrameType::TableCell ||
-         frameType == mozilla::LayoutFrameType::BCTableCell;
-}
 
 class nsDisplayTableItem : public nsPaintedDisplayItem {
  public:
@@ -193,6 +186,7 @@ class nsTableFrame : public nsContainerFrame {
   virtual void AppendFrames(ChildListID aListID,
                             nsFrameList& aFrameList) override;
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 
@@ -661,7 +655,9 @@ class nsTableFrame : public nsContainerFrame {
   void DistributeBSizeToRows(const ReflowInput& aReflowInput, nscoord aAmount);
 
   void PlaceChild(TableReflowInput& aReflowInput, nsIFrame* aKidFrame,
-                  nsPoint aKidPosition, ReflowOutput& aKidDesiredSize,
+                  const ReflowInput& aKidReflowInput,
+                  const mozilla::LogicalPoint& aKidPosition,
+                  const nsSize& aContainerSize, ReflowOutput& aKidDesiredSize,
                   const nsRect& aOriginalKidRect,
                   const nsRect& aOriginalKidVisualOverflow);
   void PlaceRepeatedFooter(TableReflowInput& aReflowInput,

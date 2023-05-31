@@ -26,7 +26,6 @@
 #include "gfx2DGlue.h"
 #include "gfxEnv.h"
 #include "gfxUtils.h"
-#include "nsAutoPtr.h"
 #include "nsAnimationManager.h"
 #include "nsDisplayList.h"
 #include "nsDocShell.h"
@@ -52,7 +51,9 @@
 #include "mozilla/Unused.h"
 #include "GeckoProfiler.h"
 #include "LayersLogging.h"
-#include "gfxPrefs.h"
+#include "mozilla/StaticPrefs_gfx.h"
+#include "mozilla/StaticPrefs_layers.h"
+#include "mozilla/StaticPrefs_layout.h"
 
 #include <algorithm>
 #include <functional>
@@ -60,6 +61,9 @@
 
 using namespace mozilla::layers;
 using namespace mozilla::gfx;
+using mozilla::UniquePtr;
+using mozilla::WrapUnique;
+
 
 // PaintedLayerData::mAssignedDisplayItems is a std::vector, which is
 // non-memmovable
@@ -266,13 +270,13 @@ void DisplayItemData::EndUpdate() {
   mOldTransform = nullptr;
 }
 
-void DisplayItemData::EndUpdate(nsAutoPtr<nsDisplayItemGeometry> aGeometry) {
+void DisplayItemData::EndUpdate(UniquePtr<nsDisplayItemGeometry>&& aGeometry) {
   MOZ_RELEASE_ASSERT(mLayer);
   MOZ_ASSERT(mItem);
   MOZ_ASSERT(mGeometry || aGeometry);
 
   if (aGeometry) {
-    mGeometry = aGeometry;
+    mGeometry = std::move(aGeometry);
   }
   mClip = mItem->GetClip();
   mChangedFrameInvalidations.SetEmpty();
@@ -577,7 +581,7 @@ class PaintedLayerData {
   nsCString mLog;
 
 #  define FLB_LOG_PAINTED_LAYER_DECISION(pld, ...) \
-    if (gfxPrefs::LayersDumpDecision()) {          \
+    if (StaticPrefs::layers_dump_decision()) {     \
       pld->mLog.AppendPrintf("\t\t\t\t");          \
       pld->mLog.AppendPrintf(__VA_ARGS__);         \
     }
@@ -2349,7 +2353,9 @@ DisplayItemData* FrameLayerBuilder::GetOldLayerForFrame(
     LayerManager* aOldLayerManager /* = nullptr */) {
   // If we need to build a new layer tree, then just refuse to recycle
   // anything.
-  if (!mRetainingManager || mInvalidateAllLayers) return nullptr;
+  if (!mRetainingManager || mInvalidateAllLayers) {
+    return nullptr;
+  }
 
   MOZ_ASSERT(!aOldData || aOldLayerManager,
              "You must provide aOldLayerManager to check aOldData's validity.");
@@ -2421,7 +2427,9 @@ already_AddRefed<ColorLayer> ContainerState::CreateOrRecycleColorLayer(
   } else {
     // Create a new layer
     layer = mManager->CreateColorLayer();
-    if (!layer) return nullptr;
+    if (!layer) {
+      return nullptr;
+    }
     // Mark this layer as being used for painting display items
     data->mColorLayer = layer;
     layer->SetUserData(&gColorLayerUserData, nullptr);
@@ -2444,7 +2452,9 @@ already_AddRefed<ImageLayer> ContainerState::CreateOrRecycleImageLayer(
   } else {
     // Create a new layer
     layer = mManager->CreateImageLayer();
-    if (!layer) return nullptr;
+    if (!layer) {
+      return nullptr;
+    }
     // Mark this layer as being used for painting display items
     data->mImageLayer = layer;
     layer->SetUserData(&gImageLayerUserData, nullptr);
@@ -3049,7 +3059,7 @@ PaintedLayerData* PaintedLayerDataNode::FindPaintedLayerFor(
         break;
       }
 
-      if (gfxPrefs::LayoutSmallerPaintedLayers()) {
+      if (StaticPrefs::layout_smaller_painted_layers()) {
         lowestUsableLayer = nullptr;
       }
     }
@@ -3755,7 +3765,7 @@ UniquePtr<InactiveLayerData> PaintedLayerData::CreateInactiveLayerData(
   FrameLayerBuilder* layerBuilder = new FrameLayerBuilder();
   // Ownership of layerBuilder is passed to tempManager.
   layerBuilder->Init(aState->Builder(), tempManager, this, true,
-                            &aItem->GetClip());
+                     &aItem->GetClip());
 
   tempManager->BeginTransaction();
   if (aState->LayerBuilder()->GetRetainingLayerManager()) {
@@ -4438,7 +4448,7 @@ void ContainerState::ProcessDisplayItems(nsDisplayList* aList) {
 
   nsPoint topLeft(0, 0);
 
-  int32_t maxLayers = gfxPrefs::MaxActiveLayers();
+  int32_t maxLayers = StaticPrefs::layers_max_active();
   int layerCount = 0;
 
   if (!mManager->IsWidgetLayerManager()) {
@@ -5023,7 +5033,7 @@ void ContainerState::ProcessDisplayItems(nsDisplayList* aList) {
       } else if ((itemType == DisplayItemType::TYPE_SUBDOCUMENT ||
                   itemType == DisplayItemType::TYPE_ZOOM ||
                   itemType == DisplayItemType::TYPE_RESOLUTION) &&
-                 gfxPrefs::LayoutUseContainersForRootFrames()) {
+                 StaticPrefs::layout_scroll_root_frame_containers()) {
         newLayerEntry->mBaseScrollMetadata =
             static_cast<nsDisplaySubDocument*>(item)->ComputeScrollMetadata(
                 ownLayer->Manager(), mParameters);
@@ -5198,7 +5208,7 @@ void FrameLayerBuilder::ComputeGeometryChangeForItem(DisplayItemData* aData) {
   // do an in-depth comparison. If we haven't previously stored geometry
   // for this item (if it was an active layer), then we can't skip this
   // yet.
-  nsAutoPtr<nsDisplayItemGeometry> geometry;
+  UniquePtr<nsDisplayItemGeometry> geometry;
   if (aData->mReusedItem && aData->mGeometry) {
     aData->EndUpdate();
     return;
@@ -5222,10 +5232,10 @@ void FrameLayerBuilder::ComputeGeometryChangeForItem(DisplayItemData* aData) {
 
   if (!aData->mGeometry) {
     // This item is being added for the first time, invalidate its entire area.
-    geometry = item->AllocateGeometry(mDisplayListBuilder);
+    geometry = WrapUnique(item->AllocateGeometry(mDisplayListBuilder));
 
-    const nsRect bounds = GetInvalidationRect(geometry, clip, aData->mTransform,
-                                              appUnitsPerDevPixel);
+    const nsRect bounds = GetInvalidationRect(
+        geometry.get(), clip, aData->mTransform, appUnitsPerDevPixel);
 
     invalidPixels = bounds.ScaleToOutsidePixels(
         layerData->mXScale, layerData->mYScale, appUnitsPerDevPixel);
@@ -5239,15 +5249,15 @@ void FrameLayerBuilder::ComputeGeometryChangeForItem(DisplayItemData* aData) {
              (item->IsInvalid(invalid) && invalid.IsEmpty())) {
     // Layout marked item/frame as needing repainting (without an explicit
     // rect), invalidate the entire old and new areas.
-    geometry = item->AllocateGeometry(mDisplayListBuilder);
+    geometry = WrapUnique(item->AllocateGeometry(mDisplayListBuilder));
 
     nsRect oldArea =
-        GetInvalidationRect(aData->mGeometry, aData->mClip,
+        GetInvalidationRect(aData->mGeometry.get(), aData->mClip,
                             aData->mOldTransform, appUnitsPerDevPixel);
     oldArea.MoveBy(shift);
 
-    nsRect newArea = GetInvalidationRect(geometry, clip, aData->mTransform,
-                                         appUnitsPerDevPixel);
+    nsRect newArea = GetInvalidationRect(
+        geometry.get(), clip, aData->mTransform, appUnitsPerDevPixel);
 
     nsRegion combined;
     combined.Or(oldArea, newArea);
@@ -5276,7 +5286,7 @@ void FrameLayerBuilder::ComputeGeometryChangeForItem(DisplayItemData* aData) {
     aData->mGeometry->MoveBy(shift);
 
     nsRegion combined;
-    item->ComputeInvalidationRegion(mDisplayListBuilder, aData->mGeometry,
+    item->ComputeInvalidationRegion(mDisplayListBuilder, aData->mGeometry.get(),
                                     &combined);
 
     // Only allocate a new geometry object if something actually changed,
@@ -5287,7 +5297,7 @@ void FrameLayerBuilder::ComputeGeometryChangeForItem(DisplayItemData* aData) {
     if (!combined.IsEmpty() ||
         aData->mLayerState == LayerState::LAYER_INACTIVE ||
         item->NeedsGeometryUpdates()) {
-      geometry = item->AllocateGeometry(mDisplayListBuilder);
+      geometry = WrapUnique(item->AllocateGeometry(mDisplayListBuilder));
     }
 
     aData->mClip.AddOffsetAndComputeDifference(
@@ -5330,7 +5340,7 @@ void FrameLayerBuilder::ComputeGeometryChangeForItem(DisplayItemData* aData) {
                                   layerData->mTranslation);
   }
 
-  aData->EndUpdate(geometry);
+  aData->EndUpdate(std::move(geometry));
 }
 
 void FrameLayerBuilder::AddPaintedDisplayItem(PaintedLayerData* aLayerData,
@@ -5911,9 +5921,9 @@ void ContainerState::Finish(uint32_t* aTextContentFlags,
                             nsDisplayList* aChildItems) {
   mPaintedLayerDataTree.Finish();
 
-  if (!gfxPrefs::LayoutUseContainersForRootFrames()) {
+  if (!StaticPrefs::layout_scroll_root_frame_containers()) {
     // Bug 1336544 tracks re-enabling this assertion in the
-    // gfxPrefs::LayoutUseContainersForRootFrames() case.
+    // StaticPrefs::layout_scroll_root_frame_containers() case.
     NS_ASSERTION(mContainerBounds.IsEqualInterior(mAccumulatedChildBounds),
                  "Bounds computation mismatch");
   }
@@ -6151,7 +6161,7 @@ static bool ChooseScaleAndSetTransform(
   // tiling, that's not a problem, since we'll automatically choose a tiled
   // layer for layers of that size. If not, we need to apply clamping to
   // prevent this.
-  if (aTransform && !gfxPrefs::LayersTilesEnabled()) {
+  if (aTransform && !StaticPrefs::layers_enable_tiles_AtStartup()) {
     RestrictScaleToMaxLayerSize(scale, aVisibleRect, aContainerFrame, aLayer);
   }
 
@@ -6250,7 +6260,7 @@ already_AddRefed<ContainerLayer> FrameLayerBuilder::BuildContainerLayerFor(
       aParameters.mScrollMetadataASR;
   const ActiveScrolledRoot* containerCompositorASR = aParameters.mCompositorASR;
 
-  if (!aContainerItem && gfxPrefs::LayoutUseContainersForRootFrames()) {
+  if (!aContainerItem && StaticPrefs::layout_scroll_root_frame_containers()) {
     containerASR = aBuilder->ActiveScrolledRootForRootScrollframe();
     containerScrollMetadataASR = containerASR;
     containerCompositorASR = containerASR;
@@ -6345,7 +6355,9 @@ already_AddRefed<ContainerLayer> FrameLayerBuilder::BuildContainerLayerFor(
 Layer* FrameLayerBuilder::GetLeafLayerFor(nsDisplayListBuilder* aBuilder,
                                           nsDisplayItem* aItem) {
   Layer* layer = GetOldLayerFor(aItem);
-  if (!layer) return nullptr;
+  if (!layer) {
+    return nullptr;
+  }
   if (layer->HasUserData(&gPaintedDisplayItemLayerUserData)) {
     // This layer was created to render Thebes-rendered content for this
     // display item. The display item should not use it for its own
@@ -7099,7 +7111,7 @@ void FrameLayerBuilder::PaintItems(std::vector<AssignedDisplayItem>& aItems,
  */
 static bool ShouldDrawRectsSeparately(DrawTarget* aDrawTarget,
                                       DrawRegionClip aClip) {
-  if (!gfxPrefs::LayoutPaintRectsSeparately() ||
+  if (!StaticPrefs::layout_paint_rects_separately_AtStartup() ||
       aClip == DrawRegionClip::NONE) {
     return false;
   }
@@ -7227,7 +7239,7 @@ void FrameLayerBuilder::DrawPaintedLayer(PaintedLayer* aLayer,
       layerBuilder->PaintItems(userData->mItems, iterRect, aContext, builder,
                                presContext, offset, userData->mXScale,
                                userData->mYScale);
-      if (gfxPrefs::GfxLoggingPaintedPixelCountEnabled()) {
+      if (StaticPrefs::gfx_logging_painted_pixel_count_enabled()) {
         aLayer->Manager()->AddPaintedPixelCount(iterRect.Area());
       }
     }
@@ -7244,7 +7256,7 @@ void FrameLayerBuilder::DrawPaintedLayer(PaintedLayer* aLayer,
     layerBuilder->PaintItems(userData->mItems, aRegionToDraw.GetBounds(),
                              aContext, builder, presContext, offset,
                              userData->mXScale, userData->mYScale);
-    if (gfxPrefs::GfxLoggingPaintedPixelCountEnabled()) {
+    if (StaticPrefs::gfx_logging_painted_pixel_count_enabled()) {
       aLayer->Manager()->AddPaintedPixelCount(aRegionToDraw.GetBounds().Area());
     }
   }
@@ -7422,7 +7434,7 @@ already_AddRefed<Layer> ContainerState::CreateMaskLayer(
   gfx::Matrix imageTransform = maskTransform;
   imageTransform.PreScale(mParameters.mXScale, mParameters.mYScale);
 
-  nsAutoPtr<MaskLayerImageCache::MaskLayerImageKey> newKey(
+  UniquePtr<MaskLayerImageCache::MaskLayerImageKey> newKey(
       new MaskLayerImageCache::MaskLayerImageKey());
 
   // copy and transform the rounded rects
@@ -7434,7 +7446,7 @@ already_AddRefed<Layer> ContainerState::CreateMaskLayer(
   }
   newKey->mKnowsCompositor = mManager->AsKnowsCompositor();
 
-  const MaskLayerImageCache::MaskLayerImageKey* lookupKey = newKey;
+  const MaskLayerImageCache::MaskLayerImageKey* lookupKey = newKey.get();
 
   // check to see if we can reuse a mask image
   RefPtr<ImageContainer> container =
@@ -7470,7 +7482,7 @@ already_AddRefed<Layer> ContainerState::CreateMaskLayer(
       return nullptr;
     }
 
-    GetMaskLayerImageCache()->PutImage(newKey.forget(), container);
+    GetMaskLayerImageCache()->PutImage(newKey.release(), container);
   }
 
   maskLayer->SetContainer(container);

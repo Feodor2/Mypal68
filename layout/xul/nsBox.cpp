@@ -13,7 +13,6 @@
 #include "nsNameSpaceManager.h"
 #include "nsGkAtoms.h"
 #include "nsITheme.h"
-#include "nsIServiceManager.h"
 #include "nsBoxLayout.h"
 #include "FrameLayerBuilder.h"
 #include "mozilla/dom/Attr.h"
@@ -33,7 +32,7 @@ nsresult nsBox::BeginXULLayout(nsBoxLayoutState& aState) {
     // does this too).
     nsIFrame* box;
     for (box = GetChildXULBox(this); box; box = GetNextXULBox(box))
-      box->AddStateBits(NS_FRAME_IS_DIRTY);
+      box->MarkSubtreeDirty();
   }
 
   // Another copy-over from ReflowInput.
@@ -100,16 +99,14 @@ void nsBox::SetXULBounds(nsBoxLayoutState& aState, const nsRect& aRect,
                          bool aRemoveOverflowAreas) {
   nsRect rect(mRect);
 
-  uint32_t flags = GetXULLayoutFlags();
+  ReflowChildFlags flags = GetXULLayoutFlags() | aState.LayoutFlags();
 
-  uint32_t stateFlags = aState.LayoutFlags();
-
-  flags |= stateFlags;
-
-  if ((flags & NS_FRAME_NO_MOVE_FRAME) == NS_FRAME_NO_MOVE_FRAME)
+  if ((flags & ReflowChildFlags::NoMoveFrame) ==
+      ReflowChildFlags::NoMoveFrame) {
     SetSize(aRect.Size());
-  else
+  } else {
     SetRect(aRect);
+  }
 
   // Nuke the overflow area. The caller is responsible for restoring
   // it if necessary.
@@ -118,7 +115,7 @@ void nsBox::SetXULBounds(nsBoxLayoutState& aState, const nsRect& aRect,
     ClearOverflowRects();
   }
 
-  if (!(flags & NS_FRAME_NO_MOVE_VIEW)) {
+  if (!(flags & ReflowChildFlags::NoMoveView)) {
     nsContainerFrame::PositionFrameView(this);
     if ((rect.x != aRect.x) || (rect.y != aRect.y))
       nsContainerFrame::PositionChildViews(this);
@@ -241,7 +238,7 @@ nsSize nsBox::GetXULMinSizeForScrollArea(nsBoxLayoutState& aBoxLayoutState) {
 nsSize nsBox::GetXULMaxSize(nsBoxLayoutState& aState) {
   NS_ASSERTION(aState.GetRenderingContext(), "must have rendering context");
 
-  nsSize maxSize(NS_INTRINSICSIZE, NS_INTRINSICSIZE);
+  nsSize maxSize(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
   DISPLAY_MAX_SIZE(this, maxSize);
 
   if (IsXULCollapsed()) return maxSize;
@@ -260,8 +257,8 @@ nscoord nsBox::GetXULFlex() {
   return flex;
 }
 
-uint32_t nsIFrame::GetXULOrdinal() {
-  uint32_t ordinal = StyleXUL()->mBoxOrdinal;
+int32_t nsIFrame::GetXULOrdinal() {
+  int32_t ordinal = StyleXUL()->mBoxOrdinal;
 
   // When present, attribute value overrides CSS.
   nsIContent* content = GetContent();
@@ -327,11 +324,7 @@ nsresult nsBox::SyncLayout(nsBoxLayoutState& aState) {
 
   nsPresContext* presContext = aState.PresContext();
 
-  uint32_t flags = GetXULLayoutFlags();
-
-  uint32_t stateFlags = aState.LayoutFlags();
-
-  flags |= stateFlags;
+  ReflowChildFlags flags = GetXULLayoutFlags() | aState.LayoutFlags();
 
   nsRect visualOverflow;
 
@@ -652,10 +645,10 @@ void nsBox::AddMargin(nsIFrame* aChild, nsSize& aSize) {
 }
 
 void nsBox::AddMargin(nsSize& aSize, const nsMargin& aMargin) {
-  if (aSize.width != NS_INTRINSICSIZE)
+  if (aSize.width != NS_UNCONSTRAINEDSIZE)
     aSize.width += aMargin.left + aMargin.right;
 
-  if (aSize.height != NS_INTRINSICSIZE)
+  if (aSize.height != NS_UNCONSTRAINEDSIZE)
     aSize.height += aMargin.top + aMargin.bottom;
 }
 

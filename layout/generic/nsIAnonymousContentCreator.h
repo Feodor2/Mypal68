@@ -10,6 +10,7 @@
 #ifndef nsIAnonymousContentCreator_h___
 #define nsIAnonymousContentCreator_h___
 
+#include "mozilla/AnonymousContentKey.h"
 #include "mozilla/ComputedStyle.h"
 
 #include "nsQueryFrame.h"
@@ -29,9 +30,13 @@ class nsIAnonymousContentCreator {
   NS_DECL_QUERYFRAME_TARGET(nsIAnonymousContentCreator)
 
   struct ContentInfo {
-    explicit ContentInfo(nsIContent* aContent) : mContent(aContent) {}
+    explicit ContentInfo(
+        nsIContent* aContent,
+        mozilla::AnonymousContentKey aKey = mozilla::AnonymousContentKey::None)
+        : mContent(aContent), mKey(aKey) {}
 
     nsIContent* mContent;
+    mozilla::AnonymousContentKey mKey;
   };
 
   /**

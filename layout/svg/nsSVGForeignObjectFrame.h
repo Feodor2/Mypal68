@@ -7,7 +7,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/PresShellForwards.h"
-#include "nsAutoPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "nsContainerFrame.h"
 #include "nsSVGDisplayableFrame.h"
 #include "nsRegion.h"
@@ -91,7 +91,7 @@ class nsSVGForeignObjectFrame final : public nsContainerFrame,
   // If width or height is less than or equal to zero we must disable rendering
   bool IsDisabled() const { return mRect.width <= 0 || mRect.height <= 0; }
 
-  nsAutoPtr<gfxMatrix> mCanvasTM;
+  mozilla::UniquePtr<gfxMatrix> mCanvasTM;
 
   bool mInReflow;
 };

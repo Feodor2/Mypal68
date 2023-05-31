@@ -7,6 +7,7 @@
 #include "nsAppDirectoryServiceDefs.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/Telemetry.h"
@@ -122,7 +123,7 @@ nsresult nsLayoutStylesheetCache::Observe(nsISupports* aSubject,
 #define STYLE_SHEET(identifier_, url_, shared_)                                \
   NotNull<StyleSheet*> nsLayoutStylesheetCache::identifier_##Sheet() {         \
     if (!m##identifier_##Sheet) {                                              \
-      LoadSheetURL(url_, &m##identifier_##Sheet, eAgentSheetFeatures, eCrash); \
+      m##identifier_##Sheet = LoadSheetURL(url_, eAgentSheetFeatures, eCrash); \
     }                                                                          \
     return WrapNotNull(m##identifier_##Sheet);                                 \
   }
@@ -238,8 +239,8 @@ nsLayoutStylesheetCache::nsLayoutStylesheetCache() : mUsedSharedMemory(0) {
 
   if (gUserContentSheetURL) {
     MOZ_ASSERT(XRE_IsContentProcess(), "Only used in content processes.");
-    LoadSheet(gUserContentSheetURL, &mUserContentSheet, eUserSheetFeatures,
-              eLogToConsole);
+    mUserContentSheet =
+        LoadSheet(gUserContentSheetURL, eUserSheetFeatures, eLogToConsole);
     gUserContentSheetURL = nullptr;
   }
 
@@ -290,8 +291,8 @@ void nsLayoutStylesheetCache::LoadSheetFromSharedMemory(
     Shm* aSharedMemory, Header* aHeader, UserAgentStyleSheetID aSheetID) {
   auto i = size_t(aSheetID);
 
-  auto sheet = MakeRefPtr<StyleSheet>(
-      aParsingMode, CORS_NONE, mozilla::net::RP_Unset, dom::SRIMetadata());
+  auto sheet =
+      MakeRefPtr<StyleSheet>(aParsingMode, CORS_NONE, dom::SRIMetadata());
 
   nsCOMPtr<nsIURI> uri;
   MOZ_ALWAYS_SUCCEEDS(NS_NewURI(getter_AddRefs(uri), aURL));
@@ -301,6 +302,9 @@ void nsLayoutStylesheetCache::LoadSheetFromSharedMemory(
   sheet->SetSharedContents(aSharedMemory, aHeader->mSheets[i]);
   sheet->SetComplete();
 
+  nsCOMPtr<nsIReferrerInfo> referrerInfo =
+      dom::ReferrerInfo::CreateForExternalCSSResources(sheet);
+  sheet->SetReferrerInfo(referrerInfo);
   URLExtraData::sShared[i] = sheet->URLData();
 
   *aSheet = sheet.forget();
@@ -436,10 +440,8 @@ void nsLayoutStylesheetCache::InitFromProfile() {
   contentFile->Append(NS_LITERAL_STRING("userContent.css"));
   chromeFile->Append(NS_LITERAL_STRING("userChrome.css"));
 
-  LoadSheetFile(contentFile, &mUserContentSheet, eUserSheetFeatures,
-                eLogToConsole);
-  LoadSheetFile(chromeFile, &mUserChromeSheet, eUserSheetFeatures,
-                eLogToConsole);
+  mUserContentSheet = LoadSheetFile(contentFile, eUserSheetFeatures);
+  mUserChromeSheet = LoadSheetFile(chromeFile, eUserSheetFeatures);
 
   if (XRE_IsParentProcess()) {
     if (mUserChromeSheet || mUserContentSheet) {
@@ -456,39 +458,28 @@ void nsLayoutStylesheetCache::InitFromProfile() {
       // set the pref themselves.
       Preferences::SetBool(PREF_LEGACY_STYLESHEET_CUSTOMIZATION, true);
     }
-
-    // We're interested specifically in potential chrome customizations,
-    // so we only need data points from the parent process
-    Telemetry::Accumulate(Telemetry::USER_CHROME_CSS_LOADED,
-                          mUserChromeSheet != nullptr);
   }
 }
 
-void nsLayoutStylesheetCache::LoadSheetURL(const char* aURL,
-                                           RefPtr<StyleSheet>* aSheet,
-                                           SheetParsingMode aParsingMode,
-                                           FailureAction aFailureAction) {
+RefPtr<StyleSheet> nsLayoutStylesheetCache::LoadSheetURL(
+    const char* aURL, SheetParsingMode aParsingMode,
+    FailureAction aFailureAction) {
   nsCOMPtr<nsIURI> uri;
   NS_NewURI(getter_AddRefs(uri), aURL);
-  LoadSheet(uri, aSheet, aParsingMode, aFailureAction);
-  if (!aSheet) {
-    NS_ERROR(nsPrintfCString("Could not load %s", aURL).get());
-  }
+  return LoadSheet(uri, aParsingMode, aFailureAction);
 }
 
-void nsLayoutStylesheetCache::LoadSheetFile(nsIFile* aFile,
-                                            RefPtr<StyleSheet>* aSheet,
-                                            SheetParsingMode aParsingMode,
-                                            FailureAction aFailureAction) {
+RefPtr<StyleSheet> nsLayoutStylesheetCache::LoadSheetFile(
+    nsIFile* aFile, SheetParsingMode aParsingMode) {
   bool exists = false;
   aFile->Exists(&exists);
-
-  if (!exists) return;
+  if (!exists) {
+    return nullptr;
+  }
 
   nsCOMPtr<nsIURI> uri;
   NS_NewFileURI(getter_AddRefs(uri), aFile);
-
-  LoadSheet(uri, aSheet, aParsingMode, aFailureAction);
+  return LoadSheet(uri, aParsingMode, eLogToConsole);
 }
 
 static void ErrorLoadingSheet(nsIURI* aURI, const char* aMsg,
@@ -507,20 +498,18 @@ static void ErrorLoadingSheet(nsIURI* aURI, const char* aMsg,
   MOZ_CRASH_UNSAFE(errorMessage.get());
 }
 
-void nsLayoutStylesheetCache::LoadSheet(nsIURI* aURI,
-                                        RefPtr<StyleSheet>* aSheet,
-                                        SheetParsingMode aParsingMode,
-                                        FailureAction aFailureAction) {
+RefPtr<StyleSheet> nsLayoutStylesheetCache::LoadSheet(
+    nsIURI* aURI, SheetParsingMode aParsingMode, FailureAction aFailureAction) {
   if (!aURI) {
     ErrorLoadingSheet(aURI, "null URI", eCrash);
-    return;
+    return nullptr;
   }
 
   if (!gCSSLoader) {
     gCSSLoader = new Loader;
     if (!gCSSLoader) {
       ErrorLoadingSheet(aURI, "no Loader", eCrash);
-      return;
+      return nullptr;
     }
   }
 
@@ -529,15 +518,17 @@ void nsLayoutStylesheetCache::LoadSheet(nsIURI* aURI,
   // parallel parsing on them. If that ever changes, we'll either need to find a
   // different way to prohibit parallel parsing for UA sheets, or handle
   // -moz-bool-pref and various other things in the parallel parsing code.
-  nsresult rv = gCSSLoader->LoadSheetSync(aURI, aParsingMode, true, aSheet);
-  if (NS_FAILED(rv)) {
+  auto result = gCSSLoader->LoadSheetSync(aURI, aParsingMode,
+                                          css::Loader::UseSystemPrincipal::Yes);
+  if (MOZ_UNLIKELY(result.isErr())) {
     ErrorLoadingSheet(
         aURI,
         nsPrintfCString("LoadSheetSync failed with error %" PRIx32,
-                        static_cast<uint32_t>(rv))
+                        static_cast<uint32_t>(result.unwrapErr()))
             .get(),
         aFailureAction);
   }
+  return result.unwrapOr(nullptr);
 }
 
 /* static */
@@ -550,13 +541,12 @@ void nsLayoutStylesheetCache::InvalidatePreferenceSheets() {
 
 void nsLayoutStylesheetCache::BuildPreferenceSheet(
     RefPtr<StyleSheet>* aSheet, const PreferenceSheet::Prefs& aPrefs) {
-  *aSheet = new StyleSheet(eAgentSheetFeatures, CORS_NONE,
-                           mozilla::net::RP_Unset, dom::SRIMetadata());
+  *aSheet = new StyleSheet(eAgentSheetFeatures, CORS_NONE, dom::SRIMetadata());
 
   StyleSheet* sheet = *aSheet;
 
   nsCOMPtr<nsIURI> uri;
-  NS_NewURI(getter_AddRefs(uri), "about:PreferenceStyleSheet", nullptr);
+  NS_NewURI(getter_AddRefs(uri), "about:PreferenceStyleSheet");
   MOZ_ASSERT(uri, "URI creation shouldn't fail");
 
   sheet->SetURIs(uri, uri, uri);

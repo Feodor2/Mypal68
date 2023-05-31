@@ -8,7 +8,6 @@
 
 #include "nsCSSRendering.h"
 #include "nsMargin.h"
-#include "nsStyleCoord.h"
 #include "nsStyleStruct.h"
 #include "SVGContentUtils.h"
 

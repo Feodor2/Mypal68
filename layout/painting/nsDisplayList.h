@@ -1596,17 +1596,9 @@ class nsDisplayListBuilder {
    */
   void ClearWindowOpaqueRegion() { mWindowOpaqueRegion.SetEmpty(); }
 
-  void SetGlassDisplayItem(nsDisplayItem* aItem) {
-    if (mGlassDisplayItem) {
-      // Web pages or extensions could trigger this by using
-      // -moz-appearance:win-borderless-glass etc on their own elements.
-      // Keep the first one, since that will be the background of the root
-      // window
-      NS_WARNING("Multiple glass backgrounds found?");
-    } else {
-      mGlassDisplayItem = aItem;
-    }
-  }
+  void SetGlassDisplayItem(nsDisplayItem* aItem);
+  void ClearGlassDisplayItem() { mGlassDisplayItem = nullptr; }
+  nsDisplayItem* GetGlassDisplayItem() { return mGlassDisplayItem; }
 
   bool NeedToForceTransparentSurfaceForItem(nsDisplayItem* aItem);
 
@@ -1622,6 +1614,17 @@ class nsDisplayListBuilder {
     mContainsBlendMode = aContainsBlendMode;
   }
   bool ContainsBlendMode() const { return mContainsBlendMode; }
+
+  /**
+   * mContainsBackdropFilter is true if we proccessed a display item that
+   * has a backdrop filter set. We track this so we can insert a
+   * nsDisplayBackdropRootContainer in the stacking context of the nearest
+   * ancestor that forms a backdrop root.
+   */
+  void SetContainsBackdropFilter(bool aContainsBackdropFilter) {
+    mContainsBackdropFilter = aContainsBackdropFilter;
+  }
+  bool ContainsBackdropFilter() const { return mContainsBackdropFilter; }
 
   DisplayListClipState& ClipState() { return mClipState; }
   const ActiveScrolledRoot* CurrentActiveScrolledRoot() {
@@ -1719,6 +1722,10 @@ class nsDisplayListBuilder {
     return mBuildAsyncZoomContainer;
   }
   void UpdateShouldBuildAsyncZoomContainer();
+
+  void UpdateShouldBuildBackdropRootContainer();
+
+  bool ShouldRebuildDisplayListDueToPrefChange();
 
   /**
    * Represents a region composed of frame/rect pairs.
@@ -1915,7 +1922,12 @@ class nsDisplayListBuilder {
   nsRegion mWindowOpaqueRegion;
 
   // The display item for the Windows window glass background, if any
+  // Set during full display list builds or during display list merging only,
+  // partial display list builds don't touch this.
   nsDisplayItem* mGlassDisplayItem;
+  // If we've encountered a glass item yet, only used during partial display
+  // list builds.
+  bool mHasGlassItemDuringPartial;
   // A temporary list that we append scroll info items to while building
   // display items for the contents of frames with SVG effects.
   // Only non-null when ShouldBuildScrollInfoItemsForHoisting() is true.
@@ -1980,6 +1992,8 @@ class nsDisplayListBuilder {
   bool mPartialBuildFailed;
   bool mIsInActiveDocShell;
   bool mBuildAsyncZoomContainer;
+  bool mBuildBackdropRootContainer;
+  bool mContainsBackdropFilter;
 
   nsRect mHitTestArea;
   CompositorHitTestInfo mHitTestInfo;
@@ -2725,6 +2739,9 @@ class nsDisplayItem : public nsDisplayItemBase {
   void SetPainted() { mItemFlags += ItemFlag::Painted; }
 #endif
 
+  void SetIsGlassItem() { mItemFlags += ItemFlag::IsGlassItem; }
+  bool IsGlassItem() { return mItemFlags.contains(ItemFlag::IsGlassItem); }
+
   /**
    * Function to create the WebRenderCommands.
    * We should check if the layer state is
@@ -3042,6 +3059,7 @@ class nsDisplayItem : public nsDisplayItemBase {
     DisableSubpixelAA,
     ForceNotVisible,
     PaintRectValid,
+    IsGlassItem,
 #ifdef MOZ_DUMP_PAINTING
     // True if this frame has been painted.
     Painted,
@@ -3665,7 +3683,7 @@ class nsDisplayListSet {
  private:
   // This class is only used on stack, so we don't have to worry about leaking
   // it.  Don't let us be heap-allocated!
-  void* operator new(size_t sz) CPP_THROW_NEW;
+  void* operator new(size_t sz) noexcept(true);
 
  protected:
   nsDisplayList* mBorderBackground;
@@ -3711,7 +3729,7 @@ struct nsDisplayListCollection : public nsDisplayListSet {
  private:
   // This class is only used on stack, so we don't have to worry about leaking
   // it.  Don't let us be heap-allocated!
-  void* operator new(size_t sz) CPP_THROW_NEW;
+  void* operator new(size_t sz) noexcept(true);
 
   nsDisplayList mLists[6];
 };
@@ -4181,7 +4199,7 @@ class nsDisplayBorder : public nsPaintedDisplayItem {
   template <typename T>
   T CalculateBounds(const nsStyleBorder& aStyleBorder) const {
     nsRect borderBounds(ToReferenceFrame(), mFrame->GetSize());
-    if (aStyleBorder.IsBorderImageLoaded()) {
+    if (aStyleBorder.IsBorderImageSizeAvailable()) {
       borderBounds.Inflate(aStyleBorder.GetImageOutset());
       return borderBounds;
     }
@@ -6613,6 +6631,77 @@ class nsDisplayMasksAndClipPaths : public nsDisplayEffectsBase {
   nsTArray<nsRect> mDestRects;
 };
 
+class nsDisplayBackdropRootContainer : public nsDisplayWrapList {
+ public:
+  nsDisplayBackdropRootContainer(nsDisplayListBuilder* aBuilder,
+                                 nsIFrame* aFrame, nsDisplayList* aList,
+                                 const ActiveScrolledRoot* aActiveScrolledRoot)
+      : nsDisplayWrapList(aBuilder, aFrame, aList, aActiveScrolledRoot, true) {
+    MOZ_COUNT_CTOR(nsDisplayBackdropRootContainer);
+  }
+
+#ifdef NS_BUILD_REFCNT_LOGGING
+  ~nsDisplayBackdropRootContainer() override {
+    MOZ_COUNT_DTOR(nsDisplayBackdropRootContainer);
+  }
+#endif
+
+  NS_DISPLAY_DECL_NAME("BackdropRootContainer", TYPE_BACKDROP_ROOT_CONTAINER)
+
+  already_AddRefed<Layer> BuildLayer(
+      nsDisplayListBuilder* aBuilder, LayerManager* aManager,
+      const ContainerLayerParameters& aContainerParameters) override;
+  LayerState GetLayerState(
+      nsDisplayListBuilder* aBuilder, LayerManager* aManager,
+      const ContainerLayerParameters& aParameters) override;
+
+  bool CreateWebRenderCommands(
+      mozilla::wr::DisplayListBuilder& aBuilder,
+      mozilla::wr::IpcResourceUpdateQueue& aResources,
+      const StackingContextHelper& aSc,
+      mozilla::layers::RenderRootStateManager* aManager,
+      nsDisplayListBuilder* aDisplayListBuilder) override;
+
+  bool ShouldFlattenAway(nsDisplayListBuilder* aBuilder) override {
+    return !aBuilder->IsPaintingForWebRender();
+  }
+};
+
+class nsDisplayBackdropFilters : public nsDisplayWrapList {
+ public:
+  nsDisplayBackdropFilters(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
+                           nsDisplayList* aList, const nsRect& aBackdropRect)
+      : nsDisplayWrapList(aBuilder, aFrame, aList),
+        mBackdropRect(aBackdropRect) {
+    MOZ_COUNT_CTOR(nsDisplayBackdropFilters);
+  }
+
+#ifdef NS_BUILD_REFCNT_LOGGING
+  ~nsDisplayBackdropFilters() override {
+    MOZ_COUNT_DTOR(nsDisplayBackdropFilters);
+  }
+#endif
+
+  NS_DISPLAY_DECL_NAME("BackdropFilter", TYPE_BACKDROP_FILTER)
+
+  bool CreateWebRenderCommands(
+      mozilla::wr::DisplayListBuilder& aBuilder,
+      mozilla::wr::IpcResourceUpdateQueue& aResources,
+      const StackingContextHelper& aSc,
+      mozilla::layers::RenderRootStateManager* aManager,
+      nsDisplayListBuilder* aDisplayListBuilder) override;
+
+  static bool CanCreateWebRenderCommands(nsDisplayListBuilder* aBuilder,
+                                         nsIFrame* aFrame);
+
+  bool ShouldFlattenAway(nsDisplayListBuilder* aBuilder) override {
+    return !aBuilder->IsPaintingForWebRender();
+  }
+
+ private:
+  nsRect mBackdropRect;
+};
+
 /**
  * A display item to paint a stacking context with filter effects set by the
  * stacking context root frame's style.
@@ -6691,8 +6780,6 @@ class nsDisplayFilters : public nsDisplayEffectsBase {
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
   bool CanCreateWebRenderCommands(nsDisplayListBuilder* aBuilder);
-
-  bool CreateWebRenderCSSFilters(WrFiltersHolder& wrFilters);
 
  private:
   NS_DISPLAY_ALLOW_CLONING()

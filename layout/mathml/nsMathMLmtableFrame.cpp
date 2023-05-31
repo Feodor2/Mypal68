@@ -23,6 +23,7 @@
 
 using namespace mozilla;
 using namespace mozilla::image;
+using mozilla::dom::Element;
 
 //
 // <mtable> -- table or matrix - implementation
@@ -111,13 +112,15 @@ static nsresult ReportParseError(nsIFrame* aFrame, const char16_t* aAttribute,
                                  const char16_t* aValue) {
   nsIContent* content = aFrame->GetContent();
 
-  const char16_t* params[] = {
-      aValue, aAttribute, content->NodeInfo()->NameAtom()->GetUTF16String()};
+  AutoTArray<nsString, 3> params;
+  params.AppendElement(aValue);
+  params.AppendElement(aAttribute);
+  params.AppendElement(nsDependentAtomString(content->NodeInfo()->NameAtom()));
 
   return nsContentUtils::ReportToConsole(
       nsIScriptError::errorFlag, NS_LITERAL_CSTRING("Layout: MathML"),
       content->OwnerDoc(), nsContentUtils::eMATHML_PROPERTIES,
-      "AttributeParsingError", params, 3);
+      "AttributeParsingError", params);
 }
 
 // Each rowalign='top bottom' or columnalign='left right center' (from
@@ -562,7 +565,7 @@ static void MapAllAttributesIntoCSS(nsMathMLmtableFrame* aTableFrame) {
 
       for (nsIFrame* cellFrame : rowFrame->PrincipalChildList()) {
         DEBUG_VERIFY_THAT_FRAME_IS(cellFrame, TableCell);
-        if (IsTableCell(cellFrame->Type())) {
+        if (cellFrame->IsTableCellFrame()) {
           // Map cell rowalign.
           ParseFrameAttribute(cellFrame, nsGkAtoms::rowalign_, false);
           // Map row columnalign.

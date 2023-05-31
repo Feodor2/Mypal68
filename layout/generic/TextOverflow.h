@@ -248,7 +248,7 @@ class TextOverflow final {
 
   class Marker {
    public:
-    void Init(const nsStyleTextOverflowSide& aStyle) {
+    void Init(const StyleTextOverflowSide& aStyle) {
       mInitialized = false;
       mISize = 0;
       mStyle = &aStyle;
@@ -264,9 +264,7 @@ class TextOverflow final {
      */
     void SetupString(nsIFrame* aFrame);
 
-    bool IsSuppressed() const {
-      return !mHasBlockEllipsis && mStyle->mType == NS_STYLE_TEXT_OVERFLOW_CLIP;
-    }
+    bool IsSuppressed() const { return !mHasBlockEllipsis && mStyle->IsClip(); }
     bool IsNeeded() const { return mHasOverflow || mHasBlockEllipsis; }
     void Reset() {
       mHasOverflow = false;
@@ -280,7 +278,7 @@ class TextOverflow final {
     nscoord mIntrinsicISize;
     // The text-overflow style for this side.  Ignored if we're rendering a
     // block ellipsis.
-    const nsStyleTextOverflowSide* mStyle;
+    const StyleTextOverflowSide* mStyle;
     // True if there is visible overflowing inline content on this side.
     bool mHasOverflow;
     // True if this side has a block ellipsis (from -webkit-line-clamp).

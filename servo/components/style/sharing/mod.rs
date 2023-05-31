@@ -82,7 +82,7 @@ use servo_arc::Arc;
 use smallbitvec::SmallBitVec;
 use smallvec::SmallVec;
 use std::marker::PhantomData;
-use std::mem;
+use std::mem::{self, ManuallyDrop};
 use std::ops::Deref;
 use std::ptr::NonNull;
 use uluru::{Entry, LRUCache};
@@ -101,15 +101,6 @@ mod checks;
 /// tested.
 pub const SHARING_CACHE_SIZE: usize = 31;
 const SHARING_CACHE_BACKING_STORE_SIZE: usize = SHARING_CACHE_SIZE + 1;
-
-/// Controls whether the style sharing cache is used.
-#[derive(Clone, Copy, PartialEq)]
-pub enum StyleSharingBehavior {
-    /// Style sharing allowed.
-    Allow,
-    /// Style sharing disallowed.
-    Disallow,
-}
 
 /// Opaque pointer type to compare ComputedValues identities.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -485,8 +476,11 @@ type SharingCache<E> = SharingCacheBase<StyleSharingCandidate<E>>;
 type TypelessSharingCache = SharingCacheBase<FakeCandidate>;
 type StoredSharingCache = Arc<AtomicRefCell<TypelessSharingCache>>;
 
-thread_local!(static SHARING_CACHE_KEY: StoredSharingCache =
-              Arc::new(AtomicRefCell::new(TypelessSharingCache::default())));
+thread_local!(
+    // See the comment on bloom.rs about why do we leak this.
+    static SHARING_CACHE_KEY: ManuallyDrop<StoredSharingCache> =
+        ManuallyDrop::new(Arc::new(Default::default()));
+);
 
 /// An LRU cache of the last few nodes seen, so that we can aggressively try to
 /// reuse their styles.
@@ -538,7 +532,7 @@ impl<E: TElement> StyleSharingCache<E> {
             mem::align_of::<SharingCache<E>>(),
             mem::align_of::<TypelessSharingCache>()
         );
-        let cache_arc = SHARING_CACHE_KEY.with(|c| c.clone());
+        let cache_arc = SHARING_CACHE_KEY.with(|c| Arc::clone(&*c));
         let cache =
             OwningHandle::new_with_fn(cache_arc, |x| unsafe { x.as_ref() }.unwrap().borrow_mut());
         debug_assert!(cache.is_empty());

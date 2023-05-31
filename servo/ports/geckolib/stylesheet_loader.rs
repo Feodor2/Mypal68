@@ -13,7 +13,7 @@ use style::gecko_bindings::structs::{Loader, LoaderReusableStyleSheets};
 use style::gecko_bindings::structs::{
     SheetLoadData, SheetLoadDataHolder, StyleSheet as DomStyleSheet,
 };
-use style::gecko_bindings::sugar::ownership::{FFIArcHelpers, HasBoxFFI, OwnedOrNull};
+use style::gecko_bindings::sugar::ownership::FFIArcHelpers;
 use style::gecko_bindings::sugar::refptr::RefPtr;
 use style::global_style_data::GLOBAL_STYLE_DATA;
 use style::media_queries::MediaList;
@@ -22,7 +22,6 @@ use style::shared_lock::{Locked, SharedRwLock};
 use style::stylesheets::import_rule::ImportSheet;
 use style::stylesheets::{ImportRule, Origin, StylesheetLoader as StyleStylesheetLoader};
 use style::stylesheets::{StylesheetContents, UrlExtraData};
-use style::use_counters::UseCounters;
 use style::values::CssUrl;
 
 pub struct StylesheetLoader(
@@ -63,7 +62,7 @@ impl StyleStylesheetLoader for StylesheetLoader {
                 self.1,
                 self.2,
                 self.3,
-                url.0.clone().into_strong(),
+                &url,
                 media.into_strong(),
             )
         };
@@ -89,7 +88,6 @@ pub struct AsyncStylesheetParser {
     origin: Origin,
     quirks_mode: QuirksMode,
     line_number_offset: u32,
-    should_record_use_counters: bool,
 }
 
 impl AsyncStylesheetParser {
@@ -100,7 +98,6 @@ impl AsyncStylesheetParser {
         origin: Origin,
         quirks_mode: QuirksMode,
         line_number_offset: u32,
-        should_record_use_counters: bool,
     ) -> Self {
         AsyncStylesheetParser {
             load_data,
@@ -109,7 +106,6 @@ impl AsyncStylesheetParser {
             origin,
             quirks_mode,
             line_number_offset,
-            should_record_use_counters,
         }
     }
 
@@ -117,14 +113,9 @@ impl AsyncStylesheetParser {
         let global_style_data = &*GLOBAL_STYLE_DATA;
         let input: &str = unsafe { (*self.bytes).as_str_unchecked() };
 
-        let use_counters = if self.should_record_use_counters {
-            Some(Box::new(UseCounters::default()))
-        } else {
-            None
-        };
-
-        // Note: Parallel CSS parsing doesn't report CSS errors. When errors are
-        // being logged, Gecko prevents the parallel parsing path from running.
+        // Note: Parallel CSS parsing doesn't report CSS errors. When errors
+        // are being logged, Gecko prevents the parallel parsing path from
+        // running.
         let sheet = Arc::new(StylesheetContents::from_str(
             input,
             self.extra_data.clone(),
@@ -134,20 +125,13 @@ impl AsyncStylesheetParser {
             None,
             self.quirks_mode.into(),
             self.line_number_offset,
-            use_counters.as_ref().map(|c| &**c),
             /* sanitized_output = */ None,
         ));
-
-        let use_counters = match use_counters {
-            Some(c) => c.into_ffi().maybe(),
-            None => OwnedOrNull::null(),
-        };
 
         unsafe {
             bindings::Gecko_StyleSheet_FinishAsyncParse(
                 self.load_data.get(),
                 sheet.into_strong(),
-                use_counters,
             );
         }
     }
@@ -172,7 +156,7 @@ impl StyleStylesheetLoader for AsyncStylesheetParser {
         unsafe {
             bindings::Gecko_LoadStyleSheetAsync(
                 self.load_data.get(),
-                url.0.into_strong(),
+                &url,
                 media.into_strong(),
                 rule.clone().into_strong(),
             );

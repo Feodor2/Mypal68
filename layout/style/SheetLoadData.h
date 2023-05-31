@@ -19,6 +19,7 @@ class nsICSSLoaderObserver;
 class nsINode;
 class nsIPrincipal;
 class nsIURI;
+class nsIReferrerInfo;
 
 namespace mozilla {
 namespace css {
@@ -46,21 +47,22 @@ class SheetLoadData final : public nsIRunnable, public nsIThreadObserver {
                 nsIStyleSheetLinkingElement* aOwningElement,
                 IsAlternate aIsAlternate, MediaMatched aMediaMatched,
                 nsICSSLoaderObserver* aObserver, nsIPrincipal* aLoaderPrincipal,
-                nsINode* aRequestingNode);
+                nsIReferrerInfo* aReferrerInfo, nsINode* aRequestingNode);
 
   // Data for loading a sheet linked from an @import rule
   SheetLoadData(Loader* aLoader, nsIURI* aURI, StyleSheet* aSheet,
                 SheetLoadData* aParentData, nsICSSLoaderObserver* aObserver,
-                nsIPrincipal* aLoaderPrincipal, nsINode* aRequestingNode);
+                nsIPrincipal* aLoaderPrincipal, nsIReferrerInfo* aReferrerInfo,
+                nsINode* aRequestingNode);
 
   // Data for loading a non-document sheet
   SheetLoadData(Loader* aLoader, nsIURI* aURI, StyleSheet* aSheet,
                 bool aSyncLoad, bool aUseSystemPrincipal,
                 const Encoding* aPreloadEncoding,
                 nsICSSLoaderObserver* aObserver, nsIPrincipal* aLoaderPrincipal,
-                nsINode* aRequestingNode);
+                nsIReferrerInfo* aReferrerInfo, nsINode* aRequestingNode);
 
-  already_AddRefed<nsIURI> GetReferrerURI();
+  nsIReferrerInfo* ReferrerInfo() { return mReferrerInfo; }
 
   void ScheduleLoadEventIfNeeded();
 
@@ -72,8 +74,6 @@ class SheetLoadData final : public nsIRunnable, public nsIThreadObserver {
   nsresult VerifySheetReadyToParse(nsresult aStatus, const nsACString& aBytes1,
                                    const nsACString& aBytes2,
                                    nsIChannel* aChannel);
-
-  void SetReferrerPolicyFromHeader(nsIChannel* aChannel);
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIRUNNABLE
@@ -99,8 +99,8 @@ class SheetLoadData final : public nsIRunnable, public nsIThreadObserver {
   // The sheet we're loading data for
   RefPtr<StyleSheet> mSheet;
 
-  // Linked list of datas for the same URI as us
-  SheetLoadData* mNext;  // strong ref
+  // Linked list of datas for the same URI as us.
+  RefPtr<SheetLoadData> mNext;
 
   // Load data for the sheet that @import-ed us if we were @import-ed
   // during the parse
@@ -183,6 +183,9 @@ class SheetLoadData final : public nsIRunnable, public nsIThreadObserver {
 
   // The principal that identifies who started loading us.
   nsCOMPtr<nsIPrincipal> mLoaderPrincipal;
+
+  // Referrer info of the load.
+  nsCOMPtr<nsIReferrerInfo> mReferrerInfo;
 
   // The node that identifies who started loading us.
   nsCOMPtr<nsINode> mRequestingNode;

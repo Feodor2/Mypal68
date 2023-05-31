@@ -94,7 +94,6 @@ EXPORTS += [
     'nsContainerFrame.h',
     'nsDirection.h',
     'nsFrame.h',
-    'nsFrameIdList.h',
     'nsFrameList.h',
     'nsFrameSelection.h',
     'nsFrameState.h',
@@ -105,10 +104,11 @@ EXPORTS += [
     'nsIFrameInlines.h',
     'nsILineIterator.h',
     'nsIObjectFrame.h',
-    'nsIPageSequenceFrame.h',
     'nsIScrollableFrame.h',
     'nsIScrollPositionListener.h',
     'nsIStatefulFrame.h',
+    'nsLineBox.h',
+    'nsPageSequenceFrame.h',
     'nsPluginFrame.h',
     'nsQueryFrame.h',
     'nsRubyBaseContainerFrame.h',
@@ -131,12 +131,14 @@ EXPORTS += [
 ]
 
 EXPORTS.mozilla += [
+    '!FrameIdList.h',
+    '!FrameTypeList.h',
+    'AnonymousContentKey.h',
     'AspectRatio.h',
     'AutoCopyListener.h',
     'ColumnUtils.h',
     'CSSAlignUtils.h',
     'CSSOrderAwareFrameIterator.h',
-    'FrameTypeList.h',
     'ReflowInput.h',
     'ReflowOutput.h',
     'ViewportFrame.h',
@@ -187,6 +189,7 @@ UNIFIED_SOURCES += [
     'nsLineLayout.cpp',
     'nsPageContentFrame.cpp',
     'nsPageFrame.cpp',
+    'nsPageSequenceFrame.cpp',
     'nsPlaceholderFrame.cpp',
     'nsRubyBaseContainerFrame.cpp',
     'nsRubyBaseFrame.cpp',
@@ -194,7 +197,6 @@ UNIFIED_SOURCES += [
     'nsRubyFrame.cpp',
     'nsRubyTextContainerFrame.cpp',
     'nsRubyTextFrame.cpp',
-    'nsSimplePageSequenceFrame.cpp',
     'nsSplittableFrame.cpp',
     'nsSubDocumentFrame.cpp',
     'nsTextFrame.cpp',
@@ -219,6 +221,13 @@ UNIFIED_SOURCES += [
 SOURCES += [
     'nsPluginFrame.cpp',
 ]
+
+GeneratedFile('FrameIdList.h',
+              script='GenerateFrameLists.py',
+              entry_point='generate_frame_id_list_h')
+GeneratedFile('FrameTypeList.h',
+              script='GenerateFrameLists.py',
+              entry_point='generate_frame_type_list_h')
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

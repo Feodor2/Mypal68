@@ -25,7 +25,7 @@ class nsBoxSize {
 
   nsBoxSize* next;
 
-  void* operator new(size_t sz, nsBoxLayoutState& aState) CPP_THROW_NEW;
+  void* operator new(size_t sz, nsBoxLayoutState& aState) noexcept(true);
   void operator delete(void* aPtr, size_t sz);
 };
 
@@ -38,7 +38,7 @@ class nsComputedBoxSize {
   bool resized;
   nsComputedBoxSize* next;
 
-  void* operator new(size_t sz, nsBoxLayoutState& aState) CPP_THROW_NEW;
+  void* operator new(size_t sz, nsBoxLayoutState& aState) noexcept(true);
   void operator delete(void* aPtr, size_t sz);
 };
 

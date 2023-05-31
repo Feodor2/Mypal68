@@ -192,7 +192,7 @@ void nsTableRowFrame::AppendFrames(ChildListID aListID,
   nsTableFrame* tableFrame = GetTableFrame();
   for (nsFrameList::Enumerator e(newCells); !e.AtEnd(); e.Next()) {
     nsIFrame* childFrame = e.get();
-    NS_ASSERTION(IsTableCell(childFrame->Type()),
+    NS_ASSERTION(childFrame->IsTableCellFrame(),
                  "Not a table cell frame/pseudo frame construction failure");
     tableFrame->AppendCell(static_cast<nsTableCellFrame&>(*childFrame),
                            GetRowIndex());
@@ -204,6 +204,7 @@ void nsTableRowFrame::AppendFrames(ChildListID aListID,
 }
 
 void nsTableRowFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                                   const nsLineList::iterator* aPrevFrameLine,
                                    nsFrameList& aFrameList) {
   NS_ASSERTION(aListID == kPrincipalList, "unexpected child list");
   NS_ASSERTION(!aPrevFrame || aPrevFrame->GetParent() == this,
@@ -221,18 +222,13 @@ void nsTableRowFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
   const nsFrameList::Slice& newCells =
       mFrames.InsertFrames(nullptr, aPrevFrame, aFrameList);
 
-  // Get the table frame
-  nsTableFrame* tableFrame = GetTableFrame();
-  LayoutFrameType cellFrameType = tableFrame->IsBorderCollapse()
-                                      ? LayoutFrameType::BCTableCell
-                                      : LayoutFrameType::TableCell;
   nsTableCellFrame* prevCellFrame =
-      (nsTableCellFrame*)nsTableFrame::GetFrameAtOrBefore(this, aPrevFrame,
-                                                          cellFrameType);
+      static_cast<nsTableCellFrame*>(nsTableFrame::GetFrameAtOrBefore(
+          this, aPrevFrame, LayoutFrameType::TableCell));
   nsTArray<nsTableCellFrame*> cellChildren;
   for (nsFrameList::Enumerator e(newCells); !e.AtEnd(); e.Next()) {
     nsIFrame* childFrame = e.get();
-    NS_ASSERTION(IsTableCell(childFrame->Type()),
+    NS_ASSERTION(childFrame->IsTableCellFrame(),
                  "Not a table cell frame/pseudo frame construction failure");
     cellChildren.AppendElement(static_cast<nsTableCellFrame*>(childFrame));
   }
@@ -241,6 +237,7 @@ void nsTableRowFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
   if (prevCellFrame) {
     colIndex = prevCellFrame->ColIndex();
   }
+  nsTableFrame* tableFrame = GetTableFrame();
   tableFrame->InsertCells(cellChildren, GetRowIndex(), colIndex);
 
   PresShell()->FrameNeedsReflow(this, IntrinsicDirty::TreeChange,
@@ -378,7 +375,8 @@ void nsTableRowFrame::DidResize() {
   FinishAndStoreOverflow(&desiredSize);
   if (HasView()) {
     nsContainerFrame::SyncFrameViewAfterReflow(PresContext(), this, GetView(),
-                                               desiredSize.VisualOverflow(), 0);
+                                               desiredSize.VisualOverflow(),
+                                               ReflowChildFlags::Default);
   }
   // Let our base class do the usual work
 }
@@ -414,7 +412,7 @@ nscoord nsTableRowFrame::GetRowBaseline(WritingMode aWM) {
   nscoord ascent = 0;
   nsSize containerSize = GetSize();
   for (nsIFrame* childFrame : mFrames) {
-    if (IsTableCell(childFrame->Type())) {
+    if (childFrame->IsTableCellFrame()) {
       nsIFrame* firstKid = childFrame->PrincipalChildList().FirstChild();
       ascent = std::max(
           ascent,
@@ -705,8 +703,8 @@ void nsTableRowFrame::ReflowChildren(nsPresContext* aPresContext,
                            kidReflowInput);
       ReflowOutput desiredSize(aReflowInput);
       nsReflowStatus status;
-      ReflowChild(kidFrame, aPresContext, desiredSize, kidReflowInput, 0, 0, 0,
-                  status);
+      ReflowChild(kidFrame, aPresContext, desiredSize, kidReflowInput, 0, 0,
+                  ReflowChildFlags::Default, status);
       kidFrame->DidReflow(aPresContext, nullptr);
 
       continue;
@@ -799,7 +797,8 @@ void nsTableRowFrame::ReflowChildren(nsPresContext* aPresContext,
 
         nsReflowStatus status;
         ReflowChild(kidFrame, aPresContext, desiredSize, *kidReflowInput, wm,
-                    kidPosition, containerSize, 0, status);
+                    kidPosition, containerSize, ReflowChildFlags::Default,
+                    status);
 
         // allow the table to determine if/how the table needs to be rebalanced
         // If any of the cells are not complete, then we're not complete
@@ -858,9 +857,11 @@ void nsTableRowFrame::ReflowChildren(nsPresContext* aPresContext,
       // Place the child
       desiredSize.ISize(wm) = availCellISize;
 
+      ReflowChildFlags flags = ReflowChildFlags::Default;
+
       if (kidReflowInput) {
         // We reflowed. Apply relative positioning in the normal way.
-        kidReflowInput->ApplyRelativePositioning(&kidPosition, containerSize);
+        flags = ReflowChildFlags::ApplyRelativePositioning;
       } else if (kidFrame->IsRelativelyPositioned()) {
         // We didn't reflow.  Do the positioning part of what
         // MovePositionBy does internally.  (This codepath should really
@@ -879,8 +880,9 @@ void nsTableRowFrame::ReflowChildren(nsPresContext* aPresContext,
       // In vertical-rl mode, we are likely to have containerSize.width = 0
       // because ComputedWidth() was NS_UNCONSTRAINEDSIZE.
       // For cases where that's wrong, we will fix up the position later.
-      FinishReflowChild(kidFrame, aPresContext, desiredSize, nullptr, wm,
-                        kidPosition, containerSize, 0);
+      FinishReflowChild(kidFrame, aPresContext, desiredSize,
+                        kidReflowInput.ptrOr(nullptr), wm, kidPosition,
+                        containerSize, flags);
 
       nsTableFrame* tableFrame = GetTableFrame();
       if (tableFrame->IsBorderCollapse()) {
@@ -1056,7 +1058,7 @@ nscoord nsTableRowFrame::ReflowCellFrame(nsPresContext* aPresContext,
   ReflowOutput desiredSize(aReflowInput);
 
   ReflowChild(aCellFrame, aPresContext, desiredSize, cellReflowInput, 0, 0,
-              NS_FRAME_NO_MOVE_FRAME, aStatus);
+              ReflowChildFlags::NoMoveFrame, aStatus);
   bool fullyComplete = aStatus.IsComplete() && !aStatus.IsTruncated();
   if (fullyComplete) {
     desiredSize.BSize(wm) = aAvailableBSize;

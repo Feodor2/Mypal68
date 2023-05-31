@@ -94,6 +94,7 @@ class nsBoxFrame : public nsContainerFrame {
   virtual void AppendFrames(ChildListID aListID,
                             nsFrameList& aFrameList) override;
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override;
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
 
@@ -111,7 +112,7 @@ class nsBoxFrame : public nsContainerFrame {
     // This is bogus, but it's what we've always done.
     // (Given that we're replaced, we need to say we're a replaced element
     // that contains a block so ReflowInput doesn't tell us to be
-    // NS_INTRINSICSIZE wide.)
+    // NS_UNCONSTRAINEDSIZE wide.)
     return nsContainerFrame::IsFrameOfType(
         aFlags & ~(nsIFrame::eReplaced | nsIFrame::eReplacedContainsBlock |
                    eXULBox | nsIFrame::eExcludesIgnorableWhitespace));

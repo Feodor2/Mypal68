@@ -105,7 +105,7 @@ nsChangeHint ComputedStyle::CalcStyleDifference(const ComputedStyle& aNewStyle,
   // FIXME: The order of these DO_STRUCT_DIFFERENCE calls is no longer
   // significant.  With a small amount of effort, we could replace them with a
   // #include "nsStyleStructList.h".
-  DO_STRUCT_DIFFERENCE(Display);
+  DO_STRUCT_DIFFERENCE_WITH_ARGS(Display, (, *StylePosition()));
   DO_STRUCT_DIFFERENCE(XUL);
   DO_STRUCT_DIFFERENCE(Column);
   DO_STRUCT_DIFFERENCE(Content);
@@ -127,7 +127,6 @@ nsChangeHint ComputedStyle::CalcStyleDifference(const ComputedStyle& aNewStyle,
   DO_STRUCT_DIFFERENCE(TextReset);
   DO_STRUCT_DIFFERENCE(Effects);
   DO_STRUCT_DIFFERENCE(Background);
-  DO_STRUCT_DIFFERENCE(Color);
 
 #undef DO_STRUCT_DIFFERENCE
 #undef DO_STRUCT_DIFFERENCE_WITH_ARGS
@@ -263,14 +262,14 @@ void ComputedStyle::List(FILE* out, int32_t aIndent) {
 #endif
 
 template <typename Func>
-static nscolor GetVisitedDependentColorInternal(ComputedStyle* aSc,
+static nscolor GetVisitedDependentColorInternal(const ComputedStyle& aStyle,
                                                 Func aColorFunc) {
   nscolor colors[2];
-  colors[0] = aColorFunc(aSc);
-  if (ComputedStyle* visitedStyle = aSc->GetStyleIfVisited()) {
-    colors[1] = aColorFunc(visitedStyle);
+  colors[0] = aColorFunc(aStyle);
+  if (const ComputedStyle* visitedStyle = aStyle.GetStyleIfVisited()) {
+    colors[1] = aColorFunc(*visitedStyle);
     return ComputedStyle::CombineVisitedColors(colors,
-                                               aSc->RelevantLinkVisited());
+                                               aStyle.RelevantLinkVisited());
   }
   return colors[0];
 }
@@ -295,24 +294,24 @@ static nscolor ExtractColor(const ComputedStyle& aStyle,
   return ExtractColor(aStyle, aColor.AsColor());
 }
 
-static nscolor ExtractColor(ComputedStyle& aStyle,
-                            const nsStyleSVGPaint& aPaintServer) {
-  return aPaintServer.Type() == eStyleSVGPaintType_Color
-             ? aPaintServer.GetColor(&aStyle)
+static nscolor ExtractColor(const ComputedStyle& aStyle,
+                            const StyleSVGPaint& aPaintServer) {
+  return aPaintServer.kind.IsColor()
+             ? ExtractColor(aStyle, aPaintServer.kind.AsColor())
              : NS_RGBA(0, 0, 0, 0);
 }
 
 #define STYLE_FIELD(struct_, field_) aField == &struct_::field_ ||
 #define STYLE_STRUCT(name_, fields_)                                           \
   template <>                                                                  \
-  nscolor ComputedStyle::GetVisitedDependentColor(                             \
-      decltype(nsStyle##name_::MOZ_ARG_1 fields_) nsStyle##name_::*aField) {   \
+  nscolor ComputedStyle::GetVisitedDependentColor(decltype(                    \
+      nsStyle##name_::MOZ_ARG_1 fields_) nsStyle##name_::*aField) const {      \
     MOZ_ASSERT(MOZ_FOR_EACH(STYLE_FIELD, (nsStyle##name_, ), fields_) false,   \
                "Getting visited-dependent color for a field in nsStyle" #name_ \
                " which is not listed in nsCSSVisitedDependentPropList.h");     \
     return GetVisitedDependentColorInternal(                                   \
-        this, [aField](ComputedStyle* sc) {                                    \
-          return ExtractColor(*sc, sc->Style##name_()->*aField);               \
+        *this, [aField](const ComputedStyle& aStyle) {                         \
+          return ExtractColor(aStyle, aStyle.Style##name_()->*aField);         \
         });                                                                    \
   }
 #include "nsCSSVisitedDependentPropList.h"
@@ -372,8 +371,6 @@ Maybe<StyleStructID> ComputedStyle::LookupStruct(const nsACString& aName) {
 ComputedStyle* ComputedStyle::GetCachedLazyPseudoStyle(
     PseudoStyleType aPseudo) const {
   MOZ_ASSERT(PseudoStyle::IsPseudoElement(aPseudo));
-  MOZ_ASSERT(!IsLazilyCascadedPseudoElement(),
-             "Lazy pseudos can't inherit lazy pseudos");
 
   if (nsCSSPseudoElements::PseudoElementSupportsUserActionState(aPseudo)) {
     return nullptr;
@@ -394,5 +391,18 @@ void ComputedStyle::AddSizeOfIncludingThis(nsWindowSizes& aSizes,
   mSource.AddSizeOfExcludingThis(aSizes);
   mCachedInheritingStyles.AddSizeOfIncludingThis(aSizes, aCVsSize);
 }
+
+#ifdef DEBUG
+bool ComputedStyle::EqualForCachedAnonymousContentStyle(
+    const ComputedStyle& aOther) const {
+  // One thing we can't add UA rules to prevent is different -x-lang
+  // values being inherited in.  So we use this FFI function function rather
+  // than rely on CalcStyleDifference, which can't tell us which specific
+  // properties have changed.
+  return Servo_ComputedValues_EqualForCachedAnonymousContentStyle(this,
+                                                                  &aOther);
+}
+
+#endif
 
 }  // namespace mozilla

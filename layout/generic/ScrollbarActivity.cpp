@@ -20,6 +20,8 @@
 namespace mozilla {
 namespace layout {
 
+using mozilla::dom::Element;
+
 NS_IMPL_ISUPPORTS(ScrollbarActivity, nsIDOMEventListener)
 
 static bool GetForceAlwaysVisiblePref() {
@@ -142,8 +144,7 @@ void ScrollbarActivity::HandleEventForScrollbar(const nsAString& aType,
                                                 nsIContent* aTarget,
                                                 Element* aScrollbar,
                                                 bool* aStoredHoverState) {
-  if (!aTarget || !aScrollbar ||
-      !nsContentUtils::ContentIsDescendantOf(aTarget, aScrollbar))
+  if (!aTarget || !aScrollbar || !aTarget->IsInclusiveDescendantOf(aScrollbar))
     return;
 
   if (aType.EqualsLiteral("mousedown")) {
@@ -307,9 +308,9 @@ static void SetOpacityOnElement(nsIContent* aContent, double aOpacity) {
   nsCOMPtr<nsStyledElement> inlineStyleContent = do_QueryInterface(aContent);
   if (inlineStyleContent) {
     nsICSSDeclaration* decl = inlineStyleContent->Style();
-    nsAutoString str;
+    nsAutoCString str;
     str.AppendFloat(aOpacity);
-    decl->SetProperty(NS_LITERAL_STRING("opacity"), str, EmptyString());
+    decl->SetProperty(NS_LITERAL_CSTRING("opacity"), str, EmptyString());
   }
 }
 
@@ -339,7 +340,7 @@ static void UnsetOpacityOnElement(nsIContent* aContent) {
   if (inlineStyleContent) {
     nsICSSDeclaration* decl = inlineStyleContent->Style();
     nsAutoString dummy;
-    decl->RemoveProperty(NS_LITERAL_STRING("opacity"), dummy);
+    decl->RemoveProperty(NS_LITERAL_CSTRING("opacity"), dummy);
   }
 }
 

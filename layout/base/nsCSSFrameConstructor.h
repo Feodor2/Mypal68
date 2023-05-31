@@ -32,6 +32,7 @@ class nsContainerFrame;
 class nsFirstLineFrame;
 class nsFirstLetterFrame;
 class nsCSSAnonBoxPseudoStaticAtom;
+class nsPageSequenceFrame;
 
 class nsPageContentFrame;
 struct PendingBinding;
@@ -340,7 +341,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   // This returns the frame for the root element that does not
   // have a psuedo-element style
   nsIFrame* GetRootElementStyleFrame() { return mRootElementStyleFrame; }
-  nsIFrame* GetPageSequenceFrame() { return mPageSequenceFrame; }
+  nsPageSequenceFrame* GetPageSequenceFrame() { return mPageSequenceFrame; }
 
   // Get the frame that is the parent of the root element.
   nsContainerFrame* GetDocElementContainingBlock() {
@@ -355,6 +356,16 @@ class nsCSSFrameConstructor final : public nsFrameManager {
  private:
   struct FrameConstructionItem;
   class FrameConstructionItemList;
+
+  // Set the root element frame, and create frames for anonymous content if
+  // there is a canvas frame.
+  //
+  // It's important to do this _before_ constructing the children of the root
+  // element, because XUL popups depend on the anonymous root popupgroup being
+  // constructed already.
+  void SetRootElementFrameAndConstructCanvasAnonContent(
+      nsContainerFrame* aRootElementFrame, nsFrameConstructorState&,
+      nsFrameList&);
 
   nsContainerFrame* ConstructPageFrame(PresShell* aPresShell,
                                        nsContainerFrame* aParentFrame,
@@ -431,7 +442,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
    */
   already_AddRefed<nsIContent> CreateGenConTextNode(
       nsFrameConstructorState& aState, const nsString& aString,
-      RefPtr<nsTextNode>* aText, nsGenConInitializer* aInitializer);
+      mozilla::UniquePtr<nsGenConInitializer> aInitializer);
 
   /**
    * Create a content node for the given generated content style.
@@ -743,14 +754,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
 #endif
     const FrameConstructionData mData;
   };
-
-#ifdef DEBUG
-#  define FCDATA_FOR_DISPLAY(_display, _fcdata) \
-    { _display, _fcdata }
-#else
-#  define FCDATA_FOR_DISPLAY(_display, _fcdata) \
-    { _fcdata }
-#endif
 
   /* Structure that has a FrameConstructionData and style pseudo-type
      for a table pseudo-frame */
@@ -1356,6 +1359,13 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                   const nsStyleDisplay* aStyleDisplay,
                                   nsFrameList& aFrameList);
 
+  // Creates a block frame wrapping an anonymous ruby frame.
+  nsIFrame* ConstructBlockRubyFrame(nsFrameConstructorState& aState,
+                                    FrameConstructionItem& aItem,
+                                    nsContainerFrame* aParentFrame,
+                                    const nsStyleDisplay* aStyleDisplay,
+                                    nsFrameList& aFrameList);
+
   void ConstructTextFrame(const FrameConstructionData* aData,
                           nsFrameConstructorState& aState, nsIContent* aContent,
                           nsContainerFrame* aParentFrame,
@@ -1497,14 +1507,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                                                          ComputedStyle&);
 #  endif /* XP_MACOSX */
 #endif   /* MOZ_XUL */
-
-  // Function to find FrameConstructionData for an element using one of the XUL
-  // display types.  Will return null if the style doesn't have a XUL display
-  // type.  This function performs no other checks, so should only be called if
-  // we know for sure that the element is not something that should get a frame
-  // constructed by tag.
-  static const FrameConstructionData* FindXULDisplayData(const nsStyleDisplay&,
-                                                         const Element&);
 
   /**
    * Constructs an outer frame, an anonymous child that wraps its real
@@ -1896,6 +1898,19 @@ class nsCSSFrameConstructor final : public nsFrameManager {
                              bool aItemIsWithinSVGText,
                              bool aItemAllowsTextPathChild);
 
+  // Determine whether we need to wipe out aFrame (the insertion parent) and
+  // rebuild the entire subtree when we insert or append new content under
+  // aFrame.
+  //
+  // This is similar to WipeContainingBlock(), but is called before constructing
+  // any frame construction items. Any container frames which need reframing
+  // regardless of the content inserted or appended can add a check in this
+  // method.
+  //
+  // @return true if we reconstructed the insertion parent frame; false
+  // otherwise
+  bool WipeInsertionParent(nsContainerFrame* aFrame);
+
   // Determine whether we need to wipe out what we just did and start over
   // because we're doing something like adding block kids to an inline frame
   // (and therefore need an {ib} split).  aPrevSibling must be correct, even in
@@ -1918,14 +1933,14 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   // Methods support :first-letter style
 
   nsFirstLetterFrame* CreateFloatingLetterFrame(
-      nsFrameConstructorState& aState, nsIContent* aTextContent,
+      nsFrameConstructorState& aState, mozilla::dom::Text* aTextContent,
       nsIFrame* aTextFrame, nsContainerFrame* aParentFrame,
       ComputedStyle* aParentComputedStyle, ComputedStyle* aComputedStyle,
       nsFrameList& aResult);
 
   void CreateLetterFrame(nsContainerFrame* aBlockFrame,
                          nsContainerFrame* aBlockContinuation,
-                         nsIContent* aTextContent,
+                         mozilla::dom::Text* aTextContent,
                          nsContainerFrame* aParentFrame, nsFrameList& aResult);
 
   void WrapFramesInFirstLetterFrame(nsContainerFrame* aBlockFrame,
@@ -2097,10 +2112,10 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   void QuotesDirty();
   void CountersDirty();
 
-  // Create touch caret frame.
   void ConstructAnonymousContentForCanvas(nsFrameConstructorState& aState,
                                           nsIFrame* aFrame,
-                                          nsIContent* aDocElement);
+                                          nsIContent* aDocElement,
+                                          nsFrameList&);
 
  public:
   friend class nsFrameConstructorState;
@@ -2123,7 +2138,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   // This is the containing block that contains the root element ---
   // the real "initial containing block" according to CSS 2.1.
   nsContainerFrame* mDocElementContainingBlock;
-  nsIFrame* mPageSequenceFrame;
+  nsPageSequenceFrame* mPageSequenceFrame;
 
   // FrameConstructionItem arena + list of freed items available for re-use.
   mozilla::ArenaAllocator<4096, 8> mFCItemPool;

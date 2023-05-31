@@ -5,7 +5,6 @@
 #include "nsPrintData.h"
 
 #include "nsIStringBundle.h"
-#include "nsIServiceManager.h"
 #include "nsIWidget.h"
 #include "nsPrintObject.h"
 #include "nsIWebProgressListener.h"

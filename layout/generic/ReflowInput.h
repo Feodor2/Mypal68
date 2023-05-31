@@ -8,7 +8,7 @@
 #define mozilla_ReflowInput_h
 
 #include "nsMargin.h"
-#include "nsStyleCoord.h"
+#include "nsStyleConsts.h"
 #include "nsIFrame.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
@@ -205,13 +205,26 @@ struct SizeComputationInput {
     // scrollbar
     bool mAssumingVScrollbar : 1;
 
-    // Is frame (a) not dirty and (b) a different inline-size than before?
+    // Is frame a different inline-size than before?
     bool mIsIResize : 1;
 
-    // Is frame (a) not dirty and (b) a different block-size than before or
-    // (potentially) in a context where percent block-sizes have a different
-    // basis?
+    // Is frame (potentially) a different block-size than before?
+    // This includes cases where the block-size is 'auto' and the
+    // contents or width have changed.
     bool mIsBResize : 1;
+
+    // Has this frame changed block-size in a way that affects
+    // block-size percentages on frames for which it is the containing
+    // block?  This includes a change between 'auto' and a length that
+    // doesn't actually change the frame's block-size.  It does not
+    // include cases where the block-size is 'auto' and the frame's
+    // contents have changed.
+    //
+    // In the current code, this is only true when mIsBResize is also
+    // true, although it doesn't necessarily need to be that way (e.g.,
+    // in the case of a frame changing from 'auto' to a length that
+    // produces the same height).
+    bool mIsBResizeForPercentages : 1;
 
     // tables are splittable, this should happen only inside a page and never
     // insider a column frame
@@ -222,6 +235,12 @@ struct SizeComputationInput {
 
     // nsColumnSetFrame is balancing columns
     bool mIsColumnBalancing : 1;
+
+    // True if ColumnSetWrapperFrame has a constrained block-size, and is going
+    // to consume all of its block-size in this fragment. This bit is passed to
+    // nsColumnSetFrame to determine whether to give up balancing and create
+    // overflow columns.
+    bool mColumnSetWrapperHasNoBSizeLeft : 1;
 
     // nsFlexContainerFrame is reflowing this child to measure its intrinsic
     // BSize.
@@ -282,6 +301,17 @@ struct SizeComputationInput {
     // line with the ellipsis flag and clear it.
     // This flag is not inherited into descendant ReflowInputs.
     bool mApplyLineClamp : 1;
+
+    // Is this frame or one of its ancestors being reflowed in a different
+    // continuation than the one in which it was previously reflowed?  In
+    // other words, has it moved to a different column or page than it was in
+    // the previous reflow?
+    //
+    // FIXME: For now, we only ensure that this is set correctly for blocks.
+    // This is okay because the only thing that uses it only cares about
+    // whether there's been a fragment change within the same block formatting
+    // context.
+    bool mMovedBlockFragments : 1;
   };
 
 #ifdef DEBUG
@@ -332,10 +362,10 @@ struct SizeComputationInput {
                    const nsStyleDisplay* aDisplay = nullptr);
 
   /*
-   * Convert nsStyleCoord to nscoord when percentages depend on the
-   * inline size of the containing block, and enumerated values are for
-   * inline size, min-inline-size, or max-inline-size.  Does not handle
-   * auto inline sizes.
+   * Convert StyleSize or StyleMaxSize to nscoord when percentages depend on the
+   * inline size of the containing block, and enumerated values are for inline
+   * size, min-inline-size, or max-inline-size.  Does not handle auto inline
+   * sizes.
    */
   template <typename SizeOrMaxSize>
   inline nscoord ComputeISizeValue(nscoord aContainingBlockISize,
@@ -597,8 +627,8 @@ struct ReflowInput : public SizeComputationInput {
   // The computed width specifies the frame's content area width, and it does
   // not apply to inline non-replaced elements
   //
-  // For replaced inline frames, a value of NS_INTRINSICSIZE means you should
-  // use your intrinsic width as the computed width
+  // For replaced inline frames, a value of NS_UNCONSTRAINEDSIZE means you
+  // should use your intrinsic width as the computed width
   //
   // For block-level frames, the computed width is based on the width of the
   // containing block, the margin/border/padding areas, and the min/max width.
@@ -608,15 +638,15 @@ struct ReflowInput : public SizeComputationInput {
   // The computed height specifies the frame's content height, and it does
   // not apply to inline non-replaced elements
   //
-  // For replaced inline frames, a value of NS_INTRINSICSIZE means you should
-  // use your intrinsic height as the computed height
+  // For replaced inline frames, a value of NS_UNCONSTRAINEDSIZE means you
+  // should use your intrinsic height as the computed height
   //
   // For non-replaced block-level frames in the flow and floated, a value of
-  // NS_AUTOHEIGHT means you choose a height to shrink wrap around the normal
-  // flow child frames. The height must be within the limit of the min/max
-  // height if there is such a limit
+  // NS_UNCONSTRAINEDSIZE means you choose a height to shrink wrap around the
+  // normal flow child frames. The height must be within the limit of the
+  // min/max height if there is such a limit
   //
-  // For replaced block-level frames, a value of NS_INTRINSICSIZE
+  // For replaced block-level frames, a value of NS_UNCONSTRAINEDSIZE
   // means you use your intrinsic height as the computed height
   MOZ_INIT_OUTSIDE_CTOR
   nscoord mComputedHeight;
@@ -681,6 +711,13 @@ struct ReflowInput : public SizeComputationInput {
   bool IsBResizeForWM(mozilla::WritingMode aWM) const {
     return aWM.IsOrthogonalTo(mWritingMode) ? mFlags.mIsIResize
                                             : mFlags.mIsBResize;
+  }
+  bool IsBResizeForPercentagesForWM(mozilla::WritingMode aWM) const {
+    // This uses the relatively-accurate mIsBResizeForPercentages flag
+    // when the writing modes are parallel, and is a bit more
+    // pessimistic when orthogonal.
+    return !aWM.IsOrthogonalTo(mWritingMode) ? mFlags.mIsBResizeForPercentages
+                                             : IsIResize();
   }
   void SetHResize(bool aValue) {
     if (mWritingMode.IsVertical()) {
@@ -801,8 +838,8 @@ struct ReflowInput : public SizeComputationInput {
    * @param aBlockBSize The computed block size of the content rect of the block
    *                     that the line should fill.
    *                     Only used with line-height:-moz-block-height.
-   *                     NS_AUTOHEIGHT results in a normal line-height for
-   *                     line-height:-moz-block-height.
+   *                     NS_UNCONSTRAINEDSIZE results in a normal line-height
+   * for line-height:-moz-block-height.
    * @param aFontSizeInflation The result of the appropriate
    *                           nsLayoutUtils::FontSizeInflationFor call,
    *                           or 1.0 if during intrinsic size
@@ -1038,12 +1075,6 @@ struct ReflowInput : public SizeComputationInput {
                                     nscoord* aOutsideBoxSizing) const;
 
   void CalculateBlockSideMargins(LayoutFrameType aFrameType);
-
-  /**
-   * Make all descendants of this frame dirty.
-   * Exceptions: XULBoxFrame and TabeColGroupFrame children.
-   */
-  static void MarkFrameChildrenDirty(nsIFrame* aFrame);
 };
 
 }  // namespace mozilla

@@ -11,16 +11,7 @@
 #include "nsSplittableFrame.h"
 #include "nsFrameList.h"
 #include "nsLayoutUtils.h"
-
-// Option flags for ReflowChild() and FinishReflowChild()
-// member functions
-#define NS_FRAME_NO_MOVE_VIEW 0x0001
-#define NS_FRAME_NO_MOVE_FRAME (0x0002 | NS_FRAME_NO_MOVE_VIEW)
-#define NS_FRAME_NO_SIZE_VIEW 0x0004
-#define NS_FRAME_NO_VISIBILITY 0x0008
-// Only applies to ReflowChild; if true, don't delete the next-in-flow, even
-// if the reflow is fully complete.
-#define NS_FRAME_NO_DELETE_NEXT_IN_FLOW_CHILD 0x0010
+#include "nsLineBox.h"
 
 class nsOverflowContinuationTracker;
 
@@ -112,10 +103,13 @@ class nsContainerFrame : public nsSplittableFrame {
    *
    * @param   aListID the child list identifier.
    * @param   aPrevFrame the frame to insert frames <b>after</b>
+   * @param   aPrevFrameLine (optional) if present (i.e., not null), the line
+   *            box that aPrevFrame is part of.
    * @param   aFrameList list of child frames to insert <b>after</b> aPrevFrame.
    *            Each of the frames has its NS_FRAME_IS_DIRTY bit set
    */
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList);
 
   /**
@@ -165,13 +159,13 @@ class nsContainerFrame : public nsSplittableFrame {
   // Set the view's size and position after its frame has been reflowed.
   //
   // Flags:
-  // NS_FRAME_NO_MOVE_VIEW - don't position the frame's view. Set this if you
+  // NoMoveView - don't position the frame's view. Set this if you
   //    don't want to automatically sync the frame and view
-  // NS_FRAME_NO_SIZE_VIEW - don't size the view
-  static void SyncFrameViewAfterReflow(nsPresContext* aPresContext,
-                                       nsIFrame* aFrame, nsView* aView,
-                                       const nsRect& aVisualOverflowArea,
-                                       uint32_t aFlags = 0);
+  // NoSizeView - don't size the view
+  static void SyncFrameViewAfterReflow(
+      nsPresContext* aPresContext, nsIFrame* aFrame, nsView* aView,
+      const nsRect& aVisualOverflowArea,
+      ReflowChildFlags aFlags = ReflowChildFlags::Default);
 
   // Syncs properties to the top level view and window, like transparency and
   // shadow.
@@ -221,16 +215,16 @@ class nsContainerFrame : public nsSplittableFrame {
    * @param aContainerSize  size of the border-box of the containing frame
    *
    * Flags:
-   * NS_FRAME_NO_MOVE_VIEW - don't position the frame's view. Set this if you
+   * NoMoveView - don't position the frame's view. Set this if you
    *    don't want to automatically sync the frame and view
-   * NS_FRAME_NO_MOVE_FRAME - don't move the frame. aPos is ignored in this
-   *    case. Also implies NS_FRAME_NO_MOVE_VIEW
+   * NoMoveFrame - don't move the frame. aPos is ignored in this
+   *    case. Also implies NoMoveView
    */
   void ReflowChild(nsIFrame* aChildFrame, nsPresContext* aPresContext,
                    ReflowOutput& aDesiredSize, const ReflowInput& aReflowInput,
                    const mozilla::WritingMode& aWM,
                    const mozilla::LogicalPoint& aPos,
-                   const nsSize& aContainerSize, uint32_t aFlags,
+                   const nsSize& aContainerSize, ReflowChildFlags aFlags,
                    nsReflowStatus& aStatus,
                    nsOverflowContinuationTracker* aTracker = nullptr);
 
@@ -247,26 +241,24 @@ class nsContainerFrame : public nsSplittableFrame {
    * @param aContainerSize  size of the border-box of the containing frame
    *
    * Flags:
-   * NS_FRAME_NO_MOVE_FRAME - don't move the frame. aPos is ignored in this
-   *    case. Also implies NS_FRAME_NO_MOVE_VIEW
-   * NS_FRAME_NO_MOVE_VIEW - don't position the frame's view. Set this if you
+   * NoMoveFrame - don't move the frame. aPos is ignored in this
+   *    case. Also implies NoMoveView
+   * NoMoveView - don't position the frame's view. Set this if you
    *    don't want to automatically sync the frame and view
-   * NS_FRAME_NO_SIZE_VIEW - don't size the frame's view
+   * NoSizeView - don't size the frame's view
    */
-  static void FinishReflowChild(nsIFrame* aKidFrame,
-                                nsPresContext* aPresContext,
-                                const ReflowOutput& aDesiredSize,
-                                const ReflowInput* aReflowInput,
-                                const mozilla::WritingMode& aWM,
-                                const mozilla::LogicalPoint& aPos,
-                                const nsSize& aContainerSize, uint32_t aFlags);
+  static void FinishReflowChild(
+      nsIFrame* aKidFrame, nsPresContext* aPresContext,
+      const ReflowOutput& aDesiredSize, const ReflowInput* aReflowInput,
+      const mozilla::WritingMode& aWM, const mozilla::LogicalPoint& aPos,
+      const nsSize& aContainerSize, ReflowChildFlags aFlags);
 
   // XXX temporary: hold on to a copy of the old physical versions of
   //    ReflowChild and FinishReflowChild so that we can convert callers
   //    incrementally.
   void ReflowChild(nsIFrame* aKidFrame, nsPresContext* aPresContext,
                    ReflowOutput& aDesiredSize, const ReflowInput& aReflowInput,
-                   nscoord aX, nscoord aY, uint32_t aFlags,
+                   nscoord aX, nscoord aY, ReflowChildFlags aFlags,
                    nsReflowStatus& aStatus,
                    nsOverflowContinuationTracker* aTracker = nullptr);
 
@@ -274,7 +266,7 @@ class nsContainerFrame : public nsSplittableFrame {
                                 nsPresContext* aPresContext,
                                 const ReflowOutput& aDesiredSize,
                                 const ReflowInput* aReflowInput, nscoord aX,
-                                nscoord aY, uint32_t aFlags);
+                                nscoord aY, ReflowChildFlags aFlags);
 
   static void PositionChildViews(nsIFrame* aFrame);
 
@@ -352,7 +344,8 @@ class nsContainerFrame : public nsSplittableFrame {
    */
   void ReflowOverflowContainerChildren(
       nsPresContext* aPresContext, const ReflowInput& aReflowInput,
-      nsOverflowAreas& aOverflowRects, uint32_t aFlags, nsReflowStatus& aStatus,
+      nsOverflowAreas& aOverflowRects, ReflowChildFlags aFlags,
+      nsReflowStatus& aStatus,
       ChildFrameMerger aMergeFunc = DefaultChildFrameMerge);
 
   /**
@@ -438,6 +431,13 @@ class nsContainerFrame : public nsSplittableFrame {
    */
   virtual uint16_t CSSAlignmentForAbsPosChild(
       const ReflowInput& aChildRI, mozilla::LogicalAxis aLogicalAxis) const;
+
+#ifdef ACCESSIBILITY
+  /**
+   * Return the ::marker text equivalent, without flushing.
+   */
+  void GetSpokenMarkerText(nsAString& aText) const;
+#endif
 
 #define NS_DECLARE_FRAME_PROPERTY_FRAMELIST(prop) \
   NS_DECLARE_FRAME_PROPERTY_WITH_DTOR_NEVER_CALLED(prop, nsFrameList)
@@ -594,8 +594,7 @@ class nsContainerFrame : public nsSplittableFrame {
    */
   static void ReparentFloatsForInlineChild(nsIFrame* aOurBlock,
                                            nsIFrame* aFrame,
-                                           bool aReparentSiblings,
-                                           ReparentingDirection aDirection);
+                                           bool aReparentSiblings);
 
   // ==========================================================================
   /*

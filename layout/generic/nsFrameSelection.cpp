@@ -10,9 +10,11 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/AutoRestore.h"
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_dom.h"
 
 #include "nsCOMPtr.h"
 #include "nsString.h"
@@ -27,7 +29,6 @@
 #include "nsTableCellFrame.h"
 #include "nsIScrollableFrame.h"
 #include "nsCCUncollectableMarker.h"
-#include "nsIDocumentEncoder.h"
 #include "nsTextFragment.h"
 #include <algorithm>
 #include "nsContentUtils.h"
@@ -51,7 +52,6 @@ static NS_DEFINE_CID(kFrameTraversalCID, NS_FRAMETRAVERSAL_CID);
 #include "mozilla/MouseEvents.h"
 #include "mozilla/TextEvents.h"
 
-#include "nsITimer.h"
 // notifications
 #include "mozilla/dom/Document.h"
 
@@ -59,8 +59,6 @@ static NS_DEFINE_CID(kFrameTraversalCID, NS_FRAMETRAVERSAL_CID);
 #include "nsCopySupport.h"
 #include "nsIClipboard.h"
 #include "nsIFrameInlines.h"
-
-#include "nsIBidiKeyboard.h"
 
 #include "nsError.h"
 #include "mozilla/AutoCopyListener.h"
@@ -176,7 +174,7 @@ bool IsValidSelectionPoint(nsFrameSelection* aFrameSel, nsINode* aNode) {
   }
 
   limiter = aFrameSel->GetAncestorLimiter();
-  return !limiter || nsContentUtils::ContentIsDescendantOf(aNode, limiter);
+  return !limiter || aNode->IsInclusiveDescendantOf(limiter);
 }
 
 namespace mozilla {
@@ -583,8 +581,6 @@ void nsFrameSelection::Init(mozilla::PresShell* aPresShell,
   if (!prefCachesInitialized) {
     prefCachesInitialized = true;
 
-    Preferences::AddBoolVarCache(&sSelectionEventsEnabled,
-                                 "dom.select_events.enabled", false);
     Preferences::AddBoolVarCache(&sSelectionEventsOnTextControlsEnabled,
                                  "dom.select_events.textcontrols.enabled",
                                  false);
@@ -599,11 +595,10 @@ void nsFrameSelection::Init(mozilla::PresShell* aPresShell,
   bool plaintextControl = (aLimiter != nullptr);
   bool initSelectEvents = plaintextControl
                               ? sSelectionEventsOnTextControlsEnabled
-                              : sSelectionEventsEnabled;
+                              : StaticPrefs::dom_select_events_enabled();
 
   Document* doc = aPresShell->GetDocument();
-  if (initSelectEvents ||
-      (doc && nsContentUtils::IsSystemPrincipal(doc->NodePrincipal()))) {
+  if (initSelectEvents || (doc && doc->NodePrincipal()->IsSystemPrincipal())) {
     int8_t index = GetIndexFromSelectionType(SelectionType::eNormal);
     if (mDomSelections[index]) {
       mDomSelections[index]->EnableSelectionChangeEvent();
@@ -611,7 +606,6 @@ void nsFrameSelection::Init(mozilla::PresShell* aPresShell,
   }
 }
 
-bool nsFrameSelection::sSelectionEventsEnabled = false;
 bool nsFrameSelection::sSelectionEventsOnTextControlsEnabled = false;
 
 nsresult nsFrameSelection::MoveCaret(nsDirection aDirection,
@@ -1245,7 +1239,8 @@ nsresult nsFrameSelection::TakeFocus(nsIContent* aNewFocus,
       RefPtr<nsRange> newRange = new nsRange(aNewFocus);
 
       newRange->CollapseTo(aNewFocus, aContentOffset);
-      mDomSelections[index]->AddRange(*newRange, IgnoreErrors());
+      mDomSelections[index]->AddRangeAndSelectFramesAndNotifyListeners(
+          *newRange, IgnoreErrors());
       mBatching = batching;
       mChangesDuringBatching = changes;
     } else {
@@ -1275,9 +1270,8 @@ nsresult nsFrameSelection::TakeFocus(nsIContent* aNewFocus,
       if (htmlEditor) {
         nsINode* cellparent = GetCellParent(aNewFocus);
         nsCOMPtr<nsINode> editorHostNode = htmlEditor->GetActiveEditingHost();
-        editableCell =
-            cellparent && editorHostNode &&
-            nsContentUtils::ContentIsDescendantOf(cellparent, editorHostNode);
+        editableCell = cellparent && editorHostNode &&
+                       cellparent->IsInclusiveDescendantOf(editorHostNode);
         if (editableCell) {
           mCellParent = cellparent;
 #ifdef DEBUG_TABLE_SELECTION
@@ -1622,7 +1616,7 @@ nsIFrame* nsFrameSelection::GetFrameToPageSelect() const {
       if (scrollStyles.mVertical == StyleOverflow::Hidden) {
         continue;
       }
-      uint32_t directions = scrollableFrame->GetPerceivedScrollingDirections();
+      uint32_t directions = scrollableFrame->GetAvailableScrollingDirections();
       if (directions & nsIScrollableFrame::VERTICAL) {
         // If there is sub scrollable frame, let's use its page size to select.
         return frame;
@@ -1636,8 +1630,9 @@ nsIFrame* nsFrameSelection::GetFrameToPageSelect() const {
   return rootFrameToSelect;
 }
 
-void nsFrameSelection::CommonPageMove(bool aForward, bool aExtend,
-                                      nsIFrame* aFrame) {
+nsresult nsFrameSelection::PageMove(bool aForward, bool aExtend,
+                                    nsIFrame* aFrame,
+                                    SelectionIntoView aSelectionIntoView) {
   MOZ_ASSERT(aFrame);
 
   // expected behavior for PageMove is to scroll AND move the caret
@@ -1650,21 +1645,21 @@ void nsFrameSelection::CommonPageMove(bool aForward, bool aExtend,
   nsIFrame* scrolledFrame =
       scrollableFrame ? scrollableFrame->GetScrolledFrame() : aFrame;
   if (!scrolledFrame) {
-    return;
+    return NS_OK;
   }
 
   // find out where the caret is.
   // we should know mDesiredPos value of nsFrameSelection, but I havent seen
   // that behavior in other windows applications yet.
-  Selection* domSel = GetSelection(SelectionType::eNormal);
-  if (!domSel) {
-    return;
+  RefPtr<Selection> selection = GetSelection(SelectionType::eNormal);
+  if (!selection) {
+    return NS_OK;
   }
 
   nsRect caretPos;
-  nsIFrame* caretFrame = nsCaret::GetGeometry(domSel, &caretPos);
+  nsIFrame* caretFrame = nsCaret::GetGeometry(selection, &caretPos);
   if (!caretFrame) {
-    return;
+    return NS_OK;
   }
 
   // If the scrolled frame is outside of current selection limiter,
@@ -1673,13 +1668,18 @@ void nsFrameSelection::CommonPageMove(bool aForward, bool aExtend,
   if (!IsValidSelectionPoint(this, scrolledFrame->GetContent())) {
     frameToClick = GetFrameToPageSelect();
     if (NS_WARN_IF(!frameToClick)) {
-      return;
+      return NS_OK;
     }
   }
 
-  if (scrollableFrame && scrolledFrame == frameToClick) {
-    // If aFrame is scrollable, adjust pseudo-click position with page scroll
-    // amount.
+  if (scrollableFrame) {
+    // If there is a scrollable frame, adjust pseudo-click position with page
+    // scroll amount.
+    // XXX This may scroll more than one page if ScrollSelectionIntoView is
+    //     called later because caret may not fully visible.  E.g., if
+    //     clicking line will be visible only half height with scrolling
+    //     the frame, ScrollSelectionIntoView additionally scrolls to show
+    //     the caret entirely.
     if (aForward) {
       caretPos.y += scrollableFrame->GetPageScrollAmount().height;
     } else {
@@ -1704,18 +1704,55 @@ void nsFrameSelection::CommonPageMove(bool aForward, bool aExtend,
       frameToClick->GetContentOffsetsFromPoint(desiredPoint);
 
   if (!offsets.content) {
-    return;
+    // XXX Do we need to handle ScrollSelectionIntoView in this case?
+    return NS_OK;
   }
 
-  // Scroll one page if necessary.
+  // First, place the caret.
+  bool selectionChanged;
+  {
+    // We don't want any script to run until we check whether selection is
+    // modified by HandleClick.
+    SelectionBatcher ensureNoSelectionChangeNotifications(selection);
+
+    RangeBoundary oldAnchor = selection->AnchorRef();
+    RangeBoundary oldFocus = selection->FocusRef();
+
+    HandleClick(offsets.content, offsets.offset, offsets.offset, aExtend, false,
+                CARET_ASSOCIATE_AFTER);
+
+    selectionChanged = selection->AnchorRef() != oldAnchor ||
+                       selection->FocusRef() != oldFocus;
+  }
+
+  bool doScrollSelectionIntoView = !(
+      aSelectionIntoView == SelectionIntoView::IfChanged && !selectionChanged);
+
+  // Then, scroll the given frame one page.
   if (scrollableFrame) {
+    // If we'll call ScrollSelectionIntoView later and selection wasn't
+    // changed and we scroll outside of selection limiter, we shouldn't use
+    // smooth scroll here because nsIScrollableFrame uses normal runnable,
+    // but ScrollSelectionIntoView uses early runner and it cancels the
+    // pending smooth scroll.  Therefore, if we used smooth scroll in such
+    // case, ScrollSelectionIntoView would scroll to show caret instead of
+    // page scroll of an element outside selection limiter.
+    ScrollMode scrollMode = doScrollSelectionIntoView && !selectionChanged &&
+                                    scrolledFrame != frameToClick
+                                ? ScrollMode::Instant
+                                : ScrollMode::Smooth;
     scrollableFrame->ScrollBy(nsIntPoint(0, aForward ? 1 : -1),
-                              nsIScrollableFrame::PAGES, ScrollMode::Smooth);
+                              nsIScrollableFrame::PAGES, scrollMode);
   }
 
-  // place the caret
-  HandleClick(offsets.content, offsets.offset, offsets.offset, aExtend, false,
-              CARET_ASSOCIATE_AFTER);
+  // Finally, scroll selection into view if requested.
+  if (!doScrollSelectionIntoView) {
+    return NS_OK;
+  }
+  return ScrollSelectionIntoView(
+      SelectionType::eNormal, nsISelectionController::SELECTION_FOCUS_REGION,
+      nsISelectionController::SCROLL_SYNCHRONOUS |
+          nsISelectionController::SCROLL_FOR_CARET_MOVE);
 }
 
 nsresult nsFrameSelection::PhysicalMove(int16_t aDirection, int16_t aAmount,
@@ -2243,7 +2280,8 @@ nsresult nsFrameSelection::HandleTableSelection(nsINode* aParentContent,
 
             // Deselect cell by removing its range from selection
             ErrorResult err;
-            mDomSelections[index]->RemoveRange(*range, err);
+            mDomSelections[index]
+                ->RemoveRangeAndUnselectFramesAndNotifyListeners(*range, err);
             return err.StealNSResult();
           }
         }
@@ -2323,7 +2361,8 @@ nsresult nsFrameSelection::UnselectCells(nsIContent* aTableContent,
       if (aRemoveOutsideOfCellRange) {
         if (curRowIndex < minRowIndex || curRowIndex > maxRowIndex ||
             curColIndex < minColIndex || curColIndex > maxColIndex) {
-          mDomSelections[index]->RemoveRange(*range, IgnoreErrors());
+          mDomSelections[index]->RemoveRangeAndUnselectFramesAndNotifyListeners(
+              *range, IgnoreErrors());
           // Since we've removed the range, decrement pointer to next range
           mSelectedCellIndex--;
         }
@@ -2348,7 +2387,8 @@ nsresult nsFrameSelection::UnselectCells(nsIContent* aTableContent,
             maxColIndex >= 0 &&
             origColIndex + actualColSpan - 1 >=
                 static_cast<uint32_t>(minColIndex)) {
-          mDomSelections[index]->RemoveRange(*range, IgnoreErrors());
+          mDomSelections[index]->RemoveRangeAndUnselectFramesAndNotifyListeners(
+              *range, IgnoreErrors());
           // Since we've removed the range, decrement pointer to next range
           mSelectedCellIndex--;
         }
@@ -2638,7 +2678,7 @@ nsresult nsFrameSelection::CreateAndAddRange(nsINode* aContainer,
   if (!mDomSelections[index]) return NS_ERROR_NULL_POINTER;
 
   ErrorResult err;
-  mDomSelections[index]->AddRange(*range, err);
+  mDomSelections[index]->AddRangeAndSelectFramesAndNotifyListeners(*range, err);
   return err.StealNSResult();
 }
 
@@ -2745,8 +2785,8 @@ nsresult nsFrameSelection::UpdateSelectionCacheOnRepaintSelection(
   nsCOMPtr<Document> aDoc = presShell->GetDocument();
 
   if (aDoc && aSel && !aSel->IsCollapsed()) {
-    return nsCopySupport::HTMLCopy(aSel, aDoc, nsIClipboard::kSelectionCache,
-                                   false);
+    return nsCopySupport::EncodeDocumentWithContextAndPutToClipboard(
+        aSel, aDoc, nsIClipboard::kSelectionCache, false);
   }
 
   return NS_OK;
@@ -2760,8 +2800,9 @@ int16_t AutoCopyListener::sClipboardID = -1;
  * What we do now:
  * On every selection change, we copy to the clipboard anew, creating a
  * HTML buffer, a transferable, an nsISupportsString and
- * a huge mess every time.  This is basically what nsCopySupport::HTMLCopy()
- * does to move the selection into the clipboard for Edit->Copy.
+ * a huge mess every time.  This is basically what
+ * nsCopySupport::EncodeDocumentWithContextAndPutToClipboard() does to move the
+ * selection into the clipboard for Edit->Copy.
  *
  * What we should do, to make our end of the deal faster:
  * Create a singleton transferable with our own magic converter.  When selection
@@ -2828,8 +2869,10 @@ void AutoCopyListener::OnSelectionChange(Document* aDocument,
     return;
   }
 
-  // Call the copy code.
   DebugOnly<nsresult> rv =
-      nsCopySupport::HTMLCopy(&aSelection, aDocument, sClipboardID, false);
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "nsCopySupport::HTMLCopy() failed");
+      nsCopySupport::EncodeDocumentWithContextAndPutToClipboard(
+          &aSelection, aDocument, sClipboardID, false);
+  NS_WARNING_ASSERTION(
+      NS_SUCCEEDED(rv),
+      "nsCopySupport::EncodeDocumentWithContextAndPutToClipboard() failed");
 }

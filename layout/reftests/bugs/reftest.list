@@ -318,7 +318,7 @@ fuzzy-if(Android,0-3,0-50) fuzzy-if(skiaContent,0-1,0-133) == 273681-1.html 2736
 == 283686-2.html 283686-2-ref.html
 == 283686-3.html about:blank
 == 289384-1.xhtml 289384-ref.xhtml
-random-if(d2d) fuzzy-if(Android,0-8,0-1439) fuzzy-if(webrender,0-6,0-2024) HTTP == 289480.html#top 289480-ref.html # basically-verbatim acid2 test, HTTP for a 404 page -- bug 578114 for the d2d failures
+random-if(d2d) fuzzy-if(Android,0-8,0-1439) fuzzy-if(webrender,0-9,0-2024) HTTP == 289480.html#top 289480-ref.html # basically-verbatim acid2 test, HTTP for a 404 page -- bug 578114 for the d2d failures
 == 290129-1.html 290129-1-ref.html
 == 291078-1.html 291078-1-ref.html
 == 291078-2.html 291078-2-ref.html
@@ -652,7 +652,7 @@ asserts(4) == 368155-negative-margins-1.html 368155-negative-margins-1-ref.html 
 == 370629-1.html 370629-1-ref.html
 == 370629-2.html 370629-2-ref.html
 == 370692-1.xhtml 370692-1-ref.xhtml
-== 371041-1.html 371041-1-ref.html
+pref(layout.css.line-height.normal-as-resolved-value.enabled,false) == 371041-1.html 371041-1-ref.html
 == 371043-1.html 371043-1-ref.html
 == 371354-1.html 371354-1-ref.html
 == 371483-1.html about:blank # assertion test
@@ -755,8 +755,7 @@ fuzzy-if(skiaContent,0-2,0-3) == 385870-2.html 385870-2-ref.html
 == 386014-1c.html 386014-1-ref.html
 == 386065-1.html 386065-1-ref.html
 == 386065-2.html about:blank
-test-pref(layout.float-fragments-inside-column.enabled,false) fails == 386147-1.html 386147-1-ref.html
-test-pref(layout.float-fragments-inside-column.enabled,true) == 386147-1.html 386147-1-ref.html
+== 386147-1.html 386147-1-ref.html
 == 386310-1a.html 386310-1-ref.html
 == 386310-1b.html 386310-1-ref.html
 == 386310-1c.html 386310-1-ref.html
@@ -955,7 +954,6 @@ fuzzy-if(winWidget,0-123,0-1900) == 409659-1d.html 409659-1-ref.html  # Bug 1128
 == 410621-1.html 410621-1-ref.html
 random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) == 411059-1.html 411059-1-ref.html # Bug 1392106
 fuzzy-if(webrender&&winWidget,127-129,652-770) == 411334-1.xml 411334-1-ref.xml
-== 411367-1.html 411367-1-ref.html
 == 411367-2.html 411367-2-ref.html
 == 411367-3.html 411367-3-ref.html
 == 411585-1.html 411585-1-ref.html
@@ -1026,7 +1024,7 @@ fuzzy-if(Android,0-11,0-17) fuzzy-if(webrender,0-1,0-10) == 413361-1.html 413361
 == 421436-1a.html 421436-1-ref.html
 == 421436-1b.html 421436-1-ref.html
 fuzzy-if(skiaContent,0-1,0-40) == 421632-1.html 421632-1-ref.html
-!= 421710-1.html about:blank
+asserts(1-1) != 421710-1.html about:blank # Bug 1574046
 fails-if(Android) fuzzy-if(webrender,63-64,1024-1024) fails-if(usesRepeatResampling&&!(webrender&&winWidget)) == 421885-1.xml 421885-1-ref.xml
 == 421955-1.html 421955-1-ref.html
 == 422249-1.html 422249-1-ref.html
@@ -1526,8 +1524,7 @@ fuzzy-if(Android,0-2,0-48) == 563584-2.html 563584-2-ref.html
 fuzzy-if(Android,0-4,0-180) == 563584-3.html 563584-3-ref.html
 fuzzy-if(Android,0-4,0-180) == 563584-4.html 563584-4-ref.html
 fuzzy-if(Android,0-2,0-48) == 563584-5.html 563584-5-ref.html
-test-pref(layout.float-fragments-inside-column.enabled,false) == 563584-6-columns.html 563584-6-columns-ref.html
-test-pref(layout.float-fragments-inside-column.enabled,true) == 563584-6-columns.html 563584-6-columns-ref-enabled.html
+== 563584-6-columns.html 563584-6-columns-ref.html
 fuzzy-if(Android,0-2,0-48) == 563584-6-printing.html 563584-6-printing-ref.html
 fuzzy-if(Android,0-2,0-48) == 563584-7.html 563584-7-ref.html
 # FIXME: It would be nice to have variants of these -8 tests for the
@@ -1794,7 +1791,6 @@ fuzzy-if(OSX,0-1,0-364) fuzzy-if(skiaContent,0-1,0-320) == 846144-1.html 846144-
 == 860242-1.html 860242-1-ref.html
 != 860370.html 860370-notref.html
 == 871338-1.html 871338-1-ref.html
-== 875060-1.html 875060-1-ref.html
 == 883987-1a.html 883987-1-ref.html
 fails == 883987-1b.html 883987-1-ref.html # bug 1446971
 fails == 883987-1c.html 883987-1-ref.html # bug 1446971
@@ -1878,7 +1874,7 @@ fails-if(webrender) == 1059498-3.html 1059498-1-ref.html # WebRender: see bug 14
 == 1069716-1.html 1069716-1-ref.html
 == 1078262-1.html about:blank
 test-pref(layout.testing.overlay-scrollbars.always-visible,false) == 1081072-1.html 1081072-1-ref.html
-fuzzy-if(webrender,64-64,407-409) == 1081185-1.html 1081185-1-ref.html
+fuzzy-if(webrender,64-64,407-486) == 1081185-1.html 1081185-1-ref.html
 == 1097437-1.html 1097437-1-ref.html
 == 1103258-1.html 1103258-1-ref.html # assertion crash test with layers culling test
 == 1105137-1.html 1105137-1-ref.html
@@ -2021,6 +2017,8 @@ skip-if(Android) != 1318769-1.html 1318769-1-ref.html
 skip-if(isDebugBuild&&winWidget) == 1330051.svg 1330051-ref.svg
 == 1348481-1.html 1348481-ref.html
 == 1348481-2.html 1348481-ref.html
+== 1351924-1.html 1351924-1-ref.html
+== 1351924-2.html 1351924-2-ref.html
 == 1352464-1.html 1352464-1-ref.html
 == 1358375-1.html 1358375-ref.html
 == 1358375-2.html 1358375-ref.html
@@ -2107,8 +2105,10 @@ fuzzy-if(!webrender,0-6,0-34) fails-if(webrender) == 1529992-2.html 1529992-2-re
 == 1535040-1.html 1535040-1-ref.html
 == 1545360-1.xhtml 1545360-1-ref.xhtml
 skip-if(!asyncPan) == 1544895.html 1544895-ref.html
+== 1547759-1.html 1547759-1-ref.html
 == 1548809.html 1548809-ref.html
 != 1552789-1.html 1552789-ref-1.html
 != 1563484.html 1563484-notref.html
 == 1563484.html 1563484-ref.html
 test-pref(plain_text.wrap_long_lines,false) != 1565129.txt 1565129.txt
+== 1579953-2.html 1579953-2-ref.html

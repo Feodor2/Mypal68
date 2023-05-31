@@ -5,8 +5,6 @@
 #include "nsPagePrintTimer.h"
 
 #include "mozilla/Unused.h"
-#include "nsIContentViewer.h"
-#include "nsIServiceManager.h"
 #include "nsPrintJob.h"
 
 using namespace mozilla;

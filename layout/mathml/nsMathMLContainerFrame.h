@@ -77,6 +77,7 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
                             nsFrameList& aFrameList) override;
 
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override;
 
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
@@ -233,9 +234,9 @@ class nsMathMLContainerFrame : public nsContainerFrame, public nsMathMLFrame {
    * Helper to call ReportToConsole when an error occurs.
    * @param aParams see nsContentUtils::ReportToConsole
    */
-  nsresult ReportErrorToConsole(const char* aErrorMsgId,
-                                const char16_t** aParams = nullptr,
-                                uint32_t aParamCount = 0);
+  nsresult ReportErrorToConsole(
+      const char* aErrorMsgId,
+      const nsTArray<nsString>& aParams = nsTArray<nsString>());
 
   // helper method to reflow a child frame. We are inline frames, and we don't
   // know our positions until reflow is finished. That's why we ask the
@@ -398,10 +399,11 @@ class nsMathMLmathBlockFrame final : public nsBlockFrame {
   }
 
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override {
     NS_ASSERTION(aListID == kPrincipalList || aListID == kNoReflowPrincipalList,
                  "unexpected frame list");
-    nsBlockFrame::InsertFrames(aListID, aPrevFrame, aFrameList);
+    nsBlockFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine, aFrameList);
     if (MOZ_LIKELY(aListID == kPrincipalList))
       nsMathMLContainerFrame::ReLayoutChildren(this);
   }
@@ -465,10 +467,12 @@ class nsMathMLmathInlineFrame final : public nsInlineFrame,
   }
 
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override {
     NS_ASSERTION(aListID == kPrincipalList || aListID == kNoReflowPrincipalList,
                  "unexpected frame list");
-    nsInlineFrame::InsertFrames(aListID, aPrevFrame, aFrameList);
+    nsInlineFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine,
+                                aFrameList);
     if (MOZ_LIKELY(aListID == kPrincipalList))
       nsMathMLContainerFrame::ReLayoutChildren(this);
   }

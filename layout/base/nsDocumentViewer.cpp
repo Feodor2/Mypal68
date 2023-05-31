@@ -20,6 +20,7 @@
 #include "mozilla/dom/PopupBlocker.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
+#include "mozilla/dom/DocGroup.h"
 #include "nsPresContext.h"
 #include "nsIFrame.h"
 #include "nsIWritablePropertyBag2.h"
@@ -39,13 +40,14 @@
 #include "mozilla/ErrorResult.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/WeakPtr.h"
+#include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
 
 #include "nsViewManager.h"
 #include "nsView.h"
 
-#include "nsIPageSequenceFrame.h"
+#include "nsPageSequenceFrame.h"
 #include "nsNetUtil.h"
 #include "nsIContentViewerEdit.h"
 #include "mozilla/css/Loader.h"
@@ -74,7 +76,7 @@
 #include "nsIScrollableFrame.h"
 #include "nsStyleSheetService.h"
 #include "nsILoadContext.h"
-
+#include "mozilla/ThrottledEventQueue.h"
 #include "nsIPrompt.h"
 #include "imgIContainer.h"  // image animation mode constants
 
@@ -112,7 +114,7 @@
 
 // paint forcing
 #include <stdio.h>
-
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/Telemetry.h"
@@ -608,10 +610,12 @@ nsDocumentViewer::~nsDocumentViewer() {
     mDocument->Destroy();
   }
 
+#ifdef NS_PRINTING
   if (mPrintJob) {
     mPrintJob->Destroy();
     mPrintJob = nullptr;
   }
+#endif
 
   MOZ_RELEASE_ASSERT(mDestroyBlockedCount == 0);
   NS_ASSERTION(!mPresShell && !mPresContext,
@@ -669,7 +673,7 @@ nsresult nsDocumentViewer::SyncParentSubDocMap() {
   }
 
   nsCOMPtr<nsIDocShellTreeItem> parent;
-  docShell->GetParent(getter_AddRefs(parent));
+  docShell->GetInProcessParent(getter_AddRefs(parent));
 
   nsCOMPtr<nsPIDOMWindowOuter> parent_win =
       parent ? parent->GetWindow() : nullptr;
@@ -1076,7 +1080,7 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
       if (os) {
         nsIPrincipal* principal = d->NodePrincipal();
         os->NotifyObservers(ToSupports(d),
-                            nsContentUtils::IsSystemPrincipal(principal)
+                            principal->IsSystemPrincipal()
                                 ? "chrome-document-loaded"
                                 : "content-document-loaded",
                             nullptr);
@@ -1090,14 +1094,69 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
             docShell, MakeUnique<DocLoadingTimelineMarker>("document::Load"));
       }
 
+      nsPIDOMWindowInner* innerWindow = window->GetCurrentInnerWindow();
+      RefPtr<DocGroup> docGroup = d->GetDocGroup();
+      // It is possible that the parent document's load event fires earlier than
+      // childs' load event, and in this case we need to fire some artificial
+      // load events to make the parent thinks the load events for child has
+      // been done
+      if (innerWindow && DocGroup::TryToLoadIframesInBackground()) {
+        nsTArray<nsCOMPtr<nsIDocShell>> docShells;
+        nsCOMPtr<nsIDocShell> container(mContainer);
+        if (container) {
+          int32_t count;
+          container->GetInProcessChildCount(&count);
+          // We first find all background loading iframes that need to
+          // fire artificial load events, and instead of firing them as
+          // soon as we find them, we store them in an array, to prevent
+          // us from skipping some events.
+          for (int32_t i = 0; i < count; ++i) {
+            nsCOMPtr<nsIDocShellTreeItem> child;
+            container->GetInProcessChildAt(i, getter_AddRefs(child));
+            nsCOMPtr<nsIDocShell> childIDocShell = do_QueryInterface(child);
+            RefPtr<nsDocShell> docShell = nsDocShell::Cast(childIDocShell);
+            if (docShell && docShell->TreatAsBackgroundLoad() &&
+                docShell->GetDocument()->GetReadyStateEnum() <
+                    Document::READYSTATE_COMPLETE) {
+              docShells.AppendElement(childIDocShell);
+            }
+          }
+
+          // Re-iterate the stored docShells to fire artificial load events
+          for (size_t i = 0; i < docShells.Length(); ++i) {
+            RefPtr<nsDocShell> docShell = nsDocShell::Cast(docShells[i]);
+            if (docShell && docShell->TreatAsBackgroundLoad() &&
+                docShell->GetDocument()->GetReadyStateEnum() <
+                    Document::READYSTATE_COMPLETE) {
+              nsEventStatus status = nsEventStatus_eIgnore;
+              WidgetEvent event(true, eLoad);
+              event.mFlags.mBubbles = false;
+              event.mFlags.mCancelable = false;
+
+              nsCOMPtr<nsPIDOMWindowOuter> win = docShell->GetWindow();
+              nsCOMPtr<Element> element = win->GetFrameElementInternal();
+
+              docShell->SetFakeOnLoadDispatched();
+              EventDispatcher::Dispatch(element, nullptr, &event, nullptr,
+                                        &status);
+            }
+          }
+        }
+      }
+
       d->SetLoadEventFiring(true);
       EventDispatcher::Dispatch(window, mPresContext, &event, nullptr, &status);
       d->SetLoadEventFiring(false);
+
+      RefPtr<nsDocShell> dShell = nsDocShell::Cast(docShell);
+      if (docGroup && dShell->TreatAsBackgroundLoad()) {
+        docGroup->TryFlushIframePostMessages(dShell->GetOuterWindowID());
+      }
+
       if (timing) {
         timing->NotifyLoadEventEnd();
       }
 
-      nsPIDOMWindowInner* innerWindow = window->GetCurrentInnerWindow();
       if (innerWindow) {
         innerWindow->QueuePerformanceNavigationTiming();
       }
@@ -1145,7 +1204,6 @@ nsDocumentViewer::LoadComplete(nsresult aStatus) {
       }
     }
   }
-
   // Release the JS bytecode cache from its wait on the load event, and
   // potentially dispatch the encoding of the bytecode.
   if (mDocument && mDocument->ScriptLoader()) {
@@ -1241,7 +1299,7 @@ nsresult nsDocumentViewer::PermitUnloadInternal(uint32_t* aPermitUnloadFlags,
   {
     // Never permit popups from the beforeunload handler, no matter
     // how we get here.
-    nsAutoPopupStatePusher popupStatePusher(PopupBlocker::openAbused, true);
+    AutoPopupStatePusher popupStatePusher(PopupBlocker::openAbused, true);
 
     // Never permit dialogs from the beforeunload handler
     nsGlobalWindowOuter* globalWindow = nsGlobalWindowOuter::Cast(window);
@@ -1364,11 +1422,11 @@ nsresult nsDocumentViewer::PermitUnloadInternal(uint32_t* aPermitUnloadFlags,
 
   if (docShell) {
     int32_t childCount;
-    docShell->GetChildCount(&childCount);
+    docShell->GetInProcessChildCount(&childCount);
 
     for (int32_t i = 0; i < childCount && *aPermitUnload; ++i) {
       nsCOMPtr<nsIDocShellTreeItem> item;
-      docShell->GetChildAt(i, getter_AddRefs(item));
+      docShell->GetInProcessChildAt(i, getter_AddRefs(item));
 
       nsCOMPtr<nsIDocShell> docShell(do_QueryInterface(item));
 
@@ -1411,7 +1469,8 @@ nsDocumentViewer::PageHide(bool aIsUnload) {
   if (aIsUnload) {
     // Poke the GC. The window might be collectable garbage now.
     nsJSContext::PokeGC(JS::GCReason::PAGE_HIDE,
-                        mDocument->GetWrapperPreserveColor(), NS_GC_DELAY * 2);
+                        mDocument->GetWrapperPreserveColor(),
+                        StaticPrefs::javascript_options_gc_delay() * 2);
   }
 
   mDocument->OnPageHide(!aIsUnload, nullptr);
@@ -1449,7 +1508,7 @@ nsDocumentViewer::PageHide(bool aIsUnload) {
 
     // Never permit popups from the unload handler, no matter how we get
     // here.
-    nsAutoPopupStatePusher popupStatePusher(PopupBlocker::openAbused, true);
+    AutoPopupStatePusher popupStatePusher(PopupBlocker::openAbused, true);
 
     Document::PageUnloadingEventTimeStamp timestamp(mDocument);
 
@@ -1481,10 +1540,10 @@ static void AttachContainerRecurse(nsIDocShell* aShell) {
 
   // Now recurse through the children
   int32_t childCount;
-  aShell->GetChildCount(&childCount);
+  aShell->GetInProcessChildCount(&childCount);
   for (int32_t i = 0; i < childCount; ++i) {
     nsCOMPtr<nsIDocShellTreeItem> childItem;
-    aShell->GetChildAt(i, getter_AddRefs(childItem));
+    aShell->GetInProcessChildAt(i, getter_AddRefs(childItem));
     nsCOMPtr<nsIDocShell> shell = do_QueryInterface(childItem);
     AttachContainerRecurse(shell);
   }
@@ -1637,10 +1696,10 @@ static void DetachContainerRecurse(nsIDocShell* aShell) {
 
   // Now recurse through the children
   int32_t childCount;
-  aShell->GetChildCount(&childCount);
+  aShell->GetInProcessChildCount(&childCount);
   for (int32_t i = 0; i < childCount; ++i) {
     nsCOMPtr<nsIDocShellTreeItem> childItem;
-    aShell->GetChildAt(i, getter_AddRefs(childItem));
+    aShell->GetInProcessChildAt(i, getter_AddRefs(childItem));
     nsCOMPtr<nsIDocShell> shell = do_QueryInterface(childItem);
     DetachContainerRecurse(shell);
   }
@@ -1914,10 +1973,10 @@ nsDocumentViewer::SetDocumentInternal(Document* aDocument,
       nsCOMPtr<nsIDocShell> node(mContainer);
       if (node) {
         int32_t count;
-        node->GetChildCount(&count);
+        node->GetInProcessChildCount(&count);
         for (int32_t i = 0; i < count; ++i) {
           nsCOMPtr<nsIDocShellTreeItem> child;
-          node->GetChildAt(0, getter_AddRefs(child));
+          node->GetInProcessChildAt(0, getter_AddRefs(child));
           node->RemoveChild(child);
         }
       }
@@ -2110,7 +2169,7 @@ nsDocumentViewer::Show(void) {
       // We need to find the root DocShell since only that object has an
       // SHistory and we need the SHistory to evict content viewers
       nsCOMPtr<nsIDocShellTreeItem> root;
-      treeItem->GetSameTypeRootTreeItem(getter_AddRefs(root));
+      treeItem->GetInProcessSameTypeRootTreeItem(getter_AddRefs(root));
       nsCOMPtr<nsIWebNavigation> webNav = do_QueryInterface(root);
       RefPtr<ChildSHistory> history = webNav->GetSessionHistory();
       if (history) {
@@ -2294,7 +2353,8 @@ NS_IMETHODIMP
 nsDocumentViewer::ClearHistoryEntry() {
   if (mDocument) {
     nsJSContext::PokeGC(JS::GCReason::PAGE_HIDE,
-                        mDocument->GetWrapperPreserveColor(), NS_GC_DELAY * 2);
+                        mDocument->GetWrapperPreserveColor(),
+                        StaticPrefs::javascript_options_gc_delay() * 2);
   }
 
   mSHEntry = nullptr;
@@ -2611,10 +2671,10 @@ void nsDocumentViewer::CallChildren(CallChildFunc aFunc, void* aClosure) {
   if (docShell) {
     int32_t i;
     int32_t n;
-    docShell->GetChildCount(&n);
+    docShell->GetInProcessChildCount(&n);
     for (i = 0; i < n; i++) {
       nsCOMPtr<nsIDocShellTreeItem> child;
-      docShell->GetChildAt(i, getter_AddRefs(child));
+      docShell->GetInProcessChildAt(i, getter_AddRefs(child));
       nsCOMPtr<nsIDocShell> childAsShell(do_QueryInterface(child));
       NS_ASSERTION(childAsShell, "null child in docshell");
       if (childAsShell) {
@@ -2761,7 +2821,7 @@ nsDocumentViewer::SetFullZoom(float aFullZoom) {
 
     mPrintPreviewZoom = aFullZoom;
     pc->SetPrintPreviewScale(aFullZoom * mOriginalPrintPreviewScale);
-    nsIPageSequenceFrame* pf = presShell->GetPageSequenceFrame();
+    nsPageSequenceFrame* pf = presShell->GetPageSequenceFrame();
     if (pf) {
       nsIFrame* f = do_QueryFrame(pf);
       presShell->FrameNeedsReflow(f, IntrinsicDirty::Resize, NS_FRAME_IS_DIRTY);
@@ -3158,7 +3218,7 @@ nsDocumentViewer::GetContentSize(int32_t* aWidth, int32_t* aHeight) {
   NS_ENSURE_TRUE(docShellAsItem, NS_ERROR_NOT_AVAILABLE);
 
   nsCOMPtr<nsIDocShellTreeItem> docShellParent;
-  docShellAsItem->GetSameTypeParent(getter_AddRefs(docShellParent));
+  docShellAsItem->GetInProcessSameTypeParent(getter_AddRefs(docShellParent));
 
   // It's only valid to access this from a top frame.  Doesn't work from
   // sub-frames.
@@ -3621,7 +3681,6 @@ nsDocumentViewer::PrintPreviewNavigate(int16_t aType, int32_t aPageNum) {
     return NS_OK;
   }
 
-  // Finds the SimplePageSequencer frame
   // in PP mPrtPreview->mPrintObject->mSeqFrame is null
   nsIFrame* seqFrame = nullptr;
   int32_t pageCount = 0;
@@ -3839,7 +3898,7 @@ void nsDocumentViewer::SetIsPrintingInDocShellTree(
     if (aIsPrintingOrPP) {
       while (parentItem) {
         nsCOMPtr<nsIDocShellTreeItem> parent;
-        parentItem->GetSameTypeParent(getter_AddRefs(parent));
+        parentItem->GetInProcessSameTypeParent(getter_AddRefs(parent));
         if (!parent) {
           break;
         }
@@ -3863,10 +3922,10 @@ void nsDocumentViewer::SetIsPrintingInDocShellTree(
 
   // Traverse children to see if any of them are printing.
   int32_t n;
-  aParentNode->GetChildCount(&n);
+  aParentNode->GetInProcessChildCount(&n);
   for (int32_t i = 0; i < n; i++) {
     nsCOMPtr<nsIDocShellTreeItem> child;
-    aParentNode->GetChildAt(i, getter_AddRefs(child));
+    aParentNode->GetInProcessChildAt(i, getter_AddRefs(child));
     NS_ASSERTION(child, "child isn't nsIDocShell");
     if (child) {
       SetIsPrintingInDocShellTree(child, aIsPrintingOrPP, false);
@@ -4163,9 +4222,7 @@ void nsDocumentViewer::DestroyPresShell() {
   mPresShell = nullptr;
 }
 
-void nsDocumentViewer::DestroyPresContext() {
-  mPresContext = nullptr;
-}
+void nsDocumentViewer::DestroyPresContext() { mPresContext = nullptr; }
 
 bool nsDocumentViewer::IsInitializedForPrintPreview() {
   return mInitializedForPrintPreview;

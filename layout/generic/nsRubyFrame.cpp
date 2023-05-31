@@ -10,6 +10,7 @@
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/WritingModes.h"
 #include "nsLineLayout.h"
 #include "nsPresContext.h"
@@ -109,29 +110,6 @@ void nsRubyFrame::Reflow(nsPresContext* aPresContext,
 
   // Clear leadings
   mLeadings.Reset();
-
-  // Since the ruby base container is going to reflow not only the ruby
-  // base frames, but also the ruby text frames, and then *afterwards*
-  // we're going to reflow the ruby text containers (which do not reflow
-  // their children), we need to transfer NS_FRAME_IS_DIRTY status from
-  // the ruby text containers to their child ruby texts now, both so
-  // that the ruby texts are marked dirty if needed, and so that the
-  // ruby text container doesn't mark the ruby text frames dirty *after*
-  // they're reflowed and leave dirty bits in a clean tree (suppressing
-  // future reflows, due to lack of a queued reflow to clean them).
-  for (nsIFrame* child : PrincipalChildList()) {
-    if (child->HasAnyStateBits(NS_FRAME_IS_DIRTY) &&
-        child->IsRubyTextContainerFrame()) {
-      for (nsIFrame* grandchild : child->PrincipalChildList()) {
-        grandchild->AddStateBits(NS_FRAME_IS_DIRTY);
-      }
-      // Replace NS_FRAME_IS_DIRTY with NS_FRAME_HAS_DIRTY_CHILDREN so
-      // we still have a dirty marking, but one that we won't transfer
-      // to children again.
-      child->RemoveStateBits(NS_FRAME_IS_DIRTY);
-      child->AddStateBits(NS_FRAME_HAS_DIRTY_CHILDREN);
-    }
-  }
 
   // Begin the span for the ruby frame
   WritingMode frameWM = aReflowInput.GetWritingMode();
@@ -333,7 +311,7 @@ void nsRubyFrame::ReflowSegment(nsPresContext* aPresContext,
 
     LogicalPoint position(lineWM);
     if (side.isSome()) {
-      if (nsLayoutUtils::IsInterCharacterRubyEnabled() &&
+      if (StaticPrefs::layout_css_ruby_intercharacter_enabled() &&
           rtcWM.IsVerticalRL() &&
           lineWM.GetInlineDir() == WritingMode::eInlineLTR) {
         // Inter-character ruby annotations are only supported for vertical-rl
@@ -363,7 +341,7 @@ void nsRubyFrame::ReflowSegment(nsPresContext* aPresContext,
     // reflowed.
     FinishReflowChild(textContainer, aPresContext, textMetrics,
                       &textReflowInput, lineWM, position, dummyContainerSize,
-                      0);
+                      ReflowChildFlags::Default);
   }
   MOZ_ASSERT(baseRect.ISize(lineWM) == offsetRect.ISize(lineWM),
              "Annotations should only be placed on the block directions");
@@ -409,8 +387,7 @@ nsRubyBaseContainerFrame* nsRubyFrame::PullOneSegment(
   if (nsBlockFrame* newFloatCB =
           do_QueryFrame(aLineLayout->LineContainerFrame())) {
     if (oldFloatCB && oldFloatCB != newFloatCB) {
-      newFloatCB->ReparentFloats(baseFrame, oldFloatCB, true,
-                                 ReparentingDirection::Backwards);
+      newFloatCB->ReparentFloats(baseFrame, oldFloatCB, true);
     }
   }
 

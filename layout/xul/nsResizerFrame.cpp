@@ -2,13 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
-#include "nsIServiceManager.h"
 #include "nsResizerFrame.h"
 #include "nsIContent.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/UniquePtr.h"
 #include "nsGkAtoms.h"
 #include "nsNameSpaceManager.h"
 
@@ -423,28 +422,28 @@ void nsResizerFrame::ResizeContent(nsIContent* aContent,
       nsICSSDeclaration* decl = inlineStyleContent->Style();
 
       if (aOriginalSizeInfo) {
-        decl->GetPropertyValue(NS_LITERAL_STRING("width"),
+        decl->GetPropertyValue(NS_LITERAL_CSTRING("width"),
                                aOriginalSizeInfo->width);
-        decl->GetPropertyValue(NS_LITERAL_STRING("height"),
+        decl->GetPropertyValue(NS_LITERAL_CSTRING("height"),
                                aOriginalSizeInfo->height);
       }
 
       // only set the property if the element could have changed in that
       // direction
       if (aDirection.mHorizontal) {
-        nsAutoString widthstr(aSizeInfo.width);
+        NS_ConvertUTF16toUTF8 widthstr(aSizeInfo.width);
         if (!widthstr.IsEmpty() &&
             !Substring(widthstr, widthstr.Length() - 2, 2).EqualsLiteral("px"))
           widthstr.AppendLiteral("px");
-        decl->SetProperty(NS_LITERAL_STRING("width"), widthstr, EmptyString());
+        decl->SetProperty(NS_LITERAL_CSTRING("width"), widthstr, EmptyString());
       }
       if (aDirection.mVertical) {
-        nsAutoString heightstr(aSizeInfo.height);
+        NS_ConvertUTF16toUTF8 heightstr(aSizeInfo.height);
         if (!heightstr.IsEmpty() &&
             !Substring(heightstr, heightstr.Length() - 2, 2)
                  .EqualsLiteral("px"))
           heightstr.AppendLiteral("px");
-        decl->SetProperty(NS_LITERAL_STRING("height"), heightstr,
+        decl->SetProperty(NS_LITERAL_CSTRING("height"), heightstr,
                           EmptyString());
       }
     }
@@ -459,10 +458,12 @@ void nsResizerFrame::MaybePersistOriginalSize(nsIContent* aContent,
   aContent->GetProperty(nsGkAtoms::_moz_original_size, &rv);
   if (rv != NS_PROPTABLE_PROP_NOT_THERE) return;
 
-  nsAutoPtr<SizeInfo> sizeInfo(new SizeInfo(aSizeInfo));
+  UniquePtr<SizeInfo> sizeInfo(new SizeInfo(aSizeInfo));
   rv = aContent->SetProperty(nsGkAtoms::_moz_original_size, sizeInfo.get(),
                              nsINode::DeleteProperty<nsResizerFrame::SizeInfo>);
-  if (NS_SUCCEEDED(rv)) sizeInfo.forget();
+  if (NS_SUCCEEDED(rv)) {
+    Unused << sizeInfo.release();
+  }
 }
 
 /* static */
@@ -481,7 +482,7 @@ void nsResizerFrame::RestoreOriginalSize(nsIContent* aContent) {
 /* returns a Direction struct containing the horizontal and vertical direction
  */
 nsResizerFrame::Direction nsResizerFrame::GetDirection() {
-  static const Element::AttrValuesArray strings[] = {
+  static const mozilla::dom::Element::AttrValuesArray strings[] = {
       // clang-format off
      nsGkAtoms::topleft,    nsGkAtoms::top,    nsGkAtoms::topright,
      nsGkAtoms::left,                          nsGkAtoms::right,

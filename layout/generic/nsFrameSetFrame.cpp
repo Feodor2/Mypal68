@@ -32,7 +32,6 @@
 #include "mozilla/ServoStyleSetInlines.h"
 #include "mozilla/dom/Element.h"
 #include "nsDisplayList.h"
-#include "nsNodeUtils.h"
 #include "mozAutoDocUpdate.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/dom/ChildIterator.h"
@@ -284,7 +283,7 @@ void nsHTMLFramesetFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
     //
     // Maybe we should change that though.
     RefPtr<ComputedStyle> kidStyle =
-        presShell->StyleSet()->ResolveServoStyle(*child->AsElement());
+        ServoStyleSet::ResolveServoStyle(*child->AsElement());
     nsIFrame* frame;
     if (child->IsHTMLElement(nsGkAtoms::frameset)) {
       frame = NS_NewHTMLFramesetFrame(presShell, kidStyle);
@@ -668,14 +667,14 @@ void nsHTMLFramesetFrame::ReflowPlaceChild(nsIFrame* aChild,
   nsReflowStatus status;
 
   ReflowChild(aChild, aPresContext, reflowOutput, reflowInput, aOffset.x,
-              aOffset.y, 0, status);
+              aOffset.y, ReflowChildFlags::Default, status);
   NS_ASSERTION(status.IsComplete(), "bad status");
 
   // Place and size the child
   reflowOutput.Width() = aSize.width;
   reflowOutput.Height() = aSize.height;
-  FinishReflowChild(aChild, aPresContext, reflowOutput, nullptr, aOffset.x,
-                    aOffset.y, 0);
+  FinishReflowChild(aChild, aPresContext, reflowOutput, &reflowInput, aOffset.x,
+                    aOffset.y, ReflowChildFlags::Default);
 }
 
 static nsFrameborder GetFrameBorderHelper(nsGenericHTMLElement* aContent) {

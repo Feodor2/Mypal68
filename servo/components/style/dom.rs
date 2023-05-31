@@ -346,6 +346,14 @@ pub trait TShadowRoot: Sized + Copy + Clone + PartialEq {
     where
         Self: 'a;
 
+    /// Get the list of shadow parts for this shadow root.
+    fn parts<'a>(&self) -> &[<Self::ConcreteNode as TNode>::ConcreteElement]
+    where
+        Self: 'a,
+    {
+        &[]
+    }
+
     /// Get a list of elements with a given ID in this shadow root, sorted by
     /// tree position.
     ///
@@ -512,6 +520,9 @@ pub trait TElement:
     /// Whether this element has an attribute with a given namespace.
     fn has_attr(&self, namespace: &Namespace, attr: &LocalName) -> bool;
 
+    /// Returns whether this element has a `part` attribute.
+    fn has_part_attr(&self) -> bool;
+
     /// The ID for this element.
     fn id(&self) -> Option<&WeakAtom>;
 
@@ -519,6 +530,13 @@ pub trait TElement:
     fn each_class<F>(&self, callback: F)
     where
         F: FnMut(&Atom);
+
+    /// Internal iterator for the part names of this element.
+    fn each_part<F>(&self, _callback: F)
+    where
+        F: FnMut(&Atom),
+    {
+    }
 
     /// Whether a given element may generate a pseudo-element.
     ///
@@ -779,7 +797,7 @@ pub trait TElement:
     /// element-backed pseudo-element, in which case we return the originating
     /// element.
     fn rule_hash_target(&self) -> Self {
-        if self.implemented_pseudo_element().is_some() {
+        if self.is_pseudo_element() {
             self.pseudo_element_originating_element()
                 .expect("Trying to collect rules for a detached pseudo-element")
         } else {
@@ -801,24 +819,29 @@ pub trait TElement:
     {
         use rule_collector::containing_shadow_ignoring_svg_use;
 
-        let mut doc_rules_apply = self.matches_user_and_author_rules();
+        let target = self.rule_hash_target();
+        if !target.matches_user_and_author_rules() {
+            return false;
+        }
+
+        let mut doc_rules_apply = true;
 
         // Use the same rules to look for the containing host as we do for rule
         // collection.
-        if let Some(shadow) = containing_shadow_ignoring_svg_use(*self) {
+        if let Some(shadow) = containing_shadow_ignoring_svg_use(target) {
             doc_rules_apply = false;
             if let Some(data) = shadow.style_data() {
                 f(data, shadow.host());
             }
         }
 
-        if let Some(shadow) = self.shadow_root() {
+        if let Some(shadow) = target.shadow_root() {
             if let Some(data) = shadow.style_data() {
                 f(data, shadow.host());
             }
         }
 
-        let mut current = self.assigned_slot();
+        let mut current = target.assigned_slot();
         while let Some(slot) = current {
             // Slots can only have assigned nodes when in a shadow tree.
             let shadow = slot.containing_shadow().unwrap();
@@ -877,6 +900,13 @@ pub trait TElement:
         hints: &mut V,
     ) where
         V: Push<ApplicableDeclarationBlock>;
+
+    /// Returns element's local name.
+    fn local_name(&self) -> &<SelectorImpl as selectors::parser::SelectorImpl>::BorrowedLocalName;
+
+    /// Returns element's namespace.
+    fn namespace(&self)
+        -> &<SelectorImpl as selectors::parser::SelectorImpl>::BorrowedNamespaceUrl;
 }
 
 /// TNode and TElement aren't Send because we want to be careful and explicit

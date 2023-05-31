@@ -240,15 +240,30 @@ trait PrivateMatchMethods: TElement {
         let new_box_style = new_style.get_box();
         let new_style_specifies_animations = new_box_style.specifies_animations();
 
-        let old_style = match old_style {
-            Some(old) => old,
-            None => return new_style_specifies_animations,
-        };
-
         let has_animations = self.has_css_animations();
         if !new_style_specifies_animations && !has_animations {
             return false;
         }
+
+        let old_style = match old_style {
+            Some(old) => old,
+            // If we have no old style but have animations, we may be a
+            // pseudo-element which was re-created without style changes.
+            //
+            // This can happen when we reframe the pseudo-element without
+            // restyling it (due to content insertion on a flex container or
+            // such, for example). See bug 1564366.
+            //
+            // FIXME(emilio): The really right fix for this is keeping the
+            // pseudo-element itself around on reframes, but that's a bit
+            // harder. If we do that we can probably remove quite a lot of the
+            // EffectSet complexity though, since right now it's stored on the
+            // parent element for pseudo-elements given we need to keep it
+            // around...
+            None => {
+                return new_style_specifies_animations || new_style.is_pseudo_style();
+            },
+        };
 
         let old_box_style = old_style.get_box();
 
@@ -503,29 +518,31 @@ trait PrivateMatchMethods: TElement {
         let old_display = old_values.get_box().clone_display();
         let new_display = new_values.get_box().clone_display();
 
-        // If we used to be a display: none element, and no longer are,
-        // our children need to be restyled because they're unstyled.
-        //
-        // NOTE(emilio): Gecko has the special-case of -moz-binding, but
-        // that gets handled on the frame constructor when processing
-        // the reframe, so no need to handle that here.
-        if old_display == Display::None && old_display != new_display {
-            return ChildCascadeRequirement::MustCascadeChildren;
-        }
-
-        // Blockification of children may depend on our display value,
-        // so we need to actually do the recascade. We could potentially
-        // do better, but it doesn't seem worth it.
-        if old_display.is_item_container() != new_display.is_item_container() {
-            return ChildCascadeRequirement::MustCascadeChildren;
-        }
-
-        // Line break suppression may also be affected if the display
-        // type changes from ruby to non-ruby.
-        #[cfg(feature = "gecko")]
-        {
-            if old_display.is_ruby_type() != new_display.is_ruby_type() {
+        if old_display != new_display {
+            // If we used to be a display: none element, and no longer are, our
+            // children need to be restyled because they're unstyled.
+            if old_display == Display::None {
                 return ChildCascadeRequirement::MustCascadeChildren;
+            }
+            // Blockification of children may depend on our display value,
+            // so we need to actually do the recascade. We could potentially
+            // do better, but it doesn't seem worth it.
+            if old_display.is_item_container() != new_display.is_item_container() {
+                return ChildCascadeRequirement::MustCascadeChildren;
+            }
+            // We may also need to blockify and un-blockify descendants if our
+            // display goes from / to display: contents, since the "layout
+            // parent style" changes.
+            if old_display.is_contents() || new_display.is_contents() {
+                return ChildCascadeRequirement::MustCascadeChildren;
+            }
+            // Line break suppression may also be affected if the display
+            // type changes from ruby to non-ruby.
+            #[cfg(feature = "gecko")]
+            {
+                if old_display.is_ruby_type() != new_display.is_ruby_type() {
+                    return ChildCascadeRequirement::MustCascadeChildren;
+                }
             }
         }
 
@@ -582,7 +599,7 @@ trait PrivateMatchMethods: TElement {
         context: &SharedStyleContext,
         style: &mut Arc<ComputedValues>,
         possibly_expired_animations: &mut Vec<crate::animation::PropertyAnimation>,
-        font_metrics: &crate::font_metrics::FontMetricsProvider,
+        font_metrics: &dyn crate::font_metrics::FontMetricsProvider,
     ) {
         use crate::animation::{self, Animation, AnimationUpdate};
         use crate::dom::TNode;
@@ -718,7 +735,7 @@ pub trait MatchMethods: TElement {
                 let device = context.shared.stylist.device();
 
                 // Needed for the "inherit from body" quirk.
-                let text_color = new_primary_style.get_color().clone_color();
+                let text_color = new_primary_style.get_inherited_text().clone_color();
                 device.set_body_text_color(text_color);
             }
         }

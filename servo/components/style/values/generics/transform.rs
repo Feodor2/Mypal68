@@ -12,7 +12,8 @@ use crate::values::specified::length::LengthPercentage as SpecifiedLengthPercent
 use crate::values::{computed, CSSFloat};
 use crate::Zero;
 use app_units::Au;
-use euclid::{self, Rect, Transform3D};
+use euclid;
+use euclid::default::{Rect, Transform3D};
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
 
@@ -150,7 +151,6 @@ fn is_same<N: PartialEq>(x: &N, y: &N) -> bool {
 )]
 #[repr(C, u8)]
 /// A single operation in the list of a `transform` value
-/// cbindgen:derive-tagged-enum-copy-constructor=true
 pub enum GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>
 where
     Angle: Zero,
@@ -240,16 +240,24 @@ where
     #[allow(missing_docs)]
     #[css(comma, function = "interpolatematrix")]
     InterpolateMatrix {
-        from_list: GenericTransform<GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>>,
-        to_list: GenericTransform<GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>>,
+        from_list: GenericTransform<
+            GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>,
+        >,
+        to_list: GenericTransform<
+            GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>,
+        >,
         progress: computed::Percentage,
     },
     /// A intermediate type for accumulation of mismatched transform lists.
     #[allow(missing_docs)]
     #[css(comma, function = "accumulatematrix")]
     AccumulateMatrix {
-        from_list: GenericTransform<GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>>,
-        to_list: GenericTransform<GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>>,
+        from_list: GenericTransform<
+            GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>,
+        >,
+        to_list: GenericTransform<
+            GenericTransformOperation<Angle, Number, Length, Integer, LengthPercentage>,
+        >,
         count: Integer,
     },
 }
@@ -534,6 +542,15 @@ impl<T: ToMatrix> Transform<T> {
             )
         };
 
+        let (m, is_3d) = self.to_transform_3d_matrix_f64(reference_box)?;
+        Ok((cast_3d_transform(m), is_3d))
+    }
+
+    /// Same as Transform::to_transform_3d_matrix but a f64 version.
+    pub fn to_transform_3d_matrix_f64(
+        &self,
+        reference_box: Option<&Rect<Au>>,
+    ) -> Result<(Transform3D<f64>, bool), ()> {
         // We intentionally use Transform3D<f64> during computation to avoid error propagation
         // because using f32 to compute triangle functions (e.g. in create_rotation()) is not
         // accurate enough. In Gecko, we also use "double" to compute the triangle functions.
@@ -545,10 +562,10 @@ impl<T: ToMatrix> Transform<T> {
         for operation in &*self.0 {
             let matrix = operation.to_3d_matrix(reference_box)?;
             contain_3d |= operation.is_3d();
-            transform = transform.pre_mul(&matrix);
+            transform = transform.pre_transform(&matrix);
         }
 
-        Ok((cast_3d_transform(transform), contain_3d))
+        Ok((transform, contain_3d))
     }
 }
 

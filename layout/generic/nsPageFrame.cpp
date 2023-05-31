@@ -14,8 +14,8 @@
 #include "nsGkAtoms.h"
 #include "nsPageContentFrame.h"
 #include "nsDisplayList.h"
-#include "nsSimplePageSequenceFrame.h"  // for nsSharedPageData
-#include "nsTextFormatter.h"  // for page number localization formatting
+#include "nsPageSequenceFrame.h"  // for nsSharedPageData
+#include "nsTextFormatter.h"      // for page number localization formatting
 #include "nsBidiUtils.h"
 #include "nsIPrintSettings.h"
 
@@ -131,12 +131,12 @@ void nsPageFrame::Reflow(nsPresContext* aPresContext,
     nscoord yc = mPageContentMargin.top;
 
     // Get the child's desired size
-    ReflowChild(frame, aPresContext, aDesiredSize, kidReflowInput, xc, yc, 0,
-                aStatus);
+    ReflowChild(frame, aPresContext, aDesiredSize, kidReflowInput, xc, yc,
+                ReflowChildFlags::Default, aStatus);
 
     // Place and size the child
     FinishReflowChild(frame, aPresContext, aDesiredSize, &kidReflowInput, xc,
-                      yc, 0);
+                      yc, ReflowChildFlags::Default);
 
     NS_ASSERTION(!aStatus.IsFullyComplete() || !frame->GetNextInFlow(),
                  "bad child flow list");
@@ -540,7 +540,7 @@ void nsPageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
         nsRect(aBuilder->ToReferenceFrame(child), child->GetSize());
 
     PresContext()->GetPresShell()->AddCanvasBackgroundColorItem(
-        *aBuilder, content, child, backgroundRect, NS_RGBA(0, 0, 0, 0));
+        aBuilder, &content, child, backgroundRect, NS_RGBA(0, 0, 0, 0));
   }
 
   content.AppendNewToTop<nsDisplayTransform>(aBuilder, child, &content,

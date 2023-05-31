@@ -16,10 +16,9 @@
 #include "mozilla/ServoCSSParser.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/ServoUtils.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/dom/Document.h"
 #include "nsStyleUtil.h"
-#include "mozilla/net/ReferrerPolicy.h"
 
 namespace mozilla {
 namespace dom {
@@ -313,8 +312,7 @@ void FontFace::SetDisplay(const nsAString& aValue, ErrorResult& aRv) {
   }
 }
 
-void FontFace::DescriptorUpdated()
-{
+void FontFace::DescriptorUpdated() {
   // If we haven't yet initialized mUserFontEntry, no need to do anything here;
   // we'll respect the updated descriptor when the time comes to create it.
   if (!mUserFontEntry) {
@@ -324,7 +322,7 @@ void FontFace::DescriptorUpdated()
   // Behind the scenes, this will actually update the existing entry and return
   // it, rather than create a new one.
   RefPtr<gfxUserFontEntry> newEntry =
-    mFontFaceSet->FindOrCreateUserFontEntryFromFontFace(this);
+      mFontFaceSet->FindOrCreateUserFontEntryFromFontFace(this);
   SetUserFontEntry(newEntry);
 
   if (mInFontFaceSet) {
@@ -477,10 +475,12 @@ already_AddRefed<URLExtraData> FontFace::GetURLExtraData() const {
   nsCOMPtr<nsIURI> docURI = window->GetDocumentURI();
   nsCOMPtr<nsIURI> base = window->GetDocBaseURI();
 
-  // We pass RP_Unset when creating URLExtraData object here because it's not
+  // We pass RP_Unset when creating ReferrerInfo object here because it's not
   // going to result to change referer policy in a resource request.
-  RefPtr<URLExtraData> url =
-      new URLExtraData(base, docURI, principal, net::RP_Unset);
+  nsCOMPtr<nsIReferrerInfo> referrerInfo =
+      new ReferrerInfo(docURI, ReferrerPolicy::_empty);
+
+  RefPtr<URLExtraData> url = new URLExtraData(base, referrerInfo, principal);
   return url.forget();
 }
 
@@ -625,7 +625,7 @@ Maybe<StyleComputedFontStretchRange> FontFace::GetFontStretch() const {
 }
 
 Maybe<StyleComputedFontStyleDescriptor> FontFace::GetFontStyle() const {
-  StyleComputedFontStyleDescriptor descriptor;
+  auto descriptor = StyleComputedFontStyleDescriptor::Normal();
   if (!Servo_FontFaceRule_GetFontStyle(GetData(), &descriptor)) {
     return Nothing();
   }

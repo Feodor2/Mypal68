@@ -8,7 +8,6 @@
 #include "mozilla/css/SheetParsingMode.h"
 #include "mozilla/dom/CSSStyleSheetBinding.h"
 #include "mozilla/dom/SRIMetadata.h"
-#include "mozilla/net/ReferrerPolicy.h"
 #include "mozilla/CORSMode.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
@@ -25,6 +24,7 @@ class nsINode;
 class nsIPrincipal;
 struct nsLayoutStylesheetCacheShm;
 struct RawServoSharedMemoryBuilder;
+class nsIReferrerInfo;
 
 namespace mozilla {
 
@@ -87,7 +87,6 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
  public:
   StyleSheet(css::SheetParsingMode aParsingMode, CORSMode aCORSMode,
-             net::ReferrerPolicy aReferrerPolicy,
              const dom::SRIMetadata& aIntegrity);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -98,11 +97,11 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   bool HasRules() const;
 
-  // Parses a stylesheet. The aLoadData argument corresponds to the
-  // SheetLoadData for this stylesheet. It may be null in some cases.
-  RefPtr<StyleSheetParsePromise> ParseSheet(css::Loader* aLoader,
+  // Parses a stylesheet. The load data argument corresponds to the
+  // SheetLoadData for this stylesheet.
+  RefPtr<StyleSheetParsePromise> ParseSheet(css::Loader&,
                                             const nsACString& aBytes,
-                                            css::SheetLoadData* aLoadData);
+                                            css::SheetLoadData&);
 
   // Common code that needs to be called after servo finishes parsing. This is
   // shared between the parallel and sequential paths.
@@ -111,12 +110,14 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   // Similar to the above, but guarantees that parsing will be performed
   // synchronously.
+  //
+  // The load data may be null sometimes.
   void ParseSheetSync(
       css::Loader* aLoader, const nsACString& aBytes,
       css::SheetLoadData* aLoadData, uint32_t aLineNumber,
       css::LoaderReusableStyleSheets* aReusableSheets = nullptr);
 
-  nsresult ReparseSheet(const nsAString& aInput);
+  nsresult ReparseSheet(const nsACString& aInput);
 
   const RawServoStyleSheetContents* RawContents() const {
     return Inner().mContents;
@@ -130,7 +131,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   URLExtraData* URLData() const { return Inner().mURLData; }
 
   // nsICSSLoaderObserver interface
-  NS_IMETHOD StyleSheetLoaded(StyleSheet* aSheet, bool aWasAlternate,
+  NS_IMETHOD StyleSheetLoaded(StyleSheet* aSheet, bool aWasDeferred,
                               nsresult aStatus) final;
 
   // Internal GetCssRules methods which do not have security check and
@@ -138,7 +139,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   ServoCSSRuleList* GetCssRulesInternal();
 
   // Returns the stylesheet's Servo origin as a StyleOrigin value.
-  mozilla::StyleOrigin GetOrigin() const;
+  StyleOrigin GetOrigin() const;
 
   /**
    * The different changes that a stylesheet may go through.
@@ -158,7 +159,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   void SetOwningNode(nsINode* aOwningNode) { mOwningNode = aOwningNode; }
 
   css::SheetParsingMode ParsingMode() const { return mParsingMode; }
-  mozilla::dom::CSSStyleSheetParsingMode ParsingModeDOM();
+  dom::CSSStyleSheetParsingMode ParsingModeDOM();
 
   /**
    * Whether the sheet is complete.
@@ -302,13 +303,14 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // Get this style sheet's CORS mode
   CORSMode GetCORSMode() const { return Inner().mCORSMode; }
 
-  // Set style sheet's Referrer Policy
-  void SetReferrerPolicy(net::ReferrerPolicy aReferrerPolicy);
+  // Get this style sheet's ReferrerInfo
+  nsIReferrerInfo* GetReferrerInfo() const { return Inner().mReferrerInfo; }
 
-  // Get this style sheet's Referrer Policy
-  net::ReferrerPolicy GetReferrerPolicy() const {
-    return Inner().mReferrerPolicy;
+  // Set this style sheet's ReferrerInfo
+  void SetReferrerInfo(nsIReferrerInfo* aReferrerInfo) {
+    Inner().mReferrerInfo = aReferrerInfo;
   }
+
   // Get this style sheet's integrity metadata
   void GetIntegrity(dom::SRIMetadata& aResult) const {
     aResult = Inner().mIntegrity;
@@ -438,6 +440,9 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
   // Called when a rule is added to the sheet from CSSOM.
   void RuleRemoved(css::Rule&);
 
+  // Called when a stylesheet is cloned.
+  void StyleSheetCloned(StyleSheet&);
+
   void ApplicableStateChanged(bool aApplicable);
 
   struct ChildSheetListBuilder {
@@ -515,7 +520,7 @@ class StyleSheet final : public nsICSSLoaderObserver, public nsWrapperCache {
 
   // Make StyleSheetInfo and subclasses into friends so they can use
   // ChildSheetListBuilder.
-  friend struct mozilla::StyleSheetInfo;
+  friend struct StyleSheetInfo;
 };
 
 }  // namespace mozilla

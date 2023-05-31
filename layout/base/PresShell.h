@@ -14,6 +14,7 @@
 #include "GeckoProfiler.h"
 #include "TouchManager.h"
 #include "Units.h"
+#include "Visibility.h"
 #include "ZoomConstraintsClient.h"
 #include "gfxPoint.h"
 #include "mozilla/ArenaObjectID.h"
@@ -40,7 +41,6 @@
 #include "nsFrameState.h"
 #include "nsHashKeys.h"
 #include "nsIContent.h"
-#include "nsIImageLoadingContent.h"
 #include "nsIObserver.h"
 #include "nsISelectionController.h"
 #include "nsIWidget.h"
@@ -78,7 +78,7 @@ class nsIDocShell;
 class nsIFrame;
 class nsILayoutHistoryState;
 class nsINode;
-class nsIPageSequenceFrame;
+class nsPageSequenceFrame;
 class nsIReflowCallback;
 class nsIScrollableFrame;
 class nsITimer;
@@ -349,15 +349,30 @@ class PresShell final : public nsStubDocumentObserver,
       ResizeReflowOptions aOptions = ResizeReflowOptions::NoOption);
 
   /**
-   * Returns true if the platform/pref or docshell require a meta viewport.
+   * Returns true if this document has a potentially zoomable viewport,
+   * allowing for its layout and visual viewports to diverge.
    */
-  bool GetIsViewportOverridden() { return (mMobileViewportManager != nullptr); }
+  bool GetIsViewportOverridden() const {
+    return (mMobileViewportManager != nullptr);
+  }
 
   /**
-   * Note that the assumptions that determine the need for a meta viewport
-   * may have changed.
+   * Note that the assumptions that determine whether we have a potentially
+   * zoomable viewport may have changed.
    */
   void UpdateViewportOverridden(bool aAfterInitialization);
+
+  /**
+   * Returns true if this document uses mobile viewport sizing (including
+   * processing of <meta name="viewport"> tags).
+   *
+   * Note that having a MobileViewportManager does not necessarily mean using
+   * mobile viewport sizing, as with desktop zooming we can have a
+   * MobileViewportManager on desktop, but we only want to do mobile viewport
+   * sizing on mobile. (TODO: Rename MobileViewportManager to reflect its more
+   * general role.)
+   */
+  bool UsesMobileViewportSizing() const;
 
   /**
    * Get the MobileViewportManager used to manage the document's mobile
@@ -436,7 +451,7 @@ class PresShell final : public nsStubDocumentObserver,
    * Returns the page sequence frame associated with the frame hierarchy.
    * Returns nullptr if not a paginated view.
    */
-  nsIPageSequenceFrame* GetPageSequenceFrame() const;
+  nsPageSequenceFrame* GetPageSequenceFrame() const;
 
   /**
    * Returns the canvas frame associated with the frame hierarchy.
@@ -900,8 +915,8 @@ class PresShell final : public nsStubDocumentObserver,
    * bounds aBounds representing the dark grey background behind the page of a
    * print preview presentation.
    */
-  void AddPrintPreviewBackgroundItem(nsDisplayListBuilder& aBuilder,
-                                     nsDisplayList& aList, nsIFrame* aFrame,
+  void AddPrintPreviewBackgroundItem(nsDisplayListBuilder* aBuilder,
+                                     nsDisplayList* aList, nsIFrame* aFrame,
                                      const nsRect& aBounds);
 
   /**
@@ -1174,7 +1189,7 @@ class PresShell final : public nsStubDocumentObserver,
   void SetKeyPressEventModel(uint16_t aKeyPressEventModel) {
     mForceUseLegacyKeyCodeAndCharCodeValues |=
         aKeyPressEventModel ==
-        dom::HTMLDocument_Binding::KEYPRESS_EVENT_MODEL_SPLIT;
+        dom::Document_Binding::KEYPRESS_EVENT_MODEL_SPLIT;
   }
 
   bool AddRefreshObserver(nsARefreshObserver* aObserver, FlushType aFlushType);
@@ -1547,7 +1562,7 @@ class PresShell final : public nsStubDocumentObserver,
    * LayoutUseContainersForRootFrame has built the scrolling ContainerLayer.
    */
   void AddCanvasBackgroundColorItem(
-      nsDisplayListBuilder& aBuilder, nsDisplayList& aList, nsIFrame* aFrame,
+      nsDisplayListBuilder* aBuilder, nsDisplayList* aList, nsIFrame* aFrame,
       const nsRect& aBounds, nscolor aBackstopColor = NS_RGBA(0, 0, 0, 0),
       AddCanvasBackgroundColorFlags aFlags =
           AddCanvasBackgroundColorFlags::None);
@@ -2567,10 +2582,6 @@ class PresShell final : public nsStubDocumentObserver,
      *
      * @param aEvent                    The handling event.
      * @param aEventStatus              [in/out] The status of aEvent.
-     * @param aIsUserInteraction        [out] Set to true if the event is user
-     *                                  interaction.  I.e., enough obvious input
-     *                                  to allow to open popup, etc.  Otherwise,
-     *                                  set to false.
      * @param aTouchIsNew               [out] Set to true if the event is an
      *                                  eTouchMove event and it represents new
      *                                  touch.  Otherwise, set to false.
@@ -2579,8 +2590,7 @@ class PresShell final : public nsStubDocumentObserver,
      */
     MOZ_CAN_RUN_SCRIPT
     bool PrepareToDispatchEvent(WidgetEvent* aEvent,
-                                nsEventStatus* aEventStatus,
-                                bool* aIsUserInteraction, bool* aTouchIsNew);
+                                nsEventStatus* aEventStatus, bool* aTouchIsNew);
 
     /**
      * MaybeHandleKeyboardEventBeforeDispatch() may handle aKeyboardEvent

@@ -20,8 +20,6 @@
 #include "nsBoxFrame.h"
 #include "nsMenuParent.h"
 
-#include "nsITimer.h"
-
 #include "Units.h"
 
 class nsIWidget;
@@ -449,7 +447,7 @@ class nsMenuPopupFrame final : public nsBoxFrame,
   nsPopupLevel PopupLevel(bool aIsNoAutoHide) const;
 
   // redefine to tell the box system not to move the views.
-  virtual uint32_t GetXULLayoutFlags() override;
+  ReflowChildFlags GetXULLayoutFlags() override;
 
   void InitPositionFromAnchorAlign(const nsAString& aAnchor,
                                    const nsAString& aAlign);

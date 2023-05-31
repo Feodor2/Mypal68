@@ -153,9 +153,7 @@ load 1247865-1.html
 load 1250791.html
 load 1264396-1.html
 load 1264949.html
-# The following test relies on -webkit-text-fill-color being behind the
-# layout.css.prefixes.webkit pref
-pref(layout.css.prefixes.webkit,false) load 1265611-1.html
+load 1265611-1.html
 load 1270795.html
 load 1275026.html
 load 1278463-1.html
@@ -306,3 +304,11 @@ load 1533891.html
 pref(gfx.omta.background-color,true) load 1533968.html
 load 1541126.html
 load 1545177.html
+skip-if(geckoview&&webrender) skip-if(Android) load 1546255.html # Bug 1563020 for GV+WR & Bug 1553971
+pref(layout.css.resizeobserver.enabled,true) load 1552911.html
+load 1562361.html
+load 1566684.html
+load 1579788.html
+load 1581579.html
+load 1599286.html
+pref(dom.paintWorklet.enabled,true) pref(dom.worklet.enabled,true) load 1593766.html

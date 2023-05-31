@@ -171,9 +171,9 @@ class nsTreeBodyFrame final : public nsLeafBoxFrame,
 
   struct ScrollParts {
     nsScrollbarFrame* mVScrollbar;
-    RefPtr<Element> mVScrollbarContent;
+    RefPtr<mozilla::dom::Element> mVScrollbarContent;
     nsScrollbarFrame* mHScrollbar;
-    RefPtr<Element> mHScrollbarContent;
+    RefPtr<mozilla::dom::Element> mHScrollbarContent;
     nsIFrame* mColumnsFrame;
     nsIScrollableFrame* mColumnsScrollFrame;
   };

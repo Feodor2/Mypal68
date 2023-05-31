@@ -437,7 +437,9 @@ bool DisplayItemClip::ComputeRegionInClips(const DisplayItemClip* aOldClip,
 }
 
 void DisplayItemClip::MoveBy(const nsPoint& aPoint) {
-  if (!mHaveClipRect) return;
+  if (!mHaveClipRect) {
+    return;
+  }
   mClipRect += aPoint;
   for (uint32_t i = 0; i < mRoundedClipRects.Length(); ++i) {
     mRoundedClipRects[i].mRect += aPoint;

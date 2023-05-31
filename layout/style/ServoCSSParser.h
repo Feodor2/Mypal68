@@ -44,7 +44,7 @@ class ServoCSSParser {
    *
    * This includes Mozilla-specific keywords such as -moz-default-color.
    */
-  static bool IsValidCSSColor(const nsAString& aValue);
+  static bool IsValidCSSColor(const nsACString& aValue);
 
   /**
    * Computes an nscolor from the given CSS <color> value.
@@ -62,7 +62,7 @@ class ServoCSSParser {
    * @return Whether aValue was successfully parsed and aResultColor was set.
    */
   static bool ComputeColor(ServoStyleSet* aStyleSet, nscolor aCurrentColor,
-                           const nsAString& aValue, nscolor* aResultColor,
+                           const nsACString& aValue, nscolor* aResultColor,
                            bool* aWasCurrentColor = nullptr,
                            css::Loader* aLoader = nullptr);
 
@@ -103,7 +103,7 @@ class ServoCSSParser {
    * @param aResult The output matrix. (output)
    * @return Whether the value was successfully parsed.
    */
-  static bool ParseTransformIntoMatrix(const nsAString& aValue,
+  static bool ParseTransformIntoMatrix(const nsACString& aValue,
                                        bool& aContains3DTransform,
                                        gfx::Matrix4x4& aResult);
 

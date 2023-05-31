@@ -16,6 +16,7 @@
 #include "mozilla/dom/AnimationEffect.h"
 #include "mozilla/dom/DocumentTimeline.h"
 #include "mozilla/dom/KeyframeEffect.h"
+#include "mozilla/dom/MutationObservers.h"
 
 #include "nsPresContext.h"
 #include "nsPresContextInlines.h"
@@ -35,6 +36,7 @@ using mozilla::dom::AnimationEffect;
 using mozilla::dom::AnimationPlayState;
 using mozilla::dom::CSSAnimation;
 using mozilla::dom::KeyframeEffect;
+using mozilla::dom::MutationObservers;
 
 typedef mozilla::ComputedTiming::AnimationPhase AnimationPhase;
 
@@ -414,7 +416,7 @@ static void UpdateOldAnimationPropertiesWithNew(
   // animation to become irrelevant so only add a changed record if
   // the animation is still relevant.
   if (animationChanged && aOld.IsRelevant()) {
-    nsNodeUtils::AnimationChanged(&aOld);
+    MutationObservers::NotifyAnimationChanged(&aOld);
   }
 }
 

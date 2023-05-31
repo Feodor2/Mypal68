@@ -36,6 +36,8 @@ struct OperatingSystemVersionInfo {
 
 // Os version identities used in the -moz-os-version media query.
 const OperatingSystemVersionInfo kOsVersionStrings[] = {
+    {LookAndFeel::eOperatingSystemVersion_WindowsXP, nsGkAtoms::windows_xp},
+    {LookAndFeel::eOperatingSystemVersion_WindowsVista, nsGkAtoms::windows_vista},
     {LookAndFeel::eOperatingSystemVersion_Windows7, nsGkAtoms::windows_win7},
     {LookAndFeel::eOperatingSystemVersion_Windows8, nsGkAtoms::windows_win8},
     {LookAndFeel::eOperatingSystemVersion_Windows10, nsGkAtoms::windows_win10}};
@@ -164,7 +166,7 @@ float Gecko_MediaFeatures_GetResolution(const Document* aDocument) {
 
 static const Document* TopDocument(const Document* aDocument) {
   const Document* current = aDocument;
-  while (const Document* parent = current->GetParentDocument()) {
+  while (const Document* parent = current->GetInProcessParentDocument()) {
     current = parent;
   }
   return current;

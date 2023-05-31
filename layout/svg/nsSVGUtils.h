@@ -32,7 +32,6 @@ class nsIContent;
 
 class nsIFrame;
 class nsPresContext;
-class nsStyleSVGPaint;
 class nsSVGDisplayContainerFrame;
 class nsSVGOuterSVGFrame;
 class nsTextFrame;
@@ -163,8 +162,6 @@ class nsSVGUtils {
   typedef mozilla::SVGContextPaintImpl SVGContextPaintImpl;
   typedef mozilla::SVGGeometryFrame SVGGeometryFrame;
   typedef mozilla::image::imgDrawingParams imgDrawingParams;
-
-  static void Init();
 
   NS_DECLARE_FRAME_PROPERTY_DELETABLE(ObjectBoundingBoxProperty, gfxRect)
 
@@ -473,8 +470,8 @@ class nsSVGUtils {
   }
 
   static nscolor GetFallbackOrPaintColor(
-      mozilla::ComputedStyle* aComputedStyle,
-      nsStyleSVGPaint nsStyleSVG::*aFillOrStroke);
+      const mozilla::ComputedStyle&,
+      mozilla::StyleSVGPaint nsStyleSVG::*aFillOrStroke);
 
   static void MakeFillPatternFor(nsIFrame* aFrame, gfxContext* aContext,
                                  GeneralPattern* aOutPattern,

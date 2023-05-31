@@ -9,13 +9,9 @@
 #include "nsDocShell.h"
 #include "nsGenericHTMLElement.h"
 #include "nsGkAtoms.h"
-#include "nsIComponentManager.h"
-#include "nsIComponentRegistrar.h"
 #include "nsIContentViewer.h"
-#include "nsICategoryManager.h"
 #include "nsIDocumentLoaderFactory.h"
 #include "mozilla/dom/Document.h"
-#include "nsIURL.h"
 #include "nsNodeInfoManager.h"
 #include "nsIScriptSecurityManager.h"
 #include "nsString.h"
@@ -33,7 +29,6 @@
 #endif
 
 // plugins
-#include "nsIPluginHost.h"
 #include "nsPluginHost.h"
 
 // Factory code for creating variations on html documents
@@ -260,7 +255,7 @@ nsContentDLF::CreateInstanceForDocument(nsISupports* aContainer,
 /* static */
 already_AddRefed<Document> nsContentDLF::CreateBlankDocument(
     nsILoadGroup* aLoadGroup, nsIPrincipal* aPrincipal,
-    nsDocShell* aContainer) {
+    nsIPrincipal* aStoragePrincipal, nsDocShell* aContainer) {
   // create a new blank HTML document
   RefPtr<Document> blankDoc;
   mozilla::Unused << NS_NewHTMLDocument(getter_AddRefs(blankDoc));
@@ -275,7 +270,7 @@ already_AddRefed<Document> nsContentDLF::CreateBlankDocument(
   if (!uri) {
     return nullptr;
   }
-  blankDoc->ResetToURI(uri, aLoadGroup, aPrincipal, aPrincipal);
+  blankDoc->ResetToURI(uri, aLoadGroup, aPrincipal, aStoragePrincipal);
   blankDoc->SetContainer(aContainer);
 
   // add some simple content structure

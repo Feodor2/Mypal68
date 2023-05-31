@@ -20,7 +20,7 @@ class StreamLoader : public nsIStreamListener {
   NS_DECL_NSIREQUESTOBSERVER
   NS_DECL_NSISTREAMLISTENER
 
-  explicit StreamLoader(mozilla::css::SheetLoadData* aSheetLoadData);
+  explicit StreamLoader(SheetLoadData&);
 
  private:
   virtual ~StreamLoader();
@@ -33,7 +33,7 @@ class StreamLoader : public nsIStreamListener {
 
   void HandleBOM();
 
-  RefPtr<mozilla::css::SheetLoadData> mSheetLoadData;
+  RefPtr<SheetLoadData> mSheetLoadData;
   nsresult mStatus;
   Maybe<const Encoding*> mEncodingFromBOM;
 

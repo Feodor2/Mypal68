@@ -174,9 +174,9 @@ void nsTableColGroupFrame::AppendFrames(ChildListID aListID,
   InsertColsReflow(GetStartColumnIndex() + mColCount, newFrames);
 }
 
-void nsTableColGroupFrame::InsertFrames(ChildListID aListID,
-                                        nsIFrame* aPrevFrame,
-                                        nsFrameList& aFrameList) {
+void nsTableColGroupFrame::InsertFrames(
+    ChildListID aListID, nsIFrame* aPrevFrame,
+    const nsLineList::iterator* aPrevFrameLine, nsFrameList& aFrameList) {
   NS_ASSERTION(aListID == kPrincipalList, "unexpected child list");
   NS_ASSERTION(!aPrevFrame || aPrevFrame->GetParent() == this,
                "inserting after sibling frame with different parent");
@@ -340,9 +340,10 @@ void nsTableColGroupFrame::Reflow(nsPresContext* aPresContext,
                                LogicalSize(kidFrame->GetWritingMode()));
 
     nsReflowStatus status;
-    ReflowChild(kidFrame, aPresContext, kidSize, kidReflowInput, 0, 0, 0,
-                status);
-    FinishReflowChild(kidFrame, aPresContext, kidSize, nullptr, 0, 0, 0);
+    ReflowChild(kidFrame, aPresContext, kidSize, kidReflowInput, 0, 0,
+                ReflowChildFlags::Default, status);
+    FinishReflowChild(kidFrame, aPresContext, kidSize, &kidReflowInput, 0, 0,
+                      ReflowChildFlags::Default);
   }
 
   aDesiredSize.ClearSize();
@@ -377,7 +378,7 @@ nsTableColFrame* nsTableColGroupFrame::GetNextColumn(nsIFrame* aChildFrame) {
   return result;
 }
 
-int32_t nsTableColGroupFrame::GetSpan() { return StyleTable()->mSpan; }
+int32_t nsTableColGroupFrame::GetSpan() { return StyleTable()->mXSpan; }
 
 void nsTableColGroupFrame::SetContinuousBCBorderWidth(LogicalSide aForSide,
                                                       BCPixelSize aPixelValue) {

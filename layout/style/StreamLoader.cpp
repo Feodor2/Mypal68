@@ -4,18 +4,19 @@
 
 #include "mozilla/css/StreamLoader.h"
 
-#include "mozilla/IntegerTypeTraits.h"
 #include "mozilla/Encoding.h"
 #include "nsIChannel.h"
 #include "nsIInputStream.h"
+
+#include <limits>
 
 using namespace mozilla;
 
 namespace mozilla {
 namespace css {
 
-StreamLoader::StreamLoader(mozilla::css::SheetLoadData* aSheetLoadData)
-    : mSheetLoadData(aSheetLoadData), mStatus(NS_OK) {}
+StreamLoader::StreamLoader(SheetLoadData& aSheetLoadData)
+    : mSheetLoadData(&aSheetLoadData), mStatus(NS_OK) {}
 
 StreamLoader::~StreamLoader() {}
 
@@ -33,10 +34,10 @@ StreamLoader::OnStartRequest(nsIRequest* aRequest) {
     int64_t length;
     nsresult rv = channel->GetContentLength(&length);
     if (NS_SUCCEEDED(rv) && length > 0) {
-      if (length > MaxValue<nsACString::size_type>::value) {
+      if (length > std::numeric_limits<nsACString::size_type>::max()) {
         return (mStatus = NS_ERROR_OUT_OF_MEMORY);
       }
-      if (!mBytes.SetCapacity(length, mozilla::fallible_t())) {
+      if (!mBytes.SetCapacity(length, fallible)) {
         return (mStatus = NS_ERROR_OUT_OF_MEMORY);
       }
     }
@@ -104,7 +105,7 @@ StreamLoader::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
   // For reasons I don't understand, factoring the below lines into
   // a method on SheetLoadData resulted in a linker error. Hence,
   // accessing fields of mSheetLoadData from here.
-  mSheetLoadData->mLoader->ParseSheet(utf8String, mSheetLoadData,
+  mSheetLoadData->mLoader->ParseSheet(utf8String, *mSheetLoadData,
                                       Loader::AllowAsyncParse::Yes);
   return NS_OK;
 }
@@ -160,7 +161,7 @@ nsresult StreamLoader::WriteSegmentFun(nsIInputStream*, void* aClosure,
     }
   }
 
-  if (!self->mBytes.Append(aSegment, aCount, mozilla::fallible_t())) {
+  if (!self->mBytes.Append(aSegment, aCount, fallible)) {
     self->mBytes.Truncate();
     return (self->mStatus = NS_ERROR_OUT_OF_MEMORY);
   }

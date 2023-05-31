@@ -8,7 +8,7 @@
 
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
-#include "gfxPrefs.h"
+
 #include "gfxUtils.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathHelpers.h"
@@ -686,7 +686,7 @@ Maybe<BulletRenderer> nsBulletFrame::CreateBulletRenderer(
     }
   }
 
-  nscolor color = nsLayoutUtils::GetColor(this, &nsStyleColor::mColor);
+  nscolor color = nsLayoutUtils::GetColor(this, &nsStyleText::mColor);
 
   DrawTarget* drawTarget = aRenderingContext.GetDrawTarget();
   int32_t appUnitsPerDevPixel = PresContext()->AppUnitsPerDevPixel();
@@ -1092,16 +1092,6 @@ nsBulletFrame::Notify(imgIRequest* aRequest, int32_t aType,
     }
 
     InvalidateFrame();
-  }
-
-  if (aType == imgINotificationObserver::DECODE_COMPLETE) {
-    if (Document* parent = GetOurCurrentDoc()) {
-      nsCOMPtr<imgIContainer> container;
-      aRequest->GetImage(getter_AddRefs(container));
-      if (container) {
-        container->PropagateUseCounters(parent);
-      }
-    }
   }
 
   return NS_OK;

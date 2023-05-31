@@ -7,11 +7,12 @@
 #include "AccessibleCaretLogger.h"
 #include "AccessibleCaretManager.h"
 #include "Layers.h"
-#include "gfxPrefs.h"
+
 #include "mozilla/AutoRestore.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
+#include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/dom/Document.h"
@@ -354,7 +355,7 @@ void AccessibleCaretEventHub::Init() {
     curDocShell->AddWeakScrollObserver(this);
 
     nsCOMPtr<nsIDocShellTreeItem> tmp;
-    curDocShell->GetSameTypeParent(getter_AddRefs(tmp));
+    curDocShell->GetInProcessSameTypeParent(getter_AddRefs(tmp));
     curDocShell = do_QueryInterface(tmp);
   } while (curDocShell);
 
@@ -380,7 +381,7 @@ void AccessibleCaretEventHub::Terminate() {
     curDocShell->RemoveWeakScrollObserver(this);
 
     nsCOMPtr<nsIDocShellTreeItem> tmp;
-    curDocShell->GetSameTypeParent(getter_AddRefs(tmp));
+    curDocShell->GetInProcessSameTypeParent(getter_AddRefs(tmp));
     curDocShell = do_QueryInterface(tmp);
   }
 
@@ -561,7 +562,7 @@ void AccessibleCaretEventHub::LaunchLongTapInjector() {
     return;
   }
 
-  int32_t longTapDelay = gfxPrefs::UiClickHoldContextMenusDelay();
+  int32_t longTapDelay = StaticPrefs::ui_click_hold_context_menus_delay();
   mLongTapInjectorTimer->InitWithNamedFuncCallback(
       FireLongTap, this, longTapDelay, nsITimer::TYPE_ONE_SHOT,
       "AccessibleCaretEventHub::LaunchLongTapInjector");

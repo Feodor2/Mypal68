@@ -11,7 +11,6 @@
 #include "mozilla/dom/MutationEventBinding.h"
 #include "HTMLInputElement.h"
 #include "ICUUtils.h"
-#include "nsIFocusManager.h"
 #include "nsFocusManager.h"
 #include "nsFontMetrics.h"
 #include "nsCheckboxRadioFrame.h"
@@ -127,7 +126,7 @@ void nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
       aReflowInput.ComputedLogicalBorderPadding().IStartEnd(myWM);
 
   nscoord borderBoxBSize;
-  if (contentBoxBSize != NS_INTRINSICSIZE) {
+  if (contentBoxBSize != NS_UNCONSTRAINEDSIZE) {
     borderBoxBSize =
         contentBoxBSize +
         aReflowInput.ComputedLogicalBorderPadding().BStartEnd(myWM);
@@ -136,7 +135,7 @@ void nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
   nsIFrame* outerWrapperFrame = mOuterWrapper->GetPrimaryFrame();
 
   if (!outerWrapperFrame) {  // display:none?
-    if (contentBoxBSize == NS_INTRINSICSIZE) {
+    if (contentBoxBSize == NS_UNCONSTRAINEDSIZE) {
       contentBoxBSize = 0;
       borderBoxBSize =
           aReflowInput.ComputedLogicalBorderPadding().BStartEnd(myWM);
@@ -170,8 +169,8 @@ void nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
     // will be fixed later.
     const nsSize dummyContainerSize;
     ReflowChild(outerWrapperFrame, aPresContext, wrappersDesiredSize,
-                wrapperReflowInput, myWM, wrapperOffset, dummyContainerSize, 0,
-                childStatus);
+                wrapperReflowInput, myWM, wrapperOffset, dummyContainerSize,
+                ReflowChildFlags::Default, childStatus);
     MOZ_ASSERT(childStatus.IsFullyComplete(),
                "We gave our child unconstrained available block-size, "
                "so it should be complete");
@@ -179,7 +178,7 @@ void nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
     nscoord wrappersMarginBoxBSize =
         wrappersDesiredSize.BSize(myWM) + wrapperMargin.BStartEnd(myWM);
 
-    if (contentBoxBSize == NS_INTRINSICSIZE) {
+    if (contentBoxBSize == NS_UNCONSTRAINEDSIZE) {
       // We are intrinsically sized -- we should shrinkwrap the outer wrapper's
       // block-size:
       contentBoxBSize = wrappersMarginBoxBSize;
@@ -209,14 +208,17 @@ void nsNumberControlFrame::Reflow(nsPresContext* aPresContext,
     // Place the child
     FinishReflowChild(outerWrapperFrame, aPresContext, wrappersDesiredSize,
                       &wrapperReflowInput, myWM, wrapperOffset, borderBoxSize,
-                      0);
+                      ReflowChildFlags::Default);
 
-    nsSize contentBoxSize = LogicalSize(myWM, contentBoxISize, contentBoxBSize)
-                                .GetPhysicalSize(myWM);
-    aDesiredSize.SetBlockStartAscent(
-        wrappersDesiredSize.BlockStartAscent() +
-        outerWrapperFrame->BStart(aReflowInput.GetWritingMode(),
-                                  contentBoxSize));
+    if (!aReflowInput.mStyleDisplay->IsContainLayout()) {
+      nsSize contentBoxSize =
+          LogicalSize(myWM, contentBoxISize, contentBoxBSize)
+              .GetPhysicalSize(myWM);
+      aDesiredSize.SetBlockStartAscent(
+          wrappersDesiredSize.BlockStartAscent() +
+          outerWrapperFrame->BStart(aReflowInput.GetWritingMode(),
+                                    contentBoxSize));
+    }  // else: we're layout-contained, and so we have no baseline.
   }
 
   LogicalSize logicalDesiredSize(myWM, borderBoxISize, borderBoxBSize);

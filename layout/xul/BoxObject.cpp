@@ -9,7 +9,6 @@
 #include "nsPresContext.h"
 #include "nsIContent.h"
 #include "nsContainerFrame.h"
-#include "nsIDocShell.h"
 #include "nsReadableUtils.h"
 #include "nsView.h"
 #include "nsLayoutUtils.h"

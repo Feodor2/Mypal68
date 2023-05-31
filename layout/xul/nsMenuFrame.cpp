@@ -15,11 +15,9 @@
 #include "nsMenuPopupFrame.h"
 #include "nsMenuBarFrame.h"
 #include "mozilla/dom/Document.h"
-#include "nsIComponentManager.h"
 #include "nsBoxLayoutState.h"
 #include "nsIScrollableFrame.h"
 #include "nsBindingManager.h"
-#include "nsIServiceManager.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsString.h"
 #include "nsReadableUtils.h"
@@ -29,7 +27,6 @@
 #include "nsDisplayList.h"
 #include "nsIReflowCallback.h"
 #include "nsISound.h"
-#include "nsIDOMXULMenuListElement.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/EventStateManager.h"
@@ -1163,6 +1160,7 @@ void nsMenuFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
 }
 
 void nsMenuFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                               const nsLineList::iterator* aPrevFrameLine,
                                nsFrameList& aFrameList) {
   if (!HasPopup() && (aListID == kPrincipalList || aListID == kPopupList)) {
     SetPopupFrame(aFrameList);
@@ -1178,7 +1176,7 @@ void nsMenuFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
     aPrevFrame = nullptr;
   }
 
-  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aFrameList);
+  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine, aFrameList);
 }
 
 void nsMenuFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {

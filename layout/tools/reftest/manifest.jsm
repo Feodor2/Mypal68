@@ -630,9 +630,10 @@ function ServeTestBase(aURL, depth) {
 
     var testbase = g.ioService.newURI("http://localhost:" + g.httpServerPort +
                                      path + dirPath);
+    var testBasePrincipal = secMan.createCodebasePrincipal(testbase, {});
 
     // Give the testbase URI access to XUL and XBL
-    Services.perms.add(testbase, "allowXULXBL", Services.perms.ALLOW_ACTION);
+    Services.perms.addFromPrincipal(testBasePrincipal, "allowXULXBL", Services.perms.ALLOW_ACTION);
     return testbase;
 }
 

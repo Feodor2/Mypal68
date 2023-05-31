@@ -7,7 +7,6 @@
 use crate::context::QuirksMode;
 use crate::error_reporting::{ContextualParseError, ParseErrorReporter};
 use crate::stylesheets::{CssRuleType, Namespaces, Origin, UrlExtraData};
-use crate::use_counters::UseCounters;
 use cssparser::{Parser, SourceLocation, UnicodeRange};
 use style_traits::{OneOrMoreSeparated, ParseError, ParsingMode, Separator};
 
@@ -51,11 +50,9 @@ pub struct ParserContext<'a> {
     /// The quirks mode of this stylesheet.
     pub quirks_mode: QuirksMode,
     /// The active error reporter, or none if error reporting is disabled.
-    error_reporter: Option<&'a ParseErrorReporter>,
+    error_reporter: Option<&'a dyn ParseErrorReporter>,
     /// The currently active namespaces.
     pub namespaces: Option<&'a Namespaces>,
-    /// The use counters we want to record while parsing style rules, if any.
-    pub use_counters: Option<&'a UseCounters>,
 }
 
 impl<'a> ParserContext<'a> {
@@ -67,10 +64,9 @@ impl<'a> ParserContext<'a> {
         rule_type: Option<CssRuleType>,
         parsing_mode: ParsingMode,
         quirks_mode: QuirksMode,
-        error_reporter: Option<&'a ParseErrorReporter>,
-        use_counters: Option<&'a UseCounters>,
+        error_reporter: Option<&'a dyn ParseErrorReporter>,
     ) -> Self {
-        Self {
+        ParserContext {
             stylesheet_origin,
             url_data,
             rule_type,
@@ -78,7 +74,6 @@ impl<'a> ParserContext<'a> {
             quirks_mode,
             error_reporter,
             namespaces: None,
-            use_counters,
         }
     }
 
@@ -89,8 +84,7 @@ impl<'a> ParserContext<'a> {
         rule_type: Option<CssRuleType>,
         parsing_mode: ParsingMode,
         quirks_mode: QuirksMode,
-        error_reporter: Option<&'a ParseErrorReporter>,
-        use_counters: Option<&'a UseCounters>,
+        error_reporter: Option<&'a dyn ParseErrorReporter>,
     ) -> Self {
         Self::new(
             Origin::Author,
@@ -99,7 +93,6 @@ impl<'a> ParserContext<'a> {
             parsing_mode,
             quirks_mode,
             error_reporter,
-            use_counters,
         )
     }
 
@@ -111,7 +104,7 @@ impl<'a> ParserContext<'a> {
         rule_type: CssRuleType,
         namespaces: &'a Namespaces,
     ) -> ParserContext<'a> {
-        Self {
+        ParserContext {
             stylesheet_origin: context.stylesheet_origin,
             url_data: context.url_data,
             rule_type: Some(rule_type),
@@ -119,7 +112,6 @@ impl<'a> ParserContext<'a> {
             quirks_mode: context.quirks_mode,
             namespaces: Some(namespaces),
             error_reporter: context.error_reporter,
-            use_counters: context.use_counters,
         }
     }
 

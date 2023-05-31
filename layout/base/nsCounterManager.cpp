@@ -155,8 +155,7 @@ void nsCounterList::SetScope(nsCounterNode* aNode) {
           nodeContent == startContent) &&
         // everything is inside the root (except the case above,
         // a second reset on the root)
-        (!startContent ||
-         nsContentUtils::ContentIsDescendantOf(nodeContent, startContent))) {
+        (!startContent || nodeContent->IsInclusiveDescendantOf(startContent))) {
       aNode->mScopeStart = start;
       aNode->mScopePrev = prev;
       return;
@@ -202,8 +201,7 @@ bool nsCounterManager::AddCounterChanges(nsIFrame* aFrame) {
   // We inherit `display` for some anonymous boxes, but we don't want them to
   // increment the list-item counter.
   const bool requiresListItemIncrement =
-      aFrame->StyleDisplay()->mDisplay == StyleDisplay::ListItem &&
-      !aFrame->Style()->IsAnonBox();
+      aFrame->StyleDisplay()->IsListItem() && !aFrame->Style()->IsAnonBox();
 
   const nsStyleContent* styleContent = aFrame->StyleContent();
 

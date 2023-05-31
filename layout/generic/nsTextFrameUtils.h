@@ -11,6 +11,12 @@
 class nsIContent;
 struct nsStyleText;
 
+namespace mozilla {
+namespace dom {
+class Text;
+}
+}  // namespace mozilla
+
 #define BIG_TEXT_NODE_SIZE 4096
 
 #define CH_NBSP 160
@@ -125,13 +131,14 @@ class nsTextFrameUtils {
 
   static void AppendLineBreakOffset(nsTArray<uint32_t>* aArray,
                                     uint32_t aOffset) {
-    if (aArray->Length() > 0 && (*aArray)[aArray->Length() - 1] == aOffset)
+    if (aArray->Length() > 0 && (*aArray)[aArray->Length() - 1] == aOffset) {
       return;
+    }
     aArray->AppendElement(aOffset);
   }
 
   static uint32_t ComputeApproximateLengthWithWhitespaceCompression(
-      nsIContent* aContent, const nsStyleText* aStyleText);
+      mozilla::dom::Text* aText, const nsStyleText* aStyleText);
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsTextFrameUtils::Flags)

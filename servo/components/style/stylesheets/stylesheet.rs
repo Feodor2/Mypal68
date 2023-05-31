@@ -14,7 +14,6 @@ use crate::stylesheets::rule_parser::{State, TopLevelRuleParser};
 use crate::stylesheets::rules_iterator::{EffectiveRules, EffectiveRulesIterator};
 use crate::stylesheets::rules_iterator::{NestedRuleIterationCondition, RulesIterator};
 use crate::stylesheets::{CssRule, CssRules, Origin, UrlExtraData};
-use crate::use_counters::UseCounters;
 use crate::{Namespace, Prefix};
 use cssparser::{Parser, ParserInput, RuleListParser};
 use fallible::FallibleVec;
@@ -76,11 +75,10 @@ impl StylesheetContents {
         url_data: UrlExtraData,
         origin: Origin,
         shared_lock: &SharedRwLock,
-        stylesheet_loader: Option<&StylesheetLoader>,
-        error_reporter: Option<&ParseErrorReporter>,
+        stylesheet_loader: Option<&dyn StylesheetLoader>,
+        error_reporter: Option<&dyn ParseErrorReporter>,
         quirks_mode: QuirksMode,
         line_number_offset: u32,
-        use_counters: Option<&UseCounters>,
         sanitization_data: Option<&mut SanitizationData>,
     ) -> Self {
         let namespaces = RwLock::new(Namespaces::default());
@@ -94,7 +92,6 @@ impl StylesheetContents {
             error_reporter,
             quirks_mode,
             line_number_offset,
-            use_counters,
             sanitization_data,
         );
 
@@ -410,13 +407,12 @@ impl Stylesheet {
         existing: &Stylesheet,
         css: &str,
         url_data: UrlExtraData,
-        stylesheet_loader: Option<&StylesheetLoader>,
-        error_reporter: Option<&ParseErrorReporter>,
+        stylesheet_loader: Option<&dyn StylesheetLoader>,
+        error_reporter: Option<&dyn ParseErrorReporter>,
         line_number_offset: u32,
     ) {
         let namespaces = RwLock::new(Namespaces::default());
 
-        // FIXME: Consider adding use counters to Servo?
         let (rules, source_map_url, source_url) = Self::parse_rules(
             css,
             &url_data,
@@ -427,7 +423,6 @@ impl Stylesheet {
             error_reporter,
             existing.contents.quirks_mode,
             line_number_offset,
-            /* use_counters = */ None,
             /* sanitization_data = */ None,
         );
 
@@ -450,11 +445,10 @@ impl Stylesheet {
         origin: Origin,
         namespaces: &mut Namespaces,
         shared_lock: &SharedRwLock,
-        stylesheet_loader: Option<&StylesheetLoader>,
-        error_reporter: Option<&ParseErrorReporter>,
+        stylesheet_loader: Option<&dyn StylesheetLoader>,
+        error_reporter: Option<&dyn ParseErrorReporter>,
         quirks_mode: QuirksMode,
         line_number_offset: u32,
-        use_counters: Option<&UseCounters>,
         mut sanitization_data: Option<&mut SanitizationData>,
     ) -> (Vec<CssRule>, Option<String>, Option<String>) {
         let mut rules = Vec::new();
@@ -468,7 +462,6 @@ impl Stylesheet {
             ParsingMode::DEFAULT,
             quirks_mode,
             error_reporter,
-            use_counters,
         );
 
         let rule_parser = TopLevelRuleParser {
@@ -531,12 +524,11 @@ impl Stylesheet {
         origin: Origin,
         media: Arc<Locked<MediaList>>,
         shared_lock: SharedRwLock,
-        stylesheet_loader: Option<&StylesheetLoader>,
-        error_reporter: Option<&ParseErrorReporter>,
+        stylesheet_loader: Option<&dyn StylesheetLoader>,
+        error_reporter: Option<&dyn ParseErrorReporter>,
         quirks_mode: QuirksMode,
         line_number_offset: u32,
     ) -> Self {
-        // FIXME: Consider adding use counters to Servo?
         let contents = StylesheetContents::from_str(
             css,
             url_data,
@@ -546,7 +538,6 @@ impl Stylesheet {
             error_reporter,
             quirks_mode,
             line_number_offset,
-            /* use_counters = */ None,
             /* sanitized_output = */ None,
         );
 

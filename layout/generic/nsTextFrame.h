@@ -9,7 +9,7 @@
 #include "mozilla/EventForwards.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/dom/CharacterData.h"
+#include "mozilla/dom/Text.h"
 #include "nsFrame.h"
 #include "nsFrameSelection.h"
 #include "nsSplittableFrame.h"
@@ -94,8 +94,7 @@ class nsTextFrame : public nsFrame {
       GetContent()->UnsetFlags(NS_HAS_FLOWLENGTH_PROPERTY);
     }
   }
-  nsIFrame* GetNextInFlowVirtual() const final { return GetNextInFlow(); }
-  nsTextFrame* GetNextInFlow() const {
+  nsTextFrame* GetNextInFlow() const final {
     return mNextContinuation && (mNextContinuation->GetStateBits() &
                                  NS_FRAME_IS_FLUID_CONTINUATION)
                ? mNextContinuation
@@ -154,6 +153,13 @@ class nsTextFrame : public nsFrame {
   nsresult GetFrameName(nsAString& aResult) const final;
   void ToCString(nsCString& aBuf, int32_t* aTotalContentLength) const;
 #endif
+
+  // Returns this text frame's content's text fragment.
+  //
+  // Assertions in Init() ensure we only ever get a Text node as content.
+  const nsTextFragment* TextFragment() const {
+    return &mContent->AsText()->TextFragment();
+  }
 
   ContentOffsets CalcContentOffsetsFromFramePoint(const nsPoint& aPoint) final;
   ContentOffsets GetCharacterOffsetAtFramePoint(const nsPoint& aPoint);
@@ -419,6 +425,7 @@ class nsTextFrame : public nsFrame {
     PropertyProvider* provider = nullptr;
     Range contentRange;
     nsTextPaintStyle* textPaintStyle = nullptr;
+    Range glyphRange;
     explicit PaintTextSelectionParams(const PaintTextParams& aParams)
         : PaintTextParams(aParams) {}
   };
@@ -442,6 +449,7 @@ class nsTextFrame : public nsFrame {
     const nsTextPaintStyle* textStyle = nullptr;
     const nsDisplayText::ClipEdges* clipEdges = nullptr;
     const nscolor* decorationOverrideColor = nullptr;
+    Range glyphRange;
     explicit DrawTextParams(gfxContext* aContext)
         : DrawTextRunParams(aContext) {}
   };
@@ -687,26 +695,40 @@ class nsTextFrame : public nsFrame {
     // positive offsets are *above* the baseline and negative offsets below
     nscoord mBaselineOffset;
 
+    // This represents the offset from the initial position of the underline
+    const mozilla::StyleTextDecorationLength mTextUnderlineOffset;
+
+    // for CSS property text-decoration-thickness, the width refers to the
+    // thickness of the decoration line
+    const mozilla::StyleTextDecorationLength mTextDecorationThickness;
     nscolor mColor;
     uint8_t mStyle;
 
     LineDecoration(nsIFrame* const aFrame, const nscoord aOff,
+                   const mozilla::StyleTextDecorationLength& aUnderline,
+                   const mozilla::StyleTextDecorationLength& aDecThickness,
                    const nscolor aColor, const uint8_t aStyle)
         : mFrame(aFrame),
           mBaselineOffset(aOff),
+          mTextUnderlineOffset(aUnderline),
+          mTextDecorationThickness(aDecThickness),
           mColor(aColor),
           mStyle(aStyle) {}
 
     LineDecoration(const LineDecoration& aOther)
         : mFrame(aOther.mFrame),
           mBaselineOffset(aOther.mBaselineOffset),
+          mTextUnderlineOffset(aOther.mTextUnderlineOffset),
+          mTextDecorationThickness(aOther.mTextDecorationThickness),
           mColor(aOther.mColor),
           mStyle(aOther.mStyle) {}
 
     bool operator==(const LineDecoration& aOther) const {
       return mFrame == aOther.mFrame && mStyle == aOther.mStyle &&
              mColor == aOther.mColor &&
-             mBaselineOffset == aOther.mBaselineOffset;
+             mBaselineOffset == aOther.mBaselineOffset &&
+             mTextUnderlineOffset == aOther.mTextUnderlineOffset &&
+             mTextDecorationThickness == aOther.mTextDecorationThickness;
     }
 
     bool operator!=(const LineDecoration& aOther) const {

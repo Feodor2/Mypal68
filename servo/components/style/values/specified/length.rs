@@ -22,7 +22,7 @@ use crate::values::CSSFloat;
 use crate::Zero;
 use app_units::Au;
 use cssparser::{Parser, Token};
-use euclid::Size2D;
+use euclid::default::Size2D;
 use std::cmp;
 use std::ops::{Add, Mul};
 use style_traits::values::specified::AllowedNumericType;
@@ -704,14 +704,14 @@ impl Parse for NonNegativeLength {
 impl From<NoCalcLength> for NonNegativeLength {
     #[inline]
     fn from(len: NoCalcLength) -> Self {
-        NonNegative::<Length>(Length::NoCalc(len))
+        NonNegative(Length::NoCalc(len))
     }
 }
 
 impl From<Length> for NonNegativeLength {
     #[inline]
     fn from(len: Length) -> Self {
-        NonNegative::<Length>(len)
+        NonNegative(len)
     }
 }
 

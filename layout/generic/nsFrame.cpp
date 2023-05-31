@@ -22,7 +22,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/Sprintf.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 
 #include "nsCOMPtr.h"
 #include "nsFlexContainerFrame.h"
@@ -71,7 +71,6 @@
 #include "nsAnimationManager.h"
 
 // For triple-click pref
-#include "imgIContainer.h"
 #include "imgIRequest.h"
 #include "nsError.h"
 #include "nsContainerFrame.h"
@@ -88,7 +87,6 @@
 #include "RetainedDisplayListBuilder.h"
 
 #include "gfxContext.h"
-#include "gfxPrefs.h"
 #include "nsAbsoluteContainingBlock.h"
 #include "StickyScrollContainer.h"
 #include "nsFontInflationData.h"
@@ -129,13 +127,13 @@ typedef nsAbsoluteContainingBlock::AbsPosReflowFlags AbsPosReflowFlags;
 const mozilla::LayoutFrameType nsIFrame::sLayoutFrameTypes[
 #define FRAME_ID(...) 1 +
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
     0] = {
 #define FRAME_ID(class_, type_, ...) mozilla::LayoutFrameType::type_,
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
 };
@@ -143,7 +141,7 @@ const mozilla::LayoutFrameType nsIFrame::sLayoutFrameTypes[
 const nsIFrame::FrameClassBits nsIFrame::sFrameClassBits[
 #define FRAME_ID(...) 1 +
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
     0] = {
@@ -152,7 +150,7 @@ const nsIFrame::FrameClassBits nsIFrame::sFrameClassBits[
 #define DynamicLeaf eFrameClassBitsDynamicLeaf
 #define FRAME_ID(class_, type_, leaf_, ...) leaf_,
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef Leaf
 #undef NotLeaf
 #undef DynamicLeaf
@@ -544,7 +542,8 @@ static bool IsFontSizeInflationContainer(nsIFrame* aFrame,
   nsIContent* content = aFrame->GetContent();
   LayoutFrameType frameType = aFrame->Type();
   bool isInline =
-      (aFrame->GetDisplay() == StyleDisplay::Inline ||
+      (nsStyleDisplay::DisplayInside(aFrame->GetDisplay()) ==
+           StyleDisplayInside::Inline ||
        RubyUtils::IsRubyBox(frameType) ||
        (aFrame->IsFloating() && frameType == LayoutFrameType::Letter) ||
        // Given multiple frames for the same node, only the
@@ -552,8 +551,9 @@ static bool IsFontSizeInflationContainer(nsIFrame* aFrame,
        // (Important, e.g., for nsSelectsAreaFrame.)
        (aFrame->GetParent()->GetContent() == content) ||
        (content &&
+        // Form controls shouldn't become inflation containers.
         (content->IsAnyOfHTMLElements(nsGkAtoms::option, nsGkAtoms::optgroup,
-                                      nsGkAtoms::select) ||
+                                      nsGkAtoms::select, nsGkAtoms::input) ||
          content->IsInNativeAnonymousSubtree()))) &&
       !(aFrame->IsXULBoxFrame() && aFrame->GetParent()->IsXULBoxFrame());
   NS_ASSERTION(!aFrame->IsFrameOfType(nsIFrame::eLineParticipant) || isInline ||
@@ -613,24 +613,40 @@ void nsFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   if (aPrevInFlow) {
     mWritingMode = aPrevInFlow->GetWritingMode();
 
-    // Make sure the general flags bits are the same
-    nsFrameState state = aPrevInFlow->GetStateBits();
+    // Copy some state bits from prev-in-flow (the bits that should apply
+    // throughout a continuation chain). The bits are sorted according to their
+    // order in nsFrameStateBits.h.
 
-    // Make bits that are currently off (see constructor) the same:
-    AddStateBits(state &
-                 (NS_FRAME_INDEPENDENT_SELECTION | NS_FRAME_PART_OF_IBSPLIT |
+    // clang-format off
+    AddStateBits(aPrevInFlow->GetStateBits() &
+                 (NS_FRAME_ANONYMOUSCONTENTCREATOR_CONTENT |
+                  NS_FRAME_GENERATED_CONTENT |
+                  NS_FRAME_OUT_OF_FLOW |
+                  NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN |
+                  NS_FRAME_INDEPENDENT_SELECTION |
+                  NS_FRAME_PART_OF_IBSPLIT |
                   NS_FRAME_MAY_BE_TRANSFORMED |
-                  NS_FRAME_CAN_HAVE_ABSPOS_CHILDREN));
+                  NS_FRAME_HAS_MULTI_COLUMN_ANCESTOR));
+    // clang-format on
+
+    // Copy other bits in nsIFrame from prev-in-flow.
+    mHasColumnSpanSiblings = aPrevInFlow->HasColumnSpanSiblings();
   } else {
     PresContext()->ConstructedFrame();
   }
   if (GetParent()) {
-    nsFrameState state = GetParent()->GetStateBits();
+    // Copy some state bits from our parent (the bits that should apply
+    // recursively throughout a subtree). The bits are sorted according to their
+    // order in nsFrameStateBits.h.
 
-    // Make bits that are currently off (see constructor) the same:
-    AddStateBits(state & (NS_FRAME_INDEPENDENT_SELECTION |
-                          NS_FRAME_GENERATED_CONTENT | NS_FRAME_IS_SVG_TEXT |
-                          NS_FRAME_IN_POPUP | NS_FRAME_IS_NONDISPLAY));
+    // clang-format off
+    AddStateBits(GetParent()->GetStateBits() &
+                 (NS_FRAME_GENERATED_CONTENT |
+                  NS_FRAME_INDEPENDENT_SELECTION |
+                  NS_FRAME_IS_SVG_TEXT |
+                  NS_FRAME_IN_POPUP |
+                  NS_FRAME_IS_NONDISPLAY));
+    // clang-format on
 
     if (HasAnyStateBits(NS_FRAME_IN_POPUP) && TrackingVisibility()) {
       // Assume all frames in popups are visible.
@@ -640,7 +656,6 @@ void nsFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   if (aPrevInFlow) {
     mMayHaveOpacityAnimation = aPrevInFlow->MayHaveOpacityAnimation();
     mMayHaveTransformAnimation = aPrevInFlow->MayHaveTransformAnimation();
-    mState |= aPrevInFlow->mState & NS_FRAME_MAY_BE_TRANSFORMED;
   } else if (mContent) {
     // It's fine to fetch the EffectSet for the style frame here because in the
     // following code we take care of the case where animations may target
@@ -695,8 +710,13 @@ void nsFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
   if (disp->IsContainLayout() && disp->IsContainSize() &&
       // All frames that support contain:layout also support contain:size.
-      IsFrameOfType(eSupportsContainLayoutAndPaint)) {
-    // Frames that have contain:layout+size can be reflow roots.
+      IsFrameOfType(eSupportsContainLayoutAndPaint) && !IsTableWrapperFrame()) {
+    // In general, frames that have contain:layout+size can be reflow roots.
+    // (One exception: table-wrapper frames don't work well as reflow roots,
+    // because their inner-table ReflowInput init path tries to reuse & deref
+    // the wrapper's containing block reflow input, which may be null if we
+    // initiate reflow from the table-wrapper itself.)
+    //
     // Changes to `contain` force frame reconstructions, so this bit can be set
     // for the whole lifetime of this frame.
     AddStateBits(NS_FRAME_REFLOW_ROOT);
@@ -739,8 +759,10 @@ void nsFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   // newly created frames.
   // Note: We don't need to do this for placeholders since placeholders have
   // different styles so that the styles don't have visibility:hidden even if
-  // the parent has visibility:hidden style.
-  if (!IsPlaceholderFrame()) {
+  // the parent has visibility:hidden style. We also don't need to update the
+  // state when creating continuations because its visibility is the same as its
+  // prev-in-flow, and the animation code cares only primary frames.
+  if (!IsPlaceholderFrame() && !aPrevInFlow) {
     UpdateVisibleDescendantsState();
   }
 }
@@ -1085,7 +1107,8 @@ void nsIFrame::MarkNeedsDisplayItemRebuild() {
 
   RetainedDisplayListData* data = GetOrSetRetainedDisplayListData(rootFrame);
 
-  if (data->ModifiedFramesCount() > gfxPrefs::LayoutRebuildFrameLimit()) {
+  if (data->ModifiedFramesCount() >
+      StaticPrefs::layout_display_list_rebuild_frame_limit()) {
     // If the modified frames count is above the rebuild limit, mark the root
     // frame modified, and stop marking additional frames modified.
     data->AddModifiedFrame(rootFrame);
@@ -1837,6 +1860,15 @@ void nsIFrame::OutsetBorderRadii(nscoord aRadii[8], const nsMargin& aOffsets) {
   }
 }
 
+static inline bool RadiiAreDefinitelyZero(const BorderRadius& aBorderRadius) {
+  NS_FOR_CSS_HALF_CORNERS(corner) {
+    if (!aBorderRadius.Get(corner).IsDefinitelyZero()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 /* virtual */
 bool nsIFrame::GetBorderRadii(const nsSize& aFrameSize,
                               const nsSize& aBorderArea, Sides aSkipSides,
@@ -1858,10 +1890,18 @@ bool nsIFrame::GetBorderRadii(const nsSize& aFrameSize,
     return false;
   }
 
-  const_cast<nsIFrame*>(this)->mMayHaveRoundedCorners =
-      ComputeBorderRadii(StyleBorder()->mBorderRadius, aFrameSize, aBorderArea,
-                         aSkipSides, aRadii);
-  return mMayHaveRoundedCorners;
+  const auto& radii = StyleBorder()->mBorderRadius;
+  const bool hasRadii =
+      ComputeBorderRadii(radii, aFrameSize, aBorderArea, aSkipSides, aRadii);
+  if (!hasRadii) {
+    // TODO(emilio): Maybe we can just remove this bit and do the
+    // IsDefinitelyZero check unconditionally. That should still avoid most of
+    // the work, though maybe not the cache miss of going through the style and
+    // the border struct.
+    const_cast<nsIFrame*>(this)->mMayHaveRoundedCorners =
+        !RadiiAreDefinitelyZero(radii);
+  }
+  return hasRadii;
 }
 
 bool nsIFrame::GetBorderRadii(nscoord aRadii[8]) const {
@@ -2451,15 +2491,45 @@ inline static bool IsSVGContentWithCSSClip(const nsIFrame* aFrame) {
                                                   nsGkAtoms::foreignObject);
 }
 
+bool nsIFrame::FormsBackdropRoot(const nsStyleDisplay* aStyleDisplay,
+                                 const nsStyleEffects* aStyleEffects,
+                                 const nsStyleSVGReset* aStyleSVGReset) {
+  // Check if this is a root frame.
+  if (!GetParent()) {
+    return true;
+  }
+
+  // Check for filter effects.
+  if (aStyleEffects->HasFilters() || aStyleEffects->HasBackdropFilters() ||
+      aStyleEffects->HasMixBlendMode()) {
+    return true;
+  }
+
+  // Check for opacity.
+  if (HasOpacity(aStyleDisplay, aStyleEffects)) {
+    return true;
+  }
+
+  // Check for mask or clip path.
+  if (aStyleSVGReset->HasMask() || aStyleSVGReset->HasClipPath()) {
+    return true;
+  }
+
+  // TODO(cbrewster): Check will-change attributes
+
+  return false;
+}
+
 Maybe<nsRect> nsIFrame::GetClipPropClipRect(const nsStyleDisplay* aDisp,
                                             const nsStyleEffects* aEffects,
                                             const nsSize& aSize) const {
-  if (!(aEffects->mClipFlags & NS_STYLE_CLIP_RECT) ||
+  if (aEffects->mClip.IsAuto() ||
       !(aDisp->IsAbsolutelyPositioned(this) || IsSVGContentWithCSSClip(this))) {
     return Nothing();
   }
 
-  nsRect rect = aEffects->mClip;
+  auto& clipRect = aEffects->mClip.AsRect();
+  nsRect rect = clipRect.ToLayoutRect();
   if (MOZ_LIKELY(StyleBorder()->mBoxDecorationBreak ==
                  StyleBoxDecorationBreak::Slice)) {
     // The clip applies to the joined boxes so it's relative the first
@@ -2471,10 +2541,10 @@ Maybe<nsRect> nsIFrame::GetClipPropClipRect(const nsStyleDisplay* aDisp,
     rect.MoveBy(nsPoint(0, -y));
   }
 
-  if (NS_STYLE_CLIP_RIGHT_AUTO & aEffects->mClipFlags) {
+  if (clipRect.right.IsAuto()) {
     rect.width = aSize.width - rect.x;
   }
-  if (NS_STYLE_CLIP_BOTTOM_AUTO & aEffects->mClipFlags) {
+  if (clipRect.bottom.IsAuto()) {
     rect.height = aSize.height - rect.y;
   }
   return Some(rect);
@@ -2604,6 +2674,30 @@ class AutoSaveRestoreContainsBlendMode {
 
   ~AutoSaveRestoreContainsBlendMode() {
     mBuilder.SetContainsBlendMode(mSavedContainsBlendMode);
+  }
+};
+
+class AutoSaveRestoreContainsBackdropFilter {
+  nsDisplayListBuilder& mBuilder;
+  bool mSavedContainsBackdropFilter;
+
+ public:
+  explicit AutoSaveRestoreContainsBackdropFilter(nsDisplayListBuilder& aBuilder)
+      : mBuilder(aBuilder),
+        mSavedContainsBackdropFilter(aBuilder.ContainsBackdropFilter()) {}
+
+  /**
+   * This is called if a stacking context which does not form a backdrop root
+   * contains a descendent with a backdrop filter. In this case we need to
+   * delegate backdrop root creation to the next parent in the tree until we hit
+   * the nearest backdrop root ancestor.
+   */
+  void DelegateUp(bool aContainsBackdropFilter) {
+    mSavedContainsBackdropFilter = aContainsBackdropFilter;
+  }
+
+  ~AutoSaveRestoreContainsBackdropFilter() {
+    mBuilder.SetContainsBackdropFilter(mSavedContainsBackdropFilter);
   }
 };
 
@@ -2942,6 +3036,19 @@ void nsIFrame::BuildDisplayListForStackingContext(
   AutoSaveRestoreContainsBlendMode autoRestoreBlendMode(*aBuilder);
   aBuilder->SetContainsBlendMode(false);
 
+  bool backdropFilterEnabled =
+      StaticPrefs::layout_css_backdrop_filter_enabled();
+  bool usingBackdropFilter =
+      backdropFilterEnabled && effects->HasBackdropFilters() &&
+      nsDisplayBackdropFilters::CanCreateWebRenderCommands(aBuilder, this);
+
+  if (usingBackdropFilter) {
+    aBuilder->SetContainsBackdropFilter(true);
+  }
+
+  AutoSaveRestoreContainsBackdropFilter autoRestoreBackdropFilter(*aBuilder);
+  aBuilder->SetContainsBackdropFilter(false);
+
   nsRect visibleRectOutsideTransform = visibleRect;
   bool allowAsyncAnimation = false;
   bool inTransform = aBuilder->IsInTransform();
@@ -2958,7 +3065,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
       case nsDisplayTransform::PartialPrerender:
         allowAsyncAnimation = true;
         visibleRect = dirtyRect;
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
         // fall through to the NoPrerender case
       case nsDisplayTransform::NoPrerender:
         if (overflow.IsEmpty() && !extend3DContext) {
@@ -3012,7 +3119,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
     }
   }
 
-  bool usingFilter = StyleEffects()->HasFilters();
+  bool usingFilter = effects->HasFilters();
   bool usingMask = nsSVGIntegrationUtils::UsingMaskOrClipPathForFrame(this);
   bool usingSVGEffects = usingFilter || usingMask;
 
@@ -3133,6 +3240,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
 
   nsDisplayListCollection set(aBuilder);
   Maybe<nsRect> clipForMask;
+  bool insertBackdropRoot;
   {
     DisplayListClipState::AutoSaveRestore nestedClipState(aBuilder);
     nsDisplayListBuilder::AutoInTransformSetter inTransformSetter(aBuilder,
@@ -3189,6 +3297,10 @@ void nsIFrame::BuildDisplayListForStackingContext(
     aBuilder->Check();
     aBuilder->DisplayCaret(this, set.Content());
 
+    insertBackdropRoot = backdropFilterEnabled &&
+                         aBuilder->ContainsBackdropFilter() &&
+                         FormsBackdropRoot(disp, effects, StyleSVGReset());
+
     // Blend modes are a real pain for retained display lists. We build a blend
     // container item if the built list contains any blend mode items within
     // the current stacking context. This can change without an invalidation
@@ -3207,13 +3319,21 @@ void nsIFrame::BuildDisplayListForStackingContext(
     // to remove any existing content that isn't wrapped in the blend container,
     // and then we need to build content infront/behind the blend container
     // to get correct positioning during merging.
-    if (aBuilder->ContainsBlendMode() && aBuilder->IsRetainingDisplayList()) {
+    if ((insertBackdropRoot || aBuilder->ContainsBlendMode()) &&
+        aBuilder->IsRetainingDisplayList()) {
       if (!aBuilder->GetDirtyRect().Contains(aBuilder->GetVisibleRect())) {
         aBuilder->SetPartialBuildFailed(true);
       } else {
         aBuilder->SetDisablePartialUpdates(true);
       }
     }
+  }
+
+  // If a child contains a backdrop filter, but this stacking context does not
+  // form a backdrop root, we need to propogate up the tree until we find an
+  // ancestor that does form a backdrop root.
+  if (!insertBackdropRoot && aBuilder->ContainsBackdropFilter()) {
+    autoRestoreBackdropFilter.DelegateUp(true);
   }
 
   if (aBuilder->IsBackgroundOnly()) {
@@ -3224,7 +3344,8 @@ void nsIFrame::BuildDisplayListForStackingContext(
     set.Outlines()->DeleteAll(aBuilder);
   }
 
-  if (hasOverrideDirtyRect && gfxPrefs::LayoutDisplayListShowArea()) {
+  if (hasOverrideDirtyRect &&
+      StaticPrefs::layout_display_list_show_rebuild_area()) {
     nsDisplaySolidColor* color = MakeDisplayItem<nsDisplaySolidColor>(
         aBuilder, this,
         dirtyRect + aBuilder->GetCurrentFrameOffsetToReferenceFrame(),
@@ -3263,6 +3384,23 @@ void nsIFrame::BuildDisplayListForStackingContext(
     DisplayListClipState::AutoSaveRestore blendContainerClipState(aBuilder);
     resultList.AppendToTop(nsDisplayBlendContainer::CreateForMixBlendMode(
         aBuilder, this, &resultList, containerItemASR));
+    ct.TrackContainer(resultList.GetTop());
+  }
+
+  if (insertBackdropRoot) {
+    DisplayListClipState::AutoSaveRestore backdropRootContainerClipState(
+        aBuilder);
+    resultList.AppendNewToTop<nsDisplayBackdropRootContainer>(
+        aBuilder, this, &resultList, containerItemASR);
+    ct.TrackContainer(resultList.GetTop());
+  }
+
+  if (usingBackdropFilter) {
+    DisplayListClipState::AutoSaveRestore clipState(aBuilder);
+    nsRect backdropRect =
+        GetRectRelativeToSelf() + aBuilder->ToReferenceFrame(this);
+    resultList.AppendNewToTop<nsDisplayBackdropFilters>(
+        aBuilder, this, &resultList, backdropRect);
     ct.TrackContainer(resultList.GetTop());
   }
 
@@ -3810,8 +3948,7 @@ void nsIFrame::BuildDisplayListForChild(nsDisplayListBuilder* aBuilder,
 
   if (pseudoStackingContext || isStackingContext || isPositioned ||
       isPlaceholder || (!isSVG && disp->IsFloating(child)) ||
-      (isSVG && (effects->mClipFlags & NS_STYLE_CLIP_RECT) &&
-       IsSVGContentWithCSSClip(child))) {
+      (isSVG && effects->mClip.IsRect() && IsSVGContentWithCSSClip(child))) {
     pseudoStackingContext = true;
     awayFromCommonPath = true;
   }
@@ -4101,8 +4238,7 @@ nsresult nsFrame::GetDataForTableSelection(
 
   // If our content node is an ancestor of the limiting node,
   // we should stop the search right now.
-  if (limiter && nsContentUtils::ContentIsDescendantOf(limiter, GetContent()))
-    return NS_OK;
+  if (limiter && limiter->IsInclusiveDescendantOf(GetContent())) return NS_OK;
 
   // We don't initiate row/col selection from here now,
   //  but we may in future
@@ -5093,7 +5229,8 @@ static nsIFrame::ContentOffsets OffsetsForSingleFrame(nsIFrame* aFrame,
   // Figure out whether the offsets should be over, after, or before the frame
   nsRect rect(nsPoint(0, 0), aFrame->GetSize());
 
-  bool isBlock = aFrame->GetDisplay() != StyleDisplay::Inline;
+  bool isBlock = nsStyleDisplay::DisplayInside(aFrame->GetDisplay()) !=
+                 StyleDisplayInside::Inline;
   bool isRtl =
       (aFrame->StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL);
   if ((isBlock && rect.y < aPoint.y) ||
@@ -5267,6 +5404,40 @@ void nsFrame::MarkIntrinsicISizesDirty() {
 
   if (GetStateBits() & NS_FRAME_FONT_INFLATION_FLOW_ROOT) {
     nsFontInflationData::MarkFontInflationDataTextDirty(this);
+  }
+}
+
+void nsIFrame::MarkSubtreeDirty() {
+  if (HasAnyStateBits(NS_FRAME_IS_DIRTY)) {
+    return;
+  }
+  // Unconditionally mark given frame dirty.
+  AddStateBits(NS_FRAME_IS_DIRTY);
+
+  // Mark all descendants dirty, unless:
+  // - Already dirty.
+  // - TableColGroup
+  // - XULBox
+  AutoTArray<nsIFrame*, 32> stack;
+  for (nsIFrame::ChildListIterator lists(this); !lists.IsDone(); lists.Next()) {
+    for (nsIFrame* kid : lists.CurrentList()) {
+      stack.AppendElement(kid);
+    }
+  }
+  while (!stack.IsEmpty()) {
+    nsIFrame* f = stack.PopLastElement();
+    if (f->HasAnyStateBits(NS_FRAME_IS_DIRTY) || f->IsTableColGroupFrame() ||
+        f->IsXULBoxFrame()) {
+      continue;
+    }
+
+    f->AddStateBits(NS_FRAME_IS_DIRTY);
+
+    for (nsIFrame::ChildListIterator lists(f); !lists.IsDone(); lists.Next()) {
+      for (nsIFrame* kid : lists.CurrentList()) {
+        stack.AppendElement(kid);
+      }
+    }
   }
 }
 
@@ -5715,7 +5886,7 @@ LogicalSize nsFrame::ComputeSize(gfxContext* aRenderingContext, WritingMode aWM,
                blockStyleCoord->BehavesLikeInitialValueOnBlockAxis() &&
                !IS_TRUE_OVERFLOW_CONTAINER(this)) {
       auto cbSize = aCBSize.BSize(aWM);
-      if (cbSize != NS_AUTOHEIGHT) {
+      if (cbSize != NS_UNCONSTRAINEDSIZE) {
         // 'auto' block-size for grid-level box - fill the CB for 'stretch' /
         // 'normal' and clamp it to the CB if requested:
         bool stretch = false;
@@ -5731,7 +5902,7 @@ LogicalSize nsFrame::ComputeSize(gfxContext* aRenderingContext, WritingMode aWM,
           auto bSizeToFillCB =
               std::max(nscoord(0), cbSize - aPadding.BSize(aWM) -
                                        aBorder.BSize(aWM) - aMargin.BSize(aWM));
-          if (stretch || (result.BSize(aWM) != NS_AUTOHEIGHT &&
+          if (stretch || (result.BSize(aWM) != NS_UNCONSTRAINEDSIZE &&
                           result.BSize(aWM) > bSizeToFillCB)) {
             result.BSize(aWM) = bSizeToFillCB;
           }
@@ -6004,7 +6175,7 @@ LogicalSize nsFrame::ComputeSizeWithIntrinsicDimensions(
     MOZ_ASSERT(!IS_TRUE_OVERFLOW_CONTAINER(this));
     // 'auto' block-size for grid-level box - apply 'stretch' as needed:
     auto cbSize = aCBSize.BSize(aWM);
-    if (cbSize != NS_AUTOHEIGHT) {
+    if (cbSize != NS_UNCONSTRAINEDSIZE) {
       if (!StyleMargin()->HasBlockAxisAuto(aWM)) {
         auto blockAxisAlignment =
             !aWM.IsOrthogonalTo(GetParent()->GetWritingMode())
@@ -6341,6 +6512,10 @@ void nsFrame::DidReflow(nsPresContext* aPresContext,
   RemoveStateBits(NS_FRAME_IN_REFLOW | NS_FRAME_FIRST_REFLOW |
                   NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN);
 
+  // Clear state that was used in ReflowInput::InitResizeFlags (see
+  // comment there for why we can't clear it there).
+  SetHasBSizeChange(false);
+
   // Notify the percent bsize observer if there is a percent bsize.
   // The observer may be able to initiate another reflow with a computed
   // bsize. This happens in the case where a table cell has no computed
@@ -6461,13 +6636,13 @@ void nsFrame::SetNextContinuation(nsIFrame*) {
   MOZ_ASSERT(false, "not splittable");
 }
 
-nsIFrame* nsFrame::GetPrevInFlowVirtual() const { return nullptr; }
+nsIFrame* nsFrame::GetPrevInFlow() const { return nullptr; }
 
 void nsFrame::SetPrevInFlow(nsIFrame* aPrevInFlow) {
   MOZ_ASSERT(false, "not splittable");
 }
 
-nsIFrame* nsFrame::GetNextInFlowVirtual() const { return nullptr; }
+nsIFrame* nsFrame::GetNextInFlow() const { return nullptr; }
 
 void nsFrame::SetNextInFlow(nsIFrame*) { MOZ_ASSERT(false, "not splittable"); }
 
@@ -7343,6 +7518,9 @@ bool nsIFrame::UpdateOverflow() {
   nsOverflowAreas overflowAreas(rect, rect);
 
   if (!ComputeCustomOverflow(overflowAreas)) {
+    // If updating overflow wasn't supported by this frame, then it should
+    // have scheduled any necessary reflows. We can return false to say nothing
+    // changed, and wait for reflow to correct it.
     return false;
   }
 
@@ -7351,9 +7529,9 @@ bool nsIFrame::UpdateOverflow() {
   if (FinishAndStoreOverflow(overflowAreas, GetSize())) {
     nsView* view = GetView();
     if (view) {
-      uint32_t flags = GetXULLayoutFlags();
+      ReflowChildFlags flags = GetXULLayoutFlags();
 
-      if ((flags & NS_FRAME_NO_SIZE_VIEW) == 0) {
+      if (!(flags & ReflowChildFlags::NoSizeView)) {
         // Make sure the frame's view is properly sized.
         nsViewManager* vm = view->GetViewManager();
         vm->ResizeView(view, overflowAreas.VisualOverflow(), true);
@@ -7363,7 +7541,12 @@ bool nsIFrame::UpdateOverflow() {
     return true;
   }
 
-  return false;
+  // Frames that combine their 3d transform with their ancestors
+  // only compute a pre-transform overflow rect, and then contribute
+  // to the normal overflow rect of the preserve-3d root. Always return
+  // true here so that we propagate changes up to the root for final
+  // calculation.
+  return Combines3DTransformWithAncestors();
 }
 
 /* virtual */
@@ -7566,6 +7749,12 @@ void nsIFrame::ListGeneric(nsACString& aTo, const char* aPrefix,
       aTo += nsPrintfCString(" scr-overflow=%d,%d,%d,%d", so.x, so.y, so.width,
                              so.height);
     }
+  }
+  bool hasNormalPosition;
+  nsPoint normalPosition = GetNormalPosition(&hasNormalPosition);
+  if (hasNormalPosition) {
+    aTo += nsPrintfCString(" normal-position={%d,%d}", normalPosition.x,
+                           normalPosition.y);
   }
   if (0 != mState) {
     aTo += nsPrintfCString(" [state=%016llx]", (unsigned long long)mState);
@@ -8283,7 +8472,7 @@ nsresult nsIFrame::PeekOffset(nsPeekOffsetStruct* aPos) {
         aPos->mWordMovementType = eEndWord;
       }
       // Intentionally fall through the eSelectWord case.
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     case eSelectWord: {
       // wordSelectEatSpace means "are we looking for a boundary between
       // whitespace and non-whitespace (in the direction we're moving in)". It
@@ -9100,7 +9289,7 @@ static void ComputeAndIncludeOutlineArea(nsIFrame* aFrame,
   const nscoord offset = outline->mOutlineOffset.ToAppUnits();
   nsRect outerRect(innerRect);
   bool useOutlineAuto = false;
-  if (nsLayoutUtils::IsOutlineStyleAutoEnabled()) {
+  if (StaticPrefs::layout_css_outline_style_auto_enabled()) {
     useOutlineAuto = outline->mOutlineStyle.IsAuto();
     if (MOZ_UNLIKELY(useOutlineAuto)) {
       nsPresContext* presContext = aFrame->PresContext();
@@ -9644,7 +9833,7 @@ ComputedStyle* nsFrame::DoGetParentComputedStyle(
           pseudo == PseudoStyleType::tableWrapper) {
         if (Servo_Element_IsDisplayContents(parentElement)) {
           RefPtr<ComputedStyle> style =
-              PresShell()->StyleSet()->ResolveServoStyle(*parentElement);
+              ServoStyleSet::ResolveServoStyle(*parentElement);
           // NOTE(emilio): we return a weak reference because the element also
           // holds the style context alive. This is a bit silly (we could've
           // returned a weak ref directly), but it's probably not worth
@@ -9792,13 +9981,6 @@ static StyleVerticalAlignKeyword ConvertSVGDominantBaselineToVerticalAlign(
     case NS_STYLE_DOMINANT_BASELINE_AUTO:
     case NS_STYLE_DOMINANT_BASELINE_ALPHABETIC:
       return StyleVerticalAlignKeyword::Baseline;
-    case NS_STYLE_DOMINANT_BASELINE_USE_SCRIPT:
-    case NS_STYLE_DOMINANT_BASELINE_NO_CHANGE:
-    case NS_STYLE_DOMINANT_BASELINE_RESET_SIZE:
-      // These three should not simply map to 'baseline', but we don't
-      // support the complex baseline model that SVG 1.1 has and which
-      // css3-linebox now defines.
-      return StyleVerticalAlignKeyword::Baseline;
     default:
       MOZ_ASSERT_UNREACHABLE("unexpected aDominantBaseline value");
       return StyleVerticalAlignKeyword::Baseline;
@@ -9807,14 +9989,7 @@ static StyleVerticalAlignKeyword ConvertSVGDominantBaselineToVerticalAlign(
 
 Maybe<StyleVerticalAlignKeyword> nsIFrame::VerticalAlignEnum() const {
   if (nsSVGUtils::IsInSVGTextSubtree(this)) {
-    uint8_t dominantBaseline;
-    for (const nsIFrame* frame = this; frame; frame = frame->GetParent()) {
-      dominantBaseline = frame->StyleSVGReset()->mDominantBaseline;
-      if (dominantBaseline != NS_STYLE_DOMINANT_BASELINE_AUTO ||
-          frame->IsSVGTextFrame()) {
-        break;
-      }
-    }
+    uint8_t dominantBaseline = StyleSVG()->mDominantBaseline;
     return Some(ConvertSVGDominantBaselineToVerticalAlign(dominantBaseline));
   }
 
@@ -9992,7 +10167,7 @@ nsSize nsFrame::GetXULMinSize(nsBoxLayoutState& aState) {
 }
 
 nsSize nsFrame::GetXULMaxSize(nsBoxLayoutState& aState) {
-  nsSize size(NS_INTRINSICSIZE, NS_INTRINSICSIZE);
+  nsSize size(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
   DISPLAY_MAX_SIZE(this, size);
   // Don't use the cache if we have HTMLReflowInput constraints --- they might
   // have changed
@@ -10147,7 +10322,7 @@ void nsFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
   // lets see if we are already that size. Yes? then don't even reflow. We are
   // done.
   if (!needsReflow) {
-    if (aWidth != NS_INTRINSICSIZE && aHeight != NS_INTRINSICSIZE) {
+    if (aWidth != NS_UNCONSTRAINEDSIZE && aHeight != NS_UNCONSTRAINEDSIZE) {
       // if the new calculated size has a 0 width or a 0 height
       if ((metrics->mLastSize.width == 0 || metrics->mLastSize.height == 0) &&
           (aWidth == 0 || aHeight == 0)) {
@@ -10186,9 +10361,9 @@ void nsFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
     GetXULMargin(margin);
 
     nsSize parentSize(aWidth, aHeight);
-    if (parentSize.height != NS_INTRINSICSIZE)
+    if (parentSize.height != NS_UNCONSTRAINEDSIZE)
       parentSize.height += margin.TopBottom();
-    if (parentSize.width != NS_INTRINSICSIZE)
+    if (parentSize.width != NS_UNCONSTRAINEDSIZE)
       parentSize.width += margin.LeftRight();
 
     nsIFrame* parentFrame = GetParent();
@@ -10198,9 +10373,9 @@ void nsFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
                                   ReflowInput::DUMMY_PARENT_REFLOW_INPUT);
 
     // This may not do very much useful, but it's probably worth trying.
-    if (parentSize.width != NS_INTRINSICSIZE)
+    if (parentSize.width != NS_UNCONSTRAINEDSIZE)
       parentReflowInput.SetComputedWidth(std::max(parentSize.width, 0));
-    if (parentSize.height != NS_INTRINSICSIZE)
+    if (parentSize.height != NS_UNCONSTRAINEDSIZE)
       parentReflowInput.SetComputedHeight(std::max(parentSize.height, 0));
     parentReflowInput.ComputedPhysicalMargin().SizeTo(0, 0, 0, 0);
     // XXX use box methods
@@ -10231,7 +10406,7 @@ void nsFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
     // (It used to have a bogus parent, skipping all the boxes).
     WritingMode wm = GetWritingMode();
     LogicalSize logicalSize(wm, nsSize(aWidth, aHeight));
-    logicalSize.BSize(wm) = NS_INTRINSICSIZE;
+    logicalSize.BSize(wm) = NS_UNCONSTRAINEDSIZE;
     ReflowInput reflowInput(aPresContext, *parentRI, this, logicalSize,
                             Nothing(), ReflowInput::DUMMY_PARENT_REFLOW_INPUT);
 
@@ -10244,7 +10419,7 @@ void nsFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
 
     // mComputedWidth and mComputedHeight are content-box, not
     // border-box
-    if (aWidth != NS_INTRINSICSIZE) {
+    if (aWidth != NS_UNCONSTRAINEDSIZE) {
       nscoord computedWidth =
           aWidth - reflowInput.ComputedPhysicalBorderPadding().LeftRight();
       computedWidth = std::max(computedWidth, 0);
@@ -10257,7 +10432,7 @@ void nsFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
     // natural height excluding any overflow area which may be caused by
     // various CSS effects such as shadow or outline.
     if (!IsBlockFrameOrSubclass()) {
-      if (aHeight != NS_INTRINSICSIZE) {
+      if (aHeight != NS_UNCONSTRAINEDSIZE) {
         nscoord computedHeight =
             aHeight - reflowInput.ComputedPhysicalBorderPadding().TopBottom();
         computedHeight = std::max(computedHeight, 0);
@@ -10288,7 +10463,7 @@ void nsFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
       // requires a full reflow.  See ReflowInput::InitResizeFlags
       // for more details.
       if (nsLayoutUtils::FontSizeInflationEnabled(aPresContext)) {
-        AddStateBits(NS_FRAME_IS_DIRTY);
+        this->MarkSubtreeDirty();
       }
     }
     if (metrics->mLastSize.height != aHeight) {
@@ -10310,10 +10485,10 @@ void nsFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
 
     NS_ASSERTION(status.IsComplete(), "bad status");
 
-    uint32_t layoutFlags = aState.LayoutFlags();
-    nsContainerFrame::FinishReflowChild(this, aPresContext, aDesiredSize,
-                                        &reflowInput, aX, aY,
-                                        layoutFlags | NS_FRAME_NO_MOVE_FRAME);
+    ReflowChildFlags layoutFlags = aState.LayoutFlags();
+    nsContainerFrame::FinishReflowChild(
+        this, aPresContext, aDesiredSize, &reflowInput, aX, aY,
+        layoutFlags | ReflowChildFlags::NoMoveFrame);
 
     // Save the ascent.  (bug 103925)
     if (IsXULCollapsed()) {
@@ -10331,19 +10506,19 @@ void nsFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
   }
 
 #ifdef DEBUG_REFLOW
-  if (aHeight != NS_INTRINSICSIZE && aDesiredSize.Height() != aHeight) {
+  if (aHeight != NS_UNCONSTRAINEDSIZE && aDesiredSize.Height() != aHeight) {
     nsAdaptorAddIndents();
     printf("*****got taller!*****\n");
   }
-  if (aWidth != NS_INTRINSICSIZE && aDesiredSize.Width() != aWidth) {
+  if (aWidth != NS_UNCONSTRAINEDSIZE && aDesiredSize.Width() != aWidth) {
     nsAdaptorAddIndents();
     printf("*****got wider!******\n");
   }
 #endif
 
-  if (aWidth == NS_INTRINSICSIZE) aWidth = aDesiredSize.Width();
+  if (aWidth == NS_UNCONSTRAINEDSIZE) aWidth = aDesiredSize.Width();
 
-  if (aHeight == NS_INTRINSICSIZE) aHeight = aDesiredSize.Height();
+  if (aHeight == NS_UNCONSTRAINEDSIZE) aHeight = aDesiredSize.Height();
 
   metrics->mLastSize.width = aDesiredSize.Width();
   metrics->mLastSize.height = aDesiredSize.Height();
@@ -10627,7 +10802,8 @@ bool nsIFrame::IsStackingContext(const nsStyleDisplay* aStyleDisplay,
                             aStylePosition->mZIndex.IsInteger())) ||
          (aStyleDisplay->mWillChange.bits &
           StyleWillChangeBits_STACKING_CONTEXT) ||
-         aStyleDisplay->mIsolation != NS_STYLE_ISOLATION_AUTO;
+         aStyleDisplay->mIsolation != NS_STYLE_ISOLATION_AUTO ||
+         aStyleEffects->HasBackdropFilters();
 }
 
 bool nsIFrame::IsStackingContext() {
@@ -11629,7 +11805,6 @@ void DR_State::InitFrameTypeTable() {
   AddFrameTypeInfo(LayoutFrameType::Root, "root", "root");
   AddFrameTypeInfo(LayoutFrameType::Scroll, "scroll", "scroll");
   AddFrameTypeInfo(LayoutFrameType::TableCell, "cell", "tableCell");
-  AddFrameTypeInfo(LayoutFrameType::BCTableCell, "bcCell", "bcTableCell");
   AddFrameTypeInfo(LayoutFrameType::TableCol, "col", "tableCol");
   AddFrameTypeInfo(LayoutFrameType::TableColGroup, "colG", "tableColGroup");
   AddFrameTypeInfo(LayoutFrameType::Table, "tbl", "table");
@@ -12191,19 +12366,16 @@ void ReflowInput::DisplayInitFrameTypeExit(nsIFrame* aFrame,
     DR_state->DisplayFrameTypeInfo(aFrame, treeNode->mIndent);
     printf("InitFrameType");
 
-    const nsStyleDisplay* disp = aState->mStyleDisplay;
-
     if (aFrame->GetStateBits() & NS_FRAME_OUT_OF_FLOW) printf(" out-of-flow");
     if (aFrame->GetPrevInFlow()) printf(" prev-in-flow");
     if (aFrame->IsAbsolutelyPositioned()) printf(" abspos");
     if (aFrame->IsFloating()) printf(" float");
 
-    const nsCSSKeyword displayVal = nsCSSProps::ValueToKeywordEnum(
-        disp->mDisplay, nsCSSProps::kDisplayKTable);
-    if (displayVal == eCSSKeyword_UNKNOWN)
-      printf(" display=%u", static_cast<uint32_t>(disp->mDisplay));
-    else
-      printf(" display=%s", nsCSSKeywords::GetStringValue(displayVal).get());
+    {
+      nsAutoString result;
+      Servo_GetPropertyValue(aFrame->Style(), eCSSProperty_display, &result);
+      printf(" display=%s", NS_ConvertUTF16toUTF8(result).get());
+    }
 
     // This array must exactly match the NS_CSS_FRAME_TYPE constants.
     const char* const cssFrameTypes[] = {
@@ -12224,5 +12396,98 @@ void ReflowInput::DisplayInitFrameTypeExit(nsIFrame* aFrame,
 
 #  endif
 // End Display Reflow
+
+// Validation of SideIsVertical.
+#  define CASE(side, result) \
+    static_assert(SideIsVertical(side) == result, "SideIsVertical is wrong")
+CASE(eSideTop, false);
+CASE(eSideRight, true);
+CASE(eSideBottom, false);
+CASE(eSideLeft, true);
+#  undef CASE
+
+// Validation of HalfCornerIsX.
+#  define CASE(corner, result) \
+    static_assert(HalfCornerIsX(corner) == result, "HalfCornerIsX is wrong")
+CASE(eCornerTopLeftX, true);
+CASE(eCornerTopLeftY, false);
+CASE(eCornerTopRightX, true);
+CASE(eCornerTopRightY, false);
+CASE(eCornerBottomRightX, true);
+CASE(eCornerBottomRightY, false);
+CASE(eCornerBottomLeftX, true);
+CASE(eCornerBottomLeftY, false);
+#  undef CASE
+
+// Validation of HalfToFullCorner.
+#  define CASE(corner, result)                        \
+    static_assert(HalfToFullCorner(corner) == result, \
+                  "HalfToFullCorner is "              \
+                  "wrong")
+CASE(eCornerTopLeftX, eCornerTopLeft);
+CASE(eCornerTopLeftY, eCornerTopLeft);
+CASE(eCornerTopRightX, eCornerTopRight);
+CASE(eCornerTopRightY, eCornerTopRight);
+CASE(eCornerBottomRightX, eCornerBottomRight);
+CASE(eCornerBottomRightY, eCornerBottomRight);
+CASE(eCornerBottomLeftX, eCornerBottomLeft);
+CASE(eCornerBottomLeftY, eCornerBottomLeft);
+#  undef CASE
+
+// Validation of FullToHalfCorner.
+#  define CASE(corner, vert, result)                        \
+    static_assert(FullToHalfCorner(corner, vert) == result, \
+                  "FullToHalfCorner is wrong")
+CASE(eCornerTopLeft, false, eCornerTopLeftX);
+CASE(eCornerTopLeft, true, eCornerTopLeftY);
+CASE(eCornerTopRight, false, eCornerTopRightX);
+CASE(eCornerTopRight, true, eCornerTopRightY);
+CASE(eCornerBottomRight, false, eCornerBottomRightX);
+CASE(eCornerBottomRight, true, eCornerBottomRightY);
+CASE(eCornerBottomLeft, false, eCornerBottomLeftX);
+CASE(eCornerBottomLeft, true, eCornerBottomLeftY);
+#  undef CASE
+
+// Validation of SideToFullCorner.
+#  define CASE(side, second, result)                        \
+    static_assert(SideToFullCorner(side, second) == result, \
+                  "SideToFullCorner is wrong")
+CASE(eSideTop, false, eCornerTopLeft);
+CASE(eSideTop, true, eCornerTopRight);
+
+CASE(eSideRight, false, eCornerTopRight);
+CASE(eSideRight, true, eCornerBottomRight);
+
+CASE(eSideBottom, false, eCornerBottomRight);
+CASE(eSideBottom, true, eCornerBottomLeft);
+
+CASE(eSideLeft, false, eCornerBottomLeft);
+CASE(eSideLeft, true, eCornerTopLeft);
+#  undef CASE
+
+// Validation of SideToHalfCorner.
+#  define CASE(side, second, parallel, result)                        \
+    static_assert(SideToHalfCorner(side, second, parallel) == result, \
+                  "SideToHalfCorner is wrong")
+CASE(eSideTop, false, true, eCornerTopLeftX);
+CASE(eSideTop, false, false, eCornerTopLeftY);
+CASE(eSideTop, true, true, eCornerTopRightX);
+CASE(eSideTop, true, false, eCornerTopRightY);
+
+CASE(eSideRight, false, false, eCornerTopRightX);
+CASE(eSideRight, false, true, eCornerTopRightY);
+CASE(eSideRight, true, false, eCornerBottomRightX);
+CASE(eSideRight, true, true, eCornerBottomRightY);
+
+CASE(eSideBottom, false, true, eCornerBottomRightX);
+CASE(eSideBottom, false, false, eCornerBottomRightY);
+CASE(eSideBottom, true, true, eCornerBottomLeftX);
+CASE(eSideBottom, true, false, eCornerBottomLeftY);
+
+CASE(eSideLeft, false, false, eCornerBottomLeftX);
+CASE(eSideLeft, false, true, eCornerBottomLeftY);
+CASE(eSideLeft, true, false, eCornerTopLeftX);
+CASE(eSideLeft, true, true, eCornerTopLeftY);
+#  undef CASE
 
 #endif

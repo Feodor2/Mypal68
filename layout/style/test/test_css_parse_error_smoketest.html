@@ -23,6 +23,10 @@
       error: "Expected ‘none’, URL, or filter function but found ‘alpha(’.  Error in parsing value for ‘filter’.  Declaration dropped.",
       cssSelectors: "x",
     }, {
+      css: "x { color: red; abc; }",
+      error: "Unknown property ‘abc;’.  Declaration dropped.",
+      cssSelectors: "x",
+    }, {
       css: "x { filter: 5; }",
       error: "Expected ‘none’, URL, or filter function but found ‘5’.  Error in parsing value for ‘filter’.  Declaration dropped.",
       cssSelectors: "x",
@@ -103,7 +107,10 @@
       css: "@media (min-monochrome: 1.1) {}",
       error: "Found invalid value for media feature.",
     }, {
-      css: "@media (min-aspect-ratio: 1) {}",
+      css: "@media (min-aspect-ratio: 1 invalid) {}",
+      error: "Found invalid value for media feature.",
+    }, {
+      css: "@media (min-aspect-ratio: 1 / invalid) {}",
       error: "Found invalid value for media feature.",
     }, {
       css: "@media (orientation: invalid-orientation-value) {}",

@@ -6,7 +6,7 @@
 
 #include "mozilla/css/ErrorReporter.h"
 
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/Preferences.h"
@@ -18,7 +18,6 @@
 #include "nsIFactory.h"
 #include "nsINode.h"
 #include "nsIScriptError.h"
-#include "nsISensitiveInfoHiddenURI.h"
 #include "nsIStringBundle.h"
 #include "nsServiceManagerUtils.h"
 #include "nsStyleUtil.h"
@@ -300,15 +299,12 @@ void ErrorReporter::ReportUnexpected(const char* aMessage) {
   AddToError(str);
 }
 
-void ErrorReporter::ReportUnexpectedUnescaped(const char* aMessage,
-                                              const nsAutoString& aParam) {
+void ErrorReporter::ReportUnexpectedUnescaped(
+    const char* aMessage, const nsTArray<nsString>& aParam) {
   MOZ_ASSERT(ShouldReportErrors(mSheet, mLoader));
 
-  const char16_t* params[1] = {aParam.get()};
-
   nsAutoString str;
-  sStringBundle->FormatStringFromName(aMessage, params, ArrayLength(params),
-                                      str);
+  sStringBundle->FormatStringFromName(aMessage, aParam, str);
   AddToError(str);
 }
 

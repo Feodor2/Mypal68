@@ -55,7 +55,7 @@ class ActiveLayerTracker {
    * value has changed.
    */
   static void NotifyAnimated(nsIFrame* aFrame, nsCSSPropertyID aProperty,
-                             const nsAString& aNewValue,
+                             const nsACString& aNewValue,
                              nsDOMCSSDeclaration* aDOMCSSDecl);
   /**
    * Notify aFrame as being known to have an animation of aProperty through an
@@ -74,7 +74,7 @@ class ActiveLayerTracker {
    */
   static void NotifyInlineStyleRuleModified(nsIFrame* aFrame,
                                             nsCSSPropertyID aProperty,
-                                            const nsAString& aNewValue,
+                                            const nsACString& aNewValue,
                                             nsDOMCSSDeclaration* aDOMCSSDecl);
   /**
    * Notify that a frame needs to be repainted. This is important for layering

@@ -40,7 +40,6 @@
 
 #include "nsBoxFrame.h"
 
-#include "gfxPrefs.h"
 #include "gfxUtils.h"
 #include "mozilla/gfx/2D.h"
 #include "nsBoxLayoutState.h"
@@ -58,7 +57,6 @@
 #include "nsViewManager.h"
 #include "nsView.h"
 #include "nsCSSRendering.h"
-#include "nsIServiceManager.h"
 #include "nsBoxLayout.h"
 #include "nsSprocketLayout.h"
 #include "nsIScrollableFrame.h"
@@ -77,7 +75,6 @@
 #include <algorithm>
 
 // Needed for Print Preview
-#include "nsIURI.h"
 
 #include "mozilla/TouchEvents.h"
 
@@ -492,6 +489,9 @@ void nsBoxFrame::DidReflow(nsPresContext* aPresContext,
       mState & (NS_FRAME_IS_DIRTY | NS_FRAME_HAS_DIRTY_CHILDREN);
   nsFrame::DidReflow(aPresContext, aReflowInput);
   AddStateBits(preserveBits);
+  if (preserveBits & NS_FRAME_IS_DIRTY) {
+    this->MarkSubtreeDirty();
+  }
 }
 
 bool nsBoxFrame::HonorPrintBackgroundSettings() {
@@ -595,9 +595,9 @@ void nsBoxFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
   LogicalSize prefSize(wm);
 
   // if we are told to layout intrinsic then get our preferred size.
-  NS_ASSERTION(computedSize.ISize(wm) != NS_INTRINSICSIZE,
+  NS_ASSERTION(computedSize.ISize(wm) != NS_UNCONSTRAINEDSIZE,
                "computed inline size should always be computed");
-  if (computedSize.BSize(wm) == NS_INTRINSICSIZE) {
+  if (computedSize.BSize(wm) == NS_UNCONSTRAINEDSIZE) {
     nsSize physicalPrefSize = GetXULPrefSize(state);
     nsSize minSize = GetXULMinSize(state);
     nsSize maxSize = GetXULMaxSize(state);
@@ -609,7 +609,7 @@ void nsBoxFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
   // get our desiredSize
   computedSize.ISize(wm) += m.IStart(wm) + m.IEnd(wm);
 
-  if (aReflowInput.ComputedBSize() == NS_INTRINSICSIZE) {
+  if (aReflowInput.ComputedBSize() == NS_UNCONSTRAINEDSIZE) {
     computedSize.BSize(wm) = prefSize.BSize(wm);
     // prefSize is border-box but min/max constraints are content-box.
     nscoord blockDirBorderPadding =
@@ -746,7 +746,7 @@ nsSize nsBoxFrame::GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) {
   NS_ASSERTION(aBoxLayoutState.GetRenderingContext(),
                "must have rendering context");
 
-  nsSize size(NS_INTRINSICSIZE, NS_INTRINSICSIZE);
+  nsSize size(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
   DISPLAY_MAX_SIZE(this, size);
   if (!DoesNeedRecalc(mMaxSize)) {
     size = mMaxSize;
@@ -786,8 +786,8 @@ nscoord nsBoxFrame::GetXULFlex() {
  */
 NS_IMETHODIMP
 nsBoxFrame::DoXULLayout(nsBoxLayoutState& aState) {
-  uint32_t oldFlags = aState.LayoutFlags();
-  aState.SetLayoutFlags(0);
+  ReflowChildFlags oldFlags = aState.LayoutFlags();
+  aState.SetLayoutFlags(ReflowChildFlags::Default);
 
   nsresult rv = NS_OK;
   if (mLayoutManager) {
@@ -880,6 +880,7 @@ void nsBoxFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
 }
 
 void nsBoxFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                              const nsLineList::iterator* aPrevFrameLine,
                               nsFrameList& aFrameList) {
   NS_ASSERTION(!aPrevFrame || aPrevFrame->GetParent() == this,
                "inserting after sibling frame with different parent");
@@ -1200,7 +1201,7 @@ nsresult nsBoxFrame::LayoutChildAt(nsBoxLayoutState& aState, nsIFrame* aBox,
 }
 
 nsresult nsBoxFrame::XULRelayoutChildAtOrdinal(nsIFrame* aChild) {
-  uint32_t ord = aChild->GetXULOrdinal();
+  int32_t ord = aChild->GetXULOrdinal();
 
   nsIFrame* child = mFrames.FirstChild();
   nsIFrame* newPrevSib = nullptr;

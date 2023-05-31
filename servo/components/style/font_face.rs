@@ -55,7 +55,7 @@ impl OneOrMoreSeparated for Source {
 #[repr(u8)]
 #[allow(missing_docs)]
 pub enum FontFaceSourceListComponent {
-    Url(*const crate::gecko_bindings::structs::mozilla::css::URLValue),
+    Url(*const crate::gecko::url::CssUrl),
     Local(*mut crate::gecko_bindings::structs::nsAtom),
     FormatHint {
         length: usize,
@@ -414,16 +414,10 @@ impl Parse for Source {
 
 macro_rules! is_descriptor_enabled {
     ("font-display") => {
-        unsafe {
-            use crate::gecko_bindings::structs::mozilla;
-            mozilla::StaticPrefs_sVarCache_layout_css_font_display_enabled
-        }
+        static_prefs::pref!("layout.css.font-display.enabled")
     };
     ("font-variation-settings") => {
-        unsafe {
-            use crate::gecko_bindings::structs::mozilla;
-            mozilla::StaticPrefs_sVarCache_layout_css_font_variations_enabled != 0
-        }
+        static_prefs::pref!("layout.css.font-variations.enabled")
     };
     ($name:tt) => {
         true

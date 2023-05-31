@@ -3,8 +3,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 <%!
-    from data import Keyword, to_rust_ident, to_camel_case, SYSTEM_FONT_LONGHANDS
-    from data import LOGICAL_CORNERS, PHYSICAL_CORNERS, LOGICAL_SIDES, PHYSICAL_SIDES, LOGICAL_SIZES
+    from data import Keyword, to_rust_ident, to_phys, to_camel_case, SYSTEM_FONT_LONGHANDS
+    from data import (LOGICAL_CORNERS, PHYSICAL_CORNERS, LOGICAL_SIDES,
+                      PHYSICAL_SIDES, LOGICAL_SIZES, LOGICAL_AXES)
 %>
 
 <%def name="predefined_type(name, type, initial_value, parse_method='parse',
@@ -136,7 +137,10 @@
             % endif
             use crate::values::computed::ComputedVecIter;
 
-            <% is_shared_list = allow_empty and allow_empty != "NotInitial" and data.longhands_by_name[name].style_struct.inherited %>
+            <%
+                is_shared_list = allow_empty and allow_empty != "NotInitial" and \
+                    data.longhands_by_name[name].style_struct.inherited
+            %>
 
             // FIXME(emilio): Add an OwnedNonEmptySlice type, and figure out
             // something for transition-name, which is the only remaining user
@@ -363,7 +367,7 @@
 
         pub use self::single_value::SpecifiedValue as SingleSpecifiedValue;
 
-        % if not simple_vector_bindings:
+        % if not simple_vector_bindings and engine == "gecko":
         impl SpecifiedValue {
             fn compute_iter<'a, 'cx, 'cx_a>(
                 &'a self,
@@ -482,7 +486,7 @@
                 _ => panic!("entered the wrong cascade_property() implementation"),
             };
 
-            % if property.ident in SYSTEM_FONT_LONGHANDS and product == "gecko":
+            % if property.ident in SYSTEM_FONT_LONGHANDS and engine == "gecko":
                 if let Some(sf) = specified_value.get_system() {
                     longhands::system_font::resolve_system_font(sf, context);
                 }
@@ -493,7 +497,7 @@
                     .set_writing_mode_dependency(context.builder.writing_mode);
             % endif
 
-            % if property.is_vector and not property.simple_vector_bindings:
+            % if property.is_vector and not property.simple_vector_bindings and engine == "gecko":
                 // In the case of a vector property we want to pass down an
                 // iterator so that this can be computed without allocation.
                 //
@@ -539,9 +543,13 @@
 <%def name="single_keyword_system(name, values, **kwargs)">
     <%
         keyword_kwargs = {a: kwargs.pop(a, None) for a in [
-            'gecko_constant_prefix', 'gecko_enum_prefix',
-            'extra_gecko_values', 'extra_servo_values',
-            'custom_consts', 'gecko_inexhaustive',
+            'gecko_constant_prefix',
+            'gecko_enum_prefix',
+            'extra_gecko_values',
+            'extra_servo_2013_values',
+            'extra_servo_2020_values',
+            'custom_consts',
+            'gecko_inexhaustive',
         ]}
         keyword = keyword=Keyword(name, values, **keyword_kwargs)
     %>
@@ -565,12 +573,12 @@
                 ToShmem,
             )]
             pub enum T {
-            % for value in keyword.values_for(product):
+            % for value in keyword.values_for(engine):
                 ${to_camel_case(value)},
             % endfor
             }
 
-            ${gecko_keyword_conversion(keyword, keyword.values_for(product), type="T", cast_to="i32")}
+            ${gecko_keyword_conversion(keyword, keyword.values_for(engine), type="T", cast_to="i32")}
         }
 
         #[cfg_attr(feature = "gecko", derive(MallocSizeOf))]
@@ -590,13 +598,15 @@
             fn to_computed_value(&self, _cx: &Context) -> Self::ComputedValue {
                 match *self {
                     SpecifiedValue::Keyword(v) => v,
-                    SpecifiedValue::System(_) => {
-                        % if product == "gecko":
+                    % if engine == "gecko":
+                        SpecifiedValue::System(_) => {
                             _cx.cached_system_font.as_ref().unwrap().${to_rust_ident(name)}
-                        % else:
-                            unreachable!()
-                        % endif
-                    }
+                        }
+                    % else:
+                        SpecifiedValue::System(system_font) => {
+                            match system_font {}
+                        }
+                    % endif
                 }
             }
             fn from_computed_value(other: &computed_value::T) -> Self {
@@ -631,7 +641,7 @@
 <%def name="gecko_keyword_conversion(keyword, values=None, type='SpecifiedValue', cast_to=None)">
     <%
         if not values:
-            values = keyword.values_for(product)
+            values = keyword.values_for(engine)
         maybe_cast = "as %s" % cast_to if cast_to else ""
         const_type = cast_to if cast_to else "u32"
     %>
@@ -699,10 +709,17 @@
             extra_specified=None, needs_conversion=False, **kwargs)">
     <%
         keyword_kwargs = {a: kwargs.pop(a, None) for a in [
-            'gecko_constant_prefix', 'gecko_enum_prefix',
-            'extra_gecko_values', 'extra_servo_values',
-            'aliases', 'extra_gecko_aliases', 'custom_consts',
-            'gecko_inexhaustive', 'gecko_strip_moz_prefix',
+            'gecko_constant_prefix',
+            'gecko_enum_prefix',
+            'extra_gecko_values',
+            'extra_servo_2013_values',
+            'extra_servo_2020_values',
+            'gecko_aliases',
+            'servo_2013_aliases',
+            'servo_2020_aliases',
+            'custom_consts',
+            'gecko_inexhaustive',
+            'gecko_strip_moz_prefix',
         ]}
     %>
 
@@ -712,7 +729,7 @@
             % if include_aliases:
             <%
                 aliases = []
-                for alias, v in keyword.aliases_for(product).iteritems():
+                for alias, v in keyword.aliases_for(engine).iteritems():
                     if variant == v:
                         aliases.append(alias)
             %>
@@ -738,7 +755,7 @@
                 ToShmem,
             )]
             pub enum SpecifiedValue {
-                ${variants(keyword.values_for(product) + extra_specified.split(), bool(extra_specified))}
+                ${variants(keyword.values_for(engine) + extra_specified.split(), bool(extra_specified))}
             }
         % else:
             pub use self::computed_value::T as SpecifiedValue;
@@ -750,7 +767,7 @@
             #[derive(Parse, SpecifiedValueInfo, ToComputedValue, ToShmem)]
             % endif
             pub enum T {
-                ${variants(data.longhands_by_name[name].keyword.values_for(product), not extra_specified)}
+                ${variants(data.longhands_by_name[name].keyword.values_for(engine), not extra_specified)}
             }
         }
         #[inline]
@@ -769,10 +786,10 @@
 
         % if needs_conversion:
             <%
-                conversion_values = keyword.values_for(product)
+                conversion_values = keyword.values_for(engine)
                 if extra_specified:
                     conversion_values += extra_specified.split()
-                conversion_values += keyword.aliases_for(product).keys()
+                conversion_values += keyword.aliases_for(engine).keys()
             %>
             ${gecko_keyword_conversion(keyword, values=conversion_values)}
         % endif
@@ -844,11 +861,11 @@
         pub struct LonghandsToSerialize<'a> {
             % for sub_property in shorthand.sub_properties:
                 pub ${sub_property.ident}:
-                % if sub_property.may_be_disabled_in(shorthand, product):
+                % if sub_property.may_be_disabled_in(shorthand, engine):
                     Option<
                 % endif
                     &'a longhands::${sub_property.ident}::SpecifiedValue,
-                % if sub_property.may_be_disabled_in(shorthand, product):
+                % if sub_property.may_be_disabled_in(shorthand, engine):
                     >,
                 % endif
             % endfor
@@ -887,7 +904,7 @@
 
                     (
                     % for sub_property in shorthand.sub_properties:
-                        % if sub_property.may_be_disabled_in(shorthand, product):
+                        % if sub_property.may_be_disabled_in(shorthand, engine):
                         ${sub_property.ident},
                         % else:
                         Some(${sub_property.ident}),
@@ -915,13 +932,13 @@
             use crate::properties::{NonCustomPropertyId, LonghandId};
             input.parse_entirely(|input| parse_value(context, input)).map(|longhands| {
                 % for sub_property in shorthand.sub_properties:
-                % if sub_property.may_be_disabled_in(shorthand, product):
+                % if sub_property.may_be_disabled_in(shorthand, engine):
                 if NonCustomPropertyId::from(LonghandId::${sub_property.camel_case}).allowed_in(context) {
                 % endif
                     declarations.push(PropertyDeclaration::${sub_property.camel_case}(
                         longhands.${sub_property.ident}
                     ));
-                % if sub_property.may_be_disabled_in(shorthand, product):
+                % if sub_property.may_be_disabled_in(shorthand, engine):
                 }
                 % endif
                 % endfor
@@ -1035,17 +1052,21 @@
         side = None
         size = None
         corner = None
+        axis = None
         maybe_side = [s for s in LOGICAL_SIDES if s in name]
         maybe_size = [s for s in LOGICAL_SIZES if s in name]
         maybe_corner = [s for s in LOGICAL_CORNERS if s in name]
+        maybe_axis = [s for s in LOGICAL_AXES if name.endswith(s)]
         if len(maybe_side) == 1:
             side = maybe_side[0]
         elif len(maybe_size) == 1:
             size = maybe_size[0]
         elif len(maybe_corner) == 1:
             corner = maybe_corner[0]
+        elif len(maybe_axis) == 1:
+            axis = maybe_axis[0]
         def phys_ident(side, phy_side):
-            return to_rust_ident(name.replace(side, phy_side).replace("inset-", ""))
+            return to_rust_ident(to_phys(name, side, phy_side))
     %>
     % if side is not None:
         use crate::logical_geometry::PhysicalSide;
@@ -1076,6 +1097,19 @@
             ${caller.inner(physical_ident=phys_ident(size, physical_size[1]))}
         } else {
             ${caller.inner(physical_ident=phys_ident(size, physical_size[0]))}
+        }
+    % elif axis is not None:
+        <%
+            if axis == "inline":
+                me, other = "x", "y"
+            else:
+                assert(axis == "block")
+                me, other = "y", "x"
+        %>
+        if wm.is_vertical() {
+            ${caller.inner(physical_ident=phys_ident(axis, other))}
+        } else {
+            ${caller.inner(physical_ident=phys_ident(axis, me))}
         }
     % else:
         <% raise Exception("Don't know what to do with logical property %s" % name) %>

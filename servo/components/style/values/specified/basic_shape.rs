@@ -20,8 +20,7 @@ use crate::values::specified::SVGPathData;
 use crate::values::specified::{LengthPercentage, NonNegativeLengthPercentage};
 use crate::Zero;
 use cssparser::Parser;
-use std::fmt::{self, Write};
-use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
+use style_traits::{ParseError, StyleParseErrorKind};
 
 /// A specified alias for FillRule.
 pub use crate::values::generics::basic_shape::FillRule;
@@ -59,9 +58,7 @@ pub type Polygon = generic::GenericPolygon<LengthPercentage>;
 
 #[cfg(feature = "gecko")]
 fn is_clip_path_path_enabled(context: &ParserContext) -> bool {
-    use crate::gecko_bindings::structs::mozilla;
-    context.chrome_rules_enabled() ||
-        unsafe { mozilla::StaticPrefs_sVarCache_layout_css_clip_path_path_enabled }
+    context.chrome_rules_enabled() || static_prefs::pref!("layout.css.clip-path-path.enabled")
 }
 #[cfg(feature = "servo")]
 fn is_clip_path_path_enabled(_: &ParserContext) -> bool {
@@ -239,23 +236,6 @@ impl Circle {
     }
 }
 
-impl ToCss for Circle {
-    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
-    where
-        W: Write,
-    {
-        dest.write_str("circle(")?;
-        if generic::ShapeRadius::ClosestSide != self.radius {
-            self.radius.to_css(dest)?;
-            dest.write_str(" ")?;
-        }
-
-        dest.write_str("at ")?;
-        self.position.to_css(dest)?;
-        dest.write_str(")")
-    }
-}
-
 impl Parse for Ellipse {
     fn parse<'i, 't>(
         context: &ParserContext,
@@ -290,25 +270,6 @@ impl Ellipse {
             semiaxis_y: b,
             position: position,
         })
-    }
-}
-
-impl ToCss for Ellipse {
-    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
-    where
-        W: Write,
-    {
-        dest.write_str("ellipse(")?;
-        if self.semiaxis_x != ShapeRadius::default() || self.semiaxis_y != ShapeRadius::default() {
-            self.semiaxis_x.to_css(dest)?;
-            dest.write_str(" ")?;
-            self.semiaxis_y.to_css(dest)?;
-            dest.write_str(" ")?;
-        }
-
-        dest.write_str("at ")?;
-        self.position.to_css(dest)?;
-        dest.write_str(")")
     }
 }
 

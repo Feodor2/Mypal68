@@ -5,6 +5,7 @@
 #include "nsStyleUtil.h"
 #include "nsStyleConsts.h"
 
+#include "mozilla/ExpandedPrincipal.h"
 #include "mozilla/FontPropertyTypes.h"
 #include "nsIContent.h"
 #include "nsCSSProps.h"
@@ -13,8 +14,6 @@
 #include "nsStyleStruct.h"
 #include "nsIContentPolicy.h"
 #include "nsIContentSecurityPolicy.h"
-#include "nsIURI.h"
-#include "nsISupportsPrimitives.h"
 #include "nsLayoutUtils.h"
 #include "nsPrintfCString.h"
 #include <cctype>
@@ -183,82 +182,6 @@ void nsStyleUtil::AppendBitmaskCSSValue(const nsCSSKTableEntry aTable[],
 }
 
 /* static */
-void nsStyleUtil::AppendAngleValue(const nsStyleCoord& aAngle,
-                                   nsAString& aResult) {
-  MOZ_ASSERT(aAngle.IsAngleValue(), "Should have angle value");
-
-  // Append number.
-  AppendCSSNumber(aAngle.GetAngleValue(), aResult);
-
-  // Append unit.
-  switch (aAngle.GetUnit()) {
-    case eStyleUnit_Degree:
-      aResult.AppendLiteral("deg");
-      break;
-    default:
-      MOZ_ASSERT_UNREACHABLE("unrecognized angle unit");
-  }
-}
-
-/* static */
-void nsStyleUtil::AppendPaintOrderValue(uint8_t aValue, nsAString& aResult) {
-  static_assert(
-      NS_STYLE_PAINT_ORDER_BITWIDTH * NS_STYLE_PAINT_ORDER_LAST_VALUE <= 8,
-      "SVGStyleStruct::mPaintOrder and local variables not big enough");
-
-  if (aValue == NS_STYLE_PAINT_ORDER_NORMAL) {
-    aResult.AppendLiteral("normal");
-    return;
-  }
-
-  // Append the minimal value necessary for the given paint order.
-  static_assert(NS_STYLE_PAINT_ORDER_LAST_VALUE == 3,
-                "paint-order values added; check serialization");
-
-  // The following relies on the default order being the order of the
-  // constant values.
-
-  const uint8_t MASK = (1 << NS_STYLE_PAINT_ORDER_BITWIDTH) - 1;
-
-  uint32_t lastPositionToSerialize = 0;
-  for (uint32_t position = NS_STYLE_PAINT_ORDER_LAST_VALUE - 1; position > 0;
-       position--) {
-    uint8_t component =
-        (aValue >> (position * NS_STYLE_PAINT_ORDER_BITWIDTH)) & MASK;
-    uint8_t earlierComponent =
-        (aValue >> ((position - 1) * NS_STYLE_PAINT_ORDER_BITWIDTH)) & MASK;
-    if (component < earlierComponent) {
-      lastPositionToSerialize = position - 1;
-      break;
-    }
-  }
-
-  for (uint32_t position = 0; position <= lastPositionToSerialize; position++) {
-    if (position > 0) {
-      aResult.Append(' ');
-    }
-    uint8_t component = aValue & MASK;
-    switch (component) {
-      case NS_STYLE_PAINT_ORDER_FILL:
-        aResult.AppendLiteral("fill");
-        break;
-
-      case NS_STYLE_PAINT_ORDER_STROKE:
-        aResult.AppendLiteral("stroke");
-        break;
-
-      case NS_STYLE_PAINT_ORDER_MARKERS:
-        aResult.AppendLiteral("markers");
-        break;
-
-      default:
-        MOZ_ASSERT_UNREACHABLE("unexpected paint-order component value");
-    }
-    aValue >>= NS_STYLE_PAINT_ORDER_BITWIDTH;
-  }
-}
-
-/* static */
 float nsStyleUtil::ColorComponentToFloat(uint8_t aAlpha) {
   // Alpha values are expressed as decimals, so we should convert
   // back, using as few decimal places as possible for
@@ -371,31 +294,25 @@ bool nsStyleUtil::ObjectPropsMightCauseOverflow(
 }
 
 /* static */
-bool nsStyleUtil::CSPAllowsInlineStyle(Element* aElement,
-                                       nsIPrincipal* aPrincipal,
-                                       nsIPrincipal* aTriggeringPrincipal,
-                                       nsIURI* aSourceURI, uint32_t aLineNumber,
-                                       uint32_t aColumnNumber,
-                                       const nsAString& aStyleText,
-                                       nsresult* aRv) {
+bool nsStyleUtil::CSPAllowsInlineStyle(
+    Element* aElement, dom::Document* aDocument,
+    nsIPrincipal* aTriggeringPrincipal, uint32_t aLineNumber,
+    uint32_t aColumnNumber, const nsAString& aStyleText, nsresult* aRv) {
   nsresult rv;
 
   if (aRv) {
     *aRv = NS_OK;
   }
 
-  nsIPrincipal* principal = aPrincipal;
-  if (aTriggeringPrincipal &&
-      BasePrincipal::Cast(aTriggeringPrincipal)->OverridesCSP(aPrincipal)) {
-    principal = aTriggeringPrincipal;
-  }
-
   nsCOMPtr<nsIContentSecurityPolicy> csp;
-  rv = principal->GetCsp(getter_AddRefs(csp));
-
-  if (NS_FAILED(rv)) {
-    if (aRv) *aRv = rv;
-    return false;
+  if (aTriggeringPrincipal && BasePrincipal::Cast(aTriggeringPrincipal)
+                                  ->OverridesCSP(aDocument->NodePrincipal())) {
+    nsCOMPtr<nsIExpandedPrincipal> ep = do_QueryInterface(aTriggeringPrincipal);
+    if (ep) {
+      csp = ep->GetCsp();
+    }
+  } else {
+    csp = aDocument->GetCsp();
   }
 
   if (!csp) {
@@ -431,7 +348,8 @@ void nsStyleUtil::AppendFontSlantStyle(const FontSlantStyle& aStyle,
     auto angle = aStyle.ObliqueAngle();
     if (angle != FontSlantStyle::kDefaultAngle) {
       aOut.AppendLiteral(" ");
-      AppendAngleValue(nsStyleCoord(angle, eStyleUnit_Degree), aOut);
+      AppendCSSNumber(angle, aOut);
+      aOut.AppendLiteral("deg");
     }
   }
 }

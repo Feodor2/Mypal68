@@ -92,8 +92,7 @@ class Rule : public nsISupports, public nsWrapperCache {
 
   // This is pure virtual because all of Rule's data members are non-owning and
   // thus measured elsewhere.
-  virtual size_t SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) const
-      MOZ_MUST_OVERRIDE = 0;
+  virtual size_t SizeOfIncludingThis(MallocSizeOf) const MOZ_MUST_OVERRIDE = 0;
 
   // WebIDL interface
   virtual uint16_t Type() const = 0;
@@ -112,6 +111,10 @@ class Rule : public nsISupports, public nsWrapperCache {
  protected:
   // True if we're known-live for cycle collection purposes.
   bool IsKnownLive() const;
+
+  // Hook subclasses can use to properly unlink the nsWrapperCache of
+  // their declarations.
+  void UnlinkDeclarationWrapper(nsWrapperCache& aDecl);
 
   // mSheet should only ever be null when we create a synthetic CSSFontFaceRule
   // for an InspectorFontFace.

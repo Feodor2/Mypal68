@@ -1670,7 +1670,7 @@ void nsLineLayout::AdjustLeadings(nsIFrame* spanFrame, PerSpanData* psd,
     requiredStartLeading += leadings.mStart;
     requiredEndLeading += leadings.mEnd;
   }
-  if (aStyleText->HasTextEmphasis()) {
+  if (aStyleText->HasEffectiveTextEmphasis()) {
     nscoord bsize = GetBSizeOfEmphasisMarks(spanFrame, aInflation);
     LogicalSide side = aStyleText->TextEmphasisSide(mRootSpan->mWritingMode);
     if (side == eLogicalSideBStart) {
@@ -2277,7 +2277,7 @@ void nsLineLayout::VerticalAlignFrames(PerSpanData* psd) {
             fm, minimumLineBSize, lineWM.IsLineInverted());
         nscoord blockEnd = blockStart + minimumLineBSize;
 
-        if (mStyleText->HasTextEmphasis()) {
+        if (mStyleText->HasEffectiveTextEmphasis()) {
           nscoord fontMaxHeight = fm->MaxHeight();
           nscoord emphasisHeight =
               GetBSizeOfEmphasisMarks(spanFrame, inflation);
@@ -2951,7 +2951,7 @@ void nsLineLayout::ExpandRubyBox(PerFrameData* aFrame, nscoord aReservedISize,
       }
       // If there are no justification opportunities for space-between,
       // fall-through to center per spec.
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
     }
     case NS_STYLE_RUBY_ALIGN_CENTER:
       // Indent all children by half of the reserved inline size.
@@ -3138,7 +3138,7 @@ void nsLineLayout::TextAlignLine(nsLineBox* aLine, bool aIsLastLine) {
         }
         // Fall through to the default case if we could not justify to fill
         // the space.
-        MOZ_FALLTHROUGH;
+        [[fallthrough]];
       }
 
       case NS_STYLE_TEXT_ALIGN_START:
@@ -3277,7 +3277,8 @@ void nsLineLayout::RelativePositionFrames(PerSpanData* psd,
     if (frame->HasView())
       nsContainerFrame::SyncFrameViewAfterReflow(
           mPresContext, frame, frame->GetView(),
-          pfd->mOverflowAreas.VisualOverflow(), NS_FRAME_NO_SIZE_VIEW);
+          pfd->mOverflowAreas.VisualOverflow(),
+          nsIFrame::ReflowChildFlags::NoSizeView);
 
     // Note: the combined area of a child is in its coordinate
     // system. We adjust the childs combined area into our coordinate
@@ -3300,7 +3301,7 @@ void nsLineLayout::RelativePositionFrames(PerSpanData* psd,
         // (4) When there are text strokes
         if (pfd->mRecomputeOverflow ||
             frame->Style()->HasTextDecorationLines() ||
-            frame->StyleText()->HasTextEmphasis() ||
+            frame->StyleText()->HasEffectiveTextEmphasis() ||
             frame->StyleText()->HasWebkitTextStroke()) {
           nsTextFrame* f = static_cast<nsTextFrame*>(frame);
           r = f->RecomputeOverflow(mBlockReflowInput->mFrame);
@@ -3324,7 +3325,7 @@ void nsLineLayout::RelativePositionFrames(PerSpanData* psd,
     if (frame->HasView())
       nsContainerFrame::SyncFrameViewAfterReflow(
           mPresContext, frame, frame->GetView(), r.VisualOverflow(),
-          NS_FRAME_NO_MOVE_VIEW);
+          nsIFrame::ReflowChildFlags::NoMoveView);
 
     overflowAreas.UnionWith(r + frame->GetPosition());
   }

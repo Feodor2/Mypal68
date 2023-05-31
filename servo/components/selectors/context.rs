@@ -134,7 +134,7 @@ where
 
     /// An optional hook function for checking whether a pseudo-element
     /// should match when matching_mode is ForStatelessPseudoElement.
-    pub pseudo_element_matching_fn: Option<&'a Fn(&Impl::PseudoElement) -> bool>,
+    pub pseudo_element_matching_fn: Option<&'a dyn Fn(&Impl::PseudoElement) -> bool>,
 
     /// Extra implementation-dependent matching data.
     pub extra_data: Impl::ExtraMatchingData,
@@ -279,13 +279,13 @@ where
     /// Runs F with a given shadow host which is the root of the tree whose
     /// rules we're matching.
     #[inline]
-    pub fn with_shadow_host<F, E, R>(&mut self, host: E, f: F) -> R
+    pub fn with_shadow_host<F, E, R>(&mut self, host: Option<E>, f: F) -> R
     where
         E: Element,
         F: FnOnce(&mut Self) -> R,
     {
         let original_host = self.current_host.take();
-        self.current_host = Some(host.opaque());
+        self.current_host = host.map(|h| h.opaque());
         let result = f(self);
         self.current_host = original_host;
         result

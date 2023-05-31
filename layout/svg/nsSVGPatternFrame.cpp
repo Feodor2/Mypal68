@@ -193,7 +193,7 @@ static nsresult GetTargetGeometry(gfxRect* aBBox,
 already_AddRefed<SourceSurface> nsSVGPatternFrame::PaintPattern(
     const DrawTarget* aDrawTarget, Matrix* patternMatrix,
     const Matrix& aContextMatrix, nsIFrame* aSource,
-    nsStyleSVGPaint nsStyleSVG::*aFillOrStroke, float aGraphicOpacity,
+    mozilla::StyleSVGPaint nsStyleSVG::*aFillOrStroke, float aGraphicOpacity,
     const gfxRect* aOverrideBounds, imgDrawingParams& aImgParams) {
   /*
    * General approach:
@@ -259,7 +259,7 @@ already_AddRefed<SourceSurface> nsSVGPatternFrame::PaintPattern(
   if (patternWithChildren->mCTM) {
     *patternWithChildren->mCTM = ctm;
   } else {
-    patternWithChildren->mCTM = new gfxMatrix(ctm);
+    patternWithChildren->mCTM = MakeUnique<gfxMatrix>(ctm);
   }
 
   // Get the bounding box of the pattern.  This will be used to determine
@@ -668,9 +668,9 @@ gfxMatrix nsSVGPatternFrame::ConstructCTM(const SVGAnimatedViewBox& aViewBox,
 // nsSVGPaintServerFrame methods:
 already_AddRefed<gfxPattern> nsSVGPatternFrame::GetPaintServerPattern(
     nsIFrame* aSource, const DrawTarget* aDrawTarget,
-    const gfxMatrix& aContextMatrix, nsStyleSVGPaint nsStyleSVG::*aFillOrStroke,
-    float aGraphicOpacity, imgDrawingParams& aImgParams,
-    const gfxRect* aOverrideBounds) {
+    const gfxMatrix& aContextMatrix,
+    mozilla::StyleSVGPaint nsStyleSVG::*aFillOrStroke, float aGraphicOpacity,
+    imgDrawingParams& aImgParams, const gfxRect* aOverrideBounds) {
   if (aGraphicOpacity == 0.0f) {
     return do_AddRef(new gfxPattern(Color()));
   }

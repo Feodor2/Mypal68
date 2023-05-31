@@ -185,6 +185,21 @@ impl<'lr> TShadowRoot for GeckoShadowRoot<'lr> {
             bindings::Gecko_ShadowRoot_GetElementsWithId(self.0, id.as_ptr())
         }))
     }
+
+    #[inline]
+    fn parts<'a>(&self) -> &[<Self::ConcreteNode as TNode>::ConcreteElement]
+    where
+        Self: 'a,
+    {
+        let slice: &[*const RawGeckoElement] = &*self.0.mParts;
+
+        #[allow(dead_code)]
+        unsafe fn static_assert() {
+            mem::transmute::<*const RawGeckoElement, GeckoElement<'static>>(0xbadc0de as *const _);
+        }
+
+        unsafe { mem::transmute(slice) }
+    }
 }
 
 /// A simple wrapper over a non-null Gecko node (`nsINode`) pointer.
@@ -575,6 +590,9 @@ impl<'le> GeckoElement<'le> {
 
     #[inline(always)]
     fn get_part_attr(&self) -> Option<&structs::nsAttrValue> {
+        if !self.has_part_attr() {
+            return None;
+        }
         snapshot_helpers::find_attr(self.attrs(), &atom!("part"))
     }
 
@@ -686,46 +704,6 @@ impl<'le> GeckoElement<'le> {
     #[inline]
     fn has_xbl_binding_with_content(&self) -> bool {
         !self.xbl_binding_with_content().is_none()
-    }
-
-    /// This duplicates the logic in Gecko's virtual nsINode::GetBindingParent
-    /// function, which only has two implementations: one for XUL elements, and
-    /// one for other elements.
-    ///
-    /// We just hard code in our knowledge of those two implementations here.
-    fn xbl_binding_parent(&self) -> Option<Self> {
-        if self.is_xul_element() {
-            // FIXME(heycam): Having trouble with bindgen on nsXULElement,
-            // where the binding parent is stored in a member variable
-            // rather than in slots.  So just get it through FFI for now.
-            unsafe {
-                bindings::Gecko_GetBindingParent(self.0)
-                    .as_ref()
-                    .map(GeckoElement)
-            }
-        } else {
-            let binding_parent = unsafe { self.non_xul_xbl_binding_parent_raw_content().as_ref() }
-                .map(GeckoNode::from_content)
-                .and_then(|n| n.as_element());
-
-            debug_assert!(
-                binding_parent ==
-                    unsafe {
-                        bindings::Gecko_GetBindingParent(self.0)
-                            .as_ref()
-                            .map(GeckoElement)
-                    }
-            );
-            binding_parent
-        }
-    }
-
-    #[inline]
-    fn non_xul_xbl_binding_parent_raw_content(&self) -> *mut nsIContent {
-        debug_assert!(!self.is_xul_element());
-        self.extended_slots().map_or(ptr::null_mut(), |slots| {
-            slots._base.mBindingParent.raw::<nsIContent>()
-        })
     }
 
     #[inline]
@@ -849,19 +827,9 @@ impl<'le> GeckoElement<'le> {
         return self.flags() & (NODE_IS_NATIVE_ANONYMOUS_ROOT as u32) != 0;
     }
 
-    /// This logic is duplicated in Gecko's nsIContent::IsInAnonymousSubtree.
     #[inline]
     fn is_in_anonymous_subtree(&self) -> bool {
-        if self.is_in_native_anonymous_subtree() {
-            return true;
-        }
-
-        let binding_parent = match self.xbl_binding_parent() {
-            Some(p) => p,
-            None => return false,
-        };
-
-        binding_parent.shadow_root().is_none()
+        unsafe { bindings::Gecko_IsInAnonymousSubtree(self.0) }
     }
 
     /// Returns true if this node is the shadow root of an use-element shadow tree.
@@ -1098,7 +1066,7 @@ impl<'le> TElement for GeckoElement<'le> {
     type TraversalChildrenIterator = GeckoChildrenIterator<'le>;
 
     fn inheritance_parent(&self) -> Option<Self> {
-        if self.implemented_pseudo_element().is_some() {
+        if self.is_pseudo_element() {
             return self.pseudo_element_originating_element();
         }
 
@@ -1166,6 +1134,19 @@ impl<'le> TElement for GeckoElement<'le> {
     #[inline]
     fn is_xul_element(&self) -> bool {
         self.namespace_id() == structs::root::kNameSpaceID_XUL as i32
+    }
+
+    #[inline]
+    fn local_name(&self) -> &WeakAtom {
+        unsafe { WeakAtom::new(self.as_node().node_info().mInner.mName) }
+    }
+
+    #[inline]
+    fn namespace(&self) -> &WeakNamespace {
+        unsafe {
+            let namespace_manager = structs::nsContentUtils_sNameSpaceManager;
+            WeakNamespace::new((*namespace_manager).mURIArray[self.namespace_id() as usize].mRawPtr)
+        }
     }
 
     /// Return the list of slotted nodes of this node.
@@ -1319,6 +1300,12 @@ impl<'le> TElement for GeckoElement<'le> {
         unsafe { bindings::Gecko_HasAttr(self.0, namespace.0.as_ptr(), attr.as_ptr()) }
     }
 
+    #[inline]
+    fn has_part_attr(&self) -> bool {
+        self.as_node()
+            .get_bool_flag(nsINode_BooleanFlag::ElementHasPart)
+    }
+
     // FIXME(emilio): we should probably just return a reference to the Atom.
     #[inline]
     fn id(&self) -> Option<&WeakAtom> {
@@ -1338,7 +1325,19 @@ impl<'le> TElement for GeckoElement<'le> {
             None => return,
         };
 
-        snapshot_helpers::each_class(attr, callback)
+        snapshot_helpers::each_class_or_part(attr, callback)
+    }
+
+    fn each_part<F>(&self, callback: F)
+    where
+        F: FnMut(&Atom),
+    {
+        let attr = match self.get_part_attr() {
+            Some(c) => c,
+            None => return,
+        };
+
+        snapshot_helpers::each_class_or_part(attr, callback)
     }
 
     #[inline]
@@ -1405,7 +1404,7 @@ impl<'le> TElement for GeckoElement<'le> {
 
     #[inline]
     fn matches_user_and_author_rules(&self) -> bool {
-        !self.rule_hash_target().is_in_native_anonymous_subtree()
+        !self.is_in_native_anonymous_subtree()
     }
 
     #[inline]
@@ -1471,7 +1470,7 @@ impl<'le> TElement for GeckoElement<'le> {
     #[inline]
     fn skip_item_display_fixup(&self) -> bool {
         debug_assert!(
-            self.implemented_pseudo_element().is_none(),
+            !self.is_pseudo_element(),
             "Just don't call me if I'm a pseudo, you should know the answer already"
         );
         self.is_root_of_native_anonymous_subtree()
@@ -1919,8 +1918,13 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
     }
 
     #[inline]
+    fn is_pseudo_element(&self) -> bool {
+        self.implemented_pseudo_element().is_some()
+    }
+
+    #[inline]
     fn pseudo_element_originating_element(&self) -> Option<Self> {
-        debug_assert!(self.implemented_pseudo_element().is_some());
+        debug_assert!(self.is_pseudo_element());
         let parent = self.closest_anon_subtree_root_parent()?;
 
         // FIXME(emilio): Special-case for <input type="number">s
@@ -2068,16 +2072,18 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
     }
 
     #[inline]
-    fn local_name(&self) -> &WeakAtom {
-        unsafe { WeakAtom::new(self.as_node().node_info().mInner.mName) }
+    fn has_local_name(&self, name: &WeakAtom) -> bool {
+        self.local_name() == name
     }
 
     #[inline]
-    fn namespace(&self) -> &WeakNamespace {
-        unsafe {
-            let namespace_manager = structs::nsContentUtils_sNameSpaceManager;
-            WeakNamespace::new((*namespace_manager).mURIArray[self.namespace_id() as usize].mRawPtr)
-        }
+    fn has_namespace(&self, ns: &WeakNamespace) -> bool {
+        self.namespace() == ns
+    }
+
+    #[inline]
+    fn is_same_type(&self, other: &Self) -> bool {
+        self.local_name() == other.local_name() && self.namespace() == other.namespace()
     }
 
     fn match_non_ts_pseudo_class<F>(
@@ -2182,7 +2188,8 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 }
                 true
             },
-            NonTSPseudoClass::MozNativeAnonymous => self.is_in_native_anonymous_subtree(),
+            NonTSPseudoClass::MozNativeAnonymous |
+            NonTSPseudoClass::MozNativeAnonymousNoSpecificity => self.is_in_native_anonymous_subtree(),
             NonTSPseudoClass::MozUseShadowTreeRoot => self.is_root_of_use_element_shadow_tree(),
             NonTSPseudoClass::MozTableBorderNonzero => unsafe {
                 bindings::Gecko_IsTableBorderNonzero(self.0)

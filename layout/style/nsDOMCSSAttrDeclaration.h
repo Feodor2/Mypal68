@@ -46,7 +46,7 @@ class nsDOMCSSAttributeDeclaration final : public nsDOMCSSDeclaration {
   nsresult SetSMILValue(const nsCSSPropertyID aPropID, const SMILValue&);
 
   nsresult SetPropertyValue(const nsCSSPropertyID aPropID,
-                            const nsAString& aValue,
+                            const nsACString& aValue,
                             nsIPrincipal* aSubjectPrincipal) override;
 
   static void MutationClosureFunction(void* aData);

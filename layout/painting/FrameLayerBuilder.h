@@ -5,7 +5,6 @@
 #ifndef FRAMELAYERBUILDER_H_
 #define FRAMELAYERBUILDER_H_
 
-#include "nsAutoPtr.h"
 #include "nsCSSPropertyIDSet.h"
 #include "nsTHashtable.h"
 #include "nsHashKeys.h"
@@ -15,6 +14,7 @@
 #include "DisplayItemClip.h"
 #include "mozilla/gfx/MatrixFwd.h"
 #include "mozilla/layers/LayersTypes.h"
+#include "mozilla/UniquePtr.h"
 #include "LayerState.h"
 #include "Layers.h"
 #include "LayerUserData.h"
@@ -183,7 +183,7 @@ class DisplayItemData final {
    * retain until the next transaction.
    *
    */
-  void EndUpdate(nsAutoPtr<nsDisplayItemGeometry> aGeometry);
+  void EndUpdate(mozilla::UniquePtr<nsDisplayItemGeometry>&& aGeometry);
   void EndUpdate();
 
   uint32_t mRefCnt;
@@ -192,7 +192,7 @@ class DisplayItemData final {
   RefPtr<layers::Layer> mOptLayer;
   RefPtr<layers::BasicLayerManager> mInactiveManager;
   AutoTArray<nsIFrame*, 1> mFrameList;
-  nsAutoPtr<nsDisplayItemGeometry> mGeometry;
+  mozilla::UniquePtr<nsDisplayItemGeometry> mGeometry;
   DisplayItemClip mClip;
   uint32_t mDisplayItemKey;
   LayerState mLayerState;

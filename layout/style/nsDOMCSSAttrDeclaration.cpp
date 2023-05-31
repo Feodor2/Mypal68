@@ -13,8 +13,6 @@
 #include "mozilla/InternalMutationEvent.h"
 #include "mozilla/SMILCSSValueType.h"
 #include "mozAutoDocUpdate.h"
-#include "nsIURI.h"
-#include "nsNodeUtils.h"
 #include "nsWrapperCacheInlines.h"
 #include "nsIFrame.h"
 #include "ActiveLayerTracker.h"
@@ -76,9 +74,11 @@ nsresult nsDOMCSSAttributeDeclaration::SetCSSDeclaration(
   MOZ_ASSERT_IF(aClosureData, !aClosureData->mClosure);
 
   aDecl->SetDirty();
-  return mIsSMILOverride
-             ? mElement->SetSMILOverrideStyleDeclaration(aDecl)
-             : mElement->SetInlineStyleDeclaration(*aDecl, *aClosureData);
+  if (mIsSMILOverride) {
+    mElement->SetSMILOverrideStyleDeclaration(*aDecl);
+    return NS_OK;
+  }
+  return mElement->SetInlineStyleDeclaration(*aDecl, *aClosureData);
 }
 
 Document* nsDOMCSSAttributeDeclaration::DocToUpdate() {
@@ -155,7 +155,7 @@ nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
 }
 
 nsresult nsDOMCSSAttributeDeclaration::SetPropertyValue(
-    const nsCSSPropertyID aPropID, const nsAString& aValue,
+    const nsCSSPropertyID aPropID, const nsACString& aValue,
     nsIPrincipal* aSubjectPrincipal) {
   // Scripted modifications to style.opacity or style.transform (or other
   // transform-like properties, e.g. style.translate, style.rotate, style.scale)

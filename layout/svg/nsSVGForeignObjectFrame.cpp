@@ -334,7 +334,7 @@ void nsSVGForeignObjectFrame::ReflowSVG() {
   // Fully mark our kid dirty so that it gets resized if necessary
   // (NS_FRAME_HAS_DIRTY_CHILDREN isn't enough in that case):
   nsIFrame* kid = PrincipalChildList().FirstChild();
-  kid->AddStateBits(NS_FRAME_IS_DIRTY);
+  kid->MarkSubtreeDirty();
 
   // Make sure to not allow interrupts if we're not being reflown as a root:
   nsPresContext::InterruptPreventer noInterrupts(PresContext());
@@ -466,7 +466,7 @@ gfxMatrix nsSVGForeignObjectFrame::GetCanvasTM() {
 
     gfxMatrix tm = content->PrependLocalTransformsTo(parent->GetCanvasTM());
 
-    mCanvasTM = new gfxMatrix(tm);
+    mCanvasTM = MakeUnique<gfxMatrix>(tm);
   }
   return *mCanvasTM;
 }
@@ -524,12 +524,12 @@ void nsSVGForeignObjectFrame::DoReflow() {
   reflowInput.SetComputedBSize(BSize(wm));
 
   ReflowChild(kid, presContext, desiredSize, reflowInput, 0, 0,
-              NS_FRAME_NO_MOVE_FRAME, status);
+              ReflowChildFlags::NoMoveFrame, status);
   NS_ASSERTION(mRect.width == desiredSize.Width() &&
                    mRect.height == desiredSize.Height(),
                "unexpected size");
   FinishReflowChild(kid, presContext, desiredSize, &reflowInput, 0, 0,
-                    NS_FRAME_NO_MOVE_FRAME);
+                    ReflowChildFlags::NoMoveFrame);
 
   mInReflow = false;
 }

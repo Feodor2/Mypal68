@@ -14,7 +14,6 @@
 #include "nsIPopupContainer.h"
 #include "nsDisplayList.h"
 #include "nsIAnonymousContentCreator.h"
-#include "gfxPrefs.h"
 
 class nsPresContext;
 class gfxContext;
@@ -33,6 +32,8 @@ class nsCanvasFrame final : public nsContainerFrame,
                             public nsIScrollPositionListener,
                             public nsIAnonymousContentCreator,
                             public nsIPopupContainer {
+  using Element = mozilla::dom::Element;
+
  public:
   explicit nsCanvasFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
       : nsContainerFrame(aStyle, aPresContext, kClassID),
@@ -56,6 +57,7 @@ class nsCanvasFrame final : public nsContainerFrame,
   virtual void AppendFrames(ChildListID aListID,
                             nsFrameList& aFrameList) override;
   virtual void InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                            const nsLineList::iterator* aPrevFrameLine,
                             nsFrameList& aFrameList) override;
 #ifdef DEBUG
   virtual void RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) override;
@@ -77,9 +79,7 @@ class nsCanvasFrame final : public nsContainerFrame,
   virtual void AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
                                         uint32_t aFilter) override;
 
-  mozilla::dom::Element* GetCustomContentContainer() const {
-    return mCustomContentContainer;
-  }
+  Element* GetCustomContentContainer() const { return mCustomContentContainer; }
 
   /**
    * Unhide the CustomContentContainer. This call only has an effect if

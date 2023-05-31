@@ -10,13 +10,11 @@
 #include "nsMenuBarListener.h"
 #include "nsContentUtils.h"
 #include "nsXULElement.h"
-#include "nsIDOMXULMenuListElement.h"
 #include "nsIDOMXULCommandDispatcher.h"
 #include "nsCSSFrameConstructor.h"
 #include "nsGlobalWindow.h"
 #include "nsLayoutUtils.h"
 #include "nsViewManager.h"
-#include "nsIComponentManager.h"
 #include "nsITimer.h"
 #include "nsFocusManager.h"
 #include "nsIDocShell.h"
@@ -43,6 +41,7 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
+#include "mozilla/StaticPrefs_xul.h"
 #include "mozilla/widget/nsAutoRollup.h"
 
 using namespace mozilla;
@@ -1174,7 +1173,7 @@ bool nsXULPopupManager::IsChildOfDocShell(Document* aDoc,
     if (docShellItem == aExpected) return true;
 
     nsCOMPtr<nsIDocShellTreeItem> parent;
-    docShellItem->GetParent(getter_AddRefs(parent));
+    docShellItem->GetInProcessParent(getter_AddRefs(parent));
     docShellItem = parent;
   }
 
@@ -2152,7 +2151,7 @@ bool nsXULPopupManager::HandleKeyboardEventWithKeyCode(
         Rollup(0, false, nullptr, nullptr);
         break;
       }
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
 #endif
 
     case KeyboardEvent_Binding::DOM_VK_LEFT:
@@ -2198,7 +2197,7 @@ bool nsXULPopupManager::HandleKeyboardEventWithKeyCode(
         break;
       }
       // Intentional fall-through to RETURN case
-      MOZ_FALLTHROUGH;
+      [[fallthrough]];
 
     case KeyboardEvent_Binding::DOM_VK_RETURN: {
       // If there is a popup open, check if the current item needs to be opened.
@@ -2665,8 +2664,7 @@ nsXULMenuCommandEvent::Run() {
     // Deselect ourselves.
     if (mCloseMenuMode != CloseMenuMode_None) menuFrame->SelectMenu(false);
 
-    AutoHandlingUserInputStatePusher userInpStatePusher(
-        mUserInput, nullptr, presShell->GetDocument());
+    AutoHandlingUserInputStatePusher userInpStatePusher(mUserInput);
     RefPtr<Element> menu = mMenu;
     nsContentUtils::DispatchXULCommand(menu, mIsTrusted, nullptr, presShell,
                                        mControl, mAlt, mShift, mMeta);

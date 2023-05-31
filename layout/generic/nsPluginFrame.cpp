@@ -26,7 +26,6 @@
 #include "nsViewManager.h"
 #include "nsString.h"
 #include "nsGkAtoms.h"
-#include "nsIPluginInstanceOwner.h"
 #include "nsNPAPIPluginInstance.h"
 #include "npapi.h"
 #include "nsIObjectLoadingContent.h"
@@ -70,7 +69,6 @@
 
 #ifdef MOZ_X11
 #  include "mozilla/X11Util.h"
-using mozilla::DefaultXDisplay;
 #endif
 
 #ifdef XP_WIN
@@ -739,7 +737,7 @@ mozilla::LayoutDeviceIntPoint nsPluginFrame::GetRemoteTabChromeOffset() {
   LayoutDeviceIntPoint offset;
   if (XRE_IsContentProcess()) {
     if (nsPIDOMWindowOuter* window = GetContent()->OwnerDoc()->GetWindow()) {
-      if (nsCOMPtr<nsPIDOMWindowOuter> topWindow = window->GetTop()) {
+      if (nsCOMPtr<nsPIDOMWindowOuter> topWindow = window->GetInProcessTop()) {
         dom::BrowserChild* tc = dom::BrowserChild::GetFrom(topWindow);
         if (tc) {
           offset += tc->GetChromeOffset();
@@ -1479,13 +1477,13 @@ nsresult nsPluginFrame::HandleEvent(nsPresContext* aPresContext,
   if (anEvent->mMessage == ePluginActivate) {
     nsIFocusManager* fm = nsFocusManager::GetFocusManager();
     if (fm) {
-      RefPtr<Element> elem = GetContent()->AsElement();
+      RefPtr<dom::Element> elem = GetContent()->AsElement();
       return fm->SetFocus(elem, 0);
     }
   } else if (anEvent->mMessage == ePluginFocus) {
     nsIFocusManager* fm = nsFocusManager::GetFocusManager();
     if (fm) {
-      RefPtr<Element> elem = GetContent()->AsElement();
+      RefPtr<dom::Element> elem = GetContent()->AsElement();
       return fm->FocusPlugin(elem);
     }
   }

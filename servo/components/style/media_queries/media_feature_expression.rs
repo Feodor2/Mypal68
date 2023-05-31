@@ -11,13 +11,13 @@ use super::Device;
 use crate::context::QuirksMode;
 #[cfg(feature = "gecko")]
 use crate::gecko::media_features::MEDIA_FEATURES;
-#[cfg(feature = "gecko")]
-use crate::gecko_bindings::structs;
 use crate::parser::{Parse, ParserContext};
 #[cfg(feature = "servo")]
 use crate::servo::media_queries::MEDIA_FEATURES;
 use crate::str::{starts_with_ignore_ascii_case, string_as_ascii_lowercase};
 use crate::values::computed::{self, ToComputedValue};
+#[cfg(feature = "gecko")]
+use crate::values::specified::NonNegativeNumber;
 use crate::values::specified::{Integer, Length, Number, Resolution};
 use crate::values::{serialize_atom_identifier, CSSFloat};
 use crate::{Atom, Zero};
@@ -27,8 +27,8 @@ use std::fmt::{self, Write};
 use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
 
 /// An aspect ratio, with a numerator and denominator.
-#[derive(Clone, Copy, Debug, Eq, MallocSizeOf, PartialEq, ToShmem)]
-pub struct AspectRatio(pub u32, pub u32);
+#[derive(Clone, Copy, Debug, MallocSizeOf, PartialEq, ToShmem)]
+pub struct AspectRatio(pub CSSFloat, pub CSSFloat);
 
 impl ToCss for AspectRatio {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
@@ -43,9 +43,9 @@ impl ToCss for AspectRatio {
 
 impl PartialOrd for AspectRatio {
     fn partial_cmp(&self, other: &AspectRatio) -> Option<Ordering> {
-        u64::partial_cmp(
-            &(self.0 as u64 * other.1 as u64),
-            &(self.1 as u64 * other.0 as u64),
+        f64::partial_cmp(
+            &(self.0 as f64 * other.1 as f64),
+            &(self.1 as f64 * other.0 as f64),
         )
     }
 }
@@ -298,14 +298,10 @@ impl MediaFeatureExpression {
 
                 #[cfg(feature = "gecko")]
                 {
-                    if unsafe { structs::StaticPrefs_sVarCache_layout_css_prefixes_webkit } &&
-                        starts_with_ignore_ascii_case(feature_name, "-webkit-")
-                    {
+                    if starts_with_ignore_ascii_case(feature_name, "-webkit-") {
                         feature_name = &feature_name[8..];
                         requirements.insert(ParsingRequirements::WEBKIT_PREFIX);
-                        if unsafe {
-                            structs::StaticPrefs_sVarCache_layout_css_prefixes_device_pixel_ratio_webkit
-                        } {
+                        if static_prefs::pref!("layout.css.prefixes.device-pixel-ratio-webkit") {
                             requirements.insert(
                                 ParsingRequirements::WEBKIT_DEVICE_PIXEL_RATIO_PREF_ENABLED,
                             );
@@ -435,9 +431,11 @@ impl MediaFeatureExpression {
                 eval(device, expect!(Integer).cloned(), self.range_or_operator)
             },
             Evaluator::Float(eval) => eval(device, expect!(Float).cloned(), self.range_or_operator),
-            Evaluator::IntRatio(eval) => {
-                eval(device, expect!(IntRatio).cloned(), self.range_or_operator)
-            },
+            Evaluator::NumberRatio(eval) => eval(
+                device,
+                expect!(NumberRatio).cloned(),
+                self.range_or_operator,
+            ),
             Evaluator::Resolution(eval) => {
                 let computed = expect!(Resolution).map(|specified| {
                     computed::Context::for_media_query_evaluation(device, quirks_mode, |context| {
@@ -462,7 +460,7 @@ impl MediaFeatureExpression {
 /// A value found or expected in a media expression.
 ///
 /// FIXME(emilio): How should calc() serialize in the Number / Integer /
-/// BoolInteger / IntRatio case, as computed or as specified value?
+/// BoolInteger / NumberRatio case, as computed or as specified value?
 ///
 /// If the first, this would need to store the relevant values.
 ///
@@ -477,9 +475,9 @@ pub enum MediaExpressionValue {
     Float(CSSFloat),
     /// A boolean value, specified as an integer (i.e., either 0 or 1).
     BoolInteger(bool),
-    /// Two integers separated by '/', with optional whitespace on either side
-    /// of the '/'.
-    IntRatio(AspectRatio),
+    /// A single non-negative number or two non-negative numbers separated by '/',
+    /// with optional whitespace on either side of the '/'.
+    NumberRatio(AspectRatio),
     /// A resolution.
     Resolution(Resolution),
     /// An enumerated value, defined by the variant keyword table in the
@@ -499,7 +497,7 @@ impl MediaExpressionValue {
             MediaExpressionValue::Integer(v) => v.to_css(dest),
             MediaExpressionValue::Float(v) => v.to_css(dest),
             MediaExpressionValue::BoolInteger(v) => dest.write_str(if v { "1" } else { "0" }),
-            MediaExpressionValue::IntRatio(ratio) => ratio.to_css(dest),
+            MediaExpressionValue::NumberRatio(ratio) => ratio.to_css(dest),
             MediaExpressionValue::Resolution(ref r) => r.to_css(dest),
             MediaExpressionValue::Ident(ref ident) => serialize_atom_identifier(ident, dest),
             MediaExpressionValue::Enumerated(value) => match for_expr.feature().evaluator {
@@ -535,11 +533,26 @@ impl MediaExpressionValue {
                 let number = Number::parse(context, input)?;
                 MediaExpressionValue::Float(number.get())
             },
-            Evaluator::IntRatio(..) => {
+            Evaluator::NumberRatio(..) => {
+                #[cfg(feature = "gecko")]
+                {
+                    if static_prefs::pref!("layout.css.aspect-ratio-number.enabled") {
+                        let a = NonNegativeNumber::parse(context, input)?.0.get();
+                        let b = match input.try_parse(|input| input.expect_delim('/')) {
+                            Ok(()) => NonNegativeNumber::parse(context, input)?.0.get(),
+                            _ => 1.0,
+                        };
+                        return Ok(MediaExpressionValue::NumberRatio(AspectRatio(a, b)));
+                    }
+                }
+
                 let a = Integer::parse_positive(context, input)?;
                 input.expect_delim('/')?;
                 let b = Integer::parse_positive(context, input)?;
-                MediaExpressionValue::IntRatio(AspectRatio(a.value() as u32, b.value() as u32))
+                MediaExpressionValue::NumberRatio(AspectRatio(
+                    a.value() as CSSFloat,
+                    b.value() as CSSFloat,
+                ))
             },
             Evaluator::Resolution(..) => {
                 MediaExpressionValue::Resolution(Resolution::parse(context, input)?)

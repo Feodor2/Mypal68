@@ -14,14 +14,14 @@ using namespace mozilla;
 using namespace mozilla::dom;
 
 /* static */
-bool ServoCSSParser::IsValidCSSColor(const nsAString& aValue) {
+bool ServoCSSParser::IsValidCSSColor(const nsACString& aValue) {
   return Servo_IsValidCSSColor(&aValue);
 }
 
 /* static */
 bool ServoCSSParser::ComputeColor(ServoStyleSet* aStyleSet,
                                   nscolor aCurrentColor,
-                                  const nsAString& aValue,
+                                  const nsACString& aValue,
                                   nscolor* aResultColor, bool* aWasCurrentColor,
                                   css::Loader* aLoader) {
   return Servo_ComputeColor(aStyleSet ? aStyleSet->RawSet() : nullptr,
@@ -47,7 +47,7 @@ bool ServoCSSParser::ParseEasing(const nsAString& aValue, URLExtraData* aUrl,
 }
 
 /* static */
-bool ServoCSSParser::ParseTransformIntoMatrix(const nsAString& aValue,
+bool ServoCSSParser::ParseTransformIntoMatrix(const nsACString& aValue,
                                               bool& aContains3DTransform,
                                               gfx::Matrix4x4& aResult) {
   return Servo_ParseTransformIntoMatrix(&aValue, &aContains3DTransform,
@@ -67,10 +67,12 @@ already_AddRefed<URLExtraData> ServoCSSParser::GetURLExtraData(
     Document* aDocument) {
   MOZ_ASSERT(aDocument);
 
+  nsCOMPtr<nsIReferrerInfo> referrerInfo =
+      ReferrerInfo::CreateForInternalCSSResources(aDocument);
+
   // FIXME this is using the wrong base uri (bug 1343919)
   RefPtr<URLExtraData> url = new URLExtraData(
-      aDocument->GetDocumentURI(), aDocument->GetDocumentURI(),
-      aDocument->NodePrincipal(), aDocument->GetReferrerPolicy());
+      aDocument->GetDocumentURI(), referrerInfo, aDocument->NodePrincipal());
   return url.forget();
 }
 

@@ -20,7 +20,7 @@
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "nsNodeInfoManager.h"
 #include "nsContentCreatorFunctions.h"
 #include "nsContentUtils.h"
@@ -171,8 +171,8 @@ void nsFileControlFrame::Reflow(nsPresContext* aPresContext,
                           availableISizeForLabel - labelBP, filename)) {
         nsBlockFrame::DidReflow(aPresContext, &aReflowInput);
         aStatus.Reset();
-        labelFrame->AddStateBits(NS_FRAME_IS_DIRTY |
-                                 NS_BLOCK_NEEDS_BIDI_RESOLUTION);
+        labelFrame->MarkSubtreeDirty();
+        labelFrame->AddStateBits(NS_BLOCK_NEEDS_BIDI_RESOLUTION);
         mCachedMinISize = NS_INTRINSIC_ISIZE_UNKNOWN;
         mCachedPrefISize = NS_INTRINSIC_ISIZE_UNKNOWN;
         done = true;
@@ -213,8 +213,8 @@ static already_AddRefed<Element> MakeAnonButton(Document* aDoc,
 
   // Set the file picking button text depending on the current locale.
   nsAutoString buttonTxt;
-  nsContentUtils::GetLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
-                                     labelKey, buttonTxt);
+  nsContentUtils::GetMaybeLocalizedString(nsContentUtils::eFORMS_PROPERTIES,
+                                          labelKey, aDoc, buttonTxt);
 
   // Set the browse button text. It's a bit of a pain to do because we want to
   // make sure we are not notifying.
@@ -393,9 +393,8 @@ nsFileControlFrame::DnDListener::HandleEvent(Event* aEvent) {
       inputElement->MozSetDndFilesAndDirectories(array);
     } else {
       bool blinkFileSystemEnabled =
-          Preferences::GetBool("dom.webkitBlink.filesystem.enabled", false);
-      bool dirPickerEnabled =
-          Preferences::GetBool("dom.input.dirpicker", false);
+          StaticPrefs::dom_webkitBlink_filesystem_enabled();
+      bool dirPickerEnabled = StaticPrefs::dom_input_dirpicker();
       if (blinkFileSystemEnabled || dirPickerEnabled) {
         FileList* files = static_cast<FileList*>(fileList.get());
         if (files) {

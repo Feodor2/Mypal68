@@ -9,11 +9,11 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/Likely.h"
+#include "mozilla/LookAndFeel.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/ResultExtensions.h"
-#include "mozilla/TextEditRules.h"
 
 #include "gfxUtils.h"
 #include "nsAlgorithm.h"
@@ -42,7 +42,6 @@
 #include "nsWidgetsCID.h"
 #include "nsIFrameInlines.h"
 #include "nsBoxFrame.h"
-#include "nsIURL.h"
 #include "nsBoxLayoutState.h"
 #include "nsTreeContentView.h"
 #include "nsTreeUtils.h"
@@ -50,7 +49,6 @@
 #include "nsITheme.h"
 #include "imgIRequest.h"
 #include "imgIContainer.h"
-#include "imgILoader.h"
 #include "mozilla/dom/NodeInfo.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
@@ -1911,18 +1909,18 @@ nsresult nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol,
       styleRequest->SyncClone(imgNotificationObserver, doc,
                               getter_AddRefs(imageRequest));
     } else {
-      nsCOMPtr<nsIURI> baseURI = mContent->GetBaseURI();
-
       nsCOMPtr<nsIURI> srcURI;
-      nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(srcURI),
-                                                imageSrc, doc, baseURI);
+      nsContentUtils::NewURIWithDocumentCharset(
+          getter_AddRefs(srcURI), imageSrc, doc, mContent->GetBaseURI());
       if (!srcURI) return NS_ERROR_FAILURE;
+
+      nsCOMPtr<nsIReferrerInfo> referrerInfo = new mozilla::dom::ReferrerInfo();
+      referrerInfo->InitWithDocument(doc);
 
       // XXXbz what's the origin principal for this stuff that comes from our
       // view?  I guess we should assume that it's the node's principal...
       nsresult rv = nsContentUtils::LoadImage(
-          srcURI, mContent, doc, mContent->NodePrincipal(), 0,
-          doc->GetDocumentURIAsReferrer(), doc->GetReferrerPolicy(),
+          srcURI, mContent, doc, mContent->NodePrincipal(), 0, referrerInfo,
           imgNotificationObserver, nsIRequest::LOAD_NORMAL, EmptyString(),
           getter_AddRefs(imageRequest));
       NS_ENSURE_SUCCESS(rv, rv);
@@ -1971,25 +1969,26 @@ nsRect nsTreeBodyFrame::GetImageSize(int32_t aRowIndex, nsTreeColumn* aCol,
 
   const nsStylePosition* myPosition = aComputedStyle->StylePosition();
   const nsStyleList* myList = aComputedStyle->StyleList();
-
+  nsRect imageRegion = myList->GetImageRegion();
   if (useImageRegion) {
-    r.x += myList->mImageRegion.x;
-    r.y += myList->mImageRegion.y;
+    r.x += imageRegion.x;
+    r.y += imageRegion.y;
   }
 
   if (myPosition->mWidth.ConvertsToLength()) {
     int32_t val = myPosition->mWidth.ToLength();
     r.width += val;
-  } else if (useImageRegion && myList->mImageRegion.width > 0)
-    r.width += myList->mImageRegion.width;
-  else
+  } else if (useImageRegion && imageRegion.width > 0) {
+    r.width += imageRegion.width;
+  } else {
     needWidth = true;
+  }
 
   if (myPosition->mHeight.ConvertsToLength()) {
     int32_t val = myPosition->mHeight.ToLength();
     r.height += val;
-  } else if (useImageRegion && myList->mImageRegion.height > 0)
-    r.height += myList->mImageRegion.height;
+  } else if (useImageRegion && imageRegion.height > 0)
+    r.height += imageRegion.height;
   else
     needHeight = true;
 
@@ -2060,21 +2059,21 @@ nsSize nsTreeBodyFrame::GetImageDestSize(ComputedStyle* aComputedStyle,
     nsSize imageSize(0, 0);
 
     const nsStyleList* myList = aComputedStyle->StyleList();
-
-    if (useImageRegion && myList->mImageRegion.width > 0) {
+    nsRect imageRegion = myList->GetImageRegion();
+    if (useImageRegion && imageRegion.width > 0) {
       // CSS has specified an image region.
       // Use the width of the image region.
-      imageSize.width = myList->mImageRegion.width;
+      imageSize.width = imageRegion.width;
     } else if (image) {
       nscoord width;
       image->GetWidth(&width);
       imageSize.width = nsPresContext::CSSPixelsToAppUnits(width);
     }
 
-    if (useImageRegion && myList->mImageRegion.height > 0) {
+    if (useImageRegion && imageRegion.height > 0) {
       // CSS has specified an image region.
       // Use the height of the image region.
-      imageSize.height = myList->mImageRegion.height;
+      imageSize.height = imageRegion.height;
     } else if (image) {
       nscoord height;
       image->GetHeight(&height);
@@ -2117,23 +2116,25 @@ nsSize nsTreeBodyFrame::GetImageDestSize(ComputedStyle* aComputedStyle,
 nsRect nsTreeBodyFrame::GetImageSourceRect(ComputedStyle* aComputedStyle,
                                            bool useImageRegion,
                                            imgIContainer* image) {
-  nsRect r(0, 0, 0, 0);
-
   const nsStyleList* myList = aComputedStyle->StyleList();
-
-  if (useImageRegion &&
-      (myList->mImageRegion.width > 0 || myList->mImageRegion.height > 0)) {
-    // CSS has specified an image region.
-    r = myList->mImageRegion;
-  } else if (image) {
-    // Use the actual image size.
-    nscoord coord;
-    image->GetWidth(&coord);
-    r.width = nsPresContext::CSSPixelsToAppUnits(coord);
-    image->GetHeight(&coord);
-    r.height = nsPresContext::CSSPixelsToAppUnits(coord);
+  // CSS has specified an image region.
+  if (useImageRegion && myList->mImageRegion.IsRect()) {
+    return myList->GetImageRegion();
   }
 
+  if (!image) {
+    return nsRect();
+  }
+
+  nsRect r;
+  // Use the actual image size.
+  nscoord coord;
+  if (NS_SUCCEEDED(image->GetWidth(&coord))) {
+    r.width = nsPresContext::CSSPixelsToAppUnits(coord);
+  }
+  if (NS_SUCCEEDED(image->GetHeight(&coord))) {
+    r.height = nsPresContext::CSSPixelsToAppUnits(coord);
+  }
   return r;
 }
 
@@ -3371,6 +3372,18 @@ ImgDrawResult nsTreeBodyFrame::PaintImage(
   return result;
 }
 
+static void FillBufWithPWChars(nsAString* aOutString, int32_t aLength) {
+  MOZ_ASSERT(aOutString);
+
+  // change the output to the platform password character
+  char16_t passwordChar = LookAndFeel::GetPasswordCharacter();
+
+  aOutString->Truncate();
+  for (int32_t i = 0; i < aLength; i++) {
+    aOutString->Append(passwordChar);
+  }
+}
+
 ImgDrawResult nsTreeBodyFrame::PaintText(
     int32_t aRowIndex, nsTreeColumn* aColumn, const nsRect& aTextRect,
     nsPresContext* aPresContext, gfxContext& aRenderingContext,
@@ -3384,7 +3397,7 @@ ImgDrawResult nsTreeBodyFrame::PaintText(
   mView->GetCellText(aRowIndex, aColumn, text);
 
   if (aColumn->Type() == TreeColumn_Binding::TYPE_PASSWORD) {
-    TextEditRules::FillBufWithPWChars(&text, text.Length());
+    FillBufWithPWChars(&text, text.Length());
   }
 
   // We're going to paint this text so we need to ensure bidi is enabled if
@@ -3450,7 +3463,7 @@ ImgDrawResult nsTreeBodyFrame::PaintText(
   textRect.Deflate(bp);
 
   // Set our color.
-  ColorPattern color(ToDeviceColor(textContext->StyleColor()->mColor));
+  ColorPattern color(ToDeviceColor(textContext->StyleText()->mColor));
 
   // Draw decorations.
   StyleTextDecorationLine decorations =
@@ -3488,7 +3501,7 @@ ImgDrawResult nsTreeBodyFrame::PaintText(
   }
 
   aRenderingContext.SetColor(
-      Color::FromABGR(textContext->StyleColor()->mColor.ToColor()));
+      Color::FromABGR(textContext->StyleText()->mColor.ToColor()));
   nsLayoutUtils::DrawString(
       this, *fontMet, &aRenderingContext, text.get(), text.Length(),
       textRect.TopLeft() + nsPoint(0, baseline), cellContext);

@@ -64,9 +64,15 @@ pub use self::stylesheet::{SanitizationData, SanitizationKind};
 pub use self::supports_rule::SupportsRule;
 pub use self::viewport_rule::ViewportRule;
 
-/// Extra data that the backend may need to resolve url values.
-#[cfg(not(feature = "gecko"))]
-pub type UrlExtraData = ::servo_url::ServoUrl;
+/// The CORS mode used for a CSS load.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ToShmem)]
+pub enum CorsMode {
+    /// No CORS mode, so cross-origin loads can be done.
+    None,
+    /// Anonymous CORS request.
+    Anonymous,
+}
 
 /// Extra data that the backend may need to resolve url values.
 ///
@@ -83,7 +89,12 @@ pub type UrlExtraData = ::servo_url::ServoUrl;
 /// `from_ptr_ref` can work.
 #[cfg(feature = "gecko")]
 #[derive(PartialEq)]
+#[repr(C)]
 pub struct UrlExtraData(usize);
+
+/// Extra data that the backend may need to resolve url values.
+#[cfg(not(feature = "gecko"))]
+pub type UrlExtraData = ::servo_url::ServoUrl;
 
 #[cfg(feature = "gecko")]
 impl Clone for UrlExtraData {
@@ -171,17 +182,28 @@ impl UrlExtraData {
 #[cfg(feature = "gecko")]
 impl fmt::Debug for UrlExtraData {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        struct DebugURI(*mut structs::nsIURI);
-        impl fmt::Debug for DebugURI {
-            fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                use nsstring::nsCString;
-                let mut spec = nsCString::new();
-                unsafe {
-                    bindings::Gecko_nsIURI_Debug(self.0, &mut spec);
+        macro_rules! define_debug_struct {
+            ($struct_name:ident, $gecko_class:ident, $debug_fn:ident) => {
+                struct $struct_name(*mut structs::$gecko_class);
+                impl fmt::Debug for $struct_name {
+                    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                        use nsstring::nsCString;
+                        let mut spec = nsCString::new();
+                        unsafe {
+                            bindings::$debug_fn(self.0, &mut spec);
+                        }
+                        spec.fmt(formatter)
+                    }
                 }
-                spec.fmt(formatter)
-            }
+            };
         }
+
+        define_debug_struct!(DebugURI, nsIURI, Gecko_nsIURI_Debug);
+        define_debug_struct!(
+            DebugReferrerInfo,
+            nsIReferrerInfo,
+            Gecko_nsIReferrerInfo_Debug
+        );
 
         formatter
             .debug_struct("URLExtraData")
@@ -192,7 +214,11 @@ impl fmt::Debug for UrlExtraData {
             )
             .field(
                 "referrer",
-                &DebugURI(self.as_ref().mReferrer.raw::<structs::nsIURI>()),
+                &DebugReferrerInfo(
+                    self.as_ref()
+                        .mReferrerInfo
+                        .raw::<structs::nsIReferrerInfo>(),
+                ),
             )
             .finish()
     }
@@ -342,7 +368,7 @@ impl CssRule {
         parent_stylesheet_contents: &StylesheetContents,
         shared_lock: &SharedRwLock,
         state: State,
-        loader: Option<&StylesheetLoader>,
+        loader: Option<&dyn StylesheetLoader>,
     ) -> Result<Self, RulesMutateError> {
         let url_data = parent_stylesheet_contents.url_data.read();
         let context = ParserContext::new(
@@ -351,7 +377,6 @@ impl CssRule {
             None,
             ParsingMode::DEFAULT,
             parent_stylesheet_contents.quirks_mode,
-            None,
             None,
         );
 

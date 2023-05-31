@@ -11,7 +11,6 @@
 
 #include "nsSliderFrame.h"
 
-#include "gfxPrefs.h"
 #include "mozilla/ComputedStyle.h"
 #include "nsPresContext.h"
 #include "nsIContent.h"
@@ -28,7 +27,6 @@
 #include "nsRepeatService.h"
 #include "nsBoxLayoutState.h"
 #include "nsSprocketLayout.h"
-#include "nsIServiceManager.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsDisplayList.h"
@@ -118,9 +116,10 @@ void nsSliderFrame::RemoveFrame(ChildListID aListID, nsIFrame* aOldFrame) {
 }
 
 void nsSliderFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                                 const nsLineList::iterator* aPrevFrameLine,
                                  nsFrameList& aFrameList) {
   bool wasEmpty = mFrames.IsEmpty();
-  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aFrameList);
+  nsBoxFrame::InsertFrames(aListID, aPrevFrame, aPrevFrameLine, aFrameList);
   if (wasEmpty) AddListener();
 }
 
@@ -596,7 +595,7 @@ nsresult nsSliderFrame::HandleEvent(nsPresContext* aPresContext,
     DragThumb(true);
 
 #ifdef MOZ_WIDGET_GTK
-    RefPtr<Element> thumb = thumbFrame->GetContent()->AsElement();
+    RefPtr<dom::Element> thumb = thumbFrame->GetContent()->AsElement();
     thumb->SetAttr(kNameSpaceID_None, nsGkAtoms::active,
                    NS_LITERAL_STRING("true"), true);
 #endif
@@ -768,8 +767,8 @@ void nsSliderFrame::CurrentPositionChanged() {
   mCurPos = curPos;
 }
 
-static void UpdateAttribute(Element* aScrollbar, nscoord aNewPos, bool aNotify,
-                            bool aIsSmooth) {
+static void UpdateAttribute(dom::Element* aScrollbar, nscoord aNewPos,
+                            bool aNotify, bool aIsSmooth) {
   nsAutoString str;
   str.AppendInt(aNewPos);
 
@@ -1093,7 +1092,7 @@ nsresult nsSliderFrame::StartDrag(Event* aEvent) {
   }
 
 #ifdef MOZ_WIDGET_GTK
-  RefPtr<Element> thumb = thumbFrame->GetContent()->AsElement();
+  RefPtr<dom::Element> thumb = thumbFrame->GetContent()->AsElement();
   thumb->SetAttr(kNameSpaceID_None, nsGkAtoms::active,
                  NS_LITERAL_STRING("true"), true);
 #endif
@@ -1130,7 +1129,7 @@ nsresult nsSliderFrame::StopDrag() {
 #ifdef MOZ_WIDGET_GTK
   nsIFrame* thumbFrame = mFrames.FirstChild();
   if (thumbFrame) {
-    RefPtr<Element> thumb = thumbFrame->GetContent()->AsElement();
+    RefPtr<dom::Element> thumb = thumbFrame->GetContent()->AsElement();
     thumb->UnsetAttr(kNameSpaceID_None, nsGkAtoms::active, true);
   }
 #endif

@@ -26,9 +26,7 @@ class StyleSheet;
 
 class PreloadedStyleSheet : public nsIPreloadedStyleSheet {
  public:
-  // *aResult is addrefed.
-  static nsresult Create(nsIURI* aURI, css::SheetParsingMode aParsingMode,
-                         PreloadedStyleSheet** aResult);
+  PreloadedStyleSheet(nsIURI*, css::SheetParsingMode);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(PreloadedStyleSheet)
@@ -44,8 +42,6 @@ class PreloadedStyleSheet : public nsIPreloadedStyleSheet {
   virtual ~PreloadedStyleSheet() {}
 
  private:
-  PreloadedStyleSheet(nsIURI* aURI, css::SheetParsingMode aParsingMode);
-
   class StylesheetPreloadObserver final : public nsICSSLoaderObserver {
    public:
     NS_DECL_ISUPPORTS
@@ -54,7 +50,7 @@ class PreloadedStyleSheet : public nsIPreloadedStyleSheet {
                                        PreloadedStyleSheet* aSheet)
         : mPromise(aPromise), mPreloadedSheet(aSheet) {}
 
-    NS_IMETHOD StyleSheetLoaded(StyleSheet* aSheet, bool aWasAlternate,
+    NS_IMETHOD StyleSheetLoaded(StyleSheet* aSheet, bool aWasDeferred,
                                 nsresult aStatus) override;
 
    protected:

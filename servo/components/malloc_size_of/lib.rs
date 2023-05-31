@@ -43,7 +43,7 @@
 //!   measured as well as the thing it points to. E.g.
 //!   `<Box<_> as MallocSizeOf>::size_of(field, ops)`.
 //!
-//!   Note: WebRender has a reduced for of this crate, so that we can avoid
+//!   Note: WebRender has a reduced fork of this crate, so that we can avoid
 //!   publishing this crate on crates.io.
 
 extern crate app_units;
@@ -92,7 +92,7 @@ use void::Void;
 type VoidPtrToSizeFn = unsafe extern "C" fn(ptr: *const c_void) -> usize;
 
 /// A closure implementing a stateful predicate on pointers.
-type VoidPtrToBoolFnMut = FnMut(*const c_void) -> bool;
+type VoidPtrToBoolFnMut = dyn FnMut(*const c_void) -> bool;
 
 /// Operations used when measuring heap usage of data structures.
 pub struct MallocSizeOfOps {
@@ -625,25 +625,25 @@ impl<T: MallocSizeOf, Unit> MallocSizeOf for euclid::Length<T, Unit> {
     }
 }
 
-impl<T: MallocSizeOf, Src, Dst> MallocSizeOf for euclid::TypedScale<T, Src, Dst> {
+impl<T: MallocSizeOf, Src, Dst> MallocSizeOf for euclid::Scale<T, Src, Dst> {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         self.0.size_of(ops)
     }
 }
 
-impl<T: MallocSizeOf, U> MallocSizeOf for euclid::TypedPoint2D<T, U> {
+impl<T: MallocSizeOf, U> MallocSizeOf for euclid::Point2D<T, U> {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         self.x.size_of(ops) + self.y.size_of(ops)
     }
 }
 
-impl<T: MallocSizeOf, U> MallocSizeOf for euclid::TypedRect<T, U> {
+impl<T: MallocSizeOf, U> MallocSizeOf for euclid::Rect<T, U> {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         self.origin.size_of(ops) + self.size.size_of(ops)
     }
 }
 
-impl<T: MallocSizeOf, U> MallocSizeOf for euclid::TypedSideOffsets2D<T, U> {
+impl<T: MallocSizeOf, U> MallocSizeOf for euclid::SideOffsets2D<T, U> {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         self.top.size_of(ops) +
             self.right.size_of(ops) +
@@ -652,13 +652,13 @@ impl<T: MallocSizeOf, U> MallocSizeOf for euclid::TypedSideOffsets2D<T, U> {
     }
 }
 
-impl<T: MallocSizeOf, U> MallocSizeOf for euclid::TypedSize2D<T, U> {
+impl<T: MallocSizeOf, U> MallocSizeOf for euclid::Size2D<T, U> {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         self.width.size_of(ops) + self.height.size_of(ops)
     }
 }
 
-impl<T: MallocSizeOf, Src, Dst> MallocSizeOf for euclid::TypedTransform2D<T, Src, Dst> {
+impl<T: MallocSizeOf, Src, Dst> MallocSizeOf for euclid::Transform2D<T, Src, Dst> {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         self.m11.size_of(ops) +
             self.m12.size_of(ops) +
@@ -669,7 +669,7 @@ impl<T: MallocSizeOf, Src, Dst> MallocSizeOf for euclid::TypedTransform2D<T, Src
     }
 }
 
-impl<T: MallocSizeOf, Src, Dst> MallocSizeOf for euclid::TypedTransform3D<T, Src, Dst> {
+impl<T: MallocSizeOf, Src, Dst> MallocSizeOf for euclid::Transform3D<T, Src, Dst> {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         self.m11.size_of(ops) +
             self.m12.size_of(ops) +
@@ -690,7 +690,7 @@ impl<T: MallocSizeOf, Src, Dst> MallocSizeOf for euclid::TypedTransform3D<T, Src
     }
 }
 
-impl<T: MallocSizeOf, U> MallocSizeOf for euclid::TypedVector2D<T, U> {
+impl<T: MallocSizeOf, U> MallocSizeOf for euclid::Vector2D<T, U> {
     fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
         self.x.size_of(ops) + self.y.size_of(ops)
     }

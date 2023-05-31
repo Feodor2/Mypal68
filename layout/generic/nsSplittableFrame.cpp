@@ -15,13 +15,12 @@ using namespace mozilla;
 
 void nsSplittableFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                              nsIFrame* aPrevInFlow) {
-  nsFrame::Init(aContent, aParent, aPrevInFlow);
-
   if (aPrevInFlow) {
     // Hook the frame into the flow
     SetPrevInFlow(aPrevInFlow);
     aPrevInFlow->SetNextInFlow(this);
   }
+  nsFrame::Init(aContent, aParent, aPrevInFlow);
 }
 
 void nsSplittableFrame::DestroyFrom(nsIFrame* aDestructRoot,
@@ -184,7 +183,8 @@ void nsSplittableFrame::RemoveFromFlow(nsIFrame* aFrame) {
 
 nscoord nsSplittableFrame::ConsumedBSize(WritingMode aWM) const {
   nscoord bSize = 0;
-  for (nsIFrame* prev = GetPrevInFlow(); prev; prev = prev->GetPrevInFlow()) {
+  for (nsIFrame* prev = GetPrevContinuation(); prev;
+       prev = prev->GetPrevContinuation()) {
     bSize += prev->ContentBSize(aWM);
   }
   return bSize;
@@ -193,11 +193,11 @@ nscoord nsSplittableFrame::ConsumedBSize(WritingMode aWM) const {
 nscoord nsSplittableFrame::GetEffectiveComputedBSize(
     const ReflowInput& aReflowInput, nscoord aConsumedBSize) const {
   nscoord bSize = aReflowInput.ComputedBSize();
-  if (bSize == NS_INTRINSICSIZE) {
-    return NS_INTRINSICSIZE;
+  if (bSize == NS_UNCONSTRAINEDSIZE) {
+    return NS_UNCONSTRAINEDSIZE;
   }
 
-  if (aConsumedBSize == NS_INTRINSICSIZE) {
+  if (aConsumedBSize == NS_UNCONSTRAINEDSIZE) {
     aConsumedBSize = ConsumedBSize(aReflowInput.GetWritingMode());
   }
 
@@ -231,7 +231,7 @@ nsIFrame::LogicalSides nsSplittableFrame::GetLogicalSkipSides(
 
     if (NS_UNCONSTRAINEDSIZE != aReflowInput->AvailableBSize()) {
       nscoord effectiveCH = this->GetEffectiveComputedBSize(*aReflowInput);
-      if (effectiveCH != NS_INTRINSICSIZE &&
+      if (effectiveCH != NS_UNCONSTRAINEDSIZE &&
           effectiveCH > aReflowInput->AvailableBSize()) {
         // Our content height is going to exceed our available height, so we're
         // going to need a next-in-flow.

@@ -67,7 +67,9 @@ impl SharedRwLock {
     #[cfg(feature = "gecko")]
     pub fn new() -> Self {
         SharedRwLock {
-            cell: Some(Arc::new(AtomicRefCell::new(SomethingZeroSizedButTyped))),
+            cell: Some(Arc::new(AtomicRefCell::new(
+                SomethingZeroSizedButTyped,
+            ))),
         }
     }
 

@@ -47,13 +47,20 @@ use style_traits::{CssWriter, ParseError, ToCss};
 pub enum BorderStyle {
     Hidden,
     None,
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     Inset,
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     Groove,
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     Outset,
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     Ridge,
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     Dotted,
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     Dashed,
     Solid,
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2013"))]
     Double,
 }
 
@@ -170,24 +177,6 @@ impl BorderImageSideWidth {
     #[inline]
     pub fn one() -> Self {
         GenericBorderImageSideWidth::Number(NonNegativeNumber::new(1.))
-    }
-}
-
-impl Parse for BorderImageSideWidth {
-    fn parse<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        if input.try(|i| i.expect_ident_matching("auto")).is_ok() {
-            return Ok(GenericBorderImageSideWidth::Auto);
-        }
-
-        if let Ok(len) = input.try(|i| NonNegativeLengthPercentage::parse(context, i)) {
-            return Ok(GenericBorderImageSideWidth::Length(len));
-        }
-
-        let num = NonNegativeNumber::parse(context, input)?;
-        Ok(GenericBorderImageSideWidth::Number(num))
     }
 }
 

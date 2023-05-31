@@ -31,8 +31,8 @@ use crate::traversal_flags::TraversalFlags;
 use app_units::Au;
 #[cfg(feature = "servo")]
 use crossbeam_channel::Sender;
-use euclid::Size2D;
-use euclid::TypedScale;
+use euclid::default::Size2D;
+use euclid::Scale;
 use fxhash::FxHashMap;
 #[cfg(feature = "servo")]
 use parking_lot::RwLock;
@@ -181,7 +181,7 @@ pub struct SharedStyleContext<'a> {
 
     /// Paint worklets
     #[cfg(feature = "servo")]
-    pub registered_speculative_painters: &'a RegisteredSpeculativePainters,
+    pub registered_speculative_painters: &'a dyn RegisteredSpeculativePainters,
 
     /// Data needed to create the thread-local style context from the shared one.
     #[cfg(feature = "servo")]
@@ -195,7 +195,7 @@ impl<'a> SharedStyleContext<'a> {
     }
 
     /// The device pixel ratio
-    pub fn device_pixel_ratio(&self) -> TypedScale<f32, CSSPixel, DevicePixel> {
+    pub fn device_pixel_ratio(&self) -> Scale<f32, CSSPixel, DevicePixel> {
         self.stylist.device().device_pixel_ratio()
     }
 
@@ -826,5 +826,5 @@ pub trait RegisteredSpeculativePainter: SpeculativePainter {
 #[cfg(feature = "servo")]
 pub trait RegisteredSpeculativePainters: Sync {
     /// Look up a speculative painter
-    fn get(&self, name: &Atom) -> Option<&RegisteredSpeculativePainter>;
+    fn get(&self, name: &Atom) -> Option<&dyn RegisteredSpeculativePainter>;
 }

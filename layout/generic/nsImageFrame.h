@@ -8,7 +8,6 @@
 #define nsImageFrame_h___
 
 #include "nsAtomicContainerFrame.h"
-#include "nsIIOService.h"
 #include "nsIObserver.h"
 
 #include "imgINotificationObserver.h"
@@ -129,7 +128,6 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
       gIconLoad->Shutdown();
       gIconLoad = nullptr;
     }
-    NS_IF_RELEASE(sIOService);
   }
 
   virtual nsresult RestartAnimation();
@@ -288,8 +286,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
 
  private:
   // random helpers
-  inline void SpecToURI(const nsAString& aSpec, nsIIOService* aIOService,
-                        nsIURI** aURI);
+  inline void SpecToURI(const nsAString& aSpec, nsIURI** aURI);
 
   inline void GetLoadGroup(nsPresContext* aPresContext,
                            nsILoadGroup** aLoadGroup);
@@ -332,6 +329,12 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   bool IsPendingLoad(imgIRequest* aRequest) const;
 
   /**
+   * Updates mImage based on the current image request (cannot be null), and the
+   * image passed in (can be null), and invalidate layout and paint as needed.
+   */
+  void UpdateImage(imgIRequest* aRequest, imgIContainer* aImage);
+
+  /**
    * Function to convert a dirty rect in the source image to a dirty
    * rect for the image frame.
    */
@@ -368,8 +371,6 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   bool mFirstFrameComplete;
   bool mReflowCallbackPosted;
   bool mForceSyncDecoding;
-
-  static nsIIOService* sIOService;
 
   /* loading / broken image icon support */
 

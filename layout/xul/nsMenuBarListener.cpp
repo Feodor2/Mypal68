@@ -8,7 +8,6 @@
 #include "nsPIWindowRoot.h"
 
 // Drag & Drop, Clipboard
-#include "nsIServiceManager.h"
 #include "nsWidgetsCID.h"
 #include "nsCOMPtr.h"
 #include "nsIContent.h"

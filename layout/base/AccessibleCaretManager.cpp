@@ -17,7 +17,7 @@
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "nsCaret.h"
 #include "nsContainerFrame.h"
 #include "nsContentUtils.h"
@@ -823,7 +823,8 @@ bool AccessibleCaretManager::IsPhoneNumber(nsAString& aCandidate) const {
   RefPtr<Document> doc = mPresShell->GetDocument();
   nsAutoString phoneNumberRegex(
       NS_LITERAL_STRING("(^\\+)?[0-9 ,\\-.()*#pw]{1,30}$"));
-  return nsContentUtils::IsPatternMatching(aCandidate, phoneNumberRegex, doc);
+  return nsContentUtils::IsPatternMatching(aCandidate, phoneNumberRegex, doc)
+      .valueOr(false);
 }
 
 void AccessibleCaretManager::SelectMoreIfPhoneNumber() const {

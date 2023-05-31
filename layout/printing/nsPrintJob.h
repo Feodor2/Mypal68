@@ -27,7 +27,7 @@ class nsIDocShell;
 class nsIDocumentViewerPrint;
 class nsPrintObject;
 class nsIDocShell;
-class nsIPageSequenceFrame;
+class nsPageSequenceFrame;
 
 namespace mozilla {
 class PresShell;

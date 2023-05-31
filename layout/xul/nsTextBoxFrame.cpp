@@ -24,7 +24,6 @@
 #include "nsBoxLayoutState.h"
 #include "nsMenuBarListener.h"
 #include "nsString.h"
-#include "nsIServiceManager.h"
 #include "nsITheme.h"
 #include "nsUnicharUtils.h"
 #include "nsContentUtils.h"
@@ -189,7 +188,7 @@ void nsTextBoxFrame::UpdateAttributes(nsAtom* aAttribute, bool& aResize,
   aRedraw = false;
 
   if (aAttribute == nullptr || aAttribute == nsGkAtoms::crop) {
-    static Element::AttrValuesArray strings[] = {
+    static dom::Element::AttrValuesArray strings[] = {
         nsGkAtoms::left,  nsGkAtoms::start, nsGkAtoms::center,
         nsGkAtoms::right, nsGkAtoms::end,   nsGkAtoms::none,
         nullptr};
@@ -282,7 +281,7 @@ void nsDisplayXULTextBox::Paint(nsDisplayListBuilder* aBuilder,
   nsRect drawRect =
       static_cast<nsTextBoxFrame*>(mFrame)->mTextDrawRect + ToReferenceFrame();
   nsLayoutUtils::PaintTextShadow(mFrame, aCtx, drawRect, GetPaintRect(),
-                                 mFrame->StyleColor()->mColor.ToColor(),
+                                 mFrame->StyleText()->mColor.ToColor(),
                                  PaintTextShadowCallback, (void*)this);
 
   PaintTextToContext(aCtx, nsPoint(0, 0), nullptr);
@@ -487,7 +486,7 @@ void nsTextBoxFrame::DrawText(gfxContext& aRenderingContext,
 
   CalculateUnderline(refDrawTarget, *fontMet);
 
-  nscolor c = aOverrideColor ? *aOverrideColor : StyleColor()->mColor.ToColor();
+  nscolor c = aOverrideColor ? *aOverrideColor : StyleText()->mColor.ToColor();
   ColorPattern color(ToDeviceColor(c));
   aRenderingContext.SetColor(Color::FromABGR(c));
 

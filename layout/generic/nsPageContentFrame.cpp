@@ -8,7 +8,7 @@
 #include "nsCSSFrameConstructor.h"
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
-#include "nsSimplePageSequenceFrame.h"
+#include "nsPageSequenceFrame.h"
 
 using namespace mozilla;
 
@@ -55,8 +55,8 @@ void nsPageContentFrame::Reflow(nsPresContext* aPresContext,
     kidReflowInput.SetComputedBSize(logicalSize.BSize(wm));
 
     // Reflow the page content area
-    ReflowChild(frame, aPresContext, aDesiredSize, kidReflowInput, 0, 0, 0,
-                aStatus);
+    ReflowChild(frame, aPresContext, aDesiredSize, kidReflowInput, 0, 0,
+                ReflowChildFlags::Default, aStatus);
 
     // The document element's background should cover the entire canvas, so
     // take into account the combined area and any space taken up by
@@ -88,7 +88,7 @@ void nsPageContentFrame::Reflow(nsPresContext* aPresContext,
 
     // Place and size the child
     FinishReflowChild(frame, aPresContext, aDesiredSize, &kidReflowInput, 0, 0,
-                      0);
+                      ReflowChildFlags::Default);
 
     NS_ASSERTION(aPresContext->IsDynamic() || !aStatus.IsFullyComplete() ||
                      !frame->GetNextInFlow(),

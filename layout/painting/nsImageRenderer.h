@@ -245,8 +245,11 @@ class nsImageRenderer {
   void SetMaskOp(mozilla::StyleMaskMode aMaskOp) { mMaskOp = aMaskOp; }
   void PurgeCacheForViewportChange(
       const mozilla::Maybe<nsSize>& aSVGViewportSize, const bool aHasRatio);
+  const nsSize& GetSize() const { return mSize; }
   nsStyleImageType GetType() const { return mType; }
-  already_AddRefed<nsStyleGradient> GetGradientData();
+  const mozilla::StyleGradient* GetGradientData() const {
+    return mGradientData;
+  }
 
  private:
   /**
@@ -291,7 +294,7 @@ class nsImageRenderer {
   const nsStyleImage* mImage;
   nsStyleImageType mType;
   nsCOMPtr<imgIContainer> mImageContainer;
-  RefPtr<nsStyleGradient> mGradientData;
+  const mozilla::StyleGradient* mGradientData;
   nsIFrame* mPaintServerFrame;
   nsLayoutUtils::SurfaceFromElementResult mImageElementSurface;
   ImgDrawResult mPrepareResult;

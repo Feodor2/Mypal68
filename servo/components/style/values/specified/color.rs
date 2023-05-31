@@ -47,7 +47,7 @@ pub enum Color {
 /// System colors.
 #[allow(missing_docs)]
 #[cfg(feature = "gecko")]
-#[derive(Copy, Clone, Debug, MallocSizeOf, Parse, PartialEq, ToCss, ToShmem)]
+#[derive(Clone, Copy, Debug, MallocSizeOf, Parse, PartialEq, ToCss, ToShmem)]
 #[repr(u8)]
 pub enum SystemColor {
     #[css(skip)]
@@ -252,7 +252,6 @@ impl SystemColor {
         }
     }
 }
-
 
 #[cfg(feature = "gecko")]
 mod gecko {
@@ -645,7 +644,7 @@ impl ToComputedValue for ColorPropertyValue {
     fn to_computed_value(&self, context: &Context) -> RGBA {
         self.0
             .to_computed_value(context)
-            .to_rgba(context.builder.get_parent_color().clone_color())
+            .to_rgba(context.builder.get_parent_inherited_text().clone_color())
     }
 
     #[inline]

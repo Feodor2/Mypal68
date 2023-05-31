@@ -33,7 +33,7 @@ void nsSVGOuterSVGFrame::RegisterForeignObject(
 
   if (!mForeignObjectHash) {
     mForeignObjectHash =
-        new nsTHashtable<nsPtrHashKey<nsSVGForeignObjectFrame> >();
+        MakeUnique<nsTHashtable<nsPtrHashKey<nsSVGForeignObjectFrame>>>();
   }
 
   NS_ASSERTION(!mForeignObjectHash->GetEntry(aFrame),
@@ -305,8 +305,8 @@ LogicalSize nsSVGOuterSVGFrame::ComputeSize(
     // We're the root of the outermost browsing context, so we need to scale
     // cbSize by the full-zoom so that SVGs with percentage width/height zoom:
 
-    NS_ASSERTION(aCBSize.ISize(aWritingMode) != NS_AUTOHEIGHT &&
-                     aCBSize.BSize(aWritingMode) != NS_AUTOHEIGHT,
+    NS_ASSERTION(aCBSize.ISize(aWritingMode) != NS_UNCONSTRAINEDSIZE &&
+                     aCBSize.BSize(aWritingMode) != NS_UNCONSTRAINEDSIZE,
                  "root should not have auto-width/height containing block");
 
     if (!IsContainingWindowElementOfType(nullptr, nsGkAtoms::iframe)) {
@@ -334,7 +334,7 @@ LogicalSize nsSVGOuterSVGFrame::ComputeSize(
 
     const SVGAnimatedLength& height =
         content->mLengthAttributes[SVGSVGElement::ATTR_HEIGHT];
-    NS_ASSERTION(aCBSize.BSize(aWritingMode) != NS_AUTOHEIGHT,
+    NS_ASSERTION(aCBSize.BSize(aWritingMode) != NS_UNCONSTRAINEDSIZE,
                  "root should not have auto-height containing block");
     if (height.IsPercentage()) {
       MOZ_ASSERT(!intrinsicSize.height,
@@ -421,9 +421,9 @@ void nsSVGOuterSVGFrame::Reflow(nsPresContext* aPresContext,
     //
     if (svgElem->HasViewBoxOrSyntheticViewBox()) {
       nsIFrame* anonChild = PrincipalChildList().FirstChild();
-      anonChild->AddStateBits(NS_FRAME_IS_DIRTY);
+      anonChild->MarkSubtreeDirty();
       for (nsIFrame* child : anonChild->PrincipalChildList()) {
-        child->AddStateBits(NS_FRAME_IS_DIRTY);
+        child->MarkSubtreeDirty();
       }
     }
     changeBits |= COORD_CONTEXT_CHANGED;
@@ -448,7 +448,6 @@ void nsSVGOuterSVGFrame::Reflow(nsPresContext* aPresContext,
   } else {
     // Update the mRects and visual overflow rects of all our descendants,
     // including our anonymous wrapper kid:
-    anonKid->AddStateBits(mState & NS_FRAME_IS_DIRTY);
     anonKid->ReflowSVG();
     MOZ_ASSERT(!anonKid->GetNextSibling(),
                "We should have one anonymous child frame wrapping our real "
@@ -869,7 +868,7 @@ gfxMatrix nsSVGOuterSVGFrame::GetCanvasTM() {
 
     gfxMatrix tm = content->PrependLocalTransformsTo(
         gfxMatrix::Scaling(devPxPerCSSPx, devPxPerCSSPx));
-    mCanvasTM = new gfxMatrix(tm);
+    mCanvasTM = MakeUnique<gfxMatrix>(tm);
   }
   return *mCanvasTM;
 }

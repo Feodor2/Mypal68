@@ -91,6 +91,8 @@ extern crate servo_config;
 extern crate servo_url;
 extern crate smallbitvec;
 extern crate smallvec;
+#[cfg(feature = "gecko")]
+extern crate static_prefs;
 #[cfg(feature = "servo")]
 extern crate string_cache;
 #[macro_use]
@@ -163,7 +165,6 @@ pub mod thread_state;
 pub mod timer;
 pub mod traversal;
 pub mod traversal_flags;
-pub mod use_counters;
 #[macro_use]
 #[allow(non_camel_case_types)]
 pub mod values;

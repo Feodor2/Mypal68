@@ -57,7 +57,7 @@ nsSize nsPlaceholderFrame::GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) {
 
 /* virtual */
 nsSize nsPlaceholderFrame::GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) {
-  nsSize size(NS_INTRINSICSIZE, NS_INTRINSICSIZE);
+  nsSize size(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
   DISPLAY_MAX_SIZE(this, size);
   return size;
 }
@@ -205,7 +205,7 @@ ComputedStyle* nsPlaceholderFrame::GetParentComputedStyleForOutOfFlow(
       mContent ? mContent->GetFlattenedTreeParentElement() : nullptr;
   if (parentElement && Servo_Element_IsDisplayContents(parentElement)) {
     RefPtr<ComputedStyle> style =
-        PresShell()->StyleSet()->ResolveServoStyle(*parentElement);
+        ServoStyleSet::ResolveServoStyle(*parentElement);
     *aProviderFrame = nullptr;
     // See the comment in GetParentComputedStyle to see why returning this as a
     // weak ref is fine.

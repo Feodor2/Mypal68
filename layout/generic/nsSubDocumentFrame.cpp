@@ -9,10 +9,9 @@
 
 #include "nsSubDocumentFrame.h"
 
-#include "gfxPrefs.h"
-
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLFrameElement.h"
 #include "mozilla/layout/RenderFrame.h"
@@ -39,7 +38,6 @@
 #include "FrameLayerBuilder.h"
 #include "nsPluginFrame.h"
 #include "nsContentUtils.h"
-#include "nsIPermissionManager.h"
 #include "nsServiceManagerUtils.h"
 #include "nsQueryObject.h"
 #include "RetainedDisplayListBuilder.h"
@@ -47,8 +45,6 @@
 using namespace mozilla;
 using mozilla::dom::Document;
 using mozilla::layout::RenderFrame;
-
-static bool sShowPreviousPage = true;
 
 static Document* GetDocumentFromView(nsView* aView) {
   MOZ_ASSERT(aView, "null view");
@@ -103,15 +99,6 @@ void nsSubDocumentFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   MOZ_ASSERT(aContent);
   // determine if we are a <frame> or <iframe>
   mIsInline = !aContent->IsHTMLElement(nsGkAtoms::frame);
-
-  static bool addedShowPreviousPage = false;
-  if (!addedShowPreviousPage) {
-    // If layout.show_previous_page is true then during loading of a new page we
-    // will draw the previous page if the new page has painting suppressed.
-    Preferences::AddBoolVarCache(&sShowPreviousPage,
-                                 "layout.show_previous_page", true);
-    addedShowPreviousPage = true;
-  }
 
   nsAtomicContainerFrame::Init(aContent, aParent, aPrevInFlow);
 
@@ -247,7 +234,7 @@ mozilla::PresShell* nsSubDocumentFrame::GetSubdocumentPresShellForPainting(
       mozilla::PresShell* presShellForNextView = frame->PresShell();
       if (!presShell || (presShellForNextView &&
                          !presShellForNextView->IsPaintingSuppressed() &&
-                         sShowPreviousPage)) {
+                         StaticPrefs::layout_show_previous_page())) {
         subdocView = nextView;
         subdocRootFrame = frame;
         presShell = presShellForNextView;
@@ -383,17 +370,6 @@ void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     return;
   }
 
-  if (aBuilder->IsInFilter()) {
-    Document* outerDoc = PresShell()->GetDocument();
-    Document* innerDoc = presShell->GetDocument();
-    if (outerDoc && innerDoc) {
-      if (!outerDoc->NodePrincipal()->Equals(innerDoc->NodePrincipal())) {
-        outerDoc->SetDocumentAndPageUseCounter(
-            eUseCounter_custom_FilteredCrossOriginIFrame);
-      }
-    }
-  }
-
   nsIFrame* subdocRootFrame = presShell->GetRootFrame();
 
   nsPresContext* presContext = presShell->GetPresContext();
@@ -425,7 +401,7 @@ void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
           aBuilder, &copyOfVisible, &copyOfDirty,
           /* aSetBase = */ true);
 
-      if (!gfxPrefs::LayoutUseContainersForRootFrames() ||
+      if (!StaticPrefs::layout_scroll_root_frame_containers() ||
           !aBuilder->IsPaintingToWindow()) {
         haveDisplayPort = false;
       }
@@ -535,7 +511,7 @@ void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       // background behind the page, not the canvas color. The canvas color gets
       // painted on the page itself.
       if (nsLayoutUtils::NeedsPrintPreviewBackground(presContext)) {
-        presShell->AddPrintPreviewBackgroundItem(*aBuilder, childItems, frame,
+        presShell->AddPrintPreviewBackgroundItem(aBuilder, &childItems, frame,
                                                  bounds);
       } else {
         // Add the canvas background color to the bottom of the list. This
@@ -546,7 +522,7 @@ void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
             AddCanvasBackgroundColorFlags::ForceDraw |
             AddCanvasBackgroundColorFlags::AddForSubDocument;
         presShell->AddCanvasBackgroundColorItem(
-            *aBuilder, childItems, frame, bounds, NS_RGBA(0, 0, 0, 0), flags);
+            aBuilder, &childItems, frame, bounds, NS_RGBA(0, 0, 0, 0), flags);
       }
     }
   }
@@ -606,7 +582,7 @@ void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   // unscrolled color item for overscroll. Try again now that we're
   // outside the scrolled ContainerLayer.
   if (!aBuilder->IsForEventDelivery() &&
-      gfxPrefs::LayoutUseContainersForRootFrames() &&
+      StaticPrefs::layout_scroll_root_frame_containers() &&
       !nsLayoutUtils::NeedsPrintPreviewBackground(presContext)) {
     nsRect bounds =
         GetContentRectRelativeToSelf() + aBuilder->ToReferenceFrame(this);
@@ -622,7 +598,7 @@ void nsSubDocumentFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     AddCanvasBackgroundColorFlags flags =
         AddCanvasBackgroundColorFlags::ForceDraw |
         AddCanvasBackgroundColorFlags::AppendUnscrolledOnly;
-    presShell->AddCanvasBackgroundColorItem(*aBuilder, childItems, this, bounds,
+    presShell->AddCanvasBackgroundColorItem(aBuilder, &childItems, this, bounds,
                                             NS_RGBA(0, 0, 0, 0), flags);
   }
 
@@ -805,7 +781,7 @@ void nsSubDocumentFrame::Reflow(nsPresContext* aPresContext,
   NS_ASSERTION(aReflowInput.ComputedWidth() != NS_UNCONSTRAINEDSIZE,
                "Shouldn't have unconstrained stuff here "
                "thanks to the rules of reflow");
-  NS_ASSERTION(NS_INTRINSICSIZE != aReflowInput.ComputedHeight(),
+  NS_ASSERTION(NS_UNCONSTRAINEDSIZE != aReflowInput.ComputedHeight(),
                "Shouldn't have unconstrained stuff here "
                "thanks to ComputeAutoSize");
 
@@ -901,12 +877,6 @@ nsresult nsSubDocumentFrame::AttributeChanged(int32_t aNameSpaceID,
           framesetFrame->RecalculateBorderResize();
         }
       }
-    }
-  } else if (aAttribute == nsGkAtoms::showresizer) {
-    nsIFrame* rootFrame = GetSubdocumentRootFrame();
-    if (rootFrame) {
-      rootFrame->PresShell()->FrameNeedsReflow(
-          rootFrame, IntrinsicDirty::Resize, NS_FRAME_IS_DIRTY);
     }
   } else if (aAttribute == nsGkAtoms::marginwidth ||
              aAttribute == nsGkAtoms::marginheight) {

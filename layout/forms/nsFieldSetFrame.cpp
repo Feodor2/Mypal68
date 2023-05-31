@@ -183,8 +183,9 @@ bool nsDisplayFieldSetBorder::CreateWebRenderCommands(
     if (!legendRect.IsEmpty()) {
       // We need to clip out the part of the border where the legend would go
       auto appUnitsPerDevPixel = frame->PresContext()->AppUnitsPerDevPixel();
-      auto layoutRect = wr::ToRoundedLayoutRect(
-          LayoutDeviceRect::FromAppUnits(rect, appUnitsPerDevPixel));
+      auto layoutRect = wr::ToRoundedLayoutRect(LayoutDeviceRect::FromAppUnits(
+          frame->GetVisualOverflowRectRelativeToSelf() + offset,
+          appUnitsPerDevPixel));
 
       wr::ComplexClipRegion region;
       region.rect = wr::ToRoundedLayoutRect(
@@ -386,14 +387,14 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
   DO_GLOBAL_REFLOW_COUNT("nsFieldSetFrame");
   DISPLAY_REFLOW(aPresContext, this, aReflowInput, aDesiredSize, aStatus);
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
-  NS_WARNING_ASSERTION(aReflowInput.ComputedISize() != NS_INTRINSICSIZE,
+  NS_WARNING_ASSERTION(aReflowInput.ComputedISize() != NS_UNCONSTRAINEDSIZE,
                        "Should have a precomputed inline-size!");
 
   nsOverflowAreas ocBounds;
   nsReflowStatus ocStatus;
   if (GetPrevInFlow()) {
-    ReflowOverflowContainerChildren(aPresContext, aReflowInput, ocBounds, 0,
-                                    ocStatus);
+    ReflowOverflowContainerChildren(aPresContext, aReflowInput, ocBounds,
+                                    ReflowChildFlags::Default, ocStatus);
   }
 
   //------------ Handle Incremental Reflow -----------------
@@ -441,8 +442,8 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
     // and containerSize passed here are unimportant.
     const nsSize dummyContainerSize;
     ReflowChild(legend, aPresContext, legendDesiredSize, *legendReflowInput, wm,
-                LogicalPoint(wm), dummyContainerSize, NS_FRAME_NO_MOVE_FRAME,
-                aStatus);
+                LogicalPoint(wm), dummyContainerSize,
+                ReflowChildFlags::NoMoveFrame, aStatus);
 #ifdef NOISY_REFLOW
     printf("  returned (%d, %d)\n", legendDesiredSize.Width(),
            legendDesiredSize.Height());
@@ -481,7 +482,7 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
 
     FinishReflowChild(legend, aPresContext, legendDesiredSize,
                       legendReflowInput.ptr(), wm, LogicalPoint(wm),
-                      dummyContainerSize, NS_FRAME_NO_MOVE_FRAME);
+                      dummyContainerSize, ReflowChildFlags::NoMoveFrame);
   } else if (!legend) {
     mLegendRect.SetEmpty();
     mLegendSpace = 0;
@@ -533,13 +534,13 @@ void nsFieldSetFrame::Reflow(nsPresContext* aPresContext,
     // if necessary.
     const nsSize dummyContainerSize;
     ReflowChild(inner, aPresContext, kidDesiredSize, kidReflowInput, wm, pt,
-                dummyContainerSize, 0, aStatus);
+                dummyContainerSize, ReflowChildFlags::Default, aStatus);
 
     // Update containerSize to account for size of the inner frame, so that
     // FinishReflowChild can position it correctly.
     containerSize += kidDesiredSize.PhysicalSize();
     FinishReflowChild(inner, aPresContext, kidDesiredSize, &kidReflowInput, wm,
-                      pt, containerSize, 0);
+                      pt, containerSize, ReflowChildFlags::Default);
     NS_FRAME_TRACE_REFLOW_OUT("FieldSet::Reflow", aStatus);
   } else if (inner) {
     // |inner| didn't need to be reflowed but we do need to include its size
@@ -670,6 +671,7 @@ void nsFieldSetFrame::AppendFrames(ChildListID aListID,
 }
 
 void nsFieldSetFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                                   const nsLineList::iterator* aPrevFrameLine,
                                    nsFrameList& aFrameList) {
   MOZ_CRASH("nsFieldSetFrame::InsertFrames not supported");
 }

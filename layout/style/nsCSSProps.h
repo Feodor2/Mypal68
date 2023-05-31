@@ -20,7 +20,6 @@
 #include "nsCSSKeywords.h"
 #include "mozilla/CSSEnabledState.h"
 #include "mozilla/CSSPropFlags.h"
-#include "mozilla/UseCounter.h"
 #include "mozilla/EnumTypeTraits.h"
 #include "mozilla/Preferences.h"
 #include "nsXULAppAPI.h"
@@ -41,26 +40,28 @@ const uint8_t* Servo_Property_GetName(nsCSSPropertyID, uint32_t* aLength);
 }
 
 struct nsCSSKTableEntry {
-  // nsCSSKTableEntry objects can be initialized either with an int16_t value
-  // or a value of an enumeration type that can fit within an int16_t.
+  // nsCSSKTableEntry objects can be initialized either with an uint16_t value
+  // or a value of an enumeration type that can fit within an uint16_t.
+  static constexpr uint16_t SENTINEL_VALUE = uint16_t(-1);
 
-  constexpr nsCSSKTableEntry(nsCSSKeyword aKeyword, int16_t aValue)
+  constexpr nsCSSKTableEntry(nsCSSKeyword aKeyword, uint16_t aValue)
       : mKeyword(aKeyword), mValue(aValue) {}
 
   template <typename T,
             typename = typename std::enable_if<std::is_enum<T>::value>::type>
   constexpr nsCSSKTableEntry(nsCSSKeyword aKeyword, T aValue)
-      : mKeyword(aKeyword), mValue(static_cast<int16_t>(aValue)) {
-    static_assert(mozilla::EnumTypeFitsWithin<T, int16_t>::value,
+      : mKeyword(aKeyword), mValue(static_cast<uint16_t>(aValue)) {
+    static_assert(mozilla::EnumTypeFitsWithin<T, uint16_t>::value,
                   "aValue must be an enum that fits within mValue");
+    MOZ_ASSERT(static_cast<uint16_t>(aValue) != SENTINEL_VALUE);
   }
 
   bool IsSentinel() const {
-    return mKeyword == eCSSKeyword_UNKNOWN && mValue == -1;
+    return mKeyword == eCSSKeyword_UNKNOWN && mValue == SENTINEL_VALUE;
   }
 
   nsCSSKeyword mKeyword;
-  int16_t mValue;
+  uint16_t mValue;
 };
 
 class nsCSSProps {
@@ -82,21 +83,14 @@ class nsCSSProps {
     return Servo_Property_LookupEnabledForAllContent(&aProperty);
   }
 
-  static nsCSSPropertyID LookupProperty(const nsAString& aProperty) {
-    NS_ConvertUTF16toUTF8 utf8(aProperty);
-    return LookupProperty(utf8);
-  }
-
   // As above, but looked up using a property's IDL name.
-  // eCSSPropertyExtra_variable won't be returned from these methods.
-  static nsCSSPropertyID LookupPropertyByIDLName(
-      const nsAString& aPropertyIDLName, EnabledState aEnabled);
+  // eCSSPropertyExtra_variable won't be returned from this method.
   static nsCSSPropertyID LookupPropertyByIDLName(
       const nsACString& aPropertyIDLName, EnabledState aEnabled);
 
   // Returns whether aProperty is a custom property name, i.e. begins with
   // "--".  This assumes that the CSS Variables pref has been enabled.
-  static bool IsCustomPropertyName(const nsAString& aProperty);
+  static bool IsCustomPropertyName(const nsACString& aProperty);
 
   static bool IsShorthand(nsCSSPropertyID aProperty) {
     MOZ_ASSERT(0 <= aProperty && aProperty < eCSSProperty_COUNT,
@@ -105,7 +99,7 @@ class nsCSSProps {
   }
 
   // Same but for @font-face descriptors
-  static nsCSSFontDesc LookupFontDesc(const nsAString& aProperty);
+  static nsCSSFontDesc LookupFontDesc(const nsACString& aProperty);
 
   // Given a property enum, get the string value
   //
@@ -137,9 +131,9 @@ class nsCSSProps {
             typename = typename std::enable_if<std::is_enum<T>::value>::type>
   static nsCSSKeyword ValueToKeywordEnum(T aValue, const KTableEntry aTable[]) {
     static_assert(
-        mozilla::EnumTypeFitsWithin<T, int16_t>::value,
+        mozilla::EnumTypeFitsWithin<T, uint16_t>::value,
         "aValue must be an enum that fits within KTableEntry::mValue");
-    return ValueToKeywordEnum(static_cast<int16_t>(aValue), aTable);
+    return ValueToKeywordEnum(static_cast<uint16_t>(aValue), aTable);
   }
   // Ditto but as a string, return "" when not found.
   static const nsCString& ValueToKeyword(int32_t aValue,
@@ -148,9 +142,9 @@ class nsCSSProps {
             typename = typename std::enable_if<std::is_enum<T>::value>::type>
   static const nsCString& ValueToKeyword(T aValue, const KTableEntry aTable[]) {
     static_assert(
-        mozilla::EnumTypeFitsWithin<T, int16_t>::value,
+        mozilla::EnumTypeFitsWithin<T, uint16_t>::value,
         "aValue must be an enum that fits within KTableEntry::mValue");
-    return ValueToKeyword(static_cast<int16_t>(aValue), aTable);
+    return ValueToKeyword(static_cast<uint16_t>(aValue), aTable);
   }
 
  private:
@@ -235,19 +229,7 @@ class nsCSSProps {
     return gPropertyEnabled[aProperty];
   }
 
-  // A table for the use counter associated with each CSS property.  If a
-  // property does not have a use counter defined in UseCounters.conf, then
-  // its associated entry is |eUseCounter_UNKNOWN|.
-  static const mozilla::UseCounter
-      gPropertyUseCounter[eCSSProperty_COUNT_no_shorthands];
-
  public:
-  static mozilla::UseCounter UseCounterFor(nsCSSPropertyID aProperty) {
-    MOZ_ASSERT(0 <= aProperty && aProperty < eCSSProperty_COUNT_no_shorthands,
-               "out of range");
-    return gPropertyUseCounter[aProperty];
-  }
-
   static bool IsEnabled(nsCSSPropertyID aProperty, EnabledState aEnabled) {
     if (IsEnabled(aProperty)) {
       return true;
@@ -285,30 +267,10 @@ class nsCSSProps {
     if (nsCSSProps::IsEnabled(*it_, (mozilla::CSSEnabledState)es_))
 
   // Keyword/Enum value tables
-  // Not const because we modify its entries when the pref
-  // "layout.css.background-clip.text" changes:
-  static const KTableEntry kShapeRadiusKTable[];
-  static const KTableEntry kFilterFunctionKTable[];
-  static const KTableEntry kBoxShadowTypeKTable[];
   static const KTableEntry kCursorKTable[];
-  // Not const because we modify its entries when various
-  // "layout.css.*.enabled" prefs changes:
-  static KTableEntry kDisplayKTable[];
-  // clang-format off
-  // -- tables for auto-completion of the {align,justify}-{content,items,self} properties --
-  static const KTableEntry kAutoCompletionAlignJustifySelf[];
-  static const KTableEntry kAutoCompletionAlignItems[];
-  static const KTableEntry kAutoCompletionAlignJustifyContent[];
-  // ------------------------------------------------------------------
-  // clang-format on
   static const KTableEntry kFontSmoothingKTable[];
-  static const KTableEntry kGridAutoFlowKTable[];
-  static const KTableEntry kGridTrackBreadthKTable[];
-  static const KTableEntry kLineHeightKTable[];
   static const KTableEntry kTextAlignKTable[];
   static const KTableEntry kTextDecorationStyleKTable[];
-  static const KTableEntry kTextEmphasisStyleShapeKTable[];
-  static const KTableEntry kTextOverflowKTable[];
 };
 
 // MOZ_DBG support for nsCSSPropertyID

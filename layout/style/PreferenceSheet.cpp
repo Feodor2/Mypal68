@@ -6,24 +6,25 @@
 
 #include "ServoCSSParser.h"
 #include "MainThreadUtils.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/Encoding.h"
+#include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/dom/Document.h"
 #include "nsContentUtils.h"
 
-using mozilla::dom::Document;
-
 namespace mozilla {
+
+using dom::Document;
 
 bool PreferenceSheet::sInitialized;
 PreferenceSheet::Prefs PreferenceSheet::sContentPrefs;
 PreferenceSheet::Prefs PreferenceSheet::sChromePrefs;
 
 static void GetColor(const char* aPrefName, nscolor& aColor) {
-  nsAutoString value;
-  Preferences::GetString(aPrefName, value);
-  if (value.IsEmpty()) {
+  nsAutoCString value;
+  Preferences::GetCString(aPrefName, value);
+  if (value.IsEmpty() || Encoding::UTF8ValidUpTo(value) != value.Length()) {
     return;
   }
   nscolor result;

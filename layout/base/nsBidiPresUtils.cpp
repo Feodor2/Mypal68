@@ -5,6 +5,7 @@
 #include "nsBidiPresUtils.h"
 
 #include "mozilla/IntegerRange.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Text.h"
 
@@ -57,6 +58,9 @@ static const char16_t kSeparators[] = {
     char16_t(0x85), char16_t(0x2029), char16_t(0)};
 
 #define NS_BIDI_CONTROL_FRAME ((nsIFrame*)0xfffb1d1)
+
+// This exists just to be a type; the value doesn't matter.
+enum class BidiControlFrameType { Value };
 
 static bool IsIsolateControl(char16_t aChar) {
   return aChar == kLRI || aChar == kRLI || aChar == kFSI;
@@ -113,11 +117,45 @@ static char16_t GetBidiControl(ComputedStyle* aComputedStyle) {
   return 0;
 }
 
+#ifdef DEBUG
+static inline bool AreContinuationsInOrder(nsIFrame* aFrame1,
+                                           nsIFrame* aFrame2) {
+  nsIFrame* f = aFrame1;
+  do {
+    f = f->GetNextContinuation();
+  } while (f && f != aFrame2);
+  return !!f;
+}
+#endif
+
 struct MOZ_STACK_CLASS BidiParagraphData {
+  struct FrameInfo {
+    FrameInfo(nsIFrame* aFrame, nsBlockInFlowLineIterator& aLineIter)
+        : mFrame(aFrame),
+          mBlockContainer(aLineIter.GetContainer()),
+          mInOverflow(aLineIter.GetInOverflow()) {}
+
+    explicit FrameInfo(BidiControlFrameType aValue)
+        : mFrame(NS_BIDI_CONTROL_FRAME),
+          mBlockContainer(nullptr),
+          mInOverflow(false) {}
+
+    FrameInfo()
+        : mFrame(nullptr), mBlockContainer(nullptr), mInOverflow(false) {}
+
+    nsIFrame* mFrame;
+
+    // The block containing mFrame (i.e., which continuation).
+    nsBlockFrame* mBlockContainer;
+
+    // true if mFrame is in mBlockContainer's overflow lines, false if
+    // in primary lines
+    bool mInOverflow;
+  };
+
   nsAutoString mBuffer;
   AutoTArray<char16_t, 16> mEmbeddingStack;
-  AutoTArray<nsIFrame*, 16> mLogicalFrames;
-  AutoTArray<nsLineBox*, 16> mLinePerFrame;
+  AutoTArray<FrameInfo, 16> mLogicalFrames;
   nsDataHashtable<nsPtrHashKey<const nsIContent>, int32_t> mContentToFrameIndex;
   // Cached presentation context for the frames we're processing.
   nsPresContext* mPresContext;
@@ -125,11 +163,131 @@ struct MOZ_STACK_CLASS BidiParagraphData {
   bool mRequiresBidi;
   nsBidiLevel mParaLevel;
   nsIContent* mPrevContent;
-  nsIFrame* mPrevFrame;
-  // Cache the block frame which needs bidi resolution.
-  const nsIFrame* mBlock;
+
+  /**
+   * This class is designed to manage the process of mapping a frame to
+   * the line that it's in, when we know that (a) the frames we ask it
+   * about are always in the block's lines and (b) each successive frame
+   * we ask it about is the same as or after (in depth-first search
+   * order) the previous.
+   *
+   * Since we move through the lines at a different pace in Traverse and
+   * ResolveParagraph, we use one of these for each.
+   *
+   * The state of the mapping is also different between TraverseFrames
+   * and ResolveParagraph since since resolving can call functions
+   * (EnsureBidiContinuation or SplitInlineAncestors) that can create
+   * new frames and thus break lines.
+   *
+   * The TraverseFrames iterator is only used in some edge cases.
+   */
+  struct FastLineIterator {
+    FastLineIterator() : mPrevFrame(nullptr), mNextLineStart(nullptr) {}
+
+    // These iterators *and* mPrevFrame track the line list that we're
+    // iterating over.
+    //
+    // mPrevFrame, if non-null, should be either the frame we're currently
+    // handling (in ResolveParagraph or TraverseFrames, depending on the
+    // iterator) or a frame before it, and is also guaranteed to either be in
+    // mCurrentLine or have been in mCurrentLine until recently.
+    //
+    // In case the splitting causes block frames to break lines, however, we
+    // also track the first frame of the next line.  If that changes, it means
+    // we've broken lines and we have to invalidate mPrevFrame.
+    nsBlockInFlowLineIterator mLineIterator;
+    nsIFrame* mPrevFrame;
+    nsIFrame* mNextLineStart;
+
+    nsLineList::iterator GetLine() { return mLineIterator.GetLine(); }
+
+    static bool IsFrameInCurrentLine(nsBlockInFlowLineIterator* aLineIter,
+                                     nsIFrame* aPrevFrame, nsIFrame* aFrame) {
+      MOZ_ASSERT(!aPrevFrame || aLineIter->GetLine()->Contains(aPrevFrame),
+                 "aPrevFrame must be in aLineIter's current line");
+      nsIFrame* endFrame = aLineIter->IsLastLineInList()
+                               ? nullptr
+                               : aLineIter->GetLine().next()->mFirstChild;
+      nsIFrame* startFrame =
+          aPrevFrame ? aPrevFrame : aLineIter->GetLine()->mFirstChild;
+      for (nsIFrame* frame = startFrame; frame && frame != endFrame;
+           frame = frame->GetNextSibling()) {
+        if (frame == aFrame) return true;
+      }
+      return false;
+    }
+
+    static nsIFrame* FirstChildOfNextLine(
+        nsBlockInFlowLineIterator& aIterator) {
+      const nsLineList::iterator line = aIterator.GetLine();
+      const nsLineList::iterator lineEnd = aIterator.End();
+      MOZ_ASSERT(line != lineEnd, "iterator should start off valid");
+      const nsLineList::iterator nextLine = line.next();
+
+      return nextLine != lineEnd ? nextLine->mFirstChild : nullptr;
+    }
+
+    // Advance line iterator to the line containing aFrame, assuming
+    // that aFrame is already in the line list our iterator is iterating
+    // over.
+    void AdvanceToFrame(nsIFrame* aFrame) {
+      if (mPrevFrame && FirstChildOfNextLine(mLineIterator) != mNextLineStart) {
+        // Something has caused a line to split.  We need to invalidate
+        // mPrevFrame since it may now be in a *later* line, though it may
+        // still be in this line, so we need to start searching for it from
+        // the start of this line.
+        mPrevFrame = nullptr;
+      }
+      nsIFrame* child = aFrame;
+      nsIFrame* parent = nsLayoutUtils::GetParentOrPlaceholderFor(child);
+      while (parent && !parent->IsBlockFrameOrSubclass()) {
+        child = parent;
+        parent = nsLayoutUtils::GetParentOrPlaceholderFor(child);
+      }
+      MOZ_ASSERT(parent, "aFrame is not a descendent of a block frame");
+      while (!IsFrameInCurrentLine(&mLineIterator, mPrevFrame, child)) {
+#ifdef DEBUG
+        bool hasNext =
+#endif
+            mLineIterator.Next();
+        MOZ_ASSERT(hasNext, "Can't find frame in lines!");
+        mPrevFrame = nullptr;
+      }
+      mPrevFrame = child;
+      mNextLineStart = FirstChildOfNextLine(mLineIterator);
+    }
+
+    // Advance line iterator to the line containing aFrame, which may
+    // require moving forward into overflow lines or into a later
+    // continuation (or both).
+    void AdvanceToLinesAndFrame(const FrameInfo& aFrameInfo) {
+      if (mLineIterator.GetContainer() != aFrameInfo.mBlockContainer ||
+          mLineIterator.GetInOverflow() != aFrameInfo.mInOverflow) {
+        MOZ_ASSERT(
+            mLineIterator.GetContainer() == aFrameInfo.mBlockContainer
+                ? (!mLineIterator.GetInOverflow() && aFrameInfo.mInOverflow)
+                : (!mLineIterator.GetContainer() ||
+                   AreContinuationsInOrder(mLineIterator.GetContainer(),
+                                           aFrameInfo.mBlockContainer)),
+            "must move forwards");
+        nsBlockFrame* block = aFrameInfo.mBlockContainer;
+        nsLineList::iterator lines =
+            aFrameInfo.mInOverflow ? block->GetOverflowLines()->mLines.begin()
+                                   : block->LinesBegin();
+        mLineIterator =
+            nsBlockInFlowLineIterator(block, lines, aFrameInfo.mInOverflow);
+        mPrevFrame = nullptr;
+      }
+      AdvanceToFrame(aFrameInfo.mFrame);
+    }
+  };
+
+  FastLineIterator mCurrentTraverseLine, mCurrentResolveLine;
+
 #ifdef DEBUG
   // Only used for NOISY debug output.
+  // Matches the current TraverseFrames state, not the ResolveParagraph
+  // state.
   nsBlockFrame* mCurrentBlock;
 #endif
 
@@ -138,17 +296,12 @@ struct MOZ_STACK_CLASS BidiParagraphData {
         mIsVisual(mPresContext->IsVisualMode()),
         mRequiresBidi(false),
         mParaLevel(nsBidiPresUtils::BidiLevelFromStyle(aBlockFrame->Style())),
-        mPrevContent(nullptr),
-        mPrevFrame(nullptr),
-        mBlock(aBlockFrame)
+        mPrevContent(nullptr)
 #ifdef DEBUG
         ,
         mCurrentBlock(aBlockFrame)
 #endif
   {
-    MOZ_ASSERT(mBlock->FirstContinuation() == mBlock,
-               "mBlock must be the first continuation!");
-
     if (mParaLevel > 0) {
       mRequiresBidi = true;
     }
@@ -216,30 +369,27 @@ struct MOZ_STACK_CLASS BidiParagraphData {
 
   void ResetData() {
     mLogicalFrames.Clear();
-    mLinePerFrame.Clear();
     mContentToFrameIndex.Clear();
     mBuffer.SetLength(0);
     mPrevContent = nullptr;
     for (uint32_t i = 0; i < mEmbeddingStack.Length(); ++i) {
       mBuffer.Append(mEmbeddingStack[i]);
-      mLogicalFrames.AppendElement(NS_BIDI_CONTROL_FRAME);
-      mLinePerFrame.AppendElement((nsLineBox*)nullptr);
+      mLogicalFrames.AppendElement(FrameInfo(BidiControlFrameType::Value));
     }
   }
 
-  void AppendFrame(nsIFrame* aFrame, nsBlockInFlowLineIterator* aLineIter,
+  void AppendFrame(nsIFrame* aFrame, FastLineIterator& aLineIter,
                    nsIContent* aContent = nullptr) {
     if (aContent) {
       mContentToFrameIndex.Put(aContent, FrameCount());
     }
-    mLogicalFrames.AppendElement(aFrame);
 
-    AdvanceLineIteratorToFrame(aFrame, aLineIter, mPrevFrame);
-    mLinePerFrame.AppendElement(aLineIter->GetLine().get());
+    // We don't actually need to advance aLineIter to aFrame, since all we use
+    // from it is the block and is-overflow state, which are correct already.
+    mLogicalFrames.AppendElement(FrameInfo(aFrame, aLineIter.mLineIterator));
   }
 
-  void AdvanceAndAppendFrame(nsIFrame** aFrame,
-                             nsBlockInFlowLineIterator* aLineIter,
+  void AdvanceAndAppendFrame(nsIFrame** aFrame, FastLineIterator& aLineIter,
                              nsIFrame** aNextSibling) {
     nsIFrame* frame = *aFrame;
     nsIFrame* nextSibling = *aNextSibling;
@@ -271,9 +421,11 @@ struct MOZ_STACK_CLASS BidiParagraphData {
 
   int32_t BufferLength() { return mBuffer.Length(); }
 
-  nsIFrame* FrameAt(int32_t aIndex) { return mLogicalFrames[aIndex]; }
+  nsIFrame* FrameAt(int32_t aIndex) { return mLogicalFrames[aIndex].mFrame; }
 
-  nsLineBox* GetLineForFrameAt(int32_t aIndex) { return mLinePerFrame[aIndex]; }
+  const FrameInfo& FrameInfoAt(int32_t aIndex) {
+    return mLogicalFrames[aIndex];
+  }
 
   void AppendUnichar(char16_t aCh) { mBuffer.Append(aCh); }
 
@@ -282,8 +434,7 @@ struct MOZ_STACK_CLASS BidiParagraphData {
   }
 
   void AppendControlChar(char16_t aCh) {
-    mLogicalFrames.AppendElement(NS_BIDI_CONTROL_FRAME);
-    mLinePerFrame.AppendElement((nsLineBox*)nullptr);
+    mLogicalFrames.AppendElement(FrameInfo(BidiControlFrameType::Value));
     AppendUnichar(aCh);
   }
 
@@ -307,42 +458,6 @@ struct MOZ_STACK_CLASS BidiParagraphData {
     for (char16_t c : Reversed(mEmbeddingStack)) {
       AppendPopChar(c);
     }
-  }
-
-  static bool IsFrameInCurrentLine(nsBlockInFlowLineIterator* aLineIter,
-                                   nsIFrame* aPrevFrame, nsIFrame* aFrame) {
-    nsIFrame* endFrame = aLineIter->IsLastLineInList()
-                             ? nullptr
-                             : aLineIter->GetLine().next()->mFirstChild;
-    nsIFrame* startFrame =
-        aPrevFrame ? aPrevFrame : aLineIter->GetLine()->mFirstChild;
-    for (nsIFrame* frame = startFrame; frame && frame != endFrame;
-         frame = frame->GetNextSibling()) {
-      if (frame == aFrame) return true;
-    }
-    return false;
-  }
-
-  static void AdvanceLineIteratorToFrame(nsIFrame* aFrame,
-                                         nsBlockInFlowLineIterator* aLineIter,
-                                         nsIFrame*& aPrevFrame) {
-    // Advance aLine to the line containing aFrame
-    nsIFrame* child = aFrame;
-    nsIFrame* parent = nsLayoutUtils::GetParentOrPlaceholderFor(child);
-    while (parent && !parent->IsBlockFrameOrSubclass()) {
-      child = parent;
-      parent = nsLayoutUtils::GetParentOrPlaceholderFor(child);
-    }
-    NS_ASSERTION(parent, "aFrame is not a descendent of a block frame");
-    while (!IsFrameInCurrentLine(aLineIter, aPrevFrame, child)) {
-#ifdef DEBUG
-      bool hasNext =
-#endif
-          aLineIter->Next();
-      NS_ASSERTION(hasNext, "Can't find frame in lines!");
-      aPrevFrame = nullptr;
-    }
-    aPrevFrame = child;
   }
 };
 
@@ -463,6 +578,7 @@ void MOZ_EXPORT DumpBidiLine(BidiLineData* aData, bool aVisualOrder) {
 
 // Should this frame be split between text runs?
 static bool IsBidiSplittable(nsIFrame* aFrame) {
+  MOZ_ASSERT(aFrame);
   // Bidi inline containers should be split, unless they're line frames.
   LayoutFrameType frameType = aFrame->Type();
   return (aFrame->IsFrameOfType(nsIFrame::eBidiInlineContainer) &&
@@ -486,6 +602,7 @@ static bool IsBidiLeaf(nsIFrame* aFrame) {
  *        If aFrame is null, all the children of aParent are reparented.
  */
 static nsresult SplitInlineAncestors(nsContainerFrame* aParent,
+                                     nsLineList::iterator aLine,
                                      nsIFrame* aFrame) {
   nsPresContext* presContext = aParent->PresContext();
   PresShell* presShell = presContext->PresShell();
@@ -515,12 +632,28 @@ static nsresult SplitInlineAncestors(nsContainerFrame* aParent,
       }
 
       // The parent's continuation adopts the siblings after the split.
-      newParent->InsertFrames(nsIFrame::kNoReflowPrincipalList, nullptr, tail);
+      MOZ_ASSERT(!newParent->IsBlockFrameOrSubclass(),
+                 "blocks should not be IsBidiSplittable");
+      newParent->InsertFrames(nsIFrame::kNoReflowPrincipalList, nullptr,
+                              nullptr, tail);
+
+      // While passing &aLine to InsertFrames for a non-block isn't harmful
+      // because it's a no-op, it doesn't really make sense.  However, the
+      // MOZ_ASSERT() we need to guarantee that it's safe only works if the
+      // parent is actually the block.
+      const nsLineList::iterator* parentLine;
+      if (grandparent->IsBlockFrameOrSubclass()) {
+        MOZ_ASSERT(aLine->Contains(parent));
+        parentLine = &aLine;
+      } else {
+        parentLine = nullptr;
+      }
 
       // The list name kNoReflowPrincipalList would indicate we don't want
       // reflow
       nsFrameList temp(newParent, newParent);
-      grandparent->InsertFrames(nsIFrame::kNoReflowPrincipalList, parent, temp);
+      grandparent->InsertFrames(nsIFrame::kNoReflowPrincipalList, parent,
+                                parentLine, temp);
     }
 
     frame = parent;
@@ -559,7 +692,7 @@ static void MakeContinuationsNonFluidUpParentChain(nsIFrame* aFrame,
 // If it isn't the last child, make sure that its continuation is fluid.
 static void JoinInlineAncestors(nsIFrame* aFrame) {
   nsIFrame* frame = aFrame;
-  do {
+  while (frame && IsBidiSplittable(frame)) {
     nsIFrame* next = frame->GetNextContinuation();
     if (next) {
       MakeContinuationFluid(frame, next);
@@ -567,11 +700,12 @@ static void JoinInlineAncestors(nsIFrame* aFrame) {
     // Join the parent only as long as we're its last child.
     if (frame->GetNextSibling()) break;
     frame = frame->GetParent();
-  } while (frame && IsBidiSplittable(frame));
+  }
 }
 
-static nsresult CreateContinuation(nsIFrame* aFrame, nsIFrame** aNewFrame,
-                                   bool aIsFluid) {
+static nsresult CreateContinuation(nsIFrame* aFrame,
+                                   const nsLineList::iterator aLine,
+                                   nsIFrame** aNewFrame, bool aIsFluid) {
   MOZ_ASSERT(aNewFrame, "null OUT ptr");
   MOZ_ASSERT(aFrame, "null ptr");
 
@@ -587,6 +721,18 @@ static nsresult CreateContinuation(nsIFrame* aFrame, nsIFrame** aNewFrame,
   NS_ASSERTION(
       parent,
       "Couldn't get frame parent in nsBidiPresUtils::CreateContinuation");
+
+  // While passing &aLine to InsertFrames for a non-block isn't harmful
+  // because it's a no-op, it doesn't really make sense.  However, the
+  // MOZ_ASSERT() we need to guarantee that it's safe only works if the
+  // parent is actually the block.
+  const nsLineList::iterator* parentLine;
+  if (parent->IsBlockFrameOrSubclass()) {
+    MOZ_ASSERT(aLine->Contains(aFrame));
+    parentLine = &aLine;
+  } else {
+    parentLine = nullptr;
+  }
 
   nsresult rv = NS_OK;
 
@@ -606,11 +752,12 @@ static nsresult CreateContinuation(nsIFrame* aFrame, nsIFrame** aNewFrame,
   // The list name kNoReflowPrincipalList would indicate we don't want reflow
   // XXXbz this needs higher-level framelist love
   nsFrameList temp(*aNewFrame, *aNewFrame);
-  parent->InsertFrames(nsIFrame::kNoReflowPrincipalList, aFrame, temp);
+  parent->InsertFrames(nsIFrame::kNoReflowPrincipalList, aFrame, parentLine,
+                       temp);
 
   if (!aIsFluid) {
     // Split inline ancestor frames
-    rv = SplitInlineAncestors(parent, aFrame);
+    rv = SplitInlineAncestors(parent, aLine, aFrame);
     if (NS_FAILED(rv)) {
       return rv;
     }
@@ -696,14 +843,16 @@ nsresult nsBidiPresUtils::Resolve(nsBlockFrame* aBlockFrame) {
     bpd.mCurrentBlock = block;
 #endif
     block->RemoveStateBits(NS_BLOCK_NEEDS_BIDI_RESOLUTION);
-    nsBlockInFlowLineIterator it(block, block->LinesBegin());
-    bpd.mPrevFrame = nullptr;
-    TraverseFrames(&it, block->PrincipalChildList().FirstChild(), &bpd);
+    bpd.mCurrentTraverseLine.mLineIterator =
+        nsBlockInFlowLineIterator(block, block->LinesBegin());
+    bpd.mCurrentTraverseLine.mPrevFrame = nullptr;
+    TraverseFrames(block->PrincipalChildList().FirstChild(), &bpd);
     nsBlockFrame::FrameLines* overflowLines = block->GetOverflowLines();
     if (overflowLines) {
-      nsBlockInFlowLineIterator it(block, overflowLines->mLines.begin(), true);
-      bpd.mPrevFrame = nullptr;
-      TraverseFrames(&it, overflowLines->mFrames.FirstChild(), &bpd);
+      bpd.mCurrentTraverseLine.mLineIterator =
+          nsBlockInFlowLineIterator(block, overflowLines->mLines.begin(), true);
+      bpd.mCurrentTraverseLine.mPrevFrame = nullptr;
+      TraverseFrames(overflowLines->mFrames.FirstChild(), &bpd);
     }
   }
 
@@ -739,10 +888,9 @@ nsresult nsBidiPresUtils::ResolveParagraph(BidiParagraphData* aBpd) {
   int32_t contentOffset = 0;  // offset of current frame in its content node
   bool isTextFrame = false;
   nsIFrame* frame = nullptr;
+  BidiParagraphData::FrameInfo frameInfo;
   nsIContent* content = nullptr;
   int32_t contentTextLength = 0;
-
-  nsLineBox* currentLine = nullptr;
 
 #ifdef DEBUG
 #  ifdef NOISY_BIDI
@@ -780,7 +928,7 @@ nsresult nsBidiPresUtils::ResolveParagraph(BidiParagraphData* aBpd) {
     }
   }
 
-  nsIFrame* lastRealFrame = nullptr;
+  BidiParagraphData::FrameInfo lastRealFrame;
   nsBidiLevel lastEmbeddingLevel = kBidiLevelNone;
   nsBidiLevel precedingControl = kBidiLevelNone;
 
@@ -809,7 +957,8 @@ nsresult nsBidiPresUtils::ResolveParagraph(BidiParagraphData* aBpd) {
       if (++frameIndex >= frameCount) {
         break;
       }
-      frame = aBpd->FrameAt(frameIndex);
+      frameInfo = aBpd->FrameInfoAt(frameIndex);
+      frame = frameInfo.mFrame;
       if (frame == NS_BIDI_CONTROL_FRAME || !frame->IsTextFrame()) {
         /*
          * Any non-text frame corresponds to a single character in the text
@@ -819,7 +968,7 @@ nsresult nsBidiPresUtils::ResolveParagraph(BidiParagraphData* aBpd) {
         isTextFrame = false;
         fragmentLength = 1;
       } else {
-        currentLine = aBpd->GetLineForFrameAt(frameIndex);
+        aBpd->mCurrentResolveLine.AdvanceToLinesAndFrame(frameInfo);
         content = frame->GetContent();
         if (!content) {
           rv = NS_OK;
@@ -867,9 +1016,12 @@ nsresult nsBidiPresUtils::ResolveParagraph(BidiParagraphData* aBpd) {
           // Set the base level and embedding level of the current run even
           // on an empty frame. Otherwise frame reordering will not be correct.
           frame->AdjustOffsetsForBidi(0, 0);
-          // Nothing more to do for an empty frame.
+          // Nothing more to do for an empty frame, except update
+          // lastRealFrame like we do below.
+          lastRealFrame = frameInfo;
           continue;
         }
+        nsLineList::iterator currentLine = aBpd->mCurrentResolveLine.GetLine();
         if ((runLength > 0) && (runLength < fragmentLength)) {
           /*
            * The text in this frame continues beyond the end of this directional
@@ -879,14 +1031,18 @@ nsresult nsBidiPresUtils::ResolveParagraph(BidiParagraphData* aBpd) {
           currentLine->MarkDirty();
           nsIFrame* nextBidi;
           int32_t runEnd = contentOffset + runLength;
-          rv = EnsureBidiContinuation(frame, &nextBidi, contentOffset, runEnd);
+          rv = EnsureBidiContinuation(frame, currentLine, &nextBidi,
+                                      contentOffset, runEnd);
           if (NS_FAILED(rv)) {
             break;
           }
           nextBidi->AdjustOffsetsForBidi(runEnd,
                                          contentOffset + fragmentLength);
           frame = nextBidi;
+          frameInfo.mFrame = frame;
           contentOffset = runEnd;
+
+          aBpd->mCurrentResolveLine.AdvanceToFrame(frame);
         }  // if (runLength < fragmentLength)
         else {
           if (contentOffset + fragmentLength == contentTextLength) {
@@ -900,7 +1056,8 @@ nsresult nsBidiPresUtils::ResolveParagraph(BidiParagraphData* aBpd) {
               currentLine->MarkDirty();
               RemoveBidiContinuation(aBpd, frame, frameIndex, newIndex);
               frameIndex = newIndex;
-              frame = aBpd->FrameAt(frameIndex);
+              frameInfo = aBpd->FrameInfoAt(frameIndex);
+              frame = frameInfo.mFrame;
             }
           } else if (fragmentLength > 0 && runLength > fragmentLength) {
             /*
@@ -941,18 +1098,18 @@ nsresult nsBidiPresUtils::ResolveParagraph(BidiParagraphData* aBpd) {
     // Record last real frame so that we can do splitting properly even
     // if a run ends after a virtual bidi control frame.
     if (frame != NS_BIDI_CONTROL_FRAME) {
-      lastRealFrame = frame;
+      lastRealFrame = frameInfo;
     }
-    if (lastRealFrame && fragmentLength <= 0) {
+    if (lastRealFrame.mFrame && fragmentLength <= 0) {
       // If the frame is at the end of a run, and this is not the end of our
       // paragraph, split all ancestor inlines that need splitting.
       // To determine whether we're at the end of the run, we check that we've
       // finished processing the current run, and that the current frame
       // doesn't have a fluid continuation (it could have a fluid continuation
       // of zero length, so testing runLength alone is not sufficient).
-      if (runLength <= 0 && !lastRealFrame->GetNextInFlow()) {
+      if (runLength <= 0 && !lastRealFrame.mFrame->GetNextInFlow()) {
         if (numRun + 1 < runCount) {
-          nsIFrame* child = lastRealFrame;
+          nsIFrame* child = lastRealFrame.mFrame;
           nsContainerFrame* parent = child->GetParent();
           // As long as we're on the last sibling, the parent doesn't have to
           // be split.
@@ -971,7 +1128,11 @@ nsresult nsBidiPresUtils::ResolveParagraph(BidiParagraphData* aBpd) {
             parent = child->GetParent();
           }
           if (parent && IsBidiSplittable(parent)) {
-            SplitInlineAncestors(parent, child);
+            aBpd->mCurrentResolveLine.AdvanceToLinesAndFrame(lastRealFrame);
+            SplitInlineAncestors(parent, aBpd->mCurrentResolveLine.GetLine(),
+                                 child);
+
+            aBpd->mCurrentResolveLine.AdvanceToLinesAndFrame(lastRealFrame);
           }
         }
       } else if (frame != NS_BIDI_CONTROL_FRAME) {
@@ -994,13 +1155,13 @@ nsresult nsBidiPresUtils::ResolveParagraph(BidiParagraphData* aBpd) {
   return rv;
 }
 
-void nsBidiPresUtils::TraverseFrames(nsBlockInFlowLineIterator* aLineIter,
-                                     nsIFrame* aCurrentFrame,
+void nsBidiPresUtils::TraverseFrames(nsIFrame* aCurrentFrame,
                                      BidiParagraphData* aBpd) {
   if (!aCurrentFrame) return;
 
 #ifdef DEBUG
-  nsBlockFrame* initialLineContainer = aLineIter->GetContainer();
+  nsBlockFrame* initialLineContainer =
+      aBpd->mCurrentTraverseLine.mLineIterator.GetContainer();
 #endif
 
   nsIFrame* childFrame = aCurrentFrame;
@@ -1074,7 +1235,7 @@ void nsBidiPresUtils::TraverseFrames(nsBlockInFlowLineIterator* aLineIter,
        * frame in the array with a given content.
        */
       nsIContent* content = frame->GetContent();
-      aBpd->AppendFrame(frame, aLineIter, content);
+      aBpd->AppendFrame(frame, aBpd->mCurrentTraverseLine, content);
 
       // Append the content of the frame to the paragraph buffer
       LayoutFrameType frameType = frame->Type();
@@ -1106,7 +1267,8 @@ void nsBidiPresUtils::TraverseFrames(nsBlockInFlowLineIterator* aLineIter,
                  */
                 aBpd->AppendString(Substring(text, start));
                 while (frame && nextSibling) {
-                  aBpd->AdvanceAndAppendFrame(&frame, aLineIter, &nextSibling);
+                  aBpd->AdvanceAndAppendFrame(
+                      &frame, aBpd->mCurrentTraverseLine, &nextSibling);
                 }
                 break;
               }
@@ -1124,7 +1286,8 @@ void nsBidiPresUtils::TraverseFrames(nsBlockInFlowLineIterator* aLineIter,
               aBpd->AppendString(
                   Substring(text, start, std::min(end, endLine) - start));
               while (end < endLine && nextSibling) {
-                aBpd->AdvanceAndAppendFrame(&frame, aLineIter, &nextSibling);
+                aBpd->AdvanceAndAppendFrame(&frame, aBpd->mCurrentTraverseLine,
+                                            &nextSibling);
                 NS_ASSERTION(frame, "Premature end of continuation chain");
                 frame->GetOffsets(start, end);
                 aBpd->AppendString(
@@ -1163,13 +1326,20 @@ void nsBidiPresUtils::TraverseFrames(nsBlockInFlowLineIterator* aLineIter,
                 nsTextFrame* textFrame = static_cast<nsTextFrame*>(frame);
                 textFrame->SetLength(endLine - start, nullptr);
 
+                // If it weren't for CreateContinuation needing this to
+                // be current, we could restructure the marking dirty
+                // below to use mCurrentResolveLine and eliminate
+                // mCurrentTraverseLine entirely.
+                aBpd->mCurrentTraverseLine.AdvanceToFrame(frame);
+
                 if (!next) {
                   // If the frame has no next in flow, create one.
-                  CreateContinuation(frame, &next, true);
+                  CreateContinuation(
+                      frame, aBpd->mCurrentTraverseLine.GetLine(), &next, true);
                   createdContinuation = true;
                 }
                 // Mark the line before the newline as dirty.
-                aBpd->GetLineForFrameAt(aBpd->FrameCount() - 1)->MarkDirty();
+                aBpd->mCurrentTraverseLine.GetLine()->MarkDirty();
               }
               ResolveParagraphWithinBlock(aBpd);
 
@@ -1177,9 +1347,10 @@ void nsBidiPresUtils::TraverseFrames(nsBlockInFlowLineIterator* aLineIter,
                 break;
               } else if (next) {
                 frame = next;
-                aBpd->AppendFrame(frame, aLineIter);
+                aBpd->AppendFrame(frame, aBpd->mCurrentTraverseLine);
                 // Mark the line after the newline as dirty.
-                aBpd->GetLineForFrameAt(aBpd->FrameCount() - 1)->MarkDirty();
+                aBpd->mCurrentTraverseLine.AdvanceToFrame(frame);
+                aBpd->mCurrentTraverseLine.GetLine()->MarkDirty();
               }
 
               /*
@@ -1216,7 +1387,7 @@ void nsBidiPresUtils::TraverseFrames(nsBlockInFlowLineIterator* aLineIter,
       MOZ_ASSERT(!frame->GetChildList(nsIFrame::kOverflowList).FirstChild(),
                  "should have drained the overflow list above");
       if (kid) {
-        TraverseFrames(aLineIter, kid, aBpd);
+        TraverseFrames(kid, aBpd);
       }
     }
 
@@ -1235,7 +1406,8 @@ void nsBidiPresUtils::TraverseFrames(nsBlockInFlowLineIterator* aLineIter,
     childFrame = nextSibling;
   } while (childFrame);
 
-  MOZ_ASSERT(initialLineContainer == aLineIter->GetContainer());
+  MOZ_ASSERT(initialLineContainer ==
+             aBpd->mCurrentTraverseLine.mLineIterator.GetContainer());
 }
 
 bool nsBidiPresUtils::ChildListMayRequireBidi(nsIFrame* aFirstChild,
@@ -1275,10 +1447,10 @@ bool nsBidiPresUtils::ChildListMayRequireBidi(nsIFrame* aFirstChild,
 
         // Check whether the text frame has any RTL characters; if so, bidi
         // resolution will be needed.
-        nsIContent* content = frame->GetContent();
+        dom::Text* content = frame->GetContent()->AsText();
         if (content != *aCurrContent) {
           *aCurrContent = content;
-          const nsTextFragment* txt = content->GetText();
+          const nsTextFragment* txt = &content->TextFragment();
           if (txt->Is2b() &&
               HasRTLChars(MakeSpan(txt->Get2b(), txt->GetLength()))) {
             return true;
@@ -1354,10 +1526,11 @@ nsBidiLevel nsBidiPresUtils::GetFrameBaseLevel(nsIFrame* aFrame) {
   return firstLeaf->GetBaseLevel();
 }
 
-void nsBidiPresUtils::IsFirstOrLast(
-    nsIFrame* aFrame, const nsContinuationStates* aContinuationStates,
-    bool aSpanDirMatchesLineDir, bool& aIsFirst /* out */,
-    bool& aIsLast /* out */) {
+void nsBidiPresUtils::IsFirstOrLast(nsIFrame* aFrame,
+                                    nsContinuationStates* aContinuationStates,
+                                    bool aSpanDirMatchesLineDir,
+                                    bool& aIsFirst /* out */,
+                                    bool& aIsLast /* out */) {
   /*
    * Since we lay out frames in the line's direction, visiting a frame with
    * 'mFirstVisualFrame == nullptr', means it's the first appearance of one
@@ -1370,7 +1543,7 @@ void nsBidiPresUtils::IsFirstOrLast(
    */
 
   bool firstInLineOrder, lastInLineOrder;
-  nsFrameContinuationState* frameState = aContinuationStates->GetEntry(aFrame);
+  nsFrameContinuationState* frameState = aContinuationStates->Get(aFrame);
   nsFrameContinuationState* firstFrameState;
 
   if (!frameState->mFirstVisualFrame) {
@@ -1388,7 +1561,7 @@ void nsBidiPresUtils::IsFirstOrLast(
      */
     // Traverse continuation chain backward
     for (frame = aFrame->GetPrevContinuation();
-         frame && (contState = aContinuationStates->GetEntry(frame));
+         frame && (contState = aContinuationStates->Get(frame));
          frame = frame->GetPrevContinuation()) {
       frameState->mFrameCount++;
       contState->mFirstVisualFrame = aFrame;
@@ -1397,7 +1570,7 @@ void nsBidiPresUtils::IsFirstOrLast(
 
     // Traverse continuation chain forward
     for (frame = aFrame->GetNextContinuation();
-         frame && (contState = aContinuationStates->GetEntry(frame));
+         frame && (contState = aContinuationStates->Get(frame));
          frame = frame->GetNextContinuation()) {
       frameState->mFrameCount++;
       contState->mFirstVisualFrame = aFrame;
@@ -1409,8 +1582,7 @@ void nsBidiPresUtils::IsFirstOrLast(
   } else {
     // aFrame is not the first visual frame of its continuation chain
     firstInLineOrder = false;
-    firstFrameState =
-        aContinuationStates->GetEntry(frameState->mFirstVisualFrame);
+    firstFrameState = aContinuationStates->Get(frameState->mFirstVisualFrame);
   }
 
   lastInLineOrder = (firstFrameState->mFrameCount == 1);
@@ -1505,7 +1677,7 @@ void nsBidiPresUtils::RepositionRubyContentFrame(
 
 /* static */
 nscoord nsBidiPresUtils::RepositionRubyFrame(
-    nsIFrame* aFrame, const nsContinuationStates* aContinuationStates,
+    nsIFrame* aFrame, nsContinuationStates* aContinuationStates,
     const WritingMode aContainerWM, const LogicalMargin& aBorderPadding) {
   LayoutFrameType frameType = aFrame->Type();
   MOZ_ASSERT(RubyUtils::IsRubyBox(frameType));
@@ -1568,7 +1740,7 @@ nscoord nsBidiPresUtils::RepositionRubyFrame(
 /* static */
 nscoord nsBidiPresUtils::RepositionFrame(
     nsIFrame* aFrame, bool aIsEvenLevel, nscoord aStartOrEnd,
-    const nsContinuationStates* aContinuationStates, WritingMode aContainerWM,
+    nsContinuationStates* aContinuationStates, WritingMode aContainerWM,
     bool aContainerReverseDir, const nsSize& aContainerSize) {
   nscoord lineSize =
       aContainerWM.IsVertical() ? aContainerSize.height : aContainerSize.width;
@@ -1669,7 +1841,7 @@ nscoord nsBidiPresUtils::RepositionFrame(
 
 void nsBidiPresUtils::InitContinuationStates(
     nsIFrame* aFrame, nsContinuationStates* aContinuationStates) {
-  aContinuationStates->PutEntry(aFrame);
+  aContinuationStates->Insert(aFrame);
   if (!IsBidiLeaf(aFrame) || RubyUtils::IsRubyBox(aFrame->Type())) {
     // Continue for child frames
     for (nsIFrame* frame : aFrame->PrincipalChildList()) {
@@ -1768,15 +1940,14 @@ nsIFrame* nsBidiPresUtils::GetFrameToLeftOf(const nsIFrame* aFrame,
   return nullptr;
 }
 
-inline nsresult nsBidiPresUtils::EnsureBidiContinuation(nsIFrame* aFrame,
-                                                        nsIFrame** aNewFrame,
-                                                        int32_t aStart,
-                                                        int32_t aEnd) {
+inline nsresult nsBidiPresUtils::EnsureBidiContinuation(
+    nsIFrame* aFrame, const nsLineList::iterator aLine, nsIFrame** aNewFrame,
+    int32_t aStart, int32_t aEnd) {
   MOZ_ASSERT(aNewFrame, "null OUT ptr");
   MOZ_ASSERT(aFrame, "aFrame is null");
 
   aFrame->AdjustOffsetsForBidi(aStart, aEnd);
-  return CreateContinuation(aFrame, aNewFrame, false);
+  return CreateContinuation(aFrame, aLine, aNewFrame, false);
 }
 
 void nsBidiPresUtils::RemoveBidiContinuation(BidiParagraphData* aBpd,
@@ -1792,9 +1963,7 @@ void nsBidiPresUtils::RemoveBidiContinuation(BidiParagraphData* aBpd,
       // so they can be reused or deleted by normal reflow code
       frame->SetProperty(nsIFrame::BidiDataProperty(), bidiData);
       frame->AddStateBits(NS_FRAME_IS_BIDI);
-
-      // Go no further than the block which needs resolution.
-      while (frame && aBpd->mBlock != frame->FirstContinuation()) {
+      while (frame && IsBidiSplittable(frame)) {
         nsIFrame* prev = frame->GetPrevContinuation();
         if (prev) {
           MakeContinuationFluid(prev, frame);

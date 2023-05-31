@@ -4,7 +4,6 @@
 
 #include "nsPrintJob.h"
 
-#include "nsIStringBundle.h"
 #include "nsReadableUtils.h"
 #include "nsCRT.h"
 
@@ -28,10 +27,8 @@
 #include "nsIPrintSettingsService.h"
 #include "nsIPrintSession.h"
 #include "nsGfxCIID.h"
-#include "nsIServiceManager.h"
 #include "nsGkAtoms.h"
 #include "nsXPCOM.h"
-#include "nsISupportsPrimitives.h"
 
 static const char sPrintSettingsServiceContractID[] =
     "@mozilla.org/gfx/printsettings-service;1";
@@ -42,16 +39,11 @@ static const char sPrintSettingsServiceContractID[] =
 #include "nsIWebBrowserPrint.h"
 
 // Print Preview
-#include "imgIContainer.h"  // image animation mode constants
 
 // Print Progress
-#include "nsIPrintProgress.h"
-#include "nsIPrintProgressParams.h"
 #include "nsIObserver.h"
 
 // Print error dialog
-#include "nsIPrompt.h"
-#include "nsIWindowWatcher.h"
 
 // Printing Prompts
 #include "nsIPrintingPromptService.h"
@@ -66,7 +58,6 @@ static const char kPrintingPromptService[] =
 #include "mozilla/dom/DocumentInlines.h"
 
 // Focus
-#include "nsISelectionController.h"
 
 // Misc
 #include "gfxContext.h"
@@ -75,7 +66,6 @@ static const char kPrintingPromptService[] =
 #include "nsISupportsUtils.h"
 #include "nsIScriptContext.h"
 #include "nsIDocumentObserver.h"
-#include "nsISelectionListener.h"
 #include "nsContentCID.h"
 #include "nsLayoutCID.h"
 #include "nsContentUtils.h"
@@ -90,15 +80,11 @@ static const char kPrintingPromptService[] =
 #include "nsDeviceContextSpecProxy.h"
 #include "nsViewManager.h"
 
-#include "nsIPageSequenceFrame.h"
-#include "nsIURL.h"
-#include "nsIContentViewerEdit.h"
+#include "nsPageSequenceFrame.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIWebBrowserChrome.h"
-#include "nsIBaseWindow.h"
-#include "nsILayoutHistoryState.h"
 #include "nsFrameManager.h"
 #include "mozilla/ReflowInput.h"
 #include "nsIContentViewer.h"
@@ -111,7 +97,6 @@ static const char kPrintingPromptService[] =
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLFrameElement.h"
 #include "nsContentList.h"
-#include "nsIChannel.h"
 #include "PrintPreviewUserEventSuppressor.h"
 #include "xpcpublic.h"
 #include "nsVariant.h"
@@ -328,9 +313,7 @@ static nsresult GetSeqFrameAndCountPagesInternal(
     return NS_ERROR_FAILURE;
   }
 
-  // Finds the SimplePageSequencer frame
-  nsIPageSequenceFrame* seqFrame = aPO->mPresShell->GetPageSequenceFrame();
-  aSeqFrame = do_QueryFrame(seqFrame);
+  aSeqFrame = aPO->mPresShell->GetPageSequenceFrame();
   if (!aSeqFrame) {
     return NS_ERROR_FAILURE;
   }
@@ -1294,11 +1277,11 @@ void nsPrintJob::BuildDocTree(nsIDocShell* aParentNode,
   NS_ASSERTION(aPO, "Pointer is null!");
 
   int32_t childWebshellCount;
-  aParentNode->GetChildCount(&childWebshellCount);
+  aParentNode->GetInProcessChildCount(&childWebshellCount);
   if (childWebshellCount > 0) {
     for (int32_t i = 0; i < childWebshellCount; i++) {
       nsCOMPtr<nsIDocShellTreeItem> child;
-      aParentNode->GetChildAt(i, getter_AddRefs(child));
+      aParentNode->GetInProcessChildAt(i, getter_AddRefs(child));
       nsCOMPtr<nsIDocShell> childAsShell(do_QueryInterface(child));
 
       nsCOMPtr<nsIContentViewer> viewer;
@@ -1804,7 +1787,7 @@ nsresult nsPrintJob::SetupToPrintContent() {
   if (mIsCreatingPrintPreview) {
     // Copy docTitleStr and docURLStr to the pageSequenceFrame, to be displayed
     // in the header
-    nsIPageSequenceFrame* seqFrame =
+    nsPageSequenceFrame* seqFrame =
         printData->mPrintObject->mPresShell->GetPageSequenceFrame();
     if (seqFrame) {
       seqFrame->StartPrint(printData->mPrintObject->mPresContext,
@@ -2032,7 +2015,8 @@ nsresult nsPrintJob::UpdateSelectionAndShrinkPrintObject(
     int32_t cnt = selection->RangeCount();
     int32_t inx;
     for (inx = 0; inx < cnt; ++inx) {
-      selectionPS->AddRange(*selection->GetRangeAt(inx), IgnoreErrors());
+      selectionPS->AddRangeAndSelectFramesAndNotifyListeners(
+          *selection->GetRangeAt(inx), IgnoreErrors());
     }
   }
 
@@ -2042,10 +2026,9 @@ nsresult nsPrintJob::UpdateSelectionAndShrinkPrintObject(
   // this is the frame where the right-hand side of the frame extends
   // the furthest
   if (mPrt->mShrinkToFit && aDocumentIsTopLevel) {
-    nsIPageSequenceFrame* pageSequence =
-        aPO->mPresShell->GetPageSequenceFrame();
-    NS_ENSURE_STATE(pageSequence);
-    pageSequence->GetSTFPercent(aPO->mShrinkRatio);
+    nsPageSequenceFrame* pageSeqFrame = aPO->mPresShell->GetPageSequenceFrame();
+    NS_ENSURE_STATE(pageSeqFrame);
+    aPO->mShrinkRatio = pageSeqFrame->GetSTFPercent();
     // Limit the shrink-to-fit scaling for some text-ish type of documents.
     nsAutoString contentType;
     aPO->mPresShell->GetDocument()->GetContentType(contentType);
@@ -2313,9 +2296,7 @@ void nsPrintJob::CalcNumPrintablePages(int32_t& aNumPages) {
     // IsPrintable() returns false, ReflowPrintObject bails before setting
     // mPresContext)
     if (po->mPresContext && po->mPresContext->IsRootPaginatedDocument()) {
-      nsIPageSequenceFrame* pageSequence =
-          po->mPresShell->GetPageSequenceFrame();
-      nsIFrame* seqFrame = do_QueryFrame(pageSequence);
+      nsPageSequenceFrame* seqFrame = po->mPresShell->GetPageSequenceFrame();
       if (seqFrame) {
         aNumPages += seqFrame->PrincipalChildList().GetLength();
       }
@@ -2418,13 +2399,14 @@ static nsresult DeleteUnselectedNodes(Document* aOrigDoc, Document* aDoc) {
     uint32_t endOffset = origRange->StartOffset() + ellipsisOffset;
 
     // Create the range that we want to remove. Note that if startNode or
-    // endNode are null CreateRange will fail and we won't remove that section.
-    RefPtr<nsRange> range;
-    nsresult rv = nsRange::CreateRange(startNode, startOffset, endNode,
-                                       endOffset, getter_AddRefs(range));
+    // endNode are null nsRange::Create() will fail and we won't remove
+    // that section.
+    RefPtr<nsRange> range = nsRange::Create(startNode, startOffset, endNode,
+                                            endOffset, IgnoreErrors());
 
-    if (NS_SUCCEEDED(rv) && !range->Collapsed()) {
-      selection->AddRange(*range, IgnoreErrors());
+    if (range && !range->Collapsed()) {
+      selection->AddRangeAndSelectFramesAndNotifyListeners(*range,
+                                                           IgnoreErrors());
 
       // Unless we've already added an ellipsis at the start, if we ended mid
       // text node then add ellipsis.
@@ -2455,12 +2437,12 @@ static nsresult DeleteUnselectedNodes(Document* aOrigDoc, Document* aDoc) {
   }
 
   // Add in the last range to the end of the body.
-  RefPtr<nsRange> lastRange;
-  nsresult rv = nsRange::CreateRange(startNode, startOffset, bodyNode,
-                                     bodyNode->GetChildCount(),
-                                     getter_AddRefs(lastRange));
-  if (NS_SUCCEEDED(rv) && !lastRange->Collapsed()) {
-    selection->AddRange(*lastRange, IgnoreErrors());
+  RefPtr<nsRange> lastRange =
+      nsRange::Create(startNode, startOffset, bodyNode,
+                      bodyNode->GetChildCount(), IgnoreErrors());
+  if (lastRange && !lastRange->Collapsed()) {
+    selection->AddRangeAndSelectFramesAndNotifyListeners(*lastRange,
+                                                         IgnoreErrors());
   }
 
   selection->DeleteFromDocument(IgnoreErrors());
@@ -2492,8 +2474,8 @@ nsresult nsPrintJob::DoPrint(const UniquePtr<nsPrintObject>& aPO) {
 
   {
     // Ask the page sequence frame to print all the pages
-    nsIPageSequenceFrame* pageSequence = poPresShell->GetPageSequenceFrame();
-    NS_ASSERTION(nullptr != pageSequence, "no page sequence frame");
+    nsPageSequenceFrame* seqFrame = poPresShell->GetPageSequenceFrame();
+    MOZ_ASSERT(seqFrame, "no page sequence frame");
 
     // We are done preparing for printing, so we can turn this off
     printData->mPreparingForPrint = false;
@@ -2519,15 +2501,14 @@ nsresult nsPrintJob::DoPrint(const UniquePtr<nsPrintObject>& aPO) {
     nsAutoString docURLStr;
     GetDisplayTitleAndURL(aPO, docTitleStr, docURLStr, eDocTitleDefBlank);
 
-    nsIFrame* seqFrame = do_QueryFrame(pageSequence);
     if (!seqFrame) {
       SetIsPrinting(false);
       return NS_ERROR_FAILURE;
     }
 
     mPageSeqFrame = seqFrame;
-    pageSequence->StartPrint(poPresContext, printData->mPrintSettings,
-                             docTitleStr, docURLStr);
+    seqFrame->StartPrint(poPresContext, printData->mPrintSettings, docTitleStr,
+                         docURLStr);
 
     // Schedule Page to Print
     PR_PL(("Scheduling Print of PO: %p (%s) \n", aPO.get(),
@@ -2645,7 +2626,7 @@ bool nsPrintJob::PrePrintPage() {
   // Ask mPageSeqFrame if the page is ready to be printed.
   // If the page doesn't get printed at all, the |done| will be |true|.
   bool done = false;
-  nsIPageSequenceFrame* pageSeqFrame = do_QueryFrame(mPageSeqFrame.GetFrame());
+  nsPageSequenceFrame* pageSeqFrame = do_QueryFrame(mPageSeqFrame.GetFrame());
   nsresult rv = pageSeqFrame->PrePrintNextPage(mPagePrintTimer, &done);
   if (NS_FAILED(rv)) {
     // ??? ::PrintPage doesn't set |printData->mIsAborted = true| if
@@ -2690,13 +2671,12 @@ bool nsPrintJob::PrintPage(nsPrintObject* aPO, bool& aInRange) {
   }
 
   int32_t pageNum, numPages, endPage;
-  nsIPageSequenceFrame* pageSeqFrame = do_QueryFrame(mPageSeqFrame.GetFrame());
-  pageSeqFrame->GetCurrentPageNum(&pageNum);
-  pageSeqFrame->GetNumPages(&numPages);
+  nsPageSequenceFrame* pageSeqFrame = do_QueryFrame(mPageSeqFrame.GetFrame());
+  pageNum = pageSeqFrame->GetCurrentPageNum();
+  numPages = pageSeqFrame->GetNumPages();
 
   bool donePrinting;
-  bool isDoingPrintRange;
-  pageSeqFrame->IsDoingPrintRange(&isDoingPrintRange);
+  bool isDoingPrintRange = pageSeqFrame->IsDoingPrintRange();
   if (isDoingPrintRange) {
     int32_t fromPage;
     int32_t toPage;
@@ -2858,7 +2838,7 @@ bool nsPrintJob::IsWindowsInOurSubTree(nsPIDOMWindowOuter* window) const {
           break;  // at top of tree
         }
         nsCOMPtr<nsIDocShellTreeItem> docShellItemParent;
-        docShell->GetSameTypeParent(getter_AddRefs(docShellItemParent));
+        docShell->GetInProcessSameTypeParent(getter_AddRefs(docShellItemParent));
         docShell = do_QueryInterface(docShellItemParent);
       }  // while
     }
@@ -2877,8 +2857,7 @@ bool nsPrintJob::DonePrintingPages(nsPrintObject* aPO, nsresult aResult) {
   // that might call |Notify| on the pagePrintTimer after things are cleaned up
   // and printing was marked as being done.
   if (mPageSeqFrame.IsAlive()) {
-    nsIPageSequenceFrame* pageSeqFrame =
-        do_QueryFrame(mPageSeqFrame.GetFrame());
+    nsPageSequenceFrame* pageSeqFrame = do_QueryFrame(mPageSeqFrame.GetFrame());
     pageSeqFrame->ResetPrintCanvasList();
   }
 
@@ -3511,10 +3490,10 @@ static void DumpViews(nsIDocShell* aDocShell, FILE* out) {
 
     // dump the views of the sub documents
     int32_t i, n;
-    aDocShell->GetChildCount(&n);
+    aDocShell->GetInProcessChildCount(&n);
     for (i = 0; i < n; i++) {
       nsCOMPtr<nsIDocShellTreeItem> child;
-      aDocShell->GetChildAt(i, getter_AddRefs(child));
+      aDocShell->GetInProcessChildAt(i, getter_AddRefs(child));
       nsCOMPtr<nsIDocShell> childAsShell(do_QueryInterface(child));
       if (childAsShell) {
         DumpViews(childAsShell, out);
@@ -3596,7 +3575,7 @@ static void DumpPrintObjectsList(const nsTArray<nsPrintObject*>& aDocList) {
     if (po->mPresShell) {
       rootFrame = po->mPresShell->GetRootFrame();
       while (rootFrame != nullptr) {
-        nsIPageSequenceFrame* sqf = do_QueryFrame(rootFrame);
+        nsPageSequenceFrame* sqf = do_QueryFrame(rootFrame);
         if (sqf) {
           break;
         }

@@ -38,7 +38,6 @@
 #include "nsWindowSizes.h"
 #include "GeckoProfiler.h"
 
-using namespace mozilla;
 using namespace mozilla::dom;
 
 #ifdef DEBUG
@@ -94,6 +93,7 @@ class MOZ_RAII AutoPrepareTraversal {
 
 ServoStyleSet::ServoStyleSet(Document& aDocument) : mDocument(&aDocument) {
   PreferenceSheet::EnsureInitialized();
+  PodArrayZero(mCachedAnonymousContentStyleIndexes);
   mRawSet.reset(Servo_StyleSet_Init(&aDocument));
 }
 
@@ -119,6 +119,8 @@ void EnumerateShadowRoots(const Document& aDoc, const Functor& aCb) {
 
 void ServoStyleSet::ShellDetachedFromDocument() {
   ClearNonInheritingComputedStyles();
+  mCachedAnonymousContentStyles.Clear();
+  PodArrayZero(mCachedAnonymousContentStyleIndexes);
   mStyleRuleMap = nullptr;
 
   // Remove all our stylesheets...
@@ -308,7 +310,7 @@ void ServoStyleSet::PreTraverseSync() {
   // Get the Document's root element to ensure that the cache is valid before
   // calling into the (potentially-parallel) Servo traversal, where a cache hit
   // is necessary to avoid a data race when updating the cache.
-  mozilla::Unused << mDocument->GetRootElement();
+  Unused << mDocument->GetRootElement();
 
   // FIXME(emilio): This shouldn't be needed in theory, the call to the same
   // function in PresShell should do the work, but as it turns out we
@@ -434,38 +436,45 @@ static inline bool LazyPseudoIsCacheable(PseudoStyleType aType,
 }
 
 already_AddRefed<ComputedStyle> ServoStyleSet::ResolvePseudoElementStyle(
-    Element* aOriginatingElement, PseudoStyleType aType,
-    ComputedStyle* aParentStyle, Element* aPseudoElement) {
+    const Element& aOriginatingElement, PseudoStyleType aType,
+    ComputedStyle* aParentStyle, IsProbe aIsProbe) {
   // Runs from frame construction, this should have clean styles already, except
   // with non-lazy FC...
   UpdateStylistIfNeeded();
   MOZ_ASSERT(PseudoStyle::IsPseudoElement(aType));
 
-  RefPtr<ComputedStyle> computedValues;
+  const bool cacheable =
+      LazyPseudoIsCacheable(aType, aOriginatingElement, aParentStyle);
+  RefPtr<ComputedStyle> style =
+      cacheable ? aParentStyle->GetCachedLazyPseudoStyle(aType) : nullptr;
 
-  if (aPseudoElement) {
-    MOZ_ASSERT(aType == aPseudoElement->GetPseudoElementType());
-    computedValues =
-        Servo_ResolveStyle(aPseudoElement, mRawSet.get()).Consume();
-  } else {
-    bool cacheable =
-        LazyPseudoIsCacheable(aType, *aOriginatingElement, aParentStyle);
-    computedValues =
-        cacheable ? aParentStyle->GetCachedLazyPseudoStyle(aType) : nullptr;
+  const bool isProbe = aIsProbe == IsProbe::Yes;
 
-    if (!computedValues) {
-      computedValues = Servo_ResolvePseudoStyle(aOriginatingElement, aType,
-                                                /* is_probe = */ false,
-                                                aParentStyle, mRawSet.get())
-                           .Consume();
-      if (cacheable) {
-        aParentStyle->SetCachedLazyPseudoStyle(computedValues);
-      }
+  if (!style) {
+    // FIXME(emilio): Why passing null for probing as the parent style?
+    //
+    // There are callers which do pass the wrong parent style and it would
+    // assert (like ComputeSelectionStyle()). That's messy!
+    style = Servo_ResolvePseudoStyle(&aOriginatingElement, aType, isProbe,
+                                     isProbe ? nullptr : aParentStyle,
+                                     mRawSet.get())
+                .Consume();
+    if (!style) {
+      MOZ_ASSERT(isProbe);
+      return nullptr;
+    }
+    if (cacheable) {
+      aParentStyle->SetCachedLazyPseudoStyle(style);
     }
   }
 
-  MOZ_ASSERT(computedValues);
-  return computedValues.forget();
+  MOZ_ASSERT(style);
+
+  if (isProbe && !GeneratedContentPseudoExists(*aParentStyle, *style)) {
+    return nullptr;
+  }
+
+  return style.forget();
 }
 
 already_AddRefed<ComputedStyle>
@@ -651,66 +660,35 @@ void ServoStyleSet::AddDocStyleSheet(StyleSheet* aSheet) {
   }
 }
 
-already_AddRefed<ComputedStyle> ServoStyleSet::ProbePseudoElementStyle(
-    const Element& aOriginatingElement, PseudoStyleType aType,
-    ComputedStyle* aParentStyle) {
-  // Runs from frame construction, this should have clean styles already, except
-  // with non-lazy FC...
-  UpdateStylistIfNeeded();
+bool ServoStyleSet::GeneratedContentPseudoExists(
+    const ComputedStyle& aParentStyle, const ComputedStyle& aPseudoStyle) {
+  auto type = aPseudoStyle.GetPseudoType();
+  MOZ_ASSERT(type != PseudoStyleType::NotPseudo);
 
-  // NB: We ignore aParentStyle, because in some cases
-  // (first-line/first-letter on anonymous box blocks) Gecko passes something
-  // nonsensical there.  In all other cases we want to inherit directly from
-  // aOriginatingElement's styles anyway.
-  MOZ_ASSERT(PseudoStyle::IsPseudoElement(aType));
-
-  bool cacheable =
-      LazyPseudoIsCacheable(aType, aOriginatingElement, aParentStyle);
-
-  RefPtr<ComputedStyle> computedValues =
-      cacheable ? aParentStyle->GetCachedLazyPseudoStyle(aType) : nullptr;
-  if (!computedValues) {
-    computedValues =
-        Servo_ResolvePseudoStyle(&aOriginatingElement, aType,
-                                 /* is_probe = */ true, nullptr, mRawSet.get())
-            .Consume();
-    if (!computedValues) {
-      return nullptr;
-    }
-
-    if (cacheable) {
-      // NB: We don't need to worry about the before/after handling below
-      // because those are eager and thus not |cacheable| anyway.
-      aParentStyle->SetCachedLazyPseudoStyle(computedValues);
-    }
-  }
-
-  if (aType == PseudoStyleType::marker) {
+  if (type == PseudoStyleType::marker) {
     // ::marker only exist for list items (for now).
-    if (aParentStyle->StyleDisplay()->mDisplay != StyleDisplay::ListItem) {
-      return nullptr;
+    if (!aParentStyle.StyleDisplay()->IsListItem()) {
+      return false;
     }
     // display:none is equivalent to not having the pseudo-element at all.
-    if (computedValues->StyleDisplay()->mDisplay == StyleDisplay::None) {
-      return nullptr;
+    if (aPseudoStyle.StyleDisplay()->mDisplay == StyleDisplay::None) {
+      return false;
     }
   }
 
   // For :before and :after pseudo-elements, having display: none or no
   // 'content' property is equivalent to not having the pseudo-element
   // at all.
-  bool isBeforeOrAfter =
-      aType == PseudoStyleType::before || aType == PseudoStyleType::after;
-  if (isBeforeOrAfter) {
-    const nsStyleDisplay* display = computedValues->StyleDisplay();
-    const nsStyleContent* content = computedValues->StyleContent();
-    if (display->mDisplay == StyleDisplay::None ||
-        content->ContentCount() == 0) {
-      return nullptr;
+  if (type == PseudoStyleType::before || type == PseudoStyleType::after) {
+    if (aPseudoStyle.StyleDisplay()->mDisplay == StyleDisplay::None) {
+      return false;
+    }
+    if (!aPseudoStyle.StyleContent()->ContentCount()) {
+      return false;
     }
   }
 
-  return computedValues.forget();
+  return true;
 }
 
 bool ServoStyleSet::StyleDocument(ServoTraversalFlags aFlags) {
@@ -887,6 +865,10 @@ void ServoStyleSet::RuleChanged(StyleSheet& aSheet, css::Rule* aRule) {
   MarkOriginsDirty(ToOriginFlags(aSheet.GetOrigin()));
 }
 
+void ServoStyleSet::StyleSheetCloned(StyleSheet& aSheet) {
+  mNeedsRestyleAfterEnsureUniqueInner = true;
+}
+
 #ifdef DEBUG
 void ServoStyleSet::AssertTreeIsClean() {
   DocumentStyleRootIterator iter(mDocument);
@@ -908,7 +890,7 @@ bool ServoStyleSet::GetKeyframesForName(const Element& aElement,
 
 nsTArray<ComputedKeyframeValues> ServoStyleSet::GetComputedKeyframeValuesFor(
     const nsTArray<Keyframe>& aKeyframes, Element* aElement,
-    const mozilla::ComputedStyle* aStyle) {
+    const ComputedStyle* aStyle) {
   nsTArray<ComputedKeyframeValues> result(aKeyframes.Length());
 
   // Construct each nsTArray<PropertyStyleAnimationValuePair> here.
@@ -948,7 +930,7 @@ ServoStyleSet::ResolveServoStyleByAddingAnimation(
 
 already_AddRefed<RawServoAnimationValue> ServoStyleSet::ComputeAnimationValue(
     Element* aElement, RawServoDeclarationBlock* aDeclarations,
-    const mozilla::ComputedStyle* aStyle) {
+    const ComputedStyle* aStyle) {
   return Servo_AnimationValue_Compute(aElement, aDeclarations, aStyle,
                                       mRawSet.get())
       .Consume();
@@ -969,23 +951,11 @@ bool ServoStyleSet::EnsureUniqueInnerOnCSSSheets() {
     }
   });
 
-  bool anyNonDocStyleChanged = false;
   while (!queue.IsEmpty()) {
     uint32_t idx = queue.Length() - 1;
     auto* sheet = queue[idx].first();
     SheetOwner owner = queue[idx].second();
     queue.RemoveElementAt(idx);
-
-    if (!sheet->HasUniqueInner() && owner.is<ShadowRoot*>()) {
-      RawServoAuthorStyles* authorStyles =
-          owner.as<ShadowRoot*>()->GetServoStyles();
-
-      if (authorStyles) {
-        Servo_AuthorStyles_ForceDirty(authorStyles);
-        mNeedsRestyleAfterEnsureUniqueInner = true;
-        anyNonDocStyleChanged = true;
-      }
-    }
 
     // Only call EnsureUniqueInner for complete sheets. If we do call it on
     // incomplete sheets, we'll cause problems when the sheet is actually
@@ -1005,15 +975,12 @@ bool ServoStyleSet::EnsureUniqueInnerOnCSSSheets() {
     }
   }
 
-  if (anyNonDocStyleChanged) {
-    SetStylistShadowDOMStyleSheetsDirty();
-  }
-
   if (mNeedsRestyleAfterEnsureUniqueInner) {
     // TODO(emilio): We could make this faster if needed tracking the specific
-    // origins and all that, but the only caller of this doesn't seem to really
-    // care about perf.
+    // origins and sheets that have been cloned. But the only caller of this
+    // doesn't seem to really care about perf.
     MarkOriginsDirty(OriginFlags::All);
+    ForceDirtyAllShadowStyles();
   }
   bool res = mNeedsRestyleAfterEnsureUniqueInner;
   mNeedsRestyleAfterEnsureUniqueInner = false;
@@ -1023,11 +990,11 @@ bool ServoStyleSet::EnsureUniqueInnerOnCSSSheets() {
 void ServoStyleSet::ClearCachedStyleData() {
   ClearNonInheritingComputedStyles();
   Servo_StyleSet_RebuildCachedData(mRawSet.get());
+  mCachedAnonymousContentStyles.Clear();
+  PodArrayZero(mCachedAnonymousContentStyleIndexes);
 }
 
-void ServoStyleSet::CompatibilityModeChanged() {
-  Servo_StyleSet_CompatModeChanged(mRawSet.get());
-  SetStylistStyleSheetsDirty();
+void ServoStyleSet::ForceDirtyAllShadowStyles() {
   bool anyShadow = false;
   EnumerateShadowRoots(*mDocument, [&](ShadowRoot& aShadowRoot) {
     if (auto* authorStyles = aShadowRoot.GetServoStyles()) {
@@ -1038,6 +1005,12 @@ void ServoStyleSet::CompatibilityModeChanged() {
   if (anyShadow) {
     SetStylistShadowDOMStyleSheetsDirty();
   }
+}
+
+void ServoStyleSet::CompatibilityModeChanged() {
+  Servo_StyleSet_CompatModeChanged(mRawSet.get());
+  SetStylistStyleSheetsDirty();
+  ForceDirtyAllShadowStyles();
 }
 
 void ServoStyleSet::ClearNonInheritingComputedStyles() {

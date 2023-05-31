@@ -21,6 +21,7 @@
 #include <algorithm>
 
 using namespace mozilla;
+using mozilla::dom::Document;
 using mozilla::dom::Element;
 using mozilla::dom::HTMLMeterElement;
 
@@ -159,9 +160,9 @@ void nsMeterFrame::ReflowBarFrame(nsIFrame* aBarFrame,
 
   ReflowOutput barDesiredSize(reflowInput);
   ReflowChild(aBarFrame, aPresContext, barDesiredSize, reflowInput, xoffset,
-              yoffset, 0, aStatus);
+              yoffset, ReflowChildFlags::Default, aStatus);
   FinishReflowChild(aBarFrame, aPresContext, barDesiredSize, &reflowInput,
-                    xoffset, yoffset, 0);
+                    xoffset, yoffset, ReflowChildFlags::Default);
 }
 
 nsresult nsMeterFrame::AttributeChanged(int32_t aNameSpaceID,

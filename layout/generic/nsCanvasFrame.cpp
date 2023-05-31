@@ -266,6 +266,7 @@ void nsCanvasFrame::AppendFrames(ChildListID aListID, nsFrameList& aFrameList) {
 }
 
 void nsCanvasFrame::InsertFrames(ChildListID aListID, nsIFrame* aPrevFrame,
+                                 const nsLineList::iterator* aPrevFrameLine,
                                  nsFrameList& aFrameList) {
   // Because we only support a single child frame inserting is the same
   // as appending
@@ -632,9 +633,9 @@ void nsCanvasFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt) {
   // XXX use the root frame foreground color, but should we find BODY frame
   // for HTML documents?
   nsIFrame* root = mFrames.FirstChild();
-  const nsStyleColor* color = root ? root->StyleColor() : StyleColor();
+  const auto* text = root ? root->StyleText() : StyleText();
   nsCSSRendering::PaintFocus(PresContext(), aDrawTarget, focusRect,
-                             color->mColor.ToColor());
+                             text->mColor.ToColor());
 }
 
 /* virtual */
@@ -722,15 +723,14 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
     LogicalMargin margin = kidReflowInput.ComputedLogicalMargin();
     LogicalPoint kidPt(kidWM, margin.IStart(kidWM), margin.BStart(kidWM));
 
-    kidReflowInput.ApplyRelativePositioning(&kidPt, containerSize);
-
     // Reflow the frame
     ReflowChild(kidFrame, aPresContext, kidDesiredSize, kidReflowInput, kidWM,
-                kidPt, containerSize, 0, aStatus);
+                kidPt, containerSize, ReflowChildFlags::Default, aStatus);
 
     // Complete the reflow and position and size the child frame
     FinishReflowChild(kidFrame, aPresContext, kidDesiredSize, &kidReflowInput,
-                      kidWM, kidPt, containerSize, 0);
+                      kidWM, kidPt, containerSize,
+                      ReflowChildFlags::ApplyRelativePositioning);
 
     if (!aStatus.IsFullyComplete()) {
       nsIFrame* nextFrame = kidFrame->GetNextInFlow();
@@ -788,7 +788,8 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
 
   if (prevCanvasFrame) {
     ReflowOverflowContainerChildren(aPresContext, aReflowInput,
-                                    aDesiredSize.mOverflowAreas, 0, aStatus);
+                                    aDesiredSize.mOverflowAreas,
+                                    ReflowChildFlags::Default, aStatus);
   }
 
   if (mPopupSetFrame) {
@@ -802,9 +803,10 @@ void nsCanvasFrame::Reflow(nsPresContext* aPresContext,
     ReflowInput popupReflowInput(aPresContext, aReflowInput, mPopupSetFrame,
                                  availSize);
     ReflowChild(mPopupSetFrame, aPresContext, popupDesiredSize,
-                popupReflowInput, 0, 0, NS_FRAME_NO_MOVE_FRAME, popupStatus);
+                popupReflowInput, 0, 0, ReflowChildFlags::NoMoveFrame,
+                popupStatus);
     FinishReflowChild(mPopupSetFrame, aPresContext, popupDesiredSize,
-                      &popupReflowInput, 0, 0, NS_FRAME_NO_MOVE_FRAME);
+                      &popupReflowInput, 0, 0, ReflowChildFlags::NoMoveFrame);
   }
 
   FinishReflowWithAbsoluteFrames(aPresContext, aDesiredSize, aReflowInput,

@@ -8,7 +8,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/ErrorResult.h"
 #include "nsCOMPtr.h"
-#include "nsIBoxObject.h"
 #include "nsPIBoxObject.h"
 #include "nsPoint.h"
 #include "nsAutoPtr.h"

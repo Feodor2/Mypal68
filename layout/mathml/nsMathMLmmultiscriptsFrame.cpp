@@ -617,7 +617,7 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
         FinishReflowChild(
             baseFrame, aPresContext, baseSize, nullptr,
             aFrame->MirrorIfRTL(aDesiredSize.Width(), baseSize.Width(), dx), dy,
-            0);
+            ReflowChildFlags::Default);
         dx += bmBase.width;
       } else if (prescriptsFrame == childFrame) {
         // Clear reflow flags of prescripts frame.
@@ -653,7 +653,7 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
                               nullptr,
                               aFrame->MirrorIfRTL(aDesiredSize.Width(),
                                                   subScriptSize.Width(), x),
-                              dy, 0);
+                              dy, ReflowChildFlags::Default);
           }
 
           if (supScriptFrame) {
@@ -670,7 +670,7 @@ nsresult nsMathMLmmultiscriptsFrame::PlaceMultiScript(
                               nullptr,
                               aFrame->MirrorIfRTL(aDesiredSize.Width(),
                                                   supScriptSize.Width(), x),
-                              dy, 0);
+                              dy, ReflowChildFlags::Default);
           }
           dx += width + scriptSpace;
         }

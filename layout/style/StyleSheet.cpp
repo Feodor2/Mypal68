@@ -3,7 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/StyleSheet.h"
-
+#include "mozilla/BasePrincipal.h"
 #include "mozilla/ComputedStyleInlines.h"
 #include "mozilla/css/ErrorReporter.h"
 #include "mozilla/css/GroupRule.h"
@@ -18,18 +18,18 @@
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoCSSRuleList.h"
 #include "mozilla/ServoStyleSet.h"
-#include "mozilla/StaticPrefs.h"
+#include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/StyleSheetInlines.h"
 
 #include "mozAutoDocUpdate.h"
 #include "nsLayoutStylesheetCache.h"
+#include "SheetLoadData.h"
 
 namespace mozilla {
 
 using namespace dom;
 
 StyleSheet::StyleSheet(css::SheetParsingMode aParsingMode, CORSMode aCORSMode,
-                       net::ReferrerPolicy aReferrerPolicy,
                        const dom::SRIMetadata& aIntegrity)
     : mParent(nullptr),
       mDocumentOrShadowRoot(nullptr),
@@ -38,8 +38,7 @@ StyleSheet::StyleSheet(css::SheetParsingMode aParsingMode, CORSMode aCORSMode,
       mParsingMode(aParsingMode),
       mState(static_cast<State>(0)),
       mAssociationMode(NotOwnedByDocumentOrShadowRoot),
-      mInner(new StyleSheetInfo(aCORSMode, aReferrerPolicy, aIntegrity,
-                                aParsingMode)) {
+      mInner(new StyleSheetInfo(aCORSMode, aIntegrity, aParsingMode)) {
   mInner->AddSheet(this);
 }
 
@@ -198,23 +197,20 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(StyleSheet)
 
-mozilla::dom::CSSStyleSheetParsingMode StyleSheet::ParsingModeDOM() {
+dom::CSSStyleSheetParsingMode StyleSheet::ParsingModeDOM() {
 #define CHECK_MODE(X, Y)                            \
   static_assert(                                    \
       static_cast<int>(X) == static_cast<int>(Y),   \
       "mozilla::dom::CSSStyleSheetParsingMode and " \
       "mozilla::css::SheetParsingMode should have identical values");
 
-  CHECK_MODE(mozilla::dom::CSSStyleSheetParsingMode::Agent,
-             css::eAgentSheetFeatures);
-  CHECK_MODE(mozilla::dom::CSSStyleSheetParsingMode::User,
-             css::eUserSheetFeatures);
-  CHECK_MODE(mozilla::dom::CSSStyleSheetParsingMode::Author,
-             css::eAuthorSheetFeatures);
+  CHECK_MODE(dom::CSSStyleSheetParsingMode::Agent, css::eAgentSheetFeatures);
+  CHECK_MODE(dom::CSSStyleSheetParsingMode::User, css::eUserSheetFeatures);
+  CHECK_MODE(dom::CSSStyleSheetParsingMode::Author, css::eAuthorSheetFeatures);
 
 #undef CHECK_MODE
 
-  return static_cast<mozilla::dom::CSSStyleSheetParsingMode>(mParsingMode);
+  return static_cast<dom::CSSStyleSheetParsingMode>(mParsingMode);
 }
 
 void StyleSheet::SetComplete() {
@@ -261,17 +257,16 @@ void StyleSheet::SetDisabled(bool aDisabled) {
 }
 
 void StyleSheet::SetURLExtraData() {
-  Inner().mURLData = new URLExtraData(GetBaseURI(), GetSheetURI(), Principal(),
-                                      GetReferrerPolicy());
+  Inner().mURLData =
+      new URLExtraData(GetBaseURI(), GetReferrerInfo(), Principal());
 }
 
 StyleSheetInfo::StyleSheetInfo(CORSMode aCORSMode,
-                               ReferrerPolicy aReferrerPolicy,
                                const SRIMetadata& aIntegrity,
                                css::SheetParsingMode aParsingMode)
     : mPrincipal(NullPrincipal::CreateWithoutOriginAttributes()),
       mCORSMode(aCORSMode),
-      mReferrerPolicy(aReferrerPolicy),
+      mReferrerInfo(new ReferrerInfo(nullptr)),
       mIntegrity(aIntegrity),
       mContents(Servo_StyleSheet_Empty(aParsingMode).Consume()),
       mURLData(URLExtraData::Dummy())
@@ -292,7 +287,7 @@ StyleSheetInfo::StyleSheetInfo(StyleSheetInfo& aCopy, StyleSheet* aPrimarySheet)
       mBaseURI(aCopy.mBaseURI),
       mPrincipal(aCopy.mPrincipal),
       mCORSMode(aCopy.mCORSMode),
-      mReferrerPolicy(aCopy.mReferrerPolicy),
+      mReferrerInfo(aCopy.mReferrerInfo),
       mIntegrity(aCopy.mIntegrity),
       mFirstChild(),  // We don't rebuild the child because we're making a copy
                       // without children.
@@ -430,6 +425,20 @@ void StyleSheet::DropStyleSet(ServoStyleSet* aStyleSet) {
 #endif
 }
 
+#define NOTIFY(function_, args_)                           \
+  do {                                                     \
+    StyleSheet* current = this;                            \
+    do {                                                   \
+      for (ServoStyleSet * handle : current->mStyleSets) { \
+        handle->function_ args_;                           \
+      }                                                    \
+      if (auto* shadow = current->GetContainingShadow()) { \
+        shadow->function_ args_;                           \
+      }                                                    \
+      current = current->mParent;                          \
+    } while (current);                                     \
+  } while (0)
+
 void StyleSheet::EnsureUniqueInner() {
   MOZ_ASSERT(mInner->mSheets.Length() != 0, "unexpected number of outers");
 
@@ -458,9 +467,7 @@ void StyleSheet::EnsureUniqueInner() {
   // let our containing style sets know that if we call
   // nsPresContext::EnsureSafeToHandOutCSSRules we will need to restyle the
   // document
-  for (ServoStyleSet* setHandle : mStyleSets) {
-    setHandle->SetNeedsRestyleAfterEnsureUniqueInner();
-  }
+  NOTIFY(StyleSheetCloned, (*this));
 }
 
 void StyleSheet::AppendAllChildSheets(nsTArray<StyleSheet*>& aArray) {
@@ -581,20 +588,6 @@ dom::ShadowRoot* StyleSheet::GetContainingShadow() const {
 
   return mOwningNode->AsContent()->GetContainingShadow();
 }
-
-#define NOTIFY(function_, args_)                           \
-  do {                                                     \
-    StyleSheet* current = this;                            \
-    do {                                                   \
-      for (ServoStyleSet * handle : current->mStyleSets) { \
-        handle->function_ args_;                           \
-      }                                                    \
-      if (auto* shadow = current->GetContainingShadow()) { \
-        shadow->function_ args_;                           \
-      }                                                    \
-      current = current->mParent;                          \
-    } while (current);                                     \
-  } while (0)
 
 void StyleSheet::RuleAdded(css::Rule& aRule) {
   mState |= State::ModifiedRules;
@@ -843,10 +836,6 @@ void StyleSheet::SetMedia(dom::MediaList* aMedia) {
   mMedia = aMedia;
 }
 
-void StyleSheet::SetReferrerPolicy(net::ReferrerPolicy aReferrerPolicy) {
-  Inner().mReferrerPolicy = aReferrerPolicy;
-}
-
 void StyleSheet::DropMedia() {
   if (mMedia) {
     mMedia->SetStyleSheet(nullptr);
@@ -908,8 +897,8 @@ void StyleSheet::BuildChildListAfterInnerClone() {
 
 already_AddRefed<StyleSheet> StyleSheet::CreateEmptyChildSheet(
     already_AddRefed<dom::MediaList> aMediaList) const {
-  RefPtr<StyleSheet> child = new StyleSheet(ParsingMode(), CORSMode::CORS_NONE,
-                                            GetReferrerPolicy(), SRIMetadata());
+  RefPtr<StyleSheet> child =
+      new StyleSheet(ParsingMode(), CORSMode::CORS_NONE, SRIMetadata());
 
   child->mMedia = aMediaList;
   return child.forget();
@@ -924,7 +913,7 @@ already_AddRefed<StyleSheet> StyleSheet::CreateEmptyChildSheet(
 // (3) The stylesheet is a chrome stylesheet, since those can use
 //     -moz-bool-pref, which needs to access the pref service, which is not
 //     threadsafe.
-static bool AllowParallelParse(css::Loader* aLoader, nsIURI* aSheetURI) {
+static bool AllowParallelParse(css::Loader& aLoader, nsIURI* aSheetURI) {
   // Check the pref.
   if (!StaticPrefs::layout_css_parsing_parallel()) {
     return false;
@@ -932,7 +921,7 @@ static bool AllowParallelParse(css::Loader* aLoader, nsIURI* aSheetURI) {
 
   // If the browser is recording CSS errors, we need to use the sequential path
   // because the parallel path doesn't support that.
-  Document* doc = aLoader->GetDocument();
+  Document* doc = aLoader.GetDocument();
   if (doc && css::ErrorReporter::ShouldReportErrors(*doc)) {
     return false;
   }
@@ -952,35 +941,27 @@ static bool AllowParallelParse(css::Loader* aLoader, nsIURI* aSheetURI) {
 }
 
 RefPtr<StyleSheetParsePromise> StyleSheet::ParseSheet(
-    css::Loader* aLoader, const nsACString& aBytes,
-    css::SheetLoadData* aLoadData) {
-  MOZ_ASSERT(aLoader);
-  MOZ_ASSERT(aLoadData);
+    css::Loader& aLoader, const nsACString& aBytes,
+    css::SheetLoadData& aLoadData) {
   MOZ_ASSERT(mParsePromise.IsEmpty());
   RefPtr<StyleSheetParsePromise> p = mParsePromise.Ensure(__func__);
   SetURLExtraData();
 
-  const StyleUseCounters* useCounters =
-      aLoader->GetDocument() ? aLoader->GetDocument()->GetStyleUseCounters()
-                             : nullptr;
-
   if (!AllowParallelParse(aLoader, GetSheetURI())) {
     RefPtr<RawServoStyleSheetContents> contents =
         Servo_StyleSheet_FromUTF8Bytes(
-            aLoader, this, aLoadData, &aBytes, mParsingMode, Inner().mURLData,
-            aLoadData->mLineNumber, aLoader->GetCompatibilityMode(),
-            /* reusable_sheets = */ nullptr, useCounters,
+            &aLoader, this, &aLoadData, &aBytes, mParsingMode, Inner().mURLData,
+            aLoadData.mLineNumber, aLoader.GetCompatibilityMode(),
+            /* reusable_sheets = */ nullptr,
             StyleSanitizationKind::None,
             /* sanitized_output = */ nullptr)
             .Consume();
     FinishAsyncParse(contents.forget());
   } else {
-    RefPtr<css::SheetLoadDataHolder> loadDataHolder =
-        new css::SheetLoadDataHolder(__func__, aLoadData);
+    auto holder = MakeRefPtr<css::SheetLoadDataHolder>(__func__, &aLoadData);
     Servo_StyleSheet_FromUTF8BytesAsync(
-        loadDataHolder, Inner().mURLData, &aBytes, mParsingMode,
-        aLoadData->mLineNumber, aLoader->GetCompatibilityMode(),
-        /* should_record_counters = */ !!useCounters);
+        holder, Inner().mURLData, &aBytes, mParsingMode, aLoadData.mLineNumber,
+        aLoader.GetCompatibilityMode());
   }
 
   return p;
@@ -1002,17 +983,12 @@ void StyleSheet::ParseSheetSync(
   nsCompatibility compatMode =
       aLoader ? aLoader->GetCompatibilityMode() : eCompatibility_FullStandards;
 
-  const StyleUseCounters* useCounters =
-      aLoader && aLoader->GetDocument()
-          ? aLoader->GetDocument()->GetStyleUseCounters()
-          : nullptr;
-
   SetURLExtraData();
   Inner().mContents =
       Servo_StyleSheet_FromUTF8Bytes(aLoader, this, aLoadData, &aBytes,
                                      mParsingMode, Inner().mURLData,
                                      aLineNumber, compatMode, aReusableSheets,
-                                     useCounters, StyleSanitizationKind::None,
+                                     StyleSanitizationKind::None,
                                      /* sanitized_output = */ nullptr)
           .Consume();
 
@@ -1029,7 +1005,7 @@ void StyleSheet::FinishParse() {
   SetSourceURL(sourceURL);
 }
 
-nsresult StyleSheet::ReparseSheet(const nsAString& aInput) {
+nsresult StyleSheet::ReparseSheet(const nsACString& aInput) {
   if (!IsComplete()) {
     return NS_ERROR_DOM_INVALID_ACCESS_ERR;
   }
@@ -1098,8 +1074,8 @@ nsresult StyleSheet::ReparseSheet(const nsAString& aInput) {
 
   DropRuleList();
 
-  ParseSheetSync(loader, NS_ConvertUTF16toUTF8(aInput),
-                 /* aLoadData = */ nullptr, lineNumber, &reusableSheets);
+  ParseSheetSync(loader, aInput, /* aLoadData = */ nullptr, lineNumber,
+                 &reusableSheets);
 
   // Notify the stylesets about the new rules.
   {
@@ -1128,7 +1104,7 @@ nsresult StyleSheet::ReparseSheet(const nsAString& aInput) {
 
 // nsICSSLoaderObserver implementation
 NS_IMETHODIMP
-StyleSheet::StyleSheetLoaded(StyleSheet* aSheet, bool aWasAlternate,
+StyleSheet::StyleSheetLoaded(StyleSheet* aSheet, bool aWasDeferred,
                              nsresult aStatus) {
   if (!aSheet->GetParentSheet()) {
     return NS_OK;  // ignore if sheet has been detached already
@@ -1255,10 +1231,12 @@ const ServoCssRules* StyleSheet::ToShared(
     RawServoSharedMemoryBuilder* aBuilder) {
   // Assert some things we assume when creating a StyleSheet using shared
   // memory.
-  MOZ_ASSERT(GetReferrerPolicy() == net::RP_Unset);
+  MOZ_ASSERT(GetReferrerInfo()->ReferrerPolicy() == ReferrerPolicy::_empty);
+  MOZ_ASSERT(GetReferrerInfo()->GetSendReferrer());
+  MOZ_ASSERT(!nsCOMPtr<nsIURI>(GetReferrerInfo()->GetComputedReferrer()));
   MOZ_ASSERT(GetCORSMode() == CORS_NONE);
   MOZ_ASSERT(Inner().mIntegrity.IsEmpty());
-  MOZ_ASSERT(nsContentUtils::IsSystemPrincipal(Principal()));
+  MOZ_ASSERT(Principal()->IsSystemPrincipal());
 
   return Servo_SharedMemoryBuilder_AddStylesheet(aBuilder, Inner().mContents);
 }

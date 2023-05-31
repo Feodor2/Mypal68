@@ -5,7 +5,6 @@
 #ifndef nsButtonFrameRenderer_h___
 #define nsButtonFrameRenderer_h___
 
-#include "imgIContainer.h"
 #include "nsMargin.h"
 #include "nsCSSRenderingBorders.h"
 

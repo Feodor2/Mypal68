@@ -9,7 +9,6 @@
 
 #include "gfxBlur.h"
 #include "gfxContext.h"
-#include "imgIContainer.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/TypedEnumBits.h"
@@ -18,6 +17,7 @@
 #include "nsIFrame.h"
 #include "nsImageRenderer.h"
 #include "nsCSSRenderingBorders.h"
+#include "gfxTextRun.h"
 
 class gfxContext;
 class nsPresContext;
@@ -164,37 +164,44 @@ struct nsCSSRendering {
   static ImgDrawResult PaintBorder(
       nsPresContext* aPresContext, gfxContext& aRenderingContext,
       nsIFrame* aForFrame, const nsRect& aDirtyRect, const nsRect& aBorderArea,
-      mozilla::ComputedStyle* aComputedStyle, mozilla::PaintBorderFlags aFlags,
+      mozilla::ComputedStyle* aStyle, mozilla::PaintBorderFlags aFlags,
       Sides aSkipSides = Sides());
 
   /**
    * Like PaintBorder, but taking an nsStyleBorder argument instead of
-   * getting it from aComputedStyle. aSkipSides says which sides to skip
+   * getting it from aStyle. aSkipSides says which sides to skip
    * when rendering, the default is to skip none.
    */
   static ImgDrawResult PaintBorderWithStyleBorder(
       nsPresContext* aPresContext, gfxContext& aRenderingContext,
       nsIFrame* aForFrame, const nsRect& aDirtyRect, const nsRect& aBorderArea,
-      const nsStyleBorder& aBorderStyle, mozilla::ComputedStyle* aComputedStyle,
+      const nsStyleBorder& aBorderStyle, mozilla::ComputedStyle* aStyle,
       mozilla::PaintBorderFlags aFlags, Sides aSkipSides = Sides());
 
   static mozilla::Maybe<nsCSSBorderRenderer> CreateBorderRenderer(
       nsPresContext* aPresContext, DrawTarget* aDrawTarget, nsIFrame* aForFrame,
       const nsRect& aDirtyRect, const nsRect& aBorderArea,
-      mozilla::ComputedStyle* aComputedStyle, bool* aOutBorderIsEmpty,
+      mozilla::ComputedStyle* aStyle, bool* aOutBorderIsEmpty,
       Sides aSkipSides = Sides());
 
   static mozilla::Maybe<nsCSSBorderRenderer>
   CreateBorderRendererWithStyleBorder(
       nsPresContext* aPresContext, DrawTarget* aDrawTarget, nsIFrame* aForFrame,
       const nsRect& aDirtyRect, const nsRect& aBorderArea,
-      const nsStyleBorder& aBorderStyle, mozilla::ComputedStyle* aComputedStyle,
+      const nsStyleBorder& aBorderStyle, mozilla::ComputedStyle* aStyle,
+      bool* aOutBorderIsEmpty, Sides aSkipSides = Sides());
+
+  static mozilla::Maybe<nsCSSBorderRenderer>
+  CreateNullBorderRendererWithStyleBorder(
+      nsPresContext* aPresContext, DrawTarget* aDrawTarget, nsIFrame* aForFrame,
+      const nsRect& aDirtyRect, const nsRect& aBorderArea,
+      const nsStyleBorder& aBorderStyle, mozilla::ComputedStyle* aStyle,
       bool* aOutBorderIsEmpty, Sides aSkipSides = Sides());
 
   static mozilla::Maybe<nsCSSBorderRenderer> CreateBorderRendererForOutline(
       nsPresContext* aPresContext, gfxContext* aRenderingContext,
       nsIFrame* aForFrame, const nsRect& aDirtyRect, const nsRect& aBorderArea,
-      mozilla::ComputedStyle* aComputedStyle);
+      mozilla::ComputedStyle* aStyle);
 
   static ImgDrawResult CreateWebRenderCommandsForBorder(
       nsDisplayItem* aItem, nsIFrame* aForFrame, const nsRect& aBorderArea,
@@ -203,6 +210,13 @@ struct nsCSSRendering {
       const mozilla::layers::StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder);
+
+  static void CreateWebRenderCommandsForNullBorder(
+      nsDisplayItem* aItem, nsIFrame* aForFrame, const nsRect& aBorderArea,
+      mozilla::wr::DisplayListBuilder& aBuilder,
+      mozilla::wr::IpcResourceUpdateQueue& aResources,
+      const mozilla::layers::StackingContextHelper& aSc,
+      const nsStyleBorder& aStyleBorder);
 
   static ImgDrawResult CreateWebRenderCommandsForBorderWithStyleBorder(
       nsDisplayItem* aItem, nsIFrame* aForFrame, const nsRect& aBorderArea,
@@ -220,7 +234,7 @@ struct nsCSSRendering {
   static void PaintOutline(nsPresContext* aPresContext,
                            gfxContext& aRenderingContext, nsIFrame* aForFrame,
                            const nsRect& aDirtyRect, const nsRect& aBorderArea,
-                           mozilla::ComputedStyle* aComputedStyle);
+                           mozilla::ComputedStyle* aStyle);
 
   /**
    * Render keyboard focus on an element.
@@ -242,7 +256,7 @@ struct nsCSSRendering {
    * aIntrinsicSize is the size of the source gradient.
    */
   static void PaintGradient(nsPresContext* aPresContext, gfxContext& aContext,
-                            nsStyleGradient* aGradient,
+                            const mozilla::StyleGradient& aGradient,
                             const nsRect& aDirtyRect, const nsRect& aDest,
                             const nsRect& aFill, const nsSize& aRepeatSize,
                             const mozilla::CSSIntRect& aSrc,
@@ -296,7 +310,9 @@ struct nsCSSRendering {
   static nsIFrame* FindCanvasBackgroundFrame(nsIFrame* aForFrame,
                                              nsIFrame* aRootElementFrame) {
     MOZ_ASSERT(IsCanvasFrame(aForFrame), "not a canvas frame");
-    if (aRootElementFrame) return FindBackgroundStyleFrame(aRootElementFrame);
+    if (aRootElementFrame) {
+      return FindBackgroundStyleFrame(aRootElementFrame);
+    }
 
     // This should always give transparent, so we'll fill it in with the
     // default color if needed.  This seems to happen a bit while a page is
@@ -325,7 +341,7 @@ struct nsCSSRendering {
    * Determine the background color to draw taking into account print settings.
    */
   static nscolor DetermineBackgroundColor(
-      nsPresContext* aPresContext, mozilla::ComputedStyle* aComputedStyle,
+      nsPresContext* aPresContext, mozilla::ComputedStyle* aStyle,
       nsIFrame* aFrame, bool& aDrawBackgroundImage, bool& aDrawBackgroundColor);
 
   static nsRect ComputeImageLayerPositioningArea(
@@ -555,6 +571,12 @@ struct nsCSSRendering {
     // for a vertical textrun, width will actually be a physical height;
     // and conversely, height will be a physical width.
     Size lineSize;
+    // The default height [thickness] of the line given by the font metrics.
+    // This is used for obtaining the correct offset for the decoration line
+    // when CSS specifies a unique thickness for a text-decoration,
+    // since the offset given by the font is derived from the font metric's
+    // assumed line height
+    Float defaultLineThickness = 0.0f;
     // The ascent of the text.
     Float ascent = 0.0f;
     // The offset of the decoration line from the baseline of the text
@@ -578,6 +600,8 @@ struct nsCSSRendering {
     uint8_t style = NS_STYLE_TEXT_DECORATION_STYLE_NONE;
     bool vertical = false;
     bool sidewaysLeft = false;
+    gfxTextRun::Range glyphRange;
+    gfxTextRun::PropertyProvider* provider;
   };
 
   struct PaintDecorationLineParams : DecorationRectParams {
@@ -593,11 +617,29 @@ struct nsCSSRendering {
   };
 
   /**
+   * Function for painting the clipped decoration lines for the text.
+   * Takes into account the rect clipping that occurs when
+   * text-decoration-skip-ink is being used for underlines or overlines
+   *
+   *  input:
+   *    @param aFrame            the frame which needs the decoration line
+   *    @param aDrawTarget       the target/backend being drawn to
+   *    @param aParams           the parameters for the decoration line
+   *                             being drawn
+   *    @param aRect             the rect representing the decoration line
+   */
+  static void PaintDecorationLineInternal(
+      nsIFrame* aFrame, DrawTarget& aDrawTarget,
+      const PaintDecorationLineParams& aParams, Rect aRect);
+
+  /**
    * Function for painting the decoration lines for the text.
    *
    *   input:
    *     @param aFrame            the frame which needs the decoration line
-   *     @param aGfxContext
+   *     @param aDrawTarget       the target/backend being drawn to
+   *     @param aParams           the parameters for the decoration line
+   *                              being drawn
    */
   static void PaintDecorationLine(nsIFrame* aFrame, DrawTarget& aDrawTarget,
                                   const PaintDecorationLineParams& aParams);

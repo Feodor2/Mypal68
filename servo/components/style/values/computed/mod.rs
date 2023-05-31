@@ -7,10 +7,11 @@
 use self::transform::DirectionVector;
 use super::animated::ToAnimatedValue;
 use super::generics::grid::GridTemplateComponent as GenericGridTemplateComponent;
-use super::generics::grid::{GridLine as GenericGridLine, TrackBreadth as GenericTrackBreadth};
-use super::generics::grid::{TrackList as GenericTrackList, TrackSize as GenericTrackSize};
+use super::generics::grid::ImplicitGridTracks as GenericImplicitGridTracks;
+use super::generics::grid::{GenericGridLine, GenericTrackBreadth};
+use super::generics::grid::{GenericTrackSize, TrackList as GenericTrackList};
 use super::generics::transform::IsParallelTo;
-use super::generics::{self, GreaterThanOrEqualToOne, NonNegative};
+use super::generics::{self, GreaterThanOrEqualToOne, NonNegative, ZeroToOne};
 use super::specified;
 use super::{CSSFloat, CSSInteger};
 use crate::context::QuirksMode;
@@ -23,7 +24,7 @@ use crate::rule_cache::RuleCacheConditions;
 use crate::Atom;
 #[cfg(feature = "servo")]
 use crate::Prefix;
-use euclid::Size2D;
+use euclid::default::Size2D;
 use std::cell::RefCell;
 use std::cmp;
 use std::f32;
@@ -56,8 +57,6 @@ pub use self::font::{FontSize, FontSizeAdjust, FontStretch, FontSynthesis};
 pub use self::font::{FontVariantAlternates, FontWeight};
 pub use self::font::{FontVariantEastAsian, FontVariationSettings};
 pub use self::font::{MozScriptLevel, MozScriptMinSize, MozScriptSizeMultiplier, XLang, XTextZoom};
-#[cfg(feature = "gecko")]
-pub use self::gecko::ScrollSnapPoint;
 pub use self::image::{Gradient, GradientItem, Image, ImageLayer, LineDirection, MozImageRect};
 pub use self::length::{CSSPixelLength, ExtremumLength, NonNegativeLength};
 pub use self::length::{Length, LengthOrNumber, LengthPercentage, NonNegativeLengthOrNumber};
@@ -66,20 +65,20 @@ pub use self::length::{NonNegativeLengthPercentage, NonNegativeLengthPercentageO
 #[cfg(feature = "gecko")]
 pub use self::list::ListStyleType;
 pub use self::list::MozListReversed;
-pub use self::list::{QuotePair, Quotes};
-pub use self::motion::OffsetPath;
+pub use self::list::Quotes;
+pub use self::motion::{OffsetPath, OffsetRotate};
 pub use self::outline::OutlineStyle;
 pub use self::percentage::{NonNegativePercentage, Percentage};
-pub use self::position::{GridAutoFlow, GridTemplateAreas, Position, ZIndex};
+pub use self::position::{GridAutoFlow, GridTemplateAreas, Position, PositionOrAuto, ZIndex};
 pub use self::rect::NonNegativeLengthOrNumberRect;
 pub use self::resolution::Resolution;
 pub use self::svg::MozContextProperties;
 pub use self::svg::{SVGLength, SVGOpacity, SVGPaint, SVGPaintKind};
 pub use self::svg::{SVGPaintOrder, SVGStrokeDashArray, SVGWidth};
-pub use self::table::XSpan;
-pub use self::text::{InitialLetter, LetterSpacing, LineHeight};
+pub use self::text::{InitialLetter, LetterSpacing, LineBreak, LineHeight};
 pub use self::text::{OverflowWrap, TextOverflow, WordBreak, WordSpacing};
 pub use self::text::{TextAlign, TextEmphasisPosition, TextEmphasisStyle};
+pub use self::text::{TextDecorationLength, TextDecorationSkipInk};
 pub use self::time::Time;
 pub use self::transform::{Rotate, Scale, Transform, TransformOperation};
 pub use self::transform::{TransformOrigin, TransformStyle, Translate};
@@ -106,8 +105,6 @@ pub mod easing;
 pub mod effects;
 pub mod flex;
 pub mod font;
-#[cfg(feature = "gecko")]
-pub mod gecko;
 pub mod image;
 pub mod length;
 pub mod list;
@@ -118,7 +115,6 @@ pub mod position;
 pub mod rect;
 pub mod resolution;
 pub mod svg;
-pub mod table;
 pub mod text;
 pub mod time;
 pub mod transform;
@@ -151,7 +147,7 @@ pub struct Context<'a> {
 
     /// A font metrics provider, used to access font metrics to implement
     /// font-relative units.
-    pub font_metrics_provider: &'a FontMetricsProvider,
+    pub font_metrics_provider: &'a dyn FontMetricsProvider,
 
     /// Whether or not we are computing the media list in a media query
     pub in_media_query: bool,
@@ -232,7 +228,7 @@ impl<'a> Context<'a> {
 
     /// Apply text-zoom if enabled.
     #[cfg(feature = "gecko")]
-    pub fn maybe_zoom_text(&self, size: NonNegativeLength) -> NonNegativeLength {
+    pub fn maybe_zoom_text(&self, size: CSSPixelLength) -> CSSPixelLength {
         // We disable zoom for <svg:text> by unsetting the
         // -x-text-zoom property, which leads to a false value
         // in mAllowZoom
@@ -245,7 +241,7 @@ impl<'a> Context<'a> {
 
     /// (Servo doesn't do text-zoom)
     #[cfg(feature = "servo")]
-    pub fn maybe_zoom_text(&self, size: NonNegativeLength) -> NonNegativeLength {
+    pub fn maybe_zoom_text(&self, size: CSSPixelLength) -> CSSPixelLength {
         size
     }
 }
@@ -459,10 +455,7 @@ where
 
     #[inline]
     fn from_computed_value(computed: &Self::ComputedValue) -> Self {
-        computed
-            .iter()
-            .map(T::from_computed_value)
-            .collect()
+        computed.iter().map(T::from_computed_value).collect()
     }
 }
 
@@ -473,6 +466,7 @@ trivial_to_computed_value!(i32);
 trivial_to_computed_value!(u8);
 trivial_to_computed_value!(u16);
 trivial_to_computed_value!(u32);
+trivial_to_computed_value!(usize);
 trivial_to_computed_value!(Atom);
 #[cfg(feature = "servo")]
 trivial_to_computed_value!(Prefix);
@@ -526,6 +520,30 @@ impl From<NonNegativeNumber> for CSSFloat {
     }
 }
 
+/// A wrapper of Number, but the value between 0 and 1
+pub type ZeroToOneNumber = ZeroToOne<CSSFloat>;
+
+impl ToAnimatedValue for ZeroToOneNumber {
+    type AnimatedValue = CSSFloat;
+
+    #[inline]
+    fn to_animated_value(self) -> Self::AnimatedValue {
+        self.0
+    }
+
+    #[inline]
+    fn from_animated_value(animated: Self::AnimatedValue) -> Self {
+        Self(animated.max(0.).min(1.))
+    }
+}
+
+impl From<CSSFloat> for ZeroToOneNumber {
+    #[inline]
+    fn from(number: CSSFloat) -> Self {
+        Self(number)
+    }
+}
+
 /// A wrapper of Number, but the value >= 1.
 pub type GreaterThanOrEqualToOneNumber = GreaterThanOrEqualToOne<CSSFloat>;
 
@@ -559,7 +577,16 @@ impl From<GreaterThanOrEqualToOneNumber> for CSSFloat {
 
 #[allow(missing_docs)]
 #[derive(
-    Clone, ComputeSquaredDistance, Copy, Debug, MallocSizeOf, PartialEq, ToCss, ToResolvedValue,
+    Animate,
+    Clone,
+    ComputeSquaredDistance,
+    Copy,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    ToAnimatedZero,
+    ToCss,
+    ToResolvedValue,
 )]
 #[repr(C, u8)]
 pub enum NumberOrPercentage {
@@ -665,17 +692,20 @@ impl From<CSSInteger> for PositiveInteger {
 /// A computed positive `<integer>` value or `none`.
 pub type PositiveIntegerOrNone = Either<PositiveInteger, None_>;
 
-/// rect(...)
-pub type ClipRect = generics::ClipRect<LengthOrAuto>;
+/// rect(...) | auto
+pub type ClipRect = generics::GenericClipRect<LengthOrAuto>;
 
 /// rect(...) | auto
-pub type ClipRectOrAuto = Either<ClipRect, Auto>;
+pub type ClipRectOrAuto = generics::GenericClipRectOrAuto<ClipRect>;
 
 /// The computed value of a grid `<track-breadth>`
 pub type TrackBreadth = GenericTrackBreadth<LengthPercentage>;
 
 /// The computed value of a grid `<track-size>`
 pub type TrackSize = GenericTrackSize<LengthPercentage>;
+
+/// The computed value of a grid `<track-size>+`
+pub type ImplicitGridTracks = GenericImplicitGridTracks<TrackSize>;
 
 /// The computed value of a grid `<track-list>`
 /// (could also be `<auto-track-list>` or `<explicit-track-list>`)
@@ -686,18 +716,3 @@ pub type GridLine = GenericGridLine<Integer>;
 
 /// `<grid-template-rows> | <grid-template-columns>`
 pub type GridTemplateComponent = GenericGridTemplateComponent<LengthPercentage, Integer>;
-
-impl ClipRectOrAuto {
-    /// Return an auto (default for clip-rect and image-region) value
-    pub fn auto() -> Self {
-        Either::Second(Auto)
-    }
-
-    /// Check if it is auto
-    pub fn is_auto(&self) -> bool {
-        match *self {
-            Either::Second(_) => true,
-            _ => false,
-        }
-    }
-}

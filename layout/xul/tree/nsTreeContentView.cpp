@@ -213,7 +213,7 @@ void nsTreeContentView::GetColumnProperties(nsTreeColumn& aColumn,
   RefPtr<Element> element = aColumn.Element();
 
   if (element) {
-    element->GetAttribute(NS_LITERAL_STRING("properties"), aProperties);
+    element->GetAttr(nsGkAtoms::properties, aProperties);
   }
 }
 
@@ -685,20 +685,6 @@ nsTreeContentView::SetCellText(int32_t aRow, nsTreeColumn* aCol,
   ErrorResult rv;
   SetCellText(aRow, *aCol, aValue, rv);
   return rv.StealNSResult();
-}
-
-NS_IMETHODIMP
-nsTreeContentView::PerformAction(const char16_t* aAction) { return NS_OK; }
-
-NS_IMETHODIMP
-nsTreeContentView::PerformActionOnRow(const char16_t* aAction, int32_t aRow) {
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsTreeContentView::PerformActionOnCell(const char16_t* aAction, int32_t aRow,
-                                       nsTreeColumn* aCol) {
-  return NS_OK;
 }
 
 Element* nsTreeContentView::GetItemAtIndex(int32_t aIndex,

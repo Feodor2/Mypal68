@@ -9,9 +9,7 @@
     from itertools import groupby
 %>
 
-#[cfg(feature = "gecko")] use crate::gecko_bindings::structs::RawServoAnimationValueMap;
 #[cfg(feature = "gecko")] use crate::gecko_bindings::structs::nsCSSPropertyID;
-#[cfg(feature = "gecko")] use crate::gecko_bindings::sugar::ownership::{HasFFI, HasSimpleFFI};
 use itertools::{EitherOrBoth, Itertools};
 use crate::properties::{CSSWideKeyword, PropertyDeclaration};
 use crate::properties::longhands;
@@ -24,7 +22,7 @@ use std::mem::{self, ManuallyDrop};
 use crate::hash::FxHashMap;
 use super::ComputedValues;
 use crate::values::animated::{Animate, Procedure, ToAnimatedValue, ToAnimatedZero};
-use crate::values::animated::effects::Filter as AnimatedFilter;
+use crate::values::animated::effects::AnimatedFilter;
 #[cfg(feature = "gecko")] use crate::values::computed::TransitionProperty;
 use crate::values::computed::{ClipRect, Context};
 use crate::values::computed::ToComputedValue;
@@ -189,13 +187,6 @@ impl AnimatedProperty {
 /// This HashMap stores the values that are the last AnimationValue to be
 /// composed for each TransitionProperty.
 pub type AnimationValueMap = FxHashMap<LonghandId, AnimationValue>;
-
-#[cfg(feature = "gecko")]
-unsafe impl HasFFI for AnimationValueMap {
-    type FFIType = RawServoAnimationValueMap;
-}
-#[cfg(feature = "gecko")]
-unsafe impl HasSimpleFFI for AnimationValueMap {}
 
 /// An enum to represent a single computed value belonging to an animated
 /// property in order to be interpolated with another one. When interpolating,
@@ -400,7 +391,7 @@ impl AnimationValue {
                 x.boxed,
                 not x.is_animatable_with_computed_value,
                 x.style_struct.inherited,
-                x.ident in SYSTEM_FONT_LONGHANDS and product == "gecko",
+                x.ident in SYSTEM_FONT_LONGHANDS and engine == "gecko",
             )
         %>
 
@@ -860,7 +851,7 @@ impl Animate for AnimatedFilter {
                 Ok(Filter::${func}(animate_multiplicative_factor(this, other, procedure)?))
             },
             % endfor
-            % if product == "gecko":
+            % if engine == "gecko":
             (&Filter::DropShadow(ref this), &Filter::DropShadow(ref other)) => {
                 Ok(Filter::DropShadow(this.animate(other, procedure)?))
             },
@@ -880,7 +871,7 @@ impl ToAnimatedZero for AnimatedFilter {
             % for func in ['Brightness', 'Contrast', 'Opacity', 'Saturate']:
             Filter::${func}(_) => Ok(Filter::${func}(1.)),
             % endfor
-            % if product == "gecko":
+            % if engine == "gecko":
             Filter::DropShadow(ref this) => Ok(Filter::DropShadow(this.to_animated_zero()?)),
             % endif
             _ => Err(()),

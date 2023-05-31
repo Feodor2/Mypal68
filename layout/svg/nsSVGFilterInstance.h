@@ -10,10 +10,9 @@
 #include "SVGAnimatedNumber.h"
 #include "SVGAnimatedNumberPair.h"
 #include "SVGFilters.h"
-#include "nsTArray.h"
+#include "mozilla/ServoStyleConsts.h"
 
 class nsSVGFilterFrame;
-struct nsStyleFilter;
 
 namespace mozilla {
 namespace dom {
@@ -63,6 +62,7 @@ class SVGFilterElement;
  *   "filter space point" = (20, 20)
  */
 class nsSVGFilterInstance {
+  using StyleFilter = mozilla::StyleFilter;
   typedef mozilla::SVGAnimatedNumber SVGAnimatedNumber;
   typedef mozilla::SVGAnimatedNumberPair SVGAnimatedNumberPair;
   typedef mozilla::gfx::Point3D Point3D;
@@ -81,7 +81,7 @@ class nsSVGFilterInstance {
    * @param aTargetBBox The SVG bbox to use for the target frame, computed by
    *   the caller. The caller may decide to override the actual SVG bbox.
    */
-  nsSVGFilterInstance(const nsStyleFilter& aFilter, nsIFrame* aTargetFrame,
+  nsSVGFilterInstance(const StyleFilter& aFilter, nsIFrame* aTargetFrame,
                       nsIContent* aTargetContent,
                       const UserSpaceMetrics& aMetrics,
                       const gfxRect& aTargetBBox,
@@ -200,7 +200,7 @@ class nsSVGFilterInstance {
   /**
    * The SVG reference filter originally from the style system.
    */
-  const nsStyleFilter& mFilter;
+  const StyleFilter& mFilter;
 
   /**
    * The filtered element.

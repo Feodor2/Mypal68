@@ -10,6 +10,8 @@
 #include "nsBidiUtils.h"
 #include "nsHashKeys.h"
 #include "nsCoord.h"
+#include "nsTArray.h"
+#include "nsLineBox.h"
 
 #ifdef DrawText
 #  undef DrawText
@@ -22,7 +24,6 @@ class nsFontMetrics;
 class nsIFrame;
 class nsBlockFrame;
 class nsPresContext;
-class nsBlockInFlowLineIterator;
 struct nsSize;
 template <class T>
 class nsTHashtable;
@@ -66,10 +67,50 @@ struct nsFrameContinuationState : public nsVoidPtrHashKey {
   bool mHasContOnNextLines{false};
 };
 
-/*
- * Following type is used to pass needed hashtable to reordering methods
- */
-typedef nsTHashtable<nsFrameContinuationState> nsContinuationStates;
+// A table of nsFrameContinuationState objects.
+//
+// This state is used between calls to nsBidiPresUtils::IsFirstOrLast.
+struct nsContinuationStates {
+  static constexpr size_t kArrayMax = 32;
+
+  // We use the array to gather up all the continuation state objects.  If in
+  // the end there are more than kArrayMax of them, we convert it to a hash
+  // table for faster lookup.
+  bool mUseTable = false;
+  AutoTArray<nsFrameContinuationState, kArrayMax> mValues;
+  nsTHashtable<nsFrameContinuationState> mTable;
+
+  void Insert(nsIFrame* aFrame) {
+    if (MOZ_UNLIKELY(mUseTable)) {
+      mTable.PutEntry(aFrame);
+      return;
+    }
+    if (MOZ_LIKELY(mValues.Length() < kArrayMax)) {
+      mValues.AppendElement(aFrame);
+      return;
+    }
+    for (const auto& entry : mValues) {
+      mTable.PutEntry(entry.GetKey());
+    }
+    mTable.PutEntry(aFrame);
+    mValues.Clear();
+    mUseTable = true;
+  }
+
+  nsFrameContinuationState* Get(nsIFrame* aFrame) {
+    MOZ_ASSERT(mValues.IsEmpty() != mTable.IsEmpty(),
+               "expect entries to either be in mValues or in mTable");
+    if (mUseTable) {
+      return mTable.GetEntry(aFrame);
+    }
+    for (size_t i = 0, len = mValues.Length(); i != len; ++i) {
+      if (mValues[i].GetKey() == aFrame) {
+        return &mValues[i];
+      }
+    }
+    return nullptr;
+  }
+};
 
 /**
  * A structure representing a logical position which should be resolved
@@ -375,8 +416,7 @@ class nsBidiPresUtils {
    *  than one paragraph for bidi resolution, resolve the paragraph up to that
    *  point.
    */
-  static void TraverseFrames(nsBlockInFlowLineIterator* aLineIter,
-                             nsIFrame* aCurrentFrame, BidiParagraphData* aBpd);
+  static void TraverseFrames(nsIFrame* aCurrentFrame, BidiParagraphData* aBpd);
 
   /**
    * Perform a recursive "pre-traversal" of the child frames of a block or
@@ -407,7 +447,7 @@ class nsBidiPresUtils {
    * Position ruby frames. Called from RepositionFrame.
    */
   static nscoord RepositionRubyFrame(
-      nsIFrame* aFrame, const nsContinuationStates* aContinuationStates,
+      nsIFrame* aFrame, nsContinuationStates* aContinuationStates,
       const mozilla::WritingMode aContainerWM,
       const mozilla::LogicalMargin& aBorderPadding);
 
@@ -428,11 +468,12 @@ class nsBidiPresUtils {
    *                             nsFrameContinuationState
    * @return                     The isize aFrame takes, including margins.
    */
-  static nscoord RepositionFrame(
-      nsIFrame* aFrame, bool aIsEvenLevel, nscoord aStartOrEnd,
-      const nsContinuationStates* aContinuationStates,
-      mozilla::WritingMode aContainerWM, bool aContainerReverseOrder,
-      const nsSize& aContainerSize);
+  static nscoord RepositionFrame(nsIFrame* aFrame, bool aIsEvenLevel,
+                                 nscoord aStartOrEnd,
+                                 nsContinuationStates* aContinuationStates,
+                                 mozilla::WritingMode aContainerWM,
+                                 bool aContainerReverseOrder,
+                                 const nsSize& aContainerSize);
 
   /*
    * Initialize the continuation state(nsFrameContinuationState) to
@@ -471,7 +512,7 @@ class nsBidiPresUtils {
    *                                    or continuation
    */
   static void IsFirstOrLast(nsIFrame* aFrame,
-                            const nsContinuationStates* aContinuationStates,
+                            nsContinuationStates* aContinuationStates,
                             bool aSpanInLineOrder /* in */,
                             bool& aIsFirst /* out */, bool& aIsLast /* out */);
 
@@ -494,6 +535,7 @@ class nsBidiPresUtils {
    * create a continuation frame for the remainder of its content.
    *
    * @param aFrame       the original frame
+   * @param aLine        the line box containing aFrame
    * @param aNewFrame    [OUT] the new frame that was created
    * @param aStart       [IN] the start of the content mapped by aFrame (and
    *                          any fluid continuations)
@@ -502,9 +544,9 @@ class nsBidiPresUtils {
    * @see Resolve()
    * @see RemoveBidiContinuation()
    */
-  static inline nsresult EnsureBidiContinuation(nsIFrame* aFrame,
-                                                nsIFrame** aNewFrame,
-                                                int32_t aStart, int32_t aEnd);
+  static inline nsresult EnsureBidiContinuation(
+      nsIFrame* aFrame, const nsLineList::iterator aLine, nsIFrame** aNewFrame,
+      int32_t aStart, int32_t aEnd);
 
   /**
    * Helper method for Resolve()

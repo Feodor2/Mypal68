@@ -17,6 +17,11 @@ bool nsIFrame::IsFlexItem() const {
          !(GetStateBits() & NS_FRAME_OUT_OF_FLOW);
 }
 
+bool nsIFrame::IsGridItem() const {
+  return GetParent() && GetParent()->IsGridContainerFrame() &&
+         !(GetStateBits() & NS_FRAME_OUT_OF_FLOW);
+}
+
 bool nsIFrame::IsFlexOrGridContainer() const {
   return IsFlexContainerFrame() || IsGridContainerFrame();
 }
@@ -180,7 +185,8 @@ nsIFrame* nsIFrame::GetClosestFlattenedTreeAncestorPrimaryFrame() const {
   if (!mContent) {
     return nullptr;
   }
-  Element* parent = mContent->GetFlattenedTreeParentElementForStyle();
+  mozilla::dom::Element* parent =
+      mContent->GetFlattenedTreeParentElementForStyle();
   while (parent) {
     if (nsIFrame* frame = parent->GetPrimaryFrame()) {
       return frame;

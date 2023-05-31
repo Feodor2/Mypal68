@@ -14,7 +14,6 @@
 
 #include "mozilla/Attributes.h"
 #include "nsButtonBoxFrame.h"
-#include "nsITimer.h"
 #include "nsRepeatService.h"
 
 namespace mozilla {

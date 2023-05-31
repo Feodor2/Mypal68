@@ -15,15 +15,16 @@
 #include "nsCOMPtr.h"
 #include "nsIFrame.h"
 #include "nsImageRenderer.h"
-#include "nsStyleConsts.h"
-#include "nsStyleStruct.h"
-#include "nsPresContext.h"
 #include "gfxUtils.h"
 
 struct nsBorderColors;
 class nsDisplayBorder;
 
 namespace mozilla {
+
+enum class StyleBorderStyle : uint8_t;
+enum class StyleBorderImageRepeat : uint8_t;
+
 namespace gfx {
 class GradientStops;
 }  // namespace gfx

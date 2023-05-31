@@ -167,7 +167,7 @@ class Selection;
 namespace mozilla {
 
 enum class LayoutFrameType : uint8_t {
-#define FRAME_TYPE(ty_) ty_,
+#define FRAME_TYPE(ty_, ...) ty_,
 #include "mozilla/FrameTypeList.h"
 #undef FRAME_TYPE
 };
@@ -598,7 +598,10 @@ class nsIFrame : public nsQueryFrame {
         mMayHaveTransformAnimation(false),
         mMayHaveOpacityAnimation(false),
         mAllDescendantsAreInvisible(false),
-        mInScrollAnchorChain(false) {
+        mHasBSizeChange(false),
+        mInScrollAnchorChain(false),
+        mHasColumnSpanSiblings(false),
+        mDescendantMayDependOnItsStaticPosition(false) {
     MOZ_ASSERT(mComputedStyle);
     MOZ_ASSERT(mPresContext);
     mozilla::PodZero(&mOverflow);
@@ -1249,13 +1252,6 @@ class nsIFrame : public nsQueryFrame {
   NS_DECLARE_FRAME_PROPERTY_WITHOUT_DTOR(PlaceholderFrameProperty,
                                          nsPlaceholderFrame)
 
-  // HasColumnSpanSiblings property stores whether the frame has any
-  // column-span siblings under the same multi-column ancestor. That is, the
-  // frame's element has column-span descendants without an intervening
-  // multi-column container element in between them. If the frame having
-  // this bit set is removed, we need to reframe the multi-column container
-  NS_DECLARE_FRAME_PROPERTY_SMALL_VALUE(HasColumnSpanSiblings, bool)
-
   mozilla::FrameBidiData GetBidiData() const {
     bool exists;
     mozilla::FrameBidiData bidiData = GetProperty(BidiDataProperty(), &exists);
@@ -1811,6 +1807,14 @@ class nsIFrame : public nsQueryFrame {
                                 Matrix* aFromParentTransforms = nullptr) const;
 
   /**
+   * Return true if this frame should form a backdrop root container.
+   * See: https://drafts.fxtf.org/filter-effects-2/#BackdropRootTriggers
+   */
+  bool FormsBackdropRoot(const nsStyleDisplay* aStyleDisplay,
+                         const nsStyleEffects* aStyleEffects,
+                         const nsStyleSVGReset* aStyleSvgReset);
+
+  /**
    * Returns whether this frame will attempt to extend the 3d transforms of its
    * children. This requires transform-style: preserve-3d, as well as no
    * clipping or svg effects.
@@ -2126,12 +2130,10 @@ class nsIFrame : public nsQueryFrame {
   /**
    * Flow member functions
    */
-  virtual nsIFrame* GetPrevInFlowVirtual() const = 0;
-  nsIFrame* GetPrevInFlow() const { return GetPrevInFlowVirtual(); }
+  virtual nsIFrame* GetPrevInFlow() const = 0;
   virtual void SetPrevInFlow(nsIFrame*) = 0;
 
-  virtual nsIFrame* GetNextInFlowVirtual() const = 0;
-  nsIFrame* GetNextInFlow() const { return GetNextInFlowVirtual(); }
+  virtual nsIFrame* GetNextInFlow() const = 0;
   virtual void SetNextInFlow(nsIFrame*) = 0;
 
   /**
@@ -2155,6 +2157,12 @@ class nsIFrame : public nsQueryFrame {
    * directly; PresShell::FrameNeedsReflow() will call it instead.
    */
   virtual void MarkIntrinsicISizesDirty() = 0;
+
+  /**
+   * Make this frame and all descendants dirty (if not already).
+   * Exceptions: XULBoxFrame and TableColGroupFrame children.
+   */
+  void MarkSubtreeDirty();
 
   /**
    * Get the min-content intrinsic inline size of the frame.  This must be
@@ -2541,6 +2549,24 @@ class nsIFrame : public nsQueryFrame {
                       const ReflowInput& aReflowInput,
                       nsReflowStatus& aStatus) = 0;
 
+  // Option flags for ReflowChild() and FinishReflowChild()
+  // member functions
+  enum class ReflowChildFlags : uint32_t {
+    Default = 0,
+    NoMoveView = 1 << 0,
+    NoMoveFrame = (1 << 1) | NoMoveView,
+    NoSizeView = 1 << 2,
+    NoVisibility = 1 << 3,
+
+    // Only applies to ReflowChild; if true, don't delete the next-in-flow, even
+    // if the reflow is fully complete.
+    NoDeleteNextInFlowChild = 1 << 4,
+
+    // Only applies to FinishReflowChild.  Tell it to call
+    // ApplyRelativePositioning.
+    ApplyRelativePositioning = 1 << 5
+  };
+
   /**
    * Post-reflow hook. After a frame is reflowed this method will be called
    * informing the frame that this reflow process is complete, and telling the
@@ -2793,12 +2819,30 @@ class nsIFrame : public nsQueryFrame {
     return sLayoutFrameTypes[uint8_t(mClass)];
   }
 
-#define FRAME_TYPE(name_)                             \
-  bool Is##name_##Frame() const {                     \
-    return Type() == mozilla::LayoutFrameType::name_; \
+#ifdef __GNUC__
+#  pragma GCC diagnostic push
+#  pragma GCC diagnostic ignored "-Wtype-limits"
+#endif
+#ifdef __clang__
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wunknown-pragmas"
+#  pragma clang diagnostic ignored "-Wtautological-unsigned-zero-compare"
+#endif
+
+#define FRAME_TYPE(name_, first_class_, last_class_)                 \
+  bool Is##name_##Frame() const {                                    \
+    return uint8_t(mClass) >= uint8_t(ClassID::first_class_##_id) && \
+           uint8_t(mClass) <= uint8_t(ClassID::last_class_##_id);    \
   }
 #include "mozilla/FrameTypeList.h"
 #undef FRAME_TYPE
+
+#ifdef __GNUC__
+#  pragma GCC diagnostic pop
+#endif
+#ifdef __clang__
+#  pragma clang diagnostic pop
+#endif
 
   /**
    * Returns a transformation matrix that converts points in this frame's
@@ -3697,7 +3741,7 @@ class nsIFrame : public nsQueryFrame {
       nsBoxLayoutState& aBoxLayoutState) = 0;
 
   // Implemented in nsBox, used in nsBoxFrame
-  uint32_t GetXULOrdinal();
+  int32_t GetXULOrdinal();
 
   virtual nscoord GetXULFlex() = 0;
   virtual nscoord GetXULBoxAscent(nsBoxLayoutState& aBoxLayoutState) = 0;
@@ -3721,7 +3765,9 @@ class nsIFrame : public nsQueryFrame {
   virtual nsBoxLayout* GetXULLayoutManager() { return nullptr; }
   nsresult GetXULClientRect(nsRect& aContentRect);
 
-  virtual uint32_t GetXULLayoutFlags() { return 0; }
+  virtual ReflowChildFlags GetXULLayoutFlags() {
+    return ReflowChildFlags::Default;
+  }
 
   // For nsSprocketLayout
   virtual Valignment GetXULVAlign() const = 0;
@@ -3896,6 +3942,10 @@ class nsIFrame : public nsQueryFrame {
    * Is this a flex item? (i.e. a non-abs-pos child of a flex container)
    */
   inline bool IsFlexItem() const;
+  /**
+   * Is this a grid item? (i.e. a non-abs-pos child of a grid container)
+   */
+  inline bool IsGridItem() const;
   /**
    * Is this a flex or grid item? (i.e. a non-abs-pos child of a flex/grid
    * container)
@@ -4081,6 +4131,8 @@ class nsIFrame : public nsQueryFrame {
   void SetMayHaveOpacityAnimation() { mMayHaveOpacityAnimation = true; }
 
   // Returns true if this frame is visible or may have visible descendants.
+  // Note: This function is accurate only on primary frames, because
+  // mAllDescendantsAreInvisible is not updated on continuations.
   bool IsVisibleOrMayHaveVisibleDescendants() const {
     return !mAllDescendantsAreInvisible || StyleVisibility()->IsVisible();
   }
@@ -4170,6 +4222,23 @@ class nsIFrame : public nsQueryFrame {
     mMayHaveWillChangeBudget = aHasBudget;
   }
 
+  bool HasBSizeChange() const { return mHasBSizeChange; }
+  void SetHasBSizeChange(bool aHasBSizeChange) {
+    mHasBSizeChange = aHasBSizeChange;
+  }
+
+  bool HasColumnSpanSiblings() const { return mHasColumnSpanSiblings; }
+  void SetHasColumnSpanSiblings(bool aHasColumnSpanSiblings) {
+    mHasColumnSpanSiblings = aHasColumnSpanSiblings;
+  }
+
+  bool DescendantMayDependOnItsStaticPosition() const {
+    return mDescendantMayDependOnItsStaticPosition;
+  }
+  void SetDescendantMayDependOnItsStaticPosition(bool aValue) {
+    mDescendantMayDependOnItsStaticPosition = aValue;
+  }
+
   /**
    * Returns the hit test area of the frame.
    */
@@ -4197,7 +4266,7 @@ class nsIFrame : public nsQueryFrame {
 
   /**
    * To be overridden by frame classes that have a varying IsLeaf() state and
-   * is indicating that with DynamicLeaf in nsFrameIdList.h.
+   * is indicating that with DynamicLeaf in FrameIdList.h.
    * @see IsLeaf()
    */
   virtual bool IsLeafDynamic() const { return false; }
@@ -4389,10 +4458,33 @@ class nsIFrame : public nsQueryFrame {
    */
   bool mAllDescendantsAreInvisible : 1;
 
+  bool mHasBSizeChange : 1;
+
   /**
    * True if we are or contain the scroll anchor for a scrollable frame.
    */
   bool mInScrollAnchorChain : 1;
+
+  /**
+   * Suppose a frame was split into multiple parts to separate parts containing
+   * column-spans from parts not containing column-spans. This bit is set on all
+   * continuations *not* containing column-spans except for the those after the
+   * last column-span/non-column-span boundary (i.e., the bit really means it
+   * has a *later* sibling across a split). Note that the last part is always
+   * created to containing no columns-spans even if it has no children. See
+   * nsCSSFrameConstructor::CreateColumnSpanSiblings() for the implementation.
+   *
+   * If the frame having this bit set is removed, we need to reframe the
+   * multi-column container.
+   */
+  bool mHasColumnSpanSiblings : 1;
+
+  /**
+   * True if we may have any descendant whose positioning may depend on its
+   * static position (and thus which we need to recompute the position for if we
+   * move).
+   */
+  bool mDescendantMayDependOnItsStaticPosition : 1;
 
  protected:
   // Helpers
@@ -4549,7 +4641,7 @@ class nsIFrame : public nsQueryFrame {
   static const mozilla::LayoutFrameType sLayoutFrameTypes[
 #define FRAME_ID(...) 1 +
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
       0];
@@ -4563,7 +4655,7 @@ class nsIFrame : public nsQueryFrame {
   static const FrameClassBits sFrameClassBits[
 #define FRAME_ID(...) 1 +
 #define ABSTRACT_FRAME_ID(...)
-#include "nsFrameIdList.h"
+#include "mozilla/FrameIdList.h"
 #undef FRAME_ID
 #undef ABSTRACT_FRAME_ID
       0];
@@ -4595,6 +4687,8 @@ class nsIFrame : public nsQueryFrame {
   virtual nsresult GetFrameName(nsAString& aResult) const = 0;
 #endif
 };
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsIFrame::ReflowChildFlags)
 
 //----------------------------------------------------------------------
 

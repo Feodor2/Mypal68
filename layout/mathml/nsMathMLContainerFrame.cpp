@@ -704,9 +704,9 @@ void nsMathMLContainerFrame::AppendFrames(ChildListID aListID,
   ChildListChanged(dom::MutationEvent_Binding::ADDITION);
 }
 
-void nsMathMLContainerFrame::InsertFrames(ChildListID aListID,
-                                          nsIFrame* aPrevFrame,
-                                          nsFrameList& aFrameList) {
+void nsMathMLContainerFrame::InsertFrames(
+    ChildListID aListID, nsIFrame* aPrevFrame,
+    const nsLineList::iterator* aPrevFrameLine, nsFrameList& aFrameList) {
   MOZ_ASSERT(aListID == kPrincipalList);
   mFrames.InsertFrames(this, aPrevFrame, aFrameList);
   ChildListChanged(dom::MutationEvent_Binding::ADDITION);
@@ -786,8 +786,8 @@ void nsMathMLContainerFrame::ReflowChild(nsIFrame* aChildFrame,
 #endif
 
   nsContainerFrame::ReflowChild(aChildFrame, aPresContext, aDesiredSize,
-                                aReflowInput, 0, 0, NS_FRAME_NO_MOVE_FRAME,
-                                aStatus);
+                                aReflowInput, 0, 0,
+                                ReflowChildFlags::NoMoveFrame, aStatus);
 
   if (aDesiredSize.BlockStartAscent() == ReflowOutput::ASK_FOR_BASELINE) {
     // This will be suitable for inline frames, which are wrapped in a block.
@@ -1244,7 +1244,7 @@ void nsMathMLContainerFrame::PositionRowChildFrames(nscoord aOffsetX,
     nscoord dx = aOffsetX + child.X();
     nscoord dy = aBaseline - child.Ascent();
     FinishReflowChild(child.Frame(), PresContext(), child.GetReflowOutput(),
-                      nullptr, dx, dy, 0);
+                      nullptr, dx, dy, ReflowChildFlags::Default);
     ++child;
   }
 }
@@ -1429,31 +1429,34 @@ void nsMathMLContainerFrame::PropagateFrameFlagFor(nsIFrame* aFrame,
   }
 }
 
-nsresult nsMathMLContainerFrame::ReportErrorToConsole(const char* errorMsgId,
-                                                      const char16_t** aParams,
-                                                      uint32_t aParamCount) {
+nsresult nsMathMLContainerFrame::ReportErrorToConsole(
+    const char* errorMsgId, const nsTArray<nsString>& aParams) {
   return nsContentUtils::ReportToConsole(
       nsIScriptError::errorFlag, NS_LITERAL_CSTRING("Layout: MathML"),
       mContent->OwnerDoc(), nsContentUtils::eMATHML_PROPERTIES, errorMsgId,
-      aParams, aParamCount);
+      aParams);
 }
 
 nsresult nsMathMLContainerFrame::ReportParseError(const char16_t* aAttribute,
                                                   const char16_t* aValue) {
-  const char16_t* argv[] = {aValue, aAttribute,
-                            mContent->NodeInfo()->NameAtom()->GetUTF16String()};
-  return ReportErrorToConsole("AttributeParsingError", argv, 3);
+  AutoTArray<nsString, 3> argv;
+  argv.AppendElement(aValue);
+  argv.AppendElement(aAttribute);
+  argv.AppendElement(nsDependentAtomString(mContent->NodeInfo()->NameAtom()));
+  return ReportErrorToConsole("AttributeParsingError", argv);
 }
 
 nsresult nsMathMLContainerFrame::ReportChildCountError() {
-  const char16_t* arg = mContent->NodeInfo()->NameAtom()->GetUTF16String();
-  return ReportErrorToConsole("ChildCountIncorrect", &arg, 1);
+  AutoTArray<nsString, 1> arg = {
+      nsDependentAtomString(mContent->NodeInfo()->NameAtom())};
+  return ReportErrorToConsole("ChildCountIncorrect", arg);
 }
 
 nsresult nsMathMLContainerFrame::ReportInvalidChildError(nsAtom* aChildTag) {
-  const char16_t* argv[] = {aChildTag->GetUTF16String(),
-                            mContent->NodeInfo()->NameAtom()->GetUTF16String()};
-  return ReportErrorToConsole("InvalidChild", argv, 2);
+  AutoTArray<nsString, 2> argv = {
+      nsDependentAtomString(aChildTag),
+      nsDependentAtomString(mContent->NodeInfo()->NameAtom())};
+  return ReportErrorToConsole("InvalidChild", argv);
 }
 
 //==========================

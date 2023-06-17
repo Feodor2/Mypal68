@@ -25,7 +25,7 @@
 }
 
 /* Add border-radius on Windows Vista/7 */
-@media (-moz-windows-glass),
+@media (-moz-os-version: windows-vista),
        (-moz-os-version: windows-win7) {
   #BMB_bookmarksPopup menupopup[placespopup=true] > hbox {
     border-radius: 3.5px;

@@ -94,7 +94,7 @@
  * and renders grey illegible.
  */
 @media (-moz-windows-default-theme) {
-  @media not (-moz-windows-glass) {
+  @media not (-moz-os-version: windows-vista) {
       @media not (-moz-os-version: windows-win7) {
     #toolbar-menubar:not(:-moz-lwtheme):-moz-window-inactive {
       color: ThreeDShadow;
@@ -103,7 +103,7 @@
   }
 }
 
-@media not (-moz-windows-glass) {
+@media not (-moz-os-version: windows-vista) {
   @media not (-moz-os-version: windows-win7) {
     @media not (-moz-os-version: windows-win8) {
       /* On Windows 10, when temporarily showing the menu bar, make it at least as
@@ -124,7 +124,7 @@
 }
 
 /* Add 4px extra margin on top of the tabs toolbar on Windows Vista and 7. */
-@media (-moz-windows-glass), 
+@media (-moz-os-version: windows-vista), 
        (-moz-os-version: windows-win7) {
   :root[sizemode="normal"][chromehidden~="menubar"] #TabsToolbar > .toolbar-items,
   :root[sizemode="normal"] #toolbar-menubar[autohide="true"][inactive] + #TabsToolbar > .toolbar-items {
@@ -148,7 +148,7 @@
  * Windows Vista and 7 draw the chrome background color as
  * the tab background instead of in the tabs toolbar.
  */
-@media (-moz-windows-glass), 
+@media (-moz-os-version: windows-vista), 
        (-moz-os-version: windows-win7) {
   @media (-moz-windows-default-theme) {
     #navigator-toolbox:not(:-moz-lwtheme) {
@@ -348,12 +348,23 @@
   -moz-box-align: stretch;
 }
 
-@media (-moz-windows-glass),
+@media (-moz-os-version: windows-xp),
+       (-moz-os-version: windows-vista),
        (-moz-os-version: windows-win7),
        (-moz-os-version: windows-win8) {
   /* Preserve window control buttons position at the top of the button box. */
   .titlebar-buttonbox-container {
     -moz-box-align: start;
+  }
+}
+
+/* add extra margin for unmaximized windows
+   on Win XP Luna themes to look consistent */
+@media not (-moz-windows-classic) {
+  @media (-moz-os-version: windows-xp) {
+    :root[tabsintitlebar]:not([sizemode="maximized"]) .titlebar-buttonbox-container {
+      margin-top: 4px;
+    }
   }
 }
 
@@ -471,7 +482,8 @@ menuitem.bookmark-item {
   background-color: hsl(355, 82%, 69%);
 }
 
-@media (-moz-windows-glass),
+@media (-moz-os-version: windows-xp),
+       (-moz-os-version: windows-vista),
        (-moz-os-version: windows-win7) {
   #window-controls {
     -moz-box-align: start;
@@ -994,7 +1006,7 @@ panel[touchmode] .PanelUI-subView #appMenu-zoom-controls > .subviewbutton-iconic
   overflow: hidden;
 }
 
-@media (-moz-windows-glass),
+@media (-moz-os-version: windows-vista),
        (-moz-os-version: windows-win7) {
   .cui-widget-panelview[id^=PanelUI-webext-] {
     border-radius: 4px;

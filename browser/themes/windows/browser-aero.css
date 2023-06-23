@@ -6,7 +6,7 @@
 %define glassActiveBorderColor rgb(37, 44, 51)
 %define glassInactiveBorderColor rgb(102, 102, 102)
 
-@media (-moz-windows-glass),
+@media (-moz-os-version: windows-vista),
        (-moz-os-version: windows-win7),
        (-moz-os-version: windows-win8) {
   @media (-moz-windows-classic: 0) {
@@ -40,7 +40,7 @@
 }
 
 @media (-moz-windows-compositor) {
-  @media not (-moz-windows-glass) {
+  @media not (-moz-os-version: windows-vista) {
     @media not (-moz-os-version: windows-win7) {
       @media not (-moz-os-version: windows-win8) {
         @media (-moz-windows-default-theme) {
@@ -264,7 +264,7 @@
     }
   }
 
-  @media (-moz-windows-glass),
+  @media (-moz-os-version: windows-vista),
          (-moz-os-version: windows-win7),
          (-moz-os-version: windows-win8) {
     :root {
@@ -302,7 +302,7 @@
   }
 
   /* Show borders on Vista, 7 & 8, but not on 10 and later: */
-  @media (-moz-windows-glass),
+  @media (-moz-os-version: windows-vista),
          (-moz-os-version: windows-win7),
          (-moz-os-version: windows-win8) {
     /* Vertical toolbar border */

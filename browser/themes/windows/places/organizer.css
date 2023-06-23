@@ -140,7 +140,7 @@
     position: relative;
   }
 
-  @media (-moz-windows-glass),
+  @media (-moz-os-version: windows-vista),
          (-moz-os-version: windows-win7) {
     #detailsDeck {
       border-top-color: #A9B7C9;

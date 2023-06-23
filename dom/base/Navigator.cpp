@@ -1031,10 +1031,9 @@ BeaconStreamListener::OnDataAvailable(nsIRequest* aRequest,
 bool Navigator::SendBeacon(const nsAString& aUrl,
                            const Nullable<fetch::BodyInit>& aData,
                            ErrorResult& aRv) {
-
   if (!Preferences::GetBool("beacon.enabled", false)) {
-      aRv = NS_OK;
-      return true;
+    aRv = NS_OK;
+    return true;
   }
 
   if (aData.IsNull()) {
@@ -1641,7 +1640,7 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
                                  bool aIsCallerChrome, nsAString& aUserAgent) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  nsAutoCString host,ua;
+  nsAutoCString host, ua;
   nsAutoString override;
   nsresult rv;
   nsCOMPtr<nsIPrefBranch> prefBranch;
@@ -1649,7 +1648,7 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
       do_GetService(NS_PREFSERVICE_CONTRACTID, &rv);
   NS_ENSURE_SUCCESS(rv, rv);
   prefService->GetBranch("general.useragent.override.",
-                   getter_AddRefs(prefBranch));
+                         getter_AddRefs(prefBranch));
   if (prefBranch) {
     nsCOMPtr<Document> doc = aWindow->GetDoc();
     if (doc) {
@@ -1658,19 +1657,19 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
         MOZ_ALWAYS_SUCCEEDS(uri->GetHost(host));
         rv = prefBranch->GetCharPref(host.get(), ua);
         if (NS_SUCCEEDED(rv)) {
-           CopyASCIItoUTF16(ua, aUserAgent);
-           return NS_OK;
+          CopyASCIItoUTF16(ua, aUserAgent);
+          return NS_OK;
         }
       }
     }
   }
 
-
   // We will skip the override and pass to httpHandler to get spoofed userAgent
   // when 'privacy.resistFingerprinting' is true.
   if (!aIsCallerChrome &&
       !nsContentUtils::ShouldResistFingerprinting(aCallerPrincipal)) {
-    rv = mozilla::Preferences::GetString("general.useragent.override", override);
+    rv =
+        mozilla::Preferences::GetString("general.useragent.override", override);
 
     if (NS_SUCCEEDED(rv)) {
       aUserAgent = override;

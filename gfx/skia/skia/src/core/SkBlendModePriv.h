@@ -9,8 +9,7 @@
 #define SkBlendModePriv_DEFINED
 
 #include "SkBlendMode.h"
-#include "SkColor.h"
-#include "SkColorData.h"
+#include "SkPM4f.h"
 
 class SkRasterPipeline;
 
@@ -40,7 +39,7 @@ enum class SkBlendModeCoeff {
 
 bool SkBlendMode_AsCoeff(SkBlendMode mode, SkBlendModeCoeff* src, SkBlendModeCoeff* dst);
 
-SkPMColor4f SkBlendMode_Apply(SkBlendMode, const SkPMColor4f& src, const SkPMColor4f& dst);
+SkPM4f SkBlendMode_Apply(SkBlendMode, const SkPM4f& src, const SkPM4f& dst);
 
 #if SK_SUPPORT_GPU
 #include "GrXferProcessor.h"

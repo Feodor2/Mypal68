@@ -21,7 +21,9 @@ class SkWStream;
  *  but is not at the beginning, this call will fail (return NULL).
  *
  *  @param stream SkStream to be copied into data.
- *  @return The resulting SkData after the copy, nullptr on failure.
+ *  @return SkData* The resulting SkData after the copy. This data
+ *      will have a ref count of one upon return and belongs to the
+ *      caller. Returns nullptr on failure.
  */
 sk_sp<SkData> SkCopyStreamToData(SkStream* stream);
 

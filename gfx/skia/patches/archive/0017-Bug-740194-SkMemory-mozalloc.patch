@@ -11,7 +11,7 @@ index f98ba85..17be191 100644
 @@ -35,6 +35,16 @@
      commented out, so including it will have no effect.
  */
- 
+
 +/*
 +    Override new/delete with Mozilla's allocator, mozalloc
 +
@@ -23,7 +23,7 @@ index f98ba85..17be191 100644
 +#include "mozilla/mozalloc.h"
 +
  ///////////////////////////////////////////////////////////////////////////////
- 
+
  /*  Scalars (the fractional value type in skia) can be implemented either as
 diff --git a/gfx/skia/src/ports/SkMemory_mozalloc.cpp b/gfx/skia/src/ports/SkMemory_mozalloc.cpp
 new file mode 100644

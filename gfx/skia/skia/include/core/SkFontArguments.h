@@ -5,8 +5,8 @@
  * found in the LICENSE file.
  */
 
-#ifndef SkFontArguments_DEFINED
-#define SkFontArguments_DEFINED
+#ifndef SkFontAgruments_DEFINED
+#define SkFontAgruments_DEFINED
 
 #include "SkScalar.h"
 #include "SkTypes.h"
@@ -16,15 +16,15 @@ struct SkFontArguments {
     struct VariationPosition {
         struct Coordinate {
             SkFourByteTag axis;
-            float value;
+            SkScalar value;
         };
         const Coordinate* coordinates;
         int coordinateCount;
     };
-    // deprecated, use VariationPosition::Coordinate instead
+    // deprecated, use VariationCoordinate instead
     struct Axis {
        SkFourByteTag fTag;
-       float fStyleValue;
+       SkScalar fStyleValue;
     };
 
     SkFontArguments() : fCollectionIndex(0), fVariationDesignPosition{nullptr, 0} {}

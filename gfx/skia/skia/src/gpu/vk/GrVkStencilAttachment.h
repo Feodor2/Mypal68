@@ -10,7 +10,7 @@
 
 #include "GrStencilAttachment.h"
 #include "GrVkImage.h"
-#include "vk/GrVkTypes.h"
+#include "vk/GrVkDefines.h"
 
 class GrVkImageView;
 class GrVkGpu;
@@ -45,7 +45,6 @@ private:
                           const Format& format,
                           const GrVkImage::ImageDesc&,
                           const GrVkImageInfo&,
-                          sk_sp<GrVkImageLayout> layout,
                           const GrVkImageView* stencilView);
 
     GrVkGpu* getVkGpu() const;

@@ -31,13 +31,16 @@ public:
                                      sk_sp<SkImageFilter> color,
                                      const CropRect* cropRect = nullptr);
 
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkDisplacementMapEffect)
+
     SkRect computeFastBounds(const SkRect& src) const override;
 
-    virtual SkIRect onFilterBounds(const SkIRect& src, const SkMatrix& ctm,
-                                   MapDirection, const SkIRect* inputRect) const override;
+    virtual SkIRect onFilterBounds(const SkIRect& src, const SkMatrix&,
+                                   MapDirection) const override;
     sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const override;
-    SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix& ctm,
-                               MapDirection, const SkIRect* inputRect) const override;
+    SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix&, MapDirection) const override;
+
+    SK_TO_STRING_OVERRIDE()
 
 protected:
     sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* source, const Context&,
@@ -50,8 +53,6 @@ protected:
     void flatten(SkWriteBuffer&) const override;
 
 private:
-    SK_FLATTENABLE_HOOKS(SkDisplacementMapEffect)
-
     ChannelSelectorType fXChannelSelector;
     ChannelSelectorType fYChannelSelector;
     SkScalar fScale;

@@ -15,7 +15,7 @@
     additional data members or virtual methods. */
 class GrSurfaceContextPriv {
 public:
-    GrRecordingContext* getContext() { return fSurfaceContext->fContext; }
+    GrContext* getContext() { return fSurfaceContext->fContext; }
 
 private:
     explicit GrSurfaceContextPriv(GrSurfaceContext* surfaceContext)

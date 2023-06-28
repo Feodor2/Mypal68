@@ -9,8 +9,10 @@
 #define GrVkFramebuffer_DEFINED
 
 #include "GrTypes.h"
+
 #include "GrVkResource.h"
-#include "vk/GrVkTypes.h"
+
+#include "vk/GrVkDefines.h"
 
 class GrVkGpu;
 class GrVkImageView;
@@ -38,7 +40,7 @@ private:
     GrVkFramebuffer(const GrVkFramebuffer&);
     GrVkFramebuffer& operator=(const GrVkFramebuffer&);
 
-    void freeGPUData(GrVkGpu* gpu) const override;
+    void freeGPUData(const GrVkGpu* gpu) const override;
 
     VkFramebuffer  fFramebuffer;
 

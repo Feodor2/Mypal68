@@ -8,8 +8,9 @@
 #include "SkCoreBlitters.h"
 #include "SkColorData.h"
 #include "SkShader.h"
-#include "SkUTF.h"
+#include "SkUtils.h"
 #include "SkXfermodePriv.h"
+#include "SkBlitMask.h"
 #include "SkColorData.h"
 
 #include "SkNx.h"
@@ -73,6 +74,9 @@ bool SkRGB565_Shader_Blitter::Supports(const SkPixmap& device, const SkPaint& pa
     }
     if (paint.getBlendMode() != SkBlendMode::kSrcOver &&
         paint.getBlendMode() != SkBlendMode::kSrc) {
+        return false;
+    }
+    if (paint.isLCDRenderText()) {
         return false;
     }
     if (paint.isDither()) {

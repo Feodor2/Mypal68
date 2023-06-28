@@ -10,7 +10,6 @@
 
 #include "GrColorSpaceXform.h"
 #include "GrGLSLUniformHandler.h"
-#include "SkColorSpaceXformSteps.h"
 
 /**
  * Helper class to assist with using GrColorSpaceXform within an FP. This manages all of the
@@ -19,61 +18,56 @@
  */
 class GrGLSLColorSpaceXformHelper : public SkNoncopyable {
 public:
-    GrGLSLColorSpaceXformHelper() {
-        memset(&fFlags, 0, sizeof(fFlags));
-    }
+    GrGLSLColorSpaceXformHelper() : fFlags(0) {}
 
     void emitCode(GrGLSLUniformHandler* uniformHandler, const GrColorSpaceXform* colorSpaceXform,
                   uint32_t visibility = kFragment_GrShaderFlag) {
         SkASSERT(uniformHandler);
         if (colorSpaceXform) {
-            fFlags = colorSpaceXform->fSteps.flags;
-            if (this->applySrcTF()) {
-                fSrcTFVar = uniformHandler->addUniformArray(visibility, kHalf_GrSLType,
-                                                            "SrcTF", kNumTransferFnCoeffs);
-            }
+            fFlags = colorSpaceXform->fFlags;
             if (this->applyGamutXform()) {
-                fGamutXformVar = uniformHandler->addUniform(visibility, kHalf3x3_GrSLType,
+                fGamutXformVar = uniformHandler->addUniform(visibility,
+                                                            kHalf4x4_GrSLType,
                                                             "ColorXform");
             }
-            if (this->applyDstTF()) {
-                fDstTFVar = uniformHandler->addUniformArray(visibility, kHalf_GrSLType,
-                                                            "DstTF", kNumTransferFnCoeffs);
+            if (this->applyTransferFn()) {
+                fTransferFnVar = uniformHandler->addUniformArray(visibility,
+                                                                 kHalf_GrSLType,
+                                                                 "TransferFn",
+                                                                 kNumTransferFnCoeffs);
             }
         }
     }
 
     void setData(const GrGLSLProgramDataManager& pdman, const GrColorSpaceXform* colorSpaceXform) {
-        if (this->applySrcTF()) {
-            pdman.set1fv(fSrcTFVar, kNumTransferFnCoeffs, &colorSpaceXform->fSteps.srcTF.g);
-        }
         if (this->applyGamutXform()) {
-            pdman.setMatrix3f(fGamutXformVar, colorSpaceXform->fSteps.src_to_dst_matrix);
+            pdman.setSkMatrix44(fGamutXformVar, colorSpaceXform->gamutXform());
         }
-        if (this->applyDstTF()) {
-            pdman.set1fv(fDstTFVar, kNumTransferFnCoeffs, &colorSpaceXform->fSteps.dstTFInv.g);
+        if (this->applyTransferFn()) {
+            pdman.set1fv(fTransferFnVar, kNumTransferFnCoeffs, colorSpaceXform->transferFnCoeffs());
         }
     }
 
-    bool isNoop() const { return (0 == fFlags.mask()); }
+    bool isValid() const { return (0 != fFlags); }
+    bool applyInverseSRGB() const {
+        return SkToBool(fFlags & GrColorSpaceXform::kApplyInverseSRGB_Flag);
+    }
+    bool applyTransferFn() const {
+        return SkToBool(fFlags & GrColorSpaceXform::kApplyTransferFn_Flag);
+    }
+    bool applyGamutXform() const {
+        return SkToBool(fFlags & GrColorSpaceXform::kApplyGamutXform_Flag);
+    }
 
-    bool applyUnpremul() const   { return fFlags.unpremul; }
-    bool applySrcTF() const      { return fFlags.linearize; }
-    bool applyGamutXform() const { return fFlags.gamut_transform; }
-    bool applyDstTF() const      { return fFlags.encode; }
-    bool applyPremul() const     { return fFlags.premul; }
-
-    GrGLSLProgramDataManager::UniformHandle srcTFUniform() const { return fSrcTFVar; }
     GrGLSLProgramDataManager::UniformHandle gamutXformUniform() const { return fGamutXformVar; }
-    GrGLSLProgramDataManager::UniformHandle dstTFUniform() const { return fDstTFVar; }
+    GrGLSLProgramDataManager::UniformHandle transferFnUniform() const { return fTransferFnVar; }
 
 private:
     static const int kNumTransferFnCoeffs = 7;
 
-    GrGLSLProgramDataManager::UniformHandle fSrcTFVar;
     GrGLSLProgramDataManager::UniformHandle fGamutXformVar;
-    GrGLSLProgramDataManager::UniformHandle fDstTFVar;
-    SkColorSpaceXformSteps::Flags fFlags;
+    GrGLSLProgramDataManager::UniformHandle fTransferFnVar;
+    uint32_t fFlags;
 };
 
 #endif

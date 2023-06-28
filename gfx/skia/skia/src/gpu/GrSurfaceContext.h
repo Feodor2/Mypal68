@@ -13,9 +13,9 @@
 #include "SkRefCnt.h"
 
 class GrAuditTrail;
+class GrContext;
 class GrDrawingManager;
 class GrOpList;
-class GrRecordingContext;
 class GrRenderTargetContext;
 class GrRenderTargetProxy;
 class GrSingleOwner;
@@ -102,7 +102,7 @@ public:
 
     virtual GrRenderTargetContext* asRenderTargetContext() { return nullptr; }
 
-    GrAuditTrail* auditTrail();
+    GrAuditTrail* auditTrail() { return fAuditTrail; }
 
     // Provides access to functions that aren't part of the public API.
     GrSurfaceContextPriv surfPriv();
@@ -111,20 +111,27 @@ public:
 protected:
     friend class GrSurfaceContextPriv;
 
-    GrSurfaceContext(GrRecordingContext*, GrPixelConfig, sk_sp<SkColorSpace>);
+    GrSurfaceContext(GrContext*, GrDrawingManager*, GrPixelConfig, sk_sp<SkColorSpace>,
+                     GrAuditTrail*, GrSingleOwner*);
 
-    GrDrawingManager* drawingManager();
-    const GrDrawingManager* drawingManager() const;
+    GrDrawingManager* drawingManager() { return fDrawingManager; }
+    const GrDrawingManager* drawingManager() const { return fDrawingManager; }
 
     virtual GrOpList* getOpList() = 0;
     SkDEBUGCODE(virtual void validate() const = 0;)
 
-    SkDEBUGCODE(GrSingleOwner* singleOwner();)
+    SkDEBUGCODE(GrSingleOwner* singleOwner() { return fSingleOwner; })
 
-    GrRecordingContext* fContext;
+    GrContext* fContext;
+    GrAuditTrail* fAuditTrail;
 
 private:
-    GrColorSpaceInfo    fColorSpaceInfo;
+    GrColorSpaceInfo fColorSpaceInfo;
+
+    GrDrawingManager* fDrawingManager;
+
+    // In debug builds we guard against improper thread handling
+    SkDEBUGCODE(mutable GrSingleOwner* fSingleOwner;)
 
     typedef SkRefCnt INHERITED;
 };

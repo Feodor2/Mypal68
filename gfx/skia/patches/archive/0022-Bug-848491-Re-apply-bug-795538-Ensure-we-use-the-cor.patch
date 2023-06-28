@@ -9,7 +9,7 @@ index 27a9c46..ce077b5 100644
 +++ b/gfx/skia/src/effects/gradients/SkGradientShader.cpp
 @@ -500,15 +500,17 @@ const SkPMColor* SkGradientShaderBase::getCache32() const {
      }
- 
+
      // Write the clamp colours into the first and last entries of fCache32
 -    fCache32[kCache32ClampLower] = SkPackARGB32(fCacheAlpha,
 -                                                SkColorGetR(fOrigColors[0]),
@@ -31,9 +31,8 @@ index 27a9c46..ce077b5 100644
 +                                                           SkColorGetR(fOrigColors[fColorCount - 1]),
 +                                                           SkColorGetG(fOrigColors[fColorCount - 1]),
 +                                                           SkColorGetB(fOrigColors[fColorCount - 1]));
- 
+
      return fCache32;
  }
--- 
+--
 1.7.11.7
-

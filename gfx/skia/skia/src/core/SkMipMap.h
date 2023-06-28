@@ -29,8 +29,16 @@ typedef SkDiscardableMemory* (*SkDiscardableFactoryProc)(size_t bytes);
  */
 class SkMipMap : public SkCachedData {
 public:
-    static SkMipMap* Build(const SkPixmap& src, SkDiscardableFactoryProc);
-    static SkMipMap* Build(const SkBitmap& src, SkDiscardableFactoryProc);
+    static SkMipMap* Build(const SkPixmap& src, SkDestinationSurfaceColorMode,
+                           SkDiscardableFactoryProc);
+    static SkMipMap* Build(const SkBitmap& src, SkDestinationSurfaceColorMode,
+                           SkDiscardableFactoryProc);
+
+    static SkDestinationSurfaceColorMode DeduceColorMode(const SkShaderBase::ContextRec& rec) {
+        return (SkShaderBase::ContextRec::kPMColor_DstType == rec.fPreferredDstType)
+            ? SkDestinationSurfaceColorMode::kLegacy
+            : SkDestinationSurfaceColorMode::kGammaAndColorSpaceAware;
+    }
 
     // Determines how many levels a SkMipMap will have without creating that mipmap.
     // This does not include the base mipmap level that the user provided when
@@ -42,11 +50,7 @@ public:
     // the base level. So index 0 represents mipmap level 1.
     static SkISize ComputeLevelSize(int baseWidth, int baseHeight, int level);
 
-    // We use a block of (possibly discardable) memory to hold an array of Level structs, followed
-    // by the pixel data for each level. On 32-bit platforms, Level would naturally be 4 byte
-    // aligned, so the pixel data could end up with 4 byte alignment. If the pixel data is F16,
-    // it must be 8 byte aligned. To ensure this, keep the Level struct 8 byte aligned as well.
-    struct alignas(8) Level {
+    struct Level {
         SkPixmap    fPixmap;
         SkSize      fScale; // < 1.0
     };

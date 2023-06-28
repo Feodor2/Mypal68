@@ -9,11 +9,10 @@
 #define GrFragmentProcessor_DEFINED
 
 #include "GrProcessor.h"
-#include "GrProxyRef.h"
 
 class GrCoordTransform;
 class GrGLSLFragmentProcessor;
-class GrPaint;
+class GrInvariantOutput;
 class GrPipeline;
 class GrProcessorKeyBuilder;
 class GrShaderCaps;
@@ -24,10 +23,8 @@ class GrSwizzle;
     GrCoordTransforms to receive a transformation of the local coordinates that map from local space
     to the fragment being processed.
  */
-class GrFragmentProcessor : public GrProcessor {
+class GrFragmentProcessor : public GrResourceIOProcessor {
 public:
-    class TextureSampler;
-
     /**
     *  In many instances (e.g. SkShader::asFragmentProcessor() implementations) it is desirable to
     *  only consider the input color's alpha. However, there is a competing desire to have reusable
@@ -63,13 +60,26 @@ public:
      *  child.
      */
     static std::unique_ptr<GrFragmentProcessor> OverrideInput(std::unique_ptr<GrFragmentProcessor>,
-                                                              const SkPMColor4f&);
+                                                              GrColor4f);
 
     /**
      *  Returns a fragment processor that premuls the input before calling the passed in fragment
      *  processor.
      */
     static std::unique_ptr<GrFragmentProcessor> PremulInput(std::unique_ptr<GrFragmentProcessor>);
+
+    /**
+     *  Returns a fragment processor that calls the passed in fragment processor, and then premuls
+     *  the output.
+     */
+    static std::unique_ptr<GrFragmentProcessor> PremulOutput(std::unique_ptr<GrFragmentProcessor>);
+
+    /**
+     *  Returns a fragment processor that calls the passed in fragment processor, and then unpremuls
+     *  the output.
+     */
+    static std::unique_ptr<GrFragmentProcessor> UnpremulOutput(
+            std::unique_ptr<GrFragmentProcessor>);
 
     /**
      *  Returns a fragment processor that calls the passed in fragment processor, and then swizzles
@@ -103,9 +113,6 @@ public:
             fChildProcessors[i]->getGLSLProcessorKey(caps, b);
         }
     }
-
-    int numTextureSamplers() const { return fTextureSamplerCnt; }
-    const TextureSampler& textureSampler(int i) const;
 
     int numCoordTransforms() const { return fCoordTransforms.count(); }
 
@@ -156,7 +163,7 @@ public:
      * (for all fragments). If true outputColor will contain the constant color produces for
      * inputColor.
      */
-    bool hasConstantOutputForConstantInput(SkPMColor4f inputColor, SkPMColor4f* outputColor) const {
+    bool hasConstantOutputForConstantInput(GrColor4f inputColor, GrColor4f* outputColor) const {
         if (fFlags & kConstantOutputForConstantInput_OptimizationFlag) {
             *outputColor = this->constantOutputForConstantInput(inputColor);
             return true;
@@ -184,7 +191,6 @@ public:
     public:
         explicit Iter(const GrFragmentProcessor* fp) { fFPStack.push_back(fp); }
         explicit Iter(const GrPipeline& pipeline);
-        explicit Iter(const GrPaint&);
         const GrFragmentProcessor* next();
 
     private:
@@ -196,8 +202,9 @@ public:
      * owned by the forest of GrFragmentProcessors in a GrPipeline. FPs are visited in the same
      * order as Iter and each of an FP's Ts are visited in order.
      */
-    template <typename T, int (GrFragmentProcessor::*COUNT)() const,
-              const T& (GrFragmentProcessor::*GET)(int)const>
+    template <typename T, typename BASE,
+              int (BASE::*COUNT)() const,
+              const T& (BASE::*GET)(int) const>
     class FPItemIter : public SkNoncopyable {
     public:
         explicit FPItemIter(const GrFragmentProcessor* fp)
@@ -234,14 +241,21 @@ public:
     };
 
     using CoordTransformIter = FPItemIter<GrCoordTransform,
+                                          GrFragmentProcessor,
                                           &GrFragmentProcessor::numCoordTransforms,
                                           &GrFragmentProcessor::coordTransform>;
 
     using TextureAccessIter = FPItemIter<TextureSampler,
-                                         &GrFragmentProcessor::numTextureSamplers,
-                                         &GrFragmentProcessor::textureSampler>;
+                                         GrResourceIOProcessor,
+                                         &GrResourceIOProcessor::numTextureSamplers,
+                                         &GrResourceIOProcessor::textureSampler>;
 
-    void visitProxies(const std::function<void(GrSurfaceProxy*)>& func);
+    void visitProxies(const std::function<void(GrSurfaceProxy*)>& func) {
+        GrFragmentProcessor::TextureAccessIter iter(this);
+        while (const GrResourceIOProcessor::TextureSampler* sampler = iter.next()) {
+            func(sampler->proxy());
+        }
+    }
 
 protected:
     enum OptimizationFlags : uint32_t {
@@ -260,21 +274,8 @@ protected:
      * This assumes that the subclass output color will be a modulation of the input color with a
      * value read from a texture of the passed config and that the texture contains premultiplied
      * color or alpha values that are in range.
-     *
-     * Since there are multiple ways in which a sampler may have its coordinates clamped or wrapped,
-     * callers must determine on their own if the sampling uses a decal strategy in any way, in
-     * which case the texture may become transparent regardless of the pixel config.
      */
-    static OptimizationFlags ModulateForSamplerOptFlags(GrPixelConfig config, bool samplingDecal) {
-        if (samplingDecal) {
-            return kCompatibleWithCoverageAsAlpha_OptimizationFlag;
-        } else {
-            return ModulateForClampedSamplerOptFlags(config);
-        }
-    }
-
-    // As above, but callers should somehow ensure or assert their sampler still uses clamping
-    static OptimizationFlags ModulateForClampedSamplerOptFlags(GrPixelConfig config) {
+    static OptimizationFlags ModulateByConfigOptimizationFlags(GrPixelConfig config) {
         if (GrPixelConfigIsOpaque(config)) {
             return kCompatibleWithCoverageAsAlpha_OptimizationFlag |
                    kPreservesOpaqueInput_OptimizationFlag;
@@ -298,8 +299,8 @@ protected:
      * constantOutputForConstantInput. It must only be called when
      * hasConstantOutputForConstantInput() is known to be true.
      */
-    static SkPMColor4f ConstantOutputForConstantInput(const GrFragmentProcessor& fp,
-                                                      const SkPMColor4f& input) {
+    static GrColor4f ConstantOutputForConstantInput(const GrFragmentProcessor& fp,
+                                                    GrColor4f input) {
         SkASSERT(fp.hasConstantOutputForConstantInput());
         return fp.constantOutputForConstantInput(input);
     }
@@ -334,26 +335,10 @@ protected:
      */
     int registerChildProcessor(std::unique_ptr<GrFragmentProcessor> child);
 
-    void setTextureSamplerCnt(int cnt) {
-        SkASSERT(cnt >= 0);
-        fTextureSamplerCnt = cnt;
-    }
-
-    /**
-     * Helper for implementing onTextureSampler(). E.g.:
-     * return IthTexureSampler(i, fMyFirstSampler, fMySecondSampler, fMyThirdSampler);
-     */
-    template <typename... Args>
-    static const TextureSampler& IthTextureSampler(int i, const TextureSampler& samp0,
-                                                   const Args&... samps) {
-        return (0 == i) ? samp0 : IthTextureSampler(i - 1, samps...);
-    }
-    inline static const TextureSampler& IthTextureSampler(int i);
-
 private:
-    virtual SkPMColor4f constantOutputForConstantInput(const SkPMColor4f& /* inputColor */) const {
+    virtual GrColor4f constantOutputForConstantInput(GrColor4f /* inputColor */) const {
         SK_ABORT("Subclass must override this if advertising this optimization.");
-        return SK_PMColor4fTRANSPARENT;
+        return GrColor4f::TransparentBlack();
     }
 
     /** Returns a new instance of the appropriate *GL* implementation class
@@ -372,8 +357,6 @@ private:
      */
     virtual bool onIsEqual(const GrFragmentProcessor&) const = 0;
 
-    virtual const TextureSampler& onTextureSampler(int) const { return IthTextureSampler(0); }
-
     bool hasSameTransforms(const GrFragmentProcessor&) const;
 
     enum PrivateFlags {
@@ -383,85 +366,12 @@ private:
 
     mutable uint32_t fFlags = 0;
 
-    int fTextureSamplerCnt = 0;
-
     SkSTArray<4, const GrCoordTransform*, true> fCoordTransforms;
 
     SkSTArray<1, std::unique_ptr<GrFragmentProcessor>, true> fChildProcessors;
 
-    typedef GrProcessor INHERITED;
+    typedef GrResourceIOProcessor INHERITED;
 };
-
-/**
- * Used to represent a texture that is required by a GrFragmentProcessor. It holds a GrTextureProxy
- * along with an associated GrSamplerState. TextureSamplers don't perform any coord manipulation to
- * account for texture origin.
- */
-class GrFragmentProcessor::TextureSampler {
-public:
-    TextureSampler() = default;
-
-    /**
-     * This copy constructor is used by GrFragmentProcessor::clone() implementations. The copy
-     * always takes a new ref on the texture proxy as the new fragment processor will not yet be
-     * in pending execution state.
-     */
-    explicit TextureSampler(const TextureSampler& that)
-            : fProxyRef(sk_ref_sp(that.fProxyRef.get()), that.fProxyRef.ioType())
-            , fSamplerState(that.fSamplerState) {}
-
-    TextureSampler(sk_sp<GrTextureProxy>, const GrSamplerState&);
-
-    explicit TextureSampler(sk_sp<GrTextureProxy>,
-                            GrSamplerState::Filter = GrSamplerState::Filter::kNearest,
-                            GrSamplerState::WrapMode wrapXAndY = GrSamplerState::WrapMode::kClamp);
-
-    TextureSampler& operator=(const TextureSampler&) = delete;
-
-    void reset(sk_sp<GrTextureProxy>, const GrSamplerState&);
-    void reset(sk_sp<GrTextureProxy>,
-               GrSamplerState::Filter = GrSamplerState::Filter::kNearest,
-               GrSamplerState::WrapMode wrapXAndY = GrSamplerState::WrapMode::kClamp);
-
-    bool operator==(const TextureSampler& that) const {
-        return this->proxy()->underlyingUniqueID() == that.proxy()->underlyingUniqueID() &&
-               fSamplerState == that.fSamplerState;
-    }
-
-    bool operator!=(const TextureSampler& other) const { return !(*this == other); }
-
-    // 'instantiate' should only ever be called at flush time.
-    bool instantiate(GrResourceProvider* resourceProvider) const {
-        return SkToBool(fProxyRef.get()->instantiate(resourceProvider));
-    }
-
-    // 'peekTexture' should only ever be called after a successful 'instantiate' call
-    GrTexture* peekTexture() const {
-        SkASSERT(fProxyRef.get()->peekTexture());
-        return fProxyRef.get()->peekTexture();
-    }
-
-    GrTextureProxy* proxy() const { return fProxyRef.get(); }
-    const GrSamplerState& samplerState() const { return fSamplerState; }
-
-    bool isInitialized() const { return SkToBool(fProxyRef.get()); }
-    /**
-     * For internal use by GrFragmentProcessor.
-     */
-    const GrTextureProxyRef* proxyRef() const { return &fProxyRef; }
-
-private:
-    GrTextureProxyRef fProxyRef;
-    GrSamplerState fSamplerState;
-};
-
-//////////////////////////////////////////////////////////////////////////////
-
-const GrFragmentProcessor::TextureSampler& GrFragmentProcessor::IthTextureSampler(int i) {
-    SK_ABORT("Illegal texture sampler index");
-    static const TextureSampler kBogus;
-    return kBogus;
-}
 
 GR_MAKE_BITFIELD_OPS(GrFragmentProcessor::OptimizationFlags)
 

@@ -29,17 +29,19 @@ public:
 
 #if SK_SUPPORT_GPU
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(
-            GrRecordingContext*, const GrColorSpaceInfo&) const override;
+            GrContext*, const GrColorSpaceInfo&) const override;
 #endif
 
-    static void RegisterFlattenables();
+    void toString(SkString* str) const override;
+
+    static sk_sp<SkFlattenable> CreateProc(SkReadBuffer& buffer);
+    Factory getFactory() const override { return CreateProc; }
+    SK_DECLARE_FLATTENABLE_REGISTRAR_GROUP()
 
 protected:
     void flatten(SkWriteBuffer& buffer) const override;
 
 private:
-    SK_FLATTENABLE_HOOKS(SkOverdrawColorFilter)
-
     SkOverdrawColorFilter(const SkPMColor colors[kNumColors]) {
         memcpy(fColors, colors, kNumColors * sizeof(SkPMColor));
     }

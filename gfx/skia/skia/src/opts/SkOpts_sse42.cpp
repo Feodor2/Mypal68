@@ -15,4 +15,3 @@ namespace SkOpts {
         hash_fn = sse42::hash_fn;
     }
 }
-

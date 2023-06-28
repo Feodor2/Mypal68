@@ -8,26 +8,10 @@
 #include "GrStencilPathOp.h"
 
 #include "GrGpu.h"
-#include "GrMemoryPool.h"
 #include "GrOpFlushState.h"
-#include "GrRecordingContext.h"
-#include "GrRecordingContextPriv.h"
 #include "GrRenderTargetPriv.h"
 
-std::unique_ptr<GrOp> GrStencilPathOp::Make(GrRecordingContext* context,
-                                            const SkMatrix& viewMatrix,
-                                            bool useHWAA,
-                                            GrPathRendering::FillType fillType,
-                                            bool hasStencilClip,
-                                            const GrScissorState& scissor,
-                                            const GrPath* path) {
-    GrOpMemoryPool* pool = context->priv().opMemoryPool();
-
-    return pool->allocate<GrStencilPathOp>(viewMatrix, useHWAA, fillType,
-                                           hasStencilClip, scissor, path);
-}
-
-void GrStencilPathOp::onExecute(GrOpFlushState* state, const SkRect& chainBounds) {
+void GrStencilPathOp::onExecute(GrOpFlushState* state) {
     GrRenderTarget* rt = state->drawOpArgs().renderTarget();
     SkASSERT(rt);
 

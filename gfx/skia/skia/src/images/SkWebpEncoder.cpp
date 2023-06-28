@@ -24,7 +24,7 @@
 #include "SkStream.h"
 #include "SkTemplates.h"
 #include "SkUnPreMultiply.h"
-#include "SkUTF.h"
+#include "SkUtils.h"
 #include "SkWebpEncoder.h"
 
 // A WebP encoder only, on top of (subset of) libwebp
@@ -41,7 +41,10 @@ extern "C" {
 #include "webp/mux.h"
 }
 
-static transform_scanline_proc choose_proc(const SkImageInfo& info) {
+static transform_scanline_proc choose_proc(const SkImageInfo& info,
+                                           SkTransferFunctionBehavior unpremulBehavior) {
+    const bool isSRGBTransferFn =
+            (SkTransferFunctionBehavior::kRespect == unpremulBehavior) && info.gammaCloseToSRGB();
     switch (info.colorType()) {
         case kRGBA_8888_SkColorType:
             switch (info.alphaType()) {
@@ -50,7 +53,8 @@ static transform_scanline_proc choose_proc(const SkImageInfo& info) {
                 case kUnpremul_SkAlphaType:
                     return transform_scanline_memcpy;
                 case kPremul_SkAlphaType:
-                    return transform_scanline_rgbA;
+                    return isSRGBTransferFn ? transform_scanline_srgbA :
+                                              transform_scanline_rgbA;
                 default:
                     return nullptr;
             }
@@ -61,7 +65,8 @@ static transform_scanline_proc choose_proc(const SkImageInfo& info) {
                 case kUnpremul_SkAlphaType:
                     return transform_scanline_BGRA;
                 case kPremul_SkAlphaType:
-                    return transform_scanline_bgrA;
+                    return isSRGBTransferFn ? transform_scanline_sbgrA :
+                                              transform_scanline_bgrA;
                 default:
                     return nullptr;
             }
@@ -83,6 +88,10 @@ static transform_scanline_proc choose_proc(const SkImageInfo& info) {
         case kGray_8_SkColorType:
             return transform_scanline_gray;
         case kRGBA_F16_SkColorType:
+            if (!info.colorSpace() || !info.colorSpace()->gammaIsLinear()) {
+                return nullptr;
+            }
+
             switch (info.alphaType()) {
                 case kOpaque_SkAlphaType:
                 case kUnpremul_SkAlphaType:
@@ -104,11 +113,11 @@ static int stream_writer(const uint8_t* data, size_t data_size,
 }
 
 bool SkWebpEncoder::Encode(SkWStream* stream, const SkPixmap& pixmap, const Options& opts) {
-    if (!SkPixmapIsValid(pixmap)) {
+    if (!SkPixmapIsValid(pixmap, opts.fUnpremulBehavior)) {
         return false;
     }
 
-    const transform_scanline_proc proc = choose_proc(pixmap.info());
+    const transform_scanline_proc proc = choose_proc(pixmap.info(), opts.fUnpremulBehavior);
     if (!proc) {
         return false;
     }
@@ -123,6 +132,8 @@ bool SkWebpEncoder::Encode(SkWStream* stream, const SkPixmap& pixmap, const Opti
     if (nullptr == pixmap.addr()) {
         return false;
     }
+
+    const SkPMColor* colors = nullptr;
 
     WebPConfig webp_config;
     if (!WebPConfigPreset(&webp_config, WEBP_PRESET_DEFAULT, opts.fQuality)) {
@@ -167,10 +178,7 @@ bool SkWebpEncoder::Encode(SkWStream* stream, const SkPixmap& pixmap, const Opti
     // to RGB color space.
     std::unique_ptr<uint8_t[]> rgb(new uint8_t[rgbStride * pic.height]);
     for (int y = 0; y < pic.height; ++y) {
-        proc((char*) &rgb[y * rgbStride],
-             (const char*) &src[y * rowBytes],
-             pic.width,
-             bpp);
+        proc((char*) &rgb[y * rgbStride], (const char*) &src[y * rowBytes], pic.width, bpp, colors);
     }
 
     auto importProc = WebPPictureImportRGB;

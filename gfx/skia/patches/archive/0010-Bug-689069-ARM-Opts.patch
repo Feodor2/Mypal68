@@ -15,7 +15,7 @@ index f2e7a83..b2717d7 100644
 +++ b/gfx/skia/src/xml/SkJS.cpp
 @@ -74,7 +74,7 @@ extern "C" {
  #endif
- 
+
  static bool
 -global_enumerate(JSContext *cx, JSObject *obj)
 +global_enumerate(JSContext *cx, JSHandleObject *obj)
@@ -24,13 +24,12 @@ index f2e7a83..b2717d7 100644
      return JS_EnumerateStandardClasses(cx, obj);
 @@ -84,7 +84,7 @@ global_enumerate(JSContext *cx, JSObject *obj)
  }
- 
+
  static bool
 -global_resolve(JSContext *cx, JSObject *obj, jsval id, uintN flags, JSObject **objp)
 +global_resolve(JSContext *cx, JSHandleObject obj, JSHandleId id, unsigned flags, JSObject **objp)
  {
  #ifdef LAZY_STANDARD_CLASSES
      if ((flags & JSRESOLVE_ASSIGNING) == 0) {
--- 
+--
 1.7.5.4
-

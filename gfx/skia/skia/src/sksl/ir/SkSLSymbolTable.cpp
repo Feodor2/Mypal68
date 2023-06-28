@@ -50,7 +50,7 @@ const Symbol* SymbolTable::operator[](StringFragment name) {
                     }
                 }
                 if (modified) {
-                    SkASSERT(functions.size() > 1);
+                    ASSERT(functions.size() > 1);
                     return this->takeOwnership(new UnresolvedFunction(functions));
                 }
             }
@@ -120,11 +120,11 @@ void SymbolTable::markAllFunctionsBuiltin() {
     }
 }
 
-std::unordered_map<StringFragment, const Symbol*>::iterator SymbolTable::begin() {
+std::map<StringFragment, const Symbol*>::iterator SymbolTable::begin() {
     return fSymbols.begin();
 }
 
-std::unordered_map<StringFragment, const Symbol*>::iterator SymbolTable::end() {
+std::map<StringFragment, const Symbol*>::iterator SymbolTable::end() {
     return fSymbols.end();
 }
 

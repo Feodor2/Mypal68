@@ -117,7 +117,7 @@ void CoverageSetOpXP::onGetBlendInfo(GrXferProcessor::BlendInfo* blendInfo) cons
             blendInfo->fDstBlend = kZero_GrBlendCoeff;
             break;
     }
-    blendInfo->fBlendConstant = SK_PMColor4fTRANSPARENT;
+    blendInfo->fBlendConstant = 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -211,7 +211,8 @@ sk_sp<const GrXferProcessor> GrCoverageSetOpXPFactory::makeXferProcessor(
         const GrProcessorAnalysisColor&,
         GrProcessorAnalysisCoverage,
         bool hasMixedSamples,
-        const GrCaps& caps) const {
+        const GrCaps& caps,
+        GrPixelConfigIsClamped dstIsClamped) const {
     // We don't support inverting coverage with mixed samples. We don't expect to ever want this in
     // the future, however we could at some point make this work using an inverted coverage
     // modulation table. Note that an inverted table still won't work if there are coverage procs.

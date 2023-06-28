@@ -9,7 +9,7 @@
 #include "nsCOMPtr.h"
 #include "PrintTarget.h"
 #include "SkCanvas.h"
-#include "SkPDFDocument.h"
+#include "SkDocument.h"
 #include "SkStream.h"
 
 namespace mozilla {

@@ -5,10 +5,10 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
      {
          // make sure our table is insync with our current #define for kSQRT_TABLE_SIZE
          SkASSERT(sizeof(gSqrt8Table) == kSQRT_TABLE_SIZE);
- 
+
          rad_to_unit_matrix(center, radius, &fPtsToUnit);
      }
- 
+
      virtual void shadeSpan(int x, int y, SkPMColor* dstC, int count) SK_OVERRIDE;
 -    virtual void shadeSpan16(int x, int y, uint16_t* SK_RESTRICT dstC, int count) SK_OVERRIDE {
 -        SkASSERT(count > 0);
@@ -111,7 +111,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 -        }
 -    }
 +    virtual void shadeSpan16(int x, int y, uint16_t* dstC, int count) SK_OVERRIDE;
- 
+
      virtual BitmapType asABitmap(SkBitmap* bitmap,
                                   SkMatrix* matrix,
                                   TileMode* xy,
@@ -127,7 +127,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
          } while (--count != 0);
      }
  }
- 
+
 +void Radial_Gradient::shadeSpan16(int x, int y, uint16_t* SK_RESTRICT dstC, int count) {
 +    SkASSERT(count > 0);
 +
@@ -233,7 +233,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
     point and radius.  The gradient can be considered to be a series of
     concentric circles, with the color interpolated from the start circle
     (at t=0) to the end circle (at t=1).
- 
+
     For each point (x, y) in the span, we want to find the
     interpolated circle that intersects that point.  The center
     of the desired circle (Cx, Cy) falls at some distance t
@@ -245,12 +245,12 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
          }
          return kRadial2_GradientType;
      }
- 
+
 -    virtual void shadeSpan(int x, int y, SkPMColor* SK_RESTRICT dstC, int count) SK_OVERRIDE {
 -        SkASSERT(count > 0);
 -
 -        // Zero difference between radii:  fill with transparent black.
--        // TODO: Is removing this actually correct? Two circles with the 
+-        // TODO: Is removing this actually correct? Two circles with the
 -        // same radius, but different centers doesn't sound like it
 -        // should be cleared
 -        if (fDiffRadius == 0 && fCenter1 == fCenter2) {
@@ -340,28 +340,28 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 -        }
 -    }
 +    virtual void shadeSpan(int x, int y, SkPMColor* dstC, int count) SK_OVERRIDE;
- 
+
      virtual bool setContext(const SkBitmap& device,
                              const SkPaint& paint,
                              const SkMatrix& matrix) SK_OVERRIDE {
          if (!this->INHERITED::setContext(device, paint, matrix)) {
              return false;
          }
- 
+
 @@ -1817,16 +1727,110 @@ private:
          fA = SkScalarSquare(fDiff.fX) + SkScalarSquare(fDiff.fY) - SK_Scalar1;
          fOneOverTwoA = fA ? SkScalarInvert(fA * 2) : 0;
- 
+
          fPtsToUnit.setTranslate(-fCenter1.fX, -fCenter1.fY);
          fPtsToUnit.postScale(inv, inv);
      }
  };
- 
+
 +void Two_Point_Radial_Gradient::shadeSpan(int x, int y, SkPMColor* SK_RESTRICT dstC, int count) {
 +    SkASSERT(count > 0);
 +
 +    // Zero difference between radii:  fill with transparent black.
-+    // TODO: Is removing this actually correct? Two circles with the 
++    // TODO: Is removing this actually correct? Two circles with the
 +    // same radius, but different centers doesn't sound like it
 +    // should be cleared
 +    if (fDiffRadius == 0 && fCenter1 == fCenter2) {
@@ -452,7 +452,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 +}
 +
  ///////////////////////////////////////////////////////////////////////////////
- 
+
  class Sweep_Gradient : public Gradient_Shader {
  public:
      Sweep_Gradient(SkScalar cx, SkScalar cy, const SkColor colors[],

@@ -10,7 +10,6 @@
 #ifndef SkCamera_DEFINED
 #define SkCamera_DEFINED
 
-#include "../private/SkNoncopyable.h"
 #include "SkMatrix.h"
 
 class SkCanvas;
@@ -129,11 +128,11 @@ public:
     void rotateY(SkScalar deg);
     void rotateZ(SkScalar deg);
 
-#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
+#ifdef SK_BUILD_FOR_ANDROID
     void setCameraLocation(SkScalar x, SkScalar y, SkScalar z);
-    SkScalar getCameraLocationX() const;
-    SkScalar getCameraLocationY() const;
-    SkScalar getCameraLocationZ() const;
+    SkScalar getCameraLocationX();
+    SkScalar getCameraLocationY();
+    SkScalar getCameraLocationZ();
 #endif
 
     void getMatrix(SkMatrix*) const;

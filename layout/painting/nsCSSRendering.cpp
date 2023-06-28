@@ -3712,9 +3712,9 @@ Rect nsCSSRendering::ExpandPaintingRectForDecorationLine(
 
 // Converts a GfxFont to an SkFont
 // Either returns true if it was successful, or false if something went wrong
-static bool GetSkFontFromGfxFont(DrawTarget& aDrawTarget, gfxFont* aFont,
+/*static bool GetSkFontFromGfxFont(DrawTarget& aDrawTarget, gfxFont* aFont,
                                  SkFont& aSkFont) {
-  RefPtr<ScaledFont> scaledFont = aFont->GetScaledFont(&aDrawTarget);
+  /*RefPtr<ScaledFont> scaledFont = aFont->GetScaledFont(&aDrawTarget);
   if (!scaledFont) {
     return false;
   }
@@ -3728,7 +3728,7 @@ static bool GetSkFontFromGfxFont(DrawTarget& aDrawTarget, gfxFont* aFont,
 
   aSkFont = SkFont(sk_ref_sp(typeface), SkFloatToScalar(fontBase->GetSize()));
   return true;
-}
+}*/
 
 // Computes data used to position text and the decoration line within a
 // SkTextBlob, data is returned through aTextPos and aBounds
@@ -3833,7 +3833,7 @@ static void AddSimpleGlyph(const SkTextBlobBuilder::RunBuffer& aRunBuffer,
 // Sets up a Skia TextBlob of the specified font, text position, and made up of
 // the glyphs between aStringStart and aStringEnd. Handles RTL and LTR text
 // and positions each glyph within the text blob
-static sk_sp<const SkTextBlob> CreateTextBlob(
+/*static sk_sp<const SkTextBlob> CreateTextBlob(
     const gfxTextRun* aTextRun,
     const gfxTextRun::CompressedGlyph* aCompressedGlyph, const SkFont& aFont,
     const gfxTextRun::PropertyProvider::Spacing* aSpacing,
@@ -3911,7 +3911,7 @@ static void GetTextIntercepts(const sk_sp<const SkTextBlob>& aBlob,
     return;
   }
   aBlob->getIntercepts(aBounds, aIntercepts.AppendElements(count));
-}
+}*/
 
 // This function, given a set of intercepts that represent each intersection
 // between an under/overline and text, makes a series of calls to
@@ -4036,20 +4036,20 @@ void nsCSSRendering::PaintDecorationLine(
 
   while (iter.NextRun()) {
     // get the glyph run's font
-    SkFont font;
-    if (!GetSkFontFromGfxFont(aDrawTarget, iter.GetGlyphRun()->mFont, font)) {
+    //SkFont font;
+    //if (!GetSkFontFromGfxFont(aDrawTarget, iter.GetGlyphRun()->mFont, font)) {
       PaintDecorationLineInternal(aFrame, aDrawTarget, aParams, rect);
       return;
-    }
+    //}
 
     // create a text blob with correctly positioned glyphs
-    sk_sp<const SkTextBlob> textBlob =
+    /*sk_sp<const SkTextBlob> textBlob =
         CreateTextBlob(textRun, characterGlyphs, font, spacing.Elements(),
                        iter.GetStringStart(), iter.GetStringEnd(),
                        (float)appUnitsPerDevPixel, textPos, spacingOffset);
 
     // compute the text intercepts that need to be skipped
-    GetTextIntercepts(textBlob, bounds, intercepts);
+    GetTextIntercepts(textBlob, bounds, intercepts);*/
   }
   bool needsSkipInk = intercepts.Length() > 0;
 

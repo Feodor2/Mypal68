@@ -19,12 +19,11 @@
 
 namespace SK_OPTS_NS {
 
-#define unaligned_load checksum_unaligned_load
-template <typename T, typename P>
-static inline T unaligned_load(const P* p) {
-    T v;
-    memcpy(&v, p, sizeof(v));
-    return v;
+template <typename T>
+static inline T unaligned_load(const uint8_t* src) {
+    T val;
+    memcpy(&val, src, sizeof(val));
+    return val;
 }
 
 #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE42 && (defined(__x86_64__) || defined(_M_X64))
@@ -49,7 +48,7 @@ static inline T unaligned_load(const P* p) {
                 data += 24;
             }
             bytes %= 24;
-            hash = _mm_crc32_u32(a, _mm_crc32_u32(b, c));
+            hash = a^b^c;
         }
 
         SkASSERT(bytes < 24);
@@ -103,7 +102,7 @@ static inline T unaligned_load(const P* p) {
                 data += 12;
             }
             bytes %= 12;
-            hash = _mm_crc32_u32(a, _mm_crc32_u32(b, c));
+            hash = a^b^c;
         }
 
         SkASSERT(bytes < 12);
@@ -143,7 +142,7 @@ static inline T unaligned_load(const P* p) {
                 data += 24;
             }
             bytes %= 24;
-            hash = __crc32w(a, __crc32w(b, c));
+            hash = a^b^c;
         }
 
         SkASSERT(bytes < 24);
@@ -211,8 +210,6 @@ static inline T unaligned_load(const P* p) {
         return SkChecksum::Mix(hash);
     }
 #endif
-
-#undef unaligned_load
 
 }  // namespace SK_OPTS_NS
 

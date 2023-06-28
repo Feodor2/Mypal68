@@ -40,17 +40,21 @@ public:
     void set(GrGLGpu*,
              int attribIndex,
              const GrBuffer* vertexBuffer,
-             GrVertexAttribType cpuType,
-             GrSLType gpuType,
+             GrVertexAttribType type,
              GrGLsizei stride,
              size_t offsetInBytes,
              int divisor = 0);
+
+    enum class EnablePrimitiveRestart : bool {
+        kYes = true,
+        kNo = false
+    };
 
     /**
      * This function enables the first 'enabledCount' vertex arrays and disables the rest.
      */
     void enableVertexArrays(const GrGLGpu*, int enabledCount,
-                            GrPrimitiveRestart = GrPrimitiveRestart::kNo);
+                            EnablePrimitiveRestart = EnablePrimitiveRestart::kNo);
 
     void invalidate() {
         int count = fAttribArrayStates.count();
@@ -75,21 +79,18 @@ private:
         void invalidate() {
             fVertexBufferUniqueID.makeInvalid();
             fDivisor = kInvalidDivisor;
-            fUsingCpuBuffer = false;
         }
 
         GrGpuResource::UniqueID   fVertexBufferUniqueID;
-        bool                      fUsingCpuBuffer;
-        GrVertexAttribType        fCPUType;
-        GrSLType                  fGPUType;
+        GrVertexAttribType        fType;
         GrGLsizei                 fStride;
-        const GrGLvoid*           fOffset;
+        size_t                    fOffset;
         int                       fDivisor;
     };
 
     SkSTArray<16, AttribArrayState, true> fAttribArrayStates;
     int fNumEnabledArrays;
-    GrPrimitiveRestart fPrimitiveRestartEnabled;
+    EnablePrimitiveRestart fPrimitiveRestartEnabled;
     bool fEnableStateIsValid = false;
 };
 

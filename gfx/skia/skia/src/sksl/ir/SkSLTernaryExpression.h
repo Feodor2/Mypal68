@@ -23,17 +23,11 @@ struct TernaryExpression : public Expression {
     , fTest(std::move(test))
     , fIfTrue(std::move(ifTrue))
     , fIfFalse(std::move(ifFalse)) {
-        SkASSERT(fIfTrue->fType == fIfFalse->fType);
+        ASSERT(fIfTrue->fType == fIfFalse->fType);
     }
 
     bool hasSideEffects() const override {
         return fTest->hasSideEffects() || fIfTrue->hasSideEffects() || fIfFalse->hasSideEffects();
-    }
-
-    std::unique_ptr<Expression> clone() const override {
-        return std::unique_ptr<Expression>(new TernaryExpression(fOffset, fTest->clone(),
-                                                                 fIfTrue->clone(),
-                                                                 fIfFalse->clone()));
     }
 
     String description() const override {

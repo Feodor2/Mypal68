@@ -3,9 +3,9 @@ diff --git a/gfx/skia/include/core/SkPostConfig.h b/gfx/skia/include/core/SkPost
 +++ b/gfx/skia/include/core/SkPostConfig.h
 @@ -277,19 +277,28 @@
  #endif
- 
+
  //////////////////////////////////////////////////////////////////////
- 
+
  #ifndef SK_OVERRIDE
  #if defined(_MSC_VER)
  #define SK_OVERRIDE override
@@ -27,6 +27,5 @@ diff --git a/gfx/skia/include/core/SkPostConfig.h b/gfx/skia/include/core/SkPost
  #define SK_OVERRIDE
  #endif
  #endif
- 
+
  //////////////////////////////////////////////////////////////////////
- 

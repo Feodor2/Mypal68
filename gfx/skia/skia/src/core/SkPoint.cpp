@@ -5,8 +5,29 @@
  * found in the LICENSE file.
  */
 
+
 #include "SkMathPriv.h"
 #include "SkPointPriv.h"
+
+#if 0
+void SkIPoint::rotateCW(SkIPoint* dst) const {
+    SkASSERT(dst);
+
+    // use a tmp in case this == dst
+    int32_t tmp = fX;
+    dst->fX = -fY;
+    dst->fY = tmp;
+}
+
+void SkIPoint::rotateCCW(SkIPoint* dst) const {
+    SkASSERT(dst);
+
+    // use a tmp in case this == dst
+    int32_t tmp = fX;
+    dst->fX = fY;
+    dst->fY = -tmp;
+}
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -27,49 +48,52 @@ bool SkPoint::setLength(SkScalar length) {
     return this->setLength(fX, fY, length);
 }
 
-/*
- *  We have to worry about 2 tricky conditions:
- *  1. underflow of mag2 (compared against nearlyzero^2)
- *  2. overflow of mag2 (compared w/ isfinite)
- *
- *  If we underflow, we return false. If we overflow, we compute again using
- *  doubles, which is much slower (3x in a desktop test) but will not overflow.
- */
-template <bool use_rsqrt> bool set_point_length(SkPoint* pt, float x, float y, float length,
-                                                float* orig_length = nullptr) {
-    SkASSERT(!use_rsqrt || (orig_length == nullptr));
+// Returns the square of the Euclidian distance to (dx,dy).
+static inline float getLengthSquared(float dx, float dy) {
+    return dx * dx + dy * dy;
+}
 
-    // our mag2 step overflowed to infinity, so use doubles instead.
-    // much slower, but needed when x or y are very large, other wise we
-    // divide by inf. and return (0,0) vector.
-    double xx = x;
-    double yy = y;
-    double dmag = sqrt(xx * xx + yy * yy);
-    double dscale = sk_ieee_double_divide(length, dmag);
-    x *= dscale;
-    y *= dscale;
-    // check if we're not finite, or we're zero-length
-    if (!sk_float_isfinite(x) || !sk_float_isfinite(y) || (x == 0 && y == 0)) {
-        pt->set(0, 0);
-        return false;
-    }
-    float mag = 0;
-    if (orig_length) {
-        mag = sk_double_to_float(dmag);
-    }
-    pt->set(x, y);
-    if (orig_length) {
-        *orig_length = mag;
-    }
-    return true;
+// Calculates the square of the Euclidian distance to (dx,dy) and stores it in
+// *lengthSquared.  Returns true if the distance is judged to be "nearly zero".
+//
+// This logic is encapsulated in a helper method to make it explicit that we
+// always perform this check in the same manner, to avoid inconsistencies
+// (see http://code.google.com/p/skia/issues/detail?id=560 ).
+static inline bool is_length_nearly_zero(float dx, float dy,
+                                         float *lengthSquared) {
+    *lengthSquared = getLengthSquared(dx, dy);
+    return *lengthSquared <= (SK_ScalarNearlyZero * SK_ScalarNearlyZero);
 }
 
 SkScalar SkPoint::Normalize(SkPoint* pt) {
-    float mag;
-    if (set_point_length<false>(pt, pt->fX, pt->fY, 1.0f, &mag)) {
-        return mag;
+    float x = pt->fX;
+    float y = pt->fY;
+    float mag2;
+    if (is_length_nearly_zero(x, y, &mag2)) {
+        pt->set(0, 0);
+        return 0;
     }
-    return 0;
+
+    float mag, scale;
+    if (SkScalarIsFinite(mag2)) {
+        mag = sk_float_sqrt(mag2);
+        scale = 1 / mag;
+    } else {
+        // our mag2 step overflowed to infinity, so use doubles instead.
+        // much slower, but needed when x or y are very large, other wise we
+        // divide by inf. and return (0,0) vector.
+        double xx = x;
+        double yy = y;
+        double magmag = sqrt(xx * xx + yy * yy);
+        mag = (float)magmag;
+        // we perform the divide with the double magmag, to stay exactly the
+        // same as setLength. It would be faster to perform the divide with
+        // mag, but it is possible that mag has overflowed to inf. but still
+        // have a non-zero value for scale (thanks to denormalized numbers).
+        scale = (float)(1 / magmag);
+    }
+    pt->set(x * scale, y * scale);
+    return mag;
 }
 
 SkScalar SkPoint::Length(SkScalar dx, SkScalar dy) {
@@ -83,20 +107,76 @@ SkScalar SkPoint::Length(SkScalar dx, SkScalar dy) {
     }
 }
 
+/*
+ *  We have to worry about 2 tricky conditions:
+ *  1. underflow of mag2 (compared against nearlyzero^2)
+ *  2. overflow of mag2 (compared w/ isfinite)
+ *
+ *  If we underflow, we return false. If we overflow, we compute again using
+ *  doubles, which is much slower (3x in a desktop test) but will not overflow.
+ */
 bool SkPoint::setLength(float x, float y, float length) {
-    return set_point_length<false>(this, x, y, length);
+    float mag2;
+    if (is_length_nearly_zero(x, y, &mag2)) {
+        this->set(0, 0);
+        return false;
+    }
+
+    float scale;
+    if (SkScalarIsFinite(mag2)) {
+        scale = length / sk_float_sqrt(mag2);
+    } else {
+        // our mag2 step overflowed to infinity, so use doubles instead.
+        // much slower, but needed when x or y are very large, other wise we
+        // divide by inf. and return (0,0) vector.
+        double xx = x;
+        double yy = y;
+    #ifdef SK_CPU_FLUSH_TO_ZERO
+        // The iOS ARM processor discards small denormalized numbers to go faster.
+        // Casting this to a float would cause the scale to go to zero. Keeping it
+        // as a double for the multiply keeps the scale non-zero.
+        double dscale = length / sqrt(xx * xx + yy * yy);
+        fX = x * dscale;
+        fY = y * dscale;
+        return true;
+    #else
+        scale = (float)(length / sqrt(xx * xx + yy * yy));
+    #endif
+    }
+    fX = x * scale;
+    fY = y * scale;
+    return true;
 }
 
 bool SkPointPriv::SetLengthFast(SkPoint* pt, float length) {
-    return set_point_length<true>(pt, pt->fX, pt->fY, length);
+    float mag2;
+    if (is_length_nearly_zero(pt->fX, pt->fY, &mag2)) {
+        pt->set(0, 0);
+        return false;
+    }
+
+    float scale;
+    if (SkScalarIsFinite(mag2)) {
+        scale = length * sk_float_rsqrt(mag2);  // <--- this is the difference
+    } else {
+        // our mag2 step overflowed to infinity, so use doubles instead.
+        // much slower, but needed when x or y are very large, other wise we
+        // divide by inf. and return (0,0) vector.
+        double xx = pt->fX;
+        double yy = pt->fY;
+        scale = (float)(length / sqrt(xx * xx + yy * yy));
+    }
+    pt->fX *= scale;
+    pt->fY *= scale;
+    return true;
 }
 
 
 ///////////////////////////////////////////////////////////////////////////////
 
 SkScalar SkPointPriv::DistanceToLineBetweenSqd(const SkPoint& pt, const SkPoint& a,
-                                               const SkPoint& b,
-                                               Side* side) {
+                                           const SkPoint& b,
+                                           Side* side) {
 
     SkVector u = b - a;
     SkVector v = pt - a;
@@ -109,18 +189,13 @@ SkScalar SkPointPriv::DistanceToLineBetweenSqd(const SkPoint& pt, const SkPoint&
                   1 == kRight_Side);
         *side = (Side) SkScalarSignAsInt(det);
     }
-    SkScalar temp = sk_ieee_float_divide(det, uLengthSqd);
+    SkScalar temp = det / uLengthSqd;
     temp *= det;
-    // It's possible we have a degenerate line vector, or we're so far away it looks degenerate
-    // In this case, return squared distance to point A.
-    if (!SkScalarIsFinite(temp)) {
-        return LengthSqd(v);
-    }
     return temp;
 }
 
 SkScalar SkPointPriv::DistanceToLineSegmentBetweenSqd(const SkPoint& pt, const SkPoint& a,
-                                                      const SkPoint& b) {
+                                                  const SkPoint& b) {
     // See comments to distanceToLineBetweenSqd. If the projection of c onto
     // u is between a and b then this returns the same result as that
     // function. Otherwise, it returns the distance to the closer of a and
@@ -143,22 +218,14 @@ SkScalar SkPointPriv::DistanceToLineSegmentBetweenSqd(const SkPoint& pt, const S
     SkScalar uLengthSqd = LengthSqd(u);
     SkScalar uDotV = SkPoint::DotProduct(u, v);
 
-    // closest point is point A
     if (uDotV <= 0) {
         return LengthSqd(v);
-    // closest point is point B
     } else if (uDotV > uLengthSqd) {
         return DistanceToSqd(b, pt);
-    // closest point is inside segment
     } else {
         SkScalar det = u.cross(v);
-        SkScalar temp = sk_ieee_float_divide(det, uLengthSqd);
+        SkScalar temp = det / uLengthSqd;
         temp *= det;
-        // It's possible we have a degenerate segment, or we're so far away it looks degenerate
-        // In this case, return squared distance to point A.
-        if (!SkScalarIsFinite(temp)) {
-            return LengthSqd(v);
-        }
         return temp;
     }
 }

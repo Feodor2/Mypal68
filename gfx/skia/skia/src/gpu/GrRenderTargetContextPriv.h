@@ -45,7 +45,7 @@ public:
 
     using CanClearFullscreen = GrRenderTargetContext::CanClearFullscreen;
 
-    void clear(const GrFixedClip&, const SkPMColor4f&, CanClearFullscreen);
+    void clear(const GrFixedClip&, const GrColor, CanClearFullscreen);
 
     void clearStencilClip(const GrFixedClip&, bool insideStencilMask);
 
@@ -60,7 +60,7 @@ public:
      * @param rect      if (!null) the rect to clear, otherwise it is a full screen clear
      * @param color     the color to clear to
      */
-    void absClear(const SkIRect* rect, const SkPMColor4f& color);
+    void absClear(const SkIRect* rect, const GrColor color);
 
     void stencilRect(const GrHardClip&,
                      const GrUserStencilSettings* ss,
@@ -107,11 +107,8 @@ public:
     }
 
     uint32_t testingOnly_getOpListID();
-
-    using WillAddOpFn = GrRenderTargetContext::WillAddOpFn;
-    void testingOnly_addDrawOp(std::unique_ptr<GrDrawOp>);
-    void testingOnly_addDrawOp(const GrClip&, std::unique_ptr<GrDrawOp>,
-                               const std::function<WillAddOpFn>& = std::function<WillAddOpFn>());
+    uint32_t testingOnly_addDrawOp(std::unique_ptr<GrDrawOp>);
+    uint32_t testingOnly_addDrawOp(const GrClip&, std::unique_ptr<GrDrawOp>);
 
     bool refsWrappedObjects() const {
         return fRenderTargetContext->fRenderTargetProxy->refsWrappedObjects();

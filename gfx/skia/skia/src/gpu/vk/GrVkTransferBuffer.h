@@ -8,15 +8,15 @@
 #ifndef GrVkTransferBuffer_DEFINED
 #define GrVkTransferBuffer_DEFINED
 
-#include "GrGpuBuffer.h"
+#include "GrBuffer.h"
 #include "GrVkBuffer.h"
-#include "vk/GrVkTypes.h"
 
 class GrVkGpu;
 
-class GrVkTransferBuffer : public GrGpuBuffer, public GrVkBuffer {
+class GrVkTransferBuffer : public GrBuffer, public GrVkBuffer {
+
 public:
-    static sk_sp<GrVkTransferBuffer> Make(GrVkGpu* gpu, size_t size, GrVkBuffer::Type type);
+    static GrVkTransferBuffer* Create(GrVkGpu* gpu, size_t size, GrVkBuffer::Type type);
 
 protected:
     void onAbandon() override;
@@ -30,7 +30,7 @@ private:
 
     void onMap() override {
         if (!this->wasDestroyed()) {
-            this->GrGpuBuffer::fMapPtr = this->vkMap(this->getVkGpu());
+            this->GrBuffer::fMapPtr = this->vkMap(this->getVkGpu());
         }
     }
 
@@ -50,7 +50,7 @@ private:
         return reinterpret_cast<GrVkGpu*>(this->getGpu());
     }
 
-    typedef GrGpuBuffer INHERITED;
+    typedef GrBuffer INHERITED;
 };
 
 #endif

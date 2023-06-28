@@ -41,16 +41,18 @@ nsresult PrintTargetSkPDF::BeginPrinting(const nsAString& aTitle,
   // because it's only now that we are given aTitle which we want for the
   // PDF metadata.
 
-  SkPDF::Metadata metadata;
+  SkDocument::PDFMetadata metadata;
   metadata.fTitle = NS_ConvertUTF16toUTF8(aTitle).get();
   metadata.fCreator = "Mypal";
   SkTime::DateTime now;
   SkTime::GetDateTime(&now);
-  metadata.fCreation = now;
-  metadata.fModified = now;
+  metadata.fCreation.fEnabled = true;
+  metadata.fCreation.fDateTime = now;
+  metadata.fModified.fEnabled = true;
+  metadata.fModified.fDateTime = now;
 
   // SkDocument stores a non-owning raw pointer to aStream
-  mPDFDoc = SkPDF::MakeDocument(mOStream.get(), metadata);
+  mPDFDoc = SkDocument::MakePDF(mOStream.get(), metadata);
 
   return mPDFDoc ? NS_OK : NS_ERROR_FAILURE;
 }
@@ -104,9 +106,9 @@ already_AddRefed<DrawTarget> PrintTargetSkPDF::MakeDrawTarget(
 
 already_AddRefed<DrawTarget> PrintTargetSkPDF::GetReferenceDrawTarget() {
   if (!mRefDT) {
-    SkPDF::Metadata metadata;
+    SkDocument::PDFMetadata metadata;
     // SkDocument stores a non-owning raw pointer to aStream
-    mRefPDFDoc = SkPDF::MakeDocument(&mRefOStream, metadata);
+    mRefPDFDoc = SkDocument::MakePDF(&mRefOStream, metadata);
     if (!mRefPDFDoc) {
       return nullptr;
     }

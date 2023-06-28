@@ -13,22 +13,6 @@
 
 #include "SkTypes.h"
 
-// returns `value * pow(base, e)`, assuming `e` is positive.
-static double pow_by_squaring(double value, double base, int e) {
-    // https://en.wikipedia.org/wiki/Exponentiation_by_squaring
-    SkASSERT(e > 0);
-    while (true) {
-        if (e & 1) {
-            value *= base;
-        }
-        e >>= 1;
-        if (0 == e) {
-            return value;
-        }
-        base *= base;
-    }
-}
-
 // Return pow(10.0, e), optimized for common cases.
 static double pow10(int e) {
     switch (e) {
@@ -50,10 +34,14 @@ static double pow10(int e) {
         case 15: return 1e+15;
         default:
             if (e > 15) {
-                return pow_by_squaring(1e+15, 10.0, e - 15);
+                double value = 1e+15;
+                while (e-- > 15) { value *= 10.0; }
+                return value;
             } else {
                 SkASSERT(e < 0);
-                return pow_by_squaring(1.0, 0.1, -e);
+                double value = 1.0;
+                while (e++ < 0) { value /= 10.0; }
+                return value;
             }
     }
 }

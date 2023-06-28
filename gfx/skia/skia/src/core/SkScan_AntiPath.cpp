@@ -5,16 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "SkScanPriv.h"
 
-#include "SkAntiRun.h"
-#include "SkBlitter.h"
-#include "SkCoverageDelta.h"
-#include "SkMatrix.h"
+#include "SkScanPriv.h"
 #include "SkPath.h"
-#include "SkPathPriv.h"
+#include "SkMatrix.h"
+#include "SkBlitter.h"
 #include "SkRegion.h"
-#include "SkTo.h"
+#include "SkAntiRun.h"
 
 #define SHIFT   SK_SUPERSAMPLE_SHIFT
 #define SCALE   (1 << SHIFT)
@@ -497,7 +494,7 @@ static void add_aa_span(uint8_t* alpha, U8CPU startAlpha, int middleCount,
 
     if (middleCount >= MIN_COUNT_FOR_QUAD_LOOP) {
         // loop until we're quad-byte aligned
-        while (reinterpret_cast<intptr_t>(alpha) & 0x3) {
+        while (SkTCast<intptr_t>(alpha) & 0x3) {
             alpha[0] = SkToU8(alpha[0] + maxValue);
             alpha += 1;
             middleCount -= 1;
@@ -586,106 +583,18 @@ void MaskSuperBlitter::blitH(int x, int y, int width) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static SkIRect safeRoundOut(const SkRect& src) {
-    // roundOut will pin huge floats to max/min int
-    SkIRect dst = src.roundOut();
-
-    // intersect with a smaller huge rect, so the rect will not be considered empty for being
-    // too large. e.g. { -SK_MaxS32 ... SK_MaxS32 } is considered empty because its width
-    // exceeds signed 32bit.
-    const int32_t limit = SK_MaxS32 >> SK_SUPERSAMPLE_SHIFT;
-    (void)dst.intersect({ -limit, -limit, limit, limit});
-
-    return dst;
-}
-
-constexpr int kSampleSize = 8;
-#if !defined(SK_DISABLE_DAA) || !defined(SK_DISABLE_AAA)
-    constexpr SkScalar kComplexityThreshold = 0.25;
-#endif
-
-static void compute_complexity(const SkPath& path, SkScalar& avgLength, SkScalar& complexity) {
-    int n = path.countPoints();
-    if (n < kSampleSize || path.getBounds().isEmpty()) {
-        // set to invalid value to indicate that we failed to compute
-        avgLength = complexity = -1;
-        return;
-    }
-
-    SkScalar sumLength = 0;
-    SkPoint lastPoint = path.getPoint(0);
-    for(int i = 1; i < kSampleSize; ++i) {
-        SkPoint point = path.getPoint(i);
-        sumLength += SkPoint::Distance(lastPoint, point);
-        lastPoint = point;
-    }
-    avgLength = sumLength / (kSampleSize - 1);
-
-    auto sqr = [](SkScalar x) { return x*x; };
-
-    SkScalar diagonalSqr = sqr(path.getBounds().width()) + sqr(path.getBounds().height());
-
-    // If the path consists of random line segments, the number of intersections should be
-    // proportional to this.
-    SkScalar intersections = sk_ieee_float_divide(sqr(n) * sqr(avgLength), diagonalSqr);
-
-    // The number of intersections per scanline should be proportional to this number.
-    complexity = sk_ieee_float_divide(intersections, path.getBounds().height());
-
-    if (sk_float_isnan(complexity)) {  // it may be possible to have 0.0 / 0.0; inf is fine for us.
-        complexity = -1;
-    }
-}
-
-static bool ShouldUseDAA(const SkPath& path, SkScalar avgLength, SkScalar complexity) {
-#if defined(SK_DISABLE_DAA)
-    return false;
-#else
+static bool ShouldUseDAA(const SkPath& path) {
     if (gSkForceDeltaAA) {
         return true;
     }
-    if (!gSkUseDeltaAA || SkPathPriv::IsBadForDAA(path)) {
+    if (!gSkUseDeltaAA) {
         return false;
     }
-
-    #ifdef SK_SUPPORT_LEGACY_AA_CHOICE
-        const SkRect& bounds = path.getBounds();
-        return !path.isConvex()
-            && path.countPoints() >= SkTMax(bounds.width(), bounds.height()) / 8;
-    #else
-        if (avgLength < 0 || complexity < 0 || path.getBounds().isEmpty() || path.isConvex()) {
-            return false;
-        }
-
-        // DAA is fast with mask
-        if (SkCoverageDeltaMask::CanHandle(safeRoundOut(path.getBounds()))) {
-            return true;
-        }
-
-        // DAA is much faster in small cubics (since we don't have to chop them).
-        // If there are many cubics, and the average length if small, use DAA.
-        constexpr SkScalar kSmallCubicThreshold = 16;
-        if (avgLength < kSmallCubicThreshold) {
-            uint8_t sampleVerbs[kSampleSize];
-            int verbCount = SkTMin(kSampleSize, path.getVerbs(sampleVerbs, kSampleSize));
-            int cubicCount = 0;
-            for(int i = 0; i < verbCount; ++i) {
-                cubicCount += (sampleVerbs[i] == SkPath::kCubic_Verb);
-            }
-            if (cubicCount * 2 >= verbCount) {
-                return true;
-            }
-        }
-
-        return complexity >= kComplexityThreshold;
-    #endif
-#endif
+    const SkRect& bounds = path.getBounds();
+    return !path.isConvex() && path.countPoints() >= SkTMax(bounds.width(), bounds.height()) / 8;
 }
 
-static bool ShouldUseAAA(const SkPath& path, SkScalar avgLength, SkScalar complexity) {
-#if defined(SK_DISABLE_AAA)
-    return false;
-#else
+static bool ShouldUseAAA(const SkPath& path) {
     if (gSkForceAnalyticAA) {
         return true;
     }
@@ -695,27 +604,13 @@ static bool ShouldUseAAA(const SkPath& path, SkScalar avgLength, SkScalar comple
     if (path.isRect(nullptr)) {
         return true;
     }
-
-    #ifdef SK_SUPPORT_LEGACY_AAA_CHOICE
-        const SkRect& bounds = path.getBounds();
-        // When the path have so many points compared to the size of its
-        // bounds/resolution, it indicates that the path is not quite smooth in
-        // the current resolution: the expected number of turning points in
-        // every pixel row/column is significantly greater than zero. Hence
-        // Aanlytic AA is not likely to produce visible quality improvements,
-        // and Analytic AA might be slower than supersampling.
-        return path.countPoints() < SkTMax(bounds.width(), bounds.height()) / 2 - 10;
-    #else
-        if (path.countPoints() >= path.getBounds().height()) {
-            // SAA is faster than AAA in this case even if there are no
-            // intersections because AAA will have too many scan lines. See
-            // skbug.com/8272
-            return false;
-        }
-        // We will use AAA if the number of verbs < kSampleSize and therefore complexity < 0
-        return complexity < kComplexityThreshold;
-    #endif
-#endif
+    const SkRect& bounds = path.getBounds();
+    // When the path have so many points compared to the size of its bounds/resolution,
+    // it indicates that the path is not quite smooth in the current resolution:
+    // the expected number of turning points in every pixel row/column is significantly greater than
+    // zero. Hence Aanlytic AA is not likely to produce visible quality improvements, and Analytic
+    // AA might be slower than supersampling.
+    return path.countPoints() < SkTMax(bounds.width(), bounds.height()) / 2 - 10;
 }
 
 void SkScan::SAAFillPath(const SkPath& path, SkBlitter* blitter, const SkIRect& ir,
@@ -758,10 +653,22 @@ static int rect_overflows_short_shift(SkIRect rect, int shift) {
            overflows_short_shift(rect.fBottom, shift);
 }
 
+static SkIRect safeRoundOut(const SkRect& src) {
+    // roundOut will pin huge floats to max/min int
+    SkIRect dst = src.roundOut();
+
+    // intersect with a smaller huge rect, so the rect will not be considered empty for being
+    // too large. e.g. { -SK_MaxS32 ... SK_MaxS32 } is considered empty because its width
+    // exceeds signed 32bit.
+    const int32_t limit = SK_MaxS32 >> SK_SUPERSAMPLE_SHIFT;
+    (void)dst.intersect({ -limit, -limit, limit, limit});
+
+    return dst;
+}
+
 void SkScan::AntiFillPath(const SkPath& path, const SkRegion& origClip,
                           SkBlitter* blitter, bool forceRLE, SkDAARecord* daaRecord) {
     if (origClip.isEmpty()) {
-        SkDAARecord::SetEmpty(daaRecord);
         return;
     }
 
@@ -771,7 +678,6 @@ void SkScan::AntiFillPath(const SkPath& path, const SkRegion& origClip,
         if (isInverse) {
             blitter->blitRegion(origClip);
         }
-        SkDAARecord::SetEmpty(daaRecord);
         return;
     }
 
@@ -785,11 +691,10 @@ void SkScan::AntiFillPath(const SkPath& path, const SkRegion& origClip,
        clippedIR = origClip.getBounds();
     } else {
        if (!clippedIR.intersect(ir, origClip.getBounds())) {
-            SkDAARecord::SetEmpty(daaRecord);
            return;
        }
     }
-    if (!daaRecord && rect_overflows_short_shift(clippedIR, SHIFT)) {
+    if (rect_overflows_short_shift(clippedIR, SHIFT)) {
         SkScan::FillPath(path, origClip, blitter);
         return;
     }
@@ -819,7 +724,6 @@ void SkScan::AntiFillPath(const SkPath& path, const SkRegion& origClip,
         if (isInverse) {
             blitter->blitRegion(*clipRgn);
         }
-        SkDAARecord::SetEmpty(daaRecord);
         return;
     }
 
@@ -833,12 +737,9 @@ void SkScan::AntiFillPath(const SkPath& path, const SkRegion& origClip,
         sk_blit_above(blitter, ir, *clipRgn);
     }
 
-    SkScalar avgLength, complexity;
-    compute_complexity(path, avgLength, complexity);
-
-    if (daaRecord || ShouldUseDAA(path, avgLength, complexity)) {
+    if (daaRecord || ShouldUseDAA(path)) {
         SkScan::DAAFillPath(path, blitter, ir, clipRgn->getBounds(), forceRLE, daaRecord);
-    } else if (ShouldUseAAA(path, avgLength, complexity)) {
+    } else if (ShouldUseAAA(path)) {
         // Do not use AAA if path is too complicated:
         // there won't be any speedup or significant visual improvement.
         SkScan::AAAFillPath(path, blitter, ir, clipRgn->getBounds(), forceRLE);
@@ -875,7 +776,6 @@ void SkScan::FillPath(const SkPath& path, const SkRasterClip& clip, SkBlitter* b
 void SkScan::AntiFillPath(const SkPath& path, const SkRasterClip& clip,
                           SkBlitter* blitter, SkDAARecord* daaRecord) {
     if (clip.isEmpty() || !path.isFinite()) {
-        SkDAARecord::SetEmpty(daaRecord);
         return;
     }
 

@@ -8,6 +8,7 @@
 #ifndef SkPixelRef_DEFINED
 #define SkPixelRef_DEFINED
 
+#include "../private/SkAtomics.h"
 #include "../private/SkMutex.h"
 #include "../private/SkTDArray.h"
 #include "SkBitmap.h"
@@ -17,8 +18,6 @@
 #include "SkRefCnt.h"
 #include "SkSize.h"
 #include "SkString.h"
-
-#include <atomic>
 
 struct SkIRect;
 
@@ -45,6 +44,18 @@ public:
         called), a different generation ID will be returned.
     */
     uint32_t getGenerationID() const;
+
+#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
+    /** Returns a non-zero, unique value corresponding to this SkPixelRef.
+        Unlike the generation ID, this ID remains the same even when the pixels
+        are changed. IDs are not reused (until uint32_t wraps), so it is safe
+        to consider this ID unique even after this SkPixelRef is deleted.
+
+        Can be used as a key which uniquely identifies this SkPixelRef
+        regardless of changes to its pixels or deletion of this object.
+     */
+    uint32_t getStableID() const { return fStableID; }
+#endif
 
     /**
      *  Call this if you have changed the contents of the pixels. This will in-
@@ -77,7 +88,7 @@ public:
         virtual void onChange() = 0;
     };
 
-    // Takes ownership of listener.  Threadsafe.
+    // Takes ownership of listener.
     void addGenIDChangeListener(GenIDChangeListener* listener);
 
     // Call when this pixelref is part of the key to a resourcecache entry. This allows the cache
@@ -89,6 +100,9 @@ public:
     virtual SkDiscardableMemory* diagnostic_only_getDiscardable() const { return nullptr; }
 
 protected:
+    // default impl does nothing.
+    virtual void onNotifyPixelsChanged();
+
     void android_only_reset(int width, int height, size_t rowBytes);
 
 private:
@@ -99,15 +113,18 @@ private:
 
     // Bottom bit indicates the Gen ID is unique.
     bool genIDIsUnique() const { return SkToBool(fTaggedGenID.load() & 1); }
-    mutable std::atomic<uint32_t> fTaggedGenID;
+    mutable SkAtomic<uint32_t> fTaggedGenID;
 
-    SkMutex                         fGenIDChangeListenersMutex;
+#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
+    const uint32_t fStableID;
+#endif
+
     SkTDArray<GenIDChangeListener*> fGenIDChangeListeners;  // pointers are owned
 
     // Set true by caches when they cache content that's derived from the current pixels.
-    std::atomic<bool> fAddedToCache;
+    SkAtomic<bool> fAddedToCache;
 
-    enum Mutability {
+    enum {
         kMutable,               // PixelRefs begin mutable.
         kTemporarilyImmutable,  // Considered immutable, but can revert to mutable.
         kImmutable,             // Once set to this state, it never leaves.
@@ -120,7 +137,13 @@ private:
     void restoreMutability();
     friend class SkSurface_Raster;   // For the two methods above.
 
+    friend class SkImage_Raster;
+    friend class SkSpecialImage_Raster;
+
     void setImmutableWithID(uint32_t genID);
+    friend class SkImage_Gpu;
+    friend class SkImage_Lazy;
+    friend class SkSpecialImage_Gpu;
     friend void SkBitmapCache_setImmutableWithID(SkPixelRef*, uint32_t);
 
     typedef SkRefCnt INHERITED;

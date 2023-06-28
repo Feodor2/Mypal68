@@ -6,8 +6,8 @@
  */
 
 #include "GrGLRenderTarget.h"
+
 #include "GrContext.h"
-#include "GrContextPriv.h"
 #include "GrGLGpu.h"
 #include "GrGLUtil.h"
 #include "GrGpuResourcePriv.h"
@@ -21,41 +21,39 @@
 // Constructor for wrapped render targets.
 GrGLRenderTarget::GrGLRenderTarget(GrGLGpu* gpu,
                                    const GrSurfaceDesc& desc,
-                                   GrGLenum format,
                                    const IDDesc& idDesc,
                                    GrGLStencilAttachment* stencil)
     : GrSurface(gpu, desc)
-    , INHERITED(gpu, desc, stencil) {
-    this->setFlags(gpu->glCaps(), idDesc);
-    this->init(desc, format, idDesc);
-    this->registerWithCacheWrapped(GrWrapCacheable::kNo);
+    , INHERITED(gpu, desc, ComputeFlags(gpu->glCaps(), idDesc), stencil) {
+    this->init(desc, idDesc);
+    this->registerWithCacheWrapped();
 }
 
-GrGLRenderTarget::GrGLRenderTarget(GrGLGpu* gpu, const GrSurfaceDesc& desc, GrGLenum format,
+GrGLRenderTarget::GrGLRenderTarget(GrGLGpu* gpu, const GrSurfaceDesc& desc,
                                    const IDDesc& idDesc)
     : GrSurface(gpu, desc)
-    , INHERITED(gpu, desc) {
-    this->setFlags(gpu->glCaps(), idDesc);
-    this->init(desc, format, idDesc);
+    , INHERITED(gpu, desc, ComputeFlags(gpu->glCaps(), idDesc)) {
+    this->init(desc, idDesc);
 }
 
-inline void GrGLRenderTarget::setFlags(const GrGLCaps& glCaps, const IDDesc& idDesc) {
+inline GrRenderTargetFlags GrGLRenderTarget::ComputeFlags(const GrGLCaps& glCaps,
+                                                          const IDDesc& idDesc) {
+    GrRenderTargetFlags flags = GrRenderTargetFlags::kNone;
     if (idDesc.fIsMixedSampled) {
         SkASSERT(glCaps.usesMixedSamples() && idDesc.fRTFBOID); // FBO 0 can't be mixed sampled.
-        this->setHasMixedSamples();
+        flags |= GrRenderTargetFlags::kMixedSampled;
     }
-    if (!idDesc.fRTFBOID) {
-        this->setGLRTFBOIDIs0();
+    if (glCaps.maxWindowRectangles() > 0 && idDesc.fRTFBOID) {
+        flags |= GrRenderTargetFlags::kWindowRectsSupport;
     }
+    return flags;
 }
 
-void GrGLRenderTarget::init(const GrSurfaceDesc& desc, GrGLenum format, const IDDesc& idDesc) {
+void GrGLRenderTarget::init(const GrSurfaceDesc& desc, const IDDesc& idDesc) {
     fRTFBOID                = idDesc.fRTFBOID;
     fTexFBOID               = idDesc.fTexFBOID;
     fMSColorRenderbufferID  = idDesc.fMSColorRenderbufferID;
     fRTFBOOwnership         = idDesc.fRTFBOOwnership;
-
-    fRTFormat               = format;
 
     fViewport.fLeft   = 0;
     fViewport.fBottom = 0;
@@ -67,7 +65,6 @@ void GrGLRenderTarget::init(const GrSurfaceDesc& desc, GrGLenum format, const ID
 
 sk_sp<GrGLRenderTarget> GrGLRenderTarget::MakeWrapped(GrGLGpu* gpu,
                                                       const GrSurfaceDesc& desc,
-                                                      GrGLenum format,
                                                       const IDDesc& idDesc,
                                                       int stencilBits) {
     GrGLStencilAttachment* sb = nullptr;
@@ -82,26 +79,16 @@ sk_sp<GrGLRenderTarget> GrGLRenderTarget::MakeWrapped(GrGLGpu* gpu,
         sb = new GrGLStencilAttachment(gpu, sbDesc, desc.fWidth, desc.fHeight,
                                        desc.fSampleCnt, format);
     }
-    return sk_sp<GrGLRenderTarget>(new GrGLRenderTarget(gpu, desc, format, idDesc, sb));
+    return sk_sp<GrGLRenderTarget>(new GrGLRenderTarget(gpu, desc, idDesc, sb));
 }
 
 GrBackendRenderTarget GrGLRenderTarget::getBackendRenderTarget() const {
     GrGLFramebufferInfo fbi;
     fbi.fFBOID = fRTFBOID;
     fbi.fFormat = this->getGLGpu()->glCaps().configSizedInternalFormat(this->config());
-    int numStencilBits = 0;
-    if (GrStencilAttachment* stencil = this->renderTargetPriv().getStencilAttachment()) {
-        numStencilBits = stencil->bits();
-    }
 
     return GrBackendRenderTarget(this->width(), this->height(), this->numColorSamples(),
-                                 numStencilBits, fbi);
-}
-
-GrBackendFormat GrGLRenderTarget::backendFormat() const {
-    // We should never have a GrGLRenderTarget (even a textureable one with a target that is not
-    // texture 2D.
-    return GrBackendFormat::MakeGL(fRTFormat, GR_GL_TEXTURE_2D);
+                                 this->numStencilSamples(), fbi);
 }
 
 size_t GrGLRenderTarget::onGpuMemorySize() const {
@@ -135,7 +122,8 @@ bool GrGLRenderTarget::completeStencilAttachment() {
         GrGLuint rb = glStencil->renderbufferID();
 
         gpu->invalidateBoundRenderTarget();
-        gpu->bindFramebuffer(GR_GL_FRAMEBUFFER, this->renderFBOID());
+        gpu->stats()->incRenderTargetBinds();
+        GR_GL_CALL(interface, BindFramebuffer(GR_GL_FRAMEBUFFER, this->renderFBOID()));
         GR_GL_CALL(interface, FramebufferRenderbuffer(GR_GL_FRAMEBUFFER,
                                                       GR_GL_STENCIL_ATTACHMENT,
                                                       GR_GL_RENDERBUFFER, rb));
@@ -148,7 +136,6 @@ bool GrGLRenderTarget::completeStencilAttachment() {
                                                           GR_GL_DEPTH_ATTACHMENT,
                                                           GR_GL_RENDERBUFFER, 0));
         }
-
 
 #ifdef SK_DEBUG
         if (kChromium_GrGLDriver != gpu->glContext().driver()) {
@@ -165,12 +152,11 @@ bool GrGLRenderTarget::completeStencilAttachment() {
 
 void GrGLRenderTarget::onRelease() {
     if (GrBackendObjectOwnership::kBorrowed != fRTFBOOwnership) {
-        GrGLGpu* gpu = this->getGLGpu();
         if (fTexFBOID) {
-            gpu->deleteFramebuffer(fTexFBOID);
+            GL_CALL(DeleteFramebuffers(1, &fTexFBOID));
         }
         if (fRTFBOID && fRTFBOID != fTexFBOID) {
-            gpu->deleteFramebuffer(fRTFBOID);
+            GL_CALL(DeleteFramebuffers(1, &fRTFBOID));
         }
         if (fMSColorRenderbufferID) {
             GL_CALL(DeleteRenderbuffers(1, &fMSColorRenderbufferID));
@@ -195,7 +181,7 @@ GrGLGpu* GrGLRenderTarget::getGLGpu() const {
 }
 
 bool GrGLRenderTarget::canAttemptStencilAttachment() const {
-    if (this->getGpu()->getContext()->priv().caps()->avoidStencilBuffers()) {
+    if (this->getGpu()->getContext()->caps()->avoidStencilBuffers()) {
         return false;
     }
 
@@ -206,35 +192,30 @@ bool GrGLRenderTarget::canAttemptStencilAttachment() const {
 }
 
 void GrGLRenderTarget::dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const {
-    // Don't check this->fRefsWrappedObjects, as we might be the base of a GrGLTextureRenderTarget
-    // which is multiply inherited from both ourselves and a texture. In these cases, one part
-    // (texture, rt) may be wrapped, while the other is owned by Skia.
-    bool refsWrappedRenderTargetObjects =
-            this->fRTFBOOwnership == GrBackendObjectOwnership::kBorrowed;
-    if (refsWrappedRenderTargetObjects && !traceMemoryDump->shouldDumpWrappedObjects()) {
-        return;
-    }
+    // Don't log the backing texture's contribution to the memory size. This will be handled by the
+    // texture object.
 
-    // Don't log the framebuffer, as the framebuffer itself doesn't contribute to meaningful
-    // memory usage. It is always a wrapper around either:
-    // - a texture, which is owned elsewhere, and will be dumped there
-    // - a renderbuffer, which will be dumped below.
-
-    // Log any renderbuffer's contribution to memory.
+    // Log any renderbuffer's contribution to memory. We only do this if we own the renderbuffer
+    // (have a fMSColorRenderbufferID).
     if (fMSColorRenderbufferID) {
         size_t size = GrSurface::ComputeSize(this->config(), this->width(), this->height(),
                                              this->msaaSamples(), GrMipMapped::kNo);
 
         // Due to this resource having both a texture and a renderbuffer component, dump as
         // skia/gpu_resources/resource_#/renderbuffer
-        SkString resourceName = this->getResourceName();
-        resourceName.append("/renderbuffer");
+        SkString dumpName("skia/gpu_resources/resource_");
+        dumpName.appendU32(this->uniqueID().asUInt());
+        dumpName.append("/renderbuffer");
 
-        this->dumpMemoryStatisticsPriv(traceMemoryDump, resourceName, "RenderTarget", size);
+        traceMemoryDump->dumpNumericValue(dumpName.c_str(), "size", "bytes", size);
+
+        if (this->isPurgeable()) {
+            traceMemoryDump->dumpNumericValue(dumpName.c_str(), "purgeable_size", "bytes", size);
+        }
 
         SkString renderbuffer_id;
         renderbuffer_id.appendU32(fMSColorRenderbufferID);
-        traceMemoryDump->setMemoryBacking(resourceName.c_str(), "gl_renderbuffer",
+        traceMemoryDump->setMemoryBacking(dumpName.c_str(), "gl_renderbuffer",
                                           renderbuffer_id.c_str());
     }
 }

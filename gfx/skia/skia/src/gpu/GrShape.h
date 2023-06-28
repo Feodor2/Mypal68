@@ -14,7 +14,6 @@
 #include "SkRRect.h"
 #include "SkTemplates.h"
 #include "SkTLazy.h"
-#include <new>
 
 /**
  * Represents a geometric shape (rrect or path) and the GrStyle that it should be rendered with.
@@ -52,7 +51,8 @@ public:
         this->attemptToSimplifyPath();
     }
 
-    GrShape(const SkRRect& rrect, const GrStyle& style) : fStyle(style) {
+    GrShape(const SkRRect& rrect, const GrStyle& style)
+        : fStyle(style) {
         this->initType(Type::kRRect);
         fRRectData.fRRect = rrect;
         fRRectData.fInverted = false;
@@ -81,7 +81,8 @@ public:
         this->attemptToSimplifyRRect();
     }
 
-    GrShape(const SkRect& rect, const GrStyle& style) : fStyle(style) {
+    GrShape(const SkRect& rect, const GrStyle& style)
+        : fStyle(style) {
         this->initType(Type::kRRect);
         fRRectData.fRRect = SkRRect::MakeRect(rect);
         fRRectData.fInverted = false;
@@ -95,7 +96,8 @@ public:
         this->attemptToSimplifyPath();
     }
 
-    GrShape(const SkRRect& rrect, const SkPaint& paint) : fStyle(paint) {
+    GrShape(const SkRRect& rrect, const SkPaint& paint)
+        : fStyle(paint) {
         this->initType(Type::kRRect);
         fRRectData.fRRect = rrect;
         fRRectData.fInverted = false;
@@ -104,7 +106,8 @@ public:
         this->attemptToSimplifyRRect();
     }
 
-    GrShape(const SkRect& rect, const SkPaint& paint) : fStyle(paint) {
+    GrShape(const SkRect& rect, const SkPaint& paint)
+        : fStyle(paint) {
         this->initType(Type::kRRect);
         fRRectData.fRRect = SkRRect::MakeRect(rect);
         fRRectData.fInverted = false;
@@ -112,9 +115,6 @@ public:
                                                         &fRRectData.fDir);
         this->attemptToSimplifyRRect();
     }
-
-    static GrShape MakeArc(const SkRect& oval, SkScalar startAngleDegrees,
-                           SkScalar sweepAngleDegrees, bool useCenter, const GrStyle& style);
 
     GrShape(const GrShape&);
     GrShape& operator=(const GrShape& that);
@@ -149,14 +149,6 @@ public:
      */
     GrShape applyStyle(GrStyle::Apply apply, SkScalar scale) const {
         return GrShape(*this, apply, scale);
-    }
-
-    bool isRect() const {
-        if (Type::kRRect != fType) {
-            return false;
-        }
-
-        return fRRectData.fRRect.isRect();
     }
 
     /** Returns the unstyled geometry as a rrect if possible. */
@@ -217,16 +209,6 @@ public:
                     out->setFillType(kDefaultPathFillType);
                 }
                 break;
-            case Type::kArc:
-                SkPathPriv::CreateDrawArcPath(out, fArcData.fOval, fArcData.fStartAngleDegrees,
-                                              fArcData.fSweepAngleDegrees, fArcData.fUseCenter,
-                                              fStyle.isSimpleFill());
-                if (fArcData.fInverted) {
-                    out->setFillType(kDefaultPathInverseFillType);
-                } else {
-                    out->setFillType(kDefaultPathFillType);
-                }
-                break;
             case Type::kLine:
                 out->reset();
                 out->moveTo(fLineData.fPts[0]);
@@ -241,51 +223,6 @@ public:
                 *out = this->path();
                 break;
         }
-    }
-
-    // Can this shape be drawn as a pair of filled nested rectangles?
-    bool asNestedRects(SkRect rects[2]) const {
-        if (Type::kPath != fType) {
-            return false;
-        }
-
-        // TODO: it would be better two store DRRects natively in the shape rather than converting
-        // them to a path and then reextracting the nested rects
-        if (this->path().isInverseFillType()) {
-            return false;
-        }
-
-        SkPath::Direction dirs[2];
-        if (!this->path().isNestedFillRects(rects, dirs)) {
-            return false;
-        }
-
-        if (SkPath::kWinding_FillType == this->path().getFillType() && dirs[0] == dirs[1]) {
-            // The two rects need to be wound opposite to each other
-            return false;
-        }
-
-        // Right now, nested rects where the margin is not the same width
-        // all around do not render correctly
-        const SkScalar* outer = rects[0].asScalars();
-        const SkScalar* inner = rects[1].asScalars();
-
-        bool allEq = true;
-
-        SkScalar margin = SkScalarAbs(outer[0] - inner[0]);
-        bool allGoE1 = margin >= SK_Scalar1;
-
-        for (int i = 1; i < 4; ++i) {
-            SkScalar temp = SkScalarAbs(outer[i] - inner[i]);
-            if (temp < SK_Scalar1) {
-                allGoE1 = false;
-            }
-            if (!SkScalarNearlyEqual(margin, temp)) {
-                allEq = false;
-            }
-        }
-
-        return allEq || allGoE1;
     }
 
     /**
@@ -319,10 +256,6 @@ public:
                 return true;
             case Type::kRRect:
                 return true;
-            case Type::kArc:
-                return SkPathPriv::DrawArcIsConvex(fArcData.fSweepAngleDegrees,
-                                                   SkToBool(fArcData.fUseCenter),
-                                                   fStyle.isSimpleFill());
             case Type::kLine:
                 return true;
             case Type::kPath:
@@ -348,9 +281,6 @@ public:
                 break;
             case Type::kRRect:
                 ret = fRRectData.fInverted;
-                break;
-            case Type::kArc:
-                ret = fArcData.fInverted;
                 break;
             case Type::kLine:
                 ret = fLineData.fInverted;
@@ -390,8 +320,6 @@ public:
                 return true;
             case Type::kRRect:
                 return true;
-            case Type::kArc:
-                return fArcData.fUseCenter;
             case Type::kLine:
                 return false;
             case Type::kPath:
@@ -415,11 +343,6 @@ public:
                     return SkPath::kLine_SegmentMask;
                 }
                 return SkPath::kLine_SegmentMask | SkPath::kConic_SegmentMask;
-            case Type::kArc:
-                if (fArcData.fUseCenter) {
-                    return SkPath::kConic_SegmentMask | SkPath::kLine_SegmentMask;
-                }
-                return SkPath::kConic_SegmentMask;
             case Type::kLine:
                 return SkPath::kLine_SegmentMask;
             case Type::kPath:
@@ -446,9 +369,9 @@ public:
     /**
      * Adds a listener to the *original* path. Typically used to invalidate cached resources when
      * a path is no longer in-use. If the shape started out as something other than a path, this
-     * does nothing.
+     * does nothing (but will delete the listener).
      */
-    void addGenIDChangeListener(sk_sp<SkPathRef::GenIDChangeListener>) const;
+    void addGenIDChangeListener(SkPathRef::GenIDChangeListener* listener) const;
 
     /**
      * Helpers that are only exposed for unit tests, to determine if the shape is a path, and get
@@ -464,7 +387,6 @@ private:
         kEmpty,
         kInvertedEmpty,
         kRRect,
-        kArc,
         kLine,
         kPath,
     };
@@ -516,7 +438,6 @@ private:
     void attemptToSimplifyPath();
     void attemptToSimplifyRRect();
     void attemptToSimplifyLine();
-    void attemptToSimplifyArc();
 
     bool attemptToSimplifyStrokedLineToRRect();
 
@@ -573,33 +494,26 @@ private:
         return kPathRRectStartIdx;
     }
 
+    Type                        fType;
     union {
         struct {
-            SkRRect fRRect;
-            SkPath::Direction fDir;
-            unsigned fStart;
-            bool fInverted;
+            SkRRect                     fRRect;
+            SkPath::Direction           fDir;
+            unsigned                    fStart;
+            bool                        fInverted;
         } fRRectData;
         struct {
-            SkRect fOval;
-            SkScalar fStartAngleDegrees;
-            SkScalar fSweepAngleDegrees;
-            int16_t fUseCenter;
-            int16_t fInverted;
-        } fArcData;
-        struct {
-            SkPath fPath;
+            SkPath                      fPath;
             // Gen ID of the original path (fPath may be modified)
-            int32_t fGenID;
+            int32_t                     fGenID;
         } fPathData;
         struct {
-            SkPoint fPts[2];
-            bool fInverted;
+            SkPoint                     fPts[2];
+            bool                        fInverted;
         } fLineData;
     };
-    GrStyle fStyle;
-    SkTLazy<SkPath> fInheritedPathForListeners;
+    GrStyle                     fStyle;
+    SkTLazy<SkPath>             fInheritedPathForListeners;
     SkAutoSTArray<8, uint32_t>  fInheritedKey;
-    Type fType;
 };
 #endif

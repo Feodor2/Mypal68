@@ -6,9 +6,7 @@
  */
 
 #include "SkPDFConvertType1FontStream.h"
-
 #include "SkTemplates.h"
-#include "SkTo.h"
 
 #include <ctype.h>
 
@@ -99,8 +97,7 @@ static bool parsePFA(const char* src, size_t size, size_t* headerLen,
         if (isspace(*dataPos)) {
             continue;
         }
-        // isxdigit() is locale-sensitive https://bugs.skia.org/8285
-        if (nullptr == strchr("0123456789abcdefABCDEF", *dataPos)) {
+        if (!isxdigit(*dataPos)) {
             return false;
         }
         nibbles++;

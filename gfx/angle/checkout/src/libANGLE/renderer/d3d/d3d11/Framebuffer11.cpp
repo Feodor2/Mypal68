@@ -130,13 +130,13 @@ angle::Result Framebuffer11::invalidateBase(const gl::Context *context,
                                             const GLenum *attachments,
                                             bool useEXTBehavior) const
 {
-    ID3D11DeviceContext1 *deviceContext1 = mRenderer->getDeviceContext1IfSupported();
+    /*ID3D11DeviceContext1 *deviceContext1 = mRenderer->getDeviceContext1IfSupported();
 
     if (!deviceContext1)
     {
         // DiscardView() is only supported on ID3D11DeviceContext1
         return angle::Result::Continue;
-    }
+    /
 
     bool foundDepth   = false;
     bool foundStencil = false;
@@ -212,7 +212,7 @@ angle::Result Framebuffer11::invalidateBase(const gl::Context *context,
     if (discardStencil && mState.getStencilAttachment())
     {
         ANGLE_TRY(invalidateAttachment(context, mState.getStencilAttachment()));
-    }
+    }*/
 
     return angle::Result::Continue;
 }
@@ -229,7 +229,7 @@ angle::Result Framebuffer11::invalidateSub(const gl::Context *context,
 angle::Result Framebuffer11::invalidateAttachment(const gl::Context *context,
                                                   const gl::FramebufferAttachment *attachment) const
 {
-    ID3D11DeviceContext1 *deviceContext1 = mRenderer->getDeviceContext1IfSupported();
+    /*ID3D11DeviceContext1 *deviceContext1 = mRenderer->getDeviceContext1IfSupported();
     ASSERT(deviceContext1);
     ASSERT(attachment && attachment->isAttached());
 
@@ -240,7 +240,7 @@ angle::Result Framebuffer11::invalidateAttachment(const gl::Context *context,
     if (rtv.valid())
     {
         deviceContext1->DiscardView(rtv.get());
-    }
+    }*/
 
     return angle::Result::Continue;
 }

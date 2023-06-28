@@ -9,31 +9,31 @@
 #include "SkPDFFormXObject.h"
 #include "SkPDFUtils.h"
 
-SkPDFIndirectReference SkPDFMakeFormXObject(SkPDFDocument* doc,
-                                            std::unique_ptr<SkStreamAsset> content,
-                                            std::unique_ptr<SkPDFArray> mediaBox,
-                                            std::unique_ptr<SkPDFDict> resourceDict,
-                                            const SkMatrix& inverseTransform,
-                                            const char* colorSpace) {
-    std::unique_ptr<SkPDFDict> dict = SkPDFMakeDict();
-    dict->insertName("Type", "XObject");
-    dict->insertName("Subtype", "Form");
+sk_sp<SkPDFObject> SkPDFMakeFormXObject(std::unique_ptr<SkStreamAsset> content,
+                                        sk_sp<SkPDFArray> mediaBox,
+                                        sk_sp<SkPDFDict> resourceDict,
+                                        const SkMatrix& inverseTransform,
+                                        const char* colorSpace) {
+    auto form = sk_make_sp<SkPDFStream>(std::move(content));
+    form->dict()->insertName("Type", "XObject");
+    form->dict()->insertName("Subtype", "Form");
     if (!inverseTransform.isIdentity()) {
-        dict->insertObject("Matrix", SkPDFUtils::MatrixToArray(inverseTransform));
+        sk_sp<SkPDFObject> mat(SkPDFUtils::MatrixToArray(inverseTransform));
+        form->dict()->insertObject("Matrix", std::move(mat));
     }
-    dict->insertObject("Resources", std::move(resourceDict));
-    dict->insertObject("BBox", std::move(mediaBox));
+    form->dict()->insertObject("Resources", std::move(resourceDict));
+    form->dict()->insertObject("BBox", std::move(mediaBox));
 
     // Right now FormXObject is only used for saveLayer, which implies
     // isolated blending.  Do this conditionally if that changes.
     // TODO(halcanary): Is this comment obsolete, since we use it for
     // alpha masks?
-    auto group = SkPDFMakeDict("Group");
+    auto group = sk_make_sp<SkPDFDict>("Group");
     group->insertName("S", "Transparency");
     if (colorSpace != nullptr) {
         group->insertName("CS", colorSpace);
     }
     group->insertBool("I", true);  // Isolated.
-    dict->insertObject("Group", std::move(group));
-    return SkPDFStreamOut(std::move(dict), std::move(content), doc);
+    form->dict()->insertObject("Group", std::move(group));
+    return form;
 }

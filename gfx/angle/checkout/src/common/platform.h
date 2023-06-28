@@ -58,7 +58,6 @@
 #    if defined(ANGLE_ENABLE_D3D11) || defined(ANGLE_ENABLE_OPENGL)
 #        include <d3d10_1.h>
 #        include <d3d11.h>
-#        include <d3d11_3.h>
 #        include <d3dcompiler.h>
 #        include <dxgi.h>
 #        include <dxgi1_2.h>

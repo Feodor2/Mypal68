@@ -11,12 +11,13 @@
 #ifndef GrAARectEffect_DEFINED
 #define GrAARectEffect_DEFINED
 #include "SkTypes.h"
+#if SK_SUPPORT_GPU
 #include "GrFragmentProcessor.h"
 #include "GrCoordTransform.h"
 class GrAARectEffect : public GrFragmentProcessor {
 public:
-    const GrClipEdgeType& edgeType() const { return fEdgeType; }
-    const SkRect& rect() const { return fRect; }
+    GrClipEdgeType edgeType() const { return fEdgeType; }
+    SkRect rect() const { return fRect; }
     static std::unique_ptr<GrFragmentProcessor> Make(GrClipEdgeType edgeType, SkRect rect) {
         return std::unique_ptr<GrFragmentProcessor>(new GrAARectEffect(edgeType, rect));
     }
@@ -38,4 +39,5 @@ private:
     SkRect fRect;
     typedef GrFragmentProcessor INHERITED;
 };
+#endif
 #endif

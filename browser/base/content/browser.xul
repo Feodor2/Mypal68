@@ -527,9 +527,7 @@
            unpinTab-title="&unpinTab.label;"
            copyURL-title="&pageAction.copyLink.label;"
            emailLink-title="&emailPageCmd.label;"
-           sendToDevice-notReadyTitle="&sendToDevice.syncNotReady.label;"
-           shareURL-title="&pageAction.shareUrl.label;"
-           shareMore-label="&pageAction.shareMore.label;">
+           sendToDevice-notReadyTitle="&sendToDevice.syncNotReady.label;">
       <panelmultiview id="pageActionPanelMultiView"
                       mainViewId="pageActionPanelMainView"
                       viewCacheId="appMenu-viewCache">

@@ -13,20 +13,7 @@
 
 struct GrMockTextureInfo {
     GrPixelConfig fConfig;
-    int fID;
-
-    bool operator==(const GrMockTextureInfo& that) const {
-        return fConfig == that.fConfig && fID == that.fID;
-    }
-};
-
-struct GrMockRenderTargetInfo {
-    GrPixelConfig fConfig;
-    int fID;
-
-    bool operator==(const GrMockRenderTargetInfo& that) const {
-        return fConfig == that.fConfig && fID == that.fID;
-    }
+    int           fID;
 };
 
 /**
@@ -52,25 +39,22 @@ struct GrMockOptions {
         bool fTexturable = false;
     };
 
-    // GrCaps options.
+    // GPU options.
     bool fInstanceAttribSupport = false;
-    bool fHalfFloatVertexAttributeSupport = false;
     uint32_t fMapBufferFlags = 0;
     int fMaxTextureSize = 2048;
     int fMaxRenderTargetSize = 2048;
     int fMaxVertexAttributes = 16;
     ConfigOptions fConfigOptions[kGrPixelConfigCnt];
 
-    // GrShaderCaps options.
+    // Shader options.
     bool fGeometryShaderSupport = false;
+    bool fTexelBufferSupport = false;
     bool fIntegerSupport = false;
     bool fFlatInterpolationSupport = false;
     int fMaxVertexSamplers = 0;
     int fMaxFragmentSamplers = 8;
     bool fShaderDerivativeSupport = true;
-
-    // GrMockGpu options.
-    bool fFailTextureAllocations = false;
 };
 
 #endif

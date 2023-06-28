@@ -10,11 +10,13 @@
 #include "SkMathPriv.h"
 #include "SkOnce.h"
 #include "SkOpts.h"
+#include "SkPM4f.h"
 #include "SkRasterPipeline.h"
 #include "SkReadBuffer.h"
 #include "SkString.h"
 #include "SkWriteBuffer.h"
 #include "SkXfermodePriv.h"
+#include "../jumper/SkJumper.h"
 
 #if SK_SUPPORT_GPU
 #include "GrFragmentProcessor.h"
@@ -35,12 +37,17 @@ public:
 
         SkRasterPipeline_<256> p;
 
-        SkRasterPipeline_MemoryCtx dst_ctx = { (void*)dst, 0 },
-                                   src_ctx = { (void*)src, 0 },
-                                    aa_ctx = { (void*)aa,  0 };
+        SkJumper_MemoryCtx dst_ctx = { (void*)dst, 0 },
+                           src_ctx = { (void*)src, 0 },
+                            aa_ctx = { (void*)aa,  0 };
 
-        p.append_load    (kN32_SkColorType, &src_ctx);
-        p.append_load_dst(kN32_SkColorType, &dst_ctx);
+        if (kN32_SkColorType == kBGRA_8888_SkColorType) {
+            p.append(SkRasterPipeline::load_bgra_dst, &dst_ctx);
+            p.append(SkRasterPipeline::load_bgra    , &src_ctx);
+        } else {
+            p.append(SkRasterPipeline::load_8888_dst, &dst_ctx);
+            p.append(SkRasterPipeline::load_8888,     &src_ctx);
+        }
 
         if (SkBlendMode_ShouldPreScaleCoverage(fMode, /*rgb_coverage=*/false)) {
             if (aa) {
@@ -54,7 +61,11 @@ public:
             }
         }
 
-        p.append_store(kN32_SkColorType, &dst_ctx);
+        if (kN32_SkColorType == kBGRA_8888_SkColorType) {
+            p.append(SkRasterPipeline::store_bgra, &dst_ctx);
+        } else {
+            p.append(SkRasterPipeline::store_8888, &dst_ctx);
+        }
         p.run(0, 0, count,1);
     }
 
@@ -150,4 +161,3 @@ const GrXPFactory* SkBlendMode_AsXPFactory(SkBlendMode mode) {
     return GrCustomXfermode::Get(mode);
 }
 #endif
-

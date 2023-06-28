@@ -9,7 +9,6 @@
 #define GrMockCaps_DEFINED
 
 #include "GrCaps.h"
-#include "SkGr.h"
 #include "mock/GrMockTypes.h"
 
 class GrMockCaps : public GrCaps {
@@ -17,7 +16,6 @@ public:
     GrMockCaps(const GrContextOptions& contextOptions, const GrMockOptions& options)
             : INHERITED(contextOptions), fOptions(options) {
         fInstanceAttribSupport = options.fInstanceAttribSupport;
-        fHalfFloatVertexAttributeSupport = options.fHalfFloatVertexAttributeSupport;
         fMapBufferFlags = options.fMapBufferFlags;
         fBufferMapThreshold = SK_MaxS32; // Overridable in GrContextOptions.
         fMaxTextureSize = options.fMaxTextureSize;
@@ -27,8 +25,10 @@ public:
 
         fShaderCaps.reset(new GrShaderCaps(contextOptions));
         fShaderCaps->fGeometryShaderSupport = options.fGeometryShaderSupport;
+        fShaderCaps->fTexelBufferSupport = options.fTexelBufferSupport;
         fShaderCaps->fIntegerSupport = options.fIntegerSupport;
         fShaderCaps->fFlatInterpolationSupport = options.fFlatInterpolationSupport;
+        fShaderCaps->fMaxVertexSamplers = options.fMaxVertexSamplers;
         fShaderCaps->fMaxFragmentSamplers = options.fMaxFragmentSamplers;
         fShaderCaps->fShaderDerivativeSupport = options.fShaderDerivativeSupport;
 
@@ -67,51 +67,40 @@ public:
         return 0;
     }
 
-    bool surfaceSupportsReadPixels(const GrSurface*) const override { return true; }
+    bool surfaceSupportsWritePixels(const GrSurface* surface) const override { return true; }
 
-    bool initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc, GrSurfaceOrigin*,
+    bool initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc,
                             bool* rectsMustMatch, bool* disallowSubrect) const override {
         return false;
     }
 
-    GrPixelConfig validateBackendRenderTarget(const GrBackendRenderTarget&,
-                                              SkColorType) const override {
-        return kUnknown_GrPixelConfig;
-    }
-
-    GrPixelConfig getConfigFromBackendFormat(const GrBackendFormat& format,
-                                             SkColorType ct) const override {
-        const GrPixelConfig* mockFormat = format.getMockFormat();
-        if (!mockFormat) {
-            return kUnknown_GrPixelConfig;
+    bool validateBackendTexture(const GrBackendTexture& tex, SkColorType,
+                                GrPixelConfig* config) const override {
+        const GrMockTextureInfo* texInfo = tex.getMockTextureInfo();
+        if (!texInfo) {
+            return false;
         }
-        return *mockFormat;
-    }
 
-    GrPixelConfig getYUVAConfigFromBackendFormat(const GrBackendFormat& format) const override {
-        const GrPixelConfig* mockFormat = format.getMockFormat();
-        if (!mockFormat) {
-            return kUnknown_GrPixelConfig;
-        }
-        return *mockFormat;
-    }
-
-    GrBackendFormat getBackendFormatFromGrColorType(GrColorType ct,
-                                                    GrSRGBEncoded srgbEncoded) const override {
-        GrPixelConfig config = GrColorTypeToPixelConfig(ct, srgbEncoded);
-        if (config == kUnknown_GrPixelConfig) {
-            return GrBackendFormat();
-        }
-        return GrBackendFormat::MakeMock(config);
-    }
-
-private:
-    bool onSurfaceSupportsWritePixels(const GrSurface*) const override { return true; }
-    bool onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                          const SkIRect& srcRect, const SkIPoint& dstPoint) const override {
+        *config = texInfo->fConfig;
         return true;
     }
 
+    bool validateBackendRenderTarget(const GrBackendRenderTarget& rt, SkColorType,
+                                     GrPixelConfig*) const override {
+        return false;
+    }
+
+    bool getConfigFromBackendFormat(const GrBackendFormat& format, SkColorType ct,
+                                    GrPixelConfig* config) const override {
+        const GrPixelConfig* mockFormat = format.getMockFormat();
+        if (!mockFormat) {
+            return false;
+        }
+        *config = *mockFormat;
+        return true;
+    }
+
+private:
     static const int kMaxSampleCnt = 16;
 
     GrMockOptions fOptions;

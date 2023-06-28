@@ -18,9 +18,9 @@ diff --git a/gfx/skia/include/core/SkPostConfig.h b/gfx/skia/include/core/SkPost
 +	#define SK_OVERRIDE
      #endif
  #endif
- 
+
  //////////////////////////////////////////////////////////////////////
- 
+
  #ifndef SK_PRINTF_LIKE
  #if defined(__clang__) || defined(__GNUC__)
  #define SK_PRINTF_LIKE(A, B) __attribute__((format(printf, (A), (B))))

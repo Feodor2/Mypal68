@@ -7,9 +7,8 @@
 
 #include "GrMemoryPool.h"
 #include "SkMalloc.h"
-#include "ops/GrOp.h"
 #ifdef SK_DEBUG
-    #include <atomic>
+#include "SkAtomics.h"
 #endif
 
 #ifdef SK_DEBUG
@@ -17,13 +16,6 @@
 #else
     #define VALIDATE
 #endif
-
-void GrOpMemoryPool::release(std::unique_ptr<GrOp> op) {
-    GrOp* tmp = op.release();
-    SkASSERT(tmp);
-    tmp->~GrOp();
-    fMemoryPool.release(tmp);
-}
 
 constexpr size_t GrMemoryPool::kSmallestMinAllocSize;
 
@@ -89,10 +81,7 @@ void* GrMemoryPool::allocate(size_t size) {
     // so that we can decrement the live count on delete in constant time.
     AllocHeader* allocData = reinterpret_cast<AllocHeader*>(ptr);
     SkDEBUGCODE(allocData->fSentinal = kAssignedMarker);
-    SkDEBUGCODE(allocData->fID = []{
-        static std::atomic<int32_t> nextID{1};
-        return nextID++;
-    }());
+    SkDEBUGCODE(allocData->fID = []{static int32_t gID; return sk_atomic_inc(&gID) + 1;}());
     // You can set a breakpoint here when a leaked ID is allocated to see the stack frame.
     SkDEBUGCODE(fAllocatedIDs.add(allocData->fID));
     allocData->fHeader = fTail;

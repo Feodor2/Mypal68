@@ -37,7 +37,6 @@ UNIFIED_SOURCES += [
     'nsLookAndFeel.mm',
     'nsMacCursor.mm',
     'nsMacDockSupport.mm',
-    'nsMacSharingService.mm',
     'nsMacWebAppUtils.mm',
     'nsMenuBarX.mm',
     'nsMenuGroupOwnerX.mm',
@@ -95,9 +94,12 @@ LOCAL_INCLUDES += [
 ]
 
 if CONFIG['MOZ_ENABLE_SKIA_PDF']:
-    # Skia includes because widget code includes PrintTargetSkPDF.h, and that
-    # includes skia headers.
-    LOCAL_INCLUDES += CONFIG['SKIA_INCLUDES']
+    LOCAL_INCLUDES += [
+        # Skia includes because widget code includes PrintTargetSkPDF.h, and that
+        # includes skia headers.
+        '/gfx/skia/skia/include/config',
+        '/gfx/skia/skia/include/core',
+    ]
 
 RESOURCE_FILES.cursors += [
     'cursors/arrowN.png',

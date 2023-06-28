@@ -45,10 +45,6 @@ protected:
 
     bool onDimensionsSupported(const SkISize&) override;
 
-    // SkCodec only applies the colorXform if it's necessary for color space
-    // conversion. SkRawCodec will always convert, so tell SkCodec not to.
-    bool usesColorXform() const override { return false; }
-
 private:
 
     /*

@@ -38,10 +38,11 @@ public:
     GrFSAAType fsaaType() const {
         SkASSERT(fSampleCnt >= 1);
         if (fSampleCnt <= 1) {
-            SkASSERT(!this->hasMixedSamples());
+            SkASSERT(!(fFlags & GrRenderTargetFlags::kMixedSampled));
             return GrFSAAType::kNone;
         }
-        return this->hasMixedSamples() ? GrFSAAType::kMixedSamples : GrFSAAType::kUnifiedMSAA;
+        return (fFlags & GrRenderTargetFlags::kMixedSampled) ? GrFSAAType::kMixedSamples
+                                                             : GrFSAAType::kUnifiedMSAA;
     }
 
     /**
@@ -99,6 +100,12 @@ public:
     };
     virtual ResolveType getResolveType() const = 0;
 
+    /**
+     *  Return the native ID or handle to the rendertarget, depending on the
+     *  platform. e.g. on OpenGL, return the FBO ID.
+     */
+    virtual GrBackendObject getRenderTargetHandle() const = 0;
+
     virtual GrBackendRenderTarget getBackendRenderTarget() const = 0;
 
     // Checked when this object is asked to attach a stencil buffer.
@@ -109,8 +116,9 @@ public:
     const GrRenderTargetPriv renderTargetPriv() const;
 
 protected:
-    GrRenderTarget(GrGpu*, const GrSurfaceDesc&, GrStencilAttachment* = nullptr);
-    ~GrRenderTarget() override;
+    GrRenderTarget(GrGpu*, const GrSurfaceDesc&,
+                   GrRenderTargetFlags = GrRenderTargetFlags::kNone,
+                   GrStencilAttachment* = nullptr);
 
     // override of GrResource
     void onAbandon() override;
@@ -126,7 +134,8 @@ private:
     friend class GrRenderTargetPriv;
 
     int                  fSampleCnt;
-    sk_sp<GrStencilAttachment> fStencilAttachment;
+    GrStencilAttachment* fStencilAttachment;
+    GrRenderTargetFlags  fFlags;
 
     SkIRect              fResolveRect;
 

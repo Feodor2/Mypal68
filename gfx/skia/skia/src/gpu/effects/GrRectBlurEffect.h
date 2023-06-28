@@ -11,11 +11,10 @@
 #ifndef GrRectBlurEffect_DEFINED
 #define GrRectBlurEffect_DEFINED
 #include "SkTypes.h"
+#if SK_SUPPORT_GPU
 
 #include "GrProxyProvider.h"
-#include "GrShaderCaps.h"
-#include "SkBlurMask.h"
-#include "SkScalar.h"
+#include "../effects/SkBlurMask.h"
 #include "GrFragmentProcessor.h"
 #include "GrCoordTransform.h"
 class GrRectBlurEffect : public GrFragmentProcessor {
@@ -26,7 +25,7 @@ public:
 
         static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
         GrUniqueKey key;
-        GrUniqueKey::Builder builder(&key, kDomain, 1, "Rect Blur Mask");
+        GrUniqueKey::Builder builder(&key, kDomain, 1);
         builder[0] = profileSize;
         builder.finish();
 
@@ -48,9 +47,9 @@ public:
                 return nullptr;
             }
 
-            blurProfile =
-                    proxyProvider->createTextureProxy(std::move(image), kNone_GrSurfaceFlags, 1,
-                                                      SkBudgeted::kYes, SkBackingFit::kExact);
+            blurProfile = proxyProvider->createTextureProxy(std::move(image), kNone_GrSurfaceFlags,
+                                                            kTopLeft_GrSurfaceOrigin, 1,
+                                                            SkBudgeted::kYes, SkBackingFit::kExact);
             if (!blurProfile) {
                 return nullptr;
             }
@@ -61,21 +60,11 @@ public:
 
         return blurProfile;
     }
-    const SkRect& rect() const { return fRect; }
+    SkRect rect() const { return fRect; }
     float sigma() const { return fSigma; }
 
     static std::unique_ptr<GrFragmentProcessor> Make(GrProxyProvider* proxyProvider,
-                                                     const GrShaderCaps& caps, const SkRect& rect,
-                                                     float sigma) {
-        if (!caps.floatIs32Bits()) {
-            // We promote the rect uniform from half to float when it has large values for
-            // precision. If we don't have full float then fail.
-            if (SkScalarAbs(rect.fLeft) > 16000.f || SkScalarAbs(rect.fTop) > 16000.f ||
-                SkScalarAbs(rect.fRight) > 16000.f || SkScalarAbs(rect.fBottom) > 16000.f ||
-                SkScalarAbs(rect.width()) > 16000.f || SkScalarAbs(rect.height()) > 16000.f) {
-                return nullptr;
-            }
-        }
+                                                     const SkRect& rect, float sigma) {
         int doubleProfileSize = SkScalarCeilToInt(12 * sigma);
 
         if (doubleProfileSize >= rect.width() || doubleProfileSize >= rect.height()) {
@@ -105,16 +94,16 @@ private:
             , fRect(rect)
             , fSigma(sigma)
             , fBlurProfile(std::move(blurProfile), samplerParams) {
-        this->setTextureSamplerCnt(1);
+        this->addTextureSampler(&fBlurProfile);
     }
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
     bool onIsEqual(const GrFragmentProcessor&) const override;
-    const TextureSampler& onTextureSampler(int) const override;
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
     SkRect fRect;
     float fSigma;
     TextureSampler fBlurProfile;
     typedef GrFragmentProcessor INHERITED;
 };
+#endif
 #endif

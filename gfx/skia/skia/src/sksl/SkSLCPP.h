@@ -26,6 +26,10 @@ struct Float4 {
         return SkRect::MakeLTRB(fX, fY, fZ, fW);
     }
 
+    operator GrColor4f() const {
+        return GrColor4f(fX, fY, fZ, fW);
+    }
+
 private:
     float fX;
     float fY;

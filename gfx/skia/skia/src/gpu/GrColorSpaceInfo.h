@@ -18,7 +18,7 @@ class GrColorSpaceInfo {
 public:
     GrColorSpaceInfo(sk_sp<SkColorSpace>, GrPixelConfig);
 
-    bool isLinearlyBlended() const { return fColorSpace && fColorSpace->gammaIsLinear(); }
+    bool isGammaCorrect() const { return static_cast<bool>(fColorSpace); }
 
     SkColorSpace* colorSpace() const { return fColorSpace.get(); }
     sk_sp<SkColorSpace> refColorSpace() const { return fColorSpace; }

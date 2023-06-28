@@ -28,19 +28,6 @@ public:
      *  Returns null on failure to allocate pixels. On success, this will
      *  decode the first frame.
      *
-     *  @param info Width and height may require scaling.
-     *  @param cropRect Rectangle to crop to after scaling.
-     *  @param postProcess Picture to apply after scaling and cropping.
-     */
-    static sk_sp<SkAnimatedImage> Make(std::unique_ptr<SkAndroidCodec>,
-            const SkImageInfo& info, SkIRect cropRect, sk_sp<SkPicture> postProcess);
-
-    /**
-     *  Create an SkAnimatedImage from the SkAndroidCodec.
-     *
-     *  Returns null on failure to allocate pixels. On success, this will
-     *  decode the first frame.
-     *
      *  @param scaledSize Size to draw the image, possibly requiring scaling.
      *  @param cropRect Rectangle to crop to after scaling.
      *  @param postProcess Picture to apply after scaling and cropping.
@@ -120,20 +107,7 @@ private:
         int      fIndex;
         SkCodecAnimation::DisposalMethod fDisposalMethod;
 
-        // init() may have to create a new SkPixelRef, if the
-        // current one is already in use by another owner (e.g.
-        // an SkPicture). This determines whether to copy the
-        // existing one to the new one.
-        enum class OnInit {
-            // Restore the image from the old SkPixelRef to the
-            // new one.
-            kRestoreIfNecessary,
-            // No need to restore.
-            kNoRestore,
-        };
-
         Frame();
-        bool init(const SkImageInfo& info, OnInit);
         bool copyTo(Frame*) const;
     };
 
@@ -148,8 +122,7 @@ private:
 
     bool                            fFinished;
     int                             fCurrentFrameDuration;
-    Frame                           fDisplayFrame;
-    Frame                           fDecodingFrame;
+    Frame                           fActiveFrame;
     Frame                           fRestoreFrame;
     int                             fRepetitionCount;
     int                             fRepetitionsCompleted;

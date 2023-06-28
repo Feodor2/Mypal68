@@ -5,12 +5,10 @@
  * found in the LICENSE file.
  */
 
+
 #include "SkEdgeClipper.h"
 #include "SkGeometry.h"
 #include "SkLineClipper.h"
-#include "SkMacros.h"
-
-#include <utility>
 
 static bool quick_reject(const SkRect& bounds, const SkRect& clip) {
     return bounds.fTop >= clip.fBottom || bounds.fBottom <= clip.fTop;
@@ -154,8 +152,7 @@ void SkEdgeClipper::clipMonoQuad(const SkPoint srcPts[3], const SkRect& clip) {
     chop_quad_in_Y(pts, clip);
 
     if (pts[0].fX > pts[2].fX) {
-        using std::swap;
-        swap(pts[0], pts[2]);
+        SkTSwap<SkPoint>(pts[0], pts[2]);
         reverse = !reverse;
     }
     SkASSERT(pts[0].fX <= pts[1].fX);
@@ -345,9 +342,8 @@ void SkEdgeClipper::clipMonoCubic(const SkPoint src[4], const SkRect& clip) {
     chop_cubic_in_Y(pts, clip);
 
     if (pts[0].fX > pts[3].fX) {
-        using std::swap;
-        swap(pts[0], pts[3]);
-        swap(pts[1], pts[2]);
+        SkTSwap<SkPoint>(pts[0], pts[3]);
+        SkTSwap<SkPoint>(pts[1], pts[2]);
         reverse = !reverse;
     }
 
@@ -457,12 +453,12 @@ void SkEdgeClipper::appendLine(SkPoint p0, SkPoint p1) {
     fCurrPoint += 2;
 }
 
-void SkEdgeClipper::appendVLine(SkScalar x, SkScalar y0, SkScalar y1, bool reverse) {
+void SkEdgeClipper::appendVLine(SkScalar x, SkScalar y0, SkScalar y1,
+                                bool reverse) {
     *fCurrVerb++ = SkPath::kLine_Verb;
 
     if (reverse) {
-        using std::swap;
-        swap(y0, y1);
+        SkTSwap<SkScalar>(y0, y1);
     }
     fCurrPoint[0].set(x, y0);
     fCurrPoint[1].set(x, y1);

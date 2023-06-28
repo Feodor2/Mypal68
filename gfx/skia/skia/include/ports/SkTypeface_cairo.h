@@ -8,11 +8,10 @@
 
 SK_API extern void SkInitCairoFT(bool fontHintingEnabled);
 
-SK_API extern SkTypeface* SkCreateTypefaceFromCairoFTFont(cairo_scaled_font_t* scaledFont, FT_Face face = nullptr);
+SK_API extern SkTypeface* SkCreateTypefaceFromCairoFTFont(cairo_scaled_font_t* scaledFont);
 
 #ifdef CAIRO_HAS_FC_FONT
-SK_API extern SkTypeface* SkCreateTypefaceFromCairoFTFontWithFontconfig(cairo_scaled_font_t* scaledFont, FcPattern* pattern, FT_Face face = nullptr);
+SK_API extern SkTypeface* SkCreateTypefaceFromCairoFTFontWithFontconfig(cairo_scaled_font_t* scaledFont, FcPattern* pattern);
 #endif
 
 #endif
-

@@ -13,7 +13,6 @@
 
 class GrDrawOp;
 class GrPaint;
-class GrRecordingContext;
 class GrStyle;
 struct GrUserStencilSettings;
 
@@ -25,12 +24,8 @@ enum class AAMode {
 };
 static const int kAAModeCnt = static_cast<int>(AAMode::kCoverageWithMSAA) + 1;
 
-std::unique_ptr<GrDrawOp> MakeDashLineOp(GrRecordingContext*,
-                                         GrPaint&&,
-                                         const SkMatrix& viewMatrix,
-                                         const SkPoint pts[2],
-                                         AAMode,
-                                         const GrStyle& style,
+std::unique_ptr<GrDrawOp> MakeDashLineOp(GrPaint&&, const SkMatrix& viewMatrix,
+                                         const SkPoint pts[2], AAMode, const GrStyle& style,
                                          const GrUserStencilSettings*);
 bool CanDrawDashLine(const SkPoint pts[2], const GrStyle& style, const SkMatrix& viewMatrix);
 }

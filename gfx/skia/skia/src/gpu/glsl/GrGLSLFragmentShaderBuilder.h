@@ -47,21 +47,12 @@ public:
     /** Appease the compiler; the derived class initializes GrGLSLFragmentBuilder. */
     GrGLSLFPFragmentBuilder() : GrGLSLFragmentBuilder(nullptr) {}
 
-    enum class Scope : bool {
-        kTopLevel,
-        kInsideLoopOrBranch
-    };
+    enum Coordinates {
+        kSkiaDevice_Coordinates,
+        kGLSLWindow_Coordinates,
 
-    /**
-     * Subtracts multisample coverage by AND-ing the sample mask with the provided "mask".
-     * Sample N corresponds to bit "1 << N".
-     *
-     * If the given scope is "kTopLevel" and the sample mask has not yet been modified, this method
-     * assigns the sample mask in place rather than pre-initializing it to ~0 then AND-ing it.
-     *
-     * Requires MSAA and GLSL support for sample variables.
-     */
-    virtual void maskOffMultisampleCoverage(const char* mask, Scope) = 0;
+        kLast_Coordinates = kGLSLWindow_Coordinates
+    };
 
     /**
      * Fragment procs with child procs should call these functions before/after calling emitCode
@@ -111,7 +102,6 @@ public:
     virtual SkString ensureCoords2D(const GrShaderVar&) override;
 
     // GrGLSLFPFragmentBuilder interface.
-    void maskOffMultisampleCoverage(const char* mask, Scope) override;
     const SkString& getMangleString() const override { return fMangleString; }
     void onBeforeChildProcEmitCode() override;
     void onAfterChildProcEmitCode() override;
@@ -129,7 +119,6 @@ private:
     void enableSecondaryOutput();
     const char* getPrimaryColorOutputName() const;
     const char* getSecondaryColorOutputName() const;
-    bool primaryColorOutputIsInOut() const;
 
 #ifdef SK_DEBUG
     // As GLSLProcessors emit code, there are some conditions we need to verify.  We use the below
@@ -173,7 +162,6 @@ private:
     bool fHasCustomColorOutput;
     int fCustomColorOutputIndex;
     bool fHasSecondaryOutput;
-    bool fHasInitializedSampleMask;
     bool fForceHighPrecision;
 
 #ifdef SK_DEBUG

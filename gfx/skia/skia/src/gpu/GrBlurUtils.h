@@ -8,15 +8,13 @@
 #ifndef GrBlurUtils_DEFINED
 #define GrBlurUtils_DEFINED
 
-#include "GrTypesPriv.h"
+#include "GrTypes.h"
 
 class GrClip;
 class GrContext;
 class GrPaint;
-class GrRecordingContext;
 class GrRenderTarget;
 class GrRenderTargetContext;
-class GrShape;
 class GrStyle;
 struct SkIRect;
 class SkMaskFilter;
@@ -31,26 +29,32 @@ class SkPathEffect;
  */
 namespace GrBlurUtils {
     /**
-     * Draw a shape handling the mask filter if present.
+     * Draw a path handling the mask filter if present.
      */
-    void drawShapeWithMaskFilter(GrRecordingContext*,
-                                 GrRenderTargetContext*,
-                                 const GrClip&,
-                                 const SkPaint&,
-                                 const SkMatrix& viewMatrix,
-                                 const GrShape&);
+    void drawPathWithMaskFilter(GrContext* context,
+                                GrRenderTargetContext* renderTargetContext,
+                                const GrClip& clip,
+                                const SkPath& origSrcPath,
+                                const SkPaint& paint,
+                                const SkMatrix& origViewMatrix,
+                                const SkMatrix* prePathMatrix,
+                                const SkIRect& clipBounds,
+                                bool pathIsMutable);
 
     /**
-     * Draw a shape handling the mask filter. The mask filter is not optional.
-     * The GrPaint will be modified after return.
+     * Draw a path handling the mask filter. The mask filter is not optional. The path effect is
+     * optional. The GrPaint will be modified after return.
      */
-    void drawShapeWithMaskFilter(GrRecordingContext*,
-                                 GrRenderTargetContext*,
-                                 const GrClip&,
-                                 const GrShape&,
-                                 GrPaint&&,
-                                 const SkMatrix& viewMatrix,
-                                 const SkMaskFilter*);
+    void drawPathWithMaskFilter(GrContext*,
+                                GrRenderTargetContext*,
+                                const GrClip&,
+                                const SkPath& path,
+                                GrPaint&&,
+                                GrAA,
+                                const SkMatrix& viewMatrix,
+                                const SkMaskFilter*,
+                                const GrStyle&,
+                                bool pathIsMutable);
 };
 
 #endif

@@ -17,7 +17,7 @@
 #include "libANGLE/renderer/d3d/ProgramD3D.h"
 #include "libANGLE/renderer/d3d/RenderTargetD3D.h"
 #include "libANGLE/renderer/d3d/RendererD3D.h"
-#include "libANGLE/renderer/d3d/d3d11/DebugAnnotator11.h"
+//#include "libANGLE/renderer/d3d/d3d11/DebugAnnotator11.h"
 #include "libANGLE/renderer/d3d/d3d11/RenderStateCache.h"
 #include "libANGLE/renderer/d3d/d3d11/ResourceManager11.h"
 #include "libANGLE/renderer/d3d/d3d11/StateManager11.h"
@@ -318,7 +318,7 @@ class Renderer11 : public RendererD3D
     ID3D11Device *getDevice() { return mDevice; }
     void *getD3DDevice() override;
     ID3D11DeviceContext *getDeviceContext() { return mDeviceContext; }
-    ID3D11DeviceContext1 *getDeviceContext1IfSupported() { return mDeviceContext1; }
+    //ID3D11DeviceContext1 *getDeviceContext1IfSupported() { return mDeviceContext1; }
     IDXGIFactory *getDxgiFactory() { return mDxgiFactory; }
 
     angle::Result getBlendState(const gl::Context *context,
@@ -593,8 +593,8 @@ class Renderer11 : public RendererD3D
     ID3D11Device *mDevice;
     Renderer11DeviceCaps mRenderer11DeviceCaps;
     ID3D11DeviceContext *mDeviceContext;
-    ID3D11DeviceContext1 *mDeviceContext1;
-    ID3D11DeviceContext3 *mDeviceContext3;
+    //ID3D11DeviceContext1 *mDeviceContext1;
+    //ID3D11DeviceContext3 *mDeviceContext3;
     IDXGIAdapter *mDxgiAdapter;
     DXGI_ADAPTER_DESC mAdapterDescription;
     char mDescription[128];

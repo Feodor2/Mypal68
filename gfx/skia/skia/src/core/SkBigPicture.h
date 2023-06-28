@@ -8,7 +8,6 @@
 #ifndef SkBigPicture_DEFINED
 #define SkBigPicture_DEFINED
 
-#include "SkNoncopyable.h"
 #include "SkOnce.h"
 #include "SkPicture.h"
 #include "SkRect.h"

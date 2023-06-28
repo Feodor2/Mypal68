@@ -9,7 +9,6 @@
 
 #if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
 
-#include "mac/SkUniqueCFRef.h"
 #include "SkBitmap.h"
 #include "SkCGUtils.h"
 #include "SkColorData.h"
@@ -38,24 +37,24 @@ static void consumer_release(void* info) {
     // we do nothing, since by design we don't "own" the stream (i.e. info)
 }
 
-static SkUniqueCFRef<CGDataConsumerRef> SkStreamToCGDataConsumer(SkWStream* stream) {
+static CGDataConsumerRef SkStreamToCGDataConsumer(SkWStream* stream) {
     CGDataConsumerCallbacks procs;
     procs.putBytes = consumer_put;
     procs.releaseConsumer = consumer_release;
     // we don't own/reference the stream, so it our consumer must not live
     // longer that our caller's ownership of the stream
-    return SkUniqueCFRef<CGDataConsumerRef>(CGDataConsumerCreate(stream, &procs));
+    return CGDataConsumerCreate(stream, &procs);
 }
 
-static SkUniqueCFRef<CGImageDestinationRef> SkStreamToImageDestination(SkWStream* stream,
-                                                                       CFStringRef type) {
-    SkUniqueCFRef<CGDataConsumerRef> consumer = SkStreamToCGDataConsumer(stream);
+static CGImageDestinationRef SkStreamToImageDestination(SkWStream* stream,
+                                                        CFStringRef type) {
+    CGDataConsumerRef consumer = SkStreamToCGDataConsumer(stream);
     if (nullptr == consumer) {
         return nullptr;
     }
+    SkAutoTCallVProc<const void, CFRelease> arconsumer(consumer);
 
-    return SkUniqueCFRef<CGImageDestinationRef>(
-            CGImageDestinationCreateWithDataConsumer(consumer.get(), type, 1, nullptr));
+    return CGImageDestinationCreateWithDataConsumer(consumer, type, 1, nullptr);
 }
 
 /*  Encode bitmaps via CGImageDestination. We setup a DataConsumer which writes
@@ -101,18 +100,20 @@ bool SkEncodeImageWithCG(SkWStream* stream, const SkPixmap& pixmap, SkEncodedIma
             return false;
     }
 
-    SkUniqueCFRef<CGImageDestinationRef> dst = SkStreamToImageDestination(stream, type);
+    CGImageDestinationRef dst = SkStreamToImageDestination(stream, type);
     if (nullptr == dst) {
         return false;
     }
+    SkAutoTCallVProc<const void, CFRelease> ardst(dst);
 
-    SkUniqueCFRef<CGImageRef> image(SkCreateCGImageRef(bm));
+    CGImageRef image = SkCreateCGImageRef(bm);
     if (nullptr == image) {
         return false;
     }
+    SkAutoTCallVProc<CGImage, CGImageRelease> agimage(image);
 
-    CGImageDestinationAddImage(dst.get(), image.get(), nullptr);
-    return CGImageDestinationFinalize(dst.get());
+    CGImageDestinationAddImage(dst, image, nullptr);
+    return CGImageDestinationFinalize(dst);
 }
 
 #endif//defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)

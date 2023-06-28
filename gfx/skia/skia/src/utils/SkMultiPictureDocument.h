@@ -9,8 +9,6 @@
 #define SkMultiPictureDocument_DEFINED
 
 #include "SkDocument.h"
-#include "SkPicture.h"
-#include "SkSize.h"
 
 struct SkDeserialProcs;
 struct SkSerialProcs;

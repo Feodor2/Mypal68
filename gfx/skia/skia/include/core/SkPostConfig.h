@@ -24,6 +24,10 @@
 #  error "must define either SK_DEBUG or SK_RELEASE"
 #endif
 
+#if defined(SK_SUPPORT_UNITTEST) && !defined(SK_DEBUG)
+#  error "can't have unittests without debug"
+#endif
+
 /**
  * Matrix calculations may be float or double.
  * The default is float, as that's what Chromium's using.
@@ -38,12 +42,6 @@
 #  error "cannot define both SK_CPU_LENDIAN and SK_CPU_BENDIAN"
 #elif !defined(SK_CPU_LENDIAN) && !defined(SK_CPU_BENDIAN)
 #  error "must define either SK_CPU_LENDIAN or SK_CPU_BENDIAN"
-#endif
-
-#if defined(SK_CPU_BENDIAN) && !defined(I_ACKNOWLEDGE_SKIA_DOES_NOT_SUPPORT_BIG_ENDIAN)
-    #error "The Skia team is not endian-savvy enough to support big-endian CPUs."
-    #error "If you still want to use Skia,"
-    #error "please define I_ACKNOWLEDGE_SKIA_DOES_NOT_SUPPORT_BIG_ENDIAN."
 #endif
 
 /**
@@ -75,6 +73,14 @@
 #  endif
 #endif
 
+#if defined(_MSC_VER) && SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE2
+    #define SK_VECTORCALL __vectorcall
+#elif defined(SK_CPU_ARM32) && defined(SK_ARM_HAS_NEON)
+    #define SK_VECTORCALL __attribute__((pcs("aapcs-vfp")))
+#else
+    #define SK_VECTORCALL
+#endif
+
 #if !defined(SK_SUPPORT_GPU)
 #  define SK_SUPPORT_GPU 1
 #endif
@@ -100,6 +106,12 @@
 #    define SkNO_RETURN_HINT() do {} while (false)
 #  endif
 #endif
+
+///////////////////////////////////////////////////////////////////////////////
+
+// TODO(mdempsky): Move elsewhere as appropriate.
+#include <new>
+
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -192,11 +204,44 @@
 //////////////////////////////////////////////////////////////////////////////////////////////
 
 #if defined SK_DEBUG && defined SK_BUILD_FOR_WIN
-    #ifdef free
-        #undef free
-    #endif
-    #include <crtdbg.h>
-    #undef free
+#  ifdef free
+#    undef free
+#  endif
+#  include <crtdbg.h>
+#  undef free
+#
+#  ifdef SK_DEBUGx
+#    if defined(SK_SIMULATE_FAILED_MALLOC) && defined(__cplusplus)
+       void * operator new(
+           size_t cb,
+           int nBlockUse,
+           const char * szFileName,
+           int nLine,
+           int foo
+           );
+       void * operator new[](
+           size_t cb,
+           int nBlockUse,
+           const char * szFileName,
+           int nLine,
+           int foo
+           );
+       void operator delete(
+           void *pUserData,
+           int, const char*, int, int
+           );
+       void operator delete(
+           void *pUserData
+           );
+       void operator delete[]( void * p );
+#      define DEBUG_CLIENTBLOCK   new( _CLIENT_BLOCK, __FILE__, __LINE__, 0)
+#    else
+#      define DEBUG_CLIENTBLOCK   new( _CLIENT_BLOCK, __FILE__, __LINE__)
+#    endif
+#    define new DEBUG_CLIENTBLOCK
+#  else
+#    define DEBUG_CLIENTBLOCK
+#  endif
 #endif
 
 //////////////////////////////////////////////////////////////////////
@@ -207,6 +252,11 @@
 #  else
 #    define SK_UNUSED SK_ATTRIBUTE(unused)
 #  endif
+#endif
+
+#if !defined(SK_ATTR_DEPRECATED)
+   // FIXME: we ignore msg for now...
+#  define SK_ATTR_DEPRECATED(msg) SK_ATTRIBUTE(deprecated)
 #endif
 
 /**
@@ -276,6 +326,16 @@
 
 //////////////////////////////////////////////////////////////////////
 
+#ifndef SK_EGL
+#  if defined(SK_BUILD_FOR_ANDROID)
+#    define SK_EGL 1
+#  else
+#    define SK_EGL 0
+#  endif
+#endif
+
+//////////////////////////////////////////////////////////////////////
+
 #if !defined(SK_GAMMA_EXPONENT)
     #define SK_GAMMA_EXPONENT (0.0f)  // SRGB
 #endif
@@ -300,10 +360,6 @@
 
 #ifndef SK_HISTOGRAM_ENUMERATION
 #  define SK_HISTOGRAM_ENUMERATION(name, value, boundary_value)
-#endif
-
-#ifndef SK_DISABLE_LEGACY_SHADERCONTEXT
-#define SK_ENABLE_LEGACY_SHADERCONTEXT
 #endif
 
 #endif // SkPostConfig_DEFINED

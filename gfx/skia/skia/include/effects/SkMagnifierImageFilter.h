@@ -18,6 +18,9 @@ public:
                                      sk_sp<SkImageFilter> input,
                                      const CropRect* cropRect = nullptr);
 
+    SK_TO_STRING_OVERRIDE()
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkMagnifierImageFilter)
+
 protected:
     SkMagnifierImageFilter(const SkRect& srcRect,
                            SkScalar inset,
@@ -30,8 +33,6 @@ protected:
     sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const override;
 
 private:
-    SK_FLATTENABLE_HOOKS(SkMagnifierImageFilter)
-
     SkRect   fSrcRect;
     SkScalar fInset;
 

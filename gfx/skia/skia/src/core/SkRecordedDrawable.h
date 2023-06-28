@@ -24,6 +24,10 @@ public:
 
     void flatten(SkWriteBuffer& buffer) const override;
 
+    static sk_sp<SkFlattenable> CreateProc(SkReadBuffer& buffer);
+
+    Factory getFactory() const override { return CreateProc; }
+
 protected:
     SkRect onGetBounds() override { return fBounds; }
 
@@ -32,8 +36,6 @@ protected:
     SkPicture* onNewPictureSnapshot() override;
 
 private:
-    SK_FLATTENABLE_HOOKS(SkRecordedDrawable)
-
     sk_sp<SkRecord>                 fRecord;
     sk_sp<SkBBoxHierarchy>          fBBH;
     std::unique_ptr<SkDrawableList> fDrawableList;

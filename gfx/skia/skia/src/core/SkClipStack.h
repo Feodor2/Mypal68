@@ -19,8 +19,6 @@
 #include "SkTLazy.h"
 
 #if SK_SUPPORT_GPU
-class GrProxyProvider;
-
 #include "GrResourceKey.h"
 #endif
 
@@ -83,7 +81,13 @@ public:
             this->initPath(0, path, m, op, doAA);
         }
 
-        ~Element();
+        ~Element() {
+#if SK_SUPPORT_GPU
+            for (int i = 0; i < fMessages.count(); ++i) {
+                SkMessageBus<GrUniqueKeyInvalidatedMessage>::Post(*fMessages[i]);
+            }
+#endif
+        }
 
         bool operator== (const Element& element) const;
         bool operator!= (const Element& element) const { return !(*this == element); }
@@ -177,16 +181,9 @@ public:
          * This is used to purge any GPU resource cache items that become unreachable when
          * the element is destroyed because their key is based on this element's gen ID.
          */
-        void addResourceInvalidationMessage(GrProxyProvider* proxyProvider,
-                                            const GrUniqueKey& key) const {
-            SkASSERT(proxyProvider);
-
-            if (!fProxyProvider) {
-                fProxyProvider = proxyProvider;
-            }
-            SkASSERT(fProxyProvider == proxyProvider);
-
-            fKeysToInvalidate.push_back(key);
+        void addResourceInvalidationMessage(
+                std::unique_ptr<GrUniqueKeyInvalidatedMessage> msg) const {
+            fMessages.emplace_back(std::move(msg));
         }
 #endif
 
@@ -219,8 +216,7 @@ public:
 
         uint32_t fGenID;
 #if SK_SUPPORT_GPU
-        mutable GrProxyProvider*      fProxyProvider = nullptr;
-        mutable SkTArray<GrUniqueKey> fKeysToInvalidate;
+        mutable SkTArray<std::unique_ptr<GrUniqueKeyInvalidatedMessage>> fMessages;
 #endif
         Element(int saveCount) {
             this->initCommon(saveCount, kReplace_SkClipOp, false);
@@ -493,6 +489,10 @@ private:
     SkDeque fDeque;
     int     fSaveCount;
 
+    // Generation ID for the clip stack. This is incremented for each
+    // clipDevRect and clipDevPath call. 0 is reserved to indicate an
+    // invalid ID.
+    static int32_t     gGenID;
     SkRect fClipRestrictionRect = SkRect::MakeEmpty();
 
     bool internalQuickContains(const SkRect& devRect) const;
@@ -519,4 +519,3 @@ private:
 };
 
 #endif
-

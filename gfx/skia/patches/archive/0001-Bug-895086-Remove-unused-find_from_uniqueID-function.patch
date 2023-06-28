@@ -15,7 +15,7 @@ index df21014..05b73dc 100644
 @@ -117,20 +117,6 @@ static FamilyRec* find_family(const SkTypeface* member) {
      return NULL;
  }
- 
+
 -static SkTypeface* find_from_uniqueID(uint32_t uniqueID) {
 -    FamilyRec* curr = gFamilyHead;
 -    while (curr != NULL) {
@@ -33,6 +33,5 @@ index df21014..05b73dc 100644
  /*  Remove reference to this face from its family. If the resulting family
   is empty (has no faces), return that family, otherwise return NULL
   */
--- 
+--
 1.8.3.1
-

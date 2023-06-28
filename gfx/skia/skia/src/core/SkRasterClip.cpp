@@ -7,7 +7,6 @@
 
 #include "SkRasterClip.h"
 #include "SkPath.h"
-#include "SkRegionPriv.h"
 
 enum MutateResult {
     kDoNothing_MutateResult,
@@ -460,7 +459,7 @@ void SkRasterClip::validate() const {
         SkASSERT(fAA.isEmpty());
     }
 
-    SkRegionPriv::Validate(fBW);
+    fBW.validate();
     fAA.validate();
 
     SkASSERT(this->computeIsEmpty() == fIsEmpty);

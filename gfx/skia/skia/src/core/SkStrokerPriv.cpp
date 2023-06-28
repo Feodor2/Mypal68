@@ -10,8 +10,6 @@
 #include "SkPath.h"
 #include "SkPointPriv.h"
 
-#include <utility>
-
 static void ButtCapper(SkPath* path, const SkPoint& pivot, const SkVector& normal,
                        const SkPoint& stop, SkPath*) {
     path->lineTo(stop.fX, stop.fY);
@@ -88,8 +86,7 @@ static void BluntJoiner(SkPath* outer, SkPath* inner, const SkVector& beforeUnit
     afterUnitNormal.scale(radius, &after);
 
     if (!is_clockwise(beforeUnitNormal, afterUnitNormal)) {
-        using std::swap;
-        swap(outer, inner);
+        SkTSwap<SkPath*>(outer, inner);
         after.negate();
     }
 
@@ -111,8 +108,7 @@ static void RoundJoiner(SkPath* outer, SkPath* inner, const SkVector& beforeUnit
     SkRotationDirection dir = kCW_SkRotationDirection;
 
     if (!is_clockwise(before, after)) {
-        using std::swap;
-        swap(outer, inner);
+        SkTSwap<SkPath*>(outer, inner);
         before.negate();
         after.negate();
         dir = kCCW_SkRotationDirection;
@@ -157,8 +153,7 @@ static void MiterJoiner(SkPath* outer, SkPath* inner, const SkVector& beforeUnit
 
     ccw = !is_clockwise(before, after);
     if (ccw) {
-        using std::swap;
-        swap(outer, inner);
+        SkTSwap<SkPath*>(outer, inner);
         before.negate();
         after.negate();
     }

@@ -8,17 +8,17 @@ diff --git a/gfx/skia/trunk/src/gpu/gl/GrGLCaps.h b/gfx/skia/trunk/src/gpu/gl/Gr
 @@ -9,16 +9,19 @@
  #ifndef GrGLCaps_DEFINED
  #define GrGLCaps_DEFINED
- 
+
  #include "GrDrawTargetCaps.h"
  #include "GrGLStencilBuffer.h"
  #include "SkTArray.h"
  #include "SkTDArray.h"
- 
+
 +// defined in Windows headers
 +#undef interface
 +
  class GrGLContextInfo;
- 
+
  /**
   * Stores some capabilities of a GL context. Most are determined by the GL
   * version and the extensions string. It also tracks formats that have passed

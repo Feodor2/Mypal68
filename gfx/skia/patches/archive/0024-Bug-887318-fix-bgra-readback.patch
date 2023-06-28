@@ -14,24 +14,24 @@ diff --git a/gfx/gl/GLContextSkia.cpp b/gfx/gl/GLContextSkia.cpp
          static bool extensionsStringBuilt = false;
 -        static char extensionsString[120];
 +        static char extensionsString[256];
- 
+
          if (!extensionsStringBuilt) {
              if (sGLContext.get()->IsExtensionSupported(GLContext::EXT_texture_format_BGRA8888)) {
                  strcpy(extensionsString, "GL_EXT_texture_format_BGRA8888 ");
              }
- 
+
              if (sGLContext.get()->IsExtensionSupported(GLContext::OES_packed_depth_stencil)) {
                  strcat(extensionsString, "GL_OES_packed_depth_stencil ");
              }
- 
+
              if (sGLContext.get()->IsExtensionSupported(GLContext::EXT_packed_depth_stencil)) {
                  strcat(extensionsString, "GL_EXT_packed_depth_stencil ");
              }
- 
+
              if (sGLContext.get()->IsExtensionSupported(GLContext::OES_rgb8_rgba8)) {
                  strcat(extensionsString, "GL_OES_rgb8_rgba8 ");
              }
- 
+
 +            if (sGLContext.get()->IsExtensionSupported(GLContext::EXT_bgra)) {
 +                strcat(extensionsString, "GL_EXT_bgra ");
 +            }
@@ -42,9 +42,9 @@ diff --git a/gfx/gl/GLContextSkia.cpp b/gfx/gl/GLContextSkia.cpp
 +
              extensionsStringBuilt = true;
          }
- 
+
          return reinterpret_cast<const GLubyte*>(extensionsString);
- 
+
      } else if (name == LOCAL_GL_SHADING_LANGUAGE_VERSION) {
          if (sGLContext.get()->IsGLES2()) {
              return reinterpret_cast<const GLubyte*>("OpenGL ES GLSL ES 1.0");
@@ -60,7 +60,7 @@ diff --git a/gfx/skia/src/gpu/gl/GrGpuGL.cpp b/gfx/skia/src/gpu/gl/GrGpuGL.cpp
   * Use of this source code is governed by a BSD-style license that can be
   * found in the LICENSE file.
   */
- 
+
 -
 +#include <algorithm>
  #include "GrGpuGL.h"
@@ -70,7 +70,7 @@ diff --git a/gfx/skia/src/gpu/gl/GrGpuGL.cpp b/gfx/skia/src/gpu/gl/GrGpuGL.cpp
  #include "GrTemplates.h"
  #include "GrTypes.h"
  #include "SkTemplates.h"
- 
+
  static const GrGLuint GR_MAX_GLUINT = ~0U;
  static const GrGLint  GR_INVAL_GLINT = ~0;
 @@ -1381,29 +1381,67 @@ bool GrGpuGL::readPixelsWillPayForYFlip(
@@ -83,7 +83,7 @@ diff --git a/gfx/skia/src/gpu/gl/GrGpuGL.cpp b/gfx/skia/src/gpu/gl/GrGpuGL.cpp
          return false;
      }
  }
- 
+
 +static void swizzleRow(void* buffer, int byteLen) {
 +    uint8_t* src = (uint8_t*)buffer;
 +    uint8_t* end = src + byteLen;
@@ -196,21 +196,21 @@ diff --git a/gfx/skia/src/gpu/gl/GrGpuGL.h b/gfx/skia/src/gpu/gl/GrGpuGL.h
                         GrPixelConfig dataConfig,
                         const void* data,
                         size_t rowBytes);
- 
+
      bool createRenderTargetObjects(int width, int height,
                                     GrGLuint texID,
                                     GrGLRenderTarget::Desc* desc);
- 
+
      void fillInConfigRenderableTable();
- 
+
 +    bool canReadBGRA() const;
 +
      GrGLContext fGLContext;
- 
+
      // GL program-related state
      ProgramCache*               fProgramCache;
      SkAutoTUnref<GrGLProgram>   fCurrentProgram;
- 
+
      ///////////////////////////////////////////////////////////////////////////
      ///@name Caching of GL State
      ///@{

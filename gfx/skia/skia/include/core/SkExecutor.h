@@ -10,9 +10,8 @@
 
 #include <functional>
 #include <memory>
-#include "SkTypes.h"
 
-class SK_API SkExecutor {
+class SkExecutor {
 public:
     virtual ~SkExecutor();
 

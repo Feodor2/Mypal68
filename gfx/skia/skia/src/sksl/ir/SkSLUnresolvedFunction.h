@@ -21,7 +21,7 @@ struct UnresolvedFunction : public Symbol {
     , fFunctions(std::move(funcs)) {
 #ifdef DEBUG
         for (auto func : funcs) {
-            SkASSERT(func->fName == fName);
+            ASSERT(func->fName == fName);
         }
 #endif
     }

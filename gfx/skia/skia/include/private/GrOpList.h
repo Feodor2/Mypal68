@@ -8,17 +8,15 @@
 #ifndef GrOpList_DEFINED
 #define GrOpList_DEFINED
 
-#include "GrProxyRef.h"
+#include "GrColor.h"
+#include "GrSurfaceProxyRef.h"
 #include "GrTextureProxy.h"
-#include "SkColorData.h"
 #include "SkRefCnt.h"
 #include "SkTDArray.h"
 
 class GrAuditTrail;
 class GrCaps;
 class GrOpFlushState;
-class GrOpMemoryPool;
-class GrRecordingContext;
 class GrRenderTargetOpList;
 class GrResourceAllocator;
 class GrResourceProvider;
@@ -30,7 +28,7 @@ struct SkIRect;
 
 class GrOpList : public SkRefCnt {
 public:
-    GrOpList(GrResourceProvider*, sk_sp<GrOpMemoryPool>, GrSurfaceProxy*, GrAuditTrail*);
+    GrOpList(GrResourceProvider*, GrSurfaceProxy*, GrAuditTrail*);
     ~GrOpList() override;
 
     // These four methods are invoked at flush time
@@ -40,7 +38,7 @@ public:
     void prepare(GrOpFlushState* flushState);
     bool execute(GrOpFlushState* flushState) { return this->onExecute(flushState); }
 
-    virtual bool copySurface(GrRecordingContext*,
+    virtual bool copySurface(const GrCaps& caps,
                              GrSurfaceProxy* dst,
                              GrSurfaceProxy* src,
                              const SkIRect& srcRect,
@@ -68,7 +66,15 @@ public:
     /*
      * Does this opList depend on 'dependedOn'?
      */
-    bool dependsOn(const GrOpList* dependedOn) const;
+    bool dependsOn(GrOpList* dependedOn) const {
+        for (int i = 0; i < fDependencies.count(); ++i) {
+            if (fDependencies[i] == dependedOn) {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /*
      * Safely cast this GrOpList to a GrTextureOpList (if possible).
@@ -85,27 +91,23 @@ public:
     /*
      * Dump out the GrOpList dependency DAG
      */
-    SkDEBUGCODE(virtual void dump(bool printDependencies) const;)
+    SkDEBUGCODE(virtual void dump() const;)
 
+    SkDEBUGCODE(virtual int numOps() const = 0;)
     SkDEBUGCODE(virtual int numClips() const { return 0; })
+
+    // TODO: it would be nice for this to be hidden
+    void setStencilLoadOp(GrLoadOp loadOp) { fStencilLoadOp = loadOp; }
 
 protected:
     bool isInstantiated() const;
 
-    // In addition to just the GrSurface being allocated, has the stencil buffer been allocated (if
-    // it is required)?
-    bool isFullyInstantiated() const;
+    GrSurfaceProxyRef fTarget;
+    GrAuditTrail*     fAuditTrail;
 
-    // This is a backpointer to the GrOpMemoryPool that holds the memory for this opLists' ops.
-    // In the DDL case, these back pointers keep the DDL's GrOpMemoryPool alive as long as its
-    // constituent opLists survive.
-    sk_sp<GrOpMemoryPool> fOpMemoryPool;
-    GrSurfaceProxyRef     fTarget;
-    GrAuditTrail*         fAuditTrail;
-
-    GrLoadOp              fColorLoadOp    = GrLoadOp::kLoad;
-    SkPMColor4f           fLoadClearColor = SK_PMColor4fTRANSPARENT;
-    GrLoadOp              fStencilLoadOp  = GrLoadOp::kLoad;
+    GrLoadOp          fColorLoadOp    = GrLoadOp::kLoad;
+    GrColor           fLoadClearColor = 0x0;
+    GrLoadOp          fStencilLoadOp  = GrLoadOp::kLoad;
 
     // List of texture proxies whose contents are being prepared on a worker thread
     SkTArray<GrTextureProxy*, true> fDeferredProxies;
@@ -113,13 +115,7 @@ protected:
 private:
     friend class GrDrawingManager; // for resetFlag, TopoSortTraits & gatherProxyIntervals
 
-    void addDependency(GrOpList* dependedOn);
-    void addDependent(GrOpList* dependent);
-    SkDEBUGCODE(bool isDependedent(const GrOpList* dependent) const;)
-    SkDEBUGCODE(void validate() const;)
-    void closeThoseWhoDependOnMe(const GrCaps&);
-
-    // Remove all Ops which reference proxies that are not instantiated.
+    // Remove all Ops which reference proxies that have not been instantiated.
     virtual void purgeOpsWithUninstantiatedProxies() = 0;
 
     // Feed proxy usage intervals to the GrResourceAllocator class
@@ -173,13 +169,13 @@ private:
     virtual void onPrepare(GrOpFlushState* flushState) = 0;
     virtual bool onExecute(GrOpFlushState* flushState) = 0;
 
+    void addDependency(GrOpList* dependedOn);
+
     uint32_t               fUniqueID;
     uint32_t               fFlags;
 
     // 'this' GrOpList relies on the output of the GrOpLists in 'fDependencies'
     SkSTArray<1, GrOpList*, true> fDependencies;
-    // 'this' GrOpList's output is relied on by the GrOpLists in 'fDependents'
-    SkSTArray<1, GrOpList*, true> fDependents;
 
     typedef SkRefCnt INHERITED;
 };

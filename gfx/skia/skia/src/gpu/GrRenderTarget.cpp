@@ -19,16 +19,18 @@
 #include "SkRectPriv.h"
 
 GrRenderTarget::GrRenderTarget(GrGpu* gpu, const GrSurfaceDesc& desc,
+                               GrRenderTargetFlags flags,
                                GrStencilAttachment* stencil)
         : INHERITED(gpu, desc)
         , fSampleCnt(desc.fSampleCnt)
-        , fStencilAttachment(stencil) {
+        , fStencilAttachment(stencil)
+        , fFlags(flags) {
     SkASSERT(desc.fFlags & kRenderTarget_GrSurfaceFlag);
-    SkASSERT(!this->hasMixedSamples() || fSampleCnt > 1);
+    SkASSERT(!(fFlags & GrRenderTargetFlags::kMixedSampled) || fSampleCnt > 1);
+    SkASSERT(!(fFlags & GrRenderTargetFlags::kWindowRectsSupport) ||
+             gpu->caps()->maxWindowRectangles() > 0);
     fResolveRect = SkRectPriv::MakeILargestInverted();
 }
-
-GrRenderTarget::~GrRenderTarget() = default;
 
 void GrRenderTarget::flagAsNeedingResolve(const SkIRect* rect) {
     if (kCanResolve_ResolveType == getResolveType()) {
@@ -59,29 +61,31 @@ void GrRenderTarget::flagAsResolved() {
 }
 
 void GrRenderTarget::onRelease() {
-    fStencilAttachment = nullptr;
+    SkSafeSetNull(fStencilAttachment);
 
     INHERITED::onRelease();
 }
 
 void GrRenderTarget::onAbandon() {
-    fStencilAttachment = nullptr;
+    SkSafeSetNull(fStencilAttachment);
 
     INHERITED::onAbandon();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void GrRenderTargetPriv::attachStencilAttachment(sk_sp<GrStencilAttachment> stencil) {
+bool GrRenderTargetPriv::attachStencilAttachment(sk_sp<GrStencilAttachment> stencil) {
     if (!stencil && !fRenderTarget->fStencilAttachment) {
         // No need to do any work since we currently don't have a stencil attachment and
         // we're not actually adding one.
-        return;
+        return true;
     }
-    fRenderTarget->fStencilAttachment = std::move(stencil);
+    fRenderTarget->fStencilAttachment = stencil.release();
     if (!fRenderTarget->completeStencilAttachment()) {
-        fRenderTarget->fStencilAttachment = nullptr;
+        SkSafeSetNull(fRenderTarget->fStencilAttachment);
+        return false;
     }
+    return true;
 }
 
 int GrRenderTargetPriv::numStencilBits() const {

@@ -29,6 +29,7 @@ public:
 
     using UniformHandle      = GrGLSLProgramDataManager::UniformHandle;
     using SamplerHandle      = GrGLSLUniformHandler::SamplerHandle;
+    using TexelBufferHandle  = GrGLSLUniformHandler::TexelBufferHandle;
 
     /**
      * This class provides access to the GrCoordTransforms across all GrFragmentProcessors in a
@@ -75,6 +76,7 @@ public:
                  const char* outputCoverage,
                  const char* rtAdjustName,
                  const SamplerHandle* texSamplers,
+                 const TexelBufferHandle* texelBuffers,
                  FPCoordTransformHandler* transformHandler)
             : fVertBuilder(vertBuilder)
             , fGeomBuilder(geomBuilder)
@@ -87,6 +89,7 @@ public:
             , fOutputCoverage(outputCoverage)
             , fRTAdjustName(rtAdjustName)
             , fTexSamplers(texSamplers)
+            , fTexelBuffers(texelBuffers)
             , fFPCoordTransformHandler(transformHandler) {}
         GrGLSLVertexBuilder* fVertBuilder;
         GrGLSLGeometryBuilder* fGeomBuilder;
@@ -99,6 +102,7 @@ public:
         const char* fOutputCoverage;
         const char* fRTAdjustName;
         const SamplerHandle* fTexSamplers;
+        const TexelBufferHandle* fTexelBuffers;
         FPCoordTransformHandler* fFPCoordTransformHandler;
     };
 

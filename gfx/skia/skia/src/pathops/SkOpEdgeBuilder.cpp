@@ -175,11 +175,10 @@ bool SkOpEdgeBuilder::close() {
 bool SkOpEdgeBuilder::walk() {
     uint8_t* verbPtr = fPathVerbs.begin();
     uint8_t* endOfFirstHalf = &verbPtr[fSecondHalf];
-    SkPoint* pointsPtr = fPathPts.begin();
+    SkPoint* pointsPtr = fPathPts.begin() - 1;
     SkScalar* weightPtr = fWeights.begin();
     SkPath::Verb verb;
     SkOpContour* contour = fContourBuilder.contour();
-    int moveToPtrBump = 0;
     while ((verb = (SkPath::Verb) *verbPtr) != SkPath::kDone_Verb) {
         if (verbPtr == endOfFirstHalf) {
             fOperand = true;
@@ -199,8 +198,7 @@ bool SkOpEdgeBuilder::walk() {
                 }
                 contour->init(fGlobalState, fOperand,
                     fXorMask[fOperand] == kEvenOdd_PathOpsMask);
-                pointsPtr += moveToPtrBump;
-                moveToPtrBump = 1;
+                pointsPtr += 1;
                 continue;
             case SkPath::kLine_Verb:
                 fContourBuilder.addLine(pointsPtr);
@@ -242,7 +240,7 @@ bool SkOpEdgeBuilder::walk() {
                 if (v1.dot(v2) < 0) {
                     // FIXME: max curvature for conics hasn't been implemented; use placeholder
                     SkScalar maxCurvature = SkFindQuadMaxCurvature(pointsPtr);
-                    if (0 < maxCurvature && maxCurvature < 1) {
+                    if (maxCurvature > 0) {
                         SkConic conic(pointsPtr, weight);
                         SkConic pair[2];
                         if (!conic.chopAt(maxCurvature, pair)) {
@@ -325,9 +323,7 @@ bool SkOpEdgeBuilder::walk() {
                         }
                         SkPoint* curve = SkPath::kCubic_Verb == split->fVerb
                                 ? split->fPts : split->fReduced;
-                        if (!can_add_curve(split->fVerb, curve)) {
-                            return false;
-                        }
+                        SkAssertResult(can_add_curve(split->fVerb, curve));
                         fContourBuilder.addCurve(split->fVerb, curve);
                     }
                 }

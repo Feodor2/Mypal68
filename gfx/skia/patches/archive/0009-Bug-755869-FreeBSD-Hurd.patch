@@ -23,6 +23,5 @@ index 46c6929..16c4d6c 100644
          #define SK_BUILD_FOR_UNIX
      #elif TARGET_OS_IPHONE || TARGET_IPHONE_SIMULATOR
          #define SK_BUILD_FOR_IOS
--- 
+--
 1.7.5.4
-

@@ -9,19 +9,6 @@
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 #include "gfxDWriteCommon.h"
-#include "dwrite_3.h"
-
-// Currently, we build with WINVER=0x601 (Win7), which means newer
-// declarations in dwrite_3.h will not be visible. Also, we don't
-// yet have the Fall Creators Update SDK available on build machines,
-// so even with updated WINVER, some of the interfaces we need would
-// not be present.
-// To work around this, until the build environment is updated,
-// we #include an extra header that contains copies of the relevant
-// classes/interfaces we need.
-#if !defined(__MINGW32__) && WINVER < 0x0A00
-#  include "mozilla/gfx/dw-extra.h"
-#endif
 
 #include "gfxFont.h"
 #include "gfxUserFontSet.h"
@@ -111,9 +98,7 @@ class gfxDWriteFontEntry : public gfxFontEntry {
         mFont(aFont),
         mFontFile(nullptr),
         mIsSystemFont(aIsSystemFont),
-        mForceGDIClassic(false),
-        mHasVariations(false),
-        mHasVariationsInitialized(false) {
+        mForceGDIClassic(false) {
     DWRITE_FONT_STYLE dwriteStyle = aFont->GetStyle();
     FontSlantStyle style = (dwriteStyle == DWRITE_FONT_STYLE_ITALIC
                                 ? FontSlantStyle::Italic()
@@ -150,9 +135,7 @@ class gfxDWriteFontEntry : public gfxFontEntry {
         mFont(aFont),
         mFontFile(nullptr),
         mIsSystemFont(false),
-        mForceGDIClassic(false),
-        mHasVariations(false),
-        mHasVariationsInitialized(false) {
+        mForceGDIClassic(false) {
     mWeightRange = aWeight;
     mStretchRange = aStretch;
     mStyleRange = aStyle;
@@ -179,9 +162,7 @@ class gfxDWriteFontEntry : public gfxFontEntry {
         mFontFile(aFontFile),
         mFontFileStream(aFontFileStream),
         mIsSystemFont(false),
-        mForceGDIClassic(false),
-        mHasVariations(false),
-        mHasVariationsInitialized(false) {
+        mForceGDIClassic(false) {
     mWeightRange = aWeight;
     mStretchRange = aStretch;
     mStyleRange = aStyle;
@@ -199,10 +180,10 @@ class gfxDWriteFontEntry : public gfxFontEntry {
 
   bool IsCJKFont();
 
-  bool HasVariations() override;
-  void GetVariationAxes(nsTArray<gfxFontVariationAxis>& aAxes) override;
+  bool HasVariations() override {return false;};
+  void GetVariationAxes(nsTArray<gfxFontVariationAxis>& aAxes) override {};
   void GetVariationInstances(
-      nsTArray<gfxFontVariationInstance>& aInstances) override;
+      nsTArray<gfxFontVariationInstance>& aInstances) override {};
 
   void SetForceGDIClassic(bool aForce) { mForceGDIClassic = aForce; }
   bool GetForceGDIClassic() { return mForceGDIClassic; }
@@ -241,16 +222,12 @@ class gfxDWriteFontEntry : public gfxFontEntry {
   // font face corresponding to the mFont/mFontFile *without* any DWrite
   // style simulations applied
   RefPtr<IDWriteFontFace> mFontFace;
-  // Extended fontface interface if supported, else null
-  RefPtr<IDWriteFontFace5> mFontFace5;
 
   DWRITE_FONT_FACE_TYPE mFaceType;
 
   int8_t mIsCJK;
   bool mIsSystemFont;
   bool mForceGDIClassic;
-  bool mHasVariations;
-  bool mHasVariationsInitialized;
 
   mozilla::ThreadSafeWeakPtr<mozilla::gfx::UnscaledFontDWrite> mUnscaledFont;
   mozilla::ThreadSafeWeakPtr<mozilla::gfx::UnscaledFontDWrite>

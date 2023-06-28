@@ -5,14 +5,12 @@
  * found in the LICENSE file.
  */
 
+
 #ifndef SkTSort_DEFINED
 #define SkTSort_DEFINED
 
-#include "SkMathPriv.h"
-#include "SkTo.h"
 #include "SkTypes.h"
-
-#include <utility>
+#include "SkMathPriv.h"
 
 /* A comparison functor which performs the comparison 'a < b'. */
 template <typename T> struct SkTCompareLT {
@@ -94,7 +92,7 @@ void SkTHeapSort_SiftDown(T array[], size_t root, size_t bottom, C lessThan) {
 }
 
 /** Sorts the array of size count using comparator lessThan using a Heap Sort algorithm. Be sure to
- *  specialize swap if T has an efficient swap operation.
+ *  specialize SkTSwap if T has an efficient swap operation.
  *
  *  @param array the array to be sorted.
  *  @param count the number of elements in the array.
@@ -106,8 +104,7 @@ template <typename T, typename C> void SkTHeapSort(T array[], size_t count, C le
     }
 
     for (size_t i = count - 1; i > 0; --i) {
-        using std::swap;
-        swap(array[0], array[i]);
+        SkTSwap<T>(array[0], array[i]);
         SkTHeapSort_SiftUp(array, 1, i, lessThan);
     }
 }
@@ -139,18 +136,17 @@ template <typename T, typename C> static void SkTInsertionSort(T* left, T* right
 
 template <typename T, typename C>
 static T* SkTQSort_Partition(T* left, T* right, T* pivot, C lessThan) {
-    using std::swap;
     T pivotValue = *pivot;
-    swap(*pivot, *right);
+    SkTSwap(*pivot, *right);
     T* newPivot = left;
     while (left < right) {
         if (lessThan(*left, pivotValue)) {
-            swap(*left, *newPivot);
+            SkTSwap(*left, *newPivot);
             newPivot += 1;
         }
         left += 1;
     }
-    swap(*newPivot, *right);
+    SkTSwap(*newPivot, *right);
     return newPivot;
 }
 
@@ -188,7 +184,7 @@ template <typename T, typename C> void SkTIntroSort(int depth, T* left, T* right
 }
 
 /** Sorts the region from left to right using comparator lessThan using a Quick Sort algorithm. Be
- *  sure to specialize swap if T has an efficient swap operation.
+ *  sure to specialize SkTSwap if T has an efficient swap operation.
  *
  *  @param left the beginning of the region to be sorted.
  *  @param right the end of the region to be sorted (inclusive).

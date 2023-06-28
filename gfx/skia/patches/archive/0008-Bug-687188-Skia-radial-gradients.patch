@@ -16,7 +16,7 @@ index 59ba48c..ea05a39 100644
 @@ -204,6 +204,7 @@ private:
      mutable SkMallocPixelRef* fCache32PixelRef;
      mutable unsigned    fCacheAlpha;        // the alpha value we used when we computed the cache. larger than 8bits so we can store uninitialized value
- 
+
 +    static SkPMColor PremultiplyColor(SkColor c0, U8CPU alpha);
      static void Build16bitCache(uint16_t[], SkColor c0, SkColor c1, int count);
      static void Build32bitCache(SkPMColor[], SkColor c0, SkColor c1, int count,
@@ -24,7 +24,7 @@ index 59ba48c..ea05a39 100644
 @@ -507,6 +508,21 @@ static inline U8CPU dither_ceil_fixed_to_8(SkFixed n) {
      return ((n << 1) - (n | (n >> 8))) >> 8;
  }
- 
+
 +SkPMColor Gradient_Shader::PremultiplyColor(SkColor c0, U8CPU paintAlpha)
 +{
 +    SkFixed a = SkMulDiv255Round(SkColorGetA(c0), paintAlpha);
@@ -50,7 +50,7 @@ index 59ba48c..ea05a39 100644
 -        const int entryCount = kCache32Count * 2;
 +        const int entryCount = kCache32Count * 2 + 2;
          const size_t allocSize = sizeof(SkPMColor) * entryCount;
- 
+
          if (NULL == fCache32PixelRef) {
              fCache32PixelRef = SkNEW_ARGS(SkMallocPixelRef,
                                            (NULL, allocSize, NULL));
@@ -83,7 +83,7 @@ index 59ba48c..ea05a39 100644
 +    fCache32[kCache32Count * 2] = PremultiplyColor(fOrigColors[fColorCount - 1], fCacheAlpha);
      return fCache32;
  }
- 
+
 @@ -857,6 +876,18 @@ void shadeSpan_linear_vertical(TileProc proc, SkFixed dx, SkFixed fx,
                                 SkPMColor* SK_RESTRICT dstC,
                                 const SkPMColor* SK_RESTRICT cache,
@@ -124,7 +124,7 @@ index 59ba48c..ea05a39 100644
      // insufficient (it subsamples the color space) and we need to lerp.
 @@ -900,10 +943,8 @@ void shadeSpan_linear_clamp(TileProc proc, SkFixed dx, SkFixed fx,
      range.init(fx, dx, count, 0, Gradient_Shader::kGradient32Length);
- 
+
      if ((count = range.fCount0) > 0) {
 -        sk_memset32_dither(dstC,
 -            cache[toggle + range.fV0],
@@ -147,7 +147,7 @@ index 59ba48c..ea05a39 100644
 +        sk_memset32(dstC, cache[Gradient_Shader::kCache32Count * 2], count);
      }
  }
- 
+
 @@ -1796,9 +1835,16 @@ void shadeSpan_twopoint_clamp(SkScalar fx, SkScalar dx,
      for (; count > 0; --count) {
          SkFixed t = two_point_radial(b, fx, fy, fSr2D2, foura,
@@ -168,6 +168,5 @@ index 59ba48c..ea05a39 100644
          fx += dx;
          fy += dy;
          b += db;
--- 
+--
 1.7.5.4
-

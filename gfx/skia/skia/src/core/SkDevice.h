@@ -11,17 +11,17 @@
 #include "SkRefCnt.h"
 #include "SkCanvas.h"
 #include "SkColor.h"
-#include "SkRegion.h"
+#include "SkImage.h"
 #include "SkSurfaceProps.h"
 
 class SkBitmap;
+class SkDrawFilter;
 struct SkDrawShadowRec;
-class SkGlyphRun;
-class SkGlyphRunList;
 class SkImageFilterCache;
 struct SkIRect;
 class SkMatrix;
 class SkRasterHandleAllocator;
+class SkRegion;
 class SkSpecialImage;
 
 class SkBaseDevice : public SkRefCnt {
@@ -126,6 +126,8 @@ public:
     void setGlobalCTM(const SkMatrix& ctm);
     virtual void validateDevBounds(const SkIRect&) {}
 
+    virtual sk_sp<SkImage> snapshotImage() { return nullptr; }
+
 protected:
     enum TileUsage {
         kPossible_TileUsage,    //!< the created device may be drawn tiled
@@ -135,6 +137,14 @@ protected:
     struct TextFlags {
         uint32_t    fFlags;     // SkPaint::getFlags()
     };
+
+    /**
+     * Returns the text-related flags, possibly modified based on the state of the
+     * device (e.g. support for LCD).
+     */
+    uint32_t filterTextFlags(const SkPaint&) const;
+
+    virtual bool onShouldDisableLCD(const SkPaint&) const { return false; }
 
     virtual void onSave() {}
     virtual void onRestore() {}
@@ -154,7 +164,8 @@ protected:
 
     /** These are called inside the per-device-layer loop for each draw call.
      When these are called, we have already applied any saveLayer operations,
-     and are handling any looping from the paint.
+     and are handling any looping from the paint, and any effects from the
+     DrawFilter.
      */
     virtual void drawPaint(const SkPaint& paint) = 0;
     virtual void drawPoints(SkCanvas::PointMode mode, size_t count,
@@ -175,20 +186,25 @@ protected:
     virtual void drawDRRect(const SkRRect& outer,
                             const SkRRect& inner, const SkPaint&);
 
-    // Default impl always calls drawRect() with a solid-color paint, setting it to anti-aliased
-    // only when all edge flags are set.
-    virtual void drawEdgeAARect(const SkRect& r, SkCanvas::QuadAAFlags aa, SkColor color,
-                                SkBlendMode mode);
-
     /**
      *  If pathIsMutable, then the implementation is allowed to cast path to a
      *  non-const pointer and modify it in place (as an optimization). Canvas
      *  may do this to implement helpers such as drawOval, by placing a temp
      *  path on the stack to hold the representation of the oval.
+     *
+     *  If prePathMatrix is not null, it should logically be applied before any
+     *  stroking or other effects. If there are no effects on the paint that
+     *  affect the geometry/rasterization, then the pre matrix can just be
+     *  pre-concated with the current matrix.
      */
     virtual void drawPath(const SkPath& path,
                           const SkPaint& paint,
+                          const SkMatrix* prePathMatrix = nullptr,
                           bool pathIsMutable = false) = 0;
+    virtual void drawBitmap(const SkBitmap& bitmap,
+                            SkScalar x,
+                            SkScalar y,
+                            const SkPaint& paint) = 0;
     virtual void drawSprite(const SkBitmap& bitmap,
                             int x, int y, const SkPaint& paint) = 0;
 
@@ -205,6 +221,7 @@ protected:
     virtual void drawBitmapLattice(const SkBitmap&, const SkCanvas::Lattice&,
                                    const SkRect& dst, const SkPaint&);
 
+    virtual void drawImage(const SkImage*, SkScalar x, SkScalar y, const SkPaint&);
     virtual void drawImageRect(const SkImage*, const SkRect* src, const SkRect& dst,
                                const SkPaint&, SkCanvas::SrcRectConstraint);
     virtual void drawImageNine(const SkImage*, const SkIRect& center,
@@ -212,17 +229,25 @@ protected:
     virtual void drawImageLattice(const SkImage*, const SkCanvas::Lattice&,
                                   const SkRect& dst, const SkPaint&);
 
-    virtual void drawImageSet(const SkCanvas::ImageSetEntry[], int count, SkFilterQuality,
-                              SkBlendMode);
-
-    virtual void drawVertices(const SkVertices*, const SkVertices::Bone bones[], int boneCount,
-                              SkBlendMode, const SkPaint&) = 0;
+    /**
+     *  Does not handle text decoration.
+     *  Decorations (underline and stike-thru) will be handled by SkCanvas.
+     */
+    virtual void drawText(const void* text, size_t len,
+                          SkScalar x, SkScalar y, const SkPaint& paint) = 0;
+    virtual void drawPosText(const void* text, size_t len,
+                             const SkScalar pos[], int scalarsPerPos,
+                             const SkPoint& offset, const SkPaint& paint) = 0;
+    virtual void drawVertices(const SkVertices*, SkBlendMode, const SkPaint&) = 0;
     virtual void drawShadow(const SkPath&, const SkDrawShadowRec&);
 
-    virtual void drawGlyphRunList(const SkGlyphRunList& glyphRunList) = 0;
+    // default implementation unrolls the blob runs.
+    virtual void drawTextBlob(const SkTextBlob*, SkScalar x, SkScalar y,
+                              const SkPaint& paint, SkDrawFilter* drawFilter);
     // default implementation calls drawVertices
     virtual void drawPatch(const SkPoint cubics[12], const SkColor colors[4],
-                           const SkPoint texCoords[4], SkBlendMode, const SkPaint& paint);
+                           const SkPoint texCoords[4], SkBlendMode, bool interpColorsLinearly,
+                           const SkPaint& paint);
 
     // default implementation calls drawPath
     virtual void drawAtlas(const SkImage* atlas, const SkRSXform[], const SkRect[],
@@ -233,12 +258,13 @@ protected:
     /** The SkDevice passed will be an SkDevice which was returned by a call to
         onCreateDevice on this device with kNeverTile_TileExpectation.
      */
-    virtual void drawDevice(SkBaseDevice*, int x, int y, const SkPaint&) = 0;
+    virtual void drawDevice(SkBaseDevice*, int x, int y,
+                            const SkPaint&) = 0;
 
-    void drawGlyphRunRSXform(const SkFont&, const SkGlyphID[], const SkRSXform[], int count,
-                             SkPoint origin, const SkPaint& paint);
-
-    virtual void drawDrawable(SkDrawable*, const SkMatrix*, SkCanvas*);
+    virtual void drawTextOnPath(const void* text, size_t len, const SkPath&,
+                                const SkMatrix*, const SkPaint&);
+    virtual void drawTextRSXform(const void* text, size_t len, const SkRSXform[],
+                                 const SkPaint&);
 
     virtual void drawSpecial(SkSpecialImage*, int x, int y, const SkPaint&,
                              SkImage* clipImage, const SkMatrix& clipMatrix);
@@ -248,8 +274,6 @@ protected:
     virtual void setImmutable() {}
 
     bool readPixels(const SkPixmap&, int x, int y);
-
-    virtual sk_sp<SkSpecialImage> snapBackImage(const SkIRect&);    // default returns null
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -293,19 +317,16 @@ protected:
                    TileUsage tileUsage,
                    SkPixelGeometry geo,
                    bool preserveLCDText,
-                   bool trackCoverage,
                    SkRasterHandleAllocator* allocator)
             : fInfo(info)
             , fTileUsage(tileUsage)
             , fPixelGeometry(AdjustGeometry(info, tileUsage, geo, preserveLCDText))
-            , fTrackCoverage(trackCoverage)
             , fAllocator(allocator)
         {}
 
         const SkImageInfo       fInfo;
         const TileUsage         fTileUsage;
         const SkPixelGeometry   fPixelGeometry;
-        const bool              fTrackCoverage = false;
         SkRasterHandleAllocator* fAllocator = nullptr;
     };
 
@@ -325,7 +346,7 @@ protected:
     }
 
     // A helper function used by derived classes to log the scale factor of a bitmap or image draw.
-    static void LogDrawScaleFactor(const SkMatrix& view, const SkMatrix& srcToDst, SkFilterQuality);
+    static void LogDrawScaleFactor(const SkMatrix&, SkFilterQuality);
 
 private:
     friend class SkAndroidFrameworkUtils;
@@ -333,15 +354,9 @@ private:
     friend struct DeviceCM; //for setMatrixClip
     friend class SkDraw;
     friend class SkDrawIter;
+    friend class SkDeviceFilteredPaint;
     friend class SkSurface_Raster;
     friend class DeviceTestingAccess;
-
-    // Temporarily friend the SkGlyphRunBuilder until drawPosText is gone.
-    friend class SkGlyphRun;
-    friend class SkGlyphRunList;
-    friend class SkGlyphRunBuilder;
-
-    friend class ClipTileRenderer;  // GM needs context() until API is in SkCanvas
 
     // used to change the backend's pixels (and possibly config/rowbytes)
     // but cannot change the width/height, so there should be no change to
@@ -377,58 +392,6 @@ private:
     SkMatrix             fCTM;
 
     typedef SkRefCnt INHERITED;
-};
-
-class SkNoPixelsDevice : public SkBaseDevice {
-public:
-    SkNoPixelsDevice(const SkIRect& bounds, const SkSurfaceProps& props,
-                     sk_sp<SkColorSpace> colorSpace = nullptr)
-    : SkBaseDevice(SkImageInfo::Make(bounds.width(), bounds.height(), kUnknown_SkColorType,
-                                     kUnknown_SkAlphaType, std::move(colorSpace)), props)
-    {
-        // this fails if we enable this assert: DiscardableImageMapTest.GetDiscardableImagesInRectMaxImage
-        //SkASSERT(bounds.width() >= 0 && bounds.height() >= 0);
-    }
-
-    void resetForNextPicture(const SkIRect& bounds) {
-        //SkASSERT(bounds.width() >= 0 && bounds.height() >= 0);
-        this->privateResize(bounds.width(), bounds.height());
-    }
-
-protected:
-    // We don't track the clip at all (for performance), but we have to respond to some queries.
-    // We pretend to be wide-open. We could pretend to always be empty, but that *seems* worse.
-    void onSave() override {}
-    void onRestore() override {}
-    void onClipRect(const SkRect& rect, SkClipOp, bool aa) override {}
-    void onClipRRect(const SkRRect& rrect, SkClipOp, bool aa) override {}
-    void onClipPath(const SkPath& path, SkClipOp, bool aa) override {}
-    void onClipRegion(const SkRegion& deviceRgn, SkClipOp) override {}
-    void onSetDeviceClipRestriction(SkIRect* mutableClipRestriction) override {}
-    bool onClipIsAA() const override { return false; }
-    void onAsRgnClip(SkRegion* rgn) const override {
-        rgn->setRect(SkIRect::MakeWH(this->width(), this->height()));
-    }
-    ClipType onGetClipType() const override {
-        return kRect_ClipType;
-    }
-
-    void drawPaint(const SkPaint& paint) override {}
-    void drawPoints(SkCanvas::PointMode, size_t, const SkPoint[], const SkPaint&) override {}
-    void drawRect(const SkRect&, const SkPaint&) override {}
-    void drawOval(const SkRect&, const SkPaint&) override {}
-    void drawRRect(const SkRRect&, const SkPaint&) override {}
-    void drawPath(const SkPath&, const SkPaint&, bool) override {}
-    void drawSprite(const SkBitmap&, int, int, const SkPaint&) override {}
-    void drawBitmapRect(const SkBitmap&, const SkRect*, const SkRect&, const SkPaint&,
-                        SkCanvas::SrcRectConstraint) override {}
-    void drawDevice(SkBaseDevice*, int, int, const SkPaint&) override {}
-    void drawGlyphRunList(const SkGlyphRunList& glyphRunList) override {}
-    void drawVertices(const SkVertices*, const SkVertices::Bone[], int, SkBlendMode,
-                      const SkPaint&) override {}
-
-private:
-    typedef SkBaseDevice INHERITED;
 };
 
 class SkAutoDeviceCTMRestore : SkNoncopyable {

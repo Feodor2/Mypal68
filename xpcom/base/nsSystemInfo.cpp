@@ -710,7 +710,7 @@ nsresult nsSystemInfo::Init() {
     }
     // Additional information if we're running x86-on-arm64
     bool isWowARM64 = (processMachine == IMAGE_FILE_MACHINE_I386 &&
-                       nativeMachine == IMAGE_FILE_MACHINE_ARM64);
+                       nativeMachine == 0xAA64);
     rv = SetPropertyAsBool(NS_LITERAL_STRING("isWowARM64"), !!isWowARM64);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;

@@ -10,41 +10,27 @@
 #include "SkCanvas.h"
 #include "SkCodec.h"
 #include "SkCodecPriv.h"
-#include "SkImagePriv.h"
 #include "SkPicture.h"
 #include "SkPictureRecorder.h"
-#include "SkPixelRef.h"
-
-#include <utility>
 
 sk_sp<SkAnimatedImage> SkAnimatedImage::Make(std::unique_ptr<SkAndroidCodec> codec,
         SkISize scaledSize, SkIRect cropRect, sk_sp<SkPicture> postProcess) {
     if (!codec) {
         return nullptr;
     }
-    auto info = codec->getInfo().makeWH(scaledSize.width(), scaledSize.height());
-    return Make(std::move(codec), info, cropRect, std::move(postProcess));
-}
 
-sk_sp<SkAnimatedImage> SkAnimatedImage::Make(std::unique_ptr<SkAndroidCodec> codec,
-        const SkImageInfo& requestedInfo, SkIRect cropRect, sk_sp<SkPicture> postProcess) {
-    if (!codec) {
-        return nullptr;
-    }
-
-    auto scaledSize = requestedInfo.dimensions();
-    auto decodeInfo = requestedInfo;
-    if (codec->getEncodedFormat() != SkEncodedImageFormat::kWEBP
-            || scaledSize.width()  >= decodeInfo.width()
-            || scaledSize.height() >= decodeInfo.height()) {
-        // Only libwebp can decode to arbitrary smaller sizes.
-        auto dims = codec->getInfo().dimensions();
-        decodeInfo = decodeInfo.makeWH(dims.width(), dims.height());
+    SkISize decodeSize = scaledSize;
+    auto decodeInfo = codec->getInfo();
+    if (codec->getEncodedFormat() == SkEncodedImageFormat::kWEBP
+            && scaledSize.width()  < decodeInfo.width()
+            && scaledSize.height() < decodeInfo.height()) {
+        // libwebp can decode to arbitrary smaller sizes.
+        decodeInfo = decodeInfo.makeWH(decodeSize.width(), decodeSize.height());
     }
 
     auto image = sk_sp<SkAnimatedImage>(new SkAnimatedImage(std::move(codec), scaledSize,
                 decodeInfo, cropRect, std::move(postProcess)));
-    if (!image->fDisplayFrame.fBitmap.getPixels()) {
+    if (!image->fActiveFrame.fBitmap.getPixels()) {
         // tryAllocPixels failed.
         return nullptr;
     }
@@ -63,7 +49,7 @@ sk_sp<SkAnimatedImage> SkAnimatedImage::Make(std::unique_ptr<SkAndroidCodec> cod
     auto image = sk_sp<SkAnimatedImage>(new SkAnimatedImage(std::move(codec), scaledSize,
                 decodeInfo, cropRect, nullptr));
 
-    if (!image->fDisplayFrame.fBitmap.getPixels()) {
+    if (!image->fActiveFrame.fBitmap.getPixels()) {
         // tryAllocPixels failed.
         return nullptr;
     }
@@ -86,7 +72,7 @@ SkAnimatedImage::SkAnimatedImage(std::unique_ptr<SkAndroidCodec> codec, SkISize 
     , fRepetitionCount(fCodec->codec()->getRepetitionCount())
     , fRepetitionsCompleted(0)
 {
-    if (!fDecodingFrame.fBitmap.tryAllocPixels(fDecodeInfo)) {
+    if (!fActiveFrame.fBitmap.tryAllocPixels(fDecodeInfo)) {
         return;
     }
 
@@ -106,37 +92,13 @@ SkRect SkAnimatedImage::onGetBounds() {
 }
 
 SkAnimatedImage::Frame::Frame()
-    : fIndex(SkCodec::kNoFrame)
+    : fIndex(SkCodec::kNone)
 {}
 
-bool SkAnimatedImage::Frame::init(const SkImageInfo& info, OnInit onInit) {
-    if (fBitmap.getPixels()) {
-        if (fBitmap.pixelRef()->unique()) {
-            SkAssertResult(fBitmap.setAlphaType(info.alphaType()));
-            return true;
-        }
-
-        // An SkCanvas provided to onDraw is still holding a reference.
-        // Copy before we decode to ensure that we don't overwrite the
-        // expected contents of the image.
-        if (OnInit::kRestoreIfNecessary == onInit) {
-            SkBitmap tmp;
-            if (!tmp.tryAllocPixels(info)) {
-                return false;
-            }
-
-            memcpy(tmp.getPixels(), fBitmap.getPixels(), fBitmap.computeByteSize());
-            using std::swap;
-            swap(tmp, fBitmap);
-            return true;
-        }
-    }
-
-    return fBitmap.tryAllocPixels(info);
-}
-
 bool SkAnimatedImage::Frame::copyTo(Frame* dst) const {
-    if (!dst->init(fBitmap.info(), OnInit::kNoRestore)) {
+    if (dst->fBitmap.getPixels()) {
+        dst->fBitmap.setAlphaType(fBitmap.alphaType());
+    } else if (!dst->fBitmap.tryAllocPixels(fBitmap.info())) {
         return false;
     }
 
@@ -149,10 +111,19 @@ bool SkAnimatedImage::Frame::copyTo(Frame* dst) const {
 void SkAnimatedImage::reset() {
     fFinished = false;
     fRepetitionsCompleted = 0;
-    if (fDisplayFrame.fIndex != 0) {
-        fDisplayFrame.fIndex = SkCodec::kNoFrame;
-        this->decodeNextFrame();
+    if (fActiveFrame.fIndex == 0) {
+        // Already showing the first frame.
+        return;
     }
+
+    if (fRestoreFrame.fIndex == 0) {
+        SkTSwap(fActiveFrame, fRestoreFrame);
+        // Now we're showing the first frame.
+        return;
+    }
+
+    fActiveFrame.fIndex = SkCodec::kNone;
+    this->decodeNextFrame();
 }
 
 static bool is_restore_previous(SkCodecAnimation::DisposalMethod dispose) {
@@ -189,7 +160,7 @@ int SkAnimatedImage::decodeNextFrame() {
     }
 
     bool animationEnded = false;
-    int frameToDecode = this->computeNextFrame(fDisplayFrame.fIndex, &animationEnded);
+    int frameToDecode = this->computeNextFrame(fActiveFrame.fIndex, &animationEnded);
 
     SkCodec::FrameInfo frameInfo;
     if (fCodec->codec()->getFrameInfo(frameToDecode, &frameInfo)) {
@@ -203,7 +174,7 @@ int SkAnimatedImage::decodeNextFrame() {
         animationEnded = true;
         if (0 == frameToDecode) {
             // Static image. This is okay.
-            frameInfo.fRequiredFrame = SkCodec::kNoFrame;
+            frameInfo.fRequiredFrame = SkCodec::kNone;
             frameInfo.fAlphaType = fCodec->getInfo().alphaType();
             frameInfo.fDisposalMethod = SkCodecAnimation::DisposalMethod::kKeep;
             // These fields won't be read.
@@ -217,22 +188,19 @@ int SkAnimatedImage::decodeNextFrame() {
         }
     }
 
-    if (frameToDecode == fDisplayFrame.fIndex) {
+    if (frameToDecode == fActiveFrame.fIndex) {
         if (animationEnded) {
             return this->finish();
         }
         return fCurrentFrameDuration;
     }
 
-    for (Frame* frame : { &fRestoreFrame, &fDecodingFrame }) {
-        if (frameToDecode == frame->fIndex) {
-            using std::swap;
-            swap(fDisplayFrame, *frame);
-            if (animationEnded) {
-                return this->finish();
-            }
-            return fCurrentFrameDuration;
+    if (frameToDecode == fRestoreFrame.fIndex) {
+        SkTSwap(fActiveFrame, fRestoreFrame);
+        if (animationEnded) {
+            return this->finish();
         }
+        return fCurrentFrameDuration;
     }
 
     // The following code makes an effort to avoid overwriting a frame that will
@@ -243,57 +211,52 @@ int SkAnimatedImage::decodeNextFrame() {
     // entire dependency chain.
     SkCodec::Options options;
     options.fFrameIndex = frameToDecode;
-    if (frameInfo.fRequiredFrame == SkCodec::kNoFrame) {
+    if (frameInfo.fRequiredFrame == SkCodec::kNone) {
         if (is_restore_previous(frameInfo.fDisposalMethod)) {
             // frameToDecode will be discarded immediately after drawing, so
             // do not overwrite a frame which could possibly be used in the
             // future.
-            if (fDecodingFrame.fIndex != SkCodec::kNoFrame &&
-                    !is_restore_previous(fDecodingFrame.fDisposalMethod)) {
-                using std::swap;
-                swap(fDecodingFrame, fRestoreFrame);
+            if (fActiveFrame.fIndex != SkCodec::kNone &&
+                    !is_restore_previous(fActiveFrame.fDisposalMethod)) {
+                SkTSwap(fActiveFrame, fRestoreFrame);
             }
         }
     } else {
         auto validPriorFrame = [&frameInfo, &frameToDecode](const Frame& frame) {
-            if (SkCodec::kNoFrame == frame.fIndex ||
-                    is_restore_previous(frame.fDisposalMethod)) {
+            if (SkCodec::kNone == frame.fIndex || is_restore_previous(frame.fDisposalMethod)) {
                 return false;
             }
 
             return frame.fIndex >= frameInfo.fRequiredFrame && frame.fIndex < frameToDecode;
         };
-        if (validPriorFrame(fDecodingFrame)) {
+        if (validPriorFrame(fActiveFrame)) {
             if (is_restore_previous(frameInfo.fDisposalMethod)) {
-                // fDecodingFrame is a good frame to use for this one, but we
+                // fActiveFrame is a good frame to use for this one, but we
                 // don't want to overwrite it.
-                fDecodingFrame.copyTo(&fRestoreFrame);
+                fActiveFrame.copyTo(&fRestoreFrame);
             }
-            options.fPriorFrame = fDecodingFrame.fIndex;
-        } else if (validPriorFrame(fDisplayFrame)) {
-            if (!fDisplayFrame.copyTo(&fDecodingFrame)) {
-                SkCodecPrintf("Failed to allocate pixels for frame\n");
-                return this->finish();
-            }
-            options.fPriorFrame = fDecodingFrame.fIndex;
+            options.fPriorFrame = fActiveFrame.fIndex;
         } else if (validPriorFrame(fRestoreFrame)) {
             if (!is_restore_previous(frameInfo.fDisposalMethod)) {
-                using std::swap;
-                swap(fDecodingFrame, fRestoreFrame);
-            } else if (!fRestoreFrame.copyTo(&fDecodingFrame)) {
+                SkTSwap(fActiveFrame, fRestoreFrame);
+            } else if (!fRestoreFrame.copyTo(&fActiveFrame)) {
                 SkCodecPrintf("Failed to restore frame\n");
                 return this->finish();
             }
-            options.fPriorFrame = fDecodingFrame.fIndex;
+            options.fPriorFrame = fActiveFrame.fIndex;
         }
     }
 
     auto alphaType = kOpaque_SkAlphaType == frameInfo.fAlphaType ?
                      kOpaque_SkAlphaType : kPremul_SkAlphaType;
-    auto info = fDecodeInfo.makeAlphaType(alphaType);
-    SkBitmap* dst = &fDecodingFrame.fBitmap;
-    if (!fDecodingFrame.init(info, Frame::OnInit::kRestoreIfNecessary)) {
-        return this->finish();
+    SkBitmap* dst = &fActiveFrame.fBitmap;
+    if (dst->getPixels()) {
+        SkAssertResult(dst->setAlphaType(alphaType));
+    } else {
+        auto info = fDecodeInfo.makeAlphaType(alphaType);
+        if (!dst->tryAllocPixels(info)) {
+            return this->finish();
+        }
     }
 
     auto result = fCodec->codec()->getPixels(dst->info(), dst->getPixels(), dst->rowBytes(),
@@ -303,12 +266,8 @@ int SkAnimatedImage::decodeNextFrame() {
         return this->finish();
     }
 
-    fDecodingFrame.fIndex = frameToDecode;
-    fDecodingFrame.fDisposalMethod = frameInfo.fDisposalMethod;
-
-    using std::swap;
-    swap(fDecodingFrame, fDisplayFrame);
-    fDisplayFrame.fBitmap.notifyPixelsChanged();
+    fActiveFrame.fIndex = frameToDecode;
+    fActiveFrame.fDisposalMethod = frameInfo.fDisposalMethod;
 
     if (animationEnded) {
         return this->finish();
@@ -317,11 +276,8 @@ int SkAnimatedImage::decodeNextFrame() {
 }
 
 void SkAnimatedImage::onDraw(SkCanvas* canvas) {
-    auto image = SkMakeImageFromRasterBitmap(fDisplayFrame.fBitmap,
-                                             kNever_SkCopyPixelsMode);
-
     if (fSimple) {
-        canvas->drawImage(image, 0, 0);
+        canvas->drawBitmap(fActiveFrame.fBitmap, 0, 0);
         return;
     }
 
@@ -330,11 +286,12 @@ void SkAnimatedImage::onDraw(SkCanvas* canvas) {
         canvas->saveLayer(&bounds, nullptr);
     }
     {
-        SkAutoCanvasRestore acr(canvas, fPostProcess != nullptr);
+        SkAutoCanvasRestore acr(canvas, fPostProcess);
         canvas->concat(fMatrix);
         SkPaint paint;
+        paint.setBlendMode(SkBlendMode::kSrc);
         paint.setFilterQuality(kLow_SkFilterQuality);
-        canvas->drawImage(image, 0, 0, &paint);
+        canvas->drawBitmap(fActiveFrame.fBitmap, 0, 0, &paint);
     }
     if (fPostProcess) {
         canvas->drawPicture(fPostProcess);

@@ -24,22 +24,22 @@ static const Type& index_type(const Context& context, const Type& type) {
                 case 2: return *context.fFloat2_Type;
                 case 3: return *context.fFloat3_Type;
                 case 4: return *context.fFloat4_Type;
-                default: SkASSERT(false);
+                default: ASSERT(false);
             }
         } else if (type.componentType() == *context.fHalf_Type) {
             switch (type.rows()) {
                 case 2: return *context.fHalf2_Type;
                 case 3: return *context.fHalf3_Type;
                 case 4: return *context.fHalf4_Type;
-                default: SkASSERT(false);
+                default: ASSERT(false);
             }
         } else {
-           SkASSERT(type.componentType() == *context.fDouble_Type);
+           ASSERT(type.componentType() == *context.fDouble_Type);
             switch (type.rows()) {
                 case 2: return *context.fDouble2_Type;
                 case 3: return *context.fDouble3_Type;
                 case 4: return *context.fDouble4_Type;
-                default: SkASSERT(false);
+                default: ASSERT(false);
             }
         }
     }
@@ -55,16 +55,11 @@ struct IndexExpression : public Expression {
     : INHERITED(base->fOffset, kIndex_Kind, index_type(context, base->fType))
     , fBase(std::move(base))
     , fIndex(std::move(index)) {
-        SkASSERT(fIndex->fType == *context.fInt_Type || fIndex->fType == *context.fUInt_Type);
+        ASSERT(fIndex->fType == *context.fInt_Type || fIndex->fType == *context.fUInt_Type);
     }
 
     bool hasSideEffects() const override {
         return fBase->hasSideEffects() || fIndex->hasSideEffects();
-    }
-
-    std::unique_ptr<Expression> clone() const override {
-        return std::unique_ptr<Expression>(new IndexExpression(fBase->clone(), fIndex->clone(),
-                                                               &fType));
     }
 
     String description() const override {
@@ -75,13 +70,6 @@ struct IndexExpression : public Expression {
     std::unique_ptr<Expression> fIndex;
 
     typedef Expression INHERITED;
-
-private:
-    IndexExpression(std::unique_ptr<Expression> base, std::unique_ptr<Expression> index,
-                    const Type* type)
-    : INHERITED(base->fOffset, kIndex_Kind, *type)
-    , fBase(std::move(base))
-    , fIndex(std::move(index)) {}
 };
 
 } // namespace

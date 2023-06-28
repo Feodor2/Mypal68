@@ -29,7 +29,7 @@ class GrSemaphore;
 class GrBackendTextureImageGenerator : public SkImageGenerator {
 public:
     static std::unique_ptr<SkImageGenerator> Make(sk_sp<GrTexture>, GrSurfaceOrigin,
-                                                  sk_sp<GrSemaphore>, SkColorType,
+                                                  sk_sp<GrSemaphore>,
                                                   SkAlphaType, sk_sp<SkColorSpace>);
 
     ~GrBackendTextureImageGenerator() override;
@@ -39,9 +39,12 @@ protected:
     // do that safely (we might be on another thread). So assume everything is fine.
     bool onIsValid(GrContext*) const override { return true; }
 
+#if SK_SUPPORT_GPU
     TexGenType onCanGenerateTexture() const override { return TexGenType::kCheap; }
-    sk_sp<GrTextureProxy> onGenerateTexture(GrRecordingContext*, const SkImageInfo&,
-                                            const SkIPoint&, bool willNeedMipMaps) override;
+    sk_sp<GrTextureProxy> onGenerateTexture(GrContext*, const SkImageInfo&, const SkIPoint&,
+                                            SkTransferFunctionBehavior,
+                                            bool willNeedMipMaps) override;
+#endif
 
 private:
     GrBackendTextureImageGenerator(const SkImageInfo& info, GrTexture*, GrSurfaceOrigin,
@@ -73,7 +76,7 @@ private:
         // texture are finished on the borrowing context before we open this back up to other
         // contexts. In general a ref to this release proc is owned by all proxies and gpu uses of
         // the backend texture.
-        GrRefCntedCallback*  fBorrowingContextReleaseProc;
+        GrReleaseProcHelper* fBorrowingContextReleaseProc;
         uint32_t             fBorrowingContextID;
     };
 

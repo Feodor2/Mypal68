@@ -14,11 +14,20 @@
 
 class SkPixmapPriv {
 public:
+    // These flag are applied in this order (swap is applied last)
+    enum OrientFlags {
+        kMirrorX = 1 << 0,
+        kMirrorY = 1 << 1,
+        kSwapXY  = 1 << 2,
+    };
+
+    static OrientFlags OriginToOrient(SkEncodedOrigin);
+
     /**
      *  Copy the pixels in this pixmap into dst, applying the orientation transformations specified
      *  by the flags. If the inputs are invalid, this returns false and no copy is made.
      */
-    static bool Orient(const SkPixmap& dst, const SkPixmap& src, SkEncodedOrigin);
+    static bool Orient(const SkPixmap& dst, const SkPixmap& src, OrientFlags);
 
     static bool ShouldSwapWidthHeight(SkEncodedOrigin o);
     static SkImageInfo SwapWidthHeight(const SkImageInfo& info);
@@ -50,7 +59,7 @@ public:
             return false;
         }
         if (tmp != &dst) {
-            return Orient(dst, *tmp, origin);
+            return Orient(dst, *tmp, OriginToOrient(origin));
         }
         return true;
     }

@@ -26,17 +26,19 @@ public:
     typedef bool(*FindProc)(SkTypeface*, void* context);
 
     /**
-     *  Add a typeface to the cache. Later, if we need to purge the cache,
-     *  typefaces uniquely owned by the cache will be unref()ed.
+     *  Add a typeface to the cache. This ref()s the typeface, so that the
+     *  cache is also an owner. Later, if we need to purge the cache, typefaces
+     *  whose refcnt is 1 (meaning only the cache is an owner) will be
+     *  unref()ed.
      */
-    void add(sk_sp<SkTypeface>);
+    void add(SkTypeface*);
 
     /**
-     *  Iterate through the cache, calling proc(typeface, ctx) for each typeface.
-     *  If proc returns true, then return that typeface.
-     *  If it never returns true, return nullptr.
+     *  Iterate through the cache, calling proc(typeface, ctx) with each
+     *  typeface. If proc returns true, then we return that typeface (this
+     *  ref()s the typeface). If it never returns true, we return nullptr.
      */
-    sk_sp<SkTypeface> findByProcAndRef(FindProc proc, void* ctx) const;
+    SkTypeface* findByProcAndRef(FindProc proc, void* ctx) const;
 
     /**
      *  This will unref all of the typefaces in the cache for which the cache
@@ -54,8 +56,8 @@ public:
 
     // These are static wrappers around a global instance of a cache.
 
-    static void Add(sk_sp<SkTypeface>);
-    static sk_sp<SkTypeface> FindByProcAndRef(FindProc proc, void* ctx);
+    static void Add(SkTypeface*);
+    static SkTypeface* FindByProcAndRef(FindProc proc, void* ctx);
     static void PurgeAll();
 
     /**

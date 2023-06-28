@@ -22,7 +22,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 +    }
      return true;
  }
- 
+
  #define NO_CHECK_ITER               \
      do {                            \
      unsigned fi = fx >> Gradient_Shader::kCache32Shift; \
@@ -36,7 +36,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
  #else
      int toggle = 0;
  #endif
- 
+
 +    if (fStart == fEnd) {
 +        sk_bzero(dstC, count * sizeof(*dstC));
 +        return;
@@ -46,19 +46,19 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
          dstProc(fDstToIndex, SkIntToScalar(x) + SK_ScalarHalf,
                               SkIntToScalar(y) + SK_ScalarHalf, &srcPt);
          SkFixed dx, fx = SkScalarToFixed(srcPt.fX);
- 
+
          if (fDstToIndexClass == kFixedStepInX_MatrixClass) {
              SkFixed dxStorage[1];
              (void)fDstToIndex.fixedStepInX(SkIntToScalar(y), dxStorage, NULL);
 @@ -1169,16 +1177,21 @@ void Linear_Gradient::shadeSpan16(int x,
      SkASSERT(count > 0);
- 
+
      SkPoint             srcPt;
      SkMatrix::MapXYProc dstProc = fDstToIndexProc;
      TileProc            proc = fTileProc;
      const uint16_t* SK_RESTRICT cache = this->getCache16();
      int                 toggle = ((x ^ y) & 1) * kDitherStride16;
- 
+
 +    if (fStart == fEnd) {
 +        sk_bzero(dstC, count * sizeof(*dstC));
 +        return;
@@ -68,14 +68,14 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
          dstProc(fDstToIndex, SkIntToScalar(x) + SK_ScalarHalf,
                               SkIntToScalar(y) + SK_ScalarHalf, &srcPt);
          SkFixed dx, fx = SkScalarToFixed(srcPt.fX);
- 
+
          if (fDstToIndexClass == kFixedStepInX_MatrixClass) {
              SkFixed dxStorage[1];
              (void)fDstToIndex.fixedStepInX(SkIntToScalar(y), dxStorage, NULL);
 @@ -1739,21 +1752,25 @@ void Radial_Gradient::shadeSpan(int x, i
     possible circles on which the point may fall.  Solving for t yields
     the gradient value to use.
- 
+
     If a<0, the start circle is entirely contained in the
     end circle, and one of the roots will be <0 or >1 (off the line
     segment).  If a>0, the start circle falls at least partially
@@ -84,38 +84,38 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 -   inside of the tube) or the other (outside of the tube).  We choose
 -   one arbitrarily.
 +   inside of the tube) or the other (outside of the tube). We choose
-+   the one with the highest t value, as long as the radius that it 
++   the one with the highest t value, as long as the radius that it
 +   corresponds to is >=0. In the case where neither root has a positive
 +   radius, we don't draw anything.
- 
+
 +   XXXmattwoodrow: I've removed this for now since it breaks
 +   down when Dr == 0. Is there something else we can do instead?
     In order to keep the math to within the limits of fixed point,
 -   we divide the entire quadratic by Dr^2, and replace
 +   we divide the entire quadratic by Dr, and replace
     (x - Sx)/Dr with x' and (y - Sy)/Dr with y', giving
- 
+
     [Dx^2 / Dr^2 + Dy^2 / Dr^2 - 1)] * t^2
     + 2 * [x' * Dx / Dr + y' * Dy / Dr - Sr / Dr] * t
     + [x'^2 + y'^2 - Sr^2/Dr^2] = 0
- 
+
     (x' and y' are computed by appending the subtract and scale to the
     fDstToIndex matrix in the constructor).
 @@ -1763,99 +1780,122 @@ void Radial_Gradient::shadeSpan(int x, i
     x' and y', if x and y are linear in the span, 'B' can be computed
     incrementally with a simple delta (db below).  If it is not (e.g.,
     a perspective projection), it must be computed in the loop.
- 
+
  */
- 
+
  namespace {
- 
+
 -inline SkFixed two_point_radial(SkScalar b, SkScalar fx, SkScalar fy,
 -                                SkScalar sr2d2, SkScalar foura,
 -                                SkScalar oneOverTwoA, bool posRoot) {
 +inline bool two_point_radial(SkScalar b, SkScalar fx, SkScalar fy,
 +                             SkScalar sr2d2, SkScalar foura,
-+                             SkScalar oneOverTwoA, SkScalar diffRadius, 
++                             SkScalar oneOverTwoA, SkScalar diffRadius,
 +                             SkScalar startRadius, SkFixed& t) {
      SkScalar c = SkScalarSquare(fx) + SkScalarSquare(fy) - sr2d2;
      if (0 == foura) {
@@ -127,7 +127,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 +        }
 +        return false;
      }
- 
+
      SkScalar discrim = SkScalarSquare(b) - SkScalarMul(foura, c);
      if (discrim < 0) {
 -        discrim = -discrim;
@@ -155,7 +155,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 +
 +    return false;
  }
- 
+
  typedef void (* TwoPointRadialShadeProc)(SkScalar fx, SkScalar dx,
          SkScalar fy, SkScalar dy,
          SkScalar b, SkScalar db,
@@ -164,7 +164,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 +        SkScalar fDiffRadius, SkScalar fRadius1,
          SkPMColor* SK_RESTRICT dstC, const SkPMColor* SK_RESTRICT cache,
          int count);
- 
+
  void shadeSpan_twopoint_clamp(SkScalar fx, SkScalar dx,
          SkScalar fy, SkScalar dy,
          SkScalar b, SkScalar db,
@@ -189,7 +189,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
              SkASSERT(t <= 0xFFFF);
              *dstC++ = cache[t >> Gradient_Shader::kCache32Shift];
          }
- 
+
          fx += dx;
          fy += dy;
          b += db;
@@ -222,12 +222,12 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
          b += db;
      }
  }
- 
+
  void shadeSpan_twopoint_repeat(SkScalar fx, SkScalar dx,
          SkScalar fy, SkScalar dy,
          SkScalar b, SkScalar db,
 -        SkScalar fSr2D2, SkScalar foura, SkScalar fOneOverTwoA, bool posRoot,
-+        SkScalar fSr2D2, SkScalar foura, SkScalar fOneOverTwoA, 
++        SkScalar fSr2D2, SkScalar foura, SkScalar fOneOverTwoA,
 +        SkScalar fDiffRadius, SkScalar fRadius1,
          SkPMColor* SK_RESTRICT dstC, const SkPMColor* SK_RESTRICT cache,
          int count) {
@@ -250,9 +250,9 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
          b += db;
      }
  }
- 
- 
- 
+
+
+
 @@ -1935,17 +1975,16 @@ public:
            sk_bzero(dstC, count * sizeof(*dstC));
            return;
@@ -260,7 +260,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
          SkMatrix::MapXYProc dstProc = fDstToIndexProc;
          TileProc            proc = fTileProc;
          const SkPMColor* SK_RESTRICT cache = this->getCache32();
- 
+
          SkScalar foura = fA * 4;
 -        bool posRoot = fDiffRadius < 0;
          if (fDstToIndexClass != kPerspective_MatrixClass) {
@@ -269,7 +269,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
                                   SkIntToScalar(y) + SK_ScalarHalf, &srcPt);
              SkScalar dx, fx = srcPt.fX;
              SkScalar dy, fy = srcPt.fY;
- 
+
              if (fDstToIndexClass == kFixedStepInX_MatrixClass) {
 @@ -1954,60 +1993,69 @@ public:
                  dx = SkFixedToScalar(fixedX);
@@ -284,7 +284,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 +                          SkScalarMul(fDiff.fY, fy) - fStartRadius * fDiffRadius) * 2;
              SkScalar db = (SkScalarMul(fDiff.fX, dx) +
                            SkScalarMul(fDiff.fY, dy)) * 2;
- 
+
              TwoPointRadialShadeProc shadeProc = shadeSpan_twopoint_repeat;
              if (proc == clamp_tileproc) {
                  shadeProc = shadeSpan_twopoint_clamp;
@@ -324,14 +324,14 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
              }
          }
      }
- 
+
      virtual bool setContext(const SkBitmap& device,
                              const SkPaint& paint,
                              const SkMatrix& matrix) SK_OVERRIDE {
          if (!this->INHERITED::setContext(device, paint, matrix)) {
              return false;
          }
- 
+
          // we don't have a span16 proc
          fFlags &= ~kHasSpan16_Flag;
 +
@@ -342,9 +342,9 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 +        }
          return true;
      }
- 
+
      SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Two_Point_Radial_Gradient)
- 
+
  protected:
      Two_Point_Radial_Gradient(SkFlattenableReadBuffer& buffer)
              : INHERITED(buffer),
@@ -353,7 +353,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
      const SkScalar fRadius2;
      SkPoint fDiff;
      SkScalar fStartRadius, fDiffRadius, fSr2D2, fA, fOneOverTwoA;
- 
+
      void init() {
          fDiff = fCenter1 - fCenter2;
          fDiffRadius = fRadius2 - fRadius1;
@@ -366,14 +366,14 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 -        fA = SkScalarSquare(fDiff.fX) + SkScalarSquare(fDiff.fY) - SK_Scalar1;
 +        fA = SkScalarSquare(fDiff.fX) + SkScalarSquare(fDiff.fY) - SkScalarSquare(fDiffRadius);
          fOneOverTwoA = fA ? SkScalarInvert(fA * 2) : 0;
- 
+
          fPtsToUnit.setTranslate(-fCenter1.fX, -fCenter1.fY);
 -        fPtsToUnit.postScale(inv, inv);
      }
  };
- 
+
  ///////////////////////////////////////////////////////////////////////////////
- 
+
  class Sweep_Gradient : public Gradient_Shader {
  public:
      Sweep_Gradient(SkScalar cx, SkScalar cy, const SkColor colors[],
@@ -385,7 +385,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
          return NULL;
      }
      EXPAND_1_COLOR(colorCount);
- 
+
 +    if (start == end && startRadius == 0) {
 +        return CreateRadial(start, endRadius, colors, pos, colorCount, mode, mapper);
 +    }
@@ -394,7 +394,7 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
                        (start, startRadius, end, endRadius, colors, pos,
                         colorCount, mode, mapper));
  }
- 
+
  SkShader* SkGradientShader::CreateSweep(SkScalar cx, SkScalar cy,
                                          const SkColor colors[],
                                          const SkScalar pos[],

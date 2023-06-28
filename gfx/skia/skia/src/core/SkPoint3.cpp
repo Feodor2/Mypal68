@@ -49,11 +49,10 @@ bool SkPoint3::normalize() {
         this->set(0, 0, 0);
         return false;
     }
-    // sqrtf does not provide enough precision; since sqrt takes a double,
-    // there's no additional penalty to storing invScale in a double
-    double invScale;
-    if (sk_float_isfinite(magSq)) {
-        invScale = magSq;
+
+    float scale;
+    if (SkScalarIsFinite(magSq)) {
+        scale = 1.0f / sk_float_sqrt(magSq);
     } else {
         // our magSq step overflowed to infinity, so use doubles instead.
         // much slower, but needed when x, y or z is very large, otherwise we
@@ -61,16 +60,21 @@ bool SkPoint3::normalize() {
         double xx = fX;
         double yy = fY;
         double zz = fZ;
-        invScale = xx * xx + yy * yy + zz * zz;
+#ifdef SK_CPU_FLUSH_TO_ZERO
+        // The iOS ARM processor discards small denormalized numbers to go faster.
+        // Casting this to a float would cause the scale to go to zero. Keeping it
+        // as a double for the multiply keeps the scale non-zero.
+        double dscale = 1.0f / sqrt(xx * xx + yy * yy + zz * zz);
+        fX = x * dscale;
+        fY = y * dscale;
+        fZ = z * dscale;
+        return true;
+#else
+        scale = (float)(1.0f / sqrt(xx * xx + yy * yy + zz * zz));
+#endif
     }
-    // using a float instead of a double for scale loses too much precision
-    double scale = 1 / sqrt(invScale);
     fX *= scale;
     fY *= scale;
     fZ *= scale;
-    if (!sk_float_isfinite(fX) || !sk_float_isfinite(fY) || !sk_float_isfinite(fZ)) {
-        this->set(0, 0, 0);
-        return false;
-    }
     return true;
 }

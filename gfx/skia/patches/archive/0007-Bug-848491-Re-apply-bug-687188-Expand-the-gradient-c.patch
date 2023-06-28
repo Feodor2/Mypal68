@@ -8,7 +8,7 @@ index 684355d..27a9c46 100644
 --- a/gfx/skia/src/effects/gradients/SkGradientShader.cpp
 +++ b/gfx/skia/src/effects/gradients/SkGradientShader.cpp
 @@ -453,15 +453,15 @@ const uint16_t* SkGradientShaderBase::getCache16() const {
- 
+
  const SkPMColor* SkGradientShaderBase::getCache32() const {
      if (fCache32 == NULL) {
 -        // double the count for dither entries
@@ -16,7 +16,7 @@ index 684355d..27a9c46 100644
 +        // double the count for dither entries, and have an extra two entries for clamp values
 +        const int entryCount = kCache32Count * 4 + 2;
          const size_t allocSize = sizeof(SkPMColor) * entryCount;
- 
+
          if (NULL == fCache32PixelRef) {
              fCache32PixelRef = SkNEW_ARGS(SkMallocPixelRef,
                                            (NULL, allocSize, NULL));
@@ -57,7 +57,7 @@ index 684355d..27a9c46 100644
 +
      return fCache32;
  }
- 
+
 diff --git a/gfx/skia/src/effects/gradients/SkGradientShaderPriv.h b/gfx/skia/src/effects/gradients/SkGradientShaderPriv.h
 index 729ce4e..2cb6a9d 100644
 --- a/gfx/skia/src/effects/gradients/SkGradientShaderPriv.h
@@ -70,8 +70,8 @@ index 729ce4e..2cb6a9d 100644
 +        kCache32ClampLower = -1,
 +        kCache32ClampUpper = kCache32Count * 4
      };
- 
- 
+
+
 diff --git a/gfx/skia/src/effects/gradients/SkLinearGradient.cpp b/gfx/skia/src/effects/gradients/SkLinearGradient.cpp
 index e0f216c..40ab918 100644
 --- a/gfx/skia/src/effects/gradients/SkLinearGradient.cpp
@@ -96,7 +96,7 @@ index e0f216c..40ab918 100644
      // insufficient (it subsamples the color space) and we need to lerp.
 @@ -154,10 +165,7 @@ void shadeSpan_linear_clamp(TileProc proc, SkFixed dx, SkFixed fx,
      range.init(fx, dx, count, 0, SkGradientShaderBase::kCache32Count - 1);
- 
+
      if ((count = range.fCount0) > 0) {
 -        sk_memset32_dither(dstC,
 -            cache[toggle + range.fV0],
@@ -117,7 +117,7 @@ index e0f216c..40ab918 100644
 +        sk_memset32(dstC, cache[SkGradientShaderBase::kCache32ClampUpper], count);
      }
  }
- 
+
 diff --git a/gfx/skia/src/effects/gradients/SkTwoPointConicalGradient.cpp b/gfx/skia/src/effects/gradients/SkTwoPointConicalGradient.cpp
 index abd974b..601fff4 100644
 --- a/gfx/skia/src/effects/gradients/SkTwoPointConicalGradient.cpp
@@ -163,6 +163,5 @@ index f70b67d..ec2ae75 100644
          fx += dx;
          fy += dy;
          b += db;
--- 
+--
 1.7.11.7
-

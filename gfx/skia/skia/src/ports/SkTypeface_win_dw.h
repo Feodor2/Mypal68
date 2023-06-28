@@ -19,11 +19,6 @@
 #include <dwrite.h>
 #include <dwrite_1.h>
 #include <dwrite_2.h>
-#include <dwrite_3.h>
-
-#if !defined(__MINGW32__) && WINVER < 0x0A00
-#include "mozilla/gfx/dw-extra.h"
-#endif
 
 class SkFontDescriptor;
 struct SkScalerContextRec;
@@ -69,9 +64,6 @@ private:
         if (!SUCCEEDED(fDWriteFontFace->QueryInterface(&fDWriteFontFace2))) {
             SkASSERT_RELEASE(nullptr == fDWriteFontFace2.get());
         }
-        if (!SUCCEEDED(fDWriteFontFace->QueryInterface(&fDWriteFontFace4))) {
-            SkASSERT_RELEASE(nullptr == fDWriteFontFace4.get());
-        }
         if (!SUCCEEDED(fFactory->QueryInterface(&fFactory2))) {
             SkASSERT_RELEASE(nullptr == fFactory2.get());
         }
@@ -87,20 +79,6 @@ public:
     SkTScopedComPtr<IDWriteFontFace> fDWriteFontFace;
     SkTScopedComPtr<IDWriteFontFace1> fDWriteFontFace1;
     SkTScopedComPtr<IDWriteFontFace2> fDWriteFontFace2;
-    SkTScopedComPtr<IDWriteFontFace4> fDWriteFontFace4;
-
-    static sk_sp<DWriteFontTypeface> Make(
-        IDWriteFactory* factory,
-        IDWriteFontFace* fontFace,
-        IDWriteFont* font,
-        IDWriteFontFamily* fontFamily,
-        IDWriteFontFileLoader* fontFileLoader = nullptr,
-        IDWriteFontCollectionLoader* fontCollectionLoader = nullptr)
-    {
-        return sk_sp<DWriteFontTypeface>(
-            new DWriteFontTypeface(get_style(font), factory, fontFace, font, fontFamily,
-                                   fontFileLoader, fontCollectionLoader));
-    }
 
     static DWriteFontTypeface* Create(IDWriteFactory* factory,
                                       IDWriteFontFace* fontFace,
@@ -118,6 +96,16 @@ public:
         return typeface;
     }
 
+    static DWriteFontTypeface* Create(IDWriteFactory* factory,
+                                      IDWriteFontFace* fontFace,
+                                      IDWriteFont* font,
+                                      IDWriteFontFamily* fontFamily,
+                                      IDWriteFontFileLoader* fontFileLoader = nullptr,
+                                      IDWriteFontCollectionLoader* fontCollectionLoader = nullptr) {
+        return new DWriteFontTypeface(get_style(font), factory, fontFace, font, fontFamily,
+                                      fontFileLoader, fontCollectionLoader);
+    }
+
     bool ForceGDI() const { return fForceGDI; }
 
 protected:
@@ -133,12 +121,10 @@ protected:
         INHERITED::weak_dispose();
     }
 
-    sk_sp<SkTypeface> onMakeClone(const SkFontArguments&) const override;
-    std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override;
+    SkStreamAsset* onOpenStream(int* ttcIndex) const override;
     SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
                                            const SkDescriptor*) const override;
     void onFilterRec(SkScalerContextRec*) const override;
-    void getGlyphToUnicodeMap(SkUnichar* glyphToUnicode) const override;
     std::unique_ptr<SkAdvancedTypefaceMetrics> onGetAdvancedMetrics() const override;
     void onGetFontDescriptor(SkFontDescriptor*, bool*) const override;
     int onCharsToGlyphs(const void* chars, Encoding encoding,
@@ -148,9 +134,10 @@ protected:
     void onGetFamilyName(SkString* familyName) const override;
     SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const override;
     int onGetVariationDesignPosition(SkFontArguments::VariationPosition::Coordinate coordinates[],
-                                     int coordinateCount) const override;
-    int onGetVariationDesignParameters(SkFontParameters::Variation::Axis parameters[],
-                                       int parameterCount) const override;
+                                     int coordinateCount) const override
+    {
+        return -1;
+    }
     int onGetTableTags(SkFontTableTag tags[]) const override;
     size_t onGetTableData(SkFontTableTag, size_t offset, size_t length, void* data) const override;
 

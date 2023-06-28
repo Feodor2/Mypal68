@@ -82,4 +82,3 @@ void SkCanvasPriv::WriteLattice(SkWriteBuffer& buffer, const SkCanvas::Lattice& 
     WriteLattice(storage.get(), lattice);
     buffer.writePad32(storage.get(), size);
 }
-

@@ -23,7 +23,8 @@ static const bool c_DisplayCache{false};
 typedef GrGLSLProgramDataManager::UniformHandle UniformHandle;
 
 struct GrGLGpu::ProgramCache::Entry {
-    Entry(sk_sp<GrGLProgram> program) : fProgram(std::move(program)) {}
+    Entry(sk_sp<GrGLProgram> program)
+    : fProgram(std::move(program)) {}
 
     sk_sp<GrGLProgram> fProgram;
 };
@@ -61,19 +62,11 @@ void GrGLGpu::ProgramCache::abandon() {
     fCacheMisses = 0;
     fHashMisses = 0;
 #endif
-
-    fMap.foreach([](std::unique_ptr<Entry>* e) {
-        (*e)->fProgram->abandon();
-    });
-    fMap.reset();
 }
 
-GrGLProgram* GrGLGpu::ProgramCache::refProgram(GrGLGpu* gpu,
-                                               GrRenderTarget* renderTarget,
-                                               GrSurfaceOrigin origin,
-                                               const GrPrimitiveProcessor& primProc,
-                                               const GrTextureProxy* const primProcProxies[],
+GrGLProgram* GrGLGpu::ProgramCache::refProgram(const GrGLGpu* gpu,
                                                const GrPipeline& pipeline,
+                                               const GrPrimitiveProcessor& primProc,
                                                bool isPoints) {
 #ifdef PROGRAM_CACHE_STATS
     ++fTotalRequests;
@@ -81,14 +74,17 @@ GrGLProgram* GrGLGpu::ProgramCache::refProgram(GrGLGpu* gpu,
 
     // Get GrGLProgramDesc
     GrProgramDesc desc;
-    if (!GrProgramDesc::Build(&desc, renderTarget->config(), primProc, isPoints, pipeline, gpu)) {
+    if (!GrProgramDesc::Build(&desc, primProc, isPoints, pipeline, *gpu->caps()->shaderCaps())) {
         GrCapsDebugf(gpu->caps(), "Failed to gl program descriptor!\n");
         return nullptr;
     }
+    desc.finalize();
     std::unique_ptr<Entry>* entry = fMap.find(desc);
     if (!entry) {
         // Didn't find an origin-independent version, check with the specific origin
+        GrSurfaceOrigin origin = pipeline.proxy()->origin();
         desc.setSurfaceOriginKey(GrGLSLFragmentShaderBuilder::KeyForSurfaceOrigin(origin));
+        desc.finalize();
         entry = fMap.find(desc);
     }
     if (!entry) {
@@ -96,9 +92,7 @@ GrGLProgram* GrGLGpu::ProgramCache::refProgram(GrGLGpu* gpu,
 #ifdef PROGRAM_CACHE_STATS
         ++fCacheMisses;
 #endif
-        GrGLProgram* program = GrGLProgramBuilder::CreateProgram(renderTarget, origin,
-                                                                 primProc, primProcProxies,
-                                                                 pipeline, &desc, fGpu);
+        GrGLProgram* program = GrGLProgramBuilder::CreateProgram(pipeline, primProc, &desc, fGpu);
         if (nullptr == program) {
             return nullptr;
         }

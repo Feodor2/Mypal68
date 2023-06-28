@@ -26,6 +26,11 @@ DEFINE_GUID(CLSID_CMSAACDecMFT, 0x32D186A7, 0x218F, 0x4C75, 0x88, 0x76, 0xDD,
             0x77, 0x27, 0x3A, 0x89, 0x99);
 #endif
 
+#ifndef MFVideoTransferMatrix_BT2020_10
+#define MFVideoTransferMatrix_BT2020_10	4
+#define MFVideoTransferMatrix_BT2020_12	5
+#endif
+
 namespace mozilla {
 
 using media::TimeUnit;

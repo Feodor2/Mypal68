@@ -9,26 +9,17 @@
 #define GLatticeOp_DEFINED
 
 #include <memory>
-#include "GrSamplerState.h"
-#include "SkRefCnt.h"
+#include "GrTypes.h"
 
-class GrColorSpaceXform;
 class GrDrawOp;
 class GrPaint;
 class SkLatticeIter;
-class GrRecordingContext;
-class GrTextureProxy;
 class SkMatrix;
 struct SkRect;
 
 namespace GrLatticeOp {
-std::unique_ptr<GrDrawOp> MakeNonAA(GrRecordingContext*,
-                                    GrPaint&&,
-                                    const SkMatrix& viewMatrix,
-                                    sk_sp<GrTextureProxy>,
-                                    sk_sp<GrColorSpaceXform>,
-                                    GrSamplerState::Filter,
-                                    std::unique_ptr<SkLatticeIter>,
+std::unique_ptr<GrDrawOp> MakeNonAA(GrPaint&& paint, const SkMatrix& viewMatrix, int imageWidth,
+                                    int imageHeight, std::unique_ptr<SkLatticeIter> iter,
                                     const SkRect& dst);
 };
 

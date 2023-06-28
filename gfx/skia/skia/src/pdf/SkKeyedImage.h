@@ -27,7 +27,7 @@ public:
     SkKeyedImage& operator=(SkKeyedImage&&) = default;
     SkKeyedImage& operator=(const SkKeyedImage&) = default;
 
-    explicit operator bool() const { return fImage != nullptr; }
+    explicit operator bool() const { return fImage; }
     const SkBitmapKey& key() const { return fKey; }
     const sk_sp<SkImage>& image() const { return fImage; }
     sk_sp<SkImage> release();

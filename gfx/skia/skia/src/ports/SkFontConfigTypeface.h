@@ -5,9 +5,6 @@
  * found in the LICENSE file.
  */
 
-#ifndef SkFontConfigTypeface_DEFINED
-#define SkFontConfigTypeface_DEFINED
-
 #include "SkFontConfigInterface.h"
 #include "SkFontDescriptor.h"
 #include "SkFontHost_FreeType_common.h"
@@ -41,17 +38,6 @@ public:
         return fIdentity;
     }
 
-    sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override {
-        std::unique_ptr<SkFontData> data = this->cloneFontData(args);
-        if (!data) {
-            return nullptr;
-        }
-        return sk_sp<SkTypeface>(new SkTypeface_FCI(std::move(data),
-                                                    fFamilyName,
-                                                    this->fontStyle(),
-                                                    this->isFixedPitch()));
-    }
-
 protected:
     SkTypeface_FCI(sk_sp<SkFontConfigInterface> fci,
                    const SkFontConfigInterface::FontIdentity& fi,
@@ -75,11 +61,9 @@ protected:
 
     void onGetFamilyName(SkString* familyName) const override { *familyName = fFamilyName; }
     void onGetFontDescriptor(SkFontDescriptor*, bool*) const override;
-    std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override;
+    SkStreamAsset* onOpenStream(int* ttcIndex) const override;
     std::unique_ptr<SkFontData> onMakeFontData() const override;
 
 private:
     typedef SkTypeface_FreeType INHERITED;
 };
-
-#endif  // SkFontConfigTypeface_DEFINED

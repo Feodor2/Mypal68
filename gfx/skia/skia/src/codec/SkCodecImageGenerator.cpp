@@ -8,7 +8,6 @@
 #include "SkCodecImageGenerator.h"
 #include "SkMakeUnique.h"
 #include "SkPixmapPriv.h"
-#include "SkYUVAIndex.h"
 
 std::unique_ptr<SkImageGenerator> SkCodecImageGenerator::MakeFromEncodedCodec(sk_sp<SkData> data) {
     auto codec = SkCodec::MakeFromData(data);
@@ -17,13 +16,6 @@ std::unique_ptr<SkImageGenerator> SkCodecImageGenerator::MakeFromEncodedCodec(sk
     }
 
     return std::unique_ptr<SkImageGenerator>(new SkCodecImageGenerator(std::move(codec), data));
-}
-
-std::unique_ptr<SkImageGenerator>
-SkCodecImageGenerator::MakeFromCodec(std::unique_ptr<SkCodec> codec) {
-    return codec
-        ? std::unique_ptr<SkImageGenerator>(new SkCodecImageGenerator(std::move(codec), nullptr))
-        : nullptr;
 }
 
 static SkImageInfo adjust_info(SkCodec* codec) {
@@ -43,16 +35,18 @@ SkCodecImageGenerator::SkCodecImageGenerator(std::unique_ptr<SkCodec> codec, sk_
     , fData(std::move(data))
 {}
 
-sk_sp<SkData> SkCodecImageGenerator::onRefEncodedData() {
-    return fData;
+SkData* SkCodecImageGenerator::onRefEncodedData() {
+    return SkRef(fData.get());
 }
 
 bool SkCodecImageGenerator::onGetPixels(const SkImageInfo& requestInfo, void* requestPixels,
-                                        size_t requestRowBytes, const Options&) {
+                                        size_t requestRowBytes, const Options& opts) {
     SkPixmap dst(requestInfo, requestPixels, requestRowBytes);
 
-    auto decode = [this](const SkPixmap& pm) {
-        SkCodec::Result result = fCodec->getPixels(pm);
+    auto decode = [this, &opts](const SkPixmap& pm) {
+        SkCodec::Options codecOpts;
+        codecOpts.fPremulBehavior = opts.fBehavior;
+        SkCodec::Result result = fCodec->getPixels(pm, &codecOpts);
         switch (result) {
             case SkCodec::kSuccess:
             case SkCodec::kIncompleteInput:
@@ -66,27 +60,13 @@ bool SkCodecImageGenerator::onGetPixels(const SkImageInfo& requestInfo, void* re
     return SkPixmapPriv::Orient(dst, fCodec->getOrigin(), decode);
 }
 
-bool SkCodecImageGenerator::onQueryYUVA8(SkYUVASizeInfo* sizeInfo,
-                                         SkYUVAIndex yuvaIndices[SkYUVAIndex::kIndexCount],
-                                         SkYUVColorSpace* colorSpace) const {
-    // This image generator always returns 3 separate non-interleaved planes
-    yuvaIndices[SkYUVAIndex::kY_Index].fIndex = 0;
-    yuvaIndices[SkYUVAIndex::kY_Index].fChannel = SkColorChannel::kR;
-    yuvaIndices[SkYUVAIndex::kU_Index].fIndex = 1;
-    yuvaIndices[SkYUVAIndex::kU_Index].fChannel = SkColorChannel::kR;
-    yuvaIndices[SkYUVAIndex::kV_Index].fIndex = 2;
-    yuvaIndices[SkYUVAIndex::kV_Index].fChannel = SkColorChannel::kR;
-    yuvaIndices[SkYUVAIndex::kA_Index].fIndex = -1;
-    yuvaIndices[SkYUVAIndex::kA_Index].fChannel = SkColorChannel::kR;
-
+bool SkCodecImageGenerator::onQueryYUV8(SkYUVSizeInfo* sizeInfo, SkYUVColorSpace* colorSpace) const
+{
     return fCodec->queryYUV8(sizeInfo, colorSpace);
 }
 
-bool SkCodecImageGenerator::onGetYUVA8Planes(const SkYUVASizeInfo& sizeInfo,
-                                             const SkYUVAIndex indices[SkYUVAIndex::kIndexCount],
-                                             void* planes[]) {
+bool SkCodecImageGenerator::onGetYUV8Planes(const SkYUVSizeInfo& sizeInfo, void* planes[3]) {
     SkCodec::Result result = fCodec->getYUV8Planes(sizeInfo, planes);
-    // TODO: check indices
 
     switch (result) {
         case SkCodec::kSuccess:

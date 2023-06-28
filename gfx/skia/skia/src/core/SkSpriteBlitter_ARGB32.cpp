@@ -12,7 +12,7 @@
 #include "SkColorData.h"
 #include "SkPaint.h"
 #include "SkTemplates.h"
-#include "SkUTF.h"
+#include "SkUtils.h"
 #include "SkXfermodePriv.h"
 
 ///////////////////////////////////////////////////////////////////////////////

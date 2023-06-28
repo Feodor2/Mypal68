@@ -448,8 +448,8 @@ Renderer11::Renderer11(egl::Display *display)
 
     mDevice         = nullptr;
     mDeviceContext  = nullptr;
-    mDeviceContext1 = nullptr;
-    mDeviceContext3 = nullptr;
+    //mDeviceContext1 = nullptr;
+    //mDeviceContext3 = nullptr;
     mDxgiAdapter    = nullptr;
     mDxgiFactory    = nullptr;
 
@@ -542,11 +542,11 @@ Renderer11::Renderer11(egl::Display *display)
 // Diagnostics tools in Visual Studio 2013.
 // The D3D9 annotator works properly for both D3D11 and D3D9.
 // Incorrect status reporting can cause ANGLE to log unnecessary debug events.
-#ifdef ANGLE_ENABLE_D3D9
+//#ifdef ANGLE_ENABLE_D3D9
     mAnnotator = new DebugAnnotator9();
-#else
+/*#else
     mAnnotator = new DebugAnnotator11();
-#endif
+#endif*/
     ASSERT(mAnnotator);
     gl::InitializeDebugAnnotations(mAnnotator);
 }
@@ -607,8 +607,8 @@ egl::Error Renderer11::initialize()
         // Cast the DeviceContext to a DeviceContext1 and DeviceContext3.
         // This could fail on Windows 7 without the Platform Update.
         // Don't error in this case- just don't use mDeviceContext1 or mDeviceContext3.
-        mDeviceContext1 = d3d11::DynamicCastComObject<ID3D11DeviceContext1>(mDeviceContext);
-        mDeviceContext3 = d3d11::DynamicCastComObject<ID3D11DeviceContext3>(mDeviceContext);
+        //mDeviceContext1 = d3d11::DynamicCastComObject<ID3D11DeviceContext1>(mDeviceContext);
+        //mDeviceContext3 = d3d11::DynamicCastComObject<ID3D11DeviceContext3>(mDeviceContext);
 
         IDXGIDevice *dxgiDevice = nullptr;
         result = mDevice->QueryInterface(__uuidof(IDXGIDevice), (void **)&dxgiDevice);
@@ -881,10 +881,10 @@ egl::Error Renderer11::initializeDevice()
     // update. Instead we check if the mDeviceContext1 pointer cast succeeded.
     // Note: we should support D3D11_0 always, but we aren't guaranteed to be at FL11_0
     // because the app can specify a lower version (such as 9_3) on Display creation.
-    if (mDeviceContext1 != nullptr)
+    /*if (mDeviceContext1 != nullptr)
     {
         angleFeatureLevel = ANGLE_FEATURE_LEVEL_11_1;
-    }
+    }*/
 
     ANGLE_HISTOGRAM_ENUMERATION("GPU.ANGLE.D3D11FeatureLevel", angleFeatureLevel,
                                 NUM_ANGLE_FEATURE_LEVELS);
@@ -908,7 +908,7 @@ void Renderer11::populateRenderer11DeviceCaps()
         mRenderer11DeviceCaps.driverVersion = version;
     }
 
-    if (mDeviceContext1)
+    /*if (mDeviceContext1)
     {
         D3D11_FEATURE_DATA_D3D11_OPTIONS d3d11Options;
         HRESULT result = mDevice->CheckFeatureSupport(D3D11_FEATURE_D3D11_OPTIONS, &d3d11Options,
@@ -931,7 +931,7 @@ void Renderer11::populateRenderer11DeviceCaps()
             mRenderer11DeviceCaps.supportsVpRtIndexWriteFromVertexShader =
                 (d3d11Options3.VPAndRTArrayIndexFromAnyShaderFeedingRasterizer == TRUE);
         }
-    }
+    }*/
 
     mRenderer11DeviceCaps.supportsMultisampledDepthStencilSRVs =
         mRenderer11DeviceCaps.featureLevel > D3D_FEATURE_LEVEL_10_0;
@@ -1941,8 +1941,8 @@ void Renderer11::release()
     SafeRelease(mDxgiFactory);
     SafeRelease(mDxgiAdapter);
 
-    SafeRelease(mDeviceContext3);
-    SafeRelease(mDeviceContext1);
+    //SafeRelease(mDeviceContext3);
+    //SafeRelease(mDeviceContext1);
 
     if (mDeviceContext)
     {

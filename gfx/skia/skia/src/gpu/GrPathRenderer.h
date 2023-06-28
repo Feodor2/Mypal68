@@ -8,23 +8,19 @@
 #ifndef GrPathRenderer_DEFINED
 #define GrPathRenderer_DEFINED
 
-#include "GrTypesPriv.h"
-#include "SkTArray.h"
-#include "SkRefCnt.h"
+#include "GrCaps.h"
+#include "GrRenderTargetContext.h"
+#include "GrPaint.h"
+#include "GrShape.h"
+#include "GrUserStencilSettings.h"
 
-class GrCaps;
-class GrClip;
+#include "SkDrawProcs.h"
+#include "SkTArray.h"
+
+class SkPath;
 class GrFixedClip;
 class GrHardClip;
-class GrPaint;
-class GrRecordingContext;
-class GrRenderTargetContext;
-class GrShape;
-class GrStyle;
-struct GrUserStencilSettings;
-struct SkIRect;
-class SkMatrix;
-class SkPath;
+struct GrPoint;
 
 /**
  *  Base class for drawing paths into a GrOpList.
@@ -64,7 +60,13 @@ public:
      * @param shape   the shape that will be drawn. Must be simple fill styled and non-inverse
      *                filled.
      */
-    StencilSupport getStencilSupport(const GrShape& shape) const;
+    StencilSupport getStencilSupport(const GrShape& shape) const {
+        SkDEBUGCODE(SkPath path;)
+        SkDEBUGCODE(shape.asPath(&path);)
+        SkASSERT(shape.style().isSimpleFill());
+        SkASSERT(!path.isInverseFillType());
+        return this->onGetStencilSupport(shape);
+    }
 
     enum class CanDrawPath {
         kNo,
@@ -80,9 +82,8 @@ public:
         const SkMatrix*             fViewMatrix;
         const GrShape*              fShape;
         GrAAType                    fAAType;
-        bool                        fTargetIsWrappedVkSecondaryCB;
 
-        // This is only used by GrStencilAndCoverPathRenderer
+        // These next two are only used by GrStencilAndCoverPathRenderer
         bool                        fHasUserStencilSettings;
 
 #ifdef SK_DEBUG
@@ -106,7 +107,7 @@ public:
     }
 
     struct DrawPathArgs {
-        GrRecordingContext*          fContext;
+        GrContext*                   fContext;
         GrPaint&&                    fPaint;
         const GrUserStencilSettings* fUserStencilSettings;
         GrRenderTargetContext*       fRenderTargetContext;
@@ -133,14 +134,40 @@ public:
      * Draws the path into the draw target. If getStencilSupport() would return kNoRestriction then
      * the subclass must respect the stencil settings.
      */
-    bool drawPath(const DrawPathArgs& args);
+    bool drawPath(const DrawPathArgs& args) {
+        SkDEBUGCODE(args.validate();)
+#ifdef SK_DEBUG
+        CanDrawPathArgs canArgs;
+        canArgs.fCaps = args.fContext->caps();
+        canArgs.fClipConservativeBounds = args.fClipConservativeBounds;
+        canArgs.fViewMatrix = args.fViewMatrix;
+        canArgs.fShape = args.fShape;
+        canArgs.fAAType = args.fAAType;
+        canArgs.validate();
+
+        canArgs.fHasUserStencilSettings = !args.fUserStencilSettings->isUnused();
+        SkASSERT(!(canArgs.fAAType == GrAAType::kMSAA &&
+                   GrFSAAType::kUnifiedMSAA != args.fRenderTargetContext->fsaaType()));
+        SkASSERT(!(canArgs.fAAType == GrAAType::kMixedSamples &&
+                   GrFSAAType::kMixedSamples != args.fRenderTargetContext->fsaaType()));
+        SkASSERT(CanDrawPath::kNo != this->canDrawPath(canArgs));
+        if (!args.fUserStencilSettings->isUnused()) {
+            SkPath path;
+            args.fShape->asPath(&path);
+            SkASSERT(args.fShape->style().isSimpleFill());
+            SkASSERT(kNoRestriction_StencilSupport == this->getStencilSupport(*args.fShape));
+        }
+#endif
+        return this->onDrawPath(args);
+    }
+
     /**
      * Args to stencilPath(). fAAType cannot be kCoverage.
      */
     struct StencilPathArgs {
         SkDEBUGCODE(StencilPathArgs() { memset(this, 0, sizeof(*this)); }) // For validation.
 
-        GrRecordingContext*    fContext;
+        GrContext*             fContext;
         GrRenderTargetContext* fRenderTargetContext;
         const GrHardClip*      fClip;
         const SkIRect*         fClipConservativeBounds;
@@ -148,7 +175,20 @@ public:
         GrAAType               fAAType;
         const GrShape*         fShape;
 
-        SkDEBUGCODE(void validate() const);
+#ifdef SK_DEBUG
+        void validate() const {
+            SkASSERT(fContext);
+            SkASSERT(fRenderTargetContext);
+            SkASSERT(fClipConservativeBounds);
+            SkASSERT(fViewMatrix);
+            SkASSERT(fShape);
+            SkASSERT(fShape->style().isSimpleFill());
+            SkASSERT(GrAAType::kCoverage != fAAType);
+            SkPath path;
+            fShape->asPath(&path);
+            SkASSERT(!path.isInverseFillType());
+        }
+#endif
     };
 
     /**
@@ -163,8 +203,21 @@ public:
 
     // Helper for determining if we can treat a thin stroke as a hairline w/ coverage.
     // If we can, we draw lots faster (raster device does this same test).
-    static bool IsStrokeHairlineOrEquivalent(const GrStyle&, const SkMatrix&,
-                                             SkScalar* outCoverage);
+    static bool IsStrokeHairlineOrEquivalent(const GrStyle& style, const SkMatrix& matrix,
+                                             SkScalar* outCoverage) {
+        if (style.pathEffect()) {
+            return false;
+        }
+        const SkStrokeRec& stroke = style.strokeRec();
+        if (stroke.isHairlineStyle()) {
+            if (outCoverage) {
+                *outCoverage = SK_Scalar1;
+            }
+            return true;
+        }
+        return stroke.getStyle() == SkStrokeRec::kStroke_Style &&
+            SkDrawTreatAAStrokeAsHairline(stroke.getWidth(), matrix, outCoverage);
+    }
 
 protected:
     // Helper for getting the device bounds of a path. Inverse filled paths will have bounds set
@@ -197,7 +250,30 @@ private:
      * Subclass implementation of stencilPath(). Subclass must override iff it ever returns
      * kStencilOnly in onGetStencilSupport().
      */
-    virtual void onStencilPath(const StencilPathArgs&);
+    virtual void onStencilPath(const StencilPathArgs& args) {
+        static constexpr GrUserStencilSettings kIncrementStencil(
+            GrUserStencilSettings::StaticInit<
+                 0xffff,
+                 GrUserStencilTest::kAlways,
+                 0xffff,
+                 GrUserStencilOp::kReplace,
+                 GrUserStencilOp::kReplace,
+                 0xffff>()
+        );
+
+        GrPaint paint;
+        DrawPathArgs drawArgs{args.fContext,
+                              std::move(paint),
+                              &kIncrementStencil,
+                              args.fRenderTargetContext,
+                              nullptr,  // clip
+                              args.fClipConservativeBounds,
+                              args.fViewMatrix,
+                              args.fShape,
+                              args.fAAType,
+                              false};
+        this->drawPath(drawArgs);
+    }
 
     typedef SkRefCnt INHERITED;
 };

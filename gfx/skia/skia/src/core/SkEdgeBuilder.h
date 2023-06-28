@@ -7,104 +7,115 @@
 #ifndef SkEdgeBuilder_DEFINED
 #define SkEdgeBuilder_DEFINED
 
-#include "SkAnalyticEdge.h"
 #include "SkArenaAlloc.h"
-#include "SkEdge.h"
 #include "SkRect.h"
 #include "SkTDArray.h"
+#include "SkEdge.h"
+#include "SkAnalyticEdge.h"
 
+struct SkEdge;
+struct SkAnalyticEdge;
+class SkEdgeClipper;
 class SkPath;
 
 class SkEdgeBuilder {
 public:
-    int buildEdges(const SkPath& path,
-                   const SkIRect* shiftedClip);
+    enum EdgeType {
+        // Used in supersampling or non-AA scan coverter; it stores only integral y coordinates.
+        kEdge,
 
-protected:
-    SkEdgeBuilder() = default;
-    virtual ~SkEdgeBuilder() = default;
+        // Used in Analytic AA scan converter; it uses SkFixed to store fractional y.
+        kAnalyticEdge,
 
-    // In general mode we allocate pointers in fList and fEdgeList points to its head.
-    // In polygon mode we preallocated edges contiguously in fAlloc and fEdgeList points there.
-    void**              fEdgeList = nullptr;
-    SkTDArray<void*>    fList;
-    SkSTArenaAlloc<512> fAlloc;
+        // Used in Delta AA scan converter; it's a super-light wrapper of SkPoint, which can then be
+        // used to construct SkAnalyticEdge (kAnalyticEdge) later. We use kBezier to save the memory
+        // allocation time (a SkBezier is much lighter than SkAnalyticEdge or SkEdge). Note that
+        // Delta AA only has to deal with one SkAnalyticEdge at a time (whereas Analytic AA has to
+        // deal with all SkAnalyticEdges at the same time). Thus for Delta AA, we only need to
+        // allocate memory for n SkBeziers and 1 SkAnalyticEdge. (Analytic AA need to allocate
+        // memory for n SkAnalyticEdges.)
+        kBezier
+    };
 
+    // static constexpr int kEdgeSizes[3] = {sizeof(SkEdge), sizeof(SkAnalyticEdge), sizeof(SkBezier)};
+
+    SkEdgeBuilder();
+
+    // returns the number of built edges. The array of those edge pointers
+    // is returned from edgeList().
+    int build(const SkPath& path, const SkIRect* clip, int shiftUp, bool clipToTheRight,
+              EdgeType edgeType = kEdge);
+
+    int build_edges(const SkPath& path, const SkIRect* shiftedClip,
+            int shiftEdgesUp, bool pathContainedInClip, EdgeType edgeType = kEdge);
+
+    SkEdge** edgeList() { return (SkEdge**)fEdgeList; }
+    SkAnalyticEdge** analyticEdgeList() { return (SkAnalyticEdge**)fEdgeList; }
+    SkBezier** bezierList() { return (SkBezier**)fEdgeList; }
+
+private:
     enum Combine {
         kNo_Combine,
         kPartial_Combine,
         kTotal_Combine
     };
 
-private:
-    int build    (const SkPath& path, const SkIRect* clip, bool clipToTheRight);
-    int buildPoly(const SkPath& path, const SkIRect* clip, bool clipToTheRight);
+    Combine CombineVertical(const SkEdge* edge, SkEdge* last);
+    Combine CombineVertical(const SkAnalyticEdge* edge, SkAnalyticEdge* last);
+    Combine checkVertical(const SkEdge* edge, SkEdge** edgePtr);
+    Combine checkVertical(const SkAnalyticEdge* edge, SkAnalyticEdge** edgePtr);
+    bool vertical_line(const SkEdge* edge);
+    bool vertical_line(const SkAnalyticEdge* edge);
 
-    virtual char* allocEdges(size_t n, size_t* sizeof_edge) = 0;
-    virtual SkRect recoverClip(const SkIRect&) const = 0;
-    virtual bool chopCubics() const = 0;
+    SkSTArenaAlloc<512> fAlloc;
+    SkTDArray<void*>    fList;
 
-    virtual void addLine (const SkPoint pts[]) = 0;
-    virtual void addQuad (const SkPoint pts[]) = 0;
-    virtual void addCubic(const SkPoint pts[]) = 0;
-    virtual Combine addPolyLine(SkPoint pts[], char* edge, char** edgePtr) = 0;
-};
+    /*
+     *  If we're in general mode, we allcoate the pointers in fList, and this
+     *  will point at fList.begin(). If we're in polygon mode, fList will be
+     *  empty, as we will have preallocated room for the pointers in fAlloc's
+     *  block, and fEdgeList will point into that.
+     */
+    void**      fEdgeList;
 
-class SkBasicEdgeBuilder final : public SkEdgeBuilder {
+    int         fShiftUp;
+    EdgeType    fEdgeType;
+
 public:
-    explicit SkBasicEdgeBuilder(int clipShift) : fClipShift(clipShift) {}
+    void addLine(const SkPoint pts[]);
+    void addQuad(const SkPoint pts[]);
+    void addCubic(const SkPoint pts[]);
+    void addClipper(SkEdgeClipper*);
 
-    SkEdge** edgeList() { return (SkEdge**)fEdgeList; }
+    EdgeType edgeType() const { return fEdgeType; }
 
-private:
-    Combine combineVertical(const SkEdge* edge, SkEdge* last);
+    int buildPoly(const SkPath& path, const SkIRect* clip, int shiftUp, bool clipToTheRight);
 
-    char* allocEdges(size_t, size_t*) override;
-    SkRect recoverClip(const SkIRect&) const override;
-    bool chopCubics() const override { return true; }
-
-    void addLine (const SkPoint pts[]) override;
-    void addQuad (const SkPoint pts[]) override;
-    void addCubic(const SkPoint pts[]) override;
-    Combine addPolyLine(SkPoint pts[], char* edge, char** edgePtr) override;
-
-    const int fClipShift;
-};
-
-class SkAnalyticEdgeBuilder final : public SkEdgeBuilder {
-public:
-    SkAnalyticEdgeBuilder() {}
-
-    SkAnalyticEdge** analyticEdgeList() { return (SkAnalyticEdge**)fEdgeList; }
-
-private:
-    Combine combineVertical(const SkAnalyticEdge* edge, SkAnalyticEdge* last);
-
-    char* allocEdges(size_t, size_t*) override;
-    SkRect recoverClip(const SkIRect&) const override;
-    bool chopCubics() const override { return true; }
-
-    void addLine (const SkPoint pts[]) override;
-    void addQuad (const SkPoint pts[]) override;
-    void addCubic(const SkPoint pts[]) override;
-    Combine addPolyLine(SkPoint pts[], char* edge, char** edgePtr) override;
-};
-
-class SkBezierEdgeBuilder final : public SkEdgeBuilder {
-public:
-    SkBezierEdgeBuilder() {}
-
-    SkBezier** bezierList() { return (SkBezier**)fEdgeList; }
-
-private:
-    char* allocEdges(size_t, size_t*) override;
-    SkRect recoverClip(const SkIRect&) const override;
-    bool chopCubics() const override { return false; }
-
-    void addLine (const SkPoint pts[]) override;
-    void addQuad (const SkPoint pts[]) override;
-    void addCubic(const SkPoint pts[]) override;
-    Combine addPolyLine(SkPoint pts[], char* edge, char** edgePtr) override;
+    inline void addPolyLine(SkPoint pts[], char* &edge, size_t edgeSize, char** &edgePtr,
+            int shiftUp) {
+        if (fEdgeType == kBezier) {
+            if (((SkLine*)edge)->set(pts)) {
+                *edgePtr++ = edge;
+                edge += edgeSize;
+            }
+            return;
+        }
+        bool analyticAA = fEdgeType == kAnalyticEdge;
+        bool setLineResult = analyticAA ?
+                ((SkAnalyticEdge*)edge)->setLine(pts[0], pts[1]) :
+                ((SkEdge*)edge)->setLine(pts[0], pts[1], shiftUp);
+        if (setLineResult) {
+            Combine combine = analyticAA ?
+                    checkVertical((SkAnalyticEdge*)edge, (SkAnalyticEdge**)edgePtr) :
+                    checkVertical((SkEdge*)edge, (SkEdge**)edgePtr);
+            if (kNo_Combine == combine) {
+                *edgePtr++ = edge;
+                edge += edgeSize;
+            } else if (kTotal_Combine == combine) {
+                --edgePtr;
+            }
+        }
+    }
 };
 
 #endif

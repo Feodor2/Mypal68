@@ -47,7 +47,8 @@ int PathToVertices(const SkPath& path, SkScalar tolerance, const SkRect& clipBou
                    WindingVertex** verts);
 
 int PathToTriangles(const SkPath& path, SkScalar tolerance, const SkRect& clipBounds,
-                    VertexAllocator*, bool antialias, bool *isLinear);
+                    VertexAllocator*, bool antialias, const GrColor& color,
+                    bool canTweakAlphaForCoverage, bool *isLinear);
 }
 
 #endif

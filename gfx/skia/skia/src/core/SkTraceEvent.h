@@ -10,9 +10,9 @@
 #ifndef SkTraceEvent_DEFINED
 #define SkTraceEvent_DEFINED
 
+#include "SkAtomics.h"
 #include "SkEventTracer.h"
 #include "SkTraceEventCommon.h"
-#include <atomic>
 
 ////////////////////////////////////////////////////////////////////////////////
 // Implementation specific tracing API definitions.
@@ -70,6 +70,11 @@
 #define TRACE_EVENT_API_UPDATE_TRACE_EVENT_DURATION \
     SkEventTracer::GetInstance()->updateTraceEventDuration
 
+#define TRACE_EVENT_API_ATOMIC_WORD intptr_t
+#define TRACE_EVENT_API_ATOMIC_LOAD(var) sk_atomic_load(&var, sk_memory_order_relaxed)
+#define TRACE_EVENT_API_ATOMIC_STORE(var, value) \
+    sk_atomic_store(&var, value, sk_memory_order_relaxed)
+
 // Defines visibility for classes in trace_event.h
 #define TRACE_EVENT_API_CLASS_EXPORT SK_API
 
@@ -96,15 +101,15 @@
 #define INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO_CUSTOM_VARIABLES( \
     category_group, atomic, category_group_enabled) \
     category_group_enabled = \
-        reinterpret_cast<const uint8_t*>(atomic.load(std::memory_order_relaxed)); \
+        reinterpret_cast<const uint8_t*>(TRACE_EVENT_API_ATOMIC_LOAD(atomic)); \
     if (!category_group_enabled) { \
       category_group_enabled = TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(category_group); \
-      atomic.store(reinterpret_cast<intptr_t>(category_group_enabled), \
-                   std::memory_order_relaxed); \
+      TRACE_EVENT_API_ATOMIC_STORE(atomic, \
+          reinterpret_cast<TRACE_EVENT_API_ATOMIC_WORD>(category_group_enabled)); \
     }
 
 #define INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category_group) \
-    static std::atomic<intptr_t> INTERNAL_TRACE_EVENT_UID(atomic){0}; \
+    static TRACE_EVENT_API_ATOMIC_WORD INTERNAL_TRACE_EVENT_UID(atomic) = 0; \
     const uint8_t* INTERNAL_TRACE_EVENT_UID(category_group_enabled); \
     INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO_CUSTOM_VARIABLES( \
         TRACE_CATEGORY_PREFIX category_group, \
@@ -146,17 +151,15 @@
 #define INTERNAL_TRACE_EVENT_ADD_SCOPED(category_group, name, ...) \
     INTERNAL_TRACE_EVENT_GET_CATEGORY_INFO(category_group); \
     skia::tracing_internals::ScopedTracer INTERNAL_TRACE_EVENT_UID(tracer); \
-    do { \
-        if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
-          SkEventTracer::Handle h = skia::tracing_internals::AddTraceEvent( \
-              TRACE_EVENT_PHASE_COMPLETE, \
-              INTERNAL_TRACE_EVENT_UID(category_group_enabled), \
-              name, skia::tracing_internals::kNoEventId, \
-              TRACE_EVENT_FLAG_NONE, ##__VA_ARGS__); \
-          INTERNAL_TRACE_EVENT_UID(tracer).Initialize( \
-              INTERNAL_TRACE_EVENT_UID(category_group_enabled), name, h); \
-        } \
-    } while (0)
+    if (INTERNAL_TRACE_EVENT_CATEGORY_GROUP_ENABLED_FOR_RECORDING_MODE()) { \
+      SkEventTracer::Handle h = skia::tracing_internals::AddTraceEvent( \
+          TRACE_EVENT_PHASE_COMPLETE, \
+          INTERNAL_TRACE_EVENT_UID(category_group_enabled), \
+          name, skia::tracing_internals::kNoEventId, \
+          TRACE_EVENT_FLAG_NONE, ##__VA_ARGS__); \
+      INTERNAL_TRACE_EVENT_UID(tracer).Initialize( \
+          INTERNAL_TRACE_EVENT_UID(category_group_enabled), name, h); \
+    }
 
 namespace skia {
 namespace tracing_internals {

@@ -40,7 +40,7 @@ public:
                 , fUniformHandler(uniformHandler)
                 , fShaderCaps(caps)
                 , fXP(xp)
-                , fInputColor(inputColor ? inputColor : "half4(1.0)")
+                , fInputColor(inputColor)
                 , fInputCoverage(inputCoverage)
                 , fOutputPrimary(outputPrimary)
                 , fOutputSecondary(outputSecondary)

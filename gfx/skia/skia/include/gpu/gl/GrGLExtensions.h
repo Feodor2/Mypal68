@@ -12,8 +12,6 @@
 #include "GrGLFunctions.h"
 #include "SkString.h"
 
-#include <utility>
-
 struct GrGLInterface;
 class SkJSONWriter;
 
@@ -25,16 +23,15 @@ class SkJSONWriter;
  */
 class SK_API GrGLExtensions {
 public:
-    GrGLExtensions() {}
+    GrGLExtensions() : fInitialized(false), fStrings(new SkTArray<SkString>) {}
 
     GrGLExtensions(const GrGLExtensions&);
 
     GrGLExtensions& operator=(const GrGLExtensions&);
 
     void swap(GrGLExtensions* that) {
-        using std::swap;
-        swap(fStrings, that->fStrings);
-        swap(fInitialized, that->fInitialized);
+        fStrings.swap(that->fStrings);
+        SkTSwap(fInitialized, that->fInitialized);
     }
 
     /**
@@ -43,10 +40,10 @@ public:
      * NULL if on desktop GL with version 3.0 or higher. Otherwise it will fail.
      */
     bool init(GrGLStandard standard,
-              GrGLFunction<GrGLGetStringFn> getString,
-              GrGLFunction<GrGLGetStringiFn> getStringi,
-              GrGLFunction<GrGLGetIntegervFn> getIntegerv,
-              GrGLFunction<GrEGLQueryStringFn> queryString = nullptr,
+              GrGLFunction<GrGLGetStringProc> getString,
+              GrGLFunction<GrGLGetStringiProc> getStringi,
+              GrGLFunction<GrGLGetIntegervProc> getIntegerv,
+              GrGLFunction<GrEGLQueryStringProc> queryString = nullptr,
               GrEGLDisplay eglDisplay = nullptr);
 
     bool isInitialized() const { return fInitialized; }
@@ -66,13 +63,13 @@ public:
      */
     void add(const char[]);
 
-    void reset() { fStrings.reset(); }
+    void reset() { fStrings->reset(); }
 
     void dumpJSON(SkJSONWriter*) const;
 
 private:
-    bool fInitialized = false;
-    SkTArray<SkString> fStrings;
+    bool                                fInitialized;
+    std::unique_ptr<SkTArray<SkString>> fStrings;
 };
 
 #endif

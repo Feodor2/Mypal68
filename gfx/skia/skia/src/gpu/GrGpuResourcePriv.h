@@ -43,13 +43,12 @@ public:
     void makeUnbudgeted() { fResource->makeUnbudgeted(); }
 
     /**
-     * Get the resource's budgeted-type which indicates whether it counts against the resource cache
-     * budget and if not whether it is allowed to be cached.
+     * Does the resource count against the resource budget?
      */
-    GrBudgetedType budgetedType() const {
-        SkASSERT(GrBudgetedType::kBudgeted == fResource->fBudgetedType ||
-                 !fResource->getUniqueKey().isValid() || fResource->fRefsWrappedObjects);
-        return fResource->fBudgetedType;
+    SkBudgeted isBudgeted() const {
+        bool ret = SkBudgeted::kYes == fResource->fBudgeted;
+        SkASSERT(ret || !fResource->getUniqueKey().isValid() || fResource->fRefsWrappedObjects);
+        return SkBudgeted(ret);
     }
 
     /**
@@ -69,10 +68,6 @@ public:
      * at resource creation time, this means the resource will never again be used as scratch.
      */
     void removeScratchKey() const { fResource->removeScratchKey();  }
-
-    bool isPurgeable() const { return fResource->isPurgeable(); }
-
-    bool hasRefOrPendingIO() const { return fResource->hasRefOrPendingIO(); }
 
 protected:
     ResourcePriv(GrGpuResource* resource) : fResource(resource) {   }

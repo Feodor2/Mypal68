@@ -206,7 +206,6 @@ class MOZ_STACK_CLASS gfxOTSContext : public ots::OTSContext {
           aTag == TRUETYPE_TAG('g', 'v', 'a', 'r') ||
           aTag == TRUETYPE_TAG('H', 'V', 'A', 'R') ||
           aTag == TRUETYPE_TAG('M', 'V', 'A', 'R') ||
-          aTag == TRUETYPE_TAG('S', 'T', 'A', 'T') ||
           aTag == TRUETYPE_TAG('V', 'V', 'A', 'R'))) ||
         aTag == TRUETYPE_TAG('S', 'V', 'G', ' ') ||
         aTag == TRUETYPE_TAG('C', 'O', 'L', 'R') ||

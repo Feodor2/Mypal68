@@ -13,15 +13,14 @@
 #include "SkFlattenable.h"
 #include "SkRefCnt.h"
 
+class GrContext;
 class GrColorSpaceInfo;
 class GrFragmentProcessor;
-class GrRecordingContext;
 class SkArenaAlloc;
 class SkBitmap;
 class SkColorSpace;
 class SkColorSpaceXformer;
 class SkRasterPipeline;
-class SkString;
 
 /**
  *  ColorFilters are optional objects in the drawing pipeline. When present in
@@ -78,7 +77,7 @@ public:
     virtual uint32_t getFlags() const { return 0; }
 
     SkColor filterColor(SkColor) const;
-    SkColor4f filterColor4f(const SkColor4f&, SkColorSpace*) const;
+    SkColor4f filterColor4f(const SkColor4f&) const;
 
     /** Create a colorfilter that uses the specified color and mode.
         If the Mode is DST, this function will return NULL (since that
@@ -120,17 +119,6 @@ public:
      */
     static sk_sp<SkColorFilter> MakeSRGBToLinearGamma();
 
-    /**
-     *  Returns a new filter that returns the weighted average between the outputs of
-     *  two other filters. If either is null, then it is treated as an identity filter.
-     *
-     *  result = cf0(color) * (1 - weight) + cf1(color) * weight
-     *
-     *  If both filters are null, or if weight is NaN, then null is returned.
-     */
-    static sk_sp<SkColorFilter> MakeMixer(sk_sp<SkColorFilter> cf0, sk_sp<SkColorFilter> cf1,
-                                          float weight);
-
 #if SK_SUPPORT_GPU
     /**
      *  A subclass may implement this factory function to work with the GPU backend. It returns
@@ -142,29 +130,17 @@ public:
      *  A null return indicates that the color filter isn't implemented for the GPU backend.
      */
     virtual std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(
-            GrRecordingContext*, const GrColorSpaceInfo& dstColorSpaceInfo) const;
+            GrContext*, const GrColorSpaceInfo& dstColorSpaceInfo) const;
 #endif
 
     bool affectsTransparentBlack() const {
-        return this->filterColor(SK_ColorTRANSPARENT) != SK_ColorTRANSPARENT;
+        return this->filterColor(0) != 0;
     }
 
-    static void RegisterFlattenables();
+    SK_TO_STRING_PUREVIRT()
 
-    static SkFlattenable::Type GetFlattenableType() {
-        return kSkColorFilter_Type;
-    }
-
-    SkFlattenable::Type getFlattenableType() const override {
-        return kSkColorFilter_Type;
-    }
-
-    static sk_sp<SkColorFilter> Deserialize(const void* data, size_t size,
-                                          const SkDeserialProcs* procs = nullptr) {
-        return sk_sp<SkColorFilter>(static_cast<SkColorFilter*>(
-                                  SkFlattenable::Deserialize(
-                                  kSkColorFilter_Type, data, size, procs).release()));
-    }
+    SK_DECLARE_FLATTENABLE_REGISTRAR_GROUP()
+    SK_DEFINE_FLATTENABLE_TYPE(SkColorFilter)
 
 protected:
     SkColorFilter() {}

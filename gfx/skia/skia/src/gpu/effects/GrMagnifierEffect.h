@@ -11,12 +11,13 @@
 #ifndef GrMagnifierEffect_DEFINED
 #define GrMagnifierEffect_DEFINED
 #include "SkTypes.h"
+#if SK_SUPPORT_GPU
 #include "GrFragmentProcessor.h"
 #include "GrCoordTransform.h"
 class GrMagnifierEffect : public GrFragmentProcessor {
 public:
-    const SkIRect& bounds() const { return fBounds; }
-    const SkRect& srcRect() const { return fSrcRect; }
+    SkIRect bounds() const { return fBounds; }
+    SkRect srcRect() const { return fSrcRect; }
     float xInvZoom() const { return fXInvZoom; }
     float yInvZoom() const { return fYInvZoom; }
     float xInvInset() const { return fXInvInset; }
@@ -43,13 +44,12 @@ private:
             , fXInvInset(xInvInset)
             , fYInvInset(yInvInset)
             , fSrcCoordTransform(SkMatrix::I(), fSrc.proxy()) {
-        this->setTextureSamplerCnt(1);
+        this->addTextureSampler(&fSrc);
         this->addCoordTransform(&fSrcCoordTransform);
     }
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
     bool onIsEqual(const GrFragmentProcessor&) const override;
-    const TextureSampler& onTextureSampler(int) const override;
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
     TextureSampler fSrc;
     SkIRect fBounds;
@@ -61,4 +61,5 @@ private:
     GrCoordTransform fSrcCoordTransform;
     typedef GrFragmentProcessor INHERITED;
 };
+#endif
 #endif

@@ -25,8 +25,6 @@
 #include "SkOpSegment.h"
 #include "SkPathOpsCurve.h"
 
-#include <utility>
-
 enum class SkOpRayDir {
     kLeft,
     kTop,
@@ -316,8 +314,7 @@ bool SkOpSpan::sortableTop(SkOpContour* contourHead) {
         }
         bool operand = hitSegment->operand();
         if (operand) {
-            using std::swap;
-            swap(wind, oppWind);
+            SkTSwap(wind, oppWind);
         }
         int lastWind = wind;
         int lastOpp = oppWind;
@@ -360,8 +357,7 @@ bool SkOpSpan::sortableTop(SkOpContour* contourHead) {
             }
         }
         if (operand) {
-            using std::swap;
-            swap(wind, oppWind);
+            SkTSwap(wind, oppWind);
         }
         last = &hit->fPt;
         this->globalState()->bumpNested();

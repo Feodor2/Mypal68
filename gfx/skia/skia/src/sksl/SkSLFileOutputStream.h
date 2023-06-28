@@ -21,7 +21,7 @@ public:
     }
 
     ~FileOutputStream() override {
-        SkASSERT(!fOpen);
+        ASSERT(!fOpen);
     }
 
     bool isValid() const override {
@@ -29,7 +29,7 @@ public:
     }
 
     void write8(uint8_t b) override {
-        SkASSERT(fOpen);
+        ASSERT(fOpen);
         if (isValid()) {
             if (EOF == fputc(b, fFile)) {
                 fFile = nullptr;
@@ -38,7 +38,7 @@ public:
     }
 
     void writeText(const char* s) override {
-        SkASSERT(fOpen);
+        ASSERT(fOpen);
         if (isValid()) {
             if (EOF == fputs(s, fFile)) {
                 fFile = nullptr;

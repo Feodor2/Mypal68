@@ -72,8 +72,7 @@ sk_sp<SkData> SkStreamBuffer::getDataAtPosition(size_t position, size_t length) 
         return sk_ref_sp<SkData>(*data);
     }
 
-    SkASSERT(length <= fStream->getLength() &&
-             position <= fStream->getLength() - length);
+    SkASSERT(position + length <= fStream->getLength());
 
     const size_t oldPosition = fStream->getPosition();
     if (!fStream->seek(position)) {

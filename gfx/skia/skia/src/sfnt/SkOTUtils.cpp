@@ -15,7 +15,6 @@
 #include "SkOTTable_name.h"
 #include "SkSFNTHeader.h"
 #include "SkStream.h"
-#include "SkTo.h"
 
 extern const uint8_t SK_OT_GlyphData_NoOutline[] = {
     0x0,0x0, //SkOTTableGlyphData::numberOfContours
@@ -163,11 +162,9 @@ SkData* SkOTUtils::RenameFont(SkStreamAsset* fontData, const char* fontName, int
     return rewrittenFontData.release();
 }
 
-sk_sp<SkOTUtils::LocalizedStrings_NameTable>
-SkOTUtils::LocalizedStrings_NameTable::Make(const SkTypeface& typeface,
-                                            SK_OT_USHORT types[],
-                                            int typesCount)
-{
+
+SkOTUtils::LocalizedStrings_NameTable*
+SkOTUtils::LocalizedStrings_NameTable::CreateForFamilyNames(const SkTypeface& typeface) {
     static const SkFontTableTag nameTag = SkSetFourByteTag('n','a','m','e');
     size_t nameTableSize = typeface.getTableSize(nameTag);
     if (0 == nameTableSize) {
@@ -179,16 +176,9 @@ SkOTUtils::LocalizedStrings_NameTable::Make(const SkTypeface& typeface,
         return nullptr;
     }
 
-    return sk_sp<SkOTUtils::LocalizedStrings_NameTable>(
-        new SkOTUtils::LocalizedStrings_NameTable(std::move(nameTableData), nameTableSize,
-                                                  types, typesCount));
-}
-
-sk_sp<SkOTUtils::LocalizedStrings_NameTable>
-SkOTUtils::LocalizedStrings_NameTable::MakeForFamilyNames(const SkTypeface& typeface) {
-    return Make(typeface,
-                SkOTUtils::LocalizedStrings_NameTable::familyNameTypes,
-                SK_ARRAY_COUNT(SkOTUtils::LocalizedStrings_NameTable::familyNameTypes));
+    return new SkOTUtils::LocalizedStrings_NameTable((SkOTTableName*)nameTableData.release(),
+        SkOTUtils::LocalizedStrings_NameTable::familyNameTypes,
+        SK_ARRAY_COUNT(SkOTUtils::LocalizedStrings_NameTable::familyNameTypes));
 }
 
 bool SkOTUtils::LocalizedStrings_NameTable::next(SkTypeface::LocalizedString* localizedString) {
@@ -207,7 +197,8 @@ bool SkOTUtils::LocalizedStrings_NameTable::next(SkTypeface::LocalizedString* lo
     } while (true);
 }
 
-SK_OT_USHORT SkOTUtils::LocalizedStrings_NameTable::familyNameTypes[3] = {
+SkOTTableName::Record::NameID::Predefined::Value
+SkOTUtils::LocalizedStrings_NameTable::familyNameTypes[3] = {
     SkOTTableName::Record::NameID::Predefined::FontFamilyName,
     SkOTTableName::Record::NameID::Predefined::PreferredFamily,
     SkOTTableName::Record::NameID::Predefined::WWSFamilyName,

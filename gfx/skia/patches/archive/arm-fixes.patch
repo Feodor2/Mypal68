@@ -3,9 +3,9 @@ diff --git a/gfx/skia/include/core/SkMath.h b/gfx/skia/include/core/SkMath.h
 +++ b/gfx/skia/include/core/SkMath.h
 @@ -148,20 +148,17 @@ static inline bool SkIsPow2(int value) {
  }
- 
+
  ///////////////////////////////////////////////////////////////////////////////
- 
+
  /** SkMulS16(a, b) multiplies a * b, but requires that a and b are both int16_t.
      With this requirement, we can generate faster instructions on some
      architectures.
@@ -29,9 +29,9 @@ diff --git a/gfx/skia/include/core/SkPostConfig.h b/gfx/skia/include/core/SkPost
 @@ -300,8 +300,53 @@
  #endif
  #endif
- 
+
  //////////////////////////////////////////////////////////////////////
- 
+
  #ifndef SK_ALLOW_STATIC_GLOBAL_INITIALIZERS
  #define SK_ALLOW_STATIC_GLOBAL_INITIALIZERS 1
  #endif
@@ -55,7 +55,7 @@ diff --git a/gfx/skia/include/core/SkPostConfig.h b/gfx/skia/include/core/SkPost
 +#    undef SK_ARM_ARCH
 +#    define SK_ARM_ARCH 5
 +#  endif
-+ 
++
 +#  if defined(__ARM_ARCH_6__) || defined(__ARM_ARCH_6J__) \
 +   || defined(__ARM_ARCH_6K__) || defined(__ARM_ARCH_6Z__) \
 +   || defined(__ARM_ARCH_6ZK__) || defined(__ARM_ARCH_6T2__) \
@@ -86,12 +86,12 @@ diff --git a/gfx/skia/src/opts/SkBitmapProcState_opts_arm.cpp b/gfx/skia/src/opt
 @@ -6,17 +6,17 @@
   * found in the LICENSE file.
   */
- 
- 
+
+
  #include "SkBitmapProcState.h"
  #include "SkColorPriv.h"
  #include "SkUtils.h"
- 
+
 -#if __ARM_ARCH__ >= 6 && !defined(SK_CPU_BENDIAN)
 +#if SK_ARM_ARCH >= 6 && !defined(SK_CPU_BENDIAN)
  void SI8_D16_nofilter_DX_arm(
@@ -99,7 +99,7 @@ diff --git a/gfx/skia/src/opts/SkBitmapProcState_opts_arm.cpp b/gfx/skia/src/opt
      const uint32_t* SK_RESTRICT xy,
      int count,
      uint16_t* SK_RESTRICT colors) __attribute__((optimize("O1")));
- 
+
  void SI8_D16_nofilter_DX_arm(const SkBitmapProcState& s,
                               const uint32_t* SK_RESTRICT xy,
 @@ -177,17 +177,17 @@ void SI8_opaque_D32_nofilter_DX_arm(cons
@@ -108,26 +108,26 @@ diff --git a/gfx/skia/src/opts/SkBitmapProcState_opts_arm.cpp b/gfx/skia/src/opt
                        : "memory", "cc", "r4", "r5", "r6", "r7", "r8", "r9", "r10", "r11"
                        );
      }
- 
+
      s.fBitmap->getColorTable()->unlockColors(false);
  }
 -#endif //__ARM_ARCH__ >= 6 && !defined(SK_CPU_BENDIAN)
 +#endif // SK_ARM_ARCH >= 6 && !defined(SK_CPU_BENDIAN)
- 
+
  ///////////////////////////////////////////////////////////////////////////////
- 
+
  /*  If we replace a sampleproc, then we null-out the associated shaderproc,
      otherwise the shader won't even look at the matrix/sampler
   */
  void SkBitmapProcState::platformProcs() {
      bool doFilter = fDoFilter;
-@@ -195,17 +195,17 @@ void SkBitmapProcState::platformProcs() 
+@@ -195,17 +195,17 @@ void SkBitmapProcState::platformProcs()
      bool justDx = false;
- 
+
      if (fInvType <= (SkMatrix::kTranslate_Mask | SkMatrix::kScale_Mask)) {
          justDx = true;
      }
- 
+
      switch (fBitmap->config()) {
          case SkBitmap::kIndex8_Config:
 -#if __ARM_ARCH__ >= 6 && !defined(SK_CPU_BENDIAN)
@@ -148,7 +148,7 @@ diff --git a/gfx/skia/src/opts/SkBlitRow_opts_arm.cpp b/gfx/skia/src/opts/SkBlit
                    "1:                                \n\t" /* <double loop> */
                    "ldm    %[src]!, {r5, r6}          \n\t" /* loading src pointers into r5 and r6 */
                    "ldm    %[dst], {r7, r8}           \n\t" /* loading dst pointers into r7 and r8 */
- 
+
                    /* dst1_scale and dst2_scale*/
                    "lsr    r9, r5, #24                \n\t" /* src >> 24 */
                    "lsr    r10, r6, #24               \n\t" /* src >> 24 */
@@ -163,9 +163,9 @@ diff --git a/gfx/skia/src/opts/SkBlitRow_opts_arm.cpp b/gfx/skia/src/opts/SkBlit
                    "lsr    r10, r10, #8               \n\t" /* r10 >> 8 */
                    "rsb    r9, r9, #256               \n\t" /* dst1_scale = r9 = 255 - r9 + 1 */
                    "rsb    r10, r10, #256             \n\t" /* dst2_scale = r10 = 255 - r10 + 1 */
- 
+
                    /* ---------------------- */
- 
+
                    /* src1, src1_scale */
 @@ -739,17 +744,21 @@ static void __attribute((noinline,optimi
                                                             /* else get into the single loop */
@@ -173,7 +173,7 @@ diff --git a/gfx/skia/src/opts/SkBlitRow_opts_arm.cpp b/gfx/skia/src/opts/SkBlit
                    "2:                                \n\t" /* <single loop> */
                    "ldr    r5, [%[src]], #4           \n\t" /* loading src pointer into r5: r5=src */
                    "ldr    r7, [%[dst]]               \n\t" /* loading dst pointer into r7: r7=dst */
- 
+
                    "lsr    r6, r5, #24                \n\t" /* src >> 24 */
                    "and    r8, r12, r5, lsr #8        \n\t" /* ag = r8 = r5 masked by r12 lsr by #8 */
 +#ifdef SK_ARM_HAS_EDSP
@@ -185,7 +185,7 @@ diff --git a/gfx/skia/src/opts/SkBlitRow_opts_arm.cpp b/gfx/skia/src/opts/SkBlit
                    "lsr    r6, r6, #8                 \n\t" /* r6 >> 8 */
                    "mul    r8, r8, %[alpha]           \n\t" /* ag = r8 times scale */
                    "rsb    r6, r6, #256               \n\t" /* r6 = 255 - r6 + 1 */
- 
+
                    /* src, src_scale */
                    "mul    r9, r9, %[alpha]           \n\t" /* rb = r9 times scale */
                    "and    r8, r8, r12, lsl #8        \n\t" /* ag masked by reverse mask (r12) */

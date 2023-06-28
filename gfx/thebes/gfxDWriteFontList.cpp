@@ -548,78 +548,6 @@ nsresult gfxDWriteFontEntry::ReadCMAP(FontInfoData* aFontInfoData) {
   return rv;
 }
 
-bool gfxDWriteFontEntry::HasVariations() {
-  if (mHasVariationsInitialized) {
-    return mHasVariations;
-  }
-  mHasVariationsInitialized = true;
-  if (!mFontFace) {
-    // CreateFontFace will initialize the mFontFace field, and also
-    // mFontFace5 if available on the current DWrite version.
-    RefPtr<IDWriteFontFace> fontFace;
-    if (NS_FAILED(CreateFontFace(getter_AddRefs(fontFace)))) {
-      return false;
-    }
-  }
-  if (mFontFace5) {
-    mHasVariations = mFontFace5->HasVariations();
-  }
-  return mHasVariations;
-}
-
-void gfxDWriteFontEntry::GetVariationAxes(
-    nsTArray<gfxFontVariationAxis>& aAxes) {
-  if (!HasVariations()) {
-    return;
-  }
-  // HasVariations() will have ensured the mFontFace5 interface is available;
-  // so we can get an IDWriteFontResource and ask it for the axis info.
-  RefPtr<IDWriteFontResource> resource;
-  HRESULT hr = mFontFace5->GetFontResource(getter_AddRefs(resource));
-  if (FAILED(hr) || !resource) {
-    return;
-  }
-
-  uint32_t count = resource->GetFontAxisCount();
-  AutoTArray<DWRITE_FONT_AXIS_VALUE, 4> defaultValues;
-  AutoTArray<DWRITE_FONT_AXIS_RANGE, 4> ranges;
-  defaultValues.SetLength(count);
-  ranges.SetLength(count);
-  resource->GetDefaultFontAxisValues(defaultValues.Elements(), count);
-  resource->GetFontAxisRanges(ranges.Elements(), count);
-  for (uint32_t i = 0; i < count; ++i) {
-    gfxFontVariationAxis axis;
-    MOZ_ASSERT(ranges[i].axisTag == defaultValues[i].axisTag);
-    DWRITE_FONT_AXIS_ATTRIBUTES attrs = resource->GetFontAxisAttributes(i);
-    if (attrs & DWRITE_FONT_AXIS_ATTRIBUTES_HIDDEN) {
-      continue;
-    }
-    if (!(attrs & DWRITE_FONT_AXIS_ATTRIBUTES_VARIABLE)) {
-      continue;
-    }
-    // Extract the 4 chars of the tag from DWrite's packed version,
-    // and reassemble them in the order we use for TRUETYPE_TAG.
-    uint32_t t = defaultValues[i].axisTag;
-    axis.mTag = TRUETYPE_TAG(t & 0xff, (t >> 8) & 0xff, (t >> 16) & 0xff,
-                             (t >> 24) & 0xff);
-    // Try to get a human-friendly name (may not be present)
-    RefPtr<IDWriteLocalizedStrings> names;
-    resource->GetAxisNames(i, getter_AddRefs(names));
-    if (names) {
-      GetEnglishOrFirstName(axis.mName, names);
-    }
-    axis.mMinValue = ranges[i].minValue;
-    axis.mMaxValue = ranges[i].maxValue;
-    axis.mDefaultValue = defaultValues[i].value;
-    aAxes.AppendElement(axis);
-  }
-}
-
-void gfxDWriteFontEntry::GetVariationInstances(
-    nsTArray<gfxFontVariationInstance>& aInstances) {
-  gfxFontUtils::GetVariationInstances(this, aInstances);
-}
-
 gfxFont* gfxDWriteFontEntry::CreateFontInstance(
     const gfxFontStyle* aFontStyle) {
   bool needsBold = aFontStyle->NeedsSyntheticBold(this);
@@ -651,12 +579,6 @@ gfxFont* gfxDWriteFontEntry::CreateFontInstance(
 nsresult gfxDWriteFontEntry::CreateFontFace(
     IDWriteFontFace** aFontFace, const gfxFontStyle* aFontStyle,
     DWRITE_FONT_SIMULATIONS aSimulations) {
-  // Convert an OpenType font tag from our uint32_t representation
-  // (as constructed by TRUETYPE_TAG(...)) to the order DWrite wants.
-  auto makeDWriteAxisTag = [](uint32_t aTag) {
-    return DWRITE_MAKE_FONT_AXIS_TAG((aTag >> 24) & 0xff, (aTag >> 16) & 0xff,
-                                     (aTag >> 8) & 0xff, aTag & 0xff);
-  };
 
   // initialize mFontFace if this hasn't been done before
   if (!mFontFace) {
@@ -675,73 +597,13 @@ nsresult gfxDWriteFontEntry::CreateFontFace(
     if (FAILED(hr)) {
       return NS_ERROR_FAILURE;
     }
-    // Also get the IDWriteFontFace5 interface if we're running on a
-    // sufficiently new DWrite version where it is available.
-    if (mFontFace) {
-      mFontFace->QueryInterface(__uuidof(IDWriteFontFace5),
-                                (void**)getter_AddRefs(mFontFace5));
-      if (!mVariationSettings.IsEmpty()) {
-        // If the font entry has variations specified, mFontFace5 will
-        // be a distinct face that has the variations applied.
-        RefPtr<IDWriteFontResource> resource;
-        HRESULT hr = mFontFace5->GetFontResource(getter_AddRefs(resource));
-        if (SUCCEEDED(hr) && resource) {
-          AutoTArray<DWRITE_FONT_AXIS_VALUE, 4> fontAxisValues;
-          for (const auto& v : mVariationSettings) {
-            DWRITE_FONT_AXIS_VALUE axisValue = {makeDWriteAxisTag(v.mTag),
-                                                v.mValue};
-            fontAxisValues.AppendElement(axisValue);
-          }
-          resource->CreateFontFace(
-              mFontFace->GetSimulations(), fontAxisValues.Elements(),
-              fontAxisValues.Length(), getter_AddRefs(mFontFace5));
-        }
-      }
-    }
   }
 
-  // Do we need to modify DWrite simulations from what mFontFace has?
-  bool needSimulations =
-      (aSimulations & DWRITE_FONT_SIMULATIONS_BOLD) &&
-      !(mFontFace->GetSimulations() & DWRITE_FONT_SIMULATIONS_BOLD);
-
-  // If the IDWriteFontFace5 interface is available, we can try using
-  // IDWriteFontResource to create a new modified face.
-  if (mFontFace5 && (HasVariations() || needSimulations)) {
-    RefPtr<IDWriteFontResource> resource;
-    HRESULT hr = mFontFace5->GetFontResource(getter_AddRefs(resource));
-    if (SUCCEEDED(hr) && resource) {
-      AutoTArray<DWRITE_FONT_AXIS_VALUE, 4> fontAxisValues;
-
-      // Get the variation settings needed to instantiate the fontEntry
-      // for a particular fontStyle, or use default style if no aFontStyle
-      // was passed (e.g. instantiating a face just to read font tables).
-      AutoTArray<gfxFontVariation, 4> vars;
-      GetVariationsForStyle(vars, aFontStyle ? *aFontStyle : gfxFontStyle());
-
-      // Copy variation settings to DWrite's type.
-      if (!vars.IsEmpty()) {
-        for (const auto& v : vars) {
-          DWRITE_FONT_AXIS_VALUE axisValue = {makeDWriteAxisTag(v.mTag),
-                                              v.mValue};
-          fontAxisValues.AppendElement(axisValue);
-        }
-      }
-
-      IDWriteFontFace5* ff5;
-      resource->CreateFontFace(aSimulations, fontAxisValues.Elements(),
-                               fontAxisValues.Length(), &ff5);
-      if (ff5) {
-        *aFontFace = ff5;
-        return NS_OK;
-      }
-    }
-  }
-
-  // Do we need to add DWrite simulations to the face?
-  if (needSimulations) {
+    // check whether we need to add a DWrite simulated style
+    if ((aSimulations & DWRITE_FONT_SIMULATIONS_BOLD) &&
+        !(mFontFace->GetSimulations() & DWRITE_FONT_SIMULATIONS_BOLD)) {
     // if so, we need to return not mFontFace itself but a version that
-    // has the Bold simulation - unfortunately, old DWrite doesn't provide
+    // has the Bold simulation - unfortunately, DWrite doesn't provide
     // a simple API for this
     UINT32 numberOfFiles = 0;
     if (FAILED(mFontFace->GetFiles(&numberOfFiles, nullptr))) {
@@ -761,13 +623,8 @@ nsresult gfxDWriteFontEntry::CreateFontFace(
     return FAILED(hr) ? NS_ERROR_FAILURE : NS_OK;
   }
 
-  // no simulation: we can just add a reference to mFontFace5 (if present)
-  // or mFontFace (otherwise) and return that
-  if (mFontFace5) {
-    *aFontFace = mFontFace5;
-  } else {
-    *aFontFace = mFontFace;
-  }
+  *aFontFace = mFontFace;
+
   (*aFontFace)->AddRef();
   return NS_OK;
 }

@@ -5,34 +5,13 @@
  * found in the LICENSE file.
  */
 
+
 #include "SkTypes.h"
 #if defined(SK_BUILD_FOR_WIN)
 
 #include "SkXPSDocument.h"
-
-#include "SkHRESULT.h"
 #include "SkStream.h"
-#include "SkTScopedComPtr.h"
-#include "SkXPSDevice.h"
-
-#include <XpsObjectModel.h>
-
-namespace {
-struct SkXPSDocument final : public SkDocument {
-    SkTScopedComPtr<IXpsOMObjectFactory> fXpsFactory;
-    SkXPSDevice fDevice;
-    std::unique_ptr<SkCanvas> fCanvas;
-    SkVector fUnitsPerMeter;
-    SkVector fPixelsPerMeter;
-
-    SkXPSDocument(SkWStream*, SkScalar dpi, SkTScopedComPtr<IXpsOMObjectFactory>);
-    ~SkXPSDocument() override;
-    SkCanvas* onBeginPage(SkScalar w, SkScalar h) override;
-    void onEndPage() override;
-    void onClose(SkWStream*) override;
-    void onAbort() override;
-};
-}
+#include "SkHRESULT.h"
 
 SkXPSDocument::SkXPSDocument(SkWStream* stream,
                    SkScalar dpi,
@@ -56,12 +35,13 @@ SkXPSDocument::~SkXPSDocument() {
 
 SkCanvas* SkXPSDocument::onBeginPage(SkScalar width, SkScalar height) {
     fDevice.beginSheet(fUnitsPerMeter, fPixelsPerMeter, {width, height});
-    fCanvas.reset(new SkCanvas(sk_ref_sp(&fDevice)));
+    fCanvas.reset(new SkCanvas(&fDevice));
     return fCanvas.get();
 }
 
 void SkXPSDocument::onEndPage() {
     SkASSERT(fCanvas.get());
+    fCanvas->flush();
     fCanvas.reset(nullptr);
     fDevice.endSheet();
 }
@@ -75,7 +55,7 @@ void SkXPSDocument::onAbort() {}
 
 ///////////////////////////////////////////////////////////////////////////////
 
-sk_sp<SkDocument> SkXPS::MakeDocument(SkWStream* stream,
+sk_sp<SkDocument> SkDocument::MakeXPS(SkWStream* stream,
                                       IXpsOMObjectFactory* factoryPtr,
                                       SkScalar dpi) {
     SkTScopedComPtr<IXpsOMObjectFactory> factory(SkSafeRefComPtr(factoryPtr));
@@ -83,4 +63,5 @@ sk_sp<SkDocument> SkXPS::MakeDocument(SkWStream* stream,
            ? sk_make_sp<SkXPSDocument>(stream, dpi, std::move(factory))
            : nullptr;
 }
-#endif  // defined(SK_BUILD_FOR_WIN)
+
+#endif//defined(SK_BUILD_FOR_WIN)

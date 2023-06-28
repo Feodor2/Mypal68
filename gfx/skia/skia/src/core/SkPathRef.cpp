@@ -5,15 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "SkPathRef.h"
-
 #include "SkBuffer.h"
 #include "SkNx.h"
 #include "SkOnce.h"
 #include "SkPath.h"
+#include "SkPathRef.h"
 #include "SkPathPriv.h"
 #include "SkSafeMath.h"
-#include "SkTo.h"
 
 // Conic weights must be 0 < weight <= finite
 static bool validate_conic_weights(const SkScalar weights[], int count) {
@@ -30,9 +28,6 @@ SkPathRef::Editor::Editor(sk_sp<SkPathRef>* pathRef,
                           int incReserveVerbs,
                           int incReservePoints)
 {
-    SkASSERT(incReserveVerbs >= 0);
-    SkASSERT(incReservePoints >= 0);
-
     if ((*pathRef)->unique()) {
         (*pathRef)->incReserve(incReserveVerbs, incReservePoints);
     } else {
@@ -43,48 +38,7 @@ SkPathRef::Editor::Editor(sk_sp<SkPathRef>* pathRef,
     fPathRef = pathRef->get();
     fPathRef->callGenIDChangeListeners();
     fPathRef->fGenerationID = 0;
-    fPathRef->fBoundsIsDirty = true;
-    SkDEBUGCODE(fPathRef->fEditorsAttached++;)
-}
-
-// Sort of like makeSpace(0) but the the additional requirement that we actively shrink the
-// allocations to just fit the current needs. makeSpace() will only grow, but never shrinks.
-//
-void SkPath::shrinkToFit() {
-    const size_t kMinFreeSpaceForShrink = 8;    // just made up a small number
-
-    if (fPathRef->fFreeSpace <= kMinFreeSpaceForShrink) {
-        return;
-    }
-
-    if (fPathRef->unique()) {
-        int pointCount = fPathRef->fPointCnt;
-        int verbCount = fPathRef->fVerbCnt;
-
-        size_t ptsSize = sizeof(SkPoint) * pointCount;
-        size_t vrbSize = sizeof(uint8_t) * verbCount;
-        size_t minSize = ptsSize + vrbSize;
-
-        void* newAlloc = sk_malloc_canfail(minSize);
-        if (!newAlloc) {
-            return; // couldn't allocate the smaller buffer, but that's ok
-        }
-
-        sk_careful_memcpy(newAlloc, fPathRef->fPoints, ptsSize);
-        sk_careful_memcpy((char*)newAlloc + minSize - vrbSize, fPathRef->verbsMemBegin(), vrbSize);
-
-        sk_free(fPathRef->fPoints);
-        fPathRef->fPoints = static_cast<SkPoint*>(newAlloc);
-        fPathRef->fVerbs = (uint8_t*)newAlloc + minSize;
-        fPathRef->fFreeSpace = 0;
-        fPathRef->fConicWeights.shrinkToFit();
-    } else {
-        sk_sp<SkPathRef> pr(new SkPathRef);
-        pr->copy(*fPathRef, 0, 0);
-        fPathRef = std::move(pr);
-    }
-
-    SkDEBUGCODE(fPathRef->validate();)
+    SkDEBUGCODE(sk_atomic_inc(&fPathRef->fEditorsAttached);)
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -93,7 +47,6 @@ SkPathRef::~SkPathRef() {
     // Deliberately don't validate() this path ref, otherwise there's no way
     // to read one that's not valid and then free its memory without asserting.
     this->callGenIDChangeListeners();
-    SkASSERT(fGenIDChangeListeners.empty());  // These are raw ptrs.
     sk_free(fPoints);
 
     SkDEBUGCODE(fPoints = nullptr;)
@@ -102,7 +55,7 @@ SkPathRef::~SkPathRef() {
     SkDEBUGCODE(fPointCnt = 0xAAAAAAA;)
     SkDEBUGCODE(fPointCnt = 0xBBBBBBB;)
     SkDEBUGCODE(fGenerationID = 0xEEEEEEEE;)
-    SkDEBUGCODE(fEditorsAttached.store(0x7777777);)
+    SkDEBUGCODE(fEditorsAttached = 0x7777777;)
 }
 
 static SkPathRef* gEmpty = nullptr;
@@ -569,9 +522,11 @@ SkPoint* SkPathRef::growForRepeatedVerb(int /*SkPath::Verb*/ verb,
 
     SkDEBUGCODE(this->validate();)
     int pCnt;
+    bool dirtyAfterEdit = true;
     switch (verb) {
         case SkPath::kMove_Verb:
             pCnt = numVbs;
+            dirtyAfterEdit = false;
             break;
         case SkPath::kLine_Verb:
             fSegmentMask |= SkPath::kLine_SegmentMask;
@@ -592,6 +547,7 @@ SkPoint* SkPathRef::growForRepeatedVerb(int /*SkPath::Verb*/ verb,
         case SkPath::kClose_Verb:
             SkDEBUGFAIL("growForRepeatedVerb called for kClose_Verb");
             pCnt = 0;
+            dirtyAfterEdit = false;
             break;
         case SkPath::kDone_Verb:
             SkDEBUGFAIL("growForRepeatedVerb called for kDone");
@@ -599,6 +555,7 @@ SkPoint* SkPathRef::growForRepeatedVerb(int /*SkPath::Verb*/ verb,
         default:
             SkDEBUGFAIL("default should not be reached");
             pCnt = 0;
+            dirtyAfterEdit = false;
     }
 
     size_t space = numVbs * sizeof(uint8_t) + pCnt * sizeof (SkPoint);
@@ -617,16 +574,14 @@ SkPoint* SkPathRef::growForRepeatedVerb(int /*SkPath::Verb*/ verb,
         }
     }
 
-    SkSafeMath safe;
-    fVerbCnt = safe.addInt(fVerbCnt, numVbs);
-    fPointCnt = safe.addInt(fPointCnt, pCnt);
-    if (!safe) {
-        SK_ABORT("cannot grow path");
-    }
+    fVerbCnt += numVbs;
+    fPointCnt += pCnt;
     fFreeSpace -= space;
     fBoundsIsDirty = true;  // this also invalidates fIsFinite
-    fIsOval = false;
-    fIsRRect = false;
+    if (dirtyAfterEdit) {
+        fIsOval = false;
+        fIsRRect = false;
+    }
 
     if (SkPath::kConic_Verb == verb) {
         SkASSERT(weights);
@@ -640,10 +595,12 @@ SkPoint* SkPathRef::growForRepeatedVerb(int /*SkPath::Verb*/ verb,
 SkPoint* SkPathRef::growForVerb(int /* SkPath::Verb*/ verb, SkScalar weight) {
     SkDEBUGCODE(this->validate();)
     int pCnt;
+    bool dirtyAfterEdit = true;
     unsigned mask = 0;
     switch (verb) {
         case SkPath::kMove_Verb:
             pCnt = 1;
+            dirtyAfterEdit = false;
             break;
         case SkPath::kLine_Verb:
             mask = SkPath::kLine_SegmentMask;
@@ -663,12 +620,14 @@ SkPoint* SkPathRef::growForVerb(int /* SkPath::Verb*/ verb, SkScalar weight) {
             break;
         case SkPath::kClose_Verb:
             pCnt = 0;
+            dirtyAfterEdit = false;
             break;
         case SkPath::kDone_Verb:
             SkDEBUGFAIL("growForVerb called for kDone");
             // fall through
         default:
             SkDEBUGFAIL("default is not reached");
+            dirtyAfterEdit = false;
             pCnt = 0;
     }
     SkSafeMath safe;
@@ -686,8 +645,10 @@ SkPoint* SkPathRef::growForVerb(int /* SkPath::Verb*/ verb, SkScalar weight) {
     fSegmentMask |= mask;
     fFreeSpace -= space;
     fBoundsIsDirty = true;  // this also invalidates fIsFinite
-    fIsOval = false;
-    fIsRRect = false;
+    if (dirtyAfterEdit) {
+        fIsOval = false;
+        fIsRRect = false;
+    }
 
     if (SkPath::kConic_Verb == verb) {
         *fConicWeights.append() = weight;
@@ -698,53 +659,39 @@ SkPoint* SkPathRef::growForVerb(int /* SkPath::Verb*/ verb, SkScalar weight) {
 }
 
 uint32_t SkPathRef::genID() const {
-    SkASSERT(fEditorsAttached.load() == 0);
+    SkASSERT(!fEditorsAttached);
     static const uint32_t kMask = (static_cast<int64_t>(1) << SkPathPriv::kPathRefGenIDBitCnt) - 1;
-
-    if (fGenerationID == 0) {
-        if (fPointCnt == 0 && fVerbCnt == 0) {
+    if (!fGenerationID) {
+        if (0 == fPointCnt && 0 == fVerbCnt) {
             fGenerationID = kEmptyGenID;
         } else {
-            static std::atomic<uint32_t> nextID{kEmptyGenID + 1};
+            static int32_t  gPathRefGenerationID;
+            // do a loop in case our global wraps around, as we never want to return a 0 or the
+            // empty ID
             do {
-                fGenerationID = nextID.fetch_add(1, std::memory_order_relaxed) & kMask;
-            } while (fGenerationID == 0 || fGenerationID == kEmptyGenID);
+                fGenerationID = (sk_atomic_inc(&gPathRefGenerationID) + 1) & kMask;
+            } while (fGenerationID <= kEmptyGenID);
         }
     }
     return fGenerationID;
 }
 
-void SkPathRef::addGenIDChangeListener(sk_sp<GenIDChangeListener> listener) {
+void SkPathRef::addGenIDChangeListener(GenIDChangeListener* listener) {
     if (nullptr == listener || this == gEmpty) {
+        delete listener;
         return;
     }
-
-    SkAutoMutexAcquire lock(fGenIDChangeListenersMutex);
-
-    // Clean out any stale listeners before we append the new one.
-    for (int i = 0; i < fGenIDChangeListeners.count(); ++i) {
-        if (fGenIDChangeListeners[i]->shouldUnregisterFromPath()) {
-            fGenIDChangeListeners[i]->unref();
-            fGenIDChangeListeners.removeShuffle(i--);  // No need to preserve the order after i.
-        }
-    }
-
-    SkASSERT(!listener->shouldUnregisterFromPath());
-    *fGenIDChangeListeners.append() = listener.release();
+    *fGenIDChangeListeners.append() = listener;
 }
 
 // we need to be called *before* the genID gets changed or zerod
 void SkPathRef::callGenIDChangeListeners() {
-    SkAutoMutexAcquire lock(fGenIDChangeListenersMutex);
-    for (GenIDChangeListener* listener : fGenIDChangeListeners) {
-        if (!listener->shouldUnregisterFromPath()) {
-            listener->onChange();
-        }
-        // Listeners get at most one shot, so whether these triggered or not, blow them away.
-        listener->unref();
+    for (int i = 0; i < fGenIDChangeListeners.count(); i++) {
+        fGenIDChangeListeners[i]->onChange();
     }
 
-    fGenIDChangeListeners.reset();
+    // Listeners get at most one shot, so whether these triggered or not, blow them away.
+    fGenIDChangeListeners.deleteAll();
 }
 
 SkRRect SkPathRef::getRRect() const {
@@ -821,11 +768,7 @@ void SkPathRef::Iter::setPathRef(const SkPathRef& path) {
 
 uint8_t SkPathRef::Iter::next(SkPoint pts[4]) {
     SkASSERT(pts);
-
-    SkDEBUGCODE(unsigned peekResult = this->peek();)
-
     if (fVerbs == fVerbStop) {
-        SkASSERT(peekResult == SkPath::kDone_Verb);
         return (uint8_t) SkPath::kDone_Verb;
     }
 
@@ -866,13 +809,12 @@ uint8_t SkPathRef::Iter::next(SkPoint pts[4]) {
             break;
     }
     fPts = srcPts;
-    SkASSERT(peekResult == verb);
     return (uint8_t) verb;
 }
 
 uint8_t SkPathRef::Iter::peek() const {
-    const uint8_t* next = fVerbs;
-    return next <= fVerbStop ? (uint8_t) SkPath::kDone_Verb : next[-1];
+    const uint8_t* next = fVerbs - 1;
+    return next <= fVerbStop ? (uint8_t) SkPath::kDone_Verb : *next;
 }
 
 
@@ -925,15 +867,14 @@ bool SkPathRef::isValid() const {
 #ifdef SK_DEBUG
             if (fPoints[i].isFinite() &&
                 ((point < leftTop).anyTrue() || (point > rightBot).anyTrue())) {
-                SkDebugf("bad SkPathRef bounds: %g %g %g %g\n",
+                SkDebugf("bounds: %f %f %f %f\n",
                          fBounds.fLeft, fBounds.fTop, fBounds.fRight, fBounds.fBottom);
                 for (int j = 0; j < fPointCnt; ++j) {
                     if (i == j) {
-                        SkDebugf("*** bounds do not contain: ");
+                        SkDebugf("*");
                     }
-                    SkDebugf("%g %g\n", fPoints[j].fX, fPoints[j].fY);
+                    SkDebugf("%f %f\n", fPoints[j].fX, fPoints[j].fY);
                 }
-                return false;
             }
 #endif
 

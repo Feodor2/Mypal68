@@ -8,10 +8,11 @@
 #ifndef GrProcessorAnalysis_DEFINED
 #define GrProcessorAnalysis_DEFINED
 
-#include "SkColorData.h"
+#include "GrColor.h"
 
 class GrDrawOp;
 class GrFragmentProcessor;
+class GrPrimitiveProcessor;
 
 class GrProcessorAnalysisColor {
 public:
@@ -21,14 +22,13 @@ public:
     };
 
     constexpr GrProcessorAnalysisColor(Opaque opaque = Opaque::kNo)
-            : fFlags(opaque == Opaque::kYes ? kIsOpaque_Flag : 0)
-            , fColor(SK_PMColor4fTRANSPARENT) {}
+            : fFlags(opaque == Opaque::kYes ? kIsOpaque_Flag : 0), fColor(0) {}
 
-    GrProcessorAnalysisColor(const SkPMColor4f& color) { this->setToConstant(color); }
+    GrProcessorAnalysisColor(GrColor color) { this->setToConstant(color); }
 
-    void setToConstant(const SkPMColor4f& color) {
+    void setToConstant(GrColor color) {
         fColor = color;
-        if (color.isOpaque()) {
+        if (GrColorIsOpaque(color)) {
             fFlags = kColorIsKnown_Flag | kIsOpaque_Flag;
         } else {
             fFlags = kColorIsKnown_Flag;
@@ -39,11 +39,9 @@ public:
 
     void setToUnknownOpaque() { fFlags = kIsOpaque_Flag; }
 
-    bool isUnknown() const { return SkToBool(fFlags == 0); }
-
     bool isOpaque() const { return SkToBool(kIsOpaque_Flag & fFlags); }
 
-    bool isConstant(SkPMColor4f* color = nullptr) const {
+    bool isConstant(GrColor* color = nullptr) const {
         if (kColorIsKnown_Flag & fFlags) {
             if (color) {
                 *color = fColor;
@@ -80,7 +78,7 @@ private:
         kIsOpaque_Flag = 0x2,
     };
     uint32_t fFlags;
-    SkPMColor4f fColor;
+    GrColor fColor;
 };
 
 enum class GrProcessorAnalysisCoverage { kNone, kSingleChannel, kLCD };
@@ -123,7 +121,14 @@ public:
      * there are only N processors) sees its expected input. If this returns 0 then there are no
      * processors to eliminate.
      */
-    int initialProcessorsToEliminate(SkPMColor4f* newPipelineInputColor) const {
+    int initialProcessorsToEliminate(GrColor* newPipelineInputColor) const {
+        if (fProcessorsToEliminate > 0) {
+            *newPipelineInputColor = fLastKnownOutputColor.toGrColor();
+        }
+        return fProcessorsToEliminate;
+    }
+
+    int initialProcessorsToEliminate(GrColor4f* newPipelineInputColor) const {
         if (fProcessorsToEliminate > 0) {
             *newPipelineInputColor = fLastKnownOutputColor;
         }
@@ -135,7 +140,7 @@ public:
      */
     GrProcessorAnalysisColor outputColor() const {
         if (fKnowOutputColor) {
-            return fLastKnownOutputColor;
+            return fLastKnownOutputColor.toGrColor();
         }
         return fIsOpaque ? GrProcessorAnalysisColor::Opaque::kYes
                          : GrProcessorAnalysisColor::Opaque::kNo;
@@ -147,7 +152,7 @@ private:
     bool fUsesLocalCoords;
     bool fKnowOutputColor;
     int fProcessorsToEliminate;
-    SkPMColor4f fLastKnownOutputColor;
+    GrColor4f fLastKnownOutputColor;
 };
 
 #endif

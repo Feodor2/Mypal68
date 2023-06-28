@@ -9,9 +9,6 @@
 #define SKSL_ENUM
 
 #include "SkSLProgramElement.h"
-
-#include <algorithm>
-
 namespace SkSL {
 
 struct Enum : public ProgramElement {
@@ -20,22 +17,12 @@ struct Enum : public ProgramElement {
     , fTypeName(typeName)
     , fSymbols(std::move(symbols)) {}
 
-    std::unique_ptr<ProgramElement> clone() const override {
-        return std::unique_ptr<ProgramElement>(new Enum(fOffset, fTypeName, fSymbols));
-    }
-
     String description() const override {
         String result = "enum class " + fTypeName + " {\n";
         String separator;
-        std::vector<const Symbol*> sortedSymbols;
-        for (const auto& pair : *fSymbols) {
-            sortedSymbols.push_back(pair.second);
-        }
-        std::sort(sortedSymbols.begin(), sortedSymbols.end(),
-                  [](const Symbol* a, const Symbol* b) { return a->fName < b->fName; });
-        for (const auto& s : sortedSymbols) {
-            result += separator + "    " + s->fName + " = " +
-                      ((Variable*) s)->fInitialValue->description();
+        for (auto iter = fSymbols->begin(); iter != fSymbols->end(); ++iter) {
+            result += separator + "    " + iter->first + " = " +
+                      ((Variable&) *iter->second).fInitialValue->description();
             separator = ",\n";
         }
         result += "\n};";

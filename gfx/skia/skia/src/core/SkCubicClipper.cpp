@@ -9,8 +9,6 @@
 #include "SkCubicClipper.h"
 #include "SkGeometry.h"
 
-#include <utility>
-
 SkCubicClipper::SkCubicClipper() {
     fClip.setEmpty();
 }
@@ -148,9 +146,8 @@ bool SkCubicClipper::clipCubic(const SkPoint srcPts[4], SkPoint dst[4]) {
     }
 
     if (reverse) {
-        using std::swap;
-        swap(dst[0], dst[3]);
-        swap(dst[1], dst[2]);
+        SkTSwap<SkPoint>(dst[0], dst[3]);
+        SkTSwap<SkPoint>(dst[1], dst[2]);
     }
     return true;
 }

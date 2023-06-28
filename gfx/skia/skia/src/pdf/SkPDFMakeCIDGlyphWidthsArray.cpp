@@ -5,14 +5,10 @@
  * found in the LICENSE file.
  */
 
+#include "SkBitSet.h"
 #include "SkPDFMakeCIDGlyphWidthsArray.h"
-
-#include "SkPDFGlyphUse.h"
 #include "SkPaint.h"
-#include "SkStrike.h"
-#include "SkTo.h"
-
-#include <vector>
+#include "SkGlyphCache.h"
 
 // TODO(halcanary): Write unit tests for SkPDFMakeCIDGlyphWidthsArray().
 
@@ -31,7 +27,7 @@ struct AdvanceMetric {
     MetricType fType;
     uint16_t fStartId;
     uint16_t fEndId;
-    std::vector<int16_t> fAdvance;
+    SkTDArray<int16_t> fAdvance;
     AdvanceMetric(uint16_t startId) : fStartId(startId) {}
     AdvanceMetric(AdvanceMetric&&) = default;
     AdvanceMetric& operator=(AdvanceMetric&& other) = default;
@@ -60,7 +56,7 @@ static void strip_uninteresting_trailing_advances_from_range(
     SkASSERT(range);
 
     int expectedAdvanceCount = range->fEndId - range->fStartId + 1;
-    if (SkToInt(range->fAdvance.size()) < expectedAdvanceCount) {
+    if (range->fAdvance.count() < expectedAdvanceCount) {
         return;
     }
 
@@ -79,10 +75,10 @@ static void zero_wildcards_in_range(AdvanceMetric* range) {
     if (range->fType != AdvanceMetric::kRange) {
         return;
     }
-    SkASSERT(SkToInt(range->fAdvance.size()) == range->fEndId - range->fStartId + 1);
+    SkASSERT(range->fAdvance.count() == range->fEndId - range->fStartId + 1);
 
     // Zero out wildcards.
-    for (size_t i = 0; i < range->fAdvance.size(); ++i) {
+    for (int i = 0; i < range->fAdvance.count(); ++i) {
         if (range->fAdvance[i] == kDontCareAdvance) {
             range->fAdvance[i] = 0;
         }
@@ -96,7 +92,7 @@ static void finish_range(
     range->fEndId = endId;
     range->fType = type;
     strip_uninteresting_trailing_advances_from_range(range);
-    size_t newLength;
+    int newLength;
     if (type == AdvanceMetric::kRange) {
         newLength = range->fEndId - range->fStartId + 1;
     } else {
@@ -105,8 +101,8 @@ static void finish_range(
         }
         newLength = 1;
     }
-    SkASSERT(range->fAdvance.size() >= newLength);
-    range->fAdvance.resize(newLength);
+    SkASSERT(range->fAdvance.count() >= newLength);
+    range->fAdvance.setCount(newLength);
     zero_wildcards_in_range(range);
 }
 
@@ -116,13 +112,13 @@ static void compose_advance_data(const AdvanceMetric& range,
                                  SkPDFArray* result) {
     switch (range.fType) {
         case AdvanceMetric::kDefault: {
-            SkASSERT(range.fAdvance.size() == 1);
+            SkASSERT(range.fAdvance.count() == 1);
             *defaultAdvance = range.fAdvance[0];
             break;
         }
         case AdvanceMetric::kRange: {
-            auto advanceArray = SkPDFMakeArray();
-            for (size_t j = 0; j < range.fAdvance.size(); j++)
+            auto advanceArray = sk_make_sp<SkPDFArray>();
+            for (int j = 0; j < range.fAdvance.count(); j++)
                 advanceArray->appendScalar(
                         scale_from_font_units(range.fAdvance[j], emSize));
             result->appendInt(range.fStartId);
@@ -130,7 +126,7 @@ static void compose_advance_data(const AdvanceMetric& range,
             break;
         }
         case AdvanceMetric::kRun: {
-            SkASSERT(range.fAdvance.size() == 1);
+            SkASSERT(range.fAdvance.count() == 1);
             result->appendInt(range.fStartId);
             result->appendInt(range.fEndId);
             result->appendScalar(
@@ -143,15 +139,15 @@ static void compose_advance_data(const AdvanceMetric& range,
 /** Retrieve advance data for glyphs. Used by the PDF backend. */
 // TODO(halcanary): this function is complex enough to need its logic
 // tested with unit tests.
-std::unique_ptr<SkPDFArray> SkPDFMakeCIDGlyphWidthsArray(SkStrike* cache,
-                                                         const SkPDFGlyphUse* subset,
-                                                         uint16_t emSize,
-                                                         int16_t* defaultAdvance) {
+sk_sp<SkPDFArray> SkPDFMakeCIDGlyphWidthsArray(SkGlyphCache* cache,
+                                               const SkBitSet* subset,
+                                               uint16_t emSize,
+                                               int16_t* defaultAdvance) {
     // Assuming that on average, the ASCII representation of an advance plus
     // a space is 8 characters and the ASCII representation of a glyph id is 3
     // characters, then the following cut offs for using different range types
     // apply:
-    // The cost of stopping and starting the range is 7 characters
+    // The cost of stopping and starting the range is 7 characers
     //  a. Removing 4 0's or don't care's is a win
     // The cost of stopping and starting the range plus a run is 22
     // characters
@@ -162,7 +158,7 @@ std::unique_ptr<SkPDFArray> SkPDFMakeCIDGlyphWidthsArray(SkStrike* cache,
     //  d. Removing a leading 0/don't cares is a win because it is omitted
     //  e. Removing 2 repeating advances is a win
 
-    auto result = SkPDFMakeArray();
+    auto result = sk_make_sp<SkPDFArray>();
     int num_glyphs = SkToInt(cache->getGlyphCount());
 
     bool prevRange = false;
@@ -196,11 +192,11 @@ std::unique_ptr<SkPDFArray> SkPDFMakeCIDGlyphWidthsArray(SkStrike* cache,
         } else if (advance == kDontCareAdvance) {
             wildCardsInRun++;
             trailingWildCards++;
-        } else if (SkToInt(curRange.fAdvance.size()) ==
+        } else if (curRange.fAdvance.count() ==
                    repeatedAdvances + 1 + wildCardsInRun) {  // All in run.
             if (lastAdvance == 0) {
                 curRange.fStartId = gId;  // reset
-                curRange.fAdvance.resize(0);
+                curRange.fAdvance.setCount(0);
                 trailingWildCards = 0;
             } else if (repeatedAdvances + 1 >= 2 || trailingWildCards >= 4) {
                 finish_range(&curRange, gId - 1, AdvanceMetric::kRun);
@@ -238,7 +234,7 @@ std::unique_ptr<SkPDFArray> SkPDFMakeCIDGlyphWidthsArray(SkStrike* cache,
                 compose_advance_data(curRange, emSize, defaultAdvance, result.get());
                 curRange =
                         AdvanceMetric(gId - repeatedAdvances - wildCardsInRun - 1);
-                curRange.fAdvance.push_back(lastAdvance);
+                curRange.fAdvance.append(1, &lastAdvance);
                 finish_range(&curRange, gId - 1, AdvanceMetric::kRun);
                 compose_advance_data(curRange, emSize, defaultAdvance, result.get());
                 prevRange = true;
@@ -249,7 +245,7 @@ std::unique_ptr<SkPDFArray> SkPDFMakeCIDGlyphWidthsArray(SkStrike* cache,
             wildCardsInRun = trailingWildCards;
             trailingWildCards = 0;
         }
-        curRange.fAdvance.push_back(advance);
+        curRange.fAdvance.append(1, &advance);
         if (advance != kDontCareAdvance) {
             lastAdvance = advance;
         }

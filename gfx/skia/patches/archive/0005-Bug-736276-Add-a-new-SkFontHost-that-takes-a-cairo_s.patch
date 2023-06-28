@@ -8,18 +8,18 @@ index 5ebbd2e..7c8cdbf 100644
 --- a/gfx/skia/Makefile.in
 +++ b/gfx/skia/Makefile.in
 @@ -60,15 +60,15 @@ VPATH += \
- 	$(NULL)
- 
+	$(NULL)
+
  ifeq (android,$(MOZ_WIDGET_TOOLKIT))
 -OS_CXXFLAGS += $(CAIRO_FT_CFLAGS)
 +OS_CXXFLAGS += $(MOZ_CAIRO_CFLAGS) $(CAIRO_FT_CFLAGS)
  endif
- 
+
  ifeq (gtk2,$(MOZ_WIDGET_TOOLKIT))
 -OS_CXXFLAGS += $(MOZ_PANGO_CFLAGS)
 +OS_CXXFLAGS += $(MOZ_CAIRO_CFLAGS) $(MOZ_PANGO_CFLAGS) $(CAIRO_FT_CFLAGS)
  endif
- 
+
  ifeq (qt,$(MOZ_WIDGET_TOOLKIT))
 -OS_CXXFLAGS += $(MOZ_PANGO_CFLAGS)
 +OS_CXXFLAGS += $(MOZ_CAIRO_CFLAGS) $(MOZ_PANGO_CFLAGS) $(CAIRO_FT_CFLAGS)
@@ -467,6 +467,5 @@ index 0000000..bb5b778
 +    return NULL;
 +}
 +
--- 
+--
 1.7.11.7
-

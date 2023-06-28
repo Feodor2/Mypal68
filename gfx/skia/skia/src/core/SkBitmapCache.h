@@ -8,15 +8,10 @@
 #ifndef SkBitmapCache_DEFINED
 #define SkBitmapCache_DEFINED
 
-#include "SkRect.h"
-#include <memory>
+#include "SkBitmap.h"
+#include "SkMipMap.h"
 
-class SkBitmap;
-class SkBitmapProvider;
 class SkImage;
-struct SkImageInfo;
-class SkMipMap;
-class SkPixmap;
 class SkResourceCache;
 
 uint64_t SkMakeResourceCacheSharedIDForBitmap(uint32_t bitmapGenID);
@@ -25,16 +20,26 @@ void SkNotifyBitmapGenIDIsStale(uint32_t bitmapGenID);
 
 struct SkBitmapCacheDesc {
     uint32_t    fImageID;       // != 0
+    int32_t     fScaledWidth;   // 0 for unscaled
+    int32_t     fScaledHeight;  // 0 for unscaled
     SkIRect     fSubset;        // always set to a valid rect (entire or subset)
 
     void validate() const {
         SkASSERT(fImageID);
+        if (fScaledWidth || fScaledHeight) {
+            SkASSERT(fScaledWidth && fScaledHeight);
+        }
         SkASSERT(fSubset.fLeft >= 0 && fSubset.fTop >= 0);
         SkASSERT(fSubset.width() > 0 && fSubset.height() > 0);
     }
 
+    static SkBitmapCacheDesc Make(const SkBitmap&, int scaledWidth, int scaledHeight);
+    static SkBitmapCacheDesc Make(const SkBitmap&);
+    static SkBitmapCacheDesc Make(const SkImage*, int scaledWidth, int scaledHeight);
     static SkBitmapCacheDesc Make(const SkImage*);
-    static SkBitmapCacheDesc Make(uint32_t genID, const SkIRect& subset);
+
+    // Use with care -- width/height must match the original bitmap/image
+    static SkBitmapCacheDesc Make(uint32_t genID, int origWidth, int origHeight);
 };
 
 class SkBitmapCache {
@@ -58,9 +63,10 @@ private:
 
 class SkMipMapCache {
 public:
-    static const SkMipMap* FindAndRef(const SkBitmapCacheDesc&,
+    // Note: the scaled width/height in desc must be 0, as any other value would not make sense.
+    static const SkMipMap* FindAndRef(const SkBitmapCacheDesc&, SkDestinationSurfaceColorMode,
                                       SkResourceCache* localCache = nullptr);
-    static const SkMipMap* AddAndRef(const SkBitmapProvider&,
+    static const SkMipMap* AddAndRef(const SkBitmap& src, SkDestinationSurfaceColorMode,
                                      SkResourceCache* localCache = nullptr);
 };
 

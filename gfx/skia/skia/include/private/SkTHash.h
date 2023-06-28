@@ -11,7 +11,6 @@
 #include "SkChecksum.h"
 #include "SkTypes.h"
 #include "SkTemplates.h"
-#include <new>
 
 // Before trying to use SkTHashTable, look below to see if SkTHashMap or SkTHashSet works for you.
 // They're easier to use, usually perform the same, and have fewer sharp edges.
@@ -23,24 +22,15 @@
 // If the key is large and stored inside T, you may want to make K a const&.
 // Similarly, if T is large you might want it to be a pointer.
 template <typename T, typename K, typename Traits = T>
-class SkTHashTable {
+class SkTHashTable : SkNoncopyable {
 public:
     SkTHashTable() : fCount(0), fCapacity(0) {}
-    SkTHashTable(SkTHashTable&& other)
-        : fCount(other.fCount)
-        , fCapacity(other.fCapacity)
-        , fSlots(std::move(other.fSlots)) { other.fCount = other.fCapacity = 0; }
-
-    SkTHashTable& operator=(SkTHashTable&& other) {
-        if (this != &other) {
-            this->~SkTHashTable();
-            new (this) SkTHashTable(std::move(other));
-        }
-        return *this;
-    }
 
     // Clear the table.
-    void reset() { *this = SkTHashTable(); }
+    void reset() {
+        this->~SkTHashTable();
+        new (this) SkTHashTable;
+    }
 
     // How many entries are in the table?
     int count() const { return fCount; }
@@ -82,15 +72,6 @@ public:
             index = this->next(index);
         }
         SkASSERT(fCapacity == 0);
-        return nullptr;
-    }
-
-    // If there is an entry in the table with this key, return it.  If not, null.
-    // This only works for pointer type T, and cannot be used to find an nullptr entry.
-    T findOrNull(const K& key) const {
-        if (T* p = this->find(key)) {
-            return *p;
-        }
         return nullptr;
     }
 
@@ -192,8 +173,8 @@ private:
 
         fCount = 0;
         fCapacity = capacity;
-        SkAutoTArray<Slot> oldSlots = std::move(fSlots);
-        fSlots = SkAutoTArray<Slot>(capacity);
+        SkAutoTArray<Slot> oldSlots(capacity);
+        oldSlots.swap(fSlots);
 
         for (int i = 0; i < oldCapacity; i++) {
             Slot& s = oldSlots[i];
@@ -233,19 +214,14 @@ private:
 
     int fCount, fCapacity;
     SkAutoTArray<Slot> fSlots;
-
-    SkTHashTable(const SkTHashTable&) = delete;
-    SkTHashTable& operator=(const SkTHashTable&) = delete;
 };
 
 // Maps K->V.  A more user-friendly wrapper around SkTHashTable, suitable for most use cases.
 // K and V are treated as ordinary copyable C++ types, with no assumed relationship between the two.
 template <typename K, typename V, typename HashK = SkGoodHash>
-class SkTHashMap {
+class SkTHashMap : SkNoncopyable {
 public:
     SkTHashMap() {}
-    SkTHashMap(SkTHashMap&&) = default;
-    SkTHashMap& operator=(SkTHashMap&&) = default;
 
     // Clear the map.
     void reset() { fTable.reset(); }
@@ -301,18 +277,13 @@ private:
     };
 
     SkTHashTable<Pair, K> fTable;
-
-    SkTHashMap(const SkTHashMap&) = delete;
-    SkTHashMap& operator=(const SkTHashMap&) = delete;
 };
 
 // A set of T.  T is treated as an ordinary copyable C++ type.
 template <typename T, typename HashT = SkGoodHash>
-class SkTHashSet {
+class SkTHashSet : SkNoncopyable {
 public:
     SkTHashSet() {}
-    SkTHashSet(SkTHashSet&&) = default;
-    SkTHashSet& operator=(SkTHashSet&&) = default;
 
     // Clear the set.
     void reset() { fTable.reset(); }
@@ -351,9 +322,6 @@ private:
         static uint32_t Hash(const T& item) { return HashT()(item); }
     };
     SkTHashTable<T, T, Traits> fTable;
-
-    SkTHashSet(const SkTHashSet&) = delete;
-    SkTHashSet& operator=(const SkTHashSet&) = delete;
 };
 
 #endif//SkTHash_DEFINED

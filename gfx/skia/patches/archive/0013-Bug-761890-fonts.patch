@@ -11,22 +11,22 @@ diff --git a/gfx/skia/include/core/SkDraw.h b/gfx/skia/include/core/SkDraw.h
 @@ -125,23 +125,24 @@ public:
  #endif
  };
- 
+
  class SkGlyphCache;
- 
+
  class SkTextToPathIter {
  public:
      SkTextToPathIter(const char text[], size_t length, const SkPaint& paint,
 -                     bool applyStrokeAndPathEffects);
 +                     bool applyStrokeAndPathEffects, bool useCanonicalTextSize = true);
      ~SkTextToPathIter();
- 
+
      const SkPaint&  getPaint() const { return fPaint; }
      SkScalar        getPathScale() const { return fScale; }
- 
+
      const SkPath*   next(SkScalar* xpos);   //!< returns nil when there are no more paths
 +    bool            nextWithWhitespace(const SkPath** path, SkScalar* xpos);   //!< returns false when there are no more paths
- 
+
  private:
      SkGlyphCache*   fCache;
      SkPaint         fPaint;
@@ -40,21 +40,21 @@ diff --git a/gfx/skia/src/core/SkPaint.cpp b/gfx/skia/src/core/SkPaint.cpp
 @@ -1359,30 +1359,32 @@ void SkPaint::getPosTextPath(const void*
                               const SkPoint pos[], SkPath* path) const {
      SkASSERT(length == 0 || textData != NULL);
- 
+
      const char* text = (const char*)textData;
      if (text == NULL || length == 0 || path == NULL) {
          return;
      }
- 
+
 -    SkTextToPathIter    iter(text, length, *this, false);
 +    SkTextToPathIter    iter(text, length, *this, false, false);
      SkMatrix            matrix;
      SkPoint             prevPos;
      prevPos.set(0, 0);
- 
+
      matrix.setScale(iter.getPathScale(), iter.getPathScale());
      path->reset();
- 
+
      unsigned int    i = 0;
      const SkPath*   iterPath;
 -    while ((iterPath = iter.next(NULL)) != NULL) {
@@ -70,18 +70,18 @@ diff --git a/gfx/skia/src/core/SkPaint.cpp b/gfx/skia/src/core/SkPaint.cpp
          i++;
      }
  }
- 
+
  static void add_flattenable(SkDescriptor* desc, uint32_t tag,
                              SkFlattenableWriteBuffer* buffer) {
      buffer->flatten(desc->addEntry(tag, buffer->size(), NULL));
  }
 @@ -2118,30 +2120,31 @@ const SkRect& SkPaint::doComputeFastBoun
- 
+
  static bool has_thick_frame(const SkPaint& paint) {
      return  paint.getStrokeWidth() > 0 &&
              paint.getStyle() != SkPaint::kFill_Style;
  }
- 
+
  SkTextToPathIter::SkTextToPathIter( const char text[], size_t length,
                                      const SkPaint& paint,
 -                                    bool applyStrokeAndPathEffects)
@@ -90,14 +90,14 @@ diff --git a/gfx/skia/src/core/SkPaint.cpp b/gfx/skia/src/core/SkPaint.cpp
                                      : fPaint(paint) {
      fGlyphCacheProc = paint.getMeasureCacheProc(SkPaint::kForward_TextBufferDirection,
                                                  true);
- 
+
      fPaint.setLinearText(true);
      fPaint.setMaskFilter(NULL);   // don't want this affecting our path-cache lookup
- 
+
      if (fPaint.getPathEffect() == NULL && !has_thick_frame(fPaint)) {
          applyStrokeAndPathEffects = false;
      }
- 
+
      // can't use our canonical size if we need to apply patheffects
 -    if (fPaint.getPathEffect() == NULL) {
 +    if (useCanonicalTextSize && fPaint.getPathEffect() == NULL) {
@@ -112,11 +112,11 @@ diff --git a/gfx/skia/src/core/SkPaint.cpp b/gfx/skia/src/core/SkPaint.cpp
 @@ -2185,30 +2188,47 @@ SkTextToPathIter::SkTextToPathIter( cons
      fXYIndex = paint.isVerticalText() ? 1 : 0;
  }
- 
+
  SkTextToPathIter::~SkTextToPathIter() {
      SkGlyphCache::AttachCache(fCache);
  }
- 
+
  const SkPath* SkTextToPathIter::next(SkScalar* xpos) {
 -    while (fText < fStop) {
 +    const SkPath* result;
@@ -134,10 +134,10 @@ diff --git a/gfx/skia/src/core/SkPaint.cpp b/gfx/skia/src/core/SkPaint.cpp
 +bool SkTextToPathIter::nextWithWhitespace(const SkPath** path, SkScalar* xpos) {
 +    if (fText < fStop) {
          const SkGlyph& glyph = fGlyphCacheProc(fCache, &fText);
- 
+
          fXPos += SkScalarMul(SkFixedToScalar(fPrevAdvance + fAutoKern.adjust(glyph)), fScale);
          fPrevAdvance = advance(glyph, fXYIndex);   // + fPaint.getTextTracking();
- 
+
          if (glyph.fWidth) {
              if (xpos) {
                  *xpos = fXPos;
@@ -153,9 +153,9 @@ diff --git a/gfx/skia/src/core/SkPaint.cpp b/gfx/skia/src/core/SkPaint.cpp
 -    return NULL;
 +    return false;
  }
- 
+
  ///////////////////////////////////////////////////////////////////////////////
- 
+
  bool SkPaint::nothingToDraw() const {
      if (fLooper) {
          return false;

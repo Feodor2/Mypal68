@@ -5,15 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "SkWbmpCodec.h"
-
 #include "SkCodec.h"
 #include "SkCodecPriv.h"
 #include "SkColorData.h"
 #include "SkColorTable.h"
 #include "SkData.h"
 #include "SkStream.h"
-#include "SkTo.h"
+#include "SkWbmpCodec.h"
 
 // Each bit represents a pixel, so width is actually a number of bits.
 // A row will always be stored in bytes, so we round width up to the
@@ -31,7 +29,7 @@ static inline bool valid_color_type(const SkImageInfo& dstInfo) {
         case kRGB_565_SkColorType:
             return true;
         case kRGBA_F16_SkColorType:
-            return dstInfo.colorSpace();
+            return dstInfo.colorSpace() && dstInfo.colorSpace()->gammaIsLinear();
         default:
             return false;
     }
@@ -89,15 +87,20 @@ bool SkWbmpCodec::onRewind() {
     return read_header(this->stream(), nullptr);
 }
 
+SkSwizzler* SkWbmpCodec::initializeSwizzler(const SkImageInfo& info, const Options& opts) {
+    return SkSwizzler::CreateSwizzler(this->getEncodedInfo(), nullptr, info, opts);
+}
+
 bool SkWbmpCodec::readRow(uint8_t* row) {
     return this->stream()->read(row, fSrcRowBytes) == fSrcRowBytes;
 }
 
-SkWbmpCodec::SkWbmpCodec(SkEncodedInfo&& info, std::unique_ptr<SkStream> stream)
+SkWbmpCodec::SkWbmpCodec(int width, int height, const SkEncodedInfo& info,
+                         std::unique_ptr<SkStream> stream)
     // Wbmp does not need a colorXform, so choose an arbitrary srcFormat.
-    : INHERITED(std::move(info), skcms_PixelFormat(),
-                std::move(stream))
-    , fSrcRowBytes(get_src_row_bytes(this->dimensions().width()))
+    : INHERITED(width, height, info, SkColorSpaceXform::ColorFormat(),
+                std::move(stream), SkColorSpace::MakeSRGB())
+    , fSrcRowBytes(get_src_row_bytes(this->getInfo().width()))
     , fSwizzler(nullptr)
 {}
 
@@ -105,8 +108,8 @@ SkEncodedImageFormat SkWbmpCodec::onGetEncodedFormat() const {
     return SkEncodedImageFormat::kWBMP;
 }
 
-bool SkWbmpCodec::conversionSupported(const SkImageInfo& dst, bool srcIsOpaque,
-                                      bool /*needsColorXform*/) {
+bool SkWbmpCodec::conversionSupported(const SkImageInfo& dst, SkColorType /*srcColor*/,
+                                      bool srcIsOpaque, const SkColorSpace* srcCS) const {
     return valid_color_type(dst) && valid_alpha(dst.alphaType(), srcIsOpaque);
 }
 
@@ -121,8 +124,7 @@ SkCodec::Result SkWbmpCodec::onGetPixels(const SkImageInfo& info,
     }
 
     // Initialize the swizzler
-    std::unique_ptr<SkSwizzler> swizzler = SkSwizzler::Make(this->getEncodedInfo(), nullptr, info,
-                                                            options);
+    std::unique_ptr<SkSwizzler> swizzler(this->initializeSwizzler(info, options));
     SkASSERT(swizzler);
 
     // Perform the decode
@@ -155,9 +157,10 @@ std::unique_ptr<SkCodec> SkWbmpCodec::MakeFromStream(std::unique_ptr<SkStream> s
         return nullptr;
     }
     *result = kSuccess;
-    auto info = SkEncodedInfo::Make(size.width(), size.height(), SkEncodedInfo::kGray_Color,
-                                    SkEncodedInfo::kOpaque_Alpha, 1);
-    return std::unique_ptr<SkCodec>(new SkWbmpCodec(std::move(info), std::move(stream)));
+    SkEncodedInfo info = SkEncodedInfo::Make(SkEncodedInfo::kGray_Color,
+            SkEncodedInfo::kOpaque_Alpha, 1);
+    return std::unique_ptr<SkCodec>(new SkWbmpCodec(size.width(), size.height(), info,
+                                                    std::move(stream)));
 }
 
 int SkWbmpCodec::onGetScanlines(void* dst, int count, size_t dstRowBytes) {
@@ -184,7 +187,8 @@ SkCodec::Result SkWbmpCodec::onStartScanlineDecode(const SkImageInfo& dstInfo,
         return kUnimplemented;
     }
 
-    fSwizzler = SkSwizzler::Make(this->getEncodedInfo(), nullptr, dstInfo, options);
+    // Initialize the swizzler
+    fSwizzler.reset(this->initializeSwizzler(dstInfo, options));
     SkASSERT(fSwizzler);
 
     fSrcBuffer.reset(fSrcRowBytes);

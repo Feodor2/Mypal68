@@ -11,7 +11,6 @@
 
 #include "SkData.h"
 #include "SkMatrix.h"
-#include "SkNoncopyable.h"
 #include "SkPath.h"
 #include "SkRegion.h"
 #include "SkRRect.h"

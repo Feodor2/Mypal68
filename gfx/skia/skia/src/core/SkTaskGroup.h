@@ -9,7 +9,6 @@
 #define SkTaskGroup_DEFINED
 
 #include "SkExecutor.h"
-#include "SkNoncopyable.h"
 #include "SkTypes.h"
 #include <atomic>
 #include <functional>

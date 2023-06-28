@@ -8,7 +8,6 @@
 #ifndef SkMutex_DEFINED
 #define SkMutex_DEFINED
 
-#include "../private/SkMacros.h"
 #include "../private/SkSemaphore.h"
 #include "../private/SkThreadID.h"
 #include "SkTypes.h"
@@ -22,6 +21,19 @@ public:
     void acquire() {
         fSemaphore.wait();
         SkDEBUGCODE(fOwner = SkGetThreadID();)
+    }
+
+    bool try_acquire() {
+#ifdef SK_DEBUG
+        if (fSemaphore.try_wait()) {
+            fOwner = SkGetThreadID();
+            return true;
+        } else {
+            return false;
+        }
+#else
+        return fSemaphore.try_wait();
+#endif
     }
 
     void release() {

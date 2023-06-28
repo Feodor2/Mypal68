@@ -9,7 +9,7 @@
 #define GrMtlCaps_DEFINED
 
 #include "GrCaps.h"
-#include "GrMtlStencilAttachment.h"
+
 #include "SkTDArray.h"
 
 #import <Metal/Metal.h>
@@ -21,8 +21,6 @@ class GrShaderCaps;
  */
 class GrMtlCaps : public GrCaps {
 public:
-    typedef GrMtlStencilAttachment::Format StencilFormat;
-
     GrMtlCaps(const GrContextOptions& contextOptions, id<MTLDevice> device,
               MTLFeatureSet featureSet);
 
@@ -33,58 +31,45 @@ public:
     int getRenderTargetSampleCount(int requestedCount, GrPixelConfig) const override;
     int maxRenderTargetSampleCount(GrPixelConfig) const override;
 
-    bool surfaceSupportsReadPixels(const GrSurface*) const override { return true; }
+    bool surfaceSupportsWritePixels(const GrSurface* surface) const override { return true; }
 
     bool isConfigCopyable(GrPixelConfig config) const override {
         return true;
     }
 
+#if 0
     /**
      * Returns both a supported and most prefered stencil format to use in draws.
      */
-    const StencilFormat& preferredStencilFormat() const {
-        return fPreferredStencilFormat;
+    const StencilFormat& preferedStencilFormat() const {
+        return fPreferedStencilFormat;
     }
-
-    bool canCopyAsBlit(GrPixelConfig dstConfig, int dstSampleCount, GrSurfaceOrigin dstOrigin,
-                       GrPixelConfig srcConfig, int srcSampleCount, GrSurfaceOrigin srcOrigin,
-                       const SkIRect& srcRect, const SkIPoint& dstPoint,
-                       bool areDstSrcSameObj) const;
-
-    bool canCopyAsDraw(GrPixelConfig dstConfig, bool dstIsRenderable,
-                       GrPixelConfig srcConfig, bool srcIsTextureable) const;
-
-    bool canCopyAsDrawThenBlit(GrPixelConfig dstConfig, GrPixelConfig srcConfig,
-                               bool srcIsTextureable) const;
-
-    bool initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc, GrSurfaceOrigin*,
+#endif
+    bool initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc,
                             bool* rectsMustMatch, bool* disallowSubrect) const override {
         return false;
     }
 
-    GrPixelConfig validateBackendRenderTarget(const GrBackendRenderTarget&,
-                                              SkColorType) const override;
+    bool validateBackendTexture(const GrBackendTexture&, SkColorType,
+                                GrPixelConfig*) const override {
+        return false;
+    }
+    bool validateBackendRenderTarget(const GrBackendRenderTarget&, SkColorType,
+                                     GrPixelConfig*) const override {
+        return false;
+    }
 
-    GrPixelConfig getConfigFromBackendFormat(const GrBackendFormat&, SkColorType) const override;
-
-    GrPixelConfig getYUVAConfigFromBackendFormat(const GrBackendFormat&) const override;
-
-    GrBackendFormat getBackendFormatFromGrColorType(GrColorType ct,
-                                                    GrSRGBEncoded srgbEncoded) const override;
+    bool getConfigFromBackendFormat(const GrBackendFormat&, SkColorType,
+                                    GrPixelConfig*) const override {
+        return false;
+    }
 
 private:
     void initFeatureSet(MTLFeatureSet featureSet);
 
-    void initStencilFormat(const id<MTLDevice> device);
-
     void initGrCaps(const id<MTLDevice> device);
     void initShaderCaps();
-
     void initConfigTable();
-
-    bool onSurfaceSupportsWritePixels(const GrSurface*) const override { return true; }
-    bool onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
-                          const SkIRect& srcRect, const SkIPoint& dstPoint) const override;
 
     struct ConfigInfo {
         ConfigInfo() : fFlags(0) {}
@@ -95,9 +80,8 @@ private:
             kMSAA_Flag        = 0x4,
             kResolve_Flag     = 0x8,
         };
-        // TODO: Put kMSAA_Flag back when MSAA is implemented
         static const uint16_t kAllFlags = kTextureable_Flag | kRenderable_Flag |
-                                          /*kMSAA_Flag |*/ kResolve_Flag;
+                                          kMSAA_Flag | kResolve_Flag;
 
         uint16_t fFlags;
     };
@@ -115,8 +99,6 @@ private:
     int fVersion;
 
     SkTDArray<int> fSampleCounts;
-
-    StencilFormat fPreferredStencilFormat;
 
     typedef GrCaps INHERITED;
 };

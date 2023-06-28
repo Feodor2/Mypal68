@@ -60,7 +60,3 @@ void SkDRect::setBounds(const SkDCubic& curve, const SkDCubic& sub, double start
         add(curve.ptAtT(t));
     }
 }
-
-void SkDRect::setBounds(const SkTCurve& curve) {
-    curve.setBounds(this);
-}

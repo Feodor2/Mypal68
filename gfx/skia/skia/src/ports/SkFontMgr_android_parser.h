@@ -12,7 +12,6 @@
 #include "SkString.h"
 #include "SkTArray.h"
 #include "SkTDArray.h"
-#include "SkTHash.h"
 #include "SkTypes.h"
 
 #include <climits>
@@ -95,11 +94,9 @@ struct FontFamily {
     SkTArray<SkString, true> fNames;
     SkTArray<FontFileInfo, true> fFonts;
     SkTArray<SkLanguage, true> fLanguages;
-    SkTHashMap<SkString, std::unique_ptr<FontFamily>> fallbackFamilies;
     FontVariant fVariant;
     int fOrder; // internal to the parser, not useful to users.
     bool fIsFallbackFont;
-    SkString fFallbackFor;
     const SkString fBasePath;
 };
 

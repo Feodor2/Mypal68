@@ -10,23 +10,7 @@
 
 #include "GrTypes.h"
 
-/**
- * Declares typedefs for Metal types used in Ganesh cpp code
- */
-typedef unsigned int GrMTLPixelFormat;
-
-///////////////////////////////////////////////////////////////////////////////
-/**
- * Types for interacting with Metal resources created externally to Skia. Holds the MTLTexture as a
- * const void*. This is used by GrBackendObjects.
- */
-struct GrMtlTextureInfo {
-public:
-    const void* fTexture; // Pointer to MTLTexture
-
-    bool operator==(const GrMtlTextureInfo& that) const {
-        return fTexture == that.fTexture;
-    }
-};
+// This is a placeholder class until we fill it out. This is needed so we can have the mtl include
+// path in our BUILD.gn
 
 #endif

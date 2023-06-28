@@ -13,15 +13,15 @@ diff --git a/gfx/skia/include/core/SkXfermode.h b/gfx/skia/include/core/SkXfermo
          kSrcATop_Mode,  //!< [Da, Sc * Da + (1 - Sa) * Dc]
          kDstATop_Mode,  //!< [Sa, Sa * Dc + Sc * (1 - Da)]
          kXor_Mode,      //!< [Sa + Da - 2 * Sa * Da, Sc * (1 - Da) + (1 - Sa) * Dc]
- 
+
          // all remaining modes are defined in the SVG Compositing standard
          // http://www.w3.org/TR/2009/WD-SVGCompositing-20090430/
          kPlus_Mode,
 -        kMultiply_Mode,
- 
+
          // all above modes can be expressed as pair of src/dst Coeffs
          kCoeffModesCnt,
- 
+
 -        kScreen_Mode = kCoeffModesCnt,
 +        kMultiply_Mode = kCoeffModesCnt,
 +        kScreen_Mode,
@@ -38,11 +38,11 @@ diff --git a/gfx/skia/include/core/SkXfermode.h b/gfx/skia/include/core/SkXfermo
 +        kSaturation_Mode,
 +        kColor_Mode,
 +        kLuminosity_Mode,
- 
+
 -        kLastMode = kExclusion_Mode
 +        kLastMode = kLuminosity_Mode
      };
- 
+
      /**
       *  If the xfermode is one of the modes in the Mode enum, then asMode()
       *  returns true and sets (if not null) mode accordingly. Otherwise it
@@ -54,24 +54,24 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +++ b/gfx/skia/src/core/SkXfermode.cpp
 @@ -7,16 +7,18 @@
   */
- 
- 
+
+
  #include "SkXfermode.h"
  #include "SkColorPriv.h"
  #include "SkFlattenableBuffers.h"
  #include "SkMathPriv.h"
- 
+
 +#include <algorithm>
 +
  SK_DEFINE_INST_COUNT(SkXfermode)
- 
+
  #define SkAlphaMulAlpha(a, b)   SkMulDiv255Round(a, b)
- 
+
  #if 0
  // idea for higher precision blends in xfer procs (and slightly faster)
  // see DstATop as a probable caller
  static U8CPU mulmuldiv255round(U8CPU a, U8CPU b, U8CPU c, U8CPU d) {
-@@ -176,244 +178,439 @@ static SkPMColor xor_modeproc(SkPMColor 
+@@ -176,244 +178,439 @@ static SkPMColor xor_modeproc(SkPMColor
  static SkPMColor plus_modeproc(SkPMColor src, SkPMColor dst) {
      unsigned b = saturated_add(SkGetPackedB32(src), SkGetPackedB32(dst));
      unsigned g = saturated_add(SkGetPackedG32(src), SkGetPackedG32(dst));
@@ -79,7 +79,7 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
      unsigned a = saturated_add(SkGetPackedA32(src), SkGetPackedA32(dst));
      return SkPackARGB32(a, r, g, b);
  }
- 
+
 +static inline int srcover_byte(int a, int b) {
 +    return a + b - SkAlphaMulAlpha(a, b);
 +}
@@ -104,7 +104,7 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +    int b = blendfunc_byte(SkGetPackedB32(src), SkGetPackedB32(dst), sa, da, multiply_byte);
      return SkPackARGB32(a, r, g, b);
  }
- 
+
  // kScreen_Mode
 -static inline int srcover_byte(int a, int b) {
 -    return a + b - SkAlphaMulAlpha(a, b);
@@ -147,7 +147,7 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +    int b = blendfunc_byte(SkGetPackedB32(src), SkGetPackedB32(dst), sa, da, hardlight_byte);
      return SkPackARGB32(a, r, g, b);
  }
- 
+
  // kOverlay_Mode
  static inline int overlay_byte(int sc, int dc, int sa, int da) {
 -    int tmp = sc * (255 - da) + dc * (255 - sa);
@@ -172,7 +172,7 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +    int b = blendfunc_byte(SkGetPackedB32(src), SkGetPackedB32(dst), sa, da, overlay_byte);
      return SkPackARGB32(a, r, g, b);
  }
- 
+
  // kDarken_Mode
  static inline int darken_byte(int sc, int dc, int sa, int da) {
 -    int sd = sc * da;
@@ -198,7 +198,7 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +    int b = blendfunc_byte(SkGetPackedB32(src), SkGetPackedB32(dst), sa, da, darken_byte);
      return SkPackARGB32(a, r, g, b);
  }
- 
+
  // kLighten_Mode
  static inline int lighten_byte(int sc, int dc, int sa, int da) {
 -    int sd = sc * da;
@@ -224,7 +224,7 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +    int b = blendfunc_byte(SkGetPackedB32(src), SkGetPackedB32(dst), sa, da, lighten_byte);
      return SkPackARGB32(a, r, g, b);
  }
- 
+
  // kColorDodge_Mode
  static inline int colordodge_byte(int sc, int dc, int sa, int da) {
 -    int diff = sa - sc;
@@ -266,7 +266,7 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +    int b = blendfunc_byte(SkGetPackedB32(src), SkGetPackedB32(dst), sa, da, colordodge_byte);
      return SkPackARGB32(a, r, g, b);
  }
- 
+
  // kColorBurn_Mode
  static inline int colorburn_byte(int sc, int dc, int sa, int da) {
 -    int rc;
@@ -328,12 +328,12 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +    int b = blendfunc_byte(SkGetPackedB32(src), SkGetPackedB32(dst), sa, da, colorburn_byte);
      return SkPackARGB32(a, r, g, b);
  }
- 
+
  // returns 255 * sqrt(n/255)
  static U8CPU sqrt_unit_byte(U8CPU n) {
      return SkSqrtBits(n, 15+4);
  }
- 
+
  // kSoftLight_Mode
  static inline int softlight_byte(int sc, int dc, int sa, int da) {
      int m = da ? dc * 256 / da : 0;
@@ -368,7 +368,7 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +    int b = blendfunc_byte(SkGetPackedB32(src), SkGetPackedB32(dst), sa, da, softlight_byte);
      return SkPackARGB32(a, r, g, b);
  }
- 
+
  // kDifference_Mode
  static inline int difference_byte(int sc, int dc, int sa, int da) {
 -    int tmp = SkMin32(sc * da, dc * sa);
@@ -391,7 +391,7 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +    int b = blendfunc_byte(SkGetPackedB32(src), SkGetPackedB32(dst), sa, da, difference_byte);
      return SkPackARGB32(a, r, g, b);
  }
- 
+
  // kExclusion_Mode
  static inline int exclusion_byte(int sc, int dc, int sa, int da) {
 -    // this equations is wacky, wait for SVG to confirm it
@@ -636,7 +636,7 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +    int b = blendfunc_nonsep_byte(sb, db, sa, da, Cs.b);
      return SkPackARGB32(a, r, g, b);
  }
- 
+
  struct ProcCoeff {
      SkXfermodeProc      fProc;
      SkXfermode::Coeff   fSC;
@@ -649,7 +649,7 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
      { srcatop_modeproc, SkXfermode::kDA_Coeff,      SkXfermode::kISA_Coeff },
      { dstatop_modeproc, SkXfermode::kIDA_Coeff,     SkXfermode::kSA_Coeff },
      { xor_modeproc,     SkXfermode::kIDA_Coeff,     SkXfermode::kISA_Coeff },
- 
+
      { plus_modeproc,    SkXfermode::kOne_Coeff,     SkXfermode::kOne_Coeff },
 -    { multiply_modeproc,SkXfermode::kZero_Coeff,    SkXfermode::kSC_Coeff },
 +    { multiply_modeproc,    CANNOT_USE_COEFF,       CANNOT_USE_COEFF},
@@ -668,14 +668,14 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +    { color_modeproc,       CANNOT_USE_COEFF,       CANNOT_USE_COEFF },
 +    { luminosity_modeproc,  CANNOT_USE_COEFF,       CANNOT_USE_COEFF },
  };
- 
+
  ///////////////////////////////////////////////////////////////////////////////
- 
+
  bool SkXfermode::asCoeff(Coeff* src, Coeff* dst) {
      return false;
  }
- 
-@@ -1172,16 +1373,20 @@ static const Proc16Rec gModeProcs16[] = 
+
+@@ -1172,16 +1373,20 @@ static const Proc16Rec gModeProcs16[] =
      { darken_modeproc16_0,  darken_modeproc16_255,  NULL            }, // darken
      { lighten_modeproc16_0, lighten_modeproc16_255, NULL            }, // lighten
      { NULL,                 NULL,                   NULL            }, // colordodge
@@ -689,10 +689,9 @@ diff --git a/gfx/skia/src/core/SkXfermode.cpp b/gfx/skia/src/core/SkXfermode.cpp
 +    { NULL,                 NULL,                   NULL            }, // color
 +    { NULL,                 NULL,                   NULL            }, // luminosity
  };
- 
+
  SkXfermodeProc16 SkXfermode::GetProc16(Mode mode, SkColor srcColor) {
      SkXfermodeProc16  proc16 = NULL;
      if ((unsigned)mode < kModeCount) {
          const Proc16Rec& rec = gModeProcs16[mode];
          unsigned a = SkColorGetA(srcColor);
- 

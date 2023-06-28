@@ -10,22 +10,21 @@
 
 #include "GrColor.h"
 #include "GrTypes.h"
-#include "GrVkInterface.h"
-#include "SkMacros.h"
+#include "vk/GrVkDefines.h"
+#include "vk/GrVkInterface.h"
 #include "ir/SkSLProgram.h"
-#include "vk/GrVkTypes.h"
 
 class GrVkGpu;
 
 // makes a Vk call on the interface
-#define GR_VK_CALL(IFACE, X) (IFACE)->fFunctions.f##X
+#define GR_VK_CALL(IFACE, X) (IFACE)->fFunctions.f##X;
 // same as GR_VK_CALL but checks for success
 #ifdef SK_DEBUG
-#define GR_VK_CALL_ERRCHECK(IFACE, X)                          \
+#define GR_VK_CALL_ERRCHECK(IFACE, X) \
     VkResult SK_MACRO_APPEND_LINE(ret) = GR_VK_CALL(IFACE, X); \
-    SkASSERT(VK_SUCCESS == SK_MACRO_APPEND_LINE(ret))
+    SkASSERT(VK_SUCCESS == SK_MACRO_APPEND_LINE(ret));
 #else
-#define GR_VK_CALL_ERRCHECK(IFACE, X)  (void) GR_VK_CALL(IFACE, X)
+#define GR_VK_CALL_ERRCHECK(IFACE, X)  (void) GR_VK_CALL(IFACE, X);
 #endif
 
 /**
@@ -33,14 +32,23 @@ class GrVkGpu;
  */
 bool GrPixelConfigToVkFormat(GrPixelConfig config, VkFormat* format);
 
+/**
+* Returns the GrPixelConfig for the given vulkan texture format
+*/
+GrPixelConfig GrVkFormatToPixelConfig(VkFormat format);
+
 bool GrVkFormatIsSupported(VkFormat);
 
-#ifdef SK_DEBUG
 /**
  * Returns true if the passed in VkFormat and GrPixelConfig are compatible with each other.
  */
 bool GrVkFormatPixelConfigPairIsValid(VkFormat, GrPixelConfig);
-#endif
+
+/**
+ * Returns true if the given vulkan texture format is sRGB encoded.
+ * Also provides the non-sRGB version, if there is one.
+ */
+bool GrVkFormatIsSRGB(VkFormat format, VkFormat* linearFormat);
 
 bool GrSampleCountToVkSampleCount(uint32_t samples, VkSampleCountFlagBits* vkSamples);
 
@@ -50,13 +58,6 @@ bool GrCompileVkShaderModule(const GrVkGpu* gpu,
                              VkShaderModule* shaderModule,
                              VkPipelineShaderStageCreateInfo* stageInfo,
                              const SkSL::Program::Settings& settings,
-                             SkSL::String* outSPIRV,
                              SkSL::Program::Inputs* outInputs);
-
-bool GrInstallVkShaderModule(const GrVkGpu* gpu,
-                             const SkSL::String& spirv,
-                             VkShaderStageFlagBits stage,
-                             VkShaderModule* shaderModule,
-                             VkPipelineShaderStageCreateInfo* stageInfo);
 
 #endif

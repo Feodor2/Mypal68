@@ -12,7 +12,7 @@ diff --git a/gfx/skia/include/utils/mac/SkCGUtils.h b/gfx/skia/include/utils/mac
   *  colorspace returned by CGColorSpaceCreateDeviceRGB()
   */
  void SkCGDrawBitmap(CGContextRef, const SkBitmap&, float x, float y);
- 
+
 -bool SkPDFDocumentToBitmap(SkStream* stream, SkBitmap* output);
 -
  /**
@@ -34,7 +34,7 @@ diff --git a/gfx/skia/src/core/SkAAClip.cpp b/gfx/skia/src/core/SkAAClip.cpp
      }
      *riteZ = zeros;
  }
- 
+
 -#ifdef SK_DEBUG
 +#if 0
  static void test_count_left_right_zeros() {
@@ -43,30 +43,30 @@ diff --git a/gfx/skia/src/core/SkAAClip.cpp b/gfx/skia/src/core/SkAAClip.cpp
          return;
      }
      gOnce = true;
- 
+
      const uint8_t data0[] = {  0, 0,     10, 0xFF };
 @@ -1319,22 +1319,16 @@ bool SkAAClip::setPath(const SkPath& pat
  }
- 
+
  ///////////////////////////////////////////////////////////////////////////////
- 
+
  typedef void (*RowProc)(SkAAClip::Builder&, int bottom,
                          const uint8_t* rowA, const SkIRect& rectA,
                          const uint8_t* rowB, const SkIRect& rectB);
- 
+
 -static void sectRowProc(SkAAClip::Builder& builder, int bottom,
 -                        const uint8_t* rowA, const SkIRect& rectA,
 -                        const uint8_t* rowB, const SkIRect& rectB) {
--    
+-
 -}
 -
  typedef U8CPU (*AlphaProc)(U8CPU alphaA, U8CPU alphaB);
- 
+
  static U8CPU sectAlphaProc(U8CPU alphaA, U8CPU alphaB) {
      // Multiply
      return SkMulDiv255Round(alphaA, alphaB);
  }
- 
+
  static U8CPU unionAlphaProc(U8CPU alphaA, U8CPU alphaB) {
 @@ -1429,31 +1423,16 @@ private:
  static void adjust_row(RowIter& iter, int& leftA, int& riteA, int rite) {
@@ -76,7 +76,7 @@ diff --git a/gfx/skia/src/core/SkAAClip.cpp b/gfx/skia/src/core/SkAAClip.cpp
          riteA = iter.right();
      }
  }
- 
+
 -static bool intersect(int& min, int& max, int boundsMin, int boundsMax) {
 -    SkASSERT(min < max);
 -    SkASSERT(boundsMin < boundsMax);
@@ -99,7 +99,7 @@ diff --git a/gfx/skia/src/core/SkAAClip.cpp b/gfx/skia/src/core/SkAAClip.cpp
      int riteA = iterA.right();
      int leftB = iterB.left();
      int riteB = iterB.right();
- 
+
 @@ -1970,34 +1949,33 @@ static void small_bzero(void* dst, size_
  static inline uint8_t mergeOne(uint8_t value, unsigned alpha) {
      return SkMulDiv255Round(value, alpha);
@@ -124,7 +124,7 @@ diff --git a/gfx/skia/src/core/SkAAClip.cpp b/gfx/skia/src/core/SkAAClip.cpp
                          SkMulDiv255Round(g, alpha),
                          SkMulDiv255Round(b, alpha));
  }
- 
+
  template <typename T> void mergeT(const T* SK_RESTRICT src, int srcN,
                                   const uint8_t* SK_RESTRICT row, int rowN,
                                   T* SK_RESTRICT dst) {
@@ -132,7 +132,7 @@ diff --git a/gfx/skia/src/core/SkAAClip.cpp b/gfx/skia/src/core/SkAAClip.cpp
      for (;;) {
          SkASSERT(rowN > 0);
          SkASSERT(srcN > 0);
-         
+
          int n = SkMin32(rowN, srcN);
          unsigned rowA = row[1];
          if (0xFF == rowA) {
@@ -145,10 +145,10 @@ diff --git a/gfx/skia/src/core/SkBlitMask_D32.cpp b/gfx/skia/src/core/SkBlitMask
      }
      return false;
  }
- 
+
  ///////////////////////////////////////////////////////////////////////////////
  ///////////////////////////////////////////////////////////////////////////////
- 
+
 -static void BW_RowProc_Blend(SkPMColor* SK_RESTRICT dst,
 -                             const uint8_t* SK_RESTRICT mask,
 -                             const SkPMColor* SK_RESTRICT src, int count) {
@@ -216,7 +216,7 @@ diff --git a/gfx/skia/src/core/SkBlitMask_D32.cpp b/gfx/skia/src/core/SkBlitMask
          }
      }
  }
- 
+
  // expand the steps that SkAlphaMulQ performs, but this way we can
 -//  exand.. add.. combine
 +//  expand.. add.. combine
@@ -226,7 +226,7 @@ diff --git a/gfx/skia/src/core/SkBlitMask_D32.cpp b/gfx/skia/src/core/SkBlitMask
  #define EXPAND0(v, m, s)    ((v) & (m)) * (s)
  #define EXPAND1(v, m, s)    (((v) >> 8) & (m)) * (s)
  #define COMBINE(e0, e1, m)  ((((e0) >> 8) & (m)) | ((e1) & ~(m)))
- 
+
  static void A8_RowProc_Opaque(SkPMColor* SK_RESTRICT dst,
                                const uint8_t* SK_RESTRICT mask,
                                const SkPMColor* SK_RESTRICT src, int count) {
@@ -256,7 +256,7 @@ diff --git a/gfx/skia/src/core/SkBlitMask_D32.cpp b/gfx/skia/src/core/SkBlitMask
      if (proc) {
          return proc;
      }
- 
+
      static const RowProc gProcs[] = {
          // need X coordinate to handle BW
 -        NULL, NULL, //(RowProc)BW_RowProc_Blend,      (RowProc)BW_RowProc_Opaque,
@@ -265,7 +265,7 @@ diff --git a/gfx/skia/src/core/SkBlitMask_D32.cpp b/gfx/skia/src/core/SkBlitMask
          (RowProc)LCD16_RowProc_Blend,   (RowProc)LCD16_RowProc_Opaque,
          (RowProc)LCD32_RowProc_Blend,   (RowProc)LCD32_RowProc_Opaque,
      };
- 
+
      int index;
      switch (config) {
          case SkBitmap::kARGB_8888_Config:
@@ -276,38 +276,38 @@ diff --git a/gfx/skia/src/core/SkConcaveToTriangles.cpp b/gfx/skia/src/core/SkCo
  #include "SkTDArray.h"
  #include "SkGeometry.h"
  #include "SkTSort.h"
- 
+
  // This is used to prevent runaway code bugs, and can probably be removed after
  // the code has been proven robust.
  #define kMaxCount 1000
- 
+
 -#define DEBUG
  #ifdef DEBUG
  //------------------------------------------------------------------------------
  // Debugging support
  //------------------------------------------------------------------------------
- 
+
  #include <cstdio>
  #include <stdarg.h>
- 
+
 diff --git a/gfx/skia/src/core/SkPath.cpp b/gfx/skia/src/core/SkPath.cpp
 --- a/gfx/skia/src/core/SkPath.cpp
 +++ b/gfx/skia/src/core/SkPath.cpp
 @@ -469,17 +469,16 @@ void SkPath::incReserve(U16CPU inc) {
      fPts.setReserve(fPts.count() + inc);
- 
+
      SkDEBUGCODE(this->validate();)
  }
- 
+
  void SkPath::moveTo(SkScalar x, SkScalar y) {
      SkDEBUGCODE(this->validate();)
- 
+
 -    int      vc = fVerbs.count();
      SkPoint* pt;
- 
+
      // remember our index
      fLastMoveToIndex = fPts.count();
- 
+
      pt = fPts.append();
      *fVerbs.append() = kMove_Verb;
      pt->set(x, y);
@@ -316,17 +316,17 @@ diff --git a/gfx/skia/src/core/SkPath.cpp b/gfx/skia/src/core/SkPath.cpp
          pts -= gPtsInVerb[verbs[i]];
      }
  }
- 
+
  void SkPath::reverseAddPath(const SkPath& src) {
      this->incReserve(src.fPts.count());
- 
+
 -    const SkPoint* startPts = src.fPts.begin();
      const SkPoint* pts = src.fPts.end();
      const uint8_t* startVerbs = src.fVerbs.begin();
      const uint8_t* verbs = src.fVerbs.end();
- 
+
      fIsOval = false;
- 
+
      bool needMove = true;
      bool needClose = false;
 diff --git a/gfx/skia/src/core/SkRegion.cpp b/gfx/skia/src/core/SkRegion.cpp
@@ -336,7 +336,7 @@ diff --git a/gfx/skia/src/core/SkRegion.cpp b/gfx/skia/src/core/SkRegion.cpp
  /*  Given count RunTypes in a complex region, return the worst case number of
      logical intervals that represents (i.e. number of rects that would be
      returned from the iterator).
-  
+
      We could just return count/2, since there must be at least 2 values per
      interval, but we can first trim off the const overhead of the initial TOP
      value, plus the final BOTTOM + 2 sentinels.
@@ -345,10 +345,10 @@ diff --git a/gfx/skia/src/core/SkRegion.cpp b/gfx/skia/src/core/SkRegion.cpp
 -    SkASSERT(count >= 6);   // a single rect is 6 values
 -    return (count - 4) >> 1;
 -}
- 
+
  /*  Given a number of intervals, what is the worst case representation of that
      many intervals?
-  
+
      Worst case (from a storage perspective), is a vertical stack of single
      intervals:  TOP + N * (BOTTOM INTERVALCOUNT LEFT RIGHT SENTINEL) + SENTINEL
   */
@@ -364,7 +364,7 @@ diff --git a/gfx/skia/src/core/SkScalerContext.cpp b/gfx/skia/src/core/SkScalerC
      // MASK_FORMAT_JUST_ADVANCE
      glyph->fMaskFormat = fRec.fMaskFormat;
  }
- 
+
 -static bool isLCD(const SkScalerContext::Rec& rec) {
 -    return SkMask::kLCD16_Format == rec.fMaskFormat ||
 -           SkMask::kLCD32_Format == rec.fMaskFormat;
@@ -394,25 +394,25 @@ diff --git a/gfx/skia/src/core/SkScalerContext.cpp b/gfx/skia/src/core/SkScalerC
 -}
 -
  #define SK_FREETYPE_LCD_LERP    160
- 
+
  static int lerp(int start, int end) {
      SkASSERT((unsigned)SK_FREETYPE_LCD_LERP <= 256);
      return start + ((end - start) * (SK_FREETYPE_LCD_LERP) >> 8);
  }
- 
+
  static uint16_t packLCD16(unsigned r, unsigned g, unsigned b) {
 diff --git a/gfx/skia/src/core/SkScan_AntiPath.cpp b/gfx/skia/src/core/SkScan_AntiPath.cpp
 --- a/gfx/skia/src/core/SkScan_AntiPath.cpp
 +++ b/gfx/skia/src/core/SkScan_AntiPath.cpp
 @@ -230,52 +230,16 @@ void SuperBlitter::blitH(int x, int y, i
                           fOffsetX);
- 
+
  #ifdef SK_DEBUG
      fRuns.assertValid(y & MASK, (1 << (8 - SHIFT)));
      fCurrX = x + width;
  #endif
  }
- 
+
 -static void set_left_rite_runs(SkAlphaRuns& runs, int ileft, U8CPU leftA,
 -                               int n, U8CPU riteA) {
 -    SkASSERT(leftA <= 0xFF);
@@ -452,7 +452,7 @@ diff --git a/gfx/skia/src/core/SkScan_AntiPath.cpp b/gfx/skia/src/core/SkScan_An
  void SuperBlitter::blitRect(int x, int y, int width, int height) {
      SkASSERT(width > 0);
      SkASSERT(height > 0);
- 
+
      // blit leading rows
      while ((y & MASK)) {
          this->blitH(x, y++, width);
@@ -462,14 +462,14 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 +++ b/gfx/skia/src/effects/SkGradientShader.cpp
 @@ -865,45 +865,16 @@ bool Linear_Gradient::setContext(const S
      } while (0)
- 
+
  namespace {
- 
+
  typedef void (*LinearShadeProc)(TileProc proc, SkFixed dx, SkFixed fx,
                                  SkPMColor* dstC, const SkPMColor* cache,
                                  int toggle, int count);
- 
--// This function is deprecated, and will be replaced by 
+
+-// This function is deprecated, and will be replaced by
 -// shadeSpan_linear_vertical_lerp() once Chrome has been weaned off of it.
 -void shadeSpan_linear_vertical(TileProc proc, SkFixed dx, SkFixed fx,
 -                               SkPMColor* SK_RESTRICT dstC,
@@ -509,19 +509,19 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
 @@ -2131,16 +2102,18 @@ protected:
          buffer.writePoint(fCenter);
      }
- 
+
  private:
      typedef Gradient_Shader INHERITED;
      const SkPoint fCenter;
  };
- 
-+#ifndef SK_SCALAR_IS_FLOAT 
+
++#ifndef SK_SCALAR_IS_FLOAT
 +
  #ifdef COMPUTE_SWEEP_TABLE
  #define PI  3.14159265
  static bool gSweepTableReady;
  static uint8_t gSweepTable[65];
- 
+
  /*  Our table stores precomputed values for atan: [0...1] -> [0..PI/4]
      We scale the results to [0..32]
  */
@@ -533,20 +533,20 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
  };
  static const uint8_t* build_sweep_table() { return gSweepTable; }
  #endif
- 
+
 +#endif
 +
  // divide numer/denom, with a bias of 6bits. Assumes numer <= denom
  // and denom != 0. Since our table is 6bits big (+1), this is a nice fit.
  // Same as (but faster than) SkFixedDiv(numer, denom) >> 10
- 
+
 +#ifndef SK_SCALAR_IS_FLOAT
  //unsigned div_64(int numer, int denom);
  static unsigned div_64(int numer, int denom) {
      SkASSERT(numer <= denom);
      SkASSERT(numer > 0);
      SkASSERT(denom > 0);
- 
+
      int nbits = SkCLZ(numer);
      int dbits = SkCLZ(denom);
 @@ -2294,16 +2270,17 @@ static unsigned atan_0_90(SkFixed y, SkF
@@ -554,25 +554,25 @@ diff --git a/gfx/skia/src/effects/SkGradientShader.cpp b/gfx/skia/src/effects/Sk
          // pin to 63
          result -= result >> 6;
      }
- 
+
      SkASSERT(result <= 63);
      return result;
  }
 +#endif
- 
+
  //  returns angle in a circle [0..2PI) -> [0..255]
  #ifdef SK_SCALAR_IS_FLOAT
  static unsigned SkATan2_255(float y, float x) {
      //    static const float g255Over2PI = 255 / (2 * SK_ScalarPI);
      static const float g255Over2PI = 40.584510488433314f;
-     
+
      float result = sk_float_atan2(y, x);
 diff --git a/gfx/skia/src/opts/SkBlitRect_opts_SSE2.cpp b/gfx/skia/src/opts/SkBlitRect_opts_SSE2.cpp
 --- a/gfx/skia/src/opts/SkBlitRect_opts_SSE2.cpp
 +++ b/gfx/skia/src/opts/SkBlitRect_opts_SSE2.cpp
 @@ -112,17 +112,17 @@ void BlitRect32_OpaqueWide_SSE2(SkPMColo
  }
- 
+
  void ColorRect32_SSE2(SkPMColor* destination,
                        int width, int height,
                        size_t rowBytes, uint32_t color) {
@@ -596,22 +596,22 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
  static CGFloat CGRectGetMaxY_inline(const CGRect& rect) {
      return rect.origin.y + rect.size.height;
  }
- 
+
  static CGFloat CGRectGetWidth_inline(const CGRect& rect) {
      return rect.size.width;
  }
- 
+
 -static CGFloat CGRectGetHeight(const CGRect& rect) {
 -    return rect.size.height;
 -}
 -
  ///////////////////////////////////////////////////////////////////////////////
- 
+
  static void sk_memset_rect32(uint32_t* ptr, uint32_t value, size_t width,
                               size_t height, size_t rowBytes) {
      SkASSERT(width);
      SkASSERT(width * sizeof(uint32_t) <= rowBytes);
- 
+
      if (width >= 32) {
 @@ -125,28 +121,30 @@ static void sk_memset_rect32(uint32_t* p
                  *ptr++ = value;
@@ -621,7 +621,7 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
          }
      }
  }
- 
+
 +#if 0
  // Potentially this should be made (1) public (2) optimized when width is small.
  // Also might want 16 and 32 bit version
@@ -636,11 +636,11 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
      }
  }
 +#endif
- 
+
  #include <sys/utsname.h>
- 
+
  typedef uint32_t CGRGBPixel;
- 
+
  static unsigned CGRGBPixel_getAlpha(CGRGBPixel pixel) {
      return pixel & 0xFF;
  }
@@ -652,7 +652,7 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
                                   ScalarToCG(matrix[SkMatrix::kMTransX]) * sx,
                                   ScalarToCG(matrix[SkMatrix::kMTransY]) * sy);
  }
- 
+
 -static void CGAffineTransformToMatrix(const CGAffineTransform& xform, SkMatrix* matrix) {
 -    matrix->setAll(
 -                   CGToScalar(xform.a), CGToScalar(xform.c), CGToScalar(xform.tx),
@@ -664,9 +664,9 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
      int unitsPerEm = CGFontGetUnitsPerEm(cgFont);
      return SkScalarInvert(SkIntToScalar(unitsPerEm));
  }
- 
+
  ///////////////////////////////////////////////////////////////////////////////
- 
+
  #define BITMAP_INFO_RGB     (kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Host)
 @@ -1075,16 +1066,17 @@ static const uint8_t* getInverseTable(bo
      if (!gInited) {
@@ -676,7 +676,7 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
      }
      return isWhite ? gWhiteTable : gTable;
  }
- 
+
 +#ifdef SK_USE_COLOR_LUMINANCE
  static const uint8_t* getGammaTable(U8CPU luminance) {
      static uint8_t gGammaTables[4][256];
@@ -696,7 +696,7 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
      return gGammaTables[luminance >> 6];
  }
 +#endif
- 
+
 +#ifndef SK_USE_COLOR_LUMINANCE
  static void invertGammaMask(bool isWhite, CGRGBPixel rgb[], int width,
                              int height, size_t rb) {
@@ -713,7 +713,7 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
      }
  }
 +#endif
- 
+
  static void cgpixels_to_bits(uint8_t dst[], const CGRGBPixel src[], int count) {
      while (count > 0) {
          uint8_t mask = 0;
@@ -726,12 +726,12 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
          *dst++ = mask;
      }
  }
- 
+
 +#ifdef SK_USE_COLOR_LUMINANCE
  static int lerpScale(int dst, int src, int scale) {
      return dst + (scale * (src - dst) >> 23);
  }
- 
+
  static CGRGBPixel lerpPixel(CGRGBPixel dst, CGRGBPixel src,
                              int scaleR, int scaleG, int scaleB) {
      int sr = (src >> 16) & 0xFF;
@@ -742,7 +742,7 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
      int rb = lerpScale(db, sb, scaleB);
      return (rr << 16) | (rg << 8) | rb;
  }
- 
+
  static void lerpPixels(CGRGBPixel dst[], const CGRGBPixel src[], int width,
                         int height, int rowBytes, int lumBits) {
 -#ifdef SK_USE_COLOR_LUMINANCE
@@ -755,7 +755,7 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
 -    int scaleG = scale;
 -    int scaleB = scale;
 -#endif
- 
+
      for (int y = 0; y < height; ++y) {
          for (int x = 0; x < width; ++x) {
              // bit-not the src, since it was drawn from black, so we need the
@@ -767,7 +767,7 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
      }
  }
 +#endif
- 
+
  #if 1
  static inline int r32_to_16(int x) { return SkR32ToR16(x); }
  static inline int g32_to_16(int x) { return SkG32ToG16(x); }
@@ -778,10 +778,10 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
 @@ -1212,22 +1202,21 @@ static inline uint32_t rgb_to_lcd32(CGRG
      return SkPackARGB32(0xFF, r, g, b);
  }
- 
+
  #define BLACK_LUMINANCE_LIMIT   0x40
  #define WHITE_LUMINANCE_LIMIT   0xA0
- 
+
  void SkScalerContext_Mac::generateImage(const SkGlyph& glyph) {
      CGGlyph cgGlyph = (CGGlyph) glyph.getGlyphID(fBaseGlyphCount);
 -
@@ -789,12 +789,12 @@ diff --git a/gfx/skia/src/ports/SkFontHost_mac_coretext.cpp b/gfx/skia/src/ports
 +#ifdef SK_USE_COLOR_LUMINANCE
      const bool isBW = SkMask::kBW_Format == glyph.fMaskFormat;
      const bool isA8 = !isLCD && !isBW;
--    
+-
 -#ifdef SK_USE_COLOR_LUMINANCE
 +
      unsigned lumBits = fRec.getLuminanceColor();
      uint32_t xorMask = 0;
- 
+
      if (isA8) {
          // for A8, we just want a component (they're all the same)
          lumBits = SkColorGetR(lumBits);
@@ -806,12 +806,12 @@ diff --git a/gfx/skia/src/utils/mac/SkCreateCGImageRef.cpp b/gfx/skia/src/utils/
 @@ -163,59 +163,8 @@ private:
      CGPDFDocumentRef fDoc;
  };
- 
+
  static void CGDataProviderReleaseData_FromMalloc(void*, const void* data,
                                                   size_t size) {
      sk_free((void*)data);
  }
- 
+
 -bool SkPDFDocumentToBitmap(SkStream* stream, SkBitmap* output) {
 -    size_t size = stream->getLength();
 -    void* ptr = sk_malloc_throw(size);
@@ -821,7 +821,7 @@ diff --git a/gfx/skia/src/utils/mac/SkCreateCGImageRef.cpp b/gfx/skia/src/utils/
 -    if (NULL == data) {
 -        return false;
 -    }
--    
+-
 -    CGPDFDocumentRef pdf = CGPDFDocumentCreateWithProvider(data);
 -    CGDataProviderRelease(data);
 -    if (NULL == pdf) {
@@ -833,12 +833,12 @@ diff --git a/gfx/skia/src/utils/mac/SkCreateCGImageRef.cpp b/gfx/skia/src/utils/
 -    if (NULL == page) {
 -        return false;
 -    }
--    
+-
 -    CGRect bounds = CGPDFPageGetBoxRect(page, kCGPDFMediaBox);
--    
+-
 -    int w = (int)CGRectGetWidth(bounds);
 -    int h = (int)CGRectGetHeight(bounds);
--        
+-
 -    SkBitmap bitmap;
 -    bitmap.setConfig(SkBitmap::kARGB_8888_Config, w, h);
 -    bitmap.allocPixels();
@@ -846,7 +846,7 @@ diff --git a/gfx/skia/src/utils/mac/SkCreateCGImageRef.cpp b/gfx/skia/src/utils/
 -
 -    size_t bitsPerComponent;
 -    CGBitmapInfo info;
--    getBitmapInfo(bitmap, &bitsPerComponent, &info, NULL); 
+-    getBitmapInfo(bitmap, &bitsPerComponent, &info, NULL);
 -
 -    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
 -    CGContextRef ctx = CGBitmapContextCreate(bitmap.getPixels(), w, h,

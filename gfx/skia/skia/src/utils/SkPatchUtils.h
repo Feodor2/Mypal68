@@ -12,8 +12,6 @@
 #include "SkMatrix.h"
 #include "SkVertices.h"
 
-class SkColorSpace;
-
 class SK_API SkPatchUtils {
 
 public:
@@ -51,7 +49,7 @@ public:
 
     static sk_sp<SkVertices> MakeVertices(const SkPoint cubics[12], const SkColor colors[4],
                                           const SkPoint texCoords[4], int lodX, int lodY,
-                                          SkColorSpace* colorSpace = nullptr);
+                                          bool interpColorsLinearly = false);
 };
 
 #endif

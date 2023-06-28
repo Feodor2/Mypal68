@@ -11,12 +11,13 @@
 #ifndef GrCircleEffect_DEFINED
 #define GrCircleEffect_DEFINED
 #include "SkTypes.h"
+#if SK_SUPPORT_GPU
 #include "GrFragmentProcessor.h"
 #include "GrCoordTransform.h"
 class GrCircleEffect : public GrFragmentProcessor {
 public:
-    const GrClipEdgeType& edgeType() const { return fEdgeType; }
-    const SkPoint& center() const { return fCenter; }
+    GrClipEdgeType edgeType() const { return fEdgeType; }
+    SkPoint center() const { return fCenter; }
     float radius() const { return fRadius; }
 
     static std::unique_ptr<GrFragmentProcessor> Make(GrClipEdgeType edgeType, SkPoint center,
@@ -48,4 +49,5 @@ private:
     float fRadius;
     typedef GrFragmentProcessor INHERITED;
 };
+#endif
 #endif

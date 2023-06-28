@@ -23,6 +23,5 @@ index c43d1a6..ce5f409 100644
      SkPoint floatOffset;
      fVerticalMatrix.mapPoints(&floatOffset, &trans, 1);
      if (!isSnowLeopard()) {
--- 
+--
 1.7.5.4
-

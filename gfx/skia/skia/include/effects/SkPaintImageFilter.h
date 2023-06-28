@@ -8,7 +8,6 @@
 #ifndef SkPaintImageFilter_DEFINED
 #define SkPaintImageFilter_DEFINED
 
-#include "SkFlattenable.h"
 #include "SkImageFilter.h"
 #include "SkPaint.h"
 
@@ -27,6 +26,9 @@ public:
 
     bool affectsTransparentBlack() const override;
 
+    SK_TO_STRING_OVERRIDE()
+    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkPaintImageFilter)
+
 protected:
     void flatten(SkWriteBuffer&) const override;
     sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* source, const Context&,
@@ -34,8 +36,6 @@ protected:
     sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer* xformer) const override;
 
 private:
-    SK_FLATTENABLE_HOOKS(SkPaintImageFilter)
-
     SkPaintImageFilter(const SkPaint& paint, const CropRect* rect);
 
     SkPaint fPaint;

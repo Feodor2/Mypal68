@@ -8,7 +8,7 @@
 
 #ifdef USE_SKIA
 #  include "PathSkia.h"
-#  include "skia/include/core/SkFont.h"
+#  include "skia/include/core/SkPaint.h"
 #endif
 
 #ifdef USE_CAIRO
@@ -105,34 +105,26 @@ SkPath ScaledFontBase::GetSkiaPathForGlyphs(const GlyphBuffer& aBuffer) {
   SkTypeface* typeFace = GetSkTypeface();
   MOZ_ASSERT(typeFace);
 
-  SkFont font(sk_ref_sp(typeFace), SkFloatToScalar(mSize));
+  SkPaint paint;
+  paint.setTypeface(sk_ref_sp(typeFace));
+  paint.setTextEncoding(SkPaint::kGlyphID_TextEncoding);
+  paint.setTextSize(SkFloatToScalar(mSize));
 
   std::vector<uint16_t> indices;
+  std::vector<SkPoint> offsets;
   indices.resize(aBuffer.mNumGlyphs);
+  offsets.resize(aBuffer.mNumGlyphs);
+
   for (unsigned int i = 0; i < aBuffer.mNumGlyphs; i++) {
     indices[i] = aBuffer.mGlyphs[i].mIndex;
+    offsets[i].fX = SkFloatToScalar(aBuffer.mGlyphs[i].mPosition.x);
+    offsets[i].fY = SkFloatToScalar(aBuffer.mGlyphs[i].mPosition.y);
   }
 
-  struct Context {
-    const Glyph* mGlyph;
-    SkPath mPath;
-  } ctx = {aBuffer.mGlyphs};
-
-  font.getPaths(
-      indices.data(), indices.size(),
-      [](const SkPath* glyphPath, const SkMatrix& scaleMatrix, void* ctxPtr) {
-        Context& ctx = *reinterpret_cast<Context*>(ctxPtr);
-        if (glyphPath) {
-          SkMatrix transMatrix(scaleMatrix);
-          transMatrix.postTranslate(SkFloatToScalar(ctx.mGlyph->mPosition.x),
-                                    SkFloatToScalar(ctx.mGlyph->mPosition.y));
-          ctx.mPath.addPath(*glyphPath, transMatrix);
-        }
-        ++ctx.mGlyph;
-      },
-      &ctx);
-
-  return ctx.mPath;
+  SkPath path;
+  paint.getPosTextPath(&indices.front(), aBuffer.mNumGlyphs * 2,
+                       &offsets.front(), &path);
+  return path;
 }
 #endif
 

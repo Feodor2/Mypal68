@@ -34,6 +34,13 @@ namespace SkWebpEncoder {
          */
         Compression fCompression = Compression::kLossy;
         float fQuality = 100.0f;
+
+        /**
+         *  If the input is premultiplied, this controls the unpremultiplication behavior.
+         *  The encoder can convert to linear before unpremultiplying or ignore the transfer
+         *  function and unpremultiply the input as is.
+         */
+        SkTransferFunctionBehavior fUnpremulBehavior = SkTransferFunctionBehavior::kRespect;
     };
 
     /**
@@ -43,6 +50,6 @@ namespace SkWebpEncoder {
      *  Returns true on success.  Returns false on an invalid or unsupported |src|.
      */
     SK_API bool Encode(SkWStream* dst, const SkPixmap& src, const Options& options);
-}
+};
 
 #endif

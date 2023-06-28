@@ -8,50 +8,46 @@
 #include "GrTextureMaker.h"
 
 #include "GrColorSpaceXform.h"
+#include "GrContext.h"
+#include "GrContextPriv.h"
 #include "GrGpu.h"
 #include "GrProxyProvider.h"
-#include "GrRecordingContext.h"
-#include "GrRecordingContextPriv.h"
 
-sk_sp<GrTextureProxy> GrTextureMaker::onRefTextureProxyForParams(const GrSamplerState& params,
-                                                                 bool willBeMipped,
-                                                                 SkScalar scaleAdjust[2]) {
-    if (this->width() > this->context()->priv().caps()->maxTextureSize() ||
-        this->height() > this->context()->priv().caps()->maxTextureSize()) {
-        return nullptr;
+sk_sp<GrTextureProxy> GrTextureMaker::refTextureProxyForParams(const GrSamplerState& params,
+                                                               SkColorSpace* dstColorSpace,
+                                                               sk_sp<SkColorSpace>* texColorSpace,
+                                                               SkScalar scaleAdjust[2]) {
+    CopyParams copyParams;
+    bool willBeMipped = params.filter() == GrSamplerState::Filter::kMipMap;
+
+    if (!fContext->caps()->mipMapSupport()) {
+        willBeMipped = false;
     }
 
-    CopyParams copyParams;
+    if (texColorSpace) {
+        *texColorSpace = this->getColorSpace(dstColorSpace);
+    }
 
-    sk_sp<GrTextureProxy> original(this->refOriginalTextureProxy(willBeMipped,
+    GrGpu* gpu = fContext->contextPriv().getGpu();
+    sk_sp<GrTextureProxy> original(this->refOriginalTextureProxy(willBeMipped, dstColorSpace,
                                                                  AllowedTexGenType::kCheap));
-    bool needsCopyForMipsOnly = false;
     if (original) {
-        if (!params.isRepeated() ||
-            !GrGpu::IsACopyNeededForRepeatWrapMode(this->context()->priv().caps(), original.get(),
-                                                   original->width(), original->height(),
-                                                   params.filter(), &copyParams, scaleAdjust)) {
-            needsCopyForMipsOnly = GrGpu::IsACopyNeededForMips(this->context()->priv().caps(),
-                                                               original.get(), params.filter(),
-                                                               &copyParams);
-            if (!needsCopyForMipsOnly) {
-                return original;
-            }
+        if (!gpu->isACopyNeededForTextureParams(original.get(), params, &copyParams, scaleAdjust)) {
+            return original;
         }
     } else {
-        if (!params.isRepeated() ||
-            !GrGpu::IsACopyNeededForRepeatWrapMode(this->context()->priv().caps(), nullptr,
-                                                   this->width(), this->height(),
-                                                   params.filter(), &copyParams, scaleAdjust)) {
-            return this->refOriginalTextureProxy(willBeMipped, AllowedTexGenType::kAny);
+        if (!gpu->isACopyNeededForTextureParams(this->width(), this->height(),
+                                                params, &copyParams, scaleAdjust)) {
+            return this->refOriginalTextureProxy(willBeMipped, dstColorSpace,
+                                                 AllowedTexGenType::kAny);
         }
     }
 
-    GrProxyProvider* proxyProvider = this->context()->priv().proxyProvider();
+    GrProxyProvider* proxyProvider = fContext->contextPriv().proxyProvider();
 
     GrSurfaceOrigin origOrigin = original ? original->origin() : kTopLeft_GrSurfaceOrigin;
     GrUniqueKey copyKey;
-    this->makeCopyKey(copyParams, &copyKey);
+    this->makeCopyKey(copyParams, &copyKey, dstColorSpace);
     sk_sp<GrTextureProxy> cachedProxy;
     if (copyKey.isValid()) {
         cachedProxy = proxyProvider->findOrCreateProxyByUniqueKey(copyKey, origOrigin);
@@ -60,29 +56,23 @@ sk_sp<GrTextureProxy> GrTextureMaker::onRefTextureProxyForParams(const GrSampler
         }
     }
 
-    sk_sp<GrTextureProxy> source;
+    sk_sp<GrTextureProxy> result;
     if (original) {
-        source = std::move(original);
+        result = std::move(original);
     } else if (cachedProxy) {
-        source = cachedProxy;
+        result = cachedProxy;
     } else {
         // Since we will be copying this texture there is no reason to make it mipped
-        source = this->refOriginalTextureProxy(false, AllowedTexGenType::kAny);
+        result = this->refOriginalTextureProxy(false, dstColorSpace,
+                                               AllowedTexGenType::kAny);
     }
-
-    if (!source) {
+    if (!result) {
         return nullptr;
     }
 
-    sk_sp<GrTextureProxy> result = CopyOnGpu(this->context(), source, copyParams, willBeMipped);
+    result = CopyOnGpu(fContext, std::move(result), copyParams, willBeMipped);
 
     if (!result) {
-        // If we were unable to make a copy and we only needed a copy for mips, then we will return
-        // the source texture here and require that the GPU backend is able to fall back to using
-        // bilerp if mips are required.
-        if (needsCopyForMipsOnly) {
-            return source;
-        }
         return nullptr;
     }
 
@@ -94,11 +84,10 @@ sk_sp<GrTextureProxy> GrTextureMaker::onRefTextureProxyForParams(const GrSampler
             // If we had a cachedProxy, that means there already is a proxy in the cache which
             // matches the key, but it does not have mip levels and we require them. Thus we must
             // remove the unique key from that proxy.
-            SkASSERT(cachedProxy->getUniqueKey() == copyKey);
-            proxyProvider->removeUniqueKeyFromProxy(cachedProxy.get());
+            proxyProvider->removeUniqueKeyFromProxy(copyKey, cachedProxy.get());
         }
         proxyProvider->assignUniqueKeyToProxy(copyKey, result.get());
-        this->didCacheCopy(copyKey, proxyProvider->contextID());
+        this->didCacheCopy(copyKey);
     }
     return result;
 }
@@ -108,11 +97,12 @@ std::unique_ptr<GrFragmentProcessor> GrTextureMaker::createFragmentProcessor(
         const SkRect& constraintRect,
         FilterConstraint filterConstraint,
         bool coordsLimitedToConstraintRect,
-        const GrSamplerState::Filter* filterOrNullForBicubic) {
+        const GrSamplerState::Filter* filterOrNullForBicubic,
+        SkColorSpace* dstColorSpace) {
     const GrSamplerState::Filter* fmForDetermineDomain = filterOrNullForBicubic;
     if (filterOrNullForBicubic && GrSamplerState::Filter::kMipMap == *filterOrNullForBicubic &&
         kYes_FilterConstraint == filterConstraint) {
-        // TODO: Here we should force a copy restricted to the constraintRect since MIP maps will
+        // TODo: Here we should force a copy restricted to the constraintRect since MIP maps will
         // read outside the constraint rect. However, as in the adjuster case, we aren't currently
         // doing that.
         // We instead we compute the domain as though were bilerping which is only correct if we
@@ -121,20 +111,41 @@ std::unique_ptr<GrFragmentProcessor> GrTextureMaker::createFragmentProcessor(
         fmForDetermineDomain = &kBilerp;
     }
 
+    GrSamplerState samplerState;
+    if (filterOrNullForBicubic) {
+        samplerState = GrSamplerState(GrSamplerState::WrapMode::kClamp, *filterOrNullForBicubic);
+    } else {
+        // Bicubic doesn't use filtering for it's texture accesses.
+        samplerState = GrSamplerState::ClampNearest();
+    }
+    sk_sp<SkColorSpace> texColorSpace;
     SkScalar scaleAdjust[2] = { 1.0f, 1.0f };
-    sk_sp<GrTextureProxy> proxy(this->refTextureProxyForParams(filterOrNullForBicubic,
-                                                               scaleAdjust));
+    sk_sp<GrTextureProxy> proxy(this->refTextureProxyForParams(samplerState, dstColorSpace,
+                                                               &texColorSpace, scaleAdjust));
     if (!proxy) {
         return nullptr;
     }
     SkMatrix adjustedMatrix = textureMatrix;
     adjustedMatrix.postScale(scaleAdjust[0], scaleAdjust[1]);
-
     SkRect domain;
     DomainMode domainMode =
         DetermineDomainMode(constraintRect, filterConstraint, coordsLimitedToConstraintRect,
                             proxy.get(), fmForDetermineDomain, &domain);
     SkASSERT(kTightCopy_DomainMode != domainMode);
-    return this->createFragmentProcessorForDomainAndFilter(
-            std::move(proxy), adjustedMatrix, domainMode, domain, filterOrNullForBicubic);
+    GrPixelConfig config = proxy->config();
+    auto fp = CreateFragmentProcessorForDomainAndFilter(std::move(proxy), adjustedMatrix,
+                                                        domainMode, domain, filterOrNullForBicubic);
+    return GrColorSpaceXformEffect::Make(std::move(fp), texColorSpace.get(), config, dstColorSpace);
+}
+
+sk_sp<GrTextureProxy> GrTextureMaker::generateTextureProxyForParams(const CopyParams& copyParams,
+                                                                    bool willBeMipped,
+                                                                    SkColorSpace* dstColorSpace) {
+    sk_sp<GrTextureProxy> original(this->refOriginalTextureProxy(willBeMipped, dstColorSpace,
+                                                                 AllowedTexGenType::kAny));
+    if (!original) {
+        return nullptr;
+    }
+
+    return CopyOnGpu(fContext, std::move(original), copyParams, willBeMipped);
 }

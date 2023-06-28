@@ -5,9 +5,9 @@
  * found in the LICENSE file.
  */
 
+#include "SkAtomics.h"
 #include "SkEventTracer.h"
 #include "SkOnce.h"
-#include <atomic>
 
 #include <stdlib.h>
 
@@ -40,20 +40,21 @@ class SkDefaultEventTracer : public SkEventTracer {
 };
 
 // We prefer gUserTracer if it's been set, otherwise we fall back on a default tracer;
-static std::atomic<SkEventTracer*> gUserTracer{nullptr};
+static SkEventTracer* gUserTracer = nullptr;
 
 bool SkEventTracer::SetInstance(SkEventTracer* tracer) {
     SkEventTracer* expected = nullptr;
-    if (!gUserTracer.compare_exchange_strong(expected, tracer)) {
+    if (!sk_atomic_compare_exchange(&gUserTracer, &expected, tracer)) {
         delete tracer;
         return false;
     }
-    atexit([]() { delete gUserTracer.load(); });
+    // An atomic load during process shutdown is probably overkill, but safe overkill.
+    atexit([]() { delete sk_atomic_load(&gUserTracer); });
     return true;
 }
 
 SkEventTracer* SkEventTracer::GetInstance() {
-    if (auto tracer = gUserTracer.load(std::memory_order_acquire)) {
+    if (SkEventTracer* tracer = sk_atomic_load(&gUserTracer, sk_memory_order_acquire)) {
         return tracer;
     }
     static SkOnce once;

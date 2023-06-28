@@ -48,11 +48,8 @@ int SkTypeface_Custom::getIndex() const { return fIndex; }
 
 SkTypeface_Empty::SkTypeface_Empty() : INHERITED(SkFontStyle(), false, true, SkString(), 0) {}
 
-std::unique_ptr<SkStreamAsset> SkTypeface_Empty::onOpenStream(int*) const { return nullptr; }
+SkStreamAsset* SkTypeface_Empty::onOpenStream(int*) const { return nullptr; }
 
-sk_sp<SkTypeface> SkTypeface_Empty::onMakeClone(const SkFontArguments& args) const {
-    return sk_ref_sp(this);
-}
 
 SkTypeface_Stream::SkTypeface_Stream(std::unique_ptr<SkFontData> fontData,
                                      const SkFontStyle& style, bool isFixedPitch, bool sysFont,
@@ -61,30 +58,15 @@ SkTypeface_Stream::SkTypeface_Stream(std::unique_ptr<SkFontData> fontData,
     , fData(std::move(fontData))
 { }
 
-std::unique_ptr<SkStreamAsset> SkTypeface_Stream::onOpenStream(int* ttcIndex) const {
+SkStreamAsset* SkTypeface_Stream::onOpenStream(int* ttcIndex) const {
     *ttcIndex = fData->getIndex();
-    return fData->getStream()->duplicate();
+    return fData->getStream()->duplicate().release();
 }
 
 std::unique_ptr<SkFontData> SkTypeface_Stream::onMakeFontData() const {
     return skstd::make_unique<SkFontData>(*fData);
 }
 
-sk_sp<SkTypeface> SkTypeface_Stream::onMakeClone(const SkFontArguments& args) const {
-    std::unique_ptr<SkFontData> data = this->cloneFontData(args);
-    if (!data) {
-        return nullptr;
-    }
-
-    SkString familyName;
-    this->getFamilyName(&familyName);
-
-    return sk_make_sp<SkTypeface_Stream>(std::move(data),
-                                         this->fontStyle(),
-                                         this->isFixedPitch(),
-                                         this->isSysFont(),
-                                         familyName);
-}
 
 SkTypeface_File::SkTypeface_File(const SkFontStyle& style, bool isFixedPitch, bool sysFont,
                                  const SkString familyName, const char path[], int index)
@@ -92,25 +74,9 @@ SkTypeface_File::SkTypeface_File(const SkFontStyle& style, bool isFixedPitch, bo
     , fPath(path)
 { }
 
-std::unique_ptr<SkStreamAsset> SkTypeface_File::onOpenStream(int* ttcIndex) const {
+SkStreamAsset* SkTypeface_File::onOpenStream(int* ttcIndex) const {
     *ttcIndex = this->getIndex();
-    return SkStream::MakeFromFile(fPath.c_str());
-}
-
-sk_sp<SkTypeface> SkTypeface_File::onMakeClone(const SkFontArguments& args) const {
-    std::unique_ptr<SkFontData> data = this->cloneFontData(args);
-    if (!data) {
-        return nullptr;
-    }
-
-    SkString familyName;
-    this->getFamilyName(&familyName);
-
-    return sk_make_sp<SkTypeface_Stream>(std::move(data),
-                                         this->fontStyle(),
-                                         this->isFixedPitch(),
-                                         this->isSysFont(),
-                                         familyName);
+    return SkStream::MakeFromFile(fPath.c_str()).release();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -8,10 +8,9 @@
 #ifndef SkSharedLock_DEFINED
 #define SkSharedLock_DEFINED
 
-#include "SkMacros.h"
+#include "SkAtomics.h"
 #include "SkSemaphore.h"
 #include "SkTypes.h"
-#include <atomic>
 
 #ifdef SK_DEBUG
     #include "SkMutex.h"
@@ -59,9 +58,9 @@ private:
     SkSemaphore fSharedQueue[2];
     SkSemaphore fExclusiveQueue;
 #else
-    std::atomic<int32_t> fQueueCounts;
-    SkSemaphore          fSharedQueue;
-    SkSemaphore          fExclusiveQueue;
+    SkAtomic<int32_t> fQueueCounts;
+    SkSemaphore       fSharedQueue;
+    SkSemaphore       fExclusiveQueue;
 #endif  // SK_DEBUG
 };
 

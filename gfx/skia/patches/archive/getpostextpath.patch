@@ -2,24 +2,24 @@ diff --git a/gfx/skia/include/core/SkPaint.h b/gfx/skia/include/core/SkPaint.h
 --- a/gfx/skia/include/core/SkPaint.h
 +++ b/gfx/skia/include/core/SkPaint.h
 @@ -836,16 +836,19 @@ public:
- 
+
      /** Return the path (outline) for the specified text.
          Note: just like SkCanvas::drawText, this will respect the Align setting
                in the paint.
      */
      void getTextPath(const void* text, size_t length, SkScalar x, SkScalar y,
                       SkPath* path) const;
- 
-+    void getPosTextPath(const void* text, size_t length, 
+
++    void getPosTextPath(const void* text, size_t length,
 +                        const SkPoint pos[], SkPath* path) const;
 +
  #ifdef SK_BUILD_FOR_ANDROID
      const SkGlyph& getUnicharMetrics(SkUnichar);
      const void* findImage(const SkGlyph&);
- 
+
      uint32_t getGenerationID() const;
  #endif
- 
+
      // returns true if the paint's settings (e.g. xfermode + alpha) resolve to
 diff --git a/gfx/skia/src/core/SkPaint.cpp b/gfx/skia/src/core/SkPaint.cpp
 --- a/gfx/skia/src/core/SkPaint.cpp
@@ -32,7 +32,7 @@ diff --git a/gfx/skia/src/core/SkPaint.cpp b/gfx/skia/src/core/SkPaint.cpp
          prevXPos = xpos;
      }
  }
- 
+
 +void SkPaint::getPosTextPath(const void* textData, size_t length,
 +                             const SkPoint pos[], SkPath* path) const {
 +    SkASSERT(length == 0 || textData != NULL);
@@ -64,7 +64,7 @@ diff --git a/gfx/skia/src/core/SkPaint.cpp b/gfx/skia/src/core/SkPaint.cpp
                              SkFlattenableWriteBuffer* buffer) {
      buffer->flatten(desc->addEntry(tag, buffer->size(), NULL));
  }
- 
+
  // SkFontHost can override this choice in FilterRec()
  static SkMask::Format computeMaskFormat(const SkPaint& paint) {
      uint32_t flags = paint.getFlags();

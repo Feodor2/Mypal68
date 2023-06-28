@@ -34,22 +34,22 @@ struct BasicBlock {
         , fStatement(statement) {}
 
         std::unique_ptr<Expression>* expression() const {
-            SkASSERT(fKind == kExpression_Kind);
+            ASSERT(fKind == kExpression_Kind);
             return fExpression;
         }
 
         void setExpression(std::unique_ptr<Expression> expr) {
-            SkASSERT(fKind == kExpression_Kind);
+            ASSERT(fKind == kExpression_Kind);
             *fExpression = std::move(expr);
         }
 
         std::unique_ptr<Statement>* statement() const {
-            SkASSERT(fKind == kStatement_Kind);
+            ASSERT(fKind == kStatement_Kind);
             return fStatement;
         }
 
         void setStatement(std::unique_ptr<Statement> stmt) {
-            SkASSERT(fKind == kStatement_Kind);
+            ASSERT(fKind == kStatement_Kind);
             *fStatement = std::move(stmt);
         }
 
@@ -57,7 +57,7 @@ struct BasicBlock {
             if (fKind == kStatement_Kind) {
                 return (*fStatement)->description();
             } else {
-                SkASSERT(fKind == kExpression_Kind);
+                ASSERT(fKind == kExpression_Kind);
                 return (*fExpression)->description();
             }
         }

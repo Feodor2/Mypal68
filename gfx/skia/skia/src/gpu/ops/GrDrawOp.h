@@ -36,6 +36,7 @@ public:
     GR_DECL_BITFIELD_CLASS_OPS_FRIENDS(FixedFunctionFlags);
     virtual FixedFunctionFlags fixedFunctionFlags() const = 0;
 
+    enum class RequiresDstTexture : bool { kNo = false, kYes = true };
     /**
      * This is called after the GrAppliedClip has been computed and just prior to recording the op
      * or combining it with a previously recorded op. The op should convert any proxies or resources
@@ -43,15 +44,8 @@ public:
      * at this time the op must report whether a copy of the destination (or destination texture
      * itself) needs to be provided to the GrXferProcessor when this op executes.
      */
-    virtual GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*, GrFSAAType) = 0;
-
-#ifdef SK_DEBUG
-    bool fAddDrawOpCalled = false;
-
-    void validate() const override {
-        SkASSERT(fAddDrawOpCalled);
-    }
-#endif
+    virtual RequiresDstTexture finalize(const GrCaps&, const GrAppliedClip*,
+                                        GrPixelConfigIsClamped) = 0;
 
 private:
     typedef GrOp INHERITED;

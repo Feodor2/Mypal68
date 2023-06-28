@@ -1271,46 +1271,6 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
   });
 }
 
-// share URL
-if (AppConstants.platform == "macosx") {
-  gBuiltInActions.push({
-    id: "shareURL",
-    title: "shareURL-title",
-    onShowingInPanel(buttonNode) {
-      browserPageActions(buttonNode).shareURL.onShowingInPanel(buttonNode);
-    },
-    onBeforePlacedInWindow(browserWindow) {
-      browserPageActions(browserWindow).shareURL.onBeforePlacedInWindow(
-        browserWindow
-      );
-    },
-    wantsSubview: true,
-    onSubviewShowing(panelViewNode) {
-      browserPageActions(panelViewNode).shareURL.onShowingSubview(
-        panelViewNode
-      );
-    },
-  });
-}
-
-if (AppConstants.isPlatformAndVersionAtLeast("win", "6.4")) {
-  gBuiltInActions.push(
-    // Share URL
-    {
-      id: "shareURL",
-      title: "shareURL-title",
-      onBeforePlacedInWindow(buttonNode) {
-        browserPageActions(buttonNode).shareURL.onBeforePlacedInWindow(
-          buttonNode
-        );
-      },
-      onCommand(event, buttonNode) {
-        browserPageActions(buttonNode).shareURL.onCommand(event, buttonNode);
-      },
-    }
-  );
-}
-
 /**
  * Gets a BrowserPageActions object in a browser window.
  *

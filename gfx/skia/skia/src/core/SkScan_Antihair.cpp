@@ -5,16 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "SkScan.h"
 
+#include "SkScan.h"
 #include "SkBlitter.h"
 #include "SkColorData.h"
-#include "SkFDot6.h"
 #include "SkLineClipper.h"
 #include "SkRasterClip.h"
-#include "SkTo.h"
-
-#include <utility>
+#include "SkFDot6.h"
 
 /*  Our attempt to compute the worst case "bounds" for the horizontal and
     vertical cases has some numerical bug in it, and we sometimes undervalue
@@ -112,7 +109,7 @@ public:
         fy += SK_Fixed1/2;
 
         int y = fy >> 16;
-        uint8_t  a = (uint8_t)((fy >> 8) & 0xFF);
+        uint8_t  a = (uint8_t)(fy >> 8);
 
         // lower line
         unsigned ma = SmallDot6Scale(a, mod64);
@@ -136,7 +133,7 @@ public:
         fy += SK_Fixed1/2;
 
         int y = fy >> 16;
-        uint8_t  a = (uint8_t)((fy >> 8) & 0xFF);
+        uint8_t  a = (uint8_t)(fy >> 8);
 
         // lower line
         if (a) {
@@ -159,7 +156,7 @@ public:
         fy += SK_Fixed1/2;
 
         int lower_y = fy >> 16;
-        uint8_t  a = (uint8_t)((fy >> 8) & 0xFF);
+        uint8_t  a = (uint8_t)(fy >> 8);
         unsigned a0 = SmallDot6Scale(255 - a, mod64);
         unsigned a1 = SmallDot6Scale(a, mod64);
         this->getBlitter()->blitAntiV2(x, lower_y - 1, a0, a1);
@@ -174,7 +171,7 @@ public:
         SkBlitter* blitter = this->getBlitter();
         do {
             int lower_y = fy >> 16;
-            uint8_t  a = (uint8_t)((fy >> 8) & 0xFF);
+            uint8_t  a = (uint8_t)(fy >> 8);
             blitter->blitAntiV2(x, lower_y - 1, 255 - a, a);
             fy += dy;
         } while (++x < stopx);
@@ -190,7 +187,7 @@ public:
         fx += SK_Fixed1/2;
 
         int x = fx >> 16;
-        int a = (uint8_t)((fx >> 8) & 0xFF);
+        int a = (uint8_t)(fx >> 8);
 
         unsigned ma = SmallDot6Scale(a, mod64);
         if (ma) {
@@ -210,7 +207,7 @@ public:
         fx += SK_Fixed1/2;
 
         int x = fx >> 16;
-        int a = (uint8_t)((fx >> 8) & 0xFF);
+        int a = (uint8_t)(fx >> 8);
 
         if (a) {
             this->getBlitter()->blitV(x, y, stopy - y, a);
@@ -230,7 +227,7 @@ public:
         fx += SK_Fixed1/2;
 
         int x = fx >> 16;
-        uint8_t a = (uint8_t)((fx >> 8) & 0xFF);
+        uint8_t a = (uint8_t)(fx >> 8);
         this->getBlitter()->blitAntiH2(x - 1, y,
                                        SmallDot6Scale(255 - a, mod64), SmallDot6Scale(a, mod64));
 
@@ -242,7 +239,7 @@ public:
         fx += SK_Fixed1/2;
         do {
             int x = fx >> 16;
-            uint8_t a = (uint8_t)((fx >> 8) & 0xFF);
+            uint8_t a = (uint8_t)(fx >> 8);
             this->getBlitter()->blitAntiH2(x - 1, y, 255 - a, a);
             fx += dx;
         } while (++y < stopy);
@@ -346,9 +343,8 @@ static void do_anti_hairline(SkFDot6 x0, SkFDot6 y0, SkFDot6 x1, SkFDot6 y1,
 
     if (SkAbs32(x1 - x0) > SkAbs32(y1 - y0)) {   // mostly horizontal
         if (x0 > x1) {    // we want to go left-to-right
-            using std::swap;
-            swap(x0, x1);
-            swap(y0, y1);
+            SkTSwap<SkFDot6>(x0, x1);
+            SkTSwap<SkFDot6>(y0, y1);
         }
 
         istart = SkFDot6Floor(x0);
@@ -420,9 +416,8 @@ static void do_anti_hairline(SkFDot6 x0, SkFDot6 y0, SkFDot6 x1, SkFDot6 y1,
         }
     } else {   // mostly vertical
         if (y0 > y1) {  // we want to go top-to-bottom
-            using std::swap;
-            swap(x0, x1);
-            swap(y0, y1);
+            SkTSwap<SkFDot6>(x0, x1);
+            SkTSwap<SkFDot6>(y0, y1);
         }
 
         istart = SkFDot6Floor(y0);

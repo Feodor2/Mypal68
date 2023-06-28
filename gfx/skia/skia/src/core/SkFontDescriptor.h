@@ -54,9 +54,9 @@ public:
     // Does not affect ownership of SkStream.
     static bool Deserialize(SkStream*, SkFontDescriptor* result);
 
-    void serialize(SkWStream*) const;
+    void serialize(SkWStream*);
 
-    SkFontStyle getStyle() const { return fStyle; }
+    SkFontStyle getStyle() { return fStyle; }
     void setStyle(SkFontStyle style) { fStyle = style; }
 
     const char* getFamilyName() const { return fFamilyName.c_str(); }

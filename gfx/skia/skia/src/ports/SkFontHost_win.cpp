@@ -14,29 +14,27 @@
 #include "SkData.h"
 #include "SkDescriptor.h"
 #include "SkFontDescriptor.h"
-#include "SkFontMetrics.h"
 #include "SkGlyph.h"
 #include "SkHRESULT.h"
-#include "SkMacros.h"
 #include "SkMakeUnique.h"
 #include "SkMaskGamma.h"
 #include "SkMatrix22.h"
+#include "SkOnce.h"
 #include "SkOTTable_OS_2.h"
 #include "SkOTTable_maxp.h"
 #include "SkOTTable_name.h"
 #include "SkOTUtils.h"
-#include "SkOnce.h"
 #include "SkPath.h"
 #include "SkSFNTHeader.h"
 #include "SkStream.h"
 #include "SkString.h"
 #include "SkTemplates.h"
-#include "SkTo.h"
-#include "SkTypefaceCache.h"
 #include "SkTypeface_win.h"
 #include "SkTypeface_win_dw.h"
+#include "SkTypefaceCache.h"
 #include "SkUtils.h"
 
+#include "SkTypes.h"
 #include <tchar.h>
 #include <usp10.h>
 #include <objbase.h>
@@ -89,7 +87,7 @@ static bool needToRenderWithSkia(const SkScalerContextRec& rec) {
         return true;
     }
 #endif
-    return rec.getHinting() == kNo_SkFontHinting || rec.getHinting() == kSlight_SkFontHinting;
+    return rec.getHinting() == SkPaint::kNo_Hinting || rec.getHinting() == SkPaint::kSlight_Hinting;
 }
 
 static void tchar_to_skstring(const TCHAR t[], SkString* s) {
@@ -171,7 +169,7 @@ static unsigned calculateGlyphCount(HDC hdc, const LOGFONT& lf) {
 
     // Binary search for glyph count.
     static const MAT2 mat2 = {{0, 1}, {0, 0}, {0, 0}, {0, 1}};
-    int32_t max = UINT16_MAX + 1;
+    int32_t max = SK_MaxU16 + 1;
     int32_t min = 0;
     GLYPHMETRICS gm;
     while (min < max) {
@@ -251,8 +249,8 @@ public:
     bool fSerializeAsStream;
     bool fCanBeLCD;
 
-    static sk_sp<LogFontTypeface> Make(const LOGFONT& lf) {
-        return sk_sp<LogFontTypeface>(new LogFontTypeface(get_style(lf), lf, false));
+    static LogFontTypeface* Create(const LOGFONT& lf) {
+        return new LogFontTypeface(get_style(lf), lf, false);
     }
 
     static void EnsureAccessible(const SkTypeface* face) {
@@ -260,12 +258,10 @@ public:
     }
 
 protected:
-    std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override;
-    sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override;
+    SkStreamAsset* onOpenStream(int* ttcIndex) const override;
     SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
                                            const SkDescriptor*) const override;
     void onFilterRec(SkScalerContextRec*) const override;
-    void getGlyphToUnicodeMap(SkUnichar*) const override;
     std::unique_ptr<SkAdvancedTypefaceMetrics> onGetAdvancedMetrics() const override;
     void onGetFontDescriptor(SkFontDescriptor*, bool*) const override;
     int onCharsToGlyphs(const void* chars, Encoding encoding,
@@ -279,11 +275,6 @@ protected:
     {
         return -1;
     }
-    int onGetVariationDesignParameters(SkFontParameters::Variation::Axis parameters[],
-                                       int parameterCount) const override
-    {
-        return -1;
-    }
     int onGetTableTags(SkFontTableTag tags[]) const override;
     size_t onGetTableData(SkFontTableTag, size_t offset, size_t length, void* data) const override;
 };
@@ -293,9 +284,8 @@ public:
     /**
      *  The created FontMemResourceTypeface takes ownership of fontMemResource.
      */
-    static sk_sp<FontMemResourceTypeface> Make(const LOGFONT& lf, HANDLE fontMemResource) {
-        return sk_sp<FontMemResourceTypeface>(
-            new FontMemResourceTypeface(get_style(lf), lf, fontMemResource));
+    static FontMemResourceTypeface* Create(const LOGFONT& lf, HANDLE fontMemResource) {
+        return new FontMemResourceTypeface(get_style(lf), lf, fontMemResource);
     }
 
 protected:
@@ -337,12 +327,12 @@ static bool FindByLogFont(SkTypeface* face, void* ctx) {
 SkTypeface* SkCreateTypefaceFromLOGFONT(const LOGFONT& origLF) {
     LOGFONT lf = origLF;
     make_canonical(&lf);
-    sk_sp<SkTypeface> face = SkTypefaceCache::FindByProcAndRef(FindByLogFont, &lf);
-    if (!face) {
-        face = LogFontTypeface::Make(lf);
+    SkTypeface* face = SkTypefaceCache::FindByProcAndRef(FindByLogFont, &lf);
+    if (nullptr == face) {
+        face = LogFontTypeface::Create(lf);
         SkTypefaceCache::Add(face);
     }
-    return face.release();
+    return face;
 }
 
 /***
@@ -361,11 +351,11 @@ SkTypeface* SkCreateTypefaceFromDWriteFont(IDWriteFactory* aFactory,
 /**
  *  The created SkTypeface takes ownership of fontMemResource.
  */
-sk_sp<SkTypeface> SkCreateFontMemResourceTypefaceFromLOGFONT(const LOGFONT& origLF, HANDLE fontMemResource) {
+SkTypeface* SkCreateFontMemResourceTypefaceFromLOGFONT(const LOGFONT& origLF, HANDLE fontMemResource) {
     LOGFONT lf = origLF;
     make_canonical(&lf);
     // We'll never get a cache hit, so no point in putting this in SkTypefaceCache.
-    return FontMemResourceTypeface::Make(lf, fontMemResource);
+    return FontMemResourceTypeface::Create(lf, fontMemResource);
 }
 
 /**
@@ -386,8 +376,7 @@ void SkLOGFONTFromTypeface(const SkTypeface* face, LOGFONT* lf) {
 // require parsing the TTF cmap table (platform 4, encoding 12) directly instead
 // of calling GetFontUnicodeRange().
 static void populate_glyph_to_unicode(HDC fontHdc, const unsigned glyphCount,
-                                      SkUnichar* glyphToUnicode) {
-    sk_bzero(glyphToUnicode, sizeof(SkUnichar) * glyphCount);
+                                      SkTDArray<SkUnichar>* glyphToUnicode) {
     DWORD glyphSetBufferSize = GetFontUnicodeRanges(fontHdc, nullptr);
     if (!glyphSetBufferSize) {
         return;
@@ -400,6 +389,8 @@ static void populate_glyph_to_unicode(HDC fontHdc, const unsigned glyphCount,
         return;
     }
 
+    glyphToUnicode->setCount(glyphCount);
+    memset(glyphToUnicode->begin(), 0, glyphCount * sizeof(SkUnichar));
     for (DWORD i = 0; i < glyphSet->cRanges; ++i) {
         // There is no guarantee that within a Unicode range, the corresponding
         // glyph id in a font file are continuous. So, even if we have ranges,
@@ -422,8 +413,9 @@ static void populate_glyph_to_unicode(HDC fontHdc, const unsigned glyphCount,
         // unlikely to have collisions since glyph reuse happens mostly for
         // different Unicode pages.
         for (USHORT j = 0; j < count; ++j) {
-            if (glyph[j] != 0xFFFF && glyph[j] < glyphCount && glyphToUnicode[glyph[j]] == 0) {
-                glyphToUnicode[glyph[j]] = chars[j];
+            if (glyph[j] != 0xffff && glyph[j] < glyphCount &&
+                (*glyphToUnicode)[glyph[j]] == 0) {
+                (*glyphToUnicode)[glyph[j]] = chars[j];
             }
         }
     }
@@ -570,11 +562,11 @@ public:
 protected:
     unsigned generateGlyphCount() override;
     uint16_t generateCharToGlyph(SkUnichar uni) override;
-    bool generateAdvance(SkGlyph* glyph) override;
+    void generateAdvance(SkGlyph* glyph) override;
     void generateMetrics(SkGlyph* glyph) override;
     void generateImage(const SkGlyph& glyph) override;
-    bool generatePath(SkGlyphID glyph, SkPath* path) override;
-    void generateFontMetrics(SkFontMetrics*) override;
+    void generatePath(SkGlyphID glyph, SkPath* path) override;
+    void generateFontMetrics(SkPaint::FontMetrics*) override;
 
 private:
     DWORD getGDIGlyphPath(SkGlyphID glyph, UINT flags,
@@ -652,7 +644,7 @@ SkScalerContext_GDI::SkScalerContext_GDI(sk_sp<LogFontTypeface> rawTypeface,
     // When GDI hinting, remove the entire Y scale from sA and GsA. (Prevents 'linear' metrics.)
     // When not hinting, remove only the integer Y scale from sA and GsA. (Applied by GDI.)
     SkScalerContextRec::PreMatrixScale scaleConstraints =
-        (fRec.getHinting() == kNo_SkFontHinting || fRec.getHinting() == kSlight_SkFontHinting)
+        (fRec.getHinting() == SkPaint::kNo_Hinting || fRec.getHinting() == SkPaint::kSlight_Hinting)
                    ? SkScalerContextRec::kVerticalInteger_PreMatrixScale
                    : SkScalerContextRec::kVertical_PreMatrixScale;
     SkVector scale;
@@ -811,7 +803,7 @@ uint16_t SkScalerContext_GDI::generateCharToGlyph(SkUnichar utf32) {
     uint16_t index = 0;
     WCHAR utf16[2];
     // TODO(ctguil): Support characters that generate more than one glyph.
-    if (SkUTF::ToUTF16(utf32, (uint16_t*)utf16) == 1) {
+    if (SkUTF16_FromUnichar(utf32, (uint16_t*)utf16) == 1) {
         // Type1 fonts fail with uniscribe API. Use GetGlyphIndices for plane 0.
 
         /** Real documentation for GetGlyphIndiciesW:
@@ -852,13 +844,6 @@ uint16_t SkScalerContext_GDI::generateCharToGlyph(SkUnichar utf32) {
         HRZM(ScriptItemize(utf16, numWCHAR, maxItems, &sc, nullptr, si, &numItems),
              "Could not itemize character.");
 
-        // Disable any attempt at shaping.
-        // Without this ScriptShape may return 0x80040200 (USP_E_SCRIPT_NOT_IN_FONT)
-        // when all that is desired here is a simple cmap lookup.
-        for (SCRIPT_ITEM& item : si) {
-            item.a.eScript = SCRIPT_UNDEFINED;
-        }
-
         // Sometimes ScriptShape cannot find a glyph for a non-BMP and returns 2 space glyphs.
         static const int maxGlyphs = 2;
         SCRIPT_VISATTR vsa[maxGlyphs];
@@ -875,14 +860,12 @@ uint16_t SkScalerContext_GDI::generateCharToGlyph(SkUnichar utf32) {
     return index;
 }
 
-bool SkScalerContext_GDI::generateAdvance(SkGlyph* glyph) {
-    return false;
+void SkScalerContext_GDI::generateAdvance(SkGlyph* glyph) {
+    this->generateMetrics(glyph);
 }
 
 void SkScalerContext_GDI::generateMetrics(SkGlyph* glyph) {
     SkASSERT(fDDC);
-
-    glyph->fMaskFormat = fRec.fMaskFormat;
 
     if (fType == SkScalerContext_GDI::kBitmap_Type || fType == SkScalerContext_GDI::kLine_Type) {
         SIZE size;
@@ -967,6 +950,8 @@ void SkScalerContext_GDI::generateMetrics(SkGlyph* glyph) {
     // TODO(benjaminwagner): What is the type of gm.gmCellInc[XY]?
     glyph->fAdvanceX = (float)((int)gm.gmCellIncX);
     glyph->fAdvanceY = (float)((int)gm.gmCellIncY);
+    glyph->fRsbDelta = 0;
+    glyph->fLsbDelta = 0;
 
     if (this->isSubpixel()) {
         sk_bzero(&gm, sizeof(gm));
@@ -989,7 +974,7 @@ void SkScalerContext_GDI::generateMetrics(SkGlyph* glyph) {
 }
 
 static const MAT2 gMat2Identity = {{0, 1}, {0, 0}, {0, 0}, {0, 1}};
-void SkScalerContext_GDI::generateFontMetrics(SkFontMetrics* metrics) {
+void SkScalerContext_GDI::generateFontMetrics(SkPaint::FontMetrics* metrics) {
     if (nullptr == metrics) {
         return;
     }
@@ -1040,8 +1025,8 @@ void SkScalerContext_GDI::generateFontMetrics(SkFontMetrics* metrics) {
     metrics->fUnderlineThickness = SkIntToScalar(otm.otmsUnderscoreSize);
     metrics->fUnderlinePosition = -SkIntToScalar(otm.otmsUnderscorePosition);
 
-    metrics->fFlags |= SkFontMetrics::kUnderlineThicknessIsValid_Flag;
-    metrics->fFlags |= SkFontMetrics::kUnderlinePositionIsValid_Flag;
+    metrics->fFlags |= SkPaint::FontMetrics::kUnderlineThicknessIsValid_Flag;
+    metrics->fFlags |= SkPaint::FontMetrics::kUnderlinePositionIsValid_Flag;
 
     metrics->fXHeight = SkIntToScalar(otm.otmsXHeight);
     GLYPHMETRICS gm;
@@ -1130,6 +1115,83 @@ static inline uint16_t rgb_to_lcd16(SkGdiRGB rgb, const uint8_t* tableR,
     return SkPack888ToRGB16(r, g, b);
 }
 
+// Is this GDI color neither black nor white? If so, we have to keep this
+// image as is, rather than smashing it down to a BW mask.
+//
+// returns int instead of bool, since we don't want/have to pay to convert
+// the zero/non-zero value into a bool
+static int is_not_black_or_white(SkGdiRGB c) {
+    // same as (but faster than)
+    //      c &= 0x00FFFFFF;
+    //      return 0 == c || 0x00FFFFFF == c;
+    return (c + (c & 1)) & 0x00FFFFFF;
+}
+
+static bool is_rgb_really_bw(const SkGdiRGB* src, int width, int height, size_t srcRB) {
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            if (is_not_black_or_white(src[x])) {
+                return false;
+            }
+        }
+        src = SkTAddOffset<const SkGdiRGB>(src, srcRB);
+    }
+    return true;
+}
+
+// gdi's bitmap is upside-down, so we reverse dst walking in Y
+// whenever we copy it into skia's buffer
+static void rgb_to_bw(const SkGdiRGB* SK_RESTRICT src, size_t srcRB,
+                      const SkGlyph& glyph) {
+    const int width = glyph.fWidth;
+    const size_t dstRB = (width + 7) >> 3;
+    uint8_t* SK_RESTRICT dst = (uint8_t*)((char*)glyph.fImage + (glyph.fHeight - 1) * dstRB);
+
+    int byteCount = width >> 3;
+    int bitCount = width & 7;
+
+    // adjust srcRB to skip the values in our byteCount loop,
+    // since we increment src locally there
+    srcRB -= byteCount * 8 * sizeof(SkGdiRGB);
+
+    for (int y = 0; y < glyph.fHeight; ++y) {
+        if (byteCount > 0) {
+            for (int i = 0; i < byteCount; ++i) {
+                unsigned byte = 0;
+                byte |= src[0] & (1 << 7);
+                byte |= src[1] & (1 << 6);
+                byte |= src[2] & (1 << 5);
+                byte |= src[3] & (1 << 4);
+                byte |= src[4] & (1 << 3);
+                byte |= src[5] & (1 << 2);
+                byte |= src[6] & (1 << 1);
+                byte |= src[7] & (1 << 0);
+                dst[i] = byte;
+                src += 8;
+            }
+        }
+        if (bitCount > 0) {
+            unsigned byte = 0;
+            unsigned mask = 0x80;
+            for (int i = 0; i < bitCount; i++) {
+                byte |= src[i] & mask;
+                mask >>= 1;
+            }
+            dst[byteCount] = byte;
+        }
+        src = SkTAddOffset<const SkGdiRGB>(src, srcRB);
+        dst -= dstRB;
+    }
+#if SK_SHOW_TEXT_BLIT_COVERAGE
+    if (glyph.fWidth > 0 && glyph.fHeight > 0) {
+        uint8_t* first = (uint8_t*)glyph.fImage;
+        uint8_t* last = (uint8_t*)((char*)glyph.fImage + glyph.fHeight * dstRB - 1);
+        *first |= 1 << 7;
+        *last |= bitCount == 0 ? 1 : 1 << (8 - bitCount);
+    }
+#endif
+}
+
 template<bool APPLY_PREBLEND>
 static void rgb_to_a8(const SkGdiRGB* SK_RESTRICT src, size_t srcRB,
                       const SkGlyph& glyph, const uint8_t* table8) {
@@ -1208,6 +1270,7 @@ void SkScalerContext_GDI::generateImage(const SkGlyph& glyph) {
         }
     }
 
+    int width = glyph.fWidth;
     size_t dstRB = glyph.rowBytes();
     if (isBW) {
         const uint8_t* src = (const uint8_t*)bits;
@@ -1219,7 +1282,7 @@ void SkScalerContext_GDI::generateImage(const SkGlyph& glyph) {
         }
 #if SK_SHOW_TEXT_BLIT_COVERAGE
             if (glyph.fWidth > 0 && glyph.fHeight > 0) {
-                int bitCount = glyph.fWidth & 7;
+                int bitCount = width & 7;
                 uint8_t* first = (uint8_t*)glyph.fImage;
                 uint8_t* last = (uint8_t*)((char*)glyph.fImage + glyph.fHeight * dstRB - 1);
                 *first |= 1 << 7;
@@ -1237,13 +1300,18 @@ void SkScalerContext_GDI::generateImage(const SkGlyph& glyph) {
         }
     } else {    // LCD16
         const SkGdiRGB* src = (const SkGdiRGB*)bits;
-        SkASSERT(SkMask::kLCD16_Format == glyph.fMaskFormat);
-        if (fPreBlend.isApplicable()) {
-            rgb_to_lcd16<true>(src, srcRB, glyph,
-                               fPreBlend.fR, fPreBlend.fG, fPreBlend.fB);
+        if (is_rgb_really_bw(src, width, glyph.fHeight, srcRB)) {
+            rgb_to_bw(src, srcRB, glyph);
+            ((SkGlyph*)&glyph)->fMaskFormat = SkMask::kBW_Format;
         } else {
-            rgb_to_lcd16<false>(src, srcRB, glyph,
-                                fPreBlend.fR, fPreBlend.fG, fPreBlend.fB);
+            SkASSERT(SkMask::kLCD16_Format == glyph.fMaskFormat);
+            if (fPreBlend.isApplicable()) {
+                rgb_to_lcd16<true>(src, srcRB, glyph,
+                                   fPreBlend.fR, fPreBlend.fG, fPreBlend.fB);
+            } else {
+                rgb_to_lcd16<false>(src, srcRB, glyph,
+                                    fPreBlend.fR, fPreBlend.fG, fPreBlend.fB);
+            }
         }
     }
 }
@@ -1553,7 +1621,7 @@ DWORD SkScalerContext_GDI::getGDIGlyphPath(SkGlyphID glyph, UINT flags,
     return total_size;
 }
 
-bool SkScalerContext_GDI::generatePath(SkGlyphID glyph, SkPath* path) {
+void SkScalerContext_GDI::generatePath(SkGlyphID glyph, SkPath* path) {
     SkASSERT(path);
     SkASSERT(fDDC);
 
@@ -1569,16 +1637,16 @@ bool SkScalerContext_GDI::generatePath(SkGlyphID glyph, SkPath* path) {
 
     //GDI only uses hinted outlines when axis aligned.
     UINT format = GGO_NATIVE | GGO_GLYPH_INDEX;
-    if (fRec.getHinting() == kNo_SkFontHinting || fRec.getHinting() == kSlight_SkFontHinting){
+    if (fRec.getHinting() == SkPaint::kNo_Hinting || fRec.getHinting() == SkPaint::kSlight_Hinting){
         format |= GGO_UNHINTED;
     }
     SkAutoSTMalloc<BUFFERSIZE, uint8_t> glyphbuf(BUFFERSIZE);
     DWORD total_size = getGDIGlyphPath(glyph, format, &glyphbuf);
     if (0 == total_size) {
-        return false;
+        return;
     }
 
-    if (fRec.getHinting() != kSlight_SkFontHinting) {
+    if (fRec.getHinting() != SkPaint::kSlight_Hinting) {
         sk_path_from_gdi_path(path, glyphbuf, total_size);
     } else {
         //GDI only uses hinted outlines when axis aligned.
@@ -1587,7 +1655,7 @@ bool SkScalerContext_GDI::generatePath(SkGlyphID glyph, SkPath* path) {
         SkAutoSTMalloc<BUFFERSIZE, uint8_t> hintedGlyphbuf(BUFFERSIZE);
         DWORD hinted_total_size = getGDIGlyphPath(glyph, format, &hintedGlyphbuf);
         if (0 == hinted_total_size) {
-            return false;
+            return;
         }
 
         if (!sk_path_from_gdi_paths(path, glyphbuf, total_size,
@@ -1597,7 +1665,6 @@ bool SkScalerContext_GDI::generatePath(SkGlyphID glyph, SkPath* path) {
             sk_path_from_gdi_path(path, glyphbuf, total_size);
         }
     }
-    return true;
 }
 
 static void logfont_for_name(const char* familyName, LOGFONT* lf) {
@@ -1646,23 +1713,6 @@ void LogFontTypeface::onGetFontDescriptor(SkFontDescriptor* desc,
     desc->setFamilyName(familyName.c_str());
     desc->setStyle(this->fontStyle());
     *isLocalStream = this->fSerializeAsStream;
-}
-
-void LogFontTypeface::getGlyphToUnicodeMap(SkUnichar* dstArray) const {
-    HDC hdc = ::CreateCompatibleDC(nullptr);
-    HFONT font = CreateFontIndirect(&fLogFont);
-    HFONT savefont = (HFONT)SelectObject(hdc, font);
-    LOGFONT lf = fLogFont;
-    HFONT designFont = CreateFontIndirect(&lf);
-    SelectObject(hdc, designFont);
-
-    unsigned int glyphCount = calculateGlyphCount(hdc, fLogFont);
-    populate_glyph_to_unicode(hdc, glyphCount, dstArray);
-
-    SelectObject(hdc, savefont);
-    DeleteObject(designFont);
-    DeleteObject(font);
-    DeleteDC(hdc);
 }
 
 std::unique_ptr<SkAdvancedTypefaceMetrics> LogFontTypeface::onGetAdvancedMetrics() const {
@@ -1714,6 +1764,8 @@ std::unique_ptr<SkAdvancedTypefaceMetrics> LogFontTypeface::onGetAdvancedMetrics
             info->fFlags |= SkAdvancedTypefaceMetrics::kNotEmbeddable_FontFlag;
         }
     }
+
+    populate_glyph_to_unicode(hdc, glyphCount, &(info->fGlyphToUnicode));
 
     if (glyphCount > 0 &&
         (otm.otmTextMetrics.tmPitchAndFamily & TMPF_TRUETYPE)) {
@@ -1870,17 +1922,18 @@ static sk_sp<SkTypeface> create_from_stream(std::unique_ptr<SkStreamAsset> strea
     return sk_sp<SkTypeface>(SkCreateFontMemResourceTypefaceFromLOGFONT(lf, fontReference));
 }
 
-std::unique_ptr<SkStreamAsset> LogFontTypeface::onOpenStream(int* ttcIndex) const {
+SkStreamAsset* LogFontTypeface::onOpenStream(int* ttcIndex) const {
     *ttcIndex = 0;
 
-    const DWORD kTTCTag = SkEndian_SwapBE32(SkSetFourByteTag('t', 't', 'c', 'f'));
+    const DWORD kTTCTag =
+        SkEndian_SwapBE32(SkSetFourByteTag('t', 't', 'c', 'f'));
     LOGFONT lf = fLogFont;
 
     HDC hdc = ::CreateCompatibleDC(nullptr);
     HFONT font = CreateFontIndirect(&lf);
     HFONT savefont = (HFONT)SelectObject(hdc, font);
 
-    std::unique_ptr<SkStreamAsset> stream;
+    SkMemoryStream* stream = nullptr;
     DWORD tables[2] = {kTTCTag, 0};
     for (size_t i = 0; i < SK_ARRAY_COUNT(tables); i++) {
         DWORD bufferSize = GetFontData(hdc, tables[i], 0, nullptr, 0);
@@ -1889,11 +1942,12 @@ std::unique_ptr<SkStreamAsset> LogFontTypeface::onOpenStream(int* ttcIndex) cons
             bufferSize = GetFontData(hdc, tables[i], 0, nullptr, 0);
         }
         if (bufferSize != GDI_ERROR) {
-            stream.reset(new SkMemoryStream(bufferSize));
+            stream = new SkMemoryStream(bufferSize);
             if (GetFontData(hdc, tables[i], 0, (void*)stream->getMemoryBase(), bufferSize)) {
                 break;
             } else {
-                stream.reset();
+                delete stream;
+                stream = nullptr;
             }
         }
     }
@@ -1903,10 +1957,6 @@ std::unique_ptr<SkStreamAsset> LogFontTypeface::onOpenStream(int* ttcIndex) cons
     DeleteDC(hdc);
 
     return stream;
-}
-
-sk_sp<SkTypeface> LogFontTypeface::onMakeClone(const SkFontArguments& args) const {
-    return sk_ref_sp(this);
 }
 
 static void bmpCharsToGlyphs(HDC hdc, const WCHAR* bmpChars, int count, uint16_t* glyphs,
@@ -2036,7 +2086,7 @@ int LogFontTypeface::onCharsToGlyphs(const void* chars, Encoding encoding,
 
             // Try a run of non-bmp.
             while (glyphIndex < glyphCount && currentChar > 0xFFFF) {
-                SkUTF::ToUTF16(currentChar, reinterpret_cast<uint16_t*>(scratch));
+                SkUTF16_FromUnichar(currentChar, reinterpret_cast<uint16_t*>(scratch));
                 glyphs[glyphIndex] = nonBmpCharToGlyph(hdc, &sc, scratch);
                 ++glyphIndex;
                 if (glyphIndex < glyphCount) {
@@ -2053,7 +2103,7 @@ int LogFontTypeface::onCharsToGlyphs(const void* chars, Encoding encoding,
             // Try a run of bmp.
             int glyphsLeft = glyphCount - glyphIndex;
             int runLength = 0;
-            while (runLength < glyphsLeft && !SkUTF16_IsLeadingSurrogate(currentUtf16[runLength])) {
+            while (runLength < glyphsLeft && !SkUTF16_IsHighSurrogate(currentUtf16[runLength])) {
                 ++runLength;
             }
             if (runLength) {
@@ -2063,7 +2113,7 @@ int LogFontTypeface::onCharsToGlyphs(const void* chars, Encoding encoding,
             }
 
             // Try a run of non-bmp.
-            while (glyphIndex < glyphCount && SkUTF16_IsLeadingSurrogate(*currentUtf16)) {
+            while (glyphIndex < glyphCount && SkUTF16_IsHighSurrogate(*currentUtf16)) {
                 glyphs[glyphIndex] = nonBmpCharToGlyph(hdc, &sc, currentUtf16);
                 ++glyphIndex;
                 currentUtf16 += 2;
@@ -2091,7 +2141,7 @@ int LogFontTypeface::onCharsToGlyphs(const void* chars, Encoding encoding,
 
             // Try a run of non-bmp.
             while (glyphIndex < glyphCount && utf32[glyphIndex] > 0xFFFF) {
-                SkUTF::ToUTF16(utf32[glyphIndex], reinterpret_cast<uint16_t*>(scratch));
+                SkUTF16_FromUnichar(utf32[glyphIndex], reinterpret_cast<uint16_t*>(scratch));
                 glyphs[glyphIndex] = nonBmpCharToGlyph(hdc, &sc, scratch);
                 ++glyphIndex;
             }
@@ -2143,15 +2193,15 @@ int LogFontTypeface::onGetUPEM() const {
 }
 
 SkTypeface::LocalizedStrings* LogFontTypeface::onCreateFamilyNameIterator() const {
-    sk_sp<SkTypeface::LocalizedStrings> nameIter =
-        SkOTUtils::LocalizedStrings_NameTable::MakeForFamilyNames(*this);
-    if (!nameIter) {
+    SkTypeface::LocalizedStrings* nameIter =
+        SkOTUtils::LocalizedStrings_NameTable::CreateForFamilyNames(*this);
+    if (nullptr == nameIter) {
         SkString familyName;
         this->getFamilyName(&familyName);
         SkString language("und"); //undetermined
-        nameIter = sk_make_sp<SkOTUtils::LocalizedStrings_SingleName>(familyName, language);
+        nameIter = new SkOTUtils::LocalizedStrings_SingleName(familyName, language);
     }
-    return nameIter.release();
+    return nameIter;
 }
 
 int LogFontTypeface::onGetTableTags(SkFontTableTag tags[]) const {
@@ -2220,30 +2270,32 @@ void LogFontTypeface::onFilterRec(SkScalerContextRec* rec) const {
         rec->fFlags |= SkScalerContext::kGenA8FromLCD_Flag;
     }
 
-    unsigned flagsWeDontSupport = SkScalerContext::kForceAutohinting_Flag |
+    unsigned flagsWeDontSupport = SkScalerContext::kVertical_Flag |
+                                  SkScalerContext::kDevKernText_Flag |
+                                  SkScalerContext::kForceAutohinting_Flag |
                                   SkScalerContext::kEmbeddedBitmapText_Flag |
                                   SkScalerContext::kEmbolden_Flag |
                                   SkScalerContext::kLCD_BGROrder_Flag |
                                   SkScalerContext::kLCD_Vertical_Flag;
     rec->fFlags &= ~flagsWeDontSupport;
 
-    SkFontHinting h = rec->getHinting();
+    SkPaint::Hinting h = rec->getHinting();
     switch (h) {
-        case kNo_SkFontHinting:
+        case SkPaint::kNo_Hinting:
             break;
-        case kSlight_SkFontHinting:
+        case SkPaint::kSlight_Hinting:
             // Only do slight hinting when axis aligned.
             // TODO: re-enable slight hinting when FontHostTest can pass.
             //if (!isAxisAligned(*rec)) {
-                h = kNo_SkFontHinting;
+                h = SkPaint::kNo_Hinting;
             //}
             break;
-        case kNormal_SkFontHinting:
-        case kFull_SkFontHinting:
+        case SkPaint::kNormal_Hinting:
+        case SkPaint::kFull_Hinting:
             // TODO: need to be able to distinguish subpixel positioned glyphs
             // and linear metrics.
             //rec->fFlags &= ~SkScalerContext::kSubpixelPositioning_Flag;
-            h = kNormal_SkFontHinting;
+            h = SkPaint::kNormal_Hinting;
             break;
         default:
             SkDEBUGFAIL("unknown hinting");
@@ -2262,12 +2314,6 @@ void LogFontTypeface::onFilterRec(SkScalerContextRec* rec) const {
     if (!fCanBeLCD && isLCD(*rec)) {
         rec->fMaskFormat = SkMask::kA8_Format;
         rec->fFlags &= ~SkScalerContext::kGenA8FromLCD_Flag;
-    } else if (rec->fMaskFormat == SkMask::kA8_Format) {
-        // Bug 1277404
-        // If we have non LCD GDI text, render the fonts as cleartype and convert them
-        // to grayscale. This seems to be what Chrome and IE are doing on Windows 7.
-        // This also applies if cleartype is disabled system wide.
-        rec->fFlags |= SkScalerContext::kGenA8FromLCD_Flag;
     }
 }
 

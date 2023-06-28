@@ -8,7 +8,6 @@
 #ifndef SkSurface_Gpu_DEFINED
 #define SkSurface_Gpu_DEFINED
 
-#include "GrTypesPriv.h"
 #include "SkSurface_Base.h"
 
 #if SK_SUPPORT_GPU
@@ -23,16 +22,15 @@ public:
     // This is an internal-only factory
     static sk_sp<SkSurface> MakeWrappedRenderTarget(GrContext*, sk_sp<GrRenderTargetContext>);
 
-    GrBackendTexture onGetBackendTexture(BackendHandleAccess) override;
-    GrBackendRenderTarget onGetBackendRenderTarget(BackendHandleAccess) override;
-
+    GrBackendObject onGetTextureHandle(BackendHandleAccess) override;
+    bool onGetRenderTargetHandle(GrBackendObject*, BackendHandleAccess) override;
     SkCanvas* onNewCanvas() override;
     sk_sp<SkSurface> onNewSurface(const SkImageInfo&) override;
-    sk_sp<SkImage> onNewImageSnapshot(const SkIRect* subset) override;
+    sk_sp<SkImage> onNewImageSnapshot() override;
     void onWritePixels(const SkPixmap&, int x, int y) override;
     void onCopyOnWrite(ContentChangeMode) override;
     void onDiscard() override;
-    GrSemaphoresSubmitted onFlush(BackendSurfaceAccess access, FlushFlags flags, int numSemaphores,
+    GrSemaphoresSubmitted onFlush(int numSemaphores,
                                   GrBackendSemaphore signalSemaphores[]) override;
     bool onWait(int numSemaphores, const GrBackendSemaphore* waitSemaphores) override;
     bool onCharacterize(SkSurfaceCharacterization*) const override;
@@ -42,7 +40,7 @@ public:
     SkGpuDevice* getDevice() { return fDevice.get(); }
 
     static bool Valid(const SkImageInfo&);
-    static bool Valid(const GrCaps*, GrPixelConfig, SkColorSpace*);
+    static bool Valid(GrContext*, GrPixelConfig, SkColorSpace*);
 
 private:
     sk_sp<SkGpuDevice> fDevice;

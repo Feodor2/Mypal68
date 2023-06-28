@@ -8,6 +8,7 @@
 #include "SkColorMatrixFilterRowMajor255.h"
 #include "SkColorData.h"
 #include "SkNx.h"
+#include "SkPM4fPriv.h"
 #include "SkRasterPipeline.h"
 #include "SkReadBuffer.h"
 #include "SkRefCnt.h"
@@ -84,7 +85,7 @@ bool SkColorMatrixFilterRowMajor255::asColorMatrix(SkScalar matrix[20]) const {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-//  This code was duplicated from src/effects/SkColorMatrix.cpp in order to be used in core.
+//  This code was duplicated from src/effects/SkColorMatrixc.cpp in order to be used in core.
 //////
 
 // To detect if we need to apply clamping after applying a matrix, we check if
@@ -205,6 +206,10 @@ private:
             fVectorHandle = uniformHandler->addUniform(kFragment_GrShaderFlag, kHalf4_GrSLType,
                                                        "ColorMatrixVector");
 
+            if (nullptr == args.fInputColor) {
+                // could optimize this case, but we aren't for now.
+                args.fInputColor = "half4(1)";
+            }
             GrGLSLFragmentBuilder* fragBuilder = args.fFragBuilder;
             // The max() is to guard against 0 / 0 during unpremul when the incoming color is
             // transparent black.
@@ -216,7 +221,7 @@ private:
                                      uniformHandler->getUniformCStr(fMatrixHandle),
                                      args.fInputColor,
                                      uniformHandler->getUniformCStr(fVectorHandle));
-            fragBuilder->codeAppendf("\t%s = saturate(%s);\n",
+            fragBuilder->codeAppendf("\t%s = clamp(%s, 0.0, 1.0);\n",
                                      args.fOutputColor, args.fOutputColor);
             fragBuilder->codeAppendf("\t%s.rgb *= %s.a;\n", args.fOutputColor, args.fOutputColor);
         }
@@ -288,19 +293,30 @@ std::unique_ptr<GrFragmentProcessor> ColorMatrixEffect::TestCreate(GrProcessorTe
 #endif
 
 std::unique_ptr<GrFragmentProcessor> SkColorMatrixFilterRowMajor255::asFragmentProcessor(
-        GrRecordingContext*, const GrColorSpaceInfo&) const {
+        GrContext*, const GrColorSpaceInfo&) const {
     return ColorMatrixEffect::Make(fMatrix);
 }
 
 #endif
 
+#ifndef SK_IGNORE_TO_STRING
+void SkColorMatrixFilterRowMajor255::toString(SkString* str) const {
+    str->append("SkColorMatrixFilterRowMajor255: ");
+
+    str->append("matrix: (");
+    for (int i = 0; i < 20; ++i) {
+        str->appendScalar(fMatrix[i]);
+        if (i < 19) {
+            str->append(", ");
+        }
+    }
+    str->append(")");
+}
+#endif
+
 ///////////////////////////////////////////////////////////////////////////////
 
 sk_sp<SkColorFilter> SkColorFilter::MakeMatrixFilterRowMajor255(const SkScalar array[20]) {
-    if (!SkScalarsAreFinite(array, 20)) {
-        return nullptr;
-    }
-
     return sk_sp<SkColorFilter>(new SkColorMatrixFilterRowMajor255(array));
 }
 
@@ -308,10 +324,6 @@ sk_sp<SkColorFilter> SkColorFilter::MakeMatrixFilterRowMajor255(const SkScalar a
 
 sk_sp<SkColorFilter>
 SkColorMatrixFilterRowMajor255::MakeSingleChannelOutput(const SkScalar row[5]) {
-    if (!SkScalarsAreFinite(row, 5)) {
-        return nullptr;
-    }
-
     SkASSERT(row);
     auto cf = sk_make_sp<SkColorMatrixFilterRowMajor255>();
     static_assert(sizeof(SkScalar) * 5 * 4 == sizeof(cf->fMatrix), "sizes don't match");
@@ -319,5 +331,5 @@ SkColorMatrixFilterRowMajor255::MakeSingleChannelOutput(const SkScalar row[5]) {
         memcpy(cf->fMatrix + 5 * i, row, sizeof(SkScalar) * 5);
     }
     cf->initState();
-    return std::move(cf);
+    return cf;
 }

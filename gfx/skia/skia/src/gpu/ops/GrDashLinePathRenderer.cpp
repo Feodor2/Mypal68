@@ -6,10 +6,9 @@
  */
 
 #include "GrDashLinePathRenderer.h"
+
 #include "GrAuditTrail.h"
 #include "GrGpu.h"
-#include "GrRenderTargetContext.h"
-#include "GrShape.h"
 #include "ops/GrDashOp.h"
 #include "ops/GrMeshDrawOp.h"
 
@@ -51,8 +50,8 @@ bool GrDashLinePathRenderer::onDrawPath(const DrawPathArgs& args) {
     SkPoint pts[2];
     SkAssertResult(args.fShape->asLine(pts, nullptr));
     std::unique_ptr<GrDrawOp> op =
-            GrDashOp::MakeDashLineOp(args.fContext, std::move(args.fPaint), *args.fViewMatrix, pts,
-                                     aaMode, args.fShape->style(), args.fUserStencilSettings);
+            GrDashOp::MakeDashLineOp(std::move(args.fPaint), *args.fViewMatrix, pts, aaMode,
+                                     args.fShape->style(), args.fUserStencilSettings);
     if (!op) {
         return false;
     }

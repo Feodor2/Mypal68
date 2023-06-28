@@ -456,7 +456,7 @@ angle::Result Clear11::clearFramebuffer(const gl::Context *context,
     }
 
     ID3D11DeviceContext *deviceContext   = mRenderer->getDeviceContext();
-    ID3D11DeviceContext1 *deviceContext1 = mRenderer->getDeviceContext1IfSupported();
+    //ID3D11DeviceContext1 *deviceContext1 = mRenderer->getDeviceContext1IfSupported();
 
     std::array<ID3D11RenderTargetView *, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> rtvs;
     std::array<uint8_t, D3D11_SIMULTANEOUS_RENDER_TARGET_COUNT> rtvMasks = {};
@@ -549,12 +549,12 @@ angle::Result Clear11::clearFramebuffer(const gl::Context *context,
             if (needScissoredClear)
             {
                 // We shouldn't reach here if deviceContext1 is unavailable.
-                ASSERT(deviceContext1);
+                /*ASSERT(deviceContext1);
                 deviceContext1->ClearView(framebufferRTV.get(), clearValues, &scissorRect, 1);
                 if (mRenderer->getWorkarounds().callClearTwice)
                 {
                     deviceContext1->ClearView(framebufferRTV.get(), clearValues, &scissorRect, 1);
-                }
+                }*/
             }
             else
             {

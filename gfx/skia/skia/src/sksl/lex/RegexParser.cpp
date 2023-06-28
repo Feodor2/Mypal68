@@ -12,10 +12,10 @@
 RegexNode RegexParser::parse(std::string source) {
     fSource = source;
     fIndex = 0;
-    SkASSERT(fStack.size() == 0);
+    ASSERT(fStack.size() == 0);
     this->regex();
-    SkASSERT(fStack.size() == 1);
-    SkASSERT(fIndex == source.size());
+    ASSERT(fStack.size() == 1);
+    ASSERT(fIndex == source.size());
     return this->pop();
 }
 
@@ -119,9 +119,9 @@ void RegexParser::setItem() {
         else {
             literal();
             RegexNode end = this->pop();
-            SkASSERT(end.fKind == RegexNode::kChar_Kind);
+            ASSERT(end.fKind == RegexNode::kChar_Kind);
             RegexNode start = this->pop();
-            SkASSERT(start.fKind == RegexNode::kChar_Kind);
+            ASSERT(start.fKind == RegexNode::kChar_Kind);
             fStack.push(RegexNode(RegexNode::kRange_Kind, std::move(start), std::move(end)));
         }
     }
@@ -171,6 +171,6 @@ void RegexParser::regex() {
         case ')':
             return;
         default:
-            SkASSERT(false);
+            ASSERT(false);
     }
 }

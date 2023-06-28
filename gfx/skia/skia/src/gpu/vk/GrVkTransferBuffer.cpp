@@ -9,8 +9,8 @@
 #include "GrVkGpu.h"
 #include "SkTraceMemoryDump.h"
 
-sk_sp<GrVkTransferBuffer> GrVkTransferBuffer::Make(GrVkGpu* gpu, size_t size,
-                                                   GrVkBuffer::Type type) {
+
+GrVkTransferBuffer* GrVkTransferBuffer::Create(GrVkGpu* gpu, size_t size, GrVkBuffer::Type type) {
     GrVkBuffer::Desc desc;
     desc.fDynamic = true;
     SkASSERT(GrVkBuffer::kCopyRead_Type == type || GrVkBuffer::kCopyWrite_Type == type);
@@ -26,16 +26,16 @@ sk_sp<GrVkTransferBuffer> GrVkTransferBuffer::Make(GrVkGpu* gpu, size_t size,
     if (!buffer) {
         bufferResource->unref(gpu);
     }
-    return sk_sp<GrVkTransferBuffer>(buffer);
+    return buffer;
 }
 
 GrVkTransferBuffer::GrVkTransferBuffer(GrVkGpu* gpu, const GrVkBuffer::Desc& desc,
                                        const GrVkBuffer::Resource* bufferResource)
-        : INHERITED(gpu, desc.fSizeInBytes,
-                    kCopyRead_Type == desc.fType ? GrGpuBufferType::kXferCpuToGpu
-                                                 : GrGpuBufferType::kXferGpuToCpu,
-                    kStream_GrAccessPattern)
-        , GrVkBuffer(desc, bufferResource) {
+    : INHERITED(gpu, desc.fSizeInBytes,
+                kCopyRead_Type == desc.fType ?
+                    kXferCpuToGpu_GrBufferType : kXferGpuToCpu_GrBufferType,
+                kStream_GrAccessPattern)
+    , GrVkBuffer(desc, bufferResource) {
     this->registerWithCache(SkBudgeted::kYes);
 }
 

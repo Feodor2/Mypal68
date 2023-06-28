@@ -10,12 +10,12 @@
 
 #include "GrTypes.h"
 #include "GrVkDescriptorSetManager.h"
-#include "vk/GrVkTypes.h"
+
+#include "vk/GrVkDefines.h"
 
 class GrSurface;
 class GrVkCopyPipeline;
 class GrVkGpu;
-class GrVkPipelineLayout;
 class GrVkUniformBuffer;
 class GrVkVertexBuffer;
 struct SkIPoint;
@@ -30,8 +30,7 @@ public:
     bool copySurfaceAsDraw(GrVkGpu* gpu,
                            GrSurface* dst, GrSurfaceOrigin dstOrigin,
                            GrSurface* src, GrSurfaceOrigin srcOrigin,
-                           const SkIRect& srcRect, const SkIPoint& dstPoint,
-                           bool canDiscardOutsideDstRect);
+                           const SkIRect& srcRect, const SkIPoint& dstPoint);
 
     void destroyResources(GrVkGpu* gpu);
     void abandonResources();
@@ -45,7 +44,7 @@ private:
     VkPipelineShaderStageCreateInfo fShaderStageInfo[2];
 
     GrVkDescriptorSetManager::Handle fSamplerDSHandle;
-    GrVkPipelineLayout* fPipelineLayout;
+    VkPipelineLayout fPipelineLayout;
 
     sk_sp<GrVkVertexBuffer> fVertexBuffer;
     std::unique_ptr<GrVkUniformBuffer> fUniformBuffer;

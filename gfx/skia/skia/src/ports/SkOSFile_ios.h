@@ -5,9 +5,6 @@
  * found in the LICENSE file.
  */
 
-#ifndef SkOSFile_ios_DEFINED
-#define SkOSFile_ios_DEFINED
-
 #include "SkString.h"
 
 #ifdef SK_BUILD_FOR_IOS
@@ -42,5 +39,3 @@ static bool ios_get_path_in_bundle(const char path[], SkString* result) {
     return true;
 }
 #endif
-
-#endif  // SkOSFile_ios_DEFINED

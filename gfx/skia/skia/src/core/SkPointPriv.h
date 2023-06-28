@@ -9,7 +9,6 @@
 #define SkPointPriv_DEFINED
 
 #include "SkPoint.h"
-#include "SkRect.h"
 
 class SkPointPriv {
 public:
@@ -26,7 +25,8 @@ public:
     static const SkScalar* AsScalars(const SkPoint& pt) { return &pt.fX; }
 
     static bool CanNormalize(SkScalar dx, SkScalar dy) {
-        return SkScalarsAreFinite(dx, dy) && (dx || dy);
+        // Simple enough (and performance critical sometimes) so we inline it.
+        return (dx*dx + dy*dy) > (SK_ScalarNearlyZero * SK_ScalarNearlyZero);
     }
 
     static SkScalar DistanceToLineBetweenSqd(const SkPoint& pt, const SkPoint& a,
@@ -93,9 +93,17 @@ public:
 
     static bool SetLengthFast(SkPoint* pt, float length);
 
-    static SkPoint MakeOrthog(const SkPoint& vec, Side side = kLeft_Side) {
-        SkASSERT(side == kRight_Side || side == kLeft_Side);
-        return (side == kRight_Side) ? SkPoint{-vec.fY, vec.fX} : SkPoint{vec.fY, -vec.fX};
+    static void SetOrthog(SkPoint* pt, const SkPoint& vec, Side side = kLeft_Side) {
+        // vec could be this
+        SkScalar tmp = vec.fX;
+        if (kRight_Side == side) {
+            pt->fX = -vec.fY;
+            pt->fY = tmp;
+        } else {
+            SkASSERT(kLeft_Side == side);
+            pt->fX = vec.fY;
+            pt->fY = -tmp;
+        }
     }
 
     // counter-clockwise fan
@@ -119,9 +127,7 @@ public:
         ((SkPoint*)((intptr_t)v + 2 * stride))->set(r, t);
         ((SkPoint*)((intptr_t)v + 3 * stride))->set(r, b);
     }
-    static void SetRectTriStrip(SkPoint v[], const SkRect& rect, size_t stride) {
-        SetRectTriStrip(v, rect.fLeft, rect.fTop, rect.fRight, rect.fBottom, stride);
-    }
+
 };
 
 #endif

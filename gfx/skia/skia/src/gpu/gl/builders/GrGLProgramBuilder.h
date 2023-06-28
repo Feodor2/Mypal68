@@ -9,7 +9,6 @@
 #define GrGLProgramBuilder_DEFINED
 
 #include "GrPipeline.h"
-#include "gl/GrGLProgram.h"
 #include "gl/GrGLProgramDataManager.h"
 #include "gl/GrGLUniformHandler.h"
 #include "gl/GrGLVaryingHandler.h"
@@ -35,10 +34,8 @@ public:
      * the surface origin.
      * @return true if generation was successful.
      */
-    static GrGLProgram* CreateProgram(GrRenderTarget*, GrSurfaceOrigin,
+    static GrGLProgram* CreateProgram(const GrPipeline&,
                                       const GrPrimitiveProcessor&,
-                                      const GrTextureProxy* const primProcProxies[],
-                                      const GrPipeline&,
                                       GrProgramDesc*,
                                       GrGLGpu*);
 
@@ -47,11 +44,9 @@ public:
     GrGLGpu* gpu() const { return fGpu; }
 
 private:
-    GrGLProgramBuilder(GrGLGpu*, GrRenderTarget*, GrSurfaceOrigin,
-                       const GrPipeline&, const GrPrimitiveProcessor&,
-                       const GrTextureProxy* const primProcProxies[], GrProgramDesc*);
+    GrGLProgramBuilder(GrGLGpu*, const GrPipeline&, const GrPrimitiveProcessor&,
+                       GrProgramDesc*);
 
-    void addInputVars(const SkSL::Program::Inputs& inputs);
     bool compileAndAttachShaders(const char* glsl,
                                  int length,
                                  GrGLuint programId,
@@ -66,10 +61,6 @@ private:
                                  SkTDArray<GrGLuint>* shaderIds,
                                  const SkSL::Program::Settings& settings,
                                  SkSL::Program::Inputs* outInputs);
-    void computeCountsAndStrides(GrGLuint programID, const GrPrimitiveProcessor& primProc,
-                                 bool bindAttribLocations);
-    void storeShaderInCache(const SkSL::Program::Inputs& inputs, GrGLuint programID,
-                            const SkSL::String& glsl);
     GrGLProgram* finalize();
     void bindProgramResourceLocations(GrGLuint programID);
     bool checkLinkStatus(GrGLuint programID);
@@ -87,12 +78,6 @@ private:
     GrGLGpu*              fGpu;
     GrGLVaryingHandler    fVaryingHandler;
     GrGLUniformHandler    fUniformHandler;
-
-    std::unique_ptr<GrGLProgram::Attribute[]> fAttributes;
-    int fVertexAttributeCnt;
-    int fInstanceAttributeCnt;
-    size_t fVertexStride;
-    size_t fInstanceStride;
 
     // shader pulled from cache. Data is organized as:
     // SkSL::Program::Inputs inputs

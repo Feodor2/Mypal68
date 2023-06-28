@@ -9,8 +9,6 @@
 #define SkScopeExit_DEFINED
 
 #include "SkTypes.h"
-#include "SkMacros.h"
-
 #include <functional>
 
 /** SkScopeExit calls a std:::function<void()> in its destructor. */
@@ -24,8 +22,6 @@ public:
             fFn();
         }
     }
-
-    void clear() { fFn = {}; }
 
     SkScopeExit& operator=(SkScopeExit&& that) {
         fFn = std::move(that.fFn);

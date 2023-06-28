@@ -55,6 +55,7 @@ namespace {
 struct Entry {
     const char*             fName;
     SkFlattenable::Factory  fFactory;
+    SkFlattenable::Type     fType;
 };
 
 struct EntryComparator {
@@ -78,30 +79,58 @@ void SkFlattenable::Finalize() {
     std::sort(gEntries, gEntries + gCount, EntryComparator());
 }
 
-void SkFlattenable::Register(const char name[], Factory factory) {
+void SkFlattenable::Register(const char name[], Factory factory, SkFlattenable::Type type) {
     SkASSERT(name);
     SkASSERT(factory);
     SkASSERT(gCount < (int)SK_ARRAY_COUNT(gEntries));
 
     gEntries[gCount].fName = name;
     gEntries[gCount].fFactory = factory;
+    gEntries[gCount].fType = type;
     gCount += 1;
 }
 
-SkFlattenable::Factory SkFlattenable::NameToFactory(const char name[]) {
-    RegisterFlattenablesIfNeeded();
-
-    SkASSERT(std::is_sorted(gEntries, gEntries + gCount, EntryComparator()));
-    auto pair = std::equal_range(gEntries, gEntries + gCount, name, EntryComparator());
-    if (pair.first == pair.second) {
-        return nullptr;
+#ifdef SK_DEBUG
+static void report_no_entries(const char* functionName) {
+    if (!gCount) {
+        SkDebugf("%s has no registered name/factory/type entries."
+                 " Call SkFlattenable::InitializeFlattenablesIfNeeded() before using gEntries",
+                 functionName);
     }
+}
+#endif
+
+SkFlattenable::Factory SkFlattenable::NameToFactory(const char name[]) {
+    InitializeFlattenablesIfNeeded();
+    SkASSERT(std::is_sorted(gEntries, gEntries + gCount, EntryComparator()));
+#ifdef SK_DEBUG
+    report_no_entries(__FUNCTION__);
+#endif
+    auto pair = std::equal_range(gEntries, gEntries + gCount, name, EntryComparator());
+    if (pair.first == pair.second)
+        return nullptr;
     return pair.first->fFactory;
 }
 
-const char* SkFlattenable::FactoryToName(Factory fact) {
-    RegisterFlattenablesIfNeeded();
+bool SkFlattenable::NameToType(const char name[], SkFlattenable::Type* type) {
+    SkASSERT(type);
+    InitializeFlattenablesIfNeeded();
+    SkASSERT(std::is_sorted(gEntries, gEntries + gCount, EntryComparator()));
+#ifdef SK_DEBUG
+    report_no_entries(__FUNCTION__);
+#endif
+    auto pair = std::equal_range(gEntries, gEntries + gCount, name, EntryComparator());
+    if (pair.first == pair.second)
+        return false;
+    *type = pair.first->fType;
+    return true;
+}
 
+const char* SkFlattenable::FactoryToName(Factory fact) {
+    InitializeFlattenablesIfNeeded();
+#ifdef SK_DEBUG
+    report_no_entries(__FUNCTION__);
+#endif
     const Entry* entries = gEntries;
     for (int i = gCount - 1; i >= 0; --i) {
         if (entries[i].fFactory == fact) {
@@ -123,16 +152,6 @@ sk_sp<SkData> SkFlattenable::serialize(const SkSerialProcs* procs) const {
     auto data = SkData::MakeUninitialized(size);
     writer.writeToMemory(data->writable_data());
     return data;
-}
-
-size_t SkFlattenable::serialize(void* memory, size_t memory_size,
-                                const SkSerialProcs* procs) const {
-  SkBinaryWriteBuffer writer(memory, memory_size);
-  if (procs) {
-      writer.setSerialProcs(*procs);
-  }
-  writer.writeFlattenable(this);
-  return writer.usingInitialStorage() ? writer.bytesWritten() : 0u;
 }
 
 sk_sp<SkFlattenable> SkFlattenable::Deserialize(SkFlattenable::Type type, const void* data,

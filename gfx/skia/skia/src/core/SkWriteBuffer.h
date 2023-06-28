@@ -9,12 +9,13 @@
 #define SkWriteBuffer_DEFINED
 
 #include "SkData.h"
-#include "SkFlattenable.h"
 #include "SkSerialProcs.h"
 #include "SkWriter32.h"
 #include "../private/SkTHash.h"
 
+class SkDeduper;
 class SkFactorySet;
+class SkFlattenable;
 class SkImage;
 class SkPath;
 class SkRefCntSet;
@@ -48,7 +49,6 @@ public:
     virtual void writeColor4fArray(const SkColor4f* color, uint32_t count) = 0;
     virtual void writePoint(const SkPoint& point) = 0;
     virtual void writePointArray(const SkPoint* point, uint32_t count) = 0;
-    virtual void writePoint3(const SkPoint3& point) = 0;
     virtual void writeMatrix(const SkMatrix& matrix) = 0;
     virtual void writeIRect(const SkIRect& rect) = 0;
     virtual void writeRect(const SkRect& rect) = 0;
@@ -59,12 +59,15 @@ public:
     virtual void writeTypeface(SkTypeface* typeface) = 0;
     virtual void writePaint(const SkPaint& paint) = 0;
 
+    void setDeduper(SkDeduper* deduper) { fDeduper = deduper; }
+
     void setSerialProcs(const SkSerialProcs& procs) { fProcs = procs; }
 
 protected:
+    SkDeduper*      fDeduper = nullptr;
     SkSerialProcs   fProcs;
 
-    friend class SkPicturePriv; // fProcs
+    friend class SkPicture; // fProcs
 };
 
 /**
@@ -89,10 +92,6 @@ public:
 
     size_t bytesWritten() const { return fWriter.bytesWritten(); }
 
-    // Returns true iff all of the bytes written so far are stored in the initial storage
-    // buffer provided in the constructor or the most recent call to reset.
-    bool usingInitialStorage() const;
-
     void writeByteArray(const void* data, size_t size) override;
     void writeBool(bool value) override;
     void writeScalar(SkScalar value) override;
@@ -109,7 +108,6 @@ public:
     void writeColor4fArray(const SkColor4f* color, uint32_t count) override;
     void writePoint(const SkPoint& point) override;
     void writePointArray(const SkPoint* point, uint32_t count) override;
-    void writePoint3(const SkPoint3& point) override;
     void writeMatrix(const SkMatrix& matrix) override;
     void writeIRect(const SkIRect& rect) override;
     void writeRect(const SkRect& rect) override;
@@ -120,20 +118,20 @@ public:
     void writeTypeface(SkTypeface* typeface) override;
     void writePaint(const SkPaint& paint) override;
 
-    bool writeToStream(SkWStream*) const;
-    void writeToMemory(void* dst) const { fWriter.flatten(dst); }
+    bool writeToStream(SkWStream*);
+    void writeToMemory(void* dst) { fWriter.flatten(dst); }
 
-    void setFactoryRecorder(sk_sp<SkFactorySet>);
-    void setTypefaceRecorder(sk_sp<SkRefCntSet>);
+    SkFactorySet* setFactoryRecorder(SkFactorySet*);
+    SkRefCntSet* setTypefaceRecorder(SkRefCntSet*);
 
 private:
-    sk_sp<SkFactorySet> fFactorySet;
-    sk_sp<SkRefCntSet> fTFSet;
-
+    SkFactorySet* fFactorySet;
     SkWriter32 fWriter;
 
+    SkRefCntSet*    fTFSet;
+
     // Only used if we do not have an fFactorySet
-    SkTHashMap<SkFlattenable::Factory, uint32_t> fFlattenableDict;
+    SkTHashMap<SkString, uint32_t> fFlattenableDict;
 };
 
 #endif // SkWriteBuffer_DEFINED

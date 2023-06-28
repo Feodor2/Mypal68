@@ -10,7 +10,6 @@
 #ifndef SkDeque_DEFINED
 #define SkDeque_DEFINED
 
-#include "../private/SkNoncopyable.h"
 #include "SkTypes.h"
 
 /*
@@ -67,7 +66,7 @@ public:
     public:
         enum IterStart {
             kFront_IterStart,
-            kBack_IterStart,
+            kBack_IterStart
         };
 
         /**

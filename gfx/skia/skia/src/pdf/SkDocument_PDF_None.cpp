@@ -5,11 +5,12 @@
  * found in the LICENSE file.
  */
 
-#include "SkCanvas.h"
-#include "SkPDFDocument.h"
+#include "SkDocument.h"
 
-sk_sp<SkDocument> SkPDF::MakeDocument(SkWStream*, const SkPDF::Metadata&) { return nullptr; }
+sk_sp<SkDocument> SkDocument::MakePDF(SkWStream* stream, const PDFMetadata& metadata) {
+    return nullptr;
+}
 
-void SkPDF::SetNodeId(SkCanvas* c, int n) {
-    c->drawAnnotation({0, 0, 0, 0}, "PDF_Node_Key", SkData::MakeWithCopy(&n, sizeof(n)).get());
+sk_sp<SkDocument> SkDocument::MakePDF(SkWStream* stream) {
+    return nullptr;
 }

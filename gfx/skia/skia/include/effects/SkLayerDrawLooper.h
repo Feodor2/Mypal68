@@ -26,13 +26,12 @@ public:
      */
     enum Bits {
         kStyle_Bit      = 1 << 0,   //!< use this layer's Style/stroke settings
+        kTextSkewX_Bit  = 1 << 1,   //!< use this layer's textskewx
         kPathEffect_Bit = 1 << 2,   //!< use this layer's patheffect
         kMaskFilter_Bit = 1 << 3,   //!< use this layer's maskfilter
         kShader_Bit     = 1 << 4,   //!< use this layer's shader
         kColorFilter_Bit = 1 << 5,  //!< use this layer's colorfilter
         kXfermode_Bit   = 1 << 6,   //!< use this layer's xfermode
-
-        // unsupported kTextSkewX_Bit  = 1 << 1,
 
         /**
          *  Use the layer's paint entirely, with these exceptions:
@@ -76,6 +75,11 @@ public:
 
     bool asABlurShadow(BlurShadowRec* rec) const override;
 
+    SK_TO_STRING_OVERRIDE()
+
+    Factory getFactory() const override { return CreateProc; }
+    static sk_sp<SkFlattenable> CreateProc(SkReadBuffer& buffer);
+
 protected:
     sk_sp<SkDrawLooper> onMakeColorSpace(SkColorSpaceXformer*) const override;
 
@@ -84,8 +88,6 @@ protected:
     void flatten(SkWriteBuffer&) const override;
 
 private:
-    SK_FLATTENABLE_HOOKS(SkLayerDrawLooper)
-
     struct Rec {
         Rec*    fNext;
         SkPaint fPaint;

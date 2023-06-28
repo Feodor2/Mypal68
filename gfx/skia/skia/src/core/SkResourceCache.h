@@ -112,7 +112,8 @@ public:
     // Used with SkMessageBus
     struct PurgeSharedIDMessage {
         PurgeSharedIDMessage(uint64_t sharedID) : fSharedID(sharedID) {}
-        uint64_t fSharedID;
+
+        uint64_t    fSharedID;
     };
 
     typedef const Rec* ID;

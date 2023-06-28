@@ -25,7 +25,7 @@ diff --git a/gfx/skia/include/core/SkPostConfig.h b/gfx/skia/include/core/SkPost
          #define SkNO_RETURN_HINT() do {} while (false)
      #endif
  #endif
- 
+
  #if defined(SK_ZLIB_INCLUDE) && defined(SK_SYSTEM_ZLIB)
      #error "cannot define both SK_ZLIB_INCLUDE and SK_SYSTEM_ZLIB"
  #elif defined(SK_ZLIB_INCLUDE) || defined(SK_SYSTEM_ZLIB)

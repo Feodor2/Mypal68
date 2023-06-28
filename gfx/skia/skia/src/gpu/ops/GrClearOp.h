@@ -12,25 +12,30 @@
 #include "GrOp.h"
 
 class GrOpFlushState;
-class GrRecordingContext;
 
 class GrClearOp final : public GrOp {
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrClearOp> Make(GrRecordingContext* context,
-                                           const GrFixedClip& clip,
-                                           const SkPMColor4f& color,
-                                           GrSurfaceProxy* dstProxy);
+    static std::unique_ptr<GrClearOp> Make(const GrFixedClip& clip, GrColor color,
+                                           GrSurfaceProxy* dstProxy) {
+        const SkIRect rect = SkIRect::MakeWH(dstProxy->width(), dstProxy->height());
+        if (clip.scissorEnabled() && !SkIRect::Intersects(clip.scissorRect(), rect)) {
+            return nullptr;
+        }
 
-    static std::unique_ptr<GrClearOp> Make(GrRecordingContext* context,
-                                           const SkIRect& rect,
-                                           const SkPMColor4f& color,
-                                           bool fullScreen);
+        return std::unique_ptr<GrClearOp>(new GrClearOp(clip, color, dstProxy));
+    }
+
+    static std::unique_ptr<GrClearOp> Make(const SkIRect& rect, GrColor color,
+                                           bool fullScreen) {
+        SkASSERT(fullScreen || !rect.isEmpty());
+
+        return std::unique_ptr<GrClearOp>(new GrClearOp(rect, color, fullScreen));
+    }
 
     const char* name() const override { return "Clear"; }
 
-#ifdef SK_DEBUG
     SkString dumpInfo() const override {
         SkString string;
         string.append(INHERITED::dumpInfo());
@@ -41,20 +46,17 @@ public:
         } else {
             string.append("disabled");
         }
-        string.appendf("], Color: 0x%08x\n", fColor.toBytes_RGBA());
+        string.appendf("], Color: 0x%08x\n", fColor);
         return string;
     }
-#endif
 
-    const SkPMColor4f& color() const { return fColor; }
-    void setColor(const SkPMColor4f& color) { fColor = color; }
+    GrColor color() const { return fColor; }
+    void setColor(GrColor color) { fColor = color; }
 
 private:
-    friend class GrOpMemoryPool; // for ctors
+    GrClearOp(const GrFixedClip& clip, GrColor color, GrSurfaceProxy* proxy);
 
-    GrClearOp(const GrFixedClip& clip, const SkPMColor4f& color, GrSurfaceProxy* proxy);
-
-    GrClearOp(const SkIRect& rect, const SkPMColor4f& color, bool fullScreen)
+    GrClearOp(const SkIRect& rect, GrColor color, bool fullScreen)
         : INHERITED(ClassID())
         , fClip(GrFixedClip(rect))
         , fColor(color) {
@@ -65,22 +67,23 @@ private:
         this->setBounds(SkRect::Make(rect), HasAABloat::kNo, IsZeroArea::kNo);
     }
 
-    CombineResult onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
+    bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
         // This could be much more complicated. Currently we look at cases where the new clear
         // contains the old clear, or when the new clear is a subset of the old clear and is the
         // same color.
         GrClearOp* cb = t->cast<GrClearOp>();
         if (fClip.windowRectsState() != cb->fClip.windowRectsState()) {
-            return CombineResult::kCannotCombine;
+            return false;
         }
         if (cb->contains(this)) {
             fClip = cb->fClip;
+            this->replaceBounds(*t);
             fColor = cb->fColor;
-            return CombineResult::kMerged;
+            return true;
         } else if (cb->fColor == fColor && this->contains(cb)) {
-            return CombineResult::kMerged;
+            return true;
         }
-        return CombineResult::kCannotCombine;
+        return false;
     }
 
     bool contains(const GrClearOp* that) const {
@@ -92,10 +95,10 @@ private:
 
     void onPrepare(GrOpFlushState*) override {}
 
-    void onExecute(GrOpFlushState* state, const SkRect& chainBounds) override;
+    void onExecute(GrOpFlushState* state) override;
 
     GrFixedClip fClip;
-    SkPMColor4f fColor;
+    GrColor     fColor;
 
     typedef GrOp INHERITED;
 };

@@ -9,6 +9,7 @@
 #include "SkBitmapRegionCodec.h"
 #include "SkBitmapRegionDecoderPriv.h"
 #include "SkCodecPriv.h"
+#include "SkPixelRef.h"
 
 SkBitmapRegionCodec::SkBitmapRegionCodec(SkAndroidCodec* codec)
     : INHERITED(codec->getInfo().width(), codec->getInfo().height())
@@ -16,8 +17,8 @@ SkBitmapRegionCodec::SkBitmapRegionCodec(SkAndroidCodec* codec)
 {}
 
 bool SkBitmapRegionCodec::decodeRegion(SkBitmap* bitmap, SkBRDAllocator* allocator,
-        const SkIRect& desiredSubset, int sampleSize, SkColorType dstColorType,
-        bool requireUnpremul, sk_sp<SkColorSpace> dstColorSpace) {
+        const SkIRect& desiredSubset, int sampleSize, SkColorType prefColorType,
+        bool requireUnpremul, sk_sp<SkColorSpace> prefColorSpace) {
 
     // Fix the input sampleSize if necessary.
     if (sampleSize < 1) {
@@ -49,7 +50,10 @@ bool SkBitmapRegionCodec::decodeRegion(SkBitmap* bitmap, SkBRDAllocator* allocat
     SkISize scaledSize = fCodec->getSampledSubsetDimensions(sampleSize, subset);
 
     // Create the image info for the decode
+    SkColorType dstColorType = fCodec->computeOutputColorType(prefColorType);
     SkAlphaType dstAlphaType = fCodec->computeOutputAlphaType(requireUnpremul);
+    sk_sp<SkColorSpace> dstColorSpace = fCodec->computeOutputColorSpace(dstColorType,
+                                                                        prefColorSpace);
     SkImageInfo decodeInfo = SkImageInfo::Make(scaledSize.width(), scaledSize.height(),
                                                dstColorType, dstAlphaType, dstColorSpace);
 
@@ -105,14 +109,10 @@ bool SkBitmapRegionCodec::decodeRegion(SkBitmap* bitmap, SkBRDAllocator* allocat
 
     SkCodec::Result result = fCodec->getAndroidPixels(decodeInfo, dst, bitmap->rowBytes(),
             &options);
-    switch (result) {
-        case SkCodec::kSuccess:
-        case SkCodec::kIncompleteInput:
-        case SkCodec::kErrorInInput:
-            return true;
-        default:
-            SkCodecPrintf("Error: Could not get pixels with message \"%s\".\n",
-                          SkCodec::ResultToString(result));
-            return false;
+    if (SkCodec::kSuccess != result && SkCodec::kIncompleteInput != result) {
+        SkCodecPrintf("Error: Could not get pixels.\n");
+        return false;
     }
+
+    return true;
 }

@@ -8,9 +8,8 @@
 #ifndef SkEncoder_DEFINED
 #define SkEncoder_DEFINED
 
-#include "../private/SkNoncopyable.h"
-#include "../private/SkTemplates.h"
 #include "SkPixmap.h"
+#include "../private/SkTemplates.h"
 
 class SK_API SkEncoder : SkNoncopyable {
 public:

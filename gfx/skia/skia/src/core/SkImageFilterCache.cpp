@@ -7,8 +7,6 @@
 
 #include "SkImageFilterCache.h"
 
-#include <vector>
-
 #include "SkImageFilter.h"
 #include "SkMutex.h"
 #include "SkOnce.h"
@@ -16,7 +14,6 @@
 #include "SkRefCnt.h"
 #include "SkSpecialImage.h"
 #include "SkTDynamicHash.h"
-#include "SkTHash.h"
 #include "SkTInternalLList.h"
 
 #ifdef SK_BUILD_FOR_IOS
@@ -79,12 +76,6 @@ public:
         fLookup.add(v);
         fLRU.addToHead(v);
         fCurrentBytes += image->getSize();
-        if (auto* values = fImageFilterValues.find(filter)) {
-            values->push_back(v);
-        } else {
-            fImageFilterValues.set(filter, {v});
-        }
-
         while (fCurrentBytes > fMaxBytes) {
             Value* tail = fLRU.tail();
             SkASSERT(tail);
@@ -104,19 +95,18 @@ public:
         }
     }
 
-    void purgeByImageFilter(const SkImageFilter* filter) override {
+    void purgeByKeys(const Key keys[], int count) override {
         SkAutoMutexAcquire mutex(fMutex);
-        auto* values = fImageFilterValues.find(filter);
-        if (!values) {
-            return;
+        // This function is only called in the destructor of SkImageFilter.
+        // Because the destructor will destroy the fCacheKeys anyway, we set the
+        // filter to be null so that removeInternal() won't call the
+        // SkImageFilter::removeKey() function.
+        for (int i = 0; i < count; i++) {
+            if (Value* v = fLookup.find(keys[i])) {
+                v->fFilter = nullptr;
+                this->removeInternal(v);
+            }
         }
-        for (Value* v : *values) {
-            // We set the filter to be null so that removeInternal() won't delete from values while
-            // we're iterating over it.
-            v->fFilter = nullptr;
-            this->removeInternal(v);
-        }
-        fImageFilterValues.remove(filter);
     }
 
     SkDEBUGCODE(int count() const override { return fLookup.count(); })
@@ -124,18 +114,7 @@ private:
     void removeInternal(Value* v) {
         SkASSERT(v->fImage);
         if (v->fFilter) {
-            if (auto* values = fImageFilterValues.find(v->fFilter)) {
-                if (values->size() == 1 && (*values)[0] == v) {
-                    fImageFilterValues.remove(v->fFilter);
-                } else {
-                    for (auto it = values->begin(); it != values->end(); ++it) {
-                        if (*it == v) {
-                            values->erase(it);
-                            break;
-                        }
-                    }
-                }
-            }
+            v->fFilter->removeKey(v->fKey);
         }
         fCurrentBytes -= v->fImage->getSize();
         fLRU.remove(v);
@@ -143,13 +122,11 @@ private:
         delete v;
     }
 private:
-    SkTDynamicHash<Value, Key>                            fLookup;
-    mutable SkTInternalLList<Value>                       fLRU;
-    // Value* always points to an item in fLookup.
-    SkTHashMap<const SkImageFilter*, std::vector<Value*>> fImageFilterValues;
-    size_t                                                fMaxBytes;
-    size_t                                                fCurrentBytes;
-    mutable SkMutex                                       fMutex;
+    SkTDynamicHash<Value, Key>            fLookup;
+    mutable SkTInternalLList<Value>       fLRU;
+    size_t                                fMaxBytes;
+    size_t                                fCurrentBytes;
+    mutable SkMutex                       fMutex;
 };
 
 } // namespace

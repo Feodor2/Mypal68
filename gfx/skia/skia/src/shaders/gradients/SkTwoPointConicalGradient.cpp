@@ -5,23 +5,22 @@
  * found in the LICENSE file.
  */
 
-#include "SkFloatingPoint.h"
+#include "SkTwoPointConicalGradient.h"
+
 #include "SkRasterPipeline.h"
 #include "SkReadBuffer.h"
-#include "SkTwoPointConicalGradient.h"
 #include "SkWriteBuffer.h"
-
-#include <utility>
+#include "../../jumper/SkJumper.h"
 
 // Please see https://skia.org/dev/design/conical for how our shader works.
 
-bool SkTwoPointConicalGradient::FocalData::set(SkScalar r0, SkScalar r1, SkMatrix* matrix) {
+void SkTwoPointConicalGradient::FocalData::set(SkScalar r0, SkScalar r1, SkMatrix& matrix) {
     fIsSwapped = false;
-    fFocalX = sk_ieee_float_divide(r0, (r0 - r1));
+    fFocalX = r0 / (r0 - r1);
     if (SkScalarNearlyZero(fFocalX - 1)) {
         // swap r0, r1
-        matrix->postTranslate(-1, 0);
-        matrix->postScale(-1, 1);
+        matrix.postTranslate(-1, 0);
+        matrix.postScale(-1, 1);
         std::swap(r0, r1);
         fFocalX = 0; // because r0 is now 0
         fIsSwapped = true;
@@ -32,20 +31,22 @@ bool SkTwoPointConicalGradient::FocalData::set(SkScalar r0, SkScalar r1, SkMatri
     const SkPoint to[2]     = { {0, 0}, {1, 0} };
     SkMatrix focalMatrix;
     if (!focalMatrix.setPolyToPoly(from, to, 2)) {
-        return false;
+        SkDEBUGFAILF("Mapping focal point failed unexpectedly for focalX = %f.\n", fFocalX);
+        // We won't be able to draw the gradient; at least make sure that we initialize the
+        // memory to prevent security issues.
+        focalMatrix = SkMatrix::MakeScale(1, 1);
     }
-    matrix->postConcat(focalMatrix);
+    matrix.postConcat(focalMatrix);
     fR1 = r1 / SkScalarAbs(1 - fFocalX); // focalMatrix has a scale of 1/(1-f)
 
     // The following transformations are just to accelerate the shader computation by saving
     // some arithmatic operations.
     if (this->isFocalOnCircle()) {
-        matrix->postScale(0.5, 0.5);
+        matrix.postScale(0.5, 0.5);
     } else {
-        matrix->postScale(fR1 / (fR1 * fR1 - 1), 1 / sqrt(SkScalarAbs(fR1 * fR1 - 1)));
+        matrix.postScale(fR1 / (fR1 * fR1 - 1), 1 / sqrt(SkScalarAbs(fR1 * fR1 - 1)));
     }
-    matrix->postScale(SkScalarAbs(1 - fFocalX), SkScalarAbs(1 - fFocalX)); // scale |1 - f|
-    return true;
+    matrix.postScale(SkScalarAbs(1 - fFocalX), SkScalarAbs(1 - fFocalX)); // scale |1 - f|
 }
 
 sk_sp<SkShader> SkTwoPointConicalGradient::Create(const SkPoint& c0, SkScalar r0,
@@ -55,13 +56,8 @@ sk_sp<SkShader> SkTwoPointConicalGradient::Create(const SkPoint& c0, SkScalar r0
     Type     gradientType;
 
     if (SkScalarNearlyZero((c0 - c1).length())) {
-        if (SkScalarNearlyZero(SkTMax(r0, r1)) || SkScalarNearlyEqual(r0, r1)) {
-            // Degenerate case; avoid dividing by zero. Should have been caught by caller but
-            // just in case, recheck here.
-            return nullptr;
-        }
         // Concentric case: we can pretend we're radial (with a tiny twist).
-        const SkScalar scale = sk_ieee_float_divide(1, SkTMax(r0, r1));
+        const SkScalar scale = 1.0f / SkTMax(r0, r1);
         gradientMatrix = SkMatrix::MakeTrans(-c1.x(), -c1.y());
         gradientMatrix.postScale(scale, scale);
 
@@ -81,9 +77,7 @@ sk_sp<SkShader> SkTwoPointConicalGradient::Create(const SkPoint& c0, SkScalar r0
     FocalData focalData;
     if (gradientType == Type::kFocal) {
         const auto dCenter = (c0 - c1).length();
-        if (!focalData.set(r0 / dCenter, r1 / dCenter, &gradientMatrix)) {
-            return nullptr;
-        }
+        focalData.set(r0 / dCenter, r1 / dCenter, gradientMatrix); // this may change gradientMatrix
     }
     return sk_sp<SkShader>(new SkTwoPointConicalGradient(c0, r0, c1, r1, desc,
                                                          gradientType, gradientMatrix, focalData));
@@ -137,17 +131,16 @@ sk_sp<SkFlattenable> SkTwoPointConicalGradient::CreateProc(SkReadBuffer& buffer)
     SkScalar r2 = buffer.readScalar();
 
     if (buffer.isVersionLT(SkReadBuffer::k2PtConicalNoFlip_Version) && buffer.readBool()) {
-        using std::swap;
         // legacy flipped gradient
-        swap(c1, c2);
-        swap(r1, r2);
+        SkTSwap(c1, c2);
+        SkTSwap(r1, r2);
 
         SkColor4f* colors = desc.mutableColors();
         SkScalar* pos = desc.mutablePos();
         const int last = desc.fCount - 1;
         const int half = desc.fCount >> 1;
         for (int i = 0; i < half; ++i) {
-            swap(colors[i], colors[last - i]);
+            SkTSwap(colors[i], colors[last - i]);
             if (pos) {
                 SkScalar tmp = pos[i];
                 pos[i] = SK_Scalar1 - pos[last - i];
@@ -160,9 +153,7 @@ sk_sp<SkFlattenable> SkTwoPointConicalGradient::CreateProc(SkReadBuffer& buffer)
             }
         }
     }
-    if (!buffer.isValid()) {
-        return nullptr;
-    }
+
     return SkGradientShader::MakeTwoPointConical(c1, r1, c2, r2, desc.fColors,
                                                  std::move(desc.fColorSpace), desc.fPos,
                                                  desc.fCount, desc.fTileMode, desc.fGradFlags,
@@ -177,12 +168,54 @@ void SkTwoPointConicalGradient::flatten(SkWriteBuffer& buffer) const {
     buffer.writeScalar(fRadius2);
 }
 
+#if SK_SUPPORT_GPU
+
+#include "SkGr.h"
+#include "SkTwoPointConicalGradient_gpu.h"
+
+std::unique_ptr<GrFragmentProcessor> SkTwoPointConicalGradient::asFragmentProcessor(
+        const GrFPArgs& args) const {
+    SkASSERT(args.fContext);
+    return Gr2PtConicalGradientEffect::Make(
+            GrGradientEffect::CreateArgs(args.fContext, this, args.fLocalMatrix, fTileMode,
+                                         args.fDstColorSpaceInfo->colorSpace()));
+}
+
+#endif
+
 sk_sp<SkShader> SkTwoPointConicalGradient::onMakeColorSpace(SkColorSpaceXformer* xformer) const {
     const AutoXformColors xformedColors(*this, xformer);
     return SkGradientShader::MakeTwoPointConical(fCenter1, fRadius1, fCenter2, fRadius2,
                                                  xformedColors.fColors.get(), fOrigPos, fColorCount,
                                                  fTileMode, fGradFlags, &this->getLocalMatrix());
 }
+
+
+#ifndef SK_IGNORE_TO_STRING
+void SkTwoPointConicalGradient::toString(SkString* str) const {
+    str->append("SkTwoPointConicalGradient: (");
+
+    str->append("center1: (");
+    str->appendScalar(fCenter1.fX);
+    str->append(", ");
+    str->appendScalar(fCenter1.fY);
+    str->append(") radius1: ");
+    str->appendScalar(fRadius1);
+    str->append(" ");
+
+    str->append("center2: (");
+    str->appendScalar(fCenter2.fX);
+    str->append(", ");
+    str->appendScalar(fCenter2.fY);
+    str->append(") radius2: ");
+    str->appendScalar(fRadius2);
+    str->append(" ");
+
+    this->INHERITED::toString(str);
+
+    str->append(")");
+}
+#endif
 
 void SkTwoPointConicalGradient::appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* p,
                                                      SkRasterPipeline* postPipeline) const {
@@ -201,7 +234,7 @@ void SkTwoPointConicalGradient::appendGradientStages(SkArenaAlloc* alloc, SkRast
     }
 
     if (fType == Type::kStrip) {
-        auto* ctx = alloc->make<SkRasterPipeline_2PtConicalCtx>();
+        auto* ctx = alloc->make<SkJumper_2PtConicalCtx>();
         SkScalar scaledR0 = fRadius1 / this->getCenterX1();
         ctx->fP0 = scaledR0 * scaledR0;
         p->append(SkRasterPipeline::xy_to_2pt_conical_strip, ctx);
@@ -210,7 +243,7 @@ void SkTwoPointConicalGradient::appendGradientStages(SkArenaAlloc* alloc, SkRast
         return;
     }
 
-    auto* ctx = alloc->make<SkRasterPipeline_2PtConicalCtx>();
+    auto* ctx = alloc->make<SkJumper_2PtConicalCtx>();
     ctx->fP0 = 1/fFocalData.fR1;
     ctx->fP1 = fFocalData.fFocalX;
 
@@ -240,16 +273,3 @@ void SkTwoPointConicalGradient::appendGradientStages(SkArenaAlloc* alloc, SkRast
         postPipeline->append(SkRasterPipeline::apply_vector_mask, &ctx->fMask);
     }
 }
-
-/////////////////////////////////////////////////////////////////////
-
-#if SK_SUPPORT_GPU
-
-#include "gradients/GrGradientShader.h"
-
-std::unique_ptr<GrFragmentProcessor> SkTwoPointConicalGradient::asFragmentProcessor(
-        const GrFPArgs& args) const {
-    return GrGradientShader::MakeConical(*this, args);
-}
-
-#endif

@@ -9,11 +9,11 @@
 #include "gl/GrGLAssembleInterface.h"
 #include "GrGLUtil.h"
 
-#define GET_PROC(F) functions->f##F = (GrGL##F##Fn*)get(ctx, "gl" #F)
-#define GET_PROC_SUFFIX(F, S) functions->f##F = (GrGL##F##Fn*)get(ctx, "gl" #F #S)
-#define GET_PROC_LOCAL(F) GrGL##F##Fn* F = (GrGL##F##Fn*)get(ctx, "gl" #F)
+#define GET_PROC(F) functions->f ## F = (GrGL ## F ## Proc) get(ctx, "gl" #F)
+#define GET_PROC_SUFFIX(F, S) functions->f ## F = (GrGL ## F ## Proc) get(ctx, "gl" #F #S)
+#define GET_PROC_LOCAL(F) GrGL ## F ## Proc F = (GrGL ## F ## Proc) get(ctx, "gl" #F)
 
-#define GET_EGL_PROC_SUFFIX(F, S) functions->fEGL##F = (GrEGL##F##Fn*)get(ctx, "egl" #F #S)
+#define GET_EGL_PROC_SUFFIX(F, S) functions->fEGL ## F = (GrEGL ## F ## Proc) get(ctx, "egl" #F #S)
 
 sk_sp<const GrGLInterface> GrGLMakeAssembledInterface(void *ctx, GrGLGetProc get) {
     GET_PROC_LOCAL(GetString);
@@ -36,13 +36,13 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledInterface(void *ctx, GrGLGetProc get
     return nullptr;
 }
 
-static void get_egl_query_and_display(GrEGLQueryStringFn** queryString, GrEGLDisplay* display,
+static void get_egl_query_and_display(GrEGLQueryStringProc* queryString, GrEGLDisplay* display,
                                       void* ctx, GrGLGetProc get) {
-    *queryString = (GrEGLQueryStringFn*)get(ctx, "eglQueryString");
+    *queryString = (GrEGLQueryStringProc) get(ctx, "eglQueryString");
     *display = GR_EGL_NO_DISPLAY;
     if (*queryString) {
-        GrEGLGetCurrentDisplayFn* getCurrentDisplay =
-                (GrEGLGetCurrentDisplayFn*)get(ctx, "eglGetCurrentDisplay");
+        GrEGLGetCurrentDisplayProc getCurrentDisplay =
+            (GrEGLGetCurrentDisplayProc) get(ctx, "eglGetCurrentDisplay");
         if (getCurrentDisplay) {
             *display = getCurrentDisplay();
         } else {
@@ -69,7 +69,7 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLInterface(void *ctx, GrGLGetProc g
         return nullptr;
     }
 
-    GrEGLQueryStringFn* queryString;
+    GrEGLQueryStringProc queryString;
     GrEGLDisplay display;
     get_egl_query_and_display(&queryString, &display, ctx, get);
     GrGLExtensions extensions;
@@ -188,6 +188,9 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLInterface(void *ctx, GrGLGetProc g
 
     GET_PROC(PixelStorei);
     GET_PROC(PolygonMode);
+    if (extensions.has("GL_EXT_raster_multisample")) {
+        GET_PROC_SUFFIX(RasterSamples, EXT);
+    }
     GET_PROC(ReadBuffer);
     GET_PROC(ReadPixels);
     GET_PROC(Scissor);
@@ -205,8 +208,6 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLInterface(void *ctx, GrGLGetProc g
         GET_PROC(TexBufferRange);
     }
     GET_PROC(TexImage2D);
-    GET_PROC(TexParameterf);
-    GET_PROC(TexParameterfv);
     GET_PROC(TexParameteri);
     GET_PROC(TexParameteriv);
     if (glVer >= GR_GL_VER(4,2) || extensions.has("GL_ARB_texture_storage")) {
@@ -385,6 +386,10 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLInterface(void *ctx, GrGLGetProc g
         GET_EGL_PROC_SUFFIX(DestroyImage, KHR);
     }
 
+    if (glVer >= GR_GL_VER(4, 0) || extensions.has("GL_ARB_sample_shading")) {
+        GET_PROC(MinSampleShading);
+    }
+
     if (glVer >= GR_GL_VER(3, 2) || extensions.has("GL_ARB_sync")) {
         GET_PROC(FenceSync);
         GET_PROC(IsSync);
@@ -403,18 +408,10 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLInterface(void *ctx, GrGLGetProc g
         GET_PROC(ProgramParameteri);
     }
 
-    if (glVer >= GR_GL_VER(3,2) || extensions.has("GL_ARB_sampler_objects")) {
-        GET_PROC(BindSampler);
-        GET_PROC(DeleteSamplers);
-        GET_PROC(GenSamplers);
-        GET_PROC(SamplerParameteri);
-        GET_PROC(SamplerParameteriv);
-    }
-
     interface->fStandard = kGL_GrGLStandard;
     interface->fExtensions.swap(&extensions);
 
-    return std::move(interface);
+    return interface;
 }
 
 sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc get) {
@@ -432,7 +429,7 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc
 
     GET_PROC_LOCAL(GetIntegerv);
     GET_PROC_LOCAL(GetStringi);
-    GrEGLQueryStringFn* queryString;
+    GrEGLQueryStringProc queryString;
     GrEGLDisplay display;
     get_egl_query_and_display(&queryString, &display, ctx, get);
     GrGLExtensions extensions;
@@ -449,16 +446,7 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc
     GET_PROC(BindAttribLocation);
     GET_PROC(BindBuffer);
     GET_PROC(BindTexture);
-
-    if (version >= GR_GL_VER(3,0)) {
-        GET_PROC(BindVertexArray);
-        GET_PROC(DeleteVertexArrays);
-        GET_PROC(GenVertexArrays);
-    } else if (extensions.has("GL_OES_vertex_array_object")) {
-        GET_PROC_SUFFIX(BindVertexArray, OES);
-        GET_PROC_SUFFIX(DeleteVertexArrays, OES);
-        GET_PROC_SUFFIX(GenVertexArrays, OES);
-    }
+    GET_PROC_SUFFIX(BindVertexArray, OES);
 
     if (version >= GR_GL_VER(3,0) && extensions.has("GL_EXT_blend_func_extended")) {
         GET_PROC_SUFFIX(BindFragDataLocation, EXT);
@@ -495,6 +483,7 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc
     GET_PROC(DeleteProgram);
     GET_PROC(DeleteShader);
     GET_PROC(DeleteTextures);
+    GET_PROC_SUFFIX(DeleteVertexArrays, OES);
     GET_PROC(DepthMask);
     GET_PROC(Disable);
     GET_PROC(DisableVertexAttribArray);
@@ -526,6 +515,7 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc
     GET_PROC(GenBuffers);
     GET_PROC(GenerateMipmap);
     GET_PROC(GenTextures);
+    GET_PROC_SUFFIX(GenVertexArrays, OES);
     GET_PROC(GetBufferParameteriv);
     GET_PROC(GetError);
     GET_PROC(GetIntegerv);
@@ -556,6 +546,10 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc
 
     GET_PROC(PixelStorei);
 
+    if (extensions.has("GL_EXT_raster_multisample")) {
+        GET_PROC_SUFFIX(RasterSamples, EXT);
+    }
+
     if (version >= GR_GL_VER(3,0)) {
         GET_PROC(ReadBuffer);
     }
@@ -581,8 +575,6 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc
     }
 
     GET_PROC(TexImage2D);
-    GET_PROC(TexParameterf);
-    GET_PROC(TexParameterfv);
     GET_PROC(TexParameteri);
     GET_PROC(TexParameteriv);
     GET_PROC(TexSubImage2D);
@@ -667,18 +659,12 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc
 
     if (extensions.has("GL_EXT_multisampled_render_to_texture")) {
         GET_PROC_SUFFIX(FramebufferTexture2DMultisample, EXT);
-        functions->fRenderbufferStorageMultisampleES2EXT =
-                (GrGLRenderbufferStorageMultisampleFn*)get(ctx,
-                                                           "glRenderbufferStorageMultisampleEXT");
+        functions->fRenderbufferStorageMultisampleES2EXT = (GrGLRenderbufferStorageMultisampleProc) get(ctx, "glRenderbufferStorageMultisampleEXT");
     } else if (extensions.has("GL_IMG_multisampled_render_to_texture")) {
         GET_PROC_SUFFIX(FramebufferTexture2DMultisample, IMG);
-        functions->fRenderbufferStorageMultisampleES2EXT =
-                (GrGLRenderbufferStorageMultisampleFn*)get(ctx,
-                                                           "glRenderbufferStorageMultisampleIMG");
+        functions->fRenderbufferStorageMultisampleES2EXT = (GrGLRenderbufferStorageMultisampleProc) get(ctx, "glRenderbufferStorageMultisampleIMG");
     } else if (extensions.has("GL_APPLE_framebuffer_multisample")) {
-        functions->fRenderbufferStorageMultisampleES2APPLE =
-                (GrGLRenderbufferStorageMultisampleFn*)get(ctx,
-                                                           "glRenderbufferStorageMultisampleAPPLE");
+        functions->fRenderbufferStorageMultisampleES2APPLE = (GrGLRenderbufferStorageMultisampleProc) get(ctx, "glRenderbufferStorageMultisampleAPPLE");
         GET_PROC_SUFFIX(ResolveMultisampleFramebuffer, APPLE);
     }
 
@@ -820,6 +806,10 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc
         GET_EGL_PROC_SUFFIX(DestroyImage, KHR);
     }
 
+    if (extensions.has("GL_OES_sample_shading")) {
+        GET_PROC_SUFFIX(MinSampleShading, OES);
+    }
+
     if (version >= GR_GL_VER(3, 0)) {
         GET_PROC(FenceSync);
         GET_PROC(IsSync);
@@ -844,18 +834,10 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledGLESInterface(void *ctx, GrGLGetProc
         GET_PROC(ProgramParameteri);
     }
 
-    if (version >= GR_GL_VER(3,0)) {
-        GET_PROC(BindSampler);
-        GET_PROC(DeleteSamplers);
-        GET_PROC(GenSamplers);
-        GET_PROC(SamplerParameteri);
-        GET_PROC(SamplerParameteriv);
-    }
-
     interface->fStandard = kGLES_GrGLStandard;
     interface->fExtensions.swap(&extensions);
 
-    return std::move(interface);
+    return interface;
 }
 
 SK_API const GrGLInterface* GrGLAssembleInterface(void *ctx, GrGLGetProc get) {

@@ -14,13 +14,12 @@ index 2703110..40cadc3 100644
 +++ b/gfx/skia/src/gpu/gl/GrGLProgram.cpp
 @@ -575,7 +575,7 @@ bool GrGLProgram::genProgram(const GrCustomStage** customStages) {
                                       POS_ATTR_NAME);
- 
+
      builder.fVSCode.appendf("void main() {\n"
 -                              "\tvec3 pos3 = %s * vec3("POS_ATTR_NAME", 1);\n"
 +                              "\tvec3 pos3 = %s * vec3(" POS_ATTR_NAME ", 1);\n"
                                "\tgl_Position = vec4(pos3.xy, 0, pos3.z);\n",
                              viewMName);
- 
--- 
-1.7.11.7
 
+--
+1.7.11.7

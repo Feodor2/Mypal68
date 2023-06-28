@@ -4,7 +4,7 @@ index 0135b85..bb108f8 100644
 +++ b/gfx/skia/include/core/SkPostConfig.h
 @@ -253,7 +253,7 @@
  //////////////////////////////////////////////////////////////////////
- 
+
  #ifndef SK_OVERRIDE
 -#if defined(SK_BUILD_FOR_WIN)
 +#if defined(_MSC_VER)
@@ -21,13 +21,13 @@ index dd9c5dc..ca2c3dc 100644
  #include "tchar.h"
 -#include "Usp10.h"
 +#include "usp10.h"
- 
+
  // always packed xxRRGGBB
  typedef uint32_t SkGdiRGB;
 @@ -1033,6 +1033,10 @@ SkAdvancedTypefaceMetrics* SkFontHost::GetAdvancedTypefaceMetrics(
      HFONT savefont = (HFONT)SelectObject(hdc, font);
      HFONT designFont = NULL;
- 
+
 +    const char stem_chars[] = {'i', 'I', '!', '1'};
 +    int16_t min_width;
 +    unsigned glyphCount;
@@ -41,11 +41,11 @@ index dd9c5dc..ca2c3dc 100644
      }
 -    const unsigned glyphCount = calculateGlyphCount(hdc);
 +    glyphCount = calculateGlyphCount(hdc);
- 
+
      info = new SkAdvancedTypefaceMetrics;
      info->fEmSize = otm.otmEMSquare;
 @@ -1115,9 +1119,8 @@ SkAdvancedTypefaceMetrics* SkFontHost::GetAdvancedTypefaceMetrics(
- 
+
      // Figure out a good guess for StemV - Min width of i, I, !, 1.
      // This probably isn't very good with an italic font.
 -    int16_t min_width = SHRT_MAX;

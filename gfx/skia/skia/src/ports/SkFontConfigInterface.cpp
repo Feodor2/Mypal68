@@ -13,18 +13,18 @@
 SK_DECLARE_STATIC_MUTEX(gFontConfigInterfaceMutex);
 static SkFontConfigInterface* gFontConfigInterface;
 
-sk_sp<SkFontConfigInterface> SkFontConfigInterface::RefGlobal() {
+SkFontConfigInterface* SkFontConfigInterface::RefGlobal() {
     SkAutoMutexAcquire ac(gFontConfigInterfaceMutex);
 
     if (gFontConfigInterface) {
-        return sk_ref_sp(gFontConfigInterface);
+        return SkRef(gFontConfigInterface);
     }
-    return sk_ref_sp(SkFontConfigInterface::GetSingletonDirectInterface());
+    return SkSafeRef(SkFontConfigInterface::GetSingletonDirectInterface());
 }
 
-void SkFontConfigInterface::SetGlobal(sk_sp<SkFontConfigInterface> fc) {
+SkFontConfigInterface* SkFontConfigInterface::SetGlobal(SkFontConfigInterface* fc) {
     SkAutoMutexAcquire ac(gFontConfigInterfaceMutex);
 
-    SkSafeUnref(gFontConfigInterface);
-    gFontConfigInterface = fc.release();
+    SkRefCnt_SafeAssign(gFontConfigInterface, fc);
+    return fc;
 }

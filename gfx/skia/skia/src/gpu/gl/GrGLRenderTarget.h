@@ -36,7 +36,6 @@ public:
 
     static sk_sp<GrGLRenderTarget> MakeWrapped(GrGLGpu*,
                                                const GrSurfaceDesc&,
-                                               GrGLenum format,
                                                const IDDesc&,
                                                int stencilBits);
 
@@ -62,9 +61,9 @@ public:
         }
     }
 
-    GrBackendRenderTarget getBackendRenderTarget() const override;
+    GrBackendObject getRenderTargetHandle() const override { return fRTFBOID; }
 
-    GrBackendFormat backendFormat() const override;
+    GrBackendRenderTarget getBackendRenderTarget() const override;
 
     bool canAttemptStencilAttachment() const override;
 
@@ -74,9 +73,9 @@ public:
 
 protected:
     // Constructor for subclasses.
-    GrGLRenderTarget(GrGLGpu*, const GrSurfaceDesc&, GrGLenum format, const IDDesc&);
+    GrGLRenderTarget(GrGLGpu*, const GrSurfaceDesc&, const IDDesc&);
 
-    void init(const GrSurfaceDesc&, GrGLenum format, const IDDesc&);
+    void init(const GrSurfaceDesc&, const IDDesc&);
 
     void onAbandon() override;
     void onRelease() override;
@@ -85,10 +84,9 @@ protected:
 
 private:
     // Constructor for instances wrapping backend objects.
-    GrGLRenderTarget(GrGLGpu*, const GrSurfaceDesc&, GrGLenum format, const IDDesc&,
-                     GrGLStencilAttachment*);
+    GrGLRenderTarget(GrGLGpu*, const GrSurfaceDesc&, const IDDesc&, GrGLStencilAttachment*);
 
-    void setFlags(const GrGLCaps&, const IDDesc&);
+    static GrRenderTargetFlags ComputeFlags(const GrGLCaps&, const IDDesc&);
 
     GrGLGpu* getGLGpu() const;
     bool completeStencilAttachment() override;
@@ -102,7 +100,6 @@ private:
     GrGLuint    fRTFBOID;
     GrGLuint    fTexFBOID;
     GrGLuint    fMSColorRenderbufferID;
-    GrGLenum    fRTFormat;
 
     GrBackendObjectOwnership fRTFBOOwnership;
 

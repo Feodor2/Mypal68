@@ -230,7 +230,6 @@ private:
     // return false on failure/degenerate path
     bool extractFromPath(const SkMatrix& m, const SkPath& path);
     void computeBisectors();
-    void computeNormals();
 
     void fanRing(const Ring& ring);
 

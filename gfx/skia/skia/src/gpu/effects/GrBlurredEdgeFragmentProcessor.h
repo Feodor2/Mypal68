@@ -11,12 +11,13 @@
 #ifndef GrBlurredEdgeFragmentProcessor_DEFINED
 #define GrBlurredEdgeFragmentProcessor_DEFINED
 #include "SkTypes.h"
+#if SK_SUPPORT_GPU
 #include "GrFragmentProcessor.h"
 #include "GrCoordTransform.h"
 class GrBlurredEdgeFragmentProcessor : public GrFragmentProcessor {
 public:
     enum class Mode { kGaussian = 0, kSmoothStep = 1 };
-    const Mode& mode() const { return fMode; }
+    Mode mode() const { return fMode; }
     static std::unique_ptr<GrFragmentProcessor> Make(Mode mode) {
         return std::unique_ptr<GrFragmentProcessor>(new GrBlurredEdgeFragmentProcessor(mode));
     }
@@ -35,4 +36,5 @@ private:
     Mode fMode;
     typedef GrFragmentProcessor INHERITED;
 };
+#endif
 #endif

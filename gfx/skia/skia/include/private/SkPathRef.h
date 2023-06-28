@@ -1,3 +1,4 @@
+
 /*
  * Copyright 2012 Google Inc.
  *
@@ -8,17 +9,14 @@
 #ifndef SkPathRef_DEFINED
 #define SkPathRef_DEFINED
 
+#include "../private/SkAtomics.h"
+#include "../private/SkTDArray.h"
 #include "SkMatrix.h"
-#include "SkMutex.h"
 #include "SkPoint.h"
 #include "SkRRect.h"
 #include "SkRect.h"
 #include "SkRefCnt.h"
-#include "SkTDArray.h"
 #include "SkTemplates.h"
-#include "SkTo.h"
-#include <atomic>
-#include <limits>
 
 class SkRBuffer;
 class SkWBuffer;
@@ -46,7 +44,7 @@ public:
                int incReserveVerbs = 0,
                int incReservePoints = 0);
 
-        ~Editor() { SkDEBUGCODE(fPathRef->fEditorsAttached--;) }
+        ~Editor() { SkDEBUGCODE(sk_atomic_dec(&fPathRef->fEditorsAttached);) }
 
         /**
          * Returns the array of points.
@@ -308,27 +306,12 @@ public:
      */
     uint32_t genID() const;
 
-    class GenIDChangeListener : public SkRefCnt {
-    public:
-        GenIDChangeListener() : fShouldUnregisterFromPath(false) {}
+    struct GenIDChangeListener {
         virtual ~GenIDChangeListener() {}
-
         virtual void onChange() = 0;
-
-        // The caller can use this method to notify the path that it no longer needs to listen. Once
-        // called, the path will remove this listener from the list at some future point.
-        void markShouldUnregisterFromPath() {
-            fShouldUnregisterFromPath.store(true, std::memory_order_relaxed);
-        }
-        bool shouldUnregisterFromPath() {
-            return fShouldUnregisterFromPath.load(std::memory_order_acquire);
-        }
-
-    private:
-        std::atomic<bool> fShouldUnregisterFromPath;
     };
 
-    void addGenIDChangeListener(sk_sp<GenIDChangeListener>);  // Threadsafe.
+    void addGenIDChangeListener(GenIDChangeListener* listener);
 
     bool isValid() const;
     SkDEBUGCODE(void validate() const { SkASSERT(this->isValid()); } )
@@ -357,7 +340,7 @@ private:
         // The next two values don't matter unless fIsOval or fIsRRect are true.
         fRRectOrOvalIsCCW = false;
         fRRectOrOvalStartIdx = 0xAC;
-        SkDEBUGCODE(fEditorsAttached.store(0);)
+        SkDEBUGCODE(fEditorsAttached = 0;)
         SkDEBUGCODE(this->validate();)
     }
 
@@ -422,7 +405,7 @@ private:
             fFreeSpace = 0;
             fVerbCnt = 0;
             fPointCnt = 0;
-            this->makeSpace(minSize, true);
+            this->makeSpace(minSize);
             fVerbCnt = verbCount;
             fPointCnt = pointCount;
             fFreeSpace -= newSize;
@@ -452,28 +435,24 @@ private:
 
     /**
      * Ensures that the free space available in the path ref is >= size. The verb and point counts
-     * are not changed. May allocate extra capacity, unless |exact| is true.
+     * are not changed.
      */
-    void makeSpace(size_t size, bool exact = false) {
+    void makeSpace(size_t size) {
         SkDEBUGCODE(this->validate();)
         if (size <= fFreeSpace) {
             return;
         }
         size_t growSize = size - fFreeSpace;
         size_t oldSize = this->currSize();
-
-        if (!exact) {
-            // round to next multiple of 8 bytes
-            growSize = (growSize + 7) & ~static_cast<size_t>(7);
-            // we always at least double the allocation
-            if (growSize < oldSize) {
-                growSize = oldSize;
-            }
-            if (growSize < kMinSize) {
-                growSize = kMinSize;
-            }
+        // round to next multiple of 8 bytes
+        growSize = (growSize + 7) & ~static_cast<size_t>(7);
+        // we always at least double the allocation
+        if (growSize < oldSize) {
+            growSize = oldSize;
         }
-
+        if (growSize < kMinSize) {
+            growSize = kMinSize;
+        }
         constexpr size_t maxSize = std::numeric_limits<size_t>::max();
         size_t newSize;
         if (growSize <= maxSize - oldSize) {
@@ -516,13 +495,13 @@ private:
     void setIsOval(bool isOval, bool isCCW, unsigned start) {
         fIsOval = isOval;
         fRRectOrOvalIsCCW = isCCW;
-        fRRectOrOvalStartIdx = SkToU8(start);
+        fRRectOrOvalStartIdx = start;
     }
 
     void setIsRRect(bool isRRect, bool isCCW, unsigned start) {
         fIsRRect = isRRect;
         fRRectOrOvalIsCCW = isCCW;
-        fRRectOrOvalStartIdx = SkToU8(start);
+        fRRectOrOvalStartIdx = start;
     }
 
     // called only by the editor. Note that this is not a const function.
@@ -557,26 +536,23 @@ private:
         kEmptyGenID = 1, // GenID reserved for path ref with zero points and zero verbs.
     };
     mutable uint32_t    fGenerationID;
-    SkDEBUGCODE(std::atomic<int> fEditorsAttached;) // assert only one editor in use at any time.
+    SkDEBUGCODE(int32_t fEditorsAttached;) // assert that only one editor in use at any time.
 
-    SkMutex                         fGenIDChangeListenersMutex;
-    SkTDArray<GenIDChangeListener*> fGenIDChangeListeners;  // pointers are reffed
+    SkTDArray<GenIDChangeListener*> fGenIDChangeListeners;  // pointers are owned
 
     mutable uint8_t  fBoundsIsDirty;
-    mutable bool     fIsFinite;    // only meaningful if bounds are valid
+    mutable SkBool8  fIsFinite;    // only meaningful if bounds are valid
 
-    bool     fIsOval;
-    bool     fIsRRect;
+    SkBool8  fIsOval;
+    SkBool8  fIsRRect;
     // Both the circle and rrect special cases have a notion of direction and starting point
     // The next two variables store that information for either.
-    bool     fRRectOrOvalIsCCW;
+    SkBool8  fRRectOrOvalIsCCW;
     uint8_t  fRRectOrOvalStartIdx;
     uint8_t  fSegmentMask;
 
     friend class PathRefTest_Private;
     friend class ForceIsRRect_Private; // unit test isRRect
-    friend class SkPath;
-    friend class SkPathPriv;
 };
 
 #endif

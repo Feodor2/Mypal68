@@ -7,8 +7,6 @@
 #include "SkIntersections.h"
 #include "SkPathOpsLine.h"
 
-#include <utility>
-
 void SkIntersections::cleanUpParallelLines(bool parallel) {
     while (fUsed > 2) {
         removeOne(1);
@@ -184,8 +182,7 @@ static int horizontal_coincident(const SkDLine& line, double y) {
     double min = line[0].fY;
     double max = line[1].fY;
     if (min > max) {
-        using std::swap;
-        swap(min, max);
+        SkTSwap(min, max);
     }
     if (min > y || max < y) {
         return 0;
@@ -197,8 +194,7 @@ static int horizontal_coincident(const SkDLine& line, double y) {
 }
 
 double SkIntersections::HorizontalIntercept(const SkDLine& line, double y) {
-    SkASSERT(line[1].fY != line[0].fY);
-    return SkPinT((y - line[0].fY) / (line[1].fY - line[0].fY));
+     return SkPinT((y - line[0].fY) / (line[1].fY - line[0].fY));
 }
 
 int SkIntersections::horizontal(const SkDLine& line, double left, double right,
@@ -262,8 +258,7 @@ static int vertical_coincident(const SkDLine& line, double x) {
     double min = line[0].fX;
     double max = line[1].fX;
     if (min > max) {
-        using std::swap;
-        swap(min, max);
+        SkTSwap(min, max);
     }
     if (!precisely_between(min, x, max)) {
         return 0;
@@ -275,7 +270,6 @@ static int vertical_coincident(const SkDLine& line, double x) {
 }
 
 double SkIntersections::VerticalIntercept(const SkDLine& line, double x) {
-    SkASSERT(line[1].fX != line[0].fX);
     return SkPinT((x - line[0].fX) / (line[1].fX - line[0].fX));
 }
 
@@ -336,4 +330,3 @@ int SkIntersections::vertical(const SkDLine& line, double top, double bottom,
     SkASSERT(fUsed <= 2);
     return fUsed;
 }
-

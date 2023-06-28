@@ -5,49 +5,33 @@
  * found in the LICENSE file.
  */
 
+
 #ifndef SkRegionPriv_DEFINED
 #define SkRegionPriv_DEFINED
 
-#include "SkMalloc.h"
 #include "SkRegion.h"
-#include "SkTo.h"
-#include <atomic>
-#include <functional>
 
-class SkRegionPriv {
-public:
-    static constexpr int kRunTypeSentinel = 0x7FFFFFFF;
-    typedef SkRegion::RunType RunType;
-    typedef SkRegion::RunHead RunHead;
-
-    // Call the function with each span, in Y -> X ascending order.
-    // We pass a rect, but we will still ensure the span Y->X ordering, so often the height
-    // of the rect may be 1. It should never be empty.
-    static void VisitSpans(const SkRegion& rgn, const std::function<void(const SkIRect&)>&);
-
-#ifdef SK_DEBUG
-    static void Validate(const SkRegion& rgn);
-#endif
-};
-
-static constexpr int SkRegion_kRunTypeSentinel = 0x7FFFFFFF;
+#include "SkAtomics.h"
+#include "SkMalloc.h"
 
 inline bool SkRegionValueIsSentinel(int32_t value) {
-    return value == (int32_t)SkRegion_kRunTypeSentinel;
+    return value == (int32_t)SkRegion::kRunTypeSentinel;
 }
 
 #define assert_sentinel(value, isSentinel) \
     SkASSERT(SkRegionValueIsSentinel(value) == isSentinel)
 
+//SkDEBUGCODE(extern int32_t gRgnAllocCounter;)
+
 #ifdef SK_DEBUG
 // Given the first interval (just past the interval-count), compute the
 // interval count, by search for the x-sentinel
 //
-static int compute_intervalcount(const SkRegionPriv::RunType runs[]) {
-    const SkRegionPriv::RunType* curr = runs;
-    while (*curr < SkRegion_kRunTypeSentinel) {
+static int compute_intervalcount(const SkRegion::RunType runs[]) {
+    const SkRegion::RunType* curr = runs;
+    while (*curr < SkRegion::kRunTypeSentinel) {
         SkASSERT(curr[0] < curr[1]);
-        SkASSERT(curr[1] < SkRegion_kRunTypeSentinel);
+        SkASSERT(curr[1] < SkRegion::kRunTypeSentinel);
         curr += 2;
     }
     return SkToInt((curr - runs) >> 1);
@@ -58,7 +42,7 @@ struct SkRegion::RunHead {
 private:
 
 public:
-    std::atomic<int32_t> fRefCnt;
+    int32_t fRefCnt;
     int32_t fRunCount;
 
     /**
@@ -81,12 +65,15 @@ public:
     }
 
     static RunHead* Alloc(int count) {
+        //SkDEBUGCODE(sk_atomic_inc(&gRgnAllocCounter);)
+        //SkDEBUGF(("************** gRgnAllocCounter::alloc %d\n", gRgnAllocCounter));
+
         if (count < SkRegion::kRectRegionRuns) {
             return nullptr;
         }
 
         const int64_t size = sk_64_mul(count, sizeof(RunType)) + sizeof(RunHead);
-        if (count < 0 || !SkTFitsIn<int32_t>(size)) { SK_ABORT("Invalid Size"); }
+        if (count < 0 || !sk_64_isS32(size)) { SK_ABORT("Invalid Size"); }
 
         RunHead* head = (RunHead*)sk_malloc_throw(size);
         head->fRefCnt = 1;
@@ -123,8 +110,9 @@ public:
     RunHead* ensureWritable() {
         RunHead* writable = this;
         if (fRefCnt > 1) {
-            // We need to alloc & copy the current region before decrease
-            // the refcount because it could be freed in the meantime.
+            // We need to alloc & copy the current region before we call
+            // sk_atomic_dec because it could be freed in the meantime,
+            // otherwise.
             writable = Alloc(fRunCount, fYSpanCount, fIntervalCount);
             memcpy(writable->writable_runs(), this->readonly_runs(),
                    fRunCount * sizeof(RunType));
@@ -132,7 +120,7 @@ public:
             // fRefCount might have changed since we last checked.
             // If we own the last reference at this point, we need to
             // free the memory.
-            if (--fRefCnt == 0) {
+            if (sk_atomic_dec(&fRefCnt) == 1) {
                 sk_free(this);
             }
         }
@@ -145,10 +133,10 @@ public:
      */
     static SkRegion::RunType* SkipEntireScanline(const SkRegion::RunType runs[]) {
         // we are not the Y Sentinel
-        SkASSERT(runs[0] < SkRegion_kRunTypeSentinel);
+        SkASSERT(runs[0] < SkRegion::kRunTypeSentinel);
 
         const int intervals = runs[1];
-        SkASSERT(runs[2 + intervals * 2] == SkRegion_kRunTypeSentinel);
+        SkASSERT(runs[2 + intervals * 2] == SkRegion::kRunTypeSentinel);
 #ifdef SK_DEBUG
         {
             int n = compute_intervalcount(&runs[2]);
@@ -180,7 +168,7 @@ public:
             int bottom = runs[0];
             // If we hit this, we've walked off the region, and our bounds check
             // failed.
-            SkASSERT(bottom < SkRegion_kRunTypeSentinel);
+            SkASSERT(bottom < SkRegion::kRunTypeSentinel);
             if (y < bottom) {
                 break;
             }
@@ -202,12 +190,12 @@ public:
 
         do {
             bot = *runs++;
-            SkASSERT(bot < SkRegion_kRunTypeSentinel);
+            SkASSERT(bot < SkRegion::kRunTypeSentinel);
             ySpanCount += 1;
 
             const int intervals = *runs++;
             SkASSERT(intervals >= 0);
-            SkASSERT(intervals < SkRegion_kRunTypeSentinel);
+            SkASSERT(intervals < SkRegion::kRunTypeSentinel);
 
             if (intervals > 0) {
 #ifdef SK_DEBUG
@@ -217,25 +205,25 @@ public:
                 }
 #endif
                 RunType L = runs[0];
-                SkASSERT(L < SkRegion_kRunTypeSentinel);
+                SkASSERT(L < SkRegion::kRunTypeSentinel);
                 if (left > L) {
                     left = L;
                 }
 
                 runs += intervals * 2;
                 RunType R = runs[-1];
-                SkASSERT(R < SkRegion_kRunTypeSentinel);
+                SkASSERT(R < SkRegion::kRunTypeSentinel);
                 if (rite < R) {
                     rite = R;
                 }
 
                 intervalCount += intervals;
             }
-            SkASSERT(SkRegion_kRunTypeSentinel == *runs);
+            SkASSERT(SkRegion::kRunTypeSentinel == *runs);
             runs += 1;  // skip x-sentinel
 
             // test Y-sentinel
-        } while (SkRegion_kRunTypeSentinel > *runs);
+        } while (SkRegion::kRunTypeSentinel > *runs);
 
 #ifdef SK_DEBUG
         // +1 to skip the last Y-sentinel
@@ -254,6 +242,16 @@ public:
 private:
     int32_t fYSpanCount;
     int32_t fIntervalCount;
+};
+
+#include <functional>
+
+class SkRegionPriv {
+public:
+    // Call the function with each span, in Y -> X ascending order.
+    // We pass a rect, but we will still ensure the span Y->X ordering, so often the height
+    // of the rect may be 1. It should never be empty.
+    static void VisitSpans(const SkRegion& rgn, const std::function<void(const SkIRect&)>&);
 };
 
 #endif

@@ -113,4 +113,3 @@ private:
     SkTHashMap<size_t, SkData*> fMarkedData;
 };
 #endif // SkStreamBuffer_DEFINED
-

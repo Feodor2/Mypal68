@@ -9,7 +9,8 @@
 #define GrVkDescriptorPool_DEFINED
 
 #include "GrVkResource.h"
-#include "vk/GrVkTypes.h"
+
+#include "vk/GrVkDefines.h"
 
 class GrVkGpu;
 
@@ -38,7 +39,7 @@ public:
 #endif
 
 private:
-    void freeGPUData(GrVkGpu* gpu) const override;
+    void freeGPUData(const GrVkGpu* gpu) const override;
 
     VkDescriptorType     fType;
     uint32_t             fCount;

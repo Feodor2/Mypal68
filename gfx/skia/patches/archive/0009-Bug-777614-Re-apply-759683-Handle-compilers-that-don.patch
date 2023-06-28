@@ -14,7 +14,7 @@ index 96d0dea..add6d5f 100644
 +++ b/gfx/skia/src/opts/opts_check_SSE2.cpp
 @@ -86,9 +86,13 @@ static inline bool hasSSSE3() {
  #else
- 
+
  static inline bool hasSSSE3() {
 +#if defined(SK_BUILD_SSSE3)
      int cpu_info[4] = { 0 };
@@ -25,9 +25,9 @@ index 96d0dea..add6d5f 100644
 +#endif
  }
  #endif
- 
+
 @@ -104,7 +108,7 @@ static bool cachedHasSSSE3() {
- 
+
  void SkBitmapProcState::platformProcs() {
      if (cachedHasSSSE3()) {
 -#if !defined(SK_BUILD_FOR_ANDROID)
@@ -35,6 +35,5 @@ index 96d0dea..add6d5f 100644
          // Disable SSSE3 optimization for Android x86
          if (fSampleProc32 == S32_opaque_D32_filter_DX) {
              fSampleProc32 = S32_opaque_D32_filter_DX_SSSE3;
--- 
+--
 1.7.11.4
-

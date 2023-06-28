@@ -10,13 +10,13 @@
 
 GrVkVertexBuffer::GrVkVertexBuffer(GrVkGpu* gpu, const GrVkBuffer::Desc& desc,
                                    const GrVkBuffer::Resource* bufferResource)
-        : INHERITED(gpu, desc.fSizeInBytes, GrGpuBufferType::kVertex,
-                    desc.fDynamic ? kDynamic_GrAccessPattern : kStatic_GrAccessPattern)
-        , GrVkBuffer(desc, bufferResource) {
+    : INHERITED(gpu, desc.fSizeInBytes, kVertex_GrBufferType,
+                desc.fDynamic ? kDynamic_GrAccessPattern : kStatic_GrAccessPattern)
+    , GrVkBuffer(desc, bufferResource) {
     this->registerWithCache(SkBudgeted::kYes);
 }
 
-sk_sp<GrVkVertexBuffer> GrVkVertexBuffer::Make(GrVkGpu* gpu, size_t size, bool dynamic) {
+GrVkVertexBuffer* GrVkVertexBuffer::Create(GrVkGpu* gpu, size_t size, bool dynamic) {
     GrVkBuffer::Desc desc;
     desc.fDynamic = dynamic;
     desc.fType = GrVkBuffer::kVertex_Type;
@@ -31,7 +31,7 @@ sk_sp<GrVkVertexBuffer> GrVkVertexBuffer::Make(GrVkGpu* gpu, size_t size, bool d
     if (!buffer) {
         bufferResource->unref(gpu);
     }
-    return sk_sp<GrVkVertexBuffer>(buffer);
+    return buffer;
 }
 
 void GrVkVertexBuffer::onRelease() {
@@ -49,7 +49,7 @@ void GrVkVertexBuffer::onAbandon() {
 
 void GrVkVertexBuffer::onMap() {
     if (!this->wasDestroyed()) {
-        this->GrGpuBuffer::fMapPtr = this->vkMap(this->getVkGpu());
+        this->GrBuffer::fMapPtr = this->vkMap(this->getVkGpu());
     }
 }
 

@@ -6,72 +6,59 @@
  */
 
 #include "GrSurfaceContext.h"
+
 #include "GrContextPriv.h"
 #include "GrDrawingManager.h"
 #include "GrOpList.h"
-#include "GrRecordingContext.h"
-#include "GrRecordingContextPriv.h"
 #include "SkGr.h"
+
 #include "../private/GrAuditTrail.h"
 
 #define ASSERT_SINGLE_OWNER \
     SkDEBUGCODE(GrSingleOwner::AutoEnforce debug_SingleOwner(this->singleOwner());)
-#define RETURN_FALSE_IF_ABANDONED  if (this->fContext->priv().abandoned()) { return false; }
+#define RETURN_FALSE_IF_ABANDONED  if (this->drawingManager()->wasAbandoned()) { return false; }
 
 // In MDB mode the reffing of the 'getLastOpList' call's result allows in-progress
 // GrOpLists to be picked up and added to by renderTargetContexts lower in the call
 // stack. When this occurs with a closed GrOpList, a new one will be allocated
 // when the renderTargetContext attempts to use it (via getOpList).
-GrSurfaceContext::GrSurfaceContext(GrRecordingContext* context,
+GrSurfaceContext::GrSurfaceContext(GrContext* context,
+                                   GrDrawingManager* drawingMgr,
                                    GrPixelConfig config,
-                                   sk_sp<SkColorSpace> colorSpace)
+                                   sk_sp<SkColorSpace> colorSpace,
+                                   GrAuditTrail* auditTrail,
+                                   GrSingleOwner* singleOwner)
         : fContext(context)
-        , fColorSpaceInfo(std::move(colorSpace), config) {
-}
-
-GrAuditTrail* GrSurfaceContext::auditTrail() {
-    return fContext->priv().auditTrail();
-}
-
-GrDrawingManager* GrSurfaceContext::drawingManager() {
-    return fContext->priv().drawingManager();
-}
-
-const GrDrawingManager* GrSurfaceContext::drawingManager() const {
-    return fContext->priv().drawingManager();
-}
-
+        , fAuditTrail(auditTrail)
+        , fColorSpaceInfo(std::move(colorSpace), config)
+        , fDrawingManager(drawingMgr)
 #ifdef SK_DEBUG
-GrSingleOwner* GrSurfaceContext::singleOwner() {
-    return fContext->priv().singleOwner();
-}
+        , fSingleOwner(singleOwner)
 #endif
+{
+    // We never should have a sRGB pixel config with a non-SRGB gamma color space.
+    SkASSERT(!GrPixelConfigIsSRGB(config) ||
+             (fColorSpaceInfo.colorSpace() && fColorSpaceInfo.colorSpace()->gammaCloseToSRGB()));
+}
 
 bool GrSurfaceContext::readPixels(const SkImageInfo& dstInfo, void* dstBuffer,
                                   size_t dstRowBytes, int x, int y, uint32_t flags) {
     ASSERT_SINGLE_OWNER
     RETURN_FALSE_IF_ABANDONED
     SkDEBUGCODE(this->validate();)
-    GR_AUDIT_TRAIL_AUTO_FRAME(this->auditTrail(), "GrSurfaceContext::readPixels");
+    GR_AUDIT_TRAIL_AUTO_FRAME(fAuditTrail, "GrSurfaceContext::readPixels");
 
     // TODO: this seems to duplicate code in SkImage_Gpu::onReadPixels
-    if (kUnpremul_SkAlphaType == dstInfo.alphaType() &&
-        !GrPixelConfigIsOpaque(this->asSurfaceProxy()->config())) {
+    if (kUnpremul_SkAlphaType == dstInfo.alphaType()) {
         flags |= GrContextPriv::kUnpremul_PixelOpsFlag;
     }
     auto colorType = SkColorTypeToGrColorType(dstInfo.colorType());
     if (GrColorType::kUnknown == colorType) {
         return false;
     }
-
-    auto direct = fContext->priv().asDirectContext();
-    if (!direct) {
-        return false;
-    }
-
-    return direct->priv().readSurfacePixels(this, x, y, dstInfo.width(), dstInfo.height(),
-                                            colorType, dstInfo.colorSpace(), dstBuffer,
-                                            dstRowBytes, flags);
+    return fContext->contextPriv().readSurfacePixels(this, x, y, dstInfo.width(), dstInfo.height(),
+                                                     colorType, dstInfo.colorSpace(), dstBuffer,
+                                                     dstRowBytes, flags);
 }
 
 bool GrSurfaceContext::writePixels(const SkImageInfo& srcInfo, const void* srcBuffer,
@@ -79,7 +66,7 @@ bool GrSurfaceContext::writePixels(const SkImageInfo& srcInfo, const void* srcBu
     ASSERT_SINGLE_OWNER
     RETURN_FALSE_IF_ABANDONED
     SkDEBUGCODE(this->validate();)
-    GR_AUDIT_TRAIL_AUTO_FRAME(this->auditTrail(), "GrSurfaceContext::writePixels");
+    GR_AUDIT_TRAIL_AUTO_FRAME(fAuditTrail, "GrSurfaceContext::writePixels");
 
     if (kUnpremul_SkAlphaType == srcInfo.alphaType()) {
         flags |= GrContextPriv::kUnpremul_PixelOpsFlag;
@@ -88,28 +75,17 @@ bool GrSurfaceContext::writePixels(const SkImageInfo& srcInfo, const void* srcBu
     if (GrColorType::kUnknown == colorType) {
         return false;
     }
-
-    auto direct = fContext->priv().asDirectContext();
-    if (!direct) {
-        return false;
-    }
-
-    return direct->priv().writeSurfacePixels(this, x, y, srcInfo.width(), srcInfo.height(),
-                                             colorType, srcInfo.colorSpace(), srcBuffer,
-                                             srcRowBytes, flags);
+    return fContext->contextPriv().writeSurfacePixels(this, x, y, srcInfo.width(), srcInfo.height(),
+                                                      colorType, srcInfo.colorSpace(), srcBuffer,
+                                                      srcRowBytes, flags);
 }
 
 bool GrSurfaceContext::copy(GrSurfaceProxy* src, const SkIRect& srcRect, const SkIPoint& dstPoint) {
     ASSERT_SINGLE_OWNER
     RETURN_FALSE_IF_ABANDONED
     SkDEBUGCODE(this->validate();)
-    GR_AUDIT_TRAIL_AUTO_FRAME(this->auditTrail(), "GrSurfaceContext::copy");
+    GR_AUDIT_TRAIL_AUTO_FRAME(fAuditTrail, "GrSurfaceContext::onCopy");
 
-    if (!fContext->priv().caps()->canCopySurface(this->asSurfaceProxy(), src, srcRect,
-                                                        dstPoint)) {
-        return false;
-    }
-
-    return this->getOpList()->copySurface(fContext, this->asSurfaceProxy(),
-                                          src, srcRect, dstPoint);
+    return this->getOpList()->copySurface(*fContext->caps(),
+                                          this->asSurfaceProxy(), src, srcRect, dstPoint);
 }

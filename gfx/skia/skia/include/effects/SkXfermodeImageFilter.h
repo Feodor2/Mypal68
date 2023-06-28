@@ -25,7 +25,7 @@ public:
         return Make(mode, std::move(background), nullptr, nullptr);
     }
 
-    static void RegisterFlattenables();
+    SK_DECLARE_FLATTENABLE_REGISTRAR_GROUP();
 
 private:
     SkXfermodeImageFilter();    // can't instantiate

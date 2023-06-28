@@ -7,13 +7,12 @@
 
 #include "SkRWBuffer.h"
 
-#include "SkMakeUnique.h"
+#include "SkAtomics.h"
 #include "SkMalloc.h"
+#include "SkMakeUnique.h"
 #include "SkStream.h"
-#include "SkTo.h"
 
 #include <atomic>
-#include <new>
 
 // Force small chunks to be a page's worth
 static const size_t kMinAllocSize = 4096;

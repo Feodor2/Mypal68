@@ -12,7 +12,7 @@ diff --git a/gfx/skia/trunk/include/images/SkImages.h b/gfx/skia/trunk/include/i
   * Use of this source code is governed by a BSD-style license that can be
   * found in the LICENSE file.
   */
- 
+
 +#ifndef SkImages_DEFINED
 +#define SkImages_DEFINED
 +
@@ -32,7 +32,7 @@ diff --git a/gfx/skia/trunk/src/core/SkConvolver.h b/gfx/skia/trunk/src/core/SkC
  #include "SkSize.h"
  #include "SkTypes.h"
  #include "SkTArray.h"
- 
+
  // avoid confusion with Mac OS X's math library (Carbon)
  #if defined(__APPLE__)
  #undef FloatToConvolutionFixed
@@ -40,7 +40,7 @@ diff --git a/gfx/skia/trunk/src/core/SkConvolver.h b/gfx/skia/trunk/src/core/SkC
 +#undef FloatToFixed
 +#undef FixedToFloat
  #endif
- 
+
  // Represents a filter in one dimension. Each output pixel has one entry in this
  // object for the filter values contributing to it. You build up the filter
  // list by calling AddFilter for each output pixel (in order).
@@ -56,21 +56,21 @@ diff --git a/gfx/skia/trunk/src/gpu/GrAAConvexPathRenderer.h b/gfx/skia/trunk/sr
   * Use of this source code is governed by a BSD-style license that can be
   * found in the LICENSE file.
   */
- 
+
  #include "GrPathRenderer.h"
- 
+
 +#ifndef GrAAConvexPathRenderer_DEFINED
 +#define GrAAConvexPathRenderer_DEFINED
- 
+
  class GrAAConvexPathRenderer : public GrPathRenderer {
  public:
      GrAAConvexPathRenderer();
- 
+
      virtual bool canDrawPath(const SkPath& path,
                               const SkStrokeRec& stroke,
                               const GrDrawTarget* target,
                               bool antiAlias) const SK_OVERRIDE;
- 
+
  protected:
      virtual bool onDrawPath(const SkPath& path,
                              const SkStrokeRec& stroke,
@@ -83,24 +83,24 @@ diff --git a/gfx/skia/trunk/src/gpu/GrReducedClip.h b/gfx/skia/trunk/src/gpu/GrR
 --- a/gfx/skia/trunk/src/gpu/GrReducedClip.h
 +++ b/gfx/skia/trunk/src/gpu/GrReducedClip.h
 @@ -1,16 +1,19 @@
- 
+
  /*
   * Copyright 2012 Google Inc.
   *
   * Use of this source code is governed by a BSD-style license that can be
   * found in the LICENSE file.
   */
- 
+
 +#ifndef GrReducedClip_DEFINED
 +#define GrReducedClip_DEFINED
 +
  #include "SkClipStack.h"
  #include "SkTLList.h"
- 
+
  namespace GrReducedClip {
- 
+
  typedef SkTLList<SkClipStack::Element> ElementList;
- 
+
  enum InitialState {
 @@ -36,8 +39,10 @@ SK_API void ReduceClipStack(const SkClip
                              const SkIRect& queryBounds,
@@ -109,7 +109,7 @@ diff --git a/gfx/skia/trunk/src/gpu/GrReducedClip.h b/gfx/skia/trunk/src/gpu/GrR
                              InitialState* initialState,
                              SkIRect* tighterBounds = NULL,
                              bool* requiresAA = NULL);
- 
+
  } // namespace GrReducedClip
 +
 +#endif
@@ -130,15 +130,15 @@ diff --git a/gfx/skia/trunk/src/pathops/SkLineParameters.h b/gfx/skia/trunk/src/
  #include "SkPathOpsCubic.h"
  #include "SkPathOpsLine.h"
  #include "SkPathOpsQuad.h"
- 
+
  // Sources
  // computer-aided design - volume 22 number 9 november 1990 pp 538 - 549
  // online at http://cagd.cs.byu.edu/~tom/papers/bezclip.pdf
- 
+
 @@ -164,8 +168,10 @@ public:
          return -a;
      }
- 
+
  private:
      double a;
      double b;

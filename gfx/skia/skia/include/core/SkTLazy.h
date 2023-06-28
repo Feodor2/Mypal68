@@ -19,16 +19,23 @@
  */
 template <typename T> class SkTLazy {
 public:
-    SkTLazy() = default;
-    explicit SkTLazy(const T* src) : fPtr(src ? new (&fStorage) T(*src) : nullptr) {}
-    SkTLazy(const SkTLazy& that) { *this = that; }
-    SkTLazy(SkTLazy&& that) { *this = std::move(that); }
+    SkTLazy() : fPtr(nullptr) {}
 
-    ~SkTLazy() { this->reset(); }
+    explicit SkTLazy(const T* src)
+        : fPtr(src ? new (fStorage.get()) T(*src) : nullptr) {}
+
+    SkTLazy(const SkTLazy& that) : fPtr(nullptr) { *this = that; }
+    SkTLazy(SkTLazy&& that) : fPtr(nullptr) { *this = std::move(that); }
+
+    ~SkTLazy() {
+        if (this->isValid()) {
+            fPtr->~T();
+        }
+    }
 
     SkTLazy& operator=(const SkTLazy& that) {
         if (that.isValid()) {
-            this->set(*that);
+            this->set(*that.get());
         } else {
             this->reset();
         }
@@ -37,7 +44,7 @@ public:
 
     SkTLazy& operator=(SkTLazy&& that) {
         if (that.isValid()) {
-            this->set(std::move(*that));
+            this->set(std::move(*that.get()));
         } else {
             this->reset();
         }
@@ -51,8 +58,10 @@ public:
      *  instance is always returned.
      */
     template <typename... Args> T* init(Args&&... args) {
-        this->reset();
-        fPtr = new (&fStorage) T(std::forward<Args>(args)...);
+        if (this->isValid()) {
+            fPtr->~T();
+        }
+        fPtr = new (SkTCast<T*>(fStorage.get())) T(std::forward<Args>(args)...);
         return fPtr;
     }
 
@@ -66,7 +75,7 @@ public:
         if (this->isValid()) {
             *fPtr = src;
         } else {
-            fPtr = new (&fStorage) T(src);
+            fPtr = new (SkTCast<T*>(fStorage.get())) T(src);
         }
         return fPtr;
     }
@@ -75,7 +84,7 @@ public:
         if (this->isValid()) {
             *fPtr = std::move(src);
         } else {
-            fPtr = new (&fStorage) T(std::move(src));
+            fPtr = new (SkTCast<T*>(fStorage.get())) T(std::move(src));
         }
         return fPtr;
     }
@@ -101,8 +110,6 @@ public:
      * knows that the object has been initialized.
      */
     T* get() const { SkASSERT(this->isValid()); return fPtr; }
-    T* operator->() const { return this->get(); }
-    T& operator*() const { return *this->get(); }
 
     /**
      * Like above but doesn't assert if object isn't initialized (in which case
@@ -111,8 +118,8 @@ public:
     T* getMaybeNull() const { return fPtr; }
 
 private:
-    typename std::aligned_storage<sizeof(T), alignof(T)>::type fStorage;
-    T*                                                         fPtr{nullptr}; // nullptr or fStorage
+    SkAlignedSTStorage<1, T> fStorage;
+    T*                       fPtr; // nullptr or fStorage
 };
 
 /**
@@ -141,27 +148,12 @@ private:
 template <typename T>
 class SkTCopyOnFirstWrite {
 public:
-    explicit SkTCopyOnFirstWrite(const T& initial) : fObj(&initial) {}
+    SkTCopyOnFirstWrite(const T& initial) : fObj(&initial) {}
 
-    explicit SkTCopyOnFirstWrite(const T* initial) : fObj(initial) {}
+    SkTCopyOnFirstWrite(const T* initial) : fObj(initial) {}
 
     // Constructor for delayed initialization.
     SkTCopyOnFirstWrite() : fObj(nullptr) {}
-
-    SkTCopyOnFirstWrite(const SkTCopyOnFirstWrite&  that) { *this = that;            }
-    SkTCopyOnFirstWrite(      SkTCopyOnFirstWrite&& that) { *this = std::move(that); }
-
-    SkTCopyOnFirstWrite& operator=(const SkTCopyOnFirstWrite& that) {
-        fLazy = that.fLazy;
-        fObj  = fLazy.isValid() ? fLazy.get() : that.fObj;
-        return *this;
-    }
-
-    SkTCopyOnFirstWrite& operator=(SkTCopyOnFirstWrite&& that) {
-        fLazy = std::move(that.fLazy);
-        fObj  = fLazy.isValid() ? fLazy.get() : that.fObj;
-        return *this;
-    }
 
     // Should only be called once, and only if the default constructor was used.
     void init(const T& initial) {
@@ -181,8 +173,6 @@ public:
         }
         return const_cast<T*>(fObj);
     }
-
-    const T* get() const { return fObj; }
 
     /**
      * Operators for treating this as though it were a const pointer.

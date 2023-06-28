@@ -45,12 +45,10 @@ if CONFIG['OS_ARCH'] == 'WINNT':
         'DynamicallyLinkedFunctionPtr.h',
         'ImportDir.h',
         'NativeNt.h',
-        'WindowsMapRemoteView.h',
         'WindowsProcessMitigations.h',
     ]
     SOURCES += [
         'TimeStamp_windows.cpp',
-        'WindowsMapRemoteView.cpp',
         'WindowsProcessMitigations.cpp',
     ]
     OS_LIBS += ['dbghelp']

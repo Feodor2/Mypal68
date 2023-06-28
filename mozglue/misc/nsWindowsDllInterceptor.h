@@ -270,12 +270,6 @@ struct TypeResolver<mozilla::interceptor::MMPolicyInProcess, InterceptorT> {
   using FuncHookType = FuncHook<InterceptorT, FuncPtrT>;
 };
 
-template <typename InterceptorT>
-struct TypeResolver<mozilla::interceptor::MMPolicyOutOfProcess, InterceptorT> {
-  template <typename FuncPtrT>
-  using FuncHookType = FuncHookCrossProcess<InterceptorT, FuncPtrT>;
-};
-
 template <typename VMPolicy = mozilla::interceptor::VMSharingPolicyShared<
               mozilla::interceptor::MMPolicyInProcess, kDefaultTrampolineSize>>
 class WindowsDllInterceptor final
@@ -445,11 +439,6 @@ class WindowsDllInterceptor final
 }  // namespace interceptor
 
 using WindowsDllInterceptor = interceptor::WindowsDllInterceptor<>;
-
-using CrossProcessDllInterceptor = interceptor::WindowsDllInterceptor<
-    mozilla::interceptor::VMSharingPolicyUnique<
-        mozilla::interceptor::MMPolicyOutOfProcess,
-        mozilla::interceptor::kDefaultTrampolineSize>>;
 
 }  // namespace mozilla
 

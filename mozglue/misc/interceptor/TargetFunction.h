@@ -18,26 +18,6 @@
 namespace mozilla {
 namespace interceptor {
 
-#if defined(_M_IX86)
-
-template <typename T>
-bool CommitAndWriteShortInternal(const T& aMMPolicy, void* aDest,
-                                 uint16_t aValue);
-
-template <>
-inline bool CommitAndWriteShortInternal<MMPolicyInProcess>(
-    const MMPolicyInProcess& aMMPolicy, void* aDest, uint16_t aValue) {
-  return aMMPolicy.WriteAtomic(aDest, aValue);
-}
-
-template <>
-inline bool CommitAndWriteShortInternal<MMPolicyOutOfProcess>(
-    const MMPolicyOutOfProcess& aMMPolicy, void* aDest, uint16_t aValue) {
-  return aMMPolicy.Write(aDest, &aValue, sizeof(uint16_t));
-}
-
-#endif  // defined(_M_IX86)
-
 // Forward declaration
 template <typename MMPolicy>
 class ReadOnlyTargetFunction;
@@ -282,8 +262,8 @@ class MOZ_STACK_CLASS WritableTargetFunction final {
     }
 
     // Now immediately write the short, atomically if inproc
-    bool ok = CommitAndWriteShortInternal(
-        mMMPolicy, reinterpret_cast<void*>(mFunc + mStartWriteOffset), aValue);
+    bool ok = mMMPolicy.WriteAtomic(
+        reinterpret_cast<void*>(mFunc + mStartWriteOffset), aValue);
     if (!ok) {
       return false;
     }
@@ -433,19 +413,7 @@ class ReadOnlyTargetBytes<MMPolicyInProcess> {
     return mMMPolicy.IsPageAccessible(reinterpret_cast<void*>(adjusted));
   }
 
-  /**
-   * This returns a pointer to a *potentially local copy* of the target
-   * function's bytes. The returned pointer should not be used for any
-   * pointer arithmetic relating to the target function.
-   */
-  const uint8_t* GetLocalBytes() const { return mBase; }
-
-  /**
-   * This returns a pointer to the target function's bytes. The returned pointer
-   * may possibly belong to another process, so while it should be used for
-   * pointer arithmetic, it *must not* be dereferenced.
-   */
-  uintptr_t GetBase() const { return reinterpret_cast<uintptr_t>(mBase); }
+  const uint8_t* Get() const { return mBase; }
 
   const MMPolicyInProcess& GetMMPolicy() const { return mMMPolicy; }
 
@@ -457,136 +425,12 @@ class ReadOnlyTargetBytes<MMPolicyInProcess> {
   uint8_t const* const mBase;
 };
 
-template <>
-class ReadOnlyTargetBytes<MMPolicyOutOfProcess> {
- public:
-  ReadOnlyTargetBytes(const MMPolicyOutOfProcess& aMMPolicy, const void* aBase)
-      : mMMPolicy(aMMPolicy), mBase(reinterpret_cast<const uint8_t*>(aBase)) {}
-
-  ReadOnlyTargetBytes(ReadOnlyTargetBytes&& aOther)
-      : mMMPolicy(aOther.mMMPolicy),
-        mLocalBytes(std::move(aOther.mLocalBytes)),
-        mBase(aOther.mBase) {}
-
-  ReadOnlyTargetBytes(const ReadOnlyTargetBytes& aOther)
-      : mMMPolicy(aOther.mMMPolicy), mBase(aOther.mBase) {
-    Unused << mLocalBytes.appendAll(aOther.mLocalBytes);
-  }
-
-  ReadOnlyTargetBytes(const ReadOnlyTargetBytes& aOther,
-                      const uint32_t aOffsetFromOther)
-      : mMMPolicy(aOther.mMMPolicy), mBase(aOther.mBase + aOffsetFromOther) {
-    if (aOffsetFromOther >= aOther.mLocalBytes.length()) {
-      return;
-    }
-
-    Unused << mLocalBytes.append(aOther.mLocalBytes.begin() + aOffsetFromOther,
-                                 aOther.mLocalBytes.end());
-  }
-
-  void EnsureLimit(uint32_t aDesiredLimit) {
-    size_t prevSize = mLocalBytes.length();
-    if (aDesiredLimit < prevSize) {
-      return;
-    }
-
-    size_t newSize = aDesiredLimit + 1;
-    if (newSize < kInlineStorage) {
-      // Always try to read as much memory as we can at once
-      newSize = kInlineStorage;
-    }
-
-    bool resizeOk = mLocalBytes.resize(newSize);
-    MOZ_RELEASE_ASSERT(resizeOk);
-
-    bool ok = mMMPolicy.Read(&mLocalBytes[prevSize], mBase + prevSize,
-                             newSize - prevSize);
-    if (ok) {
-      return;
-    }
-
-    // We couldn't pull more bytes than needed (which may happen if those extra
-    // bytes are not accessible). In this case, we try just to get the bare
-    // minimum.
-    newSize = aDesiredLimit + 1;
-    resizeOk = mLocalBytes.resize(newSize);
-    MOZ_RELEASE_ASSERT(resizeOk);
-
-    ok = mMMPolicy.Read(&mLocalBytes[prevSize], mBase + prevSize,
-                        newSize - prevSize);
-    MOZ_RELEASE_ASSERT(ok);
-  }
-
-  bool IsValidAtOffset(const int8_t aOffset) const {
-    if (!aOffset) {
-      return true;
-    }
-
-    uintptr_t base = reinterpret_cast<uintptr_t>(mBase);
-    uintptr_t adjusted = base + aOffset;
-    uint32_t pageSize = mMMPolicy.GetPageSize();
-
-    // If |adjusted| is within the same page as |mBase|, we're still valid
-    if ((base / pageSize) == (adjusted / pageSize)) {
-      return true;
-    }
-
-    // Otherwise, let's query |adjusted|
-    return mMMPolicy.IsPageAccessible(reinterpret_cast<void*>(adjusted));
-  }
-
-  /**
-   * This returns a pointer to a *potentially local copy* of the target
-   * function's bytes. The returned pointer should not be used for any
-   * pointer arithmetic relating to the target function.
-   */
-  const uint8_t* GetLocalBytes() const {
-    if (mLocalBytes.empty()) {
-      return nullptr;
-    }
-
-    return mLocalBytes.begin();
-  }
-
-  /**
-   * This returns a pointer to the target function's bytes. The returned pointer
-   * may possibly belong to another process, so while it should be used for
-   * pointer arithmetic, it *must not* be dereferenced.
-   */
-  uintptr_t GetBase() const { return reinterpret_cast<uintptr_t>(mBase); }
-
-  const MMPolicyOutOfProcess& GetMMPolicy() const { return mMMPolicy; }
-
-  ReadOnlyTargetBytes& operator=(const ReadOnlyTargetBytes&) = delete;
-  ReadOnlyTargetBytes& operator=(ReadOnlyTargetBytes&&) = delete;
-
- private:
-  // In an ideal world, we'd only read 5 bytes on 32-bit and 13 bytes on 64-bit,
-  // to match the minimum bytes that we need to write in in order to patch the
-  // target function. Since the actual opcodes will often require us to pull in
-  // extra bytes above that minimum, we set the inline storage to be larger than
-  // those minima in an effort to give the Vector extra wiggle room before it
-  // needs to touch the heap.
-#if defined(_M_IX86)
-  static const size_t kInlineStorage = 16;
-#elif defined(_M_X64) || defined(_M_ARM64)
-  static const size_t kInlineStorage = 32;
-#endif
-
-  const MMPolicyOutOfProcess& mMMPolicy;
-  Vector<uint8_t, kInlineStorage> mLocalBytes;
-  uint8_t const* const mBase;
-};
-
 template <typename TargetMMPolicy>
-class TargetBytesPtr;
-
-template <>
-class TargetBytesPtr<MMPolicyInProcess> {
+class TargetBytesPtr {
  public:
-  typedef TargetBytesPtr<MMPolicyInProcess> Type;
+  typedef TargetBytesPtr<TargetMMPolicy> Type;
 
-  static Type Make(const MMPolicyInProcess& aMMPolicy, const void* aFunc) {
+  static Type Make(const TargetMMPolicy& aMMPolicy, const void* aFunc) {
     return TargetBytesPtr(aMMPolicy, aFunc);
   }
 
@@ -595,7 +439,7 @@ class TargetBytesPtr<MMPolicyInProcess> {
     return TargetBytesPtr(aOther, aOffsetFromOther);
   }
 
-  ReadOnlyTargetBytes<MMPolicyInProcess>* operator->() { return &mTargetBytes; }
+  ReadOnlyTargetBytes<TargetMMPolicy>* operator->() { return &mTargetBytes; }
 
   TargetBytesPtr(TargetBytesPtr&& aOther)
       : mTargetBytes(std::move(aOther.mTargetBytes)) {}
@@ -607,30 +451,13 @@ class TargetBytesPtr<MMPolicyInProcess> {
   TargetBytesPtr& operator=(TargetBytesPtr&&) = delete;
 
  private:
-  TargetBytesPtr(const MMPolicyInProcess& aMMPolicy, const void* aFunc)
+  TargetBytesPtr(const TargetMMPolicy& aMMPolicy, const void* aFunc)
       : mTargetBytes(aMMPolicy, aFunc) {}
 
   TargetBytesPtr(const TargetBytesPtr& aOther, const uint32_t aOffsetFromOther)
       : mTargetBytes(aOther.mTargetBytes, aOffsetFromOther) {}
 
-  ReadOnlyTargetBytes<MMPolicyInProcess> mTargetBytes;
-};
-
-template <>
-class TargetBytesPtr<MMPolicyOutOfProcess> {
- public:
-  typedef std::shared_ptr<ReadOnlyTargetBytes<MMPolicyOutOfProcess>> Type;
-
-  static Type Make(const MMPolicyOutOfProcess& aMMPolicy, const void* aFunc) {
-    return std::make_shared<ReadOnlyTargetBytes<MMPolicyOutOfProcess>>(
-        aMMPolicy, aFunc);
-  }
-
-  static Type CopyFromOffset(const Type& aOther,
-                             const uint32_t aOffsetFromOther) {
-    return std::make_shared<ReadOnlyTargetBytes<MMPolicyOutOfProcess>>(
-        *aOther, aOffsetFromOther);
-  }
+  ReadOnlyTargetBytes<TargetMMPolicy> mTargetBytes;
 };
 
 template <typename MMPolicy>
@@ -662,13 +489,16 @@ class MOZ_STACK_CLASS ReadOnlyTargetFunction final {
     return ReadOnlyTargetFunction(*this, mOffset + aOffset);
   }
 
-  uintptr_t GetBaseAddress() const { return mTargetBytes->GetBase(); }
+  uintptr_t GetBaseAddress() const {
+    return reinterpret_cast<uintptr_t>(mTargetBytes->Get());
+  }
 
-  uintptr_t GetAddress() const { return mTargetBytes->GetBase() + mOffset; }
+  uintptr_t GetAddress() const {
+    return reinterpret_cast<uintptr_t>(mTargetBytes->Get() + mOffset);
+  }
 
   uintptr_t AsEncodedPtr() const {
-    return EncodePtr(
-        reinterpret_cast<void*>(mTargetBytes->GetBase() + mOffset));
+    return EncodePtr(const_cast<uint8_t*>(mTargetBytes->Get() + mOffset));
   }
 
   static uintptr_t EncodePtr(void* aPtr) {
@@ -698,12 +528,12 @@ class MOZ_STACK_CLASS ReadOnlyTargetFunction final {
 
   uint8_t const& operator*() const {
     mTargetBytes->EnsureLimit(mOffset);
-    return *(mTargetBytes->GetLocalBytes() + mOffset);
+    return *(mTargetBytes->Get() + mOffset);
   }
 
   uint8_t const& operator[](uint32_t aIndex) const {
     mTargetBytes->EnsureLimit(mOffset + aIndex);
-    return *(mTargetBytes->GetLocalBytes() + mOffset + aIndex);
+    return *(mTargetBytes->Get() + mOffset + aIndex);
   }
 
   ReadOnlyTargetFunction& operator++() {
@@ -718,10 +548,10 @@ class MOZ_STACK_CLASS ReadOnlyTargetFunction final {
 
   uintptr_t ReadDisp32AsAbsolute() {
     mTargetBytes->EnsureLimit(mOffset + sizeof(int32_t));
-    int32_t disp = *reinterpret_cast<const int32_t*>(
-        mTargetBytes->GetLocalBytes() + mOffset);
-    uintptr_t result =
-        mTargetBytes->GetBase() + mOffset + sizeof(int32_t) + disp;
+    int32_t disp =
+        *reinterpret_cast<const int32_t*>(mTargetBytes->Get() + mOffset);
+    uintptr_t result = reinterpret_cast<uintptr_t>(
+        mTargetBytes->Get() + mOffset + sizeof(int32_t) + disp);
     mOffset += sizeof(int32_t);
     return result;
   }
@@ -731,7 +561,7 @@ class MOZ_STACK_CLASS ReadOnlyTargetFunction final {
   uint32_t GetOffset() const { return mOffset; }
 
   uintptr_t OffsetToAbsolute(const uint8_t aOffset) const {
-    return mTargetBytes->GetBase() + mOffset + aOffset;
+    return reinterpret_cast<uintptr_t>(mTargetBytes->Get() + mOffset + aOffset);
   }
 
   uintptr_t GetCurrentAbsolute() const { return OffsetToAbsolute(0); }
@@ -755,9 +585,10 @@ class MOZ_STACK_CLASS ReadOnlyTargetFunction final {
       return WritableTargetFunction<MMPolicy>(mTargetBytes->GetMMPolicy());
     }
 
-    WritableTargetFunction<MMPolicy> result(mTargetBytes->GetMMPolicy(),
-                                            mTargetBytes->GetBase() + aOffset,
-                                            effectiveLength);
+    WritableTargetFunction<MMPolicy> result(
+        mTargetBytes->GetMMPolicy(),
+        reinterpret_cast<uintptr_t>(mTargetBytes->Get() + aOffset),
+        effectiveLength);
 
     return std::move(result);
   }
@@ -787,7 +618,7 @@ class MOZ_STACK_CLASS ReadOnlyTargetFunction final {
     mTargetBytes->EnsureLimit(mOffset + sizeof(T));
     const typename RemoveCV<T>::Type result =
         *reinterpret_cast<const typename RemoveCV<T>::Type*>(
-            mTargetBytes->GetLocalBytes() + mOffset);
+            mTargetBytes->Get() + mOffset);
     return ChasePointerHelper<typename RemoveCV<T>::Type>::Result(
         mTargetBytes->GetMMPolicy(), result);
   }

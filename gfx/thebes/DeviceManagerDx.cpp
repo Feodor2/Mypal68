@@ -623,15 +623,11 @@ FeatureStatus DeviceManagerDx::CreateContentDevice() {
   if (!CreateDevice(adapter, type, flags, hr, device)) {
     gfxCriticalNote
         << "Recovered from crash while creating a D3D11 content device";
-    gfxWindowsPlatform::RecordContentDeviceFailure(
-        TelemetryDeviceCode::Content);
     return FeatureStatus::CrashedInHandler;
   }
 
   if (FAILED(hr) || !device) {
     gfxCriticalNote << "Failed to create a D3D11 content device: " << hexa(hr);
-    gfxWindowsPlatform::RecordContentDeviceFailure(
-        TelemetryDeviceCode::Content);
     return FeatureStatus::Failed;
   }
 

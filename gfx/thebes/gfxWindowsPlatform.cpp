@@ -1461,7 +1461,7 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
 /* static */
 void gfxWindowsPlatform::InitializeAdvancedLayersConfig() {
   // Only enable Advanced Layers if D3D11 succeeded.
-  if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
+  if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING) || !IsWin7OrLater()) {
     return;
   }
 
@@ -1493,21 +1493,6 @@ void gfxWindowsPlatform::InitializeAdvancedLayersConfig() {
   }
 }
 
-/* static */
-void gfxWindowsPlatform::RecordContentDeviceFailure(
-    TelemetryDeviceCode aDevice) {
-  // If the parent process fails to acquire a device, we record this
-  // normally as part of the environment. The exceptional case we're
-  // looking for here is when the parent process successfully acquires
-  // a device, but the content process fails to acquire the same device.
-  // This would not normally be displayed in about:support.
-  if (!XRE_IsContentProcess()) {
-    return;
-  }
-  Telemetry::Accumulate(Telemetry::GFX_CONTENT_FAILED_TO_ACQUIRE_DEVICE,
-                        uint32_t(aDevice));
-}
-
 // Supports lazy device initialization on Windows, so that WebRender can avoid
 // initializing GPU state and allocating swap chains for most non-GPU processes.
 void gfxWindowsPlatform::EnsureDevicesInitialized() {
@@ -1536,7 +1521,7 @@ void gfxWindowsPlatform::InitializeDevices() {
   }
 
   // If acceleration is disabled, we refuse to initialize anything.
-  if (!gfxConfig::IsEnabled(Feature::HW_COMPOSITING)) {
+  if (!gfxConfig::IsEnabled(Feature::HW_COMPOSITING) || !IsWin7OrLater()) {
     return;
   }
 
@@ -1560,11 +1545,6 @@ void gfxWindowsPlatform::InitializeDevices() {
   // First, initialize D3D11. If this succeeds we attempt to use Direct2D.
   InitializeD3D11();
   InitializeD2D();
-
-  if (!gfxConfig::IsEnabled(Feature::DIRECT2D) && XRE_IsContentProcess() &&
-      shouldUseD2D) {
-    RecordContentDeviceFailure(TelemetryDeviceCode::D2D1);
-  }
 }
 
 void gfxWindowsPlatform::InitializeD3D11() {

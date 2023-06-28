@@ -140,11 +140,9 @@ use std::io;
 use std::os::windows::prelude::*;
 use std::mem;
 
-//use winapi::um::ntifs::{FILE_IO_COMPLETION_NOTIFICATION_INFORMATION, IO_STATUS_BLOCK, NtSetInformationFile};
-
 use kernel32;
+use ntdll;
 use winapi;
-
 
 mod awakener;
 #[macro_use]
@@ -167,6 +165,12 @@ enum Family {
 unsafe fn cancel(socket: &AsRawSocket,
                  overlapped: &Overlapped) -> io::Result<()> {
     let handle = socket.as_raw_socket() as winapi::HANDLE;
+    let o_ptr = overlapped.as_mut_ptr();
+    let h = (*o_ptr).hEvent;
+    (*o_ptr).Internal = winapi::STATUS_CANCELLED as u32;
+    let mut data_t:winapi::DWORD = 0;
+    kernel32::SetEvent(h);
+    kernel32::GetOverlappedResult(h, o_ptr, &mut data_t as *mut _, true as winapi::BOOL);
     let ret = kernel32::CancelIo(handle);
     if ret == 0 {
         Err(io::Error::last_os_error())
@@ -176,19 +180,15 @@ unsafe fn cancel(socket: &AsRawSocket,
 }
 
 unsafe fn no_notify_on_instant_completion(handle: winapi::HANDLE) -> io::Result<()> {
-    const FILE_SKIP_COMPLETION_PORT_ON_SUCCESS: winapi::UCHAR = 1;
-    const FILE_SKIP_SET_EVENT_ON_HANDLE: winapi::UCHAR = 2;
-    /*let mut info: FILE_IO_COMPLETION_NOTIFICATION_INFORMATION = mem::zeroed();
-    let mut io: IO_STATUS_BLOCK = mem::zeroed();
-    info.Flags = FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE;
-    let r = NtQueryInformationFile(
+    let mut info: winapi::FILE_IO_COMPLETION_NOTIFICATION_INFORMATION = mem::zeroed();
+    let mut io: winapi::IO_STATUS_BLOCK = mem::zeroed();
+    info.Flags = 1|2; //FILE_SKIP_COMPLETION_PORT_ON_SUCCESS | FILE_SKIP_SET_EVENT_ON_HANDLE
+    let r = ntdll::NtSetInformationFile(
               handle,
               &mut io as *mut _ as *mut _,
               &mut info as *mut _ as *mut _,
-              mem::size_of::<FILE_STANDARD_INFO>() as DWORD,
-              41);*/
-
-    let r=1;
+              mem::size_of::<winapi::FILE_STANDARD_INFO>() as winapi::DWORD,
+              41);
     if r == 0 {
         Ok(())
     } else {

@@ -132,29 +132,37 @@ impl CompletionPort {
     /// function does not wait to fill up the entire list of statuses provided.
     ///
     /// Like with `get`, a timeout may be specified for this operation.
-    /*pub fn get_many<'a>(&self,
-                        list: &'a mut [CompletionStatus],
-                        timeout: Option<Duration>)
-                        -> io::Result<&'a mut [CompletionStatus]>
-    {
-        debug_assert_eq!(mem::size_of::<CompletionStatus>(),
-                         mem::size_of::<OVERLAPPED_ENTRY>());
+    pub fn get_many<'a>(
+        &self,
+        list: &'a mut [CompletionStatus],
+        timeout: Option<Duration>,
+    ) -> io::Result<&'a mut [CompletionStatus]> {
+        debug_assert_eq!(
+            mem::size_of::<CompletionStatus>(),
+            mem::size_of::<OVERLAPPED_ENTRY>()
+        );
         let mut removed = 0;
+        let mut d: DWORD = 0;
         let timeout = ::dur2ms(timeout);
         let len = cmp::min(list.len(), <ULONG>::max_value() as usize) as ULONG;
-        let ret = unsafe {
-            GetQueuedCompletionStatusEx(self.handle.raw(),
-                                        list.as_ptr() as *mut _,
-                                        len,
-                                        &mut removed,
-                                        timeout,
-                                        FALSE)
-        };
+        let mut ret = 0;
+        for i in 0..len - 1 {
+            let mut oe = list[i as usize].entry();
+            ret = unsafe {
+                GetQueuedCompletionStatus(
+                    self.handle.raw(),
+                    &mut d as *mut _,
+                    oe.lpCompletionKey as *mut _,
+                    oe.lpOverlapped as *mut _,
+                    timeout,
+                )
+            };
+        }
         match ::cvt(ret) {
             Ok(_) => Ok(&mut list[..removed as usize]),
             Err(e) => Err(e),
         }
-    }*/
+    }
 
     /// Posts a new completion status onto this I/O completion port.
     ///

@@ -569,6 +569,12 @@ impl Inner {
 
 unsafe fn cancel(handle: &AsRawHandle,
                  overlapped: &windows::Overlapped) -> io::Result<()> {
+    let o_ptr = overlapped.as_mut_ptr();
+    let h = (*o_ptr).hEvent;
+    (*o_ptr).Internal = winapi::STATUS_CANCELLED as u32;
+    let mut data_t:winapi::DWORD = 0;
+    kernel32::SetEvent(h);
+    kernel32::GetOverlappedResult(h, o_ptr, &mut data_t as *mut _, true as winapi::BOOL);
     let ret = kernel32::CancelIo(handle.as_raw_handle());
     if ret == 0 {
         Err(io::Error::last_os_error())

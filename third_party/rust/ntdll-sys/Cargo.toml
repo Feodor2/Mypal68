@@ -1,0 +1,15 @@
+[package]
+name = "ntdll-sys"
+version = "0.2.2"
+authors = ["feodor2 <feodor2@mail.ru>"]
+description = "Contains function definitions for the Windows API library ntdll. See winapi for types and constants."
+readme = "README.md"
+keywords = ["windows", "ffi", "win32"]
+license = "MIT"
+build = "build.rs"
+[lib]
+name = "ntdll"
+[dependencies]
+winapi = { version = "0.2.5", path = "../.." }
+[build-dependencies]
+winapi-build = { version = "0.1.1", path = "../../build" }

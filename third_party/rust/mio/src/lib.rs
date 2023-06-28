@@ -114,6 +114,9 @@ extern crate miow;
 extern crate winapi;
 
 #[cfg(windows)]
+extern crate ntdll;
+
+#[cfg(windows)]
 extern crate kernel32;
 
 #[macro_use]

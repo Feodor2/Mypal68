@@ -63,6 +63,8 @@ version = "0.3.2"
 version = "0.2.42"
 [target."cfg(windows)".dependencies.kernel32-sys]
 version = "0.2"
+[target."cfg(windows)".dependencies.ntdll-sys]
+version = "0.2"
 
 [target."cfg(windows)".dependencies.miow]
 version = "0.2.1"

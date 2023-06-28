@@ -455,8 +455,6 @@ void gfxWindowsPlatform::InitAcceleration() {
   // CanUseHardwareVideoDecoding depends on DeviceManagerDx state,
   // so update the cached value now.
   UpdateCanUseHardwareVideoDecoding();
-
-  RecordStartupTelemetry();
 }
 
 void gfxWindowsPlatform::InitWebRenderConfig() {
@@ -1508,25 +1506,6 @@ void gfxWindowsPlatform::RecordContentDeviceFailure(
   }
   Telemetry::Accumulate(Telemetry::GFX_CONTENT_FAILED_TO_ACQUIRE_DEVICE,
                         uint32_t(aDevice));
-}
-
-void gfxWindowsPlatform::RecordStartupTelemetry() {
-  if (!XRE_IsParentProcess()) {
-    return;
-  }
-
-  DeviceManagerDx* dx = DeviceManagerDx::Get();
-  nsTArray<DXGI_OUTPUT_DESC1> outputs = dx->EnumerateOutputs();
-
-  uint32_t allSupportedColorSpaces = 0;
-  for (auto& output : outputs) {
-    uint32_t colorSpace = 1 << output.ColorSpace;
-    allSupportedColorSpaces |= colorSpace;
-  }
-
-  Telemetry::ScalarSet(
-      Telemetry::ScalarID::GFX_HDR_WINDOWS_DISPLAY_COLORSPACE_BITFIELD,
-      allSupportedColorSpaces);
 }
 
 // Supports lazy device initialization on Windows, so that WebRender can avoid

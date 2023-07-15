@@ -1649,7 +1649,7 @@ nsresult Navigator::GetUserAgent(nsPIDOMWindowInner* aWindow,
   NS_ENSURE_SUCCESS(rv, rv);
   prefService->GetBranch("general.useragent.override.",
                          getter_AddRefs(prefBranch));
-  if (prefBranch) {
+  if (prefBranch && aWindow) {
     nsCOMPtr<Document> doc = aWindow->GetDoc();
     if (doc) {
       nsIURI* uri = doc->GetDocumentURI();

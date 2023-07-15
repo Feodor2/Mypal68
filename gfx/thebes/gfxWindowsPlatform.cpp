@@ -1382,8 +1382,9 @@ void gfxWindowsPlatform::InitializeD3D9Config() {
     return;
   }
 
-  d3d9.SetDefaultFromPref(StaticPrefs::GetPrefName_layers_allow_d3d9_fallback(), true,
-                          StaticPrefs::GetPrefDefault_layers_allow_d3d9_fallback());
+  d3d9.SetDefaultFromPref(
+      StaticPrefs::GetPrefName_layers_allow_d3d9_fallback(), true,
+      StaticPrefs::GetPrefDefault_layers_allow_d3d9_fallback());
 
   if (!d3d9.IsEnabled() && StaticPrefs::layers_prefer_d3d9_AtStartup()) {
     d3d9.UserEnable("Direct3D9 enabled via layers.prefer-d3d9");
@@ -1461,15 +1462,15 @@ void gfxWindowsPlatform::InitializeD3D11Config() {
 /* static */
 void gfxWindowsPlatform::InitializeAdvancedLayersConfig() {
   // Only enable Advanced Layers if D3D11 succeeded.
-  if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING) || !IsWin7OrLater()) {
+  if (!gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING) ||
+      !IsVistaSP1OrLater()) {
     return;
   }
 
   FeatureState& al = gfxConfig::GetFeature(Feature::ADVANCED_LAYERS);
-  al.SetDefaultFromPref(
-      StaticPrefs::GetPrefName_layers_mlgpu_enabled(),
-      true /* aIsEnablePref */,
-      StaticPrefs::GetPrefDefault_layers_mlgpu_enabled());
+  al.SetDefaultFromPref(StaticPrefs::GetPrefName_layers_mlgpu_enabled(),
+                        true /* aIsEnablePref */,
+                        StaticPrefs::GetPrefDefault_layers_mlgpu_enabled());
 
   // Windows 7 has an extra pref since it uses totally different buffer paths
   // that haven't been performance tested yet.
@@ -1521,7 +1522,7 @@ void gfxWindowsPlatform::InitializeDevices() {
   }
 
   // If acceleration is disabled, we refuse to initialize anything.
-  if (!gfxConfig::IsEnabled(Feature::HW_COMPOSITING) || !IsWin7OrLater()) {
+  if (!gfxConfig::IsEnabled(Feature::HW_COMPOSITING) || !IsVistaSP1OrLater()) {
     return;
   }
 
@@ -1539,8 +1540,6 @@ void gfxWindowsPlatform::InitializeDevices() {
         "Harware acceleration crashed during startup in a previous session");
     return;
   }
-
-  bool shouldUseD2D = gfxConfig::IsEnabled(Feature::DIRECT2D);
 
   // First, initialize D3D11. If this succeeds we attempt to use Direct2D.
   InitializeD3D11();
@@ -1593,9 +1592,9 @@ void gfxWindowsPlatform::InitializeD2DConfig() {
     return;
   }
 
-  d2d1.SetDefaultFromPref(
-      StaticPrefs::GetPrefName_gfx_direct2d_disabled(), false,
-      StaticPrefs::GetPrefDefault_gfx_direct2d_disabled());
+  d2d1.SetDefaultFromPref(StaticPrefs::GetPrefName_gfx_direct2d_disabled(),
+                          false,
+                          StaticPrefs::GetPrefDefault_gfx_direct2d_disabled());
 
   nsCString message;
   nsCString failureId;
@@ -1716,7 +1715,6 @@ bool gfxWindowsPlatform::InitGPUProcessSupport() {
     gpuProc.Disable(FeatureStatus::Unavailable,
                     "Not using GPU Process since D3D11 is unavailable",
                     NS_LITERAL_CSTRING("FEATURE_FAILURE_NO_D3D11"));
-
   }
   // If we're still enabled at this point, the user set the force-enabled pref.
   return gpuProc.IsEnabled();
@@ -2013,17 +2011,16 @@ void gfxWindowsPlatform::GetAcceleratedCompositorBackends(
     aBackends.AppendElement(LayersBackend::LAYERS_OPENGL);
   }
 
-  if (gfxConfig::IsEnabled(Feature::D3D9_COMPOSITING) &&
-      StaticPrefs::layers_prefer_d3d9_AtStartup()) {
-    aBackends.AppendElement(LayersBackend::LAYERS_D3D9);
-  }
+  if (IsVistaSP1OrLater()) {
+    if (gfxConfig::IsEnabled(Feature::D3D9_COMPOSITING) &&
+        StaticPrefs::layers_prefer_d3d9_AtStartup()) {
+      aBackends.AppendElement(LayersBackend::LAYERS_D3D9);
+    }
 
-  if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
-    aBackends.AppendElement(LayersBackend::LAYERS_D3D11);
-  }
-
-  if (gfxConfig::IsEnabled(Feature::D3D9_COMPOSITING) &&
-      !StaticPrefs::layers_prefer_d3d9_AtStartup()) {
+    if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
+      aBackends.AppendElement(LayersBackend::LAYERS_D3D11);
+    }
+  } else if (gfxConfig::IsEnabled(Feature::D3D9_COMPOSITING)) {
     aBackends.AppendElement(LayersBackend::LAYERS_D3D9);
   }
 }

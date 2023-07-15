@@ -16,7 +16,7 @@ Some say that it runs fine on sp2 but it is no accurate data what to do.
 Don't post a screenshot of the blue screen, as the screen isn't useful for troubleshooting.
 BSOD happens only on winxp and only when multiprocess enabled, but not for all. Many still use the browser with multiprocess and without BSOD,
 Furthermore there is a certain setting that induces BSOD **layers.omtp.enabled** this stand for off-main-thread painting
-and invented for perfomance. For more dara look #3, and please do not make new reports.
+and invented for perfomance. For more data look [#3](https://github.com/Feodor2/Mypal68/issues/3), and please do not make new duplicate reports.
 
 
 **IF YOU GOT A CRASH BUT WITHOUT BLUE SCREEN**

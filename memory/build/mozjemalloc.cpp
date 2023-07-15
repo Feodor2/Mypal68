@@ -547,7 +547,7 @@ static bool malloc_initialized;
 static Atomic<bool, SequentiallyConsistent> malloc_initialized;
 #endif
 
-//static StaticMutex gInitLock = {STATIC_MUTEX_INIT};
+static StaticMutex gInitLock;
 
 // ***************************************************************************
 // Statistics data structures.
@@ -3706,7 +3706,7 @@ static bool malloc_init_hard() {
   const char* opts;
   long result;
 
-  //AutoLock<StaticMutex> lock(gInitLock);
+  AutoLock<StaticMutex> lock(gInitLock);
 
   if (malloc_initialized) {
     // Another thread initialized the allocator before this one

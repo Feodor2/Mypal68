@@ -85,13 +85,17 @@ struct Mutex {
 // initialization, which SRWLock provides.
 // Ideally, we'd use the same type of locks everywhere, but SRWLocks
 // everywhere incur a performance penalty. See bug 1418389.
-/*#if defined(XP_WIN)
+#if defined(XP_WIN)
 struct StaticMutex {
   CRITICAL_SECTION mMutex;
 
-  inline void Lock() { EnterCriticalSection(&mMutex); }
+  inline void Lock() {
+  InitializeCriticalSectionAndSpinCount(&mMutex, 5000);
+  EnterCriticalSection(&mMutex); }
 
-  inline void Unlock() { LeaveCriticalSection(&mMutex); }
+  inline void Unlock() {
+  LeaveCriticalSection(&mMutex);
+  DeleteCriticalSection(&mMutex); }
 };
 
 #else
@@ -105,7 +109,7 @@ typedef Mutex StaticMutex;
 #    define STATIC_MUTEX_INIT PTHREAD_MUTEX_INITIALIZER
 #  endif
 
-#endif*/
+#endif
 
 template <typename T>
 struct MOZ_RAII AutoLock {

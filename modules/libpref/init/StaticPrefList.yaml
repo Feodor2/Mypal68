@@ -4130,7 +4130,7 @@
 
 - name: layers.omtp.release-capture-on-main-thread
   type: RelaxedAtomicBool
-  value: false
+  value: true
   mirror: always
 
 - name: layers.orientation.sync.timeout

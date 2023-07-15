@@ -1269,6 +1269,7 @@ class HTMLMediaElement::AudioChannelAgentCallback final
     }
 
     mIsOwnerAudible = newAudibleState;
+    if (!mAudioChannelAgent) return;
     if (IsPlayingStarted()) {
       mAudioChannelAgent->NotifyStartedAudible(mIsOwnerAudible, aReason);
     }

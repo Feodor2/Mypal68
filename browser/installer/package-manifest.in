@@ -198,7 +198,6 @@
 @RESPATH@/chrome/remote.manifest
 @RESPATH@/components/command-line-handler.js
 @RESPATH@/components/RemoteAgent.manifest
-@RESPATH@/defaults/pref/remote.js
 #endif
 
 ; Marionette remote control protocol
@@ -207,7 +206,6 @@
 @RESPATH@/chrome/marionette.manifest
 @RESPATH@/components/marionette.manifest
 @RESPATH@/components/marionette.js
-@RESPATH@/defaults/pref/marionette.js
 #endif
 
 #if defined(ENABLE_TESTS) && defined(MOZ_DEBUG)
@@ -305,9 +303,6 @@
 ; Technically this is an app pref file, but we are keeping it in the original
 ; gre location for now.
 @RESPATH@/defaults/pref/channel-prefs.js
-
-; Services (gre) prefs
-@RESPATH@/defaults/pref/services-sync.js
 
 ; [Layout Engine Resources]
 ; Style Sheets, Graphics and other Resources used by the layout engine.

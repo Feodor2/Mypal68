@@ -186,6 +186,8 @@ class APZScrollHandoffTester : public APZCTreeManagerTester {
 // wait for content to send a prevent-default message, overscroll is still
 // handed off correctly when the block is processed.
 TEST_F(APZScrollHandoffTester, DeferredInputEventProcessing) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
+
   // Set up the APZC tree.
   CreateScrollHandoffLayerTree1();
 
@@ -214,6 +216,8 @@ TEST_F(APZScrollHandoffTester, DeferredInputEventProcessing) {
 // the original layer structure while overscroll handoff for the second block
 // follows the new layer structure.
 TEST_F(APZScrollHandoffTester, LayerStructureChangesWhileEventsArePending) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
+
   // Set up an initial APZC tree.
   CreateScrollHandoffLayerTree1();
 
@@ -474,6 +478,7 @@ TEST_F(APZScrollHandoffTester, PartialFlingHandoff) {
 // Here we test that if two flings are happening simultaneously, overscroll
 // is handed off correctly for each.
 TEST_F(APZScrollHandoffTester, SimultaneousFlings) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
   SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
 
   // Set up an initial APZC tree.
@@ -506,6 +511,8 @@ TEST_F(APZScrollHandoffTester, SimultaneousFlings) {
 }
 
 TEST_F(APZScrollHandoffTester, Scrollgrab) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
+
   // Set up the layer tree
   CreateScrollgrabLayerTree();
 
@@ -521,6 +528,7 @@ TEST_F(APZScrollHandoffTester, Scrollgrab) {
 }
 
 TEST_F(APZScrollHandoffTester, ScrollgrabFling) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
   SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
 
   // Set up the layer tree
@@ -537,6 +545,7 @@ TEST_F(APZScrollHandoffTester, ScrollgrabFling) {
 }
 
 TEST_F(APZScrollHandoffTester, ScrollgrabFlingAcceleration1) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
   SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
   SCOPED_GFX_VAR(UseWebRender, bool, false);
   CreateScrollgrabLayerTree(true /* make parent scrollable */);
@@ -544,6 +553,7 @@ TEST_F(APZScrollHandoffTester, ScrollgrabFlingAcceleration1) {
 }
 
 TEST_F(APZScrollHandoffTester, ScrollgrabFlingAcceleration2) {
+  SCOPED_GFX_PREF_BOOL("apz.allow_immediate_handoff", true);
   SCOPED_GFX_PREF_FLOAT("apz.fling_min_velocity_threshold", 0.0f);
   SCOPED_GFX_VAR(UseWebRender, bool, false);
   CreateScrollgrabLayerTree(false /* do not make parent scrollable */);

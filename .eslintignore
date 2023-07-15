@@ -252,7 +252,6 @@ modules/libpref/test/unit/*data/**
 python/**
 
 # Remote agent
-remote/pref/remote.js
 remote/Protocol.jsm
 remote/server/HTTPD.jsm
 remote/server/Packet.jsm
@@ -260,9 +259,6 @@ remote/server/Socket.jsm
 remote/server/Stream.jsm
 remote/test/browser/chrome-remote-interface.js
 remote/test/demo.js
-
-# security/ exclusions (pref files).
-security/manager/ssl/security-prefs.js
 
 # NSS / taskcluster only.
 security/nss/**
@@ -278,7 +274,6 @@ services/fxaccounts/FxAccountsPairingChannel.js
 
 # Uses `#filter substitution`
 services/sync/modules/constants.js
-services/sync/services-sync.js
 
 # Servo is imported.
 servo/**

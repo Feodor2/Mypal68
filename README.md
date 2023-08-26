@@ -11,8 +11,6 @@ This browser does not run well on winxp SP2 and lower. If you do not want to ins
 If you are on SP2 and lower, there is no need to post a screenshot from blue_screen_view. And i suggest to apply postready updates of 2019.
 Some say that it runs fine on sp2 but it is no accurate data what to do.
 
-**Since the september i will decline the gethub becuase of the force authentication - for new stuff look the MSFN**
-
 **IF YOU GOT A BLUE SCREEN**
 
 Don't post a screenshot of the blue screen, as the screen isn't useful for troubleshooting.

@@ -2439,10 +2439,12 @@
   mirror: always
 
 # Is support for the Web GPU API enabled?
+#ifdef MOZ_WEBGPU
 - name: dom.webgpu.enable
   type: RelaxedAtomicBool
   value: false
   mirror: always
+#endif
 
 # Is support for HTMLInputElement.webkitEntries enabled?
 - name: dom.webkitBlink.filesystem.enabled

@@ -36,7 +36,6 @@ DIRS += [
     'browser-element',
     'cache',
     'canvas',
-    'webgpu',
     'chrome-webidl',
     'clients',
     'commandhandler',
@@ -109,6 +108,9 @@ DIRS += [
 
 if CONFIG['OS_ARCH'] == 'WINNT':
     DIRS += ['plugins/ipc/hangui']
+
+if CONFIG['MOZ_WEBGPU']:
+    DIRS += ['webgpu']
 
 DIRS += ['presentation']
 

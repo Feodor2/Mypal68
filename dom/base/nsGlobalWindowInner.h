@@ -44,7 +44,9 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/webgpu/InstanceProvider.h"
+#ifdef MOZ_WEBGPU
+#  include "mozilla/webgpu/InstanceProvider.h"
+#endif
 #include "nsWrapperCacheInlines.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/EventTarget.h"
@@ -178,8 +180,11 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
                                   public nsSupportsWeakReference,
                                   public nsIInterfaceRequestor,
                                   public PRCListStr,
-                                  public nsAPostRefreshObserver,
-                                  public mozilla::webgpu::InstanceProvider {
+                                  public nsAPostRefreshObserver
+#ifdef MOZ_WEBGPU
+                                  , public mozilla::webgpu::InstanceProvider
+#endif
+                                                                           {
  public:
   typedef mozilla::dom::BrowsingContext RemoteProxy;
 

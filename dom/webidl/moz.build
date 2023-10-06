@@ -349,6 +349,7 @@ GENERATED_WEBIDL_FILES = [
 ]
 
 PREPROCESSED_WEBIDL_FILES = [
+    'Navigator.webidl',
     'Node.webidl',
     'Window.webidl',
 ]
@@ -679,7 +680,6 @@ WEBIDL_FILES = [
     'MutationObserver.webidl',
     'NamedNodeMap.webidl',
     'NativeOSFileInternals.webidl',
-    'Navigator.webidl',
     'NetDashboard.webidl',
     'NetworkInformation.webidl',
     'NetworkOptions.webidl',
@@ -926,7 +926,6 @@ WEBIDL_FILES = [
     'WebComponents.webidl',
     'WebGL2RenderingContext.webidl',
     'WebGLRenderingContext.webidl',
-    'WebGPU.webidl',
     'WebSocket.webidl',
     'WheelEvent.webidl',
     'WidevineCDMManifest.webidl',
@@ -954,6 +953,10 @@ WEBIDL_FILES = [
     'XULElement.webidl',
     'XULPopupElement.webidl',
 ]
+if CONFIG['MOZ_WEBGPU']:
+    WEBIDL_FILES += [
+        'WebGPU.webidl',
+    ]
 
 if CONFIG['MOZ_WEBRTC']:
     WEBIDL_FILES += [
@@ -1043,7 +1046,6 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     'GamepadAxisMoveEvent.webidl',
     'GamepadButtonEvent.webidl',
     'GamepadEvent.webidl',
-    'GPUUncapturedErrorEvent.webidl',
     'HashChangeEvent.webidl',
     'HiddenPluginEvent.webidl',
     'ImageCaptureErrorEvent.webidl',
@@ -1075,6 +1077,11 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     'UserProximityEvent.webidl',
     'WebGLContextEvent.webidl',
 ]
+
+if CONFIG['MOZ_WEBGPU']:
+    GENERATED_EVENTS_WEBIDL_FILES += [
+        'GPUUncapturedErrorEvent.webidl',
+    ]
 
 if CONFIG['MOZ_WEBRTC']:
     GENERATED_EVENTS_WEBIDL_FILES += [

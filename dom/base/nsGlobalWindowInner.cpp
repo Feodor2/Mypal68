@@ -820,7 +820,9 @@ class PromiseDocumentFlushedResolver final {
 
 nsGlobalWindowInner::nsGlobalWindowInner(nsGlobalWindowOuter* aOuterWindow)
     : nsPIDOMWindowInner(aOuterWindow),
+#ifdef MOZ_WEBGPU
       mozilla::webgpu::InstanceProvider(this),
+#endif
       mWasOffline(false),
       mHasHadSlowScript(false),
       mIsChrome(false),
@@ -1380,7 +1382,9 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindowInner)
     NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDocumentFlushedResolvers[i]->mCallback);
   }
 
+#ifdef MOZ_WEBGPU
   static_cast<mozilla::webgpu::InstanceProvider*>(tmp)->CcTraverse(cb);
+#endif
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
@@ -1496,7 +1500,9 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
   }
   tmp->mDocumentFlushedResolvers.Clear();
 
+#ifdef MOZ_WEBGPU
   static_cast<mozilla::webgpu::InstanceProvider*>(tmp)->CcUnlink();
+#endif
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END

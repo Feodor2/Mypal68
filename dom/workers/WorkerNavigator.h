@@ -13,9 +13,11 @@
 #include "mozilla/dom/workerinternals/RuntimeService.h"
 
 namespace mozilla {
+#ifdef MOZ_WEBGPU
 namespace webgpu {
 class Instance;
 }  // namespace webgpu
+#endif
 namespace dom {
 class Promise;
 class StorageManager;
@@ -33,7 +35,9 @@ class WorkerNavigator final : public nsWrapperCache {
   RefPtr<StorageManager> mStorageManager;
   RefPtr<network::Connection> mConnection;
   RefPtr<dom::MediaCapabilities> mMediaCapabilities;
+#ifdef MOZ_WEBGPU
   RefPtr<webgpu::Instance> mWebGpu;
+#endif
   bool mOnline;
 
   WorkerNavigator(const NavigatorProperties& aProperties, bool aOnline);
@@ -95,7 +99,9 @@ class WorkerNavigator final : public nsWrapperCache {
 
   dom::MediaCapabilities* MediaCapabilities();
 
+#ifdef MOZ_WEBGPU
   webgpu::Instance* Gpu();
+#endif
 };
 
 }  // namespace dom

@@ -38,7 +38,9 @@ Navigator includes NavigatorStorageUtils;
 Navigator includes NavigatorConcurrentHardware;
 Navigator includes NavigatorStorage;
 Navigator includes NavigatorAutomationInformation;
+#ifdef MOZ_WEBGPU
 Navigator includes GPUProvider;
+#endif
 
 interface mixin NavigatorID {
   // WebKit/Blink/Trident/Presto support this (hardcoded "Mozilla").

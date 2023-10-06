@@ -24,7 +24,9 @@
 
 #include "mozilla/dom/Navigator.h"
 
+#ifdef MOZ_WEBGPU
 #include "mozilla/webgpu/Instance.h"
+#endif
 
 namespace mozilla {
 namespace dom {
@@ -32,7 +34,11 @@ namespace dom {
 using namespace workerinternals;
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(WorkerNavigator, mStorageManager,
-                                      mConnection, mMediaCapabilities, mWebGpu);
+                                      mConnection, mMediaCapabilities
+#ifdef MOZ_WEBGPU
+                                      , mWebGpu
+#endif
+                                      );
 
 NS_IMPL_CYCLE_COLLECTION_ROOT_NATIVE(WorkerNavigator, AddRef)
 NS_IMPL_CYCLE_COLLECTION_UNROOT_NATIVE(WorkerNavigator, Release)
@@ -209,6 +215,7 @@ dom::MediaCapabilities* WorkerNavigator::MediaCapabilities() {
   return mMediaCapabilities;
 }
 
+#ifdef MOZ_WEBGPU
 webgpu::Instance* WorkerNavigator::Gpu() {
   if (!mWebGpu) {
     WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
@@ -221,6 +228,7 @@ webgpu::Instance* WorkerNavigator::Gpu() {
   }
   return mWebGpu;
 }
+#endif
 
 }  // namespace dom
 }  // namespace mozilla

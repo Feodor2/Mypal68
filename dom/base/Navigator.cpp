@@ -95,7 +95,9 @@
 #include "mozilla/DetailedPromise.h"
 #include "mozilla/Unused.h"
 
-#include "mozilla/webgpu/Instance.h"
+#ifdef MOZ_WEBGPU
+#  include "mozilla/webgpu/Instance.h"
+#endif
 
 namespace mozilla {
 namespace dom {
@@ -149,7 +151,9 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mServiceWorkerContainer)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaCapabilities)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAddonManager)
+#ifdef MOZ_WEBGPU
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWebGpu)
+#endif
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mWindow)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaKeySystemAccessManager)
@@ -223,7 +227,9 @@ void Navigator::Invalidate() {
 
   mAddonManager = nullptr;
 
+#ifdef MOZ_WEBGPU
   mWebGpu = nullptr;
+#endif
 }
 
 void Navigator::GetUserAgent(nsAString& aUserAgent, CallerType aCallerType,
@@ -1838,12 +1844,14 @@ AddonManager* Navigator::GetMozAddonManager(ErrorResult& aRv) {
   return mAddonManager;
 }
 
+#ifdef MOZ_WEBGPU
 webgpu::Instance* Navigator::Gpu() {
   if (!mWebGpu) {
     mWebGpu = webgpu::Instance::Create(GetWindow()->AsGlobal());
   }
   return mWebGpu;
 }
+#endif
 
 /* static */
 bool Navigator::Webdriver() {

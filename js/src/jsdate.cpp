@@ -2758,16 +2758,19 @@ static bool FormatDate(JSContext* cx, double utcTime, FormatSpec format,
     }
   }
 
+  char gmt[10];
+  SprintfLiteral(gmt, "GMT%+.4d", offset);
+
   char buf[100];
   switch (format) {
     case FormatSpec::DateTime:
       /* Tue Oct 31 2000 09:41:40 GMT-0800 */
-      SprintfLiteral(buf, "%s %s %.2d %.4d %.2d:%.2d:%.2d GMT%+.4d",
+      SprintfLiteral(buf, "%s %s %.2d %.4d %.2d:%.2d:%.2d %s",
                      days[int(WeekDay(localTime))],
                      months[int(MonthFromTime(localTime))],
                      int(DateFromTime(localTime)), int(YearFromTime(localTime)),
                      int(HourFromTime(localTime)), int(MinFromTime(localTime)),
-                     int(SecFromTime(localTime)), offset);
+                     int(SecFromTime(localTime)), gmt);
       break;
     case FormatSpec::Date:
       /* Tue Oct 31 2000 */
@@ -2778,9 +2781,9 @@ static bool FormatDate(JSContext* cx, double utcTime, FormatSpec format,
       break;
     case FormatSpec::Time:
       /* 09:41:40 GMT-0800 */
-      SprintfLiteral(buf, "%.2d:%.2d:%.2d GMT%+.4d",
+      SprintfLiteral(buf, "%.2d:%.2d:%.2d %s",
                      int(HourFromTime(localTime)), int(MinFromTime(localTime)),
-                     int(SecFromTime(localTime)), offset);
+                     int(SecFromTime(localTime)), gmt);
       break;
   }
 
@@ -2792,15 +2795,21 @@ static bool FormatDate(JSContext* cx, double utcTime, FormatSpec format,
   // Append the time zone string if present.
   if (timeZoneComment && !timeZoneComment->empty()) {
     str = js::ConcatStrings<CanGC>(cx, str, timeZoneComment);
-    if (!str) {
-      return false;
-    }
+  } else {
+    SprintfLiteral(buf, " (%s)", gmt);
+    RootedString str2(cx, NewStringCopyZ<CanGC>(cx, buf));
+    str = js::ConcatStrings<CanGC>(cx, str, str2);
+  }
+
+  if (!str) {
+    return false;
   }
 
   rval.setString(str);
   return true;
 }
 
+#if !JS_HAS_INTL_API
 static bool ToLocaleFormatHelper(JSContext* cx, HandleObject obj,
                                  const char* format, MutableHandleValue rval) {
   double utcTime = obj->as<DateObject>().UTCTime().toNumber();
@@ -2908,6 +2917,7 @@ static bool date_toLocaleTimeString(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   return CallNonGenericMethod<IsDate, date_toLocaleTimeString_impl>(cx, args);
 }
+#endif /* !JS_HAS_INTL_API */
 
 /* ES5 15.9.5.4. */
 MOZ_ALWAYS_INLINE bool date_toTimeString_impl(JSContext* cx,
@@ -3046,9 +3056,15 @@ static const JSFunctionSpec date_methods[] = {
     JS_FN("setMilliseconds", date_setMilliseconds, 1, 0),
     JS_FN("setUTCMilliseconds", date_setUTCMilliseconds, 1, 0),
     JS_FN("toUTCString", date_toGMTString, 0, 0),
+#if JS_HAS_INTL_API
+    JS_SELF_HOSTED_FN(js_toLocaleString_str, "Date_toLocaleString", 0, 0),
+    JS_SELF_HOSTED_FN("toLocaleDateString", "Date_toLocaleDateString", 0, 0),
+    JS_SELF_HOSTED_FN("toLocaleTimeString", "Date_toLocaleTimeString", 0, 0),
+#else
     JS_FN(js_toLocaleString_str, date_toLocaleString, 0, 0),
     JS_FN("toLocaleDateString", date_toLocaleDateString, 0, 0),
     JS_FN("toLocaleTimeString", date_toLocaleTimeString, 0, 0),
+#endif
     JS_FN("toDateString", date_toDateString, 0, 0),
     JS_FN("toTimeString", date_toTimeString, 0, 0),
     JS_FN("toISOString", date_toISOString, 0, 0),

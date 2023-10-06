@@ -1689,20 +1689,6 @@ pref("browser.suppress_first_window_animation", true);
 pref("browser.chrome.errorReporter.infoURL",
      "data:text/plain,");
 
-// Normandy client preferences
-pref("app.normandy.api_url", "data:text/plain,");
-pref("app.normandy.dev_mode", false);
-pref("app.normandy.enabled", false);
-pref("app.normandy.first_run", false);
-pref("app.normandy.logging.level", 50); // Warn
-pref("app.normandy.run_interval_seconds", 21600); // 6 hours
-pref("app.normandy.shieldLearnMoreUrl", "data:text/plain,");
-#ifdef MOZ_DATA_REPORTING
-  pref("app.shield.optoutstudies.enabled", true);
-#else
-  pref("app.shield.optoutstudies.enabled", false);
-#endif
-
 // Multi-lingual preferences
 #ifdef RELEASE_OR_BETA
   pref("intl.multilingual.enabled", true);

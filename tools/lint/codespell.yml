@@ -35,7 +35,6 @@ codespell:
         - taskcluster/docs/
         - testing/mozbase/docs/
         - toolkit/components/extensions/docs/
-        - toolkit/components/normandy/docs/
         - toolkit/components/telemetry/docs/
         - toolkit/crashreporter/docs/
         - tools/lint/

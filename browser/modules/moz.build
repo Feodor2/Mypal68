@@ -151,7 +151,6 @@ EXTRA_JS_MODULES += [
     'PageActions.jsm',
     'PermissionUI.jsm',
     'PermissionUITelemetry.jsm',
-    'PingCentre.jsm',
     'ProcessHangMonitor.jsm',
     'ReaderParent.jsm',
     'RemotePrompt.jsm',

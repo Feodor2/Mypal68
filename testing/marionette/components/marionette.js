@@ -67,9 +67,6 @@ const ENV_PRESERVE_PREFS = "MOZ_MARIONETTE_PREF_STATE_ACROSS_RESTARTS";
 // such backward compatibility has to be ensured at least for the last three
 // releases.
 const RECOMMENDED_PREFS = new Map([
-  // Make sure Shield doesn't hit the network.
-  ["app.normandy.api_url", ""],
-
   // Disable automatic downloading of new releases.
   //
   // This should also be set in the profile prior to starting Firefox,

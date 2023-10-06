@@ -971,10 +971,6 @@ collection-health-report =
     .accesskey = r
 collection-health-report-link = Learn more
 
-collection-studies =
-    .label = Allow { -brand-short-name } to install and run studies
-collection-studies-link = View { -brand-short-name } studies
-
 addon-recommendations =
     .label = Allow { -brand-short-name } to make personalized extension recommendations
 addon-recommendations-link = Learn more

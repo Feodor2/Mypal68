@@ -1,6 +1,5 @@
 // Base preferences file used by performance harnesses
 /* globals user_pref */
-user_pref("app.normandy.api_url", "https://127.0.0.1/selfsupport-dummy/");
 user_pref("browser.EULA.override", true);
 user_pref("browser.addon-watch.interval", -1); // Deactivate add-on watching
 // Disable Bookmark backups by default.

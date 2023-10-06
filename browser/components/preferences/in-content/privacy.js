@@ -44,9 +44,6 @@ const CONTENT_BLOCKING_PREFS = [
   "privacy.trackingprotection.cryptomining.enabled",
 ];
 
-const PREF_OPT_OUT_STUDIES_ENABLED = "app.shield.optoutstudies.enabled";
-const PREF_NORMANDY_ENABLED = "app.normandy.enabled";
-
 const PREF_PASSWORD_GENERATION_AVAILABLE = "signon.generation.available";
 
 XPCOMUtils.defineLazyGetter(this, "AlertsServiceDND", function() {
@@ -157,15 +154,6 @@ Preferences.addAll([
   },
   { id: "browser.safebrowsing.downloads.remote.block_uncommon", type: "bool" },
 ]);
-
-// Study opt out
-if (AppConstants.MOZ_DATA_REPORTING) {
-  Preferences.addAll([
-    // Preference instances for prefs that we need to monitor while the page is open.
-    { id: PREF_OPT_OUT_STUDIES_ENABLED, type: "bool" },
-    { id: PREF_UPLOAD_ENABLED, type: "bool" },
-  ]);
-}
 
 // Data Choices tab
 if (AppConstants.MOZ_CRASHREPORTER) {
@@ -584,7 +572,6 @@ var gPrivacyPane = {
         "command",
         gPrivacyPane.updateSubmitHealthReport
       );
-      this.initOptOutStudyCheckbox();
     }
     this._initA11yState();
     let signonBundle = document.getElementById("signonBundle");
@@ -2102,38 +2089,6 @@ var gPrivacyPane = {
   updateSubmitHealthReport() {
     let checkbox = document.getElementById("submitHealthReportBox");
     Services.prefs.setBoolPref(PREF_UPLOAD_ENABLED, checkbox.checked);
-  },
-
-  /**
-   * Initialize the opt-out-study preference checkbox into about:preferences and
-   * handles events coming from the UI for it.
-   */
-  initOptOutStudyCheckbox(doc) {
-    const allowedByPolicy = Services.policies.isAllowed("Shield");
-
-    // The checkbox should be disabled if any of the below are true. This
-    // prevents the user from changing the value in the box.
-    //
-    // * the policy forbids shield
-    // * the Shield Study preference is locked
-    // * the FHR pref is false
-    //
-    // The checkbox should match the value of the preference only if all of
-    // these are true. Otherwise, the checkbox should remain unchecked. This
-    // is because in these situations, Shield studies are always disabled, and
-    // so showing a checkbox would be confusing.
-    //
-    // * the policy allows Shield
-    // * the FHR pref is true
-    // * Normandy is enabled
-    dataCollectionCheckboxHandler({
-      checkbox: document.getElementById("optOutStudiesEnabled"),
-      matchPref: () =>
-        allowedByPolicy &&
-        Services.prefs.getBoolPref(PREF_NORMANDY_ENABLED, false),
-      isDisabled: () => !allowedByPolicy,
-      pref: PREF_OPT_OUT_STUDIES_ENABLED,
-    });
   },
 
   observe(aSubject, aTopic, aData) {

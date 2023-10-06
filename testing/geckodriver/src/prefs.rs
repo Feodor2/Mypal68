@@ -14,9 +14,6 @@ use mozprofile::preferences::Pref;
 // before you make any changes to this file.
 lazy_static! {
     pub static ref DEFAULT: Vec<(&'static str, Pref)> = vec![
-        // Make sure Shield doesn't hit the network.
-        ("app.normandy.api_url", Pref::new("")),
-
         // Disable automatic downloading of new releases
         ("app.update.auto", Pref::new(false)),
 

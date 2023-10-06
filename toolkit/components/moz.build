@@ -33,7 +33,6 @@ DIRS += [
     'downloads',
     'enterprisepolicies',
     'extensions',
-    'featuregates',
     'filewatcher',
     'finalizationwitness',
     'find',
@@ -110,9 +109,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] != 'android':
     XPCOM_MANIFESTS += [
         'components.conf',
     ]
-
-if CONFIG['MOZ_BUILD_APP'] == 'browser':
-    DIRS += ['normandy']
 
 # This is only packaged for browser since corrupt JAR and XPI files tend to be a desktop-OS problem.
 if CONFIG['MOZ_BUILD_APP'] == 'browser':

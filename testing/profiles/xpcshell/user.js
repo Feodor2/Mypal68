@@ -1,7 +1,6 @@
 // Base preferences file used by the xpcshell harness
 /* globals user_pref */
 /* eslint quotes: 0 */
-user_pref("app.normandy.api_url", "https://%(server)s/selfsupport-dummy/");
 user_pref("browser.safebrowsing.downloads.remote.url", "https://%(server)s/safebrowsing-dummy");
 user_pref("browser.search.geoip.url", "https://%(server)s/geoip-dummy");
 user_pref("extensions.systemAddon.update.url", "http://%(server)s/dummy-system-addons.xml");

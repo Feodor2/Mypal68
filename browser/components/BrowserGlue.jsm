@@ -284,16 +284,6 @@ let LEGACY_ACTORS = {
     },
   },
 
-  ShieldFrame: {
-    child: {
-      module: "resource://normandy-content/ShieldFrameChild.jsm",
-      events: {
-        ShieldPageEvent: { wantUntrusted: true },
-      },
-      matches: ["about:studies"],
-    },
-  },
-
   UITour: {
     child: {
       module: "resource:///modules/UITourChild.jsm",
@@ -452,14 +442,12 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   L10nRegistry: "resource://gre/modules/L10nRegistry.jsm",
   LiveBookmarkMigrator: "resource:///modules/LiveBookmarkMigrator.jsm",
   NewTabUtils: "resource://gre/modules/NewTabUtils.jsm",
-  Normandy: "resource://normandy/Normandy.jsm",
   ObjectUtils: "resource://gre/modules/ObjectUtils.jsm",
   OS: "resource://gre/modules/osfile.jsm",
   PageActions: "resource:///modules/PageActions.jsm",
   PageThumbs: "resource://gre/modules/PageThumbs.jsm",
   PdfJs: "resource://pdf.js/PdfJs.jsm",
   PermissionUI: "resource:///modules/PermissionUI.jsm",
-  PingCentre: "resource:///modules/PingCentre.jsm",
   PlacesBackups: "resource://gre/modules/PlacesBackups.jsm",
   PlacesUtils: "resource://gre/modules/PlacesUtils.jsm",
   PluralForm: "resource://gre/modules/PluralForm.jsm",
@@ -744,65 +732,6 @@ BrowserGlue.prototype = {
     Weave.Service.scheduler.delayedAutoConnect(delay);
   },
 
-  /**
-   * Lazily initialize PingCentre
-   */
-  get pingCentre() {
-    const MAIN_TOPIC_ID = "main";
-    Object.defineProperty(this, "pingCentre", {
-      value: new PingCentre({ topic: MAIN_TOPIC_ID }),
-    });
-    return this.pingCentre;
-  },
-
-  _sendMainPingCentrePing() {
-    let newTabSetting;
-    let homePageSetting;
-
-    // Check whether or not about:home and about:newtab have been overridden at this point.
-    // Different settings are encoded as follows:
-    //   * Value 0: default
-    //   * Value 1: about:blank
-    //   * Value 2: web extension
-    //   * Value 3: other custom URL(s)
-    // Settings for about:newtab and about:home are combined in a bitwise manner.
-
-    // Note that a user could use about:blank and web extension at the same time
-    // to overwrite the about:newtab, but the web extension takes priority, so the
-    // ordering matters in the following check.
-    if (
-      Services.prefs.getBoolPref("browser.newtabpage.enabled") &&
-      !aboutNewTabService.overridden
-    ) {
-      newTabSetting = 0;
-    } else if (aboutNewTabService.newTabURL.startsWith("moz-extension://")) {
-      newTabSetting = 2;
-    } else if (!Services.prefs.getBoolPref("browser.newtabpage.enabled")) {
-      newTabSetting = 1;
-    } else {
-      newTabSetting = 3;
-    }
-
-    const homePageURL = HomePage.get();
-    if (homePageURL === "about:home") {
-      homePageSetting = 0;
-    } else if (homePageURL === "about:blank") {
-      homePageSetting = 1;
-    } else if (homePageURL.startsWith("moz-extension://")) {
-      homePageSetting = 2;
-    } else {
-      homePageSetting = 3;
-    }
-
-    const payload = {
-      event: "AS_ENABLED",
-      value: newTabSetting | (homePageSetting << 2),
-    };
-    const ACTIVITY_STREAM_ID = "activity-stream";
-    const options = { filter: ACTIVITY_STREAM_ID };
-    this.pingCentre.sendPing(payload, options);
-  },
-
   // nsIObserver implementation
   observe: async function BG_observe(subject, topic, data) {
     switch (topic) {
@@ -999,10 +928,6 @@ BrowserGlue.prototype = {
         // shim for privileged api access.
         PdfJs.init(true);
         break;
-      case "shield-init-complete":
-        this._shieldInitComplete = true;
-        this._sendMainPingCentrePing();
-        break;
     }
   },
 
@@ -1039,7 +964,6 @@ BrowserGlue.prototype = {
     os.addObserver(this, "xpi-signature-changed");
     os.addObserver(this, "sync-ui-state:update");
     os.addObserver(this, "handlersvc-store-initialized");
-    os.addObserver(this, "shield-init-complete");
 
     ActorManagerParent.addActors(ACTORS);
     ActorManagerParent.addLegacyActors(LEGACY_ACTORS);
@@ -1103,7 +1027,6 @@ BrowserGlue.prototype = {
     os.removeObserver(this, "flash-plugin-hang");
     os.removeObserver(this, "xpi-signature-changed");
     os.removeObserver(this, "sync-ui-state:update");
-    os.removeObserver(this, "shield-init-complete");
 
     Services.prefs.removeObserver(
       "permissions.eventTelemetry.enabled",
@@ -1192,8 +1115,6 @@ BrowserGlue.prototype = {
       "1.0",
       "resource:///modules/themes/dark/"
     );
-
-    Normandy.init();
 
     Services.obs.notifyObservers(null, "browser-ui-startup-complete");
   },
@@ -1801,10 +1722,6 @@ BrowserGlue.prototype = {
 
     BrowserUsageTelemetry.uninit();
     SearchTelemetry.uninit();
-    // Only uninit PingCentre if the getter has initialized it
-    if (Object.prototype.hasOwnProperty.call(this, "pingCentre")) {
-      this.pingCentre.uninit();
-    }
 
     PageThumbs.uninit();
     NewTabUtils.uninit();
@@ -1813,7 +1730,6 @@ BrowserGlue.prototype = {
     AutoCompletePopup.uninit();
     DateTimePickerParent.uninit();
 
-    Normandy.uninit();
     RFPHelper.uninit();
   },
 
@@ -3211,43 +3127,6 @@ BrowserGlue.prototype = {
     // UnifiedComplete.js internally hardcodes a default value for it.  Before
     // Firefox 60, the hardcoded default was to show history/bookmarks first.
     // After 60, it's to show search suggestions first.
-
-    // Wait for Shield init to complete.
-    await new Promise(resolve => {
-      if (this._shieldInitComplete) {
-        resolve();
-        return;
-      }
-      let topic = "shield-init-complete";
-      Services.obs.addObserver(function obs() {
-        Services.obs.removeObserver(obs, topic);
-        resolve();
-      }, topic);
-    });
-
-    // Now get the pref's value.  If the study is active, the value will have
-    // just been set (on the default branch) as part of Shield's init.  The pref
-    // should not exist otherwise (normally).
-    let prefName = "browser.urlbar.matchBuckets";
-    let prefValue = Services.prefs.getCharPref(prefName, "");
-
-    // Get the study (aka experiment).  It may not be installed.
-    let experiment = null;
-    let experimentName = "pref-flip-search-composition-57-release-1413565";
-    let { PreferenceExperiments } = ChromeUtils.import(
-      "resource://normandy/lib/PreferenceExperiments.jsm"
-    );
-    try {
-      experiment = await PreferenceExperiments.get(experimentName);
-    } catch (e) {}
-
-    // Uninstall the study, resetting the pref to its state before the study.
-    if (experiment && !experiment.expired) {
-      await PreferenceExperiments.stop(experimentName, {
-        resetValue: true,
-        reason: "external:search-ui-migration",
-      });
-    }
 
     // At this point, normally the pref should not exist.  If it does, then it
     // either has a user value, or something unexpectedly set its value on the

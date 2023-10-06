@@ -42,7 +42,6 @@ exclude =
     testing/tools/view_gecko_profile/view_gecko_profile.py,
     testing/tools/websocketprocessbridge/websocketprocessbridge.py,
     testing/web-platform,
-    toolkit/components/featuregates,
     toolkit/content/tests/chrome/file_about_networking_wsh.py,
     toolkit/crashreporter/tools/symbolstore.py,
     toolkit/crashreporter/tools/unit-symbolstore.py,

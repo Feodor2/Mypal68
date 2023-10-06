@@ -26,7 +26,6 @@ scripts:
     copy: rsync --exclude-from .mcignore -a . $npm_package_config_mc_dir/browser/components/newtab/
     stringsExport: cp $npm_package_config_locales_dir/$npm_package_config_default_locale/strings.properties $npm_package_config_mc_dir/browser/locales/$npm_package_config_default_locale/chrome/browser/activity-stream/newtab.properties
     fluentExport: cpx "$npm_package_config_locales_dir/*.ftl" $npm_package_config_mc_dir/browser/locales/$npm_package_config_default_locale/browser/newtab/
-    copyPingCentre: cpx "ping-centre/PingCentre.jsm" $npm_package_config_mc_dir/browser/modules
 
 # builduplift: Build and export to mozilla central for uplifts without exporting strings to browser/locales
   builduplift:

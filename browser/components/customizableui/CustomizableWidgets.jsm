@@ -858,8 +858,8 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
 let preferencesButton = {
   id: "preferences-button",
   onCommand(aEvent) {
-    let win = aEvent.target.ownerGlobal;
-    win.openPreferences(undefined);
+    let win = Services.wm.getMostRecentWindow("navigator:browser");
+    win.openTrustedLinkIn("about:config", "tab");
   },
 };
 if (AppConstants.platform == "win") {

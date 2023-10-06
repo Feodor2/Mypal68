@@ -99,7 +99,7 @@ impl Example for App {
         builder.push_simple_stacking_context(
             bounds.origin,
             space_and_clip.spatial_id,
-            true,
+            PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
 
         let yuv_chanel1 = api.generate_image_key();
@@ -165,6 +165,7 @@ impl Example for App {
             YuvData::NV12(yuv_chanel1, yuv_chanel2),
             ColorDepth::Color8,
             YuvColorSpace::Rec601,
+            ColorRange::Limited,
             ImageRendering::Auto,
         );
 
@@ -178,6 +179,7 @@ impl Example for App {
             YuvData::PlanarYCbCr(yuv_chanel1, yuv_chanel2_1, yuv_chanel3),
             ColorDepth::Color8,
             YuvColorSpace::Rec601,
+            ColorRange::Limited,
             ImageRendering::Auto,
         );
 

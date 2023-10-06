@@ -122,9 +122,9 @@ static Corner GetCWCorner(mozilla::Side aSide) {
 
 static Corner GetCCWCorner(mozilla::Side aSide) { return Corner(aSide); }
 
-static bool IsSingleSide(int aSides) {
-  return aSides == eSideBitsTop || aSides == eSideBitsRight ||
-         aSides == eSideBitsBottom || aSides == eSideBitsLeft;
+static bool IsSingleSide(mozilla::SideBits aSides) {
+  return aSides == SideBits::eTop || aSides == SideBits::eRight ||
+         aSides == SideBits::eBottom || aSides == SideBits::eLeft;
 }
 
 static bool IsHorizontalSide(mozilla::Side aSide) {
@@ -175,7 +175,7 @@ nsCSSBorderRenderer::nsCSSBorderRenderer(
 
   mOneUnitBorder = CheckFourFloatsEqual(mBorderWidths, 1.0);
   mNoBorderRadius = AllCornersZeroSize(mBorderRadii);
-  mAllBordersSameStyle = AreBorderSideFinalStylesSame(eSideBitsAll);
+  mAllBordersSameStyle = AreBorderSideFinalStylesSame(SideBits::eAll);
   mAllBordersSameWidth = AllBordersSameWidth();
   mAvoidStroke = false;
 }
@@ -275,8 +275,10 @@ void nsCSSBorderRenderer::ComputeOuterRadii(const RectCornerRadii& aRadii,
   }
 }
 
-bool nsCSSBorderRenderer::AreBorderSideFinalStylesSame(uint8_t aSides) {
-  NS_ASSERTION(aSides != 0 && (aSides & ~eSideBitsAll) == 0,
+bool nsCSSBorderRenderer::AreBorderSideFinalStylesSame(
+    mozilla::SideBits aSides) {
+  NS_ASSERTION(aSides != SideBits::eNone &&
+                   (aSides & ~SideBits::eAll) == SideBits::eNone,
                "AreBorderSidesSame: invalid whichSides!");
 
   /* First check if the specified styles and colors are the same for all sides
@@ -284,13 +286,14 @@ bool nsCSSBorderRenderer::AreBorderSideFinalStylesSame(uint8_t aSides) {
   int firstStyle = 0;
   NS_FOR_CSS_SIDES(i) {
     if (firstStyle == i) {
-      if (((1 << i) & aSides) == 0) {
+      if ((static_cast<mozilla::SideBits>(1 << i) & aSides) ==
+          SideBits::eNone) {
         firstStyle++;
       }
       continue;
     }
 
-    if (((1 << i) & aSides) == 0) {
+    if ((static_cast<mozilla::SideBits>(1 << i) & aSides) == SideBits::eNone) {
       continue;
     }
 
@@ -307,8 +310,10 @@ bool nsCSSBorderRenderer::AreBorderSideFinalStylesSame(uint8_t aSides) {
     case StyleBorderStyle::Ridge:
     case StyleBorderStyle::Inset:
     case StyleBorderStyle::Outset:
-      return ((aSides & ~(eSideBitsTop | eSideBitsLeft)) == 0 ||
-              (aSides & ~(eSideBitsBottom | eSideBitsRight)) == 0);
+      return ((aSides & ~(SideBits::eTop | SideBits::eLeft)) ==
+                  SideBits::eNone ||
+              (aSides & ~(SideBits::eBottom | SideBits::eRight)) ==
+                  SideBits::eNone);
     default:
       return true;
   }
@@ -1086,7 +1091,8 @@ void nsCSSBorderRenderer::GetOuterAndInnerBezier(Bezier* aOuterBezier,
 void nsCSSBorderRenderer::FillSolidBorder(const Rect& aOuterRect,
                                           const Rect& aInnerRect,
                                           const RectCornerRadii& aBorderRadii,
-                                          const Float* aBorderSizes, int aSides,
+                                          const Float* aBorderSizes,
+                                          SideBits aSides,
                                           const ColorPattern& aColor) {
   // Note that this function is allowed to draw more than just the
   // requested sides.
@@ -1116,7 +1122,7 @@ void nsCSSBorderRenderer::FillSolidBorder(const Rect& aOuterRect,
   // sides is probably second in the list -- there are a bunch of
   // common border styles, such as inset and outset, that are
   // top-left/bottom-right split.
-  if (aSides == eSideBitsAll &&
+  if (aSides == SideBits::eAll &&
       CheckFourFloatsEqual(aBorderSizes, aBorderSizes[0]) && !mAvoidStroke) {
     Float strokeWidth = aBorderSizes[0];
     Rect r(aOuterRect);
@@ -1132,23 +1138,23 @@ void nsCSSBorderRenderer::FillSolidBorder(const Rect& aOuterRect,
   Rect r[4];
 
   // compute base rects for each side
-  if (aSides & eSideBitsTop) {
+  if (aSides & SideBits::eTop) {
     r[eSideTop] = Rect(aOuterRect.X(), aOuterRect.Y(), aOuterRect.Width(),
                        aBorderSizes[eSideTop]);
   }
 
-  if (aSides & eSideBitsBottom) {
+  if (aSides & SideBits::eBottom) {
     r[eSideBottom] =
         Rect(aOuterRect.X(), aOuterRect.YMost() - aBorderSizes[eSideBottom],
              aOuterRect.Width(), aBorderSizes[eSideBottom]);
   }
 
-  if (aSides & eSideBitsLeft) {
+  if (aSides & SideBits::eLeft) {
     r[eSideLeft] = Rect(aOuterRect.X(), aOuterRect.Y(), aBorderSizes[eSideLeft],
                         aOuterRect.Height());
   }
 
-  if (aSides & eSideBitsRight) {
+  if (aSides & SideBits::eRight) {
     r[eSideRight] =
         Rect(aOuterRect.XMost() - aBorderSizes[eSideRight], aOuterRect.Y(),
              aBorderSizes[eSideRight], aOuterRect.Height());
@@ -1159,27 +1165,27 @@ void nsCSSBorderRenderer::FillSolidBorder(const Rect& aOuterRect,
   // This is especially important in the case of colors with
   // an alpha channel.
 
-  if ((aSides & (eSideBitsTop | eSideBitsLeft)) ==
-      (eSideBitsTop | eSideBitsLeft)) {
+  if ((aSides & (SideBits::eTop | SideBits::eLeft)) ==
+      (SideBits::eTop | SideBits::eLeft)) {
     // adjust the left's top down a bit
     r[eSideLeft].y += aBorderSizes[eSideTop];
     r[eSideLeft].height -= aBorderSizes[eSideTop];
   }
 
-  if ((aSides & (eSideBitsTop | eSideBitsRight)) ==
-      (eSideBitsTop | eSideBitsRight)) {
+  if ((aSides & (SideBits::eTop | SideBits::eRight)) ==
+      (SideBits::eTop | SideBits::eRight)) {
     // adjust the top's left a bit
     r[eSideTop].width -= aBorderSizes[eSideRight];
   }
 
-  if ((aSides & (eSideBitsBottom | eSideBitsRight)) ==
-      (eSideBitsBottom | eSideBitsRight)) {
+  if ((aSides & (SideBits::eBottom | SideBits::eRight)) ==
+      (SideBits::eBottom | SideBits::eRight)) {
     // adjust the right's bottom a bit
     r[eSideRight].height -= aBorderSizes[eSideBottom];
   }
 
-  if ((aSides & (eSideBitsBottom | eSideBitsLeft)) ==
-      (eSideBitsBottom | eSideBitsLeft)) {
+  if ((aSides & (SideBits::eBottom | SideBits::eLeft)) ==
+      (SideBits::eBottom | SideBits::eLeft)) {
     // adjust the bottom's left a bit
     r[eSideBottom].x += aBorderSizes[eSideLeft];
     r[eSideBottom].width -= aBorderSizes[eSideLeft];
@@ -1187,7 +1193,7 @@ void nsCSSBorderRenderer::FillSolidBorder(const Rect& aOuterRect,
 
   // Filling these one by one is faster than filling them all at once.
   for (uint32_t i = 0; i < 4; i++) {
-    if (aSides & (1 << i)) {
+    if (aSides & static_cast<mozilla::SideBits>(1 << i)) {
       MaybeSnapToDevicePixels(r[i], *mDrawTarget, true);
       mDrawTarget->FillRect(r[i], aColor);
     }
@@ -1224,8 +1230,9 @@ Color ComputeColorForLine(uint32_t aLineIndex,
   return MakeBorderColor(aBorderColor, aBorderColorStyle[aLineIndex]);
 }
 
-void nsCSSBorderRenderer::DrawBorderSides(int aSides) {
-  if (aSides == 0 || (aSides & ~eSideBitsAll) != 0) {
+void nsCSSBorderRenderer::DrawBorderSides(mozilla::SideBits aSides) {
+  if (aSides == SideBits::eNone ||
+      (aSides & ~SideBits::eAll) != SideBits::eNone) {
     NS_WARNING("DrawBorderSides: invalid sides!");
     return;
   }
@@ -1238,7 +1245,7 @@ void nsCSSBorderRenderer::DrawBorderSides(int aSides) {
   BorderColorStyle* borderColorStyle = nullptr;
 
   NS_FOR_CSS_SIDES(i) {
-    if ((aSides & (1 << i)) == 0) {
+    if ((aSides & static_cast<mozilla::SideBits>(1 << i)) == SideBits::eNone) {
       continue;
     }
     borderRenderStyle = mBorderStyles[i];
@@ -1254,27 +1261,27 @@ void nsCSSBorderRenderer::DrawBorderSides(int aSides) {
   if (borderRenderStyle == StyleBorderStyle::Dashed ||
       borderRenderStyle == StyleBorderStyle::Dotted) {
     // Draw each corner separately, with the given side's color.
-    if (aSides & eSideBitsTop) {
+    if (aSides & SideBits::eTop) {
       DrawDashedOrDottedCorner(eSideTop, C_TL);
-    } else if (aSides & eSideBitsLeft) {
+    } else if (aSides & SideBits::eLeft) {
       DrawDashedOrDottedCorner(eSideLeft, C_TL);
     }
 
-    if (aSides & eSideBitsTop) {
+    if (aSides & SideBits::eTop) {
       DrawDashedOrDottedCorner(eSideTop, C_TR);
-    } else if (aSides & eSideBitsRight) {
+    } else if (aSides & SideBits::eRight) {
       DrawDashedOrDottedCorner(eSideRight, C_TR);
     }
 
-    if (aSides & eSideBitsBottom) {
+    if (aSides & SideBits::eBottom) {
       DrawDashedOrDottedCorner(eSideBottom, C_BL);
-    } else if (aSides & eSideBitsLeft) {
+    } else if (aSides & SideBits::eLeft) {
       DrawDashedOrDottedCorner(eSideLeft, C_BL);
     }
 
-    if (aSides & eSideBitsBottom) {
+    if (aSides & SideBits::eBottom) {
       DrawDashedOrDottedCorner(eSideBottom, C_BR);
-    } else if (aSides & eSideBitsRight) {
+    } else if (aSides & SideBits::eRight) {
       DrawDashedOrDottedCorner(eSideRight, C_BR);
     }
     return;
@@ -1361,7 +1368,7 @@ void nsCSSBorderRenderer::DrawBorderSides(int aSides) {
   // The caller should never give us anything with a mix
   // of TL/BR if the border style would require a
   // TL/BR split.
-  if (aSides & (eSideBitsBottom | eSideBitsRight)) {
+  if (aSides & (SideBits::eBottom | SideBits::eRight)) {
     borderColorStyle = borderColorStyleBottomRight;
   } else {
     borderColorStyle = borderColorStyleTopLeft;
@@ -1432,7 +1439,7 @@ void nsCSSBorderRenderer::DrawBorderSides(int aSides) {
 
   // If there is at least one dotted side, every side is rendered separately.
   if (IsSingleSide(aSides)) {
-    if (aSides == eSideBitsTop) {
+    if (aSides == SideBits::eTop) {
       if (mBorderStyles[eSideRight] == StyleBorderStyle::Dotted &&
           IsZeroSize(mBorderRadii[C_TR])) {
         noMarginRight = true;
@@ -1441,7 +1448,7 @@ void nsCSSBorderRenderer::DrawBorderSides(int aSides) {
           IsZeroSize(mBorderRadii[C_TL])) {
         noMarginLeft = true;
       }
-    } else if (aSides == eSideBitsRight) {
+    } else if (aSides == SideBits::eRight) {
       if (mBorderStyles[eSideTop] == StyleBorderStyle::Dotted &&
           IsZeroSize(mBorderRadii[C_TR])) {
         noMarginTop = true;
@@ -1450,7 +1457,7 @@ void nsCSSBorderRenderer::DrawBorderSides(int aSides) {
           IsZeroSize(mBorderRadii[C_BR])) {
         noMarginBottom = true;
       }
-    } else if (aSides == eSideBitsBottom) {
+    } else if (aSides == SideBits::eBottom) {
       if (mBorderStyles[eSideRight] == StyleBorderStyle::Dotted &&
           IsZeroSize(mBorderRadii[C_BR])) {
         noMarginRight = true;
@@ -3088,7 +3095,7 @@ void nsCSSBorderRenderer::DrawBorders() {
     mInnerRect = ToRect(innerRect);
   }
 
-  int dashedSides = 0;
+  SideBits dashedSides = SideBits::eNone;
   bool forceSeparateCorners = false;
 
   NS_FOR_CSS_SIDES(i) {
@@ -3097,16 +3104,17 @@ void nsCSSBorderRenderer::DrawBorders() {
         style == StyleBorderStyle::Dotted) {
       // we need to draw things separately for dashed/dotting
       forceSeparateCorners = true;
-      dashedSides |= (1 << i);
+      dashedSides |= static_cast<mozilla::SideBits>(1 << i);
     }
   }
 
   PrintAsFormatString(" mAllBordersSameStyle: %d dashedSides: 0x%02x\n",
-                      mAllBordersSameStyle, dashedSides);
+                      mAllBordersSameStyle,
+                      static_cast<unsigned int>(dashedSides));
 
   if (mAllBordersSameStyle && !forceSeparateCorners) {
     /* Draw everything in one go */
-    DrawBorderSides(eSideBitsAll);
+    DrawBorderSides(SideBits::eAll);
     PrintAsStringNewline("---------------- (1)");
   } else {
     AUTO_PROFILER_LABEL("nsCSSBorderRenderer::DrawBorders:multipass", GRAPHICS);
@@ -3194,7 +3202,8 @@ void nsCSSBorderRenderer::DrawBorders() {
       }
 
       const int sides[2] = {corner, PREV_SIDE(corner)};
-      int sideBits = (1 << sides[0]) | (1 << sides[1]);
+      SideBits sideBits =
+          static_cast<SideBits>((1 << sides[0]) | (1 << sides[1]));
 
       bool simpleCornerStyle = AreBorderSideFinalStylesSame(sideBits);
 
@@ -3241,7 +3250,7 @@ void nsCSSBorderRenderer::DrawBorders() {
           RefPtr<Path> path = GetSideClipSubPath(side);
           mDrawTarget->PushClip(path);
 
-          DrawBorderSides(1 << side);
+          DrawBorderSides(static_cast<mozilla::SideBits>(1 << side));
 
           mDrawTarget->PopClip();
         }
@@ -3259,30 +3268,31 @@ void nsCSSBorderRenderer::DrawBorders() {
     // We need to check for mNoBorderRadius, because when there is
     // one, FillSolidBorder always draws the full rounded rectangle
     // and expects there to be a clip in place.
-    int alreadyDrawnSides = 0;
+    SideBits alreadyDrawnSides = SideBits::eNone;
     if (mOneUnitBorder && mNoBorderRadius &&
-        (dashedSides & (eSideBitsTop | eSideBitsLeft)) == 0) {
+        (dashedSides & (SideBits::eTop | SideBits::eLeft)) == SideBits::eNone) {
       bool tlBordersSameStyle =
-          AreBorderSideFinalStylesSame(eSideBitsTop | eSideBitsLeft);
+          AreBorderSideFinalStylesSame(SideBits::eTop | SideBits::eLeft);
       bool brBordersSameStyle =
-          AreBorderSideFinalStylesSame(eSideBitsBottom | eSideBitsRight);
+          AreBorderSideFinalStylesSame(SideBits::eBottom | SideBits::eRight);
 
       if (tlBordersSameStyle) {
-        DrawBorderSides(eSideBitsTop | eSideBitsLeft);
-        alreadyDrawnSides |= (eSideBitsTop | eSideBitsLeft);
+        DrawBorderSides(SideBits::eTop | SideBits::eLeft);
+        alreadyDrawnSides |= (SideBits::eTop | SideBits::eLeft);
       }
 
       if (brBordersSameStyle &&
-          (dashedSides & (eSideBitsBottom | eSideBitsRight)) == 0) {
-        DrawBorderSides(eSideBitsBottom | eSideBitsRight);
-        alreadyDrawnSides |= (eSideBitsBottom | eSideBitsRight);
+          (dashedSides & (SideBits::eBottom | SideBits::eRight)) ==
+              SideBits::eNone) {
+        DrawBorderSides(SideBits::eBottom | SideBits::eRight);
+        alreadyDrawnSides |= (SideBits::eBottom | SideBits::eRight);
       }
     }
 
     // We're done with the corners, now draw the sides.
     NS_FOR_CSS_SIDES(side) {
       // if we drew it above, skip it
-      if (alreadyDrawnSides & (1 << side)) {
+      if (alreadyDrawnSides & static_cast<mozilla::SideBits>(1 << side)) {
         continue;
       }
 
@@ -3293,7 +3303,7 @@ void nsCSSBorderRenderer::DrawBorders() {
         continue;
       }
 
-      if (dashedSides & (1 << side)) {
+      if (dashedSides & static_cast<mozilla::SideBits>(1 << side)) {
         // Dashed sides will always draw just the part ignoring the
         // corners for the side, so no need to clip.
         DrawDashedOrDottedSide(side);
@@ -3312,7 +3322,7 @@ void nsCSSBorderRenderer::DrawBorders() {
       // avoid the potentially expensive clip.
       mDrawTarget->PushClipRect(GetSideClipWithoutCornersRect(side));
 
-      DrawBorderSides(1 << side);
+      DrawBorderSides(static_cast<mozilla::SideBits>(1 << side));
 
       mDrawTarget->PopClip();
 
@@ -3326,7 +3336,7 @@ void nsCSSBorderRenderer::CreateWebRenderCommands(
     wr::IpcResourceUpdateQueue& aResources,
     const layers::StackingContextHelper& aSc) {
   LayoutDeviceRect outerRect = LayoutDeviceRect::FromUnknownRect(mOuterRect);
-  wr::LayoutRect roundedRect = wr::ToRoundedLayoutRect(outerRect);
+  wr::LayoutRect roundedRect = wr::ToLayoutRect(outerRect);
   wr::LayoutRect clipRect = roundedRect;
   wr::BorderSide side[4];
   NS_FOR_CSS_SIDES(i) {
@@ -3343,7 +3353,7 @@ void nsCSSBorderRenderer::CreateWebRenderCommands(
   if (mLocalClip) {
     LayoutDeviceRect localClip =
         LayoutDeviceRect::FromUnknownRect(mLocalClip.value());
-    clipRect = wr::ToRoundedLayoutRect(localClip.Intersect(outerRect));
+    clipRect = wr::ToLayoutRect(localClip.Intersect(outerRect));
   }
 
   Range<const wr::BorderSide> wrsides(side, 4);
@@ -3591,7 +3601,7 @@ ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
   if (!mClip.IsEmpty()) {
     LayoutDeviceRect clipRect =
         LayoutDeviceRect::FromAppUnits(mClip, appUnitsPerDevPixel);
-    clip = wr::ToRoundedLayoutRect(clipRect);
+    clip = wr::ToLayoutRect(clipRect);
   }
 
   ImgDrawResult drawResult = ImgDrawResult::SUCCESS;

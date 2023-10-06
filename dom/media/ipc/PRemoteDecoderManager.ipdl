@@ -33,7 +33,7 @@ sync protocol PRemoteDecoderManager
 parent:
   sync PRemoteDecoder(RemoteDecoderInfoIPDL info,
                       OptionSet options,
-                      TextureFactoryIdentifier identifier)
+                      TextureFactoryIdentifier? identifier)
          returns (bool success,
                   nsCString aErrorDescription);
 

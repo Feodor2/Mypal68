@@ -290,7 +290,8 @@ class APZCFlingStopTester : public APZCGestureDetectorTester {
     EXPECT_GT(finalPoint.y, point.y);
 
     // Now we put our finger down to stop the fling
-    TouchDown(apzc, ScreenIntPoint(10, 10), mcc->Time(), &blockId);
+    blockId =
+        TouchDown(apzc, ScreenIntPoint(10, 10), mcc->Time()).mInputBlockId;
 
     // Re-sample to make sure it hasn't moved
     apzc->SampleContentTransformForFrame(&viewTransform, point,
@@ -387,14 +388,13 @@ class APZCLongPressTester : public APZCGestureDetectorTester {
   void DoLongPressTest(uint32_t aBehavior) {
     MakeApzcUnzoomable();
 
-    uint64_t blockId = 0;
-
-    nsEventStatus status =
-        TouchDown(apzc, ScreenIntPoint(10, 10), mcc->Time(), &blockId);
-    EXPECT_EQ(nsEventStatus_eConsumeDoDefault, status);
+    APZEventResult result =
+        TouchDown(apzc, ScreenIntPoint(10, 10), mcc->Time());
+    EXPECT_EQ(nsEventStatus_eConsumeDoDefault, result.mStatus);
+    uint64_t blockId = result.mInputBlockId;
 
     if (StaticPrefs::layout_css_touch_action_enabled() &&
-        status != nsEventStatus_eConsumeNoDefault) {
+        result.mStatus != nsEventStatus_eConsumeNoDefault) {
       // SetAllowedTouchBehavior() must be called after sending touch-start.
       nsTArray<uint32_t> allowedTouchBehaviors;
       allowedTouchBehaviors.AppendElement(aBehavior);
@@ -439,9 +439,9 @@ class APZCLongPressTester : public APZCGestureDetectorTester {
     // Finally, simulate lifting the finger. Since the long-press wasn't
     // prevent-defaulted, we should get a long-tap-up event.
     check.Call("preHandleLongTapUp");
-    status = TouchUp(apzc, ScreenIntPoint(10, 10), mcc->Time());
+    result.mStatus = TouchUp(apzc, ScreenIntPoint(10, 10), mcc->Time());
     mcc->RunThroughDelayedTasks();
-    EXPECT_EQ(nsEventStatus_eConsumeDoDefault, status);
+    EXPECT_EQ(nsEventStatus_eConsumeDoDefault, result.mStatus);
     check.Call("postHandleLongTapUp");
 
     apzc->AssertStateIsReset();
@@ -454,13 +454,13 @@ class APZCLongPressTester : public APZCGestureDetectorTester {
 
     int touchX = 10, touchStartY = 10, touchEndY = 50;
 
-    uint64_t blockId = 0;
-    nsEventStatus status = TouchDown(apzc, ScreenIntPoint(touchX, touchStartY),
-                                     mcc->Time(), &blockId);
-    EXPECT_EQ(nsEventStatus_eConsumeDoDefault, status);
+    APZEventResult result =
+        TouchDown(apzc, ScreenIntPoint(touchX, touchStartY), mcc->Time());
+    EXPECT_EQ(nsEventStatus_eConsumeDoDefault, result.mStatus);
+    uint64_t blockId = result.mInputBlockId;
 
     if (StaticPrefs::layout_css_touch_action_enabled() &&
-        status != nsEventStatus_eConsumeNoDefault) {
+        result.mStatus != nsEventStatus_eConsumeNoDefault) {
       // SetAllowedTouchBehavior() must be called after sending touch-start.
       nsTArray<uint32_t> allowedTouchBehaviors;
       allowedTouchBehaviors.AppendElement(aBehavior);
@@ -500,15 +500,16 @@ class APZCLongPressTester : public APZCGestureDetectorTester {
         CreateMultiTouchInput(MultiTouchInput::MULTITOUCH_MOVE, mcc->Time());
     mti.mTouches.AppendElement(SingleTouchData(
         0, ParentLayerPoint(touchX, touchEndY), ScreenSize(0, 0), 0, 0));
-    status = apzc->ReceiveInputEvent(mti, nullptr);
-    EXPECT_EQ(nsEventStatus_eConsumeDoDefault, status);
+    result.mStatus = apzc->ReceiveInputEvent(mti, nullptr);
+    EXPECT_EQ(nsEventStatus_eConsumeDoDefault, result.mStatus);
 
     EXPECT_CALL(*mcc, HandleTap(TapType::eSingleTap,
                                 LayoutDevicePoint(touchX, touchEndY), 0,
                                 apzc->GetGuid(), _))
         .Times(0);
-    status = TouchUp(apzc, ScreenIntPoint(touchX, touchEndY), mcc->Time());
-    EXPECT_EQ(nsEventStatus_eConsumeDoDefault, status);
+    result.mStatus =
+        TouchUp(apzc, ScreenIntPoint(touchX, touchEndY), mcc->Time());
+    EXPECT_EQ(nsEventStatus_eConsumeDoDefault, result.mStatus);
 
     ParentLayerPoint pointOut;
     AsyncTransform viewTransformOut;
@@ -703,17 +704,16 @@ TEST_F(APZCGestureDetectorTester, LongPressInterruptedByWheel) {
   // point in time.
   EXPECT_CALL(*mcc, HandleTap(TapType::eLongTap, _, _, _, _)).Times(1);
 
-  uint64_t touchBlockId = 0;
-  uint64_t wheelBlockId = 0;
-  nsEventStatus status =
-      TouchDown(apzc, ScreenIntPoint(10, 10), mcc->Time(), &touchBlockId);
+  APZEventResult result = TouchDown(apzc, ScreenIntPoint(10, 10), mcc->Time());
+  uint64_t touchBlockId = result.mInputBlockId;
   if (StaticPrefs::layout_css_touch_action_enabled() &&
-      status != nsEventStatus_eConsumeNoDefault) {
+      result.mStatus != nsEventStatus_eConsumeNoDefault) {
     SetDefaultAllowedTouchBehavior(apzc, touchBlockId);
   }
   mcc->AdvanceByMillis(10);
-  Wheel(apzc, ScreenIntPoint(10, 10), ScreenPoint(0, -10), mcc->Time(),
-        &wheelBlockId);
+  uint64_t wheelBlockId =
+      Wheel(apzc, ScreenIntPoint(10, 10), ScreenPoint(0, -10), mcc->Time())
+          .mInputBlockId;
   EXPECT_NE(touchBlockId, wheelBlockId);
   mcc->AdvanceByMillis(1000);
 }
@@ -732,12 +732,12 @@ TEST_F(APZCGestureDetectorTester, TapTimeoutInterruptedByWheel) {
   MakeApzcZoomable();
 
   uint64_t touchBlockId = 0;
-  uint64_t wheelBlockId = 0;
   Tap(apzc, ScreenIntPoint(10, 10), TimeDuration::FromMilliseconds(100),
       nullptr, &touchBlockId);
   mcc->AdvanceByMillis(10);
-  Wheel(apzc, ScreenIntPoint(10, 10), ScreenPoint(0, -10), mcc->Time(),
-        &wheelBlockId);
+  uint64_t wheelBlockId =
+      Wheel(apzc, ScreenIntPoint(10, 10), ScreenPoint(0, -10), mcc->Time())
+          .mInputBlockId;
   EXPECT_NE(touchBlockId, wheelBlockId);
   while (mcc->RunThroughDelayedTasks())
     ;

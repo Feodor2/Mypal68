@@ -35,8 +35,7 @@ double SkDCubic::binarySearch(double min, double max, double axisIntercept,
     double calcPos = (&cubicAtT.fX)[xAxis];
     double calcDist = calcPos - axisIntercept;
     do {
-        double priorT = t - step;
-        SkOPASSERT(priorT >= min);
+        double priorT = std::max(min, t - step);
         SkDPoint lessPt = ptAtT(priorT);
         if (approximately_equal_half(lessPt.fX, cubicAtT.fX)
                 && approximately_equal_half(lessPt.fY, cubicAtT.fY)) {
@@ -254,9 +253,7 @@ int SkDCubic::ComplexBreak(const SkPoint pointsPtr[4], SkScalar* t) {
         case SkCubicType::kLoop: {
             const double &td = tt[0], &te = tt[1], &sd = ss[0], &se = ss[1];
             if (roughly_between(0, td, sd) && roughly_between(0, te, se)) {
-                SkASSERT(roughly_between(0, td/sd, 1) && roughly_between(0, te/se, 1));
                 t[0] = static_cast<SkScalar>((td * se + te * sd) / (2 * sd * se));
-                SkASSERT(roughly_between(0, *t, 1));
                 return (int) (t[0] > 0 && t[0] < 1);
             }
         }
@@ -734,4 +731,20 @@ double SkDCubic::top(const SkDCubic& dCurve, double startT, double endT, SkDPoin
         }
     }
     return topT;
+}
+
+int SkTCubic::intersectRay(SkIntersections* i, const SkDLine& line) const {
+    return i->intersectRay(fCubic, line);
+}
+
+bool SkTCubic::hullIntersects(const SkDQuad& quad, bool* isLinear) const {
+    return quad.hullIntersects(fCubic, isLinear);
+}
+
+bool SkTCubic::hullIntersects(const SkDConic& conic, bool* isLinear) const  {
+    return conic.hullIntersects(fCubic, isLinear);
+}
+
+void SkTCubic::setBounds(SkDRect* rect) const {
+    rect->setBounds(fCubic);
 }

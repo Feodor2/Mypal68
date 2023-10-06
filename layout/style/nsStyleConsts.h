@@ -37,25 +37,19 @@ enum class StyleDisplay : uint16_t {
   Contents =
       StyleDisplayFrom(StyleDisplayOutside::None, StyleDisplayInside::Contents),
   Inline =
-      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Inline),
-  InlineBlock = StyleDisplayFrom(StyleDisplayOutside::Inline,
-                                 StyleDisplayInside::FlowRoot),
+      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Flow),
   Block =
-      StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Block),
+      StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Flow),
   FlowRoot = StyleDisplayFrom(StyleDisplayOutside::Block,
                               StyleDisplayInside::FlowRoot),
   Flex = StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Flex),
-  InlineFlex =
-      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Flex),
   Grid = StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Grid),
-  InlineGrid =
-      StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Grid),
   Table =
       StyleDisplayFrom(StyleDisplayOutside::Block, StyleDisplayInside::Table),
   InlineTable =
       StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Table),
   TableCaption = StyleDisplayFrom(StyleDisplayOutside::TableCaption,
-                                  StyleDisplayInside::Block),
+                                  StyleDisplayInside::Flow),
   Ruby =
       StyleDisplayFrom(StyleDisplayOutside::Inline, StyleDisplayInside::Ruby),
   WebkitBox = StyleDisplayFrom(StyleDisplayOutside::Block,
@@ -451,9 +445,11 @@ enum class StyleFlexDirection : uint8_t {
 };
 
 // See nsStylePosition
-#define NS_STYLE_FLEX_WRAP_NOWRAP 0
-#define NS_STYLE_FLEX_WRAP_WRAP 1
-#define NS_STYLE_FLEX_WRAP_WRAP_REVERSE 2
+enum class StyleFlexWrap : uint8_t {
+  Nowrap,
+  Wrap,
+  WrapReverse,
+};
 
 // See nsStylePosition
 // NOTE: This is the initial value of the integer-valued 'order' property
@@ -489,10 +485,6 @@ enum class StyleGridTrackBreadth : uint8_t {
   MaxContent = 1,
   MinContent = 2,
 };
-
-// CSS Grid keywords for <auto-repeat>
-#define NS_STYLE_GRID_REPEAT_AUTO_FILL 0
-#define NS_STYLE_GRID_REPEAT_AUTO_FIT 1
 
 // defaults per MathML spec
 #define NS_MATHML_DEFAULT_SCRIPT_SIZE_MULTIPLIER 0.71f
@@ -584,31 +576,32 @@ enum class StyleGridTrackBreadth : uint8_t {
 #define NS_STYLE_LIST_STYLE_POSITION_OUTSIDE 1
 
 // See nsStyleVisibility
-#define NS_STYLE_POINTER_EVENTS_NONE 0
-#define NS_STYLE_POINTER_EVENTS_VISIBLEPAINTED 1
-#define NS_STYLE_POINTER_EVENTS_VISIBLEFILL 2
-#define NS_STYLE_POINTER_EVENTS_VISIBLESTROKE 3
-#define NS_STYLE_POINTER_EVENTS_VISIBLE 4
-#define NS_STYLE_POINTER_EVENTS_PAINTED 5
-#define NS_STYLE_POINTER_EVENTS_FILL 6
-#define NS_STYLE_POINTER_EVENTS_STROKE 7
-#define NS_STYLE_POINTER_EVENTS_ALL 8
-#define NS_STYLE_POINTER_EVENTS_AUTO 9
+enum class StylePointerEvents : uint8_t {
+  None,
+  Visiblepainted,
+  Visiblefill,
+  Visiblestroke,
+  Visible,
+  Painted,
+  Fill,
+  Stroke,
+  All,
+  Auto,
+};
 
-// See nsStyleVisibility.mImageOrientationType
-#define NS_STYLE_IMAGE_ORIENTATION_FLIP 0
-#define NS_STYLE_IMAGE_ORIENTATION_FROM_IMAGE 1
-
-// See nsStyleDisplay
-#define NS_STYLE_ISOLATION_AUTO 0
-#define NS_STYLE_ISOLATION_ISOLATE 1
+enum class StyleIsolation : uint8_t {
+  Auto,
+  Isolate,
+};
 
 // See nsStylePosition.mObjectFit
-#define NS_STYLE_OBJECT_FIT_FILL 0
-#define NS_STYLE_OBJECT_FIT_CONTAIN 1
-#define NS_STYLE_OBJECT_FIT_COVER 2
-#define NS_STYLE_OBJECT_FIT_NONE 3
-#define NS_STYLE_OBJECT_FIT_SCALE_DOWN 4
+enum class StyleObjectFit : uint8_t {
+  Fill,
+  Contain,
+  Cover,
+  None,
+  ScaleDown,
+};
 
 // See nsStyleText
 #define NS_STYLE_TEXT_ALIGN_START 0
@@ -643,13 +636,17 @@ enum class StyleGridTrackBreadth : uint8_t {
 #define NS_STYLE_TEXT_TRANSFORM_FULL_SIZE_KANA 5
 
 // See nsStyleDisplay
-#define NS_STYLE_TOP_LAYER_NONE 0  // not in the top layer
-#define NS_STYLE_TOP_LAYER_TOP 1   // in the top layer
+enum class StyleTopLayer : uint8_t {
+  None,
+  Top,
+};
 
 // See nsStyleVisibility
-#define NS_STYLE_VISIBILITY_HIDDEN 0
-#define NS_STYLE_VISIBILITY_VISIBLE 1
-#define NS_STYLE_VISIBILITY_COLLAPSE 2
+enum class StyleVisibility : uint8_t {
+  Hidden,
+  Visible,
+  Collapse,
+};
 
 // See nsStyleText
 #define NS_STYLE_TABSIZE_INITIAL 8
@@ -666,31 +663,35 @@ enum class StyleWhiteSpace : uint8_t {
 };
 
 // ruby-align, see nsStyleText
-#define NS_STYLE_RUBY_ALIGN_START 0
-#define NS_STYLE_RUBY_ALIGN_CENTER 1
-#define NS_STYLE_RUBY_ALIGN_SPACE_BETWEEN 2
-#define NS_STYLE_RUBY_ALIGN_SPACE_AROUND 3
+enum class StyleRubyAlign : uint8_t {
+  Start,
+  Center,
+  SpaceBetween,
+  SpaceAround,
+};
 
 // ruby-position, see nsStyleText
-#define NS_STYLE_RUBY_POSITION_OVER 0
-#define NS_STYLE_RUBY_POSITION_UNDER 1
-#define NS_STYLE_RUBY_POSITION_INTER_CHARACTER 2  // placeholder, not yet parsed
+enum class StyleRubyPosition : uint8_t {
+  Over,
+  Under,
+};
 
 // See nsStyleText
-#define NS_STYLE_TEXT_SIZE_ADJUST_NONE 0
-#define NS_STYLE_TEXT_SIZE_ADJUST_AUTO 1
+enum class StyleTextSizeAdjust : uint8_t {
+  None,
+  Auto,
+};
 
 // See nsStyleText
-#define NS_STYLE_TEXT_ORIENTATION_MIXED 0
-#define NS_STYLE_TEXT_ORIENTATION_UPRIGHT 1
-#define NS_STYLE_TEXT_ORIENTATION_SIDEWAYS 2
+enum class StyleTextOrientation : uint8_t {
+  Mixed,
+  Upright,
+  Sideways,
+};
 
 // See nsStyleText
 #define NS_STYLE_TEXT_COMBINE_UPRIGHT_NONE 0
 #define NS_STYLE_TEXT_COMBINE_UPRIGHT_ALL 1
-
-// See nsStyleText
-#define NS_STYLE_LINE_HEIGHT_BLOCK_HEIGHT 0
 
 // See nsStyleText
 #define NS_STYLE_UNICODE_BIDI_NORMAL 0x0
@@ -741,11 +742,13 @@ enum class StyleWhiteSpace : uint8_t {
 #define NS_STYLE_PAGE_BREAK_RIGHT 4
 
 // See nsStyleUIReset
-#define NS_STYLE_IME_MODE_AUTO 0
-#define NS_STYLE_IME_MODE_NORMAL 1
-#define NS_STYLE_IME_MODE_ACTIVE 2
-#define NS_STYLE_IME_MODE_DISABLED 3
-#define NS_STYLE_IME_MODE_INACTIVE 4
+enum class StyleImeMode : uint8_t {
+  Auto,
+  Normal,
+  Active,
+  Disabled,
+  Inactive,
+};
 
 // See nsStyleSVG
 
@@ -753,12 +756,13 @@ enum class StyleWhiteSpace : uint8_t {
  * -moz-window-shadow
  * Also used in widget code
  */
-
-#define NS_STYLE_WINDOW_SHADOW_NONE 0
-#define NS_STYLE_WINDOW_SHADOW_DEFAULT 1
-#define NS_STYLE_WINDOW_SHADOW_MENU 2
-#define NS_STYLE_WINDOW_SHADOW_TOOLTIP 3
-#define NS_STYLE_WINDOW_SHADOW_SHEET 4
+enum class StyleWindowShadow : uint8_t {
+  None,
+  Default,
+  Menu,
+  Tooltip,
+  Sheet,
+};
 
 // dominant-baseline
 #define NS_STYLE_DOMINANT_BASELINE_AUTO 0
@@ -782,28 +786,31 @@ enum class StyleWhiteSpace : uint8_t {
 #define NS_STYLE_MASK_TYPE_ALPHA 1
 
 // shape-rendering
-#define NS_STYLE_SHAPE_RENDERING_AUTO 0
-#define NS_STYLE_SHAPE_RENDERING_OPTIMIZESPEED 1
-#define NS_STYLE_SHAPE_RENDERING_CRISPEDGES 2
-#define NS_STYLE_SHAPE_RENDERING_GEOMETRICPRECISION 3
+enum class StyleShapeRendering : uint8_t {
+  Auto,
+  Optimizespeed,
+  Crispedges,
+  Geometricprecision,
+};
 
 // stroke-linecap
-#define NS_STYLE_STROKE_LINECAP_BUTT 0
-#define NS_STYLE_STROKE_LINECAP_ROUND 1
-#define NS_STYLE_STROKE_LINECAP_SQUARE 2
+enum class StyleStrokeLinecap : uint8_t {
+  Butt,
+  Round,
+  Square,
+};
 
 // stroke-linejoin
 #define NS_STYLE_STROKE_LINEJOIN_MITER 0
 #define NS_STYLE_STROKE_LINEJOIN_ROUND 1
 #define NS_STYLE_STROKE_LINEJOIN_BEVEL 2
 
-// stroke-dasharray, stroke-dashoffset, stroke-width
-#define NS_STYLE_STROKE_PROP_CONTEXT_VALUE 0
-
 // text-anchor
-#define NS_STYLE_TEXT_ANCHOR_START 0
-#define NS_STYLE_TEXT_ANCHOR_MIDDLE 1
-#define NS_STYLE_TEXT_ANCHOR_END 2
+enum class StyleTextAnchor : uint8_t {
+  Start,
+  Middle,
+  End,
+};
 
 // text-emphasis-position
 #define NS_STYLE_TEXT_EMPHASIS_POSITION_OVER (1 << 0)
@@ -845,10 +852,6 @@ enum class StyleColorAdjust : uint8_t {
 
 #define NS_STYLE_TRANSFORM_STYLE_FLAT 0
 #define NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D 1
-
-// object {fill,stroke}-opacity inherited from context for SVG glyphs
-#define NS_STYLE_CONTEXT_FILL_OPACITY 0
-#define NS_STYLE_CONTEXT_STROKE_OPACITY 1
 
 // blending
 #define NS_STYLE_BLEND_NORMAL 0

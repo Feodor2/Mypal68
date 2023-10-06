@@ -622,6 +622,7 @@ impl Serialize for BuiltDisplayList {
                 Real::HitTest(v) => Debug::HitTest(v),
                 Real::Line(v) => Debug::Line(v),
                 Real::Image(v) => Debug::Image(v),
+                Real::RepeatingImage(v) => Debug::RepeatingImage(v),
                 Real::YuvImage(v) => Debug::YuvImage(v),
                 Real::Border(v) => Debug::Border(v),
                 Real::BoxShadow(v) => Debug::BoxShadow(v),
@@ -726,6 +727,7 @@ impl<'de> Deserialize<'de> for BuiltDisplayList {
                 Debug::HitTest(v) => Real::HitTest(v),
                 Debug::Line(v) => Real::Line(v),
                 Debug::Image(v) => Real::Image(v),
+                Debug::RepeatingImage(v) => Real::RepeatingImage(v),
                 Debug::YuvImage(v) => Real::YuvImage(v),
                 Debug::Border(v) => Real::Border(v),
                 Debug::BoxShadow(v) => Real::BoxShadow(v),
@@ -997,6 +999,27 @@ impl DisplayListBuilder {
         &mut self,
         common: &di::CommonItemProperties,
         bounds: LayoutRect,
+        image_rendering: di::ImageRendering,
+        alpha_type: di::AlphaType,
+        key: ImageKey,
+        color: ColorF,
+    ) {
+        let item = di::DisplayItem::Image(di::ImageDisplayItem {
+            common: *common,
+            bounds,
+            image_key: key,
+            image_rendering,
+            alpha_type,
+            color,
+        });
+
+        self.push_item(&item);
+    }
+
+    pub fn push_repeating_image(
+        &mut self,
+        common: &di::CommonItemProperties,
+        bounds: LayoutRect,
         stretch_size: LayoutSize,
         tile_spacing: LayoutSize,
         image_rendering: di::ImageRendering,
@@ -1004,7 +1027,7 @@ impl DisplayListBuilder {
         key: ImageKey,
         color: ColorF,
     ) {
-        let item = di::DisplayItem::Image(di::ImageDisplayItem {
+        let item = di::DisplayItem::RepeatingImage(di::RepeatingImageDisplayItem {
             common: *common,
             bounds,
             image_key: key,
@@ -1026,6 +1049,7 @@ impl DisplayListBuilder {
         yuv_data: di::YuvData,
         color_depth: ColorDepth,
         color_space: di::YuvColorSpace,
+        color_range: di::ColorRange,
         image_rendering: di::ImageRendering,
     ) {
         let item = di::DisplayItem::YuvImage(di::YuvImageDisplayItem {
@@ -1034,6 +1058,7 @@ impl DisplayListBuilder {
             yuv_data,
             color_depth,
             color_space,
+            color_range,
             image_rendering,
         });
         self.push_item(&item);
@@ -1222,7 +1247,7 @@ impl DisplayListBuilder {
         &mut self,
         origin: LayoutPoint,
         spatial_id: di::SpatialId,
-        is_backface_visible: bool,
+        prim_flags: di::PrimitiveFlags,
         clip_id: Option<di::ClipId>,
         transform_style: di::TransformStyle,
         mix_blend_mode: di::MixBlendMode,
@@ -1238,7 +1263,7 @@ impl DisplayListBuilder {
         let item = di::DisplayItem::PushStackingContext(di::PushStackingContextDisplayItem {
             origin,
             spatial_id,
-            is_backface_visible,
+            prim_flags,
             stacking_context: di::StackingContext {
                 transform_style,
                 mix_blend_mode,
@@ -1257,12 +1282,12 @@ impl DisplayListBuilder {
         &mut self,
         origin: LayoutPoint,
         spatial_id: di::SpatialId,
-        is_backface_visible: bool,
+        prim_flags: di::PrimitiveFlags,
     ) {
         self.push_simple_stacking_context_with_filters(
             origin,
             spatial_id,
-            is_backface_visible,
+            prim_flags,
             &[],
             &[],
             &[],
@@ -1274,7 +1299,7 @@ impl DisplayListBuilder {
         &mut self,
         origin: LayoutPoint,
         spatial_id: di::SpatialId,
-        is_backface_visible: bool,
+        prim_flags: di::PrimitiveFlags,
         filters: &[di::FilterOp],
         filter_datas: &[di::FilterData],
         filter_primitives: &[di::FilterPrimitive],
@@ -1282,7 +1307,7 @@ impl DisplayListBuilder {
         self.push_stacking_context(
             origin,
             spatial_id,
-            is_backface_visible,
+            prim_flags,
             None,
             di::TransformStyle::Flat,
             di::MixBlendMode::Normal,

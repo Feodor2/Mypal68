@@ -7,7 +7,12 @@
 
 #include "GrMtlCaps.h"
 
+#include "GrBackendSurface.h"
+#include "GrMtlUtil.h"
+#include "GrRenderTargetProxy.h"
 #include "GrShaderCaps.h"
+#include "GrSurfaceProxy.h"
+#include "SkRect.h"
 
 GrMtlCaps::GrMtlCaps(const GrContextOptions& contextOptions, const id<MTLDevice> device,
                      MTLFeatureSet featureSet)
@@ -18,9 +23,19 @@ GrMtlCaps::GrMtlCaps(const GrContextOptions& contextOptions, const id<MTLDevice>
     this->initGrCaps(device);
     this->initShaderCaps();
     this->initConfigTable();
+    this->initStencilFormat(device);
 
     this->applyOptionsOverrides(contextOptions);
     fShaderCaps->applyOptionsOverrides(contextOptions);
+
+    // The following are disabled due to the unfinished Metal backend, not because Metal itself
+    // doesn't support it.
+    fBlacklistCoverageCounting = true;   // CCPR shaders have some incompatabilities with SkSLC
+    fFenceSyncSupport = false;           // Fences are not implemented yet
+    fMipMapSupport = false;              // GrMtlGpu::onRegenerateMipMapLevels() not implemented
+    fMultisampleDisableSupport = true;   // MSAA and resolving not implemented yet
+    fDiscardRenderTargetSupport = false; // GrMtlGpuCommandBuffer::discard() not implemented
+    fCrossContextTextureSupport = false; // GrMtlGpu::prepareTextureForCrossContextUsage() not impl
 }
 
 void GrMtlCaps::initFeatureSet(MTLFeatureSet featureSet) {
@@ -99,9 +114,89 @@ void GrMtlCaps::initFeatureSet(MTLFeatureSet featureSet) {
     SK_ABORT("Requested an unsupported feature set");
 }
 
+bool GrMtlCaps::canCopyAsBlit(GrPixelConfig dstConfig, int dstSampleCount,
+                              GrSurfaceOrigin dstOrigin,
+                              GrPixelConfig srcConfig, int srcSampleCount,
+                              GrSurfaceOrigin srcOrigin,
+                              const SkIRect& srcRect, const SkIPoint& dstPoint,
+                              bool areDstSrcSameObj) const {
+    if (dstConfig != srcConfig) {
+        return false;
+    }
+    if ((dstSampleCount > 1 || srcSampleCount > 1) && (dstSampleCount != srcSampleCount)) {
+        return false;
+    }
+    if (dstOrigin != srcOrigin) {
+        return false;
+    }
+    if (areDstSrcSameObj) {
+        SkIRect dstRect = SkIRect::MakeXYWH(dstPoint.x(), dstPoint.y(),
+                                            srcRect.width(), srcRect.height());
+        if (dstRect.intersect(srcRect)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool GrMtlCaps::canCopyAsDraw(GrPixelConfig dstConfig, bool dstIsRenderable,
+                              GrPixelConfig srcConfig, bool srcIsTextureable) const {
+    // TODO: Make copySurfaceAsDraw handle the swizzle
+    if (this->shaderCaps()->configOutputSwizzle(srcConfig) !=
+        this->shaderCaps()->configOutputSwizzle(dstConfig)) {
+        return false;
+    }
+
+    if (!dstIsRenderable || !srcIsTextureable) {
+        return false;
+    }
+    return true;
+}
+
+bool GrMtlCaps::canCopyAsDrawThenBlit(GrPixelConfig dstConfig, GrPixelConfig srcConfig,
+                                      bool srcIsTextureable) const {
+    // TODO: Make copySurfaceAsDraw handle the swizzle
+    if (this->shaderCaps()->configOutputSwizzle(srcConfig) !=
+        this->shaderCaps()->configOutputSwizzle(dstConfig)) {
+        return false;
+    }
+    if (!srcIsTextureable) {
+        return false;
+    }
+    return true;
+}
+
+bool GrMtlCaps::onCanCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
+                                 const SkIRect& srcRect, const SkIPoint& dstPoint) const {
+    GrSurfaceOrigin dstOrigin = dst->origin();
+    GrSurfaceOrigin srcOrigin = src->origin();
+
+    int dstSampleCnt = 0;
+    int srcSampleCnt = 0;
+    if (const GrRenderTargetProxy* rtProxy = dst->asRenderTargetProxy()) {
+        dstSampleCnt = rtProxy->numColorSamples();
+    }
+    if (const GrRenderTargetProxy* rtProxy = src->asRenderTargetProxy()) {
+        srcSampleCnt = rtProxy->numColorSamples();
+    }
+    SkASSERT((dstSampleCnt > 0) == SkToBool(dst->asRenderTargetProxy()));
+    SkASSERT((srcSampleCnt > 0) == SkToBool(src->asRenderTargetProxy()));
+
+    return this->canCopyAsBlit(dst->config(), dstSampleCnt, dstOrigin,
+                               src->config(), srcSampleCnt, srcOrigin,
+                               srcRect, dstPoint, dst == src) ||
+           this->canCopyAsDraw(dst->config(), SkToBool(dst->asRenderTargetProxy()),
+                               src->config(), SkToBool(src->asTextureProxy())) ||
+           this->canCopyAsDrawThenBlit(dst->config(), src->config(),
+                                       SkToBool(src->asTextureProxy()));
+}
+
 void GrMtlCaps::initGrCaps(const id<MTLDevice> device) {
     // Max vertex attribs is the same on all devices
     fMaxVertexAttributes = 31;
+
+    // Metal does not support scissor + clear
+    fPerformPartialClearsAsDraws = true;
 
     // RenderTarget and Texture size
     if (this->isMac()) {
@@ -122,11 +217,21 @@ void GrMtlCaps::initGrCaps(const id<MTLDevice> device) {
     fMaxTextureSize = fMaxRenderTargetSize;
 
     // Init sample counts. All devices support 1 (i.e. 0 in skia).
-    fSampleCounts.push(1);
+    fSampleCounts.push_back(1);
     for (auto sampleCnt : {2, 4, 8}) {
         if ([device supportsTextureSampleCount:sampleCnt]) {
-            fSampleCounts.push(sampleCnt);
+            fSampleCounts.push_back(sampleCnt);
         }
+    }
+
+    // Clamp to border is supported on Mac 10.12 and higher (gpu family.version >= 1.2). It is not
+    // supported on iOS.
+    if (this->isMac()) {
+        if (fFamilyGroup == 1 && fVersion < 2) {
+            fClampToBorderSupport = false;
+        }
+    } else {
+        fClampToBorderSupport = false;
     }
 
     // Starting with the assumption that there isn't a reason to not map small buffers.
@@ -136,10 +241,6 @@ void GrMtlCaps::initGrCaps(const id<MTLDevice> device) {
     fMapBufferFlags = kCanMap_MapFlag;
 
     fOversizedStencilSupport = true;
-
-    // Looks like there is a field called rasterSampleCount labeled as beta in the Metal docs. This
-    // may be what we eventually need here, but it has no description.
-    fSampleShadingSupport = false;
 
     fSRGBSupport = true;   // always available in Metal
     fSRGBWriteControl = false;
@@ -163,6 +264,7 @@ void GrMtlCaps::initGrCaps(const id<MTLDevice> device) {
 
     fFenceSyncSupport = true;   // always available in Metal
     fCrossContextTextureSupport = false;
+    fHalfFloatVertexAttributeSupport = true;
 }
 
 
@@ -202,6 +304,8 @@ void GrMtlCaps::initShaderCaps() {
         } else {
             if (kGray_8_GrPixelConfig == config) {
                 shaderCaps->fConfigTextureSwizzle[i] = GrSwizzle::RRRA();
+            } else if (kRGB_888X_GrPixelConfig == config) {
+                shaderCaps->fConfigTextureSwizzle[i] = GrSwizzle::RGB1();
             } else {
                 shaderCaps->fConfigTextureSwizzle[i] = GrSwizzle::RGBA();
             }
@@ -225,16 +329,18 @@ void GrMtlCaps::initShaderCaps() {
         shaderCaps->fDualSourceBlendingSupport = true;
     }
 
+    // TODO: Re-enable this once skbug:8720 is fixed. Will also need to remove asserts in
+    // GrMtlPipelineStateBuilder which assert we aren't using this feature.
+#if 0
     if (this->isIOS()) {
         shaderCaps->fFBFetchSupport = true;
         shaderCaps->fFBFetchNeedsCustomOutput = true; // ??
         shaderCaps->fFBFetchColorName = ""; // Somehow add [[color(0)]] to arguments to frag shader
     }
+#endif
     shaderCaps->fDstReadInShaderSupport = shaderCaps->fFBFetchSupport;
 
     shaderCaps->fIntegerSupport = true;
-    shaderCaps->fTexelBufferSupport = false;
-    shaderCaps->fTexelFetchSupport = false;
     shaderCaps->fVertexIDSupport = false;
     shaderCaps->fImageLoadStoreSupport = false;
 
@@ -242,10 +348,10 @@ void GrMtlCaps::initShaderCaps() {
     shaderCaps->fFloatIs32Bits = true;
     shaderCaps->fHalfIs32Bits = false;
 
-    shaderCaps->fMaxVertexSamplers =
+    // Metal supports unsigned integers.
+    shaderCaps->fUnsignedSupport = true;
+
     shaderCaps->fMaxFragmentSamplers = 16;
-    // For now just cap at the per stage max. If we hit this limit we can come back to adjust this
-    shaderCaps->fMaxCombinedSamplers = shaderCaps->fMaxVertexSamplers;
 }
 
 void GrMtlCaps::initConfigTable() {
@@ -277,6 +383,10 @@ void GrMtlCaps::initConfigTable() {
     // RGBA_8888 uses RGBA8Unorm
     info = &fConfigTable[kRGBA_8888_GrPixelConfig];
     info->fFlags = ConfigInfo::kAllFlags;
+
+    // RGB_888X uses RGBA8Unorm and we will swizzle the 1
+    info = &fConfigTable[kRGB_888X_GrPixelConfig];
+    info->fFlags = ConfigInfo::kTextureable_Flag;
 
     // BGRA_8888 uses BGRA8Unorm
     info = &fConfigTable[kBGRA_8888_GrPixelConfig];
@@ -313,4 +423,152 @@ void GrMtlCaps::initConfigTable() {
     // RGBA_half uses RGBA16Float
     info = &fConfigTable[kRGBA_half_GrPixelConfig];
     info->fFlags = ConfigInfo::kAllFlags;
+}
+
+void GrMtlCaps::initStencilFormat(id<MTLDevice> physDev) {
+    fPreferredStencilFormat = StencilFormat{ MTLPixelFormatStencil8, 8, 8, true };
+}
+
+GrPixelConfig validate_sized_format(GrMTLPixelFormat grFormat, SkColorType ct) {
+    MTLPixelFormat format = static_cast<MTLPixelFormat>(grFormat);
+    switch (ct) {
+        case kUnknown_SkColorType:
+            return kUnknown_GrPixelConfig;
+        case kAlpha_8_SkColorType:
+            if (MTLPixelFormatA8Unorm == format) {
+                return kAlpha_8_as_Alpha_GrPixelConfig;
+            } else if (MTLPixelFormatR8Unorm == format) {
+                return kAlpha_8_as_Red_GrPixelConfig;
+            }
+            break;
+#ifdef SK_BUILD_FOR_MAC
+        case kRGB_565_SkColorType:
+        case kARGB_4444_SkColorType:
+            return kUnknown_GrPixelConfig;
+            break;
+#else
+        case kRGB_565_SkColorType:
+            if (MTLPixelFormatB5G6R5Unorm == format) {
+                return kRGB_565_GrPixelConfig;
+            }
+            break;
+        case kARGB_4444_SkColorType:
+            if (MTLPixelFormatABGR4Unorm == format) {
+                return kRGBA_4444_GrPixelConfig;
+            }
+            break;
+#endif
+        case kRGBA_8888_SkColorType:
+            if (MTLPixelFormatRGBA8Unorm == format) {
+                return kRGBA_8888_GrPixelConfig;
+            } else if (MTLPixelFormatRGBA8Unorm_sRGB == format) {
+                return kSRGBA_8888_GrPixelConfig;
+            }
+            break;
+        case kRGB_888x_SkColorType:
+            if (MTLPixelFormatRGBA8Unorm == format) {
+                return kRGB_888X_GrPixelConfig;
+            }
+            break;
+        case kBGRA_8888_SkColorType:
+            if (MTLPixelFormatBGRA8Unorm == format) {
+                return kBGRA_8888_GrPixelConfig;
+            } else if (MTLPixelFormatBGRA8Unorm_sRGB == format) {
+                return kSBGRA_8888_GrPixelConfig;
+            }
+            break;
+        case kRGBA_1010102_SkColorType:
+            if (MTLPixelFormatRGB10A2Unorm == format) {
+                return kRGBA_1010102_GrPixelConfig;
+            }
+            break;
+        case kRGB_101010x_SkColorType:
+            break;
+        case kGray_8_SkColorType:
+            if (MTLPixelFormatR8Unorm == format) {
+                return kGray_8_as_Red_GrPixelConfig;
+            }
+            break;
+        case kRGBA_F16Norm_SkColorType:  // TODO(brianosman): ?
+            if (MTLPixelFormatRG16Float == format) {
+                return kRGBA_half_GrPixelConfig;
+            }
+            break;
+        case kRGBA_F16_SkColorType:
+            if (MTLPixelFormatRG16Float == format) {
+                return kRGBA_half_GrPixelConfig;
+            }
+            break;
+        case kRGBA_F32_SkColorType:
+            if (MTLPixelFormatR32Float == format) {
+                return kRGBA_float_GrPixelConfig;
+            }
+            break;
+    }
+
+    return kUnknown_GrPixelConfig;
+}
+
+GrPixelConfig GrMtlCaps::validateBackendRenderTarget(const GrBackendRenderTarget& rt,
+                                                     SkColorType ct) const {
+    GrMtlTextureInfo fbInfo;
+    if (!rt.getMtlTextureInfo(&fbInfo)) {
+        return kUnknown_GrPixelConfig;
+    }
+
+    id<MTLTexture> texture = (__bridge id<MTLTexture>)fbInfo.fTexture;
+    return validate_sized_format(texture.pixelFormat, ct);
+}
+
+GrPixelConfig GrMtlCaps::getConfigFromBackendFormat(const GrBackendFormat& format,
+                                                    SkColorType ct) const {
+    const GrMTLPixelFormat* mtlFormat = format.getMtlFormat();
+    if (!mtlFormat) {
+        return kUnknown_GrPixelConfig;
+    }
+    return validate_sized_format(*mtlFormat, ct);
+}
+
+static GrPixelConfig get_yuva_config(GrMTLPixelFormat grFormat) {
+    MTLPixelFormat format = static_cast<MTLPixelFormat>(grFormat);
+
+    switch (format) {
+        case MTLPixelFormatA8Unorm:
+            return kAlpha_8_as_Alpha_GrPixelConfig;
+            break;
+        case MTLPixelFormatR8Unorm:
+            return kAlpha_8_as_Red_GrPixelConfig;
+            break;
+        // TODO: Add RG_88 format here
+        case MTLPixelFormatRGBA8Unorm:
+            return kRGBA_8888_GrPixelConfig;
+            break;
+        case MTLPixelFormatBGRA8Unorm:
+            return kBGRA_8888_GrPixelConfig;
+            break;
+        default:
+            return kUnknown_GrPixelConfig;
+            break;
+    }
+}
+
+GrPixelConfig GrMtlCaps::getYUVAConfigFromBackendFormat(const GrBackendFormat& format) const {
+    const GrMTLPixelFormat* mtlFormat = format.getMtlFormat();
+    if (!mtlFormat) {
+        return kUnknown_GrPixelConfig;
+    }
+    return get_yuva_config(*mtlFormat);
+}
+
+GrBackendFormat GrMtlCaps::getBackendFormatFromGrColorType(GrColorType ct,
+                                                           GrSRGBEncoded srgbEncoded) const {
+    GrPixelConfig config = GrColorTypeToPixelConfig(ct, srgbEncoded);
+    if (config == kUnknown_GrPixelConfig) {
+        return GrBackendFormat();
+    }
+    MTLPixelFormat format;
+    if (!GrPixelConfigToMTLFormat(config, &format)) {
+        return GrBackendFormat();
+    }
+    return GrBackendFormat::MakeMtl(format);
 }

@@ -1424,7 +1424,7 @@ function createInterfaceMap() {
           // false.  That way entries without an insecureContext annotation
           // will get treated as "insecureContext: false", which means exposed
           // only in secure contexts.
-          (isInsecureContext && !Boolean(entry.insecureContext)) ||
+          (isInsecureContext && !entry.insecureContext) ||
           entry.disabled
         ) {
           interfaceMap[entry.name] = false;

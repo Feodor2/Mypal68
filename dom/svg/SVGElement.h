@@ -31,7 +31,6 @@ nsresult NS_NewSVGElement(mozilla::dom::Element** aResult,
 namespace mozilla {
 class DeclarationBlock;
 
-class DOMSVGStringList;
 class SVGAnimatedBoolean;
 class SVGAnimatedEnumeration;
 class SVGAnimatedInteger;
@@ -55,6 +54,7 @@ class SVGUserUnitList;
 struct SVGEnumMapping;
 
 namespace dom {
+class DOMSVGStringList;
 class SVGSVGElement;
 class SVGViewportElement;
 
@@ -163,6 +163,12 @@ class SVGElement : public SVGElementBase  // nsIContent
   }
   virtual bool HasValidDimensions() const { return true; }
   void SetLength(nsAtom* aName, const SVGAnimatedLength& aLength);
+
+  enum class ValToUse { Base, Anim };
+  static bool UpdateDeclarationBlockFromLength(DeclarationBlock& aBlock,
+                                               nsCSSPropertyID aPropId,
+                                               const SVGAnimatedLength& aLength,
+                                               ValToUse aValToUse);
 
   nsAttrValue WillChangeLength(uint8_t aAttrEnum);
   nsAttrValue WillChangeNumberPair(uint8_t aAttrEnum);
@@ -536,7 +542,7 @@ class SVGElement : public SVGElementBase  // nsIContent
     void Reset(uint8_t aAttrEnum);
   };
 
-  friend class mozilla::DOMSVGStringList;
+  friend class DOMSVGStringList;
 
   struct StringListInfo {
     nsStaticAtom* const mName;

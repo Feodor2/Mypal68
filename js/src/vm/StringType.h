@@ -363,7 +363,7 @@ class JSString : public js::gc::Cell {
         "shadow::String::EXTERNAL_FLAGS must match JSString::EXTERNAL_FLAGS");
   }
 
-  /* Avoid lame compile errors in JSRope::flatten */
+  /* Avoid silly compile errors in JSRope::flatten */
   friend class JSRope;
 
   friend class js::gc::RelocationOverlay;

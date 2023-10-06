@@ -5,13 +5,13 @@
 #include "SocketProcessParent.h"
 
 #include "SocketProcessHost.h"
-#include "mozilla/ipc/CrashReporterHost.h"
 #include "mozilla/net/DNSRequestParent.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryIPC.h"
 #ifdef MOZ_WEBRTC
 #  include "mozilla/dom/ContentProcessManager.h"
 #  include "mozilla/dom/BrowserParent.h"
+#  include "mozilla/net/ProxyConfigLookupParent.h"
 #  include "mozilla/net/WebrtcProxyChannelParent.h"
 #endif
 
@@ -43,23 +43,9 @@ SocketProcessParent* SocketProcessParent::GetSingleton() {
   return sSocketProcessParent;
 }
 
-mozilla::ipc::IPCResult SocketProcessParent::RecvInitCrashReporter(
-    Shmem&& aShmem, const NativeThreadId& aThreadId) {
-  mCrashReporter = MakeUnique<CrashReporterHost>(GeckoProcessType_Content,
-                                                 aShmem, aThreadId);
-
-  return IPC_OK();
-}
-
 void SocketProcessParent::ActorDestroy(ActorDestroyReason aWhy) {
   if (aWhy == AbnormalShutdown) {
-    if (mCrashReporter) {
-      mCrashReporter->GenerateCrashReport(OtherPid());
-      mCrashReporter = nullptr;
-    } else {
-      CrashReporter::FinalizeOrphanedMinidump(OtherPid(),
-                                              GeckoProcessType_Content);
-    }
+    GenerateCrashReport(OtherPid());
   }
 
   if (mHost) {
@@ -95,28 +81,28 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvFinishMemoryReport(
 }
 
 mozilla::ipc::IPCResult SocketProcessParent::RecvAccumulateChildHistograms(
-    InfallibleTArray<HistogramAccumulation>&& aAccumulations) {
+    nsTArray<HistogramAccumulation>&& aAccumulations) {
   TelemetryIPC::AccumulateChildHistograms(Telemetry::ProcessID::Socket,
                                           aAccumulations);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult SocketProcessParent::RecvAccumulateChildKeyedHistograms(
-    InfallibleTArray<KeyedHistogramAccumulation>&& aAccumulations) {
+    nsTArray<KeyedHistogramAccumulation>&& aAccumulations) {
   TelemetryIPC::AccumulateChildKeyedHistograms(Telemetry::ProcessID::Socket,
                                                aAccumulations);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult SocketProcessParent::RecvUpdateChildScalars(
-    InfallibleTArray<ScalarAction>&& aScalarActions) {
+    nsTArray<ScalarAction>&& aScalarActions) {
   TelemetryIPC::UpdateChildScalars(Telemetry::ProcessID::Socket,
                                    aScalarActions);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult SocketProcessParent::RecvUpdateChildKeyedScalars(
-    InfallibleTArray<KeyedScalarAction>&& aScalarActions) {
+    nsTArray<KeyedScalarAction>&& aScalarActions) {
   TelemetryIPC::UpdateChildKeyedScalars(Telemetry::ProcessID::Socket,
                                         aScalarActions);
   return IPC_OK();
@@ -175,6 +161,35 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvPDNSRequestConstructor(
 bool SocketProcessParent::DeallocPDNSRequestParent(PDNSRequestParent* aParent) {
   DNSRequestParent* p = static_cast<DNSRequestParent*>(aParent);
   p->Release();
+  return true;
+}
+
+PProxyConfigLookupParent* SocketProcessParent::AllocPProxyConfigLookupParent() {
+#ifdef MOZ_WEBRTC
+  RefPtr<ProxyConfigLookupParent> actor = new ProxyConfigLookupParent();
+  return actor.forget().take();
+#else
+  return nullptr;
+#endif
+}
+
+mozilla::ipc::IPCResult SocketProcessParent::RecvPProxyConfigLookupConstructor(
+    PProxyConfigLookupParent* aActor) {
+#ifdef MOZ_WEBRTC
+  ProxyConfigLookupParent* actor =
+      static_cast<ProxyConfigLookupParent*>(aActor);
+  actor->DoProxyLookup();
+#endif
+  return IPC_OK();
+}
+
+bool SocketProcessParent::DeallocPProxyConfigLookupParent(
+    PProxyConfigLookupParent* aActor) {
+#ifdef MOZ_WEBRTC
+  RefPtr<ProxyConfigLookupParent> actor =
+      dont_AddRef(static_cast<ProxyConfigLookupParent*>(aActor));
+  MOZ_ASSERT(actor);
+#endif
   return true;
 }
 

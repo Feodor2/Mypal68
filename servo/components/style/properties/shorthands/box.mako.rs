@@ -365,3 +365,136 @@ ${helpers.two_properties_shorthand(
         }
     }
 </%helpers:shorthand>
+
+<%helpers:shorthand name="offset"
+                    engines="gecko"
+                    sub_properties="offset-path offset-distance offset-rotate offset-anchor"
+                    gecko_pref="layout.css.motion-path.enabled",
+                    spec="https://drafts.fxtf.org/motion-1/#offset-shorthand">
+    use crate::parser::Parse;
+    use crate::values::specified::motion::{OffsetPath, OffsetRotate};
+    use crate::values::specified::position::PositionOrAuto;
+    use crate::values::specified::LengthPercentage;
+    use crate::Zero;
+
+    pub fn parse_value<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Longhands, ParseError<'i>> {
+        // FIXME: Bug 1559232: Support offset-position.
+        // Per the spec, this must have offet-position and/or offset-path. However, we don't
+        // support offset-position, so offset-path is necessary now.
+        let offset_path = OffsetPath::parse(context, input)?;
+
+        let mut offset_distance = None;
+        let mut offset_rotate = None;
+        loop {
+            if offset_distance.is_none() {
+                if let Ok(value) = input.try(|i| LengthPercentage::parse(context, i)) {
+                    offset_distance = Some(value);
+                }
+            }
+
+            if offset_rotate.is_none() {
+                if let Ok(value) = input.try(|i| OffsetRotate::parse(context, i)) {
+                    offset_rotate = Some(value);
+                    continue;
+                }
+            }
+            break;
+        }
+
+        let offset_anchor = input.try(|i| {
+            i.expect_delim('/')?;
+            PositionOrAuto::parse(context, i)
+        }).ok();
+
+        Ok(expanded! {
+            offset_path: offset_path,
+            offset_distance: offset_distance.unwrap_or(LengthPercentage::zero()),
+            offset_rotate: offset_rotate.unwrap_or(OffsetRotate::auto()),
+            offset_anchor: offset_anchor.unwrap_or(PositionOrAuto::auto()),
+        })
+    }
+
+    impl<'a> ToCss for LonghandsToSerialize<'a>  {
+        fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result where W: fmt::Write {
+            // FIXME: Bug 1559232: Support offset-position. We don't support offset-position,
+            // so always serialize offset-path now.
+            self.offset_path.to_css(dest)?;
+
+            if !self.offset_distance.is_zero() {
+                dest.write_str(" ")?;
+                self.offset_distance.to_css(dest)?;
+            }
+
+            if !self.offset_rotate.is_auto() {
+                dest.write_str(" ")?;
+                self.offset_rotate.to_css(dest)?;
+            }
+
+            if *self.offset_anchor != PositionOrAuto::auto() {
+                dest.write_str(" / ")?;
+                self.offset_anchor.to_css(dest)?;
+            }
+            Ok(())
+        }
+    }
+</%helpers:shorthand>
+
+<%helpers:shorthand name="zoom" engines="gecko"
+                    sub_properties="transform transform-origin"
+                    gecko_pref="layout.css.zoom-transform-hack.enabled"
+                    flags="SHORTHAND_IN_GETCS IS_LEGACY_SHORTHAND"
+                    spec="Not a standard, only a compat hack">
+    use crate::parser::Parse;
+    use crate::values::specified::{Number, NumberOrPercentage, TransformOrigin};
+    use crate::values::generics::transform::{Transform, TransformOperation};
+
+    pub fn parse_value<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Longhands, ParseError<'i>> {
+        let zoom = match input.try(|input| NumberOrPercentage::parse(context, input)) {
+            Ok(number_or_percent) => number_or_percent.to_number(),
+            Err(..) => {
+                input.expect_ident_matching("normal")?;
+                Number::new(1.0)
+            },
+        };
+
+        // Make sure that the initial value matches the values for the
+        // longhands, just for general sanity.  `zoom: 1` and `zoom: 0` are
+        // ignored, see [1][2]. They are just hack for the "has layout" mode on
+        // IE.
+        //
+        // [1]: https://bugs.webkit.org/show_bug.cgi?id=18467
+        // [2]: https://bugzilla.mozilla.org/show_bug.cgi?id=1593009
+        Ok(if zoom.get() == 1.0 || zoom.get() == 0.0 {
+            expanded! {
+                transform: Transform::none(),
+                transform_origin: TransformOrigin::initial_value(),
+            }
+        } else {
+            expanded! {
+                transform: Transform(vec![TransformOperation::Scale(zoom, zoom)].into()),
+                transform_origin: TransformOrigin::zero_zero(),
+            }
+        })
+    }
+
+    impl<'a> ToCss for LonghandsToSerialize<'a>  {
+        fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result where W: fmt::Write {
+            if self.transform.0.is_empty() && *self.transform_origin == TransformOrigin::initial_value() {
+                return 1.0f32.to_css(dest);
+            }
+            if *self.transform_origin != TransformOrigin::zero_zero() {
+                return Ok(())
+            }
+            match &*self.transform.0 {
+                [TransformOperation::Scale(x, y)] if x == y => x.to_css(dest),
+                _ => Ok(()),
+            }
+        }
+    }
+</%helpers:shorthand>

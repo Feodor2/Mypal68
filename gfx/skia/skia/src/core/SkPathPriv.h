@@ -10,6 +10,14 @@
 
 #include "SkPath.h"
 
+#define SK_TREAT_COLINEAR_DIAGONAL_POINTS_AS_CONCAVE 0
+
+#if SK_TREAT_COLINEAR_DIAGONAL_POINTS_AS_CONCAVE
+    #define COLINEAR_DIAGONAL_CONVEXITY kConcave_Convexity
+#else
+    #define COLINEAR_DIAGONAL_CONVEXITY kConvex_Convexity
+#endif
+
 class SkPathPriv {
 public:
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
@@ -18,7 +26,7 @@ public:
     static const int kPathRefGenIDBitCnt = 32;
 #endif
 
-    enum FirstDirection {
+    enum FirstDirection : int {
         kCW_FirstDirection,         // == SkPath::kCW_Direction
         kCCW_FirstDirection,        // == SkPath::kCCW_Direction
         kUnknown_FirstDirection,
@@ -86,8 +94,9 @@ public:
         return false;
     }
 
-    static void AddGenIDChangeListener(const SkPath& path, SkPathRef::GenIDChangeListener* listener) {
-        path.fPathRef->addGenIDChangeListener(listener);
+    static void AddGenIDChangeListener(const SkPath& path,
+                                       sk_sp<SkPathRef::GenIDChangeListener> listener) {
+        path.fPathRef->addGenIDChangeListener(std::move(listener));
     }
 
     /**
@@ -104,6 +113,12 @@ public:
      */
     static void CreateDrawArcPath(SkPath* path, const SkRect& oval, SkScalar startAngle,
                                   SkScalar sweepAngle, bool useCenter, bool isFillNoPathEffect);
+
+    /**
+     * Determines whether an arc produced by CreateDrawArcPath will be convex. Assumes a non-empty
+     * oval.
+     */
+    static bool DrawArcIsConvex(SkScalar sweepAngle, bool useCenter, bool isFillNoPathEffect);
 
     /**
      * Returns a C++11-iterable object that traverses a path's verbs in order. e.g:
@@ -151,6 +166,17 @@ public:
     static const SkScalar* ConicWeightData(const SkPath& path) {
         return path.fPathRef->conicWeights();
     }
+
+#ifndef SK_LEGACY_PATH_CONVEXITY
+    /** Returns true if path formed by pts is convex.
+
+        @param pts    SkPoint array of path
+        @param count  number of entries in array
+
+        @return       true if pts represent a convex geometry
+    */
+    static bool IsConvex(const SkPoint pts[], int count);
+#endif
 
     /** Returns true if the underlying SkPathRef has one single owner. */
     static bool TestingOnly_unique(const SkPath& path) {
@@ -210,6 +236,53 @@ public:
             *dir = isCCW ? SkPath::kCCW_Direction : SkPath::kCW_Direction;
         }
         return result;
+    }
+
+    // For crbug.com/821353 and skbug.com/6886
+    static bool IsBadForDAA(const SkPath& path) { return path.fIsBadForDAA; }
+    static void SetIsBadForDAA(SkPath& path, bool isBadForDAA) { path.fIsBadForDAA = isBadForDAA; }
+
+    /**
+     *  Sometimes in the drawing pipeline, we have to perform math on path coordinates, even after
+     *  the path is in device-coordinates. Tessellation and clipping are two examples. Usually this
+     *  is pretty modest, but it can involve subtracting/adding coordinates, or multiplying by
+     *  small constants (e.g. 2,3,4). To try to preflight issues where these optionations could turn
+     *  finite path values into infinities (or NaNs), we allow the upper drawing code to reject
+     *  the path if its bounds (in device coordinates) is too close to max float.
+     */
+    static bool TooBigForMath(const SkRect& bounds) {
+        // This value is just a guess. smaller is safer, but we don't want to reject largish paths
+        // that we don't have to.
+        constexpr SkScalar scale_down_to_allow_for_small_multiplies = 0.25f;
+        constexpr SkScalar max = SK_ScalarMax * scale_down_to_allow_for_small_multiplies;
+
+        // use ! expression so we return true if bounds contains NaN
+        return !(bounds.fLeft >= -max && bounds.fTop >= -max &&
+                 bounds.fRight <= max && bounds.fBottom <= max);
+    }
+    static bool TooBigForMath(const SkPath& path) {
+        return TooBigForMath(path.getBounds());
+    }
+
+    // Returns number of valid points for each SkPath::Iter verb
+    static int PtsInIter(unsigned verb) {
+        static const uint8_t gPtsInVerb[] = {
+            1,  // kMove    pts[0]
+            2,  // kLine    pts[0..1]
+            3,  // kQuad    pts[0..2]
+            3,  // kConic   pts[0..2]
+            4,  // kCubic   pts[0..3]
+            0,  // kClose
+            0   // kDone
+        };
+
+        SkASSERT(verb < SK_ARRAY_COUNT(gPtsInVerb));
+        return gPtsInVerb[verb];
+    }
+
+    static bool IsAxisAligned(const SkPath& path) {
+        SkRect tmp;
+        return (path.fPathRef->fIsRRect | path.fPathRef->fIsOval) || path.isRect(&tmp);
     }
 };
 

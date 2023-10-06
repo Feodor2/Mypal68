@@ -10,20 +10,13 @@
 
 #include "SkTypes.h"
 
-enum SkBlurStyle {
+enum SkBlurStyle : int {
     kNormal_SkBlurStyle,  //!< fuzzy inside and outside
     kSolid_SkBlurStyle,   //!< solid inside, fuzzy outside
     kOuter_SkBlurStyle,   //!< nothing inside, fuzzy outside
     kInner_SkBlurStyle,   //!< fuzzy inside, nothing outside
 
-    kLastEnum_SkBlurStyle = kInner_SkBlurStyle
-};
-
-enum SkBlurQuality {
-    kLow_SkBlurQuality,     //!< e.g. box filter
-    kHigh_SkBlurQuality,    //!< e.g. 3-pass similar to gaussian
-
-    kLastEnum_SkBlurQuality
+    kLastEnum_SkBlurStyle = kInner_SkBlurStyle,
 };
 
 #endif

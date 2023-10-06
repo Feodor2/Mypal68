@@ -107,6 +107,7 @@
 #include "mozilla/PreloadedStyleSheet.h"
 #include "mozilla/layers/WebRenderBridgeChild.h"
 #include "mozilla/layers/WebRenderLayerManager.h"
+#include "mozilla/ResultExtensions.h"
 
 #ifdef XP_WIN
 #  undef GetClassName
@@ -462,16 +463,6 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
                         new DisplayPortPropertyData(displayport, aPriority),
                         nsINode::DeleteProperty<DisplayPortPropertyData>);
 
-  if (StaticPrefs::layout_scroll_root_frame_containers()) {
-    nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame();
-    if (rootScrollFrame && aElement == rootScrollFrame->GetContent() &&
-        nsLayoutUtils::UsesAsyncScrolling(rootScrollFrame)) {
-      // We are setting a root displayport for a document.
-      // The pres shell needs a special flag set.
-      presShell->SetIgnoreViewportScrolling(true);
-    }
-  }
-
   nsLayoutUtils::InvalidateForDisplayPortChange(aElement, hadDisplayPort,
                                                 oldDisplayPort, displayport);
 
@@ -559,7 +550,7 @@ nsDOMWindowUtils::SetResolutionAndScaleTo(float aResolution) {
   }
 
   presShell->SetResolutionAndScaleTo(aResolution,
-                                     ResolutionChangeOrigin::MainThread);
+                                     ResolutionChangeOrigin::MainThreadRestore);
 
   return NS_OK;
 }
@@ -3436,7 +3427,11 @@ nsDOMWindowUtils::GetOMTAStyle(Element* aElement, const nsAString& aProperty,
     } else if (aProperty.EqualsLiteral("transform") ||
                aProperty.EqualsLiteral("translate") ||
                aProperty.EqualsLiteral("rotate") ||
-               aProperty.EqualsLiteral("scale")) {
+               aProperty.EqualsLiteral("scale") ||
+               aProperty.EqualsLiteral("offset-path") ||
+               aProperty.EqualsLiteral("offset-distance") ||
+               aProperty.EqualsLiteral("offset-rotate") ||
+               aProperty.EqualsLiteral("offset-anchor")) {
       OMTAValue value = GetOMTAValue(frame, DisplayItemType::TYPE_TRANSFORM,
                                      GetWebRenderBridge());
       if (value.type() == OMTAValue::TMatrix4x4) {
@@ -3663,7 +3658,7 @@ nsDOMWindowUtils::PostRestyleSelfEvent(Element* aElement) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  nsLayoutUtils::PostRestyleEvent(aElement, StyleRestyleHint_RESTYLE_SELF,
+  nsLayoutUtils::PostRestyleEvent(aElement, RestyleHint::RESTYLE_SELF,
                                   nsChangeHint(0));
   return NS_OK;
 }
@@ -4081,12 +4076,58 @@ NS_IMETHODIMP
 nsDOMWindowUtils::SetCompositionRecording(bool aValue) {
   if (CompositorBridgeChild* cbc = GetCompositorBridge()) {
     if (aValue) {
-      cbc->SendBeginRecording(TimeStamp::Now());
+      RefPtr<nsDOMWindowUtils> self = this;
+      cbc->SendBeginRecording(TimeStamp::Now())
+          ->Then(
+              GetCurrentThreadSerialEventTarget(), __func__,
+              [self](const bool& aSuccess) {
+                if (!aSuccess) {
+                  self->ReportErrorMessageForWindow(
+                      NS_LITERAL_STRING(
+                          "The composition recorder is already running."),
+                      "DOM", true);
+                }
+              },
+              [self](const mozilla::ipc::ResponseRejectReason&) {
+                self->ReportErrorMessageForWindow(
+                    NS_LITERAL_STRING(
+                        "Could not start the composition recorder."),
+                    "DOM", true);
+              });
     } else {
-      cbc->SendEndRecording();
+      bool success = false;
+      if (!cbc->SendEndRecording(&success)) {
+        ReportErrorMessageForWindow(
+            NS_LITERAL_STRING("Could not stop the composition recorder."),
+            "DOM", true);
+      } else if (!success) {
+        ReportErrorMessageForWindow(
+            NS_LITERAL_STRING("The composition recorder is not running."),
+            "DOM", true);
+      }
     }
   }
+
   return NS_OK;
+}
+
+void nsDOMWindowUtils::ReportErrorMessageForWindow(
+    const nsAString& aErrorMessage, const char* aClassification,
+    bool aFromChrome) {
+  bool isPrivateWindow = false;
+
+  if (nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow)) {
+    if (nsIPrincipal* principal =
+            nsGlobalWindowOuter::Cast(window)->GetPrincipal()) {
+      uint32_t privateBrowsingId = 0;
+
+      if (NS_SUCCEEDED(principal->GetPrivateBrowsingId(&privateBrowsingId))) {
+        isPrivateWindow = !!privateBrowsingId;
+      }
+    }
+  }
+  nsContentUtils::LogSimpleConsoleError(aErrorMessage, aClassification,
+                                        isPrivateWindow, aFromChrome);
 }
 
 NS_IMETHODIMP
@@ -4110,5 +4151,11 @@ nsDOMWindowUtils::GetSystemFont(nsACString& aFontName) {
   nsAutoCString fontName;
   widget->GetSystemFont(fontName);
   aFontName.Assign(fontName);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetUsesOverlayScrollbars(bool* aResult) {
+  *aResult = Document::UseOverlayScrollbars(GetDocument());
   return NS_OK;
 }

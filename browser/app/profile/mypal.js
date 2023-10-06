@@ -167,7 +167,6 @@ pref("browser.uitour.surveyDuration", 7200);
 pref("keyword.enabled", false);
 pref("browser.fixup.domainwhitelist.localhost", true);
 
-pref("general.smoothScroll", true);
 #ifdef UNIX_BUT_NOT_MAC
   pref("general.autoScroll", false);
 #else

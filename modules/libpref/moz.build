@@ -37,6 +37,7 @@ pref_groups = [
     'dom',
     'editor',
     'extensions',
+    'findbar',
     'font',
     'full_screen_api',
     'general',
@@ -76,7 +77,8 @@ pref_groups = [
 ]
 if CONFIG['OS_TARGET'] == 'Android':
     pref_groups += [
-        'consoleservice'
+        'android',
+        'consoleservice',
     ]
 if CONFIG['FUZZING']:
     pref_groups += [

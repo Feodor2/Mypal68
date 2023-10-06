@@ -850,8 +850,7 @@ static nsIFrame* StyleFrame(nsIFrame* aOuterFrame) {
 static bool IsNonReplacedInline(nsIFrame* aFrame) {
   // FIXME: this should be IsInlineInsideStyle() since width/height
   // doesn't apply to ruby boxes.
-  return aFrame->StyleDisplay()->DisplayInside() ==
-             StyleDisplayInside::Inline &&
+  return aFrame->StyleDisplay()->IsInlineFlow() &&
          !aFrame->IsFrameOfType(nsIFrame::eReplaced);
 }
 
@@ -948,17 +947,10 @@ bool nsComputedDOMStyle::NeedsToFlushLayout(nsCSSPropertyID aPropID) const {
     case eCSSProperty_margin_right:
     case eCSSProperty_margin_bottom:
     case eCSSProperty_margin_left: {
-      // NOTE(emilio): We could do the commented out thing below, but it is not
-      // clear whether it's correct. It does change behavior and cause a new
-      // test to _pass_. But it's unclear whether it is the right thing, see:
-      //
-      // https://github.com/w3c/csswg-drafts/issues/2328
-      //
-      // Bug 1570759 tracks maybe changing the behavior here.
-      //
-      // Side side = SideForPaddingOrMarginOrInsetProperty(aPropID);
-      // return !style->StyleMargin()->mMargin.Get(side).ConvertsToLength();
-      return true;
+      // NOTE(emilio): This is dubious, but matches other browsers.
+      // See https://github.com/w3c/csswg-drafts/issues/2328
+      Side side = SideForPaddingOrMarginOrInsetProperty(aPropID);
+      return !style->StyleMargin()->mMargin.Get(side).ConvertsToLength();
     }
     default:
       return false;
@@ -1840,7 +1832,7 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::DoGetTextDecoration() {
   const nsStyleTextReset* textReset = StyleTextReset();
   RefPtr<nsDOMCSSValueList> valueList = GetROCSSValueList(false);
 
-  if (textReset->mTextDecorationLine != StyleTextDecorationLine_NONE) {
+  if (textReset->mTextDecorationLine != StyleTextDecorationLine::NONE) {
     valueList->AppendCSSValue(
         getPropertyValue(eCSSProperty_text_decoration_line));
   }
@@ -2199,7 +2191,7 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::GetMarginWidthFor(
   RefPtr<nsROCSSPrimitiveValue> val = new nsROCSSPrimitiveValue;
 
   auto& margin = StyleMargin()->mMargin.Get(aSide);
-  if (!mInnerFrame) {
+  if (!mInnerFrame || margin.ConvertsToLength()) {
     SetValueToLengthPercentageOrAuto(val, margin, false);
   } else {
     AssertFlushedPendingReflows();

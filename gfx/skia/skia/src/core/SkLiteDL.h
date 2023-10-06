@@ -25,15 +25,12 @@ public:
     void reset();
     bool empty() const { return fUsed == 0; }
 
-#ifdef SK_SUPPORT_LEGACY_DRAWFILTER
-    void setDrawFilter(SkDrawFilter*);
-#endif
-
     void flush();
 
     void save();
     void saveLayer(const SkRect*, const SkPaint*, const SkImageFilter*, const SkImage*,
                    const SkMatrix*, SkCanvas::SaveLayerFlags);
+    void saveBehind(const SkRect*);
     void restore();
 
     void    concat (const SkMatrix&);
@@ -49,6 +46,7 @@ public:
     void drawPaint (const SkPaint&);
     void drawPath  (const SkPath&, const SkPaint&);
     void drawRect  (const SkRect&, const SkPaint&);
+    void drawEdgeAARect(const SkRect&, SkCanvas::QuadAAFlags, SkColor, SkBlendMode);
     void drawRegion(const SkRegion&, const SkPaint&);
     void drawOval  (const SkRect&, const SkPaint&);
     void drawArc   (const SkRect&, SkScalar, SkScalar, bool, const SkPaint&);
@@ -59,11 +57,6 @@ public:
     void drawDrawable       (SkDrawable*, const SkMatrix*);
     void drawPicture        (const SkPicture*, const SkMatrix*, const SkPaint*);
 
-    void drawText       (const void*, size_t, SkScalar, SkScalar, const SkPaint&);
-    void drawPosText    (const void*, size_t, const SkPoint[], const SkPaint&);
-    void drawPosTextH   (const void*, size_t, const SkScalar[], SkScalar, const SkPaint&);
-    void drawTextOnPath (const void*, size_t, const SkPath&, const SkMatrix*, const SkPaint&);
-    void drawTextRSXform(const void*, size_t, const SkRSXform[], const SkRect*, const SkPaint&);
     void drawTextBlob   (const SkTextBlob*, SkScalar,SkScalar, const SkPaint&);
 
     void drawImage    (sk_sp<const SkImage>, SkScalar,SkScalar,             const SkPaint*);
@@ -72,11 +65,13 @@ public:
                        SkCanvas::SrcRectConstraint);
     void drawImageLattice(sk_sp<const SkImage>, const SkCanvas::Lattice&,
                           const SkRect&, const SkPaint*);
+    void drawImageSet(const SkCanvas::ImageSetEntry[], int count, SkFilterQuality, SkBlendMode);
 
     void drawPatch(const SkPoint[12], const SkColor[4], const SkPoint[4],
                    SkBlendMode, const SkPaint&);
     void drawPoints(SkCanvas::PointMode, size_t, const SkPoint[], const SkPaint&);
-    void drawVertices(const SkVertices*, SkBlendMode, const SkPaint&);
+    void drawVertices(const SkVertices*, const SkVertices::Bone bones[], int boneCount, SkBlendMode,
+                      const SkPaint&);
     void drawAtlas(const SkImage*, const SkRSXform[], const SkRect[], const SkColor[], int,
                    SkBlendMode, const SkRect*, const SkPaint*);
     void drawShadowRec(const SkPath&, const SkDrawShadowRec&);

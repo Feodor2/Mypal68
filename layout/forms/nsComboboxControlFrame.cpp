@@ -225,6 +225,7 @@ nsComboboxControlFrame::nsComboboxControlFrame(ComputedStyle* aStyle,
       mDropdownFrame(nullptr),
       mListControlFrame(nullptr),
       mDisplayISize(0),
+      mMaxDisplayISize(0),
       mRecentSelectedIndex(NS_SKIP_NOTIFY_INDEX),
       mDisplayedIndex(-1),
       mLastDropDownBeforeScreenBCoord(nscoord_MIN),
@@ -715,9 +716,14 @@ nscoord nsComboboxControlFrame::GetIntrinsicISize(
 
   const bool isContainSize = StyleDisplay()->IsContainSize();
   nscoord displayISize = 0;
-  if (MOZ_LIKELY(mDisplayFrame) && !isContainSize) {
-    displayISize = nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
-                                                        mDisplayFrame, aType);
+  if (MOZ_LIKELY(mDisplayFrame)) {
+    if (isContainSize) {
+      // Get padding from the inline-axis
+      displayISize = mDisplayFrame->IntrinsicISizeOffsets().padding;
+    } else {
+      displayISize = nsLayoutUtils::IntrinsicForContainer(aRenderingContext,
+                                                          mDisplayFrame, aType);
+    }
   }
 
   if (mDropdownFrame) {
@@ -824,6 +830,9 @@ void nsComboboxControlFrame::Reflow(nsPresContext* aPresContext,
   }
 
   mDisplayISize = aReflowInput.ComputedISize() - buttonISize;
+
+  mMaxDisplayISize =
+      mDisplayISize + aReflowInput.ComputedLogicalPadding().IEnd(wm);
 
   nsBlockFrame::Reflow(aPresContext, aDesiredSize, aReflowInput, aStatus);
 
@@ -981,9 +990,16 @@ void nsComboboxControlFrame::HandleRedisplayTextEvent() {
 void nsComboboxControlFrame::ActuallyDisplayText(bool aNotify) {
   RefPtr<nsTextNode> displayContent = mDisplayContent;
   if (mDisplayedOptionTextOrPreview.IsEmpty()) {
-    // Have to use a non-breaking space for line-block-size calculations
-    // to be right
-    static const char16_t space = 0xA0;
+    // Have to use a space character of some sort for line-block-size
+    // calculations to be right. Also, the space character must be zero-width
+    // in order for the the inline-size calculations to be consistent between
+    // size-contained comboboxes vs. empty comboboxes.
+    //
+    // XXXdholbert Does this space need to be "non-breaking"? I'm not sure
+    // if it matters, but we previously had a comment here (added in 2002)
+    // saying "Have to use a non-breaking space for line-height calculations
+    // to be right". So I'll stick with a non-breaking space for now...
+    static const char16_t space = 0xFEFF;
     displayContent->SetText(&space, 1, aNotify);
   } else {
     displayContent->SetText(mDisplayedOptionTextOrPreview, aNotify);
@@ -1230,24 +1246,44 @@ void nsComboboxDisplayFrame::Reflow(nsPresContext* aPresContext,
   MOZ_ASSERT(aStatus.IsEmpty(), "Caller should pass a fresh reflow status!");
 
   ReflowInput state(aReflowInput);
+  WritingMode wm = aReflowInput.GetWritingMode();
+  LogicalMargin bp = state.ComputedLogicalBorderPadding();
   if (state.ComputedBSize() == NS_UNCONSTRAINEDSIZE) {
     float inflation = nsLayoutUtils::FontSizeInflationFor(mComboBox);
     // We intentionally use the combobox frame's style here, which has
     // the 'line-height' specified by the author, if any.
     // (This frame has 'line-height: -moz-block-height' in the UA
     // sheet which is suitable when there's a specified block-size.)
-    auto lh = ReflowInput::CalcLineHeight(mComboBox->GetContent(),
-                                          mComboBox->Style(), aPresContext,
-                                          NS_UNCONSTRAINEDSIZE, inflation);
+    nscoord lh = ReflowInput::CalcLineHeight(mComboBox->GetContent(),
+                                             mComboBox->Style(), aPresContext,
+                                             NS_UNCONSTRAINEDSIZE, inflation);
+    if (!mComboBox->StyleText()->mLineHeight.IsNormal()) {
+      // If the author specified a different line-height than normal, or a
+      // different appearance, subtract the border-padding from the
+      // comboboxdisplay frame, so as to respect that line-height rather than
+      // that line-height + 2px (from the UA sheet).
+      lh = std::max(0, lh - bp.BStartEnd(wm));
+    }
     state.SetComputedBSize(lh);
   }
-  WritingMode wm = aReflowInput.GetWritingMode();
-  nscoord computedISize = mComboBox->mDisplayISize -
-                          state.ComputedLogicalBorderPadding().IStartEnd(wm);
-  if (computedISize < 0) {
-    computedISize = 0;
+  nscoord inlineBp = bp.IStartEnd(wm);
+  nscoord computedISize = mComboBox->mDisplayISize - inlineBp;
+
+  // Other UAs ignore padding in some (but not all) platforms for (themed only)
+  // comboboxes. Instead of doing that, we prevent that padding if present from
+  // clipping the display text, by enforcing the display text minimum size in
+  // that situation.
+  const bool shouldHonorMinISize =
+      mComboBox->StyleDisplay()->mAppearance == StyleAppearance::Menulist;
+  if (shouldHonorMinISize) {
+    computedISize = std::max(state.ComputedMinISize(), computedISize);
+    // Don't let this size go over mMaxDisplayISize, since that'd be
+    // observable via clientWidth / scrollWidth.
+    computedISize =
+        std::min(computedISize, mComboBox->mMaxDisplayISize - inlineBp);
   }
-  state.SetComputedISize(computedISize);
+
+  state.SetComputedISize(std::max(0, computedISize));
   nsBlockFrame::Reflow(aPresContext, aDesiredSize, state, aStatus);
   aStatus.Reset();  // this type of frame can't be split
 }

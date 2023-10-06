@@ -17,7 +17,12 @@
 #include <string.h>
 
 namespace mozilla {
+
+namespace dom {
+class DOMSVGPoint;
+class DOMSVGPointList;
 class nsISVGPoint;
+}  // namespace dom
 
 /**
  * ATTENTION! WARNING! WATCH OUT!!
@@ -29,10 +34,10 @@ class nsISVGPoint;
  * The DOM wrapper class for this class is DOMSVGPointList.
  */
 class SVGPointList {
-  friend class mozilla::nsISVGPoint;
+  friend class dom::nsISVGPoint;
   friend class SVGAnimatedPointList;
-  friend class DOMSVGPointList;
-  friend class DOMSVGPoint;
+  friend class dom::DOMSVGPointList;
+  friend class dom::DOMSVGPoint;
 
  public:
   SVGPointList() = default;

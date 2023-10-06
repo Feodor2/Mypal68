@@ -1095,14 +1095,22 @@ def enable_webrender(config, tests):
     """
     for test in tests:
         if test.get('webrender'):
-            test['mozharness'].setdefault('extra-options', [])\
-                              .append("--enable-webrender")
-        # Explicitly disable WebRender on non-WR AWSY, since that job runs on
-        # virtual-with-gpu and thus is considered qualified hardware.
-        elif test['suite'] == 'awsy':
-            test['mozharness'].setdefault('extra-options', [])\
-                              .append("--disable-webrender")
+            extra_options = test['mozharness'].setdefault('extra-options', [])
+            extra_options.append("--enable-webrender")
+            # We only want to 'setpref' on tests that have a profile
+            if not test['attributes']['unittest_category'] in ['cppunittest', 'gtest', 'raptor']:
+                extra_options.append("--setpref=layers.d3d11.enable-blacklist=false")
 
+        yield test
+
+
+@transforms.add
+def set_schedules_for_webrender_android(config, tests):
+    """android-hw has limited resources, we need webrender on phones"""
+    for test in tests:
+        if test['suite'] in ['crashtest', 'reftest'] and \
+           test['test-platform'].startswith('android-hw'):
+            test['schedules-component'] = 'android-hw-gfx'
         yield test
 
 

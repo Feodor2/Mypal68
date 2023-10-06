@@ -22,6 +22,7 @@ use std::ptr;
 use std::sync::Arc;
 use std::i32;
 use std;
+use euclid::Rect;
 
 #[cfg(target_os = "windows")]
 use dwrote;
@@ -171,7 +172,6 @@ struct BlobReader<'a> {
     reader: BufReader<'a>,
     /// Where the buffer head is.
     begin: usize,
-    origin: IntPoint,
 }
 
 #[derive(PartialEq, Debug, Eq, Clone, Copy)]
@@ -199,12 +199,11 @@ impl<'a> BlobReader<'a> {
     /// Creates a new BlobReader for the given buffer.
     fn new(buf: &'a[u8]) -> BlobReader<'a> {
         // The offset of the index is at the end of the buffer.
-        let index_offset_pos = buf.len()-(mem::size_of::<usize>() + mem::size_of::<IntPoint>());
+        let index_offset_pos = buf.len()-mem::size_of::<usize>();
         assert!(index_offset_pos < buf.len());
         let index_offset = unsafe { convert_from_bytes::<usize>(&buf[index_offset_pos..]) };
-        let origin = unsafe { convert_from_bytes(&buf[(index_offset_pos + mem::size_of::<usize>())..]) };
 
-        BlobReader { reader: BufReader::new(&buf[index_offset..index_offset_pos]), begin: 0, origin }
+        BlobReader { reader: BufReader::new(&buf[index_offset..index_offset_pos]), begin: 0}
     }
 
     /// Reads the next display item's metadata.
@@ -250,13 +249,12 @@ impl BlobWriter {
     }
 
     /// Completes the blob image, producing a single buffer containing it.
-    fn finish(mut self, origin: IntPoint) -> Vec<u8> {
+    fn finish(mut self) -> Vec<u8> {
         // Append the index to the end of the buffer
         // and then append the offset to the beginning of the index.
         let index_begin = self.data.len();
         self.data.extend_from_slice(&self.index);
         self.data.extend_from_slice(convert_to_bytes(&index_begin));
-        self.data.extend_from_slice(convert_to_bytes(&origin));
         self.data
     }
 }
@@ -277,13 +275,48 @@ struct Box2d {
 
 impl Box2d {
     /// Returns whether `self` is contained by `other` (inclusive).
+    /// an empty self is contained in every rect
     fn contained_by(&self, other: &Box2d) -> bool {
-        self.x1 >= other.x1 &&
-        self.x2 <= other.x2 &&
-        self.y1 >= other.y1 &&
-        self.y2 <= other.y2
+        self.is_empty() || (self.x1 >= other.x1 &&
+            self.x2 <= other.x2 &&
+            self.y1 >= other.y1 &&
+            self.y2 <= other.y2)
+    }
+
+    fn intersection(&self, other: &Box2d) -> Box2d {
+        let result = Box2d { x1: self.x1.max(other.x1),
+                y1: self.y1.max(other.y1),
+                x2: self.x2.min(other.x2),
+                y2: self.y2.min(other.y2) };
+        if self.is_empty() || other.is_empty() {
+            assert!(result.is_empty());
+        }
+        result
+    }
+
+    fn is_empty(&self) -> bool {
+        self.x2 <= self.x1 || self.y2 <= self.y1
     }
 }
+
+impl<T> From<Rect<i32, T>> for Box2d {
+    fn from(rect: Rect<i32, T>) -> Box2d {
+        (&rect).into()
+    }
+}
+
+impl<T> From<&Rect<i32, T>> for Box2d {
+    fn from(rect: &Rect<i32, T>) -> Box2d {
+        Box2d {
+            x1: rect.min_x(),
+            y1: rect.min_y(),
+            x2: rect.max_x(),
+            y2: rect.max_y(),
+        }
+    }
+}
+
+
 
 /// Provides an API for looking up the display items in a blob image by bounds, yielding items
 /// with equal bounds in their original relative ordering.
@@ -380,20 +413,19 @@ impl<'a> CachedReader<'a> {
 /// the first not-yet-copied item with those bounds in the old list and copy that.
 /// Any items found in the old list but not the new one can be safely assumed to
 /// have been deleted.
-fn merge_blob_images(old_buf: &[u8], new_buf: &[u8], dirty_rect: Box2d) -> Vec<u8> {
-
+fn merge_blob_images(old_buf: &[u8], new_buf: &[u8], dirty_rect: Box2d, old_visible_rect: Box2d, new_visible_rect: Box2d) -> Vec<u8> {
     let mut result = BlobWriter::new();
     dlog!("dirty rect: {:?}", dirty_rect);
     dlog!("old:");
     dump_bounds(old_buf, dirty_rect);
     dlog!("new:");
     dump_bounds(new_buf, dirty_rect);
+    dlog!("old visibile rect: {:?}", old_visible_rect);
+    dlog!("new visibile rect: {:?}", new_visible_rect);
 
     let mut old_reader = CachedReader::new(old_buf);
     let mut new_reader = BlobReader::new(new_buf);
-
-    // we currently only support merging blobs that have the same origin
-    assert_eq!(old_reader.reader.origin, new_reader.origin);
+    let preserved_rect = old_visible_rect.intersection(&new_visible_rect);
 
     // Loop over both new and old entries merging them.
     // Both new and old must have the same number of entries that
@@ -402,7 +434,8 @@ fn merge_blob_images(old_buf: &[u8], new_buf: &[u8], dirty_rect: Box2d) -> Vec<u
     while new_reader.reader.has_more() {
         let new = new_reader.read_entry();
         dlog!("bounds: {} {} {:?}", new.end, new.extra_end, new.bounds);
-        if new.bounds.contained_by(&dirty_rect) {
+        let preserved_bounds = new.bounds.intersection(&preserved_rect);
+        if preserved_bounds.contained_by(&dirty_rect) {
             result.new_entry(new.extra_end - new.end, new.bounds, &new_buf[new.begin..new.extra_end]);
         } else {
             let old = old_reader.next_entry_with_bounds(&new.bounds, &dirty_rect);
@@ -420,12 +453,12 @@ fn merge_blob_images(old_buf: &[u8], new_buf: &[u8], dirty_rect: Box2d) -> Vec<u
     while old_reader.reader.reader.has_more() {
         let old = old_reader.reader.read_entry();
         dlog!("new bounds: {} {} {:?}", old.end, old.extra_end, old.bounds);
-        assert!(old.bounds.contained_by(&dirty_rect));
+        //assert!(old.bounds.contained_by(&dirty_rect));
     }
 
-    assert!(old_reader.cache.is_empty());
+    //assert!(old_reader.cache.is_empty());
 
-    let result = result.finish(new_reader.origin);
+    let result = result.finish();
     dump_index(&result);
     result
 }
@@ -548,9 +581,8 @@ fn rasterize_blob(job: Job) -> (BlobImageRequest, BlobImageResult) {
     let result = unsafe {
         if wr_moz2d_render_cb(
             ByteSlice::new(&job.commands[..]),
-            descriptor.rect.size.width,
-            descriptor.rect.size.height,
             descriptor.format,
+            &descriptor.rect,
             &job.visible_rect,
             job.tile_size.as_ref(),
             job.request.tile.as_ref(),
@@ -603,7 +635,7 @@ impl BlobImageHandler for Moz2dBlobImageHandler {
                         y2: i32::MAX,
                     }
                 };
-                command.data = Arc::new(merge_blob_images(&command.data, &data, dirty_rect));
+                command.data = Arc::new(merge_blob_images(&command.data, &data, dirty_rect, command.visible_rect.into(), visible_rect.into()));
                 command.visible_rect = *visible_rect;
             }
             _ => { panic!("missing image key"); }

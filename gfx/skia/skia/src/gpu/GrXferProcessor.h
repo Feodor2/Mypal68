@@ -9,7 +9,6 @@
 #define GrXferProcessor_DEFINED
 
 #include "GrBlend.h"
-#include "GrColor.h"
 #include "GrNonAtomicRef.h"
 #include "GrProcessor.h"
 #include "GrProcessorAnalysis.h"
@@ -132,7 +131,7 @@ public:
             fEquation = kAdd_GrBlendEquation;
             fSrcBlend = kOne_GrBlendCoeff;
             fDstBlend = kZero_GrBlendCoeff;
-            fBlendConstant = 0;
+            fBlendConstant = SK_PMColor4fTRANSPARENT;
             fWriteColor = true;
         }
 
@@ -141,7 +140,7 @@ public:
         GrBlendEquation fEquation;
         GrBlendCoeff    fSrcBlend;
         GrBlendCoeff    fDstBlend;
-        GrColor         fBlendConstant;
+        SkPMColor4f     fBlendConstant;
         bool            fWriteColor;
     };
 
@@ -271,20 +270,15 @@ public:
          */
         kIgnoresInputColor = 0x4,
         /**
-         * If set overlapping stencil and cover operations can be replaced by a combined stencil
-         * followed by a combined cover.
-         */
-        kCanCombineOverlappedStencilAndCover = 0x8,
-        /**
          * The destination color will be provided to the fragment processor using a texture. This is
          * additional information about the implementation of kReadsDstInShader.
          */
         kRequiresDstTexture = 0x10,
         /**
-         * If set overlapping draws may not be combined because a barrier must be inserted between
-         * them.
+         * If set, each pixel can only be touched once during a draw (e.g., because we have a dst
+         * texture or because we need an xfer barrier).
          */
-        kRequiresBarrierBetweenOverlappingDraws = 0x20,
+        kRequiresNonOverlappingDraws = 0x20,
     };
     GR_DECL_BITFIELD_CLASS_OPS_FRIENDS(AnalysisProperties);
 
@@ -292,14 +286,12 @@ public:
                                                           const GrProcessorAnalysisColor&,
                                                           GrProcessorAnalysisCoverage,
                                                           bool hasMixedSamples,
-                                                          const GrCaps& caps,
-                                                          GrPixelConfigIsClamped dstIsClamped);
+                                                          const GrCaps& caps);
 
     static AnalysisProperties GetAnalysisProperties(const GrXPFactory*,
                                                     const GrProcessorAnalysisColor&,
                                                     const GrProcessorAnalysisCoverage&,
-                                                    const GrCaps&,
-                                                    GrPixelConfigIsClamped);
+                                                    const GrCaps&);
 
 protected:
     constexpr GrXPFactory() {}
@@ -308,8 +300,7 @@ private:
     virtual sk_sp<const GrXferProcessor> makeXferProcessor(const GrProcessorAnalysisColor&,
                                                            GrProcessorAnalysisCoverage,
                                                            bool hasMixedSamples,
-                                                           const GrCaps&,
-                                                           GrPixelConfigIsClamped) const = 0;
+                                                           const GrCaps&) const = 0;
 
     /**
      * Subclass analysis implementation. This should not return kNeedsDstInTexture as that will be
@@ -317,8 +308,7 @@ private:
      */
     virtual AnalysisProperties analysisProperties(const GrProcessorAnalysisColor&,
                                                   const GrProcessorAnalysisCoverage&,
-                                                  const GrCaps&,
-                                                  GrPixelConfigIsClamped) const = 0;
+                                                  const GrCaps&) const = 0;
 };
 #if defined(__GNUC__)
 #pragma GCC diagnostic pop

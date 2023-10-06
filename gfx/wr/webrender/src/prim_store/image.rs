@@ -3,12 +3,12 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 use api::{
-    AlphaType, ColorDepth, ColorF, ColorU,
+    AlphaType, ColorDepth, ColorF, ColorU, PrimitiveFlags,
     ImageKey as ApiImageKey, ImageRendering,
-    PremultipliedColorF, Shadow, YuvColorSpace, YuvFormat,
+    PremultipliedColorF, Shadow, YuvColorSpace, ColorRange, YuvFormat,
 };
 use api::units::*;
-use crate::display_list_flattener::{CreateShadow, IsVisible};
+use crate::scene_building::{CreateShadow, IsVisible};
 use crate::frame_builder::FrameBuildingState;
 use crate::gpu_cache::{GpuCache, GpuDataRequest};
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
@@ -19,9 +19,10 @@ use crate::prim_store::{
     PrimTemplate, PrimTemplateCommonData, PrimitiveStore, SegmentInstanceIndex,
     SizeKey, InternablePrimitive,
 };
-use crate::render_task::{
-    BlitSource, RenderTask, RenderTaskCacheEntryHandle, RenderTaskCacheKey,
-    RenderTaskCacheKeyKind, RenderTargetKind,
+use crate::render_target::RenderTargetKind;
+use crate::render_task::{BlitSource, RenderTask};
+use crate::render_task_cache::{
+    RenderTaskCacheEntryHandle, RenderTaskCacheKey, RenderTaskCacheKeyKind
 };
 use crate::resource_cache::{ImageRequest, ResourceCache};
 use crate::util::pack_as_float;
@@ -84,13 +85,13 @@ pub type ImageKey = PrimKey<Image>;
 
 impl ImageKey {
     pub fn new(
-        is_backface_visible: bool,
+        flags: PrimitiveFlags,
         prim_size: LayoutSize,
         image: Image,
     ) -> Self {
         ImageKey {
             common: PrimKeyCommonData {
-                is_backface_visible,
+                flags,
                 prim_size: prim_size.into(),
             },
             kind: image,
@@ -326,7 +327,7 @@ impl InternablePrimitive for Image {
         info: &LayoutPrimitiveInfo,
     ) -> ImageKey {
         ImageKey::new(
-            info.is_backface_visible,
+            info.flags,
             info.rect.size,
             self
         )
@@ -384,6 +385,7 @@ pub struct YuvImage {
     pub yuv_key: [ApiImageKey; 3],
     pub format: YuvFormat,
     pub color_space: YuvColorSpace,
+    pub color_range: ColorRange,
     pub image_rendering: ImageRendering,
 }
 
@@ -391,14 +393,14 @@ pub type YuvImageKey = PrimKey<YuvImage>;
 
 impl YuvImageKey {
     pub fn new(
-        is_backface_visible: bool,
+        flags: PrimitiveFlags,
         prim_size: LayoutSize,
         yuv_image: YuvImage,
     ) -> Self {
 
         YuvImageKey {
             common: PrimKeyCommonData {
-                is_backface_visible,
+                flags,
                 prim_size: prim_size.into(),
             },
             kind: yuv_image,
@@ -416,6 +418,7 @@ pub struct YuvImageData {
     pub yuv_key: [ApiImageKey; 3],
     pub format: YuvFormat,
     pub color_space: YuvColorSpace,
+    pub color_range: ColorRange,
     pub image_rendering: ImageRendering,
 }
 
@@ -426,6 +429,7 @@ impl From<YuvImage> for YuvImageData {
             yuv_key: image.yuv_key,
             format: image.format,
             color_space: image.color_space,
+            color_range: image.color_range,
             image_rendering: image.image_rendering,
         }
     }
@@ -504,7 +508,7 @@ impl InternablePrimitive for YuvImage {
         info: &LayoutPrimitiveInfo,
     ) -> YuvImageKey {
         YuvImageKey::new(
-            info.is_backface_visible,
+            info.flags,
             info.rect.size,
             self,
         )
@@ -542,7 +546,7 @@ fn test_struct_sizes() {
     assert_eq!(mem::size_of::<Image>(), 52, "Image size changed");
     assert_eq!(mem::size_of::<ImageTemplate>(), 104, "ImageTemplate size changed");
     assert_eq!(mem::size_of::<ImageKey>(), 64, "ImageKey size changed");
-    assert_eq!(mem::size_of::<YuvImage>(), 28, "YuvImage size changed");
-    assert_eq!(mem::size_of::<YuvImageTemplate>(), 48, "YuvImageTemplate size changed");
-    assert_eq!(mem::size_of::<YuvImageKey>(), 40, "YuvImageKey size changed");
+    assert_eq!(mem::size_of::<YuvImage>(), 32, "YuvImage size changed");
+    assert_eq!(mem::size_of::<YuvImageTemplate>(), 52, "YuvImageTemplate size changed");
+    assert_eq!(mem::size_of::<YuvImageKey>(), 44, "YuvImageKey size changed");
 }

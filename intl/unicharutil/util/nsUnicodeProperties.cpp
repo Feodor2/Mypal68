@@ -182,7 +182,7 @@ void ClusterIterator::Next() {
 
   uint32_t ch = *mPos++;
 
-  if (NS_IS_HIGH_SURROGATE(ch) && mPos < mLimit && NS_IS_LOW_SURROGATE(*mPos)) {
+  if (mPos < mLimit && NS_IS_SURROGATE_PAIR(ch, *mPos)) {
     ch = SURROGATE_TO_UCS4(ch, *mPos++);
   } else if ((ch & ~0xff) == 0x1100 || (ch >= 0xa960 && ch <= 0xa97f) ||
              (ch >= 0xac00 && ch <= 0xd7ff)) {
@@ -245,8 +245,7 @@ void ClusterIterator::Next() {
     // Check for surrogate pairs; note that isolated surrogates will just
     // be treated as generic (non-cluster-extending) characters here,
     // which is fine for cluster-iterating purposes
-    if (NS_IS_HIGH_SURROGATE(ch) && mPos < mLimit - 1 &&
-        NS_IS_LOW_SURROGATE(*(mPos + 1))) {
+    if (mPos < mLimit - 1 && NS_IS_SURROGATE_PAIR(ch, *(mPos + 1))) {
       ch = SURROGATE_TO_UCS4(ch, *(mPos + 1));
       chLen = 2;
     }
@@ -279,8 +278,7 @@ void ClusterReverseIterator::Next() {
   do {
     ch = *--mPos;
 
-    if (NS_IS_LOW_SURROGATE(ch) && mPos > mLimit &&
-        NS_IS_HIGH_SURROGATE(*(mPos - 1))) {
+    if (mPos > mLimit && NS_IS_SURROGATE_PAIR(*(mPos - 1), ch)) {
       ch = SURROGATE_TO_UCS4(*--mPos, ch);
     }
 

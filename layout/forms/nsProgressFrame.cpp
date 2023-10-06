@@ -138,7 +138,7 @@ void nsProgressFrame::ReflowChildFrame(nsIFrame* aChild,
     size *= position;
   }
 
-  if (!vertical && (wm.IsVertical() ? wm.IsVerticalRL() : !wm.IsBidiLTR())) {
+  if (!vertical && wm.IsPhysicalRTL()) {
     xoffset += aReflowInput.ComputedWidth() - size;
   }
 

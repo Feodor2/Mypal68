@@ -16,7 +16,7 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
-use webrender::api::{self, DisplayListBuilder, DocumentId, PipelineId, RenderApi, Transaction};
+use webrender::api::{self, DisplayListBuilder, DocumentId, PipelineId, PrimitiveFlags, RenderApi, Transaction};
 use webrender::api::{ColorF, CommonItemProperties, SpaceAndClipInfo};
 use webrender::api::units::*;
 use webrender::euclid::{size2, rect};
@@ -229,15 +229,13 @@ impl Example for App {
         builder.push_simple_stacking_context(
             LayoutPoint::zero(),
             space_and_clip.spatial_id,
-            true,
+            PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
 
         let bounds = (30, 30).by(500, 500);
         builder.push_image(
             &CommonItemProperties::new(bounds, space_and_clip),
             bounds,
-            LayoutSize::new(500.0, 500.0),
-            LayoutSize::new(0.0, 0.0),
             api::ImageRendering::Auto,
             api::AlphaType::PremultipliedAlpha,
             blob_img1.as_image(),
@@ -248,8 +246,6 @@ impl Example for App {
         builder.push_image(
             &CommonItemProperties::new(bounds, space_and_clip),
             bounds,
-            LayoutSize::new(200.0, 200.0),
-            LayoutSize::new(0.0, 0.0),
             api::ImageRendering::Auto,
             api::AlphaType::PremultipliedAlpha,
             blob_img2.as_image(),

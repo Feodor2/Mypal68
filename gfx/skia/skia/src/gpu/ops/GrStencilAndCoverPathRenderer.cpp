@@ -7,17 +7,18 @@
 
 #include "GrStencilAndCoverPathRenderer.h"
 #include "GrCaps.h"
-#include "GrContext.h"
 #include "GrDrawPathOp.h"
 #include "GrFixedClip.h"
 #include "GrGpu.h"
 #include "GrPath.h"
+#include "GrRecordingContext.h"
 #include "GrRenderTargetContextPriv.h"
 #include "GrResourceProvider.h"
+#include "GrShape.h"
 #include "GrStencilClip.h"
 #include "GrStencilPathOp.h"
 #include "GrStyle.h"
-#include "ops/GrRectOpFactory.h"
+#include "ops/GrFillRectOp.h"
 
 GrPathRenderer* GrStencilAndCoverPathRenderer::Create(GrResourceProvider* resourceProvider,
                                                       const GrCaps& caps) {
@@ -34,6 +35,7 @@ GrStencilAndCoverPathRenderer::GrStencilAndCoverPathRenderer(GrResourceProvider*
 
 GrPathRenderer::CanDrawPath
 GrStencilAndCoverPathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
+    SkASSERT(!args.fTargetIsWrappedVkSecondaryCB);
     // GrPath doesn't support hairline paths. An arbitrary path effect could produce a hairline
     // path.
     if (args.fShape->style().strokeRec().isHairlineStyle() ||
@@ -155,15 +157,19 @@ bool GrStencilAndCoverPathRenderer::onDrawPath(const DrawPathArgs& args) {
             if (GrAAType::kMixedSamples == coverAAType) {
                 coverAAType = GrAAType::kNone;
             }
-            args.fRenderTargetContext->addDrawOp(*args.fClip,
-                                                 GrRectOpFactory::MakeNonAAFillWithLocalMatrix(
-                                                         std::move(args.fPaint), coverMatrix,
-                                                         localMatrix, coverBounds, coverAAType,
-                                                         &kInvertedCoverPass));
+            // This is a non-coverage aa rect operation
+            SkASSERT(coverAAType == GrAAType::kNone || coverAAType == GrAAType::kMSAA);
+            std::unique_ptr<GrDrawOp> op = GrFillRectOp::MakeWithLocalMatrix(
+                                                         args.fContext, std::move(args.fPaint),
+                                                         coverAAType, coverMatrix, localMatrix,
+                                                         coverBounds, &kInvertedCoverPass);
+
+            args.fRenderTargetContext->addDrawOp(*args.fClip, std::move(op));
         }
     } else {
         std::unique_ptr<GrDrawOp> op =
-                GrDrawPathOp::Make(viewMatrix, std::move(args.fPaint), args.fAAType, path.get());
+                GrDrawPathOp::Make(args.fContext, viewMatrix, std::move(args.fPaint),
+                                   args.fAAType, path.get());
         args.fRenderTargetContext->addDrawOp(*args.fClip, std::move(op));
     }
 

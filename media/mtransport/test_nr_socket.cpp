@@ -280,6 +280,17 @@ int TestNrSocket::accept(nr_transport_addr* addrp, nr_socket** sockp) {
   return 0;
 }
 
+bool TestNrSocket::IsProxied() const {
+  if (internal_socket_->my_addr().protocol == IPPROTO_UDP ||
+      port_mappings_.empty()) {
+    // UDP and the no-nat case
+    return internal_socket_->IsProxied();
+  }
+  // This is TCP only
+  MOZ_ASSERT(port_mappings_.size() == 1);
+  return port_mappings_.front()->external_socket_->IsProxied();
+}
+
 void TestNrSocket::process_delayed_cb(NR_SOCKET s, int how, void* cb_arg) {
   DeferredPacket* op = static_cast<DeferredPacket*>(cb_arg);
   op->socket_->timer_handle_ = nullptr;
@@ -404,7 +415,7 @@ int TestNrSocket::recvfrom(void* buf, size_t maxlen, size_t* len, int flags,
     }
   }
 
-  // Kinda lame that we are forced to give the app a readable callback and then
+  // Kinda bad that we are forced to give the app a readable callback and then
   // say "Oh, never mind...", but the alternative is to totally decouple the
   // callbacks from STS and the callbacks the app sets. On the bright side, this
   // speeds up unit tests where we are verifying that ingress is forbidden,

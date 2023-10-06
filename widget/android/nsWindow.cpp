@@ -11,6 +11,8 @@
 
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
+#include "mozilla/StaticPrefs_android.h"
+#include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/TouchEvents.h"
 #include "mozilla/TypeTraits.h"
 #include "mozilla/WeakPtr.h"
@@ -350,8 +352,6 @@ class nsWindow::NPZCSupport final
     : public PanZoomController::NativeProvider::Natives<NPZCSupport> {
   using LockedWindowPtr = WindowPtr<NPZCSupport>::Locked;
 
-  static bool sNegateWheelScroll;
-
   WindowPtr<NPZCSupport> mWindow;
   PanZoomController::NativeProvider::WeakRef mNPZC;
   int mPreviousButtons;
@@ -400,13 +400,6 @@ class nsWindow::NPZCSupport final
               const PanZoomController::NativeProvider::LocalRef& aNPZC)
       : mWindow(aPtr, aWindow), mNPZC(aNPZC), mPreviousButtons(0) {
     MOZ_ASSERT(mWindow);
-
-    static bool sInited;
-    if (!sInited) {
-      Preferences::AddBoolVarCache(&sNegateWheelScroll,
-                                   "ui.scrolling.negate_wheel_scroll");
-      sInited = true;
-    }
   }
 
   ~NPZCSupport() {}
@@ -495,7 +488,7 @@ class nsWindow::NPZCSupport final
 
     ScreenPoint origin = ScreenPoint(aX, aY);
 
-    if (sNegateWheelScroll) {
+    if (StaticPrefs::ui_scrolling_negate_wheel_scroll()) {
       aHScroll = -aHScroll;
       aVScroll = -aVScroll;
     }
@@ -511,18 +504,15 @@ class nsWindow::NPZCSupport final
         // to do?
         WheelDeltaAdjustmentStrategy::eNone);
 
-    ScrollableLayerGuid guid;
-    uint64_t blockId;
-    nsEventStatus status =
-        controller->InputBridge()->ReceiveInputEvent(input, &guid, &blockId);
+    APZEventResult result = controller->InputBridge()->ReceiveInputEvent(input);
 
-    if (status == nsEventStatus_eConsumeNoDefault) {
+    if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
       return true;
     }
 
-    PostInputEvent([input, guid, blockId, status](nsWindow* window) {
+    PostInputEvent([input, result](nsWindow* window) {
       WidgetWheelEvent wheelEvent = input.ToWidgetWheelEvent(window);
-      window->ProcessUntransformedAPZEvent(&wheelEvent, guid, blockId, status);
+      window->ProcessUntransformedAPZEvent(&wheelEvent, result);
     });
 
     return true;
@@ -626,18 +616,15 @@ class nsWindow::NPZCSupport final
                      ConvertButtons(buttons), origin, aTime,
                      GetEventTimeStamp(aTime), GetModifiers(aMetaState));
 
-    ScrollableLayerGuid guid;
-    uint64_t blockId;
-    nsEventStatus status =
-        controller->InputBridge()->ReceiveInputEvent(input, &guid, &blockId);
+    APZEventResult result = controller->InputBridge()->ReceiveInputEvent(input);
 
-    if (status == nsEventStatus_eConsumeNoDefault) {
+    if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
       return true;
     }
 
-    PostInputEvent([input, guid, blockId, status](nsWindow* window) {
+    PostInputEvent([input, result](nsWindow* window) {
       WidgetMouseEvent mouseEvent = input.ToWidgetMouseEvent(window);
-      window->ProcessUntransformedAPZEvent(&mouseEvent, guid, blockId, status);
+      window->ProcessUntransformedAPZEvent(&mouseEvent, result);
     });
 
     return true;
@@ -744,19 +731,16 @@ class nsWindow::NPZCSupport final
           ScreenSize::FromUnknownSize(radius), orien, pressure[i]));
     }
 
-    ScrollableLayerGuid guid;
-    uint64_t blockId;
-    nsEventStatus status =
-        controller->InputBridge()->ReceiveInputEvent(input, &guid, &blockId);
+    APZEventResult result = controller->InputBridge()->ReceiveInputEvent(input);
 
-    if (status == nsEventStatus_eConsumeNoDefault) {
+    if (result.mStatus == nsEventStatus_eConsumeNoDefault) {
       return true;
     }
 
     // Dispatch APZ input event on Gecko thread.
-    PostInputEvent([input, guid, blockId, status](nsWindow* window) {
+    PostInputEvent([input, result](nsWindow* window) {
       WidgetTouchEvent touchEvent = input.ToWidgetTouchEvent(window);
-      window->ProcessUntransformedAPZEvent(&touchEvent, guid, blockId, status);
+      window->ProcessUntransformedAPZEvent(&touchEvent, result);
       window->DispatchHitTest(touchEvent);
     });
     return true;
@@ -765,8 +749,6 @@ class nsWindow::NPZCSupport final
 
 template <>
 const char nsWindow::NativePtr<nsWindow::NPZCSupport>::sName[] = "NPZCSupport";
-
-bool nsWindow::NPZCSupport::sNegateWheelScroll;
 
 NS_IMPL_ISUPPORTS(nsWindow::AndroidView, nsIAndroidEventDispatcher,
                   nsIAndroidView)
@@ -1418,7 +1400,8 @@ nsWindow::nsWindow()
     : mScreenId(0),  // Use 0 (primary screen) as the default value.
       mIsVisible(false),
       mParent(nullptr),
-      mIsFullScreen(false) {}
+      mIsFullScreen(false),
+      mIsDisablingWebRender(false) {}
 
 nsWindow::~nsWindow() {
   gTopLevelWindows.RemoveElement(this);
@@ -1833,6 +1816,13 @@ mozilla::layers::LayerManager* nsWindow::GetLayerManager(
   if (mLayerManager) {
     return mLayerManager;
   }
+
+  if (mIsDisablingWebRender) {
+    CreateLayerManager();
+    mIsDisablingWebRender = false;
+    return mLayerManager;
+  }
+
   return nullptr;
 }
 
@@ -1865,6 +1855,11 @@ void nsWindow::CreateLayerManager() {
     printf_stderr(" -- creating basic, not accelerated\n");
     mLayerManager = CreateBasicLayerManager();
   }
+}
+
+void nsWindow::NotifyDisablingWebRender() {
+  mIsDisablingWebRender = true;
+  RedrawAll();
 }
 
 void nsWindow::OnSizeChanged(const gfx::IntSize& aSize) {
@@ -2151,16 +2146,7 @@ nsresult nsWindow::SynthesizeNativeMouseMove(LayoutDeviceIntPoint aPoint,
 }
 
 bool nsWindow::WidgetPaintsBackground() {
-  static bool sWidgetPaintsBackground = true;
-  static bool sWidgetPaintsBackgroundPrefCached = false;
-
-  if (!sWidgetPaintsBackgroundPrefCached) {
-    sWidgetPaintsBackgroundPrefCached = true;
-    mozilla::Preferences::AddBoolVarCache(
-        &sWidgetPaintsBackground, "android.widget_paints_background", true);
-  }
-
-  return sWidgetPaintsBackground;
+  return StaticPrefs::android_widget_paints_background();
 }
 
 bool nsWindow::NeedsPaint() {

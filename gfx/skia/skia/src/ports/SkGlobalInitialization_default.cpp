@@ -5,34 +5,47 @@
  * found in the LICENSE file.
  */
 
-#include "../../src/effects/SkDashImpl.h"
-#include "SkGradientShader.h"
-#include "SkImageSource.h"
+#include "SkFlattenable.h"
 
-// Security note:
-//
-// As new subclasses are added here, they should be reviewed by chrome security before they
-// support deserializing cross-process: chrome-security@google.com. SampleFilterFuzz.cpp should
-// also be amended to exercise the new subclass.
-//
-// See SkReadBuffer::isCrossProcess() and SkPicture::PictureIOSecurityPrecautionsEnabled()
-//
+#if defined(SK_DISABLE_EFFECT_DESERIALIZATION)
 
-/*
- *  None of these are strictly "required" for Skia to operate.
- *
- *  These are the bulk of our "effects" -- subclasses of various effects on SkPaint.
- *
- *  Clients should feel free to dup this file and modify it as needed. This function "InitEffects"
- *  will automatically be called before any of skia's effects are asked to be deserialized.
- */
-void SkFlattenable::PrivateInitializer::InitEffects() {
-    // Shader
-    SkGradientShader::InitializeFlattenables();
+    void SkFlattenable::PrivateInitializer::InitEffects() {}
+    void SkFlattenable::PrivateInitializer::InitImageFilters() {}
 
-    // PathEffect
-    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkDashImpl)
+#else
 
-    // ImageFilter
-    SkImageFilter::InitializeFlattenables();
-}
+    #include "../../src/effects/SkDashImpl.h"
+    #include "SkGradientShader.h"
+    #include "SkMaskFilter.h"
+    #include "SkImageFilter.h"
+
+    /*
+     *  Register most effects for deserialization.
+     *
+     *  None of these are strictly required for Skia to operate, so if you're
+     *  not using deserialization yourself, you can define
+     *  SK_DISABLE_EFFECT_SERIALIZATION, or modify/replace this file as needed.
+     */
+    void SkFlattenable::PrivateInitializer::InitEffects() {
+        // Shaders.
+        SkGradientShader::RegisterFlattenables();
+
+        // Mask filters.
+        SkMaskFilter::RegisterFlattenables();
+
+        // Path effects.
+        SK_REGISTER_FLATTENABLE(SkDashImpl);
+    }
+
+    /*
+     *  Register SkImageFilters for deserialization.
+     *
+     *  None of these are strictly required for Skia to operate, so if you're
+     *  not using deserialization yourself, you can define
+     *  SK_DISABLE_EFFECT_SERIALIZATION, or modify/replace this file as needed.
+     */
+    void SkFlattenable::PrivateInitializer::InitImageFilters() {
+        SkImageFilter::RegisterFlattenables();
+    }
+
+#endif

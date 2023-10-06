@@ -7,7 +7,9 @@
 
 @header {
     #include "GrProxyProvider.h"
-    #include "../effects/SkBlurMask.h"
+    #include "GrShaderCaps.h"
+    #include "SkBlurMask.h"
+    #include "SkScalar.h"
 }
 
 in uniform float4 rect;
@@ -45,7 +47,7 @@ uniform half profileSize;
 
         static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
         GrUniqueKey key;
-        GrUniqueKey::Builder builder(&key, kDomain, 1);
+        GrUniqueKey::Builder builder(&key, kDomain, 1, "Rect Blur Mask");
         builder[0] = profileSize;
         builder.finish();
 
@@ -68,8 +70,8 @@ uniform half profileSize;
             }
 
             blurProfile = proxyProvider->createTextureProxy(std::move(image), kNone_GrSurfaceFlags,
-                                                            kTopLeft_GrSurfaceOrigin, 1,
-                                                            SkBudgeted::kYes, SkBackingFit::kExact);
+                                                            1, SkBudgeted::kYes,
+                                                            SkBackingFit::kExact);
             if (!blurProfile) {
                 return nullptr;
             }
@@ -84,7 +86,17 @@ uniform half profileSize;
 
 @make {
      static std::unique_ptr<GrFragmentProcessor> Make(GrProxyProvider* proxyProvider,
+                                                      const GrShaderCaps& caps,
                                                       const SkRect& rect, float sigma) {
+         if (!caps.floatIs32Bits()) {
+             // We promote the rect uniform from half to float when it has large values for
+             // precision. If we don't have full float then fail.
+             if (SkScalarAbs(rect.fLeft) > 16000.f || SkScalarAbs(rect.fTop) > 16000.f ||
+                 SkScalarAbs(rect.fRight) > 16000.f || SkScalarAbs(rect.fBottom) > 16000.f ||
+                 SkScalarAbs(rect.width()) > 16000.f || SkScalarAbs(rect.height()) > 16000.f) {
+                 return nullptr;
+             }
+         }
          int doubleProfileSize = SkScalarCeilToInt(12*sigma);
 
          if (doubleProfileSize >= rect.width() || doubleProfileSize >= rect.height()) {
@@ -112,21 +124,21 @@ void main() {
         float2 smallDims = float2(width - profileSize, height - profileSize);
         float center = 2 * floor(profileSize / 2 + 0.25) - 1;
         float2 wh = smallDims - float2(center, center);
-        half hcoord = ((abs(translatedPos.x - 0.5 * width) - 0.5 * wh.x)) / profileSize;
+        half hcoord = half(((abs(translatedPos.x - 0.5 * width) - 0.5 * wh.x)) / profileSize);
         half hlookup = texture(blurProfile, float2(hcoord, 0.5)).a;
-        half vcoord = ((abs(translatedPos.y - 0.5 * height) - 0.5 * wh.y)) / profileSize;
+        half vcoord = half(((abs(translatedPos.y - 0.5 * height) - 0.5 * wh.y)) / profileSize);
         half vlookup = texture(blurProfile, float2(vcoord, 0.5)).a;
         sk_OutColor = sk_InColor * hlookup * vlookup;
     } else {
-        half2 translatedPos = sk_FragCoord.xy - rect.xy;
-        half width = rect.z - rect.x;
-        half height = rect.w - rect.y;
+        half2 translatedPos = half2(sk_FragCoord.xy - rect.xy);
+        half width = half(rect.z - rect.x);
+        half height = half(rect.w - rect.y);
         half2 smallDims = half2(width - profileSize, height - profileSize);
         half center = 2 * floor(profileSize / 2 + 0.25) - 1;
-        half2 wh = smallDims - float2(center, center);
-        half hcoord = ((abs(translatedPos.x - 0.5 * width) - 0.5 * wh.x)) / profileSize;
+        half2 wh = smallDims - half2(center, center);
+        half hcoord = ((half(abs(translatedPos.x - 0.5 * width)) - 0.5 * wh.x)) / profileSize;
         half hlookup = texture(blurProfile, float2(hcoord, 0.5)).a;
-        half vcoord = ((abs(translatedPos.y - 0.5 * height) - 0.5 * wh.y)) / profileSize;
+        half vcoord = ((half(abs(translatedPos.y - 0.5 * height)) - 0.5 * wh.y)) / profileSize;
         half vlookup = texture(blurProfile, float2(vcoord, 0.5)).a;
         sk_OutColor = sk_InColor * hlookup * vlookup;
     }
@@ -142,5 +154,6 @@ void main() {
     float sigma = data->fRandom->nextRangeF(3,8);
     float width = data->fRandom->nextRangeF(200,300);
     float height = data->fRandom->nextRangeF(200,300);
-    return GrRectBlurEffect::Make(data->proxyProvider(), SkRect::MakeWH(width, height), sigma);
+    return GrRectBlurEffect::Make(data->proxyProvider(), *data->caps()->shaderCaps(),
+                                  SkRect::MakeWH(width, height), sigma);
 }

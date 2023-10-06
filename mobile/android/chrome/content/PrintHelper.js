@@ -46,7 +46,6 @@ var PrintHelper = {
     printSettings.printBGColors = false;
     printSettings.printToFile = true;
     printSettings.toFileName = file.path;
-    printSettings.printFrameType = Ci.nsIPrintSettings.kFramesAsIs;
     printSettings.outputFormat = Ci.nsIPrintSettings.kOutputFormatPDF;
 
     let webBrowserPrint = aBrowser.contentWindow.getInterface(

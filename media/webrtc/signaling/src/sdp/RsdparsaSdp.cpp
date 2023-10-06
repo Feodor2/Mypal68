@@ -10,7 +10,7 @@
 #include "nsError.h"
 #include <iostream>
 
-#include "signaling/src/sdp/SdpErrorHolder.h"
+#include "signaling/src/sdp/SdpParser.h"
 #include "signaling/src/sdp/RsdparsaSdpInc.h"
 #include "signaling/src/sdp/RsdparsaSdpMediaSection.h"
 

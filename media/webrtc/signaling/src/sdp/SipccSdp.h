@@ -10,6 +10,7 @@
 #include "mozilla/Attributes.h"
 
 #include "signaling/src/sdp/Sdp.h"
+#include "signaling/src/sdp/SdpParser.h"
 #include "signaling/src/sdp/SipccSdpMediaSection.h"
 #include "signaling/src/sdp/SipccSdpAttributeList.h"
 extern "C" {
@@ -19,7 +20,6 @@ extern "C" {
 namespace mozilla {
 
 class SipccSdpParser;
-class SdpErrorHolder;
 
 class SipccSdp final : public Sdp {
   friend class SipccSdpParser;
@@ -59,10 +59,12 @@ class SipccSdp final : public Sdp {
   virtual void Serialize(std::ostream&) const override;
 
  private:
+  using InternalResults = SdpParser::InternalResults;
+
   SipccSdp() : mOrigin("", 0, 0, sdp::kIPv4, ""), mAttributeList(nullptr) {}
 
-  bool Load(sdp_t* sdp, SdpErrorHolder& errorHolder);
-  bool LoadOrigin(sdp_t* sdp, SdpErrorHolder& errorHolder);
+  bool Load(sdp_t* sdp, InternalResults& results);
+  bool LoadOrigin(sdp_t* sdp, InternalResults& results);
 
   SdpOrigin mOrigin;
   SipccSdpBandwidths mBandwidths;

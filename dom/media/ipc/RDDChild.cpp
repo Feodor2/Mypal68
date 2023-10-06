@@ -5,6 +5,7 @@
 
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/ipc/CrashReporterHost.h"
+#include "mozilla/gfx/gfxVars.h"
 
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
 #  include "mozilla/SandboxBroker.h"
@@ -19,6 +20,7 @@
 namespace mozilla {
 
 using namespace layers;
+using namespace gfx;
 
 RDDChild::RDDChild(RDDProcessHost* aHost) : mHost(aHost), mRDDReady(false) {
   MOZ_COUNT_CTOR(RDDChild);
@@ -44,11 +46,15 @@ bool RDDChild::Init(bool aStartMacSandbox) {
   }
 #endif  // XP_LINUX && MOZ_SANDBOX
 
-  SendInit(brokerFd, aStartMacSandbox);
+  nsTArray<GfxVarUpdate> updates = gfxVars::FetchNonDefaultVars();
+
+  SendInit(updates, brokerFd, aStartMacSandbox);
 
 #ifdef MOZ_GECKO_PROFILER
   Unused << SendInitProfiler(ProfilerParent::CreateForProcess(OtherPid()));
 #endif
+
+  gfxVars::AddReceiver(this);
 
   return true;
 }
@@ -72,14 +78,6 @@ mozilla::ipc::IPCResult RDDChild::RecvInitComplete() {
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult RDDChild::RecvInitCrashReporter(
-    Shmem&& aShmem, const NativeThreadId& aThreadId) {
-  mCrashReporter = MakeUnique<ipc::CrashReporterHost>(GeckoProcessType_RDD,
-                                                      aShmem, aThreadId);
-
-  return IPC_OK();
-}
-
 bool RDDChild::SendRequestMemoryReport(const uint32_t& aGeneration,
                                        const bool& aAnonymize,
                                        const bool& aMinimizeMemoryUsage,
@@ -89,6 +87,8 @@ bool RDDChild::SendRequestMemoryReport(const uint32_t& aGeneration,
                                                aMinimizeMemoryUsage, aDMDFile);
   return true;
 }
+
+void RDDChild::OnVarChanged(const GfxVarUpdate& aVar) { SendUpdateVar(aVar); }
 
 mozilla::ipc::IPCResult RDDChild::RecvAddMemoryReport(
     const MemoryReport& aReport) {
@@ -109,14 +109,10 @@ mozilla::ipc::IPCResult RDDChild::RecvFinishMemoryReport(
 
 void RDDChild::ActorDestroy(ActorDestroyReason aWhy) {
   if (aWhy == AbnormalShutdown) {
-    if (mCrashReporter) {
-      mCrashReporter->GenerateCrashReport(OtherPid());
-      mCrashReporter = nullptr;
-    } else {
-      CrashReporter::FinalizeOrphanedMinidump(OtherPid(), GeckoProcessType_RDD);
-    }
+    GenerateCrashReport(OtherPid());
   }
 
+  gfxVars::RemoveReceiver(this);
   mHost->OnChannelClosed();
 }
 

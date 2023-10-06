@@ -17,9 +17,10 @@ GrVkStencilAttachment::GrVkStencilAttachment(GrVkGpu* gpu,
                                              const Format& format,
                                              const GrVkImage::ImageDesc& desc,
                                              const GrVkImageInfo& info,
+                                             sk_sp<GrVkImageLayout> layout,
                                              const GrVkImageView* stencilView)
     : GrStencilAttachment(gpu, desc.fWidth, desc.fHeight, format.fStencilBits, desc.fSamples)
-    , GrVkImage(info, GrBackendObjectOwnership::kOwned)
+    , GrVkImage(info, std::move(layout), GrBackendObjectOwnership::kOwned)
     , fFormat(format)
     , fStencilView(stencilView) {
     this->registerWithCache(SkBudgeted::kYes);
@@ -50,14 +51,16 @@ GrVkStencilAttachment* GrVkStencilAttachment::Create(GrVkGpu* gpu,
 
     const GrVkImageView* imageView = GrVkImageView::Create(gpu, info.fImage,
                                                            format.fInternalFormat,
-                                                           GrVkImageView::kStencil_Type, 1);
+                                                           GrVkImageView::kStencil_Type, 1,
+                                                           GrVkYcbcrConversionInfo());
     if (!imageView) {
         GrVkImage::DestroyImageInfo(gpu, &info);
         return nullptr;
     }
 
+    sk_sp<GrVkImageLayout> layout(new GrVkImageLayout(info.fImageLayout));
     GrVkStencilAttachment* stencil = new GrVkStencilAttachment(gpu, format, imageDesc,
-                                                               info, imageView);
+                                                               info, std::move(layout), imageView);
     imageView->unref(gpu);
 
     return stencil;

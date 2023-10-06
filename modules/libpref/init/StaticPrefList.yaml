@@ -173,6 +173,25 @@
   value: false
   mirror: always
 
+# Whether the changes in https://github.com/whatwg/html/issues/5002 are in effect.
+- name: accessibility.heading-element-level-changes.enabled
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
+#ifdef ANDROID
+  #---------------------------------------------------------------------------
+  # Prefs starting with "android."
+  #---------------------------------------------------------------------------
+
+  # On Android, we want an opaque background to be visible under the page,
+  # so layout should not force a default background.
+-   name: android.widget_paints_background
+    type: bool
+    value: true
+    mirror: always
+#endif
+
 #---------------------------------------------------------------------------
 # Prefs starting with "apz."
 # The apz prefs are explained in AsyncPanZoomController.cpp
@@ -879,6 +898,11 @@
   value: 2048
   mirror: always
 
+- name: browser.tabs.remote.desktopbehavior
+  type: bool
+  value: false
+  mirror: always
+
 - name: browser.tabs.remote.force-paint
   type: bool
   value: true
@@ -1540,6 +1564,21 @@
 #else
   value: true
 #endif
+  mirror: always
+
+# If this is true, TextEventDispatcher dispatches keydown and keyup events
+# even during composition (keypress events are never fired during composition
+# even if this is true).
+- name: dom.keyboardevent.dispatch_during_composition
+  type: bool
+  value: true
+  mirror: always
+
+# If this is true, keypress events for non-printable keys are dispatched only
+# for event listeners of the system event group in web content.
+- name: dom.keyboardevent.keypress.dispatch_non_printable_keys_only_system_group_in_content
+  type: bool
+  value: true
   mirror: always
 
 # If this is true, "keypress" event's keyCode value and charCode value always
@@ -2348,6 +2387,15 @@
 #endif
   mirror: always
 
+#ifdef XP_WIN
+  # Control firing WidgetMouseEvent by handling Windows pointer messages or
+  # mouse messages.
+-   name: dom.w3c_pointer_events.dispatch_by_pointer_messages
+    type: bool
+    value: false
+    mirror: always
+#endif
+
 # Is support for Navigator.webdriver enabled?
 - name: dom.webdriver.enabled
   type: bool
@@ -2571,6 +2619,15 @@
 # This pref governs whether we run webextensions in a separate process (true)
 # or the parent/main process (false)
 - name: extensions.webextensions.remote
+  type: bool
+  value: false
+  mirror: always
+
+#---------------------------------------------------------------------------
+# Prefs starting with "findbar."
+#---------------------------------------------------------------------------
+
+- name: findbar.modalHighlight
   type: bool
   value: false
   mirror: always
@@ -3594,6 +3651,17 @@
   value: true
   mirror: always
 
+# If true, dispatch the keydown and keyup events on any web apps even during
+# composition.
+- name: intl.ime.hack.on_any_apps.fire_key_events_for_composition
+  type: bool
+#ifdef MOZ_WIDGET_ANDROID
+  value: @IS_EARLY_BETA_OR_EARLIER@
+#else
+  value: false
+#endif
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "javascript."
 #---------------------------------------------------------------------------
@@ -3824,6 +3892,11 @@
 - name: layers.d3d11.force-warp
   type: bool
   value: false
+  mirror: once
+
+- name: layers.d3d11.enable-blacklist
+  type: bool
+  value: true
   mirror: once
 
 # Enable DEAA antialiasing for transformed layers in the compositor.
@@ -4381,11 +4454,12 @@
   value: 4096
   mirror: always
 
-# Is support for CSS backdrop-filter enabled?
-- name: layout.css.backdrop-filter.enabled
-  type: bool
+# Make `zoom` a `transform` + `transform-origin` alias.
+- name: layout.css.zoom-transform-hack.enabled
+  type: RelaxedAtomicBool
   value: false
   mirror: always
+  rust: true
 
 # Allow <number> and <number>/<number> both for <aspect-ratio>
 # https://github.com/w3c/csswg-drafts/issues/3757
@@ -4408,8 +4482,47 @@
   mirror: always
   rust: true
 
+# Set the number of device pixels per CSS pixel. A value <= 0 means choose
+# automatically based on user settings for the platform (e.g., "UI scale factor"
+# on Mac). A positive value is used as-is. This effectively controls the size
+# of a CSS "px". This is only used for windows on the screen, not for printing.
+- name: layout.css.devPixelsPerPx
+  type: AtomicFloat
+  value: -1.0f
+  mirror: always
+
+# text underline offset
+- name: layout.css.text-underline-offset.enabled
+  type: bool
+  value: true
+  mirror: always
+
+# text underline position
+- name: layout.css.text-underline-position.enabled
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
+# text decoration thickness
+- name: layout.css.text-decoration-thickness.enabled
+  type: bool
+  value: true
+  mirror: always
+
+# text decoration skip ink
+- name: layout.css.text-decoration-skip-ink.enabled
+  type: bool
+  value: true
+  mirror: always
+
 # Is support for CSS column-span enabled?
 - name: layout.css.column-span.enabled
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
+# Is support for CSS backdrop-filter enabled?
+- name: layout.css.backdrop-filter.enabled
   type: bool
   value: false
   mirror: always
@@ -4492,7 +4605,7 @@
 # Is support for CSS individual transform enabled?
 - name: layout.css.individual-transform.enabled
   type: bool
-  value: false
+  value: @IS_NOT_RELEASE_OR_BETA@
   mirror: always
 
 # Is support for CSS initial-letter property enabled?
@@ -4511,14 +4624,28 @@
 # Is support for motion-path enabled?
 - name: layout.css.motion-path.enabled
   type: bool
-  value: @IS_NOT_RELEASE_OR_BETA@
+  value: true
   mirror: always
+
+# Is support for motion-path ray() enabled?
+- name: layout.css.motion-path-ray.enabled
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+  rust: true
 
 # Is support for -moz-binding enabled?
 - name: layout.css.moz-binding.content.enabled
   type: bool
   value: false
   mirror: always
+
+# Expose the media query -moz-touch-enabled to web content.
+- name: layout.css.moz-touch-enabled.enabled
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+  rust: true
 
 # Pref to control whether the ::marker property restrictions defined in [1]
 # apply.
@@ -4606,13 +4733,6 @@
   value: true
   mirror: always
 
-# Are "-webkit-{min|max}-device-pixel-ratio" media queries supported?
-- name: layout.css.prefixes.device-pixel-ratio-webkit
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-  rust: true
-
 # Is support for -moz-prefixed font feature properties enabled?
 - name: layout.css.prefixes.font-features
   type: bool
@@ -4671,26 +4791,38 @@
   mirror: always
   rust: true
 
+# Is CSSOM-View scroll-behavior and its MSD smooth scrolling enabled?
 - name: layout.css.scroll-behavior.enabled
   type: RelaxedAtomicBool
   value: true
   mirror: always
 
+# Tuning of the smooth scroll motion used by CSSOM-View scroll-behavior.
+# Spring-constant controls the strength of the simulated MSD
+# (Mass-Spring-Damper).
 - name: layout.css.scroll-behavior.spring-constant
   type: AtomicFloat
   value: 250.0f
   mirror: always
 
+# When selecting the snap point for CSS scroll snapping, the velocity of the
+# scroll frame is clamped to this speed, in CSS pixels / s.
 - name: layout.css.scroll-snap.prediction-max-velocity
   type: RelaxedAtomicInt32
   value: 2000
   mirror: always
 
+#  When selecting the snap point for CSS scroll snapping, the velocity of the
+# scroll frame is integrated over this duration, in seconds.  The snap point
+# best suited for this position is selected, enabling the user to perform fling
+# gestures.
 - name: layout.css.scroll-snap.prediction-sensitivity
   type: AtomicFloat
   value: 0.750f
   mirror: always
 
+# Set the threshold distance in CSS pixels below which scrolling will snap to
+# an edge, when scroll snapping is set to "proximity".
 - name: layout.css.scroll-snap.proximity-threshold
   type: RelaxedAtomicInt32
   value: 200
@@ -4702,24 +4834,6 @@
   value: true
   mirror: always
   rust: true
-
-# text underline offset
-- name: layout.css.text-underline-offset.enabled
-  type: bool
-  value: false
-  mirror: always
-
-# text decoration thickness
-- name: layout.css.text-decoration-thickness.enabled
-  type: bool
-  value: false
-  mirror: always
-
-# text decoration skip ink
-- name: layout.css.text-decoration-skip-ink.enabled
-  type: bool
-  value: false
-  mirror: always
 
 # W3C touch-action css property (related to touch and pointer events)
 # Note that we turn this on even on platforms/configurations where touch
@@ -4853,6 +4967,9 @@
   value: @IS_EARLY_BETA_OR_EARLIER@
   mirror: always
 
+# Pref to control browser frame rate, in Hz. A value <= 0 means choose
+# automatically based on knowledge of the platform (or 60Hz if no platform-
+# specific information is available).
 - name: layout.frame_rate
   type: RelaxedAtomicInt32
   value: -1
@@ -4893,12 +5010,6 @@
 - name: layout.reflow.synthMouseMove
   type: bool
   value: true
-  mirror: always
-
-# This and code dependent on it should be removed once containerless scrolling looks stable.
-- name: layout.scroll.root-frame-containers
-  type: RelaxedAtomicBool
-  value: false
   mirror: always
 
 # This pref is to be set by test code only.
@@ -4987,6 +5098,13 @@
   value: true
   mirror: always
 
+# Whether we expand the layout viewport even if the expanded viewport doesn't
+# contain any contents in the area.
+- name: layout.viewport_contains_no_contents_area
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "media."
 #---------------------------------------------------------------------------
@@ -4994,6 +5112,10 @@
 # These prefs use camel case instead of snake case for the getter because one
 # reviewer had an unshakeable preference for that. Who could that be?
 
+# If "media.autoplay.default" is not ALLOWED, and this pref is true,
+# then audible media would only be allowed to autoplay after website has
+# been activated by specific user gestures, but non-audible
+# media won't be restricted.
 - name: media.autoplay.enabled.user-gestures-needed
   type: bool
   value: false
@@ -5500,17 +5622,14 @@
   mirror: always
 
 - name: media.av1.use-dav1d
-#if defined(XP_WIN) && !defined(_ARM64_)
   type: RelaxedAtomicBool
+#if defined(XP_WIN) && !defined(_ARM64_)
   value: true
 #elif defined(XP_MACOSX)
-  type: RelaxedAtomicBool
   value: true
 #elif defined(XP_UNIX) && !defined(ANDROID)
-  type: RelaxedAtomicBool
   value: true
 #else
-  type: RelaxedAtomicBool
   value: false
 #endif
   mirror: always
@@ -5699,6 +5818,8 @@
     type: RelaxedAtomicBool
   #if defined(ANDROID)
     value: false
+  #elif defined(_ARM64_) && defined(XP_WIN)
+    value: false
   #else
     value: true
   #endif
@@ -5757,12 +5878,16 @@
 # Prefs starting with "mousewheel."
 #---------------------------------------------------------------------------
 
-# These affect how line scrolls from wheel events will be accelerated.
+# This affects how line scrolls from wheel events will be accelerated.
+# Factor to be multiplied for constant acceleration.
 - name: mousewheel.acceleration.factor
   type: RelaxedAtomicInt32
-  value: -1
+  value: 10
   mirror: always
 
+# This affects how line scrolls from wheel events will be accelerated.
+# Number of mousewheel clicks when acceleration starts.
+# Acceleration can be turned off if pref is set to -1.
 - name: mousewheel.acceleration.start
   type: RelaxedAtomicInt32
   value: -1
@@ -5771,24 +5896,38 @@
 # This affects whether events will be routed through APZ or not.
 - name: mousewheel.system_scroll_override_on_root_content.enabled
   type: RelaxedAtomicBool
+#ifdef XP_WIN
+  value: true
+#else
   value: false
+#endif
   mirror: always
 
+# Prefs for overriding the system mouse wheel scrolling speed on
+# content of the web pages.  When
+# "mousewheel.system_scroll_override_on_root_content.enabled" is true and the
+# system scrolling speed isn't customized by the user, the content scrolling
+# speed is multiplied by the following factors.  The value will be used as
+# 1/100.  E.g., 200 means 2.00.
+# NOTE: Even if "mousewheel.system_scroll_override_on_root_content.enabled" is
+# true, when Gecko detects the user customized the system scrolling speed
+# settings, the override isn't executed.
 - name: mousewheel.system_scroll_override_on_root_content.horizontal.factor
   type: RelaxedAtomicInt32
-  value: 0
+  value: 200
   mirror: always
-
 - name: mousewheel.system_scroll_override_on_root_content.vertical.factor
   type: RelaxedAtomicInt32
-  value: 0
+  value: 200
   mirror: always
 
+# Mouse wheel scroll transaction is held even if the mouse cursor is moved.
 - name: mousewheel.transaction.ignoremovedelay
   type: RelaxedAtomicInt32
   value: 100
   mirror: always
 
+# Mouse wheel scroll transaction period of time (in milliseconds).
 - name: mousewheel.transaction.timeout
   type: RelaxedAtomicInt32
   value: 1500
@@ -6074,7 +6213,7 @@
   value: false
   mirror: always
 
-# Telemetry of traffic categories
+# Telemetry of traffic categories. Whether or not to enable HttpTrafficAnalyzer.
 - name: network.traffic_analyzer.enabled
   type: RelaxedAtomicBool
   value: false
@@ -6120,6 +6259,8 @@
   value: false
   mirror: always
 
+# Enable/disable widget update area flashing --- only supported with
+# BasicLayers (other layer managers always update the entire widget area).
 - name: nglayout.debug.widget_update_flashing
   type: RelaxedAtomicBool
   value: false
@@ -6189,6 +6330,9 @@
 # Prefs starting with "print."
 #---------------------------------------------------------------------------
 
+# Variation fonts can't always be embedded in certain output formats
+# such as PDF. To work around this, draw the variation fonts using
+# paths instead of using font embedding.
 - name: print.font-variations-as-paths
   type: RelaxedAtomicBool
   value: true
@@ -6271,12 +6415,12 @@
   value: true
   mirror: always
 
-# Whether origin telemetry should be enabled.
+# Whether Origin Telemetry should be enabled.
 # NOTE: if telemetry.origin_telemetry_test_mode.enabled is enabled, this pref
 #       won't have any effect.
 - name: privacy.trackingprotection.origin_telemetry.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
 
 # Whether to spoof user locale to English (used as part of Resist
@@ -6455,7 +6599,7 @@
   value: true
   mirror: always
 
-# Whether strict file origin policy is in effect.
+# Whether strict file origin policy is in effect. "False" is traditional.
 - name: security.fileuri.strict_origin_policy
   type: RelaxedAtomicBool
   value: true
@@ -6559,6 +6703,12 @@
   value: false
   mirror: always
 
+# Is support for letter-spacing and word-spacing in SVG text enabled?
+- name: svg.text-spacing.enabled
+  type: bool
+  value: true
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "telemetry."
 #---------------------------------------------------------------------------
@@ -6621,6 +6771,44 @@
 # Prefs starting with "ui."
 #---------------------------------------------------------------------------
 
+- name: ui.key.generalAccessKey
+  type: int32_t
+  value: -1
+  mirror: always
+
+# Only used if generalAccessKey is -1.
+- name: ui.key.chromeAccess
+  type: int32_t
+#ifdef XP_MACOSX
+  # 0 = disabled, 1 = Shift, 2 = Ctrl, 4 = Alt, 3 =  ctrl+shift, 8 = Meta
+  value: 2
+#else
+  # 0 = disabled, 1 = Shift, 2 = Ctrl, 4 = Alt, 5 =  Alt+Shift,
+  # 8 = Meta, 16 = Win
+  value: 4
+#endif
+  mirror: always
+
+# Only used if generalAccessKey is -1.
+- name: ui.key.contentAccess
+  type: int32_t
+#ifdef XP_MACOSX
+  # 0 = disabled, 1 = Shift, 2 = Ctrl, 4 = Alt, 3 = ctrl+shift, 8 = Meta
+  value: 6
+#else
+  # 0 = disabled, 1 = Shift, 2 = Ctrl, 4 = Alt, 5 =  Alt+Shift,
+  # 8 = Meta, 16 = Win
+  value: 5
+#endif
+  mirror: always
+
+# Negate scroll, true will make the mouse scroll wheel move the screen the
+# same direction as with most desktops or laptops.
+- name: ui.scrolling.negate_wheel_scroll
+  type: RelaxedAtomicBool
+  value: @IS_ANDROID@
+  mirror: always
+
 # If the user puts a finger down on an element and we think the user might be
 # executing a pan gesture, how long do we wait before tentatively deciding the
 # gesture is actually a tap and activating the target element?
@@ -6637,6 +6825,11 @@
   value: 10
   mirror: always
 
+- name: ui.use_native_colors
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
 # Prevent system colors from being exposed to CSS or canvas.
 - name: ui.use_standins_for_native_colors
   type: RelaxedAtomicBool
@@ -6645,6 +6838,14 @@
 
 # Disable page loading activity cursor by default.
 - name: ui.use_activity_cursor
+  type: bool
+  value: false
+  mirror: always
+
+# Whether context menus should only appear on mouseup instead of mousedown,
+# on OSes where they normally appear on mousedown (macOS, *nix).
+# Note: ignored on Windows (context menus always use mouseup).
+- name: ui.context_menus.after_mouseup
   type: bool
   value: false
   mirror: always

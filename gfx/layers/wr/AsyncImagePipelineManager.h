@@ -10,7 +10,6 @@
 #include "CompositableHost.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/layers/TextureHost.h"
-#include "mozilla/layers/WebRenderTextureHostWrapper.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 #include "mozilla/webrender/WebRenderTypes.h"
@@ -30,7 +29,6 @@ class CompositableHost;
 class CompositorVsyncScheduler;
 class WebRenderImageHost;
 class WebRenderTextureHost;
-class WebRenderTextureHostWrapper;
 
 class AsyncImagePipelineManager final {
  public:
@@ -53,9 +51,6 @@ class AsyncImagePipelineManager final {
 
   void HoldExternalImage(const wr::PipelineId& aPipelineId,
                          const wr::Epoch& aEpoch, TextureHost* aTexture);
-  void HoldExternalImage(const wr::PipelineId& aPipelineId,
-                         const wr::Epoch& aEpoch,
-                         WebRenderTextureHostWrapper* aWrTextureWrapper);
   void HoldExternalImage(const wr::PipelineId& aPipelineId,
                          const wr::Epoch& aEpoch,
                          const wr::ExternalImageId& aImageId);
@@ -149,14 +144,6 @@ class AsyncImagePipelineManager final {
     CompositableTextureHostRef mTexture;
   };
 
-  struct ForwardingTextureHostWrapper {
-    ForwardingTextureHostWrapper(const wr::Epoch& aEpoch,
-                                 WebRenderTextureHostWrapper* aWrTextureWrapper)
-        : mEpoch(aEpoch), mWrTextureWrapper(aWrTextureWrapper) {}
-    wr::Epoch mEpoch;
-    RefPtr<WebRenderTextureHostWrapper> mWrTextureWrapper;
-  };
-
   struct ForwardingExternalImage {
     ForwardingExternalImage(const wr::Epoch& aEpoch,
                             const wr::ExternalImageId& aImageId)
@@ -169,7 +156,6 @@ class AsyncImagePipelineManager final {
   struct PipelineTexturesHolder {
     // Holds forwarding WebRenderTextureHosts.
     std::queue<ForwardingTextureHost> mTextureHosts;
-    std::queue<ForwardingTextureHostWrapper> mTextureHostWrappers;
     std::queue<UniquePtr<ForwardingExternalImage>> mExternalImages;
     Maybe<wr::Epoch> mDestroyedEpoch;
     WebRenderBridgeParent* MOZ_NON_OWNING_REF mWrBridge = nullptr;
@@ -204,7 +190,6 @@ class AsyncImagePipelineManager final {
     wr::MixBlendMode mMixBlendMode;
     RefPtr<WebRenderImageHost> mImageHost;
     CompositableTextureHostRef mCurrentTexture;
-    RefPtr<WebRenderTextureHostWrapper> mWrTextureWrapper;
     nsTArray<wr::ImageKey> mKeys;
   };
 

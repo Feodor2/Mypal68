@@ -279,35 +279,13 @@ const AnimationProperty* KeyframeEffect::GetEffectiveAnimationOfProperty(
 
 bool KeyframeEffect::HasEffectiveAnimationOfPropertySet(
     const nsCSSPropertyIDSet& aPropertySet, const EffectSet& aEffectSet) const {
-  // The various transform properties ('transform', 'scale' etc.) get combined
-  // on the compositor.
-  //
-  // As a result, if we have an animation of 'scale' and 'translate', but the
-  // 'translate' property is covered by an !important rule, we will not be
-  // able to combine the result on the compositor since we won't have the
-  // !important rule to incorporate. In that case we should run all the
-  // transform-related animations on the main thread (where we have the
-  // !important rule).
-  //
-  // Bug 1534884: Move this check to ShouldBlockAsyncTransformAnimations (or
-  // similar) and add a performance warning for this case.
-
-  bool result = false;
-
   for (const AnimationProperty& property : mProperties) {
-    if (!aPropertySet.HasProperty(property.mProperty)) {
-      continue;
-    }
-
-    if (IsEffectiveProperty(aEffectSet, property.mProperty)) {
-      result = true;
-    } else if (nsCSSPropertyIDSet::TransformLikeProperties().HasProperty(
-                   property.mProperty)) {
-      return false;
+    if (aPropertySet.HasProperty(property.mProperty) &&
+        IsEffectiveProperty(aEffectSet, property.mProperty)) {
+      return true;
     }
   }
-
-  return result;
+  return false;
 }
 
 nsCSSPropertyIDSet KeyframeEffect::GetPropertiesForCompositor(
@@ -323,22 +301,44 @@ nsCSSPropertyIDSet KeyframeEffect::GetPropertiesForCompositor(
 
   static constexpr nsCSSPropertyIDSet compositorAnimatables =
       nsCSSPropertyIDSet::CompositorAnimatables();
+  static constexpr nsCSSPropertyIDSet transformLikeProperties =
+      nsCSSPropertyIDSet::TransformLikeProperties();
+
+  nsCSSPropertyIDSet transformSet;
+  AnimationPerformanceWarning::Type dummyWarning;
+
   for (const AnimationProperty& property : mProperties) {
     if (!compositorAnimatables.HasProperty(property.mProperty)) {
       continue;
     }
 
-    AnimationPerformanceWarning::Type warning;
+    // Transform-like properties are combined together on the compositor so we
+    // need to evaluate them as a group. We build up a separate set here then
+    // evaluate it as a separate step below.
+    if (transformLikeProperties.HasProperty(property.mProperty)) {
+      transformSet.AddProperty(property.mProperty);
+      continue;
+    }
+
     KeyframeEffect::MatchForCompositor matchResult = IsMatchForCompositor(
-        nsCSSPropertyIDSet{property.mProperty}, aFrame, aEffects, warning);
+        nsCSSPropertyIDSet{property.mProperty}, aFrame, aEffects, dummyWarning);
     if (matchResult ==
             KeyframeEffect::MatchForCompositor::NoAndBlockThisProperty ||
         matchResult == KeyframeEffect::MatchForCompositor::No) {
       continue;
     }
-
     properties.AddProperty(property.mProperty);
   }
+
+  if (!transformSet.IsEmpty()) {
+    KeyframeEffect::MatchForCompositor matchResult =
+        IsMatchForCompositor(transformSet, aFrame, aEffects, dummyWarning);
+    if (matchResult == KeyframeEffect::MatchForCompositor::Yes ||
+        matchResult == KeyframeEffect::MatchForCompositor::IfNeeded) {
+      properties |= transformSet;
+    }
+  }
+
   return properties;
 }
 
@@ -1185,7 +1185,25 @@ void KeyframeEffect::GetKeyframes(JSContext*& aCx, nsTArray<JSObject*>& aResult,
         }
       }
 
-      const char* name = nsCSSProps::PropertyIDLName(propertyValue.mProperty);
+      // Basically, we need to do the mapping:
+      // * eCSSProperty_offset => "cssOffset"
+      // * eCSSProperty_float => "cssFloat"
+      // This means if property refers to the CSS "offset"/"float" property,
+      // return the string "cssOffset"/"cssFloat". (So avoid overlapping
+      // "offset" property in BaseKeyframe.)
+      // https://drafts.csswg.org/web-animations/#property-name-conversion
+      const char* name = nullptr;
+      switch (propertyValue.mProperty) {
+        case nsCSSPropertyID::eCSSProperty_offset:
+          name = "cssOffset";
+          break;
+        case nsCSSPropertyID::eCSSProperty_float:
+          // FIXME: Bug 1582314: Should handle cssFloat manually if we remove it
+          // from nsCSSProps::PropertyIDLName().
+        default:
+          name = nsCSSProps::PropertyIDLName(propertyValue.mProperty);
+      }
+
       JS::Rooted<JS::Value> value(aCx);
       if (!ToJSValue(aCx, stringValue, &value) ||
           !JS_DefineProperty(aCx, keyframeObject, name, value,
@@ -1495,10 +1513,28 @@ bool KeyframeEffect::CanAnimateTransformOnCompositor(
 }
 
 bool KeyframeEffect::ShouldBlockAsyncTransformAnimations(
-    const nsIFrame* aFrame,
+    const nsIFrame* aFrame, const nsCSSPropertyIDSet& aPropertySet,
     AnimationPerformanceWarning::Type& aPerformanceWarning /* out */) const {
   EffectSet* effectSet =
       EffectSet::GetEffectSet(mTarget->mElement, mTarget->mPseudoType);
+  // The various transform properties ('transform', 'scale' etc.) get combined
+  // on the compositor.
+  //
+  // As a result, if we have an animation of 'scale' and 'translate', but the
+  // 'translate' property is covered by an !important rule, we will not be
+  // able to combine the result on the compositor since we won't have the
+  // !important rule to incorporate. In that case we should run all the
+  // transform-related animations on the main thread (where we have the
+  // !important rule).
+  nsCSSPropertyIDSet blockedProperties =
+      effectSet->PropertiesWithImportantRules().Intersect(
+          effectSet->PropertiesForAnimationsLevel());
+  if (blockedProperties.Intersects(aPropertySet)) {
+    aPerformanceWarning =
+        AnimationPerformanceWarning::Type::TransformIsBlockedByImportantRules;
+    return true;
+  }
+
   for (const AnimationProperty& property : mProperties) {
     // If there is a property for animations level that is overridden by
     // !important rules, it should not block other animations from running
@@ -1586,7 +1622,8 @@ void KeyframeEffect::CalculateCumulativeChangeHint(
   mNeedsStyleData = false;
 
   nsPresContext* presContext =
-      nsContentUtils::GetContextForContent(mTarget->mElement);
+      mTarget ? nsContentUtils::GetContextForContent(mTarget->mElement)
+              : nullptr;
   if (!presContext) {
     // Change hints make no sense if we're not rendered.
     //

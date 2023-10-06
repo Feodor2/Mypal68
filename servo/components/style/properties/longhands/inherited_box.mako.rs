@@ -16,6 +16,7 @@ ${helpers.single_keyword(
     gecko_ffi_name="mVisible",
     animation_value_type="ComputedValue",
     spec="https://drafts.csswg.org/css-box/#propdef-visibility",
+    gecko_enum_prefix="StyleVisibility",
 )}
 
 // CSS Writing Modes Level 3
@@ -29,6 +30,7 @@ ${helpers.single_keyword(
                          rl=horizontal-tb rl-tb=horizontal-tb \
                          tb=vertical-rl   tb-rl=vertical-rl",
     servo_2013_pref="layout.writing-mode.enabled",
+    servo_2020_pref="layout.writing-mode.enabled",
     animation_value_type="none",
     spec="https://drafts.csswg.org/css-writing-modes/#propdef-writing-mode",
     servo_restyle_damage="rebuild_and_reflow",
@@ -38,6 +40,7 @@ ${helpers.single_keyword(
     "direction",
     "ltr rtl",
     engines="gecko servo-2013 servo-2020",
+    servo_2020_pref="layout.2020.unimplemented",
     animation_value_type="none",
     spec="https://drafts.csswg.org/css-writing-modes/#propdef-direction",
     needs_conversion=True,
@@ -49,6 +52,7 @@ ${helpers.single_keyword(
     "mixed upright sideways",
     engines="gecko",
     gecko_aliases="sideways-right=sideways",
+    gecko_enum_prefix="StyleTextOrientation",
     animation_value_type="none",
     spec="https://drafts.csswg.org/css-writing-modes/#propdef-text-orientation",
 )}
@@ -69,9 +73,10 @@ ${helpers.single_keyword(
 ${helpers.single_keyword(
     "image-rendering",
     "auto crisp-edges",
-    engines="gecko servo-2013",
+    engines="gecko servo-2013 servo-2020",
     extra_gecko_values="optimizespeed optimizequality",
     extra_servo_2013_values="pixelated",
+    extra_servo_2020_values="pixelated",
     gecko_aliases="-moz-crisp-edges=crisp-edges",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-images/#propdef-image-rendering",

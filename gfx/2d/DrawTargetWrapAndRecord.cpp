@@ -635,6 +635,18 @@ bool DrawTargetWrapAndRecord::CanCreateSimilarDrawTarget(
   return mFinalDT->CanCreateSimilarDrawTarget(aSize, aFormat);
 }
 
+RefPtr<DrawTarget> DrawTargetWrapAndRecord::CreateClippedDrawTarget(
+    const Rect& aBounds, SurfaceFormat aFormat) {
+  RefPtr<DrawTarget> similarDT;
+  RefPtr<DrawTarget> innerDT =
+      mFinalDT->CreateClippedDrawTarget(aBounds, aFormat);
+  similarDT = new DrawTargetWrapAndRecord(this->mRecorder, innerDT);
+  mRecorder->RecordEvent(
+      RecordedCreateClippedDrawTarget(this, similarDT.get(), aBounds, aFormat));
+  similarDT->SetTransform(mTransform);
+  return similarDT;
+}
+
 already_AddRefed<PathBuilder> DrawTargetWrapAndRecord::CreatePathBuilder(
     FillRule aFillRule) const {
   RefPtr<PathBuilder> builder = mFinalDT->CreatePathBuilder(aFillRule);

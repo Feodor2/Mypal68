@@ -5,8 +5,9 @@
 #define _include_dom_media_ipc_RDDChild_h_
 #include "mozilla/PRDDChild.h"
 
-#include "mozilla/RefPtr.h"
+#include "mozilla/ipc/CrashReporterHelper.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/gfx/gfxVarReceiver.h"
 
 namespace mozilla {
 
@@ -14,16 +15,15 @@ namespace mozilla {
 class SandboxBroker;
 #endif
 
-namespace ipc {
-class CrashReporterHost;
-}  // namespace ipc
 namespace dom {
 class MemoryReportRequestHost;
 }  // namespace dom
 
 class RDDProcessHost;
 
-class RDDChild final : public PRDDChild {
+class RDDChild final : public PRDDChild,
+                       public ipc::CrashReporterHelper<GeckoProcessType_RDD>,
+                       public gfx::gfxVarReceiver {
   typedef mozilla::dom::MemoryReportRequestHost MemoryReportRequestHost;
 
  public:
@@ -34,10 +34,10 @@ class RDDChild final : public PRDDChild {
 
   bool EnsureRDDReady();
 
+  void OnVarChanged(const GfxVarUpdate& aVar) override;
+
   // PRDDChild overrides.
   mozilla::ipc::IPCResult RecvInitComplete();
-  mozilla::ipc::IPCResult RecvInitCrashReporter(
-      Shmem&& shmem, const NativeThreadId& aThreadId);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -53,7 +53,6 @@ class RDDChild final : public PRDDChild {
 
  private:
   RDDProcessHost* mHost;
-  UniquePtr<ipc::CrashReporterHost> mCrashReporter;
   UniquePtr<MemoryReportRequestHost> mMemoryReportRequest;
 #if defined(XP_LINUX) && defined(MOZ_SANDBOX)
   UniquePtr<SandboxBroker> mSandboxBroker;

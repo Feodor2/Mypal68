@@ -585,9 +585,12 @@ class nsINode : public mozilla::dom::EventTarget {
   nsIContent* GetChildAt_Deprecated(uint32_t aIndex) const;
 
   /**
-   * Get the index of a child within this content
+   * Get the index of a child within this content.
+   *
    * @param aPossibleChild the child to get the index of.
-   * @return the index of the child, or -1 if not a child
+   * @return the index of the child, or -1 if not a child. Be aware that
+   *         anonymous children (e.g. a <div> child of an <input> element) will
+   *         result in -1.
    *
    * If the return value is not -1, then calling GetChildAt_Deprecated() with
    * that value will return aPossibleChild.
@@ -761,6 +764,11 @@ class nsINode : public mozilla::dom::EventTarget {
     const bool isShadowRoot = IsInShadowTree() && !GetParentNode();
     MOZ_ASSERT_IF(isShadowRoot, IsDocumentFragment());
     return isShadowRoot;
+  }
+
+  bool IsHTMLHeadingElement() const {
+    return IsAnyOfHTMLElements(nsGkAtoms::h1, nsGkAtoms::h2, nsGkAtoms::h3,
+                               nsGkAtoms::h4, nsGkAtoms::h5, nsGkAtoms::h6);
   }
 
   /**

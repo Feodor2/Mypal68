@@ -8,6 +8,7 @@
 #define nsPresContext_h___
 
 #include "mozilla/Attributes.h"
+#include "mozilla/EnumeratedArray.h"
 #include "mozilla/MediaFeatureChange.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/ScrollStyles.h"
@@ -103,12 +104,12 @@ const uint8_t kPresContext_DefaultFixedFont_ID = 0x01;
 #ifdef DEBUG
 struct nsAutoLayoutPhase;
 
-enum nsLayoutPhase {
-  eLayoutPhase_Paint,
-  eLayoutPhase_DisplayListBuilding,  // sometimes a subset of the paint phase
-  eLayoutPhase_Reflow,
-  eLayoutPhase_FrameC,
-  eLayoutPhase_COUNT
+enum class nsLayoutPhase : uint8_t {
+  Paint,
+  DisplayListBuilding,  // sometimes a subset of the paint phase
+  Reflow,
+  FrameC,
+  COUNT
 };
 #endif
 
@@ -184,7 +185,7 @@ class nsPresContext : public nsISupports,
   nsPresContext* GetToplevelContentDocumentPresContext();
 
   /**
-   * Returns the nearest widget for the root frame of this.
+   * Returns the nearest widget for the root frame or view of this.
    *
    * @param aOffset     If non-null the offset from the origin of the root
    *                    frame's view to the widget's origin (usually positive)
@@ -795,7 +796,6 @@ class nsPresContext : public nsISupports,
 
   // Is this presentation in a chrome docshell?
   bool IsChrome() const;
-  bool IsChromeOriginImage() const;
 
   // Public API for native theme code to get style internals.
   bool HasAuthorSpecifiedRules(const nsIFrame* aFrame,
@@ -1012,7 +1012,6 @@ class nsPresContext : public nsISupports,
   void SetImgAnimations(nsIContent* aParent, uint16_t aMode);
   void SetSMILAnimations(mozilla::dom::Document* aDoc, uint16_t aNewMode,
                          uint16_t aOldMode);
-  void GetDocumentColorPreferences();
 
   void PreferenceChanged(const char* aPrefName);
 
@@ -1260,7 +1259,8 @@ class nsPresContext : public nsISupports,
 #ifdef DEBUG
  private:
   friend struct nsAutoLayoutPhase;
-  uint32_t mLayoutPhaseCount[eLayoutPhase_COUNT];
+  mozilla::EnumeratedArray<nsLayoutPhase, nsLayoutPhase::COUNT, uint32_t>
+      mLayoutPhaseCount;
 
  public:
   uint32_t LayoutPhaseCount(nsLayoutPhase aPhase) {
@@ -1322,6 +1322,18 @@ class nsRootPresContext final : public nsPresContext {
 
   virtual bool IsRoot() override { return true; }
 
+  /**
+   * Add a runnable that will get called before the next paint. They will get
+   * run eventually even if painting doesn't happen. They might run well before
+   * painting happens.
+   */
+  void AddWillPaintObserver(nsIRunnable* aRunnable);
+
+  /**
+   * Run all runnables that need to get called before the next paint.
+   */
+  void FlushWillPaintObservers();
+
   virtual size_t SizeOfExcludingThis(
       mozilla::MallocSizeOf aMallocSizeOf) const override;
 
@@ -1335,10 +1347,28 @@ class nsRootPresContext final : public nsPresContext {
    */
   void CancelApplyPluginGeometryTimer();
 
+  class RunWillPaintObservers : public mozilla::Runnable {
+   public:
+    explicit RunWillPaintObservers(nsRootPresContext* aPresContext)
+        : Runnable("nsPresContextType::RunWillPaintObservers"),
+          mPresContext(aPresContext) {}
+    void Revoke() { mPresContext = nullptr; }
+    NS_IMETHOD Run() override {
+      if (mPresContext) {
+        mPresContext->FlushWillPaintObservers();
+      }
+      return NS_OK;
+    }
+    // The lifetime of this reference is handled by an nsRevocableEventPtr
+    nsRootPresContext* MOZ_NON_OWNING_REF mPresContext;
+  };
+
   friend class nsPresContext;
 
   nsCOMPtr<nsITimer> mApplyPluginGeometryTimer;
   nsTHashtable<nsRefPtrHashKey<nsIContent>> mRegisteredPlugins;
+  nsTArray<nsCOMPtr<nsIRunnable>> mWillPaintObservers;
+  nsRevocableEventPtr<RunWillPaintObservers> mWillPaintFallbackEvent;
 };
 
 #ifdef MOZ_REFLOW_PERF

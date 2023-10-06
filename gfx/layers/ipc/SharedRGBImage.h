@@ -37,7 +37,7 @@ class SharedRGBImage : public Image {
   virtual ~SharedRGBImage();
 
  public:
-  TextureClient* GetTextureClient(KnowsCompositor* aForwarder) override;
+  TextureClient* GetTextureClient(KnowsCompositor* aKnowsCompositor) override;
 
   gfx::IntSize GetSize() const override;
 

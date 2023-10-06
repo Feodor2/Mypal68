@@ -6,6 +6,7 @@
 
 #include "ipc/IPCMessageUtils.h"
 
+#include "X11UndefineNone.h"
 #include "mozilla/dom/ClientBinding.h"
 #include "mozilla/dom/ClientsBinding.h"
 #include "mozilla/dom/DocumentBinding.h"

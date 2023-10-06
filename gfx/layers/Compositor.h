@@ -470,7 +470,6 @@ class Compositor : public TextureSourceProvider {
 
   virtual CompositorD3D9* AsCompositorD3D9() { return nullptr; }
   virtual CompositorD3D11* AsCompositorD3D11() { return nullptr; }
-  virtual BasicCompositor* AsBasicCompositor() { return nullptr; }
 
   Compositor* AsCompositor() override { return this; }
 

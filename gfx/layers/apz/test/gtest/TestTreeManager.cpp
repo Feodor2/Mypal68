@@ -146,7 +146,7 @@ TEST_F(APZCTreeManagerGenericTester, Bug1194876) {
   mti = CreateMultiTouchInput(MultiTouchInput::MULTITOUCH_START, mcc->Time());
   mti.mTouches.AppendElement(
       SingleTouchData(0, ParentLayerPoint(25, 50), ScreenSize(0, 0), 0, 0));
-  manager->ReceiveInputEvent(mti, nullptr, &blockId);
+  blockId = manager->ReceiveInputEvent(mti).mInputBlockId;
   manager->ContentReceivedInputBlock(blockId, false);
   targets.AppendElement(ApzcOf(layers[0])->GetGuid());
   manager->SetTargetAPZC(blockId, targets);
@@ -158,7 +158,7 @@ TEST_F(APZCTreeManagerGenericTester, Bug1194876) {
   // layers[1] is the RCD layer, it will end up being the multitouch target.
   mti.mTouches.AppendElement(
       SingleTouchData(1, ParentLayerPoint(75, 50), ScreenSize(0, 0), 0, 0));
-  manager->ReceiveInputEvent(mti, nullptr, &blockId);
+  blockId = manager->ReceiveInputEvent(mti).mInputBlockId;
   manager->ContentReceivedInputBlock(blockId, false);
   targets.AppendElement(ApzcOf(layers[0])->GetGuid());
   manager->SetTargetAPZC(blockId, targets);
@@ -187,7 +187,7 @@ TEST_F(APZCTreeManagerGenericTester, TargetChangesMidGesture_Bug1570559) {
       CreateMultiTouchInput(MultiTouchInput::MULTITOUCH_START, mcc->Time());
   mti.mTouches.AppendElement(
       SingleTouchData(0, ParentLayerPoint(25, 50), ScreenSize(0, 0), 0, 0));
-  manager->ReceiveInputEvent(mti, nullptr, &blockId);
+  blockId = manager->ReceiveInputEvent(mti).mInputBlockId;
   manager->ContentReceivedInputBlock(blockId, /* default prevented = */ false);
   targets.AppendElement(ApzcOf(layers[1])->GetGuid());
   manager->SetTargetAPZC(blockId, targets);
@@ -199,7 +199,7 @@ TEST_F(APZCTreeManagerGenericTester, TargetChangesMidGesture_Bug1570559) {
   // child's gesture state.
   mti.mTouches.AppendElement(
       SingleTouchData(1, ParentLayerPoint(75, 50), ScreenSize(0, 0), 0, 0));
-  manager->ReceiveInputEvent(mti, nullptr, &blockId);
+  blockId = manager->ReceiveInputEvent(mti).mInputBlockId;
   manager->ContentReceivedInputBlock(blockId, /* default prevented = */ true);
   targets.AppendElement(ApzcOf(layers[1])->GetGuid());
   manager->SetTargetAPZC(blockId, targets);
@@ -222,7 +222,7 @@ TEST_F(APZCTreeManagerGenericTester, Bug1198900) {
                        ScrollWheelInput::SCROLLDELTA_PIXEL, origin, 0, 10,
                        false, WheelDeltaAdjustmentStrategy::eNone);
   uint64_t blockId;
-  manager->ReceiveInputEvent(swi, nullptr, &blockId);
+  blockId = manager->ReceiveInputEvent(swi).mInputBlockId;
   manager->ContentReceivedInputBlock(blockId, /* preventDefault= */ true);
 }
 

@@ -41,10 +41,7 @@ struct PrintData {
   nsString footerStrCenter;
   nsString footerStrRight;
 
-  short  howToEnableFrameUI;
   bool isCancelled;
-  short printFrameTypeUsage;
-  short  printFrameType;
   bool printSilent;
   bool shrinkToFit;
   bool showPrintProgress;
@@ -74,8 +71,6 @@ struct PrintData {
   nsString deviceName;
   double printableWidthInInches;
   double printableHeightInInches;
-  bool isFramesetDocument;
-  bool isFramesetFrameSelected;
   bool isIFrameSelected;
   bool isRangeSelection;
   uint8_t[] devModeData;

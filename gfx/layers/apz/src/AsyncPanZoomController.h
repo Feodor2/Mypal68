@@ -883,7 +883,7 @@ class AsyncPanZoomController {
    * NOTE: This must be converted to LayoutDevicePoint relative to the child
    * document before sending over IPC to a child process.
    */
-  bool ConvertToGecko(const ScreenIntPoint& aPoint, LayoutDevicePoint* aOut);
+  Maybe<LayoutDevicePoint> ConvertToGecko(const ScreenIntPoint& aPoint);
 
   enum AxisLockMode {
     FREE,     /* No locking at all */
@@ -1130,13 +1130,6 @@ class AsyncPanZoomController {
       AsyncTransformComponents aComponents = LayoutAndVisual) const;
 
   /**
-   * Returns the incremental transformation corresponding to the async
-   * panning/zooming of the larger of the visual or layout viewport.
-   */
-  AsyncTransform GetCurrentAsyncTransformForFixedAdjustment(
-      AsyncTransformConsumer aMode) const;
-
-  /**
    * Returns the same transform as GetCurrentAsyncTransform(), but includes
    * any transform due to axis over-scroll.
    */
@@ -1166,16 +1159,6 @@ class AsyncPanZoomController {
    * in |Metrics()| immediately, without any delay.)
    */
   bool SampleCompositedAsyncTransform();
-
-  /**
-   * Returns the incremental transformation corresponding to the async
-   * panning/zooming of the layout viewport (unlike GetCurrentAsyncTransform,
-   * which deals with async movement of the visual viewport). That is, when
-   * this transform is multiplied with the layer's existing transform, it will
-   * make the layer appear with the desired pan/zoom amount.
-   */
-  AsyncTransform GetCurrentAsyncViewportTransform(
-      AsyncTransformConsumer aMode) const;
 
   /*
    * Helper functions to query the async layout viewport, scroll offset, and

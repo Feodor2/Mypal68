@@ -15,8 +15,7 @@
 // See the architecture comment in this file's header.
 
 namespace mozilla {
-
-using namespace dom;
+namespace dom {
 
 static inline SVGAttrTearoffTable<SVGStringList, DOMSVGStringList>&
 SVGStringListTearoffTable() {
@@ -188,4 +187,5 @@ SVGStringList& DOMSVGStringList::InternalList() const {
   return mElement->GetStringListInfo().mStringLists[mAttrEnum];
 }
 
+}  // namespace dom
 }  // namespace mozilla

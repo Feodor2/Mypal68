@@ -18,6 +18,7 @@ EXPORTS += [
     'nsDisplayItemTypes.h',
     'nsDisplayItemTypesList.h',
     'nsDisplayList.h',
+    'nsDisplayListArenaTypes.h',
     'nsDisplayListInvalidation.h',
     'nsImageRenderer.h',
     'RetainedDisplayListBuilder.h',

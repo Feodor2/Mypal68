@@ -22,6 +22,10 @@ GPUVideoTextureHost::~GPUVideoTextureHost() {
 
 GPUVideoTextureHost* GPUVideoTextureHost::CreateFromDescriptor(
     TextureFlags aFlags, const SurfaceDescriptorGPUVideo& aDescriptor) {
+  // In the future when the RDD process has a PVideoBridge connection,
+  // then there might be two VideoBridgeParents (one within the GPU process,
+  // one from RDD). We'll need to flag which one to use to lookup our
+  // descriptor, or just try both.
   TextureHost* wrappedTextureHost =
       VideoBridgeParent::GetSingleton()->LookupTexture(aDescriptor.handle());
   if (!wrappedTextureHost) {
@@ -74,6 +78,13 @@ gfx::YUVColorSpace GPUVideoTextureHost::GetYUVColorSpace() const {
   return gfx::YUVColorSpace::UNKNOWN;
 }
 
+gfx::ColorRange GPUVideoTextureHost::GetColorRange() const {
+  if (mWrappedTextureHost) {
+    return mWrappedTextureHost->GetColorRange();
+  }
+  return TextureHost::GetColorRange();
+}
+
 gfx::IntSize GPUVideoTextureHost::GetSize() const {
   if (!mWrappedTextureHost) {
     return gfx::IntSize();
@@ -122,11 +133,6 @@ void GPUVideoTextureHost::PushDisplayItems(
 
   mWrappedTextureHost->PushDisplayItems(aBuilder, aBounds, aClip, aFilter,
                                         aImageKeys);
-}
-
-bool GPUVideoTextureHost::SupportsWrNativeTexture() {
-  MOZ_ASSERT(mWrappedTextureHost);
-  return mWrappedTextureHost->SupportsWrNativeTexture();
 }
 
 }  // namespace layers

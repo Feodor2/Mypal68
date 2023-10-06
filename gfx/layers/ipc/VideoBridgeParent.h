@@ -17,7 +17,6 @@ class VideoBridgeParent final : public PVideoBridgeParent,
                                 public HostIPCAllocator,
                                 public ShmemAllocator {
  public:
-  VideoBridgeParent();
   ~VideoBridgeParent();
 
   static VideoBridgeParent* GetSingleton();
@@ -53,7 +52,11 @@ class VideoBridgeParent final : public PVideoBridgeParent,
 
   void DeallocShmem(ipc::Shmem& aShmem) override;
 
+  static void Open(Endpoint<PVideoBridgeParent>&& aEndpoint);
+
  private:
+  VideoBridgeParent();
+
   void ActorDealloc() override;
 
   // This keeps us alive until ActorDestroy(), at which point we do a

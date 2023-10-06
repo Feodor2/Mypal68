@@ -43,13 +43,6 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  FENNEC_BETA:
-#ifdef FENNEC_BETA
-  true,
-#else
-  false,
-#endif
-
   ACCESSIBILITY:
 #ifdef ACCESSIBILITY
   true,

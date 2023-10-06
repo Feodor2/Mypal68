@@ -8,6 +8,7 @@
 #ifndef SkImageSource_DEFINED
 #define SkImageSource_DEFINED
 
+#include "SkFlattenable.h"
 #include "SkImage.h"
 #include "SkImageFilter.h"
 
@@ -21,9 +22,6 @@ public:
 
     SkRect computeFastBounds(const SkRect& src) const override;
 
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkImageSource)
-
 protected:
     void flatten(SkWriteBuffer&) const override;
 
@@ -31,9 +29,12 @@ protected:
                                         SkIPoint* offset) const override;
     sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const override;
 
-    SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix&, MapDirection) const override;
+    SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix& ctm,
+                               MapDirection, const SkIRect* inputRect) const override;
 
 private:
+    SK_FLATTENABLE_HOOKS(SkImageSource)
+
     explicit SkImageSource(sk_sp<SkImage>);
     SkImageSource(sk_sp<SkImage>,
                   const SkRect& srcRect,

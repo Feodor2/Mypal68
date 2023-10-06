@@ -1710,7 +1710,7 @@ function flushRendering() {
     let root = win.document.documentElement;
     if (root) {
       try {
-        // Flush pending restyles and reflows for this window
+        // Flush pending restyles and reflows for this window (layout)
         root.getBoundingClientRect();
       } catch (e) {
         logger.error("flushWindow failed", e);
@@ -1736,9 +1736,6 @@ function flushRendering() {
         "but the root document doesn't have one!"
     );
   }
-
-  logger.debug(`flushRendering ${windowUtils.isMozAfterPaintPending}`);
-  return windowUtils.isMozAfterPaintPending;
 }
 
 async function reftestWait(url, remote) {
@@ -1798,18 +1795,23 @@ async function reftestWait(url, remote) {
 
   await new Promise(resolve => {
     let maybeResolve = () => {
-      if (flushRendering()) {
+      flushRendering();
+      if (remote) {
+        // Flush display (paint)
+        windowUtils.updateLayerTree();
+      }
+      if (windowUtils.isMozAfterPaintPending) {
+        logger.debug(`reftestWait: ${windowUtils.isMozAfterPaintPending}`);
         win.addEventListener("MozAfterPaint", maybeResolve, { once: true });
       } else {
-        win.setTimeout(resolve, 0);
+        // resolve at the start of the next frame in case of leftover paints
+        win.requestAnimationFrame(() => {
+          win.requestAnimationFrame(resolve);
+        });
       }
     };
     maybeResolve();
   });
-
-  if (remote) {
-    windowUtils.updateLayerTree();
-  }
 }
 
 function domAddEventListener(msg) {

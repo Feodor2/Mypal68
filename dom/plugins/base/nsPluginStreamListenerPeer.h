@@ -7,6 +7,7 @@
 
 #include "nscore.h"
 #include "nsIFile.h"
+#include "nsIRequest.h"
 #include "nsIStreamListener.h"
 #include "nsIProgressEventSink.h"
 #include "nsIHttpHeaderVisitor.h"

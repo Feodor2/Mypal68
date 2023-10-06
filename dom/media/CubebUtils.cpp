@@ -72,7 +72,7 @@ struct AudioIpcInitParams {
 };
 
 // These functions are provided by audioipc-server crate
-extern void* audioipc_server_start();
+extern void* audioipc_server_start(const char*, const char*);
 extern mozilla::ipc::FileDescriptor::PlatformHandleType
 audioipc_server_new_client(void*);
 extern void audioipc_server_stop(void*);
@@ -84,29 +84,6 @@ extern int audioipc_client_init(cubeb**, const char*,
 namespace mozilla {
 
 namespace {
-
-#ifdef MOZ_CUBEB_REMOTING
-////////////////////////////////////////////////////////////////////////////////
-// Cubeb Sound Server Thread
-void* sServerHandle = nullptr;
-
-// Initialized during early startup, protected by sMutex.
-StaticAutoPtr<ipc::FileDescriptor> sIPCConnection;
-
-static bool StartSoundServer() {
-  sServerHandle = audioipc_server_start();
-  return sServerHandle != nullptr;
-}
-
-static void ShutdownSoundServer() {
-  if (!sServerHandle) return;
-
-  audioipc_server_stop(sServerHandle);
-  sServerHandle = nullptr;
-}
-#endif  // MOZ_CUBEB_REMOTING
-
-////////////////////////////////////////////////////////////////////////////////
 
 LazyLogModule gCubebLog("cubeb");
 
@@ -183,6 +160,27 @@ const int CUBEB_BACKEND_UNKNOWN = CUBEB_BACKEND_INIT_FAILURE_FIRST + 2;
 // visible on the querying thread/CPU.
 uint32_t sPreferredSampleRate;
 
+#ifdef MOZ_CUBEB_REMOTING
+// AudioIPC server handle
+void* sServerHandle = nullptr;
+
+// Initialized during early startup, protected by sMutex.
+StaticAutoPtr<ipc::FileDescriptor> sIPCConnection;
+
+static bool StartAudioIPCServer() {
+  sServerHandle = audioipc_server_start(sBrandName, sCubebBackendName);
+  return sServerHandle != nullptr;
+}
+
+static void ShutdownAudioIPCServer() {
+  if (!sServerHandle) {
+    return;
+  }
+
+  audioipc_server_stop(sServerHandle);
+  sServerHandle = nullptr;
+}
+#endif  // MOZ_CUBEB_REMOTING
 }  // namespace
 
 static const uint32_t CUBEB_NORMAL_LATENCY_MS = 100;
@@ -275,11 +273,6 @@ void PrefChanged(const char* aPref, void* aClosure) {
     sCubebSandbox = Preferences::GetBool(aPref);
     MOZ_LOG(gCubebLog, LogLevel::Verbose,
             ("%s: %s", PREF_CUBEB_SANDBOX, sCubebSandbox ? "true" : "false"));
-
-    if (sCubebSandbox && !sServerHandle && XRE_IsParentProcess()) {
-      MOZ_LOG(gCubebLog, LogLevel::Debug, ("Starting cubeb server..."));
-      StartSoundServer();
-    }
   } else if (strcmp(aPref, PREF_AUDIOIPC_POOL_SIZE) == 0) {
     StaticMutexAutoLock lock(sMutex);
     sAudioIPCPoolSize = Preferences::GetUint(PREF_AUDIOIPC_POOL_SIZE,
@@ -413,6 +406,14 @@ void InitAudioIPCConnection() {
 
 ipc::FileDescriptor CreateAudioIPCConnection() {
 #ifdef MOZ_CUBEB_REMOTING
+  MOZ_ASSERT(sCubebSandbox && XRE_IsParentProcess());
+  if (!sServerHandle) {
+    MOZ_LOG(gCubebLog, LogLevel::Debug, ("Starting cubeb server..."));
+    if (!StartAudioIPCServer()) {
+      MOZ_LOG(gCubebLog, LogLevel::Error, ("audioipc_server_start failed"));
+      return ipc::FileDescriptor();
+    }
+  }
   MOZ_ASSERT(sServerHandle);
   ipc::FileDescriptor::PlatformHandleType rawFD =
       audioipc_server_new_client(sServerHandle);
@@ -491,7 +492,7 @@ cubeb* GetCubebContextUnlocked() {
 #ifdef XP_WIN
     mozilla::mscom::EnsureMTA([&]() -> void {
 #endif
-      rv = cubeb_init(&sCubebContext, sBrandName, sCubebBackendName.get());
+      rv = cubeb_init(&sCubebContext, sBrandName, sCubebBackendName);
 #ifdef XP_WIN
     });
 #endif
@@ -635,7 +636,7 @@ void ShutdownLibrary() {
 
 #ifdef MOZ_CUBEB_REMOTING
   sIPCConnection = nullptr;
-  ShutdownSoundServer();
+  ShutdownAudioIPCServer();
 #endif
 }
 

@@ -32,17 +32,14 @@ void APZInputBridgeChild::ActorDestroy(ActorDestroyReason aWhy) {
   mDestroyed = true;
 }
 
-nsEventStatus APZInputBridgeChild::ReceiveInputEvent(
-    InputData& aEvent, ScrollableLayerGuid* aOutTargetGuid,
-    uint64_t* aOutInputBlockId) {
+APZEventResult APZInputBridgeChild::ReceiveInputEvent(InputData& aEvent) {
+  APZEventResult res;
   switch (aEvent.mInputType) {
     case MULTITOUCH_INPUT: {
       MultiTouchInput& event = aEvent.AsMultiTouchInput();
       MultiTouchInput processedEvent;
 
-      nsEventStatus res;
-      SendReceiveMultiTouchInputEvent(event, &res, &processedEvent,
-                                      aOutTargetGuid, aOutInputBlockId);
+      SendReceiveMultiTouchInputEvent(event, &res, &processedEvent);
 
       event = processedEvent;
       return res;
@@ -51,9 +48,7 @@ nsEventStatus APZInputBridgeChild::ReceiveInputEvent(
       MouseInput& event = aEvent.AsMouseInput();
       MouseInput processedEvent;
 
-      nsEventStatus res;
-      SendReceiveMouseInputEvent(event, &res, &processedEvent, aOutTargetGuid,
-                                 aOutInputBlockId);
+      SendReceiveMouseInputEvent(event, &res, &processedEvent);
 
       event = processedEvent;
       return res;
@@ -62,9 +57,7 @@ nsEventStatus APZInputBridgeChild::ReceiveInputEvent(
       PanGestureInput& event = aEvent.AsPanGestureInput();
       PanGestureInput processedEvent;
 
-      nsEventStatus res;
-      SendReceivePanGestureInputEvent(event, &res, &processedEvent,
-                                      aOutTargetGuid, aOutInputBlockId);
+      SendReceivePanGestureInputEvent(event, &res, &processedEvent);
 
       event = processedEvent;
       return res;
@@ -73,9 +66,7 @@ nsEventStatus APZInputBridgeChild::ReceiveInputEvent(
       PinchGestureInput& event = aEvent.AsPinchGestureInput();
       PinchGestureInput processedEvent;
 
-      nsEventStatus res;
-      SendReceivePinchGestureInputEvent(event, &res, &processedEvent,
-                                        aOutTargetGuid, aOutInputBlockId);
+      SendReceivePinchGestureInputEvent(event, &res, &processedEvent);
 
       event = processedEvent;
       return res;
@@ -84,9 +75,7 @@ nsEventStatus APZInputBridgeChild::ReceiveInputEvent(
       TapGestureInput& event = aEvent.AsTapGestureInput();
       TapGestureInput processedEvent;
 
-      nsEventStatus res;
-      SendReceiveTapGestureInputEvent(event, &res, &processedEvent,
-                                      aOutTargetGuid, aOutInputBlockId);
+      SendReceiveTapGestureInputEvent(event, &res, &processedEvent);
 
       event = processedEvent;
       return res;
@@ -95,9 +84,7 @@ nsEventStatus APZInputBridgeChild::ReceiveInputEvent(
       ScrollWheelInput& event = aEvent.AsScrollWheelInput();
       ScrollWheelInput processedEvent;
 
-      nsEventStatus res;
-      SendReceiveScrollWheelInputEvent(event, &res, &processedEvent,
-                                       aOutTargetGuid, aOutInputBlockId);
+      SendReceiveScrollWheelInputEvent(event, &res, &processedEvent);
 
       event = processedEvent;
       return res;
@@ -106,16 +93,15 @@ nsEventStatus APZInputBridgeChild::ReceiveInputEvent(
       KeyboardInput& event = aEvent.AsKeyboardInput();
       KeyboardInput processedEvent;
 
-      nsEventStatus res;
-      SendReceiveKeyboardInputEvent(event, &res, &processedEvent,
-                                    aOutTargetGuid, aOutInputBlockId);
+      SendReceiveKeyboardInputEvent(event, &res, &processedEvent);
 
       event = processedEvent;
       return res;
     }
     default: {
       MOZ_ASSERT_UNREACHABLE("Invalid InputData type.");
-      return nsEventStatus_eConsumeNoDefault;
+      res.mStatus = nsEventStatus_eConsumeNoDefault;
+      return res;
     }
   }
 }

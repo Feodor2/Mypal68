@@ -14,7 +14,10 @@ class nsAtom;
 class nsStaticAtom;
 
 namespace mozilla {
+
+namespace dom {
 class DOMSVGStringList;
+}
 
 #define MOZILLA_DOMSVGTESTS_IID                      \
   {                                                  \
@@ -33,7 +36,7 @@ class SVGTests : public nsISupports {
 
   SVGTests();
 
-  friend class mozilla::DOMSVGStringList;
+  friend class dom::DOMSVGStringList;
   typedef mozilla::SVGStringList SVGStringList;
 
   /**

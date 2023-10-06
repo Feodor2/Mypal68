@@ -77,6 +77,7 @@ class MacIOSurfaceTextureHostOGL : public TextureHost {
                         const Range<wr::ImageKey>& aImageKeys) override;
 
   gfx::YUVColorSpace GetYUVColorSpace() const override;
+  gfx::ColorRange GetColorRange() const override;
 
  protected:
   GLTextureSource* CreateTextureSourceForPlane(size_t aPlane);

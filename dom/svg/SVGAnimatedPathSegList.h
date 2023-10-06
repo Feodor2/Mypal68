@@ -38,8 +38,8 @@ class SVGElement;
  */
 class SVGAnimatedPathSegList final {
   // friends so that they can get write access to mBaseVal and mAnimVal
-  friend class DOMSVGPathSeg;
-  friend class DOMSVGPathSegList;
+  friend class dom::DOMSVGPathSeg;
+  friend class dom::DOMSVGPathSegList;
 
  public:
   SVGAnimatedPathSegList() = default;

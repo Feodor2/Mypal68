@@ -16,6 +16,7 @@
 #include "GrColor.h"
 #include "GrFPArgs.h"
 #include "GrSamplerState.h"
+#include "SkMacros.h"
 #include "SkPathEffect.h"
 #include "SkRandom.h"
 #include "SkShaderBase.h"
@@ -71,10 +72,12 @@ public:
         return sk_sp<SkPathEffect>(new TestDashPathEffect(intervals, count, phase));
     }
 
-    bool filterPath(SkPath* dst, const SkPath&, SkStrokeRec* , const SkRect*) const override;
-    DashType asADash(DashInfo* info) const override;
     Factory getFactory() const override { return nullptr; }
-    void toString(SkString*) const override {}
+    const char* getTypeName() const override { return nullptr; }
+
+protected:
+    bool onFilterPath(SkPath* dst, const SkPath&, SkStrokeRec* , const SkRect*) const override;
+    DashType onAsADash(DashInfo* info) const override;
 
 private:
     TestDashPathEffect(const SkScalar* intervals, int count, SkScalar phase);
@@ -123,7 +126,6 @@ static inline GrColor GrRandomColor(SkRandom* random) {
             break;
         }
     }
-    GrColorIsPMAssert(color);
     return color;
 }
 

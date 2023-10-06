@@ -137,6 +137,7 @@ WMFVideoMFTManager::WMFVideoMFTManager(
       mColorSpace(aConfig.mColorSpace != gfx::YUVColorSpace::UNKNOWN
                       ? Some(aConfig.mColorSpace)
                       : Nothing()),
+      mColorRange(aConfig.mColorRange),
       mImageContainer(aImageContainer),
       mKnowsCompositor(aKnowsCompositor),
       mDXVAEnabled(aDXVAEnabled &&
@@ -637,8 +638,11 @@ MediaResult WMFVideoMFTManager::InitInternal() {
 
   if (mUseHwAccel) {
     hr = mDXVA2Manager->ConfigureForSize(
-        outputType, mColorSpace.refOr(gfx::YUVColorSpace::BT601),
-        mVideoInfo.ImageRect().width, mVideoInfo.ImageRect().height);
+        outputType,
+        mColorSpace.refOr(
+            DefaultColorSpace({mImageSize.width, mImageSize.height})),
+        mColorRange, mVideoInfo.ImageRect().width,
+        mVideoInfo.ImageRect().height);
     NS_ENSURE_TRUE(SUCCEEDED(hr),
                    MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                                RESULT_DETAIL("Fail to configure image size for "
@@ -737,6 +741,7 @@ WMFVideoMFTManager::Input(MediaRawData* aSample) {
     // band, while for VP9 it's only available within the VP9 bytestream.
     // The info would have been updated by the MediaChangeMonitor.
     mColorSpace = Some(aSample->mTrackInfo->GetAsVideoInfo()->mColorSpace);
+    mColorRange = aSample->mTrackInfo->GetAsVideoInfo()->mColorRange;
   }
   mLastDuration = aSample->mDuration;
 
@@ -905,8 +910,10 @@ WMFVideoMFTManager::CreateBasicVideoFrame(IMFSample* aSample,
   }
 
   // YuvColorSpace
-  b.mYUVColorSpace = *mColorSpace;
+  b.mYUVColorSpace =
+      mColorSpace.refOr(DefaultColorSpace({videoWidth, videoHeight}));
   b.mColorDepth = colorDepth;
+  b.mColorRange = mColorRange;
 
   TimeUnit pts = GetSampleTime(aSample);
   NS_ENSURE_TRUE(pts.IsValid(), E_FAIL);
@@ -1018,8 +1025,11 @@ WMFVideoMFTManager::Output(int64_t aStreamOffset, RefPtr<MediaData>& aOutData) {
 
       if (mUseHwAccel) {
         hr = mDXVA2Manager->ConfigureForSize(
-            outputType, mColorSpace.refOr(gfx::YUVColorSpace::BT601),
-            mVideoInfo.ImageRect().width, mVideoInfo.ImageRect().height);
+            outputType,
+            mColorSpace.refOr(
+                DefaultColorSpace({mImageSize.width, mImageSize.height})),
+            mColorRange, mVideoInfo.ImageRect().width,
+            mVideoInfo.ImageRect().height);
         NS_ENSURE_TRUE(SUCCEEDED(hr), hr);
       } else {
         // The stride may have changed, recheck for it.

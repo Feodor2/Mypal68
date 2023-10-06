@@ -72,7 +72,7 @@ void nsContainerFrame::SetInitialChildList(ChildListID aListID,
                "unexpected second call to SetInitialChildList");
     mFrames.SetFrames(aChildList);
   } else if (aListID == kBackdropList) {
-    MOZ_ASSERT(StyleDisplay()->mTopLayer != NS_STYLE_TOP_LAYER_NONE,
+    MOZ_ASSERT(StyleDisplay()->mTopLayer != StyleTopLayer::None,
                "Only top layer frames should have backdrop");
     MOZ_ASSERT(GetStateBits() & NS_FRAME_OUT_OF_FLOW,
                "Top layer frames should be out-of-flow");
@@ -275,7 +275,7 @@ void nsContainerFrame::DestroyFrom(nsIFrame* aDestructRoot,
     }
 
     MOZ_ASSERT(!GetProperty(BackdropProperty()) ||
-                   StyleDisplay()->mTopLayer != NS_STYLE_TOP_LAYER_NONE,
+                   StyleDisplay()->mTopLayer != StyleTopLayer::None,
                "only top layer frame may have backdrop");
     if (hasBackdrop) {
       SafelyDestroyFrameListProp(aDestructRoot, aPostDestroyData, presShell,
@@ -600,7 +600,7 @@ void nsContainerFrame::SyncWindowProperties(nsPresContext* aPresContext,
 
   nsTransparencyMode mode =
       nsLayoutUtils::GetFrameTransparency(aFrame, rootFrame);
-  int32_t shadow = rootFrame->StyleUIReset()->mWindowShadow;
+  StyleWindowShadow shadow = rootFrame->StyleUIReset()->mWindowShadow;
   nsCOMPtr<nsIWidget> viewWidget = aView->GetWidget();
   viewWidget->SetTransparencyMode(mode);
   windowWidget->SetWindowShadowStyle(shadow);
@@ -871,7 +871,7 @@ void nsContainerFrame::ReflowChild(
     const nsSize& aContainerSize, ReflowChildFlags aFlags,
     nsReflowStatus& aStatus, nsOverflowContinuationTracker* aTracker) {
   MOZ_ASSERT(aReflowInput.mFrame == aKidFrame, "bad reflow input");
-  if (aWM.IsVerticalRL() || (!aWM.IsVertical() && !aWM.IsBidiLTR())) {
+  if (aWM.IsPhysicalRTL()) {
     NS_ASSERTION(aContainerSize.width != NS_UNCONSTRAINEDSIZE,
                  "ReflowChild with unconstrained container width!");
   }
@@ -1016,7 +1016,7 @@ void nsContainerFrame::FinishReflowChild(
                  aKidFrame->IsTableCellFrame(),
              "aReflowInput should be passed in almost all cases");
 
-  if (aWM.IsVerticalRL() || (!aWM.IsVertical() && !aWM.IsBidiLTR())) {
+  if (aWM.IsPhysicalRTL()) {
     NS_ASSERTION(aContainerSize.width != NS_UNCONSTRAINEDSIZE,
                  "FinishReflowChild with unconstrained container width!");
   }

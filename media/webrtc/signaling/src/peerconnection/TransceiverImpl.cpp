@@ -266,7 +266,11 @@ nsresult TransceiverImpl::UpdatePrincipal(nsIPrincipal* aPrincipal) {
   return NS_OK;
 }
 
-void TransceiverImpl::ResetSync() { mConduit->SetSyncGroup(""); }
+void TransceiverImpl::ResetSync() {
+  if (mConduit) {
+    mConduit->SetSyncGroup("");
+  }
+}
 
 nsresult TransceiverImpl::SyncWithMatchingVideoConduits(
     std::vector<RefPtr<TransceiverImpl>>& transceivers) {
@@ -287,6 +291,10 @@ nsresult TransceiverImpl::SyncWithMatchingVideoConduits(
                             mJsepTransceiver->mRecvTrack.GetStreamIds().end());
 
   for (RefPtr<TransceiverImpl>& transceiver : transceivers) {
+    if (!transceiver->IsValid()) {
+      continue;
+    }
+
     if (!transceiver->IsVideo()) {
       // |this| is an audio transceiver, so we skip other audio transceivers
       continue;
@@ -318,7 +326,7 @@ nsresult TransceiverImpl::SyncWithMatchingVideoConduits(
 }
 
 bool TransceiverImpl::ConduitHasPluginID(uint64_t aPluginID) {
-  return mConduit->CodecPluginID() == aPluginID;
+  return mConduit ? mConduit->CodecPluginID() == aPluginID : false;
 }
 
 bool TransceiverImpl::HasSendTrack(
@@ -610,14 +618,26 @@ static nsresult JsepCodecDescToAudioCodecConfig(
 static nsresult NegotiatedDetailsToAudioCodecConfigs(
     const JsepTrackNegotiatedDetails& aDetails,
     std::vector<UniquePtr<AudioCodecConfig>>* aConfigs) {
+  UniquePtr<AudioCodecConfig> telephoneEvent;
+
   if (aDetails.GetEncodingCount()) {
     for (const auto& codec : aDetails.GetEncoding(0).GetCodecs()) {
       UniquePtr<AudioCodecConfig> config;
       if (NS_FAILED(JsepCodecDescToAudioCodecConfig(*codec, &config))) {
         return NS_ERROR_INVALID_ARG;
       }
-      aConfigs->push_back(std::move(config));
+      if (config->mName == "telephone-event") {
+        telephoneEvent = std::move(config);
+      } else {
+        aConfigs->push_back(std::move(config));
+      }
     }
+  }
+
+  // Put telephone event at the back, because webrtc.org crashes if we don't
+  // If we need to do even more sorting, we should use std::sort.
+  if (telephoneEvent) {
+    aConfigs->push_back(std::move(telephoneEvent));
   }
 
   if (aConfigs->empty()) {
@@ -629,6 +649,8 @@ static nsresult NegotiatedDetailsToAudioCodecConfigs(
 }
 
 nsresult TransceiverImpl::UpdateAudioConduit() {
+  MOZ_ASSERT(IsValid());
+
   RefPtr<AudioSessionConduit> conduit =
       static_cast<AudioSessionConduit*>(mConduit.get());
 
@@ -780,6 +802,8 @@ static nsresult NegotiatedDetailsToVideoCodecConfigs(
 }
 
 nsresult TransceiverImpl::UpdateVideoConduit() {
+  MOZ_ASSERT(IsValid());
+
   RefPtr<VideoSessionConduit> conduit =
       static_cast<VideoSessionConduit*>(mConduit.get());
 
@@ -919,6 +943,10 @@ nsresult TransceiverImpl::ConfigureVideoCodecMode(
 void TransceiverImpl::UpdateConduitRtpExtmap(
     const JsepTrackNegotiatedDetails& aDetails,
     const LocalDirection aDirection) {
+  if (!IsValid()) {
+    return;
+  }
+
   std::vector<webrtc::RtpExtension> extmaps;
   // @@NG read extmap from track
   aDetails.ForEachRTPHeaderExtension(
@@ -940,6 +968,11 @@ void TransceiverImpl::Stop() {
   // Make sure that stats queries stop working on this transceiver.
   UpdateSendTrack(nullptr);
   mHaveStartedReceiving = false;
+
+  if (mConduit) {
+    mConduit->DeleteStreams();
+  }
+  mConduit = nullptr;
 }
 
 bool TransceiverImpl::IsVideo() const {
@@ -949,9 +982,10 @@ bool TransceiverImpl::IsVideo() const {
 void TransceiverImpl::GetRtpSources(
     const int64_t aTimeNow,
     nsTArray<dom::RTCRtpSourceEntry>& outSources) const {
-  if (IsVideo()) {
+  if (!IsValid() || IsVideo()) {
     return;
   }
+
   WebrtcAudioConduit* audio_conduit =
       static_cast<WebrtcAudioConduit*>(mConduit.get());
   audio_conduit->GetRtpSources(aTimeNow, outSources);
@@ -961,7 +995,7 @@ void TransceiverImpl::InsertAudioLevelForContributingSource(uint32_t aSource,
                                                             int64_t aTimestamp,
                                                             bool aHasLevel,
                                                             uint8_t aLevel) {
-  if (IsVideo()) {
+  if (!IsValid() || IsVideo()) {
     return;
   }
   WebrtcAudioConduit* audio_conduit =

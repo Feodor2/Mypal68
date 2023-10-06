@@ -1895,38 +1895,23 @@ nsDocShell::GetMayEnableCharacterEncodingMenu(
 }
 
 NS_IMETHODIMP
-nsDocShell::GetDocShellEnumerator(int32_t aItemType,
-                                  DocShellEnumeratorDirection aDirection,
-                                  nsISimpleEnumerator** aResult) {
-  NS_ENSURE_ARG_POINTER(aResult);
-  *aResult = nullptr;
+nsDocShell::GetAllDocShellsInSubtree(int32_t aItemType,
+                                     DocShellEnumeratorDirection aDirection,
+                                     nsTArray<RefPtr<nsIDocShell>>& aResult) {
+  aResult.Clear();
 
-  RefPtr<nsDocShellEnumerator> docShellEnum;
-  if (aDirection == ENUMERATE_FORWARDS) {
-    docShellEnum = new nsDocShellForwardsEnumerator;
-  } else {
-    docShellEnum = new nsDocShellBackwardsEnumerator;
-  }
+  nsDocShellEnumerator docShellEnum(
+      (aDirection == ENUMERATE_FORWARDS)
+          ? nsDocShellEnumerator::EnumerationDirection::Forwards
+          : nsDocShellEnumerator::EnumerationDirection::Backwards,
+      aItemType, *this);
 
-  nsresult rv = docShellEnum->SetEnumDocShellType(aItemType);
+  nsresult rv = docShellEnum.BuildDocShellArray(aResult);
   if (NS_FAILED(rv)) {
     return rv;
   }
 
-  rv = docShellEnum->SetEnumerationRootItem((nsIDocShellTreeItem*)this);
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  rv = docShellEnum->First();
-  if (NS_FAILED(rv)) {
-    return rv;
-  }
-
-  rv = docShellEnum->QueryInterface(NS_GET_IID(nsISimpleEnumerator),
-                                    (void**)aResult);
-
-  return rv;
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -3388,6 +3373,15 @@ NS_IMETHODIMP
 nsDocShell::GetInProcessChildAt(int32_t aIndex, nsIDocShellTreeItem** aChild) {
   NS_ENSURE_ARG_POINTER(aChild);
 
+  RefPtr<nsDocShell> child = GetInProcessChildAt(aIndex);
+  NS_ENSURE_TRUE(child, NS_ERROR_UNEXPECTED);
+
+  child.forget(aChild);
+
+  return NS_OK;
+}
+
+nsDocShell* nsDocShell::GetInProcessChildAt(int32_t aIndex) {
 #ifdef DEBUG
   if (aIndex < 0) {
     NS_WARNING("Negative index passed to GetChildAt");
@@ -3397,9 +3391,9 @@ nsDocShell::GetInProcessChildAt(int32_t aIndex, nsIDocShellTreeItem** aChild) {
 #endif
 
   nsIDocumentLoader* child = ChildAt(aIndex);
-  NS_ENSURE_TRUE(child, NS_ERROR_UNEXPECTED);
 
-  return CallQueryInterface(child, aChild);
+  // child may be nullptr here.
+  return static_cast<nsDocShell*>(child);
 }
 
 NS_IMETHODIMP
@@ -3905,10 +3899,6 @@ nsresult nsDocShell::LoadURI(const nsAString& aURI,
   nsCOMPtr<nsIInputStream> postData(aLoadURIOptions.mPostData);
   nsresult rv = NS_OK;
 
-  // Create a URI from our string; if that succeeds, we want to
-  // change loadFlags to not include the ALLOW_THIRD_PARTY_FIXUP
-  // flag.
-
   NS_ConvertUTF16toUTF8 uriString(aURI);
   // Cleanup the empty spaces that might be on each end.
   uriString.Trim(" ");
@@ -3920,24 +3910,19 @@ nsresult nsDocShell::LoadURI(const nsAString& aURI,
     return NS_ERROR_FAILURE;
   }
 
-  rv = NS_NewURI(getter_AddRefs(uri), uriString);
-  if (uri) {
-    loadFlags &= ~LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP;
-  }
-
   nsCOMPtr<nsIURIFixupInfo> fixupInfo;
   if (sURIFixup) {
-    // Call the fixup object.  This will clobber the rv from NS_NewURI
-    // above, but that's fine with us.  Note that we need to do this even
-    // if NS_NewURI returned a URI, because fixup handles nested URIs, etc
-    // (things like view-source:mozilla.org for example).
-    uint32_t fixupFlags = 0;
-    if (loadFlags & LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP) {
-      fixupFlags |= nsIURIFixup::FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP;
+    uint32_t fixupFlags;
+    rv = sURIFixup->WebNavigationFlagsToFixupFlags(uriString, loadFlags,
+                                                   &fixupFlags);
+    NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
+
+    // If we don't allow keyword lookups for this URL string, make sure to
+    // update loadFlags to indicate this as well.
+    if (!(fixupFlags & nsIURIFixup::FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP)) {
+      loadFlags &= ~LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP;
     }
-    if (loadFlags & LOAD_FLAGS_FIXUP_SCHEME_TYPOS) {
-      fixupFlags |= nsIURIFixup::FIXUP_FLAG_FIX_SCHEME_TYPOS;
-    }
+
     nsCOMPtr<nsIInputStream> fixupStream;
     rv = sURIFixup->GetFixupURIInfo(uriString, fixupFlags,
                                     getter_AddRefs(fixupStream),
@@ -3962,9 +3947,11 @@ nsresult nsDocShell::LoadURI(const nsAString& aURI,
                               PromiseFlatString(aURI).get());
       }
     }
+  } else {
+    // No fixup service so just create a URI and see what happens...
+    rv = NS_NewURI(getter_AddRefs(uri), uriString);
+    loadFlags &= ~LOAD_FLAGS_ALLOW_THIRD_PARTY_FIXUP;
   }
-  // else no fixup service so just use the URI we created and see
-  // what happens
 
   if (NS_ERROR_MALFORMED_URI == rv) {
     if (DisplayLoadError(rv, uri, PromiseFlatString(aURI).get(), nullptr) &&

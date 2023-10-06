@@ -8,6 +8,7 @@
 #include <unordered_map>  // for std::unordered_map
 
 #include "FocusState.h"          // for FocusState
+#include "HitTestingTreeNode.h"  // for HitTestingTreeNodeAutoLock
 #include "gfxPoint.h"            // for gfxPoint
 #include "mozilla/Assertions.h"  // for MOZ_ASSERT_HELPER2
 #include "mozilla/gfx/CompositorHitTestInfo.h"
@@ -224,42 +225,10 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
                           wr::RenderRoot aRenderRoot);
 
   /**
-   * General handler for incoming input events. Manipulates the frame metrics
-   * based on what type of input it is. For example, a PinchGestureEvent will
-   * cause scaling. This should only be called externally to this class, and
-   * must be called on the controller thread.
-   *
-   * This function transforms |aEvent| to have its coordinates in DOM space.
-   * This is so that the event can be passed through the DOM and content can
-   * handle them. The event may need to be converted to a WidgetInputEvent
-   * by the caller if it wants to do this.
-   *
-   * The following values may be returned by this function:
-   * nsEventStatus_eConsumeNoDefault is returned to indicate the
-   *   APZ is consuming this event and the caller should discard the event with
-   *   extreme prejudice. The exact scenarios under which this is returned is
-   *   implementation-dependent and may vary.
-   * nsEventStatus_eIgnore is returned to indicate that the APZ code didn't
-   *   use this event. This might be because it was directed at a point on
-   *   the screen where there was no APZ, or because the thing the user was
-   *   trying to do was not allowed. (For example, attempting to pan a
-   *   non-pannable document).
-   * nsEventStatus_eConsumeDoDefault is returned to indicate that the APZ
-   *   code may have used this event to do some user-visible thing. Note that
-   *   in some cases CONSUMED is returned even if the event was NOT used. This
-   *   is because we cannot always know at the time of event delivery whether
-   *   the event will be used or not. So we err on the side of sending
-   *   CONSUMED when we are uncertain.
-   *
-   * @param aEvent input event object; is modified in-place
-   * @param aOutTargetGuid returns the guid of the apzc this event was
-   * delivered to. May be null.
-   * @param aOutInputBlockId returns the id of the input block that this event
-   * was added to, if that was the case. May be null.
+   * Refer to the documentation of APZInputBridge::ReceiveInputEvent() and
+   * APZEventResult.
    */
-  nsEventStatus ReceiveInputEvent(InputData& aEvent,
-                                  ScrollableLayerGuid* aOutTargetGuid,
-                                  uint64_t* aOutInputBlockId) override;
+  APZEventResult ReceiveInputEvent(InputData& aEvent) override;
 
   /**
    * Set the keyboard shortcuts to use for translating keyboard events.
@@ -332,11 +301,6 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    * This must be called on the updater thread.
    */
   void ClearTree();
-
-  /**
-   * Tests if a screen point intersect an apz in the tree.
-   */
-  bool HitTestAPZC(const ScreenIntPoint& aPoint);
 
   /**
    * Sets the dpi value used by all AsyncPanZoomControllers attached to this
@@ -508,6 +472,11 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
       const AsyncPanZoomController* aAncestor);
 
   /**
+   * Set fixed layer margins for dynamic toolbar.
+   */
+  void SetFixedLayerMargins(ScreenIntCoord aTop, ScreenIntCoord aBottom);
+
+  /**
    * Compute the updated shadow transform for a scroll thumb layer that
    * reflects async scrolling of the associated scroll frame.
    *
@@ -594,6 +563,30 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   Maybe<TimeStamp> mTestSampleTime;
 
  public:
+  // Represents the results of an APZ hit test.
+  struct HitTestResult {
+    // The APZC targeted by the hit test.
+    RefPtr<AsyncPanZoomController> mTargetApzc;
+    // The applicable hit test flags.
+    gfx::CompositorHitTestInfo mHitResult;
+    // The layers id of the content that was hit.
+    // This effectively identifiers the process that was hit for
+    // Fission purposes.
+    LayersId mLayersId;
+    // If a scrollbar was hit, this will be populated with the
+    // scrollbar node. The AutoLock allows accessing the scrollbar
+    // node without having to hold the tree lock.
+    HitTestingTreeNodeAutoLock mScrollbarNode;
+    // If content that is fixed to the root-content APZC was hit,
+    // the sides of the viewport to which the content is fixed.
+    SideBits mFixedPosSides = SideBits::eNone;
+
+    HitTestResult() = default;
+    // Make it move-only.
+    HitTestResult(HitTestResult&&) = default;
+    HitTestResult& operator=(HitTestResult&&) = default;
+  };
+
   /* Some helper functions to find an APZC given some identifying input. These
      functions lock the tree of APZCs while they find the right one, and then
      return an addref'd pointer to it. This allows caller code to just use the
@@ -601,17 +594,22 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
      testing code and generally should not be used by other production code.
   */
   RefPtr<HitTestingTreeNode> GetRootNode() const;
+  HitTestResult GetTargetAPZC(const ScreenPoint& aPoint);
   already_AddRefed<AsyncPanZoomController> GetTargetAPZC(
-      const ScreenPoint& aPoint, gfx::CompositorHitTestInfo* aOutHitResult,
-      LayersId* aOutLayersId,
-      HitTestingTreeNodeAutoLock* aOutScrollbarNode = nullptr);
-  already_AddRefed<AsyncPanZoomController> GetTargetAPZC(
-      const LayersId& aLayersId, const ScrollableLayerGuid::ViewID& aScrollId);
+      const LayersId& aLayersId,
+      const ScrollableLayerGuid::ViewID& aScrollId) const;
   ScreenToParentLayerMatrix4x4 GetScreenToApzcTransform(
       const AsyncPanZoomController* aApzc) const;
   ParentLayerToScreenMatrix4x4 GetApzcToGeckoTransform(
       const AsyncPanZoomController* aApzc) const;
   ScreenPoint GetCurrentMousePosition() const;
+
+  /**
+   * Convert a screen point of an event targeting |aApzc| to Gecko
+   * coordinates.
+   */
+  Maybe<ScreenIntPoint> ConvertToGecko(const ScreenIntPoint& aPoint,
+                                       AsyncPanZoomController* aApzc);
 
   /**
    * Process a movement of the dynamic toolbar by |aDeltaY| over the time
@@ -653,14 +651,11 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
                                      const ScrollableLayerGuid& aGuid,
                                      GuidComparator aComparator);
   AsyncPanZoomController* GetTargetApzcForNode(HitTestingTreeNode* aNode);
-  AsyncPanZoomController* GetAPZCAtPoint(
-      HitTestingTreeNode* aNode, const ScreenPoint& aHitTestPoint,
-      gfx::CompositorHitTestInfo* aOutHitResult,
-      HitTestingTreeNode** aOutScrollbarNode);
-  already_AddRefed<AsyncPanZoomController> GetAPZCAtPointWR(
+  HitTestResult GetAPZCAtPoint(const ScreenPoint& aHitTestPoint,
+                               const RecursiveMutexAutoLock& aProofOfTreeLock);
+  HitTestResult GetAPZCAtPointWR(
       const ScreenPoint& aHitTestPoint,
-      gfx::CompositorHitTestInfo* aOutHitResult, LayersId* aOutLayersId,
-      HitTestingTreeNode** aOutScrollbarNode);
+      const RecursiveMutexAutoLock& aProofOfTreeLock);
   AsyncPanZoomController* FindRootApzcForLayersId(LayersId aLayersId) const;
   AsyncPanZoomController* FindRootContentApzcForLayersId(
       LayersId aLayersId) const;
@@ -669,6 +664,7 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
       AsyncPanZoomController* aApzc1, AsyncPanZoomController* aApzc2) const;
   already_AddRefed<AsyncPanZoomController> CommonAncestor(
       AsyncPanZoomController* aApzc1, AsyncPanZoomController* aApzc2) const;
+  bool IsFixedToRootContent(const HitTestingTreeNode* aNode) const;
   /**
    * Perform hit testing for a touch-start event.
    *
@@ -679,22 +675,13 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    *
    * @param aOutTouchBehaviors
    *     The touch behaviours that should be allowed for this touch block.
-   * @param aOutHitResult The hit test result.
-   * @param aOutHitScrollbarNode
-   *     If the touch event contains a single touch point (so that it may
-   *     potentially start a scrollbar drag), and a scrollbar node was hit,
-   *     that scrollbar node, otherwise nullptr.
-   *
-   * @return The APZC that was hit.
+
+   * @return The results of the hit test, including the APZC that was hit.
    */
-  already_AddRefed<AsyncPanZoomController> GetTouchInputBlockAPZC(
+  HitTestResult GetTouchInputBlockAPZC(
       const MultiTouchInput& aEvent,
-      nsTArray<TouchBehaviorFlags>* aOutTouchBehaviors,
-      gfx::CompositorHitTestInfo* aOutHitResult, LayersId* aOutLayersId,
-      HitTestingTreeNodeAutoLock* aOutHitScrollbarNode);
-  nsEventStatus ProcessTouchInput(MultiTouchInput& aInput,
-                                  ScrollableLayerGuid* aOutTargetGuid,
-                                  uint64_t* aOutInputBlockId);
+      nsTArray<TouchBehaviorFlags>* aOutTouchBehaviors);
+  APZEventResult ProcessTouchInput(MultiTouchInput& aInput);
   /**
    * Given a mouse-down event that hit a scroll thumb node, set up APZ
    * dragging of the scroll thumb.
@@ -725,10 +712,9 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    *     The ID of the input block for the touch-drag gesture.
    * @return See ReceiveInputEvent() for what the return value means.
    */
-  nsEventStatus ProcessTouchInputForScrollbarDrag(
+  APZEventResult ProcessTouchInputForScrollbarDrag(
       MultiTouchInput& aInput,
-      const HitTestingTreeNodeAutoLock& aScrollThumbNode,
-      ScrollableLayerGuid* aOutTargetGuid, uint64_t* aOutInputBlockId);
+      const HitTestingTreeNodeAutoLock& aScrollThumbNode);
   void FlushRepaintsToClearScreenToGeckoTransform();
 
   void SynthesizePinchGestureFromMouseWheel(
@@ -882,6 +868,13 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    * sync with mApzcForInputBlock.
    */
   gfx::CompositorHitTestInfo mHitResultForInputBlock;
+  /* If the current input event block is targeting an element that is fixed to
+   * the viewport, the sides of the viewport to which the element is fixed.
+   * Such elements may have been shifted to the dynamic toolbar, and this is
+   * used to offset event coordinates accordingly.
+   * This should be in sync with mApzcForInputBlock.
+   */
+  SideBits mFixedPosSidesForInputBlock = SideBits::eNone;
   /* Sometimes we want to ignore all touches except one. In such cases, this
    * is set to the identifier of the touch we are not ignoring; in other cases,
    * this is set to -1.
@@ -900,6 +893,11 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   /* Stores the current mouse position in screen coordinates.
    */
   ScreenPoint mCurrentMousePosition;
+  /* Extra margins that should be applied to content that fixed wrt. the
+   * RCD-RSF, to account for the dynamic toolbar.
+   * Acquire mTreeLock before accessing this.
+   */
+  ScreenMargin mFixedLayerMargins;
   /* For logging the APZC tree for debugging (enabled by the apz.printtree
    * pref). */
   gfx::TreeLog<gfx::LOG_DEFAULT> mApzcTreeLog;

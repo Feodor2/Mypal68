@@ -48,7 +48,7 @@ function getLog() {
 var reportsRetrieved = getStats();
 var logRetrieved = getLog();
 
-function onLoad() {
+window.onload = function() {
   document.title = getString("document_title");
   let controls = document.querySelector("#controls");
   if (controls) {
@@ -72,7 +72,7 @@ function onLoad() {
   Promise.all([reportsRetrieved, logRetrieved])
     .then(([stats, log]) => contentInit({ reports: stats.reports, log }))
     .catch(error => contentInit({ error }));
-}
+};
 
 function onClearLog() {
   WebrtcGlobalInformation.clearLogging();
@@ -527,18 +527,20 @@ RTPStats.prototype = {
   },
 
   generateRTPStats() {
-    let remoteRtpStats = {};
+    const remoteRtpStatsMap = {};
     let rtpStats = [].concat(
-      this._report.inboundRTPStreamStats || [],
-      this._report.outboundRTPStreamStats || []
+      this._report.inboundRtpStreamStats || [],
+      this._report.outboundRtpStreamStats || []
+    );
+    let remoteRtpStats = [].concat(
+      this._report.remoteInboundRtpStreamStats || [],
+      this._report.remoteOutboundRtpStreamStats || []
     );
 
-    // Generate an id-to-streamStat index for each streamStat that is marked
-    // as a remote. This will be used next to link the remote to its local side.
-    for (let stats of rtpStats) {
-      if (stats.isRemote) {
-        remoteRtpStats[stats.id] = stats;
-      }
+    // Generate an id-to-streamStat index for each remote streamStat. This will
+    // be used next to link the remote to its local side.
+    for (let stats of remoteRtpStats) {
+      remoteRtpStatsMap[stats.id] = stats;
     }
 
     // If a streamStat has a remoteId attribute, create a remoteRtpStats
@@ -546,11 +548,11 @@ RTPStats.prototype = {
     // That is, the index generated above is merged into the returned list.
     for (let stats of rtpStats) {
       if (stats.remoteId) {
-        stats.remoteRtpStats = remoteRtpStats[stats.remoteId];
+        stats.remoteRtpStats = remoteRtpStatsMap[stats.remoteId];
       }
     }
 
-    this._stats = rtpStats;
+    this._stats = rtpStats.concat(remoteRtpStats);
   },
 
   renderCoderStats(stats) {
@@ -909,7 +911,12 @@ ICEStats.prototype = {
       type = `${c.candidateType}-${c.relayProtocol}`;
     }
 
-    return `${c.address}:${c.port}/${c.transport}(${type})`;
+    var proxied = "";
+    if (c.type == "local-candidate") {
+      proxied = `[${c.proxied}]`;
+    }
+
+    return `${c.address}:${c.port}/${c.protocol}(${type}) ${proxied}`;
   },
 };
 

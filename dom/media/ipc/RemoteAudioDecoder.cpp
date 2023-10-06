@@ -54,9 +54,8 @@ MediaResult RemoteAudioDecoderChild::InitIPDL(
   mIPDLSelfRef = this;
   bool success = false;
   nsCString errorDescription;
-  layers::TextureFactoryIdentifier defaultIdent;
   if (manager->SendPRemoteDecoderConstructor(
-          this, aAudioInfo, aOptions, defaultIdent, &success, &errorDescription)) {
+          this, aAudioInfo, aOptions, Nothing(), &success, &errorDescription)) {
     mCanSend = true;
   }
 

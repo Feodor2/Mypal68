@@ -61,6 +61,7 @@ class ScrollFrameHelper : public nsIReflowCallback {
   ~ScrollFrameHelper();
 
   mozilla::ScrollStyles GetScrollStylesFromFrame() const;
+  mozilla::layers::OverscrollBehaviorInfo GetOverscrollBehaviorInfo() const;
 
   // If a child frame was added or removed on the scrollframe,
   // reload our child frame list.
@@ -175,11 +176,11 @@ class ScrollFrameHelper : public nsIReflowCallback {
   nsPoint GetVisualViewportOffset() const;
 
   /**
-   * Return the 'optimal viewing region' [1] as a rect suitable for use by
+   * Return the 'optimal viewing region' as a rect suitable for use by
    * scroll anchoring. This rect is in the same coordinate space as
-   * 'GetScrollPortRect'.
+   * 'GetScrollPortRect', and accounts for 'scroll-padding' as defined by:
    *
-   * [1] https://drafts.csswg.org/css-scroll-snap-1/#optimal-viewing-region
+   * https://drafts.csswg.org/css-scroll-snap-1/#optimal-viewing-region
    */
   nsRect GetVisualOptimalViewingRect() const;
 
@@ -338,22 +339,12 @@ class ScrollFrameHelper : public nsIReflowCallback {
   nscoord GetNondisappearingScrollbarWidth(nsBoxLayoutState* aState,
                                            mozilla::WritingMode aVerticalWM);
   bool IsPhysicalLTR() const {
-    WritingMode wm = GetFrameForDir()->GetWritingMode();
-    return wm.IsVertical() ? wm.IsVerticalLR() : wm.IsBidiLTR();
+    return mOuter->GetWritingMode().IsPhysicalLTR();
   }
-  bool IsBidiLTR() const {
-    nsIFrame* frame = GetFrameForDir();
-    return frame->StyleVisibility()->mDirection == NS_STYLE_DIRECTION_LTR;
-  }
+  bool IsBidiLTR() const { return mOuter->GetWritingMode().IsBidiLTR(); }
 
  private:
-  nsIFrame* GetFrameForDir() const;  // helper for Is{Physical,Bidi}LTR to find
-                                     // the frame whose directionality we use
-  // helper to find the frame that style data for this scrollable frame is
-  // stored.
-  //
-  // NOTE: Use GetFrameForDir() if you want to know `writing-mode` or `dir`
-  // properties. Use GetScrollStylesFromFrame() if you want to know `overflow`
+  // NOTE: Use GetScrollStylesFromFrame() if you want to know `overflow`
   // and `overflow-behavior` properties.
   nsIFrame* GetFrameForStyle() const;
 
@@ -426,7 +417,7 @@ class ScrollFrameHelper : public nsIReflowCallback {
   void SetZoomableByAPZ(bool aZoomable);
   void SetHasOutOfFlowContentInsideFilter();
 
-  bool UsesContainerScrolling() const;
+  bool UsesOverlayScrollbars() const;
 
   // In the case where |aDestination| is given, elements which are entirely out
   // of view when the scroll position is moved to |aDestination| are not going
@@ -656,12 +647,6 @@ class ScrollFrameHelper : public nsIReflowCallback {
   // descendant scrollframes also have their displayports removed.
   bool mIsScrollParent : 1;
 
-  // Whether we are the root scroll frame that is used for containerful
-  // scrolling with a display port. If true, the scrollable frame
-  // shouldn't attach frame metrics to its layers because the container
-  // will already have the necessary frame metrics.
-  bool mIsScrollableLayerInRootContainer : 1;
-
   // If true, add clipping in ScrollFrameHelper::ClipLayerToDisplayPort.
   bool mAddClipRectToLayer : 1;
 
@@ -877,6 +862,10 @@ class nsHTMLScrollFrame : public nsContainerFrame,
   virtual mozilla::ScrollStyles GetScrollStyles() const override {
     return mHelper.GetScrollStylesFromFrame();
   }
+  virtual mozilla::layers::OverscrollBehaviorInfo GetOverscrollBehaviorInfo()
+      const override {
+    return mHelper.GetOverscrollBehaviorInfo();
+  }
   virtual uint32_t GetScrollbarVisibility() const override {
     return mHelper.GetScrollbarVisibility();
   }
@@ -1067,9 +1056,6 @@ class nsHTMLScrollFrame : public nsContainerFrame,
   }
   virtual void MarkScrollbarsDirtyForReflow() const override {
     mHelper.MarkScrollbarsDirtyForReflow();
-  }
-  virtual bool UsesContainerScrolling() const override {
-    return mHelper.UsesContainerScrolling();
   }
   virtual bool DecideScrollableLayer(nsDisplayListBuilder* aBuilder,
                                      nsRect* aVisibleRect, nsRect* aDirtyRect,
@@ -1368,6 +1354,10 @@ class nsXULScrollFrame final : public nsBoxFrame,
   virtual mozilla::ScrollStyles GetScrollStyles() const override {
     return mHelper.GetScrollStylesFromFrame();
   }
+  virtual mozilla::layers::OverscrollBehaviorInfo GetOverscrollBehaviorInfo()
+      const override {
+    return mHelper.GetOverscrollBehaviorInfo();
+  }
   virtual uint32_t GetScrollbarVisibility() const override {
     return mHelper.GetScrollbarVisibility();
   }
@@ -1616,9 +1606,6 @@ class nsXULScrollFrame final : public nsBoxFrame,
 
   virtual void SetTransformingByAPZ(bool aTransforming) override {
     mHelper.SetTransformingByAPZ(aTransforming);
-  }
-  virtual bool UsesContainerScrolling() const override {
-    return mHelper.UsesContainerScrolling();
   }
   bool IsTransformingByAPZ() const override {
     return mHelper.IsTransformingByAPZ();

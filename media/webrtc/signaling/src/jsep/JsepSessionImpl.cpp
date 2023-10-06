@@ -25,12 +25,11 @@
 
 #include "signaling/src/jsep/JsepTrack.h"
 #include "signaling/src/jsep/JsepTransport.h"
-#include "signaling/src/sdp/RsdparsaSdpParser.h"
-#include "signaling/src/sdp/Sdp.h"
+
+#include "signaling/src/sdp/HybridSdpParser.h"
 #include "signaling/src/sdp/SipccSdp.h"
-#include "signaling/src/sdp/SipccSdpParser.h"
+
 #include "mozilla/net/DataChannelProtocol.h"
-#include "signaling/src/sdp/ParsingResultComparer.h"
 
 namespace mozilla {
 
@@ -82,11 +81,6 @@ nsresult JsepSessionImpl::Init() {
 
   SetupDefaultCodecs();
   SetupDefaultRtpExtensions();
-
-  mRunRustParser =
-      Preferences::GetBool("media.peerconnection.sdp.rust.enabled", false);
-  mRunSdpComparer =
-      Preferences::GetBool("media.peerconnection.sdp.rust.compare", false);
 
   mEncodeTrackId =
       Preferences::GetBool("media.peerconnection.sdp.encode_track_id", true);
@@ -1194,26 +1188,15 @@ nsresult JsepSessionImpl::CopyPreviousTransportParams(
 
 nsresult JsepSessionImpl::ParseSdp(const std::string& sdp,
                                    UniquePtr<Sdp>* parsedp) {
-  UniquePtr<Sdp> parsed = mSipccParser.Parse(sdp);
+  auto results = mParser->Parse(sdp);
+  auto parsed = std::move(results->Sdp());
+  auto errors = results->Errors();
   if (!parsed) {
-    std::string error = "Failed to parse SDP: ";
-    mSdpHelper.appendSdpParseErrors(mSipccParser.GetParseErrors(), &error);
+    std::string error = results->ParserName() + " Failed to parse SDP: ";
+    mSdpHelper.appendSdpParseErrors(errors, &error);
     JSEP_SET_ERROR(error);
     return NS_ERROR_INVALID_ARG;
   }
-
-  if (mRunRustParser) {
-    UniquePtr<Sdp> rustParsed = mRsdparsaParser.Parse(sdp);
-    if (mRunSdpComparer) {
-      ParsingResultComparer comparer;
-      if (rustParsed) {
-        comparer.Compare(*rustParsed, *parsed, sdp);
-      } else {
-        comparer.TrackRustParsingFailed(mSipccParser.GetParseErrors().size());
-      }
-    }
-  }
-
   // Verify that the JSEP rules for all SDP are followed
   for (size_t i = 0; i < parsed->GetMediaSectionCount(); ++i) {
     if (mSdpHelper.MsectionIsDisabled(parsed->GetMediaSection(i))) {
@@ -1264,6 +1247,28 @@ nsresult JsepSessionImpl::ParseSdp(const std::string& sdp,
           "\"holdconn\" in m-section at level "
           << i);
       return NS_ERROR_INVALID_ARG;
+    }
+
+    if (mediaAttrs.HasAttribute(SdpAttribute::kExtmapAttribute)) {
+      std::set<uint16_t> extIds;
+      for (const auto& ext : mediaAttrs.GetExtmap().mExtmaps) {
+        uint16_t id = ext.entry;
+
+        if (id < 1 || id > 14) {
+          JSEP_SET_ERROR("Description contains invalid extension id "
+                         << id << " on level " << i
+                         << " which is unsupported until 2-byte rtp"
+                            " header extensions are supported in webrtc.org");
+          return NS_ERROR_INVALID_ARG;
+        }
+
+        if (extIds.find(id) != extIds.end()) {
+          JSEP_SET_ERROR("Description contains duplicate extension id "
+                         << id << " on level " << i);
+          return NS_ERROR_INVALID_ARG;
+        }
+        extIds.insert(id);
+      }
     }
 
     static const std::bitset<128> forbidden = GetForbiddenSdpPayloadTypes();
@@ -1441,7 +1446,9 @@ nsresult JsepSessionImpl::UpdateTransceiversFromRemoteDescription(
     }
 
     if (!mSdpHelper.MsectionIsDisabled(msection)) {
-      transceiver->Associate(msection.GetAttributeList().GetMid());
+      if (msection.GetAttributeList().HasAttribute(SdpAttribute::kMidAttribute)) {
+        transceiver->Associate(msection.GetAttributeList().GetMid());
+      }
       if (!transceiver->IsAssociated()) {
         transceiver->Associate(GetNewMid());
       } else {
@@ -1988,6 +1995,8 @@ void JsepSessionImpl::SetupDefaultRtpExtensions() {
                        SdpDirectionAttribute::Direction::kSendrecv);
   AddVideoRtpExtension(webrtc::RtpExtension::kTimestampOffsetUri,
                        SdpDirectionAttribute::Direction::kSendrecv);
+  AddVideoRtpExtension(webrtc::RtpExtension::kPlayoutDelayUri,
+                       SdpDirectionAttribute::Direction::kRecvonly);
 }
 
 void JsepSessionImpl::SetState(JsepSignalingState state) {

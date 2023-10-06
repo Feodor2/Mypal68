@@ -149,7 +149,7 @@ class SVGContentUtils {
    */
   static void GetStrokeOptions(AutoStrokeOptions* aStrokeOptions,
                                dom::SVGElement* aElement,
-                               ComputedStyle* aComputedStyle,
+                               const ComputedStyle* aComputedStyle,
                                mozilla::SVGContextPaint* aContextPaint,
                                StrokeOptionFlags aFlags = eAllStrokeOptions);
 
@@ -163,7 +163,7 @@ class SVGContentUtils {
    * "0", respectively.
    */
   static Float GetStrokeWidth(dom::SVGElement* aElement,
-                              ComputedStyle* aComputedStyle,
+                              const ComputedStyle* aComputedStyle,
                               mozilla::SVGContextPaint* aContextPaint);
 
   /*

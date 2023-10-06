@@ -111,7 +111,7 @@ class FT2FontFamily : public gfxFontFamily {
   explicit FT2FontFamily(const nsACString& aName) : gfxFontFamily(aName) {}
 
   // Append this family's faces to the IPC fontlist
-  void AddFacesToFontList(InfallibleTArray<FontListEntry>* aFontList);
+  void AddFacesToFontList(nsTArray<FontListEntry>* aFontList);
 };
 
 class gfxFT2FontList : public gfxPlatformFontList {
@@ -131,15 +131,14 @@ class gfxFT2FontList : public gfxPlatformFontList {
                                  const uint8_t* aFontData,
                                  uint32_t aLength) override;
 
-  void GetSystemFontList(InfallibleTArray<FontListEntry>* retValue);
+  void WriteCache();
+
+  void GetSystemFontList(nsTArray<FontListEntry>* retValue);
 
   static gfxFT2FontList* PlatformFontList() {
     return static_cast<gfxFT2FontList*>(
         gfxPlatformFontList::PlatformFontList());
   }
-
-  void GetFontFamilyList(
-      nsTArray<RefPtr<gfxFontFamily> >& aFamilyArray) override;
 
   gfxFontFamily* CreateFontFamily(const nsACString& aName) const override;
 

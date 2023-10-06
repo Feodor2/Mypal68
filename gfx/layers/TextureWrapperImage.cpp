@@ -39,7 +39,7 @@ already_AddRefed<gfx::SourceSurface> TextureWrapperImage::GetAsSourceSurface() {
 }
 
 TextureClient* TextureWrapperImage::GetTextureClient(
-    KnowsCompositor* aForwarder) {
+    KnowsCompositor* aKnowsCompositor) {
   return mTextureClient;
 }
 

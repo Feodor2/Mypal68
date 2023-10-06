@@ -29,7 +29,6 @@ class RemoteCompositorSession final : public CompositorSession {
   void NotifySessionLost();
 
  private:
-  nsBaseWidget* mWidget;
   RefPtr<APZCTreeManagerChild> mAPZ;
   RefPtr<GeckoContentController> mContentController;
 };

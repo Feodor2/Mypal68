@@ -28,7 +28,7 @@ class SharedPlanarYCbCrImage : public PlanarYCbCrImage {
   virtual ~SharedPlanarYCbCrImage();
 
  public:
-  TextureClient* GetTextureClient(KnowsCompositor* aForwarder) override;
+  TextureClient* GetTextureClient(KnowsCompositor* aKnowsCompositor) override;
 
   already_AddRefed<gfx::SourceSurface> GetAsSourceSurface() override;
   bool CopyData(const PlanarYCbCrData& aData) override;

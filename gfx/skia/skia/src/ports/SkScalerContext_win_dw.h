@@ -29,11 +29,11 @@ public:
 protected:
     unsigned generateGlyphCount() override;
     uint16_t generateCharToGlyph(SkUnichar uni) override;
-    void generateAdvance(SkGlyph* glyph) override;
+    bool generateAdvance(SkGlyph* glyph) override;
     void generateMetrics(SkGlyph* glyph) override;
     void generateImage(const SkGlyph& glyph) override;
-    void generatePath(SkGlyphID glyph, SkPath* path) override;
-    void generateFontMetrics(SkPaint::FontMetrics*) override;
+    bool generatePath(SkGlyphID glyph, SkPath* path) override;
+    void generateFontMetrics(SkFontMetrics*) override;
 
 private:
     const void* drawDWMask(const SkGlyph& glyph,
@@ -52,6 +52,8 @@ private:
     }
 
     bool getColorGlyphRun(const SkGlyph& glyph, IDWriteColorGlyphRunEnumerator** colorGlyph);
+
+    void generateColorMetrics(SkGlyph* glyph);
 
     void generateColorGlyphImage(const SkGlyph& glyph);
 

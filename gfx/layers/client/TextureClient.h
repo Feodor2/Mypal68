@@ -349,7 +349,7 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
       KnowsCompositor* aAllocator, gfx::IntSize aYSize, uint32_t aYStride,
       gfx::IntSize aCbCrSize, uint32_t aCbCrStride, StereoMode aStereoMode,
       gfx::ColorDepth aColorDepth, gfx::YUVColorSpace aYUVColorSpace,
-      TextureFlags aTextureFlags);
+      gfx::ColorRange aColorRange, TextureFlags aTextureFlags);
 
   // Creates and allocates a TextureClient (can be accessed through raw
   // pointers).
@@ -538,7 +538,7 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
    * Should be called only once per TextureClient.
    * The TextureClient must not be locked when calling this method.
    */
-  bool InitIPDLActor(KnowsCompositor* aForwarder);
+  bool InitIPDLActor(KnowsCompositor* aKnowsCompositor);
 
   /**
    * Return a pointer to the IPDLActor.
@@ -594,7 +594,7 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
   uint64_t GetSerial() const { return mSerial; }
   void GPUVideoDesc(SurfaceDescriptorGPUVideo* aOutDesc);
 
-  void CancelWaitForRecycle();
+  void CancelWaitForNotifyNotUsed();
 
   /**
    * Set last transaction id of CompositableForwarder.

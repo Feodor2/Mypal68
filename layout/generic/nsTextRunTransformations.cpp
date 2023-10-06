@@ -130,11 +130,8 @@ void MergeCharactersInTextRun(gfxTextRun* aDest, gfxTextRun* aSrc,
       gfxTextRun::CompressedGlyph::MakeComplex(false, false, 0);
   while (iter.NextRun()) {
     const gfxTextRun::GlyphRun* run = iter.GetGlyphRun();
-    nsresult rv = aDest->AddGlyphRun(run->mFont, run->mMatchType, offset, false,
-                                     run->mOrientation);
-    if (NS_FAILED(rv)) {
-      return;
-    }
+    aDest->AddGlyphRun(run->mFont, run->mMatchType, offset, false,
+                       run->mOrientation, run->mIsCJK);
 
     bool anyMissing = false;
     uint32_t mergeRunStart = iter.GetStringStart();
@@ -332,8 +329,7 @@ bool nsCaseTransformTextRunFactory::TransformString(
     const mozilla::unicode::MultiCharMapping* mcm;
     bool inhibitBreakBefore = false;  // have we just deleted preceding hyphen?
 
-    if (NS_IS_HIGH_SURROGATE(ch) && i < length - 1 &&
-        NS_IS_LOW_SURROGATE(str[i + 1])) {
+    if (i < length - 1 && NS_IS_SURROGATE_PAIR(ch, str[i + 1])) {
       ch = SURROGATE_TO_UCS4(ch, str[i + 1]);
     }
 
@@ -600,11 +596,11 @@ bool nsCaseTransformTextRunFactory::TransformString(
 
       if (!aCaseTransformsOnly) {
         if (!forceNonFullWidth &&
-            (style.other_ & StyleTextTransformOther_FULL_WIDTH)) {
+            (style.other_ & StyleTextTransformOther::FULL_WIDTH)) {
           ch = mozilla::unicode::GetFullWidth(ch);
         }
 
-        if (style.other_ & StyleTextTransformOther_FULL_SIZE_KANA) {
+        if (style.other_ & StyleTextTransformOther::FULL_SIZE_KANA) {
           // clang-format off
           static const uint16_t kSmallKanas[] = {
               // ぁ   ぃ      ぅ      ぇ      ぉ      っ      ゃ      ゅ      ょ

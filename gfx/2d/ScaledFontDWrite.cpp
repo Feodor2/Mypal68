@@ -108,14 +108,14 @@ static inline DWRITE_FONT_STRETCH DWriteFontStretchFromStretch(
 ScaledFontDWrite::ScaledFontDWrite(IDWriteFontFace* aFontFace,
                                    const RefPtr<UnscaledFont>& aUnscaledFont,
                                    Float aSize, bool aUseEmbeddedBitmap,
-                                   bool aForceGDIMode,
+                                   DWRITE_RENDERING_MODE aRenderingMode,
                                    IDWriteRenderingParams* aParams,
                                    Float aGamma, Float aContrast,
                                    const gfxFontStyle* aStyle)
     : ScaledFontBase(aUnscaledFont, aSize),
       mFontFace(aFontFace),
       mUseEmbeddedBitmap(aUseEmbeddedBitmap),
-      mForceGDIMode(aForceGDIMode),
+      mRenderingMode(aRenderingMode),
       mParams(aParams),
       mGamma(aGamma),
       mContrast(aContrast) {
@@ -166,7 +166,7 @@ SkTypeface* ScaledFontDWrite::CreateSkTypeface() {
   }
 
   return SkCreateTypefaceFromDWriteFont(factory, mFontFace, mStyle,
-                                        mForceGDIMode, gamma, contrast);
+                                        mRenderingMode, gamma, contrast);
 }
 #endif
 
@@ -397,15 +397,19 @@ ScaledFontDWrite::InstanceData::InstanceData(
     const wr::FontInstanceOptions* aOptions,
     const wr::FontInstancePlatformOptions* aPlatformOptions)
     : mUseEmbeddedBitmap(false),
-      mForceGDIMode(false),
+      mRenderingMode(DWRITE_RENDERING_MODE_DEFAULT),
       mGamma(2.2f),
       mContrast(1.0f) {
   if (aOptions) {
-    if (aOptions->flags & wr::FontInstanceFlags_EMBEDDED_BITMAPS) {
+    if (aOptions->flags & wr::FontInstanceFlags::EMBEDDED_BITMAPS) {
       mUseEmbeddedBitmap = true;
     }
-    if (aOptions->flags & wr::FontInstanceFlags_FORCE_GDI) {
-      mForceGDIMode = true;
+    if (aOptions->flags & wr::FontInstanceFlags::FORCE_GDI) {
+      mRenderingMode = DWRITE_RENDERING_MODE_GDI_CLASSIC;
+    } else if (aOptions->flags & wr::FontInstanceFlags::FORCE_SYMMETRIC) {
+      mRenderingMode = DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL_SYMMETRIC;
+    } else if (aOptions->flags & wr::FontInstanceFlags::NO_SYMMETRIC) {
+      mRenderingMode = DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL;
     }
   }
   if (aPlatformOptions) {
@@ -431,18 +435,28 @@ bool ScaledFontDWrite::GetWRFontInstanceOptions(
   options.render_mode = wr::ToFontRenderMode(GetDefaultAAMode(), useSubpixel);
   options.flags = wr::FontInstanceFlags{0};
   if (mFontFace->GetSimulations() & DWRITE_FONT_SIMULATIONS_BOLD) {
-    options.flags |= wr::FontInstanceFlags_SYNTHETIC_BOLD;
+    options.flags |= wr::FontInstanceFlags::SYNTHETIC_BOLD;
   }
   if (UseEmbeddedBitmaps()) {
-    options.flags |= wr::FontInstanceFlags_EMBEDDED_BITMAPS;
+    options.flags |= wr::FontInstanceFlags::EMBEDDED_BITMAPS;
   }
   if (ForceGDIMode()) {
-    options.flags |= wr::FontInstanceFlags_FORCE_GDI;
+    options.flags |= wr::FontInstanceFlags::FORCE_GDI;
   } else {
-    options.flags |= wr::FontInstanceFlags_SUBPIXEL_POSITION;
+    options.flags |= wr::FontInstanceFlags::SUBPIXEL_POSITION;
+  }
+  switch (GetRenderingMode()) {
+    case DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL_SYMMETRIC:
+      options.flags |= wr::FontInstanceFlags::FORCE_SYMMETRIC;
+      break;
+    case DWRITE_RENDERING_MODE_CLEARTYPE_NATURAL:
+      options.flags |= wr::FontInstanceFlags::NO_SYMMETRIC;
+      break;
+    default:
+      break;
   }
   if (Factory::GetBGRSubpixelOrder()) {
-    options.flags |= wr::FontInstanceFlags_SUBPIXEL_BGR;
+    options.flags |= wr::FontInstanceFlags::SUBPIXEL_BGR;
   }
   options.bg_color = wr::ToColorU(Color());
   options.synthetic_italics =
@@ -471,7 +485,7 @@ already_AddRefed<ScaledFont> UnscaledFontDWrite::CreateScaledFont(
 
   RefPtr<ScaledFontBase> scaledFont = new ScaledFontDWrite(
       mFontFace, this, aGlyphSize, instanceData.mUseEmbeddedBitmap,
-      instanceData.mForceGDIMode, nullptr, instanceData.mGamma,
+      instanceData.mRenderingMode, nullptr, instanceData.mGamma,
       instanceData.mContrast);
 
   if (mNeedsCairo && !scaledFont->PopulateCairoScaledFont()) {

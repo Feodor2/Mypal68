@@ -90,7 +90,9 @@ mozilla::CSSToScreenScale MobileViewportManager::ComputeIntrinsicScale(
     const mozilla::ScreenIntSize& aDisplaySize,
     const mozilla::CSSSize& aViewportOrContentSize) const {
   CSSToScreenScale intrinsicScale =
-      MaxScaleRatio(ScreenSize(aDisplaySize), aViewportOrContentSize);
+      aViewportOrContentSize.IsEmpty()
+          ? CSSToScreenScale(1.0)
+          : MaxScaleRatio(ScreenSize(aDisplaySize), aViewportOrContentSize);
   MVM_LOG("%p: Intrinsic computed zoom is %f\n", this, intrinsicScale.scale);
   return ClampZoom(intrinsicScale, aViewportInfo);
 }
@@ -101,14 +103,16 @@ void MobileViewportManager::RequestReflow(bool aForceAdjustResolution) {
   RefreshViewportSize(aForceAdjustResolution);
 }
 
-void MobileViewportManager::ResolutionUpdated() {
+void MobileViewportManager::ResolutionUpdated(
+    mozilla::ResolutionChangeOrigin aOrigin) {
   MVM_LOG("%p: resolution updated\n", this);
 
   if (!mContext) {
     return;
   }
 
-  if (!mPainted) {
+  if (!mPainted &&
+      aOrigin == mozilla::ResolutionChangeOrigin::MainThreadRestore) {
     // Save the value, so our default zoom calculation
     // can take it into account later on.
     SetRestoreResolution(mContext->GetResolution());
@@ -122,8 +126,7 @@ MobileViewportManager::HandleEvent(dom::Event* event) {
   event->GetType(type);
 
   if (type.Equals(DOM_META_ADDED)) {
-    MVM_LOG("%p: got a dom-meta-added event\n", this);
-    RefreshViewportSize(mPainted);
+    HandleDOMMetaAdded();
   } else if (type.Equals(DOM_META_CHANGED)) {
     MVM_LOG("%p: got a dom-meta-changed event\n", this);
     RefreshViewportSize(mPainted);
@@ -138,6 +141,27 @@ MobileViewportManager::HandleEvent(dom::Event* event) {
     }
   }
   return NS_OK;
+}
+
+void MobileViewportManager::HandleDOMMetaAdded() {
+  MVM_LOG("%p: got a dom-meta-added event\n", this);
+  if (mPainted && mContext->IsDocumentLoading()) {
+    // It's possible that we get a DOMMetaAdded event after the page
+    // has already been painted, but before the document finishes loading.
+    // In such a case, we've already run SetInitialViewport() on
+    // "before-first-paint", and won't run it again on "load" (because
+    // mPainted=true). But that SetInitialViewport() call didn't know the
+    // "initial-scale" from this meta viewport tag. To ensure we respect
+    // the "initial-scale", call SetInitialViewport() again.
+    // Note: It's important that we only do this if mPainted=true. In the
+    // usual case, we get the DOMMetaAdded before the first paint, sometimes
+    // even before we have a frame tree, and calling SetInitialViewport()
+    // before we have a frame tree will skip some important steps (e.g.
+    // updating display port margins).
+    SetInitialViewport();
+  } else {
+    RefreshViewportSize(mPainted);
+  }
 }
 
 NS_IMETHODIMP
@@ -168,6 +192,11 @@ void MobileViewportManager::SetInitialViewport() {
 CSSToScreenScale MobileViewportManager::ClampZoom(
     const CSSToScreenScale& aZoom, const nsViewportInfo& aViewportInfo) const {
   CSSToScreenScale zoom = aZoom;
+  if (IsNaN(zoom.scale)) {
+    NS_ERROR("Don't pass NaN to ClampZoom; check caller for 0/0 division");
+    zoom = CSSToScreenScale(1.0);
+  }
+
   if (zoom < aViewportInfo.GetMinZoom()) {
     zoom = aViewportInfo.GetMinZoom();
     MVM_LOG("%p: Clamped to %f\n", this, zoom.scale);
@@ -176,6 +205,15 @@ CSSToScreenScale MobileViewportManager::ClampZoom(
     zoom = aViewportInfo.GetMaxZoom();
     MVM_LOG("%p: Clamped to %f\n", this, zoom.scale);
   }
+
+  // Non-positive zoom factors can produce NaN or negative viewport sizes,
+  // so we better be sure we've got a positive zoom factor. Just for good
+  // measure, we check our min/max as well as the final clamped value.
+  MOZ_ASSERT(aViewportInfo.GetMinZoom() > CSSToScreenScale(0.0f),
+             "zoom factor must be positive");
+  MOZ_ASSERT(aViewportInfo.GetMaxZoom() > CSSToScreenScale(0.0f),
+             "zoom factor must be positive");
+  MOZ_ASSERT(zoom > CSSToScreenScale(0.0f), "zoom factor must be positive");
   return zoom;
 }
 
@@ -217,6 +255,10 @@ void MobileViewportManager::UpdateResolution(
   CSSToLayoutDeviceScale cssToDev = mContext->CSSToDevPixelScale();
   LayoutDeviceToLayerScale res(mContext->GetResolution());
   CSSToScreenScale zoom = ResolutionToZoom(res, cssToDev);
+  // Non-positive zoom factors can produce NaN or negative viewport sizes,
+  // so we better be sure we've got a positive zoom factor.
+  MOZ_ASSERT(zoom > CSSToScreenScale(0.0f), "zoom factor must be positive");
+
   Maybe<CSSToScreenScale> newZoom;
 
   ScreenIntSize compositionSize = GetCompositionSize(aDisplaySize);
@@ -388,10 +430,17 @@ void MobileViewportManager::UpdateResolution(
   }
 
   // If the zoom has changed, update the pres shell resolution accordingly.
+  // We characterize this as MainThreadAdjustment, because we don't want our
+  // change here to be remembered as a restore resolution.
   if (newZoom) {
+    // Non-positive zoom factors can produce NaN or negative viewport sizes,
+    // so we better be sure we've got a positive zoom factor.
+    MOZ_ASSERT(*newZoom > CSSToScreenScale(0.0f),
+               "zoom factor must be positive");
     LayoutDeviceToLayerScale resolution = ZoomToResolution(*newZoom, cssToDev);
     MVM_LOG("%p: setting resolution %f\n", this, resolution.scale);
-    mContext->SetResolutionAndScaleTo(resolution.scale);
+    mContext->SetResolutionAndScaleTo(
+        resolution.scale, ResolutionChangeOrigin::MainThreadAdjustment);
 
     MVM_LOG("%p: New zoom is %f\n", this, newZoom->scale);
   }
@@ -538,17 +587,13 @@ void MobileViewportManager::RefreshViewportSize(bool aForceAdjustResolution) {
     UpdateDisplayPortMargins();
   }
 
-  CSSSize oldSize = mMobileViewportSize;
-
   // Update internal state.
   mMobileViewportSize = viewport;
 
   RefPtr<MobileViewportManager> strongThis(this);
 
   // Kick off a reflow.
-  mContext->Reflow(viewport, oldSize,
-                   mIsFirstPaint ? MVMContext::ResizeEventFlag::Suppress
-                                 : MVMContext::ResizeEventFlag::IfNecessary);
+  mContext->Reflow(viewport);
 
   // We are going to fit the content to the display width if the initial-scale
   // is not specied and if the content is still wider than the display width.

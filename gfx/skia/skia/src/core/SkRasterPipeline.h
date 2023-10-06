@@ -9,15 +9,13 @@
 #define SkRasterPipeline_DEFINED
 
 #include "SkArenaAlloc.h"
+#include "SkColor.h"
 #include "SkImageInfo.h"
 #include "SkNx.h"
-#include "SkPM4f.h"
-#include "SkTArray.h"
+#include "SkTArray.h" // TODO: unused
 #include "SkTypes.h"
 #include <functional>
-#include <vector>
-
-struct SkJumper_Engine;
+#include <vector>  // TODO: unused
 
 /**
  * SkRasterPipeline provides a cheap way to chain together a pixel processing pipeline.
@@ -32,32 +30,28 @@ struct SkJumper_Engine;
  * arbitrary context pointer.  The stage funciton arguments and calling convention are
  * designed to maximize the amount of data we can pass along the pipeline cheaply, and
  * vary depending on CPU feature detection.
- *
- * If you'd like to see how this works internally, you want to start digging around src/jumper.
  */
 
 #define SK_RASTER_PIPELINE_STAGES(M)                               \
     M(callback)                                                    \
     M(move_src_dst) M(move_dst_src)                                \
-    M(clamp_0) M(clamp_1) M(clamp_a) M(clamp_a_dst)                \
+    M(clamp_0) M(clamp_1) M(clamp_a) M(clamp_a_dst) M(clamp_gamut) \
     M(unpremul) M(premul) M(premul_dst)                            \
     M(force_opaque) M(force_opaque_dst)                            \
-    M(set_rgb) M(swap_rb) M(invert)                                \
-    M(from_srgb) M(from_srgb_dst) M(to_srgb)                       \
-    M(black_color) M(white_color) M(uniform_color)                 \
+    M(set_rgb) M(unbounded_set_rgb) M(swap_rb) M(swap_rb_dst)      \
+    M(from_srgb) M(to_srgb)                                        \
+    M(black_color) M(white_color) M(uniform_color) M(unbounded_uniform_color) \
     M(seed_shader) M(dither)                                       \
     M(load_a8)   M(load_a8_dst)   M(store_a8)   M(gather_a8)       \
-    M(load_g8)   M(load_g8_dst)                 M(gather_g8)       \
     M(load_565)  M(load_565_dst)  M(store_565)  M(gather_565)      \
     M(load_4444) M(load_4444_dst) M(store_4444) M(gather_4444)     \
     M(load_f16)  M(load_f16_dst)  M(store_f16)  M(gather_f16)      \
-    M(load_f32)  M(load_f32_dst)  M(store_f32)                     \
+    M(load_f32)  M(load_f32_dst)  M(store_f32)  M(gather_f32)      \
     M(load_8888) M(load_8888_dst) M(store_8888) M(gather_8888)     \
-    M(load_bgra) M(load_bgra_dst) M(store_bgra) M(gather_bgra)     \
     M(load_1010102) M(load_1010102_dst) M(store_1010102) M(gather_1010102) \
+    M(alpha_to_gray) M(alpha_to_gray_dst) M(luminance_to_alpha)    \
     M(bilerp_clamp_8888)                                           \
-    M(load_u16_be) M(load_rgb_u16_be) M(store_u16_be)              \
-    M(load_tables_u16_be) M(load_tables_rgb_u16_be) M(load_tables) \
+    M(store_u16_be)                                                \
     M(load_rgba) M(store_rgba)                                     \
     M(scale_u8) M(scale_565) M(scale_1_float)                      \
     M( lerp_u8) M( lerp_565) M( lerp_1_float)                      \
@@ -67,18 +61,14 @@ struct SkJumper_Engine;
     M(colorburn) M(colordodge) M(darken) M(difference)             \
     M(exclusion) M(hardlight) M(lighten) M(overlay) M(softlight)   \
     M(hue) M(saturation) M(color) M(luminosity)                    \
-    M(srcover_rgba_8888) M(srcover_bgra_8888)                      \
-    M(luminance_to_alpha)                                          \
+    M(srcover_rgba_8888)                                           \
     M(matrix_translate) M(matrix_scale_translate)                  \
-    M(matrix_2x3) M(matrix_3x4) M(matrix_4x5) M(matrix_4x3)        \
+    M(matrix_2x3) M(matrix_3x3) M(matrix_3x4) M(matrix_4x5) M(matrix_4x3) \
     M(matrix_perspective)                                          \
-    M(parametric_r) M(parametric_g) M(parametric_b)                \
-    M(parametric_a) M(gamma) M(gamma_dst)                          \
-    M(table_r) M(table_g) M(table_b) M(table_a)                    \
-    M(lab_to_xyz)                                                  \
-                 M(mirror_x)   M(repeat_x)                         \
-                 M(mirror_y)   M(repeat_y)                         \
-                 M(decal_x)    M(decal_y)   M(decal_x_and_y)       \
+    M(parametric) M(gamma)                                         \
+    M(mirror_x)   M(repeat_x)                                      \
+    M(mirror_y)   M(repeat_y)                                      \
+    M(decal_x)    M(decal_y)   M(decal_x_and_y)                    \
     M(check_decal_mask)                                            \
     M(negate_x)                                                    \
     M(bilinear_nx) M(bilinear_px) M(bilinear_ny) M(bilinear_py)    \
@@ -100,10 +90,89 @@ struct SkJumper_Engine;
     M(alter_2pt_conical_unswap)                                    \
     M(mask_2pt_conical_nan)                                        \
     M(mask_2pt_conical_degenerates) M(apply_vector_mask)           \
-    M(byte_tables) M(byte_tables_rgb)                              \
+    M(byte_tables)                                                 \
     M(rgb_to_hsl) M(hsl_to_rgb)                                    \
-    M(clut_3D) M(clut_4D)                                          \
-    M(gauss_a_to_rgba)
+    M(gauss_a_to_rgba)                                             \
+    M(emboss)
+
+// The largest number of pixels we handle at a time.
+static const int SkRasterPipeline_kMaxStride = 16;
+
+// Structs representing the arguments to some common stages.
+
+struct SkRasterPipeline_MemoryCtx {
+    void* pixels;
+    int   stride;
+};
+
+struct SkRasterPipeline_GatherCtx {
+    const void* pixels;
+    int         stride;
+    float       width;
+    float       height;
+};
+
+// State shared by save_xy, accumulate, and bilinear_* / bicubic_*.
+struct SkRasterPipeline_SamplerCtx {
+    float      x[SkRasterPipeline_kMaxStride];
+    float      y[SkRasterPipeline_kMaxStride];
+    float     fx[SkRasterPipeline_kMaxStride];
+    float     fy[SkRasterPipeline_kMaxStride];
+    float scalex[SkRasterPipeline_kMaxStride];
+    float scaley[SkRasterPipeline_kMaxStride];
+};
+
+struct SkRasterPipeline_TileCtx {
+    float scale;
+    float invScale; // cache of 1/scale
+};
+
+struct SkRasterPipeline_DecalTileCtx {
+    uint32_t mask[SkRasterPipeline_kMaxStride];
+    float    limit_x;
+    float    limit_y;
+};
+
+struct SkRasterPipeline_CallbackCtx {
+    void (*fn)(SkRasterPipeline_CallbackCtx* self, int active_pixels/*<= SkRasterPipeline_kMaxStride*/);
+
+    // When called, fn() will have our active pixels available in rgba.
+    // When fn() returns, the pipeline will read back those active pixels from read_from.
+    float rgba[4*SkRasterPipeline_kMaxStride];
+    float* read_from = rgba;
+};
+
+struct SkRasterPipeline_GradientCtx {
+    size_t stopCount;
+    float* fs[4];
+    float* bs[4];
+    float* ts;
+    bool interpolatedInPremul;
+};
+
+struct SkRasterPipeline_EvenlySpaced2StopGradientCtx {
+    float f[4];
+    float b[4];
+    bool interpolatedInPremul;
+};
+
+struct SkRasterPipeline_2PtConicalCtx {
+    uint32_t fMask[SkRasterPipeline_kMaxStride];
+    float    fP0,
+             fP1;
+};
+
+struct SkRasterPipeline_UniformColorCtx {
+    float r,g,b,a;
+    uint16_t rgba[4];  // [0,255] in a 16-bit lane.
+};
+
+struct SkRasterPipeline_EmbossCtx {
+    SkRasterPipeline_MemoryCtx mul,
+                               add;
+};
+
+
 
 class SkRasterPipeline {
 public:
@@ -124,6 +193,9 @@ public:
     };
     void append(StockStage, void* = nullptr);
     void append(StockStage stage, const void* ctx) { this->append(stage, const_cast<void*>(ctx)); }
+    // For raw functions (i.e. from a JIT).  Don't use this unless you know exactly what fn needs to
+    // be. :)
+    void append(void* fn, void* ctx);
 
     // Append all stages to this pipeline.
     void extend(const SkRasterPipeline&);
@@ -144,28 +216,40 @@ public:
     // Tries to optimize the stage based on the color.
     void append_constant_color(SkArenaAlloc*, const float rgba[4]);
 
-    void append_constant_color(SkArenaAlloc* alloc, const SkPM4f& color) {
-        this->append_constant_color(alloc, color.fVec);
-    }
     void append_constant_color(SkArenaAlloc* alloc, const SkColor4f& color) {
         this->append_constant_color(alloc, color.vec());
     }
 
-    // Helper to append(seed_shader) with the normal {+0.5,+1.5,+2.5,...} argument it expects.
-    void append_seed_shader();
+    // Like append_constant_color() but only affecting r,g,b, ignoring the alpha channel.
+    void append_set_rgb(SkArenaAlloc*, const float rgb[3]);
+
+    void append_set_rgb(SkArenaAlloc* alloc, const SkColor4f& color) {
+        this->append_set_rgb(alloc, color.vec());
+    }
+
+    void append_load    (SkColorType, const SkRasterPipeline_MemoryCtx*);
+    void append_load_dst(SkColorType, const SkRasterPipeline_MemoryCtx*);
+    void append_store   (SkColorType, const SkRasterPipeline_MemoryCtx*);
+
+    void append_gamut_clamp_if_normalized(const SkImageInfo&);
 
     bool empty() const { return fStages == nullptr; }
+
 
 private:
     struct StageList {
         StageList* prev;
-        StockStage stage;
+        uint64_t   stage;
         void*      ctx;
+        bool       rawFunction;
     };
 
-    const SkJumper_Engine& build_pipeline(void**) const;
+    using StartPipelineFn = void(*)(size_t,size_t,size_t,size_t, void** program);
+    StartPipelineFn build_pipeline(void**) const;
+
     void unchecked_append(StockStage, void*);
 
+    // Used by old single-program void** style execution.
     SkArenaAlloc* fAlloc;
     StageList*    fStages;
     int           fNumStages;

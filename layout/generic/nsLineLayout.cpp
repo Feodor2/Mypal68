@@ -708,8 +708,9 @@ static bool IsPercentageAware(const nsIFrame* aFrame, WritingMode aWM) {
     // We need to check for frames that shrink-wrap when they're auto
     // width.
     const nsStyleDisplay* disp = aFrame->StyleDisplay();
-    if (disp->mDisplay == StyleDisplay::InlineBlock ||
-        disp->mDisplay == StyleDisplay::InlineTable ||
+    if ((disp->DisplayOutside() == StyleDisplayOutside::Inline &&
+         (disp->DisplayInside() == StyleDisplayInside::FlowRoot ||
+          disp->DisplayInside() == StyleDisplayInside::Table)) ||
         fType == LayoutFrameType::HTMLButtonControl ||
         fType == LayoutFrameType::GfxButtonControl ||
         fType == LayoutFrameType::FieldSet ||
@@ -1473,9 +1474,9 @@ bool nsLineLayout::TryToPlaceFloat(nsIFrame* aFloat) {
 bool nsLineLayout::NotifyOptionalBreakPosition(nsIFrame* aFrame,
                                                int32_t aOffset, bool aFits,
                                                gfxBreakPriority aPriority) {
-  MOZ_ASSERT(!aFits || !mNeedBackup,
-             "Shouldn't be updating the break position with a break that fits "
-             "after we've already flagged an overrun");
+  NS_ASSERTION(!aFits || !mNeedBackup,
+               "Shouldn't be updating the break position with a break that fits"
+               " after we've already flagged an overrun");
   MOZ_ASSERT(mCurrentSpan, "Should be doing line layout");
   if (mCurrentSpan->mNoWrap) {
     FlushNoWrapFloats();
@@ -2027,9 +2028,16 @@ void nsLineLayout::VerticalAlignFrames(PerSpanData* psd) {
         default:
         case StyleVerticalAlignKeyword::Baseline:
           if (lineWM.IsVertical() && !lineWM.IsSideways()) {
+            // FIXME: We should really use a central baseline from the
+            // baseline table of the font, rather than assuming it's in
+            // the middle.
             if (frameSpan) {
+              nscoord borderBoxBSize = pfd->mBounds.BSize(lineWM);
+              nscoord bStartBP = pfd->mBorderPadding.BStart(lineWM);
+              nscoord bEndBP = pfd->mBorderPadding.BEnd(lineWM);
+              nscoord contentBoxBSize = borderBoxBSize - bStartBP - bEndBP;
               pfd->mBounds.BStart(lineWM) =
-                  revisedBaselineBCoord - pfd->mBounds.BSize(lineWM) / 2;
+                  revisedBaselineBCoord - contentBoxBSize / 2 - bStartBP;
             } else {
               pfd->mBounds.BStart(lineWM) = revisedBaselineBCoord -
                                             logicalBSize / 2 +
@@ -2648,7 +2656,7 @@ struct nsLineLayout::JustificationComputationState {
 };
 
 static bool IsRubyAlignSpaceAround(nsIFrame* aRubyBase) {
-  return aRubyBase->StyleText()->mRubyAlign == NS_STYLE_RUBY_ALIGN_SPACE_AROUND;
+  return aRubyBase->StyleText()->mRubyAlign == StyleRubyAlign::SpaceAround;
 }
 
 /**
@@ -2930,14 +2938,14 @@ void nsLineLayout::ExpandRubyBox(PerFrameData* aFrame, nscoord aReservedISize,
   WritingMode lineWM = mRootSpan->mWritingMode;
   auto rubyAlign = aFrame->mFrame->StyleText()->mRubyAlign;
   switch (rubyAlign) {
-    case NS_STYLE_RUBY_ALIGN_START:
+    case StyleRubyAlign::Start:
       // do nothing for start
       break;
-    case NS_STYLE_RUBY_ALIGN_SPACE_BETWEEN:
-    case NS_STYLE_RUBY_ALIGN_SPACE_AROUND: {
+    case StyleRubyAlign::SpaceBetween:
+    case StyleRubyAlign::SpaceAround: {
       int32_t opportunities = aFrame->mJustificationInfo.mInnerOpportunities;
       int32_t gaps = opportunities * 2;
-      if (rubyAlign == NS_STYLE_RUBY_ALIGN_SPACE_AROUND) {
+      if (rubyAlign == StyleRubyAlign::SpaceAround) {
         // Each expandable ruby box with ruby-align space-around has a
         // gap at each of its sides. For rb/rbc, see comment in
         // AssignInterframeJustificationGaps; for rt/rtc, see comment
@@ -2953,7 +2961,7 @@ void nsLineLayout::ExpandRubyBox(PerFrameData* aFrame, nscoord aReservedISize,
       // fall-through to center per spec.
       [[fallthrough]];
     }
-    case NS_STYLE_RUBY_ALIGN_CENTER:
+    case StyleRubyAlign::Center:
       // Indent all children by half of the reserved inline size.
       for (PerFrameData* child = aFrame->mSpan->mFirstFrame; child;
            child = child->mNext) {
@@ -3147,7 +3155,7 @@ void nsLineLayout::TextAlignLine(nsLineBox* aLine, bool aIsLastLine) {
 
       case NS_STYLE_TEXT_ALIGN_LEFT:
       case NS_STYLE_TEXT_ALIGN_MOZ_LEFT:
-        if (!lineWM.IsBidiLTR()) {
+        if (lineWM.IsBidiRTL()) {
           dx = remainingISize;
         }
         break;
@@ -3175,7 +3183,7 @@ void nsLineLayout::TextAlignLine(nsLineBox* aLine, bool aIsLastLine) {
   }
 
   if (mPresContext->BidiEnabled() &&
-      (!mPresContext->IsVisualMode() || !lineWM.IsBidiLTR())) {
+      (!mPresContext->IsVisualMode() || lineWM.IsBidiRTL())) {
     PerFrameData* startFrame = psd->mFirstFrame;
     MOZ_ASSERT(startFrame, "empty line?");
     if (startFrame->mIsMarker) {

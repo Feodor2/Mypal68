@@ -32,14 +32,13 @@ public:
     bool filterMask(SkMask* dst, const SkMask& src, const SkMatrix&,
                     SkIPoint* margin) const override;
 
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkEmbossMaskFilter)
-
 protected:
     SkEmbossMaskFilter(SkScalar blurSigma, const Light& light);
     void flatten(SkWriteBuffer&) const override;
 
 private:
+    SK_FLATTENABLE_HOOKS(SkEmbossMaskFilter)
+
     Light       fLight;
     SkScalar    fBlurSigma;
 

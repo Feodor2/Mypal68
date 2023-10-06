@@ -190,6 +190,13 @@ class SVGGeometryElement : public SVGGeometryElementBase {
   virtual already_AddRefed<Path> GetOrBuildPathForMeasuring();
 
   /**
+   * Return |true| if some geometry properties (|x|, |y|, etc) are changed
+   * because of CSS change.
+   */
+  bool IsGeometryChangedViaCSS(ComputedStyle const& aNewStyle,
+                               ComputedStyle const& aOldStyle) const;
+
+  /**
    * Returns the current computed value of the CSS property 'fill-rule' for
    * this element.
    */
@@ -207,6 +214,8 @@ class SVGGeometryElement : public SVGGeometryElementBase {
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedNumber> PathLength();
+  bool IsPointInFill(const DOMPointInit& aPoint);
+  bool IsPointInStroke(const DOMPointInit& aPoint);
   float GetTotalLength();
   already_AddRefed<nsISVGPoint> GetPointAtLength(float distance,
                                                  ErrorResult& rv);
@@ -218,6 +227,9 @@ class SVGGeometryElement : public SVGGeometryElementBase {
   SVGAnimatedNumber mPathLength;
   static NumberInfo sNumberInfo;
   mutable RefPtr<Path> mCachedPath;
+
+ private:
+  already_AddRefed<Path> GetOrBuildPathForHitTest();
 };
 
 }  // namespace dom

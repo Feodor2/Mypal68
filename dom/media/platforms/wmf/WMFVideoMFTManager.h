@@ -70,6 +70,7 @@ class WMFVideoMFTManager : public MFTManager {
   gfx::IntSize mDecodedImageSize;
   uint32_t mVideoStride;
   Maybe<gfx::YUVColorSpace> mColorSpace;
+  gfx::ColorRange mColorRange;
 
   RefPtr<layers::ImageContainer> mImageContainer;
   RefPtr<layers::KnowsCompositor> mKnowsCompositor;

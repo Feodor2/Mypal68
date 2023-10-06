@@ -586,23 +586,15 @@ class PathSink : public RefCounted<PathSink> {
   virtual void Arc(const Point& aOrigin, float aRadius, float aStartAngle,
                    float aEndAngle, bool aAntiClockwise = false) = 0;
 
-  virtual Point CurrentPoint() const {
-    return mCurrentPoint;
-  }
+  virtual Point CurrentPoint() const { return mCurrentPoint; }
 
-  virtual Point BeginPoint() const {
-    return mBeginPoint;
-  }
+  virtual Point BeginPoint() const { return mBeginPoint; }
 
-  virtual void SetCurrentPoint(const Point& aPoint) {
-    mCurrentPoint = aPoint;
-  }
+  virtual void SetCurrentPoint(const Point& aPoint) { mCurrentPoint = aPoint; }
 
-  virtual void SetBeginPoint(const Point& aPoint) {
-    mBeginPoint = aPoint;
-  }
+  virtual void SetBeginPoint(const Point& aPoint) { mBeginPoint = aPoint; }
 
-protected:
+ protected:
   /** Point the current subpath is at - or where the next subpath will start
    * if there is no active subpath.
    */
@@ -1363,14 +1355,12 @@ class DrawTarget : public external::AtomicRefCounted<DrawTarget> {
   }
 
   /**
-   * Create a similar DrawTarget whose requested size may be clipped based
-   * on this DrawTarget's rect transformed to the new target's space.
+   * Create a similar DrawTarget in the same space as this DrawTarget whose
+   * device size may be clipped based on the active clips intersected with
+   * aBounds (if it is not empty).
    */
-  virtual RefPtr<DrawTarget> CreateClippedDrawTarget(
-      const IntSize& aMaxSize, const Matrix& aTransform,
-      SurfaceFormat aFormat) const {
-    return CreateSimilarDrawTarget(aMaxSize, aFormat);
-  }
+  virtual RefPtr<DrawTarget> CreateClippedDrawTarget(const Rect& aBounds,
+                                                     SurfaceFormat aFormat) = 0;
 
   /**
    * Create a similar draw target, but if the draw target is not backed by a
@@ -1622,6 +1612,12 @@ class GFX2D_API Factory {
                                                        SurfaceFormat aFormat);
 
   /**
+   * Create a simple PathBuilder, which uses SKIA backend. If USE_SKIA is not
+   * defined, this returns nullptr;
+   */
+  static already_AddRefed<PathBuilder> CreateSimplePathBuilder();
+
+  /**
    * Create a DrawTarget that captures the drawing commands to eventually be
    * replayed onto the DrawTarget provided. An optional byte size can be
    * provided as a limit for the CaptureCommandList. When the limit is reached,
@@ -1840,7 +1836,7 @@ class GFX2D_API Factory {
   static already_AddRefed<ScaledFont> CreateScaledFontForDWriteFont(
       IDWriteFontFace* aFontFace, const gfxFontStyle* aStyle,
       const RefPtr<UnscaledFont>& aUnscaledFont, Float aSize,
-      bool aUseEmbeddedBitmap, bool aForceGDIMode,
+      bool aUseEmbeddedBitmap, int aRenderingMode,
       IDWriteRenderingParams* aParams, Float aGamma, Float aContrast);
 
   static void SetSystemTextQuality(uint8_t aQuality);

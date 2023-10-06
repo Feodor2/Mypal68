@@ -53,7 +53,7 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMSVGTranslatePoint)
   NS_WRAPPERCACHE_INTERFACE_MAP_ENTRY
   // We have to qualify nsISVGPoint because NS_GET_IID looks for a class in the
   // global namespace
-  NS_INTERFACE_MAP_ENTRY(mozilla::nsISVGPoint)
+  NS_INTERFACE_MAP_ENTRY(nsISVGPoint)
   NS_INTERFACE_MAP_ENTRY(nsISupports)
 NS_INTERFACE_MAP_END
 
@@ -268,8 +268,8 @@ already_AddRefed<SVGMatrix> SVGSVGElement::CreateSVGMatrix() {
   return do_AddRef(new SVGMatrix());
 }
 
-already_AddRefed<SVGIRect> SVGSVGElement::CreateSVGRect() {
-  return NS_NewSVGRect(this);
+already_AddRefed<SVGRect> SVGSVGElement::CreateSVGRect() {
+  return do_AddRef(new SVGRect(this));
 }
 
 already_AddRefed<DOMSVGTransform> SVGSVGElement::CreateSVGTransform() {

@@ -1026,6 +1026,8 @@ class Element : public FragmentOrElement {
   }
 
   nsDOMTokenList* ClassList();
+  nsDOMTokenList* Part();
+
   nsDOMAttributeMap* Attributes() {
     nsDOMSlots* slots = DOMSlots();
     if (!slots->mAttributeMap) {
@@ -1905,10 +1907,6 @@ class Element : public FragmentOrElement {
    * (e.g. _blank).
    */
   virtual void GetLinkTarget(nsAString& aTarget);
-
-  nsDOMTokenList* GetTokenList(
-      nsAtom* aAtom,
-      const DOMTokenListSupportedTokenArray aSupportedTokens = nullptr);
 
   enum class ReparseAttributes { No, Yes };
   /**

@@ -50,9 +50,7 @@ web-platform-tests:
     - web-platform-tests-reftests
     - web-platform-tests-wdspec
 
-web-platform-tests-headless:
-    - web-platform-tests-headless
-    - web-platform-tests-reftests-headless
+web-platform-tests-wdspec-headless:
     - web-platform-tests-wdspec-headless
 
 opt-only-tests:
@@ -219,6 +217,7 @@ linux-talos-flex:
 windows-qr-tests:
     - crashtest
     - mochitest
+    - mochitest-browser-chrome
     - mochitest-gpu
     - mochitest-media
     - mochitest-webgl1-core
@@ -391,7 +390,6 @@ desktop-instrumentation:
 android-common-tests:
     - crashtest
     - geckoview-junit
-    - jsreftest
     - mochitest
     - mochitest-chrome
     - mochitest-gpu
@@ -409,18 +407,17 @@ android-x86_64-opt-tests:
     - crashtest
     # geckoview-junit perma-fail on opt and debug; bug 1521195
     # - geckoview-junit
-    - web-platform-tests
-    - web-platform-tests-reftests
 
 android-x86_64-tests:
-    - gtest
     - cppunit
-    - jsreftest
+    - gtest
     - marionette
     - mochitest
     - mochitest-gpu
-    # various reftest (plain) failures; bug 1501582
-    # - reftest
+    - reftest
+    - test-verify
+    - web-platform-tests
+    - web-platform-tests-reftests
     - xpcshell
 
 android-x86-tests:
@@ -441,15 +438,27 @@ marionette-headless:
     - marionette-headless
 
 android-hw-arm7-opt-unittests:
+    - mochitest-media
+
+android-hw-arm7-pgo-unittests:
     - jittest
+    - jsreftest
     - mochitest-media
 
 android-hw-arm7-debug-unittests:
+    - jittest
+    - jsreftest
     - mochitest-media
+
+android-hw-arm7-qr:
+    - crashtest
+    - reftest
 
 android-hw-arm7-raptor:
     - raptor-speedometer-geckoview
     - raptor-speedometer-refbrow
+    - raptor-youtube-playback-fenix
+    - raptor-youtube-playback-geckoview
     - raptor-tp6m-1-geckoview
     - raptor-tp6m-2-geckoview
     - raptor-tp6m-3-geckoview
@@ -503,6 +512,8 @@ android-hw-arm7-raptor:
 android-hw-aarch64-raptor:
     - raptor-speedometer-geckoview
     - raptor-speedometer-refbrow
+    - raptor-youtube-playback-fenix
+    - raptor-youtube-playback-geckoview
     - raptor-tp6m-1-geckoview
     - raptor-tp6m-2-geckoview
     - raptor-tp6m-3-geckoview

@@ -36,9 +36,6 @@ class nsPrintDialogServiceX : public nsIPrintDialogService {
   NSButton* mShrinkToFitCheckbox;
   NSButton* mPrintBGColorsCheckbox;
   NSButton* mPrintBGImagesCheckbox;
-  NSButtonCell* mAsLaidOutRadio;
-  NSButtonCell* mSelectedFrameRadio;
-  NSButtonCell* mSeparateFramesRadio;
   NSPopUpButton* mHeaderLeftList;
   NSPopUpButton* mHeaderCenterList;
   NSPopUpButton* mHeaderRightList;

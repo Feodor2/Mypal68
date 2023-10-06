@@ -15,7 +15,7 @@ class APZHitTestingTester : public APZCTreeManagerTester {
   already_AddRefed<AsyncPanZoomController> GetTargetAPZC(
       const ScreenPoint& aPoint) {
     RefPtr<AsyncPanZoomController> hit =
-        manager->GetTargetAPZC(aPoint, nullptr, nullptr);
+        manager->GetTargetAPZC(aPoint).mTargetApzc;
     if (hit) {
       transformToApzc = manager->GetScreenToApzcTransform(hit.get());
       transformToGecko = manager->GetApzcToGeckoTransform(hit.get());
@@ -491,13 +491,13 @@ TEST_F(APZHitTestingTester, TestRepaintFlushOnNewInputBlock) {
       SingleTouchData(0, touchPoint, ScreenSize(0, 0), 0, 0));
 
   EXPECT_EQ(nsEventStatus_eConsumeDoDefault,
-            manager->ReceiveInputEvent(mti, nullptr, nullptr));
+            manager->ReceiveInputEvent(mti).mStatus);
   EXPECT_EQ(touchPoint, mti.mTouches[0].mScreenPoint);
   check.Call("post-first-touch-start");
 
   // Send a touchend to clear state
   mti.mType = MultiTouchInput::MULTITOUCH_END;
-  manager->ReceiveInputEvent(mti, nullptr, nullptr);
+  manager->ReceiveInputEvent(mti);
 
   mcc->AdvanceByMillis(1000);
 
@@ -516,13 +516,13 @@ TEST_F(APZHitTestingTester, TestRepaintFlushOnNewInputBlock) {
   // a repaint
   mti.mType = MultiTouchInput::MULTITOUCH_START;
   EXPECT_EQ(nsEventStatus_eConsumeDoDefault,
-            manager->ReceiveInputEvent(mti, nullptr, nullptr));
+            manager->ReceiveInputEvent(mti).mStatus);
   EXPECT_EQ(touchPoint, mti.mTouches[0].mScreenPoint);
   check.Call("post-second-touch-start");
 
   mti.mType = MultiTouchInput::MULTITOUCH_END;
   EXPECT_EQ(nsEventStatus_eConsumeDoDefault,
-            manager->ReceiveInputEvent(mti, nullptr, nullptr));
+            manager->ReceiveInputEvent(mti).mStatus);
   EXPECT_EQ(touchPoint, mti.mTouches[0].mScreenPoint);
 }
 
@@ -543,7 +543,7 @@ TEST_F(APZHitTestingTester, TestRepaintFlushOnWheelEvents) {
                          ScrollWheelInput::SCROLLDELTA_PIXEL, origin, 0, 10,
                          false, WheelDeltaAdjustmentStrategy::eNone);
     EXPECT_EQ(nsEventStatus_eConsumeDoDefault,
-              manager->ReceiveInputEvent(swi, nullptr, nullptr));
+              manager->ReceiveInputEvent(swi).mStatus);
     EXPECT_EQ(origin, swi.mOrigin);
 
     AsyncTransform viewTransform;
@@ -571,7 +571,7 @@ TEST_F(APZHitTestingTester, TestForceDisableApz) {
                        ScrollWheelInput::SCROLLDELTA_PIXEL, origin, 0, 10,
                        false, WheelDeltaAdjustmentStrategy::eNone);
   EXPECT_EQ(nsEventStatus_eConsumeDoDefault,
-            manager->ReceiveInputEvent(swi, nullptr, nullptr));
+            manager->ReceiveInputEvent(swi).mStatus);
   EXPECT_EQ(origin, swi.mOrigin);
 
   AsyncTransform viewTransform;
@@ -602,7 +602,7 @@ TEST_F(APZHitTestingTester, TestForceDisableApz) {
                          ScrollWheelInput::SCROLLDELTA_PIXEL, origin, 0, 0,
                          false, WheelDeltaAdjustmentStrategy::eNone);
   EXPECT_EQ(nsEventStatus_eConsumeDoDefault,
-            manager->ReceiveInputEvent(swi, nullptr, nullptr));
+            manager->ReceiveInputEvent(swi).mStatus);
   EXPECT_EQ(origin, swi.mOrigin);
 }
 
@@ -630,8 +630,8 @@ TEST_F(APZHitTestingTester, Bug1148350) {
   mcc->RunThroughDelayedTasks();
   check.Call("Tapped without transform");
 
-  uint64_t blockId;
-  TouchDown(manager, ScreenIntPoint(100, 100), mcc->Time(), &blockId);
+  uint64_t blockId =
+      TouchDown(manager, ScreenIntPoint(100, 100), mcc->Time()).mInputBlockId;
   if (StaticPrefs::layout_css_touch_action_enabled()) {
     SetDefaultAllowedTouchBehavior(manager, blockId);
   }

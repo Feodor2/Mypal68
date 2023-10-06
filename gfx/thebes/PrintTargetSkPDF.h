@@ -9,7 +9,7 @@
 #include "nsCOMPtr.h"
 #include "PrintTarget.h"
 #include "SkCanvas.h"
-#include "SkDocument.h"
+#include "SkPDFDocument.h"
 #include "SkStream.h"
 
 namespace mozilla {
@@ -18,30 +18,35 @@ namespace gfx {
 /**
  * Skia PDF printing target.
  */
-class PrintTargetSkPDF final : public PrintTarget {
- public:
+class PrintTargetSkPDF final : public PrintTarget
+{
+public:
   // The returned PrintTargetSkPDF keeps a raw pointer to the passed SkWStream
   // but does not own it.  Callers are responsible for ensuring that passed
   // stream outlives the returned PrintTarget.
-  static already_AddRefed<PrintTargetSkPDF> CreateOrNull(
-      UniquePtr<SkWStream> aStream, const IntSize& aSizeInPoints);
+  static already_AddRefed<PrintTargetSkPDF>
+  CreateOrNull(UniquePtr<SkWStream> aStream,
+               const IntSize& aSizeInPoints);
 
-  nsresult BeginPrinting(const nsAString& aTitle,
-                         const nsAString& aPrintToFileName, int32_t aStartPage,
-                         int32_t aEndPage) override;
-  nsresult EndPrinting() override;
-  void Finish() override;
+  virtual nsresult BeginPrinting(const nsAString& aTitle,
+                                 const nsAString& aPrintToFileName,
+                                 int32_t aStartPage,
+                                 int32_t aEndPage) override;
+  virtual nsresult EndPrinting() override;
+  virtual void Finish() override;
 
-  nsresult BeginPage() override;
-  nsresult EndPage() override;
+  virtual nsresult BeginPage() override;
+  virtual nsresult EndPage() override;
 
-  already_AddRefed<DrawTarget> MakeDrawTarget(
-      const IntSize& aSize, DrawEventRecorder* aRecorder = nullptr) final;
+  already_AddRefed<DrawTarget>
+  MakeDrawTarget(const IntSize& aSize,
+                 DrawEventRecorder* aRecorder = nullptr) final;
 
   already_AddRefed<DrawTarget> GetReferenceDrawTarget() final;
 
- private:
-  PrintTargetSkPDF(const IntSize& aSize, UniquePtr<SkWStream> aStream);
+private:
+  PrintTargetSkPDF(const IntSize& aSize,
+                   UniquePtr<SkWStream> aStream);
   virtual ~PrintTargetSkPDF();
 
   // Do not hand out references to this object.  It holds a non-owning
@@ -63,7 +68,7 @@ class PrintTargetSkPDF final : public PrintTarget {
   SkDynamicMemoryWStream mRefOStream;
 };
 
-}  // namespace gfx
-}  // namespace mozilla
+} // namespace gfx
+} // namespace mozilla
 
 #endif /* MOZILLA_GFX_PRINTTARGETSKPDF_H */

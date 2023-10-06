@@ -203,17 +203,13 @@ class RenderThread final {
   void NotifyNotUsed(uint64_t aExternalImageId);
 
   /// Can only be called from the render thread.
-  void UpdateRenderTextureHost(uint64_t aSrcExternalImageId,
-                               uint64_t aWrappedExternalImageId);
-
-  /// Can only be called from the render thread.
   void NofityForUse(uint64_t aExternalImageId);
 
   /// Can only be called from the render thread.
   void UnregisterExternalImageDuringShutdown(uint64_t aExternalImageId);
 
   /// Can only be called from the render thread.
-  RenderTextureHost* GetRenderTexture(WrExternalImageId aExternalImageId);
+  RenderTextureHost* GetRenderTexture(ExternalImageId aExternalImageId);
 
   /// Can be called from any thread.
   bool IsDestroyed(wr::WindowId aWindowId);
@@ -262,11 +258,18 @@ class RenderThread final {
   /// Can be called from any thread.
   void SimulateDeviceReset();
 
+  /// Can only be called from the render thread.
+  void HandleWebRenderError(WebRenderError aError);
+  /// Can only be called from the render thread.
+  bool IsHandlingWebRenderError();
+
   size_t RendererCount();
 
   void SetCompositionRecorderForWindow(
       wr::WindowId aWindowId,
-      RefPtr<layers::WebRenderCompositionRecorder>&& aCompositionRecorder);
+      UniquePtr<layers::WebRenderCompositionRecorder> aCompositionRecorder);
+
+  void WriteCollectedFramesForWindow(wr::WindowId aWindowId);
 
  private:
   explicit RenderThread(base::Thread* aThread);
@@ -292,7 +295,7 @@ class RenderThread final {
   RefPtr<gl::GLContext> mSharedGL;
 
   std::map<wr::WindowId, UniquePtr<RendererOGL>> mRenderers;
-  std::map<wr::WindowId, RefPtr<layers::WebRenderCompositionRecorder>>
+  std::map<wr::WindowId, UniquePtr<layers::WebRenderCompositionRecorder>>
       mCompositionRecorders;
 
   struct WindowInfo {
@@ -321,6 +324,7 @@ class RenderThread final {
   bool mHasShutdown;
 
   bool mHandlingDeviceReset;
+  bool mHandlingWebRenderError;
 };
 
 }  // namespace wr

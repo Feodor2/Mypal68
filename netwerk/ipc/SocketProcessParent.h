@@ -6,6 +6,7 @@
 #define mozilla_net_SocketProcessParent_h
 
 #include "mozilla/UniquePtr.h"
+#include "mozilla/ipc/CrashReporterHelper.h"
 #include "mozilla/net/PSocketProcessParent.h"
 
 namespace mozilla {
@@ -25,7 +26,9 @@ class SocketProcessHost;
 
 // IPC actor of socket process in parent process. This is allocated and managed
 // by SocketProcessHost.
-class SocketProcessParent final : public PSocketProcessParent {
+class SocketProcessParent final
+    : public PSocketProcessParent,
+      public ipc::CrashReporterHelper<GeckoProcessType_Content> {
  public:
   friend class SocketProcessHost;
 
@@ -34,18 +37,16 @@ class SocketProcessParent final : public PSocketProcessParent {
 
   static SocketProcessParent* GetSingleton();
 
-  mozilla::ipc::IPCResult RecvInitCrashReporter(
-      Shmem&& aShmem, const NativeThreadId& aThreadId);
   mozilla::ipc::IPCResult RecvAddMemoryReport(const MemoryReport& aReport);
   mozilla::ipc::IPCResult RecvFinishMemoryReport(const uint32_t& aGeneration);
   mozilla::ipc::IPCResult RecvAccumulateChildHistograms(
-      InfallibleTArray<HistogramAccumulation>&& aAccumulations);
+      nsTArray<HistogramAccumulation>&& aAccumulations);
   mozilla::ipc::IPCResult RecvAccumulateChildKeyedHistograms(
-      InfallibleTArray<KeyedHistogramAccumulation>&& aAccumulations);
+      nsTArray<KeyedHistogramAccumulation>&& aAccumulations);
   mozilla::ipc::IPCResult RecvUpdateChildScalars(
-      InfallibleTArray<ScalarAction>&& aScalarActions);
+      nsTArray<ScalarAction>&& aScalarActions);
   mozilla::ipc::IPCResult RecvUpdateChildKeyedScalars(
-      InfallibleTArray<KeyedScalarAction>&& aScalarActions);
+      nsTArray<KeyedScalarAction>&& aScalarActions);
   mozilla::ipc::IPCResult RecvRecordChildEvents(
       nsTArray<ChildEventData>&& events);
   mozilla::ipc::IPCResult RecvRecordDiscardedData(
@@ -62,6 +63,10 @@ class SocketProcessParent final : public PSocketProcessParent {
       const OriginAttributes& aOriginAttributes,
       const uint32_t& flags) override;
   bool DeallocPDNSRequestParent(PDNSRequestParent*);
+  PProxyConfigLookupParent* AllocPProxyConfigLookupParent();
+  virtual mozilla::ipc::IPCResult RecvPProxyConfigLookupConstructor(
+      PProxyConfigLookupParent* aActor) override;
+  bool DeallocPProxyConfigLookupParent(PProxyConfigLookupParent* aActor);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
   bool SendRequestMemoryReport(const uint32_t& aGeneration,
@@ -71,7 +76,6 @@ class SocketProcessParent final : public PSocketProcessParent {
 
  private:
   SocketProcessHost* mHost;
-  UniquePtr<ipc::CrashReporterHost> mCrashReporter;
   UniquePtr<dom::MemoryReportRequestHost> mMemoryReportRequest;
 
   static void Destroy(UniquePtr<SocketProcessParent>&& aParent);

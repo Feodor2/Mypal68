@@ -24,13 +24,12 @@
         "border-%s-color" % side_name, "Color",
         "computed_value::T::currentcolor()",
         engines="gecko servo-2013 servo-2020",
-        servo_2020_pref="layout.2020.unimplemented",
         alias=maybe_moz_logical_alias(engine, side, "-moz-border-%s-color"),
         spec=maybe_logical_spec(side, "color"),
         animation_value_type="AnimatedColor",
         logical=is_logical,
         logical_group="border-color",
-        allow_quirks=not is_logical,
+        allow_quirks="No" if is_logical else "Yes",
         ignored_when_colors_disabled=True,
     )}
 
@@ -51,14 +50,13 @@
         "BorderSideWidth",
         "crate::values::computed::NonNegativeLength::new(3.)",
         engines="gecko servo-2013 servo-2020",
-        servo_2020_pref="layout.2020.unimplemented",
         computed_type="crate::values::computed::NonNegativeLength",
         alias=maybe_moz_logical_alias(engine, side, "-moz-border-%s-width"),
         spec=maybe_logical_spec(side, "width"),
         animation_value_type="NonNegativeLength",
         logical=is_logical,
         logical_group="border-width",
-        allow_quirks=not is_logical,
+        allow_quirks="No" if is_logical else "Yes",
         servo_restyle_damage="reflow rebuild_and_reflow_inline"
     )}
 % endfor
@@ -109,7 +107,7 @@ ${helpers.single_keyword(
 ${helpers.predefined_type(
     "border-image-source",
     "ImageLayer",
-    engines="gecko servo-2013",
+    engines="gecko servo-2013 servo-2020",
     initial_value="computed::ImageLayer::none()",
     initial_specified_value="specified::ImageLayer::none()",
     spec="https://drafts.csswg.org/css-backgrounds/#the-background-image",
@@ -122,7 +120,7 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "border-image-outset",
     "NonNegativeLengthOrNumberRect",
-    engines="gecko servo-2013",
+    engines="gecko servo-2013 servo-2020",
     initial_value="generics::rect::Rect::all(computed::NonNegativeLengthOrNumber::zero())",
     initial_specified_value="generics::rect::Rect::all(specified::NonNegativeLengthOrNumber::zero())",
     spec="https://drafts.csswg.org/css-backgrounds/#border-image-outset",
@@ -134,7 +132,7 @@ ${helpers.predefined_type(
     "border-image-repeat",
     "BorderImageRepeat",
     "computed::BorderImageRepeat::stretch()",
-    engines="gecko servo-2013",
+    engines="gecko servo-2013 servo-2020",
     initial_specified_value="specified::BorderImageRepeat::stretch()",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-backgrounds/#the-border-image-repeat",
@@ -143,7 +141,7 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "border-image-width",
     "BorderImageWidth",
-    engines="gecko servo-2013",
+    engines="gecko servo-2013 servo-2020",
     initial_value="computed::BorderImageWidth::all(computed::BorderImageSideWidth::one())",
     initial_specified_value="specified::BorderImageWidth::all(specified::BorderImageSideWidth::one())",
     spec="https://drafts.csswg.org/css-backgrounds/#border-image-width",
@@ -154,7 +152,7 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "border-image-slice",
     "BorderImageSlice",
-    engines="gecko servo-2013",
+    engines="gecko servo-2013 servo-2020",
     initial_value="computed::BorderImageSlice::hundred_percent()",
     initial_specified_value="specified::BorderImageSlice::hundred_percent()",
     spec="https://drafts.csswg.org/css-backgrounds/#border-image-slice",

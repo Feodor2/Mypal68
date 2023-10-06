@@ -104,7 +104,6 @@ var sdputils = {
         msection.includes("a=end-of-candidates"),
         label + ": SDP contains end-of-candidates"
       );
-      sdputils.checkSdpCLineNotDefault(msection, label);
 
       if (!msection.startsWith("m=application")) {
         if (testOptions.rtcpmux) {
@@ -152,16 +151,6 @@ var sdputils = {
         label + ": SDP does not contain a=ssrc"
       );
     }
-  },
-
-  // takes sdp in string form (or possibly a fragment, say an m-section), and
-  // verifies that the default 0.0.0.0 addr is not present.
-  checkSdpCLineNotDefault: function(sdpStr, label) {
-    info("CLINE-NO-DEFAULT-ADDR-SDP: " + JSON.stringify(sdpStr));
-    ok(
-      !sdpStr.includes("c=IN IP4 0.0.0.0"),
-      label + ": SDP contains non-zero IP c line"
-    );
   },
 
   // Note, we don't bother removing the fmtp lines, which makes a good test
@@ -257,12 +246,11 @@ var sdputils = {
       return answer_sdp;
     }
     ok(
-      offer_sdp.includes("a=simulcast: send rid"),
+      offer_sdp.includes("a=simulcast:send "),
       "Offer contains simulcast attribute"
     );
-    var o_simul = offer_sdp.match(/simulcast: send rid=(.*)([\n$])*/i);
-    var new_answer_sdp =
-      answer_sdp + "a=simulcast: recv rid=" + o_simul[1] + "\r\n";
+    var o_simul = offer_sdp.match(/simulcast:send (.*)([\n$])*/i);
+    var new_answer_sdp = answer_sdp + "a=simulcast:recv " + o_simul[1] + "\r\n";
     ok(offer_sdp.includes("a=rid:"), "Offer contains RID attribute");
     var o_rids = offer_sdp.match(/a=rid:(.*)/gi);
     o_rids.forEach(o_rid => {

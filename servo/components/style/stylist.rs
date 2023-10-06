@@ -18,7 +18,7 @@ use crate::properties::{self, CascadeMode, ComputedValues};
 use crate::properties::{AnimationRules, PropertyDeclarationBlock};
 use crate::rule_cache::{RuleCache, RuleCacheConditions};
 use crate::rule_collector::{containing_shadow_ignoring_svg_use, RuleCollector};
-use crate::rule_tree::{CascadeLevel, RuleTree, ShadowCascadeOrder, StrongRuleNode, StyleSource};
+use crate::rule_tree::{CascadeLevel, RuleTree, StrongRuleNode, StyleSource};
 use crate::selector_map::{PrecomputedHashMap, PrecomputedHashSet, SelectorMap, SelectorMapEntry};
 use crate::selector_parser::{PerPseudoElementMap, PseudoElement, SelectorImpl, SnapshotMap};
 use crate::shared_lock::{Locked, SharedRwLockReadGuard, StylesheetGuards};
@@ -1013,7 +1013,7 @@ impl Stylist {
             );
             if !declarations.is_empty() {
                 let rule_node = self.rule_tree.insert_ordered_rules_with_important(
-                    declarations.drain().map(|a| a.for_rule_tree()),
+                    declarations.drain(..).map(|a| a.for_rule_tree()),
                     guards,
                 );
                 if rule_node != *self.rule_tree.root() {
@@ -1322,16 +1322,17 @@ impl Stylist {
         let iter_declarations = || {
             block
                 .declaration_importance_iter()
-                .map(|(declaration, importance)| {
-                    debug_assert!(!importance.important());
-                    (declaration, CascadeLevel::StyleAttributeNormal)
-                })
+                .map(|(declaration, _)| (declaration, Origin::Author))
         };
 
         let metrics = get_metrics_provider_for_product();
 
         // We don't bother inserting these declarations in the rule tree, since
         // it'd be quite useless and slow.
+        //
+        // TODO(emilio): Now that we fixed bug 1493420, we should consider
+        // reversing this as it shouldn't be slow anymore, and should avoid
+        // generating two instantiations of apply_declarations.
         properties::apply_declarations::<E, _, _>(
             &self.device,
             /* pseudo = */ None,
@@ -1987,7 +1988,6 @@ impl CascadeData {
                                         self.rules_source_order,
                                         CascadeLevel::UANormal,
                                         selector.specificity(),
-                                        0,
                                     ));
                                 continue;
                             }
@@ -2032,11 +2032,17 @@ impl CascadeData {
                         // Part is special, since given it doesn't have any
                         // selectors inside, it's not worth using a whole
                         // SelectorMap for it.
-                        if let Some(part) = selector.part() {
+                        if let Some(parts) = selector.parts() {
+                            // ::part() has all semantics, so we just need to
+                            // put any of them in the selector map.
+                            //
+                            // We choose the last one quite arbitrarily,
+                            // expecting it's slightly more likely to be more
+                            // specific.
                             self.part_rules
                                 .get_or_insert_with(|| Box::new(Default::default()))
                                 .for_insertion(pseudo_element)
-                                .try_entry(part.clone())?
+                                .try_entry(parts.last().unwrap().clone())?
                                 .or_insert_with(SmallVec::new)
                                 .try_push(rule)?;
                         } else {
@@ -2317,16 +2323,9 @@ impl Rule {
     pub fn to_applicable_declaration_block(
         &self,
         level: CascadeLevel,
-        shadow_cascade_order: ShadowCascadeOrder,
     ) -> ApplicableDeclarationBlock {
         let source = StyleSource::from_rule(self.style_rule.clone());
-        ApplicableDeclarationBlock::new(
-            source,
-            self.source_order,
-            level,
-            self.specificity(),
-            shadow_cascade_order,
-        )
+        ApplicableDeclarationBlock::new(source, self.source_order, level, self.specificity())
     }
 
     /// Creates a new Rule.

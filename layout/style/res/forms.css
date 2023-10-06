@@ -23,11 +23,11 @@
   /* Please keep the Multicol/Flex/Grid/Align sections below in sync with
      ::-moz-scrolled-content in ua.css and ::-moz-button-content below. */
   /* Multicol container */
-  -moz-column-count: inherit;
-  -moz-column-width: inherit;
-  -moz-column-gap: inherit;
-  -moz-column-rule: inherit;
-  -moz-column-fill: inherit;
+  column-count: inherit;
+  column-width: inherit;
+  column-gap: inherit;
+  column-rule: inherit;
+  column-fill: inherit;
   /* Flex container */
   flex-direction: inherit;
   flex-wrap: inherit;
@@ -345,8 +345,10 @@ select > button[orientation="right"]:active {
   text-align: unset;
   user-select: none;
   /* Make sure to size correctly if the combobox has a non-auto block-size. */
-  block-size: 100% ! important;
-  box-sizing: border-box ! important;
+  block-size: 100%;
+  /* Try to always display our own text */
+  min-inline-size: max-content;
+  box-sizing: border-box;
   line-height: -moz-block-height;
 }
 
@@ -650,11 +652,11 @@ button {
   /* Please keep the Multicol/Flex/Grid/Align sections below in sync with
      ::-moz-scrolled-content in ua.css and ::-moz-fieldset-content above. */
   /* Multicol container */
-  -moz-column-count: inherit;
-  -moz-column-width: inherit;
-  -moz-column-gap: inherit;
-  -moz-column-rule: inherit;
-  -moz-column-fill: inherit;
+  column-count: inherit;
+  column-width: inherit;
+  column-gap: inherit;
+  column-rule: inherit;
+  column-fill: inherit;
   /* Flex container */
   flex-direction: inherit;
   flex-wrap: inherit;
@@ -802,21 +804,6 @@ textarea::placeholder,
 optgroup:before {
   unicode-bidi: inherit;
   text-overflow: inherit;
-}
-
-/**
- * Set default style for invalid elements.
- */
-:not(output):-moz-ui-invalid {
-  box-shadow: 0 0 1.5px 1px red;
-}
-
-:not(output):-moz-ui-invalid:-moz-focusring {
-  box-shadow: 0 0 2px 2px rgba(255,0,0,0.4);
-}
-
-output:-moz-ui-invalid {
-  color: red;
 }
 
 @media print {

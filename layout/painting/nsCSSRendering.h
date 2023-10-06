@@ -594,7 +594,7 @@ struct nsCSSRendering {
     // Which line will be painted. The value can be
     // UNDERLINE or OVERLINE or LINE_THROUGH.
     mozilla::StyleTextDecorationLine decoration =
-        mozilla::StyleTextDecorationLine_UNDERLINE;
+        mozilla::StyleTextDecorationLine::UNDERLINE;
     // The style of the decoration line such as
     // NS_STYLE_TEXT_DECORATION_STYLE_*.
     uint8_t style = NS_STYLE_TEXT_DECORATION_STYLE_NONE;
@@ -614,6 +614,9 @@ struct nsCSSRendering {
     // The distance between the left edge of the given frame and the
     // position of the text as positioned without offset of the shadow.
     Float icoordInFrame = 0.0f;
+    // Baseline offset being applied to this text (block-direction adjustment
+    // applied to glyph positions when computing skip-ink intercepts).
+    Float baselineOffset = 0.0f;
   };
 
   /**

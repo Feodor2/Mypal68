@@ -101,6 +101,12 @@ void RenderAndroidSurfaceTextureHostOGL::DeleteTextureHandle() {
 }
 
 bool RenderAndroidSurfaceTextureHostOGL::EnsureAttachedToGLContext() {
+  // During handling WebRenderError, GeckoSurfaceTexture should not be attached
+  // to GLContext.
+  if (RenderThread::Get()->IsHandlingWebRenderError()) {
+    return false;
+  }
+
   if (mAttachedToGLContext) {
     return true;
   }
@@ -195,7 +201,9 @@ void RenderAndroidSurfaceTextureHostOGL::NofityForUse() {
     // WebRender, instead rendered to WebGL.
     // It is not a good way. But it is same to Compositor rendering.
     MOZ_ASSERT(!mSurfTex || !mSurfTex->IsSingleBuffer());
-    EnsureAttachedToGLContext();
+    if (!EnsureAttachedToGLContext()) {
+      return;
+    }
     mPrepareStatus = STATUS_PREPARE_NEEDED;
   }
 }
@@ -205,7 +213,9 @@ void RenderAndroidSurfaceTextureHostOGL::NotifyNotUsed() {
 
   if (mSurfTex && mSurfTex->IsSingleBuffer() &&
       mPrepareStatus == STATUS_PREPARED) {
-    EnsureAttachedToGLContext();
+    if (!EnsureAttachedToGLContext()) {
+      return;
+    }
     // Release SurfaceTexture's buffer to client side.
     mGL->MakeCurrent();
     mSurfTex->ReleaseTexImage();
@@ -213,7 +223,9 @@ void RenderAndroidSurfaceTextureHostOGL::NotifyNotUsed() {
     // This could happen when video frame was skipped. UpdateTexImage() neeeds
     // to be called for adjusting SurfaceTexture's buffer status.
     MOZ_ASSERT(!mSurfTex->IsSingleBuffer());
-    EnsureAttachedToGLContext();
+    if (!EnsureAttachedToGLContext()) {
+      return;
+    }
     mSurfTex->UpdateTexImage();
   }
 

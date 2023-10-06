@@ -12,6 +12,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/WritingModes.h"
+#include "mozilla/ToString.h"
 #include "nsBidiPresUtils.h"
 #include "nsFrame.h"
 #include "nsIFrameInlines.h"
@@ -214,8 +215,8 @@ char* nsLineBox::StateToString(char* aBuf, int32_t aBufSize) const {
   snprintf(aBuf, aBufSize, "%s,%s,%s,%s,%s,before:%s,after:%s[0x%x]",
            IsBlock() ? "block" : "inline", IsDirty() ? "dirty" : "clean",
            IsPreviousMarginDirty() ? "prevmargindirty" : "prevmarginclean",
-           IsImpactedByFloat() ? "impacted" : "not impacted",
-           IsLineWrapped() ? "wrapped" : "not wrapped",
+           IsImpactedByFloat() ? "impacted" : "not-impacted",
+           IsLineWrapped() ? "wrapped" : "not-wrapped",
            BreakTypeToString(GetBreakTypeBefore()),
            BreakTypeToString(GetBreakTypeAfter()), mAllFlags);
   return aBuf;
@@ -239,26 +240,19 @@ void nsLineBox::List(FILE* out, const char* aPrefix, uint32_t aFlags) const {
     str += nsPrintfCString("bm=%d ", GetCarriedOutBEndMargin().get());
   }
   nsRect bounds = GetPhysicalBounds();
-  str += nsPrintfCString("{%d,%d,%d,%d} ", bounds.x, bounds.y, bounds.width,
-                         bounds.height);
-  if (mWritingMode.IsVertical() || !mWritingMode.IsBidiLTR()) {
-    str +=
-        nsPrintfCString("{%s: %d,%d,%d,%d; cs=%d,%d} ",
-                        mWritingMode.DebugString(), IStart(), BStart(), ISize(),
-                        BSize(), mContainerSize.width, mContainerSize.height);
+  str += nsPrintfCString("%s ", ToString(bounds).c_str());
+  if (mWritingMode.IsVertical() || mWritingMode.IsBidiRTL()) {
+    str += nsPrintfCString(
+        "wm=%s cs=(%s) logical-rect=%s ", ToString(mWritingMode).c_str(),
+        ToString(mContainerSize).c_str(), ToString(mBounds).c_str());
   }
   if (mData &&
       (!mData->mOverflowAreas.VisualOverflow().IsEqualEdges(bounds) ||
        !mData->mOverflowAreas.ScrollableOverflow().IsEqualEdges(bounds))) {
-    str += nsPrintfCString("vis-overflow=%d,%d,%d,%d scr-overflow=%d,%d,%d,%d ",
-                           mData->mOverflowAreas.VisualOverflow().x,
-                           mData->mOverflowAreas.VisualOverflow().y,
-                           mData->mOverflowAreas.VisualOverflow().width,
-                           mData->mOverflowAreas.VisualOverflow().height,
-                           mData->mOverflowAreas.ScrollableOverflow().x,
-                           mData->mOverflowAreas.ScrollableOverflow().y,
-                           mData->mOverflowAreas.ScrollableOverflow().width,
-                           mData->mOverflowAreas.ScrollableOverflow().height);
+    str += nsPrintfCString(
+        "vis-overflow=%s scr-overflow=%s ",
+        ToString(mData->mOverflowAreas.VisualOverflow()).c_str(),
+        ToString(mData->mOverflowAreas.ScrollableOverflow()).c_str());
   }
   fprintf_stderr(out, "%s<\n", str.get());
 

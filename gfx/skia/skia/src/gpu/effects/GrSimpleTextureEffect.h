@@ -11,12 +11,11 @@
 #ifndef GrSimpleTextureEffect_DEFINED
 #define GrSimpleTextureEffect_DEFINED
 #include "SkTypes.h"
-#if SK_SUPPORT_GPU
 #include "GrFragmentProcessor.h"
 #include "GrCoordTransform.h"
 class GrSimpleTextureEffect : public GrFragmentProcessor {
 public:
-    SkMatrix44 matrix() const { return fMatrix; }
+    const SkMatrix44& matrix() const { return fMatrix; }
 
     static std::unique_ptr<GrFragmentProcessor> Make(sk_sp<GrTextureProxy> proxy,
                                                      const SkMatrix& matrix) {
@@ -49,24 +48,26 @@ private:
     GrSimpleTextureEffect(sk_sp<GrTextureProxy> image, SkMatrix44 matrix,
                           GrSamplerState samplerParams)
             : INHERITED(kGrSimpleTextureEffect_ClassID,
-                        (OptimizationFlags)kCompatibleWithCoverageAsAlpha_OptimizationFlag |
-                                (GrPixelConfigIsOpaque(image->config())
-                                         ? kPreservesOpaqueInput_OptimizationFlag
-                                         : kNone_OptimizationFlags))
+                        (OptimizationFlags)ModulateForSamplerOptFlags(
+                                image->config(),
+                                samplerParams.wrapModeX() ==
+                                                GrSamplerState::WrapMode::kClampToBorder ||
+                                        samplerParams.wrapModeY() ==
+                                                GrSamplerState::WrapMode::kClampToBorder))
             , fImage(std::move(image), samplerParams)
             , fMatrix(matrix)
             , fImageCoordTransform(matrix, fImage.proxy()) {
-        this->addTextureSampler(&fImage);
+        this->setTextureSamplerCnt(1);
         this->addCoordTransform(&fImageCoordTransform);
     }
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
     void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override;
     bool onIsEqual(const GrFragmentProcessor&) const override;
+    const TextureSampler& onTextureSampler(int) const override;
     GR_DECLARE_FRAGMENT_PROCESSOR_TEST
     TextureSampler fImage;
     SkMatrix44 fMatrix;
     GrCoordTransform fImageCoordTransform;
     typedef GrFragmentProcessor INHERITED;
 };
-#endif
 #endif

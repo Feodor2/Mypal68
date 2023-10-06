@@ -15,7 +15,7 @@ class SkXMLWriter;
 
 class SkSVGDevice : public SkClipStackDevice {
 public:
-    static SkBaseDevice* Create(const SkISize& size, SkXMLWriter* writer);
+    static sk_sp<SkBaseDevice> Make(const SkISize& size, std::unique_ptr<SkXMLWriter>);
 
 protected:
     void drawPaint(const SkPaint& paint) override;
@@ -27,31 +27,22 @@ protected:
     void drawRRect(const SkRRect& rr, const SkPaint& paint) override;
     void drawPath(const SkPath& path,
                   const SkPaint& paint,
-                  const SkMatrix* prePathMatrix = nullptr,
                   bool pathIsMutable = false) override;
 
-    void drawBitmap(const SkBitmap& bitmap, SkScalar x, SkScalar y, const SkPaint& paint) override;
     void drawSprite(const SkBitmap& bitmap,
                     int x, int y, const SkPaint& paint) override;
     void drawBitmapRect(const SkBitmap&,
                         const SkRect* srcOrNull, const SkRect& dst,
                         const SkPaint& paint, SkCanvas::SrcRectConstraint) override;
-
-    void drawText(const void* text, size_t len,
-                  SkScalar x, SkScalar y, const SkPaint& paint) override;
-    void drawPosText(const void* text, size_t len,
-                     const SkScalar pos[], int scalarsPerPos,
-                     const SkPoint& offset, const SkPaint& paint) override;
-    void drawTextOnPath(const void* text, size_t len,
-                        const SkPath& path, const SkMatrix* matrix,
-                        const SkPaint& paint) override;
-    void drawVertices(const SkVertices*, SkBlendMode, const SkPaint& paint) override;
+    void drawGlyphRunList(const SkGlyphRunList& glyphRunList) override;
+    void drawVertices(const SkVertices*, const SkVertices::Bone bones[], int boneCount, SkBlendMode,
+                      const SkPaint& paint) override;
 
     void drawDevice(SkBaseDevice*, int x, int y,
                     const SkPaint&) override;
 
 private:
-    SkSVGDevice(const SkISize& size, SkXMLWriter* writer);
+    SkSVGDevice(const SkISize& size, std::unique_ptr<SkXMLWriter>);
     ~SkSVGDevice() override;
 
     struct MxCp;
@@ -60,7 +51,7 @@ private:
     class AutoElement;
     class ResourceBucket;
 
-    SkXMLWriter*                    fWriter;
+    std::unique_ptr<SkXMLWriter>    fWriter;
     std::unique_ptr<AutoElement>    fRootElement;
     std::unique_ptr<ResourceBucket> fResourceBucket;
 

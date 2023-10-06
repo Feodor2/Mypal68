@@ -22,7 +22,6 @@ namespace wr {
 
 class RenderBufferTextureHost;
 class RenderTextureHostOGL;
-class RenderTextureHostWrapper;
 
 void ActivateBindAndTexParameteri(gl::GLContext* aGL, GLenum aActiveTexture,
                                   GLenum aBindTarget, GLuint aBindTexture,
@@ -38,10 +37,6 @@ class RenderTextureHost {
                                    wr::ImageRendering aRendering) = 0;
   virtual void Unlock() = 0;
   virtual void ClearCachedResources() {}
-
-  virtual RenderTextureHostWrapper* AsRenderTextureHostWrapper() {
-    return nullptr;
-  }
 
   virtual void PrepareForUse() {}
   virtual void NofityForUse() {}

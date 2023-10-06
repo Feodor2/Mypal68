@@ -18,7 +18,6 @@ namespace mozilla {
 namespace dom {
 class SVGElement;
 class SVGMatrix;
-}  // namespace dom
 
 /**
  * Class DOMSVGPoint
@@ -79,15 +78,16 @@ class DOMSVGPoint final : public nsISVGPoint {
   virtual float Y() override;
   virtual void SetY(float aY, ErrorResult& rv) override;
   virtual already_AddRefed<nsISVGPoint> MatrixTransform(
-      dom::SVGMatrix& matrix) override;
+      SVGMatrix& matrix) override;
   nsISupports* GetParentObject() override { return mList; }
 
   virtual DOMSVGPoint* Copy() override { return new DOMSVGPoint(this); }
 
  protected:
-  dom::SVGElement* Element() { return mList->Element(); }
+  SVGElement* Element() { return mList->Element(); }
 };
 
+}  // namespace dom
 }  // namespace mozilla
 
 #endif  // MOZILLA_DOMSVGPOINT_H__

@@ -137,14 +137,6 @@ bool FindAnimationsForCompositor(
     }
   }
 
-  // If the property will be added to the animations level of the cascade but
-  // there is an !important rule for that property in the cascade then the
-  // animation will not be applied since the !important rule overrides it.
-  if (effects->PropertiesWithImportantRules().Intersects(aPropertySet) &&
-      effects->PropertiesForAnimationsLevel().Intersects(aPropertySet)) {
-    return false;
-  }
-
   AnimationPerformanceWarning::Type warning =
       AnimationPerformanceWarning::Type::None;
   if (!EffectCompositor::AllowCompositorAnimationsOnFrame(aFrame, warning)) {
@@ -283,15 +275,15 @@ void EffectCompositor::PostRestyleForAnimation(dom::Element* aElement,
   }
 
   RestyleHint hint = aCascadeLevel == CascadeLevel::Transitions
-                         ? StyleRestyleHint_RESTYLE_CSS_TRANSITIONS
-                         : StyleRestyleHint_RESTYLE_CSS_ANIMATIONS;
+                         ? RestyleHint::RESTYLE_CSS_TRANSITIONS
+                         : RestyleHint::RESTYLE_CSS_ANIMATIONS;
 
   MOZ_ASSERT(NS_IsMainThread(),
              "Restyle request during restyling should be requested only on "
              "the main-thread. e.g. after the parallel traversal");
   if (ServoStyleSet::IsInServoTraversal() || mIsInPreTraverse) {
-    MOZ_ASSERT(hint == StyleRestyleHint_RESTYLE_CSS_ANIMATIONS ||
-               hint == StyleRestyleHint_RESTYLE_CSS_TRANSITIONS);
+    MOZ_ASSERT(hint == RestyleHint::RESTYLE_CSS_ANIMATIONS ||
+               hint == RestyleHint::RESTYLE_CSS_TRANSITIONS);
 
     // We can't call Servo_NoteExplicitHints here since AtomicRefCell does not
     // allow us mutate ElementData of the |aElement| in SequentialTask.
@@ -892,8 +884,8 @@ bool EffectCompositor::PreTraverseInSubtree(ServoTraversalFlags aFlags,
       mPresContext->RestyleManager()->PostRestyleEventForAnimations(
           target.mElement, target.mPseudoType,
           cascadeLevel == CascadeLevel::Transitions
-              ? StyleRestyleHint_RESTYLE_CSS_TRANSITIONS
-              : StyleRestyleHint_RESTYLE_CSS_ANIMATIONS);
+              ? RestyleHint::RESTYLE_CSS_TRANSITIONS
+              : RestyleHint::RESTYLE_CSS_ANIMATIONS);
 
       foundElementsNeedingRestyle = true;
 

@@ -630,10 +630,10 @@ static nscoord GetSpaceBetween(int32_t aPrevColIndex, int32_t aColIndex,
     } else {
       nsTableColFrame* colFrame = aTableFrame.GetColFrame(colIdx);
       const nsStyleVisibility* colVis = colFrame->StyleVisibility();
-      bool collapseCol = (NS_STYLE_VISIBILITY_COLLAPSE == colVis->mVisible);
+      bool collapseCol = StyleVisibility::Collapse == colVis->mVisible;
       nsIFrame* cgFrame = colFrame->GetParent();
       const nsStyleVisibility* groupVis = cgFrame->StyleVisibility();
-      bool collapseGroup = (NS_STYLE_VISIBILITY_COLLAPSE == groupVis->mVisible);
+      bool collapseGroup = StyleVisibility::Collapse == groupVis->mVisible;
       isCollapsed = collapseCol || collapseGroup;
       if (!isCollapsed)
         space += fifTable->GetColumnISizeFromFirstInFlow(colIdx);
@@ -987,7 +987,7 @@ void nsTableRowFrame::Reflow(nsPresContext* aPresContext,
 
   nsTableFrame* tableFrame = GetTableFrame();
   const nsStyleVisibility* rowVis = StyleVisibility();
-  bool collapseRow = (NS_STYLE_VISIBILITY_COLLAPSE == rowVis->mVisible);
+  bool collapseRow = StyleVisibility::Collapse == rowVis->mVisible;
   if (collapseRow) {
     tableFrame->SetNeedToCollapse(true);
   }
@@ -1087,7 +1087,7 @@ nscoord nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
                                                 bool aCollapseGroup,
                                                 bool& aDidCollapse) {
   const nsStyleVisibility* rowVis = StyleVisibility();
-  bool collapseRow = (NS_STYLE_VISIBILITY_COLLAPSE == rowVis->mVisible);
+  bool collapseRow = StyleVisibility::Collapse == rowVis->mVisible;
   nsTableFrame* tableFrame =
       static_cast<nsTableFrame*>(GetTableFrame()->FirstInFlow());
   if (collapseRow) {
@@ -1167,11 +1167,10 @@ nscoord nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
              colIdx++, actualColSpan--) {
           nsTableColFrame* colFrame = tableFrame->GetColFrame(colIdx);
           const nsStyleVisibility* colVis = colFrame->StyleVisibility();
-          bool collapseCol = (NS_STYLE_VISIBILITY_COLLAPSE == colVis->mVisible);
+          bool collapseCol = StyleVisibility::Collapse == colVis->mVisible;
           nsIFrame* cgFrame = colFrame->GetParent();
           const nsStyleVisibility* groupVis = cgFrame->StyleVisibility();
-          bool collapseGroup =
-              (NS_STYLE_VISIBILITY_COLLAPSE == groupVis->mVisible);
+          bool collapseGroup = StyleVisibility::Collapse == groupVis->mVisible;
           bool isCollapsed = collapseCol || collapseGroup;
           if (!isCollapsed) {
             cRect.ISize(wm) += fifTable->GetColumnISizeFromFirstInFlow(colIdx);
@@ -1181,7 +1180,7 @@ nscoord nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
                   tableFrame->GetColFrame(colIdx + 1);
               const nsStyleVisibility* nextColVis =
                   nextColFrame->StyleVisibility();
-              if ((NS_STYLE_VISIBILITY_COLLAPSE != nextColVis->mVisible) &&
+              if (StyleVisibility::Collapse != nextColVis->mVisible &&
                   tableFrame->ColumnHasCellSpacingBefore(colIdx + 1)) {
                 cRect.ISize(wm) += tableFrame->GetColSpacing(cellColIndex);
               }
@@ -1197,7 +1196,7 @@ nscoord nsTableRowFrame::CollapseRowIfNecessary(nscoord aRowOffset,
         for (actualRowSpan--; actualRowSpan > 0 && rowFrame; actualRowSpan--) {
           const nsStyleVisibility* nextRowVis = rowFrame->StyleVisibility();
           bool collapseNextRow =
-              (NS_STYLE_VISIBILITY_COLLAPSE == nextRowVis->mVisible);
+              StyleVisibility::Collapse == nextRowVis->mVisible;
           if (!collapseNextRow) {
             LogicalRect nextRect = rowFrame->GetLogicalRect(wm, containerSize);
             cRect.BSize(wm) +=

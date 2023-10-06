@@ -344,6 +344,9 @@ void HeadlessWidget::ApplySizeModeSideEffects() {
   }
 
   mEffectiveSizeMode = mSizeMode;
+  if (mWidgetListener) {
+    mWidgetListener->SizeModeChanged(mSizeMode);
+  }
 }
 
 nsresult HeadlessWidget::MakeFullScreen(bool aFullScreen,

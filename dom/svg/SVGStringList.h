@@ -11,12 +11,16 @@
 
 namespace mozilla {
 
+namespace dom {
+class DOMSVGStringList;
+}
+
 /**
  *
  * The DOM wrapper class for this class is DOMSVGStringList.
  */
 class SVGStringList {
-  friend class DOMSVGStringList;
+  friend class dom::DOMSVGStringList;
 
  public:
   SVGStringList() : mIsSet(false), mIsCommaSeparated(false) {}

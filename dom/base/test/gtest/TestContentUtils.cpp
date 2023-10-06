@@ -6,6 +6,7 @@
 
 #include "jsapi.h"
 #include "nsContentUtils.h"
+#include "nsNetUtil.h"
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/dom/SimpleGlobalObject.h"
 

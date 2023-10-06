@@ -5,17 +5,18 @@
  * found in the LICENSE file.
  */
 
+#include "SkLiteDL.h"
+#include <algorithm>
 #include "SkCanvas.h"
+#include "SkCanvasPriv.h"
 #include "SkData.h"
-#include "SkDrawFilter.h"
 #include "SkDrawShadowInfo.h"
 #include "SkImage.h"
 #include "SkImageFilter.h"
-#include "SkLiteDL.h"
 #include "SkMath.h"
 #include "SkPicture.h"
-#include "SkRegion.h"
 #include "SkRSXform.h"
+#include "SkRegion.h"
 #include "SkTextBlob.h"
 #include "SkVertices.h"
 
@@ -47,15 +48,15 @@ static const D* pod(const T* op, size_t offset = 0) {
 }
 
 namespace {
-#define TYPES(M)                                                               \
-    M(SetDrawFilter) M(Flush) M(Save) M(Restore) M(SaveLayer)                   \
-    M(Concat) M(SetMatrix) M(Translate)                                         \
-    M(ClipPath) M(ClipRect) M(ClipRRect) M(ClipRegion)                          \
-    M(DrawPaint) M(DrawPath) M(DrawRect) M(DrawRegion) M(DrawOval) M(DrawArc)   \
-    M(DrawRRect) M(DrawDRRect) M(DrawAnnotation) M(DrawDrawable) M(DrawPicture) \
-    M(DrawImage) M(DrawImageNine) M(DrawImageRect) M(DrawImageLattice)          \
-    M(DrawText) M(DrawPosText) M(DrawPosTextH)                                  \
-    M(DrawTextOnPath) M(DrawTextRSXform) M(DrawTextBlob)                        \
+#define TYPES(M)                                                                       \
+    M(Flush) M(Save) M(Restore) M(SaveLayer) M(SaveBehind)                             \
+    M(Concat) M(SetMatrix) M(Translate)                                                \
+    M(ClipPath) M(ClipRect) M(ClipRRect) M(ClipRegion)                                 \
+    M(DrawPaint) M(DrawPath) M(DrawRect) M(DrawEdgeAARect)                             \
+    M(DrawRegion) M(DrawOval) M(DrawArc)                                               \
+    M(DrawRRect) M(DrawDRRect) M(DrawAnnotation) M(DrawDrawable) M(DrawPicture)        \
+    M(DrawImage) M(DrawImageNine) M(DrawImageRect) M(DrawImageLattice) M(DrawImageSet) \
+    M(DrawTextBlob)                                                                    \
     M(DrawPatch) M(DrawPoints) M(DrawVertices) M(DrawAtlas) M(DrawShadowRec)
 
 #define M(T) T,
@@ -67,19 +68,6 @@ namespace {
         uint32_t skip : 24;
     };
     static_assert(sizeof(Op) == 4, "");
-
-    struct SetDrawFilter final : Op {
-#ifdef SK_SUPPORT_LEGACY_DRAWFILTER
-        static const auto kType = Type::SetDrawFilter;
-        SetDrawFilter(SkDrawFilter* df) : drawFilter(sk_ref_sp(df)) {}
-        sk_sp<SkDrawFilter> drawFilter;
-#endif
-        void draw(SkCanvas* c, const SkMatrix&) const {
-#ifdef SK_SUPPORT_LEGACY_DRAWFILTER
-            c->setDrawFilter(drawFilter.get());
-#endif
-        }
-    };
 
     struct Flush final : Op {
         static const auto kType = Type::Flush;
@@ -117,7 +105,16 @@ namespace {
                            clipMatrix.isIdentity() ? nullptr : &clipMatrix, flags });
         }
     };
-
+    struct SaveBehind final : Op {
+        static const auto kType = Type::SaveBehind;
+        SaveBehind(const SkRect* subset) {
+            if (subset) { this->subset = *subset; }
+        }
+        SkRect  subset = kUnset;
+        void draw(SkCanvas* c, const SkMatrix&) const {
+            SkCanvasPriv::SaveBehind(c, maybe_unset(subset));
+        }
+    };
     struct Concat final : Op {
         static const auto kType = Type::Concat;
         Concat(const SkMatrix& matrix) : matrix(matrix) {}
@@ -192,6 +189,19 @@ namespace {
         SkRect  rect;
         SkPaint paint;
         void draw(SkCanvas* c, const SkMatrix&) const { c->drawRect(rect, paint); }
+    };
+    struct DrawEdgeAARect final : Op {
+        static const auto kType = Type::DrawEdgeAARect;
+        DrawEdgeAARect(const SkRect& rect, SkCanvas::QuadAAFlags aa, SkColor color,
+                       SkBlendMode mode)
+            : rect(rect), aa(aa), color(color), mode(mode) {}
+        SkRect rect;
+        SkCanvas::QuadAAFlags aa;
+        SkColor color;
+        SkBlendMode mode;
+        void draw(SkCanvas* c, const SkMatrix&) const {
+            c->experimental_DrawEdgeAARectV1(rect, aa, color, mode);
+        }
     };
     struct DrawRegion final : Op {
         static const auto kType = Type::DrawRegion;
@@ -304,7 +314,7 @@ namespace {
         DrawImageRect(sk_sp<const SkImage>&& image, const SkRect* src, const SkRect& dst,
                       const SkPaint* paint, SkCanvas::SrcRectConstraint constraint)
             : image(std::move(image)), dst(dst), constraint(constraint) {
-            this->src = src ? *src : SkRect::MakeIWH(image->width(), image->height());
+            this->src = src ? *src : SkRect::MakeIWH(this->image->width(), this->image->height());
             if (paint) { this->paint = *paint; }
         }
         sk_sp<const SkImage> image;
@@ -339,77 +349,19 @@ namespace {
                                 &paint);
         }
     };
-
-    struct DrawText final : Op {
-        static const auto kType = Type::DrawText;
-        DrawText(size_t bytes, SkScalar x, SkScalar y, const SkPaint& paint)
-            : bytes(bytes), x(x), y(y), paint(paint) {}
-        size_t bytes;
-        SkScalar x,y;
-        SkPaint paint;
+    struct DrawImageSet final : Op {
+        static const auto kType = Type::DrawImageSet;
+        DrawImageSet(const SkCanvas::ImageSetEntry set[], int count, SkFilterQuality quality,
+                     SkBlendMode xfermode)
+                : count(count), quality(quality), xfermode(xfermode), set(count) {
+            std::copy_n(set, count, this->set.get());
+        }
+        int                                   count;
+        SkFilterQuality                       quality;
+        SkBlendMode                           xfermode;
+        SkAutoTArray<SkCanvas::ImageSetEntry> set;
         void draw(SkCanvas* c, const SkMatrix&) const {
-            c->drawText(pod<void>(this), bytes, x,y, paint);
-        }
-    };
-    struct DrawPosText final : Op {
-        static const auto kType = Type::DrawPosText;
-        DrawPosText(size_t bytes, const SkPaint& paint, int n)
-            : bytes(bytes), paint(paint), n(n) {}
-        size_t bytes;
-        SkPaint paint;
-        int n;
-        void draw(SkCanvas* c, const SkMatrix&) const {
-            auto points = pod<SkPoint>(this);
-            auto text   = pod<void>(this, n*sizeof(SkPoint));
-            c->drawPosText(text, bytes, points, paint);
-        }
-    };
-    struct DrawPosTextH final : Op {
-        static const auto kType = Type::DrawPosTextH;
-        DrawPosTextH(size_t bytes, SkScalar y, const SkPaint& paint, int n)
-            : bytes(bytes), y(y), paint(paint), n(n) {}
-        size_t   bytes;
-        SkScalar y;
-        SkPaint  paint;
-        int n;
-        void draw(SkCanvas* c, const SkMatrix&) const {
-            auto xs   = pod<SkScalar>(this);
-            auto text = pod<void>(this, n*sizeof(SkScalar));
-            c->drawPosTextH(text, bytes, xs, y, paint);
-        }
-    };
-    struct DrawTextOnPath final : Op {
-        static const auto kType = Type::DrawTextOnPath;
-        DrawTextOnPath(size_t bytes, const SkPath& path,
-                       const SkMatrix* matrix, const SkPaint& paint)
-            : bytes(bytes), path(path), paint(paint) {
-            if (matrix) { this->matrix = *matrix; }
-        }
-        size_t   bytes;
-        SkPath   path;
-        SkMatrix matrix = SkMatrix::I();
-        SkPaint  paint;
-        void draw(SkCanvas* c, const SkMatrix&) const {
-            c->drawTextOnPath(pod<void>(this), bytes, path, &matrix, paint);
-        }
-    };
-    struct DrawTextRSXform final : Op {
-        static const auto kType = Type::DrawTextRSXform;
-        DrawTextRSXform(size_t bytes, int xforms, const SkRect* cull, const SkPaint& paint)
-            : bytes(bytes), xforms(xforms), paint(paint) {
-            if (cull) { this->cull = *cull; }
-        }
-        size_t  bytes;
-        int     xforms;
-        SkRect  cull = kUnset;
-        SkPaint paint;
-        void draw(SkCanvas* c, const SkMatrix&) const {
-            // For alignment, the SkRSXforms are first in the pod section, followed by the text.
-            c->drawTextRSXform(pod<void>(this,xforms*sizeof(SkRSXform)),
-                               bytes,
-                               pod<SkRSXform>(this),
-                               maybe_unset(cull),
-                               paint);
+            c->experimental_DrawImageSetV1(set.get(), count, quality, xfermode);
         }
     };
     struct DrawTextBlob final : Op {
@@ -459,13 +411,17 @@ namespace {
     };
     struct DrawVertices final : Op {
         static const auto kType = Type::DrawVertices;
-        DrawVertices(const SkVertices* v, SkBlendMode m, const SkPaint& p)
-            : vertices(sk_ref_sp(const_cast<SkVertices*>(v))), mode(m), paint(p) {}
+        DrawVertices(const SkVertices* v, int bc, SkBlendMode m, const SkPaint& p)
+            : vertices(sk_ref_sp(const_cast<SkVertices*>(v)))
+            , boneCount(bc)
+            , mode(m)
+            , paint(p) {}
         sk_sp<SkVertices> vertices;
+        int boneCount;
         SkBlendMode mode;
         SkPaint paint;
         void draw(SkCanvas* c, const SkMatrix&) const {
-            c->drawVertices(vertices, mode, paint);
+            c->drawVertices(vertices, pod<SkVertices::Bone>(this), boneCount, mode, paint);
         }
     };
     struct DrawAtlas final : Op {
@@ -538,12 +494,6 @@ inline void SkLiteDL::map(const Fn fns[], Args... args) const {
     }
 }
 
-#ifdef SK_SUPPORT_LEGACY_DRAWFILTER
-void SkLiteDL::setDrawFilter(SkDrawFilter* df) {
-    this->push<SetDrawFilter>(0, df);
-}
-#endif
-
 void SkLiteDL::flush() { this->push<Flush>(0); }
 
 void SkLiteDL::   save() { this->push   <Save>(0); }
@@ -552,6 +502,9 @@ void SkLiteDL::saveLayer(const SkRect* bounds, const SkPaint* paint,
                          const SkImageFilter* backdrop, const SkImage* clipMask,
                          const SkMatrix* clipMatrix, SkCanvas::SaveLayerFlags flags) {
     this->push<SaveLayer>(0, bounds, paint, backdrop, clipMask, clipMatrix, flags);
+}
+void SkLiteDL::saveBehind(const SkRect* subset) {
+    this->push<SaveBehind>(0, subset);
 }
 
 void SkLiteDL::   concat(const SkMatrix& matrix)   { this->push   <Concat>(0, matrix); }
@@ -579,6 +532,10 @@ void SkLiteDL::drawPath(const SkPath& path, const SkPaint& paint) {
 }
 void SkLiteDL::drawRect(const SkRect& rect, const SkPaint& paint) {
     this->push<DrawRect>(0, rect, paint);
+}
+void SkLiteDL::drawEdgeAARect(const SkRect& rect, SkCanvas::QuadAAFlags aa, SkColor color,
+                              SkBlendMode mode) {
+    this->push<DrawEdgeAARect>(0, rect, aa, color, mode);
 }
 void SkLiteDL::drawRegion(const SkRegion& region, const SkPaint& paint) {
     this->push<DrawRegion>(0, region, paint);
@@ -635,34 +592,11 @@ void SkLiteDL::drawImageLattice(sk_sp<const SkImage> image, const SkCanvas::Latt
                 lattice.fRectTypes, fs);
 }
 
-void SkLiteDL::drawText(const void* text, size_t bytes,
-                        SkScalar x, SkScalar y, const SkPaint& paint) {
-    void* pod = this->push<DrawText>(bytes, bytes, x, y, paint);
-    copy_v(pod, (const char*)text,bytes);
+void SkLiteDL::drawImageSet(const SkCanvas::ImageSetEntry set[], int count,
+                            SkFilterQuality filterQuality, SkBlendMode mode) {
+    this->push<DrawImageSet>(0, set, count, filterQuality, mode);
 }
-void SkLiteDL::drawPosText(const void* text, size_t bytes,
-                           const SkPoint pos[], const SkPaint& paint) {
-    int n = paint.countText(text, bytes);
-    void* pod = this->push<DrawPosText>(n*sizeof(SkPoint)+bytes, bytes, paint, n);
-    copy_v(pod, pos,n, (const char*)text,bytes);
-}
-void SkLiteDL::drawPosTextH(const void* text, size_t bytes,
-                           const SkScalar xs[], SkScalar y, const SkPaint& paint) {
-    int n = paint.countText(text, bytes);
-    void* pod = this->push<DrawPosTextH>(n*sizeof(SkScalar)+bytes, bytes, y, paint, n);
-    copy_v(pod, xs,n, (const char*)text,bytes);
-}
-void SkLiteDL::drawTextOnPath(const void* text, size_t bytes,
-                              const SkPath& path, const SkMatrix* matrix, const SkPaint& paint) {
-    void* pod = this->push<DrawTextOnPath>(bytes, bytes, path, matrix, paint);
-    copy_v(pod, (const char*)text,bytes);
-}
-void SkLiteDL::drawTextRSXform(const void* text, size_t bytes,
-                               const SkRSXform xforms[], const SkRect* cull, const SkPaint& paint) {
-    int n = paint.countText(text, bytes);
-    void* pod = this->push<DrawTextRSXform>(bytes+n*sizeof(SkRSXform), bytes, n, cull, paint);
-    copy_v(pod, xforms,n, (const char*)text,bytes);
-}
+
 void SkLiteDL::drawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y, const SkPaint& paint) {
     this->push<DrawTextBlob>(0, blob, x,y, paint);
 }
@@ -676,8 +610,14 @@ void SkLiteDL::drawPoints(SkCanvas::PointMode mode, size_t count, const SkPoint 
     void* pod = this->push<DrawPoints>(count*sizeof(SkPoint), mode, count, paint);
     copy_v(pod, points,count);
 }
-void SkLiteDL::drawVertices(const SkVertices* vertices, SkBlendMode mode, const SkPaint& paint) {
-    this->push<DrawVertices>(0, vertices, mode, paint);
+void SkLiteDL::drawVertices(const SkVertices* vertices, const SkVertices::Bone bones[],
+                            int boneCount, SkBlendMode mode, const SkPaint& paint) {
+    void* pod = this->push<DrawVertices>(boneCount * sizeof(SkVertices::Bone),
+                                         vertices,
+                                         boneCount,
+                                         mode,
+                                         paint);
+    copy_v(pod, bones, boneCount);
 }
 void SkLiteDL::drawAtlas(const SkImage* atlas, const SkRSXform xforms[], const SkRect texs[],
                          const SkColor colors[], int count, SkBlendMode xfermode,
@@ -706,16 +646,11 @@ typedef void(*void_fn)(const void*);
 static const draw_fn draw_fns[] = { TYPES(M) };
 #undef M
 
-// Older libstdc++ has pre-standard std::has_trivial_destructor.
-#if defined(__GLIBCXX__) && (__GLIBCXX__ < 20130000)
-    template <typename T> using can_skip_destructor = std::has_trivial_destructor<T>;
-#else
-    template <typename T> using can_skip_destructor = std::is_trivially_destructible<T>;
-#endif
-
 // Most state ops (matrix, clip, save, restore) have a trivial destructor.
-#define M(T) !can_skip_destructor<T>::value ? [](const void* op) { ((const T*)op)->~T(); } \
-                                            : (void_fn)nullptr,
+#define M(T) !std::is_trivially_destructible<T>::value \
+    ? [](const void* op) { ((const T*)op)->~T(); }     \
+    : (void_fn)nullptr,
+
 static const void_fn dtor_fns[] = { TYPES(M) };
 #undef M
 

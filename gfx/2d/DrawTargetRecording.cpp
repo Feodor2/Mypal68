@@ -529,19 +529,12 @@ bool DrawTargetRecording::CanCreateSimilarDrawTarget(
 }
 
 RefPtr<DrawTarget> DrawTargetRecording::CreateClippedDrawTarget(
-    const IntSize& aMaxSize, const Matrix& aTransform,
-    SurfaceFormat aFormat) const {
+    const Rect& aBounds, SurfaceFormat aFormat) {
   RefPtr<DrawTarget> similarDT;
-  if (mFinalDT->CanCreateSimilarDrawTarget(aMaxSize, aFormat)) {
-    similarDT = new DrawTargetRecording(this, mRect, aFormat);
-    mRecorder->RecordEvent(RecordedCreateClippedDrawTarget(
-        similarDT.get(), aMaxSize, aTransform, aFormat));
-  } else if (XRE_IsContentProcess()) {
-    // See CreateSimilarDrawTarget
-    MOZ_CRASH(
-        "Content-process DrawTargetRecording can't create requested clipped "
-        "drawtarget");
-  }
+  similarDT = new DrawTargetRecording(this, mRect, aFormat);
+  mRecorder->RecordEvent(
+      RecordedCreateClippedDrawTarget(this, similarDT.get(), aBounds, aFormat));
+  similarDT->SetTransform(mTransform);
   return similarDT;
 }
 

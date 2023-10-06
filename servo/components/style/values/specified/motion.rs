@@ -16,11 +16,24 @@ use style_traits::{ParseError, StyleParseErrorKind};
 /// The specified value of `offset-path`.
 pub type OffsetPath = GenericOffsetPath<Angle>;
 
+#[cfg(feature = "gecko")]
+fn is_ray_enabled() -> bool {
+    static_prefs::pref!("layout.css.motion-path-ray.enabled")
+}
+#[cfg(feature = "servo")]
+fn is_ray_enabled() -> bool {
+    false
+}
+
 impl Parse for RayFunction<Angle> {
     fn parse<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
+        if !is_ray_enabled() {
+            return Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+        }
+
         let mut angle = None;
         let mut size = None;
         let mut contain = false;
@@ -128,6 +141,23 @@ pub struct OffsetRotate {
     /// the angle of the direction in layout.
     #[css(contextual_skip_if = "direction_specified_and_angle_is_zero")]
     angle: Angle,
+}
+
+impl OffsetRotate {
+    /// Returns the initial value, auto.
+    #[inline]
+    pub fn auto() -> Self {
+        OffsetRotate {
+            direction: OffsetRotateDirection::Auto,
+            angle: Angle::zero(),
+        }
+    }
+
+    /// Returns true if self is auto 0deg.
+    #[inline]
+    pub fn is_auto(&self) -> bool {
+        self.direction == OffsetRotateDirection::Auto && self.angle.is_zero()
+    }
 }
 
 impl Parse for OffsetRotate {

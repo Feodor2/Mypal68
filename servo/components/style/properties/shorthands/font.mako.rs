@@ -8,7 +8,6 @@
 <%helpers:shorthand
     name="font"
     engines="gecko servo-2013 servo-2020"
-    servo_2020_pref="layout.2020.unimplemented"
     sub_properties="
         font-style
         font-variant-caps
@@ -221,7 +220,7 @@
             self.font_size.to_css(dest)?;
 
             if *self.line_height != LineHeight::normal() {
-                dest.write_str("/")?;
+                dest.write_str(" / ")?;
                 self.line_height.to_css(dest)?;
             }
 

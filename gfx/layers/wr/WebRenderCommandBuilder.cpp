@@ -263,16 +263,10 @@ static bool IsContainerLayerItem(nsDisplayItem* aItem) {
 static bool DetectContainerLayerPropertiesBoundsChange(
     nsDisplayItem* aItem, BlobItemData* aData,
     nsDisplayItemGeometry& aGeometry) {
-  switch (aItem->GetType()) {
-    case DisplayItemType::TYPE_MASK:
-    case DisplayItemType::TYPE_FILTER: {
-      // These two items go through BasicLayerManager composition which clips to
-      // the BuildingRect
-      aGeometry.mBounds = aGeometry.mBounds.Intersect(aItem->GetBuildingRect());
-      break;
-    }
-    default:
-      break;
+  if (aItem->GetType() == DisplayItemType::TYPE_FILTER) {
+    // Filters go through BasicLayerManager composition which clips to
+    // the BuildingRect
+    aGeometry.mBounds = aGeometry.mBounds.Intersect(aItem->GetBuildingRect());
   }
 
   return !aGeometry.mBounds.IsEqualEdges(aData->mGeometry->mBounds);
@@ -297,18 +291,25 @@ struct DIGroup {
 
   IntRect mInvalidRect;
   nsRect mGroupBounds;
-  LayerIntRect mPaintRect;
+  LayerIntRect mVisibleRect;
+  // This is the last visible rect sent to WebRender. It's used
+  // to compute the invalid rect and ensure that we send
+  // the appropriate data to WebRender for merging.
+  LayerIntRect mLastVisibleRect;
+
+  // This is the intersection of mVisibleRect and mLastVisibleRect
+  // we ensure that mInvalidRect is contained in mPreservedRect
+  IntRect mPreservedRect;
+  IntRect mActualBounds;
   int32_t mAppUnitsPerDevPixel;
   gfx::Size mScale;
   ScrollableLayerGuid::ViewID mScrollId;
   LayerPoint mResidualOffset;
-  LayerIntRect mLayerBounds;
-  // The current bounds of the blob image, relative to
-  // the top-left of the mLayerBounds.
-  IntRect mImageBounds;
-  // mImageBounds clipped to the container/parent of the
+  LayerIntRect mLayerBounds;  // mGroupBounds converted to Layer space
+  // mLayerBounds clipped to the container/parent of the
   // current item being processed.
-  IntRect mClippedImageBounds;
+  IntRect mClippedImageBounds;  // mLayerBounds with the clipping of any
+                                // containers applied
   Maybe<mozilla::Pair<wr::RenderRoot, wr::BlobImageKey>> mKey;
   std::vector<RefPtr<ScaledFont>> mFonts;
 
@@ -317,8 +318,11 @@ struct DIGroup {
         mScrollId(ScrollableLayerGuid::NULL_SCROLL_ID) {}
 
   void InvalidateRect(const IntRect& aRect) {
+    auto r = aRect.Intersect(mPreservedRect);
     // Empty rects get dropped
-    mInvalidRect = mInvalidRect.Union(aRect);
+    if (!r.IsEmpty()) {
+      mInvalidRect = mInvalidRect.Union(r);
+    }
   }
 
   IntRect ItemBounds(nsDisplayItem* aItem) {
@@ -346,16 +350,14 @@ struct DIGroup {
   }
 
   static IntRect ToDeviceSpace(nsRect aBounds, Matrix& aMatrix,
-                               int32_t aAppUnitsPerDevPixel,
-                               LayerIntPoint aOffset) {
+                               int32_t aAppUnitsPerDevPixel) {
     // RoundedOut can convert empty rectangles to non-empty ones
     // so special case them here
     if (aBounds.IsEmpty()) {
       return IntRect();
     }
-    return RoundedOut(aMatrix.TransformBounds(ToRect(
-               nsLayoutUtils::RectToGfxRect(aBounds, aAppUnitsPerDevPixel)))) -
-           aOffset.ToUnknownPoint();
+    return RoundedOut(aMatrix.TransformBounds(
+        ToRect(nsLayoutUtils::RectToGfxRect(aBounds, aAppUnitsPerDevPixel))));
   }
 
   void ComputeGeometryChange(nsDisplayItem* aItem, BlobItemData* aData,
@@ -370,14 +372,12 @@ struct DIGroup {
     int32_t appUnitsPerDevPixel =
         aItem->Frame()->PresContext()->AppUnitsPerDevPixel();
     MOZ_RELEASE_ASSERT(mAppUnitsPerDevPixel == appUnitsPerDevPixel);
-    LayoutDeviceRect bounds =
-        LayoutDeviceRect::FromAppUnits(mGroupBounds, appUnitsPerDevPixel);
-    LayoutDeviceIntPoint offset = RoundedToInt(bounds.TopLeft());
     GP("\n");
-    GP("CGC offset %d %d\n", offset.x, offset.y);
     GP("clippedImageRect %d %d %d %d\n", mClippedImageBounds.x,
        mClippedImageBounds.y, mClippedImageBounds.width,
        mClippedImageBounds.height);
+    LayerIntSize size = mVisibleRect.Size();
+    GP("imageSize: %d %d\n", size.width, size.height);
     /*if (aItem->IsReused() && aData->mGeometry) {
       return;
     }*/
@@ -395,12 +395,12 @@ struct DIGroup {
           geometry->ComputeInvalidationRegion());
       aData->mGeometry = std::move(geometry);
 
-      IntRect transformedRect = ToDeviceSpace(
-          clippedBounds, aMatrix, appUnitsPerDevPixel, mLayerBounds.TopLeft());
+      IntRect transformedRect =
+          ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel);
       aData->mRect = transformedRect.Intersect(mClippedImageBounds);
       GP("CGC %s %d %d %d %d\n", aItem->Name(), clippedBounds.x,
          clippedBounds.y, clippedBounds.width, clippedBounds.height);
-      GP("%d %d,  %f %f\n", mLayerBounds.TopLeft().x, mLayerBounds.TopLeft().y,
+      GP("%d %d,  %f %f\n", mVisibleRect.TopLeft().x, mVisibleRect.TopLeft().y,
          aMatrix._11, aMatrix._22);
       GP("mRect %d %d %d %d\n", aData->mRect.x, aData->mRect.y,
          aData->mRect.width, aData->mRect.height);
@@ -409,7 +409,6 @@ struct DIGroup {
     } else if (aData->mInvalid ||
                /* XXX: handle image load invalidation */ (
                    aItem->IsInvalid(invalid) && invalid.IsEmpty())) {
-      MOZ_RELEASE_ASSERT(mLayerBounds.TopLeft() == aData->mGroupOffset);
       UniquePtr<nsDisplayItemGeometry> geometry(
           aItem->AllocateGeometry(aBuilder));
       nsRect clippedBounds = clip.ApplyNonRoundedIntersection(
@@ -420,20 +419,19 @@ struct DIGroup {
       GP("frame invalid invalidate: %s\n", aItem->Name());
       GP("old rect: %d %d %d %d\n", aData->mRect.x, aData->mRect.y,
          aData->mRect.width, aData->mRect.height);
-      InvalidateRect(aData->mRect.Intersect(mImageBounds));
+      InvalidateRect(aData->mRect);
       // We want to snap to outside pixels. When should we multiply by the
       // matrix?
       // XXX: TransformBounds is expensive. We should avoid doing it if we have
       // no transform
-      IntRect transformedRect = ToDeviceSpace(
-          clippedBounds, aMatrix, appUnitsPerDevPixel, mLayerBounds.TopLeft());
+      IntRect transformedRect =
+          ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel);
       aData->mRect = transformedRect.Intersect(mClippedImageBounds);
       InvalidateRect(aData->mRect);
       GP("new rect: %d %d %d %d\n", aData->mRect.x, aData->mRect.y,
          aData->mRect.width, aData->mRect.height);
       aData->mInvalid = true;
     } else {
-      MOZ_RELEASE_ASSERT(mLayerBounds.TopLeft() == aData->mGroupOffset);
       GP("else invalidate: %s\n", aItem->Name());
       nsRegion combined;
       // this includes situations like reflow changing the position
@@ -442,9 +440,8 @@ struct DIGroup {
       if (!combined.IsEmpty()) {
         // There might be no point in doing this elaborate tracking here to get
         // smaller areas
-        InvalidateRect(aData->mRect.Intersect(
-            mImageBounds));  // invalidate the old area -- in theory combined
-                             // should take care of this
+        InvalidateRect(aData->mRect);  // invalidate the old area -- in theory
+                                       // combined should take care of this
         UniquePtr<nsDisplayItemGeometry> geometry(
             aItem->AllocateGeometry(aBuilder));
         // invalidate the invalidated area.
@@ -454,18 +451,9 @@ struct DIGroup {
         nsRect clippedBounds = clip.ApplyNonRoundedIntersection(
             aData->mGeometry->ComputeInvalidationRegion());
         IntRect transformedRect =
-            ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel,
-                          mLayerBounds.TopLeft());
+            ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel);
         aData->mRect = transformedRect.Intersect(mClippedImageBounds);
         InvalidateRect(aData->mRect);
-
-        // CGC invariant broken
-        if (!mInvalidRect.Contains(aData->mRect)) {
-          gfxCriticalError()
-              << "CGC-"
-              << "-" << aData->mRect.x << "-" << aData->mRect.y << "-"
-              << aData->mRect.width << "-" << aData->mRect.height << "-ib";
-        }
 
         aData->mInvalid = true;
         aData->mInvalidRegion = true;
@@ -485,9 +473,8 @@ struct DIGroup {
           nsRect clippedBounds = clip.ApplyNonRoundedIntersection(
               aData->mGeometry->ComputeInvalidationRegion());
           IntRect transformedRect =
-              ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel,
-                            mLayerBounds.TopLeft());
-          InvalidateRect(aData->mRect.Intersect(mImageBounds));
+              ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel);
+          InvalidateRect(aData->mRect);
           aData->mRect = transformedRect.Intersect(mClippedImageBounds);
           InvalidateRect(aData->mRect);
 
@@ -515,9 +502,8 @@ struct DIGroup {
           nsRect clippedBounds = clip.ApplyNonRoundedIntersection(
               aData->mGeometry->ComputeInvalidationRegion());
           IntRect transformedRect =
-              ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel,
-                            mLayerBounds.TopLeft());
-          InvalidateRect(aData->mRect.Intersect(mImageBounds));
+              ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel);
+          InvalidateRect(aData->mRect);
           aData->mRect = transformedRect.Intersect(mClippedImageBounds);
           InvalidateRect(aData->mRect);
 
@@ -534,72 +520,53 @@ struct DIGroup {
                 geometry->ComputeInvalidationRegion());
             aData->mGeometry = std::move(geometry);
             IntRect transformedRect =
-                ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel,
-                              mLayerBounds.TopLeft());
-            InvalidateRect(aData->mRect.Intersect(mImageBounds));
+                ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel);
+            InvalidateRect(aData->mRect);
             aData->mRect = transformedRect.Intersect(mClippedImageBounds);
             InvalidateRect(aData->mRect);
             GP("DetectContainerLayerPropertiesBoundsChange change\n");
-          } else if (!aData->mImageRect.IsEqualEdges(mClippedImageBounds)) {
-            // Make sure we update mRect for mClippedImageBounds changes
-            nsRect clippedBounds = clip.ApplyNonRoundedIntersection(
-                geometry->ComputeInvalidationRegion());
-            IntRect transformedRect =
-                ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel,
-                              mLayerBounds.TopLeft());
-            // The invalid rect should contain the old rect and the new rect
-            // but may not because the parent may have been removed.
-            InvalidateRect(aData->mRect);
-            aData->mRect = transformedRect.Intersect(mClippedImageBounds);
-            InvalidateRect(aData->mRect);
-            GP("ContainerLayer image rect bounds change\n");
           } else {
-            // XXX: this code can eventually be deleted/made debug only
+            // Handle changes in mClippedImageBounds
             nsRect clippedBounds = clip.ApplyNonRoundedIntersection(
                 geometry->ComputeInvalidationRegion());
             IntRect transformedRect =
-                ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel,
-                              mLayerBounds.TopLeft());
+                ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel);
             auto rect = transformedRect.Intersect(mClippedImageBounds);
-            GP("Layer NoChange: %s %d %d %d %d\n", aItem->Name(),
-               aData->mRect.x, aData->mRect.y, aData->mRect.XMost(),
-               aData->mRect.YMost());
-            MOZ_RELEASE_ASSERT(rect.IsEqualEdges(aData->mRect));
+            if (!rect.IsEqualEdges(aData->mRect)) {
+              GP("ContainerLayer image rect bounds change\n");
+              InvalidateRect(aData->mRect);
+              aData->mRect = rect;
+              InvalidateRect(aData->mRect);
+            } else {
+              GP("Layer NoChange: %s %d %d %d %d\n", aItem->Name(),
+                 aData->mRect.x, aData->mRect.y, aData->mRect.XMost(),
+                 aData->mRect.YMost());
+            }
           }
-        } else if (!aData->mImageRect.IsEqualEdges(mClippedImageBounds)) {
-          // Make sure we update mRect for mClippedImageBounds changes
-          UniquePtr<nsDisplayItemGeometry> geometry(
-              aItem->AllocateGeometry(aBuilder));
-          nsRect clippedBounds = clip.ApplyNonRoundedIntersection(
-              geometry->ComputeInvalidationRegion());
-          IntRect transformedRect =
-              ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel,
-                            mLayerBounds.TopLeft());
-          // The invalid rect should contain the old rect and the new rect
-          // but may not because the parent may have been removed.
-          InvalidateRect(aData->mRect);
-          aData->mRect = transformedRect.Intersect(mClippedImageBounds);
-          InvalidateRect(aData->mRect);
-          GP("image rect bounds change\n");
         } else {
-          // XXX: this code can eventually be deleted/made debug only
           UniquePtr<nsDisplayItemGeometry> geometry(
               aItem->AllocateGeometry(aBuilder));
           nsRect clippedBounds = clip.ApplyNonRoundedIntersection(
               geometry->ComputeInvalidationRegion());
           IntRect transformedRect =
-              ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel,
-                            mLayerBounds.TopLeft());
+              ToDeviceSpace(clippedBounds, aMatrix, appUnitsPerDevPixel);
           auto rect = transformedRect.Intersect(mClippedImageBounds);
-          GP("NoChange: %s %d %d %d %d\n", aItem->Name(), aData->mRect.x,
-             aData->mRect.y, aData->mRect.XMost(), aData->mRect.YMost());
-          MOZ_RELEASE_ASSERT(rect.IsEqualEdges(aData->mRect));
+          // Make sure we update mRect for mClippedImageBounds changes
+          if (!rect.IsEqualEdges(aData->mRect)) {
+            GP("ContainerLayer image rect bounds change\n");
+            InvalidateRect(aData->mRect);
+            aData->mRect = rect;
+            InvalidateRect(aData->mRect);
+          } else {
+            GP("NoChange: %s %d %d %d %d\n", aItem->Name(), aData->mRect.x,
+               aData->mRect.y, aData->mRect.XMost(), aData->mRect.YMost());
+          }
         }
       }
     }
+    mActualBounds.OrWith(aData->mRect);
     aData->mClip = clip;
     aData->mMatrix = aMatrix;
-    aData->mGroupOffset = mLayerBounds.TopLeft();
     aData->mImageRect = mClippedImageBounds;
     GP("post mInvalidRect: %d %d %d %d\n", mInvalidRect.x, mInvalidRect.y,
        mInvalidRect.width, mInvalidRect.height);
@@ -612,6 +579,14 @@ struct DIGroup {
                 nsDisplayItem* aStartItem, nsDisplayItem* aEndItem) {
     GP("\n\n");
     GP("Begin EndGroup\n");
+
+    mVisibleRect = mVisibleRect.Intersect(
+            ViewAs<LayerPixel>(mActualBounds,
+                               PixelCastJustification::LayerIsImage));
+
+    if (mVisibleRect.IsEmpty()) {
+      return;
+    }
 
     // Invalidate any unused items
     GP("mDisplayItems\n");
@@ -628,22 +603,26 @@ struct DIGroup {
       }
     }
 
+    IntSize dtSize = mVisibleRect.Size().ToUnknownSize();
+    // The actual display item's size shouldn't have the scale factored in
     // Round the bounds out to leave space for unsnapped content
     LayoutDeviceToLayerScale2D scale(mScale.width, mScale.height);
-    LayerIntRect layerBounds = mLayerBounds;
-    IntSize dtSize = layerBounds.Size().ToUnknownSize();
-    LayoutDeviceRect bounds =
-        (LayerRect(layerBounds) - mResidualOffset) / scale;
+    LayoutDeviceRect itemBounds =
+        (LayerRect(mVisibleRect) - mResidualOffset) / scale;
 
-    if (mInvalidRect.IsEmpty()) {
+    if (mInvalidRect.IsEmpty() && mVisibleRect.IsEqualEdges(mLastVisibleRect)) {
       GP("Not repainting group because it's empty\n");
       GP("End EndGroup\n");
       if (mKey) {
+        // Although the contents haven't changed, the visible area *may* have,
+        // so request it be updated unconditionally (wr should be able to easily
+        // detect if this is a no-op on its side, if that matters)
         aResources.SetBlobImageVisibleArea(
             mKey.value().second(),
-            ViewAs<ImagePixel>(mPaintRect,
+            ViewAs<ImagePixel>(mVisibleRect,
                                PixelCastJustification::LayerIsImage));
-        PushImage(aBuilder, bounds);
+        mLastVisibleRect = mVisibleRect;
+        PushImage(aBuilder, itemBounds);
       }
       return;
     }
@@ -669,8 +648,7 @@ struct DIGroup {
                 aStream.write((const char*)&font, sizeof(font));
               }
               fonts = std::move(aScaledFonts);
-            },
-            mLayerBounds.ToUnknownRect().TopLeft());
+            });
 
     RefPtr<gfx::DrawTarget> dummyDt = gfx::Factory::CreateDrawTarget(
         gfx::BackendType::SKIA, gfx::IntSize(1, 1), format);
@@ -679,7 +657,9 @@ struct DIGroup {
         recorder, dummyDt, mLayerBounds.ToUnknownRect());
     // Setup the gfxContext
     RefPtr<gfxContext> context = gfxContext::CreateOrNull(dt);
-    context->SetMatrix(Matrix::Scaling(mScale.width, mScale.height).PostTranslate(mResidualOffset.x, mResidualOffset.y));
+    context->SetMatrix(
+        Matrix::Scaling(mScale.width, mScale.height)
+            .PostTranslate(mResidualOffset.x, mResidualOffset.y));
 
     GP("mInvalidRect: %d %d %d %d\n", mInvalidRect.x, mInvalidRect.y,
        mInvalidRect.width, mInvalidRect.height);
@@ -709,9 +689,12 @@ struct DIGroup {
     Range<uint8_t> bytes((uint8_t*)recorder->mOutputStream.mData,
                          recorder->mOutputStream.mLength);
     if (!mKey) {
-      if (!hasItems)  // we don't want to send a new image that doesn't have any
-                      // items in it
+      // we don't want to send a new image that doesn't have any
+      // items in it
+      if (!hasItems || mVisibleRect.IsEmpty()) {
         return;
+      }
+
       wr::BlobImageKey key =
           wr::BlobImageKey{aWrManager->WrBridge()->GetNextImageKey()};
       GP("No previous key making new one %d\n", key._0.mHandle);
@@ -719,25 +702,28 @@ struct DIGroup {
       MOZ_RELEASE_ASSERT(bytes.length() > sizeof(size_t));
       if (!aResources.AddBlobImage(
               key, descriptor, bytes,
-              ViewAs<ImagePixel>(mPaintRect,
+              ViewAs<ImagePixel>(mVisibleRect,
                                  PixelCastJustification::LayerIsImage))) {
         return;
       }
       mKey = Some(MakePair(aBuilder.GetRenderRoot(), key));
     } else {
       wr::ImageDescriptor descriptor(dtSize, 0, dt->GetFormat(), opacity);
-      auto bottomRight = mInvalidRect.BottomRight();
+
+      // Convert mInvalidRect to image space by subtracting the corner of the
+      // image bounds
+      auto dirtyRect = ViewAs<ImagePixel>(mInvalidRect);
+
+      auto bottomRight = dirtyRect.BottomRight();
       GP("check invalid %d %d - %d %d\n", bottomRight.x, bottomRight.y,
          dtSize.width, dtSize.height);
-      MOZ_RELEASE_ASSERT(bottomRight.x <= dtSize.width &&
-                         bottomRight.y <= dtSize.height);
       GP("Update Blob %d %d %d %d\n", mInvalidRect.x, mInvalidRect.y,
          mInvalidRect.width, mInvalidRect.height);
       if (!aResources.UpdateBlobImage(
               mKey.value().second(), descriptor, bytes,
-              ViewAs<ImagePixel>(mPaintRect,
+              ViewAs<ImagePixel>(mVisibleRect,
                                  PixelCastJustification::LayerIsImage),
-              ViewAs<ImagePixel>(mInvalidRect))) {
+              dirtyRect)) {
         return;
       }
     }
@@ -745,8 +731,9 @@ struct DIGroup {
     mInvalidRect.SetEmpty();
     aResources.SetBlobImageVisibleArea(
         mKey.value().second(),
-        ViewAs<ImagePixel>(mPaintRect, PixelCastJustification::LayerIsImage));
-    PushImage(aBuilder, bounds);
+        ViewAs<ImagePixel>(mVisibleRect, PixelCastJustification::LayerIsImage));
+    mLastVisibleRect = mVisibleRect;
+    PushImage(aBuilder, itemBounds);
     GP("End EndGroup\n\n");
   }
 
@@ -766,7 +753,7 @@ struct DIGroup {
 
     // XXX - clipping the item against the paint rect breaks some content.
     // cf. Bug 1455422.
-    // wr::LayoutRect clip = wr::ToLayoutRect(bounds.Intersect(mPaintRect));
+    // wr::LayoutRect clip = wr::ToLayoutRect(bounds.Intersect(mVisibleRect));
 
     aBuilder.SetHitTestInfo(mScrollId, hitInfo);
     aBuilder.PushImage(dest, dest, !backfaceHidden,
@@ -780,7 +767,7 @@ struct DIGroup {
                       WebRenderDrawEventRecorder* aRecorder,
                       RenderRootStateManager* aRootManager,
                       wr::IpcResourceUpdateQueue& aResources) {
-    LayerIntSize size = mLayerBounds.Size();
+    LayerIntSize size = mVisibleRect.Size();
     for (nsDisplayItem* item = aStartItem; item != aEndItem;
          item = item->GetAbove()) {
       BlobItemData* data = GetBlobItemData(item);
@@ -798,14 +785,10 @@ struct DIGroup {
       }
 
       bool dirty = true;
-      if (!mInvalidRect.Contains(bounds)) {
+      auto preservedBounds = bounds.Intersect(mPreservedRect);
+      if (!mInvalidRect.Contains(preservedBounds)) {
         GP("Passing\n");
         dirty = false;
-      }
-
-      if (mInvalidRect.Contains(bounds)) {
-        GP("Wholely contained\n");
-      } else {
         BlobItemData* data = GetBlobItemData(item);
         if (data->mInvalid) {
           if (item->GetType() == DisplayItemType::TYPE_TRANSFORM) {
@@ -837,36 +820,38 @@ struct DIGroup {
                                      aResources);
       } else {
         nsPaintedDisplayItem* paintedItem = item->AsPaintedDisplayItem();
-        if (dirty && paintedItem &&
+        if (paintedItem &&
             // Hit test items don't have anything to paint so skip them.
             // Ideally we would drop these items earlier...
             item->GetType() != DisplayItemType::TYPE_COMPOSITOR_HITTEST_INFO) {
-          // What should the clip settting strategy be? We can set the full clip
-          // everytime. this is probably easiest for now. An alternative would
-          // be to put the push and the pop into separate items and let
-          // invalidation handle it that way.
-          DisplayItemClip currentClip = paintedItem->GetClip();
+          if (dirty) {
+            // What should the clip settting strategy be? We can set the full
+            // clip everytime. this is probably easiest for now. An alternative
+            // would be to put the push and the pop into separate items and let
+            // invalidation handle it that way.
+            DisplayItemClip currentClip = paintedItem->GetClip();
 
-          if (currentClip.HasClip()) {
-            aContext->Save();
-            currentClip.ApplyTo(aContext, aGrouper->mAppUnitsPerDevPixel);
-          }
-          aContext->NewPath();
-          GP("painting %s %p-%d\n", paintedItem->Name(), paintedItem->Frame(),
-             paintedItem->GetPerFrameKey());
-          if (aGrouper->mDisplayListBuilder->IsPaintingToWindow()) {
-            paintedItem->Frame()->AddStateBits(NS_FRAME_PAINTED_THEBES);
-          }
+            if (currentClip.HasClip()) {
+              aContext->Save();
+              currentClip.ApplyTo(aContext, aGrouper->mAppUnitsPerDevPixel);
+            }
+            aContext->NewPath();
+            GP("painting %s %p-%d\n", paintedItem->Name(), paintedItem->Frame(),
+               paintedItem->GetPerFrameKey());
+            if (aGrouper->mDisplayListBuilder->IsPaintingToWindow()) {
+              paintedItem->Frame()->AddStateBits(NS_FRAME_PAINTED_THEBES);
+            }
 
-          paintedItem->Paint(aGrouper->mDisplayListBuilder, aContext);
-          TakeExternalSurfaces(aRecorder, data->mExternalSurfaces, aRootManager,
-                               aResources);
+            paintedItem->Paint(aGrouper->mDisplayListBuilder, aContext);
+            TakeExternalSurfaces(aRecorder, data->mExternalSurfaces,
+                                 aRootManager, aResources);
 
-          if (currentClip.HasClip()) {
-            aContext->Restore();
+            if (currentClip.HasClip()) {
+              aContext->Restore();
+            }
           }
+          aContext->GetDrawTarget()->FlushItem(bounds);
         }
-        aContext->GetDrawTarget()->FlushItem(bounds);
       }
     }
   }
@@ -963,7 +948,7 @@ void Grouper::PaintContainerItem(DIGroup* aGroup, nsDisplayItem* aItem,
 
       aContext->GetDrawTarget()->PushLayer(false, opacityItem->GetOpacity(),
                                            nullptr, mozilla::gfx::Matrix(),
-                                           aItemBounds + aGroup->mLayerBounds.ToUnknownRect().TopLeft());
+                                           aItemBounds);
       GP("beginGroup %s %p-%d\n", aItem->Name(), aItem->Frame(),
          aItem->GetPerFrameKey());
       aContext->GetDrawTarget()->FlushItem(aItemBounds);
@@ -979,7 +964,7 @@ void Grouper::PaintContainerItem(DIGroup* aGroup, nsDisplayItem* aItem,
       auto blendItem = static_cast<nsDisplayBlendMode*>(aItem);
       auto blendMode = blendItem->BlendMode();
       aContext->GetDrawTarget()->PushLayerWithBlend(
-          false, 1.0, nullptr, mozilla::gfx::Matrix(), aItemBounds + aGroup->mLayerBounds.ToUnknownRect().TopLeft(), false,
+          false, 1.0, nullptr, mozilla::gfx::Matrix(), aItemBounds, false,
           blendMode);
       GP("beginGroup %s %p-%d\n", aItem->Name(), aItem->Frame(),
          aItem->GetPerFrameKey());
@@ -994,7 +979,7 @@ void Grouper::PaintContainerItem(DIGroup* aGroup, nsDisplayItem* aItem,
     }
     case DisplayItemType::TYPE_BLEND_CONTAINER: {
       aContext->GetDrawTarget()->PushLayer(false, 1.0, nullptr,
-                                           mozilla::gfx::Matrix(), aItemBounds + aGroup->mLayerBounds.ToUnknownRect().TopLeft());
+                                           mozilla::gfx::Matrix(), aItemBounds);
       GP("beginGroup %s %p-%d\n", aItem->Name(), aItem->Frame(),
          aItem->GetPerFrameKey());
       aContext->GetDrawTarget()->FlushItem(aItemBounds);
@@ -1189,7 +1174,7 @@ static bool IsItemProbablyActive(nsDisplayItem* aItem,
     }
     case DisplayItemType::TYPE_FILTER: {
       nsDisplayFilters* filters = static_cast<nsDisplayFilters*>(aItem);
-      return filters->CanCreateWebRenderCommands(aDisplayListBuilder);
+      return filters->CanCreateWebRenderCommands();
     }
     default:
       // TODO: handle other items?
@@ -1211,6 +1196,56 @@ void Grouper::ConstructGroups(nsDisplayListBuilder* aDisplayListBuilder,
   nsDisplayItem* startOfCurrentGroup = item;
   while (item) {
     if (IsItemProbablyActive(item, mDisplayListBuilder)) {
+      // We're going to be starting a new group.
+      RefPtr<WebRenderGroupData> groupData =
+          aCommandBuilder->CreateOrRecycleWebRenderUserData<WebRenderGroupData>(
+              item, aBuilder.GetRenderRoot());
+
+      // Initialize groupData->mFollowingGroup with data from currentGroup.
+      // We want to copy out this information before calling EndGroup because
+      // EndGroup will set mLastVisibleRect depending on whether
+      // we send something to WebRender.
+
+      // TODO: compute the group bounds post-grouping, so that they can be
+      // tighter for just the sublist that made it into this group.
+      // We want to ensure the tight bounds are still clipped by area
+      // that we're building the display list for.
+      if (!groupData->mFollowingGroup.mVisibleRect.IsEqualEdges(currentGroup->mVisibleRect) ||
+          !groupData->mFollowingGroup.mGroupBounds.IsEqualEdges(currentGroup->mGroupBounds) ||
+          groupData->mFollowingGroup.mScale != currentGroup->mScale ||
+          groupData->mFollowingGroup.mAppUnitsPerDevPixel !=
+              currentGroup->mAppUnitsPerDevPixel ||
+          groupData->mFollowingGroup.mResidualOffset !=
+              currentGroup->mResidualOffset) {
+        if (groupData->mFollowingGroup.mAppUnitsPerDevPixel !=
+            currentGroup->mAppUnitsPerDevPixel) {
+          GP("app unit change following: %d %d\n",
+             groupData->mFollowingGroup.mAppUnitsPerDevPixel,
+             currentGroup->mAppUnitsPerDevPixel);
+        }
+        // The group changed size
+        GP("Inner group size change\n");
+        groupData->mFollowingGroup.ClearItems();
+        groupData->mFollowingGroup.ClearImageKey(
+            aCommandBuilder->mManager->GetRenderRootStateManager(
+                aBuilder.GetRenderRoot()));
+      }
+      groupData->mFollowingGroup.mGroupBounds = currentGroup->mGroupBounds;
+      groupData->mFollowingGroup.mAppUnitsPerDevPixel =
+          currentGroup->mAppUnitsPerDevPixel;
+      groupData->mFollowingGroup.mLayerBounds = currentGroup->mLayerBounds;
+      groupData->mFollowingGroup.mClippedImageBounds =
+          currentGroup->mClippedImageBounds;
+      groupData->mFollowingGroup.mScale = currentGroup->mScale;
+      groupData->mFollowingGroup.mResidualOffset =
+          currentGroup->mResidualOffset;
+      groupData->mFollowingGroup.mVisibleRect = currentGroup->mVisibleRect;
+      groupData->mFollowingGroup.mPreservedRect =
+          groupData->mFollowingGroup.mVisibleRect
+              .Intersect(groupData->mFollowingGroup.mLastVisibleRect)
+              .ToUnknownRect();
+      groupData->mFollowingGroup.mActualBounds = IntRect();
+
       currentGroup->EndGroup(aCommandBuilder->mManager, aDisplayListBuilder,
                              aBuilder, aResources, this, startOfCurrentGroup,
                              item);
@@ -1234,47 +1269,6 @@ void Grouper::ConstructGroups(nsDisplayListBuilder* aDisplayListBuilder,
             "active transforms should always succeed at creating "
             "WebRender commands");
       }
-
-      RefPtr<WebRenderGroupData> groupData =
-          aCommandBuilder->CreateOrRecycleWebRenderUserData<WebRenderGroupData>(
-              item, aBuilder.GetRenderRoot());
-
-      // Initialize groupData->mFollowingGroup
-      // TODO: compute the group bounds post-grouping, so that they can be
-      // tighter for just the sublist that made it into this group.
-      // We want to ensure the tight bounds are still clipped by area
-      // that we're building the display list for.
-      if (!groupData->mFollowingGroup.mGroupBounds.IsEqualEdges(
-              currentGroup->mGroupBounds) ||
-          groupData->mFollowingGroup.mScale != currentGroup->mScale ||
-          groupData->mFollowingGroup.mAppUnitsPerDevPixel !=
-              currentGroup->mAppUnitsPerDevPixel ||
-          groupData->mFollowingGroup.mResidualOffset !=
-              currentGroup->mResidualOffset) {
-        if (groupData->mFollowingGroup.mAppUnitsPerDevPixel !=
-            currentGroup->mAppUnitsPerDevPixel) {
-          GP("app unit change following: %d %d\n",
-             groupData->mFollowingGroup.mAppUnitsPerDevPixel,
-             currentGroup->mAppUnitsPerDevPixel);
-        }
-        // The group changed size
-        GP("Inner group size change\n");
-        groupData->mFollowingGroup.ClearItems();
-        groupData->mFollowingGroup.ClearImageKey(
-            aCommandBuilder->mManager->GetRenderRootStateManager(
-                aBuilder.GetRenderRoot()));
-      }
-      groupData->mFollowingGroup.mGroupBounds = currentGroup->mGroupBounds;
-      groupData->mFollowingGroup.mAppUnitsPerDevPixel =
-          currentGroup->mAppUnitsPerDevPixel;
-      groupData->mFollowingGroup.mLayerBounds = currentGroup->mLayerBounds;
-      groupData->mFollowingGroup.mImageBounds = currentGroup->mImageBounds;
-      groupData->mFollowingGroup.mClippedImageBounds =
-          currentGroup->mClippedImageBounds;
-      groupData->mFollowingGroup.mScale = currentGroup->mScale;
-      groupData->mFollowingGroup.mResidualOffset =
-          currentGroup->mResidualOffset;
-      groupData->mFollowingGroup.mPaintRect = currentGroup->mPaintRect;
 
       currentGroup = &groupData->mFollowingGroup;
 
@@ -1326,11 +1320,11 @@ void Grouper::ConstructItemInsideInactive(
   // still
   aGroup->ComputeGeometryChange(aItem, data, mTransform, mDisplayListBuilder);
 
-  // Temporarily restrict the image bounds to the bounds of the container so that
-  // clipped children within the container know about the clip. This ensures
-  // that the bounds passed to FlushItem are contained in the bounds of the clip
-  // so that we don't include items in the recording without including their
-  // corresponding clipping items.
+  // Temporarily restrict the image bounds to the bounds of the container so
+  // that clipped children within the container know about the clip. This
+  // ensures that the bounds passed to FlushItem are contained in the bounds of
+  // the clip so that we don't include items in the recording without including
+  // their corresponding clipping items.
   IntRect oldClippedImageBounds = aGroup->mClippedImageBounds;
   aGroup->mClippedImageBounds =
       aGroup->mClippedImageBounds.Intersect(data->mRect);
@@ -1456,9 +1450,35 @@ void WebRenderCommandBuilder::DoGroupingForDisplayList(
 
   auto p = group.mGroupBounds;
   auto q = groupBounds;
+  // XXX: we currently compute the paintRect for the entire svg, but if the svg
+  // gets split into multiple groups (blobs), then they will all inherit this
+  // overall size even though they may each be much smaller. This can lead to
+  // allocating much larger textures than necessary in webrender.
+  //
+  // Don't bother fixing this unless we run into this in the real world, though.
+  auto layerBounds = LayerIntRect::FromUnknownRect(
+      ScaleToOutsidePixelsOffset(groupBounds, scale.width, scale.height,
+                                 appUnitsPerDevPixel, residualOffset));
+
+  const nsRect& untransformedPaintRect =
+      aWrappingItem->GetUntransformedPaintRect();
+
+  auto visibleRect = LayerIntRect::FromUnknownRect(
+                         ScaleToOutsidePixelsOffset(
+                             untransformedPaintRect, scale.width, scale.height,
+                             appUnitsPerDevPixel, residualOffset))
+                         .Intersect(layerBounds);
+
+  GP("LayerBounds: %d %d %d %d\n", layerBounds.x, layerBounds.y,
+     layerBounds.width, layerBounds.height);
+  GP("VisibleRect: %d %d %d %d\n", visibleRect.x, visibleRect.y,
+     visibleRect.width, visibleRect.height);
+
+  GP("Inherrited scale %f %f\n", scale.width, scale.height);
   GP("Bounds: %d %d %d %d vs %d %d %d %d\n", p.x, p.y, p.width, p.height, q.x,
      q.y, q.width, q.height);
-  if (!group.mGroupBounds.IsEqualEdges(groupBounds) ||
+  if (!group.mVisibleRect.IsEqualEdges(visibleRect) ||
+      !group.mGroupBounds.IsEqualEdges(groupBounds) ||
       group.mAppUnitsPerDevPixel != appUnitsPerDevPixel ||
       group.mScale != scale || group.mResidualOffset != residualOffset) {
     GP("Property change. Deleting blob\n");
@@ -1499,26 +1519,14 @@ void WebRenderCommandBuilder::DoGroupingForDisplayList(
   g.mAppUnitsPerDevPixel = appUnitsPerDevPixel;
   group.mResidualOffset = residualOffset;
   group.mGroupBounds = groupBounds;
+  group.mLayerBounds = layerBounds;
+  group.mVisibleRect = visibleRect;
+  group.mActualBounds = IntRect();
+  group.mPreservedRect =
+      group.mVisibleRect.Intersect(group.mLastVisibleRect).ToUnknownRect();
   group.mAppUnitsPerDevPixel = appUnitsPerDevPixel;
-  group.mLayerBounds = LayerIntRect::FromUnknownRect(
-      ScaleToOutsidePixelsOffset(group.mGroupBounds, scale.width, scale.height,
-                                 group.mAppUnitsPerDevPixel, residualOffset));
-  group.mImageBounds =
-      IntRect(0, 0, group.mLayerBounds.width, group.mLayerBounds.height);
-  group.mClippedImageBounds = group.mImageBounds;
+  group.mClippedImageBounds = layerBounds.ToUnknownRect();
 
-  const nsRect& untransformedPaintRect =
-      aWrappingItem->GetUntransformedPaintRect();
-
-  group.mPaintRect = LayerIntRect::FromUnknownRect(
-                         ScaleToOutsidePixelsOffset(
-                             untransformedPaintRect, scale.width, scale.height,
-                             group.mAppUnitsPerDevPixel, residualOffset))
-                         .Intersect(group.mLayerBounds);
-  // XXX: Make the paint rect relative to the layer bounds. After we include
-  // mLayerBounds.TopLeft() in the blob image we want to stop doing this
-  // adjustment.
-  group.mPaintRect = group.mPaintRect - group.mLayerBounds.TopLeft();
   g.mTransform = Matrix::Scaling(scale.width, scale.height)
                      .PostTranslate(residualOffset.x, residualOffset.y);
   group.mScale = scale;
@@ -1597,10 +1605,9 @@ void WebRenderCommandBuilder::BuildWebRenderCommands(
       }
     }
     if (ShouldDumpDisplayList(aDisplayListBuilder)) {
-      mBuilderDumpIndex[aBuilder.GetRenderRoot()] =
-          aBuilder.Dump(mDumpIndent + 1,
-                        Some(mBuilderDumpIndex[aBuilder.GetRenderRoot()]),
-                        Nothing());
+      mBuilderDumpIndex[aBuilder.GetRenderRoot()] = aBuilder.Dump(
+          mDumpIndent + 1, Some(mBuilderDumpIndex[aBuilder.GetRenderRoot()]),
+          Nothing());
     }
     MOZ_ASSERT(mRootStackingContexts == nullptr);
     AutoRestore<wr::RenderRootArray<Maybe<StackingContextHelper>>*> rootScs(
@@ -1674,10 +1681,9 @@ void WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList(
   if (dumpEnabled) {
     // If we're inside a nested display list, print the WR DL items from the
     // wrapper item before we start processing the nested items.
-    mBuilderDumpIndex[aBuilder.GetRenderRoot()] =
-        aBuilder.Dump(mDumpIndent + 1,
-                      Some(mBuilderDumpIndex[aBuilder.GetRenderRoot()]),
-                      Nothing());
+    mBuilderDumpIndex[aBuilder.GetRenderRoot()] = aBuilder.Dump(
+        mDumpIndent + 1, Some(mBuilderDumpIndex[aBuilder.GetRenderRoot()]),
+        Nothing());
   }
 
   mDumpIndent++;
@@ -1786,10 +1792,9 @@ void WebRenderCommandBuilder::CreateWebRenderCommandsFromDisplayList(
       }
 
       if (dumpEnabled) {
-        mBuilderDumpIndex[aBuilder.GetRenderRoot()] =
-            aBuilder.Dump(mDumpIndent + 1,
-                          Some(mBuilderDumpIndex[aBuilder.GetRenderRoot()]),
-                          Nothing());
+        mBuilderDumpIndex[aBuilder.GetRenderRoot()] = aBuilder.Dump(
+            mDumpIndent + 1, Some(mBuilderDumpIndex[aBuilder.GetRenderRoot()]),
+            Nothing());
       }
     }
 
@@ -1923,8 +1928,8 @@ bool WebRenderCommandBuilder::PushImage(
     return false;
   }
 
-  auto r = wr::ToRoundedLayoutRect(aRect);
-  auto c = wr::ToRoundedLayoutRect(aClip);
+  auto r = wr::ToLayoutRect(aRect);
+  auto c = wr::ToLayoutRect(aClip);
   aBuilder.PushImage(r, c, !aItem->BackfaceIsHidden(), rendering, key.value());
 
   return true;
@@ -2039,6 +2044,7 @@ static bool PaintByLayer(nsDisplayItem* aItem,
 
 static bool PaintItemByDrawTarget(nsDisplayItem* aItem, gfx::DrawTarget* aDT,
                                   const LayoutDevicePoint& aOffset,
+                                  const IntRect& visibleRect,
                                   nsDisplayListBuilder* aDisplayListBuilder,
                                   const RefPtr<BasicLayerManager>& aManager,
                                   const gfx::Size& aScale,
@@ -2047,7 +2053,7 @@ static bool PaintItemByDrawTarget(nsDisplayItem* aItem, gfx::DrawTarget* aDT,
 
   bool isInvalidated = false;
   // XXX Why is this ClearRect() needed?
-  aDT->ClearRect(Rect(aDT->GetRect()));
+  aDT->ClearRect(Rect(visibleRect));
   RefPtr<gfxContext> context = gfxContext::CreateOrNull(aDT);
   MOZ_ASSERT(context);
 
@@ -2092,15 +2098,14 @@ static bool PaintItemByDrawTarget(nsDisplayItem* aItem, gfx::DrawTarget* aDT,
     // which isn't very useful.
     if (aHighlight) {
       aDT->SetTransform(gfx::Matrix());
-      aDT->FillRect(Rect(aDT->GetRect()),
-                    gfx::ColorPattern(aHighlight.value()));
+      aDT->FillRect(Rect(visibleRect), gfx::ColorPattern(aHighlight.value()));
     }
     if (aItem->Frame()->PresContext()->GetPaintFlashing() && isInvalidated) {
       aDT->SetTransform(gfx::Matrix());
       float r = float(rand()) / float(RAND_MAX);
       float g = float(rand()) / float(RAND_MAX);
       float b = float(rand()) / float(RAND_MAX);
-      aDT->FillRect(Rect(aDT->GetRect()),
+      aDT->FillRect(Rect(visibleRect),
                     gfx::ColorPattern(gfx::Color(r, g, b, 0.5)));
     }
   }
@@ -2108,6 +2113,14 @@ static bool PaintItemByDrawTarget(nsDisplayItem* aItem, gfx::DrawTarget* aDT,
   return isInvalidated;
 }
 
+// When drawing fallback images we create either
+// a real image or a blob image that will contain the display item.
+// In the case of a blob image we paint the item at 0,0 instead
+// of trying to keep at aItem->GetBounds().TopLeft() like we do
+// with SVG. We do this because there's not necessarily a reference frame
+// between us and the rest of the world so the the coordinates
+// that we get for the bounds are not necessarily stable across scrolling
+// or other movement.
 already_AddRefed<WebRenderFallbackData>
 WebRenderCommandBuilder::GenerateFallbackData(
     nsDisplayItem* aItem, wr::DisplayListBuilder& aBuilder,
@@ -2174,23 +2187,31 @@ WebRenderCommandBuilder::GenerateFallbackData(
   auto dtRect = LayerIntRect::FromUnknownRect(
       ScaleToOutsidePixelsOffset(paintBounds, scale.width, scale.height,
                                  appUnitsPerDevPixel, residualOffset));
-  auto dtSize = dtRect.Size();
 
   auto visibleRect = LayerIntRect::FromUnknownRect(
                          ScaleToOutsidePixelsOffset(
                              aItem->GetBuildingRect(), scale.width,
                              scale.height, appUnitsPerDevPixel, residualOffset))
                          .Intersect(dtRect);
-  // visibleRect is relative to the blob origin so adjust for that
-  visibleRect -= dtRect.TopLeft();
 
-  if (dtSize.IsEmpty()) {
+  auto visibleSize = visibleRect.Size();
+  // these rectangles can overflow from scaling so try to
+  // catch that with IsEmpty() checks. See bug 1622126.
+  if (visibleSize.IsEmpty() || dtRect.IsEmpty()) {
     return nullptr;
   }
 
-  aImageRect = dtRect / layerScale;
+  if (useBlobImage) {
+    // Display item bounds should be unscaled
+    aImageRect = visibleRect / layerScale;
+  } else {
+    // Display item bounds should be unscaled
+    aImageRect = dtRect / layerScale;
+  }
 
-  auto offset = aImageRect.TopLeft();
+  // We always paint items at 0,0 so the visibleRect that we use inside the blob
+  // is needs to be adjusted by the display item bounds top left.
+  visibleRect -= dtRect.TopLeft();
 
   nsDisplayItemGeometry* geometry = fallbackData->mGeometry;
 
@@ -2259,18 +2280,18 @@ WebRenderCommandBuilder::GenerateFallbackData(
                   aStream.write((const char*)&font, sizeof(font));
                 }
                 fonts = std::move(aScaledFonts);
-              },
-              dtRect.ToUnknownRect().TopLeft());
+              });
       RefPtr<gfx::DrawTarget> dummyDt = gfx::Factory::CreateDrawTarget(
           gfx::BackendType::SKIA, gfx::IntSize(1, 1), format);
       RefPtr<gfx::DrawTarget> dt = gfx::Factory::CreateRecordingDrawTarget(
-          recorder, dummyDt, dtRect.ToUnknownRect());
+          recorder, dummyDt, visibleRect.ToUnknownRect());
       if (!fallbackData->mBasicLayerManager) {
         fallbackData->mBasicLayerManager =
             new BasicLayerManager(BasicLayerManager::BLM_INACTIVE);
       }
       bool isInvalidated = PaintItemByDrawTarget(
-          aItem, dt, LayoutDevicePoint(0, 0), aDisplayListBuilder,
+          aItem, dt, (dtRect / layerScale).TopLeft(),
+          /*aVisibleRect: */ dt->GetRect(), aDisplayListBuilder,
           fallbackData->mBasicLayerManager, scale, highlight);
       if (!isInvalidated) {
         if (!aItem->GetBuildingRect().IsEqualInterior(
@@ -2280,7 +2301,10 @@ WebRenderCommandBuilder::GenerateFallbackData(
           isInvalidated = true;
         }
       }
-      recorder->FlushItem(IntRect({0, 0}, dtSize.ToUnknownSize()));
+
+      // the item bounds are relative to the blob origin which is
+      // dtRect.TopLeft()
+      recorder->FlushItem((dtRect - dtRect.TopLeft()).ToUnknownRect());
       recorder->Finish();
 
       if (!validFonts) {
@@ -2293,7 +2317,7 @@ WebRenderCommandBuilder::GenerateFallbackData(
                              recorder->mOutputStream.mLength);
         wr::BlobImageKey key =
             wr::BlobImageKey{mManager->WrBridge()->GetNextImageKey()};
-        wr::ImageDescriptor descriptor(dtSize.ToUnknownSize(), 0,
+        wr::ImageDescriptor descriptor(visibleSize.ToUnknownSize(), 0,
                                        dt->GetFormat(), opacity);
         if (!aResources.AddBlobImage(
                 key, descriptor, bytes,
@@ -2313,10 +2337,6 @@ WebRenderCommandBuilder::GenerateFallbackData(
         if (!fallbackData->GetBlobImageKey().isSome()) {
           return nullptr;
         }
-        aResources.SetBlobImageVisibleArea(
-            fallbackData->GetBlobImageKey().value(),
-            ViewAs<ImagePixel>(visibleRect,
-                               PixelCastJustification::LayerIsImage));
       }
     } else {
       WebRenderImageData* imageData = fallbackData->PaintIntoImage();
@@ -2329,7 +2349,7 @@ WebRenderCommandBuilder::GenerateFallbackData(
 
       {
         UpdateImageHelper helper(imageContainer, imageClient,
-                                 dtSize.ToUnknownSize(), format);
+                                 dtRect.Size().ToUnknownSize(), format);
         {
           RefPtr<gfx::DrawTarget> dt = helper.GetDrawTarget();
           if (!dt) {
@@ -2340,7 +2360,9 @@ WebRenderCommandBuilder::GenerateFallbackData(
                 new BasicLayerManager(mManager->GetWidget());
           }
           isInvalidated = PaintItemByDrawTarget(
-              aItem, dt, offset, aDisplayListBuilder,
+              aItem, dt,
+              /*aOffset: */ aImageRect.TopLeft(),
+              /*aVisibleRect: */ dt->GetRect(), aDisplayListBuilder,
               fallbackData->mBasicLayerManager, scale, highlight);
         }
 
@@ -2370,6 +2392,12 @@ WebRenderCommandBuilder::GenerateFallbackData(
 
     fallbackData->mScale = scale;
     fallbackData->SetInvalid(false);
+  }
+
+  if (useBlobImage) {
+    aResources.SetBlobImageVisibleArea(
+        fallbackData->GetBlobImageKey().value(),
+        ViewAs<ImagePixel>(visibleRect, PixelCastJustification::LayerIsImage));
   }
 
   // Update current bounds to fallback data
@@ -2428,9 +2456,6 @@ Maybe<wr::ImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
 
   bool snap;
   nsRect bounds = aMaskItem->GetBounds(aDisplayListBuilder, &snap);
-  if (bounds.IsEmpty()) {
-    return Nothing();
-  }
 
   const int32_t appUnitsPerDevPixel =
       aMaskItem->Frame()->PresContext()->AppUnitsPerDevPixel();
@@ -2447,6 +2472,10 @@ Maybe<wr::ImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
   LayerIntRect itemRect =
       LayerIntRect::FromUnknownRect(bounds.ScaleToOutsidePixels(
           scale.width, scale.height, appUnitsPerDevPixel));
+
+  if (itemRect.IsEmpty()) {
+    return Nothing();
+  }
 
   LayoutDeviceToLayerScale2D layerScale(scale.width, scale.height);
   LayoutDeviceRect imageRect = LayerRect(itemRect) / layerScale;
@@ -2482,13 +2511,12 @@ Maybe<wr::ImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
               }
 
               fonts = std::move(aScaledFonts);
-            },
-            IntPoint(0, 0));
+            });
 
     RefPtr<DrawTarget> dummyDt = Factory::CreateDrawTarget(
         BackendType::SKIA, IntSize(1, 1), SurfaceFormat::A8);
-    RefPtr<DrawTarget> dt =
-        Factory::CreateRecordingDrawTarget(recorder, dummyDt, IntRect(IntPoint(0, 0), size));
+    RefPtr<DrawTarget> dt = Factory::CreateRecordingDrawTarget(
+        recorder, dummyDt, IntRect(IntPoint(0, 0), size));
 
     RefPtr<gfxContext> context = gfxContext::CreateOrNull(dt);
     MOZ_ASSERT(context);
@@ -2555,7 +2583,7 @@ bool WebRenderCommandBuilder::PushItemAsImage(
     return false;
   }
 
-  wr::LayoutRect dest = wr::ToRoundedLayoutRect(imageRect);
+  wr::LayoutRect dest = wr::ToLayoutRect(imageRect);
   gfx::SamplingFilter sampleFilter =
       nsLayoutUtils::GetSamplingFilterForFrame(aItem->Frame());
   aBuilder.PushImage(dest, dest, !aItem->BackfaceIsHidden(),

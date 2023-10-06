@@ -5,6 +5,8 @@
 #ifndef _PARSINGRESULTCOMPARER_H_
 #define _PARSINGRESULTCOMPARER_H_
 
+#include "signaling/src/sdp/SdpParser.h"
+
 #include <string>
 
 namespace mozilla {
@@ -20,10 +22,14 @@ enum class SdpComparisonResult {
 
 class ParsingResultComparer {
  public:
+  using Results = UniquePtr<SdpParser::Results>;
+
   ParsingResultComparer() = default;
 
+  static bool Compare(const Results& aResA, const Results& aResB,
+                      const std::string& aOrignalSdp);
   bool Compare(const Sdp& rsdparsaSdp, const Sdp& sipccSdp,
-               const std::string& originalSdp,
+               const std::string& aOriginalSdp,
                const SdpComparisonResult expect = SdpComparisonResult::Equal);
   bool CompareMediaSections(
       const SdpMediaSection& rustMediaSection,
@@ -34,6 +40,7 @@ class ParsingResultComparer {
       const SdpAttributeList& sipccAttrlist, int level,
       const SdpComparisonResult expect = SdpComparisonResult::Equal) const;
   void TrackRustParsingFailed(size_t sipccErrorCount) const;
+  void TrackSipccParsingFailed(size_t rustErrorCount) const;
 
  private:
   std::string mOriginalSdp;

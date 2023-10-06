@@ -2,13 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{ColorF, DebugCommand, DocumentId, ExternalImageData, ExternalImageId};
+use api::{ColorF, DebugCommand, DocumentId, ExternalImageData, ExternalImageId, PrimitiveFlags};
 use api::{ImageFormat, ItemTag, NotificationRequest, Shadow, FilterOp, MAX_BLUR_RADIUS};
 use api::units::*;
 use api;
 use crate::device::TextureFilter;
 use crate::renderer::PipelineInfo;
 use crate::gpu_cache::GpuCacheUpdateList;
+use crate::frame_builder::Frame;
 use fxhash::FxHasher;
 use plane_split::BspSplitter;
 use crate::profiler::BackendProfileCounters;
@@ -24,13 +25,38 @@ use std::sync::Arc;
 use crate::capture::{CaptureConfig, ExternalCaptureImage};
 #[cfg(feature = "replay")]
 use crate::capture::PlainExternalImage;
-use crate::tiling;
 
 pub type FastHashMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 pub type FastHashSet<K> = HashSet<K, BuildHasherDefault<FxHasher>>;
 
+/// Custom field embedded inside the Polygon struct of the plane-split crate.
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "capture", derive(Serialize))]
+pub struct PlaneSplitAnchor {
+    pub cluster_index: usize,
+    pub instance_index: usize,
+}
+
+impl PlaneSplitAnchor {
+    pub fn new(cluster_index: usize, instance_index: usize) -> Self {
+        PlaneSplitAnchor {
+            cluster_index,
+            instance_index,
+        }
+    }
+}
+
+impl Default for PlaneSplitAnchor {
+    fn default() -> Self {
+        PlaneSplitAnchor {
+            cluster_index: 0,
+            instance_index: 0,
+        }
+    }
+}
+
 /// A concrete plane splitter type used in WebRender.
-pub type PlaneSplitter = BspSplitter<f64, WorldPixel>;
+pub type PlaneSplitter = BspSplitter<f64, WorldPixel, PlaneSplitAnchor>;
 
 /// An arbitrary number which we assume opacity is invisible below.
 const OPACITY_EPSILON: f32 = 0.001;
@@ -175,6 +201,15 @@ impl Default for Swizzle {
     }
 }
 
+/// Swizzle settings of the texture cache.
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Clone, Copy, Debug, Eq, Hash, MallocSizeOf, PartialEq)]
+pub struct SwizzleSettings {
+    /// Swizzle required on sampling a texture with BGRA8 format.
+    pub bgra8_sampling_swizzle: Swizzle,
+}
+
 /// An ID for a texture that is owned by the `texture_cache` module.
 ///
 /// This can include atlases or standalone textures allocated via the texture
@@ -307,6 +342,7 @@ pub struct TextureCacheUpdate {
     pub stride: Option<i32>,
     pub offset: i32,
     pub layer_index: i32,
+    pub format_override: Option<ImageFormat>,
     pub source: TextureUpdateSource,
 }
 
@@ -364,10 +400,11 @@ impl TextureUpdateList {
         self.push_update(TextureCacheUpdate {
             id,
             rect,
-            source: TextureUpdateSource::DebugClear,
             stride: None,
             offset: 0,
             layer_index: layer_index as i32,
+            format_override: None,
+            source: TextureUpdateSource::DebugClear,
         });
     }
 
@@ -462,9 +499,9 @@ impl TextureUpdateList {
     }
 }
 
-/// Wraps a tiling::Frame, but conceptually could hold more information
+/// Wraps a frame_builder::Frame, but conceptually could hold more information
 pub struct RenderedDocument {
-    pub frame: tiling::Frame,
+    pub frame: Frame,
     pub is_new_scene: bool,
 }
 
@@ -517,7 +554,7 @@ pub struct LayoutPrimitiveInfo {
     /// but that's an ongoing project, so for now it exists and is used :(
     pub rect: LayoutRect,
     pub clip_rect: LayoutRect,
-    pub is_backface_visible: bool,
+    pub flags: PrimitiveFlags,
     pub hit_info: Option<ItemTag>,
 }
 
@@ -526,7 +563,7 @@ impl LayoutPrimitiveInfo {
         Self {
             rect,
             clip_rect,
-            is_backface_visible: true,
+            flags: PrimitiveFlags::default(),
             hit_info: None,
         }
     }

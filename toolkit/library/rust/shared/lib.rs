@@ -45,6 +45,8 @@ extern crate bookmark_sync;
 
 extern crate arrayvec;
 
+extern crate mdns_service;
+
 use std::boxed::Box;
 use std::env;
 use std::ffi::{CStr, CString};

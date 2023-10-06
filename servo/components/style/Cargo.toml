@@ -16,7 +16,7 @@ path = "lib.rs"
 doctest = false
 
 [features]
-gecko = ["nsstring", "style_traits/gecko", "fallible/known_system_malloc", "bindgen", "regex", "toml"]
+gecko = ["nsstring", "serde", "style_traits/gecko", "fallible/known_system_malloc", "bindgen", "regex", "toml"]
 servo = ["serde", "style_traits/servo", "servo_atoms", "servo_config", "html5ever",
          "cssparser/serde", "encoding_rs", "malloc_size_of/servo", "arrayvec/use_union",
          "servo_url", "string_cache", "crossbeam-channel", "to_shmem/servo", "servo_arc/servo"]
@@ -31,9 +31,9 @@ arrayvec = "0.4.6"
 atomic_refcell = "0.1"
 bitflags = "1.0"
 byteorder = "1.0"
-cssparser = "0.25"
+cssparser = "0.27"
 crossbeam-channel = { version = "0.3", optional = true }
-derive_more = "0.13"
+derive_more = "0.99"
 new_debug_unreachable = "1.0"
 encoding_rs = {version = "0.8", optional = true}
 euclid = "0.20"
@@ -53,7 +53,7 @@ nsstring = {path = "../../../xpcom/rust/nsstring/", optional = true}
 num_cpus = {version = "1.1.0"}
 num-integer = "0.1"
 num-traits = "0.2"
-num-derive = "0.2"
+num-derive = "0.3"
 ordered-float = "1.0"
 owning_ref = "0.4"
 parking_lot = "0.9"
@@ -65,9 +65,9 @@ servo_arc = { path = "../servo_arc" }
 servo_atoms = {path = "../atoms", optional = true}
 servo_config = {path = "../config", optional = true}
 smallbitvec = "2.3.0"
-smallvec = "0.6.6"
+smallvec = "1.0"
 static_prefs = { path = "../../../modules/libpref/init/static_prefs" }
-string_cache = { version = "0.7", optional = true }
+string_cache = { version = "0.8", optional = true }
 style_derive = {path = "../style_derive"}
 style_traits = {path = "../style_traits"}
 servo_url = {path = "../url", optional = true}

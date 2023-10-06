@@ -15,7 +15,7 @@ ${helpers.predefined_type(
     spec="https://drafts.csswg.org/css-backgrounds/#background-color",
     animation_value_type="AnimatedColor",
     ignored_when_colors_disabled=True,
-    allow_quirks=True,
+    allow_quirks="Yes",
     flags="CAN_ANIMATE_ON_COMPOSITOR",
 )}
 

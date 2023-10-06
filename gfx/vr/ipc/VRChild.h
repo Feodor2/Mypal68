@@ -7,13 +7,11 @@
 
 #include "mozilla/gfx/PVRChild.h"
 #include "mozilla/gfx/gfxVarReceiver.h"
+#include "mozilla/ipc/CrashReporterHelper.h"
 #include "mozilla/VsyncDispatcher.h"
 #include "gfxVR.h"
 
 namespace mozilla {
-namespace ipc {
-class CrashReporterHost;
-}  // namespace ipc
 namespace dom {
 class MemoryReportRequestHost;
 }  // namespace dom
@@ -22,7 +20,9 @@ namespace gfx {
 class VRProcessParent;
 class VRChild;
 
-class VRChild final : public PVRChild, public gfxVarReceiver {
+class VRChild final : public PVRChild,
+                      public ipc::CrashReporterHelper<GeckoProcessType_VR>,
+                      public gfxVarReceiver {
   typedef mozilla::dom::MemoryReportRequestHost MemoryReportRequestHost;
   friend class PVRChild;
 
@@ -46,15 +46,12 @@ class VRChild final : public PVRChild, public gfxVarReceiver {
   mozilla::ipc::IPCResult RecvOpenVRControllerManifestPathToParent(
       const OpenVRControllerType& aType, const nsCString& aPath);
   mozilla::ipc::IPCResult RecvInitComplete();
-  mozilla::ipc::IPCResult RecvInitCrashReporter(
-      Shmem&& shmem, const NativeThreadId& aThreadId);
 
   mozilla::ipc::IPCResult RecvAddMemoryReport(const MemoryReport& aReport);
   mozilla::ipc::IPCResult RecvFinishMemoryReport(const uint32_t& aGeneration);
 
  private:
   VRProcessParent* mHost;
-  UniquePtr<ipc::CrashReporterHost> mCrashReporter;
   UniquePtr<MemoryReportRequestHost> mMemoryReportRequest;
   bool mVRReady;
 };

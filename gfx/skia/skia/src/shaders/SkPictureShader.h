@@ -8,8 +8,8 @@
 #ifndef SkPictureShader_DEFINED
 #define SkPictureShader_DEFINED
 
-#include "SkAtomics.h"
 #include "SkShaderBase.h"
+#include <atomic>
 
 class SkArenaAlloc;
 class SkBitmap;
@@ -28,9 +28,6 @@ public:
     static sk_sp<SkShader> Make(sk_sp<SkPicture>, TileMode, TileMode, const SkMatrix*,
                                 const SkRect*);
 
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkPictureShader)
-
 #if SK_SUPPORT_GPU
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&) const override;
 #endif
@@ -39,17 +36,19 @@ protected:
     SkPictureShader(SkReadBuffer&);
     void flatten(SkWriteBuffer&) const override;
     bool onAppendStages(const StageRec&) const override;
+#ifdef SK_ENABLE_LEGACY_SHADERCONTEXT
     Context* onMakeContext(const ContextRec&, SkArenaAlloc*) const override;
+#endif
     sk_sp<SkShader> onMakeColorSpace(SkColorSpaceXformer* xformer) const override;
-    bool onIsRasterPipelineOnly(const SkMatrix&) const override;
 
 private:
+    SK_FLATTENABLE_HOOKS(SkPictureShader)
+
     SkPictureShader(sk_sp<SkPicture>, TileMode, TileMode, const SkMatrix*, const SkRect*,
                     sk_sp<SkColorSpace>);
 
-    sk_sp<SkShader> refBitmapShader(const SkMatrix&, const SkMatrix* localMatrix,
-                                    SkColorSpace* dstColorSpace,
-                                    SkMatrix* compositeLocalMatrix,
+    sk_sp<SkShader> refBitmapShader(const SkMatrix&, SkTCopyOnFirstWrite<SkMatrix>* localMatrix,
+                                    SkColorType dstColorType, SkColorSpace* dstColorSpace,
                                     const int maxTextureSize = 0) const;
 
     class PictureShaderContext : public Context {
@@ -76,8 +75,8 @@ private:
     // forces a deferred color space xform.
     sk_sp<SkColorSpace>    fColorSpace;
 
-    const uint32_t         fUniqueID;
-    mutable SkAtomic<bool> fAddedToCache;
+    const uint32_t            fUniqueID;
+    mutable std::atomic<bool> fAddedToCache;
 
     typedef SkShaderBase INHERITED;
 };

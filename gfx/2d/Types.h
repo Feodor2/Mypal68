@@ -7,6 +7,7 @@
 
 #include "mozilla/EndianUtils.h"
 #include "mozilla/MacroArgs.h"  // for MOZ_CONCAT
+#include "mozilla/TypedEnumBits.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -151,6 +152,12 @@ enum class ColorDepth : uint8_t {
   COLOR_10,
   COLOR_12,
   COLOR_16,
+  UNKNOWN
+};
+
+enum class ColorRange : uint8_t {
+  LIMITED,
+  FULL,
   UNKNOWN
 };
 
@@ -466,16 +473,18 @@ namespace mozilla {
 // Side constants for use in various places.
 enum Side { eSideTop, eSideRight, eSideBottom, eSideLeft };
 
-enum SideBits {
-  eSideBitsNone = 0,
-  eSideBitsTop = 1 << eSideTop,
-  eSideBitsRight = 1 << eSideRight,
-  eSideBitsBottom = 1 << eSideBottom,
-  eSideBitsLeft = 1 << eSideLeft,
-  eSideBitsTopBottom = eSideBitsTop | eSideBitsBottom,
-  eSideBitsLeftRight = eSideBitsLeft | eSideBitsRight,
-  eSideBitsAll = eSideBitsTopBottom | eSideBitsLeftRight
+enum class SideBits {
+  eNone = 0,
+  eTop = 1 << eSideTop,
+  eRight = 1 << eSideRight,
+  eBottom = 1 << eSideBottom,
+  eLeft = 1 << eSideLeft,
+  eTopBottom = SideBits::eTop | SideBits::eBottom,
+  eLeftRight = SideBits::eLeft | SideBits::eRight,
+  eAll = SideBits::eTopBottom | SideBits::eLeftRight
 };
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(SideBits)
 
 // Creates a for loop that walks over the four mozilla::Side values.
 // We use an int32_t helper variable (instead of a Side) for our loop counter,

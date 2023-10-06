@@ -76,7 +76,7 @@ static char16_t GetBidiOverride(ComputedStyle* aComputedStyle) {
   const nsStyleVisibility* vis = aComputedStyle->StyleVisibility();
   if ((vis->mWritingMode == NS_STYLE_WRITING_MODE_VERTICAL_RL ||
        vis->mWritingMode == NS_STYLE_WRITING_MODE_VERTICAL_LR) &&
-      vis->mTextOrientation == NS_STYLE_TEXT_ORIENTATION_UPRIGHT) {
+      vis->mTextOrientation == StyleTextOrientation::Upright) {
     return kLRO;
   }
   const nsStyleTextReset* text = aComputedStyle->StyleTextReset();
@@ -1657,7 +1657,7 @@ void nsBidiPresUtils::RepositionRubyContentFrame(
                     aFrame->GetSize(), aBorderPadding.IStart(aFrameWM));
   isize += aBorderPadding.IEnd(aFrameWM);
 
-  if (aFrame->StyleText()->mRubyAlign == NS_STYLE_RUBY_ALIGN_START) {
+  if (aFrame->StyleText()->mRubyAlign == StyleRubyAlign::Start) {
     return;
   }
   nscoord residualISize = aFrame->ISize(aFrameWM) - isize;
@@ -2115,8 +2115,8 @@ void nsBidiPresUtils::CalculateCharType(nsBidi* aBidiEngine,
     } else if (IS_ARABIC_ALPHABETIC(ch)) {
       charType = eCharType_RightToLeftArabic;
     } else {
-      if (NS_IS_HIGH_SURROGATE(ch) && offset + 1 < aCharTypeLimit &&
-          NS_IS_LOW_SURROGATE(aText[offset + 1])) {
+      if (offset + 1 < aCharTypeLimit &&
+          NS_IS_SURROGATE_PAIR(ch, aText[offset + 1])) {
         ch = SURROGATE_TO_UCS4(ch, aText[offset + 1]);
         charLen = 2;
       }

@@ -8,10 +8,12 @@
 
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/Element.h"
+#include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/MutationEventBinding.h"
 #include "mozilla/DeclarationBlock.h"
 #include "mozilla/InternalMutationEvent.h"
 #include "mozilla/SMILCSSValueType.h"
+#include "mozilla/SMILValue.h"
 #include "mozAutoDocUpdate.h"
 #include "nsWrapperCacheInlines.h"
 #include "nsIFrame.h"
@@ -131,9 +133,10 @@ nsDOMCSSAttributeDeclaration::GetParsingEnvironment(
   };
 }
 
-nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
-    const nsCSSPropertyID aPropID, const SMILValue& aValue) {
+template <typename SetterFunc>
+nsresult nsDOMCSSAttributeDeclaration::SetSMILValueHelper(SetterFunc aFunc) {
   MOZ_ASSERT(mIsSMILOverride);
+
   // No need to do the ActiveLayerTracker / ScrollLinkedEffectDetector bits,
   // since we're in a SMIL animation anyway, no need to try to detect we're a
   // scripted animation.
@@ -145,13 +148,32 @@ nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
   }
   mozAutoDocUpdate autoUpdate(DocToUpdate(), true);
   RefPtr<DeclarationBlock> decl = olddecl->EnsureMutable();
-  bool changed = SMILCSSValueType::SetPropertyValues(aValue, *decl);
+
+  bool changed = aFunc(*decl);
+
   if (changed) {
     // We can pass nullptr as the latter param, since this is
     // mIsSMILOverride == true case.
     SetCSSDeclaration(decl, nullptr);
   }
   return NS_OK;
+}
+
+nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
+    const nsCSSPropertyID /*aPropID*/, const SMILValue& aValue) {
+  MOZ_ASSERT(aValue.mType == &SMILCSSValueType::sSingleton,
+             "We should only try setting a CSS value type");
+  return SetSMILValueHelper([&aValue](DeclarationBlock& aDecl) {
+    return SMILCSSValueType::SetPropertyValues(aValue, aDecl);
+  });
+}
+
+nsresult nsDOMCSSAttributeDeclaration::SetSMILValue(
+    const nsCSSPropertyID aPropID, const SVGAnimatedLength& aLength) {
+  return SetSMILValueHelper([aPropID, &aLength](DeclarationBlock& aDecl) {
+    return SVGElement::UpdateDeclarationBlockFromLength(
+        aDecl, aPropID, aLength, SVGElement::ValToUse::Anim);
+  });
 }
 
 nsresult nsDOMCSSAttributeDeclaration::SetPropertyValue(
@@ -165,7 +187,10 @@ nsresult nsDOMCSSAttributeDeclaration::SetPropertyValue(
   // the margin properties, see bug 1266287.
   if (aPropID == eCSSProperty_opacity || aPropID == eCSSProperty_transform ||
       aPropID == eCSSProperty_translate || aPropID == eCSSProperty_rotate ||
-      aPropID == eCSSProperty_scale || aPropID == eCSSProperty_left ||
+      aPropID == eCSSProperty_scale || aPropID == eCSSProperty_offset_path ||
+      aPropID == eCSSProperty_offset_distance ||
+      aPropID == eCSSProperty_offset_rotate ||
+      aPropID == eCSSProperty_offset_anchor || aPropID == eCSSProperty_left ||
       aPropID == eCSSProperty_top || aPropID == eCSSProperty_right ||
       aPropID == eCSSProperty_bottom ||
       aPropID == eCSSProperty_background_position_x ||

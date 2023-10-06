@@ -17,7 +17,7 @@
 namespace mozilla {
 
 class RsdparsaSdp;
-class SdpErrorHolder;
+class SdpParser;
 
 class RsdparsaSdpMediaSection final : public SdpMediaSection {
   friend class RsdparsaSdp;

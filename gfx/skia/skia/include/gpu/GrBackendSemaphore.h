@@ -11,10 +11,7 @@
 #include "GrTypes.h"
 
 #include "gl/GrGLTypes.h"
-
-#ifdef SK_VULKAN
 #include "vk/GrVkTypes.h"
-#endif
 
 /**
  * Wrapper class for passing into and receiving data from Ganesh about a backend semaphore object.
@@ -23,47 +20,45 @@ class GrBackendSemaphore {
 public:
     // For convenience we just set the backend here to OpenGL. The GrBackendSemaphore cannot be used
     // until either initGL or initVulkan are called which will set the appropriate GrBackend.
-    GrBackendSemaphore() : fBackend(kOpenGL_GrBackend), fGLSync(0), fIsInitialized(false) {}
+    GrBackendSemaphore() : fBackend(GrBackendApi::kOpenGL), fGLSync(0), fIsInitialized(false) {}
 
     void initGL(GrGLsync sync) {
-        fBackend = kOpenGL_GrBackend;
+        fBackend = GrBackendApi::kOpenGL;
         fGLSync = sync;
         fIsInitialized = true;
     }
 
-#ifdef SK_VULKAN
     void initVulkan(VkSemaphore semaphore) {
-        fBackend = kVulkan_GrBackend;
+        fBackend = GrBackendApi::kVulkan;
         fVkSemaphore = semaphore;
+#ifdef SK_VULKAN
         fIsInitialized = true;
-    }
+#else
+        fIsInitialized = false;
 #endif
+    }
 
     bool isInitialized() const { return fIsInitialized; }
 
     GrGLsync glSync() const {
-        if (!fIsInitialized || kOpenGL_GrBackend != fBackend) {
+        if (!fIsInitialized || GrBackendApi::kOpenGL != fBackend) {
             return 0;
         }
         return fGLSync;
     }
 
-#ifdef SK_VULKAN
     VkSemaphore vkSemaphore() const {
-        if (!fIsInitialized || kVulkan_GrBackend != fBackend) {
+        if (!fIsInitialized || GrBackendApi::kVulkan != fBackend) {
             return VK_NULL_HANDLE;
         }
         return fVkSemaphore;
     }
-#endif
 
 private:
-    GrBackend fBackend;
+    GrBackendApi fBackend;
     union {
         GrGLsync    fGLSync;
-#ifdef SK_VULKAN
         VkSemaphore fVkSemaphore;
-#endif
     };
     bool fIsInitialized;
 };

@@ -9,25 +9,6 @@
 
 #if defined(SK_BUILD_FOR_WIN)
 
-// Workaround for:
-// http://connect.microsoft.com/VisualStudio/feedback/details/621653/
-// http://crbug.com/225822
-// In VS2010 both intsafe.h and stdint.h define the following without guards.
-// SkTypes brought in windows.h and stdint.h and the following defines are
-// not used by this file. However, they may be re-introduced by wincodec.h.
-#undef INT8_MIN
-#undef INT16_MIN
-#undef INT32_MIN
-#undef INT64_MIN
-#undef INT8_MAX
-#undef UINT8_MAX
-#undef INT16_MAX
-#undef UINT16_MAX
-#undef INT32_MAX
-#undef UINT32_MAX
-#undef INT64_MAX
-#undef UINT64_MAX
-
 #include "SkAutoCoInitialize.h"
 #include "SkAutoMalloc.h"
 #include "SkBitmap.h"
@@ -102,9 +83,9 @@ bool SkEncodeImageWithWIC(SkWStream* stream, const SkPixmap& pixmap,
             uint8_t* dstRow = SkTAddOffset<uint8_t>(pixelStorage.get(), y * rowBytes);
             for (int x = 0; x < bitmap.width(); x++) {
                 uint32_t bgra = *bitmap.getAddr32(x, y);
-                dstRow[0] = (uint8_t) (bgra >>  0);
-                dstRow[1] = (uint8_t) (bgra >>  8);
-                dstRow[2] = (uint8_t) (bgra >> 16);
+                dstRow[0] = (uint8_t) ((bgra >>  0) & 0xFF);
+                dstRow[1] = (uint8_t) ((bgra >>  8) & 0xFF);
+                dstRow[2] = (uint8_t) ((bgra >> 16) & 0xFF);
                 dstRow += 3;
             }
         }

@@ -237,8 +237,8 @@ class CompositorBridgeParentBase : public PCompositorBridgeParent,
   virtual mozilla::ipc::IPCResult RecvRequestNotifyAfterRemotePaint() = 0;
   virtual mozilla::ipc::IPCResult RecvAllPluginsCaptured() = 0;
   virtual mozilla::ipc::IPCResult RecvBeginRecording(
-      const TimeStamp& aRecordingStart) = 0;
-  virtual mozilla::ipc::IPCResult RecvEndRecording() = 0;
+      const TimeStamp& aRecordingStart, BeginRecordingResolver&& aResolve) = 0;
+  virtual mozilla::ipc::IPCResult RecvEndRecording(bool* aOutSuccess) = 0;
   virtual mozilla::ipc::IPCResult RecvInitialize(
       const LayersId& rootLayerTreeId) = 0;
   virtual mozilla::ipc::IPCResult RecvGetFrameUniformity(
@@ -347,8 +347,9 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
 
   mozilla::ipc::IPCResult RecvAllPluginsCaptured() override;
   mozilla::ipc::IPCResult RecvBeginRecording(
-      const TimeStamp& aRecordingStart) override;
-  mozilla::ipc::IPCResult RecvEndRecording() override;
+      const TimeStamp& aRecordingStart,
+      BeginRecordingResolver&& aResolve) override;
+  mozilla::ipc::IPCResult RecvEndRecording(bool* aOutSuccess) override;
 
   void NotifyMemoryPressure() override;
   void AccumulateMemoryReport(wr::MemoryReport*) override;
@@ -380,6 +381,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
       LayerTransactionParent* aLayerTree) override {
     return mCompositionManager;
   }
+  void SetFixedLayerMargins(ScreenIntCoord aTop, ScreenIntCoord aBottom);
 
   PTextureParent* AllocPTextureParent(
       const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
@@ -743,6 +745,7 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   TimeStamp mFwdTime;
 
   bool mPaused;
+  bool mHaveCompositionRecorder;
 
   bool mUseExternalSurfaceSize;
   gfx::IntSize mEGLSurfaceSize;
@@ -768,7 +771,6 @@ class CompositorBridgeParent final : public CompositorBridgeParentBase,
   // mSelfRef is cleared in DeferredDestroy which is scheduled by ActorDestroy.
   RefPtr<CompositorBridgeParent> mSelfRef;
   RefPtr<CompositorAnimationStorage> mAnimationStorage;
-  RefPtr<CompositionRecorder> mCompositionRecorder;
 
   TimeDuration mPaintTime;
 

@@ -657,8 +657,7 @@ void FT2FontEntry::AddSizeOfIncludingThis(MallocSizeOf aMallocSizeOf,
  * the font list from chrome to content via IPC.
  */
 
-void FT2FontFamily::AddFacesToFontList(
-    InfallibleTArray<FontListEntry>* aFontList) {
+void FT2FontFamily::AddFacesToFontList(nsTArray<FontListEntry>* aFontList) {
   for (int i = 0, n = mAvailableFonts.Length(); i < n; ++i) {
     const FT2FontEntry* fe =
         static_cast<const FT2FontEntry*>(mAvailableFonts[i].get());
@@ -704,11 +703,14 @@ class FontNameCache {
     mCache = mozilla::scache::StartupCache::GetSingleton();
   }
 
-  ~FontNameCache() {
+  ~FontNameCache() { WriteCache(); }
+
+  void WriteCache() {
     if (!mWriteNeeded || !mCache) {
       return;
     }
 
+    LOG(("Writing FontNameCache:"));
     nsAutoCString buf;
     for (auto iter = mMap.Iter(); !iter.Done(); iter.Next()) {
       auto entry = static_cast<FNCMapEntry*>(iter.Get());
@@ -726,8 +728,11 @@ class FontNameCache {
       buf.Append(';');
     }
 
+    LOG(("putting FontNameCache to " CACHE_KEY ", length %u",
+         buf.Length() + 1));
     mCache->PutBuffer(CACHE_KEY, UniquePtr<char[]>(ToNewCString(buf)),
                       buf.Length() + 1);
+    mWriteNeeded = false;
   }
 
   // This may be called more than once (if we re-load the font list).
@@ -739,10 +744,11 @@ class FontNameCache {
     uint32_t size;
     UniquePtr<char[]> buf;
     if (NS_FAILED(mCache->GetBuffer(CACHE_KEY, &buf, &size))) {
+      LOG(("no cache of " CACHE_KEY));
       return;
     }
 
-    LOG(("got: %s from the cache", nsDependentCString(buf.get(), size).get()));
+    LOG(("got: %u bytes from the cache " CACHE_KEY, size));
 
     mMap.Clear();
     mWriteNeeded = false;
@@ -1241,7 +1247,7 @@ void gfxFT2FontList::FindFonts() {
 
   if (!XRE_IsParentProcess()) {
     // Content process: ask the Chrome process to give us the list
-    InfallibleTArray<FontListEntry> fonts;
+    nsTArray<FontListEntry> fonts;
     mozilla::dom::ContentChild::GetSingleton()->SendReadFontList(&fonts);
     for (uint32_t i = 0, n = fonts.Length(); i < n; ++i) {
       // We don't need to identify "standard" font files here,
@@ -1335,6 +1341,25 @@ void gfxFT2FontList::FindFonts() {
     RefPtr<gfxFontFamily>& family = iter.Data();
     FinalizeFamilyMemberList(key, family, /* aSortFaces */ true);
   }
+  // Write out FontCache data if needed
+  WriteCache();
+}
+
+void gfxFT2FontList::WriteCache() {
+  if (mFontNameCache) {
+    mFontNameCache->WriteCache();
+  }
+  mozilla::scache::StartupCache* cache =
+      mozilla::scache::StartupCache::GetSingleton();
+  if (cache && mJarModifiedTime > 0) {
+    const size_t bufSize = sizeof(mJarModifiedTime);
+    auto buf = MakeUnique<char[]>(bufSize);
+    memcpy(buf.get(), &mJarModifiedTime, bufSize);
+
+    LOG(("WriteCache: putting Jar, length %zu", bufSize));
+    cache->PutBuffer(JAR_LAST_MODIFED_TIME, std::move(buf), bufSize);
+  }
+  LOG(("Done with writecache"));
 }
 
 void gfxFT2FontList::FindFontsInDir(const nsCString& aDir,
@@ -1411,8 +1436,7 @@ void gfxFT2FontList::AppendFaceFromFontListEntry(const FontListEntry& aFLE,
   }
 }
 
-void gfxFT2FontList::GetSystemFontList(
-    InfallibleTArray<FontListEntry>* retValue) {
+void gfxFT2FontList::GetSystemFontList(nsTArray<FontListEntry>* retValue) {
   for (auto iter = mFontFamilies.Iter(); !iter.Done(); iter.Next()) {
     auto family = static_cast<FT2FontFamily*>(iter.Data().get());
     family->AddFacesToFontList(retValue);
@@ -1532,27 +1556,12 @@ gfxFontEntry* gfxFT2FontList::MakePlatformFont(const nsACString& aFontName,
                                        aFontData, aLength);
 }
 
-void gfxFT2FontList::GetFontFamilyList(
-    nsTArray<RefPtr<gfxFontFamily> >& aFamilyArray) {
-  for (auto iter = mFontFamilies.Iter(); !iter.Done(); iter.Next()) {
-    RefPtr<gfxFontFamily>& family = iter.Data();
-    aFamilyArray.AppendElement(family);
-  }
-}
-
 gfxFontFamily* gfxFT2FontList::CreateFontFamily(const nsACString& aName) const {
   return new FT2FontFamily(aName);
 }
 
 void gfxFT2FontList::WillShutdown() {
-  mozilla::scache::StartupCache* cache =
-      mozilla::scache::StartupCache::GetSingleton();
-  if (cache && mJarModifiedTime > 0) {
-    const size_t bufSize = sizeof(mJarModifiedTime);
-    auto buf = MakeUnique<char[]>(bufSize);
-    memcpy(buf.get(), &mJarModifiedTime, bufSize);
-
-    cache->PutBuffer(JAR_LAST_MODIFED_TIME, std::move(buf), bufSize);
-  }
+  LOG(("WillShutdown"));
+  WriteCache();
   mFontNameCache = nullptr;
 }

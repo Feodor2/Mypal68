@@ -159,7 +159,6 @@ class nsSubDocumentFrame final : public nsAtomicContainerFrame,
   bool mPostedReflowCallback;
   bool mDidCreateDoc;
   bool mCallingShow;
-  WeakFrame mPreviousCaret;
 };
 
 #endif /* NSSUBDOCUMENTFRAME_H_ */

@@ -333,8 +333,7 @@ bool nsNativeTheme::IsFrameRTL(nsIFrame* aFrame) {
   if (!aFrame) {
     return false;
   }
-  WritingMode wm = aFrame->GetWritingMode();
-  return !(wm.IsVertical() ? wm.IsVerticalLR() : wm.IsBidiLTR());
+  return aFrame->GetWritingMode().IsPhysicalRTL();
 }
 
 bool nsNativeTheme::IsHTMLContent(nsIFrame* aFrame) {

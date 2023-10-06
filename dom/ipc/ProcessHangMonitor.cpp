@@ -337,6 +337,13 @@ HangMonitorChild::~HangMonitorChild() {
 bool HangMonitorChild::InterruptCallback() {
   MOZ_RELEASE_ASSERT(NS_IsMainThread());
 
+  // Don't start painting if we're not in a good place to run script. We run
+  // chrome script during layout and such, and it wouldn't be good to interrupt
+  // painting code from there.
+  if (!nsContentUtils::IsSafeToRunScript()) {
+    return true;
+  }
+
   bool paintWhileInterruptingJS;
   bool paintWhileInterruptingJSForce;
   TabId paintWhileInterruptingJSTab;
@@ -362,10 +369,16 @@ bool HangMonitorChild::InterruptCallback() {
     }
   }
 
-  // Only handle the interrupt for cancelling content JS if we have an actual
-  // window associated with this context...
+  // Only handle the interrupt for cancelling content JS if we have a
+  // non-privileged script (i.e. not part of Gecko or an add-on).
   JS::RootedObject global(mContext, JS::CurrentGlobalOrNull(mContext));
-  RefPtr<nsGlobalWindowInner> win = xpc::WindowOrNull(global);
+  nsIPrincipal* principal = xpc::GetObjectPrincipal(global);
+  if (principal && (principal->IsSystemPrincipal() ||
+                    principal->GetIsAddonOrExpandedAddonPrincipal())) {
+    return true;
+  }
+
+  nsCOMPtr<nsPIDOMWindowInner> win = xpc::WindowOrNull(global);
   if (!win) {
     return true;
   }
@@ -390,35 +403,45 @@ bool HangMonitorChild::InterruptCallback() {
   }
 
   if (cancelContentJS) {
+    js::AutoAssertNoContentJS nojs(mContext);
+
     RefPtr<BrowserChild> browserChild =
         BrowserChild::FindBrowserChild(cancelContentJSTab);
-    if (browserChild) {
-      js::AutoAssertNoContentJS nojs(mContext);
-      nsresult rv;
-      nsCOMPtr<nsIURI> uri;
+    RefPtr<BrowserChild> browserChildFromWin = BrowserChild::GetFrom(win);
+    if (!browserChild || !browserChildFromWin) {
+      return true;
+    }
 
-      if (cancelContentJSNavigationURI) {
-        rv = NS_NewURI(getter_AddRefs(uri),
-                       cancelContentJSNavigationURI.value());
-        if (NS_FAILED(rv)) {
-          return true;
+    TabId tabIdFromWin = browserChildFromWin->GetTabId();
+    if (tabIdFromWin != cancelContentJSTab) {
+      // The currently-executing content JS doesn't belong to the tab that
+      // requested cancellation of JS. Just return and let the JS continue.
+      return true;
+    }
+
+    nsresult rv;
+    nsCOMPtr<nsIURI> uri;
+
+    if (cancelContentJSNavigationURI) {
+      rv = NS_NewURI(getter_AddRefs(uri), cancelContentJSNavigationURI.value());
+      if (NS_FAILED(rv)) {
+        return true;
+      }
+    }
+
+    bool canCancel;
+    rv = browserChild->CanCancelContentJS(cancelContentJSNavigationType,
+                                          cancelContentJSNavigationIndex, uri,
+                                          cancelContentJSEpoch, &canCancel);
+    if (NS_SUCCEEDED(rv) && canCancel) {
+      // Don't add this page to the BF cache, since we're cancelling its JS.
+      if (Document* doc = win->GetExtantDoc()) {
+        if (Document* topLevelDoc = doc->GetTopLevelContentDocument()) {
+          topLevelDoc->DisallowBFCaching();
         }
       }
 
-      bool canCancel;
-      rv = browserChild->CanCancelContentJS(cancelContentJSNavigationType,
-                                            cancelContentJSNavigationIndex, uri,
-                                            cancelContentJSEpoch, &canCancel);
-      if (NS_SUCCEEDED(rv) && canCancel) {
-        // Don't add this page to the BF cache, since we're cancelling its JS.
-        if (Document* doc = win->GetExtantDoc()) {
-          if (Document* topLevelDoc = doc->GetTopLevelContentDocument()) {
-            topLevelDoc->DisallowBFCaching();
-          }
-        }
-
-        return false;
-      }
+      return false;
     }
   }
 

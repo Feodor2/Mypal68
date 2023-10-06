@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "SkCanvasVirtualEnforcer.h"
 #include "SkColorFilter.h"
 #include "SkColorSpaceXformCanvas.h"
 #include "SkColorSpaceXformer.h"
@@ -29,11 +30,11 @@ namespace {
     };
 };
 
-class SkColorSpaceXformCanvas : public SkNoDrawCanvas {
+class SkColorSpaceXformCanvas : public SkCanvasVirtualEnforcer<SkNoDrawCanvas> {
 public:
     SkColorSpaceXformCanvas(SkCanvas* target, sk_sp<SkColorSpace> targetCS,
                             std::unique_ptr<SkColorSpaceXformer> xformer)
-        : SkNoDrawCanvas(SkIRect::MakeSize(target->getBaseLayerSize()))
+        : SkCanvasVirtualEnforcer<SkNoDrawCanvas>(SkIRect::MakeSize(target->getBaseLayerSize()))
         , fTarget(target)
         , fTargetCS(targetCS)
         , fXformer(std::move(xformer))
@@ -55,6 +56,10 @@ public:
 
     void onDrawRect(const SkRect& rect, const SkPaint& paint) override {
         fTarget->drawRect(rect, fXformer->apply(paint));
+    }
+    void onDrawEdgeAARect(const SkRect& rect, SkCanvas::QuadAAFlags aa, SkColor color,
+                          SkBlendMode mode) override {
+        fTarget->experimental_DrawEdgeAARectV1(rect, aa, fXformer->apply(color), mode);
     }
     void onDrawOval(const SkRect& oval, const SkPaint& paint) override {
         fTarget->drawOval(oval, fXformer->apply(paint));
@@ -89,8 +94,9 @@ public:
                       const SkPaint& paint) override {
         fTarget->drawPoints(mode, count, pts, fXformer->apply(paint));
     }
-    void onDrawVerticesObject(const SkVertices* vertices, SkBlendMode mode,
-                              const SkPaint& paint) override {
+
+    void onDrawVerticesObject(const SkVertices* vertices, const SkVertices::Bone bones[], int boneCount,
+                              SkBlendMode mode, const SkPaint& paint) override {
         sk_sp<SkVertices> copy;
         if (vertices->hasColors()) {
             int count = vertices->vertexCount();
@@ -98,38 +104,14 @@ public:
             fXformer->apply(xformed.begin(), vertices->colors(), count);
             copy = SkVertices::MakeCopy(vertices->mode(), count, vertices->positions(),
                                         vertices->texCoords(), xformed.begin(),
+                                        vertices->boneIndices(), vertices->boneWeights(),
                                         vertices->indexCount(), vertices->indices());
             vertices = copy.get();
         }
 
-        fTarget->drawVertices(vertices, mode, fXformer->apply(paint));
+        fTarget->drawVertices(vertices, bones, boneCount, mode, fXformer->apply(paint));
     }
 
-    void onDrawText(const void* ptr, size_t len,
-                    SkScalar x, SkScalar y,
-                    const SkPaint& paint) override {
-        fTarget->drawText(ptr, len, x, y, fXformer->apply(paint));
-    }
-    void onDrawPosText(const void* ptr, size_t len,
-                       const SkPoint* xys,
-                       const SkPaint& paint) override {
-        fTarget->drawPosText(ptr, len, xys, fXformer->apply(paint));
-    }
-    void onDrawPosTextH(const void* ptr, size_t len,
-                        const SkScalar* xs, SkScalar y,
-                        const SkPaint& paint) override {
-        fTarget->drawPosTextH(ptr, len, xs, y, fXformer->apply(paint));
-    }
-    void onDrawTextOnPath(const void* ptr, size_t len,
-                          const SkPath& path, const SkMatrix* matrix,
-                          const SkPaint& paint) override {
-        fTarget->drawTextOnPath(ptr, len, path, matrix, fXformer->apply(paint));
-    }
-    void onDrawTextRSXform(const void* ptr, size_t len,
-                           const SkRSXform* xforms, const SkRect* cull,
-                           const SkPaint& paint) override {
-        fTarget->drawTextRSXform(ptr, len, xforms, cull, fXformer->apply(paint));
-    }
     void onDrawTextBlob(const SkTextBlob* blob,
                         SkScalar x, SkScalar y,
                         const SkPaint& paint) override {
@@ -173,6 +155,19 @@ public:
                                       dst, MaybePaint(paint, fXformer.get()));
         }
     }
+    void onDrawImageSet(const SkCanvas::ImageSetEntry set[], int count,
+                        SkFilterQuality filterQuality, SkBlendMode mode) override {
+        SkAutoTArray<ImageSetEntry> xformedSet(count);
+        for (int i = 0; i < count; ++i) {
+            xformedSet[i].fImage = this->prepareImage(set[i].fImage.get());
+            xformedSet[i].fSrcRect = set[i].fSrcRect;
+            xformedSet[i].fDstRect = set[i].fDstRect;
+            xformedSet[i].fAlpha = set[i].fAlpha;
+            xformedSet[i].fAAFlags = set[i].fAAFlags;
+        }
+        fTarget->experimental_DrawImageSetV1(xformedSet.get(), count, filterQuality, mode);
+    }
+
     void onDrawAtlas(const SkImage* atlas, const SkRSXform* xforms, const SkRect* tex,
                      const SkColor* colors, int count, SkBlendMode mode,
                      const SkRect* cull, const SkPaint* paint) override {
@@ -265,13 +260,6 @@ public:
         return kNoLayer_SaveLayerStrategy;
     }
 
-#ifdef SK_SUPPORT_LEGACY_DRAWFILTER
-    SkDrawFilter* setDrawFilter(SkDrawFilter* filter) override {
-        SkCanvas::setDrawFilter(filter);
-        return fTarget->setDrawFilter(filter);
-    }
-#endif
-
     // Everything from here on should be uninteresting strictly proxied state-change calls.
     void willSave()    override { fTarget->save(); }
     void willRestore() override { fTarget->restore(); }
@@ -330,13 +318,14 @@ public:
 private:
     sk_sp<SkImage> prepareImage(const SkImage* image) {
         GrContext* gr = fTarget->getGrContext();
+        // If fTarget is GPU-accelerated, we want to upload to a texture before applying the
+        // transform. This way, we can get cache hits in the texture cache and the transform gets
+        // applied on the GPU.
         if (gr) {
-            // If fTarget is GPU-accelerated, we want to upload to a texture
-            // before applying the transform. This way, we can get cache hits
-            // in the texture cache and the transform gets applied on the GPU.
             sk_sp<SkImage> textureImage = image->makeTextureImage(gr, nullptr);
-            if (textureImage)
+            if (textureImage) {
                 return fXformer->apply(textureImage.get());
+            }
         }
         // TODO: Extract a sub image corresponding to the src rect in order
         // to xform only the useful part of the image. Sub image could be reduced

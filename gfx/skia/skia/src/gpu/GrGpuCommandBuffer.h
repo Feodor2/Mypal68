@@ -8,8 +8,8 @@
 #ifndef GrGpuCommandBuffer_DEFINED
 #define GrGpuCommandBuffer_DEFINED
 
-#include "GrColor.h"
 #include "GrPipeline.h"
+#include "SkDrawable.h"
 #include "ops/GrDrawOp.h"
 
 class GrOpFlushState;
@@ -19,6 +19,7 @@ class GrMesh;
 class GrPipeline;
 class GrPrimitiveProcessor;
 class GrRenderTarget;
+class GrSemaphore;
 struct SkIRect;
 struct SkRect;
 
@@ -36,29 +37,27 @@ public:
     virtual void insertEventMarker(const char*) = 0;
 
     virtual GrGpuRTCommandBuffer* asRTCommandBuffer() { return nullptr; }
-
-    // Sends the command buffer off to the GPU object to execute the commands built up in the
-    // buffer. The gpu object is allowed to defer execution of the commands until it is flushed.
-    virtual void submit() = 0;
-
-protected:
-    GrGpuCommandBuffer(GrSurfaceOrigin origin) : fOrigin(origin) {}
-
-    GrSurfaceOrigin fOrigin;
 };
 
 class GrGpuTextureCommandBuffer : public GrGpuCommandBuffer{
 public:
-    virtual ~GrGpuTextureCommandBuffer() {}
+    void set(GrTexture* texture, GrSurfaceOrigin origin) {
+        SkASSERT(!fTexture);
 
-    virtual void submit() = 0;
+        fOrigin = origin;
+        fTexture = texture;
+    }
 
 protected:
-    GrGpuTextureCommandBuffer(GrTexture* texture, GrSurfaceOrigin origin)
-            : INHERITED(origin)
-            , fTexture(texture) {}
+    GrGpuTextureCommandBuffer() : fOrigin(kTopLeft_GrSurfaceOrigin), fTexture(nullptr) {}
 
-    GrTexture* fTexture;
+    GrGpuTextureCommandBuffer(GrTexture* texture, GrSurfaceOrigin origin)
+            : fOrigin(origin)
+            , fTexture(texture) {
+    }
+
+    GrSurfaceOrigin fOrigin;
+    GrTexture*      fTexture;
 
 private:
     typedef GrGpuCommandBuffer INHERITED;
@@ -73,9 +72,9 @@ private:
 class GrGpuRTCommandBuffer : public GrGpuCommandBuffer {
 public:
     struct LoadAndStoreInfo {
-        GrLoadOp  fLoadOp;
-        GrStoreOp fStoreOp;
-        GrColor   fClearColor;
+        GrLoadOp    fLoadOp;
+        GrStoreOp   fStoreOp;
+        SkPMColor4f fClearColor;
     };
 
     // Load-time clears of the stencil buffer are always to 0 so we don't store
@@ -84,8 +83,6 @@ public:
         GrLoadOp  fLoadOp;
         GrStoreOp fStoreOp;
     };
-
-    virtual ~GrGpuRTCommandBuffer() {}
 
     GrGpuRTCommandBuffer* asRTCommandBuffer() { return this; }
 
@@ -97,10 +94,11 @@ public:
     // GrMesh object and emit a draw for it. Each draw will use the same GrPipeline and
     // GrPrimitiveProcessor. This may fail if the draw would exceed any resource limits (e.g.
     // number of vertex attributes is too large).
-    bool draw(const GrPipeline&,
-              const GrPrimitiveProcessor&,
+    bool draw(const GrPrimitiveProcessor&,
+              const GrPipeline&,
+              const GrPipeline::FixedDynamicState*,
+              const GrPipeline::DynamicStateArrays*,
               const GrMesh[],
-              const GrPipeline::DynamicState[],
               int meshCount,
               const SkRect& bounds);
 
@@ -110,7 +108,7 @@ public:
     /**
      * Clear the owned render target. Ignores the draw state and clip.
      */
-    void clear(const GrFixedClip&, GrColor);
+    void clear(const GrFixedClip&, const SkPMColor4f&);
 
     void clearStencilClip(const GrFixedClip&, bool insideStencilMask);
 
@@ -120,27 +118,43 @@ public:
     // TODO: This should be removed in the future to favor using the load and store ops for discard
     virtual void discard() = 0;
 
+    /**
+     * Executes the SkDrawable object for the underlying backend.
+     */
+    virtual void executeDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler>) {}
+
 protected:
+    GrGpuRTCommandBuffer() : fOrigin(kTopLeft_GrSurfaceOrigin), fRenderTarget(nullptr) {}
+
     GrGpuRTCommandBuffer(GrRenderTarget* rt, GrSurfaceOrigin origin)
-            : INHERITED(origin)
+            : fOrigin(origin)
             , fRenderTarget(rt) {
     }
 
+    void set(GrRenderTarget* rt, GrSurfaceOrigin origin) {
+        SkASSERT(!fRenderTarget);
+
+        fRenderTarget = rt;
+        fOrigin = origin;
+    }
+
+    GrSurfaceOrigin fOrigin;
     GrRenderTarget* fRenderTarget;
 
 private:
     virtual GrGpu* gpu() = 0;
 
     // overridden by backend-specific derived class to perform the draw call.
-    virtual void onDraw(const GrPipeline&,
-                        const GrPrimitiveProcessor&,
+    virtual void onDraw(const GrPrimitiveProcessor&,
+                        const GrPipeline&,
+                        const GrPipeline::FixedDynamicState*,
+                        const GrPipeline::DynamicStateArrays*,
                         const GrMesh[],
-                        const GrPipeline::DynamicState[],
                         int meshCount,
                         const SkRect& bounds) = 0;
 
     // overridden by backend-specific derived class to perform the clear.
-    virtual void onClear(const GrFixedClip&, GrColor) = 0;
+    virtual void onClear(const GrFixedClip&, const SkPMColor4f&) = 0;
 
     virtual void onClearStencilClip(const GrFixedClip&, bool insideStencilMask) = 0;
 

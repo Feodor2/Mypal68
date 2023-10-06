@@ -14,7 +14,6 @@
 #include "mozilla/TimeStamp.h"  // for TimeStamp
 #include "mozilla/TypedEnumBits.h"
 #include "nsRegion.h"
-#include "nsStyleConsts.h"
 
 #include <stdio.h>            // FILE
 #include "mozilla/Logging.h"  // for PR_LOG
@@ -41,6 +40,9 @@ struct ParamTraits;
 }  // namespace IPC
 
 namespace mozilla {
+
+enum class StyleBorderStyle : uint8_t;
+
 namespace layers {
 
 class TextureHost;

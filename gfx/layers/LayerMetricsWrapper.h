@@ -397,6 +397,12 @@ class MOZ_STACK_CLASS LayerMetricsWrapper final {
     return mLayer->GetFixedPositionScrollContainerId();
   }
 
+  SideBits GetFixedPositionSides() const {
+    MOZ_ASSERT(IsValid());
+
+    return mLayer->GetFixedPositionSides();
+  }
+
   Maybe<uint64_t> GetZoomAnimationId() const {
     MOZ_ASSERT(IsValid());
     // This function is only really needed for template-compatibility with
@@ -414,12 +420,7 @@ class MOZ_STACK_CLASS LayerMetricsWrapper final {
   Maybe<ScrollableLayerGuid::ViewID> IsAsyncZoomContainer() const {
     MOZ_ASSERT(IsValid());
 
-    Maybe<ScrollableLayerGuid::ViewID> result = mLayer->IsAsyncZoomContainer();
-
-    // The async zoom container layer should not have any scroll metadata.
-    MOZ_ASSERT(result.isNothing() || mLayer->GetScrollMetadataCount() == 0);
-
-    return result;
+    return mLayer->IsAsyncZoomContainer();
   }
 
   // Expose an opaque pointer to the layer. Mostly used for printf

@@ -260,10 +260,6 @@ nsStyleMargin::nsStyleMargin(const nsStyleMargin& aSrc)
 
 nsChangeHint nsStyleMargin::CalcDifference(
     const nsStyleMargin& aNewData) const {
-  if (mMargin == aNewData.mMargin && mScrollMargin == aNewData.mScrollMargin) {
-    return nsChangeHint(0);
-  }
-
   nsChangeHint hint = nsChangeHint(0);
 
   if (mMargin != aNewData.mMargin) {
@@ -294,11 +290,6 @@ nsStylePadding::nsStylePadding(const nsStylePadding& aSrc)
 
 nsChangeHint nsStylePadding::CalcDifference(
     const nsStylePadding& aNewData) const {
-  if (mPadding == aNewData.mPadding &&
-      mScrollPadding == aNewData.mScrollPadding) {
-    return nsChangeHint(0);
-  }
-
   nsChangeHint hint = nsChangeHint(0);
 
   if (mPadding != aNewData.mPadding) {
@@ -751,11 +742,11 @@ nsStyleSVG::nsStyleSVG(const Document& aDocument)
       mColorInterpolationFilters(NS_STYLE_COLOR_INTERPOLATION_LINEARRGB),
       mFillRule(StyleFillRule::Nonzero),
       mPaintOrder(0),
-      mShapeRendering(NS_STYLE_SHAPE_RENDERING_AUTO),
-      mStrokeLinecap(NS_STYLE_STROKE_LINECAP_BUTT),
+      mShapeRendering(StyleShapeRendering::Auto),
+      mStrokeLinecap(StyleStrokeLinecap::Butt),
       mStrokeLinejoin(NS_STYLE_STROKE_LINEJOIN_MITER),
       mDominantBaseline(NS_STYLE_DOMINANT_BASELINE_AUTO),
-      mTextAnchor(NS_STYLE_TEXT_ANCHOR_START),
+      mTextAnchor(StyleTextAnchor::Start),
       mContextFlags(
           (eStyleSVGOpacitySource_Normal << FILL_OPACITY_SOURCE_SHIFT) |
           (eStyleSVGOpacitySource_Normal << STROKE_OPACITY_SOURCE_SHIFT)) {
@@ -1026,7 +1017,14 @@ void StyleShapeSource::DoDestroy() {
 // nsStyleSVGReset
 //
 nsStyleSVGReset::nsStyleSVGReset(const Document& aDocument)
-    : mMask(nsStyleImageLayers::LayerType::Mask),
+    : mX(LengthPercentage::Zero()),
+      mY(LengthPercentage::Zero()),
+      mCx(LengthPercentage::Zero()),
+      mCy(LengthPercentage::Zero()),
+      mRx(NonNegativeLengthPercentageOrAuto::Auto()),
+      mRy(NonNegativeLengthPercentageOrAuto::Auto()),
+      mR(NonNegativeLengthPercentage::Zero()),
+      mMask(nsStyleImageLayers::LayerType::Mask),
       mStopColor(StyleColor::Black()),
       mFloodColor(StyleColor::Black()),
       mLightingColor(StyleColor::White()),
@@ -1040,7 +1038,14 @@ nsStyleSVGReset::nsStyleSVGReset(const Document& aDocument)
 nsStyleSVGReset::~nsStyleSVGReset() { MOZ_COUNT_DTOR(nsStyleSVGReset); }
 
 nsStyleSVGReset::nsStyleSVGReset(const nsStyleSVGReset& aSource)
-    : mMask(aSource.mMask),
+    : mX(aSource.mX),
+      mY(aSource.mY),
+      mCx(aSource.mCx),
+      mCy(aSource.mCy),
+      mRx(aSource.mRx),
+      mRy(aSource.mRy),
+      mR(aSource.mR),
+      mMask(aSource.mMask),
       mClipPath(aSource.mClipPath),
       mStopColor(aSource.mStopColor),
       mFloodColor(aSource.mFloodColor),
@@ -1091,6 +1096,12 @@ void nsStyleSVGReset::TriggerImageLoads(Document& aDocument,
 nsChangeHint nsStyleSVGReset::CalcDifference(
     const nsStyleSVGReset& aNewData) const {
   nsChangeHint hint = nsChangeHint(0);
+
+  if (mX != aNewData.mX || mY != aNewData.mY || mCx != aNewData.mCx ||
+      mCy != aNewData.mCy || mR != aNewData.mR || mRx != aNewData.mRx ||
+      mRy != aNewData.mRy) {
+    hint |= nsChangeHint_InvalidateRenderingObservers | nsChangeHint_NeedReflow;
+  }
 
   if (mClipPath != aNewData.mClipPath) {
     hint |= nsChangeHint_UpdateEffects | nsChangeHint_RepaintFrame;
@@ -1154,8 +1165,8 @@ nsStylePosition::nsStylePosition(const Document& aDocument)
       mJustifyItems(NS_STYLE_JUSTIFY_NORMAL),
       mJustifySelf(NS_STYLE_JUSTIFY_AUTO),
       mFlexDirection(StyleFlexDirection::Row),
-      mFlexWrap(NS_STYLE_FLEX_WRAP_NOWRAP),
-      mObjectFit(NS_STYLE_OBJECT_FIT_FILL),
+      mFlexWrap(StyleFlexWrap::Nowrap),
+      mObjectFit(StyleObjectFit::Fill),
       mOrder(NS_STYLE_ORDER_INITIAL),
       mFlexGrow(0.0f),
       mFlexShrink(1.0f),
@@ -2653,7 +2664,7 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
       mWillChange{{}, {0}},
       mDisplay(StyleDisplay::Inline),
       mOriginalDisplay(StyleDisplay::Inline),
-      mContain(StyleContain_NONE),
+      mContain(StyleContain::NONE),
       mAppearance(StyleAppearance::None),
       mPosition(NS_STYLE_POSITION_STATIC),
       mFloat(StyleFloat::None),
@@ -2667,15 +2678,17 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
       mOverflowClipBoxInline(StyleOverflowClipBox::PaddingBox),
       mResize(StyleResize::None),
       mOrient(StyleOrient::Inline),
-      mIsolation(NS_STYLE_ISOLATION_AUTO),
-      mTopLayer(NS_STYLE_TOP_LAYER_NONE),
-      mTouchAction(StyleTouchAction_AUTO),
+      mIsolation(StyleIsolation::Auto),
+      mTopLayer(StyleTopLayer::None),
+      mTouchAction(StyleTouchAction::AUTO),
       mScrollBehavior(NS_STYLE_SCROLL_BEHAVIOR_AUTO),
       mOverscrollBehaviorX(StyleOverscrollBehavior::Auto),
       mOverscrollBehaviorY(StyleOverscrollBehavior::Auto),
       mOverflowAnchor(StyleOverflowAnchor::Auto),
-      mScrollSnapType(
-          {StyleScrollSnapAxis::Both, StyleScrollSnapStrictness::None}),
+      mScrollSnapAlign{StyleScrollSnapAlignKeyword::None,
+                       StyleScrollSnapAlignKeyword::None},
+      mScrollSnapType{StyleScrollSnapAxis::Both,
+                      StyleScrollSnapStrictness::None},
       mLineClamp(0),
       mRotate(StyleRotate::None()),
       mTranslate(StyleTranslate::None()),
@@ -2740,6 +2753,8 @@ nsStyleDisplay::nsStyleDisplay(const nsStyleDisplay& aSource)
       mScrollBehavior(aSource.mScrollBehavior),
       mOverscrollBehaviorX(aSource.mOverscrollBehaviorX),
       mOverscrollBehaviorY(aSource.mOverscrollBehaviorY),
+      mOverflowAnchor(aSource.mOverflowAnchor),
+      mScrollSnapAlign(aSource.mScrollSnapAlign),
       mScrollSnapType(aSource.mScrollSnapType),
       mLineClamp(aSource.mLineClamp),
       mTransform(aSource.mTransform),
@@ -2977,20 +2992,16 @@ nsChangeHint nsStyleDisplay::CalcDifference(
   // test above handles relevant changes in the StyleWillChangeBit_TRANSFORM
   // bit, which in turn handles frame reconstruction for changes in the
   // containing block of fixed-positioned elements.
-  //
-  // TODO(emilio): Should add xor to the generated cbindgen type.
-  auto willChangeBitsChanged =
-      StyleWillChangeBits{static_cast<decltype(StyleWillChangeBits::bits)>(
-          mWillChange.bits.bits ^ aNewData.mWillChange.bits.bits)};
+  auto willChangeBitsChanged = mWillChange.bits ^ aNewData.mWillChange.bits;
 
   if (willChangeBitsChanged &
-      (StyleWillChangeBits_STACKING_CONTEXT | StyleWillChangeBits_SCROLL |
-       StyleWillChangeBits_OPACITY)) {
+      (StyleWillChangeBits::STACKING_CONTEXT | StyleWillChangeBits::SCROLL |
+       StyleWillChangeBits::OPACITY)) {
     hint |= nsChangeHint_RepaintFrame;
   }
 
   if (willChangeBitsChanged &
-      (StyleWillChangeBits_FIXPOS_CB | StyleWillChangeBits_ABSPOS_CB)) {
+      (StyleWillChangeBits::FIXPOS_CB | StyleWillChangeBits::ABSPOS_CB)) {
     hint |= nsChangeHint_UpdateContainingBlock;
   }
 
@@ -3071,10 +3082,10 @@ nsStyleVisibility::nsStyleVisibility(const Document& aDocument)
     : mDirection(aDocument.GetBidiOptions() == IBMBIDI_TEXTDIRECTION_RTL
                      ? NS_STYLE_DIRECTION_RTL
                      : NS_STYLE_DIRECTION_LTR),
-      mVisible(NS_STYLE_VISIBILITY_VISIBLE),
+      mVisible(StyleVisibility::Visible),
       mImageRendering(NS_STYLE_IMAGE_RENDERING_AUTO),
       mWritingMode(NS_STYLE_WRITING_MODE_HORIZONTAL_TB),
-      mTextOrientation(NS_STYLE_TEXT_ORIENTATION_MIXED),
+      mTextOrientation(StyleTextOrientation::Mixed),
       mColorAdjust(StyleColorAdjust::Economy) {
   MOZ_COUNT_CTOR(nsStyleVisibility);
 }
@@ -3107,12 +3118,12 @@ nsChangeHint nsStyleVisibility::CalcDifference(
       hint |= nsChangeHint_AllReflowHints | nsChangeHint_RepaintFrame;
     }
     if (mVisible != aNewData.mVisible) {
-      if (mVisible == NS_STYLE_VISIBILITY_VISIBLE ||
-          aNewData.mVisible == NS_STYLE_VISIBILITY_VISIBLE) {
+      if (mVisible == StyleVisibility::Visible ||
+          aNewData.mVisible == StyleVisibility::Visible) {
         hint |= nsChangeHint_VisibilityChange;
       }
-      if ((NS_STYLE_VISIBILITY_COLLAPSE == mVisible) ||
-          (NS_STYLE_VISIBILITY_COLLAPSE == aNewData.mVisible)) {
+      if (StyleVisibility::Collapse == mVisible ||
+          StyleVisibility::Collapse == aNewData.mVisible) {
         hint |= NS_STYLE_HINT_REFLOW;
       } else {
         hint |= NS_STYLE_HINT_VISUAL;
@@ -3277,7 +3288,7 @@ nsChangeHint nsStyleContent::CalcDifference(
 
 nsStyleTextReset::nsStyleTextReset(const Document& aDocument)
     : mTextOverflow(),
-      mTextDecorationLine(StyleTextDecorationLine_NONE),
+      mTextDecorationLine(StyleTextDecorationLine::NONE),
       mTextDecorationStyle(NS_STYLE_TEXT_DECORATION_STYLE_SOLID),
       mUnicodeBidi(NS_STYLE_UNICODE_BIDI_NORMAL),
       mInitialLetterSink(0),
@@ -3348,9 +3359,9 @@ nsStyleText::nsStyleText(const Document& aDocument)
       mTextJustify(StyleTextJustify::Auto),
       mWhiteSpace(StyleWhiteSpace::Normal),
       mHyphens(StyleHyphens::Manual),
-      mRubyAlign(NS_STYLE_RUBY_ALIGN_SPACE_AROUND),
-      mRubyPosition(NS_STYLE_RUBY_POSITION_OVER),
-      mTextSizeAdjust(NS_STYLE_TEXT_SIZE_ADJUST_AUTO),
+      mRubyAlign(StyleRubyAlign::SpaceAround),
+      mRubyPosition(StyleRubyPosition::Over),
+      mTextSizeAdjust(StyleTextSizeAdjust::Auto),
       mTextCombineUpright(NS_STYLE_TEXT_COMBINE_UPRIGHT_NONE),
       mControlCharacterVisibility(
           nsLayoutUtils::ControlCharVisibilityDefault()),
@@ -3366,6 +3377,7 @@ nsStyleText::nsStyleText(const Document& aDocument)
       mTextIndent(LengthPercentage::Zero()),
       mTextUnderlineOffset(StyleTextDecorationLength::Auto()),
       mTextDecorationSkipInk(StyleTextDecorationSkipInk::Auto),
+      mTextUnderlinePosition(StyleTextUnderlinePosition::AUTO),
       mWebkitTextStrokeWidth(0),
       mTextEmphasisStyle(StyleTextEmphasisStyle::None()) {
   MOZ_COUNT_CTOR(nsStyleText);
@@ -3404,6 +3416,7 @@ nsStyleText::nsStyleText(const nsStyleText& aSource)
       mTextIndent(aSource.mTextIndent),
       mTextUnderlineOffset(aSource.mTextUnderlineOffset),
       mTextDecorationSkipInk(aSource.mTextDecorationSkipInk),
+      mTextUnderlinePosition(aSource.mTextUnderlinePosition),
       mWebkitTextStrokeWidth(aSource.mWebkitTextStrokeWidth),
       mTextShadow(aSource.mTextShadow),
       mTextEmphasisStyle(aSource.mTextEmphasisStyle) {
@@ -3464,7 +3477,8 @@ nsChangeHint nsStyleText::CalcDifference(const nsStyleText& aNewData) const {
 
   if (mTextShadow != aNewData.mTextShadow ||
       mTextEmphasisStyle != aNewData.mTextEmphasisStyle ||
-      mWebkitTextStrokeWidth != aNewData.mWebkitTextStrokeWidth) {
+      mWebkitTextStrokeWidth != aNewData.mWebkitTextStrokeWidth ||
+      mTextUnderlinePosition != aNewData.mTextUnderlinePosition) {
     hint |= nsChangeHint_UpdateSubtreeOverflow | nsChangeHint_SchedulePaint |
             nsChangeHint_RepaintFrame;
 
@@ -3551,7 +3565,7 @@ nsStyleUI::nsStyleUI(const Document& aDocument)
     : mUserInput(StyleUserInput::Auto),
       mUserModify(StyleUserModify::ReadOnly),
       mUserFocus(StyleUserFocus::None),
-      mPointerEvents(NS_STYLE_POINTER_EVENTS_AUTO),
+      mPointerEvents(StylePointerEvents::Auto),
       mCursor(StyleCursorKind::Auto),
       mCaretColor(StyleColorOrAuto::Auto()),
       mScrollbarColor(StyleScrollbarColor::Auto()) {
@@ -3643,9 +3657,9 @@ nsStyleUIReset::nsStyleUIReset(const Document& aDocument)
     : mUserSelect(StyleUserSelect::Auto),
       mScrollbarWidth(StyleScrollbarWidth::Auto),
       mForceBrokenImageIcon(0),
-      mIMEMode(NS_STYLE_IME_MODE_AUTO),
+      mIMEMode(StyleImeMode::Auto),
       mWindowDragging(StyleWindowDragging::Default),
-      mWindowShadow(NS_STYLE_WINDOW_SHADOW_DEFAULT),
+      mWindowShadow(StyleWindowShadow::Default),
       mWindowOpacity(1.0),
       mWindowTransformOrigin{LengthPercentage::FromPercentage(0.5),
                              LengthPercentage::FromPercentage(0.5),

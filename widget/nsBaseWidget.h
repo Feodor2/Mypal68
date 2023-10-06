@@ -58,6 +58,7 @@ class CompositorBridgeParent;
 class IAPZCTreeManager;
 class GeckoContentController;
 class APZEventState;
+struct APZEventResult;
 class CompositorSession;
 class ImageContainer;
 struct ScrollableLayerGuid;
@@ -175,7 +176,8 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   virtual nsTransparencyMode GetTransparencyMode() override;
   virtual void GetWindowClipRegion(
       nsTArray<LayoutDeviceIntRect>* aRects) override;
-  virtual void SetWindowShadowStyle(int32_t aStyle) override {}
+  virtual void SetWindowShadowStyle(
+      mozilla::StyleWindowShadow aStyle) override {}
   virtual void SetShowsToolbarButton(bool aShow) override {}
   virtual void SetShowsFullScreenButton(bool aShow) override {}
   virtual void SetWindowAnimationType(WindowAnimationType aType) override {}
@@ -433,12 +435,6 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
                         const ScreenIntSize& aSize) override{};
 #endif
 
-  /**
-   * Whether context menus should only appear on mouseup instead of mousedown,
-   * on OSes where they normally appear on mousedown (macOS, *nix).
-   */
-  static bool ShowContextMenuAfterMouseUp();
-
  protected:
   // These are methods for CompositorWidgetWrapper, and should only be
   // accessed from that class. Derived widgets can choose which methods to
@@ -483,10 +479,9 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   CreateRootContentController();
 
   // Dispatch an event that has already been routed through APZ.
-  nsEventStatus ProcessUntransformedAPZEvent(mozilla::WidgetInputEvent* aEvent,
-                                             const ScrollableLayerGuid& aGuid,
-                                             uint64_t aInputBlockId,
-                                             nsEventStatus aApzResponse);
+  nsEventStatus ProcessUntransformedAPZEvent(
+      mozilla::WidgetInputEvent* aEvent,
+      const mozilla::layers::APZEventResult& aApzResult);
 
   const LayoutDeviceIntRegion RegionFromArray(
       const nsTArray<LayoutDeviceIntRect>& aRects);

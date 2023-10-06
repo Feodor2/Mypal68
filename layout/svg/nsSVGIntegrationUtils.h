@@ -156,7 +156,7 @@ class nsSVGIntegrationUtils final {
     mozilla::layers::LayerManager* layerManager;
     bool handleOpacity;  // If true, PaintMaskAndClipPath/ PaintFilter should
                          // apply css opacity.
-    IntRect maskRect;
+    mozilla::Maybe<mozilla::gfx::Rect> maskRect;
     imgDrawingParams& imgParams;
 
     explicit PaintFramesParams(gfxContext& aCtx, nsIFrame* aFrame,
@@ -204,13 +204,31 @@ class nsSVGIntegrationUtils final {
   static void PaintFilter(const PaintFramesParams& aParams);
 
   /**
-   * Try to build WebRender filters for a frame if the filters applied to it are
-   * supported.
+   * Build WebRender filters for a frame with CSS filters applied to it.
+   */
+  static bool CreateWebRenderCSSFilters(
+      mozilla::Span<const mozilla::StyleFilter> aFilters, nsIFrame* aFrame,
+      WrFiltersHolder& aWrFilters);
+
+  /**
+   * Try to build WebRender filters for a frame with SVG filters applied to it
+   * if the filters are supported.
    */
   static bool BuildWebRenderFilters(
       nsIFrame* aFilteredFrame,
       mozilla::Span<const mozilla::StyleFilter> aFilters,
       WrFiltersHolder& aWrFilters, mozilla::Maybe<nsRect>& aPostFilterClip);
+
+  /**
+   * Check if the filters present on |aFrame| are supported by WebRender.
+   */
+  static bool CanCreateWebRenderFiltersForFrame(nsIFrame* aFrame);
+
+  /**
+   * Check if |aFrame| uses any SVG effects that cannot be rendered in the
+   * compositor.
+   */
+  static bool UsesSVGEffectsNotSupportedInCompositor(nsIFrame* aFrame);
 
   /**
    * @param aRenderingContext the target rendering context in which the paint

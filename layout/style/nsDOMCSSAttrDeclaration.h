@@ -16,6 +16,7 @@ struct RawServoUnlockedDeclarationBlock;
 namespace mozilla {
 
 class SMILValue;
+class SVGAnimatedLength;
 
 namespace dom {
 class DomGroup;
@@ -27,6 +28,7 @@ class nsDOMCSSAttributeDeclaration final : public nsDOMCSSDeclaration {
  public:
   typedef mozilla::dom::Element Element;
   typedef mozilla::SMILValue SMILValue;
+  typedef mozilla::SVGAnimatedLength SVGAnimatedLength;
   nsDOMCSSAttributeDeclaration(Element* aContent, bool aIsSMILOverride);
 
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -43,7 +45,9 @@ class nsDOMCSSAttributeDeclaration final : public nsDOMCSSDeclaration {
 
   nsINode* GetParentObject() override { return mElement; }
 
-  nsresult SetSMILValue(const nsCSSPropertyID aPropID, const SMILValue&);
+  nsresult SetSMILValue(const nsCSSPropertyID aPropID, const SMILValue& aValue);
+  nsresult SetSMILValue(const nsCSSPropertyID aPropID,
+                        const SVGAnimatedLength& aLength);
 
   nsresult SetPropertyValue(const nsCSSPropertyID aPropID,
                             const nsACString& aValue,
@@ -77,6 +81,10 @@ class nsDOMCSSAttributeDeclaration final : public nsDOMCSSDeclaration {
    * than the inline style rule).
    */
   const bool mIsSMILOverride;
+
+ private:
+  template <typename SetterFunc>
+  nsresult SetSMILValueHelper(SetterFunc aFunc);
 };
 
 #endif /* nsDOMCSSAttributeDeclaration_h */

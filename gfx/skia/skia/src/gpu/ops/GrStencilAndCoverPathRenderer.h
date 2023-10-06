@@ -10,8 +10,8 @@
 
 #include "GrPathRenderer.h"
 
-class GrContext;
 class GrGpu;
+class GrResourceProvider;
 
 /**
  * Uses GrGpu::stencilPath followed by a cover rectangle. This subclass doesn't apply AA; it relies

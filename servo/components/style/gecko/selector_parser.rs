@@ -402,7 +402,7 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
                         parser,
                     )?.into()
                 )
-            }
+            },
             _ => return Err(parser.new_custom_error(
                 SelectorParseErrorKind::UnsupportedPseudoClassOrElement(name.clone())
             ))

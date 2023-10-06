@@ -539,16 +539,6 @@ bool Layer::HasScrollableFrameMetrics() const {
   return false;
 }
 
-bool Layer::HasRootScrollableFrameMetrics() const {
-  for (uint32_t i = 0; i < GetScrollMetadataCount(); i++) {
-    if (GetFrameMetrics(i).IsScrollable() &&
-        GetFrameMetrics(i).IsRootContent()) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool Layer::IsScrollableWithoutContent() const {
   // A scrollable container layer with no children
   return AsContainerLayer() && HasScrollableFrameMetrics() && !GetFirstChild();
@@ -1727,11 +1717,12 @@ void Layer::PrintInfo(std::stringstream& aStream, const char* aPrefix) {
   }
   if (GetIsFixedPosition()) {
     LayerPoint anchor = GetFixedPositionAnchor();
-    aStream << nsPrintfCString(" [isFixedPosition scrollId=%" PRIu64
-                               " sides=0x%x anchor=%s]",
-                               GetFixedPositionScrollContainerId(),
-                               GetFixedPositionSides(),
-                               ToString(anchor).c_str())
+    aStream << nsPrintfCString(
+                   " [isFixedPosition scrollId=%" PRIu64
+                   " sides=0x%x anchor=%s]",
+                   GetFixedPositionScrollContainerId(),
+                   static_cast<unsigned int>(GetFixedPositionSides()),
+                   ToString(anchor).c_str())
                    .get();
   }
   if (GetIsStickyPosition()) {

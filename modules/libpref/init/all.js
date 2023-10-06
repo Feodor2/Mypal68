@@ -261,16 +261,6 @@ pref("dom.serviceWorkers.update_delay", 1000);
 // Enable test for 24 hours update, service workers will always treat last update check time is over 24 hours
 pref("dom.serviceWorkers.testUpdateOverOneDay", false);
 
-// If this is true, TextEventDispatcher dispatches keydown and keyup events
-// even during composition (keypress events are never fired during composition
-// even if this is true).
-pref("dom.keyboardevent.dispatch_during_composition", true);
-
-// If this is true, TextEventDispatcher dispatches keypress event with setting
-// WidgetEvent::mFlags::mOnlySystemGroupDispatchInContent to true if it won't
-// cause inputting printable character.
-pref("dom.keyboardevent.keypress.dispatch_non_printable_keys_only_system_group_in_content", true);
-
 // Blacklist of domains of web apps which are not aware of strict keypress
 // dispatching behavior.  This is comma separated list.  If you need to match
 // all sub-domains, you can specify it as "*.example.com".  Additionally, you
@@ -308,14 +298,10 @@ pref("dom.mouseevent.click.hack.use_legacy_non-primary_dispatch", "");
 // of content viewers to cache based on the amount of available memory.
 pref("browser.sessionhistory.max_total_viewers", -1);
 
-pref("ui.use_native_colors", true);
 pref("ui.click_hold_context_menus", false);
 // 0 = false, 1 = true, 2 = autodetect.
 pref("ui.android.mouse_as_touch", 1);
 
-// Pop up context menu on mouseup instead of mousedown, if that's the OS default.
-// Note: ignored on Windows (context menus always use mouseup)
-pref("ui.context_menus.after_mouseup", false);
 // Duration of timeout of incremental search in menus (ms).  0 means infinite.
 pref("ui.menu.incremental_search.timeout", 1000);
 // If true, all popups won't hide automatically on blur
@@ -410,9 +396,6 @@ pref("media.hardware-video-decoding.enabled", true);
 #endif
 pref("media.gmp.decoder.aac", 0);
 pref("media.gmp.decoder.h264", 0);
-pref("media.opus.enabled", true);
-pref("media.wave.enabled", true);
-pref("media.webm.enabled", true);
 
 // GMP storage version number. At startup we check the version against
 // media.gmp.storage.version.observed, and if the versions don't match,
@@ -449,11 +432,13 @@ pref("media.videocontrols.picture-in-picture.video-toggle.flyout-wait-ms", 5000)
   pref("media.navigator.video.red_ulpfec_enabled", false);
 
   #ifdef NIGHTLY_BUILD
-    pref("media.peerconnection.sdp.rust.enabled", true);
-    pref("media.peerconnection.sdp.rust.compare", true);
+    pref("media.peerconnection.sdp.parser", "sipcc");
+    pref("media.peerconnection.sdp.alternate_parse_mode", "never");
+    pref("media.peerconnection.sdp.strict_success", false);
   #else
-    pref("media.peerconnection.sdp.rust.enabled", false);
-    pref("media.peerconnection.sdp.rust.compare", false);
+    pref("media.peerconnection.sdp.parser", "sipcc");
+    pref("media.peerconnection.sdp.alternate_parse_mode", "never");
+    pref("media.peerconnection.sdp.strict_success", false);
   #endif
 
   pref("media.webrtc.debug.trace_mask", 0);
@@ -469,18 +454,6 @@ pref("media.videocontrols.picture-in-picture.video-toggle.flyout-wait-ms", 5000)
   pref("media.navigator.video.h264.level", 31); // 0x42E01f - level 3.1
   pref("media.navigator.video.h264.max_br", 0);
   pref("media.navigator.video.h264.max_mbps", 0);
-  #if defined(NIGHTLY_BUILD) && !defined(ANDROID)
-    pref("media.navigator.mediadatadecoder_vpx_enabled", true);
-  #else
-    pref("media.navigator.mediadatadecoder_vpx_enabled", false);
-  #endif
-  #if defined(ANDROID)
-    pref("media.navigator.mediadatadecoder_h264_enabled", false); // bug 1509316
-  #elif defined(_ARM64_) && defined(XP_WIN)
-    pref("media.navigator.mediadatadecoder_h264_enabled", false);
-  #else
-    pref("media.navigator.mediadatadecoder_h264_enabled", true);
-  #endif
   pref("media.peerconnection.video.vp9_enabled", true);
   pref("media.peerconnection.video.vp9_preferred", false);
   pref("media.getusermedia.browser.enabled", false);
@@ -519,6 +492,8 @@ pref("media.videocontrols.picture-in-picture.video-toggle.flyout-wait-ms", 5000)
   pref("media.peerconnection.ice.trickle_grace_period", 5000);
   pref("media.peerconnection.ice.no_host", false);
   pref("media.peerconnection.ice.default_address_only", false);
+  pref("media.peerconnection.ice.obfuscate_host_addresses", false);
+  pref("media.peerconnection.ice.proxy_only_if_behind_proxy", false);
   pref("media.peerconnection.ice.proxy_only", false);
   pref("media.peerconnection.turn.disable", false);
 
@@ -550,17 +525,6 @@ pref("media.getusermedia.audiocapture.enabled", false);
 // WebVTT pseudo element and class support.
 pref("media.webvtt.pseudo.enabled", true);
 
-pref("media.benchmark.vp9.threshold", 150);
-pref("media.benchmark.frames", 300);
-pref("media.benchmark.timeout", 1000);
-
-pref("media.media-capabilities.enabled", true);
-pref("media.media-capabilities.screen.enabled", false);
-
-#ifdef MOZ_WEBM_ENCODER
-  pref("media.encoder.webm.enabled", true);
-#endif
-
 // Whether to allow recording of AudioNodes with MediaRecorder
 pref("media.recorder.audio_node.enabled", false);
 
@@ -577,14 +541,6 @@ pref("media.autoplay.block-webaudio", false);
 
 // By default, don't block the media from extension background script.
 pref("media.autoplay.allow-extension-background-pages", true);
-
-// If "media.autoplay.default" is not ALLOWED, and this pref is true,
-// then audible media would only be allowed to autoplay after website has
-// been activated by specific user gestures, but non-audible
-// media won't be restricted.
-#ifdef NIGHTLY_BUILD
-  pref("media.autoplay.enabled.user-gestures-needed", false);
-#endif
 
 // The default number of decoded video frames that are enqueued in
 // MediaDecoderReader's mVideoQueue.
@@ -611,22 +567,6 @@ pref("media.cubeb.logging_level", "");
 // GraphRunner (fixed MediaTrackGraph thread) control
 pref("media.audiograph.single_thread.enabled", false);
 
-#ifdef MOZ_AV1
-  #if defined(XP_WIN) && !defined(_ARM64_)
-    pref("media.av1.enabled", true);
-    pref("media.av1.use-dav1d", true);
-  #elif defined(XP_MACOSX)
-    pref("media.av1.enabled", true);
-    pref("media.av1.use-dav1d", true);
-  #elif defined(XP_UNIX) && !defined(MOZ_WIDGET_ANDROID)
-    pref("media.av1.enabled", true);
-    pref("media.av1.use-dav1d", true);
-  #else
-    pref("media.av1.enabled", false);
-    pref("media.av1.use-dav1d", false);
-  #endif
-#endif
-
 // APZ preferences. For documentation/details on what these prefs do, check
 // gfx/layers/apz/src/AsyncPanZoomController.cpp.
 pref("apz.overscroll.spring_friction", "0.015");
@@ -643,11 +583,6 @@ pref("apz.overscroll.stretch_factor", "0.35");
   //          broken).
   pref("gfx.hidpi.enabled", 2);
 #endif
-
-// Default to containerless scrolling
-pref("layout.scroll.root-frame-containers", false);
-
-pref("layout.scrollbars.always-layerize-track", false);
 
 pref("gfx.color_management.display_profile", "");
 
@@ -737,6 +672,8 @@ pref("gfx.webrender.debug.slow-frame-indicator", false);
 pref("gfx.webrender.debug.picture-caching", false);
 pref("gfx.webrender.debug.primitives", false);
 pref("gfx.webrender.debug.small-screen", false);
+pref("gfx.webrender.debug.obscure-images", false);
+pref("gfx.webrender.debug.glyph-flashing", false);
 
 pref("accessibility.warn_on_browsewithcaret", true);
 
@@ -822,7 +759,6 @@ pref("accessibility.typeaheadfind.enablesound", true);
 #endif
 pref("accessibility.typeaheadfind.matchesCountLimit", 1000);
 pref("findbar.highlightAll", false);
-pref("findbar.modalHighlight", false);
 pref("findbar.entireword", false);
 pref("findbar.iteratorTimeout", 100);
 
@@ -839,8 +775,6 @@ pref("toolkit.cosmeticAnimations.enabled", true);
 
 pref("toolkit.scrollbox.smoothScroll", true);
 pref("toolkit.scrollbox.scrollIncrement", 20);
-pref("toolkit.scrollbox.verticalScrollDistance", 3);
-pref("toolkit.scrollbox.horizontalScrollDistance", 5);
 pref("toolkit.scrollbox.clickToScroll.scrollDelay", 150);
 
 pref("toolkit.tabbox.switchByScrolling", false);
@@ -902,10 +836,6 @@ pref("nglayout.enable_drag_images", true);
 // the first one applies to everything, the second one only to chrome
 pref("nglayout.debug.paint_flashing", false);
 pref("nglayout.debug.paint_flashing_chrome", false);
-
-// enable/disable widget update area flashing --- only supported with
-// BasicLayers (other layer managers always update the entire widget area)
-pref("nglayout.debug.widget_update_flashing", false);
 
 // Whether frame visibility tracking is enabled globally.
 pref("layout.framevisibility.enabled", true);
@@ -971,11 +901,6 @@ pref("print.print_edge_bottom", 0);
 #else
   pref("print.print_via_parent", false);
 #endif
-
-// Variation fonts can't always be embedded in certain output formats
-// such as PDF. To work around this, draw the variation fonts using
-// paths instead of using font embedding.
-pref("print.font-variations-as-paths", true);
 
 // Pref used by the spellchecker extension to control the
 // maximum number of misspelled words that will be underlined
@@ -1239,9 +1164,6 @@ pref("javascript.options.dynamicImport", true);
 // advanced prefs
 pref("advanced.mailftp",                    false);
 pref("image.animation_mode",                "normal");
-
-// Same-origin policy for file URIs, "false" is traditional
-pref("security.fileuri.strict_origin_policy", true);
 
 // If this pref is true, prefs in the logging.config branch will be cleared on
 // startup. This is done so that setting a log-file and log-modules at runtime
@@ -2033,20 +1955,12 @@ pref("font.language.group",                 "chrome://global/locale/intl.propert
 // in during composition.  Note that those prefs are ignored if
 // "dom.keyboardevent.dispatch_during_composition" is false.
 #ifdef MOZ_WIDGET_ANDROID
-  // If true, dispatch the keydown and keyup events on any web apps even during
-  // composition.
-  #ifdef EARLY_BETA_OR_EARLIER
-    pref("intl.ime.hack.on_any_apps.fire_key_events_for_composition", true);
-  #else // #ifdef EARLY_BETA_OR_EARLIER
-    pref("intl.ime.hack.on_any_apps.fire_key_events_for_composition", false);
-  #endif // #ifdef EARLY_BETA_OR_EARLIER #else
-  // If true and the above pref is false, dispatch the keydown and keyup events
-  // only on IME-unaware web apps.  So, this supports web apps which listen to
-  // only keydown or keyup event to get a change to do something at every text
-  // input.
+  // If true and intl.ime.hack.on_any_apps.fire_key_events_for_composition is
+  // false, dispatch the keydown and keyup events only on IME-unaware web apps.
+  // So, this supports web apps which listen to only keydown or keyup events
+  // to get a change to do something at every text input.
   pref("intl.ime.hack.on_ime_unaware_apps.fire_key_events_for_composition", true);
-#else // MOZ_WIDGET_ANDROID
-  pref("intl.ime.hack.on_any_apps.fire_key_events_for_composition", false);
+#else
   pref("intl.ime.hack.on_ime_unaware_apps.fire_key_events_for_composition", false);
 #endif // MOZ_WIDGET_ANDROID
 
@@ -2283,7 +2197,7 @@ pref("security.dialog_enable_delay", 1000);
 pref("security.notification_enable_delay", 500);
 
 #if defined(DEBUG) && !defined(ANDROID)
-  pref("csp.about_uris_without_csp", "blank,printpreview,srcdoc,about,addons,cache-entry,config,crashes,debugging,devtools,downloads,home,memory,networking,newtab,performance,plugins,policies,profiles,restartrequired,serviceworkers,sessionrestore,support,sync-log,telemetry,url-classifier,webrtc,welcomeback");
+  pref("csp.about_uris_without_csp", "blank,printpreview,srcdoc,about,addons,cache-entry,config,crashes,debugging,devtools,downloads,home,memory,networking,newtab,performance,plugins,policies,profiles,restartrequired,serviceworkers,sessionrestore,support,sync-log,telemetry,url-classifier,welcomeback");
   // the following prefs are for testing purposes only.
   pref("csp.overrule_about_uris_without_csp_whitelist", false);
   pref("csp.skip_about_page_has_csp_assert", false);
@@ -2384,13 +2298,6 @@ pref("services.blocklist.gfx.signer", "remote-settings.content-signature.mozilla
 // Use 17 for Ctrl, 18 for Alt, 224 for Meta, 91 for Win, 0 for none. Mac settings in macprefs.js
 pref("ui.key.accelKey", 17);
 pref("ui.key.menuAccessKey", 18);
-pref("ui.key.generalAccessKey", -1);
-
-// If generalAccessKey is -1, use the following two prefs instead.
-// Use 0 for disabled, 1 for Shift, 2 for Ctrl, 4 for Alt, 8 for Meta, 16 for Win
-// (values can be combined, e.g. 5 for Alt+Shift)
-pref("ui.key.chromeAccess", 4);
-pref("ui.key.contentAccess", 5);
 
 pref("ui.key.menuAccessKeyFocuses", false); // overridden below
 
@@ -2409,30 +2316,6 @@ pref("clipboard.plainTextOnly", false);
   pref("mousebutton.4th.enabled", true);
   pref("mousebutton.5th.enabled", true);
 #endif
-
-// mouse wheel scroll transaction period of time (in milliseconds)
-pref("mousewheel.transaction.timeout", 1500);
-// mouse wheel scroll transaction is held even if the mouse cursor is moved.
-pref("mousewheel.transaction.ignoremovedelay", 100);
-
-// prefs for app level mouse wheel scrolling acceleration.
-// number of mousewheel clicks when acceleration starts
-// acceleration can be turned off if pref is set to -1
-pref("mousewheel.acceleration.start", -1);
-// factor to be multiplied for constant acceleration
-pref("mousewheel.acceleration.factor", 10);
-
-// Prefs for override the system mouse wheel scrolling speed on
-// content of the web pages.  When
-// "mousewheel.system_scroll_override_on_root_content.enabled" is true and the system
-// scrolling speed isn't customized by the user, the content scrolling
-// speed is multiplied by the following factors.  The value will be used as
-// 1/100.  E.g., 200 means 2.00.
-// NOTE: Even if "mousewheel.system_scroll_override_on_root_content.enabled" is
-// true, when Gecko detects the user customized the system scrolling speed
-// settings, the override isn't executed.
-pref("mousewheel.system_scroll_override_on_root_content.vertical.factor", 200);
-pref("mousewheel.system_scroll_override_on_root_content.horizontal.factor", 200);
 
 // mousewheel.*.action can specify the action when you use mosue wheel.
 // When no modifier keys are pressed or two or more modifires are pressed,
@@ -2591,53 +2474,11 @@ pref("layout.word_select.stop_at_underscore", false);
 // Windows default is 1 for word delete behavior, the rest as for 2.
 pref("layout.selection.caret_style", 0);
 
-// pref to report CSS errors to the error console
-pref("layout.css.report_errors", true);
-
 // Override DPI. A value of -1 means use the maximum of 96 and the system DPI.
 // A value of 0 means use the system DPI. A positive value is used as the DPI.
 // This sets the physical size of a device pixel and thus controls the
 // interpretation of physical units such as "pt".
 pref("layout.css.dpi", -1);
-
-// Set the number of device pixels per CSS pixel. A value <= 0 means choose
-// automatically based on user settings for the platform (e.g., "UI scale factor"
-// on Mac). A positive value is used as-is. This effectively controls the size
-// of a CSS "px". This is only used for windows on the screen, not for printing.
-pref("layout.css.devPixelsPerPx", "-1.0");
-
-// Set the threshold distance in CSS pixels below which scrolling will snap to
-// an edge, when scroll snapping is set to "proximity".
-pref("layout.css.scroll-snap.proximity-threshold", 200);
-
-// When selecting the snap point for CSS scroll snapping, the velocity of the
-// scroll frame is clamped to this speed, in CSS pixels / s.
-pref("layout.css.scroll-snap.prediction-max-velocity", 2000);
-
-// When selecting the snap point for CSS scroll snapping, the velocity of the
-// scroll frame is integrated over this duration, in seconds.  The snap point
-// best suited for this position is selected, enabling the user to perform fling
-// gestures.
-pref("layout.css.scroll-snap.prediction-sensitivity", "0.750");
-
-// Is CSSOM-View scroll-behavior and its MSD smooth scrolling enabled?
-pref("layout.css.scroll-behavior.enabled", true);
-
-// Tuning of the smooth scroll motion used by CSSOM-View scroll-behavior.
-// Spring-constant controls the strength of the simulated MSD
-// (Mass-Spring-Damper)
-pref("layout.css.scroll-behavior.spring-constant", "250.0");
-
-// Tuning of the smooth scroll motion used by CSSOM-View scroll-behavior.
-// Damping-ratio controls the dampening force of the simulated MSD
-// (Mass-Spring-Damper).
-// When below 1.0, the system is under-damped; it may overshoot the target and
-// oscillate.
-// When greater than 1.0, the system is over-damped; it will reach the target at
-// reduced speed without overshooting.
-// When equal to 1.0, the system is critically-damped; it will reach the target
-// at the greatest speed without overshooting.
-pref("layout.css.scroll-behavior.damping-ratio", "1.0");
 
 // pref for which side vertical scrollbars should be on
 // 0 = end-side in UI direction
@@ -2648,11 +2489,6 @@ pref("layout.scrollbar.side", 0);
 
 // pref to stop overlay scrollbars from fading out, for testing purposes
 pref("layout.testing.overlay-scrollbars.always-visible", false);
-
-// pref to control browser frame rate, in Hz. A value <= 0 means choose
-// automatically based on knowledge of the platform (or 60Hz if no platform-
-// specific information is available).
-pref("layout.frame_rate", -1);
 
 // pref to control whether layout warnings that are hit quite often are enabled
 pref("layout.spammy_warnings.enabled", false);
@@ -3198,9 +3034,6 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
   // override double-click word selection behavior.
   pref("layout.word_select.eat_space_to_next_word", true);
 
-  // Whether to extend the native dialog with information on printing frames.
-  pref("print.extend_native_print_dialog", true);
-
   // Locate plugins by the directories specified in the Windows registry for PLIDs
   // Which is currently HKLM\Software\MozillaPlugins\xxxPLIDxxx\Path
   pref("plugin.scan.plid.all", true);
@@ -3337,8 +3170,6 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
 
   // See bug 448927, on topmost panel, some IMEs are not usable on Windows.
   pref("ui.panel.default_level_parent", false);
-
-  pref("mousewheel.system_scroll_override_on_root_content.enabled", true);
 
   // Enable system settings cache for mouse wheel message handling.
   // Note that even if this pref is set to true, Gecko may not cache the system
@@ -3588,24 +3419,11 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
   // Use 17 for Ctrl, 18 for Option, 224 for Cmd, 0 for none
   pref("ui.key.menuAccessKey", 0);
   pref("ui.key.accelKey", 224);
-  // (pinkerton, joki, saari) IE5 for mac uses Control for access keys. The HTML4 spec
-  // suggests to use command on mac, but this really sucks (imagine someone having a "q"
-  // as an access key and not letting you quit the app!). As a result, we've made a
-  // command decision 1 day before tree lockdown to change it to the control key.
-  pref("ui.key.generalAccessKey", -1);
-
-  // If generalAccessKey is -1, use the following two prefs instead.
-  // Use 0 for disabled, 1 for Shift, 2 for Ctrl, 4 for Alt, 8 for Meta (Cmd)
-  // (values can be combined, e.g. 3 for Ctrl+Shift)
-  pref("ui.key.chromeAccess", 2);
-  pref("ui.key.contentAccess", 6);
 
   // See bug 404131, topmost <panel> element wins to Dashboard on MacOSX.
   pref("ui.panel.default_level_parent", false);
 
   pref("ui.plugin.cancel_composition_at_input_source_changed", false);
-
-  pref("mousewheel.system_scroll_override_on_root_content.enabled", false);
 
   // Macbook touchpad two finger pixel scrolling
   pref("mousewheel.enable_pixel_scrolling", true);
@@ -3648,8 +3466,6 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
   // A problem with using managed windows is that metacity sometimes deactivates
   // the parent window when the managed popup is shown.
   pref("ui.panel.default_level_parent", true);
-
-  pref("mousewheel.system_scroll_override_on_root_content.enabled", false);
 
   // Forward downloads with known OMA MIME types to Android's download manager
   // instead of downloading them in the browser.
@@ -3848,8 +3664,6 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
   // 2. The parent of non-topmost panel is not activated when the panel is hidden.
   // So, we have no reasons we should use non-toplevel window for popup.
   pref("ui.panel.default_level_parent", true);
-
-  pref("mousewheel.system_scroll_override_on_root_content.enabled", false);
 
   pref("intl.ime.use_simple_context_on_password_field", false);
 
@@ -4105,8 +3919,6 @@ pref("network.tcp.tcp_fastopen_http_stalls_timeout", 20);
   #endif
 #endif
 
-pref("widget.window-transforms.disabled", false);
-
 // Timeout for outbound network geolocation provider XHR
 pref("geo.wifi.xhr.timeout", 60000);
 
@@ -4265,12 +4077,6 @@ pref("dom.push.http2.retryInterval", 5000);
   pref("dom.w3c_touch_events.enabled", 2);
 #endif
 
-// Control firing WidgetMouseEvent by handling Windows pointer messages or mouse
-// messages.
-#if defined(XP_WIN)
-  pref("dom.w3c_pointer_events.dispatch_by_pointer_messages", false);
-#endif
-
 // W3C pointer events draft
 pref("dom.w3c_pointer_events.implicit_capture", false);
 
@@ -4361,9 +4167,6 @@ pref("network.trr.disable-ECS", true);
 pref("network.trr.max-fails", 5);
 // Comma separated list of domains that we should not use TRR for
 pref("network.trr.excluded-domains", "localhost,local");
-
-// enable HttpTrafficAnalyzer
-pref("network.traffic_analyzer.enabled", true);
 
 pref("captivedetect.canonicalURL", "http://detectportal.firefox.com/success.txt");
 pref("captivedetect.canonicalContent", "success\n");

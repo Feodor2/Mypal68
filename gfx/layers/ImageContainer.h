@@ -36,15 +36,13 @@
 #ifndef XPCOM_GLUE_AVOID_NSPR
 /**
  * We need to be able to hold a reference to a Moz2D SourceSurface from Image
- * subclasses. This is potentially a problem since Images can be addrefed
- * or released off the main thread. We can ensure that we never AddRef
- * a SourceSurface off the main thread, but we might want to Release due
- * to an Image being destroyed off the main thread.
+ * subclasses. Whilst SourceSurface is atomic refcounted and thus safe to
+ * AddRef/Release on any thread, it is potentially a problem since clean up code
+ * may need to run on a the main thread.
  *
  * We use nsCountedRef<nsMainThreadSourceSurfaceRef> to reference the
- * SourceSurface. When AddRefing, we assert that we're on the main thread.
- * When Releasing, if we're not on the main thread, we post an event to
- * the main thread to do the actual release.
+ * SourceSurface. When Releasing, if we're not on the main thread, we post an
+ * event to the main thread to do the actual release.
  */
 class nsMainThreadSourceSurfaceRef;
 
@@ -78,11 +76,7 @@ class nsAutoRefTraits<nsMainThreadSourceSurfaceRef> {
     nsCOMPtr<nsIRunnable> runnable = new SurfaceReleaser(aRawRef);
     NS_DispatchToMainThread(runnable);
   }
-  static void AddRef(RawRef aRawRef) {
-    NS_ASSERTION(NS_IsMainThread(),
-                 "Can only add a reference on the main thread");
-    aRawRef->AddRef();
-  }
+  static void AddRef(RawRef aRawRef) { aRawRef->AddRef(); }
 };
 
 class nsOwningThreadSourceSurfaceRef;
@@ -219,7 +213,7 @@ class Image {
    * For use with the TextureForwarder only (so that the later can
    * synchronize the TextureClient with the TextureHost).
    */
-  virtual TextureClient* GetTextureClient(KnowsCompositor* aForwarder) {
+  virtual TextureClient* GetTextureClient(KnowsCompositor* aKnowsCompositor) {
     return nullptr;
   }
 
@@ -714,46 +708,29 @@ class AutoLockImage {
 
 struct PlanarYCbCrData {
   // Luminance buffer
-  uint8_t* mYChannel;
-  int32_t mYStride;
-  gfx::IntSize mYSize;
-  int32_t mYSkip;
+  uint8_t* mYChannel = nullptr;
+  int32_t mYStride = 0;
+  gfx::IntSize mYSize = gfx::IntSize(0, 0);
+  int32_t mYSkip = 0;
   // Chroma buffers
-  uint8_t* mCbChannel;
-  uint8_t* mCrChannel;
-  int32_t mCbCrStride;
-  gfx::IntSize mCbCrSize;
-  int32_t mCbSkip;
-  int32_t mCrSkip;
+  uint8_t* mCbChannel = nullptr;
+  uint8_t* mCrChannel = nullptr;
+  int32_t mCbCrStride = 0;
+  gfx::IntSize mCbCrSize = gfx::IntSize(0, 0);
+  int32_t mCbSkip = 0;
+  int32_t mCrSkip = 0;
   // Picture region
-  uint32_t mPicX;
-  uint32_t mPicY;
-  gfx::IntSize mPicSize;
-  StereoMode mStereoMode;
-  gfx::YUVColorSpace mYUVColorSpace;
-  gfx::ColorDepth mColorDepth;
+  uint32_t mPicX = 0;
+  uint32_t mPicY = 0;
+  gfx::IntSize mPicSize = gfx::IntSize(0, 0);
+  StereoMode mStereoMode = StereoMode::MONO;
+  gfx::ColorDepth mColorDepth = gfx::ColorDepth::COLOR_8;
+  gfx::YUVColorSpace mYUVColorSpace = gfx::YUVColorSpace::UNKNOWN;
+  gfx::ColorRange mColorRange = gfx::ColorRange::LIMITED;
 
   gfx::IntRect GetPictureRect() const {
     return gfx::IntRect(mPicX, mPicY, mPicSize.width, mPicSize.height);
   }
-
-  PlanarYCbCrData()
-      : mYChannel(nullptr),
-        mYStride(0),
-        mYSize(0, 0),
-        mYSkip(0),
-        mCbChannel(nullptr),
-        mCrChannel(nullptr),
-        mCbCrStride(0),
-        mCbCrSize(0, 0),
-        mCbSkip(0),
-        mCrSkip(0),
-        mPicX(0),
-        mPicY(0),
-        mPicSize(0, 0),
-        mStereoMode(StereoMode::MONO),
-        mYUVColorSpace(gfx::YUVColorSpace::BT601),
-        mColorDepth(gfx::ColorDepth::COLOR_8) {}
 };
 
 /****** Image subtypes for the different formats ******/
@@ -942,7 +919,7 @@ class SourceSurfaceImage final : public Image {
   void SetTextureFlags(TextureFlags aTextureFlags) {
     mTextureFlags = aTextureFlags;
   }
-  TextureClient* GetTextureClient(KnowsCompositor* aForwarder) override;
+  TextureClient* GetTextureClient(KnowsCompositor* aKnowsCompositor) override;
 
   gfx::IntSize GetSize() const override { return mSize; }
 

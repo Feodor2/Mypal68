@@ -27,9 +27,6 @@ public:
 
     bool asABlur(BlurRec*) const override { return false; }
 
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkShaderMF)
-
 protected:
 #if SK_SUPPORT_GPU
     std::unique_ptr<GrFragmentProcessor> onAsFragmentProcessor(const GrFPArgs&) const override;
@@ -37,6 +34,8 @@ protected:
 #endif
 
 private:
+    SK_FLATTENABLE_HOOKS(SkShaderMF)
+
     sk_sp<SkShader> fShader;
 
     SkShaderMF(SkReadBuffer&);
@@ -46,12 +45,6 @@ private:
 
     typedef SkMaskFilter INHERITED;
 };
-
-#ifndef SK_IGNORE_TO_STRING
-void SkShaderMF::toString(SkString* str) const {
-    str->set("SkShaderMF:");
-}
-#endif
 
 sk_sp<SkFlattenable> SkShaderMF::CreateProc(SkReadBuffer& buffer) {
     return SkShaderMaskFilter::Make(buffer.readShader());
@@ -72,7 +65,9 @@ static void rect_memcpy(void* dst, size_t dstRB, const void* src, size_t srcRB,
 
 bool SkShaderMF::filterMask(SkMask* dst, const SkMask& src, const SkMatrix& ctm,
                             SkIPoint* margin) const {
-    SkASSERT(src.fFormat == SkMask::kA8_Format);
+    if (src.fFormat != SkMask::kA8_Format) {
+        return false;
+    }
 
     if (margin) {
         margin->set(0, 0);
@@ -103,6 +98,7 @@ bool SkShaderMF::filterMask(SkMask* dst, const SkMask& src, const SkMatrix& ctm,
 
     SkPaint paint;
     paint.setShader(fShader);
+    paint.setFilterQuality(SkFilterQuality::kLow_SkFilterQuality);
     // this blendmode is the trick: we only draw the shader where the mask is
     paint.setBlendMode(SkBlendMode::kSrcIn);
 
@@ -132,6 +128,4 @@ sk_sp<SkMaskFilter> SkShaderMaskFilter::Make(sk_sp<SkShader> shader) {
     return shader ? sk_sp<SkMaskFilter>(new SkShaderMF(std::move(shader))) : nullptr;
 }
 
-SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_START(SkShaderMaskFilter)
-    SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkShaderMF)
-SK_DEFINE_FLATTENABLE_REGISTRAR_GROUP_END
+void SkShaderMaskFilter::RegisterFlattenables() { SK_REGISTER_FLATTENABLE(SkShaderMF); }

@@ -471,6 +471,8 @@ class nsDocShell final : public nsDocLoader,
     mSkipBrowsingContextDetachOnDestroy = true;
   }
 
+  nsDocShell* GetInProcessChildAt(int32_t aIndex);
+
  private:  // member functions
   friend class nsDSURIContentListener;
   friend class FramingChecker;
@@ -506,8 +508,7 @@ class nsDocShell final : public nsDocLoader,
                              nsIDocShellTreeItem* aTargetTreeItem);
 
   static inline uint32_t PRTimeToSeconds(PRTime aTimeUsec) {
-    PRTime usecPerSec = PR_USEC_PER_SEC;
-    return uint32_t(aTimeUsec /= usecPerSec);
+    return uint32_t(aTimeUsec / PR_USEC_PER_SEC);
   }
 
   static const nsCString FrameTypeToString(uint32_t aFrameType) {

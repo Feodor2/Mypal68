@@ -23,16 +23,19 @@ using namespace gfx;
 
 D3D11ShareHandleImage::D3D11ShareHandleImage(const gfx::IntSize& aSize,
                                              const gfx::IntRect& aRect,
-                                             gfx::YUVColorSpace aColorSpace)
+                                             gfx::YUVColorSpace aColorSpace,
+                                             gfx::ColorRange aColorRange)
     : Image(nullptr, ImageFormat::D3D11_SHARE_HANDLE_TEXTURE),
       mSize(aSize),
       mPictureRect(aRect),
-      mYUVColorSpace(aColorSpace) {}
+      mYUVColorSpace(aColorSpace),
+      mColorRange(aColorRange) {}
 
 bool D3D11ShareHandleImage::AllocateTexture(D3D11RecycleAllocator* aAllocator,
                                             ID3D11Device* aDevice) {
   if (aAllocator) {
-    mTextureClient = aAllocator->CreateOrRecycleClient(mYUVColorSpace, mSize);
+    mTextureClient =
+        aAllocator->CreateOrRecycleClient(mYUVColorSpace, mColorRange, mSize);
     if (mTextureClient) {
       D3D11TextureData* textureData = GetData();
       MOZ_DIAGNOSTIC_ASSERT(textureData, "Wrong TextureDataType");
@@ -56,7 +59,7 @@ bool D3D11ShareHandleImage::AllocateTexture(D3D11RecycleAllocator* aAllocator,
 gfx::IntSize D3D11ShareHandleImage::GetSize() const { return mSize; }
 
 TextureClient* D3D11ShareHandleImage::GetTextureClient(
-    KnowsCompositor* aForwarder) {
+    KnowsCompositor* aKnowsCompositor) {
   return mTextureClient;
 }
 
@@ -175,6 +178,7 @@ class MOZ_RAII D3D11TextureClientAllocationHelper
  public:
   D3D11TextureClientAllocationHelper(gfx::SurfaceFormat aFormat,
                                      gfx::YUVColorSpace aColorSpace,
+                                     gfx::ColorRange aColorRange,
                                      const gfx::IntSize& aSize,
                                      TextureAllocationFlags aAllocFlags,
                                      ID3D11Device* aDevice,
@@ -182,6 +186,7 @@ class MOZ_RAII D3D11TextureClientAllocationHelper
       : ITextureClientAllocationHelper(aFormat, aSize, BackendSelector::Content,
                                        aTextureFlags, aAllocFlags),
         mYUVColorSpace(aColorSpace),
+        mColorRange(aColorRange),
         mDevice(aDevice) {}
 
   bool IsCompatible(TextureClient* aTextureClient) override {
@@ -196,6 +201,7 @@ class MOZ_RAII D3D11TextureClientAllocationHelper
             aTextureClient->GetFormat() != gfx::SurfaceFormat::P010 &&
             aTextureClient->GetFormat() != gfx::SurfaceFormat::P016) ||
            (textureData->GetYUVColorSpace() == mYUVColorSpace &&
+            textureData->GetColorRange() == mColorRange &&
             textureData->GetTextureAllocationFlags() == mAllocationFlags);
   }
 
@@ -207,12 +213,14 @@ class MOZ_RAII D3D11TextureClientAllocationHelper
       return nullptr;
     }
     data->SetYUVColorSpace(mYUVColorSpace);
+    data->SetColorRange(mColorRange);
     return MakeAndAddRef<TextureClient>(data, mTextureFlags,
                                         aAllocator->GetTextureForwarder());
   }
 
  private:
-  gfx::YUVColorSpace mYUVColorSpace;
+  const gfx::YUVColorSpace mYUVColorSpace;
+  const gfx::ColorRange mColorRange;
   const RefPtr<ID3D11Device> mDevice;
 };
 
@@ -244,7 +252,8 @@ void D3D11RecycleAllocator::SetPreferredSurfaceFormat(
 }
 
 already_AddRefed<TextureClient> D3D11RecycleAllocator::CreateOrRecycleClient(
-    gfx::YUVColorSpace aColorSpace, const gfx::IntSize& aSize) {
+    gfx::YUVColorSpace aColorSpace, gfx::ColorRange aColorRange,
+    const gfx::IntSize& aSize) {
   // When CompositorDevice or ContentDevice is updated,
   // we could not reuse old D3D11Textures. It could cause video flickering.
   RefPtr<ID3D11Device> device = gfx::DeviceManagerDx::Get()->GetImageDevice();
@@ -261,9 +270,9 @@ already_AddRefed<TextureClient> D3D11RecycleAllocator::CreateOrRecycleClient(
     allocFlags = TextureAllocationFlags::ALLOC_MANUAL_SYNCHRONIZATION;
   }
 
-  D3D11TextureClientAllocationHelper helper(mUsableSurfaceFormat, aColorSpace,
-                                            aSize, allocFlags, mDevice,
-                                            layers::TextureFlags::DEFAULT);
+  D3D11TextureClientAllocationHelper helper(
+      mUsableSurfaceFormat, aColorSpace, aColorRange, aSize, allocFlags,
+      mDevice, layers::TextureFlags::DEFAULT);
 
   RefPtr<TextureClient> textureClient = CreateOrRecycle(helper);
   return textureClient.forget();

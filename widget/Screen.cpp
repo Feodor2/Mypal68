@@ -5,6 +5,7 @@
 #include "Screen.h"
 
 #include "mozilla/dom/DOMTypes.h"
+#include "mozilla/StaticPrefs_layout.h"
 
 namespace mozilla {
 namespace widget {
@@ -101,7 +102,7 @@ Screen::GetContentsScaleFactor(double* aOutScale) {
 
 NS_IMETHODIMP
 Screen::GetDefaultCSSScaleFactor(double* aOutScale) {
-  double scale = nsIWidget::DefaultScaleOverride();
+  double scale = StaticPrefs::layout_css_devPixelsPerPx();
   if (scale > 0.0) {
     *aOutScale = scale;
   } else {

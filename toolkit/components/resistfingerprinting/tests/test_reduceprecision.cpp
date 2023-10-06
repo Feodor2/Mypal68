@@ -6,6 +6,7 @@
 
 #include "gtest/gtest.h"
 #include "nsIPrefBranch.h"
+#include "nsServiceManagerUtils.h"
 #include "nsRFPService.h"
 
 using namespace mozilla;

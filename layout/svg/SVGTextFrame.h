@@ -15,16 +15,15 @@
 #include "nsIContent.h"  // for GetContent
 #include "nsStubMutationObserver.h"
 #include "nsSVGContainerFrame.h"
+#include "nsTextFrame.h"
 
 class gfxContext;
 class nsDisplaySVGText;
 class SVGTextFrame;
-class nsTextFrame;
 
 namespace mozilla {
 
 class CharIterator;
-class nsISVGPoint;
 class TextFrameIterator;
 class TextNodeCorrespondenceRecorder;
 struct TextRenderedRun;
@@ -32,7 +31,8 @@ class TextRenderedRunIterator;
 
 namespace dom {
 struct DOMPointInit;
-class SVGIRect;
+class nsISVGPoint;
+class SVGRect;
 class SVGGeometryElement;
 }  // namespace dom
 
@@ -211,8 +211,6 @@ class SVGTextFrame final : public nsSVGDisplayContainerFrame {
   }
 #endif
 
-  virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
-
   /**
    * Finds the nsTextFrame for the closest rendered run to the specified point.
    */
@@ -240,11 +238,11 @@ class SVGTextFrame final : public nsSVGDisplayContainerFrame {
                                const mozilla::dom::DOMPointInit& aPoint);
 
   nsresult GetStartPositionOfChar(nsIContent* aContent, uint32_t aCharNum,
-                                  mozilla::nsISVGPoint** aResult);
+                                  mozilla::dom::nsISVGPoint** aResult);
   nsresult GetEndPositionOfChar(nsIContent* aContent, uint32_t aCharNum,
-                                mozilla::nsISVGPoint** aResult);
+                                mozilla::dom::nsISVGPoint** aResult);
   nsresult GetExtentOfChar(nsIContent* aContent, uint32_t aCharNum,
-                           mozilla::dom::SVGIRect** aResult);
+                           mozilla::dom::SVGRect** aResult);
   nsresult GetRotationOfChar(nsIContent* aContent, uint32_t aCharNum,
                              float* aResult);
 

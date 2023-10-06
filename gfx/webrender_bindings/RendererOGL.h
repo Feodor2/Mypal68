@@ -43,10 +43,10 @@ class RenderTextureHost;
 /// on the render thread instead of the compositor thread.
 class RendererOGL {
   friend wr::WrExternalImage LockExternalImage(void* aObj,
-                                               wr::WrExternalImageId aId,
+                                               wr::ExternalImageId aId,
                                                uint8_t aChannelIndex,
                                                wr::ImageRendering);
-  friend void UnlockExternalImage(void* aObj, wr::WrExternalImageId aId,
+  friend void UnlockExternalImage(void* aObj, wr::ExternalImageId aId,
                                   uint8_t aChannelIndex);
 
  public:
@@ -93,7 +93,7 @@ class RendererOGL {
 
   RefPtr<WebRenderPipelineInfo> FlushPipelineInfo();
 
-  RenderTextureHost* GetRenderTexture(wr::WrExternalImageId aExternalImageId);
+  RenderTextureHost* GetRenderTexture(wr::ExternalImageId aExternalImageId);
 
   void AccumulateMemoryReport(MemoryReport* aReport);
 
@@ -102,8 +102,6 @@ class RendererOGL {
   gl::GLContext* gl() const;
 
  protected:
-  void NotifyWebRenderError(WebRenderError aError);
-
   RefPtr<RenderThread> mThread;
   UniquePtr<RenderCompositor> mCompositor;
   wr::Renderer* mRenderer;

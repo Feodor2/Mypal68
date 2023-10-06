@@ -23,7 +23,8 @@ class RemoteVideoDecoderChild : public RemoteDecoderChild {
 
   MOZ_IS_CLASS_INIT
   MediaResult InitIPDL(const VideoInfo& aVideoInfo, float aFramerate,
-                       const CreateDecoderParams::OptionSet& aOptions);
+                       const CreateDecoderParams::OptionSet& aOptions,
+                       const layers::TextureFactoryIdentifier* aIdentifier);
 
   IPCResult RecvOutput(const DecodedOutputIPDL& aDecodedData) override;
 
@@ -43,18 +44,16 @@ class GpuRemoteVideoDecoderChild final : public RemoteVideoDecoderChild {
                        const CreateDecoderParams::OptionSet& aOptions,
                        const layers::TextureFactoryIdentifier& aIdentifier);
 
-  IPCResult RecvOutput(const DecodedOutputIPDL& aDecodedData) override;
 };
 
 class RemoteVideoDecoderParent final : public RemoteDecoderParent {
  public:
-  RemoteVideoDecoderParent(RemoteDecoderManagerParent* aParent,
-                           const VideoInfo& aVideoInfo, float aFramerate,
-                           const CreateDecoderParams::OptionSet& aOptions,
-                           const layers::TextureFactoryIdentifier& aIdentifier,
-                           TaskQueue* aManagerTaskQueue,
-                           TaskQueue* aDecodeTaskQueue, bool* aSuccess,
-                           nsCString* aErrorDescription);
+  RemoteVideoDecoderParent(
+      RemoteDecoderManagerParent* aParent, const VideoInfo& aVideoInfo,
+      float aFramerate, const CreateDecoderParams::OptionSet& aOptions,
+      const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
+      TaskQueue* aManagerTaskQueue, TaskQueue* aDecodeTaskQueue, bool* aSuccess,
+      nsCString* aErrorDescription);
 
  protected:
   MediaResult ProcessDecodedData(

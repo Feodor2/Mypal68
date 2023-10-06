@@ -56,7 +56,7 @@ use crate::device::{ShaderError, TextureFilter, TextureFlags,
 use crate::device::ProgramCache;
 use crate::device::query::GpuTimer;
 use euclid::{rect, Transform3D, Scale, default};
-use crate::frame_builder::{ChasePrimitive, FrameBuilderConfig};
+use crate::frame_builder::{Frame, ChasePrimitive, FrameBuilderConfig};
 use gleam::gl;
 use crate::glyph_cache::GlyphCache;
 use crate::glyph_rasterizer::{GlyphFormat, GlyphRasterizer};
@@ -77,16 +77,18 @@ use crate::device::query::{GpuProfiler, GpuDebugMethod};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use crate::record::ApiRecordingReceiver;
 use crate::render_backend::{FrameId, RenderBackend};
-use crate::render_task::{RenderTargetKind, RenderTask, RenderTaskData, RenderTaskKind, RenderTaskGraph};
+use crate::render_task_graph::RenderTaskGraph;
+use crate::render_task::{RenderTask, RenderTaskData, RenderTaskKind};
 use crate::resource_cache::ResourceCache;
-use crate::scene_builder::{SceneBuilder, LowPrioritySceneBuilder};
+use crate::scene_builder_thread::{SceneBuilderThread, LowPrioritySceneBuilderThread};
 use crate::screen_capture::AsyncScreenshotGrabber;
 use crate::shade::{Shaders, WrShaders};
 use smallvec::SmallVec;
 use crate::texture_cache::TextureCache;
-use crate::tiling::{AlphaRenderTarget, ColorRenderTarget, PictureCacheTarget};
-use crate::tiling::{BlitJob, BlitJobSource, RenderPassKind, RenderTargetList};
-use crate::tiling::{Frame, RenderTarget, TextureCacheRenderTarget};
+use crate::render_target::{AlphaRenderTarget, ColorRenderTarget, PictureCacheTarget};
+use crate::render_target::{RenderTarget, TextureCacheRenderTarget, RenderTargetList};
+use crate::render_target::{RenderTargetKind, BlitJob, BlitJobSource};
+use crate::render_task_graph::RenderPassKind;
 use crate::util::drain_filter;
 
 use std;
@@ -115,6 +117,7 @@ cfg_if! {
 }
 
 const DEFAULT_BATCH_LOOKBACK_COUNT: usize = 10;
+const VERTEX_TEXTURE_EXTRA_ROWS: i32 = 10;
 
 /// Is only false if no WR instances have ever been created.
 static HAS_BEEN_INITIALIZED: AtomicBool = AtomicBool::new(false);
@@ -614,11 +617,6 @@ pub(crate) mod desc {
             },
             VertexAttribute {
                 name: "aClipDeviceArea",
-                count: 4,
-                kind: VertexAttributeKind::F32,
-            },
-            VertexAttribute {
-                name: "aClipSnapOffsets",
                 count: 4,
                 kind: VertexAttributeKind::F32,
             },
@@ -1467,7 +1465,7 @@ impl GpuCacheTexture {
                         DeviceIntSize::new(MAX_VERTEX_TEXTURE_WIDTH as i32, 1),
                     );
 
-                    uploader.upload(rect, 0, None, &*row.cpu_blocks);
+                    uploader.upload(rect, 0, None, None, &*row.cpu_blocks);
 
                     row.is_dirty = false;
                 }
@@ -1545,8 +1543,6 @@ impl<T> VertexDataTexture<T> {
             }
         }
 
-        let width =
-            (MAX_VERTEX_TEXTURE_WIDTH - (MAX_VERTEX_TEXTURE_WIDTH % texels_per_item)) as i32;
         let needed_height = (data.len() / items_per_row) as i32;
         let existing_height = self.texture.as_ref().map_or(0, |t| t.get_dimensions().height);
 
@@ -1556,10 +1552,10 @@ impl<T> VertexDataTexture<T> {
         // with incremental updates and just re-upload every frame. For most pages
         // they're one row each, and on stress tests like css-francine they end up
         // in the 6-14 range. So we size the texture tightly to what we need (usually
-        // 1), and shrink it if the waste would be more than 10 rows. This helps
-        // with memory overhead, especially because there are several instances of
-        // these textures per Renderer.
-        if needed_height > existing_height || needed_height + 10 < existing_height {
+        // 1), and shrink it if the waste would be more than `VERTEX_TEXTURE_EXTRA_ROWS`
+        // rows. This helps with memory overhead, especially because there are several
+        // instances of these textures per Renderer.
+        if needed_height > existing_height || needed_height + VERTEX_TEXTURE_EXTRA_ROWS < existing_height {
             // Drop the existing texture, if any.
             if let Some(t) = self.texture.take() {
                 device.delete_texture(t);
@@ -1568,7 +1564,7 @@ impl<T> VertexDataTexture<T> {
             let texture = device.create_texture(
                 TextureTarget::Default,
                 self.format,
-                width,
+                MAX_VERTEX_TEXTURE_WIDTH as i32,
                 // Ensure height is at least two to work around
                 // https://bugs.chromium.org/p/angleproject/issues/detail?id=3039
                 needed_height.max(2),
@@ -1579,13 +1575,21 @@ impl<T> VertexDataTexture<T> {
             self.texture = Some(texture);
         }
 
+        // Note: the actual width can be larger than the logical one, with a few texels
+        // of each row unused at the tail. This is needed because there is still hardware
+        // (like Intel iGPUs) that prefers power-of-two sizes of textures ([1]).
+        //
+        // [1] https://software.intel.com/en-us/articles/opengl-performance-tips-power-of-two-textures-have-better-performance
+        let logical_width =
+            (MAX_VERTEX_TEXTURE_WIDTH - (MAX_VERTEX_TEXTURE_WIDTH % texels_per_item)) as i32;
+
         let rect = DeviceIntRect::new(
             DeviceIntPoint::zero(),
-            DeviceIntSize::new(width, needed_height),
+            DeviceIntSize::new(logical_width, needed_height),
         );
         device
             .upload_texture(self.texture(), &self.pbo, 0)
-            .upload(rect, 0, None, data);
+            .upload(rect, 0, None, None, data);
     }
 
     fn deinit(mut self, device: &mut Device) {
@@ -1851,7 +1855,7 @@ impl Renderer {
         );
 
         let color_cache_formats = device.preferred_color_formats();
-        let bgra_swizzle = device.bgra_swizzle();
+        let swizzle_settings = device.swizzle_settings();
         let supports_dual_source_blending = match gl_type {
             gl::GlType::Gl => device.supports_extension("GL_ARB_blend_func_extended") &&
                 device.supports_extension("GL_ARB_explicit_attrib_location"),
@@ -2092,7 +2096,7 @@ impl Renderer {
         let lp_scene_thread_name = format!("WRSceneBuilderLP#{}", options.renderer_id.unwrap_or(0));
         let glyph_rasterizer = GlyphRasterizer::new(workers)?;
 
-        let (scene_builder, scene_tx, scene_rx) = SceneBuilder::new(
+        let (scene_builder, scene_tx, scene_rx) = SceneBuilderThread::new(
             config,
             api_tx.clone(),
             scene_builder_hooks,
@@ -2114,7 +2118,7 @@ impl Renderer {
 
         let low_priority_scene_tx = if options.support_low_priority_transactions {
             let (low_priority_scene_tx, low_priority_scene_rx) = channel();
-            let lp_builder = LowPrioritySceneBuilder {
+            let lp_builder = LowPrioritySceneBuilderThread {
                 rx: low_priority_scene_rx,
                 tx: scene_tx.clone(),
                 simulate_slow_ms: 0,
@@ -2159,7 +2163,7 @@ impl Renderer {
                 },
                 start_size,
                 color_cache_formats,
-                bgra_swizzle,
+                swizzle_settings,
             );
 
             let glyph_cache = GlyphCache::new(max_glyph_cache_size);
@@ -2854,7 +2858,7 @@ impl Renderer {
                     "Received frame depends on a later GPU cache epoch ({:?}) than one we received last via `UpdateGpuCache` ({:?})",
                     frame.gpu_cache_frame_id, self.gpu_cache_frame_id);
 
-                self.draw_tile_frame(
+                self.draw_frame(
                     frame,
                     device_size,
                     cpu_frame_id,
@@ -2872,10 +2876,12 @@ impl Renderer {
                 let dirty_regions =
                     mem::replace(&mut frame.recorded_dirty_regions, Vec::new());
                 results.recorded_dirty_regions.extend(dirty_regions);
+                let dirty_rects = mem::replace(&mut frame.dirty_rects, Vec::new());
+                results.dirty_rects.extend(dirty_rects);
 
                 // If we're the last document, don't call end_pass here, because we'll
                 // be moving on to drawing the debug overlays. See the comment above
-                // the end_pass call in draw_tile_frame about debug draw overlays
+                // the end_pass call in draw_frame about debug draw overlays
                 // for a bit more context.
                 if doc_index != last_document_index {
                     self.texture_resolver.end_pass(&mut self.device, None, None);
@@ -3161,7 +3167,7 @@ impl Renderer {
                 }
 
                 for update in update_list.updates {
-                    let TextureCacheUpdate { id, rect, stride, offset, layer_index, source } = update;
+                    let TextureCacheUpdate { id, rect, stride, offset, layer_index, format_override, source } = update;
                     let texture = &self.texture_resolver.texture_cache_map[&id];
 
                     let bytes_uploaded = match source {
@@ -3172,7 +3178,10 @@ impl Renderer {
                                 0,
                             );
                             uploader.upload(
-                                rect, layer_index, stride,
+                                rect,
+                                layer_index,
+                                stride,
+                                format_override,
                                 &data[offset as usize ..],
                             )
                         }
@@ -3186,12 +3195,10 @@ impl Renderer {
                                 .as_mut()
                                 .expect("Found external image, but no handler set!");
                             // The filter is only relevant for NativeTexture external images.
-                            let size = match handler.lock(id, channel_index, ImageRendering::Auto).source {
+                            let dummy_data;
+                            let data = match handler.lock(id, channel_index, ImageRendering::Auto).source {
                                 ExternalImageSource::RawData(data) => {
-                                    uploader.upload(
-                                        rect, layer_index, stride,
-                                        &data[offset as usize ..],
-                                    )
+                                    &data[offset as usize ..]
                                 }
                                 ExternalImageSource::Invalid => {
                                     // Create a local buffer to fill the pbo.
@@ -3200,13 +3207,20 @@ impl Renderer {
                                     let total_size = width * rect.size.height;
                                     // WR haven't support RGBAF32 format in texture_cache, so
                                     // we use u8 type here.
-                                    let dummy_data: Vec<u8> = vec![255; total_size as usize];
-                                    uploader.upload(rect, layer_index, stride, &dummy_data)
+                                    dummy_data = vec![0xFFu8; total_size as usize];
+                                    &dummy_data
                                 }
                                 ExternalImageSource::NativeTexture(eid) => {
                                     panic!("Unexpected external texture {:?} for the texture cache update of {:?}", eid, id);
                                 }
                             };
+                            let size = uploader.upload(
+                                rect,
+                                layer_index,
+                                stride,
+                                format_override,
+                                data,
+                            );
                             handler.unlock(id, channel_index);
                             size
                         }
@@ -3519,10 +3533,19 @@ impl Renderer {
             self.device.enable_depth_write();
             self.set_blend(false, framebuffer_kind);
 
+            // If updating only a dirty rect within a picture cache target, the
+            // clear must also be scissored to that dirty region.
+            let scissor_rect = target.alpha_batch_container.task_scissor_rect.map(|rect| {
+                draw_target.build_scissor_rect(
+                    Some(rect),
+                    content_origin,
+                )
+            });
+
             self.device.clear_target(
                 target.clear_color.map(|c| c.to_array()),
                 Some(1.0),
-                None,
+                scissor_rect,
             );
 
             self.device.disable_depth_write();
@@ -4493,7 +4516,7 @@ impl Renderer {
         debug_assert!(self.texture_resolver.prev_pass_color.is_none());
     }
 
-    fn draw_tile_frame(
+    fn draw_frame(
         &mut self,
         frame: &mut Frame,
         device_size: Option<DeviceIntSize>,
@@ -4501,7 +4524,9 @@ impl Renderer {
         stats: &mut RendererStats,
         clear_framebuffer: bool,
     ) {
-        let _gm = self.gpu_profile.start_marker("tile frame draw");
+        // These markers seem to crash a lot on Android, see bug 1559834
+        #[cfg(not(target_os = "android"))]
+        let _gm = self.gpu_profile.start_marker("draw frame");
 
         if frame.passes.is_empty() {
             frame.has_been_rendered = true;
@@ -4514,8 +4539,9 @@ impl Renderer {
 
         self.bind_frame_data(frame);
 
-        for (pass_index, pass) in frame.passes.iter_mut().enumerate() {
-            let _gm = self.gpu_profile.start_marker(&format!("pass {}", pass_index));
+        for (_pass_index, pass) in frame.passes.iter_mut().enumerate() {
+            #[cfg(not(target_os = "android"))]
+            let _gm = self.gpu_profile.start_marker(&format!("pass {}", _pass_index));
 
             self.texture_resolver.bind(
                 &TextureSource::PrevPassAlpha,
@@ -4830,22 +4856,19 @@ impl Renderer {
 
         for item in items {
             match item {
-                DebugItem::Rect { rect, color } => {
-                    let inner_color = color.scale_alpha(0.5).into();
-                    let outer_color = (*color).into();
-
+                DebugItem::Rect { rect, outer_color, inner_color } => {
                     debug_renderer.add_quad(
                         rect.origin.x,
                         rect.origin.y,
                         rect.origin.x + rect.size.width,
                         rect.origin.y + rect.size.height,
-                        inner_color,
-                        inner_color,
+                        (*inner_color).into(),
+                        (*inner_color).into(),
                     );
 
                     debug_renderer.add_rect(
                         &rect.to_i32(),
-                        outer_color,
+                        (*outer_color).into(),
                     );
                 }
                 DebugItem::Text { ref msg, position, color } => {
@@ -5619,8 +5642,23 @@ pub struct RendererStats {
 /// some non-repr(C) data.
 #[derive(Debug, Default)]
 pub struct RenderResults {
+    /// Statistics about the frame that was rendered.
     pub stats: RendererStats,
+
+    /// A list of dirty world rects. This is only currently
+    /// useful to test infrastructure.
+    /// TODO(gw): This needs to be refactored / removed.
     pub recorded_dirty_regions: Vec<RecordedDirtyRegion>,
+
+    /// A list of the device dirty rects that were updated
+    /// this frame.
+    /// TODO(gw): This is an initial interface, likely to change in future.
+    /// TODO(gw): The dirty rects here are currently only useful when scrolling
+    ///           is not occurring. They are still correct in the case of
+    ///           scrolling, but will be very large (until we expose proper
+    ///           OS compositor support where the dirty rects apply to a
+    ///           specific picture cache slice / OS compositor surface).
+    pub dirty_rects: Vec<DeviceIntRect>,
 }
 
 #[cfg(any(feature = "capture", feature = "replay"))]

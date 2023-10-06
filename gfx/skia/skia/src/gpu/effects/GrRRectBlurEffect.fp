@@ -7,32 +7,35 @@
 
 in float sigma;
 layout(ctype=SkRect) in float4 rect;
-in uniform float cornerRadius;
+in uniform half cornerRadius;
 in uniform sampler2D ninePatchSampler;
 layout(ctype=SkRect) uniform float4 proxyRect;
 uniform half blurRadius;
 
 @header {
+    #include "GrCaps.h"
     #include "GrClip.h"
     #include "GrContext.h"
-    #include "GrContextPriv.h"
     #include "GrPaint.h"
     #include "GrProxyProvider.h"
+    #include "GrRecordingContext.h"
+    #include "GrRecordingContextPriv.h"
     #include "GrRenderTargetContext.h"
     #include "GrStyle.h"
     #include "SkBlurMaskFilter.h"
+    #include "SkBlurPriv.h"
     #include "SkGpuBlurUtils.h"
     #include "SkRRectPriv.h"
 }
 
 @class {
-    static sk_sp<GrTextureProxy> find_or_create_rrect_blur_mask(GrContext* context,
+    static sk_sp<GrTextureProxy> find_or_create_rrect_blur_mask(GrRecordingContext* context,
                                                                 const SkRRect& rrectToDraw,
                                                                 const SkISize& size,
                                                                 float xformedSigma) {
         static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
         GrUniqueKey key;
-        GrUniqueKey::Builder builder(&key, kDomain, 9);
+        GrUniqueKey::Builder builder(&key, kDomain, 9, "RoundRect Blur Mask");
         builder[0] = SkScalarCeilToInt(xformedSigma-1/6.0f);
 
         int index = 1;
@@ -45,21 +48,26 @@ uniform half blurRadius;
         }
         builder.finish();
 
-        GrProxyProvider* proxyProvider = context->contextPriv().proxyProvider();
+        GrProxyProvider* proxyProvider = context->priv().proxyProvider();
 
         sk_sp<GrTextureProxy> mask(proxyProvider->findOrCreateProxyByUniqueKey(
                                                                  key, kBottomLeft_GrSurfaceOrigin));
         if (!mask) {
+            GrBackendFormat format =
+                context->priv().caps()->getBackendFormatFromColorType(kAlpha_8_SkColorType);
             // TODO: this could be approx but the texture coords will need to be updated
-            sk_sp<GrRenderTargetContext> rtc(context->makeDeferredRenderTargetContextWithFallback(
-                SkBackingFit::kExact, size.fWidth, size.fHeight, kAlpha_8_GrPixelConfig, nullptr));
+            sk_sp<GrRenderTargetContext> rtc(
+                    context->priv().makeDeferredRenderTargetContextWithFallback(
+                                                format, SkBackingFit::kExact, size.fWidth,
+                                                size.fHeight, kAlpha_8_GrPixelConfig, nullptr));
             if (!rtc) {
                 return nullptr;
             }
 
             GrPaint paint;
 
-            rtc->clear(nullptr, 0x0, GrRenderTargetContext::CanClearFullscreen::kYes);
+            rtc->clear(nullptr, SK_PMColor4fTRANSPARENT,
+                       GrRenderTargetContext::CanClearFullscreen::kYes);
             rtc->drawRRect(GrNoClip(), std::move(paint), GrAA::kYes, SkMatrix::I(), rrectToDraw,
                            GrStyle::SimpleFill());
 
@@ -76,6 +84,7 @@ uniform half blurRadius;
                                                    xformedSigma,
                                                    xformedSigma,
                                                    GrTextureDomain::kIgnore_Mode,
+                                                   kPremul_SkAlphaType,
                                                    SkBackingFit::kExact));
             if (!rtc2) {
                 return nullptr;
@@ -98,14 +107,16 @@ uniform half blurRadius;
 }
 
 @make {
-    static std::unique_ptr<GrFragmentProcessor> Make(GrContext* context, float sigma,
+    static std::unique_ptr<GrFragmentProcessor> Make(GrRecordingContext* context,
+                                                     float sigma,
                                                      float xformedSigma,
                                                      const SkRRect& srcRRect,
                                                      const SkRRect& devRRect);
 }
 
 @cpp {
-    std::unique_ptr<GrFragmentProcessor> GrRRectBlurEffect::Make(GrContext* context, float sigma,
+    std::unique_ptr<GrFragmentProcessor> GrRRectBlurEffect::Make(GrRecordingContext* context,
+                                                                 float sigma,
                                                                  float xformedSigma,
                                                                  const SkRRect& srcRRect,
                                                                  const SkRRect& devRRect) {
@@ -121,18 +132,18 @@ uniform half blurRadius;
         // width (and height) of the rrect.
         SkRRect rrectToDraw;
         SkISize size;
-        SkScalar ignored[SkBlurMaskFilter::kMaxDivisions];
+        SkScalar ignored[kSkBlurRRectMaxDivisions];
         int ignoredSize;
         uint32_t ignored32;
 
-        bool ninePatchable = SkBlurMaskFilter::ComputeBlurredRRectParams(srcRRect, devRRect,
-                                                                         SkRect::MakeEmpty(),
-                                                                         sigma, xformedSigma,
-                                                                         &rrectToDraw, &size,
-                                                                         ignored, ignored,
-                                                                         ignored, ignored,
-                                                                         &ignoredSize, &ignoredSize,
-                                                                         &ignored32);
+        bool ninePatchable = SkComputeBlurredRRectParams(srcRRect, devRRect,
+                                                         SkRect::MakeEmpty(),
+                                                         sigma, xformedSigma,
+                                                         &rrectToDraw, &size,
+                                                         ignored, ignored,
+                                                         ignored, ignored,
+                                                         &ignoredSize, &ignoredSize,
+                                                         &ignored32);
         if (!ninePatchable) {
             return nullptr;
         }
@@ -162,10 +173,10 @@ uniform half blurRadius;
 void main() {
     // warp the fragment position to the appropriate part of the 9patch blur texture
 
-    half2 rectCenter = (proxyRect.xy + proxyRect.zw) / 2.0;
-    half2 translatedFragPos = sk_FragCoord.xy - proxyRect.xy;
+    half2 rectCenter = half2((proxyRect.xy + proxyRect.zw) / 2.0);
+    half2 translatedFragPos = half2(sk_FragCoord.xy - proxyRect.xy);
     half threshold = cornerRadius + 2.0 * blurRadius;
-    half2 middle = proxyRect.zw - proxyRect.xy - 2.0 * threshold;
+    half2 middle = half2(proxyRect.zw - proxyRect.xy - 2.0 * threshold);
 
     if (translatedFragPos.x >= threshold && translatedFragPos.x < (middle.x + threshold)) {
             translatedFragPos.x = threshold;

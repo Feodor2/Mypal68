@@ -153,7 +153,7 @@ BufferTextureData* BufferTextureData::CreateForYCbCr(
     KnowsCompositor* aAllocator, gfx::IntSize aYSize, uint32_t aYStride,
     gfx::IntSize aCbCrSize, uint32_t aCbCrStride, StereoMode aStereoMode,
     gfx::ColorDepth aColorDepth, gfx::YUVColorSpace aYUVColorSpace,
-    TextureFlags aTextureFlags) {
+    gfx::ColorRange aColorRange, TextureFlags aTextureFlags) {
   uint32_t bufSize = ImageDataSerializer::ComputeYCbCrBufferSize(
       aYSize, aYStride, aCbCrSize, aCbCrStride);
   if (bufSize == 0) {
@@ -181,9 +181,10 @@ BufferTextureData* BufferTextureData::CreateForYCbCr(
                                          supportsTextureDirectMapping)
           : true;
 
-  YCbCrDescriptor descriptor = YCbCrDescriptor(
-      aYSize, aYStride, aCbCrSize, aCbCrStride, yOffset, cbOffset, crOffset,
-      aStereoMode, aColorDepth, aYUVColorSpace, hasIntermediateBuffer);
+  YCbCrDescriptor descriptor =
+      YCbCrDescriptor(aYSize, aYStride, aCbCrSize, aCbCrStride, yOffset,
+                      cbOffset, crOffset, aStereoMode, aColorDepth,
+                      aYUVColorSpace, aColorRange, hasIntermediateBuffer);
 
   return CreateInternal(
       aAllocator ? aAllocator->GetTextureForwarder() : nullptr, descriptor,

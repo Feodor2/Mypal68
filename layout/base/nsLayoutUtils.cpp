@@ -81,7 +81,6 @@
 #include "mozilla/dom/DOMRect.h"
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/KeyframeEffect.h"
-#include "mozilla/dom/SVGPathData.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
 #include "imgIRequest.h"
 #include "nsIImageLoadingContent.h"
@@ -263,6 +262,19 @@ bool nsLayoutUtils::HasAnimationOfPropertySet(
 }
 
 /* static */
+bool nsLayoutUtils::HasAnimationOfTransformAndMotionPath(
+    const nsIFrame* aFrame) {
+  return nsLayoutUtils::HasAnimationOfPropertySet(
+             aFrame,
+             nsCSSPropertyIDSet{eCSSProperty_transform, eCSSProperty_translate,
+                                eCSSProperty_rotate, eCSSProperty_scale,
+                                eCSSProperty_offset_path}) ||
+         (!aFrame->StyleDisplay()->mOffsetPath.IsNone() &&
+          nsLayoutUtils::HasAnimationOfPropertySet(
+              aFrame, nsCSSPropertyIDSet::MotionPathProperties()));
+}
+
+/* static */
 bool nsLayoutUtils::HasEffectiveAnimation(
     const nsIFrame* aFrame, const nsCSSPropertyIDSet& aPropertySet) {
   return HasMatchingAnimations(
@@ -294,6 +306,15 @@ nsCSSPropertyIDSet nsLayoutUtils::GetAnimationPropertiesForCompositor(
 
   for (const KeyframeEffect* effect : *effects) {
     properties |= effect->GetPropertiesForCompositor(*effects, aStyleFrame);
+  }
+
+  // If properties only have motion-path properties, we have to make sure they
+  // have effects. i.e. offset-path is not none or we have offset-path
+  // animations.
+  if (properties.IsSubsetOf(nsCSSPropertyIDSet::MotionPathProperties()) &&
+      !properties.HasProperty(eCSSProperty_offset_path) &&
+      aStyleFrame->StyleDisplay()->mOffsetPath.IsNone()) {
+    properties.Empty();
   }
 
   return properties;
@@ -600,14 +621,19 @@ static nsIFrame* GetScrollFrameFromContent(nsIContent* aContent) {
   return frame;
 }
 
+nsIScrollableFrame* nsLayoutUtils::FindScrollableFrameFor(
+    nsIContent* aContent) {
+  nsIFrame* scrollFrame = GetScrollFrameFromContent(aContent);
+  return scrollFrame ? scrollFrame->GetScrollTargetFrame() : nullptr;
+}
+
 nsIScrollableFrame* nsLayoutUtils::FindScrollableFrameFor(ViewID aId) {
   nsIContent* content = FindContentFor(aId);
   if (!content) {
     return nullptr;
   }
 
-  nsIFrame* scrollFrame = GetScrollFrameFromContent(content);
-  return scrollFrame ? scrollFrame->GetScrollTargetFrame() : nullptr;
+  return FindScrollableFrameFor(content);
 }
 
 ViewID nsLayoutUtils::FindIDForScrollableFrame(
@@ -945,9 +971,10 @@ bool nsLayoutUtils::ShouldDisableApzForElement(nsIContent* aContent) {
           rootPresShell->GetRootScrollFrame()
               ? rootPresShell->GetRootScrollFrame()->GetContent()
               : rootDoc->GetDocumentElement();
-      // For the AccessibleCaret: disable APZ on any scrollable subframes that
-      // are not the root scrollframe of a document, if the document has any
-      // visible anonymous contents.
+      // For the AccessibleCaret and other anonymous contents: disable APZ on
+      // any scrollable subframes that are not the root scrollframe of a
+      // document, if the document has any visible anonymous contents.
+      //
       // If we find this is triggering in too many scenarios then we might
       // want to tighten this check further. The main use cases for which we
       // want to disable APZ as of this writing are listed in bug 1316318.
@@ -960,6 +987,17 @@ bool nsLayoutUtils::ShouldDisableApzForElement(nsIContent* aContent) {
   if (!doc) {
     return false;
   }
+
+  if (PresShell* presShell = doc->GetPresShell()) {
+    if (RefPtr<AccessibleCaretEventHub> eventHub =
+            presShell->GetAccessibleCaretEventHub()) {
+      // Disable APZ for all elements if AccessibleCaret tells us to do so.
+      if (eventHub->ShouldDisableApz()) {
+        return true;
+      }
+    }
+  }
+
   return StaticPrefs::apz_disable_for_scroll_linked_effects() &&
          doc->HasScrollLinkedEffect();
 }
@@ -1074,10 +1112,8 @@ static bool GetDisplayPortImpl(
 static void TranslateFromScrollPortToScrollFrame(nsIContent* aContent,
                                                  nsRect* aRect) {
   MOZ_ASSERT(aRect);
-  nsIFrame* frame = GetScrollFrameFromContent(aContent);
-  nsIScrollableFrame* scrollableFrame =
-      frame ? frame->GetScrollTargetFrame() : nullptr;
-  if (scrollableFrame) {
+  if (nsIScrollableFrame* scrollableFrame =
+          nsLayoutUtils::FindScrollableFrameFor(aContent)) {
     *aRect += scrollableFrame->GetScrollPortRect().TopLeft();
   }
 }
@@ -1189,8 +1225,18 @@ bool nsLayoutUtils::SetDisplayPortMargins(nsIContent* aContent,
     return false;
   }
 
+  nsIFrame* scrollFrame = GetScrollFrameFromContent(aContent);
+
   nsRect oldDisplayPort;
-  bool hadDisplayPort = GetHighResolutionDisplayPort(aContent, &oldDisplayPort);
+  bool hadDisplayPort = false;
+  if (scrollFrame) {
+    // We only use the two return values from this function to call
+    // InvalidateForDisplayPortChange. InvalidateForDisplayPortChange does
+    // nothing if aContent does not have a frame. So getting the displayport is
+    // useless if the content has no frame, so we avoid calling this to avoid
+    // triggering a warning about not having a frame.
+    hadDisplayPort = GetHighResolutionDisplayPort(aContent, &oldDisplayPort);
+  }
 
   aContent->SetProperty(
       nsGkAtoms::DisplayPortMargins,
@@ -1202,26 +1248,14 @@ bool nsLayoutUtils::SetDisplayPortMargins(nsIContent* aContent,
       GetHighResolutionDisplayPort(aContent, &newDisplayPort);
   MOZ_ASSERT(hasDisplayPort);
 
-  if (StaticPrefs::layout_scroll_root_frame_containers()) {
-    nsIFrame* rootScrollFrame = aPresShell->GetRootScrollFrame();
-    if (rootScrollFrame && aContent == rootScrollFrame->GetContent() &&
-        nsLayoutUtils::UsesAsyncScrolling(rootScrollFrame)) {
-      // We are setting a root displayport for a document.
-      // If we have APZ, then set a special flag on the pres shell so
-      // that we don't get scrollbars drawn.
-      aPresShell->SetIgnoreViewportScrolling(true);
-    }
+  nsIScrollableFrame* scrollableFrame =
+      scrollFrame ? scrollFrame->GetScrollTargetFrame() : nullptr;
+  if (!scrollableFrame) {
+    return true;
   }
 
   InvalidateForDisplayPortChange(aContent, hadDisplayPort, oldDisplayPort,
                                  newDisplayPort, aRepaintMode);
-
-  nsIFrame* frame = GetScrollFrameFromContent(aContent);
-  nsIScrollableFrame* scrollableFrame =
-      frame ? frame->GetScrollTargetFrame() : nullptr;
-  if (!scrollableFrame) {
-    return true;
-  }
 
   scrollableFrame->TriggerDisplayPortExpiration();
 
@@ -1840,30 +1874,30 @@ void nsLayoutUtils::SetFixedPositionLayerData(
   // defaulting to top-left.
   LayerPoint anchor(anchorRect.x, anchorRect.y);
 
-  int32_t sides = eSideBitsNone;
+  SideBits sides = SideBits::eNone;
   if (aFixedPosFrame != aViewportFrame) {
     const nsStylePosition* position = aFixedPosFrame->StylePosition();
     if (!position->mOffset.Get(eSideRight).IsAuto()) {
-      sides |= eSideBitsRight;
+      sides |= SideBits::eRight;
       if (!position->mOffset.Get(eSideLeft).IsAuto()) {
-        sides |= eSideBitsLeft;
+        sides |= SideBits::eLeft;
         anchor.x = anchorRect.x + anchorRect.width / 2.f;
       } else {
         anchor.x = anchorRect.XMost();
       }
     } else if (!position->mOffset.Get(eSideLeft).IsAuto()) {
-      sides |= eSideBitsLeft;
+      sides |= SideBits::eLeft;
     }
     if (!position->mOffset.Get(eSideBottom).IsAuto()) {
-      sides |= eSideBitsBottom;
+      sides |= SideBits::eBottom;
       if (!position->mOffset.Get(eSideTop).IsAuto()) {
-        sides |= eSideBitsTop;
+        sides |= SideBits::eTop;
         anchor.y = anchorRect.y + anchorRect.height / 2.f;
       } else {
         anchor.y = anchorRect.YMost();
       }
     } else if (!position->mOffset.Get(eSideTop).IsAuto()) {
-      sides |= eSideBitsTop;
+      sides |= SideBits::eTop;
     }
   }
 
@@ -2242,8 +2276,8 @@ static void ConstrainToCoordValues(float& aStart, float& aSize) {
   // can't return a value greater than nscoord_MAX. If aSize is greater than
   // nscoord_MAX then we reduce it to nscoord_MAX while keeping the rect
   // centered:
-  if (aSize > nscoord_MAX) {
-    float excess = aSize - nscoord_MAX;
+  if (aSize > float(nscoord_MAX)) {
+    float excess = aSize - float(nscoord_MAX);
     excess /= 2;
     aStart += excess;
     aSize = (float)nscoord_MAX;
@@ -3453,14 +3487,130 @@ void PrintHitTestInfoStats(nsDisplayList* aList) {
 }
 #endif
 
+static void LogPaintedPixelCount(LayerManager* aLayerManager,
+                                 const TimeStamp aPaintStart) {
+  static std::vector<std::pair<TimeStamp, uint32_t>> history;
+
+  const TimeStamp now = TimeStamp::Now();
+  const double rasterizeTime = (now - aPaintStart).ToMilliseconds();
+
+  const uint32_t pixelCount = aLayerManager->GetAndClearPaintedPixelCount();
+  if (pixelCount) {
+    history.push_back(std::make_pair(now, pixelCount));
+  }
+
+  uint32_t paintedInLastSecond = 0;
+  for (auto i = history.begin(); i != history.end(); i++) {
+    if ((now - i->first).ToMilliseconds() > 1000.0f) {
+      // more than 1000ms ago, don't count it
+      continue;
+    }
+
+    if (paintedInLastSecond == 0) {
+      // This is the first one in the last 1000ms, so drop everything earlier
+      history.erase(history.begin(), i);
+      i = history.begin();
+    }
+
+    paintedInLastSecond += i->second;
+    MOZ_ASSERT(paintedInLastSecond);  // all historical pixel counts are > 0
+  }
+
+  printf_stderr("Painted %u pixels in %fms (%u in the last 1000ms)\n",
+                pixelCount, rasterizeTime, paintedInLastSecond);
+}
+
+static void DumpBeforePaintDisplayList(UniquePtr<std::stringstream>& aStream,
+                                       nsDisplayListBuilder* aBuilder,
+                                       nsDisplayList* aList,
+                                       const nsRect& aVisibleRect) {
+#ifdef MOZ_DUMP_PAINTING
+  if (gfxEnv::DumpPaintToFile()) {
+    nsCString string("dump-");
+    // Include the process ID in the dump file name, to make sure that in an
+    // e10s setup different processes don't clobber each other's dump files.
+    string.AppendInt(getpid());
+    for (int paintCount : *gPaintCountStack) {
+      string.AppendLiteral("-");
+      string.AppendInt(paintCount);
+    }
+    string.AppendLiteral(".html");
+    gfxUtils::sDumpPaintFile = fopen(string.BeginReading(), "w");
+  } else {
+    gfxUtils::sDumpPaintFile = stderr;
+  }
+  if (gfxEnv::DumpPaintToFile()) {
+    *aStream << "<html><head><script>\n"
+                "var array = {};\n"
+                "function ViewImage(index) { \n"
+                "  var image = document.getElementById(index);\n"
+                "  if (image.src) {\n"
+                "    image.removeAttribute('src');\n"
+                "  } else {\n"
+                "    image.src = array[index];\n"
+                "  }\n"
+                "}</script></head><body>";
+  }
+#endif
+  *aStream << nsPrintfCString(
+                  "Painting --- before optimization (dirty %d,%d,%d,%d):\n",
+                  aVisibleRect.x, aVisibleRect.y, aVisibleRect.width,
+                  aVisibleRect.height)
+                  .get();
+  nsFrame::PrintDisplayList(aBuilder, *aList, *aStream,
+                            gfxEnv::DumpPaintToFile());
+
+  if (gfxEnv::DumpPaint() || gfxEnv::DumpPaintItems()) {
+    // Flush stream now to avoid reordering dump output relative to
+    // messages dumped by PaintRoot below.
+    fprint_stderr(gfxUtils::sDumpPaintFile, *aStream);
+    aStream = MakeUnique<std::stringstream>();
+  }
+}
+
+static void DumpAfterPaintDisplayList(UniquePtr<std::stringstream>& aStream,
+                                      nsDisplayListBuilder* aBuilder,
+                                      nsDisplayList* aList,
+                                      LayerManager* aManager) {
+  *aStream << "Painting --- after optimization:\n";
+  nsFrame::PrintDisplayList(aBuilder, *aList, *aStream,
+                            gfxEnv::DumpPaintToFile());
+
+  *aStream << "Painting --- layer tree:\n";
+  if (aManager) {
+    FrameLayerBuilder::DumpRetainedLayerTree(aManager, *aStream,
+                                             gfxEnv::DumpPaintToFile());
+  }
+
+  fprint_stderr(gfxUtils::sDumpPaintFile, *aStream);
+
+#ifdef MOZ_DUMP_PAINTING
+  if (gfxEnv::DumpPaintToFile()) {
+    *aStream << "</body></html>";
+  }
+  if (gfxEnv::DumpPaintToFile()) {
+    fclose(gfxUtils::sDumpPaintFile);
+  }
+#endif
+
+  std::stringstream lsStream;
+  nsFrame::PrintDisplayList(aBuilder, *aList, lsStream);
+  if (aManager->GetRoot()) {
+    aManager->GetRoot()->SetDisplayListLog(lsStream.str().c_str());
+  }
+}
+
 struct TemporaryDisplayListBuilder {
   TemporaryDisplayListBuilder(nsIFrame* aFrame,
                               nsDisplayListBuilderMode aBuilderMode,
                               const bool aBuildCaret)
       : mBuilder(aFrame, aBuilderMode, aBuildCaret) {}
 
+  ~TemporaryDisplayListBuilder() { mList.DeleteAll(&mBuilder); }
+
   nsDisplayListBuilder mBuilder;
   nsDisplayList mList;
+  RetainedDisplayListMetrics mMetrics;
 };
 
 nsresult nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext,
@@ -3470,7 +3620,6 @@ nsresult nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext,
                                    nsDisplayListBuilderMode aBuilderMode,
                                    PaintFrameFlags aFlags) {
   AUTO_PROFILER_LABEL("nsLayoutUtils::PaintFrame", GRAPHICS);
-  typedef RetainedDisplayListBuilder::PartialUpdateResult PartialUpdateResult;
 
 #ifdef MOZ_DUMP_PAINTING
   if (!gPaintCountStack) {
@@ -3521,15 +3670,20 @@ nsresult nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext,
   Maybe<TemporaryDisplayListBuilder> temporaryBuilder;
   nsDisplayListBuilder* builder = nullptr;
   nsDisplayList* list = nullptr;
+  RetainedDisplayListMetrics* metrics = nullptr;
 
   if (useRetainedBuilder) {
     builder = retainedBuilder->Builder();
     list = retainedBuilder->List();
+    metrics = retainedBuilder->Metrics();
   } else {
     temporaryBuilder.emplace(aFrame, aBuilderMode, buildCaret);
     builder = &temporaryBuilder->mBuilder;
     list = &temporaryBuilder->mList;
+    metrics = &temporaryBuilder->mMetrics;
   }
+
+  MOZ_ASSERT(builder && list && metrics);
 
   // Retained builder exists, but display list retaining is disabled.
   if (!useRetainedBuilder && retainedBuilder) {
@@ -3539,6 +3693,9 @@ nsresult nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext,
     // Clear the retained display list.
     retainedBuilder->List()->DeleteAll(retainedBuilder->Builder());
   }
+
+  metrics->Reset();
+  metrics->StartBuild();
 
   builder->BeginFrame();
 
@@ -3646,8 +3803,6 @@ nsresult nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext,
     AUTO_PROFILER_TRACING("Paint", "DisplayList", GRAPHICS);
 
     PaintTelemetry::AutoRecord record(PaintTelemetry::Metric::DisplayList);
-    TimeStamp dlStart = TimeStamp::Now();
-
     {
       // If a scrollable container layer is created in
       // nsDisplayList::PaintForFrame, it will be the scroll parent for display
@@ -3722,32 +3877,39 @@ nsresult nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext,
         if (StaticPrefs::layout_display_list_retain_verify()) {
           beforeMergeChecker.Set(list, "BM");
         }
+
         updateState = retainedBuilder->AttemptPartialUpdate(
             aBackstop, beforeMergeChecker ? &toBeMergedChecker : nullptr);
+
         if ((updateState != PartialUpdateResult::Failed) &&
             beforeMergeChecker) {
           afterMergeChecker.Set(list, "AM");
         }
+
+        metrics->EndPartialBuild(updateState);
+      } else {
+        // Partial updates are disabled.
+        metrics->mPartialUpdateResult = PartialUpdateResult::Failed;
+        metrics->mPartialUpdateFailReason = PartialUpdateFailReason::Disabled;
       }
 
-      if ((updateState != PartialUpdateResult::Failed) &&
-          (StaticPrefs::layout_display_list_build_twice() || afterMergeChecker)) {
-        updateState = PartialUpdateResult::Failed;
-        if (StaticPrefs::layers_acceleration_draw_fps()) {
-          if (RefPtr<LayerManager> lm = builder->GetWidgetLayerManager()) {
-            if (PaintTiming* pt = ClientLayerManager::MaybeGetPaintTiming(lm)) {
-              pt->dl2Ms() = (TimeStamp::Now() - dlStart).ToMilliseconds();
-            }
-          }
-        }
-        dlStart = TimeStamp::Now();
+      // Rebuild the full display list if the partial display list build failed,
+      // or if the merge checker is used.
+      bool doFullRebuild =
+          updateState == PartialUpdateResult::Failed || afterMergeChecker;
+
+      if (StaticPrefs::layout_display_list_build_twice()) {
+        // Build display list twice to compare partial and full display list
+        // build times.
+        metrics->StartBuild();
+        doFullRebuild = true;
       }
 
-      if (updateState == PartialUpdateResult::Failed) {
+      if (doFullRebuild) {
         list->DeleteAll(builder);
 
         builder->ClearRetainedWindowRegions();
-        builder->ClearWillChangeBudget();
+        builder->ClearWillChangeBudgets();
 
         builder->EnterPresShell(aFrame);
         builder->SetDirtyRect(visibleRect);
@@ -3756,6 +3918,8 @@ nsresult nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext,
                                 visibleRegion, aBackstop);
 
         builder->LeavePresShell(aFrame, list);
+        metrics->EndFullBuild();
+
         updateState = PartialUpdateResult::Updated;
 
         if (afterMergeChecker) {
@@ -3784,13 +3948,15 @@ nsresult nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext,
 
     builder->SetIsBuilding(false);
     builder->IncrementPresShellPaintCount(presShell);
+  }
 
-    if (StaticPrefs::layers_acceleration_draw_fps()) {
-      if (RefPtr<LayerManager> lm = builder->GetWidgetLayerManager()) {
-        if (PaintTiming* pt = ClientLayerManager::MaybeGetPaintTiming(lm)) {
-          pt->dlMs() = (TimeStamp::Now() - dlStart).ToMilliseconds();
-        }
-      }
+  if (StaticPrefs::layers_acceleration_draw_fps()) {
+    RefPtr<LayerManager> lm = builder->GetWidgetLayerManager();
+    PaintTiming* pt = ClientLayerManager::MaybeGetPaintTiming(lm);
+
+    if (pt) {
+      pt->dlMs() = static_cast<float>(metrics->mPartialBuildDuration);
+      pt->dl2Ms() = static_cast<float>(metrics->mFullBuildDuration);
     }
   }
 
@@ -3810,47 +3976,7 @@ nsresult nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext,
   UniquePtr<std::stringstream> ss;
   if (consoleNeedsDisplayList) {
     ss = MakeUnique<std::stringstream>();
-#ifdef MOZ_DUMP_PAINTING
-    if (gfxEnv::DumpPaintToFile()) {
-      nsCString string("dump-");
-      // Include the process ID in the dump file name, to make sure that in an
-      // e10s setup different processes don't clobber each other's dump files.
-      string.AppendInt(getpid());
-      for (int paintCount : *gPaintCountStack) {
-        string.AppendLiteral("-");
-        string.AppendInt(paintCount);
-      }
-      string.AppendLiteral(".html");
-      gfxUtils::sDumpPaintFile = fopen(string.BeginReading(), "w");
-    } else {
-      gfxUtils::sDumpPaintFile = stderr;
-    }
-    if (gfxEnv::DumpPaintToFile()) {
-      *ss << "<html><head><script>\n"
-             "var array = {};\n"
-             "function ViewImage(index) { \n"
-             "  var image = document.getElementById(index);\n"
-             "  if (image.src) {\n"
-             "    image.removeAttribute('src');\n"
-             "  } else {\n"
-             "    image.src = array[index];\n"
-             "  }\n"
-             "}</script></head><body>";
-    }
-#endif
-    *ss << nsPrintfCString(
-               "Painting --- before optimization (dirty %d,%d,%d,%d):\n",
-               visibleRect.x, visibleRect.y, visibleRect.width,
-               visibleRect.height)
-               .get();
-    nsFrame::PrintDisplayList(builder, *list, *ss, gfxEnv::DumpPaintToFile());
-
-    if (gfxEnv::DumpPaint() || gfxEnv::DumpPaintItems()) {
-      // Flush stream now to avoid reordering dump output relative to
-      // messages dumped by PaintRoot below.
-      fprint_stderr(gfxUtils::sDumpPaintFile, *ss);
-      ss = MakeUnique<std::stringstream>();
-    }
+    DumpBeforePaintDisplayList(ss, builder, list, visibleRect);
   }
 
   uint32_t flags = nsDisplayList::PAINT_DEFAULT;
@@ -3894,59 +4020,16 @@ nsresult nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext,
   builder->Check();
 
   if (StaticPrefs::gfx_logging_painted_pixel_count_enabled()) {
-    TimeStamp now = TimeStamp::Now();
-    float rasterizeTime = (now - paintStart).ToMilliseconds();
-    uint32_t pixelCount = layerManager->GetAndClearPaintedPixelCount();
-    static std::vector<std::pair<TimeStamp, uint32_t>> history;
-    if (pixelCount) {
-      history.push_back(std::make_pair(now, pixelCount));
-    }
-    uint32_t paintedInLastSecond = 0;
-    for (auto i = history.begin(); i != history.end(); i++) {
-      if ((now - i->first).ToMilliseconds() > 1000.0f) {
-        // more than 1000ms ago, don't count it
-        continue;
-      }
-      if (paintedInLastSecond == 0) {
-        // This is the first one in the last 1000ms, so drop everything earlier
-        history.erase(history.begin(), i);
-        i = history.begin();
-      }
-      paintedInLastSecond += i->second;
-      MOZ_ASSERT(paintedInLastSecond);  // all historical pixel counts are > 0
-    }
-    printf_stderr("Painted %u pixels in %fms (%u in the last 1000ms)\n",
-                  pixelCount, rasterizeTime, paintedInLastSecond);
+    LogPaintedPixelCount(layerManager, paintStart);
   }
 
   if (consoleNeedsDisplayList) {
-    *ss << "Painting --- after optimization:\n";
-    nsFrame::PrintDisplayList(builder, *list, *ss, gfxEnv::DumpPaintToFile());
-
-    *ss << "Painting --- layer tree:\n";
-    if (layerManager) {
-      FrameLayerBuilder::DumpRetainedLayerTree(layerManager, *ss,
-                                               gfxEnv::DumpPaintToFile());
-    }
-
-    fprint_stderr(gfxUtils::sDumpPaintFile, *ss);
+    DumpAfterPaintDisplayList(ss, builder, list, layerManager);
+  }
 
 #ifdef MOZ_DUMP_PAINTING
-    if (gfxEnv::DumpPaintToFile()) {
-      *ss << "</body></html>";
-    }
-    if (gfxEnv::DumpPaintToFile()) {
-      fclose(gfxUtils::sDumpPaintFile);
-    }
-    gfxUtils::sDumpPaintFile = savedDumpFile;
+  gfxUtils::sDumpPaintFile = savedDumpFile;
 #endif
-
-    std::stringstream lsStream;
-    nsFrame::PrintDisplayList(builder, *list, lsStream);
-    if (layerManager->GetRoot()) {
-      layerManager->GetRoot()->SetDisplayListLog(lsStream.str().c_str());
-    }
-  }
 
   if (StaticPrefs::layers_dump_client_layers()) {
     std::stringstream ss;
@@ -4005,13 +4088,28 @@ nsresult nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext,
   {
     AUTO_PROFILER_TRACING("Paint", "DisplayListResources", GRAPHICS);
 
-    // Flush the list so we don't trigger the IsEmpty-on-destruction assertion
-    if (!useRetainedBuilder) {
-      list->DeleteAll(builder);
-    }
-
     builder->EndFrame();
+
+    if (!useRetainedBuilder) {
+      temporaryBuilder.reset();
+    }
   }
+
+#if 0
+  if (XRE_IsParentProcess()) {
+    if (metrics->mPartialUpdateResult == PartialUpdateResult::Failed) {
+      printf("DL partial update failed: %s, Frame: %p\n",
+             metrics->FailReasonString(), aFrame);
+    } else {
+      printf(
+          "DL partial build success!"
+          " new: %d, reused: %d, rebuilt: %d, removed: %d, total: %d\n",
+          metrics->mNewItems, metrics->mReusedItems, metrics->mRebuiltItems,
+          metrics->mRemovedItems, metrics->mTotalItems);
+    }
+  }
+#endif
+
   return NS_OK;
 }
 
@@ -4389,11 +4487,11 @@ static Maybe<nsSize> MaybeComputeObjectFitNoneSize(
 static nsSize ComputeConcreteObjectSize(const nsSize& aConstraintSize,
                                         const IntrinsicSize& aIntrinsicSize,
                                         const AspectRatio& aIntrinsicRatio,
-                                        uint8_t aObjectFit) {
+                                        StyleObjectFit aObjectFit) {
   // Handle default behavior (filling the container) w/ fast early return.
   // (Also: if there's no valid intrinsic ratio, then we have the "fill"
   // behavior & just use the constraint size.)
-  if (MOZ_LIKELY(aObjectFit == NS_STYLE_OBJECT_FIT_FILL) || !aIntrinsicRatio) {
+  if (MOZ_LIKELY(aObjectFit == StyleObjectFit::Fill) || !aIntrinsicRatio) {
     return aConstraintSize;
   }
 
@@ -4401,18 +4499,18 @@ static nsSize ComputeConcreteObjectSize(const nsSize& aConstraintSize,
   Maybe<nsImageRenderer::FitType> fitType;
 
   Maybe<nsSize> noneSize;
-  if (aObjectFit == NS_STYLE_OBJECT_FIT_NONE ||
-      aObjectFit == NS_STYLE_OBJECT_FIT_SCALE_DOWN) {
+  if (aObjectFit == StyleObjectFit::None ||
+      aObjectFit == StyleObjectFit::ScaleDown) {
     noneSize = MaybeComputeObjectFitNoneSize(aConstraintSize, aIntrinsicSize,
                                              aIntrinsicRatio);
-    if (!noneSize || aObjectFit == NS_STYLE_OBJECT_FIT_SCALE_DOWN) {
+    if (!noneSize || aObjectFit == StyleObjectFit::ScaleDown) {
       // Need to compute a 'CONTAIN' constraint (either for the 'none' size
       // itself, or for comparison w/ the 'none' size to resolve 'scale-down'.)
       fitType.emplace(nsImageRenderer::CONTAIN);
     }
-  } else if (aObjectFit == NS_STYLE_OBJECT_FIT_COVER) {
+  } else if (aObjectFit == StyleObjectFit::Cover) {
     fitType.emplace(nsImageRenderer::COVER);
-  } else if (aObjectFit == NS_STYLE_OBJECT_FIT_CONTAIN) {
+  } else if (aObjectFit == StyleObjectFit::Contain) {
     fitType.emplace(nsImageRenderer::CONTAIN);
   }
 
@@ -4424,20 +4522,20 @@ static nsSize ComputeConcreteObjectSize(const nsSize& aConstraintSize,
 
   // Now, we should have all the sizing information that we need.
   switch (aObjectFit) {
-    // skipping NS_STYLE_OBJECT_FIT_FILL; we handled it w/ early-return.
-    case NS_STYLE_OBJECT_FIT_CONTAIN:
-    case NS_STYLE_OBJECT_FIT_COVER:
+    // skipping StyleObjectFit::Fill; we handled it w/ early-return.
+    case StyleObjectFit::Contain:
+    case StyleObjectFit::Cover:
       MOZ_ASSERT(constrainedSize);
       return *constrainedSize;
 
-    case NS_STYLE_OBJECT_FIT_NONE:
+    case StyleObjectFit::None:
       if (noneSize) {
         return *noneSize;
       }
       MOZ_ASSERT(constrainedSize);
       return *constrainedSize;
 
-    case NS_STYLE_OBJECT_FIT_SCALE_DOWN:
+    case StyleObjectFit::ScaleDown:
       MOZ_ASSERT(constrainedSize);
       if (noneSize) {
         constrainedSize->width =
@@ -4464,7 +4562,7 @@ static bool IsCoord50Pct(const LengthPercentage& aCoord) {
 static bool HasInitialObjectFitAndPosition(const nsStylePosition* aStylePos) {
   const Position& objectPos = aStylePos->mObjectPosition;
 
-  return aStylePos->mObjectFit == NS_STYLE_OBJECT_FIT_FILL &&
+  return aStylePos->mObjectFit == StyleObjectFit::Fill &&
          IsCoord50Pct(objectPos.horizontal) && IsCoord50Pct(objectPos.vertical);
 }
 
@@ -5070,7 +5168,7 @@ static bool IsReplacedBoxResolvedAgainstZero(
  */
 static nscoord AddIntrinsicSizeOffset(
     gfxContext* aRenderingContext, nsIFrame* aFrame,
-    const nsIFrame::IntrinsicISizeOffsetData& aOffsets,
+    const nsIFrame::IntrinsicSizeOffsetData& aOffsets,
     nsLayoutUtils::IntrinsicISizeType aType, StyleBoxSizing aBoxSizing,
     nscoord aContentSize, nscoord aContentMinSize, const StyleSize& aStyleSize,
     const nscoord* aFixedMinSize, const StyleSize& aStyleMinSize,
@@ -5081,10 +5179,10 @@ static nscoord AddIntrinsicSizeOffset(
   nscoord coordOutsideSize = 0;
 
   if (!(aFlags & nsLayoutUtils::IGNORE_PADDING)) {
-    coordOutsideSize += aOffsets.hPadding;
+    coordOutsideSize += aOffsets.padding;
   }
 
-  coordOutsideSize += aOffsets.hBorder;
+  coordOutsideSize += aOffsets.border;
 
   if (aBoxSizing == StyleBoxSizing::Border) {
     min += coordOutsideSize;
@@ -5093,7 +5191,7 @@ static nscoord AddIntrinsicSizeOffset(
     coordOutsideSize = 0;
   }
 
-  coordOutsideSize += aOffsets.hMargin;
+  coordOutsideSize += aOffsets.margin;
 
   min += coordOutsideSize;
   result = NSCoordSaturatingAdd(result, coordOutsideSize);
@@ -5141,7 +5239,7 @@ static nscoord AddIntrinsicSizeOffset(
     nscoord themeSize = pc->DevPixelsToAppUnits(
         aAxis == eAxisVertical ? devSize.height : devSize.width);
     // GetMinimumWidgetSize() returns a border-box width.
-    themeSize += aOffsets.hMargin;
+    themeSize += aOffsets.margin;
     if (themeSize > result || !canOverride) {
       result = themeSize;
     }
@@ -5414,7 +5512,7 @@ nscoord nsLayoutUtils::IntrinsicForAxis(
             ? aPercentageBasis->BSize(childWM)
             : aPercentageBasis->ISize(childWM);
   }
-  nsIFrame::IntrinsicISizeOffsetData offsets =
+  nsIFrame::IntrinsicSizeOffsetData offsets =
       MOZ_LIKELY(isInlineAxis)
           ? aFrame->IntrinsicISizeOffsets(pmPercentageBasis)
           : aFrame->IntrinsicBSizeOffsets(pmPercentageBasis);
@@ -5547,7 +5645,7 @@ nscoord nsLayoutUtils::MinSizeContributionForAxis(
       aFrame->GetParent()->GetWritingMode().IsOrthogonalTo(childWM)
           ? aPercentageBasis.BSize(childWM)
           : aPercentageBasis.ISize(childWM);
-  nsIFrame::IntrinsicISizeOffsetData offsets =
+  nsIFrame::IntrinsicSizeOffsetData offsets =
       ourInlineAxis == aAxis ? aFrame->IntrinsicISizeOffsets(pmPercentageBasis)
                              : aFrame->IntrinsicBSizeOffsets(pmPercentageBasis);
   nscoord result = 0;
@@ -6852,17 +6950,46 @@ IntSize nsLayoutUtils::ComputeImageContainerDrawingParameters(
     }
   }
 
-  // Compute our size in layer pixels. We may need to revisit this for Android
-  // because mobile websites are rarely displayed at a 1:1
-  // LayoutPixel:ScreenPixel ratio and the snapping here may be insufficient.
-  const LayerIntSize layerSize =
-      RoundedToInt(LayerSize(aDestRect.Width() * scaleFactors.width,
-                             aDestRect.Height() * scaleFactors.height));
+  // Attempt to snap pixels, the same as ComputeSnappedImageDrawingParameters.
+  // Any changes to the algorithm here will need to be reflected there.
+  bool snapped = false;
+  gfxSize gfxLayerSize;
+  const gfx::Matrix& itm = aSc.GetInheritedTransform();
+  if (!itm.HasNonAxisAlignedTransform() && itm._11 > 0.0 && itm._22 > 0.0) {
+    gfxRect rect(gfxPoint(aDestRect.X(), aDestRect.Y()),
+                 gfxSize(aDestRect.Width(), aDestRect.Height()));
 
-  // An empty size is unacceptable so we ensure our suggested size is at least
-  // 1 pixel wide/tall.
-  gfxSize gfxLayerSize =
-      gfxSize(std::max(layerSize.width, 1), std::max(layerSize.height, 1));
+    gfxPoint p1 = ThebesPoint(itm.TransformPoint(ToPoint(rect.TopLeft())));
+    gfxPoint p2 = ThebesPoint(itm.TransformPoint(ToPoint(rect.TopRight())));
+    gfxPoint p3 = ThebesPoint(itm.TransformPoint(ToPoint(rect.BottomRight())));
+
+    if (p2 == gfxPoint(p1.x, p3.y) || p2 == gfxPoint(p3.x, p1.y)) {
+      p1.Round();
+      p3.Round();
+
+      rect.MoveTo(gfxPoint(std::min(p1.x, p3.x), std::min(p1.y, p3.y)));
+      rect.SizeTo(gfxSize(std::max(p1.x, p3.x) - rect.X(),
+                          std::max(p1.y, p3.y) - rect.Y()));
+
+      // An empty size is unacceptable so we ensure our suggested size is at
+      // least 1 pixel wide/tall.
+      gfxLayerSize =
+          gfxSize(std::max(rect.Width(), 1.0), std::max(rect.Height(), 1.0));
+      snapped = true;
+    }
+  }
+
+  if (!snapped) {
+    // Compute our size in layer pixels.
+    const LayerIntSize layerSize =
+        RoundedToInt(LayerSize(aDestRect.Width() * scaleFactors.width,
+                               aDestRect.Height() * scaleFactors.height));
+
+    // An empty size is unacceptable so we ensure our suggested size is at least
+    // 1 pixel wide/tall.
+    gfxLayerSize =
+        gfxSize(std::max(layerSize.width, 1), std::max(layerSize.height, 1));
+  }
 
   return aImage->OptimalImageSizeForDest(
       gfxLayerSize, imgIContainer::FRAME_CURRENT, samplingFilter, aFlags);
@@ -7163,11 +7290,11 @@ nsIFrame* nsLayoutUtils::GetReferenceFrame(nsIFrame* aFrame) {
     case NS_STYLE_WRITING_MODE_VERTICAL_LR:
     case NS_STYLE_WRITING_MODE_VERTICAL_RL:
       switch (aComputedStyle->StyleVisibility()->mTextOrientation) {
-        case NS_STYLE_TEXT_ORIENTATION_MIXED:
+        case StyleTextOrientation::Mixed:
           return gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_MIXED;
-        case NS_STYLE_TEXT_ORIENTATION_UPRIGHT:
+        case StyleTextOrientation::Upright:
           return gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_UPRIGHT;
-        case NS_STYLE_TEXT_ORIENTATION_SIDEWAYS:
+        case StyleTextOrientation::Sideways:
           return gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_SIDEWAYS_RIGHT;
         default:
           MOZ_ASSERT_UNREACHABLE("unknown text-orientation");
@@ -8112,7 +8239,7 @@ static bool ShouldInflateFontsForContainer(const nsIFrame* aFrame) {
   // we hit overflow-y [or -x, for vertical mode]: scroll or auto.
   const nsStyleText* styleText = aFrame->StyleText();
 
-  return styleText->mTextSizeAdjust != NS_STYLE_TEXT_SIZE_ADJUST_NONE &&
+  return styleText->mTextSizeAdjust != StyleTextSizeAdjust::None &&
          !(aFrame->GetStateBits() & NS_FRAME_IN_CONSTRAINED_BSIZE) &&
          // We also want to disable font inflation for containers that have
          // preformatted text.
@@ -8858,14 +8985,9 @@ ScrollMetadata nsLayoutUtils::ComputeScrollMetadata(
               aScrollFrame->GetParent()));
     }
 
-    metadata.SetUsesContainerScrolling(
-        scrollableFrame->UsesContainerScrolling());
-
     metadata.SetSnapInfo(scrollableFrame->GetScrollSnapInfo());
-
-    ScrollStyles scrollStyles = scrollableFrame->GetScrollStyles();
-    metadata.SetOverscrollBehavior(OverscrollBehaviorInfo::FromStyleConstants(
-        scrollStyles.mOverscrollBehaviorX, scrollStyles.mOverscrollBehaviorY));
+    metadata.SetOverscrollBehavior(
+        scrollableFrame->GetOverscrollBehaviorInfo());
   }
 
   // If we have the scrollparent being the same as the scroll id, the
@@ -9081,19 +9203,17 @@ Maybe<ScrollMetadata> nsLayoutUtils::GetRootMetadata(
   PresShell* presShell = presContext->PresShell();
   Document* document = presShell->GetDocument();
 
-  // If we're using containerless scrolling, there is still one case where we
-  // want the root container layer to have metrics. If the parent process is
-  // using XUL windows, there is no root scrollframe, and without explicitly
-  // creating metrics there will be no guaranteed top-level APZC.
-  bool addMetrics = StaticPrefs::layout_scroll_root_frame_containers() ||
-                    (XRE_IsParentProcess() && !presShell->GetRootScrollFrame());
+  // There is one case where we want the root container layer to have metrics.
+  // If the parent process is using XUL windows, there is no root scrollframe,
+  // and without explicitly creating metrics there will be no guaranteed
+  // top-level APZC.
+  bool addMetrics = XRE_IsParentProcess() && !presShell->GetRootScrollFrame();
 
   // Add metrics if there are none in the layer tree with the id (create an id
   // if there isn't one already) of the root scroll frame/root content.
-  bool ensureMetricsForRootId =
-      nsLayoutUtils::AsyncPanZoomEnabled(frame) &&
-      !StaticPrefs::layout_scroll_root_frame_containers() &&
-      aBuilder->IsPaintingToWindow() && !presContext->GetParentPresContext();
+  bool ensureMetricsForRootId = nsLayoutUtils::AsyncPanZoomEnabled(frame) &&
+                                aBuilder->IsPaintingToWindow() &&
+                                !presContext->GetParentPresContext();
 
   nsIContent* content = nullptr;
   nsIFrame* rootScrollFrame = presShell->GetRootScrollFrame();
@@ -9152,7 +9272,7 @@ bool nsLayoutUtils::ContainsMetricsWithId(const Layer* aLayer,
 /* static */
 StyleTouchAction nsLayoutUtils::GetTouchActionFromFrame(nsIFrame* aFrame) {
   if (!aFrame) {
-    return StyleTouchAction_AUTO;
+    return StyleTouchAction::AUTO;
   }
 
   // The touch-action CSS property applies to: all elements except:
@@ -9161,13 +9281,13 @@ StyleTouchAction nsLayoutUtils::GetTouchActionFromFrame(nsIFrame* aFrame) {
   bool isNonReplacedInlineElement =
       aFrame->IsFrameOfType(nsIFrame::eLineParticipant);
   if (isNonReplacedInlineElement) {
-    return StyleTouchAction_AUTO;
+    return StyleTouchAction::AUTO;
   }
 
   const nsStyleDisplay* disp = aFrame->StyleDisplay();
   bool isTableElement = disp->IsInternalTableStyleExceptCell();
   if (isTableElement) {
-    return StyleTouchAction_AUTO;
+    return StyleTouchAction::AUTO;
   }
 
   return disp->mTouchAction;
@@ -9855,436 +9975,3 @@ ComputedStyle* nsLayoutUtils::StyleForScrollbar(nsIFrame* aScrollbarPart) {
   return style.get();
 }
 
-// The distance is measured between the initial position and the intersection of
-// the ray with the box
-// https://drafts.fxtf.org/motion-1/#size-sides
-static CSSCoord ComputeSides(const CSSPoint& aInitialPosition,
-                             const CSSSize& aContainerSize,
-                             const StyleAngle& aAngle) {
-  // Given an acute angle |theta| (i.e. |t|) of a right-angled triangle, the
-  // hypotenuse |h| is the side that connects the two acute angles. The side
-  // |b| adjacent to |theta| is the side of the triangle that connects |theta|
-  // to the right angle.
-  //
-  // e.g. if the angle |t| is 0 ~ 90 degrees, and b * tan(theta) <= b',
-  //      h = b / cos(t):
-  //                       b*tan(t)
-  //       (0, 0) #--------*-----*--# (aContainerSize.width, 0)
-  //              |        |    /   |
-  //              |        |   /    |
-  //              |        b  h     |
-  //              |        |t/      |
-  //              |        |/       |
-  //    (aInitialPosition) *---b'---* (aContainerSize.width, aInitialPosition.y)
-  //              |        |        |
-  //              |        |        |
-  //              |        |        |
-  //              |        |        |
-  //              |        |        |
-  //              #-----------------# (aContainerSize.width,
-  //  (0, aContainerSize.height)       aContainerSize.height)
-  double theta = aAngle.ToRadians();
-  double sint = sin(theta);
-  double cost = cos(theta);
-
-  double b = cost >= 0 ? aInitialPosition.y
-                       : aContainerSize.height - aInitialPosition.y;
-  double bPrime = sint >= 0 ? aContainerSize.width - aInitialPosition.x
-                            : aInitialPosition.x;
-  sint = std::fabs(sint);
-  cost = std::fabs(cost);
-
-  // If |b * tan(theta)| is larger than |bPrime|, the intersection is
-  // on the other side, and |b'| is the opposite side of angle |theta| in this
-  // case.
-  //
-  // e.g. If b * tan(theta) > b', h = b' / sin(theta):
-  //   *----*
-  //   |    |
-  //   |   /|
-  //   b  /t|
-  //   |t/  |
-  //   |/   |
-  //   *-b'-*
-  if (b * sint > bPrime * cost) {
-    return bPrime / sint;
-  }
-  return b / cost;
-}
-
-static CSSCoord ComputeRayPathLength(const nsIFrame* aFrame,
-                                     const StyleRaySize aRaySizeType,
-                                     const StyleAngle& aAngle) {
-  // We use GetContainingBlock() for now. TYLin said this function is buggy in
-  // modern CSS layout, but is ok for most cases.
-  // FIXME: Bug 1581237: This is still not clear that which box we should use
-  // for calculating the path length. We may need to update this.
-  // https://github.com/w3c/fxtf-drafts/issues/369
-  // FIXME: Bug 1579294: SVG layout may get a |container| with empty mRect
-  // (e.g. nsSVGOuterSVGAnonChildFrame), which makes the path length zero.
-  const nsIFrame* container = aFrame->GetContainingBlock();
-  if (!container) {
-    // If there is no parent frame, it's impossible to calculate the path
-    // length, so return 0.0.
-    return 0.0;
-  }
-
-  // The initial position is (0, 0) in |aFrame|, and we have to transform it
-  // into the space of |container|, so use GetOffsetsTo() to get the delta
-  // value.
-  // FIXME: Bug 1559232: The initial position will be adjusted after
-  // supporting `offset-position`.
-  const CSSPoint initialPos =
-      CSSPixel::FromAppUnits(aFrame->GetOffsetTo(container));
-  // FIXME: We need a better definition for containing box in the spec. For now,
-  // we use border box for calculation.
-  // https://github.com/w3c/fxtf-drafts/issues/369
-  const CSSRect containerRect =
-      CSSPixel::FromAppUnits(container->GetRectRelativeToSelf());
-  if (aRaySizeType == StyleRaySize::Sides) {
-    // If the initial position is not within the box, the distance is 0.
-    if (!containerRect.Contains(initialPos)) {
-      return 0.0;
-    }
-
-    return ComputeSides(initialPos, containerRect.Size(), aAngle);
-  }
-
-  // left: the length between the initial point and the left side.
-  // right: the length between the initial point and the right side.
-  // top: the length between the initial point and the top side.
-  // bottom: the lenght between the initial point and the bottom side.
-  CSSCoord left = std::abs(initialPos.x);
-  CSSCoord right = std::abs(containerRect.width - initialPos.x);
-  CSSCoord top = std::abs(initialPos.y);
-  CSSCoord bottom = std::abs(containerRect.height - initialPos.y);
-
-  switch (aRaySizeType) {
-    case StyleRaySize::ClosestSide:
-      return std::min({left, right, top, bottom});
-
-    case StyleRaySize::FarthestSide:
-      return std::max({left, right, top, bottom});
-
-    case StyleRaySize::ClosestCorner:
-    case StyleRaySize::FarthestCorner: {
-      CSSCoord h = 0;
-      CSSCoord v = 0;
-      if (aRaySizeType == StyleRaySize::ClosestCorner) {
-        h = std::min(left, right);
-        v = std::min(top, bottom);
-      } else {
-        h = std::max(left, right);
-        v = std::max(top, bottom);
-      }
-      return sqrt(h.value * h.value + v.value * v.value);
-    }
-    default:
-      MOZ_ASSERT_UNREACHABLE("Unsupported ray size");
-  }
-
-  return 0.0;
-}
-
-static void ApplyRotationAndMoveRayToXAxis(
-    const StyleOffsetRotate& aOffsetRotate, const StyleAngle& aRayAngle,
-    AutoTArray<gfx::Point, 4>& aVertices) {
-  const StyleAngle directionAngle = aRayAngle - StyleAngle{90.0f};
-  // Get the final rotation which includes the direction angle and
-  // offset-rotate.
-  const StyleAngle rotateAngle =
-      (aOffsetRotate.auto_ ? directionAngle : StyleAngle{0.0f}) +
-      aOffsetRotate.angle;
-  // This is the rotation to rotate ray to positive x-axis (i.e. 90deg).
-  const StyleAngle rayToXAxis = StyleAngle{90.0} - aRayAngle;
-
-  gfx::Matrix m;
-  m.PreRotate((rotateAngle + rayToXAxis).ToRadians());
-  for (gfx::Point& p : aVertices) {
-    p = m.TransformPoint(p);
-  }
-}
-
-class RayPointComparator {
- public:
-  bool Equals(const gfx::Point& a, const gfx::Point& b) const {
-    return std::fabs(a.y) == std::fabs(b.y);
-  }
-
-  bool LessThan(const gfx::Point& a, const gfx::Point& b) const {
-    return std::fabs(a.y) > std::fabs(b.y);
-  }
-};
-// Note: the calculation of contain doesn't take other transform-like properties
-// into account. The spec doesn't mention the co-operation for this, so for now,
-// we assume we only need to take motion-path into account.
-static CSSCoord ComputeRayUsedDistance(const nsStyleDisplay* aDisplay,
-                                       const nsSize& aSize,
-                                       const CSSCoord& aPathLength) {
-  MOZ_ASSERT(aDisplay->mOffsetPath.IsRay());
-
-  CSSCoord usedDistance =
-      aDisplay->mOffsetDistance.ResolveToCSSPixels(aPathLength);
-  if (!aDisplay->mOffsetPath.AsRay().contain) {
-    return usedDistance;
-  }
-
-  // We have to simulate the 4 vertices to check if any of them is outside the
-  // path circle. Here, we create a 2D Cartesian coordinate system and its
-  // origin is at the anchor point of the box. And then apply the rotation on
-  // these 4 vertices, calculate the range of |usedDistance| which makes the box
-  // entirely contained within the path.
-  // Note:
-  // "Contained within the path" means the rectangle is inside a circle whose
-  // radius is |aPathLength|.
-  const StylePositionOrAuto& anchor = aDisplay->mOffsetAnchor;
-  const StyleTransformOrigin& origin = aDisplay->mTransformOrigin;
-  const StyleLengthPercentage& anchorX =
-      anchor.IsAuto() ? origin.horizontal : anchor.AsPosition().horizontal;
-  const StyleLengthPercentage& anchorY =
-      anchor.IsAuto() ? origin.vertical : anchor.AsPosition().vertical;
-
-  const CSSCoord width = CSSPixel::FromAppUnits(aSize.width);
-  const CSSCoord height = CSSPixel::FromAppUnits(aSize.height);
-  const CSSPoint usedAnchor = {anchorX.ResolveToCSSPixels(width),
-                               anchorY.ResolveToCSSPixels(height)};
-  AutoTArray<gfx::Point, 4> vertices = {
-      {-usedAnchor.x, -usedAnchor.y},
-      {width - usedAnchor.x, -usedAnchor.y},
-      {width - usedAnchor.x, height - usedAnchor.y},
-      {-usedAnchor.x, height - usedAnchor.y}};
-
-  ApplyRotationAndMoveRayToXAxis(aDisplay->mOffsetRotate,
-                                 aDisplay->mOffsetPath.AsRay().angle, vertices);
-
-  // We have to check if all 4 vertices are inside the circle with radius |r|.
-  // Assume the position of the vertex is (x, y), and the box is moved by
-  // |usedDistance| along the path:
-  //
-  //       (usedDistance + x)^2 + y^2 <= r^2
-  //   ==> (usedDistance + x)^2 <= r^2 - y^2 = d
-  //   ==> -x - sqrt(d) <= used distance <= -x + sqrt(d)
-  //
-  // Note: |usedDistance| is added into |x| because we convert the ray function
-  // to 90deg, x-axis):
-  float upperMin = std::numeric_limits<float>::max();
-  float lowerMax = std::numeric_limits<float>::min();
-  bool shouldIncreasePathLength = false;
-  for (const gfx::Point& p : vertices) {
-    float d = aPathLength.value * aPathLength.value - p.y * p.y;
-    if (d < 0) {
-      // Impossible to make the box inside the path circle. Need to increase
-      // the path length.
-      shouldIncreasePathLength = true;
-      break;
-    }
-    float sqrtD = sqrt(d);
-    upperMin = std::min(upperMin, -p.x + sqrtD);
-    lowerMax = std::max(lowerMax, -p.x - sqrtD);
-  }
-
-  if (!shouldIncreasePathLength) {
-    return std::max(lowerMax, std::min(upperMin, (float)usedDistance));
-  }
-
-  // Sort by the absolute value of y, so the first vertex of the each pair of
-  // vertices we check has a larger y value. (i.e. |yi| is always larger than or
-  // equal to |yj|.)
-  vertices.Sort(RayPointComparator());
-
-  // Assume we set |usedDistance| to |-vertices[0].x|, so the current radius is
-  // fabs(vertices[0].y). This is a possible solution.
-  double radius = std::fabs(vertices[0].y);
-  usedDistance = -vertices[0].x;
-  const double epsilon = 1e-5;
-
-  for (size_t i = 0; i < 3; ++i) {
-    for (size_t j = i + 1; j < 4; ++j) {
-      double xi = vertices[i].x;
-      double yi = vertices[i].y;
-      double xj = vertices[j].x;
-      double yj = vertices[j].y;
-      double dx = xi - xj;
-
-      // Check if any path that enclosed vertices[i] would also enclose
-      // vertices[j].
-      //
-      // For example, the initial setup:
-      //                 * (0, yi)
-      //                 |
-      //                 r
-      //                 |          * (xj - xi, yj)
-      //           xi    |     dx
-      // ----*-----------*----------*---
-      // (anchor point)  | (0, 0)
-      //
-      // Assuming (0, yi) is on the path and (xj - xi, yj) is inside the path
-      // circle, we should use the inequality to check this:
-      //   (xj - xi)^2 + yj^2 <= yi^2
-      //
-      // After the first iterations, the updated inequality is:
-      //       (dx + d)^2 + yj^2 <= yi^2 + d^2
-      //   ==> dx^2 + 2dx*d + yj^2 <= yi^2
-      //   ==> dx^2 + yj^2 <= yi^2 - 2dx*d <= yi^2
-      // , |d| is the difference (or offset) between the old |usedDistance| and
-      // new |usedDistance|.
-      //
-      // Note: `2dx * d` must be positive because
-      // 1. if |xj| is larger than |xi|, only negative |d| could be used to get
-      //    a new path length which encloses both vertices.
-      // 2. if |xj| is smaller than |xi|, only positive |d| could be used to get
-      //    a new path length which encloses both vertices.
-      if (dx * dx + yj * yj <= yi * yi + epsilon) {
-        continue;
-      }
-
-      // We have to find a new usedDistance which let both vertices[i] and
-      // vertices[j] be on the path.
-      //       (usedDistance + xi)^2 + yi^2 = (usedDistance + xj)^2 + yj^2
-      //                                    = radius^2
-      //   ==> usedDistance = (xj^2 + yj^2 - xi^2 - yi^2) / 2(xi-xj)
-      //
-      // Note: it's impossible to have a "divide by zero" problem here.
-      // If |dx| is zero, the if-condition above should always be true and so
-      // we skip the calculation.
-      double newUsedDistance =
-          (xj * xj + yj * yj - xi * xi - yi * yi) / dx / 2.0;
-      // Then, move vertices[i] and vertices[j] by |newUsedDistance|.
-      xi += newUsedDistance;  // or xj += newUsedDistance; if we use |xj| to get
-                              // |newRadius|.
-      double newRadius = sqrt(xi * xi + yi * yi);
-      if (newRadius > radius) {
-        // We have to increase the path length to make sure both vertices[i] and
-        // vertices[j] are contained by this new path length.
-        radius = newRadius;
-        usedDistance = (float)newUsedDistance;
-      }
-    }
-  }
-
-  return usedDistance;
-}
-
-/* static */
-Maybe<MotionPathData> nsLayoutUtils::ResolveMotionPath(const nsIFrame* aFrame) {
-  MOZ_ASSERT(aFrame);
-
-  const nsStyleDisplay* display = aFrame->StyleDisplay();
-  if (display->mOffsetPath.IsNone()) {
-    return Nothing();
-  }
-
-  double directionAngle = 0.0;
-  Point point;
-  if (display->mOffsetPath.IsPath()) {
-    const Span<const StylePathCommand>& path =
-        display->mOffsetPath.AsPath()._0.AsSpan();
-    // Build the path and compute the point and angle for creating the
-    // equivalent translate and rotate.
-    // Here we only need to build a valid path for motion path, so
-    // using the default values of stroke-width, stoke-linecap, and fill-rule
-    // is fine for now because what we want is get the point and its normal
-    // vector along the path, instead of rendering it.
-    // FIXME: Bug 1484780, we should cache the path to avoid rebuilding it here
-    // at every restyle. (Caching the path avoids the cost of flattening it
-    // again each time.)
-    RefPtr<DrawTarget> drawTarget =
-        gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget();
-    RefPtr<PathBuilder> builder =
-        drawTarget->CreatePathBuilder(FillRule::FILL_WINDING);
-    RefPtr<gfx::Path> gfxPath = SVGPathData::BuildPath(
-        path, builder, NS_STYLE_STROKE_LINECAP_BUTT, 0.0);
-    if (!gfxPath) {
-      return Nothing();
-    }
-
-    // Per the spec, we have to convert offset distance to pixels, with 100%
-    // being converted to total length. So here |gfxPath| is built with CSS
-    // pixel, and we calculate |pathLength| and |computedDistance| with CSS
-    // pixel as well.
-    gfx::Float pathLength = gfxPath->ComputeLength();
-    gfx::Float usedDistance =
-      display->mOffsetDistance.ResolveToCSSPixels(CSSCoord(pathLength));
-    if (!path.empty() && path.rbegin()->IsClosePath()) {
-      // Per the spec, let used offset distance be equal to offset distance
-      // modulus the total length of the path. If the total length of the path
-      // is 0, used offset distance is also 0.
-      usedDistance = pathLength > 0.0 ? fmod(usedDistance, pathLength) : 0.0;
-      // We make sure |usedDistance| is 0.0 or a positive value.
-      // https://github.com/w3c/fxtf-drafts/issues/339
-      if (usedDistance < 0.0) {
-        usedDistance += pathLength;
-      }
-    } else {
-      // Per the spec, for unclosed interval, let used offset distance be equal
-      // to offset distance clamped by 0 and the total length of the path.
-      usedDistance = clamped(usedDistance, 0.0f, pathLength);
-    }
-    Point tangent;
-    point = gfxPath->ComputePointAtLength(usedDistance, &tangent);
-    directionAngle = (double)atan2(tangent.y, tangent.x);  // In Radian.
-  } else if (display->mOffsetPath.IsRay()) {
-    const auto& ray = display->mOffsetPath.AsRay();
-    CSSCoord pathLength = ComputeRayPathLength(aFrame, ray.size, ray.angle);
-    CSSCoord usedDistance =
-        ComputeRayUsedDistance(display, aFrame->GetSize(), pathLength);
-
-    // 0deg pointing up and positive angles representing clockwise rotation.
-    directionAngle = StyleAngle{ray.angle.ToDegrees() - 90.0f}.ToRadians();
-
-    point.x = usedDistance * cos(directionAngle);
-    point.y = usedDistance * sin(directionAngle);
-  } else {
-    MOZ_ASSERT_UNREACHABLE("Unsupported offset-path value");
-    return Nothing();
-  }
-
-  const StyleOffsetRotate& rotate = display->mOffsetRotate;
-  // If |rotate.auto_| is true, the element should be rotated by the angle of
-  // the direction (i.e. directional tangent vector) of the offset-path, and the
-  // computed value of <angle> is added to this.
-  // Otherwise, the element has a constant clockwise rotation transformation
-  // applied to it by the specified rotation angle. (i.e. Don't need to
-  // consider the direction of the path.)
-  gfx::Float angle = static_cast<gfx::Float>(
-      (rotate.auto_ ? directionAngle : 0.0) + rotate.angle.ToRadians());
-
-  // Compute the offset for motion path translate.
-  // Bug 1559232: the translate parameters will be adjusted more after we
-  // support offset-position.
-  // FIXME: It's possible to refactor the calculation of transform-origin, so we
-  // could calculate from the caller, and reuse the value in nsDisplayList.cpp.
-  TransformReferenceBox refBox(aFrame);
-  const auto& transformOrigin = display->mTransformOrigin;
-  const CSSPoint origin = nsStyleTransformMatrix::Convert2DPosition(
-      transformOrigin.horizontal, transformOrigin.vertical, refBox);
-
-  // Per the spec, the default offset-anchor is `auto`, so initialize the anchor
-  // point to transform-origin.
-  CSSPoint anchorPoint(origin);
-  Point shift;
-  if (!display->mOffsetAnchor.IsAuto()) {
-    const auto& pos = display->mOffsetAnchor.AsPosition();
-    anchorPoint = nsStyleTransformMatrix::Convert2DPosition(
-        pos.horizontal, pos.vertical, refBox);
-    // We need this value to shift the origin from transform-origin to
-    // offset-anchor (and vice versa).
-    // See nsStyleTransformMatrix::ReadTransform for more details.
-    shift = (anchorPoint - origin).ToUnknownPoint();
-  }
-
-  // SVG frames (unlike other frames) have a reference box that can be (and
-  // typically is) offset from the TopLeft() of the frame.
-  // In motion path, we have to make sure the object is aligned with offset-path
-  // when using content area, so we should tweak the anchor point by the offset.
-  // Note: This may need to be updated if we support more transform-box.
-  if ((aFrame->GetStateBits() & NS_FRAME_SVG_LAYOUT) &&
-      display->mTransformBox != StyleGeometryBox::ViewBox &&
-      display->mTransformBox != StyleGeometryBox::BorderBox) {
-    anchorPoint.x += CSSPixel::FromAppUnits(aFrame->GetPosition().x);
-    anchorPoint.y += CSSPixel::FromAppUnits(aFrame->GetPosition().y);
-  }
-
-  return Some(
-      MotionPathData{point - anchorPoint.ToUnknownPoint(), angle, shift});
-}

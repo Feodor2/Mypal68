@@ -49,6 +49,7 @@ linux64-shippable/opt:
     test-sets:
         - common-tests
         - web-platform-tests
+        - web-platform-tests-wdspec-headless
         - opt-only-tests
         - desktop-screenshot-capture
         - talos
@@ -152,6 +153,7 @@ windows7-32-shippable/opt:
         - windows-talos
         - windows-tests
         - web-platform-tests
+        - web-platform-tests-wdspec-headless
         - raptor-chromium
         - raptor-firefox
 
@@ -221,6 +223,7 @@ windows10-64-shippable/opt:
         - marionette-gpu-tests
         - windows-tests
         - web-platform-tests
+        - web-platform-tests-wdspec-headless
         - raptor-firefox
         - raptor-chromium
         - raptor-profiling
@@ -296,6 +299,7 @@ macosx1014-64-shippable/opt:
         - raptor-firefox
         - raptor-profiling
         - marionette-media-tests
+        - web-platform-tests-wdspec-headless
 
 macosx1014-64/debug:
     build-platform: macosx64/debug
@@ -365,7 +369,17 @@ android-em-7.0-x86_64-release/opt:
 android-hw-p2-8-0-arm7-api-16/pgo:
     build-platform: android-api-16-pgo/opt
     test-sets:
-        - android-hw-arm7-opt-unittests
+        - android-hw-arm7-pgo-unittests
+
+android-hw-p2-8-0-arm7-api-16-qr/opt:
+    build-platform: android-api-16/opt
+    test-sets:
+        - android-hw-arm7-qr
+
+android-hw-p2-8-0-arm7-api-16-qr/debug:
+    build-platform: android-api-16/debug
+    test-sets:
+        - android-hw-arm7-qr
 
 android-hw-p2-8-0-android-aarch64/pgo:
     build-platform: android-aarch64-pgo/opt

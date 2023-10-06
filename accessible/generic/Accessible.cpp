@@ -72,6 +72,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
@@ -240,7 +241,7 @@ KeyBinding Accessible::AccessKey() const {
   if (!key) return KeyBinding();
 
   // Get modifier mask. Use ui.key.generalAccessKey (unless it is -1).
-  switch (Preferences::GetInt("ui.key.generalAccessKey", -1)) {
+  switch (StaticPrefs::ui_key_generalAccessKey()) {
     case -1:
       break;
     case dom::KeyboardEvent_Binding::DOM_VK_SHIFT:
@@ -266,10 +267,12 @@ KeyBinding Accessible::AccessKey() const {
   int32_t modifierMask = 0;
   switch (treeItem->ItemType()) {
     case nsIDocShellTreeItem::typeChrome:
-      rv = Preferences::GetInt("ui.key.chromeAccess", &modifierMask);
+      modifierMask = StaticPrefs::ui_key_chromeAccess();
+      rv = NS_OK;
       break;
     case nsIDocShellTreeItem::typeContent:
-      rv = Preferences::GetInt("ui.key.contentAccess", &modifierMask);
+      modifierMask = StaticPrefs::ui_key_contentAccess();
+      rv = NS_OK;
       break;
   }
 

@@ -694,8 +694,13 @@ void nsSVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
       StyleMaskMode maskMode =
           aFrame->StyleSVGReset()->mMask.mLayers[0].mMaskMode;
       nsSVGMaskFrame::MaskParams params(&aContext, aFrame, aTransform,
-                                        maskUsage.opacity, &maskTransform,
-                                        maskMode, aImgParams);
+                                        maskUsage.opacity, maskMode,
+                                        aImgParams);
+      // We want the mask to be untransformed so use the inverse of the current
+      // transform as the maskTransform to compensate.
+      maskTransform = aContext.CurrentMatrix();
+      maskTransform.Invert();
+
       maskSurface = maskFrame->GetMaskForMaskedFrame(params);
 
       if (!maskSurface) {
@@ -707,13 +712,14 @@ void nsSVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
     }
 
     if (maskUsage.shouldGenerateClipMaskLayer) {
-      Matrix clippedMaskTransform;
       RefPtr<SourceSurface> clipMaskSurface = clipPathFrame->GetClipMask(
-          aContext, aFrame, aTransform, &clippedMaskTransform, maskSurface,
-          maskTransform);
+          aContext, aFrame, aTransform, maskSurface, maskTransform);
       if (clipMaskSurface) {
+        // We want the mask to be untransformed so use the inverse of the
+        // current transform as the maskTransform to compensate.
+        maskTransform = aContext.CurrentMatrix();
+        maskTransform.Invert();
         maskSurface = clipMaskSurface;
-        maskTransform = clippedMaskTransform;
       } else {
         // Either entire surface is clipped out, or gfx buffer allocation
         // failure in nsSVGClipPathFrame::GetClipMask.
@@ -1560,10 +1566,10 @@ uint16_t nsSVGUtils::GetGeometryHitTestFlags(nsIFrame* aFrame) {
   uint16_t flags = 0;
 
   switch (aFrame->StyleUI()->mPointerEvents) {
-    case NS_STYLE_POINTER_EVENTS_NONE:
+    case StylePointerEvents::None:
       break;
-    case NS_STYLE_POINTER_EVENTS_AUTO:
-    case NS_STYLE_POINTER_EVENTS_VISIBLEPAINTED:
+    case StylePointerEvents::Auto:
+    case StylePointerEvents::Visiblepainted:
       if (aFrame->StyleVisibility()->IsVisible()) {
         if (!aFrame->StyleSVG()->mFill.kind.IsNone())
           flags |= SVG_HIT_TEST_FILL;
@@ -1573,34 +1579,34 @@ uint16_t nsSVGUtils::GetGeometryHitTestFlags(nsIFrame* aFrame) {
           flags |= SVG_HIT_TEST_CHECK_MRECT;
       }
       break;
-    case NS_STYLE_POINTER_EVENTS_VISIBLEFILL:
+    case StylePointerEvents::Visiblefill:
       if (aFrame->StyleVisibility()->IsVisible()) {
         flags |= SVG_HIT_TEST_FILL;
       }
       break;
-    case NS_STYLE_POINTER_EVENTS_VISIBLESTROKE:
+    case StylePointerEvents::Visiblestroke:
       if (aFrame->StyleVisibility()->IsVisible()) {
         flags |= SVG_HIT_TEST_STROKE;
       }
       break;
-    case NS_STYLE_POINTER_EVENTS_VISIBLE:
+    case StylePointerEvents::Visible:
       if (aFrame->StyleVisibility()->IsVisible()) {
         flags |= SVG_HIT_TEST_FILL | SVG_HIT_TEST_STROKE;
       }
       break;
-    case NS_STYLE_POINTER_EVENTS_PAINTED:
+    case StylePointerEvents::Painted:
       if (!aFrame->StyleSVG()->mFill.kind.IsNone()) flags |= SVG_HIT_TEST_FILL;
       if (!aFrame->StyleSVG()->mStroke.kind.IsNone())
         flags |= SVG_HIT_TEST_STROKE;
       if (aFrame->StyleSVG()->mStrokeOpacity) flags |= SVG_HIT_TEST_CHECK_MRECT;
       break;
-    case NS_STYLE_POINTER_EVENTS_FILL:
+    case StylePointerEvents::Fill:
       flags |= SVG_HIT_TEST_FILL;
       break;
-    case NS_STYLE_POINTER_EVENTS_STROKE:
+    case StylePointerEvents::Stroke:
       flags |= SVG_HIT_TEST_STROKE;
       break;
-    case NS_STYLE_POINTER_EVENTS_ALL:
+    case StylePointerEvents::All:
       flags |= SVG_HIT_TEST_FILL | SVG_HIT_TEST_STROKE;
       break;
     default:

@@ -296,6 +296,7 @@ load 1479681.html
 load 1488817.html
 load 1490012.html
 load 1502893.html
+load 1507674.html
 load 1509989.html
 load 1514086.html
 pref(layout.css.moz-binding.content.enabled,false) load 1517319.html
@@ -312,3 +313,5 @@ load 1579788.html
 load 1581579.html
 load 1599286.html
 pref(dom.paintWorklet.enabled,true) pref(dom.worklet.enabled,true) load 1593766.html
+pref(layout.css.motion-path.enabled,true) load 1594949.html
+pref(layout.css.motion-path.enabled,true) pref(layout.css.individual-transform.enabled,true) load 1594960.html

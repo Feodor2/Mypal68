@@ -13,7 +13,6 @@
 #include "glsl/GrGLSLProgramBuilder.h"
 #include "glsl/GrGLSLUniformHandler.h"
 #include "glsl/GrGLSLVarying.h"
-#include "../private/GrGLSL.h"
 
 const char* GrGLSLFragmentShaderBuilder::kDstColorName = "_dstColor";
 
@@ -54,8 +53,9 @@ static const char* specific_layout_qualifier_name(GrBlendEquation equation) {
     GR_STATIC_ASSERT(12 == kHSLSaturation_GrBlendEquation - kFirstAdvancedGrBlendEquation);
     GR_STATIC_ASSERT(13 == kHSLColor_GrBlendEquation - kFirstAdvancedGrBlendEquation);
     GR_STATIC_ASSERT(14 == kHSLLuminosity_GrBlendEquation - kFirstAdvancedGrBlendEquation);
+    // There's an illegal GrBlendEquation at the end there, hence the -1.
     GR_STATIC_ASSERT(SK_ARRAY_COUNT(kLayoutQualifierNames) ==
-                     kGrBlendEquationCnt - kFirstAdvancedGrBlendEquation);
+                     kGrBlendEquationCnt - kFirstAdvancedGrBlendEquation - 1);
 }
 
 uint8_t GrGLSLFragmentShaderBuilder::KeyForSurfaceOrigin(GrSurfaceOrigin origin) {
@@ -72,6 +72,7 @@ GrGLSLFragmentShaderBuilder::GrGLSLFragmentShaderBuilder(GrGLSLProgramBuilder* p
     , fHasCustomColorOutput(false)
     , fCustomColorOutputIndex(-1)
     , fHasSecondaryOutput(false)
+    , fHasInitializedSampleMask(false)
     , fForceHighPrecision(false) {
     fSubstageIndices.push_back(0);
 #ifdef SK_DEBUG
@@ -92,13 +93,30 @@ SkString GrGLSLFragmentShaderBuilder::ensureCoords2D(const GrShaderVar& coords) 
     return coords2D;
 }
 
+void GrGLSLFragmentShaderBuilder::maskOffMultisampleCoverage(const char* mask, Scope scope) {
+    const GrShaderCaps& shaderCaps = *fProgramBuilder->shaderCaps();
+    if (!shaderCaps.sampleVariablesSupport()) {
+        SkDEBUGFAIL("Attempted to mask sample coverage without support.");
+        return;
+    }
+    if (const char* extension = shaderCaps.sampleVariablesExtensionString()) {
+        this->addFeature(1 << kSampleVariables_GLSLPrivateFeature, extension);
+    }
+
+    if (!fHasInitializedSampleMask && Scope::kTopLevel == scope) {
+        this->codeAppendf("gl_SampleMask[0] = (%s);", mask);
+        fHasInitializedSampleMask = true;
+        return;
+    }
+    if (!fHasInitializedSampleMask) {
+        this->codePrependf("gl_SampleMask[0] = ~0;");
+        fHasInitializedSampleMask = true;
+    }
+    this->codeAppendf("gl_SampleMask[0] &= (%s);", mask);
+}
+
 const char* GrGLSLFragmentShaderBuilder::dstColor() {
     SkDEBUGCODE(fHasReadDstColor = true;)
-
-    const char* override = fProgramBuilder->primitiveProcessor().getDestColorOverride();
-    if (override != nullptr) {
-        return override;
-    }
 
     const GrShaderCaps* shaderCaps = fProgramBuilder->shaderCaps();
     if (shaderCaps->fbFetchSupport()) {
@@ -106,7 +124,7 @@ const char* GrGLSLFragmentShaderBuilder::dstColor() {
                          shaderCaps->fbFetchExtensionString());
 
         // Some versions of this extension string require declaring custom color output on ES 3.0+
-        const char* fbFetchColorName = shaderCaps->fbFetchColorName();
+        const char* fbFetchColorName = "sk_LastFragColor";
         if (shaderCaps->fbFetchNeedsCustomOutput()) {
             this->enableCustomOutput();
             fOutputs[fCustomColorOutputIndex].setTypeModifier(GrShaderVar::kInOut_TypeModifier);
@@ -168,6 +186,11 @@ void GrGLSLFragmentShaderBuilder::enableSecondaryOutput() {
 
 const char* GrGLSLFragmentShaderBuilder::getPrimaryColorOutputName() const {
     return fHasCustomColorOutput ? DeclaredColorOutputName() : "sk_FragColor";
+}
+
+bool GrGLSLFragmentShaderBuilder::primaryColorOutputIsInOut() const {
+    return fHasCustomColorOutput &&
+           fOutputs[fCustomColorOutputIndex].getTypeModifier() == GrShaderVar::kInOut_TypeModifier;
 }
 
 void GrGLSLFragmentBuilder::declAppendf(const char* fmt, ...) {

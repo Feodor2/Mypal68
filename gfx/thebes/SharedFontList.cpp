@@ -6,6 +6,7 @@
 #include "gfxPlatformFontList.h"
 #include "gfxFontUtils.h"
 #include "gfxFont.h"
+#include "nsReadableUtils.h"
 #include "prerror.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/Logging.h"
@@ -192,11 +193,14 @@ void Family::FindAllFacesForStyle(FontList* aList, const gfxFontStyle& aStyle,
   }
 
   Pointer* facePtrs = Faces(aList);
+  if (!facePtrs) {
+    return;
+  }
 
   // If the family has only one face, we simply return it; no further
   // checking needed.
   if (NumFaces() == 1) {
-    MOZ_ASSERT(!facePtrs->IsNull());
+    MOZ_ASSERT(!facePtrs[0].IsNull());
     aFaceList.AppendElement(static_cast<Face*>(facePtrs[0].ToPtr(aList)));
     return;
   }
@@ -310,6 +314,9 @@ void Family::SearchAllFontsForChar(FontList* aList,
   uint32_t numFaces = NumFaces();
   uint32_t charMapsLoaded = 0;  // number of faces whose charmap is loaded
   Pointer* facePtrs = Faces(aList);
+  if (!facePtrs) {
+    return;
+  }
   for (uint32_t i = 0; i < numFaces; i++) {
     Face* face = static_cast<Face*>(facePtrs[i].ToPtr(aList));
     if (!face) {
@@ -628,17 +635,19 @@ void FontList::SetFamilyNames(const nsTArray<Family::InitData>& aFamilies) {
 }
 
 void FontList::SetAliases(
-    nsClassHashtable<nsCStringHashKey, nsTArray<Pointer>>& aAliasTable) {
+    nsClassHashtable<nsCStringHashKey, AliasData>& aAliasTable) {
   MOZ_ASSERT(XRE_IsParentProcess());
 
   Header& header = GetHeader();
 
+  // Build an array of Family::InitData records based on the entries in
+  // aAliasTable, then sort them and store into the fontlist.
   nsTArray<Family::InitData> aliasArray;
   aliasArray.SetCapacity(aAliasTable.Count());
   for (auto i = aAliasTable.Iter(); !i.Done(); i.Next()) {
-    nsAutoCString key(i.Key());
-    ToLowerCase(key);
-    aliasArray.AppendElement(Family::InitData(key, i.Key()));
+    aliasArray.AppendElement(Family::InitData(
+        i.Key(), i.Key(), i.Data()->mIndex, i.Data()->mHidden,
+        i.Data()->mBundled, i.Data()->mBadUnderline, i.Data()->mForceClassic));
   }
   aliasArray.Sort();
 
@@ -654,9 +663,9 @@ void FontList::SetAliases(
     (void)new (&aliases[i]) Family(this, aliasArray[i]);
     LOG_FONTLIST(("(shared-fontlist) alias family %u (%s)", (unsigned)i,
                   aliasArray[i].mName.get()));
-    aliases[i].SetFacePtrs(this, *aAliasTable.Get(aliasArray[i].mName));
+    aliases[i].SetFacePtrs(this, aAliasTable.Get(aliasArray[i].mName)->mFaces);
     if (LOG_FONTLIST_ENABLED()) {
-      const auto& faces = *aAliasTable.Get(aliasArray[i].mName);
+      const auto& faces = aAliasTable.Get(aliasArray[i].mName)->mFaces;
       for (unsigned j = 0; j < faces.Length(); j++) {
         auto face = static_cast<const fontlist::Face*>(faces[j].ToPtr(this));
         const nsCString& desc = face->mDescriptor.AsString(this);
@@ -739,6 +748,61 @@ Family* FontList::FindFamily(const nsCString& aName) {
       return &families[match];
     }
   }
+
+#ifdef XP_WIN
+  // For Windows only, because of how DWrite munges font family names in some
+  // cases (see
+  // https://msdnshared.blob.core.windows.net/media/MSDNBlogsFS/prod.evol.blogs.msdn.com/CommunityServer.Components.PostAttachments/00/02/24/90/36/WPF%20Font%20Selection%20Model.pdf
+  // and discussion on the OpenType list), try stripping any known "regular"
+  // style name from the end of the requested family name.
+  // After the deferred font loader has finished, this is no longer needed as
+  // the "real" family names will have been found in AliasFamilies() above.
+  if (aName.Contains(' ')) {
+    auto pfl = gfxPlatformFontList::PlatformFontList();
+    if (header.mAliasCount) {
+      // Aliases have been fully loaded by the parent process, so just discard
+      // any stray mAliasTable and mLocalNameTable entries from earlier calls
+      // to this code, and return.
+      pfl->mAliasTable.Clear();
+      pfl->mLocalNameTable.Clear();
+      return nullptr;
+    }
+    const nsLiteralCString kStyleSuffixes[] = {
+        nsLiteralCString(" book"),   nsLiteralCString(" medium"),
+        nsLiteralCString(" normal"), nsLiteralCString(" regular"),
+        nsLiteralCString(" roman"),  nsLiteralCString(" upright")};
+    for (const auto& styleName : kStyleSuffixes) {
+      if (StringEndsWith(aName, styleName)) {
+        // See if we have a known family that matches the "base" family name
+        // with trailing style-name element stripped off.
+        nsAutoCString strippedName(aName.BeginReading(),
+                                   aName.Length() - styleName.Length());
+        families = Families();
+        if (BinarySearchIf(families, 0, header.mFamilyCount,
+                           FamilyNameComparator(this, strippedName), &match)) {
+          // If so, this may be a possible family to satisfy the search; check
+          // if the extended family name was actually found as an alternate
+          // (either it's already in mAliasTable, or it gets added there when
+          // we call ReadFaceNamesForFamily on this candidate).
+          Family* candidateFamily = &families[match];
+          if (pfl->mAliasTable.Lookup(aName)) {
+            return candidateFamily;
+          }
+          // Note that ReadFaceNamesForFamily may store entries in mAliasTable
+          // (and mLocalNameTable), but if this is happening in a content
+          // process (which is the common case) those entries will not be saved
+          // into the shared font list; they're just used here until the "real"
+          // alias list is ready, then discarded.
+          pfl->ReadFaceNamesForFamily(candidateFamily, false);
+          if (pfl->mAliasTable.Lookup(aName)) {
+            return candidateFamily;
+          }
+        }
+        break;
+      }
+    }
+  }
+#endif
 
   return nullptr;
 }

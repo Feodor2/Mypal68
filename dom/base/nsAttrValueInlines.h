@@ -12,7 +12,9 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/ServoUtils.h"
 
-struct MiscContainer;
+namespace mozilla {
+class ShadowParts;
+}
 
 struct MiscContainer final {
   typedef nsAttrValue::ValueType ValueType;
@@ -41,6 +43,7 @@ struct MiscContainer final {
         nsIURI* mURL;
         mozilla::AtomArray* mAtomArray;
         nsIntMargin* mIntMargin;
+        const mozilla::ShadowParts* mShadowParts;
         const mozilla::SVGAnimatedIntegerPair* mSVGAnimatedIntegerPair;
         const mozilla::SVGAnimatedLength* mSVGLength;
         const mozilla::SVGAnimatedNumberPair* mSVGAnimatedNumberPair;
@@ -95,7 +98,8 @@ struct MiscContainer final {
     // Nothing stops us from refcounting (and sharing) other types of
     // MiscContainer (except eDoubleValue types) but there's no compelling
     // reason to.
-    return mType == nsAttrValue::eCSSDeclaration;
+    return mType == nsAttrValue::eCSSDeclaration ||
+           mType == nsAttrValue::eShadowParts;
   }
 
   inline int32_t AddRef() {
@@ -245,6 +249,11 @@ inline void nsAttrValue::ToString(mozilla::dom::DOMString& aResult) const {
       ToString(aResult.AsAString());
     }
   }
+}
+
+inline const mozilla::ShadowParts& nsAttrValue::GetShadowPartsValue() const {
+  MOZ_ASSERT(Type() == eShadowParts);
+  return *GetMiscContainer()->mValue.mShadowParts;
 }
 
 #endif

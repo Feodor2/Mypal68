@@ -64,6 +64,9 @@ Maybe<gfx::YUVColorSpace> YUVColorSpaceFromBufferDescriptor(
 Maybe<gfx::ColorDepth> ColorDepthFromBufferDescriptor(
     const BufferDescriptor& aDescriptor);
 
+Maybe<gfx::ColorRange> ColorRangeFromBufferDescriptor(
+    const BufferDescriptor& aDescriptor);
+
 Maybe<StereoMode> StereoModeFromBufferDescriptor(
     const BufferDescriptor& aDescriptor);
 

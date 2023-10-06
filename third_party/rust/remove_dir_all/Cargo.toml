@@ -25,4 +25,4 @@ repository = "https://github.com/XAMPPRocky/remove_dir_all.git"
 version = "0.3"
 [target."cfg(windows)".dependencies.winapi]
 version = "0.3"
-features = ["std", "errhandlingapi", "winerror", "fileapi", "winbase"]
+features = ["std", "errhandlingapi", "winerror", "fileapi", "ntifs", "winbase"]

@@ -67,18 +67,63 @@ void WebRenderTextureHost::CreateRenderTextureHost(
 }
 
 bool WebRenderTextureHost::Lock() {
-  MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+  MOZ_ASSERT(!mWrappedTextureHost.get() ||
+             mWrappedTextureHost->AsBufferTextureHost());
+
+  if (mWrappedTextureHost && mWrappedTextureHost->AsBufferTextureHost()) {
+    return mWrappedTextureHost->Lock();
+  }
   return false;
 }
 
 void WebRenderTextureHost::Unlock() {
-  MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+  MOZ_ASSERT(!mWrappedTextureHost.get() ||
+             mWrappedTextureHost->AsBufferTextureHost());
+
+  if (mWrappedTextureHost && mWrappedTextureHost->AsBufferTextureHost()) {
+    mWrappedTextureHost->Unlock();
+  }
+}
+
+void WebRenderTextureHost::PrepareTextureSource(
+    CompositableTextureSourceRef& aTexture) {
+  MOZ_ASSERT(!mWrappedTextureHost.get() ||
+             mWrappedTextureHost->AsBufferTextureHost());
+
+  if (mWrappedTextureHost && mWrappedTextureHost->AsBufferTextureHost()) {
+    mWrappedTextureHost->PrepareTextureSource(aTexture);
+  }
 }
 
 bool WebRenderTextureHost::BindTextureSource(
     CompositableTextureSourceRef& aTexture) {
-  MOZ_ASSERT_UNREACHABLE("unexpected to be called");
+  MOZ_ASSERT(!mWrappedTextureHost.get() ||
+             mWrappedTextureHost->AsBufferTextureHost());
+
+  if (mWrappedTextureHost && mWrappedTextureHost->AsBufferTextureHost()) {
+    return mWrappedTextureHost->BindTextureSource(aTexture);
+  }
   return false;
+}
+
+void WebRenderTextureHost::UnbindTextureSource() {
+  if (mWrappedTextureHost && mWrappedTextureHost->AsBufferTextureHost()) {
+    mWrappedTextureHost->UnbindTextureSource();
+  }
+  // Handle read unlock
+  TextureHost::UnbindTextureSource();
+}
+
+void WebRenderTextureHost::SetTextureSourceProvider(
+    TextureSourceProvider* aProvider) {
+  // During using WebRender, only BasicCompositor could exist
+  MOZ_ASSERT(!aProvider || aProvider->AsBasicCompositor());
+  MOZ_ASSERT(!mWrappedTextureHost.get() ||
+             mWrappedTextureHost->AsBufferTextureHost());
+
+  if (mWrappedTextureHost && mWrappedTextureHost->AsBufferTextureHost()) {
+    mWrappedTextureHost->SetTextureSourceProvider(aProvider);
+  }
 }
 
 already_AddRefed<gfx::DataSourceSurface> WebRenderTextureHost::GetAsSurface() {
@@ -88,14 +133,18 @@ already_AddRefed<gfx::DataSourceSurface> WebRenderTextureHost::GetAsSurface() {
   return mWrappedTextureHost->GetAsSurface();
 }
 
-void WebRenderTextureHost::SetTextureSourceProvider(
-    TextureSourceProvider* aProvider) {}
-
 gfx::YUVColorSpace WebRenderTextureHost::GetYUVColorSpace() const {
   if (mWrappedTextureHost) {
     return mWrappedTextureHost->GetYUVColorSpace();
   }
   return gfx::YUVColorSpace::UNKNOWN;
+}
+
+gfx::ColorRange WebRenderTextureHost::GetColorRange() const {
+  if (mWrappedTextureHost) {
+    return mWrappedTextureHost->GetColorRange();
+  }
+  return TextureHost::GetColorRange();
 }
 
 gfx::IntSize WebRenderTextureHost::GetSize() const {
@@ -166,7 +215,7 @@ void WebRenderTextureHost::PushResourceUpdates(
     wr::TransactionBuilder& aResources, ResourceUpdateOp aOp,
     const Range<wr::ImageKey>& aImageKeys, const wr::ExternalImageId& aExtID) {
   MOZ_ASSERT(mWrappedTextureHost);
-  MOZ_ASSERT(mExternalImageId == aExtID || SupportsWrNativeTexture());
+  MOZ_ASSERT(mExternalImageId == aExtID);
 
   mWrappedTextureHost->PushResourceUpdates(aResources, aOp, aImageKeys, aExtID);
 }
@@ -180,10 +229,6 @@ void WebRenderTextureHost::PushDisplayItems(
 
   mWrappedTextureHost->PushDisplayItems(aBuilder, aBounds, aClip, aFilter,
                                         aImageKeys);
-}
-
-bool WebRenderTextureHost::SupportsWrNativeTexture() {
-  return mWrappedTextureHost->SupportsWrNativeTexture();
 }
 
 bool WebRenderTextureHost::NeedsYFlip() const {

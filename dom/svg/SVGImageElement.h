@@ -54,6 +54,12 @@ class SVGImageElement : public SVGImageElementBase,
                                 const nsAttrValue* aOldValue,
                                 nsIPrincipal* aSubjectPrincipal,
                                 bool aNotify) override;
+  bool IsNodeOfType(uint32_t aFlags) const override {
+    // <imag> is not really a SVGGeometryElement, we should
+    // ignore eSHAPE flag accepted by SVGGeometryElement.
+    return SVGGraphicsElement::IsNodeOfType(aFlags);
+  }
+
   virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;
   virtual void UnbindFromTree(bool aNullParent) override;
 
@@ -91,6 +97,8 @@ class SVGImageElement : public SVGImageElementBase,
   void GetDecoding(nsAString& aValue);
 
   already_AddRefed<Promise> Decode(ErrorResult& aRv);
+
+  static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
 
  protected:
   nsresult LoadSVGImage(bool aForce, bool aNotify);

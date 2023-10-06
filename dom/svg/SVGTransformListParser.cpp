@@ -10,7 +10,7 @@
 #include "nsGkAtoms.h"
 #include "nsAtom.h"
 
-using namespace mozilla;
+namespace mozilla {
 
 //----------------------------------------------------------------------
 // private methods
@@ -245,3 +245,5 @@ bool SVGTransformListParser::ParseMatrix() {
 
   return true;
 }
+
+}  // namespace mozilla

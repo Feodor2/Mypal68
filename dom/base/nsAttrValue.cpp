@@ -18,6 +18,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoUtils.h"
+#include "mozilla/ShadowParts.h"
 #include "mozilla/DeclarationBlock.h"
 #include "nsContentUtils.h"
 #include "nsReadableUtils.h"
@@ -279,6 +280,7 @@ void nsAttrValue::SetTo(const nsAttrValue& aOther) {
       cont->mValue.mColor = otherCont->mValue.mColor;
       break;
     }
+    case eShadowParts:
     case eCSSDeclaration: {
       MOZ_CRASH("These should be refcounted!");
     }
@@ -299,9 +301,10 @@ void nsAttrValue::SetTo(const nsAttrValue& aOther) {
       break;
     }
     case eIntMarginValue: {
-      if (otherCont->mValue.mIntMargin)
+      if (otherCont->mValue.mIntMargin) {
         cont->mValue.mIntMargin =
             new nsIntMargin(*otherCont->mValue.mIntMargin);
+      }
       break;
     }
     default: {
@@ -1153,12 +1156,23 @@ void nsAttrValue::ParseAtomArray(const nsAString& aValue) {
 void nsAttrValue::ParseStringOrAtom(const nsAString& aValue) {
   uint32_t len = aValue.Length();
   // Don't bother with atoms if it's an empty string since
-  // we can store those efficently anyway.
+  // we can store those efficiently anyway.
   if (len && len <= NS_ATTRVALUE_MAX_STRINGLENGTH_ATOM) {
     ParseAtom(aValue);
   } else {
     SetTo(aValue);
   }
+}
+
+void nsAttrValue::ParsePartMapping(const nsAString& aValue) {
+  ResetIfSet();
+  MiscContainer* cont = EnsureEmptyMiscContainer();
+
+  cont->mType = eShadowParts;
+  cont->mValue.mShadowParts = new ShadowParts(ShadowParts::Parse(aValue));
+  NS_ADDREF(cont);
+  SetMiscAtomOrString(&aValue);
+  MOZ_ASSERT(cont->mValue.mRefCount == 1);
 }
 
 void nsAttrValue::SetIntValueAndType(int32_t aValue, ValueType aType,
@@ -1271,7 +1285,7 @@ bool nsAttrValue::DoParseHTMLDimension(const nsAString& aInput,
 
   // https://html.spec.whatwg.org/multipage/#rules-for-parsing-dimension-values
 
-  // Step 1 and 2.
+  // Steps 1 and 2.
   const char16_t* position = aInput.BeginReading();
   const char16_t* end = aInput.EndReading();
 
@@ -1280,36 +1294,19 @@ bool nsAttrValue::DoParseHTMLDimension(const nsAString& aInput,
   // leading '0' characters, or trailing garbage.
   bool canonical = true;
 
-  // Step 3
+  // Step 3.
   while (position != end && nsContentUtils::IsHTMLWhitespace(*position)) {
     canonical = false;  // Leading whitespace
     ++position;
   }
 
-  // Step 4
-  if (position == end) {
+  // Step 4.
+  if (position == end || *position < char16_t('0') ||
+      *position > char16_t('9')) {
     return false;
   }
 
-  // Step 5
-  if (*position == char16_t('+')) {
-    canonical = false;  // Leading '+'
-    ++position;
-
-    // Step 6.  The spec has this happening regardless of whether we found '+',
-    // but there's no point repeating the step 4 test if we didn't advance
-    // position.
-    if (position == end) {
-      return false;
-    }
-  }
-
-  // Step 7.
-  if (*position < char16_t('0') || *position > char16_t('9')) {
-    return false;
-  }
-
-  // Step 8.
+  // Step 5.
   CheckedInt32 value = 0;
 
   // Collect up leading '0' first to avoid extra branching in the main
@@ -1332,28 +1329,35 @@ bool nsAttrValue::DoParseHTMLDimension(const nsAString& aInput,
     ++position;
   }
 
-  // Step 9 is implemented implicitly via the various "position != end" guards
+  // Step 6 is implemented implicitly via the various "position != end" guards
   // from this point on.
 
   Maybe<double> doubleValue;
-  // Step 10.
+  // Step 7.  The return in step 7.2 is handled by just falling through to the
+  // code below this block when we reach end of input or a non-digit, because
+  // the while loop will terminate at that point.
   if (position != end && *position == char16_t('.')) {
     canonical = false;  // Let's not rely on double serialization reproducing
                         // the string we started with.
+    // Step 7.1.
     ++position;
     // If we have a '.' _not_ followed by digits, this is not as efficient as it
     // could be, because we will store as a double while we could have stored as
     // an int.  But that seems like a pretty rare case.
     doubleValue.emplace(value.value());
+    // Step 7.3.
     double divisor = 1.0f;
-    // Per spec we should now return a number if there is no next char or if the
-    // next char is not a digit, but no one does that.  See
-    // https://github.com/whatwg/html/issues/4736
+    // Step 7.4.
     while (position != end && *position >= char16_t('0') &&
            *position <= char16_t('9')) {
+      // Step 7.4.1.
       divisor = divisor * 10.0f;
+      // Step 7.4.2.
       doubleValue.ref() += (*position - char16_t('0')) / divisor;
+      // Step 7.4.3.
       ++position;
+      // Step 7.4.4 and 7.4.5 are captured in the while loop condition and the
+      // "position != end" checks below.
     }
   }
 
@@ -1363,7 +1367,7 @@ bool nsAttrValue::DoParseHTMLDimension(const nsAString& aInput,
     return false;
   }
 
-  // Steps 11-13.
+  // Step 8 and the spec's early return from step 7.2.
   ValueType type;
   if (position != end && *position == char16_t('%')) {
     type = ePercent;
@@ -1746,6 +1750,12 @@ MiscContainer* nsAttrValue::ClearMiscContainer() {
           cont->Release();
           cont->Evict();
           NS_RELEASE(cont->mValue.mCSSDeclaration);
+          break;
+        }
+        case eShadowParts: {
+          MOZ_ASSERT(cont->mValue.mRefCount == 1);
+          cont->Release();
+          delete cont->mValue.mShadowParts;
           break;
         }
         case eURL: {

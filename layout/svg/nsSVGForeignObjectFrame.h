@@ -52,8 +52,7 @@ class nsSVGForeignObjectFrame final : public nsContainerFrame,
       return false;
     }
 
-    return nsContainerFrame::IsFrameOfType(
-        aFlags & ~(nsIFrame::eSVG | nsIFrame::eSVGForeignObject));
+    return nsContainerFrame::IsFrameOfType(aFlags & ~nsIFrame::eSVG);
   }
 
   virtual bool IsSVGTransformed(Matrix* aOwnTransform,
@@ -82,6 +81,8 @@ class nsSVGForeignObjectFrame final : public nsContainerFrame,
 
   // Return our ::-moz-svg-foreign-content anonymous box.
   void AppendDirectlyOwnedAnonBoxes(nsTArray<OwnedAnonBox>& aResult) override;
+
+  virtual void DidSetComputedStyle(ComputedStyle* aOldComputedStyle) override;
 
  protected:
   // implementation helpers:

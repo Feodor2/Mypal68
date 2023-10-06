@@ -183,12 +183,12 @@ bool nsDisplayFieldSetBorder::CreateWebRenderCommands(
     if (!legendRect.IsEmpty()) {
       // We need to clip out the part of the border where the legend would go
       auto appUnitsPerDevPixel = frame->PresContext()->AppUnitsPerDevPixel();
-      auto layoutRect = wr::ToRoundedLayoutRect(LayoutDeviceRect::FromAppUnits(
+      auto layoutRect = wr::ToLayoutRect(LayoutDeviceRect::FromAppUnits(
           frame->GetVisualOverflowRectRelativeToSelf() + offset,
           appUnitsPerDevPixel));
 
       wr::ComplexClipRegion region;
-      region.rect = wr::ToRoundedLayoutRect(
+      region.rect = wr::ToLayoutRect(
           LayoutDeviceRect::FromAppUnits(legendRect, appUnitsPerDevPixel));
       region.mode = wr::ClipMode::ClipOut;
       region.radii = wr::EmptyBorderRadius();
@@ -688,11 +688,9 @@ a11y::AccType nsFieldSetFrame::AccessibleType() {
 #endif
 
 nscoord nsFieldSetFrame::GetLogicalBaseline(WritingMode aWM) const {
-  switch (StyleDisplay()->mDisplay) {
-    case mozilla::StyleDisplay::Grid:
-    case mozilla::StyleDisplay::InlineGrid:
-    case mozilla::StyleDisplay::Flex:
-    case mozilla::StyleDisplay::InlineFlex:
+  switch (StyleDisplay()->DisplayInside()) {
+    case mozilla::StyleDisplayInside::Grid:
+    case mozilla::StyleDisplayInside::Flex:
       return BaselineBOffset(aWM, BaselineSharingGroup::First,
                              AlignmentContext::Inline);
     default:

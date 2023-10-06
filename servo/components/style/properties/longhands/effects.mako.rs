@@ -42,7 +42,7 @@ ${helpers.predefined_type(
     servo_2020_pref="layout.2020.unimplemented",
     animation_value_type="ComputedValue",
     boxed=True,
-    allow_quirks=True,
+    allow_quirks="Yes",
     spec="https://drafts.fxtf.org/css-masking/#clip-property",
 )}
 

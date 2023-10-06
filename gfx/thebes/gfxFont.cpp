@@ -567,8 +567,7 @@ void gfxShapedText::SetupClusterBoundaries(uint32_t aOffset,
   // _begins_ with a cluster-extender, so we handle that here
   if (aLength) {
     uint32_t ch = *aString;
-    if (aLength > 1 && NS_IS_HIGH_SURROGATE(ch) &&
-        NS_IS_LOW_SURROGATE(aString[1])) {
+    if (aLength > 1 && NS_IS_SURROGATE_PAIR(ch, aString[1])) {
       ch = SURROGATE_TO_UCS4(ch, aString[1]);
     }
     if (IsClusterExtender(ch)) {
@@ -1446,8 +1445,7 @@ bool gfxFont::SupportsSubSuperscript(uint32_t aSubSuperscript,
   for (uint32_t i = 0; i < aLength; i++) {
     uint32_t ch = aString[i];
 
-    if ((i + 1 < aLength) && NS_IS_HIGH_SURROGATE(ch) &&
-        NS_IS_LOW_SURROGATE(aString[i + 1])) {
+    if (i + 1 < aLength && NS_IS_SURROGATE_PAIR(ch, aString[i + 1])) {
       i++;
       ch = SURROGATE_TO_UCS4(ch, aString[i]);
     }
@@ -1821,7 +1819,9 @@ template <gfxFont::FontComplexityT FC, gfxFont::SpacingT S>
 bool gfxFont::DrawGlyphs(const gfxShapedText* aShapedText,
                          uint32_t aOffset,  // offset in the textrun
                          uint32_t aCount,   // length of run to draw
-                         gfx::Point* aPt, GlyphBufferAzure& aBuffer) {
+                         gfx::Point* aPt,
+                         const gfx::Matrix* aOffsetMatrix,  // may be null
+                         GlyphBufferAzure& aBuffer) {
   float& inlineCoord = aBuffer.mFontParams.isVerticalFont ? aPt->y : aPt->x;
 
   const gfxShapedText::CompressedGlyph* glyphData =
@@ -1871,7 +1871,10 @@ bool gfxFont::DrawGlyphs(const gfxShapedText* aShapedText,
               return false;
             }
           } else {
-            gfx::Point glyphPt(*aPt + details->mOffset);
+            gfx::Point glyphPt(
+                *aPt + (aOffsetMatrix
+                            ? aOffsetMatrix->TransformPoint(details->mOffset)
+                            : details->mOffset));
             DrawOneGlyph<FC>(details->mGlyphID, glyphPt, aBuffer,
                              &emittedGlyphs);
           }
@@ -1937,7 +1940,7 @@ void gfxFont::DrawOneGlyph(uint32_t aGlyphID, const gfx::Point& aPt,
       NS_WARNING_ASSERTION(
           runParams.drawMode != DrawMode::GLYPH_PATH,
           "Rendering SVG glyph despite request for glyph path");
-      if (RenderSVGGlyph(runParams.context, devPt, aGlyphID,
+      if (RenderSVGGlyph(runParams.context, textDrawer, devPt, aGlyphID,
                          fontParams.contextPaint, runParams.callbacks,
                          *aEmittedGlyphs)) {
         return;
@@ -1946,8 +1949,9 @@ void gfxFont::DrawOneGlyph(uint32_t aGlyphID, const gfx::Point& aPt,
 
     if (fontParams.haveColorGlyphs &&
         !gfxPlatform::GetPlatform()->HasNativeColrFontSupport() &&
-        RenderColorGlyph(runParams.dt, runParams.context, fontParams.scaledFont,
-                         fontParams.drawOptions, devPt, aGlyphID)) {
+        RenderColorGlyph(runParams.dt, runParams.context, textDrawer,
+                         fontParams.scaledFont, fontParams.drawOptions, devPt,
+                         aGlyphID)) {
       return;
     }
 
@@ -1988,12 +1992,12 @@ bool gfxFont::DrawMissingGlyph(const TextRunDrawParams& aRunParams,
     if (textDrawer) {
       // Generate an orientation matrix for the current writing mode
       wr::FontInstanceFlags flags = textDrawer->GetWRGlyphFlags();
-      if (flags & wr::FontInstanceFlags_TRANSPOSE) {
+      if (flags & wr::FontInstanceFlags::TRANSPOSE) {
         std::swap(mat._11, mat._12);
         std::swap(mat._21, mat._22);
       }
-      mat.PostScale(flags & wr::FontInstanceFlags_FLIP_X ? -1.0f : 1.0f,
-                    flags & wr::FontInstanceFlags_FLIP_Y ? -1.0f : 1.0f);
+      mat.PostScale(flags & wr::FontInstanceFlags::FLIP_X ? -1.0f : 1.0f,
+                    flags & wr::FontInstanceFlags::FLIP_Y ? -1.0f : 1.0f);
       matPtr = &mat;
     }
 
@@ -2100,14 +2104,6 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
   fontParams.contextPaint = aRunParams.runContextPaint;
 
   if (textDrawer) {
-    Color color;
-    if (fontParams.haveSVGGlyphs ||
-        (fontParams.haveColorGlyphs &&
-         aRunParams.context->HasNonOpaqueNonTransparentColor(color))) {
-      textDrawer->FoundUnsupportedFeature();
-      return;
-    }
-
     fontParams.isVerticalFont = aRunParams.isVerticalRun;
   } else {
     fontParams.isVerticalFont =
@@ -2126,6 +2122,7 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
   // return must be advanced in transformed space. So save the original point so
   // we can properly transform the advance later.
   gfx::Point origPt = *aPt;
+  const gfx::Matrix* offsetMatrix = nullptr;
 
   // Default to advancing along the +X direction (-X if RTL).
   fontParams.advanceDirection = aRunParams.isRTL ? -1.0f : 1.0f;
@@ -2168,11 +2165,19 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
       // X and Y, while left rotation flips the resulting Y axis, and right
       // rotation flips the resulting X axis.
       textDrawer->SetWRGlyphFlags(
-          textDrawer->GetWRGlyphFlags() | wr::FontInstanceFlags_TRANSPOSE |
+          textDrawer->GetWRGlyphFlags() | wr::FontInstanceFlags::TRANSPOSE |
           (aOrientation ==
                    gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_SIDEWAYS_LEFT
-               ? wr::FontInstanceFlags_FLIP_Y
-               : wr::FontInstanceFlags_FLIP_X));
+               ? wr::FontInstanceFlags::FLIP_Y
+               : wr::FontInstanceFlags::FLIP_X));
+      // We also need to set up a transform for the glyph offset vector that
+      // may be present in DetailedGlyph records.
+      static const gfx::Matrix kSidewaysLeft = {0, -1, 1, 0, 0, 0};
+      static const gfx::Matrix kSidewaysRight = {0, 1, -1, 0, 0, 0};
+      offsetMatrix =
+          (aOrientation == ShapedTextFlags::TEXT_ORIENT_VERTICAL_SIDEWAYS_LEFT)
+              ? &kSidewaysLeft
+              : &kSidewaysRight;
     } else {
       // For non-WebRender targets, just push a rotation transform.
       matrixRestore.SetContext(aRunParams.context);
@@ -2280,21 +2285,21 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
       if (aRunParams.spacing) {
         emittedGlyphs =
             DrawGlyphs<FontComplexityT::ComplexFont, SpacingT::HasSpacing>(
-                aTextRun, aStart, aEnd - aStart, aPt, buffer);
+                aTextRun, aStart, aEnd - aStart, aPt, offsetMatrix, buffer);
       } else {
         emittedGlyphs =
             DrawGlyphs<FontComplexityT::ComplexFont, SpacingT::NoSpacing>(
-                aTextRun, aStart, aEnd - aStart, aPt, buffer);
+                aTextRun, aStart, aEnd - aStart, aPt, offsetMatrix, buffer);
       }
     } else {
       if (aRunParams.spacing) {
         emittedGlyphs =
             DrawGlyphs<FontComplexityT::SimpleFont, SpacingT::HasSpacing>(
-                aTextRun, aStart, aEnd - aStart, aPt, buffer);
+                aTextRun, aStart, aEnd - aStart, aPt, offsetMatrix, buffer);
       } else {
         emittedGlyphs =
             DrawGlyphs<FontComplexityT::SimpleFont, SpacingT::NoSpacing>(
-                aTextRun, aStart, aEnd - aStart, aPt, buffer);
+                aTextRun, aStart, aEnd - aStart, aPt, offsetMatrix, buffer);
       }
     }
   }
@@ -2318,11 +2323,19 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
   }
 }
 
-bool gfxFont::RenderSVGGlyph(gfxContext* aContext, gfx::Point aPoint,
-                             uint32_t aGlyphId,
+bool gfxFont::RenderSVGGlyph(gfxContext* aContext,
+                             layout::TextDrawTarget* aTextDrawer,
+                             gfx::Point aPoint, uint32_t aGlyphId,
                              SVGContextPaint* aContextPaint) const {
   if (!GetFontEntry()->HasSVGGlyph(aGlyphId)) {
     return false;
+  }
+
+  if (aTextDrawer) {
+    // WebRender doesn't support SVG Glyphs.
+    // (pretend to succeed, output doesn't matter, we will emit a blob)
+    aTextDrawer->FoundUnsupportedFeature();
+    return true;
   }
 
   const gfxFloat devUnitsPerSVGUnit =
@@ -2340,18 +2353,21 @@ bool gfxFont::RenderSVGGlyph(gfxContext* aContext, gfx::Point aPoint,
   return true;
 }
 
-bool gfxFont::RenderSVGGlyph(gfxContext* aContext, gfx::Point aPoint,
-                             uint32_t aGlyphId, SVGContextPaint* aContextPaint,
+bool gfxFont::RenderSVGGlyph(gfxContext* aContext,
+                             layout::TextDrawTarget* aTextDrawer,
+                             gfx::Point aPoint, uint32_t aGlyphId,
+                             SVGContextPaint* aContextPaint,
                              gfxTextRunDrawCallbacks* aCallbacks,
                              bool& aEmittedGlyphs) const {
   if (aCallbacks && aEmittedGlyphs) {
     aCallbacks->NotifyGlyphPathEmitted();
     aEmittedGlyphs = false;
   }
-  return RenderSVGGlyph(aContext, aPoint, aGlyphId, aContextPaint);
+  return RenderSVGGlyph(aContext, aTextDrawer, aPoint, aGlyphId, aContextPaint);
 }
 
 bool gfxFont::RenderColorGlyph(DrawTarget* aDrawTarget, gfxContext* aContext,
+                               layout::TextDrawTarget* aTextDrawer,
                                mozilla::gfx::ScaledFont* scaledFont,
                                mozilla::gfx::DrawOptions aDrawOptions,
                                const mozilla::gfx::Point& aPoint,
@@ -2368,6 +2384,28 @@ bool gfxFont::RenderColorGlyph(DrawTarget* aDrawTarget, gfxContext* aContext,
     return false;
   }
 
+  // Default to opaque rendering (non-webrender applies alpha with a layer)
+  float alpha = 1.0;
+  if (aTextDrawer) {
+    // defaultColor is the one that comes from CSS, so it has transparency info.
+    bool hasComplexTransparency = 0.f < defaultColor.a && defaultColor.a < 1.f;
+    if (hasComplexTransparency && layerGlyphs.Length() > 1) {
+      // WebRender doesn't support drawing multi-layer transparent color-glyphs,
+      // as it requires compositing all the layers before applying transparency.
+      // (pretend to succeed, output doesn't matter, we will emit a blob)
+      aTextDrawer->FoundUnsupportedFeature();
+      return true;
+    }
+
+    // If we get here, then either alpha is 0 or 1, or there's only one layer
+    // which shouldn't have composition issues. In all of these cases, applying
+    // transparency directly to the glyph should work perfectly fine.
+    //
+    // Note that we must still emit completely transparent emoji, because they
+    // might be wrapped in a shadow that uses the text run's glyphs.
+    alpha = defaultColor.a;
+  }
+
   for (uint32_t layerIndex = 0; layerIndex < layerGlyphs.Length();
        layerIndex++) {
     Glyph glyph;
@@ -2378,8 +2416,9 @@ bool gfxFont::RenderColorGlyph(DrawTarget* aDrawTarget, gfxContext* aContext,
     buffer.mGlyphs = &glyph;
     buffer.mNumGlyphs = 1;
 
-    aDrawTarget->FillGlyphs(scaledFont, buffer,
-                            ColorPattern(layerColors[layerIndex]),
+    mozilla::gfx::Color layerColor = layerColors[layerIndex];
+    layerColor.a *= alpha;
+    aDrawTarget->FillGlyphs(scaledFont, buffer, ColorPattern(layerColor),
                             aDrawOptions);
   }
   return true;
@@ -2479,7 +2518,6 @@ gfxFont::RunMetrics gfxFont::Measure(const gfxTextRun* aTextRun,
   const gfxTextRun::CompressedGlyph* charGlyphs =
       aTextRun->GetCharacterGlyphs();
   bool isRTL = aTextRun->IsRightToLeft();
-  double direction = aTextRun->GetDirection();
   bool needsGlyphExtents = NeedsGlyphExtents(this, aTextRun);
   gfxGlyphExtents* extents =
       ((aBoundingBoxType == LOOSE_INK_EXTENTS && !needsGlyphExtents &&
@@ -2490,7 +2528,7 @@ gfxFont::RunMetrics gfxFont::Measure(const gfxTextRun* aTextRun,
           : GetOrCreateGlyphExtents(aTextRun->GetAppUnitsPerDevUnit());
   double x = 0;
   if (aSpacing) {
-    x += direction * aSpacing[0].mBefore;
+    x += aSpacing[0].mBefore;
   }
   uint32_t spaceGlyph = GetSpaceGlyph();
   bool allGlyphsInvisible = true;
@@ -2513,7 +2551,7 @@ gfxFont::RunMetrics gfxFont::Measure(const gfxTextRun* aTextRun,
         if (extentsWidth != gfxGlyphExtents::INVALID_WIDTH &&
             aBoundingBoxType == LOOSE_INK_EXTENTS) {
           UnionRange(x, &advanceMin, &advanceMax);
-          UnionRange(x + direction * extentsWidth, &advanceMin, &advanceMax);
+          UnionRange(x + extentsWidth, &advanceMin, &advanceMax);
         } else {
           gfxRect glyphRect;
           if (!extents->GetTightGlyphExtentsAppUnits(this, aRefDrawTarget,
@@ -2522,13 +2560,15 @@ gfxFont::RunMetrics gfxFont::Measure(const gfxTextRun* aTextRun,
                                 metrics.mBoundingBox.Height());
           }
           if (isRTL) {
-            glyphRect.MoveByX(-advance);
+            // In effect, swap left and right sidebearings of the glyph, for
+            // proper accumulation of potentially-overlapping glyph rects.
+            glyphRect.MoveToX(advance - glyphRect.XMost());
           }
           glyphRect.MoveByX(x);
           metrics.mBoundingBox = metrics.mBoundingBox.Union(glyphRect);
         }
       }
-      x += direction * advance;
+      x += advance;
     } else {
       allGlyphsInvisible = false;
       uint32_t glyphCount = glyphData->GetGlyphCount();
@@ -2551,12 +2591,17 @@ gfxFont::RunMetrics gfxFont::Measure(const gfxTextRun* aTextRun,
                                 metrics.mAscent + metrics.mDescent);
           }
           if (isRTL) {
-            glyphRect.MoveByX(-advance);
+            // Swap left/right sidebearings of the glyph, because we're doing
+            // mirrored measurement.
+            glyphRect.MoveToX(advance - glyphRect.XMost());
+            // Move to current x position, mirroring any x-offset amount.
+            glyphRect.MoveByX(x - details->mOffset.x);
+          } else {
+            glyphRect.MoveByX(x + details->mOffset.x);
           }
-          glyphRect.MoveByX(x + details->mOffset.x);
           glyphRect.MoveByY(details->mOffset.y);
           metrics.mBoundingBox = metrics.mBoundingBox.Union(glyphRect);
-          x += direction * advance;
+          x += advance;
         }
       }
     }
@@ -2566,7 +2611,7 @@ gfxFont::RunMetrics gfxFont::Measure(const gfxTextRun* aTextRun,
       if (i + 1 < aEnd) {
         space += aSpacing[i + 1 - aStart].mBefore;
       }
-      x += direction * space;
+      x += space;
     }
   }
 
@@ -2579,9 +2624,12 @@ gfxFont::RunMetrics gfxFont::Measure(const gfxTextRun* aTextRun,
                       metrics.mAscent + metrics.mDescent);
       metrics.mBoundingBox = metrics.mBoundingBox.Union(fontBox);
     }
-    if (isRTL) {
-      metrics.mBoundingBox -= gfxPoint(x, 0);
-    }
+  }
+
+  if (isRTL) {
+    // Reverse the effect of having swapped each glyph's sidebearings, to get
+    // the correct sidebearings of the merged bounding box.
+    metrics.mBoundingBox.MoveToX(x - metrics.mBoundingBox.XMost());
   }
 
   // If the font may be rendered with a fake-italic effect, we need to allow
@@ -2606,7 +2654,8 @@ gfxFont::RunMetrics gfxFont::Measure(const gfxTextRun* aTextRun,
     metrics.mBoundingBox.MoveByY(baselineOffset);
   }
 
-  metrics.mAdvanceWidth = x * direction;
+  metrics.mAdvanceWidth = x;
+
   return metrics;
 }
 
@@ -2855,8 +2904,7 @@ bool gfxFont::ShapeFragmentWithoutWordCache(DrawTarget* aDrawTarget,
           // if we didn't find any cluster start while backtracking,
           // just check that we're not in the middle of a surrogate
           // pair; back up by one code unit if we are.
-          if (NS_IS_LOW_SURROGATE(aText[fragLen]) &&
-              NS_IS_HIGH_SURROGATE(aText[fragLen - 1])) {
+          if (NS_IS_SURROGATE_PAIR(aText[fragLen - 1], aText[fragLen])) {
             --fragLen;
           }
         }
@@ -3168,6 +3216,8 @@ bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
     smallCapsFont = this;
   }
 
+  bool isCJK = gfxTextRun::IsCJKScript(aScript);
+
   enum RunCaseAction { kNoChange, kUppercaseReduce, kUppercase };
 
   RunCaseAction runAction = kNoChange;
@@ -3182,8 +3232,7 @@ bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
     // character will need.
     if (i < aLength) {
       uint32_t ch = aText[i];
-      if (NS_IS_HIGH_SURROGATE(ch) && i < aLength - 1 &&
-          NS_IS_LOW_SURROGATE(aText[i + 1])) {
+      if (i < aLength - 1 && NS_IS_SURROGATE_PAIR(ch, aText[i + 1])) {
         ch = SURROGATE_TO_UCS4(ch, aText[i + 1]);
         extraCodeUnits = 1;
       }
@@ -3228,7 +3277,7 @@ bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
         case kNoChange:
           // just use the current font and the existing string
           aTextRun->AddGlyphRun(f, aMatchType, aOffset + runStart, true,
-                                aOrientation);
+                                aOrientation, isCJK);
           if (!f->SplitAndInitTextRun(aDrawTarget, aTextRun, aText + runStart,
                                       aOffset + runStart, runLength, aScript,
                                       aOrientation)) {
@@ -3265,7 +3314,7 @@ bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
             RefPtr<gfxTextRun> tempRun(gfxTextRun::Create(
                 &params, convertedString.Length(), aTextRun->GetFontGroup(),
                 gfx::ShapedTextFlags(), nsTextFrameUtils::Flags()));
-            tempRun->AddGlyphRun(f, aMatchType, 0, true, aOrientation);
+            tempRun->AddGlyphRun(f, aMatchType, 0, true, aOrientation, isCJK);
             if (!f->SplitAndInitTextRun(
                     aDrawTarget, tempRun.get(), convertedString.BeginReading(),
                     0, convertedString.Length(), aScript, aOrientation)) {
@@ -3283,7 +3332,7 @@ bool gfxFont::InitFakeSmallCapsRun(DrawTarget* aDrawTarget,
             }
           } else {
             aTextRun->AddGlyphRun(f, aMatchType, aOffset + runStart, true,
-                                  aOrientation);
+                                  aOrientation, isCJK);
             if (!f->SplitAndInitTextRun(
                     aDrawTarget, aTextRun, convertedString.BeginReading(),
                     aOffset + runStart, runLength, aScript, aOrientation)) {

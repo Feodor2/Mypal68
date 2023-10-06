@@ -14,10 +14,10 @@
 
 // See the architecture comment in DOMSVGPointList.h.
 
-using namespace mozilla;
 using namespace mozilla::gfx;
 
 namespace mozilla {
+namespace dom {
 
 //----------------------------------------------------------------------
 // Helper class: AutoChangePointNotifier
@@ -49,8 +49,6 @@ class MOZ_RAII AutoChangePointNotifier {
   nsAttrValue mEmptyOrOldValue;
   MOZ_DECL_USE_GUARD_OBJECT_NOTIFIER
 };
-
-}  // namespace mozilla
 
 float DOMSVGPoint::X() {
   if (mIsAnimValItem && HasOwner()) {
@@ -109,3 +107,6 @@ already_AddRefed<nsISVGPoint> DOMSVGPoint::MatrixTransform(
   nsCOMPtr<nsISVGPoint> newPoint = new DOMSVGPoint(pt);
   return newPoint.forget();
 }
+
+}  // namespace dom
+}  // namespace mozilla

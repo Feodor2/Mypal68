@@ -14,8 +14,11 @@
 #include "nsFont.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/Services.h"
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/StaticPrefs_editor.h"
+#include "mozilla/StaticPrefs_findbar.h"
+#include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/widget/WidgetMessageUtils.h"
 
@@ -142,6 +145,8 @@ const char nsXPLookAndFeel::sColorPrefs[][41] = {
     "ui.buttonshadow",
     "ui.buttontext",
     "ui.captiontext",
+    "ui.-moz-field",
+    "ui.-moz-fieldtext",
     "ui.graytext",
     "ui.highlight",
     "ui.highlighttext",
@@ -162,8 +167,8 @@ const char nsXPLookAndFeel::sColorPrefs[][41] = {
     "ui.windowframe",
     "ui.windowtext",
     "ui.-moz-buttondefault",
-    "ui.-moz-field",
-    "ui.-moz-fieldtext",
+    "ui.-moz-default-color",
+    "ui.-moz-default-background-color",
     "ui.-moz-dialog",
     "ui.-moz-dialogtext",
     "ui.-moz-dragtargetzone",
@@ -207,6 +212,9 @@ const char nsXPLookAndFeel::sColorPrefs[][41] = {
     "ui.-moz-win-mediatext",
     "ui.-moz-win-communicationstext",
     "ui.-moz-nativehyperlinktext",
+    "ui.-moz-hyperlinktext",
+    "ui.-moz-activehyperlinktext",
+    "ui.-moz-visitedhyperlinktext",
     "ui.-moz-comboboxtext",
     "ui.-moz-combobox",
     "ui.-moz-gtk-info-bar-text"};
@@ -215,8 +223,6 @@ int32_t nsXPLookAndFeel::sCachedColors[size_t(LookAndFeel::ColorID::End)] = {0};
 int32_t nsXPLookAndFeel::sCachedColorBits[COLOR_CACHE_SIZE] = {0};
 
 bool nsXPLookAndFeel::sInitialized = false;
-bool nsXPLookAndFeel::sUseNativeColors = true;
-bool nsXPLookAndFeel::sFindbarModalHighlight = false;
 bool nsXPLookAndFeel::sIsInPrefersReducedMotionForTest = false;
 bool nsXPLookAndFeel::sPrefersReducedMotionForTest = false;
 
@@ -261,13 +267,21 @@ void nsXPLookAndFeel::IntPrefChanged(nsLookAndFeelIntPref* data) {
   int32_t intpref;
   nsresult rv = Preferences::GetInt(data->name, &intpref);
   if (NS_FAILED(rv)) {
-    return;
-  }
-  data->intVar = intpref;
-  data->isSet = true;
+    data->isSet = false;
+
 #ifdef DEBUG_akkana
-  printf("====== Changed int pref %s to %d\n", data->name, data->intVar);
+    printf("====== Cleared int pref %s\n", data->name);
 #endif
+  } else {
+    data->intVar = intpref;
+    data->isSet = true;
+
+#ifdef DEBUG_akkana
+    printf("====== Changed int pref %s to %d\n", data->name, data->intVar);
+#endif
+  }
+
+  NotifyPrefChanged();
 }
 
 // static
@@ -279,13 +293,21 @@ void nsXPLookAndFeel::FloatPrefChanged(nsLookAndFeelFloatPref* data) {
   int32_t intpref;
   nsresult rv = Preferences::GetInt(data->name, &intpref);
   if (NS_FAILED(rv)) {
-    return;
-  }
-  data->floatVar = (float)intpref / 100.0f;
-  data->isSet = true;
+    data->isSet = false;
+
 #ifdef DEBUG_akkana
-  printf("====== Changed float pref %s to %f\n", data->name, data->floatVar);
+    printf("====== Cleared float pref %s\n", data->name);
 #endif
+  } else {
+    data->floatVar = (float)intpref / 100.0f;
+    data->isSet = true;
+
+#ifdef DEBUG_akkana
+    printf("====== Changed float pref %s to %f\n", data->name);
+#endif
+  }
+
+  NotifyPrefChanged();
 }
 
 // static
@@ -293,10 +315,7 @@ void nsXPLookAndFeel::ColorPrefChanged(unsigned int index,
                                        const char* prefName) {
   nsAutoString colorStr;
   nsresult rv = Preferences::GetString(prefName, colorStr);
-  if (NS_FAILED(rv)) {
-    return;
-  }
-  if (!colorStr.IsEmpty()) {
+  if (NS_SUCCEEDED(rv) && !colorStr.IsEmpty()) {
     nscolor thecolor;
     if (colorStr[0] == char16_t('#')) {
       if (NS_HexToRGBA(nsDependentString(colorStr, 1), nsHexColorType::NoAlpha,
@@ -316,6 +335,20 @@ void nsXPLookAndFeel::ColorPrefChanged(unsigned int index,
     // to force lookup when the color is next used
     int32_t id = NS_PTR_TO_INT32(index);
     CLEAR_COLOR_CACHE(id);
+
+#ifdef DEBUG_akkana
+    printf("====== Cleared color pref %s\n", prefName);
+#endif
+  }
+
+  NotifyPrefChanged();
+}
+
+// static
+void nsXPLookAndFeel::NotifyPrefChanged() {
+  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
+  if (obs) {
+    obs->NotifyObservers(nullptr, "look-and-feel-pref-changed", nullptr);
   }
 }
 
@@ -419,12 +452,6 @@ void nsXPLookAndFeel::Init() {
   for (i = 0; i < ArrayLength(sColorPrefs); ++i) {
     InitColorFromPref(i);
   }
-
-  Preferences::AddBoolVarCache(&sUseNativeColors, "ui.use_native_colors",
-                               sUseNativeColors);
-  Preferences::AddBoolVarCache(&sFindbarModalHighlight,
-                               "findbar.modalHighlight",
-                               sFindbarModalHighlight);
 
   if (XRE_IsContentProcess()) {
     mozilla::dom::ContentChild* cc = mozilla::dom::ContentChild::GetSingleton();
@@ -606,10 +633,10 @@ nscolor nsXPLookAndFeel::GetStandinForNativeColor(ColorID aID) {
     case ColorID::MozButtondefault:
       result = NS_RGB(0x69, 0x69, 0x69);
       break;
-    case ColorID::MozField:
+    case ColorID::Field:
       result = NS_RGB(0xFF, 0xFF, 0xFF);
       break;
-    case ColorID::MozFieldtext:
+    case ColorID::Fieldtext:
       result = NS_RGB(0x00, 0x00, 0x00);
       break;
     case ColorID::MozDialog:
@@ -814,8 +841,8 @@ nsresult nsXPLookAndFeel::GetColorImpl(ColorID aID,
         // from the CSS3 working draft (not yet finalized)
         // http://www.w3.org/tr/2000/wd-css3-userint-20000216.html#color
 
-      case ColorID::MozField:
-      case ColorID::MozFieldtext:
+      case ColorID::Field:
+      case ColorID::Fieldtext:
         aResult = NS_RGB(0xff, 0x00, 0xff);
         break;
 
@@ -853,7 +880,7 @@ nsresult nsXPLookAndFeel::GetColorImpl(ColorID aID,
 #endif
 
   if (aID == ColorID::TextSelectBackgroundAttention) {
-    if (sFindbarModalHighlight) {
+    if (StaticPrefs::findbar_modalHighlight()) {
       aResult = NS_RGBA(0, 0, 0, 0);
       return NS_OK;
     }
@@ -878,12 +905,13 @@ nsresult nsXPLookAndFeel::GetColorImpl(ColorID aID,
     return NS_OK;
   }
 
-  if (sUseNativeColors && aUseStandinsForNativeColors) {
+  if (StaticPrefs::ui_use_native_colors() && aUseStandinsForNativeColors) {
     aResult = GetStandinForNativeColor(aID);
     return NS_OK;
   }
 
-  if (sUseNativeColors && NS_SUCCEEDED(NativeGetColor(aID, aResult))) {
+  if (StaticPrefs::ui_use_native_colors() &&
+      NS_SUCCEEDED(NativeGetColor(aID, aResult))) {
     if (!mozilla::ServoStyleSet::IsInServoTraversal()) {
       MOZ_ASSERT(NS_IsMainThread());
       if ((gfxPlatform::GetCMSMode() == eCMSMode_All) &&
@@ -956,8 +984,17 @@ nsresult nsXPLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
 void nsXPLookAndFeel::RefreshImpl() {
   // Wipe out our color cache.
   uint32_t i;
-  for (i = 0; i < uint32_t(ColorID::End); i++) sCachedColors[i] = 0;
-  for (i = 0; i < COLOR_CACHE_SIZE; i++) sCachedColorBits[i] = 0;
+  for (i = 0; i < uint32_t(ColorID::End); i++) {
+    sCachedColors[i] = 0;
+  }
+  for (i = 0; i < COLOR_CACHE_SIZE; i++) {
+    sCachedColorBits[i] = 0;
+  }
+
+  // Reinit color cache from prefs.
+  for (i = 0; i < uint32_t(ColorID::End); ++i) {
+    InitColorFromPref(i);
+  }
 }
 
 nsTArray<LookAndFeelInt> nsXPLookAndFeel::GetIntCacheImpl() {

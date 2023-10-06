@@ -115,13 +115,6 @@ struct DisplayPortMarginsPropertyData {
   uint32_t mPriority;
 };
 
-struct MotionPathData {
-  gfx::Point mTranslate;
-  float mRotate;
-  // The delta value between transform-origin and offset-anchor.
-  gfx::Point mShift;
-};
-
 }  // namespace mozilla
 
 // For GetDisplayPort
@@ -197,6 +190,11 @@ class nsLayoutUtils {
    * Find content for given ID.
    */
   static nsIContent* FindContentFor(ViewID aId);
+
+  /**
+   * Find the scrollable frame for a given content element.
+   */
+  static nsIScrollableFrame* FindScrollableFrameFor(nsIContent* aContent);
 
   /**
    * Find the scrollable frame for a given ID.
@@ -2326,6 +2324,17 @@ class nsLayoutUtils {
                                         mozilla::EffectSet* aEffectSet);
 
   /**
+   * A variant of the above HasAnimationOfPropertySet. This is especially for
+   * tranform-like properties with motion-path.
+   * For transform-like properties with motion-path, we need to check if
+   * offset-path has effect. If we don't have any animation on offset-path and
+   * offset-path is none, there is no effective motion-path, and so we don't
+   * care other offset-* properties. In this case, this function only checks the
+   * rest of transform-like properties (i.e. transform/translate/rotate/scale).
+   */
+  static bool HasAnimationOfTransformAndMotionPath(const nsIFrame* aFrame);
+
+  /**
    * Returns true if |aFrame| has an animation of |aProperty| which is
    * not overridden by !important rules.
    */
@@ -2970,12 +2979,6 @@ class nsLayoutUtils {
    * used for the given scrollbar part frame.
    */
   static ComputedStyle* StyleForScrollbar(nsIFrame* aScrollbarPart);
-
-  /**
-   * Generate the motion path transform result.
-   **/
-  static mozilla::Maybe<mozilla::MotionPathData> ResolveMotionPath(
-      const nsIFrame* aFrame);
 
  private:
   /**

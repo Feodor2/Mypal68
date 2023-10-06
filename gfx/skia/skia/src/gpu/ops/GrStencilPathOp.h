@@ -14,32 +14,34 @@
 #include "GrStencilSettings.h"
 
 class GrOpFlushState;
+class GrRecordingContext;
 
 class GrStencilPathOp final : public GrOp {
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrOp> Make(const SkMatrix& viewMatrix,
+    static std::unique_ptr<GrOp> Make(GrRecordingContext* context,
+                                      const SkMatrix& viewMatrix,
                                       bool useHWAA,
                                       GrPathRendering::FillType fillType,
                                       bool hasStencilClip,
                                       const GrScissorState& scissor,
-                                      const GrPath* path) {
-
-        return std::unique_ptr<GrOp>(new GrStencilPathOp(viewMatrix, useHWAA, fillType,
-                                                         hasStencilClip, scissor, path));
-    }
+                                      const GrPath* path);
 
     const char* name() const override { return "StencilPathOp"; }
 
+#ifdef SK_DEBUG
     SkString dumpInfo() const override {
         SkString string;
         string.printf("Path: 0x%p, AA: %d", fPath.get(), fUseHWAA);
         string.append(INHERITED::dumpInfo());
         return string;
     }
+#endif
 
 private:
+    friend class GrOpMemoryPool; // for ctor
+
     GrStencilPathOp(const SkMatrix& viewMatrix,
                     bool useHWAA,
                     GrPathRendering::FillType fillType,
@@ -56,11 +58,9 @@ private:
         this->setBounds(path->getBounds(), HasAABloat::kNo, IsZeroArea::kNo);
     }
 
-    bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override { return false; }
-
     void onPrepare(GrOpFlushState*) override {}
 
-    void onExecute(GrOpFlushState* state) override;
+    void onExecute(GrOpFlushState*, const SkRect& chainBounds) override;
 
     SkMatrix                                          fViewMatrix;
     bool                                              fUseHWAA;

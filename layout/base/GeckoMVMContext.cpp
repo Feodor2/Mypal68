@@ -134,10 +134,15 @@ bool GeckoMVMContext::IsInReaderMode() const {
   return StringBeginsWith(uri, readerModeUriPrefix);
 }
 
-void GeckoMVMContext::SetResolutionAndScaleTo(float aResolution) {
+bool GeckoMVMContext::IsDocumentLoading() const {
+  MOZ_ASSERT(mDocument);
+  return mDocument->GetReadyStateEnum() == dom::Document::READYSTATE_LOADING;
+}
+
+void GeckoMVMContext::SetResolutionAndScaleTo(float aResolution,
+                                              ResolutionChangeOrigin aOrigin) {
   MOZ_ASSERT(mPresShell);
-  mPresShell->SetResolutionAndScaleTo(aResolution,
-                                      ResolutionChangeOrigin::MainThread);
+  mPresShell->SetResolutionAndScaleTo(aResolution, aOrigin);
 }
 
 void GeckoMVMContext::SetVisualViewportSize(const CSSSize& aSize) {
@@ -170,21 +175,14 @@ void GeckoMVMContext::UpdateDisplayPortMargins() {
   }
 }
 
-void GeckoMVMContext::Reflow(const CSSSize& aNewSize, const CSSSize& aOldSize,
-                             ResizeEventFlag aResizeEventFlag) {
+void GeckoMVMContext::Reflow(const CSSSize& aNewSize) {
   MOZ_ASSERT(mPresShell);
-
-  ResizeReflowOptions reflowOptions = ResizeReflowOptions::NoOption;
-  if (aResizeEventFlag == ResizeEventFlag::Suppress) {
-    reflowOptions |= ResizeReflowOptions::SuppressResizeEvent;
-  }
 
   RefPtr<PresShell> presShell = mPresShell;
   presShell->ResizeReflowIgnoreOverride(
-      nsPresContext::CSSPixelsToAppUnits(aNewSize.width),
-      nsPresContext::CSSPixelsToAppUnits(aNewSize.height),
-      nsPresContext::CSSPixelsToAppUnits(aOldSize.width),
-      nsPresContext::CSSPixelsToAppUnits(aOldSize.height), reflowOptions);
+      CSSPixel::ToAppUnits(aNewSize.width),
+      CSSPixel::ToAppUnits(aNewSize.height),
+      ResizeReflowOptions::NoOption);
 }
 
 }  // namespace mozilla

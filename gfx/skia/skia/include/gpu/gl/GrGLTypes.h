@@ -46,14 +46,9 @@ typedef float GrGLclampf;
 typedef double GrGLdouble;
 typedef double GrGLclampd;
 typedef void GrGLvoid;
-#ifndef SK_IGNORE_64BIT_OPENGL_CHANGES
 #ifdef _WIN64
 typedef signed long long int GrGLintptr;
 typedef signed long long int GrGLsizeiptr;
-#else
-typedef signed long int GrGLintptr;
-typedef signed long int GrGLsizeiptr;
-#endif
 #else
 typedef signed long int GrGLintptr;
 typedef signed long int GrGLsizeiptr;
@@ -113,15 +108,19 @@ struct GrGLTextureInfo {
     GrGLenum fTarget;
     GrGLuint fID;
     GrGLenum fFormat = 0;
-};
 
-GR_STATIC_ASSERT(sizeof(GrBackendObject) >= sizeof(const GrGLTextureInfo*));
+    bool operator==(const GrGLTextureInfo& that) const {
+        return fTarget == that.fTarget && fID == that.fID && fFormat == that.fFormat;
+    }
+};
 
 struct GrGLFramebufferInfo {
     GrGLuint fFBOID;
     GrGLenum fFormat = 0;
-};
 
-GR_STATIC_ASSERT(sizeof(GrBackendObject) >= sizeof(const GrGLFramebufferInfo*));
+    bool operator==(const GrGLFramebufferInfo& that) const {
+        return fFBOID == that.fFBOID && fFormat == that.fFormat;
+    }
+};
 
 #endif

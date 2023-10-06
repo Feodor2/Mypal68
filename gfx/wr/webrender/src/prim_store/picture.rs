@@ -4,10 +4,10 @@
 
 use api::{
     ColorU, MixBlendMode, FilterPrimitiveInput, FilterPrimitiveKind, ColorSpace,
-    PropertyBinding, PropertyBindingId,
+    PropertyBinding, PropertyBindingId, CompositeOperator, PrimitiveFlags,
 };
 use api::units::{Au, LayoutSize, LayoutVector2D};
-use crate::display_list_flattener::IsVisible;
+use crate::scene_building::IsVisible;
 use crate::filterdata::SFilterData;
 use crate::intern::ItemUid;
 use crate::intern::{Internable, InternDebug, Handle as InternHandle};
@@ -22,6 +22,41 @@ use crate::prim_store::{
 #[cfg_attr(feature = "capture", derive(Serialize))]
 #[cfg_attr(feature = "replay", derive(Deserialize))]
 #[derive(Debug, Clone, MallocSizeOf, PartialEq, Hash, Eq)]
+pub enum CompositeOperatorKey {
+    Over,
+    In,
+    Out,
+    Atop,
+    Xor,
+    Lighter,
+    Arithmetic([Au; 4]),
+}
+
+impl From<CompositeOperator> for CompositeOperatorKey {
+    fn from(operator: CompositeOperator) -> Self {
+        match operator {
+            CompositeOperator::Over => CompositeOperatorKey::Over,
+            CompositeOperator::In => CompositeOperatorKey::In,
+            CompositeOperator::Out => CompositeOperatorKey::Out,
+            CompositeOperator::Atop => CompositeOperatorKey::Atop,
+            CompositeOperator::Xor => CompositeOperatorKey::Xor,
+            CompositeOperator::Lighter => CompositeOperatorKey::Lighter,
+            CompositeOperator::Arithmetic(k_vals) => {
+                let k_vals = [
+                    Au::from_f32_px(k_vals[0]),
+                    Au::from_f32_px(k_vals[1]),
+                    Au::from_f32_px(k_vals[2]),
+                    Au::from_f32_px(k_vals[3]),
+                ];
+                CompositeOperatorKey::Arithmetic(k_vals)
+            }
+        }
+    }
+}
+
+#[cfg_attr(feature = "capture", derive(Serialize))]
+#[cfg_attr(feature = "replay", derive(Deserialize))]
+#[derive(Debug, Clone, MallocSizeOf, PartialEq, Hash, Eq)]
 pub enum FilterPrimitiveKey {
     Identity(ColorSpace, FilterPrimitiveInput),
     Flood(ColorSpace, ColorU),
@@ -31,6 +66,8 @@ pub enum FilterPrimitiveKey {
     ColorMatrix(ColorSpace, [Au; 20], FilterPrimitiveInput),
     DropShadow(ColorSpace, (VectorKey, Au, ColorU), FilterPrimitiveInput),
     ComponentTransfer(ColorSpace, FilterPrimitiveInput, Vec<SFilterData>),
+    Offset(ColorSpace, FilterPrimitiveInput, VectorKey),
+    Composite(ColorSpace, FilterPrimitiveInput, FilterPrimitiveInput, CompositeOperatorKey),
 }
 
 /// Represents a hashable description of how a picture primitive
@@ -175,6 +212,10 @@ impl From<Option<PictureCompositeMode>> for PictureCompositeKey {
                         }
                         FilterPrimitiveKind::ComponentTransfer(component_transfer) =>
                             FilterPrimitiveKey::ComponentTransfer(primitive.color_space, component_transfer.input, filter_data.clone()),
+                        FilterPrimitiveKind::Offset(info) =>
+                            FilterPrimitiveKey::Offset(primitive.color_space, info.input, info.offset.into()),
+                        FilterPrimitiveKind::Composite(info) =>
+                            FilterPrimitiveKey::Composite(primitive.color_space, info.input1, info.input2, info.operator.into()),
                     }
                 }).collect())
             }
@@ -198,14 +239,14 @@ pub type PictureKey = PrimKey<Picture>;
 
 impl PictureKey {
     pub fn new(
-        is_backface_visible: bool,
+        flags: PrimitiveFlags,
         prim_size: LayoutSize,
         pic: Picture,
     ) -> Self {
 
         PictureKey {
             common: PrimKeyCommonData {
-                is_backface_visible,
+                flags,
                 prim_size: prim_size.into(),
             },
             kind: pic,
@@ -247,7 +288,7 @@ impl InternablePrimitive for Picture {
         info: &LayoutPrimitiveInfo,
     ) -> PictureKey {
         PictureKey::new(
-            info.is_backface_visible,
+            info.flags,
             info.rect.size,
             self,
         )

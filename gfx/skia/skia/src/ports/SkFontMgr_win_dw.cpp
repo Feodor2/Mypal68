@@ -4,7 +4,6 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "SkTypes.h"
 #if defined(SK_BUILD_FOR_WIN)
 
@@ -20,7 +19,7 @@
 #include "SkTypefaceCache.h"
 #include "SkTypeface_win_dw.h"
 #include "SkTypes.h"
-#include "SkUtils.h"
+#include "SkUTF.h"
 
 #include <dwrite.h>
 #include <dwrite_2.h>
@@ -456,14 +455,14 @@ sk_sp<SkTypeface> SkFontMgr_DirectWrite::makeTypefaceFromDWriteFont(
         IDWriteFontFamily* fontFamily) const {
     SkAutoMutexAcquire ama(fTFCacheMutex);
     ProtoDWriteTypeface spec = { fontFace, font, fontFamily };
-    SkTypeface* face = fTFCache.findByProcAndRef(FindByDWriteFont, &spec);
+    sk_sp<SkTypeface> face = fTFCache.findByProcAndRef(FindByDWriteFont, &spec);
     if (nullptr == face) {
-        face = DWriteFontTypeface::Create(fFactory.get(), fontFace, font, fontFamily);
+        face = DWriteFontTypeface::Make(fFactory.get(), fontFace, font, fontFamily);
         if (face) {
             fTFCache.add(face);
         }
     }
-    return sk_sp<SkTypeface>(face);
+    return face;
 }
 
 int SkFontMgr_DirectWrite::onCountFamilies() const {
@@ -753,7 +752,7 @@ SkTypeface* SkFontMgr_DirectWrite::onMatchFamilyStyleCharacter(const char family
 
     WCHAR str[16];
     UINT32 strLen = static_cast<UINT32>(
-        SkUTF16_FromUnichar(character, reinterpret_cast<uint16_t*>(str)));
+        SkUTF::ToUTF16(character, reinterpret_cast<uint16_t*>(str)));
 
     const SkSMallocWCHAR* dwBcp47;
     SkSMallocWCHAR dwBcp47Local;
@@ -913,10 +912,10 @@ sk_sp<SkTypeface> SkFontMgr_DirectWrite::onMakeFromStreamIndex(std::unique_ptr<S
 
             int faceIndex = fontFace->GetIndex();
             if (faceIndex == ttcIndex) {
-                return sk_sp<SkTypeface>(DWriteFontTypeface::Create(fFactory.get(),
-                                                  fontFace.get(), font.get(), fontFamily.get(),
-                                                  autoUnregisterFontFileLoader.detatch(),
-                                                  autoUnregisterFontCollectionLoader.detatch()));
+                return DWriteFontTypeface::Make(fFactory.get(),
+                                                fontFace.get(), font.get(), fontFamily.get(),
+                                                autoUnregisterFontFileLoader.detatch(),
+                                                autoUnregisterFontCollectionLoader.detatch());
             }
         }
     }
@@ -1071,7 +1070,7 @@ SK_API sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory* factory,
         localeNameLen = getUserDefaultLocaleNameProc(localeNameStorage, LOCALE_NAME_MAX_LENGTH);
         if (localeNameLen) {
             localeName = localeNameStorage;
-        };
+        }
     }
 
     return sk_make_sp<SkFontMgr_DirectWrite>(factory, collection, fallback,

@@ -6,14 +6,11 @@ check-alphabetical-order = false
 [ignore]
 # Ignored packages with duplicated versions
 packages = [
-    "crossbeam-epoch",
     "crossbeam-utils",
     "gl_generator",
     "khronos_api",
     "lazy_static",
     "nix",
-    "parking_lot",
-    "parking_lot_core",
     "percent-encoding",
     "rand",
     "rand_core",
@@ -22,6 +19,13 @@ packages = [
     "core-text",
     "xml-rs",
     "yaml-rust",
+
+    # These are tracked in bug 1587468, see there for pending work.
+    "syn",
+    "quote",
+    "unicode-xid",
+    "synstructure",
+    "proc-macro2",
 ]
 
 # Files that are ignored for all tidy and lint checks.

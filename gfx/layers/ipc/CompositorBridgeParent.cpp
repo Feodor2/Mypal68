@@ -141,7 +141,8 @@ void CompositorBridgeParentBase::NotifyNotUsed(PTextureParent* aTexture,
     return;
   }
 
-  if (!(texture->GetFlags() & TextureFlags::RECYCLE)) {
+  if (!(texture->GetFlags() & TextureFlags::RECYCLE) &&
+      !(texture->GetFlags() & TextureFlags::WAIT_HOST_USAGE_END)) {
     return;
   }
 
@@ -319,6 +320,7 @@ CompositorBridgeParent::CompositorBridgeParent(
       mVsyncRate(aVsyncRate),
       mPendingTransaction{0},
       mPaused(false),
+      mHaveCompositionRecorder(false),
       mUseExternalSurfaceSize(aUseExternalSurfaceSize),
       mEGLSurfaceSize(aSurfaceSize),
       mOptions(aOptions),
@@ -1418,6 +1420,20 @@ void CompositorBridgeParent::SetConfirmedTargetAPZC(
     selector.mRenderRoots += aTargets[i].mRenderRoot;
   }
   mApzUpdater->RunOnControllerThread(selector, task.forget());
+}
+
+void CompositorBridgeParent::SetFixedLayerMargins(ScreenIntCoord aTop,
+                                                  ScreenIntCoord aBottom) {
+  if (AsyncCompositionManager* manager = GetCompositionManager(nullptr)) {
+    manager->SetFixedLayerMargins(aTop, aBottom);
+  }
+
+  if (mApzcTreeManager) {
+    mApzcTreeManager->SetFixedLayerMargins(aTop, aBottom);
+  }
+
+  Invalidate();
+  ScheduleComposition();
 }
 
 void CompositorBridgeParent::InitializeLayerManager(
@@ -2603,32 +2619,42 @@ int32_t RecordContentFrameTime(
 }
 
 mozilla::ipc::IPCResult CompositorBridgeParent::RecvBeginRecording(
-    const TimeStamp& aRecordingStart) {
-  if (mLayerManager) {
-    mCompositionRecorder = new CompositionRecorder(aRecordingStart);
-    mLayerManager->SetCompositionRecorder(do_AddRef(mCompositionRecorder));
-  } else if (mWrBridge) {
-    RefPtr<WebRenderCompositionRecorder> recorder =
-        new WebRenderCompositionRecorder(aRecordingStart,
-                                         mWrBridge->PipelineId());
-    mCompositionRecorder = recorder;
-    mWrBridge->SetCompositionRecorder(std::move(recorder));
+    const TimeStamp& aRecordingStart, BeginRecordingResolver&& aResolve) {
+  if (mHaveCompositionRecorder) {
+    aResolve(false);
+    return IPC_OK();
   }
+
+  if (mLayerManager) {
+    mLayerManager->SetCompositionRecorder(
+        MakeUnique<CompositionRecorder>(aRecordingStart));
+  } else if (mWrBridge) {
+    mWrBridge->SetCompositionRecorder(MakeUnique<WebRenderCompositionRecorder>(
+        aRecordingStart, mWrBridge->PipelineId()));
+  }
+
+  mHaveCompositionRecorder = true;
+  aResolve(true);
 
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult CompositorBridgeParent::RecvEndRecording() {
-  if (mLayerManager) {
-    mLayerManager->SetCompositionRecorder(nullptr);
+mozilla::ipc::IPCResult CompositorBridgeParent::RecvEndRecording(
+    bool* aOutSuccess) {
+  if (!mHaveCompositionRecorder) {
+    *aOutSuccess = false;
+    return IPC_OK();
   }
 
-  // If we are using WebRender, the |RenderThread| will have a handle to this
-  // |WebRenderCompositionRecorder|, which it will release once the frames have
-  // been written.
+  if (mLayerManager) {
+    mLayerManager->WriteCollectedFrames();
+  } else if (mWrBridge) {
+    mWrBridge->WriteCollectedFrames();
+  }
 
-  mCompositionRecorder->WriteCollectedFrames();
-  mCompositionRecorder = nullptr;
+  mHaveCompositionRecorder = false;
+  *aOutSuccess = true;
+
   return IPC_OK();
 }
 

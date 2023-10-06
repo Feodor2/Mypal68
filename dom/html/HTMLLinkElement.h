@@ -9,12 +9,15 @@
 #include "mozilla/dom/Link.h"
 #include "nsGenericHTMLElement.h"
 #include "nsStyleLinkElement.h"
+#include "nsDOMTokenList.h"
 
 namespace mozilla {
 class EventChainPostVisitor;
 class EventChainPreVisitor;
 namespace dom {
 
+// NOTE(emilio): If we stop inheriting from Link, we need to remove the
+// IsHTMLElement(nsGkAtoms::link) checks in Link.cpp.
 class HTMLLinkElement final : public nsGenericHTMLElement,
                               public nsStyleLinkElement,
                               public Link {
@@ -116,7 +119,16 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
   void SetAs(const nsAString& aAs, ErrorResult& aRv) {
     SetAttr(nsGkAtoms::as, aAs, aRv);
   }
-  nsDOMTokenList* Sizes() { return GetTokenList(nsGkAtoms::sizes); }
+
+  static void ParseAsValue(const nsAString& aValue, nsAttrValue& aResult);
+  static nsContentPolicyType AsValueToContentPolicy(const nsAttrValue& aValue);
+
+  nsDOMTokenList* Sizes() {
+    if (!mSizes) {
+      mSizes = new nsDOMTokenList(this, nsGkAtoms::sizes);
+    }
+    return mSizes;
+  }
   void GetType(DOMString& aValue) { GetHTMLAttr(nsGkAtoms::type, aValue); }
   void SetType(const nsAString& aType, ErrorResult& aRv) {
     SetHTMLAttr(nsGkAtoms::type, aType, aRv);
@@ -163,10 +175,19 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
  protected:
   virtual ~HTMLLinkElement();
 
+  void GetContentPolicyMimeTypeMedia(nsAttrValue& aAsAttr,
+                                     nsContentPolicyType& aPolicyType,
+                                     nsString& aMimeType, nsAString& aMedia);
+  void TryDNSPrefetchOrPreconnectOrPrefetchOrPreloadOrPrerender();
+  void UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
+                     const nsAttrValue* aOldValue);
+  void CancelPrefetchOrPreload();
+
   // nsStyleLinkElement
   Maybe<SheetInfo> GetStyleSheetInfo() final;
 
   RefPtr<nsDOMTokenList> mRelList;
+  RefPtr<nsDOMTokenList> mSizes;
 
   // The "explicitly enabled" flag. This flag is set whenever the `disabled`
   // attribute is explicitly unset, and makes alternate stylesheets not be

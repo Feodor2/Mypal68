@@ -88,7 +88,6 @@ mod debug_render;
 #[cfg(feature = "debugger")]
 mod debug_server;
 mod device;
-mod display_list_flattener;
 mod ellipse;
 mod filterdata;
 mod frame_builder;
@@ -108,11 +107,15 @@ mod prim_store;
 mod print_tree;
 mod record;
 mod render_backend;
+mod render_target;
+mod render_task_graph;
+mod render_task_cache;
 mod render_task;
 mod renderer;
 mod resource_cache;
 mod scene;
-mod scene_builder;
+mod scene_builder_thread;
+mod scene_building;
 mod screen_capture;
 mod segment;
 mod shade;
@@ -120,7 +123,6 @@ mod spatial_node;
 mod storage;
 mod texture_allocator;
 mod texture_cache;
-mod tiling;
 mod util;
 
 mod shader_source {

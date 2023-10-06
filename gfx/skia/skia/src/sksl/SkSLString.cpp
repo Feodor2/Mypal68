@@ -22,6 +22,7 @@ String String::printf(const char* fmt, ...) {
     va_start(args, fmt);
     String result;
     result.vappendf(fmt, args);
+    va_end(args);
     return result;
 }
 
@@ -30,6 +31,17 @@ void String::appendf(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
     this->vappendf(fmt, args);
+    va_end(args);
+}
+
+void String::reset() {
+    this->clear();
+}
+
+int String::findLastOf(const char c) const {
+    // Rely on find_last_of and remap the output
+    size_t index = this->find_last_of(c);
+    return (index == std::string::npos ? -1 : index);
 }
 #endif
 
@@ -51,6 +63,7 @@ void String::vappendf(const char* fmt, va_list args) {
         VSNPRINTF(newBuffer.get(), size + 1, fmt, reuse);
         this->append(newBuffer.get(), size);
     }
+    va_end(reuse);
 }
 
 
@@ -64,6 +77,34 @@ bool String::endsWith(const char* s) const {
         return false;
     }
     return !strncmp(c_str() + size() - len, s, len);
+}
+
+int String::find(const String& substring, int fromPos) const {
+    return find(substring.c_str(), fromPos);
+}
+
+int String::find(const char* substring, int fromPos) const {
+    SkASSERT(fromPos >= 0);
+#ifdef SKSL_USE_STD_STRING
+    // use std::string find() and check it against npos for not found, and find() natively supports
+    // searching from a position
+    size_t found = INHERITED::find(substring, (size_t) fromPos);
+    return found == std::string::npos ? -1 : found;
+#else
+    // use SkStrFind on the underlying c string, and pointer arithmetic to support the searching
+    // position
+    if (substring == nullptr) {
+        // Treat null as empty, and an empty string shows up immediately
+        return 0;
+    }
+
+    size_t sublen = strlen(substring);
+    if (fromPos >= size() - sublen) {
+        // Can't find it if there aren't enough characters left
+        return -1;
+    }
+    return SkStrFind(c_str() + fromPos, substring);
+#endif
 }
 
 String String::operator+(const char* s) const {
@@ -203,30 +244,31 @@ String to_string(uint64_t value) {
 }
 
 String to_string(double value) {
-#ifdef SKSL_BUILD_FOR_WIN
-    #define SNPRINTF    _snprintf
-#else
-    #define SNPRINTF    snprintf
-#endif
-#define MAX_DOUBLE_CHARS 25
-    char buffer[MAX_DOUBLE_CHARS];
-    SKSL_DEBUGCODE(int len = )SNPRINTF(buffer, sizeof(buffer), "%.17g", value);
-    ASSERT(len < MAX_DOUBLE_CHARS);
-    String result(buffer);
-    if (!strchr(buffer, '.') && !strchr(buffer, 'e')) {
-        result += ".0";
+    std::stringstream buffer;
+    buffer.imbue(std::locale::classic());
+    buffer.precision(17);
+    buffer << value;
+    bool needsDotZero = true;
+    const std::string str = buffer.str();
+    for (int i = str.size() - 1; i >= 0; --i) {
+        char c = str[i];
+        if (c == '.' || c == 'e') {
+            needsDotZero = false;
+            break;
+        }
     }
-    return result;
-#undef SNPRINTF
-#undef MAX_DOUBLE_CHARS
+    if (needsDotZero) {
+        buffer << ".0";
+    }
+    return String(buffer.str().c_str());
 }
 
 int stoi(const String& s) {
     char* p;
-    SKSL_DEBUGCODE(errno = 0;)
+    SkDEBUGCODE(errno = 0;)
     long result = strtoul(s.c_str(), &p, 0);
-    ASSERT(*p == 0);
-    ASSERT(!errno);
+    SkASSERT(*p == 0);
+    SkASSERT(!errno);
     return (int) result;
 }
 
@@ -236,16 +278,16 @@ double stod(const String& s) {
     std::stringstream buffer(str);
     buffer.imbue(std::locale::classic());
     buffer >> result;
-    ASSERT(!buffer.fail());
+    SkASSERT(!buffer.fail());
     return result;
 }
 
 long stol(const String& s) {
     char* p;
-    SKSL_DEBUGCODE(errno = 0;)
+    SkDEBUGCODE(errno = 0;)
     long result = strtoul(s.c_str(), &p, 0);
-    ASSERT(*p == 0);
-    ASSERT(!errno);
+    SkASSERT(*p == 0);
+    SkASSERT(!errno);
     return result;
 }
 

@@ -2827,7 +2827,6 @@ this.DownloadPDFSaver.prototype = {
 
     printSettings.printBGImages = true;
     printSettings.printBGColors = true;
-    printSettings.printFrameType = Ci.nsIPrintSettings.kFramesAsIs;
     printSettings.headerStrCenter = "";
     printSettings.headerStrLeft = "";
     printSettings.headerStrRight = "";

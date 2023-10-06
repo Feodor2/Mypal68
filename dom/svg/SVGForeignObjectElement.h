@@ -6,6 +6,7 @@
 #define mozilla_dom_SVGForeignObjectElement_h
 
 #include "mozilla/dom/SVGGraphicsElement.h"
+#include "nsCSSPropertyID.h"
 #include "SVGAnimatedLength.h"
 
 nsresult NS_NewSVGForeignObjectElement(
@@ -39,6 +40,8 @@ class SVGForeignObjectElement final : public SVGGraphicsElement {
   NS_IMETHOD_(bool) IsAttributeMapped(const nsAtom* name) const override;
 
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
+
+  static nsCSSPropertyID GetCSSPropertyIdForAttrEnum(uint8_t aAttrEnum);
 
   // WebIDL
   already_AddRefed<DOMSVGAnimatedLength> X();

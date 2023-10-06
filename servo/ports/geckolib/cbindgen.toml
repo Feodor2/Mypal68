@@ -6,8 +6,13 @@ header = """/* This Source Code Form is subject to the terms of the Mozilla Publ
 #pragma GCC diagnostic push
 #ifdef __clang__
 #  pragma GCC diagnostic ignored "-Wreturn-type-c-linkage"
-#endif"""
+#endif
+// Work-around silly windows.h define.
+#pragma push_macro("STRICT")
+#undef STRICT
+"""
 trailer = """
+#pragma pop_macro("STRICT")
 #pragma GCC diagnostic pop
 #include "mozilla/ServoStyleConstsInlines.h"
 """
@@ -33,6 +38,7 @@ extra_bindings = ["style"]
 include = ["style", "cssparser", "style_traits", "servo_arc"]
 
 [struct]
+associated_constants_in_body = true
 derive_eq = true
 derive_neq = true
 
@@ -130,6 +136,7 @@ include = [
   "TouchAction",
   "WillChange",
   "TextDecorationLine",
+  "TextUnderlinePosition",
   "TextTransform",
   "TextOverflow",
   "MozListReversed",
@@ -175,6 +182,7 @@ include = [
   "SVGPaintOrder",
   "ClipRectOrAuto",
   "WritingMode",
+  "VecU8",
 ]
 item_types = ["enums", "structs", "typedefs", "functions", "constants"]
 renaming_overrides_prefixing = true
@@ -332,6 +340,13 @@ renaming_overrides_prefixing = true
 "TextTransform" = """
   static inline StyleTextTransform None();
   inline bool IsNone() const;
+"""
+
+"TextUnderlinePosition" = """
+  inline bool IsAuto() const;
+  inline bool IsUnder() const;
+  inline bool IsLeft() const;
+  inline bool IsRight() const;
 """
 
 # TODO(emilio): Add hooks to cbindgen to be able to generate MOZ_MUST_USE_TYPE
@@ -525,6 +540,10 @@ renaming_overrides_prefixing = true
   }
 """
 
+"CoordPair" = """
+  explicit StyleCoordPair(const gfx::Point& aPoint): _0(aPoint.x), _1(aPoint.y) {}
+"""
+
 "TextOverflow" = """
   StyleTextOverflow()
     : first(StyleTextOverflowSide::Clip()),
@@ -612,4 +631,20 @@ renaming_overrides_prefixing = true
 "GenericClipRect" = """
   // Get the layout rect, replacing auto right / bottom values for aAutoSize.
   inline nsRect ToLayoutRect(nscoord aAutoSize = NS_MAXSIZE) const;
+"""
+
+"VecU8" = """
+  StyleVecU8(): data(nullptr), length(0), capacity(0) {}
+  StyleVecU8(const StyleVecU8& aOther) = delete;
+  StyleVecU8(StyleVecU8&& aOther)
+    : data(aOther.data), length(aOther.length), capacity(aOther.capacity) {
+    aOther.data = nullptr;
+    aOther.length = 0;
+    aOther.capacity = 0;
+  }
+  StyleVecU8& operator=(StyleVecU8&& aOther) = delete;
+  StyleVecU8& operator=(const StyleVecU8& aOther) = delete;
+
+  // This type is not safe to return by value. Should be careful.
+  inline ~StyleVecU8();
 """

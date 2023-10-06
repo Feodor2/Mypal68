@@ -1,7 +1,9 @@
 # LIST OF REFTEST FAILURES FROM IMPORTS
 #
 # The syntax of this file is as follows:
-#    1) All lines marked with a '#' are comments.
+#    1) All lines marked with a '#' are comments. Comments can also be written
+#       at the end of the line, which are copied to the auto-generated
+#       received/reftest.list.
 #    2) A failure is denoted by <failure-type>* (as described in
 #       layout/tools/reftest/README.txt) and a path pattern starting
 #       with module. E.g.:
@@ -138,20 +140,9 @@ skip css-writing-modes/abs-pos-non-replaced-icb-vlr-021.xht
 skip css-writing-modes/abs-pos-non-replaced-icb-vrl-020.xht
 
 # Bug 1244601
-fails css-writing-modes/block-flow-direction-slr-058.xht
 fails css-writing-modes/block-flow-direction-srl-057.xht
 fails css-writing-modes/block-flow-direction-vlr-018.xht
 fails css-writing-modes/block-flow-direction-vrl-017.xht
-
-# Bug 1185430
-fails css-writing-modes/contiguous-floated-table-vlr-00?.xht
-fails css-writing-modes/contiguous-floated-table-vrl-00?.xht
-fails css-writing-modes/table-progression-slr-002.html
-fails css-writing-modes/table-progression-srl-002.html
-fails css-writing-modes/table-progression-vlr-00?.html
-      css-writing-modes/table-progression-vlr-001.html
-fails css-writing-modes/table-progression-vrl-00?.html
-      css-writing-modes/table-progression-vrl-001.html
 
 css-writing-modes/flexbox_align-items-stretch-writing-modes.html
 
@@ -166,18 +157,6 @@ random css-writing-modes/line-box-direction-srl-055.xht
 random css-writing-modes/line-box-direction-vlr-016.xht
 random css-writing-modes/line-box-direction-vrl-015.xht
 
-# Bug 1220352
-fails random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) css-writing-modes/line-box-height-vlr-003.xht
-fails random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) css-writing-modes/line-box-height-vlr-005.xht
-fails random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) css-writing-modes/line-box-height-vlr-011.xht
-fails random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) css-writing-modes/line-box-height-vlr-013.xht
-fails random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) css-writing-modes/line-box-height-vlr-021.xht
-fails random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) css-writing-modes/line-box-height-vlr-023.xht
-fails random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) css-writing-modes/line-box-height-vrl-002.xht
-fails random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) css-writing-modes/line-box-height-vrl-004.xht
-fails random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) css-writing-modes/line-box-height-vrl-010.xht
-fails random-if(/^Windows\x20NT\x206\.1/.test(http.oscpu)) css-writing-modes/line-box-height-vrl-012.xht
-
 # Bug 1258635 - text-combine-upright: digits
 skip css-writing-modes/full-width-003.html
 skip css-writing-modes/text-combine-upright-value-digits?-001.html
@@ -189,10 +168,11 @@ fails css-writing-modes/vertical-alignment-vlr-025.xht
 fails css-writing-modes/vertical-alignment-vrl-022.xht
 fails css-writing-modes/vertical-alignment-vrl-024.xht
 
-# Bug 1102175
-fails css-writing-modes/wm-propagation-body-*.xht
-
 css-writing-modes/text-combine-upright-layout-rules-001.html
+
+# Bug 1580385 - Fix failing writing-mode tests because of propagating WritingMode from <body>
+fails css-writing-modes/normal-flow-overconstrained-vlr-005.xht
+fails css-writing-modes/normal-flow-overconstrained-vrl-004.xht
 
 #### CSS Multi-column 1 ##############################################
 
@@ -219,9 +199,9 @@ fuzzy(0-135,0-530) css-multicol/multicol-containing-001.xht
 fuzzy(0-215,0-241) css-multicol/multicol-containing-002.xht
 fuzzy(0-87,0-180) css-multicol/multicol-count-001.xht
 fails-if(!OSX) random-if(OSX) css-multicol/multicol-count-002.xht
-css-multicol/multicol-count-computed-003.xht
-fuzzy-if(winWidget||OSX||gtkWidget,0-112,0-861) css-multicol/multicol-count-computed-004.xht
-css-multicol/multicol-count-computed-005.xht
+fails-if(geckoview) css-multicol/multicol-count-computed-003.xht # Bug 1558509 for GV
+fuzzy-if(winWidget||OSX||gtkWidget,0-112,0-861) fails-if(geckoview) css-multicol/multicol-count-computed-004.xht # Bug 1558509 for GV
+fails-if(geckoview) css-multicol/multicol-count-computed-005.xht # Bug 1558509 for GV
 fuzzy(0-204,0-930) fuzzy-if(skiaContent,0-208,0-930) css-multicol/multicol-count-negative-001.xht
 fuzzy(0-204,0-930) fuzzy-if(skiaContent,0-208,0-930) css-multicol/multicol-count-negative-002.xht
 fuzzy(0-204,0-930) fuzzy-if(skiaContent,0-208,0-930) css-multicol/multicol-count-non-integer-001.xht
@@ -235,7 +215,7 @@ fuzzy(0-255,0-329) css-multicol/multicol-gap-001.xht
 fuzzy(0-204,0-930) fuzzy-if(skiaContent,0-208,0-930) css-multicol/multicol-gap-002.xht
 fuzzy(0-204,0-930) fuzzy-if(skiaContent,0-208,0-930) css-multicol/multicol-gap-003.xht
 fuzzy(0-107,0-1823) css-multicol/multicol-gap-fraction-001.xht
-fuzzy-if(winWidget||OSX||gtkWidget,0-204,0-1048) fuzzy-if(skiaContent,0-208,0-1048) css-multicol/multicol-gap-large-001.xht
+fuzzy-if(winWidget||OSX||gtkWidget,0-204,0-1048) fuzzy-if(skiaContent,0-208,0-1048) fails-if(geckoview) css-multicol/multicol-gap-large-001.xht # Bug 1558509 for GV
 fuzzy(0-225,0-920) css-multicol/multicol-gap-large-002.xht
 fuzzy(0-204,0-930) fuzzy-if(skiaContent,0-208,0-930) css-multicol/multicol-gap-negative-001.xht
 pref(layout.css.column-span.enabled,true) css-multicol/multicol-height-block-child-001.xht
@@ -283,11 +263,11 @@ pref(layout.css.column-span.enabled,true) css-multicol/multicol-span-000.xht
 pref(layout.css.column-span.enabled,true) css-multicol/multicol-span-all-001.xht
 pref(layout.css.column-span.enabled,true) css-multicol/multicol-span-all-002.xht
 pref(layout.css.column-span.enabled,true) fails-if(!OSX) random-if(OSX) css-multicol/multicol-span-all-003.xht
-pref(layout.css.column-span.enabled,true) css-multicol/multicol-span-all-margin-001.xht
-pref(layout.css.column-span.enabled,true) css-multicol/multicol-span-all-margin-002.xht
+pref(layout.css.column-span.enabled,true) fails-if(geckoview) css-multicol/multicol-span-all-margin-001.xht # Bug 1558509 for GV
+pref(layout.css.column-span.enabled,true) fails-if(geckoview) css-multicol/multicol-span-all-margin-002.xht # Bug 1558509 for GV
 pref(layout.css.column-span.enabled,true) fails css-multicol/multicol-span-all-margin-bottom-001.xht
-pref(layout.css.column-span.enabled,true) css-multicol/multicol-span-all-margin-nested-001.xht
-pref(layout.css.column-span.enabled,true) fails css-multicol/multicol-span-all-margin-nested-002.xht
+pref(layout.css.column-span.enabled,true) fails-if(geckoview) css-multicol/multicol-span-all-margin-nested-001.xht # Bug 1558509 for GV
+pref(layout.css.column-span.enabled,true) fails-if(geckoview) css-multicol/multicol-span-all-margin-nested-002.xht # Bug 1558509 for GV
 pref(layout.css.column-span.enabled,true) css-multicol/multicol-span-all-margin-nested-firstchild-001.xht
 pref(layout.css.column-span.enabled,true) css-multicol/multicol-span-float-001.xht
 pref(layout.css.column-span.enabled,true) fails css-multicol/multicol-span-none-001.xht
@@ -311,9 +291,11 @@ fuzzy-if(OSX&&!webrender,255-255,100-150) css-writing-modes/outline-inline-vlr-0
 #Therefore using fuzzy annotation as a catch all
 fuzzy(0-255,0-2808) css-multicol/multicol-rule-large-001.xht
 
-# fails because column-span property not implemented (Bug 616436)
-fails css-multicol/multicol-fill-auto-block-children-001.xht
-fails css-multicol/multicol-fill-auto-block-children-002.xht
+# multicol-fill-auto-block-children-ref.xht has been updated in wpt in
+# bug 1523595 Part 4. Updating to the upstream version should eliminate the
+# fuzzy-if on OSX for multicol-fill-auto-block-children-001.xht.
+pref(layout.css.column-span.enabled,true) fuzzy-if(OSX,255-255,2762-2762) css-multicol/multicol-fill-auto-block-children-001.xht
+pref(layout.css.column-span.enabled,true) css-multicol/multicol-fill-auto-block-children-002.xht
 pref(layout.css.column-span.enabled,true) fuzzy-if(winWidget,40-47,8-8) fuzzy-if(OSX,0-27,0-11) css-multicol/multicol-span-all-block-sibling-003.xht
 
 # skip these tests since they haven't been triaged yet.

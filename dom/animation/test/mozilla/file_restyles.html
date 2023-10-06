@@ -365,8 +365,6 @@ waitForAllPaints(() => {
 
   add_task(
     async function restyling_transform_animations_in_scrolled_out_element() {
-      await SpecialPowers.pushPrefEnv({ set: [["ui.showHideScrollbars", 1]] });
-
       // Make sure we start from the state right after requestAnimationFrame.
       await waitForFrame();
 
@@ -1549,8 +1547,6 @@ waitForAllPaints(() => {
 
   add_task(
     async function no_overflow_transform_animations_in_scrollable_element() {
-      await SpecialPowers.pushPrefEnv({ set: [["ui.showHideScrollbars", 1]] });
-
       const parentElement = addDiv(null,
         { style: 'overflow-y: scroll; height: 100px;' });
       const div = addDiv(null);

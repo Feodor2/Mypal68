@@ -24,7 +24,7 @@ ${helpers.single_keyword(
     "-moz-top-layer",
     "none top",
     engines="gecko",
-    gecko_constant_prefix="NS_STYLE_TOP_LAYER",
+    gecko_enum_prefix="StyleTopLayer",
     gecko_ffi_name="mTopLayer",
     animation_value_type="none",
     enabled_in="ua",
@@ -53,7 +53,10 @@ ${helpers.single_keyword(
 >
 impl computed_value::T {
     pub fn is_absolutely_positioned(self) -> bool {
-        matches!(self, computed_value::T::Absolute | computed_value::T::Fixed)
+        matches!(self, Self::Absolute | Self::Fixed)
+    }
+    pub fn is_relative(self) -> bool {
+        self == Self::Relative
     }
 }
 </%helpers:single_keyword>
@@ -397,7 +400,7 @@ ${helpers.predefined_type(
     engines="gecko",
     animation_value_type="ComputedValue",
     gecko_pref="layout.css.motion-path.enabled",
-    flags="CREATES_STACKING_CONTEXT FIXPOS_CB",
+    flags="CREATES_STACKING_CONTEXT FIXPOS_CB CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-path-property",
     servo_restyle_damage="reflow_out_of_flow"
 )}
@@ -410,6 +413,7 @@ ${helpers.predefined_type(
     engines="gecko",
     animation_value_type="ComputedValue",
     gecko_pref="layout.css.motion-path.enabled",
+    flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-distance-property",
     servo_restyle_damage="reflow_out_of_flow"
 )}
@@ -422,6 +426,7 @@ ${helpers.predefined_type(
     engines="gecko",
     animation_value_type="ComputedValue",
     gecko_pref="layout.css.motion-path.enabled",
+    flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-rotate-property",
     servo_restyle_damage="reflow_out_of_flow"
 )}
@@ -434,6 +439,7 @@ ${helpers.predefined_type(
     engines="gecko",
     animation_value_type="ComputedValue",
     gecko_pref="layout.css.motion-path.enabled",
+    flags="CAN_ANIMATE_ON_COMPOSITOR",
     spec="https://drafts.fxtf.org/motion-1/#offset-anchor-property",
     servo_restyle_damage="reflow_out_of_flow",
     boxed=True
@@ -488,6 +494,7 @@ ${helpers.single_keyword(
     engines="gecko",
     spec="https://drafts.fxtf.org/compositing/#isolation",
     flags="CREATES_STACKING_CONTEXT",
+    gecko_enum_prefix="StyleIsolation",
     animation_value_type="discrete",
 )}
 

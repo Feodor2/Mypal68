@@ -6,43 +6,19 @@
  */
 
 #include "GrCaps.h"
-
 #include "GrBackendSurface.h"
 #include "GrContextOptions.h"
+#include "GrSurface.h"
+#include "GrSurfaceProxy.h"
+#include "GrTypesPriv.h"
 #include "GrWindowRectangles.h"
 #include "SkJSONWriter.h"
-
-static const char* pixel_config_name(GrPixelConfig config) {
-    switch (config) {
-        case kUnknown_GrPixelConfig: return "Unknown";
-        case kAlpha_8_GrPixelConfig: return "Alpha8";
-        case kAlpha_8_as_Alpha_GrPixelConfig: return "Alpha8_asAlpha";
-        case kAlpha_8_as_Red_GrPixelConfig: return "Alpha8_asRed";
-        case kGray_8_GrPixelConfig: return "Gray8";
-        case kGray_8_as_Lum_GrPixelConfig: return "Gray8_asLum";
-        case kGray_8_as_Red_GrPixelConfig: return "Gray8_asRed";
-        case kRGB_565_GrPixelConfig: return "RGB565";
-        case kRGBA_4444_GrPixelConfig: return "RGBA444";
-        case kRGBA_8888_GrPixelConfig: return "RGBA8888";
-        case kBGRA_8888_GrPixelConfig: return "BGRA8888";
-        case kSRGBA_8888_GrPixelConfig: return "SRGBA8888";
-        case kSBGRA_8888_GrPixelConfig: return "SBGRA8888";
-        case kRGBA_float_GrPixelConfig: return "RGBAFloat";
-        case kRG_float_GrPixelConfig: return "RGFloat";
-        case kAlpha_half_GrPixelConfig: return "AlphaHalf";
-        case kAlpha_half_as_Red_GrPixelConfig: return "AlphaHalf_asRed";
-        case kRGBA_half_GrPixelConfig: return "RGBAHalf";
-    }
-    SK_ABORT("Invalid pixel config");
-    return "<invalid>";
-}
 
 GrCaps::GrCaps(const GrContextOptions& options) {
     fMipMapSupport = false;
     fNPOTTextureTileSupport = false;
     fSRGBSupport = false;
     fSRGBWriteControl = false;
-    fSRGBDecodeDisableSupport = false;
     fDiscardRenderTargetSupport = false;
     fReuseScratchTextures = true;
     fReuseScratchBuffers = true;
@@ -57,9 +33,14 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fPreferClientSideDynamicBuffers = false;
     fPreferFullscreenClears = false;
     fMustClearUploadedBufferData = false;
-    fSampleShadingSupport = false;
+    fSupportsAHardwareBufferImages = false;
     fFenceSyncSupport = false;
     fCrossContextTextureSupport = false;
+    fHalfFloatVertexAttributeSupport = false;
+    fDynamicStateArrayGeometryProcessorTextureSupport = false;
+    fPerformPartialClearsAsDraws = false;
+    fPerformColorClearsAsDraws = false;
+    fPerformStencilClearsAsDraws = false;
 
     fBlendEquationSupport = kBasic_BlendEquationSupport;
     fAdvBlendEqBlacklist = 0;
@@ -70,7 +51,6 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fMaxRenderTargetSize = 1;
     fMaxPreferredRenderTargetSize = 1;
     fMaxTextureSize = 1;
-    fMaxRasterSamples = 0;
     fMaxWindowRectangles = 0;
 
     // An default count of 4 was chosen because of the common pattern in Blink of:
@@ -90,8 +70,14 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fBufferMapThreshold = options.fBufferMapThreshold;
     fBlacklistCoverageCounting = false;
     fAvoidStencilBuffers = false;
+    fAvoidWritePixelsFastPath = false;
 
     fPreferVRAMUseOverFlushes = true;
+
+    // Default to true, allow older versions of OpenGL to disable explicitly
+    fClampToBorderSupport = true;
+
+    fDriverBugWorkarounds = options.fDriverBugWorkarounds;
 }
 
 void GrCaps::applyOptionsOverrides(const GrContextOptions& options) {
@@ -102,6 +88,17 @@ void GrCaps::applyOptionsOverrides(const GrContextOptions& options) {
         // SkASSERT(!fBlacklistCoverageCounting);
         SkASSERT(!fAvoidStencilBuffers);
         SkASSERT(!fAdvBlendEqBlacklist);
+        SkASSERT(!fPerformColorClearsAsDraws);
+        SkASSERT(!fPerformStencilClearsAsDraws);
+        // Don't check the partial-clear workaround, since that is a backend limitation, not a
+        // driver workaround (it just so happens the fallbacks are the same).
+    }
+    if (GrContextOptions::Enable::kNo == options.fUseDrawInsteadOfClear) {
+        fPerformColorClearsAsDraws = false;
+        fPerformStencilClearsAsDraws = false;
+    } else if (GrContextOptions::Enable::kYes == options.fUseDrawInsteadOfClear) {
+        fPerformColorClearsAsDraws = true;
+        fPerformStencilClearsAsDraws = true;
     }
 
     fMaxTextureSize = SkTMin(fMaxTextureSize, options.fMaxTextureSizeOverride);
@@ -121,6 +118,40 @@ void GrCaps::applyOptionsOverrides(const GrContextOptions& options) {
         fMaxWindowRectangles = GrWindowRectangles::kMaxWindows;
     }
     fAvoidStencilBuffers = options.fAvoidStencilBuffers;
+
+    fDriverBugWorkarounds.applyOverrides(options.fDriverBugWorkarounds);
+}
+
+
+#ifdef SK_ENABLE_DUMP_GPU
+static const char* pixel_config_name(GrPixelConfig config) {
+    switch (config) {
+        case kUnknown_GrPixelConfig: return "Unknown";
+        case kAlpha_8_GrPixelConfig: return "Alpha8";
+        case kAlpha_8_as_Alpha_GrPixelConfig: return "Alpha8_asAlpha";
+        case kAlpha_8_as_Red_GrPixelConfig: return "Alpha8_asRed";
+        case kGray_8_GrPixelConfig: return "Gray8";
+        case kGray_8_as_Lum_GrPixelConfig: return "Gray8_asLum";
+        case kGray_8_as_Red_GrPixelConfig: return "Gray8_asRed";
+        case kRGB_565_GrPixelConfig: return "RGB565";
+        case kRGBA_4444_GrPixelConfig: return "RGBA444";
+        case kRGBA_8888_GrPixelConfig: return "RGBA8888";
+        case kRGB_888_GrPixelConfig: return "RGB888";
+        case kRGB_888X_GrPixelConfig: return "RGB888X";
+        case kRG_88_GrPixelConfig: return "RG88";
+        case kBGRA_8888_GrPixelConfig: return "BGRA8888";
+        case kSRGBA_8888_GrPixelConfig: return "SRGBA8888";
+        case kSBGRA_8888_GrPixelConfig: return "SBGRA8888";
+        case kRGBA_1010102_GrPixelConfig: return "RGBA1010102";
+        case kRGBA_float_GrPixelConfig: return "RGBAFloat";
+        case kRG_float_GrPixelConfig: return "RGFloat";
+        case kAlpha_half_GrPixelConfig: return "AlphaHalf";
+        case kAlpha_half_as_Red_GrPixelConfig: return "AlphaHalf_asRed";
+        case kRGBA_half_GrPixelConfig: return "RGBAHalf";
+        case kRGB_ETC1_GrPixelConfig: return "RGBETC1";
+    }
+    SK_ABORT("Invalid pixel config");
+    return "<invalid>";
 }
 
 static SkString map_flags_to_string(uint32_t flags) {
@@ -150,7 +181,6 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("NPOT Texture Tile Support", fNPOTTextureTileSupport);
     writer->appendBool("sRGB Support", fSRGBSupport);
     writer->appendBool("sRGB Write Control", fSRGBWriteControl);
-    writer->appendBool("sRGB Decode Disable", fSRGBDecodeDisableSupport);
     writer->appendBool("Discard Render Target Support", fDiscardRenderTargetSupport);
     writer->appendBool("Reuse Scratch Textures", fReuseScratchTextures);
     writer->appendBool("Reuse Scratch Buffers", fReuseScratchBuffers);
@@ -165,13 +195,21 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Prefer client-side dynamic buffers", fPreferClientSideDynamicBuffers);
     writer->appendBool("Prefer fullscreen clears", fPreferFullscreenClears);
     writer->appendBool("Must clear buffer memory", fMustClearUploadedBufferData);
-    writer->appendBool("Sample shading support", fSampleShadingSupport);
+    writer->appendBool("Supports importing AHardwareBuffers", fSupportsAHardwareBufferImages);
     writer->appendBool("Fence sync support", fFenceSyncSupport);
     writer->appendBool("Cross context texture support", fCrossContextTextureSupport);
+    writer->appendBool("Half float vertex attribute support", fHalfFloatVertexAttributeSupport);
+    writer->appendBool("Specify GeometryProcessor textures as a dynamic state array",
+                       fDynamicStateArrayGeometryProcessorTextureSupport);
+    writer->appendBool("Use draws for partial clears", fPerformPartialClearsAsDraws);
+    writer->appendBool("Use draws for color clears", fPerformColorClearsAsDraws);
+    writer->appendBool("Use draws for stencil clip clears", fPerformStencilClearsAsDraws);
+    writer->appendBool("Clamp-to-border", fClampToBorderSupport);
 
     writer->appendBool("Blacklist Coverage Counting Path Renderer [workaround]",
                        fBlacklistCoverageCounting);
     writer->appendBool("Prefer VRAM Use over flushes [workaround]", fPreferVRAMUseOverFlushes);
+    writer->appendBool("Avoid stencil buffers [workaround]", fAvoidStencilBuffers);
 
     if (this->advancedBlendEquationSupport()) {
         writer->appendHexU32("Advanced Blend Equation Blacklist", fAdvBlendEqBlacklist);
@@ -181,7 +219,6 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendS32("Max Texture Size", fMaxTextureSize);
     writer->appendS32("Max Render Target Size", fMaxRenderTargetSize);
     writer->appendS32("Max Preferred Render Target Size", fMaxPreferredRenderTargetSize);
-    writer->appendS32("Max Raster Samples", fMaxRasterSamples);
     writer->appendS32("Max Window Rectangles", fMaxWindowRectangles);
     writer->appendS32("Max Clip Analytic Fragment Processors", fMaxClipAnalyticFPs);
 
@@ -222,6 +259,18 @@ void GrCaps::dumpJSON(SkJSONWriter* writer) const {
 
     writer->endObject();
 }
+#else
+void GrCaps::dumpJSON(SkJSONWriter* writer) const { }
+#endif
+
+bool GrCaps::surfaceSupportsWritePixels(const GrSurface* surface) const {
+    return surface->readOnly() ? false : this->onSurfaceSupportsWritePixels(surface);
+}
+
+bool GrCaps::canCopySurface(const GrSurfaceProxy* dst, const GrSurfaceProxy* src,
+                            const SkIRect& srcRect, const SkIPoint& dstPoint) const {
+    return dst->readOnly() ? false : this->onCanCopySurface(dst, src, srcRect, dstPoint);
+}
 
 bool GrCaps::validateSurfaceDesc(const GrSurfaceDesc& desc, GrMipMapped mipped) const {
     if (!this->isConfigTexturable(desc.fConfig)) {
@@ -256,4 +305,8 @@ bool GrCaps::validateSurfaceDesc(const GrSurfaceDesc& desc, GrMipMapped mipped) 
     }
 
     return true;
+}
+
+GrBackendFormat GrCaps::getBackendFormatFromColorType(SkColorType ct) const {
+    return this->getBackendFormatFromGrColorType(SkColorTypeToGrColorType(ct), GrSRGBEncoded::kNo);
 }

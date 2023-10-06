@@ -9,8 +9,7 @@
 #ifndef GrBlend_DEFINED
 #define GrBlend_DEFINED
 
-#include "GrTypes.h"
-#include "../private/SkTLogic.h"
+#include "SkTypes.h"
 
 /**
  * Equations for alpha-blending.
@@ -38,8 +37,10 @@ enum GrBlendEquation {
     kHSLColor_GrBlendEquation,
     kHSLLuminosity_GrBlendEquation,
 
+    kIllegal_GrBlendEquation,
+
     kFirstAdvancedGrBlendEquation = kScreen_GrBlendEquation,
-    kLast_GrBlendEquation = kHSLLuminosity_GrBlendEquation
+    kLast_GrBlendEquation = kIllegal_GrBlendEquation,
 };
 
 static const int kGrBlendEquationCnt = kLast_GrBlendEquation + 1;
@@ -68,7 +69,9 @@ enum GrBlendCoeff {
     kS2A_GrBlendCoeff,
     kIS2A_GrBlendCoeff,
 
-    kLast_GrBlendCoeff = kIS2A_GrBlendCoeff
+    kIllegal_GrBlendCoeff,
+
+    kLast_GrBlendCoeff = kIllegal_GrBlendCoeff,
 };
 
 static const int kGrBlendCoeffCnt = kLast_GrBlendCoeff + 1;
@@ -97,7 +100,8 @@ static constexpr bool GrBlendCoeffsUseDstColor(GrBlendCoeff srcCoeff, GrBlendCoe
 }
 
 static constexpr bool GrBlendEquationIsAdvanced(GrBlendEquation equation) {
-    return equation >= kFirstAdvancedGrBlendEquation;
+    return equation >= kFirstAdvancedGrBlendEquation
+        && equation != kIllegal_GrBlendEquation;
 }
 
 static constexpr bool GrBlendModifiesDst(GrBlendEquation equation, GrBlendCoeff srcCoeff,

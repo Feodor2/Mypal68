@@ -8,6 +8,7 @@
 
 #include "DOMSVGPathSeg.h"
 #include "DOMSVGPathSegList.h"
+#include "SVGGeometryProperty.h"
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"
 #include "nsGkAtoms.h"
@@ -255,20 +256,20 @@ already_AddRefed<Path> SVGPathElement::BuildPath(PathBuilder* aBuilder) {
   // also our stroke width. See the comment for
   // ApproximateZeroLengthSubpathSquareCaps for more info.
 
-  uint8_t strokeLineCap = NS_STYLE_STROKE_LINECAP_BUTT;
+  auto strokeLineCap = StyleStrokeLinecap::Butt;
   Float strokeWidth = 0;
 
-  if (auto* f = GetPrimaryFrame()) {
-    const nsStyleSVG* style = f->StyleSVG();
+  SVGGeometryProperty::DoForComputedStyle(this, [&](const ComputedStyle* s) {
+    const nsStyleSVG* style = s->StyleSVG();
     // Note: the path that we return may be used for hit-testing, and SVG
     // exposes hit-testing of strokes that are not actually painted. For that
     // reason we do not check for eStyleSVGPaintType_None or check the stroke
     // opacity here.
-    if (style->mStrokeLinecap != NS_STYLE_STROKE_LINECAP_BUTT) {
+    if (style->mStrokeLinecap != StyleStrokeLinecap::Butt) {
       strokeLineCap = style->mStrokeLinecap;
-      strokeWidth = SVGContentUtils::GetStrokeWidth(this, f->Style(), nullptr);
+      strokeWidth = SVGContentUtils::GetStrokeWidth(this, s, nullptr);
     }
-  }
+  });
 
   return mD.GetAnimValue().BuildPath(aBuilder, strokeLineCap, strokeWidth);
 }

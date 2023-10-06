@@ -380,7 +380,7 @@ bool D3D11TextureData::SerializeSpecific(
   }
 
   *aOutDesc = SurfaceDescriptorD3D10((WindowsHandle)sharedHandle, mFormat,
-                                     mSize, mYUVColorSpace);
+                                     mSize, mYUVColorSpace, mColorRange);
   return true;
 }
 
@@ -552,12 +552,23 @@ void D3D11TextureData::GetDXGIResource(IDXGIResource** aOutResource) {
   mTexture->QueryInterface(aOutResource);
 }
 
+TextureFlags D3D11TextureData::GetTextureFlags() const {
+  TextureFlags flags = TextureFlags::NO_FLAGS;
+  // With WebRender, resource open happens asynchronously on RenderThread.
+  // During opening the resource on host side, TextureClient needs to be alive.
+  // With WAIT_HOST_USAGE_END, keep TextureClient alive during host side usage.
+  if (gfx::gfxVars::UseWebRender()) {
+    flags |= TextureFlags::WAIT_HOST_USAGE_END;
+  }
+  return flags;
+}
+
 DXGIYCbCrTextureData* DXGIYCbCrTextureData::Create(
     IDirect3DTexture9* aTextureY, IDirect3DTexture9* aTextureCb,
     IDirect3DTexture9* aTextureCr, HANDLE aHandleY, HANDLE aHandleCb,
     HANDLE aHandleCr, const gfx::IntSize& aSize, const gfx::IntSize& aSizeY,
     const gfx::IntSize& aSizeCbCr, gfx::ColorDepth aColorDepth,
-    YUVColorSpace aYUVColorSpace) {
+    YUVColorSpace aYUVColorSpace, gfx::ColorRange aColorRange) {
   if (!aHandleY || !aHandleCb || !aHandleCr || !aTextureY || !aTextureCb ||
       !aTextureCr) {
     return nullptr;
@@ -575,6 +586,7 @@ DXGIYCbCrTextureData* DXGIYCbCrTextureData::Create(
   texture->mSizeCbCr = aSizeCbCr;
   texture->mColorDepth = aColorDepth;
   texture->mYUVColorSpace = aYUVColorSpace;
+  texture->mColorRange = aColorRange;
 
   return texture;
 }
@@ -583,7 +595,8 @@ DXGIYCbCrTextureData* DXGIYCbCrTextureData::Create(
     ID3D11Texture2D* aTextureY, ID3D11Texture2D* aTextureCb,
     ID3D11Texture2D* aTextureCr, const gfx::IntSize& aSize,
     const gfx::IntSize& aSizeY, const gfx::IntSize& aSizeCbCr,
-    gfx::ColorDepth aColorDepth, YUVColorSpace aYUVColorSpace) {
+    gfx::ColorDepth aColorDepth, YUVColorSpace aYUVColorSpace,
+    gfx::ColorRange aColorRange) {
   if (!aTextureY || !aTextureCb || !aTextureCr) {
     return nullptr;
   }
@@ -635,6 +648,7 @@ DXGIYCbCrTextureData* DXGIYCbCrTextureData::Create(
   texture->mSizeCbCr = aSizeCbCr;
   texture->mColorDepth = aColorDepth;
   texture->mYUVColorSpace = aYUVColorSpace;
+  texture->mColorRange = aColorRange;
 
   return texture;
 }
@@ -652,7 +666,7 @@ void DXGIYCbCrTextureData::SerializeSpecific(
   *aOutDesc = SurfaceDescriptorDXGIYCbCr(
       (WindowsHandle)mHandles[0], (WindowsHandle)mHandles[1],
       (WindowsHandle)mHandles[2], mSize, mSizeY, mSizeCbCr, mColorDepth,
-      mYUVColorSpace);
+      mYUVColorSpace, mColorRange);
 }
 
 bool DXGIYCbCrTextureData::Serialize(SurfaceDescriptor& aOutDescriptor) {
@@ -678,6 +692,17 @@ void DXGIYCbCrTextureData::Deallocate(LayersIPCChannel*) {
   mD3D11Textures[0] = nullptr;
   mD3D11Textures[1] = nullptr;
   mD3D11Textures[2] = nullptr;
+}
+
+TextureFlags DXGIYCbCrTextureData::GetTextureFlags() const {
+  TextureFlags flags = TextureFlags::DEALLOCATE_MAIN_THREAD;
+  // With WebRender, resource open happens asynchronously on RenderThread.
+  // During opening the resource on host side, TextureClient needs to be alive.
+  // With WAIT_HOST_USAGE_END, keep TextureClient alive during host side usage.
+  if (gfx::gfxVars::UseWebRender()) {
+    flags |= TextureFlags::WAIT_HOST_USAGE_END;
+  }
+  return flags;
 }
 
 already_AddRefed<TextureHost> CreateTextureHostD3D11(
@@ -735,6 +760,7 @@ DXGITextureHostD3D11::DXGITextureHostD3D11(
       mHandle(aDescriptor.handle()),
       mFormat(aDescriptor.format()),
       mYUVColorSpace(aDescriptor.yUVColorSpace()),
+      mColorRange(aDescriptor.colorRange()),
       mIsLocked(false) {}
 
 bool DXGITextureHostD3D11::EnsureTexture() {
@@ -1049,7 +1075,8 @@ void DXGITextureHostD3D11::PushDisplayItems(
                              GetFormat() == gfx::SurfaceFormat::NV12
                                  ? wr::ColorDepth::Color8
                                  : wr::ColorDepth::Color16,
-                             wr::ToWrYuvColorSpace(mYUVColorSpace), aFilter);
+                             wr::ToWrYuvColorSpace(mYUVColorSpace),
+                             wr::ToWrColorRange(mColorRange), aFilter);
       break;
     }
     default: {
@@ -1065,7 +1092,8 @@ DXGIYCbCrTextureHostD3D11::DXGIYCbCrTextureHostD3D11(
       mSizeCbCr(aDescriptor.sizeCbCr()),
       mIsLocked(false),
       mColorDepth(aDescriptor.colorDepth()),
-      mYUVColorSpace(aDescriptor.yUVColorSpace()) {
+      mYUVColorSpace(aDescriptor.yUVColorSpace()),
+      mColorRange(aDescriptor.colorRange()) {
   mHandles[0] = aDescriptor.handleY();
   mHandles[1] = aDescriptor.handleCb();
   mHandles[2] = aDescriptor.handleCr();
@@ -1258,10 +1286,10 @@ void DXGIYCbCrTextureHostD3D11::PushDisplayItems(
     const Range<wr::ImageKey>& aImageKeys) {
   MOZ_ASSERT(aImageKeys.length() == 3);
 
-  aBuilder.PushYCbCrPlanarImage(aBounds, aClip, true, aImageKeys[0],
-                                aImageKeys[1], aImageKeys[2],
-                                wr::ToWrColorDepth(mColorDepth),
-                                wr::ToWrYuvColorSpace(mYUVColorSpace), aFilter);
+  aBuilder.PushYCbCrPlanarImage(
+      aBounds, aClip, true, aImageKeys[0], aImageKeys[1], aImageKeys[2],
+      wr::ToWrColorDepth(mColorDepth), wr::ToWrYuvColorSpace(mYUVColorSpace),
+      wr::ToWrColorRange(mColorRange), aFilter);
 }
 
 bool DXGIYCbCrTextureHostD3D11::AcquireTextureSource(

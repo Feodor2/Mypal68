@@ -5,9 +5,11 @@
 #ifndef mozilla_gfx_layers_LayerAttributes_h
 #define mozilla_gfx_layers_LayerAttributes_h
 
+#include "FrameMetrics.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/layers/LayersTypes.h"
+#include "mozilla/layers/ScrollableLayerGuid.h"
 
 namespace IPC {
 template <typename T>
@@ -234,7 +236,7 @@ class SimpleLayerAttributes final {
   }
 
   bool SetFixedPositionData(ScrollableLayerGuid::ViewID aTargetViewId,
-                            const LayerPoint& aAnchor, int32_t aSides) {
+                            const LayerPoint& aAnchor, SideBits aSides) {
     if (mFixedPositionData && mFixedPositionData->mScrollId == aTargetViewId &&
         mFixedPositionData->mAnchor == aAnchor &&
         mFixedPositionData->mSides == aSides) {
@@ -324,8 +326,8 @@ class SimpleLayerAttributes final {
     return mFixedPositionData ? mFixedPositionData->mAnchor : LayerPoint();
   }
 
-  int32_t GetFixedPositionSides() const {
-    return mFixedPositionData ? mFixedPositionData->mSides : eSideBitsNone;
+  SideBits GetFixedPositionSides() const {
+    return mFixedPositionData ? mFixedPositionData->mSides : SideBits::eNone;
   }
 
   bool IsStickyPosition() const { return !!mStickyPositionData; }
@@ -375,7 +377,7 @@ class SimpleLayerAttributes final {
   struct FixedPositionData {
     ScrollableLayerGuid::ViewID mScrollId;
     LayerPoint mAnchor;
-    int32_t mSides;
+    SideBits mSides;
   };
   Maybe<FixedPositionData> mFixedPositionData;
 

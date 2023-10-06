@@ -44,9 +44,9 @@ use crate::properties::computed_value_flags::*;
 use crate::properties::longhands;
 use crate::rule_tree::StrongRuleNode;
 use crate::selector_parser::PseudoElement;
-use servo_arc::{Arc, RawOffsetArc};
+use servo_arc::{Arc, RawOffsetArc, UniqueArc};
 use std::marker::PhantomData;
-use std::mem::{forget, uninitialized, zeroed, ManuallyDrop};
+use std::mem::{forget, MaybeUninit};
 use std::{cmp, ops, ptr};
 use crate::values::{self, CustomIdent, Either, KeyframesName, None_};
 use crate::values::computed::{Percentage, TransitionProperty};
@@ -215,19 +215,18 @@ impl ComputedValuesInner {
             Some(p) => p.pseudo_type(),
             None => structs::PseudoStyleType::NotPseudo,
         };
-        let arc = unsafe {
-            let arc: Arc<ComputedValues> = Arc::new(uninitialized());
+        unsafe {
+            let mut arc = UniqueArc::<ComputedValues>::new_uninit();
             bindings::Gecko_ComputedStyle_Init(
-                &arc.0 as *const _ as *mut _,
+                arc.as_mut_ptr() as *mut _,
                 &self,
                 pseudo_ty,
             );
-            // We're simulating a move by having C++ do a memcpy and then forgetting
+            // We're simulating move semantics by having C++ do a memcpy and then forgetting
             // it on this end.
             forget(self);
-            arc
-        };
-        arc
+            UniqueArc::assume_init(arc).shareable()
+        }
     }
 }
 
@@ -432,7 +431,7 @@ def set_gecko_property(ffi_name, expr):
 
     pub fn copy_${ident}_from(&mut self, other: &Self) {
         use crate::gecko_bindings::structs::nsStyleSVG_${ident.upper()}_CONTEXT as CONTEXT_VALUE;
-        self.gecko.${gecko_ffi_name} = other.gecko.${gecko_ffi_name};
+        self.gecko.${gecko_ffi_name} = other.gecko.${gecko_ffi_name}.clone();
         self.gecko.mContextFlags =
             (self.gecko.mContextFlags & !CONTEXT_VALUE) |
             (other.gecko.mContextFlags & CONTEXT_VALUE);
@@ -448,7 +447,7 @@ def set_gecko_property(ffi_name, expr):
         if (self.gecko.mContextFlags & CONTEXT_VALUE) != 0 {
             return SVGLength::ContextValue;
         }
-        SVGLength::LengthPercentage(self.gecko.${gecko_ffi_name})
+        SVGLength::LengthPercentage(self.gecko.${gecko_ffi_name}.clone())
     }
 </%def>
 
@@ -569,7 +568,7 @@ def set_gecko_property(ffi_name, expr):
     #[allow(non_snake_case)]
     pub fn copy_${ident}_from(&mut self, other: &Self) {
         self.gecko.${gecko_ffi_name}.${index} =
-            other.gecko.${gecko_ffi_name}.${index};
+            other.gecko.${gecko_ffi_name}.${index}.clone();
     }
     #[allow(non_snake_case)]
     pub fn reset_${ident}(&mut self, other: &Self) {
@@ -578,7 +577,7 @@ def set_gecko_property(ffi_name, expr):
 
     #[allow(non_snake_case)]
     pub fn clone_${ident}(&self) -> longhands::${ident}::computed_value::T {
-        self.gecko.${gecko_ffi_name}.${index}
+        self.gecko.${gecko_ffi_name}.${index}.clone()
     }
 </%def>
 
@@ -607,7 +606,7 @@ def set_gecko_property(ffi_name, expr):
     #[allow(non_snake_case)]
     pub fn copy_${ident}_from(&mut self, other: &Self) {
         self.gecko.${gecko_ffi_name}.${corner} =
-            other.gecko.${gecko_ffi_name}.${corner};
+            other.gecko.${gecko_ffi_name}.${corner}.clone();
     }
     #[allow(non_snake_case)]
     pub fn reset_${ident}(&mut self, other: &Self) {
@@ -615,7 +614,7 @@ def set_gecko_property(ffi_name, expr):
     }
     #[allow(non_snake_case)]
     pub fn clone_${ident}(&self) -> longhands::${ident}::computed_value::T {
-        self.gecko.${gecko_ffi_name}.${corner}
+        self.gecko.${gecko_ffi_name}.${corner}.clone()
     }
 </%def>
 
@@ -627,14 +626,17 @@ def set_gecko_property(ffi_name, expr):
 impl ${style_struct.gecko_struct_name} {
     #[allow(dead_code, unused_variables)]
     pub fn default(document: &structs::Document) -> Arc<Self> {
-        let mut result = Arc::new(${style_struct.gecko_struct_name} { gecko: ManuallyDrop::new(unsafe { zeroed() }) });
         unsafe {
+            let mut result = UniqueArc::<Self>::new_uninit();
+            // FIXME(bug 1595895): Zero the memory to keep valgrind happy, but
+            // these looks like Valgrind false-positives at a quick glance.
+            ptr::write_bytes::<Self>(result.as_mut_ptr(), 0, 1);
             Gecko_Construct_Default_${style_struct.gecko_ffi_name}(
-                &mut *Arc::get_mut(&mut result).unwrap().gecko,
+                result.as_mut_ptr() as *mut _,
                 document,
             );
+            UniqueArc::assume_init(result).shareable()
         }
-        result
     }
 }
 impl Drop for ${style_struct.gecko_struct_name} {
@@ -647,9 +649,12 @@ impl Drop for ${style_struct.gecko_struct_name} {
 impl Clone for ${style_struct.gecko_struct_name} {
     fn clone(&self) -> Self {
         unsafe {
-            let mut result = ${style_struct.gecko_struct_name} { gecko: ManuallyDrop::new(zeroed()) };
-            Gecko_CopyConstruct_${style_struct.gecko_ffi_name}(&mut *result.gecko, &*self.gecko);
-            result
+            let mut result = MaybeUninit::<Self>::uninit();
+            // FIXME(bug 1595895): Zero the memory to keep valgrind happy, but
+            // these looks like Valgrind false-positives at a quick glance.
+            ptr::write_bytes::<Self>(result.as_mut_ptr(), 0, 1);
+            Gecko_CopyConstruct_${style_struct.gecko_ffi_name}(result.as_mut_ptr() as *mut _, &*self.gecko);
+            result.assume_init()
         }
     }
 }
@@ -1134,7 +1139,7 @@ fn static_assert() {
     pub fn set_font_size(&mut self, v: FontSize) {
         use crate::values::specified::font::KeywordSize;
 
-        let size = v.size();
+        let size = Au::from(v.size());
         self.gecko.mScriptUnconstrainedSize = size.0;
 
         // These two may be changed from Cascade::fixup_font_stuff.
@@ -1852,7 +1857,7 @@ fn static_assert() {
         for (layer, other) in self.gecko.${layers_field_name}.mLayers.iter_mut()
                                   .zip(other.gecko.${layers_field_name}.mLayers.iter())
                                   .take(count as usize) {
-            layer.${field_name} = other.${field_name};
+            layer.${field_name} = other.${field_name}.clone();
         }
         self.gecko.${layers_field_name}.${field_name}Count = count;
     }
@@ -2006,7 +2011,7 @@ fn static_assert() {
         for (layer, other) in self.gecko.${image_layers_field}.mLayers.iter_mut()
                                   .zip(other.gecko.${image_layers_field}.mLayers.iter())
                                   .take(count as usize) {
-            layer.mPosition.${keyword} = other.mPosition.${keyword};
+            layer.mPosition.${keyword} = other.mPosition.${keyword}.clone();
         }
         self.gecko.${image_layers_field}.mPosition${orientation.upper()}Count = count;
     }
@@ -2020,7 +2025,7 @@ fn static_assert() {
         longhands::${shorthand}_position_${orientation}::computed_value::List(
             self.gecko.${image_layers_field}.mLayers.iter()
                 .take(self.gecko.${image_layers_field}.mPosition${orientation.upper()}Count as usize)
-                .map(|position| position.mPosition.${keyword})
+                .map(|position| position.mPosition.${keyword}.clone())
                 .collect()
         )
     }
@@ -2054,7 +2059,7 @@ fn static_assert() {
 
     pub fn clone_${shorthand}_size(&self) -> longhands::${shorthand}_size::computed_value::T {
         longhands::${shorthand}_size::computed_value::List(
-            self.gecko.${image_layers_field}.mLayers.iter().map(|layer| layer.mSize).collect()
+            self.gecko.${image_layers_field}.mLayers.iter().map(|layer| layer.mSize.clone()).collect()
         )
     }
 

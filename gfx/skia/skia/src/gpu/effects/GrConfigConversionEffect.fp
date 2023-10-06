@@ -17,6 +17,9 @@
     static bool TestForPreservingPMConversions(GrContext* context) {
         static constexpr int kSize = 256;
         static constexpr GrPixelConfig kConfig = kRGBA_8888_GrPixelConfig;
+        static constexpr SkColorType kColorType = kRGBA_8888_SkColorType;
+        const GrBackendFormat format =
+                context->priv().caps()->getBackendFormatFromColorType(kColorType);
         SkAutoTMalloc<uint32_t> data(kSize * kSize * 3);
         uint32_t* srcData = data.get();
         uint32_t* firstRead = data.get() + kSize * kSize;
@@ -34,18 +37,20 @@
                 color[0] = SkTMin(x, y);
             }
         }
+        memset(firstRead, 0, kSize * kSize * sizeof(uint32_t));
+        memset(secondRead, 0, kSize * kSize * sizeof(uint32_t));
 
         const SkImageInfo ii = SkImageInfo::Make(kSize, kSize,
                                                  kRGBA_8888_SkColorType, kPremul_SkAlphaType);
 
-        sk_sp<GrRenderTargetContext> readRTC(context->makeDeferredRenderTargetContext(
-                                                                              SkBackingFit::kExact,
-                                                                              kSize, kSize,
-                                                                              kConfig, nullptr));
-        sk_sp<GrRenderTargetContext> tempRTC(context->makeDeferredRenderTargetContext(
-                                                                              SkBackingFit::kExact,
-                                                                              kSize, kSize,
-                                                                              kConfig, nullptr));
+        sk_sp<GrRenderTargetContext> readRTC(
+                context->priv().makeDeferredRenderTargetContext(format, SkBackingFit::kExact,
+                                                                kSize, kSize,
+                                                                kConfig, nullptr));
+        sk_sp<GrRenderTargetContext> tempRTC(
+                context->priv().makeDeferredRenderTargetContext(format, SkBackingFit::kExact,
+                                                                kSize, kSize,
+                                                                kConfig, nullptr));
         if (!readRTC || !readRTC->asTextureProxy() || !tempRTC) {
             return false;
         }
@@ -53,16 +58,20 @@
         // draw
         readRTC->discard();
 
-        GrSurfaceDesc desc;
-        desc.fOrigin = kTopLeft_GrSurfaceOrigin;
-        desc.fWidth = kSize;
-        desc.fHeight = kSize;
-        desc.fConfig = kConfig;
+        GrProxyProvider* proxyProvider = context->priv().proxyProvider();
 
-        GrProxyProvider* proxyProvider = context->contextPriv().proxyProvider();
+        SkPixmap pixmap(ii, srcData, 4 * kSize);
 
-        sk_sp<GrTextureProxy> dataProxy = proxyProvider->createTextureProxy(desc, SkBudgeted::kYes,
-                                                                            data, 0);
+        // This function is only ever called if we are in a GrContext that has a GrGpu since we are
+        // calling read pixels here. Thus the pixel data will be uploaded immediately and we don't
+        // need to keep the pixel data alive in the proxy. Therefore the ReleaseProc is nullptr.
+        sk_sp<SkImage> image = SkImage::MakeFromRaster(pixmap, nullptr, nullptr);
+
+        sk_sp<GrTextureProxy> dataProxy = proxyProvider->createTextureProxy(std::move(image),
+                                                                            kNone_GrSurfaceFlags,
+                                                                            1,
+                                                                            SkBudgeted::kYes,
+                                                                            SkBackingFit::kExact);
         if (!dataProxy) {
             return false;
         }

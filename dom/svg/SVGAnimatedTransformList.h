@@ -40,11 +40,11 @@ class DOMSVGTransform;
 class SVGAnimatedTransformList {
   // friends so that they can get write access to mBaseVal
   friend class dom::DOMSVGTransform;
-  friend class DOMSVGTransformList;
+  friend class dom::DOMSVGTransformList;
 
  public:
   SVGAnimatedTransformList()
-      : mIsAttrSet(false), mRequiresFrameReconstruction(true) {}
+      : mIsAttrSet(false), mCreatedOrRemovedOnLastChange(true) {}
 
   /**
    * Because it's so important that mBaseVal and its DOMSVGTransformList wrapper
@@ -92,18 +92,18 @@ class SVGAnimatedTransformList {
   bool IsAnimating() const { return !!mAnimVal; }
 
   /**
-   * Returns true if we need to reconstruct the frame of the element associated
-   * with this transform list because the stacking context has changed.
+   * Returns true if the last change of this transform went from having to not
+   * having a transform or vice versa.
    *
    * (This is used as part of an optimization in
    * SVGTransformableElement::GetAttributeChangeHint. That function reports an
    * inexpensive nsChangeHint when a transform has just modified -- but this
-   * accessor lets it detect cases where the "modification" is actually adding
+   * accessor lets it detect cases where the "modification" is actually creating
    * a transform where we previously had none. These cases require a more
    * thorough nsChangeHint.)
    */
-  bool RequiresFrameReconstruction() const {
-    return mRequiresFrameReconstruction;
+  bool CreatedOrRemovedOnLastChange() const {
+    return mCreatedOrRemovedOnLastChange;
   }
 
   mozilla::UniquePtr<SMILAttr> ToSMILAttr(dom::SVGElement* aSVGElement);
@@ -117,8 +117,8 @@ class SVGAnimatedTransformList {
   SVGTransformList mBaseVal;
   nsAutoPtr<SVGTransformList> mAnimVal;
   bool mIsAttrSet;
-  // (See documentation for accessor, RequiresFrameReconstruction.)
-  bool mRequiresFrameReconstruction;
+  // See documentation for accessor.
+  bool mCreatedOrRemovedOnLastChange;
 
   struct SMILAnimatedTransformList : public SMILAttr {
    public:

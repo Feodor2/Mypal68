@@ -5,7 +5,6 @@
 #ifndef __GFXMESSAGEUTILS_H__
 #define __GFXMESSAGEUTILS_H__
 
-#include "mozilla/webrender/webrender_ffi.h"
 #include "FilterSupport.h"
 #include "ImageTypes.h"
 #include "RegionBuilder.h"
@@ -649,6 +648,12 @@ struct ParamTraits<mozilla::gfx::ColorDepth>
     : public ContiguousEnumSerializer<mozilla::gfx::ColorDepth,
                                       mozilla::gfx::ColorDepth::COLOR_8,
                                       mozilla::gfx::ColorDepth::UNKNOWN> {};
+
+template <>
+struct ParamTraits<mozilla::gfx::ColorRange>
+    : public ContiguousEnumSerializer<mozilla::gfx::ColorRange,
+                                      mozilla::gfx::ColorRange::LIMITED,
+                                      mozilla::gfx::ColorRange::UNKNOWN> {};
 
 template <>
 struct ParamTraits<mozilla::gfx::YUVColorSpace>

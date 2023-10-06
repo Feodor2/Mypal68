@@ -67,8 +67,7 @@ void DrawTargetOffset::DrawFilter(FilterNode* aNode, const Rect& aSourceRect,
     // Try to reduce the source rect so that it's not much bigger
     // than the draw target. The result is not minimal. Examples
     // are left as an exercise for the reader.
-    auto destRect = Rect(mOrigin.x, mOrigin.y, mDrawTarget->GetSize().width,
-                         mDrawTarget->GetSize().height);
+    auto destRect = Rect(mDrawTarget->GetRect() + mOrigin);
     Rect userSpaceBounds = clone.TransformBounds(destRect);
     userSpaceSource = userSpaceSource.Intersect(userSpaceBounds);
   }
@@ -164,7 +163,7 @@ void DrawTargetOffset::PushLayer(bool aOpaque, Float aOpacity,
 already_AddRefed<SourceSurface> DrawTargetOffset::IntoLuminanceSource(
     LuminanceType aLuminanceType, float aOpacity) {
   return MakeAndAddRef<SourceSurfaceOffset>(
-      DrawTarget::IntoLuminanceSource(aLuminanceType, aOpacity), mOrigin);
+      mDrawTarget->IntoLuminanceSource(aLuminanceType, aOpacity), mOrigin);
 }
 
 void DrawTargetOffset::PushLayerWithBlend(bool aOpaque, Float aOpacity,

@@ -11,6 +11,7 @@
 
 #include "GrVkTexture.h"
 #include "GrVkRenderTarget.h"
+#include "vk/GrVkTypes.h"
 
 class GrVkGpu;
 
@@ -25,78 +26,91 @@ struct GrVkImageInfo;
 
 class GrVkTextureRenderTarget: public GrVkTexture, public GrVkRenderTarget {
 public:
-    static sk_sp<GrVkTextureRenderTarget> CreateNewTextureRenderTarget(GrVkGpu*, SkBudgeted,
-                                                                       const GrSurfaceDesc&,
-                                                                       const GrVkImage::ImageDesc&,
-                                                                       GrMipMapsStatus);
+    static sk_sp<GrVkTextureRenderTarget> MakeNewTextureRenderTarget(GrVkGpu*, SkBudgeted,
+                                                                     const GrSurfaceDesc&,
+                                                                     const GrVkImage::ImageDesc&,
+                                                                     GrMipMapsStatus);
 
     static sk_sp<GrVkTextureRenderTarget> MakeWrappedTextureRenderTarget(GrVkGpu*,
                                                                          const GrSurfaceDesc&,
                                                                          GrWrapOwnership,
-                                                                         const GrVkImageInfo*);
+                                                                         GrWrapCacheable,
+                                                                         const GrVkImageInfo&,
+                                                                         sk_sp<GrVkImageLayout>);
 
-    bool updateForMipmap(GrVkGpu* gpu, const GrVkImageInfo& newInfo);
+    GrBackendFormat backendFormat() const override { return this->getBackendFormat(); }
 
 protected:
     void onAbandon() override {
-        GrVkRenderTarget::onAbandon();
+        // In order to correctly handle calling texture idle procs, GrVkTexture must go first.
         GrVkTexture::onAbandon();
+        GrVkRenderTarget::onAbandon();
     }
 
     void onRelease() override {
-        GrVkRenderTarget::onRelease();
+        // In order to correctly handle calling texture idle procs, GrVkTexture must go first.
         GrVkTexture::onRelease();
+        GrVkRenderTarget::onRelease();
     }
 
 private:
+    // MSAA, not-wrapped
     GrVkTextureRenderTarget(GrVkGpu* gpu,
                             SkBudgeted budgeted,
                             const GrSurfaceDesc& desc,
                             const GrVkImageInfo& info,
+                            sk_sp<GrVkImageLayout> layout,
                             const GrVkImageView* texView,
                             const GrVkImageInfo& msaaInfo,
+                            sk_sp<GrVkImageLayout> msaaLayout,
                             const GrVkImageView* colorAttachmentView,
                             const GrVkImageView* resolveAttachmentView,
-                            GrMipMapsStatus,
-                            GrBackendObjectOwnership);
+                            GrMipMapsStatus);
 
+    // non-MSAA, not-wrapped
     GrVkTextureRenderTarget(GrVkGpu* gpu,
                             SkBudgeted budgeted,
                             const GrSurfaceDesc& desc,
                             const GrVkImageInfo& info,
+                            sk_sp<GrVkImageLayout> layout,
                             const GrVkImageView* texView,
                             const GrVkImageView* colorAttachmentView,
-                            GrMipMapsStatus,
-                            GrBackendObjectOwnership);
+                            GrMipMapsStatus);
 
+    // MSAA, wrapped
     GrVkTextureRenderTarget(GrVkGpu* gpu,
                             const GrSurfaceDesc& desc,
                             const GrVkImageInfo& info,
+                            sk_sp<GrVkImageLayout> layout,
                             const GrVkImageView* texView,
                             const GrVkImageInfo& msaaInfo,
+                            sk_sp<GrVkImageLayout> msaaLayout,
                             const GrVkImageView* colorAttachmentView,
                             const GrVkImageView* resolveAttachmentView,
                             GrMipMapsStatus,
-                            GrBackendObjectOwnership);
+                            GrBackendObjectOwnership,
+                            GrWrapCacheable);
 
+    // non-MSAA, wrapped
     GrVkTextureRenderTarget(GrVkGpu* gpu,
                             const GrSurfaceDesc& desc,
                             const GrVkImageInfo& info,
+                            sk_sp<GrVkImageLayout> layout,
                             const GrVkImageView* texView,
                             const GrVkImageView* colorAttachmentView,
                             GrMipMapsStatus,
-                            GrBackendObjectOwnership);
-
-    static sk_sp<GrVkTextureRenderTarget> Make(GrVkGpu*,
-                                               const GrSurfaceDesc&,
-                                               const GrVkImageInfo&,
-                                               GrMipMapsStatus,
-                                               SkBudgeted budgeted,
-                                               GrBackendObjectOwnership,
-                                               bool isWrapped);
+                            GrBackendObjectOwnership,
+                            GrWrapCacheable);
 
     // GrGLRenderTarget accounts for the texture's memory and any MSAA renderbuffer's memory.
     size_t onGpuMemorySize() const override;
+
+    // In Vulkan we call the release proc after we are finished with the underlying
+    // GrVkImage::Resource object (which occurs after the GPU has finished all work on it).
+    void onSetRelease(sk_sp<GrRefCntedCallback> releaseHelper) override {
+        // Forward the release proc on to GrVkImage
+        this->setResourceRelease(std::move(releaseHelper));
+    }
 };
 
 #endif

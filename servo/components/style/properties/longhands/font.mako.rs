@@ -11,7 +11,6 @@ ${helpers.predefined_type(
     "font-family",
     "FontFamily",
     engines="gecko servo-2013 servo-2020",
-    servo_2020_pref="layout.2020.unimplemented",
     initial_value="computed::FontFamily::serif()",
     animation_value_type="discrete",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-family",
@@ -22,7 +21,6 @@ ${helpers.predefined_type(
     "font-style",
     "FontStyle",
     engines="gecko servo-2013 servo-2020",
-    servo_2020_pref="layout.2020.unimplemented",
     initial_value="computed::FontStyle::normal()",
     initial_specified_value="specified::FontStyle::normal()",
     animation_value_type="FontStyle",
@@ -40,7 +38,6 @@ ${helpers.single_keyword_system(
     "font-variant-caps",
     "normal small-caps",
     engines="gecko servo-2013 servo-2020",
-    servo_2020_pref="layout.2020.unimplemented",
     extra_gecko_values="all-small-caps petite-caps all-petite-caps unicase titling-caps",
     gecko_constant_prefix="NS_FONT_VARIANT_CAPS",
     gecko_ffi_name="mFont.variantCaps",
@@ -54,7 +51,6 @@ ${helpers.predefined_type(
     "font-weight",
     "FontWeight",
     engines="gecko servo-2013 servo-2020",
-    servo_2020_pref="layout.2020.unimplemented",
     initial_value="computed::FontWeight::normal()",
     initial_specified_value="specified::FontWeight::normal()",
     animation_value_type="Number",
@@ -69,7 +65,7 @@ ${helpers.predefined_type(
     initial_value="computed::FontSize::medium()",
     initial_specified_value="specified::FontSize::medium()",
     animation_value_type="NonNegativeLength",
-    allow_quirks=True,
+    allow_quirks="Yes",
     spec="https://drafts.csswg.org/css-fonts/#propdef-font-size",
     servo_restyle_damage="rebuild_and_reflow",
 )}
@@ -97,7 +93,6 @@ ${helpers.predefined_type(
     "font-stretch",
     "FontStretch",
     engines="gecko servo-2013 servo-2020",
-    servo_2020_pref="layout.2020.unimplemented",
     initial_value="computed::FontStretch::hundred()",
     initial_specified_value="specified::FontStretch::normal()",
     animation_value_type="Percentage",
@@ -378,15 +373,16 @@ ${helpers.predefined_type(
                     % endfor
                 };
 
-                let mut system: nsFont = unsafe { mem::uninitialized() };
-                unsafe {
+                let mut system = mem::MaybeUninit::<nsFont>::uninit();
+                let system = unsafe {
                     bindings::Gecko_nsFont_InitSystem(
-                        &mut system,
+                        system.as_mut_ptr(),
                         id as i32,
                         cx.style().get_font().gecko(),
                         cx.device().document()
-                    )
-                }
+                    );
+                    &mut *system.as_mut_ptr()
+                };
                 let font_weight = longhands::font_weight::computed_value::T::from_gecko_weight(system.weight);
                 let font_stretch = FontStretch(NonNegative(Percentage(unsafe {
                     bindings::Gecko_FontStretch_ToFloat(system.stretch)
@@ -424,7 +420,7 @@ ${helpers.predefined_type(
                     system_font: *self,
                     default_font_type: system.fontlist.mDefaultFontType,
                 };
-                unsafe { bindings::Gecko_nsFont_Destroy(&mut system); }
+                unsafe { bindings::Gecko_nsFont_Destroy(system); }
                 ret
             }
 

@@ -366,7 +366,7 @@ impl YamlFrameReader {
             clip_rect: LayoutRect::zero(),
             clip_id: ClipId::invalid(),
             spatial_id: SpatialId::new(0, PipelineId::dummy()),
-            is_backface_visible: true,
+            flags: PrimitiveFlags::default(),
             hit_info: None,
         };
         self.add_stacking_context_from_yaml(&mut builder, wrench, yaml, true, &mut info);
@@ -1164,6 +1164,7 @@ impl YamlFrameReader {
         // TODO(gw): Support other YUV color depth and spaces.
         let color_depth = ColorDepth::Color8;
         let color_space = YuvColorSpace::Rec709;
+        let color_range = ColorRange::Limited;
 
         let yuv_data = match item["format"].as_str().expect("no format supplied") {
             "planar" => {
@@ -1210,6 +1211,7 @@ impl YamlFrameReader {
             yuv_data,
             color_depth,
             color_space,
+            color_range,
             ImageRendering::Auto,
         );
     }
@@ -1245,10 +1247,6 @@ impl YamlFrameReader {
                 item["bounds"]
             );
         };
-        let stretch_size = item["stretch-size"].as_size().unwrap_or(image_dims);
-        let tile_spacing = item["tile-spacing"]
-            .as_size()
-            .unwrap_or(LayoutSize::new(0.0, 0.0));
         let rendering = match item["rendering"].as_str() {
             Some("auto") | None => ImageRendering::Auto,
             Some("crisp-edges") => ImageRendering::CrispEdges,
@@ -1266,16 +1264,29 @@ impl YamlFrameReader {
                 item
             ),
         };
-        dl.push_image(
-            &info,
-            bounds,
-            stretch_size,
-            tile_spacing,
-            rendering,
-            alpha_type,
-            image_key,
-            ColorF::WHITE,
-        );
+        let stretch_size = item["stretch-size"].as_size();
+        let tile_spacing = item["tile-spacing"].as_size();
+        if stretch_size.is_none() && tile_spacing.is_none() {
+            dl.push_image(
+                &info,
+                bounds,
+                rendering,
+                alpha_type,
+                image_key,
+                ColorF::WHITE,
+           );
+        } else {
+            dl.push_repeating_image(
+                &info,
+                bounds,
+                stretch_size.unwrap_or(image_dims),
+                tile_spacing.unwrap_or(LayoutSize::zero()),
+                rendering,
+                alpha_type,
+                image_key,
+                ColorF::WHITE,
+           );
+        }
     }
 
     fn handle_text(
@@ -1505,12 +1516,21 @@ impl YamlFrameReader {
             }
 
             let space_and_clip = self.top_space_and_clip();
+            let mut flags = PrimitiveFlags::default();
+            if let Some(is_backface_visible) = item["backface-visible"].as_bool() {
+                if is_backface_visible {
+                    flags.insert(PrimitiveFlags::IS_BACKFACE_VISIBLE);
+                } else {
+                    flags.remove(PrimitiveFlags::IS_BACKFACE_VISIBLE);
+                }
+            }
+
             let mut info = CommonItemProperties {
                 clip_rect,
                 clip_id: space_and_clip.clip_id,
                 spatial_id: space_and_clip.spatial_id,
                 hit_info: self.to_hit_testing_tag(&item["hit-testing-tag"]),
-                is_backface_visible: item["backface-visible"].as_bool().unwrap_or(true),
+                flags,
             };
 
             match item_type {
@@ -1888,7 +1908,7 @@ impl YamlFrameReader {
         dl.push_stacking_context(
             bounds.origin,
             *self.spatial_id_stack.last().unwrap(),
-            info.is_backface_visible,
+            info.flags,
             clip_node_id,
             transform_style,
             mix_blend_mode,

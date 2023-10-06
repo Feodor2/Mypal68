@@ -100,14 +100,6 @@
  */
 //#define SK_MAX_SIZE_FOR_LCDTEXT     48
 
-/*  If SK_DEBUG is defined, then you can optionally define SK_SUPPORT_UNITTEST
-    which will run additional self-tests at startup. These can take a long time,
-    so this flag is optional.
- */
-#ifdef SK_DEBUG
-//#define SK_SUPPORT_UNITTEST
-#endif
-
 /*  Change the ordering to work in X windows.
  */
 //#ifdef SK_SAMPLES_FOR_X
@@ -143,16 +135,13 @@
 
 #define SK_ALLOW_STATIC_GLOBAL_INITIALIZERS 0
 
-// Don't use __stdcall with SkiaGLGlue - bug 1320644
-#define GR_GL_FUNCTION_TYPE
-
 #define SK_RASTERIZE_EVEN_ROUNDING
 
 #define SK_DISABLE_SLOW_DEBUG_VALIDATION 1
 
 #define SK_SUPPORT_DEPRECATED_CLIPOPS
 
-#define SK_DISABLE_EXPLICIT_GPU_RESOURCE_ALLOCATION
+#define SK_SUPPORT_GPU 0
 
 #ifndef MOZ_IMPLICIT
 #  ifdef MOZ_CLANG_PLUGIN
@@ -164,6 +153,8 @@
 
 #define MOZ_SKIA
 
-#define SK_SUPPORT_GPU 0
+#define SK_IGNORE_MAC_BLENDING_MATCH_FIX
+
+#define I_ACKNOWLEDGE_SKIA_DOES_NOT_SUPPORT_BIG_ENDIAN
 
 #endif

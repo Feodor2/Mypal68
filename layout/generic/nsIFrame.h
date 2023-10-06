@@ -892,8 +892,12 @@ class nsIFrame : public nsQueryFrame {
    * It's usually the 'writing-mode' computed value, but there are exceptions:
    *   * inner table frames copy the value from the table frame
    *     (@see nsTableRowGroupFrame::Init, nsTableRowFrame::Init etc)
-   *   * the root element frame propagates its value to its ancestors
-   *     (@see nsCanvasFrame::MaybePropagateRootElementWritingMode)
+   *   * the root element frame propagates its value to its ancestors.
+   *     The value may obtain from the principal <body> element.
+   *     (@see nsCSSFrameConstructor::ConstructDocElementFrame)
+   *   * the internal anonymous frames of the root element copy their value
+   *     from the parent.
+   *     (@see nsFrame::Init)
    *   * a scrolled frame propagates its value to its ancestor scroll frame
    *     (@see nsHTMLScrollFrame::ReloadChildFrames)
    */
@@ -1058,8 +1062,7 @@ class nsIFrame : public nsQueryFrame {
    */
   void SetSize(mozilla::WritingMode aWritingMode,
                const mozilla::LogicalSize& aSize) {
-    if ((!aWritingMode.IsVertical() && !aWritingMode.IsBidiLTR()) ||
-        aWritingMode.IsVerticalRL()) {
+    if (aWritingMode.IsPhysicalRTL()) {
       nscoord oldWidth = mRect.Width();
       SetSize(aSize.GetPhysicalSize(aWritingMode));
       mRect.x -= mRect.Width() - oldWidth;
@@ -1252,6 +1255,8 @@ class nsIFrame : public nsQueryFrame {
   NS_DECLARE_FRAME_PROPERTY_WITHOUT_DTOR(PlaceholderFrameProperty,
                                          nsPlaceholderFrame)
 
+  NS_DECLARE_FRAME_PROPERTY_RELEASABLE(OffsetPathCache, mozilla::gfx::Path)
+
   mozilla::FrameBidiData GetBidiData() const {
     bool exists;
     mozilla::FrameBidiData bidiData = GetProperty(BidiDataProperty(), &exists);
@@ -1378,7 +1383,7 @@ class nsIFrame : public nsQueryFrame {
   /**
    * Fill in border radii for this frame.  Return whether any are nonzero.
    * Indices into aRadii are the enum HalfCorner constants in gfx/2d/Types.h
-   * aSkipSides is a union of eSideBitsLeft/Right/Top/Bottom bits that says
+   * aSkipSides is a union of SideBits::eLeft/Right/Top/Bottom bits that says
    * which side(s) to skip.
    *
    * Note: GetMarginBoxBorderRadii() and GetShapeBoxBorderRadii() work only
@@ -2353,17 +2358,23 @@ class nsIFrame : public nsQueryFrame {
                                   InlinePrefISizeData* aData) = 0;
 
   /**
-   * Return the horizontal components of padding, border, and margin
+   * Intrinsic size of a frame in a single axis.
+   *
+   * This can represent either isize or bsize.
+   */
+  struct IntrinsicSizeOffsetData {
+    nscoord padding = 0;
+    nscoord border = 0;
+    nscoord margin = 0;
+  };
+
+  /**
+   * Return the isize components of padding, border, and margin
    * that contribute to the intrinsic width that applies to the parent.
    * @param aPercentageBasis the percentage basis to use for padding/margin -
    *   i.e. the Containing Block's inline-size
    */
-  struct IntrinsicISizeOffsetData {
-    nscoord hPadding, hBorder, hMargin;
-
-    IntrinsicISizeOffsetData() : hPadding(0), hBorder(0), hMargin(0) {}
-  };
-  virtual IntrinsicISizeOffsetData IntrinsicISizeOffsets(
+  virtual IntrinsicSizeOffsetData IntrinsicISizeOffsets(
       nscoord aPercentageBasis = NS_UNCONSTRAINEDSIZE) = 0;
 
   /**
@@ -2372,7 +2383,7 @@ class nsIFrame : public nsQueryFrame {
    * @param aPercentageBasis the percentage basis to use for padding/margin -
    *   i.e. the Containing Block's inline-size
    */
-  IntrinsicISizeOffsetData IntrinsicBSizeOffsets(
+  IntrinsicSizeOffsetData IntrinsicBSizeOffsets(
       nscoord aPercentageBasis = NS_UNCONSTRAINEDSIZE);
 
   virtual mozilla::IntrinsicSize GetIntrinsicSize() = 0;
@@ -2875,37 +2886,32 @@ class nsIFrame : public nsQueryFrame {
   enum {
     eMathML = 1 << 0,
     eSVG = 1 << 1,
-    eSVGForeignObject = 1 << 2,
-    eSVGContainer = 1 << 3,
-    eSVGGeometry = 1 << 4,
-    eSVGPaintServer = 1 << 5,
-    eBidiInlineContainer = 1 << 6,
+    eSVGContainer = 1 << 2,
+    eSVGGeometry = 1 << 3,
+    eSVGPaintServer = 1 << 4,
+    eBidiInlineContainer = 1 << 5,
     // the frame is for a replaced element, such as an image
-    eReplaced = 1 << 7,
+    eReplaced = 1 << 6,
     // Frame that contains a block but looks like a replaced element
     // from the outside
-    eReplacedContainsBlock = 1 << 8,
+    eReplacedContainsBlock = 1 << 7,
     // A frame that participates in inline reflow, i.e., one that
     // requires ReflowInput::mLineLayout.
-    eLineParticipant = 1 << 9,
-    eXULBox = 1 << 10,
-    eCanContainOverflowContainers = 1 << 11,
-    eTablePart = 1 << 12,
-    // If this bit is set, the frame doesn't allow ignorable whitespace as
-    // children. For example, the whitespace between <table>\n<tr>\n<td>
-    // will be excluded during the construction of children.
-    eExcludesIgnorableWhitespace = 1 << 13,
-    eSupportsCSSTransforms = 1 << 14,
+    eLineParticipant = 1 << 8,
+    eXULBox = 1 << 9,
+    eCanContainOverflowContainers = 1 << 10,
+    eTablePart = 1 << 11,
+    eSupportsCSSTransforms = 1 << 12,
 
     // A replaced element that has replaced-element sizing
     // characteristics (i.e., like images or iframes), as opposed to
     // inline-block sizing characteristics (like form controls).
-    eReplacedSizing = 1 << 15,
+    eReplacedSizing = 1 << 13,
 
     // Does this frame class support 'contain: layout' and
     // 'contain:paint' (supporting one is equivalent to supporting the
     // other).
-    eSupportsContainLayoutAndPaint = 1 << 16,
+    eSupportsContainLayoutAndPaint = 1 << 14,
 
     // These are to allow nsFrame::Init to assert that IsFrameOfType
     // implementations all call the base class method.  They are only
@@ -3958,7 +3964,6 @@ class nsIFrame : public nsQueryFrame {
    */
   inline bool IsTableCaption() const;
 
-  inline bool IsBlockInside() const;
   inline bool IsBlockOutside() const;
   inline bool IsInlineOutside() const;
   inline mozilla::StyleDisplay GetDisplay() const;
@@ -4204,26 +4209,26 @@ class nsIFrame : public nsQueryFrame {
     mForceDescendIntoIfVisible = aForce;
   }
 
-  bool BuiltDisplayList() { return mBuiltDisplayList; }
-  void SetBuiltDisplayList(bool aBuilt) { mBuiltDisplayList = aBuilt; }
+  bool BuiltDisplayList() const { return mBuiltDisplayList; }
+  void SetBuiltDisplayList(const bool aBuilt) { mBuiltDisplayList = aBuilt; }
 
-  bool IsFrameModified() { return mFrameIsModified; }
-  void SetFrameIsModified(bool aFrameIsModified) {
+  bool IsFrameModified() const { return mFrameIsModified; }
+  void SetFrameIsModified(const bool aFrameIsModified) {
     mFrameIsModified = aFrameIsModified;
   }
 
-  bool HasOverrideDirtyRegion() { return mHasOverrideDirtyRegion; }
-  void SetHasOverrideDirtyRegion(bool aHasDirtyRegion) {
+  bool HasOverrideDirtyRegion() const { return mHasOverrideDirtyRegion; }
+  void SetHasOverrideDirtyRegion(const bool aHasDirtyRegion) {
     mHasOverrideDirtyRegion = aHasDirtyRegion;
   }
 
-  bool MayHaveWillChangeBudget() { return mMayHaveWillChangeBudget; }
-  void SetMayHaveWillChangeBudget(bool aHasBudget) {
+  bool MayHaveWillChangeBudget() const { return mMayHaveWillChangeBudget; }
+  void SetMayHaveWillChangeBudget(const bool aHasBudget) {
     mMayHaveWillChangeBudget = aHasBudget;
   }
 
   bool HasBSizeChange() const { return mHasBSizeChange; }
-  void SetHasBSizeChange(bool aHasBSizeChange) {
+  void SetHasBSizeChange(const bool aHasBSizeChange) {
     mHasBSizeChange = aHasBSizeChange;
   }
 
@@ -4253,6 +4258,11 @@ class nsIFrame : public nsQueryFrame {
    */
   mozilla::gfx::CompositorHitTestInfo GetCompositorHitTestInfo(
       nsDisplayListBuilder* aBuilder);
+
+  /**
+   * Copies aWM to mWritingMode on 'this' and all its ancestors.
+   */
+  inline void PropagateWritingModeToSelfAndAncestors(mozilla::WritingMode aWM);
 
  protected:
   static void DestroyAnonymousContent(nsPresContext* aPresContext,
@@ -4308,11 +4318,6 @@ class nsIFrame : public nsQueryFrame {
   }
 
  protected:
-  /**
-   * Copies aRootElemWM to mWritingMode on 'this' and all its ancestors.
-   */
-  inline void PropagateRootElementWritingMode(mozilla::WritingMode aRootElemWM);
-
   void MarkInReflow() {
 #ifdef DEBUG_dbaron_off
     // bug 81268

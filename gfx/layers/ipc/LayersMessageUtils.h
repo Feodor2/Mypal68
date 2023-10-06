@@ -12,6 +12,8 @@
 #include "ipc/IPCMessageUtils.h"
 #include "ipc/nsGUIEventIPC.h"
 #include "mozilla/GfxMessageUtils.h"
+#include "mozilla/ipc/ByteBuf.h"
+#include "mozilla/layers/APZInputBridge.h"
 #include "mozilla/layers/APZTypes.h"
 #include "mozilla/layers/AsyncDragMetrics.h"
 #include "mozilla/layers/CompositorOptions.h"
@@ -25,6 +27,8 @@
 #include "mozilla/layers/RefCountedShmem.h"
 #include "mozilla/layers/RepaintRequest.h"
 #include "mozilla/layers/WebRenderMessageUtils.h"
+#include "mozilla/MotionPathUtils.h"
+#include "mozilla/ServoBindings.h"
 #include "VsyncSource.h"
 #include "mozilla/Move.h"
 #include "nsSize.h"
@@ -403,7 +407,6 @@ struct ParamTraits<mozilla::layers::ScrollMetadata>
     WriteParam(aMsg, aParam.mHasScrollgrab);
     WriteParam(aMsg, aParam.mIsLayersIdRoot);
     WriteParam(aMsg, aParam.mIsAutoDirRootContentRTL);
-    WriteParam(aMsg, aParam.mUsesContainerScrolling);
     WriteParam(aMsg, aParam.mForceDisableApz);
     WriteParam(aMsg, aParam.mResolutionUpdated);
     WriteParam(aMsg, aParam.mDisregardedDirection);
@@ -436,8 +439,6 @@ struct ParamTraits<mozilla::layers::ScrollMetadata>
                                 &paramType::SetIsLayersIdRoot) &&
             ReadBoolForBitfield(aMsg, aIter, aResult,
                                 &paramType::SetIsAutoDirRootContentRTL) &&
-            ReadBoolForBitfield(aMsg, aIter, aResult,
-                                &paramType::SetUsesContainerScrolling) &&
             ReadBoolForBitfield(aMsg, aIter, aResult,
                                 &paramType::SetForceDisableApz) &&
             ReadBoolForBitfield(aMsg, aIter, aResult,
@@ -521,6 +522,31 @@ struct ParamTraits<mozilla::layers::ScrollableLayerGuid> {
     return (ReadParam(aMsg, aIter, &aResult->mLayersId) &&
             ReadParam(aMsg, aIter, &aResult->mPresShellId) &&
             ReadParam(aMsg, aIter, &aResult->mScrollId));
+  }
+};
+
+template <>
+struct ParamTraits<nsEventStatus>
+    : public ContiguousEnumSerializer<nsEventStatus, nsEventStatus_eIgnore,
+                                      nsEventStatus_eSentinel> {};
+
+template <>
+struct ParamTraits<mozilla::layers::APZEventResult> {
+  typedef mozilla::layers::APZEventResult paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    WriteParam(aMsg, aParam.mStatus);
+    WriteParam(aMsg, aParam.mTargetGuid);
+    WriteParam(aMsg, aParam.mInputBlockId);
+    WriteParam(aMsg, aParam.mHitRegionWithApzAwareListeners);
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    return (ReadParam(aMsg, aIter, &aResult->mStatus) &&
+            ReadParam(aMsg, aIter, &aResult->mTargetGuid) &&
+            ReadParam(aMsg, aIter, &aResult->mInputBlockId) &&
+            ReadParam(aMsg, aIter, &aResult->mHitRegionWithApzAwareListeners));
   }
 };
 
@@ -793,6 +819,91 @@ struct ParamTraits<mozilla::layers::CompositionPayload> {
                    paramType* aResult) {
     return ReadParam(aMsg, aIter, &aResult->mType) &&
            ReadParam(aMsg, aIter, &aResult->mTimeStamp);
+  }
+};
+
+inline mozilla::ipc::ByteBuf ConvertToByteBuf(mozilla::StyleVecU8&& aVec) {
+  mozilla::ipc::ByteBuf out(aVec.data, aVec.length, aVec.capacity);
+  aVec.data = nullptr;
+  aVec.length = 0;
+  aVec.capacity = 0;
+  return out;
+}
+
+inline mozilla::StyleVecU8 ConvertToStyleVecU8(mozilla::ipc::ByteBuf&& aOther) {
+  mozilla::StyleVecU8 v;
+  v.data = aOther.mData;
+  v.length = aOther.mLen;
+  v.capacity = aOther.mCapacity;
+  aOther.mData = nullptr;
+  aOther.mLen = 0;
+  aOther.mCapacity = 0;
+  return v;
+}
+
+template <>
+struct ParamTraits<mozilla::LengthPercentage> {
+  typedef mozilla::LengthPercentage paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    mozilla::StyleVecU8 v;
+    mozilla::DebugOnly<bool> rv = Servo_LengthPercentage_Serialize(&aParam, &v);
+    MOZ_ASSERT(rv, "Serialize LengthPercentage failed");
+
+    WriteParam(aMsg, ConvertToByteBuf(std::move(v)));
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    mozilla::ipc::ByteBuf in;
+    bool rv = ReadParam(aMsg, aIter, &in);
+    if (!rv) {
+      return false;
+    }
+
+    mozilla::StyleVecU8 v = ConvertToStyleVecU8(std::move(in));
+    return v.data && Servo_LengthPercentage_Deserialize(&v, aResult);
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::RayFunction> {
+  typedef mozilla::RayFunction paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    mozilla::StyleVecU8 v;
+    mozilla::DebugOnly<bool> rv = Servo_RayFunction_Serialize(&aParam, &v);
+    MOZ_ASSERT(rv, "Serialize RayFunction failed");
+
+    WriteParam(aMsg, ConvertToByteBuf(std::move(v)));
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    mozilla::ipc::ByteBuf in;
+    bool rv = ReadParam(aMsg, aIter, &in);
+    if (!rv) {
+      return false;
+    }
+
+    mozilla::StyleVecU8 v = ConvertToStyleVecU8(std::move(in));
+    return v.data && Servo_RayFunction_Deserialize(&v, aResult);
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::RayReferenceData> {
+  typedef mozilla::RayReferenceData paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    WriteParam(aMsg, aParam.mInitialPosition);
+    WriteParam(aMsg, aParam.mContainingBlockRect);
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    return (ReadParam(aMsg, aIter, &aResult->mInitialPosition) &&
+            ReadParam(aMsg, aIter, &aResult->mContainingBlockRect));
   }
 };
 

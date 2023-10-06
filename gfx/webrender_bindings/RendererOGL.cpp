@@ -8,7 +8,6 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/layers/CompositorBridgeParent.h"
-#include "mozilla/layers/CompositorManagerParent.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/webrender/RenderCompositor.h"
@@ -18,9 +17,9 @@
 namespace mozilla {
 namespace wr {
 
-wr::WrExternalImage LockExternalImage(void* aObj, wr::WrExternalImageId aId,
-                                      uint8_t aChannelIndex,
-                                      wr::ImageRendering aRendering) {
+wr::WrExternalImage wr_renderer_lock_external_image(
+    void* aObj, wr::ExternalImageId aId, uint8_t aChannelIndex,
+    wr::ImageRendering aRendering) {
   RendererOGL* renderer = reinterpret_cast<RendererOGL*>(aObj);
   RenderTextureHost* texture = renderer->GetRenderTexture(aId);
   MOZ_ASSERT(texture);
@@ -32,8 +31,8 @@ wr::WrExternalImage LockExternalImage(void* aObj, wr::WrExternalImageId aId,
   return texture->Lock(aChannelIndex, renderer->gl(), aRendering);
 }
 
-void UnlockExternalImage(void* aObj, wr::WrExternalImageId aId,
-                         uint8_t aChannelIndex) {
+void wr_renderer_unlock_external_image(void* aObj, wr::ExternalImageId aId,
+                                       uint8_t aChannelIndex) {
   RendererOGL* renderer = reinterpret_cast<RendererOGL*>(aObj);
   RenderTextureHost* texture = renderer->GetRenderTexture(aId);
   MOZ_ASSERT(texture);
@@ -73,8 +72,6 @@ RendererOGL::~RendererOGL() {
 wr::WrExternalImageHandler RendererOGL::GetExternalImageHandler() {
   return wr::WrExternalImageHandler{
       this,
-      LockExternalImage,
-      UnlockExternalImage,
   };
 }
 
@@ -120,7 +117,8 @@ bool RendererOGL::UpdateAndRender(const Maybe<gfx::IntSize>& aReadbackSize,
 
   if (!wr_renderer_render(mRenderer, size.width, size.height, aHadSlowFrame,
                           aOutStats)) {
-    NotifyWebRenderError(WebRenderError::RENDER);
+    RenderThread::Get()->HandleWebRenderError(WebRenderError::RENDER);
+    return false;
   }
 
   if (aReadbackBuffer.isSome()) {
@@ -199,7 +197,7 @@ RefPtr<WebRenderPipelineInfo> RendererOGL::FlushPipelineInfo() {
 }
 
 RenderTextureHost* RendererOGL::GetRenderTexture(
-    wr::WrExternalImageId aExternalImageId) {
+    wr::ExternalImageId aExternalImageId) {
   return mThread->GetRenderTexture(aExternalImageId);
 }
 
@@ -214,15 +212,6 @@ void RendererOGL::AccumulateMemoryReport(MemoryReport* aReport) {
                             BytesPerPixel(SurfaceFormat::B8G8R8A8) *
                             (mCompositor->UseTripleBuffering() ? 3 : 2);
   aReport->swap_chain += swapChainSize;
-}
-
-static void DoNotifyWebRenderError(WebRenderError aError) {
-  layers::CompositorManagerParent::NotifyWebRenderError(aError);
-}
-
-void RendererOGL::NotifyWebRenderError(WebRenderError aError) {
-  layers::CompositorThreadHolder::Loop()->PostTask(NewRunnableFunction(
-      "DoNotifyWebRenderErrorRunnable", &DoNotifyWebRenderError, aError));
 }
 
 }  // namespace wr

@@ -71,8 +71,8 @@ class RemoteDecoderManagerChild final : public PRemoteDecoderManagerChild,
   PRemoteDecoderChild* AllocPRemoteDecoderChild(
       const RemoteDecoderInfoIPDL& aRemoteDecoderInfo,
       const CreateDecoderParams::OptionSet& aOptions,
-      const layers::TextureFactoryIdentifier& aIdentifier, bool* aSuccess,
-      nsCString* aErrorDescription);
+      const Maybe<layers::TextureFactoryIdentifier>& aIdentifier,
+      bool* aSuccess, nsCString* aErrorDescription);
   bool DeallocPRemoteDecoderChild(PRemoteDecoderChild* actor);
 
  private:

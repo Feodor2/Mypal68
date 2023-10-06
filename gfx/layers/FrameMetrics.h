@@ -5,7 +5,7 @@
 #ifndef GFX_FRAMEMETRICS_H
 #define GFX_FRAMEMETRICS_H
 
-#include <stdint.h>  // for uint8_t, uint32_t, uint64_t
+#include <stdint.h>                 // for uint8_t, uint32_t, uint64_t
 #include "Units.h"                  // for CSSRect, CSSPixel, etc
 #include "mozilla/DefineEnum.h"     // for MOZ_DEFINE_ENUM
 #include "mozilla/HashFunctions.h"  // for HashGeneric
@@ -867,7 +867,6 @@ struct ScrollMetadata {
         mHasScrollgrab(false),
         mIsLayersIdRoot(false),
         mIsAutoDirRootContentRTL(false),
-        mUsesContainerScrolling(false),
         mForceDisableApz(false),
         mResolutionUpdated(false),
         mOverscrollBehavior() {}
@@ -883,7 +882,6 @@ struct ScrollMetadata {
            mHasScrollgrab == aOther.mHasScrollgrab &&
            mIsLayersIdRoot == aOther.mIsLayersIdRoot &&
            mIsAutoDirRootContentRTL == aOther.mIsAutoDirRootContentRTL &&
-           mUsesContainerScrolling == aOther.mUsesContainerScrolling &&
            mForceDisableApz == aOther.mForceDisableApz &&
            mResolutionUpdated == aOther.mResolutionUpdated &&
            mDisregardedDirection == aOther.mDisregardedDirection &&
@@ -958,10 +956,6 @@ struct ScrollMetadata {
     mIsAutoDirRootContentRTL = aValue;
   }
   bool IsAutoDirRootContentRTL() const { return mIsAutoDirRootContentRTL; }
-  void SetUsesContainerScrolling(bool aValue) {
-    mUsesContainerScrolling = aValue;
-  }
-  bool UsesContainerScrolling() const { return mUsesContainerScrolling; }
   void SetForceDisableApz(bool aForceDisable) {
     mForceDisableApz = aForceDisable;
   }
@@ -1035,10 +1029,6 @@ struct ScrollMetadata {
   // the writing mode of this root element instead of the target scrollframe,
   // and so we need to know if the writing mode is RTL or not.
   bool mIsAutoDirRootContentRTL : 1;
-
-  // True if scrolling using containers, false otherwise. This can be removed
-  // when containerful scrolling is eliminated.
-  bool mUsesContainerScrolling : 1;
 
   // Whether or not the compositor should actually do APZ-scrolling on this
   // scrollframe.

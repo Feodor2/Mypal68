@@ -10,22 +10,19 @@
 #include "GrCoordTransform.h"
 
 /**
- * The key for an individual coord transform is made up of a matrix type, and a bit that indicates
- * the source of the input coords.
- */
-enum {
-    kMatrixTypeKeyBits   = 1,
-    kPositionCoords_Flag = 1 << kMatrixTypeKeyBits,
-    kTransformKeyBits    = kMatrixTypeKeyBits + 1,
-};
-
-/**
  * We specialize the vertex code for each of these matrix types.
  */
 enum MatrixType {
     kNoPersp_MatrixType  = 0,
     kGeneral_MatrixType  = 1,
 };
+
+GrPrimitiveProcessor::GrPrimitiveProcessor(ClassID classID) : GrProcessor(classID) {}
+
+const GrPrimitiveProcessor::TextureSampler& GrPrimitiveProcessor::textureSampler(int i) const {
+    SkASSERT(i >= 0 && i < this->numTextureSamplers());
+    return this->onTextureSampler(i);
+}
 
 uint32_t
 GrPrimitiveProcessor::getTransformKey(const SkTArray<const GrCoordTransform*, true>& coords,
@@ -39,15 +36,57 @@ GrPrimitiveProcessor::getTransformKey(const SkTArray<const GrCoordTransform*, tr
         } else {
             key |= kNoPersp_MatrixType;
         }
-
-        if (!this->hasExplicitLocalCoords()) {
-            key |= kPositionCoords_Flag;
-        }
-
-        key <<= kTransformKeyBits * t;
-
+        key <<= t;
         SkASSERT(0 == (totalKey & key)); // keys for each transform ought not to overlap
         totalKey |= key;
     }
     return totalKey;
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+
+static inline GrSamplerState::Filter clamp_filter(GrTextureType type,
+                                                  GrSamplerState::Filter requestedFilter) {
+    if (GrTextureTypeHasRestrictedSampling(type)) {
+        return SkTMin(requestedFilter, GrSamplerState::Filter::kBilerp);
+    }
+    return requestedFilter;
+}
+
+GrPrimitiveProcessor::TextureSampler::TextureSampler(GrTextureType textureType,
+                                                     GrPixelConfig config,
+                                                     const GrSamplerState& samplerState,
+                                                     uint32_t extraSamplerKey) {
+    this->reset(textureType, config, samplerState, extraSamplerKey);
+}
+
+GrPrimitiveProcessor::TextureSampler::TextureSampler(GrTextureType textureType,
+                                                     GrPixelConfig config,
+                                                     GrSamplerState::Filter filterMode,
+                                                     GrSamplerState::WrapMode wrapXAndY) {
+    this->reset(textureType, config, filterMode, wrapXAndY);
+}
+
+void GrPrimitiveProcessor::TextureSampler::reset(GrTextureType textureType,
+                                                 GrPixelConfig config,
+                                                 const GrSamplerState& samplerState,
+                                                 uint32_t extraSamplerKey) {
+    SkASSERT(kUnknown_GrPixelConfig != config);
+    fSamplerState = samplerState;
+    fSamplerState.setFilterMode(clamp_filter(textureType, samplerState.filter()));
+    fTextureType = textureType;
+    fConfig = config;
+    fExtraSamplerKey = extraSamplerKey;
+    SkASSERT(!fExtraSamplerKey || textureType == GrTextureType::kExternal);
+}
+
+void GrPrimitiveProcessor::TextureSampler::reset(GrTextureType textureType,
+                                                 GrPixelConfig config,
+                                                 GrSamplerState::Filter filterMode,
+                                                 GrSamplerState::WrapMode wrapXAndY) {
+    SkASSERT(kUnknown_GrPixelConfig != config);
+    filterMode = clamp_filter(textureType, filterMode);
+    fSamplerState = GrSamplerState(wrapXAndY, filterMode);
+    fTextureType = textureType;
+    fConfig = config;
 }

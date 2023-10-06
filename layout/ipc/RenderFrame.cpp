@@ -20,12 +20,11 @@
 #include "mozilla/layers/WebRenderScrollData.h"
 #include "mozilla/webrender/WebRenderAPI.h"
 
-using namespace mozilla::dom;
-using namespace mozilla::gfx;
+using namespace mozilla;
 using namespace mozilla::layers;
-
-namespace mozilla {
-namespace layout {
+using namespace mozilla::dom;
+using namespace mozilla::layout;
+using namespace mozilla::gfx;
 
 static already_AddRefed<LayerManager> GetLayerManager(
     BrowserParent* aBrowserParent) {
@@ -124,9 +123,6 @@ void RenderFrame::GetTextureFactoryIdentifier(
   }
 }
 
-}  // namespace layout
-}  // namespace mozilla
-
 /**
  * Gets the layer-pixel offset of aContainerFrame's content rect top-left
  * from the nearest display item reference frame (which we assume will be
@@ -164,7 +160,7 @@ nsDisplayRemote::nsDisplayRemote(nsDisplayListBuilder* aBuilder,
       mTabId{0},
       mEventRegionsOverride(EventRegionsOverride::NoOverride) {
   bool frameIsPointerEventsNone = aFrame->StyleUI()->GetEffectivePointerEvents(
-                                      aFrame) == NS_STYLE_POINTER_EVENTS_NONE;
+                                      aFrame) == StylePointerEvents::None;
   if (aBuilder->IsInsidePointerEventsNoneDoc() || frameIsPointerEventsNone) {
     mEventRegionsOverride |= EventRegionsOverride::ForceEmptyHitRegion;
   }
@@ -277,8 +273,8 @@ bool nsDisplayRemote::CreateWebRenderCommands(
       mFrame->PresContext()->AppUnitsPerDevPixel());
   rect += mOffset;
 
-  aBuilder.PushIFrame(mozilla::wr::ToRoundedLayoutRect(rect),
-                      !BackfaceIsHidden(), mozilla::wr::AsPipelineId(mLayersId),
+  aBuilder.PushIFrame(mozilla::wr::ToLayoutRect(rect), !BackfaceIsHidden(),
+                      mozilla::wr::AsPipelineId(mLayersId),
                       /*ignoreMissingPipelines*/ true);
 
   return true;

@@ -17,13 +17,12 @@
         "NonNegativeLengthPercentage",
         "computed::NonNegativeLengthPercentage::zero()",
         engines="gecko servo-2013 servo-2020",
-        servo_2020_pref="layout.2020.unimplemented",
         alias=maybe_moz_logical_alias(engine, side, "-moz-padding-%s"),
         animation_value_type="NonNegativeLengthPercentage",
         logical=side[1],
         logical_group="padding",
         spec=spec,
-        allow_quirks=not side[1],
+        allow_quirks="No" if side[1] else "Yes",
         servo_restyle_damage="reflow rebuild_and_reflow_inline"
     )}
 % endfor

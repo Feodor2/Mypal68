@@ -438,7 +438,9 @@ void DrawTargetD2D1::MaskSurface(const Pattern& aSource, SourceSurface* aMask,
 
   IntSize size =
       IntSize::Truncate(aMask->GetSize().width, aMask->GetSize().height);
-  Rect dest = Rect(aOffset.x, aOffset.y, Float(size.width), Float(size.height));
+  Rect dest =
+      Rect(aOffset.x + aMask->GetRect().x, aOffset.y + aMask->GetRect().y,
+           Float(size.width), Float(size.height));
 
   HRESULT hr = image->QueryInterface((ID2D1Bitmap**)getter_AddRefs(bitmap));
   if (!bitmap || FAILED(hr)) {
@@ -452,15 +454,19 @@ void DrawTargetD2D1::MaskSurface(const Pattern& aSource, SourceSurface* aMask,
     hr = mDC->CreateImageBrush(
         image,
         D2D1::ImageBrushProperties(D2D1::RectF(0, 0, size.width, size.height)),
-        D2D1::BrushProperties(1.0f, D2D1::IdentityMatrix()),
+        D2D1::BrushProperties(
+            1.0f, D2D1::Matrix3x2F::Translation(aMask->GetRect().x,
+                                                aMask->GetRect().y)),
         getter_AddRefs(maskBrush));
     MOZ_ASSERT(SUCCEEDED(hr));
 
-    mDC->PushLayer(D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr,
-                                          D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-                                          D2D1::IdentityMatrix(), 1.0f,
-                                          maskBrush, D2D1_LAYER_OPTIONS1_NONE),
-                   nullptr);
+    mDC->PushLayer(
+        D2D1::LayerParameters1(D2D1::InfiniteRect(), nullptr,
+                               D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                               D2D1::Matrix3x2F::Translation(
+                                   aMask->GetRect().x, aMask->GetRect().y),
+                               1.0f, maskBrush, D2D1_LAYER_OPTIONS1_NONE),
+        nullptr);
 
     mDC->FillRectangle(D2DRect(dest), source);
     mDC->PopLayer();
@@ -480,7 +486,8 @@ void DrawTargetD2D1::MaskSurface(const Pattern& aSource, SourceSurface* aMask,
   // FillOpacityMask only works if the antialias mode is MODE_ALIASED
   mDC->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
 
-  Rect maskRect = Rect(0.f, 0.f, Float(size.width), Float(size.height));
+  Rect maskRect = Rect(aMask->GetRect().x, aMask->GetRect().y,
+                       Float(size.width), Float(size.height));
   RefPtr<ID2D1Brush> brush = CreateBrushForPattern(aSource, aOptions.mAlpha);
   mDC->FillOpacityMask(bitmap, brush, D2D1_OPACITY_MASK_CONTENT_GRAPHICS,
                        D2DRect(dest), D2DRect(maskRect));
@@ -981,6 +988,8 @@ void DrawTargetD2D1::PushLayer(bool aOpaque, Float aOpacity,
     mDC->SetTransform(D2D1::IdentityMatrix());
     mTransformDirty = true;
 
+    maskTransform =
+        maskTransform.PreTranslate(aMask->GetRect().X(), aMask->GetRect().Y());
     // The mask is given in user space. Our layer will apply it in device space.
     maskTransform = maskTransform * mTransform;
 
@@ -1098,6 +1107,29 @@ bool DrawTargetD2D1::CanCreateSimilarDrawTarget(const IntSize& aSize,
   }
   return (dc->GetMaximumBitmapSize() >= UINT32(aSize.width) &&
           dc->GetMaximumBitmapSize() >= UINT32(aSize.height));
+}
+
+RefPtr<DrawTarget> DrawTargetD2D1::CreateClippedDrawTarget(
+    const Rect& aBounds, SurfaceFormat aFormat) {
+  RefPtr<DrawTarget> result;
+
+  if (!aBounds.IsEmpty()) {
+    PushClipRect(aBounds);
+  }
+
+  D2D1_RECT_F clipRect;
+  bool isAligned;
+  GetDeviceSpaceClipRect(clipRect, isAligned);
+  IntRect rect = RoundedOut(ToRect(clipRect));
+
+  RefPtr<DrawTarget> dt = CreateSimilarDrawTarget(rect.Size(), aFormat);
+  result = gfx::Factory::CreateOffsetDrawTarget(dt, rect.TopLeft());
+  result->SetTransform(mTransform);
+  if (!aBounds.IsEmpty()) {
+    PopClip();
+  }
+
+  return result;
 }
 
 already_AddRefed<PathBuilder> DrawTargetD2D1::CreatePathBuilder(
@@ -1675,12 +1707,13 @@ static D2D1_RECT_F IntersectRect(const D2D1_RECT_F& aRect1,
 
 bool DrawTargetD2D1::GetDeviceSpaceClipRect(D2D1_RECT_F& aClipRect,
                                             bool& aIsPixelAligned) {
+  aIsPixelAligned = true;
+  aClipRect = D2D1::RectF(0, 0, mSize.width, mSize.height);
+
   if (!CurrentLayer().mPushedClips.size()) {
     return false;
   }
 
-  aIsPixelAligned = true;
-  aClipRect = D2D1::RectF(0, 0, mSize.width, mSize.height);
   for (auto iter = CurrentLayer().mPushedClips.begin();
        iter != CurrentLayer().mPushedClips.end(); iter++) {
     if (iter->mGeometry) {
@@ -1951,11 +1984,7 @@ already_AddRefed<ID2D1Brush> DrawTargetD2D1::CreateBrushForPattern(
     }
 
     if (pat->mBegin == pat->mEnd) {
-      uint32_t stopCount = stops->mStopCollection->GetGradientStopCount();
-      std::vector<D2D1_GRADIENT_STOP> d2dStops(stopCount);
-      stops->mStopCollection->GetGradientStops(&d2dStops.front(), stopCount);
-      d2dStops.back().color.a *= aAlpha;
-      return GetSolidColorBrush(d2dStops.back().color);
+      return CreateTransparentBlackBrush();
     }
 
     mDC->CreateLinearGradientBrush(
@@ -1980,6 +2009,10 @@ already_AddRefed<ID2D1Brush> DrawTargetD2D1::CreateBrushForPattern(
 
     if (!stops) {
       gfxDebug() << "No stops specified for gradient pattern.";
+      return CreateTransparentBlackBrush();
+    }
+
+    if (pat->mCenter1 == pat->mCenter2 && pat->mRadius1 == pat->mRadius2) {
       return CreateTransparentBlackBrush();
     }
 

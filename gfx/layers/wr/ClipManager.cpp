@@ -281,17 +281,18 @@ Maybe<wr::WrSpaceAndClip> ClipManager::DefineScrollLayers(
 
   LayoutDeviceRect contentRect =
       metrics.GetExpandedScrollableRect() * metrics.GetDevPixelsPerCSSPixel();
-  LayoutDeviceRect clipBounds = LayoutDeviceRect::FromUnknownRect(
-      metrics.GetCompositionBounds().ToUnknownRect());
+  LayoutDeviceRect clipBounds =
+      metrics.GetCompositionBounds() /
+      LayoutDeviceToParentLayerScale(metrics.GetPresShellResolution());
   // The content rect that we hand to PushScrollLayer should be relative to
-  // the same origin as the clipBounds that we hand to PushScrollLayer - that
-  // is, both of them should be relative to the stacking context `aSc`.
-  // However, when we get the scrollable rect from the FrameMetrics, the origin
-  // has nothing to do with the position of the frame but instead represents
-  // the minimum allowed scroll offset of the scrollable content. While APZ
-  // uses this to clamp the scroll position, we don't need to send this to
-  // WebRender at all. Instead, we take the position from the composition
-  // bounds.
+  // the same origin as the clipBounds that we hand to PushScrollLayer -
+  // that is, both of them should be relative to the stacking context `aSc`.
+  // However, when we get the scrollable rect from the FrameMetrics, the
+  // origin has nothing to do with the position of the frame but instead
+  // represents the minimum allowed scroll offset of the scrollable content.
+  // While APZ uses this to clamp the scroll position, we don't need to send
+  // this to WebRender at all. Instead, we take the position from the
+  // composition bounds.
   contentRect.MoveTo(clipBounds.TopLeft());
 
   Maybe<wr::WrSpaceAndClip> parent = ancestorSpaceAndClip;
@@ -301,8 +302,8 @@ Maybe<wr::WrSpaceAndClip> ClipManager::DefineScrollLayers(
   LayoutDevicePoint scrollOffset =
       metrics.GetScrollOffset() * metrics.GetDevPixelsPerCSSPixel();
   return Some(mBuilder->DefineScrollLayer(
-      viewId, parent, wr::ToRoundedLayoutRect(contentRect),
-      wr::ToRoundedLayoutRect(clipBounds), wr::ToLayoutPoint(scrollOffset)));
+      viewId, parent, wr::ToLayoutRect(contentRect),
+      wr::ToLayoutRect(clipBounds), wr::ToLayoutPoint(scrollOffset)));
 }
 
 Maybe<wr::WrClipChainId> ClipManager::DefineClipChain(
@@ -339,7 +340,7 @@ Maybe<wr::WrClipChainId> ClipManager::DefineClipChain(
     // Define the clip
     spaceAndClip->space = SpatialIdAfterOverride(spaceAndClip->space);
     wr::WrClipId clipId = mBuilder->DefineClip(
-        spaceAndClip, wr::ToRoundedLayoutRect(clip), &wrRoundedRects);
+        spaceAndClip, wr::ToLayoutRect(clip), &wrRoundedRects);
     clipIds.AppendElement(clipId);
     cache[chain] = clipId;
     CLIP_LOG("cache[%p] <= %zu\n", chain, clipId.id);
@@ -370,7 +371,7 @@ void ClipManager::ItemClips::UpdateSeparateLeaf(
   Maybe<wr::LayoutRect> clipLeaf;
   if (mSeparateLeaf) {
     MOZ_ASSERT(mChain);
-    clipLeaf.emplace(wr::ToRoundedLayoutRect(LayoutDeviceRect::FromAppUnits(
+    clipLeaf.emplace(wr::ToLayoutRect(LayoutDeviceRect::FromAppUnits(
         mChain->mClip.GetClipRect(), aAppUnitsPerDevPixel)));
   }
 

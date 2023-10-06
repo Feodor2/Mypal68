@@ -95,6 +95,7 @@ class nsXPLookAndFeel : public mozilla::LookAndFeel {
   static void IntPrefChanged(nsLookAndFeelIntPref* data);
   static void FloatPrefChanged(nsLookAndFeelFloatPref* data);
   static void ColorPrefChanged(unsigned int index, const char* prefName);
+  static void NotifyPrefChanged();
   void InitFromPref(nsLookAndFeelIntPref* aPref);
   void InitFromPref(nsLookAndFeelFloatPref* aPref);
   void InitColorFromPref(int32_t aIndex);
@@ -114,8 +115,6 @@ class nsXPLookAndFeel : public mozilla::LookAndFeel {
   static const char sColorPrefs[][41];
   static int32_t sCachedColors[size_t(LookAndFeel::ColorID::End)];
   static int32_t sCachedColorBits[COLOR_CACHE_SIZE];
-  static bool sUseNativeColors;
-  static bool sFindbarModalHighlight;
 
   static nsXPLookAndFeel* sInstance;
   static bool sShutdown;

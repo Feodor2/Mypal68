@@ -19,7 +19,6 @@ namespace dom {
 class SVGElement;
 class SVGMatrix;
 class DOMSVGTransform;
-}  // namespace dom
 
 /**
  * Class DOMSVGTransformList
@@ -149,6 +148,7 @@ class DOMSVGTransformList final : public nsISupports, public nsWrapperCache {
   RefPtr<dom::DOMSVGAnimatedTransformList> mAList;
 };
 
+}  // namespace dom
 }  // namespace mozilla
 
 #endif  // MOZILLA_DOMSVGTRANSFORMLIST_H__

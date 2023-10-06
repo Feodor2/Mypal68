@@ -173,7 +173,7 @@ class PresShell final : public nsStubDocumentObserver,
   typedef nsTHashtable<nsPtrHashKey<nsIFrame>> VisibleFrames;
 
  public:
-  PresShell();
+  explicit PresShell(Document* aDocument);
 
   // nsISupports
   NS_DECL_ISUPPORTS
@@ -234,7 +234,7 @@ class PresShell final : public nsStubDocumentObserver,
   static nsAccessibilityService* GetAccessibilityService();
 #endif  // #ifdef ACCESSIBILITY
 
-  void Init(Document*, nsPresContext*, nsViewManager*);
+  void Init(nsPresContext*, nsViewManager*);
 
   /**
    * All callers are responsible for calling |Destroy| after calling
@@ -255,26 +255,26 @@ class PresShell final : public nsStubDocumentObserver,
    * on out-of-memory.
    */
   void* AllocateFrame(nsQueryFrame::FrameIID aID, size_t aSize) {
-    void* result = mFrameArena.AllocateByFrameID(aID, aSize);
-    RecordAlloc(result);
-    return result;
+#define FRAME_ID(classname, ...)                                  \
+  static_assert(size_t(nsQueryFrame::FrameIID::classname##_id) == \
+                    size_t(eArenaObjectID_##classname),           \
+                "");
+#define ABSTRACT_FRAME_ID(classname)                              \
+  static_assert(size_t(nsQueryFrame::FrameIID::classname##_id) == \
+                    size_t(eArenaObjectID_##classname),           \
+                "");
+#include "mozilla/FrameIdList.h"
+#undef FRAME_ID
+#undef ABSTRACT_FRAME_ID
+    return AllocateByObjectID(ArenaObjectID(size_t(aID)), aSize);
   }
 
   void FreeFrame(nsQueryFrame::FrameIID aID, void* aPtr) {
-    RecordFree(aPtr);
-    if (!mIsDestroying) {
-      mFrameArena.FreeByFrameID(aID, aPtr);
-    }
+    return FreeByObjectID(ArenaObjectID(size_t(aID)), aPtr);
   }
 
-  /**
-   * This is for allocating other types of objects (not frames).  Separate free
-   * lists are maintained for each type (aID), which must always correspond to
-   * the same aSize value.  AllocateByObjectID is infallible and will abort on
-   * out-of-memory.
-   */
   void* AllocateByObjectID(ArenaObjectID aID, size_t aSize) {
-    void* result = mFrameArena.AllocateByObjectID(aID, aSize);
+    void* result = mFrameArena.Allocate(aID, aSize);
     RecordAlloc(result);
     return result;
   }
@@ -282,7 +282,7 @@ class PresShell final : public nsStubDocumentObserver,
   void FreeByObjectID(ArenaObjectID aID, void* aPtr) {
     RecordFree(aPtr);
     if (!mIsDestroying) {
-      mFrameArena.FreeByObjectID(aID, aPtr);
+      mFrameArena.Free(aID, aPtr);
     }
   }
 
@@ -341,13 +341,20 @@ class PresShell final : public nsStubDocumentObserver,
    * coordinates for aWidth and aHeight must be in standard nscoord's.
    */
   MOZ_CAN_RUN_SCRIPT nsresult
-  ResizeReflow(nscoord aWidth, nscoord aHeight, nscoord aOldWidth = 0,
-               nscoord aOldHeight = 0,
-               ResizeReflowOptions aOptions = ResizeReflowOptions::NoOption);
-  MOZ_CAN_RUN_SCRIPT nsresult ResizeReflowIgnoreOverride(
-      nscoord aWidth, nscoord aHeight, nscoord aOldWidth, nscoord aOldHeight,
-      ResizeReflowOptions aOptions = ResizeReflowOptions::NoOption);
+  ResizeReflow(nscoord aWidth, nscoord aHeight,
+               ResizeReflowOptions = ResizeReflowOptions::NoOption);
+  MOZ_CAN_RUN_SCRIPT nsresult ResizeReflowIgnoreOverride(nscoord aWidth,
+                                                         nscoord aHeight,
+                                                         ResizeReflowOptions);
 
+ private:
+  /**
+   * This is what ResizeReflowIgnoreOverride does when not shrink-wrapping (that
+   * is, when ResizeReflowOptions::BSizeLimit is not specified).
+   */
+  void SimpleResizeReflow(nscoord aWidth, nscoord aHeight, ResizeReflowOptions);
+
+ public:
   /**
    * Returns true if this document has a potentially zoomable viewport,
    * allowing for its layout and visual viewports to diverge.
@@ -578,29 +585,6 @@ class PresShell final : public nsStubDocumentObserver,
                                ScrollFlags aScrollFlags);
 
   /**
-   * Determine if a rectangle specified in the frame's coordinate system
-   * intersects "enough" with the viewport to be considered visible. This
-   * is not a strict test against the viewport -- it's a test against
-   * the intersection of the viewport and the frame's ancestor scrollable
-   * frames. If it doesn't intersect enough, return a value indicating
-   * which direction the frame's topmost ancestor scrollable frame would
-   * need to be scrolled to bring the frame into view.
-   * @param aFrame frame that aRect coordinates are specified relative to
-   * @param aRect rectangle in twips to test for visibility
-   * @param aMinTwips is the minimum distance in from the edge of the
-   *                  visible area that an object must be to be counted
-   *                  visible
-   * @return RectVisibility::Visible if the rect is visible
-   *         RectVisibility::AboveViewport
-   *         RectVisibility::BelowViewport
-   *         RectVisibility::LeftOfViewport
-   *         RectVisibility::RightOfViewport rectangle is outside the
-   *         topmost ancestor scrollable frame in the specified direction
-   */
-  RectVisibility GetRectVisibility(nsIFrame* aFrame, const nsRect& aRect,
-                                   nscoord aMinTwips) const;
-
-  /**
    * Suppress notification of the frame manager that frames are
    * being destroyed.
    */
@@ -745,7 +729,7 @@ class PresShell final : public nsStubDocumentObserver,
   /**
    * Reconstruct frames for all elements in the document
    */
-  void ReconstructFrames();
+  MOZ_CAN_RUN_SCRIPT void ReconstructFrames();
 
   /**
    * See if reflow verification is enabled. To enable reflow verification add
@@ -977,7 +961,6 @@ class PresShell final : public nsStubDocumentObserver,
    * of painting.  If we are ignoring, then layers aren't clipped to
    * the CSS viewport and scrollbars aren't drawn.
    */
-  void SetIgnoreViewportScrolling(bool aIgnore);
   bool IgnoringViewportScrolling() const {
     return !!(mRenderingStateFlags &
               RenderingStateFlags::IgnoringViewportScrolling);
@@ -1178,7 +1161,7 @@ class PresShell final : public nsStubDocumentObserver,
    */
   bool HasHandledUserInput() const { return mHasHandledUserInput; }
 
-  void FireResizeEvent();
+  MOZ_CAN_RUN_SCRIPT void FireResizeEvent();
 
   void NativeAnonymousContentRemoved(nsIContent* aAnonContent);
 
@@ -2815,8 +2798,11 @@ class PresShell final : public nsStubDocumentObserver,
 
   // These are the same Document and PresContext owned by the DocViewer.
   // we must share ownership.
-  RefPtr<Document> mDocument;
-  RefPtr<nsPresContext> mPresContext;
+  // mDocument and mPresContext should've never been cleared nor swapped with
+  // another instance while PresShell instance is alive so that it's safe to
+  // call their can-run- script methods without local RefPtr variables.
+  RefPtr<Document> const mDocument;
+  RefPtr<nsPresContext> const mPresContext;
   // The document's style set owns it but we maintain a ref, may be null.
   RefPtr<StyleSheet> mPrefStyleSheet;
   UniquePtr<nsCSSFrameConstructor> mFrameConstructor;
@@ -2972,7 +2958,8 @@ class PresShell final : public nsStubDocumentObserver,
   // The focus information needed for async keyboard scrolling
   FocusTarget mAPZFocusTarget;
 
-  nsPresArena<8192> mFrameArena;
+  using Arena = nsPresArena<8192, ArenaObjectID, eArenaObjectID_COUNT>;
+  Arena mFrameArena;
 
   Maybe<nsPoint> mVisualViewportOffset;
 

@@ -203,7 +203,9 @@ fn maybe_radius_yaml(radius: &BorderRadius) -> Option<Yaml> {
 
 fn common_node(v: &mut Table, clip_id_mapper: &mut ClipIdMapper, info: &CommonItemProperties) {
     rect_node(v, "clip-rect", &info.clip_rect);
-    bool_node(v, "backface-visible", info.is_backface_visible);
+    bool_node(v, "backface-visible", info.flags.contains(PrimitiveFlags::IS_BACKFACE_VISIBLE));
+    bool_node(v, "scrollbar-container", info.flags.contains(PrimitiveFlags::IS_SCROLLBAR_CONTAINER));
+    bool_node(v, "scrollbar-thumb", info.flags.contains(PrimitiveFlags::IS_SCROLLBAR_THUMB));
 
     clip_and_scroll_node(v, clip_id_mapper, info.clip_id, info.spatial_id);
 
@@ -398,6 +400,31 @@ fn write_filter_primitives(
             FilterPrimitiveKind::ComponentTransfer(component_transfer_primitive) => {
                 yaml_node(&mut table, "type", Yaml::String("component-transfer".into()));
                 filter_input_node(&mut table, "in", component_transfer_primitive.input);
+            }
+            FilterPrimitiveKind::Offset(info) => {
+                yaml_node(&mut table, "type", Yaml::String("offset".into()));
+                filter_input_node(&mut table, "in", info.input);
+                vector_node(&mut table, "offset", &info.offset);
+            }
+            FilterPrimitiveKind::Composite(info) => {
+                yaml_node(&mut table, "type", Yaml::String("composite".into()));
+                filter_input_node(&mut table, "in1", info.input1);
+                filter_input_node(&mut table, "in2", info.input2);
+
+                let operator = match info.operator {
+                    CompositeOperator::Over => "over",
+                    CompositeOperator::In => "in",
+                    CompositeOperator::Out => "out",
+                    CompositeOperator::Atop => "atop",
+                    CompositeOperator::Xor => "xor",
+                    CompositeOperator::Lighter => "lighter",
+                    CompositeOperator::Arithmetic(..) => "arithmetic",
+                };
+                str_node(&mut table, "operator", operator);
+
+                if let CompositeOperator::Arithmetic(k_vals) = info.operator {
+                    f32_vec_node(&mut table, "k-values", &k_vals);
+                }
             }
         }
         enum_node(&mut table, "color-space", filter_primitive.color_space);
@@ -828,9 +855,10 @@ impl YamlFrameWriter {
         );
 
         assert!(data.stride > 0);
-        let (color_type, bpp) = match data.format {
-            ImageFormat::BGRA8 => (ColorType::RGBA(8), 4),
-            ImageFormat::R8 => (ColorType::Gray(8), 1),
+        let (color_type, bpp, do_unpremultiply) = match data.format {
+            ImageFormat::RGBA8 |
+            ImageFormat::BGRA8 => (ColorType::RGBA(8), 4, true),
+            ImageFormat::R8 => (ColorType::Gray(8), 1, false),
             _ => {
                 println!(
                     "Failed to write image with format {:?}, dimensions {}x{}, stride {}",
@@ -844,7 +872,7 @@ impl YamlFrameWriter {
         };
 
         if data.stride == data.width * bpp {
-            if data.format == ImageFormat::BGRA8 {
+            if do_unpremultiply {
                 unpremultiply(bytes.as_mut_slice());
             }
             save_buffer(
@@ -863,7 +891,7 @@ impl YamlFrameWriter {
                     chunk[.. (data.width * bpp) as usize].iter().cloned()
                 })
                 .collect();
-            if data.format == ImageFormat::BGRA8 {
+            if do_unpremultiply {
                 unpremultiply(tmp.as_mut_slice());
             }
 
@@ -1027,6 +1055,29 @@ impl YamlFrameWriter {
                     }
                 }
                 DisplayItem::Image(item) => {
+                    common_node(&mut v, clip_id_mapper, &item.common);
+                    rect_node(&mut v, "bounds", &item.bounds);
+                    if let Some(path) = self.path_for_image(item.image_key) {
+                        path_node(&mut v, "image", &path);
+                    }
+                    if let Some(&CachedImage {
+                        tiling: Some(tile_size),
+                        ..
+                    }) = self.images.get(&item.image_key)
+                    {
+                        u32_node(&mut v, "tile-size", tile_size as u32);
+                    }
+                    match item.image_rendering {
+                        ImageRendering::Auto => (),
+                        ImageRendering::CrispEdges => str_node(&mut v, "rendering", "crisp-edges"),
+                        ImageRendering::Pixelated => str_node(&mut v, "rendering", "pixelated"),
+                    };
+                    match item.alpha_type {
+                        AlphaType::PremultipliedAlpha => str_node(&mut v, "alpha-type", "premultiplied-alpha"),
+                        AlphaType::Alpha => str_node(&mut v, "alpha-type", "alpha"),
+                    };
+                }
+                DisplayItem::RepeatingImage(item) => {
                     common_node(&mut v, clip_id_mapper, &item.common);
                     rect_node(&mut v, "bounds", &item.bounds);
                     if let Some(path) = self.path_for_image(item.image_key) {
@@ -1244,7 +1295,18 @@ impl YamlFrameWriter {
                         item.spatial_id
                     );
                     point_node(&mut v, "origin", &item.origin);
-                    bool_node(&mut v, "backface-visible", item.is_backface_visible);
+                    bool_node(
+                        &mut v,
+                        "backface-visible",
+                        item.prim_flags.contains(PrimitiveFlags::IS_BACKFACE_VISIBLE));
+                    bool_node(
+                        &mut v,
+                        "scrollbar-container",
+                        item.prim_flags.contains(PrimitiveFlags::IS_SCROLLBAR_CONTAINER));
+                    bool_node(
+                        &mut v,
+                        "scrollbar-thumb",
+                        item.prim_flags.contains(PrimitiveFlags::IS_SCROLLBAR_THUMB));
                     write_stacking_context(
                         &mut v,
                         &item.stacking_context,

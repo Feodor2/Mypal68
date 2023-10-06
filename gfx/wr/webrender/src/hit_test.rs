@@ -2,10 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use api::{BorderRadius, ClipMode, HitTestFlags, HitTestItem, HitTestResult, ItemTag};
+use api::{BorderRadius, ClipMode, HitTestFlags, HitTestItem, HitTestResult, ItemTag, PrimitiveFlags};
 use api::PipelineId;
 use api::units::*;
-use crate::clip::{ClipChainId, ClipDataStore, ClipNode, ClipItem, ClipStore};
+use crate::clip::{ClipChainId, ClipDataStore, ClipNode, ClipItemKind, ClipStore};
 use crate::clip::{rounded_rectangle_contains_point};
 use crate::clip_scroll_tree::{SpatialNodeIndex, ClipScrollTree};
 use crate::internal_types::{FastHashMap, LayoutPrimitiveInfo};
@@ -39,21 +39,18 @@ pub struct HitTestClipNode {
 }
 
 impl HitTestClipNode {
-    fn new(local_pos: LayoutPoint, node: &ClipNode) -> Self {
-        let region = match node.item {
-            ClipItem::Rectangle(size, mode) => {
-                let rect = LayoutRect::new(local_pos, size);
+    fn new(node: &ClipNode) -> Self {
+        let region = match node.item.kind {
+            ClipItemKind::Rectangle { rect, mode } => {
                 HitTestRegion::Rectangle(rect, mode)
             }
-            ClipItem::RoundedRectangle(size, radii, mode) => {
-                let rect = LayoutRect::new(local_pos, size);
-                HitTestRegion::RoundedRectangle(rect, radii, mode)
+            ClipItemKind::RoundedRectangle { rect, radius, mode } => {
+                HitTestRegion::RoundedRectangle(rect, radius, mode)
             }
-            ClipItem::Image { size, .. } => {
-                let rect = LayoutRect::new(local_pos, size);
+            ClipItemKind::Image { rect, .. } => {
                 HitTestRegion::Rectangle(rect, ClipMode::Clip)
             }
-            ClipItem::BoxShadow(_) => HitTestRegion::Invalid,
+            ClipItemKind::BoxShadow { .. } => HitTestRegion::Invalid,
         };
 
         HitTestClipNode {
@@ -107,7 +104,7 @@ impl HitTestingItem {
             rect: info.rect,
             clip_rect: info.clip_rect,
             tag,
-            is_backface_visible: info.is_backface_visible,
+            is_backface_visible: info.flags.contains(PrimitiveFlags::IS_BACKFACE_VISIBLE),
             spatial_node_index,
             clip_chain_range,
         }
@@ -278,8 +275,8 @@ impl HitTester {
         for node in &clip_store.clip_chain_nodes {
             let clip_node = &clip_data_store[node.handle];
             self.clip_chains.push(HitTestClipChainNode {
-                region: HitTestClipNode::new(node.local_pos, clip_node),
-                spatial_node_index: node.spatial_node_index,
+                region: HitTestClipNode::new(clip_node),
+                spatial_node_index: clip_node.item.spatial_node_index,
                 parent_clip_chain_id: HitTestClipChainId(node.parent_clip_chain_id.0),
             });
         }

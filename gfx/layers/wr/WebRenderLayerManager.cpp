@@ -311,7 +311,7 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
                                renderRoot == wr::RenderRoot::Default
                                    ? LayoutDeviceSize(size)
                                    : LayoutDeviceSize());
-    wrRects[renderRoot] = wr::ToRoundedLayoutRect(rects[renderRoot]);
+    wrRects[renderRoot] = wr::ToLayoutRect(rects[renderRoot]);
   }
 
   wr::DisplayListBuilder builder(
@@ -342,8 +342,8 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
     mWebRenderCommandBuilder.BuildWebRenderCommands(
         builder, resourceUpdates, aDisplayList, aDisplayListBuilder,
         mScrollDatas, std::move(aFilters));
-    builderDumpIndex = mWebRenderCommandBuilder.GetBuilderDumpIndex(
-        builder.GetRenderRoot());
+    builderDumpIndex =
+        mWebRenderCommandBuilder.GetBuilderDumpIndex(builder.GetRenderRoot());
     containsSVGGroup = mWebRenderCommandBuilder.GetContainsSVGGroup();
   } else {
     // ViewToPaint does not have frame yet, then render only background clolor.

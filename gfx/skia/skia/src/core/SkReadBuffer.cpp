@@ -5,8 +5,9 @@
  * found in the LICENSE file.
  */
 
+#include "SkAutoMalloc.h"
 #include "SkBitmap.h"
-#include "SkDeduper.h"
+#include "SkData.h"
 #include "SkImage.h"
 #include "SkImageGenerator.h"
 #include "SkMakeUnique.h"
@@ -16,6 +17,8 @@
 #include "SkSafeMath.h"
 #include "SkStream.h"
 #include "SkTypeface.h"
+
+#ifndef SK_DISABLE_READBUFFER
 
 namespace {
     // This generator intentionally should always fail on all attempts to get its pixels,
@@ -38,35 +41,23 @@ namespace {
 
 SkReadBuffer::SkReadBuffer() {
     fVersion = 0;
-    fMemoryPtr = nullptr;
 
     fTFArray = nullptr;
     fTFCount = 0;
 
     fFactoryArray = nullptr;
     fFactoryCount = 0;
-#ifdef DEBUG_NON_DETERMINISTIC_ASSERT
-    fDecodedBitmapIndex = -1;
-#endif // DEBUG_NON_DETERMINISTIC_ASSERT
 }
 
 SkReadBuffer::SkReadBuffer(const void* data, size_t size) {
     fVersion = 0;
     this->setMemory(data, size);
-    fMemoryPtr = nullptr;
 
     fTFArray = nullptr;
     fTFCount = 0;
 
     fFactoryArray = nullptr;
     fFactoryCount = 0;
-#ifdef DEBUG_NON_DETERMINISTIC_ASSERT
-    fDecodedBitmapIndex = -1;
-#endif // DEBUG_NON_DETERMINISTIC_ASSERT
-}
-
-SkReadBuffer::~SkReadBuffer() {
-    sk_free(fMemoryPtr);
 }
 
 void SkReadBuffer::setMemory(const void* data, size_t size) {
@@ -260,67 +251,95 @@ bool SkReadBuffer::readScalarArray(SkScalar* values, size_t size) {
     return this->readArray(values, size, sizeof(SkScalar));
 }
 
+sk_sp<SkData> SkReadBuffer::readByteArrayAsData() {
+    size_t numBytes = this->getArrayCount();
+    if (!this->validate(fReader.isAvailable(numBytes))) {
+        return nullptr;
+    }
+
+    SkAutoMalloc buffer(numBytes);
+    if (!this->readByteArray(buffer.get(), numBytes)) {
+        return nullptr;
+    }
+
+    return SkData::MakeFromMalloc(buffer.release(), numBytes);
+}
+
 uint32_t SkReadBuffer::getArrayCount() {
     const size_t inc = sizeof(uint32_t);
     fError = fError || !IsPtrAlign4(fReader.peek()) || !fReader.isAvailable(inc);
     return fError ? 0 : *(uint32_t*)fReader.peek();
 }
 
+/*  Format:
+ *  (subset) width, height
+ *  (subset) origin x, y
+ *  size (31bits)
+ *  data [ encoded, with raw width/height ]
+ */
 sk_sp<SkImage> SkReadBuffer::readImage() {
-    if (fInflator) {
-        SkImage* img = fInflator->getImage(this->read32());
-        return img ? sk_ref_sp(img) : nullptr;
+    SkIRect bounds;
+    if (this->isVersionLT(kStoreImageBounds_Version)) {
+        bounds.fLeft = bounds.fTop = 0;
+        bounds.fRight = this->read32();
+        bounds.fBottom = this->read32();
+    } else {
+        this->readIRect(&bounds);
     }
-
-    int width = this->read32();
-    int height = this->read32();
+    const int width = bounds.width();
+    const int height = bounds.height();
     if (width <= 0 || height <= 0) {    // SkImage never has a zero dimension
         this->validate(false);
         return nullptr;
     }
 
-    /*
-     *  What follows is a 32bit encoded size.
-     *   0 : failure, nothing else to do
-     *  <0 : negative (int32_t) of a custom encoded blob using SerialProcs
-     *  >0 : standard encoded blob size (use MakeFromEncoded)
-     */
-
-    int32_t encoded_size = this->read32();
-    if (encoded_size == 0) {
+    int32_t size = this->read32();
+    if (size == SK_NaN32) {
+        // 0x80000000 is never valid, since it cannot be passed to abs().
+        this->validate(false);
+        return nullptr;
+    }
+    if (size == 0) {
         // The image could not be encoded at serialization time - return an empty placeholder.
         return MakeEmptyImage(width, height);
     }
-    if (encoded_size == 1) {
+
+    // we used to negate the size for "custom" encoded images -- ignore that signal (Dec-2017)
+    size = SkAbs32(size);
+    if (size == 1) {
         // legacy check (we stopped writing this for "raw" images Nov-2017)
         this->validate(false);
         return nullptr;
     }
 
-    size_t size = SkAbs32(encoded_size);
+    // Preflight check to make sure there's enough stuff in the buffer before
+    // we allocate the memory. This helps the fuzzer avoid OOM when it creates
+    // bad/corrupt input.
+    if (!this->validateCanReadN<uint8_t>(size)) {
+        return nullptr;
+    }
+
     sk_sp<SkData> data = SkData::MakeUninitialized(size);
     if (!this->readPad32(data->writable_data(), size)) {
         this->validate(false);
         return nullptr;
     }
-    int32_t originX = this->read32();
-    int32_t originY = this->read32();
-    if (originX < 0 || originY < 0) {
-        this->validate(false);
-        return nullptr;
+    if (this->isVersionLT(kDontNegateImageSize_Version)) {
+        (void)this->read32();   // originX
+        (void)this->read32();   // originY
     }
 
     sk_sp<SkImage> image;
-    if (encoded_size < 0) {     // custom encoded, need serial proc
-        if (fProcs.fImageProc) {
-            image = fProcs.fImageProc(data->data(), data->size(), fProcs.fImageCtx);
-        } else {
-            // Nothing to do (no client proc), but since we've already "read" the custom data,
-            // wee just leave image as nullptr.
+    if (fProcs.fImageProc) {
+        image = fProcs.fImageProc(data->data(), data->size(), fProcs.fImageCtx);
+    }
+    if (!image) {
+        image = SkImage::MakeFromEncoded(std::move(data));
+    }
+    if (image) {
+        if (bounds.x() || bounds.y() || width < image->width() || height < image->height()) {
+            image = image->makeSubset(bounds);
         }
-    } else {
-        SkIRect subset = SkIRect::MakeXYWH(originX, originY, width, height);
-        image = SkImage::MakeFromEncoded(std::move(data), &subset);
     }
     // Question: are we correct to return an "empty" image instead of nullptr, if the decoder
     //           failed for some reason?
@@ -328,10 +347,6 @@ sk_sp<SkImage> SkReadBuffer::readImage() {
 }
 
 sk_sp<SkTypeface> SkReadBuffer::readTypeface() {
-    if (fInflator) {
-        return sk_ref_sp(fInflator->getTypeface(this->read32()));
-    }
-
     // Read 32 bits (signed)
     //   0 -- return null (default font)
     //  >0 -- index
@@ -344,7 +359,7 @@ sk_sp<SkTypeface> SkReadBuffer::readTypeface() {
         if (!this->validate(index <= fTFCount)) {
             return nullptr;
         }
-        return sk_ref_sp(fTFArray[index - 1]);
+        return fTFArray[index - 1];
     } else {    // custom
         size_t size = sk_negate_to_size_t(index);
         const void* data = this->skip(size);
@@ -358,12 +373,7 @@ sk_sp<SkTypeface> SkReadBuffer::readTypeface() {
 SkFlattenable* SkReadBuffer::readFlattenable(SkFlattenable::Type ft) {
     SkFlattenable::Factory factory = nullptr;
 
-    if (fInflator) {
-        factory = fInflator->getFactory(this->read32());
-        if (!factory) {
-            return nullptr;
-        }
-    } else if (fFactoryCount > 0) {
+    if (fFactoryCount > 0) {
         int32_t index = this->read32();
         if (0 == index || !this->isValid()) {
             return nullptr; // writer failed to give us the flattenable
@@ -375,13 +385,13 @@ SkFlattenable* SkReadBuffer::readFlattenable(SkFlattenable::Type ft) {
         }
         factory = fFactoryArray[index];
     } else {
-        SkString name;
         if (this->peekByte()) {
             // If the first byte is non-zero, the flattenable is specified by a string.
+            SkString name;
             this->readString(&name);
 
-            // Add the string to the dictionary.
-            fFlattenableDict.set(fFlattenableDict.count() + 1, name);
+            factory = SkFlattenable::NameToFactory(name.c_str());
+            fFlattenableDict.set(fFlattenableDict.count() + 1, factory);
         } else {
             // Read the index.  We are guaranteed that the first byte
             // is zeroed, so we must shift down a byte.
@@ -389,19 +399,14 @@ SkFlattenable* SkReadBuffer::readFlattenable(SkFlattenable::Type ft) {
             if (index == 0) {
                 return nullptr; // writer failed to give us the flattenable
             }
-            SkString* namePtr = fFlattenableDict.find(index);
-            if (!this->validate(namePtr != nullptr)) {
-                return nullptr;
+
+            if (SkFlattenable::Factory* found = fFlattenableDict.find(index)) {
+                factory = *found;
             }
-            name = *namePtr;
         }
 
-        // Check if a custom Factory has been specified for this flattenable.
-        if (!(factory = this->getCustomFactory(name))) {
-            // If there is no custom Factory, check for a default.
-            if (!(factory = SkFlattenable::NameToFactory(name.c_str()))) {
-                return nullptr; // writer failed to give us the flattenable
-            }
+        if (!this->validate(factory != nullptr)) {
+            return nullptr;
         }
     }
 
@@ -426,6 +431,9 @@ SkFlattenable* SkReadBuffer::readFlattenable(SkFlattenable::Type ft) {
         // we must skip the remaining data
         fReader.skip(sizeRecorded);
     }
+    if (!this->isValid()) {
+        return nullptr;
+    }
     return obj.release();
 }
 
@@ -444,3 +452,5 @@ int32_t SkReadBuffer::checkInt(int32_t min, int32_t max) {
 SkFilterQuality SkReadBuffer::checkFilterQuality() {
     return this->checkRange<SkFilterQuality>(kNone_SkFilterQuality, kLast_SkFilterQuality);
 }
+
+#endif // #ifndef SK_DISABLE_READBUFFER

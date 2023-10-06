@@ -62,7 +62,7 @@ class DrawTargetOffset : public DrawTarget {
   virtual void DetachAllSnapshots() override;
   virtual IntSize GetSize() const override { return mDrawTarget->GetSize(); }
   virtual IntRect GetRect() const override {
-    return IntRect(mOrigin, GetSize());
+    return mDrawTarget->GetRect() + mOrigin;
   }
 
   virtual void Flush() override;
@@ -149,6 +149,15 @@ class DrawTargetOffset : public DrawTarget {
   virtual bool CanCreateSimilarDrawTarget(
       const IntSize& aSize, SurfaceFormat aFormat) const override {
     return mDrawTarget->CanCreateSimilarDrawTarget(aSize, aFormat);
+  }
+  virtual RefPtr<DrawTarget> CreateClippedDrawTarget(
+      const Rect& aBounds, SurfaceFormat aFormat) override {
+    RefPtr<DrawTarget> dt =
+        mDrawTarget->CreateClippedDrawTarget(aBounds, aFormat);
+    RefPtr<DrawTarget> result =
+        gfx::Factory::CreateOffsetDrawTarget(dt, mOrigin);
+    result->SetTransform(mTransform);
+    return result;
   }
 
   virtual already_AddRefed<PathBuilder> CreatePathBuilder(

@@ -240,24 +240,24 @@ DXGIYCbCrTextureData* IMFYCbCrImage::GetD3D9TextureData(Data aData,
   return DXGIYCbCrTextureData::Create(
       textureY, textureCb, textureCr, shareHandleY, shareHandleCb,
       shareHandleCr, aSize, aData.mYSize, aData.mCbCrSize, aData.mColorDepth,
-      aData.mYUVColorSpace);
+      aData.mYUVColorSpace, aData.mColorRange);
 }
 
 TextureClient* IMFYCbCrImage::GetD3D9TextureClient(
-    KnowsCompositor* aForwarder) {
+    KnowsCompositor* aKnowsCompositor) {
   DXGIYCbCrTextureData* textureData = GetD3D9TextureData(mData, GetSize());
   if (textureData == nullptr) {
     return nullptr;
   }
 
   mTextureClient = TextureClient::CreateWithData(
-      textureData, TextureFlags::DEFAULT, aForwarder->GetTextureForwarder());
+      textureData, TextureFlags::DEFAULT, aKnowsCompositor->GetTextureForwarder());
 
   return mTextureClient;
 }
 
 TextureClient* IMFYCbCrImage::GetD3D11TextureClient(
-    KnowsCompositor* aForwarder) {
+    KnowsCompositor* aKnowsCompositor) {
   if (!mAllocator) {
     return nullptr;
   }
@@ -289,21 +289,22 @@ TextureClient* IMFYCbCrImage::GetD3D11TextureClient(
   return mTextureClient;
 }
 
-TextureClient* IMFYCbCrImage::GetTextureClient(KnowsCompositor* aForwarder) {
+TextureClient* IMFYCbCrImage::GetTextureClient(
+    KnowsCompositor* aKnowsCompositor) {
   if (mTextureClient) {
     return mTextureClient;
   }
 
   RefPtr<ID3D11Device> device = gfx::DeviceManagerDx::Get()->GetImageDevice();
 
-  LayersBackend backend = aForwarder->GetCompositorBackendType();
+  LayersBackend backend = aKnowsCompositor->GetCompositorBackendType();
   if (!device || backend != LayersBackend::LAYERS_D3D11) {
     if (backend == LayersBackend::LAYERS_D3D9) {
-      return GetD3D9TextureClient(aForwarder);
+      return GetD3D9TextureClient(aKnowsCompositor);
     }
     return nullptr;
   }
-  return GetD3D11TextureClient(aForwarder);
+  return GetD3D11TextureClient(aKnowsCompositor);
 }
 
 }  // namespace layers

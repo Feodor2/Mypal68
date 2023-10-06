@@ -20,9 +20,10 @@
 #include "SVGPathSegUtils.h"
 #include <algorithm>
 
-using namespace mozilla;
 using namespace mozilla::dom::SVGPathSeg_Binding;
 using namespace mozilla::gfx;
+
+namespace mozilla {
 
 static inline bool IsMoveto(uint16_t aSegType) {
   return aSegType == PATHSEG_MOVETO_ABS || aSegType == PATHSEG_MOVETO_REL;
@@ -163,6 +164,12 @@ bool SVGPathData::GetDistancesFromOriginToEndsOfVisibleSegments(
     uint32_t segType = SVGPathSegUtils::DecodeType(mData[i]);
     SVGPathSegUtils::TraversePathSegment(&mData[i], state);
 
+    // With degenerately large point coordinates, TraversePathSegment can fail
+    // and end up producing NaNs.
+    if (!std::isfinite(state.length)) {
+      return false;
+    }
+
     // We skip all moveto commands except an initial moveto. See the text 'A
     // "move to" command does not count as an additional point when dividing up
     // the duration...':
@@ -271,13 +278,13 @@ static void ApproximateZeroLengthSubpathSquareCaps(PathBuilder* aPB,
   } while (0)
 
 already_AddRefed<Path> SVGPathData::BuildPath(PathBuilder* aBuilder,
-                                              uint8_t aStrokeLineCap,
+                                              StyleStrokeLinecap aStrokeLineCap,
                                               Float aStrokeWidth) const {
   if (mData.IsEmpty() || !IsMoveto(SVGPathSegUtils::DecodeType(mData[0]))) {
     return nullptr;  // paths without an initial moveto are invalid
   }
 
-  bool hasLineCaps = aStrokeLineCap != NS_STYLE_STROKE_LINECAP_BUTT;
+  bool hasLineCaps = aStrokeLineCap != StyleStrokeLinecap::Butt;
   bool subpathHasLength = false;  // visual length
   bool subpathContainsNonMoveTo = false;
 
@@ -520,7 +527,7 @@ already_AddRefed<Path> SVGPathData::BuildPathForMeasuring() const {
       gfxPlatform::GetPlatform()->ScreenReferenceDrawTarget();
   RefPtr<PathBuilder> builder =
       drawTarget->CreatePathBuilder(FillRule::FILL_WINDING);
-  return BuildPath(builder, NS_STYLE_STROKE_LINECAP_BUTT, 0);
+  return BuildPath(builder, StyleStrokeLinecap::Butt, 0);
 }
 
 // We could simplify this function because this is only used by CSS motion path
@@ -529,7 +536,7 @@ already_AddRefed<Path> SVGPathData::BuildPathForMeasuring() const {
 /* static */
 already_AddRefed<Path> SVGPathData::BuildPath(
     Span<const StylePathCommand> aPath, PathBuilder* aBuilder,
-    uint8_t aStrokeLineCap, Float aStrokeWidth, float aZoomFactor) {
+    StyleStrokeLinecap aStrokeLineCap, Float aStrokeWidth, float aZoomFactor) {
   if (aPath.IsEmpty() || !aPath[0].IsMoveTo()) {
     return nullptr;  // paths without an initial moveto are invalid
   }
@@ -548,7 +555,7 @@ already_AddRefed<Path> SVGPathData::BuildPath(
            aType == StylePathCommand::Tag::SmoothQuadBezierCurveTo;
   };
 
-  bool hasLineCaps = aStrokeLineCap != NS_STYLE_STROKE_LINECAP_BUTT;
+  bool hasLineCaps = aStrokeLineCap != StyleStrokeLinecap::Butt;
   bool subpathHasLength = false;  // visual length
   bool subpathContainsNonMoveTo = false;
 
@@ -1069,3 +1076,5 @@ size_t SVGPathData::SizeOfExcludingThis(MallocSizeOf aMallocSizeOf) const {
 size_t SVGPathData::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) const {
   return aMallocSizeOf(this) + SizeOfExcludingThis(aMallocSizeOf);
 }
+
+}  // namespace mozilla

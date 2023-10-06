@@ -14,25 +14,24 @@
 #include "GrSemaphore.h"
 #include "SkRefCnt.h"
 
+class GrRecordingContext;
+
 class GrSemaphoreOp : public GrOp {
 public:
-    static std::unique_ptr<GrSemaphoreOp> MakeSignal(sk_sp<GrSemaphore> semaphore,
-                                                     GrRenderTargetProxy* proxy,
-                                                     bool forceFlush);
-
-    static std::unique_ptr<GrSemaphoreOp> MakeWait(sk_sp<GrSemaphore> semaphore,
-                                                   GrRenderTargetProxy* proxy);
+    static std::unique_ptr<GrOp> MakeWait(GrRecordingContext*,
+                                          sk_sp<GrSemaphore>,
+                                          GrRenderTargetProxy*);
 
 protected:
     GrSemaphoreOp(uint32_t classId, sk_sp<GrSemaphore> semaphore, GrRenderTargetProxy* proxy)
-        : INHERITED(classId), fSemaphore(std::move(semaphore)) {
+            : INHERITED(classId)
+            , fSemaphore(std::move(semaphore)) {
         this->makeFullScreen(proxy);
     }
 
     sk_sp<GrSemaphore> fSemaphore;
 
 private:
-    bool onCombineIfPossible(GrOp* that, const GrCaps& caps) override { return false; }
     void onPrepare(GrOpFlushState*) override {}
 
     typedef GrOp INHERITED;

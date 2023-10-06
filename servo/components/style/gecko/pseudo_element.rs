@@ -116,6 +116,12 @@ impl PseudoElement {
         *self == PseudoElement::Marker
     }
 
+    /// Whether this pseudo-element is the ::selection pseudo.
+    #[inline]
+    pub fn is_selection(&self) -> bool {
+        *self == PseudoElement::Selection
+    }
+
     /// Whether this pseudo-element is ::first-letter.
     #[inline]
     pub fn is_first_letter(&self) -> bool {
@@ -132,6 +138,12 @@ impl PseudoElement {
     #[inline]
     pub fn is_fieldset_content(&self) -> bool {
         *self == PseudoElement::FieldsetContent
+    }
+
+    /// Whether this pseudo-element is the ::-moz-color-swatch pseudo.
+    #[inline]
+    pub fn is_color_swatch(&self) -> bool {
+        *self == PseudoElement::MozColorSwatch
     }
 
     /// Whether this pseudo-element is lazily-cascaded.

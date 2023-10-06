@@ -9,6 +9,7 @@
 #include "nss.h"
 #include "ssl.h"
 
+#include "mozilla/Preferences.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/Tuple.h"
 
@@ -55,6 +56,9 @@ class JsepSessionTest : public JsepSessionTestBase,
                         public ::testing::WithParamInterface<std::string> {
  public:
   JsepSessionTest() : mSdpHelper(&mLastError) {
+    Preferences::SetCString("media.peerconnection.sdp.parser", "legacy");
+    Preferences::SetCString("media.peerconnection.sdp.alternate_parse_mode",
+                            "never");
     mSessionOff =
         MakeUnique<JsepSessionImpl>("Offerer", MakeUnique<FakeUuidGenerator>());
     mSessionAns = MakeUnique<JsepSessionImpl>("Answerer",
@@ -1149,11 +1153,12 @@ class JsepSessionTest : public JsepSessionTestBase,
   };
 
   // For streaming parse errors
-  std::string GetParseErrors(const SipccSdpParser& parser) const {
+  std::string GetParseErrors(
+      const UniquePtr<SdpParser::Results>& results) const {
     std::stringstream output;
-    for (auto e = parser.GetParseErrors().begin();
-         e != parser.GetParseErrors().end(); ++e) {
-      output << e->first << ": " << e->second << std::endl;
+    auto errors = std::move(results->Errors());
+    for (auto error : errors) {
+      output << error.first << ": " << error.second << std::endl;
     }
     return output.str();
   }
@@ -1347,9 +1352,10 @@ class JsepSessionTest : public JsepSessionTestBase,
 
   UniquePtr<Sdp> Parse(const std::string& sdp) const {
     SipccSdpParser parser;
-    UniquePtr<Sdp> parsed = parser.Parse(sdp);
+    auto results = parser.Parse(sdp);
+    UniquePtr<Sdp> parsed = std::move(results->Sdp());
     EXPECT_TRUE(parsed.get()) << "Should have valid SDP" << std::endl
-                              << "Errors were: " << GetParseErrors(parser);
+                              << "Errors were: " << GetParseErrors(results);
     return parsed;
   }
 
@@ -2206,7 +2212,7 @@ TEST_P(JsepSessionTest, RenegotiationOffererDisablesTelephoneEvent) {
     const JsepTrackNegotiatedDetails* details = track.GetNegotiatedDetails();
     ASSERT_EQ(1U, details->GetEncodingCount());
     const JsepTrackEncoding& encoding = details->GetEncoding(0);
-    ASSERT_EQ(2U, encoding.GetCodecs().size());
+    ASSERT_EQ(5U, encoding.GetCodecs().size());
     ASSERT_TRUE(encoding.HasFormat("109"));
     ASSERT_TRUE(encoding.HasFormat("101"));
     for (const auto& codec : encoding.GetCodecs()) {
@@ -2219,7 +2225,7 @@ TEST_P(JsepSessionTest, RenegotiationOffererDisablesTelephoneEvent) {
   }
 
   std::string offer = CreateOffer();
-  ReplaceInSdp(&offer, " 109 101 ", " 109 ");
+  ReplaceInSdp(&offer, "8 101", "8");
   ReplaceInSdp(&offer, "a=fmtp:101 0-15\r\n", "");
   ReplaceInSdp(&offer, "a=rtpmap:101 telephone-event/8000/1\r\n", "");
   std::cerr << "modified OFFER: " << offer << std::endl;
@@ -2245,7 +2251,7 @@ TEST_P(JsepSessionTest, RenegotiationOffererDisablesTelephoneEvent) {
     const JsepTrackNegotiatedDetails* details = track.GetNegotiatedDetails();
     ASSERT_EQ(1U, details->GetEncodingCount());
     const JsepTrackEncoding& encoding = details->GetEncoding(0);
-    ASSERT_EQ(1U, encoding.GetCodecs().size());
+    ASSERT_EQ(4U, encoding.GetCodecs().size());
     ASSERT_TRUE(encoding.HasFormat("109"));
     // we can cast here because we've already checked for audio track
     const JsepAudioCodecDescription* audioCodec =
@@ -3474,7 +3480,7 @@ TEST_F(JsepSessionTest, ValidateNoFmtpLineForRedInOfferAndAnswer) {
                     .size());
 }
 
-TEST_F(JsepSessionTest, ValidateAnsweredCodecParams) {
+TEST_F(JsepSessionTest, ValidateAnsweredCodecParamsNoRed) {
   // TODO(bug 1099351): Once fixed, we can allow red in this offer,
   // which will also cause multiple codecs in answer.  For now,
   // red/ulpfec for video are behind a pref to mitigate potential for
@@ -3516,38 +3522,27 @@ TEST_F(JsepSessionTest, ValidateAnsweredCodecParams) {
   auto& video_attrs = video_section.GetAttributeList();
   ASSERT_EQ(SdpDirectionAttribute::kSendrecv, video_attrs.GetDirection());
 
-  // TODO(bug 1099351): Once fixed, this stuff will need to be updated.
-  ASSERT_EQ(1U, video_section.GetFormats().size());
-  // ASSERT_EQ(3U, video_section.GetFormats().size());
+  ASSERT_EQ(2U, video_section.GetFormats().size());
   ASSERT_EQ("120", video_section.GetFormats()[0]);
-  // ASSERT_EQ("121", video_section.GetFormats()[1]);
-  // ASSERT_EQ("126", video_section.GetFormats()[2]);
-  // ASSERT_EQ("97", video_section.GetFormats()[3]);
+  ASSERT_EQ("121", video_section.GetFormats()[1]);
 
   // Validate rtpmap
   ASSERT_TRUE(video_attrs.HasAttribute(SdpAttribute::kRtpmapAttribute));
   auto& rtpmaps = video_attrs.GetRtpmap();
   ASSERT_TRUE(rtpmaps.HasEntry("120"));
-  // ASSERT_TRUE(rtpmaps.HasEntry("121"));
-  // ASSERT_TRUE(rtpmaps.HasEntry("126"));
-  // ASSERT_TRUE(rtpmaps.HasEntry("97"));
+  ASSERT_TRUE(rtpmaps.HasEntry("121"));
 
   auto& vp8_entry = rtpmaps.GetEntry("120");
-  // auto& vp9_entry = rtpmaps.GetEntry("121");
-  // auto& h264_1_entry = rtpmaps.GetEntry("126");
-  // auto& h264_0_entry = rtpmaps.GetEntry("97");
+  auto& vp9_entry = rtpmaps.GetEntry("121");
 
   ASSERT_EQ("VP8", vp8_entry.name);
-  // ASSERT_EQ("VP9", vp9_entry.name);
-  // ASSERT_EQ("H264", h264_1_entry.name);
-  // ASSERT_EQ("H264", h264_0_entry.name);
+  ASSERT_EQ("VP9", vp9_entry.name);
 
   // Validate fmtps
   ASSERT_TRUE(video_attrs.HasAttribute(SdpAttribute::kFmtpAttribute));
   auto& fmtps = video_attrs.GetFmtp().mFmtps;
 
-  ASSERT_EQ(1U, fmtps.size());
-  // ASSERT_EQ(3U, fmtps.size());
+  ASSERT_EQ(2U, fmtps.size());
 
   // VP8
   ASSERT_EQ("120", fmtps[0].format);
@@ -3561,6 +3556,18 @@ TEST_F(JsepSessionTest, ValidateAnsweredCodecParams) {
   ASSERT_EQ((uint32_t)12288, parsed_vp8_params.max_fs);
   ASSERT_EQ((uint32_t)60, parsed_vp8_params.max_fr);
 
+  // VP9
+  ASSERT_EQ("121", fmtps[1].format);
+  ASSERT_TRUE(!!fmtps[1].parameters);
+  ASSERT_EQ(SdpRtpmapAttributeList::kVP9, fmtps[1].parameters->codec_type);
+
+  auto& parsed_vp9_params =
+      *static_cast<const SdpFmtpAttributeList::VP8Parameters*>(
+          fmtps[1].parameters.get());
+
+  ASSERT_EQ((uint32_t)12288, parsed_vp9_params.max_fs);
+  ASSERT_EQ((uint32_t)60, parsed_vp9_params.max_fr);
+
   SetLocalAnswer(answer);
   SetRemoteAnswer(answer);
 
@@ -3570,12 +3577,12 @@ TEST_F(JsepSessionTest, ValidateAnsweredCodecParams) {
   ASSERT_FALSE(IsNull(offerTransceivers[1]->mRecvTrack));
   ASSERT_TRUE(offerTransceivers[1]->mSendTrack.GetNegotiatedDetails());
   ASSERT_TRUE(offerTransceivers[1]->mRecvTrack.GetNegotiatedDetails());
-  ASSERT_EQ(1U, offerTransceivers[1]
+  ASSERT_EQ(2U, offerTransceivers[1]
                     ->mSendTrack.GetNegotiatedDetails()
                     ->GetEncoding(0)
                     .GetCodecs()
                     .size());
-  ASSERT_EQ(1U, offerTransceivers[1]
+  ASSERT_EQ(2U, offerTransceivers[1]
                     ->mRecvTrack.GetNegotiatedDetails()
                     ->GetEncoding(0)
                     .GetCodecs()
@@ -3587,12 +3594,12 @@ TEST_F(JsepSessionTest, ValidateAnsweredCodecParams) {
   ASSERT_FALSE(IsNull(answerTransceivers[1]->mRecvTrack));
   ASSERT_TRUE(answerTransceivers[1]->mSendTrack.GetNegotiatedDetails());
   ASSERT_TRUE(answerTransceivers[1]->mRecvTrack.GetNegotiatedDetails());
-  ASSERT_EQ(1U, answerTransceivers[1]
+  ASSERT_EQ(2U, answerTransceivers[1]
                     ->mSendTrack.GetNegotiatedDetails()
                     ->GetEncoding(0)
                     .GetCodecs()
                     .size());
-  ASSERT_EQ(1U, answerTransceivers[1]
+  ASSERT_EQ(2U, answerTransceivers[1]
                     ->mRecvTrack.GetNegotiatedDetails()
                     ->GetEncoding(0)
                     .GetCodecs()
@@ -4193,9 +4200,9 @@ TEST_F(JsepSessionTest, TestExtmap) {
   // csrc-audio-level will be 2 for both
   // mid will be 3 for both
   // video related extensions take 4 and 5
-  mSessionOff->AddAudioRtpExtension("foo");  // Default mapping of 6
-  mSessionOff->AddAudioRtpExtension("bar");  // Default mapping of 7
-  mSessionAns->AddAudioRtpExtension("bar");  // Default mapping of 6
+  mSessionOff->AddAudioRtpExtension("foo");  // Default mapping of 7
+  mSessionOff->AddAudioRtpExtension("bar");  // Default mapping of 8
+  mSessionAns->AddAudioRtpExtension("bar");  // Default mapping of 7
   std::string offer = CreateOffer();
   SetLocalOffer(offer, CHECK_SUCCESS);
   SetRemoteOffer(offer, CHECK_SUCCESS);
@@ -4220,9 +4227,9 @@ TEST_F(JsepSessionTest, TestExtmap) {
             offerExtmap[2].extensionname);
   ASSERT_EQ(3U, offerExtmap[2].entry);
   ASSERT_EQ("foo", offerExtmap[3].extensionname);
-  ASSERT_EQ(6U, offerExtmap[3].entry);
+  ASSERT_EQ(7U, offerExtmap[3].entry);
   ASSERT_EQ("bar", offerExtmap[4].extensionname);
-  ASSERT_EQ(7U, offerExtmap[4].entry);
+  ASSERT_EQ(8U, offerExtmap[4].entry);
 
   UniquePtr<Sdp> parsedAnswer(Parse(answer));
   ASSERT_EQ(1U, parsedAnswer->GetMediaSectionCount());
@@ -4239,7 +4246,94 @@ TEST_F(JsepSessionTest, TestExtmap) {
   ASSERT_EQ(3U, answerExtmap[1].entry);
   // We ensure that the entry for "bar" matches what was in the offer
   ASSERT_EQ("bar", answerExtmap[2].extensionname);
-  ASSERT_EQ(7U, answerExtmap[2].entry);
+  ASSERT_EQ(8U, answerExtmap[2].entry);
+}
+
+TEST_F(JsepSessionTest, TestExtmapDefaults) {
+  types.push_back(SdpMediaSection::kAudio);
+  types.push_back(SdpMediaSection::kVideo);
+  AddTracks(*mSessionOff, "audio,video");
+
+  std::string offer = CreateOffer();
+  SetLocalOffer(offer, CHECK_SUCCESS);
+  SetRemoteOffer(offer, CHECK_SUCCESS);
+
+  std::string answer = CreateAnswer();
+  SetLocalAnswer(answer, CHECK_SUCCESS);
+  SetRemoteAnswer(answer, CHECK_SUCCESS);
+
+  UniquePtr<Sdp> parsedOffer(Parse(offer));
+  ASSERT_EQ(2U, parsedOffer->GetMediaSectionCount());
+
+  auto& offerAudioMediaAttrs =
+      parsedOffer->GetMediaSection(0).GetAttributeList();
+  ASSERT_TRUE(
+      offerAudioMediaAttrs.HasAttribute(SdpAttribute::kExtmapAttribute));
+  auto& offerAudioExtmap = offerAudioMediaAttrs.GetExtmap().mExtmaps;
+  ASSERT_EQ(3U, offerAudioExtmap.size());
+
+  ASSERT_EQ("urn:ietf:params:rtp-hdrext:ssrc-audio-level",
+            offerAudioExtmap[0].extensionname);
+  ASSERT_EQ(1U, offerAudioExtmap[0].entry);
+  ASSERT_EQ("urn:ietf:params:rtp-hdrext:csrc-audio-level",
+            offerAudioExtmap[1].extensionname);
+  ASSERT_EQ(2U, offerAudioExtmap[1].entry);
+  ASSERT_EQ("urn:ietf:params:rtp-hdrext:sdes:mid",
+            offerAudioExtmap[2].extensionname);
+
+  auto& offerVideoMediaAttrs =
+      parsedOffer->GetMediaSection(1).GetAttributeList();
+  ASSERT_TRUE(
+      offerVideoMediaAttrs.HasAttribute(SdpAttribute::kExtmapAttribute));
+  auto& offerVideoExtmap = offerVideoMediaAttrs.GetExtmap().mExtmaps;
+  ASSERT_EQ(4U, offerVideoExtmap.size());
+
+  ASSERT_EQ(3U, offerVideoExtmap[0].entry);
+  ASSERT_EQ("urn:ietf:params:rtp-hdrext:sdes:mid",
+            offerVideoExtmap[0].extensionname);
+  ASSERT_EQ("http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time",
+            offerVideoExtmap[1].extensionname);
+  ASSERT_EQ(4U, offerVideoExtmap[1].entry);
+  ASSERT_EQ("urn:ietf:params:rtp-hdrext:toffset",
+            offerVideoExtmap[2].extensionname);
+  ASSERT_EQ(5U, offerVideoExtmap[2].entry);
+  ASSERT_EQ("http://www.webrtc.org/experiments/rtp-hdrext/playout-delay",
+            offerVideoExtmap[3].extensionname);
+  ASSERT_EQ(6U, offerVideoExtmap[3].entry);
+
+  UniquePtr<Sdp> parsedAnswer(Parse(answer));
+  ASSERT_EQ(2U, parsedAnswer->GetMediaSectionCount());
+
+  auto& answerAudioMediaAttrs =
+      parsedAnswer->GetMediaSection(0).GetAttributeList();
+  ASSERT_TRUE(
+      answerAudioMediaAttrs.HasAttribute(SdpAttribute::kExtmapAttribute));
+  auto& answerAudioExtmap = answerAudioMediaAttrs.GetExtmap().mExtmaps;
+  ASSERT_EQ(2U, answerAudioExtmap.size());
+
+  ASSERT_EQ("urn:ietf:params:rtp-hdrext:ssrc-audio-level",
+            answerAudioExtmap[0].extensionname);
+  ASSERT_EQ(1U, answerAudioExtmap[0].entry);
+  ASSERT_EQ("urn:ietf:params:rtp-hdrext:sdes:mid",
+            answerAudioExtmap[1].extensionname);
+  ASSERT_EQ(3U, answerAudioExtmap[1].entry);
+
+  auto& answerVideoMediaAttrs =
+      parsedAnswer->GetMediaSection(1).GetAttributeList();
+  ASSERT_TRUE(
+      answerVideoMediaAttrs.HasAttribute(SdpAttribute::kExtmapAttribute));
+  auto& answerVideoExtmap = answerVideoMediaAttrs.GetExtmap().mExtmaps;
+  ASSERT_EQ(3U, answerVideoExtmap.size());
+
+  ASSERT_EQ(3U, answerVideoExtmap[0].entry);
+  ASSERT_EQ("urn:ietf:params:rtp-hdrext:sdes:mid",
+            answerVideoExtmap[0].extensionname);
+  ASSERT_EQ("http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time",
+            answerVideoExtmap[1].extensionname);
+  ASSERT_EQ(4U, answerVideoExtmap[1].entry);
+  ASSERT_EQ("urn:ietf:params:rtp-hdrext:toffset",
+            answerVideoExtmap[2].extensionname);
+  ASSERT_EQ(5U, answerVideoExtmap[2].entry);
 }
 
 TEST_F(JsepSessionTest, TestExtmapWithDuplicates) {
@@ -4249,11 +4343,11 @@ TEST_F(JsepSessionTest, TestExtmapWithDuplicates) {
   // csrc-audio-level will be 2 for both
   // mid will be 3 for both
   // video related extensions take 4 and 5
-  mSessionOff->AddAudioRtpExtension("foo");  // Default mapping of 6
-  mSessionOff->AddAudioRtpExtension("bar");  // Default mapping of 7
+  mSessionOff->AddAudioRtpExtension("foo");  // Default mapping of 7
+  mSessionOff->AddAudioRtpExtension("bar");  // Default mapping of 8
   mSessionOff->AddAudioRtpExtension("bar");  // Should be ignored
   mSessionOff->AddAudioRtpExtension("bar");  // Should be ignored
-  mSessionOff->AddAudioRtpExtension("baz");  // Default mapping of 8
+  mSessionOff->AddAudioRtpExtension("baz");  // Default mapping of 9
   mSessionOff->AddAudioRtpExtension("bar");  // Should be ignored
 
   std::string offer = CreateOffer();
@@ -4274,11 +4368,91 @@ TEST_F(JsepSessionTest, TestExtmapWithDuplicates) {
             offerExtmap[2].extensionname);
   ASSERT_EQ(3U, offerExtmap[2].entry);
   ASSERT_EQ("foo", offerExtmap[3].extensionname);
-  ASSERT_EQ(6U, offerExtmap[3].entry);
+  ASSERT_EQ(7U, offerExtmap[3].entry);
   ASSERT_EQ("bar", offerExtmap[4].extensionname);
-  ASSERT_EQ(7U, offerExtmap[4].entry);
+  ASSERT_EQ(8U, offerExtmap[4].entry);
   ASSERT_EQ("baz", offerExtmap[5].extensionname);
-  ASSERT_EQ(8U, offerExtmap[5].entry);
+  ASSERT_EQ(9U, offerExtmap[5].entry);
+}
+
+TEST_F(JsepSessionTest, TestExtmapZeroId) {
+  AddTracks(*mSessionOff, "video");
+  AddTracks(*mSessionAns, "video");
+
+  std::string sdp =
+      "v=0\r\n"
+      "o=- 6 2 IN IP4 1r\r\n"
+      "t=0 0a\r\n"
+      "a=ice-ufrag:Xp\r\n"
+      "a=ice-pwd:he\r\n"
+      "a=setup:actpass\r\n"
+      "a=fingerprint:sha-256 "
+      "DC:FC:25:56:2B:88:77:2F:E4:FA:97:4E:2E:F1:D6:34:A6:A0:11:E2:E4:38:B3:98:"
+      "08:D2:F7:9D:F5:E2:C1:15\r\n"
+      "m=video 9 UDP/TLS/RTP/SAVPF 100\r\n"
+      "c=IN IP4 0\r\n"
+      "a=rtpmap:100 VP8/90000\r\n"
+      "a=extmap:0 urn:ietf:params:rtp-hdrext:toffset\r\n";
+  auto result = mSessionAns->SetRemoteDescription(kJsepSdpOffer, sdp);
+  ASSERT_TRUE(result.mError == Some(dom::PCError::OperationError));
+  ASSERT_EQ(
+      "Description contains invalid extension id 0 on level 0 which is"
+      " unsupported until 2-byte rtp header extensions are supported in"
+      " webrtc.org",
+      mSessionAns->GetLastError());
+}
+
+TEST_F(JsepSessionTest, TestExtmapInvalidId) {
+  AddTracks(*mSessionOff, "video");
+  AddTracks(*mSessionAns, "video");
+
+  std::string sdp =
+      "v=0\r\n"
+      "o=- 6 2 IN IP4 1r\r\n"
+      "t=0 0a\r\n"
+      "a=ice-ufrag:Xp\r\n"
+      "a=ice-pwd:he\r\n"
+      "a=setup:actpass\r\n"
+      "a=fingerprint:sha-256 "
+      "DC:FC:25:56:2B:88:77:2F:E4:FA:97:4E:2E:F1:D6:34:A6:A0:11:E2:E4:38:B3:98:"
+      "08:D2:F7:9D:F5:E2:C1:15\r\n"
+      "m=video 9 UDP/TLS/RTP/SAVPF 100\r\n"
+      "c=IN IP4 0\r\n"
+      "a=rtpmap:100 VP8/90000\r\n"
+      "a=extmap:15 urn:ietf:params:rtp-hdrext:toffset\r\n";
+  auto result = mSessionAns->SetRemoteDescription(kJsepSdpOffer, sdp);
+  ASSERT_TRUE(result.mError == Some(dom::PCError::OperationError));
+  ASSERT_EQ(
+      "Description contains invalid extension id 15 on level 0 which is"
+      " unsupported until 2-byte rtp header extensions are supported in"
+      " webrtc.org",
+      mSessionAns->GetLastError());
+}
+
+TEST_F(JsepSessionTest, TestExtmapDuplicateId) {
+  AddTracks(*mSessionOff, "video");
+  AddTracks(*mSessionAns, "video");
+
+  std::string sdp =
+      "v=0\r\n"
+      "o=- 6 2 IN IP4 1r\r\n"
+      "t=0 0a\r\n"
+      "a=ice-ufrag:Xp\r\n"
+      "a=ice-pwd:he\r\n"
+      "a=setup:actpass\r\n"
+      "a=fingerprint:sha-256 "
+      "DC:FC:25:56:2B:88:77:2F:E4:FA:97:4E:2E:F1:D6:34:A6:A0:11:E2:E4:38:B3:98:"
+      "08:D2:F7:9D:F5:E2:C1:15\r\n"
+      "m=video 9 UDP/TLS/RTP/SAVPF 100\r\n"
+      "c=IN IP4 0\r\n"
+      "a=rtpmap:100 VP8/90000\r\n"
+      "a=extmap:2 urn:ietf:params:rtp-hdrext:toffset\r\n"
+      "a=extmap:2 "
+      "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time\r\n";
+  auto result = mSessionAns->SetRemoteDescription(kJsepSdpOffer, sdp);
+  ASSERT_TRUE(result.mError == Some(dom::PCError::OperationError));
+  ASSERT_EQ("Description contains duplicate extension id 2 on level 0",
+            mSessionAns->GetLastError());
 }
 
 TEST_F(JsepSessionTest, TestRtcpFbStar) {
@@ -4680,8 +4854,8 @@ TEST_P(JsepSessionTest, TestBalancedBundle) {
   mSessionOff->SetBundlePolicy(kBundleBalanced);
 
   std::string offer = CreateOffer();
-  SipccSdpParser parser;
-  UniquePtr<Sdp> parsedOffer = parser.Parse(offer);
+  UniquePtr<Sdp> parsedOffer = std::move(SipccSdpParser().Parse(offer)->Sdp());
+
   ASSERT_TRUE(parsedOffer.get());
 
   std::map<SdpMediaSection::MediaType, SdpMediaSection*> firstByType;
@@ -4716,8 +4890,7 @@ TEST_P(JsepSessionTest, TestMaxBundle) {
   OfferAnswer();
 
   std::string offer = mSessionOff->GetLocalDescription(kJsepDescriptionCurrent);
-  SipccSdpParser parser;
-  UniquePtr<Sdp> parsedOffer = parser.Parse(offer);
+  UniquePtr<Sdp> parsedOffer = std::move(SipccSdpParser().Parse(offer)->Sdp());
   ASSERT_TRUE(parsedOffer.get());
 
   ASSERT_FALSE(parsedOffer->GetMediaSection(0).GetAttributeList().HasAttribute(
@@ -5139,12 +5312,9 @@ TEST_F(JsepSessionTest, AudioOnlyG722Rejected) {
   SetLocalAnswer(answer);
   SetRemoteAnswer(answer);
 
-  // TODO(bug 814227): Use commented out code instead.
   ASSERT_NE(mSessionAns->GetLocalDescription(kJsepDescriptionCurrent)
-                .find("UDP/TLS/RTP/SAVPF 0\r"),
+                .find("UDP/TLS/RTP/SAVPF 0 8\r"),
             std::string::npos);
-  // ASSERT_NE(mSessionAns->GetLocalDescription(kJsepDescriptionCurrent)
-  //           .find("UDP/TLS/RTP/SAVPF 0 8\r"), std::string::npos);
   ASSERT_NE(mSessionAns->GetLocalDescription(kJsepDescriptionCurrent)
                 .find("a=rtpmap:0 PCMU/8000"),
             std::string::npos);

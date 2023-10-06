@@ -75,6 +75,7 @@ pub use self::resolution::Resolution;
 pub use self::svg::MozContextProperties;
 pub use self::svg::{SVGLength, SVGOpacity, SVGPaint, SVGPaintKind};
 pub use self::svg::{SVGPaintOrder, SVGStrokeDashArray, SVGWidth};
+pub use self::text::TextUnderlinePosition;
 pub use self::text::{InitialLetter, LetterSpacing, LineBreak, LineHeight};
 pub use self::text::{OverflowWrap, TextOverflow, WordBreak, WordSpacing};
 pub use self::text::{TextAlign, TextEmphasisPosition, TextEmphasisStyle};
@@ -302,10 +303,8 @@ pub trait ToComputedValue {
 
     /// Convert a specified value to a computed value, using itself and the data
     /// inside the `Context`.
-    #[inline]
     fn to_computed_value(&self, context: &Context) -> Self::ComputedValue;
 
-    #[inline]
     /// Convert a computed value to specified value form.
     ///
     /// This will be used for recascading during animation.

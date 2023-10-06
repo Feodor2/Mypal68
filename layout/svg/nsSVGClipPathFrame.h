@@ -73,8 +73,6 @@ class nsSVGClipPathFrame final : public nsSVGContainerFrame {
    *   clipPath that is currently being processed.
    * @param aMatrix The transform from aClippedFrame's user space to aContext's
    *   current transform.
-   * @param [out] aMaskTransform The transform to use with the returned
-   *   surface.
    * @param [in, optional] aExtraMask An extra surface that the returned
    *   surface should be masked with.
    * @param [in, optional] aExtraMasksTransform The transform to use with
@@ -82,8 +80,7 @@ class nsSVGClipPathFrame final : public nsSVGContainerFrame {
    */
   already_AddRefed<SourceSurface> GetClipMask(
       gfxContext& aReferenceContext, nsIFrame* aClippedFrame,
-      const gfxMatrix& aMatrix, Matrix* aMaskTransform,
-      SourceSurface* aExtraMask = nullptr,
+      const gfxMatrix& aMatrix, SourceSurface* aExtraMask = nullptr,
       const Matrix& aExtraMasksTransform = Matrix());
 
   /**
@@ -94,16 +91,13 @@ class nsSVGClipPathFrame final : public nsSVGContainerFrame {
    *   clipPath that is currently being processed.
    * @param aMatrix The transform from aClippedFrame's user space to
    *   current transform.
-   * @param [out] aMaskTransform The transform to use with the returned
-   *   surface.
    * @param [in, optional] aExtraMask An extra surface that the returned
    *   surface should be masked with.
    * @param [in, optional] aExtraMasksTransform The transform to use with
    *   aExtraMask. Should be passed when aExtraMask is passed.
    */
   void PaintClipMask(gfxContext& aMaskContext, nsIFrame* aClippedFrame,
-                     const gfxMatrix& aMatrix, Matrix* aMaskTransform,
-                     SourceSurface* aExtraMask,
+                     const gfxMatrix& aMatrix, SourceSurface* aExtraMask,
                      const Matrix& aExtraMasksTransform);
 
   /**

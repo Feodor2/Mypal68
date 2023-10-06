@@ -17,12 +17,9 @@
 #include "nsITheme.h"
 #include "nsITimer.h"
 #include "nsRegionFwd.h"
-#include "nsStyleConsts.h"
 #include "nsXULAppAPI.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/EventForwards.h"
-#include "mozilla/layers/APZTypes.h"
-#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/ScrollableLayerGuid.h"
 #include "mozilla/layers/ZoomConstraints.h"
 #include "mozilla/RefPtr.h"
@@ -45,6 +42,9 @@ class nsIRunnable;
 class nsIKeyEventInPluginCallback;
 
 namespace mozilla {
+
+enum class StyleWindowShadow : uint8_t;
+
 #if defined(MOZ_WIDGET_ANDROID)
 namespace ipc {
 class Shmem;
@@ -64,6 +64,7 @@ struct FrameMetrics;
 class LayerManager;
 class LayerManagerComposite;
 class PLayerTransactionChild;
+struct SLGuidAndRenderRoot;
 class WebRenderBridgeChild;
 }  // namespace layers
 namespace gfx {
@@ -1095,7 +1096,7 @@ class nsIWidget : public nsISupports {
    *
    * Ignored on child widgets and on non-Mac platforms.
    */
-  virtual void SetWindowShadowStyle(int32_t aStyle) = 0;
+  virtual void SetWindowShadowStyle(mozilla::StyleWindowShadow aStyle) = 0;
 
   /**
    * Set the opacity of the window.

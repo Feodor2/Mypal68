@@ -20,8 +20,9 @@ public:
     std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(const GrFPArgs&) const override;
 #endif
 
-    SK_TO_STRING_OVERRIDE()
-    SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkSweepGradient)
+    SkScalar getTBias() const { return fTBias; }
+
+    SkScalar getTScale() const { return fTScale; }
 
 protected:
     void flatten(SkWriteBuffer& buffer) const override;
@@ -30,9 +31,9 @@ protected:
     void appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* tPipeline,
                               SkRasterPipeline* postPipeline) const override;
 
-    bool onIsRasterPipelineOnly(const SkMatrix&) const override { return true; }
-
 private:
+    SK_FLATTENABLE_HOOKS(SkSweepGradient)
+
     const SkPoint  fCenter;
     const SkScalar fTBias,
                    fTScale;

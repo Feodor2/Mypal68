@@ -1378,9 +1378,6 @@ class SdpFmtpAttributeList : public SdpAttribute {
 
   class Fmtp {
    public:
-    Fmtp(const std::string& aFormat, UniquePtr<Parameters> aParameters)
-        : format(aFormat), parameters(std::move(aParameters)) {}
-
     Fmtp(const std::string& aFormat, const Parameters& aParameters)
         : format(aFormat), parameters(aParameters.Clone()) {}
 
@@ -1414,8 +1411,8 @@ class SdpFmtpAttributeList : public SdpAttribute {
 
   virtual void Serialize(std::ostream& os) const override;
 
-  void PushEntry(const std::string& format, UniquePtr<Parameters> parameters) {
-    mFmtps.push_back(Fmtp(format, std::move(parameters)));
+  void PushEntry(const std::string& format, const Parameters& parameters) {
+    mFmtps.push_back(Fmtp(format, parameters));
   }
 
   std::vector<Fmtp> mFmtps;
@@ -1533,21 +1530,25 @@ class SdpSimulcastAttribute : public SdpAttribute {
   void Serialize(std::ostream& os) const override;
   bool Parse(std::istream& is, std::string* error);
 
+  class Encoding {
+   public:
+    Encoding(const std::string& aRid, bool aPaused)
+        : rid(aRid), paused(aPaused) {}
+    std::string rid;
+    bool paused = false;
+  };
+
   class Version {
    public:
     void Serialize(std::ostream& os) const;
     bool IsSet() const { return !choices.empty(); }
     bool Parse(std::istream& is, std::string* error);
-    bool GetChoicesAsFormats(std::vector<uint16_t>* formats) const;
 
-    std::vector<std::string> choices;
+    std::vector<Encoding> choices;
   };
 
   class Versions : public std::vector<Version> {
    public:
-    enum Type { kPt, kRid };
-
-    Versions() : type(kRid) {}
     void Serialize(std::ostream& os) const;
     bool IsSet() const {
       if (empty()) {
@@ -1564,7 +1565,6 @@ class SdpSimulcastAttribute : public SdpAttribute {
     }
 
     bool Parse(std::istream& is, std::string* error);
-    Type type;
   };
 
   Versions sendVersions;

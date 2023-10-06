@@ -13,6 +13,12 @@
 #include "gl/GrGLAssembleInterface.h"
 #include "gl/GrGLUtil.h"
 
+#if defined(_M_ARM64)
+
+sk_sp<const GrGLInterface> GrGLMakeNativeInterface() { return nullptr; }
+
+#else
+
 class AutoLibraryUnload {
 public:
     AutoLibraryUnload(const char* moduleName) {
@@ -72,7 +78,7 @@ sk_sp<const GrGLInterface> GrGLMakeNativeInterface() {
         return nullptr;
     }
 
-    GrGLGetStringProc getString = (GrGLGetStringProc)getter.getProc("glGetString");
+    GrGLGetStringFn* getString = (GrGLGetStringFn*)getter.getProc("glGetString");
     if (nullptr == getString) {
         return nullptr;
     }
@@ -86,6 +92,8 @@ sk_sp<const GrGLInterface> GrGLMakeNativeInterface() {
     }
     return nullptr;
 }
+
+#endif // ARM64
 
 const GrGLInterface* GrGLCreateNativeInterface() { return GrGLMakeNativeInterface().release(); }
 

@@ -14,6 +14,7 @@ EXPORTS.mozilla.ipc += [
     'BrowserProcessSubThread.h',
     'ByteBuf.h',
     'CrashReporterClient.h',
+    'CrashReporterHelper.h',
     'CrashReporterHost.h',
     'CrashReporterMetadataShmem.h',
     'CrossProcessMutex.h',

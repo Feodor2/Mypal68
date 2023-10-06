@@ -166,6 +166,13 @@ impl ScaleOffset {
         })
     }
 
+    pub fn from_offset(offset: default::Vector2D<f32>) -> Self {
+        ScaleOffset {
+            scale: Vector2D::new(1.0, 1.0),
+            offset,
+        }
+    }
+
     pub fn inverse(&self) -> Self {
         ScaleOffset {
             scale: Vector2D::new(
@@ -184,6 +191,15 @@ impl ScaleOffset {
             &ScaleOffset {
                 scale: Vector2D::new(1.0, 1.0),
                 offset,
+            }
+        )
+    }
+
+    pub fn scale(&self, scale: f32) -> Self {
+        self.accumulate(
+            &ScaleOffset {
+                scale: Vector2D::new(scale, scale),
+                offset: Vector2D::zero(),
             }
         )
     }
@@ -405,12 +421,29 @@ impl<Src, Dst> MatrixHelpers<Src, Dst> for Transform3D<f32, Src, Dst> {
     }
 }
 
+pub trait PointHelpers<U>
+where
+    Self: Sized,
+{
+    fn snap(&self) -> Self;
+}
+
+impl<U> PointHelpers<U> for Point2D<f32, U> {
+    fn snap(&self) -> Self {
+        Point2D::new(
+            (self.x + 0.5).floor(),
+            (self.y + 0.5).floor(),
+        )
+    }
+}
+
 pub trait RectHelpers<U>
 where
     Self: Sized,
 {
     fn from_floats(x0: f32, y0: f32, x1: f32, y1: f32) -> Self;
     fn is_well_formed_and_nonempty(&self) -> bool;
+    fn snap(&self) -> Self;
 }
 
 impl<U> RectHelpers<U> for Rect<f32, U> {
@@ -423,6 +456,36 @@ impl<U> RectHelpers<U> for Rect<f32, U> {
 
     fn is_well_formed_and_nonempty(&self) -> bool {
         self.size.width > 0.0 && self.size.height > 0.0
+    }
+
+    fn snap(&self) -> Self {
+        let origin = Point2D::new(
+            (self.origin.x + 0.5).floor(),
+            (self.origin.y + 0.5).floor(),
+        );
+        Rect::new(
+            origin,
+            Size2D::new(
+                (self.origin.x + self.size.width + 0.5).floor() - origin.x,
+                (self.origin.y + self.size.height + 0.5).floor() - origin.y,
+            ),
+        )
+    }
+}
+
+pub trait VectorHelpers<U>
+where
+    Self: Sized,
+{
+    fn snap(&self) -> Self;
+}
+
+impl<U> VectorHelpers<U> for Vector2D<f32, U> {
+    fn snap(&self) -> Self {
+        Vector2D::new(
+            (self.x + 0.5).floor(),
+            (self.y + 0.5).floor(),
+        )
     }
 }
 
@@ -825,11 +888,11 @@ pub fn project_rect<F, T>(
 
     // Note: we only do the full frustum collision when the polygon approaches the camera plane.
     // Otherwise, it will be clamped to the screen bounds anyway.
-    if homogens.iter().any(|h| h.w <= 0.0) {
+    if homogens.iter().any(|h| h.w <= 0.0 || h.w.is_nan()) {
         let mut clipper = Clipper::new();
         let polygon = Polygon::from_rect(*rect, 1);
 
-        let planes = match Clipper::frustum_planes(
+        let planes = match Clipper::<_, _, usize>::frustum_planes(
             transform,
             Some(*bounds),
         ) {
@@ -975,108 +1038,6 @@ impl Recycler {
     }
 }
 
-/// A specialized array container for comparing equality between the current
-/// contents and the new contents, incrementally. As each item is added, the
-/// container maintains track of whether this is the same as last time items
-/// were added, or if the contents have diverged. After each reset, the memory
-/// of the vec is retained, which means that memory allocation is rare.
-#[derive(Debug)]
-pub struct ComparableVec<T> {
-    /// The items to be stored and compared
-    items: Vec<T>,
-    /// The current index to add the next item to
-    current_index: usize,
-    /// The previous length of the array
-    prev_len: usize,
-    /// Whether the contents of the vec is the same as last time.
-    is_same: bool,
-}
-
-impl<T> ComparableVec<T> where T: PartialEq + Clone + fmt::Debug {
-    /// Construct a new comparable vec
-    pub fn new() -> Self {
-        ComparableVec {
-            items: Vec::new(),
-            current_index: 0,
-            prev_len: 0,
-            is_same: false,
-        }
-    }
-
-    /// Retrieve a reference to the current items array
-    pub fn items(&self) -> &[T] {
-        &self.items[.. self.current_index]
-    }
-
-    /// Clear the contents of the vec, ready for adding new items.
-    pub fn reset(&mut self) {
-        self.items.truncate(self.current_index);
-        self.prev_len = self.current_index;
-        self.current_index = 0;
-        self.is_same = true;
-    }
-
-    /// Return the current length of the container
-    pub fn len(&self) -> usize {
-        self.current_index
-    }
-
-    /// Return true if the container has no items
-    pub fn is_empty(&self) -> bool {
-        self.current_index == 0
-    }
-
-    /// Push a number of items into the container
-    pub fn extend_from_slice(&mut self, items: &[T]) {
-        for item in items {
-            self.push(item.clone());
-        }
-    }
-
-    /// Push a single item into the container.
-    pub fn push(&mut self, item: T) {
-        // If this item extends the real length of the vec, it's clearly not
-        // the same as last time.
-        if self.current_index < self.items.len() {
-            // If the vec is currently considered equal, we need to compare
-            // the item being pushed.
-            if self.is_same {
-                let existing_item = &mut self.items[self.current_index];
-                if *existing_item != item {
-                    // Overwrite the current item with the new one and
-                    // mark the vec as different.
-                    *existing_item = item;
-                    self.is_same = false;
-                }
-            } else {
-                // The vec is already not equal, so just push the item.
-                self.items[self.current_index] = item;
-            }
-        } else {
-            // In this case, mark the vec as different and store the new item.
-            self.is_same = false;
-            self.items.push(item);
-        }
-
-        // Increment where the next item will be pushed.
-        self.current_index += 1;
-    }
-
-    #[allow(dead_code)]
-    pub fn dump(&self, tag: &str) {
-        println!("{}", tag);
-        let items = self.items();
-        for (i, item) in items.iter().enumerate() {
-            println!("{}/{}: {:?}", i, items.len(), item);
-        }
-    }
-
-    /// Return true if the contents of the vec are the same as the previous time.
-    pub fn is_valid(&self) -> bool {
-        self.is_same && self.prev_len == self.current_index
-    }
-}
-
 /// Arc wrapper to support measurement via MallocSizeOf.
 ///
 /// Memory reporting for Arcs is tricky because of the risk of double-counting.
@@ -1200,5 +1161,57 @@ pub fn round_up_to_multiple(val: usize, mul: NonZeroUsize) -> usize {
     match val % mul.get() {
         0 => val,
         rem => val - rem + mul.get(),
+    }
+}
+
+/// A helper function to construct a rect from a (x0,y0) and (x1,y1) pair
+#[inline]
+fn rect_from_points_f<U>(x0: f32,
+                         y0: f32,
+                         x1: f32,
+                         y1: f32) -> Rect<f32, U> {
+    Rect::new(Point2D::new(x0, y0),
+              Size2D::new(x1 - x0, y1 - y0))
+}
+
+/// Subtract `other` from `rect`, and write the outputs into `results`.
+pub fn subtract_rect<U>(rect: &Rect<f32, U>,
+                        other: &Rect<f32, U>,
+                        results: &mut Vec<Rect<f32, U>>) {
+    results.clear();
+
+    let int = rect.intersection(other);
+    match int {
+        Some(int) => {
+            let rx0 = rect.origin.x;
+            let ry0 = rect.origin.y;
+            let rx1 = rx0 + rect.size.width;
+            let ry1 = ry0 + rect.size.height;
+
+            let ox0 = int.origin.x;
+            let oy0 = int.origin.y;
+            let ox1 = ox0 + int.size.width;
+            let oy1 = oy0 + int.size.height;
+
+            let r = rect_from_points_f(rx0, ry0, ox0, ry1);
+            if r.size.width > 0.0 && r.size.height > 0.0 {
+                results.push(r);
+            }
+            let r = rect_from_points_f(ox0, ry0, ox1, oy0);
+            if r.size.width > 0.0 && r.size.height > 0.0 {
+                results.push(r);
+            }
+            let r = rect_from_points_f(ox0, oy1, ox1, ry1);
+            if r.size.width > 0.0 && r.size.height > 0.0 {
+                results.push(r);
+            }
+            let r = rect_from_points_f(ox1, ry0, rx1, ry1);
+            if r.size.width > 0.0 && r.size.height > 0.0 {
+                results.push(r);
+            }
+        }
+        None => {
+            results.push(*rect);
+        }
     }
 }

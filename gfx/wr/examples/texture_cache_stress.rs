@@ -102,7 +102,7 @@ impl Example for App {
         builder.push_simple_stacking_context(
             bounds.origin,
             space_and_clip.spatial_id,
-            true,
+            PrimitiveFlags::IS_BACKFACE_VISIBLE,
         );
 
         let x0 = 50.0;
@@ -147,8 +147,6 @@ impl Example for App {
             builder.push_image(
                 &info,
                 bounds,
-                image_size,
-                LayoutSize::zero(),
                 ImageRendering::Auto,
                 AlphaType::PremultipliedAlpha,
                 *key,
@@ -165,8 +163,6 @@ impl Example for App {
             builder.push_image(
                 &info,
                 bounds,
-                image_size,
-                LayoutSize::zero(),
                 ImageRendering::Auto,
                 AlphaType::PremultipliedAlpha,
                 image_key,
@@ -183,8 +179,6 @@ impl Example for App {
         builder.push_image(
             &info,
             bounds,
-            image_size,
-            LayoutSize::zero(),
             ImageRendering::Auto,
             AlphaType::PremultipliedAlpha,
             swap_key,

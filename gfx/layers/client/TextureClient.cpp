@@ -794,8 +794,8 @@ void TextureClient::SetAddedToCompositableClient() {
   }
 }
 
-static void CancelTextureClientRecycle(uint64_t aTextureId,
-                                       LayersIPCChannel* aAllocator) {
+static void CancelTextureClientNotifyNotUsed(uint64_t aTextureId,
+                                             LayersIPCChannel* aAllocator) {
   if (!aAllocator) {
     return;
   }
@@ -805,17 +805,17 @@ static void CancelTextureClientRecycle(uint64_t aTextureId,
     return;
   }
   if (MessageLoop::current() == msgLoop) {
-    aAllocator->CancelWaitForRecycle(aTextureId);
+    aAllocator->CancelWaitForNotifyNotUsed(aTextureId);
   } else {
-    msgLoop->PostTask(NewRunnableFunction("CancelTextureClientRecycleRunnable",
-                                          CancelTextureClientRecycle,
-                                          aTextureId, aAllocator));
+    msgLoop->PostTask(NewRunnableFunction(
+        "CancelTextureClientNotifyNotUsedRunnable",
+        CancelTextureClientNotifyNotUsed, aTextureId, aAllocator));
   }
 }
 
-void TextureClient::CancelWaitForRecycle() {
+void TextureClient::CancelWaitForNotifyNotUsed() {
   if (GetFlags() & TextureFlags::RECYCLE) {
-    CancelTextureClientRecycle(mSerial, GetAllocator());
+    CancelTextureClientNotifyNotUsed(mSerial, GetAllocator());
     return;
   }
 }
@@ -931,11 +931,11 @@ bool TextureClient::InitIPDLActor(CompositableForwarder* aForwarder) {
   return mActor->IPCOpen();
 }
 
-bool TextureClient::InitIPDLActor(KnowsCompositor* aForwarder) {
-  MOZ_ASSERT(aForwarder &&
-             aForwarder->GetTextureForwarder()->GetMessageLoop() ==
+bool TextureClient::InitIPDLActor(KnowsCompositor* aKnowsCompositor) {
+  MOZ_ASSERT(aKnowsCompositor &&
+             aKnowsCompositor->GetTextureForwarder()->GetMessageLoop() ==
                  mAllocator->GetMessageLoop());
-  TextureForwarder* fwd = aForwarder->GetTextureForwarder();
+  TextureForwarder* fwd = aKnowsCompositor->GetTextureForwarder();
   if (mActor && !mActor->mDestroyed) {
     CompositableForwarder* currentFwd = mActor->mCompositableForwarder;
     TextureForwarder* currentTexFwd = mActor->mTextureForwarder;
@@ -964,7 +964,7 @@ bool TextureClient::InitIPDLActor(KnowsCompositor* aForwarder) {
 
   // Try external image id allocation.
   mExternalImageId =
-      aForwarder->GetTextureForwarder()->GetNextExternalImageId();
+      aKnowsCompositor->GetTextureForwarder()->GetNextExternalImageId();
 
   ReadLockDescriptor readLockDescriptor = null_t();
   if (mReadLock) {
@@ -972,12 +972,12 @@ bool TextureClient::InitIPDLActor(KnowsCompositor* aForwarder) {
   }
 
   PTextureChild* actor = fwd->CreateTexture(
-      desc, readLockDescriptor, aForwarder->GetCompositorBackendType(),
+      desc, readLockDescriptor, aKnowsCompositor->GetCompositorBackendType(),
       GetFlags(), mSerial, mExternalImageId);
   if (!actor) {
     gfxCriticalNote << static_cast<int32_t>(desc.type()) << ", "
                     << static_cast<int32_t>(
-                           aForwarder->GetCompositorBackendType())
+                           aKnowsCompositor->GetCompositorBackendType())
                     << ", " << static_cast<uint32_t>(GetFlags()) << ", "
                     << mSerial;
     return false;
@@ -1240,7 +1240,7 @@ already_AddRefed<TextureClient> TextureClient::CreateForYCbCr(
     KnowsCompositor* aAllocator, gfx::IntSize aYSize, uint32_t aYStride,
     gfx::IntSize aCbCrSize, uint32_t aCbCrStride, StereoMode aStereoMode,
     gfx::ColorDepth aColorDepth, gfx::YUVColorSpace aYUVColorSpace,
-    TextureFlags aTextureFlags) {
+    gfx::ColorRange aColorRange, TextureFlags aTextureFlags) {
   if (!aAllocator || !aAllocator->GetLayersIPCActor()->IPCOpen()) {
     return nullptr;
   }
@@ -1251,7 +1251,7 @@ already_AddRefed<TextureClient> TextureClient::CreateForYCbCr(
 
   TextureData* data = BufferTextureData::CreateForYCbCr(
       aAllocator, aYSize, aYStride, aCbCrSize, aCbCrStride, aStereoMode,
-      aColorDepth, aYUVColorSpace, aTextureFlags);
+      aColorDepth, aYUVColorSpace, aColorRange, aTextureFlags);
   if (!data) {
     return nullptr;
   }

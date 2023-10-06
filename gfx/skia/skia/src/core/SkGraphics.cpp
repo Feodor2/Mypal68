@@ -5,29 +5,28 @@
  * found in the LICENSE file.
  */
 
-
 #include "SkGraphics.h"
 
 #include "SkBlitter.h"
 #include "SkCanvas.h"
 #include "SkCpu.h"
 #include "SkGeometry.h"
-#include "SkGlyphCache.h"
 #include "SkImageFilter.h"
 #include "SkMath.h"
 #include "SkMatrix.h"
 #include "SkOpts.h"
 #include "SkPath.h"
 #include "SkPathEffect.h"
-#include "SkPixelRef.h"
 #include "SkRefCnt.h"
 #include "SkResourceCache.h"
 #include "SkScalerContext.h"
 #include "SkShader.h"
 #include "SkStream.h"
+#include "SkStrikeCache.h"
 #include "SkTSearch.h"
 #include "SkTime.h"
-#include "SkUtils.h"
+#include "SkTypefaceCache.h"
+#include "SkUTF.h"
 
 #include <stdlib.h>
 
@@ -53,7 +52,7 @@ void SkGraphics::Init() {
 
 void SkGraphics::DumpMemoryStatistics(SkTraceMemoryDump* dump) {
   SkResourceCache::DumpMemoryStatistics(dump);
-  SkGlyphCache::DumpMemoryStatistics(dump);
+  SkStrikeCache::DumpMemoryStatistics(dump);
 }
 
 void SkGraphics::PurgeAllCaches() {
@@ -108,4 +107,41 @@ void SkGraphics::SetFlags(const char* flags) {
         }
         flags = nextSemi + 1;
     } while (nextSemi);
+}
+
+size_t SkGraphics::GetFontCacheLimit() {
+    return SkStrikeCache::GlobalStrikeCache()->getCacheSizeLimit();
+}
+
+size_t SkGraphics::SetFontCacheLimit(size_t bytes) {
+    return SkStrikeCache::GlobalStrikeCache()->setCacheSizeLimit(bytes);
+}
+
+size_t SkGraphics::GetFontCacheUsed() {
+    return SkStrikeCache::GlobalStrikeCache()->getTotalMemoryUsed();
+}
+
+int SkGraphics::GetFontCacheCountLimit() {
+    return SkStrikeCache::GlobalStrikeCache()->getCacheCountLimit();
+}
+
+int SkGraphics::SetFontCacheCountLimit(int count) {
+    return SkStrikeCache::GlobalStrikeCache()->setCacheCountLimit(count);
+}
+
+int SkGraphics::GetFontCacheCountUsed() {
+    return SkStrikeCache::GlobalStrikeCache()->getCacheCountUsed();
+}
+
+int SkGraphics::GetFontCachePointSizeLimit() {
+    return SkStrikeCache::GlobalStrikeCache()->getCachePointSizeLimit();
+}
+
+int SkGraphics::SetFontCachePointSizeLimit(int limit) {
+    return SkStrikeCache::GlobalStrikeCache()->setCachePointSizeLimit(limit);
+}
+
+void SkGraphics::PurgeFontCache() {
+    SkStrikeCache::GlobalStrikeCache()->purgeAll();
+    SkTypefaceCache::PurgeAll();
 }

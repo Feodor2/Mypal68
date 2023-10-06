@@ -10,9 +10,6 @@ browser.jar:
         content/browser/aboutDialog.css               (content/aboutDialog.css)
         content/browser/aboutRestartRequired.js       (content/aboutRestartRequired.js)
         content/browser/aboutRestartRequired.xhtml    (content/aboutRestartRequired.xhtml)
-        content/browser/aboutRobots.xhtml             (content/aboutRobots.xhtml)
-        content/browser/aboutRobots.js                (content/aboutRobots.js)
-        content/browser/aboutRobots.css               (content/aboutRobots.css)
 
         content/browser/illustrations/error-connection-failure.svg (content/illustrations/error-connection-failure.svg)
         content/browser/illustrations/error-server-not-found.svg (content/illustrations/error-server-not-found.svg)
@@ -21,7 +18,6 @@ browser.jar:
         content/browser/illustrations/blue-berror.svg (content/illustrations/blue-berror.svg)
         content/browser/aboutNetError.xhtml            (content/aboutNetError.xhtml)
         content/browser/aboutNetError.js               (content/aboutNetError.js)
-        content/browser/aboutRobots-icon.png          (content/aboutRobots-icon.png)
         content/browser/aboutFrameCrashed.html        (content/aboutFrameCrashed.html)
         content/browser/aboutTabCrashed.css           (content/aboutTabCrashed.css)
         content/browser/aboutTabCrashed.js            (content/aboutTabCrashed.js)

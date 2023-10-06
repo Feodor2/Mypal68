@@ -85,7 +85,7 @@ class nsHttpTransaction final : public nsAHttpTransaction,
        uint64_t reqContentLength, bool reqBodyIncludesHeaders,
        nsIEventTarget* consumerTarget, nsIInterfaceRequestor* callbacks,
        nsITransportEventSink* eventsink, uint64_t topLevelOuterContentWindowId,
-       HttpTrafficCategory trafficCategory, nsIAsyncInputStream** responseBody);
+       nsIAsyncInputStream** responseBody);
 
   void OnActivated() override;
 
@@ -484,7 +484,6 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // H2 websocket support
   RefPtr<SpdyConnectTransaction> mH2WSTransaction;
 
-  HttpTrafficCategory mTrafficCategory;
   bool mThroughCaptivePortal;
 };
 

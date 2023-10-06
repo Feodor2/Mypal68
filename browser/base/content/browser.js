@@ -608,9 +608,7 @@ var gInitialPages = [
   "about:newtab",
   "about:home",
   "about:privatebrowsing",
-  "about:welcomeback",
   "about:sessionrestore",
-  "about:welcome",
   "about:newinstall",
 ];
 

@@ -6218,12 +6218,6 @@
   value: false
   mirror: always
 
-# Telemetry of traffic categories. Whether or not to enable HttpTrafficAnalyzer.
-- name: network.traffic_analyzer.enabled
-  type: RelaxedAtomicBool
-  value: false
-  mirror: always
-
 - name: network.delay.tracking.load
   type: uint32_t
   value: 0

@@ -159,13 +159,8 @@ nsHttpConnection::~nsHttpConnection() {
       auto total =
           Clamp<uint32_t>((mTotalBytesRead >> 10) + (mTotalBytesWritten >> 10),
                           0, std::numeric_limits<uint32_t>::max());
-      Telemetry::ScalarAdd(
-          Telemetry::ScalarID::NETWORKING_DATA_TRANSFERRED_CAPTIVE_PORTAL,
-          total);
     }
 
-    Telemetry::ScalarAdd(
-        Telemetry::ScalarID::NETWORKING_HTTP_CONNECTIONS_CAPTIVE_PORTAL, 1);
   }
 
   if (mForceSendTimer) {
@@ -985,14 +980,6 @@ void nsHttpConnection::Close(nsresult reason, bool aIsShutdown) {
   if (mForceSendTimer) {
     mForceSendTimer->Cancel();
     mForceSendTimer = nullptr;
-  }
-
-  if (!mTrafficCategory.IsEmpty()) {
-    HttpTrafficAnalyzer* hta = gHttpHandler->GetHttpTrafficAnalyzer();
-    if (hta) {
-      hta->IncrementHttpConnection(std::move(mTrafficCategory));
-      MOZ_ASSERT(mTrafficCategory.IsEmpty());
-    }
   }
 
   if (NS_FAILED(reason)) {
@@ -2711,15 +2698,6 @@ bool nsHttpConnection::CanAcceptWebsocket() {
   }
 
   return mSpdySession->CanAcceptWebsocket();
-}
-
-void nsHttpConnection::SetTrafficCategory(HttpTrafficCategory aCategory) {
-  MOZ_ASSERT(OnSocketThread(), "not on socket thread");
-  if (aCategory == HttpTrafficCategory::eInvalid ||
-      mTrafficCategory.Contains(aCategory)) {
-    return;
-  }
-  Unused << mTrafficCategory.AppendElement(aCategory);
 }
 
 }  // namespace net

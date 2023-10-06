@@ -11,7 +11,6 @@
 #include "nsHttpAuthCache.h"
 #include "nsHttpConnectionMgr.h"
 #include "ASpdySession.h"
-#include "HttpTrafficAnalyzer.h"
 
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticPtr.h"
@@ -454,8 +453,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   bool DumpHpackTables() { return mDumpHpackTables; }
 
-  HttpTrafficAnalyzer* GetHttpTrafficAnalyzer();
-
   bool GetThroughCaptivePortal() { return mThroughCaptivePortal; }
 
  private:
@@ -703,8 +700,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
 
   // If true, the transactions from active tab will be dispatched first.
   bool mActiveTabPriority;
-
-  HttpTrafficAnalyzer mHttpTrafficAnalyzer;
 
  private:
   // For Rate Pacing Certain Network Events. Only assign this pointer on

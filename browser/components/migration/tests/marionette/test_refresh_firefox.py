@@ -346,7 +346,7 @@ class TestFirefoxRefresh(MarionetteTestCase):
         tabURIs = self.runCode("""
           return [... gBrowser.browsers].map(b => b.currentURI && b.currentURI.spec)
         """)
-        self.assertSequenceEqual(tabURIs, ["about:welcomeback"])
+        self.assertSequenceEqual(tabURIs, ["about:welcome"])
 
         # Dismiss modal dialog if any. This is mainly to dismiss the check for
         # default browser dialog if it shows up.

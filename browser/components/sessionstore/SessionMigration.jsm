@@ -66,7 +66,7 @@ var SessionMigrationInternal = {
       win._closedTabs = [];
       return win;
     });
-    let url = "about:welcomeback";
+    let url = "about:welcome";
     let formdata = { id: { sessionData: state }, url };
     let entry = {
       url,

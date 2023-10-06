@@ -730,14 +730,6 @@ var SessionStoreInternal = {
                   E10SUtils.SERIALIZED_SYSTEMPRINCIPAL,
               };
               state = { windows: [{ tabs: [{ entries: [entry], formdata }] }] };
-            } else if (
-              this._hasSingleTabWithURL(state.windows, "about:welcomeback")
-            ) {
-              // On a single about:welcomeback URL that crashed, replace about:welcomeback
-              // with about:sessionrestore, to make clear to the user that we crashed.
-              state.windows[0].tabs[0].entries[0].url = "about:sessionrestore";
-              state.windows[0].tabs[0].entries[0].triggeringPrincipal_base64 =
-                E10SUtils.SERIALIZED_SYSTEMPRINCIPAL;
             }
           }
 
@@ -5288,8 +5280,7 @@ var SessionStoreInternal = {
 
     // don't wrap a single about:sessionrestore page
     if (
-      this._hasSingleTabWithURL(winData, "about:sessionrestore") ||
-      this._hasSingleTabWithURL(winData, "about:welcomeback")
+      this._hasSingleTabWithURL(winData, "about:sessionrestore")
     ) {
       return false;
     }

@@ -70,12 +70,7 @@ static const RedirEntry kRedirMap[] = {
     {"rights", "chrome://global/content/aboutRights.xhtml",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::ALLOW_SCRIPT},
-    {"robots", "chrome://browser/content/aboutRobots.xhtml",
-     nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
-         nsIAboutModule::ALLOW_SCRIPT},
     {"sessionrestore", "chrome://browser/content/aboutSessionRestore.xhtml",
-     nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::HIDE_FROM_ABOUTABOUT},
-    {"welcomeback", "chrome://browser/content/aboutWelcomeBack.xhtml",
      nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::HIDE_FROM_ABOUTABOUT},
     // Actual activity stream URL for home and newtab are set in channel
     // creation

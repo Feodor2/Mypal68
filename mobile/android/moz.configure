@@ -120,7 +120,6 @@ def fennec_nightly(nightly):
     return bool(nightly)
 
 
-imply_option('MOZ_SERVICES_HEALTHREPORT', True)
 imply_option('MOZ_ANDROID_HISTORY', True)
 imply_option('--enable-small-chunk-size', True)
 

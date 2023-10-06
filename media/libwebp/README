@@ -4,7 +4,7 @@
           \__\__/\____/\_____/__/ ____  ___
                 / _/ /    \    \ /  _ \/ _/
                /  \_/   / /   \ \   __/  \__
-               \____/____/\_____/_____/____/v1.0.2
+               \____/____/\_____/_____/____/v1.2.2
 
 Description:
 ============
@@ -13,13 +13,13 @@ WebP codec: library to encode and decode images in WebP format. This package
 contains the library that can be used in other programs to add WebP support,
 as well as the command line tools 'cwebp' and 'dwebp'.
 
-See http://developers.google.com/speed/webp
+See https://developers.google.com/speed/webp
 
 The latest source tree is available at
 https://chromium.googlesource.com/webm/libwebp
 
 It is released under the same license as the WebM project.
-See http://www.webmproject.org/license/software/ or the
+See https://www.webmproject.org/license/software/ or the
 "COPYING" file for details. An additional intellectual
 property rights grant can be found in the file PATENTS.
 
@@ -113,7 +113,7 @@ make install
 
 CMake:
 ------
-With CMake, you can compile libwebp, cwebp, dwebp, gif2web, img2webp, webpinfo
+With CMake, you can compile libwebp, cwebp, dwebp, gif2webp, img2webp, webpinfo
 and the JS bindings.
 
 Prerequisites:
@@ -225,6 +225,7 @@ Usage:
 
 If input size (-s) for an image is not specified, it is
 assumed to be a PNG, JPEG, TIFF or WebP file.
+Note: Animated PNG and WebP files are not supported.
 
 Options:
   -h / -help ............. short help
@@ -254,6 +255,8 @@ Options:
   -partition_limit <int> . limit quality to fit the 512k limit on
                            the first partition (0=no degradation ... 100=full)
   -pass <int> ............ analysis pass number (1..10)
+  -qrange <min> <max> .... specifies the permissible quality range
+                           (default: 0 100)
   -crop <x> <y> <w> <h> .. crop picture with the given rectangle
   -resize <w> <h> ........ resize picture (after any cropping)
   -mt .................... use multi-threading if available
@@ -293,6 +296,7 @@ Experimental Options:
   -jpeg_like ............. roughly match expected JPEG size
   -af .................... auto-adjust filter strength
   -pre <int> ............. pre-processing filter
+
 
 The main options you might want to try in order to further tune the
 visual quality are:
@@ -341,7 +345,9 @@ The full list of options is available using -h:
 > dwebp -h
 Usage: dwebp in_file [options] [-o out_file]
 
-Decodes the WebP image file to PNG format [Default]
+Decodes the WebP image file to PNG format [Default].
+Note: Animated WebP files are not supported.
+
 Use following options to convert into alternate image formats:
   -pam ......... save the raw RGBA samples as a color PAM
   -ppm ......... save the raw RGB samples as a color PPM
@@ -423,15 +429,15 @@ Prerequisites:
 1) OpenGL & OpenGL Utility Toolkit (GLUT)
   Linux:
     $ sudo apt-get install freeglut3-dev mesa-common-dev
-  Mac + XCode:
+  Mac + Xcode:
     - These libraries should be available in the OpenGL / GLUT frameworks.
   Windows:
     http://freeglut.sourceforge.net/index.php#download
 
 2) (Optional) qcms (Quick Color Management System)
   i. Download qcms from Mozilla / Chromium:
-    http://hg.mozilla.org/mozilla-central/file/0e7639e3bdfb/gfx/qcms
-    http://src.chromium.org/viewvc/chrome/trunk/src/third_party/qcms
+    https://hg.mozilla.org/mozilla-central/file/0e7639e3bdfb/gfx/qcms
+    https://source.chromium.org/chromium/chromium/src/+/main:third_party/qcms/;drc=d4a2f8e1ed461d8fc05ed88d1ae2dc94c9773825
   ii. Build and archive the source files as libqcms.a / qcms.lib
   iii. Update makefile.unix / Makefile.vc
     a) Define WEBP_HAVE_QCMS
@@ -450,7 +456,7 @@ modes, etc.
 
 Usage:
 
-  img2webp [file-level options] [image files...] [per-frame options...]
+  img2webp [file_options] [[frame_options] frame_file]...
 
 File-level options (only used at the start of compression):
  -min_size ............ minimize size
@@ -597,7 +603,7 @@ The encoding flow looks like:
   // Setup a config, starting form a preset and tuning some additional
   // parameters
   WebPConfig config;
-  if (!WebPConfigPreset(&config, WEBP_PRESET_PHOTO, quality_factor))
+  if (!WebPConfigPreset(&config, WEBP_PRESET_PHOTO, quality_factor)) {
     return 0;   // version error
   }
   // ... additional tuning
@@ -613,7 +619,7 @@ The encoding flow looks like:
   pic.width = width;
   pic.height = height;
   // allocated picture of dimension width x height
-  if (!WebPPictureAllocate(&pic)) {
+  if (!WebPPictureAlloc(&pic)) {
     return 0;   // memory error
   }
   // at this point, 'pic' has been initialized as a container,
@@ -780,10 +786,10 @@ Bugs:
 Please report all bugs to the issue tracker:
     https://bugs.chromium.org/p/webp
 Patches welcome! See this page to get started:
-    http://www.webmproject.org/code/contribute/submitting-patches/
+    https://www.webmproject.org/code/contribute/submitting-patches/
 
 Discuss:
 ========
 
 Email: webp-discuss@webmproject.org
-Web: http://groups.google.com/a/webmproject.org/group/webp-discuss
+Web: https://groups.google.com/a/webmproject.org/group/webp-discuss

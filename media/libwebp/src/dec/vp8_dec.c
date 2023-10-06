@@ -86,6 +86,8 @@ void VP8Delete(VP8Decoder* const dec) {
 
 int VP8SetError(VP8Decoder* const dec,
                 VP8StatusCode error, const char* const msg) {
+  // VP8_STATUS_SUSPENDED is only meaningful in incremental decoding.
+  assert(dec->incremental_ || error != VP8_STATUS_SUSPENDED);
   // The oldest error reported takes precedence over the new one.
   if (dec->status_ == VP8_STATUS_OK) {
     dec->status_ = error;
@@ -161,23 +163,26 @@ static int ParseSegmentHeader(VP8BitReader* br,
                               VP8SegmentHeader* hdr, VP8Proba* proba) {
   assert(br != NULL);
   assert(hdr != NULL);
-  hdr->use_segment_ = VP8Get(br);
+  hdr->use_segment_ = VP8Get(br, "global-header");
   if (hdr->use_segment_) {
-    hdr->update_map_ = VP8Get(br);
-    if (VP8Get(br)) {   // update data
+    hdr->update_map_ = VP8Get(br, "global-header");
+    if (VP8Get(br, "global-header")) {   // update data
       int s;
-      hdr->absolute_delta_ = VP8Get(br);
+      hdr->absolute_delta_ = VP8Get(br, "global-header");
       for (s = 0; s < NUM_MB_SEGMENTS; ++s) {
-        hdr->quantizer_[s] = VP8Get(br) ? VP8GetSignedValue(br, 7) : 0;
+        hdr->quantizer_[s] = VP8Get(br, "global-header") ?
+            VP8GetSignedValue(br, 7, "global-header") : 0;
       }
       for (s = 0; s < NUM_MB_SEGMENTS; ++s) {
-        hdr->filter_strength_[s] = VP8Get(br) ? VP8GetSignedValue(br, 6) : 0;
+        hdr->filter_strength_[s] = VP8Get(br, "global-header") ?
+            VP8GetSignedValue(br, 6, "global-header") : 0;
       }
     }
     if (hdr->update_map_) {
       int s;
       for (s = 0; s < MB_FEATURE_TREE_PROBS; ++s) {
-        proba->segments_[s] = VP8Get(br) ? VP8GetValue(br, 8) : 255u;
+        proba->segments_[s] = VP8Get(br, "global-header") ?
+            VP8GetValue(br, 8, "global-header") : 255u;
       }
     }
   } else {
@@ -187,12 +192,12 @@ static int ParseSegmentHeader(VP8BitReader* br,
 }
 
 // Paragraph 9.5
-// This function returns VP8_STATUS_SUSPENDED if we don't have all the
-// necessary data in 'buf'.
-// This case is not necessarily an error (for incremental decoding).
-// Still, no bitreader is ever initialized to make it possible to read
-// unavailable memory.
-// If we don't even have the partitions' sizes, than VP8_STATUS_NOT_ENOUGH_DATA
+// If we don't have all the necessary data in 'buf', this function returns
+// VP8_STATUS_SUSPENDED in incremental decoding, VP8_STATUS_NOT_ENOUGH_DATA
+// otherwise.
+// In incremental decoding, this case is not necessarily an error. Still, no
+// bitreader is ever initialized to make it possible to read unavailable memory.
+// If we don't even have the partitions' sizes, then VP8_STATUS_NOT_ENOUGH_DATA
 // is returned, and this is an unrecoverable error.
 // If the partitions were positioned ok, VP8_STATUS_OK is returned.
 static VP8StatusCode ParsePartitions(VP8Decoder* const dec,
@@ -205,7 +210,7 @@ static VP8StatusCode ParsePartitions(VP8Decoder* const dec,
   size_t last_part;
   size_t p;
 
-  dec->num_parts_minus_one_ = (1 << VP8GetValue(br, 2)) - 1;
+  dec->num_parts_minus_one_ = (1 << VP8GetValue(br, 2, "global-header")) - 1;
   last_part = dec->num_parts_minus_one_;
   if (size < 3 * last_part) {
     // we can't even read the sizes with sz[]! That's a failure.
@@ -222,28 +227,30 @@ static VP8StatusCode ParsePartitions(VP8Decoder* const dec,
     sz += 3;
   }
   VP8InitBitReader(dec->parts_ + last_part, part_start, size_left);
-  return (part_start < buf_end) ? VP8_STATUS_OK :
-           VP8_STATUS_SUSPENDED;   // Init is ok, but there's not enough data
+  if (part_start < buf_end) return VP8_STATUS_OK;
+  return dec->incremental_
+             ? VP8_STATUS_SUSPENDED  // Init is ok, but there's not enough data
+             : VP8_STATUS_NOT_ENOUGH_DATA;
 }
 
 // Paragraph 9.4
 static int ParseFilterHeader(VP8BitReader* br, VP8Decoder* const dec) {
   VP8FilterHeader* const hdr = &dec->filter_hdr_;
-  hdr->simple_    = VP8Get(br);
-  hdr->level_     = VP8GetValue(br, 6);
-  hdr->sharpness_ = VP8GetValue(br, 3);
-  hdr->use_lf_delta_ = VP8Get(br);
+  hdr->simple_    = VP8Get(br, "global-header");
+  hdr->level_     = VP8GetValue(br, 6, "global-header");
+  hdr->sharpness_ = VP8GetValue(br, 3, "global-header");
+  hdr->use_lf_delta_ = VP8Get(br, "global-header");
   if (hdr->use_lf_delta_) {
-    if (VP8Get(br)) {   // update lf-delta?
+    if (VP8Get(br, "global-header")) {   // update lf-delta?
       int i;
       for (i = 0; i < NUM_REF_LF_DELTAS; ++i) {
-        if (VP8Get(br)) {
-          hdr->ref_lf_delta_[i] = VP8GetSignedValue(br, 6);
+        if (VP8Get(br, "global-header")) {
+          hdr->ref_lf_delta_[i] = VP8GetSignedValue(br, 6, "global-header");
         }
       }
       for (i = 0; i < NUM_MODE_LF_DELTAS; ++i) {
-        if (VP8Get(br)) {
-          hdr->mode_lf_delta_[i] = VP8GetSignedValue(br, 6);
+        if (VP8Get(br, "global-header")) {
+          hdr->mode_lf_delta_[i] = VP8GetSignedValue(br, 6, "global-header");
         }
       }
     }
@@ -332,7 +339,7 @@ int VP8GetHeaders(VP8Decoder* const dec, VP8Io* const io) {
     io->scaled_width = io->width;
     io->scaled_height = io->height;
 
-    io->mb_w = io->width;   // sanity check
+    io->mb_w = io->width;   // for soundness
     io->mb_h = io->height;  // ditto
 
     VP8ResetProba(&dec->proba_);
@@ -352,8 +359,8 @@ int VP8GetHeaders(VP8Decoder* const dec, VP8Io* const io) {
   buf_size -= frm_hdr->partition_length_;
 
   if (frm_hdr->key_frame_) {
-    pic_hdr->colorspace_ = VP8Get(br);
-    pic_hdr->clamp_type_ = VP8Get(br);
+    pic_hdr->colorspace_ = VP8Get(br, "global-header");
+    pic_hdr->clamp_type_ = VP8Get(br, "global-header");
   }
   if (!ParseSegmentHeader(br, &dec->segment_hdr_, &dec->proba_)) {
     return VP8SetError(dec, VP8_STATUS_BITSTREAM_ERROR,
@@ -378,7 +385,7 @@ int VP8GetHeaders(VP8Decoder* const dec, VP8Io* const io) {
                        "Not a key frame.");
   }
 
-  VP8Get(br);   // ignore the value of update_proba_
+  VP8Get(br, "global-header");   // ignore the value of update_proba_
 
   VP8ParseProba(br, dec);
 
@@ -400,31 +407,31 @@ static const uint8_t kZigzag[16] = {
   0, 1, 4, 8,  5, 2, 3, 6,  9, 12, 13, 10,  7, 11, 14, 15
 };
 
-// See section 13-2: http://tools.ietf.org/html/rfc6386#section-13.2
+// See section 13-2: https://datatracker.ietf.org/doc/html/rfc6386#section-13.2
 static int GetLargeValue(VP8BitReader* const br, const uint8_t* const p) {
   int v;
-  if (!VP8GetBit(br, p[3])) {
-    if (!VP8GetBit(br, p[4])) {
+  if (!VP8GetBit(br, p[3], "coeffs")) {
+    if (!VP8GetBit(br, p[4], "coeffs")) {
       v = 2;
     } else {
-      v = 3 + VP8GetBit(br, p[5]);
+      v = 3 + VP8GetBit(br, p[5], "coeffs");
     }
   } else {
-    if (!VP8GetBit(br, p[6])) {
-      if (!VP8GetBit(br, p[7])) {
-        v = 5 + VP8GetBit(br, 159);
+    if (!VP8GetBit(br, p[6], "coeffs")) {
+      if (!VP8GetBit(br, p[7], "coeffs")) {
+        v = 5 + VP8GetBit(br, 159, "coeffs");
       } else {
-        v = 7 + 2 * VP8GetBit(br, 165);
-        v += VP8GetBit(br, 145);
+        v = 7 + 2 * VP8GetBit(br, 165, "coeffs");
+        v += VP8GetBit(br, 145, "coeffs");
       }
     } else {
       const uint8_t* tab;
-      const int bit1 = VP8GetBit(br, p[8]);
-      const int bit0 = VP8GetBit(br, p[9 + bit1]);
+      const int bit1 = VP8GetBit(br, p[8], "coeffs");
+      const int bit0 = VP8GetBit(br, p[9 + bit1], "coeffs");
       const int cat = 2 * bit1 + bit0;
       v = 0;
       for (tab = kCat3456[cat]; *tab; ++tab) {
-        v += v + VP8GetBit(br, *tab);
+        v += v + VP8GetBit(br, *tab, "coeffs");
       }
       v += 3 + (8 << cat);
     }
@@ -438,24 +445,24 @@ static int GetCoeffsFast(VP8BitReader* const br,
                          int ctx, const quant_t dq, int n, int16_t* out) {
   const uint8_t* p = prob[n]->probas_[ctx];
   for (; n < 16; ++n) {
-    if (!VP8GetBit(br, p[0])) {
+    if (!VP8GetBit(br, p[0], "coeffs")) {
       return n;  // previous coeff was last non-zero coeff
     }
-    while (!VP8GetBit(br, p[1])) {       // sequence of zero coeffs
+    while (!VP8GetBit(br, p[1], "coeffs")) {       // sequence of zero coeffs
       p = prob[++n]->probas_[0];
       if (n == 16) return 16;
     }
     {        // non zero coeff
       const VP8ProbaArray* const p_ctx = &prob[n + 1]->probas_[0];
       int v;
-      if (!VP8GetBit(br, p[2])) {
+      if (!VP8GetBit(br, p[2], "coeffs")) {
         v = 1;
         p = p_ctx[1];
       } else {
         v = GetLargeValue(br, p);
         p = p_ctx[2];
       }
-      out[kZigzag[n]] = VP8GetSigned(br, v) * dq[n > 0];
+      out[kZigzag[n]] = VP8GetSigned(br, v, "coeffs") * dq[n > 0];
     }
   }
   return 16;
@@ -468,36 +475,34 @@ static int GetCoeffsAlt(VP8BitReader* const br,
                         int ctx, const quant_t dq, int n, int16_t* out) {
   const uint8_t* p = prob[n]->probas_[ctx];
   for (; n < 16; ++n) {
-    if (!VP8GetBitAlt(br, p[0])) {
+    if (!VP8GetBitAlt(br, p[0], "coeffs")) {
       return n;  // previous coeff was last non-zero coeff
     }
-    while (!VP8GetBitAlt(br, p[1])) {       // sequence of zero coeffs
+    while (!VP8GetBitAlt(br, p[1], "coeffs")) {       // sequence of zero coeffs
       p = prob[++n]->probas_[0];
       if (n == 16) return 16;
     }
     {        // non zero coeff
       const VP8ProbaArray* const p_ctx = &prob[n + 1]->probas_[0];
       int v;
-      if (!VP8GetBitAlt(br, p[2])) {
+      if (!VP8GetBitAlt(br, p[2], "coeffs")) {
         v = 1;
         p = p_ctx[1];
       } else {
         v = GetLargeValue(br, p);
         p = p_ctx[2];
       }
-      out[kZigzag[n]] = VP8GetSigned(br, v) * dq[n > 0];
+      out[kZigzag[n]] = VP8GetSigned(br, v, "coeffs") * dq[n > 0];
     }
   }
   return 16;
 }
 
-static WEBP_TSAN_IGNORE_FUNCTION void InitGetCoeffs(void) {
-  if (GetCoeffs == NULL) {
-    if (VP8GetCPUInfo != NULL && VP8GetCPUInfo(kSlowSSSE3)) {
-      GetCoeffs = GetCoeffsAlt;
-    } else {
-      GetCoeffs = GetCoeffsFast;
-    }
+WEBP_DSP_INIT_FUNC(InitGetCoeffs) {
+  if (VP8GetCPUInfo != NULL && VP8GetCPUInfo(kSlowSSSE3)) {
+    GetCoeffs = GetCoeffsAlt;
+  } else {
+    GetCoeffs = GetCoeffsFast;
   }
 }
 

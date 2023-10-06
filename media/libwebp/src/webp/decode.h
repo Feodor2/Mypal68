@@ -20,7 +20,7 @@
 extern "C" {
 #endif
 
-#define WEBP_DECODER_ABI_VERSION 0x0208    // MAJOR(8b) + MINOR(8b)
+#define WEBP_DECODER_ABI_VERSION 0x0209    // MAJOR(8b) + MINOR(8b)
 
 // Note: forward declaring enumerations is not allowed in (strict) C and C++,
 // the types are left here for reference.
@@ -85,14 +85,11 @@ WEBP_EXTERN uint8_t* WebPDecodeBGR(const uint8_t* data, size_t data_size,
 // Upon return, the Y buffer has a stride returned as '*stride', while U and V
 // have a common stride returned as '*uv_stride'.
 // Return NULL in case of error.
-// (*) Also named Y'CbCr. See: http://en.wikipedia.org/wiki/YCbCr
+// (*) Also named Y'CbCr. See: https://en.wikipedia.org/wiki/YCbCr
 WEBP_EXTERN uint8_t* WebPDecodeYUV(const uint8_t* data, size_t data_size,
                                    int* width, int* height,
                                    uint8_t** u, uint8_t** v,
                                    int* stride, int* uv_stride);
-
-// Releases memory returned by the WebPDecode*() functions above.
-WEBP_EXTERN void WebPFree(void* ptr);
 
 // These five functions are variants of the above ones, that decode the image
 // directly into a pre-allocated buffer 'output_buffer'. The maximum storage
@@ -456,7 +453,7 @@ struct WebPDecoderOptions {
   int scaled_width, scaled_height;    // final resolution
   int use_threads;                    // if true, use multi-threaded decoding
   int dithering_strength;             // dithering strength (0=Off, 100=full)
-  int flip;                           // flip output vertically
+  int flip;                           // if true, flip output vertically
   int alpha_dithering_strength;       // alpha dithering strength in [0..100]
 
   uint32_t pad[5];                    // padding for later use

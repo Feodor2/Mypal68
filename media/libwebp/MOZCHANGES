@@ -1,5 +1,19 @@
 Changes made to pristine libwebp source by mozilla.org developers.
 
+2023/03/06  -- Cherry-pick upstream fix (bug 1819244).
+
+2022/02/03  -- Enabled automatic updates via Updatebot (meta bug #1618282). For
+               further updates to the library please review the mercurial
+               history for /media/libwebp/moz.yaml (bug #1753050).
+
+2022/01/25  -- Synced with libwebp-1.2.2 (bug 1752025).
+
+2021/09/08  -- Synced with libwebp-1.2.1 (bug 1729748).
+
+2021/02/07  -- Synced with libwebp-1.2.0 (bug 1691317).
+
+2020/02/26  -- Synced with libwebp-1.1.0 (bug 1618288).
+
 2018/01/21  -- Synced with libwebp-1.0.2 (bug 1521478).
 
 2018/11/26  -- Synced with libwebp-1.0.1 (bug 1509878).

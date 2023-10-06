@@ -7,8 +7,10 @@ with Files('**'):
 
 SOURCES += [
     'bit_reader_utils.c',
+    'bit_writer_utils.c',
     'color_cache_utils.c',
     'filters_utils.c',
+    'huffman_encode_utils.c',
     'huffman_utils.c',
     'quant_levels_dec_utils.c',
     'quant_levels_utils.c',
@@ -21,6 +23,9 @@ SOURCES += [
 LOCAL_INCLUDES += [
     '/media/libwebp',
 ]
+
+# Add libFuzzer configuration directives
+include('/tools/fuzzing/libfuzzer-config.mozbuild')
 
 FINAL_LIBRARY = 'gkmedias'
 

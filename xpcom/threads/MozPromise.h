@@ -7,7 +7,6 @@
 
 #  include "mozilla/Logging.h"
 #  include "mozilla/Maybe.h"
-#  include "mozilla/Mutex.h"
 #  include "mozilla/Monitor2.h"
 #  include "mozilla/RefPtr.h"
 #  include "mozilla/Tuple.h"
@@ -803,7 +802,7 @@ class MozPromise : public MozPromiseBase {
     PROMISE_ASSERT(mMagic1 == sMagic && mMagic2 == sMagic &&
                    mMagic3 == sMagic && mMagic4 == &mMutex);
     RefPtr<ThenValueBase> thenValue = aThenValue;
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     MOZ_DIAGNOSTIC_ASSERT(
         !IsExclusive || !mHaveRequest,
         "Using an exclusive promise in a non-exclusive fashion");
@@ -916,7 +915,7 @@ class MozPromise : public MozPromiseBase {
 
   void ChainTo(already_AddRefed<Private> aChainedPromise,
                const char* aCallSite) {
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     MOZ_DIAGNOSTIC_ASSERT(
         !IsExclusive || !mHaveRequest,
         "Using an exclusive promise in a non-exclusive fashion");
@@ -939,7 +938,7 @@ class MozPromise : public MozPromiseBase {
   void AssertIsDead() override {
     PROMISE_ASSERT(mMagic1 == sMagic && mMagic2 == sMagic &&
                    mMagic3 == sMagic && mMagic4 == &mMutex);
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     for (auto&& then : mThenValues) {
       then->AssertIsDead();
     }
@@ -999,7 +998,7 @@ class MozPromise : public MozPromiseBase {
   };
 
   const char* mCreationSite;  // For logging
-  Mutex mMutex;
+  Lock mMutex;
   ResolveOrRejectValue mValue;
 #  ifdef PROMISE_DEBUG
   uint32_t mMagic1 = sMagic;
@@ -1032,7 +1031,7 @@ class MozPromise<ResolveValueT, RejectValueT, IsExclusive>::Private
   void Resolve(ResolveValueT_&& aResolveValue, const char* aResolveSite) {
     PROMISE_ASSERT(mMagic1 == sMagic && mMagic2 == sMagic &&
                    mMagic3 == sMagic && mMagic4 == &mMutex);
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     PROMISE_LOG("%s resolving MozPromise (%p created at %s)", aResolveSite,
                 this, mCreationSite);
     if (!IsPending()) {
@@ -1050,7 +1049,7 @@ class MozPromise<ResolveValueT, RejectValueT, IsExclusive>::Private
   void Reject(RejectValueT_&& aRejectValue, const char* aRejectSite) {
     PROMISE_ASSERT(mMagic1 == sMagic && mMagic2 == sMagic &&
                    mMagic3 == sMagic && mMagic4 == &mMutex);
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     PROMISE_LOG("%s rejecting MozPromise (%p created at %s)", aRejectSite, this,
                 mCreationSite);
     if (!IsPending()) {
@@ -1068,7 +1067,7 @@ class MozPromise<ResolveValueT, RejectValueT, IsExclusive>::Private
   void ResolveOrReject(ResolveOrRejectValue_&& aValue, const char* aSite) {
     PROMISE_ASSERT(mMagic1 == sMagic && mMagic2 == sMagic &&
                    mMagic3 == sMagic && mMagic4 == &mMutex);
-    MutexAutoLock lock(mMutex);
+    AutoLock lock(mMutex);
     PROMISE_LOG("%s resolveOrRejecting MozPromise (%p created at %s)", aSite,
                 this, mCreationSite);
     if (!IsPending()) {

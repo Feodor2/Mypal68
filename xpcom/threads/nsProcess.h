@@ -10,7 +10,7 @@
 #endif
 
 #include "mozilla/Attributes.h"
-#include "mozilla/Mutex.h"
+#include "base/lock.h"
 #include "nsIProcess.h"
 #include "nsIFile.h"
 #include "nsIObserver.h"
@@ -55,7 +55,7 @@ class nsProcess final : public nsIProcess, public nsIObserver {
                       bool aHoldWeak, bool aArgsUTF8);
 
   PRThread* mThread;
-  mozilla::Mutex mLock;
+  Lock mLock;
   bool mShutdown;
   bool mBlocking;
   bool mStartHidden;

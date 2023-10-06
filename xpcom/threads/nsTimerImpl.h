@@ -13,7 +13,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/Logging.h"
-#include "mozilla/Mutex.h"
+#include "base/lock.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Variant.h"
 
@@ -213,7 +213,7 @@ class nsTimerImpl {
   static double sDeltaSumSquared;
   static double sDeltaNum;
   RefPtr<nsITimer> mITimer;
-  mozilla::Mutex mMutex;
+  Lock mMutex;
   Callback mCallback;
   // Counter because in rare cases we can Fire reentrantly
   unsigned int mFiring;

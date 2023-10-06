@@ -14,7 +14,7 @@
 #include "nsIThreadInternal.h"
 #include "nsITimer.h"
 
-#include "mozilla/Mutex.h"
+#include "base/lock.h"
 #include "nsCOMPtr.h"
 #include "nsTArray.h"
 #include "nsString.h"
@@ -129,7 +129,7 @@ class LazyIdleThread final : public nsIThread,
   /**
    * Protects data that is accessed on both threads.
    */
-  mozilla::Mutex mMutex;
+  Lock mMutex;
 
   /**
    * Touched on both threads but set before mThread is created. Used to direct

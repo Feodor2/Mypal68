@@ -1945,12 +1945,6 @@ SearchEngine.prototype = {
     return false;
   },
 
-  get _hasUpdates() {
-    // Whether or not the engine has an update URL
-    let selfURL = this._getURLOfType(SearchUtils.URL_TYPE.OPENSEARCH, "self");
-    return !!(this._updateURL || this._iconUpdateURL || selfURL);
-  },
-
   get name() {
     return this._name;
   },

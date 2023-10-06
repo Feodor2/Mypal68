@@ -1,0 +1,26 @@
+{
+  "name": "Startpage",
+  "description": "Search Startpage",
+  "manifest_version": 2,
+  "version": "1.0",
+  "applications": {
+    "gecko": {
+      "id": "stp@search.mozilla.org"
+    }
+  },
+  "hidden": true,
+  "icons": {
+    "64": "favicon.png"
+  },
+  "web_accessible_resources": [
+    "favicon.png"
+  ],
+  "chrome_settings_overrides": {
+    "search_provider": {
+      "name": "Startpage",
+      "search_url": "https://www.startpage.com/sp/search",
+      "search_form": "https://www.startpage.com/sp/search?query={searchTerms}",
+      "search_url_get_params": "query={searchTerms}"
+    }
+  }
+}

@@ -77,10 +77,6 @@ const mockUpdateManager = {
   ],
 };
 
-function resetPreferences() {
-  Services.prefs.clearUserPref("browser.search.update");
-}
-
 function formatInstallDate(sec) {
   var date = new Date(sec);
   const dtOptions = {
@@ -95,26 +91,6 @@ function formatInstallDate(sec) {
 }
 
 registerCleanupFunction(resetPreferences);
-
-add_task(async function() {
-  await openPreferencesViaOpenPreferencesAPI("general", { leaveOpen: true });
-  resetPreferences();
-  Services.prefs.setBoolPref("browser.search.update", false);
-
-  let doc = gBrowser.selectedBrowser.contentDocument;
-  let enableSearchUpdate = doc.getElementById("enableSearchUpdate");
-  is_element_visible(
-    enableSearchUpdate,
-    "Check search update preference is visible"
-  );
-
-  // Ensure that the update pref dialog reflects the actual pref value.
-  ok(!enableSearchUpdate.checked, "Ensure search updates are disabled");
-  Services.prefs.setBoolPref("browser.search.update", true);
-  ok(enableSearchUpdate.checked, "Ensure search updates are enabled");
-
-  gBrowser.removeCurrentTab();
-});
 
 add_task(async function() {
   await openPreferencesViaOpenPreferencesAPI("general", { leaveOpen: true });

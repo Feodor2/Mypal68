@@ -183,7 +183,6 @@ Preferences.addAll([
 
   // Update
   { id: "browser.preferences.advanced.selectedTabIndex", type: "int" },
-  { id: "browser.search.update", type: "bool" },
 
   { id: "privacy.userContext.enabled", type: "bool" },
 ]);
@@ -519,11 +518,13 @@ var gMainPane = {
     let arch = bundle.GetStringFromName(archResource);
     version += ` (${arch})`;
 
+#ifdef MOZ_UPDATER
     document.l10n.setAttributes(
       document.getElementById("updateAppInfo"),
       "update-application-version",
       { version }
     );
+#endif
 
     // Show a release notes link if we have a URL.
     let relNotesLink = document.getElementById("releasenotes");

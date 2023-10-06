@@ -75,15 +75,6 @@ const CACHE_VERSION = 1;
 
 const CACHE_FILENAME = "search.json.mozlz4";
 
-// The default engine update interval, in days. This is only used if an engine
-// specifies an updateURL, but not an updateInterval.
-const SEARCH_DEFAULT_UPDATE_INTERVAL = 7;
-
-// The default interval before checking again for the name of the
-// default engine for the region, in seconds. Only used if the response
-// from the server doesn't specify an interval.
-const SEARCH_GEO_DEFAULT_UPDATE_INTERVAL = 2592000; // 30 days.
-
 // Some extensions package multiple locales into a single extension, for those
 // engines we use engine-locale to address the engine.
 // This is to be removed in https://bugzilla.mozilla.org/show_bug.cgi?id=1532246
@@ -169,12 +160,6 @@ var ensureKnownRegion = async function(ss) {
         });
       }
     }
-
-    // If gInitialized is true then the search service was forced to perform
-    // a sync initialization during our XHRs - capture this via telemetry.
-    Services.telemetry
-      .getHistogramById("SEARCH_SERVICE_COUNTRY_FETCH_CAUSED_SYNC_INIT")
-      .add(gInitialized);
   } catch (ex) {
     Cu.reportError(ex);
   } finally {
@@ -189,8 +174,7 @@ var ensureKnownRegion = async function(ss) {
   }
 };
 
-// Store the result of the geoip request as well as any other values and
-// telemetry which depend on it.
+// Store the result of the geoip request as well as any other values.
 function storeRegion(region) {
   let isTimezoneUS = isUSTimezone();
   // If it's a US region, but not a US timezone, we don't store the value.
@@ -198,72 +182,10 @@ function storeRegion(region) {
   if (region != "US" || isTimezoneUS) {
     Services.prefs.setCharPref("browser.search.region", region);
   }
-
-  // and telemetry...
-  if (region == "US" && !isTimezoneUS) {
-    SearchUtils.log("storeRegion mismatch - US Region, non-US timezone");
-    Services.telemetry
-      .getHistogramById("SEARCH_SERVICE_US_COUNTRY_MISMATCHED_TIMEZONE")
-      .add(1);
-  }
-  if (region != "US" && isTimezoneUS) {
-    SearchUtils.log("storeRegion mismatch - non-US Region, US timezone");
-    Services.telemetry
-      .getHistogramById("SEARCH_SERVICE_US_TIMEZONE_MISMATCHED_COUNTRY")
-      .add(1);
-  }
-  // telemetry to compare our geoip response with platform-specific country data.
-  // On Mac and Windows, we can get a country code via sysinfo
-  let platformCC = Services.sysinfo.get("countryCode");
-  if (platformCC) {
-    let probeUSMismatched, probeNonUSMismatched;
-    switch (Services.appinfo.OS) {
-      case "Darwin":
-        probeUSMismatched = "SEARCH_SERVICE_US_COUNTRY_MISMATCHED_PLATFORM_OSX";
-        probeNonUSMismatched =
-          "SEARCH_SERVICE_NONUS_COUNTRY_MISMATCHED_PLATFORM_OSX";
-        break;
-      case "WINNT":
-        probeUSMismatched = "SEARCH_SERVICE_US_COUNTRY_MISMATCHED_PLATFORM_WIN";
-        probeNonUSMismatched =
-          "SEARCH_SERVICE_NONUS_COUNTRY_MISMATCHED_PLATFORM_WIN";
-        break;
-      default:
-        Cu.reportError(
-          "Platform " +
-            Services.appinfo.OS +
-            " has system country code but no search service telemetry probes"
-        );
-        break;
-    }
-    if (probeUSMismatched && probeNonUSMismatched) {
-      if (region == "US" || platformCC == "US") {
-        // one of the 2 said US, so record if they are the same.
-        Services.telemetry
-          .getHistogramById(probeUSMismatched)
-          .add(region != platformCC);
-      } else {
-        // non-US - record if they are the same
-        Services.telemetry
-          .getHistogramById(probeNonUSMismatched)
-          .add(region != platformCC);
-      }
-    }
-  }
 }
 
 // Get the region we are in via a XHR geoip request.
 function fetchRegion(ss) {
-  // values for the SEARCH_SERVICE_COUNTRY_FETCH_RESULT 'enum' telemetry probe.
-  const TELEMETRY_RESULT_ENUM = {
-    SUCCESS: 0,
-    SUCCESS_WITHOUT_DATA: 1,
-    XHRTIMEOUT: 2,
-    ERROR: 3,
-    // Note that we expect to add finer-grained error types here later (eg,
-    // dns error, network error, ssl error, etc) with .ERROR remaining as the
-    // generic catch-all that doesn't fit into other categories.
-  };
   let endpoint = Services.urlFormatter.formatURLPref(
     "browser.search.geoip.url"
   );
@@ -287,24 +209,16 @@ function fetchRegion(ss) {
     let geoipTimeoutPossible = true;
     let timerId = setTimeout(() => {
       SearchUtils.log("_fetchRegion: timeout fetching region information");
-      if (geoipTimeoutPossible) {
-        Services.telemetry
-          .getHistogramById("SEARCH_SERVICE_COUNTRY_TIMEOUT")
-          .add(1);
-      }
       timerId = null;
       resolve();
     }, timeoutMS);
 
-    let resolveAndReportSuccess = (result, reason) => {
+    let resolveAndReportSuccess = (result) => {
       // Even if we timed out, we want to save the region and everything
       // related so next startup sees the value and doesn't retry this dance.
       if (result) {
         storeRegion(result);
       }
-      Services.telemetry
-        .getHistogramById("SEARCH_SERVICE_COUNTRY_FETCH_RESULT")
-        .add(reason);
 
       // This notification is just for tests...
       Services.obs.notifyObservers(
@@ -314,9 +228,6 @@ function fetchRegion(ss) {
       );
 
       if (timerId) {
-        Services.telemetry
-          .getHistogramById("SEARCH_SERVICE_COUNTRY_TIMEOUT")
-          .add(0);
         geoipTimeoutPossible = false;
       }
 
@@ -356,23 +267,17 @@ function fetchRegion(ss) {
       SearchUtils.log(
         "_fetchRegion got success response in " + took + "ms: " + region
       );
-      Services.telemetry
-        .getHistogramById("SEARCH_SERVICE_COUNTRY_FETCH_TIME_MS")
-        .add(took);
-      let reason = region
-        ? TELEMETRY_RESULT_ENUM.SUCCESS
-        : TELEMETRY_RESULT_ENUM.SUCCESS_WITHOUT_DATA;
-      resolveAndReportSuccess(region, reason);
+      resolveAndReportSuccess(region);
     };
     request.ontimeout = function(event) {
       SearchUtils.log(
         "_fetchRegion: XHR finally timed-out fetching region information"
       );
-      resolveAndReportSuccess(null, TELEMETRY_RESULT_ENUM.XHRTIMEOUT);
+      resolveAndReportSuccess(null);
     };
     request.onerror = function(event) {
       SearchUtils.log("_fetchRegion: failed to retrieve region information");
-      resolveAndReportSuccess(null, TELEMETRY_RESULT_ENUM.ERROR);
+      resolveAndReportSuccess(null);
     };
     request.open("POST", endpoint, true);
     request.setRequestHeader("Content-Type", "application/json");
@@ -1409,13 +1314,6 @@ SearchService.prototype = {
       }
       SearchUtils.notifyAction(engine, SearchUtils.MODIFIED_TYPE.ADDED);
     }
-
-    if (engine._hasUpdates) {
-      // Schedule the engine's next update, if it isn't already.
-      if (!engine.getAttr("updateexpir")) {
-        engineUpdateService.scheduleNextUpdate(engine);
-      }
-    }
   },
 
   _loadEnginesMetadataFromCache(cache) {
@@ -1951,20 +1849,16 @@ SearchService.prototype = {
       return this._initObservers.promise;
     }
 
-    TelemetryStopwatch.start("SEARCH_SERVICE_INIT_MS");
     this._initStarted = true;
     try {
       // Complete initialization by calling asynchronous initializer.
       await this._init(skipRegionCheck);
-      TelemetryStopwatch.finish("SEARCH_SERVICE_INIT_MS");
     } catch (ex) {
       if (ex.result == Cr.NS_ERROR_ALREADY_INITIALIZED) {
         // No need to pursue asynchronous because synchronous fallback was
         // called and has finished.
-        TelemetryStopwatch.finish("SEARCH_SERVICE_INIT_MS");
       } else {
         this._initObservers.reject(ex.result);
-        TelemetryStopwatch.cancel("SEARCH_SERVICE_INIT_MS");
         throw ex;
       }
     }
@@ -2998,57 +2892,6 @@ SearchService.prototype = {
     }
   },
 
-  // nsITimerCallback
-  notify(timer) {
-    SearchUtils.log("_notify: checking for updates");
-
-    if (
-      !Services.prefs.getBoolPref(
-        SearchUtils.BROWSER_SEARCH_PREF + "update",
-        true
-      )
-    ) {
-      return;
-    }
-
-    // Our timer has expired, but unfortunately, we can't get any data from it.
-    // Therefore, we need to walk our engine-list, looking for expired engines
-    var currentTime = Date.now();
-    SearchUtils.log("currentTime: " + currentTime);
-    for (let name in this._engines) {
-      let engine = this._engines[name].wrappedJSObject;
-      if (!engine._hasUpdates) {
-        continue;
-      }
-
-      SearchUtils.log("checking " + engine.name);
-
-      var expirTime = engine.getAttr("updateexpir");
-      SearchUtils.log(
-        "expirTime: " +
-          expirTime +
-          "\nupdateURL: " +
-          engine._updateURL +
-          "\niconUpdateURL: " +
-          engine._iconUpdateURL
-      );
-
-      var engineExpired = expirTime <= currentTime;
-
-      if (!expirTime || !engineExpired) {
-        SearchUtils.log("skipping engine");
-        continue;
-      }
-
-      SearchUtils.log(engine.name + " has expired");
-
-      engineUpdateService.update(engine);
-
-      // Schedule the next update
-      engineUpdateService.scheduleNextUpdate(engine);
-    } // end engine iteration
-  },
-
   _addObservers() {
     if (this._observersAdded) {
       // There might be a race between synchronous and asynchronous
@@ -3133,76 +2976,6 @@ SearchService.prototype = {
     Ci.nsIObserver,
     Ci.nsITimerCallback,
   ]),
-};
-
-var engineUpdateService = {
-  scheduleNextUpdate(engine) {
-    var interval = engine._updateInterval || SEARCH_DEFAULT_UPDATE_INTERVAL;
-    var milliseconds = interval * 86400000; // |interval| is in days
-    engine.setAttr("updateexpir", Date.now() + milliseconds);
-  },
-
-  update(engine) {
-    engine = engine.wrappedJSObject;
-    this._log("update called for " + engine._name);
-    if (
-      !Services.prefs.getBoolPref(
-        SearchUtils.BROWSER_SEARCH_PREF + "update",
-        true
-      ) ||
-      !engine._hasUpdates
-    ) {
-      return;
-    }
-
-    let testEngine = null;
-    let updateURL = engine._getURLOfType(SearchUtils.URL_TYPE.OPENSEARCH);
-    let updateURI =
-      updateURL && updateURL._hasRelation("self")
-        ? updateURL.getSubmission("", engine).uri
-        : makeURI(engine._updateURL);
-    if (updateURI) {
-      if (engine._isDefault && !updateURI.schemeIs("https")) {
-        this._log("Invalid scheme for default engine update");
-        return;
-      }
-
-      this._log("updating " + engine.name + " from " + updateURI.spec);
-      testEngine = new SearchEngine({
-        uri: updateURI,
-        readOnly: false,
-      });
-      testEngine._engineToUpdate = engine;
-      testEngine._initFromURIAndLoad(updateURI);
-    } else {
-      this._log("invalid updateURI");
-    }
-
-    if (engine._iconUpdateURL) {
-      // If we're updating the engine too, use the new engine object,
-      // otherwise use the existing engine object.
-      (testEngine || engine)._setIcon(engine._iconUpdateURL, true);
-    }
-  },
-
-  /**
-   * Outputs text to the JavaScript console as well as to stdout, if the search
-   * logging pref (browser.search.update.log) is set to true.
-   *
-   * @param {string} text
-   *   The message to log.
-   */
-  _log(text) {
-    if (
-      Services.prefs.getBoolPref(
-        SearchUtils.BROWSER_SEARCH_PREF + "update.log",
-        false
-      )
-    ) {
-      dump("*** Search update: " + text + "\n");
-      Services.console.logStringMessage(text);
-    }
-  },
 };
 
 var EXPORTED_SYMBOLS = ["SearchService"];

@@ -809,9 +809,6 @@
         "browser.safebrowsing.malware.enabled": {
           "type": "boolean"
         },
-        "browser.search.update": {
-          "type": "boolean"
-        },
         "browser.tabs.warnOnClose": {
           "type": "boolean"
         },

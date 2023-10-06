@@ -407,6 +407,7 @@
   <stringbundle id="bundleBrand" src="chrome://branding/locale/brand.properties"/>
 #endif
 
+#ifdef MOZ_UPDATER
 <hbox id="updatesCategory"
       class="subcategory"
       hidden="true"
@@ -427,7 +428,6 @@
       <description id="distribution" class="text-blurb" hidden="true"/>
       <description id="distributionId" class="text-blurb" hidden="true"/>
     </vbox>
-#ifdef MOZ_UPDATER
     <spacer flex="1"/>
     <!-- Please don't remove the wrapping hbox/vbox/box for these elements. It's used to properly compute the search tooltip position. -->
     <vbox>
@@ -441,9 +441,7 @@
                 history-intro
               "/>
     </vbox>
-#endif
   </hbox>
-#ifdef MOZ_UPDATER
   <vbox id="updateBox">
     <deck id="updateDeck" orient="vertical">
       <hbox id="checkForUpdates" align="start">
@@ -533,9 +531,6 @@
       </hbox>
     </deck>
   </vbox>
-#endif
-
-#ifdef MOZ_UPDATER
   <description id="updateAllowDescription" data-l10n-id="update-application-allow-description"></description>
   <vbox id="updateSettingsContainer">
     <radiogroup id="updateRadioGroup">
@@ -555,11 +550,8 @@
             data-l10n-id="update-application-use-service"
             preference="app.update.service.enabled"/>
 #endif
-#endif
-  <checkbox id="enableSearchUpdate"
-            data-l10n-id="update-enable-search-update"
-            preference="browser.search.update"/>
 </groupbox>
+#endif
 
 <hbox id="performanceCategory"
       class="subcategory"

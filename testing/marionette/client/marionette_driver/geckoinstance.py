@@ -547,9 +547,6 @@ class DesktopInstance(GeckoInstance):
         "browser.safebrowsing.malware.enabled": False,
         "browser.safebrowsing.phishing.enabled": False,
 
-        # Disable updates to search engines
-        "browser.search.update": False,
-
         # Do not restore the last open set of tabs if the browser has crashed
         "browser.sessionstore.resume_from_crash": False,
 

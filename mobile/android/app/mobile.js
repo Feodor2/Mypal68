@@ -253,9 +253,6 @@ pref("browser.xul.error_pages.expert_bad_cert", false);
 pref("browser.search.geoSpecificDefaults", true);
 pref("browser.search.geoSpecificDefaults.url", "https://search.services.mozilla.com/1/%APP%/%VERSION%/%CHANNEL%/%LOCALE%/%REGION%/%DISTRIBUTION%/%DISTRIBUTION_VERSION%");
 
-// disable updating
-pref("browser.search.update", false);
-
 // disable search suggestions by default
 pref("browser.search.suggest.enabled", false);
 pref("browser.search.suggest.prompted", false);

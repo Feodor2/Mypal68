@@ -44,7 +44,6 @@ const PREFS_WHITELIST = [
   "browser.search.param",
   "browser.search.searchEnginesURL",
   "browser.search.suggest.enabled",
-  "browser.search.update",
   "browser.search.useDBForOrder",
   "browser.sessionstore.",
   "browser.startup.homepage",

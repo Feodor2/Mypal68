@@ -108,11 +108,6 @@ const RECOMMENDED_PREFS = new Map([
   ["browser.safebrowsing.malware.enabled", false],
   ["browser.safebrowsing.phishing.enabled", false],
 
-  // Disable updates to search engines.
-  //
-  // Should be set in profile.
-  ["browser.search.update", false],
-
   // Do not restore the last open set of tabs if the browser has crashed
   ["browser.sessionstore.resume_from_crash", false],
 

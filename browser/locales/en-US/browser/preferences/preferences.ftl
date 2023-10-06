@@ -354,10 +354,6 @@ update-application-use-service =
     .label = Use a background service to install updates
     .accesskey = b
 
-update-enable-search-update =
-    .label = Automatically update search engines
-    .accesskey = e
-
 ## General Section - Performance
 
 performance-title = Performance

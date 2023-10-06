@@ -30,10 +30,6 @@ EXTRA_JS_MODULES += [
     'SearchUtils.jsm',
 ]
 
-EXTRA_COMPONENTS += [
-    'toolkitsearch.manifest',
-]
-
 XPCOM_MANIFESTS += [
     'components.conf',
 ]

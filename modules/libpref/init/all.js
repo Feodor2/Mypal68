@@ -4323,9 +4323,6 @@ pref("dom.presentation.session_transport.data_channel.enable", false);
 
 // Search service settings
 pref("browser.search.log", false);
-pref("browser.search.update", false);
-pref("browser.search.update.log", false);
-pref("browser.search.update.interval", 21600);
 pref("browser.search.suggest.enabled", false);
 pref("browser.search.reset.enabled", false);
 pref("browser.search.reset.whitelist", "");

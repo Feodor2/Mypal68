@@ -56,7 +56,9 @@ class DeviceManagerDx final {
   RefPtr<ID3D11Device> GetContentDevice();
   RefPtr<ID3D11Device> GetImageDevice();
   RefPtr<IDCompositionDevice> GetDirectCompositionDevice();
+#ifdef MOZ_VR
   RefPtr<ID3D11Device> GetVRDevice();
+#endif
   RefPtr<ID3D11Device> CreateDecoderDevice();
   RefPtr<layers::MLGDevice> GetMLGDevice();
   IDirectDraw7* GetDirectDraw();
@@ -128,7 +130,9 @@ class DeviceManagerDx final {
 
   void CreateWARPCompositorDevice();
   void CreateMLGDevice();
+#ifdef MOZ_VR
   bool CreateVRDevice();
+#endif
 
   mozilla::gfx::FeatureStatus CreateContentDevice();
 
@@ -162,7 +166,9 @@ class DeviceManagerDx final {
   RefPtr<ID3D11Device> mCompositorDevice;
   RefPtr<ID3D11Device> mContentDevice;
   RefPtr<ID3D11Device> mImageDevice;
+#ifdef MOZ_VR
   RefPtr<ID3D11Device> mVRDevice;
+#endif
   RefPtr<ID3D11Device> mDecoderDevice;
   RefPtr<IDCompositionDevice> mDirectCompositionDevice;
 

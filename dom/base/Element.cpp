@@ -138,7 +138,9 @@
 #include "mozilla/dom/KeyframeEffect.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/WindowBinding.h"
-#include "mozilla/dom/VRDisplay.h"
+#ifdef MOZ_VR
+#  include "mozilla/dom/VRDisplay.h"
+#endif
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Preferences.h"
 #include "nsComputedDOMStyle.h"

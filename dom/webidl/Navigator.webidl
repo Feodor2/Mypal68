@@ -213,6 +213,7 @@ partial interface Navigator {
   GamepadServiceTest requestGamepadServiceTest();
 };
 
+#ifdef MOZ_VR
 partial interface Navigator {
   [Throws, Pref="dom.vr.enabled"]
   Promise<sequence<VRDisplay>> getVRDisplays();
@@ -230,6 +231,7 @@ partial interface Navigator {
   [Pref="dom.vr.test.enabled"]
   VRServiceTest requestVRServiceTest();
 };
+#endif
 
 // http://webaudio.github.io/web-midi-api/#requestmidiaccess
 partial interface Navigator {

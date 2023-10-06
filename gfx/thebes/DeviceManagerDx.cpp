@@ -130,7 +130,9 @@ bool DeviceManagerDx::LoadDcomp() {
 void DeviceManagerDx::ReleaseD3D11() {
   MOZ_ASSERT(!mCompositorDevice);
   MOZ_ASSERT(!mContentDevice);
+#ifdef MOZ_VR
   MOZ_ASSERT(!mVRDevice);
+#endif
   MOZ_ASSERT(!mDecoderDevice);
 
   mD3D11Module.reset();
@@ -140,7 +142,9 @@ void DeviceManagerDx::ReleaseD3D11() {
 #ifdef DEBUG
 static inline bool ProcessOwnsCompositor() {
   return XRE_GetProcessType() == GeckoProcessType_GPU ||
+#ifdef MOZ_VR
          XRE_GetProcessType() == GeckoProcessType_VR ||
+#endif
          (XRE_IsParentProcess() && !gfxConfig::IsEnabled(Feature::GPU_PROCESS));
 }
 #endif
@@ -198,6 +202,7 @@ bool DeviceManagerDx::CreateCompositorDevices() {
   return true;
 }
 
+#ifdef MOZ_VR
 bool DeviceManagerDx::CreateVRDevice() {
   MOZ_ASSERT(ProcessOwnsCompositor());
 
@@ -235,6 +240,7 @@ bool DeviceManagerDx::CreateVRDevice() {
 
   return true;
 }
+#endif
 
 void DeviceManagerDx::CreateDirectCompositionDevice() {
   if (!gfxVars::UseWebRenderDCompWin()) {
@@ -1031,6 +1037,7 @@ RefPtr<ID3D11Device> DeviceManagerDx::GetImageDevice() {
   return mImageDevice;
 }
 
+#ifdef MOZ_VR
 RefPtr<ID3D11Device> DeviceManagerDx::GetVRDevice() {
   MutexAutoLock lock(mDeviceLock);
   if (!mVRDevice) {
@@ -1038,6 +1045,7 @@ RefPtr<ID3D11Device> DeviceManagerDx::GetVRDevice() {
   }
   return mVRDevice;
 }
+#endif
 
 RefPtr<IDCompositionDevice> DeviceManagerDx::GetDirectCompositionDevice() {
   MutexAutoLock lock(mDeviceLock);

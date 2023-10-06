@@ -25,7 +25,9 @@
 #endif
 #include "nsNetCID.h"
 #include "nsThread.h"
-#include "VRProcessManager.h"
+#ifdef MOZ_VR
+#  include "VRProcessManager.h"
+#endif
 #include "mozilla/Attributes.h"
 #include "mozilla/MemoryReportingProcess.h"
 #include "mozilla/PodOperations.h"
@@ -1813,11 +1815,13 @@ nsresult nsMemoryReporterManager::StartGettingReports() {
     }
   }
 
+#ifdef MOZ_VR
   if (gfx::VRProcessManager* vr = gfx::VRProcessManager::Get()) {
     if (RefPtr<MemoryReportingProcess> proc = vr->GetProcessMemoryReporter()) {
       s->mChildrenPending.AppendElement(proc.forget());
     }
   }
+#endif
 
   if (!mIsRegistrationBlocked && net::gIOService) {
     if (RefPtr<MemoryReportingProcess> proc =

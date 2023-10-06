@@ -58,8 +58,10 @@ interface Gamepad {
    * The displayId in use for as an association point in the VRDisplay API
    * to identify which VRDisplay that the gamepad is associated with.
    */
+#ifdef MOZ_VR
   [Pref="dom.vr.enabled"]
   readonly attribute unsigned long displayId;
+#endif
 
   /**
    * true if this gamepad is currently connected to the system.

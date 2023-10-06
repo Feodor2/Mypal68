@@ -40,9 +40,11 @@ class GPUChild final : public ipc::CrashReporterHelper<GeckoProcessType_GPU>,
   mozilla::ipc::IPCResult RecvInitComplete(const GPUDeviceData& aData);
   mozilla::ipc::IPCResult RecvReportCheckerboard(const uint32_t& aSeverity,
                                                  const nsCString& aLog);
+#ifdef MOZ_VR
   mozilla::ipc::IPCResult RecvCreateVRProcess();
   mozilla::ipc::IPCResult RecvShutdownVRProcess();
 
+#endif
   mozilla::ipc::IPCResult RecvAccumulateChildHistograms(
       nsTArray<HistogramAccumulation>&& aAccumulations);
   mozilla::ipc::IPCResult RecvAccumulateChildKeyedHistograms(

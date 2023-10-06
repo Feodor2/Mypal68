@@ -48,7 +48,9 @@ namespace gfx {
 
 class GPUChild;
 class GPUProcessListener;
+#ifdef MOZ_VR
 class PVRManagerChild;
+#endif
 class VsyncBridgeChild;
 class VsyncIOThreadHolder;
 
@@ -97,7 +99,9 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
       base::ProcessId aOtherProcess,
       mozilla::ipc::Endpoint<PCompositorManagerChild>* aOutCompositor,
       mozilla::ipc::Endpoint<PImageBridgeChild>* aOutImageBridge,
+#ifdef MOZ_VR
       mozilla::ipc::Endpoint<PVRManagerChild>* aOutVRBridge,
+#endif
       mozilla::ipc::Endpoint<PRemoteDecoderManagerChild>* aOutVideoManager,
       nsTArray<uint32_t>* aNamespaces);
 
@@ -184,9 +188,11 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
   bool CreateContentImageBridge(
       base::ProcessId aOtherProcess,
       mozilla::ipc::Endpoint<PImageBridgeChild>* aOutEndpoint);
+#ifdef MOZ_VR
   bool CreateContentVRManager(
       base::ProcessId aOtherProcess,
       mozilla::ipc::Endpoint<PVRManagerChild>* aOutEndpoint);
+#endif
   void CreateContentRemoteDecoderManager(
       base::ProcessId aOtherProcess,
       mozilla::ipc::Endpoint<PRemoteDecoderManagerChild>* aOutEndPoint);
@@ -226,7 +232,9 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
   void EnsureProtocolsReady();
   void EnsureCompositorManagerChild();
   void EnsureImageBridgeChild();
+#ifdef MOZ_VR
   void EnsureVRManager();
+#endif
 
 #if defined(MOZ_WIDGET_ANDROID)
   already_AddRefed<UiCompositorControllerChild> CreateUiCompositorController(

@@ -34,8 +34,10 @@
 #endif
 #include "nsBaseWidget.h"
 #include "nsContentUtils.h"
-#include "VRManagerChild.h"
-#include "VRManagerParent.h"
+#ifdef MOZ_VR
+#  include "VRManagerChild.h"
+#  include "VRManagerParent.h"
+#endif
 #include "VsyncBridgeChild.h"
 #include "VsyncIOThreadHolder.h"
 #include "VsyncSource.h"
@@ -235,7 +237,9 @@ bool GPUProcessManager::EnsureGPUReady() {
 void GPUProcessManager::EnsureProtocolsReady() {
   EnsureCompositorManagerChild();
   EnsureImageBridgeChild();
+#ifdef MOZ_VR
   EnsureVRManager();
+#endif
 }
 
 void GPUProcessManager::EnsureCompositorManagerChild() {
@@ -287,6 +291,7 @@ void GPUProcessManager::EnsureImageBridgeChild() {
                                        AllocateNamespace());
 }
 
+#ifdef MOZ_VR
 void GPUProcessManager::EnsureVRManager() {
   if (VRManagerChild::IsCreated()) {
     return;
@@ -309,6 +314,7 @@ void GPUProcessManager::EnsureVRManager() {
   mGPUChild->SendInitVRManager(std::move(parentPipe));
   VRManagerChild::InitWithGPUProcess(std::move(childPipe));
 }
+#endif
 
 #if defined(MOZ_WIDGET_ANDROID)
 already_AddRefed<UiCompositorControllerChild>
@@ -818,12 +824,16 @@ bool GPUProcessManager::CreateContentBridges(
     base::ProcessId aOtherProcess,
     ipc::Endpoint<PCompositorManagerChild>* aOutCompositor,
     ipc::Endpoint<PImageBridgeChild>* aOutImageBridge,
+#ifdef MOZ_VR
     ipc::Endpoint<PVRManagerChild>* aOutVRBridge,
+#endif
     ipc::Endpoint<PRemoteDecoderManagerChild>* aOutVideoManager,
     nsTArray<uint32_t>* aNamespaces) {
   if (!CreateContentCompositorManager(aOtherProcess, aOutCompositor) ||
-      !CreateContentImageBridge(aOtherProcess, aOutImageBridge) ||
-      !CreateContentVRManager(aOtherProcess, aOutVRBridge)) {
+#ifdef MOZ_VR
+      !CreateContentVRManager(aOtherProcess, aOutVRBridge) ||
+#endif
+      !CreateContentImageBridge(aOtherProcess, aOutImageBridge)) {
     return false;
   }
   // VideoDeocderManager is only supported in the GPU process, so we allow this
@@ -900,6 +910,7 @@ base::ProcessId GPUProcessManager::GPUProcessPid() {
   return gpuPid;
 }
 
+#ifdef MOZ_VR
 bool GPUProcessManager::CreateContentVRManager(
     base::ProcessId aOtherProcess,
     ipc::Endpoint<PVRManagerChild>* aOutEndpoint) {
@@ -929,6 +940,7 @@ bool GPUProcessManager::CreateContentVRManager(
   *aOutEndpoint = std::move(childPipe);
   return true;
 }
+#endif
 
 void GPUProcessManager::CreateContentRemoteDecoderManager(
     base::ProcessId aOtherProcess,

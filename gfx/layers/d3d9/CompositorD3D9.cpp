@@ -5,7 +5,6 @@
 #include "CompositorD3D9.h"
 #include "D3D9SurfaceImage.h"
 #include "LayerManagerD3D9Shaders.h"
-#include "Nv3DVUtils.h"
 #include "gfxCrashReporterUtils.h"
 #include "gfxFailure.h"
 #include "gfxUtils.h"
@@ -402,46 +401,6 @@ void CompositorD3D9::DrawQuad(const gfx::Rect &aRect,
     MOZ_ASSERT(sourceY->GetD3D9Texture());
     MOZ_ASSERT(sourceCb->GetD3D9Texture());
     MOZ_ASSERT(sourceCr->GetD3D9Texture());
-
-    /*
-     * Send 3d control data and metadata
-     */
-    if (mDeviceManager->GetNv3DVUtils()) {
-      Nv_Stereo_Mode mode;
-      switch (source->AsSourceD3D9()->GetStereoMode()) {
-      case StereoMode::LEFT_RIGHT:
-        mode = NV_STEREO_MODE_LEFT_RIGHT;
-        break;
-      case StereoMode::RIGHT_LEFT:
-        mode = NV_STEREO_MODE_RIGHT_LEFT;
-        break;
-      case StereoMode::BOTTOM_TOP:
-        mode = NV_STEREO_MODE_BOTTOM_TOP;
-        break;
-      case StereoMode::TOP_BOTTOM:
-        mode = NV_STEREO_MODE_TOP_BOTTOM;
-        break;
-      case StereoMode::MONO:
-        mode = NV_STEREO_MODE_MONO;
-        break;
-      }
-
-      // Send control data even in mono case so driver knows to leave stereo
-      // mode.
-      mDeviceManager->GetNv3DVUtils()->SendNv3DVControl(mode, true,
-                                                        FIREFOX_3DV_APP_HANDLE);
-
-      if (source->AsSourceD3D9()->GetStereoMode() != StereoMode::MONO) {
-        mDeviceManager->GetNv3DVUtils()->SendNv3DVControl(
-            mode, true, FIREFOX_3DV_APP_HANDLE);
-
-        RefPtr<IDirect3DSurface9> renderTarget;
-        d3d9Device->GetRenderTarget(0, getter_AddRefs(renderTarget));
-        mDeviceManager->GetNv3DVUtils()->SendNv3DVMetaData(
-            (unsigned int)aRect.width, (unsigned int)aRect.height,
-            (HANDLE)(sourceY->GetD3D9Texture()), (HANDLE)(renderTarget));
-      }
-    }
 
     // Linear scaling is default here, adhering to mFilter is difficult since
     // presumably even with point filtering we'll still want chroma upsampling

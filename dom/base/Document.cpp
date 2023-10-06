@@ -10199,12 +10199,14 @@ bool Document::CanSavePresentation(nsIRequest* aNewRequest,
       ret = false;
     }
 #endif
+#ifdef MOZ_VR
     if (globalWindow->HasUsedVR()) {
       MOZ_LOG(gPageCacheLog, mozilla::LogLevel::Verbose,
               ("Save of %s blocked due to having used VR", uri.get()));
       aBFCacheCombo |= BFCacheStatus::HAS_USED_VR;
       ret = false;
     }
+#endif
   }
 
   return ret;

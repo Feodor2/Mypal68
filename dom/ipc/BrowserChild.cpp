@@ -109,7 +109,9 @@
 #include "nsDeviceContext.h"
 #include "nsSandboxFlags.h"
 #include "FrameLayerBuilder.h"
-#include "VRManagerChild.h"
+#ifdef MOZ_VR
+#  include "VRManagerChild.h"
+#endif
 #include "nsCommandParams.h"
 #include "nsISHEntry.h"
 #include "nsISHistory.h"
@@ -2648,7 +2650,9 @@ void BrowserChild::InitRenderingState(
     MOZ_ASSERT(mLayersConnected == Some(true));
     // Succeeded to create "remote" layer manager
     ImageBridgeChild::IdentifyCompositorTextureHost(mTextureFactoryIdentifier);
+#ifdef MOZ_VR
     gfx::VRManagerChild::IdentifyTextureHost(mTextureFactoryIdentifier);
+#endif
     InitAPZState();
     RefPtr<LayerManager> lm = mPuppetWidget->GetLayerManager();
     MOZ_ASSERT(lm);
@@ -3023,7 +3027,9 @@ void BrowserChild::ReinitRendering() {
 
   mLayersConnected = Some(true);
   ImageBridgeChild::IdentifyCompositorTextureHost(mTextureFactoryIdentifier);
+#ifdef MOZ_VR
   gfx::VRManagerChild::IdentifyTextureHost(mTextureFactoryIdentifier);
+#endif
 
   InitAPZState();
   RefPtr<LayerManager> lm = mPuppetWidget->GetLayerManager();

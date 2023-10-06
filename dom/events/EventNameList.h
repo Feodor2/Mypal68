@@ -328,6 +328,7 @@ WINDOW_ONLY_EVENT(userproximity, eUserProximity, EventNameType_None,
                   eBasicEventClass)
 WINDOW_ONLY_EVENT(devicelight, eDeviceLight, EventNameType_None,
                   eBasicEventClass)
+#ifdef MOZ_VR
 WINDOW_ONLY_EVENT(vrdisplayactivate, eVRDisplayActivate, EventNameType_None,
                   eBasicEventClass)
 WINDOW_ONLY_EVENT(vrdisplaydeactivate, eVRDisplayDeactivate, EventNameType_None,
@@ -338,6 +339,7 @@ WINDOW_ONLY_EVENT(vrdisplaydisconnect, eVRDisplayDisconnect, EventNameType_None,
                   eBasicEventClass)
 WINDOW_ONLY_EVENT(vrdisplaypresentchange, eVRDisplayPresentChange,
                   EventNameType_None, eBasicEventClass)
+#endif
 // Install events as per W3C Manifest spec
 WINDOW_ONLY_EVENT(appinstalled, eAppInstalled, EventNameType_None,
                   eBasicEventClass)

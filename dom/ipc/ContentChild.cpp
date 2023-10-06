@@ -242,7 +242,9 @@
 #include "gfxPlatform.h"
 #include "gfxPlatformFontList.h"
 #include "nscore.h"  // for NS_FREE_PERMANENT_DATA
-#include "VRManagerChild.h"
+#ifdef MOZ_VR
+#  include "VRManagerChild.h"
+#endif
 #include "private/pprio.h"
 #include "nsString.h"
 #include "MMPrinter.h"
@@ -1432,7 +1434,9 @@ void CGSShutdownServerConnections();
 mozilla::ipc::IPCResult ContentChild::RecvInitRendering(
     Endpoint<PCompositorManagerChild>&& aCompositor,
     Endpoint<PImageBridgeChild>&& aImageBridge,
+#ifdef MOZ_VR
     Endpoint<PVRManagerChild>&& aVRBridge,
+#endif
     Endpoint<PRemoteDecoderManagerChild>&& aVideoManager,
     nsTArray<uint32_t>&& namespaces) {
   MOZ_ASSERT(namespaces.Length() == 3);
@@ -1454,9 +1458,11 @@ mozilla::ipc::IPCResult ContentChild::RecvInitRendering(
                                         namespaces[2])) {
     return GetResultForRenderingInitFailure(aImageBridge.OtherPid());
   }
+#ifdef MOZ_VR
   if (!gfx::VRManagerChild::InitForContent(std::move(aVRBridge))) {
     return GetResultForRenderingInitFailure(aVRBridge.OtherPid());
   }
+#endif
   RemoteDecoderManagerChild::InitForGPUProcess(std::move(aVideoManager));
 
 #if defined(XP_MACOSX) && !defined(MOZ_SANDBOX)
@@ -1474,7 +1480,9 @@ mozilla::ipc::IPCResult ContentChild::RecvInitRendering(
 mozilla::ipc::IPCResult ContentChild::RecvReinitRendering(
     Endpoint<PCompositorManagerChild>&& aCompositor,
     Endpoint<PImageBridgeChild>&& aImageBridge,
+#ifdef MOZ_VR
     Endpoint<PVRManagerChild>&& aVRBridge,
+#endif
     Endpoint<PRemoteDecoderManagerChild>&& aVideoManager,
     nsTArray<uint32_t>&& namespaces) {
   MOZ_ASSERT(namespaces.Length() == 3);
@@ -1498,9 +1506,11 @@ mozilla::ipc::IPCResult ContentChild::RecvReinitRendering(
                                           namespaces[2])) {
     return GetResultForRenderingInitFailure(aImageBridge.OtherPid());
   }
+#ifdef MOZ_VR
   if (!gfx::VRManagerChild::ReinitForContent(std::move(aVRBridge))) {
     return GetResultForRenderingInitFailure(aVRBridge.OtherPid());
   }
+#endif
   gfxPlatform::GetPlatform()->CompositorUpdated();
 
   // Establish new PLayerTransactions.

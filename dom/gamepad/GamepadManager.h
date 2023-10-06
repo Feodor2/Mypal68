@@ -13,9 +13,11 @@
 class nsGlobalWindowInner;
 
 namespace mozilla {
+#ifdef MOZ_VR
 namespace gfx {
 class VRManagerChild;
 }  // namespace gfx
+#endif
 namespace dom {
 
 class EventTarget;

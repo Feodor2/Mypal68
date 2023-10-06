@@ -33,7 +33,9 @@
 #  include "VsyncSource.h"
 #endif
 #include "mozilla/widget/CompositorWidget.h"
-#include "VRManager.h"
+#ifdef MOZ_VR
+#  include "VRManager.h"
+#endif
 
 namespace mozilla {
 
@@ -69,9 +71,12 @@ CompositorVsyncScheduler::CompositorVsyncScheduler(
       mVsyncNotificationsSkipped(0),
       mWidget(aWidget),
       mCurrentCompositeTaskMonitor("CurrentCompositeTaskMonitor"),
-      mCurrentCompositeTask(nullptr),
-      mCurrentVRTaskMonitor("CurrentVRTaskMonitor"),
-      mCurrentVRTask(nullptr) {
+      mCurrentCompositeTask(nullptr)
+#ifdef MOZ_VR
+      , mCurrentVRTaskMonitor("CurrentVRTaskMonitor"),
+      mCurrentVRTask(nullptr)
+#endif
+                              {
   mVsyncObserver = new Observer(this);
 
   // mAsapScheduling is set on the main thread during init,
@@ -102,7 +107,9 @@ void CompositorVsyncScheduler::Destroy() {
 
   mCompositeRequestedAt = TimeStamp();
   CancelCurrentCompositeTask();
+#ifdef MOZ_VR
   CancelCurrentVRTask();
+#endif
 }
 
 void CompositorVsyncScheduler::PostCompositeTask(
@@ -118,6 +125,7 @@ void CompositorVsyncScheduler::PostCompositeTask(
   }
 }
 
+#ifdef MOZ_VR
 void CompositorVsyncScheduler::PostVRTask(TimeStamp aTimestamp) {
   Monitor2AutoLock lockVR(mCurrentVRTaskMonitor);
   if (mCurrentVRTask == nullptr && CompositorThreadHolder::Loop()) {
@@ -128,6 +136,7 @@ void CompositorVsyncScheduler::PostVRTask(TimeStamp aTimestamp) {
     CompositorThreadHolder::Loop()->PostDelayedTask(task.forget(), 0);
   }
 }
+#endif
 
 void CompositorVsyncScheduler::ScheduleComposition() {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
@@ -177,18 +186,23 @@ bool CompositorVsyncScheduler::NotifyVsync(const VsyncEvent& aVsync) {
   MOZ_ASSERT(!NS_IsMainThread());
 
 #if defined(MOZ_WIDGET_ANDROID)
+#ifdef MOZ_VR
   gfx::VRManager* vm = gfx::VRManager::Get();
   if (!vm->IsPresenting()) {
     PostCompositeTask(aVsync.mId, aVsync.mTime);
   }
+#endif
 #else
   PostCompositeTask(aVsync.mId, aVsync.mTime);
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
+#ifdef MOZ_VR
   PostVRTask(aVsync.mTime);
+#endif
   return true;
 }
 
+#ifdef MOZ_VR
 void CompositorVsyncScheduler::CancelCurrentVRTask() {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread() ||
              NS_IsMainThread());
@@ -198,6 +212,7 @@ void CompositorVsyncScheduler::CancelCurrentVRTask() {
     mCurrentVRTask = nullptr;
   }
 }
+#endif
 
 void CompositorVsyncScheduler::CancelCurrentCompositeTask() {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread() ||
@@ -310,6 +325,7 @@ void CompositorVsyncScheduler::UnobserveVsync() {
   mIsObservingVsync = false;
 }
 
+#ifdef MOZ_VR
 void CompositorVsyncScheduler::DispatchVREvents(TimeStamp aVsyncTimestamp) {
   {
     Monitor2AutoLock lock(mCurrentVRTaskMonitor);
@@ -326,6 +342,7 @@ void CompositorVsyncScheduler::DispatchVREvents(TimeStamp aVsyncTimestamp) {
   VRManager* vm = VRManager::Get();
   vm->NotifyVsync(aVsyncTimestamp);
 }
+#endif
 
 void CompositorVsyncScheduler::ScheduleTask(
     already_AddRefed<CancelableRunnable> aTask) {

@@ -37,7 +37,9 @@ include protocol PWebrtcGlobal;
 include protocol PPresentation;
 include protocol PURLClassifier;
 include protocol PURLClassifierLocal;
+#ifdef MOZ_VR
 include protocol PVRManager;
+#endif
 include protocol PRemoteDecoderManager;
 include protocol PProfiler;
 include protocol PScriptCache;
@@ -410,7 +412,9 @@ child:
     async InitRendering(
       Endpoint<PCompositorManagerChild> compositor,
       Endpoint<PImageBridgeChild> imageBridge,
+#ifdef MOZ_VR
       Endpoint<PVRManagerChild> vr,
+#endif
       Endpoint<PRemoteDecoderManagerChild> video,
       uint32_t[] namespaces);
 
@@ -420,7 +424,9 @@ child:
     async ReinitRendering(
       Endpoint<PCompositorManagerChild> compositor,
       Endpoint<PImageBridgeChild> bridge,
+#ifdef MOZ_VR
       Endpoint<PVRManagerChild> vr,
+#endif
       Endpoint<PRemoteDecoderManagerChild> video,
       uint32_t[] namespaces);
 

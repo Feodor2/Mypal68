@@ -4,7 +4,6 @@
 
 #include "DeviceManagerD3D9.h"
 #include "LayerManagerD3D9Shaders.h"
-#include "Nv3DVUtils.h"
 #include "TextureD3D9.h"
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"
@@ -220,21 +219,6 @@ bool DeviceManagerD3D9::Initialize() {
     return false;
   }
 
-  //if (gfxPrefs::StereoVideoEnabled()) {
-    /* Create an Nv3DVUtils instance */
-    /*if (!mNv3DVUtils) {
-      mNv3DVUtils = new Nv3DVUtils();
-      if (!mNv3DVUtils) {
-        NS_WARNING("Could not create a new instance of Nv3DVUtils.");
-      }
-    }*/
-
-    /* Initialize the Nv3DVUtils object */
-    /*if (mNv3DVUtils) {
-      mNv3DVUtils->Initialize();
-    }
-  }*/
-
   HMODULE d3d9 = LoadLibraryW(L"d3d9.dll");
   decltype(Direct3DCreate9) *d3d9Create =
       (decltype(Direct3DCreate9) *)GetProcAddress(d3d9, "Direct3DCreate9");
@@ -351,17 +335,6 @@ bool DeviceManagerD3D9::Initialize() {
   if (FAILED(mDevice->GetCreationParameters(&parameters)))
     return false;
   mDeviceMonitor = mD3D9->GetAdapterMonitor(parameters.AdapterOrdinal);
-
-  /*
-   * Do some post device creation setup
-   */
-  if (mNv3DVUtils) {
-    IUnknown *devUnknown = nullptr;
-    if (mDevice) {
-      mDevice->QueryInterface(IID_IUnknown, (void **)&devUnknown);
-    }
-    mNv3DVUtils->SetDeviceInfo(devUnknown);
-  }
 
   auto failCreateShaderMsg =
       "[D3D9] failed to create a critical resource (shader) code";

@@ -78,7 +78,9 @@
 #endif
 #include "gfxConfig.h"
 #include "mozilla/layers/CompositorSession.h"
-#include "VRManagerChild.h"
+#ifdef MOZ_VR
+#  include "VRManagerChild.h"
+#endif
 #include "gfxConfig.h"
 #include "nsView.h"
 #include "nsViewManager.h"
@@ -1299,7 +1301,9 @@ void nsBaseWidget::CreateCompositor(int aWidth, int aHeight) {
     MOZ_ASSERT(textureFactoryIdentifier.mParentBackend ==
                LayersBackend::LAYERS_WR);
     ImageBridgeChild::IdentifyCompositorTextureHost(textureFactoryIdentifier);
+#ifdef MOZ_VR
     gfx::VRManagerChild::IdentifyTextureHost(textureFactoryIdentifier);
+#endif
   }
 
   ShadowLayerForwarder* lf = lm->AsShadowForwarder();
@@ -1336,10 +1340,12 @@ void nsBaseWidget::CreateCompositor(int aWidth, int aHeight) {
     // Some popup or transparent widgets may use a different backend than the
     // compositors used with ImageBridge and VR (and more generally web
     // content).
+#ifdef MOZ_VR
     if (WidgetTypeSupportsAcceleration()) {
       ImageBridgeChild::IdentifyCompositorTextureHost(textureFactoryIdentifier);
       gfx::VRManagerChild::IdentifyTextureHost(textureFactoryIdentifier);
     }
+#endif
   }
 
   WindowUsesOMTC();

@@ -45,9 +45,11 @@
 #include "mozilla/dom/StorageManager.h"
 #include "mozilla/dom/TCPSocket.h"
 #include "mozilla/dom/URLSearchParams.h"
-#include "mozilla/dom/VRDisplay.h"
-#include "mozilla/dom/VRDisplayEvent.h"
-#include "mozilla/dom/VRServiceTest.h"
+#ifdef MOZ_VR
+#  include "mozilla/dom/VRDisplay.h"
+#  include "mozilla/dom/VRDisplayEvent.h"
+#  include "mozilla/dom/VRServiceTest.h"
+#endif
 #include "mozilla/dom/workerinternals/RuntimeService.h"
 #include "mozilla/Hal.h"
 #include "mozilla/ClearOnShutdown.h"
@@ -159,8 +161,10 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Navigator)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mMediaKeySystemAccessManager)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mPresentation)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGamepadServiceTest)
+#ifdef MOZ_VR
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVRGetDisplaysPromises)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVRServiceTest)
+#endif
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_WRAPPERCACHE(Navigator)
@@ -216,12 +220,14 @@ void Navigator::Invalidate() {
     mGamepadServiceTest = nullptr;
   }
 
+#ifdef MOZ_VR
   mVRGetDisplaysPromises.Clear();
 
   if (mVRServiceTest) {
     mVRServiceTest->Shutdown();
     mVRServiceTest = nullptr;
   }
+#endif
 
   mMediaCapabilities = nullptr;
 
@@ -1325,6 +1331,7 @@ GamepadServiceTest* Navigator::RequestGamepadServiceTest() {
   return mGamepadServiceTest;
 }
 
+#ifdef MOZ_VR
 already_AddRefed<Promise> Navigator::GetVRDisplays(ErrorResult& aRv) {
   if (!mWindow || !mWindow->GetDocShell() || !mWindow->GetExtantDoc()) {
     aRv.Throw(NS_ERROR_UNEXPECTED);
@@ -1431,6 +1438,7 @@ void Navigator::RequestVRPresentation(VRDisplay& aDisplay) {
   win->DispatchVRDisplayActivate(aDisplay.DisplayId(),
                                  VRDisplayEventReason::Requested);
 }
+#endif  // MOZ_VR
 
 already_AddRefed<Promise> Navigator::RequestMIDIAccess(
     const MIDIOptions& aOptions, ErrorResult& aRv) {

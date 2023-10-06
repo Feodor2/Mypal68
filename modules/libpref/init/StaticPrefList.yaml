@@ -2159,6 +2159,7 @@
 # Is support for WebVR APIs enabled?
 # Enabled by default in beta and release for Windows and OS X and for all
 # platforms in nightly and aurora.
+#ifdef MOZ_VR
 - name: dom.vr.enabled
   type: RelaxedAtomicBool
 #if defined(XP_WIN) || defined(XP_DARWIN) || !defined(RELEASE_OR_BETA)
@@ -2376,6 +2377,8 @@
   type: bool
   value: true
   mirror: once
+#endif
+# MOZ_VR
 
 # W3C draft pointer events
 - name: dom.w3c_pointer_events.enabled

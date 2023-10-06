@@ -123,7 +123,6 @@ IPDL_SOURCES += [
     'PBrowserBridge.ipdl',
     'PBrowserOrId.ipdlh',
     'PColorPicker.ipdl',
-    'PContent.ipdl',
     'PContentPermission.ipdlh',
     'PContentPermissionRequest.ipdl',
     'PCycleCollectWithLogs.ipdl',
@@ -137,6 +136,10 @@ IPDL_SOURCES += [
     'PURLClassifierLocal.ipdl',
     'PWindowGlobal.ipdl',
     'ServiceWorkerConfiguration.ipdlh',
+]
+
+PREPROCESSED_IPDL_SOURCES += [
+    'PContent.ipdl',
 ]
 
 include('/ipc/chromium/chromium-config.mozbuild')

@@ -42,8 +42,10 @@
 #include "gfxTextRun.h"
 #include "gfxUserFontSet.h"
 #include "gfxConfig.h"
-#include "VRProcessManager.h"
-#include "VRThread.h"
+#ifdef MOZ_VR
+#  include "VRProcessManager.h"
+#  include "VRThread.h"
+#endif
 
 #ifdef XP_WIN
 #  include <process.h>
@@ -143,8 +145,10 @@ static const uint32_t kDefaultGlyphCacheSize = -1;
 #include "nscore.h"  // for NS_FREE_PERMANENT_DATA
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/TouchEvent.h"
-#include "gfxVR.h"
-#include "VRManagerChild.h"
+#ifdef MOZ_VR
+#  include "gfxVR.h"
+#  include "VRManagerChild.h"
+#endif
 #include "mozilla/gfx/GPUParent.h"
 #include "mozilla/layers/MemoryReportingMLGPU.h"
 #include "prsystem.h"
@@ -478,7 +482,9 @@ gfxPlatform::gfxPlatform()
 
   mTotalSystemMemory = PR_GetPhysicalMemorySize();
 
+#ifdef MOZ_VR
   VRManager::ManagerInit();
+#endif
 }
 
 gfxPlatform* gfxPlatform::GetPlatform() {
@@ -1247,7 +1253,9 @@ void gfxPlatform::Shutdown() {
 
   if (XRE_IsParentProcess()) {
     GPUProcessManager::Shutdown();
+#ifdef MOZ_VR
     VRProcessManager::Shutdown();
+#endif
     RDDProcessManager::Shutdown();
   }
 
@@ -1297,7 +1305,9 @@ void gfxPlatform::ShutdownLayersIPC() {
   sLayersIPCIsUp = false;
 
   if (XRE_IsContentProcess()) {
+#ifdef MOZ_VR
     gfx::VRManagerChild::ShutDown();
+#endif
     // cf bug 1215265.
     if (StaticPrefs::layers_child_process_shutdown()) {
       layers::CompositorManagerChild::Shutdown();
@@ -1311,7 +1321,9 @@ void gfxPlatform::ShutdownLayersIPC() {
 #ifdef MOZ_WAYLAND
     widget::WaylandDisplayShutdown();
 #endif
+#ifdef MOZ_VR
     gfx::VRManagerChild::ShutDown();
+#endif
     layers::CompositorManagerChild::Shutdown();
     layers::ImageBridgeChild::ShutDown();
     // This has to happen after shutting down the child protocols.

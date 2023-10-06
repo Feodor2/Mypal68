@@ -349,6 +349,7 @@ GENERATED_WEBIDL_FILES = [
 ]
 
 PREPROCESSED_WEBIDL_FILES = [
+    'Gamepad.webidl',
     'Navigator.webidl',
     'Node.webidl',
     'Window.webidl',
@@ -513,7 +514,6 @@ WEBIDL_FILES = [
     'FrameLoader.webidl',
     'Function.webidl',
     'GainNode.webidl',
-    'Gamepad.webidl',
     'GamepadHapticActuator.webidl',
     'GamepadPose.webidl',
     'GamepadServiceTest.webidl',
@@ -916,9 +916,6 @@ WEBIDL_FILES = [
     'VideoTrack.webidl',
     'VideoTrackList.webidl',
     'VisualViewport.webidl',
-    'VRDisplay.webidl',
-    'VRDisplayEvent.webidl',
-    'VRServiceTest.webidl',
     'VTTCue.webidl',
     'VTTRegion.webidl',
     'WaveShaperNode.webidl',
@@ -956,6 +953,13 @@ WEBIDL_FILES = [
 if CONFIG['MOZ_WEBGPU']:
     WEBIDL_FILES += [
         'WebGPU.webidl',
+    ]
+
+if CONFIG['MOZ_VR']:
+    WEBIDL_FILES += [
+        'VRDisplay.webidl',
+        'VRDisplayEvent.webidl',
+        'VRServiceTest.webidl',
     ]
 
 if CONFIG['MOZ_WEBRTC']:

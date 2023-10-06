@@ -24,7 +24,9 @@
 #include "nsIObserver.h"
 #include "nsIObserverService.h"
 #include "nsThreadUtils.h"
-#include "VRManagerChild.h"
+#ifdef MOZ_VR
+#  include "VRManagerChild.h"
+#endif
 #include "mozilla/Services.h"
 #include "mozilla/Unused.h"
 
@@ -93,10 +95,12 @@ void GamepadManager::StopMonitoring() {
   for (uint32_t i = 0; i < mChannelChildren.Length(); ++i) {
     mChannelChildren[i]->SendGamepadListenerRemoved();
   }
+#ifdef MOZ_VR
   if (gfx::VRManagerChild::IsCreated()) {
     gfx::VRManagerChild* vm = gfx::VRManagerChild::Get();
     vm->SendControllerListenerRemoved();
   }
+#endif
   mChannelChildren.Clear();
   mGamepads.Clear();
 }
@@ -136,12 +140,14 @@ void GamepadManager::AddListener(nsGlobalWindowInner* aWindow) {
     child->SendGamepadListenerAdded();
     mChannelChildren.AppendElement(child);
 
+#ifdef MOZ_VR
     if (gfx::VRManagerChild::IsCreated()) {
       // Construct VRManagerChannel and ask adding the connected
       // VR controllers to GamepadManager
       gfx::VRManagerChild* vm = gfx::VRManagerChild::Get();
       vm->SendControllerListenerAdded();
     }
+#endif
   }
 
   if (!mEnabled || mShuttingDown ||
@@ -203,9 +209,11 @@ uint32_t GamepadManager::GetGamepadIndexWithServiceType(
       MOZ_ASSERT(aIndex <= VR_GAMEPAD_IDX_OFFSET);
       newIndex = aIndex;
       break;
+#ifdef MOZ_VR
     case GamepadServiceType::VR:
       newIndex = aIndex + VR_GAMEPAD_IDX_OFFSET;
       break;
+#endif
     default:
       MOZ_ASSERT(false);
       break;
@@ -579,6 +587,7 @@ already_AddRefed<Promise> GamepadManager::VibrateHaptic(
   }
   if (Preferences::GetBool(kGamepadHapticEnabledPref)) {
     if (aControllerIdx >= VR_GAMEPAD_IDX_OFFSET) {
+#ifdef MOZ_VR
       if (gfx::VRManagerChild::IsCreated()) {
         const uint32_t index = aControllerIdx - VR_GAMEPAD_IDX_OFFSET;
         gfx::VRManagerChild* vm = gfx::VRManagerChild::Get();
@@ -586,6 +595,7 @@ already_AddRefed<Promise> GamepadManager::VibrateHaptic(
         vm->SendVibrateHaptic(index, aHapticIndex, aIntensity, aDuration,
                               mPromiseID);
       }
+#endif
     } else {
       for (const auto& channelChild : mChannelChildren) {
         channelChild->AddPromise(mPromiseID, promise);
@@ -608,11 +618,13 @@ void GamepadManager::StopHaptics() {
   for (auto iter = mGamepads.Iter(); !iter.Done(); iter.Next()) {
     const uint32_t gamepadIndex = iter.UserData()->HashKey();
     if (gamepadIndex >= VR_GAMEPAD_IDX_OFFSET) {
+#ifdef MOZ_VR
       if (gfx::VRManagerChild::IsCreated()) {
         const uint32_t index = gamepadIndex - VR_GAMEPAD_IDX_OFFSET;
         gfx::VRManagerChild* vm = gfx::VRManagerChild::Get();
         vm->SendStopVibrateHaptic(index);
       }
+#endif
     } else {
       for (auto& channelChild : mChannelChildren) {
         channelChild->SendStopVibrateHaptic(gamepadIndex);

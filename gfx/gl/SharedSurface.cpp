@@ -16,7 +16,9 @@
 #include "mozilla/layers/TextureClientSharedSurface.h"
 #include "mozilla/layers/TextureForwarder.h"
 #include "mozilla/Unused.h"
-#include "VRManagerChild.h"
+#ifdef MOZ_VR
+#  include "VRManagerChild.h"
+#endif
 
 namespace mozilla {
 namespace gl {

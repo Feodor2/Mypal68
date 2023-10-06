@@ -75,7 +75,9 @@ class gfxEnv final {
   // Force gfxDevCrash to use telemetry in Nightly and Aurora
   DECL_GFX_ENV("MOZ_GFX_CRASH_TELEMETRY", GfxDevCrashTelemetry);
 
+#ifdef MOZ_VR
   DECL_GFX_ENV("MOZ_GFX_VR_NO_DISTORTION", VRNoDistortion);
+#endif
 
   // Debugging in GLContext
   DECL_GFX_ENV("MOZ_GL_DEBUG", GlDebug);
@@ -106,8 +108,10 @@ class gfxEnv final {
   // Skip rasterizing painted layer contents
   DECL_GFX_ENV("MOZ_SKIPRASTERIZATION", SkipRasterization);
 
+#ifdef MOZ_VR
   // Stop the VR rendering
   DECL_GFX_ENV("NO_VR_RENDERING", NoVRRendering);
+#endif
 
   // WARNING:
   // Please make sure that you've added your new envvar to the list above in

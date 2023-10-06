@@ -129,7 +129,9 @@ using mozilla::_ipdltest::IPDLUnitTestProcessChild;
 #  include "mozilla/sandboxing/sandboxLogging.h"
 #endif
 
-#include "VRProcessChild.h"
+#ifdef MOZ_VR
+#  include "VRProcessChild.h"
+#endif
 
 using namespace mozilla;
 
@@ -652,7 +654,9 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
   switch (XRE_GetProcessType()) {
     case GeckoProcessType_Content:
     case GeckoProcessType_GPU:
+#ifdef MOZ_VR
     case GeckoProcessType_VR:
+#endif
     case GeckoProcessType_RDD:
     case GeckoProcessType_Socket:
       // Content processes need the XPCOM/chromium frankenventloop
@@ -713,9 +717,11 @@ nsresult XRE_InitChildProcess(int aArgc, char* aArgv[],
           process = new gfx::GPUProcessImpl(parentPID);
           break;
 
+#ifdef MOZ_VR
         case GeckoProcessType_VR:
           process = new gfx::VRProcessChild(parentPID);
           break;
+#endif
 
         case GeckoProcessType_RDD:
           process = new RDDProcessImpl(parentPID);

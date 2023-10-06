@@ -113,9 +113,11 @@ class SpeechSynthesis;
 class TabGroup;
 class Timeout;
 class U2F;
+#ifdef MOZ_VR
 class VRDisplay;
 enum class VRDisplayEventReason : uint8_t;
 class VREventObserver;
+#endif
 class WakeLock;
 #if defined(MOZ_WIDGET_ANDROID)
 class WindowOrientationObserver;
@@ -468,9 +470,11 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   void AllowScriptsToClose() { mAllowScriptsToClose = true; }
 
   // Outer windows only.
+#ifdef MOZ_VR
   uint32_t GetAutoActivateVRDisplayID();
   // Outer windows only.
   void SetAutoActivateVRDisplayID(uint32_t aAutoActivateVRDisplayID);
+#endif
 
 #define EVENT(name_, id_, type_, struct_)                              \
   mozilla::dom::EventHandlerNonNull* GetOn##name_() {                  \
@@ -1133,7 +1137,9 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   // When non-zero, the document should receive a vrdisplayactivate event
   // after loading.  The value is the ID of the VRDisplay that content should
   // begin presentation on.
+#ifdef MOZ_VR
   uint32_t mAutoActivateVRDisplayID;
+#endif
 
   static OuterWindowByIdTable* sOuterWindowsById;
 

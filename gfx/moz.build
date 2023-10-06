@@ -24,7 +24,6 @@ DIRS += [
     'ots/src',
     'thebes',
     'ipc',
-    'vr',
     'config',
     'webrender_bindings',
 ]
@@ -34,6 +33,9 @@ if CONFIG['MOZ_ENABLE_SKIA']:
 
 if CONFIG['MOZ_ENABLE_SKIA_PDF_SFNTLY']:
      DIRS += ['sfntly/cpp/src']
+
+if CONFIG['MOZ_VR']:
+    DIRS += ['vr']
 
 if CONFIG['ENABLE_TESTS']:
     DIRS += ['tests/gtest']

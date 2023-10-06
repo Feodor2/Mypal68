@@ -33,7 +33,9 @@
 #include "mozilla/gfx/Point.h"      // for IntSize
 #include "mozilla/gfx/Rect.h"       // for IntSize
 #include "mozilla/gfx/gfxVars.h"    // for gfxVars
-#include "VRManager.h"              // for VRManager
+#ifdef MOZ_VR
+#  include "VRManager.h"              // for VRManager
+#endif
 #include "mozilla/ipc/Transport.h"  // for Transport
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUParent.h"

@@ -88,7 +88,6 @@ DIRS += [
     'xslt',
     'xul',
     'manifest',
-    'vr',
     'u2f',
     'console',
     'performance',
@@ -111,6 +110,9 @@ if CONFIG['OS_ARCH'] == 'WINNT':
 
 if CONFIG['MOZ_WEBGPU']:
     DIRS += ['webgpu']
+
+if CONFIG['MOZ_VR']:
+    DIRS += ['vr']
 
 DIRS += ['presentation']
 

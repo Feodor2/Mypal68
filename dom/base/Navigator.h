@@ -75,8 +75,10 @@ class Connection;
 
 class Presentation;
 class LegacyMozTCPSocket;
+#ifdef MOZ_VR
 class VRDisplay;
 class VRServiceTest;
+#endif
 class StorageManager;
 class MediaCapabilities;
 
@@ -172,12 +174,14 @@ class Navigator final : public nsISupports, public nsWrapperCache {
 
   void GetGamepads(nsTArray<RefPtr<Gamepad>>& aGamepads, ErrorResult& aRv);
   GamepadServiceTest* RequestGamepadServiceTest();
+#ifdef MOZ_VR
   already_AddRefed<Promise> GetVRDisplays(ErrorResult& aRv);
   void GetActiveVRDisplays(nsTArray<RefPtr<VRDisplay>>& aDisplays) const;
   VRServiceTest* RequestVRServiceTest();
   bool IsWebVRContentDetected() const;
   bool IsWebVRContentPresenting() const;
   void RequestVRPresentation(VRDisplay& aDisplay);
+#endif
   already_AddRefed<Promise> RequestMIDIAccess(const MIDIOptions& aOptions,
                                               ErrorResult& aRv);
 
@@ -238,9 +242,11 @@ class Navigator final : public nsISupports, public nsWrapperCache {
  private:
   RefPtr<MediaKeySystemAccessManager> mMediaKeySystemAccessManager;
 
+#ifdef MOZ_VR
  public:
   void NotifyVRDisplaysUpdated();
   void NotifyActiveVRDisplaysChanged();
+#endif
 
  private:
   virtual ~Navigator();
@@ -270,8 +276,10 @@ class Navigator final : public nsISupports, public nsWrapperCache {
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
   RefPtr<Presentation> mPresentation;
   RefPtr<GamepadServiceTest> mGamepadServiceTest;
+#ifdef MOZ_VR
   nsTArray<RefPtr<Promise>> mVRGetDisplaysPromises;
   RefPtr<VRServiceTest> mVRServiceTest;
+#endif
   nsTArray<uint32_t> mRequestedVibrationPattern;
   RefPtr<StorageManager> mStorageManager;
   RefPtr<dom::MediaCapabilities> mMediaCapabilities;

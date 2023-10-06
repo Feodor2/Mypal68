@@ -11,10 +11,12 @@
 
 namespace mozilla {
 
+#ifdef MOZ_VR
 namespace gfx {
 // See VRManagerChild.cpp
 void ReleaseVRManagerParentSingleton();
 }  // namespace gfx
+#endif
 
 namespace layers {
 
@@ -122,7 +124,9 @@ void CompositorThreadHolder::Shutdown() {
   }
 
   ImageBridgeParent::Shutdown();
+#ifdef MOZ_VR
   gfx::ReleaseVRManagerParentSingleton();
+#endif
   MediaSystemResourceService::Shutdown();
   CompositorManagerParent::Shutdown();
 

@@ -10,8 +10,10 @@ include protocol PAPZInputBridge;
 include protocol PCompositorManager;
 include protocol PImageBridge;
 include protocol PProfiler;
+#ifdef MOZ_VR
 include protocol PVRGPU;
 include protocol PVRManager;
+#endif
 include protocol PVsyncBridge;
 include protocol PUiCompositorController;
 include protocol PRemoteDecoderManager;
@@ -56,11 +58,15 @@ parent:
   async InitCompositorManager(Endpoint<PCompositorManagerParent> endpoint);
   async InitVsyncBridge(Endpoint<PVsyncBridgeParent> endpoint);
   async InitImageBridge(Endpoint<PImageBridgeParent> endpoint);
+#ifdef MOZ_VR
   async InitVRManager(Endpoint<PVRManagerParent> endpoint);
-  async InitUiCompositorController(LayersId rootLayerTreeId, Endpoint<PUiCompositorControllerParent> endpoint);
-  async InitProfiler(Endpoint<PProfilerChild> endpoint);
   // Forward GPU process its endpoints to the VR process.
   async InitVR(Endpoint<PVRGPUChild> endpoint);
+  async NewContentVRManager(Endpoint<PVRManagerParent> endpoint);
+#endif
+  async InitUiCompositorController(LayersId rootLayerTreeId, Endpoint<PUiCompositorControllerParent> endpoint);
+  async InitProfiler(Endpoint<PProfilerChild> endpoint);
+
   // Called to update a gfx variable.
   async UpdateVar(GfxVarUpdate var);
 
@@ -69,7 +75,6 @@ parent:
   // Create a new content-process compositor bridge.
   async NewContentCompositorManager(Endpoint<PCompositorManagerParent> endpoint);
   async NewContentImageBridge(Endpoint<PImageBridgeParent> endpoint);
-  async NewContentVRManager(Endpoint<PVRManagerParent> endpoint);
   async NewContentRemoteDecoderManager(Endpoint<PRemoteDecoderManagerParent> endpoint);
 
   // Called to notify the GPU process of who owns a layersId.
@@ -92,7 +97,9 @@ parent:
                             bool anonymize,
                             bool minimizeMemoryUsage,
                             FileDescriptor? DMDFile);
+#ifdef MOZ_VR
   async ShutdownVR();
+#endif
 
 child:
   // Sent when the GPU process has initialized devices. This occurs once, after
@@ -107,8 +114,10 @@ child:
 
   async InitCrashReporter(Shmem shmem, NativeThreadId threadId);
 
+#ifdef MOZ_VR
   async CreateVRProcess();
   async ShutdownVRProcess();
+#endif
 
   // Have a message be broadcasted to the UI process by the UI process
   // observer service.

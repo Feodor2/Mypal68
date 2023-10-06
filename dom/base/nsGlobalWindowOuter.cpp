@@ -187,11 +187,13 @@
 #include "mozilla/dom/Gamepad.h"
 #include "mozilla/dom/GamepadManager.h"
 
-#include "gfxVR.h"
-#include "mozilla/dom/VRDisplay.h"
-#include "mozilla/dom/VRDisplayEvent.h"
-#include "mozilla/dom/VRDisplayEventBinding.h"
-#include "mozilla/dom/VREventObserver.h"
+#ifdef MOZ_VR
+#  include "gfxVR.h"
+#  include "mozilla/dom/VRDisplay.h"
+#  include "mozilla/dom/VRDisplayEvent.h"
+#  include "mozilla/dom/VRDisplayEventBinding.h"
+#  include "mozilla/dom/VREventObserver.h"
+#endif
 
 #include "nsRefreshDriver.h"
 #include "Layers.h"
@@ -1113,8 +1115,11 @@ nsGlobalWindowOuter::nsGlobalWindowOuter(uint64_t aWindowID)
 #ifdef DEBUG
       mIsValidatingTabGroup(false),
 #endif
-      mCanSkipCCGeneration(0),
-      mAutoActivateVRDisplayID(0) {
+      mCanSkipCCGeneration(0)
+#ifdef MOZ_VR
+      , mAutoActivateVRDisplayID(0)
+#endif
+                                  {
   AssertIsOnMainThread();
 
   nsLayoutStatics::AddRef();
@@ -6840,10 +6845,12 @@ void nsGlobalWindowOuter::SetIsBackground(bool aIsBackground) {
     // the background window.
     if (inner && changed) {
       inner->StopGamepadHaptics();
+#ifdef MOZ_VR
       inner->StopVRActivity();
       // true is for asking to set the delta time to
       // the telemetry.
       inner->ResetVRTelemetry(true);
+#endif
     }
     return;
   }
@@ -6851,9 +6858,11 @@ void nsGlobalWindowOuter::SetIsBackground(bool aIsBackground) {
   if (inner) {
     // When switching to be as a top tab, restart the telemetry.
     // false is for only resetting the timestamp.
+#ifdef MOZ_VR
     inner->ResetVRTelemetry(false);
-    inner->SyncGamepadState();
     inner->StartVRActivity();
+#endif
+    inner->SyncGamepadState();
   }
 }
 
@@ -7506,6 +7515,7 @@ void nsGlobalWindowOuter::AddSizeOfIncludingThis(
   aWindowSizes.mDOMOtherSize += aWindowSizes.mState.mMallocSizeOf(this);
 }
 
+#ifdef MOZ_VR
 uint32_t nsGlobalWindowOuter::GetAutoActivateVRDisplayID() {
   uint32_t retVal = mAutoActivateVRDisplayID;
   mAutoActivateVRDisplayID = 0;
@@ -7516,6 +7526,7 @@ void nsGlobalWindowOuter::SetAutoActivateVRDisplayID(
     uint32_t aAutoActivateVRDisplayID) {
   mAutoActivateVRDisplayID = aAutoActivateVRDisplayID;
 }
+#endif
 
 already_AddRefed<nsWindowRoot> nsGlobalWindowOuter::GetWindowRootOuter() {
   nsCOMPtr<nsPIWindowRoot> root = GetTopWindowRoot();

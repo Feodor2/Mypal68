@@ -44,9 +44,14 @@ class GPUParent final : public PGPUParent {
       Endpoint<PVsyncBridgeParent>&& aVsyncEndpoint);
   mozilla::ipc::IPCResult RecvInitImageBridge(
       Endpoint<PImageBridgeParent>&& aEndpoint);
+#ifdef MOZ_VR
   mozilla::ipc::IPCResult RecvInitVRManager(
       Endpoint<PVRManagerParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvInitVR(Endpoint<PVRGPUChild>&& aVRGPUChild);
+  mozilla::ipc::IPCResult RecvNewContentVRManager(
+      Endpoint<PVRManagerParent>&& aEndpoint);
+  mozilla::ipc::IPCResult RecvShutdownVR();
+#endif
   mozilla::ipc::IPCResult RecvInitUiCompositorController(
       const LayersId& aRootLayerTreeId,
       Endpoint<PUiCompositorControllerParent>&& aEndpoint);
@@ -58,8 +63,6 @@ class GPUParent final : public PGPUParent {
       Endpoint<PCompositorManagerParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvNewContentImageBridge(
       Endpoint<PImageBridgeParent>&& aEndpoint);
-  mozilla::ipc::IPCResult RecvNewContentVRManager(
-      Endpoint<PVRManagerParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvNewContentRemoteDecoderManager(
       Endpoint<PRemoteDecoderManagerParent>&& aEndpoint);
   mozilla::ipc::IPCResult RecvGetDeviceStatus(GPUDeviceData* aOutStatus);
@@ -73,7 +76,6 @@ class GPUParent final : public PGPUParent {
       const uint32_t& generation, const bool& anonymize,
       const bool& minimizeMemoryUsage,
       const Maybe<ipc::FileDescriptor>& DMDFile);
-  mozilla::ipc::IPCResult RecvShutdownVR();
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 

@@ -397,11 +397,13 @@ NS_EVENT_MESSAGE(eOrientationChange)
 #endif
 
 // WebVR events
+#ifdef MOZ_VR
 NS_EVENT_MESSAGE(eVRDisplayActivate)
 NS_EVENT_MESSAGE(eVRDisplayDeactivate)
 NS_EVENT_MESSAGE(eVRDisplayConnect)
 NS_EVENT_MESSAGE(eVRDisplayDisconnect)
 NS_EVENT_MESSAGE(eVRDisplayPresentChange)
+#endif
 
 NS_EVENT_MESSAGE(eShow)
 

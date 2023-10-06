@@ -522,6 +522,7 @@ partial interface Window {
   readonly attribute boolean isChromeWindow;
 };
 
+#ifdef MOZ_VR
 partial interface Window {
   [Pref="dom.vr.enabled"]
   attribute EventHandler onvrdisplayconnect;
@@ -534,6 +535,7 @@ partial interface Window {
   [Pref="dom.vr.enabled"]
   attribute EventHandler onvrdisplaypresentchange;
 };
+#endif
 
 // https://drafts.css-houdini.org/css-paint-api-1/#dom-window-paintworklet
 partial interface Window {

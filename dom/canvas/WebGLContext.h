@@ -86,7 +86,9 @@ struct WebGLContextAttributes;
 
 namespace gfx {
 class SourceSurface;
+#ifdef MOZ_VR
 class VRLayerChild;
+#endif
 }  // namespace gfx
 
 namespace gl {
@@ -692,8 +694,10 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   void PixelStorei(GLenum pname, GLint param);
   void PolygonOffset(GLfloat factor, GLfloat units);
 
+#ifdef MOZ_VR
   already_AddRefed<layers::SharedSurfaceTextureClient> GetVRFrame();
   void EnsureVRReady();
+#endif
 
   ////
 
@@ -1477,7 +1481,9 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   bool mCanLoseContextInForeground;
   bool mShouldPresent;
   bool mDisableFragHighP;
+#ifdef MOZ_VR
   bool mVRReady;
+#endif
 
   template <typename WebGLObjectType>
   void DeleteWebGLObjectsArray(nsTArray<WebGLObjectType>& array);
@@ -1946,7 +1952,7 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
   bool mNeedsIndexValidation = false;
 
   const bool mAllowFBInvalidation;
-#if defined(MOZ_WIDGET_ANDROID)
+#if defined(MOZ_WIDGET_ANDROID) && defined(MOZ_VR)
   UniquePtr<gl::GLScreenBuffer> mVRScreen;
 #endif
 

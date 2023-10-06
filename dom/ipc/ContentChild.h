@@ -173,7 +173,9 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvInitRendering(
       Endpoint<PCompositorManagerChild>&& aCompositor,
       Endpoint<PImageBridgeChild>&& aImageBridge,
+#ifdef MOZ_VR
       Endpoint<PVRManagerChild>&& aVRBridge,
+#endif
       Endpoint<PRemoteDecoderManagerChild>&& aVideoManager,
       nsTArray<uint32_t>&& namespaces);
 
@@ -182,7 +184,9 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvReinitRendering(
       Endpoint<PCompositorManagerChild>&& aCompositor,
       Endpoint<PImageBridgeChild>&& aImageBridge,
+#ifdef MOZ_VR
       Endpoint<PVRManagerChild>&& aVRBridge,
+#endif
       Endpoint<PRemoteDecoderManagerChild>&& aVideoManager,
       nsTArray<uint32_t>&& namespaces);
 

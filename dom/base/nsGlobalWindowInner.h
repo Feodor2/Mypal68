@@ -127,9 +127,11 @@ class TabGroup;
 class Timeout;
 class U2F;
 class VisualViewport;
+#ifdef MOZ_VR
 class VRDisplay;
 enum class VRDisplayEventReason : uint8_t;
 class VREventObserver;
+#endif
 class WakeLock;
 #if defined(MOZ_WIDGET_ANDROID)
 class WindowOrientationObserver;
@@ -369,10 +371,12 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   // Inner windows only.
   virtual void SetHasGamepadEventListener(bool aHasGamepad = true) override;
+#ifdef MOZ_VR
   void NotifyVREventListenerAdded();
   bool HasUsedVR() const;
   bool IsVRContentDetected() const;
   bool IsVRContentPresenting() const;
+#endif
 
   using EventTarget::EventListenerAdded;
   virtual void EventListenerAdded(nsAtom* aType) override;
@@ -513,6 +517,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   // Inner windows only.
   // Enable/disable updates for VR
+#ifdef MOZ_VR
   void EnableVRUpdates();
   void DisableVRUpdates();
   // Reset telemetry data when switching windows.
@@ -538,6 +543,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void DispatchVRDisplayConnect(uint32_t aDisplayID);
   void DispatchVRDisplayDisconnect(uint32_t aDisplayID);
   void DispatchVRDisplayPresentChange(uint32_t aDisplayID);
+#endif
 
 #define EVENT(name_, id_, type_, struct_)                              \
   mozilla::dom::EventHandlerNonNull* GetOn##name_() {                  \
@@ -1299,13 +1305,17 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   bool mHasGamepad : 1;
 
   // Indicates whether this window wants VR events
+#ifdef MOZ_VR
   bool mHasVREvents : 1;
+#endif
 
   // Whether we told the JS engine that we were in pageload.
   bool mHintedWasLoading : 1;
 
   // Indicates whether this window wants VRDisplayActivate events
+#ifdef MOZ_VR
   bool mHasVRDisplayActivateEvents : 1;
+#endif
   nsCheapSet<nsUint32HashKey> mGamepadIndexSet;
   nsRefPtrHashtable<nsUint32HashKey, mozilla::dom::Gamepad> mGamepads;
   bool mHasSeenGamepadInput;
@@ -1422,9 +1432,11 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   uint32_t mCanSkipCCGeneration;
 
   // The VR Displays for this window
+#ifdef MOZ_VR
   nsTArray<RefPtr<mozilla::dom::VRDisplay>> mVRDisplays;
 
   RefPtr<mozilla::dom::VREventObserver> mVREventObserver;
+#endif
 
   int64_t mBeforeUnloadListenerCount;
 

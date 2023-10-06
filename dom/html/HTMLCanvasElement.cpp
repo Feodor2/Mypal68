@@ -42,7 +42,9 @@
 #include "nsStreamUtils.h"
 #include "ActiveLayerTracker.h"
 #include "CanvasUtils.h"
-#include "VRManagerChild.h"
+#ifdef MOZ_VR
+#  include "VRManagerChild.h"
+#endif
 #include "WebGL1Context.h"
 #include "WebGL2Context.h"
 
@@ -1415,6 +1417,7 @@ void HTMLCanvasElement::InvalidateFromAsyncCanvasRenderer(
   element->InvalidateCanvasContent(nullptr);
 }
 
+#ifdef MOZ_VR
 already_AddRefed<layers::SharedSurfaceTextureClient>
 HTMLCanvasElement::GetVRFrame() {
   if (GetCurrentContextType() != CanvasContextType::WebGL1 &&
@@ -1429,6 +1432,7 @@ HTMLCanvasElement::GetVRFrame() {
 
   return webgl->GetVRFrame();
 }
+#endif
 
 }  // namespace dom
 }  // namespace mozilla

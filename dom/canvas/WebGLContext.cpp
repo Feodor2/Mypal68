@@ -46,7 +46,9 @@
 #include "SVGObserverUtils.h"
 #include "prenv.h"
 #include "ScopedGLHelpers.h"
-#include "VRManagerChild.h"
+#ifdef MOZ_VR
+#  include "VRManagerChild.h"
+#endif
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/TextureClientSharedSurface.h"
 #include "mozilla/layers/WebRenderUserData.h"
@@ -134,7 +136,9 @@ WebGLContext::WebGLContext()
   mDisableExtensions = false;
   mIsMesa = false;
   mWebGLError = 0;
+#ifdef MOZ_VR
   mVRReady = false;
+#endif
 
   mViewportX = 0;
   mViewportY = 0;
@@ -219,7 +223,7 @@ void WebGLContext::DestroyResourcesAndContext() {
   mDefaultVertexArray = nullptr;
   mBoundTransformFeedback = nullptr;
   mDefaultTransformFeedback = nullptr;
-#if defined(MOZ_WIDGET_ANDROID)
+#if defined(MOZ_WIDGET_ANDROID) && defined(MOZ_VR)
   mVRScreen = nullptr;
 #endif
 
@@ -1217,7 +1221,9 @@ bool WebGLContext::InitializeCanvasRenderer(nsDisplayListBuilder* aBuilder,
 
   aRenderer->Initialize(data);
   aRenderer->SetDirty();
+#ifdef MOZ_VR
   mVRReady = true;
+#endif
   return true;
 }
 
@@ -2115,6 +2121,7 @@ CheckedUint32 WebGLContext::GetUnpackSize(bool isFunc3D, uint32_t width,
   return totalBytes;
 }
 
+#ifdef MOZ_VR
 #if defined(MOZ_WIDGET_ANDROID)
 already_AddRefed<layers::SharedSurfaceTextureClient>
 WebGLContext::GetVRFrame() {
@@ -2209,6 +2216,7 @@ void WebGLContext::EnsureVRReady() {
     mVRReady = true;
   }
 }
+#endif  // MOZ_VR
 
 ////////////////////////////////////////////////////////////////////////////////
 

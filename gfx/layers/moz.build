@@ -72,7 +72,6 @@ if CONFIG['MOZ_WIDGET_TOOLKIT'] == 'windows':
         SOURCES += [
             'd3d9/CompositorD3D9.cpp',
             'd3d9/DeviceManagerD3D9.cpp',
-            'd3d9/Nv3DVUtils.cpp',
         ]
     if CONFIG['MOZ_ENABLE_D3D10_LAYER']:
         EXPORTS.mozilla.layers += [

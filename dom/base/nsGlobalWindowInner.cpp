@@ -183,11 +183,13 @@
 #include "mozilla/dom/Gamepad.h"
 #include "mozilla/dom/GamepadManager.h"
 
-#include "gfxVR.h"
-#include "mozilla/dom/VRDisplay.h"
-#include "mozilla/dom/VRDisplayEvent.h"
-#include "mozilla/dom/VRDisplayEventBinding.h"
-#include "mozilla/dom/VREventObserver.h"
+#ifdef MOZ_VR
+#  include "gfxVR.h"
+#  include "mozilla/dom/VRDisplay.h"
+#  include "mozilla/dom/VRDisplayEvent.h"
+#  include "mozilla/dom/VRDisplayEventBinding.h"
+#  include "mozilla/dom/VREventObserver.h"
+#endif
 
 #include "nsRefreshDriver.h"
 #include "Layers.h"
@@ -833,9 +835,11 @@ nsGlobalWindowInner::nsGlobalWindowInner(nsGlobalWindowOuter* aOuterWindow)
       mFocusByKeyOccurred(false),
       mDidFireDocElemInserted(false),
       mHasGamepad(false),
-      mHasVREvents(false),
       mHintedWasLoading(false),
+#ifdef MOZ_VR
+      mHasVREvents(false),
       mHasVRDisplayActivateEvents(false),
+#endif
       mHasSeenGamepadInput(false),
       mSuspendDepth(0),
       mFreezeDepth(0),
@@ -1147,10 +1151,12 @@ void nsGlobalWindowInner::FreeInnerObjects() {
   DisableGamepadUpdates();
   mHasGamepad = false;
   mGamepads.Clear();
+#ifdef MOZ_VR
   DisableVRUpdates();
   mHasVREvents = false;
   mHasVRDisplayActivateEvents = false;
   mVRDisplays.Clear();
+#endif
 
   // This breaks a cycle between the window and the ClientSource object.
   mClientSource.reset();
@@ -1345,7 +1351,9 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGamepads)
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mCacheStorage)
+#ifdef MOZ_VR
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVRDisplays)
+#endif
 
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDebuggerNotificationManager)
 
@@ -1447,7 +1455,9 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mGamepads)
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mCacheStorage)
+#ifdef MOZ_VR
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mVRDisplays)
+#endif
 
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mDebuggerNotificationManager)
 
@@ -1925,6 +1935,7 @@ nsresult nsGlobalWindowInner::PostHandleEvent(EventChainPostVisitor& aVisitor) {
     // will receive a vrdisplayactive event to indicate that it should
     // immediately begin vr presentation. This should occur when navigating
     // forwards, navigating backwards, and on page reload.
+#ifdef MOZ_VR
     for (const auto& display : mVRDisplays) {
       if (display->IsPresenting()) {
         display->StartVRNavigation();
@@ -1942,6 +1953,7 @@ nsresult nsGlobalWindowInner::PostHandleEvent(EventChainPostVisitor& aVisitor) {
         break;
       }
     }
+#endif
     // Execute bindingdetached handlers before we tear ourselves
     // down.
     if (mDoc) {
@@ -1984,6 +1996,7 @@ nsresult nsGlobalWindowInner::PostHandleEvent(EventChainPostVisitor& aVisitor) {
       }
     }
 
+#ifdef MOZ_VR
     if (mVREventObserver) {
       mVREventObserver->NotifyAfterLoad();
     }
@@ -1997,6 +2010,7 @@ nsresult nsGlobalWindowInner::PostHandleEvent(EventChainPostVisitor& aVisitor) {
       DispatchVRDisplayActivate(autoActivateVRDisplayID,
                                 VRDisplayEventReason::Navigation);
     }
+#endif
   }
 
   return NS_OK;
@@ -4013,6 +4027,7 @@ void nsGlobalWindowInner::DisableGamepadUpdates() {
   }
 }
 
+#ifdef MOZ_VR
 void nsGlobalWindowInner::EnableVRUpdates() {
   if (mHasVREvents && !mVREventObserver) {
     mVREventObserver = new VREventObserver(this);
@@ -4043,6 +4058,7 @@ void nsGlobalWindowInner::StopVRActivity() {
     mVREventObserver->StopActivity();
   }
 }
+#endif
 
 #ifndef XP_WIN  // This guard should match the guard at the callsite.
 static bool ShouldShowFocusRingIfFocusedByMouse(nsIContent* aNode) {
@@ -5127,7 +5143,9 @@ void nsGlobalWindowInner::Suspend() {
       ac->RemoveWindowListener(mEnabledSensors[i], this);
   }
   DisableGamepadUpdates();
+#ifdef MOZ_VR
   DisableVRUpdates();
+#endif
 
   SuspendWorkersForWindow(this);
 
@@ -5180,7 +5198,9 @@ void nsGlobalWindowInner::Resume() {
       ac->AddWindowListener(mEnabledSensors[i], this);
   }
   EnableGamepadUpdates();
+#ifdef MOZ_VR
   EnableVRUpdates();
+#endif
 
   // Resume all of the AudioContexts for this window
   for (uint32_t i = 0; i < mAudioContexts.Length(); ++i) {
@@ -5979,6 +5999,7 @@ void nsGlobalWindowInner::SetHasGamepadEventListener(
 }
 
 void nsGlobalWindowInner::EventListenerAdded(nsAtom* aType) {
+#ifdef MOZ_VR
   if (aType == nsGkAtoms::onvrdisplayactivate ||
       aType == nsGkAtoms::onvrdisplayconnect ||
       aType == nsGkAtoms::onvrdisplaydeactivate ||
@@ -5990,6 +6011,7 @@ void nsGlobalWindowInner::EventListenerAdded(nsAtom* aType) {
   if (aType == nsGkAtoms::onvrdisplayactivate) {
     mHasVRDisplayActivateEvents = true;
   }
+#endif
 
   if (aType == nsGkAtoms::onbeforeunload && mBrowserChild &&
       (!mDoc || !(mDoc->GetSandboxFlags() & SANDBOXED_MODALS))) {
@@ -6035,6 +6057,7 @@ void nsGlobalWindowInner::EventListenerRemoved(nsAtom* aType) {
   }
 }
 
+#ifdef MOZ_VR
 void nsGlobalWindowInner::NotifyVREventListenerAdded() {
   mHasVREvents = true;
   EnableVRUpdates();
@@ -6060,6 +6083,7 @@ bool nsGlobalWindowInner::IsVRContentPresenting() const {
   }
   return false;
 }
+#endif
 
 void nsGlobalWindowInner::AddSizeOfIncludingThis(
     nsWindowSizes& aWindowSizes) const {
@@ -6183,6 +6207,7 @@ void nsGlobalWindowInner::StopGamepadHaptics() {
   }
 }
 
+#ifdef MOZ_VR
 bool nsGlobalWindowInner::UpdateVRDisplays(
     nsTArray<RefPtr<mozilla::dom::VRDisplay>>& aDevices) {
   VRDisplay::UpdateVRDisplays(mVRDisplays, this);
@@ -6352,6 +6377,7 @@ void nsGlobalWindowInner::DispatchVRDisplayPresentChange(uint32_t aDisplayID) {
     }
   }
 }
+#endif  // MOZ_VR
 
 enum WindowState {
   // These constants need to match the constants in Window.webidl

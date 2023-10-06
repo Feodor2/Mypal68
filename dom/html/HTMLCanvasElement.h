@@ -37,7 +37,9 @@ class WebRenderCanvasData;
 }  // namespace layers
 namespace gfx {
 class SourceSurface;
+#ifdef MOZ_VR
 class VRLayerChild;
+#endif
 }  // namespace gfx
 
 namespace dom {
@@ -326,7 +328,9 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   static void SetAttrFromAsyncCanvasRenderer(AsyncCanvasRenderer* aRenderer);
   static void InvalidateFromAsyncCanvasRenderer(AsyncCanvasRenderer* aRenderer);
 
+#ifdef MOZ_VR
   already_AddRefed<layers::SharedSurfaceTextureClient> GetVRFrame();
+#endif
 
   bool MaybeModified() const { return mMaybeModified; };
 

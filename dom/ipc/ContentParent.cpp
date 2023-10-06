@@ -2365,17 +2365,25 @@ void ContentParent::InitInternal(ProcessPriority aInitialPriority) {
 
   Endpoint<PCompositorManagerChild> compositor;
   Endpoint<PImageBridgeChild> imageBridge;
+#ifdef MOZ_VR
   Endpoint<PVRManagerChild> vrBridge;
+#endif
   Endpoint<PRemoteDecoderManagerChild> videoManager;
   AutoTArray<uint32_t, 3> namespaces;
 
   DebugOnly<bool> opened =
       gpm->CreateContentBridges(OtherPid(), &compositor, &imageBridge,
-                                &vrBridge, &videoManager, &namespaces);
+#ifdef MOZ_VR
+                                &vrBridge,
+#endif
+                                &videoManager, &namespaces);
   MOZ_ASSERT(opened);
 
   Unused << SendInitRendering(std::move(compositor), std::move(imageBridge),
-                              std::move(vrBridge), std::move(videoManager),
+#ifdef MOZ_VR
+                              std::move(vrBridge),
+#endif
+                              std::move(videoManager),
                               namespaces);
 
   gpm->AddListener(this);
@@ -2531,17 +2539,25 @@ void ContentParent::OnCompositorUnexpectedShutdown() {
 
   Endpoint<PCompositorManagerChild> compositor;
   Endpoint<PImageBridgeChild> imageBridge;
+#ifdef MOZ_VR
   Endpoint<PVRManagerChild> vrBridge;
+#endif
   Endpoint<PRemoteDecoderManagerChild> videoManager;
   AutoTArray<uint32_t, 3> namespaces;
 
   DebugOnly<bool> opened =
       gpm->CreateContentBridges(OtherPid(), &compositor, &imageBridge,
-                                &vrBridge, &videoManager, &namespaces);
+#ifdef MOZ_VR
+                                &vrBridge,
+#endif
+                                &videoManager, &namespaces);
   MOZ_ASSERT(opened);
 
   Unused << SendReinitRendering(std::move(compositor), std::move(imageBridge),
-                                std::move(vrBridge), std::move(videoManager),
+#ifdef MOZ_VR
+                                std::move(vrBridge),
+#endif
+                                std::move(videoManager),
                                 namespaces);
 }
 

@@ -5,7 +5,9 @@
 #include "gfxConfig.h"
 #include "GPUProcessHost.h"
 #include "GPUProcessManager.h"
-#include "VRProcessManager.h"
+#ifdef MOZ_VR
+#  include "VRProcessManager.h"
+#endif
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TelemetryIPC.h"
@@ -117,6 +119,7 @@ mozilla::ipc::IPCResult GPUChild::RecvGraphicsError(const nsCString& aError) {
   return IPC_OK();
 }
 
+#ifdef MOZ_VR
 mozilla::ipc::IPCResult GPUChild::RecvCreateVRProcess() {
   // Make sure create VR process at the main process
   MOZ_ASSERT(XRE_IsParentProcess());
@@ -142,6 +145,7 @@ mozilla::ipc::IPCResult GPUChild::RecvShutdownVRProcess() {
 
   return IPC_OK();
 }
+#endif
 
 mozilla::ipc::IPCResult GPUChild::RecvNotifyUiObservers(
     const nsCString& aTopic) {

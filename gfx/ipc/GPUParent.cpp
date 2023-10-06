@@ -43,9 +43,11 @@
 #include "nsThreadManager.h"
 #include "prenv.h"
 #include "ProcessUtils.h"
-#include "VRGPUChild.h"
-#include "VRManager.h"
-#include "VRManagerParent.h"
+#ifdef MOZ_VR
+#  include "VRGPUChild.h"
+#  include "VRManager.h"
+#  include "VRManagerParent.h"
+#endif
 #include "VsyncBridgeParent.h"
 #include "cairo.h"
 #include "skia/include/core/SkGraphics.h"
@@ -262,7 +264,9 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   }
 #endif
 
+#ifdef MOZ_VR
   VRManager::ManagerInit();
+#endif
   // Send a message to the UI process that we're done.
   GPUDeviceData data;
   RecvGetDeviceStatus(&data);
@@ -291,6 +295,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInitImageBridge(
   return IPC_OK();
 }
 
+#ifdef MOZ_VR
 mozilla::ipc::IPCResult GPUParent::RecvInitVRManager(
     Endpoint<PVRManagerParent>&& aEndpoint) {
   VRManagerParent::CreateForGPUProcess(std::move(aEndpoint));
@@ -302,6 +307,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInitVR(
   gfx::VRGPUChild::InitForGPUProcess(std::move(aEndpoint));
   return IPC_OK();
 }
+#endif
 
 mozilla::ipc::IPCResult GPUParent::RecvInitUiCompositorController(
     const LayersId& aRootLayerTreeId,
@@ -397,6 +403,7 @@ mozilla::ipc::IPCResult GPUParent::RecvNewContentImageBridge(
   return IPC_OK();
 }
 
+#ifdef MOZ_VR
 mozilla::ipc::IPCResult GPUParent::RecvNewContentVRManager(
     Endpoint<PVRManagerParent>&& aEndpoint) {
   if (!VRManagerParent::CreateForContent(std::move(aEndpoint))) {
@@ -404,6 +411,7 @@ mozilla::ipc::IPCResult GPUParent::RecvNewContentVRManager(
   }
   return IPC_OK();
 }
+#endif
 
 mozilla::ipc::IPCResult GPUParent::RecvNewContentRemoteDecoderManager(
     Endpoint<PRemoteDecoderManagerParent>&& aEndpoint) {
@@ -468,12 +476,14 @@ mozilla::ipc::IPCResult GPUParent::RecvRequestMemoryReport(
   return IPC_OK();
 }
 
+#ifdef MOZ_VR
 mozilla::ipc::IPCResult GPUParent::RecvShutdownVR() {
   if (StaticPrefs::dom_vr_process_enabled_AtStartup()) {
     VRGPUChild::Shutdown();
   }
   return IPC_OK();
 }
+#endif
 
 void GPUParent::ActorDestroy(ActorDestroyReason aWhy) {
   if (AbnormalShutdown == aWhy) {

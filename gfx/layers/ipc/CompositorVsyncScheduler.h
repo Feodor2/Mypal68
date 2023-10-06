@@ -114,6 +114,7 @@ class CompositorVsyncScheduler {
   // such a task already queued. Can be called from any thread.
   void PostCompositeTask(VsyncId aId, TimeStamp aCompositeTimestamp);
 
+#ifdef MOZ_VR
   // Post a task to run DispatchVREvents() on the VR thread, if there isn't
   // such a task already queued. Can be called from any thread.
   void PostVRTask(TimeStamp aTimestamp);
@@ -123,14 +124,16 @@ class CompositorVsyncScheduler {
    */
   void CancelCurrentVRTask();
 
+  void DispatchVREvents(TimeStamp aVsyncTimestamp);
+
+#endif
+
   // This gets run at vsync time and "does" a composite (which really means
   // update internal state and call the owner to do the composite).
   void Composite(VsyncId aId, TimeStamp aVsyncTimestamp);
 
   void ObserveVsync();
   void UnobserveVsync();
-
-  void DispatchVREvents(TimeStamp aVsyncTimestamp);
 
   class Observer final : public VsyncObserver {
    public:
@@ -161,8 +164,10 @@ class CompositorVsyncScheduler {
   mozilla::Monitor2 mCurrentCompositeTaskMonitor;
   RefPtr<CancelableRunnable> mCurrentCompositeTask;
 
+#ifdef MOZ_VR
   mozilla::Monitor2 mCurrentVRTaskMonitor;
   RefPtr<CancelableRunnable> mCurrentVRTask;
+#endif
 };
 
 }  // namespace layers

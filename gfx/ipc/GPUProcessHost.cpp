@@ -7,7 +7,9 @@
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_layers.h"
-#include "VRGPUChild.h"
+#ifdef MOZ_VR
+#  include "VRGPUChild.h"
+#endif
 #include "ProcessUtils.h"
 
 namespace mozilla {
@@ -157,10 +159,12 @@ void GPUProcessHost::Shutdown() {
 
     // The channel might already be closed if we got here unexpectedly.
     if (!mChannelClosed) {
+#ifdef MOZ_VR
       if (VRGPUChild::IsCreated()) {
         VRGPUChild::Get()->Close();
       }
       mGPUChild->SendShutdownVR();
+#endif
       mGPUChild->Close();
     }
 

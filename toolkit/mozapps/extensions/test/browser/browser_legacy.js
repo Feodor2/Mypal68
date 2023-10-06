@@ -18,18 +18,6 @@ add_task(async function() {
     "mozscreenshots@mozilla.org",
   ];
 
-  let exceptions = Services.prefs.getCharPref("extensions.legacy.exceptions");
-  exceptions = [exceptions, ...IGNORE].join(",");
-
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["extensions.legacy.enabled", false],
-      ["extensions.legacy.exceptions", exceptions],
-
-      ["xpinstall.signatures.required", false],
-    ],
-  });
-
   let goodAddons = [
     {
       id: "webextension@tests.mozilla.org",
@@ -107,14 +95,6 @@ add_task(async function() {
     "mozilla@tests.mozilla.org",
   ]);
 
-  let banner = mgrWin.document.getElementById("legacy-extensions-notice");
-  is_element_hidden(banner, "Warning about legacy extensions should be hidden");
-  is(
-    mgrWin.gLegacyView._categoryItem.disabled,
-    true,
-    "Legacy category is hidden"
-  );
-
   // Now add a legacy extension
   provider.createAddons(disabledAddon);
 
@@ -174,9 +154,6 @@ add_task(async function() {
 
   // Now add some unsigned addons and flip the signing preference
   provider.createAddons(unsignedAddons);
-  SpecialPowers.pushPrefEnv({
-    set: [["xpinstall.signatures.required", true]],
-  });
 
   // The entry on the left side should now read "Unsupported"
   await mgrWin.gLegacyView.refreshVisibility();

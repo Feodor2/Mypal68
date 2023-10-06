@@ -65,9 +65,6 @@ add_task(async function setup() {
   });
 });
 
-hookExtensionsTelemetry();
-AddonTestUtils.hookAMTelemetryEvents();
-
 // Helper function to test background updates.
 async function backgroundUpdateTest(url, id, checkIconFn) {
   await SpecialPowers.pushPrefEnv({
@@ -208,35 +205,6 @@ async function backgroundUpdateTest(url, id, checkIconFn) {
 
   await addon.uninstall();
   await SpecialPowers.popPrefEnv();
-
-  // Test that the expected telemetry events have been recorded (and that they include the
-  // permission_prompt event).
-  const amEvents = AddonTestUtils.getAMTelemetryEvents();
-  const updateEvents = amEvents
-    .filter(evt => evt.method === "update")
-    .map(evt => {
-      delete evt.value;
-      return evt;
-    });
-
-  Assert.deepEqual(
-    updateEvents.map(evt => evt.extra && evt.extra.step),
-    [
-      // First update (cancelled).
-      "started",
-      "download_started",
-      "download_completed",
-      "permissions_prompt",
-      "cancelled",
-      // Second update (completed).
-      "started",
-      "download_started",
-      "download_completed",
-      "permissions_prompt",
-      "completed",
-    ],
-    "Got the steps from the collected telemetry events"
-  );
 
   const method = "update";
   const object = "extension";

@@ -45,7 +45,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
   AddonSettings: "resource://gre/modules/addons/AddonSettings.jsm",
-  AMTelemetry: "resource://gre/modules/AddonManager.jsm",
   AppConstants: "resource://gre/modules/AppConstants.jsm",
   AsyncShutdown: "resource://gre/modules/AsyncShutdown.jsm",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.jsm",
@@ -1844,14 +1843,12 @@ class Extension extends ExtensionData {
     return (
       this.addonData.signedState === AddonManager.SIGNEDSTATE_PRIVILEGED ||
       this.addonData.signedState === AddonManager.SIGNEDSTATE_SYSTEM ||
-      this.addonData.builtIn ||
-      (AppConstants.MOZ_ALLOW_LEGACY_EXTENSIONS &&
-        this.addonData.temporarilyInstalled)
+      this.addonData.builtIn
     );
   }
 
   get experimentsAllowed() {
-    return AddonSettings.ALLOW_LEGACY_EXTENSIONS || this.isPrivileged;
+    return this.isPrivileged;
   }
 
   saveStartupData() {
@@ -2143,15 +2140,6 @@ class Extension extends ExtensionData {
         origins: [],
       });
       await StartupCache.clearAddonData(addonData.id);
-
-      // Record a telemetry event for the extension automatically allowed on private browsing as
-      // part of the Firefox upgrade.
-      AMTelemetry.recordActionEvent({
-        extra: { addonId: addonData.id },
-        object: "appUpgrade",
-        action: "privateBrowsingAllowed",
-        value: "on",
-      });
     }
   }
 

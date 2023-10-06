@@ -21,11 +21,6 @@ var { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
 
 ChromeUtils.defineModuleGetter(
   this,
-  "AMTelemetry",
-  "resource://gre/modules/AddonManager.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "formAutofillParent",
   "resource://formautofill/FormAutofillParent.jsm"
 );
@@ -121,10 +116,6 @@ function init_all() {
     document.getElementById("addonsButton").addEventListener("click", () => {
       let mainWindow = window.docShell.rootTreeItem.domWindow;
       mainWindow.BrowserOpenAddonsMgr();
-      AMTelemetry.recordLinkEvent({
-        object: "aboutPreferences",
-        value: "about:addons",
-      });
     });
 
     document.dispatchEvent(

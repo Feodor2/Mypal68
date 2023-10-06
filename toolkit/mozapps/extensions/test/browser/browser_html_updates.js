@@ -10,7 +10,6 @@ add_task(async function enableHtmlViews() {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.htmlaboutaddons.enabled", true]],
   });
-  Services.telemetry.clearEvents();
 });
 
 function loadDetailView(win, id) {
@@ -108,53 +107,6 @@ add_task(async function testChangeAutoUpdates() {
 
   await closeView(win);
   await extension.unload();
-
-  assertAboutAddonsTelemetryEvents([
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "enabled",
-      { type: "extension", addonId: id, action: "setAddonUpdate" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "",
-      { type: "extension", addonId: id, action: "setAddonUpdate" },
-    ],
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "default",
-      { type: "extension", addonId: id, action: "setAddonUpdate" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "enabled",
-      { type: "extension", addonId: id, action: "setAddonUpdate" },
-    ],
-  ]);
 });
 
 async function setupExtensionWithUpdate(id, { releaseNotes } = {}) {
@@ -328,7 +280,6 @@ add_task(async function testUpdateAvailable() {
 });
 
 add_task(async function testReleaseNotesLoad() {
-  Services.telemetry.clearEvents();
   let id = "update-with-notes@mochi.test";
   let extension = await setupExtensionWithUpdate(id, {
     releaseNotes: `
@@ -426,45 +377,6 @@ add_task(async function testReleaseNotesLoad() {
 
   await closeView(win);
   await extension.unload();
-
-  assertAboutAddonsTelemetryEvents([
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "extension", addonId: id },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "",
-      { type: "extension", addonId: id, action: "setAddonUpdate" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, action: "checkForUpdate" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, action: "releaseNotes" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, action: "releaseNotes" },
-    ],
-  ]);
 });
 
 add_task(async function testReleaseNotesError() {

@@ -34,12 +34,6 @@ async function checkInstallConfirmation(...names) {
         "Got one AddonInstall instance as expected"
       );
 
-      Assert.deepEqual(
-        installInfo.installs[0].installTelemetryInfo,
-        { source: "about:addons", method: "drag-and-drop" },
-        "Got the expected installTelemetryInfo"
-      );
-
       notificationCount++;
     },
   };

@@ -49,7 +49,6 @@ EXTRA_PP_COMPONENTS += [
 ]
 
 EXTRA_JS_MODULES += [
-    'AbuseReporter.jsm',
     'addonManager.js',
     'AddonManager.jsm',
     'amContentHandler.jsm',

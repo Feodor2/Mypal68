@@ -15,7 +15,6 @@ const { EventEmitter } = ChromeUtils.import(
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
   AddonManagerPrivate: "resource://gre/modules/AddonManager.jsm",
-  AMTelemetry: "resource://gre/modules/AddonManager.jsm",
   AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.jsm",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.jsm",
   ExtensionData: "resource://gre/modules/Extension.jsm",
@@ -160,10 +159,6 @@ var ExtensionsUI = {
       type: "sideload",
     });
 
-    AMTelemetry.recordManageEvent(addon, "sideload_prompt", {
-      num_strings: strings.msgs.length,
-    });
-
     this.showAddonsManager(browser, strings, addon.iconURL, "sideload").then(
       async answer => {
         if (answer) {
@@ -187,11 +182,6 @@ var ExtensionsUI = {
   },
 
   showUpdate(browser, info) {
-    AMTelemetry.recordInstallEvent(info.install, {
-      step: "permissions_prompt",
-      num_strings: info.strings.msgs.length,
-    });
-
     this.showAddonsManager(
       browser,
       info.strings,
@@ -260,17 +250,6 @@ var ExtensionsUI = {
         histkey = "installLocal";
       } else {
         histkey = "installWeb";
-      }
-
-      if (info.type == "sideload") {
-        AMTelemetry.recordManageEvent(info.addon, "sideload_prompt", {
-          num_strings: strings.msgs.length,
-        });
-      } else {
-        AMTelemetry.recordInstallEvent(info.install, {
-          step: "permissions_prompt",
-          num_strings: strings.msgs.length,
-        });
       }
 
       this.showPermissionsPrompt(browser, strings, icon, histkey).then(
@@ -554,13 +533,6 @@ var ExtensionsUI = {
             origins: [],
           };
           await ExtensionPermissions.add(addon.id, perms);
-          AMTelemetry.recordActionEvent({
-            addon,
-            object: "doorhanger",
-            action: "privateBrowsingAllowed",
-            view: "postInstall",
-            value: "on",
-          });
 
           // Reload the extension if it is already enabled.  This ensures any change
           // on the private browsing permission is properly handled.
@@ -604,21 +576,11 @@ var ExtensionsUI = {
       let action = {
         callback: () => {
           resolve();
-          AMTelemetry.recordActionEvent({
-            object: "doorhanger",
-            action: "dismiss",
-            view: "privateBrowsing",
-          });
         },
         dismiss: false,
       };
       let manage = {
         callback: () => {
-          AMTelemetry.recordActionEvent({
-            object: "doorhanger",
-            action: "manage",
-            view: "privateBrowsing",
-          });
           // Callback may happen in a different window, use the top window
           // for the new tab.
           let win = BrowserWindowTracker.getTopWindow();

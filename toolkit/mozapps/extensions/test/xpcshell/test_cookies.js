@@ -4,7 +4,6 @@ let server = createHttpServer({ hosts: ["example.com"] });
 
 createAppInfo("xpcshell@tests.mozilla.org", "XPCShell", "45", "45");
 
-Services.prefs.setBoolPref("extensions.getAddons.cache.enabled", true);
 Services.prefs.setBoolPref(PREF_EM_CHECK_UPDATE_SECURITY, false);
 
 // Tests that cookies are not sent with background requests.

@@ -38,7 +38,6 @@ user_pref("dom.use_xbl_scopes_for_remote_xul", false);
 user_pref("extensions.autoDisableScopes", 0);
 // Disable blocklist updates so we don't have them reported as leaks
 user_pref("extensions.blocklist.enabled", false);
-user_pref("extensions.getAddons.cache.enabled", false);
 user_pref("extensions.systemAddon.update.url", "http://localhost/dummy-system-addons.xml");
 user_pref("gfx.color_management.force_srgb", true);
 user_pref("gfx.color_management.mode", 2);

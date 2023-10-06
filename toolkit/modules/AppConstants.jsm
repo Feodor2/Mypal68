@@ -243,13 +243,6 @@ this.AppConstants = Object.freeze({
   false,
 #endif
 
-  MOZ_REQUIRE_SIGNING:
-#ifdef MOZ_REQUIRE_SIGNING
-  true,
-#else
-  false,
-#endif
-
   get MOZ_UNSIGNED_SCOPES() {
     let result = 0;
 #ifdef MOZ_UNSIGNED_APP_SCOPE
@@ -260,13 +253,6 @@ this.AppConstants = Object.freeze({
 #endif
     return result;
   },
-
-  MOZ_ALLOW_LEGACY_EXTENSIONS:
-#ifdef MOZ_ALLOW_LEGACY_EXTENSIONS
-  true,
-#else
-  false,
-#endif
 
   MENUBAR_CAN_AUTOHIDE:
 #ifdef MENUBAR_CAN_AUTOHIDE

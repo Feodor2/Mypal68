@@ -6,9 +6,6 @@ add_task(async function setup() {
       ["extensions.install.requireBuiltInCerts", false],
       ["extensions.update.requireBuiltInCerts", false],
 
-      // Don't require the extensions to be signed
-      ["xpinstall.signatures.required", false],
-
       // Point updates to the local mochitest server
       ["extensions.update.url", `${BASE}/browser_webext_update.json`],
     ],

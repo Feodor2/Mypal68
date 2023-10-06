@@ -4,8 +4,6 @@
 // Tests compatibility overrides, for when strict compatibility checking is
 // disabled. See bug 693906.
 
-const PREF_GETADDONS_CACHE_ENABLED = "extensions.getAddons.cache.enabled";
-
 let testserver = createHttpServer({ hosts: ["example.com"] });
 
 const GETADDONS_RESPONSE = {
@@ -175,7 +173,6 @@ const COMPAT_RESPONSE = {
 AddonTestUtils.registerJSON(testserver, "/compat.json", COMPAT_RESPONSE);
 
 Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, false);
-Services.prefs.setBoolPref(PREF_GETADDONS_CACHE_ENABLED, true);
 Services.prefs.setCharPref(
   PREF_GETADDONS_BYIDS,
   "http://example.com/addons.json"

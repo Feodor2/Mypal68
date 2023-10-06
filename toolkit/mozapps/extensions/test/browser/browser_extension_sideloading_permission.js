@@ -84,7 +84,6 @@ function clickEnableExtension(managerWindow, addonElement) {
 async function test_sideloaded_extension_permissions_prompt() {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["xpinstall.signatures.required", false],
       ["extensions.autoDisableScopes", 15],
       ["extensions.ui.ignoreUnsigned", true],
     ],

@@ -30,9 +30,6 @@ config = {
     ] + [
         # File, from, to
         ("build/mozconfig.common",
-         "MOZ_REQUIRE_SIGNING=${MOZ_REQUIRE_SIGNING-0}",
-         "MOZ_REQUIRE_SIGNING=${MOZ_REQUIRE_SIGNING-1}"),
-        ("build/mozconfig.common",
          "# Disable enforcing that add-ons are signed by the trusted root",
          "# Enable enforcing that add-ons are signed by the trusted root")
     ],

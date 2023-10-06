@@ -2,12 +2,6 @@
 
 XPCOMUtils.defineLazyPreferenceGetter(
   this,
-  "ABUSE_REPORT_ENABLED",
-  "extensions.abuseReport.enabled",
-  false
-);
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
   "HTML_ABOUTADDONS_ENABLED",
   "extensions.htmlaboutaddons.enabled",
   false
@@ -207,10 +201,9 @@ add_task(async function browseraction_contextmenu_manage_extension() {
     let manageExtension = menu.querySelector(
       ".customize-context-manageExtension"
     );
-    let reportExtension = menu.querySelector(
-      ".customize-context-reportExtension"
-    );
-    let separator = reportExtension.nextElementSibling;
+    let separator = popup.querySelector(
+      ".customize-context-removeExtension"
+    ).nextElementSibling;
 
     info(`Check visibility: ${visible}`);
     let expected = visible ? "visible" : "hidden";
@@ -223,11 +216,6 @@ add_task(async function browseraction_contextmenu_manage_extension() {
       manageExtension.hidden,
       !visible,
       `Manage Extension should be ${expected}`
-    );
-    is(
-      reportExtension.hidden,
-      !ABUSE_REPORT_ENABLED || !HTML_ABOUTADDONS_ENABLED || !visible,
-      `Report Extension should be ${expected}`
     );
     is(
       separator.hidden,
@@ -589,121 +577,6 @@ add_task(async function browseraction_contextmenu_remove_extension() {
 
   addon = await AddonManager.getAddonByID(id);
   ok(!addon, "Addon has been uninstalled");
-
-  await extension.unload();
-
-  await BrowserTestUtils.closeWindow(win);
-});
-
-// This test case verify reporting an extension from the browserAction
-// context menu (when the browserAction is in the toolbox and in the
-// overwflow menu, and repeat the test with and without the customize
-// mode enabled).
-add_task(async function browseraction_contextmenu_report_extension() {
-  SpecialPowers.pushPrefEnv({
-    set: [
-      ["extensions.htmlaboutaddons.enabled", true],
-      ["extensions.abuseReport.enabled", true],
-    ],
-  });
-  let win = await BrowserTestUtils.openNewBrowserWindow();
-  let id = "addon_id@example.com";
-  let name = "Bad Add-on";
-  let buttonId = `${makeWidgetId(id)}-browser-action`;
-  let extension = ExtensionTestUtils.loadExtension({
-    manifest: {
-      name,
-      author: "Bad author",
-      applications: {
-        gecko: { id },
-      },
-      browser_action: {},
-    },
-    useAddonManager: "temporary",
-  });
-
-  async function testContextMenu(menuId, customizing) {
-    info(`Open browserAction context menu in ${menuId}`);
-    let menu = await openContextMenu(menuId, buttonId, win);
-
-    info(`Choosing 'Report Extension' in ${menuId} should show confirm dialog`);
-    let reportExtension = menu.querySelector(
-      ".customize-context-reportExtension"
-    );
-    ok(!reportExtension.hidden, "Report extension should be visibile");
-
-    // When running in customizing mode "about:addons" will load in a new tab,
-    // otherwise it will replace the existing blank tab.
-    const onceAboutAddonsTab = customizing
-      ? BrowserTestUtils.waitForNewTab(win.gBrowser, "about:addons")
-      : BrowserTestUtils.waitForCondition(() => {
-          return win.gBrowser.currentURI.spec === "about:addons";
-        }, "Wait an about:addons tab to be opened");
-
-    await closeChromeContextMenu(menuId, reportExtension, win);
-    await onceAboutAddonsTab;
-
-    const browser = win.gBrowser.selectedBrowser;
-    is(
-      browser.currentURI.spec,
-      "about:addons",
-      "Got about:addons tab selected"
-    );
-
-    await BrowserTestUtils.browserLoaded(browser);
-
-    const abuseReportFrame = await BrowserTestUtils.waitForCondition(() => {
-      return browser.contentDocument.querySelector(
-        "addon-abuse-report-xulframe"
-      );
-    }, "Wait the abuse report frame");
-
-    ok(
-      !abuseReportFrame.hidden,
-      "Abuse report frame has the expected visibility"
-    );
-    is(
-      abuseReportFrame.report.addon.id,
-      id,
-      "Abuse report frame has the expected addon id"
-    );
-    is(
-      abuseReportFrame.report.reportEntryPoint,
-      "toolbar_context_menu",
-      "Abuse report frame has the expected reportEntryPoint"
-    );
-
-    // Close the new about:addons tab when running in customize mode,
-    // or cancel the abuse report if the about:addons page has been
-    // loaded in the existing blank tab.
-    if (customizing) {
-      info("Closing the about:addons tab");
-      BrowserTestUtils.removeTab(win.gBrowser.selectedTab);
-    } else {
-      info("Navigate the about:addons tab to about:blank");
-      await BrowserTestUtils.loadURI(browser, "about:blank");
-    }
-
-    return menu;
-  }
-
-  await extension.startup();
-
-  info("Run tests in normal mode");
-  await runTestContextMenu({
-    buttonId,
-    customizing: false,
-    testContextMenu,
-    win,
-  });
-
-  info("Run tests in customize mode");
-  await runTestContextMenu({
-    buttonId,
-    customizing: true,
-    testContextMenu,
-    win,
-  });
 
   await extension.unload();
 

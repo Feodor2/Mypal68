@@ -48,8 +48,6 @@ const IGNORE_PRIVATE = [
   "recordException",
   "getSimpleMeasures",
   "simpleTimer",
-  "setTelemetryDetails",
-  "getTelemetryDetails",
   "callNoUpdateListeners",
   "backgroundUpdateTimerHandler",
   "hasUpgradeListener",

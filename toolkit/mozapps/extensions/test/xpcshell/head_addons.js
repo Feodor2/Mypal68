@@ -14,9 +14,6 @@ if (!_TEST_FILE[0].includes("toolkit/mozapps/extensions/test/xpcshell/")) {
 
 const PREF_EM_CHECK_UPDATE_SECURITY = "extensions.checkUpdateSecurity";
 const PREF_EM_STRICT_COMPATIBILITY = "extensions.strictCompatibility";
-const PREF_GETADDONS_BYIDS = "extensions.getAddons.get.url";
-const PREF_COMPAT_OVERRIDES = "extensions.getAddons.compatOverides.url";
-const PREF_XPI_SIGNATURES_REQUIRED = "xpinstall.signatures.required";
 
 const PREF_DISABLE_SECURITY =
   "security.turn_off_all_security_so_that_" +
@@ -1150,11 +1147,6 @@ async function promiseInstallWebExtension(aData) {
 
 // By default use strict compatibility
 Services.prefs.setBoolPref("extensions.strictCompatibility", true);
-
-// Ensure signature checks are enabled by default
-Services.prefs.setBoolPref(PREF_XPI_SIGNATURES_REQUIRED, true);
-
-Services.prefs.setBoolPref("extensions.legacy.enabled", true);
 
 // Copies blocklistFile (an nsIFile) to gProfD/blocklist.xml.
 function copyBlocklistToProfile(blocklistFile) {

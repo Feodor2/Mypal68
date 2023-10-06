@@ -41,11 +41,6 @@ ChromeUtils.defineModuleGetter(
 );
 ChromeUtils.defineModuleGetter(
   this,
-  "AMTelemetry",
-  "resource://gre/modules/AddonManager.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "DragPositionManager",
   "resource:///modules/DragPositionManager.jsm"
 );
@@ -1338,13 +1333,11 @@ CustomizeMode.prototype = {
 
   openAddonsManagerThemes(aEvent) {
     aEvent.target.parentNode.parentNode.hidePopup();
-    AMTelemetry.recordLinkEvent({ object: "customize", value: "manageThemes" });
     this.window.BrowserOpenAddonsMgr("addons://list/theme");
   },
 
   getMoreThemes(aEvent) {
     aEvent.target.parentNode.parentNode.hidePopup();
-    AMTelemetry.recordLinkEvent({ object: "customize", value: "getThemes" });
     let getMoreURL = Services.urlFormatter.formatURLPref(
       "lightweightThemes.getMoreURL"
     );
@@ -1534,11 +1527,6 @@ CustomizeMode.prototype = {
       button.addEventListener("command", async () => {
         await button.theme.enable();
         onThemeSelected(panel);
-        AMTelemetry.recordActionEvent({
-          object: "customize",
-          action: "enable",
-          extra: { type: "theme", addonId: theme.id },
-        });
       });
       panel.insertBefore(button, footer);
     }

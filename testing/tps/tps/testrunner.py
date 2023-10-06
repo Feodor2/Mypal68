@@ -65,9 +65,6 @@ class TPSTestRunner(object):
         'browser.warnOnQuit': False,
         # Allow installing extensions dropped into the profile folder
         'extensions.autoDisableScopes': 10,
-        'extensions.getAddons.get.url': 'http://127.0.0.1:4567/addons/api/%IDS%.json',
-        # Our pretend addons server doesn't support metadata...
-        'extensions.getAddons.cache.enabled': False,
         'extensions.install.requireSecureOrigin': False,
         'extensions.update.enabled': False,
         # Don't open a dialog to show available add-on updates
@@ -77,10 +74,8 @@ class TPSTestRunner(object):
         'services.sync.autoconnectDelay': 60 * 60 * 10,
         'toolkit.startup.max_resumed_crashes': -1,
         # hrm - not sure what the release/beta channels will do?
-        'xpinstall.signatures.required': False,
         'services.sync.testing.tps': True,
         'engine.bookmarks.repair.enabled': False,
-        'extensions.legacy.enabled': True,
     }
 
     debug_preferences = {

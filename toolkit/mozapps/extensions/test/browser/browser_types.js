@@ -107,12 +107,6 @@ add_test(async function() {
   ok(!gCategoryUtilities.get("type2", true), "Type 2 should be absent");
   ok(!gCategoryUtilities.get("missing1", true), "Missing 1 should be absent");
 
-  is(
-    gCategoryUtilities.selectedCategory,
-    "discover",
-    "Should be back to the default view"
-  );
-
   close_manager(gManagerWindow, run_next_test);
 });
 
@@ -169,11 +163,6 @@ add_test(async function() {
   ok(!gCategoryUtilities.get("type2", true), "Type 2 should be absent");
   ok(!gCategoryUtilities.get("missing1", true), "Missing 1 should be absent");
 
-  is(
-    gCategoryUtilities.selectedCategory,
-    "discover",
-    "Should be back to the default view"
-  );
   check_state(true, true);
 
   go_back(gManagerWindow);
@@ -187,11 +176,6 @@ add_test(async function() {
 
   go_forward(gManagerWindow);
   await wait_for_view_load(gManagerWindow);
-  is(
-    gCategoryUtilities.selectedCategory,
-    "discover",
-    "Should be back to the default view"
-  );
   check_state(true, true);
 
   go_forward(gManagerWindow);
@@ -205,11 +189,6 @@ add_test(async function() {
 
   go_back(gManagerWindow);
   await wait_for_view_load(gManagerWindow);
-  is(
-    gCategoryUtilities.selectedCategory,
-    "discover",
-    "Should be back to the default view"
-  );
   check_state(true, true);
 
   close_manager(gManagerWindow, run_next_test);

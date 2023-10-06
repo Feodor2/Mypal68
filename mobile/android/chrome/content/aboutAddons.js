@@ -288,21 +288,6 @@ var Addons = {
     let outer = document.createElement("div");
     outer.className = "addon-item list-item";
     outer.setAttribute("role", "button");
-    outer.addEventListener(
-      "click",
-      function(event) {
-        try {
-          openLink(
-            Services.urlFormatter.formatURLPref(
-              "extensions.getAddons.browseAddons"
-            )
-          );
-        } catch (e) {
-          Cu.reportError(e);
-        }
-      },
-      true
-    );
 
     let img = document.createElement("img");
     img.className = "icon";

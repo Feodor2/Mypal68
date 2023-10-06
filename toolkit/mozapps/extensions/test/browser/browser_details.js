@@ -77,9 +77,6 @@ async function test() {
       contributionURL: "http://foo.com",
       contributionAmount: "$0.99",
       sourceURI: Services.io.newURI("http://example.com/foo"),
-      averageRating: 4,
-      reviewCount: 5,
-      reviewURL: "http://example.com/reviews",
       homepageURL: "http://example.com/addon1",
       applyBackgroundUpdates: AddonManager.AUTOUPDATE_ENABLE,
     },
@@ -117,8 +114,6 @@ async function test() {
       type: "extension",
       sourceURI: Services.io.newURI("http://example.com/foo"),
       updateDate: gDate,
-      reviewCount: 1,
-      reviewURL: "http://example.com/reviews",
       applyBackgroundUpdates: AddonManager.AUTOUPDATE_DISABLE,
       isActive: false,
       isCompatible: false,
@@ -261,8 +256,6 @@ add_test(async function() {
       "Private browsing should be off"
     );
 
-    is_element_hidden(get("detail-rating-row"), "Rating should be hidden");
-
     is_element_hidden(
       get("detail-homepage-row"),
       "Homepage should not be visible"
@@ -394,23 +387,6 @@ add_test(function() {
       get("detail-dateUpdated").value,
       formatDate(gDate),
       "Update date should be correct"
-    );
-
-    is_element_visible(
-      get("detail-rating-row"),
-      "Rating row should not be hidden"
-    );
-    is_element_hidden(get("detail-rating"), "Rating should be hidden");
-    is_element_visible(get("detail-reviews"), "Reviews should not be hidden");
-    is(
-      get("detail-reviews").href,
-      "http://example.com/reviews",
-      "Review URL should be correct"
-    );
-    is(
-      get("detail-reviews").value,
-      "1 review",
-      "Review text should be correct"
     );
 
     is_element_visible(
@@ -607,89 +583,12 @@ add_test(function() {
   });
 });
 
-// These tests are only appropriate when signing can be turned off
-if (!AppConstants.MOZ_REQUIRE_SIGNING) {
-  // Opens and tests the details view for add-on 9
-  add_test(function() {
-    open_details("addon9@tests.mozilla.org", "extension", function() {
-      is(
-        get("detail-name").textContent,
-        "Test add-on 9",
-        "Name should be correct"
-      );
-
-      is_element_hidden(
-        get("detail-prefs-btn"),
-        "Preferences button should be hidden"
-      );
-      is_element_hidden(
-        get("detail-enable-btn"),
-        "Enable button should be hidden"
-      );
-      is_element_visible(
-        get("detail-disable-btn"),
-        "Disable button should be visible"
-      );
-      is_element_visible(
-        get("detail-uninstall-btn"),
-        "Remove button should be visible"
-      );
-
-      is_element_hidden(get("detail-error"), "Error message should be hidden");
-      is_element_hidden(
-        get("detail-error-link"),
-        "Error link should be hidden"
-      );
-      is_element_visible(
-        get("detail-warning"),
-        "Error message should be visible"
-      );
-      is(
-        get("detail-warning").textContent,
-        "Test add-on 9 could not be verified for use in " +
-          gApp +
-          ". Proceed with caution.",
-        "Warning message should be correct"
-      );
-      is_element_visible(
-        get("detail-warning-link"),
-        "Warning link should be visible"
-      );
-      is(
-        get("detail-warning-link").value,
-        "More Information",
-        "Warning link text should be correct"
-      );
-      is(
-        get("detail-warning-link").href,
-        infoURL,
-        "Warning link should be correct"
-      );
-      is_element_hidden(
-        get("detail-pending"),
-        "Pending message should be hidden"
-      );
-
-      run_next_test();
-    });
-  });
-}
-
-// Opens and tests the details view for add-on 9 with signing required
-add_test(async function() {
-  await close_manager(gManagerWindow);
-  Services.prefs.setBoolPref("xpinstall.signatures.required", true);
-  let aWindow = await open_manager(null);
-  gManagerWindow = aWindow;
-  gCategoryUtilities = new CategoryUtilities(gManagerWindow);
-
-  open_details("addon9@tests.mozilla.org", "extension", async function() {
-    await TestUtils.waitForCondition(
-      () => !BrowserTestUtils.is_hidden(get("detail-error-link"))
-    );
+// Opens and tests the details view for add-on 10
+add_test(function() {
+  open_details("addon10@tests.mozilla.org", "extension", function() {
     is(
       get("detail-name").textContent,
-      "Test add-on 9",
+      "Test add-on 10",
       "Name should be correct"
     );
 
@@ -701,107 +600,40 @@ add_test(async function() {
       get("detail-enable-btn"),
       "Enable button should be hidden"
     );
-    is_element_visible(
+    is_element_hidden(
       get("detail-disable-btn"),
-      "Disable button should be visible"
+      "Disable button should be hidden"
     );
     is_element_visible(
       get("detail-uninstall-btn"),
       "Remove button should be visible"
     );
-
-    is_element_hidden(
+    is_element_visible(
       get("detail-warning"),
-      "Warning message should be hidden"
+      "Warning message should be visible"
+    );
+    is(
+      get("detail-warning").textContent,
+      "Test add-on 10 is incompatible with " + gApp + " " + gVersion + ".",
+      "Warning message should be correct"
     );
     is_element_hidden(
       get("detail-warning-link"),
       "Warning link should be hidden"
     );
-    is_element_visible(get("detail-error"), "Error message should be visible");
-    is(
-      get("detail-error").textContent,
-      "Test add-on 9 could not be verified for use in " +
-        gApp +
-        " and has been disabled.",
-      "Error message should be correct"
-    );
-    is_element_visible(
+    is_element_hidden(get("detail-error"), "Error message should be hidden");
+    is_element_hidden(
       get("detail-error-link"),
-      "Error link should be visible"
+      "Error link should be hidden"
     );
-    is(
-      get("detail-error-link").value,
-      "More Information",
-      "Error link text should be correct"
+    is_element_hidden(
+      get("detail-pending"),
+      "Pending message should be hidden"
     );
-    is(get("detail-error-link").href, infoURL, "Error link should be correct");
-
-    await close_manager(gManagerWindow);
-    Services.prefs.setBoolPref("xpinstall.signatures.required", false);
-    aWindow = await open_manager(null);
-    gManagerWindow = aWindow;
-    gCategoryUtilities = new CategoryUtilities(gManagerWindow);
 
     run_next_test();
   });
 });
-
-// These tests are only appropriate when signing can be turned off
-if (!AppConstants.REQUIRE_SIGNING) {
-  // Opens and tests the details view for add-on 10
-  add_test(function() {
-    open_details("addon10@tests.mozilla.org", "extension", function() {
-      is(
-        get("detail-name").textContent,
-        "Test add-on 10",
-        "Name should be correct"
-      );
-
-      is_element_hidden(
-        get("detail-prefs-btn"),
-        "Preferences button should be hidden"
-      );
-      is_element_hidden(
-        get("detail-enable-btn"),
-        "Enable button should be hidden"
-      );
-      is_element_hidden(
-        get("detail-disable-btn"),
-        "Disable button should be hidden"
-      );
-      is_element_visible(
-        get("detail-uninstall-btn"),
-        "Remove button should be visible"
-      );
-
-      is_element_visible(
-        get("detail-warning"),
-        "Warning message should be visible"
-      );
-      is(
-        get("detail-warning").textContent,
-        "Test add-on 10 is incompatible with " + gApp + " " + gVersion + ".",
-        "Warning message should be correct"
-      );
-      is_element_hidden(
-        get("detail-warning-link"),
-        "Warning link should be hidden"
-      );
-      is_element_hidden(get("detail-error"), "Error message should be hidden");
-      is_element_hidden(
-        get("detail-error-link"),
-        "Error link should be hidden"
-      );
-      is_element_hidden(
-        get("detail-pending"),
-        "Pending message should be hidden"
-      );
-
-      run_next_test();
-    });
-  });
-}
 
 // Opens and tests the details view for add-on 10 with signing required
 add_test(async function() {
@@ -1106,7 +938,6 @@ add_test(function() {
         type: "extension",
         iconURL: "chrome://foo/skin/icon.png",
         sourceURI: Services.io.newURI("http://example.com/foo"),
-        averageRating: 2,
         optionsURL: "chrome://foo/content/options.xul",
         applyBackgroundUpdates: AddonManager.AUTOUPDATE_ENABLE,
         operationsRequiringRestart: AddonManager.OP_NEEDS_RESTART_NONE,
@@ -1146,14 +977,6 @@ add_test(function() {
       get("detail-dateUpdated"),
       "Update date should be hidden"
     );
-
-    is_element_visible(
-      get("detail-rating-row"),
-      "Rating row should not be hidden"
-    );
-    is_element_visible(get("detail-rating"), "Rating should not be hidden");
-    is(get("detail-rating").averageRating, 2, "Rating should be correct");
-    is_element_hidden(get("detail-reviews"), "Reviews should be hidden");
 
     is_element_hidden(get("detail-homepage-row"), "Homepage should be hidden");
 

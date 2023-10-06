@@ -14,38 +14,6 @@ AddonTestUtils.createAppInfo(
 );
 AddonTestUtils.usePrivilegedSignatures = false;
 
-// Assert on the expected "addonsManager.action" telemetry events (and optional filter events to verify
-// by using a given actionType).
-function assertActionAMTelemetryEvent(
-  expectedActionEvents,
-  assertMessage,
-  { actionType } = {}
-) {
-  const snapshot = Services.telemetry.snapshotEvents(
-    Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-    true
-  );
-
-  ok(
-    snapshot.parent && snapshot.parent.length > 0,
-    "Got parent telemetry events in the snapshot"
-  );
-
-  const events = snapshot.parent
-    .filter(([timestamp, category, method, object, value, extra]) => {
-      return (
-        category === "addonsManager" &&
-        method === "action" &&
-        (!actionType ? true : extra && extra.action === actionType)
-      );
-    })
-    .map(([timestamp, category, method, object, value, extra]) => {
-      return { method, object, value, extra };
-    });
-
-  Assert.deepEqual(events, expectedActionEvents, assertMessage);
-}
-
 async function runIncognitoTest(
   extensionData,
   privateBrowsingAllowed,
@@ -221,10 +189,4 @@ add_task(async function test_extension_incognito_spanning_grandfathered() {
       extra: { addonId, action: "privateBrowsingAllowed" },
     },
   ];
-
-  assertActionAMTelemetryEvent(
-    expectedEvents,
-    "Got the expected telemetry events for the grandfathered extensions",
-    { actionType: "privateBrowsingAllowed" }
-  );
 });

@@ -2611,7 +2611,7 @@
 # Private browsing opt-in is only supported on Firefox desktop.
 - name: extensions.allowPrivateBrowsingByDefault
   type: bool
-  value: @IS_ANDROID@
+  value: true
   mirror: always
 
 # This pref should be set to true only in case of regression related to the

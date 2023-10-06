@@ -130,55 +130,6 @@ add_task(async function testBlocked() {
   });
 });
 
-add_task(async function testUnsignedDisabled() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["xpinstall.signatures.required", true]],
-  });
-
-  let id = "unsigned@mochi.test";
-  gProvider.createAddons([
-    {
-      appDisabled: true,
-      id,
-      name: "Unsigned",
-      signedState: AddonManager.SIGNEDSTATE_MISSING,
-    },
-  ]);
-  await checkMessageState(id, "extension", {
-    linkText: "More Information",
-    linkUrl: SUPPORT_URL + "unsigned-addons",
-    text:
-      "Unsigned could not be verified for use in " +
-      appName +
-      " and has been disabled.",
-    type: "error",
-  });
-
-  await SpecialPowers.popPrefEnv();
-});
-
-add_task(async function testUnsignedLangpackDisabled() {
-  let id = "unsigned-langpack@mochi.test";
-  gProvider.createAddons([
-    {
-      appDisabled: true,
-      id,
-      name: "Unsigned",
-      signedState: AddonManager.SIGNEDSTATE_MISSING,
-      type: "locale",
-    },
-  ]);
-  await checkMessageState(id, "locale", {
-    linkText: "More Information",
-    linkUrl: SUPPORT_URL + "unsigned-addons",
-    text:
-      "Unsigned could not be verified for use in " +
-      appName +
-      " and has been disabled.",
-    type: "error",
-  });
-});
-
 add_task(async function testIncompatible() {
   let id = "incompatible@mochi.test";
   gProvider.createAddons([
@@ -215,33 +166,6 @@ add_task(async function testUnsignedEnabled() {
       ". Proceed with caution.",
     type: "warning",
   });
-});
-
-add_task(async function testUnsignedLangpackEnabled() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["extensions.langpacks.signatures.required", false]],
-  });
-
-  let id = "unsigned-allowed-langpack@mochi.test";
-  gProvider.createAddons([
-    {
-      id,
-      name: "Unsigned Langpack",
-      signedState: AddonManager.SIGNEDSTATE_MISSING,
-      type: "locale",
-    },
-  ]);
-  await checkMessageState(id, "locale", {
-    linkText: "More Information",
-    linkUrl: SUPPORT_URL + "unsigned-addons",
-    text:
-      "Unsigned Langpack could not be verified for use in " +
-      appName +
-      ". Proceed with caution.",
-    type: "warning",
-  });
-
-  await SpecialPowers.popPrefEnv();
 });
 
 add_task(async function testSoftBlocked() {

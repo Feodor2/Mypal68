@@ -313,7 +313,6 @@ class Test_get_config(object):
         # assert test_config['unit'] == 'ms'
         # TODO: this isn't overriden
         # assert test_config['webextensions'] != '${talos}/webextensions/dummy/dummy-signed.xpi'
-        assert test_config['preferences'] == {'xpinstall.signatures.required': False}
 
     def test_ts_paint_heavy_has_expected_attributes(self):
         config = get_config(self.argv_ts_paint_heavy)
@@ -633,7 +632,6 @@ class Test_get_config(object):
         assert test_config['timeout'] == 1800
         assert test_config['unit'] == 'ms'
         assert test_config['webextensions'] == '${talos}/webextensions/dummy/dummy.xpi'
-        assert test_config['preferences'] == {'xpinstall.signatures.required': False}
 
     @mock.patch('talos.config.build_manifest', conftest.patched_build_manifest)
     def test_tp5o_scroll_has_expected_attributes(self):

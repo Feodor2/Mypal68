@@ -2,14 +2,6 @@
 
 // This test checks whether the theme experiments work
 
-add_task(async function setup() {
-  await SpecialPowers.pushPrefEnv({
-    set: [
-      ["extensions.legacy.enabled", AppConstants.MOZ_ALLOW_LEGACY_EXTENSIONS],
-    ],
-  });
-});
-
 add_task(async function test_experiment_static_theme() {
   let extension = ExtensionTestUtils.loadExtension({
     manifest: {
@@ -59,46 +51,28 @@ add_task(async function test_experiment_static_theme() {
   await extension.startup();
 
   const testExperimentApplied = rootEl => {
-    if (AppConstants.MOZ_ALLOW_LEGACY_EXTENSIONS) {
-      is(
-        rootEl.style.getPropertyValue("--some-color-property"),
-        hexToCSS("#ff00ff"),
-        "Color property should be parsed and set."
-      );
-      ok(
-        rootEl.style
-          .getPropertyValue("--some-image-property")
-          .startsWith("url("),
-        "Image property should be parsed."
-      );
-      ok(
-        rootEl.style
-          .getPropertyValue("--some-image-property")
-          .endsWith("background.jpg)"),
-        "Image property should be set."
-      );
-      is(
-        rootEl.style.getPropertyValue("--some-random-property"),
-        "no-repeat",
-        "Generic Property should be set."
-      );
-    } else {
-      is(
-        rootEl.style.getPropertyValue("--some-color-property"),
-        "",
-        "Color property should be unset"
-      );
-      is(
-        rootEl.style.getPropertyValue("--some-image-property"),
-        "",
-        "Image property should be unset"
-      );
-      is(
-        rootEl.style.getPropertyValue("--some-random-property"),
-        "",
-        "Generic Property should be unset."
-      );
-    }
+    is(
+      rootEl.style.getPropertyValue("--some-color-property"),
+      hexToCSS("#ff00ff"),
+      "Color property should be parsed and set."
+    );
+    ok(
+      rootEl.style
+        .getPropertyValue("--some-image-property")
+        .startsWith("url("),
+      "Image property should be parsed."
+    );
+    ok(
+      rootEl.style
+        .getPropertyValue("--some-image-property")
+        .endsWith("background.jpg)"),
+      "Image property should be set."
+    );
+    is(
+      rootEl.style.getPropertyValue("--some-random-property"),
+      "no-repeat",
+      "Generic Property should be set."
+    );
   };
 
   info("Testing that current window updated with the experiment applied");
@@ -198,46 +172,28 @@ add_task(async function test_experiment_dynamic_theme() {
   await extension.awaitMessage("theme-updated");
 
   const testExperimentApplied = rootEl => {
-    if (AppConstants.MOZ_ALLOW_LEGACY_EXTENSIONS) {
-      is(
-        rootEl.style.getPropertyValue("--some-color-property"),
-        hexToCSS("#ff00ff"),
-        "Color property should be parsed and set."
-      );
-      ok(
-        rootEl.style
-          .getPropertyValue("--some-image-property")
-          .startsWith("url("),
-        "Image property should be parsed."
-      );
-      ok(
-        rootEl.style
-          .getPropertyValue("--some-image-property")
-          .endsWith("background.jpg)"),
-        "Image property should be set."
-      );
-      is(
-        rootEl.style.getPropertyValue("--some-random-property"),
-        "no-repeat",
-        "Generic Property should be set."
-      );
-    } else {
-      is(
-        rootEl.style.getPropertyValue("--some-color-property"),
-        "",
-        "Color property should be unset"
-      );
-      is(
-        rootEl.style.getPropertyValue("--some-image-property"),
-        "",
-        "Image property should be unset"
-      );
-      is(
-        rootEl.style.getPropertyValue("--some-random-property"),
-        "",
-        "Generic Property should be unset."
-      );
-    }
+    is(
+      rootEl.style.getPropertyValue("--some-color-property"),
+      hexToCSS("#ff00ff"),
+      "Color property should be parsed and set."
+    );
+    ok(
+      rootEl.style
+        .getPropertyValue("--some-image-property")
+        .startsWith("url("),
+      "Image property should be parsed."
+    );
+    ok(
+      rootEl.style
+        .getPropertyValue("--some-image-property")
+        .endsWith("background.jpg)"),
+      "Image property should be set."
+    );
+    is(
+      rootEl.style.getPropertyValue("--some-random-property"),
+      "no-repeat",
+      "Generic Property should be set."
+    );
   };
   testExperimentApplied(root);
 
@@ -343,44 +299,26 @@ add_task(async function test_experiment_stylesheet() {
 
   await extension.startup();
 
-  if (AppConstants.MOZ_ALLOW_LEGACY_EXTENSIONS) {
-    // Wait for stylesheet load.
-    await BrowserTestUtils.waitForCondition(
-      () => computedStyle.fill === expectedFill
-    );
+  // Wait for stylesheet load.
+  await BrowserTestUtils.waitForCondition(
+    () => computedStyle.fill === expectedFill
+  );
 
-    is(
-      root.style.getPropertyValue("--menu-button-background"),
-      expectedColor,
-      "Variable should be parsed and set."
-    );
-    is(
-      computedStyle.backgroundColor,
-      expectedColor,
-      "Menu button should be have correct background"
-    );
-    is(
-      computedStyle.fill,
-      expectedFill,
-      "Menu button should be have correct fill"
-    );
-  } else {
-    is(
-      root.style.getPropertyValue("--menu-button-background"),
-      "",
-      "Variable should be unset"
-    );
-    isnot(
-      computedStyle.backgroundColor,
-      expectedColor,
-      "Menu button should not have custom background"
-    );
-    isnot(
-      computedStyle.fill,
-      expectedFill,
-      "Menu button should not have stylesheet fill"
-    );
-  }
+  is(
+    root.style.getPropertyValue("--menu-button-background"),
+    expectedColor,
+    "Variable should be parsed and set."
+  );
+  is(
+    computedStyle.backgroundColor,
+    expectedColor,
+    "Menu button should be have correct background"
+  );
+  is(
+    computedStyle.fill,
+    expectedFill,
+    "Menu button should be have correct fill"
+  );
 
   await extension.unload();
 

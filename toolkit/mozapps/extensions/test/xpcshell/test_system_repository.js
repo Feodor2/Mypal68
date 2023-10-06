@@ -1,7 +1,5 @@
 // Tests that AddonRepository doesn't download results for system add-ons
 
-const PREF_GETADDONS_CACHE_ENABLED = "extensions.getAddons.cache.enabled";
-
 var gServer = new HttpServer();
 gServer.start(-1);
 
@@ -22,11 +20,6 @@ add_task(async function test_app_addons() {
 
   registerDirectory("XREAppFeat", distroDir);
 
-  Services.prefs.setBoolPref(PREF_GETADDONS_CACHE_ENABLED, true);
-  Services.prefs.setCharPref(
-    PREF_GETADDONS_BYIDS,
-    `http://localhost:${gServer.identity.primaryPort}/get?%IDS%`
-  );
   Services.prefs.setCharPref(
     PREF_COMPAT_OVERRIDES,
     `http://localhost:${gServer.identity.primaryPort}/get?%IDS%`

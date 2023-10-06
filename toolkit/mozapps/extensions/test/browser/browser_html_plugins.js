@@ -25,8 +25,6 @@ add_task(async function enableHtmlViews() {
       type: "plugin",
     },
   ]);
-
-  Services.telemetry.clearEvents();
 });
 
 add_task(async function testAskToActivate() {
@@ -124,39 +122,6 @@ add_task(async function testAskToActivate() {
   checkItems(panelItems, "always-activate");
 
   await closeView(win);
-
-  assertAboutAddonsTelemetryEvents([
-    ["addonsManager", "view", "aboutAddons", "list", { type: "plugin" }],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "plugin", addonId, view: "list", action: "enable" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "plugin", addonId, view: "list", action: "disable" },
-    ],
-    // Ask-to-activate doesn't trigger a telemetry event.
-    [
-      "addonsManager",
-      "view",
-      "aboutAddons",
-      "detail",
-      { type: "plugin", addonId },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "plugin", addonId, view: "detail", action: "enable" },
-    ],
-  ]);
 });
 
 add_task(async function testNoAskToActivate() {

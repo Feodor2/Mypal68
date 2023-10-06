@@ -19,14 +19,3 @@
 .addon[show-relnotes] .relnotes-toggle {
   list-style-image: url("moz-icon://stock/gtk-go-up?size=16");
 }
-
-.meta-rating[showrating="average"] > .star {
-  list-style-image: url("chrome://mozapps/skin/extensions/rating-not-won.png");
-  padding: 0 1px;
-}
-
-.meta-rating > .star[on="true"],
-.meta-rating[showrating="user"] > .star[hover] {
-  list-style-image: url("chrome://mozapps/skin/extensions/rating-won.png");
-  padding: 0 1px;
-}

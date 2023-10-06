@@ -854,9 +854,6 @@
         "extensions.blocklist.enabled": {
           "type": "boolean"
         },
-        "extensions.getAddons.showPane": {
-          "type": "boolean"
-        },
         "geo.enabled": {
           "type": "boolean"
         },

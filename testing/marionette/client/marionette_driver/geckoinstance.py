@@ -60,8 +60,6 @@ class GeckoInstance(object):
         # AddonManager.SCOPE_PROFILE + AddonManager.SCOPE_APPLICATION
         "extensions.autoDisableScopes": 0,
         "extensions.enabledScopes": 5,
-        # Disable metadata caching for installed add-ons by default
-        "extensions.getAddons.cache.enabled": False,
         # Disable intalling any distribution add-ons
         "extensions.installDistroAddons": False,
         # Make sure Shield doesn't hit the network.
@@ -73,8 +71,6 @@ class GeckoInstance(object):
         # Turn off extension updates so they don't bother tests
         "extensions.update.enabled": False,
         "extensions.update.notifyUser": False,
-        # Make sure opening about:addons won"t hit the network
-        "extensions.webservice.discoverURL": "http://%(server)s/dummy/discoveryURL",
 
         # Allow the application to have focus even it runs in the background
         "focusmanager.testmode": True,

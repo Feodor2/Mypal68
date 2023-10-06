@@ -535,10 +535,6 @@ PluginWrapper.prototype = {
     return true;
   },
 
-  get installTelemetryInfo() {
-    return { source: "plugin" };
-  },
-
   isCompatibleWith(aAppVersion, aPlatformVersion) {
     return true;
   },

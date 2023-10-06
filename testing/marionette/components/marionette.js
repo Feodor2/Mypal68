@@ -195,9 +195,6 @@ const RECOMMENDED_PREFS = new Map([
   ["extensions.autoDisableScopes", 0],
   ["extensions.enabledScopes", 5],
 
-  // Disable metadata caching for installed add-ons by default
-  ["extensions.getAddons.cache.enabled", false],
-
   // Disable installing any distribution extensions or add-ons.
   // Should be set in profile.
   ["extensions.installDistroAddons", false],
@@ -205,9 +202,6 @@ const RECOMMENDED_PREFS = new Map([
   // Turn off extension updates so they do not bother tests
   ["extensions.update.enabled", false],
   ["extensions.update.notifyUser", false],
-
-  // Make sure opening about:addons will not hit the network
-  ["extensions.webservice.discoverURL", "http://%(server)s/dummy/discoveryURL"],
 
   // Allow the application to have focus even it runs in the background
   ["focusmanager.testmode", true],

@@ -26,11 +26,6 @@ function end_test() {
 add_test(async function() {
   let aManager = await open_manager("addons://detail/foo");
   gCategoryUtilities = new CategoryUtilities(aManager);
-  is(
-    gCategoryUtilities.selectedCategory,
-    "discover",
-    "Should fall back to the discovery pane"
-  );
 
   close_manager(aManager, run_next_test);
 });

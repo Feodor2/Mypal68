@@ -15,7 +15,6 @@ ChromeUtils.import("resource://gre/modules/NotificationDB.jsm");
 
 XPCOMUtils.defineLazyModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.jsm",
-  AMTelemetry: "resource://gre/modules/AddonManager.jsm",
   NewTabPagePreloading: "resource:///modules/NewTabPagePreloading.jsm",
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.jsm",
   BrowserUtils: "resource://gre/modules/BrowserUtils.jsm",
@@ -531,13 +530,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   this,
   "gHtmlAboutAddonsEnabled",
   "extensions.htmlaboutaddons.enabled",
-  false
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  this,
-  "gAddonAbuseReportEnabled",
-  "extensions.abuseReport.enabled",
   false
 );
 
@@ -7763,19 +7755,6 @@ function promptRemoveExtension(addon) {
   let checkboxState = { value: false };
   let checkboxMessage = null;
 
-  // Enable abuse report checkbox in the remove extension dialog,
-  // if enabled by the about:config prefs and the addon type
-  // is currently supported.
-  if (
-    gHtmlAboutAddonsEnabled &&
-    gAddonAbuseReportEnabled &&
-    ["extension", "theme"].includes(addon.type)
-  ) {
-    checkboxMessage = getFormattedString(
-      "webext.remove.abuseReportCheckbox.message",
-      [document.getElementById("bundle_brand").getString("vendorShortName")]
-    );
-  }
   const result = confirmEx(
     null,
     title,
@@ -7834,19 +7813,15 @@ var ToolbarContextMenu = {
     let manageExtension = popup.querySelector(
       ".customize-context-manageExtension"
     );
-    let reportExtension = popup.querySelector(
-      ".customize-context-reportExtension"
-    );
-    let separator = reportExtension.nextElementSibling;
     let id = this._getExtensionId(popup);
     let addon = id && (await AddonManager.getAddonByID(id));
 
+    let separator = popup.querySelector(
+      ".customize-context-removeExtension"
+    ).nextElementSibling;
     for (let element of [removeExtension, manageExtension, separator]) {
       element.hidden = !addon;
     }
-
-    reportExtension.hidden =
-      !addon || !gAddonAbuseReportEnabled || !gHtmlAboutAddonsEnabled;
 
     if (addon) {
       removeExtension.disabled = !(
@@ -7862,33 +7837,11 @@ var ToolbarContextMenu = {
       return;
     }
     let { remove, report } = promptRemoveExtension(addon);
-    AMTelemetry.recordActionEvent({
-      object: "browserAction",
-      action: "uninstall",
-      value: remove ? "accepted" : "cancelled",
-      extra: { addonId: addon.id },
-    });
     if (remove) {
       // Leave the extension in pending uninstall if we are also
       // reporting the add-on.
       await addon.uninstall(report);
-      if (report) {
-        this.reportExtensionForContextAction(popup, "uninstall");
-      }
     }
-  },
-
-  async reportExtensionForContextAction(popup, reportEntryPoint) {
-    let id = this._getExtensionId(popup);
-    let addon = id && (await AddonManager.getAddonByID(id));
-    if (!addon) {
-      return;
-    }
-    const win = await BrowserOpenAddonsMgr("addons://list/extension");
-    win.openAbuseReport({
-      addonId: addon.id,
-      reportEntryPoint,
-    });
   },
 
   openAboutAddonsForContextAction(popup) {
@@ -7896,11 +7849,6 @@ var ToolbarContextMenu = {
     if (id) {
       let viewID = "addons://detail/" + encodeURIComponent(id);
       BrowserOpenAddonsMgr(viewID);
-      AMTelemetry.recordActionEvent({
-        object: "browserAction",
-        action: "manage",
-        extra: { addonId: id },
-      });
     }
   },
 };

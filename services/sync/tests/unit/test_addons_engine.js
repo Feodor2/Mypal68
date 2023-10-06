@@ -18,10 +18,6 @@ const { Preferences } = ChromeUtils.import(
 );
 
 const prefs = new Preferences();
-prefs.set(
-  "extensions.getAddons.get.url",
-  "http://localhost:8888/search/guid:%IDS%"
-);
 prefs.set("extensions.install.requireSecureOrigin", false);
 
 let engine;

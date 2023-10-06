@@ -192,29 +192,8 @@ detail-rating =
 addon-restart-now =
     .label = Restart now
 
-disabled-unsigned-heading =
-    .value = Some add-ons have been disabled
-
-disabled-unsigned-description =
-    The following add-ons have not been verified for use in { -brand-short-name }. You can
-    <label data-l10n-name="find-addons">find replacements</label> or ask the developer to get them verified.
-
-disabled-unsigned-learn-more = Learn more about our efforts to help keep you safe online.
-
-disabled-unsigned-devinfo =
-    Developers interested in getting their add-ons verified can continue by reading our
-    <label data-l10n-name="learn-more">manual</label>.
-
 plugin-deprecation-description =
     Missing something? Some plugins are no longer supported by { -brand-short-name }. <label data-l10n-name="learn-more">Learn More.</label>
-
-legacy-warning-show-legacy = Show legacy extensions
-
-legacy-extensions =
-    .value = Legacy Extensions
-
-legacy-extensions-description =
-    These extensions do not meet current { -brand-short-name } standards so they have been deactivated. <label data-l10n-name="legacy-learn-more">Learn about the changes to add-ons</label>
 
 private-browsing-description2 =
     { -brand-short-name } is changing how extensions work in private browsing. Any new extensions you add to
@@ -222,10 +201,6 @@ private-browsing-description2 =
     extension won’t work while private browsing, and won’t have access to your online activities
     there. We’ve made this change to keep your private browsing private.
     <label data-l10n-name="private-browsing-learn-more">Learn how to manage extension settings</label>
-
-extensions-view-discopane =
-    .name = Recommendations
-    .tooltiptext = { extensions-view-discopane.name }
 
 extensions-view-recent-updates =
     .name = Recent Updates
@@ -343,24 +318,6 @@ shortcuts-card-collapse-button = Show Less
 go-back-button =
     .tooltiptext = Go back
 
-## Recommended add-ons page
-
-# Explanatory introduction to the list of recommended add-ons. The action word
-# ("recommends") in the final sentence is a link to external documentation.
-discopane-intro =
-    Extensions and themes are like apps for your browser, and they let you
-    protect passwords, download videos, find deals, block annoying ads, change
-    how your browser looks, and much more. These small software programs are
-    often developed by a third party. Here’s a selection { -brand-product-name }
-    <a data-l10n-name="learn-more-trigger">recommends</a> for exceptional
-    security, performance, and functionality.
-
-# Notice to make user aware that the recommendations are personalized.
-discopane-notice-recommendations =
-    Some of these recommendations are personalized. They are based on other
-    extensions you’ve installed, profile preferences, and usage statistics.
-discopane-notice-learn-more = Learn more
-
 privacy-policy = Privacy Policy
 
 # Refers to the author of an add-on, shown below the name of the add-on.
@@ -404,7 +361,6 @@ addon-detail-author-label = Author
 addon-detail-version-label = Version
 addon-detail-last-updated-label = Last Updated
 addon-detail-homepage-label = Homepage
-addon-detail-rating-label = Rating
 
 # The average rating that the add-on has received.
 # Variables:
@@ -416,15 +372,6 @@ five-star-rating =
 # Variables:
 #   $name (string) - The name of the add-on
 addon-name-disabled = { $name } (disabled)
-
-# The number of reviews that an add-on has received on AMO.
-# Variables:
-#   $numberOfReviews (number) - The number of reviews received
-addon-detail-reviews-link =
-    { $numberOfReviews ->
-        [one] { $numberOfReviews } review
-       *[other] { $numberOfReviews } reviews
-    }
 
 ## Pending uninstall message bar
 
@@ -448,12 +395,6 @@ addon-detail-private-browsing-help = When allowed, the extension will have acces
 addon-detail-private-browsing-allow = Allow
 addon-detail-private-browsing-disallow = Don’t Allow
 
-# This is the tooltip text for the recommended badge for an extension in about:addons. The
-# badge is a small icon displayed next to an extension when it is recommended on AMO.
-addon-badge-recommended =
-  .title = Recommended
-  .alt = Recommended
-
 available-updates-heading = Available Updates
 recent-updates-heading = Recent Updates
 
@@ -461,10 +402,3 @@ release-notes-loading = Loading…
 release-notes-error = Sorry, but there was an error loading the release notes.
 
 addon-permissions-empty = This extension doesn’t require any permissions
-
-recommended-extensions-heading = Recommended Extensions
-recommended-themes-heading = Recommended Themes
-
-# A recommendation for the Firefox Color theme shown at the bottom of the theme
-# list view. The "Firefox Color" name itself should not be translated.
-recommended-theme-1 = Feeling creative? <a data-l10n-name="link">Build your own theme with Firefox Color.</a>

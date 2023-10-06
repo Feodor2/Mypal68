@@ -39,7 +39,6 @@ add_task(async function enableHtmlViews() {
     set: [["extensions.htmlaboutaddons.enabled", true]],
   });
   promptService = mockPromptService();
-  Services.telemetry.clearEvents();
 });
 
 let extensionsCreated = 0;
@@ -276,50 +275,6 @@ add_task(async function testExtensionList() {
     !(await AddonManager.getAddonByID(themeAddon.id)),
     "The theme addon is fully uninstalled"
   );
-
-  assertAboutAddonsTelemetryEvents([
-    ["addonsManager", "view", "aboutAddons", "list", { type: "extension" }],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, view: "list", action: "disable" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "cancelled",
-      { type: "extension", addonId: id, view: "list", action: "uninstall" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      "accepted",
-      { type: "extension", addonId: id, view: "list", action: "uninstall" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      { type: "extension", addonId: id, view: "list", action: "undo" },
-    ],
-    [
-      "addonsManager",
-      "action",
-      "aboutAddons",
-      null,
-      {
-        type: "extension",
-        addonId: "test-2@mochi.test",
-        view: "list",
-        action: "undo",
-      },
-    ],
-  ]);
 });
 
 add_task(async function testMouseSupport() {

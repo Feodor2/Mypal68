@@ -87,22 +87,12 @@ amManager.prototype = {
       retval = false;
     }
 
-    let telemetryInfo = {
-      source: AddonManager.getInstallSourceFromHost(aPayload.sourceHost),
-      sourceURL: aPayload.sourceURL,
-    };
-
-    if ("method" in aPayload) {
-      telemetryInfo.method = aPayload.method;
-    }
-
     AddonManager.getInstallForURL(uri, {
       hash,
       name,
       icon,
       browser: aBrowser,
       triggeringPrincipal,
-      telemetryInfo,
       sendCookies: true,
     }).then(aInstall => {
       function callCallback(status) {

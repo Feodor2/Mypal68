@@ -178,7 +178,6 @@ function flushJarCache(aJarFile) {
 
 const PREF_EM_UPDATE_BACKGROUND_URL = "extensions.update.background.url";
 const PREF_EM_UPDATE_URL = "extensions.update.url";
-const PREF_XPI_SIGNATURES_DEV_ROOT = "xpinstall.signatures.dev-root";
 const PREF_INSTALL_REQUIREBUILTINCERTS =
   "extensions.install.requireBuiltInCerts";
 
@@ -259,12 +258,6 @@ class Package {
     }
 
     let root = Ci.nsIX509CertDB.AddonsPublicRoot;
-    if (
-      !AppConstants.MOZ_REQUIRE_SIGNING &&
-      Services.prefs.getBoolPref(PREF_XPI_SIGNATURES_DEV_ROOT, false)
-    ) {
-      root = Ci.nsIX509CertDB.AddonsStageRoot;
-    }
 
     return this.verifySignedStateForRoot(addon, root);
   }
@@ -582,47 +575,6 @@ async function loadManifestFromWebManifest(aPackage) {
   return addon;
 }
 
-async function readRecommendationStates(aPackage, aAddonID) {
-  let recommendationData;
-  try {
-    recommendationData = await aPackage.readString(
-      "mozilla-recommendation.json"
-    );
-  } catch (e) {
-    // Ignore I/O errors.
-    return null;
-  }
-
-  try {
-    recommendationData = JSON.parse(recommendationData);
-  } catch (e) {
-    logger.warn("Failed to parse recommendation", e);
-  }
-
-  if (recommendationData) {
-    let { addon_id, states, validity } = recommendationData;
-
-    if (addon_id === aAddonID && Array.isArray(states) && validity) {
-      let validNotAfter = Date.parse(validity.not_after);
-      let validNotBefore = Date.parse(validity.not_before);
-      if (validNotAfter && validNotBefore) {
-        return {
-          validNotAfter,
-          validNotBefore,
-          states,
-        };
-      }
-    }
-    logger.warn(
-      `Invalid recommendation for ${aAddonID}: ${JSON.stringify(
-        recommendationData
-      )}`
-    );
-  }
-
-  return null;
-}
-
 function defineSyncGUID(aAddon) {
   // Define .syncGUID as a lazy property which is also settable
   Object.defineProperty(aAddon, "syncGUID", {
@@ -640,15 +592,21 @@ function defineSyncGUID(aAddon) {
 }
 
 // Generate a unique ID based on the path to this temporary add-on location.
-function generateTemporaryInstallID(aFile) {
+function generateInstallID(str, isTemp = false) {
   const hasher = CryptoHash("sha1");
-  const data = new TextEncoder().encode(aFile.path);
-  // Make it so this ID cannot be guessed.
+  const data = new TextEncoder().encode(str);
+  let suffix = "@addon";
   const sess = TEMP_INSTALL_ID_GEN_SESSION;
-  hasher.update(sess, sess.length);
+  if (isTemp) {
+    // Make it so this ID cannot be guessed.
+    hasher.update(sess, sess.length);
+    suffix = TEMPORARY_ADDON_SUFFIX;
+  }
   hasher.update(data, data.length);
-  let id = `${getHashStringForCrypto(hasher)}${TEMPORARY_ADDON_SUFFIX}`;
-  logger.info(`Generated temp id ${id} (${sess.join("")}) for ${aFile.path}`);
+  let id = `${getHashStringForCrypto(hasher)}${suffix}`;
+  if (isTemp) {
+    logger.info(`Generated temp id ${id} (${sess.join("")}) for ${str}`);
+  }
   return id;
 }
 
@@ -690,19 +648,11 @@ var loadManifest = async function(aPackage, aLocation, aOldAddon) {
       }
     }
     if (!addon.id && aLocation.isTemporary) {
-      addon.id = generateTemporaryInstallID(aPackage.file);
+      addon.id = generateInstallID(aPackage.file.path, true);
+    } 
+    if (!addon.id) {
+      addon.id = generateInstallID(addon.name);
     }
-  }
-
-  if (
-    addon.type === "extension" &&
-    !aLocation.isBuiltin &&
-    !aLocation.isTemporary
-  ) {
-    addon.recommendationState = await readRecommendationStates(
-      aPackage,
-      addon.id
-    );
   }
 
   addon.propagateDisabledState(aOldAddon);
@@ -1229,9 +1179,6 @@ class AddonInstall {
    *        Optional icons for the add-on
    * @param {string} [options.version]
    *        An optional version for the add-on
-   * @param {Object?} [options.telemetryInfo]
-   *        An optional object which provides details about the installation source
-   *        included in the addon manager telemetry events.
    * @param {boolean} [options.isUserRequestedUpdate]
    *        An optional boolean, true if the install object is related to a user triggered update.
    * @param {nsIURL} [options.releaseNotesURI]
@@ -1279,14 +1226,8 @@ class AddonInstall {
     this.type = options.type || null;
     this.version = options.version || null;
     this.isUserRequestedUpdate = options.isUserRequestedUpdate;
-    this.installTelemetryInfo = null;
 
-    if (options.telemetryInfo) {
-      this.installTelemetryInfo = options.telemetryInfo;
-    } else if (this.existingAddon) {
-      // Inherits the installTelemetryInfo on updates (so that the source of the original
-      // installation telemetry data is being preserved across the extension updates).
-      this.installTelemetryInfo = this.existingAddon.installTelemetryInfo;
+    if (this.existingAddon) {
       this.existingAddon._updateInstall = this;
     }
 
@@ -1497,10 +1438,6 @@ class AddonInstall {
     if (this.releaseNotesURI) {
       this.addon.releaseNotesURI = this.releaseNotesURI.spec;
     }
-
-    if (this.installTelemetryInfo) {
-      this.addon.installTelemetryInfo = this.installTelemetryInfo;
-    }
   }
 
   /**
@@ -1550,26 +1487,6 @@ class AddonInstall {
         }
       }
 
-      if (XPIDatabase.mustSign(this.addon.type)) {
-        if (this.addon.signedState <= AddonManager.SIGNEDSTATE_MISSING) {
-          // This add-on isn't properly signed by a signature that chains to the
-          // trusted root.
-          let state = this.addon.signedState;
-          this.addon = null;
-
-          if (state == AddonManager.SIGNEDSTATE_MISSING) {
-            return Promise.reject([
-              AddonManager.ERROR_SIGNEDSTATE_REQUIRED,
-              "signature is required but missing",
-            ]);
-          }
-
-          return Promise.reject([
-            AddonManager.ERROR_CORRUPT_FILE,
-            "signature verification failed",
-          ]);
-        }
-      }
     } finally {
       pkg.close();
     }
@@ -1619,8 +1536,6 @@ class AddonInstall {
           existingAddon: this.existingAddon ? this.existingAddon.wrapper : null,
           addon: this.addon.wrapper,
           icon: this.getIcon(),
-          // Used in AMTelemetry to detect the install flow related to this prompt.
-          install: this.wrapper,
         };
 
         try {
@@ -1789,8 +1704,6 @@ class AddonInstall {
         logger.debug(`Install of ${this.sourceURI.spec} completed.`);
         this.state = AddonManager.STATE_INSTALLED;
         this._callInstallListeners("onInstallEnded", this.addon.wrapper);
-
-        XPIDatabase.recordAddonTelemetry(this.addon);
 
         // Notify providers that a new theme has been enabled.
         if (this.addon.type === "theme" && this.addon.active) {
@@ -2238,8 +2151,7 @@ var DownloadAddonInstall = class extends AddonInstall {
     try {
       let requireBuiltIn = Services.prefs.getBoolPref(
         PREF_INSTALL_REQUIREBUILTINCERTS,
-        !AppConstants.MOZ_REQUIRE_SIGNING &&
-          !AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")
+        !AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")
       );
       this.badCertHandler = new CertUtils.BadCertHandler(!requireBuiltIn);
 
@@ -2412,8 +2324,7 @@ var DownloadAddonInstall = class extends AddonInstall {
               aRequest,
               !Services.prefs.getBoolPref(
                 PREF_INSTALL_REQUIREBUILTINCERTS,
-                !AppConstants.MOZ_REQUIRE_SIGNING &&
-                  !AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")
+                !AppConstants.MOZ_APP_VERSION_DISPLAY.endsWith("esr")
               )
             );
           } catch (e) {
@@ -2612,10 +2523,6 @@ function createUpdate(aCallback, aAddon, aUpdate, isUserRequested) {
 const wrapperMap = new WeakMap();
 let installFor = wrapper => wrapperMap.get(wrapper);
 
-// Numeric id included in the install telemetry events to correlate multiple events related
-// to the same install or update flow.
-let nextInstallId = 0;
-
 /**
  * Creates a wrapper for an AddonInstall that only exposes the public API
  *
@@ -2624,7 +2531,6 @@ let nextInstallId = 0;
  */
 function AddonInstallWrapper(aInstall) {
   wrapperMap.set(this, aInstall);
-  this.installId = ++nextInstallId;
 }
 
 AddonInstallWrapper.prototype = {
@@ -2656,10 +2562,6 @@ AddonInstallWrapper.prototype = {
 
   set promptHandler(handler) {
     installFor(this).promptHandler = handler;
-  },
-
-  get installTelemetryInfo() {
-    return installFor(this).installTelemetryInfo;
   },
 
   get isUserRequestedUpdate() {
@@ -2965,20 +2867,17 @@ UpdateChecker.prototype = {
  *        The file to install
  * @param {XPIStateLocation} location
  *        The location to install to
- * @param {Object?} [telemetryInfo]
- *        An optional object which provides details about the installation source
- *        included in the addon manager telemetry events.
  * @returns {Promise<AddonInstall>}
  *        A Promise that resolves with the new install object.
  */
-function createLocalInstall(file, location, telemetryInfo) {
+function createLocalInstall(file, location) {
   if (!location) {
     location = XPIStates.getLocation(KEY_APP_PROFILE);
   }
   let url = Services.io.newFileURI(file);
 
   try {
-    let install = new LocalAddonInstall(location, url, { telemetryInfo });
+    let install = new LocalAddonInstall(location, url);
     return install.init().then(() => install);
   } catch (e) {
     logger.error("Error creating install", e);
@@ -3736,7 +3635,6 @@ var XPIInstall = {
    */
   async installDistributionAddon(id, file, location, oldAppVersion) {
     let addon = await loadManifestFromFile(file, location);
-    addon.installTelemetryInfo = { source: "distribution" };
 
     if (addon.id != id) {
       throw new Error(
@@ -4138,9 +4036,6 @@ var XPIInstall = {
    *        A version for the install
    * @param {XULElement} [aOptions.browser]
    *        The browser performing the install
-   * @param {Object} [aOptions.telemetryInfo]
-   *        An optional object which provides details about the installation source
-   *        included in the addon manager telemetry events.
    * @param {boolean} [options.sendCookies = false]
    *        Whether cookies should be sent when downloading the add-on.
    * @returns {AddonInstall}
@@ -4164,13 +4059,10 @@ var XPIInstall = {
    *
    * @param {nsIFile} aFile
    *        The file to be installed
-   * @param {Object?} [aInstallTelemetryInfo]
-   *        An optional object which provides details about the installation source
-   *        included in the addon manager telemetry events.
    * @returns {AddonInstall?}
    */
-  async getInstallForFile(aFile, aInstallTelemetryInfo) {
-    let install = await createLocalInstall(aFile, null, aInstallTelemetryInfo);
+  async getInstallForFile(aFile) {
+    let install = await createLocalInstall(aFile, null);
     return install ? install.wrapper : null;
   },
 

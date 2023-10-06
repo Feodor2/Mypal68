@@ -242,11 +242,6 @@ async function hasPrivateAllowed(id) {
   );
 }
 
-add_task(function clearInitialTelemetry() {
-  // Clear out any telemetry data that existed before this file is run.
-  Services.telemetry.clearEvents();
-});
-
 async function test_badge_and_toggle_incognito() {
   await SpecialPowers.pushPrefEnv({
     set: [["extensions.allowPrivateBrowsingByDefault", false]],
@@ -365,30 +360,6 @@ async function test_badge_and_toggle_incognito() {
     view: "detail",
     type: "extension",
   };
-
-  assertTelemetryMatches(
-    [
-      [
-        "action",
-        "aboutAddons",
-        "on",
-        { ...expectedExtras, addonId: "@test-default" },
-      ],
-      [
-        "action",
-        "aboutAddons",
-        "off",
-        { ...expectedExtras, addonId: "@test-override" },
-      ],
-      [
-        "action",
-        "aboutAddons",
-        "off",
-        { ...expectedExtras, addonId: "@test-override-permanent" },
-      ],
-    ],
-    { filterMethods: ["action"] }
-  );
 
   Services.prefs.clearUserPref("extensions.allowPrivateBrowsingByDefault");
 }
@@ -578,7 +549,6 @@ async function test_addon_postinstall_incognito_hidden_checkbox(withHtmlViews) {
   await SpecialPowers.pushPrefEnv({
     set: [
       ["extensions.allowPrivateBrowsingByDefault", false],
-      ["extensions.langpacks.signatures.required", false],
       ["extensions.htmlaboutaddons.enabled", withHtmlViews],
     ],
   });

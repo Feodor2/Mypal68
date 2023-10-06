@@ -92,7 +92,7 @@ Services.ppmm.loadProcessScript(
 
 const INTEGER = /^[1-9]\d*$/;
 
-var EXPORTED_SYMBOLS = ["AddonManager", "AddonManagerPrivate", "AMTelemetry"];
+var EXPORTED_SYMBOLS = ["AddonManager", "AddonManagerPrivate"];
 
 const CATEGORY_PROVIDER_MODULE = "addon-provider-module";
 
@@ -588,8 +588,6 @@ var gShutdownInProgress = false;
 var gPluginPageListener = null;
 var gBrowserUpdated = null;
 
-var AMTelemetry;
-
 /**
  * This is the real manager, kept here rather than in AddonManager to keep its
  * contents hidden from API users.
@@ -606,14 +604,8 @@ var AddonManagerInternal = {
   providerShutdowns: new Map(),
   types: {},
   startupChanges: {},
-  // Store telemetry details per addon provider
-  telemetryDetails: {},
   upgradeListeners: new Map(),
   externalExtensionLoaders: new Map(),
-
-  recordTimestamp(name, value) {
-    this.TelemetryTimestamps.add(name, value);
-  },
 
   /**
    * Start up a provider, and register its shutdown hook if it has one
@@ -693,16 +685,6 @@ var AddonManagerInternal = {
     try {
       if (gStarted) {
         return;
-      }
-
-      this.recordTimestamp("AMI_startup_begin");
-
-      // Enable the addonsManager telemetry event category.
-      AMTelemetry.init();
-
-      // clear this for xpcshell test restarts
-      for (let provider in this.telemetryDetails) {
-        delete this.telemetryDetails[provider];
       }
 
       let appChanged = undefined;
@@ -886,7 +868,6 @@ var AddonManagerInternal = {
       );
 
       gStartupComplete = true;
-      this.recordTimestamp("AMI_startup_end");
     } catch (e) {
       logger.error("startup failed", e);
       AddonManagerPrivate.recordException("AMI", "startup failed", e);
@@ -1345,9 +1326,6 @@ var AddonManagerInternal = {
           permissions: difference,
           resolve,
           reject,
-          // Reference to the related AddonInstall object (used in AMTelemetry to
-          // link the recorded event to the other events from the same install flow).
-          install: info.install,
         },
       };
       Services.obs.notifyObservers(subject, "webextension-update-permissions");
@@ -1758,9 +1736,6 @@ var AddonManagerInternal = {
    *         An optional <browser> element for download permissions prompts.
    * @param  {nsIPrincipal} [aOptions.triggeringPrincipal]
    *         The principal which is attempting to install the add-on.
-   * @param  {Object} [aOptions.telemetryInfo]
-   *         An optional object which provides details about the installation source
-   *         included in the addon manager telemetry events.
    * @throws if aUrl is not specified or if an optional argument of
    *         an improper type is passed.
    */
@@ -1842,12 +1817,9 @@ var AddonManagerInternal = {
    *         The nsIFile where the add-on is located
    * @param  aMimetype
    *         An optional mimetype hint for the add-on
-   * @param  aTelemetryInfo
-   *         An optional object which provides details about the installation source
-   *         included in the addon manager telemetry events.
    * @throws if the aFile or aCallback arguments are not specified
    */
-  getInstallForFile(aFile, aMimetype, aTelemetryInfo) {
+  getInstallForFile(aFile, aMimetype) {
     if (!gStarted) {
       throw Components.Exception(
         "AddonManager is not initialized",
@@ -1874,8 +1846,7 @@ var AddonManagerInternal = {
         let install = await promiseCallProvider(
           provider,
           "getInstallForFile",
-          aFile,
-          aTelemetryInfo
+          aFile
         );
 
         if (install) {
@@ -3287,11 +3258,6 @@ var AddonManagerInternal = {
         browser: target,
         triggeringPrincipal: options.triggeringPrincipal,
         hash: options.hash,
-        telemetryInfo: {
-          source: AddonManager.getInstallSourceFromHost(options.sourceHost),
-          sourceURL: options.sourceURL,
-          method: "amWebAPI",
-        },
       }).then(install => {
         let requireConfirm = true;
         if (
@@ -3495,10 +3461,6 @@ var AddonManagerPrivate = {
       .BOOTSTRAP_REASONS;
   },
 
-  recordTimestamp(name, value) {
-    AddonManagerInternal.recordTimestamp(name, value);
-  },
-
   _simpleMeasures: {},
   recordSimpleMeasure(name, value) {
     this._simpleMeasures[name] = value;
@@ -3525,14 +3487,6 @@ var AddonManagerPrivate = {
 
   getSimpleMeasures() {
     return this._simpleMeasures;
-  },
-
-  getTelemetryDetails() {
-    return AddonManagerInternal.telemetryDetails;
-  },
-
-  setTelemetryDetails(aProvider, aDetails) {
-    AddonManagerInternal.telemetryDetails[aProvider] = aDetails;
   },
 
   // Start a timer, record a simple measure of the time interval when
@@ -3643,7 +3597,6 @@ var AddonManager = {
   // telemetry events.
   _installHostSource: new Map([
     ["addons.mozilla.org", "amo"],
-    ["discovery.addons.mozilla.org", "disco"],
   ]),
 
   // Constants for the AddonInstall.state property
@@ -3927,11 +3880,10 @@ var AddonManager = {
     return AddonManagerInternal.getInstallForURL(aUrl, aOptions);
   },
 
-  getInstallForFile(aFile, aMimetype, aTelemetryInfo) {
+  getInstallForFile(aFile, aMimetype) {
     return AddonManagerInternal.getInstallForFile(
       aFile,
-      aMimetype,
-      aTelemetryInfo
+      aMimetype
     );
   },
 
@@ -4159,544 +4111,8 @@ var AddonManager = {
   },
 };
 
-/**
- * Listens to the AddonManager install and addon events and send telemetry events.
- */
-AMTelemetry = {
-  telemetrySetupDone: false,
-
-  init() {
-    // Enable the addonsManager telemetry event category before the AddonManager
-    // has completed its startup, otherwise telemetry events recorded during the
-    // AddonManager/XPIProvider startup will not be recorded (e.g. the telemetry
-    // events for the extension migrated to the private browsing permission).
-    Services.telemetry.setEventRecordingEnabled("addonsManager", true);
-  },
-
-  // This method is called by the AddonManager, once it has been started, so that we can
-  // init the telemetry event category and start listening for the events related to the
-  // addons installation and management.
-  onStartup() {
-    if (this.telemetrySetupDone) {
-      return;
-    }
-
-    this.telemetrySetupDone = true;
-
-    Services.obs.addObserver(this, "addon-install-origin-blocked");
-    Services.obs.addObserver(this, "addon-install-disabled");
-    Services.obs.addObserver(this, "addon-install-blocked");
-
-    AddonManager.addInstallListener(this);
-    AddonManager.addAddonListener(this);
-  },
-
-  // Observer Service notification callback.
-
-  observe(subject, topic, data) {
-    switch (topic) {
-      case "addon-install-blocked": {
-        const { installs } = subject.wrappedJSObject;
-        this.recordInstallEvent(installs[0], { step: "site_warning" });
-        break;
-      }
-      case "addon-install-origin-blocked": {
-        const { installs } = subject.wrappedJSObject;
-        this.recordInstallEvent(installs[0], { step: "site_blocked" });
-        break;
-      }
-      case "addon-install-disabled": {
-        const { installs } = subject.wrappedJSObject;
-        this.recordInstallEvent(installs[0], {
-          step: "install_disabled_warning",
-        });
-        break;
-      }
-    }
-  },
-
-  // AddonManager install listener callbacks.
-
-  onNewInstall(install) {
-    this.recordInstallEvent(install, { step: "started" });
-  },
-
-  onInstallCancelled(install) {
-    this.recordInstallEvent(install, { step: "cancelled" });
-  },
-
-  onInstallPostponed(install) {
-    this.recordInstallEvent(install, { step: "postponed" });
-  },
-
-  onInstallFailed(install) {
-    this.recordInstallEvent(install, { step: "failed" });
-  },
-
-  onInstallEnded(install) {
-    this.recordInstallEvent(install, { step: "completed" });
-  },
-
-  onDownloadStarted(install) {
-    this.recordInstallEvent(install, { step: "download_started" });
-  },
-
-  onDownloadCancelled(install) {
-    this.recordInstallEvent(install, { step: "cancelled" });
-  },
-
-  onDownloadEnded(install) {
-    let download_time = Math.round(Cu.now() - install.downloadStartedAt);
-    this.recordInstallEvent(install, {
-      step: "download_completed",
-      download_time,
-    });
-  },
-
-  onDownloadFailed(install) {
-    let download_time = Math.round(Cu.now() - install.downloadStartedAt);
-    this.recordInstallEvent(install, {
-      step: "download_failed",
-      download_time,
-    });
-  },
-
-  // Addon listeners callbacks.
-
-  onUninstalled(addon) {
-    this.recordManageEvent(addon, "uninstall");
-  },
-
-  onEnabled(addon) {
-    this.recordManageEvent(addon, "enable");
-  },
-
-  onDisabled(addon) {
-    this.recordManageEvent(addon, "disable");
-  },
-
-  // Internal helpers methods.
-
-  /**
-   * Get a trimmed version of the given string if it is longer than 80 chars.
-   *
-   * @param {string} str
-   *        The original string content.
-   *
-   * @returns {string}
-   *          The trimmed version of the string when longer than 80 chars, or the given string
-   *          unmodified otherwise.
-   */
-  getTrimmedString(str) {
-    if (str.length <= 80) {
-      return str;
-    }
-
-    const length = str.length;
-
-    // Trim the string to prevent a flood of warnings messages logged internally by recordEvent,
-    // the trimmed version is going to be composed by the first 40 chars and the last 37 and 3 dots
-    // that joins the two parts, to visually indicate that the string has been trimmed.
-    return `${str.slice(0, 40)}...${str.slice(length - 37, length)}`;
-  },
-
-  /**
-   * Retrieve the addonId for the given AddonInstall instance.
-   *
-   * @param {AddonInstall} install
-   *        The AddonInstall instance to retrieve the addonId from.
-   *
-   * @returns {string | null}
-   *          The addonId for the given AddonInstall instance (if any).
-   */
-  getAddonIdFromInstall(install) {
-    // Returns the id of the extension that is being installed, as soon as the
-    // addon is available in the AddonInstall instance (after being downloaded
-    // and validated successfully).
-    if (install.addon) {
-      return install.addon.id;
-    }
-
-    // While updating an addon, the existing addon can be
-    // used to retrieve the addon id since the first update event.
-    if (install.existingAddon) {
-      return install.existingAddon.id;
-    }
-
-    return null;
-  },
-
-  /**
-   * Retrieve the telemetry event's object property value for the given
-   * AddonInstall instance.
-   *
-   * @param {AddonInstall} install
-   *        The AddonInstall instance to retrieve the event object from.
-   *
-   * @returns {string}
-   *          The object for the given AddonInstall instance.
-   */
-  getEventObjectFromInstall(install) {
-    let addonType;
-
-    if (install.type) {
-      // The AddonInstall wrapper already provides a type (if it was known when the
-      // install object has been created).
-      addonType = install.type;
-    } else if (install.addon) {
-      // The install flow has reached a step that has an addon instance which we can
-      // check to know the extension type (e.g. after download for the DownloadAddonInstall).
-      addonType = install.addon.type;
-    } else if (install.existingAddon) {
-      // The install flow is an update and we can look the existingAddon to check which was
-      // the add-on type that is being installed.
-      addonType = install.existingAddon.type;
-    }
-
-    return this.getEventObjectFromAddonType(addonType);
-  },
-
-  /**
-   * Retrieve the telemetry event source for the given AddonInstall instance.
-   *
-   * @param {AddonInstall} install
-   *        The AddonInstall instance to retrieve the source from.
-   *
-   * @returns {Object | null}
-   *          The telemetry infor ({source, method}) from the given AddonInstall instance.
-   */
-  getInstallTelemetryInfo(install) {
-    if (install.installTelemetryInfo) {
-      return install.installTelemetryInfo;
-    } else if (
-      install.existingAddon &&
-      install.existingAddon.installTelemetryInfo
-    ) {
-      // Get the install source from the existing addon (e.g. for an extension update).
-      return install.existingAddon.installTelemetryInfo;
-    }
-
-    return null;
-  },
-
-  /**
-   * Get the telemetry event's object property for the given addon type
-   *
-   * @param {string} addonType
-   *        The addon type to convert into the related telemetry event object.
-   *
-   * @returns {string}
-   *          The object for the given addon type.
-   */
-  getEventObjectFromAddonType(addonType) {
-    switch (addonType) {
-      case undefined:
-        return "unknown";
-      case "extension":
-      case "theme":
-      case "locale":
-      case "dictionary":
-        return addonType;
-      default:
-        // Currently this should only include plugins and gmp-plugins
-        return "other";
-    }
-  },
-
-  convertToString(value) {
-    if (value == null) {
-      // Convert null and undefined to empty strings.
-      return "";
-    }
-    switch (typeof value) {
-      case "string":
-        return value;
-      case "boolean":
-        return value ? "1" : "0";
-    }
-    return String(value);
-  },
-
-  /**
-   * Convert all the telemetry event's extra_vars into strings, if needed.
-   *
-   * @param {object} extraVars
-   * @returns {object} The formatted extra vars.
-   */
-  formatExtraVars({ addon, ...extraVars }) {
-    if (addon) {
-      extraVars.addonId = addon.id;
-      extraVars.type = addon.type;
-    }
-
-    // All the extra_vars in a telemetry event have to be strings.
-    for (var [key, value] of Object.entries(extraVars)) {
-      if (value == undefined) {
-        delete extraVars[key];
-      } else {
-        extraVars[key] = this.convertToString(value);
-      }
-    }
-
-    if (extraVars.addonId) {
-      extraVars.addonId = this.getTrimmedString(extraVars.addonId);
-    }
-
-    return extraVars;
-  },
-
-  /**
-   * Record an install or update event for the given AddonInstall instance.
-   *
-   * @param {AddonInstall} install
-   *        The AddonInstall instance to record an install or update event for.
-   * @param {object} extraVars
-   *        The additional extra_vars to include in the recorded event.
-   * @param {string} extraVars.step
-   *        The current step in the install or update flow.
-   * @param {string} extraVars.download_time
-   *        The number of ms needed to download the extension.
-   * @param {string} extraVars.num_strings
-   *        The number of permission description string for the extension
-   *        permission doorhanger.
-   */
-  recordInstallEvent(install, extraVars) {
-    // Early exit if AMTelemetry's telemetry setup has not been done yet.
-    if (!this.telemetrySetupDone) {
-      return;
-    }
-
-    let extra = {};
-
-    let telemetryInfo = this.getInstallTelemetryInfo(install);
-    if (telemetryInfo && typeof telemetryInfo.source === "string") {
-      extra.source = telemetryInfo.source;
-    }
-
-    if (extra.source === "internal") {
-      // Do not record the telemetry event for installation sources
-      // that are marked as "internal".
-      return;
-    }
-
-    // Also include the install source's method when applicable (e.g. install events with
-    // source "about:addons" may have "install-from-file" or "url" as their source method).
-    if (telemetryInfo && typeof telemetryInfo.method === "string") {
-      extra.method = telemetryInfo.method;
-    }
-
-    let addonId = this.getAddonIdFromInstall(install);
-    let object = this.getEventObjectFromInstall(install);
-
-    let installId = String(install.installId);
-    let eventMethod = install.existingAddon ? "update" : "install";
-
-    if (addonId) {
-      extra.addon_id = this.getTrimmedString(addonId);
-    }
-
-    if (install.error) {
-      extra.error = AddonManager.errorToString(install.error);
-    }
-
-    if (eventMethod === "update") {
-      // For "update" telemetry events, also include an extra var which determine
-      // if the update has been requested by the user.
-      extra.updated_from = install.isUserRequestedUpdate ? "user" : "app";
-    }
-
-    // All the extra vars in a telemetry event have to be strings.
-    extra = this.formatExtraVars({ ...extraVars, ...extra });
-
-    this.recordEvent({ method: eventMethod, object, value: installId, extra });
-  },
-
-  /**
-   * Record a manage event for the given addon.
-   *
-   * @param {AddonWrapper} addon
-   *        The AddonWrapper instance.
-   * @param {object} extraVars
-   *        The additional extra_vars to include in the recorded event.
-   * @param {string} extraVars.num_strings
-   *        The number of permission description string for the extension
-   *        permission doorhanger.
-   */
-  recordManageEvent(addon, method, extraVars) {
-    // Early exit if AMTelemetry's telemetry setup has not been done yet.
-    if (!this.telemetrySetupDone) {
-      return;
-    }
-
-    let extra = {};
-
-    if (addon.installTelemetryInfo) {
-      if ("source" in addon.installTelemetryInfo) {
-        extra.source = addon.installTelemetryInfo.source;
-      }
-
-      // Also include the install source's method when applicable (e.g. install events with
-      // source "about:addons" may have "install-from-file" or "url" as their source method).
-      if ("method" in addon.installTelemetryInfo) {
-        extra.method = addon.installTelemetryInfo.method;
-      }
-    }
-
-    if (extra.source === "internal") {
-      // Do not record the telemetry event for installation sources
-      // that are marked as "internal".
-      return;
-    }
-
-    let object = this.getEventObjectFromAddonType(addon.type);
-    let value = this.getTrimmedString(addon.id);
-
-    extra = { ...extraVars, ...extra };
-
-    let hasExtraVars = Object.keys(extra).length > 0;
-    extra = this.formatExtraVars(extra);
-
-    this.recordEvent({
-      method,
-      object,
-      value,
-      extra: hasExtraVars ? extra : null,
-    });
-  },
-
-  /**
-   * Record an event for when a link is clicked.
-   *
-   * @param {object} opts
-   * @param {string} opts.object
-   *        The object of the event, should be an identifier for where the link
-   *        is located. The accepted values are listed in the
-   *        addonsManager.link object of the Events.yaml file.
-   * @param {string} opts.value The identifier for the link destination.
-   * @param {object} opts.extra
-   *        The extra data to be sent, all keys must be registered in the
-   *        extra_keys section of addonsManager.link in Events.yaml.
-   */
-  recordLinkEvent({ object, value, extra = null }) {
-    this.recordEvent({ method: "link", object, value, extra });
-  },
-
-  /**
-   * Record an event for an action that took place.
-   *
-   * @param {object} opts
-   * @param {string} opts.object
-   *        The object of the event, should an identifier for where the action
-   *        took place. The accepted values are listed in the
-   *        addonsManager.action object of the Events.yaml file.
-   * @param {string} opts.action The identifier for the action.
-   * @param {string} opts.value An optional value for the action.
-   * @param {object} opts.addon
-   *        An optional object with the "id" and "type" properties, for example
-   *        an AddonWrapper object. Passing this will set some extra properties.
-   * @param {string} opts.addon.id
-   *        The add-on ID to assign to extra.addonId.
-   * @param {string} opts.addon.type
-   *        The add-on type to assign to extra.type.
-   * @param {string} opts.view The current view, when object is aboutAddons.
-   * @param {object} opts.extra
-   *        The extra data to be sent, all keys must be registered in the
-   *        extra_keys section of addonsManager.action in Events.yaml. If
-   *        opts.addon is passed then it will overwrite the addonId and type
-   *        properties in this object, if they are set.
-   */
-  recordActionEvent({ object, action, value, addon, view, extra }) {
-    extra = { ...extra, action, addon, view };
-    this.recordEvent({
-      method: "action",
-      object,
-      // Treat null and undefined as null.
-      value: value == null ? null : this.convertToString(value),
-      extra: this.formatExtraVars(extra),
-    });
-  },
-
-  /**
-   * Record an event for a view load in about:addons.
-   *
-   * @param {object} opts
-   * @param {string} opts.view
-   *        The identifier for the view. The accepted values are listed in the
-   *        object property of addonsManager.view object of the Events.yaml
-   *        file.
-   * @param {AddonWrapper} opts.addon
-   *        An optional add-on object related to the event.
-   * @param {string} opts.type
-   *        An optional type for the view. If opts.addon is set it will
-   *        overwrite this value with the type of the add-on.
-   */
-  recordViewEvent({ view, addon, type }) {
-    this.recordEvent({
-      method: "view",
-      object: "aboutAddons",
-      value: view,
-      extra: this.formatExtraVars({ type, addon }),
-    });
-  },
-
-  /**
-   * Record an event on abuse report submissions.
-   *
-   * @params {object} opts
-   * @params {string} opts.addonId
-   *         The id of the addon being reported.
-   * @params {string} [opts.addonType]
-   *         The type of the addon being reported  (only present for an existing
-   *         addonId).
-   * @params {string} [opts.errorType]
-   *         The AbuseReport errorType for a submission failure.
-   * @params {string} opts.reportEntryPoint
-   *         The entry point of the abuse report.
-   */
-  recordReportEvent({ addonId, addonType, errorType, reportEntryPoint }) {
-    this.recordEvent({
-      method: "report",
-      object: reportEntryPoint,
-      value: addonId,
-      extra: this.formatExtraVars({
-        addon_type: addonType,
-        error_type: errorType,
-      }),
-    });
-  },
-
-  recordEvent({ method, object, value, extra }) {
-    if (typeof value != "string") {
-      // The value must be a string or null, make sure it's valid so sending
-      // the event doesn't fail.
-      value = null;
-    }
-    try {
-      Services.telemetry.recordEvent(
-        "addonsManager",
-        method,
-        object,
-        value,
-        extra
-      );
-    } catch (err) {
-      // If the telemetry throws just log the error so it doesn't break any
-      // functionality.
-      Cu.reportError(err);
-    }
-  },
-};
-
 this.AddonManager.init();
 
-// Setup the AMTelemetry once the AddonManager has been started.
-this.AddonManager.addManagerListener(AMTelemetry);
-
-// load the timestamps module into AddonManagerInternal
-ChromeUtils.import(
-  "resource://gre/modules/TelemetryTimestamps.jsm",
-  AddonManagerInternal
-);
 Object.freeze(AddonManagerInternal);
 Object.freeze(AddonManagerPrivate);
 Object.freeze(AddonManager);

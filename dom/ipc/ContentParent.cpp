@@ -3003,7 +3003,6 @@ bool ContentParent::ShouldSyncPreference(const char16_t* aData) {
       BLACKLIST_ENTRY(u"browser.shell."),
       BLACKLIST_ENTRY(u"browser.slowStartup."),
       BLACKLIST_ENTRY(u"browser.startup."),
-      BLACKLIST_ENTRY(u"extensions.getAddons.cache."),
       BLACKLIST_ENTRY(u"media.gmp-manager."),
       BLACKLIST_ENTRY(u"media.gmp-gmpopenh264."),
       BLACKLIST_ENTRY(u"privacy.sanitize."),

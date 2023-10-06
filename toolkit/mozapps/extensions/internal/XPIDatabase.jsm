@@ -86,7 +86,6 @@ const PREF_DB_SCHEMA = "extensions.databaseSchema";
 const PREF_EM_AUTO_DISABLED_SCOPES = "extensions.autoDisableScopes";
 const PREF_PENDING_OPERATIONS = "extensions.pendingOperations";
 const PREF_XPI_PERMISSIONS_BRANCH = "xpinstall.";
-const PREF_XPI_SIGNATURES_DEV_ROOT = "xpinstall.signatures.dev-root";
 
 const TOOLKIT_ID = "toolkit@mozilla.org";
 
@@ -114,7 +113,6 @@ const PENDING_INSTALL_METADATA = [
   "updateDate",
   "applyBackgroundUpdates",
   "compatibilityOverrides",
-  "installTelemetryInfo",
 ];
 
 // Properties to save in JSON file
@@ -160,8 +158,6 @@ const PROP_JSON_FIELDS = [
   "startupData",
   "previewImage",
   "hidden",
-  "installTelemetryInfo",
-  "recommendationState",
   "rootURI",
 ];
 
@@ -272,10 +268,8 @@ class AddonInternal {
     this.skinnable = false;
     this.startupData = null;
     this._hidden = false;
-    this.installTelemetryInfo = null;
     this.rootURI = null;
     this._updateInstall = null;
-    this.recommendationState = null;
 
     this.inDatabase = false;
 
@@ -759,21 +753,6 @@ AddonWrapper = class {
     XPIDatabase.saveChanges();
   }
 
-  get installTelemetryInfo() {
-    const addon = addonFor(this);
-    if (!addon.installTelemetryInfo && addon.location) {
-      if (addon.location.isSystem) {
-        return { source: "system-addon" };
-      }
-
-      if (addon.location.isTemporary) {
-        return { source: "temporary-addon" };
-      }
-    }
-
-    return addon.installTelemetryInfo;
-  }
-
   get temporarilyInstalled() {
     return addonFor(this).location.isTemporary;
   }
@@ -874,21 +853,6 @@ AddonWrapper = class {
     }
 
     return null;
-  }
-
-  get isRecommended() {
-    let addon = addonFor(this);
-    let state = addon.recommendationState;
-    if (
-      state &&
-      state.validNotBefore < addon.updateDate &&
-      state.validNotAfter > addon.updateDate &&
-      addon.isCorrectlySigned &&
-      !this.temporarilyInstalled
-    ) {
-      return state.states.includes("recommended");
-    }
-    return false;
   }
 
   get applyBackgroundUpdates() {
@@ -1995,49 +1959,6 @@ this.XPIDatabase = {
   },
 
   /**
-   * Returns true if signing is required for the given add-on type.
-   *
-   * @param {string} aType
-   *        The add-on type to check.
-   * @returns {boolean}
-   */
-  mustSign(aType) {
-    if (!SIGNED_TYPES.has(aType)) {
-      return false;
-    }
-
-    if (aType == "locale") {
-      return AddonSettings.LANGPACKS_REQUIRE_SIGNING;
-    }
-
-    return AddonSettings.REQUIRE_SIGNING;
-  },
-
-  /**
-   * Determine if this addon should be disabled due to being legacy
-   *
-   * @param {Addon} addon The addon to check
-   *
-   * @returns {boolean} Whether the addon should be disabled for being legacy
-   */
-  isDisabledLegacy(addon) {
-    return (
-      !AddonSettings.ALLOW_LEGACY_EXTENSIONS &&
-      !addon.isWebExtension &&
-      LEGACY_TYPES.has(addon.type) &&
-      // Legacy add-ons are allowed in the system location.
-      !addon.location.isSystem &&
-      // Legacy extensions may be installed temporarily in
-      // non-release builds.
-      !(
-        AppConstants.MOZ_ALLOW_LEGACY_EXTENSIONS && addon.location.isTemporary
-      ) &&
-      // Properly signed legacy extensions are allowed.
-      addon.signedState !== AddonManager.SIGNEDSTATE_PRIVILEGED
-    );
-  },
-
-  /**
    * Calculates whether an add-on should be appDisabled or not.
    *
    * @param {AddonInternal} aAddon
@@ -2046,14 +1967,6 @@ this.XPIDatabase = {
    *        True if the add-on should not be appDisabled
    */
   isUsableAddon(aAddon) {
-    if (this.mustSign(aAddon.type) && !aAddon.isCorrectlySigned) {
-      logger.warn(`Add-on ${aAddon.id} is not correctly signed.`);
-      if (Services.prefs.getBoolPref(PREF_XPI_SIGNATURES_DEV_ROOT, false)) {
-        logger.warn(`Preference ${PREF_XPI_SIGNATURES_DEV_ROOT} is set.`);
-      }
-      return false;
-    }
-
     if (aAddon.blocklistState == nsIBlocklistService.STATE_BLOCKED) {
       logger.warn(`Add-on ${aAddon.id} is blocklisted.`);
       return false;
@@ -2085,11 +1998,6 @@ this.XPIDatabase = {
       if (aAddon.dependencies.some(id => !isActive(id))) {
         return false;
       }
-    }
-
-    if (this.isDisabledLegacy(aAddon)) {
-      logger.warn(`disabling legacy extension ${aAddon.id}`);
-      return false;
     }
 
     if (AddonManager.checkCompatibility) {
@@ -2164,7 +2072,6 @@ this.XPIDatabase = {
     aNewAddon.seen = aOldAddon.seen;
     aNewAddon.active =
       aNewAddon.visible && !aNewAddon.disabled && !aNewAddon.pendingUninstall;
-    aNewAddon.installTelemetryInfo = aOldAddon.installTelemetryInfo;
 
     return this.addToDatabase(aNewAddon, aPath);
   },
@@ -2462,20 +2369,6 @@ this.XPIDatabase = {
       this.updateAddonDisabledState(addon);
     }
   },
-
-  /**
-   * Adds the add-on's name and creator to the telemetry payload.
-   *
-   * @param {AddonInternal} aAddon
-   *        The addon to record
-   */
-  recordAddonTelemetry(aAddon) {
-    let locale = aAddon.defaultLocale;
-    XPIProvider.addTelemetry(aAddon.id, {
-      name: locale.name,
-      creator: locale.creator,
-    });
-  },
 };
 
 this.XPIDatabaseReconcile = {
@@ -2592,8 +2485,6 @@ this.XPIDatabaseReconcile = {
     // must be something dropped directly into the install location
     let isDetectedInstall = isNewInstall && !aNewAddon;
 
-    // Load the manifest if necessary and sanity check the add-on ID
-    let unsigned;
     try {
       // Do not allow third party installs if xpinstall is disabled by policy
       if (
@@ -2619,11 +2510,6 @@ this.XPIDatabaseReconcile = {
         );
       }
 
-      unsigned =
-        XPIDatabase.mustSign(aNewAddon.type) && !aNewAddon.isCorrectlySigned;
-      if (unsigned) {
-        throw Error(`Extension ${aNewAddon.id} is not correctly signed`);
-      }
     } catch (e) {
       logger.warn(`addMetadata: Add-on ${aId} is invalid`, e);
 
@@ -2635,8 +2521,6 @@ this.XPIDatabaseReconcile = {
         logger.warn(
           "Could not uninstall invalid item from locked install location"
         );
-      } else if (unsigned && !isNewInstall) {
-        logger.warn("Not uninstalling existing unsigned add-on");
       } else {
         aLocation.installer.uninstallAddon(aId);
       }
@@ -2655,12 +2539,6 @@ this.XPIDatabaseReconcile = {
     aNewAddon.appDisabled = !XPIDatabase.isUsableAddon(aNewAddon);
 
     if (isDetectedInstall && aNewAddon.foreignInstall) {
-      // Add the installation source info for the sideloaded extension.
-      aNewAddon.installTelemetryInfo = {
-        source: aLocation.name,
-        method: "sideload",
-      };
-
       // If the add-on is a foreign install and is in a scope where add-ons
       // that were dropped in should default to disabled then disable it
       let disablingScopes = Services.prefs.getIntPref(
@@ -2847,7 +2725,6 @@ this.XPIDatabaseReconcile = {
         "sourceURI",
         "releaseNotesURI",
         "targetApplications",
-        "installTelemetryInfo",
       ];
 
       let props = PROP_JSON_FIELDS.filter(a => !remove.includes(a));
@@ -2919,8 +2796,6 @@ this.XPIDatabaseReconcile = {
     aUpdateCompatibility,
     aSchemaChange
   ) {
-    XPIDatabase.recordAddonTelemetry(oldAddon);
-
     let installLocation = oldAddon.location;
 
     // Update the add-on's database metadata from on-disk metadata if:

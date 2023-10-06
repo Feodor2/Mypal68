@@ -50,12 +50,6 @@ function confirm_install(panel) {
 }
 
 function install_ended(install, addon) {
-  AddonTestUtils.checkInstallInfo(install, {
-    method: "installTrigger",
-    source: "test-host",
-    sourceURL: /http:\/\/example.com\/.*\/installtrigger.html/,
-  });
-
   install.cancel();
 }
 

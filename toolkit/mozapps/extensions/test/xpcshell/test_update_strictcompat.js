@@ -5,8 +5,6 @@
 // This verifies that add-on update checks work in conjunction with
 // strict compatibility settings.
 
-const PREF_GETADDONS_CACHE_ENABLED = "extensions.getAddons.cache.enabled";
-
 // The test extension uses an insecure update url.
 Services.prefs.setBoolPref(PREF_EM_CHECK_UPDATE_SECURITY, false);
 Services.prefs.setBoolPref(PREF_EM_STRICT_COMPATIBILITY, false);
@@ -21,14 +19,9 @@ add_task(async function setup() {
   AddonTestUtils.updateReason = AddonManager.UPDATE_WHEN_USER_REQUESTED;
 
   Services.prefs.setCharPref(
-    PREF_GETADDONS_BYIDS,
-    "http://example.com/data/test_update_addons.json"
-  );
-  Services.prefs.setCharPref(
     PREF_COMPAT_OVERRIDES,
     "http://example.com/data/test_update_compat.json"
   );
-  Services.prefs.setBoolPref(PREF_GETADDONS_CACHE_ENABLED, true);
 });
 
 // Test that the update check correctly observes the

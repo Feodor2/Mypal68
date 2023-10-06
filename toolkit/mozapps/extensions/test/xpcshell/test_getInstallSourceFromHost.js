@@ -13,10 +13,6 @@ add_task(function test_getInstallSourceFromHost_helpers() {
       installSourceFromHost: "amo",
     },
     {
-      host: "discovery.addons.mozilla.org",
-      installSourceFromHost: "disco",
-    },
-    {
       host: "about:blank",
       installSourceFromHost: "unknown",
     },

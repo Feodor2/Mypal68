@@ -9,18 +9,13 @@
 
     <link rel="localization" href="branding/brand.ftl">
     <link rel="localization" href="toolkit/about/aboutAddons.ftl">
-    <link rel="localization" href="toolkit/about/abuseReports.ftl">
 
     <script src="chrome://mozapps/content/extensions/named-deck.js"></script>
     <script src="chrome://mozapps/content/extensions/aboutaddonsCommon.js"></script>
     <script src="chrome://mozapps/content/extensions/message-bar.js"></script>
-    <script src="chrome://mozapps/content/extensions/abuse-reports.js"></script>
     <script src="chrome://mozapps/content/extensions/aboutaddons.js"></script>
   </head>
   <body>
-    <message-bar-stack id="abuse-reports-messages" reverse max-message-bar-count="3">
-    </message-bar-stack>
-
     <div id="main"></div>
 
     <!-- Include helpers for the inline options browser select and context menus. -->
@@ -81,26 +76,6 @@
       </div>
     </template>
 
-    <template name="addon-name-container-in-disco-card">
-      <div class="disco-card-head">
-        <span class="disco-addon-name"></span>
-        <span class="disco-addon-author"><a data-l10n-name="author" target="_blank"></a></span>
-      </div>
-      <button class="disco-cta-button primary" action="install-addon"></button>
-      <button class="disco-cta-button" data-l10n-id="manage-addon-button" action="manage-addon"></button>
-    </template>
-
-    <template name="addon-description-in-disco-card">
-      <div>
-        <strong class="disco-description-intro"></strong>
-        <span class="disco-description-main"></span>
-      </div>
-      <div class="disco-description-statistics">
-        <five-star-rating></five-star-rating>
-        <span class="disco-user-count"></span>
-      </div>
-    </template>
-
     <template name="addon-details">
       <div class="deck-tab-group">
         <named-deck-button-group>
@@ -122,33 +97,33 @@
               data-l10n-attrs="accesskey">
             </button>
           </div>
-          <div class="addon-detail-row addon-detail-row-updates">
+          <!--div class="addon-detail-row addon-detail-row-updates">
             <label data-l10n-id="addon-detail-updates-label"></label>
             <div>
               <button class="button-link" data-l10n-id="addon-detail-update-check-label" action="update-check" hidden></button>
               <label>
-                <input type="radio" name="autoupdate" value="1" data-telemetry-value="default">
+                <input type="radio" name="autoupdate" value="1">
                 <span data-l10n-id="addon-detail-updates-radio-default"></span>
               </label>
               <label>
-                <input type="radio" name="autoupdate" value="2" data-telemetry-value="enabled">
+                <input type="radio" name="autoupdate" value="2">
                 <span data-l10n-id="addon-detail-updates-radio-on"></span>
               </label>
               <label>
-                <input type="radio" name="autoupdate" value="0" data-telemetry-value="">
+                <input type="radio" name="autoupdate" value="0">
                 <span data-l10n-id="addon-detail-updates-radio-off"></span>
               </label>
             </div>
-          </div>
+          </div-->
           <div class="addon-detail-row addon-detail-row-has-help addon-detail-row-private-browsing" hidden>
             <label data-l10n-id="detail-private-browsing-label"></label>
             <div>
               <label>
-                <input type="radio" name="private-browsing" value="1" data-telemetry-value="on">
+                <input type="radio" name="private-browsing" value="1">
                 <span data-l10n-id="addon-detail-private-browsing-allow"></span>
               </label>
               <label>
-                <input type="radio" name="private-browsing" value="0" data-telemetry-value="off">
+                <input type="radio" name="private-browsing" value="0">
                 <span data-l10n-id="addon-detail-private-browsing-disallow"></span>
               </label>
             </div>
@@ -170,7 +145,7 @@
           </div>
           <div class="addon-detail-row addon-detail-row-author">
             <label data-l10n-id="addon-detail-author-label"></label>
-            <a target="_blank" data-telemetry-name="author"></a>
+            <a target="_blank"></a>
           </div>
           <div class="addon-detail-row addon-detail-row-version">
             <label data-l10n-id="addon-detail-version-label"></label>
@@ -180,29 +155,13 @@
           </div>
           <div class="addon-detail-row addon-detail-row-homepage">
             <label data-l10n-id="addon-detail-homepage-label"></label>
-            <a target="_blank" data-telemetry-name="homepage"></a>
-          </div>
-          <div class="addon-detail-row addon-detail-row-rating">
-            <label data-l10n-id="addon-detail-rating-label"></label>
-            <div class="addon-detail-rating">
-              <five-star-rating></five-star-rating>
-              <a target="_blank" data-telemetry-name="rating"></a>
-            </div>
+            <a target="_blank"></a>
           </div>
         </section>
         <inline-options-browser name="preferences"></inline-options-browser>
         <addon-permissions-list name="permissions"></addon-permissions-list>
         <update-release-notes name="release-notes"></update-release-notes>
       </named-deck>
-    </template>
-
-    <template name="five-star-rating">
-      <link rel="stylesheet" href="chrome://mozapps/content/extensions/rating-star.css">
-      <span class="rating-star"></span>
-      <span class="rating-star"></span>
-      <span class="rating-star"></span>
-      <span class="rating-star"></span>
-      <span class="rating-star"></span>
     </template>
 
     <template name="panel-list">

@@ -17,15 +17,6 @@
   list-style-image: url("chrome://global/skin/arrow/arrow-up.gif");
 }
 
-.meta-rating > .star {
-  list-style-image: url("chrome://mozapps/skin/extensions/rating-not-won.png");
-  padding: 0 1px;
-}
-
-.meta-rating > .star[on="true"] {
-  list-style-image: url("chrome://mozapps/skin/extensions/rating-won.png");
-}
-
 #detail-view .legacy-warning {
   margin-top: 1rem;
 }

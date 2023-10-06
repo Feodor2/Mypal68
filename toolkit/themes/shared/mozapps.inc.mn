@@ -11,7 +11,6 @@
   skin/classic/mozapps/extensions/dictionaryGeneric.svg      (../../shared/extensions/category-dictionaries.svg)
   skin/classic/mozapps/extensions/extensionGeneric.svg       (../../shared/extensions/category-extensions.svg)
   skin/classic/mozapps/extensions/themeGeneric.svg           (../../shared/extensions/category-themes.svg)
-  skin/classic/mozapps/extensions/category-discover.svg      (../../shared/extensions/category-discover.svg)
   skin/classic/mozapps/extensions/category-service.svg       (../../shared/extensions/category-service.svg)
   skin/classic/mozapps/extensions/category-recent.svg        (../../shared/extensions/category-recent.svg)
   skin/classic/mozapps/extensions/category-available.svg     (../../shared/extensions/category-available.svg)
@@ -23,10 +22,6 @@
   skin/classic/mozapps/extensions/alerticon-info-positive.svg (../../shared/extensions/alerticon-info-positive.svg)
   skin/classic/mozapps/extensions/alerticon-info-negative.svg (../../shared/extensions/alerticon-info-negative.svg)
   skin/classic/mozapps/extensions/category-legacy.svg        (../../shared/extensions/category-legacy.svg)
-  skin/classic/mozapps/extensions/recommended.svg            (../../shared/extensions/recommended.svg)
-#ifndef ANDROID
-  skin/classic/mozapps/extensions/rating-star.svg            (../../shared/extensions/rating-star.svg)
-#endif
   skin/classic/mozapps/aboutNetworking.css                   (../../shared/aboutNetworking.css)
 #ifndef ANDROID
   skin/classic/mozapps/aboutProfiles.css                     (../../shared/aboutProfiles.css)

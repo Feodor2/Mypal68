@@ -56,11 +56,6 @@ function install_blocked(installInfo) {
     1,
     "Got one AddonInstall instance as expected"
   );
-  AddonTestUtils.checkInstallInfo(installInfo.installs[0], {
-    method: "link",
-    source: "unknown",
-    sourceURL: /moz-nullprincipal:\{.*\}/,
-  });
 }
 
 function finish_test(count) {

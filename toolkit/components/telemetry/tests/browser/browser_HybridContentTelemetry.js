@@ -471,21 +471,6 @@ add_task(async function test_can_upload() {
   PermissionTestUtils.remove(testHttpsUri, HC_PERMISSION);
 });
 
-add_task(async function test_hct_for_discopane() {
-  const discoHost = "https://discovery.addons.mozilla.org";
-
-  let discoHttpsUri = Services.io.newURI(discoHost);
-  let permission = PermissionTestUtils.testPermission(
-    discoHttpsUri,
-    HC_PERMISSION
-  );
-
-  ok(
-    permission == Services.perms.ALLOW_ACTION,
-    "Disco Pane needs Hybrid Content Permission for Telemetry data upload"
-  );
-});
-
 add_task(async function test_init_rejects() {
   await SpecialPowers.pushPrefEnv({
     set: [[TelemetryUtils.Preferences.FhrUploadEnabled, true]],

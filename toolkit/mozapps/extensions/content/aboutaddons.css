@@ -17,11 +17,6 @@
   max-width: var(--section-width);
 }
 
-#abuse-reports-messages {
-  margin-inline-start: 28px;
-  max-width: var(--section-width);
-}
-
 /* The margin between message bars. */
 message-bar-stack > * {
   margin-bottom: 8px;
@@ -245,14 +240,6 @@ addon-details {
 
 .addon-detail-row input[type="checkbox"] {
   margin: 0;
-}
-
-.addon-detail-rating {
-  display: flex;
-}
-
-.addon-detail-rating > a {
-  margin-inline-start: 8px;
 }
 
 .more-options-button {

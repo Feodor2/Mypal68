@@ -6,7 +6,7 @@
 "use strict";
 
 /* exported attachUpdateHandler, gBrowser, getBrowserElement, isCorrectlySigned,
- *          isDisabledUnsigned, loadReleaseNotes, openOptionsInTab,
+ *          loadReleaseNotes, openOptionsInTab,
  *          promiseEvent, shouldShowPermissionsPrompt, showPermissionsPrompt */
 
 const { AddonSettings } = ChromeUtils.import(
@@ -69,10 +69,6 @@ function attachUpdateHandler(install) {
             type: "update",
             addon: info.addon,
             icon: info.addon.icon,
-            // Reference to the related AddonInstall object (used in
-            // AMTelemetry to link the recorded event to the other events from
-            // the same install flow).
-            install,
             permissions: difference,
             resolve,
             reject,
@@ -190,12 +186,4 @@ function isCorrectlySigned(addon) {
   // Add-ons without an "isCorrectlySigned" property are correctly signed as
   // they aren't the correct type for signing.
   return addon.isCorrectlySigned !== false;
-}
-
-function isDisabledUnsigned(addon) {
-  let signingRequired =
-    addon.type == "locale"
-      ? AddonSettings.LANGPACKS_REQUIRE_SIGNING
-      : AddonSettings.REQUIRE_SIGNING;
-  return signingRequired && !isCorrectlySigned(addon);
 }

@@ -19,14 +19,6 @@ async function checkInstallConfirmation(...names) {
         null,
         "Notification should have non-null browser"
       );
-      Assert.deepEqual(
-        installInfo.installs[0].installTelemetryInfo,
-        {
-          source: "about:addons",
-          method: "install-from-file",
-        },
-        "Got the expected installTelemetryInfo"
-      );
       notificationCount++;
     },
   };

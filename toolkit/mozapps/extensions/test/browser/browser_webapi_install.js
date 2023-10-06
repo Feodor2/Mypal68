@@ -256,13 +256,6 @@ function makeRegularTest(options, what) {
     let addon = await promiseAddonByID(ID);
     isnot(addon, null, "Found the addon");
 
-    // Check that the expected installTelemetryInfo has been stored in the addon details.
-    AddonTestUtils.checkInstallInfo(addon, {
-      method: "amWebAPI",
-      source: "test-host",
-      sourceURL: /https:\/\/example.com\/.*\/webapi_checkavailable.html/,
-    });
-
     await addon.uninstall();
 
     addon = await promiseAddonByID(ID);

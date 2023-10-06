@@ -17,11 +17,6 @@ async function test() {
   Services.prefs.clearUserPref(PREF_UI_LASTCATEGORY);
 
   aWindow = await open_manager(null);
-  is(
-    new CategoryUtilities(aWindow).selectedCategory,
-    "discover",
-    "Should have loaded the right view"
-  );
 
   close_manager(aWindow, finish);
 }

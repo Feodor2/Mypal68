@@ -774,12 +774,6 @@ add_task(async function test_18_1() {
     "http://example.com/compat.json"
   );
 
-  Services.prefs.setBoolPref("extensions.getAddons.cache.enabled", true);
-  Services.prefs.setBoolPref(
-    "extensions.addon2@tests.mozilla.org.getAddons.cache.enabled",
-    false
-  );
-
   let url = "http://example.com/addons/test_install2_1.xpi";
   let install = await AddonManager.getInstallForURL(url);
   await install.install();

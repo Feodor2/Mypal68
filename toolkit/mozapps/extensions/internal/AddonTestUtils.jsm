@@ -33,11 +33,6 @@ const { OS } = ChromeUtils.import("resource://gre/modules/osfile.jsm");
 
 ChromeUtils.defineModuleGetter(
   this,
-  "AMTelemetry",
-  "resource://gre/modules/AddonManager.jsm"
-);
-ChromeUtils.defineModuleGetter(
-  this,
   "ExtensionTestCommon",
   "resource://testing-common/ExtensionTestCommon.jsm"
 );
@@ -330,7 +325,6 @@ var AddonTestUtils = {
   addonsList: null,
   appInfo: null,
   addonStartup: null,
-  collectedTelemetryEvents: [],
   testScope: null,
   testUnpacked: false,
   useRealCertChecks: false,
@@ -410,9 +404,6 @@ var AddonTestUtils = {
 
     // By default ignore bundled add-ons
     Services.prefs.setBoolPref("extensions.installDistroAddons", false);
-
-    // Ensure signature checks are enabled by default
-    Services.prefs.setBoolPref("xpinstall.signatures.required", true);
 
     // Write out an empty blocklist.xml file to the profile to ensure nothing
     // is blocklisted by default
@@ -1533,21 +1524,16 @@ var AddonTestUtils = {
    * @param {boolean} [ignoreIncompatible = false]
    *        Optional parameter to ignore add-ons that are incompatible
    *        with the application
-   * @param {Object} [installTelemetryInfo = undefined]
-   *        Optional parameter to set the install telemetry info for the
-   *        installed addon
    * @returns {Promise}
    *        Resolves when the install has completed.
    */
   async promiseInstallFile(
     file,
-    ignoreIncompatible = false,
-    installTelemetryInfo
+    ignoreIncompatible = false
   ) {
     let install = await AddonManager.getInstallForFile(
       file,
-      null,
-      installTelemetryInfo
+      null
     );
     if (!install) {
       throw new Error(`No AddonInstall created for ${file.path}`);
@@ -1783,36 +1769,6 @@ var AddonTestUtils = {
   },
 
   /**
-   * Asserts that the expected installTelemetryInfo properties are available
-   * on the AddonWrapper or AddonInstall objects.
-   *
-   * @param {AddonWrapper|AddonInstall} addonOrInstall
-   *        The addon or addonInstall object to check.
-   * @param {Object} expectedInstallInfo
-   *        The expected installTelemetryInfo properties
-   *        (every property can be a primitive value or a regular expression).
-   */
-  checkInstallInfo(addonOrInstall, expectedInstallInfo) {
-    const installInfo = addonOrInstall.installTelemetryInfo;
-    const { Assert } = this.testScope;
-
-    for (const key of Object.keys(expectedInstallInfo)) {
-      const actual = installInfo[key];
-      let expected = expectedInstallInfo[key];
-
-      // Assert the property value using a regular expression.
-      if (expected && typeof expected.test == "function") {
-        Assert.ok(
-          expected.test(actual),
-          `${key} value "${actual}" has the value expected: "${expected}"`
-        );
-      } else {
-        Assert.deepEqual(actual, expected, `Got the expected value for ${key}`);
-      }
-    }
-  },
-
-  /**
    * Helper to wait for a webextension to completely start
    *
    * @param {string} [id]
@@ -1916,39 +1872,6 @@ var AddonTestUtils = {
       ],
     ]);
     Services.prefs.setBoolPref(PREF_DISABLE_SECURITY, prevPrefVal);
-  },
-
-  // AMTelemetry events helpers.
-
-  /**
-   * Redefine AMTelemetry.recordEvent to collect the recorded telemetry events and
-   * ensure that there are no unexamined events after the test file is exiting.
-   */
-  hookAMTelemetryEvents() {
-    let originalRecordEvent = AMTelemetry.recordEvent;
-    AMTelemetry.recordEvent = event => {
-      this.collectedTelemetryEvents.push(event);
-    };
-    this.testScope.registerCleanupFunction(() => {
-      this.testScope.Assert.deepEqual(
-        [],
-        this.collectedTelemetryEvents,
-        "No unexamined telemetry events after test is finished"
-      );
-      AMTelemetry.recordEvent = originalRecordEvent;
-    });
-  },
-
-  /**
-   * Retrive any AMTelemetry event collected and empty the array of the collected events.
-   *
-   * @returns {Array<Object>}
-   *          The array of the collected telemetry data.
-   */
-  getAMTelemetryEvents() {
-    let events = this.collectedTelemetryEvents;
-    this.collectedTelemetryEvents = [];
-    return events;
   },
 };
 

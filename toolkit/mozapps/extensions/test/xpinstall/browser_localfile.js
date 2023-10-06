@@ -24,12 +24,6 @@ function test() {
 }
 
 function install_ended(install, addon) {
-  Assert.deepEqual(
-    install.installTelemetryInfo,
-    { source: "file-url" },
-    "Got the expected install.installTelemetryInfo"
-  );
-
   install.cancel();
 }
 

@@ -36,10 +36,6 @@ xhtml|link {
   -moz-binding: url("chrome://mozapps/content/extensions/extensions.xml#creator-link");
 }
 
-.meta-rating {
-  -moz-binding: url("chrome://mozapps/content/extensions/extensions.xml#rating");
-}
-
 .download-progress, .download-progress[mode="undetermined"] {
   -moz-binding: url("chrome://mozapps/content/extensions/extensions.xml#download-progress");
 }
@@ -69,11 +65,6 @@ row[unsupported="true"] {
 #addonitem-popup:not([addontype="theme"]) > #menuitem_enableTheme,
 #addonitem-popup:not([addontype="theme"]) > #menuitem_disableTheme {
   display: none;
-}
-
-#show-disabled-unsigned-extensions .button-text {
-  margin-inline-start: 3px !important;
-  margin-inline-end: 2px !important;
 }
 
 #header-searching:not([active]) {
@@ -186,12 +177,6 @@ row[unsupported="true"] {
   max-width: 580px;
 }
 
-/* Make sure we're not animating hidden images. See bug 623739. */
-#view-port:not([selectedIndex="0"]) #discover-view .loading,
-#discover-view:not([selectedIndex="0"]) .loading {
-  display: none;
-}
-
 /* Elements in unselected richlistitems cannot be focused */
 richlistitem:not([selected]) * {
   -moz-user-focus: ignore;
@@ -199,10 +184,6 @@ richlistitem:not([selected]) * {
 
 #header-search {
   width: 22em;
-}
-
-.discover-button[disabled="true"] {
-  display: none;
 }
 
 .view-pane:not(#legacy-view) .addon-control.replacement {

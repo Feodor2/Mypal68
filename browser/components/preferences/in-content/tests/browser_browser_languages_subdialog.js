@@ -242,7 +242,6 @@ add_task(async function testDisabledBrowserLanguages() {
       ["intl.multilingual.enabled", true],
       ["intl.multilingual.downloadEnabled", true],
       ["intl.locale.requested", "en-US,pl,he,de"],
-      ["extensions.langpacks.signatures.required", false],
       ["extensions.getAddons.langpacks.url", langpacksUrl],
     ],
   });

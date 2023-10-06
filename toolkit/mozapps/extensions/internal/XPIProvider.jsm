@@ -38,7 +38,6 @@ XPCOMUtils.defineLazyModuleGetters(this, {
   FileUtils: "resource://gre/modules/FileUtils.jsm",
   OS: "resource://gre/modules/osfile.jsm",
   JSONFile: "resource://gre/modules/JSONFile.jsm",
-  TelemetrySession: "resource://gre/modules/TelemetrySession.jsm",
 
   XPIDatabase: "resource://gre/modules/addons/XPIDatabase.jsm",
   XPIDatabaseReconcile: "resource://gre/modules/addons/XPIDatabase.jsm",
@@ -76,13 +75,9 @@ const PREF_DB_SCHEMA = "extensions.databaseSchema";
 const PREF_PENDING_OPERATIONS = "extensions.pendingOperations";
 const PREF_EM_ENABLED_SCOPES = "extensions.enabledScopes";
 const PREF_EM_STARTUP_SCAN_SCOPES = "extensions.startupScanScopes";
-// xpinstall.signatures.required only supported in dev builds
-const PREF_XPI_SIGNATURES_REQUIRED = "xpinstall.signatures.required";
-const PREF_LANGPACK_SIGNATURES = "extensions.langpacks.signatures.required";
 const PREF_INSTALL_DISTRO_ADDONS = "extensions.installDistroAddons";
 const PREF_BRANCH_INSTALLED_ADDON = "extensions.installedDistroAddon.";
 const PREF_SYSTEM_ADDON_SET = "extensions.systemAddonSet";
-const PREF_ALLOW_LEGACY = "extensions.legacy.enabled";
 
 const PREF_EM_LAST_APP_BUILD_ID = "extensions.lastAppBuildId";
 
@@ -464,7 +459,6 @@ const JSON_FIELDS = Object.freeze([
   "runInSafeMode",
   "signedState",
   "startupData",
-  "telemetryKey",
   "type",
   "version",
 ]);
@@ -487,10 +481,6 @@ class XPIState {
     // If we're updating from such a build, add that property now.
     if (!("rootURI" in this) && this.file) {
       this.rootURI = getURIForResourceInFile(this.file, "").spec;
-    }
-
-    if (!this.telemetryKey) {
-      this.telemetryKey = this.getTelemetryKey();
     }
 
     if (
@@ -556,7 +546,6 @@ class XPIState {
       rootURI: this.rootURI,
       runInSafeMode: this.runInSafeMode,
       signedState: this.signedState,
-      telemetryKey: this.telemetryKey,
       version: this.version,
     };
     if (this.type != "extension") {
@@ -595,16 +584,6 @@ class XPIState {
     return this.changed;
   }
 
-  /**
-   * Returns a string key by which to identify this add-on in telemetry
-   * and crash reports.
-   *
-   * @returns {string}
-   */
-  getTelemetryKey() {
-    return encoded`${this.id}:${this.version}`;
-  }
-
   get resolvedRootURI() {
     return maybeResolveURI(Services.io.newURI(this.rootURI));
   }
@@ -638,8 +617,6 @@ class XPIState {
     if (aDBAddon.startupData) {
       this.startupData = aDBAddon.startupData;
     }
-
-    this.telemetryKey = this.getTelemetryKey();
 
     this.dependencies = aDBAddon.dependencies;
     this.runInSafeMode = canRunInSafeMode(aDBAddon);
@@ -805,8 +782,6 @@ class XPIStateLocation extends Map {
 
     let xpiState = this._addState(addon.id, { file: addon._sourceBundle });
     xpiState.syncWithDB(addon, true);
-
-    XPIProvider.addTelemetry(addon.id, { location: this.name });
   }
 
   /**
@@ -1487,7 +1462,6 @@ var XPIStates = {
             });
           }
         }
-        XPIProvider.addTelemetry(id, { location: loc.name });
       }
 
       // Anything left behind in oldState was removed from the file system.
@@ -2079,8 +2053,6 @@ var XPIProvider = {
 
   // A Map of active addons to their bootstrapScope by ID
   activeAddons: new Map(),
-  // Per-addon telemetry information
-  _telemetryDetails: {},
   // Have we started shutting down bootstrap add-ons?
   _closing: false,
 
@@ -2159,16 +2131,6 @@ var XPIProvider = {
     Object.values(addons).forEach(add);
 
     return Array.from(res, id => addons[id]);
-  },
-
-  /*
-   * Adds metadata to the telemetry payload for the given add-on.
-   */
-  addTelemetry(aId, aPayload) {
-    if (!this._telemetryDetails[aId]) {
-      this._telemetryDetails[aId] = {};
-    }
-    Object.assign(this._telemetryDetails[aId], aPayload);
   },
 
   setupInstallLocations(aAppChanged) {
@@ -2366,8 +2328,6 @@ var XPIProvider = {
    */
   startup(aAppChanged, aOldAppVersion, aOldPlatformVersion) {
     try {
-      AddonManagerPrivate.recordTimestamp("XPI_startup_begin");
-
       logger.debug("startup");
 
       this.builtInAddons = {};
@@ -2381,18 +2341,8 @@ var XPIProvider = {
 
       this.registerBuiltinDictionaries();
 
-      // Clear this at startup for xpcshell test restarts
-      this._telemetryDetails = {};
-      // Register our details structure with AddonManager
-      AddonManagerPrivate.setTelemetryDetails("XPI", this._telemetryDetails);
-
       this.setupInstallLocations(aAppChanged);
 
-      if (!AppConstants.MOZ_REQUIRE_SIGNING || Cu.isInAutomation) {
-        Services.prefs.addObserver(PREF_XPI_SIGNATURES_REQUIRED, this);
-      }
-      Services.prefs.addObserver(PREF_LANGPACK_SIGNATURES, this);
-      Services.prefs.addObserver(PREF_ALLOW_LEGACY, this);
       Services.obs.addObserver(this, NOTIFICATION_FLUSH_PERMISSIONS);
 
       this.checkForChanges(aAppChanged, aOldAppVersion, aOldPlatformVersion);
@@ -2434,8 +2384,6 @@ var XPIProvider = {
       }
 
       try {
-        AddonManagerPrivate.recordTimestamp("XPI_bootstrap_addons_begin");
-
         for (let addon of this.sortBootstrappedAddons()) {
           // The startup update check above may have already started some
           // extensions, make sure not to try to start them twice.
@@ -2471,7 +2419,6 @@ var XPIProvider = {
             );
           }
         }
-        AddonManagerPrivate.recordTimestamp("XPI_bootstrap_addons_end");
       } catch (e) {
         logger.error("bootstrap startup failed", e);
         AddonManagerPrivate.recordException(
@@ -2532,12 +2479,6 @@ var XPIProvider = {
         }
       );
 
-      // Detect final-ui-startup for telemetry reporting
-      Services.obs.addObserver(function observer() {
-        AddonManagerPrivate.recordTimestamp("XPI_finalUIStartup");
-        Services.obs.removeObserver(observer, "final-ui-startup");
-      }, "final-ui-startup");
-
       // If we haven't yet loaded the XPI database, schedule loading it
       // to occur once other important startup work is finished.  We want
       // this to happen relatively quickly after startup so the telemetry
@@ -2575,8 +2516,6 @@ var XPIProvider = {
           Services.obs.addObserver(observer, event);
         }
       }
-
-      AddonManagerPrivate.recordTimestamp("XPI_startup_end");
 
       timerManager.registerTimer(
         "xpi-signature-verification",
@@ -3062,15 +3001,6 @@ var XPIProvider = {
           XPIDatabase.importPermissions();
         }
         break;
-
-      case "nsPref:changed":
-        switch (aData) {
-          case PREF_XPI_SIGNATURES_REQUIRED:
-          case PREF_LANGPACK_SIGNATURES:
-          case PREF_ALLOW_LEGACY:
-            XPIDatabase.updateAddonAppDisabledStates();
-            break;
-        }
     }
   },
 };

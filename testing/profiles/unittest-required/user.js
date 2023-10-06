@@ -105,13 +105,6 @@ user_pref("extensions.blocklist.itemURL", "http://{server}/extensions-dummy/bloc
 user_pref("extensions.blocklist.url", "http://{server}/extensions-dummy/blocklistURL");
 // XPI extensions are required for test harnesses to load
 user_pref("extensions.defaultProviders.enabled", true);
-// Disable metadata caching for installed add-ons by default
-user_pref("extensions.getAddons.cache.enabled", false);
-// Make sure AddonRepository won't hit the network
-user_pref("extensions.getAddons.get.url", "http://{server}/extensions-dummy/repositoryGetURL");
-user_pref("extensions.getAddons.getWithPerformance.url", "http://{server}/extensions-dummy/repositoryGetWithPerformanceURL");
-user_pref("extensions.getAddons.search.browseURL", "http://{server}/extensions-dummy/repositoryBrowseURL");
-user_pref("extensions.hotfix.url", "http://{server}/extensions-dummy/hotfixURL");
 // Disable intalling any distribution add-ons
 user_pref("extensions.installDistroAddons", false);
 // Disable Screenshots by default for now
@@ -120,8 +113,6 @@ user_pref("extensions.systemAddon.update.url", "http://{server}/dummy-system-add
 user_pref("extensions.update.background.url", "http://{server}/extensions-dummy/updateBackgroundURL");
 // Point update checks to the local testing server for fast failures
 user_pref("extensions.update.url", "http://{server}/extensions-dummy/updateURL");
-// Make sure opening about:addons won't hit the network
-user_pref("extensions.webservice.discoverURL", "http://{server}/extensions-dummy/discoveryURL");
 user_pref("extensions.privatebrowsing.notification", true);
 user_pref("findbar.highlightAll", false);
 user_pref("findbar.modalHighlight", false);

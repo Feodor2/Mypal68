@@ -153,7 +153,6 @@ class ts_paint(TsBase):
 @register_test()
 class ts_paint_webext(ts_paint):
     webextensions = '${talos}/webextensions/dummy/dummy.xpi'
-    preferences = {'xpinstall.signatures.required': False}
 
 
 @register_test()
@@ -555,7 +554,6 @@ class tp5o(PageloaderTest):
 @register_test()
 class tp5o_webext(tp5o):
     webextensions = '${talos}/webextensions/dummy/dummy.xpi'
-    preferences = {'xpinstall.signatures.required': False}
 
 
 @register_test()

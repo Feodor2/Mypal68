@@ -25,12 +25,3 @@
   margin-top: 3px;
   margin-bottom: 3px;
 }
-
-.meta-rating > .star {
-  list-style-image: url("chrome://mozapps/skin/extensions/rating-not-won.png");
-  padding: 0 1px;
-}
-
-.meta-rating > .star[on="true"] {
-  list-style-image: url("chrome://mozapps/skin/extensions/rating-won.png");
-}

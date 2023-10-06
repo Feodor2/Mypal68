@@ -933,13 +933,6 @@ var BrowserPageActions = {
     let action = this._contextAction;
     this._contextAction = null;
 
-    PageActions.logTelemetry("managed", action);
-    AMTelemetry.recordActionEvent({
-      object: "pageAction",
-      action: "manage",
-      extra: { addonId: action.extensionID },
-    });
-
     let viewID = "addons://detail/" + encodeURIComponent(action.extensionID);
     window.BrowserOpenAddonsMgr(viewID);
   },

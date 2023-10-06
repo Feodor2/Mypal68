@@ -2259,9 +2259,6 @@ pref("services.settings.security.onecrl.collection", "onecrl");
 pref("services.settings.security.onecrl.signer", "onecrl.content-signature.mozilla.org");
 pref("services.settings.security.onecrl.checked", 0);
 
-pref("extensions.abuseReport.enabled", false);
-pref("extensions.abuseReport.url", "data:text/plain,");
-
 // Blocklist preferences
 pref("extensions.blocklist.enabled", false);
 // OneCRL freshness checking depends on this value, so if you change it,
@@ -3932,11 +3929,7 @@ pref("browser.meta_refresh_when_inactive.disabled", false);
 
 // XPInstall prefs
 pref("xpinstall.whitelist.required", true);
-// Only Firefox requires add-on signatures
-pref("xpinstall.signatures.required", false);
-pref("extensions.langpacks.signatures.required", false);
 pref("extensions.webExtensionsMinPlatformVersion", "42.0a1");
-pref("extensions.legacy.enabled", true);
 
 // Other webextensions prefs
 pref("extensions.webextensions.keepStorageOnUninstall", false);
@@ -3970,7 +3963,7 @@ pref("extensions.webextensions.enablePerformanceCounters", true);
 pref("extensions.webextensions.performanceCountersMaxAge", 5000);
 
 // The HTML about:addons page.
-pref("extensions.htmlaboutaddons.enabled", true);
+pref("extensions.htmlaboutaddons.enabled", false);
 // Whether to allow the inline options browser in HTML about:addons page.
 pref("extensions.htmlaboutaddons.inline-options.enabled", true);
 // Show recommendations on the extension and theme list views.

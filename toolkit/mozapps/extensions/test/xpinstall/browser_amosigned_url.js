@@ -30,11 +30,6 @@ function confirm_install(panel) {
 }
 
 function install_ended(install, addon) {
-  AddonTestUtils.checkInstallInfo(install, {
-    method: "link",
-    source: "unknown",
-    sourceURL: undefined,
-  });
   install.cancel();
 }
 

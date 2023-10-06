@@ -6,9 +6,6 @@
 /* eslint no-unused-vars: ["error", {vars: "local", args: "none"}] */
 
 var { NetUtil } = ChromeUtils.import("resource://gre/modules/NetUtil.jsm");
-const { TelemetryTestUtils } = ChromeUtils.import(
-  "resource://testing-common/TelemetryTestUtils.jsm"
-);
 
 var tmp = {};
 ChromeUtils.import("resource://gre/modules/AddonManager.jsm", tmp);
@@ -28,11 +25,8 @@ const SECURE_TESTROOT = "https://example.com/" + RELATIVE_DIR;
 const TESTROOT2 = "http://example.org/" + RELATIVE_DIR;
 const SECURE_TESTROOT2 = "https://example.org/" + RELATIVE_DIR;
 const CHROMEROOT = pathParts.join("/") + "/";
-const PREF_DISCOVERURL = "extensions.webservice.discoverURL";
-const PREF_DISCOVER_ENABLED = "extensions.getAddons.showPane";
 const PREF_XPI_ENABLED = "xpinstall.enabled";
 const PREF_UPDATEURL = "extensions.update.url";
-const PREF_GETADDONS_CACHE_ENABLED = "extensions.getAddons.cache.enabled";
 const PREF_UI_LASTCATEGORY = "extensions.ui.lastCategory";
 
 const MANAGER_URI = "about:addons";
@@ -1709,53 +1703,6 @@ function waitAppMenuNotificationShown(
 
 function acceptAppMenuNotificationWhenShown(id, addonId) {
   return waitAppMenuNotificationShown(id, addonId, true);
-}
-
-const ABOUT_ADDONS_METHODS = new Set(["action", "view", "link"]);
-function assertAboutAddonsTelemetryEvents(events, filters = {}) {
-  TelemetryTestUtils.assertEvents(events, {
-    category: "addonsManager",
-    method: actual =>
-      filters.methods
-        ? filters.methods.includes(actual)
-        : ABOUT_ADDONS_METHODS.has(actual),
-    object: "aboutAddons",
-  });
-}
-
-function assertTelemetryMatches(events, { filterMethods } = {}) {
-  let snapshot = Services.telemetry.snapshotEvents(
-    Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-    true
-  );
-
-  if (events.length == 0) {
-    ok(
-      !snapshot.parent || snapshot.parent.length == 0,
-      "There are no telemetry events"
-    );
-    return;
-  }
-
-  // Make sure we got some data.
-  ok(
-    snapshot.parent && snapshot.parent.length > 0,
-    "Got parent telemetry events in the snapshot"
-  );
-
-  // Only look at the related events after stripping the timestamp and category (and optionally filter
-  // out the events related to methods that we are not interested in).
-  let relatedEvents = snapshot.parent
-    .filter(([timestamp, category, method]) => {
-      return (
-        category == "addonsManager" &&
-        (filterMethods ? filterMethods.includes(method) : true)
-      );
-    })
-    .map(relatedEvent => relatedEvent.slice(2, 6));
-
-  // Events are now [method, object, value, extra] as expected.
-  Assert.deepEqual(relatedEvents, events, "The events are recorded correctly");
 }
 
 /* HTML view helpers */

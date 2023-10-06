@@ -173,9 +173,6 @@ pref("xpinstall.whitelist.directRequest", false);
 pref("xpinstall.whitelist.fileRequest", false);
 pref("xpinstall.whitelist.add", "https://addons.mozilla.org");
 
-pref("extensions.langpacks.signatures.required", true);
-pref("xpinstall.signatures.required", true);
-
 // Disable add-ons that are not installed by the user in all scopes by default (See the SCOPE
 // constants in AddonManager.jsm for values to use here, and Bug 1405528 for a rationale).
 pref("extensions.autoDisableScopes", 15);
@@ -196,14 +193,6 @@ pref("extensions.minCompatibleAppVersion", "11.0");
 pref("extensions.update.url", "https://versioncheck.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=%APP_VERSION%&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
 pref("extensions.update.background.url", "https://versioncheck-bg.addons.mozilla.org/update/VersionCheck.php?reqVersion=%REQ_VERSION%&id=%ITEM_ID%&version=%ITEM_VERSION%&maxAppVersion=%ITEM_MAXAPPVERSION%&status=%ITEM_STATUS%&appID=%APP_ID%&appVersion=%APP_VERSION%&appOS=%APP_OS%&appABI=%APP_ABI%&locale=%APP_LOCALE%&currentAppVersion=%CURRENT_APP_VERSION%&updateType=%UPDATE_TYPE%&compatMode=%COMPATIBILITY_MODE%");
 
-/* preferences for the Get Add-ons pane */
-pref("extensions.getAddons.cache.enabled", true);
-pref("extensions.getAddons.search.browseURL", "https://addons.mozilla.org/%LOCALE%/android/search?q=%TERMS%&platform=%OS%&appver=%VERSION%");
-pref("extensions.getAddons.browseAddons", "https://addons.mozilla.org/%LOCALE%/android/collections/4757633/mob/?page=1&collection_sort=-popularity");
-pref("extensions.getAddons.get.url", "https://services.addons.mozilla.org/api/v3/addons/search/?guid=%IDS%&lang=%LOCALE%");
-pref("extensions.getAddons.compatOverides.url", "https://services.addons.mozilla.org/api/v3/addons/compat-override/?guid=%IDS%&lang=%LOCALE%");
-pref("extensions.getAddons.langpacks.url", "https://services.addons.mozilla.org/api/v3/addons/language-tools/?app=android&type=language&appversion=%VERSION%");
-
 /* preference for the locale picker */
 pref("extensions.getLocales.get.url", "");
 pref("extensions.compatability.locales.buildid", "0");
@@ -219,8 +208,6 @@ pref("extensions.webextensions.base-content-security-policy", "script-src 'self'
 pref("extensions.webextensions.default-content-security-policy", "script-src 'self'; object-src 'self';");
 
 pref("extensions.webextensions.background-delayed-startup", true);
-
-pref("extensions.legacy.enabled", false);
 
 /* block popups by default, and notify the user about blocked popups */
 pref("dom.disable_open_during_load", true);

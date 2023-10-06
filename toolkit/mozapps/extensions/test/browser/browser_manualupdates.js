@@ -40,11 +40,6 @@ async function end_test() {
   finish();
 }
 
-add_test(function clearOldTelemetry() {
-  Services.telemetry.clearEvents();
-  run_next_test();
-});
-
 add_test(function() {
   gAvailableCategory = gManagerWindow.gCategories.get(
     "addons://updates/available"
@@ -155,53 +150,6 @@ add_test(async function() {
 });
 
 add_test(function() {
-  function checkReleaseNotesTelemetry() {
-    let snapshot = Services.telemetry.snapshotEvents(
-      Ci.nsITelemetry.DATASET_PRERELEASE_CHANNELS,
-      true
-    );
-    ok(
-      snapshot.parent && snapshot.parent.length > 0,
-      "Got parent telemetry events in the snapshot"
-    );
-
-    let releaseNotesEvents = snapshot.parent
-      .filter(
-        ([ts, category, method]) =>
-          category == "addonsManager" && method == "action"
-      )
-      .map(([ts, category, ...rest]) => rest);
-
-    Assert.deepEqual(
-      releaseNotesEvents,
-      [
-        [
-          "action",
-          "aboutAddons",
-          null,
-          {
-            action: "releaseNotes",
-            type: "extension",
-            addonId: "addon2@tests.mozilla.org",
-            view: "updates",
-          },
-        ],
-        [
-          "action",
-          "aboutAddons",
-          null,
-          {
-            action: "releaseNotes",
-            type: "extension",
-            addonId: "addon2@tests.mozilla.org",
-            view: "updates",
-          },
-        ],
-      ],
-      "The releaseNotes events are tracked"
-    );
-  }
-
   var list = gManagerWindow.document.getElementById("updates-list");
   var item = list.firstChild;
   get_tooltip_info(item).then(({ version }) => {
@@ -269,8 +217,6 @@ add_test(function() {
                   0,
                   "Release notes should have been inserted into container"
                 );
-
-                checkReleaseNotesTelemetry();
 
                 run_next_test();
               },

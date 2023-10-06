@@ -26,7 +26,6 @@ class TestNotifications(PuppeteerMixin, MarionetteTestCase):
     def tearDown(self):
         try:
             self.marionette.clear_pref('extensions.install.requireSecureOrigin')
-            self.marionette.clear_pref('xpinstall.signatures.required')
 
             self.puppeteer.utils.permissions.remove(self.addons_url, 'install')
 
@@ -66,15 +65,6 @@ class TestNotifications(PuppeteerMixin, MarionetteTestCase):
         self.trigger_addon_notification('webextension-signed.xpi')
         self.assertIn(self.browser.notification.origin, self.marionette.baseurl)
         self.assertIsNotNone(self.browser.notification.label)
-
-    def test_addon_install_failed_notification(self):
-        """Trigger add-on blocked notification using an unsigned add-on"""
-        # Ensure that installing unsigned extensions will fail
-        self.marionette.set_pref('xpinstall.signatures.required', True)
-
-        self.trigger_addon_notification(
-            'webextension-unsigned.xpi',
-            notification=AddOnInstallFailedNotification)
 
     def trigger_addon_notification(self, addon, notification=AddOnInstallConfirmationNotification):
         with self.marionette.using_context('content'):

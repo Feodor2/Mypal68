@@ -4,10 +4,6 @@ const BASE =
   "http://mochi.test:8888/browser/browser/components/extensions/test/browser/";
 
 add_task(async function test_management_install() {
-  await SpecialPowers.pushPrefEnv({
-    set: [["xpinstall.signatures.required", false]],
-  });
-
   registerCleanupFunction(async () => {
     await SpecialPowers.popPrefEnv();
   });

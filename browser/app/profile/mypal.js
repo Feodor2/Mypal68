@@ -51,14 +51,6 @@ pref("extensions.webextensions.default-content-security-policy", "script-src 'se
 pref("extensions.webextensions.remote", true);
 pref("extensions.webextensions.background-delayed-startup", true);
 
-// Extensions that should not be flagged as legacy in about:addons
-pref("extensions.legacy.exceptions", "testpilot@cliqz.com,@testpilot-containers,jid1-NeEaf3sAHdKHPA@jetpack,@activity-streams,pulse@mozilla.com,@testpilot-addon,@min-vid,tabcentertest1@mozilla.com,snoozetabs@mozilla.com,speaktome@mozilla.com,hoverpad@mozilla.com");
-
-// Require signed add-ons by default
-pref("extensions.langpacks.signatures.required", false);
-pref("xpinstall.signatures.required", false);
-pref("xpinstall.signatures.devInfoURL", "data:text/plain,");
-
 // Dictionary download preference
 pref("browser.dictionaries.download.url", "data:text/plain,");
 
@@ -717,7 +709,7 @@ pref("browser.preferences.search", true);
 pref("browser.preferences.defaultPerformanceSettings.enabled", true);
 
 pref("browser.download.show_plugins_in_list", true);
-pref("browser.download.hide_plugins_without_extensions", true);
+pref("browser.download.hide_plugins_without_extensions", false);
 
 // Backspace and Shift+Backspace behavior
 // 0 goes Back/Forward
@@ -1581,8 +1573,6 @@ pref("browser.tabs.crashReporting.includeURL", false);
 pref("browser.tabs.crashReporting.requestEmail", false);
 pref("browser.tabs.crashReporting.emailMe", false);
 pref("browser.tabs.crashReporting.email", "");
-
-pref("extensions.legacy.enabled", false);
 
 // How often to check for CPOW timeouts. CPOWs are only timed out by
 // the hang monitor.

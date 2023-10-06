@@ -17,10 +17,21 @@ Don't post a screenshot of the blue screen, as the screen isn't useful for troub
 BSOD happens only on winxp and only when multiprocess enabled, but not for all. Many still use the browser with multiprocess and without BSOD,
 Furthermore there is a certain setting that induces BSOD **layers.omtp.enabled** this stand for off-main-thread painting
 and invented for perfomance. For more data look [#3](https://github.com/Feodor2/Mypal68/issues/3), and please do not make new duplicate reports.
-
+Suddenly restart may be also this error depends of the settings
 
 **IF YOU GOT A CRASH BUT WITHOUT BLUE SCREEN**
 
-Please post drwatson.log only. Do not post any irrelevent logs.
-Drwatsin log is usually inside All Users\Application Data\Microsoft\Dr Watson
+On winxp pease post drwatson.log only. On others look inside windows events
+Drwatson log is usually inside All Users\Application Data\Microsoft\Dr Watson
+Minidump also may be usefull. Do not post any irrelevent logs.
 
+**IF YOU WANT REPORT A SITE**
+
+Report [there](https://github.com/Feodor2/Mypal68/issues/228)
+Put the actual link to the site
+Notice that i never would look to the site which requires the login, including any goolag sites. Please try to find what feature is missig by yourself.
+Then report like for site 'x' is missing feature 'y'
+
+**YOU MAY DONATE**
+
+But only by crypto [Look here](https://github.com/Feodor2/Mypal68/issues/84)

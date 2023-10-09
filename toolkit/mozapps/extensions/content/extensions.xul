@@ -225,9 +225,9 @@
 
               <button id="header-utils-btn" type="menu" data-l10n-id="tools-menu">
                 <menupopup id="utils-menu">
-                  <!--menuitem id="utils-updateNow"
+                  <menuitem id="utils-updateNow"
                             data-l10n-id="extensions-updates-check-for-updates"
-                            command="cmd_findAllUpdates"/-->
+                            command="cmd_findAllUpdates"/>
                   <menuitem id="utils-viewUpdates"
                             data-l10n-id="extensions-updates-view-updates"
                             command="cmd_goToRecentUpdates"/>
@@ -239,16 +239,16 @@
                       data-l10n-id="debug-addons"
                             command="cmd_debugAddons"/>
                   <menuseparator/>
-                  <!--menuitem id="utils-autoUpdateDefault"
+                  <menuitem id="utils-autoUpdateDefault"
                             data-l10n-id="extensions-updates-update-addons-automatically"
                             type="checkbox" autocheck="false"
-                            command="cmd_toggleAutoUpdateDefault"/-->
-                  <!--menuitem id="utils-resetAddonUpdatesToAutomatic"
+                            command="cmd_toggleAutoUpdateDefault"/>
+                  <menuitem id="utils-resetAddonUpdatesToAutomatic"
                             data-l10n-id="extensions-updates-reset-updates-to-automatic"
-                            command="cmd_resetAddonAutoUpdate"/-->
-                  <!--menuitem id="utils-resetAddonUpdatesToManual"
+                            command="cmd_resetAddonAutoUpdate"/>
+                  <menuitem id="utils-resetAddonUpdatesToManual"
                             data-l10n-id="extensions-updates-reset-updates-to-manual"
-                            command="cmd_resetAddonAutoUpdate"/-->
+                            command="cmd_resetAddonAutoUpdate"/>
                   <menuseparator/>
                   <menuitem id="manage-shortcuts"
                             data-l10n-id="manage-extensions-shortcuts"
@@ -547,10 +547,6 @@
                           <row class="detail-row-complex" id="detail-homepage-row" data-l10n-id="detail-home">
                             <label class="detail-row-label" data-l10n-id="detail-home-value"/>
                             <label id="detail-homepage" class="detail-row-value" crop="end" is="text-link"/>
-                          </row>
-                          <row class="detail-row-complex" id="detail-repository-row" data-l10n-id="detail-repository">
-                            <label class="detail-row-label" data-l10n-id="detail-repository-value"/>
-                            <label id="detail-repository" class="detail-row-value" is="text-link"/>
                           </row>
                         </rows>
                       </grid>

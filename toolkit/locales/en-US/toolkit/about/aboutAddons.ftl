@@ -336,7 +336,6 @@ manage-addon-button = Manage
 find-more-addons = Find more add-ons
 
 ## Add-on actions
-report-addon-button = Report
 remove-addon-button = Remove
 disable-addon-button = Disable
 enable-addon-button = Enable

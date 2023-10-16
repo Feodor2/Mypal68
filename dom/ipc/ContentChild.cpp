@@ -2192,6 +2192,9 @@ mozilla::ipc::IPCResult ContentChild::RecvSetCaptivePortalState(
 }
 
 void ContentChild::ActorDestroy(ActorDestroyReason why) {
+
+  gfxPlatform::ShutdownLayersIPC();
+
   if (mForceKillTimer) {
     mForceKillTimer->Cancel();
     mForceKillTimer = nullptr;

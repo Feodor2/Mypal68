@@ -225,6 +225,10 @@ already_AddRefed<TextureHost> TextureHost::Create(
       MOZ_CRASH("GFX: Unsupported Surface type host");
   }
 
+  if (!result) {
+    gfxCriticalNote << "TextureHost creation failure type=" << aDesc.type();
+  }
+
   if (result && WrapWithWebRenderTextureHost(aDeallocator, aBackend, aFlags)) {
     MOZ_ASSERT(aExternalImageId.isSome());
     result =
@@ -574,7 +578,7 @@ void BufferTextureHost::CreateRenderTexture(
                                                  texture.forget());
 }
 
-uint32_t BufferTextureHost::NumSubTextures() const {
+uint32_t BufferTextureHost::NumSubTextures() {
   if (GetFormat() == gfx::SurfaceFormat::YUV) {
     return 3;
   }

@@ -221,8 +221,9 @@ Maybe<TextureHost::ResourceUpdateOp> AsyncImagePipelineManager::UpdateImageKeys(
     return Nothing();
   }
 
-  if (!texture) {
-    // We don't have a new texture, there isn't much we can do.
+  if (!texture || texture->NumSubTextures() == 0) {
+    // We don't have a new texture or texture does not have SubTextures, there
+    // isn't much we can do.
     aKeys = aPipeline->mKeys;
     return Nothing();
   }
@@ -241,6 +242,7 @@ Maybe<TextureHost::ResourceUpdateOp> AsyncImagePipelineManager::UpdateImageKeys(
   // The non-external image code path falls back to converting the texture into
   // an rgb image.
   auto numKeys = useExternalImage ? texture->NumSubTextures() : 1;
+  MOZ_ASSERT(numKeys > 0);
 
   // If we already had a texture and the format hasn't changed, better to reuse
   // the image keys than create new ones.

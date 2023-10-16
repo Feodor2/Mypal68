@@ -119,8 +119,6 @@ static void StartRDDMacSandbox() {
 mozilla::ipc::IPCResult RDDParent::RecvInit(
     nsTArray<GfxVarUpdate>&& vars, const Maybe<FileDescriptor>& aBrokerFd,
     bool aStartMacSandbox) {
-  Unused << SendInitComplete();
-
   for (const auto& var : vars) {
     gfxVars::ApplyUpdate(var);
   }
@@ -172,9 +170,9 @@ mozilla::ipc::IPCResult RDDParent::RecvNewContentRemoteDecoderManager(
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult RDDParent::RecvCreateVideoBridgeToParentProcess(
+mozilla::ipc::IPCResult RDDParent::RecvInitVideoBridge(
     Endpoint<PVideoBridgeChild>&& aEndpoint) {
-  if (!RemoteDecoderManagerParent::CreateVideoBridgeToParentProcess(
+  if (!RemoteDecoderManagerParent::CreateVideoBridgeToOtherProcess(
           std::move(aEndpoint))) {
     return IPC_FAIL_NO_REASON(this);
   }

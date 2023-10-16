@@ -866,6 +866,7 @@ enum class WebRenderError : int8_t {
   INITIALIZE = 0,
   MAKE_CURRENT,
   RENDER,
+  NEW_SURFACE,
 
   Sentinel /* this must be last for serialization purposes. */
 };

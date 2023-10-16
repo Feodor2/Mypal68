@@ -3711,17 +3711,6 @@ var XPIInstall = {
 
     let addon = await loadManifestFromFile(source, location);
 
-    if (
-      XPIDatabase.mustSign(addon.type) &&
-      addon.signedState <= AddonManager.SIGNEDSTATE_MISSING
-    ) {
-      throw new Error(
-        `Refusing to install staged add-on ${id} with signed state ${
-          addon.signedState
-        }`
-      );
-    }
-
     addon.importMetadata(metadata);
 
     logger.debug(`Processing install of ${id} in ${location.name}`);

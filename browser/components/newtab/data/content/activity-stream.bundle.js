@@ -461,26 +461,6 @@ function debounce(func, wait) {
 }
 
 class _Base extends react__WEBPACK_IMPORTED_MODULE_7___default.a.PureComponent {
-  componentWillMount() {
-    if (this.props.isFirstrun) {
-      global.document.body.classList.add("welcome", "hide-main");
-    }
-  }
-
-  componentWillUnmount() {
-    this.updateTheme();
-  }
-
-  componentWillUpdate() {
-    this.updateTheme();
-  }
-
-  updateTheme() {
-    const bodyClassName = ["activity-stream", // If we skipped the about:welcome overlay and removed the CSS classes
-    // we don't want to add them back to the Activity Stream view
-    document.body.classList.contains("welcome") ? "welcome" : "", document.body.classList.contains("hide-main") ? "hide-main" : "", document.body.classList.contains("inline-onboarding") ? "inline-onboarding" : ""].filter(v => v).join(" ");
-    global.document.body.className = bodyClassName;
-  }
 
   render() {
     const {

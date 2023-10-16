@@ -406,6 +406,7 @@ var CustomizableUIInternal = {
         "fullscreen-button",
         "find-button",
         "preferences-button",
+        "preferencesA-button",
         "add-ons-button",
         "sync-button",
       ];

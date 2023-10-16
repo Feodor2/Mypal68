@@ -858,8 +858,8 @@ if (Services.prefs.getBoolPref("identity.fxaccounts.enabled")) {
 let preferencesButton = {
   id: "preferences-button",
   onCommand(aEvent) {
-    let win = Services.wm.getMostRecentWindow("navigator:browser");
-    win.openTrustedLinkIn("about:config", "tab");
+    let win = aEvent.target.ownerGlobal;
+    win.openPreferences(undefined);
   },
 };
 if (AppConstants.platform == "win") {
@@ -872,6 +872,14 @@ if (AppConstants.platform == "win") {
   preferencesButton.tooltiptext = "preferences-button.tooltiptext2";
 }
 CustomizableWidgets.push(preferencesButton);
+
+CustomizableWidgets.push({
+  id: "preferencesA-button",
+  onCommand(e) {
+    let win = e.target.ownerGlobal;
+    win.openTrustedLinkIn("about:config", "tab");
+  },
+});
 
 if (Services.prefs.getBoolPref("privacy.panicButton.enabled")) {
   CustomizableWidgets.push({

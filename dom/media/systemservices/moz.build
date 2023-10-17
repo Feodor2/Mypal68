@@ -13,7 +13,6 @@ if CONFIG['MOZ_WEBRTC']:
     UNIFIED_SOURCES += [
         'CamerasChild.cpp',
         'CamerasParent.cpp',
-        'ShmemPool.cpp',
         'VideoEngine.cpp',
         'VideoFrameUtils.cpp'
     ]
@@ -71,6 +70,7 @@ UNIFIED_SOURCES += [
     'MediaSystemResourceManagerParent.cpp',
     'MediaSystemResourceService.cpp',
     'MediaUtils.cpp',
+    'ShmemPool.cpp',
 ]
 IPDL_SOURCES += [
     'PCameras.ipdl',

@@ -465,9 +465,8 @@ choose-bookmark =
 
 ## Home Section - Firefox Home Content Customization
 
-home-prefs-content-header = Firefox Home Content
-home-prefs-content-description = Choose what content you want on your Firefox Home screen.
-home-prefs-content-discovery-description = Content Discovery in Firefox Home allows you to discover high-quality, relevant articles from across the web.
+home-prefs-content-header = Mypal Home Content
+home-prefs-content-description = Choose what content you want on your Mypal Home screen.
 
 home-prefs-search-header =
     .label = Web Search
@@ -484,8 +483,13 @@ home-prefs-highlights-options-bookmarks =
     .label = Bookmarks
 home-prefs-highlights-option-most-recent-download =
     .label = Most Recent Download
-home-prefs-highlights-option-saved-to-pocket =
-    .label = Pages Saved to { -pocket-brand-name }
+
+home-prefs-sections-rows-option =
+    .label =
+        { $num ->
+            [one] { $num } row
+           *[other] { $num } rows
+        }
 
 ## Search Section
 

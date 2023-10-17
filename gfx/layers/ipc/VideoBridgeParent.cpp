@@ -5,6 +5,7 @@
 #include "VideoBridgeParent.h"
 #include "CompositorThread.h"
 #include "mozilla/layers/TextureHost.h"
+#include "mozilla/layers/VideoBridgeUtils.h"
 
 namespace mozilla {
 namespace layers {
@@ -12,27 +13,66 @@ namespace layers {
 using namespace mozilla::ipc;
 using namespace mozilla::gfx;
 
-static VideoBridgeParent* sVideoBridgeSingleton;
+static VideoBridgeParent* sVideoBridgeFromRddProcess;
+static VideoBridgeParent* sVideoBridgeFromGpuProcess;
 
-VideoBridgeParent::VideoBridgeParent() : mClosed(false) {
+VideoBridgeParent::VideoBridgeParent(VideoBridgeSource aSource)
+    : mCompositorThreadHolder(CompositorThreadHolder::GetSingleton()),
+      mClosed(false) {
   mSelfRef = this;
-  sVideoBridgeSingleton = this;
-  mCompositorThreadRef = CompositorThreadHolder::GetSingleton();
+  switch (aSource) {
+    default:
+      MOZ_CRASH("Unhandled case");
+    case VideoBridgeSource::RddProcess:
+      sVideoBridgeFromRddProcess = this;
+      break;
+    case VideoBridgeSource::GpuProcess:
+      sVideoBridgeFromGpuProcess = this;
+      break;
+  }
 }
 
-VideoBridgeParent::~VideoBridgeParent() { sVideoBridgeSingleton = nullptr; }
-
-void VideoBridgeParent::Open(Endpoint<PVideoBridgeParent>&& aEndpoint) {
-  RefPtr<VideoBridgeParent> parent = new VideoBridgeParent();
-  if (!aEndpoint.Bind(parent)) {
-    // We can't recover from this.
-    MOZ_CRASH("Failed to bind RemoteDecoderManagerParent to endpoint");
+VideoBridgeParent::~VideoBridgeParent() {
+  if (sVideoBridgeFromRddProcess == this) {
+    sVideoBridgeFromRddProcess = nullptr;
+  }
+  if (sVideoBridgeFromGpuProcess == this) {
+    sVideoBridgeFromGpuProcess = nullptr;
   }
 }
 
 /* static */
-VideoBridgeParent* VideoBridgeParent::GetSingleton() {
-  return sVideoBridgeSingleton;
+void VideoBridgeParent::Open(Endpoint<PVideoBridgeParent>&& aEndpoint,
+                             VideoBridgeSource aSource) {
+  RefPtr<VideoBridgeParent> parent = new VideoBridgeParent(aSource);
+
+  CompositorThreadHolder::Loop()->PostTask(
+      NewRunnableMethod<Endpoint<PVideoBridgeParent>&&>(
+          "gfx::layers::VideoBridgeParent::Bind", parent,
+          &VideoBridgeParent::Bind, std::move(aEndpoint)));
+}
+
+void VideoBridgeParent::Bind(Endpoint<PVideoBridgeParent>&& aEndpoint) {
+  if (!aEndpoint.Bind(this)) {
+    // We can't recover from this.
+    MOZ_CRASH("Failed to bind VideoBridgeParent to endpoint");
+  }
+}
+
+/* static */
+VideoBridgeParent* VideoBridgeParent::GetSingleton(
+    Maybe<VideoBridgeSource>& aSource) {
+  MOZ_ASSERT(aSource.isSome());
+  switch (aSource.value()) {
+    default:
+      MOZ_CRASH("Unhandled case");
+    case VideoBridgeSource::RddProcess:
+      MOZ_ASSERT(sVideoBridgeFromRddProcess);
+      return sVideoBridgeFromRddProcess;
+    case VideoBridgeSource::GpuProcess:
+      MOZ_ASSERT(sVideoBridgeFromGpuProcess);
+      return sVideoBridgeFromGpuProcess;
+  }
 }
 
 TextureHost* VideoBridgeParent::LookupTexture(uint64_t aSerial) {
@@ -45,7 +85,7 @@ void VideoBridgeParent::ActorDestroy(ActorDestroyReason aWhy) {
 }
 
 void VideoBridgeParent::ActorDealloc() {
-  mCompositorThreadRef = nullptr;
+  mCompositorThreadHolder = nullptr;
   mSelfRef = nullptr;
 }
 

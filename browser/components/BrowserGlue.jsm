@@ -2917,17 +2917,6 @@ BrowserGlue.prototype = {
       );
     }
 
-    if (currentUIVersion < 76) {
-      // Clear old onboarding prefs from profile (bug 1462415)
-      let onboardingPrefs = Services.prefs.getBranch("browser.onboarding.");
-      if (onboardingPrefs) {
-        let onboardingPrefsArray = onboardingPrefs.getChildList("");
-        for (let item of onboardingPrefsArray) {
-          Services.prefs.clearUserPref("browser.onboarding." + item);
-        }
-      }
-    }
-
     if (currentUIVersion < 77) {
       // Remove currentset from all the toolbars
       let toolbars = [

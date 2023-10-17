@@ -206,7 +206,7 @@ bool WebRenderTextureHost::HasIntermediateBuffer() const {
   return mWrappedTextureHost->HasIntermediateBuffer();
 }
 
-uint32_t WebRenderTextureHost::NumSubTextures() const {
+uint32_t WebRenderTextureHost::NumSubTextures() {
   MOZ_ASSERT(mWrappedTextureHost);
   return mWrappedTextureHost->NumSubTextures();
 }

@@ -650,16 +650,29 @@ var gEventManager = {
 
     // The checkbox needs to reflect that both prefs need to be true
     // for updates to be checked for and applied automatically
-    /*document
+    document
       .getElementById("utils-autoUpdateDefault")
       .setAttribute("checked", updateEnabled && autoUpdateDefault);
 
     document.getElementById(
-      "utils-resetAddonUpdatesToAutomatic"
-    ).hidden = !autoUpdateDefault;
+      "utils-updateNow"
+    ).hidden = !updateEnabled;
+    let e = document.getElementById(
+      "utils-viewUpdates"
+    );
+    e.hidden = !updateEnabled;
+    e.nextElementSibling.hidden = !updateEnabled;
     document.getElementById(
+      "utils-autoUpdateDefault"
+    ).hidden = !updateEnabled;
+    document.getElementById(
+      "utils-resetAddonUpdatesToAutomatic"
+    ).hidden = !autoUpdateDefault || !updateEnabled;
+    e = document.getElementById(
       "utils-resetAddonUpdatesToManual"
-    ).hidden = autoUpdateDefault;*/
+    );
+    e.hidden = autoUpdateDefault || !updateEnabled;
+    e.nextElementSibling.hidden = !updateEnabled;
   },
 
   onCompatibilityModeChanged() {
@@ -2564,27 +2577,18 @@ var gDetailView = {
       updateDateRow.value = null;
     }
 
-    // TODO if the add-on was downloaded from releases.mozilla.org link to the
-    // AMO profile (bug 590344)
-    if (false) {
-      document.getElementById("detail-repository-row").hidden = false;
-      document.getElementById("detail-homepage-row").hidden = true;
-      var repository = document.getElementById("detail-repository");
-      repository.value = aAddon.homepageURL;
-      repository.href = aAddon.homepageURL;
-    } else if (aAddon.homepageURL) {
-      document.getElementById("detail-repository-row").hidden = true;
+    if (aAddon.homepageURL) {
       document.getElementById("detail-homepage-row").hidden = false;
       var homepage = document.getElementById("detail-homepage");
       homepage.value = aAddon.homepageURL;
       homepage.href = aAddon.homepageURL;
     } else {
-      document.getElementById("detail-repository-row").hidden = true;
       document.getElementById("detail-homepage-row").hidden = true;
     }
 
     var canUpdate = !aIsRemote && hasPermission(aAddon, "upgrade");
-    document.getElementById("detail-updates-row").hidden = !canUpdate;
+    document.getElementById("detail-updates-row").hidden = !canUpdate
+      || !AddonManager.updateEnabled;
 
     if ("applyBackgroundUpdates" in aAddon) {
       this._autoUpdate.hidden = false;

@@ -1243,10 +1243,10 @@ class AddonDetails extends HTMLElement {
     this.querySelector(
       ".addon-detail-contribute"
     ).hidden = !addon.contributionURL;
-    /*this.querySelector(".addon-detail-row-updates").hidden = !hasPermission(
+    this.querySelector(".addon-detail-row-updates").hidden = !hasPermission(
       addon,
       "upgrade"
-    );*/
+    ) || !AddonManager.updateEnabled;
 
     // By default, all private browsing rows are hidden. Possibly show one.
     if (allowPrivateBrowsingByDefault || addon.type != "extension") {
@@ -1491,7 +1491,6 @@ class AddonCard extends HTMLElement {
             this.panel.hide();
             let {
               remove,
-              report,
             } = windowRoot.ownerGlobal.promptRemoveExtension(addon);
             let value = remove ? "accepted" : "cancelled";
             if (remove) {

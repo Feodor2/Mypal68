@@ -578,7 +578,7 @@ void BufferTextureHost::CreateRenderTexture(
                                                  texture.forget());
 }
 
-uint32_t BufferTextureHost::NumSubTextures() {
+uint32_t BufferTextureHost::NumSubTextures() const {
   if (GetFormat() == gfx::SurfaceFormat::YUV) {
     return 3;
   }

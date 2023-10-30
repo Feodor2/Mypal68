@@ -49,7 +49,7 @@ class GPUVideoTextureHost : public TextureHost {
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
 
-  uint32_t NumSubTextures() override;
+  uint32_t NumSubTextures() const override;
 
   void PushResourceUpdates(wr::TransactionBuilder& aResources,
                            ResourceUpdateOp aOp,
@@ -62,14 +62,9 @@ class GPUVideoTextureHost : public TextureHost {
                         const Range<wr::ImageKey>& aImageKeys) override;
 
  protected:
-  GPUVideoTextureHost(TextureFlags aFlags,
-                      const SurfaceDescriptorGPUVideo& aDescriptor);
-
-  TextureHost* EnsureWrappedTextureHost();
+  GPUVideoTextureHost(TextureFlags aFlags, TextureHost* aWrappedTextureHost);
 
   RefPtr<TextureHost> mWrappedTextureHost;
-  SurfaceDescriptorGPUVideo mDescriptor;
-  wr::MaybeExternalImageId mExternalImageId;
 };
 
 }  // namespace layers

@@ -14,7 +14,6 @@ include protocol PProfiler;
 include protocol PVRGPU;
 include protocol PVRManager;
 #endif
-include protocol PVideoBridge;
 include protocol PVsyncBridge;
 include protocol PUiCompositorController;
 include protocol PRemoteDecoderManager;
@@ -59,7 +58,6 @@ parent:
   async InitCompositorManager(Endpoint<PCompositorManagerParent> endpoint);
   async InitVsyncBridge(Endpoint<PVsyncBridgeParent> endpoint);
   async InitImageBridge(Endpoint<PImageBridgeParent> endpoint);
-  async InitVideoBridge(Endpoint<PVideoBridgeParent> endpoint);
 #ifdef MOZ_VR
   async InitVRManager(Endpoint<PVRManagerParent> endpoint);
   // Forward GPU process its endpoints to the VR process.

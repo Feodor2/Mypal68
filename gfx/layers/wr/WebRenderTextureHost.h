@@ -68,7 +68,7 @@ class WebRenderTextureHost : public TextureHost {
 
   bool HasIntermediateBuffer() const override;
 
-  uint32_t NumSubTextures() override;
+  uint32_t NumSubTextures() const override;
 
   void PushResourceUpdates(wr::TransactionBuilder& aResources,
                            ResourceUpdateOp aOp,

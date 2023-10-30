@@ -64,7 +64,7 @@ class MacIOSurfaceTextureHostOGL : public TextureHost {
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
 
-  uint32_t NumSubTextures() override;
+  uint32_t NumSubTextures() const override;
 
   void PushResourceUpdates(wr::TransactionBuilder& aResources,
                            ResourceUpdateOp aOp,

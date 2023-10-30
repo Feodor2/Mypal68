@@ -1022,10 +1022,9 @@ mozilla::ipc::IPCResult ContentParent::RecvLaunchRDDProcess(
       Preferences::GetBool("media.rdd-process.enabled", false)) {
     RDDProcessManager* rdd = RDDProcessManager::Get();
     if (rdd) {
-      bool rddOpened = rdd->LaunchRDDProcess();
-      if (rddOpened) {
-        rddOpened = rdd->CreateContentBridge(OtherPid(), aEndpoint);
-      }
+      rdd->LaunchRDDProcess();
+
+      bool rddOpened = rdd->CreateContentBridge(OtherPid(), aEndpoint);
 
       if (NS_WARN_IF(!rddOpened)) {
         *aRv = NS_ERROR_NOT_AVAILABLE;

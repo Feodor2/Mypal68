@@ -63,8 +63,9 @@ MediaResult RemoteAudioDecoderChild::InitIPDL(
   mIPDLSelfRef = this;
   bool success = false;
   nsCString errorDescription;
+  layers::TextureFactoryIdentifier defaultIdent;
   Unused << manager->SendPRemoteDecoderConstructor(
-      this, aAudioInfo, aOptions, Nothing(), &success, &errorDescription);
+      this, aAudioInfo, aOptions, defaultIdent, &success, &errorDescription);
   return success ? MediaResult(NS_OK)
                  : MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR, errorDescription);
 }

@@ -6,7 +6,6 @@
 #define MOZILLA_GFX_VIDEOBRIDGECHILD_H
 
 #include "mozilla/layers/PVideoBridgeChild.h"
-#include "mozilla/layers/VideoBridgeUtils.h"
 #include "ISurfaceAllocator.h"
 #include "TextureForwarder.h"
 
@@ -18,7 +17,7 @@ class VideoBridgeChild final : public PVideoBridgeChild,
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(VideoBridgeChild, override);
 
-  static void StartupForGPUProcess();
+  static void Startup();
   static void Shutdown();
 
   static VideoBridgeChild* GetSingleton();
@@ -62,11 +61,6 @@ class VideoBridgeChild final : public PVideoBridgeChild,
   bool IsSameProcess() const override;
 
   bool CanSend() { return mCanSend; }
-
-  static void Open(Endpoint<PVideoBridgeChild>&& aEndpoint);
-
- protected:
-  void HandleFatalError(const char* aMsg) const override;
 
  private:
   VideoBridgeChild();

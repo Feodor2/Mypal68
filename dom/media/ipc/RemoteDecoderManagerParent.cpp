@@ -73,7 +73,6 @@ class RemoteDecoderManagerThreadShutdownObserver : public nsIObserver {
                      const char16_t* aData) override {
     MOZ_ASSERT(strcmp(aTopic, NS_XPCOM_SHUTDOWN_OBSERVER_ID) == 0);
 
-    RemoteDecoderManagerParent::ShutdownVideoBridge();
     RemoteDecoderManagerParent::ShutdownThreads();
     return NS_OK;
   }
@@ -113,9 +112,8 @@ bool RemoteDecoderManagerParent::StartupThreads() {
 #endif
   if (XRE_IsGPUProcess()) {
     sRemoteDecoderManagerParentThread->Dispatch(
-        NS_NewRunnableFunction(
-            "RemoteDecoderManagerParent::StartupThreads",
-            []() { layers::VideoBridgeChild::StartupForGPUProcess(); }),
+        NS_NewRunnableFunction("RemoteDecoderManagerParent::StartupThreads",
+                               []() { layers::VideoBridgeChild::Startup(); }),
         NS_DISPATCH_NORMAL);
   }
 
@@ -172,25 +170,6 @@ bool RemoteDecoderManagerParent::CreateForContent(
   return true;
 }
 
-bool RemoteDecoderManagerParent::CreateVideoBridgeToOtherProcess(
-    Endpoint<PVideoBridgeChild>&& aEndpoint) {
-  // We never want to decode in the GPU process, but output
-  // frames to the parent process.
-  MOZ_ASSERT(XRE_GetProcessType() == GeckoProcessType_RDD);
-  MOZ_ASSERT(NS_IsMainThread());
-
-  if (!StartupThreads()) {
-    return false;
-  }
-
-  RefPtr<Runnable> task =
-      NewRunnableFunction("gfx::VideoBridgeChild::Open",
-                          &VideoBridgeChild::Open, std::move(aEndpoint));
-  sRemoteDecoderManagerParentThread->Dispatch(task.forget(),
-                                              NS_DISPATCH_NORMAL);
-  return true;
-}
-
 RemoteDecoderManagerParent::RemoteDecoderManagerParent(
     RemoteDecoderManagerThreadHolder* aHolder)
     : mThreadHolder(aHolder) {
@@ -209,7 +188,7 @@ void RemoteDecoderManagerParent::ActorDestroy(
 PRemoteDecoderParent* RemoteDecoderManagerParent::AllocPRemoteDecoderParent(
     const RemoteDecoderInfoIPDL& aRemoteDecoderInfo,
     const CreateDecoderParams::OptionSet& aOptions,
-    const Maybe<layers::TextureFactoryIdentifier>& aIdentifier, bool* aSuccess,
+    const layers::TextureFactoryIdentifier& aIdentifier, bool* aSuccess,
     nsCString* aErrorDescription) {
   RefPtr<TaskQueue> decodeTaskQueue =
       new TaskQueue(GetMediaThreadPool(MediaThreadType::PLATFORM_DECODER),

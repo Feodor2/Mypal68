@@ -10,9 +10,9 @@
 namespace mozilla {
 namespace layers {
 
-GPUVideoTextureHost::GPUVideoTextureHost(
-    TextureFlags aFlags, const SurfaceDescriptorGPUVideo& aDescriptor)
-    : TextureHost(aFlags), mDescriptor(aDescriptor) {
+GPUVideoTextureHost::GPUVideoTextureHost(TextureFlags aFlags,
+                                         TextureHost* aWrappedTextureHost)
+    : TextureHost(aFlags), mWrappedTextureHost(aWrappedTextureHost) {
   MOZ_COUNT_CTOR(GPUVideoTextureHost);
 }
 
@@ -22,62 +22,48 @@ GPUVideoTextureHost::~GPUVideoTextureHost() {
 
 GPUVideoTextureHost* GPUVideoTextureHost::CreateFromDescriptor(
     TextureFlags aFlags, const SurfaceDescriptorGPUVideo& aDescriptor) {
-  return new GPUVideoTextureHost(aFlags, aDescriptor);
-}
-
-TextureHost* GPUVideoTextureHost::EnsureWrappedTextureHost() {
-  if (mWrappedTextureHost) {
-    return mWrappedTextureHost;
+  TextureHost* wrappedTextureHost =
+      VideoBridgeParent::GetSingleton()->LookupTexture(aDescriptor.handle());
+  if (!wrappedTextureHost) {
+    return nullptr;
   }
-
-  // In the future when the RDD process has a PVideoBridge connection,
-  // then there might be two VideoBridgeParents (one within the GPU process,
-  // one from RDD). We'll need to flag which one to use to lookup our
-  // descriptor, or just try both.
-  mWrappedTextureHost =
-      VideoBridgeParent::GetSingleton(mDescriptor.source())->LookupTexture(mDescriptor.handle());
-
-  if (mWrappedTextureHost && mExternalImageId.isSome()) {
-    mWrappedTextureHost->CreateRenderTexture(mExternalImageId.ref());
-  }
-
-  return mWrappedTextureHost;
+  return new GPUVideoTextureHost(aFlags, wrappedTextureHost);
 }
 
 bool GPUVideoTextureHost::Lock() {
-  if (!EnsureWrappedTextureHost()) {
+  if (!mWrappedTextureHost) {
     return false;
   }
-  return EnsureWrappedTextureHost()->Lock();
+  return mWrappedTextureHost->Lock();
 }
 
 void GPUVideoTextureHost::Unlock() {
-  if (!EnsureWrappedTextureHost()) {
+  if (!mWrappedTextureHost) {
     return;
   }
-  EnsureWrappedTextureHost()->Unlock();
+  mWrappedTextureHost->Unlock();
 }
 
 bool GPUVideoTextureHost::BindTextureSource(
     CompositableTextureSourceRef& aTexture) {
-  if (!EnsureWrappedTextureHost()) {
+  if (!mWrappedTextureHost) {
     return false;
   }
-  return EnsureWrappedTextureHost()->BindTextureSource(aTexture);
+  return mWrappedTextureHost->BindTextureSource(aTexture);
 }
 
 bool GPUVideoTextureHost::AcquireTextureSource(
     CompositableTextureSourceRef& aTexture) {
-  if (!EnsureWrappedTextureHost()) {
+  if (!mWrappedTextureHost) {
     return false;
   }
-  return EnsureWrappedTextureHost()->AcquireTextureSource(aTexture);
+  return mWrappedTextureHost->AcquireTextureSource(aTexture);
 }
 
 void GPUVideoTextureHost::SetTextureSourceProvider(
     TextureSourceProvider* aProvider) {
-  if (EnsureWrappedTextureHost()) {
-    EnsureWrappedTextureHost()->SetTextureSourceProvider(aProvider);
+  if (mWrappedTextureHost) {
+    mWrappedTextureHost->SetTextureSourceProvider(aProvider);
   }
 }
 
@@ -111,62 +97,38 @@ gfx::SurfaceFormat GPUVideoTextureHost::GetFormat() const {
 
 bool GPUVideoTextureHost::HasIntermediateBuffer() const {
   MOZ_ASSERT(mWrappedTextureHost);
-  if (!mWrappedTextureHost) {
-    return false;
-  }
 
   return mWrappedTextureHost->HasIntermediateBuffer();
 }
 
 void GPUVideoTextureHost::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
-  MOZ_ASSERT(mExternalImageId.isNothing());
+  MOZ_ASSERT(mWrappedTextureHost);
 
-  mExternalImageId = Some(aExternalImageId);
-
-  // When mWrappedTextureHost already exist, call CreateRenderTexture() here.
-  // In other cases, EnsureWrappedTextureHost() handles CreateRenderTexture().
-
-  if (mWrappedTextureHost) {
-    mWrappedTextureHost->CreateRenderTexture(aExternalImageId);
-    return;
-  }
-
-  MOZ_ASSERT(EnsureWrappedTextureHost());
-  EnsureWrappedTextureHost();
+  mWrappedTextureHost->CreateRenderTexture(aExternalImageId);
 }
 
-uint32_t GPUVideoTextureHost::NumSubTextures() {
-  MOZ_ASSERT(EnsureWrappedTextureHost());
-  if (!EnsureWrappedTextureHost()) {
-    return 0;
-  }
-  return EnsureWrappedTextureHost()->NumSubTextures();
+uint32_t GPUVideoTextureHost::NumSubTextures() const {
+  MOZ_ASSERT(mWrappedTextureHost);
+  return mWrappedTextureHost->NumSubTextures();
 }
 
 void GPUVideoTextureHost::PushResourceUpdates(
     wr::TransactionBuilder& aResources, ResourceUpdateOp aOp,
     const Range<wr::ImageKey>& aImageKeys, const wr::ExternalImageId& aExtID) {
-  MOZ_ASSERT(EnsureWrappedTextureHost());
-  if (!EnsureWrappedTextureHost()) {
-    return;
-  }
-  EnsureWrappedTextureHost()->PushResourceUpdates(aResources, aOp, aImageKeys,
-                                                  aExtID);
+  MOZ_ASSERT(mWrappedTextureHost);
+  mWrappedTextureHost->PushResourceUpdates(aResources, aOp, aImageKeys, aExtID);
 }
 
 void GPUVideoTextureHost::PushDisplayItems(
     wr::DisplayListBuilder& aBuilder, const wr::LayoutRect& aBounds,
     const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
     const Range<wr::ImageKey>& aImageKeys) {
-  MOZ_ASSERT(EnsureWrappedTextureHost());
+  MOZ_ASSERT(mWrappedTextureHost);
   MOZ_ASSERT(aImageKeys.length() > 0);
-  if (!EnsureWrappedTextureHost()) {
-    return;
-  }
 
-  EnsureWrappedTextureHost()->PushDisplayItems(aBuilder, aBounds, aClip,
-                                               aFilter, aImageKeys);
+  mWrappedTextureHost->PushDisplayItems(aBuilder, aBounds, aClip, aFilter,
+                                        aImageKeys);
 }
 
 }  // namespace layers

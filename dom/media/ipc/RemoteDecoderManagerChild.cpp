@@ -136,7 +136,7 @@ AbstractThread* RemoteDecoderManagerChild::GetManagerAbstractThread() {
 PRemoteDecoderChild* RemoteDecoderManagerChild::AllocPRemoteDecoderChild(
     const RemoteDecoderInfoIPDL& /* not used */,
     const CreateDecoderParams::OptionSet& aOptions,
-    const Maybe<layers::TextureFactoryIdentifier>& aIdentifier, bool* aSuccess,
+    const layers::TextureFactoryIdentifier& aIdentifier, bool* aSuccess,
     nsCString* /* not used */) {
   // RemoteDecoderModule is responsible for creating RemoteDecoderChild
   // classes.
@@ -153,10 +153,6 @@ bool RemoteDecoderManagerChild::DeallocPRemoteDecoderChild(
   return true;
 }
 
-RemoteDecoderManagerChild::RemoteDecoderManagerChild(
-    layers::VideoBridgeSource aSource)
-    : mSource(aSource) {}
-
 void RemoteDecoderManagerChild::OpenForRDDProcess(
     Endpoint<PRemoteDecoderManagerChild>&& aEndpoint) {
   MOZ_ASSERT(NS_GetCurrentThread() == GetManagerThread());
@@ -172,8 +168,7 @@ void RemoteDecoderManagerChild::OpenForRDDProcess(
   }
   sRemoteDecoderManagerChildForRDDProcess = nullptr;
   if (aEndpoint.IsValid()) {
-    RefPtr<RemoteDecoderManagerChild> manager =
-        new RemoteDecoderManagerChild(VideoBridgeSource::RddProcess);
+    RefPtr<RemoteDecoderManagerChild> manager = new RemoteDecoderManagerChild();
     if (aEndpoint.Bind(manager)) {
       sRemoteDecoderManagerChildForRDDProcess = manager;
       manager->InitIPDL();
@@ -187,8 +182,7 @@ void RemoteDecoderManagerChild::OpenForGPUProcess(
   // fail since this is as close to being recreated as we will ever be.
   sRemoteDecoderManagerChildForGPUProcess = nullptr;
   if (aEndpoint.IsValid()) {
-    RefPtr<RemoteDecoderManagerChild> manager =
-        new RemoteDecoderManagerChild(VideoBridgeSource::GpuProcess);
+    RefPtr<RemoteDecoderManagerChild> manager = new RemoteDecoderManagerChild();
     if (aEndpoint.Bind(manager)) {
       sRemoteDecoderManagerChildForGPUProcess = manager;
       manager->InitIPDL();

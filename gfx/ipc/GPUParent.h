@@ -44,8 +44,6 @@ class GPUParent final : public PGPUParent {
       Endpoint<PVsyncBridgeParent>&& aVsyncEndpoint);
   mozilla::ipc::IPCResult RecvInitImageBridge(
       Endpoint<PImageBridgeParent>&& aEndpoint);
-  mozilla::ipc::IPCResult RecvInitVideoBridge(
-      Endpoint<PVideoBridgeParent>&& aEndpoint);
 #ifdef MOZ_VR
   mozilla::ipc::IPCResult RecvInitVRManager(
       Endpoint<PVRManagerParent>&& aEndpoint);

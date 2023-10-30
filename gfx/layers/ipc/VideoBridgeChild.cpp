@@ -5,52 +5,41 @@
 #include "VideoBridgeChild.h"
 #include "VideoBridgeParent.h"
 #include "CompositorThread.h"
-#include "mozilla/dom/ContentChild.h"
 
 namespace mozilla {
 namespace layers {
 
-StaticRefPtr<VideoBridgeChild> sVideoBridge;
+StaticRefPtr<VideoBridgeChild> sVideoBridgeChildSingleton;
 
 /* static */
-void VideoBridgeChild::StartupForGPUProcess() {
-  ipc::Endpoint<PVideoBridgeParent> parentPipe;
-  ipc::Endpoint<PVideoBridgeChild> childPipe;
+void VideoBridgeChild::Startup() {
+  sVideoBridgeChildSingleton = new VideoBridgeChild();
+  RefPtr<VideoBridgeParent> parent = new VideoBridgeParent();
 
-  PVideoBridge::CreateEndpoints(base::GetCurrentProcId(),
-                                base::GetCurrentProcId(), &parentPipe,
-                                &childPipe);
+  MessageLoop* loop = CompositorThreadHolder::Loop();
 
-  VideoBridgeChild::Open(std::move(childPipe));
-  VideoBridgeParent::Open(std::move(parentPipe), VideoBridgeSource::GpuProcess);
-}
-
-void VideoBridgeChild::Open(Endpoint<PVideoBridgeChild>&& aEndpoint) {
-  MOZ_ASSERT(!sVideoBridge || !sVideoBridge->CanSend());
-  sVideoBridge = new VideoBridgeChild();
-
-  if (!aEndpoint.Bind(sVideoBridge)) {
-    // We can't recover from this.
-    MOZ_CRASH("Failed to bind VideoBridgeChild to endpoint");
-  }
+  sVideoBridgeChildSingleton->Open(parent->GetIPCChannel(), loop,
+                                   ipc::ChildSide);
+  sVideoBridgeChildSingleton->mIPDLSelfRef = sVideoBridgeChildSingleton;
+  parent->SetOtherProcessId(base::GetCurrentProcId());
 }
 
 /* static */
 void VideoBridgeChild::Shutdown() {
-  if (sVideoBridge) {
-    sVideoBridge->Close();
-    sVideoBridge = nullptr;
+  if (sVideoBridgeChildSingleton) {
+    sVideoBridgeChildSingleton->Close();
+    sVideoBridgeChildSingleton = nullptr;
   }
 }
 
 VideoBridgeChild::VideoBridgeChild()
-    : mIPDLSelfRef(this),
-      mMessageLoop(MessageLoop::current()),
-      mCanSend(true) {}
+    : mMessageLoop(MessageLoop::current()), mCanSend(true) {}
 
 VideoBridgeChild::~VideoBridgeChild() {}
 
-VideoBridgeChild* VideoBridgeChild::GetSingleton() { return sVideoBridge; }
+VideoBridgeChild* VideoBridgeChild::GetSingleton() {
+  return sVideoBridgeChildSingleton;
+}
 
 bool VideoBridgeChild::AllocUnsafeShmem(
     size_t aSize, ipc::SharedMemory::SharedMemoryType aType,
@@ -99,10 +88,6 @@ PTextureChild* VideoBridgeChild::CreateTexture(
 
 bool VideoBridgeChild::IsSameProcess() const {
   return OtherPid() == base::GetCurrentProcId();
-}
-
-void VideoBridgeChild::HandleFatalError(const char* aMsg) const {
-  dom::ContentChild::FatalErrorIfNotUsingGPUProcess(aMsg, OtherPid());
 }
 
 }  // namespace layers

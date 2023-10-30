@@ -21,7 +21,9 @@ Suddenly restart may be also this error depends of the settings
 
 **IF YOU GOT A CRASH BUT WITHOUT BLUE SCREEN**
 
-On winxp pease post drwatson.log only. On others look inside windows events
+Describe detailed how to reproduces the crash, do not forget to put the link.
+Do not post pictures of the crash, this is useless and a waste.
+If i dont't reproduce the crash myself then you may to submit drwatson.log.
 Drwatson log is usually inside All Users\Application Data\Microsoft\Dr Watson
 Minidump also may be usefull. Do not post any irrelevent logs.
 

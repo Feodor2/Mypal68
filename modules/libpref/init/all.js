@@ -4126,7 +4126,7 @@ pref("network.trr.mode", 0);
 // DNS-over-HTTP service to use, must be HTTPS://
 pref("network.trr.uri", "data:text/plain,");
 // DNS-over-HTTP service options, must be HTTPS://
-pref("network.trr.resolvers", "[{ \"name\": \"Cloudflare\", \"url\": \"data:text/plain,\" }]");
+pref("network.trr.resolvers", "[{ \"name\": \"NextDNS\", \"url\": \"https://firefox.dns.nextdns.io/\" }]");
 // credentials to pass to DOH end-point
 pref("network.trr.credentials", "");
 pref("network.trr.custom_uri", "");

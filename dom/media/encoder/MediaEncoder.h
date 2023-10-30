@@ -7,6 +7,7 @@
 
 #include "ContainerWriter.h"
 #include "CubebUtils.h"
+#include "MediaQueue.h"
 #include "MediaTrackGraph.h"
 #include "MediaTrackListener.h"
 #include "mozilla/DebugOnly.h"
@@ -18,6 +19,7 @@
 namespace mozilla {
 
 class DriftCompensator;
+class Muxer;
 class Runnable;
 class TaskQueue;
 
@@ -75,29 +77,21 @@ class MediaEncoderListener {
  *    been initialized and when there's data available.
  *    => encoder->RegisterListener(listener);
  *
- * 3) Connect the MediaStreamTracks to be recorded.
- *    => encoder->ConnectMediaStreamTrack(track);
- *    This creates the corresponding TrackEncoder and connects the track and
- *    the TrackEncoder through a track listener. This also starts encoding.
- *
- * 4) When the MediaEncoderListener is notified that the MediaEncoder is
- *    initialized, we can encode metadata.
- *    => encoder->GetEncodedMetadata(...);
- *
- * 5) When the MediaEncoderListener is notified that the MediaEncoder has
- *    data available, we can encode data.
+ * 3) When the MediaEncoderListener is notified that the MediaEncoder has
+ *    data available, we can encode data. This also encodes metadata on its
+ *    first invocation.
  *    => encoder->GetEncodedData(...);
  *
- * 6) To stop encoding, there are multiple options:
+ * 4) To stop encoding, there are multiple options:
  *
- *    6.1) Stop() for a graceful stop.
+ *    4.1) Stop() for a graceful stop.
  *         => encoder->Stop();
  *
- *    6.2) Cancel() for an immediate stop, if you don't need the data currently
+ *    4.2) Cancel() for an immediate stop, if you don't need the data currently
  *         buffered.
  *         => encoder->Cancel();
  *
- *    6.3) When all input tracks end, the MediaEncoder will automatically stop
+ *    4.3) When all input tracks end, the MediaEncoder will automatically stop
  *         and shut down.
  */
 class MediaEncoder {
@@ -157,43 +151,30 @@ class MediaEncoder {
       TrackRate aTrackRate);
 
   /**
-   * Encodes raw metadata for all tracks to aOutputBufs. aMIMEType is the valid
-   * mime-type for the returned container data. The buffer of container data is
-   * allocated in ContainerWriter::GetContainerData().
-   *
-   * Should there be insufficient input data for either track encoder to infer
-   * the metadata, or if metadata has already been encoded, we return an error
-   * and the output arguments are undefined. Otherwise we return NS_OK.
-   */
-  nsresult GetEncodedMetadata(nsTArray<nsTArray<uint8_t>>* aOutputBufs,
-                              nsAString& aMIMEType);
-  /**
    * Encodes raw data for all tracks to aOutputBufs. The buffer of container
    * data is allocated in ContainerWriter::GetContainerData().
    *
-   * This implies that metadata has already been encoded and that all track
-   * encoders are still active. Should either implication break, we return an
-   * error and the output argument is undefined. Otherwise we return NS_OK.
+   * On its first call, metadata is also encoded. TrackEncoders must have been
+   * initialized before this is called.
    */
   nsresult GetEncodedData(nsTArray<nsTArray<uint8_t>>* aOutputBufs);
 
   /**
-   * Return true if MediaEncoder has been shutdown. Reasons are encoding
+   * Asserts that Shutdown() has been called. Reasons are encoding
    * complete, encounter an error, or being canceled by its caller.
    */
-  bool IsShutdown();
+  void AssertShutdownCalled() { MOZ_ASSERT(mShutdownPromise); }
 
   /**
    * Cancels the encoding and shuts down the encoder using Shutdown().
-   * Listeners are not notified of the shutdown.
    */
-  void Cancel();
+  RefPtr<GenericNonExclusivePromise::AllPromiseType> Cancel();
 
   bool HasError();
 
-#ifdef MOZ_WEBM_ENCODER
   static bool IsWebMEncoderEnabled();
-#endif
+
+  const nsString& MimeType() const;
 
   /**
    * Notifies listeners that this MediaEncoder has been initialized.
@@ -228,7 +209,7 @@ class MediaEncoder {
   /**
    * Set desired video keyframe interval defined in milliseconds.
    */
-  void SetVideoKeyFrameInterval(int32_t aVideoKeyFrameInterval);
+  void SetVideoKeyFrameInterval(uint32_t aVideoKeyFrameInterval);
 
  protected:
   ~MediaEncoder();
@@ -250,7 +231,7 @@ class MediaEncoder {
    * Shuts down the MediaEncoder and cleans up track encoders.
    * Listeners will be notified of the shutdown unless we were Cancel()ed first.
    */
-  void Shutdown();
+  RefPtr<GenericNonExclusivePromise::AllPromiseType> Shutdown();
 
   /**
    * Sets mError to true, notifies listeners of the error if mError changed,
@@ -258,15 +239,10 @@ class MediaEncoder {
    */
   void SetError();
 
-  // Get encoded data from trackEncoder and write to muxer
-  nsresult WriteEncodedDataToMuxer(TrackEncoder* aTrackEncoder);
-  // Get metadata from trackEncoder and copy to muxer
-  nsresult CopyMetadataToMuxer(TrackEncoder* aTrackEncoder);
-
   const RefPtr<TaskQueue> mEncoderThread;
   const RefPtr<DriftCompensator> mDriftCompensator;
 
-  UniquePtr<ContainerWriter> mWriter;
+  UniquePtr<Muxer> mMuxer;
   RefPtr<AudioTrackEncoder> mAudioEncoder;
   RefPtr<AudioTrackListener> mAudioListener;
   RefPtr<VideoTrackEncoder> mVideoEncoder;
@@ -294,13 +270,12 @@ class MediaEncoder {
   RefPtr<SharedDummyTrack> mGraphTrack;
 
   TimeStamp mStartTime;
-  nsString mMIMEType;
+  const nsString mMIMEType;
   bool mInitialized;
-  bool mMetadataEncoded;
   bool mCompleted;
   bool mError;
-  bool mCanceled;
-  bool mShutdown;
+  // Set when shutdown starts.
+  RefPtr<GenericNonExclusivePromise::AllPromiseType> mShutdownPromise;
   // Get duration from create encoder, for logging purpose
   double GetEncodeTimeStamp() {
     TimeDuration decodeTime;

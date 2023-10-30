@@ -14,7 +14,7 @@ namespace gl {
 
 // Use |newState = true| to enable, |false| to disable.
 ScopedGLState::ScopedGLState(GLContext* aGL, GLenum aCapability, bool aNewState)
-    : ScopedGLWrapper<ScopedGLState>(aGL), mCapability(aCapability) {
+    : mGL(aGL), mCapability(aCapability) {
   mOldState = mGL->fIsEnabled(mCapability);
 
   // Early out if we're already in the right state.
@@ -28,11 +28,11 @@ ScopedGLState::ScopedGLState(GLContext* aGL, GLenum aCapability, bool aNewState)
 }
 
 ScopedGLState::ScopedGLState(GLContext* aGL, GLenum aCapability)
-    : ScopedGLWrapper<ScopedGLState>(aGL), mCapability(aCapability) {
+    : mGL(aGL), mCapability(aCapability) {
   mOldState = mGL->fIsEnabled(mCapability);
 }
 
-void ScopedGLState::UnwrapImpl() {
+ScopedGLState::~ScopedGLState() {
   if (mOldState) {
     mGL->fEnable(mCapability);
   } else {
@@ -52,18 +52,17 @@ void ScopedBindFramebuffer::Init() {
   }
 }
 
-ScopedBindFramebuffer::ScopedBindFramebuffer(GLContext* aGL)
-    : ScopedGLWrapper<ScopedBindFramebuffer>(aGL) {
+ScopedBindFramebuffer::ScopedBindFramebuffer(GLContext* aGL) : mGL(aGL) {
   Init();
 }
 
 ScopedBindFramebuffer::ScopedBindFramebuffer(GLContext* aGL, GLuint aNewFB)
-    : ScopedGLWrapper<ScopedBindFramebuffer>(aGL) {
+    : mGL(aGL) {
   Init();
   mGL->BindFB(aNewFB);
 }
 
-void ScopedBindFramebuffer::UnwrapImpl() {
+ScopedBindFramebuffer::~ScopedBindFramebuffer() {
   if (mOldReadFB == mOldDrawFB) {
     mGL->BindFB(mOldDrawFB);
   } else {
@@ -75,42 +74,43 @@ void ScopedBindFramebuffer::UnwrapImpl() {
 /* ScopedBindTextureUnit ******************************************************/
 
 ScopedBindTextureUnit::ScopedBindTextureUnit(GLContext* aGL, GLenum aTexUnit)
-    : ScopedGLWrapper<ScopedBindTextureUnit>(aGL), mOldTexUnit(0) {
+    : mGL(aGL), mOldTexUnit(0) {
   MOZ_ASSERT(aTexUnit >= LOCAL_GL_TEXTURE0);
   mGL->GetUIntegerv(LOCAL_GL_ACTIVE_TEXTURE, &mOldTexUnit);
   mGL->fActiveTexture(aTexUnit);
 }
 
-void ScopedBindTextureUnit::UnwrapImpl() { mGL->fActiveTexture(mOldTexUnit); }
+ScopedBindTextureUnit::~ScopedBindTextureUnit() {
+  mGL->fActiveTexture(mOldTexUnit);
+}
 
 /* ScopedTexture **************************************************************/
 
-ScopedTexture::ScopedTexture(GLContext* aGL)
-    : ScopedGLWrapper<ScopedTexture>(aGL), mTexture(0) {
+ScopedTexture::ScopedTexture(GLContext* aGL) : mGL(aGL), mTexture(0) {
   mGL->fGenTextures(1, &mTexture);
 }
 
-void ScopedTexture::UnwrapImpl() { mGL->fDeleteTextures(1, &mTexture); }
+ScopedTexture::~ScopedTexture() { mGL->fDeleteTextures(1, &mTexture); }
 
 /* ScopedFramebuffer
  * **************************************************************/
 
-ScopedFramebuffer::ScopedFramebuffer(GLContext* aGL)
-    : ScopedGLWrapper<ScopedFramebuffer>(aGL), mFB(0) {
+ScopedFramebuffer::ScopedFramebuffer(GLContext* aGL) : mGL(aGL), mFB(0) {
   mGL->fGenFramebuffers(1, &mFB);
 }
 
-void ScopedFramebuffer::UnwrapImpl() { mGL->fDeleteFramebuffers(1, &mFB); }
+ScopedFramebuffer::~ScopedFramebuffer() { mGL->fDeleteFramebuffers(1, &mFB); }
 
 /* ScopedRenderbuffer
  * **************************************************************/
 
-ScopedRenderbuffer::ScopedRenderbuffer(GLContext* aGL)
-    : ScopedGLWrapper<ScopedRenderbuffer>(aGL), mRB(0) {
+ScopedRenderbuffer::ScopedRenderbuffer(GLContext* aGL) : mGL(aGL), mRB(0) {
   mGL->fGenRenderbuffers(1, &mRB);
 }
 
-void ScopedRenderbuffer::UnwrapImpl() { mGL->fDeleteRenderbuffers(1, &mRB); }
+ScopedRenderbuffer::~ScopedRenderbuffer() {
+  mGL->fDeleteRenderbuffers(1, &mRB);
+}
 
 /* ScopedBindTexture **********************************************************/
 
@@ -152,13 +152,11 @@ static GLuint GetBoundTexture(GLContext* gl, GLenum texTarget) {
 
 ScopedBindTexture::ScopedBindTexture(GLContext* aGL, GLuint aNewTex,
                                      GLenum aTarget)
-    : ScopedGLWrapper<ScopedBindTexture>(aGL),
-      mTarget(aTarget),
-      mOldTex(GetBoundTexture(aGL, aTarget)) {
+    : mGL(aGL), mTarget(aTarget), mOldTex(GetBoundTexture(aGL, aTarget)) {
   mGL->fBindTexture(mTarget, aNewTex);
 }
 
-void ScopedBindTexture::UnwrapImpl() { mGL->fBindTexture(mTarget, mOldTex); }
+ScopedBindTexture::~ScopedBindTexture() { mGL->fBindTexture(mTarget, mOldTex); }
 
 /* ScopedBindRenderbuffer *****************************************************/
 
@@ -167,18 +165,17 @@ void ScopedBindRenderbuffer::Init() {
   mGL->GetUIntegerv(LOCAL_GL_RENDERBUFFER_BINDING, &mOldRB);
 }
 
-ScopedBindRenderbuffer::ScopedBindRenderbuffer(GLContext* aGL)
-    : ScopedGLWrapper<ScopedBindRenderbuffer>(aGL) {
+ScopedBindRenderbuffer::ScopedBindRenderbuffer(GLContext* aGL) : mGL(aGL) {
   Init();
 }
 
 ScopedBindRenderbuffer::ScopedBindRenderbuffer(GLContext* aGL, GLuint aNewRB)
-    : ScopedGLWrapper<ScopedBindRenderbuffer>(aGL) {
+    : mGL(aGL) {
   Init();
   mGL->fBindRenderbuffer(LOCAL_GL_RENDERBUFFER, aNewRB);
 }
 
-void ScopedBindRenderbuffer::UnwrapImpl() {
+ScopedBindRenderbuffer::~ScopedBindRenderbuffer() {
   mGL->fBindRenderbuffer(LOCAL_GL_RENDERBUFFER, mOldRB);
 }
 
@@ -186,9 +183,7 @@ void ScopedBindRenderbuffer::UnwrapImpl() {
 ScopedFramebufferForTexture::ScopedFramebufferForTexture(GLContext* aGL,
                                                          GLuint aTexture,
                                                          GLenum aTarget)
-    : ScopedGLWrapper<ScopedFramebufferForTexture>(aGL),
-      mComplete(false),
-      mFB(0) {
+    : mGL(aGL), mComplete(false), mFB(0) {
   mGL->fGenFramebuffers(1, &mFB);
   ScopedBindFramebuffer autoFB(aGL, mFB);
   mGL->fFramebufferTexture2D(LOCAL_GL_FRAMEBUFFER, LOCAL_GL_COLOR_ATTACHMENT0,
@@ -203,7 +198,7 @@ ScopedFramebufferForTexture::ScopedFramebufferForTexture(GLContext* aGL,
   }
 }
 
-void ScopedFramebufferForTexture::UnwrapImpl() {
+ScopedFramebufferForTexture::~ScopedFramebufferForTexture() {
   if (!mFB) return;
 
   mGL->fDeleteFramebuffers(1, &mFB);
@@ -214,9 +209,7 @@ void ScopedFramebufferForTexture::UnwrapImpl() {
 
 ScopedFramebufferForRenderbuffer::ScopedFramebufferForRenderbuffer(
     GLContext* aGL, GLuint aRB)
-    : ScopedGLWrapper<ScopedFramebufferForRenderbuffer>(aGL),
-      mComplete(false),
-      mFB(0) {
+    : mGL(aGL), mComplete(false), mFB(0) {
   mGL->fGenFramebuffers(1, &mFB);
   ScopedBindFramebuffer autoFB(aGL, mFB);
   mGL->fFramebufferRenderbuffer(LOCAL_GL_FRAMEBUFFER,
@@ -232,7 +225,7 @@ ScopedFramebufferForRenderbuffer::ScopedFramebufferForRenderbuffer(
   }
 }
 
-void ScopedFramebufferForRenderbuffer::UnwrapImpl() {
+ScopedFramebufferForRenderbuffer::~ScopedFramebufferForRenderbuffer() {
   if (!mFB) return;
 
   mGL->fDeleteFramebuffers(1, &mFB);
@@ -243,12 +236,12 @@ void ScopedFramebufferForRenderbuffer::UnwrapImpl() {
 
 ScopedViewportRect::ScopedViewportRect(GLContext* aGL, GLint x, GLint y,
                                        GLsizei width, GLsizei height)
-    : ScopedGLWrapper<ScopedViewportRect>(aGL) {
+    : mGL(aGL) {
   mGL->fGetIntegerv(LOCAL_GL_VIEWPORT, mSavedViewportRect);
   mGL->fViewport(x, y, width, height);
 }
 
-void ScopedViewportRect::UnwrapImpl() {
+ScopedViewportRect::~ScopedViewportRect() {
   mGL->fViewport(mSavedViewportRect[0], mSavedViewportRect[1],
                  mSavedViewportRect[2], mSavedViewportRect[3]);
 }
@@ -257,17 +250,16 @@ void ScopedViewportRect::UnwrapImpl() {
 
 ScopedScissorRect::ScopedScissorRect(GLContext* aGL, GLint x, GLint y,
                                      GLsizei width, GLsizei height)
-    : ScopedGLWrapper<ScopedScissorRect>(aGL) {
+    : mGL(aGL) {
   mGL->fGetIntegerv(LOCAL_GL_SCISSOR_BOX, mSavedScissorRect);
   mGL->fScissor(x, y, width, height);
 }
 
-ScopedScissorRect::ScopedScissorRect(GLContext* aGL)
-    : ScopedGLWrapper<ScopedScissorRect>(aGL) {
+ScopedScissorRect::ScopedScissorRect(GLContext* aGL) : mGL(aGL) {
   mGL->fGetIntegerv(LOCAL_GL_SCISSOR_BOX, mSavedScissorRect);
 }
 
-void ScopedScissorRect::UnwrapImpl() {
+ScopedScissorRect::~ScopedScissorRect() {
   mGL->fScissor(mSavedScissorRect[0], mSavedScissorRect[1],
                 mSavedScissorRect[2], mSavedScissorRect[3]);
 }
@@ -278,7 +270,7 @@ ScopedVertexAttribPointer::ScopedVertexAttribPointer(
     GLContext* aGL, GLuint index, GLint size, GLenum type,
     realGLboolean normalized, GLsizei stride, GLuint buffer,
     const GLvoid* pointer)
-    : ScopedGLWrapper<ScopedVertexAttribPointer>(aGL),
+    : mGL(aGL),
       mAttribEnabled(0),
       mAttribSize(0),
       mAttribStride(0),
@@ -295,7 +287,7 @@ ScopedVertexAttribPointer::ScopedVertexAttribPointer(
 
 ScopedVertexAttribPointer::ScopedVertexAttribPointer(GLContext* aGL,
                                                      GLuint index)
-    : ScopedGLWrapper<ScopedVertexAttribPointer>(aGL),
+    : mGL(aGL),
       mAttribEnabled(0),
       mAttribSize(0),
       mAttribStride(0),
@@ -348,7 +340,7 @@ void ScopedVertexAttribPointer::WrapImpl(GLuint index) {
   mGL->GetUIntegerv(LOCAL_GL_ARRAY_BUFFER_BINDING, &mBoundBuffer);
 }
 
-void ScopedVertexAttribPointer::UnwrapImpl() {
+ScopedVertexAttribPointer::~ScopedVertexAttribPointer() {
   mGL->fBindBuffer(LOCAL_GL_ARRAY_BUFFER, mAttribBufferBinding);
   mGL->fVertexAttribPointer(mAttribIndex, mAttribSize, mAttribType,
                             mAttribNormalized, mAttribStride, mAttribPointer);
@@ -363,7 +355,7 @@ void ScopedVertexAttribPointer::UnwrapImpl() {
 // ScopedPackState
 
 ScopedPackState::ScopedPackState(GLContext* gl)
-    : ScopedGLWrapper<ScopedPackState>(gl),
+    : mGL(gl),
       mAlignment(0),
       mPixelBuffer(0),
       mRowLength(0),
@@ -402,7 +394,7 @@ bool ScopedPackState::SetForWidthAndStrideRGBA(GLsizei aWidth,
   return false;
 }
 
-void ScopedPackState::UnwrapImpl() {
+ScopedPackState::~ScopedPackState() {
   mGL->fPixelStorei(LOCAL_GL_PACK_ALIGNMENT, mAlignment);
 
   if (!mGL->HasPBOState()) return;
@@ -417,7 +409,7 @@ void ScopedPackState::UnwrapImpl() {
 // ResetUnpackState
 
 ResetUnpackState::ResetUnpackState(GLContext* gl)
-    : ScopedGLWrapper<ResetUnpackState>(gl),
+    : mGL(gl),
       mAlignment(0),
       mPBO(0),
       mRowLength(0),
@@ -447,7 +439,7 @@ ResetUnpackState::ResetUnpackState(GLContext* gl)
   fnReset(LOCAL_GL_UNPACK_SKIP_IMAGES, 0, &mSkipImages);
 }
 
-void ResetUnpackState::UnwrapImpl() {
+ResetUnpackState::~ResetUnpackState() {
   mGL->fPixelStorei(LOCAL_GL_UNPACK_ALIGNMENT, mAlignment);
 
   if (!mGL->HasPBOState()) return;
@@ -485,11 +477,9 @@ static GLuint GetPBOBinding(GLContext* gl, GLenum target) {
 }
 
 ScopedBindPBO::ScopedBindPBO(GLContext* gl, GLenum target)
-    : ScopedGLWrapper<ScopedBindPBO>(gl),
-      mTarget(target),
-      mPBO(GetPBOBinding(mGL, mTarget)) {}
+    : mGL(gl), mTarget(target), mPBO(GetPBOBinding(mGL, mTarget)) {}
 
-void ScopedBindPBO::UnwrapImpl() {
+ScopedBindPBO::~ScopedBindPBO() {
   if (!mGL->HasPBOState()) return;
 
   mGL->fBindBuffer(mTarget, mPBO);

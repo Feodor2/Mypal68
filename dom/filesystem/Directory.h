@@ -28,13 +28,13 @@ class Directory final : public nsISupports, public nsWrapperCache {
                                                  const nsAString& aRealPath,
                                                  ErrorResult& aRv);
 
-  static already_AddRefed<Directory> Create(nsISupports* aParent,
+  static already_AddRefed<Directory> Create(nsIGlobalObject* aGlobal,
                                             nsIFile* aDirectory,
                                             FileSystemBase* aFileSystem = 0);
 
   // ========= Begin WebIDL bindings. ===========
 
-  nsISupports* GetParentObject() const;
+  nsIGlobalObject* GetParentObject() const;
 
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
@@ -84,7 +84,7 @@ class Directory final : public nsISupports, public nsWrapperCache {
   nsIFile* GetInternalNsIFile() const { return mFile; }
 
  private:
-  Directory(nsISupports* aParent, nsIFile* aFile,
+  Directory(nsIGlobalObject* aGlobal, nsIFile* aFile,
             FileSystemBase* aFileSystem = nullptr);
   ~Directory();
 
@@ -93,7 +93,7 @@ class Directory final : public nsISupports, public nsWrapperCache {
    */
   nsresult DOMPathToRealPath(const nsAString& aPath, nsIFile** aFile) const;
 
-  nsCOMPtr<nsISupports> mParent;
+  nsCOMPtr<nsIGlobalObject> mGlobal;
   RefPtr<FileSystemBase> mFileSystem;
   nsCOMPtr<nsIFile> mFile;
 

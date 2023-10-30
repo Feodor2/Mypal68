@@ -17,7 +17,6 @@
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/dom/WebCryptoCommon.h"
 #include "mozilla/dom/WebCryptoTask.h"
-#include "mozilla/dom/WebCryptoThreadPool.h"
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerPrivate.h"
 
@@ -337,7 +336,13 @@ void WebCryptoTask::DispatchWithPromise(Promise* aResultPromise) {
   MAYBE_EARLY_FAIL(mEarlyRv);
 
   // dispatch to thread pool
-  mEarlyRv = WebCryptoThreadPool::Dispatch(this);
+
+  if (!EnsureNSSInitializedChromeOrContent()) {
+    mEarlyRv = NS_ERROR_FAILURE;
+  }
+  MAYBE_EARLY_FAIL(mEarlyRv);
+
+  mEarlyRv = NS_DispatchBackgroundTask(this);
   MAYBE_EARLY_FAIL(mEarlyRv)
 }
 

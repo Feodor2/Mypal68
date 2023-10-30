@@ -4,6 +4,7 @@
 
 #include "ImageEncoder.h"
 #include "mozilla/dom/CanvasRenderingContext2D.h"
+#include "mozilla/dom/MemoryBlobImpl.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
@@ -98,14 +99,10 @@ class EncodingCompleteEvent : public CancelableRunnable {
     // We want to null out mEncodeCompleteCallback no matter what.
     RefPtr<EncodeCompleteCallback> callback(mEncodeCompleteCallback.forget());
     if (!mFailed) {
-      // The correct parentObject has to be set by the mEncodeCompleteCallback.
-      RefPtr<Blob> blob =
-          Blob::CreateMemoryBlob(nullptr, mImgData, mImgSize, mType);
-      MOZ_ASSERT(blob);
-
-      rv = callback->ReceiveBlob(blob.forget());
+      RefPtr<BlobImpl> blobImpl = new MemoryBlobImpl(mImgData, mImgSize, mType);
+      rv = callback->ReceiveBlobImpl(blobImpl.forget());
     } else {
-      rv = callback->ReceiveBlob(nullptr);
+      rv = callback->ReceiveBlobImpl(nullptr);
     }
 
     return rv;
@@ -247,7 +244,7 @@ nsresult ImageEncoder::ExtractDataFromLayersImageAsync(
       new EncodingRunnable(aType, aOptions, nullptr, aImage, encoder,
                            completeEvent, imgIEncoder::INPUT_FORMAT_HOSTARGB,
                            size, aUsePlaceholder, aUsingCustomOptions);
-  return NS_DispatchToBackgroundThread(event.forget());
+  return NS_DispatchBackgroundTask(event.forget());
 }
 
 /* static */
@@ -266,7 +263,7 @@ nsresult ImageEncoder::ExtractDataAsync(
   nsCOMPtr<nsIRunnable> event = new EncodingRunnable(
       aType, aOptions, std::move(aImageBuffer), nullptr, encoder, completeEvent,
       aFormat, aSize, aUsePlaceholder, aUsingCustomOptions);
-  return NS_DispatchToBackgroundThread(event.forget());
+  return NS_DispatchBackgroundTask(event.forget());
 }
 
 /*static*/

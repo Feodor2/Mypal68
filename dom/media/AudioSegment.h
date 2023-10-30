@@ -5,11 +5,14 @@
 #ifndef MOZILLA_AUDIOSEGMENT_H_
 #define MOZILLA_AUDIOSEGMENT_H_
 
+#include <speex/speex_resampler.h>
+#include "MediaTrackGraph.h"
 #include "MediaSegment.h"
 #include "AudioSampleFormat.h"
 #include "AudioChannelFormat.h"
 #include "SharedBuffer.h"
 #include "WebAudioUtils.h"
+#include "nsAutoRef.h"
 #ifdef MOZILLA_INTERNAL_API
 #  include "mozilla/TimeStamp.h"
 #endif
@@ -201,7 +204,7 @@ struct AudioChunk {
     mPrincipalHandle = PRINCIPAL_HANDLE_NONE;
   }
 
-  size_t ChannelCount() const { return mChannelData.Length(); }
+  uint32_t ChannelCount() const { return mChannelData.Length(); }
 
   bool IsMuted() const { return mVolume == 0.0f; }
 
@@ -292,14 +295,16 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
 
   ~AudioSegment() {}
 
-  // Resample the whole segment in place.
+  // Resample the whole segment in place.  `aResampler` is an instance of a
+  // resampler, initialized with `aResamplerChannelCount` channels. If this
+  // function finds a chunk with more channels, `aResampler` is destroyed and a
+  // new resampler is created, and `aResamplerChannelCount` is updated with the
+  // new channel count value.
   template <typename T>
-  void Resample(SpeexResamplerState* aResampler, uint32_t aInRate,
+  void Resample(nsAutoRef<SpeexResamplerState>& aResampler,
+                uint32_t* aResamplerChannelCount, uint32_t aInRate,
                 uint32_t aOutRate) {
     mDuration = 0;
-#ifdef DEBUG
-    uint32_t segmentChannelCount = ChannelCount();
-#endif
 
     for (ChunkIterator ci(*this); !ci.IsEnded(); ci.Next()) {
       AutoTArray<nsTArray<T>, GUESS_AUDIO_CHANNELS> output;
@@ -312,7 +317,17 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
         continue;
       }
       uint32_t channels = c.mChannelData.Length();
-      MOZ_ASSERT(channels == segmentChannelCount);
+      // This might introduce a discontinuity, but a channel count change in the
+      // middle of a stream is not that common. This also initializes the
+      // resampler as late as possible.
+      if (channels != *aResamplerChannelCount) {
+        SpeexResamplerState* state =
+            speex_resampler_init(channels, aInRate, aOutRate,
+                                 SPEEX_RESAMPLER_QUALITY_DEFAULT, nullptr);
+        MOZ_ASSERT(state);
+        aResampler.own(state);
+        *aResamplerChannelCount = channels;
+      }
       output.SetLength(channels);
       bufferPtrs.SetLength(channels);
       uint32_t inFrames = c.mDuration;
@@ -325,8 +340,8 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
         uint32_t outFrames = outSize;
 
         const T* in = static_cast<const T*>(c.mChannelData[i]);
-        dom::WebAudioUtils::SpeexResamplerProcess(aResampler, i, in, &inFrames,
-                                                  out, &outFrames);
+        dom::WebAudioUtils::SpeexResamplerProcess(aResampler.get(), i, in,
+                                                  &inFrames, out, &outFrames);
         MOZ_ASSERT(inFrames == c.mDuration);
 
         bufferPtrs[i] = out;
@@ -342,7 +357,8 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
     }
   }
 
-  void ResampleChunks(SpeexResamplerState* aResampler, uint32_t aInRate,
+  void ResampleChunks(nsAutoRef<SpeexResamplerState>& aResampler,
+                      uint32_t* aResamplerChannelCount, uint32_t aInRate,
                       uint32_t aOutRate);
   void AppendFrames(already_AddRefed<ThreadSharedObject> aBuffer,
                     const nsTArray<const float*>& aChannelData,
@@ -401,18 +417,17 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
   // aChannelCount channels.
   void Mix(AudioMixer& aMixer, uint32_t aChannelCount, uint32_t aSampleRate);
 
-  int ChannelCount() {
-    NS_WARNING_ASSERTION(
-        !mChunks.IsEmpty(),
-        "Cannot query channel count on a AudioSegment with no chunks.");
+  // Returns the maximum
+  uint32_t MaxChannelCount() {
     // Find the first chunk that has non-zero channels. A chunk that hs zero
     // channels is just silence and we can simply discard it.
+    uint32_t channelCount = 0;
     for (ChunkIterator ci(*this); !ci.IsEnded(); ci.Next()) {
       if (ci->ChannelCount()) {
-        return ci->ChannelCount();
+        channelCount = std::max(channelCount, ci->ChannelCount());
       }
     }
-    return 0;
+    return channelCount;
   }
 
   static Type StaticType() { return AUDIO; }

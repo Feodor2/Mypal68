@@ -19,7 +19,7 @@ void FileSystemBase::Shutdown() {
   mShutdown = true;
 }
 
-nsISupports* FileSystemBase::GetParentObject() const {
+nsIGlobalObject* FileSystemBase::GetParentObject() const {
   AssertIsOnOwningThread();
   return nullptr;
 }

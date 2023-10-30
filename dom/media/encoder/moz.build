@@ -7,7 +7,7 @@ with Files('*'):
 
 EXPORTS += [
     'ContainerWriter.h',
-    'EncodedFrameContainer.h',
+    'EncodedFrame.h',
     'MediaEncoder.h',
     'OpusTrackEncoder.h',
     'TrackEncoder.h',
@@ -16,6 +16,7 @@ EXPORTS += [
 
 UNIFIED_SOURCES += [
     'MediaEncoder.cpp',
+    'Muxer.cpp',
     'OpusTrackEncoder.cpp',
     'TrackEncoder.cpp',
 ]

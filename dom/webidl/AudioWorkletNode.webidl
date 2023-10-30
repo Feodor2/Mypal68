@@ -15,7 +15,7 @@ dictionary AudioWorkletNodeOptions : AudioNodeOptions {
              unsigned long             numberOfOutputs = 1;
              sequence<unsigned long>   outputChannelCount;
              record<DOMString, double> parameterData;
-             object?                   processorOptions = null;
+             object                    processorOptions;
 };
 
 [SecureContext, Pref="dom.audioworklet.enabled",
@@ -27,7 +27,6 @@ interface AudioWorkletNode : AudioNode {
 
     [Throws]
     readonly        attribute AudioParamMap              parameters;
-    [Throws]
     readonly        attribute MessagePort                port;
                     attribute EventHandler               onprocessorerror;
 };

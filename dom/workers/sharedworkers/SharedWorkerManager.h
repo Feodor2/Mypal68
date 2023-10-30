@@ -14,7 +14,7 @@ class nsIPrincipal;
 namespace mozilla {
 namespace dom {
 
-class MessagePortIdentifier;
+class UniqueMessagePortId;
 class RemoteWorkerData;
 class SharedWorkerManager;
 class SharedWorkerService;
@@ -90,7 +90,7 @@ class SharedWorkerManager final : public RemoteWorkerObserver {
 
   bool MaybeCreateRemoteWorker(const RemoteWorkerData& aData,
                                uint64_t aWindowID,
-                               const MessagePortIdentifier& aPortIdentifier,
+                               UniqueMessagePortId& aPortIdentifier,
                                base::ProcessId aProcessId);
 
   void AddActor(SharedWorkerParent* aParent);

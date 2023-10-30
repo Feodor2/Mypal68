@@ -12,7 +12,7 @@
 namespace mozilla {
 
 namespace dom {
-class Blob;
+class BlobImpl;
 class ImageCapture;
 class MediaStreamTrack;
 }  // namespace dom
@@ -46,7 +46,8 @@ class CaptureTask : public DirectMediaTrackListener,
   //
   // Note:
   //   this function should be called on main thread.
-  nsresult TaskComplete(already_AddRefed<dom::Blob> aBlob, nsresult aRv);
+  nsresult TaskComplete(already_AddRefed<dom::BlobImpl> aBlobImpl,
+                        nsresult aRv);
 
   // Add listeners into MediaStreamTrack and PrincipalChangeObserver.
   // It should be on main thread only.

@@ -453,10 +453,11 @@ TrackAndPromiseForOperation::TrackAndPromiseForOperation(
       mFlags(aFlags) {}
 
 AudioCallbackDriver::AudioCallbackDriver(MediaTrackGraphImpl* aGraphImpl,
+                                         uint32_t aOutputChannelCount,
                                          uint32_t aInputChannelCount,
                                          AudioInputType aAudioInputType)
     : GraphDriver(aGraphImpl),
-      mOutputChannels(0),
+      mOutputChannels(aOutputChannelCount),
       mSampleRate(0),
       mInputChannelCount(aInputChannelCount),
       mIterationDurationMS(MEDIA_GRAPH_TARGET_PERIOD_MS),
@@ -553,8 +554,6 @@ bool AudioCallbackDriver::Init() {
     output.format = CUBEB_SAMPLE_FLOAT32NE;
   }
 
-  // Query and set the number of channels this AudioCallbackDriver will use.
-  mOutputChannels = GraphImpl()->AudioOutputChannelCount();
   if (!mOutputChannels) {
     LOG(LogLevel::Warning, ("Output number of channels is 0."));
     Monitor2AutoLock lock(GraphImpl()->GetMonitor());
@@ -579,7 +578,10 @@ bool AudioCallbackDriver::Init() {
       SpillBuffer<AudioDataValue, WEBAUDIO_BLOCK_SIZE * 2>(mOutputChannels);
 
   output.channels = mOutputChannels;
-  output.layout = CUBEB_LAYOUT_UNDEFINED;
+  AudioConfig::ChannelLayout::ChannelMap channelMap =
+      AudioConfig::ChannelLayout(mOutputChannels).Map();
+
+  output.layout = static_cast<uint32_t>(channelMap);
   output.prefs = CubebUtils::GetDefaultStreamPrefs();
 #if !defined(XP_WIN)
   if (mInputDevicePreference == CUBEB_DEVICE_PREF_VOICE) {
@@ -725,7 +727,7 @@ void AudioCallbackDriver::AddMixerCallback() {
   MOZ_ASSERT(OnGraphThread());
 
   if (!mAddedMixer) {
-    mGraphImpl->mMixer.AddCallback(this);
+    mGraphImpl->mMixer.AddCallback(WrapNotNull(this));
     mAddedMixer = true;
   }
 }
@@ -799,7 +801,7 @@ long AudioCallbackDriver::DataCallback(const AudioDataValue* aInputBuffer,
 
   // Don't add the callback until we're inited and ready
   if (!mAddedMixer) {
-    GraphImpl()->mMixer.AddCallback(this);
+    GraphImpl()->mMixer.AddCallback(WrapNotNull(this));
     mAddedMixer = true;
   }
 
@@ -895,6 +897,18 @@ long AudioCallbackDriver::DataCallback(const AudioDataValue* aInputBuffer,
   // use separate callback methods.
   GraphImpl()->NotifyOutputData(aOutputBuffer, static_cast<size_t>(aFrames),
                                 mSampleRate, mOutputChannels);
+
+#ifdef XP_MACOSX
+  // This only happens when the output is on a macbookpro's external speaker,
+  // that are stereo, but let's just be safe.
+  if (mNeedsPanning && mOutputChannels == 2) {
+    // hard pan to the right
+    for (uint32_t i = 0; i < aFrames * 2; i += 2) {
+      aOutputBuffer[i + 1] += aOutputBuffer[i];
+      aOutputBuffer[i] = 0.0;
+    }
+  }
+#endif
 
   if (!stillProcessing) {
     // About to hand over control of the graph.  Do not start a new driver if
@@ -996,7 +1010,7 @@ void AudioCallbackDriver::MixerCallback(AudioDataValue* aMixedBuffer,
 
 void AudioCallbackDriver::PanOutputIfNeeded(bool aMicrophoneActive) {
 #ifdef XP_MACOSX
-  cubeb_device* out;
+  cubeb_device* out = nullptr;
   int rv;
   char name[128];
   size_t length = sizeof(name);
@@ -1008,22 +1022,16 @@ void AudioCallbackDriver::PanOutputIfNeeded(bool aMicrophoneActive) {
 
   if (!strncmp(name, "MacBookPro", 10)) {
     if (cubeb_stream_get_current_device(mAudioStream, &out) == CUBEB_OK) {
+      MOZ_ASSERT(out);
       // Check if we are currently outputing sound on external speakers.
-      if (!strcmp(out->output_name, "ispk")) {
+      if (out->output_name && !strcmp(out->output_name, "ispk")) {
         // Pan everything to the right speaker.
-        if (aMicrophoneActive) {
-          if (cubeb_stream_set_panning(mAudioStream, 1.0) != CUBEB_OK) {
-            NS_WARNING("Could not pan audio output to the right.");
-          }
-        } else {
-          if (cubeb_stream_set_panning(mAudioStream, 0.0) != CUBEB_OK) {
-            NS_WARNING("Could not pan audio output to the center.");
-          }
-        }
+        LOG(LogLevel::Debug, ("Using the built-in speakers, with%s audio input",
+                              aMicrophoneActive ? "" : "out"));
+        mNeedsPanning = aMicrophoneActive;
       } else {
-        if (cubeb_stream_set_panning(mAudioStream, 0.0) != CUBEB_OK) {
-          NS_WARNING("Could not pan audio output to the center.");
-        }
+        LOG(LogLevel::Debug, ("Using an external output device"));
+        mNeedsPanning = false;
       }
       cubeb_stream_device_destroy(mAudioStream, out);
     }
@@ -1038,7 +1046,12 @@ void AudioCallbackDriver::DeviceChangedCallback() {
   Monitor2AutoLock mon(mGraphImpl->GetMonitor());
   GraphImpl()->DeviceChanged();
 #ifdef XP_MACOSX
-  PanOutputIfNeeded(mInputChannelCount);
+  RefPtr<AudioCallbackDriver> self(this);
+  bool hasInput = mInputChannelCount;
+  NS_DispatchBackgroundTask(NS_NewRunnableFunction(
+      "PanOutputIfNeeded", [self{std::move(self)}, hasInput]() {
+        self->PanOutputIfNeeded(hasInput);
+      }));
 #endif
 }
 

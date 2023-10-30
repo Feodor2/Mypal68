@@ -86,11 +86,6 @@ class MessagePortIdentifierRunnable final : public WorkerRunnable {
     return true;
   }
 
-  nsresult Cancel() override {
-    MessagePort::ForceClose(mPortIdentifier);
-    return WorkerRunnable::Cancel();
-  }
-
   virtual bool PreDispatch(WorkerPrivate* aWorkerPrivate) override {
     // Silence bad assertions.
     return true;
@@ -113,7 +108,7 @@ class MessagePortIdentifierRunnable final : public WorkerRunnable {
   }
 
   RefPtr<RemoteWorkerChild> mActor;
-  MessagePortIdentifier mPortIdentifier;
+  UniqueMessagePortId mPortIdentifier;
 };
 
 }  // namespace
@@ -570,7 +565,7 @@ void RemoteWorkerChild::RecvExecOpOnMainThread(const RemoteWorkerOp& aOp) {
 
 void RemoteWorkerChild::AddPortIdentifier(
     JSContext* aCx, WorkerPrivate* aWorkerPrivate,
-    const MessagePortIdentifier& aPortIdentifier) {
+    UniqueMessagePortId& aPortIdentifier) {
   if (NS_WARN_IF(!aWorkerPrivate->ConnectMessagePort(aCx, aPortIdentifier))) {
     ErrorPropagationDispatch(NS_ERROR_FAILURE);
   }

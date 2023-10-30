@@ -589,6 +589,7 @@ auto DeserializeStructuredCloneFiles(
 
           RefPtr<Blob> blob =
               Blob::Create(aDatabase->GetOwnerGlobal(), blobImpl);
+          MOZ_ASSERT(blob);
 
           files.EmplaceBack(StructuredCloneFile::eStructuredClone,
                             std::move(blob));

@@ -24,7 +24,6 @@ class MutableBlobStreamListener final
   NS_DECL_NSIREQUESTOBSERVER
 
   MutableBlobStreamListener(MutableBlobStorage::MutableBlobStorageType aType,
-                            nsISupports* aParent,
                             const nsACString& aContentType,
                             MutableBlobStorageCallback* aCallback,
                             nsIEventTarget* aEventTarget = nullptr);
@@ -39,7 +38,6 @@ class MutableBlobStreamListener final
   RefPtr<MutableBlobStorage> mStorage;
   RefPtr<MutableBlobStorageCallback> mCallback;
 
-  nsCOMPtr<nsISupports> mParent;
   MutableBlobStorage::MutableBlobStorageType mStorageType;
   nsCString mContentType;
   nsCOMPtr<nsIEventTarget> mEventTarget;

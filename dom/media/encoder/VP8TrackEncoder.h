@@ -33,7 +33,7 @@ class VP8TrackEncoder : public VideoTrackEncoder {
 
   already_AddRefed<TrackMetadataBase> GetMetadata() final;
 
-  nsresult GetEncodedTrack(EncodedFrameContainer& aData) final;
+  nsresult GetEncodedTrack(nsTArray<RefPtr<EncodedFrame>>& aData) final;
 
  protected:
   nsresult Init(int32_t aWidth, int32_t aHeight, int32_t aDisplayWidth,
@@ -49,7 +49,7 @@ class VP8TrackEncoder : public VideoTrackEncoder {
   //                                        null for EOS detection.
   //               NS_OK if some data was appended to aData.
   //               An error nsresult otherwise.
-  nsresult GetEncodedPartitions(EncodedFrameContainer& aData);
+  nsresult GetEncodedPartitions(nsTArray<RefPtr<EncodedFrame>>& aData);
 
   // Prepare the input data to the mVPXImageWrapper for encoding.
   nsresult PrepareRawFrame(VideoChunk& aChunk);

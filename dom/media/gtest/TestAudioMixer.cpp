@@ -85,7 +85,7 @@ TEST(AudioMixer, Test)
   {
     int iterations = 2;
     mozilla::AudioMixer mixer;
-    mixer.AddCallback(&consumer);
+    mixer.AddCallback(WrapNotNull(&consumer));
 
     fprintf(stderr, "Test AudioMixer constant buffer length.\n");
 
@@ -98,7 +98,7 @@ TEST(AudioMixer, Test)
 
   {
     mozilla::AudioMixer mixer;
-    mixer.AddCallback(&consumer);
+    mixer.AddCallback(WrapNotNull(&consumer));
 
     fprintf(stderr, "Test AudioMixer variable buffer length.\n");
 
@@ -136,7 +136,7 @@ TEST(AudioMixer, Test)
 
   {
     mozilla::AudioMixer mixer;
-    mixer.AddCallback(&consumer);
+    mixer.AddCallback(WrapNotNull(&consumer));
 
     fprintf(stderr, "Test AudioMixer variable channel count.\n");
 
@@ -153,7 +153,7 @@ TEST(AudioMixer, Test)
 
   {
     mozilla::AudioMixer mixer;
-    mixer.AddCallback(&consumer);
+    mixer.AddCallback(WrapNotNull(&consumer));
     fprintf(stderr, "Test AudioMixer variable stream count.\n");
 
     mixer.Mix(a, 2, CHANNEL_LENGTH, AUDIO_RATE);

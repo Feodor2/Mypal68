@@ -428,7 +428,7 @@ class XMLHttpRequestMainThread final : public XMLHttpRequest,
   virtual void SetOriginAttributes(
       const mozilla::dom::OriginAttributesDictionary& aAttrs) override;
 
-  void BlobStoreCompleted(MutableBlobStorage* aBlobStorage, Blob* aBlob,
+  void BlobStoreCompleted(MutableBlobStorage* aBlobStorage, BlobImpl* aBlobImpl,
                           nsresult aResult) override;
 
   void LocalFileToBlobCompleted(Blob* aBlob);

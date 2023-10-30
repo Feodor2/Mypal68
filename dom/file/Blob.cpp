@@ -3,6 +3,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "Blob.h"
+#include "EmptyBlobImpl.h"
 #include "File.h"
 #include "MemoryBlobImpl.h"
 #include "mozilla/dom/BlobBinding.h"
@@ -10,6 +11,7 @@
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "MultipartBlobImpl.h"
+#include "nsIGlobalObject.h"
 #include "nsIInputStream.h"
 #include "nsPIDOMWindow.h"
 #include "StreamBlobImpl.h"
@@ -22,12 +24,12 @@ namespace dom {
 NS_IMPL_CYCLE_COLLECTION_CLASS(Blob)
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(Blob)
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mParent)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mGlobal)
   NS_IMPL_CYCLE_COLLECTION_UNLINK_PRESERVED_WRAPPER
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN(Blob)
-  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mParent)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mGlobal)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN(Blob)
@@ -63,36 +65,52 @@ void Blob::MakeValidBlobType(nsAString& aType) {
 }
 
 /* static */
-Blob* Blob::Create(nsISupports* aParent, BlobImpl* aImpl) {
+Blob* Blob::Create(nsIGlobalObject* aGlobal, BlobImpl* aImpl) {
   MOZ_ASSERT(aImpl);
 
-  return aImpl->IsFile() ? new File(aParent, aImpl) : new Blob(aParent, aImpl);
+  MOZ_ASSERT(aGlobal);
+  if (NS_WARN_IF(!aGlobal)) {
+    return nullptr;
+  }
+
+  return aImpl->IsFile() ? new File(aGlobal, aImpl) : new Blob(aGlobal, aImpl);
 }
 
 /* static */
-already_AddRefed<Blob> Blob::CreateStringBlob(nsISupports* aParent,
+already_AddRefed<Blob> Blob::CreateStringBlob(nsIGlobalObject* aGlobal,
                                               const nsACString& aData,
                                               const nsAString& aContentType) {
+  MOZ_ASSERT(aGlobal);
+  if (NS_WARN_IF(!aGlobal)) {
+    return nullptr;
+  }
+
   RefPtr<BlobImpl> blobImpl = StringBlobImpl::Create(aData, aContentType);
-  RefPtr<Blob> blob = Blob::Create(aParent, blobImpl);
+  RefPtr<Blob> blob = Blob::Create(aGlobal, blobImpl);
   MOZ_ASSERT(!blob->mImpl->IsFile());
   return blob.forget();
 }
 
 /* static */
-already_AddRefed<Blob> Blob::CreateMemoryBlob(nsISupports* aParent,
+already_AddRefed<Blob> Blob::CreateMemoryBlob(nsIGlobalObject* aGlobal,
                                               void* aMemoryBuffer,
                                               uint64_t aLength,
                                               const nsAString& aContentType) {
+  MOZ_ASSERT(aGlobal);
+  if (NS_WARN_IF(!aGlobal)) {
+    return nullptr;
+  }
+
   RefPtr<Blob> blob = Blob::Create(
-      aParent, new MemoryBlobImpl(aMemoryBuffer, aLength, aContentType));
+      aGlobal, new MemoryBlobImpl(aMemoryBuffer, aLength, aContentType));
   MOZ_ASSERT(!blob->mImpl->IsFile());
   return blob.forget();
 }
 
-Blob::Blob(nsISupports* aParent, BlobImpl* aImpl)
-    : mImpl(aImpl), mParent(aParent) {
+Blob::Blob(nsIGlobalObject* aGlobal, BlobImpl* aImpl)
+    : mImpl(aImpl), mGlobal(aGlobal) {
   MOZ_ASSERT(mImpl);
+  MOZ_ASSERT(mGlobal);
 }
 
 Blob::~Blob() = default;
@@ -112,7 +130,7 @@ already_AddRefed<File> Blob::ToFile() {
   if (HasFileInterface()) {
     file = static_cast<File*>(this);
   } else {
-    file = new File(mParent, mImpl);
+    file = new File(mGlobal, mImpl);
   }
 
   return file.forget();
@@ -131,7 +149,7 @@ already_AddRefed<File> Blob::ToFile(const nsAString& aName,
     return nullptr;
   }
 
-  RefPtr<File> file = new File(mParent, impl);
+  RefPtr<File> file = new File(mGlobal, impl);
   return file.forget();
 }
 
@@ -144,7 +162,7 @@ already_AddRefed<Blob> Blob::CreateSlice(uint64_t aStart, uint64_t aLength,
     return nullptr;
   }
 
-  RefPtr<Blob> blob = Blob::Create(mParent, impl);
+  RefPtr<Blob> blob = Blob::Create(mGlobal, impl);
   return blob.forget();
 }
 
@@ -170,7 +188,7 @@ already_AddRefed<Blob> Blob::Slice(const Optional<int64_t>& aStart,
     return nullptr;
   }
 
-  RefPtr<Blob> blob = Blob::Create(mParent, impl);
+  RefPtr<Blob> blob = Blob::Create(mGlobal, impl);
   return blob.forget();
 }
 
@@ -210,7 +228,10 @@ already_AddRefed<Blob> Blob::Constructor(
 
   MOZ_ASSERT(!impl->IsFile());
 
-  RefPtr<Blob> blob = Blob::Create(aGlobal.GetAsSupports(), impl);
+  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
+  MOZ_ASSERT(global);
+
+  RefPtr<Blob> blob = Blob::Create(global, impl);
   return blob.forget();
 }
 
@@ -243,8 +264,7 @@ already_AddRefed<Promise> Blob::ArrayBuffer(ErrorResult& aRv) {
 
 already_AddRefed<Promise> Blob::ConsumeBody(
     BodyConsumer::ConsumeType aConsumeType, ErrorResult& aRv) {
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(mParent);
-  if (NS_WARN_IF(!global)) {
+  if (NS_WARN_IF(!mGlobal)) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
   }
@@ -255,7 +275,7 @@ already_AddRefed<Promise> Blob::ConsumeBody(
     MOZ_ASSERT(workerPrivate);
     mainThreadEventTarget = workerPrivate->MainThreadEventTarget();
   } else {
-    mainThreadEventTarget = global->EventTargetFor(TaskCategory::Other);
+    mainThreadEventTarget = mGlobal->EventTargetFor(TaskCategory::Other);
   }
 
   MOZ_ASSERT(mainThreadEventTarget);
@@ -266,7 +286,7 @@ already_AddRefed<Promise> Blob::ConsumeBody(
     return nullptr;
   }
 
-  return BodyConsumer::Create(global, mainThreadEventTarget, inputStream,
+  return BodyConsumer::Create(mGlobal, mainThreadEventTarget, inputStream,
                               nullptr, aConsumeType, VoidCString(),
                               VoidString(), VoidCString(),
                               MutableBlobStorage::eOnlyInMemory, aRv);
@@ -335,15 +355,14 @@ void Blob::Stream(JSContext* aCx, JS::MutableHandle<JSObject*> aStream,
     return;
   }
 
-  nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(GetParentObject());
-  if (NS_WARN_IF(!global)) {
+  if (NS_WARN_IF(!mGlobal)) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
 
   RefPtr<BlobBodyStreamHolder> holder = new BlobBodyStreamHolder();
 
-  BodyStream::Create(aCx, holder, global, stream, aRv);
+  BodyStream::Create(aCx, holder, mGlobal, stream, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }

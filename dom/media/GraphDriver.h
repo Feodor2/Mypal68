@@ -129,7 +129,7 @@ class GraphDriver {
    * before being started again. */
   virtual void Start() = 0;
   /* Shutdown GraphDriver (synchronously) */
-  virtual void Shutdown() = 0;
+  MOZ_CAN_RUN_SCRIPT virtual void Shutdown() = 0;
   /* Rate at which the GraphDriver runs, in ms. This can either be user
    * controlled (because we are using a {System,Offline}ClockDriver, and decide
    * how often we want to wakeup/how much we want to process per iteration), or
@@ -231,7 +231,7 @@ class ThreadedDriver : public GraphDriver {
   void WaitForNextIteration() override;
   void WakeUp() override;
   void Start() override;
-  void Shutdown() override;
+  MOZ_CAN_RUN_SCRIPT void Shutdown() override;
   /**
    * Runs main control loop on the graph thread. Normally a single invocation
    * of this runs for the entire lifetime of the graph thread.
@@ -352,14 +352,14 @@ class AudioCallbackDriver : public GraphDriver,
  public:
   /** If aInputChannelCount is zero, then this driver is output-only. */
   AudioCallbackDriver(MediaTrackGraphImpl* aGraphImpl,
-                      uint32_t aInputChannelCount,
+                      uint32_t aOutputChannelCount, uint32_t aInputChannelCount,
                       AudioInputType aAudioInputType);
   virtual ~AudioCallbackDriver();
 
   void Start() override;
   void WaitForNextIteration() override;
   void WakeUp() override;
-  void Shutdown() override;
+  MOZ_CAN_RUN_SCRIPT void Shutdown() override;
 #if defined(XP_WIN)
   void ResetDefaultDevice() override;
 #endif
@@ -459,7 +459,7 @@ class AudioCallbackDriver : public GraphDriver,
   }
 
   /* MediaTrackGraphs are always down/up mixed to output channels. */
-  uint32_t mOutputChannels;
+  const uint32_t mOutputChannels;
   /* The size of this buffer comes from the fact that some audio backends can
    * call back with a number of frames lower than one block (128 frames), so we
    * need to keep at most two block in the SpillBuffer, because we always round
@@ -533,6 +533,12 @@ class AudioCallbackDriver : public GraphDriver,
   /* True if this driver was created from a driver created because of a previous
    * AudioCallbackDriver failure. */
   bool mFromFallback;
+#ifdef XP_MACOSX
+  /* When using the built-in speakers on macbook pro (13 and 15, all models),
+   * it's best to hard pan the audio on the right, to avoid feedback into the
+   * microphone that is located next to the left speaker.  */
+  Atomic<bool> mNeedsPanning;
+#endif
 };
 
 class AsyncCubebTask : public Runnable {

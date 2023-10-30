@@ -16,14 +16,14 @@
 
 #include "AppleUtils.h"
 
+namespace mozilla {
+extern LazyLogModule sPEMLog;
 #define VTENC_LOGE(fmt, ...)                 \
   MOZ_LOG(sPEMLog, mozilla::LogLevel::Error, \
           ("[AppleVTEncoder] %s: " fmt, __func__, ##__VA_ARGS__))
 #define VTENC_LOGD(fmt, ...)                 \
   MOZ_LOG(sPEMLog, mozilla::LogLevel::Debug, \
           ("[AppleVTEncoder] %s: " fmt, __func__, ##__VA_ARGS__))
-
-namespace mozilla {
 
 static CFDictionaryRef BuildEncoderSpec() {
   const void* keys[] = {
@@ -37,17 +37,36 @@ static CFDictionaryRef BuildEncoderSpec() {
                             &kCFTypeDictionaryValueCallBacks);
 }
 
-static void FrameCallback(void* aEncoder, void* aFrameParams, OSStatus aStatus,
+static void FrameCallback(void* aEncoder, void* aFrameRefCon, OSStatus aStatus,
                           VTEncodeInfoFlags aInfoFlags,
                           CMSampleBufferRef aSampleBuffer) {
   if (aStatus != noErr || !aSampleBuffer) {
-    VTENC_LOGE("VideoToolbox encoder returned no data");
+    VTENC_LOGE("VideoToolbox encoder returned no data status=%d sample=%p",
+               aStatus, aSampleBuffer);
     aSampleBuffer = nullptr;
   } else if (aInfoFlags & kVTEncodeInfo_FrameDropped) {
-    VTENC_LOGE("  ...frame tagged as dropped...");
+    VTENC_LOGE("frame tagged as dropped");
+    return;
   }
+  (static_cast<AppleVTEncoder*>(aEncoder))->OutputFrame(aSampleBuffer);
+}
 
-  static_cast<AppleVTEncoder*>(aEncoder)->OutputFrame(aSampleBuffer);
+static bool SetAverageBitrate(VTCompressionSessionRef& aSession,
+                              MediaDataEncoder::Rate aBitsPerSec) {
+  int64_t bps(aBitsPerSec);
+  AutoCFRelease<CFNumberRef> bitrate(
+      CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt64Type, &bps));
+  return VTSessionSetProperty(aSession,
+                              kVTCompressionPropertyKey_AverageBitRate,
+                              bitrate) == noErr;
+}
+
+static bool SetRealtimeProperties(VTCompressionSessionRef& aSession) {
+  return VTSessionSetProperty(aSession, kVTCompressionPropertyKey_RealTime,
+                              kCFBooleanTrue) == noErr &&
+         VTSessionSetProperty(aSession,
+                              kVTCompressionPropertyKey_AllowFrameReordering,
+                              kCFBooleanFalse) == noErr;
 }
 
 static bool SetProfileLevel(VTCompressionSessionRef& aSession,
@@ -75,37 +94,61 @@ RefPtr<MediaDataEncoder::InitPromise> AppleVTEncoder::Init() {
   AutoCFRelease<CFDictionaryRef> srcBufferAttr(
       BuildSourceImageBufferAttributes());
   if (!srcBufferAttr) {
-    return InitPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR,
-                                        __func__);
+    return InitPromise::CreateAndReject(
+        MediaResult(NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR,
+                    "fail to create source buffer attributes"),
+        __func__);
   }
 
   OSStatus status = VTCompressionSessionCreate(
       kCFAllocatorDefault, mConfig.mSize.width, mConfig.mSize.height,
       kCMVideoCodecType_H264, spec, srcBufferAttr, kCFAllocatorDefault,
-      &FrameCallback, this, &mSession);
+      &FrameCallback, this /* outputCallbackRefCon */, &mSession);
+
   if (status != noErr) {
-    VTENC_LOGE("fail to create encoder session");
-    // TODO: new error codes for encoder
-    return InitPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_ABORT_ERR, __func__);
+    return InitPromise::CreateAndReject(
+        MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                    "fail to create encoder session"),
+        __func__);
   }
 
-  const Maybe<H264Specific>& h264Config = mConfig.mCodecSpecific;
-  if (h264Config) {
-    if (!SetProfileLevel(mSession, h264Config.ref().mProfileLevel)) {
-      VTENC_LOGE("fail to configurate profile level");
-      return InitPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_ABORT_ERR,
-                                          __func__);
+  if (!SetAverageBitrate(mSession, mConfig.mBitsPerSec)) {
+    return InitPromise::CreateAndReject(
+        MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                    "fail to configurate average bitrate"),
+        __func__);
+  }
+
+  if (mConfig.mUsage == Usage::Realtime && !SetRealtimeProperties(mSession)) {
+    VTENC_LOGE("fail to configurate realtime properties");
+    return InitPromise::CreateAndReject(
+        MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                    "fail to configurate average bitrate"),
+        __func__);
+  }
+
+  if (mConfig.mCodecSpecific) {
+    const H264Specific& specific = mConfig.mCodecSpecific.ref();
+    if (!SetProfileLevel(mSession, specific.mProfileLevel)) {
+      return InitPromise::CreateAndReject(
+          MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
+                      nsPrintfCString("fail to configurate profile level:%d",
+                                      specific.mProfileLevel)),
+          __func__);
     }
 
-    int64_t interval = h264Config.ref().mKeyframeInterval;
+    int64_t interval = specific.mKeyframeInterval;
     AutoCFRelease<CFNumberRef> cf(
         CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt64Type, &interval));
     if (VTSessionSetProperty(mSession,
                              kVTCompressionPropertyKey_MaxKeyFrameInterval,
                              cf) != noErr) {
-      VTENC_LOGE("fail to configurate keyframe interval");
-      return InitPromise::CreateAndReject(NS_ERROR_DOM_MEDIA_ABORT_ERR,
-                                          __func__);
+      return InitPromise::CreateAndReject(
+          MediaResult(
+              NS_ERROR_DOM_MEDIA_FATAL_ERR,
+              nsPrintfCString("fail to configurate keyframe interval:%" PRId64,
+                              interval)),
+          __func__);
     }
   }
 
@@ -411,7 +454,7 @@ RefPtr<MediaDataEncoder::EncodePromise> AppleVTEncoder::ProcessEncode(
       mSession, buffer,
       CMTimeMake(aSample->mTime.ToMicroseconds(), USECS_PER_S),
       CMTimeMake(aSample->mDuration.ToMicroseconds(), USECS_PER_S), frameProps,
-      nullptr, &info);
+      nullptr /* sourceFrameRefcon */, &info);
   if (status != noErr) {
     return EncodePromise::CreateAndReject(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                                           __func__);
@@ -441,12 +484,17 @@ static size_t NumberOfPlanes(MediaDataEncoder::PixelFormat aPixelFormat) {
 
 using namespace layers;
 
+static void ReleaseImage(void* aImageGrip, const void* aDataPtr,
+                         size_t aDataSize, size_t aNumOfPlanes,
+                         const void** aPlanes) {
+  (static_cast<PlanarYCbCrImage*>(aImageGrip))->Release();
+}
+
 CVPixelBufferRef AppleVTEncoder::CreateCVPixelBuffer(const Image* aSource) {
   AssertOnTaskQueue();
 
   // TODO: support types other than YUV
-  const PlanarYCbCrImage* image =
-      const_cast<Image*>(aSource)->AsPlanarYCbCrImage();
+  PlanarYCbCrImage* image = const_cast<Image*>(aSource)->AsPlanarYCbCrImage();
   if (!image || !image->GetData()) {
     return nullptr;
   }
@@ -482,12 +530,19 @@ CVPixelBufferRef AppleVTEncoder::CreateCVPixelBuffer(const Image* aSource) {
   }
 
   CVPixelBufferRef buffer = nullptr;
-  return CVPixelBufferCreateWithPlanarBytes(
-             kCFAllocatorDefault, yuv->mPicSize.width, yuv->mPicSize.height,
-             format, nullptr, 0, numPlanes, addresses, widths, heights, strides,
-             nullptr, nullptr, nullptr, &buffer) == kCVReturnSuccess
-             ? buffer
-             : nullptr;
+  image->AddRef();  // Grip input buffers.
+  CVReturn rv = CVPixelBufferCreateWithPlanarBytes(
+      kCFAllocatorDefault, yuv->mPicSize.width, yuv->mPicSize.height, format,
+      nullptr /* dataPtr */, 0 /* dataSize */, numPlanes, addresses, widths,
+      heights, strides, ReleaseImage /* releaseCallback */,
+      image /* releaseRefCon */, nullptr /* pixelBufferAttributes */, &buffer);
+  if (rv == kCVReturnSuccess) {
+    return buffer;
+    // |image| will be released in |ReleaseImage()|.
+  } else {
+    image->Release();
+    return nullptr;
+  }
 }
 
 RefPtr<MediaDataEncoder::EncodePromise> AppleVTEncoder::Drain() {
@@ -541,11 +596,7 @@ RefPtr<GenericPromise> AppleVTEncoder::SetBitrate(
   RefPtr<AppleVTEncoder> self = this;
   return InvokeAsync(mTaskQueue, __func__, [self, aBitsPerSec]() {
     MOZ_ASSERT(self->mSession);
-    AutoCFRelease<CFNumberRef> bitrate(
-        CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt64Type, &aBitsPerSec));
-    return VTSessionSetProperty(self->mSession,
-                                kVTCompressionPropertyKey_AverageBitRate,
-                                bitrate) == noErr
+    return SetAverageBitrate(self->mSession, aBitsPerSec)
                ? GenericPromise::CreateAndResolve(true, __func__)
                : GenericPromise::CreateAndReject(
                      NS_ERROR_DOM_MEDIA_NOT_SUPPORTED_ERR, __func__);

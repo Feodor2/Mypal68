@@ -169,7 +169,7 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
     return nullptr;
   }
 
-  MessagePortIdentifier portIdentifier;
+  UniqueMessagePortId portIdentifier;
   channel->Port1()->CloneAndDisentangle(portIdentifier);
 
   URIParams resolvedScriptURL;
@@ -196,7 +196,7 @@ already_AddRefed<SharedWorker> SharedWorker::Constructor(
       storageAllowed, true /* sharedWorker */);
 
   PSharedWorkerChild* pActor = actorChild->SendPSharedWorkerConstructor(
-      remoteWorkerData, loadInfo.mWindowID, portIdentifier);
+      remoteWorkerData, loadInfo.mWindowID, portIdentifier.release());
 
   RefPtr<SharedWorkerChild> actor = static_cast<SharedWorkerChild*>(pActor);
   MOZ_ASSERT(actor);

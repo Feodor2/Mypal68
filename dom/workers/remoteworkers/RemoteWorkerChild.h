@@ -17,6 +17,7 @@ namespace mozilla {
 namespace dom {
 
 class RemoteWorkerData;
+class UniqueMessagePortId;
 class WeakWorkerRef;
 class WorkerErrorReport;
 class WorkerPrivate;
@@ -37,7 +38,7 @@ class RemoteWorkerChild final : public PRemoteWorkerChild {
   void ShutdownOnWorker();
 
   void AddPortIdentifier(JSContext* aCx, WorkerPrivate* aWorkerPrivate,
-                         const MessagePortIdentifier& aPortIdentifier);
+                         UniqueMessagePortId& aPortIdentifier);
 
   void ErrorPropagationOnMainThread(const WorkerErrorReport* aReport,
                                     bool aIsErrorEvent);

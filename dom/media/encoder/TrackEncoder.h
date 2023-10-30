@@ -6,7 +6,7 @@
 #define TrackEncoder_h_
 
 #include "AudioSegment.h"
-#include "EncodedFrameContainer.h"
+#include "EncodedFrame.h"
 #include "MediaTrackGraph.h"
 #include "TrackMetadataBase.h"
 #include "VideoSegment.h"
@@ -80,7 +80,7 @@ class TrackEncoder {
    * Encodes raw segments. Result data is returned in aData, and called on the
    * worker thread.
    */
-  virtual nsresult GetEncodedTrack(EncodedFrameContainer& aData) = 0;
+  virtual nsresult GetEncodedTrack(nsTArray<RefPtr<EncodedFrame>>& aData) = 0;
 
   /**
    * Returns true once this TrackEncoder is initialized.
@@ -419,7 +419,7 @@ class VideoTrackEncoder : public TrackEncoder {
   /**
    * Set desired keyframe interval defined in milliseconds.
    */
-  void SetKeyFrameInterval(int32_t aKeyFrameInterval);
+  void SetKeyFrameInterval(uint32_t aKeyFrameInterval);
 
  protected:
   /**
@@ -517,7 +517,7 @@ class VideoTrackEncoder : public TrackEncoder {
   /**
    * The desired keyframe interval defined in milliseconds.
    */
-  int32_t mKeyFrameInterval;
+  uint32_t mKeyFrameInterval;
 
   /**
    * True if the video MediaTrackTrack this VideoTrackEncoder is attached to is

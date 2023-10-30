@@ -2,13 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "RemoteDataDecoder.h"
+
 #include "AndroidBridge.h"
 #include "AndroidDecoderModule.h"
-#include "JavaCallbacksSupport.h"
-#include "SimpleMap.h"
+#include "EMEDecoderModule.h"
 #include "GLImages.h"
+#include "JavaCallbacksSupport.h"
 #include "MediaData.h"
 #include "MediaInfo.h"
+#include "SimpleMap.h"
 #include "VideoUtils.h"
 #include "VPXDecoder.h"
 
@@ -58,13 +61,14 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
  public:
   // Render the output to the surface when the frame is sent
   // to compositor, or release it if not presented.
-  class CompositeListener : private RenderOrReleaseOutput,
-                            public VideoData::Listener {
+  class CompositeListener
+      : private RenderOrReleaseOutput,
+        public layers::SurfaceTextureImage::SetCurrentCallback {
    public:
     CompositeListener(CodecProxy::Param aCodec, Sample::Param aSample)
         : RenderOrReleaseOutput(aCodec, aSample) {}
 
-    void OnSentToCompositor() override { ReleaseOutput(true); }
+    void operator()(void) override { ReleaseOutput(true); }
   };
 
   class InputInfo {
@@ -251,7 +255,7 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
       return;
     }
 
-    UniquePtr<VideoData::Listener> releaseSample(
+    UniquePtr<layers::SurfaceTextureImage::SetCurrentCallback> releaseSample(
         new CompositeListener(mJavaDecoder, aSample));
 
     BufferInfo::LocalRef info = aSample->Info();
@@ -284,18 +288,19 @@ class RemoteVideoDecoder : public RemoteDataDecoder {
     }
 
     if (ok && (size > 0 || presentationTimeUs >= 0)) {
-      RefPtr<layers::Image> img = new SurfaceTextureImage(
+      RefPtr<layers::Image> img = new layers::SurfaceTextureImage(
           mSurfaceHandle, inputInfo.mImageSize, false /* NOT continuous */,
           gl::OriginPos::BottomLeft, mConfig.HasAlpha());
+      img->AsSurfaceTextureImage()->RegisterSetCurrentCallback(
+          std::move(releaseSample));
 
       RefPtr<VideoData> v = VideoData::CreateFromImage(
           inputInfo.mDisplaySize, offset,
           TimeUnit::FromMicroseconds(presentationTimeUs),
-          TimeUnit::FromMicroseconds(inputInfo.mDurationUs), img,
+          TimeUnit::FromMicroseconds(inputInfo.mDurationUs), img.forget(),
           !!(flags & MediaCodec::BUFFER_FLAG_SYNC_FRAME),
           TimeUnit::FromMicroseconds(presentationTimeUs));
 
-      v->SetListener(std::move(releaseSample));
       RemoteDataDecoder::UpdateOutputStatus(std::move(v));
     }
 
@@ -855,3 +860,4 @@ void RemoteDataDecoder::Error(const MediaResult& aError) {
 }
 
 }  // namespace mozilla
+#undef LOG

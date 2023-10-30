@@ -1673,4 +1673,6 @@ bool SkeletonState::DecodeHeader(OggPacketPtr aPacket) {
   return true;
 }
 
+#undef LOG
+
 }  // namespace mozilla

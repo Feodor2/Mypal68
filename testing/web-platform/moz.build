@@ -417,21 +417,6 @@ with Files("tests/page-visibility/**"):
 with Files("tests/paint-timing/**"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
-# No tests in here
-with Files("tests/payment-handler/**"):
-    BUG_COMPONENT = ("Core", "DOM: Web Payments")
-
-# No tests in here
-with Files("tests/payment-method-basic-card/**"):
-    BUG_COMPONENT = ("Core", "DOM: Web Payments")
-
-# No tests in here
-with Files("tests/payment-method-id/**"):
-    BUG_COMPONENT = ("Core", "DOM: Web Payments")
-
-with Files("tests/payment-request/**"):
-    BUG_COMPONENT = ("Core", "DOM: Web Payments")
-
 with Files("tests/performance-timeline/**"):
     BUG_COMPONENT = ("Core", "Performance")
 

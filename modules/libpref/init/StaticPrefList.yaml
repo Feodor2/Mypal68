@@ -1684,25 +1684,6 @@
   value: false
   mirror: always
 
-# Enable/disable the PaymentRequest API
-- name: dom.payments.request.enabled
-  type: bool
-  value: false
-  mirror: always
-
-# Whether a user gesture is required to call PaymentRequest.prototype.show().
-- name: dom.payments.request.user_interaction_required
-  type: bool
-  value: true
-  mirror: always
-
-# Time in milliseconds for PaymentResponse to wait for
-# the Web page to call complete().
-- name: dom.payments.response.timeout
-  type: uint32_t
-  value: 5000
-  mirror: always
-
 # Enable printing performance marks/measures to log
 - name: dom.performance.enable_user_timing_logging
   type: RelaxedAtomicBool

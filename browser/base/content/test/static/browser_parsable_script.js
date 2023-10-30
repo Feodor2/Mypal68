@@ -12,13 +12,6 @@ const kWhitelist = new Set([
   /browser\/content\/browser\/places\/controller.js$/,
 ]);
 
-const kESModuleList = new Set([
-  /browser\/res\/payments\/(components|containers|mixins)\/.*\.js$/,
-  /browser\/res\/payments\/paymentRequest\.js$/,
-  /browser\/res\/payments\/PaymentsStore\.js$/,
-  /browser\/aboutlogins\/components\/.*\.js$/,
-]);
-
 // Normally we would use reflect.jsm to get Reflect.parse. However, if
 // we do that, then all the AST data is allocated in reflect.jsm's
 // zone. That exposes a bug in our GC. The GC collects reflect.jsm's

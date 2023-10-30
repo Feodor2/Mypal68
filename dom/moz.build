@@ -22,7 +22,6 @@ interfaces = [
     'geolocation',
     'notification',
     'push',
-    'payments',
 ]
 
 DIRS += ['interfaces/' + i for i in interfaces]
@@ -95,7 +94,6 @@ DIRS += [
     'xhr',
     'worklet',
     'script',
-    'payments',
     'websocket',
     'serviceworkers',
     'simpledb',

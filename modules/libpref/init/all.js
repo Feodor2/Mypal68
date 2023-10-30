@@ -4497,12 +4497,6 @@ pref("browser.sanitizer.loglevel", "Warn");
 // To disable blocking of auth prompts, set the limit to -1.
 pref("prompts.authentication_dialog_abuse_limit", 2);
 
-// Payment Request API preferences
-pref("dom.payments.loglevel", "Warn");
-pref("dom.payments.defaults.saveCreditCard", false);
-pref("dom.payments.defaults.saveAddress", true);
-pref("dom.payments.request.supportedRegions", "US,CA");
-
 #ifdef MOZ_ASAN_REPORTER
   pref("asanreporter.apiurl", "");
   pref("asanreporter.clientid", "unknown");

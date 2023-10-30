@@ -269,7 +269,6 @@ module.exports = {
       "dom/messagechannel/**",
       "dom/midi/**",
       "dom/network/**",
-      "dom/payments/**",
       "dom/performance/**",
       "dom/permission/**",
       "dom/quota/**",

@@ -668,10 +668,6 @@ class BrowserParent final : public PBrowserParent,
 
   bool DeallocPPluginWidgetParent(PPluginWidgetParent* aActor);
 
-  PPaymentRequestParent* AllocPPaymentRequestParent();
-
-  bool DeallocPPaymentRequestParent(PPaymentRequestParent* aActor);
-
   bool SendLoadRemoteScript(const nsString& aURL,
                             const bool& aRunInGlobalScope);
 

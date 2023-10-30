@@ -1049,7 +1049,6 @@ const Description = {
                         "midi",
                         "midiSysex",
                         "notifications",
-                        "paymentHandler",
                         "protectedMediaIdentifier",
                         "sensors",
                         "videoCapture"

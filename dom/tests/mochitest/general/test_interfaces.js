@@ -772,51 +772,6 @@ var interfaceNamesInGlobalScope = [
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Path2D", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "PaymentAddress",
-    insecureContext: false,
-    desktop: true,
-    nightly: true,
-    linux: false,
-    disabled: true,
-  },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "PaymentMethodChangeEvent",
-    insecureContext: false,
-    desktop: true,
-    nightly: true,
-    linux: false,
-    disabled: true,
-  },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "PaymentRequest",
-    insecureContext: false,
-    desktop: true,
-    nightly: true,
-    linux: false,
-    disabled: true,
-  },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "PaymentRequestUpdateEvent",
-    insecureContext: false,
-    desktop: true,
-    nightly: true,
-    linux: false,
-    disabled: true,
-  },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
-  {
-    name: "PaymentResponse",
-    insecureContext: false,
-    desktop: true,
-    nightly: true,
-    linux: false,
-    disabled: true,
-  },
-  // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "Performance", insecureContext: true },
   // IMPORTANT: Do not change this list without review from a DOM peer!
   { name: "PerformanceEntry", insecureContext: true },

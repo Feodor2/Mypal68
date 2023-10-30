@@ -30,9 +30,6 @@ var gExceptionPaths = [
   "resource://gre/modules/commonjs/",
   "resource://gre/defaults/pref/",
 
-  // These resources are referenced using relative paths from html files.
-  "resource://payments/",
-
   // https://github.com/mozilla/activity-stream/issues/3053
   "resource://activity-stream/data/content/tippytop/images/",
   // https://github.com/mozilla/activity-stream/issues/3758

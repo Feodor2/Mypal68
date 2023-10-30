@@ -23,7 +23,6 @@
 #include "mozilla/dom/MessageManagerBinding.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/Nullable.h"
-#include "mozilla/dom/PaymentRequestChild.h"
 #include "mozilla/dom/PBrowser.h"
 #include "mozilla/dom/WindowProxyHolder.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
@@ -3233,17 +3232,6 @@ nsresult BrowserChild::CreatePluginWidget(nsIWidget* aParent,
   return rv;
 }
 #endif  // XP_WIN
-
-PPaymentRequestChild* BrowserChild::AllocPPaymentRequestChild() {
-  MOZ_CRASH(
-      "We should never be manually allocating PPaymentRequestChild actors");
-  return nullptr;
-}
-
-bool BrowserChild::DeallocPPaymentRequestChild(PPaymentRequestChild* actor) {
-  delete actor;
-  return true;
-}
 
 PWindowGlobalChild* BrowserChild::AllocPWindowGlobalChild(
     const WindowGlobalInit&) {

@@ -20,7 +20,6 @@
 #include "mozilla/dom/FrameCrashedEvent.h"
 #include "mozilla/dom/indexedDB/ActorsParent.h"
 #include "mozilla/dom/IPCBlobUtils.h"
-#include "mozilla/dom/PaymentRequestParent.h"
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/RemoteWebProgress.h"
 #include "mozilla/dom/RemoteWebProgressRequest.h"
@@ -3518,18 +3517,6 @@ BrowserParent::AllocPPluginWidgetParent() {
 bool BrowserParent::DeallocPPluginWidgetParent(
     mozilla::plugins::PPluginWidgetParent* aActor) {
   delete aActor;
-  return true;
-}
-
-PPaymentRequestParent* BrowserParent::AllocPPaymentRequestParent() {
-  RefPtr<PaymentRequestParent> actor = new PaymentRequestParent();
-  return actor.forget().take();
-}
-
-bool BrowserParent::DeallocPPaymentRequestParent(
-    PPaymentRequestParent* aActor) {
-  RefPtr<PaymentRequestParent> actor =
-      dont_AddRef(static_cast<PaymentRequestParent*>(aActor));
   return true;
 }
 

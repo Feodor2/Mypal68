@@ -564,10 +564,6 @@ class BrowserChild final : public BrowserChildBase,
   nsresult CreatePluginWidget(nsIWidget* aParent, nsIWidget** aOut);
 #endif
 
-  PPaymentRequestChild* AllocPPaymentRequestChild();
-
-  bool DeallocPPaymentRequestChild(PPaymentRequestChild* aActor);
-
   LayoutDeviceIntPoint GetClientOffset() const { return mClientOffset; }
   LayoutDeviceIntPoint GetChromeOffset() const { return mChromeOffset; };
 

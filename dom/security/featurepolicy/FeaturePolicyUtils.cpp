@@ -34,7 +34,6 @@ static FeatureMap sSupportedFeatures[] = {
     {"geolocation", FeaturePolicyUtils::FeaturePolicyValue::eAll},
     {"microphone", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     {"midi", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
-    {"payment", FeaturePolicyUtils::FeaturePolicyValue::eAll},
     {"document-domain", FeaturePolicyUtils::FeaturePolicyValue::eAll},
     {"display-capture", FeaturePolicyUtils::FeaturePolicyValue::eSelf},
     // TODO: not supported yet!!!

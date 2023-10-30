@@ -1,9 +1,9 @@
 {
   "default": {
-    "searchDefault": "Qwant",
-    "searchOrder": ["Qwant", "Brave"],
+    "searchDefault": "Brave",
+    "searchOrder": ["Brave", "Qwant"],
     "visibleDefaultEngines": [
-      "brave", "mojeek","qwant", "stp"
+      "brave", "mojeek","qwant","ddg"
     ]
   }
 }

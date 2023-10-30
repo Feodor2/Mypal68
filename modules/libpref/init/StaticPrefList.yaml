@@ -5596,15 +5596,7 @@
 # AV1
 - name: media.av1.enabled
   type: RelaxedAtomicBool
-#if defined(XP_WIN) && !defined(_ARM64_)
-  value: true
-#elif defined(XP_MACOSX)
-  value: true
-#elif defined(XP_UNIX) && !defined(ANDROID)
-  value: true
-#else
   value: false
-#endif
   mirror: always
 
 - name: media.av1.use-dav1d

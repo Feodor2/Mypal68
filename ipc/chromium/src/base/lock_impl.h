@@ -53,7 +53,12 @@ class LockImpl {
 
  private:
   //NativeHandle native_handle_;
+#if defined(_M_IX86) || defined(__i386)
   char os_lock_[24];
+#else
+  char os_lock_[40];
+#endif
+
 
 #if !defined(NDEBUG) && defined(OS_WIN)
   // All private data is implicitly protected by lock_.

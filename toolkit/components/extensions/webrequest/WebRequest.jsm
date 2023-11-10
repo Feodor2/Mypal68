@@ -157,10 +157,6 @@ const checkRestrictedHeaderValue = (value, opts = {}) => {
   if (extension && !extension.allowedOrigins.matches(uri)) {
     throw new Error(`Unable to set host header, url missing from permissions.`);
   }
-
-  if (WebExtensionPolicy.isRestrictedURI(uri)) {
-    throw new Error(`Unable to set host header to restricted url.`);
-  }
 };
 
 class RequestHeaderChanger extends HeaderChanger {

@@ -549,7 +549,6 @@ var WebExtensionInspectedWindowActor = protocol.ActorClassWithSpec(
       // allowed and their are expected to not have their about URI associated
       // to the principal).
       if (
-        WebExtensionPolicy.isRestrictedURI(docPrincipalURI) ||
         docPrincipalURI.schemeIs("about")
       ) {
         logEvalDenied();

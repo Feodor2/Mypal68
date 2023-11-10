@@ -192,11 +192,6 @@ interface WebExtensionPolicy {
   static WebExtensionPolicy? getByURI(URI uri);
 
   /**
-   * Returns true if the URI is restricted for any extension.
-   */
-  static boolean isRestrictedURI(URI uri);
-
-  /**
    * When present, the extension is not yet ready to load URLs. In that case,
    * this policy object is a stub, and the attribute contains a promise which
    * resolves to a new, non-stub policy object when the extension is ready.

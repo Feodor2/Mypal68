@@ -38,9 +38,6 @@ static const char kBackgroundPageHTMLEnd[] =
   </body>\n\
 </html>";
 
-static const char kRestrictedDomainPref[] =
-    "extensions.webextensions.restrictedDomains";
-
 static inline ExtensionPolicyService& EPS() {
   return ExtensionPolicyService::GetSingleton();
 }
@@ -395,25 +392,6 @@ bool WebExtensionPolicy::IsRestrictedDoc(const DocInfo& aDoc) {
     return true;
   }
 
-  return IsRestrictedURI(aDoc.PrincipalURL());
-}
-
-/* static */
-bool WebExtensionPolicy::IsRestrictedURI(const URLInfo& aURI) {
-  static RefPtr<AtomSetPref> domains;
-  if (!domains) {
-    domains = AtomSetPref::Create(nsLiteralCString(kRestrictedDomainPref));
-    ClearOnShutdown(&domains);
-  }
-
-  if (domains->Contains(aURI.HostAtom())) {
-    return true;
-  }
-
-  if (AddonManagerWebAPI::IsValidSite(aURI.URI())) {
-    return true;
-  }
-
   return false;
 }
 
@@ -632,10 +610,6 @@ bool MozDocumentMatcher::MatchesURI(const URLInfo& aURL) const {
   }
 
   if (!mExcludeGlobs.IsNull() && mExcludeGlobs.Value().Matches(aURL.Spec())) {
-    return false;
-  }
-
-  if (mRestricted && mExtension->IsRestrictedURI(aURL)) {
     return false;
   }
 

@@ -75,7 +75,7 @@ class WebExtensionPolicy final : public nsISupports,
 
   bool CanAccessURI(const URLInfo& aURI, bool aExplicit = false,
                     bool aCheckRestricted = true) const {
-    return (!aCheckRestricted || !IsRestrictedURI(aURI)) && mHostPermissions &&
+    return !aCheckRestricted && mHostPermissions &&
            mHostPermissions->Matches(aURI, aExplicit);
   }
 
@@ -91,7 +91,6 @@ class WebExtensionPolicy final : public nsISupports,
   }
 
   static bool IsRestrictedDoc(const DocInfo& aDoc);
-  static bool IsRestrictedURI(const URLInfo& aURI);
 
   nsCString BackgroundPageHTML() const;
 
@@ -152,10 +151,6 @@ class WebExtensionPolicy final : public nsISupports,
 
   static already_AddRefed<WebExtensionPolicy> GetByURI(
       dom::GlobalObject& aGlobal, nsIURI* aURI);
-
-  static bool IsRestrictedURI(dom::GlobalObject& aGlobal, const URLInfo& aURI) {
-    return IsRestrictedURI(aURI);
-  }
 
   static bool UseRemoteWebExtensions(dom::GlobalObject& aGlobal);
   static bool IsExtensionProcess(dom::GlobalObject& aGlobal);

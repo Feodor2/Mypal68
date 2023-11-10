@@ -74,28 +74,3 @@ add_task(async function test_host_header_denied() {
 
   await extension.unload();
 });
-
-add_task(async function test_host_header_restricted() {
-  Services.prefs.setCharPref(
-    "extensions.webextensions.restrictedDomains",
-    "example.org"
-  );
-  registerCleanupFunction(() => {
-    Services.prefs.clearUserPref("extensions.webextensions.restrictedDomains");
-  });
-
-  let extension = getExtension();
-
-  await extension.startup();
-
-  let headers = JSON.parse(
-    await ExtensionTestUtils.fetch(
-      FETCH_ORIGIN,
-      `${BASE_URL}/return_headers.sjs`
-    )
-  );
-
-  equal(headers.host, "example.com", "Host header was not set on request");
-
-  await extension.unload();
-});

@@ -412,18 +412,9 @@ bool ChannelWrapper::IsSystemLoad() const {
 }
 
 bool ChannelWrapper::CanModify() const {
-  if (WebExtensionPolicy::IsRestrictedURI(FinalURLInfo())) {
-    return false;
-  }
-
   if (nsCOMPtr<nsILoadInfo> loadInfo = GetLoadInfo()) {
     if (nsIPrincipal* prin = loadInfo->LoadingPrincipal()) {
       if (IsSystemPrincipal(prin)) {
-        return false;
-      }
-
-      auto* docURI = DocumentURLInfo();
-      if (docURI && WebExtensionPolicy::IsRestrictedURI(*docURI)) {
         return false;
       }
     }

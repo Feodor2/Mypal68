@@ -1498,6 +1498,9 @@ pref("network.process.enabled", false);
 // Enable/disable sni encryption.
 pref("network.security.esni.enabled", false);
 
+// <ws>: WebSocket
+pref("network.websocket.enabled", true);
+
 // 2147483647 == PR_INT32_MAX == ~2 GB
 pref("network.websocket.max-message-size", 2147483647);
 

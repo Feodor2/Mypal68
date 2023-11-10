@@ -950,6 +950,11 @@ void WebSocket::BindToOwner(nsIGlobalObject* aNew) {
 already_AddRefed<WebSocket> WebSocket::Constructor(const GlobalObject& aGlobal,
                                                    const nsAString& aUrl,
                                                    ErrorResult& aRv) {
+  if (!PrefEnabled()) {
+    aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
+    return nullptr;
+  }
+
   Sequence<nsString> protocols;
   return WebSocket::ConstructorCommon(aGlobal, aUrl, protocols, nullptr,
                                       EmptyCString(), aRv);
@@ -1506,6 +1511,10 @@ nsresult WebSocketImpl::Init(JSContext* aCx, nsIPrincipal* aLoadingPrincipal,
   AssertIsOnMainThread();
   MOZ_ASSERT(aPrincipal);
 
+  if (!WebSocket::PrefEnabled()) {
+    return NS_ERROR_DOM_SECURITY_ERR;
+  }
+
   mService = WebSocketEventService::GetOrCreate();
 
   // We need to keep the implementation alive in case the init disconnects it
@@ -1954,6 +1963,10 @@ nsresult WebSocket::CreateAndDispatchCloseEvent(bool aWasClean, uint16_t aCode,
   ErrorResult err;
   DispatchEvent(*event, err);
   return err.StealNSResult();
+}
+
+bool WebSocket::PrefEnabled() {
+  return Preferences::GetBool("network.websocket.enabled", true);
 }
 
 nsresult WebSocketImpl::ParseURL(const nsAString& aURL) {

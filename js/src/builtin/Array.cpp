@@ -3778,9 +3778,12 @@ static const JSFunctionSpec array_methods[] = {
     /* ES7 additions */
     JS_SELF_HOSTED_FN("includes", "ArrayIncludes", 2, 0),
 
-    /* Future additions */
+    /* ES2020 */
     JS_SELF_HOSTED_FN("flatMap", "ArrayFlatMap", 1, 0),
     JS_SELF_HOSTED_FN("flat", "ArrayFlat", 0, 0),
+
+    /* Proposal */
+    JS_SELF_HOSTED_FN("at", "ArrayAt", 1, 0),
 
     JS_FS_END};
 
@@ -3935,7 +3938,8 @@ static bool array_proto_finish(JSContext* cx, JS::HandleObject ctor,
   }
 
   RootedValue value(cx, BooleanValue(true));
-  if (!DefineDataProperty(cx, unscopables, cx->names().copyWithin, value) ||
+  if (!DefineDataProperty(cx, unscopables, cx->names().at, value) ||
+      !DefineDataProperty(cx, unscopables, cx->names().copyWithin, value) ||
       !DefineDataProperty(cx, unscopables, cx->names().entries, value) ||
       !DefineDataProperty(cx, unscopables, cx->names().fill, value) ||
       !DefineDataProperty(cx, unscopables, cx->names().find, value) ||

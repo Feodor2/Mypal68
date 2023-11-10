@@ -1905,6 +1905,7 @@ bool TypedArrayObject::set(JSContext* cx, unsigned argc, Value* vp) {
     JS_SELF_HOSTED_FN("includes", "TypedArrayIncludes", 2, 0),
     JS_SELF_HOSTED_FN("toString", "ArrayToString", 0, 0),
     JS_SELF_HOSTED_FN("toLocaleString", "TypedArrayToLocaleString", 2, 0),
+    JS_SELF_HOSTED_FN("at", "TypedArrayAt", 1, 0),
     JS_FS_END};
 
 /* static */ const JSFunctionSpec TypedArrayObject::staticFunctions[] = {

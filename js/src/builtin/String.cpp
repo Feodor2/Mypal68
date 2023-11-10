@@ -465,7 +465,7 @@ const JSClass StringObject::class_ = {
  * from nearly all String.prototype.* functions.
  */
 static MOZ_ALWAYS_INLINE JSString* ToStringForStringFunction(
-    JSContext* cx, HandleValue thisv) {
+    JSContext* cx, const char* funName, HandleValue thisv) {
   if (!CheckRecursionLimit(cx)) {
     return nullptr;
   }
@@ -487,8 +487,8 @@ static MOZ_ALWAYS_INLINE JSString* ToStringForStringFunction(
     }
   } else if (thisv.isNullOrUndefined()) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_CANT_CONVERT_TO,
-                              thisv.isNull() ? "null" : "undefined", "object");
+                              JSMSG_INCOMPATIBLE_PROTO, "String", funName,
+                              thisv.isNull() ? "null" : "undefined");
     return nullptr;
   }
 
@@ -870,7 +870,8 @@ JSString* js::StringToLowerCase(JSContext* cx, HandleString string) {
 static bool str_toLowerCase(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  RootedString str(cx, ToStringForStringFunction(cx, args.thisv()));
+  RootedString str(cx,
+                   ToStringForStringFunction(cx, "toLowerCase", args.thisv()));
   if (!str) {
     return false;
   }
@@ -983,7 +984,8 @@ bool js::intl_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
 static bool str_toLocaleLowerCase(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  RootedString str(cx, ToStringForStringFunction(cx, args.thisv()));
+  RootedString str(
+      cx, ToStringForStringFunction(cx, "toLocaleLowerCase", args.thisv()));
   if (!str) {
     return false;
   }
@@ -1308,7 +1310,8 @@ JSString* js::StringToUpperCase(JSContext* cx, HandleString string) {
 static bool str_toUpperCase(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  RootedString str(cx, ToStringForStringFunction(cx, args.thisv()));
+  RootedString str(cx,
+                   ToStringForStringFunction(cx, "toUpperCase", args.thisv()));
   if (!str) {
     return false;
   }
@@ -1395,7 +1398,8 @@ bool js::intl_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  RootedString str(cx, ToStringForStringFunction(cx, args.thisv()));
+  RootedString str(
+      cx, ToStringForStringFunction(cx, "toLocaleUpperCase", args.thisv()));
   if (!str) {
     return false;
   }
@@ -1443,7 +1447,8 @@ static bool str_toLocaleUpperCase(JSContext* cx, unsigned argc, Value* vp) {
 // JSLocaleCallbacks) when Intl functionality is not exposed.
 static bool str_localeCompare(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  RootedString str(cx, ToStringForStringFunction(cx, args.thisv()));
+  RootedString str(
+      cx, ToStringForStringFunction(cx, "localeCompare", args.thisv()));
   if (!str) {
     return false;
   }
@@ -1487,7 +1492,8 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-2.
-  RootedString str(cx, ToStringForStringFunction(cx, args.thisv()));
+  RootedString str(cx,
+                   ToStringForStringFunction(cx, "normalize", args.thisv()));
   if (!str) {
     return false;
   }
@@ -1626,7 +1632,7 @@ static bool str_charAt(JSContext* cx, unsigned argc, Value* vp) {
       goto out_of_range;
     }
   } else {
-    str = ToStringForStringFunction(cx, args.thisv());
+    str = ToStringForStringFunction(cx, "charAt", args.thisv());
     if (!str) {
       return false;
     }
@@ -1692,7 +1698,7 @@ bool js::str_charCodeAt(JSContext* cx, unsigned argc, Value* vp) {
   if (args.thisv().isString()) {
     str = args.thisv().toString();
   } else {
-    str = ToStringForStringFunction(cx, args.thisv());
+    str = ToStringForStringFunction(cx, "charCodeAt", args.thisv());
     if (!str) {
       return false;
     }
@@ -2183,7 +2189,7 @@ bool js::str_includes(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-2.
-  RootedString str(cx, ToStringForStringFunction(cx, args.thisv()));
+  RootedString str(cx, ToStringForStringFunction(cx, "includes", args.thisv()));
   if (!str) {
     return false;
   }
@@ -2235,7 +2241,7 @@ bool js::str_indexOf(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1, 2, and 3
-  RootedString str(cx, ToStringForStringFunction(cx, args.thisv()));
+  RootedString str(cx, ToStringForStringFunction(cx, "indexOf", args.thisv()));
   if (!str) {
     return false;
   }
@@ -2319,7 +2325,8 @@ static bool str_lastIndexOf(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-2.
-  RootedString str(cx, ToStringForStringFunction(cx, args.thisv()));
+  RootedString str(cx,
+                   ToStringForStringFunction(cx, "lastIndexOf", args.thisv()));
   if (!str) {
     return false;
   }
@@ -2416,7 +2423,8 @@ bool js::str_startsWith(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-2.
-  RootedString str(cx, ToStringForStringFunction(cx, args.thisv()));
+  RootedString str(cx,
+                   ToStringForStringFunction(cx, "startsWith", args.thisv()));
   if (!str) {
     return false;
   }
@@ -2478,7 +2486,7 @@ bool js::str_endsWith(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Steps 1-2.
-  RootedString str(cx, ToStringForStringFunction(cx, args.thisv()));
+  RootedString str(cx, ToStringForStringFunction(cx, "endsWith", args.thisv()));
   if (!str) {
     return false;
   }
@@ -2558,9 +2566,9 @@ static void TrimString(const CharT* chars, bool trimStart, bool trimEnd,
   *pEnd = end;
 }
 
-static bool TrimString(JSContext* cx, const CallArgs& args, bool trimStart,
-                       bool trimEnd) {
-  JSString* str = ToStringForStringFunction(cx, args.thisv());
+static bool TrimString(JSContext* cx, const CallArgs& args, const char* funName,
+                       bool trimStart, bool trimEnd) {
+  JSString* str = ToStringForStringFunction(cx, funName, args.thisv());
   if (!str) {
     return false;
   }
@@ -2593,17 +2601,17 @@ static bool TrimString(JSContext* cx, const CallArgs& args, bool trimStart,
 
 static bool str_trim(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return TrimString(cx, args, true, true);
+  return TrimString(cx, args, "trim", true, true);
 }
 
 static bool str_trimStart(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return TrimString(cx, args, true, false);
+  return TrimString(cx, args, "trimStart", true, false);
 }
 
 static bool str_trimEnd(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
-  return TrimString(cx, args, false, true);
+  return TrimString(cx, args, "trimEnd", false, true);
 }
 
 // Utility for building a rope (lazy concatenation) of strings.
@@ -3566,43 +3574,6 @@ ArrayObject* js::StringSplitString(JSContext* cx, HandleObjectGroup group,
   return SplitHelper(cx, linearStr, limit, linearSep, group);
 }
 
-/*
- * Python-esque sequence operations.
- */
-static bool str_concat(JSContext* cx, unsigned argc, Value* vp) {
-  CallArgs args = CallArgsFromVp(argc, vp);
-  JSString* str = ToStringForStringFunction(cx, args.thisv());
-  if (!str) {
-    return false;
-  }
-
-  for (unsigned i = 0; i < args.length(); i++) {
-    JSString* argStr = ToString<NoGC>(cx, args[i]);
-    if (!argStr) {
-      RootedString strRoot(cx, str);
-      argStr = ToString<CanGC>(cx, args[i]);
-      if (!argStr) {
-        return false;
-      }
-      str = strRoot;
-    }
-
-    JSString* next = ConcatStrings<NoGC>(cx, str, argStr);
-    if (next) {
-      str = next;
-    } else {
-      RootedString strRoot(cx, str), argStrRoot(cx, argStr);
-      str = ConcatStrings<CanGC>(cx, strRoot, argStrRoot);
-      if (!str) {
-        return false;
-      }
-    }
-  }
-
-  args.rval().setString(str);
-  return true;
-}
-
 static const JSFunctionSpec string_methods[] = {
     JS_FN(js_toSource_str, str_toSource, 0, 0),
 
@@ -3647,8 +3618,10 @@ static const JSFunctionSpec string_methods[] = {
     JS_SELF_HOSTED_FN("substr", "String_substr", 2, 0),
 
     /* Python-esque sequence methods. */
-    JS_FN("concat", str_concat, 1, 0),
+    JS_SELF_HOSTED_FN("concat", "String_concat", 1, 0),
     JS_SELF_HOSTED_FN("slice", "String_slice", 2, 0),
+
+    JS_SELF_HOSTED_FN("at", "String_at", 1, 0),
 
     /* HTML string methods. */
     JS_SELF_HOSTED_FN("bold", "String_bold", 0, 0),

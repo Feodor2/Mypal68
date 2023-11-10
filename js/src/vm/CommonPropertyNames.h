@@ -39,6 +39,7 @@
   MACRO(AsyncGeneratorThrow, AsyncGeneratorThrow, "AsyncGeneratorThrow")       \
   MACRO(AsyncWrapped, AsyncWrapped, "AsyncWrapped")                            \
   MACRO(async, async, "async")                                                 \
+  MACRO(at, at, "at")                               \
   MACRO(autoAllocateChunkSize, autoAllocateChunkSize, "autoAllocateChunkSize") \
   MACRO(await, await, "await")                                                 \
   MACRO(bigint64, bigint64, "bigint64")                                        \

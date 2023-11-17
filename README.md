@@ -14,22 +14,20 @@ Some say that it runs fine on sp2 but it is no accurate data what to do.
 **IF YOU GOT A BLUE SCREEN**
 
 Don't post a screenshot of the blue screen, as the screen isn't useful for troubleshooting.
-BSOD happens only on winxp and only when multiprocess enabled, but not for all. Many still use the browser with multiprocess and without BSOD,
-Furthermore there is a certain setting that induces BSOD **layers.omtp.enabled** this stand for off-main-thread painting
-and invented for perfomance. For more data look [#3](https://github.com/Feodor2/Mypal68/issues/3), and please do not make new duplicate reports.
+For more data look [#3](https://github.com/Feodor2/Mypal68/issues/3), and please do not make new duplicate reports.
 Suddenly restart may be also this error depends of the settings
 
 **IF YOU GOT A CRASH BUT WITHOUT BLUE SCREEN**
 
 Describe detailed how to reproduces the crash, do not forget to put the link.
 Do not post pictures of the crash, this is useless and a waste.
-If i dont't reproduce the crash myself then you may to submit drwatson.log.
-Drwatson log is usually inside All Users\Application Data\Microsoft\Dr Watson
+If i don't reproduce the crash myself then you may to submit drwatson.log.
+Drwatson log is usually inside All Users\Application Data\Microsoft\Dr Watson.
 Minidump also may be usefull. Do not post any irrelevent logs.
 
 **IF YOU WANT REPORT A SITE**
 
-Report [there](https://github.com/Feodor2/Mypal68/issues/228)
+Report [there](https://github.com/Feodor2/Mypal68/issues/228).
 Put the actual link to the site
 Notice that i never would look to the site which requires the login, including any goolag sites. Please try to find what feature is missig by yourself.
 Then report like for site 'x' is missing feature 'y'

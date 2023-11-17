@@ -36,5 +36,7 @@ def get_dependent_loaded_tasks(config, params, loaded_tasks, job):
     return [
         task for task in tasks_with_matching_kind
         if task.attributes.get('shipping_product') == 'fennec'
-        and task.attributes.get('release-type') == job['attributes']['release-type']
+        and task.attributes.get('release-type') == job['attributes']['release-type'] and
+        # Bug 1522581: Some GeckoView-only tasks produce APKs that shouldn't be pushed.
+        not task.attributes.get('disable-push-apk', False)
     ]

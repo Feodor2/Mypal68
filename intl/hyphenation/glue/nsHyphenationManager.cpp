@@ -12,6 +12,7 @@
 #include "nsDirectoryServiceDefs.h"
 #include "nsNetUtil.h"
 #include "nsUnicharUtils.h"
+#include "mozilla/CountingAllocatorBase.h"
 #include "mozilla/Preferences.h"
 #include "nsZipArchive.h"
 #include "mozilla/Services.h"
@@ -25,6 +26,28 @@ using namespace mozilla;
 
 static const char kIntlHyphenationAliasPrefix[] = "intl.hyphenation-alias.";
 static const char kMemoryPressureNotification[] = "memory-pressure";
+
+class HyphenReporter final : public nsIMemoryReporter {
+ private:
+  ~HyphenReporter() = default;
+
+ public:
+  NS_DECL_ISUPPORTS
+
+  NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
+                            nsISupports* aData, bool aAnonymize) override {
+    size_t total = 0;
+    if (nsHyphenationManager::Instance()) {
+      total = nsHyphenationManager::Instance()->SizeOfIncludingThis(
+          moz_malloc_size_of);
+    }
+    MOZ_COLLECT_REPORT("explicit/hyphenation", KIND_HEAP, UNITS_BYTES, total,
+                       "Memory used by hyphenation data.");
+    return NS_OK;
+  }
+};
+
+NS_IMPL_ISUPPORTS(HyphenReporter, nsIMemoryReporter)
 
 nsHyphenationManager* nsHyphenationManager::sInstance = nullptr;
 
@@ -55,6 +78,8 @@ nsHyphenationManager* nsHyphenationManager::Instance() {
       obs->AddObserver(new MemoryPressureObserver, kMemoryPressureNotification,
                        false);
     }
+
+    RegisterStrongMemoryReporter(new HyphenReporter());
   }
   return sInstance;
 }
@@ -78,9 +103,6 @@ already_AddRefed<nsHyphenator> nsHyphenationManager::GetHyphenator(
   if (hyph) {
     return hyph.forget();
   }
-  nsAutoCString hyphCapPref("intl.hyphenate-capitalized.");
-  hyphCapPref.Append(nsAtomCString(aLocale));
-  bool hyphenateCapitalized = Preferences::GetBool(hyphCapPref.get());
   nsCOMPtr<nsIURI> uri = mPatternFiles.Get(aLocale);
   if (!uri) {
     RefPtr<nsAtom> alias = mHyphAliases.Get(aLocale);
@@ -112,7 +134,9 @@ already_AddRefed<nsHyphenator> nsHyphenationManager::GetHyphenator(
       }
     }
   }
-  hyph = new nsHyphenator(uri, hyphenateCapitalized);
+  nsAutoCString hyphCapPref("intl.hyphenate-capitalized.");
+  hyphCapPref.Append(nsAtomCString(aLocale));
+  hyph = new nsHyphenator(uri, Preferences::GetBool(hyphCapPref.get()));
   if (hyph->IsValid()) {
     mHyphenators.Put(aLocale, hyph);
     return hyph.forget();
@@ -180,7 +204,7 @@ void nsHyphenationManager::LoadPatternListFromOmnijar(Omnijar::Type aType) {
   }
 
   nsZipFind* find;
-  zip->FindInit("hyphenation/hyph_*.dic", &find);
+  zip->FindInit("hyphenation/hyph_*.hyf", &find);
   if (!find) {
     return;
   }
@@ -201,7 +225,7 @@ void nsHyphenationManager::LoadPatternListFromOmnijar(Omnijar::Type aType) {
       continue;
     }
     ToLowerCase(locale);
-    locale.SetLength(locale.Length() - 4);     // strip ".dic"
+    locale.SetLength(locale.Length() - 4);     // strip ".hyf"
     locale.Cut(0, locale.RFindChar('/') + 1);  // strip directory
     if (StringBeginsWith(locale, NS_LITERAL_CSTRING("hyph_"))) {
       locale.Cut(0, 5);
@@ -246,13 +270,13 @@ void nsHyphenationManager::LoadPatternListFromDir(nsIFile* aDir) {
     file->GetLeafName(dictName);
     NS_ConvertUTF16toUTF8 locale(dictName);
     ToLowerCase(locale);
-    if (!StringEndsWith(locale, NS_LITERAL_CSTRING(".dic"))) {
+    if (!StringEndsWith(locale, NS_LITERAL_CSTRING(".hyf"))) {
       continue;
     }
     if (StringBeginsWith(locale, NS_LITERAL_CSTRING("hyph_"))) {
       locale.Cut(0, 5);
     }
-    locale.SetLength(locale.Length() - 4);  // strip ".dic"
+    locale.SetLength(locale.Length() - 4);  // strip ".hyf"
     for (uint32_t i = 0; i < locale.Length(); ++i) {
       if (locale[i] == '_') {
         locale.Replace(i, 1, '-');
@@ -294,4 +318,18 @@ void nsHyphenationManager::LoadAliases() {
       }
     }
   }
+}
+
+size_t nsHyphenationManager::SizeOfIncludingThis(MallocSizeOf aMallocSizeOf) {
+  size_t result = aMallocSizeOf(this);
+
+  result += mHyphAliases.ShallowSizeOfExcludingThis(aMallocSizeOf);
+
+  result += mPatternFiles.ShallowSizeOfExcludingThis(aMallocSizeOf);
+  // Measurement of the URIs stored in mPatternFiles may be added later if DMD
+  // finds it is worthwhile.
+
+  result += mHyphenators.ShallowSizeOfExcludingThis(aMallocSizeOf);
+
+  return result;
 }

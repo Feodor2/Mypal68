@@ -23,7 +23,7 @@ categories = ["concurrency", "memory-management", "no-std"]
 license = "MIT/Apache-2.0"
 repository = "https://github.com/crossbeam-rs/crossbeam"
 [dependencies.arrayvec]
-version = "0.4"
+version = "0.5"
 default-features = false
 
 [dependencies.cfg-if]

@@ -7,6 +7,7 @@
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/webrender/WebRenderTypes.h"
 #include "Units.h"
 
 namespace mozilla {
@@ -35,7 +36,9 @@ class RenderCompositor {
 
   virtual bool BeginFrame() = 0;
   virtual void EndFrame() = 0;
-  virtual void WaitForGPU() = 0;
+  // Returns false when waiting gpu tasks is failed.
+  // It might happen when rendering context is lost.
+  virtual bool WaitForGPU() { return true; }
   virtual void Pause() = 0;
   virtual bool Resume() = 0;
 
@@ -54,6 +57,26 @@ class RenderCompositor {
   widget::CompositorWidget* GetWidget() const { return mWidget; }
 
   layers::SyncObjectHost* GetSyncObject() const { return mSyncObject.get(); }
+
+  virtual bool IsContextLost();
+
+  virtual bool ShouldUseNativeCompositor() { return false; }
+
+  // Interface for wr::Compositor
+  virtual void CompositorBeginFrame() {}
+  virtual void CompositorEndFrame() {}
+  virtual void Bind(wr::NativeSurfaceId aId, wr::DeviceIntPoint* aOffset) {}
+  virtual void Unbind() {}
+  virtual void CreateSurface(wr::NativeSurfaceId aId, wr::DeviceIntSize aSize) {
+  }
+  virtual void DestroySurface(NativeSurfaceId aId) {}
+  virtual void AddSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aPosition,
+                          wr::DeviceIntRect aClipRect) {}
+
+  void wr_compositor_unbind(void* aCompositor) {}
+
+  // Whether the surface contents are flipped vertically
+  virtual bool SurfaceIsYFlipped() { return false; }
 
  protected:
   RefPtr<widget::CompositorWidget> mWidget;

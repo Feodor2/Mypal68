@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function, unicode_literals
 
 from mozpack.chrome.manifest import (
     Manifest,
@@ -345,11 +345,13 @@ class OmniJarSubFormatter(PiecemealFormatter):
             return len(path) != 3 or \
                 not (path[2] == 'channel-prefs.js' and
                      path[1] in ['pref', 'preferences'])
+        if len(path) <= 2 and path[-1] == 'greprefs.js':
+            # Accommodate `greprefs.js` and `$ANDROID_CPU_ARCH/greprefs.js`.
+            return True
         return path[0] in [
             'modules',
             'actors',
             'dictionaries',
-            'greprefs.js',
             'hyphenation',
             'localization',
             'update.locale',

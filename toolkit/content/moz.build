@@ -8,8 +8,13 @@ for var in ('CC', 'CC_VERSION', 'CXX', 'RUSTC', 'RUSTC_VERSION'):
     if CONFIG[var]:
         DEFINES[var] = CONFIG[var]
 
-for var in ('target', 'MOZ_CONFIGURE_OPTIONS'):
+for var in ('MOZ_CONFIGURE_OPTIONS',):
     DEFINES[var] = CONFIG[var]
+
+if CONFIG['MOZ_ANDROID_FAT_AAR_ARCHITECTURES']:
+    DEFINES['target'] = '</td><td>'.join(sorted(CONFIG['MOZ_ANDROID_FAT_AAR_ARCHITECTURES']))
+else:
+    DEFINES['target'] = CONFIG['target']
 
 DEFINES['CFLAGS'] = ' '.join(CONFIG['OS_CFLAGS'])
 
@@ -20,7 +25,7 @@ DEFINES['RUSTFLAGS'] = ' '.join(rustflags)
 
 cxx_flags = []
 for var in ('OS_CPPFLAGS', 'OS_CXXFLAGS', 'DEBUG', 'OPTIMIZE', 'FRAMEPTR'):
-    cxx_flags += COMPILE_FLAGS.get(var, [])
+    cxx_flags += COMPILE_FLAGS[var] or []
 
 DEFINES['CXXFLAGS'] = ' '.join(cxx_flags)
 

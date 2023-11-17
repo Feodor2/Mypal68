@@ -28,8 +28,8 @@ js_option('--disable-optimize',
           help='Disable optimizations via compiler flags')
 
 
-@depends('--enable-optimize')
-def moz_optimize(option):
+@depends('--enable-optimize', '--help')
+def moz_optimize(option, _):
     flags = None
 
     if len(option):
@@ -718,10 +718,11 @@ def toolchain_search_path_for(host_or_target):
         target: vc_compiler_path,
     }[host_or_target]
 
-    @depends(vc_path, original_path)
+    @depends(vc_path, original_path, developer_options, mozbuild_state_path)
     @imports('os')
     @imports(_from='os', _import='environ')
-    def toolchain_search_path(vc_compiler_path, original_path):
+    def toolchain_search_path(vc_compiler_path, original_path, developer_options,
+                              mozbuild_state_path):
         result = list(original_path)
 
         if vc_compiler_path:
@@ -735,22 +736,24 @@ def toolchain_search_path_for(host_or_target):
 
         # Also add in the location to which `mach bootstrap` or
         # `mach artifact toolchain` installs clang.
-        mozbuild_state_dir = environ.get('MOZBUILD_STATE_PATH',
-                                         os.path.expanduser(os.path.join('~', '.mozbuild')))
-        bootstrap_clang_path = os.path.join(mozbuild_state_dir, 'clang', 'bin')
-        result.append(bootstrap_clang_path)
+        bootstrapped = []
 
-        bootstrap_cbindgen_path = os.path.join(mozbuild_state_dir, 'cbindgen')
-        result.append(bootstrap_cbindgen_path)
+        bootstrap_clang_path = os.path.join(mozbuild_state_path, 'clang', 'bin')
+        bootstrapped.append(bootstrap_clang_path)
 
-        bootstrap_nasm_path = os.path.join(mozbuild_state_dir, 'nasm')
-        result.append(bootstrap_nasm_path)
+        bootstrap_cbindgen_path = os.path.join(mozbuild_state_path, 'cbindgen')
+        bootstrapped.append(bootstrap_cbindgen_path)
+
+        bootstrap_nasm_path = os.path.join(mozbuild_state_path, 'nasm')
+        bootstrapped.append(bootstrap_nasm_path)
 
         # Also add the rustup install directory for cargo/rustc.
         rustup_path = os.path.expanduser(os.path.join('~', '.cargo', 'bin'))
         result.append(rustup_path)
 
-        return result
+        if developer_options:
+            return bootstrapped + result
+        return result + bootstrapped
     return toolchain_search_path
 
 
@@ -790,10 +793,9 @@ def default_c_compilers(host_or_target, other_c_compiler=None):
 
     other_c_compiler = () if other_c_compiler is None else (other_c_compiler,)
 
-    @depends(host_or_target, target, toolchain_prefix, android_clang_compiler,
-             *other_c_compiler)
+    @depends(host_or_target, target, toolchain_prefix, *other_c_compiler)
     def default_c_compilers(host_or_target, target, toolchain_prefix,
-                            android_clang_compiler, *other_c_compiler):
+                            *other_c_compiler):
         if host_or_target.kernel == 'WINNT':
             supported = types = ('clang-cl', 'gcc', 'clang')
         elif host_or_target.kernel == 'Darwin':
@@ -816,10 +818,6 @@ def default_c_compilers(host_or_target, other_c_compiler=None):
                     # -m32/-m64 for the host, it's probably toolchain-prefixed,
                     # so we prioritize a raw 'gcc' instead.
                     prioritized = info.type
-            elif info.type == 'clang' and android_clang_compiler:
-                # Android NDK clangs do not function as host compiler, so
-                # prioritize a raw 'clang' instead.
-                prioritized = info.type
 
             types = [prioritized] + [t for t in types if t != info.type]
 
@@ -829,12 +827,7 @@ def default_c_compilers(host_or_target, other_c_compiler=None):
 
         result = []
         for type in types:
-            # Android sets toolchain_prefix and android_clang_compiler, but
-            # we want the latter to take precedence, because the latter can
-            # point at clang, which is what we want to use.
-            if type == 'clang' and android_clang_compiler and host_or_target is target:
-                result.append(android_clang_compiler)
-            elif type == 'gcc':
+            if type == 'gcc':
                 result.extend(gcc)
             else:
                 result.append(type)
@@ -1387,75 +1380,31 @@ set_config('WRAP_SYSTEM_INCLUDES', wrap_system_includes)
 set_config('VISIBILITY_FLAGS', visibility_flags)
 
 
-@depends(c_compiler)
-def depend_cflags(info):
-    if info.type != 'clang-cl':
-        return ['-MD', '-MP', '-MF $(MDDEPDIR)/$(@F).pp']
-    else:
-        # clang-cl doesn't accept the normal -MD -MP -MF options that clang
-        # does, but the underlying cc1 binary understands how to generate
-        # dependency files.  These options are based on analyzing what the
-        # normal clang driver sends to cc1 when given the "correct"
-        # dependency options.
-        return [
-            '-Xclang', '-MP',
-            '-Xclang', '-dependency-file',
-            '-Xclang', '$(MDDEPDIR)/$(@F).pp',
-            '-Xclang', '-MT',
-            '-Xclang', '$@'
-        ]
-
-
-set_config('_DEPEND_CFLAGS', depend_cflags)
-
-
-@depends(c_compiler, check_build_environment, target)
-@imports('multiprocessing')
-@imports(_from='__builtin__', _import='min')
-def pgo_flags(compiler, build_env, target):
-    topobjdir = build_env.topobjdir
-    if topobjdir.endswith('/js/src'):
-        topobjdir = topobjdir[:-7]
-
-    if compiler.type == 'gcc':
-        return namespace(
-            gen_cflags=['-fprofile-generate'],
-            gen_ldflags=['-fprofile-generate'],
-            use_cflags=['-fprofile-use', '-fprofile-correction',
-                        '-Wcoverage-mismatch'],
-            use_ldflags=['-fprofile-use'],
-        )
-
-    if compiler.type in ('clang-cl', 'clang'):
-        profdata = os.path.join(topobjdir, 'merged.profdata')
-        prefix = ''
-        if compiler.type == 'clang-cl':
-            prefix = '/clang:'
-            if target.cpu == 'x86_64':
-                gen_ldflags = ['clang_rt.profile-x86_64.lib']
-            elif target.cpu == 'x86':
-                gen_ldflags = ['clang_rt.profile-i386.lib']
-            else:
-                gen_ldflags = None
+@template
+def depend_cflags(host_or_target_c_compiler):
+    @depends(host_or_target_c_compiler)
+    def depend_cflags(host_or_target_c_compiler):
+        if host_or_target_c_compiler.type != 'clang-cl':
+            return ['-MD', '-MP', '-MF $(MDDEPDIR)/$(@F).pp']
         else:
-            gen_ldflags = ['-fprofile-generate']
+            # clang-cl doesn't accept the normal -MD -MP -MF options that clang
+            # does, but the underlying cc1 binary understands how to generate
+            # dependency files.  These options are based on analyzing what the
+            # normal clang driver sends to cc1 when given the "correct"
+            # dependency options.
+            return [
+                '-Xclang', '-MP',
+                '-Xclang', '-dependency-file',
+                '-Xclang', '$(MDDEPDIR)/$(@F).pp',
+                '-Xclang', '-MT',
+                '-Xclang', '$@'
+            ]
 
-        if gen_ldflags:
-            return namespace(
-                gen_cflags=[prefix + '-fprofile-generate'],
-                gen_ldflags=gen_ldflags,
-                use_cflags=[prefix + '-fprofile-use=%s' % profdata,
-                            # Some error messages about mismatched profile data
-                            # come in via -Wbackend-plugin, so disable those too.
-                            '-Wno-error=backend-plugin'],
-                use_ldflags=[],
-            )
+    return depend_cflags
 
 
-set_config('PROFILE_GEN_CFLAGS', pgo_flags.gen_cflags)
-set_config('PROFILE_GEN_LDFLAGS', pgo_flags.gen_ldflags)
-set_config('PROFILE_USE_CFLAGS', pgo_flags.use_cflags)
-set_config('PROFILE_USE_LDFLAGS', pgo_flags.use_ldflags)
+set_config('_DEPEND_CFLAGS', depend_cflags(c_compiler))
+set_config('_HOST_DEPEND_CFLAGS', depend_cflags(host_c_compiler))
 
 
 @depends(c_compiler)
@@ -1481,133 +1430,6 @@ def is_windows(target, host):
 
 include('windows.configure', when=is_windows)
 
-# PGO
-# ==============================================================
-llvm_profdata = check_prog('LLVM_PROFDATA', ['llvm-profdata'],
-                           allow_missing=True,
-                           paths=toolchain_search_path)
-
-js_option('--enable-profile-generate',
-          help='Build a PGO instrumented binary')
-
-imply_option('MOZ_PGO',
-             depends_if('--enable-profile-generate')(lambda _: True))
-
-set_config('MOZ_PROFILE_GENERATE',
-           depends_if('--enable-profile-generate')(lambda _: True))
-
-js_option('--enable-profile-use',
-          help='Use a generated profile during the build')
-
-js_option('--with-pgo-profile-path',
-          help='Path to the directory with unmerged profile data to use during the build',
-          nargs=1)
-
-imply_option('MOZ_PGO',
-             depends_if('--enable-profile-use')(lambda _: True))
-
-set_config('MOZ_PROFILE_USE',
-           depends_if('--enable-profile-use')(lambda _: True))
-
-
-@depends('--with-pgo-profile-path', '--enable-profile-use', llvm_profdata)
-@imports('os')
-def pgo_profile_path(path, pgo_use, profdata):
-    if not path:
-        return
-    if path and not pgo_use:
-        die('Pass --enable-profile-use to use --with-pgo-profile-path.')
-    if path and not profdata:
-        die('LLVM_PROFDATA must be set to process the pgo profile.')
-    if not os.path.isdir(path[0]):
-        die('Argument to --with-pgo-profile-path must be a directory.')
-    if not os.path.isabs(path[0]):
-        die('Argument to --with-pgo-profile-path must be an absolute path.')
-    return path[0]
-
-
-set_config('PGO_PROFILE_PATH', pgo_profile_path)
-
-option('--with-pgo-jarlog',
-       help='Use the provided jarlog file when packaging during a profile-use '
-            'build',
-       nargs=1)
-
-set_config('PGO_JARLOG_PATH', depends_if('--with-pgo-jarlog')(lambda p: p))
-
-# LTO
-# ==============================================================
-
-js_option('--enable-lto',
-          env='MOZ_LTO',
-          nargs='?',
-          choices=('full', 'thin', 'cross'),
-          help='Enable LTO')
-
-
-@depends('--enable-lto', 'MOZ_PGO', '--enable-profile-generate', c_compiler)
-@imports('multiprocessing')
-def lto(value, pgo, profile_generate, c_compiler):
-    cflags = []
-    ldflags = []
-    enabled = None
-    rust_lto = False
-
-    # MSVC's implementation of PGO implies LTO. Make clang-cl match this.
-    if c_compiler.type == 'clang-cl' and pgo and not profile_generate and value.origin == 'default':
-        value = ['thin']
-
-    if value:
-        enabled = True
-        # `cross` implies `thin`, but with Rust code participating in LTO
-        # as well.  Make that a little more explicit.
-        if len(value) and value[0].lower() == 'cross':
-            if c_compiler.type == 'gcc':
-                die('Cross-language LTO is not supported with GCC.')
-
-            rust_lto = True
-            value = ['thin']
-
-        if c_compiler.type == 'clang':
-            if len(value) and value[0].lower() == 'full':
-                cflags.append("-flto")
-                ldflags.append("-flto")
-            else:
-                cflags.append("-flto=thin")
-                ldflags.append("-flto=thin")
-        elif c_compiler.type == 'clang-cl':
-            if len(value) and value[0].lower() == 'full':
-                cflags.append("-flto")
-            else:
-                cflags.append("-flto=thin")
-            # With clang-cl, -flto can only be used with -c or -fuse-ld=lld.
-            # AC_TRY_LINKs during configure don't have -c, so pass -fuse-ld=lld.
-            cflags.append("-fuse-ld=lld");
-        else:
-            num_cores = multiprocessing.cpu_count()
-            cflags.append("-flto")
-            cflags.append("-flifetime-dse=1")
-
-            ldflags.append("-flto=%s" % num_cores)
-            ldflags.append("-flifetime-dse=1")
-
-    return namespace(
-        enabled=enabled,
-        cflags=cflags,
-        ldflags=ldflags,
-        rust_lto=rust_lto,
-    )
-
-
-add_old_configure_assignment('MOZ_LTO', lto.enabled)
-set_config('MOZ_LTO', lto.enabled)
-set_define('MOZ_LTO', lto.enabled)
-set_config('MOZ_LTO_CFLAGS', lto.cflags)
-set_config('MOZ_LTO_LDFLAGS', lto.ldflags)
-set_config('MOZ_LTO_RUST', lto.rust_lto)
-add_old_configure_assignment('MOZ_LTO_CFLAGS', lto.cflags)
-add_old_configure_assignment('MOZ_LTO_LDFLAGS', lto.ldflags)
-
 # ASAN
 # ==============================================================
 
@@ -1620,6 +1442,32 @@ def asan():
 
 
 add_old_configure_assignment('MOZ_ASAN', asan)
+
+# MSAN
+# ==============================================================
+
+js_option('--enable-memory-sanitizer', help='Enable Memory Sanitizer')
+
+
+@depends(when='--enable-memory-sanitizer')
+def msan():
+    return True
+
+
+add_old_configure_assignment('MOZ_MSAN', msan)
+
+# TSAN
+# ==============================================================
+
+js_option('--enable-thread-sanitizer', help='Enable Thread Sanitizer')
+
+
+@depends(when='--enable-thread-sanitizer')
+def tsan():
+    return True
+
+
+add_old_configure_assignment('MOZ_TSAN', tsan)
 
 # UBSAN
 # ==============================================================
@@ -1641,6 +1489,30 @@ def ubsan(options):
     return ','.join(checks)
 
 add_old_configure_assignment('MOZ_UBSAN_CHECKS', ubsan)
+
+
+js_option('--enable-signed-overflow-sanitizer',
+          help='Enable UndefinedBehavior Sanitizer (Signed Integer Overflow Parts)')
+
+
+@depends(when='--enable-signed-overflow-sanitizer')
+def ub_signed_overflow_san():
+    return True
+
+
+add_old_configure_assignment('MOZ_SIGNED_OVERFLOW_SANITIZE', ub_signed_overflow_san)
+
+
+js_option('--enable-unsigned-overflow-sanitizer',
+          help='Enable UndefinedBehavior Sanitizer (Unsigned Integer Overflow Parts)')
+
+
+@depends(when='--enable-unsigned-overflow-sanitizer')
+def ub_unsigned_overflow_san():
+    return True
+
+
+add_old_configure_assignment('MOZ_UNSIGNED_OVERFLOW_SANITIZE', ub_unsigned_overflow_san)
 
 # Security Hardening
 # ==============================================================
@@ -1704,9 +1576,10 @@ def security_hardening_cflags(hardening_flag, asan, optimize, c_compiler, target
             js_ldflags.append("-Wl,--dynamicbase")
 
         # Control Flow Guard (CFG) ----------------------------
-        # See Bug 1525588 for why this doesn't work on Windows ARM
+        # On aarch64, this is enabled only with explicit --enable-hardening
+        # (roughly: automation) due to a dependency on a patched clang-cl.
         if c_compiler.type == 'clang-cl' and c_compiler.version >= '8' and \
-           target.cpu != 'aarch64':
+           (target.cpu != 'aarch64' or hardening_flag):
             flags.append("-guard:cf")
             js_flags.append("-guard:cf")
             # nolongjmp is needed because clang doesn't emit the CFG tables of
@@ -1740,6 +1613,44 @@ add_old_configure_assignment('MOZ_HARDENING_CFLAGS', security_hardening_cflags.f
 add_old_configure_assignment('MOZ_HARDENING_LDFLAGS', security_hardening_cflags.ldflags)
 add_old_configure_assignment('MOZ_HARDENING_CFLAGS_JS', security_hardening_cflags.js_flags)
 add_old_configure_assignment('MOZ_HARDENING_LDFLAGS_JS', security_hardening_cflags.js_ldflags)
+
+
+# Frame pointers
+# ==============================================================
+@depends(c_compiler)
+def frame_pointer_flags(compiler):
+    if compiler.type == 'clang-cl':
+        return namespace(
+            enable=['-Oy-'],
+            disable=['-Oy'],
+        )
+    return namespace(
+        enable=['-fno-omit-frame-pointer', '-funwind-tables'],
+        disable=['-fomit-frame-pointer', '-funwind-tables'],
+    )
+
+
+@depends(moz_optimize.optimize, moz_debug, target,
+         '--enable-memory-sanitizer', '--enable-address-sanitizer',
+         '--enable-undefined-sanitizer')
+def frame_pointer_default(optimize, debug, target, msan, asan, ubsan):
+    return bool(not optimize or debug or msan or asan or ubsan or \
+        (target.os == 'WINNT' and target.cpu in ('x86', 'aarch64')))
+
+
+js_option('--enable-frame-pointers', default=frame_pointer_default,
+          help='{Enable|Disable} frame pointers')
+
+
+@depends('--enable-frame-pointers', frame_pointer_flags)
+def frame_pointer_flags(enable, flags):
+    if enable:
+        return flags.enable
+    return flags.disable
+
+
+set_config('MOZ_FRAMEPTR_FLAGS', frame_pointer_flags)
+
 
 # nasm detection
 # ==============================================================
@@ -1903,8 +1814,8 @@ def rustc_opt_level(opt_level_option, moz_optimize):
         return '1' if moz_optimize.optimize else '0'
 
 
-@depends(rustc_opt_level, debug_rust, '--enable-debug-symbols')
-def rust_compile_flags(opt_level, debug_rust, debug_symbols):
+@depends(rustc_opt_level, debug_rust, '--enable-debug-symbols', '--enable-frame-pointers')
+def rust_compile_flags(opt_level, debug_rust, debug_symbols, frame_pointers):
     # Cargo currently supports only two interesting profiles for building:
     # development and release. Those map (roughly) to --enable-debug and
     # --disable-debug in Gecko, respectively.
@@ -1937,6 +1848,8 @@ def rust_compile_flags(opt_level, debug_rust, debug_symbols):
                     ('yes' if debug_assertions else 'no'))
     if debug_info is not None:
         opts.append('debuginfo=%s' % debug_info)
+    if frame_pointers:
+        opts.append('force-frame-pointers=yes')
 
     flags = []
     for opt in opts:
@@ -2098,10 +2011,10 @@ def select_linker(linker, c_compiler, developer_options, enable_gold,
         die("Failed to find a linker")
 
     if (linker is None and enable_gold.origin == 'default' and
-            developer_options and result.KIND == 'bfd'):
+            developer_options and result.KIND in ('bfd', 'gold')):
         # try and use lld if available.
         tried = try_linker('lld')
-        if tried is None or tried.KIND != 'lld':
+        if result.KIND != 'gold' and (tried is None or tried.KIND != 'lld'):
             tried = try_linker('gold')
             if tried is None or tried.KIND != 'gold':
                 tried = None

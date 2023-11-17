@@ -644,8 +644,9 @@ pref("gfx.font_rendering.graphite.enabled", true);
 
 #ifdef XP_WIN
   pref("gfx.webrender.force-angle", true);
+  pref("gfx.webrender.flip-sequential", false);
   pref("gfx.webrender.dcomp-win.enabled", true);
-  pref("gfx.webrender.dcomp-win-triple-buffering.enabled", true);
+  pref("gfx.webrender.triple-buffering.enabled", true);
 #endif
 
 #if defined(XP_WIN) || defined(MOZ_WIDGET_ANDROID)
@@ -664,6 +665,7 @@ pref("gfx.webrender.debug.gpu-sample-queries", false);
 pref("gfx.webrender.debug.disable-batching", false);
 pref("gfx.webrender.debug.epochs", false);
 pref("gfx.webrender.debug.compact-profiler", false);
+pref("gfx.webrender.debug.smart-profiler", false);
 pref("gfx.webrender.debug.echo-driver-messages", false);
 pref("gfx.webrender.debug.new-frame-indicator", false);
 pref("gfx.webrender.debug.new-scene-indicator", false);

@@ -25,7 +25,7 @@ webrender_build = { version = "0.0.1", path = "../webrender_build" }
 [dependencies]
 base64 = { optional = true, version = "0.10" }
 bincode = "1.0"
-bitflags = "1.0"
+bitflags = "1.2"
 byteorder = "1.0"
 cfg-if = "0.1.2"
 cstr = "0.1.2"
@@ -54,7 +54,7 @@ ws = { optional = true, version = "0.9" }
 svg_fmt = "0.4"
 
 [dev-dependencies]
-mozangle = "0.1"
+mozangle = "0.3.1"
 rand = "0.4"
 
 [target.'cfg(any(target_os = "android", all(unix, not(target_os = "macos"))))'.dependencies]

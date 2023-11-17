@@ -155,6 +155,7 @@ bool RenderCompositorANGLE::Initialize() {
 
   if (!mSwapChain && dxgiFactory2 && IsWin8OrLater()) {
     RefPtr<IDXGISwapChain1> swapChain1;
+    bool useTripleBuffering = false;
 
     DXGI_SWAP_CHAIN_DESC1 desc{};
     desc.Width = 0;
@@ -166,12 +167,19 @@ bool RenderCompositorANGLE::Initialize() {
     // framebuffer to texture on intel gpu.
     desc.BufferUsage =
         DXGI_USAGE_RENDER_TARGET_OUTPUT | DXGI_USAGE_SHADER_INPUT;
-    // Do not use DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, since it makes HWND
-    // unreusable.
-    // desc.BufferCount = 2;
-    // desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-    desc.BufferCount = 1;
-    desc.SwapEffect = DXGI_SWAP_EFFECT_SEQUENTIAL;
+
+    if (gfx::gfxVars::UseWebRenderFlipSequentialWin()) {
+      useTripleBuffering = gfx::gfxVars::UseWebRenderTripleBufferingWin();
+      if (useTripleBuffering) {
+        desc.BufferCount = 3;
+      } else {
+        desc.BufferCount = 2;
+      }
+      desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+    } else {
+      desc.BufferCount = 1;
+      desc.SwapEffect = DXGI_SWAP_EFFECT_SEQUENTIAL;
+    }
     desc.Scaling = DXGI_SCALING_NONE;
     desc.Flags = 0;
 
@@ -181,6 +189,7 @@ bool RenderCompositorANGLE::Initialize() {
       DXGI_RGBA color = {1.0f, 1.0f, 1.0f, 1.0f};
       swapChain1->SetBackgroundColor(&color);
       mSwapChain = swapChain1;
+      mUseTripleBuffering = useTripleBuffering;
     }
   }
 
@@ -281,7 +290,7 @@ void RenderCompositorANGLE::CreateSwapChainForDCompIfPossible(
   }
 
   RefPtr<IDXGISwapChain1> swapChain1;
-  bool useTripleBuffering = gfx::gfxVars::UseWebRenderDCompWinTripleBuffering();
+  bool useTripleBuffering = gfx::gfxVars::UseWebRenderTripleBufferingWin();
 
   DXGI_SWAP_CHAIN_DESC1 desc{};
   // DXGI does not like 0x0 swapchains. Swap chain creation failed when 0x0 was
@@ -319,11 +328,6 @@ void RenderCompositorANGLE::CreateSwapChainForDCompIfPossible(
 }
 
 bool RenderCompositorANGLE::BeginFrame() {
-  if (mDevice->GetDeviceRemovedReason() != S_OK) {
-    RenderThread::Get()->HandleDeviceReset("BeginFrame", /* aNotify */ true);
-    return false;
-  }
-
   mWidget->AsWindows()->UpdateCompositorWndSizeIfNecessary();
 
   if (!ResizeBufferIfNeeded()) {
@@ -355,7 +359,7 @@ void RenderCompositorANGLE::EndFrame() {
   }
 }
 
-void RenderCompositorANGLE::WaitForGPU() {
+bool RenderCompositorANGLE::WaitForGPU() {
   // Note: this waits on the query we inserted in the previous frame,
   // not the one we just inserted now. Example:
   //   Insert query #1
@@ -369,7 +373,7 @@ void RenderCompositorANGLE::WaitForGPU() {
   //   Wait for query #2.
   //
   // This ensures we're done reading textures before swapping buffers.
-  WaitForPreviousPresentQuery();
+  return WaitForPreviousPresentQuery();
 }
 
 bool RenderCompositorANGLE::ResizeBufferIfNeeded() {
@@ -387,14 +391,32 @@ bool RenderCompositorANGLE::ResizeBufferIfNeeded() {
     return true;
   }
 
-  HRESULT hr;
-  RefPtr<ID3D11Texture2D> backBuf;
-
   // Release EGLSurface of back buffer before calling ResizeBuffers().
   DestroyEGLSurface();
 
-  // Reset buffer size
-  mBufferSize.reset();
+  mBufferSize = Some(size);
+
+  if (!CreateEGLSurface()) {
+    mBufferSize.reset();
+    return false;
+  }
+
+  return true;
+}
+
+bool RenderCompositorANGLE::CreateEGLSurface() {
+  MOZ_ASSERT(mBufferSize.isSome());
+  MOZ_ASSERT(mEGLSurface == EGL_NO_SURFACE);
+
+  HRESULT hr;
+  RefPtr<ID3D11Texture2D> backBuf;
+
+  if (mBufferSize.isNothing()) {
+    gfxCriticalNote << "Buffer size is invalid";
+    return false;
+  }
+
+  const LayoutDeviceIntSize& size = mBufferSize.ref();
 
   // Resize swap chain
   DXGI_SWAP_CHAIN_DESC desc;
@@ -448,7 +470,6 @@ bool RenderCompositorANGLE::ResizeBufferIfNeeded() {
   }
 
   mEGLSurface = surface;
-  mBufferSize = Some(size);
 
   return true;
 }
@@ -509,18 +530,31 @@ void RenderCompositorANGLE::InsertPresentWaitQuery() {
   mWaitForPresentQueries.emplace(query);
 }
 
-void RenderCompositorANGLE::WaitForPreviousPresentQuery() {
+bool RenderCompositorANGLE::WaitForPreviousPresentQuery() {
   size_t waitLatency = mUseTripleBuffering ? 3 : 2;
 
   while (mWaitForPresentQueries.size() >= waitLatency) {
     RefPtr<ID3D11Query>& query = mWaitForPresentQueries.front();
     BOOL result;
-    layers::WaitForFrameGPUQuery(mDevice, mCtx, query, &result);
+    bool ret = layers::WaitForFrameGPUQuery(mDevice, mCtx, query, &result);
 
     // Recycle query for later use.
     mRecycledQuery = query;
     mWaitForPresentQueries.pop();
+    if (!ret) {
+      return false;
+    }
   }
+  return true;
+}
+
+bool RenderCompositorANGLE::IsContextLost() {
+  // XXX glGetGraphicsResetStatus sometimes did not work for detecting TDR.
+  // Then this function just uses GetDeviceRemovedReason().
+  if (mDevice->GetDeviceRemovedReason() != S_OK) {
+    return true;
+  }
+  return false;
 }
 
 }  // namespace wr

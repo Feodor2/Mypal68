@@ -46,8 +46,11 @@ endif
 cargo_rustc_flags = $(CARGO_RUSTCFLAGS)
 ifndef DEVELOPER_OPTIONS
 ifndef MOZ_DEBUG_RUST
-# Enable link-time optimization for release builds.
-cargo_rustc_flags += -C lto
+# Enable link-time optimization for release builds, but not when linking
+# gkrust_gtest.
+ifeq (,$(findstring gkrust_gtest,$(RUST_LIBRARY_FILE)))
+cargo_rustc_flags += -Clto
+endif
 # Versions of rust >= 1.45 need -Cembed-bitcode=yes for all crates when
 # using -Clto.
 ifeq (,$(filter 1.22.% 1.23.% 1.24.% 1.25.% 1.26.% 1.27.% 1.28.% 1.29.% 1.30.% 1.31.% 1.32.% 1.33.% 1.34.% 1.35.% 1.36.% 1.37.% 1.38.% 1.39.% 1.40.% 1.41.% 1.42.% 1.43.% 1.44.%,$(RUSTC_VERSION)))
@@ -129,6 +132,7 @@ export MOZ_SRC=$(topsrcdir)
 export MOZ_DIST=$(ABS_DIST)
 export LIBCLANG_PATH=$(MOZ_LIBCLANG_PATH)
 export CLANG_PATH=$(MOZ_CLANG_PATH)
+export PKG_CONFIG
 export PKG_CONFIG_ALLOW_CROSS=1
 export RUST_BACKTRACE=full
 export MOZ_TOPOBJDIR=$(topobjdir)
@@ -136,7 +140,11 @@ export MOZ_TOPOBJDIR=$(topobjdir)
 target_rust_ltoable := force-cargo-library-build
 target_rust_nonltoable := force-cargo-test-run force-cargo-library-check $(foreach b,build check,force-cargo-program-$(b))
 
-$(target_rust_ltoable): RUSTFLAGS:=$(rustflags_override) $(RUSTFLAGS) $(if $(MOZ_LTO_RUST),-Clinker-plugin-lto)
+ifdef MOZ_PGO_RUST
+rust_pgo_flags := $(if $(MOZ_PROFILE_GENERATE),-C profile-generate=$(topobjdir)) $(if $(MOZ_PROFILE_USE),-C profile-use=$(topobjdir)/merged.profdata)
+endif
+
+$(target_rust_ltoable): RUSTFLAGS:=$(rustflags_override) $(RUSTFLAGS) $(if $(MOZ_LTO_RUST),-Clinker-plugin-lto) $(rust_pgo_flags)
 $(target_rust_nonltoable): RUSTFLAGS:=$(rustflags_override) $(RUSTFLAGS)
 
 TARGET_RECIPES := $(target_rust_ltoable) $(target_rust_nonltoable)
@@ -248,9 +256,10 @@ $(RUST_LIBRARY_FILE): force-cargo-library-build
 # When we are building in --enable-release mode; we add an additional check to confirm
 # that we are not importing any networking-related functions in rust code. This reduces
 # the chance of proxy bypasses originating from rust code.
-ifndef DEVELOPER_OPTIONS
-ifndef MOZ_DEBUG_RUST
+# The check only works when rust code is built with -Clto.
+ifndef MOZ_PROFILE_GENERATE
 ifeq ($(OS_ARCH), Linux)
+ifneq (,$(filter -Clto,$(cargo_rustc_flags)))
 	$(call py_action,check_binary,--target --networking $@)
 endif
 endif
@@ -302,9 +311,9 @@ ifdef RUST_PROGRAMS
 
 GARBAGE_DIRS += $(RUST_TARGET)
 
-force-cargo-program-build:
+force-cargo-program-build: $(RESFILE)
 	$(REPORT_BUILD)
-	$(call CARGO_BUILD) $(addprefix --bin ,$(RUST_CARGO_PROGRAMS)) $(cargo_target_flag)
+	$(call CARGO_BUILD) $(addprefix --bin ,$(RUST_CARGO_PROGRAMS)) $(cargo_target_flag) -- $(if $(RESFILE),-C link-arg=$(CURDIR)/$(RESFILE))
 
 $(RUST_PROGRAMS): force-cargo-program-build
 

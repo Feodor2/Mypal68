@@ -202,9 +202,6 @@ gfx/wr/**
 
 # intl/ exclusions
 intl/icu/**
-intl/locale/**
-intl/strres/**
-intl/uconv/**
 # Bug 1527075: This directory is linted in github repository
 intl/l10n/**
 

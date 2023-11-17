@@ -33,12 +33,17 @@ log = {version = "0.4", features = ["release_max_level_info"]}
 env_logger = {version = "0.6", default-features = false} # disable `regex` to reduce code size
 cose-c = { version = "0.1.5" }
 jsrust_shared = { path = "../../../../js/src/rust/shared" }
-arrayvec = "0.4"
 cert_storage = { path = "../../../../security/manager/ssl/cert_storage", optional = true }
 bitsdownload = { path = "../../../components/bitsdownload", optional = true }
 storage = { path = "../../../../storage/rust" }
 bookmark_sync = { path = "../../../components/places/bookmark_sync", optional = true }
 mdns_service = { path="../../../../media/mtransport/mdns_service" }
+mapped_hyph = { git = "https://github.com/jfkthame/mapped_hyph.git", tag = "v0.3.0" }
+
+unic-langid = { version = "0.7.1", features = ["likelysubtags"] }
+unic-langid-ffi = { path = "../../../../intl/locale/rust/unic-langid-ffi" }
+fluent-langneg = { version = "0.11.1", features = ["cldr"] }
+fluent-langneg-ffi = { path = "../../../../intl/locale/rust/fluent-langneg-ffi" }
 
 [build-dependencies]
 rustc_version = "0.2"

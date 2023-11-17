@@ -36,7 +36,7 @@ class RenderCompositorANGLE : public RenderCompositor {
 
   bool BeginFrame() override;
   void EndFrame() override;
-  void WaitForGPU() override;
+  bool WaitForGPU() override;
   void Pause() override;
   bool Resume() override;
 
@@ -52,10 +52,15 @@ class RenderCompositorANGLE : public RenderCompositor {
 
   LayoutDeviceIntSize GetBufferSize() override;
 
+  bool IsContextLost() override;
+
+  bool SurfaceIsYFlipped() override { return true; }
+
  protected:
   void InsertPresentWaitQuery();
-  void WaitForPreviousPresentQuery();
+  bool WaitForPreviousPresentQuery();
   bool ResizeBufferIfNeeded();
+  bool CreateEGLSurface();
   void DestroyEGLSurface();
   ID3D11Device* GetDeviceOfEGLDisplay();
   void CreateSwapChainForDCompIfPossible(IDXGIFactory2* aDXGIFactory2);

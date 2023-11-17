@@ -40,8 +40,6 @@ endif
 
 EXEC			= exec
 
-_VPATH_SRCS = $(abspath $<)
-
 ################################################################################
 # Testing frameworks support
 ################################################################################
@@ -310,24 +308,6 @@ EXTRA_DSO_LDOPTS	+= -dynamiclib -install_name $(_LOADER_PATH)/$(SHARED_LIBRARY) 
 endif
 endif
 
-ifdef SYMBOLS_FILE
-ifeq ($(OS_TARGET),WINNT)
-ifndef GNU_CC
-EXTRA_DSO_LDOPTS += -DEF:$(call normalizepath,$(SYMBOLS_FILE))
-else
-EXTRA_DSO_LDOPTS += $(call normalizepath,$(SYMBOLS_FILE))
-endif
-else
-ifdef GCC_USE_GNU_LD
-EXTRA_DSO_LDOPTS += -Wl,--version-script,$(SYMBOLS_FILE)
-else
-ifeq ($(OS_TARGET),Darwin)
-EXTRA_DSO_LDOPTS += -Wl,-exported_symbols_list,$(SYMBOLS_FILE)
-endif
-endif
-endif
-EXTRA_DEPS += $(SYMBOLS_FILE)
-endif
 #
 # GNU doesn't have path length limitation
 #
@@ -719,11 +699,8 @@ $(foreach f,$(HOST_CSRCS) $(HOST_CPPSRCS) $(HOST_CMSRCS) $(HOST_CMMSRCS),$(eval 
 
 # The Rust compiler only outputs library objects, and so we need different
 # mangling to generate dependency rules for it.
-mk_libname = $(basename lib$(notdir $1)).rlib
-src_libdep = $(call mk_libname,$1): $1 $$(call mkdir_deps,$$(MDDEPDIR))
 mk_global_crate_libname = $(basename lib$(notdir $1)).$(LIB_SUFFIX)
 crate_src_libdep = $(call mk_global_crate_libname,$1): $1 $$(call mkdir_deps,$$(MDDEPDIR))
-$(foreach f,$(RSSRCS),$(eval $(call src_libdep,$(f))))
 $(foreach f,$(RS_STATICLIB_CRATE_SRC),$(eval $(call crate_src_libdep,$(f))))
 
 $(OBJS) $(HOST_OBJS) $(PROGOBJS) $(HOST_PROGOBJS): $(GLOBAL_DEPS)
@@ -731,46 +708,31 @@ $(OBJS) $(HOST_OBJS) $(PROGOBJS) $(HOST_PROGOBJS): $(GLOBAL_DEPS)
 # Rules for building native targets must come first because of the host_ prefix
 $(HOST_COBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(HOST_CC) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(NSPR_CFLAGS) $(_VPATH_SRCS)
+	$(HOST_CC) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(NSPR_CFLAGS) $<
 
 $(HOST_CPPOBJS):
 	$(REPORT_BUILD_VERBOSE)
 	$(call BUILDSTATUS,OBJECT_FILE $@)
-	$(HOST_CXX) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CXXFLAGS) $(NSPR_CFLAGS) $(_VPATH_SRCS)
+	$(HOST_CXX) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CXXFLAGS) $(NSPR_CFLAGS) $<
 
 $(HOST_CMOBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(HOST_CC) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(HOST_CMFLAGS) $(NSPR_CFLAGS) $(_VPATH_SRCS)
+	$(HOST_CC) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CFLAGS) $(HOST_CMFLAGS) $(NSPR_CFLAGS) $<
 
 $(HOST_CMMOBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(HOST_CXX) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CXXFLAGS) $(HOST_CMMFLAGS) $(NSPR_CFLAGS) $(_VPATH_SRCS)
+	$(HOST_CXX) $(HOST_OUTOPTION)$@ -c $(HOST_CPPFLAGS) $(HOST_CXXFLAGS) $(HOST_CMMFLAGS) $(NSPR_CFLAGS) $<
 
 $(COBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(CC) $(OUTOPTION)$@ -c $(COMPILE_CFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
-
-# DEFINES and ACDEFINES are needed here to enable conditional compilation of Q_OBJECTs:
-# 'moc' only knows about #defines it gets on the command line (-D...), not in
-# included headers like mozilla-config.h
-$(filter moc_%.cpp,$(CPPSRCS)): moc_%.cpp: %.h
-	$(REPORT_BUILD_VERBOSE)
-	$(MOC) $(DEFINES) $(ACDEFINES) $< $(OUTOPTION)$@
-
-$(filter moc_%.cc,$(CPPSRCS)): moc_%.cc: %.cc
-	$(REPORT_BUILD_VERBOSE)
-	$(MOC) $(DEFINES) $(ACDEFINES) $(_VPATH_SRCS:.cc=.h) $(OUTOPTION)$@
-
-$(filter qrc_%.cpp,$(CPPSRCS)): qrc_%.cpp: %.qrc
-	$(REPORT_BUILD_VERBOSE)
-	$(RCC) -name $* $< $(OUTOPTION)$@
+	$(CC) $(OUTOPTION)$@ -c $(COMPILE_CFLAGS) $($(notdir $<)_FLAGS) $<
 
 ifdef ASFILES
 # The AS_DASH_C_FLAG is needed cause not all assemblers (Solaris) accept
 # a '-c' flag.
 $(ASOBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(AS) $(ASOUTOPTION)$@ $(ASFLAGS) $($(notdir $<)_FLAGS) $(AS_DASH_C_FLAG) $(_VPATH_SRCS)
+	$(AS) $(ASOUTOPTION)$@ $(ASFLAGS) $($(notdir $<)_FLAGS) $(AS_DASH_C_FLAG) $<
 endif
 
 define syms_template
@@ -821,31 +783,31 @@ $(SOBJS):
 $(CPPOBJS):
 	$(REPORT_BUILD_VERBOSE)
 	$(call BUILDSTATUS,OBJECT_FILE $@)
-	$(CCC) $(OUTOPTION)$@ -c $(COMPILE_CXXFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
+	$(CCC) $(OUTOPTION)$@ -c $(COMPILE_CXXFLAGS) $($(notdir $<)_FLAGS) $<
 
 $(CMMOBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(CCC) -o $@ -c $(COMPILE_CXXFLAGS) $(COMPILE_CMMFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
+	$(CCC) -o $@ -c $(COMPILE_CXXFLAGS) $(COMPILE_CMMFLAGS) $($(notdir $<)_FLAGS) $<
 
 $(CMOBJS):
 	$(REPORT_BUILD_VERBOSE)
-	$(CC) -o $@ -c $(COMPILE_CFLAGS) $(COMPILE_CMFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
+	$(CC) -o $@ -c $(COMPILE_CFLAGS) $(COMPILE_CMFLAGS) $($(notdir $<)_FLAGS) $<
 
 $(filter %.s,$(CPPSRCS:%.cpp=%.s)): %.s: %.cpp $(call mkdir_deps,$(MDDEPDIR))
 	$(REPORT_BUILD_VERBOSE)
-	$(CCC) -S $(COMPILE_CXXFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
+	$(CCC) -S $(COMPILE_CXXFLAGS) $($(notdir $<)_FLAGS) $<
 
 $(filter %.s,$(CPPSRCS:%.cc=%.s)): %.s: %.cc $(call mkdir_deps,$(MDDEPDIR))
 	$(REPORT_BUILD_VERBOSE)
-	$(CCC) -S $(COMPILE_CXXFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
+	$(CCC) -S $(COMPILE_CXXFLAGS) $($(notdir $<)_FLAGS) $<
 
 $(filter %.s,$(CPPSRCS:%.cxx=%.s)): %.s: %.cpp $(call mkdir_deps,$(MDDEPDIR))
 	$(REPORT_BUILD_VERBOSE)
-	$(CCC) -S $(COMPILE_CXXFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
+	$(CCC) -S $(COMPILE_CXXFLAGS) $($(notdir $<)_FLAGS) $<
 
 $(filter %.s,$(CSRCS:%.c=%.s)): %.s: %.c $(call mkdir_deps,$(MDDEPDIR))
 	$(REPORT_BUILD_VERBOSE)
-	$(CC) -S $(COMPILE_CFLAGS) $($(notdir $<)_FLAGS) $(_VPATH_SRCS)
+	$(CC) -S $(COMPILE_CFLAGS) $($(notdir $<)_FLAGS) $<
 
 ifneq (,$(filter %.i,$(MAKECMDGOALS)))
 # Call as $(call _group_srcs,extension,$(SRCS)) - this will create a list
@@ -872,7 +834,7 @@ $$(_PREPROCESSED_$1_FILES): _DEPEND_CFLAGS=
 $$(_PREPROCESSED_$1_FILES): %.i: %.$1
 	$$(REPORT_BUILD_VERBOSE)
 	$$(addprefix $$(MKDIR) -p ,$$(filter-out .,$$(@D)))
-	$$($3) -C $$(PREPROCESS_OPTION)$$@ $(foreach var,$4,$$($(var))) $$($$(notdir $$<)_FLAGS) $$(_VPATH_SRCS)
+	$$($3) -C $$(PREPROCESS_OPTION)$$@ $(foreach var,$4,$$($(var))) $$($$(notdir $$<)_FLAGS) $$<
 
 endef
 
@@ -934,13 +896,13 @@ endif
 
 endif
 
-$(RESFILE): %.res: %.rc
+$(RESFILE): %.res: $(RCFILE)
 	$(REPORT_BUILD)
 	@echo Creating Resource file: $@
 ifdef GNU_CC
-	$(RC) $(RCFLAGS) $(filter-out -U%,$(DEFINES)) $(INCLUDES:-I%=--include-dir %) $(OUTOPTION)$@ $(_VPATH_SRCS)
+	$(RC) $(RCFLAGS) $(filter-out -U%,$(DEFINES)) $(INCLUDES:-I%=--include-dir %) $(OUTOPTION)$@ $<
 else
-	$(RC) $(RCFLAGS) -r $(DEFINES) $(INCLUDES) $(OUTOPTION)$@ $(_VPATH_SRCS)
+	$(RC) $(RCFLAGS) -r $(DEFINES) $(INCLUDES) $(OUTOPTION)$@ $<
 endif
 
 # Cancel GNU make built-in implicit rules
@@ -954,21 +916,6 @@ endif
 
 EMPTY :=
 SPACE := $(EMPTY) $(EMPTY)
-
-# MSYS has its own special path form, but javac expects the source and class
-# paths to be in the DOS form (i.e. e:/builds/...).  This function does the
-# appropriate conversion on Windows, but is a noop on other systems.
-ifeq ($(HOST_OS_ARCH),WINNT)
-#  We use 'pwd -W' to get DOS form of the path.  However, since the given path
-#  could be a file or a non-existent path, we cannot call 'pwd -W' directly
-#  on the path.  Instead, we extract the root path (i.e. "c:/"), call 'pwd -W'
-#  on it, then merge with the rest of the path.
-root-path = $(shell echo $(1) | sed -e 's|\(/[^/]*\)/\?\(.*\)|\1|')
-non-root-path = $(shell echo $(1) | sed -e 's|\(/[^/]*\)/\?\(.*\)|\2|')
-normalizepath = $(foreach p,$(1),$(if $(filter /%,$(1)),$(patsubst %/,%,$(shell cd $(call root-path,$(1)) && pwd -W))/$(call non-root-path,$(1)),$(1)))
-else
-normalizepath = $(1)
-endif
 
 ###############################################################################
 # Bunch of things that extend the 'export' rule (in order):

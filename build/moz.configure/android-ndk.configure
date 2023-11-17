@@ -3,8 +3,18 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
+@depends(mozbuild_state_path, '--help')
+@imports('os')
+@imports(_from='mozboot.android', _import='NDK_VERSION')
+def default_android_ndk_root(mozbuild_state_path, _):
+    path = os.path.join(mozbuild_state_path, 'android-ndk-%s' % NDK_VERSION)
+    if os.path.isdir(path):
+        return path
+
+
 js_option('--with-android-ndk', nargs=1,
-          help='location where the Android NDK can be found')
+          default=default_android_ndk_root,
+          help='location where the Android NDK can be found{|}')
 
 js_option('--with-android-toolchain', nargs=1,
           help='location of the Android toolchain')
@@ -50,11 +60,16 @@ add_old_configure_assignment('android_version', android_version)
 
 
 @depends('--with-android-ndk')
+@imports(_from='os.path', _import='isdir')
 def ndk(value):
-    if not value:
-        die('You must specify --with-android-ndk=/path/to/ndk when '
-            'building for Android')
-    return value[0]
+    if value:
+        if not isdir(value[0]):
+            die("The path you specified with --with-android-ndk (%s) is not "
+                "a directory" % value[0])
+        return value[0]
+
+    die('You must specify --with-android-ndk=/path/to/ndk when targeting Android, '
+        'or try |mach bootstrap|.')
 
 
 set_config('ANDROID_NDK', ndk)
@@ -333,28 +348,6 @@ def bindgen_cflags_android(toolchain_flags, stlport_flags, toolchain,
         '-I%s' % os.path.join(gcc_include, 'include'),
         '-I%s' % os.path.join(gcc_include, 'include-fixed'),
     ]
-
-
-@depends(host, ndk)
-@imports(_from='os.path', _import='exists')
-@imports(_from='os.path', _import='isdir')
-def android_clang_compiler(host, ndk):
-    if not ndk:
-        return
-
-    llvm_format = '%s/toolchains/llvm/prebuilt/%s-%s/bin'
-    llvm_path = llvm_format % (ndk, host.kernel.lower(), host.cpu)
-    if not isdir(llvm_path) and host.cpu == 'x86_64':
-        llvm_path = llvm_format % (ndk, host.kernel.lower(), 'x86')
-
-    if not isdir(llvm_path):
-        die("Couldn't find path to LLVM toolchain at %s" % llvm_path)
-
-    clang = '%s/clang' % llvm_path
-    if not exists(clang):
-        die("Couln't find clang in LLVM toolchain at %s" % clang)
-
-    return clang
 
 
 @depends('--with-android-googlevr-sdk', target)

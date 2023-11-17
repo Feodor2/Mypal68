@@ -36,6 +36,7 @@ _ARTIFACT_ID_PER_PLATFORM = {
     'android-api-16-release': 'geckoview-armeabi-v7a',
     'android-x86-release': 'geckoview-x86',
     'android-x86_64-release': 'geckoview-x86_64',
+    'android-geckoview-fat-aar': 'geckoview-fat-aar',
 }
 
 

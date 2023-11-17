@@ -68,30 +68,33 @@ class NewRenderer : public RendererEvent {
     *mUseDComp = compositor->UseDComp();
     *mUseTripleBuffering = compositor->UseTripleBuffering();
 
+    bool allow_texture_swizzling = gfx::gfxVars::UseGLSwizzle();
     bool isMainWindow = true;  // TODO!
     bool supportLowPriorityTransactions = isMainWindow;
     bool supportPictureCaching = isMainWindow;
     wr::Renderer* wrRenderer = nullptr;
-    if (!wr_window_new(aWindowId, mSize.width, mSize.height,
-                       supportLowPriorityTransactions,
-                       StaticPrefs::gfx_webrender_picture_caching() &&
-                           supportPictureCaching,
+    if (!wr_window_new(
+            aWindowId, mSize.width, mSize.height,
+            supportLowPriorityTransactions, allow_texture_swizzling,
+            StaticPrefs::gfx_webrender_picture_caching() &&
+                supportPictureCaching,
 #ifdef NIGHTLY_BUILD
-                       StaticPrefs::gfx_webrender_start_debug_server(),
+            StaticPrefs::gfx_webrender_start_debug_server(),
 #else
-                       false,
+            false,
 #endif
-                       compositor->gl(),
-                       aRenderThread.GetProgramCache()
-                           ? aRenderThread.GetProgramCache()->Raw()
-                           : nullptr,
-                       aRenderThread.GetShaders()
-                           ? aRenderThread.GetShaders()->RawShaders()
-                           : nullptr,
-                       aRenderThread.ThreadPool().Raw(), &WebRenderMallocSizeOf,
-                       &WebRenderMallocEnclosingSizeOf,
-                       (uint32_t)wr::RenderRoot::Default, mDocHandle,
-                       &wrRenderer, mMaxTextureSize)) {
+            compositor->gl(), compositor->SurfaceIsYFlipped(),
+            aRenderThread.GetProgramCache()
+                ? aRenderThread.GetProgramCache()->Raw()
+                : nullptr,
+            aRenderThread.GetShaders()
+                ? aRenderThread.GetShaders()->RawShaders()
+                : nullptr,
+            aRenderThread.ThreadPool().Raw(), &WebRenderMallocSizeOf,
+            &WebRenderMallocEnclosingSizeOf, (uint32_t)wr::RenderRoot::Default,
+            compositor->ShouldUseNativeCompositor() ? compositor.get()
+                                                    : nullptr,
+            mDocHandle, &wrRenderer, mMaxTextureSize)) {
       // wr_window_new puts a message into gfxCriticalNote if it returns false
       return;
     }

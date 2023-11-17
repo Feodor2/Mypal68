@@ -2118,6 +2118,7 @@ impl ResourceCache {
                         root.join(format!("images/{}.png", image_id)),
                         desc.size,
                         desc.format,
+                        desc.stride,
                         &arc,
                     );
                     let file_name = format!("{}.raw", image_id);
@@ -2173,6 +2174,7 @@ impl ResourceCache {
                         root.join(format!("blobs/{}.png", num_blobs)),
                         desc.size,
                         desc.format,
+                        desc.stride,
                         &result.data,
                     );
                     let file_name = format!("{}.raw", num_blobs);

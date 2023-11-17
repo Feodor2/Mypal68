@@ -2,20 +2,16 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use std::mem;
-use std::ptr;
-use std::ops::Deref;
+use crate::interfaces::nsrefcnt;
+use libc;
+use nserror::{nsresult, NS_OK};
+use std::cell::Cell;
 use std::fmt;
 use std::marker::PhantomData;
-use std::cell::Cell;
+use std::mem;
+use std::ops::Deref;
 use std::sync::atomic::{self, AtomicUsize, Ordering};
-
-use nserror::{nsresult, NS_OK};
-
-use libc;
-
-use interfaces::nsrefcnt;
-
+use std::ptr::{self, NonNull};
 use threadbound::ThreadBound;
 
 /// A trait representing a type which can be reference counted invasively.
@@ -32,39 +28,31 @@ pub unsafe trait RefCounted {
 /// own memory. RefPtr will invoke the addref and release methods at the
 /// appropriate times to facilitate the bookkeeping.
 pub struct RefPtr<T: RefCounted + 'static> {
-    // We're going to cheat and store the internal reference as an &'static T
-    // instead of an *const T or Shared<T>, because Shared and NonZero are
-    // unstable, and we need to build on stable rust.
-    // I believe that this is "safe enough", as this module is private and
-    // no other module can read this reference.
-    _ptr: &'static T,
-    // As we aren't using Shared<T>, we need to add this phantomdata to
-    // prevent unsoundness in dropck
+    _ptr: NonNull<T>,
+    // Tell dropck that we own an instance of T.
     _marker: PhantomData<T>,
 }
 
-impl <T: RefCounted + 'static> RefPtr<T> {
+impl<T: RefCounted + 'static> RefPtr<T> {
     /// Construct a new RefPtr from a reference to the refcounted object.
     #[inline]
     pub fn new(p: &T) -> RefPtr<T> {
         unsafe {
             p.addref();
-            RefPtr {
-                _ptr: mem::transmute(p),
-                _marker: PhantomData,
-            }
+        }
+        RefPtr {
+            _ptr: p.into(),
+            _marker: PhantomData,
         }
     }
 
     /// Construct a RefPtr from a raw pointer, addrefing it.
     #[inline]
     pub unsafe fn from_raw(p: *const T) -> Option<RefPtr<T>> {
-        if p.is_null() {
-            return None;
-        }
-        (*p).addref();
+        let ptr = NonNull::new(p as *mut T)?;
+        ptr.as_ref().addref();
         Some(RefPtr {
-            _ptr: &*p,
+            _ptr: ptr,
             _marker: PhantomData,
         })
     }
@@ -72,11 +60,8 @@ impl <T: RefCounted + 'static> RefPtr<T> {
     /// Construct a RefPtr from a raw pointer, without addrefing it.
     #[inline]
     pub unsafe fn from_raw_dont_addref(p: *const T) -> Option<RefPtr<T>> {
-        if p.is_null() {
-            return None;
-        }
         Some(RefPtr {
-            _ptr: &*p,
+            _ptr: NonNull::new(p as *mut T)?,
             _marker: PhantomData,
         })
     }
@@ -89,35 +74,41 @@ impl <T: RefCounted + 'static> RefPtr<T> {
     }
 }
 
-impl <T: RefCounted + 'static> Deref for RefPtr<T> {
+impl<T: RefCounted + 'static> Deref for RefPtr<T> {
     type Target = T;
     #[inline]
     fn deref(&self) -> &T {
-        self._ptr
+        unsafe { self._ptr.as_ref() }
     }
 }
 
-impl <T: RefCounted + 'static> Drop for RefPtr<T> {
+impl<T: RefCounted + 'static> Drop for RefPtr<T> {
     #[inline]
     fn drop(&mut self) {
         unsafe {
-            self._ptr.release();
+            self._ptr.as_ref().release();
         }
     }
 }
 
-impl <T: RefCounted + 'static> Clone for RefPtr<T> {
+impl<T: RefCounted + 'static> Clone for RefPtr<T> {
     #[inline]
     fn clone(&self) -> RefPtr<T> {
         RefPtr::new(self)
     }
 }
 
-impl <T: RefCounted + 'static + fmt::Debug> fmt::Debug for RefPtr<T> {
+impl<T: RefCounted + 'static + fmt::Debug> fmt::Debug for RefPtr<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "RefPtr<{:?}>", self.deref())
     }
 }
+
+// Both `Send` and `Sync` bounds are required for `RefPtr<T>` to implement
+// either, as sharing a `RefPtr<T>` also allows transferring ownership, and
+// vice-versa.
+unsafe impl<T: RefCounted + 'static + Send + Sync> Send for RefPtr<T> {}
+unsafe impl<T: RefCounted + 'static + Send + Sync> Sync for RefPtr<T> {}
 
 /// A wrapper that binds a RefCounted value to its original thread,
 /// preventing retrieval from other threads and panicking if the value
@@ -158,7 +149,7 @@ pub struct GetterAddrefs<T: RefCounted + 'static> {
     _marker: PhantomData<T>,
 }
 
-impl <T: RefCounted + 'static> GetterAddrefs<T> {
+impl<T: RefCounted + 'static> GetterAddrefs<T> {
     /// Create a `GetterAddrefs`, initializing it with the null pointer.
     #[inline]
     pub fn new() -> GetterAddrefs<T> {
@@ -192,13 +183,11 @@ impl <T: RefCounted + 'static> GetterAddrefs<T> {
         // Don't run the destructor because we don't want to release the stored
         // pointer.
         mem::forget(self);
-        unsafe {
-            RefPtr::from_raw_dont_addref(p)
-        }
+        unsafe { RefPtr::from_raw_dont_addref(p) }
     }
 }
 
-impl <T: RefCounted + 'static> Drop for GetterAddrefs<T> {
+impl<T: RefCounted + 'static> Drop for GetterAddrefs<T> {
     #[inline]
     fn drop(&mut self) {
         if !self._ptr.is_null() {
@@ -228,7 +217,8 @@ impl <T: RefCounted + 'static> Drop for GetterAddrefs<T> {
 /// ```
 #[inline]
 pub fn getter_addrefs<T: RefCounted, F>(f: F) -> Result<RefPtr<T>, nsresult>
-    where F: FnOnce(*mut *const T) -> nsresult
+where
+    F: FnOnce(*mut *const T) -> nsresult,
 {
     let mut ga = GetterAddrefs::<T>::new();
     let rv = f(unsafe { ga.ptr() });

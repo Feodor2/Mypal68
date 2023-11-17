@@ -51,7 +51,7 @@ ifndef TEST_MOZBUILD
 ifndef MOZ_PROFILE_USE
 # We need to explicitly put BUILD_BACKEND_FILES here otherwise the rule in
 # rules.mk doesn't run early enough.
-$(TIERS) binaries:: CLOBBER $(BUILD_BACKEND_FILES)
+$(RUNNABLE_TIERS) binaries:: CLOBBER $(BUILD_BACKEND_FILES)
 endif
 endif
 
@@ -156,6 +156,11 @@ recurse_win32-artifact:
 	$(topsrcdir)/mach --log-no-times artifact install --job $(if $(MOZ_PGO),win32-pgo,win32-opt) --no-tests --distdir $(DIST)/i686
 	mv $(DIST)/i686/bin/* $(DIST)/i686
 endif
+
+ifdef MOZ_ANDROID_FAT_AAR_ARCHITECTURES
+recurse_android-fat-aar-artifact:
+	$(call py_action,fat_aar,$(MOZ_ANDROID_FAT_AAR_ARCHITECTURES) --distdir $(abspath $(DIST)/fat-aar))
+endif # MOZ_ANDROID_FAT_AAR_ARCHITECTURES
 
 ifdef MOZ_WIDGET_TOOLKIT
 ifdef ENABLE_TESTS

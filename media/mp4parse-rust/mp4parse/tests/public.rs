@@ -9,9 +9,12 @@ extern crate mp4parse as mp4;
 use std::io::{Cursor, Read};
 use std::fs::File;
 
-static MINI_MP4: &'static str = "tests/minimal.mp4";
-static AUDIO_EME_CENC_MP4: &'static str = "tests/bipbop-cenc-audioinit.mp4";
-static VIDEO_EME_CENC_MP4: &'static str = "tests/bipbop_480wp_1001kbps-cenc-video-key1-init.mp4";
+static MINI_MP4: &str = "tests/minimal.mp4";
+static MINI_MP4_WITH_METADATA: &str = "tests/metadata.mp4";
+static MINI_MP4_WITH_METADATA_STD_GENRE: &str = "tests/metadata_gnre.mp4";
+
+static AUDIO_EME_CENC_MP4: &str = "tests/bipbop-cenc-audioinit.mp4";
+static VIDEO_EME_CENC_MP4: &str = "tests/bipbop_480wp_1001kbps-cenc-video-key1-init.mp4";
 // The cbcs files were created via shaka-packager from Firefox's test suite's bipbop.mp4 using:
 // packager-win.exe
 // in=bipbop.mp4,stream=audio,init_segment=bipbop_cbcs_audio_init.mp4,segment_template=bipbop_cbcs_audio_$Number$.m4s
@@ -21,12 +24,13 @@ static VIDEO_EME_CENC_MP4: &'static str = "tests/bipbop_480wp_1001kbps-cenc-vide
 // --iv 11223344556677889900112233445566
 // --generate_static_mpd --mpd_output bipbop_cbcs.mpd
 // note: only the init files are needed for these tests
-static AUDIO_EME_CBCS_MP4: &'static str = "tests/bipbop_cbcs_audio_init.mp4";
-static VIDEO_EME_CBCS_MP4: &'static str = "tests/bipbop_cbcs_video_init.mp4";
-static VIDEO_AV1_MP4: &'static str = "tests/tiny_av1.mp4";
+static AUDIO_EME_CBCS_MP4: &str = "tests/bipbop_cbcs_audio_init.mp4";
+static VIDEO_EME_CBCS_MP4: &str = "tests/bipbop_cbcs_video_init.mp4";
+static VIDEO_AV1_MP4: &str = "tests/tiny_av1.mp4";
 
 // Adapted from https://github.com/GuillaumeGomez/audio-video-metadata/blob/9dff40f565af71d5502e03a2e78ae63df95cfd40/src/metadata.rs#L53
 #[test]
+#[allow(clippy::cognitive_complexity)] // TODO: Consider simplifying this
 fn public_api() {
     let mut fd = File::open(MINI_MP4).expect("Unknown file");
     let mut buf = Vec::new();
@@ -49,8 +53,8 @@ fn public_api() {
                 let tkhd = track.tkhd.unwrap();
                 assert_eq!(tkhd.disabled, false);
                 assert_eq!(tkhd.duration, 40);
-                assert_eq!(tkhd.width, 20971520);
-                assert_eq!(tkhd.height, 15728640);
+                assert_eq!(tkhd.width, 20_971_520);
+                assert_eq!(tkhd.height, 15_728_640);
 
                 // track.stsd part
                 let stsd = track.stsd.expect("expected an stsd");
@@ -68,7 +72,7 @@ fn public_api() {
                     mp4::VideoCodecSpecific::VPxConfig(ref vpx) => {
                         // We don't enter in here, we just check if fields are public.
                         assert!(vpx.bit_depth > 0);
-                        assert!(vpx.color_space > 0);
+                        assert!(vpx.colour_primaries > 0);
                         assert!(vpx.chroma_subsampling > 0);
                         assert!(!vpx.codec_init.is_empty());
                         "VPx"
@@ -141,6 +145,132 @@ fn public_api() {
 }
 
 #[test]
+#[allow(clippy::cognitive_complexity)] // TODO: Consider simplifying this
+fn public_metadata() {
+    let mut fd = File::open(MINI_MP4_WITH_METADATA).expect("Unknown file");
+    let mut buf = Vec::new();
+    fd.read_to_end(&mut buf).expect("File error");
+
+    let mut c = Cursor::new(&buf);
+    let mut context = mp4::MediaContext::new();
+    mp4::read_mp4(&mut c, &mut context).expect("read_mp4 failed");
+    let udta = context.userdata.expect("didn't find udta")
+        .expect("failed to parse udta");
+    let meta = udta.meta.expect("didn't find meta");
+    assert_eq!(meta.title.unwrap(), "Title");
+    assert_eq!(meta.artist.unwrap(), "Artist");
+    assert_eq!(meta.album_artist.unwrap(), "Album Artist");
+    assert_eq!(meta.comment.unwrap(), "Comments");
+    assert_eq!(meta.year.unwrap(), "2019");
+    assert_eq!(meta.genre.unwrap(), mp4::Genre::CustomGenre("Custom Genre".to_string()));
+    assert_eq!(meta.encoder.unwrap(), "Lavf56.40.101");
+    assert_eq!(meta.encoded_by.unwrap(), "Encoded-by");
+    assert_eq!(meta.copyright.unwrap(), "Copyright");
+    assert_eq!(meta.track_number.unwrap(), 3);
+    assert_eq!(meta.total_tracks.unwrap(), 6);
+    assert_eq!(meta.disc_number.unwrap(), 5);
+    assert_eq!(meta.total_discs.unwrap(), 10);
+    assert_eq!(meta.beats_per_minute.unwrap(), 128);
+    assert_eq!(meta.composer.unwrap(), "Composer");
+    assert_eq!(meta.compilation.unwrap(), true);
+    assert_eq!(meta.gapless_playback.unwrap(), false);
+    assert_eq!(meta.podcast.unwrap(), false);
+    assert_eq!(meta.advisory.unwrap(), mp4::AdvisoryRating::Clean);
+    assert_eq!(meta.media_type.unwrap(), mp4::MediaType::Normal);
+    assert_eq!(meta.rating.unwrap(), "50");
+    assert_eq!(meta.grouping.unwrap(), "Grouping");
+    assert_eq!(meta.category.unwrap(), "Category");
+    assert_eq!(meta.keyword.unwrap(), "Keyword");
+    assert_eq!(meta.description.unwrap(), "Description");
+    assert_eq!(meta.lyrics.unwrap(), "Lyrics");
+    assert_eq!(meta.long_description.unwrap(), "Long Description");
+    assert_eq!(meta.tv_episode_name.unwrap(), "Episode Name");
+    assert_eq!(meta.tv_network_name.unwrap(), "Network Name");
+    assert_eq!(meta.tv_episode_number.unwrap(), 15);
+    assert_eq!(meta.tv_season.unwrap(), 10);
+    assert_eq!(meta.tv_show_name.unwrap(), "Show Name");
+    assert_eq!(meta.hd_video.unwrap(), true);
+    assert_eq!(meta.owner.unwrap(), "Owner");
+    assert_eq!(meta.sort_name.unwrap(), "Sort Name");
+    assert_eq!(meta.sort_album.unwrap(), "Sort Album");
+    assert_eq!(meta.sort_artist.unwrap(), "Sort Artist");
+    assert_eq!(meta.sort_album_artist.unwrap(), "Sort Album Artist");
+    assert_eq!(meta.sort_composer.unwrap(), "Sort Composer");
+
+    // Check for valid JPEG header
+    let covers = meta.cover_art.unwrap();
+    let cover = &covers[0];
+    let mut bytes = [0u8; 4];
+    bytes[0] = cover[0];
+    bytes[1] = cover[1];
+    bytes[2] = cover[2];
+    assert_eq!(u32::from_le_bytes(bytes), 0x00ff_d8ff);
+}
+
+#[test]
+#[allow(clippy::cognitive_complexity)] // TODO: Consider simplifying this
+fn public_metadata_gnre() {
+    let mut fd = File::open(MINI_MP4_WITH_METADATA_STD_GENRE).expect("Unknown file");
+    let mut buf = Vec::new();
+    fd.read_to_end(&mut buf).expect("File error");
+
+    let mut c = Cursor::new(&buf);
+    let mut context = mp4::MediaContext::new();
+    mp4::read_mp4(&mut c, &mut context).expect("read_mp4 failed");
+    let udta = context.userdata.expect("didn't find udta")
+        .expect("failed to parse udta");
+    let meta = udta.meta.expect("didn't find meta");
+    assert_eq!(meta.title.unwrap(), "Title");
+    assert_eq!(meta.artist.unwrap(), "Artist");
+    assert_eq!(meta.album_artist.unwrap(), "Album Artist");
+    assert_eq!(meta.comment.unwrap(), "Comments");
+    assert_eq!(meta.year.unwrap(), "2019");
+    assert_eq!(meta.genre.unwrap(), mp4::Genre::StandardGenre(3));
+    assert_eq!(meta.encoder.unwrap(), "Lavf56.40.101");
+    assert_eq!(meta.encoded_by.unwrap(), "Encoded-by");
+    assert_eq!(meta.copyright.unwrap(), "Copyright");
+    assert_eq!(meta.track_number.unwrap(), 3);
+    assert_eq!(meta.total_tracks.unwrap(), 6);
+    assert_eq!(meta.disc_number.unwrap(), 5);
+    assert_eq!(meta.total_discs.unwrap(), 10);
+    assert_eq!(meta.beats_per_minute.unwrap(), 128);
+    assert_eq!(meta.composer.unwrap(), "Composer");
+    assert_eq!(meta.compilation.unwrap(), true);
+    assert_eq!(meta.gapless_playback.unwrap(), false);
+    assert_eq!(meta.podcast.unwrap(), false);
+    assert_eq!(meta.advisory.unwrap(), mp4::AdvisoryRating::Clean);
+    assert_eq!(meta.media_type.unwrap(), mp4::MediaType::Normal);
+    assert_eq!(meta.rating.unwrap(), "50");
+    assert_eq!(meta.grouping.unwrap(), "Grouping");
+    assert_eq!(meta.category.unwrap(), "Category");
+    assert_eq!(meta.keyword.unwrap(), "Keyword");
+    assert_eq!(meta.description.unwrap(), "Description");
+    assert_eq!(meta.lyrics.unwrap(), "Lyrics");
+    assert_eq!(meta.long_description.unwrap(), "Long Description");
+    assert_eq!(meta.tv_episode_name.unwrap(), "Episode Name");
+    assert_eq!(meta.tv_network_name.unwrap(), "Network Name");
+    assert_eq!(meta.tv_episode_number.unwrap(), 15);
+    assert_eq!(meta.tv_season.unwrap(), 10);
+    assert_eq!(meta.tv_show_name.unwrap(), "Show Name");
+    assert_eq!(meta.hd_video.unwrap(), true);
+    assert_eq!(meta.owner.unwrap(), "Owner");
+    assert_eq!(meta.sort_name.unwrap(), "Sort Name");
+    assert_eq!(meta.sort_album.unwrap(), "Sort Album");
+    assert_eq!(meta.sort_artist.unwrap(), "Sort Artist");
+    assert_eq!(meta.sort_album_artist.unwrap(), "Sort Album Artist");
+    assert_eq!(meta.sort_composer.unwrap(), "Sort Composer");
+
+    // Check for valid JPEG header
+    let covers = meta.cover_art.unwrap();
+    let cover = &covers[0];
+    let mut bytes = [0u8; 4];
+    bytes[0] = cover[0];
+    bytes[1] = cover[1];
+    bytes[2] = cover[2];
+    assert_eq!(u32::from_le_bytes(bytes), 0x00ff_d8ff);
+}
+
+#[test]
 fn public_audio_tenc() {
     let kid =
         vec![0x7e, 0x57, 0x1d, 0x04, 0x7e, 0x57, 0x1d, 0x04,
@@ -166,7 +296,7 @@ fn public_audio_tenc() {
                 if let Some(ref schm) = p.scheme_type {
                     assert_eq!(schm.scheme_type.value, "cenc");
                 } else {
-                    assert!(false, "Expected scheme type info");
+                    panic!("Expected scheme type info");
                 }
                 if let Some(ref tenc) = p.tenc {
                     assert!(tenc.is_encrypted > 0);
@@ -176,11 +306,11 @@ fn public_audio_tenc() {
                     assert_eq!(tenc.skip_byte_block_count, None);
                     assert_eq!(tenc.constant_iv, None);
                 } else {
-                    assert!(false, "Invalid test condition");
+                    panic!("Invalid test condition");
                 }
             },
             _=> {
-                assert!(false, "Invalid test condition");
+                panic!("Invalid test condition");
             },
         }
     }
@@ -225,7 +355,7 @@ fn public_video_cenc() {
                 if let Some(ref schm) = p.scheme_type {
                     assert_eq!(schm.scheme_type.value, "cenc");
                 } else {
-                    assert!(false, "Expected scheme type info");
+                    panic!("Expected scheme type info");
                 }
                 if let Some(ref tenc) = p.tenc {
                     assert!(tenc.is_encrypted > 0);
@@ -235,11 +365,11 @@ fn public_video_cenc() {
                     assert_eq!(tenc.skip_byte_block_count, None);
                     assert_eq!(tenc.constant_iv, None);
                 } else {
-                    assert!(false, "Invalid test condition");
+                    panic!("Invalid test condition");
                 }
             },
             _=> {
-                assert!(false, "Invalid test condition");
+                panic!("Invalid test condition");
             }
         }
     }
@@ -297,7 +427,7 @@ fn publicaudio_cbcs() {
                         if let Some(ref schm) = p.scheme_type {
                             assert_eq!(schm.scheme_type.value, "cbcs");
                         } else {
-                            assert!(false, "Expected scheme type info");
+                            panic!("Expected scheme type info");
                         }
                         if let Some(ref tenc) = p.tenc {
                             assert!(tenc.is_encrypted > 0);
@@ -310,7 +440,7 @@ fn publicaudio_cbcs() {
                             assert_eq!(tenc.skip_byte_block_count, Some(0));
                             assert_eq!(tenc.constant_iv, Some(default_iv.clone()));
                         } else {
-                            assert!(false, "Invalid test condition");
+                            panic!("Invalid test condition");
                         }
                     }
                 },
@@ -334,6 +464,7 @@ fn publicaudio_cbcs() {
 }
 
 #[test]
+#[allow(clippy::cognitive_complexity)] // TODO: Consider simplifying this
 fn public_video_cbcs() {
     let system_id =
         vec![0x10, 0x77, 0xef, 0xec, 0xc0, 0xb2, 0x4d, 0x02,
@@ -378,7 +509,7 @@ fn public_video_cbcs() {
                         if let Some(ref schm) = p.scheme_type {
                             assert_eq!(schm.scheme_type.value, "cbcs");
                         } else {
-                            assert!(false, "Expected scheme type info");
+                            panic!("Expected scheme type info");
                         }
                         if let Some(ref tenc) = p.tenc {
                             assert!(tenc.is_encrypted > 0);
@@ -388,7 +519,7 @@ fn public_video_cbcs() {
                             assert_eq!(tenc.skip_byte_block_count, Some(9));
                             assert_eq!(tenc.constant_iv, Some(default_iv.clone()));
                         } else {
-                            assert!(false, "Invalid test condition");
+                            panic!("Invalid test condition");
                         }
                     }
                 },
@@ -412,6 +543,7 @@ fn public_video_cbcs() {
 }
 
 #[test]
+#[allow(clippy::cognitive_complexity)] // TODO: Consider simplifying this
 fn public_video_av1() {
     let mut fd = File::open(VIDEO_AV1_MP4).expect("Unknown file");
     let mut buf = Vec::new();
@@ -431,8 +563,8 @@ fn public_video_av1() {
         let tkhd = track.tkhd.unwrap();
         assert_eq!(tkhd.disabled, false);
         assert_eq!(tkhd.duration, 42);
-        assert_eq!(tkhd.width, 4194304);
-        assert_eq!(tkhd.height, 4194304);
+        assert_eq!(tkhd.width, 4_194_304);
+        assert_eq!(tkhd.height, 4_194_304);
 
         // track.stsd part
         let stsd = track.stsd.expect("expected an stsd");
@@ -458,7 +590,7 @@ fn public_video_av1() {
                 assert_eq!(av1c.initial_presentation_delay_present, false);
                 assert_eq!(av1c.initial_presentation_delay_minus_one, 0);
             },
-            _ => assert!(false, "Invalid test condition"),
+            _ => panic!("Invalid test condition"),
         }
     }
 }

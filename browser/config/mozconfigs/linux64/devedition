@@ -4,9 +4,4 @@ export MOZ_PGO=1
 
 ac_add_options --with-branding=browser/branding/aurora
 
-export MOZ_LTO=1
-ac_add_options --enable-profile-use
-ac_add_options --with-pgo-jarlog=/builds/worker/fetches/en-US.log
-ac_add_options --with-pgo-profile-path=/builds/worker/fetches
-
 . "$topsrcdir/build/mozconfig.common.override"

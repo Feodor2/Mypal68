@@ -2,37 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+use crate::interfaces::{nsIComponentManager, nsIComponentRegistrar, nsIServiceManager};
+use crate::{GetterAddrefs, RefPtr, XpCom};
 use std::ffi::CStr;
 use std::ptr;
-use {
-    RefPtr,
-    GetterAddrefs,
-    XpCom,
-};
-
-use interfaces::{
-    nsIComponentManager,
-    nsIServiceManager,
-    nsIComponentRegistrar,
-};
-
-macro_rules! try_opt {
-    ($e: expr) => {
-        match $e {
-            Some(x) => x,
-            None => return None,
-        }
-    }
-}
 
 /// Get a reference to the global `nsIComponentManager`.
 ///
 /// Can return `None` during shutdown.
 #[inline]
 pub fn component_manager() -> Option<RefPtr<nsIComponentManager>> {
-    unsafe {
-        RefPtr::from_raw(Gecko_GetComponentManager())
-    }
+    unsafe { RefPtr::from_raw(Gecko_GetComponentManager()) }
 }
 
 /// Get a reference to the global `nsIServiceManager`.
@@ -40,9 +20,7 @@ pub fn component_manager() -> Option<RefPtr<nsIComponentManager>> {
 /// Can return `None` during shutdown.
 #[inline]
 pub fn service_manager() -> Option<RefPtr<nsIServiceManager>> {
-    unsafe {
-        RefPtr::from_raw(Gecko_GetServiceManager())
-    }
+    unsafe { RefPtr::from_raw(Gecko_GetServiceManager()) }
 }
 
 /// Get a reference to the global `nsIComponentRegistrar`
@@ -50,9 +28,7 @@ pub fn service_manager() -> Option<RefPtr<nsIServiceManager>> {
 /// Can return `None` during shutdown.
 #[inline]
 pub fn component_registrar() -> Option<RefPtr<nsIComponentRegistrar>> {
-    unsafe {
-        RefPtr::from_raw(Gecko_GetComponentRegistrar())
-    }
+    unsafe { RefPtr::from_raw(Gecko_GetComponentRegistrar()) }
 }
 
 /// Helper for calling `nsIComponentManager::CreateInstanceByContractID` on the
@@ -63,12 +39,10 @@ pub fn component_registrar() -> Option<RefPtr<nsIComponentRegistrar>> {
 pub fn create_instance<T: XpCom>(id: &CStr) -> Option<RefPtr<T>> {
     unsafe {
         let mut ga = GetterAddrefs::<T>::new();
-        if try_opt!(component_manager()).CreateInstanceByContractID(
-            id.as_ptr(),
-            ptr::null(),
-            &T::IID,
-            ga.void_ptr(),
-        ).succeeded() {
+        if component_manager()?
+            .CreateInstanceByContractID(id.as_ptr(), ptr::null(), &T::IID, ga.void_ptr())
+            .succeeded()
+        {
             ga.refptr()
         } else {
             None
@@ -84,11 +58,10 @@ pub fn create_instance<T: XpCom>(id: &CStr) -> Option<RefPtr<T>> {
 pub fn get_service<T: XpCom>(id: &CStr) -> Option<RefPtr<T>> {
     unsafe {
         let mut ga = GetterAddrefs::<T>::new();
-        if try_opt!(service_manager()).GetServiceByContractID(
-            id.as_ptr(),
-            &T::IID,
-            ga.void_ptr()
-        ).succeeded() {
+        if service_manager()?
+            .GetServiceByContractID(id.as_ptr(), &T::IID, ga.void_ptr())
+            .succeeded()
+        {
             ga.refptr()
         } else {
             None

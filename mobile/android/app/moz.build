@@ -47,9 +47,20 @@ if CONFIG['MOZ_PKG_SPECIAL']:
     DEFINES['MOZ_PKG_SPECIAL'] = CONFIG['MOZ_PKG_SPECIAL']
 
 JS_PREFERENCE_PP_FILES += [
-     'geckoview-prefs.js',
      'mobile.js',
 ]
+
+if not CONFIG['MOZ_ANDROID_FAT_AAR_ARCHITECTURES']:
+    # Equivalent to JS_PREFERENCE_PP_FILES[CONFIG['ANDROID_CPU_ARCH']],
+    # which isn't supported out of the box.
+    FINAL_TARGET_PP_FILES.defaults.pref[CONFIG['ANDROID_CPU_ARCH']] += [
+        'geckoview-prefs.js',
+    ]
+else:
+    for arch in CONFIG['MOZ_ANDROID_FAT_AAR_ARCHITECTURES']:
+        FINAL_TARGET_FILES.defaults.pref[arch] += [
+             '!/dist/fat-aar/output/defaults/pref/{arch}/geckoview-prefs.js'.format(arch=arch),
+        ]
 
 FINAL_TARGET_PP_FILES += [
   'ua-update.json.in',

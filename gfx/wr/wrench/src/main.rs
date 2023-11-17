@@ -2,42 +2,14 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-extern crate base64;
-extern crate bincode;
-extern crate byteorder;
 #[macro_use]
 extern crate clap;
-#[cfg(target_os = "macos")]
-extern crate core_foundation;
-#[cfg(target_os = "macos")]
-extern crate core_graphics;
-extern crate crossbeam;
-#[cfg(target_os = "windows")]
-extern crate dwrote;
-#[cfg(feature = "env_logger")]
-extern crate env_logger;
-extern crate euclid;
-#[cfg(all(unix, not(target_os = "android")))]
-extern crate font_loader;
-extern crate gleam;
-extern crate glutin;
-extern crate image;
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-#[cfg(target_os = "windows")]
-extern crate mozangle;
-#[cfg(feature = "headless")]
-extern crate osmesa_sys;
-extern crate ron;
 #[macro_use]
 extern crate serde;
-extern crate serde_json;
-extern crate time;
-extern crate webrender;
-extern crate winit;
-extern crate yaml_rust;
 
 mod angle;
 mod binary_frame_reader;
@@ -424,6 +396,17 @@ fn main() {
     #[cfg(feature = "env_logger")]
     env_logger::init();
 
+    #[cfg(target_os = "macos")]
+    {
+        use core_foundation::{self as cf, base::TCFType};
+        let i = cf::bundle::CFBundle::main_bundle().info_dictionary();
+        let mut i = unsafe { i.to_mutable() };
+        i.set(
+            cf::string::CFString::new("NSSupportsAutomaticGraphicsSwitching"),
+            cf::boolean::CFBoolean::true_value().into_CFType(),
+        );
+    }
+
     let args_yaml = load_yaml!("args.yaml");
     let clap = clap::App::from_yaml(args_yaml)
         .setting(clap::AppSettings::ArgRequiredElseHelp);
@@ -488,15 +471,23 @@ fn main() {
     let zoom_factor = args.value_of("zoom").map(|z| z.parse::<f32>().unwrap());
     let chase_primitive = match args.value_of("chase") {
         Some(s) => {
-            let items = s
-                .split(',')
-                .map(|s| s.parse::<f32>().unwrap())
-                .collect::<Vec<_>>();
-            let rect = LayoutRect::new(
-                LayoutPoint::new(items[0], items[1]),
-                LayoutSize::new(items[2], items[3]),
-            );
-            webrender::ChasePrimitive::LocalRect(rect)
+            match s.find(',') {
+                Some(_) => {
+                    let items = s
+                        .split(',')
+                        .map(|s| s.parse::<f32>().unwrap())
+                        .collect::<Vec<_>>();
+                    let rect = LayoutRect::new(
+                        LayoutPoint::new(items[0], items[1]),
+                        LayoutSize::new(items[2], items[3]),
+                    );
+                    webrender::ChasePrimitive::LocalRect(rect)
+                }
+                None => {
+                    let id = s.parse::<usize>().unwrap();
+                    webrender::ChasePrimitive::Id(webrender::PrimitiveDebugId(id))
+                }
+            }
         },
         None => webrender::ChasePrimitive::Nothing,
     };
@@ -577,6 +568,7 @@ fn main() {
 
     if let Some(subargs) = args.subcommand_matches("show") {
         let no_block = args.is_present("no_block");
+        let no_batch = args.is_present("no_batch");
         render(
             &mut wrench,
             &mut window,
@@ -584,6 +576,7 @@ fn main() {
             &mut events_loop,
             subargs,
             no_block,
+            no_batch,
         );
     } else if let Some(subargs) = args.subcommand_matches("png") {
         let surface = match subargs.value_of("surface") {
@@ -628,6 +621,7 @@ fn render<'a>(
     events_loop: &mut Option<winit::EventsLoop>,
     subargs: &clap::ArgMatches<'a>,
     no_block: bool,
+    no_batch: bool,
 ) {
     let input_path = subargs.value_of("INPUT").map(PathBuf::from).unwrap();
 
@@ -665,6 +659,7 @@ fn render<'a>(
     thing.do_frame(wrench);
 
     let mut debug_flags = DebugFlags::empty();
+    debug_flags.set(DebugFlags::DISABLE_BATCHING, no_batch);
 
     // Default the profile overlay on for android.
     if cfg!(target_os = "android") {

@@ -38,7 +38,7 @@ features = ["png"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 core-graphics = "0.17.1"
-core-foundation = "0.6"
+core-foundation = "0.6.4"
 
 [features]
 default = [ "env_logger" ]
@@ -46,7 +46,7 @@ headless = [ "osmesa-sys", "osmesa-src" ]
 
 [target.'cfg(target_os = "windows")'.dependencies]
 dwrote = "0.9"
-mozangle = {version = "0.1.5", features = ["egl"]}
+mozangle = {version = "0.3.1", features = ["egl"]}
 
 [target.'cfg(all(unix, not(target_os = "android")))'.dependencies]
 font-loader = "0.7"

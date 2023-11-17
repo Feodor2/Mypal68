@@ -7,6 +7,7 @@ use api::{YuvColorSpace, YuvFormat, ColorDepth, ColorRange, PremultipliedColorF,
 use api::units::*;
 use crate::clip::{ClipDataStore, ClipNodeFlags, ClipNodeRange, ClipItemKind, ClipStore};
 use crate::clip_scroll_tree::{ClipScrollTree, ROOT_SPATIAL_NODE_INDEX, SpatialNodeIndex, CoordinateSystemId};
+use crate::composite::{CompositeState, CompositeTile, CompositeTileSurface};
 use crate::glyph_rasterizer::GlyphFormat;
 use crate::gpu_cache::{GpuBlockData, GpuCache, GpuCacheHandle, GpuCacheAddress};
 use crate::gpu_types::{BrushFlags, BrushInstance, PrimitiveHeaders, ZBufferId, ZBufferIdGenerator};
@@ -17,7 +18,7 @@ use crate::internal_types::{FastHashMap, SavedTargetIndex, Swizzle, TextureSourc
 use crate::picture::{Picture3DContext, PictureCompositeMode, PicturePrimitive, TileSurface};
 use crate::prim_store::{DeferredResolve, EdgeAaSegmentMask, PrimitiveInstanceKind, PrimitiveVisibilityIndex, PrimitiveVisibilityMask};
 use crate::prim_store::{VisibleGradientTile, PrimitiveInstance, PrimitiveOpacity, SegmentInstanceIndex};
-use crate::prim_store::{BrushSegment, ClipMaskKind, ClipTaskIndex, VECS_PER_SEGMENT};
+use crate::prim_store::{BrushSegment, ClipMaskKind, ClipTaskIndex, VECS_PER_SEGMENT, SpaceMapper};
 use crate::prim_store::image::ImageSource;
 use crate::render_backend::DataStores;
 use crate::render_target::RenderTargetContext;
@@ -429,8 +430,9 @@ impl AlphaBatchContainer {
 
             match batch_index {
                 Some(batch_index) => {
-                    self.alpha_batches[batch_index + min_batch_index].merge(other_batch);
-                    min_batch_index = batch_index;
+                    let index = batch_index + min_batch_index;
+                    self.alpha_batches[index].merge(other_batch);
+                    min_batch_index = index;
                 }
                 None => {
                     self.alpha_batches.push(other_batch);
@@ -643,6 +645,7 @@ impl BatchBuilder {
         root_spatial_node_index: SpatialNodeIndex,
         surface_spatial_node_index: SpatialNodeIndex,
         z_generator: &mut ZBufferIdGenerator,
+        composite_state: &mut CompositeState,
     ) {
         for cluster in &pic.prim_list.clusters {
             // Add each run in this picture to the batch.
@@ -659,6 +662,7 @@ impl BatchBuilder {
                     root_spatial_node_index,
                     surface_spatial_node_index,
                     z_generator,
+                    composite_state,
                 );
             }
         }
@@ -681,6 +685,7 @@ impl BatchBuilder {
         root_spatial_node_index: SpatialNodeIndex,
         surface_spatial_node_index: SpatialNodeIndex,
         z_generator: &mut ZBufferIdGenerator,
+        composite_state: &mut CompositeState,
     ) {
         if prim_instance.visibility_info == PrimitiveVisibilityIndex::INVALID {
             return;
@@ -1173,8 +1178,16 @@ impl BatchBuilder {
 
                         match raster_config.composite_mode {
                             PictureCompositeMode::TileCache { .. } => {
+                                // Tile cache instances are added to the composite config, rather than
+                                // directly added to batches. This allows them to be drawn with various
+                                // present modes during render, such as partial present etc.
                                 let tile_cache = picture.tile_cache.as_ref().unwrap();
-
+                                let map_local_to_world = SpaceMapper::new_with_target(
+                                    ROOT_SPATIAL_NODE_INDEX,
+                                    tile_cache.spatial_node_index,
+                                    ctx.screen_world_rect,
+                                    ctx.clip_scroll_tree,
+                                );
                                 let local_tile_clip_rect = LayoutRect::from_untyped(&tile_cache.local_rect.to_untyped());
                                 let local_tile_clip_rect = match local_tile_clip_rect.intersection(&prim_info.combined_local_clip_rect) {
                                     Some(rect) => rect,
@@ -1182,140 +1195,54 @@ impl BatchBuilder {
                                         return;
                                     }
                                 };
-
-                                // Add tile cache instances in two passes.
-                                // 1) Add all color/rectangle instances.
-                                // 2) Add remaining texture/image instances.
-                                // This ensures we batch together as many solid rectangles
-                                // as possible, which typically reduces the written pixel
-                                // count on most pages significantly.
-                                // TODO(gw): We could consider separating the tiles_to_draw
-                                //           array, to make this a bit tidier.
-
+                                let world_clip_rect = map_local_to_world
+                                    .map(&local_tile_clip_rect)
+                                    .expect("bug: unable to map clip rect");
+                                let device_clip_rect = (world_clip_rect * ctx.global_device_pixel_scale).round();
+                                let z_id = composite_state.z_generator.next();
                                 for key in &tile_cache.tiles_to_draw {
                                     let tile = &tile_cache.tiles[key];
+                                    let device_rect = (tile.world_rect * ctx.global_device_pixel_scale).round();
+                                    let dirty_rect = (tile.world_dirty_rect * ctx.global_device_pixel_scale).round();
                                     let surface = tile.surface.as_ref().expect("no tile surface set!");
+                                    match surface {
+                                        TileSurface::Color { color } => {
+                                            composite_state.opaque_tiles.push(CompositeTile {
+                                                surface: CompositeTileSurface::Color { color: *color },
+                                                rect: device_rect,
+                                                dirty_rect,
+                                                clip_rect: device_clip_rect,
+                                                z_id,
+                                            });
+                                        }
+                                        TileSurface::Clear => {
+                                            composite_state.clear_tiles.push(CompositeTile {
+                                                surface: CompositeTileSurface::Clear,
+                                                rect: device_rect,
+                                                dirty_rect,
+                                                clip_rect: device_clip_rect,
+                                                z_id,
+                                            });
+                                        }
+                                        TileSurface::Texture { descriptor, .. } => {
+                                            let surface = descriptor.resolve(ctx.resource_cache);
 
-                                    if let TileSurface::Color { color } = surface {
-                                        debug_assert!(tile.is_valid);
-                                        let local_tile_rect = LayoutRect::from_untyped(&tile.rect.to_untyped());
+                                            let composite_tile = CompositeTile {
+                                                surface: CompositeTileSurface::Texture {
+                                                    surface,
+                                                },
+                                                rect: device_rect,
+                                                dirty_rect,
+                                                clip_rect: device_clip_rect,
+                                                z_id,
+                                            };
 
-                                        let batch_params = BrushBatchParameters::shared(
-                                            BrushBatchKind::Solid,
-                                            BatchTextures::no_texture(),
-                                            [get_shader_opacity(1.0), 0, 0, 0],
-                                            0,
-                                        );
-
-                                        // TODO(gw): Maybe we could retain this GPU cache handle inside
-                                        //           the tile to avoid pushing per-frame GPU cache blocks.
-                                        let gpu_blocks = [
-                                            color.premultiplied().into(),
-                                        ];
-
-                                        let gpu_handle = gpu_cache.push_per_frame_blocks(&gpu_blocks);
-                                        let prim_cache_address = gpu_cache.get_address(&gpu_handle);
-                                        let opacity = PrimitiveOpacity::opaque();
-                                        let blend_mode = BlendMode::None;
-
-                                        let prim_header = PrimitiveHeader {
-                                            local_rect: local_tile_rect,
-                                            local_clip_rect: local_tile_clip_rect,
-                                            specific_prim_address: prim_cache_address,
-                                            transform_id,
-                                        };
-
-                                        let prim_header_index = prim_headers.push(
-                                            &prim_header,
-                                            z_id,
-                                            batch_params.prim_user_data,
-                                        );
-
-                                        self.add_segmented_prim_to_batch(
-                                            None,
-                                            opacity,
-                                            &batch_params,
-                                            blend_mode,
-                                            blend_mode,
-                                            batch_features,
-                                            prim_header_index,
-                                            bounding_rect,
-                                            transform_kind,
-                                            render_tasks,
-                                            z_id,
-                                            prim_info.clip_task_index,
-                                            prim_vis_mask,
-                                            ctx,
-                                        );
-                                    }
-                                }
-
-                                for key in &tile_cache.tiles_to_draw {
-                                    let tile = &tile_cache.tiles[key];
-                                    let surface = tile.surface.as_ref().expect("no tile surface set!");
-
-                                    if let TileSurface::Texture { ref handle, .. } = surface {
-                                        debug_assert!(tile.is_valid);
-                                        let local_tile_rect = LayoutRect::from_untyped(&tile.rect.to_untyped());
-
-                                        let cache_item = ctx.resource_cache.texture_cache.get(handle);
-                                        let uv_rect_address = gpu_cache
-                                            .get_address(&cache_item.uv_rect_handle)
-                                            .as_int();
-
-                                        let batch_params = BrushBatchParameters::shared(
-                                            BrushBatchKind::Image(ImageBufferKind::Texture2DArray),
-                                            BatchTextures::color(cache_item.texture_id),
-                                            [
-                                                ShaderColorMode::Image as i32 | ((AlphaType::PremultipliedAlpha as i32) << 16),
-                                                RasterizationSpace::Local as i32,
-                                                get_shader_opacity(1.0),
-                                                0,
-                                            ],
-                                            uv_rect_address,
-                                        );
-
-                                        let (opacity, blend_mode) = if tile.is_opaque || tile_cache.is_opaque() {
-                                            (
-                                                PrimitiveOpacity::opaque(),
-                                                BlendMode::None,
-                                            )
-                                        } else {
-                                            (
-                                                PrimitiveOpacity::translucent(),
-                                                BlendMode::PremultipliedAlpha,
-                                            )
-                                        };
-
-                                        let prim_header = PrimitiveHeader {
-                                            local_rect: local_tile_rect,
-                                            local_clip_rect: local_tile_clip_rect,
-                                            specific_prim_address: prim_cache_address,
-                                            transform_id,
-                                        };
-
-                                        let prim_header_index = prim_headers.push(
-                                            &prim_header,
-                                            z_id,
-                                            batch_params.prim_user_data,
-                                        );
-
-                                        self.add_segmented_prim_to_batch(
-                                            None,
-                                            opacity,
-                                            &batch_params,
-                                            blend_mode,
-                                            blend_mode,
-                                            batch_features,
-                                            prim_header_index,
-                                            bounding_rect,
-                                            transform_kind,
-                                            render_tasks,
-                                            z_id,
-                                            prim_info.clip_task_index,
-                                            prim_vis_mask,
-                                            ctx,
-                                        );
+                                            if tile.is_opaque || tile_cache.is_opaque() {
+                                                composite_state.opaque_tiles.push(composite_tile);
+                                            } else {
+                                                composite_state.alpha_tiles.push(composite_tile);
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1786,6 +1713,7 @@ impl BatchBuilder {
                             root_spatial_node_index,
                             surface_spatial_node_index,
                             z_generator,
+                            composite_state,
                         );
                     }
                 }

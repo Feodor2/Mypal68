@@ -280,6 +280,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   void GetApzSupportInfo(mozilla::widget::InfoObject& aObj);
   void GetTilesSupportInfo(mozilla::widget::InfoObject& aObj);
   void GetFrameStats(mozilla::widget::InfoObject& aObj);
+  void GetCMSSupportInfo(mozilla::widget::InfoObject& aObj);
 
   // Get the default content backend that will be used with the default
   // compositor. If the compositor is known when calling this function,
@@ -904,6 +905,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   mozilla::widget::GfxInfoCollector<gfxPlatform> mApzSupportCollector;
   mozilla::widget::GfxInfoCollector<gfxPlatform> mTilesInfoCollector;
   mozilla::widget::GfxInfoCollector<gfxPlatform> mFrameStatsCollector;
+  mozilla::widget::GfxInfoCollector<gfxPlatform> mCMSInfoCollector;
 
   nsTArray<mozilla::layers::FrameStats> mFrameStats;
 
@@ -915,6 +917,9 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   int32_t mScreenDepth;
   mozilla::gfx::IntSize mScreenSize;
+
+  // Total number of screen pixels across all monitors.
+  int64_t mScreenPixels;
 
   // An instance of gfxSkipChars which is empty. It is used as the
   // basis for error-case iterators.

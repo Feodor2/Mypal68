@@ -73,10 +73,8 @@ class WebExtensionPolicy final : public nsISupports,
 
   void InjectContentScripts(ErrorResult& aRv);
 
-  bool CanAccessURI(const URLInfo& aURI, bool aExplicit = false,
-                    bool aCheckRestricted = true) const {
-    return !aCheckRestricted && mHostPermissions &&
-           mHostPermissions->Matches(aURI, aExplicit);
+  bool CanAccessURI(const URLInfo& aURI, bool aExplicit = false) const {
+    return mHostPermissions && mHostPermissions->Matches(aURI, aExplicit);
   }
 
   bool IsPathWebAccessible(const nsAString& aPath) const {

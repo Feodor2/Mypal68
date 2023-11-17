@@ -525,7 +525,7 @@ bool ChannelWrapper::Matches(
     bool isProxy =
         aOptions.mIsProxy && aExtension->HasPermission(nsGkAtoms::proxy);
     // Proxies are allowed access to all urls, including restricted urls.
-    if (!aExtension->CanAccessURI(urlInfo, false, !isProxy)) {
+    if (!aExtension->CanAccessURI(urlInfo, false)) {
       return false;
     }
 

@@ -253,7 +253,9 @@ struct AecCore {
 AecCore* WebRtcAec_CreateAec(int instance_count);  // Returns NULL on error.
 void WebRtcAec_FreeAec(AecCore* aec);
 int WebRtcAec_InitAec(AecCore* aec, int sampFreq);
+#if defined(WEBRTC_ARCH_X86_FAMILY)
 void WebRtcAec_InitAec_SSE2(void);
+#endif
 #if defined(MIPS_FPU_LE)
 void WebRtcAec_InitAec_mips(void);
 #endif

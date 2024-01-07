@@ -25,7 +25,7 @@ UNIFIED_SOURCES += [
 ]
 
 if CONFIG['INTEL_ARCHITECTURE']:
-    if CONFIG['MOZ_SAMPLE_TYPE_FLOAT32']:
+    if CONFIG['MOZ_SAMPLE_TYPE_FLOAT32'] and not CONFIG['THE_SSE1']:
         SOURCES += ['sse_optimized.cpp']
         SOURCES['sse_optimized.cpp'].flags += CONFIG['SSE2_FLAGS']
     else:

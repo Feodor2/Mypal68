@@ -426,8 +426,12 @@ void (*WebPAlphaReplace)(uint32_t* src, int length, uint32_t color);
 // Init function
 
 extern void WebPInitAlphaProcessingMIPSdspR2(void);
+#if defined(WEBP_HAVE_SSE2)
 extern void WebPInitAlphaProcessingSSE2(void);
+#if defined(WEBP_HAVE_SSE41)
 extern void WebPInitAlphaProcessingSSE41(void);
+#endif
+#endif
 extern void WebPInitAlphaProcessingNEON(void);
 
 WEBP_DSP_INIT_FUNC(WebPInitAlphaProcessing) {

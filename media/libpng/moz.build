@@ -41,7 +41,7 @@ if CONFIG['CPU_ARCH'] == 'arm' or CONFIG['CPU_ARCH'] == 'aarch64':
             'arm/filter_neon.S'
         ]
 
-if CONFIG['INTEL_ARCHITECTURE']:
+if CONFIG['INTEL_ARCHITECTURE'] and not CONFIG['THE_SSE1']:
     DEFINES['MOZ_PNG_USE_INTEL_SSE'] = True
     UNIFIED_SOURCES += [
         'intel/filter_sse2_intrinsics.c',

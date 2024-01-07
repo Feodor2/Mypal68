@@ -130,7 +130,7 @@ if CONFIG['CPU_ARCH'] == 'aarch64' or CONFIG['BUILD_ARM_NEON']:
         ]
 
 # Are we targeting x86 or x64?  If so, build SSE2 files.
-if CONFIG['INTEL_ARCHITECTURE']:
+if CONFIG['INTEL_ARCHITECTURE'] and not CONFIG['THE_SSE1']:
     SOURCES += ['AudioNodeEngineSSE2.cpp']
     DEFINES['USE_SSE2'] = True
     SOURCES['AudioNodeEngineSSE2.cpp'].flags += CONFIG['SSE2_FLAGS']

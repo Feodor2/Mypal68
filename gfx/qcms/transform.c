@@ -442,6 +442,7 @@ static void qcms_transform_data_graya_out_precache(qcms_transform *transform, un
 	}
 }
 
+#if (defined(__POWERPC__) || defined(__powerpc__) && !defined(__NO_FPRS__))
 static void qcms_transform_data_rgb_out_lut_precache(qcms_transform *transform, unsigned char *src, unsigned char *dest, size_t length)
 {
 	unsigned int i;
@@ -511,6 +512,7 @@ static void qcms_transform_data_rgba_out_lut_precache(qcms_transform *transform,
 		dest += RGBA_OUTPUT_COMPONENTS;
 	}
 }
+#endif
 
 // Not used
 /* 
@@ -1011,87 +1013,6 @@ void qcms_transform_release(qcms_transform *t)
 	transform_free(t);
 }
 
-#ifdef X86
-// Determine if we can build with SSE2 (this was partly copied from jmorecfg.h in
-// mozilla/jpeg)
- // -------------------------------------------------------------------------
-#if defined(_M_IX86) && defined(_MSC_VER)
-#define HAS_CPUID
-/* Get us a CPUID function. Avoid clobbering EBX because sometimes it's the PIC
-   register - I'm not sure if that ever happens on windows, but cpuid isn't
-   on the critical path so we just preserve the register to be safe and to be
-   consistent with the non-windows version. */
-static void cpuid(uint32_t fxn, uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
-       uint32_t a_, b_, c_, d_;
-       __asm {
-              xchg   ebx, esi
-              mov    eax, fxn
-              cpuid
-              mov    a_, eax
-              mov    b_, ebx
-              mov    c_, ecx
-              mov    d_, edx
-              xchg   ebx, esi
-       }
-       *a = a_;
-       *b = b_;
-       *c = c_;
-       *d = d_;
-}
-#elif (defined(__GNUC__) || defined(__SUNPRO_C)) && (defined(__i386__) || defined(__i386))
-#define HAS_CPUID
-/* Get us a CPUID function. We can't use ebx because it's the PIC register on
-   some platforms, so we use ESI instead and save ebx to avoid clobbering it. */
-static void cpuid(uint32_t fxn, uint32_t *a, uint32_t *b, uint32_t *c, uint32_t *d) {
-
-	uint32_t a_, b_, c_, d_;
-       __asm__ __volatile__ ("xchgl %%ebx, %%esi; cpuid; xchgl %%ebx, %%esi;" 
-                             : "=a" (a_), "=S" (b_), "=c" (c_), "=d" (d_) : "a" (fxn));
-	   *a = a_;
-	   *b = b_;
-	   *c = c_;
-	   *d = d_;
-}
-#endif
-
-// -------------------------Runtime SSEx Detection-----------------------------
-
-/* MMX is always supported per
- *  Gecko v1.9.1 minimum CPU requirements */
-#define SSE1_EDX_MASK (1UL << 25)
-#define SSE2_EDX_MASK (1UL << 26)
-#define SSE3_ECX_MASK (1UL <<  0)
-
-static int sse_version_available(void)
-{
-#if defined(__x86_64__) || defined(__x86_64) || defined(_M_AMD64)
-	/* we know at build time that 64-bit CPUs always have SSE2
-	 * this tells the compiler that non-SSE2 branches will never be
-	 * taken (i.e. OK to optimze away the SSE1 and non-SIMD code */
-	return 2;
-#elif defined(HAS_CPUID)
-	static int sse_version = -1;
-	uint32_t a, b, c, d;
-	uint32_t function = 0x00000001;
-
-	if (sse_version == -1) {
-		sse_version = 0;
-		cpuid(function, &a, &b, &c, &d);
-		if (c & SSE3_ECX_MASK)
-			sse_version = 3;
-		else if (d & SSE2_EDX_MASK)
-			sse_version = 2;
-		else if (d & SSE1_EDX_MASK)
-			sse_version = 1;
-	}
-
-	return sse_version;
-#else
-	return 0;
-#endif
-}
-#endif
-
 static const struct matrix bradford_matrix = {{	{ 0.8951f, 0.2664f,-0.1614f},
 						{-0.7502f, 1.7135f, 0.0367f},
 						{ 0.0389f,-0.0685f, 1.0296f}}, 
@@ -1291,24 +1212,21 @@ qcms_transform* qcms_transform_create(
                 	return NULL;
             	}
 		if (precache) {
-#ifdef X86
-		    if (sse_version_available() >= 2) {
-			    if (in_type == QCMS_DATA_RGB_8)
-				    transform->transform_fn = qcms_transform_data_rgb_out_lut_sse2;
-			    else
-				    transform->transform_fn = qcms_transform_data_rgba_out_lut_sse2;
+#if defined(X86)
+#if !defined(THE_SSE1)
+		if (in_type == QCMS_DATA_RGB_8)
+			    transform->transform_fn = qcms_transform_data_rgb_out_lut_sse2;
+		    else
+			    transform->transform_fn = qcms_transform_data_rgba_out_lut_sse2;
 
-#if !(defined(_MSC_VER) && defined(_M_AMD64))
-                    /* Microsoft Compiler for x64 doesn't support MMX.
-                     * SSE code uses MMX so that we disable on x64 */
-		    } else
-		    if (sse_version_available() >= 1) {
-			    if (in_type == QCMS_DATA_RGB_8)
-				    transform->transform_fn = qcms_transform_data_rgb_out_lut_sse1;
-			    else
-				    transform->transform_fn = qcms_transform_data_rgba_out_lut_sse1;
+#elif !(defined(_MSC_VER) && defined(_M_AMD64)) || defined(THE_SSE1)
+                /* Microsoft Compiler for x64 doesn't support MMX.
+                * SSE code uses MMX so that we disable on x64 */
+		    if (in_type == QCMS_DATA_RGB_8)
+			    transform->transform_fn = qcms_transform_data_rgb_out_lut_sse1;
+		    else
+			    transform->transform_fn = qcms_transform_data_rgba_out_lut_sse1;
 #endif
-		    } else
 #endif
 #if (defined(__POWERPC__) || defined(__powerpc__) && !defined(__NO_FPRS__))
 		    if (have_altivec()) {
@@ -1316,14 +1234,14 @@ qcms_transform* qcms_transform_create(
 				    transform->transform_fn = qcms_transform_data_rgb_out_lut_altivec;
 			    else
 				    transform->transform_fn = qcms_transform_data_rgba_out_lut_altivec;
-		    } else
+		    } else {
+
+			    if (in_type == QCMS_DATA_RGB_8)
+				    transform->transform_fn = qcms_transform_data_rgb_out_lut_precache;
+			    else
+			            transform->transform_fn = qcms_transform_data_rgba_out_lut_precache;
+		    }
 #endif
-			{
-				if (in_type == QCMS_DATA_RGB_8)
-					transform->transform_fn = qcms_transform_data_rgb_out_lut_precache;
-				else
-					transform->transform_fn = qcms_transform_data_rgba_out_lut_precache;
-			}
 		} else {
 			if (in_type == QCMS_DATA_RGB_8)
 				transform->transform_fn = qcms_transform_data_rgb_out_lut;

@@ -490,7 +490,7 @@ static bool AttemptVideoScale(TextureSourceBasic* aSource,
                               const gfx::Rect& aRect,
                               const gfx::Rect& aClipRect, DrawTarget* aDest,
                               const DrawTarget* aBuffer) {
-#ifdef MOZILLA_SSE_HAVE_CPUID_DETECTION
+#if defined(MOZILLA_SSE_HAVE_CPUID_DETECTION) && !defined(THE_SSE1)
   if (!mozilla::supports_ssse3()) return false;
   if (aNewTransform
           .IsTranslation())  // unscaled painting should take the regular path
@@ -563,7 +563,7 @@ static bool AttemptVideoConvertAndScale(
   WrappingTextureSourceYCbCrBasic* wrappingSource =
       aSource->AsWrappingTextureSourceYCbCrBasic();
   if (!wrappingSource) return false;
-#ifdef MOZILLA_SSE_HAVE_CPUID_DETECTION
+#if defined(MOZILLA_SSE_HAVE_CPUID_DETECTION) && !defined(THE_SSE1)
   if (!mozilla::supports_ssse3())  // libyuv requests SSSE3 for fast YUV
                                    // conversion.
     return false;

@@ -6,4 +6,3 @@ with Files("**"):
     BUG_COMPONENT = ("Core", "Audio/Video: Playback")
 
 DIRS += ['src']
-

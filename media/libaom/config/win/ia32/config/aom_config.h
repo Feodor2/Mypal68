@@ -69,11 +69,19 @@
 #define HAVE_MSA 0
 #define HAVE_NEON 0
 #define HAVE_SSE 1
+#ifndef THE_SSE1
 #define HAVE_SSE2 1
 #define HAVE_SSE3 1
 #define HAVE_SSE4_1 1
 #define HAVE_SSE4_2 1
 #define HAVE_SSSE3 1
+#else
+#define HAVE_SSE2 0
+#define HAVE_SSE3 0
+#define HAVE_SSE4_1 0
+#define HAVE_SSE4_2 0
+#define HAVE_SSSE3 0
+#endif
 #define HAVE_VSX 0
 #define HAVE_WXWIDGETS 0
 #define INCLUDE_INSTALL_DIR INSTALLDIR/include

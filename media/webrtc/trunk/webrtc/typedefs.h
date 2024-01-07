@@ -28,7 +28,9 @@
 #define WEBRTC_ARCH_64_BITS
 #define WEBRTC_ARCH_LITTLE_ENDIAN
 #elif defined(_M_IX86) || defined(__i386__)
-#define WEBRTC_ARCH_X86_FAMILY
+#  ifndef THE_SSE1
+#  define WEBRTC_ARCH_X86_FAMILY
+#  endif
 #define WEBRTC_ARCH_X86
 #define WEBRTC_ARCH_32_BITS
 #define WEBRTC_ARCH_LITTLE_ENDIAN

@@ -30,6 +30,8 @@ if CONFIG['CPU_ARCH'] == 'x86_64':
 elif CONFIG['CPU_ARCH'] == 'x86':
     EXPORTS.vpx += files['IA32_EXPORTS']
     SOURCES += files['IA32_SOURCES']
+    if not CONFIG['THE_SSE1']:
+        SOURCES += files['IA32_SSE2_SOURCES']
     if CONFIG['OS_TARGET'] == 'WINNT':
         if CONFIG['CC_TYPE'] == 'gcc':
             ASFLAGS += [ '-I%s/media/libvpx/config/win/mingw32/' % TOPSRCDIR ]

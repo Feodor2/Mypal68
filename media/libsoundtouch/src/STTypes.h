@@ -155,7 +155,7 @@ namespace soundtouch
         // data type for sample accumulation: Use double to utilize full precision.
         typedef double LONG_SAMPLETYPE;
 
-        #ifdef SOUNDTOUCH_ALLOW_X86_OPTIMIZATIONS
+        #if defined(SOUNDTOUCH_ALLOW_X86_OPTIMIZATIONS) && !defined(THE_SSE1)
             // Allow SSE optimizations
             #define SOUNDTOUCH_ALLOW_SSE       1
         #endif

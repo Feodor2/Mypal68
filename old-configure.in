@@ -707,19 +707,23 @@ case "$target" in
             CPPFLAGS="$CPPFLAGS -utf-8"
         fi
         if test "$CPU_ARCH" = "x86"; then
+            SSE_FLAGS="-arch:SSE"
+            if test "$THE_SSE1" = 1; then
+               SSE2_FLAGS="-arch:SSE"
+            else
+               SSE2_FLAGS="-arch:SSE2"
+            fi
             dnl VS2012+ defaults to -arch:SSE2. We want to target nothing
             dnl more recent, so set that explicitly here unless another
             dnl target arch has already been set.
             changequote(,)
             if test -z `echo $CFLAGS | grep -i [-/]arch:`; then
-              CFLAGS="$CFLAGS -arch:SSE2"
+              CFLAGS="$CFLAGS $SSE2_FLAGS"
             fi
             if test -z `echo $CXXFLAGS | grep -i [-/]arch:`; then
-              CXXFLAGS="$CXXFLAGS -arch:SSE2"
+              CXXFLAGS="$CXXFLAGS $SSE2_FLAGS"
             fi
             changequote([,])
-            SSE_FLAGS="-arch:SSE"
-            SSE2_FLAGS="-arch:SSE2"
             dnl MSVC allows the use of intrinsics without any flags
             dnl and doesn't have a separate arch for SSSE3
             SSSE3_FLAGS="-arch:SSE2"
@@ -925,6 +929,10 @@ if test -z "$MOZ_OPTIMIZE_FLAGS"; then
     MOZ_OPTIMIZE_FLAGS="-O"
 fi
 
+if test -n "$THE_SSE1"; then
+  AC_DEFINE(THE_SSE1)
+fi
+AC_SUBST(THE_SSE1)
 AC_SUBST_LIST(MMX_FLAGS)
 AC_SUBST_LIST(SSE_FLAGS)
 AC_SUBST_LIST(SSE2_FLAGS)

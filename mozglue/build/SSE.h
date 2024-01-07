@@ -250,80 +250,80 @@ inline bool supports_sse() { return sse_private::sse_enabled; }
 inline bool supports_sse() { return false; }
 #endif
 
-#if defined(MOZILLA_PRESUME_SSE2)
+#if defined(MOZILLA_PRESUME_SSE2) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_SSE2 1
 inline bool supports_sse2() { return true; }
-#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION)
+#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_SSE2 1
 inline bool supports_sse2() { return sse_private::sse2_enabled; }
 #else
 inline bool supports_sse2() { return false; }
 #endif
 
-#if defined(MOZILLA_PRESUME_SSE3)
+#if defined(MOZILLA_PRESUME_SSE3) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_SSE3 1
 inline bool supports_sse3() { return true; }
-#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION)
+#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_SSE3 1
 inline bool supports_sse3() { return sse_private::sse3_enabled; }
 #else
 inline bool supports_sse3() { return false; }
 #endif
 
-#if defined(MOZILLA_PRESUME_SSSE3)
+#if defined(MOZILLA_PRESUME_SSSE3) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_SSSE3 1
 inline bool supports_ssse3() { return true; }
-#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION)
+#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_SSSE3 1
 inline bool supports_ssse3() { return sse_private::ssse3_enabled; }
 #else
 inline bool supports_ssse3() { return false; }
 #endif
 
-#if defined(MOZILLA_PRESUME_SSE4A)
+#if defined(MOZILLA_PRESUME_SSE4A) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_SSE4A 1
 inline bool supports_sse4a() { return true; }
-#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION)
+#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_SSE4A 1
 inline bool supports_sse4a() { return sse_private::sse4a_enabled; }
 #else
 inline bool supports_sse4a() { return false; }
 #endif
 
-#if defined(MOZILLA_PRESUME_SSE4_1)
+#if defined(MOZILLA_PRESUME_SSE4_1) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_SSE4_1 1
 inline bool supports_sse4_1() { return true; }
-#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION)
+#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_SSE4_1 1
 inline bool supports_sse4_1() { return sse_private::sse4_1_enabled; }
 #else
 inline bool supports_sse4_1() { return false; }
 #endif
 
-#if defined(MOZILLA_PRESUME_SSE4_2)
+#if defined(MOZILLA_PRESUME_SSE4_2) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_SSE4_2 1
 inline bool supports_sse4_2() { return true; }
-#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION)
+#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_SSE4_2 1
 inline bool supports_sse4_2() { return sse_private::sse4_2_enabled; }
 #else
 inline bool supports_sse4_2() { return false; }
 #endif
 
-#if defined(MOZILLA_PRESUME_AVX)
+#if defined(MOZILLA_PRESUME_AVX) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_AVX 1
 inline bool supports_avx() { return true; }
-#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION)
+#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_AVX 1
 inline bool supports_avx() { return sse_private::avx_enabled; }
 #else
 inline bool supports_avx() { return false; }
 #endif
 
-#if defined(MOZILLA_PRESUME_AVX2)
+#if defined(MOZILLA_PRESUME_AVX2) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_AVX2 1
 inline bool supports_avx2() { return true; }
-#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION)
+#elif defined(MOZILLA_SSE_HAVE_CPUID_DETECTION) && !defined(THE_SSE1)
 #  define MOZILLA_MAY_SUPPORT_AVX2 1
 inline bool supports_avx2() { return sse_private::avx2_enabled; }
 #else

@@ -27,6 +27,8 @@ extern void vp8_filter_block1dc_v6_mmx(
     unsigned int pixels_per_line, unsigned int pixel_step,
     unsigned int output_height, unsigned int output_width,
     const short *vp8_filter);
+
+#if HAVE_SSE2
 extern void vp8_filter_block1d8_h6_sse2(unsigned char *src_ptr,
                                         unsigned short *output_ptr,
                                         unsigned int src_pixels_per_line,
@@ -74,6 +76,7 @@ extern void vp8_filter_block1d8_v6_only_sse2(unsigned char *src_ptr,
                                              int dst_ptich,
                                              unsigned int output_height,
                                              const short *vp8_filter);
+#endif
 
 #if HAVE_MMX
 void vp8_sixtap_predict4x4_mmx(unsigned char *src_ptr, int src_pixels_per_line,

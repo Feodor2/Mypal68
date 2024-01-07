@@ -15,12 +15,13 @@ UNIFIED_SOURCES += [
     'yuv_row_table.cpp',
 ]
 
-if CONFIG['INTEL_ARCHITECTURE']:
+if CONFIG['INTEL_ARCHITECTURE'] and not CONFIG['THE_SSE1']:
     # These files use MMX and SSE2 intrinsics, so they need special compile flags
     # on some compilers.
     SOURCES += ['yuv_convert_sse2.cpp']
     SOURCES['yuv_convert_sse2.cpp'].flags += CONFIG['SSE2_FLAGS']
 
+if CONFIG['INTEL_ARCHITECTURE']:
     # MSVC doesn't support MMX when targeting AMD64.
     if CONFIG['CC_TYPE'] == 'clang-cl':
         if CONFIG['CPU_ARCH'] == 'x86':
@@ -33,7 +34,7 @@ if CONFIG['INTEL_ARCHITECTURE']:
 
 if CONFIG['CC_TYPE'] == 'clang-cl':
     if CONFIG['CPU_ARCH'] == 'x86_64' or \
-       (CONFIG['CPU_ARCH'] == 'x86' and CONFIG['CC_TYPE'] == 'clang-cl'):
+       (CONFIG['CPU_ARCH'] == 'x86' and CONFIG['CC_TYPE'] == 'clang-cl' and not CONFIG['THE_SSE1']):
         SOURCES += [
             'yuv_row_win64.cpp',
         ]

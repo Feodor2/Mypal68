@@ -55,7 +55,7 @@ elif CONFIG['CPU_ARCH'] == 'aarch64':
         'yuv_neon.c',
     ]
     DEFINES['WEBP_HAVE_NEON'] = 1;
-elif CONFIG['INTEL_ARCHITECTURE']:
+elif CONFIG['INTEL_ARCHITECTURE'] and not CONFIG['THE_SSE1']:
     SOURCES += [
         'alpha_processing_sse2.c',
         'alpha_processing_sse41.c',

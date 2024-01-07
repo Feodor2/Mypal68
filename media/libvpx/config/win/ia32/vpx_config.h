@@ -23,12 +23,21 @@
 #define HAVE_MIPS64 0
 #define HAVE_MMX 1
 #define HAVE_SSE 1
+#ifndef THE_SSE1
 #define HAVE_SSE2 1
 #define HAVE_SSE3 1
 #define HAVE_SSSE3 1
 #define HAVE_SSE4_1 1
 #define HAVE_AVX 1
 #define HAVE_AVX2 1
+#else
+#define HAVE_SSE2 0
+#define HAVE_SSE3 0
+#define HAVE_SSSE3 0
+#define HAVE_SSE4_1 0
+#define HAVE_AVX 0
+#define HAVE_AVX2 0
+#endif
 #define HAVE_AVX512 0
 #define HAVE_VSX 0
 #define HAVE_MMI 0

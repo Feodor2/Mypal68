@@ -86,8 +86,10 @@ use_sse2 = False
 use_vmx = False
 use_arm_simd_gcc = False
 use_arm_neon_gcc = False
-if CONFIG['INTEL_ARCHITECTURE']:
+if CONFIG['INTEL_ARCHITECTURE'] and not CONFIG['THE_SSE1']:
     use_sse2 = True
+
+if CONFIG['INTEL_ARCHITECTURE']:
     if CONFIG['CPU_ARCH'] == 'x86':
         if CONFIG['CC_TYPE'] == 'clang-cl':
             use_mmx = True

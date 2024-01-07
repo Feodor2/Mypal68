@@ -79,10 +79,10 @@
 #    undef far
 #endif
 
-#if defined(_MSC_VER) && !defined(_M_ARM) && !defined(_M_ARM64)
+#if defined(_MSC_VER) && !defined(_M_ARM) && !defined(_M_ARM64) && !defined(THE_SSE1)
 #    include <intrin.h>
 #    define ANGLE_USE_SSE
-#elif defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
+#elif defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__)) && !defined(THE_SSE1)
 #    include <x86intrin.h>
 #    define ANGLE_USE_SSE
 #endif

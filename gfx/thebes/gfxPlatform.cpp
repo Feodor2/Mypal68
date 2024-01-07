@@ -30,7 +30,6 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Unused.h"
 #include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/Base64.h"
 
 #include "mozilla/Logging.h"
 #include "mozilla/Services.h"
@@ -468,7 +467,6 @@ gfxPlatform::gfxPlatform()
       mApzSupportCollector(this, &gfxPlatform::GetApzSupportInfo),
       mTilesInfoCollector(this, &gfxPlatform::GetTilesSupportInfo),
       mFrameStatsCollector(this, &gfxPlatform::GetFrameStats),
-      mCMSInfoCollector(this, &gfxPlatform::GetCMSSupportInfo),
       mCompositorBackend(layers::LayersBackend::LAYERS_NONE),
       mScreenDepth(0),
       mScreenPixels(0) {
@@ -3337,38 +3335,6 @@ void gfxPlatform::GetFrameStats(mozilla::widget::InfoObject& aObj) {
         (f.compositeEnd() - f.compositeStart()).ToMilliseconds());
     aObj.DefineProperty(name.get(), value.get());
   }
-}
-
-void gfxPlatform::GetCMSSupportInfo(mozilla::widget::InfoObject& aObj) {
-  void* profile = nullptr;
-  size_t size = 0;
-
-  GetCMSOutputProfileData(profile, size);
-  if (!profile) {
-    return;
-  }
-
-  // Some profiles can be quite large. We don't want to include giant profiles
-  // by default in about:support. For now, we only accept less than 8kiB.
-  const size_t kMaxProfileSize = 8192;
-  if (size < kMaxProfileSize) {
-    char* encodedProfile = nullptr;
-    nsresult rv =
-        Base64Encode(reinterpret_cast<char*>(profile), size, &encodedProfile);
-    if (NS_SUCCEEDED(rv)) {
-      aObj.DefineProperty("CMSOutputProfile", encodedProfile);
-      free(encodedProfile);
-    } else {
-      nsPrintfCString msg("base64 encode failed 0x%08x",
-                          static_cast<uint32_t>(rv));
-      aObj.DefineProperty("CMSOutputProfile", msg.get());
-    }
-  } else {
-    nsPrintfCString msg("%zu bytes, too large", size);
-    aObj.DefineProperty("CMSOutputProfile", msg.get());
-  }
-
-  free(profile);
 }
 
 class FrameStatsComparator {

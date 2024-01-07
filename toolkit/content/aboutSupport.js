@@ -410,11 +410,9 @@ var snapshotFormatters = {
       apzInfo = formatApzInfo(data.info);
 
       let trs = sortedArrayFromObject(data.info).map(function([prop, val]) {
-        let td = $.new("td", String(val));
-        td.style["word-break"] = "break-all";
         return $.new("tr", [
           $.new("th", prop, "column"),
-          td,
+          $.new("td", String(val)),
         ]);
       });
       addRows("diagnostics", trs);

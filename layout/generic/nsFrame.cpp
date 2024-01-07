@@ -643,6 +643,7 @@ void nsFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   } else {
     PresContext()->ConstructedFrame();
   }
+
   if (GetParent()) {
     if (MOZ_UNLIKELY(mContent == PresContext()->Document()->GetRootElement() &&
                      mContent == GetParent()->GetContent())) {
@@ -708,22 +709,9 @@ void nsFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
   const nsStyleDisplay* disp = StyleDisplay();
   if (disp->HasTransform(this)) {
-    // The frame gets reconstructed if we toggle the transform
-    // property, so we can set this bit here and then ignore it.
+    // If 'transform' dynamically changes, RestyleManager takes care of
+    // updating this bit.
     AddStateBits(NS_FRAME_MAY_BE_TRANSFORMED);
-  }
-  if (disp->mPosition == NS_STYLE_POSITION_STICKY && !aPrevInFlow &&
-      !(mState & NS_FRAME_IS_NONDISPLAY)) {
-    // Note that we only add first continuations, but we really only
-    // want to add first continuation-or-ib-split-siblings.  But since we
-    // don't yet know if we're a later part of a block-in-inline split,
-    // we'll just add later members of a block-in-inline split here, and
-    // then StickyScrollContainer will remove them later.
-    StickyScrollContainer* ssc =
-        StickyScrollContainer::GetStickyScrollContainerForFrame(this);
-    if (ssc) {
-      ssc->AddFrame(this);
-    }
   }
 
   if (disp->IsContainLayout() && disp->IsContainSize() &&
@@ -800,7 +788,7 @@ void nsFrame::DestroyFrom(nsIFrame* aDestructRoot,
 
   SVGObserverUtils::InvalidateDirectRenderingObservers(this);
 
-  if (StyleDisplay()->mPosition == NS_STYLE_POSITION_STICKY) {
+  if (StyleDisplay()->mPosition == StylePositionProperty::Sticky) {
     StickyScrollContainer* ssc =
         StickyScrollContainer::GetStickyScrollContainerForFrame(this);
     if (ssc) {
@@ -1200,6 +1188,8 @@ void nsFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
   newLayers = &StyleSVGReset()->mMask;
   AddAndRemoveImageAssociations(*imageLoader, this, oldLayers, newLayers);
 
+  const nsStyleDisplay* disp = StyleDisplay();
+  bool handleStickyChange = false;
   if (aOldComputedStyle) {
     // Detect style changes that should trigger a scroll anchor adjustment
     // suppression.
@@ -1241,7 +1231,7 @@ void nsFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
     }
 
     const nsStyleDisplay* oldDisp = aOldComputedStyle->StyleDisplay();
-    if (oldDisp->mOverflowAnchor != StyleDisplay()->mOverflowAnchor) {
+    if (oldDisp->mOverflowAnchor != disp->mOverflowAnchor) {
       if (auto* container = ScrollAnchorContainer::FindFor(this)) {
         container->InvalidateAnchor();
       }
@@ -1251,22 +1241,52 @@ void nsFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
     }
 
     if (mInScrollAnchorChain) {
-      const nsStylePosition* oldPosition = aOldComputedStyle->StylePosition();
+      const nsStylePosition* pos = StylePosition();
+      const nsStylePosition* oldPos = aOldComputedStyle->StylePosition();
       if (!needAnchorSuppression &&
-          (oldPosition->mOffset != StylePosition()->mOffset ||
-           oldPosition->mWidth != StylePosition()->mWidth ||
-           oldPosition->mMinWidth != StylePosition()->mMinWidth ||
-           oldPosition->mMaxWidth != StylePosition()->mMaxWidth ||
-           oldPosition->mHeight != StylePosition()->mHeight ||
-           oldPosition->mMinHeight != StylePosition()->mMinHeight ||
-           oldPosition->mMaxHeight != StylePosition()->mMaxHeight ||
-           oldDisp->mPosition != StyleDisplay()->mPosition ||
-           oldDisp->mTransform != StyleDisplay()->mTransform)) {
+          (oldPos->mOffset != pos->mOffset || oldPos->mWidth != pos->mWidth ||
+           oldPos->mMinWidth != pos->mMinWidth ||
+           oldPos->mMaxWidth != pos->mMaxWidth ||
+           oldPos->mHeight != pos->mHeight ||
+           oldPos->mMinHeight != pos->mMinHeight ||
+           oldPos->mMaxHeight != pos->mMaxHeight ||
+           oldDisp->mPosition != disp->mPosition ||
+           oldDisp->mTransform != disp->mTransform)) {
         needAnchorSuppression = true;
       }
 
-      if (needAnchorSuppression) {
+      if (needAnchorSuppression &&
+          StaticPrefs::layout_css_scroll_anchoring_suppressions_enabled()) {
         ScrollAnchorContainer::FindFor(this)->SuppressAdjustments();
+      }
+    }
+
+    if (disp->mPosition != oldDisp->mPosition) {
+      if (!disp->IsRelativelyPositionedStyle() &&
+          oldDisp->IsRelativelyPositionedStyle()) {
+        DeleteProperty(NormalPositionProperty());
+      }
+
+      handleStickyChange = disp->mPosition == StylePositionProperty::Sticky ||
+                           oldDisp->mPosition == StylePositionProperty::Sticky;
+    }
+  } else {  // !aOldComputedStyle
+    handleStickyChange = disp->mPosition == StylePositionProperty::Sticky;
+  }
+
+  if (handleStickyChange && !HasAnyStateBits(NS_FRAME_IS_NONDISPLAY) &&
+      !GetPrevInFlow()) {
+    // Note that we only add first continuations, but we really only
+    // want to add first continuation-or-ib-split-siblings. But since we don't
+    // yet know if we're a later part of a block-in-inline split, we'll just
+    // add later members of a block-in-inline split here, and then
+    // StickyScrollContainer will remove them later.
+    if (auto* ssc =
+            StickyScrollContainer::GetStickyScrollContainerForFrame(this)) {
+      if (disp->mPosition == StylePositionProperty::Sticky) {
+        ssc->AddFrame(this);
+      } else {
+        ssc->RemoveFrame(this);
       }
     }
   }
@@ -1330,7 +1350,7 @@ void nsFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
   // does not contain any characters that would activate the Unicode
   // bidi algorithm, we need to call |SetBidiEnabled| on the pres
   // context before reflow starts.  See bug 115921.
-  if (StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL) {
+  if (StyleVisibility()->mDirection == StyleDirection::Rtl) {
     PresContext()->SetBidiEnabled();
   }
 
@@ -1736,7 +1756,7 @@ bool nsIFrame::Extend3DContext(const nsStyleDisplay* aStyleDisplay,
     return false;
   }
   const nsStyleDisplay* disp = StyleDisplayWithOptionalParam(aStyleDisplay);
-  if (disp->mTransformStyle != NS_STYLE_TRANSFORM_STYLE_PRESERVE_3D ||
+  if (disp->mTransformStyle != StyleTransformStyle::Preserve3d ||
       !IsFrameOfType(nsIFrame::eSupportsCSSTransforms)) {
     return false;
   }
@@ -1804,7 +1824,7 @@ bool nsIFrame::ComputeBorderRadii(const BorderRadius& aBorderRadius,
                                   const nsSize& aBorderArea, Sides aSkipSides,
                                   nscoord aRadii[8]) {
   // Percentages are relative to whichever side they're on.
-  NS_FOR_CSS_HALF_CORNERS(i) {
+  for (const auto i : mozilla::AllPhysicalHalfCorners()) {
     const LengthPercentage& c = aBorderRadius.Get(i);
     nscoord axis = HalfCornerIsX(i) ? aFrameSize.width : aFrameSize.height;
     aRadii[i] = std::max(0, c.Resolve(axis));
@@ -1842,7 +1862,7 @@ bool nsIFrame::ComputeBorderRadii(const BorderRadius& aBorderRadius,
   // corner radii when they are too big.
   bool haveRadius = false;
   double ratio = 1.0f;
-  NS_FOR_CSS_SIDES(side) {
+  for (const auto side : mozilla::AllPhysicalSides()) {
     uint32_t hc1 = SideToHalfCorner(side, false, true);
     uint32_t hc2 = SideToHalfCorner(side, true, true);
     nscoord length =
@@ -1857,7 +1877,9 @@ bool nsIFrame::ComputeBorderRadii(const BorderRadius& aBorderRadius,
     }
   }
   if (ratio < 1.0) {
-    NS_FOR_CSS_HALF_CORNERS(corner) { aRadii[corner] *= ratio; }
+    for (const auto corner : mozilla::AllPhysicalHalfCorners()) {
+      aRadii[corner] *= ratio;
+    }
   }
 
   return haveRadius;
@@ -1865,7 +1887,7 @@ bool nsIFrame::ComputeBorderRadii(const BorderRadius& aBorderRadius,
 
 /* static */
 void nsIFrame::InsetBorderRadii(nscoord aRadii[8], const nsMargin& aOffsets) {
-  NS_FOR_CSS_SIDES(side) {
+  for (const auto side : mozilla::AllPhysicalSides()) {
     nscoord offset = aOffsets.Side(side);
     uint32_t hc1 = SideToHalfCorner(side, false, false);
     uint32_t hc2 = SideToHalfCorner(side, true, false);
@@ -1889,7 +1911,7 @@ void nsIFrame::OutsetBorderRadii(nscoord aRadii[8], const nsMargin& aOffsets) {
     return aOffset;
   };
 
-  NS_FOR_CSS_SIDES(side) {
+  for (const auto side : mozilla::AllPhysicalSides()) {
     const nscoord offset = aOffsets.Side(side);
     const uint32_t hc1 = SideToHalfCorner(side, false, false);
     const uint32_t hc2 = SideToHalfCorner(side, true, false);
@@ -1905,7 +1927,7 @@ void nsIFrame::OutsetBorderRadii(nscoord aRadii[8], const nsMargin& aOffsets) {
 }
 
 static inline bool RadiiAreDefinitelyZero(const BorderRadius& aBorderRadius) {
-  NS_FOR_CSS_HALF_CORNERS(corner) {
+  for (const auto corner : mozilla::AllPhysicalHalfCorners()) {
     if (!aBorderRadius.Get(corner).IsDefinitelyZero()) {
       return false;
     }
@@ -1930,7 +1952,9 @@ bool nsIFrame::GetBorderRadii(const nsSize& aFrameSize,
     // In an ideal world, we might have a way for the them to tell us an
     // border radius, but since we don't, we're better off assuming
     // zero.
-    NS_FOR_CSS_HALF_CORNERS(corner) { aRadii[corner] = 0; }
+    for (const auto corner : mozilla::AllPhysicalHalfCorners()) {
+      aRadii[corner] = 0;
+    }
     return false;
   }
 
@@ -1973,7 +1997,7 @@ bool nsIFrame::GetBoxBorderRadii(nscoord aRadii[8], nsMargin aOffset,
   } else {
     InsetBorderRadii(aRadii, aOffset);
   }
-  NS_FOR_CSS_HALF_CORNERS(corner) {
+  for (const auto corner : mozilla::AllPhysicalHalfCorners()) {
     if (aRadii[corner]) return true;
   }
   return false;
@@ -2370,13 +2394,18 @@ already_AddRefed<ComputedStyle> nsIFrame::ComputeSelectionStyle(
       aSelectionStatus != nsISelectionController::SELECTION_DISABLED) {
     return nullptr;
   }
+  // When in high-contrast mode, the style system ends up ignoring the color
+  // declarations, which means that the ::selection style becomes the inherited
+  // color, and default background. That's no good.
+  if (!PresContext()->PrefSheetPrefs().mUseDocumentColors) {
+    return nullptr;
+  }
   Element* element = FindElementAncestorForMozSelection(GetContent());
   if (!element) {
     return nullptr;
   }
-  RefPtr<ComputedStyle> sc = PresContext()->StyleSet()->ProbePseudoElementStyle(
+  return PresContext()->StyleSet()->ProbePseudoElementStyle(
       *element, PseudoStyleType::selection, Style());
-  return sc.forget();
 }
 
 /********************************************************
@@ -2443,6 +2472,11 @@ void nsFrame::DisplayOutlineUnconditional(nsDisplayListBuilder* aBuilder,
     // "All css properties of table-column and table-column-group boxes are
     // ignored, except when explicitly specified by this specification."
     // CSS outlines fall into this category, so we skip them on these boxes.
+    return;
+  }
+
+  // Outlines are painted by the table wrapper frame.
+  if (IsTableFrame()) {
     return;
   }
 
@@ -3177,13 +3211,13 @@ void nsIFrame::BuildDisplayListForStackingContext(
   }
 
   bool useStickyPosition =
-      disp->mPosition == NS_STYLE_POSITION_STICKY &&
+      disp->mPosition == StylePositionProperty::Sticky &&
       IsScrollFrameActive(
           aBuilder,
           nsLayoutUtils::GetNearestScrollableFrame(
               GetParent(), nsLayoutUtils::SCROLLABLE_SAME_DOC |
                                nsLayoutUtils::SCROLLABLE_INCLUDE_HIDDEN));
-  bool useFixedPosition = disp->mPosition == NS_STYLE_POSITION_FIXED &&
+  bool useFixedPosition = disp->mPosition == StylePositionProperty::Fixed &&
                           (nsLayoutUtils::IsFixedPosFrameInDisplayPort(this) ||
                            BuilderHasScrolledClip(aBuilder));
 
@@ -4386,9 +4420,10 @@ static StyleUserSelect UsedUserSelect(const nsIFrame* aFrame) {
     return style;
   }
 
-  if (IsEditingHost(aFrame)) {
+  if (aFrame->IsTextInputFrame() || IsEditingHost(aFrame)) {
     // We don't implement 'contain' itself, but we make 'text' behave as
-    // 'contain' for contenteditable elements anyway so this is ok.
+    // 'contain' for contenteditable and <input> / <textarea> elements anyway so
+    // this is ok.
     return StyleUserSelect::Text;
   }
 
@@ -5291,8 +5326,7 @@ static nsIFrame::ContentOffsets OffsetsForSingleFrame(nsIFrame* aFrame,
   nsRect rect(nsPoint(0, 0), aFrame->GetSize());
 
   bool isBlock = !aFrame->StyleDisplay()->IsInlineFlow();
-  bool isRtl =
-      (aFrame->StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL);
+  bool isRtl = (aFrame->StyleVisibility()->mDirection == StyleDirection::Rtl);
   if ((isBlock && rect.y < aPoint.y) ||
       (!isBlock && ((isRtl && rect.x + rect.width / 2 > aPoint.x) ||
                     (!isRtl && rect.x + rect.width / 2 < aPoint.x)))) {
@@ -5870,10 +5904,10 @@ LogicalSize nsFrame::ComputeSize(gfxContext* aRenderingContext, WritingMode aWM,
         !StyleMargin()->HasInlineAxisAuto(aWM)) {
       auto inlineAxisAlignment =
           aWM.IsOrthogonalTo(alignCB->GetWritingMode())
-              ? StylePosition()->UsedAlignSelf(alignCB->Style())
-              : StylePosition()->UsedJustifySelf(alignCB->Style());
-      stretch = inlineAxisAlignment == NS_STYLE_ALIGN_NORMAL ||
-                inlineAxisAlignment == NS_STYLE_ALIGN_STRETCH;
+              ? StylePosition()->UsedAlignSelf(alignCB->Style())._0
+              : StylePosition()->UsedJustifySelf(alignCB->Style())._0;
+      stretch = inlineAxisAlignment == StyleAlignFlags::NORMAL ||
+                inlineAxisAlignment == StyleAlignFlags::STRETCH;
     }
     if (stretch || (aFlags & ComputeSizeFlags::eIClampMarginBoxMinSize)) {
       auto iSizeToFillCB =
@@ -5941,8 +5975,7 @@ LogicalSize nsFrame::ComputeSize(gfxContext* aRenderingContext, WritingMode aWM,
       result.BSize(aWM) = nsLayoutUtils::ComputeBSizeValue(
           aCBSize.BSize(aWM), boxSizingAdjust.BSize(aWM),
           blockStyleCoord->AsLengthPercentage());
-    } else if (MOZ_UNLIKELY(isGridItem) &&
-               blockStyleCoord->BehavesLikeInitialValueOnBlockAxis() &&
+    } else if (MOZ_UNLIKELY(isGridItem) && blockStyleCoord->IsAuto() &&
                !IS_TRUE_OVERFLOW_CONTAINER(this)) {
       auto cbSize = aCBSize.BSize(aWM);
       if (cbSize != NS_UNCONSTRAINEDSIZE) {
@@ -5952,10 +5985,10 @@ LogicalSize nsFrame::ComputeSize(gfxContext* aRenderingContext, WritingMode aWM,
         if (!StyleMargin()->HasBlockAxisAuto(aWM)) {
           auto blockAxisAlignment =
               !aWM.IsOrthogonalTo(alignCB->GetWritingMode())
-                  ? StylePosition()->UsedAlignSelf(alignCB->Style())
-                  : StylePosition()->UsedJustifySelf(alignCB->Style());
-          stretch = blockAxisAlignment == NS_STYLE_ALIGN_NORMAL ||
-                    blockAxisAlignment == NS_STYLE_ALIGN_STRETCH;
+                  ? StylePosition()->UsedAlignSelf(alignCB->Style())._0
+                  : StylePosition()->UsedJustifySelf(alignCB->Style())._0;
+          stretch = blockAxisAlignment == StyleAlignFlags::NORMAL ||
+                    blockAxisAlignment == StyleAlignFlags::STRETCH;
         }
         if (stretch || (aFlags & ComputeSizeFlags::eBClampMarginBoxMinSize)) {
           auto bSizeToFillCB =
@@ -6171,14 +6204,14 @@ LogicalSize nsFrame::ComputeSizeWithIntrinsicDimensions(
       if (!StyleMargin()->HasInlineAxisAuto(aWM)) {
         auto inlineAxisAlignment =
             aWM.IsOrthogonalTo(GetParent()->GetWritingMode())
-                ? stylePos->UsedAlignSelf(GetParent()->Style())
-                : stylePos->UsedJustifySelf(GetParent()->Style());
+                ? stylePos->UsedAlignSelf(GetParent()->Style())._0
+                : stylePos->UsedJustifySelf(GetParent()->Style())._0;
         // Note: 'normal' means 'start' for elements with an intrinsic size
         // or ratio in the relevant dimension, otherwise 'stretch'.
         // https://drafts.csswg.org/css-grid/#grid-item-sizing
-        if ((inlineAxisAlignment == NS_STYLE_ALIGN_NORMAL &&
+        if ((inlineAxisAlignment == StyleAlignFlags::NORMAL &&
              !hasIntrinsicISize && !logicalRatio) ||
-            inlineAxisAlignment == NS_STYLE_ALIGN_STRETCH) {
+            inlineAxisAlignment == StyleAlignFlags::STRETCH) {
           stretchI = eStretch;
         }
       }
@@ -6238,14 +6271,14 @@ LogicalSize nsFrame::ComputeSizeWithIntrinsicDimensions(
       if (!StyleMargin()->HasBlockAxisAuto(aWM)) {
         auto blockAxisAlignment =
             !aWM.IsOrthogonalTo(GetParent()->GetWritingMode())
-                ? stylePos->UsedAlignSelf(GetParent()->Style())
-                : stylePos->UsedJustifySelf(GetParent()->Style());
+                ? stylePos->UsedAlignSelf(GetParent()->Style())._0
+                : stylePos->UsedJustifySelf(GetParent()->Style())._0;
         // Note: 'normal' means 'start' for elements with an intrinsic size
         // or ratio in the relevant dimension, otherwise 'stretch'.
         // https://drafts.csswg.org/css-grid/#grid-item-sizing
-        if ((blockAxisAlignment == NS_STYLE_ALIGN_NORMAL &&
+        if ((blockAxisAlignment == StyleAlignFlags::NORMAL &&
              !hasIntrinsicBSize && !logicalRatio) ||
-            blockAxisAlignment == NS_STYLE_ALIGN_STRETCH) {
+            blockAxisAlignment == StyleAlignFlags::STRETCH) {
           stretchB = eStretch;
         }
       }
@@ -7967,8 +8000,7 @@ const nsFrameSelection* nsIFrame::GetConstFrameSelection() const {
 bool nsIFrame::IsFrameSelected() const {
   NS_ASSERTION(!GetContent() || GetContent()->IsSelectionDescendant(),
                "use the public IsSelected() instead");
-  return nsRange::IsNodeSelected(GetContent(), 0,
-                                 GetContent()->GetChildCount());
+  return GetContent()->IsSelected(0, GetContent()->GetChildCount());
 }
 
 nsresult nsFrame::GetPointFromOffset(int32_t inOffset, nsPoint* outPoint) {
@@ -7987,9 +8019,9 @@ nsresult nsFrame::GetPointFromOffset(int32_t inOffset, nsPoint* outPoint) {
       // property.
       bool hasBidiData;
       FrameBidiData bidiData = GetProperty(BidiDataProperty(), &hasBidiData);
-      bool isRTL =
-          hasBidiData ? IS_LEVEL_RTL(bidiData.embeddingLevel)
-                      : StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
+      bool isRTL = hasBidiData
+                       ? IS_LEVEL_RTL(bidiData.embeddingLevel)
+                       : StyleVisibility()->mDirection == StyleDirection::Rtl;
       if ((!isRTL && inOffset > newOffset) ||
           (isRTL && inOffset <= newOffset)) {
         pt = contentRect.TopRight();
@@ -8621,7 +8653,6 @@ nsresult nsIFrame::PeekOffset(nsPeekOffsetStruct* aPos) {
         if (thisLine < 0) return NS_ERROR_FAILURE;
         iter = blockFrame->GetLineIterator();
         NS_ASSERTION(iter, "GetLineNumber() succeeded but no block frame?");
-        result = NS_OK;
 
         int edgeCase = 0;  // no edge case. this should look at thisLine
 
@@ -9216,11 +9247,11 @@ static nsRect UnionBorderBoxes(
   Maybe<nsRect> clipPropClipRect =
       aFrame->GetClipPropClipRect(disp, effects, bounds.Size());
 
-  // Iterate over all children except pop-up, absolutely-positioned, and
-  // float ones.
+  // Iterate over all children except pop-up, absolutely-positioned,
+  // float, and overflow ones.
   const nsIFrame::ChildListIDs skip = {
       nsIFrame::kPopupList, nsIFrame::kSelectPopupList, nsIFrame::kAbsoluteList,
-      nsIFrame::kFixedList, nsIFrame::kFloatList};
+      nsIFrame::kFixedList, nsIFrame::kFloatList, nsIFrame::kOverflowList};
   for (nsIFrame::ChildListIterator childLists(aFrame); !childLists.IsDone();
        childLists.Next()) {
     if (skip.contains(childLists.CurrentID())) {
@@ -10023,21 +10054,21 @@ bool nsIFrame::IsFocusable(int32_t* aTabIndex, bool aWithMouse) {
 bool nsIFrame::HasSignificantTerminalNewline() const { return false; }
 
 static StyleVerticalAlignKeyword ConvertSVGDominantBaselineToVerticalAlign(
-    uint8_t aDominantBaseline) {
+    StyleDominantBaseline aDominantBaseline) {
   // Most of these are approximate mappings.
   switch (aDominantBaseline) {
-    case NS_STYLE_DOMINANT_BASELINE_HANGING:
-    case NS_STYLE_DOMINANT_BASELINE_TEXT_BEFORE_EDGE:
+    case StyleDominantBaseline::Hanging:
+    case StyleDominantBaseline::TextBeforeEdge:
       return StyleVerticalAlignKeyword::TextTop;
-    case NS_STYLE_DOMINANT_BASELINE_TEXT_AFTER_EDGE:
-    case NS_STYLE_DOMINANT_BASELINE_IDEOGRAPHIC:
+    case StyleDominantBaseline::TextAfterEdge:
+    case StyleDominantBaseline::Ideographic:
       return StyleVerticalAlignKeyword::TextBottom;
-    case NS_STYLE_DOMINANT_BASELINE_CENTRAL:
-    case NS_STYLE_DOMINANT_BASELINE_MIDDLE:
-    case NS_STYLE_DOMINANT_BASELINE_MATHEMATICAL:
+    case StyleDominantBaseline::Central:
+    case StyleDominantBaseline::Middle:
+    case StyleDominantBaseline::Mathematical:
       return StyleVerticalAlignKeyword::Middle;
-    case NS_STYLE_DOMINANT_BASELINE_AUTO:
-    case NS_STYLE_DOMINANT_BASELINE_ALPHABETIC:
+    case StyleDominantBaseline::Auto:
+    case StyleDominantBaseline::Alphabetic:
       return StyleVerticalAlignKeyword::Baseline;
     default:
       MOZ_ASSERT_UNREACHABLE("unexpected aDominantBaseline value");
@@ -10047,7 +10078,7 @@ static StyleVerticalAlignKeyword ConvertSVGDominantBaselineToVerticalAlign(
 
 Maybe<StyleVerticalAlignKeyword> nsIFrame::VerticalAlignEnum() const {
   if (nsSVGUtils::IsInSVGTextSubtree(this)) {
-    uint8_t dominantBaseline = StyleSVG()->mDominantBaseline;
+    StyleDominantBaseline dominantBaseline = StyleSVG()->mDominantBaseline;
     return Some(ConvertSVGDominantBaselineToVerticalAlign(dominantBaseline));
   }
 
@@ -10573,10 +10604,6 @@ void nsFrame::BoxReflow(nsBoxLayoutState& aState, nsPresContext* aPresContext,
     printf("*****got wider!******\n");
   }
 #endif
-
-  if (aWidth == NS_UNCONSTRAINEDSIZE) aWidth = aDesiredSize.Width();
-
-  if (aHeight == NS_UNCONSTRAINEDSIZE) aHeight = aDesiredSize.Height();
 
   metrics->mLastSize.width = aDesiredSize.Width();
   metrics->mLastSize.height = aDesiredSize.Height();
@@ -11376,8 +11403,6 @@ void nsFrame::VerifyDirtyBitSet(const nsFrameList& aFrameList) {
 }
 
 // Start Display Reflow
-#  ifdef DEBUG
-
 DR_cookie::DR_cookie(nsPresContext* aPresContext, nsIFrame* aFrame,
                      const ReflowInput& aReflowInput, ReflowOutput& aMetrics,
                      nsReflowStatus& aStatus)
@@ -11873,12 +11898,12 @@ void DR_State::InitFrameTypeTable() {
   AddFrameTypeInfo(LayoutFrameType::TextInput, "textCtl", "textInput");
   AddFrameTypeInfo(LayoutFrameType::Text, "text", "text");
   AddFrameTypeInfo(LayoutFrameType::Viewport, "VP", "viewport");
-#    ifdef MOZ_XUL
+#  ifdef MOZ_XUL
   AddFrameTypeInfo(LayoutFrameType::XULLabel, "XULLabel", "XULLabel");
   AddFrameTypeInfo(LayoutFrameType::Box, "Box", "Box");
   AddFrameTypeInfo(LayoutFrameType::Slider, "Slider", "Slider");
   AddFrameTypeInfo(LayoutFrameType::PopupSet, "PopupSet", "PopupSet");
-#    endif
+#  endif
   AddFrameTypeInfo(LayoutFrameType::None, "unknown", "unknown");
 }
 
@@ -12453,7 +12478,6 @@ void ReflowInput::DisplayInitFrameTypeExit(nsIFrame* aFrame,
   DR_state->DeleteTreeNode(*treeNode);
 }
 
-#  endif
 // End Display Reflow
 
 // Validation of SideIsVertical.

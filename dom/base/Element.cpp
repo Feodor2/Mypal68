@@ -2379,15 +2379,15 @@ nsresult Element::SetAttr(int32_t aNamespaceID, nsAtom* aName, nsAtom* aPrefix,
     return OnAttrSetButNotChanged(aNamespaceID, aName, value, aNotify);
   }
 
-  if (aNotify) {
-    MutationObservers::NotifyAttributeWillChange(this, aNamespaceID, aName,
-                                                 modType);
-  }
-
   // Hold a script blocker while calling ParseAttribute since that can call
   // out to id-observers
   Document* document = GetComposedDoc();
   mozAutoDocUpdate updateBatch(document, aNotify);
+
+  if (aNotify) {
+    MutationObservers::NotifyAttributeWillChange(this, aNamespaceID, aName,
+                                                 modType);
+  }
 
   nsresult rv = BeforeSetAttr(aNamespaceID, aName, &value, aNotify);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -2426,6 +2426,9 @@ nsresult Element::SetParsedAttr(int32_t aNamespaceID, nsAtom* aName,
     return OnAttrSetButNotChanged(aNamespaceID, aName, value, aNotify);
   }
 
+  Document* document = GetComposedDoc();
+  mozAutoDocUpdate updateBatch(document, aNotify);
+
   if (aNotify) {
     MutationObservers::NotifyAttributeWillChange(this, aNamespaceID, aName,
                                                  modType);
@@ -2436,8 +2439,6 @@ nsresult Element::SetParsedAttr(int32_t aNamespaceID, nsAtom* aName,
 
   PreIdMaybeChange(aNamespaceID, aName, &value);
 
-  Document* document = GetComposedDoc();
-  mozAutoDocUpdate updateBatch(document, aNotify);
   return SetAttrAndNotify(aNamespaceID, aName, aPrefix,
                           oldValueSet ? &oldValue : nullptr, aParsedValue,
                           nullptr, modType, hasListeners, aNotify,
@@ -2518,31 +2519,34 @@ nsresult Element::SetAttrAndNotify(
     }
   }
 
-  CustomElementDefinition* definition = GetCustomElementDefinition();
-  // Only custom element which is in `custom` state could get the
-  // CustomElementDefinition.
-  if (definition && definition->IsInObservedAttributeList(aName)) {
-    RefPtr<nsAtom> oldValueAtom;
-    if (oldValue) {
-      oldValueAtom = oldValue->GetAsAtom();
-    } else {
-      // If there is no old value, get the value of the uninitialized
-      // attribute that was swapped with aParsedValue.
-      oldValueAtom = aParsedValue.GetAsAtom();
+  const CustomElementData* data = GetCustomElementData();
+  if (data && data->mState == CustomElementData::State::eCustom) {
+    CustomElementDefinition* definition = data->GetCustomElementDefinition();
+    MOZ_ASSERT(definition, "Should have a valid CustomElementDefinition");
+
+    if (definition->IsInObservedAttributeList(aName)) {
+      RefPtr<nsAtom> oldValueAtom;
+      if (oldValue) {
+        oldValueAtom = oldValue->GetAsAtom();
+      } else {
+        // If there is no old value, get the value of the uninitialized
+        // attribute that was swapped with aParsedValue.
+        oldValueAtom = aParsedValue.GetAsAtom();
+      }
+      RefPtr<nsAtom> newValueAtom = valueForAfterSetAttr.GetAsAtom();
+      nsAutoString ns;
+      nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNamespaceID, ns);
+
+      LifecycleCallbackArgs args = {nsDependentAtomString(aName),
+                                    aModType == MutationEvent_Binding::ADDITION
+                                        ? VoidString()
+                                        : nsDependentAtomString(oldValueAtom),
+                                    nsDependentAtomString(newValueAtom),
+                                    (ns.IsEmpty() ? VoidString() : ns)};
+
+      nsContentUtils::EnqueueLifecycleCallback(
+          Document::eAttributeChanged, this, &args, nullptr, definition);
     }
-    RefPtr<nsAtom> newValueAtom = valueForAfterSetAttr.GetAsAtom();
-    nsAutoString ns;
-    nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNamespaceID, ns);
-
-    LifecycleCallbackArgs args = {nsDependentAtomString(aName),
-                                  aModType == MutationEvent_Binding::ADDITION
-                                      ? VoidString()
-                                      : nsDependentAtomString(oldValueAtom),
-                                  nsDependentAtomString(newValueAtom),
-                                  (ns.IsEmpty() ? VoidString() : ns)};
-
-    nsContentUtils::EnqueueLifecycleCallback(Document::eAttributeChanged, this,
-                                             &args, nullptr, definition);
   }
 
   if (aCallAfterSetAttr) {
@@ -2710,19 +2714,22 @@ void Element::PostIdMaybeChange(int32_t aNamespaceID, nsAtom* aName,
 nsresult Element::OnAttrSetButNotChanged(int32_t aNamespaceID, nsAtom* aName,
                                          const nsAttrValueOrString& aValue,
                                          bool aNotify) {
-  // Only custom element which is in `custom` state could get the
-  // CustomElementDefinition.
-  CustomElementDefinition* definition = GetCustomElementDefinition();
-  if (definition && definition->IsInObservedAttributeList(aName)) {
-    nsAutoString ns;
-    nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNamespaceID, ns);
+  const CustomElementData* data = GetCustomElementData();
+  if (data && data->mState == CustomElementData::State::eCustom) {
+    CustomElementDefinition* definition = data->GetCustomElementDefinition();
+    MOZ_ASSERT(definition, "Should have a valid CustomElementDefinition");
 
-    nsAutoString value(aValue.String());
-    LifecycleCallbackArgs args = {nsDependentAtomString(aName), value, value,
-                                  (ns.IsEmpty() ? VoidString() : ns)};
+    if (definition->IsInObservedAttributeList(aName)) {
+      nsAutoString ns;
+      nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNamespaceID, ns);
 
-    nsContentUtils::EnqueueLifecycleCallback(Document::eAttributeChanged, this,
-                                             &args, nullptr, definition);
+      nsAutoString value(aValue.String());
+      LifecycleCallbackArgs args = {nsDependentAtomString(aName), value, value,
+                                    (ns.IsEmpty() ? VoidString() : ns)};
+
+      nsContentUtils::EnqueueLifecycleCallback(
+          Document::eAttributeChanged, this, &args, nullptr, definition);
+    }
   }
 
   return NS_OK;
@@ -2825,20 +2832,23 @@ nsresult Element::UnsetAttr(int32_t aNameSpaceID, nsAtom* aName, bool aNotify) {
     }
   }
 
-  CustomElementDefinition* definition = GetCustomElementDefinition();
-  // Only custom element which is in `custom` state could get the
-  // CustomElementDefinition.
-  if (definition && definition->IsInObservedAttributeList(aName)) {
-    nsAutoString ns;
-    nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNameSpaceID, ns);
+  const CustomElementData* data = GetCustomElementData();
+  if (data && data->mState == CustomElementData::State::eCustom) {
+    CustomElementDefinition* definition = data->GetCustomElementDefinition();
+    MOZ_ASSERT(definition, "Should have a valid CustomElementDefinition");
 
-    RefPtr<nsAtom> oldValueAtom = oldValue.GetAsAtom();
-    LifecycleCallbackArgs args = {
-        nsDependentAtomString(aName), nsDependentAtomString(oldValueAtom),
-        VoidString(), (ns.IsEmpty() ? VoidString() : ns)};
+    if (definition->IsInObservedAttributeList(aName)) {
+      nsAutoString ns;
+      nsContentUtils::NameSpaceManager()->GetNameSpaceURI(aNameSpaceID, ns);
 
-    nsContentUtils::EnqueueLifecycleCallback(Document::eAttributeChanged, this,
-                                             &args, nullptr, definition);
+      RefPtr<nsAtom> oldValueAtom = oldValue.GetAsAtom();
+      LifecycleCallbackArgs args = {
+          nsDependentAtomString(aName), nsDependentAtomString(oldValueAtom),
+          VoidString(), (ns.IsEmpty() ? VoidString() : ns)};
+
+      nsContentUtils::EnqueueLifecycleCallback(
+          Document::eAttributeChanged, this, &args, nullptr, definition);
+    }
   }
 
   rv = AfterSetAttr(aNameSpaceID, aName, nullptr, &oldValue, nullptr, aNotify);
@@ -2918,8 +2928,9 @@ void Element::List(FILE* out, int32_t aIndent, const nsCString& aPrefix) const {
   fprintf(out, " state=[%llx]",
           static_cast<unsigned long long>(State().GetInternalValue()));
   fprintf(out, " flags=[%08x]", static_cast<unsigned int>(GetFlags()));
-  if (IsCommonAncestorForRangeInSelection()) {
-    const LinkedList<nsRange>* ranges = GetExistingCommonAncestorRanges();
+  if (IsClosestCommonInclusiveAncestorForRangeInSelection()) {
+    const LinkedList<nsRange>* ranges =
+        GetExistingClosestCommonInclusiveAncestorRanges();
     int32_t count = 0;
     if (ranges) {
       // Can't use range-based iteration on a const LinkedList, unfortunately.
@@ -3495,15 +3506,21 @@ already_AddRefed<Animation> Element::Animate(
 }
 
 void Element::GetAnimations(const GetAnimationsOptions& aOptions,
-                            nsTArray<RefPtr<Animation>>& aAnimations) {
-  Document* doc = GetComposedDoc();
-  if (doc) {
-    // We don't need to explicitly flush throttled animations here, since
-    // updating the animation style of elements will never affect the set of
-    // running animations and it's only the set of running animations that is
-    // important here.
-    doc->FlushPendingNotifications(
-        ChangesToFlush(FlushType::Style, false /* flush animations */));
+                            nsTArray<RefPtr<Animation>>& aAnimations,
+                            Flush aFlush) {
+  if (aFlush == Flush::Yes) {
+    if (Document* doc = GetComposedDoc()) {
+      // We don't need to explicitly flush throttled animations here, since
+      // updating the animation style of elements will never affect the set of
+      // running animations and it's only the set of running animations that is
+      // important here.
+      //
+      // NOTE: Any changes to the flags passed to the following call should
+      // be reflected in the flags passed in DocumentOrShadowRoot::GetAnimations
+      // too.
+      doc->FlushPendingNotifications(
+          ChangesToFlush(FlushType::Style, false /* flush animations */));
+    }
   }
 
   Element* elem = this;
@@ -3830,9 +3847,8 @@ void Element::SetOrRemoveNullableStringAttr(nsAtom* aName,
 }
 
 Directionality Element::GetComputedDirectionality() const {
-  nsIFrame* frame = GetPrimaryFrame();
-  if (frame) {
-    return frame->StyleVisibility()->mDirection == NS_STYLE_DIRECTION_LTR
+  if (nsIFrame* frame = GetPrimaryFrame()) {
+    return frame->StyleVisibility()->mDirection == StyleDirection::Ltr
                ? eDir_LTR
                : eDir_RTL;
   }
@@ -3898,9 +3914,8 @@ static void IntersectionObserverPropertyDtor(void* aObject,
                                              nsAtom* aPropertyName,
                                              void* aPropertyValue,
                                              void* aData) {
-  Element* element = static_cast<Element*>(aObject);
-  IntersectionObserverList* observers =
-      static_cast<IntersectionObserverList*>(aPropertyValue);
+  auto* element = static_cast<Element*>(aObject);
+  auto* observers = static_cast<IntersectionObserverList*>(aPropertyValue);
   for (auto iter = observers->Iter(); !iter.Done(); iter.Next()) {
     DOMIntersectionObserver* observer = iter.Key();
     observer->UnlinkTarget(*element);
@@ -3916,7 +3931,7 @@ void Element::RegisterIntersectionObserver(DOMIntersectionObserver* aObserver) {
     observers = new IntersectionObserverList();
     observers->Put(aObserver, eUninitialized);
     SetProperty(nsGkAtoms::intersectionobserverlist, observers,
-                IntersectionObserverPropertyDtor, true);
+                IntersectionObserverPropertyDtor, /* aTransfer = */ true);
     return;
   }
 
@@ -3932,29 +3947,24 @@ void Element::RegisterIntersectionObserver(DOMIntersectionObserver* aObserver) {
 
 void Element::UnregisterIntersectionObserver(
     DOMIntersectionObserver* aObserver) {
-  IntersectionObserverList* observers = static_cast<IntersectionObserverList*>(
+  auto* observers = static_cast<IntersectionObserverList*>(
       GetProperty(nsGkAtoms::intersectionobserverlist));
   if (observers) {
     observers->Remove(aObserver);
+    if (observers->IsEmpty()) {
+      DeleteProperty(nsGkAtoms::intersectionobserverlist);
+    }
   }
 }
 
 void Element::UnlinkIntersectionObservers() {
-  IntersectionObserverList* observers = static_cast<IntersectionObserverList*>(
-      GetProperty(nsGkAtoms::intersectionobserverlist));
-  if (!observers) {
-    return;
-  }
-  for (auto iter = observers->Iter(); !iter.Done(); iter.Next()) {
-    DOMIntersectionObserver* observer = iter.Key();
-    observer->UnlinkTarget(*this);
-  }
-  observers->Clear();
+  // IntersectionObserverPropertyDtor takes care of the hard work.
+  DeleteProperty(nsGkAtoms::intersectionobserverlist);
 }
 
 bool Element::UpdateIntersectionObservation(DOMIntersectionObserver* aObserver,
                                             int32_t aThreshold) {
-  IntersectionObserverList* observers = static_cast<IntersectionObserverList*>(
+  auto* observers = static_cast<IntersectionObserverList*>(
       GetProperty(nsGkAtoms::intersectionobserverlist));
   if (!observers) {
     return false;
@@ -4430,15 +4440,6 @@ double Element::FirstLineBoxBSize() const {
              ? nsPresContext::AppUnitsToDoubleCSSPixels(line->BSize())
              : 0.0;
 }
-
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-void Element::AssertInvariantsOnNodeInfoChange() {
-  MOZ_DIAGNOSTIC_ASSERT(!IsInComposedDoc());
-  if (nsCOMPtr<Link> link = do_QueryInterface(this)) {
-    MOZ_DIAGNOSTIC_ASSERT(!link->HasPendingLinkUpdate());
-  }
-}
-#endif
 
 }  // namespace dom
 }  // namespace mozilla

@@ -1,6 +1,6 @@
 from tools.ci import jobs
 
-all_jobs = set([
+all_jobs = {
     "build_css",
     "lint",
     "manifest_upload",
@@ -11,9 +11,9 @@ all_jobs = set([
     "wpt_integration",
     "wptrunner_infrastructure",
     "wptrunner_unittest",
-])
+}
 
-default_jobs = set(["lint", "manifest_upload"])
+default_jobs = {"lint", "manifest_upload"}
 
 
 def test_all():
@@ -25,19 +25,19 @@ def test_default():
 
 
 def test_testharness():
-    assert jobs.get_jobs(["resources/testharness.js"]) == default_jobs | set(["resources_unittest",
-                                                                              "wptrunner_infrastructure"])
+    assert jobs.get_jobs(["resources/testharness.js"]) == default_jobs | {"resources_unittest",
+                                                                          "wptrunner_infrastructure"}
     assert jobs.get_jobs(["resources/testharness.js"],
-                         includes=["resources_unittest"]) == set(["resources_unittest"])
+                         includes=["resources_unittest"]) == {"resources_unittest"}
     assert jobs.get_jobs(["tools/wptserve/wptserve/config.py"],
-                         includes=["resources_unittest"]) == set(["resources_unittest"])
+                         includes=["resources_unittest"]) == {"resources_unittest"}
     assert jobs.get_jobs(["foo/resources/testharness.js"],
                          includes=["resources_unittest"]) == set()
 
 
 def test_stability():
     assert jobs.get_jobs(["dom/historical.html"],
-                         includes=["stability"]) == set(["stability"])
+                         includes=["stability"]) == {"stability"}
     assert jobs.get_jobs(["tools/pytest.ini"],
                          includes=["stability"]) == set()
     assert jobs.get_jobs(["serve"],

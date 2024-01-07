@@ -54,7 +54,7 @@ protected:
     if (NS_FAILED(rv)) {
       return rv;
     }
-    mURI = uri.forget();
+    mURI = std::move(uri);
     return NS_OK;
   }
 
@@ -65,7 +65,7 @@ protected:
     if (!ret) {
       return NS_ERROR_FAILURE;
     }
-    mURI = uri.forget();
+    mURI = std::move(uri);
     return NS_OK;
   }
 
@@ -84,7 +84,7 @@ protected:
     if (NS_FAILED(rv)) {
       return rv;
     }
-    mURI = uri.forget();
+    mURI = std::move(uri);
     return NS_OK;
   }
 

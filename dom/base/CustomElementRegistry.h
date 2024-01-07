@@ -101,7 +101,7 @@ struct CustomElementData {
   AutoTArray<UniquePtr<CustomElementReaction>, 3> mReactionQueue;
 
   void SetCustomElementDefinition(CustomElementDefinition* aDefinition);
-  CustomElementDefinition* GetCustomElementDefinition();
+  CustomElementDefinition* GetCustomElementDefinition() const;
   nsAtom* GetCustomElementType() const { return mType; }
   void AttachedInternals();
   bool HasAttachedInternals() const { return mIsAttachedInternals; }
@@ -477,7 +477,7 @@ class CustomElementRegistry final : public nsISupports, public nsWrapperCache {
   ~CustomElementRegistry();
 
   bool JSObjectToAtomArray(JSContext* aCx, JS::Handle<JSObject*> aConstructor,
-                           const char16_t* aName,
+                           const nsString& aName,
                            nsTArray<RefPtr<nsAtom>>& aArray, ErrorResult& aRv);
 
   static UniquePtr<CustomElementCallback> CreateCustomElementCallback(

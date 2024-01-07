@@ -3157,35 +3157,32 @@ bool nsCookieService::CanSetCookie(nsIURI* aHostURI, const nsCookieKey& aKey,
   // 1 = nonsecure and "https:"
   // 2 = secure and "http:"
   // 3 = secure and "https:"
-  bool isHTTPS = true;
-  nsresult rv = aHostURI->SchemeIs("https", &isHTTPS);
-  if (NS_SUCCEEDED(rv)) {
-    Telemetry::Accumulate(
-        Telemetry::COOKIE_SCHEME_SECURITY,
-        ((aCookieData.isSecure()) ? 0x02 : 0x00) | ((isHTTPS) ? 0x01 : 0x00));
+  bool isHTTPS = aHostURI->SchemeIs("https");
+  Telemetry::Accumulate(
+      Telemetry::COOKIE_SCHEME_SECURITY,
+      ((aCookieData.isSecure()) ? 0x02 : 0x00) | ((isHTTPS) ? 0x01 : 0x00));
 
-    // Collect telemetry on how often are first- and third-party cookies set
-    // from HTTPS origins:
-    //
-    // 0 (000) = first-party and "http:"
-    // 1 (001) = first-party and "http:" with bogus Secure cookie flag?!
-    // 2 (010) = first-party and "https:"
-    // 3 (011) = first-party and "https:" with Secure cookie flag
-    // 4 (100) = third-party and "http:"
-    // 5 (101) = third-party and "http:" with bogus Secure cookie flag?!
-    // 6 (110) = third-party and "https:"
-    // 7 (111) = third-party and "https:" with Secure cookie flag
-    if (aThirdPartyUtil) {
-      bool isThirdParty = true;
+  // Collect telemetry on how often are first- and third-party cookies set
+  // from HTTPS origins:
+  //
+  // 0 (000) = first-party and "http:"
+  // 1 (001) = first-party and "http:" with bogus Secure cookie flag?!
+  // 2 (010) = first-party and "https:"
+  // 3 (011) = first-party and "https:" with Secure cookie flag
+  // 4 (100) = third-party and "http:"
+  // 5 (101) = third-party and "http:" with bogus Secure cookie flag?!
+  // 6 (110) = third-party and "https:"
+  // 7 (111) = third-party and "https:" with Secure cookie flag
+  if (aThirdPartyUtil) {
+    bool isThirdParty = true;
 
-      if (aChannel) {
-        aThirdPartyUtil->IsThirdPartyChannel(aChannel, aHostURI, &isThirdParty);
-      }
-      Telemetry::Accumulate(Telemetry::COOKIE_SCHEME_HTTPS,
-                            (isThirdParty ? 0x04 : 0x00) |
-                                (isHTTPS ? 0x02 : 0x00) |
-                                (aCookieData.isSecure() ? 0x01 : 0x00));
+    if (aChannel) {
+      aThirdPartyUtil->IsThirdPartyChannel(aChannel, aHostURI, &isThirdParty);
     }
+    Telemetry::Accumulate(Telemetry::COOKIE_SCHEME_HTTPS,
+                          (isThirdParty ? 0x04 : 0x00) |
+                              (isHTTPS ? 0x02 : 0x00) |
+                              (aCookieData.isSecure() ? 0x01 : 0x00));
   }
 
   int64_t currentTimeInUsec = PR_Now();
@@ -3889,13 +3886,10 @@ CookieStatus nsCookieService::CheckPrefs(
 
   MOZ_ASSERT(aRejectedReason);
 
-  uint32_t aInputRejectedReason = *aRejectedReason;
-
   *aRejectedReason = 0;
 
   // don't let ftp sites get/set cookies (could be a security issue)
-  bool ftp;
-  if (NS_SUCCEEDED(aHostURI->SchemeIs("ftp", &ftp)) && ftp) {
+  if (aHostURI->SchemeIs("ftp")) {
     COOKIE_LOGFAILURE(aCookieHeader.IsVoid() ? GET_COOKIE : SET_COOKIE,
                       aHostURI, aCookieHeader, "ftp sites cannot read cookies");
     return STATUS_REJECTED_WITH_ERROR;
@@ -3935,7 +3929,14 @@ CookieStatus nsCookieService::CheckPrefs(
   // access to the first-party cookie jar.
   if (aIsForeign && aIsTrackingResource && !aFirstPartyStorageAccessGranted &&
       aCookieSettings->GetRejectThirdPartyTrackers()) {
-    if (StoragePartitioningEnabled(aInputRejectedReason, aCookieSettings)) {
+    // Explicitly pass nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER
+    // here to ensure that we are testing the partitioning configuration only
+    // for the nsICookieService::BEHAVIOR_REJECT_TRACKER configuration.
+    // When partitioning for BEHAVIOR_REJECT_TRACKER_AND_PARTITION_FOREIGN, we
+    // don't want to give a free pass to tracker cookies here!
+    if (StoragePartitioningEnabled(
+            nsIWebProgressListener::STATE_COOKIES_BLOCKED_TRACKER,
+            aCookieSettings)) {
       MOZ_ASSERT(!aOriginAttrs.mFirstPartyDomain.IsEmpty(),
                  "We must have a StoragePrincipal here!");
       return STATUS_ACCEPTED;
@@ -3986,9 +3987,9 @@ CookieStatus nsCookieService::CheckPrefs(
     }
 
     if (StaticPrefs::network_cookie_thirdparty_nonsecureSessionOnly()) {
-      bool isHTTPS = false;
-      aHostURI->SchemeIs("https", &isHTTPS);
-      if (!isHTTPS) return STATUS_ACCEPT_SESSION;
+      if (!aHostURI->SchemeIs("https")) {
+        return STATUS_ACCEPT_SESSION;
+      }
     }
   }
 

@@ -267,6 +267,32 @@ void HTMLFormElement::Submit(ErrorResult& aRv) {
   aRv = DoSubmitOrReset(nullptr, eFormSubmit);
 }
 
+// https://html.spec.whatwg.org/multipage/forms.html#dom-form-requestsubmit
+void HTMLFormElement::RequestSubmit(nsGenericHTMLElement* aSubmitter,
+                                    ErrorResult& aRv) {
+  // 1. If submitter is not null, then:
+  if (aSubmitter) {
+    nsCOMPtr<nsIFormControl> fc = do_QueryObject(aSubmitter);
+
+    // 1.1. If submitter is not a submit button, then throw a TypeError.
+    if (!fc || !fc->IsSubmitControl()) {
+      aRv.ThrowTypeError(u"The submitter is not a submit button.");
+      return;
+    }
+
+    // 1.2. If submitter's form owner is not this form element, then throw a
+    //      "NotFoundError" DOMException.
+    if (fc->GetFormElement() != this) {
+      aRv.Throw(NS_ERROR_DOM_NOT_FOUND_ERR);
+      return;
+    }
+  }
+
+  // 2. Otherwise, set submitter to this form element.
+  // 3. Submit this form element, from submitter.
+  MaybeSubmit(aSubmitter);
+}
+
 void HTMLFormElement::Reset() {
   InternalFormEvent event(true, eFormReset);
   EventDispatcher::Dispatch(static_cast<nsIContent*>(this), nullptr, &event);
@@ -1627,7 +1653,7 @@ nsresult HTMLFormElement::GetActionURL(nsIURI** aActionURL,
     nsCOMPtr<nsIURI> upgradedActionURL;
     rv = NS_GetSecureUpgradedURI(actionURL, getter_AddRefs(upgradedActionURL));
     NS_ENSURE_SUCCESS(rv, rv);
-    actionURL = upgradedActionURL.forget();
+    actionURL = std::move(upgradedActionURL);
 
     // let's log a message to the console that we are upgrading a request
     nsAutoCString scheme;

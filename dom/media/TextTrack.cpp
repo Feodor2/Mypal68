@@ -141,7 +141,7 @@ void TextTrack::GetId(nsAString& aId) const {
 }
 
 void TextTrack::AddCue(TextTrackCue& aCue) {
-  WEBVTT_LOG("AddCue %p", &aCue);
+  WEBVTT_LOG("AddCue %p [%f:%f]", &aCue, aCue.StartTime(), aCue.EndTime());
   TextTrack* oldTextTrack = aCue.GetTrack();
   if (oldTextTrack) {
     ErrorResult dummy;
@@ -314,6 +314,8 @@ void TextTrack::GetCurrentCuesAndOtherCues(
   const double playbackTime = mediaElement->CurrentTime();
   for (uint32_t idx = 0; idx < mCueList->Length(); idx++) {
     TextTrackCue* cue = (*mCueList)[idx];
+    WEBVTT_LOG("cue %p [%f:%f], playbackTime=%f", cue, cue->StartTime(),
+               cue->EndTime(), playbackTime);
     if (cue->StartTime() <= playbackTime && cue->EndTime() > playbackTime) {
       WEBVTT_LOG("Add cue %p [%f:%f] to current cue list", cue,
                  cue->StartTime(), cue->EndTime());

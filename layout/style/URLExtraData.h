@@ -18,8 +18,6 @@
 #include "nsIURI.h"
 #include "nsIReferrerInfo.h"
 
-class nsLayoutStylesheetCache;
-
 namespace mozilla {
 
 struct URLExtraData {

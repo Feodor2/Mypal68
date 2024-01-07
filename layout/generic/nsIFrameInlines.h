@@ -12,6 +12,10 @@
 #include "nsCSSAnonBoxes.h"
 #include "nsFrameManager.h"
 
+bool nsIFrame::IsSVGGeometryFrameOrSubclass() const {
+  return IsSVGGeometryFrame() || IsSVGImageFrame();
+}
+
 bool nsIFrame::IsFlexItem() const {
   return GetParent() && GetParent()->IsFlexContainerFrame() &&
          !(GetStateBits() & NS_FRAME_OUT_OF_FLOW);

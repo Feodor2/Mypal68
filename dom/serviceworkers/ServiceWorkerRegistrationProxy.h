@@ -56,7 +56,7 @@ class ServiceWorkerRegistrationProxy final
 
   void FireUpdateFound() override;
 
-  void RegistrationRemoved() override;
+  void RegistrationCleared() override;
 
   void GetScope(nsAString& aScope) const override;
 

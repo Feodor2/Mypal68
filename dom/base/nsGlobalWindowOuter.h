@@ -651,15 +651,8 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   // fact chrome.
   nsIBrowserDOMWindow* GetBrowserDOMWindowOuter();
   void SetBrowserDOMWindowOuter(nsIBrowserDOMWindow* aBrowserWindow);
-  void SetCursorOuter(const nsAString& aCursor, mozilla::ErrorResult& aError);
+  void SetCursorOuter(const nsACString& aCursor, mozilla::ErrorResult& aError);
 
-  void GetDialogArgumentsOuter(JSContext* aCx,
-                               JS::MutableHandle<JS::Value> aRetval,
-                               nsIPrincipal& aSubjectPrincipal,
-                               mozilla::ErrorResult& aError);
-  void GetDialogArguments(JSContext* aCx, JS::MutableHandle<JS::Value> aRetval,
-                          nsIPrincipal& aSubjectPrincipal,
-                          mozilla::ErrorResult& aError);
   void GetReturnValueOuter(JSContext* aCx,
                            JS::MutableHandle<JS::Value> aReturnValue,
                            nsIPrincipal& aSubjectPrincipal,

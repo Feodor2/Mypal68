@@ -60,11 +60,6 @@ function toggleDisplay(node) {
   return (node.style.display = toggle[node.style.display]);
 }
 
-function showCertificateErrorReporting() {
-  // Display error reporting UI
-  document.getElementById("certificateErrorReporting").style.display = "block";
-}
-
 function showPrefChangeContainer() {
   const panel = document.getElementById("prefChangeContainer");
   panel.style.display = "block";
@@ -270,23 +265,6 @@ function initPage() {
         let shortDesc = document.getElementById("errorShortDescText")
           .textContent;
         document.getElementById("learnMoreContainer").style.display = "block";
-        var options = JSON.parse(evt.detail);
-        if (options && options.enabled) {
-          var checkbox = document.getElementById("automaticallyReportInFuture");
-          showCertificateErrorReporting();
-          if (options.automatic) {
-            // set the checkbox
-            checkbox.checked = true;
-          }
-
-          checkbox.addEventListener("change", function(changeEvt) {
-            var event = new CustomEvent("AboutNetErrorSetAutomatic", {
-              bubbles: true,
-              detail: changeEvt.target.checked,
-            });
-            document.dispatchEvent(event);
-          });
-        }
         const hasPrefStyleError = [
           "interrupted", // This happens with subresources that are above the max tls
           "SSL_ERROR_PROTOCOL_VERSION_ALERT",
@@ -379,28 +357,10 @@ function initPageCertError() {
 
   document.getElementById("learnMoreContainer").style.display = "block";
 
-  let checkbox = document.getElementById("automaticallyReportInFuture");
-  checkbox.addEventListener("change", function({ target: { checked } }) {
-    document.dispatchEvent(
-      new CustomEvent("AboutNetErrorSetAutomatic", {
-        detail: checked,
-        bubbles: true,
-      })
-    );
-  });
-
   addEventListener(
     "AboutNetErrorOptions",
     function(event) {
       var options = JSON.parse(event.detail);
-      if (options && options.enabled) {
-        // Display error reporting UI
-        document.getElementById("certificateErrorReporting").style.display =
-          "block";
-
-        // set the checkbox
-        checkbox.checked = !!options.automatic;
-      }
       if (options && options.hideAddExceptionButton) {
         document.querySelector(".exceptionDialogButtonContainer").hidden = true;
       }

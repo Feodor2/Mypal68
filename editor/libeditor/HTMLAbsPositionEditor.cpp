@@ -511,7 +511,7 @@ nsresult HTMLEditor::SetPositionToStatic(Element& aElement) {
   }
 
   if (!aElement.IsHTMLElement(nsGkAtoms::div) ||
-      HasStyleOrIdOrClass(&aElement)) {
+      HTMLEditor::HasStyleOrIdOrClassAttribute(aElement)) {
     return NS_OK;
   }
 

@@ -10,6 +10,7 @@
 #include "nsIMutableArray.h"
 #include "mozilla/dom/PContentPermissionRequestChild.h"
 #include "mozilla/dom/ipc/IdType.h"
+#include "PermissionDelegateHandler.h"
 
 // Microsoft's API Name hackery sucks
 // XXXbz Doing this in a header is a gigantic footgun. See
@@ -137,6 +138,9 @@ class ContentPermissionRequestBase : public nsIContentPermissionRequest {
 
   PromptResult CheckPromptPrefs();
 
+  // Check if the permission has an opportunity to request.
+  bool CheckPermissionDelegate();
+
   enum class DelayedTaskType {
     Allow,
     Deny,
@@ -155,6 +159,7 @@ class ContentPermissionRequestBase : public nsIContentPermissionRequest {
   nsCOMPtr<nsIPrincipal> mTopLevelPrincipal;
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
   nsCOMPtr<nsIContentPermissionRequester> mRequester;
+  RefPtr<PermissionDelegateHandler> mPermissionHandler;
   nsCString mPrefName;
   nsCString mType;
   bool mIsHandlingUserInput;

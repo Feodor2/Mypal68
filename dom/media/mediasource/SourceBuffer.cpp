@@ -53,7 +53,9 @@ void SourceBuffer::SetMode(SourceBufferAppendMode aMode, ErrorResult& aRv) {
   }
   if (mCurrentAttributes.mGenerateTimestamps &&
       aMode == SourceBufferAppendMode::Segments) {
-    aRv.Throw(NS_ERROR_DOM_TYPE_ERR);
+    aRv.ThrowTypeError(
+        u"Can't set mode to \"segments\" when the byte stream generates "
+        u"timestamps");
     return;
   }
   MOZ_ASSERT(mMediaSource->ReadyState() != MediaSourceReadyState::Closed);
@@ -141,7 +143,7 @@ void SourceBuffer::SetAppendWindowStart(double aAppendWindowStart,
   }
   if (aAppendWindowStart < 0 ||
       aAppendWindowStart >= mCurrentAttributes.GetAppendWindowEnd()) {
-    aRv.Throw(NS_ERROR_DOM_TYPE_ERR);
+    aRv.ThrowTypeError(u"Invalid appendWindowStart value");
     return;
   }
   mCurrentAttributes.SetAppendWindowStart(aAppendWindowStart);
@@ -158,7 +160,7 @@ void SourceBuffer::SetAppendWindowEnd(double aAppendWindowEnd,
   }
   if (IsNaN(aAppendWindowEnd) ||
       aAppendWindowEnd <= mCurrentAttributes.GetAppendWindowStart()) {
-    aRv.Throw(NS_ERROR_DOM_TYPE_ERR);
+    aRv.ThrowTypeError(u"Invalid appendWindowEnd value");
     return;
   }
   mCurrentAttributes.SetAppendWindowEnd(aAppendWindowEnd);
@@ -302,9 +304,16 @@ void SourceBuffer::PrepareRemove(double aStart, double aEnd, ErrorResult& aRv) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
-  if (IsNaN(mMediaSource->Duration()) || aStart < 0 ||
-      aStart > mMediaSource->Duration() || aEnd <= aStart || IsNaN(aEnd)) {
-    aRv.Throw(NS_ERROR_DOM_TYPE_ERR);
+  if (IsNaN(mMediaSource->Duration())) {
+    aRv.ThrowTypeError(u"Duration is NaN");
+    return;
+  }
+  if (aStart < 0 || aStart > mMediaSource->Duration()) {
+    aRv.ThrowTypeError(u"Invalid start value");
+    return;
+  }
+  if (aEnd <= aStart || IsNaN(aEnd)) {
+    aRv.ThrowTypeError(u"Invalid end value");
     return;
   }
   if (mMediaSource->ReadyState() == MediaSourceReadyState::Ended) {
@@ -334,7 +343,7 @@ void SourceBuffer::ChangeType(const nsAString& aType, ErrorResult& aRv) {
   // 1. If type is an empty string then throw a TypeError exception and abort
   //    these steps.
   if (aType.IsEmpty()) {
-    aRv.Throw(NS_ERROR_DOM_TYPE_ERR);
+    aRv.ThrowTypeError(u"Type must not be empty");
     return;
   }
 
@@ -355,16 +364,17 @@ void SourceBuffer::ChangeType(const nsAString& aType, ErrorResult& aRv) {
   //    the parent media source , then throw a NotSupportedError exception and
   //    abort these steps.
   DecoderDoctorDiagnostics diagnostics;
-  nsresult rv = MediaSource::IsTypeSupported(aType, &diagnostics);
+  MediaSource::IsTypeSupported(aType, &diagnostics, aRv);
+  bool supported = !aRv.Failed();
   diagnostics.StoreFormatDiagnostics(
       mMediaSource->GetOwner() ? mMediaSource->GetOwner()->GetExtantDoc()
                                : nullptr,
-      aType, NS_SUCCEEDED(rv), __func__);
+      aType, supported, __func__);
   MSE_API("ChangeType(aType=%s)%s", NS_ConvertUTF16toUTF8(aType).get(),
-          rv == NS_OK ? "" : " [not supported]");
-  if (NS_FAILED(rv)) {
-    DDLOG(DDLogCategory::API, "ChangeType", rv);
-    aRv.Throw(rv);
+          supported ? "" : " [not supported]");
+  if (!supported) {
+    DDLOG(DDLogCategory::API, "ChangeType",
+          static_cast<nsresult>(aRv.ErrorCodeAsInt()));
     return;
   }
 

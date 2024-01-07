@@ -122,6 +122,118 @@ static bool BlockHasAnyFloats(nsIFrame* aFrame) {
   return false;
 }
 
+/**
+ * Determines whether the given frame is visible or has
+ * visible children that participate in the same line. Frames
+ * that are not line participants do not have their
+ * children checked.
+ */
+static bool FrameHasVisibleInlineContent(nsIFrame* aFrame) {
+  MOZ_ASSERT(aFrame, "Frame argument cannot be null");
+
+  if (aFrame->StyleVisibility()->IsVisible()) {
+    return true;
+  }
+
+  if (aFrame->IsFrameOfType(nsIFrame::eLineParticipant)) {
+    for (nsIFrame* kid : aFrame->PrincipalChildList()) {
+      if (kid->StyleVisibility()->IsVisible() ||
+          FrameHasVisibleInlineContent(kid)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Determines whether any of the frames descended from the
+ * given line have inline content with 'visibility: visible'.
+ * This function calls FrameHasVisibleInlineContent to process
+ * each frame in the line's child list.
+ */
+static bool LineHasVisibleInlineContent(nsLineBox* aLine) {
+  nsIFrame* kid = aLine->mFirstChild;
+  int32_t n = aLine->GetChildCount();
+  while (n-- > 0) {
+    if (FrameHasVisibleInlineContent(kid)) {
+      return true;
+    }
+
+    kid = kid->GetNextSibling();
+  }
+
+  return false;
+}
+
+/**
+ * Iterates through the frame's in-flow children and
+ * unions the visual overflow of all text frames which
+ * participate in the line aFrame belongs to.
+ * If a child of aFrame is not a text frame,
+ * we recurse with the child as the aFrame argument.
+ * If aFrame isn't a line participant, we skip it entirely
+ * and return an empty rect.
+ * The resulting nsRect is offset relative to the parent of aFrame.
+ */
+static nsRect GetFrameTextArea(nsIFrame* aFrame,
+                               nsDisplayListBuilder* aBuilder) {
+  nsRect textArea;
+  if (aFrame->IsTextFrame()) {
+    textArea = aFrame->GetVisualOverflowRect();
+  } else if (aFrame->IsFrameOfType(nsIFrame::eLineParticipant)) {
+    for (nsIFrame* kid : aFrame->PrincipalChildList()) {
+      nsRect kidTextArea = GetFrameTextArea(kid, aBuilder);
+      textArea.OrWith(kidTextArea);
+    }
+  }
+  // add aFrame's position to keep textArea relative to aFrame's parent
+  return textArea + aFrame->GetPosition();
+}
+
+/**
+ * Iterates through the line's children and
+ * unions the visual overflow of all text frames.
+ * GetFrameTextArea unions and returns the visual overflow
+ * from all line-participating text frames within the given child.
+ * The nsRect returned from GetLineTextArea is offset
+ * relative to the given line.
+ */
+static nsRect GetLineTextArea(nsLineBox* aLine,
+                              nsDisplayListBuilder* aBuilder) {
+  nsRect textArea;
+  nsIFrame* kid = aLine->mFirstChild;
+  int32_t n = aLine->GetChildCount();
+  while (n-- > 0) {
+    nsRect kidTextArea = GetFrameTextArea(kid, aBuilder);
+    textArea.OrWith(kidTextArea);
+    kid = kid->GetNextSibling();
+  }
+
+  return textArea;
+}
+
+/**
+ * Starting with aFrame, iterates upward through parent frames and checks for
+ * non-transparent background colors. If one is found, we use that as our
+ * backplate color. Otheriwse, we use the default background color from
+ * our high contrast theme.
+ */
+static nscolor GetBackplateColor(nsIFrame* aFrame) {
+  for (nsIFrame* frame = aFrame; frame; frame = frame->GetParent()) {
+    auto* bg = frame->StyleBackground();
+    if (bg->IsTransparent(frame)) {
+      continue;
+    }
+    nscolor backgroundColor = bg->BackgroundColor(frame);
+    if (NS_GET_A(backgroundColor) != 0) {
+      return backgroundColor;
+    }
+    break;
+  }
+  return aFrame->PresContext()->DefaultBackgroundColor();
+}
+
 #ifdef DEBUG
 #  include "nsBlockDebugFlags.h"
 
@@ -360,8 +472,7 @@ nsILineIterator* nsBlockFrame::GetLineIterator() {
   if (!it) return nullptr;
 
   const nsStyleVisibility* visibility = StyleVisibility();
-  nsresult rv =
-      it->Init(mLines, visibility->mDirection == NS_STYLE_DIRECTION_RTL);
+  nsresult rv = it->Init(mLines, visibility->mDirection == StyleDirection::Rtl);
   if (NS_FAILED(rv)) {
     delete it;
     return nullptr;
@@ -2086,14 +2197,14 @@ void nsBlockFrame::MarkLineDirty(LineIterator aLine,
  * Test whether lines are certain to be aligned left so that we can make
  * resizing optimizations
  */
-static inline bool IsAlignedLeft(uint8_t aAlignment, uint8_t aDirection,
+static inline bool IsAlignedLeft(uint8_t aAlignment, StyleDirection aDirection,
                                  uint8_t aUnicodeBidi, nsIFrame* aFrame) {
   return nsSVGUtils::IsInSVGTextSubtree(aFrame) ||
          NS_STYLE_TEXT_ALIGN_LEFT == aAlignment ||
          (((NS_STYLE_TEXT_ALIGN_START == aAlignment &&
-            NS_STYLE_DIRECTION_LTR == aDirection) ||
+            StyleDirection::Ltr == aDirection) ||
            (NS_STYLE_TEXT_ALIGN_END == aAlignment &&
-            NS_STYLE_DIRECTION_RTL == aDirection)) &&
+            StyleDirection::Rtl == aDirection)) &&
           !(NS_STYLE_UNICODE_BIDI_PLAINTEXT & aUnicodeBidi));
 }
 
@@ -3555,9 +3666,7 @@ void nsBlockFrame::ReflowBlockFrame(BlockReflowInput& aState,
       // Calculate the multicol containing block's block size so that the
       // children with percentage block size get correct percentage basis.
       const ReflowInput* cbReflowInput =
-          StaticPrefs::layout_css_column_span_enabled()
-              ? aState.mReflowInput.mParentReflowInput->mCBReflowInput
-              : aState.mReflowInput.mCBReflowInput;
+          aState.mReflowInput.mParentReflowInput->mCBReflowInput;
       MOZ_ASSERT(cbReflowInput->mFrame->StyleColumn()->IsColumnContainerStyle(),
                  "Get unexpected reflow input of multicol containing block!");
 
@@ -6814,6 +6923,16 @@ void nsBlockFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
             aLineArea.Intersects(aBuilder->GetVisibleRect()));
   };
 
+  // We'll try to draw an accessibility backplate behind text
+  // (to ensure it's readable over any possible background-images),
+  // if all of the following hold:
+  //    (A) the backplate feature is preffed on
+  //    (B) we are not honoring the document colors
+  const bool shouldDrawBackplate =
+      StaticPrefs::browser_display_permit_backplate() &&
+      !PresContext()->PrefSheetPrefs().mUseDocumentColors &&
+      !IsComboboxControlFrame();
+
   // Don't use the line cursor if we might have a descendant placeholder ...
   // it might skip lines that contain placeholders but don't themselves
   // intersect with the dirty area.
@@ -6824,7 +6943,12 @@ void nsBlockFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   // Also skip the cursor if we're creating text overflow markers,
   // since we need to know what line number we're up to in order
   // to generate unique display item keys.
-  nsLineBox* cursor = (hasDescendantPlaceHolders || textOverflow.isSome())
+  // Lastly, the cursor should be skipped if we're drawing
+  // backplates behind text. When backplating we consider consecutive
+  // runs of text as a whole, which requires we iterate through all lines
+  // to find our backplate size.
+  nsLineBox* cursor = (hasDescendantPlaceHolders || textOverflow.isSome() ||
+                       shouldDrawBackplate)
                           ? nullptr
                           : GetFirstLineContaining(aBuilder->GetDirtyRect().y);
   LineIterator line_end = LinesEnd();
@@ -6853,6 +6977,18 @@ void nsBlockFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     uint32_t lineCount = 0;
     nscoord lastY = INT32_MIN;
     nscoord lastYMost = INT32_MIN;
+    nsRect curBackplateArea;
+    Maybe<nscolor> backplateColor;
+    if (shouldDrawBackplate) {
+      backplateColor = Some(GetBackplateColor(this));
+    }
+    // A frame's display list cannot contain more than one copy of a
+    // given display item unless the items are uniquely identifiable.
+    // Because backplate occasionally requires multiple
+    // SolidColor items, we use an index (backplateIndex) to maintain
+    // uniqueness among them. Note this is a mapping of index to
+    // item, and the mapping is stable even if the dirty rect changes.
+    uint16_t backplateIndex = 0;
     for (LineIterator line = LinesBegin(); line != line_end; ++line) {
       const nsRect lineArea = line->GetVisualOverflowArea();
       const bool lineInLine = line->IsInline();
@@ -6862,18 +6998,48 @@ void nsBlockFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                     lineCount, depth, drawnLines);
       }
 
+      if (!lineInLine && !curBackplateArea.IsEmpty()) {
+        // If we have encountered a non-inline line but were previously
+        // forming a backplate, we should add the backplate to the display
+        // list as-is and render future backplates disjointly.
+        MOZ_ASSERT(shouldDrawBackplate,
+                   "if this master switch is off, curBackplateArea "
+                   "must be empty and we shouldn't get here");
+        aLists.BorderBackground()->AppendNewToTop<nsDisplaySolidColor>(
+            aBuilder, this, curBackplateArea, backplateColor.value(),
+            backplateIndex);
+        backplateIndex++;
+
+        curBackplateArea = nsRect();
+      }
+
       if (!lineArea.IsEmpty()) {
         if (lineArea.y < lastY || lineArea.YMost() < lastYMost) {
           nonDecreasingYs = false;
         }
         lastY = lineArea.y;
         lastYMost = lineArea.YMost();
+        if (lineInLine && shouldDrawBackplate &&
+            LineHasVisibleInlineContent(line)) {
+          nsRect lineBackplate = GetLineTextArea(line, aBuilder) +
+                                 aBuilder->ToReferenceFrame(this);
+          if (curBackplateArea.IsEmpty()) {
+            curBackplateArea = lineBackplate;
+          } else {
+            curBackplateArea.OrWith(lineBackplate);
+          }
+        }
       }
       lineCount++;
     }
 
     if (nonDecreasingYs && lineCount >= MIN_LINES_NEEDING_CURSOR) {
       SetupLineCursor();
+    }
+    if (!curBackplateArea.IsEmpty()) {
+      aLists.BorderBackground()->AppendNewToTop<nsDisplaySolidColor>(
+          aBuilder, this, curBackplateArea, backplateColor.value(),
+          backplateIndex);
     }
   }
 
@@ -7085,7 +7251,7 @@ void nsBlockFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
         GetWritingMode().IsVerticalSideways() !=
             GetParent()->GetWritingMode().IsVerticalSideways())) ||
       StyleDisplay()->IsContainPaint() || StyleDisplay()->IsContainLayout() ||
-      (StaticPrefs::layout_css_column_span_enabled() && IsColumnSpan())) {
+      IsColumnSpan()) {
     AddStateBits(NS_BLOCK_FORMATTING_CONTEXT_STATE_BITS);
   }
 

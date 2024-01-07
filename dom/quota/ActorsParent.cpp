@@ -1911,6 +1911,9 @@ StaticRefPtr<QuotaManager> gInstance;
 bool gCreateFailed = false;
 mozilla::Atomic<bool> gShutdown(false);
 
+// Constants for temporary storage limit computing.
+static const uint32_t kDefaultChunkSizeKB = 10 * 1024;
+
 class StorageOperationBase {
  protected:
   struct OriginProps;
@@ -1964,6 +1967,7 @@ struct StorageOperationBase::OriginProps {
   nsCString mSuffix;
   nsCString mGroup;
   nsCString mOrigin;
+  nsCString mOriginalSuffix;
 
   Type mType;
   bool mNeedsRestore;
@@ -2018,7 +2022,6 @@ class MOZ_STACK_CLASS OriginParser final {
   };
 
   const nsCString mOrigin;
-  const OriginAttributes mOriginAttributes;
   Tokenizer mTokenizer;
 
   nsCString mScheme;
@@ -2039,10 +2042,8 @@ class MOZ_STACK_CLASS OriginParser final {
   uint8_t mIPGroup;
 
  public:
-  OriginParser(const nsACString& aOrigin,
-               const OriginAttributes& aOriginAttributes)
+  explicit OriginParser(const nsACString& aOrigin)
       : mOrigin(aOrigin),
-        mOriginAttributes(aOriginAttributes),
         mTokenizer(aOrigin, '+'),
         mPort(),
         mSchemeType(eNone),
@@ -2055,9 +2056,10 @@ class MOZ_STACK_CLASS OriginParser final {
         mIPGroup(0) {}
 
   static ResultType ParseOrigin(const nsACString& aOrigin, nsCString& aSpec,
-                                OriginAttributes* aAttrs);
+                                OriginAttributes* aAttrs,
+                                nsCString& aOriginalSuffix);
 
-  ResultType Parse(nsACString& aSpec, OriginAttributes* aAttrs);
+  ResultType Parse(nsACString& aSpec);
 
  private:
   void HandleScheme(const nsDependentCSubstring& aToken);
@@ -2640,32 +2642,33 @@ nsresult GetBinaryInputStream(nsIFile* aDirectory, const nsAString& aFilename,
 }
 
 // This method computes and returns our best guess for the temporary storage
-// limit (in bytes), based on the amount of space users have free on their hard
-// drive and on given temporary storage usage (also in bytes).
-nsresult GetTemporaryStorageLimit(nsIFile* aDirectory, uint64_t aCurrentUsage,
-                                  uint64_t* aLimit) {
-  // Check for free space on device where temporary storage directory lives.
-  int64_t bytesAvailable;
-  nsresult rv = aDirectory->GetDiskSpaceAvailable(&bytesAvailable);
-  NS_ENSURE_SUCCESS(rv, rv);
+// limit (in bytes), based on available space.
+uint64_t GetTemporaryStorageLimit(uint64_t aAvailableSpaceBytes) {
+  // The fixed limit pref can be used to override temporary storage limit
+  // calculation.
+  if (StaticPrefs::dom_quotaManager_temporaryStorage_fixedLimit() >= 0) {
+    return static_cast<uint64_t>(
+               StaticPrefs::dom_quotaManager_temporaryStorage_fixedLimit()) *
+           1024;
+  }
 
-  NS_ASSERTION(bytesAvailable >= 0, "Negative bytes available?!");
+  uint64_t availableSpaceKB = aAvailableSpaceBytes / 1024;
 
-  uint64_t availableKB =
-      static_cast<uint64_t>((bytesAvailable + aCurrentUsage) / 1024);
-  uint32_t chunkSizeKB =
-      StaticPrefs::dom_quotaManager_temporaryStorage_chunkSize();
+  // Prevent division by zero below.
+  uint32_t chunkSizeKB;
+  if (StaticPrefs::dom_quotaManager_temporaryStorage_chunkSize()) {
+    chunkSizeKB = StaticPrefs::dom_quotaManager_temporaryStorage_chunkSize();
+  } else {
+    chunkSizeKB = kDefaultChunkSizeKB;
+  }
 
   // Grow/shrink in chunkSizeKB units, deliberately, so that in the common case
   // we don't shrink temporary storage and evict origin data every time we
   // initialize.
-  availableKB = (availableKB / chunkSizeKB) * chunkSizeKB;
+  availableSpaceKB = (availableSpaceKB / chunkSizeKB) * chunkSizeKB;
 
   // Allow temporary storage to consume up to half the available space.
-  uint64_t resultKB = availableKB * .50;
-
-  *aLimit = resultKB * 1024;
-  return NS_OK;
+  return availableSpaceKB * .50 * 1024;
 }
 
 }  // namespace
@@ -4181,7 +4184,7 @@ void QuotaManager::RemoveQuota() {
   AutoLock lock(mQuotaMutex);
 
   for (auto iter = mGroupInfoPairs.Iter(); !iter.Done(); iter.Next()) {
-    nsAutoPtr<GroupInfoPair>& pair = iter.Data();
+    auto pair = iter.UserData();
 
     MOZ_ASSERT(!iter.Key().IsEmpty(), "Empty key!");
     MOZ_ASSERT(pair, "Null pointer!");
@@ -5162,30 +5165,10 @@ nsresult QuotaManager::InitializeOrigin(PersistenceType aPersistenceType,
     Client::Type clientType;
     bool ok = Client::TypeFromText(leafName, clientType, fallible);
     if (!ok) {
+      // Unknown directories during initialization are now allowed. Just warn if
+      // we find them.
       UNKNOWN_FILE_WARNING(leafName);
-      REPORT_TELEMETRY_INIT_ERR(kQuotaInternalError, Ori_UnexpectedClient);
-      RECORD_IN_NIGHTLY(statusKeeper, NS_ERROR_UNEXPECTED);
-
-      // Our upgrade process should have attempted to delete the deprecated
-      // client directory and failed to upgrade if it could not be deleted. So
-      // if we're here, either a) there's a bug in our code or b) a user copied
-      // over parts of an old profile into a new profile for some reason and the
-      // upgrade process won't be run again to fix it. If it's a bug, we want to
-      // assert, but only on nightly where the bug would have been introduced
-      // and we can do something about it. If it's the user, it's best for us to
-      // try and delete the origin and/or mark it broken, so we do that for
-      // non-nightly builds by trying to delete the deprecated client directory
-      // and return the initialization error for the origin.
-      if (Client::IsDeprecatedClient(leafName)) {
-        rv = file->Remove(true);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          CONTINUE_IN_NIGHTLY_RETURN_IN_OTHERS(rv);
-        }
-
-        MOZ_DIAGNOSTIC_ASSERT(true, "Found a deprecated client");
-      }
-
-      CONTINUE_IN_NIGHTLY_RETURN_IN_OTHERS(NS_ERROR_UNEXPECTED);
+      continue;
     }
 
     UsageInfo usageInfo;
@@ -5230,7 +5213,8 @@ nsresult QuotaManager::InitializeOrigin(PersistenceType aPersistenceType,
   return NS_OK;
 }
 
-nsresult QuotaManager::MaybeUpgradeIndexedDBDirectory() {
+nsresult
+QuotaManager::MaybeUpgradeFromIndexedDBDirectoryToPersistentStorageDirectory() {
   AssertIsOnIOThread();
 
   nsCOMPtr<nsIFile> indexedDBDir;
@@ -5269,7 +5253,13 @@ nsresult QuotaManager::MaybeUpgradeIndexedDBDirectory() {
   NS_ENSURE_SUCCESS(rv, rv);
 
   if (exists) {
-    NS_WARNING("indexedDB directory shouldn't exist after the upgrade!");
+    QM_WARNING("Deleting old <profile>/indexedDB directory!");
+
+    rv = indexedDBDir->Remove(/* aRecursive */ true);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
     return NS_OK;
   }
 
@@ -5290,7 +5280,8 @@ nsresult QuotaManager::MaybeUpgradeIndexedDBDirectory() {
   return NS_OK;
 }
 
-nsresult QuotaManager::MaybeUpgradePersistentStorageDirectory() {
+nsresult QuotaManager::
+    MaybeUpgradeFromPersistentStorageDirectoryToDefaultStorageDirectory() {
   AssertIsOnIOThread();
 
   nsCOMPtr<nsIFile> persistentStorageDir;
@@ -5341,7 +5332,13 @@ nsresult QuotaManager::MaybeUpgradePersistentStorageDirectory() {
   }
 
   if (exists) {
-    NS_WARNING("storage/persistent shouldn't exist after the upgrade!");
+    QM_WARNING("Deleting old <profile>/storage/persistent directory!");
+
+    rv = persistentStorageDir->Remove(/* aRecursive */ true);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
     return NS_OK;
   }
 
@@ -5394,61 +5391,6 @@ nsresult QuotaManager::MaybeUpgradePersistentStorageDirectory() {
       nullptr, NS_LITERAL_STRING(DEFAULT_DIRECTORY_NAME));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
-  }
-
-  return NS_OK;
-}
-
-nsresult QuotaManager::MaybeRemoveOldDirectories() {
-  AssertIsOnIOThread();
-
-  nsCOMPtr<nsIFile> indexedDBDir;
-  nsresult rv =
-      NS_NewLocalFile(mIndexedDBPath, false, getter_AddRefs(indexedDBDir));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  bool exists;
-  rv = indexedDBDir->Exists(&exists);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  if (exists) {
-    QM_WARNING("Deleting old <profile>/indexedDB directory!");
-
-    rv = indexedDBDir->Remove(/* aRecursive */ true);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-  }
-
-  nsCOMPtr<nsIFile> persistentStorageDir;
-  rv = NS_NewLocalFile(mStoragePath, false,
-                       getter_AddRefs(persistentStorageDir));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  rv = persistentStorageDir->Append(
-      NS_LITERAL_STRING(PERSISTENT_DIRECTORY_NAME));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  rv = persistentStorageDir->Exists(&exists);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  if (exists) {
-    QM_WARNING("Deleting old <profile>/storage/persistent directory!");
-
-    rv = persistentStorageDir->Remove(/* aRecursive */ true);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
   }
 
   return NS_OK;
@@ -5516,22 +5458,7 @@ nsresult QuotaManager::UpgradeStorageFrom0_0To1_0(
   AssertIsOnIOThread();
   MOZ_ASSERT(aConnection);
 
-  nsresult rv = MaybeUpgradeIndexedDBDirectory();
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  rv = MaybeUpgradePersistentStorageDirectory();
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  rv = MaybeRemoveOldDirectories();
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  rv = UpgradeStorage<UpgradeStorageFrom0_0To1_0Helper>(
+  nsresult rv = UpgradeStorage<UpgradeStorageFrom0_0To1_0Helper>(
       0, MakeStorageVersion(1, 0), aConnection);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
@@ -6314,6 +6241,24 @@ nsresult QuotaManager::EnsureStorageIsInitialized() {
     return rv;
   }
 
+  bool exists;
+  rv = storageFile->Exists(&exists);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  if (!exists) {
+    rv = MaybeUpgradeFromIndexedDBDirectoryToPersistentStorageDirectory();
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
+    rv = MaybeUpgradeFromPersistentStorageDirectoryToDefaultStorageDirectory();
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+  }
+
   nsCOMPtr<mozIStorageService> ss =
       do_GetService(MOZ_STORAGE_SERVICE_CONTRACTID, &rv);
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -6375,23 +6320,9 @@ nsresult QuotaManager::EnsureStorageIsInitialized() {
       return rv;
     }
 
-    bool exists;
     rv = storageDir->Exists(&exists);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
-    }
-
-    if (!exists) {
-      nsCOMPtr<nsIFile> indexedDBDir;
-      rv = NS_NewLocalFile(mIndexedDBPath, false, getter_AddRefs(indexedDBDir));
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-
-      rv = indexedDBDir->Exists(&exists);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
     }
 
     const bool newDirectory = !exists;
@@ -6923,29 +6854,33 @@ nsresult QuotaManager::EnsureTemporaryStorageIsInitialized() {
 
   nsresult rv;
 
-  if (StaticPrefs::dom_quotaManager_temporaryStorage_fixedLimit() >= 0) {
-    mTemporaryStorageLimit =
-        static_cast<uint64_t>(
-            StaticPrefs::dom_quotaManager_temporaryStorage_fixedLimit()) *
-        1024;
-  } else {
-    nsCOMPtr<nsIFile> storageDir =
-        do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, &rv);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    rv = storageDir->InitWithPath(GetStoragePath());
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    rv = GetTemporaryStorageLimit(storageDir, mTemporaryStorageUsage,
-                                  &mTemporaryStorageLimit);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
+  nsCOMPtr<nsIFile> storageDir =
+      do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, &rv);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
   }
+
+  rv = storageDir->InitWithPath(GetStoragePath());
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  // The storage directory must exist before calling GetDiskSpaceAvailable.
+  bool dummy;
+  rv = EnsureDirectory(storageDir, &dummy);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  // Check for available disk space users have on their device where storage
+  // directory lives.
+  int64_t diskSpaceAvailable;
+  rv = storageDir->GetDiskSpaceAvailable(&diskSpaceAvailable);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  MOZ_ASSERT(diskSpaceAvailable >= 0);
 
   rv = LoadQuota();
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -6953,6 +6888,14 @@ nsresult QuotaManager::EnsureTemporaryStorageIsInitialized() {
   }
 
   mTemporaryStorageInitialized = true;
+
+  // Available disk space shouldn't be used directly for temporary storage
+  // limit calculation since available disk space is affected by existing data
+  // stored in temporary storage. So we need to increase it by the temporary
+  // storage size (that has been calculated in LoadQuota) before passing to
+  // GetTemporaryStorageLimit..
+  mTemporaryStorageLimit = GetTemporaryStorageLimit(
+      /* aAvailableSpaceBytes */ diskSpaceAvailable + mTemporaryStorageUsage);
 
   CheckTemporaryStorageLimits();
 
@@ -7409,8 +7352,9 @@ bool QuotaManager::ParseOrigin(const nsACString& aOrigin, nsCString& aSpec,
   nsCString sanitizedOrigin(aOrigin);
   SanitizeOriginString(sanitizedOrigin);
 
+  nsCString originalSuffix;
   OriginParser::ResultType result =
-      OriginParser::ParseOrigin(sanitizedOrigin, aSpec, aAttrs);
+      OriginParser::ParseOrigin(sanitizedOrigin, aSpec, aAttrs, originalSuffix);
   if (NS_WARN_IF(result != OriginParser::ValidOrigin)) {
     return false;
   }
@@ -7731,8 +7675,9 @@ bool QuotaManager::IsSanitizedOriginValid(const nsACString& aSanitizedOrigin) {
   } else {
     nsCString spec;
     OriginAttributes attrs;
-    OriginParser::ResultType result =
-        OriginParser::ParseOrigin(aSanitizedOrigin, spec, &attrs);
+    nsCString originalSuffix;
+    OriginParser::ResultType result = OriginParser::ParseOrigin(
+        aSanitizedOrigin, spec, &attrs, originalSuffix);
 
     valid = result == OriginParser::ValidOrigin;
     entry.OrInsert([valid]() { return valid; });
@@ -8934,10 +8879,9 @@ nsresult QuotaUsageRequestBase::GetUsageForOrigin(
       Client::Type clientType;
       bool ok = Client::TypeFromText(leafName, clientType, fallible);
       if (!ok) {
+        // Unknown directories during getting usage for an origin (even for an
+        // uninitialized origin) are now allowed. Just warn if we find them.
         UNKNOWN_FILE_WARNING(leafName);
-        if (!initialized) {
-          return NS_ERROR_UNEXPECTED;
-        }
         continue;
       }
 
@@ -10436,8 +10380,9 @@ nsresult StorageOperationBase::OriginProps::Init(nsIFile* aDirectory) {
 
   nsCString spec;
   OriginAttributes attrs;
-  OriginParser::ResultType result =
-      OriginParser::ParseOrigin(NS_ConvertUTF16toUTF8(leafName), spec, &attrs);
+  nsCString originalSuffix;
+  OriginParser::ResultType result = OriginParser::ParseOrigin(
+      NS_ConvertUTF16toUTF8(leafName), spec, &attrs, originalSuffix);
   if (NS_WARN_IF(result == OriginParser::InvalidOrigin)) {
     mType = OriginProps::eInvalid;
     return NS_ERROR_FAILURE;
@@ -10447,6 +10392,7 @@ nsresult StorageOperationBase::OriginProps::Init(nsIFile* aDirectory) {
   mLeafName = leafName;
   mSpec = spec;
   mAttrs = attrs;
+  mOriginalSuffix = originalSuffix;
   if (result == OriginParser::ObsoleteOrigin) {
     mType = eObsolete;
   } else if (mSpec.EqualsLiteral(kChromeOrigin)) {
@@ -10460,9 +10406,19 @@ nsresult StorageOperationBase::OriginProps::Init(nsIFile* aDirectory) {
 
 // static
 auto OriginParser::ParseOrigin(const nsACString& aOrigin, nsCString& aSpec,
-                               OriginAttributes* aAttrs) -> ResultType {
+                               OriginAttributes* aAttrs,
+                               nsCString& aOriginalSuffix) -> ResultType {
   MOZ_ASSERT(!aOrigin.IsEmpty());
   MOZ_ASSERT(aAttrs);
+
+  nsCString origin(aOrigin);
+  int32_t pos = origin.RFindChar('^');
+
+  if (pos == kNotFound) {
+    aOriginalSuffix.Truncate();
+  } else {
+    aOriginalSuffix = Substring(origin, pos);
+  }
 
   OriginAttributes originAttributes;
 
@@ -10472,14 +10428,13 @@ auto OriginParser::ParseOrigin(const nsACString& aOrigin, nsCString& aSpec,
     return InvalidOrigin;
   }
 
-  OriginParser parser(originNoSuffix, originAttributes);
-  return parser.Parse(aSpec, aAttrs);
+  OriginParser parser(originNoSuffix);
+
+  *aAttrs = originAttributes;
+  return parser.Parse(aSpec);
 }
 
-auto OriginParser::Parse(nsACString& aSpec, OriginAttributes* aAttrs)
-    -> ResultType {
-  MOZ_ASSERT(aAttrs);
-
+auto OriginParser::Parse(nsACString& aSpec) -> ResultType {
   while (mTokenizer.hasMoreTokens()) {
     const nsDependentCSubstring& token = mTokenizer.nextToken();
 
@@ -10514,7 +10469,6 @@ auto OriginParser::Parse(nsACString& aSpec, OriginAttributes* aAttrs)
   // For IPv6 URL, it should at least have three groups.
   MOZ_ASSERT_IF(mIPGroup > 0, mIPGroup >= 3);
 
-  *aAttrs = mOriginAttributes;
   nsAutoCString spec(mScheme);
 
   if (mSchemeType == eFile) {
@@ -11419,6 +11373,45 @@ nsresult UpgradeStorageFrom1_0To2_0Helper::MaybeRemoveMorgueDirectory(
 nsresult UpgradeStorageFrom1_0To2_0Helper::MaybeRemoveAppsData(
     const OriginProps& aOriginProps, bool* aRemoved) {
   AssertIsOnIOThread();
+
+  // TODO: This method was empty for some time due to accidental changes done
+  //       in bug 1320404. This led to renaming of origin directories like:
+  //         https+++developer.cdn.mozilla.net^appId=1007&inBrowser=1
+  //       to:
+  //         https+++developer.cdn.mozilla.net^inBrowser=1
+  //       instead of just removing them.
+
+  class MOZ_STACK_CLASS ParamsIterator final
+      : public URLParams::ForEachIterator {
+   public:
+    bool URLParamsIterator(const nsAString& aName,
+                           const nsAString& aValue) override {
+      if (aName.EqualsLiteral("appId")) {
+        return false;
+      }
+
+      return true;
+    }
+  };
+
+  const nsCString& originalSuffix = aOriginProps.mOriginalSuffix;
+  if (!originalSuffix.IsEmpty()) {
+    MOZ_ASSERT(originalSuffix[0] == '^');
+
+    ParamsIterator iterator;
+    if (!URLParams::Parse(
+            Substring(originalSuffix, 1, originalSuffix.Length() - 1),
+            iterator)) {
+      nsresult rv = RemoveObsoleteOrigin(aOriginProps);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return rv;
+      }
+
+      *aRemoved = true;
+      return NS_OK;
+    }
+  }
+
   *aRemoved = false;
   return NS_OK;
 }
@@ -11712,6 +11705,9 @@ nsresult UpgradeStorageFrom2_1To2_2Helper::PrepareClientDirectory(
   AssertIsOnIOThread();
 
   if (Client::IsDeprecatedClient(aLeafName)) {
+    QM_WARNING("Deleting deprecated %s client!",
+               NS_ConvertUTF16toUTF8(aLeafName).get());
+
     nsresult rv = aFile->Remove(true);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;

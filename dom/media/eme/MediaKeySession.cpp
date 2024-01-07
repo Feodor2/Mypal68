@@ -202,10 +202,8 @@ already_AddRefed<Promise> MediaKeySession::GenerateRequest(
   if (IsClosed()) {
     EME_LOG("MediaKeySession[%p,'%s'] GenerateRequest() failed, closed", this,
             NS_ConvertUTF16toUTF8(mSessionId).get());
-    promise->MaybeReject(
-        NS_ERROR_DOM_INVALID_STATE_ERR,
-        NS_LITERAL_CSTRING(
-            "Session is closed in MediaKeySession.generateRequest()"));
+    promise->MaybeRejectWithInvalidStateError(
+        "Session is closed in MediaKeySession.generateRequest()");
     return promise.forget();
   }
 
@@ -214,10 +212,8 @@ already_AddRefed<Promise> MediaKeySession::GenerateRequest(
   if (!mUninitialized) {
     EME_LOG("MediaKeySession[%p,'%s'] GenerateRequest() failed, uninitialized",
             this, NS_ConvertUTF16toUTF8(mSessionId).get());
-    promise->MaybeReject(
-        NS_ERROR_DOM_INVALID_STATE_ERR,
-        NS_LITERAL_CSTRING("Session is already initialized in "
-                           "MediaKeySession.generateRequest()"));
+    promise->MaybeRejectWithInvalidStateError(
+        "Session is already initialized in MediaKeySession.generateRequest()");
     return promise.forget();
   }
 
@@ -253,10 +249,8 @@ already_AddRefed<Promise> MediaKeySession::GenerateRequest(
   // NotSupportedError. String comparison is case-sensitive.
   if (!MediaKeySystemAccess::KeySystemSupportsInitDataType(mKeySystem,
                                                            aInitDataType)) {
-    promise->MaybeReject(
-        NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        NS_LITERAL_CSTRING("Unsupported initDataType passed to "
-                           "MediaKeySession.generateRequest()"));
+    promise->MaybeRejectWithNotSupportedError(
+        "Unsupported initDataType passed to MediaKeySession.generateRequest()");
     EME_LOG(
         "MediaKeySession[%p,'%s'] GenerateRequest() failed, unsupported "
         "initDataType",
@@ -322,9 +316,8 @@ already_AddRefed<Promise> MediaKeySession::Load(const nsAString& aSessionId,
   // 1. If this object is closed, return a promise rejected with an
   // InvalidStateError.
   if (IsClosed()) {
-    promise->MaybeReject(
-        NS_ERROR_DOM_INVALID_STATE_ERR,
-        NS_LITERAL_CSTRING("Session is closed in MediaKeySession.load()"));
+    promise->MaybeRejectWithInvalidStateError(
+        "Session is closed in MediaKeySession.load()");
     EME_LOG("MediaKeySession[%p,'%s'] Load() failed, closed", this,
             NS_ConvertUTF16toUTF8(aSessionId).get());
     return promise.forget();
@@ -333,10 +326,8 @@ already_AddRefed<Promise> MediaKeySession::Load(const nsAString& aSessionId,
   // 2.If this object's uninitialized value is false, return a promise rejected
   // with an InvalidStateError.
   if (!mUninitialized) {
-    promise->MaybeReject(
-        NS_ERROR_DOM_INVALID_STATE_ERR,
-        NS_LITERAL_CSTRING(
-            "Session is already initialized in MediaKeySession.load()"));
+    promise->MaybeRejectWithInvalidStateError(
+        "Session is already initialized in MediaKeySession.load()");
     EME_LOG("MediaKeySession[%p,'%s'] Load() failed, uninitialized", this,
             NS_ConvertUTF16toUTF8(aSessionId).get());
     return promise.forget();
@@ -403,19 +394,15 @@ already_AddRefed<Promise> MediaKeySession::Update(
     EME_LOG(
         "MediaKeySession[%p,''] Update() called before sessionId set by CDM",
         this);
-    promise->MaybeReject(
-        NS_ERROR_DOM_INVALID_STATE_ERR,
-        NS_LITERAL_CSTRING(
-            "MediaKeySession.Update() called before sessionId set by CDM"));
+    promise->MaybeRejectWithInvalidStateError(
+        "MediaKeySession.Update() called before sessionId set by CDM");
     return promise.forget();
   }
 
   nsTArray<uint8_t> data;
   if (IsClosed() || !mKeys->GetCDMProxy()) {
-    promise->MaybeReject(
-        NS_ERROR_DOM_INVALID_STATE_ERR,
-        NS_LITERAL_CSTRING(
-            "Session is closed or was not properly initialized"));
+    promise->MaybeRejectWithInvalidStateError(
+        "Session is closed or was not properly initialized");
     EME_LOG(
         "MediaKeySession[%p,'%s'] Update() failed, session is closed or was "
         "not properly initialised.",
@@ -466,18 +453,15 @@ already_AddRefed<Promise> MediaKeySession::Close(ErrorResult& aRv) {
   if (!IsCallable()) {
     EME_LOG("MediaKeySession[%p,''] Close() called before sessionId set by CDM",
             this);
-    promise->MaybeReject(
-        NS_ERROR_DOM_INVALID_STATE_ERR,
-        NS_LITERAL_CSTRING(
-            "MediaKeySession.Close() called before sessionId set by CDM"));
+    promise->MaybeRejectWithInvalidStateError(
+        "MediaKeySession.Close() called before sessionId set by CDM");
     return promise.forget();
   }
   if (!mKeys->GetCDMProxy()) {
     EME_LOG("MediaKeySession[%p,'%s'] Close() null CDMProxy", this,
             NS_ConvertUTF16toUTF8(mSessionId).get());
-    promise->MaybeReject(
-        NS_ERROR_DOM_INVALID_STATE_ERR,
-        NS_LITERAL_CSTRING("MediaKeySession.Close() lost reference to CDM"));
+    promise->MaybeRejectWithInvalidStateError(
+        "MediaKeySession.Close() lost reference to CDM");
     return promise.forget();
   }
   // 4. Let promise be a new promise.
@@ -523,27 +507,21 @@ already_AddRefed<Promise> MediaKeySession::Remove(ErrorResult& aRv) {
     EME_LOG(
         "MediaKeySession[%p,''] Remove() called before sessionId set by CDM",
         this);
-    promise->MaybeReject(
-        NS_ERROR_DOM_INVALID_STATE_ERR,
-        NS_LITERAL_CSTRING(
-            "MediaKeySession.Remove() called before sessionId set by CDM"));
+    promise->MaybeRejectWithInvalidStateError(
+        "MediaKeySession.Remove() called before sessionId set by CDM");
     return promise.forget();
   }
   if (mSessionType != MediaKeySessionType::Persistent_license) {
-    promise->MaybeReject(
-        NS_ERROR_DOM_INVALID_ACCESS_ERR,
-        NS_LITERAL_CSTRING(
-            "Calling MediaKeySession.remove() on non-persistent session"));
+    promise->MaybeRejectWithInvalidAccessError(
+        "Calling MediaKeySession.remove() on non-persistent session");
     // "The operation is not supported on session type sessions."
     EME_LOG("MediaKeySession[%p,'%s'] Remove() failed, sesion not persisrtent.",
             this, NS_ConvertUTF16toUTF8(mSessionId).get());
     return promise.forget();
   }
   if (IsClosed() || !mKeys->GetCDMProxy()) {
-    promise->MaybeReject(
-        NS_ERROR_DOM_INVALID_STATE_ERR,
-        NS_LITERAL_CSTRING(
-            "MediaKeySesison.remove() called but session is not active"));
+    promise->MaybeRejectWithInvalidStateError(
+        "MediaKeySession.remove() called but session is not active");
     // "The session is closed."
     EME_LOG("MediaKeySession[%p,'%s'] Remove() failed, already session closed.",
             this, NS_ConvertUTF16toUTF8(mSessionId).get());

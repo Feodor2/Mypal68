@@ -134,7 +134,7 @@ void ServiceWorkerRegistrationProxy::FireUpdateFound() {
   MOZ_ALWAYS_SUCCEEDS(mEventTarget->Dispatch(r.forget(), NS_DISPATCH_NORMAL));
 }
 
-void ServiceWorkerRegistrationProxy::RegistrationRemoved() {
+void ServiceWorkerRegistrationProxy::RegistrationCleared() {
   MaybeShutdownOnMainThread();
 }
 
@@ -216,7 +216,7 @@ RefPtr<GenericPromise> ServiceWorkerRegistrationProxy::Unregister() {
 
   MOZ_ALWAYS_SUCCEEDS(SystemGroup::Dispatch(TaskCategory::Other, r.forget()));
 
-  return promise.forget();
+  return promise;
 }
 
 namespace {

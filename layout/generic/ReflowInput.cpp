@@ -1076,9 +1076,9 @@ void ReflowInput::ApplyRelativePositioning(nsIFrame* aFrame,
   }
 
   const nsStyleDisplay* display = aFrame->StyleDisplay();
-  if (NS_STYLE_POSITION_RELATIVE == display->mPosition) {
+  if (StylePositionProperty::Relative == display->mPosition) {
     *aPosition += nsPoint(aComputedOffsets.left, aComputedOffsets.top);
-  } else if (NS_STYLE_POSITION_STICKY == display->mPosition &&
+  } else if (StylePositionProperty::Sticky == display->mPosition &&
              !aFrame->GetNextContinuation() && !aFrame->GetPrevContinuation() &&
              !(aFrame->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT)) {
     // Sticky positioning for elements with multiple frames needs to be
@@ -2137,11 +2137,12 @@ LogicalSize ReflowInput::ComputeContainingBlockRectangle(
       return aSize.ConvertsToPercentage();
     };
     // an element in quirks mode gets a containing block based on looking for a
-    // parent with a non-auto height if the element has a percent height
-    // Note: We don't emulate this quirk for percents in calc() or in
-    // vertical writing modes.
+    // parent with a non-auto height if the element has a percent height.
+    // Note: We don't emulate this quirk for percents in calc(), or in vertical
+    // writing modes, or if the containing block is a flex or grid item.
     if (!wm.IsVertical() && NS_UNCONSTRAINEDSIZE == cbSize.BSize(wm)) {
       if (eCompatibility_NavQuirks == aPresContext->CompatibilityMode() &&
+          !aContainingBlockRI->mFrame->IsFlexOrGridItem() &&
           (IsQuirky(mStylePosition->mHeight) ||
            (mFrame->IsTableWrapperFrame() &&
             IsQuirky(mFrame->PrincipalChildList()
@@ -2273,7 +2274,8 @@ void ReflowInput::InitConstraints(
           // in quirks mode, get the cb height using the special quirk method
           if (!wm.IsVertical() &&
               eCompatibility_NavQuirks == aPresContext->CompatibilityMode()) {
-            if (!cbri->mFrame->IsTableCellFrame()) {
+            if (!cbri->mFrame->IsTableCellFrame() &&
+                !cbri->mFrame->IsFlexOrGridItem()) {
               cbSize.BSize(wm) = CalcQuirkContainingBlockHeight(cbri);
               if (cbSize.BSize(wm) == NS_UNCONSTRAINEDSIZE) {
                 isAutoBSize = true;
@@ -2307,7 +2309,7 @@ void ReflowInput::InitConstraints(
     // until the scroll container knows its size, so we compute offsets
     // from StickyScrollContainer::UpdatePositions.)
     if (mStyleDisplay->IsRelativelyPositioned(mFrame) &&
-        NS_STYLE_POSITION_RELATIVE == mStyleDisplay->mPosition) {
+        StylePositionProperty::Relative == mStyleDisplay->mPosition) {
       ComputeRelativeOffsets(cbwm, mFrame, cbSize.ConvertTo(cbwm, wm),
                              ComputedPhysicalOffsets());
     } else {
@@ -2419,10 +2421,10 @@ void ReflowInput::InitConstraints(
         // in its inline axis.
         auto inlineAxisAlignment =
             wm.IsOrthogonalTo(cbwm)
-                ? mStylePosition->UsedAlignSelf(alignCB->Style())
-                : mStylePosition->UsedJustifySelf(alignCB->Style());
-        if ((inlineAxisAlignment != NS_STYLE_ALIGN_STRETCH &&
-             inlineAxisAlignment != NS_STYLE_ALIGN_NORMAL) ||
+                ? mStylePosition->UsedAlignSelf(alignCB->Style())._0
+                : mStylePosition->UsedJustifySelf(alignCB->Style())._0;
+        if ((inlineAxisAlignment != StyleAlignFlags::STRETCH &&
+             inlineAxisAlignment != StyleAlignFlags::NORMAL) ||
             mStyleMargin->mMargin.GetIStart(wm).IsAuto() ||
             mStyleMargin->mMargin.GetIEnd(wm).IsAuto()) {
           computeSizeFlags = ComputeSizeFlags(computeSizeFlags |
@@ -2578,6 +2580,11 @@ void SizeComputationInput::InitOffsets(WritingMode aWM, nscoord aPercentBasis,
       }
       mComputedPadding.Side(wm.PhysicalSide(side)) += val;
       needPaddingProp = true;
+      if (aAxis == eLogicalAxisBlock && val > 0) {
+        // We have a baseline-adjusted block-axis start padding, so
+        // we need this to mark lines dirty when mIsBResize is true:
+        this->mFrame->AddStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
+      }
     }
   };
   if (!aFlags.mUseAutoBSize) {

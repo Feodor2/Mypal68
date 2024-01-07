@@ -12,6 +12,7 @@ using ClientType from "mozilla/dom/ClientIPCUtils.h";
 using FrameType from "mozilla/dom/ClientIPCUtils.h";
 using mozilla::StorageAccess from "mozilla/dom/ClientIPCUtils.h";
 using VisibilityState from "mozilla/dom/ClientIPCUtils.h";
+using mozilla::CopyableErrorResult from "ipc/ErrorIPCUtils.h";
 
 namespace mozilla {
 namespace dom {
@@ -141,7 +142,7 @@ struct ClientNavigateOpConstructorArgs
 
 union ClientOpResult
 {
-  nsresult;
+  CopyableErrorResult;
   IPCClientState;
   ClientInfoAndState;
   ClientList;

@@ -13,11 +13,14 @@ namespace mozilla {
 namespace dom {
 
 class MessagePortParent;
-class SharedMessagePortMessage;
+class SharedMessageBody;
 
 class MessagePortService final {
  public:
   NS_INLINE_DECL_REFCOUNTING(MessagePortService)
+
+  // Needs to be public for the DECLARE_USE_COPY_CONSTRUCTORS macro.
+  struct NextParent;
 
   static MessagePortService* Get();
   static MessagePortService* GetOrCreate();
@@ -26,15 +29,13 @@ class MessagePortService final {
                          const nsID& aDestinationUUID,
                          const uint32_t& aSequenceID);
 
-  bool DisentanglePort(
-      MessagePortParent* aParent,
-      FallibleTArray<RefPtr<SharedMessagePortMessage>>& aMessages);
+  bool DisentanglePort(MessagePortParent* aParent,
+                       FallibleTArray<RefPtr<SharedMessageBody>>& aMessages);
 
   bool ClosePort(MessagePortParent* aParent);
 
-  bool PostMessages(
-      MessagePortParent* aParent,
-      FallibleTArray<RefPtr<SharedMessagePortMessage>>& aMessages);
+  bool PostMessages(MessagePortParent* aParent,
+                    FallibleTArray<RefPtr<SharedMessageBody>>& aMessages);
 
   void ParentDestroy(MessagePortParent* aParent);
 

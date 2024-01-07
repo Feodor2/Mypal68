@@ -47,8 +47,10 @@ namespace mozilla {
 
 namespace dom {
 
-enum ErrNum {
-#define MSG_DEF(_name, _argc, _exn, _str) _name,
+class Promise;
+
+enum ErrNum : uint16_t {
+#define MSG_DEF(_name, _argc, _has_context, _exn, _str) _name,
 #include "mozilla/dom/Errors.msg"
 #undef MSG_DEF
   Err_Limit
@@ -58,11 +60,18 @@ enum ErrNum {
 // use in static_assert.
 #if defined(DEBUG) && (defined(__clang__) || defined(__GNUC__))
 uint16_t constexpr ErrorFormatNumArgs[] = {
-#  define MSG_DEF(_name, _argc, _exn, _str) _argc,
+#  define MSG_DEF(_name, _argc, _has_context, _exn, _str) _argc,
 #  include "mozilla/dom/Errors.msg"
 #  undef MSG_DEF
 };
 #endif
+
+// Table of whether various error messages want a context arg.
+bool constexpr ErrorFormatHasContext[] = {
+#define MSG_DEF(_name, _argc, _has_context, _exn, _str) _has_context,
+#include "mozilla/dom/Errors.msg"
+#undef MSG_DEF
+};
 
 uint16_t GetErrorArgCount(const ErrNum aErrorNumber);
 
@@ -70,10 +79,13 @@ namespace binding_detail {
 void ThrowErrorMessage(JSContext* aCx, const unsigned aErrorNumber, ...);
 }  // namespace binding_detail
 
-template <typename... Ts>
-inline bool ThrowErrorMessage(JSContext* aCx, const ErrNum aErrorNumber,
-                              Ts&&... aArgs) {
-  binding_detail::ThrowErrorMessage(aCx, static_cast<unsigned>(aErrorNumber),
+template <ErrNum errorNumber, typename... Ts>
+inline bool ThrowErrorMessage(JSContext* aCx, Ts&&... aArgs) {
+#if defined(DEBUG) && (defined(__clang__) || defined(__GNUC__))
+  static_assert(ErrorFormatNumArgs[errorNumber] == sizeof...(aArgs),
+                "Pass in the right number of arguments");
+#endif
+  binding_detail::ThrowErrorMessage(aCx, static_cast<unsigned>(errorNumber),
                                     std::forward<Ts>(aArgs)...);
   return false;
 }
@@ -162,11 +174,11 @@ class TErrorResult {
   operator const ErrorResult&() const;
   operator OOMReporter&();
 
-  // This method is deprecated.  Consumers should ThrowDOMException if they are
-  // throwing a DOMException.  If they have a random nsresult which may or may
-  // not correspond to a DOMException type, they should consider using an
-  // appropriate DOMException-type nsresult with an informative message and
-  // calling ThrowDOMException.
+  // This method is deprecated.  Consumers should Throw*Error with the
+  // appropriate DOMException name if they are throwing a DOMException.  If they
+  // have a random nsresult which may or may not correspond to a DOMException
+  // type, they should consider using an appropriate DOMException with an
+  // informative message and calling the relevant Throw*Error.
   void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG Throw(nsresult rv) {
     MOZ_ASSERT(NS_FAILED(rv), "Please don't try throwing success");
     AssignErrorCode(rv);
@@ -227,14 +239,19 @@ class TErrorResult {
   //
   // After this call, the TErrorResult will no longer return true from Failed(),
   // since the exception will have moved to the JSContext.
+  //
+  // If "context" is not null and our exception has a useful message string, the
+  // string "%s: ", with the value of "context" replacing %s, will be prepended
+  // to the message string.  The passed-in string must be ASCII.
   MOZ_MUST_USE
-  bool MaybeSetPendingException(JSContext* cx) {
+  bool MaybeSetPendingException(JSContext* cx,
+                                const char* description = nullptr) {
     WouldReportJSException();
     if (!Failed()) {
       return false;
     }
 
-    SetPendingException(cx);
+    SetPendingException(cx, description);
     return true;
   }
 
@@ -315,22 +332,10 @@ class TErrorResult {
     return ErrorCode() == NS_ERROR_INTERNAL_ERRORRESULT_JS_EXCEPTION;
   }
 
-  // Facilities for throwing a DOMException.  If an empty message string is
-  // passed to ThrowDOMException, the default message string for the given
-  // nsresult will be used.  The passed-in string must be UTF-8.  The nsresult
-  // passed in must be one we create DOMExceptions for; otherwise you may get an
-  // XPConnect Exception.
-  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
-  ThrowDOMException(nsresult rv, const nsACString& message);
-
-  // Same thing, but using a string literal.
-  template <int N>
-  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
-  ThrowDOMException(nsresult rv, const char (&aMessage)[N]) {
-    ThrowDOMException(rv, nsLiteralCString(aMessage));
-  }
-
-  // Facilities for throwing specific spec-defined DOMExceptions.
+  // Facilities for throwing DOMExceptions of whatever type a spec calls for.
+  // If an empty message string is passed to one of these Throw*Error functions,
+  // the default message string for the relevant type of DOMException will be
+  // used.  The passed-in string must be UTF-8.
 #define DOMEXCEPTION(name, err)                                \
   void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG Throw##name( \
       const nsACString& aMessage) {                            \
@@ -343,50 +348,7 @@ class TErrorResult {
     ThrowDOMException(err, aMessage);                          \
   }
 
-  // XXXbz This list sort of duplicates the DOM4_MSG_DEF bits of domerr.msg,
-  // except that has various extra errors that are not in specs
-  // (e.g. InvalidPointerId) and has multiple definitions for the same error
-  // name using different messages, which we don't need because we get the
-  // message passed in.  We should try to convert all consumers of the "extra"
-  // error codes in there to these APIs, remove the extra bits, and just
-  // include domerr.msg here.
-  DOMEXCEPTION(IndexSizeError, NS_ERROR_DOM_INDEX_SIZE_ERR)
-  // We don't have a DOMStringSizeError and it's deprecated anyway.
-  DOMEXCEPTION(HierarchyRequestError, NS_ERROR_DOM_HIERARCHY_REQUEST_ERR)
-  DOMEXCEPTION(WrongDocumentError, NS_ERROR_DOM_WRONG_DOCUMENT_ERR)
-  DOMEXCEPTION(InvalidCharacterError, NS_ERROR_DOM_INVALID_CHARACTER_ERR)
-  // We don't have a NoDataAllowedError and it's deprecated anyway.
-  DOMEXCEPTION(NoModificationAllowedError,
-               NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR)
-  DOMEXCEPTION(NotFoundError, NS_ERROR_DOM_NOT_FOUND_ERR)
-  DOMEXCEPTION(NotSupportedError, NS_ERROR_DOM_NOT_SUPPORTED_ERR)
-  DOMEXCEPTION(InUseAttributeError, NS_ERROR_DOM_INUSE_ATTRIBUTE_ERR)
-  DOMEXCEPTION(InvalidStateError, NS_ERROR_DOM_INVALID_STATE_ERR)
-  DOMEXCEPTION(SyntaxError, NS_ERROR_DOM_SYNTAX_ERR)
-  DOMEXCEPTION(InvalidModificationError, NS_ERROR_DOM_INVALID_MODIFICATION_ERR)
-  DOMEXCEPTION(NamespaceError, NS_ERROR_DOM_NAMESPACE_ERR)
-  DOMEXCEPTION(InvalidAccessError, NS_ERROR_DOM_INVALID_ACCESS_ERR)
-  // We don't have a ValidationError and it's deprecated anyway.
-  DOMEXCEPTION(TypeMismatchError, NS_ERROR_DOM_TYPE_MISMATCH_ERR)
-  DOMEXCEPTION(SecurityError, NS_ERROR_DOM_SECURITY_ERR)
-  DOMEXCEPTION(NetworkError, NS_ERROR_DOM_NETWORK_ERR)
-  DOMEXCEPTION(AbortError, NS_ERROR_DOM_ABORT_ERR)
-  DOMEXCEPTION(URLMismatchError, NS_ERROR_DOM_URL_MISMATCH_ERR)
-  DOMEXCEPTION(QuotaExceededError, NS_ERROR_DOM_QUOTA_EXCEEDED_ERR)
-  DOMEXCEPTION(TimeoutError, NS_ERROR_DOM_TIMEOUT_ERR)
-  DOMEXCEPTION(InvalidNodeTypeError, NS_ERROR_DOM_INVALID_NODE_TYPE_ERR)
-  DOMEXCEPTION(DataCloneError, NS_ERROR_DOM_DATA_CLONE_ERR)
-  DOMEXCEPTION(EncodingError, NS_ERROR_DOM_ENCODING_NOT_SUPPORTED_ERR)
-  DOMEXCEPTION(NotReadableError, NS_ERROR_DOM_FILE_NOT_READABLE_ERR)
-  DOMEXCEPTION(UnknownError, NS_ERROR_DOM_UNKNOWN_ERR)
-  DOMEXCEPTION(ConstraintError, NS_ERROR_DOM_INDEXEDDB_CONSTRAINT_ERR)
-  DOMEXCEPTION(DataError, NS_ERROR_DOM_DATA_ERR)
-  DOMEXCEPTION(TransactionInactiveError,
-               NS_ERROR_DOM_INDEXEDDB_TRANSACTION_INACTIVE_ERR)
-  DOMEXCEPTION(ReadOnlyError, NS_ERROR_DOM_INDEXEDDB_READ_ONLY_ERR)
-  DOMEXCEPTION(VersionError, NS_ERROR_DOM_INDEXEDDB_VERSION_ERR)
-  DOMEXCEPTION(OperationError, NS_ERROR_DOM_OPERATION_ERR)
-  DOMEXCEPTION(NotAllowedError, NS_ERROR_DOM_NOT_ALLOWED_ERR)
+#include "mozilla/dom/DOMExceptionNames.h"
 
 #undef DOMEXCEPTION
 
@@ -446,6 +408,25 @@ class TErrorResult {
  protected:
   nsresult ErrorCode() const { return mResult; }
 
+  // Helper methods for throwing DOMExceptions, for now.  We can try to get rid
+  // of these once EME code is fixed to not use them and we decouple
+  // DOMExceptions from nsresult.
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
+  ThrowDOMException(nsresult rv, const nsACString& message);
+
+  // Same thing, but using a string literal.
+  template <int N>
+  void MOZ_MUST_RETURN_FROM_CALLER_IF_THIS_IS_ARG
+  ThrowDOMException(nsresult rv, const char (&aMessage)[N]) {
+    ThrowDOMException(rv, nsLiteralCString(aMessage));
+  }
+
+  // Allow Promise to call the above methods when it really needs to.
+  // Unfortunately, we can't have the definition of Promise here, so can't mark
+  // just it's MaybeRejectWithDOMException method as a friend.  In any case,
+  // hopefully it's all temporary until we sort out the EME bits.
+  friend class dom::Promise;
+
  private:
 #ifdef DEBUG
   enum UnionState {
@@ -473,9 +454,10 @@ class TErrorResult {
   template <dom::ErrNum errorNumber, typename... Ts>
   void ThrowErrorWithMessage(nsresult errorType, Ts&&... messageArgs) {
 #if defined(DEBUG) && (defined(__clang__) || defined(__GNUC__))
-    static_assert(
-        dom::ErrorFormatNumArgs[errorNumber] == sizeof...(messageArgs),
-        "Pass in the right number of arguments");
+    static_assert(dom::ErrorFormatNumArgs[errorNumber] ==
+                      sizeof...(messageArgs) +
+                          int(dom::ErrorFormatHasContext[errorNumber]),
+                  "Pass in the right number of arguments");
 #endif
 
     ClearUnionData();
@@ -483,6 +465,16 @@ class TErrorResult {
     nsTArray<nsString>& messageArgsArray =
         CreateErrorMessageHelper(errorNumber, errorType);
     uint16_t argCount = dom::GetErrorArgCount(errorNumber);
+    if (dom::ErrorFormatHasContext[errorNumber]) {
+      // Insert an empty string arg at the beginning and reduce our arg count to
+      // still be appended accordingly.
+      MOZ_ASSERT(argCount > 0,
+                 "Must have at least one arg if we have a context!");
+      MOZ_ASSERT(messageArgsArray.Length() == 0,
+                 "Why do we already have entries in the array?");
+      --argCount;
+      messageArgsArray.AppendElement();
+    }
     dom::StringArrayAppender::Append(messageArgsArray, argCount,
                                      std::forward<Ts>(messageArgs)...);
 #ifdef DEBUG
@@ -508,7 +500,7 @@ class TErrorResult {
                "Use ThrowJSException()");
     MOZ_ASSERT(!IsJSException(), "Don't overwrite JS exceptions");
     MOZ_ASSERT(aRv != NS_ERROR_INTERNAL_ERRORRESULT_DOMEXCEPTION,
-               "Use ThrowDOMException()");
+               "Use Throw*Error for the appropriate DOMException name");
     MOZ_ASSERT(!IsDOMException(), "Don't overwrite DOM exceptions");
     MOZ_ASSERT(aRv != NS_ERROR_XPC_NOT_ENOUGH_ARGS,
                "May need to bring back ThrowNotEnoughArgsError");
@@ -529,13 +521,15 @@ class TErrorResult {
   void ClearUnionData();
 
   // Implementation of MaybeSetPendingException for the case when we're a
-  // failure result.
-  void SetPendingException(JSContext* cx);
+  // failure result.  See documentation of MaybeSetPendingException for the
+  // "context" argument.
+  void SetPendingException(JSContext* cx, const char* context);
 
-  // Methods for setting various specific kinds of pending exceptions.
-  void SetPendingExceptionWithMessage(JSContext* cx);
+  // Methods for setting various specific kinds of pending exceptions.  See
+  // documentation of MaybeSetPendingException for the "context" argument.
+  void SetPendingExceptionWithMessage(JSContext* cx, const char* context);
   void SetPendingJSException(JSContext* cx);
-  void SetPendingDOMException(JSContext* cx);
+  void SetPendingDOMException(JSContext* cx, const char* context);
   void SetPendingGenericErrorException(JSContext* cx);
 
   MOZ_ALWAYS_INLINE void AssertReportedOrSuppressed() {
@@ -721,6 +715,27 @@ class CopyableErrorResult
   CopyableErrorResult(CopyableErrorResult&& aRHS)
       : BaseErrorResult(std::move(aRHS)) {}
 
+  explicit CopyableErrorResult(ErrorResult&& aRHS) : BaseErrorResult() {
+    // We must not copy JS exceptions since it can too easily lead to
+    // off-thread use.  Assert this and fall back to a generic error
+    // in release builds.
+    MOZ_DIAGNOSTIC_ASSERT(
+        !aRHS.IsJSException(),
+        "Attempt to copy from ErrorResult with a JS exception value.");
+    if (aRHS.IsJSException()) {
+      aRHS.SuppressException();
+      Throw(NS_ERROR_FAILURE);
+    } else {
+      // We could avoid the cast here if we had a move constructor on
+      // TErrorResult templated on the cleanup policy type, but then we'd have
+      // to either inline the impl or force all possible instantiations or
+      // something.  This is a bit simpler, and not that different from our copy
+      // constructor.
+      auto val = reinterpret_cast<CopyableErrorResult&&>(aRHS);
+      operator=(val);
+    }
+  }
+
   explicit CopyableErrorResult(nsresult aRv) : BaseErrorResult(aRv) {}
 
   // This operator is deprecated and ideally shouldn't be used.
@@ -806,8 +821,8 @@ class OOMReporterInstantiator : public OOMReporter {
   // We want to be able to call MaybeSetPendingException from codegen.  The one
   // on OOMReporter is not callable directly, because it comes from a private
   // superclass.  But we're a friend, so _we_ can call it.
-  bool MaybeSetPendingException(JSContext* cx) {
-    return OOMReporter::MaybeSetPendingException(cx);
+  bool MaybeSetPendingException(JSContext* cx, const char* context = nullptr) {
+    return OOMReporter::MaybeSetPendingException(cx, context);
   }
 };
 }  // namespace binding_danger

@@ -20,7 +20,6 @@
 #include "DOMSVGNumber.h"
 #include "DOMSVGPoint.h"
 #include "nsFrameSelection.h"
-#include "nsLayoutStylesheetCache.h"
 #include "nsIFrame.h"
 #include "nsISVGSVGFrame.h"
 #include "nsSVGDisplayableFrame.h"

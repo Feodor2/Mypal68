@@ -138,8 +138,7 @@ impl Device {
 
     /// Set the font size of the root element (for rem)
     pub fn set_root_font_size(&self, size: Au) {
-        self.root_font_size
-            .store(size.0 as isize, Ordering::Relaxed)
+        self.root_font_size.store(size.0 as isize, Ordering::Relaxed)
     }
 
     /// Sets the body text color for the "inherit color from body" quirk.
@@ -269,18 +268,17 @@ impl Device {
         if doc.mIsBeingUsedAsImage() {
             return true;
         }
-        let document_color_use = static_prefs::pref!("browser.display.document_color_use");
-        let prefs = self.pref_sheet_prefs();
-        match document_color_use {
-            1 => true,
-            2 => prefs.mIsChrome,
-            _ => !prefs.mUseAccessibilityTheme,
-        }
+        self.pref_sheet_prefs().mUseDocumentColors
     }
 
     /// Returns the default background color.
     pub fn default_background_color(&self) -> RGBA {
         convert_nscolor_to_rgba(self.pref_sheet_prefs().mDefaultBackgroundColor)
+    }
+
+    /// Returns the default foreground color.
+    pub fn default_color(&self) -> RGBA {
+        convert_nscolor_to_rgba(self.pref_sheet_prefs().mDefaultColor)
     }
 
     /// Returns the current effective text zoom.

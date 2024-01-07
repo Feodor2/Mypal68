@@ -575,7 +575,7 @@ nsSVGImageListener::Notify(imgIRequest* aRequest, int32_t aType,
     aRequest->GetImage(getter_AddRefs(image));
     if (image) {
       image->SetAnimationMode(mFrame->PresContext()->ImageAnimationMode());
-      mFrame->mImageContainer = image.forget();
+      mFrame->mImageContainer = std::move(image);
     }
     mFrame->InvalidateFrame();
     nsLayoutUtils::PostRestyleEvent(mFrame->GetContent()->AsElement(),

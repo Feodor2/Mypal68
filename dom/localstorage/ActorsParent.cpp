@@ -1716,10 +1716,9 @@ class Datastore final
   // Created by PrepareDatastoreOp.
   Datastore(const nsACString& aGroup, const nsACString& aOrigin,
             uint32_t aPrivateBrowsingId, int64_t aUsage, int64_t aSizeOfKeys,
-            int64_t aSizeOfItems,
-            already_AddRefed<DirectoryLock>&& aDirectoryLock,
-            already_AddRefed<Connection>&& aConnection,
-            already_AddRefed<QuotaObject>&& aQuotaObject,
+            int64_t aSizeOfItems, RefPtr<DirectoryLock>&& aDirectoryLock,
+            RefPtr<Connection>&& aConnection,
+            RefPtr<QuotaObject>&& aQuotaObject,
             nsDataHashtable<nsStringHashKey, LSValue>& aValues,
             nsTArray<LSItemInfo>& aOrderedItems);
 
@@ -3350,7 +3349,7 @@ bool RecvPBackgroundLSDatabaseConstructor(PBackgroundLSDatabaseParent* aActor,
   // registered as a subprotocol).
   // ActorDestroy will be called if we fail here.
 
-  nsAutoPtr<PreparedDatastore> preparedDatastore;
+  mozilla::UniquePtr<PreparedDatastore> preparedDatastore;
   gPreparedDatastores->Remove(aDatastoreId, &preparedDatastore);
   MOZ_ASSERT(preparedDatastore);
 
@@ -3649,7 +3648,7 @@ void DatastoreWriteOptimizer::ApplyAndReset(
     LSItemInfo& item = aOrderedItems[index];
 
     if (auto entry = mWriteInfos.Lookup(item.key())) {
-      WriteInfo* writeInfo = entry.Data();
+      WriteInfo* writeInfo = entry.Data().get();
 
       switch (writeInfo->GetType()) {
         case WriteInfo::DeleteItem:
@@ -3664,7 +3663,7 @@ void DatastoreWriteOptimizer::ApplyAndReset(
             // about the UpdateWithMove flag.
 
             aOrderedItems.RemoveElementAt(index);
-            entry.Data() = new InsertItemInfo(updateItemInfo->SerialNumber(),
+            entry.Data() = MakeUnique<InsertItemInfo>(updateItemInfo->SerialNumber(),
                                               updateItemInfo->GetKey(),
                                               updateItemInfo->GetValue());
           } else {
@@ -3722,7 +3721,7 @@ nsresult ConnectionWriteOptimizer::Perform(Connection* aConnection,
   }
 
   for (auto iter = mWriteInfos.ConstIter(); !iter.Done(); iter.Next()) {
-    WriteInfo* writeInfo = iter.Data();
+    WriteInfo* writeInfo = iter.Data().get();
 
     switch (writeInfo->GetType()) {
       case WriteInfo::InsertItem:
@@ -4766,9 +4765,9 @@ void ConnectionThread::Shutdown() {
 Datastore::Datastore(const nsACString& aGroup, const nsACString& aOrigin,
                      uint32_t aPrivateBrowsingId, int64_t aUsage,
                      int64_t aSizeOfKeys, int64_t aSizeOfItems,
-                     already_AddRefed<DirectoryLock>&& aDirectoryLock,
-                     already_AddRefed<Connection>&& aConnection,
-                     already_AddRefed<QuotaObject>&& aQuotaObject,
+                     RefPtr<DirectoryLock>&& aDirectoryLock,
+                     RefPtr<Connection>&& aConnection,
+                     RefPtr<QuotaObject>&& aQuotaObject,
                      nsDataHashtable<nsStringHashKey, LSValue>& aValues,
                      nsTArray<LSItemInfo>& aOrderedItems)
     : mDirectoryLock(std::move(aDirectoryLock)),
@@ -5595,11 +5594,8 @@ void Datastore::NotifySnapshots(Database* aDatabase, const nsAString& aKey,
 void PreparedDatastore::Destroy() {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(gPreparedDatastores);
-  MOZ_ASSERT(gPreparedDatastores->Get(mDatastoreId));
-
-  nsAutoPtr<PreparedDatastore> preparedDatastore;
-  gPreparedDatastores->Remove(mDatastoreId, &preparedDatastore);
-  MOZ_ASSERT(preparedDatastore);
+  DebugOnly<bool> removed = gPreparedDatastores->Remove(mDatastoreId);
+  MOZ_ASSERT(removed);
 }
 
 // static
@@ -7199,7 +7195,7 @@ nsresult PrepareDatastoreOp::OpenDirectory() {
   MOZ_ASSERT(pendingDirectoryLock);
 
   if (mNestedState == NestedState::DirectoryOpenPending) {
-    mPendingDirectoryLock = pendingDirectoryLock.forget();
+    mPendingDirectoryLock = std::move(pendingDirectoryLock);
   }
 
   mRequestedDirectoryLock = true;
@@ -7869,10 +7865,10 @@ void PrepareDatastoreOp::GetResponse(LSRequestResponse& aResponse) {
       }
     }
 
-    mDatastore = new Datastore(mGroup, mOrigin, mPrivateBrowsingId, mUsage,
-                               mSizeOfKeys, mSizeOfItems,
-                               mDirectoryLock.forget(), mConnection.forget(),
-                               quotaObject.forget(), mValues, mOrderedItems);
+    mDatastore = new Datastore(
+        mGroup, mOrigin, mPrivateBrowsingId, mUsage, mSizeOfKeys, mSizeOfItems,
+        std::move(mDirectoryLock), std::move(mConnection),
+        std::move(quotaObject), mValues, mOrderedItems);
 
     mDatastore->NoteLivePrepareDatastoreOp(this);
 
@@ -7926,11 +7922,8 @@ void PrepareDatastoreOp::Cleanup() {
       // destroy prepared datastore, otherwise it won't be destroyed until the
       // timer fires (after 20 seconds).
       MOZ_ASSERT(gPreparedDatastores);
-      MOZ_ASSERT(gPreparedDatastores->Get(mDatastoreId));
-
-      nsAutoPtr<PreparedDatastore> preparedDatastore;
-      gPreparedDatastores->Remove(mDatastoreId, &preparedDatastore);
-      MOZ_ASSERT(preparedDatastore);
+      DebugOnly<bool> removed = gPreparedDatastores->Remove(mDatastoreId);
+      MOZ_ASSERT(removed);
     }
 
     // Make sure to release the datastore on this thread.
@@ -8611,7 +8604,7 @@ bool ArchivedOriginScope::HasMatches(
 
     bool operator()(const Prefix& aPrefix) {
       for (auto iter = mHashtable->ConstIter(); !iter.Done(); iter.Next()) {
-        ArchivedOriginInfo* archivedOriginInfo = iter.Data();
+        const auto& archivedOriginInfo = iter.Data();
 
         if (archivedOriginInfo->mOriginNoSuffix == aPrefix.OriginNoSuffix()) {
           return true;
@@ -8623,7 +8616,7 @@ bool ArchivedOriginScope::HasMatches(
 
     bool operator()(const Pattern& aPattern) {
       for (auto iter = mHashtable->ConstIter(); !iter.Done(); iter.Next()) {
-        ArchivedOriginInfo* archivedOriginInfo = iter.Data();
+        const auto& archivedOriginInfo = iter.Data();
 
         if (aPattern.GetPattern().Matches(
                 archivedOriginInfo->mOriginAttributes)) {
@@ -8660,7 +8653,7 @@ void ArchivedOriginScope::RemoveMatches(
 
     void operator()(const Prefix& aPrefix) {
       for (auto iter = mHashtable->Iter(); !iter.Done(); iter.Next()) {
-        ArchivedOriginInfo* archivedOriginInfo = iter.Data();
+        const auto& archivedOriginInfo = iter.Data();
 
         if (archivedOriginInfo->mOriginNoSuffix == aPrefix.OriginNoSuffix()) {
           iter.Remove();
@@ -8670,7 +8663,7 @@ void ArchivedOriginScope::RemoveMatches(
 
     void operator()(const Pattern& aPattern) {
       for (auto iter = mHashtable->Iter(); !iter.Done(); iter.Next()) {
-        ArchivedOriginInfo* archivedOriginInfo = iter.Data();
+        const auto& archivedOriginInfo = iter.Data();
 
         if (aPattern.GetPattern().Matches(
                 archivedOriginInfo->mOriginAttributes)) {
@@ -9212,7 +9205,7 @@ void QuotaClient::AbortOperations(const nsACString& aOrigin) {
   if (gPreparedDatastores) {
     for (auto iter = gPreparedDatastores->ConstIter(); !iter.Done();
          iter.Next()) {
-      PreparedDatastore* preparedDatastore = iter.Data();
+      const auto& preparedDatastore = iter.Data();
       MOZ_ASSERT(preparedDatastore);
 
       if (aOrigin.IsVoid() || preparedDatastore->Origin() == aOrigin) {

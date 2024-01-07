@@ -143,7 +143,7 @@ class nsTreeBodyFrame final : public nsLeafBoxFrame,
   virtual void ScrollbarActivityStarted() const override;
   virtual void ScrollbarActivityStopped() const override;
   virtual bool IsScrollbarOnRight() const override {
-    return (StyleVisibility()->mDirection == NS_STYLE_DIRECTION_LTR);
+    return StyleVisibility()->mDirection == mozilla::StyleDirection::Ltr;
   }
   virtual bool ShouldSuppressScrollbarRepaints() const override {
     return false;

@@ -160,6 +160,8 @@ class BrowsingContext : public nsWrapperCache, public BrowsingContextBase {
 
   bool IsContent() const { return mType == Type::Content; }
 
+  bool IsTopContent() const { return IsContent() && !GetParent(); }
+
   uint64_t Id() const { return mBrowsingContextId; }
 
   BrowsingContext* GetParent() const { return mParent; }

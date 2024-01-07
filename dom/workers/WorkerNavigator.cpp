@@ -47,7 +47,7 @@ WorkerNavigator::WorkerNavigator(const NavigatorProperties& aProperties,
                                  bool aOnline)
     : mProperties(aProperties), mOnline(aOnline) {}
 
-WorkerNavigator::~WorkerNavigator() {}
+WorkerNavigator::~WorkerNavigator() = default;
 
 /* static */
 already_AddRefed<WorkerNavigator> WorkerNavigator::Create(bool aOnLine) {

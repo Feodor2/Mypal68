@@ -5,8 +5,8 @@
 //! A struct to encapsulate all the style fixups and flags propagations
 //! a computed style needs in order for it to adhere to the CSS spec.
 
+use crate::computed_value_flags::ComputedValueFlags;
 use crate::dom::TElement;
-use crate::properties::computed_value_flags::ComputedValueFlags;
 use crate::properties::longhands::display::computed_value::T as Display;
 use crate::properties::longhands::float::computed_value::T as Float;
 use crate::properties::longhands::overflow_x::computed_value::T as Overflow;
@@ -61,43 +61,38 @@ where
 {
     use crate::Atom;
 
-    // FIXME(emilio): This should be an actual static.
-    lazy_static! {
-        static ref SPECIAL_HTML_ELEMENTS: [Atom; 16] = [
-            atom!("br"),
-            atom!("wbr"),
-            atom!("meter"),
-            atom!("progress"),
-            atom!("canvas"),
-            atom!("embed"),
-            atom!("object"),
-            atom!("audio"),
-            atom!("iframe"),
-            atom!("img"),
-            atom!("video"),
-            atom!("frame"),
-            atom!("frameset"),
-            atom!("input"),
-            atom!("textarea"),
-            atom!("select"),
-        ];
-    }
+    const SPECIAL_HTML_ELEMENTS: [Atom; 16] = [
+        atom!("br"),
+        atom!("wbr"),
+        atom!("meter"),
+        atom!("progress"),
+        atom!("canvas"),
+        atom!("embed"),
+        atom!("object"),
+        atom!("audio"),
+        atom!("iframe"),
+        atom!("img"),
+        atom!("video"),
+        atom!("frame"),
+        atom!("frameset"),
+        atom!("input"),
+        atom!("textarea"),
+        atom!("select"),
+    ];
 
     // https://drafts.csswg.org/css-display/#unbox-svg
     //
     // There's a note about "Unknown elements", but there's not a good way to
     // know what that means, or to get that information from here, and no other
     // UA implements this either.
-    lazy_static! {
-        static ref SPECIAL_SVG_ELEMENTS: [Atom; 6] = [
-            atom!("svg"),
-            atom!("a"),
-            atom!("g"),
-            atom!("use"),
-            atom!("tspan"),
-            atom!("textPath"),
-        ];
-    }
+    const SPECIAL_SVG_ELEMENTS: [Atom; 6] = [
+        atom!("svg"),
+        atom!("a"),
+        atom!("g"),
+        atom!("use"),
+        atom!("tspan"),
+        atom!("textPath"),
+    ];
 
     // https://drafts.csswg.org/css-display/#unbox-html
     if element.is_html_element() {
@@ -194,8 +189,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
             };
         }
 
-        let is_root = self.style.pseudo.is_none() && element.map_or(false, |e| e.is_root());
-        blockify_if!(is_root);
+        blockify_if!(self.style.is_root_element);
         if !self.skip_item_display_fixup(element) {
             let parent_display = layout_parent_style.get_box().clone_display();
             blockify_if!(parent_display.is_item_container());
@@ -218,7 +212,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         }
 
         let display = self.style.get_box().clone_display();
-        let blockified_display = display.equivalent_block_display(is_root);
+        let blockified_display = display.equivalent_block_display(self.style.is_root_element);
         if display != blockified_display {
             self.style
                 .mutate_box()
@@ -227,7 +221,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     }
 
     /// Compute a few common flags for both text and element's style.
-    pub fn set_bits(&mut self) {
+    fn set_bits(&mut self) {
         let display = self.style.get_box().clone_display();
 
         if !display.is_contents() &&
@@ -246,6 +240,10 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
                 .add_flags(ComputedValueFlags::IS_IN_PSEUDO_ELEMENT_SUBTREE);
         }
 
+        if self.style.is_root_element {
+            self.style.add_flags(ComputedValueFlags::IS_ROOT_ELEMENT_STYLE);
+        }
+
         #[cfg(feature = "servo-layout-2013")]
         {
             if self.style.get_parent_column().is_multicol() {
@@ -262,6 +260,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     /// Note that this, for Gecko, comes through Servo_ComputedValues_Inherit.
     #[cfg(feature = "gecko")]
     pub fn adjust_for_text(&mut self) {
+        debug_assert!(!self.style.is_root_element);
         self.adjust_for_text_combine_upright();
         self.adjust_for_text_in_ruby();
         self.set_bits();
@@ -286,7 +285,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
         let writing_mode = self.style.get_inherited_box().clone_writing_mode();
         let text_combine_upright = self.style.get_inherited_text().clone_text_combine_upright();
 
-        if writing_mode != WritingMode::HorizontalTb &&
+        if matches!(writing_mode, WritingMode::VerticalRl | WritingMode::VerticalLr) &&
             text_combine_upright == TextCombineUpright::All
         {
             self.style.add_flags(ComputedValueFlags::IS_TEXT_COMBINED);
@@ -552,7 +551,14 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
     }
 
     #[cfg(feature = "gecko")]
-    fn should_suppress_linebreak(&self, layout_parent_style: &ComputedValues) -> bool {
+    fn should_suppress_linebreak<E>(
+        &self,
+        layout_parent_style: &ComputedValues,
+        element: Option<E>,
+    ) -> bool
+    where
+        E: TElement,
+    {
         // Line break suppression should only be propagated to in-flow children.
         if self.style.is_floating() || self.style.is_absolutely_positioned() {
             return false;
@@ -572,11 +578,18 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
             // Ruby base and text are always non-breakable.
             Display::RubyBase | Display::RubyText => true,
             // Ruby base container and text container are breakable.
+            // Non-HTML elements may not form ruby base / text container because
+            // they may not respect ruby-internal display values, so we can't
+            // make them escaped from line break suppression.
             // Note that, when certain HTML tags, e.g. form controls, have ruby
             // level container display type, they could also escape from the
             // line break suppression flag while they shouldn't. However, it is
-            // generally fine since they themselves are non-breakable.
-            Display::RubyBaseContainer | Display::RubyTextContainer => false,
+            // generally fine as far as they can't break the line inside them.
+            Display::RubyBaseContainer | Display::RubyTextContainer
+                if element.map_or(true, |e| e.is_html_element()) =>
+            {
+                false
+            },
             // Anything else is non-breakable if and only if its layout parent
             // has a ruby display type, because any of the ruby boxes can be
             // anonymous.
@@ -598,7 +611,7 @@ impl<'a, 'b: 'a> StyleAdjuster<'a, 'b> {
 
         let self_display = self.style.get_box().clone_display();
         // Check whether line break should be suppressed for this element.
-        if self.should_suppress_linebreak(layout_parent_style) {
+        if self.should_suppress_linebreak(layout_parent_style, element) {
             self.style
                 .add_flags(ComputedValueFlags::SHOULD_SUPPRESS_LINEBREAK);
             // Inlinify the display type if allowed.

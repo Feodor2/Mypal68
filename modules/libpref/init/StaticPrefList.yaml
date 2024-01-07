@@ -136,9 +136,11 @@
 #endif
 
 #ifdef NIGHTLY_BUILD
-#define IS_NIGHTLY_BUILD  true
+#define IS_NIGHTLY_BUILD      true
+#define IS_NOT_NIGHTLY_BUILD  false
 #else
-#define IS_NIGHTLY_BUILD  false
+#define IS_NIGHTLY_BUILD      false
+#define IS_NOT_NIGHTLY_BUILD  true
 #endif
 
 #ifdef MOZILLA_OFFICIAL
@@ -776,6 +778,22 @@
   mirror: always
   rust: true
 
+# This pref dictates whether or not backplates and background images
+# are to be drawn, when in high-contrast mode:
+#   false: do not draw backplates or render background images
+#   true: render background images and draw backplates
+# This condition is only considered when high-contrast mode is enabled
+# in Firefox, ie. when the user has:
+#   (1) mUseAccessibilityMode set to true (Widows high-contrast mode is on)
+#       AND browser.display.document_color_use set to 0
+#       (only with high-contrast themes) OR
+#   (2) browser.display.document_color_use set to 2 (always)
+- name: browser.display.permit_backplate
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+  rust: true
+
 - name: browser.display.focus_ring_on_anything
   type: bool
   value: false
@@ -1405,6 +1423,12 @@
 - name: dom.forms.number.grouping
   type: bool
   value: false
+  mirror: always
+
+# Whether the form.requestSubmit API is enabled
+- name: dom.forms.requestsubmit.enabled
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
   mirror: always
 
 # Whether the Gamepad API is enabled
@@ -2516,18 +2540,6 @@
   value: true
   mirror: always
 
-# Is support for XMLDocument.async enabled?
-- name: dom.xmldocument.async.enabled
-  type: bool
-  value: false
-  mirror: always
-
-# Is support for XMLDocument.load enabled?
-- name: dom.xmldocument.load.enabled
-  type: bool
-  value: false
-  mirror: always
-
 # When this pref is set, parent documents may consider child iframes have
 # loaded while they are still loading.
 - name: dom.cross_origin_iframes_loaded_in_background
@@ -2749,12 +2761,6 @@
   type: bool
   value: false
   mirror: always
-
-- name: full-screen-api.unprefix.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-  rust: true
 
 - name: full-screen-api.allow-trusted-requests-only
   type: bool
@@ -3097,6 +3103,12 @@
 - name: gfx.downloadable_fonts.keep_color_bitmaps
   type: RelaxedAtomicBool
   value: false
+  mirror: always
+
+# Whether font sanitization is performed on the main thread or not.
+- name: gfx.downloadable_fonts.sanitize_omt
+  type: RelaxedAtomicBool
+  value: true
   mirror: always
 
 # Whether to validate OpenType variation tables in fonts.
@@ -4445,6 +4457,12 @@
   value: 4096
   mirror: always
 
+# Whether Constructable Stylesheets are enabled in script.
+- name: layout.css.constructable-stylesheets.enabled
+  type: bool
+  value: false
+  mirror: always
+
 # Make `zoom` a `transform` + `transform-origin` alias.
 - name: layout.css.zoom-transform-hack.enabled
   type: RelaxedAtomicBool
@@ -4469,9 +4487,15 @@
 # Is path() supported in clip-path?
 - name: layout.css.clip-path-path.enabled
   type: RelaxedAtomicBool
-  value: false
+  value: true
   mirror: always
   rust: true
+
+# Are implicit tracks in computed grid templates serialized?
+- name: layout.css.serialize-grid-implicit-tracks
+  type: RelaxedAtomicBool
+  value: @IS_NOT_NIGHTLY_BUILD@
+  mirror: always
 
 # Set the number of device pixels per CSS pixel. A value <= 0 means choose
 # automatically based on user settings for the platform (e.g., "UI scale factor"
@@ -4504,12 +4528,6 @@
 - name: layout.css.text-decoration-skip-ink.enabled
   type: bool
   value: true
-  mirror: always
-
-# Is support for CSS column-span enabled?
-- name: layout.css.column-span.enabled
-  type: bool
-  value: @IS_NIGHTLY_BUILD@
   mirror: always
 
 # Is support for CSS backdrop-filter enabled?
@@ -4700,12 +4718,6 @@
   value: true
   mirror: always
 
-# Is parallel CSS parsing enabled?
-- name: layout.css.parsing.parallel
-  type: bool
-  value: true
-  mirror: always
-
 # Is support for -moz-prefixed animation properties enabled?
 - name: layout.css.prefixes.animations
   type: bool
@@ -4722,6 +4734,12 @@
 - name: layout.css.prefixes.box-sizing
   type: bool
   value: true
+  mirror: always
+
+# Is support for -moz-prefixed multi-column properties (including column-gap) enabled?
+- name: layout.css.prefixes.columns
+  type: bool
+  value: false
   mirror: always
 
 # Is support for -moz-prefixed font feature properties enabled?
@@ -5038,6 +5056,41 @@
   value: true
   mirror: always
 
+# Pref to control how many consecutive scroll-anchoring adjustments (since the
+# most recent user scroll) we'll average, before we consider whether to
+# automatically turn off scroll anchoring. When we hit this threshold, the
+# actual decision to disable also depends on the
+# min-average-adjustment-threshold pref, see below for more details.
+#
+# Zero disables the heuristic.
+- name: layout.css.scroll-anchoring.max-consecutive-adjustments
+  type: uint32_t
+  value: 10
+  mirror: always
+
+# Pref to control whether we should disable scroll anchoring on a scroller
+# where at least max-consecutive-adjustments have happened, and which the
+# average adjustment ends up being less than this number, in CSS pixels.
+#
+# So, for example, given max-consecutive-adjustments=10 and
+# min-average-adjustment-treshold=3, we'll block scroll anchoring if there have
+# been 10 consecutive adjustments without a user scroll or more, and the
+# average offset difference between them amount to less than 3 CSS pixels.
+- name: layout.css.scroll-anchoring.min-average-adjustment-threshold
+  type: uint32_t
+  value: 3
+  mirror: always
+
+# Pref to control disabling scroll anchoring suppression triggers, see
+#
+# https://drafts.csswg.org/css-scroll-anchoring/#suppression-triggers
+#
+# Those triggers should be unnecessary after bug 1561450.
+- name: layout.css.scroll-anchoring.suppressions.enabled
+  type: bool
+  value: true
+  mirror: always
+
 - name: layout.css.scroll-anchoring.highlight
   type: bool
   value: false
@@ -5046,7 +5099,7 @@
 # Are shared memory User Agent style sheets enabled?
 - name: layout.css.shared-memory-ua-sheets.enabled
   type: bool
-  value: false
+  value: true
   mirror: always
 
 - name: layout.css.shadow-parts.enabled

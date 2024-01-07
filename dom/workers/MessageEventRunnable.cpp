@@ -19,7 +19,7 @@ MessageEventRunnable::MessageEventRunnable(WorkerPrivate* aWorkerPrivate,
                                            TargetAndBusyBehavior aBehavior)
     : WorkerDebuggeeRunnable(aWorkerPrivate, aBehavior),
       StructuredCloneHolder(CloningSupported, TransferringSupported,
-                            StructuredCloneScope::SameProcessDifferentThread) {}
+                            StructuredCloneScope::SameProcess) {}
 
 bool MessageEventRunnable::DispatchDOMEvent(JSContext* aCx,
                                             WorkerPrivate* aWorkerPrivate,

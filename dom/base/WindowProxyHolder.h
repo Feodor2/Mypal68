@@ -31,7 +31,7 @@ class WindowProxyHolder {
   explicit WindowProxyHolder(BrowsingContext* aBC) : mBrowsingContext(aBC) {
     MOZ_ASSERT(mBrowsingContext, "Don't set WindowProxyHolder to null.");
   }
-  explicit WindowProxyHolder(already_AddRefed<BrowsingContext>&& aBC)
+  explicit WindowProxyHolder(RefPtr<BrowsingContext>&& aBC)
       : mBrowsingContext(std::move(aBC)) {
     MOZ_ASSERT(mBrowsingContext, "Don't set WindowProxyHolder to null.");
   }
@@ -40,7 +40,7 @@ class WindowProxyHolder {
     MOZ_ASSERT(mBrowsingContext, "Don't set WindowProxyHolder to null.");
     return *this;
   }
-  WindowProxyHolder& operator=(already_AddRefed<BrowsingContext>&& aBC) {
+  WindowProxyHolder& operator=(RefPtr<BrowsingContext>&& aBC) {
     mBrowsingContext = std::move(aBC);
     MOZ_ASSERT(mBrowsingContext, "Don't set WindowProxyHolder to null.");
     return *this;

@@ -1091,6 +1091,8 @@ bitflags! {
         const GLYPH_FLASHING = 1 << 25;
         /// The profiler only displays information that is out of the ordinary.
         const SMART_PROFILER        = 1 << 26;
+        /// Dynamically control whether picture caching is enabled.
+        const DISABLE_PICTURE_CACHING = 1 << 27;
     }
 }
 

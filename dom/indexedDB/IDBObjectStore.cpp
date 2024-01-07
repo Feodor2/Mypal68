@@ -191,7 +191,8 @@ RefPtr<IDBRequest> GenerateRequest(JSContext* aCx,
 
 bool StructuredCloneWriteCallback(JSContext* aCx,
                                   JSStructuredCloneWriter* aWriter,
-                                  JS::Handle<JSObject*> aObj, void* aClosure) {
+                                  JS::Handle<JSObject*> aObj,
+                                  bool* aSameProcessRequired, void* aClosure) {
   MOZ_ASSERT(aCx);
   MOZ_ASSERT(aWriter);
   MOZ_ASSERT(aClosure);
@@ -350,6 +351,7 @@ bool StructuredCloneWriteCallback(JSContext* aCx,
 bool CopyingStructuredCloneWriteCallback(JSContext* aCx,
                                          JSStructuredCloneWriter* aWriter,
                                          JS::Handle<JSObject*> aObj,
+                                         bool* aSameProcessRequired,
                                          void* aClosure) {
   MOZ_ASSERT(aCx);
   MOZ_ASSERT(aWriter);
@@ -1547,10 +1549,10 @@ RefPtr<IDBRequest> IDBObjectStore::AddOrPut(JSContext* aCx,
 
   if (messageSize > kMaxMessageSize) {
     IDB_REPORT_INTERNAL_ERR();
-    aRv.ThrowDOMException(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR,
-                          nsPrintfCString("The serialized value is too large"
-                                          " (size=%zu bytes, max=%zu bytes).",
-                                          messageSize, kMaxMessageSize));
+    aRv.ThrowUnknownError(
+        nsPrintfCString("The serialized value is too large"
+                        " (size=%zu bytes, max=%zu bytes).",
+                        messageSize, kMaxMessageSize));
     return nullptr;
   }
 
@@ -2139,11 +2141,9 @@ RefPtr<IDBIndex> IDBObjectStore::CreateIndex(
       indexes.cbegin(), end,
       [&aName](const auto& index) { return aName == index.name(); });
   if (foundIt != end) {
-    aRv.ThrowDOMException(
-        NS_ERROR_DOM_INDEXEDDB_CONSTRAINT_ERR,
-        nsPrintfCString("Index named '%s' already exists at index '%zu'",
-                        NS_ConvertUTF16toUTF8(aName).get(),
-                        foundIt.GetIndex()));
+    aRv.ThrowConstraintError(nsPrintfCString(
+        "Index named '%s' already exists at index '%zu'",
+        NS_ConvertUTF16toUTF8(aName).get(), foundIt.GetIndex()));
     return nullptr;
   }
 

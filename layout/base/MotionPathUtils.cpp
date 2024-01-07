@@ -328,7 +328,7 @@ static CSSCoord ComputeRayUsedDistance(const RayFunction& aRay,
 }
 
 /* static */
-Maybe<MotionPathData> MotionPathUtils::ResolveMotionPath(
+Maybe<ResolvedMotionPathData> MotionPathUtils::ResolveMotionPath(
     const OffsetPathData& aPath, const LengthPercentage& aDistance,
     const StyleOffsetRotate& aRotate, const StylePositionOrAuto& aAnchor,
     const CSSPoint& aTransformOrigin, const CSSSize& aFrameSize,
@@ -429,8 +429,8 @@ Maybe<MotionPathData> MotionPathUtils::ResolveMotionPath(
     anchorPoint.y += aFramePosition->y;
   }
 
-  return Some(
-      MotionPathData{point - anchorPoint.ToUnknownPoint(), angle, shift});
+  return Some(ResolvedMotionPathData{point - anchorPoint.ToUnknownPoint(),
+                                     angle, shift});
 }
 
 static OffsetPathData GenerateOffsetPathData(const nsIFrame* aFrame) {
@@ -452,7 +452,7 @@ static OffsetPathData GenerateOffsetPathData(const nsIFrame* aFrame) {
 }
 
 /* static*/
-Maybe<MotionPathData> MotionPathUtils::ResolveMotionPath(
+Maybe<ResolvedMotionPathData> MotionPathUtils::ResolveMotionPath(
     const nsIFrame* aFrame) {
   MOZ_ASSERT(aFrame);
 
@@ -488,7 +488,7 @@ Maybe<MotionPathData> MotionPathUtils::ResolveMotionPath(
 }
 
 static OffsetPathData GenerateOffsetPathData(
-    const StyleOffsetPath& aPath, const layers::TransformData& aTransformData,
+    const StyleOffsetPath& aPath, const RayReferenceData& aRayReferenceData,
     gfx::Path* aCachedMotionPath) {
   switch (aPath.tag) {
     case StyleOffsetPath::Tag::Path: {
@@ -504,8 +504,7 @@ static OffsetPathData GenerateOffsetPathData(
       return OffsetPathData::Path(svgPathData, path.forget());
     }
     case StyleOffsetPath::Tag::Ray:
-      return OffsetPathData::Ray(aPath.AsRay(),
-                                 aTransformData.motionPathRayReferenceData());
+      return OffsetPathData::Ray(aPath.AsRay(), aRayReferenceData);
     case StyleOffsetPath::Tag::None:
     default:
       return OffsetPathData::None();
@@ -513,108 +512,40 @@ static OffsetPathData GenerateOffsetPathData(
 }
 
 /* static */
-Maybe<MotionPathData> MotionPathUtils::ResolveMotionPath(
+Maybe<ResolvedMotionPathData> MotionPathUtils::ResolveMotionPath(
     const StyleOffsetPath* aPath, const StyleLengthPercentage* aDistance,
     const StyleOffsetRotate* aRotate, const StylePositionOrAuto* aAnchor,
-    const layers::TransformData& aTransformData, gfx::Path* aCachedMotionPath) {
+    const Maybe<layers::MotionPathData>& aMotionPathData,
+    const CSSSize& aFrameSize, gfx::Path* aCachedMotionPath) {
   if (!aPath) {
     return Nothing();
   }
 
+  MOZ_ASSERT(aMotionPathData);
+
   auto zeroOffsetDistance = LengthPercentage::Zero();
   auto autoOffsetRotate = StyleOffsetRotate{true, StyleAngle::Zero()};
   auto autoOffsetAnchor = StylePositionOrAuto::Auto();
-  Maybe<CSSPoint> framePosition =
-      Some(aTransformData.motionPathFramePosition());
+  Maybe<CSSPoint> framePosition = Some(aMotionPathData->framePosition());
 
   return MotionPathUtils::ResolveMotionPath(
-      GenerateOffsetPathData(*aPath, aTransformData, aCachedMotionPath),
+      GenerateOffsetPathData(*aPath, aMotionPathData->rayReferenceData(),
+                             aCachedMotionPath),
       aDistance ? *aDistance : zeroOffsetDistance,
       aRotate ? *aRotate : autoOffsetRotate,
-      aAnchor ? *aAnchor : autoOffsetAnchor, aTransformData.motionPathOrigin(),
-      CSSSize::FromAppUnits(aTransformData.bounds().Size()),
+      aAnchor ? *aAnchor : autoOffsetAnchor, aMotionPathData->origin(),
+      aFrameSize,
       // The frame position is (0, 0) if we don't have to tweak, so using
       // Some() is fine.
-      Some(aTransformData.motionPathFramePosition()));
+      Some(aMotionPathData->framePosition()));
 }
 
 /* static */
-nsTArray<layers::PathCommand>
-MotionPathUtils::NormalizeAndConvertToPathCommands(
+StyleSVGPathData MotionPathUtils::NormalizeSVGPathData(
     const StyleSVGPathData& aPath) {
-  // Normalization
   StyleSVGPathData n;
   Servo_SVGPathData_Normalize(&aPath, &n);
-
-  auto asPoint = [](const StyleCoordPair& aPair) {
-    return gfx::Point(aPair._0, aPair._1);
-  };
-
-  // Converstion
-  nsTArray<layers::PathCommand> commands;
-  for (const StylePathCommand& command : n._0.AsSpan()) {
-    switch (command.tag) {
-      case StylePathCommand::Tag::ClosePath:
-        commands.AppendElement(mozilla::null_t());
-        break;
-      case StylePathCommand::Tag::MoveTo: {
-        const auto& p = command.AsMoveTo().point;
-        commands.AppendElement(layers::MoveTo(asPoint(p)));
-        break;
-      }
-      case StylePathCommand::Tag::LineTo: {
-        const auto& p = command.AsLineTo().point;
-        commands.AppendElement(layers::LineTo(asPoint(p)));
-        break;
-      }
-      case StylePathCommand::Tag::HorizontalLineTo: {
-        const auto& h = command.AsHorizontalLineTo();
-        commands.AppendElement(layers::HorizontalLineTo(h.x));
-        break;
-      }
-      case StylePathCommand::Tag::VerticalLineTo: {
-        const auto& v = command.AsVerticalLineTo();
-        commands.AppendElement(layers::VerticalLineTo(v.y));
-        break;
-      }
-      case StylePathCommand::Tag::CurveTo: {
-        const auto& curve = command.AsCurveTo();
-        commands.AppendElement(layers::CurveTo(asPoint(curve.control1),
-                                               asPoint(curve.control2),
-                                               asPoint(curve.point)));
-        break;
-      }
-      case StylePathCommand::Tag::SmoothCurveTo: {
-        const auto& curve = command.AsSmoothCurveTo();
-        commands.AppendElement(layers::SmoothCurveTo(asPoint(curve.control2),
-                                                     asPoint(curve.point)));
-        break;
-      }
-      case StylePathCommand::Tag::QuadBezierCurveTo: {
-        const auto& curve = command.AsQuadBezierCurveTo();
-        commands.AppendElement(layers::QuadBezierCurveTo(
-            asPoint(curve.control1), asPoint(curve.point)));
-        break;
-      }
-      case StylePathCommand::Tag::SmoothQuadBezierCurveTo: {
-        const auto& curve = command.AsSmoothCurveTo();
-        commands.AppendElement(
-            layers::SmoothQuadBezierCurveTo(asPoint(curve.point)));
-        break;
-      }
-      case StylePathCommand::Tag::EllipticalArc: {
-        const auto& arc = command.AsEllipticalArc();
-        gfx::Point point = asPoint(arc.point);
-        commands.AppendElement(layers::EllipticalArc(arc.rx, arc.ry, arc.angle,
-                                                     arc.large_arc_flag._0,
-                                                     arc.sweep_flag._0, point));
-        break;
-      }
-      case StylePathCommand::Tag::Unknown:
-        MOZ_ASSERT_UNREACHABLE("Unsupported path command");
-    }
-  }
-  return commands;
+  return n;
 }
 
 /* static */

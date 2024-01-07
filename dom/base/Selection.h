@@ -157,17 +157,26 @@ class Selection final : public nsSupportsWeakReference,
                           ScrollAxis aVertical = ScrollAxis(),
                           ScrollAxis aHorizontal = ScrollAxis(),
                           int32_t aFlags = 0);
-  nsresult SubtractRange(RangeData* aRange, nsRange* aSubtract,
-                         nsTArray<RangeData>* aOutput);
+  static nsresult SubtractRange(RangeData* aRange, nsRange* aSubtract,
+                                nsTArray<RangeData>* aOutput);
+
+ private:
   /**
-   * AddItem adds aRange to this Selection.  If mUserInitiated is true,
+   * Adds aRange to this Selection.  If mUserInitiated is true,
    * then aRange is first scanned for -moz-user-select:none nodes and split up
    * into multiple ranges to exclude those before adding the resulting ranges
    * to this Selection.
+   *
+   * @param aOutIndex points to the range last added, if at least one was added.
+   *                  If aRange is already contained, it points to the range
+   *                  containing it. -1 if mRanges was empty and no range was
+   *                  added.
    */
-  nsresult AddItem(nsRange* aRange, int32_t* aOutIndex,
-                   bool aNoStartSelect = false);
-  nsresult RemoveItem(nsRange* aRange);
+  nsresult AddRangesForSelectableNodes(nsRange* aRange, int32_t* aOutIndex,
+                                       bool aNoStartSelect = false);
+  nsresult RemoveRangeInternal(nsRange& aRange);
+
+ public:
   nsresult RemoveCollapsedRanges();
   nsresult Clear(nsPresContext* aPresContext);
   nsresult Collapse(nsINode* aContainer, int32_t aOffset) {
@@ -185,6 +194,9 @@ class Selection final : public nsSupportsWeakReference,
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
   nsresult Extend(nsINode* aContainer, int32_t aOffset);
 
+  /**
+   * See mRanges.
+   */
   nsRange* GetRangeAt(int32_t aIndex) const;
 
   // Get the anchor-to-focus range if we don't care which end is
@@ -225,7 +237,9 @@ class Selection final : public nsSupportsWeakReference,
   }
   uint32_t AnchorOffset() const {
     const RangeBoundary& anchor = AnchorRef();
-    return anchor.IsSet() ? anchor.Offset() : 0;
+    const Maybe<uint32_t> offset =
+        anchor.Offset(RangeBoundary::OffsetFilter::kValidOffsets);
+    return offset ? *offset : 0;
   }
   nsINode* GetFocusNode() const {
     const RangeBoundary& focus = FocusRef();
@@ -233,7 +247,9 @@ class Selection final : public nsSupportsWeakReference,
   }
   uint32_t FocusOffset() const {
     const RangeBoundary& focus = FocusRef();
-    return focus.IsSet() ? focus.Offset() : 0;
+    const Maybe<uint32_t> offset =
+        focus.Offset(RangeBoundary::OffsetFilter::kValidOffsets);
+    return offset ? *offset : 0;
   }
 
   nsIContent* GetChildAtAnchorOffset() {
@@ -498,10 +514,7 @@ class Selection final : public nsSupportsWeakReference,
   MOZ_CAN_RUN_SCRIPT
   void SetBaseAndExtent(nsINode& aAnchorNode, uint32_t aAnchorOffset,
                         nsINode& aFocusNode, uint32_t aFocusOffset,
-                        ErrorResult& aRv) {
-    SetBaseAndExtent(RawRangeBoundary(&aAnchorNode, aAnchorOffset),
-                     RawRangeBoundary(&aFocusNode, aFocusOffset), aRv);
-  }
+                        ErrorResult& aRv);
   MOZ_CAN_RUN_SCRIPT
   void SetBaseAndExtent(const RawRangeBoundary& aAnchorRef,
                         const RawRangeBoundary& aFocusRef, ErrorResult& aRv) {
@@ -693,9 +706,15 @@ class Selection final : public nsSupportsWeakReference,
    * nothing.
    */
   void SetAnchorFocusRange(int32_t aIndex);
-  void SelectFramesForContent(nsIContent* aContent, bool aSelected);
-  nsresult SelectAllFramesForContent(PostContentIterator& aPostOrderIter,
-                                     nsIContent* aContent, bool aSelected);
+  void SelectFramesOf(nsIContent* aContent, bool aSelected) const;
+
+  /**
+   * https://dom.spec.whatwg.org/#concept-tree-inclusive-descendant.
+   */
+  nsresult SelectFramesOfInclusiveDescendantsOfContent(
+      PostContentIterator& aPostOrderIter, nsIContent* aContent,
+      bool aSelected) const;
+
   nsresult SelectFrames(nsPresContext* aPresContext, nsRange* aRange,
                         bool aSelect);
 
@@ -716,30 +735,60 @@ class Selection final : public nsSupportsWeakReference,
   nsresult GetTableCellLocationFromRange(nsRange* aRange,
                                          TableSelection* aSelectionType,
                                          int32_t* aRow, int32_t* aCol);
-  nsresult AddTableCellRange(nsRange* aRange, bool* aDidAddRange,
-                             int32_t* aOutIndex);
-
-  nsresult FindInsertionPoint(nsTArray<RangeData>* aElementArray,
-                              nsINode* aPointNode, int32_t aPointOffset,
-                              nsresult (*aComparator)(nsINode*, int32_t,
-                                                      nsRange*, int32_t*),
-                              int32_t* aPoint);
-  bool EqualsRangeAtPoint(nsINode* aBeginNode, int32_t aBeginOffset,
-                          nsINode* aEndNode, int32_t aEndOffset,
-                          int32_t aRangeIndex);
-  nsresult GetIndicesForInterval(nsINode* aBeginNode, int32_t aBeginOffset,
-                                 nsINode* aEndNode, int32_t aEndOffset,
-                                 bool aAllowAdjacent, int32_t* aStartIndex,
-                                 int32_t* aEndIndex);
-  RangeData* FindRangeData(nsRange* aRange);
-
-  void UserSelectRangesToAdd(nsRange* aItem,
-                             nsTArray<RefPtr<nsRange>>& rangesToAdd);
 
   /**
-   * Helper method for AddItem.
+   * @param aOutIndex points to the index of the range in mRanges. If
+   *                  aDidAddRange is true, it is in [0, mRanges.Length()).
    */
-  nsresult AddItemInternal(nsRange* aRange, int32_t* aOutIndex);
+  nsresult MaybeAddTableCellRange(nsRange* aRange, bool* aDidAddRange,
+                                  int32_t* aOutIndex);
+
+  /**
+   * Binary searches the given sorted array of ranges for the insertion point
+   * for the given node/offset. The given comparator is used, and the index
+   * where the point should appear in the array is placed in *aInsertionPoint.
+
+   * If there is an item in the array equal to the input point (aPointNode,
+   * aPointOffset), we will return the index of this item.
+   *
+   * @param aInsertionPoint can be in [0, `aElementArray->Length()`].
+   */
+  static nsresult FindInsertionPoint(
+      const nsTArray<RangeData>* aElementArray, const nsINode* aPointNode,
+      int32_t aPointOffset,
+      nsresult (*aComparator)(const nsINode*, int32_t, const nsRange*,
+                              int32_t*),
+      int32_t* aInsertionPoint);
+
+  bool HasEqualRangeBoundariesAt(const nsRange& aRange,
+                                 int32_t aRangeIndex) const;
+  /**
+   * Works on the same principle as GetRangesForIntervalArray, however
+   * instead this returns the indices into mRanges between which the
+   * overlapping ranges lie.
+   *
+   * @param aStartIndex will be less or equal than aEndIndex.
+   * @param aEndIndex can be in [-1, mRanges.Length()].
+   */
+  nsresult GetIndicesForInterval(const nsINode* aBeginNode,
+                                 int32_t aBeginOffset, const nsINode* aEndNode,
+                                 int32_t aEndOffset, bool aAllowAdjacent,
+                                 int32_t& aStartIndex,
+                                 int32_t& aEndIndex) const;
+  RangeData* FindRangeData(nsRange* aRange);
+
+  static void UserSelectRangesToAdd(nsRange* aItem,
+                                    nsTArray<RefPtr<nsRange>>& rangesToAdd);
+
+  /**
+   * Preserves the sorting and disjunctiveness of mRanges.
+   *
+   * @param aOutIndex will point to the index of the added range, or if aRange
+   *                  is already contained, to the one containing it. Hence
+   *                  it'll always be in [0, mRanges.Length()).
+   */
+  nsresult MaybeAddRangeAndTruncateOverlaps(nsRange* aRange,
+                                            int32_t* aOutIndex);
 
   Document* GetDocument() const;
   nsPIDOMWindowOuter* GetWindow() const;

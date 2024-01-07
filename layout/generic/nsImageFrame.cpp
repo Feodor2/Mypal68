@@ -14,6 +14,8 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Encoding.h"
 #include "mozilla/EventStates.h"
+#include "mozilla/HTMLEditor.h"
+#include "mozilla/dom/ImageTracker.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Helpers.h"
 #include "mozilla/gfx/PathHelpers.h"
@@ -267,12 +269,11 @@ void nsImageFrame::DestroyFrom(nsIFrame* aDestructRoot,
     // deregister with our refresh driver.
     imageLoader->FrameDestroyed(this);
     imageLoader->RemoveNativeObserver(mListener);
-  } else {
-    if (mContentURLRequest) {
-      nsLayoutUtils::DeregisterImageRequest(PresContext(), mContentURLRequest,
-                                            &mContentURLRequestRegistered);
-      mContentURLRequest->Cancel(NS_BINDING_ABORTED);
-    }
+  } else if (mContentURLRequest) {
+    PresContext()->Document()->ImageTracker()->Remove(mContentURLRequest);
+    nsLayoutUtils::DeregisterImageRequest(PresContext(), mContentURLRequest,
+                                          &mContentURLRequestRegistered);
+    mContentURLRequest->Cancel(NS_BINDING_ABORTED);
   }
 
   // set the frame to null so we don't send messages to a dead object.
@@ -330,7 +331,9 @@ void nsImageFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
   mListener = new nsImageListener(this);
 
-  if (!gIconLoad) LoadIcons(PresContext());
+  if (!gIconLoad) {
+    LoadIcons(PresContext());
+  }
 
   if (mKind == Kind::ImageElement) {
     nsCOMPtr<nsIImageLoadingContent> imageLoader = do_QueryInterface(aContent);
@@ -359,11 +362,12 @@ void nsImageFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
       contentIndex = static_cast<GeneratedImageContent*>(aContent)->Index();
     }
     MOZ_RELEASE_ASSERT(contentIndex < styleContent->ContentCount());
-    MOZ_RELEASE_ASSERT(styleContent->ContentAt(contentIndex).GetType() ==
-                       StyleContentType::Image);
-    if (auto* proxy = styleContent->ContentAt(contentIndex).GetImage()) {
-      proxy->Clone(mListener, mContent->OwnerDoc(),
-                   getter_AddRefs(mContentURLRequest));
+    MOZ_RELEASE_ASSERT(styleContent->ContentAt(contentIndex).IsUrl());
+    auto& url = const_cast<StyleComputedUrl&>(
+        styleContent->ContentAt(contentIndex).AsUrl());
+    Document* doc = PresContext()->Document();
+    if (RefPtr<imgRequestProxy> proxy = url.LoadImage(*doc)) {
+      proxy->Clone(mListener, doc, getter_AddRefs(mContentURLRequest));
       SetupForContentURLRequest();
     }
   }
@@ -387,6 +391,9 @@ void nsImageFrame::SetupForContentURLRequest() {
   if (!mContentURLRequest) {
     return;
   }
+
+  // We're not using nsStyleImageRequest, so manually track the image.
+  PresContext()->Document()->ImageTracker()->Add(mContentURLRequest);
 
   uint32_t status = 0;
   nsresult rv = mContentURLRequest->GetImageStatus(&status);
@@ -602,8 +609,7 @@ static bool HasAltText(const Element& aElement) {
   }
 
   MOZ_ASSERT(aElement.IsHTMLElement(nsGkAtoms::img));
-  nsAutoString altText;
-  return aElement.GetAttr(nsGkAtoms::alt, altText) && !altText.IsEmpty();
+  return aElement.HasNonEmptyAttr(nsGkAtoms::alt);
 }
 
 // Check if we want to use an image frame or just let the frame constructor make
@@ -893,7 +899,6 @@ void nsImageFrame::EnsureIntrinsicSizeAndRatio() {
   UpdateIntrinsicRatio(mImage);
 }
 
-/* virtual */
 LogicalSize nsImageFrame::ComputeSize(
     gfxContext* aRenderingContext, WritingMode aWM, const LogicalSize& aCBSize,
     nscoord aAvailableISize, const LogicalSize& aMargin,
@@ -929,7 +934,6 @@ nscoord nsImageFrame::GetContinuationOffset() const {
   return offset;
 }
 
-/* virtual */
 nscoord nsImageFrame::GetMinISize(gfxContext* aRenderingContext) {
   // XXX The caller doesn't account for constraints of the block-size,
   // min-block-size, and max-block-size properties.
@@ -941,7 +945,6 @@ nscoord nsImageFrame::GetMinISize(gfxContext* aRenderingContext) {
   return iSize.valueOr(0);
 }
 
-/* virtual */
 nscoord nsImageFrame::GetPrefISize(gfxContext* aRenderingContext) {
   // XXX The caller doesn't account for constraints of the block-size,
   // min-block-size, and max-block-size properties.
@@ -953,12 +956,6 @@ nscoord nsImageFrame::GetPrefISize(gfxContext* aRenderingContext) {
   // convert from normal twips to scaled twips (printing...)
   return iSize.valueOr(0);
 }
-
-/* virtual */
-IntrinsicSize nsImageFrame::GetIntrinsicSize() { return mIntrinsicSize; }
-
-/* virtual */
-AspectRatio nsImageFrame::GetIntrinsicRatio() { return mIntrinsicRatio; }
 
 void nsImageFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aMetrics,
                           const ReflowInput& aReflowInput,
@@ -1249,7 +1246,7 @@ void nsImageFrame::DisplayAltText(nsPresContext* aPresContext,
 struct nsRecessedBorder : public nsStyleBorder {
   nsRecessedBorder(nscoord aBorderWidth, nsPresContext* aPresContext)
       : nsStyleBorder(*aPresContext->Document()) {
-    NS_FOR_CSS_SIDES(side) {
+    for (const auto side : mozilla::AllPhysicalSides()) {
       BorderColorFor(side) = StyleColor::Black();
       mBorder.Side(side) = aBorderWidth;
       // Note: use SetBorderStyle here because we want to affect
@@ -1264,14 +1261,14 @@ class nsDisplayAltFeedback final : public nsPaintedDisplayItem {
   nsDisplayAltFeedback(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
       : nsPaintedDisplayItem(aBuilder, aFrame) {}
 
-  virtual nsDisplayItemGeometry* AllocateGeometry(
-      nsDisplayListBuilder* aBuilder) override {
+  nsDisplayItemGeometry* AllocateGeometry(
+      nsDisplayListBuilder* aBuilder) final {
     return new nsDisplayItemGenericImageGeometry(this, aBuilder);
   }
 
-  virtual void ComputeInvalidationRegion(
-      nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
-      nsRegion* aInvalidRegion) const override {
+  void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
+                                 const nsDisplayItemGeometry* aGeometry,
+                                 nsRegion* aInvalidRegion) const final {
     auto geometry =
         static_cast<const nsDisplayItemGenericImageGeometry*>(aGeometry);
 
@@ -1285,14 +1282,12 @@ class nsDisplayAltFeedback final : public nsPaintedDisplayItem {
                                              aInvalidRegion);
   }
 
-  virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
-                           bool* aSnap) const override {
+  nsRect GetBounds(nsDisplayListBuilder* aBuilder, bool* aSnap) const final {
     *aSnap = false;
     return mFrame->GetVisualOverflowRectRelativeToSelf() + ToReferenceFrame();
   }
 
-  virtual void Paint(nsDisplayListBuilder* aBuilder,
-                     gfxContext* aCtx) override {
+  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) final {
     // Always sync decode, because these icons are UI, and since they're not
     // discardable we'll pay the price of sync decoding at most once.
     uint32_t flags = imgIContainer::FLAG_SYNC_DECODE;
@@ -1309,7 +1304,7 @@ class nsDisplayAltFeedback final : public nsPaintedDisplayItem {
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
-      nsDisplayListBuilder* aDisplayListBuilder) override {
+      nsDisplayListBuilder* aDisplayListBuilder) final {
     uint32_t flags = imgIContainer::FLAG_ASYNC_NOTIFY;
     nsImageFrame* f = static_cast<nsImageFrame*>(mFrame);
     ImgDrawResult result = f->DisplayAltFeedbackWithoutLayer(
@@ -1566,14 +1561,10 @@ ImgDrawResult nsImageFrame::DisplayAltFeedbackWithoutLayer(
       inner, PresContext()->AppUnitsPerDevPixel());
   auto wrBounds = wr::ToLayoutRect(bounds);
 
-  // Draw image
-  ImgDrawResult result = ImgDrawResult::NOT_READY;
-
   // Check if we should display image placeholders
-  if (!ShouldShowBrokenImageIcon() || !gIconLoad->mPrefShowPlaceholders ||
-      (isLoading && !gIconLoad->mPrefShowLoadingPlaceholder)) {
-    result = ImgDrawResult::SUCCESS;
-  } else {
+  if (ShouldShowBrokenImageIcon() && gIconLoad->mPrefShowPlaceholders &&
+      (!isLoading || gIconLoad->mPrefShowLoadingPlaceholder)) {
+    ImgDrawResult result = ImgDrawResult::NOT_READY;
     nscoord size = nsPresContext::CSSPixelsToAppUnits(ICON_SIZE);
     imgIRequest* request = isLoading ? nsImageFrame::gIconLoad->mLoadingImage
                                      : nsImageFrame::gIconLoad->mBrokenImage;
@@ -1822,7 +1813,6 @@ LayerState nsDisplayImage::GetLayerState(
   return LayerState::LAYER_ACTIVE;
 }
 
-/* virtual */
 nsRegion nsDisplayImage::GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
                                          bool* aSnap) const {
   *aSnap = false;
@@ -2611,7 +2601,6 @@ static bool IsInAutoWidthTableCellForQuirk(nsIFrame* aFrame) {
   return false;
 }
 
-/* virtual */
 void nsImageFrame::AddInlineMinISize(gfxContext* aRenderingContext,
                                      nsIFrame::InlineMinISizeData* aData) {
   nscoord isize = nsLayoutUtils::IntrinsicForContainer(

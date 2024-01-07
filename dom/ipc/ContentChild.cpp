@@ -143,7 +143,7 @@
 #include "SandboxHal.h"
 #include "nsDebugImpl.h"
 #include "nsHashPropertyBag.h"
-#include "nsLayoutStylesheetCache.h"
+#include "mozilla/GlobalStyleSheetCache.h"
 #include "nsThreadManager.h"
 #include "nsAnonymousTemporaryFile.h"
 #include "nsClipboardProxy.h"
@@ -195,11 +195,6 @@
 
 #if defined(XP_MACOSX)
 #  include "nsMacUtilsImpl.h"
-#  include <CoreServices/CoreServices.h>
-// Info.plist key associated with the developer repo path
-#  define MAC_DEV_REPO_KEY "MozillaDeveloperRepoPath"
-// Info.plist key associated with the developer repo object directory
-#  define MAC_DEV_OBJ_KEY "MozillaDeveloperObjPath"
 #endif /* XP_MACOSX */
 
 #ifdef MOZ_X11
@@ -1222,7 +1217,7 @@ void ContentChild::InitSharedUASheets(const Maybe<SharedMemoryHandle>& aHandle,
   // Map the shared memory storing the user agent style sheets.  Do this as
   // early as possible to maximize the chance of being able to map at the
   // address we want.
-  nsLayoutStylesheetCache::SetSharedMemory(*aHandle, aAddress);
+  GlobalStyleSheetCache::SetSharedMemory(*aHandle, aAddress);
 }
 
 void ContentChild::InitXPCOM(
@@ -1305,7 +1300,7 @@ void ContentChild::InitXPCOM(
 
   // The stylesheet cache is not ready yet. Store this URL for future use.
   nsCOMPtr<nsIURI> ucsURL = DeserializeURI(aXPCOMInit.userContentSheetURL());
-  nsLayoutStylesheetCache::SetUserContentCSSURL(ucsURL);
+  GlobalStyleSheetCache::SetUserContentCSSURL(ucsURL);
 
   GfxInfoBase::SetFeatureStatus(aXPCOMInit.gfxFeatureStatus());
 
@@ -1631,7 +1626,7 @@ static bool StartMacOSContentSandbox() {
 
   if (mozilla::IsDevelopmentBuild()) {
     nsCOMPtr<nsIFile> repoDir;
-    rv = mozilla::GetRepoDir(getter_AddRefs(repoDir));
+    rv = nsMacUtilsImpl::GetRepoDir(getter_AddRefs(repoDir));
     if (NS_FAILED(rv)) {
       MOZ_CRASH("Failed to get path to repo dir");
     }
@@ -1640,7 +1635,7 @@ static bool StartMacOSContentSandbox() {
     info.testingReadPath3.assign(repoDirPath.get());
 
     nsCOMPtr<nsIFile> objDir;
-    rv = mozilla::GetObjDir(getter_AddRefs(objDir));
+    rv = nsMacUtilsImpl::GetObjDir(getter_AddRefs(objDir));
     if (NS_FAILED(rv)) {
       MOZ_CRASH("Failed to get path to build object dir");
     }
@@ -1824,8 +1819,7 @@ mozilla::ipc::IPCResult ContentChild::RecvConstructBrowser(
   return IPC_OK();
 }
 
-void ContentChild::GetAvailableDictionaries(
-    InfallibleTArray<nsString>& aDictionaries) {
+void ContentChild::GetAvailableDictionaries(nsTArray<nsString>& aDictionaries) {
   aDictionaries = mAvailableDictionaries;
 }
 
@@ -2104,9 +2098,9 @@ bool ContentChild::DeallocPWebrtcGlobalChild(PWebrtcGlobalChild* aActor) {
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvRegisterChrome(
-    InfallibleTArray<ChromePackage>&& packages,
-    InfallibleTArray<SubstitutionMapping>&& resources,
-    InfallibleTArray<OverrideMapping>&& overrides, const nsCString& locale,
+    nsTArray<ChromePackage>&& packages,
+    nsTArray<SubstitutionMapping>&& resources,
+    nsTArray<OverrideMapping>&& overrides, const nsCString& locale,
     const bool& reset) {
   nsCOMPtr<nsIChromeRegistry> registrySvc = nsChromeRegistry::GetService();
   nsChromeRegistryContent* chromeRegistry =
@@ -2352,7 +2346,7 @@ mozilla::ipc::IPCResult ContentChild::RecvLoadProcessScript(
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvAsyncMessage(
-    const nsString& aMsg, InfallibleTArray<CpowEntry>&& aCpows,
+    const nsString& aMsg, nsTArray<CpowEntry>&& aCpows,
     const IPC::Principal& aPrincipal, const ClonedMessageData& aData) {
   AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING("ContentChild::RecvAsyncMessage",
                                              OTHER, aMsg);
@@ -2432,14 +2426,14 @@ mozilla::ipc::IPCResult ContentChild::RecvGeolocationError(
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvUpdateDictionaryList(
-    InfallibleTArray<nsString>&& aDictionaries) {
+    nsTArray<nsString>&& aDictionaries) {
   mAvailableDictionaries = aDictionaries;
   mozInlineSpellChecker::UpdateCanEnableInlineSpellChecking();
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult ContentChild::RecvUpdateFontList(
-    InfallibleTArray<SystemFontListEntry>&& aFontList) {
+    nsTArray<SystemFontListEntry>&& aFontList) {
   mFontList = std::move(aFontList);
   gfxPlatform::GetPlatform()->UpdateFontList();
   return IPC_OK();
@@ -2952,7 +2946,7 @@ mozilla::ipc::IPCResult ContentChild::RecvUpdateWindow(
 
 PContentPermissionRequestChild*
 ContentChild::AllocPContentPermissionRequestChild(
-    const InfallibleTArray<PermissionRequest>& aRequests,
+    const nsTArray<PermissionRequest>& aRequests,
     const IPC::Principal& aPrincipal, const IPC::Principal& aTopLevelPrincipal,
     const bool& aIsHandlingUserInput, const bool& aDocumentHasUserInput,
     const DOMTimeStamp aPageLoadTimestamp, const TabId& aTabId) {
@@ -3144,7 +3138,7 @@ mozilla::ipc::IPCResult ContentChild::RecvPush(const nsCString& aScope,
 
 mozilla::ipc::IPCResult ContentChild::RecvPushWithData(
     const nsCString& aScope, const IPC::Principal& aPrincipal,
-    const nsString& aMessageId, InfallibleTArray<uint8_t>&& aData) {
+    const nsString& aMessageId, nsTArray<uint8_t>&& aData) {
   PushMessageDispatcher dispatcher(aScope, aPrincipal, aMessageId, Some(aData));
   Unused << NS_WARN_IF(NS_FAILED(dispatcher.NotifyObserversAndWorkers()));
   return IPC_OK();
@@ -3315,7 +3309,7 @@ mozilla::ipc::IPCResult ContentChild::RecvDeactivate(PBrowserChild* aTab) {
 
 mozilla::ipc::IPCResult ContentChild::RecvProvideAnonymousTemporaryFile(
     const uint64_t& aID, const FileDescOrError& aFDOrError) {
-  nsAutoPtr<AnonymousTemporaryFileCallback> callback;
+  mozilla::UniquePtr<AnonymousTemporaryFileCallback> callback;
   mPendingAnonymousTemporaryFiles.Remove(aID, &callback);
   MOZ_ASSERT(callback);
 
@@ -3876,104 +3870,5 @@ bool IsDevelopmentBuild() {
   return path == nullptr;
 }
 #endif /* !XP_WIN */
-
-#if defined(XP_MACOSX)
-/*
- * Helper function to read a string value for a given key from the .app's
- * Info.plist.
- */
-static nsresult GetStringValueFromBundlePlist(const nsAString& aKey,
-                                              nsAutoCString& aValue) {
-  CFBundleRef mainBundle = CFBundleGetMainBundle();
-  if (mainBundle == nullptr) {
-    return NS_ERROR_FAILURE;
-  }
-
-  // Read this app's bundle Info.plist as a dictionary
-  CFDictionaryRef bundleInfoDict = CFBundleGetInfoDictionary(mainBundle);
-  if (bundleInfoDict == nullptr) {
-    return NS_ERROR_FAILURE;
-  }
-
-  nsAutoCString keyAutoCString = NS_ConvertUTF16toUTF8(aKey);
-  CFStringRef key = CFStringCreateWithCString(
-      kCFAllocatorDefault, keyAutoCString.get(), kCFStringEncodingUTF8);
-  if (key == nullptr) {
-    return NS_ERROR_FAILURE;
-  }
-
-  CFStringRef value = (CFStringRef)CFDictionaryGetValue(bundleInfoDict, key);
-  CFRelease(key);
-  if (value == nullptr) {
-    return NS_ERROR_FAILURE;
-  }
-
-  CFIndex valueLength = CFStringGetLength(value);
-  if (valueLength == 0) {
-    return NS_ERROR_FAILURE;
-  }
-
-  const char* valueCString =
-      CFStringGetCStringPtr(value, kCFStringEncodingUTF8);
-  if (valueCString) {
-    aValue.Assign(valueCString);
-    return NS_OK;
-  }
-
-  CFIndex maxLength =
-      CFStringGetMaximumSizeForEncoding(valueLength, kCFStringEncodingUTF8) + 1;
-  char* valueBuffer = static_cast<char*>(moz_xmalloc(maxLength));
-
-  if (!CFStringGetCString(value, valueBuffer, maxLength,
-                          kCFStringEncodingUTF8)) {
-    free(valueBuffer);
-    return NS_ERROR_FAILURE;
-  }
-
-  aValue.Assign(valueBuffer);
-  free(valueBuffer);
-  return NS_OK;
-}
-
-/*
- * Helper function for reading a path string from the .app's Info.plist
- * and returning a directory object for that path with symlinks resolved.
- */
-static nsresult GetDirFromBundlePlist(const nsAString& aKey, nsIFile** aDir) {
-  nsresult rv;
-
-  nsAutoCString dirPath;
-  rv = GetStringValueFromBundlePlist(aKey, dirPath);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  nsCOMPtr<nsIFile> dir;
-  rv = NS_NewLocalFile(NS_ConvertUTF8toUTF16(dirPath), false,
-                       getter_AddRefs(dir));
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = dir->Normalize();
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  bool isDirectory = false;
-  rv = dir->IsDirectory(&isDirectory);
-  NS_ENSURE_SUCCESS(rv, rv);
-  if (!isDirectory) {
-    return NS_ERROR_FILE_NOT_DIRECTORY;
-  }
-
-  dir.swap(*aDir);
-  return NS_OK;
-}
-
-nsresult GetRepoDir(nsIFile** aRepoDir) {
-  MOZ_ASSERT(IsDevelopmentBuild());
-  return GetDirFromBundlePlist(NS_LITERAL_STRING(MAC_DEV_REPO_KEY), aRepoDir);
-}
-
-nsresult GetObjDir(nsIFile** aObjDir) {
-  MOZ_ASSERT(IsDevelopmentBuild());
-  return GetDirFromBundlePlist(NS_LITERAL_STRING(MAC_DEV_OBJ_KEY), aObjDir);
-}
-#endif /* XP_MACOSX */
 
 }  // namespace mozilla

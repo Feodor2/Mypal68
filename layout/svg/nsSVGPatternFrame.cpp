@@ -18,6 +18,7 @@
 #include "mozilla/dom/SVGUnitTypesBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "nsGkAtoms.h"
+#include "nsIFrameInlines.h"
 #include "nsSVGDisplayableFrame.h"
 #include "SVGObserverUtils.h"
 #include "SVGGeometryFrame.h"
@@ -342,7 +343,7 @@ already_AddRefed<SourceSurface> nsSVGPatternFrame::PaintPattern(
   // we got at the beginning because it takes care of the
   // referenced pattern situation for us
 
-  if (aSource->IsFrameOfType(nsIFrame::eSVGGeometry)) {
+  if (aSource->IsSVGGeometryFrameOrSubclass()) {
     // Set the geometrical parent of the pattern we are rendering
     patternWithChildren->mSource = static_cast<SVGGeometryFrame*>(aSource);
   }

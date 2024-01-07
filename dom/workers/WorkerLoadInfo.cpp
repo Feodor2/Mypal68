@@ -54,7 +54,7 @@ class MainThreadReleaseRunnable final : public Runnable {
   }
 
  private:
-  ~MainThreadReleaseRunnable() {}
+  ~MainThreadReleaseRunnable() = default;
 };
 
 // Specialize this if there's some class that has multiple nsISupports bases.

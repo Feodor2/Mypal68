@@ -97,15 +97,7 @@ input {
   color: -moz-FieldText;
   font: -moz-field;
   text-rendering: optimizeLegibility;
-  line-height: normal;
-  text-align: start;
-  text-transform: none;
-  word-spacing: normal;
-  letter-spacing: normal;
   cursor: text;
-  text-indent: 0;
-  user-select: text;
-  text-shadow: none;
   overflow-clip-box: padding-box content-box;
 }
 
@@ -131,17 +123,20 @@ textarea {
   vertical-align: text-bottom;
   cursor: text;
   resize: both;
-  user-select: text;
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-clip-box: content-box;
-  /* A few properties that we don't want to inherit by default: */
+}
+
+/* A few properties that we don't want to inherit by default: */
+input, textarea, select, button {
   text-align: initial;
   text-indent: initial;
   text-shadow: initial;
   text-transform: initial;
   word-spacing: initial;
   letter-spacing: initial;
+  /* Note that line-height is also reset for all these, via the font shorthand */
 }
 
 textarea > scrollbar {
@@ -237,19 +232,15 @@ select {
   background-color: -moz-Combobox;
   color: -moz-ComboboxText;
   font: -moz-list;
-  line-height: initial;
   white-space: nowrap !important;
   word-wrap: normal !important;
-  text-align: start;
   cursor: default;
   box-sizing: border-box;
   user-select: none;
   -moz-appearance: menulist;
   border-width: 2px;
   border-style: inset;
-  text-indent: 0;
   overflow: -moz-hidden-unscrollable;
-  text-shadow: none;
   /* No text-decoration reaching inside, by default */
   display: inline-block;
   page-break-inside: avoid;
@@ -517,7 +508,6 @@ input[type="file"] > label {
 
 /* button part of file selector */
 input[type="file"] > button {
-  block-size: inherit;
   font-size: unset;
   letter-spacing: unset;
   cursor: unset;
@@ -627,10 +617,8 @@ input[type="button"],
 input[type="submit"] {
   color: ButtonText;
   font: -moz-button;
-  line-height: normal;
   white-space: pre;
   text-align: center;
-  text-shadow: none;
   overflow-clip-box: padding-box;
 }
 
@@ -741,7 +729,7 @@ input[type="color"]:-moz-focusring::-moz-focus-inner,
 input[type="reset"]:-moz-focusring::-moz-focus-inner,
 input[type="button"]:-moz-focusring::-moz-focus-inner,
 input[type="submit"]:-moz-focusring::-moz-focus-inner {
-  border-color: ButtonText;
+  border-color: currentColor;
 }
 
 button:disabled:active, button:disabled,
@@ -913,9 +901,14 @@ input[type=range]::-moz-range-track {
   position: static !important;
   writing-mode: unset !important;
   direction: unset !important;
-  block-size: 0.2em;
+  block-size: 0.2em; /* same as inline-size below */
   /* Prevent nsFrame::HandlePress setting mouse capture to this element. */
   user-select: none !important;
+}
+
+input[type=range][orient=vertical]::-moz-range-track {
+  inline-size: 0.2em; /* same as block-size above */
+  block-size: 100%;
 }
 
 /**
@@ -1025,6 +1018,7 @@ input[type=number]::-moz-number-spin-box {
    * spin-box in vertical mode; it works OK at default size but less well
    * if the font-size is made substantially larger or smaller. (Bug 1175074.)
    */
+  height: 1em;
   max-height: 1em;
   align-self: center;
   justify-content: center;
@@ -1034,7 +1028,7 @@ input[type=number]::-moz-number-spin-up {
   writing-mode: horizontal-tb;
   -moz-appearance: spinner-upbutton;
   display: block; /* bug 926670 */
-  flex: none;
+  flex-grow: 1;
   cursor: default;
   /* Style for when native theming is off: */
   background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="6" height="5"><path d="M1,4 L3,0 5,4" fill="dimgrey"/></svg>');
@@ -1052,7 +1046,7 @@ input[type=number]::-moz-number-spin-down {
   writing-mode: horizontal-tb;
   -moz-appearance: spinner-downbutton;
   display: block; /* bug 926670 */
-  flex: none;
+  flex-grow: 1;
   cursor: default;
   /* Style for when native theming is off: */
   background-image: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="6" height="5"><path d="M1,1 L3,5 5,1" fill="dimgrey"/></svg>');

@@ -287,24 +287,22 @@ partial interface Document {
 partial interface Document {
   // Note: Per spec the 'S' in these two is lowercase, but the "Moz"
   // versions have it uppercase.
-  [LenientSetter, Unscopable, Func="Document::IsUnprefixedFullscreenEnabled"]
+  [LenientSetter, Unscopable]
   readonly attribute boolean fullscreen;
   [BinaryName="fullscreen"]
   readonly attribute boolean mozFullScreen;
-  [LenientSetter, Func="Document::IsUnprefixedFullscreenEnabled", NeedsCallerType]
+  [LenientSetter, NeedsCallerType]
   readonly attribute boolean fullscreenEnabled;
   [BinaryName="fullscreenEnabled", NeedsCallerType]
   readonly attribute boolean mozFullScreenEnabled;
 
-  [Throws, Func="Document::IsUnprefixedFullscreenEnabled"]
+  [Throws]
   Promise<void> exitFullscreen();
   [Throws, BinaryName="exitFullscreen"]
   Promise<void> mozCancelFullScreen();
 
   // Events handlers
-  [Func="Document::IsUnprefixedFullscreenEnabled"]
   attribute EventHandler onfullscreenchange;
-  [Func="Document::IsUnprefixedFullscreenEnabled"]
   attribute EventHandler onfullscreenerror;
 };
 
@@ -357,8 +355,6 @@ partial interface Document {
 partial interface Document {
   [Func="Document::AreWebAnimationsTimelinesEnabled"]
   readonly attribute DocumentTimeline timeline;
-  [Func="Document::IsWebAnimationsGetAnimationsEnabled"]
-  sequence<Animation> getAnimations();
 };
 
 // https://svgwg.org/svg2-draft/struct.html#InterfaceDocumentExtensions
@@ -455,6 +451,12 @@ partial interface Document {
 
   [ChromeOnly]
   attribute Node? popupNode;
+
+  // The JS debugger uses DOM mutation events to implement DOM mutation
+  // breakpoints. This is used to avoid logging a warning that the user
+  // cannot address and have no control over.
+  [ChromeOnly]
+  attribute boolean dontWarnAboutMutationEventsAndAllowSlowDOMMutations;
 
   /**
    * These attributes correspond to rangeParent and rangeOffset. They will help

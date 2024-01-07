@@ -17,11 +17,11 @@ namespace mozilla {
 using RayFunction = StyleRayFunction<StyleAngle>;
 
 namespace layers {
+class MotionPathData;
 class PathCommand;
-class TransformData;
 }  // namespace layers
 
-struct MotionPathData {
+struct ResolvedMotionPathData {
   gfx::Point mTranslate;
   float mRotate;
   // The delta value between transform-origin and offset-anchor.
@@ -157,7 +157,7 @@ class MotionPathUtils final {
    * Generate the motion path transform result. This function may be called on
    * the compositor thread.
    **/
-  static Maybe<MotionPathData> ResolveMotionPath(
+  static Maybe<ResolvedMotionPathData> ResolveMotionPath(
       const OffsetPathData& aPath, const LengthPercentage& aDistance,
       const StyleOffsetRotate& aRotate, const StylePositionOrAuto& aAnchor,
       const CSSPoint& aTransformOrigin, const CSSSize& aFrameSize,
@@ -167,29 +167,30 @@ class MotionPathUtils final {
    * Generate the motion path transform result with |nsIFrame|. This is only
    * called in the main thread.
    **/
-  static Maybe<MotionPathData> ResolveMotionPath(const nsIFrame* aFrame);
+  static Maybe<ResolvedMotionPathData> ResolveMotionPath(
+      const nsIFrame* aFrame);
 
   /**
-   * Generate the motion path transfrom result with styles and TransformData.
+   * Generate the motion path transfrom result with styles and
+   * layers::MotionPathData.
    * This is only called by the compositor.
    */
-  static Maybe<MotionPathData> ResolveMotionPath(
+  static Maybe<ResolvedMotionPathData> ResolveMotionPath(
       const StyleOffsetPath* aPath, const StyleLengthPercentage* aDistance,
       const StyleOffsetRotate* aRotate, const StylePositionOrAuto* aAnchor,
-      const layers::TransformData& aTransformData,
-      gfx::Path* aCachedMotionPath);
+      const Maybe<layers::MotionPathData>& aMotionPathData,
+      const CSSSize& aFrameSize, gfx::Path* aCachedMotionPath);
 
   /**
-   * Normalize and convert StyleSVGPathData into nsTArray<layers::PathCommand>.
+   * Normalize StyleSVGPathData.
    *
    * The algorithm of normalization is the same as normalize() in
    * servo/components/style/values/specified/svg_path.rs
    * FIXME: Bug 1489392: We don't have to normalize the path here if we accept
-   * the spec issue which would like to normalize svg paths ar computed time.
+   * the spec issue which would like to normalize svg paths at computed time.
    * https://github.com/w3c/svgwg/issues/321
    */
-  static nsTArray<layers::PathCommand> NormalizeAndConvertToPathCommands(
-      const StyleSVGPathData& aPath);
+  static StyleSVGPathData NormalizeSVGPathData(const StyleSVGPathData& aPath);
 
   /**
    * Build a gfx::Path from the computed svg path. We should give it a path

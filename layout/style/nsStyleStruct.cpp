@@ -120,8 +120,24 @@ already_AddRefed<nsIURI> StyleComputedUrl::ResolveLocalRef(
   return ResolveLocalRef(aContent->GetBaseURI());
 }
 
-imgRequestProxy* StyleComputedUrl::LoadImage(Document& aDocument) {
+already_AddRefed<imgRequestProxy> StyleComputedUrl::LoadImage(
+    Document& aDocument) {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
+
+  nsIURI* docURI = aDocument.GetDocumentURI();
+  if (HasRef()) {
+    bool isEqualExceptRef = false;
+    nsIURI* imageURI = GetURI();
+    if (!imageURI) {
+      return nullptr;
+    }
+
+    if (NS_SUCCEEDED(imageURI->EqualsExceptRef(docURI, &isEqualExceptRef)) &&
+        isEqualExceptRef) {
+      // Prevent loading an internal resource.
+      return nullptr;
+    }
+  }
 
   static uint64_t sNextLoadID = 1;
 
@@ -134,6 +150,7 @@ imgRequestProxy* StyleComputedUrl::LoadImage(Document& aDocument) {
   // images from aDocument.  Instead we do the image load from the original doc
   // and clone it to aDocument.
   Document* loadingDoc = aDocument.GetOriginalDocument();
+  const bool isPrint = !!loadingDoc;
   if (!loadingDoc) {
     loadingDoc = &aDocument;
   }
@@ -142,7 +159,17 @@ imgRequestProxy* StyleComputedUrl::LoadImage(Document& aDocument) {
   css::ImageLoader::LoadImage(*this, *loadingDoc);
 
   // Register the image in the document that's using it.
-  return aDocument.StyleImageLoader()->RegisterCSSImage(data);
+  imgRequestProxy* request =
+      aDocument.StyleImageLoader()->RegisterCSSImage(data);
+  if (!request) {
+    return nullptr;
+  }
+  if (!isPrint) {
+    return do_AddRef(request);
+  }
+  RefPtr<imgRequestProxy> ret;
+  request->GetStaticRequest(&aDocument, getter_AddRefs(ret));
+  return ret.forget();
 }
 
 // --------------------
@@ -344,7 +371,7 @@ nsStyleBorder::nsStyleBorder(const Document& aDocument)
   MOZ_COUNT_CTOR(nsStyleBorder);
 
   nscoord medium = kMediumBorderWidth;
-  NS_FOR_CSS_SIDES(side) {
+  for (const auto side : mozilla::AllPhysicalSides()) {
     mBorder.Side(side) = medium;
     mBorderStyle[side] = StyleBorderStyle::None;
   }
@@ -368,7 +395,9 @@ nsStyleBorder::nsStyleBorder(const nsStyleBorder& aSrc)
       mBorder(aSrc.mBorder),
       mTwipsPerPixel(aSrc.mTwipsPerPixel) {
   MOZ_COUNT_CTOR(nsStyleBorder);
-  NS_FOR_CSS_SIDES(side) { mBorderStyle[side] = aSrc.mBorderStyle[side]; }
+  for (const auto side : mozilla::AllPhysicalSides()) {
+    mBorderStyle[side] = aSrc.mBorderStyle[side];
+  }
 }
 
 nsStyleBorder::~nsStyleBorder() { MOZ_COUNT_DTOR(nsStyleBorder); }
@@ -386,7 +415,7 @@ nsMargin nsStyleBorder::GetImageOutset() const {
   // the initial values yields 0 outset) so that we don't have to
   // reflow to update overflow areas when an image loads.
   nsMargin outset;
-  NS_FOR_CSS_SIDES(s) {
+  for (const auto s : mozilla::AllPhysicalSides()) {
     const auto& coord = mBorderImageOutset.Get(s);
     nscoord value;
     if (coord.IsLength()) {
@@ -417,7 +446,7 @@ nsChangeHint nsStyleBorder::CalcDifference(
     return NS_STYLE_HINT_REFLOW;
   }
 
-  NS_FOR_CSS_SIDES(ix) {
+  for (const auto ix : mozilla::AllPhysicalSides()) {
     // See the explanation in nsChangeHint.h of
     // nsChangeHint_BorderStyleNoneChange .
     // Furthermore, even though we know *this* side is 0 width, just
@@ -433,7 +462,7 @@ nsChangeHint nsStyleBorder::CalcDifference(
   // comparison, border-style differences can only lead to a repaint hint.  So
   // it's OK to just compare the values directly -- if either the actual
   // style or the color flags differ we want to repaint.
-  NS_FOR_CSS_SIDES(ix) {
+  for (const auto ix : mozilla::AllPhysicalSides()) {
     if (mBorderStyle[ix] != aNewData.mBorderStyle[ix] ||
         BorderColorFor(ix) != aNewData.BorderColorFor(ix)) {
       return nsChangeHint_RepaintFrame;
@@ -744,8 +773,8 @@ nsStyleSVG::nsStyleSVG(const Document& aDocument)
       mPaintOrder(0),
       mShapeRendering(StyleShapeRendering::Auto),
       mStrokeLinecap(StyleStrokeLinecap::Butt),
-      mStrokeLinejoin(NS_STYLE_STROKE_LINEJOIN_MITER),
-      mDominantBaseline(NS_STYLE_DOMINANT_BASELINE_AUTO),
+      mStrokeLinejoin(StyleStrokeLinejoin::Miter),
+      mDominantBaseline(StyleDominantBaseline::Auto),
       mTextAnchor(StyleTextAnchor::Start),
       mContextFlags(
           (eStyleSVGOpacitySource_Normal << FILL_OPACITY_SOURCE_SHIFT) |
@@ -1031,7 +1060,7 @@ nsStyleSVGReset::nsStyleSVGReset(const Document& aDocument)
       mStopOpacity(1.0f),
       mFloodOpacity(1.0f),
       mVectorEffect(NS_STYLE_VECTOR_EFFECT_NONE),
-      mMaskType(NS_STYLE_MASK_TYPE_LUMINANCE) {
+      mMaskType(StyleMaskType::Luminance) {
   MOZ_COUNT_CTOR(nsStyleSVGReset);
 }
 
@@ -1157,13 +1186,12 @@ nsStylePosition::nsStylePosition(const Document& aDocument)
       mAspectRatio(0.0f),
       mGridAutoFlow(NS_STYLE_GRID_AUTO_FLOW_ROW),
       mBoxSizing(StyleBoxSizing::Content),
-      mAlignContent(NS_STYLE_ALIGN_NORMAL),
-      mAlignItems(NS_STYLE_ALIGN_NORMAL),
-      mAlignSelf(NS_STYLE_ALIGN_AUTO),
-      mJustifyContent(NS_STYLE_JUSTIFY_NORMAL),
-      mSpecifiedJustifyItems(NS_STYLE_JUSTIFY_LEGACY),
-      mJustifyItems(NS_STYLE_JUSTIFY_NORMAL),
-      mJustifySelf(NS_STYLE_JUSTIFY_AUTO),
+      mAlignContent({StyleAlignFlags::NORMAL}),
+      mAlignItems({StyleAlignFlags::NORMAL}),
+      mAlignSelf({StyleAlignFlags::AUTO}),
+      mJustifyContent({StyleAlignFlags::NORMAL}),
+      mJustifyItems({{StyleAlignFlags::LEGACY}, {StyleAlignFlags::NORMAL}}),
+      mJustifySelf({StyleAlignFlags::AUTO}),
       mFlexDirection(StyleFlexDirection::Row),
       mFlexWrap(StyleFlexWrap::Nowrap),
       mObjectFit(StyleObjectFit::Fill),
@@ -1208,7 +1236,6 @@ nsStylePosition::nsStylePosition(const nsStylePosition& aSource)
       mAlignItems(aSource.mAlignItems),
       mAlignSelf(aSource.mAlignSelf),
       mJustifyContent(aSource.mJustifyContent),
-      mSpecifiedJustifyItems(aSource.mSpecifiedJustifyItems),
       mJustifyItems(aSource.mJustifyItems),
       mJustifySelf(aSource.mJustifySelf),
       mFlexDirection(aSource.mFlexDirection),
@@ -1232,7 +1259,7 @@ nsStylePosition::nsStylePosition(const nsStylePosition& aSource)
 
 static bool IsAutonessEqual(const StyleRect<LengthPercentageOrAuto>& aSides1,
                             const StyleRect<LengthPercentageOrAuto>& aSides2) {
-  NS_FOR_CSS_SIDES(side) {
+  for (const auto side : mozilla::AllPhysicalSides()) {
     if (aSides1.Get(side).IsAuto() != aSides2.Get(side).IsAuto()) {
       return false;
     }
@@ -1318,14 +1345,14 @@ nsChangeHint nsStylePosition::CalcDifference(
   // Changing 'justify-content/items/self' might affect the positioning,
   // but it won't affect any sizing.
   if (mJustifyContent != aNewData.mJustifyContent ||
-      mJustifyItems != aNewData.mJustifyItems ||
+      mJustifyItems.computed != aNewData.mJustifyItems.computed ||
       mJustifySelf != aNewData.mJustifySelf) {
     hint |= nsChangeHint_NeedReflow;
   }
 
-  // No need to do anything if mSpecifiedJustifyItems changes, as long as
-  // mJustifyItems (tested above) is unchanged.
-  if (mSpecifiedJustifyItems != aNewData.mSpecifiedJustifyItems) {
+  // No need to do anything if specified justify-items changes, as long as the
+  // computed one (tested above) is unchanged.
+  if (mJustifyItems.specified != aNewData.mJustifyItems.specified) {
     hint |= nsChangeHint_NeutralChange;
   }
 
@@ -1372,34 +1399,38 @@ nsChangeHint nsStylePosition::CalcDifference(
       hint |=
           nsChangeHint_RecomputePosition | nsChangeHint_UpdateParentOverflow;
     } else {
-      hint |= nsChangeHint_NeedReflow | nsChangeHint_ReflowChangesSizeOrPosition;
+      hint |=
+          nsChangeHint_NeedReflow | nsChangeHint_ReflowChangesSizeOrPosition;
     }
   }
   return hint;
 }
 
-uint8_t nsStylePosition::UsedAlignSelf(ComputedStyle* aParent) const {
-  if (mAlignSelf != NS_STYLE_ALIGN_AUTO) {
+StyleAlignSelf nsStylePosition::UsedAlignSelf(
+    const ComputedStyle* aParent) const {
+  if (mAlignSelf._0 != StyleAlignFlags::AUTO) {
     return mAlignSelf;
   }
   if (MOZ_LIKELY(aParent)) {
     auto parentAlignItems = aParent->StylePosition()->mAlignItems;
-    MOZ_ASSERT(!(parentAlignItems & NS_STYLE_ALIGN_LEGACY),
+    MOZ_ASSERT(!(parentAlignItems._0 & StyleAlignFlags::LEGACY),
                "align-items can't have 'legacy'");
-    return parentAlignItems;
+    return {parentAlignItems._0};
   }
-  return NS_STYLE_ALIGN_NORMAL;
+  return {StyleAlignFlags::NORMAL};
 }
 
-uint8_t nsStylePosition::UsedJustifySelf(ComputedStyle* aParent) const {
-  if (mJustifySelf != NS_STYLE_JUSTIFY_AUTO) {
+StyleJustifySelf nsStylePosition::UsedJustifySelf(
+    const ComputedStyle* aParent) const {
+  if (mJustifySelf._0 != StyleAlignFlags::AUTO) {
     return mJustifySelf;
   }
   if (MOZ_LIKELY(aParent)) {
-    auto inheritedJustifyItems = aParent->StylePosition()->mJustifyItems;
-    return inheritedJustifyItems & ~NS_STYLE_JUSTIFY_LEGACY;
+    const auto& inheritedJustifyItems =
+        aParent->StylePosition()->mJustifyItems.computed;
+    return {inheritedJustifyItems._0 & ~StyleAlignFlags::LEGACY};
   }
-  return NS_STYLE_JUSTIFY_NORMAL;
+  return {StyleAlignFlags::NORMAL};
 }
 
 // --------------------
@@ -1407,7 +1438,7 @@ uint8_t nsStylePosition::UsedJustifySelf(ComputedStyle* aParent) const {
 //
 
 nsStyleTable::nsStyleTable(const Document& aDocument)
-    : mLayoutStrategy(NS_STYLE_TABLE_LAYOUT_AUTO), mXSpan(1) {
+    : mLayoutStrategy(StyleTableLayout::Auto), mXSpan(1) {
   MOZ_COUNT_CTOR(nsStyleTable);
 }
 
@@ -1434,7 +1465,7 @@ nsStyleTableBorder::nsStyleTableBorder(const Document& aDocument)
       mBorderSpacingRow(0),
       mBorderCollapse(StyleBorderCollapse::Separate),
       mCaptionSide(NS_STYLE_CAPTION_SIDE_TOP),
-      mEmptyCells(NS_STYLE_TABLE_EMPTY_CELLS_SHOW) {
+      mEmptyCells(StyleEmptyCells::Show) {
   MOZ_COUNT_CTOR(nsStyleTableBorder);
 }
 
@@ -1577,27 +1608,12 @@ nsStyleImageRequest::~nsStyleImageRequest() {
   MOZ_ASSERT(!mImageTracker);
 }
 
-bool nsStyleImageRequest::Resolve(Document& aDocument,
+void nsStyleImageRequest::Resolve(Document& aDocument,
                                   const nsStyleImageRequest* aOldImageRequest) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!IsResolved(), "already resolved");
 
   mResolved = true;
-
-  nsIURI* docURI = aDocument.GetDocumentURI();
-  if (GetImageValue().HasRef()) {
-    bool isEqualExceptRef = false;
-    RefPtr<nsIURI> imageURI = GetImageURI();
-    if (!imageURI) {
-      return false;
-    }
-
-    if (NS_SUCCEEDED(imageURI->EqualsExceptRef(docURI, &isEqualExceptRef)) &&
-        isEqualExceptRef) {
-      // Prevent loading an internal resource.
-      return true;
-    }
-  }
 
   // TODO(emilio, bug 1440442): This is a hackaround to avoid flickering due the
   // lack of non-http image caching in imagelib (bug 1406134), which causes
@@ -1617,18 +1633,12 @@ bool nsStyleImageRequest::Resolve(Document& aDocument,
     mRequestProxy = aOldImageRequest->mRequestProxy;
   } else {
     mDocGroup = aDocument.GetDocGroup();
-    imgRequestProxy* request = mImageURL.LoadImage(aDocument);
-    bool isPrint = !!aDocument.GetOriginalDocument();
-    if (!isPrint) {
-      mRequestProxy = request;
-    } else if (request) {
-      request->GetStaticRequest(&aDocument, getter_AddRefs(mRequestProxy));
-    }
+    mRequestProxy = mImageURL.LoadImage(aDocument);
   }
 
   if (!mRequestProxy) {
     // The URL resolution or image load failed.
-    return false;
+    return;
   }
 
   // Boost priority now that we know the image is present in the ComputedStyle
@@ -1640,7 +1650,6 @@ bool nsStyleImageRequest::Resolve(Document& aDocument,
   }
 
   MaybeTrackAndLock();
-  return true;
 }
 
 void nsStyleImageRequest::MaybeTrackAndLock() {
@@ -2666,7 +2675,7 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
       mOriginalDisplay(StyleDisplay::Inline),
       mContain(StyleContain::NONE),
       mAppearance(StyleAppearance::None),
-      mPosition(NS_STYLE_POSITION_STATIC),
+      mPosition(StylePositionProperty::Static),
       mFloat(StyleFloat::None),
       mBreakType(StyleClear::None),
       mBreakInside(StyleBreakWithin::Auto),
@@ -2681,7 +2690,7 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
       mIsolation(StyleIsolation::Auto),
       mTopLayer(StyleTopLayer::None),
       mTouchAction(StyleTouchAction::AUTO),
-      mScrollBehavior(NS_STYLE_SCROLL_BEHAVIOR_AUTO),
+      mScrollBehavior(StyleScrollBehavior::Auto),
       mOverscrollBehaviorX(StyleOverscrollBehavior::Auto),
       mOverscrollBehaviorY(StyleOverscrollBehavior::Auto),
       mOverflowAnchor(StyleOverflowAnchor::Auto),
@@ -2694,7 +2703,7 @@ nsStyleDisplay::nsStyleDisplay(const Document& aDocument)
       mTranslate(StyleTranslate::None()),
       mScale(StyleScale::None()),
       mBackfaceVisibility(NS_STYLE_BACKFACE_VISIBILITY_VISIBLE),
-      mTransformStyle(NS_STYLE_TRANSFORM_STYLE_FLAT),
+      mTransformStyle(StyleTransformStyle::Flat),
       mTransformBox(StyleGeometryBox::BorderBox),
       mOffsetPath(StyleOffsetPath::None()),
       mOffsetDistance(LengthPercentage::Zero()),
@@ -2836,10 +2845,8 @@ static inline nsChangeHint CompareMotionValues(
 
 nsChangeHint nsStyleDisplay::CalcDifference(
     const nsStyleDisplay& aNewData, const nsStylePosition& aOldPosition) const {
-  nsChangeHint hint = nsChangeHint(0);
-
-  if (mBinding != aNewData.mBinding || mPosition != aNewData.mPosition ||
-      mDisplay != aNewData.mDisplay || mContain != aNewData.mContain ||
+  if (mBinding != aNewData.mBinding || mDisplay != aNewData.mDisplay ||
+      mContain != aNewData.mContain ||
       (mFloat == StyleFloat::None) != (aNewData.mFloat == StyleFloat::None) ||
       mScrollBehavior != aNewData.mScrollBehavior ||
       mScrollSnapType != aNewData.mScrollSnapType ||
@@ -2858,6 +2865,35 @@ nsChangeHint nsStyleDisplay::CalcDifference(
     // nsTextControlFrame instead of nsNumberControlFrame if the author
     // specifies 'textfield'.
     return nsChangeHint_ReconstructFrame;
+  }
+
+  auto hint = nsChangeHint(0);
+  if (mPosition != aNewData.mPosition) {
+    if (IsAbsolutelyPositionedStyle() ||
+        aNewData.IsAbsolutelyPositionedStyle()) {
+      // This changes our parent relationship on the frame tree and / or needs
+      // to create a placeholder, so gotta reframe. There are some cases (when
+      // switching from fixed to absolute or viceversa, if our containing block
+      // happens to remain the same, i.e., if it has a transform or such) where
+      // this wouldn't really be needed (though we'd still need to move the
+      // frame from one child list to another). In any case we don't have a hand
+      // to that information from here, and it doesn't seem like a case worth
+      // optimizing for.
+      return nsChangeHint_ReconstructFrame;
+    }
+    // We start or stop being a containing block for abspos descendants. This
+    // also causes painting to change, as we'd become a pseudo-stacking context.
+    if (IsRelativelyPositionedStyle() !=
+        aNewData.IsRelativelyPositionedStyle()) {
+      hint |= nsChangeHint_UpdateContainingBlock | nsChangeHint_RepaintFrame;
+    }
+    if (IsPositionForcingStackingContext() !=
+        aNewData.IsPositionForcingStackingContext()) {
+      hint |= nsChangeHint_RepaintFrame;
+    }
+    // On top of that: if the above ends up not reframing, we need a reflow to
+    // compute our relative, static or sticky position.
+    hint |= nsChangeHint_NeedReflow | nsChangeHint_ReflowChangesSizeOrPosition;
   }
 
   if (mScrollSnapAlign != aNewData.mScrollSnapAlign) {
@@ -3026,7 +3062,8 @@ nsChangeHint nsStyleDisplay::CalcDifference(
     // reflow anyway.
     if (IsAbsolutelyPositionedStyle() &&
         aOldPosition.NeedsHypotheticalPositionIfAbsPos()) {
-      hint |= nsChangeHint_NeedReflow | nsChangeHint_ReflowChangesSizeOrPosition;
+      hint |=
+          nsChangeHint_NeedReflow | nsChangeHint_ReflowChangesSizeOrPosition;
     } else {
       hint |= nsChangeHint_NeutralChange;
     }
@@ -3080,10 +3117,10 @@ nsChangeHint nsStyleDisplay::CalcDifference(
 
 nsStyleVisibility::nsStyleVisibility(const Document& aDocument)
     : mDirection(aDocument.GetBidiOptions() == IBMBIDI_TEXTDIRECTION_RTL
-                     ? NS_STYLE_DIRECTION_RTL
-                     : NS_STYLE_DIRECTION_LTR),
+                     ? StyleDirection::Rtl
+                     : StyleDirection::Ltr),
       mVisible(StyleVisibility::Visible),
-      mImageRendering(NS_STYLE_IMAGE_RENDERING_AUTO),
+      mImageRendering(StyleImageRendering::Auto),
       mWritingMode(NS_STYLE_WRITING_MODE_HORIZONTAL_TB),
       mTextOrientation(StyleTextOrientation::Mixed),
       mColorAdjust(StyleColorAdjust::Economy) {
@@ -3143,129 +3180,22 @@ nsChangeHint nsStyleVisibility::CalcDifference(
   return hint;
 }
 
-nsStyleContentData::~nsStyleContentData() {
-  MOZ_COUNT_DTOR(nsStyleContentData);
-
-  if (mType == StyleContentType::Image) {
-    // FIXME(emilio): Is this needed now that URLs are not main thread only?
-    NS_ReleaseOnMainThreadSystemGroup("nsStyleContentData::mContent.mImage",
-                                      dont_AddRef(mContent.mImage));
-    mContent.mImage = nullptr;
-  } else if (mType == StyleContentType::Counter ||
-             mType == StyleContentType::Counters) {
-    mContent.mCounters->Release();
-  } else if (mType == StyleContentType::String) {
-    free(mContent.mString);
-  } else if (mType == StyleContentType::Attr) {
-    delete mContent.mAttr;
-  } else {
-    MOZ_ASSERT(mContent.mString == nullptr, "Leaking due to missing case");
-  }
-}
-
-nsStyleContentData::nsStyleContentData(const nsStyleContentData& aOther)
-    : mType(aOther.mType) {
-  MOZ_COUNT_CTOR(nsStyleContentData);
-  switch (mType) {
-    case StyleContentType::Image:
-      mContent.mImage = aOther.mContent.mImage;
-      mContent.mImage->AddRef();
-      break;
-    case StyleContentType::Counter:
-    case StyleContentType::Counters:
-      mContent.mCounters = aOther.mContent.mCounters;
-      mContent.mCounters->AddRef();
-      break;
-    case StyleContentType::Attr:
-      mContent.mAttr = new nsStyleContentAttr(*aOther.mContent.mAttr);
-      break;
-    case StyleContentType::String:
-      mContent.mString = NS_xstrdup(aOther.mContent.mString);
-      break;
-    default:
-      MOZ_ASSERT(!aOther.mContent.mString);
-      mContent.mString = nullptr;
-  }
-}
-
-bool nsStyleContentData::CounterFunction::operator==(
-    const CounterFunction& aOther) const {
-  return mIdent == aOther.mIdent && mSeparator == aOther.mSeparator &&
-         mCounterStyle == aOther.mCounterStyle;
-}
-
-nsStyleContentData& nsStyleContentData::operator=(
-    const nsStyleContentData& aOther) {
-  if (this == &aOther) {
-    return *this;
-  }
-  this->~nsStyleContentData();
-  new (this) nsStyleContentData(aOther);
-
-  return *this;
-}
-
-bool nsStyleContentData::operator==(const nsStyleContentData& aOther) const {
-  if (mType != aOther.mType) {
-    return false;
-  }
-  if (mType == StyleContentType::Image) {
-    return DefinitelyEqualImages(mContent.mImage, aOther.mContent.mImage);
-  }
-  if (mType == StyleContentType::Attr) {
-    return *mContent.mAttr == *aOther.mContent.mAttr;
-  }
-  if (mType == StyleContentType::Counter ||
-      mType == StyleContentType::Counters) {
-    return *mContent.mCounters == *aOther.mContent.mCounters;
-  }
-  if (mType == StyleContentType::String) {
-    return NS_strcmp(mContent.mString, aOther.mContent.mString) == 0;
-  }
-  MOZ_ASSERT(!mContent.mString && !aOther.mContent.mString);
-  return true;
-}
-
-void nsStyleContentData::Resolve(Document& aDocument,
-                                 const nsStyleContentData* aOldStyle) {
-  if (mType != StyleContentType::Image) {
-    return;
-  }
-  if (!mContent.mImage->IsResolved()) {
-    const nsStyleImageRequest* oldRequest =
-        (aOldStyle && aOldStyle->mType == StyleContentType::Image)
-            ? aOldStyle->mContent.mImage
-            : nullptr;
-    mContent.mImage->Resolve(aDocument, oldRequest);
-  }
-}
-
 //-----------------------
 // nsStyleContent
 //
 
-nsStyleContent::nsStyleContent(const Document& aDocument) {
+nsStyleContent::nsStyleContent(const Document& aDocument)
+    : mContent(StyleContent::Normal()) {
   MOZ_COUNT_CTOR(nsStyleContent);
 }
 
 nsStyleContent::~nsStyleContent() { MOZ_COUNT_DTOR(nsStyleContent); }
 
-void nsStyleContent::TriggerImageLoads(Document& aDocument,
-                                       const nsStyleContent* aOldStyle) {
-  for (size_t i = 0; i < mContents.Length(); ++i) {
-    const nsStyleContentData* oldData =
-        (aOldStyle && aOldStyle->mContents.Length() > i)
-            ? &aOldStyle->mContents[i]
-            : nullptr;
-    mContents[i].Resolve(aDocument, oldData);
-  }
-}
-
 nsStyleContent::nsStyleContent(const nsStyleContent& aSource)
-    : mContents(aSource.mContents),
-      mIncrements(aSource.mIncrements),
-      mResets(aSource.mResets),
-      mSets(aSource.mSets) {
+    : mContent(aSource.mContent),
+      mCounterIncrement(aSource.mCounterIncrement),
+      mCounterReset(aSource.mCounterReset),
+      mCounterSet(aSource.mCounterSet) {
   MOZ_COUNT_CTOR(nsStyleContent);
 }
 
@@ -3274,8 +3204,10 @@ nsChangeHint nsStyleContent::CalcDifference(
   // Unfortunately we need to reframe even if the content lengths are the same;
   // a simple reflow will not pick up different text or different image URLs,
   // since we set all that up in the CSSFrameConstructor
-  if (mContents != aNewData.mContents || mIncrements != aNewData.mIncrements ||
-      mResets != aNewData.mResets || mSets != aNewData.mSets) {
+  if (mContent != aNewData.mContent ||
+      mCounterIncrement != aNewData.mCounterIncrement ||
+      mCounterReset != aNewData.mCounterReset ||
+      mCounterSet != aNewData.mCounterSet) {
     return nsChangeHint_ReconstructFrame;
   }
 
@@ -3375,7 +3307,7 @@ nsStyleText::nsStyleText(const Document& aDocument)
       mLetterSpacing({0.}),
       mLineHeight(StyleLineHeight::Normal()),
       mTextIndent(LengthPercentage::Zero()),
-      mTextUnderlineOffset(StyleTextDecorationLength::Auto()),
+      mTextUnderlineOffset(LengthPercentageOrAuto::Auto()),
       mTextDecorationSkipInk(StyleTextDecorationSkipInk::Auto),
       mTextUnderlinePosition(StyleTextUnderlinePosition::AUTO),
       mWebkitTextStrokeWidth(0),
@@ -3450,8 +3382,6 @@ nsChangeHint nsStyleText::CalcDifference(const nsStyleText& aNewData) const {
       (mLetterSpacing != aNewData.mLetterSpacing) ||
       (mLineHeight != aNewData.mLineHeight) ||
       (mTextIndent != aNewData.mTextIndent) ||
-      (mTextUnderlineOffset != aNewData.mTextUnderlineOffset) ||
-      (mTextDecorationSkipInk != aNewData.mTextDecorationSkipInk) ||
       (mTextJustify != aNewData.mTextJustify) ||
       (mWordSpacing != aNewData.mWordSpacing) ||
       (mMozTabSize != aNewData.mMozTabSize)) {
@@ -3478,6 +3408,8 @@ nsChangeHint nsStyleText::CalcDifference(const nsStyleText& aNewData) const {
   if (mTextShadow != aNewData.mTextShadow ||
       mTextEmphasisStyle != aNewData.mTextEmphasisStyle ||
       mWebkitTextStrokeWidth != aNewData.mWebkitTextStrokeWidth ||
+      mTextUnderlineOffset != aNewData.mTextUnderlineOffset ||
+      mTextDecorationSkipInk != aNewData.mTextDecorationSkipInk ||
       mTextUnderlinePosition != aNewData.mTextUnderlinePosition) {
     hint |= nsChangeHint_UpdateSubtreeOverflow | nsChangeHint_SchedulePaint |
             nsChangeHint_RepaintFrame;
@@ -3621,7 +3553,10 @@ nsChangeHint nsStyleUI::CalcDifference(const nsStyleUI& aNewData) const {
     // of pointer-events. See SVGGeometryFrame::ReflowSVG's use of
     // GetHitTestFlags. (Only a reflow, no visual change.)
     hint |= nsChangeHint_NeedReflow |
-            nsChangeHint_NeedDirtyReflow;  // XXX remove me: bug 876085
+            nsChangeHint_NeedDirtyReflow |  // XXX remove me: bug 876085
+            nsChangeHint_SchedulePaint;     // pointer-events changes can change
+                                            // event regions overrides on layers
+                                            // and so needs a repaint.
   }
 
   if (mUserModify != aNewData.mUserModify) {

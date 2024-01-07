@@ -1310,8 +1310,8 @@ bool CanvasRenderingContext2D::EnsureTarget(const gfx::Rect* aCoveredRect,
     newTarget->ClearRect(canvasRect);
   }
 
-  mTarget = newTarget.forget();
-  mBufferProvider = newProvider.forget();
+  mTarget = std::move(newTarget);
+  mBufferProvider = std::move(newProvider);
 
   RegisterAllocation();
 
@@ -3723,8 +3723,7 @@ nsresult CanvasRenderingContext2D::DrawOrMeasureText(
       return NS_ERROR_FAILURE;
     }
 
-    isRTL =
-        canvasStyle->StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL;
+    isRTL = canvasStyle->StyleVisibility()->mDirection == StyleDirection::Rtl;
   } else {
     isRTL = GET_BIDI_OPTION_DIRECTION(document->GetBidiOptions()) ==
             IBMBIDI_TEXTDIRECTION_RTL;
@@ -4284,8 +4283,8 @@ CanvasRenderingContext2D::CachedSurfaceFromElement(Element* aElement) {
   }
 
   res.mSize = res.mIntrinsicSize = res.mSourceSurface->GetSize();
-  res.mPrincipal = principal.forget();
-  res.mImageRequest = imgRequest.forget();
+  res.mPrincipal = std::move(principal);
+  res.mImageRequest = std::move(imgRequest);
   res.mIsWriteOnly = CheckWriteOnlySecurity(res.mCORSUsed, res.mPrincipal,
                                             res.mHadCrossOriginRedirects);
 

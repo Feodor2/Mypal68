@@ -727,7 +727,7 @@ nsFilePicker::ShowXPFilePicker(const nsString& aInitialDir)
       // the new Common File Dialogs for Vista and up.
       if (!IsVistaOrLater()) {
         ofn.lpfnHook = MultiFilePickerHook;
-        fileBuffer.release();
+        mozilla::Unused << fileBuffer.release();
         result = FilePickerWrapper(&ofn, PICKER_TYPE_OPEN);
         fileBuffer.reset(ofn.lpstrFile);
       } else {

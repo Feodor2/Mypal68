@@ -12,7 +12,6 @@ if CONFIG['ENABLE_TESTS']:
 
 XPIDL_SOURCES += [
     'nsIWindowCreator.idl',
-    'nsIWindowCreator2.idl',
     'nsIWindowProvider.idl',
 ]
 

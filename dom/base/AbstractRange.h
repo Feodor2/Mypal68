@@ -34,7 +34,10 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
   }
   nsIContent* GetChildAtEndOffset() const { return mEnd.GetChildAtOffset(); }
   bool IsPositioned() const { return mIsPositioned; }
-  nsINode* GetCommonAncestor() const;
+  /**
+   * https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor
+   */
+  nsINode* GetClosestCommonInclusiveAncestor() const;
 
   // WebIDL
 
@@ -48,22 +51,30 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
 
   nsINode* GetStartContainer() const { return mStart.Container(); }
   nsINode* GetEndContainer() const { return mEnd.Container(); }
+
+  // FYI: Returns 0 if it's not positioned.
   uint32_t StartOffset() const {
-    // FYI: Returns 0 if it's not positioned.
-    return static_cast<uint32_t>(mStart.Offset());
+    return static_cast<uint32_t>(
+        *mStart.Offset(RangeBoundary::OffsetFilter::kValidOrInvalidOffsets));
   }
+
+  // FYI: Returns 0 if it's not positioned.
   uint32_t EndOffset() const {
-    // FYI: Returns 0 if it's not positioned.
-    return static_cast<uint32_t>(mEnd.Offset());
+    return static_cast<uint32_t>(
+        *mEnd.Offset(RangeBoundary::OffsetFilter::kValidOrInvalidOffsets));
   }
   bool Collapsed() const {
     return !mIsPositioned || (mStart.Container() == mEnd.Container() &&
-                              mStart.Offset() == mEnd.Offset());
+                              StartOffset() == EndOffset());
   }
 
   nsINode* GetParentObject() const { return mOwner; }
   virtual JSObject* WrapObject(JSContext* aCx,
                                JS::Handle<JSObject*> aGivenProto) override;
+
+  bool HasEqualBoundaries(const AbstractRange& aOther) const {
+    return (mStart == aOther.mStart) && (mEnd == aOther.mEnd);
+  }
 
  protected:
   template <typename SPT, typename SRT, typename EPT, typename ERT,
@@ -75,6 +86,8 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
   RefPtr<Document> mOwner;
   RangeBoundary mStart;
   RangeBoundary mEnd;
+  // `true` if `mStart` and `mEnd` are set for StaticRange or set and valid
+  // for nsRange.
   bool mIsPositioned;
 
   // Used by nsRange, but this should have this for minimizing the size.

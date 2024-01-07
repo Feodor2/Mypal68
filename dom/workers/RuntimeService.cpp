@@ -4,7 +4,6 @@
 
 #include "RuntimeService.h"
 
-#include "nsAutoPtr.h"
 #include "nsIContentSecurityPolicy.h"
 #include "mozilla/dom/Document.h"
 #include "nsIObserverService.h"
@@ -553,7 +552,7 @@ class LogViolationDetailsRunnable final : public WorkerMainThreadRunnable {
   virtual bool MainThreadRun() override;
 
  private:
-  ~LogViolationDetailsRunnable() {}
+  ~LogViolationDetailsRunnable() = default;
 };
 
 bool ContentSecurityPolicyAllows(JSContext* aCx, JS::HandleString aCode) {
@@ -961,7 +960,7 @@ class WorkerJSContext final : public mozilla::CycleCollectedJSContext {
     }
 
     JS::JobQueueMayNotBeEmpty(cx);
-    microTaskQueue->push(runnable.forget());
+    microTaskQueue->push(std::move(runnable));
   }
 
   bool IsSystemCaller() const override {
@@ -1001,7 +1000,7 @@ class WorkerThreadPrimaryRunnable final : public Runnable {
     NS_INLINE_DECL_REFCOUNTING_INHERITED(FinishedRunnable, Runnable)
 
    private:
-    ~FinishedRunnable() {}
+    ~FinishedRunnable() = default;
 
     NS_DECL_NSIRUNNABLE
   };
@@ -1020,7 +1019,7 @@ class WorkerThreadPrimaryRunnable final : public Runnable {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(WorkerThreadPrimaryRunnable, Runnable)
 
  private:
-  ~WorkerThreadPrimaryRunnable() {}
+  ~WorkerThreadPrimaryRunnable() = default;
 
   NS_DECL_NSIRUNNABLE
 };
@@ -1170,12 +1169,11 @@ bool RuntimeService::RegisterWorker(WorkerPrivate* aWorkerPrivate) {
 
   const nsCString& domain = aWorkerPrivate->Domain();
 
-  WorkerDomainInfo* domainInfo;
   bool queued = false;
   {
     MutexAutoLock lock(mMutex);
 
-    domainInfo = mDomainMap.LookupForAdd(domain).OrInsert([&domain, parent]() {
+    const auto& domainInfo = mDomainMap.LookupForAdd(domain).OrInsert([&domain, parent]() {
       NS_ASSERTION(!parent, "Shouldn't have a parent here!");
       Unused << parent;  // silence clang -Wunused-lambda-capture in opt builds
       WorkerDomainInfo* wdi = new WorkerDomainInfo();
@@ -1242,7 +1240,7 @@ bool RuntimeService::RegisterWorker(WorkerPrivate* aWorkerPrivate) {
     if (!isServiceWorker) {
       // Service workers are excluded since their lifetime is separate from
       // that of dom windows.
-      nsTArray<WorkerPrivate*>* windowArray =
+      const auto& windowArray =
           mWindowMap.LookupForAdd(window).OrInsert(
               []() { return new nsTArray<WorkerPrivate*>(1); });
       if (!windowArray->Contains(aWorkerPrivate)) {
@@ -1339,8 +1337,8 @@ void RuntimeService::UnregisterWorker(WorkerPrivate* aWorkerPrivate) {
     AssertIsOnMainThread();
 
     for (auto iter = mWindowMap.Iter(); !iter.Done(); iter.Next()) {
-      nsAutoPtr<nsTArray<WorkerPrivate*>>& workers = iter.Data();
-      MOZ_ASSERT(workers.get());
+      const auto& workers = iter.Data();
+      MOZ_ASSERT(workers);
 
       if (workers->RemoveElement(aWorkerPrivate)) {
         MOZ_ASSERT(!workers->Contains(aWorkerPrivate),

@@ -284,6 +284,8 @@ already_AddRefed<Promise> ExecuteOpOnMainOrWorkerThread(
         // In private browsing mode, no permission prompt.
         if (nsContentUtils::IsInPrivateBrowsing(doc)) {
           aRv = request->Cancel();
+        } else if (!request->CheckPermissionDelegate()) {
+          aRv = request->Cancel();
         } else {
           aRv = request->Start();
         }

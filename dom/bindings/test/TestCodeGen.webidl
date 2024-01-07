@@ -845,11 +845,11 @@ interface TestInterface {
   void exerciseTypedefInterfaces3(YetAnotherNameForTestInterface arg);
 
   // Deprecated methods and attributes
-  [Deprecated="EnablePrivilege"]
+  [Deprecated="Components"]
   attribute byte deprecatedAttribute;
-  [Deprecated="EnablePrivilege"]
+  [Deprecated="Components"]
   byte deprecatedMethod();
-  [Deprecated="EnablePrivilege"]
+  [Deprecated="Components"]
   byte deprecatedMethodWithContext(any arg);
 
   // Static methods and attributes
@@ -861,11 +861,11 @@ interface TestInterface {
   static void assert(boolean arg);
 
   // Deprecated static methods and attributes
-  [Deprecated="EnablePrivilege"]
+  [Deprecated="Components"]
   static attribute byte staticDeprecatedAttribute;
-  [Deprecated="EnablePrivilege"]
+  [Deprecated="Components"]
   static void staticDeprecatedMethod();
-  [Deprecated="EnablePrivilege"]
+  [Deprecated="Components"]
   static void staticDeprecatedMethodWithContext(any arg);
 
   // Overload resolution tests
@@ -1293,7 +1293,7 @@ interface TestCppKeywordNamedMethodsInterface {
   long volatile();
 };
 
-[Deprecated="EnablePrivilege",
+[Deprecated="Components",
  Exposed=Window]
 interface TestDeprecatedInterface {
   constructor();

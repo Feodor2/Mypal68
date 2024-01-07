@@ -19,16 +19,22 @@ class nsIRadioVisitor;
 class nsWindowSizes;
 
 namespace mozilla {
+class ErrorResult;
 class StyleSheet;
+class ErrorResult;
 
 namespace dom {
 
+class Animation;
 class Element;
+class Document;
 class DocumentOrShadowRoot;
 class HTMLInputElement;
 struct nsRadioGroupStruct;
 class StyleSheetList;
 class ShadowRoot;
+template <typename T>
+class Sequence;
 
 /**
  * A class meant to be shared by ShadowRoot and Document, that holds a list of
@@ -44,17 +50,20 @@ class DocumentOrShadowRoot {
   };
 
  public:
-  explicit DocumentOrShadowRoot(Document&);
-  explicit DocumentOrShadowRoot(ShadowRoot&);
+  // These should always be non-null, but can't use a reference because
+  // dereferencing `this` on initializer lists is UB, apparently, see
+  // bug 1596499.
+  explicit DocumentOrShadowRoot(Document*);
+  explicit DocumentOrShadowRoot(ShadowRoot*);
 
   // Unusual argument naming is because of cycle collection macros.
   static void Traverse(DocumentOrShadowRoot* tmp,
                        nsCycleCollectionTraversalCallback& cb);
   static void Unlink(DocumentOrShadowRoot* tmp);
 
-  nsINode& AsNode() { return mAsNode; }
+  nsINode& AsNode() { return *mAsNode; }
 
-  const nsINode& AsNode() const { return mAsNode; }
+  const nsINode& AsNode() const { return *mAsNode; }
 
   StyleSheet* SheetAt(size_t aIndex) const {
     return mStyleSheets.SafeElementAt(aIndex);
@@ -62,11 +71,20 @@ class DocumentOrShadowRoot {
 
   size_t SheetCount() const { return mStyleSheets.Length(); }
 
-  int32_t IndexOfSheet(const StyleSheet& aSheet) const {
-    return mStyleSheets.IndexOf(&aSheet);
-  }
+  size_t AdoptedSheetCount() const { return mAdoptedStyleSheets.Length(); }
 
-  StyleSheetList& EnsureDOMStyleSheets();
+  /**
+   * Returns an index for the sheet in relative style order.
+   * If there are non-applicable sheets, then this index may
+   * not match 1:1 with the sheet's actual index in the style set.
+   *
+   * Handles sheets from both mStyleSheets and mAdoptedStyleSheets
+   */
+  int32_t StyleOrderIndexOfSheet(const StyleSheet& aSheet) const;
+
+  StyleSheetList* StyleSheets();
+
+  void GetAdoptedStyleSheets(nsTArray<RefPtr<StyleSheet>>&) const;
 
   Element* GetElementById(const nsAString& aElementId);
 
@@ -176,6 +194,10 @@ class DocumentOrShadowRoot {
 
   void ReportEmptyGetElementByIdArg();
 
+  // Web Animations
+  MOZ_CAN_RUN_SCRIPT
+  void GetAnimations(nsTArray<RefPtr<Animation>>& aAnimations);
+
   // nsIRadioGroupContainer
   NS_IMETHOD WalkRadioGroup(const nsAString& aName, nsIRadioVisitor* aVisitor,
                             bool aFlushContent);
@@ -201,6 +223,11 @@ class DocumentOrShadowRoot {
   // Returns the reference to the sheet, if found in mStyleSheets.
   already_AddRefed<StyleSheet> RemoveSheet(StyleSheet& aSheet);
   void InsertSheetAt(size_t aIndex, StyleSheet& aSheet);
+  void InsertAdoptedSheetAt(size_t aIndex, StyleSheet& aSheet);
+
+  void EnsureAdoptedSheetsAreValid(
+      const Sequence<OwningNonNull<StyleSheet>>& aAdoptedStyleSheets,
+      ErrorResult& aRv);
 
   void AddSizeOfExcludingThis(nsWindowSizes&) const;
   void AddSizeOfOwnedSheetArrayExcludingThis(
@@ -216,6 +243,10 @@ class DocumentOrShadowRoot {
   nsTArray<RefPtr<StyleSheet>> mStyleSheets;
   RefPtr<StyleSheetList> mDOMStyleSheets;
 
+  // Style sheets that are adopted by assinging to the `adoptedStyleSheets`
+  // WebIDL atribute. These can only be constructed stylesheets.
+  nsTArray<RefPtr<StyleSheet>> mAdoptedStyleSheets;
+
   /*
    * mIdentifierMap works as follows for IDs:
    * 1) Attribute changes affect the table immediately (removing and adding
@@ -228,7 +259,9 @@ class DocumentOrShadowRoot {
 
   nsClassHashtable<nsStringHashKey, nsRadioGroupStruct> mRadioGroups;
 
-  nsINode& mAsNode;
+  // Always non-null, see comment in the constructor as to why a pointer instead
+  // of a reference.
+  nsINode* mAsNode;
   const Kind mKind;
 };
 

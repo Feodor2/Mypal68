@@ -7,6 +7,7 @@
 #ifndef mozilla_Result_h
 #define mozilla_Result_h
 
+#include <type_traits>
 #include "mozilla/Alignment.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Attributes.h"
@@ -53,7 +54,8 @@ class ResultImplementation<V, E, PackingStrategy::Variant> {
   explicit ResultImplementation(V&& aValue)
       : mStorage(std::forward<V>(aValue)) {}
   explicit ResultImplementation(const V& aValue) : mStorage(aValue) {}
-  explicit ResultImplementation(E aErrorValue)
+  explicit ResultImplementation(const E& aErrorValue) : mStorage(aErrorValue) {}
+  explicit ResultImplementation(E&& aErrorValue)
       : mStorage(std::forward<E>(aErrorValue)) {}
 
   bool isOk() const { return mStorage.template is<V>(); }
@@ -342,6 +344,18 @@ class MOZ_MUST_USE_TYPE Result final {
    * Create an error result from another error result.
    */
   template <typename E2>
+  MOZ_IMPLICIT Result(GenericErrorResult<E2>&& aErrorResult)
+      : mImpl(std::forward<E2>(aErrorResult.mErrorValue)) {
+    static_assert(mozilla::IsConvertible<E2, E>::value,
+                  "E2 must be convertible to E");
+    MOZ_ASSERT(isErr());
+  }
+
+  /**
+   * Implementation detail of MOZ_TRY().
+   * Create an error result from another error result.
+   */
+  template <typename E2>
   MOZ_IMPLICIT Result(const GenericErrorResult<E2>& aErrorResult)
       : mImpl(aErrorResult.mErrorValue) {
     static_assert(mozilla::IsConvertible<E2, E>::value,
@@ -371,7 +385,9 @@ class MOZ_MUST_USE_TYPE Result final {
    * Take the success value from this Result, which must be a success result.
    * If it is an error result, then return the aValue.
    */
-  V unwrapOr(V aValue) { return isOk() ? mImpl.unwrap() : std::move(aValue); }
+  V unwrapOr(V aValue) {
+    return MOZ_LIKELY(isOk()) ? mImpl.unwrap() : std::move(aValue);
+  }
 
   /** Take the error value from this Result, which must be an error result. */
   E unwrapErr() {
@@ -416,7 +432,38 @@ class MOZ_MUST_USE_TYPE Result final {
   template <typename F>
   auto map(F f) -> Result<decltype(f(*((V*)nullptr))), E> {
     using RetResult = Result<decltype(f(*((V*)nullptr))), E>;
-    return isOk() ? RetResult(f(unwrap())) : RetResult(unwrapErr());
+    return MOZ_LIKELY(isOk()) ? RetResult(f(unwrap())) : RetResult(unwrapErr());
+  }
+
+  /**
+   * Map a function V -> W over this result's error variant. If this result is
+   * a success, do not invoke the function and move the success over.
+   *
+   * Mapping over error values invokes the function to produce a new error
+   * value:
+   *
+   *     // Map Result<V, int> to another Result<V, int>
+   *     Result<V, int> res(5);
+   *     Result<V, int> res2 = res.mapErr([](int x) { return x * x; });
+   *     MOZ_ASSERT(res2.unwrapErr() == 25);
+   *
+   *     // Map Result<V, const char*> to Result<V, size_t>
+   *     Result<V, const char*> res("hello, map!");
+   *     Result<size_t, E> res2 = res.mapErr(strlen);
+   *     MOZ_ASSERT(res2.unwrapErr() == 11);
+   *
+   * Mapping over a success does not invoke the function and copies the error:
+   *
+   *     Result<int, V> res(5);
+   *     MOZ_ASSERT(res.isOk());
+   *     Result<int, W> res2 = res.mapErr([](V v) { ... });
+   *     MOZ_ASSERT(res2.isOk());
+   *     MOZ_ASSERT(res2.unwrap() == 5);
+   */
+  template <typename F>
+  auto mapErr(F f) -> Result<V, std::result_of_t<F(E)>> {
+    using RetResult = Result<V, std::result_of_t<F(E)>>;
+    return isOk() ? RetResult(unwrap()) : RetResult(f(unwrapErr()));
   }
 
   /**
@@ -450,7 +497,8 @@ class MOZ_MUST_USE_TYPE Result final {
   template <typename F, typename = typename EnableIf<detail::IsResult<decltype(
                             (*((F*)nullptr))(*((V*)nullptr)))>::value>::Type>
   auto andThen(F f) -> decltype(f(*((V*)nullptr))) {
-    return isOk() ? f(unwrap()) : GenericErrorResult<E>(unwrapErr());
+    return MOZ_LIKELY(isOk()) ? f(unwrap())
+                              : GenericErrorResult<E>(unwrapErr());
   }
 };
 
@@ -468,12 +516,13 @@ class MOZ_MUST_USE_TYPE GenericErrorResult {
   friend class Result;
 
  public:
-  explicit GenericErrorResult(E aErrorValue) : mErrorValue(aErrorValue) {}
+  explicit GenericErrorResult(E&& aErrorValue)
+      : mErrorValue(std::forward<E>(aErrorValue)) {}
 };
 
 template <typename E>
 inline GenericErrorResult<E> Err(E&& aErrorValue) {
-  return GenericErrorResult<E>(aErrorValue);
+  return GenericErrorResult<E>(std::forward<E>(aErrorValue));
 }
 
 }  // namespace mozilla
@@ -487,7 +536,7 @@ inline GenericErrorResult<E> Err(E&& aErrorValue) {
 #define MOZ_TRY(expr)                                       \
   do {                                                      \
     auto mozTryTempResult_ = ::mozilla::ToResult(expr);     \
-    if (mozTryTempResult_.isErr()) {                        \
+    if (MOZ_UNLIKELY(mozTryTempResult_.isErr())) {          \
       return ::mozilla::Err(mozTryTempResult_.unwrapErr()); \
     }                                                       \
   } while (0)
@@ -502,7 +551,7 @@ inline GenericErrorResult<E> Err(E&& aErrorValue) {
 #define MOZ_TRY_VAR(target, expr)                              \
   do {                                                         \
     auto mozTryVarTempResult_ = (expr);                        \
-    if (mozTryVarTempResult_.isErr()) {                        \
+    if (MOZ_UNLIKELY(mozTryVarTempResult_.isErr())) {          \
       return ::mozilla::Err(mozTryVarTempResult_.unwrapErr()); \
     }                                                          \
     (target) = mozTryVarTempResult_.unwrap();                  \

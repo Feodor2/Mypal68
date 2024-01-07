@@ -577,7 +577,7 @@ nsresult ScalarUnsigned::GetValue(const nsACString& aStoreName,
   if (NS_FAILED(rv)) {
     return rv;
   }
-  aResult = outVar.forget();
+  aResult = std::move(outVar);
   if (aClearStore) {
     mStorage[storeIndex] = 0;
     ClearValueInStore(storeIndex);
@@ -690,7 +690,7 @@ nsresult ScalarString::GetValue(const nsACString& aStoreName, bool aClearStore,
   if (aClearStore) {
     ClearValueInStore(storeIndex);
   }
-  aResult = outVar.forget();
+  aResult = std::move(outVar);
   return NS_OK;
 }
 
@@ -780,7 +780,7 @@ nsresult ScalarBoolean::GetValue(const nsACString& aStoreName, bool aClearStore,
   if (NS_FAILED(rv)) {
     return rv;
   }
-  aResult = outVar.forget();
+  aResult = std::move(outVar);
   return NS_OK;
 }
 
@@ -983,7 +983,7 @@ void KeyedScalar::SetMaximum(const StaticMutexAutoLock& locker,
 nsresult KeyedScalar::GetValue(const nsACString& aStoreName, bool aClearStorage,
                                nsTArray<KeyValuePair>& aValues) {
   for (auto iter = mScalarKeys.ConstIter(); !iter.Done(); iter.Next()) {
-    ScalarBase* scalar = static_cast<ScalarBase*>(iter.Data());
+    ScalarBase* scalar = iter.UserData();
 
     // Get the scalar value.
     nsCOMPtr<nsIVariant> scalarValue;
@@ -1085,7 +1085,7 @@ ScalarResult KeyedScalar::GetScalarForKey(const StaticMutexAutoLock& locker,
 size_t KeyedScalar::SizeOfIncludingThis(mozilla::MallocSizeOf aMallocSizeOf) {
   size_t n = aMallocSizeOf(this);
   for (auto iter = mScalarKeys.Iter(); !iter.Done(); iter.Next()) {
-    ScalarBase* scalar = static_cast<ScalarBase*>(iter.Data());
+    ScalarBase* scalar = iter.UserData();
     n += scalar->SizeOfIncludingThis(aMallocSizeOf);
   }
   return n;
@@ -1951,8 +1951,7 @@ nsresult internal_ScalarSnapshotter(const StaticMutexAutoLock& aLock,
   // Iterate the scalars in aProcessStorage. The storage may contain empty or
   // yet to be initialized scalars from all the supported processes.
   for (auto iter = aProcessStorage.Iter(); !iter.Done(); iter.Next()) {
-    ScalarStorageMapType* scalarStorage =
-        static_cast<ScalarStorageMapType*>(iter.Data());
+    ScalarStorageMapType* scalarStorage = iter.UserData();
     ScalarTupleArray& processScalars =
         aScalarsToReflect.GetOrInsert(iter.Key());
 
@@ -1963,7 +1962,7 @@ nsresult internal_ScalarSnapshotter(const StaticMutexAutoLock& aLock,
     // Iterate each available child storage.
     for (auto childIter = scalarStorage->Iter(); !childIter.Done();
          childIter.Next()) {
-      ScalarBase* scalar = static_cast<ScalarBase*>(childIter.Data());
+      ScalarBase* scalar = childIter.UserData();
 
       // Get the informations for this scalar.
       const BaseScalarInfo& info = internal_GetScalarInfo(
@@ -2012,8 +2011,7 @@ nsresult internal_KeyedScalarSnapshotter(
   // Iterate the scalars in aProcessStorage. The storage may contain empty or
   // yet to be initialized scalars from all the supported processes.
   for (auto iter = aProcessStorage.Iter(); !iter.Done(); iter.Next()) {
-    KeyedScalarStorageMapType* scalarStorage =
-        static_cast<KeyedScalarStorageMapType*>(iter.Data());
+    KeyedScalarStorageMapType* scalarStorage = iter.UserData();
     KeyedScalarTupleArray& processScalars =
         aScalarsToReflect.GetOrInsert(iter.Key());
 
@@ -2023,7 +2021,7 @@ nsresult internal_KeyedScalarSnapshotter(
 
     for (auto childIter = scalarStorage->Iter(); !childIter.Done();
          childIter.Next()) {
-      KeyedScalar* scalar = static_cast<KeyedScalar*>(childIter.Data());
+      KeyedScalar* scalar = childIter.UserData();
 
       // Get the informations for this scalar.
       const BaseScalarInfo& info = internal_GetScalarInfo(

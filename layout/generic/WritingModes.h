@@ -9,6 +9,7 @@
 
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/ComputedStyleInlines.h"
+#include "mozilla/EnumeratedRange.h"
 
 #include "nsRect.h"
 #include "nsBidiUtils.h"
@@ -50,6 +51,10 @@ enum LogicalSide : uint8_t {
   eLogicalSideIStart = (eLogicalAxisInline << 1) | eLogicalEdgeStart,  // 0x2
   eLogicalSideIEnd = (eLogicalAxisInline << 1) | eLogicalEdgeEnd       // 0x3
 };
+constexpr auto AllLogicalSides() {
+  return mozilla::MakeInclusiveEnumeratedRange(eLogicalSideBStart,
+                                               eLogicalSideIEnd);
+}
 
 enum LogicalCorner {
   eLogicalCornerBStartIStart = 0,
@@ -1223,6 +1228,37 @@ class LogicalMargin {
   }
   nscoord StartEnd(LogicalAxis aAxis, WritingMode aWM) const {
     return aAxis == eLogicalAxisInline ? IStartEnd(aWM) : BStartEnd(aWM);
+  }
+
+  nscoord Side(LogicalSide aSide, WritingMode aWM) const {
+    switch (aSide) {
+      case eLogicalSideBStart:
+        return BStart(aWM);
+      case eLogicalSideBEnd:
+        return BEnd(aWM);
+      case eLogicalSideIStart:
+        return IStart(aWM);
+      case eLogicalSideIEnd:
+        return IEnd(aWM);
+    }
+
+    MOZ_ASSERT_UNREACHABLE("We should handle all sides!");
+    return BStart(aWM);
+  }
+  nscoord& Side(LogicalSide aSide, WritingMode aWM) {
+    switch (aSide) {
+      case eLogicalSideBStart:
+        return BStart(aWM);
+      case eLogicalSideBEnd:
+        return BEnd(aWM);
+      case eLogicalSideIStart:
+        return IStart(aWM);
+      case eLogicalSideIEnd:
+        return IEnd(aWM);
+    }
+
+    MOZ_ASSERT_UNREACHABLE("We should handle all sides!");
+    return BStart(aWM);
   }
 
   /*

@@ -2632,9 +2632,8 @@ nsresult nsGenericHTMLElement::NewURIFromString(const nsAString& aURISpec,
 
   nsCOMPtr<Document> doc = OwnerDoc();
 
-  nsresult rv =
-      nsContentUtils::NewURIWithDocumentCharset(aURI, aURISpec, doc,
-                                                GetBaseURI());
+  nsresult rv = nsContentUtils::NewURIWithDocumentCharset(aURI, aURISpec, doc,
+                                                          GetBaseURI());
   NS_ENSURE_SUCCESS(rv, rv);
 
   bool equal;
@@ -2772,12 +2771,10 @@ already_AddRefed<ElementInternals> nsGenericHTMLElement::AttachInternals(
   nsAtom* isAtom = ceData ? ceData->GetIs(this) : nullptr;
   nsAtom* nameAtom = NodeInfo()->NameAtom();
   if (isAtom) {
-    aRv.ThrowDOMException(
-        NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        nsPrintfCString(
-            "Cannot attach ElementInternals to a customized built-in element "
-            "'%s'",
-            NS_ConvertUTF16toUTF8(isAtom->GetUTF16String()).get()));
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "Cannot attach ElementInternals to a customized built-in element "
+        "'%s'",
+        NS_ConvertUTF16toUTF8(isAtom->GetUTF16String()).get()));
     return nullptr;
   }
 
@@ -2792,40 +2789,34 @@ already_AddRefed<ElementInternals> nsGenericHTMLElement::AttachInternals(
     // Fallback to use LookupCustomElementDefinition to find its definition.
     if (!definition) {
       definition = nsContentUtils::LookupCustomElementDefinition(
-          NodeInfo()->GetDocument(), nameAtom,
-          NodeInfo()->NamespaceID(), ceData->GetCustomElementType());
+          NodeInfo()->GetDocument(), nameAtom, NodeInfo()->NamespaceID(),
+          ceData->GetCustomElementType());
     }
   }
 
   // 3. If definition is null, then throw an "NotSupportedError" DOMException.
   if (!definition) {
-    aRv.ThrowDOMException(
-        NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        nsPrintfCString(
-            "Cannot attach ElementInternals to a non-custom element '%s'",
-            NS_ConvertUTF16toUTF8(nameAtom->GetUTF16String()).get()));
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "Cannot attach ElementInternals to a non-custom element '%s'",
+        NS_ConvertUTF16toUTF8(nameAtom->GetUTF16String()).get()));
     return nullptr;
   }
 
   // 4. If definition's disable internals is true, then throw a
   //    "NotSupportedError" DOMException.
   if (definition->mDisableInternals) {
-    aRv.ThrowDOMException(
-        NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        nsPrintfCString(
-            "AttachInternal() to '%s' is disabled by disabledFeatures",
-            NS_ConvertUTF16toUTF8(nameAtom->GetUTF16String()).get()));
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "AttachInternal() to '%s' is disabled by disabledFeatures",
+        NS_ConvertUTF16toUTF8(nameAtom->GetUTF16String()).get()));
     return nullptr;
   }
 
   // 5. If element's attached internals is true, then throw an
   //    "NotSupportedError" DOMException.
   if (ceData->HasAttachedInternals()) {
-    aRv.ThrowDOMException(
-        NS_ERROR_DOM_NOT_SUPPORTED_ERR,
-        nsPrintfCString(
-            "AttachInternals() has already been called from '%s'",
-            NS_ConvertUTF16toUTF8(nameAtom->GetUTF16String()).get()));
+    aRv.ThrowNotSupportedError(nsPrintfCString(
+        "AttachInternals() has already been called from '%s'",
+        NS_ConvertUTF16toUTF8(nameAtom->GetUTF16String()).get()));
     return nullptr;
   }
 

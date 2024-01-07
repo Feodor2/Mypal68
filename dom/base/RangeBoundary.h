@@ -7,7 +7,10 @@
 
 #include "nsCOMPtr.h"
 #include "nsIContent.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/Maybe.h"
+
+class nsRange;
 
 namespace mozilla {
 
@@ -46,10 +49,14 @@ class RangeBoundaryBase {
   template <typename T, typename U>
   friend class EditorDOMPointBase;
 
+  friend nsRange;
+
   friend void ImplCycleCollectionTraverse(nsCycleCollectionTraversalCallback&,
                                           RangeBoundary&, const char*,
                                           uint32_t);
   friend void ImplCycleCollectionUnlink(RangeBoundary&);
+
+  static const uint32_t kFallbackOffset = 0;
 
  public:
   RangeBoundaryBase(nsINode* aContainer, nsIContent* aRef)
@@ -96,10 +103,12 @@ class RangeBoundaryBase {
       return nullptr;
     }
     if (!mRef) {
-      MOZ_ASSERT(Offset() == 0, "invalid RangeBoundary");
+      MOZ_ASSERT(*Offset(OffsetFilter::kValidOrInvalidOffsets) == 0,
+                 "invalid RangeBoundary");
       return mParent->GetFirstChild();
     }
-    MOZ_ASSERT(mParent->GetChildAt_Deprecated(Offset()) ==
+    MOZ_ASSERT(mParent->GetChildAt_Deprecated(
+                   *Offset(OffsetFilter::kValidOrInvalidOffsets)) ==
                mRef->GetNextSibling());
     return mRef->GetNextSibling();
   }
@@ -136,20 +145,52 @@ class RangeBoundaryBase {
     return mRef;
   }
 
-  uint32_t Offset() const {
-    if (mOffset.isSome()) {
-      return mOffset.value();
+  enum class OffsetFilter { kValidOffsets, kValidOrInvalidOffsets };
+
+  /**
+   * @return maybe an offset, depending on aOffsetFilter. If it is:
+   *         kValidOffsets: if the offset is valid, it, Nothing{} otherwise.
+   *         kValidOrInvalidOffsets: the internally stored offset, even if
+   *                                 invalid, or if not available, a defined
+   *                                 default value. That is, always some value.
+   */
+  Maybe<uint32_t> Offset(const OffsetFilter aOffsetFilter) const {
+    switch (aOffsetFilter) {
+      case OffsetFilter::kValidOffsets: {
+        if (IsSetAndValid()) {
+          if (!mOffset) {
+            DetermineOffsetFromReference();
+          }
+        }
+        return mOffset;
+      }
+      case OffsetFilter::kValidOrInvalidOffsets: {
+        if (mOffset.isSome()) {
+          return mOffset;
+        }
+
+        if (mParent) {
+          DetermineOffsetFromReference();
+          return mOffset;
+        }
+
+        return Some(kFallbackOffset);
+      }
     }
 
-    if (!mParent) {
-      return 0;
-    }
+    // Needed to calm the compiler. There was deliberately no default case added
+    // to the above switch-statement, because it would prevent build-errors when
+    // not all enumerators are handled.
+    MOZ_ASSERT_UNREACHABLE();
+    return Some(kFallbackOffset);
+  }
 
+ private:
+  void DetermineOffsetFromReference() const {
+    MOZ_ASSERT(mParent);
     MOZ_ASSERT(mRef);
     MOZ_ASSERT(mRef->GetParentNode() == mParent);
     mOffset = mozilla::Some(mParent->ComputeIndexOf(mRef) + 1);
-
-    return mOffset.value();
   }
 
   void InvalidateOffset() {
@@ -165,6 +206,7 @@ class RangeBoundaryBase {
     mOffset.reset();
   }
 
+ public:
   bool IsSet() const { return mParent && (mRef || mOffset.isSome()); }
 
   bool IsSetAndValid() const {
@@ -175,7 +217,9 @@ class RangeBoundaryBase {
     if (Ref()) {
       return Ref()->GetParentNode() == Container();
     }
-    return Offset() <= Container()->Length();
+
+    MOZ_ASSERT(mOffset.isSome());
+    return *mOffset <= Container()->Length();
   }
 
   bool IsStartOfContainer() const {
@@ -214,6 +258,15 @@ class RangeBoundaryBase {
     return *this;
   }
 
+  bool Equals(const nsINode* aNode, uint32_t aOffset) const {
+    if (mParent != aNode) {
+      return false;
+    }
+
+    const Maybe<uint32_t> offset = Offset(OffsetFilter::kValidOffsets);
+    return offset && (*offset == aOffset);
+  }
+
   template <typename A, typename B>
   bool operator==(const RangeBoundaryBase<A, B>& aOther) const {
     return mParent == aOther.mParent &&
@@ -231,6 +284,9 @@ class RangeBoundaryBase {
 
   mutable mozilla::Maybe<uint32_t> mOffset;
 };
+
+template <typename ParentType, typename RefType>
+const uint32_t RangeBoundaryBase<ParentType, RefType>::kFallbackOffset;
 
 inline void ImplCycleCollectionUnlink(RangeBoundary& aField) {
   ImplCycleCollectionUnlink(aField.mParent);

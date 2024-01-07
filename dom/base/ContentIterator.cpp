@@ -15,6 +15,64 @@
 
 namespace mozilla {
 
+static bool ComparePostMode(const RawRangeBoundary& aStart,
+                            const RawRangeBoundary& aEnd, nsINode& aNode) {
+  nsINode* parent = aNode.GetParentNode();
+  if (!parent) {
+    return false;
+  }
+
+  // aNode should always be content, as we have a parent, but let's just be
+  // extra careful and check.
+  nsIContent* content =
+      NS_WARN_IF(!aNode.IsContent()) ? nullptr : aNode.AsContent();
+
+  // Post mode: start < node <= end.
+  RawRangeBoundary afterNode(parent, content);
+  const auto isStartLessThanAfterNode = [&]() {
+    const Maybe<int32_t> startComparedToAfterNode =
+        nsContentUtils::ComparePoints(aStart, afterNode);
+    return !NS_WARN_IF(!startComparedToAfterNode) &&
+           (*startComparedToAfterNode < 0);
+  };
+
+  const auto isAfterNodeLessOrEqualToEnd = [&]() {
+    const Maybe<int32_t> afterNodeComparedToEnd =
+        nsContentUtils::ComparePoints(afterNode, aEnd);
+    return !NS_WARN_IF(!afterNodeComparedToEnd) &&
+           (*afterNodeComparedToEnd <= 0);
+  };
+
+  return isStartLessThanAfterNode() && isAfterNodeLessOrEqualToEnd();
+}
+
+static bool ComparePreMode(const RawRangeBoundary& aStart,
+                           const RawRangeBoundary& aEnd, nsINode& aNode) {
+  nsINode* parent = aNode.GetParentNode();
+  if (!parent) {
+    return false;
+  }
+
+  // Pre mode: start <= node < end.
+  RawRangeBoundary beforeNode(parent, aNode.GetPreviousSibling());
+
+  const auto isStartLessOrEqualToBeforeNode = [&]() {
+    const Maybe<int32_t> startComparedToBeforeNode =
+        nsContentUtils::ComparePoints(aStart, beforeNode);
+    return !NS_WARN_IF(!startComparedToBeforeNode) &&
+           (*startComparedToBeforeNode <= 0);
+  };
+
+  const auto isBeforeNodeLessThanEndNode = [&]() {
+    const Maybe<int32_t> beforeNodeComparedToEnd =
+        nsContentUtils::ComparePoints(beforeNode, aEnd);
+    return !NS_WARN_IF(!beforeNodeComparedToEnd) &&
+           (*beforeNodeComparedToEnd < 0);
+  };
+
+  return isStartLessOrEqualToBeforeNode() && isBeforeNodeLessThanEndNode();
+}
+
 ///////////////////////////////////////////////////////////////////////////
 // NodeIsInTraversalRange: returns true if content is visited during
 // the traversal of the range in the specified mode.
@@ -45,26 +103,11 @@ static bool NodeIsInTraversalRange(nsINode* aNode, bool aIsPreMode,
     }
   }
 
-  nsINode* parent = aNode->GetParentNode();
-  if (!parent) {
-    return false;
+  if (aIsPreMode) {
+    return ComparePreMode(aStart, aEnd, *aNode);
   }
 
-  if (!aIsPreMode) {
-    // aNode should always be content, as we have a parent, but let's just be
-    // extra careful and check.
-    nsIContent* content =
-        NS_WARN_IF(!aNode->IsContent()) ? nullptr : aNode->AsContent();
-    // Post mode: start < node <= end.
-    RawRangeBoundary afterNode(parent, content);
-    return nsContentUtils::ComparePoints(aStart, afterNode) < 0 &&
-           nsContentUtils::ComparePoints(aEnd, afterNode) >= 0;
-  }
-
-  // Pre mode: start <= node < end.
-  RawRangeBoundary beforeNode(parent, aNode->GetPreviousSibling());
-  return nsContentUtils::ComparePoints(aStart, beforeNode) <= 0 &&
-         nsContentUtils::ComparePoints(aEnd, beforeNode) > 0;
+  return ComparePostMode(aStart, aEnd, *aNode);
 }
 
 ContentIteratorBase::ContentIteratorBase(bool aPre)
@@ -139,8 +182,8 @@ nsresult ContentIteratorBase::Init(const RawRangeBoundary& aStart,
 nsresult ContentIteratorBase::InitInternal(const RawRangeBoundary& aStart,
                                            const RawRangeBoundary& aEnd) {
   // get common content parent
-  mCommonParent =
-      nsContentUtils::GetCommonAncestor(aStart.Container(), aEnd.Container());
+  mCommonParent = nsContentUtils::GetClosestCommonInclusiveAncestor(
+      aStart.Container(), aEnd.Container());
   if (NS_WARN_IF(!mCommonParent)) {
     return NS_ERROR_FAILURE;
   }
@@ -665,7 +708,7 @@ nsresult ContentSubtreeIterator::InitWithRange() {
   MOZ_ASSERT(mRange->IsPositioned());
 
   // get the start node and offset, convert to nsINode
-  mCommonParent = mRange->GetCommonAncestor();
+  mCommonParent = mRange->GetClosestCommonInclusiveAncestor();
   nsINode* startContainer = mRange->GetStartContainer();
   int32_t startOffset = mRange->StartOffset();
   nsINode* endContainer = mRange->GetEndContainer();

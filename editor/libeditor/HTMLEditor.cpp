@@ -764,6 +764,9 @@ nsresult HTMLEditor::HandleKeyPressEvent(WidgetKeyboardEvent* aKeyboardEvent) {
  * Can be used to determine if a new paragraph should be started.
  */
 bool HTMLEditor::NodeIsBlockStatic(const nsINode& aElement) {
+  if (!aElement.IsElement()) {
+    return false;
+  }
   // We want to treat these as block nodes even though nsHTMLElement says
   // they're not.
   if (aElement.IsAnyOfHTMLElements(
@@ -4560,7 +4563,7 @@ nsresult HTMLEditor::CopyLastEditableChildStylesWithTransaction(
   if (NS_WARN_IF(!brElement)) {
     return NS_ERROR_FAILURE;
   }
-  *aNewBrElement = brElement.forget();
+  *aNewBrElement = std::move(brElement);
   return NS_OK;
 }
 
@@ -4622,7 +4625,7 @@ Element* HTMLEditor::GetSelectionContainerElement() const {
         focusNode = startRef.GetChildAtOffset();
         MOZ_ASSERT(focusNode, "Start container must not be nullptr");
       } else {
-        focusNode = range->GetCommonAncestor();
+        focusNode = range->GetClosestCommonInclusiveAncestor();
         if (NS_WARN_IF(!focusNode)) {
           return nullptr;
         }

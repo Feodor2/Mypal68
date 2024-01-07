@@ -495,7 +495,7 @@ class ContentParent final : public PContentParent,
   void MaybeInvokeDragSession(BrowserParent* aParent);
 
   PContentPermissionRequestParent* AllocPContentPermissionRequestParent(
-      const InfallibleTArray<PermissionRequest>& aRequests,
+      const nsTArray<PermissionRequest>& aRequests,
       const IPC::Principal& aPrincipal,
       const IPC::Principal& aTopLevelPrincipal,
       const bool& aIsHandlingUserInput, const bool& aDocumentHasUserInput,
@@ -890,10 +890,9 @@ class ContentParent final : public PContentParent,
   bool DeallocPWebBrowserPersistDocumentParent(
       PWebBrowserPersistDocumentParent* aActor);
 
-  mozilla::ipc::IPCResult RecvGetGfxVars(InfallibleTArray<GfxVarUpdate>* aVars);
+  mozilla::ipc::IPCResult RecvGetGfxVars(nsTArray<GfxVarUpdate>* aVars);
 
-  mozilla::ipc::IPCResult RecvReadFontList(
-      InfallibleTArray<FontListEntry>* retValue);
+  mozilla::ipc::IPCResult RecvReadFontList(nsTArray<FontListEntry>* retValue);
 
   mozilla::ipc::IPCResult RecvSetClipboard(
       const IPCDataTransfer& aDataTransfer, const bool& aIsPrivateData,
@@ -918,9 +917,9 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvBeep();
   mozilla::ipc::IPCResult RecvPlayEventSound(const uint32_t& aEventId);
 
-  mozilla::ipc::IPCResult RecvGetIconForExtension(
-      const nsCString& aFileExt, const uint32_t& aIconSize,
-      InfallibleTArray<uint8_t>* bits);
+  mozilla::ipc::IPCResult RecvGetIconForExtension(const nsCString& aFileExt,
+                                                  const uint32_t& aIconSize,
+                                                  nsTArray<uint8_t>* bits);
 
   mozilla::ipc::IPCResult RecvGetShowPasswordSetting(bool* showPassword);
 
@@ -952,16 +951,16 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvSyncMessage(
       const nsString& aMsg, const ClonedMessageData& aData,
-      InfallibleTArray<CpowEntry>&& aCpows, const IPC::Principal& aPrincipal,
+      nsTArray<CpowEntry>&& aCpows, const IPC::Principal& aPrincipal,
       nsTArray<StructuredCloneData>* aRetvals);
 
   mozilla::ipc::IPCResult RecvRpcMessage(
       const nsString& aMsg, const ClonedMessageData& aData,
-      InfallibleTArray<CpowEntry>&& aCpows, const IPC::Principal& aPrincipal,
+      nsTArray<CpowEntry>&& aCpows, const IPC::Principal& aPrincipal,
       nsTArray<StructuredCloneData>* aRetvals);
 
   mozilla::ipc::IPCResult RecvAsyncMessage(const nsString& aMsg,
-                                           InfallibleTArray<CpowEntry>&& aCpows,
+                                           nsTArray<CpowEntry>&& aCpows,
                                            const IPC::Principal& aPrincipal,
                                            const ClonedMessageData& aData);
 
@@ -1093,7 +1092,7 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvNotifyPushObserversWithData(
       const nsCString& aScope, const IPC::Principal& aPrincipal,
-      const nsString& aMessageId, InfallibleTArray<uint8_t>&& aData);
+      const nsString& aMessageId, nsTArray<uint8_t>&& aData);
 
   mozilla::ipc::IPCResult RecvNotifyPushSubscriptionChangeObservers(
       const nsCString& aScope, const IPC::Principal& aPrincipal);
@@ -1113,13 +1112,13 @@ class ContentParent final : public PContentParent,
   mozilla::ipc::IPCResult RecvDeleteGetFilesRequest(const nsID& aID);
 
   mozilla::ipc::IPCResult RecvAccumulateChildHistograms(
-      InfallibleTArray<HistogramAccumulation>&& aAccumulations);
+      nsTArray<HistogramAccumulation>&& aAccumulations);
   mozilla::ipc::IPCResult RecvAccumulateChildKeyedHistograms(
-      InfallibleTArray<KeyedHistogramAccumulation>&& aAccumulations);
+      nsTArray<KeyedHistogramAccumulation>&& aAccumulations);
   mozilla::ipc::IPCResult RecvUpdateChildScalars(
-      InfallibleTArray<ScalarAction>&& aScalarActions);
+      nsTArray<ScalarAction>&& aScalarActions);
   mozilla::ipc::IPCResult RecvUpdateChildKeyedScalars(
-      InfallibleTArray<KeyedScalarAction>&& aScalarActions);
+      nsTArray<KeyedScalarAction>&& aScalarActions);
   mozilla::ipc::IPCResult RecvRecordChildEvents(
       nsTArray<ChildEventData>&& events);
   mozilla::ipc::IPCResult RecvRecordDiscardedData(

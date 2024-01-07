@@ -73,6 +73,8 @@ SET TIMEOUT: docs/*
 WEB-PLATFORM.TEST:README.md
 WEB-PLATFORM.TEST:*/README.md
 WEB-PLATFORM.TEST:docs/*
+INDENT TABS:docs/*
+CR AT EOL:docs/*
 
 ## Helper scripts ##
 
@@ -385,6 +387,7 @@ SUPPORT-WRONG-DIR: css/vendor-imports/mozilla/mozilla-central-reftests/sync-test
 SUPPORT-WRONG-DIR: css/vendor-imports/mozilla/mozilla-central-reftests/masking/blank.html
 SUPPORT-WRONG-DIR: css/WOFF2/testcaseindex.xht
 NON-EXISTENT-REF: css/css-masking/clip-path-svg-content/clip-path-clip-rule-008.svg
+NON-EXISTENT-REF: css/CSS2/normal-flow/blocks-017.xht
 
 
 ## Whitespace rules that we can't enforce yet
@@ -797,7 +800,10 @@ MISSING-LINK: css/filter-effects/*.any.js
 
 # Tests that use WebKit/Blink testing APIs
 LAYOUTTESTS APIS: css/css-regions/interactivity/*
+LAYOUTTESTS APIS: import-maps/resolving.tentative.html
+LAYOUTTESTS APIS: permissions/test-background-fetch-permission.html
 LAYOUTTESTS APIS: resources/chromium/generic_sensor_mocks.js
+LAYOUTTESTS APIS: resources/chromium/webxr-test.js
 
 # Gecko additons to remove
 CSS-COLLIDING-REF-NAME: css/css-contain/reference/contain-size-fieldset-001-ref.html

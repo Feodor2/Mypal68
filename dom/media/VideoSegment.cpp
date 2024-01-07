@@ -35,7 +35,7 @@ void VideoFrame::SetNull() {
 }
 
 void VideoFrame::TakeFrom(VideoFrame* aFrame) {
-  mImage = aFrame->mImage.forget();
+  mImage = std::move(aFrame->mImage);
   mIntrinsicSize = aFrame->mIntrinsicSize;
   mForceBlack = aFrame->GetForceBlack();
   mPrincipalHandle = aFrame->mPrincipalHandle;

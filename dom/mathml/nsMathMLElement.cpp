@@ -10,7 +10,6 @@
 #include "mozilla/TextUtils.h"
 #include "nsGkAtoms.h"
 #include "nsITableCellLayout.h"  // for MAX_COLSPAN / MAX_ROWSPAN
-#include "nsLayoutStylesheetCache.h"
 #include "nsCSSValue.h"
 #include "nsMappedAttributes.h"
 #include "nsStyleConsts.h"
@@ -108,10 +107,6 @@ bool nsMathMLElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
   MOZ_ASSERT(IsMathMLElement());
 
   if (aNamespaceID == kNameSpaceID_None) {
-    if (mNodeInfo->Equals(nsGkAtoms::math) && aAttribute == nsGkAtoms::mode) {
-      WarnDeprecated(nsGkAtoms::mode->GetUTF16String(),
-                     nsGkAtoms::display->GetUTF16String(), OwnerDoc());
-    }
     if (aAttribute == nsGkAtoms::color) {
       WarnDeprecated(nsGkAtoms::color->GetUTF16String(),
                      nsGkAtoms::mathcolor_->GetUTF16String(), OwnerDoc());
@@ -821,8 +816,8 @@ void nsMathMLElement::MapMathMLAttributesInto(
       !aDecls.PropertyIsSet(eCSSProperty_direction)) {
     nsAutoString str(value->GetStringValue());
     static const char dirs[][4] = {"ltr", "rtl"};
-    static const int32_t dirValues[MOZ_ARRAY_LENGTH(dirs)] = {
-        NS_STYLE_DIRECTION_LTR, NS_STYLE_DIRECTION_RTL};
+    static const StyleDirection dirValues[MOZ_ARRAY_LENGTH(dirs)] = {
+        StyleDirection::Ltr, StyleDirection::Rtl};
     for (uint32_t i = 0; i < ArrayLength(dirs); ++i) {
       if (str.EqualsASCII(dirs[i])) {
         aDecls.SetKeywordValue(eCSSProperty_direction, dirValues[i]);

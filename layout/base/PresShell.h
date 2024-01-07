@@ -334,7 +334,7 @@ class PresShell final : public nsStubDocumentObserver,
    * is guaranteed to survive through arbitrary script execution.
    * Calling Initialize can execute arbitrary script.
    */
-  nsresult Initialize();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult Initialize();
 
   /**
    * Reflow the frame model into a new width and height.  The
@@ -474,7 +474,7 @@ class PresShell final : public nsStubDocumentObserver,
 
   void CancelAllPendingReflows();
 
-  void NotifyCounterStylesAreDirty();
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void NotifyCounterStylesAreDirty();
 
   bool FrameIsAncestorOfDirtyRoot(nsIFrame* aFrame) const;
 
@@ -1739,7 +1739,7 @@ class PresShell final : public nsStubDocumentObserver,
   friend class ::nsAutoCauseReflowNotifier;
 
   void WillCauseReflow();
-  void DidCauseReflow();
+  MOZ_CAN_RUN_SCRIPT void DidCauseReflow();
 
   void CancelPostedReflowCallbacks();
   void FlushPendingScrollAnchorAdjustments();
@@ -1969,7 +1969,7 @@ class PresShell final : public nsStubDocumentObserver,
     explicit EventHandler(PresShell& aPresShell)
         : mPresShell(aPresShell), mCurrentEventInfoSetter(nullptr) {}
     explicit EventHandler(RefPtr<PresShell>&& aPresShell)
-        : mPresShell(aPresShell.forget()), mCurrentEventInfoSetter(nullptr) {}
+        : mPresShell(std::move(aPresShell)), mCurrentEventInfoSetter(nullptr) {}
 
     /**
      * HandleEvent() may dispatch aGUIEvent.  This may redirect the event to
@@ -2036,7 +2036,7 @@ class PresShell final : public nsStubDocumentObserver,
    private:
     static bool InZombieDocument(nsIContent* aContent);
     static nsIFrame* GetNearestFrameContainingPresShell(PresShell* aPresShell);
-    static already_AddRefed<nsIURI> GetDocumentURIToCompareWithBlacklist(
+    static nsIPrincipal* GetDocumentPrincipalToCompareWithBlacklist(
         PresShell& aPresShell);
 
     /**
@@ -2065,15 +2065,10 @@ class PresShell final : public nsStubDocumentObserver,
     struct MOZ_STACK_CLASS EventTargetData final {
       EventTargetData() = delete;
       EventTargetData(const EventTargetData& aOther) = delete;
-      EventTargetData(PresShell* aPresShell, nsIFrame* aFrameToHandleEvent)
-          : mPresShell(aPresShell), mFrame(aFrameToHandleEvent) {}
-
-      void SetPresShellAndFrame(PresShell* aPresShell,
-                                nsIFrame* aFrameToHandleEvent) {
-        mPresShell = aPresShell;
-        mFrame = aFrameToHandleEvent;
-        mContent = nullptr;
+      explicit EventTargetData(nsIFrame* aFrameToHandleEvent) {
+        SetFrameAndComputePresShell(aFrameToHandleEvent);
       }
+
       void SetFrameAndComputePresShell(nsIFrame* aFrameToHandleEvent);
       void SetFrameAndComputePresShellAndContent(nsIFrame* aFrameToHandleEvent,
                                                  WidgetGUIEvent* aGUIEvent);
@@ -2124,7 +2119,7 @@ class PresShell final : public nsStubDocumentObserver,
       void UpdateTouchEventTarget(WidgetGUIEvent* aGUIEvent);
 
       RefPtr<PresShell> mPresShell;
-      nsIFrame* mFrame;
+      nsIFrame* mFrame = nullptr;
       nsCOMPtr<nsIContent> mContent;
       nsCOMPtr<nsIContent> mOverrideClickTarget;
     };

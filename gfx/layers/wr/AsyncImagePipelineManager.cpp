@@ -176,7 +176,7 @@ void AsyncImagePipelineManager::RemoveAsyncImagePipeline(
 
   uint64_t id = wr::AsUint64(aPipelineId);
   if (auto entry = mAsyncImagePipelines.Lookup(id)) {
-    AsyncImagePipeline* holder = entry.Data();
+    const auto& holder = entry.Data();
     wr::Epoch epoch = GetNextImageEpoch();
     aTxn.ClearDisplayList(epoch, aPipelineId);
     for (wr::ImageKey key : holder->mKeys) {
@@ -328,7 +328,7 @@ void AsyncImagePipelineManager::ApplyAsyncImagesOfImageBridge(
   // Update each of them if needed.
   for (auto iter = mAsyncImagePipelines.Iter(); !iter.Done(); iter.Next()) {
     wr::PipelineId pipelineId = wr::AsPipelineId(iter.Key());
-    AsyncImagePipeline* pipeline = iter.Data();
+    AsyncImagePipeline* pipeline = iter.UserData();
     // If aync image pipeline does not use ImageBridge, do not need to apply.
     if (!pipeline->mImageHost->GetAsyncRef()) {
       continue;
@@ -598,7 +598,7 @@ void AsyncImagePipelineManager::ProcessPipelineRendered(
     const wr::PipelineId& aPipelineId, const wr::Epoch& aEpoch,
     const uint64_t aUpdatesCount) {
   if (auto entry = mPipelineTexturesHolders.Lookup(wr::AsUint64(aPipelineId))) {
-    PipelineTexturesHolder* holder = entry.Data();
+    const auto& holder = entry.Data();
     // Release TextureHosts based on Epoch
     while (!holder->mTextureHosts.empty()) {
       if (aEpoch <= holder->mTextureHosts.front().mEpoch) {
@@ -625,7 +625,7 @@ void AsyncImagePipelineManager::ProcessPipelineRemoved(
   }
   if (auto entry = mPipelineTexturesHolders.Lookup(
           wr::AsUint64(aRemovedPipeline.pipeline_id))) {
-    PipelineTexturesHolder* holder = entry.Data();
+    const auto& holder = entry.Data();
     if (holder->mDestroyedEpoch.isSome()) {
       while (!holder->mTextureHosts.empty()) {
         // Need to extend holding TextureHost if it is direct bounded texture.

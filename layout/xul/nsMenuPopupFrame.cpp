@@ -958,8 +958,7 @@ void nsMenuPopupFrame::HidePopup(bool aDeselectMenu, nsPopupState aNewState) {
 }
 
 nsIFrame::ReflowChildFlags nsMenuPopupFrame::GetXULLayoutFlags() {
-  return ReflowChildFlags::NoSizeView | ReflowChildFlags::NoMoveView |
-         ReflowChildFlags::NoVisibility;
+  return ReflowChildFlags::NoSizeView | ReflowChildFlags::NoMoveView;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

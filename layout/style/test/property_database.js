@@ -2380,13 +2380,6 @@ var gCSSProperties = {
       "calc(50px + rubbish) 2",
     ],
   },
-  "-moz-columns": {
-    domProp: "MozColumns",
-    inherited: false,
-    type: CSS_TYPE_TRUE_SHORTHAND,
-    alias_for: "columns",
-    subproperties: ["column-count", "column-width"],
-  },
   "column-count": {
     domProp: "columnCount",
     inherited: false,
@@ -2396,13 +2389,6 @@ var gCSSProperties = {
     // negative and zero invalid per editor's draft
     invalid_values: ["-1", "0", "3px"],
   },
-  "-moz-column-count": {
-    domProp: "MozColumnCount",
-    inherited: false,
-    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
-    alias_for: "column-count",
-    subproperties: ["column-count"],
-  },
   "column-fill": {
     domProp: "columnFill",
     inherited: false,
@@ -2410,20 +2396,6 @@ var gCSSProperties = {
     initial_values: ["balance"],
     other_values: ["auto"],
     invalid_values: ["2px", "dotted", "5em"],
-  },
-  "-moz-column-fill": {
-    domProp: "MozColumnFill",
-    inherited: false,
-    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
-    alias_for: "column-fill",
-    subproperties: ["column-fill"],
-  },
-  "-moz-column-gap": {
-    domProp: "MozColumnGap",
-    inherited: false,
-    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
-    alias_for: "column-gap",
-    subproperties: ["column-gap"],
   },
   "column-rule": {
     domProp: "columnRule",
@@ -2455,22 +2427,11 @@ var gCSSProperties = {
       "5 green solid",
     ],
   },
-  "-moz-column-rule": {
-    domProp: "MozColumnRule",
-    inherited: false,
-    type: CSS_TYPE_TRUE_SHORTHAND,
-    alias_for: "column-rule",
-    subproperties: [
-      "column-rule-width",
-      "column-rule-style",
-      "column-rule-color",
-    ],
-  },
   "column-rule-width": {
     domProp: "columnRuleWidth",
     inherited: false,
     type: CSS_TYPE_LONGHAND,
-    prerequisites: { "-moz-column-rule-style": "solid" },
+    prerequisites: { "column-rule-style": "solid" },
     initial_values: ["medium", "3px", "calc(3px)", "calc(5em + 3px - 5em)"],
     other_values: [
       "thin",
@@ -2626,13 +2587,6 @@ var gCSSProperties = {
       "calc((0 + 2em) * 1)",
     ],
   },
-  "-moz-column-rule-width": {
-    domProp: "MozColumnRuleWidth",
-    inherited: false,
-    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
-    alias_for: "column-rule-width",
-    subproperties: ["column-rule-width"],
-  },
   "column-rule-style": {
     domProp: "columnRuleStyle",
     inherited: false,
@@ -2651,13 +2605,6 @@ var gCSSProperties = {
     ],
     invalid_values: ["20", "foo"],
   },
-  "-moz-column-rule-style": {
-    domProp: "MozColumnRuleStyle",
-    inherited: false,
-    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
-    alias_for: "column-rule-style",
-    subproperties: ["column-rule-style"],
-  },
   "column-rule-color": {
     domProp: "columnRuleColor",
     inherited: false,
@@ -2667,12 +2614,13 @@ var gCSSProperties = {
     other_values: ["red", "blue", "#ffff00"],
     invalid_values: ["ffff00"],
   },
-  "-moz-column-rule-color": {
-    domProp: "MozColumnRuleColor",
+  "column-span": {
+    domProp: "columnSpan",
     inherited: false,
-    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
-    alias_for: "column-rule-color",
-    subproperties: ["column-rule-color"],
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["none"],
+    other_values: ["all"],
+    invalid_values: ["-1", "0", "auto", "2px"],
   },
   "column-width": {
     domProp: "columnWidth",
@@ -2688,13 +2636,6 @@ var gCSSProperties = {
       "calc(0px)",
     ],
     invalid_values: ["20", "-1px", "50%"],
-  },
-  "-moz-column-width": {
-    domProp: "MozColumnWidth",
-    inherited: false,
-    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
-    alias_for: "column-width",
-    subproperties: ["column-width"],
   },
   "-moz-float-edge": {
     domProp: "MozFloatEdge",
@@ -5284,7 +5225,7 @@ var gCSSProperties = {
     inherited: false,
     type: CSS_TYPE_LONGHAND,
     applies_to_marker: true,
-    /* XXX needs to be on pseudo-elements */
+    // XXX This really depends on pseudo-element-ness.
     initial_values: ["normal", "none"],
     other_values: [
       '""',
@@ -7626,6 +7567,8 @@ var gCSSProperties = {
       "overline 2em",
       "underline from-font",
       "red from-font overline",
+      "5% underline blue",
+      "dotted line-through 25%",
     ],
     invalid_values: [
       "none none",
@@ -7637,8 +7580,6 @@ var gCSSProperties = {
       "underline overline line-through blink none",
       "underline overline line-throuh blink blink",
       "rgb(0, rubbish, 0) underline",
-      "5% underline blue",
-      "dotted line-through 25%",
       "from font blue underline",
     ],
   },
@@ -7718,16 +7659,17 @@ var gCSSProperties = {
     applies_to_placeholder: true,
     applies_to_cue: true,
     initial_values: ["auto"],
-    other_values: ["from-font", "0", "-14px", "25px", "100em", "-45em"],
-    invalid_values: [
-      "13",
-      "-25",
-      "rubbish",
-      ",./!@#$",
+    other_values: [
+      "from-font",
+      "0",
+      "-14px",
+      "25px",
+      "100em",
+      "-45em",
       "43%",
       "-10%",
-      "from font",
     ],
+    invalid_values: ["13", "-25", "rubbish", ",./!@#$", "from font"],
   },
   "text-decoration-skip-ink": {
     domProp: "textDecorationSkipInk",
@@ -7760,14 +7702,13 @@ var gCSSProperties = {
     applies_to_first_line: true,
     applies_to_placeholder: true,
     initial_values: ["auto"],
-    other_values: ["from-font", "0", "-14px", "25px", "100em", "-45em"],
+    other_values: ["0", "-14px", "25px", "100em", "-45em", "43%", "-10%"],
     invalid_values: [
       "13",
       "-25",
       "rubbish",
       ",./!@#$",
-      "43%",
-      "-10%",
+      "from-font",
       "from font",
     ],
   },
@@ -7787,16 +7728,23 @@ var gCSSProperties = {
       "under left",
       "right under",
       "under right",
+      "from-font",
+      "from-font left",
+      "from-font right",
+      "left from-font",
+      "right from-font",
     ],
     invalid_values: [
       "none",
+      "auto from-font",
       "auto under",
+      "under from-font",
       "left right",
       "right auto",
       "0",
       "1px",
       "10%",
-      "from-font",
+      "from font",
     ],
   },
   "text-emphasis": {
@@ -12454,6 +12402,24 @@ if (IsCSSPropertyPrefEnabled("layout.css.overscroll-behavior.enabled")) {
     other_values: ["contain", "none"],
     invalid_values: ["left", "1px"],
   };
+  gCSSProperties["overscroll-behavior-inline"] = {
+    domProp: "overscrollBehaviorInline",
+    inherited: false,
+    logical: true,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["auto"],
+    other_values: ["contain", "none"],
+    invalid_values: ["left", "1px"],
+  };
+  gCSSProperties["overscroll-behavior-block"] = {
+    domProp: "overscrollBehaviorBlock",
+    inherited: false,
+    logical: true,
+    type: CSS_TYPE_LONGHAND,
+    initial_values: ["auto"],
+    other_values: ["contain", "none"],
+    invalid_values: ["left", "1px"],
+  };
   gCSSProperties["overscroll-behavior"] = {
     domProp: "overscrollBehavior",
     inherited: false,
@@ -12546,24 +12512,6 @@ if (IsCSSPropertyPrefEnabled("layout.css.offset-logical-properties.enabled")) {
 }
 
 gCSSProperties["display"].other_values.push("flow-root");
-
-if (IsCSSPropertyPrefEnabled("layout.css.column-span.enabled")) {
-  gCSSProperties["column-span"] = {
-    domProp: "columnSpan",
-    inherited: false,
-    type: CSS_TYPE_LONGHAND,
-    initial_values: ["none"],
-    other_values: ["all"],
-    invalid_values: ["-1", "0", "auto", "2px"],
-  };
-  gCSSProperties["-moz-column-span"] = {
-    domProp: "MozColumnSpan",
-    inherited: false,
-    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
-    alias_for: "column-span",
-    subproperties: ["column-span"],
-  };
-}
 
 if (IsCSSPropertyPrefEnabled("layout.css.webkit-line-clamp.enabled")) {
   gCSSProperties["-webkit-line-clamp"] = {
@@ -13033,6 +12981,92 @@ if (IsCSSPropertyPrefEnabled("layout.css.zoom-transform-hack.enabled")) {
     initial_values: ["normal", "1.0", "0", "0%", "100%"],
     other_values: ["10%", "2", "2.5"],
     invalid_values: ["0 0", "foo", "10px"],
+  };
+}
+
+if (IsCSSPropertyPrefEnabled("layout.css.prefixes.columns")) {
+  gCSSProperties["-moz-columns"] = {
+    domProp: "MozColumns",
+    inherited: false,
+    type: CSS_TYPE_TRUE_SHORTHAND,
+    alias_for: "columns",
+    subproperties: ["column-count", "column-width"],
+  };
+
+  gCSSProperties["-moz-column-count"] = {
+    domProp: "MozColumnCount",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-count",
+    subproperties: ["column-count"],
+  };
+
+  gCSSProperties["-moz-column-fill"] = {
+    domProp: "MozColumnFill",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-fill",
+    subproperties: ["column-fill"],
+  };
+
+  gCSSProperties["-moz-column-gap"] = {
+    domProp: "MozColumnGap",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-gap",
+    subproperties: ["column-gap"],
+  };
+
+  gCSSProperties["-moz-column-rule"] = {
+    domProp: "MozColumnRule",
+    inherited: false,
+    type: CSS_TYPE_TRUE_SHORTHAND,
+    alias_for: "column-rule",
+    subproperties: [
+      "column-rule-width",
+      "column-rule-style",
+      "column-rule-color",
+    ],
+  };
+
+  gCSSProperties["-moz-column-rule-width"] = {
+    domProp: "MozColumnRuleWidth",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-rule-width",
+    subproperties: ["column-rule-width"],
+  };
+
+  gCSSProperties["-moz-column-rule-style"] = {
+    domProp: "MozColumnRuleStyle",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-rule-style",
+    subproperties: ["column-rule-style"],
+  };
+
+  gCSSProperties["-moz-column-rule-color"] = {
+    domProp: "MozColumnRuleColor",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-rule-color",
+    subproperties: ["column-rule-color"],
+  };
+
+  gCSSProperties["-moz-column-span"] = {
+    domProp: "MozColumnSpan",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-span",
+    subproperties: ["column-span"],
+  };
+
+  gCSSProperties["-moz-column-width"] = {
+    domProp: "MozColumnWidth",
+    inherited: false,
+    type: CSS_TYPE_SHORTHAND_AND_LONGHAND,
+    alias_for: "column-width",
+    subproperties: ["column-width"],
   };
 }
 

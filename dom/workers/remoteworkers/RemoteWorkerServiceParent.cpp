@@ -14,7 +14,7 @@ namespace dom {
 RemoteWorkerServiceParent::RemoteWorkerServiceParent()
     : mManager(RemoteWorkerManager::GetOrCreate()) {}
 
-RemoteWorkerServiceParent::~RemoteWorkerServiceParent() {}
+RemoteWorkerServiceParent::~RemoteWorkerServiceParent() = default;
 
 void RemoteWorkerServiceParent::Initialize() {
   AssertIsOnBackgroundThread();

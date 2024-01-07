@@ -123,6 +123,7 @@ impl StylesheetContents {
         url_data: UrlExtraData,
         quirks_mode: QuirksMode,
     ) -> Self {
+        debug_assert!(rules.is_static());
         Self {
             rules,
             origin,
@@ -143,6 +144,9 @@ impl StylesheetContents {
     /// Measure heap usage.
     #[cfg(feature = "gecko")]
     pub fn size_of(&self, guard: &SharedRwLockReadGuard, ops: &mut MallocSizeOfOps) -> usize {
+        if self.rules.is_static() {
+            return 0;
+        }
         // Measurement of other fields may be added later.
         self.rules.unconditional_shallow_size_of(ops) +
             self.rules.read_with(guard).size_of(guard, ops)

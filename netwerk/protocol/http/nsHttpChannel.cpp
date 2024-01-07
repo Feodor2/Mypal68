@@ -2126,11 +2126,7 @@ nsresult nsHttpChannel::ProcessSecurityHeaders() {
   return NS_OK;
 }
 
-bool nsHttpChannel::IsHTTPS() {
-  bool isHttps;
-  if (NS_FAILED(mURI->SchemeIs("https", &isHttps)) || !isHttps) return false;
-  return true;
-}
+bool nsHttpChannel::IsHTTPS() { return mURI->SchemeIs("https"); }
 
 void nsHttpChannel::ProcessSSLInformation() {
   // If this is HTTPS, record any use of RSA so that Key Exchange Algorithm
@@ -2753,7 +2749,8 @@ nsresult nsHttpChannel::ContinueProcessResponse4(nsresult rv) {
   bool doNotRender = DoNotRender3xxBody(rv);
 
   if (rv == NS_ERROR_DOM_BAD_URI && mRedirectURI) {
-    bool isHTTP = mRedirectURI->SchemeIs("http") || mRedirectURI->SchemeIs("https");
+    bool isHTTP =
+        mRedirectURI->SchemeIs("http") || mRedirectURI->SchemeIs("https");
     if (!isHTTP) {
       // This was a blocked attempt to redirect and subvert the system by
       // redirecting to another protocol (perhaps javascript:)
@@ -9411,12 +9408,6 @@ void nsHttpChannel::MaybeWarnAboutAppCache() {
   GetCallback(warner);
   if (warner) {
     warner->IssueWarning(Document::eAppCache, false);
-    // When the page is insecure and the API is still enabled
-    // provide an additional warning for developers of removal
-    if (!IsHTTPS() &&
-        Preferences::GetBool("browser.cache.offline.insecure.enable")) {
-      warner->IssueWarning(Document::eAppCacheInsecure, true);
-    }
   }
 }
 

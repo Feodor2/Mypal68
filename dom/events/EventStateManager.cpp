@@ -2170,7 +2170,7 @@ void EventStateManager::DoScrollZoom(nsIFrame* aTargetFrame,
 static nsIFrame* GetParentFrameToScroll(nsIFrame* aFrame) {
   if (!aFrame) return nullptr;
 
-  if (aFrame->StyleDisplay()->mPosition == NS_STYLE_POSITION_FIXED &&
+  if (aFrame->StyleDisplay()->mPosition == StylePositionProperty::Fixed &&
       nsLayoutUtils::IsReallyFixedPos(aFrame))
     return aFrame->PresContext()->GetPresShell()->GetRootScrollFrame();
 
@@ -3864,7 +3864,7 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
       return;
     }
     cursor = framecursor->mCursor;
-    container = customCursor.mContainer.forget();
+    container = std::move(customCursor.mContainer);
     hotspot = Some(customCursor.mHotspot);
   }
 

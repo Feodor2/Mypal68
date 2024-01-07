@@ -56,7 +56,7 @@ class PostMessageEvent final : public Runnable {
     mHolder.construct<StructuredCloneHolder>(
         StructuredCloneHolder::CloningSupported,
         StructuredCloneHolder::TransferringSupported,
-        JS::StructuredCloneScope::SameProcessDifferentThread);
+        JS::StructuredCloneScope::SameProcess);
     mHolder.ref<StructuredCloneHolder>().Write(aCx, aMessage, aTransfer,
                                                JS::CloneDataPolicy(), aError);
   }

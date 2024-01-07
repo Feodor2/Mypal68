@@ -22,6 +22,7 @@
 #include "nsGkAtoms.h"
 #include "nsIContent.h"
 #include "nsIFrame.h"
+#include "nsIFrameInlines.h"
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsStyleStruct.h"
@@ -541,7 +542,7 @@ class MixModeBlender {
       gfxContextMatrixAutoSaveRestore matrixAutoSaveRestore(mSourceCtx);
       mSourceCtx->Multiply(aTransform);
       nsRect overflowRect = mFrame->GetVisualOverflowRectRelativeToSelf();
-      if (mFrame->IsFrameOfType(nsIFrame::eSVGGeometry) ||
+      if (mFrame->IsSVGGeometryFrameOrSubclass() ||
           nsSVGUtils::IsInSVGTextSubtree(mFrame)) {
         // Unlike containers, leaf frames do not include GetPosition() in
         // GetCanvasTM().
@@ -602,7 +603,7 @@ void nsSVGUtils::PaintFrameWithEffects(nsIFrame* aFrame, gfxContext& aContext,
     // We don't do this optimization for nondisplay SVG since nondisplay
     // SVG doesn't maintain bounds/overflow rects.
     nsRect overflowRect = aFrame->GetVisualOverflowRectRelativeToSelf();
-    if (aFrame->IsFrameOfType(nsIFrame::eSVGGeometry) ||
+    if (aFrame->IsSVGGeometryFrameOrSubclass() ||
         nsSVGUtils::IsInSVGTextSubtree(aFrame)) {
       // Unlike containers, leaf frames do not include GetPosition() in
       // GetCanvasTM().
@@ -1119,7 +1120,7 @@ gfxPoint nsSVGUtils::FrameSpaceInCSSPxToUserSpaceOffset(nsIFrame* aFrame) {
   }
 
   // Leaf frames apply their own offset inside their user space.
-  if (aFrame->IsFrameOfType(nsIFrame::eSVGGeometry) ||
+  if (aFrame->IsSVGGeometryFrameOrSubclass() ||
       nsSVGUtils::IsInSVGTextSubtree(aFrame)) {
     return nsLayoutUtils::RectToGfxRect(aFrame->GetRect(),
                                         AppUnitsPerCSSPixel())
@@ -1300,7 +1301,7 @@ gfxRect nsSVGUtils::PathExtentsToMaxStrokeExtents(const gfxRect& aPathExtents,
 
   if (affectedByMiterlimit) {
     const nsStyleSVG* style = aFrame->StyleSVG();
-    if (style->mStrokeLinejoin == NS_STYLE_STROKE_LINEJOIN_MITER &&
+    if (style->mStrokeLinejoin == StyleStrokeLinejoin::Miter &&
         styleExpansionFactor < style->mStrokeMiterlimit / 2.0) {
       styleExpansionFactor = style->mStrokeMiterlimit / 2.0;
     }

@@ -208,7 +208,7 @@ void FontFaceSet::ParseFontShorthandForMatching(
   RefPtr<URLExtraData> url = ServoCSSParser::GetURLExtraData(mDocument);
   if (!ServoCSSParser::ParseFontShorthandForMatching(aFont, url, aFamilyList,
                                                      style, stretch, weight)) {
-    aRv.Throw(NS_ERROR_DOM_SYNTAX_ERR);
+    aRv.ThrowSyntaxError("Invalid font shorthand");
     return;
   }
 
@@ -430,7 +430,8 @@ void FontFaceSet::Add(FontFace& aFontFace, ErrorResult& aRv) {
   }
 
   if (aFontFace.HasRule()) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_MODIFICATION_ERR);
+    aRv.ThrowInvalidModificationError(
+        "Can't add face to FontFaceSet that comes from an @font-face rule");
     return;
   }
 
@@ -622,12 +623,11 @@ nsresult FontFaceSet::StartLoad(gfxUserFontEntry* aUserFontEntry,
     rv = httpChannel->SetReferrerInfo(aFontFaceSrc->mReferrerInfo);
     Unused << NS_WARN_IF(NS_FAILED(rv));
 
-    nsAutoCString accept("application/font-woff;q=0.9,*/*;q=0.8");
-    if (Preferences::GetBool(GFX_PREF_WOFF2_ENABLED)) {
-      accept.InsertLiteral("application/font-woff2;q=1.0,", 0);
-    }
-    rv = httpChannel->SetRequestHeader(NS_LITERAL_CSTRING("Accept"), accept,
-                                       false);
+    rv = httpChannel->SetRequestHeader(
+        NS_LITERAL_CSTRING("Accept"),
+        NS_LITERAL_CSTRING("application/font-woff2;q=1.0,application/"
+                           "font-woff;q=0.9,*/*;q=0.8"),
+        false);
     NS_ENSURE_SUCCESS(rv, rv);
 
     // For WOFF and WOFF2, we should tell servers/proxies/etc NOT to try
@@ -1110,8 +1110,7 @@ FontFaceSet::FindOrCreateUserFontEntryFromFontFace(
 
             if (valueString.LowerCaseEqualsASCII("woff")) {
               face->mFormatFlags |= gfxUserFontSet::FLAG_FORMAT_WOFF;
-            } else if (Preferences::GetBool(GFX_PREF_WOFF2_ENABLED) &&
-                       valueString.LowerCaseEqualsASCII("woff2")) {
+            } else if (valueString.LowerCaseEqualsASCII("woff2")) {
               face->mFormatFlags |= gfxUserFontSet::FLAG_FORMAT_WOFF2;
             } else if (valueString.LowerCaseEqualsASCII("opentype")) {
               face->mFormatFlags |= gfxUserFontSet::FLAG_FORMAT_OPENTYPE;
@@ -1127,7 +1126,6 @@ FontFaceSet::FindOrCreateUserFontEntryFromFontFace(
                        valueString.LowerCaseEqualsASCII("woff-variations")) {
               face->mFormatFlags |= gfxUserFontSet::FLAG_FORMAT_WOFF_VARIATIONS;
             } else if (StaticPrefs::layout_css_font_variations_enabled() &&
-                       Preferences::GetBool(GFX_PREF_WOFF2_ENABLED) &&
                        valueString.LowerCaseEqualsASCII("woff2-variations")) {
               face->mFormatFlags |=
                   gfxUserFontSet::FLAG_FORMAT_WOFF2_VARIATIONS;
@@ -1202,6 +1200,9 @@ RawServoFontFaceRule* FontFaceSet::FindRuleForUserFontEntry(
 nsresult FontFaceSet::LogMessage(gfxUserFontEntry* aUserFontEntry,
                                  const char* aMessage, uint32_t aFlags,
                                  nsresult aStatus) {
+  MOZ_ASSERT(NS_IsMainThread() ||
+             ServoStyleSet::IsCurrentThreadInServoTraversal());
+
   nsCOMPtr<nsIConsoleService> console(
       do_GetService(NS_CONSOLESERVICE_CONTRACTID));
   if (!console) {

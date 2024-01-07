@@ -119,7 +119,7 @@ struct InlineBackgroundData {
       // of frames that are to the left (if this is an LTR block) or right
       // (if it's RTL) of the current one.
       bool isRtlBlock = (mLineContainer->StyleVisibility()->mDirection ==
-                         NS_STYLE_DIRECTION_RTL);
+                         StyleDirection::Rtl);
       nscoord curOffset = mVertical ? aFrame->GetOffsetTo(mLineContainer).y
                                     : aFrame->GetOffsetTo(mLineContainer).x;
 
@@ -533,16 +533,12 @@ static nsRect JoinBoxesForBlockAxisSlice(nsIFrame* aFrame,
   auto wm = aFrame->GetWritingMode();
   nsIFrame* f = aFrame->GetNextContinuation();
   for (; f; f = f->GetNextContinuation()) {
-    MOZ_ASSERT(!(f->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT),
-               "anonymous ib-split block shouldn't have border/background");
     bSize += f->BSize(wm);
   }
   (wm.IsVertical() ? borderArea.width : borderArea.height) += bSize;
   bSize = 0;
   f = aFrame->GetPrevContinuation();
   for (; f; f = f->GetPrevContinuation()) {
-    MOZ_ASSERT(!(f->GetStateBits() & NS_FRAME_PART_OF_IBSPLIT),
-               "anonymous ib-split block shouldn't have border/background");
     bSize += f->BSize(wm);
   }
   (wm.IsVertical() ? borderArea.x : borderArea.y) -= bSize;
@@ -613,8 +609,9 @@ void nsCSSRendering::ComputePixelRadii(const nscoord* aAppUnitsRadii,
                                        nscoord aAppUnitsPerPixel,
                                        RectCornerRadii* oBorderRadii) {
   Float radii[8];
-  NS_FOR_CSS_HALF_CORNERS(corner)
-  radii[corner] = Float(aAppUnitsRadii[corner]) / aAppUnitsPerPixel;
+  for (const auto corner : mozilla::AllPhysicalHalfCorners()) {
+    radii[corner] = Float(aAppUnitsRadii[corner]) / aAppUnitsPerPixel;
+  }
 
   (*oBorderRadii)[C_TL] = Size(radii[eCornerTopLeftX], radii[eCornerTopLeftY]);
   (*oBorderRadii)[C_TR] =
@@ -636,7 +633,7 @@ static Maybe<nsStyleBorder> GetBorderIfVisited(const ComputedStyle& aStyle) {
 
   result.emplace(*aStyle.StyleBorder());
   auto& newBorder = result.ref();
-  NS_FOR_CSS_SIDES(side) {
+  for (const auto side : mozilla::AllPhysicalSides()) {
     nscolor color = aStyle.GetVisitedDependentColor(
         nsStyleBorder::BorderColorFieldFor(side));
     newBorder.BorderColorFor(side) = StyleColor::FromColor(color);
@@ -809,7 +806,7 @@ static nsCSSBorderRenderer ConstructBorderRenderer(
   nscolor borderColors[4];
 
   // pull out styles, colors
-  NS_FOR_CSS_SIDES(i) {
+  for (const auto i : mozilla::AllPhysicalSides()) {
     borderStyles[i] = aStyleBorder.GetBorderStyle(i);
     borderColors[i] = aStyleBorder.BorderColorFor(i).CalcColor(*aStyle);
   }
@@ -1987,7 +1984,7 @@ static bool IsOpaqueBorderEdge(const nsStyleBorder& aBorder,
  * Returns true if all border edges are either missing or opaque.
  */
 static bool IsOpaqueBorder(const nsStyleBorder& aBorder) {
-  NS_FOR_CSS_SIDES(i) {
+  for (const auto i : mozilla::AllPhysicalSides()) {
     if (!IsOpaqueBorderEdge(aBorder, i)) {
       return false;
     }
@@ -3819,12 +3816,7 @@ static uint32_t CountAllGlyphs(
     const gfxTextRun* aTextRun,
     const gfxTextRun::CompressedGlyph* aCompressedGlyph, uint32_t aStringStart,
     uint32_t aStringEnd) {
-  bool hasDetailed = aTextRun->HasDetailedGlyphs();
   uint32_t totalGlyphCount = 0;
-
-  if (!hasDetailed) {
-    return aStringEnd - aStringStart;
-  }
 
   for (const gfxTextRun::CompressedGlyph* cg = aCompressedGlyph + aStringStart;
        cg < aCompressedGlyph + aStringEnd; ++cg) {
@@ -3883,8 +3875,6 @@ static sk_sp<const SkTextBlob> CreateTextBlob(
   SkTextBlobBuilder builder;
   const SkTextBlobBuilder::RunBuffer& run = builder.allocRunPos(aFont, len);
 
-  bool hasDetailed = aTextRun->HasDetailedGlyphs();
-
   // RTL text should be read in by glyph starting at aStringEnd - 1 down until
   // aStringStart.
   bool isRTL = aTextRun->IsRightToLeft();
@@ -3906,7 +3896,7 @@ static sk_sp<const SkTextBlob> CreateTextBlob(
       AddSimpleGlyph(run, aCompressedGlyph[currIndex], i, aAppUnitsPerDevPixel,
                      aTextPos);
       i++;
-    } else if (hasDetailed) {
+    } else {
       // if it's detailed, potentially add multiple into run.glyphs
       uint32_t count = aCompressedGlyph[currIndex].GetGlyphCount();
       if (count > 0) {
@@ -3930,6 +3920,8 @@ static sk_sp<const SkTextBlob> CreateTextBlob(
     }
     currIndex += step;
   }
+
+  MOZ_ASSERT(i == len, "glyph count error!");
 
   return builder.make();
 }
@@ -3958,11 +3950,9 @@ static void GetTextIntercepts(const sk_sp<const SkTextBlob>& aBlob,
 // included here
 static void SkipInk(nsIFrame* aFrame, DrawTarget& aDrawTarget,
                     const nsCSSRendering::PaintDecorationLineParams& aParams,
-                    const nsTArray<SkScalar>& aIntercepts, Rect& aRect) {
+                    const nsTArray<SkScalar>& aIntercepts, Float aPadding,
+                    Rect& aRect) {
   nsCSSRendering::PaintDecorationLineParams clipParams = aParams;
-  double padding = aParams.lineSize.height;
-  double oneCSSPixel = aFrame->PresContext()->CSSPixelsToDevPixels(1.0f);
-  padding = std::max(padding, oneCSSPixel);
   int length = aIntercepts.Length();
 
   SkScalar startIntercept = 0;
@@ -3983,15 +3973,15 @@ static void SkipInk(nsIFrame* aFrame, DrawTarget& aDrawTarget,
   for (int i = 0; i <= length; i += 2) {
     // handle start/end edge cases and set up general case
     startIntercept = (i > 0) ? (dir * aIntercepts[i - 1]) + lineStart
-                             : lineStart - (dir * padding);
+                             : lineStart - (dir * aPadding);
     endIntercept = (i < length) ? (dir * aIntercepts[i]) + lineStart
-                                : lineEnd + (dir * padding);
+                                : lineEnd + (dir * aPadding);
 
     // remove padding at both ends for width
     // the start of the line is calculated so the padding removes just
     // enough so that the line starts at its normal position
     clipParams.lineSize.width =
-        (dir * (endIntercept - startIntercept)) - (2.0 * padding);
+        (dir * (endIntercept - startIntercept)) - (2.0 * aPadding);
 
     if (aParams.vertical) {
       aRect.height = clipParams.lineSize.width;
@@ -3999,21 +3989,20 @@ static void SkipInk(nsIFrame* aFrame, DrawTarget& aDrawTarget,
       aRect.width = clipParams.lineSize.width;
     }
 
-    // Don't draw decoration lines that have a smaller width than 1, or half the
-    // decoration thickness
-    if (clipParams.lineSize.width <
-        std::max(0.5 * clipParams.lineSize.height, 1.0)) {
+    // Don't draw decoration lines that have a smaller width than 1, or half
+    // the line-end padding dimension.
+    if (clipParams.lineSize.width < std::max(aPadding * 0.5, 1.0)) {
       continue;
     }
 
     // start the line right after the intercept's location plus room for
     // padding
     if (aParams.vertical) {
-      clipParams.pt.y = aParams.sidewaysLeft ? endIntercept + padding
-                                             : startIntercept + padding;
+      clipParams.pt.y = aParams.sidewaysLeft ? endIntercept + aPadding
+                                             : startIntercept + aPadding;
       aRect.y = clipParams.pt.y;
     } else {
-      clipParams.pt.x = startIntercept + padding;
+      clipParams.pt.x = startIntercept + aPadding;
       aRect.x = clipParams.pt.x;
     }
 
@@ -4151,7 +4140,13 @@ void nsCSSRendering::PaintDecorationLine(
   bool needsSkipInk = intercepts.Length() > 0;
 
   if (needsSkipInk) {
-    SkipInk(aFrame, aDrawTarget, aParams, intercepts, rect);
+    // Padding between glyph intercepts and the decoration line: we use the
+    // decoration line thickness, clamped to a minimum of 1px and a maximum
+    // of 0.2em.
+    Float padding =
+        std::min(std::max(aParams.lineSize.height, oneCSSPixel),
+                 Float(textRun->GetFontGroup()->GetStyle()->size / 5.0));
+    SkipInk(aFrame, aDrawTarget, aParams, intercepts, padding, rect);
   } else {
     PaintDecorationLineInternal(aFrame, aDrawTarget, aParams, rect);
   }

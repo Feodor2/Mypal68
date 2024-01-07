@@ -358,10 +358,13 @@ SheetLoadData::SheetLoadData(Loader* aLoader, nsIURI* aURI, StyleSheet* aSheet,
 }
 
 SheetLoadData::~SheetLoadData() {
+  MOZ_DIAGNOSTIC_ASSERT(mSheetCompleteCalled,
+                        "Should always call SheetComplete");
+
   // Do this iteratively to avoid blowing up the stack.
-  RefPtr<SheetLoadData> next = mNext.forget();
+  RefPtr<SheetLoadData> next = std::move(mNext);
   while (next) {
-    next = next->mNext.forget();
+    next = std::move(next->mNext);
   }
 }
 
@@ -1046,6 +1049,7 @@ nsresult Loader::CheckContentPolicy(nsIPrincipal* aLoadingPrincipal,
                                     nsIPrincipal* aTriggeringPrincipal,
                                     nsIURI* aTargetURI,
                                     nsINode* aRequestingNode,
+                                    const nsAString& aNonce,
                                     IsPreload aIsPreload) {
   // When performing a system load (e.g. aUseSystemPrincipal = true)
   // then aLoadingPrincipal == null; don't consult content policies.
@@ -1064,12 +1068,8 @@ nsresult Loader::CheckContentPolicy(nsIPrincipal* aLoadingPrincipal,
 
   // snapshot the nonce at load start time for performing CSP checks
   if (contentPolicyType == nsIContentPolicy::TYPE_INTERNAL_STYLESHEET) {
-    nsCOMPtr<Element> element = do_QueryInterface(aRequestingNode);
-    if (element && element->IsHTMLElement()) {
-      nsAutoString cspNonce;
-      element->GetAttr(nsGkAtoms::nonce, cspNonce);
-      secCheckLoadInfo->SetCspNonce(cspNonce);
-    }
+    secCheckLoadInfo->SetCspNonce(aNonce);
+    MOZ_ASSERT_IF(aIsPreload != IsPreload::No, aNonce.IsEmpty());
   }
 
   int16_t shouldLoad = nsIContentPolicy::ACCEPT;
@@ -1166,7 +1166,7 @@ Loader::MediaMatched Loader::PrepareSheet(
     mediaList = MediaList::Create(aMediaString);
   }
 
-  aSheet.SetMedia(mediaList);
+  aSheet.SetMedia(do_AddRef(mediaList));
 
   aSheet.SetTitle(aTitle);
   aSheet.SetEnabled(aIsAlternate == IsAlternate::No ||
@@ -1278,7 +1278,7 @@ void Loader::InsertChildSheet(StyleSheet& aSheet, StyleSheet& aParentSheet) {
   // child sheets should always start out enabled, even if they got
   // cloned off of top-level sheets which were disabled
   aSheet.SetEnabled(true);
-  aParentSheet.PrependStyleSheet(&aSheet);
+  aParentSheet.AppendStyleSheet(aSheet);
 
   LOG(("  Inserting into parent sheet"));
 }
@@ -1324,7 +1324,7 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState,
     // Create a StreamLoader instance to which we will feed
     // the data from the sync load.  Do this before creating the
     // channel to make error recovery simpler.
-    nsCOMPtr<nsIStreamListener> streamLoader = new StreamLoader(aLoadData);
+    auto streamLoader = MakeRefPtr<StreamLoader>(aLoadData);
 
     if (mDocument) {
       net::PredictorLearn(aLoadData.mURI, mDocument->GetDocumentURI(),
@@ -1375,6 +1375,7 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState,
     }
     if (NS_FAILED(rv)) {
       LOG_ERROR(("  Failed to create channel"));
+      streamLoader->ChannelOpenFailed();
       SheetComplete(aLoadData, rv);
       return rv;
     }
@@ -1384,6 +1385,7 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState,
       nsCOMPtr<Element> element = do_QueryInterface(aLoadData.mRequestingNode);
       if (element && element->IsHTMLElement()) {
         nsAutoString cspNonce;
+        // TODO(bug 1607009) move to SheetLoadData
         element->GetAttr(nsGkAtoms::nonce, cspNonce);
         nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
         loadInfo->SetCspNonce(cspNonce);
@@ -1395,6 +1397,7 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState,
 
     if (NS_FAILED(rv)) {
       LOG_ERROR(("  Failed to open URI synchronously"));
+      streamLoader->ChannelOpenFailed();
       SheetComplete(aLoadData, rv);
       return rv;
     }
@@ -1514,6 +1517,7 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState,
     nsCOMPtr<Element> element = do_QueryInterface(aLoadData.mRequestingNode);
     if (element && element->IsHTMLElement()) {
       nsAutoString cspNonce;
+      // TODO(bug 1607009) move to SheetLoadData
       element->GetAttr(nsGkAtoms::nonce, cspNonce);
       nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
       loadInfo->SetCspNonce(cspNonce);
@@ -1591,17 +1595,16 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState,
   // We don't have to hold on to the stream loader.  The ownership
   // model is: Necko owns the stream loader, which owns the load data,
   // which owns us
-  nsCOMPtr<nsIStreamListener> streamLoader = new StreamLoader(aLoadData);
-
+  auto streamLoader = MakeRefPtr<StreamLoader>(aLoadData);
   if (mDocument) {
     net::PredictorLearn(aLoadData.mURI, mDocument->GetDocumentURI(),
                         nsINetworkPredictor::LEARN_LOAD_SUBRESOURCE, mDocument);
   }
 
   rv = channel->AsyncOpen(streamLoader);
-
   if (NS_FAILED(rv)) {
     LOG_ERROR(("  Failed to create stream loader"));
+    streamLoader->ChannelOpenFailed();
     SheetComplete(aLoadData, rv);
     return rv;
   }
@@ -1651,14 +1654,8 @@ Loader::Completed Loader::ParseSheet(const nsACString& aBytes,
           target, __func__,
           [loadData = RefPtr<SheetLoadData>(&aLoadData)](bool aDummy) {
             MOZ_ASSERT(NS_IsMainThread());
-            loadData->mIsBeingParsed = false;
             loadData->mLoader->UnblockOnload(/* aFireSync = */ false);
-            // If there are no child sheets outstanding, mark us as complete.
-            // Otherwise, the children are holding strong refs to the data
-            // and will call SheetComplete() on it when they complete.
-            if (loadData->mPendingChildren == 0) {
-              loadData->mLoader->SheetComplete(*loadData, NS_OK);
-            }
+            loadData->SheetFinishedParsingAsync();
           },
           [] { MOZ_CRASH("rejected parse promise"); });
   return Completed::No;
@@ -1726,7 +1723,7 @@ void Loader::DoSheetComplete(SheetLoadData& aLoadData,
                              LoadDataArray& aDatasToNotify) {
   LOG(("css::Loader::DoSheetComplete"));
   MOZ_ASSERT(aLoadData.mSheet, "Must have a sheet");
-  NS_ASSERTION(mSheets || !aLoadData.mURI,
+  NS_ASSERTION(mSheets || !aLoadData.mURI || aLoadData.mSheet->IsConstructed(),
                "mLoadingDatas should be initialized by now.");
 
   // Twiddle the hashtables
@@ -1735,14 +1732,10 @@ void Loader::DoSheetComplete(SheetLoadData& aLoadData,
     // Remove the data from the list of loading datas
     if (aLoadData.mIsLoading) {
       SheetLoadDataHashKey key(aLoadData);
-#ifdef DEBUG
-      SheetLoadData* loadingData;
-      NS_ASSERTION(mSheets->mLoadingDatas.Get(&key, &loadingData) &&
-                       loadingData == &aLoadData,
-                   "Bad loading table");
-#endif
-
-      mSheets->mLoadingDatas.Remove(&key);
+      Maybe<SheetLoadData*> loadingData =
+          mSheets->mLoadingDatas.GetAndRemove(&key);
+      MOZ_DIAGNOSTIC_ASSERT(loadingData && loadingData.value() == &aLoadData);
+      Unused << loadingData;
       aLoadData.mIsLoading = false;
     }
   }
@@ -1750,11 +1743,21 @@ void Loader::DoSheetComplete(SheetLoadData& aLoadData,
   // Go through and deal with the whole linked list.
   SheetLoadData* data = &aLoadData;
   do {
+    MOZ_DIAGNOSTIC_ASSERT(!data->mSheetCompleteCalled);
+#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
+    data->mSheetCompleteCalled = true;
+#endif
+
     if (!data->mSheetAlreadyComplete) {
       // If mSheetAlreadyComplete, then the sheet could well be modified between
       // when we posted the async call to SheetComplete and now, since the sheet
       // was page-accessible during that whole time.
-      MOZ_ASSERT(!data->mSheet->HasForcedUniqueInner(),
+
+      // HasForcedUniqueInner() is okay if the sheet is constructed, because
+      // constructed sheets are always unique and they may be set to complete
+      // multiple times if their rules are replaced via Replace()
+      MOZ_ASSERT(data->mSheet->IsConstructed() ||
+                     !data->mSheet->HasForcedUniqueInner(),
                  "should not get a forced unique inner during parsing");
       data->mSheet->SetComplete();
       data->ScheduleLoadEventIfNeeded();
@@ -1788,7 +1791,9 @@ void Loader::DoSheetComplete(SheetLoadData& aLoadData,
   // If we ever start doing this for failed loads, we'll need to
   // adjust the PostLoadEvent code that thinks anything already
   // complete must have loaded succesfully.
-  if (!aLoadData.mLoadFailed && aLoadData.mURI) {
+  // We don't want to use mSheets for constructable stylesheets.
+  if (!aLoadData.mLoadFailed && aLoadData.mURI &&
+      !aLoadData.mSheet->IsConstructed()) {
     // Pick our sheet to cache carefully.  Ideally, we want to cache
     // one of the sheets that will be kept alive by a document or
     // parent sheet anyway, so that if someone then accesses it via
@@ -1834,6 +1839,7 @@ void Loader::MarkLoadTreeFailed(SheetLoadData& aLoadData) {
   SheetLoadData* data = &aLoadData;
   do {
     data->mLoadFailed = true;
+    data->mSheet->MaybeRejectReplacePromise();
 
     if (data->mParentData) {
       MarkLoadTreeFailed(*data->mParentData);
@@ -1980,7 +1986,7 @@ Result<Loader::LoadSheetResult, nsresult> Loader::LoadStyleLink(
   MOZ_ASSERT_IF(syncLoad, !aObserver);
 
   nsresult rv = CheckContentPolicy(loadingPrincipal, principal, aInfo.mURI,
-                                   context, IsPreload::No);
+                                   context, aInfo.mNonce, IsPreload::No);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     // Don't fire the error event if our document is loaded as data.  We're
     // supposed to not even try to do loads in that case... Unfortunately, we
@@ -2129,7 +2135,7 @@ nsresult Loader::LoadChildSheet(StyleSheet& aParentSheet,
 
   nsIPrincipal* principal = aParentSheet.Principal();
   nsresult rv = CheckContentPolicy(loadingPrincipal, principal, aURL, context,
-                                   IsPreload::No);
+                                   EmptyString(), IsPreload::No);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     if (aParentData) {
       MarkLoadTreeFailed(*aParentData);
@@ -2254,7 +2260,7 @@ Result<RefPtr<StyleSheet>, nsresult> Loader::InternalLoadNonDocumentSheet(
   nsCOMPtr<nsIPrincipal> loadingPrincipal =
       (aOriginPrincipal && mDocument ? mDocument->NodePrincipal() : nullptr);
   nsresult rv = CheckContentPolicy(loadingPrincipal, aOriginPrincipal, aURL,
-                                   mDocument, aIsPreload);
+                                   mDocument, EmptyString(), aIsPreload);
   if (NS_FAILED(rv)) {
     return Err(rv);
   }
@@ -2501,6 +2507,7 @@ void Loader::UnblockOnload(bool aFireSync) {
 already_AddRefed<nsISerialEventTarget> Loader::DispatchTarget() {
   nsCOMPtr<nsISerialEventTarget> target;
   if (mDocument) {
+    // If you change this, you may want to change StyleSheet::Replace
     target = mDocument->EventTargetFor(TaskCategory::Other);
   } else if (mDocGroup) {
     target = mDocGroup->EventTargetFor(TaskCategory::Other);

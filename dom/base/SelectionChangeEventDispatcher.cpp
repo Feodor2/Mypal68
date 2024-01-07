@@ -136,7 +136,7 @@ void SelectionChangeEventDispatcher::OnSelectionChange(Document* aDoc,
           root = root->GetParent();
         }
 
-        target = root.forget();
+        target = std::move(root);
       }
     }
 

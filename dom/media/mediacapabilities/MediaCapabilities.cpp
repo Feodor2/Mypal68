@@ -107,7 +107,8 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
   if (!aConfiguration.mVideo.WasPassed() &&
       !aConfiguration.mAudio.WasPassed()) {
     aRv.ThrowTypeError<MSG_MISSING_REQUIRED_DICTIONARY_MEMBER>(
-        NS_LITERAL_STRING("'audio' or 'video'"));
+        NS_LITERAL_STRING("'audio' or 'video' member of argument of "
+                          "MediaCapabilities.decodingInfo"));
     return nullptr;
   }
 
@@ -414,7 +415,8 @@ already_AddRefed<Promise> MediaCapabilities::EncodingInfo(
   if (!aConfiguration.mVideo.WasPassed() &&
       !aConfiguration.mAudio.WasPassed()) {
     aRv.ThrowTypeError<MSG_MISSING_REQUIRED_DICTIONARY_MEMBER>(
-        NS_LITERAL_STRING("'audio' or 'video'"));
+        NS_LITERAL_STRING("'audio' or 'video' member of argument of "
+                          "MediaCapabilities.encodingInfo"));
     return nullptr;
   }
 
@@ -492,8 +494,11 @@ Maybe<MediaContainerType> MediaCapabilities::CheckAudioConfiguration(
 }
 
 bool MediaCapabilities::CheckTypeForMediaSource(const nsAString& aType) {
-  return NS_SUCCEEDED(MediaSource::IsTypeSupported(
-      aType, nullptr /* DecoderDoctorDiagnostics */));
+  IgnoredErrorResult rv;
+  MediaSource::IsTypeSupported(aType, nullptr /* DecoderDoctorDiagnostics */,
+                               rv);
+
+  return !rv.Failed();
 }
 
 bool MediaCapabilities::CheckTypeForFile(const nsAString& aType) {

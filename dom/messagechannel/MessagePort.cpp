@@ -19,6 +19,8 @@
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/ipc/BackgroundChild.h"
+#include "mozilla/dom/RefMessageBodyService.h"
+#include "mozilla/dom/SharedMessageBody.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/MessagePortTimelineMarker.h"
 #include "mozilla/ScopeExit.h"
@@ -28,7 +30,6 @@
 #include "nsContentUtils.h"
 #include "nsGlobalWindow.h"
 #include "nsPresContext.h"
-#include "SharedMessagePortMessage.h"
 
 #include "nsIBFCacheEntry.h"
 #include "mozilla/dom/Document.h"
@@ -52,7 +53,7 @@ class PostMessageRunnable final : public CancelableRunnable {
   friend class MessagePort;
 
  public:
-  PostMessageRunnable(MessagePort* aPort, SharedMessagePortMessage* aData)
+  PostMessageRunnable(MessagePort* aPort, SharedMessageBody* aData)
       : CancelableRunnable("dom::PostMessageRunnable"),
         mPort(aPort),
         mData(aData) {
@@ -124,7 +125,8 @@ class PostMessageRunnable final : public CancelableRunnable {
           MarkerTracingType::START);
     }
 
-    mData->Read(cx, &value, rv);
+    mData->Read(cx, &value, mPort->mRefMessageBodyService,
+                SharedMessageBody::ReadMethod::StealRefMessageBody, rv);
 
     if (isTimelineRecording) {
       end = MakeUnique<MessagePortTimelineMarker>(
@@ -165,7 +167,7 @@ class PostMessageRunnable final : public CancelableRunnable {
   ~PostMessageRunnable() {}
 
   RefPtr<MessagePort> mPort;
-  RefPtr<SharedMessagePortMessage> mData;
+  RefPtr<SharedMessageBody> mData;
 };
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(MessagePort)
@@ -198,6 +200,7 @@ NS_IMPL_RELEASE_INHERITED(MessagePort, DOMEventTargetHelper)
 
 MessagePort::MessagePort(nsIGlobalObject* aGlobal, State aState)
     : DOMEventTargetHelper(aGlobal),
+      mRefMessageBodyService(RefMessageBodyService::GetOrCreate()),
       mState(aState),
       mMessageQueueEnabled(false),
       mIsKeptAlive(false),
@@ -329,7 +332,8 @@ void MessagePort::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
     return;
   }
 
-  RefPtr<SharedMessagePortMessage> data = new SharedMessagePortMessage();
+  RefPtr<SharedMessageBody> data =
+      new SharedMessageBody(StructuredCloneHolder::TransferringSupported);
 
   UniquePtr<AbstractTimelineMarker> start;
   UniquePtr<AbstractTimelineMarker> end;
@@ -342,7 +346,8 @@ void MessagePort::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
         MarkerTracingType::START);
   }
 
-  data->Write(aCx, aMessage, transferable, aRv);
+  data->Write(aCx, aMessage, transferable, mIdentifier->uuid(),
+              mRefMessageBodyService, aRv);
 
   if (isTimelineRecording) {
     end = MakeUnique<MessagePortTimelineMarker>(
@@ -386,14 +391,15 @@ void MessagePort::PostMessage(JSContext* aCx, JS::Handle<JS::Value> aMessage,
   MOZ_ASSERT(mActor);
   MOZ_ASSERT(mMessagesForTheOtherPort.IsEmpty());
 
-  AutoTArray<RefPtr<SharedMessagePortMessage>, 1> array;
+  AutoTArray<RefPtr<SharedMessageBody>, 1> array;
   array.AppendElement(data);
 
-  AutoTArray<ClonedMessageData, 1> messages;
+  AutoTArray<MessageData, 1> messages;
   // note: `messages` will borrow the underlying buffer, but this is okay
   // because reverse destruction order means `messages` will be destroyed prior
   // to `array`/`data`.
-  SharedMessagePortMessage::FromSharedToMessagesChild(mActor, array, messages);
+  SharedMessageBody::FromSharedToMessagesChild(mActor->Manager(), array,
+                                               messages);
   mActor->SendPostMessages(messages);
 }
 
@@ -462,7 +468,7 @@ void MessagePort::Dispatch() {
       break;
   }
 
-  RefPtr<SharedMessagePortMessage> data = mMessages.ElementAt(0);
+  RefPtr<SharedMessageBody> data = mMessages.ElementAt(0);
   mMessages.RemoveElementAt(0);
 
   mPostMessageRunnable = new PostMessageRunnable(this, data);
@@ -490,6 +496,10 @@ void MessagePort::CloseInternal(bool aSoftly) {
   if (!aSoftly) {
     mMessages.Clear();
   }
+
+  // Let's inform the RefMessageBodyService that any our shared messages are
+  // now invalid.
+  mRefMessageBodyService->ForgetPort(mIdentifier->uuid());
 
   if (mState == eStateUnshippedEntangled) {
     MOZ_DIAGNOSTIC_ASSERT(mUnshippedEntangledPort);
@@ -555,7 +565,7 @@ void MessagePort::SetOnmessage(EventHandlerNonNull* aCallback) {
 // another actor. It receives a list of messages to be dispatch. It can be that
 // we were waiting for this entangling step in order to disentangle the port or
 // to close it.
-void MessagePort::Entangled(nsTArray<ClonedMessageData>& aMessages) {
+void MessagePort::Entangled(nsTArray<MessageData>& aMessages) {
   MOZ_ASSERT(mState == eStateEntangling ||
              mState == eStateEntanglingForDisentangle ||
              mState == eStateEntanglingForClose);
@@ -566,9 +576,9 @@ void MessagePort::Entangled(nsTArray<ClonedMessageData>& aMessages) {
   // If we have pending messages, these have to be sent.
   if (!mMessagesForTheOtherPort.IsEmpty()) {
     {
-      nsTArray<ClonedMessageData> messages;
-      SharedMessagePortMessage::FromSharedToMessagesChild(
-          mActor, mMessagesForTheOtherPort, messages);
+      nsTArray<MessageData> messages;
+      SharedMessageBody::FromSharedToMessagesChild(
+          mActor->Manager(), mMessagesForTheOtherPort, messages);
       mActor->SendPostMessages(messages);
     }
     // Because `messages` borrow the underlying JSStructuredCloneData buffers,
@@ -576,10 +586,10 @@ void MessagePort::Entangled(nsTArray<ClonedMessageData>& aMessages) {
     mMessagesForTheOtherPort.Clear();
   }
 
-  // We must convert the messages into SharedMessagePortMessages to avoid leaks.
-  FallibleTArray<RefPtr<SharedMessagePortMessage>> data;
-  if (NS_WARN_IF(!SharedMessagePortMessage::FromMessagesToSharedChild(aMessages,
-                                                                      data))) {
+  // We must convert the messages into SharedMessageBodys to avoid leaks.
+  FallibleTArray<RefPtr<SharedMessageBody>> data;
+  if (NS_WARN_IF(
+          !SharedMessageBody::FromMessagesToSharedChild(aMessages, data))) {
     DispatchError();
     return;
   }
@@ -616,7 +626,7 @@ void MessagePort::StartDisentangling() {
   mActor->SendStopSendingData();
 }
 
-void MessagePort::MessagesReceived(nsTArray<ClonedMessageData>& aMessages) {
+void MessagePort::MessagesReceived(nsTArray<MessageData>& aMessages) {
   MOZ_ASSERT(mState == eStateEntangled || mState == eStateDisentangling ||
              // This last step can happen only if Close() has been called
              // manually. At this point SendClose() is sent but we can still
@@ -626,9 +636,9 @@ void MessagePort::MessagesReceived(nsTArray<ClonedMessageData>& aMessages) {
 
   RemoveDocFromBFCache();
 
-  FallibleTArray<RefPtr<SharedMessagePortMessage>> data;
-  if (NS_WARN_IF(!SharedMessagePortMessage::FromMessagesToSharedChild(aMessages,
-                                                                      data))) {
+  FallibleTArray<RefPtr<SharedMessageBody>> data;
+  if (NS_WARN_IF(
+          !SharedMessageBody::FromMessagesToSharedChild(aMessages, data))) {
     DispatchError();
     return;
   }
@@ -654,13 +664,18 @@ void MessagePort::Disentangle() {
   mState = eStateDisentangled;
 
   {
-    nsTArray<ClonedMessageData> messages;
-    SharedMessagePortMessage::FromSharedToMessagesChild(mActor, mMessages,
-                                                        messages);
+    nsTArray<MessageData> messages;
+    SharedMessageBody::FromSharedToMessagesChild(mActor->Manager(), mMessages,
+                                                 messages);
     mActor->SendDisentangle(messages);
   }
-  // Only clear mMessages after the ClonedMessageData instances have gone out of
-  // scope because they borrow mMessages' underlying JSStructuredCloneDatas.
+
+  // Let's inform the RefMessageBodyService that any our shared messages are
+  // now invalid.
+  mRefMessageBodyService->ForgetPort(mIdentifier->uuid());
+
+  // Only clear mMessages after the MessageData instances have gone out of scope
+  // because they borrow mMessages' underlying JSStructuredCloneDatas.
   mMessages.Clear();
 
   mActor->SetPort(nullptr);

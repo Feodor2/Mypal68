@@ -1,16 +1,21 @@
 workflow "Build & Release Manifest" {
   on = "push"
-  resolves = ["tag-master"]
+  resolves = ["manifest-build-and-tag"]
 }
 
-action "build-manifest" {
+action "manifest-build-and-tag" {
   uses = "./tools/docker/github"
-  runs = ["bash", "-c", "tools/ci/action_manifest_build.sh"]
-}
-
-action "tag-master" {
-  needs = "build-manifest"
-  uses = "./tools/docker/github"
-  runs = ["python", "tools/ci/tag_master.py"]
+  runs = ["python", "tools/ci/manifest_build.py"]
   secrets = ["GITHUB_TOKEN"]
+}
+
+workflow "Build & Publish Documentation Website" {
+  on = "push"
+  resolves = ["website-build-and-publish"]
+}
+
+action "website-build-and-publish" {
+  uses = "./tools/docker/documentation"
+  runs = ["/bin/bash", "tools/ci/website_build.sh"]
+  secrets = ["DEPLOY_TOKEN"]
 }

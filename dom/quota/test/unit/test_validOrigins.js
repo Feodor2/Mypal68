@@ -11,8 +11,10 @@ async function testSteps() {
   const testingURLs = [
     // General
     "https://example.com",
+    "https://smaug----.github.io/",
     // About
     "about:home",
+    "about:reader",
     // IPv6
     "https://[::]",
     "https://[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]",

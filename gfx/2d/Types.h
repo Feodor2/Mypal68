@@ -6,6 +6,7 @@
 #define MOZILLA_GFX_TYPES_H_
 
 #include "mozilla/EndianUtils.h"
+#include "mozilla/EnumeratedRange.h"
 #include "mozilla/MacroArgs.h"  // for MOZ_CONCAT
 #include "mozilla/TypedEnumBits.h"
 
@@ -471,7 +472,11 @@ typedef mozilla::gfx::SurfaceFormat gfxImageFormat;
 namespace mozilla {
 
 // Side constants for use in various places.
-enum Side { eSideTop, eSideRight, eSideBottom, eSideLeft };
+enum Side : uint8_t { eSideTop, eSideRight, eSideBottom, eSideLeft };
+
+constexpr auto AllPhysicalSides() {
+  return mozilla::MakeInclusiveEnumeratedRange(eSideTop, eSideLeft);
+}
 
 enum class SideBits {
   eNone = 0,
@@ -486,25 +491,7 @@ enum class SideBits {
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(SideBits)
 
-// Creates a for loop that walks over the four mozilla::Side values.
-// We use an int32_t helper variable (instead of a Side) for our loop counter,
-// to avoid triggering undefined behavior just before we exit the loop (at
-// which point the counter is incremented beyond the largest valid Side value).
-#define NS_FOR_CSS_SIDES(var_)                                               \
-  int32_t MOZ_CONCAT(var_, __LINE__) = mozilla::eSideTop;                    \
-  for (mozilla::Side var_;                                                   \
-       MOZ_CONCAT(var_, __LINE__) <= mozilla::eSideLeft &&                   \
-       (static_cast<void>(var_ = mozilla::Side(MOZ_CONCAT(var_, __LINE__))), \
-        true);                                                               \
-       ++MOZ_CONCAT(var_, __LINE__))
-
-static inline Side& operator++(Side& side) {
-  MOZ_ASSERT(side >= eSideTop && side <= eSideLeft, "Out of range side");
-  side = Side(side + 1);
-  return side;
-}
-
-enum Corner {
+enum Corner : uint8_t {
   // This order is important!
   eCornerTopLeft = 0,
   eCornerTopRight = 1,
@@ -517,21 +504,9 @@ enum Corner {
 // switch-case.
 constexpr int eCornerCount = 4;
 
-// Creates a for loop that walks over the four mozilla::Corner values. This
-// implementation uses the same technique as NS_FOR_CSS_SIDES.
-#define NS_FOR_CSS_FULL_CORNERS(var_)                                          \
-  int32_t MOZ_CONCAT(var_, __LINE__) = mozilla::eCornerTopLeft;                \
-  for (mozilla::Corner var_;                                                   \
-       MOZ_CONCAT(var_, __LINE__) <= mozilla::eCornerBottomLeft &&             \
-       (static_cast<void>(var_ = mozilla::Corner(MOZ_CONCAT(var_, __LINE__))), \
-        true);                                                                 \
-       ++MOZ_CONCAT(var_, __LINE__))
-
-static inline Corner operator++(Corner& aCorner) {
-  MOZ_ASSERT(aCorner >= eCornerTopLeft && aCorner <= eCornerBottomLeft,
-             "Out of range corner!");
-  aCorner = Corner(aCorner + 1);
-  return aCorner;
+constexpr auto AllPhysicalCorners() {
+  return mozilla::MakeInclusiveEnumeratedRange(eCornerTopLeft,
+                                               eCornerBottomLeft);
 }
 
 // Indices into "half corner" arrays (nsStyleCorners e.g.)
@@ -547,23 +522,9 @@ enum HalfCorner : uint8_t {
   eCornerBottomLeftY = 7
 };
 
-// Creates a for loop that walks over the eight mozilla::HalfCorner values.
-// This implementation uses the same technique as NS_FOR_CSS_SIDES.
-#define NS_FOR_CSS_HALF_CORNERS(var_)                                \
-  int32_t MOZ_CONCAT(var_, __LINE__) = mozilla::eCornerTopLeftX;     \
-  for (mozilla::HalfCorner var_;                                     \
-       MOZ_CONCAT(var_, __LINE__) <= mozilla::eCornerBottomLeftY &&  \
-       (static_cast<void>(                                           \
-            var_ = mozilla::HalfCorner(MOZ_CONCAT(var_, __LINE__))), \
-        true);                                                       \
-       ++MOZ_CONCAT(var_, __LINE__))
-
-static inline HalfCorner operator++(HalfCorner& aHalfCorner) {
-  MOZ_ASSERT(
-      aHalfCorner >= eCornerTopLeftX && aHalfCorner <= eCornerBottomLeftY,
-      "Out of range half corner!");
-  aHalfCorner = HalfCorner(aHalfCorner + 1);
-  return aHalfCorner;
+constexpr auto AllPhysicalHalfCorners() {
+  return mozilla::MakeInclusiveEnumeratedRange(eCornerTopLeftX,
+                                               eCornerBottomLeftY);
 }
 
 // The result of these conversion functions are exhaustively checked in

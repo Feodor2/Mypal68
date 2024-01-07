@@ -205,11 +205,11 @@
 #include "mozilla/psm/PSMContentListener.h"
 #include "nsPluginHost.h"
 #include "nsPluginTags.h"
+#include "mozilla/GlobalStyleSheetCache.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "nsICaptivePortalService.h"
 #include "nsIBidiKeyboard.h"
-#include "nsLayoutStylesheetCache.h"
 #include "MMPrinter.h"
 
 #include "mozilla/Sprintf.h"
@@ -1399,7 +1399,7 @@ void ContentParent::RemoveFromList() {
     }
   } else if (sBrowserContentParents) {
     if (auto entry = sBrowserContentParents->Lookup(mRemoteType)) {
-      nsTArray<ContentParent*>* contentParents = entry.Data();
+      const auto& contentParents = entry.Data();
       contentParents->RemoveElement(this);
       if (contentParents->IsEmpty()) {
         entry.Remove();
@@ -1859,7 +1859,7 @@ static void CacheSandboxParams(std::vector<std::string>& aCachedParams) {
   if (mozilla::IsDevelopmentBuild()) {
     // Repo dir
     nsCOMPtr<nsIFile> repoDir;
-    rv = mozilla::GetRepoDir(getter_AddRefs(repoDir));
+    rv = nsMacUtilsImpl::GetRepoDir(getter_AddRefs(repoDir));
     if (NS_FAILED(rv)) {
       MOZ_CRASH("Failed to get path to repo dir");
     }
@@ -1869,7 +1869,7 @@ static void CacheSandboxParams(std::vector<std::string>& aCachedParams) {
 
     // Object dir
     nsCOMPtr<nsIFile> objDir;
-    rv = mozilla::GetObjDir(getter_AddRefs(objDir));
+    rv = nsMacUtilsImpl::GetObjDir(getter_AddRefs(objDir));
     if (NS_FAILED(rv)) {
       MOZ_CRASH("Failed to get path to build object dir");
     }
@@ -2252,8 +2252,8 @@ void ContentParent::InitInternal(ProcessPriority aInitialPriority) {
 
   // Content processes have no permission to access profile directory, so we
   // send the file URL instead.
-  StyleSheet* ucs = nsLayoutStylesheetCache::Singleton()->GetUserContentSheet();
-  if (ucs) {
+  auto* sheetCache = GlobalStyleSheetCache::Singleton();
+  if (StyleSheet* ucs = sheetCache->GetUserContentSheet()) {
     SerializeURI(ucs->GetSheetURI(), xpcomInit.userContentSheetURL());
   } else {
     SerializeURI(nullptr, xpcomInit.userContentSheetURL());
@@ -2291,12 +2291,11 @@ void ContentParent::InitInternal(ProcessPriority aInitialPriority) {
   screenManager.CopyScreensToRemote(this);
 
   // Send the UA sheet shared memory buffer and the address it is mapped at.
-  auto cache = nsLayoutStylesheetCache::Singleton();
   Maybe<SharedMemoryHandle> sharedUASheetHandle;
-  uintptr_t sharedUASheetAddress = cache->GetSharedMemoryAddress();
+  uintptr_t sharedUASheetAddress = sheetCache->GetSharedMemoryAddress();
 
   SharedMemoryHandle handle;
-  if (cache->ShareToProcess(OtherPid(), &handle)) {
+  if (sheetCache->ShareToProcess(OtherPid(), &handle)) {
     sharedUASheetHandle.emplace(handle);
   } else {
     sharedUASheetAddress = 0;
@@ -2522,7 +2521,7 @@ int32_t ContentParent::Pid() const {
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvGetGfxVars(
-    InfallibleTArray<GfxVarUpdate>* aVars) {
+    nsTArray<GfxVarUpdate>* aVars) {
   // Ensure gfxVars is initialized (for xpcshell tests).
   gfxVars::Initialize();
 
@@ -2618,7 +2617,7 @@ void ContentParent::OnVarChanged(const GfxVarUpdate& aVar) {
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvReadFontList(
-    InfallibleTArray<FontListEntry>* retValue) {
+    nsTArray<FontListEntry>* retValue) {
 #ifdef ANDROID
   gfxAndroidPlatform::GetPlatform()->GetSystemFontList(retValue);
 #endif
@@ -2758,7 +2757,7 @@ mozilla::ipc::IPCResult ContentParent::RecvPlayEventSound(
 
 mozilla::ipc::IPCResult ContentParent::RecvGetIconForExtension(
     const nsCString& aFileExt, const uint32_t& aIconSize,
-    InfallibleTArray<uint8_t>* bits) {
+    nsTArray<uint8_t>* bits) {
 #ifdef MOZ_WIDGET_ANDROID
   NS_ASSERTION(AndroidBridge::Bridge() != nullptr,
                "AndroidBridge is not available");
@@ -3778,7 +3777,7 @@ mozilla::ipc::IPCResult ContentParent::RecvNotificationEvent(
 
 mozilla::ipc::IPCResult ContentParent::RecvSyncMessage(
     const nsString& aMsg, const ClonedMessageData& aData,
-    InfallibleTArray<CpowEntry>&& aCpows, const IPC::Principal& aPrincipal,
+    nsTArray<CpowEntry>&& aCpows, const IPC::Principal& aPrincipal,
     nsTArray<StructuredCloneData>* aRetvals) {
   AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING("ContentParent::RecvSyncMessage",
                                              OTHER, aMsg);
@@ -3798,7 +3797,7 @@ mozilla::ipc::IPCResult ContentParent::RecvSyncMessage(
 
 mozilla::ipc::IPCResult ContentParent::RecvRpcMessage(
     const nsString& aMsg, const ClonedMessageData& aData,
-    InfallibleTArray<CpowEntry>&& aCpows, const IPC::Principal& aPrincipal,
+    nsTArray<CpowEntry>&& aCpows, const IPC::Principal& aPrincipal,
     nsTArray<StructuredCloneData>* aRetvals) {
   AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING("ContentParent::RecvRpcMessage",
                                              OTHER, aMsg);
@@ -3817,7 +3816,7 @@ mozilla::ipc::IPCResult ContentParent::RecvRpcMessage(
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvAsyncMessage(
-    const nsString& aMsg, InfallibleTArray<CpowEntry>&& aCpows,
+    const nsString& aMsg, nsTArray<CpowEntry>&& aCpows,
     const IPC::Principal& aPrincipal, const ClonedMessageData& aData) {
   AUTO_PROFILER_LABEL_DYNAMIC_LOSSY_NSSTRING("ContentParent::RecvAsyncMessage",
                                              OTHER, aMsg);
@@ -4033,7 +4032,7 @@ nsresult ContentParent::DoSendAsyncMessage(JSContext* aCx,
   if (!BuildClonedMessageDataForParent(this, aHelper, data)) {
     return NS_ERROR_DOM_DATA_CLONE_ERR;
   }
-  InfallibleTArray<CpowEntry> cpows;
+  nsTArray<CpowEntry> cpows;
   jsipc::CPOWManager* mgr = GetCPOWManager();
   if (aCpows && (!mgr || !mgr->Wrap(aCx, aCpows, &cpows))) {
     return NS_ERROR_UNEXPECTED;
@@ -4290,7 +4289,7 @@ void ContentParent::NotifyUpdatedDictionaries() {
   RefPtr<mozSpellChecker> spellChecker(mozSpellChecker::Create());
   MOZ_ASSERT(spellChecker, "No spell checker?");
 
-  InfallibleTArray<nsString> dictionaries;
+  nsTArray<nsString> dictionaries;
   spellChecker->GetDictionaryList(&dictionaries);
 
   for (auto* cp : AllProcesses(eLive)) {
@@ -4299,7 +4298,7 @@ void ContentParent::NotifyUpdatedDictionaries() {
 }
 
 void ContentParent::NotifyUpdatedFonts() {
-  InfallibleTArray<SystemFontListEntry> fontList;
+  nsTArray<SystemFontListEntry> fontList;
   gfxPlatform::GetPlatform()->ReadSystemFontList(&fontList);
 
   for (auto* cp : AllProcesses(eLive)) {
@@ -4467,7 +4466,7 @@ mozilla::ipc::IPCResult ContentParent::RecvUpdateDropEffect(
 
 PContentPermissionRequestParent*
 ContentParent::AllocPContentPermissionRequestParent(
-    const InfallibleTArray<PermissionRequest>& aRequests,
+    const nsTArray<PermissionRequest>& aRequests,
     const IPC::Principal& aPrincipal, const IPC::Principal& aTopLevelPrincipal,
     const bool& aIsHandlingUserInput, const bool& aDocumentHasUserInput,
     const DOMTimeStamp& aPageLoadTimestamp, const TabId& aTabId) {
@@ -4948,7 +4947,7 @@ mozilla::ipc::IPCResult ContentParent::RecvNotifyPushObservers(
 
 mozilla::ipc::IPCResult ContentParent::RecvNotifyPushObserversWithData(
     const nsCString& aScope, const IPC::Principal& aPrincipal,
-    const nsString& aMessageId, InfallibleTArray<uint8_t>&& aData) {
+    const nsString& aMessageId, nsTArray<uint8_t>&& aData) {
   PushMessageDispatcher dispatcher(aScope, aPrincipal, aMessageId, Some(aData));
   Unused << NS_WARN_IF(NS_FAILED(dispatcher.NotifyObserversAndWorkers()));
   return IPC_OK();
@@ -5258,28 +5257,28 @@ bool ContentParent::NeedsPermissionsUpdate(
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvAccumulateChildHistograms(
-    InfallibleTArray<HistogramAccumulation>&& aAccumulations) {
+    nsTArray<HistogramAccumulation>&& aAccumulations) {
   TelemetryIPC::AccumulateChildHistograms(GetTelemetryProcessID(mRemoteType),
                                           aAccumulations);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvAccumulateChildKeyedHistograms(
-    InfallibleTArray<KeyedHistogramAccumulation>&& aAccumulations) {
+    nsTArray<KeyedHistogramAccumulation>&& aAccumulations) {
   TelemetryIPC::AccumulateChildKeyedHistograms(
       GetTelemetryProcessID(mRemoteType), aAccumulations);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvUpdateChildScalars(
-    InfallibleTArray<ScalarAction>&& aScalarActions) {
+    nsTArray<ScalarAction>&& aScalarActions) {
   TelemetryIPC::UpdateChildScalars(GetTelemetryProcessID(mRemoteType),
                                    aScalarActions);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult ContentParent::RecvUpdateChildKeyedScalars(
-    InfallibleTArray<KeyedScalarAction>&& aScalarActions) {
+    nsTArray<KeyedScalarAction>&& aScalarActions) {
   TelemetryIPC::UpdateChildKeyedScalars(GetTelemetryProcessID(mRemoteType),
                                         aScalarActions);
   return IPC_OK();

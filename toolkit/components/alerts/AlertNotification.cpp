@@ -305,7 +305,7 @@ nsresult AlertImageRequest::NotifyMissing() {
     mTimer = nullptr;
   }
   if (nsCOMPtr<nsIAlertNotificationImageListener> listener =
-          mListener.forget()) {
+          std::move(mListener)) {
     nsresult rv = listener->OnImageMissing(mUserData);
     NS_RELEASE_THIS();
     return rv;
@@ -319,7 +319,7 @@ nsresult AlertImageRequest::NotifyComplete() {
     mTimer = nullptr;
   }
   if (nsCOMPtr<nsIAlertNotificationImageListener> listener =
-          mListener.forget()) {
+          std::move(mListener)) {
     nsresult rv = listener->OnImageReady(mUserData, mRequest);
     NS_RELEASE_THIS();
     return rv;

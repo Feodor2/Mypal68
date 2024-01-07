@@ -16,7 +16,6 @@
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
-#include "nsAutoPtr.h"
 #include "nsClassHashtable.h"
 #include "nsServiceManagerUtils.h"
 #include "DecryptThroughputLimit.h"
@@ -154,7 +153,7 @@ class EMEDecryptor : public MediaDataDecoder,
     MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn());
     MOZ_ASSERT(aDecrypted.mSample);
 
-    nsAutoPtr<DecryptPromiseRequestHolder> holder;
+    UniquePtr<DecryptPromiseRequestHolder> holder;
     mDecrypts.Remove(aDecrypted.mSample, &holder);
     if (holder) {
       holder->Complete();
@@ -218,7 +217,7 @@ class EMEDecryptor : public MediaDataDecoder,
           mDecodePromise.RejectIfExists(NS_ERROR_DOM_MEDIA_CANCELED, __func__);
           mThroughputLimiter.Flush();
           for (auto iter = mDecrypts.Iter(); !iter.Done(); iter.Next()) {
-            nsAutoPtr<DecryptPromiseRequestHolder>& holder = iter.Data();
+            auto holder = iter.UserData();
             holder->DisconnectIfExists();
             iter.Remove();
           }
@@ -237,7 +236,7 @@ class EMEDecryptor : public MediaDataDecoder,
       MOZ_ASSERT(mDecodePromise.IsEmpty() && !mDecodeRequest.Exists(),
                  "Must wait for decoding to complete");
       for (auto iter = mDecrypts.Iter(); !iter.Done(); iter.Next()) {
-        nsAutoPtr<DecryptPromiseRequestHolder>& holder = iter.Data();
+        auto holder = iter.UserData();
         holder->DisconnectIfExists();
         iter.Remove();
       }
@@ -252,7 +251,7 @@ class EMEDecryptor : public MediaDataDecoder,
       mIsShutdown = true;
       mSamplesWaitingForKey->BreakCycles();
       mSamplesWaitingForKey = nullptr;
-      RefPtr<MediaDataDecoder> decoder = mDecoder.forget();
+      RefPtr<MediaDataDecoder> decoder = std::move(mDecoder);
       mProxy = nullptr;
       return decoder->Shutdown();
     });

@@ -25,7 +25,7 @@ use webrender::{
     BinaryRecorder, Compositor, DebugFlags, Device, ExternalImage, ExternalImageHandler, ExternalImageSource,
     NativeSurfaceId, PipelineInfo, ProfilerHooks, RecordedFrameHandle, Renderer, RendererOptions, RendererStats,
     SceneBuilderHooks, ShaderPrecacheFlags, Shaders, ThreadListener, UploadMethod, VertexUsageHint,
-    WrShaders, set_profiler_hooks,
+    WrShaders, set_profiler_hooks, CompositorConfig, NativeSurfaceInfo
 };
 use thread_profiler::register_thread_with_profiler;
 use moz2d_renderer::Moz2dBlobImageHandler;
@@ -1140,6 +1140,7 @@ extern "C" {
         compositor: *mut c_void,
         id: NativeSurfaceId,
         size: DeviceIntSize,
+        is_opaque: bool,
     );
     fn wr_compositor_destroy_surface(
         compositor: *mut c_void,
@@ -1149,6 +1150,8 @@ extern "C" {
         compositor: *mut c_void,
         id: NativeSurfaceId,
         offset: &mut DeviceIntPoint,
+        fbo_id: &mut u32,
+        dirty_rect: DeviceIntRect,
     );
     fn wr_compositor_unbind(compositor: *mut c_void);
     fn wr_compositor_begin_frame(compositor: *mut c_void);
@@ -1168,12 +1171,14 @@ impl Compositor for WrCompositor {
         &mut self,
         id: NativeSurfaceId,
         size: DeviceIntSize,
+        is_opaque: bool,
     ) {
         unsafe {
             wr_compositor_create_surface(
                 self.0,
                 id,
                 size,
+                is_opaque,
             );
         }
     }
@@ -1193,16 +1198,24 @@ impl Compositor for WrCompositor {
     fn bind(
         &mut self,
         id: NativeSurfaceId,
-    ) -> DeviceIntPoint {
-        let mut offset = DeviceIntPoint::zero();
+        dirty_rect: DeviceIntRect,
+    ) -> NativeSurfaceInfo {
+        let mut surface_info = NativeSurfaceInfo {
+            origin: DeviceIntPoint::zero(),
+            fbo_id: 0,
+        };
+
         unsafe {
             wr_compositor_bind(
                 self.0,
                 id,
-                &mut offset,
+                &mut surface_info.origin,
+                &mut surface_info.fbo_id,
+                dirty_rect,
             );
         }
-        offset
+
+        surface_info
     }
 
     fn unbind(
@@ -1319,14 +1332,20 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
         ColorF::new(0.0, 0.0, 0.0, 0.0)
     };
 
-    let native_compositor : Option<Box<dyn Compositor>> = if compositor != ptr::null_mut() {
-        Some(Box::new(WrCompositor(compositor)))
+    let compositor_config = if compositor != ptr::null_mut() {
+        CompositorConfig::Native {
+            max_update_rects: 0,
+            compositor: Box::new(WrCompositor(compositor)),
+        }
     } else {
-        None
+        CompositorConfig::Draw {
+            max_partial_present_rects: 0,
+        }
     };
 
     let opts = RendererOptions {
         enable_aa: true,
+        force_subpixel_aa: false,
         enable_subpixel_aa: cfg!(not(target_os = "android")),
         support_low_priority_transactions,
         allow_texture_swizzling,
@@ -1359,8 +1378,8 @@ pub extern "C" fn wr_window_new(window_id: WrWindowId,
         enable_picture_caching,
         allow_pixel_local_storage_support: false,
         start_debug_server,
-        native_compositor,
         surface_is_y_flipped,
+        compositor_config,
         ..Default::default()
     };
 

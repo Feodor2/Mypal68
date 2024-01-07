@@ -5,6 +5,8 @@
 #include "mozilla/dom/AbstractRange.h"
 #include "mozilla/dom/AbstractRangeBinding.h"
 
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
 #include "mozilla/RangeUtils.h"
 #include "mozilla/dom/StaticRange.h"
 #include "nsContentUtils.h"
@@ -72,9 +74,9 @@ AbstractRange::AbstractRange(nsINode* aNode)
   mOwner = aNode->OwnerDoc();
 }
 
-nsINode* AbstractRange::GetCommonAncestor() const {
-  return mIsPositioned ? nsContentUtils::GetCommonAncestor(mStart.Container(),
-                                                           mEnd.Container())
+nsINode* AbstractRange::GetClosestCommonInclusiveAncestor() const {
+  return mIsPositioned ? nsContentUtils::GetClosestCommonInclusiveAncestor(
+                             mStart.Container(), mEnd.Container())
                        : nullptr;
 }
 
@@ -105,7 +107,10 @@ nsresult AbstractRange::SetStartAndEndInternal(
     // XXX: Offsets - handle this more efficiently.
     // If the end offset is less than the start offset, this should be
     // collapsed at the end offset.
-    if (aStartBoundary.Offset() > aEndBoundary.Offset()) {
+    if (*aStartBoundary.Offset(
+            RangeBoundaryBase<SPT, SRT>::OffsetFilter::kValidOffsets) >
+        *aEndBoundary.Offset(
+            RangeBoundaryBase<EPT, ERT>::OffsetFilter::kValidOffsets)) {
       aRange->DoSetRange(aEndBoundary, aEndBoundary, newStartRoot);
     } else {
       aRange->DoSetRange(aStartBoundary, aEndBoundary, newStartRoot);
@@ -127,9 +132,17 @@ nsresult AbstractRange::SetStartAndEndInternal(
     return NS_OK;
   }
 
+  const Maybe<int32_t> pointOrder =
+      nsContentUtils::ComparePoints(aStartBoundary, aEndBoundary);
+  if (!pointOrder) {
+    // Safely return a value but also detected this in debug builds.
+    MOZ_ASSERT_UNREACHABLE();
+    return NS_ERROR_INVALID_ARG;
+  }
+
   // If the end point is before the start point, this should be collapsed at
   // the end point.
-  if (nsContentUtils::ComparePoints(aStartBoundary, aEndBoundary) == 1) {
+  if (*pointOrder == 1) {
     aRange->DoSetRange(aEndBoundary, aEndBoundary, newEndRoot);
     return NS_OK;
   }

@@ -687,12 +687,11 @@ class nsLayoutUtils {
    * GetScrolledRect returns the range of allowable scroll offsets
    * for aScrolledFrame, assuming the scrollable overflow area is
    * aScrolledFrameOverflowArea and the scrollport size is aScrollPortSize.
-   * aDirection is either NS_STYLE_DIRECTION_LTR or NS_STYLE_DIRECTION_RTL.
    */
   static nsRect GetScrolledRect(nsIFrame* aScrolledFrame,
                                 const nsRect& aScrolledFrameOverflowArea,
                                 const nsSize& aScrollPortSize,
-                                uint8_t aDirection);
+                                mozilla::StyleDirection);
 
   /**
    * HasPseudoStyle returns true if aContent (whose primary style
@@ -2060,7 +2059,7 @@ class nsLayoutUtils {
 
   /**
    * Some frames with 'position: fixed' (nsStyleDisplay::mPosition ==
-   * NS_STYLE_POSITION_FIXED) are not really fixed positioned, since
+   * StylePositionProperty::Fixed) are not really fixed positioned, since
    * they're inside an element with -moz-transform.  This function says
    * whether such an element is a real fixed-pos element.
    */
@@ -2068,7 +2067,7 @@ class nsLayoutUtils {
 
   /**
    * This function says whether `aFrame` would really be a fixed positioned
-   * frame if the frame was created with NS_STYLE_POSITION_FIXED.
+   * frame if the frame was created with StylePositionProperty::Fixed.
    *
    * It is effectively the same as IsReallyFixedPos, but without asserting the
    * position value. Use it only when you know what you're doing, like when

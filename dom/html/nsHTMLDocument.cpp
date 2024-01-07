@@ -82,7 +82,6 @@
 #include "nsFocusManager.h"
 #include "nsIFrame.h"
 #include "nsIContent.h"
-#include "nsLayoutStylesheetCache.h"
 #include "mozilla/StyleSheet.h"
 #include "mozilla/StyleSheetInlines.h"
 #include "mozilla/Unused.h"
@@ -531,7 +530,7 @@ nsresult nsHTMLDocument::StartDocumentLoad(const char* aCommand,
     docShell->GetContentViewer(getter_AddRefs(cv));
   }
   if (!cv) {
-    cv = parentContentViewer.forget();
+    cv = std::move(parentContentViewer);
   }
 
   nsAutoCString urlSpec;

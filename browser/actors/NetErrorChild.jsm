@@ -638,8 +638,6 @@ class NetErrorChild extends ActorChild {
             clockErrTitle.textContent;
           let desc = doc.getElementById("errorShortDescText");
           doc.getElementById("errorShortDesc").style.display = "block";
-          doc.getElementById("certificateErrorReporting").style.display =
-            "none";
           if (desc) {
             // eslint-disable-next-line no-unsanitized/property
             desc.innerHTML = clockErrDesc.innerHTML;

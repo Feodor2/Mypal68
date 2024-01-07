@@ -104,11 +104,6 @@ body:not(.neterror) #advancedButton {
   display: block;
 }
 
-#certificateErrorReporting {
-  display: none;
-  padding-bottom: 10px;
-}
-
 #advancedPanelContainer {
   width: 100%;
   left: 0;
@@ -139,13 +134,6 @@ body:not(.neterror) #advancedButton {
   font-weight: bold;
 }
 
-#automaticallyReportInFuture {
-  cursor: pointer;
-  /* Prevent the checkbox from looking super
-   * squeezed on small viewports */
-  flex-shrink: 0;
-}
-
 #errorCode:not([href]) {
   color: var(--in-content-page-color);
   cursor: text;
@@ -164,10 +152,6 @@ body:not(.neterror) #advancedButton {
   margin: 3em 3em 1em;
   overflow: auto;
   white-space: pre-wrap;
-}
-
-#certificateErrorReporting {
-  display: none;
 }
 
 #certificateErrorDebugInformation {

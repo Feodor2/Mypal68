@@ -105,7 +105,7 @@ LayerManager* RenderFrame::AttachLayerManager() {
     FrameLayerBuilder::InvalidateAllLayers(lm);
   }
 
-  mLayerManager = lm.forget();
+  mLayerManager = std::move(lm);
   return mLayerManager;
 }
 

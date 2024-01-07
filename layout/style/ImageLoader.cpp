@@ -10,7 +10,6 @@
 
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/DocumentInlines.h"
-#include "nsAutoPtr.h"
 #include "nsContentUtils.h"
 #include "nsLayoutUtils.h"
 #include "nsError.h"
@@ -91,7 +90,7 @@ void ImageLoader::AssociateRequestToFrame(imgIRequest* aRequest,
 
   MOZ_ASSERT(observer == this);
 
-  FrameSet* frameSet =
+  const auto& frameSet =
       mRequestToFrameMap.LookupForAdd(aRequest).OrInsert([=]() {
         nsPresContext* presContext = GetPresContext();
         if (presContext) {
@@ -101,7 +100,7 @@ void ImageLoader::AssociateRequestToFrame(imgIRequest* aRequest,
         return new FrameSet();
       });
 
-  RequestSet* requestSet =
+  const auto& requestSet =
       mFrameToRequestMap.LookupForAdd(aFrame).OrInsert([=]() {
         aFrame->SetHasImageRequest(true);
         return new RequestSet();
@@ -262,7 +261,7 @@ void ImageLoader::DeregisterCSSImageFromAllLoaders(uint64_t aImageLoadID) {
   MOZ_ASSERT(aImageLoadID != 0);
 
   if (auto e = sImages->Lookup(aImageLoadID)) {
-    ImageTableEntry* tableEntry = e.Data();
+    const auto& tableEntry = e.Data();
     if (imgRequestProxy* request = tableEntry->mCanonicalRequest) {
       request->CancelAndForgetObserver(NS_BINDING_ABORTED);
     }
@@ -293,7 +292,7 @@ void ImageLoader::RemoveRequestToFrameMapping(imgIRequest* aRequest,
 #endif
 
   if (auto entry = mRequestToFrameMap.Lookup(aRequest)) {
-    FrameSet* frameSet = entry.Data();
+    const auto& frameSet = entry.Data();
     MOZ_ASSERT(frameSet, "This should never be null");
 
     // Before we remove aFrame from the frameSet, unblock onload if needed.
@@ -323,7 +322,7 @@ void ImageLoader::RemoveRequestToFrameMapping(imgIRequest* aRequest,
 void ImageLoader::RemoveFrameToRequestMapping(imgIRequest* aRequest,
                                               nsIFrame* aFrame) {
   if (auto entry = mFrameToRequestMap.Lookup(aFrame)) {
-    RequestSet* requestSet = entry.Data();
+    const auto& requestSet = entry.Data();
     MOZ_ASSERT(requestSet, "This should never be null");
     requestSet->RemoveElementSorted(aRequest);
     if (requestSet->IsEmpty()) {
@@ -346,7 +345,7 @@ void ImageLoader::DropRequestsForFrame(nsIFrame* aFrame) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(aFrame->HasImageRequest(), "why call me?");
 
-  nsAutoPtr<RequestSet> requestSet;
+  UniquePtr<RequestSet> requestSet;
   mFrameToRequestMap.Remove(aFrame, &requestSet);
   aFrame->SetHasImageRequest(false);
   if (MOZ_UNLIKELY(!requestSet)) {
@@ -433,16 +432,12 @@ void ImageLoader::LoadImage(const StyleComputedImageUrl& aImage,
     return;
   }
 
-  ImageTableEntry* entry;
-
-  {
-    auto lookup = sImages->LookupForAdd(loadId);
-    if (lookup) {
-      // This url has already been loaded.
-      return;
-    }
-    entry = lookup.OrInsert([]() { return new ImageTableEntry(); });
+  auto lookup = sImages->LookupForAdd(loadId);
+  if (lookup) {
+    // This url has already been loaded.
+    return;
   }
+  const auto& entry = lookup.OrInsert([]() { return new ImageTableEntry(); });
 
   nsIURI* uri = aImage.GetURI();
   if (!uri) {

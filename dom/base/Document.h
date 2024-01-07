@@ -37,6 +37,7 @@
 #include "nsStubMutationObserver.h"
 #include "nsTHashtable.h"  // for member
 #include "nsURIHashKey.h"
+#include "mozilla/ServoBindingTypes.h"
 #include "mozilla/WeakPtr.h"
 #include "Units.h"
 #include "nsContentListDeclarations.h"
@@ -54,7 +55,6 @@
 #include "mozilla/LinkedList.h"
 #include "mozilla/NotNull.h"
 #include "mozilla/SegmentedVector.h"
-#include "mozilla/StyleSheet.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include <bitset>  // for member
@@ -129,7 +129,7 @@ struct nsFont;
 
 namespace mozilla {
 class AbstractThread;
-class CSSStyleSheet;
+class StyleSheet;
 class EditorCommand;
 class Encoding;
 class ErrorResult;
@@ -137,9 +137,11 @@ class EventStates;
 class EventListenerManager;
 class FullscreenExit;
 class FullscreenRequest;
+struct LangGroupFontPrefs;
 class PendingAnimationTracker;
 class PresShell;
 class ServoStyleSet;
+enum class StyleOrigin : uint8_t;
 class SMILAnimationController;
 enum class StyleCursorKind : uint8_t;
 template <typename>
@@ -153,7 +155,6 @@ class Rule;
 }  // namespace css
 
 namespace dom {
-class Animation;
 class AnonymousContent;
 class Attr;
 class BoxObject;
@@ -163,6 +164,7 @@ class ClientInfo;
 class ClientState;
 class CDATASection;
 class Comment;
+class CSSImportRule;
 struct CustomElementDefinition;
 class DocGroup;
 class DocumentL10n;
@@ -1863,10 +1865,6 @@ class Document : public nsINode,
    * Style sheets are ordered, most significant last.
    */
 
-  StyleSheetList* StyleSheets() {
-    return &DocumentOrShadowRoot::EnsureDOMStyleSheets();
-  }
-
   void InsertSheetAt(size_t aIndex, StyleSheet&);
 
   /**
@@ -1883,13 +1881,13 @@ class Document : public nsINode,
   /**
    * Remove a stylesheet from the document
    */
-  void RemoveStyleSheet(StyleSheet* aSheet);
+  void RemoveStyleSheet(StyleSheet&);
 
   /**
    * Notify the document that the applicable state of the sheet changed
    * and that observers should be notified and style sets updated
    */
-  void SetStyleSheetApplicableState(StyleSheet* aSheet, bool aApplicable);
+  void StyleSheetApplicableStateChanged(StyleSheet&);
 
   enum additionalSheetType {
     eAgentSheet,
@@ -1907,6 +1905,8 @@ class Document : public nsINode,
   StyleSheet* GetFirstAdditionalAuthorSheet() {
     return mAdditionalSheets[eAuthorSheet].SafeElementAt(0);
   }
+
+  void AppendAdoptedStyleSheet(StyleSheet& aSheet);
 
   /**
    * Returns the index that aSheet should be inserted at to maintain document
@@ -2162,7 +2162,8 @@ class Document : public nsINode,
   OrientationType CurrentOrientationType() const {
     return mCurrentOrientationType;
   }
-  void SetOrientationPendingPromise(Promise* aPromise);
+  void ClearOrientationPendingPromise();
+  bool SetOrientationPendingPromise(Promise* aPromise);
   Promise* GetOrientationPendingPromise() const {
     return mOrientationPendingPromise;
   }
@@ -2235,9 +2236,11 @@ class Document : public nsINode,
 
   // Observation hooks for style data to propagate notifications
   // to document observers
-  void StyleRuleChanged(StyleSheet* aStyleSheet, css::Rule* aStyleRule);
-  void StyleRuleAdded(StyleSheet* aStyleSheet, css::Rule* aStyleRule);
-  void StyleRuleRemoved(StyleSheet* aStyleSheet, css::Rule* aStyleRule);
+  void RuleChanged(StyleSheet&, css::Rule*);
+  void RuleAdded(StyleSheet&, css::Rule&);
+  void RuleRemoved(StyleSheet&, css::Rule&);
+  void SheetCloned(StyleSheet&) {}
+  void ImportRuleLoaded(CSSImportRule&, StyleSheet&);
 
   /**
    * Flush notifications for this document and its parent documents
@@ -3168,8 +3171,6 @@ class Document : public nsINode,
   DocumentTimeline* Timeline();
   LinkedList<DocumentTimeline>& Timelines() { return mTimelines; }
 
-  void GetAnimations(nsTArray<RefPtr<Animation>>& aAnimations);
-
   SVGSVGElement* GetSVGRootElement() const;
 
   struct FrameRequest {
@@ -3547,7 +3548,6 @@ class Document : public nsINode,
 
   mozilla::dom::HTMLAllCollection* All();
 
-  static bool IsUnprefixedFullscreenEnabled(JSContext* aCx, JSObject* aObject);
   static bool DocumentSupportsL10n(JSContext* aCx, JSObject* aObject);
   static bool IsWebAnimationsEnabled(JSContext* aCx, JSObject* aObject);
   static bool IsWebAnimationsEnabled(CallerType aCallerType);
@@ -3656,6 +3656,15 @@ class Document : public nsINode,
   int32_t GetPopupRangeOffset(ErrorResult& aRv);
   already_AddRefed<nsINode> GetTooltipNode();
   void SetTooltipNode(nsINode* aNode) { /* do nothing */
+  }
+
+  bool DontWarnAboutMutationEventsAndAllowSlowDOMMutations() {
+    return mDontWarnAboutMutationEventsAndAllowSlowDOMMutations;
+  }
+  void SetDontWarnAboutMutationEventsAndAllowSlowDOMMutations(
+      bool aDontWarnAboutMutationEventsAndAllowSlowDOMMutations) {
+    mDontWarnAboutMutationEventsAndAllowSlowDOMMutations =
+        aDontWarnAboutMutationEventsAndAllowSlowDOMMutations;
   }
 
   // ParentNode
@@ -3823,7 +3832,8 @@ class Document : public nsINode,
   FlashClassification DocumentFlashClassification();
 
   // ResizeObserver usage.
-  void AddResizeObserver(ResizeObserver* aResizeObserver);
+  void AddResizeObserver(ResizeObserver&);
+  void RemoveResizeObserver(ResizeObserver&);
   void ScheduleResizeObserversNotification() const;
 
   // Getter for PermissionDelegateHandler. Performs lazy initialization.
@@ -4050,6 +4060,10 @@ class Document : public nsINode,
 
   static bool AutomaticStorageAccessCanBeGranted(nsIPrincipal* aPrincipal);
 
+  void SetAdoptedStyleSheets(
+      const Sequence<OwningNonNull<StyleSheet>>& aAdoptedStyleSheets,
+      ErrorResult& aRv);
+
  protected:
   void DoUpdateSVGUseElementShadowTrees();
 
@@ -4106,8 +4120,6 @@ class Document : public nsINode,
   void RemoveContentEditableStyleSheets();
   void AddStyleSheetToStyleSets(StyleSheet* aSheet);
   void RemoveStyleSheetFromStyleSets(StyleSheet* aSheet);
-  void NotifyStyleSheetAdded(StyleSheet* aSheet, bool aDocumentSheet);
-  void NotifyStyleSheetRemoved(StyleSheet* aSheet, bool aDocumentSheet);
   void NotifyStyleSheetApplicableStateChanged();
   // Just like EnableStyleSheetsForSet, but doesn't check whether
   // aSheetSet is null and allows the caller to control whether to set
@@ -4337,6 +4349,8 @@ class Document : public nsINode,
   bool mUpgradeInsecureRequests;
   bool mUpgradeInsecurePreloads;
 
+  bool mDontWarnAboutMutationEventsAndAllowSlowDOMMutations;
+
   WeakPtr<nsDocShell> mDocumentContainer;
 
   NotNull<const Encoding*> mCharacterSet;
@@ -4431,7 +4445,7 @@ class Document : public nsINode,
   UniquePtr<ResizeObserverController> mResizeObserverController;
 
   // Permission Delegate Handler, lazily-initialized in
-  // PermissionDelegateHandler
+  // GetPermissionDelegateHandler
   RefPtr<PermissionDelegateHandler> mPermissionDelegateHandler;
 
   // True if BIDI is enabled.
@@ -5086,6 +5100,8 @@ class Document : public nsINode,
   nsCOMPtr<nsIRunnable> mMaybeEndOutermostXBLUpdateRunner;
   nsCOMPtr<nsIRequest> mOnloadBlocker;
 
+  // Gecko-internal sheets used for extensions and such.
+  // Exposed to privileged script via nsIDOMWindowUtils.loadSheet.
   nsTArray<RefPtr<StyleSheet>> mAdditionalSheets[AdditionalSheetTypeCount];
 
   // Member to store out last-selected stylesheet set.

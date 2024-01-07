@@ -285,12 +285,10 @@ nsresult HTMLEditor::DoInsertHTMLWithContext(
 
     if (aClearStyle) {
       // pasting does not inherit local inline styles
-      nsCOMPtr<nsINode> tmpNode = SelectionRefPtr()->GetAnchorNode();
-      int32_t tmpOffset =
-          static_cast<int32_t>(SelectionRefPtr()->AnchorOffset());
-      rv = ClearStyle(address_of(tmpNode), &tmpOffset, nullptr, nullptr);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
+      EditResult result = ClearStyleAt(
+          EditorDOMPoint(SelectionRefPtr()->AnchorRef()), nullptr, nullptr);
+      if (NS_WARN_IF(result.Failed())) {
+        return result.Rv();
       }
     }
   } else {
@@ -728,7 +726,7 @@ nsresult HTMLEditor::StripFormattingNodes(nsIContent& aNode, bool aListOnly) {
       nsCOMPtr<nsIContent> previous = child->GetPreviousSibling();
       nsresult rv = StripFormattingNodes(*child, aListOnly);
       NS_ENSURE_SUCCESS(rv, rv);
-      child = previous.forget();
+      child = std::move(previous);
     }
   }
   return NS_OK;
@@ -2613,7 +2611,7 @@ nsresult HTMLEditor::CreateDOMFragmentFromPaste(
     *outEndNode = *outStartNode = fragment;
   }
 
-  *outFragNode = fragment.forget();
+  *outFragNode = std::move(fragment);
   *outStartOffset = 0;
 
   // get the infoString contents

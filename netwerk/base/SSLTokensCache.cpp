@@ -170,7 +170,7 @@ nsresult SSLTokensCache::RemoveLocked(const nsACString& aHost) {
   LOG(("SSLTokensCache::RemoveLocked [host=%s]",
        PromiseFlatCString(aHost).get()));
 
-  nsAutoPtr<HostRecord> rec;
+  UniquePtr<HostRecord> rec;
 
   if (!mHostRecs.Remove(aHost, &rec)) {
     LOG(("  token not found"));
@@ -179,7 +179,7 @@ nsresult SSLTokensCache::RemoveLocked(const nsACString& aHost) {
 
   mCacheSize -= rec->mToken.Length();
 
-  if (!mExpirationArray.RemoveElement(rec)) {
+  if (!mExpirationArray.RemoveElement(rec.get())) {
     MOZ_ASSERT(false, "token not found in mExpirationArray");
   }
 

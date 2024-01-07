@@ -761,6 +761,20 @@ class Element : public FragmentOrElement {
   }
 
   /**
+   * Determine if an attribute has been set to a non-empty string value. If the
+   * attribute is not set at all, this will return false.
+   *
+   * @param aNameSpaceId the namespace id of the attribute (defaults to
+   *                     kNameSpaceID_None in the overload that omits this arg)
+   * @param aAttr the attribute name
+   */
+  inline bool HasNonEmptyAttr(int32_t aNameSpaceID, const nsAtom* aName) const;
+
+  bool HasNonEmptyAttr(const nsAtom* aAttr) const {
+    return HasNonEmptyAttr(kNameSpaceID_None, aAttr);
+  }
+
+  /**
    * Test whether this Element's given attribute has the given value.  If the
    * attribute is not set at all, this will return false.
    *
@@ -1059,7 +1073,6 @@ class Element : public FragmentOrElement {
                     ErrorResult& aError) {
     SetAttribute(aName, aValue, nullptr, aError);
   }
-
   void RemoveAttribute(const nsAString& aName, ErrorResult& aError);
   void RemoveAttributeNS(const nsAString& aNamespaceURI,
                          const nsAString& aLocalName, ErrorResult& aError);
@@ -1332,11 +1345,13 @@ class Element : public FragmentOrElement {
       const UnrestrictedDoubleOrKeyframeAnimationOptions& aOptions,
       ErrorResult& aError);
 
-  // Note: GetAnimations will flush style while GetAnimationsUnsorted won't.
-  // Callers must keep this element alive because flushing style may destroy
-  // this element.
+  enum class Flush { Yes, No };
+
+  MOZ_CAN_RUN_SCRIPT
   void GetAnimations(const GetAnimationsOptions& aOptions,
-                     nsTArray<RefPtr<Animation>>& aAnimations);
+                     nsTArray<RefPtr<Animation>>& aAnimations,
+                     Flush aFlush = Flush::Yes);
+
   static void GetAnimationsUnsorted(Element* aElement,
                                     PseudoStyleType aPseudoType,
                                     nsTArray<RefPtr<Animation>>& aAnimations);
@@ -1453,23 +1468,6 @@ class Element : public FragmentOrElement {
     }
 
     return mAttrs.AttrInfoAt(index);
-  }
-
-  /**
-   * Called when we have been adopted, and the information of the
-   * node has been changed.
-   *
-   * The new document can be reached via OwnerDoc().
-   *
-   * If you override this method,
-   * please call up to the parent NodeInfoChanged.
-   *
-   * If you change this, change also the similar method in Link.
-   */
-  virtual void NodeInfoChanged(Document* aOldDoc) {
-#ifdef MOZ_DIAGNOSTIC_ASSERT_ENABLED
-    AssertInvariantsOnNodeInfoChange();
-#endif
   }
 
   /**
@@ -1980,6 +1978,15 @@ inline bool Element::HasAttr(int32_t aNameSpaceID, const nsAtom* aName) const {
                "must have a real namespace ID!");
 
   return mAttrs.IndexOfAttr(aName, aNameSpaceID) >= 0;
+}
+
+inline bool Element::HasNonEmptyAttr(int32_t aNameSpaceID,
+                                     const nsAtom* aName) const {
+  MOZ_ASSERT(aNameSpaceID > kNameSpaceID_Unknown, "Must have namespace");
+  MOZ_ASSERT(aName, "Must have attribute name");
+
+  const nsAttrValue* val = mAttrs.GetAttr(aName, aNameSpaceID);
+  return val && !val->IsEmptyString();
 }
 
 inline bool Element::AttrValueIs(int32_t aNameSpaceID, const nsAtom* aName,

@@ -570,7 +570,7 @@ void UDPSocket::HandleReceivedData(const nsACString& aRemoteAddress,
   }
 
   if (NS_FAILED(DispatchReceivedData(aRemoteAddress, aRemotePort, aData))) {
-    CloseWithReason(NS_ERROR_TYPE_ERR);
+    CloseWithReason(NS_ERROR_UNEXPECTED);
   }
 }
 

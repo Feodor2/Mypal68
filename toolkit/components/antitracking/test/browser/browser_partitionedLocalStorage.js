@@ -12,11 +12,6 @@ AntiTracking.runTestInNormalAndPrivateMode(
         "network.cookie.cookieBehavior"
       ) == SpecialPowers.Ci.nsICookieService.BEHAVIOR_REJECT;
 
-    is(
-      window.localStorage == null,
-      shouldThrow,
-      shouldThrow ? "LocalStorage is null" : "LocalStorage is not null"
-    );
     let hasThrown;
     try {
       localStorage.foo = 42;
@@ -24,7 +19,7 @@ AntiTracking.runTestInNormalAndPrivateMode(
       is(localStorage.foo, "42", "The value matches");
       hasThrown = false;
     } catch (e) {
-      is(e.name, "TypeError", "We want a type error message.");
+      is(e.name, "SecurityError", "We want a security error message.");
       hasThrown = true;
     }
 

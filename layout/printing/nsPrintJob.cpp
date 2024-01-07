@@ -69,7 +69,6 @@ static const char kPrintingPromptService[] =
 #include "nsContentCID.h"
 #include "nsLayoutCID.h"
 #include "nsContentUtils.h"
-#include "nsLayoutStylesheetCache.h"
 #include "nsLayoutUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
@@ -2814,7 +2813,7 @@ nsresult nsPrintJob::EnablePOsForPrinting() {
         NS_ASSERTION(po, "nsPrintObject can't be null!");
         nsCOMPtr<nsPIDOMWindowOuter> domWin = po->mDocShell->GetWindow();
         if (IsThereARangeSelection(domWin)) {
-          printData->mCurrentFocusWin = domWin.forget();
+          printData->mCurrentFocusWin = std::move(domWin);
           SetPrintPO(po, true);
           break;
         }

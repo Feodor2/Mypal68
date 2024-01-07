@@ -91,7 +91,9 @@ void SVGAnimatedIntegerPair::SetBaseValue(int32_t aValue, PairIndex aPairIndex,
     return;
   }
 
-  nsAttrValue emptyOrOldValue = aSVGElement->WillChangeIntegerPair(mAttrEnum);
+  mozAutoDocUpdate updateBatch(aSVGElement->GetComposedDoc(), true);
+  nsAttrValue emptyOrOldValue =
+      aSVGElement->WillChangeIntegerPair(mAttrEnum, updateBatch);
   mBaseVal[index] = aValue;
   mIsBaseSet = true;
   if (!mIsAnimated) {
@@ -99,7 +101,7 @@ void SVGAnimatedIntegerPair::SetBaseValue(int32_t aValue, PairIndex aPairIndex,
   } else {
     aSVGElement->AnimationNeedsResample();
   }
-  aSVGElement->DidChangeIntegerPair(mAttrEnum, emptyOrOldValue);
+  aSVGElement->DidChangeIntegerPair(mAttrEnum, emptyOrOldValue, updateBatch);
 }
 
 void SVGAnimatedIntegerPair::SetBaseValues(int32_t aValue1, int32_t aValue2,
@@ -108,7 +110,9 @@ void SVGAnimatedIntegerPair::SetBaseValues(int32_t aValue1, int32_t aValue2,
     return;
   }
 
-  nsAttrValue emptyOrOldValue = aSVGElement->WillChangeIntegerPair(mAttrEnum);
+  mozAutoDocUpdate updateBatch(aSVGElement->GetComposedDoc(), true);
+  nsAttrValue emptyOrOldValue =
+      aSVGElement->WillChangeIntegerPair(mAttrEnum, updateBatch);
   mBaseVal[0] = aValue1;
   mBaseVal[1] = aValue2;
   mIsBaseSet = true;
@@ -118,7 +122,7 @@ void SVGAnimatedIntegerPair::SetBaseValues(int32_t aValue1, int32_t aValue2,
   } else {
     aSVGElement->AnimationNeedsResample();
   }
-  aSVGElement->DidChangeIntegerPair(mAttrEnum, emptyOrOldValue);
+  aSVGElement->DidChangeIntegerPair(mAttrEnum, emptyOrOldValue, updateBatch);
 }
 
 void SVGAnimatedIntegerPair::SetAnimValue(const int32_t aValue[2],

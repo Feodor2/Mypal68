@@ -98,21 +98,22 @@ static const constructorGetterCallback sConstructorGetterCallback[] = {
 #undef HTML_OTHER
 };
 
-const JSErrorFormatString ErrorFormatString[] = {
-#define MSG_DEF(_name, _argc, _exn, _str) {#_name, _str, _argc, _exn},
+static const JSErrorFormatString ErrorFormatString[] = {
+#define MSG_DEF(_name, _argc, _has_context, _exn, _str) \
+  {#_name, _str, _argc, _exn},
 #include "mozilla/dom/Errors.msg"
 #undef MSG_DEF
 };
 
-#define MSG_DEF(_name, _argc, _exn, _str)      \
-  static_assert(                               \
-      _argc < JS::MaxNumErrorArguments, #_name \
+#define MSG_DEF(_name, _argc, _has_context, _exn, _str) \
+  static_assert(                                        \
+      (_argc) < JS::MaxNumErrorArguments, #_name        \
       " must only have as many error arguments as the JS engine can support");
 #include "mozilla/dom/Errors.msg"
 #undef MSG_DEF
 
-const JSErrorFormatString* GetErrorMessage(void* aUserRef,
-                                           const unsigned aErrorNumber) {
+static const JSErrorFormatString* GetErrorMessage(void* aUserRef,
+                                                  const unsigned aErrorNumber) {
   MOZ_ASSERT(aErrorNumber < ArrayLength(ErrorFormatString));
   return &ErrorFormatString[aErrorNumber];
 }
@@ -239,7 +240,7 @@ bool TErrorResult<CleanupPolicy>::DeserializeMessage(const IPC::Message* aMsg,
 
 template <typename CleanupPolicy>
 void TErrorResult<CleanupPolicy>::SetPendingExceptionWithMessage(
-    JSContext* aCx) {
+    JSContext* aCx, const char* context) {
   AssertInOwningThread();
   MOZ_ASSERT(mUnionState == HasMessage);
   MOZ_ASSERT(mExtra.mMessage,
@@ -247,6 +248,15 @@ void TErrorResult<CleanupPolicy>::SetPendingExceptionWithMessage(
 
   Message* message = mExtra.mMessage;
   MOZ_RELEASE_ASSERT(message->HasCorrectNumberOfArguments());
+  if (dom::ErrorFormatHasContext[message->mErrorNumber]) {
+    MOZ_ASSERT(!message->mArgs.IsEmpty(), "How could we have no args here?");
+    MOZ_ASSERT(message->mArgs[0].IsEmpty(), "Context should not be set yet!");
+    if (context) {
+      // Prepend our context and ": "; see API documentation.
+      message->mArgs[0].AssignASCII(context);
+      message->mArgs[0].AppendLiteral(": ");
+    }
+  }
   const uint32_t argCount = message->mArgs.Length();
   const char16_t* args[JS::MaxNumErrorArguments + 1];
   for (uint32_t i = 0; i < argCount; ++i) {
@@ -381,11 +391,19 @@ void TErrorResult<CleanupPolicy>::ThrowDOMException(nsresult rv,
 }
 
 template <typename CleanupPolicy>
-void TErrorResult<CleanupPolicy>::SetPendingDOMException(JSContext* cx) {
+void TErrorResult<CleanupPolicy>::SetPendingDOMException(JSContext* cx,
+                                                         const char* context) {
   AssertInOwningThread();
   MOZ_ASSERT(mUnionState == HasDOMExceptionInfo);
   MOZ_ASSERT(mExtra.mDOMExceptionInfo,
              "SetPendingDOMException() can be called only once");
+
+  if (context && !mExtra.mDOMExceptionInfo->mMessage.IsEmpty()) {
+    // Prepend our context and ": "; see API documentation.
+    nsAutoCString prefix(context);
+    prefix.AppendLiteral(": ");
+    mExtra.mDOMExceptionInfo->mMessage.Insert(prefix, 0);
+  }
 
   dom::Throw(cx, mExtra.mDOMExceptionInfo->mRv,
              mExtra.mDOMExceptionInfo->mMessage);
@@ -551,7 +569,8 @@ void TErrorResult<CleanupPolicy>::SuppressException() {
 }
 
 template <typename CleanupPolicy>
-void TErrorResult<CleanupPolicy>::SetPendingException(JSContext* cx) {
+void TErrorResult<CleanupPolicy>::SetPendingException(JSContext* cx,
+                                                      const char* context) {
   AssertInOwningThread();
   if (IsUncatchableException()) {
     // Nuke any existing exception on cx, to make sure we're uncatchable.
@@ -568,7 +587,7 @@ void TErrorResult<CleanupPolicy>::SetPendingException(JSContext* cx) {
     return;
   }
   if (IsErrorWithMessage()) {
-    SetPendingExceptionWithMessage(cx);
+    SetPendingExceptionWithMessage(cx, context);
     return;
   }
   if (IsJSException()) {
@@ -576,7 +595,7 @@ void TErrorResult<CleanupPolicy>::SetPendingException(JSContext* cx) {
     return;
   }
   if (IsDOMException()) {
-    SetPendingDOMException(cx);
+    SetPendingDOMException(cx, context);
     return;
   }
   SetPendingGenericErrorException(cx);
@@ -1308,11 +1327,11 @@ void GetInterfaceImpl(JSContext* aCx, nsIInterfaceRequestor* aRequestor,
 }
 
 bool ThrowingConstructor(JSContext* cx, unsigned argc, JS::Value* vp) {
-  return ThrowErrorMessage(cx, MSG_ILLEGAL_CONSTRUCTOR);
+  return ThrowErrorMessage<MSG_ILLEGAL_CONSTRUCTOR>(cx, "");
 }
 
 bool ThrowConstructorWithoutNew(JSContext* cx, const char* name) {
-  return ThrowErrorMessage(cx, MSG_CONSTRUCTOR_WITHOUT_NEW, name);
+  return ThrowErrorMessage<MSG_CONSTRUCTOR_WITHOUT_NEW>(cx, name);
 }
 
 inline const NativePropertyHooks* GetNativePropertyHooksFromConstructorFunction(
@@ -2554,7 +2573,7 @@ bool GetContentGlobalForJSImplementedObject(JSContext* cx,
   }
 
   if (!domImplVal.isObject()) {
-    ThrowErrorMessage(cx, MSG_NOT_OBJECT, "Value");
+    ThrowErrorMessage<MSG_NOT_OBJECT>(cx, "Value");
     return false;
   }
 
@@ -2732,7 +2751,7 @@ bool ConvertJSValueToByteString(JSContext* cx, JS::Handle<JS::Value> v,
       char badCharArray[6];
       static_assert(sizeof(char16_t) <= 2, "badCharArray too small");
       SprintfLiteral(badCharArray, "%d", badChar);
-      ThrowErrorMessage(cx, MSG_INVALID_BYTESTRING, index, badCharArray);
+      ThrowErrorMessage<MSG_INVALID_BYTESTRING>(cx, index, badCharArray);
       return false;
     }
   } else {
@@ -3451,7 +3470,7 @@ nsresult UnwrapWindowProxyArg(JSContext* cx, JS::Handle<JSObject*> src,
 
   nsCOMPtr<nsPIDOMWindowOuter> outer = inner->GetOuterWindow();
   RefPtr<BrowsingContext> bc = outer ? outer->GetBrowsingContext() : nullptr;
-  ppArg = bc.forget();
+  ppArg = std::move(bc);
   return NS_OK;
 }
 
@@ -3713,13 +3732,18 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
   // Now we start the [HTMLConstructor] algorithm steps from
   // https://html.spec.whatwg.org/multipage/dom.html#htmlconstructor
 
+  ErrorResult rv;
+  auto scopeExit =
+      MakeScopeExit([&]() { Unused << rv.MaybeSetPendingException(aCx); });
+
   // Step 1.
   nsCOMPtr<nsPIDOMWindowInner> window =
       do_QueryInterface(global.GetAsSupports());
   if (!window) {
     // This means we ended up with an HTML Element interface object defined in
     // a non-Window scope.  That's ... pretty unexpected.
-    return Throw(aCx, NS_ERROR_UNEXPECTED);
+    rv.Throw(NS_ERROR_UNEXPECTED);
+    return false;
   }
   RefPtr<mozilla::dom::CustomElementRegistry> registry(
       window->CustomElements());
@@ -3729,7 +3753,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
   // going to need a document to create an element.
   Document* doc = window->GetExtantDoc();
   if (!doc) {
-    return Throw(aCx, NS_ERROR_UNEXPECTED);
+    rv.Throw(NS_ERROR_UNEXPECTED);
+    return false;
   }
 
   // Step 2.
@@ -3744,7 +3769,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
   JS::Rooted<JSObject*> newTarget(
       aCx, js::CheckedUnwrapStatic(&args.newTarget().toObject()));
   if (!newTarget) {
-    return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+    rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+    return false;
   }
 
   // Enter the compartment of our underlying newTarget object, so we end
@@ -3762,7 +3788,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
       return false;
     }
     if (newTarget == constructor) {
-      return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+      rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+      return false;
     }
   }
 
@@ -3770,7 +3797,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
   CustomElementDefinition* definition =
       registry->LookupCustomElementDefinition(aCx, newTarget);
   if (!definition) {
-    return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+    rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+    return false;
   }
 
   // Steps 4, 5, 6 do some sanity checks on our callee.  We add to those a
@@ -3820,7 +3848,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
     // CheckedUnwrapStatic is OK here, since our callee is callable, hence not a
     // cross-origin object.
     if (constructor != js::CheckedUnwrapStatic(callee)) {
-      return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+      rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+      return false;
     }
   } else {
     if (ns == kNameSpaceID_XHTML) {
@@ -3830,7 +3859,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
       // interface.
       tag = nsHTMLTags::CaseSensitiveAtomTagToId(definition->mLocalName);
       if (tag == eHTMLTag_userdefined) {
-        return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+        rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+        return false;
       }
 
       MOZ_ASSERT(tag <= NS_HTML_TAG_MAX, "tag is out of bounds");
@@ -3841,7 +3871,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
     }
 
     if (!cb) {
-      return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+      rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+      return false;
     }
 
     // We want to get the constructor from our global's realm, not the
@@ -3855,7 +3886,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
     // CheckedUnwrapStatic is OK here, since our callee is callable, hence not a
     // cross-origin object.
     if (constructor != js::CheckedUnwrapStatic(callee)) {
-      return ThrowErrorMessage(aCx, MSG_ILLEGAL_CONSTRUCTOR);
+      rv.ThrowTypeError<MSG_ILLEGAL_CONSTRUCTOR>();
+      return false;
     }
   }
 
@@ -3908,7 +3940,10 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
 
     // Step 10.
     if (element == ALREADY_CONSTRUCTED_MARKER) {
-      return Throw(aCx, NS_ERROR_DOM_INVALID_STATE_ERR);
+      rv.ThrowTypeError(
+          u"Cannot instantiate a custom element inside its own constructor "
+          u"during upgrades");
+      return false;
     }
 
     // Step 11.

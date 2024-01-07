@@ -227,7 +227,7 @@ void nsXBLBinding::GenerateAnonymousContent() {
     Document* doc = mBoundElement->OwnerDoc();
 
     nsCOMPtr<nsINode> clonedNode =
-        content->Clone(true, doc->NodeInfoManager(), nullptr, IgnoreErrors());
+        content->Clone(true, doc->NodeInfoManager(), IgnoreErrors());
     // FIXME: Bug 1399558, Why is this code OK assuming that nsINode::Clone
     // never fails?
     mContent = clonedNode->AsElement();

@@ -106,7 +106,7 @@ class WorkerRunnable : public nsIRunnable, public nsICancelableRunnable {
 #endif
 
   // This class is reference counted.
-  virtual ~WorkerRunnable() {}
+  virtual ~WorkerRunnable() = default;
 
   // Returns true if this runnable should be dispatched to the debugger queue,
   // and false otherwise.
@@ -181,7 +181,7 @@ class WorkerDebuggerRunnable : public WorkerRunnable {
   explicit WorkerDebuggerRunnable(WorkerPrivate* aWorkerPrivate)
       : WorkerRunnable(aWorkerPrivate, WorkerThreadUnchangedBusyCount) {}
 
-  virtual ~WorkerDebuggerRunnable() {}
+  virtual ~WorkerDebuggerRunnable() = default;
 
  private:
   virtual bool IsDebuggerRunnable() const override { return true; }
@@ -207,7 +207,7 @@ class WorkerSyncRunnable : public WorkerRunnable {
                      nsIEventTarget* aSyncLoopTarget);
 
   WorkerSyncRunnable(WorkerPrivate* aWorkerPrivate,
-                     already_AddRefed<nsIEventTarget>&& aSyncLoopTarget);
+                     nsCOMPtr<nsIEventTarget>&& aSyncLoopTarget);
 
   virtual ~WorkerSyncRunnable();
 
@@ -227,14 +227,13 @@ class MainThreadWorkerSyncRunnable : public WorkerSyncRunnable {
     AssertIsOnMainThread();
   }
 
-  MainThreadWorkerSyncRunnable(
-      WorkerPrivate* aWorkerPrivate,
-      already_AddRefed<nsIEventTarget>&& aSyncLoopTarget)
+  MainThreadWorkerSyncRunnable(WorkerPrivate* aWorkerPrivate,
+                               nsCOMPtr<nsIEventTarget>&& aSyncLoopTarget)
       : WorkerSyncRunnable(aWorkerPrivate, std::move(aSyncLoopTarget)) {
     AssertIsOnMainThread();
   }
 
-  virtual ~MainThreadWorkerSyncRunnable() {}
+  virtual ~MainThreadWorkerSyncRunnable() = default;
 
  private:
   virtual bool PreDispatch(WorkerPrivate* aWorkerPrivate) override {
@@ -264,7 +263,7 @@ class WorkerControlRunnable : public WorkerRunnable {
   }
 #endif
 
-  virtual ~WorkerControlRunnable() {}
+  virtual ~WorkerControlRunnable() = default;
 
   nsresult Cancel() override;
 
@@ -287,7 +286,7 @@ class MainThreadWorkerRunnable : public WorkerRunnable {
     AssertIsOnMainThread();
   }
 
-  virtual ~MainThreadWorkerRunnable() {}
+  virtual ~MainThreadWorkerRunnable() = default;
 
   virtual bool PreDispatch(WorkerPrivate* aWorkerPrivate) override {
     AssertIsOnMainThread();
@@ -307,7 +306,7 @@ class MainThreadWorkerControlRunnable : public WorkerControlRunnable {
   explicit MainThreadWorkerControlRunnable(WorkerPrivate* aWorkerPrivate)
       : WorkerControlRunnable(aWorkerPrivate, WorkerThreadUnchangedBusyCount) {}
 
-  virtual ~MainThreadWorkerControlRunnable() {}
+  virtual ~MainThreadWorkerControlRunnable() = default;
 
   virtual bool PreDispatch(WorkerPrivate* aWorkerPrivate) override {
     AssertIsOnMainThread();
@@ -331,7 +330,7 @@ class WorkerSameThreadRunnable : public WorkerRunnable {
   explicit WorkerSameThreadRunnable(WorkerPrivate* aWorkerPrivate)
       : WorkerRunnable(aWorkerPrivate, WorkerThreadModifyBusyCount) {}
 
-  virtual ~WorkerSameThreadRunnable() {}
+  virtual ~WorkerSameThreadRunnable() = default;
 
   virtual bool PreDispatch(WorkerPrivate* aWorkerPrivate) override;
 
@@ -354,7 +353,7 @@ class WorkerMainThreadRunnable : public Runnable {
 
   explicit WorkerMainThreadRunnable(WorkerPrivate* aWorkerPrivate,
                                     const nsACString& aTelemetryKey);
-  ~WorkerMainThreadRunnable() {}
+  ~WorkerMainThreadRunnable() = default;
 
   virtual bool MainThreadRun() = 0;
 
@@ -417,16 +416,16 @@ class MainThreadStopSyncLoopRunnable : public WorkerSyncRunnable {
 
  public:
   // Passing null for aSyncLoopTarget is not allowed.
-  MainThreadStopSyncLoopRunnable(
-      WorkerPrivate* aWorkerPrivate,
-      already_AddRefed<nsIEventTarget>&& aSyncLoopTarget, bool aResult);
+  MainThreadStopSyncLoopRunnable(WorkerPrivate* aWorkerPrivate,
+                                 nsCOMPtr<nsIEventTarget>&& aSyncLoopTarget,
+                                 bool aResult);
 
   // By default StopSyncLoopRunnables cannot be canceled since they could leave
   // a sync loop spinning forever.
   nsresult Cancel() override;
 
  protected:
-  virtual ~MainThreadStopSyncLoopRunnable() {}
+  virtual ~MainThreadStopSyncLoopRunnable() = default;
 
  private:
   bool PreDispatch(WorkerPrivate* aWorkerPrivate) final {

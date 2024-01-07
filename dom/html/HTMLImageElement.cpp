@@ -153,11 +153,14 @@ bool HTMLImageElement::Draggable() const {
 }
 
 bool HTMLImageElement::Complete() {
-  if (!mCurrentRequest) {
+  // It is still not clear what value should img.complete return in various
+  // cases, see https://github.com/whatwg/html/issues/4884
+
+  if (!HasAttr(nsGkAtoms::srcset) && !HasNonEmptyAttr(nsGkAtoms::src)) {
     return true;
   }
 
-  if (mPendingRequest) {
+  if (!mCurrentRequest || mPendingRequest) {
     return false;
   }
 

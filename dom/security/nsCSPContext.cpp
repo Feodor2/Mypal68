@@ -246,6 +246,7 @@ NS_IMPL_ISUPPORTS_CI(nsCSPContext, nsIContentSecurityPolicy, nsISerializable)
 
 nsCSPContext::nsCSPContext()
     : mInnerWindowID(0),
+      mSkipAllowInlineStyleCheck(false),
       mLoadingContext(nullptr),
       mLoadingPrincipal(nullptr),
       mQueueUpMessages(true) {
@@ -306,6 +307,8 @@ nsresult nsCSPContext::InitFromOther(nsCSPContext* aOtherContext) {
         aOtherContext->mReferrer, aOtherContext->mInnerWindowID);
   }
   NS_ENSURE_SUCCESS(rv, rv);
+
+  mSkipAllowInlineStyleCheck = aOtherContext->mSkipAllowInlineStyleCheck;
 
   for (auto policy : aOtherContext->mPolicies) {
     nsAutoString policyStr;
@@ -778,6 +781,15 @@ nsCSPContext::GetReferrer(nsAString& outReferrer) {
 }
 
 uint64_t nsCSPContext::GetInnerWindowID() { return mInnerWindowID; }
+
+bool nsCSPContext::GetSkipAllowInlineStyleCheck() {
+  return mSkipAllowInlineStyleCheck;
+}
+
+void nsCSPContext::SetSkipAllowInlineStyleCheck(
+    bool aSkipAllowInlineStyleCheck) {
+  mSkipAllowInlineStyleCheck = aSkipAllowInlineStyleCheck;
+}
 
 NS_IMETHODIMP
 nsCSPContext::EnsureEventTarget(nsIEventTarget* aEventTarget) {

@@ -25,6 +25,11 @@ class MOZ_IS_SMARTPTR_TO_REFCOUNTED OwningNonNull {
   }
 
   template <class U>
+  MOZ_IMPLICIT OwningNonNull(RefPtr<U>&& aValue) {
+    init(std::move(aValue));
+  }
+
+  template <class U>
   MOZ_IMPLICIT OwningNonNull(const OwningNonNull<U>& aValue) {
     init(aValue);
   }
@@ -54,6 +59,12 @@ class MOZ_IS_SMARTPTR_TO_REFCOUNTED OwningNonNull {
   template <class U>
   OwningNonNull<T>& operator=(already_AddRefed<U>&& aValue) {
     init(aValue);
+    return *this;
+  }
+
+  template <class U>
+  OwningNonNull<T>& operator=(RefPtr<U>&& aValue) {
+    init(std::move(aValue));
     return *this;
   }
 

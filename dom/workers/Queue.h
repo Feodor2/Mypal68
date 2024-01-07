@@ -87,7 +87,7 @@ class NoLocking {
    public:
     explicit AutoLock(NoLocking& aHost) {}
 
-    ~AutoLock() {}
+    ~AutoLock() = default;
   };
 };
 

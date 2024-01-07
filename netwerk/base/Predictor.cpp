@@ -822,9 +822,7 @@ void Predictor::PredictForLink(nsIURI* targetURI, nsIURI* sourceURI,
   }
 
   if (!StaticPrefs::network_predictor_enable_hover_on_ssl()) {
-    bool isSSL = false;
-    sourceURI->SchemeIs("https", &isSSL);
-    if (isSSL) {
+    if (sourceURI->SchemeIs("https")) {
       // We don't want to predict from an HTTPS page, to avoid info leakage
       PREDICTOR_LOG(("    Not predicting for link hover - on an SSL page"));
       return;

@@ -235,14 +235,13 @@ class nsCSSFrameConstructor final : public nsFrameManager {
    * set.)
    */
 
-  // If aInsertionKind is Async then frame construction of the new children can
-  // be done lazily.
+  // If the insertion kind is Async then frame construction of the new children
+  // can be done lazily.
   void ContentAppended(nsIContent* aFirstNewContent, InsertionKind);
 
-  // If aInsertionkind is Async then frame construction of the new child
+  // If the insertion kind is Async then frame construction of the new child
   // can be done lazily.
-  void ContentInserted(nsIContent* aChild, nsILayoutHistoryState* aFrameState,
-                       InsertionKind aInsertionKind);
+  void ContentInserted(nsIContent* aChild, InsertionKind);
 
   // Like ContentInserted but handles inserting the children in the range
   // [aStartChild, aEndChild).  aStartChild must be non-null.  aEndChild may be
@@ -252,7 +251,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   // be done lazily. It is only allowed to be Async when inserting a single
   // node.
   void ContentRangeInserted(nsIContent* aStartChild, nsIContent* aEndChild,
-                            nsILayoutHistoryState* aFrameState,
                             InsertionKind aInsertionKind);
 
   enum RemoveFlags {
@@ -410,8 +408,7 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   // Construct the frames for the document element.  This can return null if the
   // document element is display:none, or if the document element has a
   // not-yet-loaded XBL binding, or if it's an SVG element that's not <svg>.
-  nsIFrame* ConstructDocElementFrame(Element* aDocElement,
-                                     nsILayoutHistoryState* aFrameState);
+  nsIFrame* ConstructDocElementFrame(Element* aDocElement);
 
   // Set up our mDocElementContainingBlock correctly for the given root
   // content.
@@ -1786,16 +1783,12 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   //        ColumnSetWrapperFrame (which would have been the parent of
   //        aColumnContent if we were not creating a column hierarchy).
   // @param aContent is the content of the aColumnContent.
-  // @return the outermost ColumnSetWrapperFrame (or ColumnSetFrame if
-  //         "column-span" is disabled).
-  //
-  // Bug 1499281: We can change the return type to ColumnSetWrapperFrame
-  // once "layout.css.column-span.enabled" is removed.
-  nsContainerFrame* BeginBuildingColumns(nsFrameConstructorState& aState,
-                                         nsIContent* aContent,
-                                         nsContainerFrame* aParentFrame,
-                                         nsContainerFrame* aColumnContent,
-                                         ComputedStyle* aComputedStyle);
+  // @return the outermost ColumnSetWrapperFrame.
+  nsBlockFrame* BeginBuildingColumns(nsFrameConstructorState& aState,
+                                     nsIContent* aContent,
+                                     nsContainerFrame* aParentFrame,
+                                     nsContainerFrame* aColumnContent,
+                                     ComputedStyle* aComputedStyle);
 
   // Complete building the column hierarchy by first wrapping each
   // non-column-span child in aChildList in a ColumnSetFrame (skipping
@@ -1809,8 +1802,6 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   // @param aColumnContentSiblings contains the aColumnContent's siblings, which
   //        are the column spanners and aColumnContent's continuations returned
   //        by CreateColumnSpanSiblings(). It'll become empty after this call.
-  //
-  // Note: No need to call this function if "column-span" is disabled.
   void FinishBuildingColumns(nsFrameConstructorState& aState,
                              nsContainerFrame* aColumnSetWrapper,
                              nsContainerFrame* aColumnContent,
@@ -2161,7 +2152,13 @@ class nsCSSFrameConstructor final : public nsFrameManager {
   bool mHasRootAbsPosContainingBlock : 1;
   bool mAlwaysCreateFramesForIgnorableWhitespace : 1;
 
-  nsCOMPtr<nsILayoutHistoryState> mTempFrameTreeState;
+  // The layout state from our history entry (to restore scroll positions and
+  // such from history), or a new one if there was none (so we can store scroll
+  // positions and such during reframe).
+  //
+  // FIXME(bug 1397239): This can leak some state sometimes for the lifetime of
+  // the frame constructor, which is not great.
+  nsCOMPtr<nsILayoutHistoryState> mFrameTreeState;
 };
 
 #endif /* nsCSSFrameConstructor_h___ */

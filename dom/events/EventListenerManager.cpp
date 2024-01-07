@@ -17,7 +17,6 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/StaticPrefs_full_screen_api.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/EventCallbackDebuggerNotification.h"
 #include "mozilla/dom/Element.h"
@@ -269,7 +268,9 @@ void EventListenerManager::AddEventListenerInternal(
     // Go from our target to the nearest enclosing DOM window.
     if (nsPIDOMWindowInner* window = GetInnerWindowForTarget()) {
       nsCOMPtr<Document> doc = window->GetExtantDoc();
-      if (doc) {
+      if (doc &&
+          !(aFlags.mInSystemGroup &&
+            doc->DontWarnAboutMutationEventsAndAllowSlowDOMMutations())) {
         doc->WarnOnceAbout(Document::eMutationEvent);
       }
       // If aEventMessage is eLegacySubtreeModified, we need to listen all
@@ -594,16 +595,6 @@ bool EventListenerManager::ListenerCanHandle(const Listener* aListener,
   }
   if (aEvent->mMessage == eUnidentifiedEvent) {
     return aListener->mTypeAtom == aEvent->mSpecifiedEventType;
-  }
-  if (MOZ_UNLIKELY(!StaticPrefs::full_screen_api_unprefix_enabled() &&
-                   aEvent->IsTrusted() &&
-                   (aEventMessage == eFullscreenChange ||
-                    aEventMessage == eFullscreenError))) {
-    // If unprefixed Fullscreen API is not enabled, don't dispatch it
-    // to the content.
-    if (!aEvent->mFlags.mInSystemGroup && !aListener->mIsChrome) {
-      return false;
-    }
   }
   MOZ_ASSERT(mIsMainThreadELM);
   return aListener->mEventMessage == aEventMessage;

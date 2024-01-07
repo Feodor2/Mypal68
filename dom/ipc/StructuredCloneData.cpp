@@ -30,20 +30,29 @@ using mozilla::ipc::PBackgroundChild;
 using mozilla::ipc::PBackgroundParent;
 
 StructuredCloneData::StructuredCloneData()
-    : StructuredCloneData(StructuredCloneHolder::TransferringSupported) {}
+    : StructuredCloneData(
+          StructuredCloneHolder::StructuredCloneScope::DifferentProcess,
+          StructuredCloneHolder::TransferringSupported) {}
 
 StructuredCloneData::StructuredCloneData(StructuredCloneData&& aOther)
-    : StructuredCloneData(StructuredCloneHolder::TransferringSupported) {
+    : StructuredCloneData(
+          StructuredCloneHolder::StructuredCloneScope::DifferentProcess,
+          StructuredCloneHolder::TransferringSupported) {
   *this = std::move(aOther);
 }
 
 StructuredCloneData::StructuredCloneData(
+    StructuredCloneHolder::StructuredCloneScope aScope,
     TransferringSupport aSupportsTransferring)
-    : StructuredCloneHolder(
-          StructuredCloneHolder::CloningSupported, aSupportsTransferring,
-          StructuredCloneHolder::StructuredCloneScope::DifferentProcess),
+    : StructuredCloneHolder(StructuredCloneHolder::CloningSupported,
+                            aSupportsTransferring, aScope),
       mExternalData(JS::StructuredCloneScope::DifferentProcess),
-      mInitialized(false) {}
+      mInitialized(false) {
+  MOZ_ASSERT(
+      aScope == StructuredCloneHolder::StructuredCloneScope::DifferentProcess ||
+      aScope ==
+          StructuredCloneHolder::StructuredCloneScope::UnknownDestination);
+}
 
 StructuredCloneData::~StructuredCloneData() {}
 
@@ -143,7 +152,7 @@ bool BuildClonedMessageData(M* aManager, StructuredCloneData& aData,
     return false;
   }
   if (aData.SupportsTransferring()) {
-    aClonedData.identfiers().AppendElements(aData.PortIdentifiers());
+    aClonedData.identifiers().AppendElements(aData.PortIdentifiers());
   }
 
   const nsTArray<RefPtr<BlobImpl>>& blobImpls = aData.BlobImpls();
@@ -170,7 +179,7 @@ bool BuildClonedMessageData(M* aManager, StructuredCloneData& aData,
       return false;
     }
 
-    InfallibleTArray<IPCStream>& streams = aClonedData.inputStreams();
+    nsTArray<IPCStream>& streams = aClonedData.inputStreams();
     uint32_t length = inputStreams.Length();
     streams.SetCapacity(length);
     for (uint32_t i = 0; i < length; ++i) {
@@ -257,8 +266,8 @@ template <MemoryFlavorEnum MemoryFlavor, ActorFlavorEnum Flavor>
 static void UnpackClonedMessageData(
     typename MemoryTraits<MemoryFlavor>::ClonedMessageType& aClonedData,
     StructuredCloneData& aData) {
-  const InfallibleTArray<MessagePortIdentifier>& identifiers =
-      aClonedData.identfiers();
+  const nsTArray<MessagePortIdentifier>& identifiers =
+      aClonedData.identifiers();
 
   MemoryTraits<MemoryFlavor>::ProvideBuffer(aClonedData, aData);
 
@@ -278,7 +287,7 @@ static void UnpackClonedMessageData(
     }
   }
 
-  const InfallibleTArray<IPCStream>& streams = aClonedData.inputStreams();
+  const nsTArray<IPCStream>& streams = aClonedData.inputStreams();
   if (!streams.IsEmpty()) {
     uint32_t length = streams.Length();
     aData.InputStreams().SetCapacity(length);

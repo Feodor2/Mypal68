@@ -34,15 +34,16 @@ void wr_compositor_begin_frame(void* aCompositor) {
 }
 
 void wr_compositor_bind(void* aCompositor, wr::NativeSurfaceId aId,
-                        wr::DeviceIntPoint* aOffset) {
+                        wr::DeviceIntPoint* aOffset, uint32_t* aFboId,
+                        wr::DeviceIntRect aDirtyRect) {
   RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
-  compositor->Bind(aId, aOffset);
+  compositor->Bind(aId, aOffset, aFboId, aDirtyRect);
 }
 
 void wr_compositor_create_surface(void* aCompositor, wr::NativeSurfaceId aId,
-                                  wr::DeviceIntSize aSize) {
+                                  wr::DeviceIntSize aSize, bool aIsOpaque) {
   RenderCompositor* compositor = static_cast<RenderCompositor*>(aCompositor);
-  compositor->CreateSurface(aId, aSize);
+  compositor->CreateSurface(aId, aSize, aIsOpaque);
 }
 
 void wr_compositor_destroy_surface(void* aCompositor, NativeSurfaceId aId) {

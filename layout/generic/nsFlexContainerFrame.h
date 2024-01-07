@@ -154,7 +154,7 @@ class nsFlexContainerFrame final : public nsContainerFrame {
   uint32_t GetLineClampValue() const;
 
   // nsContainerFrame overrides
-  uint16_t CSSAlignmentForAbsPosChild(
+  mozilla::StyleAlignFlags CSSAlignmentForAbsPosChild(
       const ReflowInput& aChildRI,
       mozilla::LogicalAxis aLogicalAxis) const override;
 
@@ -163,7 +163,8 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    * subjects in MainAxisPositionTracker() and CrossAxisPositionTracker() for
    * space-between, space-around, and space-evenly.
    *    * @param aNumThingsToPack             Number of alignment subjects.
-   * @param aAlignVal                    Value for align-self or justify-self.
+   * @param aAlignVal                    Value for align-content or
+   *                                     justify-content.
    * @param aFirstSubjectOffset          Outparam for first subject offset.
    * @param aNumPackingSpacesRemaining   Outparam for number of equal-sized
    *                                     packing spaces to apply between each
@@ -171,11 +172,11 @@ class nsFlexContainerFrame final : public nsContainerFrame {
    * @param aPackingSpaceRemaining       Outparam for total amount of packing
    *                                     space to be divided up.
    */
-  static void CalculatePackingSpace(uint32_t aNumThingsToPack,
-                                    uint8_t aAlignVal,
-                                    nscoord* aFirstSubjectOffset,
-                                    uint32_t* aNumPackingSpacesRemaining,
-                                    nscoord* aPackingSpaceRemaining);
+  static void CalculatePackingSpace(
+      uint32_t aNumThingsToPack,
+      const mozilla::StyleContentDistribution& aAlignVal,
+      nscoord* aFirstSubjectOffset, uint32_t* aNumPackingSpacesRemaining,
+      nscoord* aPackingSpaceRemaining);
 
   /**
    * This property is created by a call to
@@ -196,6 +197,26 @@ class nsFlexContainerFrame final : public nsContainerFrame {
                          "See Bug 1157012.");
     return info;
   }
+
+  /**
+   * This function creates a new ComputedFlexContainerInfo or clear the existing
+   * one.
+   */
+  void CreateOrClearFlexContainerInfo();
+
+  /**
+   * Helpers for DoFlexLayout to computed fields in ComputedFlexContainerInfo.
+   */
+  static void CreateFlexLineAndFlexItemInfo(
+      ComputedFlexContainerInfo& aContainerInfo,
+      const mozilla::LinkedList<FlexLine>& aLines);
+
+  static void ComputeFlexDirections(ComputedFlexContainerInfo& aContainerInfo,
+                                    const FlexboxAxisTracker& aAxisTracker);
+
+  static void UpdateFlexLineAndItemInfo(
+      ComputedFlexContainerInfo& aContainerInfo,
+      const mozilla::LinkedList<FlexLine>& aLines);
 
   /**
    * Return aFrame as a flex frame after ensuring it has computed flex info.
@@ -241,11 +262,7 @@ class nsFlexContainerFrame final : public nsContainerFrame {
   // Protected constructor & destructor
   explicit nsFlexContainerFrame(ComputedStyle* aStyle,
                                 nsPresContext* aPresContext)
-      : nsContainerFrame(aStyle, aPresContext, kClassID),
-        mCachedMinISize(NS_INTRINSIC_ISIZE_UNKNOWN),
-        mCachedPrefISize(NS_INTRINSIC_ISIZE_UNKNOWN),
-        mBaselineFromLastReflow(NS_INTRINSIC_ISIZE_UNKNOWN),
-        mLastBaselineFromLastReflow(NS_INTRINSIC_ISIZE_UNKNOWN) {}
+      : nsContainerFrame(aStyle, aPresContext, kClassID) {}
 
   virtual ~nsFlexContainerFrame();
 
@@ -380,7 +397,6 @@ class nsFlexContainerFrame final : public nsContainerFrame {
                            nsReflowStatus& aStatus);
 
   void SizeItemInCrossAxis(nsPresContext* aPresContext,
-                           const FlexboxAxisTracker& aAxisTracker,
                            ReflowInput& aChildReflowInput, FlexItem& aItem);
 
   /**
@@ -458,12 +474,12 @@ class nsFlexContainerFrame final : public nsContainerFrame {
   /**
    * Cached values to optimize GetMinISize/GetPrefISize.
    */
-  nscoord mCachedMinISize;
-  nscoord mCachedPrefISize;
+  nscoord mCachedMinISize = NS_INTRINSIC_ISIZE_UNKNOWN;
+  nscoord mCachedPrefISize = NS_INTRINSIC_ISIZE_UNKNOWN;
 
-  nscoord mBaselineFromLastReflow;
+  nscoord mBaselineFromLastReflow = NS_INTRINSIC_ISIZE_UNKNOWN;
   // Note: the last baseline is a distance from our border-box end edge.
-  nscoord mLastBaselineFromLastReflow;
+  nscoord mLastBaselineFromLastReflow = NS_INTRINSIC_ISIZE_UNKNOWN;
 };
 
 #endif /* nsFlexContainerFrame_h___ */

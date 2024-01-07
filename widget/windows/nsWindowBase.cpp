@@ -10,7 +10,6 @@
 #include "KeyboardLayout.h"
 #include "WinUtils.h"
 #include "npapi.h"
-#include "nsAutoPtr.h"
 
 using namespace mozilla;
 using namespace mozilla::widget;
@@ -220,8 +219,8 @@ nsresult nsWindowBase::ClearNativeTouchSequence(nsIObserver* aObserver) {
 
   // cancel all input points
   for (auto iter = mActivePointers.Iter(); !iter.Done(); iter.Next()) {
-    nsAutoPtr<PointerInfo>& info = iter.Data();
-    InjectTouchPoint(info.get()->mPointerId, info.get()->mPosition,
+    auto info = iter.UserData();
+    InjectTouchPoint(info->mPointerId, info->mPosition,
                      POINTER_FLAG_CANCELED);
     iter.Remove();
   }

@@ -48,7 +48,7 @@ void CompositorManagerChild::InitSameProcess(uint32_t aNamespace,
   }
 
   parent->BindComplete(/* aIsRoot */ true);
-  sInstance = child.forget();
+  sInstance = std::move(child);
 }
 
 /* static */

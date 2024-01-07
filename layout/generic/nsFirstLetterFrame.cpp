@@ -280,7 +280,7 @@ bool nsFirstLetterFrame::CanContinueTextRun() const {
   return true;
 }
 
-nsresult nsFirstLetterFrame::CreateContinuationForFloatingParent(
+void nsFirstLetterFrame::CreateContinuationForFloatingParent(
     nsPresContext* aPresContext, nsIFrame* aChild, nsIFrame** aContinuation,
     bool aIsFluid) {
   NS_ASSERTION(IsFloating(),
@@ -320,7 +320,6 @@ nsresult nsFirstLetterFrame::CreateContinuationForFloatingParent(
   parent->InsertFrames(kNoReflowPrincipalList, placeholderFrame, nullptr, temp);
 
   *aContinuation = continuation;
-  return NS_OK;
 }
 
 void nsFirstLetterFrame::DrainOverflowFrames(nsPresContext* aPresContext) {

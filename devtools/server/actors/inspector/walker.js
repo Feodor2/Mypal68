@@ -2039,6 +2039,9 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
       return;
     }
 
+    const origFlag = rawDoc.dontWarnAboutMutationEventsAndAllowSlowDOMMutations;
+    rawDoc.dontWarnAboutMutationEventsAndAllowSlowDOMMutations = true;
+
     if (docMutationBreakpoints.counts.subtree > 0) {
       eventListenerService.addSystemEventListener(
         rawDoc,
@@ -2089,6 +2092,8 @@ var WalkerActor = protocol.ActorClassWithSpec(walkerSpec, {
         true /* capture */
       );
     }
+
+    rawDoc.dontWarnAboutMutationEventsAndAllowSlowDOMMutations = origFlag;
   },
 
   _breakOnMutation: function(bpType) {

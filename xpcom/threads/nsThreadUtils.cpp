@@ -326,7 +326,7 @@ class IdleRunnableWrapper final : public IdleRunnable {
       return NS_OK;
     }
     CancelTimer();
-    nsCOMPtr<nsIRunnable> runnable = mRunnable.forget();
+    nsCOMPtr<nsIRunnable> runnable = std::move(mRunnable);
     return runnable->Run();
   }
 

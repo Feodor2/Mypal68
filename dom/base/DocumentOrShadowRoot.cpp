@@ -3,12 +3,15 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "DocumentOrShadowRoot.h"
+#include "mozilla/AnimationComparator.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/dom/AnimatableBinding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/ShadowRoot.h"
 #include "mozilla/dom/StyleSheetList.h"
+#include "nsTHashtable.h"
 #include "nsFocusManager.h"
 #include "nsIRadioVisitor.h"
 #include "nsIFormControl.h"
@@ -19,12 +22,15 @@
 namespace mozilla {
 namespace dom {
 
-DocumentOrShadowRoot::DocumentOrShadowRoot(
-    mozilla::dom::ShadowRoot& aShadowRoot)
-    : mAsNode(aShadowRoot), mKind(Kind::ShadowRoot) {}
+DocumentOrShadowRoot::DocumentOrShadowRoot(ShadowRoot* aShadowRoot)
+    : mAsNode(aShadowRoot), mKind(Kind::ShadowRoot) {
+  MOZ_ASSERT(mAsNode);
+}
 
-DocumentOrShadowRoot::DocumentOrShadowRoot(Document& aDoc)
-    : mAsNode(aDoc), mKind(Kind::Document) {}
+DocumentOrShadowRoot::DocumentOrShadowRoot(Document* aDoc)
+    : mAsNode(aDoc), mKind(Kind::Document) {
+  MOZ_ASSERT(mAsNode);
+}
 
 void DocumentOrShadowRoot::AddSizeOfOwnedSheetArrayExcludingThis(
     nsWindowSizes& aSizes, const nsTArray<RefPtr<StyleSheet>>& aSheets) const {
@@ -57,17 +63,22 @@ DocumentOrShadowRoot::~DocumentOrShadowRoot() {
   }
 }
 
-StyleSheetList& DocumentOrShadowRoot::EnsureDOMStyleSheets() {
+StyleSheetList* DocumentOrShadowRoot::StyleSheets() {
   if (!mDOMStyleSheets) {
     mDOMStyleSheets = new StyleSheetList(*this);
   }
-  return *mDOMStyleSheets;
+  return mDOMStyleSheets;
 }
 
 void DocumentOrShadowRoot::InsertSheetAt(size_t aIndex, StyleSheet& aSheet) {
   aSheet.SetAssociatedDocumentOrShadowRoot(
       this, StyleSheet::OwnedByDocumentOrShadowRoot);
   mStyleSheets.InsertElementAt(aIndex, &aSheet);
+}
+
+void DocumentOrShadowRoot::InsertAdoptedSheetAt(size_t aIndex,
+                                                StyleSheet& aSheet) {
+  mAdoptedStyleSheets.InsertElementAt(aIndex, &aSheet);
 }
 
 already_AddRefed<StyleSheet> DocumentOrShadowRoot::RemoveSheet(
@@ -80,6 +91,39 @@ already_AddRefed<StyleSheet> DocumentOrShadowRoot::RemoveSheet(
   mStyleSheets.RemoveElementAt(index);
   sheet->ClearAssociatedDocumentOrShadowRoot();
   return sheet.forget();
+}
+
+// https://wicg.github.io/construct-stylesheets/#dom-documentorshadowroot-adoptedstylesheets
+void DocumentOrShadowRoot::EnsureAdoptedSheetsAreValid(
+    const Sequence<OwningNonNull<StyleSheet>>& aAdoptedStyleSheets,
+    ErrorResult& aRv) {
+  nsTHashtable<nsPtrHashKey<const StyleSheet>> set(
+      aAdoptedStyleSheets.Length());
+
+  for (const OwningNonNull<StyleSheet>& sheet : aAdoptedStyleSheets) {
+    // 2.1 Check if all sheets are constructed, else throw NotAllowedError
+    if (!sheet->IsConstructed()) {
+      return aRv.ThrowNotAllowedError(
+          "Each adopted style sheet must be created through the Constructable "
+          "StyleSheets API");
+    }
+    // 2.2 Check if all sheets' constructor documents match the
+    // DocumentOrShadowRoot's node document, else throw NotAlloweError
+    if (!sheet->ConstructorDocumentMatches(AsNode().OwnerDoc())) {
+      return aRv.ThrowNotAllowedError(
+          "Each adopted style sheet's constructor document must match the "
+          "document or shadow root's node document");
+    }
+
+    // FIXME(nordzilla): This is temporary code to disallow duplicate sheets.
+    // This exists to ensure that the fuzzers aren't blocked.
+    // This code will eventually be removed.
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=1617302
+    if (!set.EnsureInserted(sheet.get())) {
+      return aRv.ThrowNotAllowedError(
+          "Temporarily disallowing duplicate stylesheets.");
+    }
+  }
 }
 
 Element* DocumentOrShadowRoot::GetElementById(const nsAString& aElementId) {
@@ -110,7 +154,7 @@ already_AddRefed<nsContentList> DocumentOrShadowRoot::GetElementsByTagNameNS(
 
 already_AddRefed<nsContentList> DocumentOrShadowRoot::GetElementsByTagNameNS(
     const nsAString& aNamespaceURI, const nsAString& aLocalName,
-    mozilla::ErrorResult& aResult) {
+    ErrorResult& aResult) {
   int32_t nameSpaceId = kNameSpaceID_Wildcard;
 
   if (!aNamespaceURI.EqualsLiteral("*")) {
@@ -449,6 +493,31 @@ struct nsRadioGroupStruct {
   bool mGroupSuffersFromValueMissing;
 };
 
+void DocumentOrShadowRoot::GetAnimations(
+    nsTArray<RefPtr<Animation>>& aAnimations) {
+  // As with Element::GetAnimations we initially flush style here.
+  // This should ensure that there are no subsequent changes to the tree
+  // structure while iterating over the children below.
+  if (Document* doc = AsNode().GetComposedDoc()) {
+    doc->FlushPendingNotifications(
+        ChangesToFlush(FlushType::Style, false /* flush animations */));
+  }
+
+  GetAnimationsOptions options;
+  options.mSubtree = true;
+
+  for (RefPtr<nsIContent> child = AsNode().GetFirstChild(); child;
+       child = child->GetNextSibling()) {
+    if (RefPtr<Element> element = Element::FromNode(child)) {
+      nsTArray<RefPtr<Animation>> result;
+      element->GetAnimations(options, result, Element::Flush::No);
+      aAnimations.AppendElements(std::move(result));
+    }
+  }
+
+  aAnimations.Sort(AnimationPtrComparator<RefPtr<Animation>>());
+}
+
 nsresult DocumentOrShadowRoot::WalkRadioGroup(const nsAString& aName,
                                               nsIRadioVisitor* aVisitor,
                                               bool aFlushContent) {
@@ -583,32 +652,56 @@ nsRadioGroupStruct* DocumentOrShadowRoot::GetRadioGroup(
 
 nsRadioGroupStruct* DocumentOrShadowRoot::GetOrCreateRadioGroup(
     const nsAString& aName) {
-  return mRadioGroups.LookupForAdd(aName).OrInsert(
-      []() { return new nsRadioGroupStruct(); });
+  return mRadioGroups.LookupForAdd(aName)
+      .OrInsert([]() { return new nsRadioGroupStruct(); })
+      .get();
+}
+
+int32_t DocumentOrShadowRoot::StyleOrderIndexOfSheet(
+    const StyleSheet& aSheet) const {
+  if (aSheet.IsConstructed()) {
+    int32_t index = mAdoptedStyleSheets.IndexOf(&aSheet);
+    return (index < 0) ? index : index + SheetCount();
+  }
+  return mStyleSheets.IndexOf(&aSheet);
+}
+
+void DocumentOrShadowRoot::GetAdoptedStyleSheets(
+    nsTArray<RefPtr<StyleSheet>>& aAdoptedStyleSheets) const {
+  aAdoptedStyleSheets = mAdoptedStyleSheets;
 }
 
 void DocumentOrShadowRoot::Traverse(DocumentOrShadowRoot* tmp,
                                     nsCycleCollectionTraversalCallback& cb) {
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mStyleSheets)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mDOMStyleSheets)
-  for (StyleSheet* sheet : tmp->mStyleSheets) {
-    if (!sheet->IsApplicable()) {
-      continue;
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mAdoptedStyleSheets)
+
+  auto NoteSheets = [tmp, &cb = cb](nsTArray<RefPtr<StyleSheet>>& sheetList) {
+    for (StyleSheet* sheet : sheetList) {
+      if (!sheet->IsApplicable()) {
+        continue;
+      }
+      // The style set or mServoStyles keep more references to it if the sheet
+      // is applicable.
+      if (tmp->mKind == Kind::ShadowRoot) {
+        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mServoStyles->sheets[i]");
+        cb.NoteXPCOMChild(sheet);
+      } else if (tmp->AsNode().AsDocument()->StyleSetFilled()) {
+        NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(
+            cb, "mStyleSet->mRawSet.stylist.stylesheets.author[i]");
+        cb.NoteXPCOMChild(sheet);
+      }
     }
-    // The style set or mServoStyles keep more references to it if the sheet is
-    // applicable.
-    if (tmp->mKind == Kind::ShadowRoot) {
-      NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(cb, "mServoStyles->sheets[i]");
-      cb.NoteXPCOMChild(sheet);
-    } else if (tmp->AsNode().AsDocument()->StyleSetFilled()) {
-      NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(
-          cb, "mStyleSet->mRawSet.stylist.stylesheets.author[i]");
-      cb.NoteXPCOMChild(sheet);
-    }
-  }
+  };
+
+  NoteSheets(tmp->mStyleSheets);
+  NoteSheets(tmp->mAdoptedStyleSheets);
+
   for (auto iter = tmp->mIdentifierMap.ConstIter(); !iter.Done(); iter.Next()) {
     iter.Get()->Traverse(&cb);
   }
+
   for (auto iter = tmp->mRadioGroups.Iter(); !iter.Done(); iter.Next()) {
     nsRadioGroupStruct* radioGroup = iter.UserData();
     NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(
@@ -625,7 +718,11 @@ void DocumentOrShadowRoot::Traverse(DocumentOrShadowRoot* tmp,
 }
 
 void DocumentOrShadowRoot::Unlink(DocumentOrShadowRoot* tmp) {
-  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDOMStyleSheets)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mDOMStyleSheets);
+  for (RefPtr<StyleSheet>& sheet : tmp->mAdoptedStyleSheets) {
+    sheet->RemoveAdopter(*tmp);
+  }
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mAdoptedStyleSheets);
   tmp->mIdentifierMap.Clear();
   tmp->mRadioGroups.Clear();
 }

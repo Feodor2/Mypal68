@@ -6,13 +6,16 @@
 #define mozilla_dom_MessagePortParent_h
 
 #include "mozilla/dom/PMessagePortParent.h"
+#include "mozilla/dom/quota/CheckedUnsafePtr.h"
 
 namespace mozilla {
 namespace dom {
 
 class MessagePortService;
 
-class MessagePortParent final : public PMessagePortParent {
+class MessagePortParent final
+    : public PMessagePortParent,
+      public SupportsCheckedUnsafePtr<CheckIf<DiagnosticAssertEnabled>> {
   friend class PMessagePortParent;
 
  public:
@@ -21,7 +24,7 @@ class MessagePortParent final : public PMessagePortParent {
 
   bool Entangle(const nsID& aDestinationUUID, const uint32_t& aSequenceID);
 
-  bool Entangled(const nsTArray<ClonedMessageData>& aMessages);
+  bool Entangled(const nsTArray<MessageData>& aMessages);
 
   void Close();
   void CloseAndDelete();
@@ -34,11 +37,9 @@ class MessagePortParent final : public PMessagePortParent {
                          const uint32_t& aSequenceID);
 
  private:
-  mozilla::ipc::IPCResult RecvPostMessages(
-      nsTArray<ClonedMessageData>&& aMessages);
+  mozilla::ipc::IPCResult RecvPostMessages(nsTArray<MessageData>&& aMessages);
 
-  mozilla::ipc::IPCResult RecvDisentangle(
-      nsTArray<ClonedMessageData>&& aMessages);
+  mozilla::ipc::IPCResult RecvDisentangle(nsTArray<MessageData>&& aMessages);
 
   mozilla::ipc::IPCResult RecvStopSendingData();
 

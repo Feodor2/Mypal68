@@ -3411,7 +3411,8 @@ void ContainerState::FinishPaintedLayerData(
 
     NS_ASSERTION(FindIndexOfLayerIn(mNewChildLayers, paintedLayer) < 0,
                  "Layer already in list???");
-    mNewChildLayers[data->mNewChildLayersIndex].mLayer = paintedLayer.forget();
+    mNewChildLayers[data->mNewChildLayersIndex].mLayer =
+        std::move(paintedLayer);
   }
 
   PaintedDisplayItemLayerUserData* userData =
@@ -4965,7 +4966,7 @@ void ContainerState::ProcessDisplayItems(nsDisplayList* aList) {
       if (itemType == DisplayItemType::TYPE_FIXED_POSITION) {
         newLayerEntry->mIsFixedToRootScrollFrame =
             item->Frame()->StyleDisplay()->mPosition ==
-                NS_STYLE_POSITION_FIXED &&
+                StylePositionProperty::Fixed &&
             nsLayoutUtils::IsReallyFixedPos(item->Frame());
       }
 
@@ -5092,7 +5093,7 @@ void ContainerState::ProcessDisplayItems(nsDisplayList* aList) {
             NS_ASSERTION(FindIndexOfLayerIn(mNewChildLayers, layer) < 0,
                          "Layer already in list???");
             mNewChildLayers[paintedLayerData->mNewChildLayersIndex].mLayer =
-                layer.forget();
+                std::move(layer);
           }
         }
       }

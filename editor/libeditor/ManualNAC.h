@@ -44,10 +44,10 @@ class ManualNACPtr final {
   }
 
   // We use move semantics, and delete the copy-constructor and operator=.
-  ManualNACPtr(ManualNACPtr&& aOther) : mPtr(aOther.mPtr.forget()) {}
+  ManualNACPtr(ManualNACPtr&& aOther) : mPtr(std::move(aOther.mPtr)) {}
   ManualNACPtr(ManualNACPtr& aOther) = delete;
   ManualNACPtr& operator=(ManualNACPtr&& aOther) {
-    mPtr = aOther.mPtr.forget();
+    mPtr = std::move(aOther.mPtr);
     return *this;
   }
   ManualNACPtr& operator=(ManualNACPtr& aOther) = delete;
@@ -59,7 +59,7 @@ class ManualNACPtr final {
       return;
     }
 
-    RefPtr<dom::Element> ptr = mPtr.forget();
+    RefPtr<dom::Element> ptr = std::move(mPtr);
     RemoveContentFromNACArray(ptr);
   }
 

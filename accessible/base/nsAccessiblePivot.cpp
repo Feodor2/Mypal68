@@ -623,7 +623,7 @@ bool nsAccessiblePivot::IsDescendantOf(Accessible* aAccessible,
 bool nsAccessiblePivot::MovePivotInternal(Accessible* aPosition,
                                           PivotMoveReason aReason,
                                           bool aIsFromUserInput) {
-  RefPtr<Accessible> oldPosition = mPosition.forget();
+  RefPtr<Accessible> oldPosition = std::move(mPosition);
   mPosition = aPosition;
   int32_t oldStart = mStartOffset, oldEnd = mEndOffset;
   mStartOffset = mEndOffset = -1;

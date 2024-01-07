@@ -159,11 +159,11 @@ nsresult nsXBLDocumentInfo::SetPrototypeBinding(
 
 void nsXBLDocumentInfo::RemovePrototypeBinding(const nsACString& aRef) {
   if (mBindingTable) {
-    nsAutoPtr<nsXBLPrototypeBinding> bindingToRemove;
+    mozilla::UniquePtr<nsXBLPrototypeBinding> bindingToRemove;
     mBindingTable->Remove(aRef, &bindingToRemove);
 
     // We do not want to destroy the binding, so just forget it.
-    bindingToRemove.forget();
+    mozilla::Unused << bindingToRemove.release();
   }
 }
 

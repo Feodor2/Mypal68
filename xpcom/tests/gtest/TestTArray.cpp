@@ -5,6 +5,7 @@
 #include "nsTArray.h"
 #include "gtest/gtest.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/RefPtr.h"
 
 using namespace mozilla;
 
@@ -480,5 +481,18 @@ TEST(TArray, MakeBackInserter_Move)
 
   ASSERT_EQ(1u, destructionCounter);
 }
+
+// This should compile:
+struct RefCounted;
+
+class Foo {
+  ~Foo(); // Intentionally out of line
+
+  nsTArray<RefPtr<RefCounted>> mArray;
+
+  const RefCounted* GetFirst() const {
+    return mArray.SafeElementAt(0);
+  }
+};
 
 }  // namespace TestTArray

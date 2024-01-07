@@ -1030,7 +1030,7 @@ nsresult PresentationControllingInfo::NotifyReconnectResult(nsresult aStatus) {
 
   mIsReconnecting = false;
   nsCOMPtr<nsIPresentationServiceCallback> callback =
-      mReconnectCallback.forget();
+      std::move(mReconnectCallback);
   if (NS_FAILED(aStatus)) {
     return callback->NotifyError(aStatus);
   }

@@ -9,7 +9,6 @@
 #include "AudioChannelService.h"
 #include "mozilla/dom/Document.h"
 #include "DocumentInlines.h"
-#include "mozilla/AnimationComparator.h"
 #include "mozilla/AntiTrackingCommon.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/AutoRestore.h"
@@ -63,7 +62,7 @@
 #include "nsIObserver.h"
 #include "nsIBaseWindow.h"
 #include "nsILayoutHistoryState.h"
-#include "nsLayoutStylesheetCache.h"
+#include "mozilla/GlobalStyleSheetCache.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/css/ImageLoader.h"
 #include "nsDocShell.h"
@@ -86,6 +85,7 @@
 #include "mozilla/dom/Attr.h"
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/ContentChild.h"
+#include "mozilla/dom/CSSImportRule.h"
 #include "mozilla/dom/CSPDictionariesBinding.h"
 #include "mozilla/dom/DOMIntersectionObserver.h"
 #include "mozilla/dom/Element.h"
@@ -195,8 +195,6 @@
 #include "nsIPrompt.h"
 #include "nsIPropertyBag2.h"
 #include "mozilla/dom/PageTransitionEvent.h"
-#include "mozilla/dom/StyleRuleChangeEvent.h"
-#include "mozilla/dom/StyleSheetChangeEvent.h"
 #include "mozilla/dom/StyleSheetApplicableStateChangeEvent.h"
 #include "nsJSUtils.h"
 #include "nsFrameLoader.h"
@@ -1193,11 +1191,12 @@ void Document::Shutdown() {
 
 Document::Document(const char* aContentType)
     : nsINode(nullptr),
-      DocumentOrShadowRoot(*this),
+      DocumentOrShadowRoot(this),
       mBlockAllMixedContent(false),
       mBlockAllMixedContentPreloads(false),
       mUpgradeInsecureRequests(false),
       mUpgradeInsecurePreloads(false),
+      mDontWarnAboutMutationEventsAndAllowSlowDOMMutations(false),
       mCharacterSet(WINDOWS_1252_ENCODING),
       mCharacterSetSource(0),
       mParentDocument(nullptr),
@@ -2233,15 +2232,17 @@ size_t Document::FindDocStyleSheetInsertionPoint(const StyleSheet& aSheet) {
   nsStyleSheetService* sheetService = nsStyleSheetService::GetInstance();
 
   // lowest index first
-  int32_t newDocIndex = IndexOfSheet(aSheet);
+  int32_t newDocIndex = StyleOrderIndexOfSheet(aSheet);
 
   size_t count = mStyleSet->SheetCount(StyleOrigin::Author);
   size_t index = 0;
   for (; index < count; index++) {
     auto* sheet = mStyleSet->SheetAt(StyleOrigin::Author, index);
     MOZ_ASSERT(sheet);
-    int32_t sheetDocIndex = IndexOfSheet(*sheet);
-    if (sheetDocIndex > newDocIndex) break;
+    int32_t sheetDocIndex = StyleOrderIndexOfSheet(*sheet);
+    if (sheetDocIndex > newDocIndex) {
+      break;
+    }
 
     // If the sheet is not owned by the document it can be an author
     // sheet registered at nsStyleSheetService or an additional author
@@ -2261,6 +2262,14 @@ size_t Document::FindDocStyleSheetInsertionPoint(const StyleSheet& aSheet) {
   }
 
   return index;
+}
+
+void Document::AppendAdoptedStyleSheet(StyleSheet& aSheet) {
+  DocumentOrShadowRoot::InsertAdoptedSheetAt(mAdoptedStyleSheets.Length(),
+                                             aSheet);
+  if (aSheet.IsApplicable()) {
+    AddStyleSheetToStyleSets(&aSheet);
+  }
 }
 
 void Document::RemoveDocStyleSheetsFromStyleSets() {
@@ -2353,7 +2362,7 @@ void Document::FillStyleSetUserAndUASheets() {
   // ordering.
 
   // The document will fill in the document sheets when we create the presshell
-  auto cache = nsLayoutStylesheetCache::Singleton();
+  auto* cache = GlobalStyleSheetCache::Singleton();
 
   nsStyleSheetService* sheetService = nsStyleSheetService::GetInstance();
   MOZ_ASSERT(sheetService,
@@ -2428,7 +2437,7 @@ void Document::FillStyleSet() {
 void Document::RemoveContentEditableStyleSheets() {
   MOZ_ASSERT(IsHTMLOrXHTML());
 
-  auto* cache = nsLayoutStylesheetCache::Singleton();
+  auto* cache = GlobalStyleSheetCache::Singleton();
   bool changed = false;
   if (mDesignModeSheetAdded) {
     mStyleSet->RemoveStyleSheet(StyleOrigin::UserAgent,
@@ -2453,7 +2462,7 @@ void Document::AddContentEditableStyleSheetsToStyleSet(bool aDesignMode) {
   MOZ_DIAGNOSTIC_ASSERT(mStyleSetFilled,
                         "Caller should ensure we're being rendered");
 
-  auto* cache = nsLayoutStylesheetCache::Singleton();
+  auto* cache = GlobalStyleSheetCache::Singleton();
   bool changed = false;
   if (!mContentEditableSheetAdded) {
     mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent,
@@ -2481,7 +2490,15 @@ void Document::FillStyleSetDocumentSheets() {
   MOZ_ASSERT(mStyleSet->SheetCount(StyleOrigin::Author) == 0,
              "Style set already has document sheets?");
 
+  // Sheets are added in reverse order to avoid worst-case
+  // time complexity when looking up the index of a sheet
   for (StyleSheet* sheet : Reversed(mStyleSheets)) {
+    if (sheet->IsApplicable()) {
+      mStyleSet->AddDocStyleSheet(sheet);
+    }
+  }
+
+  for (StyleSheet* sheet : Reversed(mAdoptedStyleSheets)) {
     if (sheet->IsApplicable()) {
       mStyleSet->AddDocStyleSheet(sheet);
     }
@@ -2516,7 +2533,7 @@ void Document::CompatibilityModeChanged() {
   if (mQuirkSheetAdded == NeedsQuirksSheet()) {
     return;
   }
-  auto cache = nsLayoutStylesheetCache::Singleton();
+  auto* cache = GlobalStyleSheetCache::Singleton();
   StyleSheet* sheet = cache->QuirkSheet();
   if (mQuirkSheetAdded) {
     mStyleSet->RemoveStyleSheet(StyleOrigin::UserAgent, sheet);
@@ -3524,18 +3541,6 @@ DocumentTimeline* Document::Timeline() {
   }
 
   return mDocumentTimeline;
-}
-
-void Document::GetAnimations(nsTArray<RefPtr<Animation>>& aAnimations) {
-  // Hold a strong ref for the root element since Element::GetAnimations() calls
-  // FlushPendingNotifications() which may destroy the element.
-  RefPtr<Element> root = GetRootElement();
-  if (!root) {
-    return;
-  }
-  GetAnimationsOptions options;
-  options.mSubtree = true;
-  root->GetAnimations(options, aAnimations);
 }
 
 SVGSVGElement* Document::GetSVGRootElement() const {
@@ -5479,7 +5484,7 @@ Result<nsCOMPtr<nsIURI>, nsresult> Document::ResolveWithBaseURI(
   nsCOMPtr<nsIURI> resolvedURI;
   MOZ_TRY(
       NS_NewURI(getter_AddRefs(resolvedURI), aURI, nullptr, GetDocBaseURI()));
-  return std::move(resolvedURI);
+  return resolvedURI;
 }
 
 URLExtraData* Document::DefaultStyleAttrURLData() {
@@ -6024,39 +6029,6 @@ void Document::ApplicableStylesChanged() {
   pc->RestyleManager()->NextRestyleIsForCSSRuleChanges();
 }
 
-#define DO_STYLESHEET_NOTIFICATION(className, type, memberName, argName) \
-  do {                                                                   \
-    className##Init init;                                                \
-    init.mBubbles = true;                                                \
-    init.mCancelable = true;                                             \
-    init.mStylesheet = aSheet;                                           \
-    init.memberName = argName;                                           \
-                                                                         \
-    RefPtr<className> event =                                            \
-        className::Constructor(this, NS_LITERAL_STRING(type), init);     \
-    event->SetTrusted(true);                                             \
-    event->SetTarget(this);                                              \
-    RefPtr<AsyncEventDispatcher> asyncDispatcher =                       \
-        new AsyncEventDispatcher(this, event);                           \
-    asyncDispatcher->mOnlyChromeDispatch = ChromeOnlyDispatch::eYes;     \
-    asyncDispatcher->PostDOMEvent();                                     \
-  } while (0);
-
-void Document::NotifyStyleSheetAdded(StyleSheet* aSheet, bool aDocumentSheet) {
-  if (StyleSheetChangeEventsEnabled()) {
-    DO_STYLESHEET_NOTIFICATION(StyleSheetChangeEvent, "StyleSheetAdded",
-                               mDocumentSheet, aDocumentSheet);
-  }
-}
-
-void Document::NotifyStyleSheetRemoved(StyleSheet* aSheet,
-                                       bool aDocumentSheet) {
-  if (StyleSheetChangeEventsEnabled()) {
-    DO_STYLESHEET_NOTIFICATION(StyleSheetChangeEvent, "StyleSheetRemoved",
-                               mDocumentSheet, aDocumentSheet);
-  }
-}
-
 void Document::RemoveStyleSheetFromStyleSets(StyleSheet* aSheet) {
   if (mStyleSetFilled) {
     mStyleSet->RemoveDocStyleSheet(aSheet);
@@ -6064,21 +6036,16 @@ void Document::RemoveStyleSheetFromStyleSets(StyleSheet* aSheet) {
   }
 }
 
-void Document::RemoveStyleSheet(StyleSheet* aSheet) {
-  MOZ_ASSERT(aSheet);
-  RefPtr<StyleSheet> sheet = DocumentOrShadowRoot::RemoveSheet(*aSheet);
+void Document::RemoveStyleSheet(StyleSheet& aSheet) {
+  RefPtr<StyleSheet> sheet = DocumentOrShadowRoot::RemoveSheet(aSheet);
 
   if (!sheet) {
     NS_ASSERTION(mInUnlinkOrDeletion, "stylesheet not found");
     return;
   }
 
-  if (!mIsGoingAway) {
-    if (sheet->IsApplicable()) {
-      RemoveStyleSheetFromStyleSets(sheet);
-    }
-
-    NotifyStyleSheetRemoved(sheet, true);
+  if (!mIsGoingAway && sheet->IsApplicable()) {
+    RemoveStyleSheetFromStyleSets(sheet);
   }
 
   sheet->ClearAssociatedDocumentOrShadowRoot();
@@ -6090,27 +6057,36 @@ void Document::InsertSheetAt(size_t aIndex, StyleSheet& aSheet) {
   if (aSheet.IsApplicable()) {
     AddStyleSheetToStyleSets(&aSheet);
   }
-
-  NotifyStyleSheetAdded(&aSheet, true);
 }
 
-void Document::SetStyleSheetApplicableState(StyleSheet* aSheet,
-                                            bool aApplicable) {
-  MOZ_ASSERT(aSheet, "null arg");
-
+void Document::StyleSheetApplicableStateChanged(StyleSheet& aSheet) {
+  const bool applicable = aSheet.IsApplicable();
   // If we're actually in the document style sheet list
-  if (mStyleSheets.IndexOf(aSheet) != mStyleSheets.NoIndex) {
-    if (aApplicable) {
-      AddStyleSheetToStyleSets(aSheet);
+  if (StyleOrderIndexOfSheet(aSheet) >= 0) {
+    if (applicable) {
+      AddStyleSheetToStyleSets(&aSheet);
     } else {
-      RemoveStyleSheetFromStyleSets(aSheet);
+      RemoveStyleSheetFromStyleSets(&aSheet);
     }
   }
 
   if (StyleSheetChangeEventsEnabled()) {
-    DO_STYLESHEET_NOTIFICATION(StyleSheetApplicableStateChangeEvent,
-                               "StyleSheetApplicableStateChanged", mApplicable,
-                               aApplicable);
+    StyleSheetApplicableStateChangeEventInit init;
+    init.mBubbles = true;
+    init.mCancelable = true;
+    init.mStylesheet = &aSheet;
+    init.mApplicable = applicable;
+
+    RefPtr<StyleSheetApplicableStateChangeEvent> event =
+        StyleSheetApplicableStateChangeEvent::Constructor(
+            this, NS_LITERAL_STRING("StyleSheetApplicableStateChanged"),
+            init);
+    event->SetTrusted(true);
+    event->SetTarget(this);
+    RefPtr<AsyncEventDispatcher> asyncDispatcher =
+        new AsyncEventDispatcher(this, event);
+    asyncDispatcher->mOnlyChromeDispatch = ChromeOnlyDispatch::eYes;
+    asyncDispatcher->PostDOMEvent();
   }
 
   if (!mSSApplicableStateNotificationPending) {
@@ -6206,9 +6182,13 @@ nsresult Document::LoadAdditionalStyleSheet(additionalSheetType aType,
 
 nsresult Document::AddAdditionalStyleSheet(additionalSheetType aType,
                                            StyleSheet* aSheet) {
-  if (mAdditionalSheets[aType].Contains(aSheet)) return NS_ERROR_INVALID_ARG;
+  if (mAdditionalSheets[aType].Contains(aSheet)) {
+    return NS_ERROR_INVALID_ARG;
+  }
 
-  if (!aSheet->IsApplicable()) return NS_ERROR_INVALID_ARG;
+  if (!aSheet->IsApplicable()) {
+    return NS_ERROR_INVALID_ARG;
+  }
 
   mAdditionalSheets[aType].AppendElement(aSheet);
 
@@ -6216,10 +6196,6 @@ nsresult Document::AddAdditionalStyleSheet(additionalSheetType aType,
     mStyleSet->AppendStyleSheet(ConvertAdditionalSheetType(aType), aSheet);
     ApplicableStylesChanged();
   }
-
-  // Passing false, so documet.styleSheets.length will not be affected by
-  // these additional sheets.
-  NotifyStyleSheetAdded(aSheet, false);
   return NS_OK;
 }
 
@@ -6242,10 +6218,6 @@ void Document::RemoveAdditionalStyleSheet(additionalSheetType aType,
         ApplicableStylesChanged();
       }
     }
-
-    // Passing false, so documet.styleSheets.length will not be affected by
-    // these additional sheets.
-    NotifyStyleSheetRemoved(sheetRef, false);
     sheetRef->ClearAssociatedDocumentOrShadowRoot();
   }
 }
@@ -6967,40 +6939,33 @@ void Document::ContentStateChanged(nsIContent* aContent,
                                (this, aContent, aStateMask));
 }
 
-void Document::StyleRuleChanged(StyleSheet* aSheet, css::Rule* aStyleRule) {
-  ApplicableStylesChanged();
+void Document::RuleChanged(StyleSheet& aSheet, css::Rule* aRule) {
+  if (aSheet.IsApplicable()) {
+    ApplicableStylesChanged();
+  }
+}
 
-  if (!StyleSheetChangeEventsEnabled()) {
+void Document::RuleAdded(StyleSheet& aSheet, css::Rule& aRule) {
+  if (aRule.IsIncompleteImportRule()) {
     return;
   }
 
-  DO_STYLESHEET_NOTIFICATION(StyleRuleChangeEvent, "StyleRuleChanged", mRule,
-                             aStyleRule);
-}
-
-void Document::StyleRuleAdded(StyleSheet* aSheet, css::Rule* aStyleRule) {
-  ApplicableStylesChanged();
-
-  if (!StyleSheetChangeEventsEnabled()) {
-    return;
+  if (aSheet.IsApplicable()) {
+    ApplicableStylesChanged();
   }
-
-  DO_STYLESHEET_NOTIFICATION(StyleRuleChangeEvent, "StyleRuleAdded", mRule,
-                             aStyleRule);
 }
 
-void Document::StyleRuleRemoved(StyleSheet* aSheet, css::Rule* aStyleRule) {
-  ApplicableStylesChanged();
-
-  if (!StyleSheetChangeEventsEnabled()) {
-    return;
+void Document::ImportRuleLoaded(dom::CSSImportRule& aRule, StyleSheet& aSheet) {
+  if (aSheet.IsApplicable()) {
+    ApplicableStylesChanged();
   }
-
-  DO_STYLESHEET_NOTIFICATION(StyleRuleChangeEvent, "StyleRuleRemoved", mRule,
-                             aStyleRule);
 }
 
-#undef DO_STYLESHEET_NOTIFICATION
+void Document::RuleRemoved(StyleSheet& aSheet, css::Rule& aRule) {
+  if (aSheet.IsApplicable()) {
+    ApplicableStylesChanged();
+  }
+}
 
 static Element* GetCustomContentContainer(PresShell* aPresShell) {
   if (!aPresShell || !aPresShell->GetCanvasFrame()) {
@@ -7545,7 +7510,7 @@ already_AddRefed<nsINode> Document::ImportNode(nsINode& aNode, bool aDeep,
     case CDATA_SECTION_NODE:
     case COMMENT_NODE:
     case DOCUMENT_TYPE_NODE: {
-      return imported->Clone(aDeep, mNodeInfoManager, nullptr, rv);
+      return imported->Clone(aDeep, mNodeInfoManager, rv);
     }
     default: {
       NS_WARNING("Don't know how to clone this nodetype for importNode.");
@@ -8557,7 +8522,7 @@ Document* Document::Open(const Optional<nsAString>& /* unused */,
         aError.Throw(rv);
         return nullptr;
       }
-      newURI = noFragmentURI.forget();
+      newURI = std::move(noFragmentURI);
     }
 
     // UpdateURLAndHistory might do various member-setting, so make sure we're
@@ -8668,35 +8633,6 @@ void Document::Close(ErrorResult& rv) {
   rv = (static_cast<nsHtml5Parser*>(mParser.get()))
            ->Parse(EmptyString(), nullptr, true);
   --mWriteLevel;
-
-  // Even if that Parse() call failed, do the rest of this method
-
-  // XXX Make sure that all the document.written content is
-  // reflowed.  We should remove this call once we change
-  // Document::OpenCommon() so that it completely destroys the
-  // earlier document's content and frame hierarchy.  Right now, it
-  // re-uses the earlier document's root content object and
-  // corresponding frame objects.  These re-used frame objects think
-  // that they have already been reflowed, so they drop initial
-  // reflows.  For certain cases of document.written content, like a
-  // frameset document, the dropping of the initial reflow means
-  // that we end up in document.close() without appended any reflow
-  // commands to the reflow queue and, consequently, without adding
-  // the dummy layout request to the load group.  Since the dummy
-  // layout request is not added to the load group, the onload
-  // handler of the frameset fires before the frames get reflowed
-  // and loaded.  That is the long explanation for why we need this
-  // one line of code here!
-  // XXXbz as far as I can tell this may not be needed anymore; all
-  // the testcases in bug 57636 pass without this line...  Leaving
-  // it be for now, though.  In any case, there's no reason to do
-  // this if we have no presshell, since in that case none of the
-  // above about reusing frames applies.
-  //
-  // XXXhsivonen keeping this around for bug 577508 / 253951 still :-(
-  if (GetPresShell()) {
-    FlushPendingNotifications(FlushType::Layout);
-  }
 }
 
 void Document::WriteCommon(const Sequence<nsString>& aText,
@@ -9083,41 +9019,16 @@ nsINode* Document::AdoptNode(nsINode& aAdoptedNode, ErrorResult& rv) {
     }
   }
 
-  nsCOMArray<nsINode> nodesWithProperties;
-  adoptedNode->Adopt(sameDocument ? nullptr : mNodeInfoManager, newScope,
-                     nodesWithProperties, rv);
+  adoptedNode->Adopt(sameDocument ? nullptr : mNodeInfoManager, newScope, rv);
   if (rv.Failed()) {
     // Disconnect all nodes from their parents, since some have the old document
     // as their ownerDocument and some have this as their ownerDocument.
     nsDOMAttributeMap::BlastSubtreeToPieces(adoptedNode);
-
-    if (!sameDocument && oldDocument) {
-      for (nsINode* node : nodesWithProperties) {
-        // Remove all properties.
-        oldDocument->PropertyTable().DeleteAllPropertiesFor(node);
-      }
-    }
-
     return nullptr;
   }
 
-  if (!sameDocument && oldDocument) {
-    nsPropertyTable& oldTable = oldDocument->PropertyTable();
-    nsPropertyTable& newTable = PropertyTable();
-    for (nsINode* node : nodesWithProperties) {
-      rv = oldTable.TransferOrDeleteAllPropertiesFor(node, newTable);
-    }
-
-    if (rv.Failed()) {
-      // Disconnect all nodes from their parents.
-      nsDOMAttributeMap::BlastSubtreeToPieces(adoptedNode);
-
-      return nullptr;
-    }
-  }
-
-  NS_ASSERTION(adoptedNode->OwnerDoc() == this,
-               "Should still be in the document we just got adopted into");
+  MOZ_ASSERT(adoptedNode->OwnerDoc() == this,
+             "Should still be in the document we just got adopted into");
 
   return adoptedNode;
 }
@@ -10236,6 +10147,10 @@ void Document::Destroy() {
   // leak-fixing if we fix nsDocumentViewer to do cycle-collection, but
   // tearing down all those frame trees right now is the right thing to do.
   mExternalResourceMap.Shutdown();
+
+  // Manually break cycles via promise's global object pointer.
+  mReadyForIdle = nullptr;
+  mOrientationPendingPromise = nullptr;
 }
 
 void Document::RemovedFromDocShell() {
@@ -10707,8 +10622,8 @@ void Document::MutationEventDispatched(nsINode* aTarget) {
       nsINode* commonAncestor = nullptr;
       int32_t realTargetCount = realTargets.Count();
       for (int32_t j = 0; j < realTargetCount; ++j) {
-        commonAncestor =
-            nsContentUtils::GetCommonAncestor(possibleTarget, realTargets[j]);
+        commonAncestor = nsContentUtils::GetClosestCommonInclusiveAncestor(
+            possibleTarget, realTargets[j]);
         if (commonAncestor) {
           realTargets.ReplaceObjectAt(commonAncestor, j);
           break;
@@ -11432,7 +11347,7 @@ static already_AddRefed<nsPIDOMWindowOuter> FindTopWindowForElement(
 
   // Trying to find the top window (equivalent to window.top).
   if (nsCOMPtr<nsPIDOMWindowOuter> top = window->GetInProcessTop()) {
-    window = top.forget();
+    window = std::move(top);
   }
   return window.forget();
 }
@@ -11443,11 +11358,11 @@ static already_AddRefed<nsPIDOMWindowOuter> FindTopWindowForElement(
  */
 class nsAutoFocusEvent : public Runnable {
  public:
-  explicit nsAutoFocusEvent(already_AddRefed<Element>&& aElement,
-                            already_AddRefed<nsPIDOMWindowOuter>&& aTopWindow)
+  explicit nsAutoFocusEvent(nsCOMPtr<Element>&& aElement,
+                            nsCOMPtr<nsPIDOMWindowOuter>&& aTopWindow)
       : mozilla::Runnable("nsAutoFocusEvent"),
-        mElement(aElement),
-        mTopWindow(aTopWindow) {}
+        mElement(std::move(aElement)),
+        mTopWindow(std::move(aTopWindow)) {}
 
   NS_IMETHOD Run() override {
     nsCOMPtr<nsPIDOMWindowOuter> currentTopWindow =
@@ -11520,7 +11435,7 @@ void Document::TriggerAutoFocus() {
     }
 
     nsCOMPtr<nsIRunnable> event =
-        new nsAutoFocusEvent(autoFocusElement.forget(), topWindow.forget());
+        new nsAutoFocusEvent(std::move(autoFocusElement), topWindow.forget());
     nsresult rv = NS_DispatchToCurrentThread(event.forget());
     NS_ENSURE_SUCCESS_VOID(rv);
   }
@@ -12269,6 +12184,11 @@ already_AddRefed<nsIURI> Document::GetMozDocumentURIIfNotForErrorPages() {
 }
 
 Promise* Document::GetDocumentReadyForIdle(ErrorResult& aRv) {
+  if (mIsGoingAway) {
+    aRv.Throw(NS_ERROR_NOT_AVAILABLE);
+    return nullptr;
+  }
+
   if (!mReadyForIdle) {
     nsIGlobalObject* global = GetScopeObject();
     if (!global) {
@@ -13118,14 +13038,6 @@ void Document::RemoteFrameFullscreenReverted() {
   RestorePreviousFullscreenState(std::move(exit));
 }
 
-/* static */
-bool Document::IsUnprefixedFullscreenEnabled(JSContext* aCx,
-                                             JSObject* aObject) {
-  MOZ_ASSERT(NS_IsMainThread());
-  return nsContentUtils::IsSystemCaller(aCx) ||
-         StaticPrefs::full_screen_api_unprefix_enabled();
-}
-
 static bool HasFullscreenSubDocument(Document& aDoc) {
   uint32_t count = CountFullscreenSubDocuments(aDoc);
   NS_ASSERTION(count <= 1,
@@ -13137,15 +13049,14 @@ static bool HasFullscreenSubDocument(Document& aDoc) {
 // in the given document. Returns a static string indicates the reason
 // why it is not enabled otherwise.
 static const char* GetFullscreenError(Document* aDoc, CallerType aCallerType) {
-  bool apiEnabled = StaticPrefs::full_screen_api_enabled();
-  if (apiEnabled && aCallerType == CallerType::System) {
+  if (!StaticPrefs::full_screen_api_enabled()) {
+    return "FullscreenDeniedDisabled";
+  }
+
+  if (aCallerType == CallerType::System) {
     // Chrome code can always use the fullscreen API, provided it's not
     // explicitly disabled.
     return nullptr;
-  }
-
-  if (!apiEnabled) {
-    return "FullscreenDeniedDisabled";
   }
 
   if (!aDoc->IsVisible()) {
@@ -13448,8 +13359,17 @@ bool Document::FullscreenEnabled(CallerType aCallerType) {
   return !GetFullscreenError(this, aCallerType);
 }
 
-void Document::SetOrientationPendingPromise(Promise* aPromise) {
+void Document::ClearOrientationPendingPromise() {
+  mOrientationPendingPromise = nullptr;
+}
+
+bool Document::SetOrientationPendingPromise(Promise* aPromise) {
+  if (mIsGoingAway) {
+    return false;
+  }
+
   mOrientationPendingPromise = aPromise;
+  return true;
 }
 
 static void DispatchPointerLockChange(Document* aTarget) {
@@ -13813,8 +13733,15 @@ void Document::DocAddSizeOfExcludingThis(nsWindowSizes& aWindowSizes) const {
   // Lumping in the loader with the style-sheets size is not ideal,
   // but most of the things in there are in fact stylesheets, so it
   // doesn't seem worthwhile to separate it out.
-  aWindowSizes.mLayoutStyleSheetsSize +=
-      CSSLoader()->SizeOfIncludingThis(aWindowSizes.mState.mMallocSizeOf);
+  // This can be null if we've already been unlinked.
+  if (mCSSLoader) {
+    aWindowSizes.mLayoutStyleSheetsSize +=
+        mCSSLoader->SizeOfIncludingThis(aWindowSizes.mState.mMallocSizeOf);
+  }
+
+  if (mResizeObserverController) {
+    mResizeObserverController->AddSizeOfIncludingThis(aWindowSizes);
+  }
 
   aWindowSizes.mDOMOtherSize += mAttrStyleSheet
                                     ? mAttrStyleSheet->DOMSizeOfIncludingThis(
@@ -14701,12 +14628,19 @@ FlashClassification Document::DocumentFlashClassification() {
   return mFlashClassification;
 }
 
-void Document::AddResizeObserver(ResizeObserver* aResizeObserver) {
+void Document::AddResizeObserver(ResizeObserver& aObserver) {
   if (!mResizeObserverController) {
     mResizeObserverController = MakeUnique<ResizeObserverController>(this);
   }
+  mResizeObserverController->AddResizeObserver(aObserver);
+}
 
-  mResizeObserverController->AddResizeObserver(aResizeObserver);
+void Document::RemoveResizeObserver(ResizeObserver& aObserver) {
+  MOZ_DIAGNOSTIC_ASSERT(mResizeObserverController, "No controller?");
+  if (MOZ_UNLIKELY(!mResizeObserverController)) {
+    return;
+  }
+  mResizeObserverController->RemoveResizeObserver(aObserver);
 }
 
 PermissionDelegateHandler* Document::GetPermissionDelegateHandler() {
@@ -14714,6 +14648,11 @@ PermissionDelegateHandler* Document::GetPermissionDelegateHandler() {
     mPermissionDelegateHandler =
         mozilla::MakeAndAddRef<PermissionDelegateHandler>(this);
   }
+
+  if (!mPermissionDelegateHandler->Initialize()) {
+    mPermissionDelegateHandler = nullptr;
+  }
+
   return mPermissionDelegateHandler;
 }
 
@@ -15086,7 +15025,7 @@ already_AddRefed<Promise> Document::RequestStorageAccess(ErrorResult& aRv) {
                   ContentPermissionRequestBase::DelayedTaskType::Request);
             });
 
-        return p.forget();
+        return std::move(p);
       };
       AntiTrackingCommon::AddFirstPartyStorageAccessGrantedFor(
           NodePrincipal(), inner, AntiTrackingCommon::eStorageAccessAPI,
@@ -15371,7 +15310,7 @@ void Document::RecomputeLanguageFromCharset() {
   }
 
   mMayNeedFontPrefsUpdate = true;
-  mLanguageFromCharset = language.forget();
+  mLanguageFromCharset = std::move(language);
 }
 
 nsICookieSettings* Document::CookieSettings() {
@@ -15477,6 +15416,35 @@ Document::RecomputeContentBlockingAllowListPrincipal(
 
   nsCOMPtr<nsIPrincipal> copy = mContentBlockingAllowListPrincipal;
   return copy.forget();
+}
+
+// https://wicg.github.io/construct-stylesheets/#dom-documentorshadowroot-adoptedstylesheets
+void Document::SetAdoptedStyleSheets(
+    const Sequence<OwningNonNull<StyleSheet>>& aAdoptedStyleSheets,
+    ErrorResult& aRv) {
+  // Step 1 is a variable declaration
+
+  // 2.1 Check if all sheets are constructed, else throw NotAllowedError
+  // 2.2 Check if all sheets' constructor documents match the
+  // DocumentOrShadowRoot's node document, else throw NotAlloweError
+  EnsureAdoptedSheetsAreValid(aAdoptedStyleSheets, aRv);
+  if (aRv.Failed()) {
+    return;
+  }
+
+  // 3. Set the adopted style sheets to the new sheets
+  for (const RefPtr<StyleSheet>& sheet : mAdoptedStyleSheets) {
+    if (sheet->IsApplicable()) {
+      RemoveStyleSheetFromStyleSets(sheet);
+    }
+    sheet->RemoveAdopter(*this);
+  }
+  mAdoptedStyleSheets.ClearAndRetainStorage();
+  mAdoptedStyleSheets.SetCapacity(aAdoptedStyleSheets.Length());
+  for (const OwningNonNull<StyleSheet>& sheet : aAdoptedStyleSheets) {
+    sheet->AddAdopter(*this);
+    AppendAdoptedStyleSheet(*sheet);
+  }
 }
 
 }  // namespace dom

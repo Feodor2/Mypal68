@@ -82,7 +82,7 @@ struct WorkerLoadInfoData {
     }
 
    private:
-    ~InterfaceRequestor() {}
+    ~InterfaceRequestor() = default;
 
     already_AddRefed<nsIBrowserChild> GetAnyLiveBrowserChild();
 

@@ -286,7 +286,7 @@ void nsMutationReceiver::ContentRemoved(nsIContent* aChild,
     if (Observer()->GetReceiverFor(aChild, false, false) != orig) {
       bool transientExists = false;
       bool isNewEntry = false;
-      nsCOMArray<nsMutationReceiver>* transientReceivers =
+      const auto& transientReceivers =
           Observer()->mTransientReceivers.LookupForAdd(aChild).OrInsert(
               [&isNewEntry]() {
                 isNewEntry = true;
@@ -699,7 +699,7 @@ void nsDOMMutationObserver::TakeRecords(
     current->mNext.swap(next);
     if (!mMergeAttributeRecords ||
         !MergeableAttributeRecord(aRetVal.SafeLastElement(nullptr), current)) {
-      *aRetVal.AppendElement() = current.forget();
+      *aRetVal.AppendElement() = std::move(current);
     }
     current.swap(next);
   }
@@ -752,7 +752,7 @@ already_AddRefed<nsDOMMutationObserver> nsDOMMutationObserver::Constructor(
   }
   bool isChrome = nsContentUtils::IsChromeDoc(window->GetExtantDoc());
   RefPtr<nsDOMMutationObserver> observer =
-      new nsDOMMutationObserver(window.forget(), aCb, isChrome);
+      new nsDOMMutationObserver(std::move(window), aCb, isChrome);
   return observer.forget();
 }
 
@@ -992,7 +992,7 @@ void nsAutoMutationBatch::Done() {
       }
 
       if (allObservers.Length()) {
-        nsCOMArray<nsMutationReceiver>* transientReceivers =
+        const auto& transientReceivers =
             ob->mTransientReceivers.LookupForAdd(removed).OrInsert(
                 []() { return new nsCOMArray<nsMutationReceiver>(); });
         for (uint32_t k = 0; k < allObservers.Length(); ++k) {

@@ -140,6 +140,7 @@ class nsWindowSizes {
   MACRO(DOM, mDOMMediaQueryLists)                            \
   MACRO(DOM, mDOMPerformanceUserEntries)                     \
   MACRO(DOM, mDOMPerformanceResourceEntries)                 \
+  MACRO(DOM, mDOMResizeObserverControllerSize)               \
   MACRO(DOM, mDOMOtherSize)                                  \
   MACRO(Style, mLayoutStyleSheetsSize)                       \
   MACRO(Style, mLayoutShadowDomStyleSheetsSize)              \

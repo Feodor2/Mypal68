@@ -101,7 +101,7 @@
 #include "nsReadableUtils.h"   // for EmptyString, ToNewCString
 #include "nsString.h"          // for nsAutoString, nsString, etc.
 #include "nsStringFwd.h"       // for nsString
-#include "nsStyleConsts.h"     // for NS_STYLE_DIRECTION_RTL, etc.
+#include "nsStyleConsts.h"     // for StyleDirection::Rtl, etc.
 #include "nsStyleStruct.h"     // for nsStyleDisplay, nsStyleText, etc.
 #include "nsStyleStructFwd.h"  // for nsIFrame::StyleUIReset, etc.
 #include "nsStyleUtil.h"       // for nsStyleUtil
@@ -618,8 +618,9 @@ bool EditorBase::IsSelectionEditable() {
     return false;
   }
 
-  nsINode* commonAncestor =
-      SelectionRefPtr()->GetAnchorFocusRange()->GetCommonAncestor();
+  nsINode* commonAncestor = SelectionRefPtr()
+                                ->GetAnchorFocusRange()
+                                ->GetClosestCommonInclusiveAncestor();
   while (commonAncestor && !commonAncestor->IsEditable()) {
     commonAncestor = commonAncestor->GetParentNode();
   }
@@ -5000,7 +5001,7 @@ nsresult EditorBase::DetermineCurrentDirection() {
 
     // Set the flag here, to enable us to use the same code path below.
     // It will be flipped before returning from the function.
-    if (frame->StyleVisibility()->mDirection == NS_STYLE_DIRECTION_RTL) {
+    if (frame->StyleVisibility()->mDirection == StyleDirection::Rtl) {
       mFlags |= nsIPlaintextEditor::eEditorRightToLeft;
     } else {
       mFlags |= nsIPlaintextEditor::eEditorLeftToRight;
@@ -5626,18 +5627,17 @@ nsresult EditorBase::TopLevelEditSubActionData::AddRangeToChangedRange(
     return rv;
   }
 
-  bool disconnected = false;
-  int16_t relation = mChangedRange->StartRef().IsSet()
-                         ? nsContentUtils::ComparePoints(
-                               mChangedRange->StartRef(),
-                               aStart.ToRawRangeBoundary(), &disconnected)
-                         : 1;
-  if (NS_WARN_IF(disconnected)) {
+  Maybe<int32_t> relation =
+      mChangedRange->StartRef().IsSet()
+          ? nsContentUtils::ComparePoints(mChangedRange->StartRef(),
+                                          aStart.ToRawRangeBoundary())
+          : Some(1);
+  if (NS_WARN_IF(!relation)) {
     return NS_ERROR_FAILURE;
   }
 
   // If aStart is before start of mChangedRange, reset the start.
-  if (relation > 0) {
+  if (*relation > 0) {
     ErrorResult error;
     mChangedRange->SetStart(aStart.ToRawRangeBoundary(), error);
     if (NS_WARN_IF(error.Failed())) {
@@ -5647,15 +5647,14 @@ nsresult EditorBase::TopLevelEditSubActionData::AddRangeToChangedRange(
 
   relation = mChangedRange->EndRef().IsSet()
                  ? nsContentUtils::ComparePoints(mChangedRange->EndRef(),
-                                                 aEnd.ToRawRangeBoundary(),
-                                                 &disconnected)
-                 : 1;
-  if (NS_WARN_IF(disconnected)) {
+                                                 aEnd.ToRawRangeBoundary())
+                 : Some(1);
+  if (NS_WARN_IF(!relation)) {
     return NS_ERROR_FAILURE;
   }
 
   // If aEnd is after end of mChangedRange, reset the end.
-  if (relation < 0) {
+  if (*relation < 0) {
     ErrorResult error;
     mChangedRange->SetEnd(aEnd.ToRawRangeBoundary(), error);
     if (NS_WARN_IF(error.Failed())) {

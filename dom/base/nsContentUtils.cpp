@@ -329,16 +329,28 @@ mozilla::LazyLogModule nsContentUtils::sDOMDumpLog("Dump");
 int32_t nsContentUtils::sInnerOrOuterWindowCount = 0;
 uint32_t nsContentUtils::sInnerOrOuterWindowSerialCounter = 0;
 
-template int32_t nsContentUtils::ComparePoints(
+template Maybe<int32_t> nsContentUtils::ComparePoints(
+    const RangeBoundary& aFirstBoundary, const RangeBoundary& aSecondBoundary);
+template Maybe<int32_t> nsContentUtils::ComparePoints(
+    const RangeBoundary& aFirstBoundary,
+    const RawRangeBoundary& aSecondBoundary);
+template Maybe<int32_t> nsContentUtils::ComparePoints(
+    const RawRangeBoundary& aFirstBoundary,
+    const RangeBoundary& aSecondBoundary);
+template Maybe<int32_t> nsContentUtils::ComparePoints(
+    const RawRangeBoundary& aFirstBoundary,
+    const RawRangeBoundary& aSecondBoundary);
+
+template int32_t nsContentUtils::ComparePoints_Deprecated(
     const RangeBoundary& aFirstBoundary, const RangeBoundary& aSecondBoundary,
     bool* aDisconnected);
-template int32_t nsContentUtils::ComparePoints(
+template int32_t nsContentUtils::ComparePoints_Deprecated(
     const RangeBoundary& aFirstBoundary,
     const RawRangeBoundary& aSecondBoundary, bool* aDisconnected);
-template int32_t nsContentUtils::ComparePoints(
+template int32_t nsContentUtils::ComparePoints_Deprecated(
     const RawRangeBoundary& aFirstBoundary,
     const RangeBoundary& aSecondBoundary, bool* aDisconnected);
-template int32_t nsContentUtils::ComparePoints(
+template int32_t nsContentUtils::ComparePoints_Deprecated(
     const RawRangeBoundary& aFirstBoundary,
     const RawRangeBoundary& aSecondBoundary, bool* aDisconnected);
 
@@ -1956,12 +1968,7 @@ bool nsContentUtils::InProlog(nsINode* aNode) {
 
 bool nsContentUtils::IsCallerChrome() {
   MOZ_ASSERT(NS_IsMainThread());
-  if (SubjectPrincipal() == sSystemPrincipal) {
-    return true;
-  }
-
-  // If the check failed, look for UniversalXPConnect on the cx compartment.
-  return xpc::IsUniversalXPConnectEnabled(GetCurrentJSContext());
+  return SubjectPrincipal() == sSystemPrincipal;
 }
 
 #ifdef FUZZING
@@ -2248,8 +2255,8 @@ nsINode* nsContentUtils::Retarget(nsINode* aTargetA, nsINode* aTargetB) {
 }
 
 // static
-nsresult nsContentUtils::GetAncestors(nsINode* aNode,
-                                      nsTArray<nsINode*>& aArray) {
+nsresult nsContentUtils::GetInclusiveAncestors(nsINode* aNode,
+                                               nsTArray<nsINode*>& aArray) {
   while (aNode) {
     aArray.AppendElement(aNode);
     aNode = aNode->GetParentNode();
@@ -2258,7 +2265,7 @@ nsresult nsContentUtils::GetAncestors(nsINode* aNode,
 }
 
 // static
-nsresult nsContentUtils::GetAncestorsAndOffsets(
+nsresult nsContentUtils::GetInclusiveAncestorsAndOffsets(
     nsINode* aNode, int32_t aOffset, nsTArray<nsIContent*>* aAncestorNodes,
     nsTArray<int32_t>* aAncestorOffsets) {
   NS_ENSURE_ARG_POINTER(aNode);
@@ -2363,10 +2370,24 @@ bool nsContentUtils::PositionIsBefore(nsINode* aNode1, nsINode* aNode2,
 }
 
 /* static */
-int32_t nsContentUtils::ComparePoints(nsINode* aParent1, int32_t aOffset1,
-                                      nsINode* aParent2, int32_t aOffset2,
-                                      bool* aDisconnected,
-                                      ComparePointsCache* aParent1Cache) {
+Maybe<int32_t> nsContentUtils::ComparePoints(
+    const nsINode* aParent1, int32_t aOffset1, const nsINode* aParent2,
+    int32_t aOffset2, ComparePointsCache* aParent1Cache) {
+  bool disconnected{false};
+
+  const int32_t order = ComparePoints_Deprecated(
+      aParent1, aOffset1, aParent2, aOffset2, &disconnected, aParent1Cache);
+  if (disconnected) {
+    return Nothing();
+  }
+
+  return Some(order);
+}
+
+/* static */
+int32_t nsContentUtils::ComparePoints_Deprecated(
+    const nsINode* aParent1, int32_t aOffset1, const nsINode* aParent2,
+    int32_t aOffset2, bool* aDisconnected, ComparePointsCache* aParent1Cache) {
   if (aParent1 == aParent2) {
     // XXX This is odd.  aOffset1 and/or aOffset2 may be -1, e.g., it's result
     //     of nsINode::ComputeIndexOf(), but this compares such invalid
@@ -2374,9 +2395,9 @@ int32_t nsContentUtils::ComparePoints(nsINode* aParent1, int32_t aOffset1,
     return aOffset1 < aOffset2 ? -1 : aOffset1 > aOffset2 ? 1 : 0;
   }
 
-  AutoTArray<nsINode*, 32> parents1, parents2;
-  nsINode* node1 = aParent1;
-  nsINode* node2 = aParent2;
+  AutoTArray<const nsINode*, 32> parents1, parents2;
+  const nsINode* node1 = aParent1;
+  const nsINode* node2 = aParent2;
   do {
     parents1.AppendElement(node1);
     node1 = node1->GetParentNode();
@@ -2399,11 +2420,11 @@ int32_t nsContentUtils::ComparePoints(nsINode* aParent1, int32_t aOffset1,
   }
 
   // Find where the parent chains differ
-  nsINode* parent = parents1.ElementAt(pos1);
+  const nsINode* parent = parents1.ElementAt(pos1);
   uint32_t len;
   for (len = std::min(pos1, pos2); len > 0; --len) {
-    nsINode* child1 = parents1.ElementAt(--pos1);
-    nsINode* child2 = parents2.ElementAt(--pos2);
+    const nsINode* child1 = parents1.ElementAt(--pos1);
+    const nsINode* child2 = parents2.ElementAt(--pos2);
     if (child1 != child2) {
       int32_t child1index = aParent1Cache
                                 ? aParent1Cache->ComputeIndexOf(parent, child1)
@@ -2420,13 +2441,13 @@ int32_t nsContentUtils::ComparePoints(nsINode* aParent1, int32_t aOffset1,
                "should have run out of parent chain for one of the nodes");
 
   if (!pos1) {
-    nsINode* child2 = parents2.ElementAt(--pos2);
+    const nsINode* child2 = parents2.ElementAt(--pos2);
     // XXX aOffset1 may be -1 as mentioned above.  So, why does this return
     //     it's *before* of the valid DOM point?
     return aOffset1 <= parent->ComputeIndexOf(child2) ? -1 : 1;
   }
 
-  nsINode* child1 = parents1.ElementAt(--pos1);
+  const nsINode* child1 = parents1.ElementAt(--pos1);
   // XXX aOffset2 may be -1 as mentioned above.  So, why does this return it's
   //     *after* of the valid DOM point?
   int32_t child1index = aParent1Cache
@@ -2485,7 +2506,27 @@ nsINode* nsContentUtils::GetCommonAncestorUnderInteractiveContent(
 
 /* static */
 template <typename FPT, typename FRT, typename SPT, typename SRT>
-int32_t nsContentUtils::ComparePoints(
+Maybe<int32_t> nsContentUtils::ComparePoints(
+    const RangeBoundaryBase<FPT, FRT>& aFirstBoundary,
+    const RangeBoundaryBase<SPT, SRT>& aSecondBoundary) {
+  if (!aFirstBoundary.IsSet() || !aSecondBoundary.IsSet()) {
+    return Nothing{};
+  }
+
+  bool disconnected{false};
+  const int32_t order =
+      ComparePoints_Deprecated(aFirstBoundary, aSecondBoundary, &disconnected);
+
+  if (disconnected) {
+    return Nothing{};
+  }
+
+  return Some(order);
+}
+
+/* static */
+template <typename FPT, typename FRT, typename SPT, typename SRT>
+int32_t nsContentUtils::ComparePoints_Deprecated(
     const RangeBoundaryBase<FPT, FRT>& aFirstBoundary,
     const RangeBoundaryBase<SPT, SRT>& aSecondBoundary, bool* aDisconnected) {
   if (NS_WARN_IF(!aFirstBoundary.IsSet()) ||
@@ -2494,9 +2535,14 @@ int32_t nsContentUtils::ComparePoints(
   }
   // XXX Re-implement this without calling `Offset()` as far as possible,
   //     and the other overload should be an alias of this.
-  return ComparePoints(aFirstBoundary.Container(), aFirstBoundary.Offset(),
-                       aSecondBoundary.Container(), aSecondBoundary.Offset(),
-                       aDisconnected);
+  return ComparePoints_Deprecated(
+      aFirstBoundary.Container(),
+      *aFirstBoundary.Offset(
+          RangeBoundaryBase<FPT, FRT>::OffsetFilter::kValidOrInvalidOffsets),
+      aSecondBoundary.Container(),
+      *aSecondBoundary.Offset(
+          RangeBoundaryBase<SPT, SRT>::OffsetFilter::kValidOrInvalidOffsets),
+      aDisconnected);
 }
 
 inline bool IsCharInSet(const char* aSet, const char16_t aChar) {

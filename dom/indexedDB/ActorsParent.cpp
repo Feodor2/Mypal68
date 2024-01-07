@@ -5179,7 +5179,7 @@ class ConnectionPool::ThreadInfo {
 };
 
 struct ConnectionPool::DatabaseInfo final {
-  friend class nsAutoPtr<DatabaseInfo>;
+  friend class mozilla::DefaultDelete<DatabaseInfo>;
 
   RefPtr<ConnectionPool> mConnectionPool;
   const nsCString mDatabaseId;
@@ -5370,7 +5370,7 @@ class ConnectionPool::ThreadRunnable final : public Runnable {
 };
 
 class ConnectionPool::TransactionInfo final {
-  friend class nsAutoPtr<TransactionInfo>;
+  friend class mozilla::DefaultDelete<TransactionInfo>;
 
   nsTHashtable<nsPtrHashKey<TransactionInfo>> mBlocking;
   nsTArray<TransactionInfo*> mBlockingOrdered;
@@ -5410,7 +5410,7 @@ class ConnectionPool::TransactionInfo final {
 };
 
 struct ConnectionPool::TransactionInfoPair final {
-  friend class nsAutoPtr<TransactionInfoPair>;
+  friend class mozilla::DefaultDelete<TransactionInfoPair>;
 
   // Multiple reading transactions can block future writes.
   nsTArray<TransactionInfo*> mLastBlockingWrites;
@@ -6424,7 +6424,7 @@ class TransactionBase {
     CommitOrAbort();
   }
 
-  PBackgroundIDBRequestParent* AllocRequest(const RequestParams& aParams,
+  PBackgroundIDBRequestParent* AllocRequest(RequestParams&& aParams,
                                             bool aTrustParams);
 
   bool StartRequest(PBackgroundIDBRequestParent* aActor);
@@ -7405,7 +7405,7 @@ class ObjectStoreAddOrPutRequestOp final : public NormalTransactionOp {
  private:
   // Only created by TransactionBase.
   ObjectStoreAddOrPutRequestOp(RefPtr<TransactionBase> aTransaction,
-                               const RequestParams& aParams);
+                               RequestParams&& aParams);
 
   ~ObjectStoreAddOrPutRequestOp() override = default;
 
@@ -8282,7 +8282,7 @@ class GetFileReferencesHelper final : public Runnable {
  ******************************************************************************/
 
 struct DatabaseActorInfo final {
-  friend class nsAutoPtr<DatabaseActorInfo>;
+  friend class mozilla::DefaultDelete<DatabaseActorInfo>;
 
   RefPtr<FullDatabaseMetadata> mMetadata;
   nsTArray<CheckedUnsafePtr<Database>> mLiveDatabases;
@@ -10986,7 +10986,7 @@ nsresult DatabaseConnection::UpdateRefcountFunction::WillCommit() {
 
   DatabaseUpdateFunction function(this);
   for (const auto& entry : mFileInfoEntries) {
-    FileInfoEntry* value = entry.GetData();
+    const auto& value = entry.GetData();
     MOZ_ASSERT(value);
 
     if (value->mDelta && !function.Update(entry.GetKey(), value->mDelta)) {
@@ -11015,7 +11015,7 @@ void DatabaseConnection::UpdateRefcountFunction::DidCommit() {
                       DOM);
 
   for (const auto& entry : mFileInfoEntries) {
-    FileInfoEntry* value = entry.GetData();
+    const auto& value = entry.GetData();
 
     MOZ_ASSERT(value);
 
@@ -11152,7 +11152,7 @@ void DatabaseConnection::UpdateRefcountFunction::Reset() {
   // done asynchronously and with a delay. We want to remove them (and decrease
   // quota usage) before we fire the commit event.
   for (const auto& entry : mFileInfoEntries) {
-    FileInfoEntry* const value = entry.GetData();
+    const auto& value = entry.GetData();
     MOZ_ASSERT(value);
 
     FileInfo* const fileInfo = value->mFileInfo.forget().take();
@@ -14646,7 +14646,7 @@ void TransactionBase::Invalidate() {
 }
 
 PBackgroundIDBRequestParent* TransactionBase::AllocRequest(
-    const RequestParams& aParams, bool aTrustParams) {
+    RequestParams&& aParams, bool aTrustParams) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aParams.type() != RequestParams::T__None);
 
@@ -14670,7 +14670,7 @@ PBackgroundIDBRequestParent* TransactionBase::AllocRequest(
   switch (aParams.type()) {
     case RequestParams::TObjectStoreAddParams:
     case RequestParams::TObjectStorePutParams:
-      actor = new ObjectStoreAddOrPutRequestOp(this, aParams);
+      actor = new ObjectStoreAddOrPutRequestOp(this, std::move(aParams));
       break;
 
     case RequestParams::TObjectStoreGetParams:
@@ -14946,7 +14946,8 @@ NormalTransaction::AllocPBackgroundIDBRequestParent(
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aParams.type() != RequestParams::T__None);
 
-  return AllocRequest(aParams, IsSameProcessActor());
+  return AllocRequest(std::move(const_cast<RequestParams&>(aParams)),
+                      IsSameProcessActor());
 }
 
 mozilla::ipc::IPCResult NormalTransaction::RecvPBackgroundIDBRequestConstructor(
@@ -15579,7 +15580,8 @@ VersionChangeTransaction::AllocPBackgroundIDBRequestParent(
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aParams.type() != RequestParams::T__None);
 
-  return AllocRequest(aParams, IsSameProcessActor());
+  return AllocRequest(std::move(const_cast<RequestParams&>(aParams)),
+                      IsSameProcessActor());
 }
 
 mozilla::ipc::IPCResult
@@ -16758,6 +16760,8 @@ nsresult QuotaClient::UpgradeStorageFrom2_1To2_2(nsIFile* aDirectory) {
     // directories in Bug 1503883. Such files shouldn't exist in the indexedDB
     // directory so remove them in this upgrade.
     if (StringEndsWith(leafName, NS_LITERAL_STRING(".tmp"))) {
+      IDB_WARNING("Deleting unknown temporary file!");
+
       rv = file->Remove(false);
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
@@ -22437,7 +22441,7 @@ TransactionDatabaseOperationBase::TransactionDatabaseOperationBase(
     RefPtr<TransactionBase> aTransaction)
     : DatabaseOperationBase(aTransaction->GetLoggingInfo()->Id(),
                             aTransaction->GetLoggingInfo()->NextRequestSN()),
-      mTransaction(aTransaction.forget()),
+      mTransaction(std::move(aTransaction)),
       mTransactionIsAborted((*mTransaction)->IsAborted()),
       mTransactionLoggingSerialNumber((*mTransaction)->LoggingSerialNumber()) {
   MOZ_ASSERT(LoggingSerialNumber());
@@ -22447,7 +22451,7 @@ TransactionDatabaseOperationBase::TransactionDatabaseOperationBase(
     RefPtr<TransactionBase> aTransaction, uint64_t aLoggingSerialNumber)
     : DatabaseOperationBase(aTransaction->GetLoggingInfo()->Id(),
                             aLoggingSerialNumber),
-      mTransaction(aTransaction.forget()),
+      mTransaction(std::move(aTransaction)),
       mTransactionIsAborted((*mTransaction)->IsAborted()),
       mTransactionLoggingSerialNumber((*mTransaction)->LoggingSerialNumber()) {}
 
@@ -24639,11 +24643,12 @@ mozilla::ipc::IPCResult NormalTransactionOp::RecvContinue(
 }
 
 ObjectStoreAddOrPutRequestOp::ObjectStoreAddOrPutRequestOp(
-    RefPtr<TransactionBase> aTransaction, const RequestParams& aParams)
+    RefPtr<TransactionBase> aTransaction, RequestParams&& aParams)
     : NormalTransactionOp(std::move(aTransaction)),
-      mParams(aParams.type() == RequestParams::TObjectStoreAddParams
-                  ? aParams.get_ObjectStoreAddParams().commonParams()
-                  : aParams.get_ObjectStorePutParams().commonParams()),
+      mParams(
+          std::move(aParams.type() == RequestParams::TObjectStoreAddParams
+                        ? aParams.get_ObjectStoreAddParams().commonParams()
+                        : aParams.get_ObjectStorePutParams().commonParams())),
       mGroup(Transaction().GetDatabase()->Group()),
       mOrigin(Transaction().GetDatabase()->Origin()),
       mPersistenceType(Transaction().GetDatabase()->Type()),

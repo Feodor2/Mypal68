@@ -109,7 +109,7 @@ void ServiceWorkerRegistration::DisconnectFromOwner() {
   DOMEventTargetHelper::DisconnectFromOwner();
 }
 
-void ServiceWorkerRegistration::RegistrationRemoved() {
+void ServiceWorkerRegistration::RegistrationCleared() {
   // Its possible that the registration will fail to install and be
   // immediately removed.  In that case we may never receive the
   // UpdateState() call if the actor was too slow to connect, etc.
@@ -285,7 +285,7 @@ already_AddRefed<Promise> ServiceWorkerRegistration::ShowNotification(
   }
 
   RefPtr<Promise> p = Notification::ShowPersistentNotification(
-      aCx, global, scope, aTitle, aOptions, aRv);
+      aCx, global, scope, aTitle, aOptions, mDescriptor, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -405,9 +405,9 @@ void ServiceWorkerRegistration::UpdateStateInternal(
   // given descriptor.  Any that are not restored will need
   // to be moved to the redundant state.
   AutoTArray<RefPtr<ServiceWorker>, 3> oldWorkerList({
-      mInstallingWorker.forget(),
-      mWaitingWorker.forget(),
-      mActiveWorker.forget(),
+      std::move(mInstallingWorker),
+      std::move(mWaitingWorker),
+      std::move(mActiveWorker),
   });
 
   // Its important that all state changes are actually applied before

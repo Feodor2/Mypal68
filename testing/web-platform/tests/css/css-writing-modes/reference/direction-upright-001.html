@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<title>Reftest Reference</title>
+<meta charset=utf-8>
+<style>
+  body > div {
+    border: solid silver;
+    float: left;
+    margin: 1em;
+    text-align: right;
+    font: 20px/1 sans-serif;
+  }
+  span { text-orientation: upright; }
+  hr { clear: both; }
+</style>
+
+<p>Test passes if both rows of boxes are identical (order, orientation, and arrangement of contents).
+
+
+<div style="writing-mode: vertical-rl">
+<bdo dir=ltr>
+ Ч– <span>Ч’ Ч“</span> <span>Ч” Ч•</span> Ч‘ Чђ<br>
+Щ§ <span>ЩЈ Щ¤</span> <span>ЩҐ Щ¦</span> Щў ЩЎ
+</bdo>
+</div>
+<div style="writing-mode: vertical-lr">
+<bdo dir=ltr>
+ Ч– <span>Ч’ Ч“</span> <span>Ч” Ч•</span> Ч‘ Чђ<br>
+Щ§ <span>ЩЈ Щ¤</span> <span>ЩҐ Щ¦</span> Щў ЩЎ
+</bdo>
+</div>
+
+<div dir=rtl> Чђ Ч‘ Ч’ Ч“ Ч” Ч• Ч–<br>
+ ЩЎ Щў ЩЈ Щ¤ ЩҐ Щ¦ Щ§
+</div>
+<div dir=rtl style="writing-mode: sideways-rl">
+ Чђ Ч‘ Ч’ Ч“ Ч” Ч• Ч–<br>
+ ЩЎ Щў ЩЈ Щ¤ ЩҐ Щ¦ Щ§
+</div>
+<div dir=rtl style="writing-mode: sideways-lr">
+ Чђ Ч‘ Ч’ Ч“ Ч” Ч• Ч–<br>
+ ЩЎ Щў ЩЈ Щ¤ ЩҐ Щ¦ Щ§
+</div>
+
+
+<hr>
+
+
+<div style="writing-mode: vertical-rl">
+<bdo dir=ltr>
+ Ч– <span>Ч’ Ч“</span> <span>Ч” Ч•</span> Ч‘ Чђ<br>
+Щ§ <span>ЩЈ Щ¤</span> <span>ЩҐ Щ¦</span> Щў ЩЎ
+</bdo>
+</div>
+<div style="writing-mode: vertical-lr">
+<bdo dir=ltr>
+ Ч– <span>Ч’ Ч“</span> <span>Ч” Ч•</span> Ч‘ Чђ<br>
+Щ§ <span>ЩЈ Щ¤</span> <span>ЩҐ Щ¦</span> Щў ЩЎ
+</bdo>
+</div>
+
+<div dir=rtl> Чђ Ч‘ Ч’ Ч“ Ч” Ч• Ч–<br>
+ ЩЎ Щў ЩЈ Щ¤ ЩҐ Щ¦ Щ§
+</div>
+<div dir=rtl style="writing-mode: sideways-rl">
+ Чђ Ч‘ Ч’ Ч“ Ч” Ч• Ч–<br>
+ ЩЎ Щў ЩЈ Щ¤ ЩҐ Щ¦ Щ§
+</div>
+<div dir=rtl style="writing-mode: sideways-lr">
+ Чђ Ч‘ Ч’ Ч“ Ч” Ч• Ч–<br>
+ ЩЎ Щў ЩЈ Щ¤ ЩҐ Щ¦ Щ§
+</div>

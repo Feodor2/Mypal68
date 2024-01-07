@@ -12,6 +12,7 @@
 #include "js/MemoryMetrics.h"
 #include "js/SourceText.h"
 #include "MessageEventRunnable.h"
+#include "mozilla/Result.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/BlobURLProtocolHandler.h"
@@ -156,7 +157,7 @@ class ExternalRunnableWrapper final : public WorkerRunnable {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(ExternalRunnableWrapper, WorkerRunnable)
 
  private:
-  ~ExternalRunnableWrapper() {}
+  ~ExternalRunnableWrapper() = default;
 
   virtual bool PreDispatch(WorkerPrivate* aWorkerPrivate) override {
     // Silence bad assertions.
@@ -254,7 +255,7 @@ class TopLevelWorkerFinishedRunnable final : public Runnable {
   NS_INLINE_DECL_REFCOUNTING_INHERITED(TopLevelWorkerFinishedRunnable, Runnable)
 
  private:
-  ~TopLevelWorkerFinishedRunnable() {}
+  ~TopLevelWorkerFinishedRunnable() = default;
 
   NS_IMETHOD
   Run() override {
@@ -532,7 +533,7 @@ class TimerRunnable final : public WorkerRunnable,
       : WorkerRunnable(aWorkerPrivate, WorkerThreadUnchangedBusyCount) {}
 
  private:
-  ~TimerRunnable() {}
+  ~TimerRunnable() = default;
 
   virtual bool PreDispatch(WorkerPrivate* aWorkerPrivate) override {
     // Silence bad assertions.
@@ -917,7 +918,7 @@ class WorkerPrivate::EventTarget final : public nsISerialEventTarget {
   NS_DECL_NSIEVENTTARGET_FULL
 
  private:
-  ~EventTarget() {}
+  ~EventTarget() = default;
 };
 
 struct WorkerPrivate::TimeoutInfo {
@@ -1085,7 +1086,7 @@ class WorkerPrivate::MemoryReporter final : public nsIMemoryReporter {
     FinishCollectRunnable& operator=(const FinishCollectRunnable&&) = delete;
   };
 
-  ~MemoryReporter() {}
+  ~MemoryReporter() = default;
 
   void Disable() {
     // Called from WorkerPrivate::DisableMemoryReporter.
@@ -3012,9 +3013,15 @@ Maybe<ClientInfo> WorkerPrivate::GetClientInfo() const {
 const ClientState WorkerPrivate::GetClientState() const {
   MOZ_ACCESS_THREAD_BOUND(mWorkerThreadAccessible, data);
   MOZ_DIAGNOSTIC_ASSERT(data->mClientSource);
-  ClientState state;
-  data->mClientSource->SnapshotState(&state);
-  return state;
+  Result<ClientState, ErrorResult> res = data->mClientSource->SnapshotState();
+  if (res.isOk()) {
+    return res.unwrap();
+  }
+
+  // XXXbz Why is it OK to just ignore errors and return a default-initialized
+  // state here?
+  res.unwrapErr().SuppressException();
+  return ClientState();
 }
 
 const Maybe<ServiceWorkerDescriptor> WorkerPrivate::GetController() {

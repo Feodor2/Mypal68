@@ -43,7 +43,7 @@ class DelayedRunnable : public Runnable, public nsITimerCallback {
   }
 
   nsresult DoRun() {
-    nsCOMPtr<nsIRunnable> r = mWrappedRunnable.forget();
+    nsCOMPtr<nsIRunnable> r = std::move(mWrappedRunnable);
     return r->Run();
   }
 

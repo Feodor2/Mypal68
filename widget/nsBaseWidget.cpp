@@ -312,7 +312,7 @@ void nsBaseWidget::DestroyCompositor() {
 
     // XXX CompositorBridgeChild and CompositorBridgeParent might be re-created
     // in ClientLayerManager destructor. See bug 1133426.
-    RefPtr<CompositorSession> session = mCompositorSession.forget();
+    RefPtr<CompositorSession> session = std::move(mCompositorSession);
     session->Shutdown();
   }
 }
@@ -1126,7 +1126,7 @@ nsEventStatus nsBaseWidget::DispatchInputEvent(WidgetInputEvent* aEvent) {
     if (wheelEvent) {
       RefPtr<Runnable> r =
           new DispatchWheelInputOnControllerThread(*wheelEvent, mAPZC, this);
-      APZThreadUtils::RunOnControllerThread(r.forget());
+      APZThreadUtils::RunOnControllerThread(std::move(r));
       return nsEventStatus_eConsumeDoDefault;
     }
     // Allow dispatching keyboard events on Gecko thread.

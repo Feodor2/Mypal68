@@ -75,7 +75,7 @@ interface Element : Node {
   HTMLCollection getElementsByTagNameNS(DOMString? namespace, DOMString localName);
   [Pure]
   HTMLCollection getElementsByClassName(DOMString classNames);
- 
+
   [CEReactions, Throws, Pure]
   Element? insertAdjacentElement(DOMString where, Element element); // historical
 
@@ -281,15 +281,13 @@ Element includes GeometryUtils;
 
 // https://fullscreen.spec.whatwg.org/#api
 partial interface Element {
-  [Throws, Func="Document::IsUnprefixedFullscreenEnabled", NeedsCallerType]
+  [Throws, NeedsCallerType]
   Promise<void> requestFullscreen();
   [Throws, BinaryName="requestFullscreen", NeedsCallerType, Deprecated="MozRequestFullScreenDeprecatedPrefix"]
   Promise<void> mozRequestFullScreen();
 
   // Events handlers
-  [Func="Document::IsUnprefixedFullscreenEnabled"]
   attribute EventHandler onfullscreenchange;
-  [Func="Document::IsUnprefixedFullscreenEnabled"]
   attribute EventHandler onfullscreenerror;
 };
 
@@ -319,7 +317,7 @@ partial interface Element {
    */
   [ChromeOnly, Pure]
   sequence<Grid> getGridFragments();
-  
+
   /**
    * Returns a sequence of all the descendent elements of this element
    * that have display:grid or display:inline-grid style and generate

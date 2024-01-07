@@ -57,7 +57,7 @@ bool WebAuthnManagerBase::MaybeCreateBackgroundActor() {
   }
 
   MOZ_ASSERT(constructedMgr == mgr);
-  mChild = mgr.forget();
+  mChild = std::move(mgr);
 
   return true;
 }

@@ -408,7 +408,7 @@ static IntSize ComputeMinSizeForShadowShape(const RectCornerRadii* aCornerRadii,
   Size cornerSize(0, 0);
   if (aCornerRadii) {
     const RectCornerRadii& corners = *aCornerRadii;
-    NS_FOR_CSS_FULL_CORNERS(i) {
+    for (const auto i : mozilla::AllPhysicalCorners()) {
       cornerSize.width = std::max(cornerSize.width, corners[i].width);
       cornerSize.height = std::max(cornerSize.height, corners[i].height);
     }
@@ -1114,7 +1114,7 @@ static void GetBlurMargins(const RectCornerRadii* aInnerClipRadii,
   Size cornerSize(0, 0);
   if (aInnerClipRadii) {
     const RectCornerRadii& corners = *aInnerClipRadii;
-    NS_FOR_CSS_FULL_CORNERS(i) {
+    for (const auto i : mozilla::AllPhysicalCorners()) {
       cornerSize.width = std::max(cornerSize.width, corners[i].width);
       cornerSize.height = std::max(cornerSize.height, corners[i].height);
     }

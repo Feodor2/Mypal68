@@ -12,6 +12,7 @@
 namespace mozilla {
 
 struct ReflowInput;
+struct StyleAlignFlags;
 
 class CSSAlignUtils {
  public:
@@ -39,7 +40,7 @@ class CSSAlignUtils {
    *
    * @param aAlignment An enumerated value representing a keyword for
    *                   "align-self" or "justify-self". The values
-   *                   NS_STYLE_ALIGN_{AUTO,LEFT,RIGHT} must *not* be
+   *                   StyleAlignFlags::{AUTO,LEFT,RIGHT} must *not* be
    *                   passed here; this method expects the caller to have
    *                   already resolved those to 'start', 'end', or 'stretch'.
    * @param aAxis The container's axis in which we're doing alignment.
@@ -48,8 +49,8 @@ class CSSAlignUtils {
    * @param aRI A ReflowInput for the child.
    * @param aChildSize The child's LogicalSize (in its own writing mode).
    */
-  static nscoord AlignJustifySelf(uint8_t aAlignment, LogicalAxis aAxis,
-                                  AlignJustifyFlags aFlags,
+  static nscoord AlignJustifySelf(const StyleAlignFlags& aAlignment,
+                                  LogicalAxis aAxis, AlignJustifyFlags aFlags,
                                   nscoord aBaselineAdjust, nscoord aCBSize,
                                   const ReflowInput& aRI,
                                   const LogicalSize& aChildSize);

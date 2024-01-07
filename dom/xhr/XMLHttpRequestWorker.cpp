@@ -242,7 +242,7 @@ class SendRunnable final : public WorkerThreadProxySyncRunnable,
                const nsAString& aStringBody)
       : WorkerThreadProxySyncRunnable(aWorkerPrivate, aProxy),
         StructuredCloneHolder(CloningSupported, TransferringNotSupported,
-                              StructuredCloneScope::SameProcessDifferentThread),
+                              StructuredCloneScope::SameProcess),
         mStringBody(aStringBody),
         mHasUploadListeners(false) {}
 
@@ -473,7 +473,7 @@ class EventRunnable final : public MainThreadProxyRunnable,
                 JS::Handle<JSObject*> aScopeObj)
       : MainThreadProxyRunnable(aProxy->mWorkerPrivate, aProxy),
         StructuredCloneHolder(CloningSupported, TransferringNotSupported,
-                              StructuredCloneScope::SameProcessDifferentThread),
+                              StructuredCloneScope::SameProcess),
         mType(aType),
         mResponse(JS::UndefinedValue()),
         mLoaded(aLoaded),
@@ -494,7 +494,7 @@ class EventRunnable final : public MainThreadProxyRunnable,
                 JS::Handle<JSObject*> aScopeObj)
       : MainThreadProxyRunnable(aProxy->mWorkerPrivate, aProxy),
         StructuredCloneHolder(CloningSupported, TransferringNotSupported,
-                              StructuredCloneScope::SameProcessDifferentThread),
+                              StructuredCloneScope::SameProcess),
         mType(aType),
         mResponse(JS::UndefinedValue()),
         mLoaded(0),
@@ -835,8 +835,8 @@ void Proxy::Teardown(bool aSendUnpin) {
       if (mSyncLoopTarget) {
         // We have an unclosed sync loop.  Fix that now.
         RefPtr<MainThreadStopSyncLoopRunnable> runnable =
-            new MainThreadStopSyncLoopRunnable(mWorkerPrivate,
-                                               mSyncLoopTarget.forget(), false);
+            new MainThreadStopSyncLoopRunnable(
+                mWorkerPrivate, std::move(mSyncLoopTarget), false);
         if (!runnable->Dispatch()) {
           MOZ_CRASH("We're going to hang at shutdown anyways.");
         }

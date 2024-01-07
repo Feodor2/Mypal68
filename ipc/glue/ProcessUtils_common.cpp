@@ -7,6 +7,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/ipc/GeckoChildProcessHost.h"
 #include "mozilla/RandomNum.h"
+#include "mozilla/UniquePtrExtensions.h"
 
 namespace mozilla {
 namespace ipc {
@@ -22,9 +23,9 @@ SharedPreferenceSerializer::~SharedPreferenceSerializer() {
 SharedPreferenceSerializer::SharedPreferenceSerializer(
     SharedPreferenceSerializer&& aOther)
     : mPrefMapSize(aOther.mPrefMapSize),
+      mPrefsLength(aOther.mPrefsLength),
       mPrefMapHandle(std::move(aOther.mPrefMapHandle)),
-      mShm(std::move(aOther.mShm)),
-      mPrefs(std::move(aOther.mPrefs)) {
+      mPrefsHandle(std::move(aOther.mPrefsHandle)) {
   MOZ_COUNT_CTOR(SharedPreferenceSerializer);
 }
 
@@ -35,10 +36,12 @@ bool SharedPreferenceSerializer::SerializeToSharedMemory(
   nsAutoCString name;
 
   mPrefMapHandle =
-      Preferences::EnsureSnapshot(&mPrefMapSize, name).ClonePlatformHandle();
+      Preferences::EnsureSnapshot(&mPrefMapSize, name).TakePlatformHandle();
 
   // Serialize the early prefs.
-  Preferences::SerializePreferences(mPrefs);
+  nsAutoCStringN<1024> prefs;
+  Preferences::SerializePreferences(prefs);
+  mPrefsLength = prefs.Length();
 
   nsAutoCString name2;
   name2.SetLength(sizeof("MSM_") + 16 * 2);
@@ -49,19 +52,21 @@ bool SharedPreferenceSerializer::SerializeToSharedMemory(
   const char* str;
   name2.GetData(&str);
 
+  base::SharedMemory shm;
   // Set up the shared memory.
-  if (!mShm.Create(mPrefs.Length(), str)) {
+  if (!shm.Create(prefs.Length(), str)) {
     NS_ERROR("failed to create shared memory in the parent");
     return false;
   }
-  if (!mShm.Map(mPrefs.Length())) {
+  if (!shm.Map(prefs.Length())) {
     NS_ERROR("failed to map shared memory in the parent");
     return false;
   }
 
   // Copy the serialized prefs into the shared memory.
-  memcpy(static_cast<char*>(mShm.memory()), mPrefs.get(), mPrefs.Length());
+  memcpy(static_cast<char*>(shm.memory()), prefs.get(), mPrefsLength);
 
+  mPrefsHandle = shm.TakeHandle();
   // Formats a pointer or pointer-sized-integer as a string suitable for passing
   // in an arguments list.
   auto formatPtrArg = [](auto arg) {
@@ -71,8 +76,7 @@ bool SharedPreferenceSerializer::SerializeToSharedMemory(
 #if defined(XP_WIN)
   // Record the handle as to-be-shared, and pass it via a command flag. This
   // works because Windows handles are system-wide.
-  HANDLE prefsHandle = GetSharedMemoryHandle();
-  procHost.AddHandleToShare(prefsHandle);
+  procHost.AddHandleToShare(GetPrefsHandle().get());
   procHost.AddHandleToShare(GetPrefMapHandle().get());
   aExtraOpts.push_back("-prefsHandle");
   aExtraOpts.push_back(name2.get());
@@ -86,13 +90,13 @@ bool SharedPreferenceSerializer::SerializeToSharedMemory(
   // Note: on Android, AddFdToRemap() sets up the fd to be passed via a Parcel,
   // and the fixed fd isn't used. However, we still need to mark it for
   // remapping so it doesn't get closed in the child.
-  procHost.AddFdToRemap(GetSharedMemoryHandle().fd, kPrefsFileDescriptor);
+  procHost.AddFdToRemap(GetPrefsHandle().get(), kPrefsFileDescriptor);
   procHost.AddFdToRemap(GetPrefMapHandle().get(), kPrefMapFileDescriptor);
 #endif
 
   // Pass the lengths via command line flags.
   aExtraOpts.push_back("-prefsLen");
-  aExtraOpts.push_back(formatPtrArg(GetPrefLength()).get());
+  aExtraOpts.push_back(formatPtrArg(GetPrefsLength()).get());
   aExtraOpts.push_back("-prefMapSize");
   aExtraOpts.push_back(formatPtrArg(GetPrefMapSize()).get());
 
@@ -143,7 +147,7 @@ bool SharedPreferenceDeserializer::DeserializeFromSharedMemory(
     return false;
   }
 
-  mPrefMapHandle.emplace(handle);
+  mPrefMapHandle.emplace(std::move(handle));
 #endif
 
   mPrefsLen = Some(parseUIntPtrArg(aPrefsLenStr));
@@ -161,17 +165,12 @@ bool SharedPreferenceDeserializer::DeserializeFromSharedMemory(
   MOZ_RELEASE_ASSERT(gPrefsFd != -1);
   mPrefsHandle = Some(base::FileDescriptor(gPrefsFd, /* auto_close */ true));
 
-  FileDescriptor::UniquePlatformHandle handle(gPrefMapFd);
-  mPrefMapHandle.emplace(handle.get());
+  mPrefMapHandle.emplace(UniqueFileHandle(gPrefMapFd));
 #elif XP_UNIX
   mPrefsHandle = Some(base::FileDescriptor(kPrefsFileDescriptor,
                                            /* auto_close */ true));
 
-  // The FileDescriptor constructor will clone this handle when constructed,
-  // so store it in a UniquePlatformHandle to make sure the original gets
-  // closed.
-  FileDescriptor::UniquePlatformHandle handle(kPrefMapFileDescriptor);
-  mPrefMapHandle.emplace(handle.get());
+  mPrefMapHandle.emplace(UniqueFileHandle(kPrefMapFileDescriptor));
 #endif
 
   if (mPrefsHandle.isNothing() || mPrefsLen.isNothing() ||

@@ -48,6 +48,10 @@
 #  include "WinUtils.h"
 #endif
 
+#if defined(XP_MACOSX)
+#  include "nsMacUtilsImpl.h"
+#endif
+
 #define EXTENSION_SCHEME "moz-extension"
 using mozilla::dom::Promise;
 using mozilla::ipc::FileDescriptor;
@@ -276,7 +280,7 @@ void ExtensionStreamGetter::OnStream(already_AddRefed<nsIInputStream> aStream) {
 
   // We must keep an owning reference to the listener
   // until we pass it on to AsyncRead.
-  nsCOMPtr<nsIStreamListener> listener = mListener.forget();
+  nsCOMPtr<nsIStreamListener> listener = std::move(mListener);
 
   MOZ_ASSERT(mChannel);
 
@@ -313,7 +317,7 @@ void ExtensionStreamGetter::OnFD(const FileDescriptor& aFD) {
 
   // We must keep an owning reference to the listener
   // until we pass it on to AsyncOpen.
-  nsCOMPtr<nsIStreamListener> listener = mListener.forget();
+  nsCOMPtr<nsIStreamListener> listener = std::move(mListener);
 
   RefPtr<FileDescriptorFile> fdFile = new FileDescriptorFile(aFD, mJarFile);
   mJarChannel->SetJarFile(fdFile);
@@ -608,7 +612,7 @@ Result<bool, nsresult> ExtensionProtocolHandler::DevRepoContains(
   // On the first invocation, set mDevRepo
   if (!mAlreadyCheckedDevRepo) {
     mAlreadyCheckedDevRepo = true;
-    MOZ_TRY(mozilla::GetRepoDir(getter_AddRefs(mDevRepo)));
+    MOZ_TRY(nsMacUtilsImpl::GetRepoDir(getter_AddRefs(mDevRepo)));
     if (MOZ_LOG_TEST(gExtProtocolLog, LogLevel::Debug)) {
       nsAutoCString repoPath;
       Unused << mDevRepo->GetNativePath(repoPath);

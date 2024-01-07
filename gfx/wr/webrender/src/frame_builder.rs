@@ -8,7 +8,7 @@ use api::units::*;
 use crate::batch::{BatchBuilder, AlphaBatchBuilder, AlphaBatchContainer};
 use crate::clip::{ClipStore, ClipChainStack};
 use crate::clip_scroll_tree::{ClipScrollTree, ROOT_SPATIAL_NODE_INDEX, SpatialNodeIndex};
-use crate::composite::{CompositeMode, CompositeState};
+use crate::composite::{CompositorKind, CompositeState};
 use crate::debug_render::DebugItem;
 use crate::gpu_cache::{GpuCache, GpuCacheHandle};
 use crate::gpu_types::{PrimitiveHeaders, TransformPalette, UvRectKind, ZBufferIdGenerator};
@@ -18,7 +18,7 @@ use crate::picture::{PictureUpdateState, SurfaceInfo, ROOT_SURFACE_INDEX, Surfac
 use crate::picture::{RetainedTiles, TileCacheInstance, DirtyRegion, SurfaceRenderTasks, SubpixelMode};
 use crate::prim_store::{SpaceMapper, PictureIndex, PrimitiveDebugId, PrimitiveScratchBuffer};
 use crate::prim_store::{DeferredResolve, PrimitiveVisibilityMask};
-use crate::profiler::{FrameProfileCounters, GpuCacheProfileCounters, TextureCacheProfileCounters};
+use crate::profiler::{FrameProfileCounters, TextureCacheProfileCounters, ResourceProfileCounters};
 use crate::render_backend::{DataStores, FrameStamp, FrameId};
 use crate::render_target::{RenderTarget, PictureCacheTarget, TextureCacheRenderTarget};
 use crate::render_target::{RenderTargetContext, RenderTargetKind};
@@ -56,7 +56,8 @@ pub struct FrameBuilderConfig {
     pub dual_source_blending_is_supported: bool,
     pub dual_source_blending_is_enabled: bool,
     pub chase_primitive: ChasePrimitive,
-    pub enable_picture_caching: bool,
+    /// The immutable global picture caching enable from `RendererOptions`
+    pub global_enable_picture_caching: bool,
     /// True if we're running tests (i.e. via wrench).
     pub testing: bool,
     pub gpu_supports_fast_clears: bool,
@@ -64,7 +65,7 @@ pub struct FrameBuilderConfig {
     pub advanced_blend_is_coherent: bool,
     pub batch_lookback_count: usize,
     pub background_color: Option<ColorF>,
-    pub composite_mode: CompositeMode,
+    pub compositor_kind: CompositorKind,
 }
 
 /// A set of common / global resources that are retained between
@@ -314,6 +315,7 @@ impl FrameBuilder {
             gpu_cache,
             &scene.clip_store,
             data_stores,
+            composite_state,
         );
 
         {
@@ -349,6 +351,22 @@ impl FrameBuilder {
                 &visibility_context,
                 &mut visibility_state,
             );
+
+            // When a new display list is processed by WR, the existing tiles from
+            // any picture cache are stored in the `retained_tiles` field above. This
+            // allows the first frame of a new display list to reuse any existing tiles
+            // and surfaces that match. Once the `update_visibility` call above is
+            // complete, any tiles that are left remaining in the `retained_tiles`
+            // map are not needed and will be dropped. For simple compositing mode,
+            // this is fine, since texture cache handles are garbage collected at
+            // the end of each frame. However, if we're in native compositor mode,
+            // we need to manually clean up any native compositor surfaces that were
+            // allocated by these tiles.
+            for (_, cache_state) in visibility_state.retained_tiles.caches.drain() {
+                visibility_state.composite_state.destroy_native_surfaces(
+                    cache_state.tiles.values(),
+                );
+            }
         }
 
         let mut frame_state = FrameBuildingState {
@@ -443,8 +461,7 @@ impl FrameBuilder {
         layer: DocumentLayer,
         device_origin: DeviceIntPoint,
         pan: WorldPoint,
-        texture_cache_profile: &mut TextureCacheProfileCounters,
-        gpu_cache_profile: &mut GpuCacheProfileCounters,
+        resource_profile: &mut ResourceProfileCounters,
         scene_properties: &SceneProperties,
         data_stores: &mut DataStores,
         scratch: &mut PrimitiveScratchBuffer,
@@ -458,7 +475,7 @@ impl FrameBuilder {
         profile_counters
             .total_primitives
             .set(scene.prim_store.prim_count());
-
+        resource_profile.content_slices.set(scene.content_slice_count);
         resource_cache.begin_frame(stamp);
         gpu_cache.begin_frame(stamp);
 
@@ -480,7 +497,18 @@ impl FrameBuilder {
 
         let output_size = scene.output_rect.size.to_i32();
         let screen_world_rect = (scene.output_rect.to_f32() / global_device_pixel_scale).round_out();
-        let mut composite_state = CompositeState::new(scene.config.composite_mode);
+
+        // Determine if we will draw this frame with picture caching enabled. This depends on:
+        // (1) If globally enabled when WR was initialized
+        // (2) If current debug flags allow picture caching
+        // (3) [In future] Whether we are currently pinch zooming
+        let picture_caching_is_enabled =
+            scene.config.global_enable_picture_caching &&
+            !debug_flags.contains(DebugFlags::DISABLE_PICTURE_CACHING);
+        let mut composite_state = CompositeState::new(
+            scene.config.compositor_kind,
+            picture_caching_is_enabled,
+        );
 
         let main_render_task_id = self.build_layer_screen_rects_and_cull_layers(
             scene,
@@ -496,7 +524,7 @@ impl FrameBuilder {
             &mut surfaces,
             scratch,
             debug_flags,
-            texture_cache_profile,
+            &mut resource_profile.texture_cache,
             &mut composite_state,
         );
 
@@ -563,11 +591,11 @@ impl FrameBuilder {
             }
         }
 
-        let gpu_cache_frame_id = gpu_cache.end_frame(gpu_cache_profile).frame_id();
+        let gpu_cache_frame_id = gpu_cache.end_frame(&mut resource_profile.gpu_cache).frame_id();
 
         render_tasks.write_task_data();
         *render_task_counters = render_tasks.counters();
-        resource_cache.end_frame(texture_cache_profile);
+        resource_cache.end_frame(&mut resource_profile.texture_cache);
 
         Frame {
             content_origin: scene.output_rect.origin,
@@ -851,9 +879,9 @@ pub fn build_render_pass(
                             let scissor_rect  = match render_tasks[task_id].kind {
                                 RenderTaskKind::Picture(ref info) => info.scissor_rect,
                                 _ => unreachable!(),
-                            };
+                            }.expect("bug: dirty rect must be set for picture cache tasks");
                             let mut batch_containers = Vec::new();
-                            let mut alpha_batch_container = AlphaBatchContainer::new(scissor_rect);
+                            let mut alpha_batch_container = AlphaBatchContainer::new(Some(scissor_rect));
                             batcher.build(
                                 &mut batch_containers,
                                 &mut alpha_batch_container,
@@ -866,6 +894,7 @@ pub fn build_render_pass(
                                 surface: surface.clone(),
                                 clear_color,
                                 alpha_batch_container,
+                                dirty_rect: scissor_rect,
                             };
 
                             picture_cache.push(target);

@@ -1082,6 +1082,7 @@ pub enum DrawTarget {
     /// An OS compositor surface
     NativeSurface {
         offset: DeviceIntPoint,
+        external_fbo_id: u32,
         dimensions: DeviceIntSize,
     },
 }
@@ -1729,21 +1730,21 @@ impl Device {
     ) {
         let (fbo_id, rect, depth_available) = match target {
             DrawTarget::Default { rect, .. } => {
-                (Some(self.default_draw_fbo), rect, true)
+                (self.default_draw_fbo, rect, true)
             }
             DrawTarget::Texture { dimensions, fbo_id, with_depth, .. } => {
                 let rect = FramebufferIntRect::new(
                     FramebufferIntPoint::zero(),
                     FramebufferIntSize::from_untyped(dimensions.to_untyped()),
                 );
-                (Some(fbo_id), rect, with_depth)
+                (fbo_id, rect, with_depth)
             },
             DrawTarget::External { fbo, size } => {
-                (Some(fbo), size.into(), false)
+                (fbo, size.into(), false)
             }
-            DrawTarget::NativeSurface { offset, dimensions, .. } => {
+            DrawTarget::NativeSurface { external_fbo_id, offset, dimensions, .. } => {
                 (
-                    None,
+                    FBOId(external_fbo_id),
                     FramebufferIntRect::new(
                         FramebufferIntPoint::from_untyped(offset.to_untyped()),
                         FramebufferIntSize::from_untyped(dimensions.to_untyped()),
@@ -1754,9 +1755,7 @@ impl Device {
         };
 
         self.depth_available = depth_available;
-        if let Some(fbo_id) = fbo_id {
-            self.bind_draw_target_impl(fbo_id);
-        }
+        self.bind_draw_target_impl(fbo_id);
         self.gl.viewport(
             rect.origin.x,
             rect.origin.y,
@@ -3536,7 +3535,10 @@ impl<'a, T> TextureUploader<'a, T> {
         // for optimal PBO texture uploads the stride of the data in
         // the buffer may have to be a multiple of a certain value.
         let dst_stride = round_up_to_multiple(src_stride, self.target.optimal_pbo_stride);
-        let dst_size = (rect.size.height as usize - 1) * dst_stride + width_bytes;
+        // The size of the PBO should only need to be (height - 1) * dst_stride + width_bytes,
+        // however, the android emulator will error unless it is height * dst_stride.
+        // See bug 1587047 for details.
+        let dst_size = rect.size.height as usize * dst_stride;
 
         match self.buffer {
             Some(ref mut buffer) => {

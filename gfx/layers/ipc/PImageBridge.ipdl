@@ -10,12 +10,16 @@ include protocol PMediaSystemResourceManager;
 
 include "mozilla/GfxMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
+#ifdef MOZ_BUILD_WEBRENDER
 include "mozilla/layers/WebRenderMessageUtils.h";
+#endif
 
 using struct mozilla::layers::TextureInfo from "mozilla/layers/CompositorTypes.h";
 using mozilla::layers::TextureFlags from "mozilla/layers/CompositorTypes.h";
 using mozilla::layers::CompositableHandle from "mozilla/layers/LayersTypes.h";
+#ifdef MOZ_BUILD_WEBRENDER
 using mozilla::wr::MaybeExternalImageId from "mozilla/webrender/WebRenderTypes.h";
+#endif
 
 namespace mozilla {
 namespace layers {
@@ -50,7 +54,11 @@ parent:
   // before sending closing the channel.
   sync WillClose();
 
-  async PTexture(SurfaceDescriptor aSharedData, ReadLockDescriptor aReadLock, LayersBackend aBackend, TextureFlags aTextureFlags, uint64_t aSerial, MaybeExternalImageId aExternalImageId);
+  async PTexture(SurfaceDescriptor aSharedData, ReadLockDescriptor aReadLock, LayersBackend aBackend, TextureFlags aTextureFlags, uint64_t aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+                 , MaybeExternalImageId aExternalImageId
+#endif
+                 );
   async PMediaSystemResourceManager();
 
   sync NewCompositable(CompositableHandle aHandle, TextureInfo aInfo, LayersBackend aBackend);

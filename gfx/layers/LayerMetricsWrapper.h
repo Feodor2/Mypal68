@@ -335,7 +335,9 @@ class MOZ_STACK_CLASS LayerMetricsWrapper final {
     return Nothing();
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   Maybe<wr::RenderRoot> GetReferentRenderRoot() const { return Nothing(); }
+#endif
 
   Maybe<ParentLayerIntRect> GetClipRect() const {
     MOZ_ASSERT(IsValid());
@@ -383,6 +385,7 @@ class MOZ_STACK_CLASS LayerMetricsWrapper final {
     return mLayer->GetScrollbarData();
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   Maybe<uint64_t> GetScrollbarAnimationId() const {
     MOZ_ASSERT(IsValid());
     // This function is only really needed for template-compatibility with
@@ -390,6 +393,7 @@ class MOZ_STACK_CLASS LayerMetricsWrapper final {
     // value is not used.
     return Nothing();
   }
+#endif
 
   ScrollableLayerGuid::ViewID GetFixedPositionScrollContainerId() const {
     MOZ_ASSERT(IsValid());
@@ -403,6 +407,7 @@ class MOZ_STACK_CLASS LayerMetricsWrapper final {
     return mLayer->GetFixedPositionSides();
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   Maybe<uint64_t> GetZoomAnimationId() const {
     MOZ_ASSERT(IsValid());
     // This function is only really needed for template-compatibility with
@@ -410,6 +415,7 @@ class MOZ_STACK_CLASS LayerMetricsWrapper final {
     // value is not used.
     return Nothing();
   }
+#endif
 
   bool IsBackfaceHidden() const {
     MOZ_ASSERT(IsValid());

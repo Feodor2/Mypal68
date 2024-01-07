@@ -48,8 +48,10 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
-#include "mozilla/image/ImageMemoryReporter.h"
-#include "mozilla/layers/CompositorManagerChild.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/image/ImageMemoryReporter.h"
+#  include "mozilla/layers/CompositorManagerChild.h"
+#endif
 
 #include "nsIApplicationCache.h"
 #include "nsIApplicationCacheContainer.h"
@@ -82,6 +84,7 @@ class imgMemoryReporter final : public nsIMemoryReporter {
 
   NS_IMETHOD CollectReports(nsIHandleReportCallback* aHandleReport,
                             nsISupports* aData, bool aAnonymize) override {
+#ifdef MOZ_BUILD_WEBRENDER
     MOZ_ASSERT(NS_IsMainThread());
 
     layers::CompositorManagerChild* manager =
@@ -110,6 +113,7 @@ class imgMemoryReporter final : public nsIMemoryReporter {
   void FinishCollectReports(
       nsIHandleReportCallback* aHandleReport, nsISupports* aData,
       bool aAnonymize, layers::SharedSurfacesMemoryReport& aSharedSurfaces) {
+#endif
     nsTArray<ImageMemoryCounter> chrome;
     nsTArray<ImageMemoryCounter> content;
     nsTArray<ImageMemoryCounter> uncached;
@@ -138,16 +142,31 @@ class imgMemoryReporter final : public nsIMemoryReporter {
 
     // Note that we only need to anonymize content image URIs.
 
-    ReportCounterArray(aHandleReport, aData, chrome, "images/chrome",
-                       /* aAnonymize */ false, aSharedSurfaces);
+    ReportCounterArray(aHandleReport, aData, chrome, "images/chrome"
+#ifdef MOZ_BUILD_WEBRENDER
+                       ,
+                       /* aAnonymize */ false, aSharedSurfaces
+#endif
+    );
 
     ReportCounterArray(aHandleReport, aData, content, "images/content",
-                       aAnonymize, aSharedSurfaces);
+                       aAnonymize
+#ifdef MOZ_BUILD_WEBRENDER
+                       ,
+                       aSharedSurfaces
+#endif
+    );
 
     // Uncached images may be content or chrome, so anonymize them.
     ReportCounterArray(aHandleReport, aData, uncached, "images/uncached",
-                       aAnonymize, aSharedSurfaces);
+                       aAnonymize
+#ifdef MOZ_BUILD_WEBRENDER
+                       ,
+                       aSharedSurfaces
+#endif
+    );
 
+#ifdef MOZ_BUILD_WEBRENDER
     // Report any shared surfaces that were not merged with the surface cache.
     ImageMemoryReporter::ReportSharedSurfaces(aHandleReport, aData,
                                               aSharedSurfaces);
@@ -157,6 +176,9 @@ class imgMemoryReporter final : public nsIMemoryReporter {
     if (imgr) {
       imgr->EndReport();
     }
+#else
+    return NS_OK;
+#endif
   }
 
   static int64_t ImagesContentUsedUncompressedDistinguishedAmount() {
@@ -239,8 +261,14 @@ class imgMemoryReporter final : public nsIMemoryReporter {
   void ReportCounterArray(nsIHandleReportCallback* aHandleReport,
                           nsISupports* aData,
                           nsTArray<ImageMemoryCounter>& aCounterArray,
-                          const char* aPathPrefix, bool aAnonymize,
-                          layers::SharedSurfacesMemoryReport& aSharedSurfaces) {
+                          const char* aPathPrefix,
+#ifdef MOZ_BUILD_WEBRENDER
+                          bool aAnonymize,
+                          layers::SharedSurfacesMemoryReport& aSharedSurfaces
+#else
+                          bool aAnonymize = false
+#endif
+  ) {
     MemoryTotal summaryTotal;
     MemoryTotal nonNotableTotal;
 
@@ -263,11 +291,21 @@ class imgMemoryReporter final : public nsIMemoryReporter {
 
       summaryTotal += counter;
 
-      if (counter.IsNotable() || StaticPrefs::image_mem_debug_reporting()) {
-        ReportImage(aHandleReport, aData, aPathPrefix, counter,
-                    aSharedSurfaces);
+      if (counter.IsNotable()
+#ifdef MOZ_BUILD_WEBRENDER
+          || StaticPrefs::image_mem_debug_reporting()
+#endif
+      ) {
+        ReportImage(aHandleReport, aData, aPathPrefix, counter
+#ifdef MOZ_BUILD_WEBRENDER
+                    ,
+                    aSharedSurfaces
+#endif
+        );
       } else {
+#ifdef MOZ_BUILD_WEBRENDER
         ImageMemoryReporter::TrimSharedSurfaces(counter, aSharedSurfaces);
+#endif
         nonNotableTotal += counter;
       }
     }
@@ -283,8 +321,12 @@ class imgMemoryReporter final : public nsIMemoryReporter {
 
   static void ReportImage(nsIHandleReportCallback* aHandleReport,
                           nsISupports* aData, const char* aPathPrefix,
-                          const ImageMemoryCounter& aCounter,
-                          layers::SharedSurfacesMemoryReport& aSharedSurfaces) {
+                          const ImageMemoryCounter& aCounter
+#ifdef MOZ_BUILD_WEBRENDER
+                          ,
+                          layers::SharedSurfacesMemoryReport& aSharedSurfaces
+#endif
+  ) {
     nsAutoCString pathPrefix(NS_LITERAL_CSTRING("explicit/"));
     pathPrefix.Append(aPathPrefix);
     pathPrefix.Append(aCounter.Type() == imgIContainer::TYPE_RASTER
@@ -305,15 +347,24 @@ class imgMemoryReporter final : public nsIMemoryReporter {
 
     pathPrefix.AppendLiteral(")/");
 
-    ReportSurfaces(aHandleReport, aData, pathPrefix, aCounter, aSharedSurfaces);
+    ReportSurfaces(aHandleReport, aData, pathPrefix, aCounter
+#ifdef MOZ_BUILD_WEBRENDER
+                   ,
+                   aSharedSurfaces
+#endif
+    );
 
     ReportSourceValue(aHandleReport, aData, pathPrefix, aCounter.Values());
   }
 
-  static void ReportSurfaces(
-      nsIHandleReportCallback* aHandleReport, nsISupports* aData,
-      const nsACString& aPathPrefix, const ImageMemoryCounter& aCounter,
-      layers::SharedSurfacesMemoryReport& aSharedSurfaces) {
+  static void ReportSurfaces(nsIHandleReportCallback* aHandleReport,
+                             nsISupports* aData, const nsACString& aPathPrefix,
+                             const ImageMemoryCounter& aCounter
+#ifdef MOZ_BUILD_WEBRENDER
+                             ,
+                             layers::SharedSurfacesMemoryReport& aSharedSurfaces
+#endif
+  ) {
     for (const SurfaceMemoryCounter& counter : aCounter.Surfaces()) {
       nsAutoCString surfacePathPrefix(aPathPrefix);
       if (counter.IsLocked()) {
@@ -333,16 +384,25 @@ class imgMemoryReporter final : public nsIMemoryReporter {
       surfacePathPrefix.AppendInt(counter.Key().Size().height);
 
       if (counter.Values().ExternalHandles() > 0) {
-        surfacePathPrefix.AppendLiteral(", handles:");
+        surfacePathPrefix.AppendLiteral(
+#ifdef MOZ_BUILD_WEBRENDER
+            ", handles:"
+#else
+            ", external:"
+#endif
+        );
         surfacePathPrefix.AppendInt(
             uint32_t(counter.Values().ExternalHandles()));
       }
 
+#ifdef MOZ_BUILD_WEBRENDER
       ImageMemoryReporter::AppendSharedSurfacePrefix(surfacePathPrefix, counter,
                                                      aSharedSurfaces);
+#endif
 
       if (counter.Type() == SurfaceMemoryCounterType::NORMAL) {
         PlaybackType playback = counter.Key().Playback();
+#ifdef MOZ_BUILD_WEBRENDER
         if (playback == PlaybackType::eAnimated) {
           if (StaticPrefs::image_mem_debug_reporting()) {
             surfacePathPrefix.AppendPrintf(
@@ -351,6 +411,10 @@ class imgMemoryReporter final : public nsIMemoryReporter {
             surfacePathPrefix.AppendLiteral(" (animation)");
           }
         }
+#else
+        surfacePathPrefix.Append(
+            playback == PlaybackType::eAnimated ? " (animation)" : "");
+#endif
 
         if (counter.Key().Flags() != DefaultSurfaceFlags()) {
           surfacePathPrefix.AppendLiteral(", flags:");
@@ -1267,7 +1331,11 @@ void imgLoader::GlobalInit() {
   sCacheMaxSize = cachesize > 0 ? cachesize : 0;
 
   sMemReporter = new imgMemoryReporter();
+#ifdef MOZ_BUILD_WEBRENDER
   RegisterStrongAsyncMemoryReporter(sMemReporter);
+#else
+  RegisterStrongMemoryReporter(sMemReporter);
+#endif
   RegisterImagesContentUsedUncompressedDistinguishedAmount(
       imgMemoryReporter::ImagesContentUsedUncompressedDistinguishedAmount);
 }
@@ -1661,10 +1729,10 @@ bool imgLoader::ValidateRequestWithNewChannel(
     imgRequest* request, nsIURI* aURI, nsIURI* aInitialDocumentURI,
     nsIReferrerInfo* aReferrerInfo, nsILoadGroup* aLoadGroup,
     imgINotificationObserver* aObserver, nsISupports* aCX,
-    Document* aLoadingDocument, uint64_t aInnerWindowId,
-    nsLoadFlags aLoadFlags, nsContentPolicyType aLoadPolicyType,
-    imgRequestProxy** aProxyRequest, nsIPrincipal* aTriggeringPrincipal,
-    int32_t aCORSMode, bool* aNewChannelCreated) {
+    Document* aLoadingDocument, uint64_t aInnerWindowId, nsLoadFlags aLoadFlags,
+    nsContentPolicyType aLoadPolicyType, imgRequestProxy** aProxyRequest,
+    nsIPrincipal* aTriggeringPrincipal, int32_t aCORSMode,
+    bool* aNewChannelCreated) {
   // now we need to insert a new channel request object inbetween the real
   // request and the proxy that basically delays loading the image until it
   // gets a 304 or figures out that this needs to be a new request

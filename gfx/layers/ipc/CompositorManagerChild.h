@@ -57,6 +57,7 @@ class CompositorManagerChild : public PCompositorManagerChild {
 
   uint32_t GetNamespace() const { return mNamespace; }
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool OwnsExternalImageId(const wr::ExternalImageId& aId) const {
     return mNamespace == static_cast<uint32_t>(wr::AsUint64(aId) >> 32);
   }
@@ -68,6 +69,10 @@ class CompositorManagerChild : public PCompositorManagerChild {
     return wr::ToExternalImageId(id);
   }
 
+  mozilla::ipc::IPCResult RecvNotifyWebRenderError(
+      const WebRenderError&& aError);
+#endif
+
   void ActorDestroy(ActorDestroyReason aReason) override;
 
   void HandleFatalError(const char* aMsg) const override;
@@ -75,9 +80,6 @@ class CompositorManagerChild : public PCompositorManagerChild {
   void ProcessingError(Result aCode, const char* aReason) override;
 
   bool ShouldContinueFromReplyTimeout() override;
-
-  mozilla::ipc::IPCResult RecvNotifyWebRenderError(
-      const WebRenderError&& aError);
 
  private:
   static StaticRefPtr<CompositorManagerChild> sInstance;

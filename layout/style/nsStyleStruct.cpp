@@ -3746,10 +3746,12 @@ nsChangeHint nsStyleEffects::CalcDifference(
     hint |= nsChangeHint_RepaintFrame;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (HasBackdropFilters() != aNewData.HasBackdropFilters()) {
     // A change from/to being a containing block for position:fixed.
     hint |= nsChangeHint_UpdateContainingBlock;
   }
+#endif
 
   if (mBackdropFilters != aNewData.mBackdropFilters) {
     hint |= nsChangeHint_UpdateEffects | nsChangeHint_RepaintFrame;

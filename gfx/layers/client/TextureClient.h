@@ -25,7 +25,9 @@
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor
 #include "mozilla/mozalloc.h"               // for operator delete
 #include "mozilla/gfx/CriticalSection.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 #include "nsCOMPtr.h"         // for already_AddRefed
 #include "nsISupportsImpl.h"  // for TextureImage::AddRef, etc
 #include "GfxTexturesReporter.h"
@@ -631,7 +633,9 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
   // must only be called from the PaintThread.
   void DropPaintThreadRef();
 
+#ifdef MOZ_BUILD_WEBRENDER
   wr::MaybeExternalImageId GetExternalImageKey() { return mExternalImageId; }
+#endif
 
  private:
   static void TextureClientRecycleCallback(TextureClient* aClient,
@@ -723,11 +727,13 @@ class TextureClient : public AtomicRefCountedWithFinalize<TextureClient> {
   // When non-zero, texture data must not be freed.
   mozilla::Atomic<uintptr_t> mPaintThreadRefs;
 
+#ifdef MOZ_BUILD_WEBRENDER
   // External image id. It is unique if it is allocated.
   // The id is allocated in TextureClient::InitIPDLActor().
   // Its allocation is supported by
   // CompositorBridgeChild and ImageBridgeChild for now.
   wr::MaybeExternalImageId mExternalImageId;
+#endif
 
   // Used to assign serial ids of TextureClient.
   static mozilla::Atomic<uint64_t> sSerialCounter;

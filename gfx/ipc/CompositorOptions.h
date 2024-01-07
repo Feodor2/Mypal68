@@ -29,18 +29,31 @@ class CompositorOptions {
   // This constructor needed for IPDL purposes, don't use it anywhere else.
   CompositorOptions()
       : mUseAPZ(false),
+#ifdef MOZ_BUILD_WEBRENDER
         mUseWebRender(false),
+#endif
         mUseAdvancedLayers(false),
-        mInitiallyPaused(false) {}
+        mInitiallyPaused(false) {
+  }
 
-  CompositorOptions(bool aUseAPZ, bool aUseWebRender)
+  CompositorOptions(bool aUseAPZ
+#ifdef MOZ_BUILD_WEBRENDER
+                    ,
+                    bool aUseWebRender
+#endif
+                    )
       : mUseAPZ(aUseAPZ),
+#ifdef MOZ_BUILD_WEBRENDER
         mUseWebRender(aUseWebRender),
+#endif
         mUseAdvancedLayers(false),
-        mInitiallyPaused(false) {}
+        mInitiallyPaused(false) {
+  }
 
   bool UseAPZ() const { return mUseAPZ; }
+#ifdef MOZ_BUILD_WEBRENDER
   bool UseWebRender() const { return mUseWebRender; }
+#endif
   bool UseAdvancedLayers() const { return mUseAdvancedLayers; }
   bool InitiallyPaused() const { return mInitiallyPaused; }
 
@@ -53,7 +66,10 @@ class CompositorOptions {
   }
 
   bool operator==(const CompositorOptions& aOther) const {
-    return mUseAPZ == aOther.mUseAPZ && mUseWebRender == aOther.mUseWebRender &&
+    return mUseAPZ == aOther.mUseAPZ &&
+#ifdef MOZ_BUILD_WEBRENDER
+           mUseWebRender == aOther.mUseWebRender &&
+#endif
            mUseAdvancedLayers == aOther.mUseAdvancedLayers;
   }
 
@@ -61,7 +77,9 @@ class CompositorOptions {
 
  private:
   bool mUseAPZ;
+#ifdef MOZ_BUILD_WEBRENDER
   bool mUseWebRender;
+#endif
   bool mUseAdvancedLayers;
   bool mInitiallyPaused;
 

@@ -27,8 +27,13 @@ class APZCBasicTester : public APZCTesterBase {
     APZThreadUtils::SetControllerThread(MessageLoop::current());
 
     tm = new TestAPZCTreeManager(mcc);
+#ifdef MOZ_BUILD_WEBRENDER
     updater = new APZUpdater(tm, false);
     sampler = new APZSampler(tm, false);
+#else
+    updater = new APZUpdater(tm);
+    sampler = new APZSampler(tm);
+#endif
     apzc = new TestAsyncPanZoomController(
         LayersId{0}, mcc, tm, wr::RenderRoot::Default, mGestureBehavior);
     apzc->SetFrameMetrics(TestFrameMetrics());

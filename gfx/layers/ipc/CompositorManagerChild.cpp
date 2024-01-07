@@ -268,6 +268,7 @@ bool CompositorManagerChild::ShouldContinueFromReplyTimeout() {
   return false;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 mozilla::ipc::IPCResult CompositorManagerChild::RecvNotifyWebRenderError(
     const WebRenderError&& aError) {
   MOZ_ASSERT(XRE_IsParentProcess());
@@ -275,6 +276,7 @@ mozilla::ipc::IPCResult CompositorManagerChild::RecvNotifyWebRenderError(
   GPUProcessManager::Get()->NotifyWebRenderError(aError);
   return IPC_OK();
 }
+#endif
 
 }  // namespace layers
 }  // namespace mozilla

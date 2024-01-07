@@ -4,7 +4,9 @@
 
 #include "AnimationInfo.h"
 #include "mozilla/LayerAnimationInfo.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#endif
 #include "mozilla/layers/AnimationHelper.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/dom/Animation.h"
@@ -165,12 +167,14 @@ Maybe<uint64_t> AnimationInfo::GetGenerationFromFrame(
   if (nsLayoutUtils::IsFirstContinuationOrIBSplitSibling(aFrame)) {
     aFrame = nsLayoutUtils::LastContinuationOrIBSplitSibling(aFrame);
   }
+#ifdef MOZ_BUILD_WEBRENDER
   RefPtr<WebRenderAnimationData> animationData =
       GetWebRenderUserData<WebRenderAnimationData>(aFrame,
                                                    (uint32_t)aDisplayItemKey);
   if (animationData) {
     return animationData->GetAnimationInfo().GetAnimationGeneration();
   }
+#endif
 
   return Nothing();
 }
@@ -205,6 +209,7 @@ void AnimationInfo::EnumerateGenerationOnFrame(
   RefPtr<LayerManager> layerManager =
       nsContentUtils::LayerManagerForContent(aContent);
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (layerManager &&
       layerManager->GetBackendType() == layers::LayersBackend::LAYERS_WR) {
     // In case of continuation, nsDisplayItem uses its last continuation, so we
@@ -231,6 +236,7 @@ void AnimationInfo::EnumerateGenerationOnFrame(
     }
     return;
   }
+#endif
 
   FrameLayerBuilder::EnumerateGenerationForDedicatedLayers(aFrame, aCallback);
 }

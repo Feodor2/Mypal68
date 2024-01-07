@@ -42,7 +42,9 @@
 #include "gfxMathTable.h"
 #include "gfxSVGGlyphs.h"
 #include "gfx2DGlue.h"
-#include "TextDrawTarget.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "TextDrawTarget.h"
+#endif
 
 #include "GreekCasing.h"
 
@@ -1913,12 +1915,17 @@ void gfxFont::DrawOneGlyph(uint32_t aGlyphID, const gfx::Point& aPt,
   if (FC == FontComplexityT::ComplexFont) {
     const FontDrawParams& fontParams(aBuffer.mFontParams);
 
+#ifdef MOZ_BUILD_WEBRENDER
     auto* textDrawer = runParams.context->GetTextDrawer();
+#endif
 
     gfxContextMatrixAutoSaveRestore matrixRestore;
 
-    if (fontParams.obliqueSkew != 0.0f && fontParams.isVerticalFont &&
-        !textDrawer) {
+    if (fontParams.obliqueSkew != 0.0f && fontParams.isVerticalFont
+#ifdef MOZ_BUILD_WEBRENDER
+        && !textDrawer
+#endif
+    ) {
       // We have to flush each glyph individually when doing
       // synthetic-oblique for vertical-upright text, because
       // the skew transform needs to be applied to a separate
@@ -1940,16 +1947,22 @@ void gfxFont::DrawOneGlyph(uint32_t aGlyphID, const gfx::Point& aPt,
       NS_WARNING_ASSERTION(
           runParams.drawMode != DrawMode::GLYPH_PATH,
           "Rendering SVG glyph despite request for glyph path");
-      if (RenderSVGGlyph(runParams.context, textDrawer, devPt, aGlyphID,
-                         fontParams.contextPaint, runParams.callbacks,
-                         *aEmittedGlyphs)) {
+      if (RenderSVGGlyph(runParams.context,
+#ifdef MOZ_BUILD_WEBRENDER
+                         textDrawer,
+#endif
+                         devPt, aGlyphID, fontParams.contextPaint,
+                         runParams.callbacks, *aEmittedGlyphs)) {
         return;
       }
     }
 
     if (fontParams.haveColorGlyphs &&
         !gfxPlatform::GetPlatform()->HasNativeColrFontSupport() &&
-        RenderColorGlyph(runParams.dt, runParams.context, textDrawer,
+        RenderColorGlyph(runParams.dt, runParams.context,
+#ifdef MOZ_BUILD_WEBRENDER
+                         textDrawer,
+#endif
                          fontParams.scaledFont, fontParams.drawOptions, devPt,
                          aGlyphID)) {
       return;
@@ -1967,8 +1980,11 @@ void gfxFont::DrawOneGlyph(uint32_t aGlyphID, const gfx::Point& aPt,
       aBuffer.OutputGlyph(aGlyphID, devPt);
     }
 
-    if (fontParams.obliqueSkew != 0.0f && fontParams.isVerticalFont &&
-        !textDrawer) {
+    if (fontParams.obliqueSkew != 0.0f && fontParams.isVerticalFont
+#ifdef MOZ_BUILD_WEBRENDER
+        && !textDrawer
+#endif
+    ) {
       aBuffer.Flush();
     }
   } else {
@@ -1986,9 +2002,10 @@ bool gfxFont::DrawMissingGlyph(const TextRunDrawParams& aRunParams,
   // we don't have to draw the hexbox for them.
   float advance = aDetails->mAdvance;
   if (aRunParams.drawMode != DrawMode::GLYPH_PATH && advance > 0) {
-    auto* textDrawer = aRunParams.context->GetTextDrawer();
     const Matrix* matPtr = nullptr;
     Matrix mat;
+#ifdef MOZ_BUILD_WEBRENDER
+    auto* textDrawer = aRunParams.context->GetTextDrawer();
     if (textDrawer) {
       // Generate an orientation matrix for the current writing mode
       wr::FontInstanceFlags flags = textDrawer->GetWRGlyphFlags();
@@ -2000,6 +2017,7 @@ bool gfxFont::DrawMissingGlyph(const TextRunDrawParams& aRunParams,
                     flags & wr::FontInstanceFlags::FLIP_Y ? -1.0f : 1.0f);
       matPtr = &mat;
     }
+#endif
 
     Point pt(Float(ToDeviceUnits(aPt.x, aRunParams.devPerApp)),
              Float(ToDeviceUnits(aPt.y, aRunParams.devPerApp)));
@@ -2016,8 +2034,11 @@ bool gfxFont::DrawMissingGlyph(const TextRunDrawParams& aRunParams,
     // of the drawTarget's transform, we need to undo
     // this before drawing the hexbox. (Bug 983985)
     gfxContextMatrixAutoSaveRestore matrixRestore;
-    if (aFontParams.obliqueSkew != 0.0f && !aFontParams.isVerticalFont &&
-        !textDrawer) {
+    if (aFontParams.obliqueSkew != 0.0f && !aFontParams.isVerticalFont
+#ifdef MOZ_BUILD_WEBRENDER
+        && !textDrawer
+#endif
+    ) {
       matrixRestore.SetContext(aRunParams.context);
       gfx::Matrix mat =
           aRunParams.context->CurrentMatrix()
@@ -2096,22 +2117,27 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
     return;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   auto* textDrawer = aRunParams.context->GetTextDrawer();
+#endif
 
   fontParams.obliqueSkew = SkewForSyntheticOblique();
   fontParams.haveSVGGlyphs = GetFontEntry()->TryGetSVGData(this);
   fontParams.haveColorGlyphs = GetFontEntry()->TryGetColorGlyphs();
   fontParams.contextPaint = aRunParams.runContextPaint;
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (textDrawer) {
     fontParams.isVerticalFont = aRunParams.isVerticalRun;
   } else {
+#endif
     fontParams.isVerticalFont =
         aOrientation == gfx::ShapedTextFlags::TEXT_ORIENT_VERTICAL_UPRIGHT;
+#ifdef MOZ_BUILD_WEBRENDER
   }
+#endif
 
   gfxContextMatrixAutoSaveRestore matrixRestore;
-  layout::TextDrawTarget::AutoRestoreWRGlyphFlags glyphFlagsRestore;
 
   // Save the current baseline offset for restoring later, in case it is
   // modified.
@@ -2142,6 +2168,8 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
   // If we're rendering a sideways run, we need to push a rotation transform to
   // the context.
   if (sidewaysDir != 0.0f) {
+#ifdef MOZ_BUILD_WEBRENDER
+    layout::TextDrawTarget::AutoRestoreWRGlyphFlags glyphFlagsRestore;
     if (textDrawer) {
       // For WebRender, we can't use a DrawTarget transform and must instead use
       // flags that locally transform the glyph, without affecting the glyph
@@ -2179,6 +2207,7 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
               ? &kSidewaysLeft
               : &kSidewaysRight;
     } else {
+#endif
       // For non-WebRender targets, just push a rotation transform.
       matrixRestore.SetContext(aRunParams.context);
       gfxPoint p(aPt->x * aRunParams.devPerApp, aPt->y * aRunParams.devPerApp);
@@ -2193,7 +2222,9 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
                       PreTranslate(-p);  // undo the translation
 
       aRunParams.context->SetMatrixDouble(mat);
+#ifdef MOZ_BUILD_WEBRENDER
     }
+#endif
 
     // If we're drawing rotated horizontal text for an element styled
     // text-orientation:mixed, the dominant baseline will be vertical-
@@ -2211,8 +2242,11 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
     }
   }
 
-  if (fontParams.obliqueSkew != 0.0f && !fontParams.isVerticalFont &&
-      !textDrawer) {
+  if (fontParams.obliqueSkew != 0.0f && !fontParams.isVerticalFont
+#ifdef MOZ_BUILD_WEBRENDER
+      && !textDrawer
+#endif
+  ) {
     // Adjust matrix for synthetic-oblique, except if we're doing vertical-
     // upright text, in which case this will be handled for each glyph
     // individually in DrawOneGlyph.
@@ -2243,7 +2277,11 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
   // (these values are only needed if IsSyntheticBold() is true)
   // WebRender handles synthetic bold independently via FontInstanceFlags,
   // so just ignore requests in that case.
-  if (IsSyntheticBold() && !textDrawer) {
+  if (IsSyntheticBold()
+#ifdef MOZ_BUILD_WEBRENDER
+      && !textDrawer
+#endif
+  ) {
     gfx::Float xscale = CalcXScale(aRunParams.context->GetDrawTarget());
     fontParams.synBoldOnePixelOffset = aRunParams.direction * xscale;
     if (xscale != 0.0) {
@@ -2280,8 +2318,11 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
     GlyphBufferAzure buffer(aRunParams, fontParams);
     if (fontParams.haveSVGGlyphs || fontParams.haveColorGlyphs ||
         fontParams.extraStrikes ||
-        (fontParams.obliqueSkew != 0.0f && fontParams.isVerticalFont &&
-         !textDrawer)) {
+        (fontParams.obliqueSkew != 0.0f && fontParams.isVerticalFont
+#ifdef MOZ_BUILD_WEBRENDER
+         && !textDrawer
+#endif
+         )) {
       if (aRunParams.spacing) {
         emittedGlyphs =
             DrawGlyphs<FontComplexityT::ComplexFont, SpacingT::HasSpacing>(
@@ -2313,7 +2354,11 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
   aRunParams.dt->SetTransform(oldMat);
   aRunParams.dt->SetPermitSubpixelAA(oldSubpixelAA);
 
-  if (sidewaysDir != 0.0f && !textDrawer) {
+  if (sidewaysDir != 0.0f
+#ifdef MOZ_BUILD_WEBRENDER
+      && !textDrawer
+#endif
+  ) {
     // Adjust updated aPt to account for the transform we were using.
     // The advance happened horizontally in local-space, but the transformed
     // sideways advance is actually vertical, with sign depending on the
@@ -2324,19 +2369,23 @@ void gfxFont::Draw(const gfxTextRun* aTextRun, uint32_t aStart, uint32_t aEnd,
 }
 
 bool gfxFont::RenderSVGGlyph(gfxContext* aContext,
+#ifdef MOZ_BUILD_WEBRENDER
                              layout::TextDrawTarget* aTextDrawer,
+#endif
                              gfx::Point aPoint, uint32_t aGlyphId,
                              SVGContextPaint* aContextPaint) const {
   if (!GetFontEntry()->HasSVGGlyph(aGlyphId)) {
     return false;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (aTextDrawer) {
     // WebRender doesn't support SVG Glyphs.
     // (pretend to succeed, output doesn't matter, we will emit a blob)
     aTextDrawer->FoundUnsupportedFeature();
     return true;
   }
+#endif
 
   const gfxFloat devUnitsPerSVGUnit =
       GetAdjustedSize() / GetFontEntry()->UnitsPerEm();
@@ -2354,7 +2403,9 @@ bool gfxFont::RenderSVGGlyph(gfxContext* aContext,
 }
 
 bool gfxFont::RenderSVGGlyph(gfxContext* aContext,
+#ifdef MOZ_BUILD_WEBRENDER
                              layout::TextDrawTarget* aTextDrawer,
+#endif
                              gfx::Point aPoint, uint32_t aGlyphId,
                              SVGContextPaint* aContextPaint,
                              gfxTextRunDrawCallbacks* aCallbacks,
@@ -2363,11 +2414,17 @@ bool gfxFont::RenderSVGGlyph(gfxContext* aContext,
     aCallbacks->NotifyGlyphPathEmitted();
     aEmittedGlyphs = false;
   }
-  return RenderSVGGlyph(aContext, aTextDrawer, aPoint, aGlyphId, aContextPaint);
+  return RenderSVGGlyph(aContext,
+#ifdef MOZ_BUILD_WEBRENDER
+                        aTextDrawer,
+#endif
+                        aPoint, aGlyphId, aContextPaint);
 }
 
 bool gfxFont::RenderColorGlyph(DrawTarget* aDrawTarget, gfxContext* aContext,
+#ifdef MOZ_BUILD_WEBRENDER
                                layout::TextDrawTarget* aTextDrawer,
+#endif
                                mozilla::gfx::ScaledFont* scaledFont,
                                mozilla::gfx::DrawOptions aDrawOptions,
                                const mozilla::gfx::Point& aPoint,
@@ -2386,6 +2443,7 @@ bool gfxFont::RenderColorGlyph(DrawTarget* aDrawTarget, gfxContext* aContext,
 
   // Default to opaque rendering (non-webrender applies alpha with a layer)
   float alpha = 1.0;
+#ifdef MOZ_BUILD_WEBRENDER
   if (aTextDrawer) {
     // defaultColor is the one that comes from CSS, so it has transparency info.
     bool hasComplexTransparency = 0.f < defaultColor.a && defaultColor.a < 1.f;
@@ -2405,6 +2463,7 @@ bool gfxFont::RenderColorGlyph(DrawTarget* aDrawTarget, gfxContext* aContext,
     // might be wrapped in a shadow that uses the text run's glyphs.
     alpha = defaultColor.a;
   }
+#endif
 
   for (uint32_t layerIndex = 0; layerIndex < layerGlyphs.Length();
        layerIndex++) {

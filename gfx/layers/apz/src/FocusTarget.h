@@ -9,8 +9,10 @@
 
 #include "mozilla/DefineEnum.h"                  // for MOZ_DEFINE_ENUM
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ViewID
-#include "mozilla/webrender/WebRenderTypes.h"    // for RenderRoot
-#include "mozilla/Variant.h"                     // for Variant
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"  // for RenderRoot
+#endif
+#include "mozilla/Variant.h"  // for Variant
 
 namespace mozilla {
 
@@ -28,13 +30,16 @@ class FocusTarget final {
  public:
   struct ScrollTargets {
     ScrollableLayerGuid::ViewID mHorizontal;
-    wr::RenderRoot mHorizontalRenderRoot;
     ScrollableLayerGuid::ViewID mVertical;
+#ifdef MOZ_BUILD_WEBRENDER
+    wr::RenderRoot mHorizontalRenderRoot;
     wr::RenderRoot mVerticalRenderRoot;
+#endif
 
     bool operator==(const ScrollTargets& aRhs) const {
       bool ret =
           (mHorizontal == aRhs.mHorizontal && mVertical == aRhs.mVertical);
+#ifdef MOZ_BUILD_WEBRENDER
       if (ret) {
         // The render root is a function of where the scrollable frame is in
         // the DOM/layout tree, so if the ViewIDs match then the render roots
@@ -42,6 +47,7 @@ class FocusTarget final {
         MOZ_ASSERT(mHorizontalRenderRoot == aRhs.mHorizontalRenderRoot &&
                    mVerticalRenderRoot == aRhs.mVerticalRenderRoot);
       }
+#endif
       return ret;
     }
   };

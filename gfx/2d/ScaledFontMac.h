@@ -36,9 +36,11 @@ class ScaledFontMac : public ScaledFontBase {
 
   bool GetFontInstanceData(FontInstanceDataOutput aCb, void* aBaton) override;
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool GetWRFontInstanceOptions(Maybe<wr::FontInstanceOptions>* aOutOptions,
                                 Maybe<wr::FontInstancePlatformOptions>* aOutPlatformOptions,
                                 std::vector<FontVariation>* aOutVariations) override;
+#endif
 
   bool CanSerialize() override { return true; }
 

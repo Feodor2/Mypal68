@@ -21,7 +21,6 @@
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/gfxVars.h"
-#include "mozilla/image/ImageMemoryReporter.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/layers/APZInputBridgeParent.h"
@@ -34,8 +33,11 @@
 #include "mozilla/layers/LayerTreeOwnerTracker.h"
 #include "mozilla/layers/UiCompositorControllerParent.h"
 #include "mozilla/layers/MemoryReportingMLGPU.h"
-#include "mozilla/webrender/RenderThread.h"
-#include "mozilla/webrender/WebRenderAPI.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/image/ImageMemoryReporter.h"
+#  include "mozilla/webrender/RenderThread.h"
+#  include "mozilla/webrender/WebRenderAPI.h"
+#endif
 #include "mozilla/HangDetails.h"
 #include "nscore.h"
 #include "nsDebugImpl.h"
@@ -182,6 +184,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   gfxConfig::Inherit(Feature::ADVANCED_LAYERS, devicePrefs.advancedLayers());
   gfxConfig::Inherit(Feature::DIRECT2D, devicePrefs.useD2D1());
 
+#ifdef MOZ_BUILD_WEBRENDER
   {  // Let the crash reporter know if we've got WR enabled or not. For other
     // processes this happens in gfxPlatform::InitWebRenderConfig.
     ScopedGfxFeatureReporter reporter("WR",
@@ -190,6 +193,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
       reporter.SetSuccessful();
     }
   }
+#endif
 
   for (const LayerTreeIdMapping& map : aMappings) {
     LayerTreeOwnerTracker::Get()->Map(map.layersId(), map.ownerId());
@@ -203,6 +207,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   if (gfxConfig::IsEnabled(Feature::D3D11_COMPOSITING)) {
     DeviceManagerDx::Get()->CreateCompositorDevices();
   }
+#  ifdef MOZ_BUILD_WEBRENDER
   if (gfxVars::UseWebRender()) {
     DeviceManagerDx::Get()->CreateDirectCompositionDevice();
     // Ensure to initialize GfxInfo
@@ -211,6 +216,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
 
     Factory::EnsureDWriteFactory();
   }
+#  endif
 #endif
 
 #if defined(MOZ_WIDGET_GTK)
@@ -239,6 +245,7 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
   // Ensure we have an FT library for font instantiation.
   // This would normally be set by gfxPlatform::Init().
   // Since we bypass that, we must do it here instead.
+#  ifdef MOZ_BUILD_WEBRENDER
   if (gfxVars::UseWebRender()) {
     FT_Library library = Factory::NewFTLibrary();
     MOZ_ASSERT(library);
@@ -246,15 +253,19 @@ mozilla::ipc::IPCResult GPUParent::RecvInit(
 
     SkInitCairoFT(true);
   }
+#  endif
 #endif
 
   // Make sure to do this *after* we update gfxVars above.
+#ifdef MOZ_BUILD_WEBRENDER
   if (gfxVars::UseWebRender()) {
     wr::RenderThread::Start();
     image::ImageMemoryReporter::InitForWebRender();
   }
-#ifdef XP_WIN
-  else {
+#  ifdef XP_WIN
+  else
+#  endif
+  {
     if (gfxVars::UseDoubleBufferingWithCompositor()) {
       // This is needed to avoid freezing the window on a device crash on double
       // buffering, see bug 1549674.
@@ -380,9 +391,11 @@ mozilla::ipc::IPCResult GPUParent::RecvSimulateDeviceReset(
   DeviceManagerDx::Get()->ForceDeviceReset(
       ForcedDeviceResetReason::COMPOSITOR_UPDATED);
   DeviceManagerDx::Get()->MaybeResetAndReacquireDevices();
+#  ifdef MOZ_BUILD_WEBRENDER
   if (gfxVars::UseWebRender()) {
     wr::RenderThread::Get()->SimulateDeviceReset();
   }
+#  endif
 #endif
   RecvGetDeviceStatus(aOut);
   return IPC_OK();
@@ -513,18 +526,22 @@ void GPUParent::ActorDestroy(ActorDestroyReason aWhy) {
   }
   RemoteDecoderManagerParent::ShutdownVideoBridge();
   CompositorThreadHolder::Shutdown();
+#ifdef MOZ_BUILD_WEBRENDER
   // There is a case that RenderThread exists when gfxVars::UseWebRender() is
   // false. This could happen when WebRender was fallbacked to compositor.
   if (wr::RenderThread::Get()) {
     wr::RenderThread::ShutDown();
   }
+#endif
 #ifdef XP_WIN
   if (widget::WinCompositorWindowThread::Get()) {
     widget::WinCompositorWindowThread::ShutDown();
   }
 #endif
 
+#ifdef MOZ_BUILD_WEBRENDER
   image::ImageMemoryReporter::ShutdownForWebRender();
+#endif
 
   // Shut down the default GL context provider.
   gl::GLContextProvider::Shutdown();

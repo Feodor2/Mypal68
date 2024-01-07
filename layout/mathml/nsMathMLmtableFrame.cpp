@@ -308,6 +308,7 @@ class nsDisplaymtdBorder final : public nsDisplayBorder {
     nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -316,6 +317,7 @@ class nsDisplaymtdBorder final : public nsDisplayBorder {
       nsDisplayListBuilder* aDisplayListBuilder) override {
     return false;
   }
+#endif
 };
 
 #ifdef DEBUG

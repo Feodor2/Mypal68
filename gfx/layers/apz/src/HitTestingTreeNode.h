@@ -109,8 +109,11 @@ class HitTestingTreeNode {
 
   /* Scrollbar info */
 
-  void SetScrollbarData(const Maybe<uint64_t>& aScrollbarAnimationId,
-                        const ScrollbarData& aScrollbarData);
+  void SetScrollbarData(
+#ifdef MOZ_BUILD_WEBRENDER
+      const Maybe<uint64_t>& aScrollbarAnimationId,
+#endif
+      const ScrollbarData& aScrollbarData);
   bool MatchesScrollDragMetrics(const AsyncDragMetrics& aDragMetrics) const;
   bool IsScrollbarNode() const;  // Scroll thumb or scrollbar container layer.
   // This can only be called if IsScrollbarNode() is true
@@ -118,7 +121,9 @@ class HitTestingTreeNode {
   bool IsScrollThumbNode() const;  // Scroll thumb container layer.
   ScrollableLayerGuid::ViewID GetScrollTargetId() const;
   const ScrollbarData& GetScrollbarData() const;
+#ifdef MOZ_BUILD_WEBRENDER
   Maybe<uint64_t> GetScrollbarAnimationId() const;
+#endif
 
   /* Fixed pos info */
 
@@ -168,10 +173,12 @@ class HitTestingTreeNode {
 
   LayersId mLayersId;
 
+#ifdef MOZ_BUILD_WEBRENDER
   // This is only set if WebRender is enabled, and only for HTTNs
   // where IsScrollThumbNode() returns true. It holds the animation id that we
   // use to move the thumb node to reflect async scrolling.
   Maybe<uint64_t> mScrollbarAnimationId;
+#endif
 
   // This is set for scrollbar Container and Thumb layers.
   ScrollbarData mScrollbarData;

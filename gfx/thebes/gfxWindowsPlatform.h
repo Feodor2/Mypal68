@@ -50,7 +50,7 @@ class DeviceManagerDx;
 namespace layers {
 class DeviceManagerD3D9;
 class ReadbackManagerD3D11;
-}
+}  // namespace layers
 }  // namespace mozilla
 struct IDirect3DDevice9;
 struct ID3D11Device;
@@ -242,7 +242,9 @@ class gfxWindowsPlatform : public gfxPlatform {
 
   void Init();
   void InitAcceleration() override;
+#ifdef MOZ_BUILD_WEBRENDER
   void InitWebRenderConfig() override;
+#endif
 
   void InitializeDevices();
   void InitializeD3D11();

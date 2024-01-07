@@ -134,7 +134,12 @@ class GLContextEGL : public GLContext {
 #endif  // defined(MOZ_WIDGET_ANDROID)
 };
 
-bool CreateConfig(EGLConfig* config, int32_t depth, bool enableDepthBuffer);
+bool CreateConfig(EGLConfig* config, int32_t depth
+#ifdef MOZ_BUILD_WEBRENDER
+                  ,
+                  bool enableDepthBuffer
+#endif
+);
 
 }  // namespace gl
 }  // namespace mozilla

@@ -71,7 +71,12 @@ bool SourceSurfaceAlignedRawData::Init(const IntSize& aSize,
 
 void SourceSurfaceAlignedRawData::AddSizeOfExcludingThis(
     MallocSizeOf aMallocSizeOf, size_t& aHeapSizeOut, size_t& aNonHeapSizeOut,
-    size_t& aExtHandlesOut, uint64_t& aExtIdOut) const {
+    size_t& aExtHandlesOut
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    uint64_t& aExtIdOut
+#endif
+) const {
   aHeapSizeOut += mArray.HeapSizeOfExcludingThis(aMallocSizeOf);
 }
 

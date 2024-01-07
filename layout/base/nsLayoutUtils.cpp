@@ -127,12 +127,14 @@
 #include "RegionBuilder.h"
 #include "SVGViewportElement.h"
 #include "DisplayItemClip.h"
-#include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/StackingContextHelper.h"
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#  include "TextDrawTarget.h"
+#endif
 #include "prenv.h"
 #include "RetainedDisplayListBuilder.h"
 #include "DisplayListChecker.h"
-#include "TextDrawTarget.h"
 #include "nsDeckFrame.h"
 #include "mozilla/dom/InspectorFontFace.h"
 
@@ -3708,9 +3710,11 @@ nsresult nsLayoutUtils::PaintFrame(gfxContext* aRenderingContext,
   if (aFlags & (PaintFrameFlags::WidgetLayers | PaintFrameFlags::ToWindow)) {
     builder->SetPaintingToWindow(true);
   }
+#ifdef MOZ_BUILD_WEBRENDER
   if (aFlags & PaintFrameFlags::ForWebRender) {
     builder->SetPaintingForWebRender(true);
   }
+#endif
   if (aFlags & PaintFrameFlags::IgnoreSuppression) {
     builder->IgnorePaintSuppression();
   }
@@ -6127,6 +6131,7 @@ void nsLayoutUtils::PaintTextShadow(
 
     nscolor shadowColor = shadow.color.CalcColor(aForegroundColor);
 
+#ifdef MOZ_BUILD_WEBRENDER
     // Webrender just needs the shadow details
     if (auto* textDrawer = aContext->GetTextDrawer()) {
       wr::Shadow wrShadow;
@@ -6144,6 +6149,7 @@ void nsLayoutUtils::PaintTextShadow(
       textDrawer->AppendShadow(wrShadow, inflate);
       continue;
     }
+#endif
 
     gfxContext* shadowContext = contextBoxBlur.Init(
         shadowRect, 0, blurRadius, presCtx->AppUnitsPerDevPixel(), aDestCtx,
@@ -6920,6 +6926,7 @@ CSSIntSize nsLayoutUtils::ComputeSizeForDrawingWithFallback(
   return imageSize;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 /* static */
 IntSize nsLayoutUtils::ComputeImageContainerDrawingParameters(
     imgIContainer* aImage, nsIFrame* aForFrame,
@@ -6994,6 +7001,7 @@ IntSize nsLayoutUtils::ComputeImageContainerDrawingParameters(
   return aImage->OptimalImageSizeForDest(
       gfxLayerSize, imgIContainer::FRAME_CURRENT, samplingFilter, aFlags);
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 /* static */
 nsPoint nsLayoutUtils::GetBackgroundFirstTilePos(const nsPoint& aDest,
@@ -8599,9 +8607,11 @@ void nsLayoutUtils::DoLogTestDataForPaint(LayerManager* aManager,
   MOZ_ASSERT(nsLayoutUtils::IsAPZTestLoggingEnabled(), "don't call me");
   if (ClientLayerManager* mgr = aManager->AsClientLayerManager()) {
     mgr->LogTestDataForCurrentPaint(aScrollId, aKey, aValue);
+#ifdef MOZ_BUILD_WEBRENDER
   } else if (WebRenderLayerManager* wrlm =
                  aManager->AsWebRenderLayerManager()) {
     wrlm->LogTestDataForCurrentPaint(aScrollId, aKey, aValue);
+#endif
   }
 }
 
@@ -8614,8 +8624,10 @@ void nsLayoutUtils::LogAdditionalTestData(nsDisplayListBuilder* aBuilder,
   }
   if (ClientLayerManager* clm = manager->AsClientLayerManager()) {
     clm->LogAdditionalTestData(aKey, aValue);
+#ifdef MOZ_BUILD_WEBRENDER
   } else if (WebRenderLayerManager* wrlm = manager->AsWebRenderLayerManager()) {
     wrlm->LogAdditionalTestData(aKey, aValue);
+#endif
   }
 }
 
@@ -9974,4 +9986,3 @@ ComputedStyle* nsLayoutUtils::StyleForScrollbar(nsIFrame* aScrollbarPart) {
   // held strongly by the element.
   return style.get();
 }
-

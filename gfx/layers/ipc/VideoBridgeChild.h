@@ -47,7 +47,9 @@ class VideoBridgeChild final : public PVideoBridgeChild,
                                const ReadLockDescriptor& aReadLock,
                                LayersBackend aLayersBackend,
                                TextureFlags aFlags, uint64_t aSerial,
+#ifdef MOZ_BUILD_WEBRENDER
                                wr::MaybeExternalImageId& aExternalImageId,
+#endif
                                nsIEventTarget* aTarget = nullptr) override;
 
   // ClientIPCAllocator

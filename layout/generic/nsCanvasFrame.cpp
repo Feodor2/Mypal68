@@ -23,8 +23,10 @@
 #include "mozilla/AccessibleCaretEventHub.h"
 #include "mozilla/ComputedStyle.h"
 #include "mozilla/dom/AnonymousContent.h"
-#include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/layers/RenderRootStateManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/StackingContextHelper.h"
+#  include "mozilla/layers/RenderRootStateManager.h"
+#endif
 #include "mozilla/PresShell.h"
 // for focus
 #include "nsIScrollableFrame.h"
@@ -352,6 +354,7 @@ already_AddRefed<Layer> nsDisplayCanvasBackgroundColor::BuildLayer(
   return layer.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayCanvasBackgroundColor::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -372,6 +375,7 @@ bool nsDisplayCanvasBackgroundColor::CreateWebRenderCommands(
                     wr::ToColorF(ToDeviceColor(mColor)));
   return true;
 }
+#endif
 
 #ifdef MOZ_DUMP_PAINTING
 void nsDisplayCanvasBackgroundColor::WriteDebugInfo(

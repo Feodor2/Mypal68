@@ -6,10 +6,12 @@
 #define mozilla_layers_AnimationHelper_h
 
 #include "mozilla/dom/Nullable.h"
-#include "mozilla/ComputedTimingFunction.h"    // for ComputedTimingFunction
-#include "mozilla/layers/LayersMessages.h"     // for TransformData, etc
-#include "mozilla/webrender/WebRenderTypes.h"  // for RenderRoot
-#include "mozilla/TimeStamp.h"                 // for TimeStamp
+#include "mozilla/ComputedTimingFunction.h"  // for ComputedTimingFunction
+#include "mozilla/layers/LayersMessages.h"   // for TransformData, etc
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"  // for RenderRoot
+#endif
+#include "mozilla/TimeStamp.h"  // for TimeStamp
 #include "mozilla/TimingParams.h"
 #include "mozilla/Variant.h"
 #include "X11UndefineNone.h"
@@ -156,8 +158,10 @@ class CompositorAnimationStorage final {
   typedef nsClassHashtable<nsUint64HashKey, AnimatedValue> AnimatedValueTable;
   typedef nsDataHashtable<nsUint64HashKey, AnimationStorageData>
       AnimationsTable;
+#ifdef MOZ_BUILD_WEBRENDER
   typedef nsDataHashtable<nsUint64HashKey, wr::RenderRoot>
       AnimationsRenderRootsTable;
+#endif
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(CompositorAnimationStorage)
  public:
@@ -203,8 +207,12 @@ class CompositorAnimationStorage final {
   /**
    * Set the animations based on the unique id
    */
-  void SetAnimations(uint64_t aId, const AnimationArray& aAnimations,
-                     wr::RenderRoot aRenderRoot);
+  void SetAnimations(uint64_t aId, const AnimationArray& aAnimations
+#ifdef MOZ_BUILD_WEBRENDER
+                     ,
+                     wr::RenderRoot aRenderRoot
+#endif
+  );
 
   /**
    * Return the iterator of animations table
@@ -215,9 +223,11 @@ class CompositorAnimationStorage final {
 
   uint32_t AnimationsCount() const { return mAnimations.Count(); }
 
+#ifdef MOZ_BUILD_WEBRENDER
   wr::RenderRoot AnimationRenderRoot(const uint64_t& aId) const {
     return mAnimationRenderRoots.Get(aId);
   }
+#endif
 
   /**
    * Clear AnimatedValues and Animations data
@@ -231,7 +241,9 @@ class CompositorAnimationStorage final {
  private:
   AnimatedValueTable mAnimatedValues;
   AnimationsTable mAnimations;
+#ifdef MOZ_BUILD_WEBRENDER
   AnimationsRenderRootsTable mAnimationRenderRoots;
+#endif
 };
 
 /**
@@ -334,6 +346,7 @@ class AnimationHelper {
    */
   static uint64_t GetNextCompositorAnimationsId();
 
+#ifdef MOZ_BUILD_WEBRENDER
   /**
    * Sample animation based a given time stamp |aTime| and the animation
    * data inside CompositorAnimationStorage |aStorage|. The animated values
@@ -349,6 +362,7 @@ class AnimationHelper {
   static bool SampleAnimations(CompositorAnimationStorage* aStorage,
                                TimeStamp aPreviousFrameTime,
                                TimeStamp aCurrentFrameTime);
+#endif
 
   /**
    * Convert an array of animation values into a matrix given the corresponding

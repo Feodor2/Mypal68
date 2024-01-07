@@ -115,8 +115,12 @@ void ClientImageLayer::RenderLayer() {
     return;
   }
 
-  if (!mImageClient ||
-      !mImageClient->UpdateImage(mContainer, GetContentFlags(), Nothing())) {
+  if (!mImageClient || !mImageClient->UpdateImage(mContainer, GetContentFlags()
+#ifdef MOZ_BUILD_WEBRENDER
+                                                                  ,
+                                                  Nothing()
+#endif
+                                                      )) {
     CompositableType type = GetImageClientType();
     if (type == CompositableType::UNKNOWN) {
       return;
@@ -132,7 +136,12 @@ void ClientImageLayer::RenderLayer() {
       mImageClient->Connect();
       ClientManager()->AsShadowForwarder()->Attach(mImageClient, this);
     }
-    if (!mImageClient->UpdateImage(mContainer, GetContentFlags(), Nothing())) {
+    if (!mImageClient->UpdateImage(mContainer, GetContentFlags()
+#ifdef MOZ_BUILD_WEBRENDER
+                                                   ,
+                                   Nothing()
+#endif
+                                       )) {
       return;
     }
   }

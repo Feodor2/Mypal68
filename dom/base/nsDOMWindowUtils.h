@@ -25,7 +25,9 @@ class Element;
 }  // namespace dom
 namespace layers {
 class LayerTransactionChild;
+#ifdef MOZ_BUILD_WEBRENDER
 class WebRenderBridgeChild;
+#endif
 }  // namespace layers
 }  // namespace mozilla
 
@@ -79,7 +81,9 @@ class nsDOMWindowUtils final : public nsIDOMWindowUtils,
   nsPresContext* GetPresContext();
   mozilla::dom::Document* GetDocument();
   mozilla::layers::LayerTransactionChild* GetLayerTransaction();
+#ifdef MOZ_BUILD_WEBRENDER
   mozilla::layers::WebRenderBridgeChild* GetWebRenderBridge();
+#endif
   mozilla::layers::CompositorBridgeChild* GetCompositorBridge();
 
   // Until callers are annotated.

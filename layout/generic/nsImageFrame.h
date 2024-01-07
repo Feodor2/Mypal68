@@ -144,12 +144,14 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
                                    const nsRect& aDirtyRect, nsPoint aPt,
                                    uint32_t aFlags);
 
+#ifdef MOZ_BUILD_WEBRENDER
   ImgDrawResult DisplayAltFeedbackWithoutLayer(
       nsDisplayItem*, mozilla::wr::DisplayListBuilder&,
       mozilla::wr::IpcResourceUpdateQueue&,
       const mozilla::layers::StackingContextHelper&,
       mozilla::layers::RenderRootStateManager*, nsDisplayListBuilder*,
       nsPoint aPt, uint32_t aFlags);
+#endif
 
   nsRect GetInnerArea() const;
 
@@ -478,11 +480,13 @@ class nsDisplayImage final : public nsDisplayImageContainer {
 
   already_AddRefed<Layer> BuildLayer(nsDisplayListBuilder*, LayerManager*,
                                      const ContainerLayerParameters&) final;
+#ifdef MOZ_BUILD_WEBRENDER
   bool CreateWebRenderCommands(mozilla::wr::DisplayListBuilder&,
                                mozilla::wr::IpcResourceUpdateQueue&,
                                const StackingContextHelper&,
                                mozilla::layers::RenderRootStateManager*,
                                nsDisplayListBuilder*) final;
+#endif
 
   NS_DISPLAY_DECL_NAME("Image", TYPE_IMAGE)
  private:

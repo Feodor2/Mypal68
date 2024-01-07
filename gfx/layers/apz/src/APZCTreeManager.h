@@ -34,11 +34,13 @@
 namespace mozilla {
 class MultiTouchInput;
 
+#ifdef MOZ_BUILD_WEBRENDER
 namespace wr {
 class TransactionWrapper;
 class WebRenderAPI;
 struct WrTransformProperty;
 }  // namespace wr
+#endif
 
 namespace layers {
 
@@ -57,7 +59,9 @@ class InputQueue;
 class GeckoContentController;
 class HitTestingTreeNode;
 class HitTestingTreeNodeAutoLock;
+#ifdef MOZ_BUILD_WEBRENDER
 class WebRenderScrollDataWrapper;
+#endif
 struct AncestorTransform;
 struct ScrollThumbData;
 
@@ -183,7 +187,8 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    *
    * @param aRoot The root of the (full) layer tree
    * @param aOriginatingLayersId The layers id of the subtree that triggered
-   *                             this repaint, and to which aIsFirstPaint applies.
+   *                             this repaint, and to which aIsFirstPaint
+   * applies.
    * @param aIsFirstPaint True if the layers update that this is called in
    *                      response to included a first-paint. If this is true,
    *                      the part of the tree that is affected by the
@@ -194,10 +199,11 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    *                             process' layer subtree has its own sequence
    *                             numbers.
    */
-  void UpdateHitTestingTree(Layer* aRoot,
-                            bool aIsFirstPaint, LayersId aOriginatingLayersId,
+  void UpdateHitTestingTree(Layer* aRoot, bool aIsFirstPaint,
+                            LayersId aOriginatingLayersId,
                             uint32_t aPaintSequenceNumber);
 
+#ifdef MOZ_BUILD_WEBRENDER
   /**
    * Same as the above UpdateHitTestingTree, except slightly modified to take
    * the scrolling data passed over PWebRenderBridge instead of the raw layer
@@ -223,6 +229,7 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   void SampleForWebRender(wr::TransactionWrapper& aTxn,
                           const TimeStamp& aSampleTime,
                           wr::RenderRoot aRenderRoot);
+#endif
 
   /**
    * Refer to the documentation of APZInputBridge::ReceiveInputEvent() and
@@ -241,8 +248,13 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    * up. |aRect| must be given in CSS pixels, relative to the document.
    * |aFlags| is a combination of the ZoomToRectBehavior enum values.
    */
-  void ZoomToRect(const SLGuidAndRenderRoot& aGuid, const CSSRect& aRect,
-                  const uint32_t aFlags = DEFAULT_BEHAVIOR) override;
+  void ZoomToRect(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid,
+#else
+      const ScrollableLayerGuid& aGuid,
+#endif
+      const CSSRect& aRect, const uint32_t aFlags = DEFAULT_BEHAVIOR) override;
 
   /**
    * If we have touch listeners, this should always be called when we know
@@ -273,7 +285,12 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    *       arrive.
    */
   void SetTargetAPZC(uint64_t aInputBlockId,
-                     const nsTArray<SLGuidAndRenderRoot>& aTargets) override;
+#ifdef MOZ_BUILD_WEBRENDER
+                     const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+                     const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+                     ) override;
 
   /**
    * Updates any zoom constraints contained in the <meta name="viewport"> tag.
@@ -281,7 +298,11 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    * the given |aGuid| are cleared.
    */
   void UpdateZoomConstraints(
+#ifdef MOZ_BUILD_WEBRENDER
       const SLGuidAndRenderRoot& aGuid,
+#else
+      const ScrollableLayerGuid& aGuid,
+#endif
       const Maybe<ZoomConstraints>& aConstraints) override;
 
   /**
@@ -422,13 +443,29 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   ParentLayerPoint DispatchFling(AsyncPanZoomController* aApzc,
                                  const FlingHandoffState& aHandoffState);
 
-  void StartScrollbarDrag(const SLGuidAndRenderRoot& aGuid,
-                          const AsyncDragMetrics& aDragMetrics) override;
+  void StartScrollbarDrag(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid,
+#else
+      const ScrollableLayerGuid& aGuid,
+#endif
+      const AsyncDragMetrics& aDragMetrics) override;
 
-  bool StartAutoscroll(const SLGuidAndRenderRoot& aGuid,
-                       const ScreenPoint& aAnchorLocation) override;
+  bool StartAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid,
+#else
+      const ScrollableLayerGuid& aGuid,
+#endif
+      const ScreenPoint& aAnchorLocation) override;
 
-  void StopAutoscroll(const SLGuidAndRenderRoot& aGuid) override;
+  void StopAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid
+#else
+      const ScrollableLayerGuid& aGuid
+#endif
+      ) override;
 
   /*
    * Build the chain of APZCs that will handle overscroll for a pan starting at
@@ -517,6 +554,7 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   // Assert that the current thread is the updater thread for this APZCTM.
   void AssertOnUpdaterThread();
 
+#ifdef MOZ_BUILD_WEBRENDER
   // Returns a pointer to the WebRenderAPI this APZCTreeManager is for, for
   // the provided RenderRoot (since an APZCTreeManager can cover multiple
   // RenderRoots). This might be null (for example, if WebRender is not
@@ -531,6 +569,7 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   // This might be null (for example, if WebRender is not enabled).
   already_AddRefed<wr::WebRenderAPI> GetWebRenderAPIAtPoint(
       const ScreenPoint& aPoint) const;
+#endif
 
  protected:
   // Protected destructor, to discourage deletion outside of Release():
@@ -549,8 +588,12 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
 
   // Protected hooks for gtests subclass
   virtual AsyncPanZoomController* NewAPZCInstance(
-      LayersId aLayersId, GeckoContentController* aController,
-      wr::RenderRoot aRenderRoot);
+      LayersId aLayersId, GeckoContentController* aController
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      wr::RenderRoot aRenderRoot
+#endif
+  );
 
  public:
   // Public hook for gtests subclass
@@ -638,7 +681,11 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   /* Helpers */
   template <class ScrollNode>
   void UpdateHitTestingTreeImpl(const ScrollNode& aRoot, bool aIsFirstPaint,
+#ifdef MOZ_BUILD_WEBRENDER
                                 WRRootId aOriginatingWrRootId,
+#else
+                                LayersId aOriginatingLayersId,
+#endif
                                 uint32_t aPaintSequenceNumber);
 
   void AttachNodeToTree(HitTestingTreeNode* aNode, HitTestingTreeNode* aParent,
@@ -729,8 +776,12 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
       const RecursiveMutexAutoLock& aProofOfTreeLock, const ScrollNode& aLayer,
       const FrameMetrics& aMetrics, LayersId aLayersId,
       const AncestorTransform& aAncestorTransform, HitTestingTreeNode* aParent,
-      HitTestingTreeNode* aNextSibling, TreeBuildingState& aState,
-      wr::RenderRoot aRenderRoot);
+      HitTestingTreeNode* aNextSibling, TreeBuildingState& aState
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      wr::RenderRoot aRenderRoot
+#endif
+  );
   template <class ScrollNode>
   Maybe<ParentLayerIntRegion> ComputeClipRegion(const ScrollNode& aLayer);
 

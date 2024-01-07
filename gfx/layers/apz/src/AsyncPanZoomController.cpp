@@ -835,10 +835,15 @@ void AsyncPanZoomController::InitializeGlobalState() {
 AsyncPanZoomController::AsyncPanZoomController(
     LayersId aLayersId, APZCTreeManager* aTreeManager,
     const RefPtr<InputQueue>& aInputQueue,
-    GeckoContentController* aGeckoContentController, wr::RenderRoot aRenderRoot,
+    GeckoContentController* aGeckoContentController,
+#ifdef MOZ_BUILD_WEBRENDER
+    wr::RenderRoot aRenderRoot,
+#endif
     GestureBehavior aGestures)
     : mLayersId(aLayersId),
+#ifdef MOZ_BUILD_WEBRENDER
       mRenderRoot(aRenderRoot),
+#endif
       mGeckoContentController(aGeckoContentController),
       mRefPtrMonitor("RefPtrMonitor"),
       // mTreeManager must be initialized before GetFrameTime() is called
@@ -3767,7 +3772,10 @@ const ScreenMargin AsyncPanZoomController::CalculatePendingDisplayPort(
 void AsyncPanZoomController::ScheduleComposite() {
   if (mCompositorController) {
     mCompositorController->ScheduleRenderOnCompositorThread(
-        wr::RenderRootSet(mRenderRoot));
+#ifdef MOZ_BUILD_WEBRENDER
+        wr::RenderRootSet(mRenderRoot)
+#endif
+    );
   }
 }
 
@@ -3926,8 +3934,7 @@ void AsyncPanZoomController::RequestContentRepaint(
       NewRunnableMethod<AsyncPanZoomController*>(
           "layers::APZCTreeManager::SendSubtreeTransformsToChromeMainThread",
           GetApzcTreeManager(),
-          &APZCTreeManager::SendSubtreeTransformsToChromeMainThread,
-          this));
+          &APZCTreeManager::SendSubtreeTransformsToChromeMainThread, this));
 }
 
 bool AsyncPanZoomController::UpdateAnimation(
@@ -5293,6 +5300,7 @@ bool AsyncPanZoomController::MaybeAdjustDestinationForScrollSnapping(
   return false;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void AsyncPanZoomController::SetZoomAnimationId(
     const Maybe<uint64_t>& aZoomAnimationId) {
   mZoomAnimationId = aZoomAnimationId;
@@ -5301,6 +5309,7 @@ void AsyncPanZoomController::SetZoomAnimationId(
 Maybe<uint64_t> AsyncPanZoomController::GetZoomAnimationId() const {
   return mZoomAnimationId;
 }
+#endif
 
 }  // namespace layers
 }  // namespace mozilla

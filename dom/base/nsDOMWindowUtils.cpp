@@ -105,8 +105,10 @@
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/dom/TimeoutManager.h"
 #include "mozilla/PreloadedStyleSheet.h"
-#include "mozilla/layers/WebRenderBridgeChild.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderBridgeChild.h"
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#endif
 #include "mozilla/ResultExtensions.h"
 
 #ifdef XP_WIN
@@ -244,6 +246,7 @@ LayerTransactionChild* nsDOMWindowUtils::GetLayerTransaction() {
              : nullptr;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 WebRenderBridgeChild* nsDOMWindowUtils::GetWebRenderBridge() {
   if (nsIWidget* widget = GetWidget()) {
     if (LayerManager* lm = widget->GetLayerManager()) {
@@ -254,6 +257,7 @@ WebRenderBridgeChild* nsDOMWindowUtils::GetWebRenderBridge() {
   }
   return nullptr;
 }
+#endif
 
 CompositorBridgeChild* nsDOMWindowUtils::GetCompositorBridge() {
   if (nsIWidget* widget = GetWidget()) {
@@ -2131,8 +2135,11 @@ nsDOMWindowUtils::GetUsingAdvancedLayers(bool* retval) {
 
 NS_IMETHODIMP
 nsDOMWindowUtils::GetIsWebRenderRequested(bool* retval) {
+#ifdef MOZ_BUILD_WEBRENDER
+
   *retval = gfxPlatform::WebRenderPrefEnabled() ||
             gfxPlatform::WebRenderEnvvarEnabled();
+#endif
   return NS_OK;
 }
 
@@ -2242,8 +2249,10 @@ nsDOMWindowUtils::AdvanceTimeAndRefresh(int64_t aMilliseconds) {
     RefPtr<LayerTransactionChild> transaction = GetLayerTransaction();
     if (transaction && transaction->IPCOpen()) {
       transaction->SendSetTestSampleTime(driver->MostRecentRefresh());
+#ifdef MOZ_BUILD_WEBRENDER
     } else if (WebRenderBridgeChild* wrbc = GetWebRenderBridge()) {
       wrbc->SendSetTestSampleTime(driver->MostRecentRefresh());
+#endif
     }
   }
 
@@ -2270,8 +2279,10 @@ nsDOMWindowUtils::RestoreNormalRefresh() {
   RefPtr<LayerTransactionChild> transaction = GetLayerTransaction();
   if (transaction && transaction->IPCOpen()) {
     transaction->SendLeaveTestMode();
+#ifdef MOZ_BUILD_WEBRENDER
   } else if (WebRenderBridgeChild* wrbc = GetWebRenderBridge()) {
     wrbc->SendLeaveTestMode();
+#endif
   }
 
   if (nsPresContext* pc = GetPresContext()) {
@@ -2319,6 +2330,7 @@ nsDOMWindowUtils::SetAsyncScrollOffset(Element* aElement, float aX, float aY) {
   if (!manager) {
     return NS_ERROR_FAILURE;
   }
+#ifdef MOZ_BUILD_WEBRENDER
   if (WebRenderLayerManager* wrlm = manager->AsWebRenderLayerManager()) {
     WebRenderBridgeChild* wrbc = wrlm->WrBridge();
     if (!wrbc) {
@@ -2327,6 +2339,7 @@ nsDOMWindowUtils::SetAsyncScrollOffset(Element* aElement, float aX, float aY) {
     wrbc->SendSetAsyncScrollOffset(viewId, aX, aY);
     return NS_OK;
   }
+#endif
   ShadowLayerForwarder* forwarder = manager->AsShadowForwarder();
   if (!forwarder || !forwarder->HasShadowManager()) {
     return NS_ERROR_UNEXPECTED;
@@ -2352,6 +2365,7 @@ nsDOMWindowUtils::SetAsyncZoom(Element* aRootElement, float aValue) {
   if (!manager) {
     return NS_ERROR_FAILURE;
   }
+#ifdef MOZ_BUILD_WEBRENDER
   if (WebRenderLayerManager* wrlm = manager->AsWebRenderLayerManager()) {
     WebRenderBridgeChild* wrbc = wrlm->WrBridge();
     if (!wrbc) {
@@ -2360,6 +2374,7 @@ nsDOMWindowUtils::SetAsyncZoom(Element* aRootElement, float aValue) {
     wrbc->SendSetAsyncZoom(viewId, aValue);
     return NS_OK;
   }
+#endif
   ShadowLayerForwarder* forwarder = manager->AsShadowForwarder();
   if (!forwarder || !forwarder->HasShadowManager()) {
     return NS_ERROR_UNEXPECTED;
@@ -2385,6 +2400,7 @@ nsDOMWindowUtils::FlushApzRepaints(bool* aOutResult) {
     *aOutResult = false;
     return NS_OK;
   }
+#ifdef MOZ_BUILD_WEBRENDER
   if (WebRenderLayerManager* wrlm = manager->AsWebRenderLayerManager()) {
     WebRenderBridgeChild* wrbc = wrlm->WrBridge();
     if (!wrbc) {
@@ -2394,6 +2410,7 @@ nsDOMWindowUtils::FlushApzRepaints(bool* aOutResult) {
     *aOutResult = true;
     return NS_OK;
   }
+#endif
   ShadowLayerForwarder* forwarder = manager->AsShadowForwarder();
   if (!forwarder || !forwarder->HasShadowManager()) {
     *aOutResult = false;
@@ -3372,8 +3389,12 @@ static Result<nsIFrame*, nsresult> GetTargetFrame(
   return frame;
 }
 
-static OMTAValue GetOMTAValue(nsIFrame* aFrame, DisplayItemType aDisplayItemKey,
-                              WebRenderBridgeChild* aWebRenderBridgeChild) {
+static OMTAValue GetOMTAValue(nsIFrame* aFrame, DisplayItemType aDisplayItemKey
+#ifdef MOZ_BUILD_WEBRENDER
+                              ,
+                              WebRenderBridgeChild* aWebRenderBridgeChild
+#endif
+) {
   OMTAValue value = mozilla::null_t();
 
   Layer* layer = FrameLayerBuilder::GetDedicatedLayer(aFrame, aDisplayItemKey);
@@ -3383,6 +3404,7 @@ static OMTAValue GetOMTAValue(nsIFrame* aFrame, DisplayItemType aDisplayItemKey,
       forwarder->GetShadowManager()->SendGetAnimationValue(
           layer->GetCompositorAnimationsId(), &value);
     }
+#ifdef MOZ_BUILD_WEBRENDER
   } else if (aWebRenderBridgeChild) {
     RefPtr<WebRenderAnimationData> animationData =
         GetWebRenderUserData<WebRenderAnimationData>(aFrame,
@@ -3392,6 +3414,7 @@ static OMTAValue GetOMTAValue(nsIFrame* aFrame, DisplayItemType aDisplayItemKey,
           animationData->GetAnimationInfo().GetCompositorAnimationsId(),
           &value);
     }
+#endif
   }
   return value;
 }
@@ -3418,8 +3441,12 @@ nsDOMWindowUtils::GetOMTAStyle(Element* aElement, const nsAString& aProperty,
     }
 
     if (aProperty.EqualsLiteral("opacity")) {
-      OMTAValue value = GetOMTAValue(frame, DisplayItemType::TYPE_OPACITY,
-                                     GetWebRenderBridge());
+      OMTAValue value = GetOMTAValue(frame, DisplayItemType::TYPE_OPACITY
+#ifdef MOZ_BUILD_WEBRENDER
+                                     ,
+                                     GetWebRenderBridge()
+#endif
+      );
       if (value.type() == OMTAValue::Tfloat) {
         cssValue = new nsROCSSPrimitiveValue;
         cssValue->SetNumber(value.get_float());
@@ -3432,14 +3459,23 @@ nsDOMWindowUtils::GetOMTAStyle(Element* aElement, const nsAString& aProperty,
                aProperty.EqualsLiteral("offset-distance") ||
                aProperty.EqualsLiteral("offset-rotate") ||
                aProperty.EqualsLiteral("offset-anchor")) {
-      OMTAValue value = GetOMTAValue(frame, DisplayItemType::TYPE_TRANSFORM,
-                                     GetWebRenderBridge());
+      OMTAValue value = GetOMTAValue(frame, DisplayItemType::TYPE_TRANSFORM
+#ifdef MOZ_BUILD_WEBRENDER
+                                     ,
+                                     GetWebRenderBridge()
+#endif
+      );
       if (value.type() == OMTAValue::TMatrix4x4) {
         cssValue = nsComputedDOMStyle::MatrixToCSSValue(value.get_Matrix4x4());
       }
     } else if (aProperty.EqualsLiteral("background-color")) {
-      OMTAValue value = GetOMTAValue(
-          frame, DisplayItemType::TYPE_BACKGROUND_COLOR, GetWebRenderBridge());
+      OMTAValue value =
+          GetOMTAValue(frame, DisplayItemType::TYPE_BACKGROUND_COLOR
+#ifdef MOZ_BUILD_WEBRENDER
+                       ,
+                       GetWebRenderBridge()
+#endif
+          );
       if (value.type() == OMTAValue::Tnscolor) {
         cssValue = new nsROCSSPrimitiveValue;
         nsComputedDOMStyle::SetToRGBAColor(cssValue, value.get_nscolor());
@@ -3466,9 +3502,11 @@ nsDOMWindowUtils::GetOMTCTransform(Element* aElement,
     return NS_ERROR_INVALID_ARG;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (GetWebRenderBridge()) {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
+#endif
 
   auto frameOrError = GetTargetFrame(aElement, aPseudoElement);
   if (frameOrError.isErr()) {
@@ -3615,10 +3653,12 @@ nsDOMWindowUtils::GetContentAPZTestData(
       if (!clm->GetAPZTestData().ToJS(aOutContentTestData, aContext)) {
         return NS_ERROR_FAILURE;
       }
+#ifdef MOZ_BUILD_WEBRENDER
     } else if (WebRenderLayerManager* wrlm = lm->AsWebRenderLayerManager()) {
       if (!wrlm->GetAPZTestData().ToJS(aOutContentTestData, aContext)) {
         return NS_ERROR_FAILURE;
       }
+#endif
     }
   }
 
@@ -3636,6 +3676,7 @@ nsDOMWindowUtils::GetCompositorAPZTestData(
     APZTestData compositorSideData;
     if (ClientLayerManager* clm = lm->AsClientLayerManager()) {
       clm->GetCompositorSideAPZTestData(&compositorSideData);
+#ifdef MOZ_BUILD_WEBRENDER
     } else if (WebRenderLayerManager* wrlm = lm->AsWebRenderLayerManager()) {
       if (!wrlm->WrBridge()) {
         return NS_ERROR_UNEXPECTED;
@@ -3643,6 +3684,7 @@ nsDOMWindowUtils::GetCompositorAPZTestData(
       if (!wrlm->WrBridge()->SendGetAPZTestData(&compositorSideData)) {
         return NS_ERROR_FAILURE;
       }
+#endif
     }
     if (!compositorSideData.ToJS(aOutCompositorTestData, aContext)) {
       return NS_ERROR_FAILURE;
@@ -4066,9 +4108,11 @@ nsTranslationNodeList::GetLength(uint32_t* aRetVal) {
 
 NS_IMETHODIMP
 nsDOMWindowUtils::WrCapture() {
+#ifdef MOZ_BUILD_WEBRENDER
   if (WebRenderBridgeChild* wrbc = GetWebRenderBridge()) {
     wrbc->Capture();
   }
+#endif
   return NS_OK;
 }
 

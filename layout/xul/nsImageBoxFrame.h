@@ -99,12 +99,14 @@ class nsImageBoxFrame final : public nsLeafBoxFrame {
                            const nsRect& aDirtyRect, nsPoint aPt,
                            uint32_t aFlags);
 
+#ifdef MOZ_BUILD_WEBRENDER
   ImgDrawResult CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const mozilla::layers::StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager, nsDisplayItem* aItem,
       nsPoint aPt, uint32_t aFlags);
+#endif
 
   bool CanOptimizeToImageLayer();
 
@@ -172,12 +174,14 @@ class nsDisplayXULImage final : public nsDisplayImageContainer {
   // event receiver for us
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
+#endif
 
   NS_DISPLAY_DECL_NAME("XULImage", TYPE_XUL_IMAGE)
 };

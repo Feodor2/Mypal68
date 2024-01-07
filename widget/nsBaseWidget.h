@@ -126,7 +126,9 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   typedef mozilla::layers::CompositorBridgeParent CompositorBridgeParent;
   typedef mozilla::layers::IAPZCTreeManager IAPZCTreeManager;
   typedef mozilla::layers::GeckoContentController GeckoContentController;
+#ifdef MOZ_BUILD_WEBRENDER
   typedef mozilla::layers::SLGuidAndRenderRoot SLGuidAndRenderRoot;
+#endif
   typedef mozilla::layers::ScrollableLayerGuid ScrollableLayerGuid;
   typedef mozilla::layers::APZEventState APZEventState;
   typedef mozilla::layers::SetAllowedTouchBehaviorCallback
@@ -323,9 +325,13 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
   nsEventStatus DispatchInputEvent(mozilla::WidgetInputEvent* aEvent) override;
   void DispatchEventToAPZOnly(mozilla::WidgetInputEvent* aEvent) override;
 
-  void SetConfirmedTargetAPZC(
-      uint64_t aInputBlockId,
-      const nsTArray<SLGuidAndRenderRoot>& aTargets) const override;
+  void SetConfirmedTargetAPZC(uint64_t aInputBlockId,
+#ifdef MOZ_BUILD_WEBRENDER
+                              const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+                              const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+  ) const override;
 
   void UpdateZoomConstraints(
       const uint32_t& aPresShellId, const ScrollableLayerGuid::ViewID& aViewId,
@@ -381,9 +387,20 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
       const AsyncDragMetrics& aDragMetrics) override;
 
   virtual bool StartAsyncAutoscroll(const ScreenPoint& aAnchorLocation,
-                                    const SLGuidAndRenderRoot& aGuid) override;
+#ifdef MOZ_BUILD_WEBRENDER
+                                    const SLGuidAndRenderRoot& aGuid
+#else
+                                    const ScrollableLayerGuid& aGuid
+#endif
+                                    ) override;
 
-  virtual void StopAsyncAutoscroll(const SLGuidAndRenderRoot& aGuid) override;
+  virtual void StopAsyncAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid
+#else
+      const ScrollableLayerGuid& aGuid
+#endif
+      ) override;
 
   /**
    * Use this when GetLayerManager() returns a BasicLayerManager
@@ -591,7 +608,9 @@ class nsBaseWidget : public nsIWidget, public nsSupportsWeakReference {
 
   bool UseAPZ();
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool AllowWebRenderForThisWindow();
+#endif
 
   /**
    * For widgets that support synthesizing native touch events, this function

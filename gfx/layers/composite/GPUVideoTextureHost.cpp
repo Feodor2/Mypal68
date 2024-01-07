@@ -101,6 +101,7 @@ bool GPUVideoTextureHost::HasIntermediateBuffer() const {
   return mWrappedTextureHost->HasIntermediateBuffer();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void GPUVideoTextureHost::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   MOZ_ASSERT(mWrappedTextureHost);
@@ -130,6 +131,7 @@ void GPUVideoTextureHost::PushDisplayItems(
   mWrappedTextureHost->PushDisplayItems(aBuilder, aBounds, aClip, aFilter,
                                         aImageKeys);
 }
+#endif
 
 }  // namespace layers
 }  // namespace mozilla

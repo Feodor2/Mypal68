@@ -61,6 +61,7 @@ class MacIOSurfaceTextureHostOGL : public TextureHost {
 
   MacIOSurface* GetMacIOSurface() override { return mSurface; }
 
+#ifdef MOZ_BUILD_WEBRENDER
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
 
@@ -75,6 +76,7 @@ class MacIOSurfaceTextureHostOGL : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys) override;
+#endif
 
   gfx::YUVColorSpace GetYUVColorSpace() const override;
   gfx::ColorRange GetColorRange() const override;

@@ -162,7 +162,10 @@ bool nsSVGIntegrationUtils::UsingEffectsForFrame(const nsIFrame* aFrame) {
   const nsStyleEffects* effects = aFrame->StyleEffects();
   // TODO(cbrewster): remove backdrop-filter from this list once it is supported
   // in preserve-3d cases.
-  return effects->HasFilters() || effects->HasBackdropFilters() ||
+  return effects->HasFilters() ||
+#ifdef MOZ_BUILD_WEBRENDER
+         effects->HasBackdropFilters() ||
+#endif
          style->HasClipPath() || style->HasMask();
 }
 
@@ -1104,6 +1107,7 @@ void nsSVGIntegrationUtils::PaintFilter(const PaintFramesParams& aParams) {
                                        aParams.imgParams, opacity);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 static float ClampStdDeviation(float aStdDeviation) {
   // Cap software blur radius for performance reasons.
   return std::min(std::max(0.0f, aStdDeviation), 100.0f);
@@ -1206,17 +1210,26 @@ bool nsSVGIntegrationUtils::CanCreateWebRenderFiltersForFrame(
   return CreateWebRenderCSSFilters(filterChain, aFrame, wrFilters) ||
          BuildWebRenderFilters(aFrame, filterChain, wrFilters, filterClip);
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 bool nsSVGIntegrationUtils::UsesSVGEffectsNotSupportedInCompositor(
     nsIFrame* aFrame) {
   // WebRender supports masks / clip-paths and some filters in the compositor.
   // Non-WebRender doesn't support any SVG effects in the compositor.
   if (aFrame->StyleEffects()->HasFilters()) {
+#ifdef MOZ_BUILD_WEBRENDER
     return !gfx::gfxVars::UseWebRender() ||
            !nsSVGIntegrationUtils::CanCreateWebRenderFiltersForFrame(aFrame);
+#else
+    return true;
+#endif
   }
   if (nsSVGIntegrationUtils::UsingMaskOrClipPathForFrame(aFrame)) {
+#ifdef MOZ_BUILD_WEBRENDER
     return !gfx::gfxVars::UseWebRender();
+#else
+    return true;
+#endif
   }
   return false;
 }

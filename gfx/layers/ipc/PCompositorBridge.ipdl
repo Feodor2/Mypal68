@@ -12,10 +12,12 @@ include protocol PCompositorManager;
 include protocol PCompositorWidget;
 include protocol PLayerTransaction;
 include protocol PTexture;
-include protocol PWebRenderBridge;
 include "mozilla/GfxMessageUtils.h";
 include "mozilla/layers/LayersMessageUtils.h";
+#ifdef MOZ_BUILD_WEBRENDER
+include protocol PWebRenderBridge;
 include "mozilla/layers/WebRenderMessageUtils.h";
+#endif
 
 using struct mozilla::null_t from "ipc/IPCMessageUtils.h";
 using struct mozilla::layers::LayersId from "mozilla/layers/LayersTypes.h";
@@ -34,10 +36,12 @@ using class mozilla::TimeStamp from "mozilla/TimeStamp.h";
 using class mozilla::layers::FrameUniformityData from "mozilla/layers/FrameUniformityData.h";
 using mozilla::layers::TextureFlags from "mozilla/layers/CompositorTypes.h";
 using mozilla::layers::CompositorOptions from "mozilla/layers/CompositorOptions.h";
+using base::ProcessId from "base/process.h";
+#ifdef MOZ_BUILD_WEBRENDER
 using mozilla::wr::PipelineId from "mozilla/webrender/WebRenderTypes.h";
 using mozilla::wr::IdNamespace from "mozilla/webrender/WebRenderTypes.h";
-using base::ProcessId from "base/process.h";
 using mozilla::wr::MaybeExternalImageId from "mozilla/webrender/WebRenderTypes.h";
+#endif
 using mozilla::layers::LayersObserverEpoch from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::TransactionId from "mozilla/layers/LayersTypes.h";
 
@@ -96,7 +100,9 @@ sync refcounted protocol PCompositorBridge
   manages PLayerTransaction;
   manages PTexture;
   manages PCompositorWidget;
+#ifdef MOZ_BUILD_WEBRENDER
   manages PWebRenderBridge;
+#endif
 
 child:
   // The child should invalidate retained layers. This is used for local
@@ -215,7 +221,9 @@ parent:
 
   // Same as FlushRendering, but asynchronous, since not all platforms require
   // synchronous repaints on resize.
+#ifdef MOZ_BUILD_WEBRENDER
   async FlushRenderingAsync();
+#endif
 
   // Make sure any pending composites have been received.
   sync WaitOnTransactionProcessed();
@@ -251,12 +259,18 @@ parent:
    */
   async AllPluginsCaptured();
 
-  async PTexture(SurfaceDescriptor aSharedData, ReadLockDescriptor aReadLock, LayersBackend aBackend, TextureFlags aTextureFlags, LayersId id, uint64_t aSerial, MaybeExternalImageId aExternalImageId);
+  async PTexture(SurfaceDescriptor aSharedData, ReadLockDescriptor aReadLock, LayersBackend aBackend, TextureFlags aTextureFlags, LayersId id, uint64_t aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+                 , MaybeExternalImageId aExternalImageId
+#endif
+                 );
 
   sync SyncWithCompositor();
 
   // The pipelineId is the same as the layersId
+#ifdef MOZ_BUILD_WEBRENDER
   async PWebRenderBridge(PipelineId pipelineId, LayoutDeviceIntSize aSize);
+#endif
 
   sync CheckContentOnlyTDR(uint32_t sequenceNum)
     returns (bool isContentOnlyTDR);

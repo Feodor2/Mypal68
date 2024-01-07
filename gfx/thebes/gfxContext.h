@@ -23,9 +23,12 @@ namespace mozilla {
 namespace gfx {
 struct RectCornerRadii;
 }  // namespace gfx
+
+#ifdef MOZ_BUILD_WEBRENDER
 namespace layout {
 class TextDrawTarget;
 }  // namespace layout
+#endif
 }  // namespace mozilla
 
 class ClipExporter;
@@ -85,7 +88,9 @@ class gfxContext final {
   /**
    * Returns the DrawTarget if it's actually a TextDrawTarget.
    */
+#ifdef MOZ_BUILD_WEBRENDER
   mozilla::layout::TextDrawTarget* GetTextDrawer();
+#endif
 
   /**
    ** State

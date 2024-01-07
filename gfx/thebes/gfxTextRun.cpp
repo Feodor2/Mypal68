@@ -23,7 +23,9 @@
 #include "mozilla/gfx/Logging.h"  // for gfxCriticalError
 #include "mozilla/UniquePtr.h"
 #include "mozilla/Unused.h"
-#include "TextDrawTarget.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "TextDrawTarget.h"
+#endif
 
 #ifdef XP_WIN
 #  include "gfxWindowsPlatform.h"
@@ -551,8 +553,11 @@ void gfxTextRun::Draw(Range aRange, gfx::Point aPt,
   bool skipDrawing = mSkipDrawing;
   if (aParams.drawMode & DrawMode::GLYPH_FILL) {
     Color currentColor;
-    if (aParams.context->GetDeviceColor(currentColor) && currentColor.a == 0 &&
-        !aParams.context->GetTextDrawer()) {
+    if (aParams.context->GetDeviceColor(currentColor) && currentColor.a == 0
+#ifdef MOZ_BUILD_WEBRENDER
+        && !aParams.context->GetTextDrawer()
+#endif
+    ) {
       skipDrawing = true;
     }
   }
@@ -581,8 +586,11 @@ void gfxTextRun::Draw(Range aRange, gfx::Point aPt,
 
   if (aParams.drawMode & DrawMode::GLYPH_FILL &&
       aParams.context->HasNonOpaqueNonTransparentColor(currentColor) &&
-      HasSyntheticBoldOrColor(this, aRange) &&
-      !aParams.context->GetTextDrawer()) {
+      HasSyntheticBoldOrColor(this, aRange)
+#ifdef MOZ_BUILD_WEBRENDER
+      && !aParams.context->GetTextDrawer()
+#endif
+  ) {
     needToRestore = true;
     // Measure text; use the bounding box to determine the area we need
     // to buffer.
@@ -1330,9 +1338,8 @@ void gfxTextRun::SortGlyphRuns() {
     // A GlyphRun with the same font and orientation as the previous can
     // just be skipped; the last GlyphRun will cover its character range.
     MOZ_ASSERT(run.mFont != nullptr);
-    if (!prevRun ||
-        !prevRun->Matches(run.mFont, run.mOrientation, run.mIsCJK,
-                          run.mMatchType)) {
+    if (!prevRun || !prevRun->Matches(run.mFont, run.mOrientation, run.mIsCJK,
+                                      run.mMatchType)) {
       // If two font runs have the same character offset, Sort() will have
       // randomized their order!
       MOZ_ASSERT(prevRun == nullptr ||

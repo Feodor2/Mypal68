@@ -207,7 +207,9 @@
 
 #include "mozilla/Telemetry.h"
 #include "mozilla/plugins/PluginProcessParent.h"
-#include "mozilla/webrender/WebRenderAPI.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderAPI.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::dom;
@@ -266,7 +268,7 @@ LONG nsWindow::sLastClickCount = 0L;
 BYTE nsWindow::sLastMouseButton = 0;
 
 // Trim heap on minimize. (initialized, but still true.)
-int             nsWindow::sTrimOnMinimize         = 2;
+int nsWindow::sTrimOnMinimize = 2;
 
 TriStateBool nsWindow::sHasBogusPopupsDropShadowOnMultiMonitor = TRI_UNKNOWN;
 
@@ -496,7 +498,8 @@ class TIPMessageHandler {
                                               DWORD aGeneratingTid,
                                               DWORD aEventTime) {
     A11yInstantiationBlocker block;
-    //sProcessCaretEventsStub(aWinEventHook, aEvent, aHwnd, aObjectId, aChildId,
+    // sProcessCaretEventsStub(aWinEventHook, aEvent, aHwnd, aObjectId,
+    // aChildId,
     //                        aGeneratingTid, aEventTime);
   }
 
@@ -753,7 +756,8 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
       parent = nullptr;
     }
 
-    if (IsVistaOrLater() && !IsWin8OrLater() && HasBogusPopupsDropShadowOnMultiMonitor() &&
+    if (IsVistaOrLater() && !IsWin8OrLater() &&
+        HasBogusPopupsDropShadowOnMultiMonitor() &&
         ShouldUseOffMainThreadCompositing()) {
       extendedStyle |= WS_EX_COMPOSITED;
     }
@@ -815,8 +819,8 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
 
   if (mIsRTL && WinUtils::dwmSetWindowAttributePtr) {
     DWORD dwAttribute = TRUE;
-    WinUtils::dwmSetWindowAttributePtr(mWnd, DWMWA_NONCLIENT_RTL_LAYOUT, &dwAttribute,
-                                       sizeof dwAttribute);
+    WinUtils::dwmSetWindowAttributePtr(mWnd, DWMWA_NONCLIENT_RTL_LAYOUT,
+                                       &dwAttribute, sizeof dwAttribute);
   }
 
   if (mOpeningAnimationSuppressed) {
@@ -897,9 +901,8 @@ nsresult nsWindow::Create(nsIWidget* aParent, nsNativeWidget aNativeParent,
     // the working set when windows are minimized, but on Vista and up it has
     // little to no effect. Since this feature has been the source of numerous
     // bugs over the years, disable it (sTrimOnMinimize=1) on Vista and up.
-    sTrimOnMinimize =
-      Preferences::GetBool("config.trim_on_minimize",
-        IsVistaOrLater() ? 1 : 0);
+    sTrimOnMinimize = Preferences::GetBool("config.trim_on_minimize",
+                                           IsVistaOrLater() ? 1 : 0);
     sSwitchKeyboardLayout =
         Preferences::GetBool("intl.keyboard.per_window_layout", false);
   }
@@ -1786,7 +1789,10 @@ void nsWindow::Move(double aX, double aY) {
     // Workaround SetWindowPos bug with D3D9. If our window has a clip
     // region, some drivers or OSes may incorrectly copy into the clipped-out
     // area.
-    if (IsPlugin() && (!mLayerManager || mLayerManager->GetBackendType() == LayersBackend::LAYERS_D3D9) && mClipRects &&
+    if (IsPlugin() &&
+        (!mLayerManager ||
+         mLayerManager->GetBackendType() == LayersBackend::LAYERS_D3D9) &&
+        mClipRects &&
         (mClipRectCount != 1 ||
          !mClipRects[0].IsEqualInterior(
              LayoutDeviceIntRect(0, 0, mBounds.Width(), mBounds.Height())))) {
@@ -2036,12 +2042,12 @@ void nsWindow::SetSizeMode(nsSizeMode aMode) {
         break;
 
       case nsSizeMode_Minimized:
-        // Using SW_SHOWMINIMIZED prevents the working set from being trimmed but
-        // keeps the window active in the tray. So after the window is minimized,
-        // windows will fire WM_WINDOWPOSCHANGED (OnWindowPosChanged) at which point
-        // we will do some additional processing to get the active window set right.
-        // If sTrimOnMinimize is set, we let windows handle minimization normally
-        // using SW_MINIMIZE.
+        // Using SW_SHOWMINIMIZED prevents the working set from being trimmed
+        // but keeps the window active in the tray. So after the window is
+        // minimized, windows will fire WM_WINDOWPOSCHANGED (OnWindowPosChanged)
+        // at which point we will do some additional processing to get the
+        // active window set right. If sTrimOnMinimize is set, we let windows
+        // handle minimization normally using SW_MINIMIZE.
         mode = sTrimOnMinimize ? SW_MINIMIZE : SW_SHOWMINIMIZED;
         break;
 
@@ -2063,10 +2069,10 @@ void nsWindow::SetSizeMode(nsSizeMode aMode) {
 }
 
 void nsWindow::SuppressAnimation(bool aSuppress) {
-  if(WinUtils::dwmSetWindowAttributePtr) {
+  if (WinUtils::dwmSetWindowAttributePtr) {
     DWORD dwAttribute = aSuppress ? TRUE : FALSE;
-    WinUtils::dwmSetWindowAttributePtr(mWnd, DWMWA_TRANSITIONS_FORCEDISABLED, &dwAttribute,
-                                       sizeof dwAttribute);
+    WinUtils::dwmSetWindowAttributePtr(mWnd, DWMWA_TRANSITIONS_FORCEDISABLED,
+                                       &dwAttribute, sizeof dwAttribute);
   }
 }
 
@@ -2383,7 +2389,7 @@ static WindowsDllInterceptor::FuncHookType<GetWindowInfoPtr>
 
 BOOL WINAPI GetWindowInfoHook(HWND hWnd, PWINDOWINFO pwi) {
   if (!sGetWindowInfoPtrStub) {
-   NS_ASSERTION(FALSE, "Something is horribly wrong in GetWindowInfoHook!");
+    NS_ASSERTION(FALSE, "Something is horribly wrong in GetWindowInfoHook!");
     return FALSE;
   }
   int windowStatus =
@@ -3742,7 +3748,12 @@ LayerManager* nsWindow::GetLayerManager(PLayerTransactionChild* aShadowManager,
         reinterpret_cast<uintptr_t>(static_cast<nsIWidget*>(this)),
         mTransparencyMode);
     // If we're not using the compositor, the options don't actually matter.
-    CompositorOptions options(false, false);
+    CompositorOptions options(false
+#ifdef MOZ_BUILD_WEBRENDER
+                              ,
+                              false
+#endif
+    );
     mBasicLayersSurface =
         new InProcessWinCompositorWidget(initData, options, this);
     mCompositorWidgetDelegate = mBasicLayersSurface;
@@ -3880,6 +3891,7 @@ void nsWindow::UpdateThemeGeometries(
   layerManager->SetRegionToClear(clearRegion);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void nsWindow::AddWindowOverlayWebRenderCommands(
     layers::WebRenderBridgeChild* aWrBridge, wr::DisplayListBuilder& aBuilder,
     wr::IpcResourceUpdateQueue& aResources) {
@@ -3891,6 +3903,7 @@ void nsWindow::AddWindowOverlayWebRenderCommands(
     aBuilder.PushClearRectWithComplexRegion(rect, complexRegion);
   }
 }
+#endif
 
 uint32_t nsWindow::GetMaxTouchPoints() const {
   return WinUtils::GetMaxTouchPoints();
@@ -4910,7 +4923,8 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
       /* We don't do this for win10 glass with a custom titlebar,
        * in order to avoid the caption buttons breaking. */
       !(IsWin10OrLater() && HasGlass()) &&
-      WinUtils::dwmDwmDefWindowProcPtr(mWnd, msg, wParam, lParam, &dwmHitResult)) {
+      WinUtils::dwmDwmDefWindowProcPtr(mWnd, msg, wParam, lParam,
+                                       &dwmHitResult)) {
     *aRetValue = dwmHitResult;
     return true;
   }
@@ -4934,7 +4948,6 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
                                  quitType);*/
         obsServ->NotifyObservers(cancelQuit, "quit-application-requested",
                                  nullptr);
-
 
         bool abortQuit;
         cancelQuit->GetData(&abortQuit);
@@ -4964,12 +4977,12 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
             mozilla::services::GetObserverService();
         const char16_t* context = u"shutdown-persist";
         const char16_t* syncShutdown = u"syncShutdown";
-        //const char16_t* quitType = GetQuitType();
+        // const char16_t* quitType = GetQuitType();
 
         obsServ->NotifyObservers(nullptr, "quit-application-granted",
                                  syncShutdown);
         obsServ->NotifyObservers(nullptr, "quit-application-forced", nullptr);
-        //obsServ->NotifyObservers(nullptr, "quit-application", quitType);
+        // obsServ->NotifyObservers(nullptr, "quit-application", quitType);
         obsServ->NotifyObservers(nullptr, "quit-application", nullptr);
         obsServ->NotifyObservers(nullptr, "profile-change-net-teardown",
                                  context);
@@ -5034,8 +5047,8 @@ bool nsWindow::ProcessMessage(UINT msg, WPARAM& wParam, LPARAM& lParam,
     } break;
 
     case WM_SETTINGCHANGE: {
-      if (//wParam == SPI_SETCLIENTAREAANIMATION ||
-          // CaretBlinkTime is cached in nsLookAndFeel
+      if (  // wParam == SPI_SETCLIENTAREAANIMATION ||
+            // CaretBlinkTime is cached in nsLookAndFeel
           wParam == SPI_SETKEYBOARDDELAY) {
         NotifyThemeChanged();
         break;
@@ -6519,8 +6532,9 @@ void nsWindow::OnWindowPosChanged(WINDOWPOS* wp) {
 void nsWindow::ActivateOtherWindowHelper(HWND aWnd) {
   // Find the next window that is enabled, visible, and not minimized.
   HWND hwndBelow = ::GetNextWindow(aWnd, GW_HWNDNEXT);
-  while (hwndBelow && (!::IsWindowEnabled(hwndBelow) || !::IsWindowVisible(hwndBelow) ||
-                       ::IsIconic(hwndBelow))) {
+  while (hwndBelow &&
+         (!::IsWindowEnabled(hwndBelow) || !::IsWindowVisible(hwndBelow) ||
+          ::IsIconic(hwndBelow))) {
     hwndBelow = ::GetNextWindow(hwndBelow, GW_HWNDNEXT);
   }
 
@@ -6528,8 +6542,7 @@ void nsWindow::ActivateOtherWindowHelper(HWND aWnd) {
   // next window.
   ::SetWindowPos(aWnd, HWND_BOTTOM, 0, 0, 0, 0,
                  SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE);
-  if (hwndBelow)
-    ::SetForegroundWindow(hwndBelow);
+  if (hwndBelow) ::SetForegroundWindow(hwndBelow);
 
   // Play the minimize sound while we're here, since that is also
   // forgotten when we use SW_SHOWMINIMIZED.

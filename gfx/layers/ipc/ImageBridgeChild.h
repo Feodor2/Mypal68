@@ -19,7 +19,9 @@
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/PImageBridgeChild.h"
 #include "mozilla/Mutex.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 #include "nsRegion.h"  // for nsIntRegion
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/ReentrantMonitor.h"  // for ReentrantMonitor, etc
@@ -180,8 +182,12 @@ class ImageBridgeChild final : public PImageBridgeChild,
   PTextureChild* AllocPTextureChild(
       const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
       const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
-      const uint64_t& aSerial,
-      const wr::MaybeExternalImageId& aExternalImageId);
+      const uint64_t& aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      const wr::MaybeExternalImageId& aExternalImageId
+#endif
+  );
 
   bool DeallocPTextureChild(PTextureChild* actor);
 
@@ -264,8 +270,12 @@ class ImageBridgeChild final : public PImageBridgeChild,
    * See CompositableForwarder::UseTextures
    */
   void UseTextures(CompositableClient* aCompositable,
-                   const nsTArray<TimedTextureClient>& aTextures,
-                   const Maybe<wr::RenderRoot>& aRenderRoot) override;
+                   const nsTArray<TimedTextureClient>& aTextures
+#ifdef MOZ_BUILD_WEBRENDER
+                   ,
+                   const Maybe<wr::RenderRoot>& aRenderRoot
+#endif
+                   ) override;
   void UseComponentAlphaTextures(CompositableClient* aCompositable,
                                  TextureClient* aClientOnBlack,
                                  TextureClient* aClientOnWhite) override;
@@ -292,9 +302,13 @@ class ImageBridgeChild final : public PImageBridgeChild,
   bool DestroyInTransaction(PTextureChild* aTexture) override;
   bool DestroyInTransaction(const CompositableHandle& aHandle);
 
-  void RemoveTextureFromCompositable(
-      CompositableClient* aCompositable, TextureClient* aTexture,
-      const Maybe<wr::RenderRoot>& aRenderRoot) override;
+  void RemoveTextureFromCompositable(CompositableClient* aCompositable,
+                                     TextureClient* aTexture
+#ifdef MOZ_BUILD_WEBRENDER
+                                     ,
+                                     const Maybe<wr::RenderRoot>& aRenderRoot
+#endif
+                                     ) override;
 
   void UseTiledLayerBuffer(
       CompositableClient* aCompositable,
@@ -335,7 +349,9 @@ class ImageBridgeChild final : public PImageBridgeChild,
                                const ReadLockDescriptor& aReadLock,
                                LayersBackend aLayersBackend,
                                TextureFlags aFlags, uint64_t aSerial,
+#ifdef MOZ_BUILD_WEBRENDER
                                wr::MaybeExternalImageId& aExternalImageId,
+#endif
                                nsIEventTarget* aTarget = nullptr) override;
 
   bool IsSameProcess() const override;
@@ -347,7 +363,9 @@ class ImageBridgeChild final : public PImageBridgeChild,
 
   void HandleFatalError(const char* aMsg) const override;
 
+#ifdef MOZ_BUILD_WEBRENDER
   wr::MaybeExternalImageId GetNextExternalImageId() override;
+#endif
 
  protected:
   explicit ImageBridgeChild(uint32_t aNamespace);

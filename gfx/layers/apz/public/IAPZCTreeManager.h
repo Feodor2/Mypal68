@@ -7,7 +7,9 @@
 
 #include <stdint.h>  // for uint64_t, uint32_t
 
-#include "mozilla/layers/APZTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/APZTypes.h"
+#endif
 #include "mozilla/layers/LayersTypes.h"          // for TouchBehaviorFlags
 #include "mozilla/layers/ScrollableLayerGuid.h"  // for ScrollableLayerGuid, etc
 #include "mozilla/layers/ZoomConstraints.h"      // for ZoomConstraints
@@ -54,9 +56,13 @@ class IAPZCTreeManager {
    * up. |aRect| must be given in CSS pixels, relative to the document.
    * |aFlags| is a combination of the ZoomToRectBehavior enum values.
    */
-  virtual void ZoomToRect(const SLGuidAndRenderRoot& aGuid,
-                          const CSSRect& aRect,
-                          const uint32_t aFlags = DEFAULT_BEHAVIOR) = 0;
+  virtual void ZoomToRect(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid,
+#else
+      const ScrollableLayerGuid& aGuid,
+#endif
+      const CSSRect& aRect, const uint32_t aFlags = DEFAULT_BEHAVIOR) = 0;
 
   /**
    * If we have touch listeners, this should always be called when we know
@@ -80,7 +86,12 @@ class IAPZCTreeManager {
    * should be set to ScrollableLayerGuid::NULL_SCROLL_ID.
    */
   virtual void SetTargetAPZC(uint64_t aInputBlockId,
-                             const nsTArray<SLGuidAndRenderRoot>& aTargets) = 0;
+#ifdef MOZ_BUILD_WEBRENDER
+                             const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+                             const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+                             ) = 0;
 
   /**
    * Updates any zoom constraints contained in the <meta name="viewport"> tag.
@@ -88,7 +99,11 @@ class IAPZCTreeManager {
    * the given |aGuid| are cleared.
    */
   virtual void UpdateZoomConstraints(
+#ifdef MOZ_BUILD_WEBRENDER
       const SLGuidAndRenderRoot& aGuid,
+#else
+      const ScrollableLayerGuid& aGuid,
+#endif
       const Maybe<ZoomConstraints>& aConstraints) = 0;
 
   virtual void SetDPI(float aDpiValue) = 0;
@@ -105,13 +120,29 @@ class IAPZCTreeManager {
   virtual void SetAllowedTouchBehavior(
       uint64_t aInputBlockId, const nsTArray<TouchBehaviorFlags>& aValues) = 0;
 
-  virtual void StartScrollbarDrag(const SLGuidAndRenderRoot& aGuid,
-                                  const AsyncDragMetrics& aDragMetrics) = 0;
+  virtual void StartScrollbarDrag(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid,
+#else
+      const ScrollableLayerGuid& aGuid,
+#endif
+      const AsyncDragMetrics& aDragMetrics) = 0;
 
-  virtual bool StartAutoscroll(const SLGuidAndRenderRoot& aGuid,
-                               const ScreenPoint& aAnchorLocation) = 0;
+  virtual bool StartAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid,
+#else
+      const ScrollableLayerGuid& aGuid,
+#endif
+      const ScreenPoint& aAnchorLocation) = 0;
 
-  virtual void StopAutoscroll(const SLGuidAndRenderRoot& aGuid) = 0;
+  virtual void StopAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid
+#else
+      const ScrollableLayerGuid& aGuid
+#endif
+      ) = 0;
 
   /**
    * Function used to disable LongTap gestures.

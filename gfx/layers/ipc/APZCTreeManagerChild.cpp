@@ -46,9 +46,13 @@ void APZCTreeManagerChild::SetKeyboardMap(const KeyboardMap& aKeyboardMap) {
   SendSetKeyboardMap(aKeyboardMap);
 }
 
-void APZCTreeManagerChild::ZoomToRect(const SLGuidAndRenderRoot& aGuid,
-                                      const CSSRect& aRect,
-                                      const uint32_t aFlags) {
+void APZCTreeManagerChild::ZoomToRect(
+#ifdef MOZ_BUILD_WEBRENDER
+    const SLGuidAndRenderRoot& aGuid,
+#else
+    const ScrollableLayerGuid& aGuid,
+#endif
+    const CSSRect& aRect, const uint32_t aFlags) {
   SendZoomToRect(aGuid, aRect, aFlags);
 }
 
@@ -58,12 +62,22 @@ void APZCTreeManagerChild::ContentReceivedInputBlock(uint64_t aInputBlockId,
 }
 
 void APZCTreeManagerChild::SetTargetAPZC(
-    uint64_t aInputBlockId, const nsTArray<SLGuidAndRenderRoot>& aTargets) {
+    uint64_t aInputBlockId,
+#ifdef MOZ_BUILD_WEBRENDER
+    const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+    const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+) {
   SendSetTargetAPZC(aInputBlockId, aTargets);
 }
 
 void APZCTreeManagerChild::UpdateZoomConstraints(
+#ifdef MOZ_BUILD_WEBRENDER
     const SLGuidAndRenderRoot& aGuid,
+#else
+    const ScrollableLayerGuid& aGuid,
+#endif
     const Maybe<ZoomConstraints>& aConstraints) {
   if (mIPCOpen) {
     SendUpdateZoomConstraints(aGuid, aConstraints);
@@ -78,16 +92,32 @@ void APZCTreeManagerChild::SetAllowedTouchBehavior(
 }
 
 void APZCTreeManagerChild::StartScrollbarDrag(
-    const SLGuidAndRenderRoot& aGuid, const AsyncDragMetrics& aDragMetrics) {
+#ifdef MOZ_BUILD_WEBRENDER
+    const SLGuidAndRenderRoot& aGuid,
+#else
+    const ScrollableLayerGuid& aGuid,
+#endif
+    const AsyncDragMetrics& aDragMetrics) {
   SendStartScrollbarDrag(aGuid, aDragMetrics);
 }
 
-bool APZCTreeManagerChild::StartAutoscroll(const SLGuidAndRenderRoot& aGuid,
-                                           const ScreenPoint& aAnchorLocation) {
+bool APZCTreeManagerChild::StartAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+    const SLGuidAndRenderRoot& aGuid,
+#else
+    const ScrollableLayerGuid& aGuid,
+#endif
+    const ScreenPoint& aAnchorLocation) {
   return SendStartAutoscroll(aGuid, aAnchorLocation);
 }
 
-void APZCTreeManagerChild::StopAutoscroll(const SLGuidAndRenderRoot& aGuid) {
+void APZCTreeManagerChild::StopAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+    const SLGuidAndRenderRoot& aGuid
+#else
+    const ScrollableLayerGuid& aGuid
+#endif
+) {
   SendStopAutoscroll(aGuid);
 }
 

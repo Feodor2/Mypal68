@@ -38,7 +38,9 @@
 #include "nsProperties.h"
 
 #include "mozilla/IntegerPrintfMacros.h"
-#include "mozilla/SizeOfState.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/SizeOfState.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::image;

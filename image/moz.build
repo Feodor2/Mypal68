@@ -57,9 +57,13 @@ EXPORTS.mozilla.image += [
     'encoders/jpeg/nsJPEGEncoder.h',
     'encoders/png/nsPNGEncoder.h',
     'ICOFileHeaders.h',
-    'ImageMemoryReporter.h',
     'RecyclingSourceSurface.h',
 ]
+
+if CONFIG['MOZ_BUILD_WEBRENDER']:
+    EXPORTS.mozilla.image += [
+        'ImageMemoryReporter.h',
+    ]
 
 UNIFIED_SOURCES += [
     'AnimationFrameBuffer.cpp',
@@ -75,7 +79,6 @@ UNIFIED_SOURCES += [
     'Image.cpp',
     'ImageCacheKey.cpp',
     'ImageFactory.cpp',
-    'ImageMemoryReporter.cpp',
     'ImageOps.cpp',
     'ImageWrapper.cpp',
     'imgFrame.cpp',
@@ -96,6 +99,8 @@ UNIFIED_SOURCES += [
     'SVGDocumentWrapper.cpp',
     'VectorImage.cpp',
 ]
+if CONFIG['MOZ_BUILD_WEBRENDER']:
+    UNIFIED_SOURCES += [ 'ImageMemoryReporter.cpp']
 if CONFIG['MOZ_ENABLE_SKIA']:
     UNIFIED_SOURCES += [ 'Downscaler.cpp']
 

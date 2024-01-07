@@ -113,7 +113,9 @@
 #include "mozilla/dom/SVGPathData.h"
 #include "mozilla/dom/TouchEvent.h"
 #include "mozilla/gfx/Tools.h"
-#include "mozilla/layers/WebRenderUserData.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderUserData.h"
+#endif
 #include "mozilla/layout/ScrollAnchorContainer.h"
 #include "nsPrintfCString.h"
 #include "ActiveLayerTracker.h"
@@ -1028,6 +1030,7 @@ void nsIFrame::DiscardOldItems() {
 }
 
 void nsIFrame::RemoveDisplayItemDataForDeletion() {
+#ifdef MOZ_BUILD_WEBRENDER
   // Destroying a WebRenderUserDataTable can cause destruction of other objects
   // which can remove frame properties in their destructor. If we delete a frame
   // property it runs the destructor of the stored object in the middle of
@@ -1043,6 +1046,7 @@ void nsIFrame::RemoveDisplayItemDataForDeletion() {
     }
     delete userDataTable;
   }
+#endif
 
   FrameLayerBuilder::RemoveFrameFromLayerManager(this, DisplayItemData());
   DisplayItemData().Clear();
@@ -2295,12 +2299,14 @@ class nsDisplaySelectionOverlay : public nsPaintedDisplayItem {
 #endif
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
+#ifdef MOZ_BUILD_WEBRENDER
   bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
+#endif
   NS_DISPLAY_DECL_NAME("SelectionOverlay", TYPE_SELECTION_OVERLAY)
  private:
   Color ComputeColor() const;
@@ -2361,6 +2367,7 @@ void nsDisplaySelectionOverlay::Paint(nsDisplayListBuilder* aBuilder,
   aDrawTarget.FillRect(rect, color);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplaySelectionOverlay::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -2374,6 +2381,7 @@ bool nsDisplaySelectionOverlay::CreateWebRenderCommands(
                     wr::ToColorF(ComputeColor()));
   return true;
 }
+#endif
 
 static Element* FindElementAncestorForMozSelection(nsIContent* aContent) {
   NS_ENSURE_TRUE(aContent, nullptr);
@@ -2568,6 +2576,7 @@ inline static bool IsSVGContentWithCSSClip(const nsIFrame* aFrame) {
                                                   nsGkAtoms::foreignObject);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsIFrame::FormsBackdropRoot(const nsStyleDisplay* aStyleDisplay,
                                  const nsStyleEffects* aStyleEffects,
                                  const nsStyleSVGReset* aStyleSVGReset) {
@@ -2596,6 +2605,7 @@ bool nsIFrame::FormsBackdropRoot(const nsStyleDisplay* aStyleDisplay,
 
   return false;
 }
+#endif
 
 Maybe<nsRect> nsIFrame::GetClipPropClipRect(const nsStyleDisplay* aDisp,
                                             const nsStyleEffects* aEffects,
@@ -2754,6 +2764,7 @@ class AutoSaveRestoreContainsBlendMode {
   }
 };
 
+#ifdef MOZ_BUILD_WEBRENDER
 class AutoSaveRestoreContainsBackdropFilter {
   nsDisplayListBuilder& mBuilder;
   bool mSavedContainsBackdropFilter;
@@ -2777,6 +2788,7 @@ class AutoSaveRestoreContainsBackdropFilter {
     mBuilder.SetContainsBackdropFilter(mSavedContainsBackdropFilter);
   }
 };
+#endif
 
 static void CheckForApzAwareEventHandlers(nsDisplayListBuilder* aBuilder,
                                           nsIFrame* aFrame) {
@@ -3113,6 +3125,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
   AutoSaveRestoreContainsBlendMode autoRestoreBlendMode(*aBuilder);
   aBuilder->SetContainsBlendMode(false);
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool backdropFilterEnabled =
       StaticPrefs::layout_css_backdrop_filter_enabled();
   bool usingBackdropFilter =
@@ -3125,6 +3138,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
 
   AutoSaveRestoreContainsBackdropFilter autoRestoreBackdropFilter(*aBuilder);
   aBuilder->SetContainsBackdropFilter(false);
+#endif
 
   nsRect visibleRectOutsideTransform = visibleRect;
   bool allowAsyncAnimation = false;
@@ -3317,7 +3331,9 @@ void nsIFrame::BuildDisplayListForStackingContext(
 
   nsDisplayListCollection set(aBuilder);
   Maybe<nsRect> clipForMask;
+#ifdef MOZ_BUILD_WEBRENDER
   bool insertBackdropRoot;
+#endif
   {
     DisplayListClipState::AutoSaveRestore nestedClipState(aBuilder);
     nsDisplayListBuilder::AutoInTransformSetter inTransformSetter(aBuilder,
@@ -3350,10 +3366,12 @@ void nsIFrame::BuildDisplayListForStackingContext(
 
     aBuilder->AdjustWindowDraggingRegion(this);
 
+#ifdef MOZ_BUILD_WEBRENDER
     if (gfxVars::UseWebRender()) {
       aBuilder->BuildCompositorHitTestInfoIfNeeded(this, set.BorderBackground(),
                                                    true);
     } else {
+#endif
       CompositorHitTestInfo info = aBuilder->BuildCompositorHitTestInfo()
                                        ? GetCompositorHitTestInfo(aBuilder)
                                        : CompositorHitTestInvisibleToHit;
@@ -3365,7 +3383,9 @@ void nsIFrame::BuildDisplayListForStackingContext(
         // Let child frames know the current hit test area and hit test flags.
         aBuilder->SetCompositorHitTestInfo(hitTestInfo->mArea,
                                            hitTestInfo->mFlags);
+#ifdef MOZ_BUILD_WEBRENDER
       }
+#endif
     }
 
     MarkAbsoluteFramesForDisplayList(aBuilder);
@@ -3374,9 +3394,11 @@ void nsIFrame::BuildDisplayListForStackingContext(
     aBuilder->Check();
     aBuilder->DisplayCaret(this, set.Outlines());
 
+#ifdef MOZ_BUILD_WEBRENDER
     insertBackdropRoot = backdropFilterEnabled &&
                          aBuilder->ContainsBackdropFilter() &&
                          FormsBackdropRoot(disp, effects, StyleSVGReset());
+#endif
 
     // Blend modes are a real pain for retained display lists. We build a blend
     // container item if the built list contains any blend mode items within
@@ -3396,7 +3418,11 @@ void nsIFrame::BuildDisplayListForStackingContext(
     // to remove any existing content that isn't wrapped in the blend container,
     // and then we need to build content infront/behind the blend container
     // to get correct positioning during merging.
-    if ((insertBackdropRoot || aBuilder->ContainsBlendMode()) &&
+    if ((
+#ifdef MOZ_BUILD_WEBRENDER
+            insertBackdropRoot ||
+#endif
+            aBuilder->ContainsBlendMode()) &&
         aBuilder->IsRetainingDisplayList()) {
       if (!aBuilder->GetDirtyRect().Contains(aBuilder->GetVisibleRect())) {
         aBuilder->SetPartialBuildFailed(true);
@@ -3406,12 +3432,14 @@ void nsIFrame::BuildDisplayListForStackingContext(
     }
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   // If a child contains a backdrop filter, but this stacking context does not
   // form a backdrop root, we need to propogate up the tree until we find an
   // ancestor that does form a backdrop root.
   if (!insertBackdropRoot && aBuilder->ContainsBackdropFilter()) {
     autoRestoreBackdropFilter.DelegateUp(true);
   }
+#endif
 
   if (aBuilder->IsBackgroundOnly()) {
     set.BlockBorderBackgrounds()->DeleteAll(aBuilder);
@@ -3464,6 +3492,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
     ct.TrackContainer(resultList.GetTop());
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (insertBackdropRoot) {
     DisplayListClipState::AutoSaveRestore backdropRootContainerClipState(
         aBuilder);
@@ -3480,6 +3509,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
         aBuilder, this, &resultList, backdropRect);
     ct.TrackContainer(resultList.GetTop());
   }
+#endif
 
   /* If there are any SVG effects, wrap the list up in an SVG effects item
    * (which also handles CSS group opacity). Note that we create an SVG effects
@@ -3719,8 +3749,10 @@ void nsIFrame::BuildDisplayListForStackingContext(
   }
 
   if (hitTestInfo) {
+#ifdef MOZ_BUILD_WEBRENDER
     // WebRender support is not yet implemented.
     MOZ_ASSERT(!gfxVars::UseWebRender());
+#endif
     AddHitTestInfo(aBuilder, &resultList, ct.mContainer, this,
                    std::move(hitTestInfo));
   }
@@ -7385,12 +7417,14 @@ Layer* nsIFrame::InvalidateLayer(DisplayItemType aDisplayItemKey,
   nsIFrame* displayRoot = nsLayoutUtils::GetDisplayRootFrame(this);
   InvalidateRenderingObservers(displayRoot, this, false);
 
+#ifdef MOZ_BUILD_WEBRENDER
   // Check if frame supports WebRender's async update
   if ((aFlags & UPDATE_IS_ASYNC) &&
       WebRenderUserData::SupportsAsyncUpdate(this)) {
     // WebRender does not use layer, then return nullptr.
     return nullptr;
   }
+#endif
 
   // If the layer is being updated asynchronously, and it's being forwarded
   // to a compositor, then we don't need to invalidate.
@@ -10848,6 +10882,7 @@ void nsIFrame::SetParent(nsContainerFrame* aParent) {
 void nsIFrame::CreateOwnLayerIfNeeded(nsDisplayListBuilder* aBuilder,
                                       nsDisplayList* aList,
                                       bool* aCreatedContainerItem) {
+#ifdef MOZ_BUILD_WEBRENDER
   wr::RenderRoot renderRoot =
       gfxUtils::GetRenderRootForFrame(this).valueOr(wr::RenderRoot::Default);
 
@@ -10858,9 +10893,11 @@ void nsIFrame::CreateOwnLayerIfNeeded(nsDisplayListBuilder* aBuilder,
     if (aCreatedContainerItem) {
       *aCreatedContainerItem = true;
     }
-  } else if (GetContent() && GetContent()->IsXULElement() &&
-             GetContent()->AsElement()->HasAttr(kNameSpaceID_None,
-                                                nsGkAtoms::layer)) {
+  } else
+#endif
+      if (GetContent() && GetContent()->IsXULElement() &&
+          GetContent()->AsElement()->HasAttr(kNameSpaceID_None,
+                                             nsGkAtoms::layer)) {
     aList->AppendNewToTop<nsDisplayOwnLayer>(
         aBuilder, this, aList, aBuilder->CurrentActiveScrolledRoot());
     if (aCreatedContainerItem) {
@@ -10887,8 +10924,11 @@ bool nsIFrame::IsStackingContext(const nsStyleDisplay* aStyleDisplay,
                             aStylePosition->mZIndex.IsInteger())) ||
          (aStyleDisplay->mWillChange.bits &
           StyleWillChangeBits::STACKING_CONTEXT) ||
-         aStyleDisplay->mIsolation != StyleIsolation::Auto ||
-         aStyleEffects->HasBackdropFilters();
+         aStyleDisplay->mIsolation != StyleIsolation::Auto
+#ifdef MOZ_BUILD_WEBRENDER
+         || aStyleEffects->HasBackdropFilters()
+#endif
+      ;
 }
 
 bool nsIFrame::IsStackingContext() {
@@ -11166,13 +11206,14 @@ CompositorHitTestInfo nsIFrame::GetCompositorHitTestInfo(
   // Anything that didn't match the above conditions is visible to hit-testing.
   result = CompositorHitTestFlags::eVisibleToHitTest;
   if (nsSVGIntegrationUtils::UsingMaskOrClipPathForFrame(this)) {
+#ifdef MOZ_BUILD_WEBRENDER
     // If WebRender is enabled, simple clip-paths can be converted into WR
     // clips that WR knows how to hit-test against, so we don't need to mark
     // it as an irregular area.
     if (!gfxVars::UseWebRender() ||
-        !nsSVGIntegrationUtils::UsingSimpleClipPathForFrame(this)) {
+        !nsSVGIntegrationUtils::UsingSimpleClipPathForFrame(this))
+#endif
       result += CompositorHitTestFlags::eIrregularArea;
-    }
   }
 
   if (aBuilder->IsBuildingNonLayerizedScrollbar()) {

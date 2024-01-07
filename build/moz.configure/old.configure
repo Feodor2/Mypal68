@@ -214,6 +214,7 @@ def old_configure_options(*options):
     '--enable-system-sqlite',
     '--enable-universalchardet',
     '--enable-updater',
+    '--enable-webrender',
     '--enable-xul',
     '--enable-zipwriter',
     '--includedir',

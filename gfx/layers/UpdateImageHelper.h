@@ -50,7 +50,11 @@ class UpdateImageHelper {
     return target.forget();
   }
 
-  bool UpdateImage(wr::RenderRoot aRenderRoot) {
+  bool UpdateImage(
+#ifdef MOZ_BUILD_WEBRENDER
+      wr::RenderRoot aRenderRoot
+#endif
+  ) {
     if (!mTexture) {
       return false;
     }
@@ -63,8 +67,12 @@ class UpdateImageHelper {
     RefPtr<TextureWrapperImage> image = new TextureWrapperImage(
         mTexture, gfx::IntRect(gfx::IntPoint(0, 0), mImageSize));
     mImageContainer->SetCurrentImageInTransaction(image);
-    return mImageClient->UpdateImage(mImageContainer, /* unused */ 0,
-                                     Some(aRenderRoot));
+    return mImageClient->UpdateImage(mImageContainer, /* unused */ 0
+#ifdef MOZ_BUILD_WEBRENDER
+                                     ,
+                                     Some(aRenderRoot)
+#endif
+    );
   }
 
  private:

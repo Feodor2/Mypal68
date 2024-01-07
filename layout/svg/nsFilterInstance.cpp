@@ -95,6 +95,7 @@ void nsFilterInstance::PaintFilteredFrame(
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 static mozilla::wr::ComponentTransferFuncType FuncTypeToWr(uint8_t aFuncType) {
   switch (aFuncType) {
     case SVG_FECOMPONENTTRANSFER_TYPE_TABLE:
@@ -108,7 +109,6 @@ static mozilla::wr::ComponentTransferFuncType FuncTypeToWr(uint8_t aFuncType) {
     case SVG_FECOMPONENTTRANSFER_TYPE_IDENTITY:
     default:
       return mozilla::wr::ComponentTransferFuncType::Identity;
-
   }
   MOZ_ASSERT_UNREACHABLE("all func types not handled?");
   return mozilla::wr::ComponentTransferFuncType::Identity;
@@ -367,6 +367,7 @@ bool nsFilterInstance::BuildWebRenderFilters(nsIFrame* aFilteredFrame,
   }
   return true;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 nsRegion nsFilterInstance::GetPostFilterDirtyArea(
     nsIFrame* aFilteredFrame, const nsRegion& aPreFilterDirtyRegion) {

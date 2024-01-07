@@ -164,19 +164,32 @@ static already_AddRefed<GLContext> CreateEAGLContext(CreateContextFlags flags, b
 }
 
 already_AddRefed<GLContext> GLContextProviderEAGL::CreateForCompositorWidget(
-    CompositorWidget* aCompositorWidget, bool aWebRender, bool aForceAccelerated) {
+    CompositorWidget* aCompositorWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+    bool aWebRender,
+#endif
+    bool aForceAccelerated) {
   if (!aCompositorWidget) {
     MOZ_ASSERT(false);
     return nullptr;
   }
-  return CreateForWindow(aCompositorWidget->RealWidget(), aWebRender, aForceAccelerated);
+  return CreateForWindow(aCompositorWidget->RealWidget(),
+#ifdef MOZ_BUILD_WEBRENDER
+                         aWebRender,
+#endif
+                         aForceAccelerated);
 }
 
 already_AddRefed<GLContext> GLContextProviderEAGL::CreateForWindow(nsIWidget* aWidget,
+#ifdef MOZ_BUILD_WEBRENDER
                                                                    bool aWebRender,
+#endif
                                                                    bool aForceAccelerated) {
-  RefPtr<GLContext> glContext =
-      CreateEAGLContext(CreateContextFlags::NONE, false, GetGlobalContextEAGL());
+  RefPtr<GLContext> glContext = CreateEAGLContext(CreateContextFlags::NONE,
+#ifdef MOZ_BUILD_WEBRENDER
+                                                  false,
+#endif
+                                                  GetGlobalContextEAGL());
   if (!glContext) {
     return nullptr;
   }

@@ -7,7 +7,9 @@
 #include "NativeFontResourceFreeType.h"
 #include "Logging.h"
 #include "StackArray.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 
 #ifdef USE_SKIA
 #  include "skia/include/ports/SkTypeface_cairo.h"
@@ -46,6 +48,7 @@ bool ScaledFontFreeType::GetFontInstanceData(FontInstanceDataOutput aCb,
   return true;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool ScaledFontFreeType::GetWRFontInstanceOptions(
     Maybe<wr::FontInstanceOptions>* aOutOptions,
     Maybe<wr::FontInstancePlatformOptions>* aOutPlatformOptions,
@@ -72,6 +75,7 @@ bool ScaledFontFreeType::GetWRFontInstanceOptions(
 
   return true;
 }
+#endif
 
 FT_Face UnscaledFontFreeType::InitFace() {
   if (mFace) {

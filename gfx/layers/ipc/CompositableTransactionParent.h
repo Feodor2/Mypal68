@@ -34,10 +34,17 @@ class CompositableParentManager : public HostIPCAllocator {
   uint64_t GetFwdTransactionId() { return mFwdTransactionId; }
 
   RefPtr<CompositableHost> AddCompositable(const CompositableHandle& aHandle,
-                                           const TextureInfo& aInfo,
-                                           bool aUseWebRender);
+                                           const TextureInfo& aInfo
+#ifdef MOZ_BUILD_WEBRENDER
+                                           , bool aUseWebRender
+#endif
+                                          );
   RefPtr<CompositableHost> FindCompositable(
-      const CompositableHandle& aHandle, bool aAllowDisablingWebRender = false);
+      const CompositableHandle& aHandle
+#ifdef MOZ_BUILD_WEBRENDER
+      , bool aAllowDisablingWebRender = false
+#endif
+      );
 
  protected:
   /**

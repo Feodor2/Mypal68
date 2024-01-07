@@ -253,8 +253,12 @@ void CompositableParentManager::DestroyActor(const OpDestroy& aOp) {
 }
 
 RefPtr<CompositableHost> CompositableParentManager::AddCompositable(
-    const CompositableHandle& aHandle, const TextureInfo& aInfo,
-    bool aUseWebRender) {
+    const CompositableHandle& aHandle, const TextureInfo& aInfo
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    bool aUseWebRender
+#endif
+) {
   if (mCompositables.find(aHandle.Value()) != mCompositables.end()) {
     NS_ERROR("Client should not allocate duplicate handles");
     return nullptr;
@@ -264,8 +268,12 @@ RefPtr<CompositableHost> CompositableParentManager::AddCompositable(
     return nullptr;
   }
 
-  RefPtr<CompositableHost> host =
-      CompositableHost::Create(aInfo, aUseWebRender);
+  RefPtr<CompositableHost> host = CompositableHost::Create(aInfo
+#ifdef MOZ_BUILD_WEBRENDER
+                                                           ,
+                                                           aUseWebRender
+#endif
+  );
   if (!host) {
     return nullptr;
   }
@@ -275,12 +283,18 @@ RefPtr<CompositableHost> CompositableParentManager::AddCompositable(
 }
 
 RefPtr<CompositableHost> CompositableParentManager::FindCompositable(
-    const CompositableHandle& aHandle, bool aAllowDisablingWebRender) {
+    const CompositableHandle& aHandle
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    bool aAllowDisablingWebRender
+#endif
+) {
   auto iter = mCompositables.find(aHandle.Value());
   if (iter == mCompositables.end()) {
     return nullptr;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   RefPtr<CompositableHost> host = iter->second;
   if (!aAllowDisablingWebRender) {
     return host;
@@ -302,6 +316,9 @@ RefPtr<CompositableHost> CompositableParentManager::FindCompositable(
   mCompositables[aHandle.Value()] = newHost;
 
   return newHost;
+#else
+  return iter->second;
+#endif
 }
 
 void CompositableParentManager::ReleaseCompositable(

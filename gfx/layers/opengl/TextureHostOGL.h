@@ -24,7 +24,9 @@
 #include "mozilla/layers/LayersSurfaces.h"   // for SurfaceDescriptor
 #include "mozilla/layers/TextureHost.h"      // for TextureHost, etc
 #include "mozilla/mozalloc.h"                // for operator delete, etc
-#include "mozilla/webrender/RenderThread.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/RenderThread.h"
+#endif
 #include "nsCOMPtr.h"         // for already_AddRefed
 #include "nsDebug.h"          // for NS_WARNING
 #include "nsISupportsImpl.h"  // for TextureImage::Release, etc
@@ -425,6 +427,7 @@ class SurfaceTextureHost : public TextureHost {
 
   SurfaceTextureHost* AsSurfaceTextureHost() override { return this; }
 
+#  ifdef MOZ_BUILD_WEBRENDER
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
 
@@ -437,6 +440,7 @@ class SurfaceTextureHost : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys) override;
+#  endif
 
  protected:
   bool EnsureAttached();
@@ -530,6 +534,7 @@ class EGLImageTextureHost final : public TextureHost {
 
   const char* Name() override { return "EGLImageTextureHost"; }
 
+#ifdef MOZ_BUILD_WEBRENDER
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
 
@@ -542,6 +547,7 @@ class EGLImageTextureHost final : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys) override;
+#endif
 
  protected:
   const EGLImage mImage;

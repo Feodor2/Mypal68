@@ -5,9 +5,9 @@
 include protocol PBackground;
 include protocol PContent;
 
-include "mozilla/layers/WebRenderMessageUtils.h";
+include "mozilla/ipc/ByteBufUtils.h";
 
-using mozilla::wr::ByteBuffer from "mozilla/webrender/WebRenderTypes.h";
+using mozilla::ipc::ByteBuffer from "mozilla/ipc/ByteBufUtils.h";
 
 namespace mozilla {
 namespace ipc {

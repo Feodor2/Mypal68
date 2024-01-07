@@ -8,8 +8,10 @@
 #include "gfxUtils.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathHelpers.h"
-#include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/StackingContextHelper.h"
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 #include "nsPresContext.h"
 #include "nsCSSRendering.h"
 #include "nsLayoutUtils.h"
@@ -476,6 +478,7 @@ nsCString DisplayItemClip::ToString() const {
   return std::move(str);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void DisplayItemClip::ToComplexClipRegions(
     int32_t aAppUnitsPerDevPixel,
     nsTArray<wr::ComplexClipRegion>& aOutArray) const {
@@ -484,5 +487,6 @@ void DisplayItemClip::ToComplexClipRegions(
         clipRect.mRect, clipRect.mRadii, aAppUnitsPerDevPixel));
   }
 }
+#endif
 
 }  // namespace mozilla

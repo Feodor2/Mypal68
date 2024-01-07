@@ -33,7 +33,9 @@
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Vector.h"
-#include "mozilla/webrender/webrender_ffi.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/webrender_ffi.h"
+#endif
 #include "nsAppRunner.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIClipboardHelper.h"
@@ -1417,6 +1419,7 @@ nsresult gfxUtils::ThreadSafeGetFeatureStatus(
 #define GFX_SHADER_CHECK_DEVICE_ID_PREF "gfx-shader-check.device-id"
 #define GFX_SHADER_CHECK_DRIVER_VERSION_PREF "gfx-shader-check.driver-version"
 
+#ifdef MOZ_BUILD_WEBRENDER
 /* static */
 void gfxUtils::RemoveShaderCacheFromDiskIfNecessary() {
   if (!gfxVars::UseWebRenderProgramBinaryDisk()) {
@@ -1458,6 +1461,7 @@ void gfxUtils::RemoveShaderCacheFromDiskIfNecessary() {
   Preferences::SetString(GFX_SHADER_CHECK_DRIVER_VERSION_PREF, driverVersion);
   return;
 }
+#endif
 
 /* static */
 bool gfxUtils::DumpDisplayList() {
@@ -1468,6 +1472,7 @@ bool gfxUtils::DumpDisplayList() {
           XRE_IsContentProcess());
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 wr::RenderRoot gfxUtils::GetContentRenderRoot() {
   if (gfx::gfxVars::UseWebRender() &&
       StaticPrefs::gfx_webrender_split_render_roots_AtStartup()) {
@@ -1541,6 +1546,7 @@ wr::RenderRoot gfxUtils::RecursivelyGetRenderRootForElement(
 
   return wr::RenderRoot::Default;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 FILE* gfxUtils::sDumpPaintFile = stderr;
 

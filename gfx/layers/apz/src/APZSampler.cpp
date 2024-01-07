@@ -13,27 +13,40 @@
 #include "mozilla/layers/LayerMetricsWrapper.h"
 #include "mozilla/layers/SynchronousTask.h"
 #include "TreeTraversal.h"
-#include "mozilla/webrender/WebRenderAPI.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderAPI.h"
+#endif
 
 namespace mozilla {
 namespace layers {
 
+#ifdef MOZ_BUILD_WEBRENDER
 StaticMutex APZSampler::sWindowIdLock;
 StaticAutoPtr<std::unordered_map<uint64_t, RefPtr<APZSampler>>>
     APZSampler::sWindowIdMap;
+#endif
 
-APZSampler::APZSampler(const RefPtr<APZCTreeManager>& aApz,
-                       bool aIsUsingWebRender)
-    : mApz(aApz),
+APZSampler::APZSampler(const RefPtr<APZCTreeManager>& aApz
+#ifdef MOZ_BUILD_WEBRENDER
+                       ,
+                       bool aIsUsingWebRender
+#endif
+                       )
+    : mApz(aApz)
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
       mIsUsingWebRender(aIsUsingWebRender),
       mThreadIdLock("APZSampler::mThreadIdLock"),
-      mSampleTimeLock("APZSampler::mSampleTimeLock") {
+      mSampleTimeLock("APZSampler::mSampleTimeLock")
+#endif
+{
   MOZ_ASSERT(aApz);
   mApz->SetSampler(this);
 }
 
 APZSampler::~APZSampler() { mApz->SetSampler(nullptr); }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void APZSampler::Destroy() {
   StaticMutexAutoLock lock(sWindowIdLock);
   if (mWindowId) {
@@ -93,6 +106,7 @@ void APZSampler::SampleForWebRender(wr::TransactionWrapper& aTxn,
   }
   mApz->SampleForWebRender(aTxn, sampleTime, aRenderRoot);
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 bool APZSampler::SampleAnimations(const LayerMetricsWrapper& aLayer,
                                   const TimeStamp& aSampleTime) {
@@ -217,6 +231,7 @@ void APZSampler::AssertOnSamplerThread() const {
 }
 
 bool APZSampler::IsSamplerThread() const {
+#ifdef MOZ_BUILD_WEBRENDER
   if (mIsUsingWebRender) {
     // If the sampler thread id isn't set yet then we cannot be running on the
     // sampler thread (because we will have the thread id before we run any
@@ -225,9 +240,11 @@ bool APZSampler::IsSamplerThread() const {
     MutexAutoLock lock(mThreadIdLock);
     return mSamplerThreadId && PlatformThread::CurrentId() == *mSamplerThreadId;
   }
+#endif
   return CompositorThreadHolder::IsInCompositorThread();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 /*static*/
 already_AddRefed<APZSampler> APZSampler::GetSampler(
     const wr::WrWindowId& aWindowId) {
@@ -241,10 +258,12 @@ already_AddRefed<APZSampler> APZSampler::GetSampler(
   }
   return sampler.forget();
 }
+#endif
 
 }  // namespace layers
 }  // namespace mozilla
 
+#ifdef MOZ_BUILD_WEBRENDER
 void apz_register_sampler(mozilla::wr::WrWindowId aWindowId) {
   mozilla::layers::APZSampler::SetSamplerThread(aWindowId);
 }
@@ -257,3 +276,4 @@ void apz_sample_transforms(mozilla::wr::WrWindowId aWindowId,
 }
 
 void apz_deregister_sampler(mozilla::wr::WrWindowId aWindowId) {}
+#endif

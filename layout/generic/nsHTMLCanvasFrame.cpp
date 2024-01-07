@@ -10,9 +10,11 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
-#include "mozilla/layers/WebRenderBridgeChild.h"
-#include "mozilla/layers/WebRenderCanvasRenderer.h"
-#include "mozilla/layers/RenderRootStateManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderBridgeChild.h"
+#  include "mozilla/layers/WebRenderCanvasRenderer.h"
+#  include "mozilla/layers/RenderRootStateManager.h"
+#endif
 #include "nsDisplayList.h"
 #include "nsLayoutUtils.h"
 #include "nsStyleUtil.h"
@@ -107,6 +109,7 @@ class nsDisplayCanvas final : public nsPaintedDisplayItem {
         aBuilder, aManager, this, aContainerParameters);
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       wr::IpcResourceUpdateQueue& aResources, const StackingContextHelper& aSc,
@@ -192,6 +195,7 @@ class nsDisplayCanvas final : public nsPaintedDisplayItem {
     }
     return true;
   }
+#endif
 
   virtual LayerState GetLayerState(
       nsDisplayListBuilder* aBuilder, LayerManager* aManager,
@@ -444,11 +448,13 @@ already_AddRefed<Layer> nsHTMLCanvasFrame::BuildLayer(
   return layer.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsHTMLCanvasFrame::UpdateWebRenderCanvasData(
     nsDisplayListBuilder* aBuilder, WebRenderCanvasData* aCanvasData) {
   HTMLCanvasElement* element = static_cast<HTMLCanvasElement*>(GetContent());
   return element->UpdateWebRenderCanvasData(aBuilder, aCanvasData);
 }
+#endif
 
 void nsHTMLCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                          const nsDisplayListSet& aLists) {

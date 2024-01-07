@@ -782,7 +782,9 @@ class nsTextFrame : public nsFrame {
   }
   nsFontMetrics* InflatedFontMetrics() const { return mFontMetrics; }
 
+#ifdef MOZ_BUILD_WEBRENDER
   nsRect WebRenderBounds();
+#endif
 
  protected:
   virtual ~nsTextFrame();

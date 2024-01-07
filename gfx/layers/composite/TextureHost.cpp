@@ -23,10 +23,12 @@
 #  include "mozilla/layers/TextureSync.h"
 #endif
 #include "mozilla/layers/GPUVideoTextureHost.h"
-#include "mozilla/layers/WebRenderTextureHost.h"
-#include "mozilla/webrender/RenderBufferTextureHost.h"
-#include "mozilla/webrender/RenderThread.h"
-#include "mozilla/webrender/WebRenderAPI.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderTextureHost.h"
+#  include "mozilla/webrender/RenderBufferTextureHost.h"
+#  include "mozilla/webrender/RenderThread.h"
+#  include "mozilla/webrender/WebRenderAPI.h"
+#endif
 #include "nsAString.h"
 #include "mozilla/RefPtr.h"   // for nsRefPtr
 #include "nsPrintfCString.h"  // for nsPrintfCString
@@ -74,8 +76,12 @@ namespace layers {
  */
 class TextureParent : public ParentActor<PTextureParent> {
  public:
-  TextureParent(HostIPCAllocator* aAllocator, uint64_t aSerial,
-                const wr::MaybeExternalImageId& aExternalImageId);
+  TextureParent(HostIPCAllocator* aAllocator, uint64_t aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+                ,
+                const wr::MaybeExternalImageId& aExternalImageId
+#endif
+  );
 
   virtual ~TextureParent();
 
@@ -98,9 +104,12 @@ class TextureParent : public ParentActor<PTextureParent> {
   RefPtr<TextureHost> mTextureHost;
   // mSerial is unique in TextureClient's process.
   const uint64_t mSerial;
+#ifdef MOZ_BUILD_WEBRENDER
   wr::MaybeExternalImageId mExternalImageId;
+#endif
 };
 
+#ifdef MOZ_BUILD_WEBRENDER
 static bool WrapWithWebRenderTextureHost(ISurfaceAllocator* aDeallocator,
                                          LayersBackend aBackend,
                                          TextureFlags aFlags) {
@@ -112,15 +121,24 @@ static bool WrapWithWebRenderTextureHost(ISurfaceAllocator* aDeallocator,
   }
   return true;
 }
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 PTextureParent* TextureHost::CreateIPDLActor(
     HostIPCAllocator* aAllocator, const SurfaceDescriptor& aSharedData,
     const ReadLockDescriptor& aReadLock, LayersBackend aLayersBackend,
-    TextureFlags aFlags, uint64_t aSerial,
-    const wr::MaybeExternalImageId& aExternalImageId) {
-  TextureParent* actor =
-      new TextureParent(aAllocator, aSerial, aExternalImageId);
+    TextureFlags aFlags, uint64_t aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    const wr::MaybeExternalImageId& aExternalImageId
+#endif
+) {
+  TextureParent* actor = new TextureParent(aAllocator, aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+                                           ,
+                                           aExternalImageId
+#endif
+  );
   if (!actor->Init(aSharedData, aReadLock, aLayersBackend, aFlags)) {
     actor->ActorDestroy(ipc::IProtocol::ActorDestroyReason::FailedConstructor);
     delete actor;
@@ -165,8 +183,12 @@ void TextureHost::SetLastFwdTransactionId(uint64_t aTransactionId) {
 
 already_AddRefed<TextureHost> TextureHost::Create(
     const SurfaceDescriptor& aDesc, const ReadLockDescriptor& aReadLock,
-    ISurfaceAllocator* aDeallocator, LayersBackend aBackend,
-    TextureFlags aFlags, wr::MaybeExternalImageId& aExternalImageId) {
+    ISurfaceAllocator* aDeallocator, LayersBackend aBackend, TextureFlags aFlags
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    wr::MaybeExternalImageId& aExternalImageId
+#endif
+) {
   RefPtr<TextureHost> result;
 
   switch (aDesc.type()) {
@@ -229,11 +251,13 @@ already_AddRefed<TextureHost> TextureHost::Create(
     gfxCriticalNote << "TextureHost creation failure type=" << aDesc.type();
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (result && WrapWithWebRenderTextureHost(aDeallocator, aBackend, aFlags)) {
     MOZ_ASSERT(aExternalImageId.isSome());
     result =
         new WebRenderTextureHost(aDesc, aFlags, result, aExternalImageId.ref());
   }
+#endif
 
   if (result) {
     result->DeserializeReadLock(aReadLock, aDeallocator);
@@ -569,6 +593,7 @@ void BufferTextureHost::Unlock() {
   mLocked = false;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void BufferTextureHost::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   RefPtr<wr::RenderTextureHost> texture =
@@ -636,6 +661,7 @@ void BufferTextureHost::PushDisplayItems(
         wr::ToWrColorRange(desc.colorRange()), aFilter);
   }
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 void TextureHost::DeserializeReadLock(const ReadLockDescriptor& aDesc,
                                       ISurfaceAllocator* aAllocator) {
@@ -1171,11 +1197,19 @@ size_t MemoryTextureHost::GetBufferSize() {
 }
 
 TextureParent::TextureParent(HostIPCAllocator* aSurfaceAllocator,
-                             uint64_t aSerial,
-                             const wr::MaybeExternalImageId& aExternalImageId)
+                             uint64_t aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+                             ,
+                             const wr::MaybeExternalImageId& aExternalImageId
+#endif
+                             )
     : mSurfaceAllocator(aSurfaceAllocator),
-      mSerial(aSerial),
-      mExternalImageId(aExternalImageId) {
+      mSerial(aSerial)
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      mExternalImageId(aExternalImageId)
+#endif
+{
   MOZ_COUNT_CTOR(TextureParent);
 }
 
@@ -1193,7 +1227,12 @@ bool TextureParent::Init(const SurfaceDescriptor& aSharedData,
                          const LayersBackend& aBackend,
                          const TextureFlags& aFlags) {
   mTextureHost = TextureHost::Create(aSharedData, aReadLock, mSurfaceAllocator,
-                                     aBackend, aFlags, mExternalImageId);
+                                     aBackend, aFlags
+#ifdef MOZ_BUILD_WEBRENDER
+                                     ,
+                                     mExternalImageId
+#endif
+  );
   if (mTextureHost) {
     mTextureHost->mActor = this;
   }

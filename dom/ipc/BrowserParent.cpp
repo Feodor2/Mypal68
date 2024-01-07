@@ -129,9 +129,9 @@ using namespace mozilla::widget;
 using namespace mozilla::jsipc;
 using namespace mozilla::gfx;
 
-using mozilla::Unused;
 using mozilla::LazyLogModule;
 using mozilla::StaticAutoPtr;
+using mozilla::Unused;
 
 LazyLogModule gBrowserFocusLog("BrowserFocus");
 
@@ -3811,8 +3811,12 @@ BrowserParent::StartApzAutoscroll(float aAnchorX, float aAnchorY,
   if (mRenderFrame.IsInitialized()) {
     layers::LayersId layersId = mRenderFrame.GetLayersId();
     if (nsCOMPtr<nsIWidget> widget = GetWidget()) {
+#ifdef MOZ_BUILD_WEBRENDER
       SLGuidAndRenderRoot guid(layersId, aPresShellId, aScrollId,
                                gfxUtils::GetContentRenderRoot());
+#else
+      ScrollableLayerGuid guid(layersId, aPresShellId, aScrollId);
+#endif
 
       // The anchor coordinates that are passed in are relative to the origin
       // of the screen, but we are sending them to APZ which only knows about
@@ -3841,8 +3845,12 @@ BrowserParent::StopApzAutoscroll(nsViewID aScrollId, uint32_t aPresShellId) {
   if (mRenderFrame.IsInitialized()) {
     layers::LayersId layersId = mRenderFrame.GetLayersId();
     if (nsCOMPtr<nsIWidget> widget = GetWidget()) {
+#ifdef MOZ_BUILD_WEBRENDER
       SLGuidAndRenderRoot guid(layersId, aPresShellId, aScrollId,
                                gfxUtils::GetContentRenderRoot());
+#else
+      ScrollableLayerGuid guid(layersId, aPresShellId, aScrollId);
+#endif
 
       widget->StopAsyncAutoscroll(guid);
     }

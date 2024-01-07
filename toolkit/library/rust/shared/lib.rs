@@ -64,6 +64,7 @@ use std::os::raw::c_char;
 use std::os::raw::c_int;
 
 extern "C" {
+    #[cfg(feature = "quantum_render")]
     fn gfx_critical_note(msg: *const c_char);
     #[cfg(target_os = "android")]
     fn __android_log_write(prio: c_int, tag: *const c_char, text: *const c_char) -> c_int;
@@ -96,6 +97,7 @@ impl GeckoLogger {
         log::set_boxed_logger(Box::new(gecko_logger))
     }
 
+    #[cfg(feature = "quantum_render")]
     fn should_log_to_gfx_critical_note(record: &log::Record) -> bool {
         if record.level() == log::Level::Error && record.target().contains("webrender") {
             true
@@ -104,6 +106,7 @@ impl GeckoLogger {
         }
     }
 
+    #[cfg(feature = "quantum_render")]
     fn maybe_log_to_gfx_critical_note(&self, record: &log::Record) {
         if Self::should_log_to_gfx_critical_note(record) {
             let msg = CString::new(format!("{}", record.args())).unwrap();
@@ -142,9 +145,15 @@ impl log::Log for GeckoLogger {
         self.logger.enabled(metadata)
     }
 
+    #[cfg(feature = "quantum_render")]
     fn log(&self, record: &log::Record) {
         // Forward log to gfxCriticalNote, if the log should be in gfx crash log.
         self.maybe_log_to_gfx_critical_note(record);
+        self.log_out(record);
+    }
+
+    #[cfg(not(feature = "quantum_render"))]
+    fn log(&self, record: &log::Record) {
         self.log_out(record);
     }
 

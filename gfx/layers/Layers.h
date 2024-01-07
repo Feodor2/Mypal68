@@ -37,7 +37,9 @@
 #include "mozilla/layers/CanvasRenderer.h"
 #include "mozilla/layers/LayerAttributes.h"
 #include "mozilla/layers/LayersTypes.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 #include "mozilla/mozalloc.h"        // for operator delete, etc
 #include "nsAutoPtr.h"               // for nsAutoPtr, nsRefPtr, etc
 #include "nsCOMPtr.h"                // for already_AddRefed
@@ -105,7 +107,9 @@ class Compositor;
 class FrameUniformityData;
 class PersistentBufferProvider;
 class GlyphArray;
+#ifdef MOZ_BUILD_WEBRENDER
 class WebRenderLayerManager;
+#endif
 struct AnimData;
 
 namespace layerscope {
@@ -270,7 +274,9 @@ class LayerManager : public FrameRecorder {
   virtual BasicLayerManager* AsBasicLayerManager() { return nullptr; }
   virtual HostLayerManager* AsHostLayerManager() { return nullptr; }
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual WebRenderLayerManager* AsWebRenderLayerManager() { return nullptr; }
+#endif
 
   /**
    * Returns true if this LayerManager is owned by an nsIWidget,
@@ -798,15 +804,23 @@ class LayerManager : public FrameRecorder {
    * scroll position updates to the APZ code.
    */
   virtual bool SetPendingScrollUpdateForNextTransaction(
-      ScrollableLayerGuid::ViewID aScrollId,
-      const ScrollUpdateInfo& aUpdateInfo, wr::RenderRoot aRenderRoot);
+      ScrollableLayerGuid::ViewID aScrollId, const ScrollUpdateInfo& aUpdateInfo
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      wr::RenderRoot aRenderRoot
+#endif
+  );
   Maybe<ScrollUpdateInfo> GetPendingScrollInfoUpdate(
       ScrollableLayerGuid::ViewID aScrollId);
   std::unordered_set<ScrollableLayerGuid::ViewID>
   ClearPendingScrollInfoUpdate();
 
  protected:
+#ifdef MOZ_BUILD_WEBRENDER
   wr::RenderRootArray<ScrollUpdatesMap> mPendingScrollUpdates;
+#else
+  ScrollUpdatesMap mPendingScrollUpdates;
+#endif
 };
 
 /**

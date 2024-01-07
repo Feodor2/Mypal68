@@ -6,7 +6,6 @@
 
 #include "nsImageFrame.h"
 
-#include "TextDrawTarget.h"
 #include "gfx2DGlue.h"
 #include "gfxContext.h"
 #include "gfxUtils.h"
@@ -23,8 +22,11 @@
 #include "mozilla/dom/HTMLAreaElement.h"
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/ResponsiveImageSelector.h"
-#include "mozilla/layers/RenderRootStateManager.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "TextDrawTarget.h"
+#  include "mozilla/layers/RenderRootStateManager.h"
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#endif
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
@@ -92,7 +94,9 @@ using namespace mozilla::gfx;
 using namespace mozilla::image;
 using namespace mozilla::layers;
 
+#ifdef MOZ_BUILD_WEBRENDER
 using mozilla::layout::TextDrawTarget;
+#endif
 
 // sizes (pixels) for image icon, padding and border frame
 #define ICON_SIZE (16)
@@ -772,11 +776,13 @@ void nsImageFrame::InvalidateSelf(const nsIntRect* aLayerInvalidRect,
   // Check if WebRender has interacted with this frame. If it has
   // we need to let it know that things have changed.
   const auto type = DisplayItemType::TYPE_IMAGE;
+#ifdef MOZ_BUILD_WEBRENDER
   const auto producerId =
       mImage ? mImage->GetProducerId() : kContainerProducerID_Invalid;
   if (WebRenderUserData::ProcessInvalidateForImage(this, type, producerId)) {
     return;
   }
+#endif
 
   InvalidateLayer(type, aLayerInvalidRect, aFrameInvalidRect);
 
@@ -1299,6 +1305,7 @@ class nsDisplayAltFeedback final : public nsPaintedDisplayItem {
     nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -1313,6 +1320,7 @@ class nsDisplayAltFeedback final : public nsPaintedDisplayItem {
 
     return result == ImgDrawResult::SUCCESS;
   }
+#endif
 
   NS_DISPLAY_DECL_NAME("AltFeedback", TYPE_ALT_FEEDBACK)
 };
@@ -1470,6 +1478,7 @@ ImgDrawResult nsImageFrame::DisplayAltFeedback(gfxContext& aRenderingContext,
   return result;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 ImgDrawResult nsImageFrame::DisplayAltFeedbackWithoutLayer(
     nsDisplayItem* aItem, mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -1680,6 +1689,7 @@ ImgDrawResult nsImageFrame::DisplayAltFeedbackWithoutLayer(
   // already.
   return textDrawResult ? ImgDrawResult::SUCCESS : ImgDrawResult::NOT_READY;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 #ifdef DEBUG
 static void PaintDebugImageMap(nsIFrame* aFrame, DrawTarget* aDrawTarget,
@@ -1847,6 +1857,7 @@ already_AddRefed<Layer> nsDisplayImage::BuildLayer(
   return layer.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayImage::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -1932,6 +1943,7 @@ bool nsDisplayImage::CreateWebRenderCommands(
   nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, drawResult);
   return true;
 }
+#endif
 
 ImgDrawResult nsImageFrame::PaintImage(gfxContext& aRenderingContext,
                                        nsPoint aPt, const nsRect& aDirtyRect,

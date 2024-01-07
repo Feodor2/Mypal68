@@ -4,15 +4,13 @@
 
 #include "IPCStreamSource.h"
 #include "BackgroundParent.h"  // for AssertIsOnBackgroundThread
-#include "mozilla/webrender/WebRenderTypes.h"
+#include "mozilla/ipc/ByteBufUtils.h"
 #include "nsIAsyncInputStream.h"
 #include "nsICancelableRunnable.h"
 #include "nsIRunnable.h"
 #include "nsISerialEventTarget.h"
 #include "nsStreamUtils.h"
 #include "nsThreadUtils.h"
-
-using mozilla::wr::ByteBuffer;
 
 namespace mozilla {
 namespace ipc {

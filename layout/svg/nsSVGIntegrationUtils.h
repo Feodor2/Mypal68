@@ -10,7 +10,9 @@
 #include "gfxRect.h"
 #include "nsRegionFwd.h"
 #include "mozilla/gfx/Rect.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 
 class gfxContext;
 class gfxDrawable;
@@ -32,6 +34,7 @@ class LayerManager;
 struct nsPoint;
 struct nsSize;
 
+#ifdef MOZ_BUILD_WEBRENDER
 struct WrFiltersHolder {
   nsTArray<mozilla::wr::FilterOp> filters;
   nsTArray<mozilla::wr::WrFilterData> filter_datas;
@@ -39,6 +42,7 @@ struct WrFiltersHolder {
   // rust.
   nsTArray<nsTArray<float>> values;
 };
+#endif
 
 /**
  * Integration of SVG effects (clipPath clipping, masking and filters) into
@@ -203,6 +207,7 @@ class nsSVGIntegrationUtils final {
    */
   static void PaintFilter(const PaintFramesParams& aParams);
 
+#ifdef MOZ_BUILD_WEBRENDER
   /**
    * Build WebRender filters for a frame with CSS filters applied to it.
    */
@@ -223,6 +228,7 @@ class nsSVGIntegrationUtils final {
    * Check if the filters present on |aFrame| are supported by WebRender.
    */
   static bool CanCreateWebRenderFiltersForFrame(nsIFrame* aFrame);
+#endif
 
   /**
    * Check if |aFrame| uses any SVG effects that cannot be rendered in the

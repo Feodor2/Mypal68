@@ -37,7 +37,12 @@ class DisplayportSetListener : public nsAPostRefreshObserver {
  public:
   DisplayportSetListener(nsIWidget* aWidget, PresShell* aPresShell,
                          const uint64_t& aInputBlockId,
-                         const nsTArray<SLGuidAndRenderRoot>& aTargets);
+#ifdef MOZ_BUILD_WEBRENDER
+                         const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+                         const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+  );
   virtual ~DisplayportSetListener();
   bool Register();
   void DidRefresh() override;
@@ -46,7 +51,11 @@ class DisplayportSetListener : public nsAPostRefreshObserver {
   RefPtr<nsIWidget> mWidget;
   RefPtr<PresShell> mPresShell;
   uint64_t mInputBlockId;
+#ifdef MOZ_BUILD_WEBRENDER
   nsTArray<SLGuidAndRenderRoot> mTargets;
+#else
+  nsTArray<ScrollableLayerGuid> mTargets;
+#endif
 };
 
 /* This class contains some helper methods that facilitate implementing the

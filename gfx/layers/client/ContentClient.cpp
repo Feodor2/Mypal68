@@ -3,10 +3,10 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/layers/ContentClient.h"
-#include "BasicLayers.h"            // for BasicLayerManager
-#include "gfxContext.h"             // for gfxContext, etc
-#include "gfxPlatform.h"            // for gfxPlatform
-#include "gfxEnv.h"                 // for gfxEnv
+#include "BasicLayers.h"  // for BasicLayerManager
+#include "gfxContext.h"   // for gfxContext, etc
+#include "gfxPlatform.h"  // for gfxPlatform
+#include "gfxEnv.h"       // for gfxEnv
 
 #include "gfxPoint.h"               // for IntSize, gfxPoint
 #include "gfxUtils.h"               // for gfxUtils
@@ -144,10 +144,12 @@ ContentClient::PaintState ContentClient::BeginPaint(PaintedLayer* aLayer,
   // We need to disable rotation if we're going to be resampled when
   // drawing, because we might sample across the rotation boundary.
   // Also disable buffer rotation when using webrender.
-  bool canHaveRotation =
-      gfxPlatform::BufferRotationEnabled() &&
-      !(aFlags & (PAINT_WILL_RESAMPLE | PAINT_NO_ROTATION)) &&
-      !(aLayer->Manager()->AsWebRenderLayerManager());
+  bool canHaveRotation = gfxPlatform::BufferRotationEnabled() &&
+                         !(aFlags & (PAINT_WILL_RESAMPLE | PAINT_NO_ROTATION))
+#ifdef MOZ_BUILD_WEBRENDER
+                         && !(aLayer->Manager()->AsWebRenderLayerManager())
+#endif
+      ;
   bool canDrawRotated = aFlags & PAINT_CAN_DRAW_ROTATED;
   OpenMode readMode =
       result.mAsyncPaint ? OpenMode::OPEN_READ_ASYNC : OpenMode::OPEN_READ;
@@ -713,7 +715,12 @@ void ContentClientRemoteBuffer::Updated(const nsIntRegion& aRegionToDraw,
     IntSize size = remoteBuffer->GetClient()->GetSize();
     t->mPictureRect = nsIntRect(0, 0, size.width, size.height);
 
-    GetForwarder()->UseTextures(this, textures, Nothing());
+    GetForwarder()->UseTextures(this, textures
+#ifdef MOZ_BUILD_WEBRENDER
+                                ,
+                                Nothing()
+#endif
+    );
   }
 
   // This forces a synchronous transaction, so we can swap buffers now

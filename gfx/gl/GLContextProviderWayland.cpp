@@ -28,24 +28,43 @@ already_AddRefed<GLContext> GLContextProviderWayland::CreateWrappingExisting(
 }
 
 already_AddRefed<GLContext> GLContextProviderWayland::CreateForCompositorWidget(
-    CompositorWidget* aCompositorWidget, bool aWebRender,
+    CompositorWidget* aCompositorWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+    bool aWebRender,
+#endif
     bool aForceAccelerated) {
   if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-    return sGLContextProviderGLX.CreateForCompositorWidget(
-        aCompositorWidget, aWebRender, aForceAccelerated);
+    return sGLContextProviderGLX.CreateForCompositorWidget(aCompositorWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+                                                           aWebRender,
+#endif
+                                                           aForceAccelerated);
   } else {
-    return sGLContextProviderEGL.CreateForCompositorWidget(
-        aCompositorWidget, aWebRender, aForceAccelerated);
+    return sGLContextProviderEGL.CreateForCompositorWidget(aCompositorWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+                                                           aWebRender,
+#endif
+                                                           aForceAccelerated);
   }
 }
 
 already_AddRefed<GLContext> GLContextProviderWayland::CreateForWindow(
-    nsIWidget* aWidget, bool aWebRender, bool aForceAccelerated) {
+    nsIWidget* aWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+    bool aWebRender,
+#endif
+    bool aForceAccelerated) {
   if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
-    return sGLContextProviderGLX.CreateForWindow(aWidget, aWebRender,
+    return sGLContextProviderGLX.CreateForWindow(aWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+                                                 aWebRender,
+#endif
                                                  aForceAccelerated);
   } else {
-    return sGLContextProviderEGL.CreateForWindow(aWidget, aWebRender,
+    return sGLContextProviderEGL.CreateForWindow(aWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+                                                 aWebRender,
+#endif
                                                  aForceAccelerated);
   }
 }

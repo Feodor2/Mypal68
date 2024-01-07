@@ -51,8 +51,10 @@
 #endif
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/TextureClientSharedSurface.h"
-#include "mozilla/layers/WebRenderUserData.h"
-#include "mozilla/layers/WebRenderCanvasRenderer.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderUserData.h"
+#  include "mozilla/layers/WebRenderCanvasRenderer.h"
+#endif
 
 // Local
 #include "CanvasUtils.h"
@@ -1169,6 +1171,7 @@ already_AddRefed<layers::Layer> WebGLContext::GetCanvasLayer(
   return canvasLayer.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool WebGLContext::UpdateWebRenderCanvasData(nsDisplayListBuilder* aBuilder,
                                              WebRenderCanvasData* aCanvasData) {
   CanvasRenderer* renderer = aCanvasData->GetCanvasRenderer();
@@ -1188,6 +1191,7 @@ bool WebGLContext::UpdateWebRenderCanvasData(nsDisplayListBuilder* aBuilder,
   mResetLayer = false;
   return true;
 }
+#endif
 
 bool WebGLContext::InitializeCanvasRenderer(nsDisplayListBuilder* aBuilder,
                                             CanvasRenderer* aRenderer) {
@@ -2123,7 +2127,7 @@ CheckedUint32 WebGLContext::GetUnpackSize(bool isFunc3D, uint32_t width,
 }
 
 #ifdef MOZ_VR
-#if defined(MOZ_WIDGET_ANDROID)
+#  if defined(MOZ_WIDGET_ANDROID)
 already_AddRefed<layers::SharedSurfaceTextureClient>
 WebGLContext::GetVRFrame() {
   if (!gl) return nullptr;
@@ -2163,7 +2167,7 @@ WebGLContext::GetVRFrame() {
 
   return sharedSurface.forget();
 }
-#else
+#  else
 already_AddRefed<layers::SharedSurfaceTextureClient>
 WebGLContext::GetVRFrame() {
   if (!gl) return nullptr;
@@ -2186,7 +2190,7 @@ WebGLContext::GetVRFrame() {
   return sharedSurface.forget();
 }
 
-#endif  // ifdefined(MOZ_WIDGET_ANDROID)
+#  endif  // ifdefined(MOZ_WIDGET_ANDROID)
 
 void WebGLContext::EnsureVRReady() {
   if (mVRReady) {
@@ -2208,12 +2212,12 @@ void WebGLContext::EnsureVRReady() {
     auto factory =
         gl::GLScreenBuffer::CreateFactory(gl, caps, imageBridge.get(), flags);
     gl->Screen()->Morph(std::move(factory));
-#if defined(MOZ_WIDGET_ANDROID)
+#  if defined(MOZ_WIDGET_ANDROID)
     // On Android we are using a different GLScreenBuffer for WebVR, so we need
     // a resize here because PresentScreenBuffer() may not be called for the
     // gl->Screen() after we set the new factory.
     gl->Screen()->Resize(DrawingBufferSize());
-#endif
+#  endif
     mVRReady = true;
   }
 }

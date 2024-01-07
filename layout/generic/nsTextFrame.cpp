@@ -56,8 +56,9 @@
 #include "nsUnicodeProperties.h"
 #include "nsStyleUtil.h"
 #include "nsRubyFrame.h"
-#include "TextDrawTarget.h"
-
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "TextDrawTarget.h"
+#endif
 #include "nsTextFragment.h"
 #include "nsGkAtoms.h"
 #include "nsFrameSelection.h"
@@ -101,7 +102,9 @@ using namespace mozilla;
 using namespace mozilla::dom;
 using namespace mozilla::gfx;
 
+#ifdef MOZ_BUILD_WEBRENDER
 typedef mozilla::layout::TextDrawTarget TextDrawTarget;
+#endif
 
 static bool NeedsToMaskPassword(nsTextFrame* aFrame) {
   MOZ_ASSERT(aFrame);
@@ -6045,6 +6048,7 @@ void nsTextFrame::PaintOneShadow(const PaintShadowParams& aParams,
 
   nscolor shadowColor = aShadowDetails.color.CalcColor(aParams.foregroundColor);
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (auto* textDrawer = aParams.context->GetTextDrawer()) {
     wr::Shadow wrShadow;
 
@@ -6058,6 +6062,7 @@ void nsTextFrame::PaintOneShadow(const PaintShadowParams& aParams,
     textDrawer->AppendShadow(wrShadow, inflate);
     return;
   }
+#endif
 
   // This rect is the box which is equivalent to where the shadow will be
   // painted. The origin of aBoundingBox is the text baseline left, so we must
@@ -6191,7 +6196,9 @@ bool nsTextFrame::PaintTextWithSelectionColors(
   TextRangeStyle rangeStyle;
   // Draw background colors
 
+#ifdef MOZ_BUILD_WEBRENDER
   auto* textDrawer = aParams.context->GetTextDrawer();
+#endif
 
   if (anyBackgrounds && !aParams.IsGenerateTextMask()) {
     int32_t appUnitsPerDevPixel =
@@ -6221,14 +6228,15 @@ bool nsTextFrame::PaintTextWithSelectionColors(
         LayoutDeviceRect selectionRect =
             LayoutDeviceRect::FromAppUnits(bgRect, appUnitsPerDevPixel);
 
+#ifdef MOZ_BUILD_WEBRENDER
         if (textDrawer) {
           textDrawer->AppendSelectionRect(selectionRect,
                                           ToDeviceColor(background));
-        } else {
+        } else
+#endif
           PaintSelectionBackground(*aParams.context->GetDrawTarget(),
                                    background, aParams.dirtyRect, selectionRect,
                                    aParams.callbacks);
-        }
       }
       iterator.UpdateWithAdvance(advance);
     }
@@ -6537,7 +6545,8 @@ nscolor nsTextFrame::GetCaretColorAt(int32_t aOffset) {
   return result;
 }
 
-static gfxTextRun::Range ComputeTransformedRange(nsTextFrame::PropertyProvider& aProvider) {
+static gfxTextRun::Range ComputeTransformedRange(
+    nsTextFrame::PropertyProvider& aProvider) {
   gfxSkipCharsIterator iter(aProvider.GetStart());
   uint32_t start = iter.GetSkippedOffset();
   iter.AdvanceOriginal(aProvider.GetOriginalLength());
@@ -6833,20 +6842,31 @@ static void DrawTextRun(const gfxTextRun* aTextRun,
     aTextRun->Draw(aRange, aTextBaselinePt, params);
     aParams.callbacks->NotifyAfterText();
   } else {
+#ifdef MOZ_BUILD_WEBRENDER
     auto* textDrawer = aParams.context->GetTextDrawer();
-    if (NS_GET_A(aParams.textColor) != 0 || textDrawer ||
+#endif
+    if (NS_GET_A(aParams.textColor) != 0 ||
+#ifdef MOZ_BUILD_WEBRENDER
+        textDrawer ||
+#endif
         aParams.textStrokeWidth == 0.0f) {
       aParams.context->SetColor(Color::FromABGR(aParams.textColor));
     } else {
       params.drawMode = DrawMode::GLYPH_STROKE;
     }
 
-    if ((NS_GET_A(aParams.textStrokeColor) != 0 || textDrawer) &&
+    if ((NS_GET_A(aParams.textStrokeColor) != 0
+#ifdef MOZ_BUILD_WEBRENDER
+         || textDrawer
+#endif
+         ) &&
         aParams.textStrokeWidth != 0.0f) {
+#ifdef MOZ_BUILD_WEBRENDER
       if (textDrawer) {
         textDrawer->FoundUnsupportedFeature();
         return;
       }
+#endif
       params.drawMode |= DrawMode::GLYPH_STROKE;
 
       // Check the paint-order property; if we find stroke before fill,
@@ -7139,11 +7159,14 @@ void nsTextFrame::DrawText(Range aRange, const gfx::Point& aTextBaselinePt,
     DrawTextRun(aRange, aTextBaselinePt, aParams);
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (auto* textDrawer = aParams.context->GetTextDrawer()) {
     textDrawer->TerminateShadows();
   }
+#endif
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 NS_DECLARE_FRAME_PROPERTY_DELETABLE(WebRenderTextBounds, nsRect)
 
 nsRect nsTextFrame::WebRenderBounds() {
@@ -7157,6 +7180,7 @@ nsRect nsTextFrame::WebRenderBounds() {
   }
   return *cachedBounds;
 }
+#endif
 
 int16_t nsTextFrame::GetSelectionStatus(int16_t* aSelectionFlags) {
   // get the selection controller
@@ -8225,9 +8249,9 @@ static bool FindFirstLetterRange(const nsTextFragment* aFrag,
 }
 
 static uint32_t FindStartAfterSkippingWhitespace(
-    nsTextFrame::PropertyProvider* aProvider, nsIFrame::InlineIntrinsicISizeData* aData,
-    const nsStyleText* aTextStyle, gfxSkipCharsIterator* aIterator,
-    uint32_t aFlowEndInTextRun) {
+    nsTextFrame::PropertyProvider* aProvider,
+    nsIFrame::InlineIntrinsicISizeData* aData, const nsStyleText* aTextStyle,
+    gfxSkipCharsIterator* aIterator, uint32_t aFlowEndInTextRun) {
   if (aData->mSkipWhitespace) {
     while (aIterator->GetSkippedOffset() < aFlowEndInTextRun &&
            IsTrimmableSpace(aProvider->GetFragment(),
@@ -8980,7 +9004,9 @@ void nsTextFrame::ReflowText(nsLineLayout& aLineLayout, nscoord aAvailableWidth,
   // reflow request from CharacterDataChanged (since we're reflowing now).
   RemoveStateBits(TEXT_REFLOW_FLAGS | TEXT_WHITESPACE_FLAGS);
   mReflowRequestedForCharDataChange = false;
+#ifdef MOZ_BUILD_WEBRENDER
   DeleteProperty(WebRenderTextBounds());
+#endif
   // Temporarily map all possible content while we construct our new textrun.
   // so that when doing reflow our styles prevail over any part of the
   // textrun we look at. Note that next-in-flows may be mapping the same
@@ -9646,7 +9672,9 @@ nsTextFrame::TrimOutput nsTextFrame::TrimTrailingWhiteSpace(
 
 nsOverflowAreas nsTextFrame::RecomputeOverflow(nsIFrame* aBlockFrame,
                                                bool aIncludeShadows) {
+#ifdef MOZ_BUILD_WEBRENDER
   DeleteProperty(WebRenderTextBounds());
+#endif
 
   nsRect bounds(nsPoint(0, 0), GetSize());
   nsOverflowAreas result(bounds, bounds);
@@ -9953,7 +9981,7 @@ bool nsTextFrame::IsEmpty() {
 
   bool isEmpty =
       IsAllWhitespace(TextFragment(), textStyle->mWhiteSpace !=
-                                           mozilla::StyleWhiteSpace::PreLine);
+                                          mozilla::StyleWhiteSpace::PreLine);
   AddStateBits(isEmpty ? TEXT_IS_ONLY_WHITESPACE : TEXT_ISNOT_ONLY_WHITESPACE);
   return isEmpty;
 }

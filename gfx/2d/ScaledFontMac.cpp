@@ -4,7 +4,9 @@
 
 #include "ScaledFontMac.h"
 #include "UnscaledFontMac.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 #ifdef USE_SKIA
 #  include "PathSkia.h"
 #  include "skia/include/core/SkPaint.h"
@@ -410,6 +412,7 @@ bool ScaledFontMac::GetFontInstanceData(FontInstanceDataOutput aCb,
   return true;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool ScaledFontMac::GetWRFontInstanceOptions(
     Maybe<wr::FontInstanceOptions>* aOutOptions,
     Maybe<wr::FontInstancePlatformOptions>* aOutPlatformOptions,
@@ -431,6 +434,7 @@ bool ScaledFontMac::GetWRFontInstanceOptions(
   *aOutOptions = Some(options);
   return true;
 }
+#endif
 
 static CFDictionaryRef CreateVariationDictionaryOrNull(
     CGFontRef aCGFont, uint32_t aVariationCount,

@@ -13,7 +13,9 @@
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/LayersSurfaces.h"  // for SurfaceDescriptor
 #include "mozilla/layers/TextureHost.h"     // for TextureHost, etc
-#include "mozilla/layers/WebRenderImageHost.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderImageHost.h"
+#endif
 #include "mozilla/RefPtr.h"   // for nsRefPtr
 #include "nsDebug.h"          // for NS_WARNING
 #include "nsISupportsImpl.h"  // for MOZ_COUNT_CTOR, etc
@@ -104,7 +106,12 @@ void CompositableHost::RemoveMaskEffect() {
 
 /* static */
 already_AddRefed<CompositableHost> CompositableHost::Create(
-    const TextureInfo& aTextureInfo, bool aUseWebRender) {
+    const TextureInfo& aTextureInfo
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    bool aUseWebRender
+#endif
+) {
   RefPtr<CompositableHost> result;
   switch (aTextureInfo.mCompositableType) {
     case CompositableType::IMAGE_BRIDGE:
@@ -114,21 +121,25 @@ already_AddRefed<CompositableHost> CompositableHost::Create(
       result = new TiledContentHost(aTextureInfo);
       break;
     case CompositableType::IMAGE:
-      if (aUseWebRender) {
+#ifdef MOZ_BUILD_WEBRENDER
+      if (aUseWebRender)
         result = new WebRenderImageHost(aTextureInfo);
-      } else {
+      else
+#endif
         result = new ImageHost(aTextureInfo);
-      }
       break;
     case CompositableType::CONTENT_SINGLE:
-      if (aUseWebRender) {
+#ifdef MOZ_BUILD_WEBRENDER
+      if (aUseWebRender)
         result = new WebRenderImageHost(aTextureInfo);
-      } else {
+      else
+#endif
         result = new ContentHostSingleBuffered(aTextureInfo);
-      }
       break;
     case CompositableType::CONTENT_DOUBLE:
+#ifdef MOZ_BUILD_WEBRENDER
       MOZ_ASSERT(!aUseWebRender);
+#endif
       result = new ContentHostDoubleBuffered(aTextureInfo);
       break;
     default:

@@ -10,9 +10,11 @@
 #include "mozilla/gfx/Point.h"        // for IntSize, etc
 #include "mozilla/gfx/TiledRegion.h"  // for TiledRegion
 #include "mozilla/gfx/Types.h"        // for SamplingFilter, SurfaceFormat
-#include "mozilla/layers/APZTypes.h"  // for SLGuidAndRenderRoot
 #include "mozilla/layers/CompositorTypes.h"  // for TextureFlags
-#include "mozilla/layers/WebRenderLayersLogging.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/APZTypes.h"  // for SLGuidAndRenderRoot
+#  include "mozilla/layers/WebRenderLayersLogging.h"
+#endif
 #include "mozilla/layers/ZoomConstraints.h"
 #include "nsAString.h"
 #include "nsPrintfCString.h"  // for nsPrintfCString
@@ -116,6 +118,7 @@ void AppendToString(std::stringstream& aStream,
   aStream << sfx;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void AppendToString(std::stringstream& aStream, const wr::ColorF& c,
                     const char* pfx = "", const char* sfx = "");
 
@@ -125,10 +128,11 @@ void AppendToString(std::stringstream& aStream, const wr::LayoutRect& r,
 void AppendToString(std::stringstream& aStream, const wr::LayoutSize& s,
                     const char* pfx = "", const char* sfx = "");
 
-void AppendToString(std::stringstream& aStream, const nsSize& sz,
-                    const char* pfx = "", const char* sfx = "");
-
 void AppendToString(std::stringstream& aStream, const wr::StickyOffsetBounds& s,
+                    const char* pfx = "", const char* sfx = "");
+#endif
+
+void AppendToString(std::stringstream& aStream, const nsSize& sz,
                     const char* pfx = "", const char* sfx = "");
 
 void AppendToString(std::stringstream& aStream, const nsRegion& r,
@@ -180,8 +184,10 @@ void AppendToString(std::stringstream& aStream, const FrameMetrics& m,
 void AppendToString(std::stringstream& aStream, const ScrollableLayerGuid& s,
                     const char* pfx = "", const char* sfx = "");
 
+#ifdef MOZ_BUILD_WEBRENDER
 void AppendToString(std::stringstream& aStream, const SLGuidAndRenderRoot& s,
                     const char* pfx = "", const char* sfx = "");
+#endif
 
 void AppendToString(std::stringstream& aStream, const ZoomConstraints& z,
                     const char* pfx = "", const char* sfx = "");

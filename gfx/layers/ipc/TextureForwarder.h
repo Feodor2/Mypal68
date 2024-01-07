@@ -52,9 +52,11 @@ class LayersIPCChannel : public LayersIPCActor,
 
   virtual void CancelWaitForNotifyNotUsed(uint64_t aTextureId) = 0;
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual wr::MaybeExternalImageId GetNextExternalImageId() {
     return Nothing();
   }
+#endif
 
  protected:
   virtual ~LayersIPCChannel() = default;
@@ -74,7 +76,9 @@ class TextureForwarder : public LayersIPCChannel {
   virtual PTextureChild* CreateTexture(
       const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
       LayersBackend aLayersBackend, TextureFlags aFlags, uint64_t aSerial,
+#ifdef MOZ_BUILD_WEBRENDER
       wr::MaybeExternalImageId& aExternalImageId,
+#endif
       nsIEventTarget* aTarget = nullptr) = 0;
 };
 

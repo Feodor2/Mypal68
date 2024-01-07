@@ -10,7 +10,9 @@
 #include "mozilla/SizeOfState.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Tuple.h"  // for Tie
-#include "mozilla/layers/SharedSurfacesChild.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/SharedSurfacesChild.h"
+#endif
 
 namespace mozilla {
 namespace image {
@@ -96,6 +98,7 @@ void ImageResource::SetCurrentImage(ImageContainer* aContainer,
     aContainer->SetCurrentImages(imageList);
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   // If we are animated, then we should request that the image container be
   // treated as such, to avoid display list rebuilding to update frames for
   // WebRender.
@@ -109,6 +112,7 @@ void ImageResource::SetCurrentImage(ImageContainer* aContainer,
                                                    dirtyRect);
     }
   }
+#endif
 }
 
 ImgDrawResult ImageResource::GetImageContainerImpl(

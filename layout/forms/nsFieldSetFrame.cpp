@@ -106,12 +106,14 @@ class nsDisplayFieldSetBorder final : public nsPaintedDisplayItem {
   virtual void ComputeInvalidationRegion(
       nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
       nsRegion* aInvalidRegion) const override;
+#ifdef MOZ_BUILD_WEBRENDER
   bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
+#endif
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
                            bool* aSnap) const override;
   NS_DISPLAY_DECL_NAME("FieldSetBorder", TYPE_FIELDSET_BORDER_BACKGROUND)
@@ -157,6 +159,7 @@ nsRect nsDisplayFieldSetBorder::GetBounds(nsDisplayListBuilder* aBuilder,
   return Frame()->GetVisualOverflowRectRelativeToSelf() + ToReferenceFrame();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayFieldSetBorder::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -212,6 +215,7 @@ bool nsDisplayFieldSetBorder::CreateWebRenderCommands(
   nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, drawResult);
   return true;
 };
+#endif
 
 void nsFieldSetFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                        const nsDisplayListSet& aLists) {

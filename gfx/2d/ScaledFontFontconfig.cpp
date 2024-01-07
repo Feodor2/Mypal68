@@ -7,7 +7,9 @@
 #include "NativeFontResourceFreeType.h"
 #include "Logging.h"
 #include "StackArray.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 
 #ifdef USE_SKIA
 #  include "skia/include/ports/SkTypeface_cairo.h"
@@ -110,6 +112,7 @@ ScaledFontFontconfig::InstanceData::InstanceData(
   cairo_font_options_destroy(fontOptions);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 ScaledFontFontconfig::InstanceData::InstanceData(
     const wr::FontInstanceOptions* aOptions,
     const wr::FontInstancePlatformOptions* aPlatformOptions)
@@ -174,6 +177,7 @@ ScaledFontFontconfig::InstanceData::InstanceData(
     }
   }
 }
+#endif
 
 void ScaledFontFontconfig::InstanceData::SetupPattern(
     FcPattern* aPattern) const {
@@ -293,6 +297,7 @@ bool ScaledFontFontconfig::GetFontInstanceData(FontInstanceDataOutput aCb,
   return true;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool ScaledFontFontconfig::GetWRFontInstanceOptions(
     Maybe<wr::FontInstanceOptions>* aOutOptions,
     Maybe<wr::FontInstancePlatformOptions>* aOutPlatformOptions,
@@ -430,6 +435,7 @@ bool ScaledFontFontconfig::GetWRFontInstanceOptions(
 
   return true;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 static cairo_user_data_key_t sNativeFontResourceKey;
 
@@ -561,6 +567,7 @@ already_AddRefed<ScaledFont> UnscaledFontFontconfig::CreateScaledFont(
   return scaledFont.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 already_AddRefed<ScaledFont> UnscaledFontFontconfig::CreateScaledFontFromWRFont(
     Float aGlyphSize, const wr::FontInstanceOptions* aOptions,
     const wr::FontInstancePlatformOptions* aPlatformOptions,
@@ -569,6 +576,7 @@ already_AddRefed<ScaledFont> UnscaledFontFontconfig::CreateScaledFontFromWRFont(
   return CreateScaledFont(aGlyphSize, reinterpret_cast<uint8_t*>(&instanceData),
                           sizeof(instanceData), aVariations, aNumVariations);
 }
+#endif
 
 bool ScaledFontFontconfig::HasVariationSettings() {
   // Check if the FT face has been cloned.

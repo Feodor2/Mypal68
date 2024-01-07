@@ -156,8 +156,10 @@ void nsSVGForeignObjectFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                        &newList);
   DisplayOutline(aBuilder, set);
   BuildDisplayListForNonBlockChildren(aBuilder, set);
+#ifdef MOZ_BUILD_WEBRENDER
   aLists.Content()->AppendNewToTop<nsDisplayForeignObject>(aBuilder, this,
                                                            &newList);
+#endif
 }
 
 bool nsSVGForeignObjectFrame::IsSVGTransformed(

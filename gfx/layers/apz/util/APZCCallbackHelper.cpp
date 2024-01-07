@@ -14,8 +14,10 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/layers/LayerTransactionChild.h"
 #include "mozilla/layers/ShadowLayers.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
-#include "mozilla/layers/WebRenderBridgeChild.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#  include "mozilla/layers/WebRenderBridgeChild.h"
+#endif
 #include "mozilla/PresShell.h"
 #include "mozilla/TouchEvents.h"
 #include "nsContainerFrame.h"
@@ -662,9 +664,14 @@ using FrameForPointOption = nsLayoutUtils::FrameForPointOption;
 static bool PrepareForSetTargetAPZCNotification(
     nsIWidget* aWidget, const LayersId& aLayersId, nsIFrame* aRootFrame,
     const LayoutDeviceIntPoint& aRefPoint,
+#ifdef MOZ_BUILD_WEBRENDER
     nsTArray<SLGuidAndRenderRoot>* aTargets) {
   SLGuidAndRenderRoot guid(aLayersId, 0, ScrollableLayerGuid::NULL_SCROLL_ID,
                            wr::RenderRoot::Default);
+#else
+    nsTArray<ScrollableLayerGuid>* aTargets) {
+  ScrollableLayerGuid guid(aLayersId, 0, ScrollableLayerGuid::NULL_SCROLL_ID);
+#endif
   nsPoint point = nsLayoutUtils::GetEventCoordinatesRelativeTo(
       aWidget, aRefPoint, aRootFrame);
   EnumSet<FrameForPointOption> options;
@@ -687,11 +694,13 @@ static bool PrepareForSetTargetAPZCNotification(
       scrollAncestor ? GetDisplayportElementFor(scrollAncestor)
                      : GetRootDocumentElementFor(aWidget);
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (XRE_IsContentProcess()) {
     guid.mRenderRoot = gfxUtils::GetContentRenderRoot();
   } else {
     guid.mRenderRoot = gfxUtils::RecursivelyGetRenderRootForElement(dpElement);
   }
+#endif
 
 #ifdef APZCCH_LOGGING
   nsAutoString dpElementDesc;
@@ -704,8 +713,12 @@ static bool PrepareForSetTargetAPZCNotification(
 #endif
 
   bool guidIsValid = APZCCallbackHelper::GetOrCreateScrollIdentifiers(
+#ifdef MOZ_BUILD_WEBRENDER
       dpElement, &(guid.mScrollableLayerGuid.mPresShellId),
       &(guid.mScrollableLayerGuid.mScrollId));
+#else
+      dpElement, &(guid.mPresShellId), &(guid.mScrollId));
+#endif
   aTargets->AppendElement(guid);
 
   if (!guidIsValid || nsLayoutUtils::HasDisplayPort(dpElement)) {
@@ -738,18 +751,25 @@ static bool PrepareForSetTargetAPZCNotification(
 
 static void SendLayersDependentApzcTargetConfirmation(
     PresShell* aPresShell, uint64_t aInputBlockId,
-    const nsTArray<SLGuidAndRenderRoot>& aTargets) {
+#ifdef MOZ_BUILD_WEBRENDER
+    const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+    const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+) {
   LayerManager* lm = aPresShell->GetLayerManager();
   if (!lm) {
     return;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (WebRenderLayerManager* wrlm = lm->AsWebRenderLayerManager()) {
     if (WebRenderBridgeChild* wrbc = wrlm->WrBridge()) {
       wrbc->SendSetConfirmedTargetAPZC(aInputBlockId, aTargets);
     }
     return;
   }
+#endif
 
   ShadowLayerForwarder* lf = lm->AsShadowForwarder();
   if (!lf) {
@@ -768,11 +788,17 @@ static void SendLayersDependentApzcTargetConfirmation(
 
 DisplayportSetListener::DisplayportSetListener(
     nsIWidget* aWidget, PresShell* aPresShell, const uint64_t& aInputBlockId,
-    const nsTArray<SLGuidAndRenderRoot>& aTargets)
+#ifdef MOZ_BUILD_WEBRENDER
+    const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+    const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+    )
     : mWidget(aWidget),
       mPresShell(aPresShell),
       mInputBlockId(aInputBlockId),
-      mTargets(aTargets) {}
+      mTargets(aTargets) {
+}
 
 DisplayportSetListener::~DisplayportSetListener() {}
 
@@ -839,7 +865,11 @@ APZCCallbackHelper::SendSetTargetAPZCNotification(nsIWidget* aWidget,
       rootFrame = UpdateRootFrameForTouchTargetDocument(rootFrame);
 
       bool waitForRefresh = false;
+#ifdef MOZ_BUILD_WEBRENDER
       nsTArray<SLGuidAndRenderRoot> targets;
+#else
+      nsTArray<ScrollableLayerGuid> targets;
+#endif
 
       if (const WidgetTouchEvent* touchEvent = aEvent.AsTouchEvent()) {
         for (size_t i = 0; i < touchEvent->mTouches.Length(); i++) {

@@ -14,12 +14,12 @@
 #include "base/task.h"                   // for NewRunnableFunction, etc
 #include "base/thread.h"                 // for Thread
 #include "mozilla/Assertions.h"          // for MOZ_ASSERT, etc
-#include "mozilla/Monitor2.h"             // for Monitor, MonitorAutoLock
+#include "mozilla/Monitor2.h"            // for Monitor, MonitorAutoLock
 #include "mozilla/ReentrantMonitor.h"    // for ReentrantMonitor, etc
 #include "mozilla/ipc/MessageChannel.h"  // for MessageChannel, etc
 #include "mozilla/ipc/Transport.h"       // for Transport
 #include "mozilla/gfx/gfxVars.h"
-#include "mozilla/gfx/Point.h"           // for IntSize
+#include "mozilla/gfx/Point.h"  // for IntSize
 #include "mozilla/layers/AsyncCanvasRenderer.h"
 #include "mozilla/media/MediaSystemResourceManager.h"  // for MediaSystemResourceManager
 #include "mozilla/media/MediaSystemResourceManagerChild.h"  // for MediaSystemResourceManagerChild
@@ -96,10 +96,13 @@ struct AutoEndTransaction final {
   CompositableTransaction* mTxn;
 };
 
-void ImageBridgeChild::UseTextures(
-    CompositableClient* aCompositable,
-    const nsTArray<TimedTextureClient>& aTextures,
-    const Maybe<wr::RenderRoot>& aRenderRoot) {
+void ImageBridgeChild::UseTextures(CompositableClient* aCompositable,
+                                   const nsTArray<TimedTextureClient>& aTextures
+#ifdef MOZ_BUILD_WEBRENDER
+                                   ,
+                                   const Maybe<wr::RenderRoot>& aRenderRoot
+#endif
+) {
   MOZ_ASSERT(aCompositable);
   MOZ_ASSERT(aCompositable->GetIPCHandle());
   MOZ_ASSERT(aCompositable->IsConnected());
@@ -328,7 +331,12 @@ void ImageBridgeChild::UpdateImageClient(RefPtr<ImageContainer> aContainer) {
   }
 
   BeginTransaction();
-  client->UpdateImage(aContainer, Layer::CONTENT_OPAQUE, Nothing());
+  client->UpdateImage(aContainer, Layer::CONTENT_OPAQUE
+#ifdef MOZ_BUILD_WEBRENDER
+                      ,
+                      Nothing()
+#endif
+  );
   EndTransaction();
 }
 
@@ -368,7 +376,11 @@ void ImageBridgeChild::UpdateAsyncCanvasRendererNow(
 
   BeginTransaction();
   // TODO wr::RenderRoot::Unknown
-  aWrapper->GetCanvasClient()->Updated(wr::RenderRoot::Default);
+  aWrapper->GetCanvasClient()->Updated(
+#ifdef MOZ_BUILD_WEBRENDER
+      wr::RenderRoot::Default
+#endif
+  );
   EndTransaction();
 }
 
@@ -630,6 +642,7 @@ void ImageBridgeChild::UpdateTextureFactoryIdentifier(
     const TextureFactoryIdentifier& aIdentifier) {
   // ImageHost is incompatible between WebRender enabled and WebRender disabled.
   // Then drop all ImageContainers' ImageClients during disabling WebRender.
+#ifdef MOZ_BUILD_WEBRENDER
   bool disablingWebRender =
       GetCompositorBackendType() == LayersBackend::LAYERS_WR &&
       aIdentifier.mParentBackend != LayersBackend::LAYERS_WR;
@@ -657,6 +670,9 @@ void ImageBridgeChild::UpdateTextureFactoryIdentifier(
       aIdentifier.mParentBackend == LayersBackend::LAYERS_WR;
 
   bool needsDrop = disablingWebRender || initializingWebRender;
+#else
+  bool needsDrop = false;
+#endif
 
 #if defined(XP_WIN)
   RefPtr<ID3D11Device> device = gfx::DeviceManagerDx::Get()->GetImageDevice();
@@ -859,8 +875,12 @@ bool ImageBridgeChild::DeallocShmem(ipc::Shmem& aShmem) {
 
 PTextureChild* ImageBridgeChild::AllocPTextureChild(
     const SurfaceDescriptor&, const ReadLockDescriptor&, const LayersBackend&,
-    const TextureFlags&, const uint64_t& aSerial,
-    const wr::MaybeExternalImageId& aExternalImageId) {
+    const TextureFlags&, const uint64_t& aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    const wr::MaybeExternalImageId& aExternalImageId
+#endif
+) {
   MOZ_ASSERT(CanSend());
   return TextureClient::CreateIPDLActor();
 }
@@ -936,10 +956,18 @@ mozilla::ipc::IPCResult ImageBridgeChild::RecvReportFramesDropped(
 PTextureChild* ImageBridgeChild::CreateTexture(
     const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
     LayersBackend aLayersBackend, TextureFlags aFlags, uint64_t aSerial,
-    wr::MaybeExternalImageId& aExternalImageId, nsIEventTarget* aTarget) {
+#ifdef MOZ_BUILD_WEBRENDER
+    wr::MaybeExternalImageId& aExternalImageId,
+#endif
+    nsIEventTarget* aTarget) {
   MOZ_ASSERT(CanSend());
   return SendPTextureConstructor(aSharedData, aReadLock, aLayersBackend, aFlags,
-                                 aSerial, aExternalImageId);
+                                 aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+                                 ,
+                                 aExternalImageId
+#endif
+  );
 }
 
 static bool IBCAddOpDestroy(CompositableTransaction* aTxn,
@@ -961,8 +989,12 @@ bool ImageBridgeChild::DestroyInTransaction(const CompositableHandle& aHandle) {
 }
 
 void ImageBridgeChild::RemoveTextureFromCompositable(
-    CompositableClient* aCompositable, TextureClient* aTexture,
-    const Maybe<wr::RenderRoot>& aRenderRoot) {
+    CompositableClient* aCompositable, TextureClient* aTexture
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    const Maybe<wr::RenderRoot>& aRenderRoot
+#endif
+) {
   MOZ_ASSERT(CanSend());
   MOZ_ASSERT(aTexture);
   MOZ_ASSERT(aTexture->IsSharedWithCompositor());
@@ -1033,6 +1065,7 @@ void ImageBridgeChild::HandleFatalError(const char* aMsg) const {
   dom::ContentChild::FatalErrorIfNotUsingGPUProcess(aMsg, OtherPid());
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 wr::MaybeExternalImageId ImageBridgeChild::GetNextExternalImageId() {
   static uint32_t sNextID = 1;
   ++sNextID;
@@ -1042,6 +1075,7 @@ wr::MaybeExternalImageId ImageBridgeChild::GetNextExternalImageId() {
   imageId = imageId << 32 | sNextID;
   return Some(wr::ToExternalImageId(imageId));
 }
+#endif
 
 }  // namespace layers
 }  // namespace mozilla

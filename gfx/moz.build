@@ -25,8 +25,11 @@ DIRS += [
     'thebes',
     'ipc',
     'config',
-    'webrender_bindings',
+
 ]
+
+if CONFIG['MOZ_BUILD_WEBRENDER']:
+    DIRS += ['webrender_bindings']
 
 if CONFIG['MOZ_ENABLE_SKIA']:
     DIRS += ['skia']

@@ -27,7 +27,9 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 #include "mozilla/dom/MouseEventBinding.h"
 #include "nsMargin.h"
 #include "nsRegionFwd.h"
@@ -504,10 +506,12 @@ class nsWindow final : public nsWindowBase {
   void ClearCachedResources();
   nsIWidgetListener* GetPaintListener();
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual void AddWindowOverlayWebRenderCommands(
       mozilla::layers::WebRenderBridgeChild* aWrBridge,
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResourceUpdates) override;
+#endif
 
   already_AddRefed<SourceSurface> CreateScrollSnapshot() override;
 

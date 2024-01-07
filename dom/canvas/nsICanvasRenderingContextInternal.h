@@ -33,7 +33,9 @@ class CanvasLayer;
 class CanvasRenderer;
 class Layer;
 class LayerManager;
+#ifdef MOZ_BUILD_WEBRENDER
 class WebRenderCanvasData;
+#endif
 }  // namespace layers
 namespace gfx {
 class SourceSurface;
@@ -47,7 +49,9 @@ class nsICanvasRenderingContextInternal : public nsISupports,
   typedef mozilla::layers::CanvasRenderer CanvasRenderer;
   typedef mozilla::layers::Layer Layer;
   typedef mozilla::layers::LayerManager LayerManager;
+#ifdef MOZ_BUILD_WEBRENDER
   typedef mozilla::layers::WebRenderCanvasData WebRenderCanvasData;
+#endif
 
   NS_DECLARE_STATIC_IID_ACCESSOR(NS_ICANVASRENDERINGCONTEXTINTERNAL_IID)
 
@@ -144,10 +148,12 @@ class nsICanvasRenderingContextInternal : public nsISupports,
   virtual already_AddRefed<Layer> GetCanvasLayer(nsDisplayListBuilder* builder,
                                                  Layer* oldLayer,
                                                  LayerManager* manager) = 0;
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool UpdateWebRenderCanvasData(nsDisplayListBuilder* aBuilder,
                                          WebRenderCanvasData* aCanvasData) {
     return false;
   }
+#endif
   virtual bool InitializeCanvasRenderer(nsDisplayListBuilder* aBuilder,
                                         CanvasRenderer* aRenderer) {
     return true;

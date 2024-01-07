@@ -270,8 +270,15 @@ mozilla::ipc::IPCResult ImageBridgeParent::RecvWillClose() {
 mozilla::ipc::IPCResult ImageBridgeParent::RecvNewCompositable(
     const CompositableHandle& aHandle, const TextureInfo& aInfo,
     const LayersBackend& aLayersBackend) {
+#ifdef MOZ_BUILD_WEBRENDER
   bool useWebRender = aLayersBackend == LayersBackend::LAYERS_WR;
-  RefPtr<CompositableHost> host = AddCompositable(aHandle, aInfo, useWebRender);
+#endif
+  RefPtr<CompositableHost> host = AddCompositable(aHandle, aInfo
+#ifdef MOZ_BUILD_WEBRENDER
+                                                  ,
+                                                  useWebRender
+#endif
+  );
   if (!host) {
     return IPC_FAIL_NO_REASON(this);
   }
@@ -289,10 +296,19 @@ mozilla::ipc::IPCResult ImageBridgeParent::RecvReleaseCompositable(
 PTextureParent* ImageBridgeParent::AllocPTextureParent(
     const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
     const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
-    const uint64_t& aSerial, const wr::MaybeExternalImageId& aExternalImageId) {
+    const uint64_t& aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    const wr::MaybeExternalImageId& aExternalImageId
+#endif
+) {
   return TextureHost::CreateIPDLActor(this, aSharedData, aReadLock,
-                                      aLayersBackend, aFlags, aSerial,
-                                      aExternalImageId);
+                                      aLayersBackend, aFlags, aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+                                      ,
+                                      aExternalImageId
+#endif
+  );
 }
 
 bool ImageBridgeParent::DeallocPTextureParent(PTextureParent* actor) {

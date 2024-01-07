@@ -16,9 +16,11 @@
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
-#include "mozilla/webrender/RenderD3D11TextureHostOGL.h"
-#include "mozilla/webrender/RenderThread.h"
-#include "mozilla/webrender/WebRenderAPI.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/RenderD3D11TextureHostOGL.h"
+#  include "mozilla/webrender/RenderThread.h"
+#  include "mozilla/webrender/WebRenderAPI.h"
+#endif
 
 namespace mozilla {
 
@@ -554,12 +556,14 @@ void D3D11TextureData::GetDXGIResource(IDXGIResource** aOutResource) {
 
 TextureFlags D3D11TextureData::GetTextureFlags() const {
   TextureFlags flags = TextureFlags::NO_FLAGS;
+#ifdef MOZ_BUILD_WEBRENDER
   // With WebRender, resource open happens asynchronously on RenderThread.
   // During opening the resource on host side, TextureClient needs to be alive.
   // With WAIT_HOST_USAGE_END, keep TextureClient alive during host side usage.
   if (gfx::gfxVars::UseWebRender()) {
     flags |= TextureFlags::WAIT_HOST_USAGE_END;
   }
+#endif
   return flags;
 }
 
@@ -696,12 +700,14 @@ void DXGIYCbCrTextureData::Deallocate(LayersIPCChannel*) {
 
 TextureFlags DXGIYCbCrTextureData::GetTextureFlags() const {
   TextureFlags flags = TextureFlags::DEALLOCATE_MAIN_THREAD;
+#ifdef MOZ_BUILD_WEBRENDER
   // With WebRender, resource open happens asynchronously on RenderThread.
   // During opening the resource on host side, TextureClient needs to be alive.
   // With WAIT_HOST_USAGE_END, keep TextureClient alive during host side usage.
   if (gfx::gfxVars::UseWebRender()) {
     flags |= TextureFlags::WAIT_HOST_USAGE_END;
   }
+#endif
   return flags;
 }
 
@@ -872,6 +878,7 @@ bool DXGITextureHostD3D11::LockInternal() {
 }
 
 already_AddRefed<gfx::DataSourceSurface> DXGITextureHostD3D11::GetAsSurface() {
+#ifdef MOZ_BUILD_WEBRENDER
   if (!gfxVars::UseWebRender()) {
     return nullptr;
   }
@@ -928,6 +935,9 @@ already_AddRefed<gfx::DataSourceSurface> DXGITextureHostD3D11::GetAsSurface() {
       (uint8_t*)mappedSubresource.pData, mappedSubresource.RowPitch);
   context->Unmap(cpuTexture, 0);
   return surf.forget();
+#else
+  return nullptr;
+#endif  // MOZ_BUILD_WEBRENDER
 }
 
 bool DXGITextureHostD3D11::EnsureTextureSource() {
@@ -973,6 +983,7 @@ bool DXGITextureHostD3D11::AcquireTextureSource(
   return true;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void DXGITextureHostD3D11::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   RefPtr<wr::RenderTextureHost> texture =
@@ -1084,6 +1095,7 @@ void DXGITextureHostD3D11::PushDisplayItems(
     }
   }
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 DXGIYCbCrTextureHostD3D11::DXGIYCbCrTextureHostD3D11(
     TextureFlags aFlags, const SurfaceDescriptorDXGIYCbCr& aDescriptor)
@@ -1235,6 +1247,7 @@ bool DXGIYCbCrTextureHostD3D11::BindTextureSource(
   return !!aTexture;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void DXGIYCbCrTextureHostD3D11::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   RefPtr<wr::RenderTextureHost> texture =
@@ -1291,6 +1304,7 @@ void DXGIYCbCrTextureHostD3D11::PushDisplayItems(
       wr::ToWrColorDepth(mColorDepth), wr::ToWrYuvColorSpace(mYUVColorSpace),
       wr::ToWrColorRange(mColorRange), aFilter);
 }
+#endif
 
 bool DXGIYCbCrTextureHostD3D11::AcquireTextureSource(
     CompositableTextureSourceRef& aTexture) {
@@ -1675,10 +1689,12 @@ bool SyncObjectD3D11Client::IsSyncObjectValid() {
     dev = DeviceManagerDx::Get()->GetContentDevice();
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   // Update mDevice if the ContentDevice initialization is detected.
   if (!mDevice && dev && NS_IsMainThread() && gfxVars::UseWebRender()) {
     mDevice = dev;
   }
+#endif
 
   if (!dev || (NS_IsMainThread() && dev != mDevice)) {
     return false;

@@ -145,9 +145,13 @@ class PuppetWidget : public nsBaseWidget,
   virtual nsresult DispatchEvent(WidgetGUIEvent* aEvent,
                                  nsEventStatus& aStatus) override;
   nsEventStatus DispatchInputEvent(WidgetInputEvent* aEvent) override;
-  void SetConfirmedTargetAPZC(
-      uint64_t aInputBlockId,
-      const nsTArray<SLGuidAndRenderRoot>& aTargets) const override;
+  void SetConfirmedTargetAPZC(uint64_t aInputBlockId,
+#ifdef MOZ_BUILD_WEBRENDER
+                              const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+                              const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+  ) const override;
   void UpdateZoomConstraints(
       const uint32_t& aPresShellId, const ScrollableLayerGuid::ViewID& aViewId,
       const mozilla::Maybe<ZoomConstraints>& aConstraints) override;

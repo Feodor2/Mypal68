@@ -128,7 +128,13 @@ class LayerTransactionParent final : public PLayerTransactionParent,
   mozilla::ipc::IPCResult RecvRequestProperty(const nsString& aProperty,
                                               float* aValue);
   mozilla::ipc::IPCResult RecvSetConfirmedTargetAPZC(
-      const uint64_t& aBlockId, nsTArray<SLGuidAndRenderRoot>&& aTargets);
+      const uint64_t& aBlockId,
+#ifdef MOZ_BUILD_WEBRENDER
+      nsTArray<SLGuidAndRenderRoot>&& aTargets
+#else
+      nsTArray<ScrollableLayerGuid>&& aTargets
+#endif
+  );
   mozilla::ipc::IPCResult RecvRecordPaintTimes(const PaintTiming& aTiming);
   mozilla::ipc::IPCResult RecvGetTextureFactoryIdentifier(
       TextureFactoryIdentifier* aIdentifier);

@@ -62,9 +62,18 @@ already_AddRefed<ImageClient> ImageClient::CreateImageClient(
   return result.forget();
 }
 
-void ImageClient::RemoveTexture(TextureClient* aTexture,
-                                const Maybe<wr::RenderRoot>& aRenderRoot) {
-  GetForwarder()->RemoveTextureFromCompositable(this, aTexture, aRenderRoot);
+void ImageClient::RemoveTexture(TextureClient* aTexture
+#ifdef MOZ_BUILD_WEBRENDER
+                                ,
+                                const Maybe<wr::RenderRoot>& aRenderRoot
+#endif
+) {
+  GetForwarder()->RemoveTextureFromCompositable(this, aTexture
+#ifdef MOZ_BUILD_WEBRENDER
+                                                ,
+                                                aRenderRoot
+#endif
+  );
 }
 
 ImageClientSingle::ImageClientSingle(CompositableForwarder* aFwd,
@@ -82,7 +91,12 @@ void ImageClientSingle::FlushAllImages() {
     // the texture actually presents in a content render root, as the only
     // risk would be if the content render root has not / is not going to
     // generate a frame before the texture gets cleared.
-    RemoveTexture(b.mTextureClient, Some(wr::RenderRoot::Default));
+    RemoveTexture(b.mTextureClient
+#ifdef MOZ_BUILD_WEBRENDER
+                  ,
+                  Some(wr::RenderRoot::Default)
+#endif
+    );
   }
   mBuffers.Clear();
 }
@@ -160,8 +174,12 @@ already_AddRefed<TextureClient> ImageClient::CreateTextureClientForImage(
 }
 
 bool ImageClientSingle::UpdateImage(ImageContainer* aContainer,
-                                    uint32_t aContentFlags,
-                                    const Maybe<wr::RenderRoot>& aRenderRoot) {
+                                    uint32_t aContentFlags
+#ifdef MOZ_BUILD_WEBRENDER
+                                    ,
+                                    const Maybe<wr::RenderRoot>& aRenderRoot
+#endif
+) {
   AutoTArray<ImageContainer::OwningImage, 4> images;
   uint32_t generationCounter;
   aContainer->GetCurrentImages(&images, &generationCounter);
@@ -185,7 +203,12 @@ bool ImageClientSingle::UpdateImage(ImageContainer* aContainer,
     // We return true because the caller would attempt to recreate the
     // ImageClient otherwise, and that isn't going to help.
     for (auto& b : mBuffers) {
-      RemoveTexture(b.mTextureClient, aRenderRoot);
+      RemoveTexture(b.mTextureClient
+#ifdef MOZ_BUILD_WEBRENDER
+                    ,
+                    aRenderRoot
+#endif
+      );
     }
     mBuffers.Clear();
     return true;
@@ -249,10 +272,20 @@ bool ImageClientSingle::UpdateImage(ImageContainer* aContainer,
     texture->SyncWithObject(GetForwarder()->GetSyncObject());
   }
 
-  GetForwarder()->UseTextures(this, textures, aRenderRoot);
+  GetForwarder()->UseTextures(this, textures
+#ifdef MOZ_BUILD_WEBRENDER
+                              ,
+                              aRenderRoot
+#endif
+  );
 
   for (auto& b : mBuffers) {
-    RemoveTexture(b.mTextureClient, aRenderRoot);
+    RemoveTexture(b.mTextureClient
+#ifdef MOZ_BUILD_WEBRENDER
+                  ,
+                  aRenderRoot
+#endif
+    );
   }
   mBuffers.SwapElements(newBuffers);
 
@@ -285,8 +318,12 @@ ImageClientBridge::ImageClientBridge(CompositableForwarder* aFwd,
     : ImageClient(aFwd, aFlags, CompositableType::IMAGE_BRIDGE) {}
 
 bool ImageClientBridge::UpdateImage(ImageContainer* aContainer,
-                                    uint32_t aContentFlags,
-                                    const Maybe<wr::RenderRoot>& aRenderRoot) {
+                                    uint32_t aContentFlags
+#ifdef MOZ_BUILD_WEBRENDER
+                                    ,
+                                    const Maybe<wr::RenderRoot>& aRenderRoot
+#endif
+) {
   if (!GetForwarder() || !mLayer) {
     return false;
   }

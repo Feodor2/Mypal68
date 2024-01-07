@@ -43,7 +43,9 @@ class Compositor;
 class ThebesBufferData;
 class TiledContentHost;
 class CompositableParentManager;
+#ifdef MOZ_BUILD_WEBRENDER
 class WebRenderImageHost;
+#endif
 class ContentHost;
 class ContentHostTexture;
 class HostLayerManager;
@@ -87,7 +89,12 @@ class CompositableHost {
   explicit CompositableHost(const TextureInfo& aTextureInfo);
 
   static already_AddRefed<CompositableHost> Create(
-      const TextureInfo& aTextureInfo, bool aUseWebRender);
+      const TextureInfo& aTextureInfo
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      bool aUseWebRender
+#endif
+  );
 
   virtual CompositableType GetType() = 0;
 
@@ -128,7 +135,10 @@ class CompositableHost {
     return gfx::IntSize();
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   const TextureInfo& GetTextureInfo() const { return mTextureInfo; }
+  virtual WebRenderImageHost* AsWebRenderImageHost() { return nullptr; }
+#endif
 
   /**
    * Adds a mask effect using this texture as the mask, if possible.
@@ -147,7 +157,6 @@ class CompositableHost {
   virtual ContentHostTexture* AsContentHostTexture() { return nullptr; }
   virtual ImageHost* AsImageHost() { return nullptr; }
   virtual TiledContentHost* AsTiledContentHost() { return nullptr; }
-  virtual WebRenderImageHost* AsWebRenderImageHost() { return nullptr; }
 
   typedef uint32_t AttachFlags;
   static const AttachFlags NO_FLAGS = 0;

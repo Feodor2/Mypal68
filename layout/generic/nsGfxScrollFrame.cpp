@@ -2914,18 +2914,27 @@ void ScrollFrameHelper::ScrollToImpl(nsPoint aPt, const nsRect& aRange,
             // update, instead of a full transaction. This empty transaction
             // might still get squashed into a full transaction if something
             // happens to trigger one.
+#ifdef MOZ_BUILD_WEBRENDER
             wr::RenderRoot renderRoot = wr::RenderRoot::Default;
             if (XRE_IsContentProcess()) {
               renderRoot = gfxUtils::GetContentRenderRoot();
             } else {
               renderRoot = gfxUtils::RecursivelyGetRenderRootForFrame(mOuter);
             }
+#endif
             success = manager->SetPendingScrollUpdateForNextTransaction(
                 id,
-                {mScrollGeneration, CSSPoint::FromAppUnits(GetScrollPosition()),
-                 CSSPoint::FromAppUnits(GetApzScrollPosition()),
-                 mLastScrollOrigin == nsGkAtoms::relative},
-                renderRoot);
+                {
+                  mScrollGeneration,
+                      CSSPoint::FromAppUnits(GetScrollPosition()),
+                      CSSPoint::FromAppUnits(GetApzScrollPosition()),
+                      mLastScrollOrigin == nsGkAtoms::relative
+                }
+#ifdef MOZ_BUILD_WEBRENDER
+                ,
+                renderRoot
+#endif
+            );
             if (success) {
               schedulePaint = false;
               mOuter->SchedulePaint(nsIFrame::PAINT_COMPOSITE_ONLY);

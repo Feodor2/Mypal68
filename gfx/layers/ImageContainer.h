@@ -148,7 +148,9 @@ class ImageCompositeNotification;
 class ImageContainer;
 class ImageContainerChild;
 class SharedPlanarYCbCrImage;
+#ifdef MOZ_BUILD_WEBRENDER
 class SharedSurfacesAnimation;
+#endif
 class PlanarYCbCrImage;
 class TextureClient;
 class KnowsCompositor;
@@ -602,11 +604,13 @@ class ImageContainer final : public SupportsWeakPtr<ImageContainer> {
 
   void DropImageClient();
 
+#ifdef MOZ_BUILD_WEBRENDER
   SharedSurfacesAnimation* GetSharedSurfacesAnimation() const {
     return mSharedAnimation;
   }
 
   SharedSurfacesAnimation* EnsureSharedSurfacesAnimation();
+#endif
 
  private:
   typedef mozilla::RecursiveMutex RecursiveMutex;
@@ -668,7 +672,9 @@ class ImageContainer final : public SupportsWeakPtr<ImageContainer> {
   // than asynchronusly using the ImageBridge IPDL protocol.
   RefPtr<ImageClient> mImageClient;
 
+#ifdef MOZ_BUILD_WEBRENDER
   RefPtr<SharedSurfacesAnimation> mSharedAnimation;
+#endif
 
   bool mIsAsync;
   CompositableHandle mAsyncContainerHandle;

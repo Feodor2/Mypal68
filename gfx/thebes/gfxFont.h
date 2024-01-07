@@ -34,7 +34,9 @@
 #include "nsColor.h"
 #include "nsFontMetrics.h"
 #include "mozilla/ServoUtils.h"
-#include "TextDrawTarget.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "TextDrawTarget.h"
+#endif
 
 typedef struct _cairo cairo_t;
 typedef struct _cairo_scaled_font cairo_scaled_font_t;
@@ -2148,18 +2150,24 @@ class gfxFont {
   void SanitizeMetrics(Metrics* aMetrics, bool aIsBadUnderlineFont);
 
   bool RenderSVGGlyph(gfxContext* aContext,
+#ifdef MOZ_BUILD_WEBRENDER
                       mozilla::layout::TextDrawTarget* aTextDrawer,
+#endif
                       mozilla::gfx::Point aPoint, uint32_t aGlyphId,
                       SVGContextPaint* aContextPaint) const;
   bool RenderSVGGlyph(gfxContext* aContext,
+#ifdef MOZ_BUILD_WEBRENDER
                       mozilla::layout::TextDrawTarget* aTextDrawer,
+#endif
                       mozilla::gfx::Point aPoint, uint32_t aGlyphId,
                       SVGContextPaint* aContextPaint,
                       gfxTextRunDrawCallbacks* aCallbacks,
                       bool& aEmittedGlyphs) const;
 
   bool RenderColorGlyph(DrawTarget* aDrawTarget, gfxContext* aContext,
+#ifdef MOZ_BUILD_WEBRENDER
                         mozilla::layout::TextDrawTarget* aTextDrawer,
+#endif
                         mozilla::gfx::ScaledFont* scaledFont,
                         mozilla::gfx::DrawOptions drawOptions,
                         const mozilla::gfx::Point& aPoint,

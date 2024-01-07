@@ -15,7 +15,9 @@
 #include "mozilla/ipc/TaskFactory.h"
 #include "mozilla/ipc/Transport.h"
 #include "mozilla/layers/LayersTypes.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 #include "nsThreadUtils.h"
 class nsBaseWidget;
 
@@ -144,8 +146,10 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
   void OnProcessLaunchComplete(GPUProcessHost* aHost) override;
   void OnProcessUnexpectedShutdown(GPUProcessHost* aHost) override;
   void SimulateDeviceReset();
+#ifdef MOZ_BUILD_WEBRENDER
   void DisableWebRender(wr::WebRenderError aError);
   void NotifyWebRenderError(wr::WebRenderError aError);
+#endif
   void OnInProcessDeviceReset();
   void OnRemoteProcessDeviceReset(GPUProcessHost* aHost) override;
   void NotifyListenersOnCompositeDeviceReset();
@@ -210,7 +214,9 @@ class GPUProcessManager final : public GPUProcessHost::Listener {
   void RebuildRemoteSessions();
   void RebuildInProcessSessions();
 
+#ifdef MOZ_BUILD_WEBRENDER
   void NotifyDisablingWebRender();
+#endif
 
   void FallbackToSoftware(const char* aMessage);
 

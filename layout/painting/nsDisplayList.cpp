@@ -98,13 +98,15 @@
 #include "nsFocusManager.h"
 #include "ClientLayerManager.h"
 #include "mozilla/layers/AnimationHelper.h"
-#include "mozilla/layers/RenderRootStateManager.h"
-#include "mozilla/layers/StackingContextHelper.h"
 #include "mozilla/layers/TreeTraversal.h"
-#include "mozilla/layers/WebRenderBridgeChild.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
-#include "mozilla/layers/WebRenderMessages.h"
-#include "mozilla/layers/WebRenderScrollData.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/RenderRootStateManager.h"
+#  include "mozilla/layers/StackingContextHelper.h"
+#  include "mozilla/layers/WebRenderBridgeChild.h"
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#  include "mozilla/layers/WebRenderMessages.h"
+#  include "mozilla/layers/WebRenderScrollData.h"
+#endif
 #include "mozilla/layout/RenderFrame.h"
 
 using namespace mozilla;
@@ -878,6 +880,7 @@ static void AddAnimationsForDisplayItem(nsIFrame* aFrame,
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 static uint64_t AddAnimationsForWebRender(
     nsDisplayItem* aItem, mozilla::layers::RenderRootStateManager* aManager,
     nsDisplayListBuilder* aDisplayListBuilder, wr::RenderRoot aRenderRoot) {
@@ -907,6 +910,7 @@ static uint64_t AddAnimationsForWebRender(
 
   return animationsId;
 }
+#endif
 
 static bool GenerateAndPushTextMask(nsIFrame* aFrame, gfxContext* aContext,
                                     const nsRect& aFillRect,
@@ -1179,7 +1183,9 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
       mCurrentContainerASR(nullptr),
       mCurrentFrame(aReferenceFrame),
       mCurrentReferenceFrame(aReferenceFrame),
+#ifdef MOZ_BUILD_WEBRENDER
       mNeedsDisplayListBuild{},
+#endif
       mRootAGR(AnimatedGeometryRoot::CreateAGRForFrame(
           aReferenceFrame, nullptr, true, aRetainingDisplayList)),
       mCurrentAGR(mRootAGR),
@@ -1213,7 +1219,9 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
       mIsInChromePresContext(false),
       mSyncDecodeImages(false),
       mIsPaintingToWindow(false),
+#ifdef MOZ_BUILD_WEBRENDER
       mIsPaintingForWebRender(false),
+#endif
       mIsCompositingCheap(false),
       mContainsPluginItem(false),
       mAncestorHasApzAwareEventHandler(false),
@@ -1230,8 +1238,10 @@ nsDisplayListBuilder::nsDisplayListBuilder(nsIFrame* aReferenceFrame,
       mPartialBuildFailed(false),
       mIsInActiveDocShell(false),
       mBuildAsyncZoomContainer(false),
+#ifdef MOZ_BUILD_WEBRENDER
       mBuildBackdropRootContainer(false),
       mContainsBackdropFilter(false),
+#endif
       mHitTestArea(),
       mHitTestInfo(CompositorHitTestInvisibleToHit) {
   MOZ_COUNT_CTOR(nsDisplayListBuilder);
@@ -1270,6 +1280,7 @@ void nsDisplayListBuilder::BeginFrame() {
   mInTransform = false;
   mInFilter = false;
   mSyncDecodeImages = false;
+#ifdef MOZ_BUILD_WEBRENDER
   for (auto& needsDisplayListBuild : mNeedsDisplayListBuild) {
     needsDisplayListBuild = false;
   }
@@ -1277,6 +1288,7 @@ void nsDisplayListBuilder::BeginFrame() {
   for (auto& renderRootRect : mRenderRootRects) {
     renderRootRect = LayoutDeviceRect();
   }
+#endif
 
   if (!mBuildCaret) {
     return;
@@ -1360,7 +1372,7 @@ void nsDisplayListBuilder::SetGlassDisplayItem(nsDisplayItem* aItem) {
         NS_WARNING("Multiple glass backgrounds found?");
       } else
 #endif
-      if (!mHasGlassItemDuringPartial) {
+          if (!mHasGlassItemDuringPartial) {
         mHasGlassItemDuringPartial = true;
         aItem->SetIsGlassItem();
       }
@@ -1374,7 +1386,7 @@ void nsDisplayListBuilder::SetGlassDisplayItem(nsDisplayItem* aItem) {
       NS_WARNING("Multiple glass backgrounds found?");
     } else
 #endif
-    if (!mGlassDisplayItem) {
+        if (!mGlassDisplayItem) {
       mGlassDisplayItem = aItem;
       mGlassDisplayItem->SetIsGlassItem();
     }
@@ -1465,10 +1477,12 @@ void nsDisplayListBuilder::UpdateShouldBuildAsyncZoomContainer() {
   mBuildAsyncZoomContainer = nsLayoutUtils::AllowZoomingForDocument(document);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void nsDisplayListBuilder::UpdateShouldBuildBackdropRootContainer() {
   mBuildBackdropRootContainer =
       StaticPrefs::layout_css_backdrop_filter_enabled();
 }
+#endif
 
 // Certain prefs may cause display list items to be added or removed when they
 // are toggled. In those cases, we need to fully rebuild the display list.
@@ -1485,6 +1499,7 @@ bool nsDisplayListBuilder::ShouldRebuildDisplayListDueToPrefChange() {
     shouldRebuild = true;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   // If backdrop-filter is enabled, backdrop root containers are added to the
   // display list. When the pref is toggled these containers may be added or
   // removed, so the display list should be rebuilt.
@@ -1493,6 +1508,7 @@ bool nsDisplayListBuilder::ShouldRebuildDisplayListDueToPrefChange() {
   if (didBuildBackdropRootContainer != mBuildBackdropRootContainer) {
     shouldRebuild = true;
   }
+#endif
 
   return shouldRebuild;
 }
@@ -1583,14 +1599,19 @@ uint32_t nsDisplayListBuilder::GetImageDecodeFlags() const {
   return flags;
 }
 
-void nsDisplayListBuilder::ComputeDefaultRenderRootRect(LayoutDeviceIntSize aClientSize) {
+#ifdef MOZ_BUILD_WEBRENDER
+void nsDisplayListBuilder::ComputeDefaultRenderRootRect(
+    LayoutDeviceIntSize aClientSize) {
   LayoutDeviceIntRegion cutout;
   LayoutDeviceIntRect clientRect(LayoutDeviceIntPoint(), aClientSize);
   cutout.OrWith(clientRect);
-  cutout.SubOut(RoundedToInt(mRenderRootRects[mozilla::wr::RenderRoot::Content]));
+  cutout.SubOut(
+      RoundedToInt(mRenderRootRects[mozilla::wr::RenderRoot::Content]));
 
-  mRenderRootRects[mozilla::wr::RenderRoot::Default] = LayoutDeviceRect(cutout.GetBounds());
+  mRenderRootRects[mozilla::wr::RenderRoot::Default] =
+      LayoutDeviceRect(cutout.GetBounds());
 }
+#endif
 
 void nsDisplayListBuilder::SubtractFromVisibleRegion(nsRegion* aVisibleRegion,
                                                      const nsRegion& aRegion) {
@@ -2843,7 +2864,6 @@ FrameLayerBuilder* nsDisplayList::BuildLayers(nsDisplayListBuilder* aBuilder,
                                               bool aIsWidgetTransaction) {
   nsIFrame* frame = aBuilder->RootReferenceFrame();
   nsPresContext* presContext = frame->PresContext();
-  PresShell* presShell = presContext->PresShell();
 
   FrameLayerBuilder* layerBuilder = new FrameLayerBuilder();
   layerBuilder->Init(aBuilder, aLayerManager);
@@ -3004,6 +3024,7 @@ already_AddRefed<LayerManager> nsDisplayList::PaintRoot(
         rootPresContext->CollectPluginGeometryUpdates(layerManager);
       }
 
+#ifdef MOZ_BUILD_WEBRENDER
       auto* wrManager = static_cast<WebRenderLayerManager*>(layerManager.get());
 
       nsIDocShell* docShell = presContext->GetDocShell();
@@ -3017,6 +3038,7 @@ already_AddRefed<LayerManager> nsDisplayList::PaintRoot(
 
       wrManager->EndTransactionWithoutLayer(this, aBuilder,
                                             std::move(wrFilters));
+#endif
     }
 
     // For layers-free mode, we check the invalidation state bits in the
@@ -3642,6 +3664,7 @@ nsDisplayContainer::nsDisplayContainer(
   nsDisplayItem::SetClipChain(nullptr, true);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayContainer::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -3652,6 +3675,7 @@ bool nsDisplayContainer::CreateWebRenderCommands(
       GetChildren(), this, aDisplayListBuilder, aSc, aBuilder, aResources);
   return true;
 }
+#endif
 
 /**
  * Like |nsDisplayList::ComputeVisibilityForSublist()|, but restricts
@@ -3792,6 +3816,7 @@ void nsDisplaySolidColor::WriteDebugInfo(std::stringstream& aStream) {
           << ")";
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplaySolidColor::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -3824,6 +3849,7 @@ bool nsDisplaySolidColor::CreateWebRenderCommands(
 
   return true;
 }
+#endif
 
 nsRect nsDisplaySolidColorRegion::GetBounds(nsDisplayListBuilder* aBuilder,
                                             bool* aSnap) const {
@@ -3848,6 +3874,7 @@ void nsDisplaySolidColorRegion::WriteDebugInfo(std::stringstream& aStream) {
           << "," << int(mColor.b * 255) << "," << mColor.a << ")";
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplaySolidColorRegion::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -3865,6 +3892,7 @@ bool nsDisplaySolidColorRegion::CreateWebRenderCommands(
 
   return true;
 }
+#endif
 
 static void RegisterThemeGeometry(nsDisplayListBuilder* aBuilder,
                                   nsDisplayItem* aItem, nsIFrame* aFrame,
@@ -4488,6 +4516,7 @@ already_AddRefed<Layer> nsDisplayBackgroundImage::BuildLayer(
   return layer.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayBackgroundImage::CanBuildWebRenderDisplayItems(
     LayerManager* aManager, nsDisplayListBuilder* aDisplayListBuilder) {
   if (aDisplayListBuilder) {
@@ -4528,6 +4557,7 @@ bool nsDisplayBackgroundImage::CreateWebRenderCommands(
   nsDisplayBackgroundGeometry::UpdateDrawResult(this, result);
   return true;
 }
+#endif
 
 void nsDisplayBackgroundImage::HitTest(nsDisplayListBuilder* aBuilder,
                                        const nsRect& aRect,
@@ -4866,6 +4896,7 @@ void nsDisplayThemedBackground::PaintInternal(nsDisplayListBuilder* aBuilder,
                               drawing);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayThemedBackground::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -4877,6 +4908,7 @@ bool nsDisplayThemedBackground::CreateWebRenderCommands(
                                                  aManager, StyleFrame(),
                                                  mAppearance, mBackgroundRect);
 }
+#endif
 
 bool nsDisplayThemedBackground::IsWindowActive() const {
   EventStates docState = mFrame->GetContent()->OwnerDoc()->GetDocumentState();
@@ -5101,6 +5133,7 @@ already_AddRefed<Layer> nsDisplayBackgroundColor::BuildLayer(
   return layer.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayBackgroundColor::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -5124,6 +5157,7 @@ bool nsDisplayBackgroundColor::CreateWebRenderCommands(
 
   return true;
 }
+#endif
 
 void nsDisplayBackgroundColor::PaintWithClip(nsDisplayListBuilder* aBuilder,
                                              gfxContext* aCtx,
@@ -5292,6 +5326,7 @@ already_AddRefed<Layer> nsDisplayClearBackground::BuildLayer(
   return layer.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayClearBackground::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -5306,6 +5341,7 @@ bool nsDisplayClearBackground::CreateWebRenderCommands(
 
   return true;
 }
+#endif
 
 nsRect nsDisplayOutline::GetBounds(nsDisplayListBuilder* aBuilder,
                                    bool* aSnap) const {
@@ -5324,6 +5360,7 @@ void nsDisplayOutline::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
       nsRect(offset, mFrame->GetSize()), mFrame->Style());
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayOutline::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -5358,6 +5395,7 @@ bool nsDisplayOutline::CreateWebRenderCommands(
   borderRenderer->CreateWebRenderCommands(this, aBuilder, aResources, aSc);
   return true;
 }
+#endif
 
 bool nsDisplayOutline::IsInvisibleInRect(const nsRect& aRect) const {
   const nsStyleOutline* outline = mFrame->StyleOutline();
@@ -5385,6 +5423,7 @@ void nsDisplayEventReceiver::HitTest(nsDisplayListBuilder* aBuilder,
   aOutFrames->AppendElement(mFrame);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayEventReceiver::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -5396,6 +5435,7 @@ bool nsDisplayEventReceiver::CreateWebRenderCommands(
   MOZ_ASSERT(false);
   return true;
 }
+#endif
 
 nsDisplayCompositorHitTestInfo::nsDisplayCompositorHitTestInfo(
     nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
@@ -5440,6 +5480,7 @@ void nsDisplayCompositorHitTestInfo::InitializeScrollTarget(
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayCompositorHitTestInfo::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -5482,6 +5523,7 @@ bool nsDisplayCompositorHitTestInfo::CreateWebRenderCommands(
 
   return true;
 }
+#endif
 
 uint16_t nsDisplayCompositorHitTestInfo::CalculatePerFrameKey() const {
   return mIndex;
@@ -5521,6 +5563,7 @@ void nsDisplayCaret::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
   mCaret->PaintCaret(*aCtx->GetDrawTarget(), mFrame, ToReferenceFrame());
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayCaret::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -5558,6 +5601,7 @@ bool nsDisplayCaret::CreateWebRenderCommands(
   }
   return true;
 }
+#endif
 
 nsDisplayBorder::nsDisplayBorder(nsDisplayListBuilder* aBuilder,
                                  nsIFrame* aFrame)
@@ -5615,6 +5659,7 @@ LayerState nsDisplayBorder::GetLayerState(
   return LayerState::LAYER_NONE;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayBorder::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -5634,6 +5679,7 @@ bool nsDisplayBorder::CreateWebRenderCommands(
   nsDisplayBorderGeometry::UpdateDrawResult(this, drawResult);
   return true;
 };
+#endif
 
 void nsDisplayBorder::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
   nsPoint offset = ToReferenceFrame();
@@ -5742,6 +5788,7 @@ bool nsDisplayBoxShadowOuter::ComputeVisibility(nsDisplayListBuilder* aBuilder,
   return true;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayBoxShadowOuter::CanBuildWebRenderDisplayItems() {
   auto shadows = mFrame->StyleEffects()->mBoxShadow.AsSpan();
   if (shadows.IsEmpty()) {
@@ -5849,6 +5896,7 @@ bool nsDisplayBoxShadowOuter::CreateWebRenderCommands(
 
   return true;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 void nsDisplayBoxShadowOuter::ComputeInvalidationRegion(
     nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
@@ -5897,6 +5945,7 @@ void nsDisplayBoxShadowInner::Paint(nsDisplayListBuilder* aBuilder,
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayBoxShadowInner::CanCreateWebRenderCommands(
     nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
     const nsPoint& aReferenceOffset) {
@@ -6001,6 +6050,7 @@ bool nsDisplayBoxShadowInner::CreateWebRenderCommands(
 
   return true;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 bool nsDisplayBoxShadowInner::ComputeVisibility(nsDisplayListBuilder* aBuilder,
                                                 nsRegion* aVisibleRegion) {
@@ -6214,6 +6264,7 @@ void nsDisplayWrapList::SetReferenceFrame(const nsIFrame* aFrame) {
   mToReferenceFrame = mFrame->GetOffsetToCrossDoc(mReferenceFrame);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayWrapList::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -6224,6 +6275,7 @@ bool nsDisplayWrapList::CreateWebRenderCommands(
       GetChildren(), this, aDisplayListBuilder, aSc, aBuilder, aResources);
   return true;
 }
+#endif
 
 static nsresult WrapDisplayList(nsDisplayListBuilder* aBuilder,
                                 nsIFrame* aFrame, nsDisplayList* aList,
@@ -6552,7 +6604,12 @@ bool nsDisplayOpacity::ShouldFlattenAway(nsDisplayListBuilder* aBuilder) {
   // Return true if we successfully applied opacity to child items, or if
   // WebRender is not in use. In the latter case, the opacity gets flattened and
   // applied during layer building.
-  return ApplyOpacityToChildren(aBuilder) || !gfxVars::UseWebRender();
+  return ApplyOpacityToChildren(aBuilder) ||
+#ifdef MOZ_BUILD_WEBRENDER
+         !gfxVars::UseWebRender();
+#else
+         true;
+#endif
 }
 
 nsDisplayItem::LayerState nsDisplayOpacity::GetLayerState(
@@ -6604,6 +6661,7 @@ void nsDisplayOpacity::WriteDebugInfo(std::stringstream& aStream) {
   aStream << " (opacity " << mOpacity << ")";
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayOpacity::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -6631,6 +6689,7 @@ bool nsDisplayOpacity::CreateWebRenderCommands(
       &mList, this, aDisplayListBuilder, sc, aBuilder, aResources);
   return true;
 }
+#endif
 
 nsDisplayBlendMode::nsDisplayBlendMode(
     nsDisplayListBuilder* aBuilder, nsIFrame* aFrame, nsDisplayList* aList,
@@ -6655,6 +6714,7 @@ LayerState nsDisplayBlendMode::GetLayerState(
   return LayerState::LAYER_ACTIVE;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayBlendMode::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -6672,6 +6732,7 @@ bool nsDisplayBlendMode::CreateWebRenderCommands(
   return nsDisplayWrapList::CreateWebRenderCommands(
       aBuilder, aResources, sc, aManager, aDisplayListBuilder);
 }
+#endif
 
 // nsDisplayBlendMode uses layers for rendering
 already_AddRefed<Layer> nsDisplayBlendMode::BuildLayer(
@@ -6779,6 +6840,7 @@ LayerState nsDisplayBlendContainer::GetLayerState(
                                        GetAnimatedGeometryRoot());
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayBlendContainer::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -6794,6 +6856,7 @@ bool nsDisplayBlendContainer::CreateWebRenderCommands(
   return nsDisplayWrapList::CreateWebRenderCommands(
       aBuilder, aResources, sc, aManager, aDisplayListBuilder);
 }
+#endif
 
 /* static */
 nsDisplayTableBlendContainer*
@@ -6813,8 +6876,12 @@ nsDisplayOwnLayer::nsDisplayOwnLayer(
                         aClearClipChain),
       mFlags(aFlags),
       mScrollbarData(aScrollbarData),
-      mForceActive(aForceActive),
-      mWrAnimationId(0) {
+      mForceActive(aForceActive)
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      mWrAnimationId(0)
+#endif
+{
   MOZ_COUNT_CTOR(nsDisplayOwnLayer);
 
   // For scroll thumb layers, override the AGR to be the thumb's AGR rather
@@ -6870,6 +6937,7 @@ already_AddRefed<Layer> nsDisplayOwnLayer::BuildLayer(
   return layer.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayOwnLayer::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -6945,6 +7013,7 @@ bool nsDisplayOwnLayer::UpdateScrollData(
   }
   return true;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 void nsDisplayOwnLayer::WriteDebugInfo(std::stringstream& aStream) {
   aStream << nsPrintfCString(" (flags 0x%x) (scrolltarget %" PRIu64 ")",
@@ -6952,6 +7021,7 @@ void nsDisplayOwnLayer::WriteDebugInfo(std::stringstream& aStream) {
                  .get();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 nsDisplayRenderRoot::nsDisplayRenderRoot(
     nsDisplayListBuilder* aBuilder, nsIFrame* aFrame, nsDisplayList* aList,
     const ActiveScrolledRoot* aActiveScrolledRoot, wr::RenderRoot aRenderRoot)
@@ -7069,6 +7139,7 @@ void nsDisplayRenderRoot::ExpandDisplayListBuilderRenderRootRect(
       mFrame->PresContext()->AppUnitsPerDevPixel());
   aBuilder->ExpandRenderRootRect(rect, mRenderRoot);
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 nsDisplaySubDocument::nsDisplaySubDocument(nsDisplayListBuilder* aBuilder,
                                            nsIFrame* aFrame,
@@ -7319,6 +7390,7 @@ ViewID nsDisplayFixedPosition::GetScrollTargetId() {
   return nsLayoutUtils::ScrollIdForRootScrollFrame(mFrame->PresContext());
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayFixedPosition::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -7343,6 +7415,7 @@ bool nsDisplayFixedPosition::UpdateScrollData(
   }
   return nsDisplayOwnLayer::UpdateScrollData(aData, aLayerData) | true;
 }
+#endif
 
 void nsDisplayFixedPosition::WriteDebugInfo(std::stringstream& aStream) {
   aStream << nsPrintfCString(" (containerASR %s) (scrolltarget %" PRIu64 ")",
@@ -7483,6 +7556,7 @@ already_AddRefed<Layer> nsDisplayStickyPosition::BuildLayer(
   return layer.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 // Returns the smallest distance from "0" to the range [min, max] where
 // min <= max.
 static nscoord DistanceToRange(nscoord min, nscoord max) {
@@ -7666,6 +7740,7 @@ bool nsDisplayStickyPosition::CreateWebRenderCommands(
 
   return true;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 nsDisplayScrollInfoLayer::nsDisplayScrollInfoLayer(
     nsDisplayListBuilder* aBuilder, nsIFrame* aScrolledFrame,
@@ -7717,6 +7792,7 @@ UniquePtr<ScrollMetadata> nsDisplayScrollInfoLayer::ComputeScrollMetadata(
   return UniquePtr<ScrollMetadata>(new ScrollMetadata(metadata));
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayScrollInfoLayer::UpdateScrollData(
     mozilla::layers::WebRenderScrollData* aData,
     mozilla::layers::WebRenderLayerScrollData* aLayerData) {
@@ -7729,6 +7805,7 @@ bool nsDisplayScrollInfoLayer::UpdateScrollData(
   }
   return true;
 }
+#endif
 
 void nsDisplayScrollInfoLayer::WriteDebugInfo(std::stringstream& aStream) {
   aStream << " (scrollframe " << mScrollFrame << " scrolledFrame "
@@ -7945,10 +8022,12 @@ void nsDisplayTransform::Init(nsDisplayListBuilder* aBuilder,
 }
 
 bool nsDisplayTransform::ShouldFlattenAway(nsDisplayListBuilder* aBuilder) {
+#ifdef MOZ_BUILD_WEBRENDER
   if (gfxVars::UseWebRender() ||
       !StaticPrefs::layout_display_list_flatten_transform()) {
     return false;
   }
+#endif
 
   MOZ_ASSERT(!mShouldFlatten);
   mShouldFlatten = GetTransform().Is2D();
@@ -8304,6 +8383,7 @@ auto nsDisplayTransform::ShouldPrerenderTransformedContent(
     return FullPrerender;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   // If painting is for WebRender, allow full prerender even for large size
   // frame. With WebRender, memory usage increase for async animation is limited
   // compared to non-WebRender case.
@@ -8311,6 +8391,7 @@ auto nsDisplayTransform::ShouldPrerenderTransformedContent(
     *aDirtyRect = overflow;
     return FullPrerender;
   }
+#endif
 
   float viewportRatioX =
       StaticPrefs::layout_animation_prerender_viewport_ratio_limit_x();
@@ -8491,6 +8572,7 @@ const Matrix4x4& nsDisplayTransform::GetAccumulatedPreserved3DTransform(
   return *mTransformPreserves3D;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayTransform::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -8582,6 +8664,7 @@ bool nsDisplayTransform::UpdateScrollData(
   }
   return true;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 bool nsDisplayTransform::ShouldSkipTransform(
     nsDisplayListBuilder* aBuilder) const {
@@ -9192,6 +9275,7 @@ nsRegion nsDisplayPerspective::GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
   return GetChildren()->GetTop()->GetOpaqueRegion(aBuilder, aSnap);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayPerspective::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -9278,6 +9362,7 @@ bool nsDisplayPerspective::CreateWebRenderCommands(
 
   return true;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 nsDisplayText::nsDisplayText(nsDisplayListBuilder* aBuilder,
                              nsTextFrame* aFrame,
@@ -9322,6 +9407,7 @@ void nsDisplayText::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
   RenderToContext(aCtx, aBuilder);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayText::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -9361,6 +9447,7 @@ bool nsDisplayText::CreateWebRenderCommands(
 
   return textDrawer->GetTextDrawer()->Finish();
 }
+#endif
 
 void nsDisplayText::RenderToContext(gfxContext* aCtx,
                                     nsDisplayListBuilder* aBuilder,
@@ -9397,11 +9484,13 @@ void nsDisplayText::RenderToContext(gfxContext* aCtx,
   if (f->Style()->IsTextCombined()) {
     float scaleFactor = nsTextFrame::GetTextCombineScaleFactor(f);
     if (scaleFactor != 1.0f) {
+#ifdef MOZ_BUILD_WEBRENDER
       if (auto* textDrawer = aCtx->GetTextDrawer()) {
         // WebRender doesn't support scaling text like this yet
         textDrawer->FoundUnsupportedFeature();
         return;
       }
+#endif
       matrixSR.SetContext(aCtx);
       // Setup matrix to compress text for text-combine-upright if
       // necessary. This is done here because we want selection be
@@ -9899,6 +9988,7 @@ void nsDisplayMasksAndClipPaths::PaintWithContentsPaintCallback(
   nsDisplayMasksAndClipPathsGeometry::UpdateDrawResult(this, imgParams.result);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 static Maybe<wr::WrClipId> CreateSimpleClipRegion(
     const nsDisplayMasksAndClipPaths& aDisplayItem,
     wr::DisplayListBuilder& aBuilder) {
@@ -10047,6 +10137,7 @@ bool nsDisplayMasksAndClipPaths::CreateWebRenderCommands(
 
   return true;
 }
+#endif
 
 Maybe<nsRect> nsDisplayMasksAndClipPaths::GetClipWithRespectToASR(
     nsDisplayListBuilder* aBuilder, const ActiveScrolledRoot* aASR) const {
@@ -10108,6 +10199,7 @@ void nsDisplayMasksAndClipPaths::PrintEffects(nsACString& aTo) {
 }
 #endif
 
+#ifdef MOZ_BUILD_WEBRENDER
 already_AddRefed<Layer> nsDisplayBackdropRootContainer::BuildLayer(
     nsDisplayListBuilder* aBuilder, LayerManager* aManager,
     const ContainerLayerParameters& aContainerParameters) {
@@ -10194,6 +10286,7 @@ bool nsDisplayBackdropFilters::CreateWebRenderCommands(
                                              aDisplayListBuilder);
   return true;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 /* static */
 nsDisplayFilters::nsDisplayFilters(nsDisplayListBuilder* aBuilder,
@@ -10284,6 +10377,7 @@ void nsDisplayFilters::PaintAsLayer(nsDisplayListBuilder* aBuilder,
   nsDisplayFiltersGeometry::UpdateDrawResult(this, imgParams.result);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayFilters::CanCreateWebRenderCommands() {
   return nsSVGIntegrationUtils::CanCreateWebRenderFiltersForFrame(mFrame);
 }
@@ -10331,6 +10425,7 @@ bool nsDisplayFilters::CreateWebRenderCommands(
 
   return true;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 #ifdef MOZ_DUMP_PAINTING
 void nsDisplayFilters::PrintEffects(nsACString& aTo) {
@@ -10396,6 +10491,7 @@ already_AddRefed<Layer> nsDisplaySVGWrapper::BuildLayer(
   return container.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplaySVGWrapper::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -10413,11 +10509,11 @@ nsDisplayForeignObject::nsDisplayForeignObject(nsDisplayListBuilder* aBuilder,
   MOZ_COUNT_CTOR(nsDisplayForeignObject);
 }
 
-#ifdef NS_BUILD_REFCNT_LOGGING
+#  ifdef NS_BUILD_REFCNT_LOGGING
 nsDisplayForeignObject::~nsDisplayForeignObject() {
   MOZ_COUNT_DTOR(nsDisplayForeignObject);
 }
-#endif
+#  endif
 
 LayerState nsDisplayForeignObject::GetLayerState(
     nsDisplayListBuilder* aBuilder, LayerManager* aManager,
@@ -10464,6 +10560,7 @@ bool nsDisplayForeignObject::CreateWebRenderCommands(
   return nsDisplayWrapList::CreateWebRenderCommands(
       aBuilder, aResources, aSc, aManager, aDisplayListBuilder);
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 void nsDisplayListCollection::SerializeWithCorrectZOrder(
     nsDisplayList* aOutResultList, nsIContent* aContent) {

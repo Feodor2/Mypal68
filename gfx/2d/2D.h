@@ -537,8 +537,13 @@ class DataSourceSurface : public SourceSurface {
   virtual void AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
                                       size_t& aHeapSizeOut,
                                       size_t& aNonHeapSizeOut,
-                                      size_t& aExtHandlesOut,
-                                      uint64_t& aExtIdOut) const {}
+                                      size_t& aExtHandlesOut
+#ifdef MOZ_BUILD_WEBRENDER
+                                      ,
+                                      uint64_t& aExtIdOut
+#endif
+  ) const {
+  }
 
   /**
    * Returns whether or not the data was allocated on the heap. This should
@@ -776,6 +781,7 @@ class UnscaledFont : public SupportsThreadSafeWeakPtr<UnscaledFont> {
     return nullptr;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual already_AddRefed<ScaledFont> CreateScaledFontFromWRFont(
       Float aGlyphSize, const wr::FontInstanceOptions* aOptions,
       const wr::FontInstancePlatformOptions* aPlatformOptions,
@@ -783,6 +789,7 @@ class UnscaledFont : public SupportsThreadSafeWeakPtr<UnscaledFont> {
     return CreateScaledFont(aGlyphSize, nullptr, 0, aVariations,
                             aNumVariations);
   }
+#endif
 
  protected:
   UnscaledFont() {}
@@ -839,12 +846,14 @@ class ScaledFont : public SupportsThreadSafeWeakPtr<ScaledFont> {
     return false;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool GetWRFontInstanceOptions(
       Maybe<wr::FontInstanceOptions>* aOutOptions,
       Maybe<wr::FontInstancePlatformOptions>* aOutPlatformOptions,
       std::vector<FontVariation>* aOutVariations) {
     return false;
   }
+#endif
 
   virtual bool CanSerialize() { return false; }
 

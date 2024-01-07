@@ -1252,7 +1252,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleVisibility {
   mozilla::StyleDirection mDirection;
   mozilla::StyleVisibility mVisible;
   mozilla::StyleImageRendering mImageRendering;
-  uint8_t mWritingMode;     // NS_STYLE_WRITING_MODE_*
+  uint8_t mWritingMode;  // NS_STYLE_WRITING_MODE_*
   mozilla::StyleTextOrientation mTextOrientation;
   mozilla::StyleColorAdjust mColorAdjust;
 
@@ -2217,7 +2217,9 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleEffects {
 
   bool HasFilters() const { return !mFilters.IsEmpty(); }
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool HasBackdropFilters() const { return !mBackdropFilters.IsEmpty(); }
+#endif
 
   bool HasBoxShadowWithInset(bool aInset) const {
     for (auto& shadow : mBoxShadow.AsSpan()) {
@@ -2228,9 +2230,11 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleEffects {
     return false;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool HasMixBlendMode() const {
     return mMixBlendMode != NS_STYLE_BLEND_NORMAL;
   }
+#endif
 
   mozilla::StyleOwnedSlice<mozilla::StyleFilter> mFilters;
   mozilla::StyleOwnedSlice<mozilla::StyleBoxShadow> mBoxShadow;

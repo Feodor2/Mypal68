@@ -452,9 +452,11 @@ class nsChildView final : public nsBaseWidget {
   virtual void PrepareWindowEffects() override;
   virtual void CleanupWindowEffects() override;
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual void AddWindowOverlayWebRenderCommands(
       mozilla::layers::WebRenderBridgeChild* aWrBridge, mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResourceUpdates) override;
+#endif
 
   virtual bool PreRender(mozilla::widget::WidgetRenderingContext* aContext) override;
   virtual void PostRender(mozilla::widget::WidgetRenderingContext* aContext) override;

@@ -19,7 +19,6 @@
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ipc/ByteBufUtils.h"
 #include "mozilla/layers/APZInputBridge.h"
-#include "mozilla/layers/APZTypes.h"
 #include "mozilla/layers/AsyncDragMetrics.h"
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/CompositorTypes.h"
@@ -29,9 +28,12 @@
 #include "mozilla/layers/LayerAttributes.h"
 #include "mozilla/layers/LayersTypes.h"
 #include "mozilla/layers/MatrixMessage.h"
-#include "mozilla/layers/RefCountedShmem.h"
 #include "mozilla/layers/RepaintRequest.h"
-#include "mozilla/layers/WebRenderMessageUtils.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/APZTypes.h"
+#  include "mozilla/layers/RefCountedShmem.h"
+#  include "mozilla/layers/WebRenderMessageUtils.h"
+#endif
 #include "mozilla/Move.h"
 #include "nsSize.h"
 
@@ -549,6 +551,7 @@ struct ParamTraits<mozilla::layers::APZEventResult> {
   }
 };
 
+#ifdef MOZ_BUILD_WEBRENDER
 template <>
 struct ParamTraits<mozilla::layers::SLGuidAndRenderRoot> {
   typedef mozilla::layers::SLGuidAndRenderRoot paramType;
@@ -564,6 +567,7 @@ struct ParamTraits<mozilla::layers::SLGuidAndRenderRoot> {
             ReadParam(aMsg, aIter, &aResult->mRenderRoot));
   }
 };
+#endif
 
 template <>
 struct ParamTraits<mozilla::layers::ZoomConstraints> {
@@ -615,17 +619,22 @@ struct ParamTraits<mozilla::layers::FocusTarget::ScrollTargets> {
 
   static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.mHorizontal);
-    WriteParam(aMsg, aParam.mHorizontalRenderRoot);
     WriteParam(aMsg, aParam.mVertical);
+#ifdef MOZ_BUILD_WEBRENDER
+    WriteParam(aMsg, aParam.mHorizontalRenderRoot);
     WriteParam(aMsg, aParam.mVerticalRenderRoot);
+#endif
   }
 
   static bool Read(const Message* aMsg, PickleIterator* aIter,
                    paramType* aResult) {
     return ReadParam(aMsg, aIter, &aResult->mHorizontal) &&
-           ReadParam(aMsg, aIter, &aResult->mHorizontalRenderRoot) &&
-           ReadParam(aMsg, aIter, &aResult->mVertical) &&
-           ReadParam(aMsg, aIter, &aResult->mVerticalRenderRoot);
+           ReadParam(aMsg, aIter, &aResult->mVertical)
+#ifdef MOZ_BUILD_WEBRENDER
+           && ReadParam(aMsg, aIter, &aResult->mHorizontalRenderRoot) &&
+           ReadParam(aMsg, aIter, &aResult->mVerticalRenderRoot)
+#endif
+        ;
   }
 };
 
@@ -776,7 +785,9 @@ struct ParamTraits<mozilla::layers::CompositorOptions> {
 
   static void Write(Message* aMsg, const paramType& aParam) {
     WriteParam(aMsg, aParam.mUseAPZ);
+#ifdef MOZ_BUILD_WEBRENDER
     WriteParam(aMsg, aParam.mUseWebRender);
+#endif
     WriteParam(aMsg, aParam.mUseAdvancedLayers);
     WriteParam(aMsg, aParam.mInitiallyPaused);
   }
@@ -784,7 +795,9 @@ struct ParamTraits<mozilla::layers::CompositorOptions> {
   static bool Read(const Message* aMsg, PickleIterator* aIter,
                    paramType* aResult) {
     return ReadParam(aMsg, aIter, &aResult->mUseAPZ) &&
+#ifdef MOZ_BUILD_WEBRENDER
            ReadParam(aMsg, aIter, &aResult->mUseWebRender) &&
+#endif
            ReadParam(aMsg, aIter, &aResult->mUseAdvancedLayers) &&
            ReadParam(aMsg, aIter, &aResult->mInitiallyPaused);
   }

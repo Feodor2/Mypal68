@@ -13,6 +13,7 @@
 class gfxDrawable;
 namespace mozilla {
 
+#ifdef MOZ_BUILD_WEBRENDER
 namespace layers {
 class StackingContextHelper;
 class WebRenderParentCommand;
@@ -23,6 +24,7 @@ namespace wr {
 class DisplayListBuilder;
 class IpcResourceUpdateQueue;
 }  // namespace wr
+#endif
 
 // A CSSSizeOrRatio represents a (possibly partially specified) size for use
 // in computing image sizes. Either or both of the width and height might be
@@ -184,6 +186,7 @@ class nsImageRenderer {
                           const nsRect& aDirty, const nsSize& aRepeatSize,
                           float aOpacity);
 
+#ifdef MOZ_BUILD_WEBRENDER
   /**
    * Builds WebRender DisplayItems for an image using
    * {background|mask}-specific arguments.
@@ -196,6 +199,7 @@ class nsImageRenderer {
       mozilla::layers::RenderRootStateManager* aManager, nsDisplayItem* aItem,
       const nsRect& aDest, const nsRect& aFill, const nsPoint& aAnchor,
       const nsRect& aDirty, const nsSize& aRepeatSize, float aOpacity);
+#endif
 
   /**
    * Draw the image to a single component of a border-image style rendering.
@@ -265,6 +269,7 @@ class nsImageRenderer {
                      const nsSize& aRepeatSize, const mozilla::CSSIntRect& aSrc,
                      float aOpacity = 1.0);
 
+#ifdef MOZ_BUILD_WEBRENDER
   /**
    * Builds WebRender DisplayItems for the image.
    * aSrc is a rect on the source image which will be mapped to aDest; it's
@@ -280,6 +285,7 @@ class nsImageRenderer {
       const nsRect& aDirtyRect, const nsRect& aDest, const nsRect& aFill,
       const nsPoint& aAnchor, const nsSize& aRepeatSize,
       const mozilla::CSSIntRect& aSrc, float aOpacity = 1.0);
+#endif
 
   /**
    * Helper method for creating a gfxDrawable from mPaintServerFrame or

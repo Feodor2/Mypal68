@@ -33,7 +33,12 @@ void SourceSurfaceVolatileData::GuaranteePersistance() {
 
 void SourceSurfaceVolatileData::AddSizeOfExcludingThis(
     MallocSizeOf aMallocSizeOf, size_t& aHeapSizeOut, size_t& aNonHeapSizeOut,
-    size_t& aExtHandlesOut, uint64_t& aExtIdOut) const {
+    size_t& aExtHandlesOut
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    uint64_t& aExtIdOut
+#endif
+) const {
   if (mVBuf) {
     aHeapSizeOut += mVBuf->HeapSizeOfExcludingThis(aMallocSizeOf);
     aNonHeapSizeOut += mVBuf->NonHeapSizeOfExcludingThis();

@@ -17,12 +17,9 @@ class ContentChild;
 class ContentParent;
 }  // namespace dom
 
-namespace wr {
-struct ByteBuffer;
-}  // namespace wr
-
 namespace ipc {
 
+struct ByteBuffer;
 class PBackgroundChild;
 class PBackgroundParent;
 class PChildToParentStreamChild;
@@ -105,7 +102,7 @@ class IPCStreamSource {
 
   virtual void Close(nsresult aRv) = 0;
 
-  virtual void SendData(const wr::ByteBuffer& aBuffer) = 0;
+  virtual void SendData(const ByteBuffer& aBuffer) = 0;
 
   void ActorConstructed();
 

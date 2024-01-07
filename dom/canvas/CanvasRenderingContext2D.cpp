@@ -118,8 +118,10 @@
 #include "mozilla/ServoStyleSet.h"
 #include "mozilla/SVGContentUtils.h"
 #include "mozilla/layers/CanvasClient.h"
-#include "mozilla/layers/WebRenderUserData.h"
-#include "mozilla/layers/WebRenderCanvasRenderer.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderUserData.h"
+#  include "mozilla/layers/WebRenderCanvasRenderer.h"
+#endif
 
 #undef free  // apparently defined by some windows header, clashing with a
              // free() method in SkTypes.h
@@ -5312,6 +5314,7 @@ already_AddRefed<Layer> CanvasRenderingContext2D::GetCanvasLayer(
   return canvasLayer.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool CanvasRenderingContext2D::UpdateWebRenderCanvasData(
     nsDisplayListBuilder* aBuilder, WebRenderCanvasData* aCanvasData) {
   if (mOpaque) {
@@ -5356,6 +5359,7 @@ bool CanvasRenderingContext2D::UpdateWebRenderCanvasData(
   mResetLayer = false;
   return true;
 }
+#endif
 
 bool CanvasRenderingContext2D::InitializeCanvasRenderer(
     nsDisplayListBuilder* aBuilder, CanvasRenderer* aRenderer) {

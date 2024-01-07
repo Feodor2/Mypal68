@@ -141,6 +141,7 @@ static const NSOpenGLPixelFormatAttribute kAttribs_doubleBuffered[] = {
 static const NSOpenGLPixelFormatAttribute kAttribs_doubleBuffered_accel[] = {
     NSOpenGLPFAAccelerated, NSOpenGLPFAAllowOfflineRenderers, NSOpenGLPFADoubleBuffer, 0};
 
+#ifdef MOZ_BUILD_WEBRENDER
 static const NSOpenGLPixelFormatAttribute kAttribs_doubleBuffered_accel_webrender[] = {
     NSOpenGLPFAAccelerated,
     NSOpenGLPFAAllowOfflineRenderers,
@@ -150,6 +151,7 @@ static const NSOpenGLPixelFormatAttribute kAttribs_doubleBuffered_accel_webrende
     NSOpenGLPFADepthSize,
     24,
     0};
+#endif
 
 static NSOpenGLContext* CreateWithFormat(const NSOpenGLPixelFormatAttribute* attribs) {
   NSOpenGLPixelFormat* format = [[NSOpenGLPixelFormat alloc] initWithAttributes:attribs];
@@ -166,12 +168,20 @@ static NSOpenGLContext* CreateWithFormat(const NSOpenGLPixelFormatAttribute* att
 }
 
 already_AddRefed<GLContext> GLContextProviderCGL::CreateForCompositorWidget(
-    CompositorWidget* aCompositorWidget, bool aWebRender, bool aForceAccelerated) {
+    CompositorWidget* aCompositorWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+    bool aWebRender,
+#endif
+    bool aForceAccelerated) {
   if (!aCompositorWidget) {
     MOZ_ASSERT(false);
     return nullptr;
   }
-  return CreateForWindow(aCompositorWidget->RealWidget(), aWebRender, aForceAccelerated);
+  return CreateForWindow(aCompositorWidget->RealWidget(),
+#ifdef MOZ_BUILD_WEBRENDER
+                         aWebRender,
+#endif
+                         aForceAccelerated);
 }
 
 already_AddRefed<GLContext> GLContextProviderCGL::CreateForWindow(nsIWidget* aWidget,
@@ -189,12 +199,16 @@ already_AddRefed<GLContext> GLContextProviderCGL::CreateForWindow(nsIWidget* aWi
 
   const NSOpenGLPixelFormatAttribute* attribs;
   if (sCGLLibrary.UseDoubleBufferedWindows()) {
+#ifdef MOZ_BUILD_WEBRENDER
     if (aWebRender) {
       attribs =
           aForceAccelerated ? kAttribs_doubleBuffered_accel_webrender : kAttribs_doubleBuffered;
     } else {
+#endif
       attribs = aForceAccelerated ? kAttribs_doubleBuffered_accel : kAttribs_doubleBuffered;
+#ifdef MOZ_BUILD_WEBRENDER
     }
+#endif
   } else {
     attribs = aForceAccelerated ? kAttribs_singleBuffered_accel : kAttribs_singleBuffered;
   }

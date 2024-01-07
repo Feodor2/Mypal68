@@ -34,7 +34,7 @@ CompositorBridgeChild* CompositorSession::GetCompositorBridgeChild() {
   return mCompositorBridgeChild;
 }
 
-#if defined(MOZ_WIDGET_ANDROID)
+#if defined(MOZ_WIDGET_ANDROID) && defined(MOZ_BUILD_WEBRENDER)
 void CompositorSession::NotifyDisablingWebRender() {
   if (!mWidget) {
     return;

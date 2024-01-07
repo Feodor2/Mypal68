@@ -13,9 +13,6 @@
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/layers/LayersMessages.h"
-#include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/layers/RenderRootStateManager.h"
-#include "mozilla/layers/WebRenderMessages.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Move.h"
 #include "mozilla/PresShell.h"
@@ -38,8 +35,13 @@
 #include "imgRequestProxy.h"
 #include "nsIURI.h"
 #include "SVGImageContext.h"
-#include "TextDrawTarget.h"
-#include "mozilla/layers/WebRenderBridgeChild.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/StackingContextHelper.h"
+#  include "mozilla/layers/RenderRootStateManager.h"
+#  include "mozilla/layers/WebRenderMessages.h"
+#  include "mozilla/layers/WebRenderBridgeChild.h"
+#  include "TextDrawTarget.h"
+#endif
 
 #include <algorithm>
 
@@ -224,12 +226,14 @@ class BulletRenderer final {
     MOZ_ASSERT(IsTextType());
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   ImgDrawResult CreateWebRenderCommands(
       nsDisplayItem* aItem, wr::DisplayListBuilder& aBuilder,
       wr::IpcResourceUpdateQueue& aResources,
       const layers::StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder);
+#endif
 
   ImgDrawResult Paint(gfxContext& aRenderingContext, nsPoint aPt,
                       const nsRect& aDirtyRect, uint32_t aFlags,
@@ -263,6 +267,7 @@ class BulletRenderer final {
   bool IsImageContainerAvailable(layers::LayerManager* aManager,
                                  uint32_t aFlags);
 
+#ifdef MOZ_BUILD_WEBRENDER
  private:
   ImgDrawResult CreateWebRenderCommandsForImage(
       nsDisplayItem* aItem, wr::DisplayListBuilder& aBuilder,
@@ -284,6 +289,7 @@ class BulletRenderer final {
       const layers::StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder);
+#endif
 
  private:
   // mImage and mDest are the properties for list-style-image.
@@ -321,6 +327,7 @@ class BulletRenderer final {
   int32_t mListStyleType;
 };
 
+#ifdef MOZ_BUILD_WEBRENDER
 ImgDrawResult BulletRenderer::CreateWebRenderCommands(
     nsDisplayItem* aItem, wr::DisplayListBuilder& aBuilder,
     wr::IpcResourceUpdateQueue& aResources,
@@ -344,6 +351,7 @@ ImgDrawResult BulletRenderer::CreateWebRenderCommands(
 
   return success ? ImgDrawResult::SUCCESS : ImgDrawResult::NOT_SUPPORTED;
 }
+#endif
 
 ImgDrawResult BulletRenderer::Paint(gfxContext& aRenderingContext, nsPoint aPt,
                                     const nsRect& aDirtyRect, uint32_t aFlags,
@@ -423,6 +431,7 @@ bool BulletRenderer::IsImageContainerAvailable(layers::LayerManager* aManager,
   return mImage->IsImageContainerAvailable(aManager, aFlags);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 ImgDrawResult BulletRenderer::CreateWebRenderCommandsForImage(
     nsDisplayItem* aItem, wr::DisplayListBuilder& aBuilder,
     wr::IpcResourceUpdateQueue& aResources,
@@ -539,6 +548,7 @@ bool BulletRenderer::CreateWebRenderCommandsForText(
 
   return textDrawer->Finish();
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 class nsDisplayBullet final : public nsPaintedDisplayItem {
  public:
@@ -556,11 +566,13 @@ class nsDisplayBullet final : public nsPaintedDisplayItem {
     return mFrame->GetVisualOverflowRectRelativeToSelf() + ToReferenceFrame();
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue&, const StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
+#endif
 
   virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
                        HitTestState* aState,
@@ -609,6 +621,7 @@ class nsDisplayBullet final : public nsPaintedDisplayItem {
   Maybe<BulletRenderer> mBulletRenderer;
 };
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayBullet::CreateWebRenderCommands(
     wr::DisplayListBuilder& aBuilder, wr::IpcResourceUpdateQueue& aResources,
     const StackingContextHelper& aSc,
@@ -635,6 +648,7 @@ bool nsDisplayBullet::CreateWebRenderCommands(
   nsDisplayBulletGeometry::UpdateDrawResult(this, drawResult);
   return true;
 }
+#endif
 
 void nsDisplayBullet::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
   uint32_t flags = imgIContainer::FLAG_NONE;

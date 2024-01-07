@@ -14,8 +14,10 @@
 #include "mozilla/gfx/BaseSize.h"  // for BaseSize
 #include "mozilla/gfx/Logging.h"   // for gfxCriticalError
 #include "mozilla/layers/ISurfaceAllocator.h"
-#include "mozilla/webrender/RenderEGLImageTextureHost.h"
-#include "mozilla/webrender/WebRenderAPI.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/RenderEGLImageTextureHost.h"
+#  include "mozilla/webrender/WebRenderAPI.h"
+#endif
 #include "nsRegion.h"  // for nsIntRegion
 #include "AndroidSurfaceTexture.h"
 #include "GfxTexturesReporter.h"  // for GfxTexturesReporter
@@ -622,6 +624,7 @@ void SurfaceTextureHost::DeallocateDeviceData() {
   }
 }
 
+#  ifdef MOZ_BUILD_WEBRENDER
 void SurfaceTextureHost::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   RefPtr<wr::RenderTextureHost> texture =
@@ -679,6 +682,7 @@ void SurfaceTextureHost::PushDisplayItems(
     }
   }
 }
+#  endif  // MOZ_BUILD_WEBRENDER
 
 #endif  // MOZ_WIDGET_ANDROID
 
@@ -821,6 +825,7 @@ gfx::SurfaceFormat EGLImageTextureHost::GetFormat() const {
                         : gfx::SurfaceFormat::UNKNOWN;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void EGLImageTextureHost::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   RefPtr<wr::RenderTextureHost> texture =
@@ -859,6 +864,7 @@ void EGLImageTextureHost::PushDisplayItems(
   aBuilder.PushImage(aBounds, aClip, true, aFilter, aImageKeys[0],
                      !(mFlags & TextureFlags::NON_PREMULTIPLIED));
 }
+#endif
 
 //
 

@@ -131,7 +131,12 @@ void DeleteWaylandGLSurface(EGLSurface surface) {
     (_array).AppendElement(_k); \
   } while (0)
 
-static bool CreateConfig(EGLConfig* aConfig, bool aEnableDepthBuffer);
+static bool CreateConfig(EGLConfig* aConfig
+#ifdef MOZ_BUILD_WEBRENDER
+                         ,
+                         bool aEnableDepthBuffer
+#endif
+);
 
 // append three zeros at the end of attribs list to work around
 // EGL implementation bugs that iterate until they find 0, instead of
@@ -235,8 +240,12 @@ static EGLSurface CreateSurfaceFromNativeWindow(EGLNativeWindowType window,
  */
 class GLContextEGLFactory {
  public:
-  static already_AddRefed<GLContext> Create(EGLNativeWindowType aWindow,
-                                            bool aWebRender);
+  static already_AddRefed<GLContext> Create(EGLNativeWindowType aWindow
+#ifdef MOZ_BUILD_WEBRENDER
+                                            ,
+                                            bool aWebRender
+#endif
+  );
 
  private:
   GLContextEGLFactory() {}
@@ -244,7 +253,12 @@ class GLContextEGLFactory {
 };
 
 already_AddRefed<GLContext> GLContextEGLFactory::Create(
-    EGLNativeWindowType aWindow, bool aWebRender) {
+    EGLNativeWindowType aWindow
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    bool aWebRender
+#endif
+) {
   nsCString discardFailureId;
   if (!GLLibraryEGL::EnsureInitialized(false, &discardFailureId)) {
     gfxCriticalNote << "Failed to load EGL library 3!";
@@ -255,6 +269,7 @@ already_AddRefed<GLContext> GLContextEGLFactory::Create(
   bool doubleBuffered = true;
 
   EGLConfig config;
+#ifdef MOZ_BUILD_WEBRENDER
   if (aWebRender && egl->IsANGLE()) {
     // Force enable alpha channel to make sure ANGLE use correct framebuffer
     // formart
@@ -265,11 +280,19 @@ already_AddRefed<GLContext> GLContextEGLFactory::Create(
       return nullptr;
     }
   } else {
-    if (!CreateConfig(&config, aWebRender)) {
+#endif
+    if (!CreateConfig(&config
+#ifdef MOZ_BUILD_WEBRENDER
+                      ,
+                      aWebRender
+#endif
+                      )) {
       gfxCriticalNote << "Failed to create EGLConfig!";
       return nullptr;
     }
+#ifdef MOZ_BUILD_WEBRENDER
   }
+#endif
 
   EGLSurface surface = EGL_NO_SURFACE;
   if (aWindow) {
@@ -277,9 +300,11 @@ already_AddRefed<GLContext> GLContextEGLFactory::Create(
   }
 
   CreateContextFlags flags = CreateContextFlags::NONE;
+#ifdef MOZ_BUILD_WEBRENDER
   if (aWebRender) {
     flags |= CreateContextFlags::PREFER_ES3;
   }
+#endif
   SurfaceCaps caps = SurfaceCaps::Any();
   RefPtr<GLContextEGL> gl = GLContextEGL::CreateGLContext(
       flags, caps, false, config, surface, &discardFailureId);
@@ -300,10 +325,12 @@ already_AddRefed<GLContext> GLContextEGLFactory::Create(
     egl->fSwapInterval(EGL_DISPLAY(), 0);
   }
 #endif
+#ifdef MOZ_BUILD_WEBRENDER
   if (aWebRender && egl->IsANGLE()) {
     MOZ_ASSERT(doubleBuffered);
     egl->fSwapInterval(EGL_DISPLAY(), 0);
   }
+#endif
   return gl.forget();
 }
 
@@ -785,7 +812,12 @@ static const EGLint kEGLConfigAttribsRGBA32[] = {
     8,
     EGL_ATTRIBS_LIST_SAFE_TERMINATION_WORKING_AROUND_BUGS};
 
-bool CreateConfig(EGLConfig* aConfig, int32_t depth, bool aEnableDepthBuffer) {
+bool CreateConfig(EGLConfig* aConfig, int32_t depth
+#ifdef MOZ_BUILD_WEBRENDER
+                  ,
+                  bool aEnableDepthBuffer
+#endif
+) {
   EGLConfig configs[64];
   const EGLint* attribs;
   EGLint ncfg = ArrayLength(configs);
@@ -824,6 +856,7 @@ bool CreateConfig(EGLConfig* aConfig, int32_t depth, bool aEnableDepthBuffer) {
         ((depth == 16 && r == 5 && g == 6 && b == 5) ||
          (depth == 24 && r == 8 && g == 8 && b == 8) ||
          (depth == 32 && r == 8 && g == 8 && b == 8 && a == 8))) {
+#ifdef MOZ_BUILD_WEBRENDER
       EGLint z;
       if (aEnableDepthBuffer) {
         if (!egl->fGetConfigAttrib(EGL_DISPLAY(), config, LOCAL_EGL_DEPTH_SIZE,
@@ -832,6 +865,7 @@ bool CreateConfig(EGLConfig* aConfig, int32_t depth, bool aEnableDepthBuffer) {
           continue;
         }
       }
+#endif
       *aConfig = config;
       return true;
     }
@@ -844,19 +878,39 @@ bool CreateConfig(EGLConfig* aConfig, int32_t depth, bool aEnableDepthBuffer) {
 //
 // NB: It's entirely legal for the returned EGLConfig to be valid yet
 // have the value null.
-static bool CreateConfig(EGLConfig* aConfig, bool aEnableDepthBuffer) {
+static bool CreateConfig(EGLConfig* aConfig
+#ifdef MOZ_BUILD_WEBRENDER
+                         ,
+                         bool aEnableDepthBuffer
+#endif
+) {
   int32_t depth = gfxVars::ScreenDepth();
-  if (!CreateConfig(aConfig, depth, aEnableDepthBuffer)) {
+  if (!CreateConfig(aConfig, depth
+#ifdef MOZ_BUILD_WEBRENDER
+                    ,
+                    aEnableDepthBuffer
+#endif
+                    )) {
 #ifdef MOZ_WIDGET_ANDROID
     // Bug 736005
     // Android doesn't always support 16 bit so also try 24 bit
     if (depth == 16) {
-      return CreateConfig(aConfig, 24, aEnableDepthBuffer);
+      return CreateConfig(aConfig, 24
+#  ifdef MOZ_BUILD_WEBRENDER
+                          ,
+                          aEnableDepthBuffer
+#  endif
+      );
     }
     // Bug 970096
     // Some devices that have 24 bit screens only support 16 bit OpenGL?
     if (depth == 24) {
-      return CreateConfig(aConfig, 16, aEnableDepthBuffer);
+      return CreateConfig(aConfig, 16
+#  ifdef MOZ_BUILD_WEBRENDER
+                          ,
+                          aEnableDepthBuffer
+#  endif
+      );
     }
 #endif
     return false;
@@ -887,20 +941,36 @@ already_AddRefed<GLContext> GLContextProviderEGL::CreateWrappingExisting(
 }
 
 already_AddRefed<GLContext> GLContextProviderEGL::CreateForCompositorWidget(
-    CompositorWidget* aCompositorWidget, bool aWebRender,
+    CompositorWidget* aCompositorWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+    bool aWebRender,
+#endif
     bool aForceAccelerated) {
   EGLNativeWindowType window = nullptr;
   if (aCompositorWidget) {
     window = GET_NATIVE_WINDOW_FROM_COMPOSITOR_WIDGET(aCompositorWidget);
   }
-  return GLContextEGLFactory::Create(window, aWebRender);
+  return GLContextEGLFactory::Create(window
+#ifdef MOZ_BUILD_WEBRENDER
+                                     ,
+                                     aWebRender
+#endif
+  );
 }
 
 already_AddRefed<GLContext> GLContextProviderEGL::CreateForWindow(
-    nsIWidget* aWidget, bool aWebRender, bool aForceAccelerated) {
+    nsIWidget* aWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+    bool aWebRender,
+#endif
+    bool aForceAccelerated) {
   MOZ_ASSERT(aWidget);
-  return GLContextEGLFactory::Create(
-      GET_NATIVE_WINDOW_FROM_REAL_WIDGET(aWidget), aWebRender);
+  return GLContextEGLFactory::Create(GET_NATIVE_WINDOW_FROM_REAL_WIDGET(aWidget)
+#ifdef MOZ_BUILD_WEBRENDER
+                                         ,
+                                     aWebRender
+#endif
+  );
 }
 
 #if defined(MOZ_WIDGET_ANDROID)
@@ -922,7 +992,12 @@ EGLSurface GLContextProviderEGL::CreateEGLSurface(void* aWindow,
   }
   auto* egl = gl::GLLibraryEGL::Get();
   EGLConfig config = aConfig;
-  if (!config && !CreateConfig(&config, /* aEnableDepthBuffer */ false)) {
+  if (!config && !CreateConfig(&config
+#  ifdef MOZ_BUILD_WEBRENDER
+                               ,
+                               /* aEnableDepthBuffer */ false
+#  endif
+                               )) {
     MOZ_CRASH("GFX: Failed to create EGLConfig 2!");
   }
 

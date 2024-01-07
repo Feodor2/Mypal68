@@ -343,6 +343,7 @@ class DXGITextureHostD3D11 : public TextureHost {
 
   already_AddRefed<gfx::DataSourceSurface> GetAsSurface() override;
 
+#ifdef MOZ_BUILD_WEBRENDER
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
 
@@ -357,6 +358,7 @@ class DXGITextureHostD3D11 : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys) override;
+#endif
 
  protected:
   bool LockInternal();
@@ -411,6 +413,7 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
     return nullptr;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
 
@@ -425,6 +428,7 @@ class DXGIYCbCrTextureHostD3D11 : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys) override;
+#endif
 
  private:
   bool EnsureTextureSource();

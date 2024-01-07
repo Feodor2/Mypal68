@@ -10,13 +10,20 @@ namespace gl {
 using namespace mozilla::widget;
 
 already_AddRefed<GLContext> GLContextProviderNull::CreateForCompositorWidget(
-    CompositorWidget* aCompositorWidget, bool aWebRender,
+    CompositorWidget* aCompositorWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+    bool aWebRender,
+#endif
     bool aForceAccelerated) {
   return nullptr;
 }
 
 already_AddRefed<GLContext> GLContextProviderNull::CreateForWindow(
-    nsIWidget* aWidget, bool aWebRender, bool aForceAccelerated) {
+    nsIWidget* aWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+    bool aWebRender,
+#endif
+    bool aForceAccelerated) {
   return nullptr;
 }
 

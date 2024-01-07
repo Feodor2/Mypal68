@@ -16,7 +16,9 @@
 #include "nsRegionFwd.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/CheckedInt.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 
 class gfxASurface;
 class gfxDrawable;
@@ -29,17 +31,21 @@ namespace dom {
 class Element;
 }
 namespace layers {
-class WebRenderBridgeChild;
 class GlyphArray;
 struct PlanarYCbCrData;
+#ifdef MOZ_BUILD_WEBRENDER
+class WebRenderBridgeChild;
 class WebRenderCommand;
+#endif
 }  // namespace layers
 namespace image {
 class ImageRegion;
 }  // namespace image
+#ifdef MOZ_BUILD_WEBRENDER
 namespace wr {
 class DisplayListBuilder;
 }  // namespace wr
+#endif
 }  // namespace mozilla
 
 enum class ImageType {
@@ -299,7 +305,9 @@ class gfxUtils {
       const nsCOMPtr<nsIGfxInfo>& gfxInfo, int32_t feature,
       nsACString& failureId, int32_t* status);
 
+#ifdef MOZ_BUILD_WEBRENDER
   static void RemoveShaderCacheFromDiskIfNecessary();
+#endif
 
   /**
    * Copy to the clipboard as a PNG encoded Data URL.
@@ -311,6 +319,7 @@ class gfxUtils {
 
   static FILE* sDumpPaintFile;
 
+#ifdef MOZ_BUILD_WEBRENDER
   static mozilla::wr::RenderRoot GetContentRenderRoot();
 
   static mozilla::Maybe<mozilla::wr::RenderRoot> GetRenderRootForFrame(
@@ -321,6 +330,7 @@ class gfxUtils {
       const nsIFrame* aFrame);
   static mozilla::wr::RenderRoot RecursivelyGetRenderRootForElement(
       const mozilla::dom::Element* aElement);
+#endif
 };
 
 namespace mozilla {

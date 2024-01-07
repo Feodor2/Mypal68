@@ -40,8 +40,13 @@ class SourceSurfaceSharedDataWrapper final : public DataSourceSurface {
       : mStride(0),
         mConsumers(0),
         mFormat(SurfaceFormat::UNKNOWN),
-        mCreatorPid(0),
-        mCreatorRef(true) {}
+        mCreatorPid(0)
+#ifdef MOZ_BUILD_WEBRENDER
+        ,
+        mCreatorRef(true)
+#endif
+  {
+  }
 
   bool Init(const IntSize& aSize, int32_t aStride, SurfaceFormat aFormat,
             const SharedMemoryBasic::Handle& aHandle,
@@ -63,8 +68,13 @@ class SourceSurfaceSharedDataWrapper final : public DataSourceSurface {
 
   bool AddConsumer() { return ++mConsumers == 1; }
 
-  bool RemoveConsumer(bool aForCreator) {
+  bool RemoveConsumer(
+#ifdef MOZ_BUILD_WEBRENDER
+      bool aForCreator
+#endif
+  ) {
     MOZ_ASSERT(mConsumers > 0);
+#ifdef MOZ_BUILD_WEBRENDER
     if (aForCreator) {
       if (!mCreatorRef) {
         MOZ_ASSERT_UNREACHABLE("Already released creator reference!");
@@ -72,15 +82,18 @@ class SourceSurfaceSharedDataWrapper final : public DataSourceSurface {
       }
       mCreatorRef = false;
     }
+#endif
     return --mConsumers == 0;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   uint32_t GetConsumers() const {
     MOZ_ASSERT(mConsumers > 0);
     return mConsumers;
   }
 
   bool HasCreatorRef() const { return mCreatorRef; }
+#endif
 
  private:
   size_t GetDataLength() const {
@@ -97,7 +110,9 @@ class SourceSurfaceSharedDataWrapper final : public DataSourceSurface {
   RefPtr<SharedMemoryBasic> mBuf;
   SurfaceFormat mFormat;
   base::ProcessId mCreatorPid;
+#ifdef MOZ_BUILD_WEBRENDER
   bool mCreatorRef;
+#endif
 };
 
 /**
@@ -142,8 +157,12 @@ class SourceSurfaceSharedData final : public DataSourceSurface {
   void GuaranteePersistance() override;
 
   void AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf, size_t& aHeapSizeOut,
-                              size_t& aNonHeapSizeOut, size_t& aExtHandlesOut,
-                              uint64_t& aExtIdOut) const override;
+                              size_t& aNonHeapSizeOut, size_t& aExtHandlesOut
+#ifdef MOZ_BUILD_WEBRENDER
+                              ,
+                              uint64_t& aExtIdOut
+#endif
+  ) const override;
 
   bool OnHeap() const override { return false; }
 

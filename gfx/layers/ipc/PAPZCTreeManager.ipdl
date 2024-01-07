@@ -15,12 +15,14 @@ using ScreenPoint from "Units.h";
 using mozilla::layers::MaybeZoomConstraints from "mozilla/layers/ZoomConstraints.h";
 using struct mozilla::layers::ScrollableLayerGuid from "mozilla/layers/ScrollableLayerGuid.h";
 using mozilla::layers::ScrollableLayerGuid::ViewID from "mozilla/layers/ScrollableLayerGuid.h";
-using struct mozilla::layers::SLGuidAndRenderRoot from "mozilla/layers/APZTypes.h";
 using mozilla::layers::TouchBehaviorFlags from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::AsyncDragMetrics from "mozilla/layers/AsyncDragMetrics.h";
 using mozilla::layers::GeckoContentController::TapType from "mozilla/layers/GeckoContentController.h";
 using class mozilla::layers::KeyboardMap from "mozilla/layers/KeyboardMap.h";
+#ifdef MOZ_BUILD_WEBRENDER
+using struct mozilla::layers::SLGuidAndRenderRoot from "mozilla/layers/APZTypes.h";
 using mozilla::wr::RenderRoot from "mozilla/webrender/WebRenderTypes.h";
+#endif
 
 using mozilla::Modifiers from "mozilla/EventForwards.h";
 using mozilla::PinchGestureInput::PinchGestureType from "InputData.h";
@@ -46,13 +48,31 @@ parent:
   // These messages correspond to the methods
   // on the IAPZCTreeManager interface
 
-  async ZoomToRect(SLGuidAndRenderRoot aGuid, CSSRect aRect, uint32_t Flags);
+  async ZoomToRect(
+#ifdef MOZ_BUILD_WEBRENDER
+                   SLGuidAndRenderRoot aGuid,
+#else
+                   ScrollableLayerGuid aGuid,
+#endif
+                   CSSRect aRect, uint32_t Flags);
 
   async ContentReceivedInputBlock(uint64_t aInputBlockId, bool PreventDefault);
 
-  async SetTargetAPZC(uint64_t aInputBlockId, SLGuidAndRenderRoot[] Targets);
+  async SetTargetAPZC(uint64_t aInputBlockId,
+#ifdef MOZ_BUILD_WEBRENDER
+                      SLGuidAndRenderRoot[] Targets
+#else
+                      ScrollableLayerGuid[] Targets
+#endif
+                      );
 
-  async UpdateZoomConstraints(SLGuidAndRenderRoot aGuid, MaybeZoomConstraints aConstraints);
+  async UpdateZoomConstraints(
+#ifdef MOZ_BUILD_WEBRENDER
+                              SLGuidAndRenderRoot aGuid,
+#else
+                              ScrollableLayerGuid aGuid,
+#endif
+                              MaybeZoomConstraints aConstraints);
 
   async SetKeyboardMap(KeyboardMap aKeyboardMap);
 
@@ -60,11 +80,29 @@ parent:
 
   async SetAllowedTouchBehavior(uint64_t aInputBlockId, TouchBehaviorFlags[] aValues);
 
-  async StartScrollbarDrag(SLGuidAndRenderRoot aGuid, AsyncDragMetrics aDragMetrics);
+  async StartScrollbarDrag(
+#ifdef MOZ_BUILD_WEBRENDER
+                           SLGuidAndRenderRoot aGuid,
+#else
+                           ScrollableLayerGuid aGuid,
+#endif
+                           AsyncDragMetrics aDragMetrics);
 
-  async StartAutoscroll(SLGuidAndRenderRoot aGuid, ScreenPoint aAnchorLocation);
+  async StartAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+                        SLGuidAndRenderRoot aGuid,
+#else
+                        ScrollableLayerGuid aGuid,
+#endif
+                        ScreenPoint aAnchorLocation);
 
-  async StopAutoscroll(SLGuidAndRenderRoot aGuid);
+  async StopAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+                       SLGuidAndRenderRoot aGuid
+#else
+                       ScrollableLayerGuid aGuid
+#endif
+                      );
 
   async SetLongTapEnabled(bool aTapGestureEnabled);
 

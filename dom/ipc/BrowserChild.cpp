@@ -44,7 +44,9 @@
 #include "mozilla/layers/InputAPZContext.h"
 #include "mozilla/layers/LayerTransactionChild.h"
 #include "mozilla/layers/ShadowLayers.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#endif
 #include "mozilla/plugins/PPluginWidgetChild.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MouseEvents.h"
@@ -467,9 +469,13 @@ void BrowserChild::ContentReceivedInputBlock(uint64_t aInputBlockId,
   }
 }
 
-void BrowserChild::SetTargetAPZC(
-    uint64_t aInputBlockId,
-    const nsTArray<SLGuidAndRenderRoot>& aTargets) const {
+void BrowserChild::SetTargetAPZC(uint64_t aInputBlockId,
+#ifdef MOZ_BUILD_WEBRENDER
+                                 const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+                                 const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+) const {
   if (mApzcTreeManager) {
     mApzcTreeManager->SetTargetAPZC(aInputBlockId, aTargets);
   }
@@ -490,8 +496,13 @@ bool BrowserChild::DoUpdateZoomConstraints(
     return false;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   SLGuidAndRenderRoot guid = SLGuidAndRenderRoot(
       mLayersId, aPresShellId, aViewId, gfxUtils::GetContentRenderRoot());
+#else
+  ScrollableLayerGuid guid =
+      ScrollableLayerGuid(mLayersId, aPresShellId, aViewId);
+#endif
 
   mApzcTreeManager->UpdateZoomConstraints(guid, aConstraints);
   return true;
@@ -1294,8 +1305,12 @@ void BrowserChild::HandleDoubleTap(const CSSPoint& aPoint,
   if (APZCCallbackHelper::GetOrCreateScrollIdentifiers(
           document->GetDocumentElement(), &presShellId, &viewId) &&
       mApzcTreeManager) {
+#ifdef MOZ_BUILD_WEBRENDER
     SLGuidAndRenderRoot guid(mLayersId, presShellId, viewId,
                              gfxUtils::GetContentRenderRoot());
+#else
+    ScrollableLayerGuid guid(mLayersId, presShellId, viewId);
+#endif
 
     mApzcTreeManager->ZoomToRect(guid, zoomToRect, DEFAULT_BEHAVIOR);
   }
@@ -1381,9 +1396,14 @@ bool BrowserChild::NotifyAPZStateChange(
 
 void BrowserChild::StartScrollbarDrag(
     const layers::AsyncDragMetrics& aDragMetrics) {
+#ifdef MOZ_BUILD_WEBRENDER
   SLGuidAndRenderRoot guid(mLayersId, aDragMetrics.mPresShellId,
                            aDragMetrics.mViewId,
                            gfxUtils::GetContentRenderRoot());
+#else
+  ScrollableLayerGuid guid(mLayersId, aDragMetrics.mPresShellId,
+                           aDragMetrics.mViewId);
+#endif
 
   if (mApzcTreeManager) {
     mApzcTreeManager->StartScrollbarDrag(guid, aDragMetrics);
@@ -1393,8 +1413,12 @@ void BrowserChild::StartScrollbarDrag(
 void BrowserChild::ZoomToRect(const uint32_t& aPresShellId,
                               const ScrollableLayerGuid::ViewID& aViewId,
                               const CSSRect& aRect, const uint32_t& aFlags) {
+#ifdef MOZ_BUILD_WEBRENDER
   SLGuidAndRenderRoot guid(mLayersId, aPresShellId, aViewId,
                            gfxUtils::GetContentRenderRoot());
+#else
+  ScrollableLayerGuid guid(mLayersId, aPresShellId, aViewId);
+#endif
 
   if (mApzcTreeManager) {
     mApzcTreeManager->ZoomToRect(guid, aRect, aFlags);
@@ -2674,6 +2698,7 @@ bool BrowserChild::CreateRemoteLayerManager(
   MOZ_ASSERT(aCompositorChild);
 
   bool success = false;
+#ifdef MOZ_BUILD_WEBRENDER
   if (mCompositorOptions->UseWebRender()) {
     success = mPuppetWidget->CreateRemoteLayerManager(
         [&](LayerManager* aLayerManager) -> bool {
@@ -2683,6 +2708,7 @@ bool BrowserChild::CreateRemoteLayerManager(
               &mTextureFactoryIdentifier);
         });
   } else {
+#endif
     nsTArray<LayersBackend> ignored;
     PLayerTransactionChild* shadowManager =
         aCompositorChild->SendPLayerTransactionConstructor(ignored,
@@ -2715,7 +2741,9 @@ bool BrowserChild::CreateRemoteLayerManager(
             return true;
           });
     }
+#ifdef MOZ_BUILD_WEBRENDER
   }
+#endif
   return success;
 }
 
@@ -3043,9 +3071,12 @@ void BrowserChild::ReinitRenderingForDeviceReset() {
   InvalidateLayers();
 
   RefPtr<LayerManager> lm = mPuppetWidget->GetLayerManager();
+#ifdef MOZ_BUILD_WEBRENDER
   if (WebRenderLayerManager* wlm = lm->AsWebRenderLayerManager()) {
     wlm->DoDestroy(/* aIsSync */ true);
-  } else if (ClientLayerManager* clm = lm->AsClientLayerManager()) {
+  } else
+#endif
+      if (ClientLayerManager* clm = lm->AsClientLayerManager()) {
     if (ShadowLayerForwarder* fwd = clm->AsShadowForwarder()) {
       // Force the LayerTransactionChild to synchronously shutdown. It is
       // okay to do this early, we'll simply stop sending messages. This
@@ -3557,9 +3588,9 @@ NS_IMETHODIMP BrowserChild::OnLocationChange(nsIWebProgress* aWebProgress,
 
     locationChangeData->mayEnableCharacterEncodingMenu() =
         docShell->GetMayEnableCharacterEncodingMenu();
-//1543077
-//    locationChangeData->charsetAutodetected() =
-//        docShell->GetCharsetAutodetected();
+    // 1543077
+    //    locationChangeData->charsetAutodetected() =
+    //        docShell->GetCharsetAutodetected();
 
     locationChangeData->contentPrincipal() = document->NodePrincipal();
     locationChangeData->contentStoragePrincipal() =
@@ -3567,8 +3598,8 @@ NS_IMETHODIMP BrowserChild::OnLocationChange(nsIWebProgress* aWebProgress,
     locationChangeData->csp() = document->GetCsp();
     locationChangeData->contentBlockingAllowListPrincipal() =
         document->GetContentBlockingAllowListPrincipal();
-//1534681
-//    locationChangeData->referrerInfo() = document->ReferrerInfo();
+    // 1534681
+    //    locationChangeData->referrerInfo() = document->ReferrerInfo();
     locationChangeData->isSyntheticDocument() = document->IsSyntheticDocument();
 
     if (nsCOMPtr<nsILoadGroup> loadGroup = document->GetDocumentLoadGroup()) {

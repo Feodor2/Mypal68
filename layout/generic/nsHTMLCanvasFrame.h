@@ -17,7 +17,9 @@ class PresShell;
 namespace layers {
 class Layer;
 class LayerManager;
+#ifdef MOZ_BUILD_WEBRENDER
 class WebRenderCanvasData;
+#endif
 }  // namespace layers
 }  // namespace mozilla
 
@@ -32,7 +34,9 @@ class nsHTMLCanvasFrame final : public nsContainerFrame {
   typedef mozilla::layers::CanvasRenderer CanvasRenderer;
   typedef mozilla::layers::Layer Layer;
   typedef mozilla::layers::LayerManager LayerManager;
+#ifdef MOZ_BUILD_WEBRENDER
   typedef mozilla::layers::WebRenderCanvasData WebRenderCanvasData;
+#endif
   typedef mozilla::ContainerLayerParameters ContainerLayerParameters;
 
   NS_DECL_QUERYFRAME
@@ -53,8 +57,10 @@ class nsHTMLCanvasFrame final : public nsContainerFrame {
       nsDisplayItem* aItem,
       const ContainerLayerParameters& aContainerParameters);
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool UpdateWebRenderCanvasData(nsDisplayListBuilder* aBuilder,
                                  WebRenderCanvasData* aCanvasData);
+#endif
 
   /* get the size of the canvas's image */
   nsIntSize GetCanvasSize();

@@ -62,8 +62,12 @@ void CanvasClientBridge::UpdateAsync(AsyncCanvasRenderer* aRenderer) {
   mAsyncHandle = asyncID;
 }
 
-void CanvasClient2D::UpdateFromTexture(TextureClient* aTexture,
-                                       wr::RenderRoot aRenderRoot) {
+void CanvasClient2D::UpdateFromTexture(TextureClient* aTexture
+#ifdef MOZ_BUILD_WEBRENDER
+                                       ,
+                                       wr::RenderRoot aRenderRoot
+#endif
+) {
   MOZ_ASSERT(aTexture);
 
   if (!aTexture->IsSharedWithCompositor()) {
@@ -82,16 +86,30 @@ void CanvasClient2D::UpdateFromTexture(TextureClient* aTexture,
   t->mPictureRect = nsIntRect(nsIntPoint(0, 0), aTexture->GetSize());
   t->mFrameID = mFrameID;
 
-  GetForwarder()->UseTextures(this, textures, Some(aRenderRoot));
+  GetForwarder()->UseTextures(this, textures
+#ifdef MOZ_BUILD_WEBRENDER
+                              ,
+                              Some(aRenderRoot)
+#endif
+  );
   aTexture->SyncWithObject(GetForwarder()->GetSyncObject());
 }
 
 void CanvasClient2D::Update(gfx::IntSize aSize,
-                            ShareableCanvasRenderer* aCanvasRenderer,
-                            wr::RenderRoot aRenderRoot) {
+                            ShareableCanvasRenderer* aCanvasRenderer
+#ifdef MOZ_BUILD_WEBRENDER
+                            ,
+                            wr::RenderRoot aRenderRoot
+#endif
+) {
   mBufferProviderTexture = nullptr;
 
-  AutoRemoveTexture autoRemove(this, aRenderRoot);
+  AutoRemoveTexture autoRemove(this
+#ifdef MOZ_BUILD_WEBRENDER
+                               ,
+                               aRenderRoot
+#endif
+  );
   if (mBackBuffer &&
       (mBackBuffer->IsReadLocked() || mBackBuffer->GetSize() != aSize)) {
     autoRemove.mTexture = mBackBuffer;
@@ -151,7 +169,12 @@ void CanvasClient2D::Update(gfx::IntSize aSize,
     t->mTextureClient = mBackBuffer;
     t->mPictureRect = nsIntRect(nsIntPoint(0, 0), mBackBuffer->GetSize());
     t->mFrameID = mFrameID;
-    GetForwarder()->UseTextures(this, textures, Some(aRenderRoot));
+    GetForwarder()->UseTextures(this, textures
+#ifdef MOZ_BUILD_WEBRENDER
+                                ,
+                                Some(aRenderRoot)
+#endif
+    );
     mBackBuffer->SyncWithObject(GetForwarder()->GetSyncObject());
   }
 
@@ -171,6 +194,7 @@ already_AddRefed<TextureClient> CanvasClient2D::CreateTextureClientForCanvas(
   }
 
 #ifdef XP_WIN
+#  ifdef MOZ_BUILD_WEBRENDER
   // With WebRender, host side uses data of TextureClient longer.
   // Then back buffer reuse in CanvasClient2D::Update() does not work. It causes
   // a lot of TextureClient allocations.
@@ -180,6 +204,7 @@ already_AddRefed<TextureClient> CanvasClient2D::CreateTextureClientForCanvas(
     return GetTextureClientRecycler()->CreateOrRecycle(
         aFormat, aSize, BackendSelector::Canvas, aFlags);
   }
+#  endif
   return CreateTextureClientForDrawing(aFormat, aSize, BackendSelector::Canvas,
                                        aFlags);
 #else
@@ -248,9 +273,11 @@ class TexClientFactory {
     if (!areRGBAFormatsBroken) {
       gfx::SurfaceFormat format = mHasAlpha ? gfx::SurfaceFormat::R8G8B8A8
                                             : gfx::SurfaceFormat::R8G8B8X8;
+#ifdef MOZ_BUILD_WEBRENDER
       if (gfxVars::UseWebRender() && format == gfx::SurfaceFormat::R8G8B8X8) {
         MOZ_CRASH("R8G8B8X8 is not supported on WebRender");
       }
+#endif
       ret = Create(format);
     }
 
@@ -372,8 +399,12 @@ static already_AddRefed<SharedSurfaceTextureClient> CloneSurface(
 }
 
 void CanvasClientSharedSurface::Update(gfx::IntSize aSize,
-                                       ShareableCanvasRenderer* aCanvasRenderer,
-                                       wr::RenderRoot aRenderRoot) {
+                                       ShareableCanvasRenderer* aCanvasRenderer
+#ifdef MOZ_BUILD_WEBRENDER
+                                       ,
+                                       wr::RenderRoot aRenderRoot
+#endif
+) {
   Renderer renderer;
   renderer.construct<ShareableCanvasRenderer*>(aCanvasRenderer);
   UpdateRenderer(aSize, renderer);
@@ -482,7 +513,11 @@ void CanvasClientSharedSurface::UpdateRenderer(gfx::IntSize aSize,
   mNewFront = newFront;
 }
 
-void CanvasClientSharedSurface::Updated(wr::RenderRoot aRenderRoot) {
+void CanvasClientSharedSurface::Updated(
+#ifdef MOZ_BUILD_WEBRENDER
+    wr::RenderRoot aRenderRoot
+#endif
+) {
   if (!mNewFront) {
     return;
   }
@@ -502,7 +537,12 @@ void CanvasClientSharedSurface::Updated(wr::RenderRoot aRenderRoot) {
   t->mTextureClient = mFront;
   t->mPictureRect = nsIntRect(nsIntPoint(0, 0), mFront->GetSize());
   t->mFrameID = mFrameID;
-  forwarder->UseTextures(this, textures, Some(aRenderRoot));
+  forwarder->UseTextures(this, textures
+#ifdef MOZ_BUILD_WEBRENDER
+                         ,
+                         Some(aRenderRoot)
+#endif
+  );
 }
 
 void CanvasClientSharedSurface::OnDetach() { ClearSurfaces(); }

@@ -25,10 +25,12 @@
 #include "gfxUtils.h"
 #include "gfxGradientCache.h"
 
-#include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
-#include "mozilla/webrender/WebRenderTypes.h"
-#include "mozilla/webrender/WebRenderAPI.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/StackingContextHelper.h"
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#  include "mozilla/webrender/WebRenderTypes.h"
+#  include "mozilla/webrender/WebRenderAPI.h"
+#endif
 #include "Units.h"
 
 using namespace mozilla;
@@ -1109,6 +1111,7 @@ bool nsCSSGradientRenderer::TryPaintTilesWithExtendMode(
   return true;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void nsCSSGradientRenderer::BuildWebRenderParameters(
     float aOpacity, wr::ExtendMode& aMode, nsTArray<wr::GradientStop>& aStops,
     LayoutDevicePoint& aLineStart, LayoutDevicePoint& aLineEnd,
@@ -1203,5 +1206,6 @@ void nsCSSGradientRenderer::BuildWebRenderDisplayItems(
         mozilla::wr::ToLayoutSize(tileSpacing));
   }
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 }  // namespace mozilla

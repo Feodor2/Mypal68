@@ -5,7 +5,7 @@
 #include "HitTestingTreeNode.h"
 
 #include "AsyncPanZoomController.h"  // for AsyncPanZoomController
-#include "LayersLogging.h"            // for Stringify
+#include "LayersLogging.h"           // for Stringify
 #include "mozilla/StaticPrefs_layout.h"
 #include "mozilla/gfx/Point.h"        // for Point4D
 #include "mozilla/layers/APZUtils.h"  // for CompleteAsyncTransform
@@ -92,9 +92,13 @@ void HitTestingTreeNode::SetLastChild(HitTestingTreeNode* aChild) {
 }
 
 void HitTestingTreeNode::SetScrollbarData(
+#ifdef MOZ_BUILD_WEBRENDER
     const Maybe<uint64_t>& aScrollbarAnimationId,
+#endif
     const ScrollbarData& aScrollbarData) {
+#ifdef MOZ_BUILD_WEBRENDER
   mScrollbarAnimationId = aScrollbarAnimationId;
+#endif
   mScrollbarData = aScrollbarData;
 }
 
@@ -124,9 +128,11 @@ ScrollableLayerGuid::ViewID HitTestingTreeNode::GetScrollTargetId() const {
   return mScrollbarData.mTargetViewId;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 Maybe<uint64_t> HitTestingTreeNode::GetScrollbarAnimationId() const {
   return mScrollbarAnimationId;
 }
+#endif
 
 const ScrollbarData& HitTestingTreeNode::GetScrollbarData() const {
   return mScrollbarData;
@@ -325,9 +331,9 @@ LayerToScreenMatrix4x4 HitTestingTreeNode::GetTransformToGecko() const {
     LayerToParentLayerMatrix4x4 thisToParent =
         mTransform * AsyncTransformMatrix();
     if (mApzc) {
-      thisToParent = thisToParent *
-          ViewAs<ParentLayerToParentLayerMatrix4x4>(
-              mApzc->GetTransformToLastDispatchedPaint());
+      thisToParent =
+          thisToParent * ViewAs<ParentLayerToParentLayerMatrix4x4>(
+                             mApzc->GetTransformToLastDispatchedPaint());
     }
     ParentLayerToScreenMatrix4x4 parentToRoot =
         ViewAs<ParentLayerToScreenMatrix4x4>(

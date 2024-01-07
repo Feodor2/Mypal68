@@ -53,10 +53,12 @@ class ScaledFontDWrite final : public ScaledFontBase {
 
   bool GetFontInstanceData(FontInstanceDataOutput aCb, void* aBaton) override;
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool GetWRFontInstanceOptions(
       Maybe<wr::FontInstanceOptions>* aOutOptions,
       Maybe<wr::FontInstancePlatformOptions>* aOutPlatformOptions,
       std::vector<FontVariation>* aOutVariations) override;
+#endif
 
   AntialiasMode GetDefaultAAMode() override;
 
@@ -100,8 +102,10 @@ class ScaledFontDWrite final : public ScaledFontBase {
           mGamma(aScaledFont->mGamma),
           mContrast(aScaledFont->mContrast) {}
 
+#ifdef MOZ_BUILD_WEBRENDER
     InstanceData(const wr::FontInstanceOptions* aOptions,
                  const wr::FontInstancePlatformOptions* aPlatformOptions);
+#endif
 
     bool mUseEmbeddedBitmap;
     DWRITE_RENDERING_MODE mRenderingMode;

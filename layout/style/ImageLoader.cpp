@@ -20,7 +20,9 @@
 #include "imgIContainer.h"
 #include "GeckoProfiler.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/layers/WebRenderUserData.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderUserData.h"
+#endif
 
 using namespace mozilla::dom;
 
@@ -421,7 +423,6 @@ static CORSMode EffectiveCorsMode(nsIURI* aURI,
   return CORSMode::CORS_ANONYMOUS;
 }
 
-
 /* static */
 void ImageLoader::LoadImage(const StyleComputedImageUrl& aImage,
                             Document& aLoadingDoc) {
@@ -496,6 +497,7 @@ static void InvalidateImages(nsIFrame* aFrame, imgIRequest* aRequest) {
       invalidateFrame = true;
     }
   }
+#ifdef MOZ_BUILD_WEBRENDER
   if (auto userDataTable =
           aFrame->GetProperty(layers::WebRenderUserDataProperty::Key())) {
     for (auto iter = userDataTable->Iter(); !iter.Done(); iter.Next()) {
@@ -521,6 +523,7 @@ static void InvalidateImages(nsIFrame* aFrame, imgIRequest* aRequest) {
       }
     }
   }
+#endif
 
   if (invalidateFrame) {
     aFrame->SchedulePaint();

@@ -104,7 +104,9 @@ bool DeviceManagerDx::LoadD3D11() {
 
 bool DeviceManagerDx::LoadDcomp() {
   MOZ_ASSERT(gfxConfig::GetFeature(Feature::D3D11_COMPOSITING).IsEnabled());
+#ifdef MOZ_BUILD_WEBRENDER
   MOZ_ASSERT(gfxVars::UseWebRender());
+#endif
   MOZ_ASSERT(gfxVars::UseWebRenderANGLE());
   MOZ_ASSERT(gfxVars::UseWebRenderDCompWin());
 
@@ -142,9 +144,9 @@ void DeviceManagerDx::ReleaseD3D11() {
 #ifdef DEBUG
 static inline bool ProcessOwnsCompositor() {
   return XRE_GetProcessType() == GeckoProcessType_GPU ||
-#ifdef MOZ_VR
+#  ifdef MOZ_VR
          XRE_GetProcessType() == GeckoProcessType_VR ||
-#endif
+#  endif
          (XRE_IsParentProcess() && !gfxConfig::IsEnabled(Feature::GPU_PROCESS));
 }
 #endif
@@ -195,9 +197,10 @@ bool DeviceManagerDx::CreateCompositorDevices() {
   // Fallback from WR to D3D11 Non-WR compositor without re-creating gpu process
   // could happen when WR causes error. In this case, the attachments are loaded
   // synchronously.
-  if (!gfx::gfxVars::UseWebRender()) {
+#ifdef MOZ_BUILD_WEBRENDER
+  if (!gfx::gfxVars::UseWebRender())
+#endif
     PreloadAttachmentsOnCompositorThread();
-  }
 
   return true;
 }
@@ -242,6 +245,7 @@ bool DeviceManagerDx::CreateVRDevice() {
 }
 #endif
 
+#ifdef MOZ_BUILD_WEBRENDER
 void DeviceManagerDx::CreateDirectCompositionDevice() {
   if (!gfxVars::UseWebRenderDCompWin()) {
     return;
@@ -276,6 +280,7 @@ void DeviceManagerDx::CreateDirectCompositionDevice() {
 
   mDirectCompositionDevice = compositionDevice;
 }
+#endif
 
 void DeviceManagerDx::ImportDeviceInfo(const D3D11DeviceStatus& aDeviceStatus) {
   MOZ_ASSERT(!ProcessOwnsCompositor());

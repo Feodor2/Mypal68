@@ -28,9 +28,11 @@ enum class StyleBorderImageRepeat : uint8_t;
 namespace gfx {
 class GradientStops;
 }  // namespace gfx
+#ifdef MOZ_BUILD_WEBRENDER
 namespace layers {
 class StackingContextHelper;
 }  // namespace layers
+#endif
 }  // namespace mozilla
 
 // define this to enable a bunch of debug dump info
@@ -96,10 +98,12 @@ class nsCSSBorderRenderer final {
   // draw the entire border
   void DrawBorders();
 
+#ifdef MOZ_BUILD_WEBRENDER
   void CreateWebRenderCommands(
       nsDisplayItem* aItem, mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const mozilla::layers::StackingContextHelper& aSc);
+#endif
 
   // utility function used for background painting as well as borders
   static void ComputeInnerRadii(const RectCornerRadii& aRadii,
@@ -269,6 +273,7 @@ class nsCSSBorderImageRenderer final {
                                                 gfxContext& aRenderingContext,
                                                 nsIFrame* aForFrame,
                                                 const nsRect& aDirtyRect);
+#ifdef MOZ_BUILD_WEBRENDER
   mozilla::image::ImgDrawResult CreateWebRenderCommands(
       nsDisplayItem* aItem, nsIFrame* aForFrame,
       mozilla::wr::DisplayListBuilder& aBuilder,
@@ -276,6 +281,7 @@ class nsCSSBorderImageRenderer final {
       const mozilla::layers::StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder);
+#endif
 
   nsCSSBorderImageRenderer(const nsCSSBorderImageRenderer& aRhs);
   nsCSSBorderImageRenderer& operator=(const nsCSSBorderImageRenderer& aRhs);

@@ -46,6 +46,7 @@ class GPUVideoTextureHost : public TextureHost {
 
   bool HasIntermediateBuffer() const override;
 
+#ifdef MOZ_BUILD_WEBRENDER
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
 
@@ -60,6 +61,7 @@ class GPUVideoTextureHost : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys) override;
+#endif
 
  protected:
   GPUVideoTextureHost(TextureFlags aFlags, TextureHost* aWrappedTextureHost);

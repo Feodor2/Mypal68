@@ -22,14 +22,22 @@ class GLContextGLX : public GLContext {
       Display* display, GLXDrawable drawable, GLXFBConfig cfg,
       bool deleteDrawable, gfxXlibSurface* pixmap);
 
-  static bool FindVisual(Display* display, int screen, bool useWebRender,
+  static bool FindVisual(Display* display, int screen,
+#ifdef MOZ_BUILD_WEBRENDER
+                         bool useWebRender,
+#endif
                          bool useAlpha, int* const out_visualId);
 
   // Finds a GLXFBConfig compatible with the provided window.
   static bool FindFBConfigForWindow(
       Display* display, int screen, Window window,
       ScopedXFree<GLXFBConfig>* const out_scopedConfigArr,
-      GLXFBConfig* const out_config, int* const out_visid, bool aWebRender);
+      GLXFBConfig* const out_config, int* const out_visid
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      bool aWebRender
+#endif
+  );
 
   virtual ~GLContextGLX();
 

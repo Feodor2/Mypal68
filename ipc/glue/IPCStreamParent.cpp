@@ -51,7 +51,7 @@ class IPCStreamSourceParent final : public PParentToChildStreamParent,
     Unused << SendClose(aRv);
   }
 
-  void SendData(const wr::ByteBuffer& aBuffer) override {
+  void SendData(const ByteBuffer& aBuffer) override {
     Unused << SendBuffer(aBuffer);
   }
 
@@ -128,7 +128,7 @@ class IPCStreamDestinationParent final : public PChildToParentStreamParent,
 
   void ActorDestroy(ActorDestroyReason aReason) override { ActorDestroyed(); }
 
-  IPCResult RecvBuffer(const wr::ByteBuffer& aBuffer) override {
+  IPCResult RecvBuffer(const ByteBuffer& aBuffer) override {
     BufferReceived(aBuffer);
     return IPC_OK();
   }

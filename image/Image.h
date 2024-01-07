@@ -35,8 +35,13 @@ struct MemoryCounter {
         mDecodedHeap(0),
         mDecodedNonHeap(0),
         mExternalHandles(0),
-        mFrameIndex(0),
-        mExternalId(0) {}
+        mFrameIndex(0)
+#ifdef MOZ_BUILD_WEBRENDER
+        ,
+        mExternalId(0)
+#endif
+  {
+  }
 
   void SetSource(size_t aCount) { mSource = aCount; }
   size_t Source() const { return mSource; }
@@ -48,8 +53,10 @@ struct MemoryCounter {
   size_t ExternalHandles() const { return mExternalHandles; }
   void SetFrameIndex(size_t aIndex) { mFrameIndex = aIndex; }
   size_t FrameIndex() const { return mFrameIndex; }
+#ifdef MOZ_BUILD_WEBRENDER
   void SetExternalId(uint64_t aId) { mExternalId = aId; }
   uint64_t ExternalId() const { return mExternalId; }
+#endif
 
   MemoryCounter& operator+=(const MemoryCounter& aOther) {
     mSource += aOther.mSource;
@@ -65,7 +72,9 @@ struct MemoryCounter {
   size_t mDecodedNonHeap;
   size_t mExternalHandles;
   size_t mFrameIndex;
+#ifdef MOZ_BUILD_WEBRENDER
   uint64_t mExternalId;
+#endif
 };
 
 enum class SurfaceMemoryCounterType { NORMAL, COMPOSITING, COMPOSITING_PREV };

@@ -102,12 +102,14 @@ class UnscaledFontFontconfig : public UnscaledFontFreeType {
       uint32_t aInstanceDataLength, const FontVariation* aVariations,
       uint32_t aNumVariations) override;
 
+#  ifdef MOZ_BUILD_WEBRENDER
   already_AddRefed<ScaledFont> CreateScaledFontFromWRFont(
       Float aGlyphSize, const wr::FontInstanceOptions* aOptions,
       const wr::FontInstancePlatformOptions* aPlatformOptions,
       const FontVariation* aVariations, uint32_t aNumVariations) override;
+#  endif
 };
-#endif
+#endif  // MOZ_WIDGET_GTK
 
 }  // namespace gfx
 }  // namespace mozilla

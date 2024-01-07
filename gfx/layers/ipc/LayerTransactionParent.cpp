@@ -386,8 +386,13 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvUpdate(
         if (!imageBridge) {
           return IPC_FAIL_NO_REASON(this);
         }
-        RefPtr<CompositableHost> host = imageBridge->FindCompositable(
-            op.compositable(), /* aAllowDisablingWebRender */ true);
+        RefPtr<CompositableHost> host =
+            imageBridge->FindCompositable(op.compositable()
+#ifdef MOZ_BUILD_WEBRENDER
+                                              ,
+                                          /* aAllowDisablingWebRender */ true
+#endif
+            );
         if (!host) {
           // This normally should not happen, but can after a GPU process crash.
           // Media may not have had time to update the ImageContainer associated
@@ -745,8 +750,13 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvSetAsyncScrollOffset(
     return IPC_FAIL_NO_REASON(this);
   }
 
-  mCompositorBridge->SetTestAsyncScrollOffset(WRRootId::NonWebRender(GetId()),
-                                              aScrollID, CSSPoint(aX, aY));
+  mCompositorBridge->SetTestAsyncScrollOffset(
+#ifdef MOZ_BUILD_WEBRENDER
+      WRRootId::NonWebRender(GetId()),
+#else
+      GetId(),
+#endif
+      aScrollID, CSSPoint(aX, aY));
   return IPC_OK();
 }
 
@@ -756,20 +766,36 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvSetAsyncZoom(
     return IPC_FAIL_NO_REASON(this);
   }
 
-  mCompositorBridge->SetTestAsyncZoom(WRRootId::NonWebRender(GetId()),
-                                      aScrollID,
-                                      LayerToParentLayerScale(aValue));
+  mCompositorBridge->SetTestAsyncZoom(
+#ifdef MOZ_BUILD_WEBRENDER
+      WRRootId::NonWebRender(GetId()),
+#else
+      GetId(),
+#endif
+      aScrollID, LayerToParentLayerScale(aValue));
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult LayerTransactionParent::RecvFlushApzRepaints() {
-  mCompositorBridge->FlushApzRepaints(WRRootId::NonWebRender(GetId()));
+  mCompositorBridge->FlushApzRepaints(
+#ifdef MOZ_BUILD_WEBRENDER
+      WRRootId::NonWebRender(GetId())
+#else
+      GetId()
+#endif
+  );
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult LayerTransactionParent::RecvGetAPZTestData(
     APZTestData* aOutData) {
-  mCompositorBridge->GetAPZTestData(WRRootId::NonWebRender(GetId()), aOutData);
+  mCompositorBridge->GetAPZTestData(
+#ifdef MOZ_BUILD_WEBRENDER
+      WRRootId::NonWebRender(GetId()),
+#else
+      GetId(),
+#endif
+      aOutData);
   return IPC_OK();
 }
 
@@ -780,9 +806,16 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvRequestProperty(
 }
 
 mozilla::ipc::IPCResult LayerTransactionParent::RecvSetConfirmedTargetAPZC(
-    const uint64_t& aBlockId, nsTArray<SLGuidAndRenderRoot>&& aTargets) {
+    const uint64_t& aBlockId,
+#ifdef MOZ_BUILD_WEBRENDER
+    nsTArray<SLGuidAndRenderRoot>&& aTargets
+#else
+    nsTArray<ScrollableLayerGuid>&& aTargets
+#endif
+) {
   for (size_t i = 0; i < aTargets.Length(); i++) {
     // Guard against bad data from hijacked child processes
+#ifdef MOZ_BUILD_WEBRENDER
     if (aTargets[i].mRenderRoot != wr::RenderRoot::Default) {
       NS_ERROR(
           "Unexpected render root in RecvSetConfirmedTargetAPZC; dropping "
@@ -790,6 +823,9 @@ mozilla::ipc::IPCResult LayerTransactionParent::RecvSetConfirmedTargetAPZC(
       return IPC_FAIL(this, "Bad render root");
     }
     if (aTargets[i].mScrollableLayerGuid.mLayersId != GetId()) {
+#else
+    if (aTargets[i].mLayersId != GetId()) {
+#endif
       NS_ERROR(
           "Unexpected layers id in RecvSetConfirmedTargetAPZC; dropping "
           "message...");
@@ -816,10 +852,12 @@ bool LayerTransactionParent::Attach(Layer* aLayer,
       static_cast<HostLayerManager*>(aLayer->Manager())
           ->GetTextureSourceProvider();
 
+#ifdef MOZ_BUILD_WEBRENDER
   MOZ_ASSERT(!aCompositable->AsWebRenderImageHost());
   if (aCompositable->AsWebRenderImageHost()) {
     gfxCriticalNote << "Use WebRenderImageHost at LayerTransactionParent.";
   }
+#endif
   if (!layer->SetCompositableHost(aCompositable)) {
     // not all layer types accept a compositable, see bug 967824
     return false;
@@ -968,7 +1006,12 @@ Layer* LayerTransactionParent::AsLayer(const LayerHandle& aHandle) {
 
 mozilla::ipc::IPCResult LayerTransactionParent::RecvNewCompositable(
     const CompositableHandle& aHandle, const TextureInfo& aInfo) {
-  if (!AddCompositable(aHandle, aInfo, /* aUseWebRender */ false)) {
+  if (!AddCompositable(aHandle, aInfo
+#ifdef MOZ_BUILD_WEBRENDER
+                       ,
+                       /* aUseWebRender */ false
+#endif
+                       )) {
     return IPC_FAIL_NO_REASON(this);
   }
   return IPC_OK();

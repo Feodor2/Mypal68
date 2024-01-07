@@ -612,12 +612,16 @@ void ClientLayerManager::MakeSnapshotIfRequired() {
 void ClientLayerManager::FlushRendering() {
   if (mWidget) {
     if (CompositorBridgeChild* remoteRenderer = mWidget->GetRemoteRenderer()) {
+#ifdef MOZ_BUILD_WEBRENDER
       if (mWidget->SynchronouslyRepaintOnResize() ||
           StaticPrefs::layers_force_synchronous_resize()) {
         remoteRenderer->SendFlushRendering();
       } else {
         remoteRenderer->SendFlushRenderingAsync();
       }
+#else
+      remoteRenderer->SendFlushRendering();
+#endif
     }
   }
 }

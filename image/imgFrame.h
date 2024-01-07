@@ -181,13 +181,24 @@ class imgFrame {
 
   struct AddSizeOfCbData {
     AddSizeOfCbData()
-        : heap(0), nonHeap(0), handles(0), index(0), externalId(0) {}
+        : heap(0),
+          nonHeap(0),
+          handles(0),
+          index(0)
+#ifdef MOZ_BUILD_WEBRENDER
+          ,
+          externalId(0)
+#endif
+    {
+    }
 
     size_t heap;
     size_t nonHeap;
     size_t handles;
     size_t index;
+#ifdef MOZ_BUILD_WEBRENDER
     uint64_t externalId;
+#endif
   };
 
   typedef std::function<void(AddSizeOfCbData& aMetadata)> AddSizeOfCb;

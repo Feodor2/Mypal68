@@ -4,11 +4,13 @@
 
 #include "mozilla/layers/CompositorManagerParent.h"
 #include "mozilla/gfx/GPUParent.h"
-#include "mozilla/webrender/RenderThread.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/RenderThread.h"
+#  include "mozilla/layers/SharedSurfacesParent.h"
+#endif
 #include "mozilla/layers/CompositorBridgeParent.h"
 #include "mozilla/layers/ContentCompositorBridgeParent.h"
 #include "mozilla/layers/CompositorThread.h"
-#include "mozilla/layers/SharedSurfacesParent.h"
 #include "mozilla/Unused.h"
 #include "nsAutoPtr.h"
 #include "VsyncSource.h"
@@ -148,7 +150,9 @@ void CompositorManagerParent::BindComplete(bool aIsRoot) {
 }
 
 void CompositorManagerParent::ActorDestroy(ActorDestroyReason aReason) {
+#ifdef MOZ_BUILD_WEBRENDER
   SharedSurfacesParent::DestroyProcess(OtherPid());
+#endif
 
   StaticMutexAutoLock lock(sMutex);
   if (sInstance == this) {
@@ -256,6 +260,7 @@ CompositorManagerParent::AllocPCompositorBridgeParent(
   return nullptr;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 mozilla::ipc::IPCResult CompositorManagerParent::RecvAddSharedSurface(
     const wr::ExternalImageId& aId, const SurfaceDescriptorShared& aDesc) {
   SharedSurfacesParent::Add(aId, aDesc, OtherPid());
@@ -326,6 +331,7 @@ void CompositorManagerParent::NotifyWebRenderError(wr::WebRenderError aError) {
   }
   Unused << sInstance->SendNotifyWebRenderError(aError);
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 }  // namespace layers
 }  // namespace mozilla

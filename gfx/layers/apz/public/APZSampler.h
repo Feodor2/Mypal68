@@ -19,12 +19,14 @@ namespace mozilla {
 
 class TimeStamp;
 
+#ifdef MOZ_BUILD_WEBRENDER
 namespace wr {
 struct Transaction;
 class TransactionWrapper;
 struct WrTransformProperty;
 struct WrWindowId;
 }  // namespace wr
+#endif
 
 namespace layers {
 
@@ -41,8 +43,14 @@ class APZSampler {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(APZSampler)
 
  public:
-  APZSampler(const RefPtr<APZCTreeManager>& aApz, bool aIsUsingWebRender);
+  APZSampler(const RefPtr<APZCTreeManager>& aApz
+#ifdef MOZ_BUILD_WEBRENDER
+             ,
+             bool aIsUsingWebRender
+#endif
+  );
 
+#ifdef MOZ_BUILD_WEBRENDER
   // Whoever creates this sampler is responsible for calling Destroy() on it
   // before releasing the owning refptr.
   void Destroy();
@@ -63,6 +71,7 @@ class APZSampler {
   void SetSampleTime(const TimeStamp& aSampleTime);
   void SampleForWebRender(wr::TransactionWrapper& aTxn,
                           wr::RenderRoot aRenderRoot);
+#endif
 
   bool SampleAnimations(const LayerMetricsWrapper& aLayer,
                         const TimeStamp& aSampleTime);
@@ -114,12 +123,13 @@ class APZSampler {
  protected:
   virtual ~APZSampler();
 
+#ifdef MOZ_BUILD_WEBRENDER
   static already_AddRefed<APZSampler> GetSampler(
       const wr::WrWindowId& aWindowId);
+#endif
 
  private:
   RefPtr<APZCTreeManager> mApz;
-  bool mIsUsingWebRender;
 
   // Used to manage the mapping from a WR window id to APZSampler. These are
   // only used if WebRender is enabled. Both sWindowIdMap and mWindowId should
@@ -127,10 +137,11 @@ class APZSampler {
   // StaticAutoPtr wrapper on sWindowIdMap to avoid a static initializer for the
   // unordered_map. This also avoids the initializer/memory allocation in cases
   // where we're not using WebRender.
+#ifdef MOZ_BUILD_WEBRENDER
   static StaticMutex sWindowIdLock;
   static StaticAutoPtr<std::unordered_map<uint64_t, RefPtr<APZSampler>>>
       sWindowIdMap;
-  Maybe<wr::WrWindowId> mWindowId;
+  bool mIsUsingWebRender;
 
   // Lock used to protected mSamplerThreadId
   mutable Mutex mThreadIdLock;
@@ -139,9 +150,12 @@ class APZSampler {
   // this APZSampler instance.
   Maybe<PlatformThreadId> mSamplerThreadId;
 
+  Maybe<wr::WrWindowId> mWindowId;
+
   Mutex mSampleTimeLock;
   // Can only be accessed or modified while holding mSampleTimeLock.
   TimeStamp mSampleTime;
+#endif
 };
 
 }  // namespace layers

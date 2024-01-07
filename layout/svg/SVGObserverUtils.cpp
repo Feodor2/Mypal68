@@ -1716,8 +1716,11 @@ already_AddRefed<nsIURI> SVGObserverUtils::GetBaseURLForLocalRef(
 
 already_AddRefed<URLAndReferrerInfo> SVGObserverUtils::GetFilterURI(
     nsIFrame* aFrame, const StyleFilter& aFilter) {
-  MOZ_ASSERT(!aFrame->StyleEffects()->mFilters.IsEmpty() ||
-             !aFrame->StyleEffects()->mBackdropFilters.IsEmpty());
+  MOZ_ASSERT(!aFrame->StyleEffects()->mFilters.IsEmpty()
+#ifdef MOZ_BUILD_WEBRENDER
+             || !aFrame->StyleEffects()->mBackdropFilters.IsEmpty()
+#endif
+  );
   MOZ_ASSERT(aFilter.IsUrl());
   return ResolveURLUsingLocalRef(aFrame, aFilter.AsUrl());
 }

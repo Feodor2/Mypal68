@@ -64,8 +64,10 @@ struct FrameMetrics;
 class LayerManager;
 class LayerManagerComposite;
 class PLayerTransactionChild;
+#ifdef MOZ_BUILD_WEBRENDER
 struct SLGuidAndRenderRoot;
 class WebRenderBridgeChild;
+#endif
 }  // namespace layers
 namespace gfx {
 class DrawTarget;
@@ -343,7 +345,9 @@ class nsIWidget : public nsISupports {
   typedef mozilla::layers::LayerManagerComposite LayerManagerComposite;
   typedef mozilla::layers::LayersBackend LayersBackend;
   typedef mozilla::layers::PLayerTransactionChild PLayerTransactionChild;
+#ifdef MOZ_BUILD_WEBRENDER
   typedef mozilla::layers::SLGuidAndRenderRoot SLGuidAndRenderRoot;
+#endif
   typedef mozilla::layers::ScrollableLayerGuid ScrollableLayerGuid;
   typedef mozilla::layers::ZoomConstraints ZoomConstraints;
   typedef mozilla::widget::IMEMessage IMEMessage;
@@ -1270,10 +1274,12 @@ class nsIWidget : public nsISupports {
   /**
    * Called on the main thread at the end of WebRender display list building.
    */
+#ifdef MOZ_BUILD_WEBRENDER
   virtual void AddWindowOverlayWebRenderCommands(
       mozilla::layers::WebRenderBridgeChild* aWrBridge,
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources) {}
+#endif
 
   /**
    * Called when Gecko knows which themed widgets exist in this window.
@@ -1401,7 +1407,12 @@ class nsIWidget : public nsISupports {
    */
   virtual void SetConfirmedTargetAPZC(
       uint64_t aInputBlockId,
-      const nsTArray<SLGuidAndRenderRoot>& aTargets) const = 0;
+#ifdef MOZ_BUILD_WEBRENDER
+      const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+      const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+  ) const = 0;
 
   /**
    * Returns true if APZ is in use, false otherwise.
@@ -1668,13 +1679,24 @@ class nsIWidget : public nsISupports {
    * @return true if APZ has been successfully notified
    */
   virtual bool StartAsyncAutoscroll(const ScreenPoint& aAnchorLocation,
-                                    const SLGuidAndRenderRoot& aGuid) = 0;
+#ifdef MOZ_BUILD_WEBRENDER
+                                    const SLGuidAndRenderRoot& aGuid
+#else
+                                    const ScrollableLayerGuid& aGuid
+#endif
+                                    ) = 0;
 
   /**
    * Notify APZ to stop autoscrolling.
    * @param aGuid identifies the scroll frame which is being autoscrolled.
    */
-  virtual void StopAsyncAutoscroll(const SLGuidAndRenderRoot& aGuid) = 0;
+  virtual void StopAsyncAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid
+#else
+      const ScrollableLayerGuid& aGuid
+#endif
+      ) = 0;
 
   // If this widget supports out-of-process compositing, it can override
   // this method to provide additional information to the compositor.

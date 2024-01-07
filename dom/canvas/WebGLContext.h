@@ -480,8 +480,10 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
                                          Layer* oldLayer,
                                          LayerManager* manager) override;
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool UpdateWebRenderCanvasData(nsDisplayListBuilder* aBuilder,
                                  WebRenderCanvasData* aCanvasData) override;
+#endif
 
   bool InitializeCanvasRenderer(nsDisplayListBuilder* aBuilder,
                                 CanvasRenderer* aRenderer) override;
@@ -798,8 +800,7 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
 
    public:
     explicit Arr(const viewT& view)
-        : elemCount(ComputeAndReturnLength(view)),
-          elemBytes(view.Data()) {}
+        : elemCount(ComputeAndReturnLength(view)), elemBytes(view.Data()) {}
 
     explicit Arr(const dom::Sequence<elemT>& seq)
         : elemCount(seq.Length()), elemBytes(seq.Elements()) {}

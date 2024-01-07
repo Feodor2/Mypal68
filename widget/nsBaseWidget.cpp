@@ -59,7 +59,10 @@
 #include "mozilla/layers/CompositorOptions.h"
 #include "mozilla/layers/InputAPZContext.h"
 #include "mozilla/layers/APZCCallbackHelper.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/gfx/GPUProcessManager.h"
@@ -67,7 +70,6 @@
 #include "mozilla/Move.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/webrender/WebRenderTypes.h"
 #include "nsRefPtrHashtable.h"
 #include "TouchEvents.h"
 #include "WritingModes.h"
@@ -825,12 +827,14 @@ bool nsBaseWidget::IsSmallPopup() const {
 }
 
 bool nsBaseWidget::ComputeShouldAccelerate() {
+#ifdef MOZ_BUILD_WEBRENDER
   if (gfx::gfxVars::UseWebRender() && !AllowWebRenderForThisWindow()) {
     // If WebRender is enabled, non-WebRender widgets use the basic compositor
     // (at least for now), even though they would get an accelerated compositor
     // if WebRender wasn't enabled.
     return false;
   }
+#endif
   return gfx::gfxConfig::IsEnabled(gfx::Feature::HW_COMPOSITING) &&
          WidgetTypeSupportsAcceleration();
 }
@@ -843,12 +847,14 @@ bool nsBaseWidget::UseAPZ() {
             StaticPrefs::apz_popups_enabled())));
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsBaseWidget::AllowWebRenderForThisWindow() {
   return WindowType() == eWindowType_toplevel ||
          WindowType() == eWindowType_child ||
          WindowType() == eWindowType_dialog ||
          (WindowType() == eWindowType_popup && HasRemoteContent());
 }
+#endif
 
 void nsBaseWidget::CreateCompositor() {
   LayoutDeviceIntRect rect = GetBounds();
@@ -927,10 +933,20 @@ void nsBaseWidget::ConfigureAPZControllerThread() {
 
 void nsBaseWidget::SetConfirmedTargetAPZC(
     uint64_t aInputBlockId,
-    const nsTArray<SLGuidAndRenderRoot>& aTargets) const {
+#ifdef MOZ_BUILD_WEBRENDER
+    const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+    const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+) const {
   APZThreadUtils::RunOnControllerThread(
-      NewRunnableMethod<uint64_t,
-                        StoreCopyPassByRRef<nsTArray<SLGuidAndRenderRoot>>>(
+      NewRunnableMethod<uint64_t, StoreCopyPassByRRef<nsTArray<
+#ifdef MOZ_BUILD_WEBRENDER
+                                      SLGuidAndRenderRoot
+#else
+                                      ScrollableLayerGuid
+#endif
+                                      >>>(
           "layers::IAPZCTreeManager::SetTargetAPZC", mAPZC,
           &IAPZCTreeManager::SetTargetAPZC, aInputBlockId, aTargets));
 }
@@ -957,8 +973,12 @@ void nsBaseWidget::UpdateZoomConstraints(
   }
   LayersId layersId = mCompositorSession->RootLayerTreeId();
   mAPZC->UpdateZoomConstraints(
+#ifdef MOZ_BUILD_WEBRENDER
       SLGuidAndRenderRoot(layersId, aPresShellId, aViewId,
                           wr::RenderRoot::Default),
+#else
+      ScrollableLayerGuid(layersId, aPresShellId, aViewId),
+#endif
       aConstraints);
 }
 
@@ -1194,11 +1214,18 @@ already_AddRefed<LayerManager> nsBaseWidget::CreateCompositorSession(
     // If widget type does not supports acceleration, we use ClientLayerManager
     // even when gfxVars::UseWebRender() is true. WebRender could coexist only
     // with BasicCompositor.
+#ifdef MOZ_BUILD_WEBRENDER
     bool enableWR = gfx::gfxVars::UseWebRender() &&
                     WidgetTypeSupportsAcceleration() &&
                     AllowWebRenderForThisWindow();
+#endif
     bool enableAPZ = UseAPZ();
-    CompositorOptions options(enableAPZ, enableWR);
+    CompositorOptions options(enableAPZ
+#ifdef MOZ_BUILD_WEBRENDER
+                              ,
+                              enableWR
+#endif
+    );
 
     bool enableAL = gfx::gfxConfig::IsEnabled(gfx::Feature::ADVANCED_LAYERS);
     options.SetUseAdvancedLayers(enableAL);
@@ -1212,17 +1239,22 @@ already_AddRefed<LayerManager> nsBaseWidget::CreateCompositorSession(
 #endif
 
     RefPtr<LayerManager> lm;
+#ifdef MOZ_BUILD_WEBRENDER
     if (options.UseWebRender()) {
       lm = new WebRenderLayerManager(this);
     } else {
       lm = new ClientLayerManager(this);
     }
+#else
+    lm = new ClientLayerManager(this);
+#endif
 
     bool retry = false;
     mCompositorSession = gpu->CreateTopLevelCompositor(
         this, lm, GetDefaultScale(), options, UseExternalCompositingSurface(),
         gfx::IntSize(aWidth, aHeight), &retry);
 
+#ifdef MOZ_BUILD_WEBRENDER
     if (lm->AsWebRenderLayerManager() && mCompositorSession) {
       TextureFactoryIdentifier textureFactoryIdentifier;
       lm->AsWebRenderLayerManager()->Initialize(
@@ -1236,6 +1268,7 @@ already_AddRefed<LayerManager> nsBaseWidget::CreateCompositorSession(
             wr::WebRenderError::INITIALIZE);
       }
     }
+#endif
 
     // We need to retry in a loop because the act of failing to create the
     // compositor can change our state (e.g. disable WebRender).
@@ -1295,16 +1328,18 @@ void nsBaseWidget::CreateCompositor(int aWidth, int aHeight) {
     mInitialZoomConstraints.reset();
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (lm->AsWebRenderLayerManager()) {
     TextureFactoryIdentifier textureFactoryIdentifier =
         lm->GetTextureFactoryIdentifier();
     MOZ_ASSERT(textureFactoryIdentifier.mParentBackend ==
                LayersBackend::LAYERS_WR);
     ImageBridgeChild::IdentifyCompositorTextureHost(textureFactoryIdentifier);
-#ifdef MOZ_VR
+#  ifdef MOZ_VR
     gfx::VRManagerChild::IdentifyTextureHost(textureFactoryIdentifier);
-#endif
+#  endif
   }
+#endif
 
   ShadowLayerForwarder* lf = lm->AsShadowForwarder();
   if (lf) {
@@ -1787,12 +1822,23 @@ void nsBaseWidget::ZoomToRect(const uint32_t& aPresShellId,
   }
   LayersId layerId = mCompositorSession->RootLayerTreeId();
   APZThreadUtils::RunOnControllerThread(
-      NewRunnableMethod<SLGuidAndRenderRoot, CSSRect, uint32_t>(
-          "layers::IAPZCTreeManager::ZoomToRect", mAPZC,
-          &IAPZCTreeManager::ZoomToRect,
-          SLGuidAndRenderRoot(layerId, aPresShellId, aViewId,
-                              wr::RenderRoot::Default),
-          aRect, aFlags));
+      NewRunnableMethod<
+#ifdef MOZ_BUILD_WEBRENDER
+          SLGuidAndRenderRoot
+#else
+          ScrollableLayerGuid
+#endif
+          ,
+          CSSRect, uint32_t>("layers::IAPZCTreeManager::ZoomToRect", mAPZC,
+                             &IAPZCTreeManager::ZoomToRect,
+#ifdef MOZ_BUILD_WEBRENDER
+                             SLGuidAndRenderRoot(layerId, aPresShellId, aViewId,
+                                                 wr::RenderRoot::Default),
+#else
+                             ScrollableLayerGuid(layerId, aPresShellId,
+                                                 aViewId),
+#endif
+                             aRect, aFlags));
 }
 
 #ifdef ACCESSIBILITY
@@ -1830,23 +1876,44 @@ void nsBaseWidget::StartAsyncScrollbarDrag(
   MOZ_ASSERT(XRE_IsParentProcess() && mCompositorSession);
 
   LayersId layersId = mCompositorSession->RootLayerTreeId();
+#ifdef MOZ_BUILD_WEBRENDER
   SLGuidAndRenderRoot guid(layersId, aDragMetrics.mPresShellId,
                            aDragMetrics.mViewId, wr::RenderRoot::Default);
+#else
+  ScrollableLayerGuid guid(layersId, aDragMetrics.mPresShellId,
+                           aDragMetrics.mViewId);
+#endif
 
-  APZThreadUtils::RunOnControllerThread(
-      NewRunnableMethod<SLGuidAndRenderRoot, AsyncDragMetrics>(
-          "layers::IAPZCTreeManager::StartScrollbarDrag", mAPZC,
-          &IAPZCTreeManager::StartScrollbarDrag, guid, aDragMetrics));
+  APZThreadUtils::RunOnControllerThread(NewRunnableMethod<
+#ifdef MOZ_BUILD_WEBRENDER
+                                        SLGuidAndRenderRoot,
+#else
+                                        ScrollableLayerGuid,
+#endif
+                                        AsyncDragMetrics>(
+      "layers::IAPZCTreeManager::StartScrollbarDrag", mAPZC,
+      &IAPZCTreeManager::StartScrollbarDrag, guid, aDragMetrics));
 }
 
 bool nsBaseWidget::StartAsyncAutoscroll(const ScreenPoint& aAnchorLocation,
-                                        const SLGuidAndRenderRoot& aGuid) {
+#ifdef MOZ_BUILD_WEBRENDER
+                                        const SLGuidAndRenderRoot& aGuid
+#else
+                                        const ScrollableLayerGuid& aGuid
+#endif
+) {
   MOZ_ASSERT(XRE_IsParentProcess() && AsyncPanZoomEnabled());
 
   return mAPZC->StartAutoscroll(aGuid, aAnchorLocation);
 }
 
-void nsBaseWidget::StopAsyncAutoscroll(const SLGuidAndRenderRoot& aGuid) {
+void nsBaseWidget::StopAsyncAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+    const SLGuidAndRenderRoot& aGuid
+#else
+    const ScrollableLayerGuid& aGuid
+#endif
+) {
   MOZ_ASSERT(XRE_IsParentProcess() && AsyncPanZoomEnabled());
 
   mAPZC->StopAutoscroll(aGuid);

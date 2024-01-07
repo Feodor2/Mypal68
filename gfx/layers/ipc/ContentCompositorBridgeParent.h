@@ -57,9 +57,11 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
     return IPC_OK();
   }
   mozilla::ipc::IPCResult RecvFlushRendering() override { return IPC_OK(); }
+#ifdef MOZ_BUILD_WEBRENDER
   mozilla::ipc::IPCResult RecvFlushRenderingAsync() override {
     return IPC_OK();
   }
+#endif
   mozilla::ipc::IPCResult RecvForcePresent() override { return IPC_OK(); }
   mozilla::ipc::IPCResult RecvWaitOnTransactionProcessed() override {
     return IPC_OK();
@@ -124,18 +126,44 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
   void LeaveTestMode(const LayersId& aId) override;
   void ApplyAsyncProperties(LayerTransactionParent* aLayerTree,
                             TransformsToSkip aSkip) override;
-  void SetTestAsyncScrollOffset(const WRRootId& aLayersId,
-                                const ScrollableLayerGuid::ViewID& aScrollId,
-                                const CSSPoint& aPoint) override;
-  void SetTestAsyncZoom(const WRRootId& aLayersId,
-                        const ScrollableLayerGuid::ViewID& aScrollId,
-                        const LayerToParentLayerScale& aZoom) override;
-  void FlushApzRepaints(const WRRootId& aLayersId) override;
-  void GetAPZTestData(const WRRootId& aLayersId,
-                      APZTestData* aOutData) override;
-  void SetConfirmedTargetAPZC(
-      const LayersId& aLayersId, const uint64_t& aInputBlockId,
-      const nsTArray<SLGuidAndRenderRoot>& aTargets) override;
+  void SetTestAsyncScrollOffset(
+#ifdef MOZ_BUILD_WEBRENDER
+      const WRRootId& aWrRootId,
+#else
+      const LayersId& aLayersId,
+#endif
+      const ScrollableLayerGuid::ViewID& aScrollId,
+      const CSSPoint& aPoint) override;
+  void SetTestAsyncZoom(
+#ifdef MOZ_BUILD_WEBRENDER
+      const WRRootId& aWrRootId,
+#else
+      const LayersId& aLayersId,
+#endif
+      const ScrollableLayerGuid::ViewID& aScrollId,
+      const LayerToParentLayerScale& aZoom) override;
+  void FlushApzRepaints(
+#ifdef MOZ_BUILD_WEBRENDER
+      const WRRootId& aLayersId
+#else
+      const LayersId& aLayersId
+#endif
+      ) override;
+  void GetAPZTestData(
+#ifdef MOZ_BUILD_WEBRENDER
+      const WRRootId& aLayersId,
+#else
+      const LayersId& aLayersId,
+#endif
+      APZTestData* aOutData) override;
+  void SetConfirmedTargetAPZC(const LayersId& aLayersId,
+                              const uint64_t& aInputBlockId,
+#ifdef MOZ_BUILD_WEBRENDER
+                              const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+                              const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+                              ) override;
 
   AsyncCompositionManager* GetCompositionManager(
       LayerTransactionParent* aParent) override;
@@ -152,8 +180,12 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
   PTextureParent* AllocPTextureParent(
       const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
       const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
-      const LayersId& aId, const uint64_t& aSerial,
-      const wr::MaybeExternalImageId& aExternalImageId) override;
+      const LayersId& aId, const uint64_t& aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      const wr::MaybeExternalImageId& aExternalImageId
+#endif
+      ) override;
 
   bool DeallocPTextureParent(PTextureParent* actor) override;
 
@@ -182,10 +214,12 @@ class ContentCompositorBridgeParent final : public CompositorBridgeParentBase {
   void RegisterPayloads(LayerTransactionParent* aLayerTree,
                         const nsTArray<CompositionPayload>& aPayload) override;
 
+#ifdef MOZ_BUILD_WEBRENDER
   PWebRenderBridgeParent* AllocPWebRenderBridgeParent(
       const wr::PipelineId& aPipelineId,
       const LayoutDeviceIntSize& aSize) override;
   bool DeallocPWebRenderBridgeParent(PWebRenderBridgeParent* aActor) override;
+#endif
 
   void ObserveLayersUpdate(LayersId aLayersId, LayersObserverEpoch aEpoch,
                            bool aActive) override;

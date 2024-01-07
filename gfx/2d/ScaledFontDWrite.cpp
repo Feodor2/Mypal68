@@ -8,7 +8,9 @@
 #include "gfxFont.h"
 #include "Logging.h"
 #include "mozilla/FontPropertyTypes.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 #include "HelpersD2D.h"
 
 #ifdef USE_SKIA
@@ -287,7 +289,8 @@ bool UnscaledFontDWrite::GetFontFileData(FontFileDataOutput aDataCallback,
   }
 
   RefPtr<IDWriteFontFileStream> stream;
-  hr = loader->CreateStreamFromKey(referenceKey, refKeySize, getter_AddRefs(stream));
+  hr = loader->CreateStreamFromKey(referenceKey, refKeySize,
+                                   getter_AddRefs(stream));
   if (FAILED(hr)) {
     return false;
   }
@@ -315,6 +318,7 @@ bool UnscaledFontDWrite::GetFontFileData(FontFileDataOutput aDataCallback,
   return true;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 static bool GetFontFileName(RefPtr<IDWriteFontFace> aFontFace,
                             std::vector<WCHAR>& aFileName) {
   UINT32 numFiles;
@@ -417,15 +421,18 @@ ScaledFontDWrite::InstanceData::InstanceData(
     mContrast = aPlatformOptions->contrast / 100.0f;
   }
 }
+#endif
 
 bool ScaledFontDWrite::GetFontInstanceData(FontInstanceDataOutput aCb,
                                            void* aBaton) {
   InstanceData instance(this);
-  aCb(reinterpret_cast<uint8_t*>(&instance), sizeof(instance), nullptr, 0, aBaton);
+  aCb(reinterpret_cast<uint8_t*>(&instance), sizeof(instance), nullptr, 0,
+      aBaton);
 
   return true;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool ScaledFontDWrite::GetWRFontInstanceOptions(
     Maybe<wr::FontInstanceOptions>* aOutOptions,
     Maybe<wr::FontInstancePlatformOptions>* aOutPlatformOptions,
@@ -471,6 +478,7 @@ bool ScaledFontDWrite::GetWRFontInstanceOptions(
   *aOutPlatformOptions = Some(platformOptions);
   return true;
 }
+#endif
 
 already_AddRefed<ScaledFont> UnscaledFontDWrite::CreateScaledFont(
     Float aGlyphSize, const uint8_t* aInstanceData,
@@ -496,6 +504,7 @@ already_AddRefed<ScaledFont> UnscaledFontDWrite::CreateScaledFont(
   return scaledFont.forget();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 already_AddRefed<ScaledFont> UnscaledFontDWrite::CreateScaledFontFromWRFont(
     Float aGlyphSize, const wr::FontInstanceOptions* aOptions,
     const wr::FontInstancePlatformOptions* aPlatformOptions,
@@ -504,6 +513,7 @@ already_AddRefed<ScaledFont> UnscaledFontDWrite::CreateScaledFontFromWRFont(
   return CreateScaledFont(aGlyphSize, reinterpret_cast<uint8_t*>(&instanceData),
                           sizeof(instanceData), aVariations, aNumVariations);
 }
+#endif
 
 AntialiasMode ScaledFontDWrite::GetDefaultAAMode() {
   AntialiasMode defaultMode = GetSystemDefaultAAMode();

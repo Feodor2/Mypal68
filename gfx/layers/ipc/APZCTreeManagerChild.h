@@ -28,17 +28,31 @@ class APZCTreeManagerChild : public IAPZCTreeManager,
 
   void SetKeyboardMap(const KeyboardMap& aKeyboardMap) override;
 
-  void ZoomToRect(const SLGuidAndRenderRoot& aGuid, const CSSRect& aRect,
-                  const uint32_t aFlags = DEFAULT_BEHAVIOR) override;
+  void ZoomToRect(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid,
+#else
+      const ScrollableLayerGuid& aGuid,
+#endif
+      const CSSRect& aRect, const uint32_t aFlags = DEFAULT_BEHAVIOR) override;
 
   void ContentReceivedInputBlock(uint64_t aInputBlockId,
                                  bool aPreventDefault) override;
 
   void SetTargetAPZC(uint64_t aInputBlockId,
-                     const nsTArray<SLGuidAndRenderRoot>& aTargets) override;
+#ifdef MOZ_BUILD_WEBRENDER
+                     const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+                     const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+                     ) override;
 
   void UpdateZoomConstraints(
+#ifdef MOZ_BUILD_WEBRENDER
       const SLGuidAndRenderRoot& aGuid,
+#else
+      const ScrollableLayerGuid& aGuid,
+#endif
       const Maybe<ZoomConstraints>& aConstraints) override;
 
   void SetDPI(float aDpiValue) override;
@@ -47,13 +61,29 @@ class APZCTreeManagerChild : public IAPZCTreeManager,
       uint64_t aInputBlockId,
       const nsTArray<TouchBehaviorFlags>& aValues) override;
 
-  void StartScrollbarDrag(const SLGuidAndRenderRoot& aGuid,
-                          const AsyncDragMetrics& aDragMetrics) override;
+  void StartScrollbarDrag(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid,
+#else
+      const ScrollableLayerGuid& aGuid,
+#endif
+      const AsyncDragMetrics& aDragMetrics) override;
 
-  bool StartAutoscroll(const SLGuidAndRenderRoot& aGuid,
-                       const ScreenPoint& aAnchorLocation) override;
+  bool StartAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid,
+#else
+      const ScrollableLayerGuid& aGuid,
+#endif
+      const ScreenPoint& aAnchorLocation) override;
 
-  void StopAutoscroll(const SLGuidAndRenderRoot& aGuid) override;
+  void StopAutoscroll(
+#ifdef MOZ_BUILD_WEBRENDER
+      const SLGuidAndRenderRoot& aGuid
+#else
+      const ScrollableLayerGuid& aGuid
+#endif
+      ) override;
 
   void SetLongTapEnabled(bool aTapGestureEnabled) override;
 

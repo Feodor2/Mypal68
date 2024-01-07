@@ -14,8 +14,10 @@
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/layers/LayersTypes.h"    // for LayersBackend, TextureDumpMode
 #include "mozilla/layers/TextureClient.h"  // for TextureClient
-#include "mozilla/webrender/WebRenderTypes.h"  // for RenderRoot
-#include "nsISupportsImpl.h"                   // for MOZ_COUNT_CTOR, etc
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"  // for RenderRoot
+#endif
+#include "nsISupportsImpl.h"  // for MOZ_COUNT_CTOR, etc
 
 namespace mozilla {
 namespace layers {
@@ -155,8 +157,12 @@ class CompositableClient {
    *
    * See AutoRemoveTexture to automatically invoke this at the end of a scope.
    */
-  virtual void RemoveTexture(TextureClient* aTexture,
-                             const Maybe<wr::RenderRoot>& aRenderRoot);
+  virtual void RemoveTexture(TextureClient* aTexture
+#ifdef MOZ_BUILD_WEBRENDER
+                             ,
+                             const Maybe<wr::RenderRoot>& aRenderRoot
+#endif
+  );
 
   void InitIPDL(const CompositableHandle& aHandle);
 
@@ -188,11 +194,18 @@ class CompositableClient {
  */
 struct AutoRemoveTexture {
   AutoRemoveTexture(CompositableClient* aCompositable,
+#ifdef MOZ_BUILD_WEBRENDER
                     wr::RenderRoot aRenderRoot,
+#endif
                     TextureClient* aTexture = nullptr)
       : mTexture(aTexture),
-        mCompositable(aCompositable),
-        mRenderRoot(aRenderRoot) {}
+        mCompositable(aCompositable)
+#ifdef MOZ_BUILD_WEBRENDER
+        ,
+        mRenderRoot(aRenderRoot)
+#endif
+  {
+  }
 
   ~AutoRemoveTexture();
 
@@ -200,7 +213,9 @@ struct AutoRemoveTexture {
 
  private:
   CompositableClient* mCompositable;
+#ifdef MOZ_BUILD_WEBRENDER
   wr::RenderRoot mRenderRoot;
+#endif
 };
 
 }  // namespace layers

@@ -22,7 +22,9 @@
 #include "mozilla/layers/PTextureChild.h"
 #include "mozilla/layers/TextureClient.h"      // for TextureClient
 #include "mozilla/layers/TextureClientPool.h"  // for TextureClientPool
-#include "mozilla/layers/WebRenderBridgeChild.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderBridgeChild.h"
+#endif
 #include "mozilla/layers/SyncObject.h"  // for SyncObjectClient
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUProcessManager.h"
@@ -163,6 +165,7 @@ void CompositorBridgeChild::Destroy() {
     layers->Destroy();
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   AutoTArray<PWebRenderBridgeChild*, 16> wrBridges;
   ManagedPWebRenderBridgeChild(wrBridges);
   for (int i = wrBridges.Length() - 1; i >= 0; --i) {
@@ -170,6 +173,7 @@ void CompositorBridgeChild::Destroy() {
         static_cast<WebRenderBridgeChild*>(wrBridges[i]);
     wrBridge->Destroy(/* aIsSync */ false);
   }
+#endif
 
   AutoTArray<PAPZChild*, 16> apzChildren;
   ManagedPAPZChild(apzChildren);
@@ -783,8 +787,12 @@ bool CompositorBridgeChild::SendAllPluginsCaptured() {
 
 PTextureChild* CompositorBridgeChild::AllocPTextureChild(
     const SurfaceDescriptor&, const ReadLockDescriptor&, const LayersBackend&,
-    const TextureFlags&, const LayersId&, const uint64_t& aSerial,
-    const wr::MaybeExternalImageId& aExternalImageId) {
+    const TextureFlags&, const LayersId&, const uint64_t& aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    const wr::MaybeExternalImageId& aExternalImageId
+#endif
+) {
   return TextureClient::CreateIPDLActor();
 }
 
@@ -911,19 +919,32 @@ CompositorBridgeChild::GetTileLockAllocator() {
 PTextureChild* CompositorBridgeChild::CreateTexture(
     const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
     LayersBackend aLayersBackend, TextureFlags aFlags, uint64_t aSerial,
-    wr::MaybeExternalImageId& aExternalImageId, nsIEventTarget* aTarget) {
+#ifdef MOZ_BUILD_WEBRENDER
+    wr::MaybeExternalImageId& aExternalImageId,
+#endif
+    nsIEventTarget* aTarget) {
   PTextureChild* textureChild =
       AllocPTextureChild(aSharedData, aReadLock, aLayersBackend, aFlags,
-                         LayersId{0} /* FIXME */, aSerial, aExternalImageId);
+                         LayersId{0} /* FIXME */, aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+                         ,
+                         aExternalImageId
+#endif
+      );
 
   // Do the DOM labeling.
   if (aTarget) {
     SetEventTargetForActor(textureChild, aTarget);
   }
 
-  return SendPTextureConstructor(
-      textureChild, aSharedData, aReadLock, aLayersBackend, aFlags,
-      LayersId{0} /* FIXME? */, aSerial, aExternalImageId);
+  return SendPTextureConstructor(textureChild, aSharedData, aReadLock,
+                                 aLayersBackend, aFlags,
+                                 LayersId{0} /* FIXME? */, aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+                                 ,
+                                 aExternalImageId
+#endif
+  );
 }
 
 bool CompositorBridgeChild::AllocUnsafeShmem(
@@ -1001,6 +1022,7 @@ bool CompositorBridgeChild::DeallocPAPZCTreeManagerChild(
 
 void CompositorBridgeChild::WillEndTransaction() { ResetShmemCounter(); }
 
+#ifdef MOZ_BUILD_WEBRENDER
 PWebRenderBridgeChild* CompositorBridgeChild::AllocPWebRenderBridgeChild(
     const wr::PipelineId& aPipelineId, const LayoutDeviceIntSize&) {
   WebRenderBridgeChild* child = new WebRenderBridgeChild(aPipelineId);
@@ -1015,6 +1037,7 @@ bool CompositorBridgeChild::DeallocPWebRenderBridgeChild(
   child->ReleaseIPDLReference();
   return true;
 }
+#endif
 
 void CompositorBridgeChild::ClearSharedFrameMetricsData(LayersId aLayersId) {
   for (auto iter = mFrameMetricsTable.Iter(); !iter.Done(); iter.Next()) {
@@ -1035,6 +1058,7 @@ uint64_t CompositorBridgeChild::GetNextResourceId() {
   return id;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 wr::MaybeExternalImageId CompositorBridgeChild::GetNextExternalImageId() {
   return Some(wr::ToExternalImageId(GetNextResourceId()));
 }
@@ -1042,6 +1066,7 @@ wr::MaybeExternalImageId CompositorBridgeChild::GetNextExternalImageId() {
 wr::PipelineId CompositorBridgeChild::GetNextPipelineId() {
   return wr::AsPipelineId(GetNextResourceId());
 }
+#endif
 
 void CompositorBridgeChild::FlushAsyncPaints() {
   MOZ_ASSERT(NS_IsMainThread());

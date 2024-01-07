@@ -34,8 +34,13 @@ class RecyclingSourceSurface final : public gfx::DataSourceSurface {
   }
 
   void AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf, size_t& aHeapSizeOut,
-                              size_t& aNonHeapSizeOut, size_t& aExtHandlesOut,
-                              uint64_t& aExtIdOut) const override {}
+                              size_t& aNonHeapSizeOut, size_t& aExtHandlesOut
+#ifdef MOZ_BUILD_WEBRENDER
+                              ,
+                              uint64_t& aExtIdOut
+#endif
+  ) const override {
+  }
 
   bool OnHeap() const override { return mSurface->OnHeap(); }
   bool Map(MapType aType, MappedSurface* aMappedSurface) override {

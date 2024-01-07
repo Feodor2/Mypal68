@@ -12,6 +12,58 @@
 #include "mozilla/ipc/ByteBuf.h"
 #include "ipc/IPCMessageUtils.h"
 
+namespace mozilla {
+namespace ipc {
+
+struct ByteBuffer {
+  ByteBuffer(size_t aLength, uint8_t* aData)
+      : mLength(aLength), mData(aData), mOwned(false) {}
+
+  ByteBuffer(ByteBuffer&& aFrom)
+      : mLength(aFrom.mLength), mData(aFrom.mData), mOwned(aFrom.mOwned) {
+    aFrom.mLength = 0;
+    aFrom.mData = nullptr;
+    aFrom.mOwned = false;
+  }
+
+  ByteBuffer(ByteBuffer& aFrom)
+      : mLength(aFrom.mLength), mData(aFrom.mData), mOwned(aFrom.mOwned) {
+    aFrom.mLength = 0;
+    aFrom.mData = nullptr;
+    aFrom.mOwned = false;
+  }
+
+  ByteBuffer() : mLength(0), mData(nullptr), mOwned(false) {}
+
+  bool Allocate(size_t aLength) {
+    MOZ_ASSERT(mData == nullptr);
+    mData = (uint8_t*)malloc(aLength);
+    if (!mData) {
+      return false;
+    }
+    mLength = aLength;
+    mOwned = true;
+    return true;
+  }
+
+  ~ByteBuffer() {
+    if (mData && mOwned) {
+      free(mData);
+    }
+  }
+
+  bool operator==(const ByteBuffer& other) const {
+    return mLength == other.mLength && !(memcmp(mData, other.mData, mLength));
+  }
+
+  size_t mLength;
+  uint8_t* mData;
+  bool mOwned;
+};
+
+}  // namespace ipc
+}  // namespace mozilla
+
 namespace IPC {
 
 template <>
@@ -42,6 +94,23 @@ struct ParamTraits<mozilla::ipc::ByteBuf> {
 
   static void Log(const paramType& aParam, std::wstring* aLog) {
     aLog->append(L"(byte buf)");
+  }
+};
+
+template <>
+struct ParamTraits<mozilla::ipc::ByteBuffer> {
+  typedef mozilla::ipc::ByteBuffer paramType;
+
+  static void Write(Message* aMsg, const paramType& aParam) {
+    WriteParam(aMsg, aParam.mLength);
+    aMsg->WriteBytes(aParam.mData, aParam.mLength);
+  }
+
+  static bool Read(const Message* aMsg, PickleIterator* aIter,
+                   paramType* aResult) {
+    size_t length;
+    return ReadParam(aMsg, aIter, &length) && aResult->Allocate(length) &&
+           aMsg->ReadBytesInto(aIter, aResult->mData, length);
   }
 };
 

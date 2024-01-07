@@ -7,7 +7,9 @@
 
 #include "nsISupportsImpl.h"  // for NS_INLINE_DECL_PURE_VIRTUAL_REFCOUNTING
 #include "mozilla/Maybe.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 
 namespace mozilla {
 namespace layers {
@@ -23,7 +25,10 @@ class CompositorController {
    * scheduled.
    */
   virtual void ScheduleRenderOnCompositorThread(
-      const wr::RenderRootSet& aRenderRoots) = 0;
+#ifdef MOZ_BUILD_WEBRENDER
+      const wr::RenderRootSet& aRenderRoots
+#endif
+      ) = 0;
   virtual void ScheduleHideAllPluginWindows() = 0;
   virtual void ScheduleShowAllPluginWindows() = 0;
 

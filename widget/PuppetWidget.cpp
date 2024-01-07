@@ -13,7 +13,9 @@
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/layers/APZChild.h"
 #include "mozilla/layers/PLayerTransactionChild.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#endif
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_browser.h"
@@ -507,7 +509,12 @@ nsresult PuppetWidget::ClearNativeTouchSequence(nsIObserver* aObserver) {
 
 void PuppetWidget::SetConfirmedTargetAPZC(
     uint64_t aInputBlockId,
-    const nsTArray<SLGuidAndRenderRoot>& aTargets) const {
+#ifdef MOZ_BUILD_WEBRENDER
+    const nsTArray<SLGuidAndRenderRoot>& aTargets
+#else
+    const nsTArray<ScrollableLayerGuid>& aTargets
+#endif
+) const {
   if (mBrowserChild) {
     mBrowserChild->SetTargetAPZC(aInputBlockId, aTargets);
   }
@@ -562,11 +569,15 @@ bool PuppetWidget::CreateRemoteLayerManager(
     const std::function<bool(LayerManager*)>& aInitializeFunc) {
   RefPtr<LayerManager> lm;
   MOZ_ASSERT(mBrowserChild);
+#ifdef MOZ_BUILD_WEBRENDER
   if (mBrowserChild->GetCompositorOptions().UseWebRender()) {
     lm = new WebRenderLayerManager(this);
   } else {
     lm = new ClientLayerManager(this);
   }
+#else
+  lm = new ClientLayerManager(this);
+#endif
 
   if (!aInitializeFunc(lm)) {
     return false;

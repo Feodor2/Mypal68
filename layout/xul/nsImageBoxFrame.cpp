@@ -47,8 +47,10 @@
 #include "mozilla/PresShell.h"
 #include "SVGImageContext.h"
 #include "Units.h"
-#include "mozilla/layers/RenderRootStateManager.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/RenderRootStateManager.h"
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#endif
 
 #if defined(XP_WIN)
 // Undefine LoadImage to prevent naming conflict with Windows.
@@ -387,6 +389,7 @@ ImgDrawResult nsImageBoxFrame::PaintImage(gfxContext& aRenderingContext,
       aFlags, anchorPoint.ptrOr(nullptr), hasSubRect ? &mSubRect : nullptr);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 ImgDrawResult nsImageBoxFrame::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -442,6 +445,7 @@ ImgDrawResult nsImageBoxFrame::CreateWebRenderCommands(
 
   return result;
 }
+#endif
 
 nsRect nsImageBoxFrame::GetDestRect(const nsPoint& aOffset,
                                     Maybe<nsPoint>& aAnchorPoint) {
@@ -505,6 +509,7 @@ void nsDisplayXULImage::Paint(nsDisplayListBuilder* aBuilder,
   nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayXULImage::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -537,6 +542,7 @@ bool nsDisplayXULImage::CreateWebRenderCommands(
   nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
   return true;
 }
+#endif
 
 nsDisplayItemGeometry* nsDisplayXULImage::AllocateGeometry(
     nsDisplayListBuilder* aBuilder) {
@@ -835,10 +841,12 @@ nsresult nsImageBoxFrame::OnFrameUpdate(imgIRequest* aRequest) {
   // Check if WebRender has interacted with this frame. If it has
   // we need to let it know that things have changed.
   const auto type = DisplayItemType::TYPE_XUL_IMAGE;
+#ifdef MOZ_BUILD_WEBRENDER
   const auto producerId = aRequest->GetProducerId();
   if (WebRenderUserData::ProcessInvalidateForImage(this, type, producerId)) {
     return NS_OK;
   }
+#endif
 
   InvalidateLayer(type);
 

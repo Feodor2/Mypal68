@@ -108,7 +108,6 @@ EXPORTS.mozilla.layers += [
     'AnimationInfo.h',
     'apz/public/APZInputBridge.h',
     'apz/public/APZSampler.h',
-    'apz/public/APZTypes.h',
     'apz/public/APZUpdater.h',
     'apz/public/CompositorController.h',
     'apz/public/GeckoContentController.h',
@@ -208,14 +207,10 @@ EXPORTS.mozilla.layers += [
     'ipc/LayerTransactionChild.h',
     'ipc/LayerTransactionParent.h',
     'ipc/LayerTreeOwnerTracker.h',
-    'ipc/RefCountedShmem.h',
     'ipc/RemoteContentController.h',
     'ipc/ShadowLayers.h',
     'ipc/SharedPlanarYCbCrImage.h',
     'ipc/SharedRGBImage.h',
-    'ipc/SharedSurfacesChild.h',
-    'ipc/SharedSurfacesMemoryReport.h',
-    'ipc/SharedSurfacesParent.h',
     'ipc/SynchronousTask.h',
     'ipc/TextureForwarder.h',
     'ipc/UiCompositorControllerChild.h',
@@ -258,29 +253,38 @@ EXPORTS.mozilla.layers += [
     'TransactionIdAllocator.h',
     'TreeTraversal.h',
     'UpdateImageHelper.h',
-    'wr/AsyncImagePipelineManager.h',
-    'wr/ClipManager.h',
-    'wr/IpcResourceUpdateQueue.h',
-    'wr/RenderRootBoundary.h',
-    'wr/RenderRootStateManager.h',
-    'wr/RenderRootTypes.h',
-    'wr/StackingContextHelper.h',
-    'wr/WebRenderBridgeChild.h',
-    'wr/WebRenderBridgeParent.h',
-    'wr/WebRenderCanvasRenderer.h',
-    'wr/WebRenderCommandBuilder.h',
-    'wr/WebRenderCompositionRecorder.h',
-    'wr/WebRenderDrawEventRecorder.h',
-    'wr/WebRenderImageHost.h',
-    'wr/WebRenderLayerManager.h',
-    'wr/WebRenderLayersLogging.h',
-    'wr/WebRenderMessageUtils.h',
-    'wr/WebRenderScrollData.h',
-    'wr/WebRenderScrollDataWrapper.h',
-    'wr/WebRenderTextureHost.h',
-    'wr/WebRenderUserData.h',
     'ZoomConstraints.h',
 ]
+
+if CONFIG['MOZ_BUILD_WEBRENDER']:
+    EXPORTS.mozilla.layers += [
+       'apz/public/APZTypes.h',
+       'ipc/RefCountedShmem.h',
+       'ipc/SharedSurfacesChild.h',
+       'ipc/SharedSurfacesMemoryReport.h',
+       'ipc/SharedSurfacesParent.h',
+        'wr/AsyncImagePipelineManager.h',
+        'wr/ClipManager.h',
+        'wr/IpcResourceUpdateQueue.h',
+        'wr/RenderRootBoundary.h',
+        'wr/RenderRootStateManager.h',
+        'wr/RenderRootTypes.h',
+        'wr/StackingContextHelper.h',
+        'wr/WebRenderBridgeChild.h',
+        'wr/WebRenderBridgeParent.h',
+        'wr/WebRenderCanvasRenderer.h',
+        'wr/WebRenderCommandBuilder.h',
+        'wr/WebRenderCompositionRecorder.h',
+        'wr/WebRenderDrawEventRecorder.h',
+        'wr/WebRenderImageHost.h',
+        'wr/WebRenderLayerManager.h',
+        'wr/WebRenderLayersLogging.h',
+        'wr/WebRenderMessageUtils.h',
+        'wr/WebRenderScrollData.h',
+        'wr/WebRenderScrollDataWrapper.h',
+        'wr/WebRenderTextureHost.h',
+        'wr/WebRenderUserData.h',
+    ]
 
 if CONFIG['MOZ_X11']:
     EXPORTS.mozilla.layers += [
@@ -453,13 +457,10 @@ UNIFIED_SOURCES += [
     'ipc/LayerTransactionChild.cpp',
     'ipc/LayerTransactionParent.cpp',
     'ipc/LayerTreeOwnerTracker.cpp',
-    'ipc/RefCountedShmem.cpp',
     'ipc/RemoteContentController.cpp',
     'ipc/ShadowLayers.cpp',
     'ipc/SharedPlanarYCbCrImage.cpp',
     'ipc/SharedRGBImage.cpp',
-    'ipc/SharedSurfacesChild.cpp',
-    'ipc/SharedSurfacesParent.cpp',
     'ipc/UiCompositorControllerChild.cpp',
     'ipc/UiCompositorControllerParent.cpp',
     'ipc/VideoBridgeChild.cpp',
@@ -507,34 +508,45 @@ UNIFIED_SOURCES += [
     'SyncObject.cpp',
     'TextureSourceProvider.cpp',
     'TextureWrapperImage.cpp',
-    'wr/AsyncImagePipelineManager.cpp',
-    'wr/ClipManager.cpp',
-    'wr/IpcResourceUpdateQueue.cpp',
-    'wr/RenderRootStateManager.cpp',
-    'wr/RenderRootTypes.cpp',
-    'wr/StackingContextHelper.cpp',
-    'wr/WebRenderBridgeChild.cpp',
-    'wr/WebRenderBridgeParent.cpp',
-    'wr/WebRenderCanvasRenderer.cpp',
-    'wr/WebRenderCommandBuilder.cpp',
-    'wr/WebRenderCompositionRecorder.cpp',
-    'wr/WebRenderDrawEventRecorder.cpp',
-    'wr/WebRenderImageHost.cpp',
-    'wr/WebRenderLayerManager.cpp',
-    'wr/WebRenderLayersLogging.cpp',
-    'wr/WebRenderScrollData.cpp',
-    'wr/WebRenderUserData.cpp',
-    # XXX here are some unified build error.
-    #'wr/WebRenderTextureHost.cpp'
 ]
+
+if CONFIG['MOZ_BUILD_WEBRENDER']:
+    UNIFIED_SOURCES += [
+        'ipc/RefCountedShmem.cpp',
+        'ipc/SharedSurfacesChild.cpp',
+        'ipc/SharedSurfacesParent.cpp',
+        'wr/AsyncImagePipelineManager.cpp',
+        'wr/ClipManager.cpp',
+        'wr/IpcResourceUpdateQueue.cpp',
+        'wr/RenderRootStateManager.cpp',
+        'wr/RenderRootTypes.cpp',
+        'wr/StackingContextHelper.cpp',
+        'wr/WebRenderBridgeChild.cpp',
+        'wr/WebRenderBridgeParent.cpp',
+        'wr/WebRenderCanvasRenderer.cpp',
+        'wr/WebRenderCommandBuilder.cpp',
+        'wr/WebRenderCompositionRecorder.cpp',
+        'wr/WebRenderDrawEventRecorder.cpp',
+        'wr/WebRenderImageHost.cpp',
+        'wr/WebRenderLayerManager.cpp',
+        'wr/WebRenderLayersLogging.cpp',
+        'wr/WebRenderScrollData.cpp',
+        'wr/WebRenderUserData.cpp',
+        # XXX here are some unified build error.
+        #'wr/WebRenderTextureHost.cpp'
+    ]
 
 SOURCES += [
     'basic/BasicImageLayer.cpp',
     'ImageContainer.cpp',
     'PersistentBufferProvider.cpp',
     'protobuf/LayerScopePacket.pb.cc',
-    'wr/WebRenderTextureHost.cpp',
 ]
+
+if CONFIG['MOZ_BUILD_WEBRENDER']:
+    SOURCES += [
+        'wr/WebRenderTextureHost.cpp',
+    ]
 
 DEFINES['GOOGLE_PROTOBUF_NO_RTTI'] = True
 DEFINES['GOOGLE_PROTOBUF_NO_STATIC_INITIALIZER'] = True
@@ -550,18 +562,25 @@ IPDL_SOURCES += [
     'ipc/LayersMessages.ipdlh',
     'ipc/LayersSurfaces.ipdlh',
     'ipc/PAPZ.ipdl',
-    'ipc/PAPZCTreeManager.ipdl',
     'ipc/PAPZInputBridge.ipdl',
+    'ipc/PTexture.ipdl',
+    'ipc/PUiCompositorController.ipdl',
+    'ipc/PVideoBridge.ipdl',
+]
+
+PREPROCESSED_IPDL_SOURCES += [
+    'ipc/PAPZCTreeManager.ipdl',
     'ipc/PCompositorBridge.ipdl',
     'ipc/PCompositorManager.ipdl',
     'ipc/PImageBridge.ipdl',
     'ipc/PLayerTransaction.ipdl',
-    'ipc/PTexture.ipdl',
-    'ipc/PUiCompositorController.ipdl',
-    'ipc/PVideoBridge.ipdl',
-    'ipc/PWebRenderBridge.ipdl',
-    'ipc/WebRenderMessages.ipdlh',
 ]
+
+if CONFIG['MOZ_BUILD_WEBRENDER']:
+    IPDL_SOURCES += [
+        'ipc/PWebRenderBridge.ipdl',
+        'ipc/WebRenderMessages.ipdlh',
+    ]
 
 include('/ipc/chromium/chromium-config.mozbuild')
 

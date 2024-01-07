@@ -97,12 +97,15 @@ static already_AddRefed<DataSourceSurface> AllocateBufferForImage(
     const IntSize& size, SurfaceFormat format, bool aIsAnimated = false) {
   int32_t stride = VolatileSurfaceStride(size, format);
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (gfxVars::GetUseWebRenderOrDefault() && StaticPrefs::image_mem_shared()) {
     RefPtr<SourceSurfaceSharedData> newSurf = new SourceSurfaceSharedData();
     if (newSurf->Init(size, stride, format)) {
       return newSurf.forget();
     }
-  } else if (ShouldUseHeap(size, stride, aIsAnimated)) {
+  } else
+#endif
+      if (ShouldUseHeap(size, stride, aIsAnimated)) {
     RefPtr<SourceSurfaceAlignedRawData> newSurf =
         new SourceSurfaceAlignedRawData();
     if (newSurf->Init(size, format, false, 0, stride)) {
@@ -353,10 +356,12 @@ nsresult imgFrame::InitForDecoderRecycle(const AnimationParams& aAnimParams) {
   return NS_OK;
 }
 
-nsresult imgFrame::InitWithDrawable(
-    gfxDrawable* aDrawable, const nsIntSize& aSize, const SurfaceFormat aFormat,
-    SamplingFilter aSamplingFilter, uint32_t aImageFlags,
-    gfx::BackendType aBackend) {
+nsresult imgFrame::InitWithDrawable(gfxDrawable* aDrawable,
+                                    const nsIntSize& aSize,
+                                    const SurfaceFormat aFormat,
+                                    SamplingFilter aSamplingFilter,
+                                    uint32_t aImageFlags,
+                                    gfx::BackendType aBackend) {
   // Assert for properties that should be verified by decoders,
   // warn for properties related to bad content.
   if (!SurfaceCache::IsLegalSize(aSize)) {
@@ -930,8 +935,12 @@ void imgFrame::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
   if (mRawSurface) {
     metadata.heap += aMallocSizeOf(mRawSurface);
     mRawSurface->AddSizeOfExcludingThis(aMallocSizeOf, metadata.heap,
-                                        metadata.nonHeap, metadata.handles,
-                                        metadata.externalId);
+                                        metadata.nonHeap, metadata.handles
+#ifdef MOZ_BUILD_WEBRENDER
+                                        ,
+                                        metadata.externalId
+#endif
+    );
   }
 
   aCallback(metadata);

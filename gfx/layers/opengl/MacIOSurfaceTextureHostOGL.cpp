@@ -128,6 +128,7 @@ gfx::ColorRange MacIOSurfaceTextureHostOGL::GetColorRange() const {
                                  : gfx::ColorRange::LIMITED;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void MacIOSurfaceTextureHostOGL::CreateRenderTexture(
     const wr::ExternalImageId& aExternalImageId) {
   RefPtr<wr::RenderTextureHost> texture =
@@ -255,6 +256,7 @@ void MacIOSurfaceTextureHostOGL::PushDisplayItems(
     }
   }
 }
+#endif
 
 }  // namespace layers
 }  // namespace mozilla

@@ -27,9 +27,11 @@ class LogicalMargin;
 class PresShell;
 class WritingMode;
 struct TableReflowInput;
+#ifdef MOZ_BUILD_WEBRENDER
 namespace layers {
 class StackingContextHelper;
 }
+#endif
 }  // namespace mozilla
 
 struct BCPropertyData;
@@ -255,10 +257,12 @@ class nsTableFrame : public nsContainerFrame {
   bool BCRecalcNeeded(ComputedStyle* aOldComputedStyle,
                       ComputedStyle* aNewComputedStyle);
   void PaintBCBorders(DrawTarget& aDrawTarget, const nsRect& aDirtyRect);
+#ifdef MOZ_BUILD_WEBRENDER
   void CreateWebRenderCommandsForBCBorders(
       mozilla::wr::DisplayListBuilder& aBuilder,
       const mozilla::layers::StackingContextHelper& aSc,
       const nsRect& aVisibleRect, const nsPoint& aOffsetToReferenceFrame);
+#endif
 
   virtual void MarkIntrinsicISizesDirty() override;
   // For border-collapse tables, the caller must not add padding and

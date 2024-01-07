@@ -21,7 +21,9 @@
 #include "mozilla/gfx/PathHelpers.h"
 #include "mozilla/gfx/DrawTargetTiled.h"
 #include <algorithm>
-#include "TextDrawTarget.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "TextDrawTarget.h"
+#endif
 
 #if XP_WIN
 #  include "gfxWindowsPlatform.h"
@@ -101,12 +103,14 @@ gfxContext::~gfxContext() {
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 mozilla::layout::TextDrawTarget* gfxContext::GetTextDrawer() {
   if (mDT->GetBackendType() == BackendType::WEBRENDER_TEXT) {
     return static_cast<mozilla::layout::TextDrawTarget*>(&*mDT);
   }
   return nullptr;
 }
+#endif
 
 void gfxContext::Save() {
   CurrentState().transform = mTransform;

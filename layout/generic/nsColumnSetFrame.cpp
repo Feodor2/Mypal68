@@ -43,12 +43,14 @@ class nsDisplayColumnRule : public nsPaintedDisplayItem {
         ToReferenceFrame());
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
+#endif
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
 
   NS_DISPLAY_DECL_NAME("ColumnRule", TYPE_COLUMN_RULE);
@@ -68,6 +70,7 @@ void nsDisplayColumnRule::Paint(nsDisplayListBuilder* aBuilder,
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayColumnRule::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -84,12 +87,15 @@ bool nsDisplayColumnRule::CreateWebRenderCommands(
     return true;
   }
 
+#  ifdef MOZ_BUILD_WEBRENDER
   for (auto& renderer : mBorderRenderers) {
     renderer.CreateWebRenderCommands(this, aBuilder, aResources, aSc);
   }
+#  endif
 
   return true;
 }
+#endif
 
 /**
  * Tracking issues:

@@ -193,7 +193,9 @@ class CachedSurface {
             counter.Values().SetDecodedNonHeap(aMetadata.nonHeap);
             counter.Values().SetExternalHandles(aMetadata.handles);
             counter.Values().SetFrameIndex(aMetadata.index);
+#ifdef MOZ_BUILD_WEBRENDER
             counter.Values().SetExternalId(aMetadata.externalId);
+#endif
 
             mCounters.AppendElement(counter);
           });

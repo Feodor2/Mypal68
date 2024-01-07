@@ -24,8 +24,13 @@ class APZCTreeManagerTester : public APZCTesterBase {
     APZThreadUtils::SetControllerThread(MessageLoop::current());
 
     manager = new TestAPZCTreeManager(mcc);
+#ifdef MOZ_BUILD_WEBRENDER
     updater = new APZUpdater(manager, false);
     sampler = new APZSampler(manager, false);
+#else
+    updater = new APZUpdater(manager);
+    sampler = new APZSampler(manager);
+#endif
   }
 
   virtual void TearDown() {

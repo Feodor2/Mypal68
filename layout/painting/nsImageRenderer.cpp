@@ -6,15 +6,16 @@
 
 #include "nsImageRenderer.h"
 
-#include "mozilla/webrender/WebRenderAPI.h"
-
 #include "gfxContext.h"
 #include "gfxDrawable.h"
 #include "ImageOps.h"
 #include "ImageRegion.h"
-#include "mozilla/layers/RenderRootStateManager.h"
-#include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderAPI.h"
+#  include "mozilla/layers/RenderRootStateManager.h"
+#  include "mozilla/layers/StackingContextHelper.h"
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#endif
 #include "nsContentUtils.h"
 #include "nsCSSRendering.h"
 #include "nsCSSRenderingGradients.h"
@@ -549,6 +550,7 @@ ImgDrawResult nsImageRenderer::Draw(nsPresContext* aPresContext,
   return result;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
     nsPresContext* aPresContext, mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -679,6 +681,7 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItems(
   }
   return drawResult;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 already_AddRefed<gfxDrawable> nsImageRenderer::DrawableForElement(
     const nsRect& aImageRect, gfxContext& aContext) {
@@ -743,6 +746,7 @@ ImgDrawResult nsImageRenderer::DrawLayer(
       aOpacity);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItemsForLayer(
     nsPresContext* aPresContext, mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -768,6 +772,7 @@ ImgDrawResult nsImageRenderer::BuildWebRenderDisplayItemsForLayer(
                  nsPresContext::AppUnitsToIntCSSPixels(mSize.height)),
       aOpacity);
 }
+#endif
 
 /**
  * Compute the size and position of the master copy of the image. I.e., a single

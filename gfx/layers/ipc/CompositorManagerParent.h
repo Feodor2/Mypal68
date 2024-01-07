@@ -38,6 +38,7 @@ class CompositorManagerParent final : public PCompositorManagerParent {
                                           bool aUseExternalSurfaceSize,
                                           const gfx::IntSize& aSurfaceSize);
 
+#ifdef MOZ_BUILD_WEBRENDER
   mozilla::ipc::IPCResult RecvAddSharedSurface(
       const wr::ExternalImageId& aId, const SurfaceDescriptorShared& aDesc);
   mozilla::ipc::IPCResult RecvRemoveSharedSurface(
@@ -48,6 +49,7 @@ class CompositorManagerParent final : public PCompositorManagerParent {
   mozilla::ipc::IPCResult RecvNotifyMemoryPressure();
 
   mozilla::ipc::IPCResult RecvReportMemory(ReportMemoryResolver&&);
+#endif
 
   void BindComplete(bool aIsRoot);
   void ActorDestroy(ActorDestroyReason aReason) override;
@@ -55,7 +57,9 @@ class CompositorManagerParent final : public PCompositorManagerParent {
   already_AddRefed<PCompositorBridgeParent> AllocPCompositorBridgeParent(
       const CompositorBridgeOptions& aOpt);
 
+#ifdef MOZ_BUILD_WEBRENDER
   static void NotifyWebRenderError(wr::WebRenderError aError);
+#endif
 
  private:
   static StaticRefPtr<CompositorManagerParent> sInstance;

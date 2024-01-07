@@ -1051,8 +1051,10 @@ void nsBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   // long term we may want to add a specific element in which we can wrap
   // alternate renderroot content, but we're electing to not go down that
   // rabbit hole today.
+#ifdef MOZ_BUILD_WEBRENDER
   wr::RenderRoot renderRoot =
       gfxUtils::GetRenderRootForFrame(this).valueOr(wr::RenderRoot::Default);
+#endif
 
   if (GetContent()->IsXULElement()) {
     // forcelayer is only supported on XUL elements with box layout
@@ -1071,13 +1073,22 @@ void nsBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
   nsDisplayListCollection tempLists(aBuilder);
   const nsDisplayListSet& destination =
-      (forceLayer || renderRoot != wr::RenderRoot::Default) ? tempLists
-                                                            : aLists;
+      (forceLayer
+#ifdef MOZ_BUILD_WEBRENDER
+       || renderRoot != wr::RenderRoot::Default
+#endif
+       )
+          ? tempLists
+          : aLists;
 
   DisplayBorderBackgroundOutline(aBuilder, destination);
 
   Maybe<nsDisplayListBuilder::AutoContainerASRTracker> contASRTracker;
-  if (forceLayer || renderRoot != wr::RenderRoot::Default) {
+  if (forceLayer
+#ifdef MOZ_BUILD_WEBRENDER
+      || renderRoot != wr::RenderRoot::Default
+#endif
+  ) {
     contASRTracker.emplace(aBuilder);
   }
 
@@ -1086,7 +1097,11 @@ void nsBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   // see if we have to draw a selection frame around this container
   DisplaySelectionOverlay(aBuilder, destination.Content());
 
-  if (forceLayer || renderRoot != wr::RenderRoot::Default) {
+  if (forceLayer
+#ifdef MOZ_BUILD_WEBRENDER
+      || renderRoot != wr::RenderRoot::Default
+#endif
+  ) {
     // This is a bit of a hack. Collect up all descendant display items
     // and merge them into a single Content() list. This can cause us
     // to violate CSS stacking order, but forceLayer is a magic
@@ -1101,18 +1116,22 @@ void nsBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     const ActiveScrolledRoot* ownLayerASR = contASRTracker->GetContainerASR();
     DisplayListClipState::AutoSaveRestore ownLayerClipState(aBuilder);
 
+#ifdef MOZ_BUILD_WEBRENDER
     if (forceLayer) {
       MOZ_ASSERT(renderRoot == wr::RenderRoot::Default);
+#endif
       // Wrap the list to make it its own layer
       aLists.Content()->AppendNewToTop<nsDisplayOwnLayer>(
           aBuilder, this, &masterList, ownLayerASR,
           nsDisplayOwnLayerFlags::None, mozilla::layers::ScrollbarData{}, true,
           true);
+#ifdef MOZ_BUILD_WEBRENDER
     } else {
       MOZ_ASSERT(!XRE_IsContentProcess());
       aLists.Content()->AppendNewToTop<nsDisplayRenderRoot>(
           aBuilder, this, &masterList, ownLayerASR, renderRoot);
     }
+#endif
   }
 }
 

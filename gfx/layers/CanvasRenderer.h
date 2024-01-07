@@ -24,7 +24,9 @@ class AsyncCanvasRenderer;
 class ClientCanvasRenderer;
 class CopyableCanvasRenderer;
 class PersistentBufferProvider;
+#ifdef MOZ_BUILD_WEBRENDER
 class WebRenderCanvasRendererAsync;
+#endif
 
 struct CanvasInitializeData final {
   CanvasInitializeData();
@@ -116,9 +118,12 @@ class CanvasRenderer {
 
   virtual CopyableCanvasRenderer* AsCopyableCanvasRenderer() { return nullptr; }
   virtual ClientCanvasRenderer* AsClientCanvasRenderer() { return nullptr; }
+
+#ifdef MOZ_BUILD_WEBRENDER
   virtual WebRenderCanvasRendererAsync* AsWebRenderCanvasRendererAsync() {
     return nullptr;
   }
+#endif
 
  protected:
   void FirePreTransactionCallback() {

@@ -114,8 +114,11 @@ bool nsStyleDisplay::IsFixedPosContainingBlockForNonSVGTextFrames(
     return true;
   }
 
-  return aStyle.StyleEffects()->HasFilters() ||
-         aStyle.StyleEffects()->HasBackdropFilters();
+  return aStyle.StyleEffects()->HasFilters()
+#ifdef MOZ_BUILD_WEBRENDER
+         || aStyle.StyleEffects()->HasBackdropFilters()
+#endif
+      ;
 }
 
 bool nsStyleDisplay::

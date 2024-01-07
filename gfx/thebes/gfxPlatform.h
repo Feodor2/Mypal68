@@ -202,7 +202,9 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   static bool IsHeadless();
 
+#ifdef MOZ_BUILD_WEBRENDER
   static bool UseWebRender();
+#endif
 
   /**
    * Create an offscreen surface of the given dimensions
@@ -673,7 +675,9 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    */
   static bool PerfWarnings();
 
+#ifdef MOZ_BUILD_WEBRENDER
   static void NotifyGPUProcessDisabled();
+#endif
 
   void NotifyCompositorCreated(mozilla::layers::LayersBackend aBackend);
   mozilla::layers::LayersBackend GetCompositorBackend() const {
@@ -718,10 +722,12 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   bool HasNativeColrFontSupport() const { return mHasNativeColrFontSupport; }
 
+#ifdef MOZ_BUILD_WEBRENDER
   // you probably want to use gfxVars::UseWebRender() instead of this
   static bool WebRenderPrefEnabled();
   // you probably want to use gfxVars::UseWebRender() instead of this
   static bool WebRenderEnvvarEnabled();
+#endif
 
   void NotifyFrameStats(nsTArray<mozilla::layers::FrameStats>&& aFrameStats);
 
@@ -740,7 +746,9 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   virtual bool HasBattery() { return false; }
 
   virtual void InitAcceleration();
+#ifdef MOZ_BUILD_WEBRENDER
   virtual void InitWebRenderConfig();
+#endif
 
   /**
    * Called immediately before deleting the gfxPlatform object.

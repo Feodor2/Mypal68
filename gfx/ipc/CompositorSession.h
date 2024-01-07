@@ -79,7 +79,9 @@ class CompositorSession {
     return mUiCompositorControllerChild;
   }
 
+#  ifdef MOZ_BUILD_WEBRENDER
   void NotifyDisablingWebRender();
+#  endif
 #endif  // defined(MOZ_WIDGET_ANDROID)
  protected:
   CompositorSession(nsBaseWidget* aWidget, CompositorWidgetDelegate* aDelegate,

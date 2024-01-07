@@ -2059,6 +2059,19 @@ x86_64)
 esac
 
 dnl ========================================================
+dnl = Webrender
+dnl ========================================================
+MOZ_ARG_DISABLE_BOOL(webrender,
+[  --disable-webrender    Disable webrender build],
+  MOZ_BUILD_WEBRENDER=,
+  MOZ_BUILD_WEBRENDER=1 )
+
+AC_SUBST(MOZ_BUILD_WEBRENDER)
+if test -n "$MOZ_BUILD_WEBRENDER"; then
+  AC_DEFINE(MOZ_BUILD_WEBRENDER)
+fi
+
+dnl ========================================================
 dnl D3D compiler DLL
 dnl ========================================================
 MOZ_DIRECTX_SDK_PATH=

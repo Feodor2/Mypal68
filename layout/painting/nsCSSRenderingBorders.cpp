@@ -27,9 +27,11 @@
 #include "nsStyleStruct.h"
 #include "gfx2DGlue.h"
 #include "gfxGradientCache.h"
-#include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/layers/RenderRootStateManager.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/RenderRootStateManager.h"
+#  include "mozilla/layers/StackingContextHelper.h"
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#endif
 #include "mozilla/Range.h"
 #include <algorithm>
 
@@ -3333,6 +3335,7 @@ void nsCSSBorderRenderer::DrawBorders() {
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void nsCSSBorderRenderer::CreateWebRenderCommands(
     nsDisplayItem* aItem, wr::DisplayListBuilder& aBuilder,
     wr::IpcResourceUpdateQueue& aResources,
@@ -3364,6 +3367,7 @@ void nsCSSBorderRenderer::CreateWebRenderCommands(
                                          mBorderWidths[2], mBorderWidths[3]),
                       wrsides, borderRadius);
 }
+#endif
 
 /* static */
 Maybe<nsCSSBorderImageRenderer>
@@ -3568,6 +3572,7 @@ ImgDrawResult nsCSSBorderImageRenderer::DrawBorderImage(
   return result;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
     nsDisplayItem* aItem, nsIFrame* aForFrame,
     mozilla::wr::DisplayListBuilder& aBuilder,
@@ -3717,6 +3722,7 @@ ImgDrawResult nsCSSBorderImageRenderer::CreateWebRenderCommands(
 
   return drawResult;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 nsCSSBorderImageRenderer::nsCSSBorderImageRenderer(
     const nsCSSBorderImageRenderer& aRhs)

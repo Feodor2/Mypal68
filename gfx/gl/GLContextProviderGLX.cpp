@@ -705,7 +705,9 @@ already_AddRefed<GLContext> GLContextProviderGLX::CreateWrappingExisting(
 }
 
 already_AddRefed<GLContext> CreateForWidget(Display* aXDisplay, Window aXWindow,
+#ifdef MOZ_BUILD_WEBRENDER
                                             bool aWebRender,
+#endif
                                             bool aForceAccelerated) {
   if (!sGLXLibrary.EnsureInitialized()) {
     return nullptr;
@@ -734,18 +736,25 @@ already_AddRefed<GLContext> CreateForWidget(Display* aXDisplay, Window aXWindow,
   }
 
   CreateContextFlags flags;
+#ifdef MOZ_BUILD_WEBRENDER
   if (aWebRender) {
     flags = CreateContextFlags::NONE;  // WR needs GL3.2+
   } else {
+#endif
     flags = CreateContextFlags::REQUIRE_COMPAT_PROFILE;
+#ifdef MOZ_BUILD_WEBRENDER
   }
+#endif
   return GLContextGLX::CreateGLContext(flags, SurfaceCaps::Any(), false,
                                        aXDisplay, aXWindow, config, false,
                                        nullptr);
 }
 
 already_AddRefed<GLContext> GLContextProviderGLX::CreateForCompositorWidget(
-    CompositorWidget* aCompositorWidget, bool aWebRender,
+    CompositorWidget* aCompositorWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+    bool aWebRender,
+#endif
     bool aForceAccelerated) {
   if (!aCompositorWidget) {
     MOZ_ASSERT(false);
@@ -755,16 +764,27 @@ already_AddRefed<GLContext> GLContextProviderGLX::CreateForCompositorWidget(
   MOZ_ASSERT(compWidget);
 
   return CreateForWidget(compWidget->XDisplay(), compWidget->XWindow(),
-                         aWebRender, aForceAccelerated);
+#ifdef MOZ_BUILD_WEBRENDER
+                         aWebRender,
+#endif
+                         aForceAccelerated);
 }
 
 already_AddRefed<GLContext> GLContextProviderGLX::CreateForWindow(
-    nsIWidget* aWidget, bool aWebRender, bool aForceAccelerated) {
+    nsIWidget* aWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+    bool aWebRender,
+#endif
+    bool aForceAccelerated) {
   Display* display =
       (Display*)aWidget->GetNativeData(NS_NATIVE_COMPOSITOR_DISPLAY);
   Window window = GET_NATIVE_WINDOW(aWidget);
 
-  return CreateForWidget(display, window, aWebRender, aForceAccelerated);
+  return CreateForWidget(display, window,
+#ifdef MOZ_BUILD_WEBRENDER
+                         aWebRender,
+#endif
+                         aForceAccelerated);
 }
 
 static bool ChooseConfig(GLXLibrary* glx, Display* display, int screen,
@@ -826,7 +846,10 @@ static bool ChooseConfig(GLXLibrary* glx, Display* display, int screen,
   return false;
 }
 
-bool GLContextGLX::FindVisual(Display* display, int screen, bool useWebRender,
+bool GLContextGLX::FindVisual(Display* display, int screen,
+#ifdef MOZ_BUILD_WEBRENDER
+                              bool useWebRender,
+#endif
                               bool useAlpha, int* const out_visualId) {
   if (!sGLXLibrary.EnsureInitialized()) {
     return false;
@@ -864,7 +887,11 @@ bool GLContextGLX::FindVisual(Display* display, int screen, bool useWebRender,
 
   const int bpp = useAlpha ? 32 : 24;
   const int alphaSize = useAlpha ? 8 : 0;
-  const int depthSize = useWebRender ? 24 : 0;
+#ifdef MOZ_BUILD_WEBRENDER
+  const int depthSize = 24;
+#else
+  const int depthSize = 0;
+#endif
 
   for (auto& cur : visualInfos) {
     const auto fnConfigMatches = [&](const int pname, const int expected) {
@@ -899,7 +926,12 @@ bool GLContextGLX::FindVisual(Display* display, int screen, bool useWebRender,
 bool GLContextGLX::FindFBConfigForWindow(
     Display* display, int screen, Window window,
     ScopedXFree<GLXFBConfig>* const out_scopedConfigArr,
-    GLXFBConfig* const out_config, int* const out_visid, bool aWebRender) {
+    GLXFBConfig* const out_config, int* const out_visid
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    bool aWebRender
+#endif
+) {
   // XXX the visual ID is almost certainly the LOCAL_GLX_FBCONFIG_ID, so
   // we could probably do this first and replace the glXGetFBConfigs
   // with glXChooseConfigs.  Docs are sparklingly clear as always.
@@ -911,6 +943,7 @@ bool GLContextGLX::FindFBConfigForWindow(
 
   ScopedXFree<GLXFBConfig>& cfgs = *out_scopedConfigArr;
   int numConfigs;
+#ifdef MOZ_BUILD_WEBRENDER
   const int webrenderAttribs[] = {LOCAL_GLX_ALPHA_SIZE,
                                   windowAttrs.depth == 32 ? 8 : 0,
                                   LOCAL_GLX_DEPTH_SIZE,
@@ -923,8 +956,11 @@ bool GLContextGLX::FindFBConfigForWindow(
     cfgs = sGLXLibrary.fChooseFBConfig(display, screen, webrenderAttribs,
                                        &numConfigs);
   } else {
+#endif
     cfgs = sGLXLibrary.fGetFBConfigs(display, screen, &numConfigs);
+#ifdef MOZ_BUILD_WEBRENDER
   }
+#endif
 
   if (!cfgs) {
     NS_WARNING("[GLX] glXGetFBConfigs() failed");

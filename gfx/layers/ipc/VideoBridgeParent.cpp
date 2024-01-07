@@ -46,7 +46,12 @@ PTextureParent* VideoBridgeParent::AllocPTextureParent(
     const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
     const uint64_t& aSerial) {
   PTextureParent* parent = TextureHost::CreateIPDLActor(
-      this, aSharedData, aReadLock, aLayersBackend, aFlags, aSerial, Nothing());
+      this, aSharedData, aReadLock, aLayersBackend, aFlags, aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      Nothing()
+#endif
+  );
 
   if (!parent) {
     return nullptr;

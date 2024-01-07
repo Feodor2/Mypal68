@@ -15,7 +15,9 @@
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/Unused.h"
-#include "mozilla/webrender/RenderThread.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/RenderThread.h"
+#endif
 #include "nsDirectoryServiceDefs.h"
 #include "nsDirectoryServiceUtils.h"
 #include "nsIGfxInfo.h"
@@ -157,9 +159,10 @@ static EGLDisplay GetAndInitWARPDisplay(GLLibraryEGL& egl, void* displayType) {
   return display;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 static EGLDisplay GetAndInitDisplayForWebRender(GLLibraryEGL& egl,
                                                 void* displayType) {
-#ifdef XP_WIN
+#  ifdef XP_WIN
   const EGLint attrib_list[] = {LOCAL_EGL_NONE};
   RefPtr<ID3D11Device> d3d11Device =
       gfx::DeviceManagerDx::Get()->GetCompositorDevice();
@@ -201,18 +204,21 @@ static EGLDisplay GetAndInitDisplayForWebRender(GLLibraryEGL& egl,
     return EGL_NO_DISPLAY;
   }
   return display;
-#else
+#  else
   return EGL_NO_DISPLAY;
-#endif
+#  endif
 }
+#endif
 
 static bool IsAccelAngleSupported(const nsCOMPtr<nsIGfxInfo>& gfxInfo,
                                   nsACString* const out_failureId) {
+#ifdef MOZ_BUILD_WEBRENDER
   if (wr::RenderThread::IsInRenderThread()) {
     // We can only enter here with WebRender, so assert that this is a
     // WebRender-enabled build.
     return true;
   }
+#endif
   int32_t angleSupport;
   nsCString failureId;
   gfxUtils::ThreadSafeGetFeatureStatus(gfxInfo, nsIGfxInfo::FEATURE_WEBGL_ANGLE,
@@ -280,9 +286,11 @@ static EGLDisplay GetAndInitDisplayForAccelANGLE(
     GLLibraryEGL& egl, nsACString* const out_failureId) {
   EGLDisplay ret = 0;
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (wr::RenderThread::IsInRenderThread()) {
     return GetAndInitDisplayForWebRender(egl, EGL_DEFAULT_DISPLAY);
   }
+#endif
 
   FeatureState& d3d11ANGLE = gfxConfig::GetFeature(Feature::D3D11_HW_ANGLE);
 
@@ -411,12 +419,11 @@ bool GLLibraryEGL::DoEnsureInitialized(bool forceAccel,
     // Also note that we intentionally leak the libs we load.
 
     do {
-
       if (IsVistaOrLater()) {
-      // Windows 8.1+ has d3dcompiler_47.dll in the system directory.
-      // Try it first. Note that _46 will never be in the system
-      // directory. So there is no point trying _46 in the system
-      // directory.
+        // Windows 8.1+ has d3dcompiler_47.dll in the system directory.
+        // Try it first. Note that _46 will never be in the system
+        // directory. So there is no point trying _46 in the system
+        // directory.
 
         if (LoadLibrarySystem32(L"d3dcompiler_47.dll")) break;
 
@@ -426,11 +433,11 @@ bool GLLibraryEGL::DoEnsureInitialized(bool forceAccel,
           break;
 #  endif
       }
-#ifdef MOZ_D3DCOMPILER_XP_DLL
+#  ifdef MOZ_D3DCOMPILER_XP_DLL
       if (LoadLibraryForEGLOnWindows(
               NS_LITERAL_STRING(MOZ_STRINGIFY(MOZ_D3DCOMPILER_XP_DLL))))
         break;
-#endif
+#  endif
 
       MOZ_ASSERT(false, "d3dcompiler DLL loading failed.");
     } while (false);

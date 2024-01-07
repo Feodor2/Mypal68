@@ -11,8 +11,8 @@
 #include "mozilla/layout/RenderFrame.h"      // For RenderFrame
 #include "mozilla/PresShell.h"               // For PresShell
 #include "mozilla/StaticPrefs_apz.h"
-#include "nsIContentInlines.h"               // for nsINode::IsEditable()
-#include "nsLayoutUtils.h"                   // for nsLayoutUtils
+#include "nsIContentInlines.h"  // for nsINode::IsEditable()
+#include "nsLayoutUtils.h"      // for nsLayoutUtils
 
 #define ENABLE_FT_LOGGING 0
 // #define ENABLE_FT_LOGGING 1
@@ -218,6 +218,7 @@ FocusTarget::FocusTarget(PresShell* aRootPresShell,
   ScrollTargets target;
   target.mHorizontal = nsLayoutUtils::FindIDForScrollableFrame(horizontal);
   target.mVertical = nsLayoutUtils::FindIDForScrollableFrame(vertical);
+#ifdef MOZ_BUILD_WEBRENDER
   if (XRE_IsContentProcess()) {
     target.mHorizontalRenderRoot = gfxUtils::GetContentRenderRoot();
     target.mVerticalRenderRoot = gfxUtils::GetContentRenderRoot();
@@ -231,6 +232,7 @@ FocusTarget::FocusTarget(PresShell* aRootPresShell,
                        vertical->GetScrolledFrame())
                  : wr::RenderRoot::Default;
   }
+#endif
   mData = AsVariant(target);
 
   FT_LOG("Creating scroll target with seq=%" PRIu64 ", kl=%d, h=%" PRIu64

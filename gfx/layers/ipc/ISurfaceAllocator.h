@@ -101,7 +101,9 @@ class ISurfaceAllocator {
 
   virtual bool UsesImageBridge() const { return false; }
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool UsesWebRenderBridge() const { return false; }
+#endif
 
  protected:
   void Finalize() {}

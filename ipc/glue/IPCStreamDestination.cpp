@@ -331,7 +331,7 @@ void IPCStreamDestination::ActorDestroyed() {
   }
 }
 
-void IPCStreamDestination::BufferReceived(const wr::ByteBuffer& aBuffer) {
+void IPCStreamDestination::BufferReceived(const ByteBuffer& aBuffer) {
   MOZ_ASSERT(mWriter);
 
   uint32_t numWritten = 0;

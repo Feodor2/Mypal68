@@ -176,7 +176,10 @@ CanvasClient::CanvasClientType ShareableCanvasRenderer::GetCanvasClientType() {
 }
 
 void ShareableCanvasRenderer::UpdateCompositableClient(
-    wr::RenderRoot aRenderRoot) {
+#ifdef MOZ_BUILD_WEBRENDER
+    wr::RenderRoot aRenderRoot
+#endif
+) {
   if (!CreateCompositable()) {
     return;
   }
@@ -196,16 +199,28 @@ void ShareableCanvasRenderer::UpdateCompositableClient(
       gfxCriticalNote << "BufferProvider::SetForwarder failed";
       return;
     }
-    mCanvasClient->UpdateFromTexture(mBufferProvider->GetTextureClient(),
-                                     aRenderRoot);
+    mCanvasClient->UpdateFromTexture(mBufferProvider->GetTextureClient()
+#ifdef MOZ_BUILD_WEBRENDER
+                                         ,
+                                     aRenderRoot
+#endif
+    );
   } else {
-    mCanvasClient->Update(gfx::IntSize(mSize.width, mSize.height), this,
-                          aRenderRoot);
+    mCanvasClient->Update(gfx::IntSize(mSize.width, mSize.height), this
+#ifdef MOZ_BUILD_WEBRENDER
+                          ,
+                          aRenderRoot
+#endif
+    );
   }
 
   FireDidTransactionCallback();
 
-  mCanvasClient->Updated(aRenderRoot);
+  mCanvasClient->Updated(
+#ifdef MOZ_BUILD_WEBRENDER
+      aRenderRoot
+#endif
+  );
 }
 
 }  // namespace layers

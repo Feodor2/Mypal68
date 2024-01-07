@@ -18,7 +18,9 @@
 #include "Layers.h"
 
 #include "gfxUtils.h"
-#include "mozilla/layers/RenderRootStateManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/RenderRootStateManager.h"
+#endif
 
 #define ACTIVE "active"
 #define HOVER "hover"
@@ -71,6 +73,7 @@ class nsDisplayButtonBoxShadowOuter : public nsPaintedDisplayItem {
   }
 #endif
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -79,6 +82,7 @@ class nsDisplayButtonBoxShadowOuter : public nsPaintedDisplayItem {
       nsDisplayListBuilder* aDisplayListBuilder) override;
 
   bool CanBuildWebRenderDisplayItems();
+#endif
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
@@ -100,6 +104,7 @@ void nsDisplayButtonBoxShadowOuter::Paint(nsDisplayListBuilder* aBuilder,
                                       frameRect, GetPaintRect());
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayButtonBoxShadowOuter::CanBuildWebRenderDisplayItems() {
   // FIXME(emilio): Is this right? That doesn't make much sense.
   if (mFrame->StyleEffects()->mBoxShadow.IsEmpty()) {
@@ -185,6 +190,7 @@ bool nsDisplayButtonBoxShadowOuter::CreateWebRenderCommands(
   }
   return true;
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 class nsDisplayButtonBorder final : public nsPaintedDisplayItem {
  public:
@@ -211,12 +217,14 @@ class nsDisplayButtonBorder final : public nsPaintedDisplayItem {
   virtual void ComputeInvalidationRegion(
       nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
       nsRegion* aInvalidRegion) const override;
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
+#endif
   NS_DISPLAY_DECL_NAME("ButtonBorderBackground", TYPE_BUTTON_BORDER_BACKGROUND)
  private:
   nsButtonFrameRenderer* mBFR;
@@ -227,6 +235,7 @@ nsDisplayItemGeometry* nsDisplayButtonBorder::AllocateGeometry(
   return new nsDisplayItemGenericImageGeometry(this, aBuilder);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayButtonBorder::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -254,6 +263,7 @@ bool nsDisplayButtonBorder::CreateWebRenderCommands(
 
   return true;
 }
+#endif
 
 void nsDisplayButtonBorder::ComputeInvalidationRegion(
     nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
@@ -311,12 +321,14 @@ class nsDisplayButtonForeground final : public nsPaintedDisplayItem {
                                  const nsDisplayItemGeometry* aGeometry,
                                  nsRegion* aInvalidRegion) const override;
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
+#endif
   NS_DISPLAY_DECL_NAME("ButtonForeground", TYPE_BUTTON_FOREGROUND)
  private:
   nsButtonFrameRenderer* mBFR;
@@ -358,6 +370,7 @@ void nsDisplayButtonForeground::Paint(nsDisplayListBuilder* aBuilder,
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayButtonForeground::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -383,6 +396,7 @@ bool nsDisplayButtonForeground::CreateWebRenderCommands(
   br->CreateWebRenderCommands(this, aBuilder, aResources, aSc);
   return true;
 }
+#endif
 
 nsresult nsButtonFrameRenderer::DisplayButton(nsDisplayListBuilder* aBuilder,
                                               nsDisplayList* aBackground,

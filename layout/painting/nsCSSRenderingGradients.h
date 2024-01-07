@@ -56,6 +56,7 @@ class nsCSSGradientRenderer final {
              const nsSize& aRepeatSize, const mozilla::CSSIntRect& aSrc,
              const nsRect& aDirtyRect, float aOpacity = 1.0);
 
+#ifdef MOZ_BUILD_WEBRENDER
   /**
    * Collect the gradient parameters
    */
@@ -81,6 +82,7 @@ class nsCSSGradientRenderer final {
                                   const mozilla::CSSIntRect& aSrc,
                                   bool aIsBackfaceVisible,
                                   float aOpacity = 1.0);
+#endif
 
  private:
   nsCSSGradientRenderer()

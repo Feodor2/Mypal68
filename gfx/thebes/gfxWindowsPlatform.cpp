@@ -457,6 +457,7 @@ void gfxWindowsPlatform::InitAcceleration() {
   UpdateCanUseHardwareVideoDecoding();
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void gfxWindowsPlatform::InitWebRenderConfig() {
   gfxPlatform::InitWebRenderConfig();
 
@@ -464,6 +465,7 @@ void gfxWindowsPlatform::InitWebRenderConfig() {
     UpdateBackendPrefs();
   }
 }
+#endif
 
 bool gfxWindowsPlatform::CanUseHardwareVideoDecoding() {
   DeviceManagerDx* dm = DeviceManagerDx::Get();
@@ -544,11 +546,15 @@ BackendPrefsData gfxWindowsPlatform::GetBackendPrefs() const {
   if (gfxConfig::IsEnabled(Feature::DIRECT2D)) {
     data.mCanvasBitmask |= BackendTypeBit(BackendType::DIRECT2D1_1);
     data.mCanvasDefault = BackendType::DIRECT2D1_1;
+#ifdef MOZ_BUILD_WEBRENDER
     // We do not use d2d for content when WebRender is used.
     if (!gfxVars::UseWebRender()) {
+#endif
       data.mContentBitmask |= BackendTypeBit(BackendType::DIRECT2D1_1);
       data.mContentDefault = BackendType::DIRECT2D1_1;
+#ifdef MOZ_BUILD_WEBRENDER
     }
+#endif
   }
   return data;
 }
@@ -611,10 +617,12 @@ mozilla::gfx::BackendType gfxWindowsPlatform::GetContentBackendFor(
     return defaultBackend;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (aLayers == LayersBackend::LAYERS_WR &&
       gfx::gfxVars::UseWebRenderANGLE()) {
     return defaultBackend;
   }
+#endif
 
   if (defaultBackend == BackendType::DIRECT2D1_1) {
     // We can't have D2D without D3D11 layers, so fallback to Skia.
@@ -628,12 +636,14 @@ mozilla::gfx::BackendType gfxWindowsPlatform::GetContentBackendFor(
 mozilla::gfx::BackendType gfxWindowsPlatform::GetPreferredCanvasBackend() {
   mozilla::gfx::BackendType backend = gfxPlatform::GetPreferredCanvasBackend();
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (backend == BackendType::DIRECT2D1_1 && gfx::gfxVars::UseWebRender() &&
       !gfx::gfxVars::UseWebRenderANGLE()) {
     // We can't have D2D without ANGLE when WebRender is enabled, so fallback to
     // Skia.
     return BackendType::SKIA;
   }
+#endif
   return backend;
 }
 

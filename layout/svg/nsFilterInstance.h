@@ -17,7 +17,9 @@
 #include "nsTArray.h"
 #include "nsIFrame.h"
 #include "mozilla/gfx/2D.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 
 class gfxContext;
 class nsIFrame;
@@ -121,6 +123,7 @@ class nsFilterInstance {
                                     const gfxRect* aOverrideBBox = nullptr,
                                     const nsRect* aPreFilterBounds = nullptr);
 
+#ifdef MOZ_BUILD_WEBRENDER
   /**
    * Try to build WebRender filters for a frame if the filters applied to it are
    * supported.
@@ -129,6 +132,7 @@ class nsFilterInstance {
       nsIFrame* aFilteredFrame,
       mozilla::Span<const mozilla::StyleFilter> aFilters,
       WrFiltersHolder& aWrFilters, mozilla::Maybe<nsRect>& aPostFilterClip);
+#endif
 
  private:
   /**

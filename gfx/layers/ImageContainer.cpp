@@ -17,7 +17,9 @@
 #include "mozilla/layers/ImageDataSerializer.h"  // for SurfaceDescriptorBuffer
 #include "mozilla/layers/LayersMessages.h"
 #include "mozilla/layers/SharedPlanarYCbCrImage.h"
-#include "mozilla/layers/SharedSurfacesChild.h"  // for SharedSurfacesAnimation
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/SharedSurfacesChild.h"  // for SharedSurfacesAnimation
+#endif
 #include "mozilla/layers/SharedRGBImage.h"
 #include "mozilla/layers/TextureClientRecycleAllocator.h"
 #include "mozilla/gfx/gfxVars.h"
@@ -171,12 +173,14 @@ void ImageContainer::EnsureImageClient() {
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 SharedSurfacesAnimation* ImageContainer::EnsureSharedSurfacesAnimation() {
   if (!mSharedAnimation) {
     mSharedAnimation = new SharedSurfacesAnimation();
   }
   return mSharedAnimation;
 }
+#endif
 
 ImageContainer::ImageContainer(Mode flag)
     : mRecursiveMutex("ImageContainer.mRecursiveMutex"),
@@ -216,9 +220,11 @@ ImageContainer::~ImageContainer() {
       imageBridge->ForgetImageContainer(mAsyncContainerHandle);
     }
   }
+#ifdef MOZ_BUILD_WEBRENDER
   if (mSharedAnimation) {
     mSharedAnimation->Destroy();
   }
+#endif
 }
 
 RefPtr<PlanarYCbCrImage> ImageContainer::CreatePlanarYCbCrImage() {

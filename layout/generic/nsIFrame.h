@@ -1815,9 +1815,11 @@ class nsIFrame : public nsQueryFrame {
    * Return true if this frame should form a backdrop root container.
    * See: https://drafts.fxtf.org/filter-effects-2/#BackdropRootTriggers
    */
+#ifdef MOZ_BUILD_WEBRENDER
   bool FormsBackdropRoot(const nsStyleDisplay* aStyleDisplay,
                          const nsStyleEffects* aStyleEffects,
                          const nsStyleSVGReset* aStyleSvgReset);
+#endif
 
   /**
    * Returns whether this frame will attempt to extend the 3d transforms of its

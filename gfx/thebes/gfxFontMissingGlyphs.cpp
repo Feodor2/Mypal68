@@ -12,7 +12,9 @@
 #include "mozilla/RefPtr.h"
 #include "nsDeviceContext.h"
 #include "nsLayoutUtils.h"
-#include "TextDrawTarget.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "TextDrawTarget.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::gfx;
@@ -141,6 +143,7 @@ static void PurgeGlyphAtlas() {
   gGlyphMask = nullptr;
 }
 
+#  ifdef MOZ_BUILD_WEBRENDER
 // WebRender layer manager user data that will get signaled when the layer
 // manager is destroyed.
 class WRUserData : public layers::LayerUserData,
@@ -317,11 +320,13 @@ static already_AddRefed<SourceSurface> GetWRGlyphAtlas(DrawTarget& aDrawTarget,
   }
   return atlas.forget();
 }
+#  endif  // MOZ_BUILD_WEBRENDER
 
 static void DrawHexChar(uint32_t aDigit, Float aLeft, Float aTop,
                         DrawTarget& aDrawTarget, SourceSurface* aAtlas,
                         const Color& aColor, const Matrix* aMat = nullptr) {
   Rect dest(aLeft, aTop, MINIFONT_WIDTH, MINIFONT_HEIGHT);
+#  ifdef MOZ_BUILD_WEBRENDER
   if (aDrawTarget.GetBackendType() == BackendType::WEBRENDER_TEXT) {
     // For WR, we need to get the image key assigned to the given WR layer
     // manager for referencing the image.
@@ -353,6 +358,7 @@ static void DrawHexChar(uint32_t aDigit, Float aLeft, Float aTop,
     tdt->PushImage(key, bounds, dest, wr::ImageRendering::Pixelated,
                    wr::ToColorF(aColor));
   } else {
+#  endif
     // For the normal case, just draw the given digit from the atlas. Point
     // filtering is used to ensure the mini-font rectangles stay sharp with any
     // scaling. Handle any transparency here as well.
@@ -361,12 +367,16 @@ static void DrawHexChar(uint32_t aDigit, Float aLeft, Float aTop,
         Rect(aDigit * MINIFONT_WIDTH, 0, MINIFONT_WIDTH, MINIFONT_HEIGHT),
         DrawSurfaceOptions(SamplingFilter::POINT),
         DrawOptions(aColor.a, CompositionOp::OP_OVER, AntialiasMode::NONE));
+#  ifdef MOZ_BUILD_WEBRENDER
   }
+#  endif
 }
 
 void gfxFontMissingGlyphs::Purge() {
   PurgeGlyphAtlas();
+#  ifdef MOZ_BUILD_WEBRENDER
   PurgeWRGlyphAtlas();
+#  endif
 }
 
 #else  // MOZ_GFX_OPTIMIZE_MOBILE
@@ -418,9 +428,12 @@ void gfxFontMissingGlyphs::DrawMissingGlyph(uint32_t aChar, const Rect& aRect,
 
 #ifndef MOZ_GFX_OPTIMIZE_MOBILE
   RefPtr<SourceSurface> atlas =
+#  ifdef MOZ_BUILD_WEBRENDER
       aDrawTarget.GetBackendType() == BackendType::WEBRENDER_TEXT
           ? GetWRGlyphAtlas(aDrawTarget, aMat)
-          : GetGlyphAtlas(color);
+          :
+#  endif
+          GetGlyphAtlas(color);
   if (!atlas) {
     return;
   }

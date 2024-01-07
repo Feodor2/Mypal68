@@ -12,7 +12,9 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/HTMLVideoElement.h"
 #include "mozilla/dom/ShadowRoot.h"
-#include "mozilla/layers/RenderRootStateManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/RenderRootStateManager.h"
+#endif
 #include "nsDisplayList.h"
 #include "nsGenericHTMLElement.h"
 #include "nsPresContext.h"
@@ -409,6 +411,7 @@ class nsDisplayVideo : public nsPaintedDisplayItem {
 
   NS_DISPLAY_DECL_NAME("Video", TYPE_VIDEO)
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -478,6 +481,7 @@ class nsDisplayVideo : public nsPaintedDisplayItem {
                                          aSc, rect, rect);
     return true;
   }
+#endif
 
   // For opaque videos, we will want to override GetOpaqueRegion here.
   // This is tracked by bug 1545498.

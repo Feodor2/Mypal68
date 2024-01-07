@@ -1400,8 +1400,13 @@ nsWindow::nsWindow()
     : mScreenId(0),  // Use 0 (primary screen) as the default value.
       mIsVisible(false),
       mParent(nullptr),
-      mIsFullScreen(false),
-      mIsDisablingWebRender(false) {}
+      mIsFullScreen(false)
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      mIsDisablingWebRender(false)
+#endif
+{
+}
 
 nsWindow::~nsWindow() {
   gTopLevelWindows.RemoveElement(this);
@@ -1817,11 +1822,13 @@ mozilla::layers::LayerManager* nsWindow::GetLayerManager(
     return mLayerManager;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (mIsDisablingWebRender) {
     CreateLayerManager();
     mIsDisablingWebRender = false;
     return mLayerManager;
   }
+#endif
 
   return nullptr;
 }
@@ -1857,10 +1864,12 @@ void nsWindow::CreateLayerManager() {
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void nsWindow::NotifyDisablingWebRender() {
   mIsDisablingWebRender = true;
   RedrawAll();
 }
+#endif
 
 void nsWindow::OnSizeChanged(const gfx::IntSize& aSize) {
   ALOG("nsWindow: %p OnSizeChanged [%d %d]", (void*)this, aSize.width,

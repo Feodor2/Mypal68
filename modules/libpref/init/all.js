@@ -640,6 +640,7 @@ pref("gfx.font_rendering.graphite.enabled", true);
   pref("gfx.content.azure.backends", "skia");
 #endif
 
+#ifdef MOZ_BUILD_WEBRENDER
 #ifdef XP_WIN
   pref("gfx.webrender.force-angle", true);
   pref("gfx.webrender.flip-sequential", false);
@@ -674,6 +675,7 @@ pref("gfx.webrender.debug.primitives", false);
 pref("gfx.webrender.debug.small-screen", false);
 pref("gfx.webrender.debug.obscure-images", false);
 pref("gfx.webrender.debug.glyph-flashing", false);
+#endif
 
 pref("accessibility.warn_on_browsewithcaret", true);
 

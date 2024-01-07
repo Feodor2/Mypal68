@@ -181,7 +181,9 @@ void GPUProcessManager::DisableGPUProcess(const char* aMessage) {
   gfxConfig::SetFailed(Feature::GPU_PROCESS, FeatureStatus::Failed, aMessage);
   gfxCriticalNote << aMessage;
 
+#ifdef MOZ_BUILD_WEBRENDER
   gfxPlatform::NotifyGPUProcessDisabled();
+#endif
 
   Telemetry::Accumulate(Telemetry::GPU_PROCESS_CRASH_FALLBACKS,
                         uint32_t(FallbackType::DISABLED));
@@ -435,6 +437,7 @@ void GPUProcessManager::SimulateDeviceReset() {
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void GPUProcessManager::DisableWebRender(wr::WebRenderError aError) {
   if (!gfx::gfxVars::UseWebRender()) {
     return;
@@ -466,14 +469,14 @@ void GPUProcessManager::DisableWebRender(wr::WebRenderError aError) {
   }
   gfx::gfxVars::SetUseWebRender(false);
 
-#if defined(MOZ_WIDGET_ANDROID)
+#  if defined(MOZ_WIDGET_ANDROID)
   // If aError is not wr::WebRenderError::INITIALIZE, nsWindow does not
   // re-create LayerManager. Needs to trigger re-creating LayerManager on
   // android
   if (aError != wr::WebRenderError::INITIALIZE) {
     NotifyDisablingWebRender();
   }
-#endif
+#  endif
 
   if (mProcess) {
     OnRemoteProcessDeviceReset(mProcess);
@@ -485,6 +488,7 @@ void GPUProcessManager::DisableWebRender(wr::WebRenderError aError) {
 void GPUProcessManager::NotifyWebRenderError(wr::WebRenderError aError) {
   DisableWebRender(aError);
 }
+#endif
 
 void GPUProcessManager::OnInProcessDeviceReset() {
   RebuildInProcessSessions();
@@ -666,8 +670,9 @@ void GPUProcessManager::RebuildInProcessSessions() {
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void GPUProcessManager::NotifyDisablingWebRender() {
-#if defined(MOZ_WIDGET_ANDROID)
+#  if defined(MOZ_WIDGET_ANDROID)
   for (const auto& session : mRemoteSessions) {
     session->NotifyDisablingWebRender();
   }
@@ -675,8 +680,9 @@ void GPUProcessManager::NotifyDisablingWebRender() {
   for (const auto& session : mInProcessSessions) {
     session->NotifyDisablingWebRender();
   }
-#endif
+#  endif
 }
+#endif
 
 void GPUProcessManager::NotifyRemoteActorDestroyed(
     const uint64_t& aProcessToken) {

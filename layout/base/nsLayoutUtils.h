@@ -93,7 +93,9 @@ namespace layers {
 struct FrameMetrics;
 struct ScrollMetadata;
 class Image;
+#ifdef MOZ_BUILD_WEBRENDER
 class StackingContextHelper;
+#endif
 class Layer;
 }  // namespace layers
 }  // namespace mozilla
@@ -139,7 +141,9 @@ class nsLayoutUtils {
   typedef mozilla::LengthPercentageOrAuto LengthPercentageOrAuto;
   typedef mozilla::dom::DOMRectList DOMRectList;
   typedef mozilla::layers::Layer Layer;
+#ifdef MOZ_BUILD_WEBRENDER
   typedef mozilla::layers::StackingContextHelper StackingContextHelper;
+#endif
   typedef mozilla::ContainerLayerParameters ContainerLayerParameters;
   typedef mozilla::IntrinsicSize IntrinsicSize;
   typedef mozilla::gfx::SourceSurface SourceSurface;
@@ -1104,7 +1108,9 @@ class nsLayoutUtils {
     ExistingTransaction = 0x80,
     NoComposite = 0x100,
     Compressed = 0x200,
+#ifdef MOZ_BUILD_WEBRENDER
     ForWebRender = 0x400,
+#endif
   };
 
   /**
@@ -1936,10 +1942,12 @@ class nsLayoutUtils {
    * Given the image container, frame, and dest rect, determine the best fitting
    * size to decode the image at, and calculate any necessary SVG parameters.
    */
+#ifdef MOZ_BUILD_WEBRENDER
   static mozilla::gfx::IntSize ComputeImageContainerDrawingParameters(
       imgIContainer* aImage, nsIFrame* aForFrame,
       const LayoutDeviceRect& aDestRect, const StackingContextHelper& aSc,
       uint32_t aFlags, mozilla::Maybe<SVGImageContext>& aSVGContext);
+#endif
 
   /**
    * Given a source area of an image (in appunits) and a destination area

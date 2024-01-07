@@ -48,8 +48,10 @@
 #include "nsStyleChangeList.h"
 #include <algorithm>
 
-#include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/layers/RenderRootStateManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/StackingContextHelper.h"
+#  include "mozilla/layers/RenderRootStateManager.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::image;
@@ -1176,11 +1178,13 @@ class nsDisplayTableBorderCollapse final : public nsDisplayTableItem {
 #endif
 
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
+#ifdef MOZ_BUILD_WEBRENDER
   bool CreateWebRenderCommands(
       wr::DisplayListBuilder& aBuilder, wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
+#endif
   NS_DISPLAY_DECL_NAME("TableBorderCollapse", TYPE_TABLE_BORDER_COLLAPSE)
 };
 
@@ -1202,6 +1206,7 @@ void nsDisplayTableBorderCollapse::Paint(nsDisplayListBuilder* aBuilder,
                                                      GetPaintRect() - pt);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayTableBorderCollapse::CreateWebRenderCommands(
     wr::DisplayListBuilder& aBuilder, wr::IpcResourceUpdateQueue& aResources,
     const StackingContextHelper& aSc,
@@ -1211,6 +1216,7 @@ bool nsDisplayTableBorderCollapse::CreateWebRenderCommands(
       aBuilder, aSc, GetPaintRect(), ToReferenceFrame());
   return true;
 }
+#endif
 
 /* static */
 void nsTableFrame::GenericTraversal(nsDisplayListBuilder* aBuilder,
@@ -6091,11 +6097,13 @@ struct BCBlockDirSeg {
                                                   BCPixelSize aInlineSegBSize);
   void Paint(BCPaintBorderIterator& aIter, DrawTarget& aDrawTarget,
              BCPixelSize aInlineSegBSize);
+#ifdef MOZ_BUILD_WEBRENDER
   void CreateWebRenderCommands(BCPaintBorderIterator& aIter,
                                BCPixelSize aInlineSegBSize,
                                wr::DisplayListBuilder& aBuilder,
                                const layers::StackingContextHelper& aSc,
                                const nsPoint& aPt);
+#endif
   void AdvanceOffsetB();
   void IncludeCurrentBorder(BCPaintBorderIterator& aIter);
 
@@ -6141,10 +6149,12 @@ struct BCInlineDirSeg {
   void IncludeCurrentBorder(BCPaintBorderIterator& aIter);
   Maybe<BCBorderParameters> BuildBorderParameters(BCPaintBorderIterator& aIter);
   void Paint(BCPaintBorderIterator& aIter, DrawTarget& aDrawTarget);
+#ifdef MOZ_BUILD_WEBRENDER
   void CreateWebRenderCommands(BCPaintBorderIterator& aIter,
                                wr::DisplayListBuilder& aBuilder,
                                const layers::StackingContextHelper& aSc,
                                const nsPoint& aPt);
+#endif
 
   nscoord mOffsetI;              // i-offset with respect to the table edge
   nscoord mOffsetB;              // b-offset with respect to the table edge
@@ -6173,6 +6183,7 @@ struct BCPaintData {
   DrawTarget& mDrawTarget;
 };
 
+#ifdef MOZ_BUILD_WEBRENDER
 struct BCCreateWebRenderCommandsData {
   BCCreateWebRenderCommandsData(wr::DisplayListBuilder& aBuilder,
                                 const layers::StackingContextHelper& aSc,
@@ -6185,11 +6196,13 @@ struct BCCreateWebRenderCommandsData {
   const layers::StackingContextHelper& mSc;
   const nsPoint& mOffsetToReferenceFrame;
 };
+#endif
 
 struct BCPaintBorderAction {
   explicit BCPaintBorderAction(DrawTarget& aDrawTarget)
       : mMode(Mode::Paint), mPaintData(aDrawTarget) {}
 
+#ifdef MOZ_BUILD_WEBRENDER
   BCPaintBorderAction(wr::DisplayListBuilder& aBuilder,
                       const layers::StackingContextHelper& aSc,
                       const nsPoint& aOffsetToReferenceFrame)
@@ -6204,18 +6217,26 @@ struct BCPaintBorderAction {
       mCreateWebRenderCommandsData.~BCCreateWebRenderCommandsData();
     }
   }
+#endif
 
   enum class Mode {
-    Paint,
+    Paint
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
     CreateWebRenderCommands,
+#endif
   };
 
   Mode mMode;
 
+#ifdef MOZ_BUILD_WEBRENDER
   union {
+#endif
     BCPaintData mPaintData;
+#ifdef MOZ_BUILD_WEBRENDER
     BCCreateWebRenderCommandsData mCreateWebRenderCommandsData;
   };
+#endif
 };
 
 // Iterates over borders (iStart border, corner, bStart border) in the cell map
@@ -6996,6 +7017,7 @@ void BCBlockDirSeg::Paint(BCPaintBorderIterator& aIter, DrawTarget& aDrawTarget,
       param->mStartBevelOffset, param->mEndBevelSide, param->mEndBevelOffset);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 // Pushes a border bevel triangle and substracts the relevant rectangle from
 // aRect, which, after all the bevels, will end up being a solid segment rect.
 static void AdjustAndPushBevel(wr::DisplayListBuilder& aBuilder,
@@ -7166,6 +7188,7 @@ void BCBlockDirSeg::CreateWebRenderCommands(
 
   CreateWRCommandsForBorderSegment(*param, aBuilder, aSc, aOffset);
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 /**
  * Advance the start point of a segment
@@ -7385,6 +7408,7 @@ void BCInlineDirSeg::Paint(BCPaintBorderIterator& aIter,
       param->mStartBevelOffset, param->mEndBevelSide, param->mEndBevelOffset);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void BCInlineDirSeg::CreateWebRenderCommands(
     BCPaintBorderIterator& aIter, wr::DisplayListBuilder& aBuilder,
     const layers::StackingContextHelper& aSc, const nsPoint& aPt) {
@@ -7395,6 +7419,7 @@ void BCInlineDirSeg::CreateWebRenderCommands(
 
   CreateWRCommandsForBorderSegment(*param, aBuilder, aSc, aPt);
 }
+#endif
 
 /**
  * Advance the start point of a segment
@@ -7472,6 +7497,7 @@ void BCPaintBorderIterator::AccumulateOrDoActionInlineDirSegment(
       if (mInlineSeg.mWidth > 0) {
         if (aAction.mMode == BCPaintBorderAction::Mode::Paint) {
           mInlineSeg.Paint(*this, aAction.mPaintData.mDrawTarget);
+#ifdef MOZ_BUILD_WEBRENDER
         } else {
           MOZ_ASSERT(aAction.mMode ==
                      BCPaintBorderAction::Mode::CreateWebRenderCommands);
@@ -7479,6 +7505,7 @@ void BCPaintBorderIterator::AccumulateOrDoActionInlineDirSegment(
               *this, aAction.mCreateWebRenderCommandsData.mBuilder,
               aAction.mCreateWebRenderCommandsData.mSc,
               aAction.mCreateWebRenderCommandsData.mOffsetToReferenceFrame);
+#endif
         }
       }
       mInlineSeg.AdvanceOffsetI();
@@ -7524,6 +7551,7 @@ void BCPaintBorderIterator::AccumulateOrDoActionBlockDirSegment(
         if (aAction.mMode == BCPaintBorderAction::Mode::Paint) {
           blockDirSeg.Paint(*this, aAction.mPaintData.mDrawTarget,
                             inlineSegBSize);
+#ifdef MOZ_BUILD_WEBRENDER
         } else {
           MOZ_ASSERT(aAction.mMode ==
                      BCPaintBorderAction::Mode::CreateWebRenderCommands);
@@ -7532,6 +7560,7 @@ void BCPaintBorderIterator::AccumulateOrDoActionBlockDirSegment(
               aAction.mCreateWebRenderCommandsData.mBuilder,
               aAction.mCreateWebRenderCommandsData.mSc,
               aAction.mCreateWebRenderCommandsData.mOffsetToReferenceFrame);
+#endif
         }
       }
       blockDirSeg.AdvanceOffsetB();
@@ -7597,6 +7626,7 @@ void nsTableFrame::PaintBCBorders(DrawTarget& aDrawTarget,
   IterateBCBorders(action, aDirtyRect);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 void nsTableFrame::CreateWebRenderCommandsForBCBorders(
     wr::DisplayListBuilder& aBuilder,
     const mozilla::layers::StackingContextHelper& aSc,
@@ -7606,6 +7636,7 @@ void nsTableFrame::CreateWebRenderCommandsForBCBorders(
   // dirty rect.
   IterateBCBorders(action, aVisibleRect - aOffsetToReferenceFrame);
 }
+#endif
 
 bool nsTableFrame::RowHasSpanningCells(int32_t aRowIndex, int32_t aNumEffCols) {
   bool result = false;

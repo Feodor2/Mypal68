@@ -33,13 +33,15 @@ class Image;
 class Layer;
 class LayerManager;
 class SharedSurfaceTextureClient;
+#  ifdef MOZ_BUILD_WEBRENDER
 class WebRenderCanvasData;
+#  endif
 }  // namespace layers
 namespace gfx {
 class SourceSurface;
-#ifdef MOZ_VR
+#  ifdef MOZ_VR
 class VRLayerChild;
-#endif
+#  endif
 }  // namespace gfx
 
 namespace dom {
@@ -121,7 +123,9 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   typedef layers::CanvasLayer CanvasLayer;
   typedef layers::Layer Layer;
   typedef layers::LayerManager LayerManager;
+#  ifdef MOZ_BUILD_WEBRENDER
   typedef layers::WebRenderCanvasData WebRenderCanvasData;
+#  endif
 
  public:
   explicit HTMLCanvasElement(
@@ -295,8 +299,10 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   already_AddRefed<Layer> GetCanvasLayer(nsDisplayListBuilder* aBuilder,
                                          Layer* aOldLayer,
                                          LayerManager* aManager);
+#  ifdef MOZ_BUILD_WEBRENDER
   bool UpdateWebRenderCanvasData(nsDisplayListBuilder* aBuilder,
                                  WebRenderCanvasData* aCanvasData);
+#  endif
   bool InitializeCanvasRenderer(nsDisplayListBuilder* aBuilder,
                                 CanvasRenderer* aRenderer);
   // Should return true if the canvas layer should always be marked inactive.
@@ -328,9 +334,9 @@ class HTMLCanvasElement final : public nsGenericHTMLElement,
   static void SetAttrFromAsyncCanvasRenderer(AsyncCanvasRenderer* aRenderer);
   static void InvalidateFromAsyncCanvasRenderer(AsyncCanvasRenderer* aRenderer);
 
-#ifdef MOZ_VR
+#  ifdef MOZ_VR
   already_AddRefed<layers::SharedSurfaceTextureClient> GetVRFrame();
-#endif
+#  endif
 
   bool MaybeModified() const { return mMaybeModified; };
 

@@ -54,6 +54,7 @@ class nsDisplayTableCellSelection final : public nsPaintedDisplayItem {
   }
   NS_DISPLAY_DECL_NAME("TableCellSelection", TYPE_TABLE_CELL_SELECTION)
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -68,6 +69,7 @@ class nsDisplayTableCellSelection final : public nsPaintedDisplayItem {
 
     return true;
   }
+#endif
 };
 
 nsTableCellFrame::nsTableCellFrame(ComputedStyle* aStyle,

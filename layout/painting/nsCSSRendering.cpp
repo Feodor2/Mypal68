@@ -65,7 +65,9 @@
 #include "nsRubyTextContainerFrame.h"
 #include <algorithm>
 #include "SVGImageContext.h"
-#include "TextDrawTarget.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "TextDrawTarget.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::css;
@@ -665,6 +667,7 @@ Maybe<nsCSSBorderRenderer> nsCSSRendering::CreateBorderRenderer(
       aSkipSides);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 ImgDrawResult nsCSSRendering::CreateWebRenderCommandsForBorder(
     nsDisplayItem* aItem, nsIFrame* aForFrame, const nsRect& aBorderArea,
     mozilla::wr::DisplayListBuilder& aBuilder,
@@ -750,12 +753,12 @@ ImgDrawResult nsCSSRendering::CreateWebRenderCommandsForBorderWithStyleBorder(
   return bir->CreateWebRenderCommands(aItem, aForFrame, aBuilder, aResources,
                                       aSc, aManager, aDisplayListBuilder);
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 static nsCSSBorderRenderer ConstructBorderRenderer(
-    nsPresContext* aPresContext, ComputedStyle* aStyle,
-    DrawTarget* aDrawTarget, nsIFrame* aForFrame, const nsRect& aDirtyRect,
-    const nsRect& aBorderArea, const nsStyleBorder& aStyleBorder,
-    Sides aSkipSides, bool* aNeedsClip) {
+    nsPresContext* aPresContext, ComputedStyle* aStyle, DrawTarget* aDrawTarget,
+    nsIFrame* aForFrame, const nsRect& aDirtyRect, const nsRect& aBorderArea,
+    const nsStyleBorder& aStyleBorder, Sides aSkipSides, bool* aNeedsClip) {
   nsMargin border = aStyleBorder.GetComputedBorder();
 
   // Compute the outermost boundary of the area that might be painted.
@@ -891,8 +894,8 @@ ImgDrawResult nsCSSRendering::PaintBorderWithStyleBorder(
 
   bool needsClip = false;
   nsCSSBorderRenderer br = ConstructBorderRenderer(
-      aPresContext, aStyle, &aDrawTarget, aForFrame, aDirtyRect,
-      aBorderArea, aStyleBorder, aSkipSides, &needsClip);
+      aPresContext, aStyle, &aDrawTarget, aForFrame, aDirtyRect, aBorderArea,
+      aStyleBorder, aSkipSides, &needsClip);
   if (needsClip) {
     aDrawTarget.PushClipRect(NSRectToSnappedRect(
         aBorderArea, aForFrame->PresContext()->AppUnitsPerDevPixel(),
@@ -950,8 +953,8 @@ nsCSSRendering::CreateNullBorderRendererWithStyleBorder(
 
   bool needsClip = false;
   nsCSSBorderRenderer br = ConstructBorderRenderer(
-      aPresContext, aStyle, aDrawTarget, aForFrame, aDirtyRect,
-      aBorderArea, aStyleBorder, aSkipSides, &needsClip);
+      aPresContext, aStyle, aDrawTarget, aForFrame, aDirtyRect, aBorderArea,
+      aStyleBorder, aSkipSides, &needsClip);
   return Some(br);
 }
 
@@ -1865,6 +1868,7 @@ ImgDrawResult nsCSSRendering::PaintStyleImageLayer(const PaintBGParams& aParams,
                                     *aParams.frame->StyleBorder());
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsCSSRendering::CanBuildWebRenderDisplayItemsForStyleImageLayer(
     LayerManager* aManager, nsPresContext& aPresCtx, nsIFrame* aFrame,
     const nsStyleBackground* aBackgroundStyle, int32_t aLayer,
@@ -1952,6 +1956,7 @@ ImgDrawResult nsCSSRendering::BuildWebRenderDisplayItemsForStyleImageLayer(
       aParams, aBuilder, aResources, aSc, aManager, aItem, sc,
       *aParams.frame->StyleBorder());
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 static bool IsOpaqueBorderEdge(const nsStyleBorder& aBorder,
                                mozilla::Side aSide) {
@@ -2360,8 +2365,7 @@ static nscolor GetBackgroundColor(nsIFrame* aFrame, ComputedStyle* aStyle) {
     default:
       break;
   }
-  return aStyle->GetVisitedDependentColor(
-      &nsStyleBackground::mBackgroundColor);
+  return aStyle->GetVisitedDependentColor(&nsStyleBackground::mBackgroundColor);
 }
 
 nscolor nsCSSRendering::DetermineBackgroundColor(nsPresContext* aPresContext,
@@ -2658,6 +2662,7 @@ ImgDrawResult nsCSSRendering::PaintStyleImageLayerWithSC(
   return result;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 ImgDrawResult
 nsCSSRendering::BuildWebRenderDisplayItemsForStyleImageLayerWithSC(
     const PaintBGParams& aParams, mozilla::wr::DisplayListBuilder& aBuilder,
@@ -2713,6 +2718,7 @@ nsCSSRendering::BuildWebRenderDisplayItemsForStyleImageLayerWithSC(
 
   return result;
 }
+#endif
 
 nsRect nsCSSRendering::ComputeImageLayerPositioningArea(
     nsPresContext* aPresContext, nsIFrame* aForFrame, const nsRect& aBorderArea,
@@ -4166,10 +4172,12 @@ void nsCSSRendering::PaintDecorationLineInternal(
 
   AutoPopClips autoPopClips(&aDrawTarget);
 
+#ifdef MOZ_BUILD_WEBRENDER
   mozilla::layout::TextDrawTarget* textDrawer = nullptr;
   if (aDrawTarget.GetBackendType() == BackendType::WEBRENDER_TEXT) {
     textDrawer = static_cast<mozilla::layout::TextDrawTarget*>(&aDrawTarget);
   }
+#endif
 
   switch (aParams.style) {
     case NS_STYLE_TEXT_DECORATION_STYLE_SOLID:
@@ -4239,12 +4247,16 @@ void nsCSSRendering::PaintDecorationLineInternal(
     case NS_STYLE_TEXT_DECORATION_STYLE_DASHED: {
       Point p1 = aRect.TopLeft();
       Point p2 = aParams.vertical ? aRect.BottomLeft() : aRect.TopRight();
+#ifdef MOZ_BUILD_WEBRENDER
       if (textDrawer) {
         textDrawer->AppendDecoration(p1, p2, lineThickness, aParams.vertical,
                                      color, aParams.style);
       } else {
+#endif
         aDrawTarget.StrokeLine(p1, p2, colorPat, strokeOptions, drawOptions);
+#ifdef MOZ_BUILD_WEBRENDER
       }
+#endif
       return;
     }
     case NS_STYLE_TEXT_DECORATION_STYLE_DOUBLE: {
@@ -4274,6 +4286,7 @@ void nsCSSRendering::PaintDecorationLineInternal(
       Point p1b = aParams.vertical ? aRect.TopRight() : aRect.BottomLeft();
       Point p2b = aRect.BottomRight();
 
+#ifdef MOZ_BUILD_WEBRENDER
       if (textDrawer) {
         textDrawer->AppendDecoration(p1a, p2a, lineThickness, aParams.vertical,
                                      color,
@@ -4282,9 +4295,12 @@ void nsCSSRendering::PaintDecorationLineInternal(
                                      color,
                                      NS_STYLE_TEXT_DECORATION_STYLE_SOLID);
       } else {
+#endif
         aDrawTarget.StrokeLine(p1a, p2a, colorPat, strokeOptions, drawOptions);
         aDrawTarget.StrokeLine(p1b, p2b, colorPat, strokeOptions, drawOptions);
+#ifdef MOZ_BUILD_WEBRENDER
       }
+#endif
       return;
     }
     case NS_STYLE_TEXT_DECORATION_STYLE_WAVY: {
@@ -4334,6 +4350,7 @@ void nsCSSRendering::PaintDecorationLineInternal(
           aFrame, aParams.style, aRect, aParams.icoordInFrame, cycleLength,
           aParams.vertical);
 
+#ifdef MOZ_BUILD_WEBRENDER
       if (textDrawer) {
         // Undo attempted centering
         Float& rectBCoord = aParams.vertical ? aRect.x : aRect.y;
@@ -4343,6 +4360,7 @@ void nsCSSRendering::PaintDecorationLineInternal(
                                          color);
         return;
       }
+#endif
 
       // figure out if we can trim whole cycles from the left and right edges
       // of the line, to try and avoid creating an unnecessarily long and

@@ -45,7 +45,9 @@ namespace layers {
 class AsyncDragMetrics;
 class APZCTreeManager;
 struct ScrollableLayerGuid;
+#ifdef MOZ_BUILD_WEBRENDER
 struct SLGuidAndRenderRoot;
+#endif
 class CompositorController;
 class MetricsSharingController;
 class GestureEventListener;
@@ -194,7 +196,9 @@ class AsyncPanZoomController {
   AsyncPanZoomController(LayersId aLayersId, APZCTreeManager* aTreeManager,
                          const RefPtr<InputQueue>& aInputQueue,
                          GeckoContentController* aController,
+#ifdef MOZ_BUILD_WEBRENDER
                          wr::RenderRoot aRenderRoot,
+#endif
                          GestureBehavior aGestures = DEFAULT_GESTURES);
 
   // --------------------------------------------------------------------------
@@ -912,7 +916,9 @@ class AsyncPanZoomController {
   void OnTouchEndOrCancel();
 
   LayersId mLayersId;
+#ifdef MOZ_BUILD_WEBRENDER
   wr::RenderRoot mRenderRoot;
+#endif
   RefPtr<CompositorController> mCompositorController;
   RefPtr<MetricsSharingController> mMetricsSharingController;
 
@@ -1030,6 +1036,7 @@ class AsyncPanZoomController {
 
   UniquePtr<OverscrollEffectBase> mOverscrollEffect;
 
+#ifdef MOZ_BUILD_WEBRENDER
   // Zoom animation id, used for zooming in WebRender. This should only be
   // set on the APZC instance for the root content document (i.e. the one we
   // support zooming on), and is only used if WebRender is enabled. The
@@ -1038,6 +1045,7 @@ class AsyncPanZoomController {
   // associated with this id, we can adjust the scaling that WebRender applies,
   // thereby controlling the zoom.
   Maybe<uint64_t> mZoomAnimationId;
+#endif
 
   // Position on screen where user first put their finger down.
   ExternalPoint mStartTouch;
@@ -1059,8 +1067,10 @@ class AsyncPanZoomController {
     return callable(mLastContentPaintMetrics);
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   void SetZoomAnimationId(const Maybe<uint64_t>& aZoomAnimationId);
   Maybe<uint64_t> GetZoomAnimationId() const;
+#endif
 
   /* ===================================================================
    * The functions and members in this section are used to expose
@@ -1590,7 +1600,9 @@ class AsyncPanZoomController {
 
   LayersId GetLayersId() const { return mLayersId; }
 
+#ifdef MOZ_BUILD_WEBRENDER
   wr::RenderRoot GetRenderRoot() const { return mRenderRoot; }
+#endif
 
   bool IsPinchZooming() const { return mState == PINCHING; }
 

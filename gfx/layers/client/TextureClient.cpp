@@ -888,9 +888,11 @@ bool TextureClient::InitIPDLActor(CompositableForwarder* aForwarder) {
     return false;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   // Try external image id allocation.
   mExternalImageId =
       aForwarder->GetTextureForwarder()->GetNextExternalImageId();
+#endif
 
   nsIEventTarget* target = nullptr;
   // Get the layers id if the forwarder is a ShadowLayerForwarder.
@@ -905,7 +907,11 @@ bool TextureClient::InitIPDLActor(CompositableForwarder* aForwarder) {
 
   PTextureChild* actor = aForwarder->GetTextureForwarder()->CreateTexture(
       desc, readLockDescriptor, aForwarder->GetCompositorBackendType(),
-      GetFlags(), mSerial, mExternalImageId, target);
+      GetFlags(), mSerial,
+#ifdef MOZ_BUILD_WEBRENDER
+      mExternalImageId,
+#endif
+      target);
 
   if (!actor) {
     gfxCriticalNote << static_cast<int32_t>(desc.type()) << ", "
@@ -962,9 +968,11 @@ bool TextureClient::InitIPDLActor(KnowsCompositor* aKnowsCompositor) {
     return false;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   // Try external image id allocation.
   mExternalImageId =
       aKnowsCompositor->GetTextureForwarder()->GetNextExternalImageId();
+#endif
 
   ReadLockDescriptor readLockDescriptor = null_t();
   if (mReadLock) {
@@ -973,7 +981,12 @@ bool TextureClient::InitIPDLActor(KnowsCompositor* aKnowsCompositor) {
 
   PTextureChild* actor = fwd->CreateTexture(
       desc, readLockDescriptor, aKnowsCompositor->GetCompositorBackendType(),
-      GetFlags(), mSerial, mExternalImageId);
+      GetFlags(), mSerial
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      mExternalImageId
+#endif
+  );
   if (!actor) {
     gfxCriticalNote << static_cast<int32_t>(desc.type()) << ", "
                     << static_cast<int32_t>(

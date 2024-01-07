@@ -13,7 +13,9 @@
 #include "mozilla/layers/PCompositorBridgeChild.h"
 #include "mozilla/layers/TextureForwarder.h"  // for TextureForwarder
 #include "mozilla/layers/PaintThread.h"       // for PaintThread
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 #include "nsClassHashtable.h"  // for nsClassHashtable
 #include "nsCOMPtr.h"          // for nsCOMPtr
 #include "nsHashKeys.h"        // for nsUint64HashKey
@@ -106,8 +108,12 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   PTextureChild* AllocPTextureChild(
       const SurfaceDescriptor& aSharedData, const ReadLockDescriptor& aReadLock,
       const LayersBackend& aLayersBackend, const TextureFlags& aFlags,
-      const LayersId& aId, const uint64_t& aSerial,
-      const wr::MaybeExternalImageId& aExternalImageId);
+      const LayersId& aId, const uint64_t& aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      const wr::MaybeExternalImageId& aExternalImageId
+#endif
+  );
 
   bool DeallocPTextureChild(PTextureChild* actor);
 
@@ -117,7 +123,9 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
                                const ReadLockDescriptor& aReadLock,
                                LayersBackend aLayersBackend,
                                TextureFlags aFlags, uint64_t aSerial,
+#ifdef MOZ_BUILD_WEBRENDER
                                wr::MaybeExternalImageId& aExternalImageId,
+#endif
                                nsIEventTarget* aTarget) override;
 
   /**
@@ -210,6 +218,7 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
 
   void WillEndTransaction();
 
+#ifdef MOZ_BUILD_WEBRENDER
   PWebRenderBridgeChild* AllocPWebRenderBridgeChild(
       const wr::PipelineId& aPipelineId, const LayoutDeviceIntSize&);
   bool DeallocPWebRenderBridgeChild(PWebRenderBridgeChild* aActor);
@@ -217,6 +226,7 @@ class CompositorBridgeChild final : public PCompositorBridgeChild,
   wr::MaybeExternalImageId GetNextExternalImageId() override;
 
   wr::PipelineId GetNextPipelineId();
+#endif
 
   // Must only be called from the main thread. Ensures that any paints from
   // previous frames have been flushed. The main thread blocks until the

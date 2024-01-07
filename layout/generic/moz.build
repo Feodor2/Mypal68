@@ -129,9 +129,10 @@ EXPORTS += [
     'ScrollAnimationPhysics.h',
     'ScrollbarActivity.h',
     'ScrollSnap.h',
-    'TextDrawTarget.h',
     'Visibility.h',
 ]
+if CONFIG['MOZ_BUILD_WEBRENDER']:
+    EXPORTS += ['TextDrawTarget.h']
 
 EXPORTS.mozilla += [
     '!FrameIdList.h',

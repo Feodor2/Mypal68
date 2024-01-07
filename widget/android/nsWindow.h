@@ -218,7 +218,9 @@ class nsWindow final : public nsBaseWidget {
     return nullptr;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   void NotifyDisablingWebRender();
+#endif
 
   //
   // nsIWidget
@@ -345,7 +347,9 @@ class nsWindow final : public nsBaseWidget {
   nsCOMPtr<nsIIdleServiceInternal> mIdleService;
 
   bool mIsFullScreen;
+#ifdef MOZ_BUILD_WEBRENDER
   bool mIsDisablingWebRender;
+#endif
 
   bool UseExternalCompositingSurface() const override { return true; }
 

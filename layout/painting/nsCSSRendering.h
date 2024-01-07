@@ -33,15 +33,19 @@ class DrawTarget;
 
 namespace layers {
 class ImageContainer;
+#ifdef MOZ_BUILD_WEBRENDER
 class StackingContextHelper;
 class WebRenderParentCommand;
-class LayerManager;
 class RenderRootStateManager;
+#endif
+class LayerManager;
 }  // namespace layers
 
+#ifdef MOZ_BUILD_WEBRENDER
 namespace wr {
 class DisplayListBuilder;
 }  // namespace wr
+#endif
 
 enum class PaintBorderFlags : uint8_t { SyncDecodeImages = 1 << 0 };
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(PaintBorderFlags)
@@ -203,6 +207,7 @@ struct nsCSSRendering {
       nsIFrame* aForFrame, const nsRect& aDirtyRect, const nsRect& aBorderArea,
       mozilla::ComputedStyle* aStyle);
 
+#ifdef MOZ_BUILD_WEBRENDER
   static ImgDrawResult CreateWebRenderCommandsForBorder(
       nsDisplayItem* aItem, nsIFrame* aForFrame, const nsRect& aBorderArea,
       mozilla::wr::DisplayListBuilder& aBuilder,
@@ -226,6 +231,7 @@ struct nsCSSRendering {
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder,
       const nsStyleBorder& aStyleBorder);
+#endif
 
   /**
    * Render the outline for an element using css rendering rules
@@ -340,9 +346,11 @@ struct nsCSSRendering {
   /**
    * Determine the background color to draw taking into account print settings.
    */
-  static nscolor DetermineBackgroundColor(
-      nsPresContext* aPresContext, mozilla::ComputedStyle* aStyle,
-      nsIFrame* aFrame, bool& aDrawBackgroundImage, bool& aDrawBackgroundColor);
+  static nscolor DetermineBackgroundColor(nsPresContext* aPresContext,
+                                          mozilla::ComputedStyle* aStyle,
+                                          nsIFrame* aFrame,
+                                          bool& aDrawBackgroundImage,
+                                          bool& aDrawBackgroundColor);
 
   static nsRect ComputeImageLayerPositioningArea(
       nsPresContext* aPresContext, nsIFrame* aForFrame,
@@ -490,10 +498,12 @@ struct nsCSSRendering {
       const PaintBGParams& aParams, gfxContext& aRenderingCtx,
       mozilla::ComputedStyle* mBackgroundSC, const nsStyleBorder& aBorder);
 
+#ifdef MOZ_BUILD_WEBRENDER
   static bool CanBuildWebRenderDisplayItemsForStyleImageLayer(
       LayerManager* aManager, nsPresContext& aPresCtx, nsIFrame* aFrame,
       const nsStyleBackground* aBackgroundStyle, int32_t aLayer,
       uint32_t aPaintFlags);
+
   static ImgDrawResult BuildWebRenderDisplayItemsForStyleImageLayer(
       const PaintBGParams& aParams, mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -506,6 +516,7 @@ struct nsCSSRendering {
       const mozilla::layers::StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager, nsDisplayItem* aItem,
       mozilla::ComputedStyle* mBackgroundSC, const nsStyleBorder& aBorder);
+#endif
 
   /**
    * Returns the rectangle covered by the given background layer image, taking

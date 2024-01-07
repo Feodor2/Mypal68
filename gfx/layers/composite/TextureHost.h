@@ -22,7 +22,9 @@
 #include "mozilla/mozalloc.h"  // for operator delete
 #include "mozilla/Range.h"
 #include "mozilla/UniquePtr.h"  // for UniquePtr
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 #include "nsCOMPtr.h"         // for already_AddRefed
 #include "nsDebug.h"          // for NS_WARNING
 #include "nsISupportsImpl.h"  // for MOZ_COUNT_CTOR, etc
@@ -65,7 +67,9 @@ class TextureSourceBasic;
 class DataTextureSource;
 class PTextureParent;
 class TextureParent;
+#ifdef MOZ_BUILD_WEBRENDER
 class WebRenderTextureHost;
+#endif
 class WrappingTextureSourceYCbCrBasic;
 
 /**
@@ -403,7 +407,12 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   static already_AddRefed<TextureHost> Create(
       const SurfaceDescriptor& aDesc, const ReadLockDescriptor& aReadLock,
       ISurfaceAllocator* aDeallocator, LayersBackend aBackend,
-      TextureFlags aFlags, wr::MaybeExternalImageId& aExternalImageId);
+      TextureFlags aFlags
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      wr::MaybeExternalImageId& aExternalImageId
+#endif
+  );
 
   /**
    * Lock the texture host for compositing.
@@ -562,8 +571,12 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   static PTextureParent* CreateIPDLActor(
       HostIPCAllocator* aAllocator, const SurfaceDescriptor& aSharedData,
       const ReadLockDescriptor& aDescriptor, LayersBackend aLayersBackend,
-      TextureFlags aFlags, uint64_t aSerial,
-      const wr::MaybeExternalImageId& aExternalImageId);
+      TextureFlags aFlags, uint64_t aSerial
+#ifdef MOZ_BUILD_WEBRENDER
+      ,
+      const wr::MaybeExternalImageId& aExternalImageId
+#endif
+  );
   static bool DestroyIPDLActor(PTextureParent* actor);
 
   /**
@@ -636,8 +649,10 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
   virtual MacIOSurfaceTextureHostOGL* AsMacIOSurfaceTextureHost() {
     return nullptr;
   }
-  virtual WebRenderTextureHost* AsWebRenderTextureHost() { return nullptr; }
   virtual SurfaceTextureHost* AsSurfaceTextureHost() { return nullptr; }
+
+#ifdef MOZ_BUILD_WEBRENDER
+  virtual WebRenderTextureHost* AsWebRenderTextureHost() { return nullptr; }
 
   // Create the corresponding RenderTextureHost type of this texture, and
   // register the RenderTextureHost into render thread.
@@ -675,6 +690,7 @@ class TextureHost : public AtomicRefCountedWithFinalize<TextureHost> {
     MOZ_ASSERT_UNREACHABLE(
         "No PushDisplayItems() implementation for this TextureHost type.");
   }
+#endif
 
   /**
    * Some API's can use the cross-process IOSurface directly, such as OpenVR
@@ -784,6 +800,7 @@ class BufferTextureHost : public TextureHost {
 
   const BufferDescriptor& GetBufferDescriptor() const { return mDescriptor; }
 
+#ifdef MOZ_BUILD_WEBRENDER
   void CreateRenderTexture(
       const wr::ExternalImageId& aExternalImageId) override;
 
@@ -798,6 +815,7 @@ class BufferTextureHost : public TextureHost {
                         const wr::LayoutRect& aBounds,
                         const wr::LayoutRect& aClip, wr::ImageRendering aFilter,
                         const Range<wr::ImageKey>& aImageKeys) override;
+#endif
 
   void ReadUnlock() override;
   bool IsDirectMap() override {

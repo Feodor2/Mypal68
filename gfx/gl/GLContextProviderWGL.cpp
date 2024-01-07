@@ -18,7 +18,9 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/layers/CompositorOptions.h"
-#include "mozilla/webrender/RenderThread.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/webrender/RenderThread.h"
+#endif
 #include "mozilla/widget/CompositorWidget.h"
 #include "mozilla/widget/WinCompositorWidget.h"
 
@@ -353,7 +355,9 @@ WGLLibrary::CreateContextWithFallback(const HDC dc,
 }
 
 static RefPtr<GLContext> CreateForWidget(const HWND window,
+#ifdef MOZ_BUILD_WEBRENDER
                                          const bool isWebRender,
+#endif
                                          const bool requireAccelerated) {
   auto& wgl = sWGLLib;
   if (!wgl.EnsureInitialized()) return nullptr;
@@ -375,6 +379,8 @@ static RefPtr<GLContext> CreateForWidget(const HWND window,
                             LOCAL_WGL_ACCELERATION_ARB,
                             LOCAL_WGL_FULL_ACCELERATION_ARB,
                             0};
+    const int* attribs;
+#ifdef MOZ_BUILD_WEBRENDER
     const int kAttribsForWebRender[] = {LOCAL_WGL_DRAW_TO_WINDOW_ARB,
                                         true,
                                         LOCAL_WGL_SUPPORT_OPENGL_ARB,
@@ -386,12 +392,14 @@ static RefPtr<GLContext> CreateForWidget(const HWND window,
                                         LOCAL_WGL_ACCELERATION_ARB,
                                         LOCAL_WGL_FULL_ACCELERATION_ARB,
                                         0};
-    const int* attribs;
     if (wr::RenderThread::IsInRenderThread()) {
       attribs = kAttribsForWebRender;
     } else {
+#endif
       attribs = kAttribs;
+#ifdef MOZ_BUILD_WEBRENDER
     }
+#endif
 
     if (!wgl.mSymbols.fChoosePixelFormat(wgl.RootDc(), attribs, nullptr, 1,
                                          &chosenFormat, &foundFormats)) {
@@ -408,6 +416,8 @@ static RefPtr<GLContext> CreateForWidget(const HWND window,
                             LOCAL_WGL_DOUBLE_BUFFER_ARB,
                             true,
                             0};
+    const int* attribs;
+#ifdef MOZ_BUILD_WEBRENDER
     const int kAttribsForWebRender[] = {LOCAL_WGL_DRAW_TO_WINDOW_ARB,
                                         true,
                                         LOCAL_WGL_SUPPORT_OPENGL_ARB,
@@ -418,12 +428,14 @@ static RefPtr<GLContext> CreateForWidget(const HWND window,
                                         24,
                                         0};
 
-    const int* attribs;
     if (wr::RenderThread::IsInRenderThread()) {
       attribs = kAttribsForWebRender;
     } else {
+#endif
       attribs = kAttribs;
+#ifdef MOZ_BUILD_WEBRENDER
     }
+#endif
 
     if (!wgl.mSymbols.fChoosePixelFormat(wgl.RootDc(), attribs, nullptr, 1,
                                          &chosenFormat, &foundFormats)) {
@@ -451,21 +463,34 @@ static RefPtr<GLContext> CreateForWidget(const HWND window,
 }
 
 already_AddRefed<GLContext> GLContextProviderWGL::CreateForCompositorWidget(
-    CompositorWidget* aCompositorWidget, bool aWebRender,
+    CompositorWidget* aCompositorWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+    bool aWebRender,
+#endif
     bool aForceAccelerated) {
   if (!aCompositorWidget) {
     MOZ_ASSERT(false);
     return nullptr;
   }
-  return CreateForWidget(aCompositorWidget->AsWindows()->GetHwnd(), aWebRender,
+  return CreateForWidget(aCompositorWidget->AsWindows()->GetHwnd(),
+#ifdef MOZ_BUILD_WEBRENDER
+                         aWebRender,
+#endif
                          aForceAccelerated)
       .forget();
 }
 
 already_AddRefed<GLContext> GLContextProviderWGL::CreateForWindow(
-    nsIWidget* aWidget, bool aWebRender, bool aForceAccelerated) {
+    nsIWidget* aWidget,
+#ifdef MOZ_BUILD_WEBRENDER
+    bool aWebRender,
+#endif
+    bool aForceAccelerated) {
   return CreateForWidget((HWND)aWidget->GetNativeData(NS_NATIVE_WINDOW),
-                         aWebRender, aForceAccelerated)
+#ifdef MOZ_BUILD_WEBRENDER
+                         aWebRender,
+#endif
+                         aForceAccelerated)
       .forget();
 }
 

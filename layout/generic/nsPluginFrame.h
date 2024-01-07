@@ -16,8 +16,10 @@
 #include "nsDisplayList.h"
 #include "nsIReflowCallback.h"
 #include "Units.h"
-#include "mozilla/layers/StackingContextHelper.h"
-#include "mozilla/webrender/WebRenderAPI.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/StackingContextHelper.h"
+#  include "mozilla/webrender/WebRenderAPI.h"
+#endif
 
 #ifdef XP_WIN
 #  include <windows.h>  // For HWND :(
@@ -60,9 +62,11 @@ class nsPluginFrame final : public nsFrame,
   typedef mozilla::layers::Layer Layer;
   typedef mozilla::layers::LayerManager LayerManager;
   typedef mozilla::layers::ImageContainer ImageContainer;
+#ifdef MOZ_BUILD_WEBRENDER
   typedef mozilla::layers::StackingContextHelper StackingContextHelper;
   typedef mozilla::layers::RenderRootStateManager RenderRootStateManager;
   typedef mozilla::layers::WebRenderParentCommand WebRenderParentCommand;
+#endif
   typedef mozilla::ContainerLayerParameters ContainerLayerParameters;
 
   NS_DECL_FRAMEARENA_HELPERS(nsPluginFrame)
@@ -221,12 +225,14 @@ class nsPluginFrame final : public nsFrame,
    */
   bool WantsToHandleWheelEventAsDefaultAction() const;
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool CreateWebRenderCommands(
       nsDisplayItem* aItem, mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder);
+#endif
 
  protected:
   explicit nsPluginFrame(ComputedStyle* aStyle, nsPresContext* aPresContext);
@@ -391,12 +397,14 @@ class nsDisplayPlugin final : public nsPaintedDisplayItem {
     return new nsDisplayPluginGeometry(this, aBuilder);
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
+#endif
 };
 
 #endif /* nsPluginFrame_h___ */

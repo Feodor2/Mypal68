@@ -11,7 +11,6 @@
 #include "mozilla/EventStateManager.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
-#include "mozilla/layers/RenderRootStateManager.h"
 #include "mozilla/gfx/2D.h"
 #include "nsFontMetrics.h"
 #include "nsReadableUtils.h"
@@ -33,7 +32,10 @@
 #include "nsBoxFrame.h"
 #include "nsLayoutUtils.h"
 #include "nsUnicodeProperties.h"
-#include "TextDrawTarget.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/RenderRootStateManager.h"
+#  include "TextDrawTarget.h"
+#endif
 
 #ifdef ACCESSIBILITY
 #  include "nsAccessibilityService.h"
@@ -258,12 +260,14 @@ class nsDisplayXULTextBox final : public nsPaintedDisplayItem {
   void PaintTextToContext(gfxContext* aCtx, nsPoint aOffset,
                           const nscolor* aColor);
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       mozilla::layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
+#endif
 };
 
 static void PaintTextShadowCallback(gfxContext* aCtx, nsPoint aShadowOffset,
@@ -293,6 +297,7 @@ void nsDisplayXULTextBox::PaintTextToContext(gfxContext* aCtx, nsPoint aOffset,
       *aCtx, GetPaintRect(), ToReferenceFrame() + aOffset, aColor);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayXULTextBox::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -322,6 +327,7 @@ bool nsDisplayXULTextBox::CreateWebRenderCommands(
 
   return textDrawer->Finish();
 }
+#endif
 
 nsRect nsDisplayXULTextBox::GetBounds(nsDisplayListBuilder* aBuilder,
                                       bool* aSnap) const {

@@ -4,16 +4,18 @@
 
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/RDDProcessManager.h"
-#include "mozilla/image/ImageMemoryReporter.h"
 #include "mozilla/layers/CompositorManagerChild.h"
 #include "mozilla/layers/CompositorThread.h"
 #include "mozilla/layers/ImageBridgeChild.h"
 #include "mozilla/layers/ISurfaceAllocator.h"  // for GfxMemoryImageReporter
 #include "mozilla/layers/CompositorBridgeChild.h"
 #include "mozilla/layers/TiledContentClient.h"
-#include "mozilla/webrender/RenderThread.h"
-#include "mozilla/webrender/WebRenderAPI.h"
-#include "mozilla/webrender/webrender_ffi.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/image/ImageMemoryReporter.h"
+#  include "mozilla/webrender/RenderThread.h"
+#  include "mozilla/webrender/WebRenderAPI.h"
+#  include "mozilla/webrender/webrender_ffi.h"
+#endif
 #include "mozilla/layers/PaintThread.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "mozilla/gfx/GPUProcessManager.h"
@@ -452,6 +454,7 @@ void gfxPlatform::OnMemoryPressure(layers::MemoryPressureReason aWhy) {
   gfxGradientCache::PurgeAllCaches();
   gfxFontMissingGlyphs::Purge();
   PurgeSkiaFontCache();
+#ifdef MOZ_BUILD_WEBRENDER
   if (XRE_IsParentProcess()) {
     layers::CompositorManagerChild* manager =
         CompositorManagerChild::GetInstance();
@@ -459,6 +462,7 @@ void gfxPlatform::OnMemoryPressure(layers::MemoryPressureReason aWhy) {
       manager->SendNotifyMemoryPressure();
     }
   }
+#endif
 }
 
 gfxPlatform::gfxPlatform()
@@ -553,15 +557,15 @@ void RecordingPrefChanged(const char* aPrefName, void* aClosure) {
     Factory::SetGlobalEventRecorder(nullptr);
   }
 }
-
-#define WR_DEBUG_PREF "gfx.webrender.debug"
+#ifdef MOZ_BUILD_WEBRENDER
+#  define WR_DEBUG_PREF "gfx.webrender.debug"
 
 static void WebRenderDebugPrefChangeCallback(const char* aPrefName, void*) {
   wr::DebugFlags flags{0};
-#define GFX_WEBRENDER_DEBUG(suffix, bit)                   \
-  if (Preferences::GetBool(WR_DEBUG_PREF suffix, false)) { \
-    flags |= (bit);                                        \
-  }
+#  define GFX_WEBRENDER_DEBUG(suffix, bit)                   \
+    if (Preferences::GetBool(WR_DEBUG_PREF suffix, false)) { \
+      flags |= (bit);                                        \
+    }
 
   GFX_WEBRENDER_DEBUG(".profiler", wr::DebugFlags::PROFILER_DBG)
   GFX_WEBRENDER_DEBUG(".render-targets", wr::DebugFlags::RENDER_TARGET_DBG)
@@ -598,10 +602,11 @@ static void WebRenderDebugPrefChangeCallback(const char* aPrefName, void*) {
                       wr::DebugFlags::DISABLE_GRADIENT_PRIMS)
   GFX_WEBRENDER_DEBUG(".obscure-images", wr::DebugFlags::OBSCURE_IMAGES)
   GFX_WEBRENDER_DEBUG(".glyph-flashing", wr::DebugFlags::GLYPH_FLASHING)
-#undef GFX_WEBRENDER_DEBUG
+#  undef GFX_WEBRENDER_DEBUG
 
   gfx::gfxVars::SetWebRenderDebugFlags(flags.bits);
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 #if defined(USE_SKIA)
 static uint32_t GetSkiaGlyphCacheSize() {
@@ -625,6 +630,7 @@ static uint32_t GetSkiaGlyphCacheSize() {
 }
 #endif
 
+#ifdef MOZ_BUILD_WEBRENDER
 class WebRenderMemoryReporter final : public nsIMemoryReporter {
  public:
   NS_DECL_ISUPPORTS
@@ -698,6 +704,7 @@ static void FinishAsyncMemoryReport() {
     imgr->EndReport();
   }
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 // clang-format off
 // (For some reason, clang-format gets the second macro right, but totally mangles the first).
@@ -710,6 +717,7 @@ static void FinishAsyncMemoryReport() {
   helper.Report(aReport.interning.data_stores.id, \
                 "interning/" #id "/data-stores");
 
+#ifdef MOZ_BUILD_WEBRENDER
 NS_IMPL_ISUPPORTS(WebRenderMemoryReporter, nsIMemoryReporter)
 
 NS_IMETHODIMP
@@ -759,8 +767,8 @@ WebRenderMemoryReporter::CollectReports(nsIHandleReportCallback* aHandleReport,
   return NS_OK;
 }
 
-#undef REPORT_INTERNER
-#undef REPORT_DATA_STORE
+#  undef REPORT_INTERNER
+#  undef REPORT_DATA_STORE
 
 static const char* const WR_ROLLOUT_PREF = "gfx.webrender.all.qualified";
 static const bool WR_ROLLOUT_PREF_DEFAULTVALUE = true;
@@ -837,6 +845,7 @@ class WrRolloutPrefShutdownSaver : public nsIObserver {
     Preferences::SetBool(WR_ROLLOUT_DEFAULT_PREF, defaultValue);
   }
 };
+#endif  // MOZ_BUILD_WEBRENDER
 
 static void FrameRatePrefChanged(const char* aPref, void*) {
   int32_t newRate = gfxPlatform::ForceSoftwareVsync()
@@ -848,7 +857,9 @@ static void FrameRatePrefChanged(const char* aPref, void*) {
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 NS_IMPL_ISUPPORTS(WrRolloutPrefShutdownSaver, nsIObserver)
+#endif
 
 void gfxPlatform::Init() {
   MOZ_RELEASE_ASSERT(!XRE_IsGPUProcess(), "GFX: Not allowed in GPU process.");
@@ -892,7 +903,9 @@ void gfxPlatform::Init() {
   }
 
   if (XRE_IsParentProcess()) {
+#ifdef MOZ_BUILD_WEBRENDER
     WrRolloutPrefShutdownSaver::AddShutdownObserver();
+#endif
 
     nsCOMPtr<nsIFile> profDir;
     nsresult rv = NS_GetSpecialDirectory(NS_APP_PROFILE_DIR_STARTUP,
@@ -980,15 +993,19 @@ void gfxPlatform::Init() {
 #endif
   gPlatform->PopulateScreenInfo();
   gPlatform->InitAcceleration();
+#ifdef MOZ_BUILD_WEBRENDER
   gPlatform->InitWebRenderConfig();
+#endif
 
+#ifdef MOZ_BUILD_WEBRENDER
   // When using WebRender, we defer initialization of the D3D11 devices until
   // the (rare) cases where they're used. Note that the GPU process where
   // WebRender runs doesn't initialize gfxPlatform and performs explicit
   // initialization of the bits it needs.
-  if (!UseWebRender()) {
+  if (!UseWebRender())
+#endif
     gPlatform->EnsureDevicesInitialized();
-  }
+
   gPlatform->InitOMTPConfig();
 
   if (gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
@@ -1075,9 +1092,11 @@ void gfxPlatform::Init() {
   }
 
   RegisterStrongMemoryReporter(new GfxMemoryImageReporter());
+#ifdef MOZ_BUILD_WEBRENDER
   if (XRE_IsParentProcess() && UseWebRender()) {
     RegisterStrongAsyncMemoryReporter(new WebRenderMemoryReporter());
   }
+#endif
 
 #ifdef USE_SKIA
   RegisterStrongMemoryReporter(new SkMemoryReporter());
@@ -1183,8 +1202,10 @@ bool gfxPlatform::IsHeadless() {
   return headless;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 /* static */
 bool gfxPlatform::UseWebRender() { return gfx::gfxVars::UseWebRender(); }
+#endif
 
 static bool sLayersIPCIsUp = false;
 
@@ -1288,10 +1309,12 @@ void gfxPlatform::InitLayersIPC() {
   }
 
   if (XRE_IsParentProcess()) {
+#ifdef MOZ_BUILD_WEBRENDER
     if (!gfxConfig::IsEnabled(Feature::GPU_PROCESS) && UseWebRender()) {
       wr::RenderThread::Start();
       image::ImageMemoryReporter::InitForWebRender();
     }
+#endif
 
     layers::CompositorThreadHolder::Start();
   }
@@ -1328,6 +1351,7 @@ void gfxPlatform::ShutdownLayersIPC() {
     layers::ImageBridgeChild::ShutDown();
     // This has to happen after shutting down the child protocols.
     layers::CompositorThreadHolder::Shutdown();
+#ifdef MOZ_BUILD_WEBRENDER
     image::ImageMemoryReporter::ShutdownForWebRender();
     // There is a case that RenderThread exists when UseWebRender() is
     // false. This could happen when WebRender was fallbacked to compositor.
@@ -1337,6 +1361,7 @@ void gfxPlatform::ShutdownLayersIPC() {
       Preferences::UnregisterCallback(WebRenderDebugPrefChangeCallback,
                                       WR_DEBUG_PREF);
     }
+#endif
 
   } else {
     // TODO: There are other kind of processes and we should make sure gfx
@@ -2516,6 +2541,7 @@ void gfxPlatform::InitCompositorAccelerationPrefs() {
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 /*static*/
 bool gfxPlatform::WebRenderPrefEnabled() {
   return StaticPrefs::gfx_webrender_all_AtStartup() ||
@@ -2630,19 +2656,19 @@ static void UpdateWRQualificationForAMD(FeatureState& aFeature,
 
   // we have a desktop CAYMAN, SI, CIK, VI, or GFX9 device.
 
-#if defined(XP_WIN)
+#  if defined(XP_WIN)
   // These devices got WR in release Firefox 68.
   *aOutGuardedByQualifiedPref = false;
-#elif defined(NIGHTLY_BUILD)
+#  elif defined(NIGHTLY_BUILD)
   // Qualify on Linux Nightly, but leave *aOutGuardedByQualifiedPref as true
   // to indicate users on release don't have it yet, and it's still guarded
   // by the qualified pref.
-#else
+#  else
   // Disqualify everywhere else
   aFeature.Disable(FeatureStatus::BlockedReleaseChannelAMD,
                    "Release channel and AMD",
                    NS_LITERAL_CSTRING("FEATURE_FAILURE_RELEASE_CHANNEL_AMD"));
-#endif
+#  endif
 }
 
 static void UpdateWRQualificationForIntel(FeatureState& aFeature,
@@ -2747,20 +2773,20 @@ static void UpdateWRQualificationForIntel(FeatureState& aFeature,
   // Performance is not great on 4k screens with WebRender.
   // Disable it for now on all release platforms, and also on Linux
   // nightly. We only allow it on Windows nightly.
-#if defined(XP_WIN) && defined(NIGHTLY_BUILD)
+#  if defined(XP_WIN) && defined(NIGHTLY_BUILD)
   // Windows nightly, so don't do screen size checks
-#else
+#  else
   // Windows release, Linux nightly, Linux release. Do screen size
   // checks. (macOS is still completely blocked by the blocklist).
   // On Windows release, we only allow really small screens (sub-WUXGA). On
   // Linux we allow medium size screens as well (anything sub-4k).
-#  if defined(XP_WIN)
+#    if defined(XP_WIN)
   // Allow up to WUXGA on Windows release
   const int64_t kMaxPixels = 1920 * 1200;  // WUXGA
-#  else
+#    else
   // Allow up to 4k on Linux
   const int64_t kMaxPixels = 3440 * 1440;  // UWQHD
-#  endif
+#    endif
   if (aScreenPixels > kMaxPixels) {
     aFeature.Disable(
         FeatureStatus::BlockedScreenTooLarge, "Screen size too large",
@@ -2772,19 +2798,19 @@ static void UpdateWRQualificationForIntel(FeatureState& aFeature,
                      NS_LITERAL_CSTRING("FEATURE_FAILURE_SCREEN_SIZE_UNKNOWN"));
     return;
   }
-#endif
+#  endif
 
-#if (defined(XP_WIN) || (defined(MOZ_WIDGET_GTK) && defined(NIGHTLY_BUILD)))
+#  if (defined(XP_WIN) || (defined(MOZ_WIDGET_GTK) && defined(NIGHTLY_BUILD)))
   // Qualify Intel graphics cards on Windows to release and on Linux nightly
   // (subject to device whitelist and screen size checks above).
   // Leave *aOutGuardedByQualifiedPref as true to indicate no existing
   // release users have this yet, and it's still guarded by the qualified pref.
-#else
+#  else
   // Disqualify everywhere else
   aFeature.Disable(FeatureStatus::BlockedReleaseChannelIntel,
                    "Release channel and Intel",
                    NS_LITERAL_CSTRING("FEATURE_FAILURE_RELEASE_CHANNEL_INTEL"));
-#endif
+#  endif
 }
 
 static FeatureState& WebRenderHardwareQualificationStatus(
@@ -2859,11 +2885,11 @@ static FeatureState& WebRenderHardwareQualificationStatus(
   // We leave checking the battery for last because we would like to know
   // which users were denied WebRender only because they have a battery.
   if (aHasBattery) {
-#ifndef XP_WIN
+#  ifndef XP_WIN
     // aHasBattery is only ever true on Windows, we don't check it on other
     // platforms.
     MOZ_ASSERT(false);
-#endif
+#  endif
     // We never released WR to the battery populations, so let's keep the pref
     // guard for these populations. That way we can do a gradual rollout to
     // the battery population using the pref.
@@ -2872,12 +2898,12 @@ static FeatureState& WebRenderHardwareQualificationStatus(
     // if we have a battery, ignore it if the screen is small enough.
     const int64_t kMaxPixelsBattery = 1920 * 1200;  // WUXGA
     if (aScreenPixels > 0 && aScreenPixels <= kMaxPixelsBattery) {
-#ifndef NIGHTLY_BUILD
+#  ifndef NIGHTLY_BUILD
       featureWebRenderQualified.Disable(
           FeatureStatus::BlockedReleaseChannelBattery,
           "Release channel and battery",
           NS_LITERAL_CSTRING("FEATURE_FAILURE_RELEASE_CHANNEL_BATTERY"));
-#endif  // !NIGHTLY_BUILD
+#  endif  // !NIGHTLY_BUILD
     } else {
       featureWebRenderQualified.Disable(
           FeatureStatus::BlockedHasBattery, "Has battery",
@@ -2960,13 +2986,13 @@ void gfxPlatform::InitWebRenderConfig() {
   }
 
   // WebRender relies on the GPU process when on Windows
-#ifdef XP_WIN
+#  ifdef XP_WIN
   if (!gfxConfig::IsEnabled(Feature::GPU_PROCESS)) {
     featureWebRender.ForceDisable(
         FeatureStatus::UnavailableNoGpuProcess, "GPU Process is disabled",
         NS_LITERAL_CSTRING("FEATURE_FAILURE_GPU_PROCESS_DISABLED"));
   }
-#endif
+#  endif
 
   if (InSafeMode()) {
     featureWebRender.ForceDisable(
@@ -2974,7 +3000,7 @@ void gfxPlatform::InitWebRenderConfig() {
         NS_LITERAL_CSTRING("FEATURE_FAILURE_SAFE_MODE"));
   }
 
-#ifdef XP_WIN
+#  ifdef XP_WIN
   if (Preferences::GetBool("gfx.webrender.force-angle", false)) {
     if (!gfxConfig::IsEnabled(Feature::D3D11_HW_ANGLE)) {
       featureWebRender.ForceDisable(
@@ -2984,21 +3010,21 @@ void gfxPlatform::InitWebRenderConfig() {
       gfxVars::SetUseWebRenderANGLE(gfxConfig::IsEnabled(Feature::WEBRENDER));
     }
   }
-#endif
+#  endif
 
   if (Preferences::GetBool("gfx.webrender.program-binary-disk", false)) {
     gfxVars::SetUseWebRenderProgramBinaryDisk(
         gfxConfig::IsEnabled(Feature::WEBRENDER));
   }
 
-#ifdef MOZ_WIDGET_ANDROID
+#  ifdef MOZ_WIDGET_ANDROID
   if (jni::IsFennec()) {
     featureWebRender.ForceDisable(
         FeatureStatus::Unavailable,
         "WebRender not ready for use on non-e10s Android",
         NS_LITERAL_CSTRING("FEATURE_FAILURE_ANDROID"));
   }
-#endif
+#  endif
 
   // gfxFeature is not usable in the GPU process, so we use gfxVars to transmit
   // this feature
@@ -3011,7 +3037,7 @@ void gfxPlatform::InitWebRenderConfig() {
           WebRenderDebugPrefChangeCallback, WR_DEBUG_PREF);
     }
   }
-#if defined(MOZ_WIDGET_GTK)
+#  if defined(MOZ_WIDGET_GTK)
   else if (gfxConfig::IsEnabled(Feature::HW_COMPOSITING)) {
     // Hardware compositing should be disabled by default if we aren't using
     // WebRender. We had to check if it is enabled at all, because it may
@@ -3020,9 +3046,9 @@ void gfxPlatform::InitWebRenderConfig() {
     gfxConfig::Disable(Feature::HW_COMPOSITING, FeatureStatus::Blocked,
                        "Acceleration blocked by platform");
   }
-#endif
+#  endif
 
-#ifdef XP_WIN
+#  ifdef XP_WIN
   if (Preferences::GetBool("gfx.webrender.flip-sequential", false)) {
     // XXX relax win version to windows 8.
     if (IsWin10OrLater() && UseWebRender() && gfxVars::UseWebRenderANGLE()) {
@@ -3041,15 +3067,17 @@ void gfxPlatform::InitWebRenderConfig() {
       gfxVars::SetUseWebRenderTripleBufferingWin(true);
     }
   }
-#endif
+#  endif
 
   // Set features that affect WR's RendererOptions
-  gfxVars::SetUseGLSwizzle(IsFeatureSupported(nsIGfxInfo::FEATURE_GL_SWIZZLE, true));
+  gfxVars::SetUseGLSwizzle(
+      IsFeatureSupported(nsIGfxInfo::FEATURE_GL_SWIZZLE, true));
 
   // The RemoveShaderCacheFromDiskIfNecessary() needs to be called after
   // WebRenderConfig initialization.
   gfxUtils::RemoveShaderCacheFromDiskIfNecessary();
 }
+#endif  // MOZ_BUILD_WEBRENDER
 
 void gfxPlatform::InitOMTPConfig() {
   ScopedGfxFeatureReporter reporter("OMTP");
@@ -3445,6 +3473,7 @@ void gfxPlatform::NotifyCompositorCreated(LayersBackend aBackend) {
       }));
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 /* static */
 void gfxPlatform::NotifyGPUProcessDisabled() {
   if (gfxConfig::IsEnabled(Feature::WEBRENDER)) {
@@ -3455,6 +3484,7 @@ void gfxPlatform::NotifyGPUProcessDisabled() {
     gfxVars::SetUseWebRender(false);
   }
 }
+#endif
 
 void gfxPlatform::FetchAndImportContentDeviceData() {
   MOZ_ASSERT(XRE_IsContentProcess());

@@ -23,9 +23,11 @@
 #include "mozilla/Likely.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/Selection.h"
-#include "TextDrawTarget.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "TextDrawTarget.h"
 
 using mozilla::layout::TextDrawTarget;
+#endif
 
 namespace mozilla {
 namespace css {
@@ -191,12 +193,14 @@ class nsDisplayTextOverflowMarker final : public nsPaintedDisplayItem {
 
   void PaintTextToContext(gfxContext* aCtx, nsPoint aOffsetFromRect);
 
+#ifdef MOZ_BUILD_WEBRENDER
   virtual bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
       const StackingContextHelper& aSc,
       layers::RenderRootStateManager* aManager,
       nsDisplayListBuilder* aDisplayListBuilder) override;
+#endif
 
   NS_DISPLAY_DECL_NAME("TextOverflow", TYPE_TEXT_OVERFLOW)
  private:
@@ -264,6 +268,7 @@ void nsDisplayTextOverflowMarker::PaintTextToContext(gfxContext* aCtx,
   }
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayTextOverflowMarker::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -284,6 +289,7 @@ bool nsDisplayTextOverflowMarker::CreateWebRenderCommands(
 
   return textDrawer->Finish();
 }
+#endif
 
 TextOverflow::TextOverflow(nsDisplayListBuilder* aBuilder,
                            nsIFrame* aBlockFrame)

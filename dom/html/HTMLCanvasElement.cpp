@@ -24,8 +24,10 @@
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/layers/AsyncCanvasRenderer.h"
-#include "mozilla/layers/WebRenderCanvasRenderer.h"
-#include "mozilla/layers/WebRenderUserData.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderCanvasRenderer.h"
+#  include "mozilla/layers/WebRenderUserData.h"
+#endif
 #include "mozilla/MouseEvents.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Telemetry.h"
@@ -994,6 +996,7 @@ void HTMLCanvasElement::InvalidateCanvasContent(const gfx::Rect* damageRect) {
 
   ActiveLayerTracker::NotifyContentChange(frame);
 
+#ifdef MOZ_BUILD_WEBRENDER
   // When using layers-free WebRender, we cannot invalidate the layer (because
   // there isn't one). Instead, we mark the CanvasRenderer dirty and scheduling
   // an empty transaction which is effectively equivalent.
@@ -1008,6 +1011,7 @@ void HTMLCanvasElement::InvalidateCanvasContent(const gfx::Rect* damageRect) {
     renderer->SetDirty();
     frame->SchedulePaint(nsIFrame::PAINT_COMPOSITE_ONLY);
   } else {
+#endif
     Layer* layer = nullptr;
     if (damageRect) {
       nsIntSize size = GetWidthHeight();
@@ -1023,7 +1027,9 @@ void HTMLCanvasElement::InvalidateCanvasContent(const gfx::Rect* damageRect) {
     if (layer) {
       static_cast<CanvasLayer*>(layer)->Updated();
     }
+#ifdef MOZ_BUILD_WEBRENDER
   }
+#endif
 
   /*
    * Treat canvas invalidations as animation activity for JS. Frequently
@@ -1114,6 +1120,7 @@ already_AddRefed<Layer> HTMLCanvasElement::GetCanvasLayer(
   return nullptr;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool HTMLCanvasElement::UpdateWebRenderCanvasData(
     nsDisplayListBuilder* aBuilder, WebRenderCanvasData* aCanvasData) {
   if (mCurrentContext) {
@@ -1142,6 +1149,7 @@ bool HTMLCanvasElement::UpdateWebRenderCanvasData(
   aCanvasData->ClearCanvasRenderer();
   return false;
 }
+#endif
 
 bool HTMLCanvasElement::InitializeCanvasRenderer(nsDisplayListBuilder* aBuilder,
                                                  CanvasRenderer* aRenderer) {

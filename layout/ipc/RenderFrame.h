@@ -111,6 +111,7 @@ class nsDisplayRemote final : public nsPaintedDisplayItem {
 
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool CreateWebRenderCommands(
       mozilla::wr::DisplayListBuilder& aBuilder,
       mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -120,6 +121,7 @@ class nsDisplayRemote final : public nsPaintedDisplayItem {
   bool UpdateScrollData(
       mozilla::layers::WebRenderScrollData* aData,
       mozilla::layers::WebRenderLayerScrollData* aLayerData) override;
+#endif
 
   NS_DISPLAY_DECL_NAME("Remote", TYPE_REMOTE)
 

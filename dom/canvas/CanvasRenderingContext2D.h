@@ -431,8 +431,10 @@ class CanvasRenderingContext2D final : public nsICanvasRenderingContextInternal,
                                          Layer* aOldLayer,
                                          LayerManager* aManager) override;
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool UpdateWebRenderCanvasData(nsDisplayListBuilder* aBuilder,
                                  WebRenderCanvasData* aCanvasData) override;
+#endif
 
   bool InitializeCanvasRenderer(nsDisplayListBuilder* aBuilder,
                                 CanvasRenderer* aRenderer) override;

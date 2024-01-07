@@ -6,7 +6,9 @@
 
 #include "mozilla/Likely.h"
 #include "mozilla/Types.h"  // for decltype
-#include "mozilla/layers/SharedSurfacesChild.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/SharedSurfacesChild.h"
+#endif
 
 #include "base/process_util.h"
 
@@ -20,7 +22,9 @@
 #  define SHARED_SURFACE_PROTECT_FINALIZED
 #endif
 
+#ifdef MOZ_BUILD_WEBRENDER
 using namespace mozilla::layers;
+#endif
 
 namespace mozilla {
 namespace gfx {
@@ -71,9 +75,11 @@ bool SourceSurfaceSharedData::Init(const IntSize& aSize, int32_t aStride,
     return false;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (aShare) {
     layers::SharedSurfacesChild::Share(this);
   }
+#endif
 
   return true;
 }
@@ -82,9 +88,15 @@ void SourceSurfaceSharedData::GuaranteePersistance() {
   // Shared memory is not unmapped until we release SourceSurfaceSharedData.
 }
 
-void SourceSurfaceSharedData::AddSizeOfExcludingThis(
-    MallocSizeOf aMallocSizeOf, size_t& aHeapSizeOut, size_t& aNonHeapSizeOut,
-    size_t& aExtHandlesOut, uint64_t& aExtIdOut) const {
+void SourceSurfaceSharedData::AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf,
+                                                     size_t& aHeapSizeOut,
+                                                     size_t& aNonHeapSizeOut,
+                                                     size_t& aExtHandlesOut
+#ifdef MOZ_BUILD_WEBRENDER
+                                                     ,
+                                                     uint64_t& aExtIdOut
+#endif
+) const {
   MutexAutoLock lock(mMutex);
   if (mBuf) {
     aNonHeapSizeOut += GetAlignedDataLength();
@@ -92,10 +104,12 @@ void SourceSurfaceSharedData::AddSizeOfExcludingThis(
   if (!mClosed) {
     ++aExtHandlesOut;
   }
+#ifdef MOZ_BUILD_WEBRENDER
   Maybe<wr::ExternalImageId> extId = SharedSurfacesChild::GetExternalId(this);
   if (extId) {
     aExtIdOut = wr::AsUint64(extId.ref());
   }
+#endif
 }
 
 uint8_t* SourceSurfaceSharedData::GetDataInternal() const {

@@ -53,7 +53,9 @@
 #include "Layers.h"
 #include "ReadbackLayer.h"
 #include "ImageContainer.h"
-#include "mozilla/layers/RenderRootStateManager.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/RenderRootStateManager.h"
+#endif
 
 // accessibility support
 #ifdef ACCESSIBILITY
@@ -972,6 +974,7 @@ nsRegion nsDisplayPlugin::GetOpaqueRegion(nsDisplayListBuilder* aBuilder,
   return result;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayPlugin::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -981,6 +984,7 @@ bool nsDisplayPlugin::CreateWebRenderCommands(
   return static_cast<nsPluginFrame*>(mFrame)->CreateWebRenderCommands(
       this, aBuilder, aResources, aSc, aManager, aDisplayListBuilder);
 }
+#endif
 
 nsresult nsPluginFrame::PluginEventNotifier::Run() {
   nsCOMPtr<nsIObserverService> obsSvc = mozilla::services::GetObserverService();
@@ -1295,6 +1299,7 @@ bool nsPluginFrame::GetBounds(nsDisplayItem* aItem, IntSize& aSize,
   return true;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsPluginFrame::CreateWebRenderCommands(
     nsDisplayItem* aItem, mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -1317,11 +1322,11 @@ bool nsPluginFrame::CreateWebRenderCommands(
     return true;
   }
 
-#ifdef XP_MACOSX
+#  ifdef XP_MACOSX
   if (!mInstanceOwner->UseAsyncRendering()) {
     mInstanceOwner->DoCocoaEventDrawRect(r, nullptr);
   }
-#endif
+#  endif
 
   RefPtr<LayerManager> lm = aDisplayListBuilder->GetWidgetLayerManager();
   if (!mDidCompositeObserver || !mDidCompositeObserver->IsValid(lm)) {
@@ -1338,6 +1343,7 @@ bool nsPluginFrame::CreateWebRenderCommands(
                                        aSc, dest, dest);
   return true;
 }
+#endif
 
 already_AddRefed<Layer> nsPluginFrame::BuildLayer(
     nsDisplayListBuilder* aBuilder, LayerManager* aManager,

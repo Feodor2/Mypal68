@@ -360,9 +360,13 @@ already_AddRefed<TextureClient> DXGIYCbCrTextureAllocationHelper::Allocate(
                                     ? DXGI_FORMAT_R8_UNORM
                                     : DXGI_FORMAT_R16_UNORM,
                                 mData.mYSize.width, mData.mYSize.height, 1, 1);
+
   // WebRender requests keyed mutex
-  if (mDevice == gfx::DeviceManagerDx::Get()->GetCompositorDevice() &&
-      !gfxVars::UseWebRender()) {
+  if (mDevice == gfx::DeviceManagerDx::Get()->GetCompositorDevice()
+#ifdef MOZ_BUILD_WEBRENDER
+      && !gfxVars::UseWebRender()
+#endif
+      ) {
     newDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
   } else {
     newDesc.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;

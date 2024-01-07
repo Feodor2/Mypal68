@@ -10,12 +10,14 @@
 
 #include "base/platform_thread.h"  // for PlatformThreadId
 #include "LayersTypes.h"
-#include "APZTypes.h"
 #include "mozilla/layers/APZTestData.h"
-#include "mozilla/layers/WebRenderScrollData.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/webrender/WebRenderTypes.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "APZTypes.h"
+#  include "mozilla/layers/WebRenderScrollData.h"
+#  include "mozilla/webrender/WebRenderTypes.h"
+#endif
 #include "nsThreadUtils.h"
 #include "Units.h"
 
@@ -26,7 +28,9 @@ namespace layers {
 class APZCTreeManager;
 class FocusTarget;
 class Layer;
+#ifdef MOZ_BUILD_WEBRENDER
 class WebRenderScrollData;
+#endif
 
 /**
  * This interface is used to send updates or otherwise mutate APZ internal
@@ -39,9 +43,15 @@ class APZUpdater {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(APZUpdater)
 
  public:
-  APZUpdater(const RefPtr<APZCTreeManager>& aApz, bool aIsUsingWebRender);
+  APZUpdater(const RefPtr<APZCTreeManager>& aApz
+#ifdef MOZ_BUILD_WEBRENDER
+             ,
+             bool aIsUsingWebRender
+#endif
+  );
 
   bool HasTreeManager(const RefPtr<APZCTreeManager>& aApz);
+#ifdef MOZ_BUILD_WEBRENDER
   void SetWebRenderWindowId(const wr::WindowId& aWindowId);
 
   /**
@@ -55,13 +65,22 @@ class APZUpdater {
   static void CompleteSceneSwap(const wr::WrWindowId& aWindowId,
                                 const wr::WrPipelineInfo& aInfo);
   static void ProcessPendingTasks(const wr::WrWindowId& aWindowId);
+#endif
 
-  void ClearTree(LayersId aRootLayersId);
+  void ClearTree(
+#ifdef MOZ_BUILD_WEBRENDER
+      LayersId aRootLayersId
+#endif
+  );
   void UpdateFocusState(LayersId aRootLayerTreeId,
+#ifdef MOZ_BUILD_WEBRENDER
                         WRRootId aOriginatingWrRootId,
+#else
+                        LayersId aOriginatingLayersId,
+#endif
                         const FocusTarget& aFocusTarget);
-  void UpdateHitTestingTree(Layer* aRoot,
-                            bool aIsFirstPaint, LayersId aOriginatingLayersId,
+  void UpdateHitTestingTree(Layer* aRoot, bool aIsFirstPaint,
+                            LayersId aOriginatingLayersId,
                             uint32_t aPaintSequenceNumber);
   /**
    * This should be called (in the WR-enabled case) when the compositor receives
@@ -71,6 +90,7 @@ class APZUpdater {
    * This function will store the new scroll data and update the focus state and
    * hit-testing tree.
    */
+#ifdef MOZ_BUILD_WEBRENDER
   void UpdateScrollDataAndTreeState(WRRootId aRootLayerTreeId,
                                     WRRootId aOriginatingWrRootId,
                                     const wr::Epoch& aEpoch,
@@ -85,22 +105,51 @@ class APZUpdater {
                            WRRootId aOriginatingWrRootId,
                            ScrollUpdatesMap&& aUpdates,
                            uint32_t aPaintSequenceNumber);
+#endif
 
-  void NotifyLayerTreeAdopted(WRRootId aWrRootId,
-                              const RefPtr<APZUpdater>& aOldUpdater);
-  void NotifyLayerTreeRemoved(WRRootId aWrRootId);
+  void NotifyLayerTreeAdopted(
+#ifdef MOZ_BUILD_WEBRENDER
+      WRRootId aWrRootId,
+#else
+      LayersId aLayersId,
+#endif
+      const RefPtr<APZUpdater>& aOldUpdater);
+  void NotifyLayerTreeRemoved(
+#ifdef MOZ_BUILD_WEBRENDER
+      WRRootId aWrRootId
+#else
+      LayersId aLayersId
+#endif
+  );
 
-  bool GetAPZTestData(WRRootId aWrRootId, APZTestData* aOutData);
+  bool GetAPZTestData(
+#ifdef MOZ_BUILD_WEBRENDER
+      WRRootId aWrRootId,
+#else
+      LayersId aLayersId,
+#endif
+      APZTestData* aOutData);
 
-  void SetTestAsyncScrollOffset(WRRootId aWrRootId,
-                                const ScrollableLayerGuid::ViewID& aScrollId,
-                                const CSSPoint& aOffset);
-  void SetTestAsyncZoom(WRRootId aWrRootId,
-                        const ScrollableLayerGuid::ViewID& aScrollId,
-                        const LayerToParentLayerScale& aZoom);
+  void SetTestAsyncScrollOffset(
+#ifdef MOZ_BUILD_WEBRENDER
+      WRRootId aWrRootId,
+#else
+      LayersId aLayersId,
+#endif
+      const ScrollableLayerGuid::ViewID& aScrollId, const CSSPoint& aOffset);
+  void SetTestAsyncZoom(
+#ifdef MOZ_BUILD_WEBRENDER
+      WRRootId aWrRootId,
+#else
+      LayersId aLayersId,
+#endif
+      const ScrollableLayerGuid::ViewID& aScrollId,
+      const LayerToParentLayerScale& aZoom);
 
   // This can only be called on the updater thread.
+#ifdef MOZ_BUILD_WEBRENDER
   const WebRenderScrollData* GetScrollData(WRRootId aWrRootId) const;
+#endif
 
   /**
    * This can be used to assert that the current thread is the
@@ -125,8 +174,11 @@ class APZUpdater {
    * render roots the task is tied to so that this ordering dependency can be
    * respected.
    */
-  void RunOnUpdaterThread(UpdaterQueueSelector aSelector,
-                          already_AddRefed<Runnable> aTask);
+  void RunOnUpdaterThread(
+#ifdef MOZ_BUILD_WEBRENDER
+      UpdaterQueueSelector aSelector,
+#endif
+      already_AddRefed<Runnable> aTask);
 
   /**
    * Returns true if currently on the APZUpdater's "updater thread".
@@ -143,21 +195,27 @@ class APZUpdater {
    *
    * See the RunOnUpdaterThread method for details on the aSelector argument.
    */
-  void RunOnControllerThread(UpdaterQueueSelector aSelector,
-                             already_AddRefed<Runnable> aTask);
+  void RunOnControllerThread(
+#ifdef MOZ_BUILD_WEBRENDER
+      UpdaterQueueSelector aSelector,
+#endif
+      already_AddRefed<Runnable> aTask);
 
  protected:
   virtual ~APZUpdater();
 
+#ifdef MOZ_BUILD_WEBRENDER
   bool UsingWebRenderUpdaterThread() const;
   static already_AddRefed<APZUpdater> GetUpdater(
       const wr::WrWindowId& aWindowId);
 
   void ProcessQueue();
+#endif
 
  private:
   RefPtr<APZCTreeManager> mApz;
   bool mDestroyed;
+#ifdef MOZ_BUILD_WEBRENDER
   bool mIsUsingWebRender;
 
   // Map from WRRoot id to WebRenderScrollData. This can only be touched on
@@ -238,6 +296,7 @@ class APZUpdater {
   // is exactly one render root per task, there is no guaranteed ordering for
   // tasks with different render roots.
   std::deque<QueuedTask> mUpdaterQueue;
+#endif  // MOZ_BUILD_WEBRENDER
 };
 
 }  // namespace layers

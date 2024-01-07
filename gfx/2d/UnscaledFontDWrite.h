@@ -40,12 +40,14 @@ class UnscaledFontDWrite final : public UnscaledFont {
       uint32_t aInstanceDataLength, const FontVariation* aVariations,
       uint32_t aNumVariations) override;
 
+#ifdef MOZ_BUILD_WEBRENDER
   already_AddRefed<ScaledFont> CreateScaledFontFromWRFont(
       Float aGlyphSize, const wr::FontInstanceOptions* aOptions,
       const wr::FontInstancePlatformOptions* aPlatformOptions,
       const FontVariation* aVariations, uint32_t aNumVariations) override;
 
   bool GetWRFontDescriptor(WRFontDescriptorOutput aCb, void* aBaton) override;
+#endif
 
  private:
   RefPtr<IDWriteFontFace> mFontFace;

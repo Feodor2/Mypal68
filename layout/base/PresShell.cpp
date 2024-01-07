@@ -180,8 +180,10 @@
 #include "mozilla/GlobalStyleSheetCache.h"
 #include "mozilla/layers/InputAPZContext.h"
 #include "mozilla/layers/FocusTarget.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
-#include "mozilla/layers/WebRenderUserData.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#  include "mozilla/layers/WebRenderUserData.h"
+#endif
 #include "mozilla/layout/ScrollAnchorContainer.h"
 #include "mozilla/ServoBindings.h"
 #include "mozilla/ServoStyleSet.h"
@@ -1752,10 +1754,10 @@ nsresult PresShell::Initialize() {
       // content object down
       mFrameConstructor->ContentInserted(
           root, nsCSSFrameConstructor::InsertionKind::Sync);
-    // Run the XBL binding constructors for any new frames we've constructed.
-    // (Do this in a script runner, since our caller might have a script
-    // blocker on the stack.)
-    nsContentUtils::AddScriptRunner(new XBLConstructorRunner(mDocument));
+      // Run the XBL binding constructors for any new frames we've constructed.
+      // (Do this in a script runner, since our caller might have a script
+      // blocker on the stack.)
+      nsContentUtils::AddScriptRunner(new XBLConstructorRunner(mDocument));
     }
     // Something in mFrameConstructor->ContentInserted may have caused
     // Destroy() to get called, bug 337586.  Or, nsAutoCauseReflowNotifier
@@ -6045,9 +6047,11 @@ void PresShell::Paint(nsView* aViewToPaint, const nsRegion& aDirtyRegion,
     flags |= PaintFrameFlags::Compressed;
     mNextPaintCompressed = false;
   }
+#ifdef MOZ_BUILD_WEBRENDER
   if (layerManager->GetBackendType() == layers::LayersBackend::LAYERS_WR) {
     flags |= PaintFrameFlags::ForWebRender;
   }
+#endif
 
   if (frame) {
     // We can paint directly into the widget using its layer manager.
@@ -6056,6 +6060,7 @@ void PresShell::Paint(nsView* aViewToPaint, const nsRegion& aDirtyRegion,
     return;
   }
 
+#ifdef MOZ_BUILD_WEBRENDER
   if (layerManager->GetBackendType() == layers::LayersBackend::LAYERS_WR) {
     nsPresContext* pc = GetPresContext();
     LayoutDeviceRect bounds = LayoutDeviceRect::FromAppUnits(
@@ -6070,6 +6075,7 @@ void PresShell::Paint(nsView* aViewToPaint, const nsRegion& aDirtyRegion,
         nullptr, nullptr, std::move(wrFilters), &data);
     return;
   }
+#endif
 
   RefPtr<ColorLayer> root = layerManager->CreateColorLayer();
   if (root) {

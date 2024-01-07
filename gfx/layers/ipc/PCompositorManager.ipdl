@@ -5,7 +5,9 @@
 include protocol PCompositorBridge;
 include LayersSurfaces;
 include "mozilla/GfxMessageUtils.h";
+#ifdef MOZ_BUILD_WEBRENDER
 include "mozilla/layers/WebRenderMessageUtils.h";
+#endif
 
 using struct mozilla::void_t from "ipc/IPCMessageUtils.h";
 using mozilla::TimeDuration from "mozilla/TimeStamp.h";
@@ -13,10 +15,12 @@ using mozilla::CSSToLayoutDeviceScale from "Units.h";
 using mozilla::gfx::IntSize from "mozilla/gfx/2D.h";
 using mozilla::ipc::SharedMemoryBasic::Handle from "mozilla/ipc/SharedMemoryBasic.h";
 using mozilla::layers::CompositorOptions from "mozilla/layers/CompositorOptions.h";
+#ifdef MOZ_BUILD_WEBRENDER
 using mozilla::wr::ExternalImageId from "mozilla/webrender/WebRenderTypes.h";
 using mozilla::wr::MemoryReport from "mozilla/webrender/WebRenderTypes.h";
 using mozilla::wr::WebRenderError from "mozilla/webrender/WebRenderTypes.h";
 using mozilla::layers::SharedSurfacesMemoryReport from "mozilla/layers/SharedSurfacesMemoryReport.h";
+#endif
 
 namespace mozilla {
 namespace layers {
@@ -73,16 +77,18 @@ parent:
    */
   async PCompositorBridge(CompositorBridgeOptions options);
 
+#ifdef MOZ_BUILD_WEBRENDER
   async AddSharedSurface(ExternalImageId aId, SurfaceDescriptorShared aDesc);
   async RemoveSharedSurface(ExternalImageId aId);
   async ReportSharedSurfacesMemory() returns (SharedSurfacesMemoryReport aReport);
 
-  async NotifyMemoryPressure();
-
   async ReportMemory() returns (MemoryReport aReport);
+
+  async NotifyMemoryPressure();
 
 child:
   async NotifyWebRenderError(WebRenderError error);
+#endif
 };
 
 } // layers

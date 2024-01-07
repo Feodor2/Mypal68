@@ -81,8 +81,12 @@ class SourceSurfaceAlignedRawData : public DataSourceSurface {
   virtual SurfaceFormat GetFormat() const override { return mFormat; }
 
   void AddSizeOfExcludingThis(MallocSizeOf aMallocSizeOf, size_t& aHeapSizeOut,
-                              size_t& aNonHeapSizeOut, size_t& aExtHandlesOut,
-                              uint64_t& aExtIdOut) const override;
+                              size_t& aNonHeapSizeOut, size_t& aExtHandlesOut
+#ifdef MOZ_BUILD_WEBRENDER
+                              ,
+                              uint64_t& aExtIdOut
+#endif
+  ) const override;
 
  private:
   friend class Factory;

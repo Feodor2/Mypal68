@@ -16,9 +16,13 @@
 #include "RenderFrame.h"
 #include "mozilla/gfx/GPUProcessManager.h"
 #include "mozilla/layers/CompositorBridgeChild.h"
-#include "mozilla/layers/WebRenderLayerManager.h"
-#include "mozilla/layers/WebRenderScrollData.h"
-#include "mozilla/webrender/WebRenderAPI.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderLayerManager.h"
+#  include "mozilla/layers/WebRenderScrollData.h"
+#  include "mozilla/webrender/WebRenderAPI.h"
+#else
+#  include "BasicLayers.h"
+#endif
 
 using namespace mozilla;
 using namespace mozilla::layers;
@@ -256,6 +260,7 @@ void nsDisplayRemote::Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) {
   target->DrawDependentSurface(mTabId, destRect);
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool nsDisplayRemote::CreateWebRenderCommands(
     mozilla::wr::DisplayListBuilder& aBuilder,
     mozilla::wr::IpcResourceUpdateQueue& aResources,
@@ -295,6 +300,7 @@ bool nsDisplayRemote::UpdateScrollData(
   }
   return true;
 }
+#endif
 
 nsFrameLoader* nsDisplayRemote::GetFrameLoader() const {
   return mFrame ? static_cast<nsSubDocumentFrame*>(mFrame)->FrameLoader()

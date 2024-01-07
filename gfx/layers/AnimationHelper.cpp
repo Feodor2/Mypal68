@@ -25,7 +25,9 @@ void CompositorAnimationStorage::Clear() {
 
   mAnimatedValues.Clear();
   mAnimations.Clear();
+#ifdef MOZ_BUILD_WEBRENDER
   mAnimationRenderRoots.Clear();
+#endif
 }
 
 void CompositorAnimationStorage::ClearById(const uint64_t& aId) {
@@ -33,7 +35,9 @@ void CompositorAnimationStorage::ClearById(const uint64_t& aId) {
 
   mAnimatedValues.Remove(aId);
   mAnimations.Remove(aId);
+#ifdef MOZ_BUILD_WEBRENDER
   mAnimationRenderRoots.Remove(aId);
+#endif
 }
 
 AnimatedValue* CompositorAnimationStorage::GetAnimatedValue(
@@ -119,11 +123,17 @@ void CompositorAnimationStorage::SetAnimatedValue(uint64_t aId,
 }
 
 void CompositorAnimationStorage::SetAnimations(uint64_t aId,
-                                               const AnimationArray& aValue,
-                                               wr::RenderRoot aRenderRoot) {
+                                               const AnimationArray& aValue
+#ifdef MOZ_BUILD_WEBRENDER
+                                               ,
+                                               wr::RenderRoot aRenderRoot
+#endif
+) {
   MOZ_ASSERT(CompositorThreadHolder::IsInCompositorThread());
   mAnimations.Put(aId, AnimationHelper::ExtractAnimations(aValue));
+#ifdef MOZ_BUILD_WEBRENDER
   mAnimationRenderRoots.Put(aId, aRenderRoot);
+#endif
 }
 
 enum class CanSkipCompose {
@@ -577,6 +587,7 @@ uint64_t AnimationHelper::GetNextCompositorAnimationsId() {
   return nextId;
 }
 
+#ifdef MOZ_BUILD_WEBRENDER
 bool AnimationHelper::SampleAnimations(CompositorAnimationStorage* aStorage,
                                        TimeStamp aPreviousFrameTime,
                                        TimeStamp aCurrentFrameTime) {
@@ -657,6 +668,7 @@ bool AnimationHelper::SampleAnimations(CompositorAnimationStorage* aStorage,
 
   return isAnimating;
 }
+#endif
 
 gfx::Matrix4x4 AnimationHelper::ServoAnimationValueToMatrix4x4(
     const nsTArray<RefPtr<RawServoAnimationValue>>& aValues,

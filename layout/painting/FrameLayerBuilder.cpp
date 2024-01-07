@@ -47,7 +47,9 @@
 #include "mozilla/layers/ShadowLayers.h"
 #include "mozilla/layers/TextureClient.h"
 #include "mozilla/layers/TextureWrapperImage.h"
-#include "mozilla/layers/WebRenderUserData.h"
+#ifdef MOZ_BUILD_WEBRENDER
+#  include "mozilla/layers/WebRenderUserData.h"
+#endif
 #include "mozilla/Unused.h"
 #include "GeckoProfiler.h"
 #include "LayersLogging.h"
@@ -63,7 +65,6 @@ using namespace mozilla::layers;
 using namespace mozilla::gfx;
 using mozilla::UniquePtr;
 using mozilla::WrapUnique;
-
 
 // PaintedLayerData::mAssignedDisplayItems is a std::vector, which is
 // non-memmovable
@@ -517,6 +518,7 @@ void FrameLayerBuilder::DestroyDisplayItemDataFor(nsIFrame* aFrame) {
   RemoveFrameFromLayerManager(aFrame, aFrame->DisplayItemData());
   aFrame->DisplayItemData().Clear();
 
+#ifdef MOZ_BUILD_WEBRENDER
   // Destroying a WebRenderUserDataTable can cause destruction of other objects
   // which can remove frame properties in their destructor. If we delete a frame
   // property it runs the destructor of the stored object in the middle of
@@ -532,6 +534,7 @@ void FrameLayerBuilder::DestroyDisplayItemDataFor(nsIFrame* aFrame) {
     }
     delete userDataTable;
   }
+#endif
 }
 
 /**
@@ -2339,11 +2342,13 @@ bool FrameLayerBuilder::HasRetainedDataFor(nsIFrame* aFrame,
       return true;
     }
   }
+#ifdef MOZ_BUILD_WEBRENDER
   if (RefPtr<WebRenderUserData> data =
           GetWebRenderUserData<WebRenderFallbackData>(aFrame,
                                                       aDisplayItemKey)) {
     return true;
   }
+#endif
   return false;
 }
 
@@ -5916,7 +5921,7 @@ void ContainerState::Finish(uint32_t* aTextContentFlags,
   mPaintedLayerDataTree.Finish();
 
   NS_ASSERTION(mContainerBounds.IsEqualInterior(mAccumulatedChildBounds),
-                "Bounds computation mismatch");
+               "Bounds computation mismatch");
 
   if (mLayerBuilder->IsBuildingRetainedLayers()) {
     nsIntRegion containerOpaqueRegion;
@@ -7306,11 +7311,13 @@ nsDisplayItemGeometry* FrameLayerBuilder::GetMostRecentGeometry(
   if (firstMatching) {
     return firstMatching->GetGeometry();
   }
+#ifdef MOZ_BUILD_WEBRENDER
   if (RefPtr<WebRenderFallbackData> data =
           GetWebRenderUserData<WebRenderFallbackData>(aItem->Frame(),
                                                       itemPerFrameKey)) {
     return data->GetGeometry();
   }
+#endif
 
   return nullptr;
 }

@@ -121,24 +121,19 @@ def read_ini(fp, variables=None, default='DEFAULT', defaults_only=False,
                 value = value.strip()
                 key_indent = line_indent
 
+                # make sure this key isn't already in the section
+                if key and current_section is not variables:
+                    assert key not in current_section
+
                 if strict:
-                    # make sure this key isn't already in the section or empty
+                    # make sure this key isn't empty
                     assert key
-                    if current_section is not variables:
-                        assert key not in current_section
 
                 current_section[key] = value
                 break
         else:
             # something bad happened!
             raise IniParseError(fp, linenum, "Unexpected line '{}'".format(stripped))
-
-    # server-root is a special os path declared relative to the manifest file.
-    # inheritance demands we expand it as absolute
-    if 'server-root' in variables:
-        root = os.path.join(os.path.dirname(fp.name),
-                            variables['server-root'])
-        variables['server-root'] = os.path.abspath(root)
 
     # return the default section only if requested
     if defaults_only:

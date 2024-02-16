@@ -117,7 +117,6 @@ SpecialPowersObserverAPI.prototype = {
         aSubject = aSubject.QueryInterface(Ci.nsIPropertyBag2);
         if (aTopic == "plugin-crashed") {
           addDumpIDToMessage("pluginDumpID");
-          addDumpIDToMessage("browserDumpID");
 
           let pluginID = aSubject.getPropertyAsAString("pluginDumpID");
           let extra = this._getExtraData(pluginID);

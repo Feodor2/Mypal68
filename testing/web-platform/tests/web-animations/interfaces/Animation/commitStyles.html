@@ -128,7 +128,23 @@ test(t => {
   div.style.setProperty('--target', '1');
 
   assert_numeric_style_equals(getComputedStyle(div).opacity, 0.5);
-}, 'Commits variables as their computed values');
+}, 'Commits variable references as their computed values');
+
+
+test(t => {
+  const div = createDiv(t);
+  div.style.setProperty('--target', '0.5');
+  div.style.opacity = 'var(--target)';
+  const animation = div.animate(
+    { '--target': 0.8 },
+    { duration: 1, fill: 'forwards' }
+  );
+  animation.finish();
+  animation.commitStyles();
+  animation.cancel();
+
+  assert_numeric_style_equals(getComputedStyle(div).opacity, 0.8);
+}, 'Commits custom variables');
 
 test(t => {
   const div = createDiv(t);
@@ -276,7 +292,7 @@ test(t => {
     { duration: 1, fill: 'forwards', pseudoElement: '::before' }
   );
 
-  assert_throws('NoModificationAllowedError', () => {
+  assert_throws_dom('NoModificationAllowedError', () => {
     animation.commitStyles();
   });
 }, 'Throws if the target element is a pseudo element');
@@ -292,7 +308,7 @@ test(t => {
   document.body.appendChild(nonStyleElement);
   animation.effect.target = nonStyleElement;
 
-  assert_throws('NoModificationAllowedError', () => {
+  assert_throws_dom('NoModificationAllowedError', () => {
     animation.commitStyles();
   });
 
@@ -308,7 +324,7 @@ test(t => {
 
   div.style.display = 'none';
 
-  assert_throws('InvalidStateError', () => {
+  assert_throws_dom('InvalidStateError', () => {
     animation.commitStyles();
   });
 }, 'Throws if the target effect is display:none');
@@ -325,7 +341,7 @@ test(t => {
 
   container.style.display = 'none';
 
-  assert_throws('InvalidStateError', () => {
+  assert_throws_dom('InvalidStateError', () => {
     animation.commitStyles();
   });
 }, "Throws if the target effect's ancestor is display:none");
@@ -359,7 +375,7 @@ test(t => {
   div.style.display = 'contents';
   container.style.display = 'none';
 
-  assert_throws('InvalidStateError', () => {
+  assert_throws_dom('InvalidStateError', () => {
     animation.commitStyles();
   });
 }, 'Treats display:contents in a display:none subtree as not rendered');
@@ -373,7 +389,7 @@ test(t => {
 
   div.remove();
 
-  assert_throws('InvalidStateError', () => {
+  assert_throws_dom('InvalidStateError', () => {
     animation.commitStyles();
   });
 }, 'Throws if the target effect is disconnected');
@@ -388,7 +404,7 @@ test(t => {
 
   div.remove();
 
-  assert_throws('NoModificationAllowedError', () => {
+  assert_throws_dom('NoModificationAllowedError', () => {
     animation.commitStyles();
   });
 }, 'Checks the pseudo element condition before the not rendered condition');

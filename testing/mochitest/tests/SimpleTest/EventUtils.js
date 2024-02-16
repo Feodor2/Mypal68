@@ -261,7 +261,7 @@ function sendDragEvent(aEvent, aTarget, aWindow = window) {
   }
 
   var utils = _getDOMWindowUtils(aWindow);
-  return utils.dispatchDOMEventViaPresShell(aTarget, event);
+  return utils.dispatchDOMEventViaPresShellForTesting(aTarget, event);
 }
 
 /**
@@ -2207,18 +2207,23 @@ function createDragEventObject(aType, aDestElement, aDestWindow, aDataTransfer,
   }
 
   // Wrap only in plain mochitests
-  let dataTransfer = _EU_maybeUnwrap(_EU_maybeWrap(aDataTransfer).mozCloneForEvent(aType));
+  let dataTransfer;
+  if (aDataTransfer) {
+    dataTransfer = _EU_maybeUnwrap(
+      _EU_maybeWrap(aDataTransfer).mozCloneForEvent(aType)
+    );
 
-  // Copy over the drop effect. This isn't copied over by Clone, as it uses more
-  // complex logic in the actual implementation (see
-  // nsContentUtils::SetDataTransferInEvent for actual impl).
-  dataTransfer.dropEffect = aDataTransfer.dropEffect;
+    // Copy over the drop effect. This isn't copied over by Clone, as it uses
+    // more complex logic in the actual implementation (see
+    // nsContentUtils::SetDataTransferInEvent for actual impl).
+    dataTransfer.dropEffect = aDataTransfer.dropEffect;
+  }
 
   return Object.assign({
     type: aType,
     screenX: destScreenX, screenY: destScreenY,
     clientX: destClientX, clientY: destClientY,
-    dataTransfer: dataTransfer,
+    dataTransfer,
     _domDispatchOnly: aDragEvent._domDispatchOnly,
   }, aDragEvent);
 }
@@ -2374,7 +2379,24 @@ function synthesizeDrop(aSrcElement, aDestElement, aDragData, aDropEffect, aWind
   var ds = _EU_Cc["@mozilla.org/widget/dragservice;1"]
            .getService(_EU_Ci.nsIDragService);
 
-  ds.startDragSession();
+  let dropAction;
+  switch (aDropEffect) {
+    case null:
+    case undefined:
+    case "move":
+      dropAction = _EU_Ci.nsIDragService.DRAGDROP_ACTION_MOVE;
+      break;
+    case "copy":
+      dropAction = _EU_Ci.nsIDragService.DRAGDROP_ACTION_COPY;
+      break;
+    case "link":
+      dropAction = _EU_Ci.nsIDragService.DRAGDROP_ACTION_LINK;
+      break;
+    default:
+      throw new Error(`${aDropEffect} is an invalid drop effect value`);
+  }
+
+  ds.startDragSessionForTests(dropAction);
 
   try {
     var [result, dataTransfer] = synthesizeDragOver(aSrcElement, aDestElement,
@@ -2393,14 +2415,23 @@ function synthesizeDrop(aSrcElement, aDestElement, aDragData, aDropEffect, aWind
  * and firing events dragenter, dragover, drop, and dragend.
  * This does not modify dataTransfer and tries to emulate the plain drag and
  * drop as much as possible, compared to synthesizeDrop.
+ * Note that if synthesized dragstart is canceled, this throws an exception
+ * because in such case, Gecko does not start drag session.
  *
  * @param aParams
  *        {
- *          srcElement:   The element to start dragging
+ *          dragEvent:    The DnD events will be generated with modifiers
+ *                        specified with this.
+ *          srcElement:   The element to start dragging.  If srcSelection is
+ *                        set, this is computed for element at focus node.
+ *          srcSelection: The selection to start to drag, set null if
+ *                        srcElement is set.
  *          destElement:  The element to drop on. Pass null to emulate
  *                        a drop on an invalid target.
- *          srcX:         The initial x coordinate inside srcElement
- *          srcY:         The initial y coordinate inside srcElement
+ *          srcX:         The initial x coordinate inside srcElement or
+ *                        ignored if srcSelection is set.
+ *          srcY:         The initial y coordinate inside srcElement or
+ *                        ignored if srcSelection is set.
  *          stepX:        The x-axis step for mousemove inside srcElement
  *          stepY:        The y-axis step for mousemove inside srcElement
  *          finalX:       The final x coordinate inside srcElement
@@ -2409,12 +2440,16 @@ function synthesizeDrop(aSrcElement, aDestElement, aDragData, aDropEffect, aWind
  *                        defaults to the current window object
  *          destWindow:   The window for dispatching event on destElement,
  *                        defaults to the current window object
+ *          expectCancelDragStart:  Set to true if the test cancels "dragstart"
+ *          logFunc:      Set function which takes one argument if you need
+ *                        to log rect of target.  E.g., `console.log`.
  *        }
  */
-async function synthesizePlainDragAndDrop(aParams)
-{
+async function synthesizePlainDragAndDrop(aParams) {
   let {
+    dragEvent = {},
     srcElement,
+    srcSelection,
     destElement,
     srcX = 2,
     srcY = 2,
@@ -2424,72 +2459,348 @@ async function synthesizePlainDragAndDrop(aParams)
     finalY = srcY + stepY * 2,
     srcWindow = window,
     destWindow = window,
+    expectCancelDragStart = false,
+    logFunc,
   } = aParams;
+  // Don't modify given dragEvent object because we modify dragEvent below and
+  // callers may use the object multiple times so that callers must not assume
+  // that it'll be modified.
+  if (aParams.dragEvent !== undefined) {
+    dragEvent = Object.assign({}, aParams.dragEvent);
+  }
 
-  const ds = _EU_Cc["@mozilla.org/widget/dragservice;1"]
-        .getService(_EU_Ci.nsIDragService);
-  ds.startDragSession();
+  function rectToString(aRect) {
+    return `left: ${aRect.left}, top: ${aRect.top}, right: ${
+      aRect.right
+    }, bottom: ${aRect.bottom}`;
+  }
+
+  if (logFunc) {
+    logFunc("synthesizePlainDragAndDrop() -- START");
+  }
+
+  if (srcSelection) {
+    srcElement = srcSelection.focusNode;
+    while (_EU_maybeWrap(srcElement).isNativeAnonymous) {
+      srcElement = _EU_maybeUnwrap(
+        _EU_maybeWrap(srcElement).flattenedTreeParentNode
+      );
+    }
+    if (srcElement.nodeType !== Node.NODE_TYPE_ELEMENT) {
+      srcElement = srcElement.parentElement;
+    }
+    let srcElementRect = srcElement.getBoundingClientRect();
+    if (logFunc) {
+      logFunc(
+        `srcElement.getBoundingClientRect(): ${rectToString(srcElementRect)}`
+      );
+    }
+    // Use last selection client rect because nsIDragSession.sourceNode is
+    // initialized from focus node which is usually in last rect.
+    let selectionRectList = srcSelection.getRangeAt(0).getClientRects();
+    let lastSelectionRect = selectionRectList[selectionRectList.length - 1];
+    if (logFunc) {
+      logFunc(
+        `srcSelection.getRangeAt(0).getClientRects()[${selectionRectList.length -
+          1}]: ${rectToString(lastSelectionRect)}`
+      );
+    }
+    // Click at center of last selection rect.
+    srcX = Math.floor(
+      lastSelectionRect.left + lastSelectionRect.width / 2
+    );
+    srcY = Math.floor(
+      lastSelectionRect.top + lastSelectionRect.height / 2
+    );
+    // Then, adjust srcX and srcY for making them offset relative to
+    // srcElementRect because they will be used when we call synthesizeMouse()
+    // with srcElement.
+    srcX = Math.floor(
+      srcX - srcElementRect.left
+    );
+    srcY = Math.floor(
+      srcY - srcElementRect.top
+    );
+    // Finally, recalculate finalX and finalY with new srcX and srcY if they
+    // are not specified by the caller.
+    if (aParams.finalX === undefined) {
+      finalX = srcX + stepX * 2;
+    }
+    if (aParams.finalY === undefined) {
+      finalY = srcY + stepY * 2;
+    }
+  } else if (logFunc) {
+    logFunc(
+      `srcElement.getBoundingClientRect(): ${rectToString(
+        srcElement.getBoundingClientRect()
+      )}`
+    );
+  }
+
+  const ds = _EU_Cc["@mozilla.org/widget/dragservice;1"].getService(
+    _EU_Ci.nsIDragService
+  );
 
   try {
-    let dataTransfer = null;
-    function trapDrag(aEvent) {
-      dataTransfer = aEvent.dataTransfer;
-    }
-    srcElement.addEventListener("dragstart", trapDrag, true);
+    _getDOMWindowUtils().disableNonTestMouseEvents(true);
+
+    await new Promise(r => setTimeout(r, 0));
+
     synthesizeMouse(srcElement, srcX, srcY, { type: "mousedown" }, srcWindow);
+    if (logFunc) {
+      logFunc(`mousedown at ${srcX}, ${srcY}`);
+    }
 
-    // Wait for the next event tick after each event dispatch, so that UI elements
-    // (e.g. menu) work like the real user input.
-    await new Promise(r => setTimeout(r, 0));
+    let dragStartEvent;
+    function onDragStart(aEvent) {
+      dragStartEvent = aEvent;
+      if (logFunc) {
+        logFunc(`"${aEvent.type}" event is fired`);
+      }
+      if (!srcElement.contains(aEvent.target)) {
+        // If srcX and srcY does not point in one of rects in srcElement,
+        // "dragstart" target is not in srcElement.  Such case must not
+        // be expected by this API users so that we should throw an exception
+        // for making debug easier.
+        throw new Error(
+          'event target of "dragstart" is not srcElement nor its descendant'
+        );
+      }
+    }
+    let dragEnterEvent;
+    function onDragEnterGenerated(aEvent) {
+      dragEnterEvent = aEvent;
+    }
+    srcWindow.addEventListener("dragstart", onDragStart, { capture: true });
+    srcWindow.addEventListener("dragenter", onDragEnterGenerated, {
+      capture: true,
+    });
+    try {
+      // Wait for the next event tick after each event dispatch, so that UI
+      // elements (e.g. menu) work like the real user input.
+      await new Promise(r => setTimeout(r, 0));
 
-    srcX += stepX; srcY += stepY;
-    synthesizeMouse(srcElement, srcX, srcY, { type: "mousemove" }, srcWindow);
-
-    await new Promise(r => setTimeout(r, 0));
-
-    srcX += stepX; srcY += stepY;
-    synthesizeMouse(srcElement, srcX, srcY, { type: "mousemove" }, srcWindow);
-
-    await new Promise(r => setTimeout(r, 0));
-
-    srcElement.removeEventListener("dragstart", trapDrag, true);
-
-    await new Promise(r => setTimeout(r, 0));
-
-    let event;
-    if (destElement) {
-      // dragover and drop are only fired to a valid drop target. If the
-      // destElement parameter is null, this function is being used to
-      // simulate a drag'n'drop over an invalid drop target.
-      event = createDragEventObject("dragover", destElement, destWindow,
-                                        dataTransfer, {});
-      sendDragEvent(event, destElement, destWindow);
+      srcX += stepX;
+      srcY += stepY;
+      synthesizeMouse(srcElement, srcX, srcY, { type: "mousemove" }, srcWindow);
+      if (logFunc) {
+        logFunc(`first mousemove at ${srcX}, ${srcY}`);
+      }
 
       await new Promise(r => setTimeout(r, 0));
 
-      event = createDragEventObject("drop", destElement, destWindow,
-                                    dataTransfer, {});
-      sendDragEvent(event, destElement, destWindow);
+      srcX += stepX;
+      srcY += stepY;
+      synthesizeMouse(srcElement, srcX, srcY, { type: "mousemove" }, srcWindow);
+      if (logFunc) {
+        logFunc(`second mousemove at ${srcX}, ${srcY}`);
+      }
+
+      await new Promise(r => setTimeout(r, 0));
+
+      if (!dragStartEvent) {
+        throw new Error('"dragstart" event is not fired');
+      }
+    } finally {
+      srcWindow.removeEventListener("dragstart", onDragStart, {
+        capture: true,
+      });
+      srcWindow.removeEventListener("dragenter", onDragEnterGenerated, {
+        capture: true,
+      });
     }
 
-    // dragend is fired, by definition, on the srcElement
-    event = createDragEventObject("dragend", srcElement, srcWindow,
-                                  dataTransfer, {clientX: finalX, clientY: finalY});
-    sendDragEvent(event, srcElement, srcWindow);
+    let session = ds.getCurrentSession();
+    if (!session) {
+      if (expectCancelDragStart) {
+        synthesizeMouse(srcElement, srcX, srcY, { type: "mouseup" }, srcWindow);
+        return;
+      }
+      throw new Error("drag hasn't been started by the operation");
+    } else if (expectCancelDragStart) {
+      throw new Error("drag has been started by the operation");
+    }
 
+    if (destElement) {
+      if (
+        (srcElement != destElement && !dragEnterEvent) ||
+        destElement != dragEnterEvent.target
+      ) {
+        if (logFunc) {
+          logFunc(
+            `destElement.getBoundingClientRect(): ${rectToString(
+              destElement.getBoundingClientRect()
+            )}`
+          );
+        }
+
+        function onDragEnter(aEvent) {
+          dragEnterEvent = aEvent;
+          if (logFunc) {
+            logFunc(`"${aEvent.type}" event is fired`);
+          }
+          if (aEvent.target != destElement) {
+            throw new Error('event target of "dragenter" is not destElement');
+          }
+        }
+        destWindow.addEventListener("dragenter", onDragEnter, {
+          capture: true,
+        });
+        try {
+          let event = createDragEventObject(
+            "dragenter",
+            destElement,
+            destWindow,
+            null,
+            dragEvent
+          );
+          sendDragEvent(event, destElement, destWindow);
+          if (!dragEnterEvent && !destElement.disabled) {
+            throw new Error('"dragenter" event is not fired');
+          }
+          if (dragEnterEvent && destElement.disabled) {
+            throw new Error(
+              '"dragenter" event should not be fired on disable element'
+            );
+          }
+        } finally {
+          destWindow.removeEventListener("dragenter", onDragEnter, {
+            capture: true,
+          });
+        }
+      }
+
+      let dragOverEvent;
+      function onDragOver(aEvent) {
+        dragOverEvent = aEvent;
+        if (logFunc) {
+          logFunc(`"${aEvent.type}" event is fired`);
+        }
+        if (aEvent.target != destElement) {
+          throw new Error('event target of "dragover" is not destElement');
+        }
+      }
+      destWindow.addEventListener("dragover", onDragOver, { capture: true });
+      try {
+        // dragover and drop are only fired to a valid drop target. If the
+        // destElement parameter is null, this function is being used to
+        // simulate a drag'n'drop over an invalid drop target.
+        let event = createDragEventObject(
+          "dragover",
+          destElement,
+          destWindow,
+          null,
+          dragEvent
+        );
+        sendDragEvent(event, destElement, destWindow);
+        if (!dragOverEvent && !destElement.disabled) {
+          throw new Error('"dragover" event is not fired');
+        }
+        if (dragEnterEvent && destElement.disabled) {
+          throw new Error(
+            '"dragover" event should not be fired on disable element'
+          );
+        }
+      } finally {
+        destWindow.removeEventListener("dragover", onDragOver, {
+          capture: true,
+        });
+      }
+
+      await new Promise(r => setTimeout(r, 0));
+
+      // If there is not accept to drop the data, "drop" event shouldn't be
+      // fired.
+      // XXX nsIDragSession.canDrop is different only on Linux.  It must be
+      //     a bug of gtk/nsDragService since it manages `mCanDrop` by itself.
+      //     Thus, we should use nsIDragSession.dragAction instead.
+      if (session.dragAction != _EU_Ci.nsIDragService.DRAGDROP_ACTION_NONE) {
+        let dropEvent;
+        function onDrop(aEvent) {
+          dropEvent = aEvent;
+          if (logFunc) {
+            logFunc(`"${aEvent.type}" event is fired`);
+          }
+          if (!destElement.contains(aEvent.target)) {
+            throw new Error(
+              'event target of "drop" is not destElement nor its descendant'
+            );
+          }
+        }
+        destWindow.addEventListener("drop", onDrop, { capture: true });
+        try {
+          let event = createDragEventObject(
+            "drop",
+            destElement,
+            destWindow,
+            null,
+            dragEvent
+          );
+          sendDragEvent(event, destElement, destWindow);
+          if (!dropEvent && session.canDrop) {
+            throw new Error('"drop" event is not fired');
+          }
+        } finally {
+          destWindow.removeEventListener("drop", onDrop, { capture: true });
+        }
+        return;
+      };
+    }
+
+    // Since we don't synthesize drop event, we need to set drag end point
+    // explicitly for "dragEnd" event which will be fired by
+    // endDragSession().
+    dragEvent.clientX = finalX;
+    dragEvent.clientY = finalY;
+    let event = createDragEventObject(
+      "dragend",
+      destElement || srcElement,
+      destElement ? srcWindow : destWindow,
+      null,
+      dragEvent
+    );
+    session.setDragEndPointForTests(event.screenX, event.screenY);
+  } finally {
     await new Promise(r => setTimeout(r, 0));
 
-  } finally {
-    ds.endDragSession(true, 0);
+    if (ds.getCurrentSession()) {
+      let dragEndEvent;
+      function onDragEnd(aEvent) {
+        dragEndEvent = aEvent;
+        if (logFunc) {
+          logFunc(`"${aEvent.type}" event is fired`);
+        }
+        if (!srcElement.contains(aEvent.target)) {
+          throw new Error(
+            'event target of "dragend" is not srcElement not its descendant'
+          );
+        }
+      }
+      srcWindow.addEventListener("dragend", onDragEnd, { capture: true });
+      try {
+        ds.endDragSession(true, _parseModifiers(dragEvent));
+        if (!dragEndEvent) {
+          // eslint-disable-next-line no-unsafe-finally
+          throw new Error(
+            '"dragend" event is not fired by nsIDragService.endDragSession()'
+          );
+        }
+      } finally {
+        srcWindow.removeEventListener("dragend", onDragEnd, { capture: true });
+      }
+    }
+    _getDOMWindowUtils().disableNonTestMouseEvents(false);
+    if (logFunc) {
+      logFunc("synthesizePlainDragAndDrop() -- END");
+    }
   }
 }
 
-var PluginUtils =
-{
-  withTestPlugin : function(callback)
-  {
-    var ph = _EU_Cc["@mozilla.org/plugin/host;1"]
-             .getService(_EU_Ci.nsIPluginHost);
+var PluginUtils = {
+  withTestPlugin: function(callback) {
+    var ph = _EU_Cc["@mozilla.org/plugin/host;1"].getService(
+      _EU_Ci.nsIPluginHost
+    );
     var tags = ph.getPluginTags();
 
     // Find the test plugin

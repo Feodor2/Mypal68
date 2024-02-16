@@ -2484,8 +2484,23 @@ SpecialPowersAPI.prototype = {
     });
   },
 
-  doCommand(window, cmd) {
-    return this._getDocShell(window).doCommand(cmd);
+  doCommand(window, cmd, param) {
+    switch (cmd) {
+      case "cmd_align":
+      case "cmd_backgroundColor":
+      case "cmd_fontColor":
+      case "cmd_fontFace":
+      case "cmd_fontSize":
+      case "cmd_highlight":
+      case "cmd_insertImageNoUI":
+      case "cmd_insertLinkNoUI":
+      case "cmd_paragraphState":
+        let params = Cu.createCommandParams();
+        params.setStringValue("state_attribute", param);
+        return this._getDocShell(window).doCommandWithParams(cmd, params);
+      default:
+        return this._getDocShell(window).doCommand(cmd);
+    }
   },
 
   isCommandEnabled(window, cmd) {

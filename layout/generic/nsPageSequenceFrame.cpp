@@ -6,6 +6,7 @@
 
 #include "mozilla/PresShell.h"
 #include "mozilla/dom/HTMLCanvasElement.h"
+#include "mozilla/StaticPresData.h"
 
 #include "DateTimeFormat.h"
 #include "nsCOMPtr.h"
@@ -13,6 +14,8 @@
 #include "nsPresContext.h"
 #include "gfxContext.h"
 #include "nsGkAtoms.h"
+#include "nsIFrame.h"
+#include "nsIFrameInlines.h"
 #include "nsIPrintSettings.h"
 #include "nsPageFrame.h"
 #include "nsSubDocumentFrame.h"
@@ -271,8 +274,8 @@ void nsPageSequenceFrame::Reflow(nsPresContext* aPresContext,
       // The page isn't complete and it doesn't have a next-in-flow, so
       // create a continuing page.
       nsIFrame* continuingPage =
-          aPresContext->PresShell()->FrameConstructor()->CreateContinuingFrame(
-              aPresContext, kidFrame, this);
+          PresShell()->FrameConstructor()->CreateContinuingFrame(kidFrame,
+                                                                 this);
 
       // Add it to our child list
       mFrames.InsertFrame(nullptr, kidFrame, continuingPage);
@@ -400,12 +403,8 @@ static void GetPrintCanvasElementsInFrame(
   if (!aFrame) {
     return;
   }
-  for (nsIFrame::ChildListIterator childLists(aFrame); !childLists.IsDone();
-       childLists.Next()) {
-    nsFrameList children = childLists.CurrentList();
-    for (nsFrameList::Enumerator e(children); !e.AtEnd(); e.Next()) {
-      nsIFrame* child = e.get();
-
+  for (const auto& childList : aFrame->ChildLists()) {
+    for (nsIFrame* child : childList.mList) {
       // Check if child is a nsHTMLCanvasFrame.
       nsHTMLCanvasFrame* canvasFrame = do_QueryFrame(child);
 
@@ -557,6 +556,14 @@ nsresult nsPageSequenceFrame::PrePrintNextPage(nsITimerCallback* aCallback,
         ctx->InitializeWithDrawTarget(nullptr, WrapNotNull(canvasTarget));
 
         // Start the rendering process.
+        // Note: Other than drawing to our CanvasRenderingContext2D, the
+        // callback cannot access or mutate our static clone document.  It is
+        // evaluated in its original context (the window of the original
+        // document) of course, and our canvas has a strong ref to the
+        // original HTMLCanvasElement (in mOriginalCanvas) so that if the
+        // callback calls GetCanvas() on our CanvasRenderingContext2D (passed
+        // to it via a MozCanvasPrintState argument) it will be given the
+        // original 'canvas' element.
         AutoWeakFrame weakFrame = this;
         canvas->DispatchPrintCallback(aCallback);
         NS_ENSURE_STATE(weakFrame.IsAlive());
@@ -689,7 +696,7 @@ void nsPageSequenceFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 
   content.AppendNewToTop<nsDisplayTransform>(aBuilder, this, &content,
-                                             content.GetBuildingRect(), 0,
+                                             content.GetBuildingRect(),
                                              ::ComputePageSequenceTransform);
 
   aLists.Content()->AppendToTop(&content);

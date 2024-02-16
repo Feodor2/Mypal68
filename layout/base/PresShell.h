@@ -549,6 +549,12 @@ class PresShell final : public nsStubDocumentObserver,
 
   void ClearFrameRefs(nsIFrame* aFrame);
 
+  // Clears the selection of the older focused frame selection if any.
+  void FrameSelectionWillTakeFocus(nsFrameSelection&);
+
+  // Clears and repaint mFocusedFrameSelection if it matches the argument.
+  void FrameSelectionWillLoseFocus(nsFrameSelection&);
+
   /**
    * Get a reference rendering context. This is a context that should not
    * be rendered to, but is suitable for measuring text and performing
@@ -614,22 +620,10 @@ class PresShell final : public nsStubDocumentObserver,
   dom::Selection* GetCurrentSelection(SelectionType aSelectionType);
 
   /**
-   * Gets a selection controller for the focused content in the DOM window
-   * for mDocument.
-   *
-   * @param aFocusedContent     If there is focused content in the DOM window,
-   *                            the focused content will be returned.  This may
-   *                            be nullptr if it's not necessary.
-   * @return                    A selection controller for focused content.
-   *                            E.g., if an <input> element has focus, returns
-   *                            the independent selection controller of it.
-   *                            If the DOM window does not have focused content
-   *                            (similar to Document.activeElement), returns
-   *                            nullptr.
+   * Gets the last selection that took focus in this document. This is basically
+   * the frame selection that's visible to the user.
    */
-  already_AddRefed<nsISelectionController>
-  GetSelectionControllerForFocusedContent(
-      nsIContent** aFocusedContent = nullptr);
+  nsFrameSelection* GetLastFocusedFrameSelection();
 
   /**
    * Interface to dispatch events via the presshell
@@ -715,16 +709,6 @@ class PresShell final : public nsStubDocumentObserver,
    * Unsuppress painting.
    */
   void UnsuppressPainting();
-
-  /**
-   * Add an override style sheet for this presentation
-   */
-  nsresult AddOverrideStyleSheet(StyleSheet* aSheet);
-
-  /**
-   * Remove an override style sheet
-   */
-  nsresult RemoveOverrideStyleSheet(StyleSheet* aSheet);
 
   /**
    * Reconstruct frames for all elements in the document
@@ -1263,6 +1247,8 @@ class PresShell final : public nsStubDocumentObserver,
                                      SelectionRegion aRegion,
                                      int16_t aFlags) override;
   NS_IMETHOD RepaintSelection(RawSelectionType aRawSelectionType) override;
+  void SelectionWillTakeFocus() override;
+  void SelectionWillLoseFocus() override;
 
   /**
    * Set a "resolution" for the document, which if not 1.0 will
@@ -1325,11 +1311,10 @@ class PresShell final : public nsStubDocumentObserver,
    * by the frames.  Visual effects may not effect layout, only display.
    * Takes effect on next repaint, does not force a repaint itself.
    *
-   * @param aInEnable  if true, visual selection effects are enabled
-   *                   if false visual selection effects are disabled
+   * @param aFlags may be multiple of nsISelectionDisplay::DISPLAY_*.
    */
-  NS_IMETHOD SetSelectionFlags(int16_t aInEnable) override;
-  NS_IMETHOD GetSelectionFlags(int16_t* aOutEnable) override;
+  NS_IMETHOD SetSelectionFlags(int16_t aFlags) override;
+  NS_IMETHOD GetSelectionFlags(int16_t* aFlags) override;
 
   /**
    * Gets the current state of non text selection effects
@@ -1343,10 +1328,7 @@ class PresShell final : public nsStubDocumentObserver,
   NS_IMETHOD PhysicalMove(int16_t aDirection, int16_t aAmount,
                           bool aExtend) override;
   NS_IMETHOD CharacterMove(bool aForward, bool aExtend) override;
-  NS_IMETHOD CharacterExtendForDelete() override;
-  NS_IMETHOD CharacterExtendForBackspace() override;
   NS_IMETHOD WordMove(bool aForward, bool aExtend) override;
-  NS_IMETHOD WordExtendForDelete(bool aForward) override;
   NS_IMETHOD LineMove(bool aForward, bool aExtend) override;
   NS_IMETHOD IntraLineMove(bool aForward, bool aExtend) override;
   MOZ_CAN_RUN_SCRIPT
@@ -1356,7 +1338,6 @@ class PresShell final : public nsStubDocumentObserver,
   NS_IMETHOD ScrollCharacter(bool aRight) override;
   NS_IMETHOD CompleteScroll(bool aForward) override;
   NS_IMETHOD CompleteMove(bool aForward, bool aExtend) override;
-  NS_IMETHOD SelectAll() override;
   NS_IMETHOD CheckVisibility(nsINode* node, int16_t startOffset,
                              int16_t EndOffset, bool* _retval) override;
   nsresult CheckVisibilityContent(nsIContent* aNode, int16_t aStartOffset,
@@ -1805,7 +1786,6 @@ class PresShell final : public nsStubDocumentObserver,
   void AddUserSheet(StyleSheet*);
   void AddAgentSheet(StyleSheet*);
   void AddAuthorSheet(StyleSheet*);
-  void RemoveSheet(StyleOrigin, StyleSheet*);
   void RemovePreferenceStyles();
 
   /**
@@ -1889,7 +1869,7 @@ class PresShell final : public nsStubDocumentObserver,
 
   class DelayedEvent {
    public:
-    virtual ~DelayedEvent() {}
+    virtual ~DelayedEvent() = default;
     virtual void Dispatch() {}
     virtual bool IsKeyPressEvent() { return false; }
   };
@@ -2277,13 +2257,16 @@ class PresShell final : public nsStubDocumentObserver,
      * MaybeHandleEventWithAccessibleCaret() may handle aGUIEvent with
      * AccessibleCaretEventHub if it's necessary.
      *
+     * @param aFrameForPresShell The frame for PresShell. See explanation of
+     *                           HandleEvent() for the details.
      * @param aGUIEvent         Event may be handled by AccessibleCaretEventHub.
      * @param aEventStatus      [in/out] EventStatus of aGUIEvent.
      * @return                  true if AccessibleCaretEventHub handled the
      *                          event and caller shouldn't keep handling it.
      */
     MOZ_CAN_RUN_SCRIPT
-    bool MaybeHandleEventWithAccessibleCaret(WidgetGUIEvent* aGUIEvent,
+    bool MaybeHandleEventWithAccessibleCaret(nsIFrame* aFrameForPresShell,
+                                             WidgetGUIEvent* aGUIEvent,
                                              nsEventStatus* aEventStatus);
 
     /**
@@ -2803,6 +2786,10 @@ class PresShell final : public nsStubDocumentObserver,
   UniquePtr<nsCSSFrameConstructor> mFrameConstructor;
   nsViewManager* mViewManager;  // [WEAK] docViewer owns it so I don't have to
   RefPtr<nsFrameSelection> mSelection;
+  // The frame selection that last took focus on this shell, which we need to
+  // hide if we focus another selection. May or may not be the same as
+  // `mSelection`.
+  RefPtr<nsFrameSelection> mFocusedFrameSelection;
   RefPtr<nsCaret> mCaret;
   RefPtr<nsCaret> mOriginalCaret;
   RefPtr<AccessibleCaretEventHub> mAccessibleCaretEventHub;
@@ -2992,6 +2979,7 @@ class PresShell final : public nsStubDocumentObserver,
   uint32_t mFontSizeInflationMinTwips;
   uint32_t mFontSizeInflationLineThreshold;
 
+  // Can be multiple of nsISelectionDisplay::DISPLAY_*.
   int16_t mSelectionFlags;
 
   // This is used to protect ourselves from triggering reflow while in the

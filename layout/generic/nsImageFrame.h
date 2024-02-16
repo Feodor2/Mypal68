@@ -111,7 +111,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
 #ifdef DEBUG_FRAME_DUMP
   nsresult GetFrameName(nsAString& aResult) const override;
   void List(FILE* out = stderr, const char* aPrefix = "",
-            uint32_t aFlags = 0) const final;
+            ListFlags aFlags = ListFlags()) const final;
 #endif
 
   LogicalSides GetLogicalSkipSides(
@@ -130,7 +130,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   nsresult StopAnimation();
 
   already_AddRefed<imgIRequest> GetCurrentRequest() const;
-  nsresult Notify(imgIRequest*, int32_t aType, const nsIntRect* aData);
+  void Notify(imgIRequest*, int32_t aType, const nsIntRect* aData);
 
   /**
    * Function to test whether given an element and its style, that element
@@ -262,9 +262,9 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
   friend class nsImageLoadingContent;
   friend class mozilla::PresShell;
 
-  nsresult OnSizeAvailable(imgIRequest* aRequest, imgIContainer* aImage);
-  nsresult OnFrameUpdate(imgIRequest* aRequest, const nsIntRect* aRect);
-  nsresult OnLoadComplete(imgIRequest* aRequest, nsresult aStatus);
+  void OnSizeAvailable(imgIRequest* aRequest, imgIContainer* aImage);
+  void OnFrameUpdate(imgIRequest* aRequest, const nsIntRect* aRect);
+  void OnLoadComplete(imgIRequest* aRequest, nsresult aStatus);
 
   /**
    * Notification that aRequest will now be the current request.
@@ -294,19 +294,13 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
 
   /**
    * Recalculate mIntrinsicSize from the image.
-   *
-   * @return whether aImage's size did _not_
-   *         match our previous intrinsic size.
    */
-  bool UpdateIntrinsicSize(imgIContainer* aImage);
+  bool UpdateIntrinsicSize();
 
   /**
    * Recalculate mIntrinsicRatio from the image.
-   *
-   * @return whether aImage's ratio did _not_
-   *         match our previous intrinsic ratio.
    */
-  bool UpdateIntrinsicRatio(imgIContainer* aImage);
+  bool UpdateIntrinsicRatio();
 
   /**
    * This function calculates the transform for converting between
@@ -406,7 +400,7 @@ class nsImageFrame : public nsAtomicContainerFrame, public nsIReflowCallback {
     }
 
    private:
-    ~IconLoad() {}
+    ~IconLoad() = default;
 
     void GetPrefs();
     nsTObserverArray<nsImageFrame*> mIconObservers;

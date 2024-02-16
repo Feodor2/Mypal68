@@ -31,9 +31,12 @@ class nsPrintObject {
   nsPrintObject();
   ~nsPrintObject();  // non-virtual
 
-  // Methods
-  nsresult Init(nsIDocShell* aDocShell, mozilla::dom::Document* aDoc,
-                bool aPrintPreview);
+  nsresult InitAsRootObject(nsIDocShell* aDocShell,
+                            mozilla::dom::Document* aDoc,
+                            bool aForPrintPreview);
+  nsresult InitAsNestedObject(nsIDocShell* aDocShell,
+                              mozilla::dom::Document* aDoc,
+                              nsPrintObject* aParent);
 
   bool IsPrintable() { return !mDontPrint; }
   void DestroyPresentation();
@@ -56,7 +59,6 @@ class nsPrintObject {
   bool mDontPrint;
   bool mPrintAsIs;
   bool mInvisible;  // Indicates PO is set to not visible by CSS
-  bool mPrintPreview;
   bool mDidCreateDocShell;
   float mShrinkRatio;
   float mZoomRatio;

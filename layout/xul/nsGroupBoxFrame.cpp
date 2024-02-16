@@ -269,19 +269,19 @@ ImgDrawResult nsGroupBoxFrame::PaintBorder(gfxContext& aRenderingContext,
 
 nsIFrame* nsGroupBoxFrame::GetCaptionBox(nsRect& aCaptionRect) {
   // first child is our grouped area
-  nsIFrame* box = nsBox::GetChildXULBox(this);
+  nsIFrame* box = nsIFrame::GetChildXULBox(this);
 
   // no area fail.
   if (!box) return nullptr;
 
   // get the first child in the grouped area, that is the caption
-  box = nsBox::GetChildXULBox(box);
+  box = nsIFrame::GetChildXULBox(box);
 
   // nothing in the area? fail
   if (!box) return nullptr;
 
   // now get the caption itself. It is in the caption frame.
-  nsIFrame* child = nsBox::GetChildXULBox(box);
+  nsIFrame* child = nsIFrame::GetChildXULBox(box);
 
   if (child) {
     // convert to our coordinates.

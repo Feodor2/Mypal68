@@ -23,6 +23,7 @@
 #include "nsIContentViewer.h"
 #include "nsPIDOMWindow.h"
 #include "mozilla/ServoStyleSet.h"
+#include "mozilla/MediaFeatureChange.h"
 #include "nsIContent.h"
 #include "nsIFrame.h"
 #include "mozilla/dom/Document.h"
@@ -59,6 +60,7 @@
 #include "mozilla/dom/PBrowserParent.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/BrowserParent.h"
+#include "mozilla/StaticPresData.h"
 #include "nsRefreshDriver.h"
 #include "Layers.h"
 #include "LayerUserData.h"
@@ -81,6 +83,7 @@
 #include "mozilla/dom/Performance.h"
 #include "mozilla/dom/PerformanceTiming.h"
 #include "mozilla/layers/APZThreadUtils.h"
+#include "mozilla/dom/ImageTracker.h"
 
 // Needed for Start/Stop of Image Animation
 #include "imgIContainer.h"
@@ -153,7 +156,6 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mPresShell(nullptr),
       mDocument(aDocument),
       mMedium(aType == eContext_Galley ? nsGkAtoms::screen : nsGkAtoms::print),
-      mMediaEmulated(mMedium),
       mInflationDisabledForShrinkWrap(false),
       mSystemFontScale(1.0),
       mTextZoom(1.0),
@@ -195,9 +197,7 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mPendingUIResolutionChanged(false),
       mPrefChangePendingNeedsReflow(false),
       mPostedPrefChangedRunnable(false),
-      mIsEmulatingMedia(false),
       mIsGlyph(false),
-      mUsesRootEMUnits(false),
       mUsesExChUnits(false),
       mCounterStylesDirty(true),
       mFontFeatureValuesDirty(true),
@@ -322,10 +322,6 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsPresContext)
 
   tmp->Destroy();
 NS_IMPL_CYCLE_COLLECTION_UNLINK_END
-
-// whether no native theme service exists;
-// if this gets set to true, we'll stop asking for it.
-static bool sNoTheme = false;
 
 // Set to true when LookAndFeelChanged needs to be called.  This is used
 // because the look and feel is a service, so there's no need to notify it from
@@ -746,7 +742,7 @@ void nsPresContext::DetachPresShell() {
   }
 }
 
-void nsPresContext::DoChangeCharSet(NotNull<const Encoding*> aCharSet) {
+void nsPresContext::DocumentCharSetChanged(NotNull<const Encoding*> aCharSet) {
   UpdateCharSet(aCharSet);
   mDeviceContext->FlushFontCache();
 
@@ -772,11 +768,6 @@ void nsPresContext::UpdateCharSet(NotNull<const Encoding*> aCharSet) {
     default:
       SetVisualMode(IsVisualCharset(aCharSet));
   }
-}
-
-void nsPresContext::DispatchCharSetChange(NotNull<const Encoding*> aEncoding) {
-  // In Servo RebuildAllStyleData is async, so no need to do the runnable dance.
-  DoChangeCharSet(aEncoding);
 }
 
 nsPresContext* nsPresContext::GetParentPresContext() {
@@ -1130,7 +1121,9 @@ bool nsPresContext::ElementWouldPropagateScrollStyles(const Element& aElement) {
   return GetPropagatedScrollStylesForViewport(this, &dummy) == &aElement;
 }
 
-nsISupports* nsPresContext::GetContainerWeak() const { return GetDocShell(); }
+nsISupports* nsPresContext::GetContainerWeak() const {
+  return mDocument->GetDocShell();
+}
 
 nsIDocShell* nsPresContext::GetDocShell() const {
   return mDocument->GetDocShell();
@@ -1237,12 +1230,10 @@ void nsPresContext::RecordInteractionTime(InteractionType aType,
   }
 }
 
-nsITheme* nsPresContext::GetTheme() {
-  if (!sNoTheme && !mTheme) {
-    mTheme = do_GetNativeTheme();
-    if (!mTheme) sNoTheme = true;
-  }
-
+nsITheme* nsPresContext::EnsureTheme() {
+  MOZ_ASSERT(!mTheme);
+  mTheme = do_GetNativeTheme();
+  MOZ_RELEASE_ASSERT(mTheme);
   return mTheme;
 }
 
@@ -1369,20 +1360,6 @@ void nsPresContext::UIResolutionChangedSync() {
   }
 }
 
-/* static */
-bool nsPresContext::UIResolutionChangedSubdocumentCallback(
-    dom::Document& aDocument, void* aData) {
-  if (nsPresContext* pc = aDocument.GetPresContext()) {
-    // For subdocuments, we want to apply the parent's scale, because there
-    // are cases where the subdoc's device context is connected to a widget
-    // that has an out-of-date resolution (it's on a different screen, but
-    // currently hidden, and will not be updated until shown): bug 1249279.
-    double scale = *static_cast<double*>(aData);
-    pc->UIResolutionChangedInternalScale(scale);
-  }
-  return true;
-}
-
 static void NotifyTabUIResolutionChanged(BrowserParent* aTab, void* aArg) {
   aTab->UIResolutionChanged();
 }
@@ -1413,27 +1390,24 @@ void nsPresContext::UIResolutionChangedInternalScale(double aScale) {
     NotifyChildrenUIResolutionChanged(window);
   }
 
-  mDocument->EnumerateSubDocuments(UIResolutionChangedSubdocumentCallback,
-                                   &aScale);
+  auto recurse = [aScale](dom::Document& aSubDoc) {
+    if (nsPresContext* pc = aSubDoc.GetPresContext()) {
+      // For subdocuments, we want to apply the parent's scale, because there
+      // are cases where the subdoc's device context is connected to a widget
+      // that has an out-of-date resolution (it's on a different screen, but
+      // currently hidden, and will not be updated until shown): bug 1249279.
+      pc->UIResolutionChangedInternalScale(aScale);
+    }
+    return true;
+  };
+  mDocument->EnumerateSubDocuments(recurse);
 }
 
-void nsPresContext::EmulateMedium(const nsAString& aMediaType) {
-  nsAtom* previousMedium = Medium();
-  mIsEmulatingMedia = true;
-
-  nsAutoString mediaType;
-  nsContentUtils::ASCIIToLower(aMediaType, mediaType);
-
-  mMediaEmulated = NS_Atomize(mediaType);
+void nsPresContext::EmulateMedium(nsAtom* aMediaType) {
+  MOZ_ASSERT(!aMediaType || aMediaType->IsAsciiLowercase());
+  RefPtr<const nsAtom> previousMedium = Medium();
+  mMediaEmulated = aMediaType;
   if (mMediaEmulated != previousMedium && mPresShell) {
-    MediaFeatureValuesChanged({MediaFeatureChangeReason::MediumChange});
-  }
-}
-
-void nsPresContext::StopEmulatingMedium() {
-  nsAtom* previousMedium = Medium();
-  mIsEmulatingMedia = false;
-  if (Medium() != previousMedium) {
     MediaFeatureValuesChanged({MediaFeatureChangeReason::MediumChange});
   }
 }
@@ -1450,7 +1424,7 @@ void nsPresContext::MediaFeatureValuesChanged(
   }
 
   if (!mPendingMediaFeatureValuesChange) {
-    mPendingMediaFeatureValuesChange.emplace(aChange);
+    mPendingMediaFeatureValuesChange = MakeUnique<MediaFeatureChange>(aChange);
     return;
   }
 
@@ -1458,16 +1432,11 @@ void nsPresContext::MediaFeatureValuesChanged(
 }
 
 void nsPresContext::RebuildAllStyleData(nsChangeHint aExtraHint,
-                                        RestyleHint aRestyleHint) {
+                                        const RestyleHint& aRestyleHint) {
   if (!mPresShell) {
     // We must have been torn down. Nothing to do here.
     return;
   }
-
-  // FIXME(emilio): Why is it safe to reset mUsesRootEMUnits / mUsesEXChUnits
-  // here if there's no restyle hint? That looks pretty bogus.
-  mUsesRootEMUnits = false;
-  mUsesExChUnits = false;
 
   // TODO(emilio): It's unclear to me why would these three calls below be
   // needed. In particular, RebuildAllStyleData doesn't rebuild rules or
@@ -1478,34 +1447,38 @@ void nsPresContext::RebuildAllStyleData(nsChangeHint aExtraHint,
   mDocument->MarkUserFontSetDirty();
   MarkCounterStylesDirty();
   MarkFontFeatureValuesDirty();
-
-  RestyleManager()->RebuildAllStyleData(aExtraHint, aRestyleHint);
+  PostRebuildAllStyleDataEvent(aExtraHint, aRestyleHint);
 }
 
-void nsPresContext::PostRebuildAllStyleDataEvent(nsChangeHint aExtraHint,
-                                                 RestyleHint aRestyleHint) {
+void nsPresContext::PostRebuildAllStyleDataEvent(
+    nsChangeHint aExtraHint, const RestyleHint& aRestyleHint) {
   if (!mPresShell) {
     // We must have been torn down. Nothing to do here.
     return;
   }
-  RestyleManager()->PostRebuildAllStyleDataEvent(aExtraHint, aRestyleHint);
-}
-
-static bool MediaFeatureValuesChangedAllDocumentsCallback(Document& aDocument,
-                                                          void* aChange) {
-  auto* change = static_cast<const MediaFeatureChange*>(aChange);
-  if (nsPresContext* pc = aDocument.GetPresContext()) {
-    pc->MediaFeatureValuesChangedAllDocuments(*change);
+  if (aRestyleHint.DefinitelyRecascadesAllSubtree()) {
+    mUsesExChUnits = false;
   }
-  return true;
+  RestyleManager()->RebuildAllStyleData(aExtraHint, aRestyleHint);
 }
 
 void nsPresContext::MediaFeatureValuesChangedAllDocuments(
     const MediaFeatureChange& aChange) {
+  // Handle the media feature value change in this document.
   MediaFeatureValuesChanged(aChange);
-  mDocument->EnumerateSubDocuments(
-      MediaFeatureValuesChangedAllDocumentsCallback,
-      const_cast<MediaFeatureChange*>(&aChange));
+
+  // Propagate the media feature value change down to any SVG images the
+  // document is using.
+  mDocument->ImageTracker()->MediaFeatureValuesChangedAllDocuments(aChange);
+
+  // And then into any subdocuments.
+  auto recurse = [&aChange](dom::Document& aSubDoc) {
+    if (nsPresContext* pc = aSubDoc.GetPresContext()) {
+      pc->MediaFeatureValuesChangedAllDocuments(aChange);
+    }
+    return true;
+  };
+  mDocument->EnumerateSubDocuments(recurse);
 }
 
 void nsPresContext::FlushPendingMediaFeatureValuesChanged() {
@@ -1622,28 +1595,20 @@ void nsPresContext::CountReflows(const char* aName, nsIFrame* aFrame) {
 
 bool nsPresContext::HasAuthorSpecifiedRules(const nsIFrame* aFrame,
                                             uint32_t aRuleTypeMask) const {
-  Element* elem = aFrame->GetContent()->AsElement();
+  const bool padding = aRuleTypeMask & NS_AUTHOR_SPECIFIED_PADDING;
+  const bool borderBackground =
+      aRuleTypeMask & NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND;
+  const auto& style = *aFrame->Style();
 
-  // We need to handle non-generated content pseudos too, so we use
-  // the parent of generated content pseudo to be consistent.
-  if (elem->GetPseudoElementType() != PseudoStyleType::NotPseudo) {
-    MOZ_ASSERT(elem->GetParent(), "Pseudo element has no parent element?");
-    elem = elem->GetParent()->AsElement();
-  }
-  if (MOZ_UNLIKELY(!elem->HasServoData())) {
-    // Probably shouldn't happen, but does. See bug 1387953
-    return false;
+  if (padding && style.HasAuthorSpecifiedPadding()) {
+    return true;
   }
 
-  // Anonymous boxes are more complicated, and we just assume that they
-  // cannot have any author-specified rules here.
-  if (aFrame->Style()->IsAnonBox()) {
-    return false;
+  if (borderBackground && style.HasAuthorSpecifiedBorderOrBackground()) {
+    return true;
   }
 
-  auto* set = PresShell()->StyleSet()->RawSet();
-  return Servo_HasAuthorSpecifiedRules(set, aFrame->Style(), elem,
-                                       aRuleTypeMask);
+  return false;
 }
 
 gfxUserFontSet* nsPresContext::GetUserFontSet() {
@@ -1688,7 +1653,7 @@ class CounterStyleCleaner final : public nsAPostRefreshObserver {
                       CounterStyleManager* aCounterStyleManager)
       : mRefreshDriver(aRefreshDriver),
         mCounterStyleManager(aCounterStyleManager) {}
-  virtual ~CounterStyleCleaner() {}
+  virtual ~CounterStyleCleaner() = default;
 
   void DidRefresh() final {
     mRefreshDriver->RemovePostRefreshObserver(this);
@@ -1795,19 +1760,6 @@ void nsPresContext::FireDOMPaintEvent(
                                     static_cast<Event*>(event), this, nullptr);
 }
 
-static bool MayHavePaintEventListenerSubdocumentCallback(Document& aDocument,
-                                                         void* aData) {
-  bool* result = static_cast<bool*>(aData);
-  if (nsPresContext* pc = aDocument.GetPresContext()) {
-    *result = pc->MayHavePaintEventListenerInSubDocument();
-
-    // If we found a paint event listener, then we can stop enumerating
-    // sub documents.
-    return !*result;
-  }
-  return true;
-}
-
 static bool MayHavePaintEventListener(nsPIDOMWindowInner* aInnerWindow) {
   if (!aInnerWindow) return false;
   if (aInnerWindow->HasPaintEventListeners()) return true;
@@ -1856,8 +1808,17 @@ bool nsPresContext::MayHavePaintEventListenerInSubDocument() {
   }
 
   bool result = false;
-  mDocument->EnumerateSubDocuments(MayHavePaintEventListenerSubdocumentCallback,
-                                   &result);
+  auto recurse = [&result](dom::Document& aSubDoc) {
+    if (nsPresContext* pc = aSubDoc.GetPresContext()) {
+      if (pc->MayHavePaintEventListenerInSubDocument()) {
+        result = true;
+        return false;
+      }
+    }
+    return true;
+  };
+
+  mDocument->EnumerateSubDocuments(recurse);
   return result;
 }
 
@@ -1961,28 +1922,6 @@ void nsPresContext::ClearNotifySubDocInvalidationData(
   aContainer->SetUserData(&gNotifySubDocInvalidationData, nullptr);
 }
 
-struct NotifyDidPaintSubdocumentCallbackClosure {
-  TransactionId mTransactionId;
-  const mozilla::TimeStamp& mTimeStamp;
-};
-bool nsPresContext::NotifyDidPaintSubdocumentCallback(dom::Document& aDocument,
-                                                      void* aData) {
-  auto* closure = static_cast<NotifyDidPaintSubdocumentCallbackClosure*>(aData);
-  if (nsPresContext* pc = aDocument.GetPresContext()) {
-    pc->NotifyDidPaintForSubtree(closure->mTransactionId, closure->mTimeStamp);
-  }
-  return true;
-}
-
-bool nsPresContext::NotifyRevokingDidPaintSubdocumentCallback(
-    dom::Document& aDocument, void* aData) {
-  auto* closure = static_cast<NotifyDidPaintSubdocumentCallbackClosure*>(aData);
-  if (nsPresContext* pc = aDocument.GetPresContext()) {
-    pc->NotifyRevokingDidPaint(closure->mTransactionId);
-  }
-  return true;
-}
-
 class DelayedFireDOMPaintEvent : public Runnable {
  public:
   DelayedFireDOMPaintEvent(
@@ -2046,10 +1985,13 @@ void nsPresContext::NotifyRevokingDidPaint(TransactionId aTransactionId) {
     transaction->mIsWaitingForPreviousTransaction = true;
   }
 
-  NotifyDidPaintSubdocumentCallbackClosure closure = {aTransactionId,
-                                                      mozilla::TimeStamp()};
-  mDocument->EnumerateSubDocuments(
-      nsPresContext::NotifyRevokingDidPaintSubdocumentCallback, &closure);
+  auto recurse = [&aTransactionId](dom::Document& aSubDoc) {
+    if (nsPresContext* pc = aSubDoc.GetPresContext()) {
+      pc->NotifyRevokingDidPaint(aTransactionId);
+    }
+    return true;
+  };
+  mDocument->EnumerateSubDocuments(recurse);
 }
 
 void nsPresContext::NotifyDidPaintForSubtree(
@@ -2113,10 +2055,13 @@ void nsPresContext::NotifyDidPaintForSubtree(
     nsContentUtils::AddScriptRunner(ev);
   }
 
-  NotifyDidPaintSubdocumentCallbackClosure closure = {aTransactionId,
-                                                      aTimeStamp};
-  mDocument->EnumerateSubDocuments(
-      nsPresContext::NotifyDidPaintSubdocumentCallback, &closure);
+  auto recurse = [&aTransactionId, &aTimeStamp](dom::Document& aSubDoc) {
+    if (nsPresContext* pc = aSubDoc.GetPresContext()) {
+      pc->NotifyDidPaintForSubtree(aTransactionId, aTimeStamp);
+    }
+    return true;
+  };
+  mDocument->EnumerateSubDocuments(recurse);
 }
 
 already_AddRefed<nsITimer> nsPresContext::CreateTimer(

@@ -138,7 +138,8 @@ impl Device {
 
     /// Set the font size of the root element (for rem)
     pub fn set_root_font_size(&self, size: Au) {
-        self.root_font_size.store(size.0 as isize, Ordering::Relaxed)
+        self.root_font_size
+            .store(size.0 as isize, Ordering::Relaxed)
     }
 
     /// Sets the body text color for the "inherit color from body" quirk.
@@ -211,12 +212,11 @@ impl Device {
             None => return MediaType::screen(),
         };
 
-        // Gecko allows emulating random media with mIsEmulatingMedia and
-        // mMediaEmulated.
-        let medium_to_use = if pc.mIsEmulatingMedia() != 0 {
+        // Gecko allows emulating random media with mMediaEmulated.
+        let medium_to_use = if !pc.mMediaEmulated.mRawPtr.is_null() {
             pc.mMediaEmulated.mRawPtr
         } else {
-            pc.mMedium
+            pc.mMedium as *const bindings::nsAtom as *mut _
         };
 
         MediaType(CustomIdent(unsafe { Atom::from_raw(medium_to_use) }))

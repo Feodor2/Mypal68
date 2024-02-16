@@ -29,7 +29,7 @@ MediaQueryList::MediaQueryList(Document* aDocument,
   KeepAliveIfHasListenersFor(ONCHANGE_STRING);
 }
 
-MediaQueryList::~MediaQueryList() {}
+MediaQueryList::~MediaQueryList() = default;
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(MediaQueryList)
 

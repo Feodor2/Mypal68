@@ -68,7 +68,7 @@ using mozilla::WrapUnique;
 
 // PaintedLayerData::mAssignedDisplayItems is a std::vector, which is
 // non-memmovable
-DECLARE_USE_COPY_CONSTRUCTORS(mozilla::PaintedLayerData);
+MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(mozilla::PaintedLayerData);
 
 namespace mozilla {
 
@@ -527,7 +527,7 @@ void FrameLayerBuilder::DestroyDisplayItemDataFor(nsIFrame* aFrame) {
   // property table in an inconsistent state. So we remove it from the table and
   // then destroy it. (bug 1530657)
   WebRenderUserDataTable* userDataTable =
-      aFrame->RemoveProperty(WebRenderUserDataProperty::Key());
+      aFrame->TakeProperty(WebRenderUserDataProperty::Key());
   if (userDataTable) {
     for (auto iter = userDataTable->Iter(); !iter.Done(); iter.Next()) {
       iter.UserData()->RemoveFromTable();
@@ -561,7 +561,6 @@ class PaintedLayerData {
         mHideAllLayersBelow(false),
         mOpaqueForAnimatedGeometryRootParent(false),
         mBackfaceHidden(false),
-        mShouldPaintOnContentSide(false),
         mDTCRequiresTargetConfirmation(false),
         mImage(nullptr),
         mItemClip(nullptr),
@@ -783,11 +782,6 @@ class PaintedLayerData {
    * with visible backface.
    */
   bool mBackfaceHidden;
-  /**
-   * Set if it is better to render this layer on the content process, for
-   * example if it contains native theme widgets.
-   */
-  bool mShouldPaintOnContentSide;
   /**
    * Set to true if events targeting the dispatch-to-content region
    * require target confirmation.
@@ -3857,10 +3851,6 @@ void PaintedLayerData::Accumulate(
     }
   }
 
-  if (aItem->MustPaintOnContentSide()) {
-    mShouldPaintOnContentSide = true;
-  }
-
   if (aTransform && aType == DisplayItemEntryType::Item) {
     // Bounds transformed with axis-aligned transforms could be included in the
     // opaque region calculations. For simplicity, this is currently not done.
@@ -3984,9 +3974,7 @@ void PaintedLayerData::AccumulateHitTestItem(ContainerState* aState,
                                              nsDisplayItem* aItem,
                                              const DisplayItemClip& aClip,
                                              TransformClipNode* aTransform) {
-  MOZ_ASSERT(aItem->HasHitTestInfo());
-  auto* item = static_cast<nsDisplayHitTestInfoItem*>(aItem);
-
+  auto* item = static_cast<nsDisplayHitTestInfoBase*>(aItem);
   const HitTestInfo& info = item->GetHitTestInfo();
 
   nsRect area = info.mArea;
@@ -4525,8 +4513,9 @@ void ContainerState::ProcessDisplayItems(nsDisplayList* aList) {
     nsRect itemContent;
 
     if (marker == DisplayItemEntryType::HitTestInfo) {
+      MOZ_ASSERT(item->IsHitTestItem());
       const auto& hitTestInfo =
-          static_cast<nsDisplayHitTestInfoItem*>(item)->GetHitTestInfo();
+          static_cast<nsDisplayHitTestInfoBase*>(item)->GetHitTestInfo();
 
       // Override the layer selection hints for items that have hit test
       // information. This is needed because container items may have different
@@ -4734,10 +4723,14 @@ void ContainerState::ProcessDisplayItems(nsDisplayList* aList) {
         clipPtr = &clipRectUntyped;
       }
 
+      bool isStickyNotClippedToDisplayPort =
+          itemType == DisplayItemType::TYPE_STICKY_POSITION &&
+          !static_cast<nsDisplayStickyPosition*>(item)
+               ->IsClippedToDisplayPort();
       bool hasScrolledClip =
           layerClipChain && layerClipChain->mClip.HasClip() &&
           (!ActiveScrolledRoot::IsAncestor(layerClipChain->mASR, itemASR) ||
-           itemType == DisplayItemType::TYPE_STICKY_POSITION);
+           isStickyNotClippedToDisplayPort);
 
       if (hasScrolledClip) {
         // If the clip is scrolled, reserve just the area of the clip for
@@ -4877,13 +4870,7 @@ void ContainerState::ProcessDisplayItems(nsDisplayList* aList) {
       NS_ASSERTION(!ownLayer->AsPaintedLayer(),
                    "Should never have created a dedicated Painted layer!");
 
-      if (item->BackfaceIsHidden()) {
-        ownLayer->SetContentFlags(ownLayer->GetContentFlags() |
-                                  Layer::CONTENT_BACKFACE_HIDDEN);
-      } else {
-        ownLayer->SetContentFlags(ownLayer->GetContentFlags() &
-                                  ~Layer::CONTENT_BACKFACE_HIDDEN);
-      }
+      SetBackfaceHiddenForLayer(item->BackfaceIsHidden(), ownLayer);
 
       nsRect invalid;
       if (item->IsInvalid(invalid)) {
@@ -6323,6 +6310,9 @@ already_AddRefed<ContainerLayer> FrameLayerBuilder::BuildContainerLayerFor(
       flags &= ~Layer::CONTENT_COMPONENT_ALPHA;
       flags |= Layer::CONTENT_OPAQUE;
     }
+  }
+  if (nsLayoutUtils::ShouldSnapToGrid(aContainerFrame)) {
+    flags |= Layer::CONTENT_SNAP_TO_GRID;
   }
   containerLayer->SetContentFlags(flags);
   // If aContainerItem is non-null some BuildContainerLayer further up the

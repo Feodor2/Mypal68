@@ -15,7 +15,7 @@
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/LookAndFeel.h"
-#include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_layout.h"
 
 namespace mozilla {
 namespace layout {
@@ -24,28 +24,16 @@ using mozilla::dom::Element;
 
 NS_IMPL_ISUPPORTS(ScrollbarActivity, nsIDOMEventListener)
 
-static bool GetForceAlwaysVisiblePref() {
-  static bool sForceAlwaysVisible;
-  static bool sForceAlwaysVisiblePrefCached = false;
-  if (!sForceAlwaysVisiblePrefCached) {
-    Preferences::AddBoolVarCache(
-        &sForceAlwaysVisible,
-        "layout.testing.overlay-scrollbars.always-visible");
-    sForceAlwaysVisiblePrefCached = true;
-  }
-  return sForceAlwaysVisible;
-}
-
 void ScrollbarActivity::QueryLookAndFeelVals() {
   // Fade animation constants
   mScrollbarFadeBeginDelay =
-      LookAndFeel::GetInt(LookAndFeel::eIntID_ScrollbarFadeBeginDelay);
+      LookAndFeel::GetInt(LookAndFeel::IntID::ScrollbarFadeBeginDelay);
   mScrollbarFadeDuration =
-      LookAndFeel::GetInt(LookAndFeel::eIntID_ScrollbarFadeDuration);
+      LookAndFeel::GetInt(LookAndFeel::IntID::ScrollbarFadeDuration);
   // Controls whether we keep the mouse move listener so we can display the
   // scrollbars whenever the user moves the mouse within the scroll area.
   mDisplayOnMouseMove =
-      LookAndFeel::GetInt(LookAndFeel::eIntID_ScrollbarDisplayOnMouseMove);
+      LookAndFeel::GetInt(LookAndFeel::IntID::ScrollbarDisplayOnMouseMove);
 }
 
 void ScrollbarActivity::Destroy() {
@@ -366,7 +354,7 @@ bool ScrollbarActivity::SetIsFading(bool aNewFading) {
 }
 
 void ScrollbarActivity::StartFadeBeginTimer() {
-  if (GetForceAlwaysVisiblePref()) {
+  if (StaticPrefs::layout_testing_overlay_scrollbars_always_visible()) {
     return;
   }
   if (!mFadeBeginTimer) {

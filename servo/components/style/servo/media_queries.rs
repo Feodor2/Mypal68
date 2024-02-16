@@ -164,6 +164,11 @@ impl Device {
     pub fn default_background_color(&self) -> RGBA {
         RGBA::new(255, 255, 255, 255)
     }
+    /// Returns the default color color.
+    pub fn default_color(&self) -> RGBA {
+        RGBA::new(0, 0, 0, 255)
+    }
+
 }
 
 /// https://drafts.csswg.org/mediaqueries-4/#width

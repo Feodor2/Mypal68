@@ -6,8 +6,6 @@
 
 use crate::gecko_bindings::bindings;
 use crate::gecko_bindings::structs;
-use crate::gecko_bindings::structs::nsStyleImageRequest;
-use crate::gecko_bindings::sugar::refptr::RefPtr;
 use crate::parser::{Parse, ParserContext};
 use crate::stylesheets::{CorsMode, UrlExtraData};
 use crate::values::computed::{Context, ToComputedValue};
@@ -20,7 +18,7 @@ use std::fmt::{self, Write};
 use std::mem::ManuallyDrop;
 use std::sync::RwLock;
 use style_traits::{CssWriter, ParseError, ToCss};
-use to_shmem::{SharedMemoryBuilder, ToShmem};
+use to_shmem::{self, SharedMemoryBuilder, ToShmem};
 
 /// A CSS url() value for gecko.
 #[css(function = "url")]
@@ -150,31 +148,52 @@ struct LoadDataKey(*const LoadDataSource);
 unsafe impl Sync for LoadDataKey {}
 unsafe impl Send for LoadDataKey {}
 
-/// The load data for a given URL. This is mutable from C++, for now at least.
+bitflags! {
+    /// Various bits of mutable state that are kept for image loads.
+    #[repr(C)]
+    pub struct LoadDataFlags: u8 {
+        /// Whether we tried to resolve the uri at least once.
+        const TRIED_TO_RESOLVE_URI = 1 << 0;
+        /// Whether we tried to resolve the image at least once.
+        const TRIED_TO_RESOLVE_IMAGE = 1 << 1;
+    }
+}
+
+/// This is usable and movable from multiple threads just fine, as long as it's
+/// not cloned (it is not clonable), and the methods that mutate it run only on
+/// the main thread (when all the other threads we care about are paused).
+unsafe impl Sync for LoadData {}
+unsafe impl Send for LoadData {}
+
+/// The load data for a given URL. This is mutable from C++, and shouldn't be
+/// accessed from rust for anything.
 #[repr(C)]
 #[derive(Debug)]
 pub struct LoadData {
-    resolved: RefPtr<structs::nsIURI>,
-    load_id: u64,
-    tried_to_resolve: bool,
+    /// A strong reference to the imgRequestProxy, if any, that should be
+    /// released on drop.
+    ///
+    /// These are raw pointers because they are not safe to reference-count off
+    /// the main thread.
+    resolved_image: *mut structs::imgRequestProxy,
+    /// A strong reference to the resolved URI of this image.
+    resolved_uri: *mut structs::nsIURI,
+    /// A few flags that are set when resolving the image or such.
+    flags: LoadDataFlags,
 }
 
 impl Drop for LoadData {
     fn drop(&mut self) {
-        if self.load_id != 0 {
-            unsafe {
-                bindings::Gecko_LoadData_DeregisterLoad(self);
-            }
-        }
+        unsafe { bindings::Gecko_LoadData_Drop(self) }
     }
 }
 
 impl Default for LoadData {
     fn default() -> Self {
         Self {
-            resolved: RefPtr::null(),
-            load_id: 0,
-            tried_to_resolve: false,
+            resolved_image: std::ptr::null_mut(),
+            resolved_uri: std::ptr::null_mut(),
+            flags: LoadDataFlags::empty(),
         }
     }
 }
@@ -222,11 +241,11 @@ impl LoadDataSource {
 }
 
 impl ToShmem for LoadDataSource {
-    fn to_shmem(&self, _builder: &mut SharedMemoryBuilder) -> ManuallyDrop<Self> {
-        ManuallyDrop::new(match self {
+    fn to_shmem(&self, _builder: &mut SharedMemoryBuilder) -> to_shmem::Result<Self> {
+        Ok(ManuallyDrop::new(match self {
             LoadDataSource::Owned(..) => LoadDataSource::Lazy,
             LoadDataSource::Lazy => LoadDataSource::Lazy,
-        })
+        }))
     }
 }
 
@@ -341,13 +360,6 @@ impl ToCss for ComputedUrl {
 #[derive(Clone, Debug, Eq, MallocSizeOf, PartialEq)]
 #[repr(transparent)]
 pub struct ComputedImageUrl(pub ComputedUrl);
-
-impl ComputedImageUrl {
-    /// Convert from nsStyleImageRequest to ComputedImageUrl.
-    pub unsafe fn from_image_request(image_request: &nsStyleImageRequest) -> Self {
-        image_request.mImageURL.clone()
-    }
-}
 
 impl ToCss for ComputedImageUrl {
     fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result

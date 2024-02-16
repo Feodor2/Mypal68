@@ -17,7 +17,7 @@ use std::ops::Add;
 /// on each fields of the values.
 ///
 /// If a variant is annotated with `#[animation(error)]`, the corresponding
-/// `match` arm is not generated.
+/// `match` arm returns an error.
 ///
 /// If the two values are not similar, an error is returned unless a fallback
 /// function has been specified through `#[distance(fallback)]`.
@@ -78,6 +78,16 @@ impl ComputeSquaredDistance for Au {
     #[inline]
     fn compute_squared_distance(&self, other: &Self) -> Result<SquaredDistance, ()> {
         self.0.compute_squared_distance(&other.0)
+    }
+}
+
+impl<T> ComputeSquaredDistance for Box<T>
+where
+    T: ComputeSquaredDistance,
+{
+    #[inline]
+    fn compute_squared_distance(&self, other: &Self) -> Result<SquaredDistance, ()> {
+        (**self).compute_squared_distance(&**other)
     }
 }
 

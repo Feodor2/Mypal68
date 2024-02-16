@@ -32,11 +32,9 @@ class BlockReflowInput {
         : mIsBStartMarginRoot(false),
           mIsBEndMarginRoot(false),
           mShouldApplyBStartMargin(false),
-          mIsFirstInflow(false),
           mHasLineAdjacentToTop(false),
           mBlockNeedsFloatManager(false),
           mIsLineLayoutEmpty(false),
-          mIsOverflowContainer(false),
           mIsFloatListInBlockPropertyTable(false),
           mCanHaveOverflowMarkers(false) {}
 
@@ -76,8 +74,6 @@ class BlockReflowInput {
     // root by default.
     bool mShouldApplyBStartMargin : 1;
 
-    bool mIsFirstInflow : 1;
-
     // Set when mLineAdjacentToTop is valid.
     bool mHasLineAdjacentToTop : 1;
 
@@ -87,8 +83,6 @@ class BlockReflowInput {
     // Set when nsLineLayout::LineIsEmpty was true at the end of reflowing
     // the current line.
     bool mIsLineLayoutEmpty : 1;
-
-    bool mIsOverflowContainer : 1;
 
     // Set when our mPushedFloats list is stored on the block's property table.
     bool mIsFloatListInBlockPropertyTable : 1;
@@ -251,8 +245,6 @@ class BlockReflowInput {
   // block, not floats inside of it.
   nsFloatManager::SavedState mFloatManagerStateBefore;
 
-  nscoord mBEndEdge;
-
   // The content area to reflow child frames within.  This is within
   // this frame's coordinate system and writing mode, which means
   // mContentArea.IStart == BorderPadding().IStart and
@@ -279,6 +271,9 @@ class BlockReflowInput {
     return mContentArea.BSize(mReflowInput.GetWritingMode());
   }
   nscoord ContentBEnd() const {
+    NS_ASSERTION(
+        ContentBSize() != NS_UNCONSTRAINEDSIZE,
+        "ContentBSize() is unconstrained, so ContentBEnd() may overflow.");
     return mContentArea.BEnd(mReflowInput.GetWritingMode());
   }
   mozilla::LogicalSize ContentSize(mozilla::WritingMode aWM) const {

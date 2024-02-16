@@ -9,7 +9,6 @@
 
 use crate::custom_properties::SpecifiedValue;
 use crate::parser::{Parse, ParserContext};
-use crate::stylesheets::CorsMode;
 use crate::values::generics::image::PaintWorklet;
 use crate::values::generics::image::{
     self as generic, Circle, Ellipse, GradientCompatMode, ShapeExtent,
@@ -32,24 +31,6 @@ use std::cmp::Ordering;
 use std::fmt::{self, Write};
 use style_traits::{CssType, CssWriter, KeywordsCollectFn, ParseError};
 use style_traits::{SpecifiedValueInfo, StyleParseErrorKind, ToCss};
-
-/// A specified image layer.
-pub type ImageLayer = generic::GenericImageLayer<Image>;
-
-impl ImageLayer {
-    /// This is a specialization of Either with an alternative parse
-    /// method to provide anonymous CORS headers for the Image url fetch.
-    pub fn parse_with_cors_anonymous<'i, 't>(
-        context: &ParserContext,
-        input: &mut Parser<'i, 't>,
-    ) -> Result<Self, ParseError<'i>> {
-        if let Ok(v) = input.try(|i| Image::parse_with_cors_anonymous(context, i)) {
-            return Ok(generic::GenericImageLayer::Image(v));
-        }
-        input.expect_ident_matching("none")?;
-        Ok(generic::GenericImageLayer::None)
-    }
-}
 
 /// Specified values for an image according to CSS-IMAGES.
 /// <https://drafts.csswg.org/css-images/#image-values>
@@ -111,37 +92,55 @@ pub enum LineDirection {
 /// A specified ending shape.
 pub type EndingShape = generic::EndingShape<NonNegativeLength, NonNegativeLengthPercentage>;
 
-/// A specified gradient item.
-pub type GradientItem = generic::GradientItem<Color, LengthPercentage>;
-
-/// A computed color stop.
-pub type ColorStop = generic::ColorStop<Color, LengthPercentage>;
-
 /// Specified values for `moz-image-rect`
 /// -moz-image-rect(<uri>, top, right, bottom, left);
-pub type MozImageRect = generic::MozImageRect<NumberOrPercentage, SpecifiedImageUrl>;
+#[cfg(all(feature = "gecko", not(feature = "cbindgen")))]
+pub type MozImageRect = generic::GenericMozImageRect<NumberOrPercentage, SpecifiedImageUrl>;
+
+#[cfg(not(feature = "gecko"))]
+#[derive(
+    Clone,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+/// Empty enum on non-Gecko
+pub enum MozImageRect {}
 
 impl Parse for Image {
     fn parse<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Image, ParseError<'i>> {
+        if input.try(|i| i.expect_ident_matching("none")).is_ok() {
+            return Ok(generic::Image::None);
+        }
         if let Ok(url) = input.try(|input| SpecifiedImageUrl::parse(context, input)) {
             return Ok(generic::Image::Url(url));
         }
         if let Ok(gradient) = input.try(|i| Gradient::parse(context, i)) {
             return Ok(generic::Image::Gradient(Box::new(gradient)));
         }
-        #[cfg(feature = "servo")]
+        #[cfg(feature = "servo-layout-2013")]
         {
             if let Ok(paint_worklet) = input.try(|i| PaintWorklet::parse(context, i)) {
                 return Ok(generic::Image::PaintWorklet(paint_worklet));
             }
         }
-        if let Ok(image_rect) = input.try(|input| MozImageRect::parse(context, input)) {
-            return Ok(generic::Image::Rect(Box::new(image_rect)));
+        #[cfg(feature = "gecko")]
+        {
+            if let Ok(image_rect) = input.try(|input| MozImageRect::parse(context, input)) {
+                return Ok(generic::Image::Rect(Box::new(image_rect)));
+            }
+            Ok(generic::Image::Element(Image::parse_element(input)?))
         }
-        Ok(generic::Image::Element(Image::parse_element(input)?))
+        #[cfg(not(feature = "gecko"))]
+        Err(input.new_error_for_next_token())
     }
 }
 
@@ -155,6 +154,7 @@ impl Image {
     }
 
     /// Parses a `-moz-element(# <element-id>)`.
+    #[cfg(feature = "gecko")]
     fn parse_element<'i, 't>(input: &mut Parser<'i, 't>) -> Result<Atom, ParseError<'i>> {
         input.try(|i| i.expect_function_matching("-moz-element"))?;
         let location = input.current_source_location();
@@ -250,7 +250,7 @@ impl Parse for Gradient {
                 Shape::Linear => GradientKind::parse_linear(context, i, &mut compat_mode)?,
                 Shape::Radial => GradientKind::parse_radial(context, i, &mut compat_mode)?,
             };
-            let items = GradientItem::parse_comma_separated(context, i)?;
+            let items = generic::GradientItem::parse_comma_separated(context, i)?;
             Ok((shape, items))
         })?;
 
@@ -772,7 +772,10 @@ impl ShapeExtent {
     }
 }
 
-impl GradientItem {
+impl<T> generic::GradientItem<Color, T>
+where
+    T: Parse,
+{
     fn parse_comma_separated<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
@@ -783,20 +786,20 @@ impl GradientItem {
         loop {
             input.parse_until_before(Delimiter::Comma, |input| {
                 if seen_stop {
-                    if let Ok(hint) = input.try(|i| LengthPercentage::parse(context, i)) {
+                    if let Ok(hint) = input.try(|i| T::parse(context, i)) {
                         seen_stop = false;
                         items.push(generic::GradientItem::InterpolationHint(hint));
                         return Ok(());
                     }
                 }
 
-                let stop = ColorStop::parse(context, input)?;
+                let stop = generic::ColorStop::parse(context, input)?;
 
-                if let Ok(multi_position) = input.try(|i| LengthPercentage::parse(context, i)) {
+                if let Ok(multi_position) = input.try(|i| T::parse(context, i)) {
                     let stop_color = stop.color.clone();
                     items.push(stop.into_item());
                     items.push(
-                        ColorStop {
+                        generic::ColorStop {
                             color: stop_color,
                             position: Some(multi_position),
                         }
@@ -824,14 +827,17 @@ impl GradientItem {
     }
 }
 
-impl Parse for ColorStop {
+impl<T> Parse for generic::ColorStop<Color, T>
+where
+    T: Parse,
+{
     fn parse<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
     ) -> Result<Self, ParseError<'i>> {
-        Ok(ColorStop {
+        Ok(generic::ColorStop {
             color: Color::parse(context, input)?,
-            position: input.try(|i| LengthPercentage::parse(context, i)).ok(),
+            position: input.try(|i| T::parse(context, i)).ok(),
         })
     }
 }
@@ -856,6 +862,15 @@ impl Parse for PaintWorklet {
 }
 
 impl Parse for MozImageRect {
+    #[cfg(not(feature = "gecko"))]
+    fn parse<'i, 't>(
+        _context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        Err(input.new_error_for_next_token())
+    }
+
+    #[cfg(feature = "gecko")]
     fn parse<'i, 't>(
         context: &ParserContext,
         input: &mut Parser<'i, 't>,
@@ -866,7 +881,7 @@ impl Parse for MozImageRect {
             let url = SpecifiedImageUrl::parse_from_string(
                 string.as_ref().to_owned(),
                 context,
-                CorsMode::None,
+                crate::stylesheets::CorsMode::None,
             );
             i.expect_comma()?;
             let top = NumberOrPercentage::parse_non_negative(context, i)?;

@@ -13,7 +13,6 @@
 #include "nsGridRowGroupLayout.h"
 #include "nsGridRow.h"
 #include "nsBoxLayoutState.h"
-#include "nsBox.h"
 #include "nsIScrollableFrame.h"
 #include "nsBoxFrame.h"
 #include "nsGridLayout2.h"
@@ -26,7 +25,7 @@ already_AddRefed<nsBoxLayout> NS_NewGridRowLeafLayout() {
 
 nsGridRowLeafLayout::nsGridRowLeafLayout() : nsGridRowLayout() {}
 
-nsGridRowLeafLayout::~nsGridRowLeafLayout() {}
+nsGridRowLeafLayout::~nsGridRowLeafLayout() = default;
 
 nsSize nsGridRowLeafLayout::GetXULPrefSize(nsIFrame* aBox,
                                            nsBoxLayoutState& aState) {
@@ -40,7 +39,7 @@ nsSize nsGridRowLeafLayout::GetXULPrefSize(nsIFrame* aBox,
     return nsGridRowLayout::GetXULPrefSize(aBox, aState);
   } else {
     return grid->GetPrefRowSize(aState, index, isHorizontal);
-    // AddBorderAndPadding(aBox, pref);
+    // AddXULBorderAndPadding(aBox, pref);
   }
 }
 
@@ -54,7 +53,7 @@ nsSize nsGridRowLeafLayout::GetXULMinSize(nsIFrame* aBox,
     return nsGridRowLayout::GetXULMinSize(aBox, aState);
   else {
     nsSize minSize = grid->GetMinRowSize(aState, index, isHorizontal);
-    AddBorderAndPadding(aBox, minSize);
+    AddXULBorderAndPadding(aBox, minSize);
     return minSize;
   }
 }
@@ -70,7 +69,7 @@ nsSize nsGridRowLeafLayout::GetXULMaxSize(nsIFrame* aBox,
   else {
     nsSize maxSize;
     maxSize = grid->GetMaxRowSize(aState, index, isHorizontal);
-    AddBorderAndPadding(aBox, maxSize);
+    AddXULBorderAndPadding(aBox, maxSize);
     return maxSize;
   }
 }
@@ -104,7 +103,7 @@ void nsGridRowLeafLayout::PopulateBoxSizes(nsIFrame* aBox,
     nsBoxSize* start = nullptr;
     nsBoxSize* last = nullptr;
     nsBoxSize* current = nullptr;
-    nsIFrame* child = nsBox::GetChildXULBox(aBox);
+    nsIFrame* child = nsIFrame::GetChildXULBox(aBox);
     for (int i = 0; i < count; i++) {
       column = grid->GetColumnAt(i, isHorizontal);
 
@@ -170,7 +169,7 @@ void nsGridRowLeafLayout::PopulateBoxSizes(nsIFrame* aBox,
 
       // initialize the box size here
       max = std::max(min, max);
-      pref = nsBox::BoundsCheck(min, pref, max);
+      pref = nsIFrame::XULBoundsCheck(min, pref, max);
 
       current = new (aState) nsBoxSize();
       current->pref = pref;
@@ -190,7 +189,9 @@ void nsGridRowLeafLayout::PopulateBoxSizes(nsIFrame* aBox,
         last = current;
       }
 
-      if (child && !column->mIsBogus) child = nsBox::GetNextXULBox(child);
+      if (child && !column->mIsBogus) {
+        child = nsIFrame::GetNextXULBox(child);
+      }
     }
     aBoxSizes = start;
   }
@@ -277,12 +278,12 @@ void nsGridRowLeafLayout::DirtyRows(nsIFrame* aBox, nsBoxLayoutState& aState) {
 void nsGridRowLeafLayout::CountRowsColumns(nsIFrame* aBox, int32_t& aRowCount,
                                            int32_t& aComputedColumnCount) {
   if (aBox) {
-    nsIFrame* child = nsBox::GetChildXULBox(aBox);
+    nsIFrame* child = nsIFrame::GetChildXULBox(aBox);
 
     // count the children
     int32_t columnCount = 0;
     while (child) {
-      child = nsBox::GetNextXULBox(child);
+      child = nsIFrame::GetNextXULBox(child);
       columnCount++;
     }
 

@@ -21,7 +21,6 @@
 #include "nsTableCellFrame.h"
 #include "nsIPercentBSizeObserver.h"
 #include "nsLayoutUtils.h"
-#include "mozilla/Preferences.h"
 #include "nsFontInflationData.h"
 #include "StickyScrollContainer.h"
 #include "nsIFrameInlines.h"
@@ -591,12 +590,8 @@ void ReflowInput::InitResizeFlags(nsPresContext* aPresContext,
 
       do {
         nsIFrame* f = stack.PopLastElement();
-
-        nsIFrame::ChildListIterator lists(f);
-        for (; !lists.IsDone(); lists.Next()) {
-          nsFrameList::Enumerator childFrames(lists.CurrentList());
-          for (; !childFrames.AtEnd(); childFrames.Next()) {
-            nsIFrame* kid = childFrames.get();
+        for (const auto& childList : f->ChildLists()) {
+          for (nsIFrame* kid : childList.mList) {
             kid->MarkIntrinsicISizesDirty();
             stack.AppendElement(kid);
           }
@@ -748,109 +743,8 @@ void ReflowInput::InitResizeFlags(nsPresContext* aPresContext,
   }
 }
 
-template <typename SizeOrMaxSize>
-static inline bool IsIntrinsicKeyword(const SizeOrMaxSize& aSize) {
-  if (!aSize.IsExtremumLength()) {
-    return false;
-  }
-
-  // All of the keywords except for '-moz-available' depend on intrinsic sizes.
-  return aSize.AsExtremumLength() != StyleExtremumLength::MozAvailable;
-}
-
-static bool AreDynamicReflowRootsEnabled() {
-  static bool sAreDynamicReflowRootsEnabled;
-  static bool sIsPrefCached = false;
-
-  if (!sIsPrefCached) {
-    sIsPrefCached = true;
-    Preferences::AddBoolVarCache(&sAreDynamicReflowRootsEnabled,
-                                 "layout.dynamic-reflow-roots.enabled");
-  }
-  return sAreDynamicReflowRootsEnabled;
-}
-
 void ReflowInput::InitDynamicReflowRoot() {
-  auto display = mStyleDisplay->mDisplay;
-  if (mFrame->IsFrameOfType(nsIFrame::eLineParticipant) ||
-      nsStyleDisplay::IsRubyDisplayType(display) ||
-      mFrameType == NS_CSS_FRAME_TYPE_INTERNAL_TABLE ||
-      nsStyleDisplay::DisplayInside(display) == StyleDisplayInside::Table ||
-      (mFrame->GetParent() && mFrame->GetParent()->IsXULBoxFrame())) {
-    // We have a display type where 'width' and 'height' don't actually
-    // set the width or height (i.e., the size depends on content).
-    NS_ASSERTION(!(mFrame->GetStateBits() & NS_FRAME_DYNAMIC_REFLOW_ROOT),
-                 "should not have dynamic reflow root bit");
-    return;
-  }
-
-  bool canBeDynamicReflowRoot = AreDynamicReflowRootsEnabled();
-
-  // We can't do this if our used 'width' and 'height' might be influenced by
-  // content.
-  // FIXME: For display:block, we should probably optimize inline-size
-  // being auto.
-  // FIXME: Other flex and grid cases?
-  const auto& width = mStylePosition->mWidth;
-  const auto& height = mStylePosition->mHeight;
-  if (canBeDynamicReflowRoot &&
-      (!width.IsLengthPercentage() || width.HasPercent() ||
-       !height.IsLengthPercentage() || height.HasPercent() ||
-       IsIntrinsicKeyword(mStylePosition->mMinWidth) ||
-       IsIntrinsicKeyword(mStylePosition->mMaxWidth) ||
-       IsIntrinsicKeyword(mStylePosition->mMinHeight) ||
-       IsIntrinsicKeyword(mStylePosition->mMaxHeight) ||
-       ((mStylePosition->mMinWidth.IsAuto() ||
-         mStylePosition->mMinHeight.IsAuto()) &&
-        mFrame->IsFlexOrGridItem()))) {
-    canBeDynamicReflowRoot = false;
-  }
-
-  if (canBeDynamicReflowRoot && mFrame->IsFlexItem()) {
-    // If our flex-basis is 'auto', it'll defer to 'width' (or 'height') which
-    // we've already checked. Otherwise, it preempts them, so we need to
-    // perform the same "could-this-value-be-influenced-by-content" checks that
-    // we performed for 'width' and 'height' above.
-    const auto& flexBasis = mStylePosition->mFlexBasis;
-    if (!flexBasis.IsAuto()) {
-      if (!flexBasis.IsSize() || !flexBasis.AsSize().IsLengthPercentage() ||
-          flexBasis.AsSize().HasPercent()) {
-        canBeDynamicReflowRoot = false;
-      }
-    }
-  }
-
-  if (canBeDynamicReflowRoot && !mFrame->IsFixedPosContainingBlock()) {
-    // We can't treat this frame as a reflow root, since dynamic changes
-    // to absolutely-positioned frames inside of it require that we
-    // reflow the placeholder before we reflow the absolutely positioned
-    // frame.
-    // FIXME:  Alternatively, we could sort the reflow roots in
-    // PresShell::ProcessReflowCommands by depth in the tree, from
-    // deepest to least deep.  However, for performance (FIXME) we
-    // should really be sorting them in the opposite order!
-    canBeDynamicReflowRoot = false;
-  }
-
-  // If we participate in a container's block reflow context, or margins
-  // can collapse through us, we can't be a dynamic reflow root.
-  if (canBeDynamicReflowRoot && mFrame->IsBlockFrameOrSubclass() &&
-      !mFrame->HasAllStateBits(NS_BLOCK_FLOAT_MGR | NS_BLOCK_MARGIN_ROOT)) {
-    canBeDynamicReflowRoot = false;
-  }
-
-  // Subgrids are never reflow roots, but 'contain:layout/paint' prevents
-  // creating a subgrid in the first place.
-  if (canBeDynamicReflowRoot &&
-      (mStylePosition->mGridTemplateColumns.IsSubgrid() ||
-       mStylePosition->mGridTemplateRows.IsSubgrid()) &&
-      !(mStyleDisplay->IsContainLayout() || mStyleDisplay->IsContainPaint())) {
-    // NOTE: we could check that 'display' of our content's primary frame is
-    // '[inline-]grid' here but that's probably not worth it in practice.
-    canBeDynamicReflowRoot = false;
-  }
-
-  if (canBeDynamicReflowRoot) {
+  if (mFrame->CanBeDynamicReflowRoot()) {
     mFrame->AddStateBits(NS_FRAME_DYNAMIC_REFLOW_ROOT);
   } else {
     mFrame->RemoveStateBits(NS_FRAME_DYNAMIC_REFLOW_ROOT);
@@ -1061,7 +955,7 @@ void ReflowInput::ApplyRelativePositioning(nsIFrame* aFrame,
                  "We assume that changing the 'position' property causes "
                  "frame reconstruction.  If that ever changes, this code "
                  "should call "
-                 "aFrame->DeleteProperty(nsIFrame::NormalPositionProperty())");
+                 "aFrame->RemoveProperty(nsIFrame::NormalPositionProperty())");
     return;
   }
 
@@ -1599,14 +1493,13 @@ void ReflowInput::InitAbsoluteConstraints(nsPresContext* aPresContext,
   if ((iStartIsAuto && iEndIsAuto) || (bStartIsAuto && bEndIsAuto)) {
     nsPlaceholderFrame* placeholderFrame = mFrame->GetPlaceholderFrame();
     MOZ_ASSERT(placeholderFrame, "no placeholder frame");
+    nsIFrame* placeholderParent = placeholderFrame->GetParent();
+    MOZ_ASSERT(placeholderParent, "shouldn't have unparented placeholders");
 
     if (placeholderFrame->HasAnyStateBits(
             PLACEHOLDER_STATICPOS_NEEDS_CSSALIGN)) {
-      DebugOnly<nsIFrame*> placeholderParent = placeholderFrame->GetParent();
-      MOZ_ASSERT(placeholderParent, "shouldn't have unparented placeholders");
       MOZ_ASSERT(placeholderParent->IsFlexOrGridContainer(),
                  "This flag should only be set on grid/flex children");
-
       // If the (as-yet unknown) static position will determine the inline
       // and/or block offsets, set flags to note those offsets aren't valid
       // until we can do CSS Box Alignment on the OOF frame.
@@ -1618,6 +1511,22 @@ void ReflowInput::InitAbsoluteConstraints(nsPresContext* aPresContext,
       hypotheticalPos.mWritingMode = cbwm;
       hypotheticalPos.mIStart = nscoord(0);
       hypotheticalPos.mBStart = nscoord(0);
+      if (placeholderParent->IsGridContainerFrame() &&
+          placeholderParent->HasAnyStateBits(NS_STATE_GRID_IS_COL_MASONRY |
+                                             NS_STATE_GRID_IS_ROW_MASONRY)) {
+        // Disable CSS alignment in Masonry layout since we don't have real grid
+        // areas in that axis.  We'll use the placeholder position instead as it
+        // was calculated by nsGridContainerFrame::MasonryLayout.
+        auto cbsz = aCBSize.GetPhysicalSize(cbwm);
+        LogicalPoint pos = placeholderFrame->GetLogicalPosition(cbwm, cbsz);
+        if (placeholderParent->HasAnyStateBits(NS_STATE_GRID_IS_COL_MASONRY)) {
+          mFlags.mIOffsetsNeedCSSAlign = false;
+          hypotheticalPos.mIStart = pos.I(cbwm);
+        } else {
+          mFlags.mBOffsetsNeedCSSAlign = false;
+          hypotheticalPos.mBStart = pos.B(cbwm);
+        }
+      }
     } else {
       // XXXmats all this is broken for orthogonal writing-modes: bug 1521988.
       CalculateHypotheticalPosition(aPresContext, placeholderFrame,
@@ -2511,7 +2420,7 @@ static void UpdateProp(nsIFrame* aFrame,
       aFrame->AddProperty(aProperty, new nsMargin(aNewValue));
     }
   } else {
-    aFrame->DeleteProperty(aProperty);
+    aFrame->RemoveProperty(aProperty);
   }
 }
 
@@ -2526,7 +2435,7 @@ void SizeComputationInput::InitOffsets(WritingMode aWM, nscoord aPercentBasis,
   // Since we are in reflow, we don't need to store these properties anymore
   // unless they are dependent on width, in which case we store the new value.
   nsPresContext* presContext = mFrame->PresContext();
-  mFrame->DeleteProperty(nsIFrame::UsedBorderProperty());
+  mFrame->RemoveProperty(nsIFrame::UsedBorderProperty());
 
   // Compute margins from the specified margin style information. These
   // become the default computed values, and may be adjusted below
@@ -2544,7 +2453,7 @@ void SizeComputationInput::InitOffsets(WritingMode aWM, nscoord aPercentBasis,
   bool isThemed = mFrame->IsThemed(disp);
   bool needPaddingProp;
   LayoutDeviceIntMargin widgetPadding;
-  if (isThemed && presContext->GetTheme()->GetWidgetPadding(
+  if (isThemed && presContext->Theme()->GetWidgetPadding(
                       presContext->DeviceContext(), mFrame, disp->mAppearance,
                       &widgetPadding)) {
     ComputedPhysicalPadding() = LayoutDevicePixel::ToAppUnits(
@@ -2595,7 +2504,7 @@ void SizeComputationInput::InitOffsets(WritingMode aWM, nscoord aPercentBasis,
   }
 
   if (isThemed) {
-    LayoutDeviceIntMargin border = presContext->GetTheme()->GetWidgetBorder(
+    LayoutDeviceIntMargin border = presContext->Theme()->GetWidgetBorder(
         presContext->DeviceContext(), mFrame, disp->mAppearance);
     ComputedPhysicalBorderPadding() = LayoutDevicePixel::ToAppUnits(
         border, presContext->AppUnitsPerDevPixel());
@@ -2715,19 +2624,19 @@ void ReflowInput::CalculateBlockSideMargins(LayoutFrameType aFrameType) {
       // of the table wrapper's parent.
       pri = pri->mParentReflowInput;
     }
-    if (pri && (pri->mStyleText->mTextAlign == NS_STYLE_TEXT_ALIGN_MOZ_LEFT ||
-                pri->mStyleText->mTextAlign == NS_STYLE_TEXT_ALIGN_MOZ_CENTER ||
-                pri->mStyleText->mTextAlign == NS_STYLE_TEXT_ALIGN_MOZ_RIGHT)) {
+    if (pri && (pri->mStyleText->mTextAlign == StyleTextAlign::MozLeft ||
+                pri->mStyleText->mTextAlign == StyleTextAlign::MozCenter ||
+                pri->mStyleText->mTextAlign == StyleTextAlign::MozRight)) {
       if (pri->mWritingMode.IsBidiLTR()) {
         isAutoStartMargin =
-            pri->mStyleText->mTextAlign != NS_STYLE_TEXT_ALIGN_MOZ_LEFT;
+            pri->mStyleText->mTextAlign != StyleTextAlign::MozLeft;
         isAutoEndMargin =
-            pri->mStyleText->mTextAlign != NS_STYLE_TEXT_ALIGN_MOZ_RIGHT;
+            pri->mStyleText->mTextAlign != StyleTextAlign::MozRight;
       } else {
         isAutoStartMargin =
-            pri->mStyleText->mTextAlign != NS_STYLE_TEXT_ALIGN_MOZ_RIGHT;
+            pri->mStyleText->mTextAlign != StyleTextAlign::MozRight;
         isAutoEndMargin =
-            pri->mStyleText->mTextAlign != NS_STYLE_TEXT_ALIGN_MOZ_LEFT;
+            pri->mStyleText->mTextAlign != StyleTextAlign::MozLeft;
       }
     }
     // Otherwise apply the CSS rules, and ignore one margin by forcing
@@ -2857,11 +2766,15 @@ nscoord ReflowInput::CalcLineHeight(nsIContent* aContent,
   HTMLInputElement* input = HTMLInputElement::FromNodeOrNull(aContent);
   if (input && input->IsSingleLineTextControl()) {
     // For Web-compatibility, single-line text input elements cannot
-    // have a line-height smaller than one.
-    nscoord lineHeightOne =
-        aFontSizeInflation * aComputedStyle->StyleFont()->mFont.size;
-    if (lineHeight < lineHeightOne) {
-      lineHeight = lineHeightOne;
+    // have a line-height smaller than 'normal'.
+    const StyleLineHeight& lh = aComputedStyle->StyleText()->mLineHeight;
+    if (!lh.IsNormal()) {
+      RefPtr<nsFontMetrics> fm = nsLayoutUtils::GetFontMetricsForComputedStyle(
+          aComputedStyle, aPresContext, aFontSizeInflation);
+      nscoord normal = GetNormalLineHeight(fm);
+      if (lineHeight < normal) {
+        lineHeight = normal;
+      }
     }
   }
 

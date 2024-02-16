@@ -83,6 +83,7 @@ struct PropertyStyleAnimationValuePair;
 using ComputedKeyframeValues = nsTArray<PropertyStyleAnimationValuePair>;
 
 class ComputedStyle;
+enum LogicalAxis : uint8_t;
 class SeenPtrs;
 class SharedFontList;
 class StyleSheet;
@@ -93,6 +94,7 @@ template <typename T>
 struct StyleForgottenArcSlicePtr;
 
 struct AnimationPropertySegment;
+struct AspectRatio;
 struct ComputedTiming;
 struct URLExtraData;
 
@@ -115,6 +117,8 @@ enum class CallerType : uint32_t;
 
 class Element;
 class Document;
+class ImageTracker;
+
 }  // namespace dom
 
 namespace ipc {
@@ -175,6 +179,7 @@ struct StyleBox {
 // Work-around weird cbindgen renaming / avoiding moving stuff outside its
 // namespace.
 
+using StyleImageTracker = dom::ImageTracker;
 using StyleLoader = css::Loader;
 using StyleLoaderReusableStyleSheets = css::LoaderReusableStyleSheets;
 using StyleCallerType = dom::CallerType;
@@ -209,5 +214,6 @@ using StyleAtomicUsize = std::atomic<size_t>;
 static_assert(sizeof(void*) == 4, "");
 #    define SERVO_32_BITS 1
 #  endif
+#define CBINDGEN_IS_GECKO
 
 #endif

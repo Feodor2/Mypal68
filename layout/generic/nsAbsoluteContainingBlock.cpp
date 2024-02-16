@@ -219,8 +219,7 @@ void nsAbsoluteContainingBlock::Reflow(nsContainerFrame* aDelegatingFrame,
         if (!nextFrame) {
           nextFrame = aPresContext->PresShell()
                           ->FrameConstructor()
-                          ->CreateContinuingFrame(aPresContext, kidFrame,
-                                                  aDelegatingFrame);
+                          ->CreateContinuingFrame(kidFrame, aDelegatingFrame);
         }
         // Add it as an overflow container.
         // XXXfr This is a hack to fix some of our printing dataloss.

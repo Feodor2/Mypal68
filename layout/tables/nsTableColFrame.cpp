@@ -45,7 +45,7 @@ nsTableColFrame::nsTableColFrame(ComputedStyle* aStyle,
   ResetFinalISize();
 }
 
-nsTableColFrame::~nsTableColFrame() {}
+nsTableColFrame::~nsTableColFrame() = default;
 
 nsTableColType nsTableColFrame::GetColType() const {
   return (nsTableColType)((mState & COL_TYPE_BITS) >> COL_TYPE_OFFSET);

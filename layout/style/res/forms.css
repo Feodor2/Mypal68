@@ -19,6 +19,7 @@
      borders we don't leak out the corners for hit-testing purposes. */
   border-radius: inherit;
   padding: inherit;
+  box-decoration-break: inherit;
   block-size: 100%; /* Need this so percentage block-sizes of kids work right */
   /* Please keep the Multicol/Flex/Grid/Align sections below in sync with
      ::-moz-scrolled-content in ua.css and ::-moz-button-content below. */
@@ -52,7 +53,7 @@
   justify-items: inherit;
 }
 
-/* miscellaneous form elements */
+/* Miscellaneous form elements */
 
 fieldset > legend {
   inline-size: -moz-fit-content;
@@ -60,18 +61,14 @@ fieldset > legend {
 
 legend {
   display: block;
-  padding-inline-start: 2px;
-  padding-inline-end: 2px;
+  padding-inline: 2px;
 }
 
 fieldset {
   display: block;
-  margin-inline-start: 2px;
-  margin-inline-end: 2px;
-  padding-block-start: 0.35em;
-  padding-block-end: 0.625em;
-  padding-inline-start: 0.75em;
-  padding-inline-end: 0.75em;
+  margin-inline: 2px;
+  padding-block: 0.35em 0.625em;
+  padding-inline: 0.75em;
   border: 2px groove ThreeDLightShadow;
   min-inline-size: min-content;
 }
@@ -80,7 +77,7 @@ label {
   cursor: default;
 }
 
-/* default inputs, text inputs, and selects */
+/* Default inputs, text inputs, and selects */
 
 /* Note: Values in nsNativeTheme IsWidgetStyled function
    need to match textfield background/border values here */
@@ -101,7 +98,7 @@ input {
   overflow-clip-box: padding-box content-box;
 }
 
-input > .anonymous-div,
+input::-moz-text-control-editing-root,
 input::placeholder {
   word-wrap: normal;
   /* Make the line-height equal to the available height */
@@ -110,12 +107,10 @@ input::placeholder {
 
 textarea {
   -moz-appearance: textarea;
-  margin-block-start: 1px;
-  margin-block-end: 1px;
+  margin-block: 1px;
   border: 2px inset ThreeDLightShadow;
   /* The 1px inline padding is for parity with Win/IE */
-  padding-inline-start: 1px;
-  padding-inline-end: 1px;
+  padding-inline: 1px;
   background-color: -moz-Field;
   color: -moz-FieldText;
   font: medium -moz-fixed;
@@ -129,7 +124,7 @@ textarea {
 }
 
 /* A few properties that we don't want to inherit by default: */
-input, textarea, select, button {
+input, textarea, select, button, ::file-chooser-button {
   text-align: initial;
   text-indent: initial;
   text-shadow: initial;
@@ -143,16 +138,13 @@ textarea > scrollbar {
   cursor: default;
 }
 
-textarea > .anonymous-div,
-input > .anonymous-div,
-input::placeholder,
-textarea::placeholder,
-input > .preview-div
-textarea > .preview-div {
+::placeholder,
+::-moz-text-control-editing-root,
+::-moz-text-control-preview {
   overflow: auto;
-  border: 0px;
+  border: 0;
   padding: inherit;
-  margin: 0px;
+  margin: 0;
   text-decoration: inherit;
   display: inline-block;
   ime-mode: inherit;
@@ -162,14 +154,14 @@ textarea > .preview-div {
   overflow-clip-box: inherit;
 }
 
-input > .anonymous-div,
+input::-moz-text-control-editing-root,
 input::placeholder,
-input > .preview-div {
+input::-moz-text-control-preview {
   white-space: pre;
 }
 
-input[type=password] > .anonymous-div,
-input[type=password] > .preview-div {
+input[type=password]::-moz-text-control-editing-root,
+input[type=password]::-moz-text-control-preview {
   /*
    * In password fields, any character should be put same direction.  Otherwise,
    * caret position at typing tells everybody whether the character is an RTL
@@ -179,19 +171,15 @@ input[type=password] > .preview-div {
   unicode-bidi: bidi-override;
 }
 
-textarea > .anonymous-div {
+textarea::-moz-text-control-editing-root {
   scroll-behavior: inherit;
   overscroll-behavior: inherit;
-}
-
-textarea > .anonymous-div.inherit-overflow {
+  /* StyleAdjuster makes sure that the overflow value ends up being scrollable */
   overflow: inherit;
 }
 
-input::placeholder,
-textarea::placeholder,
-input > .preview-div,
-textarea > .preview-div {
+::placeholder,
+::-moz-text-control-preview {
   /*
    * Changing display to inline can leads to broken behaviour and will assert.
    */
@@ -211,33 +199,29 @@ textarea > .preview-div {
   pointer-events: none;
 }
 
-input::placeholder,
-textarea::placeholder {
+::placeholder {
   opacity: 0.54;
 }
 
 textarea::placeholder,
-textarea > .preview-div {
+textarea::-moz-text-control-preview {
   white-space: pre-wrap !important;
 }
 
-input:-moz-read-write,
-textarea:-moz-read-write {
+input:read-write,
+textarea:read-write {
   -moz-user-modify: read-write !important;
 }
 
 select {
   margin: 0;
   border-color: ThreeDLightShadow;
-  background-color: -moz-Combobox;
-  color: -moz-ComboboxText;
   font: -moz-list;
   white-space: nowrap !important;
   word-wrap: normal !important;
   cursor: default;
   box-sizing: border-box;
   user-select: none;
-  -moz-appearance: menulist;
   border-width: 2px;
   border-style: inset;
   overflow: -moz-hidden-unscrollable;
@@ -245,41 +229,23 @@ select {
   display: inline-block;
   page-break-inside: avoid;
   overflow-clip-box: padding-box !important; /* bug 992447 */
-}
 
-%ifdef MOZ_WIDGET_GTK
-/* Comboboxes use button styles on Gtk so it's safe to
- * use a button style here. */
-select:active:hover {
-  color: -moz-gtk-buttonactivetext;
-}
-%endif
-
-/* Need the "select[size][multiple]" selector to override the settings on
-   'select[size="1"]', eg if one has <select size="1" multiple> */
-
-select[size],
-select[multiple],
-select[size][multiple] {
-  /* Different alignment and padding for listbox vs combobox */
-  background-color: -moz-Field;
-  color: -moz-FieldText;
-  vertical-align: text-bottom;
-  padding-block-start: 1px;
-  padding-block-end: 1px;
-  padding-inline-start: 0;
-  padding-inline-end: 0;
-  -moz-appearance: listbox;
-}
-
-select[size="0"],
-select[size="1"] {
-  /* Except this is not a listbox */
+  /* Set some styles for drop down selects. These are overridden below for
+   * list box selects. */
   background-color: -moz-Combobox;
   color: -moz-ComboboxText;
   vertical-align: baseline;
-  padding: unset;
+  padding-block: 0;
   -moz-appearance: menulist;
+  -moz-button-appearance: allow;
+}
+
+select:-moz-select-list-box {
+  background-color: -moz-Field;
+  color: -moz-FieldText;
+  vertical-align: text-bottom;
+  padding-block: 1px;
+  -moz-appearance: listbox;
 }
 
 select > button {
@@ -289,11 +255,11 @@ select > button {
   background-image: url("arrow.gif") !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
-  -moz-appearance: -moz-menulist-button;
+  -moz-appearance: -moz-menulist-arrow-button;
 
   /* Make sure to size correctly if the combobox has a non-auto height. */
-  block-size: 100% ! important;
-  box-sizing: border-box ! important;
+  block-size: 100% !important;
+  box-sizing: border-box !important;
 
   /*
     Make sure to align properly with the display frame.  Note that we
@@ -327,10 +293,8 @@ select > button[orientation="right"]:active {
   overflow: -moz-hidden-unscrollable;
   /* This block-start/end padding plus the combobox block-start/end border need to
      add up to the block-start/end borderpadding of text inputs and buttons */
-  padding-block-start: 1px;
-  padding-block-end: 1px;
-  padding-inline-start: 4px;
-  padding-inline-end: 4px;
+  padding-block: 1px;
+  padding-inline: 4px;
   color: unset;
   white-space: nowrap;
   text-align: unset;
@@ -363,10 +327,8 @@ option {
 }
 
 select > option {
-  padding-block-start : 0;
-  padding-block-end: 0;
-  padding-inline-start: 3px;
-  padding-inline-end: 5px;
+  padding-block: 0;
+  padding-inline: 3px 5px;
 }
 
 option:checked {
@@ -376,8 +338,8 @@ option:checked {
 
 select:focus > option:checked,
 select:focus > optgroup > option:checked {
-  background-color: Highlight ! important;
-  color: HighlightText ! important;
+  background-color: Highlight !important;
+  color: HighlightText !important;
 }
 
 optgroup {
@@ -421,16 +383,14 @@ optgroup:before {
    * with the dropmarker.  So set our inline-start border to 2px.
    */
   border: 1px outset black !important;
-  border-inline-start-width: 2px ! important;
+  border-inline-start-width: 2px !important;
 }
 
 input:disabled,
 textarea:disabled,
 option:disabled,
 optgroup:disabled,
-select:disabled:disabled /* Need the pseudo-class twice to have the specificity
-                            be at least the same as select[size][multiple] above */
-{
+select:disabled {
   color: GrayText;
   background-color: ThreeDLightShadow;
   cursor: unset;
@@ -471,56 +431,13 @@ input[type="image"]:disabled {
   cursor: unset;
 }
 
-input[type="image"]:-moz-focusring {
-  /* Don't specify the outline-color, we should always use initial value. */
-  outline: 1px dotted;
-}
-
-/* file selector */
-input[type="file"] {
-  white-space: nowrap !important;
-  overflow: hidden !important;
-  overflow-clip-box: padding-box;
-  color: unset;
-
-  /* Revert rules which apply on all inputs. */
-  -moz-appearance: none;
-  cursor: default;
-
-  border: none;
-  background-color: transparent;
-  padding: unset;
-}
-
-input[type="file"] > label {
-  display: inline-block;
-  min-inline-size: 12em;
-  padding-inline-start: 5px;
-  text-align: match-parent;
-
-  color: unset;
-  font-size: unset;
-  letter-spacing: unset;
-
-  user-select: none;
-  unicode-bidi: plaintext;
-}
-
-/* button part of file selector */
-input[type="file"] > button {
-  font-size: unset;
-  letter-spacing: unset;
-  cursor: unset;
-}
-
 /* colored part of the color selector button */
-input[type="color"]::-moz-color-swatch {
+::-moz-color-swatch {
   width: 100%;
   height: 100%;
   min-width: 3px;
   min-height: 3px;
-  margin-inline-start: auto;
-  margin-inline-end: auto;
+  margin-inline: auto;
   box-sizing: border-box;
   border: 1px solid grey;
   display: block;
@@ -529,22 +446,18 @@ input[type="color"]::-moz-color-swatch {
 /* radio buttons */
 input[type="radio"] {
   -moz-appearance: radio;
-  margin-block-start: 3px;
-  margin-block-end: 0px;
-  margin-inline-start: 5px;
-  margin-inline-end: 3px;
+  margin-block: 3px 0;
+  margin-inline: 5px 3px;
 }
 
 /* check boxes */
 input[type="checkbox"] {
   -moz-appearance: checkbox;
-  margin-block-start: 3px;
-  margin-block-end: 3px;
-  margin-inline-start: 4px;
-  margin-inline-end: 3px;
+  margin-block: 3px;
+  margin-inline: 4px 3px;
 }
 
-/* common features of radio buttons and check boxes */
+/* Common features of radio buttons and check boxes */
 
 input[type="radio"],
 input[type="checkbox"] {
@@ -557,26 +470,19 @@ input[type="checkbox"] {
   color: unset;
 }
 
-input[type="radio"]:disabled,
-input[type="radio"]:disabled:active,
-input[type="radio"]:disabled:hover,
-input[type="radio"]:disabled:hover:active,
-input[type="checkbox"]:disabled,
-input[type="checkbox"]:disabled:active,
-input[type="checkbox"]:disabled:hover,
-input[type="checkbox"]:disabled:hover:active {
+input:is([type="radio"], [type="checkbox"]):is(:disabled, :disabled:active, :disabled:hover:active) {
   cursor: unset;
 }
 
-% On Mac, the native theme takes care of this.
-% See nsNativeThemeCocoa::ThemeDrawsFocusForWidget.
-%ifndef XP_MACOSX
-input[type="checkbox"]:-moz-focusring,
-input[type="radio"]:-moz-focusring {
-  /* Don't specify the outline-color, we should always use initial value. */
-  outline: 1px dotted;
+input:not([type="file"]):not([type="image"]):-moz-focusring,
+select:-moz-focusring,
+button:-moz-focusring,
+textarea:-moz-focusring {
+  /* These elements can handle outline themselves when themed, so we use
+   * outline-style: auto and skip rendering the outline only when themed and
+   * the theme allows so */
+  outline-style: auto;
 }
-%endif
 
 input[type="search"] {
   box-sizing: border-box;
@@ -590,18 +496,14 @@ input[type="search"] {
 /* Non text-related properties for buttons: these ones are shared with
    input[type="color"] */
 button,
-input[type="color"],
-input[type="reset"],
-input[type="button"],
-input[type="submit"] {
+::file-chooser-button,
+input:is([type="color"], [type="reset"], [type="button"], [type="submit"]) {
   -moz-appearance: button;
   /* The sum of border and padding on block-start and block-end
      must be the same here, for text inputs, and for <select>.
      Note -moz-focus-inner padding does not affect button size. */
-  padding-block-start: 0px;
-  padding-inline-end: 8px;
-  padding-block-end: 0px;
-  padding-inline-start: 8px;
+  padding-block: 0;
+  padding-inline: 8px;
   border: 2px outset ThreeDLightShadow;
   background-color: ButtonFace;
   cursor: default;
@@ -612,9 +514,8 @@ input[type="submit"] {
 /* Text-related properties for buttons: these ones are not shared with
    input[type="color"] */
 button,
-input[type="reset"],
-input[type="button"],
-input[type="submit"] {
+::file-chooser-button,
+input:is([type="reset"], [type="button"], [type="submit"]) {
   color: ButtonText;
   font: -moz-button;
   white-space: pre;
@@ -627,7 +528,8 @@ input[type="color"] {
   block-size: 23px;
 }
 
-button {
+button,
+::file-chooser-button {
   /* Buttons should lay out like "normal" html, mostly */
   white-space: unset;
   text-indent: 0;
@@ -669,40 +571,32 @@ button {
   justify-items: inherit;
 }
 
+::file-chooser-button:hover,
 button:hover,
-input[type="color"]:hover,
-input[type="reset"]:hover,
-input[type="button"]:hover,
-input[type="submit"]:hover {
+input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):hover {
   background-color: -moz-buttonhoverface;
 }
 
+::file-chooser-button:hover,
 button:hover,
-input[type="reset"]:hover,
-input[type="button"]:hover,
-input[type="submit"]:hover {
+input:is([type="reset"], [type="button"], [type="submit"]):hover {
   color: -moz-buttonhovertext;
 }
 
+::file-chooser-button:active:hover,
 button:active:hover,
-input[type="color"]:active:hover,
-input[type="reset"]:active:hover,
-input[type="button"]:active:hover,
-input[type="submit"]:active:hover {
+input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):active:hover {
 %ifndef XP_MACOSX
-  padding-block-start: 0px;
-  padding-inline-end: 7px;
-  padding-block-end: 0px;
-  padding-inline-start: 9px;
+  padding-block: 0;
+  padding-inline: 9px 7px;
 %endif
   border-style: inset;
   background-color: ButtonFace;
 }
 
+::file-chooser-button:active:hover,
 button:active:hover,
-input[type="reset"]:active:hover,
-input[type="button"]:active:hover,
-input[type="submit"]:active:hover {
+input:is([type="reset"], [type="button"], [type="submit"]):active:hover {
 %ifdef MOZ_WIDGET_GTK
   color: -moz-gtk-buttonactivetext;
 %else
@@ -710,59 +604,71 @@ input[type="submit"]:active:hover {
 %endif
 }
 
-
-button::-moz-focus-inner,
-input[type="color"]::-moz-focus-inner,
-input[type="reset"]::-moz-focus-inner,
-input[type="button"]::-moz-focus-inner,
-input[type="submit"]::-moz-focus-inner {
+::-moz-focus-inner {
   /* Note this padding only affects the -moz-focus-inner ring, not the button itself */
-  padding-block-start: 0px;
-  padding-inline-end: 2px;
-  padding-block-end: 0px;
-  padding-inline-start: 2px;
+  padding-block: 0;
+  padding-inline: 2px;
   border: 1px dotted transparent;
 }
 
-button:-moz-focusring::-moz-focus-inner,
-input[type="color"]:-moz-focusring::-moz-focus-inner,
-input[type="reset"]:-moz-focusring::-moz-focus-inner,
-input[type="button"]:-moz-focusring::-moz-focus-inner,
-input[type="submit"]:-moz-focusring::-moz-focus-inner {
+:-moz-focusring::-moz-focus-inner {
   border-color: currentColor;
 }
 
-button:disabled:active, button:disabled,
-input[type="color"]:disabled:active,
-input[type="color"]:disabled,
-input[type="reset"]:disabled:active,
-input[type="reset"]:disabled,
-input[type="button"]:disabled:active,
-input[type="button"]:disabled,
-select:disabled > button,
-select:disabled > button,
-input[type="submit"]:disabled:active,
-input[type="submit"]:disabled {
+:is(:disabled, :disabled:active)::file-chooser-button,
+button:is(:disabled, :disabled:active),
+input:is([type="reset"], [type="button"], [type="submit"], [type="color"]):is(:disabled, :disabled:active),
+select:is(:disabled, :disabled:active) > button {
   /* The sum of border and padding on block-start and block-end
      must be the same here and for text inputs */
-  padding-block-start: 0px;
-  padding-inline-end: 8px;
-  padding-block-end: 0px;
-  padding-inline-start: 8px;
+  padding-block: 0;
+  padding-inline: 8px;
   border: 2px outset ThreeDLightShadow;
   cursor: unset;
 }
 
-button:disabled:active, button:disabled,
-input[type="reset"]:disabled:active,
-input[type="reset"]:disabled,
-input[type="button"]:disabled:active,
-input[type="button"]:disabled,
-select:disabled > button,
-select:disabled > button,
-input[type="submit"]:disabled:active,
-input[type="submit"]:disabled {
+:is(:disabled, :disabled:active)::file-chooser-button,
+button:is(:disabled, :disabled:active),
+input:is([type="reset"], [type="button"], [type="submit"]):is(:disabled, :disabled:active),
+select:is(:disabled, :disabled:active) > button {
   color: GrayText;
+}
+
+/* file selector */
+input[type="file"] {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  overflow-clip-box: padding-box;
+  color: unset;
+
+  /* Revert rules which apply on all inputs. */
+  -moz-appearance: none;
+  cursor: default;
+
+  border: none;
+  background-color: transparent;
+  padding: unset;
+}
+
+input[type="file"] > label {
+  display: inline-block;
+  min-inline-size: 12em;
+  padding-inline-start: 5px;
+  text-align: match-parent;
+
+  color: unset;
+  font-size: unset;
+  letter-spacing: unset;
+
+  user-select: none;
+  unicode-bidi: plaintext;
+}
+
+/* button part of file selector */
+::file-chooser-button {
+  font-size: unset;
+  letter-spacing: unset;
+  cursor: unset;
 }
 
  /*
@@ -770,8 +676,8 @@ input[type="submit"]:disabled {
   *  their various anonymous descendants and pseudo-elements:
   *
   * <textarea> and <input type="text">:
-  *  inherit into the XULScroll frame with class 'anonymous-div' which is a
-  *  child of the text control.
+  *  inherit into the scroll frame with pseudo ::-moz-text-control-editing-root
+  *  which is a (direct or indirect) child of the text control.
   *
   * Buttons (either <button>, <input type="submit">, <input type="button">
   *          or <input type="reset">)
@@ -783,10 +689,8 @@ input[type="submit"]:disabled {
   *  the <optgroup> gets displayed. The <option>s don't use anonymous boxes,
   *  so they need no special rules.
   */
-textarea > .anonymous-div,
-input > .anonymous-div,
-input::placeholder,
-textarea::placeholder,
+::placeholder,
+::-moz-text-control-editing-root,
 *|*::-moz-button-content,
 *|*::-moz-display-comboboxcontrol-frame,
 optgroup:before {
@@ -799,7 +703,9 @@ optgroup:before {
     -moz-user-input: none !important;
   }
 
-  input[type="file"] { height: 2em; }
+  input[type="file"] {
+    height: 2em;
+  }
 }
 
 progress {
@@ -817,11 +723,11 @@ progress {
 
 ::-moz-progress-bar {
   /* Prevent styling that would change the type of frame we construct. */
-  display: inline-block ! important;
-  float: none ! important;
-  position: static ! important;
-  overflow: visible ! important;
-  box-sizing: border-box ! important;
+  display: inline-block !important;
+  float: none !important;
+  position: static !important;
+  overflow: visible !important;
+  box-sizing: border-box !important;
 
   -moz-appearance: progresschunk;
   height: 100%;
@@ -835,16 +741,15 @@ meter {
   -moz-appearance: meter;
   display: inline-block;
   vertical-align: -0.2em;
-
   background: linear-gradient(#e6e6e6, #e6e6e6, #eeeeee 20%, #cccccc 45%, #cccccc 55%);
 }
 
 ::-moz-meter-bar {
   /* Block styles that would change the type of frame we construct. */
-  display: inline-block ! important;
-  float: none ! important;
-  position: static ! important;
-  overflow: visible ! important;
+  display: inline-block !important;
+  float: none !important;
+  position: static !important;
+  overflow: visible !important;
 
   -moz-appearance: meterchunk;
   height: 100%;
@@ -873,16 +778,6 @@ input[type=range] {
   border: unset;
   /* Prevent nsFrame::HandlePress setting mouse capture to this element. */
   user-select: none !important;
-}
-
-/**
- * Ideally we'd also require :-moz-focusring here, but that doesn't currently
- * work. Instead we only use the -moz-focus-outer border style if
- * NS_EVENT_STATE_FOCUSRING is set (the check is in
- * nsRangeFrame::BuildDisplayList).
- */
-input[type=range]::-moz-focus-outer {
-  border: 1px dotted black;
 }
 
 /**
@@ -952,6 +847,7 @@ input[type=range]::-moz-range-thumb {
   position: static !important;
   writing-mode: unset !important;
   direction: unset !important;
+
   width: 1em;
   height: 1em;
   border: 0.1em solid #999;
@@ -963,10 +859,6 @@ input[type=range]::-moz-range-thumb {
 
 input[type="number"] {
   -moz-appearance: number-input;
-  /* Has to revert some properties applied by the generic input rule. */
-  inline-size: 20ch; /* It'd be nice if this matched the default inline-size
-                        of <input type=text>, but that's not easy to achieve
-                        due to platform differences. */
 }
 
 input[type=number]::-moz-number-wrapper {
@@ -975,29 +867,23 @@ input[type=number]::-moz-number-wrapper {
   float: none !important;
   position: static !important;
   block-size: 100%;
+  /* The align-self: center bit below allows the editor to be potentially
+   * bigger than us. Clip it to match other text fields. */
+  overflow: -moz-hidden-unscrollable;
 }
 
-input[type=number]::-moz-number-text {
+input[type=number]::-moz-text-control-editing-root {
   display: block; /* Flex items must be block-level. Normally we do fixup in
                      the style system to ensure this, but that fixup is disabled
                      inside of form controls. So, we hardcode display here. */
-  -moz-appearance: none;
-  /* work around autofocus bug 939248 on initial load */
-  -moz-user-modify: read-write;
-  /* This pseudo-element is also an 'input' element (nested inside and
-   * distinct from the <input type=number> element) so we need to prevent the
-   * explicit setting of 'text-align' by the general CSS rule for 'input'
-   * above. We want to inherit its value from its <input type=number>
-   * ancestor, not have that general CSS rule reset it.
-   */
-  text-align: unset;
-  text-decoration: inherit;
-  ime-mode: inherit;
   flex: 1;
   min-inline-size: 0;
-  padding: unset;
-  border: 0;
-  margin: 0;
+  /* This makes it overflow into the flex container padding if needed, instead
+   * of getting squashed or pushed down by it */
+  align-self: center;
+  /* This prevents double-applying the padding, which our flex container gets
+   * via the override in nsTextControlFrame::ReflowTextControlChild */
+  padding: 0;
 }
 
 input[type=number]::-moz-number-spin-box {
@@ -1059,7 +945,7 @@ input[type=number]::-moz-number-spin-down {
 }
 
 input[type="number"] > div > div > div:hover {
-  /* give some indication of hover state for the up/down buttons */
+  /* Give some indication of hover state for the up/down buttons */
   background-color: lightblue;
 }
 
@@ -1070,10 +956,7 @@ input[type="time"] {
   cursor: default;
 }
 
-input[type="date"]:disabled,
-input[type="time"]:disabled,
-input[type="date"]:-moz-read-only,
-input[type="time"]:-moz-read-only {
+input:is([type="date"], [type="time"]):is(:disabled, :read-only) {
   color: GrayText;
 }
 

@@ -12,6 +12,7 @@
 #include "nsLayoutUtils.h"
 #include "nsPresContext.h"
 #include "nsGkAtoms.h"
+#include "nsFieldSetFrame.h"
 #include "nsPageContentFrame.h"
 #include "nsDisplayList.h"
 #include "nsPageSequenceFrame.h"  // for nsSharedPageData
@@ -39,7 +40,7 @@ NS_QUERYFRAME_TAIL_INHERITING(nsContainerFrame)
 nsPageFrame::nsPageFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
     : nsContainerFrame(aStyle, aPresContext, kClassID) {}
 
-nsPageFrame::~nsPageFrame() {}
+nsPageFrame::~nsPageFrame() = default;
 
 void nsPageFrame::Reflow(nsPresContext* aPresContext,
                          ReflowOutput& aDesiredSize,
@@ -444,9 +445,7 @@ class nsDisplayHeaderFooter final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayHeaderFooter);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayHeaderFooter() { MOZ_COUNT_DTOR(nsDisplayHeaderFooter); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayHeaderFooter)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder,
                      gfxContext* aCtx) override {
@@ -558,7 +557,7 @@ void nsPageFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   }
 
   content.AppendNewToTop<nsDisplayTransform>(aBuilder, child, &content,
-                                             content.GetBuildingRect(), 0,
+                                             content.GetBuildingRect(),
                                              ::ComputePageTransform);
 
   set.Content()->AppendToTop(&content);
@@ -656,7 +655,7 @@ nsPageBreakFrame::nsPageBreakFrame(ComputedStyle* aStyle,
                                    nsPresContext* aPresContext)
     : nsLeafFrame(aStyle, aPresContext, kClassID), mHaveReflowed(false) {}
 
-nsPageBreakFrame::~nsPageBreakFrame() {}
+nsPageBreakFrame::~nsPageBreakFrame() = default;
 
 nscoord nsPageBreakFrame::GetIntrinsicISize() {
   return nsPresContext::CSSPixelsToAppUnits(1);
@@ -675,11 +674,31 @@ void nsPageBreakFrame::Reflow(nsPresContext* aPresContext,
   // Override reflow, since we don't want to deal with what our
   // computed values are.
   WritingMode wm = aReflowInput.GetWritingMode();
-  LogicalSize finalSize(wm, GetIntrinsicISize(),
-                        aReflowInput.AvailableBSize() == NS_UNCONSTRAINEDSIZE
-                            ? 0
-                            : aReflowInput.AvailableBSize());
+  nscoord bSize = aReflowInput.AvailableBSize();
+  if (aReflowInput.AvailableBSize() == NS_UNCONSTRAINEDSIZE) {
+    bSize = nscoord(0);
+  } else if (GetContent()->IsHTMLElement(nsGkAtoms::legend)) {
+    // If this is a page break frame for a _rendered legend_ then it should be
+    // ignored since these frames are inserted inside the fieldset's inner
+    // frame and thus "misplaced".  nsFieldSetFrame::Reflow deals with these
+    // forced breaks explicitly instead.
+    nsContainerFrame* parent = GetParent();
+    if (parent &&
+        parent->Style()->GetPseudoType() == PseudoStyleType::fieldsetContent) {
+      while ((parent = parent->GetParent())) {
+        if (nsFieldSetFrame* fieldset = do_QueryFrame(parent)) {
+          auto* legend = fieldset->GetLegend();
+          if (legend && legend->GetContent() == GetContent()) {
+            bSize = nscoord(0);
+          }
+          break;
+        }
+      }
+    }
+  }
+  LogicalSize finalSize(wm, GetIntrinsicISize(), bSize);
   // round the height down to the nearest pixel
+  // XXX(mats) why???
   finalSize.BSize(wm) -=
       finalSize.BSize(wm) % nsPresContext::CSSPixelsToAppUnits(1);
   aDesiredSize.SetSize(wm, finalSize);

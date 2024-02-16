@@ -86,7 +86,7 @@ nsComboboxControlFrame::RedisplayTextEvent::Run() {
  */
 class nsComboButtonListener final : public nsIDOMEventListener {
  private:
-  virtual ~nsComboButtonListener() {}
+  virtual ~nsComboButtonListener() = default;
 
  public:
   NS_DECL_ISUPPORTS
@@ -372,7 +372,7 @@ class nsResizeDropdownAtFinalPosition final : public nsIReflowCallback,
       : mozilla::Runnable("nsResizeDropdownAtFinalPosition"), mFrame(aFrame) {}
 
  protected:
-  ~nsResizeDropdownAtFinalPosition() {}
+  ~nsResizeDropdownAtFinalPosition() = default;
 
  public:
   virtual bool ReflowFinished() override {
@@ -696,9 +696,11 @@ static void printSize(char* aDesc, nscoord aSize) {
 
 bool nsComboboxControlFrame::HasDropDownButton() const {
   const nsStyleDisplay* disp = StyleDisplay();
+  // FIXME(emilio): Blink also shows this for menulist-button and such... Seems
+  // more similar to our mac / linux implementation.
   return disp->mAppearance == StyleAppearance::Menulist &&
          (!IsThemed(disp) ||
-          PresContext()->GetTheme()->ThemeNeedsComboboxDropmarker());
+          PresContext()->Theme()->ThemeNeedsComboboxDropmarker());
 }
 
 nscoord nsComboboxControlFrame::GetIntrinsicISize(
@@ -728,7 +730,7 @@ nscoord nsComboboxControlFrame::GetIntrinsicISize(
   if (mDropdownFrame) {
     nscoord dropdownContentISize;
     bool isUsingOverlayScrollbars =
-        LookAndFeel::GetInt(LookAndFeel::eIntID_UseOverlayScrollbars) != 0;
+        LookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars) != 0;
     if (aType == nsLayoutUtils::MIN_ISIZE) {
       dropdownContentISize =
           isContainSize ? 0 : mDropdownFrame->GetMinISize(aRenderingContext);
@@ -1148,7 +1150,7 @@ nsresult nsComboboxControlFrame::CreateAnonymousContent(
 
   nsNodeInfoManager* nimgr = mContent->NodeInfo()->NodeInfoManager();
 
-  mDisplayContent = new nsTextNode(nimgr);
+  mDisplayContent = new (nimgr) nsTextNode(nimgr);
 
   // set the value of the text node
   mDisplayedIndex = mListControlFrame->GetSelectedIndex();
@@ -1158,7 +1160,9 @@ nsresult nsComboboxControlFrame::CreateAnonymousContent(
   }
   ActuallyDisplayText(false);
 
-  if (!aElements.AppendElement(mDisplayContent)) return NS_ERROR_OUT_OF_MEMORY;
+  // XXX(Bug 1631371) Check if this should use a fallible operation as it
+  // pretended earlier.
+  aElements.AppendElement(mDisplayContent);
 
   mButtonContent = mContent->OwnerDoc()->CreateHTMLElement(nsGkAtoms::button);
   if (!mButtonContent) return NS_ERROR_OUT_OF_MEMORY;
@@ -1183,7 +1187,9 @@ nsresult nsComboboxControlFrame::CreateAnonymousContent(
                             false);
   }
 
-  if (!aElements.AppendElement(mButtonContent)) return NS_ERROR_OUT_OF_MEMORY;
+  // XXX(Bug 1631371) Check if this should use a fallible operation as it
+  // pretended earlier.
+  aElements.AppendElement(mButtonContent);
 
   return NS_OK;
 }
@@ -1464,9 +1470,7 @@ class nsDisplayComboboxFocus : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayComboboxFocus);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayComboboxFocus() { MOZ_COUNT_DTOR(nsDisplayComboboxFocus); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayComboboxFocus)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("ComboboxFocus", TYPE_COMBOBOX_FOCUS)
@@ -1497,7 +1501,7 @@ void nsComboboxControlFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       nsPresContext* presContext = PresContext();
       const nsStyleDisplay* disp = StyleDisplay();
       if ((!IsThemed(disp) ||
-           !presContext->GetTheme()->ThemeDrawsFocusForWidget(
+           presContext->Theme()->ThemeWantsButtonInnerFocusRing(
                disp->mAppearance)) &&
           mDisplayFrame && IsVisibleForPainting()) {
         aLists.Content()->AppendNewToTop<nsDisplayComboboxFocus>(aBuilder,

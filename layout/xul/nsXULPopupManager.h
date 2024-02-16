@@ -173,7 +173,7 @@ class nsMenuChainItem {
     MOZ_COUNT_CTOR(nsMenuChainItem);
   }
 
-  ~nsMenuChainItem() { MOZ_COUNT_DTOR(nsMenuChainItem); }
+  MOZ_COUNTED_DTOR(nsMenuChainItem)
 
   nsIContent* Content();
   nsMenuPopupFrame* Frame() { return mFrame; }
@@ -413,8 +413,8 @@ class nsXULPopupManager final : public nsIDOMEventListener,
   // the rangeOffset of the event supplied to ShowPopup or ShowPopupAtScreen.
   // This is used by the implementation of XULDocument::GetPopupRangeParent
   // and XULDocument::GetPopupRangeOffset.
-  nsINode* GetMouseLocationParent();
-  int32_t MouseLocationOffset();
+  nsIContent* GetMouseLocationParent() const { return mRangeParentContent; }
+  int32_t MouseLocationOffset() const { return mRangeOffset; }
 
   /**
    * Open a <menu> given its content node. If aSelectFirstItem is
@@ -794,7 +794,7 @@ class nsXULPopupManager final : public nsIDOMEventListener,
   nsCOMPtr<nsIWidget> mWidget;
 
   // range parent and offset set in SetTriggerEvent
-  nsCOMPtr<nsINode> mRangeParent;
+  nsCOMPtr<nsIContent> mRangeParentContent;
   int32_t mRangeOffset;
   // Device pixels relative to the showing popup's presshell's
   // root prescontext's root frame.

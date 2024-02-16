@@ -89,6 +89,9 @@ void InspectorUtils::GetAllStyleSheets(GlobalObject& aGlobalObject,
   for (size_t i = 0; i < aDocument.SheetCount(); i++) {
     aResult.AppendElement(aDocument.SheetAt(i));
   }
+
+  // FIXME(emilio, bug 1617948): This doesn't deal with adopted stylesheets, and
+  // it should. It should also handle duplicates correctly when it does.
 }
 
 bool InspectorUtils::IsIgnorableWhitespace(CharacterData& aDataNode) {
@@ -460,7 +463,6 @@ void InspectorUtils::GetCSSValuesForProperty(GlobalObject& aGlobalObject,
   if (!found) {
     aRv.Throw(NS_ERROR_FAILURE);
   }
-  return;
 }
 
 /* static */

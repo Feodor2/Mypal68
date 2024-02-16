@@ -18,6 +18,8 @@
 #include "nsPresContext.h"
 #include "nsCSSRendering.h"
 #include "nsIContent.h"
+#include "nsIFrame.h"
+#include "nsIFrameInlines.h"
 #include "nsGenericHTMLElement.h"
 #include "nsAttrValueInlines.h"
 #include "nsHTMLParts.h"
@@ -42,11 +44,7 @@ class nsDisplayTableCellSelection final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayTableCellSelection);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayTableCellSelection() {
-    MOZ_COUNT_DTOR(nsDisplayTableCellSelection);
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayTableCellSelection)
 
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override {
     static_cast<nsTableCellFrame*>(mFrame)->DecorateForSelection(
@@ -63,7 +61,7 @@ class nsDisplayTableCellSelection final : public nsPaintedDisplayItem {
       nsDisplayListBuilder* aDisplayListBuilder) override {
     RefPtr<nsFrameSelection> frameSelection =
         mFrame->PresShell()->FrameSelection();
-    if (frameSelection->GetTableCellSelection()) {
+    if (frameSelection->IsInTableSelectionMode()) {
       return false;
     }
 
@@ -80,10 +78,9 @@ nsTableCellFrame::nsTableCellFrame(ComputedStyle* aStyle,
   mPriorAvailISize = 0;
 
   SetContentEmpty(false);
-  SetHasPctOverBSize(false);
 }
 
-nsTableCellFrame::~nsTableCellFrame() {}
+nsTableCellFrame::~nsTableCellFrame() = default;
 
 NS_IMPL_FRAMEARENA_HELPERS(nsTableCellFrame)
 
@@ -271,12 +268,12 @@ void nsTableCellFrame::DecorateForSelection(DrawTarget* aDrawTarget,
   NS_ASSERTION(IsSelected(), "Should only be called for selected cells");
   int16_t displaySelection;
   nsPresContext* presContext = PresContext();
-  displaySelection = DisplaySelection(presContext);
+  displaySelection = DetermineDisplaySelection();
   if (displaySelection) {
     RefPtr<nsFrameSelection> frameSelection =
         presContext->PresShell()->FrameSelection();
 
-    if (frameSelection->GetTableCellSelection()) {
+    if (frameSelection->IsInTableSelectionMode()) {
       nscolor bordercolor;
       if (displaySelection == nsISelectionController::SELECTION_DISABLED) {
         bordercolor = NS_RGB(176, 176, 176);  // disabled color
@@ -362,11 +359,7 @@ class nsDisplayTableCellBackground : public nsDisplayTableItem {
       : nsDisplayTableItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayTableCellBackground);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayTableCellBackground() {
-    MOZ_COUNT_DTOR(nsDisplayTableCellBackground);
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayTableCellBackground)
 
   virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
                        HitTestState* aState,
@@ -492,12 +485,12 @@ void nsTableCellFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 
 nsIFrame::LogicalSides nsTableCellFrame::GetLogicalSkipSides(
     const ReflowInput* aReflowInput) const {
+  LogicalSides skip(mWritingMode);
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
                    StyleBoxDecorationBreak::Clone)) {
-    return LogicalSides();
+    return skip;
   }
 
-  LogicalSides skip;
   if (nullptr != GetPrevInFlow()) {
     skip |= eLogicalSideBitsBStart;
   }
@@ -532,11 +525,15 @@ void nsTableCellFrame::BlockDirAlignChild(WritingMode aWM, nscoord aMaxAscent) {
   nscoord kidBStart = 0;
   switch (GetVerticalAlign()) {
     case StyleVerticalAlignKeyword::Baseline:
-      // Align the baselines of the child frame with the baselines of
-      // other children in the same row which have 'vertical-align: baseline'
-      kidBStart = bStartInset + aMaxAscent - GetCellBaseline();
-      break;
-
+      if (!GetContentEmpty()) {
+        // Align the baselines of the child frame with the baselines of
+        // other children in the same row which have 'vertical-align: baseline'
+        kidBStart = bStartInset + aMaxAscent - GetCellBaseline();
+        break;
+      }
+      // Empty cells don't participate in baseline alignment -
+      // fallback to start alignment.
+      [[fallthrough]];
     case StyleVerticalAlignKeyword::Top:
       // Align the top of the child frame with the top of the content area,
       kidBStart = bStartInset;
@@ -638,8 +635,10 @@ nscoord nsTableCellFrame::GetCellBaseline() const {
   nsIFrame* inner = mFrames.FirstChild();
   nscoord borderPadding = GetUsedBorderAndPadding().top;
   nscoord result;
-  if (nsLayoutUtils::GetFirstLineBaseline(GetWritingMode(), inner, &result))
+  if (!StyleDisplay()->IsContainLayout() &&
+      nsLayoutUtils::GetFirstLineBaseline(GetWritingMode(), inner, &result)) {
     return result + borderPadding;
+  }
   return inner->GetContentRectRelativeToSelf().YMost() + borderPadding;
 }
 
@@ -814,8 +813,6 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
           .SetComputedBSize(computedUnpaginatedBSize);
       DISPLAY_REFLOW_CHANGE();
     }
-  } else {
-    SetHasPctOverBSize(false);
   }
 
   WritingMode kidWM = firstKid->GetWritingMode();
@@ -912,15 +909,9 @@ void nsTableCellFrame::Reflow(nsPresContext* aPresContext,
 
   // the overflow area will be computed when BlockDirAlignChild() gets called
 
-  if (aReflowInput.mFlags.mSpecialBSizeReflow) {
-    if (aDesiredSize.BSize(wm) > BSize(wm)) {
-      // set a bit indicating that the pct bsize contents exceeded
-      // the height that they could honor in the pass 2 reflow
-      SetHasPctOverBSize(true);
-    }
-    if (NS_UNCONSTRAINEDSIZE == aReflowInput.AvailableBSize()) {
-      aDesiredSize.BSize(wm) = BSize(wm);
-    }
+  if (aReflowInput.mFlags.mSpecialBSizeReflow &&
+      NS_UNCONSTRAINEDSIZE == aReflowInput.AvailableBSize()) {
+    aDesiredSize.BSize(wm) = BSize(wm);
   }
 
   // If our parent is in initial reflow, it'll handle invalidating our
@@ -1000,7 +991,7 @@ nsBCTableCellFrame::nsBCTableCellFrame(ComputedStyle* aStyle,
   mBStartBorder = mIEndBorder = mBEndBorder = mIStartBorder = 0;
 }
 
-nsBCTableCellFrame::~nsBCTableCellFrame() {}
+nsBCTableCellFrame::~nsBCTableCellFrame() = default;
 
 /* virtual */
 nsMargin nsBCTableCellFrame::GetUsedBorder() const {

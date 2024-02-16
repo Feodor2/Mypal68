@@ -15,6 +15,7 @@
 #include "nsContentUtils.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/Preferences.h"
+#include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/EventBinding.h"
@@ -35,7 +36,6 @@ NS_IMPL_ISUPPORTS(nsMenuBarListener, nsIDOMEventListener)
 
 int32_t nsMenuBarListener::mAccessKey = -1;
 Modifiers nsMenuBarListener::mAccessKeyMask = 0;
-bool nsMenuBarListener::mAccessKeyFocuses = false;
 
 nsMenuBarListener::nsMenuBarListener(nsMenuBarFrame* aMenuBarFrame,
                                      nsIContent* aMenuBarContent)
@@ -115,11 +115,6 @@ void nsMenuBarListener::OnDestroyMenuBarFrame() {
   mTopWindowEventTarget = nullptr;
 }
 
-void nsMenuBarListener::InitializeStatics() {
-  Preferences::AddBoolVarCache(&mAccessKeyFocuses,
-                               "ui.key.menuAccessKeyFocuses");
-}
-
 nsresult nsMenuBarListener::GetMenuAccessKey(int32_t* aAccessKey) {
   if (!aAccessKey) return NS_ERROR_INVALID_POINTER;
   InitAccessKey();
@@ -188,7 +183,7 @@ nsresult nsMenuBarListener::KeyUp(Event* aKeyEvent) {
     return NS_OK;
   }
 
-  if (mAccessKey && mAccessKeyFocuses) {
+  if (mAccessKey && StaticPrefs::ui_key_menuAccessKeyFocuses()) {
     bool defaultPrevented = keyEvent->DefaultPrevented();
 
     // On a press of the ALT key by itself, we toggle the menu's
@@ -412,7 +407,7 @@ nsresult nsMenuBarListener::KeyDown(Event* aKeyEvent) {
   }
 #endif
 
-  if (mAccessKey && mAccessKeyFocuses) {
+  if (mAccessKey && StaticPrefs::ui_key_menuAccessKeyFocuses()) {
     bool defaultPrevented = aKeyEvent->DefaultPrevented();
 
     // No other modifiers can be down.

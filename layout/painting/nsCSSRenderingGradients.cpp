@@ -126,7 +126,8 @@ static Tuple<CSSPoint, CSSPoint> ComputeLinearGradientLine(
 }
 
 using EndingShape = StyleGenericEndingShape<Length, LengthPercentage>;
-using RadialGradientRadii = Variant<StyleShapeExtent, Pair<CSSCoord, CSSCoord>>;
+using RadialGradientRadii =
+    Variant<StyleShapeExtent, std::pair<CSSCoord, CSSCoord>>;
 
 static RadialGradientRadii ComputeRadialGradientRadii(const EndingShape& aShape,
                                                       const CSSSize& aSize) {
@@ -136,7 +137,7 @@ static RadialGradientRadii ComputeRadialGradientRadii(const EndingShape& aShape,
       return RadialGradientRadii(circle.AsExtent());
     }
     CSSCoord radius = circle.AsRadius().ToCSSPixels();
-    return RadialGradientRadii(MakePair(radius, radius));
+    return RadialGradientRadii(std::make_pair(radius, radius));
   }
   auto& ellipse = aShape.AsEllipse();
   if (ellipse.IsExtent()) {
@@ -145,8 +146,8 @@ static RadialGradientRadii ComputeRadialGradientRadii(const EndingShape& aShape,
 
   auto& radii = ellipse.AsRadii();
   return RadialGradientRadii(
-      MakePair(radii._0.ResolveToCSSPixels(aSize.width),
-               radii._1.ResolveToCSSPixels(aSize.height)));
+      std::make_pair(radii._0.ResolveToCSSPixels(aSize.width),
+                     radii._1.ResolveToCSSPixels(aSize.height)));
 }
 
 // Compute the start and end points of the gradient line for a radial gradient.
@@ -214,9 +215,9 @@ static Tuple<CSSPoint, CSSPoint, CSSCoord, CSSCoord> ComputeRadialGradientLine(
         radiusX = radiusY = 0;
     }
   } else {
-    auto pair = radii.as<Pair<CSSCoord, CSSCoord>>();
-    radiusX = pair.first();
-    radiusY = pair.second();
+    auto pair = radii.as<std::pair<CSSCoord, CSSCoord>>();
+    radiusX = pair.first;
+    radiusY = pair.second;
   }
 
   // The gradient line end point is where the gradient line intersects
@@ -529,8 +530,10 @@ static void ClampColorStops(nsTArray<ColorStop>& aStops) {
 
 namespace mozilla {
 
-static Color GetSpecifiedColor(const StyleGradientItem& aItem,
-                               const ComputedStyle& aStyle) {
+template <typename T>
+static Color GetSpecifiedColor(
+    const StyleGenericGradientItem<StyleColor, T>& aItem,
+    const ComputedStyle& aStyle) {
   if (aItem.IsInterpolationHint()) {
     return Color();
   }
@@ -541,7 +544,8 @@ static Color GetSpecifiedColor(const StyleGradientItem& aItem,
 }
 
 static Maybe<double> GetSpecifiedGradientPosition(
-    const StyleGradientItem& aItem, CSSCoord aLineLength) {
+    const StyleGenericGradientItem<StyleColor, StyleLengthPercentage>& aItem,
+    CSSCoord aLineLength) {
   if (aItem.IsSimpleColorStop()) {
     return Nothing();
   }
@@ -573,7 +577,7 @@ static nsTArray<ColorStop> ComputeColorStops(ComputedStyle* aComputedStyle,
   Maybe<size_t> firstUnsetPosition;
   auto span = aGradient.items.AsSpan();
   for (size_t i = 0; i < aGradient.items.Length(); ++i) {
-    const StyleGradientItem& stop = span[i];
+    const auto& stop = span[i];
     double position;
 
     Maybe<double> specifiedPosition =

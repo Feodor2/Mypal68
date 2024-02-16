@@ -39,7 +39,7 @@ class PreloadedStyleSheet : public nsIPreloadedStyleSheet {
   nsresult PreloadAsync(NotNull<dom::Promise*> aPromise);
 
  protected:
-  virtual ~PreloadedStyleSheet() {}
+  virtual ~PreloadedStyleSheet() = default;
 
  private:
   class StylesheetPreloadObserver final : public nsICSSLoaderObserver {
@@ -54,7 +54,7 @@ class PreloadedStyleSheet : public nsIPreloadedStyleSheet {
                                 nsresult aStatus) override;
 
    protected:
-    virtual ~StylesheetPreloadObserver() {}
+    virtual ~StylesheetPreloadObserver() = default;
 
    private:
     RefPtr<dom::Promise> mPromise;

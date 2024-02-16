@@ -121,7 +121,7 @@ nsBoxFrame::nsBoxFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
   SetXULLayoutManager(layout);
 }
 
-nsBoxFrame::~nsBoxFrame() {}
+nsBoxFrame::~nsBoxFrame() = default;
 
 void nsBoxFrame::SetInitialChildList(ChildListID aListID,
                                      nsFrameList& aChildList) {
@@ -603,7 +603,7 @@ void nsBoxFrame::Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
     nsSize minSize = GetXULMinSize(state);
     nsSize maxSize = GetXULMaxSize(state);
     // XXXbz isn't GetXULPrefSize supposed to bounds-check for us?
-    physicalPrefSize = BoundsCheck(minSize, physicalPrefSize, maxSize);
+    physicalPrefSize = XULBoundsCheck(minSize, physicalPrefSize, maxSize);
     prefSize = LogicalSize(wm, physicalPrefSize);
   }
 
@@ -673,7 +673,7 @@ nsSize nsBoxFrame::GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) {
 
   nsSize size(0, 0);
   DISPLAY_PREF_SIZE(this, size);
-  if (!DoesNeedRecalc(mPrefSize)) {
+  if (!XULNeedsRecalc(mPrefSize)) {
     size = mPrefSize;
     return size;
   }
@@ -688,26 +688,31 @@ nsSize nsBoxFrame::GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) {
       if (!widthSet) size.width = layoutSize.width;
       if (!heightSet) size.height = layoutSize.height;
     } else {
-      size = nsBox::GetXULPrefSize(aBoxLayoutState);
+      size = nsIFrame::GetUncachedXULPrefSize(aBoxLayoutState);
     }
   }
 
   nsSize minSize = GetXULMinSize(aBoxLayoutState);
   nsSize maxSize = GetXULMaxSize(aBoxLayoutState);
-  mPrefSize = BoundsCheck(minSize, size, maxSize);
+  mPrefSize = XULBoundsCheck(minSize, size, maxSize);
 
   return mPrefSize;
 }
 
 nscoord nsBoxFrame::GetXULBoxAscent(nsBoxLayoutState& aBoxLayoutState) {
-  if (!DoesNeedRecalc(mAscent)) return mAscent;
+  if (!XULNeedsRecalc(mAscent)) {
+    return mAscent;
+  }
 
-  if (IsXULCollapsed()) return 0;
+  if (IsXULCollapsed()) {
+    return 0;
+  }
 
-  if (mLayoutManager)
+  if (mLayoutManager) {
     mAscent = mLayoutManager->GetAscent(this, aBoxLayoutState);
-  else
-    mAscent = nsBox::GetXULBoxAscent(aBoxLayoutState);
+  } else {
+    mAscent = GetXULPrefSize(aBoxLayoutState).height;
+  }
 
   return mAscent;
 }
@@ -718,7 +723,7 @@ nsSize nsBoxFrame::GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) {
 
   nsSize size(0, 0);
   DISPLAY_MIN_SIZE(this, size);
-  if (!DoesNeedRecalc(mMinSize)) {
+  if (!XULNeedsRecalc(mMinSize)) {
     size = mMinSize;
     return size;
   }
@@ -727,14 +732,13 @@ nsSize nsBoxFrame::GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) {
 
   // if the size was not completely redefined in CSS then ask our children
   bool widthSet, heightSet;
-  if (!nsIFrame::AddXULMinSize(aBoxLayoutState, this, size, widthSet,
-                               heightSet)) {
+  if (!nsIFrame::AddXULMinSize(this, size, widthSet, heightSet)) {
     if (mLayoutManager) {
       nsSize layoutSize = mLayoutManager->GetXULMinSize(this, aBoxLayoutState);
       if (!widthSet) size.width = layoutSize.width;
       if (!heightSet) size.height = layoutSize.height;
     } else {
-      size = nsBox::GetXULMinSize(aBoxLayoutState);
+      size = nsIFrame::GetUncachedXULMinSize(aBoxLayoutState);
     }
   }
 
@@ -749,7 +753,7 @@ nsSize nsBoxFrame::GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) {
 
   nsSize size(NS_UNCONSTRAINEDSIZE, NS_UNCONSTRAINEDSIZE);
   DISPLAY_MAX_SIZE(this, size);
-  if (!DoesNeedRecalc(mMaxSize)) {
+  if (!XULNeedsRecalc(mMaxSize)) {
     size = mMaxSize;
     return size;
   }
@@ -764,7 +768,7 @@ nsSize nsBoxFrame::GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) {
       if (!widthSet) size.width = layoutSize.width;
       if (!heightSet) size.height = layoutSize.height;
     } else {
-      size = nsBox::GetXULMaxSize(aBoxLayoutState);
+      size = nsIFrame::GetUncachedXULMaxSize(aBoxLayoutState);
     }
   }
 
@@ -774,9 +778,9 @@ nsSize nsBoxFrame::GetXULMaxSize(nsBoxLayoutState& aBoxLayoutState) {
 }
 
 nscoord nsBoxFrame::GetXULFlex() {
-  if (!DoesNeedRecalc(mFlex)) return mFlex;
-
-  mFlex = nsBox::GetXULFlex();
+  if (XULNeedsRecalc(mFlex)) {
+    nsIFrame::AddXULFlex(this, mFlex);
+  }
 
   return mFlex;
 }
@@ -792,7 +796,7 @@ nsBoxFrame::DoXULLayout(nsBoxLayoutState& aState) {
 
   nsresult rv = NS_OK;
   if (mLayoutManager) {
-    CoordNeedsRecalc(mAscent);
+    XULCoordNeedsRecalc(mAscent);
     rv = mLayoutManager->XULLayout(this, aState);
   }
 
@@ -846,11 +850,11 @@ void nsBoxFrame::DestroyFrom(nsIFrame* aDestructRoot,
 
 /* virtual */
 void nsBoxFrame::MarkIntrinsicISizesDirty() {
-  SizeNeedsRecalc(mPrefSize);
-  SizeNeedsRecalc(mMinSize);
-  SizeNeedsRecalc(mMaxSize);
-  CoordNeedsRecalc(mFlex);
-  CoordNeedsRecalc(mAscent);
+  XULSizeNeedsRecalc(mPrefSize);
+  XULSizeNeedsRecalc(mMinSize);
+  XULSizeNeedsRecalc(mMaxSize);
+  XULCoordNeedsRecalc(mFlex);
+  XULCoordNeedsRecalc(mAscent);
 
   if (mLayoutManager) {
     nsBoxLayoutState state(PresContext());
@@ -1121,10 +1125,10 @@ void nsBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
       MOZ_ASSERT(renderRoot == wr::RenderRoot::Default);
 #endif
       // Wrap the list to make it its own layer
-      aLists.Content()->AppendNewToTop<nsDisplayOwnLayer>(
-          aBuilder, this, &masterList, ownLayerASR,
-          nsDisplayOwnLayerFlags::None, mozilla::layers::ScrollbarData{}, true,
-          true);
+      aLists.Content()->AppendNewToTopWithIndex<nsDisplayOwnLayer>(
+          aBuilder, this, /* aIndex = */ nsDisplayOwnLayer::OwnLayerForBoxFrame,
+          &masterList, ownLayerASR, nsDisplayOwnLayerFlags::None,
+          mozilla::layers::ScrollbarData{}, true, true);
 #ifdef MOZ_BUILD_WEBRENDER
     } else {
       MOZ_ASSERT(!XRE_IsContentProcess());

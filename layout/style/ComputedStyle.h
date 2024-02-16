@@ -13,6 +13,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/PseudoStyleType.h"
 #include "mozilla/ServoComputedData.h"
+#include "mozilla/ServoComputedDataInlines.h"
 #include "mozilla/ServoStyleConsts.h"
 #include "mozilla/ServoTypes.h"
 #include "mozilla/ServoUtils.h"
@@ -68,6 +69,11 @@ class ComputedStyle {
   ComputedStyle(PseudoStyleType aPseudoType,
                 ServoComputedDataForgotten aComputedValues);
 
+  // Returns the computed (not resolved) value of the given property.
+  void GetComputedPropertyValue(nsCSSPropertyID aId, nsAString& aOut) const {
+    Servo_GetPropertyValue(this, aId, &aOut);
+  }
+
   // Return the ComputedStyle whose style data should be used for the R,
   // G, and B components of color, background-color, and border-*-color
   // if RelevantLinkIsVisited().
@@ -113,6 +119,19 @@ class ComputedStyle {
 
   bool IsPseudoOrAnonBox() const {
     return mPseudoType != PseudoStyleType::NotPseudo;
+  }
+
+  // Whether there are author-specified rules for padding properties.
+  // Only returns something meaningful if the appearance property is not `none`.
+  bool HasAuthorSpecifiedPadding() const {
+    return bool(Flags() & Flag::HAS_AUTHOR_SPECIFIED_PADDING);
+  }
+
+  // Whether there are author-specified rules for border or background
+  // properties.
+  // Only returns something meaningful if the appearance property is not `none`.
+  bool HasAuthorSpecifiedBorderOrBackground() const {
+    return bool(Flags() & Flag::HAS_AUTHOR_SPECIFIED_BORDER_BACKGROUND);
   }
 
   // Does this ComputedStyle or any of its ancestors have text
@@ -162,6 +181,10 @@ class ComputedStyle {
   // Whether this style is for the root element of the document.
   bool IsRootElementStyle() const {
     return bool(Flags() & Flag::IS_ROOT_ELEMENT_STYLE);
+  }
+
+  bool IsInOpacityZeroSubtree() const {
+    return bool(Flags() & Flag::IS_IN_OPACITY_ZERO_SUBTREE);
   }
 
   ComputedStyle* GetCachedInheritingAnonBoxStyle(

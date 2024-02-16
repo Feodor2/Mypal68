@@ -14,7 +14,7 @@ namespace layout {
 
 NS_IMPL_ISUPPORTS(RemotePrintJobChild, nsIWebProgressListener)
 
-RemotePrintJobChild::RemotePrintJobChild() {}
+RemotePrintJobChild::RemotePrintJobChild() = default;
 
 nsresult RemotePrintJobChild::InitializePrint(const nsString& aDocumentTitle,
                                               const nsString& aPrintToFile,
@@ -151,7 +151,7 @@ RemotePrintJobChild::OnContentBlockingEvent(nsIWebProgress* aProgress,
 
 // End of nsIWebProgressListener
 
-RemotePrintJobChild::~RemotePrintJobChild() {}
+RemotePrintJobChild::~RemotePrintJobChild() = default;
 
 void RemotePrintJobChild::ActorDestroy(ActorDestroyReason aWhy) {
   mPagePrintTimer = nullptr;

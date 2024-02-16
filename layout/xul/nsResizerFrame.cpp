@@ -13,7 +13,7 @@
 
 #include "nsPresContext.h"
 #include "nsFrameManager.h"
-#include "nsIDocShell.h"
+#include "nsDocShell.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIBaseWindow.h"
 #include "nsPIDOMWindow.h"
@@ -477,7 +477,7 @@ void nsResizerFrame::RestoreOriginalSize(nsIContent* aContent) {
   NS_ASSERTION(sizeInfo, "We set a null sizeInfo!?");
   Direction direction = {1, 1};
   ResizeContent(aContent, direction, *sizeInfo, nullptr);
-  aContent->DeleteProperty(nsGkAtoms::_moz_original_size);
+  aContent->RemoveProperty(nsGkAtoms::_moz_original_size);
 }
 
 /* returns a Direction struct containing the horizontal and vertical direction

@@ -39,7 +39,7 @@ struct nsTransformedCharStyle final {
   bool mMaskPassword = false;
 
  private:
-  ~nsTransformedCharStyle() {}
+  ~nsTransformedCharStyle() = default;
   nsTransformedCharStyle(const nsTransformedCharStyle& aOther) = delete;
   nsTransformedCharStyle& operator=(const nsTransformedCharStyle& aOther) =
       delete;
@@ -47,7 +47,7 @@ struct nsTransformedCharStyle final {
 
 class nsTransformingTextRunFactory {
  public:
-  virtual ~nsTransformingTextRunFactory() {}
+  virtual ~nsTransformingTextRunFactory() = default;
 
   // Default 8-bit path just transforms to Unicode and takes that path
   already_AddRefed<nsTransformedTextRun> MakeTextRun(

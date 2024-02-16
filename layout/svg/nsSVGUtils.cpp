@@ -333,7 +333,7 @@ nsIFrame* nsSVGUtils::GetOuterSVGFrameAndCoveredRegion(nsIFrame* aFrame,
     // double-counting.
     m = m.PreTranslate(-initPositionX, -initPositionY);
 
-    SVGBBox bbox = nsSVGUtils::GetBBox(aFrame, flags, &m);
+    gfxRect bbox = nsSVGUtils::GetBBox(aFrame, flags, &m);
     *aRect = nsLayoutUtils::RoundGfxRectToAppRect(bbox, appUnitsPerDevPixel);
   }
 
@@ -427,6 +427,8 @@ float nsSVGUtils::ComputeOpacity(nsIFrame* aFrame, bool aHandleOpacity) {
 
 void nsSVGUtils::DetermineMaskUsage(nsIFrame* aFrame, bool aHandleOpacity,
                                     MaskUsage& aUsage) {
+  using ClipPathType = StyleClipPath::Tag;
+
   aUsage.opacity = ComputeOpacity(aFrame, aHandleOpacity);
 
   nsIFrame* firstFrame =
@@ -442,11 +444,10 @@ void nsSVGUtils::DetermineMaskUsage(nsIFrame* aFrame, bool aHandleOpacity,
   nsSVGClipPathFrame* clipPathFrame;
   // XXX check return value?
   SVGObserverUtils::GetAndObserveClipPath(firstFrame, &clipPathFrame);
-  MOZ_ASSERT(!clipPathFrame ||
-             svgReset->mClipPath.GetType() == StyleShapeSourceType::Image);
+  MOZ_ASSERT(!clipPathFrame || svgReset->mClipPath.IsUrl());
 
-  switch (svgReset->mClipPath.GetType()) {
-    case StyleShapeSourceType::Image:
+  switch (svgReset->mClipPath.tag) {
+    case ClipPathType::Url:
       if (clipPathFrame) {
         if (clipPathFrame->IsTrivial()) {
           aUsage.shouldApplyClipPath = true;
@@ -455,12 +456,12 @@ void nsSVGUtils::DetermineMaskUsage(nsIFrame* aFrame, bool aHandleOpacity,
         }
       }
       break;
-    case StyleShapeSourceType::Shape:
-    case StyleShapeSourceType::Box:
-    case StyleShapeSourceType::Path:
+    case ClipPathType::Shape:
+    case ClipPathType::Box:
+    case ClipPathType::Path:
       aUsage.shouldApplyBasicShapeOrPath = true;
       break;
-    case StyleShapeSourceType::None:
+    case ClipPathType::None:
       MOZ_ASSERT(!aUsage.shouldGenerateClipMaskLayer &&
                  !aUsage.shouldApplyClipPath &&
                  !aUsage.shouldApplyBasicShapeOrPath);
@@ -481,7 +482,7 @@ class MixModeBlender {
   }
 
   bool ShouldCreateDrawTargetForBlend() const {
-    return mFrame->StyleEffects()->mMixBlendMode != NS_STYLE_BLEND_NORMAL;
+    return mFrame->StyleEffects()->mMixBlendMode != StyleBlend::Normal;
   }
 
   gfxContext* CreateBlendTarget(const gfxMatrix& aTransform) {
@@ -1365,8 +1366,7 @@ void nsSVGUtils::MakeFillPatternFor(nsIFrame* aFrame, gfxContext* aContext,
 
   const float opacity = aFrame->StyleEffects()->mOpacity;
 
-  float fillOpacity = GetOpacity(style->FillOpacitySource(),
-                                 style->mFillOpacity, aContextPaint);
+  float fillOpacity = GetOpacity(style->mFillOpacity, aContextPaint);
   if (opacity < 1.0f && nsSVGUtils::CanOptimizeOpacity(aFrame)) {
     // Combine the group opacity into the fill opacity (we will have skipped
     // creating an offscreen surface to apply the group opacity).
@@ -1433,8 +1433,7 @@ void nsSVGUtils::MakeStrokePatternFor(nsIFrame* aFrame, gfxContext* aContext,
 
   const float opacity = aFrame->StyleEffects()->mOpacity;
 
-  float strokeOpacity = GetOpacity(style->StrokeOpacitySource(),
-                                   style->mStrokeOpacity, aContextPaint);
+  float strokeOpacity = GetOpacity(style->mStrokeOpacity, aContextPaint);
   if (opacity < 1.0f && nsSVGUtils::CanOptimizeOpacity(aFrame)) {
     // Combine the group opacity into the stroke opacity (we will have skipped
     // creating an offscreen surface to apply the group opacity).
@@ -1490,35 +1489,22 @@ void nsSVGUtils::MakeStrokePatternFor(nsIFrame* aFrame, gfxContext* aContext,
 }
 
 /* static */
-float nsSVGUtils::GetOpacity(nsStyleSVGOpacitySource aOpacityType,
-                             const float& aOpacity,
+float nsSVGUtils::GetOpacity(const StyleSVGOpacity& aOpacity,
                              SVGContextPaint* aContextPaint) {
   float opacity = 1.0f;
-  switch (aOpacityType) {
-    case eStyleSVGOpacitySource_Normal:
-      opacity = aOpacity;
-      break;
-    case eStyleSVGOpacitySource_ContextFillOpacity:
+  switch (aOpacity.tag) {
+    case StyleSVGOpacity::Tag::Opacity:
+      return aOpacity.AsOpacity();
+    case StyleSVGOpacity::Tag::ContextFillOpacity:
       if (aContextPaint) {
         opacity = aContextPaint->GetFillOpacity();
-      } else {
-        NS_WARNING(
-            "Content used context-fill-opacity when not in a context element");
       }
       break;
-    case eStyleSVGOpacitySource_ContextStrokeOpacity:
+    case StyleSVGOpacity::Tag::ContextStrokeOpacity:
       if (aContextPaint) {
         opacity = aContextPaint->GetStrokeOpacity();
-      } else {
-        NS_WARNING(
-            "Content used context-stroke-opacity when not in a context "
-            "element");
       }
       break;
-    default:
-      MOZ_ASSERT_UNREACHABLE(
-          "Unknown object opacity inheritance type for SVG "
-          "glyph");
   }
   return opacity;
 }
@@ -1531,8 +1517,8 @@ bool nsSVGUtils::HasStroke(nsIFrame* aFrame, SVGContextPaint* aContextPaint) {
 float nsSVGUtils::GetStrokeWidth(nsIFrame* aFrame,
                                  SVGContextPaint* aContextPaint) {
   const nsStyleSVG* style = aFrame->StyleSVG();
-  if (aContextPaint && style->StrokeWidthFromObject()) {
-    return aContextPaint->GetStrokeWidth();
+  if (style->mStrokeWidth.IsContextValue()) {
+    return aContextPaint ? aContextPaint->GetStrokeWidth() : 1.0f;
   }
 
   nsIContent* content = aFrame->GetContent();
@@ -1541,7 +1527,8 @@ float nsSVGUtils::GetStrokeWidth(nsIFrame* aFrame,
   }
 
   SVGElement* ctx = static_cast<SVGElement*>(content);
-  return SVGContentUtils::CoordToFloat(ctx, style->mStrokeWidth);
+  return SVGContentUtils::CoordToFloat(
+      ctx, style->mStrokeWidth.AsLengthPercentage());
 }
 
 void nsSVGUtils::SetupStrokeGeometry(nsIFrame* aFrame, gfxContext* aContext,
@@ -1576,7 +1563,8 @@ uint16_t nsSVGUtils::GetGeometryHitTestFlags(nsIFrame* aFrame) {
           flags |= SVG_HIT_TEST_FILL;
         if (!aFrame->StyleSVG()->mStroke.kind.IsNone())
           flags |= SVG_HIT_TEST_STROKE;
-        if (aFrame->StyleSVG()->mStrokeOpacity > 0)
+        if (!aFrame->StyleSVG()->mStrokeOpacity.IsOpacity() ||
+            aFrame->StyleSVG()->mStrokeOpacity.AsOpacity() > 0)
           flags |= SVG_HIT_TEST_CHECK_MRECT;
       }
       break;
@@ -1599,7 +1587,10 @@ uint16_t nsSVGUtils::GetGeometryHitTestFlags(nsIFrame* aFrame) {
       if (!aFrame->StyleSVG()->mFill.kind.IsNone()) flags |= SVG_HIT_TEST_FILL;
       if (!aFrame->StyleSVG()->mStroke.kind.IsNone())
         flags |= SVG_HIT_TEST_STROKE;
-      if (aFrame->StyleSVG()->mStrokeOpacity) flags |= SVG_HIT_TEST_CHECK_MRECT;
+      if (!aFrame->StyleSVG()->mStrokeOpacity.IsOpacity() ||
+          aFrame->StyleSVG()->mStrokeOpacity.AsOpacity() > 0) {
+        flags |= SVG_HIT_TEST_CHECK_MRECT;
+      }
       break;
     case StylePointerEvents::Fill:
       flags |= SVG_HIT_TEST_FILL;
@@ -1692,10 +1683,9 @@ gfxMatrix nsSVGUtils::GetTransformMatrixInUserSpace(const nsIFrame* aFrame) {
     return {};
   }
 
+  nsStyleTransformMatrix::TransformReferenceBox refBox(aFrame);
   nsDisplayTransform::FrameTransformProperties properties{
-      aFrame, AppUnitsPerCSSPixel(), nullptr};
-  nsStyleTransformMatrix::TransformReferenceBox refBox;
-  refBox.Init(aFrame);
+      aFrame, refBox, AppUnitsPerCSSPixel()};
 
   // SVG elements can have x/y offset, their default transform origin
   // is the origin of user space, not the top left point of the frame.

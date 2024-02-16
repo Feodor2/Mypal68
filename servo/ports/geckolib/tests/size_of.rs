@@ -8,7 +8,7 @@ use style::applicable_declarations::ApplicableDeclarationBlock;
 use style::data::{ElementData, ElementStyles};
 use style::gecko::selector_parser::{self, SelectorImpl};
 use style::properties::ComputedValues;
-use style::rule_tree::{RuleNode, StrongRuleNode};
+use style::rule_tree::{RULE_NODE_SIZE, StrongRuleNode};
 use style::servo_arc::Arc;
 use style::values::computed;
 use style::values::specified;
@@ -53,7 +53,10 @@ size_of_test!(
     16
 );
 
-size_of_test!(test_size_of_rule_node, RuleNode, 80);
+#[test]
+fn test_size_of_rule_node() {
+    assert_eq!(RULE_NODE_SIZE, 80, "RuleNode size changed");
+}
 
 // This is huge, but we allocate it on the stack and then never move it,
 // we only pass `&mut SourcePropertyDeclaration` references around.
@@ -66,15 +69,13 @@ size_of_test!(
 size_of_test!(test_size_of_computed_image, computed::image::Image, 16);
 size_of_test!(test_size_of_specified_image, specified::image::Image, 16);
 
-// FIXME(bz): These can shrink if we move the None_ value inside the
-// enum instead of paying an extra word for the Either discriminant.
 size_of_test!(
     test_size_of_computed_image_layer,
-    computed::image::ImageLayer,
+    computed::image::Image,
     16
 );
 size_of_test!(
     test_size_of_specified_image_layer,
-    specified::image::ImageLayer,
+    specified::image::Image,
     16
 );

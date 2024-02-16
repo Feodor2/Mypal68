@@ -44,7 +44,7 @@ MobileViewportManager::MobileViewportManager(MVMContext* aContext)
   mContext->AddObserver(this, BEFORE_FIRST_PAINT.Data(), false);
 }
 
-MobileViewportManager::~MobileViewportManager() {}
+MobileViewportManager::~MobileViewportManager() = default;
 
 void MobileViewportManager::Destroy() {
   MVM_LOG("%p: destroying\n", this);

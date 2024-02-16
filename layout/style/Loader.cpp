@@ -163,7 +163,7 @@ class SheetLoadDataHashKey : public nsURIHashKey {
 
   explicit SheetLoadDataHashKey(css::SheetLoadData&);
 
-  ~SheetLoadDataHashKey() { MOZ_COUNT_DTOR(SheetLoadDataHashKey); }
+  MOZ_COUNTED_DTOR(SheetLoadDataHashKey)
 
   SheetLoadDataHashKey* GetKey() const {
     return const_cast<SheetLoadDataHashKey*>(this);
@@ -432,6 +432,10 @@ void SheetLoadData::ScheduleLoadEventIfNeeded() {
  * Style sheet reuse *
  *********************/
 
+static RefPtr<StyleSheet> CloneSheet(StyleSheet& aSheet) {
+  return aSheet.Clone(nullptr, nullptr, nullptr, nullptr);
+}
+
 bool LoaderReusableStyleSheets::FindReusableStyleSheet(
     nsIURI* aURL, RefPtr<StyleSheet>& aResult) {
   MOZ_ASSERT(aURL);
@@ -509,10 +513,6 @@ static void AssertIncompleteSheetMatches(const SheetLoadData& aData,
 
 auto Loader::Sheets::Lookup(SheetLoadDataHashKey& aKey, bool aSyncLoad)
     -> CacheResult {
-  auto CloneSheet = [](StyleSheet& aSheet) -> RefPtr<StyleSheet> {
-    return aSheet.Clone(nullptr, nullptr, nullptr, nullptr);
-  };
-
   nsIURI* uri = aKey.GetURI();
   // Try to find first in the XUL prototype cache.
 #ifdef MOZ_XUL
@@ -1382,13 +1382,14 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState,
 
     // snapshot the nonce at load start time for performing CSP checks
     if (contentPolicyType == nsIContentPolicy::TYPE_INTERNAL_STYLESHEET) {
-      nsCOMPtr<Element> element = do_QueryInterface(aLoadData.mRequestingNode);
-      if (element && element->IsHTMLElement()) {
-        nsAutoString cspNonce;
+      if (aLoadData.mRequestingNode) {
         // TODO(bug 1607009) move to SheetLoadData
-        element->GetAttr(nsGkAtoms::nonce, cspNonce);
-        nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
-        loadInfo->SetCspNonce(cspNonce);
+        nsString* cspNonce = static_cast<nsString*>(
+            aLoadData.mRequestingNode->GetProperty(nsGkAtoms::nonce));
+        if (cspNonce) {
+          nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+          loadInfo->SetCspNonce(*cspNonce);
+        }
       }
     }
 
@@ -1514,13 +1515,14 @@ nsresult Loader::LoadSheet(SheetLoadData& aLoadData, SheetState aSheetState,
 
   // snapshot the nonce at load start time for performing CSP checks
   if (contentPolicyType == nsIContentPolicy::TYPE_INTERNAL_STYLESHEET) {
-    nsCOMPtr<Element> element = do_QueryInterface(aLoadData.mRequestingNode);
-    if (element && element->IsHTMLElement()) {
-      nsAutoString cspNonce;
+    if (aLoadData.mRequestingNode) {
       // TODO(bug 1607009) move to SheetLoadData
-      element->GetAttr(nsGkAtoms::nonce, cspNonce);
-      nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
-      loadInfo->SetCspNonce(cspNonce);
+      nsString* cspNonce = static_cast<nsString*>(
+          aLoadData.mRequestingNode->GetProperty(nsGkAtoms::nonce));
+      if (cspNonce) {
+        nsCOMPtr<nsILoadInfo> loadInfo = channel->LoadInfo();
+        loadInfo->SetCspNonce(*cspNonce);
+      }
     }
   }
 
@@ -1816,7 +1818,14 @@ void Loader::DoSheetComplete(SheetLoadData& aLoadData,
           LOG(("  Putting sheet in XUL prototype cache"));
           NS_ASSERTION(sheet->IsComplete(),
                        "Should only be caching complete sheets");
-          cache->PutStyleSheet(sheet);
+          // We need to clone the sheet on insertion to the cache because
+          // if the original sheet has a cyclic reference this can cause
+          // leaks until shutdown since the global cache is not cycle-collected
+
+          // NOTE: If we stop cloning sheets before insertion, we need to change
+          // nsXULPrototypeCache::CollectMemoryReports() to stop using
+          // SizeOfIncludingThis() because it will no longer own the sheets.
+          cache->PutStyleSheet(CloneSheet(*sheet));
         }
       }
     } else {
@@ -1824,7 +1833,7 @@ void Loader::DoSheetComplete(SheetLoadData& aLoadData,
       SheetLoadDataHashKey key(aLoadData);
       NS_ASSERTION(sheet->IsComplete(),
                    "Should only be caching complete sheets");
-      mSheets->mCompleteSheets.Put(&key, sheet);
+      mSheets->mCompleteSheets.Put(&key, RefPtr{sheet});
 #ifdef MOZ_XUL
     }
 #endif
@@ -1939,7 +1948,7 @@ Result<Loader::LoadSheetResult, nsresult> Loader::LoadInlineStyle(
     if (completed == Completed::Yes) {
       // TODO(emilio): Try to cache sheets with @import rules, maybe?
       if (isWorthCaching) {
-        mSheets->mInlineSheets.Put(aBuffer, sheet);
+        mSheets->mInlineSheets.Put(aBuffer, std::move(sheet));
       }
     } else {
       data->mMustNotify = true;
@@ -2052,7 +2061,7 @@ Result<Loader::LoadSheetResult, nsresult> Loader::LoadStyleLink(
       mSheets->mLoadingDatas.Count() != 0 && !result.ShouldBlock()) {
     LOG(("  Deferring sheet load"));
     SheetLoadDataHashKey key(*data);
-    mSheets->mPendingDatas.Put(&key, data);
+    mSheets->mPendingDatas.Put(&key, RefPtr{data});
     data->mMustNotify = true;
     return result;
   }

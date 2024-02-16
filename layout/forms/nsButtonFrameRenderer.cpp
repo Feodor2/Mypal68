@@ -67,11 +67,7 @@ class nsDisplayButtonBoxShadowOuter : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayButtonBoxShadowOuter);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayButtonBoxShadowOuter() {
-    MOZ_COUNT_DTOR(nsDisplayButtonBoxShadowOuter);
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayButtonBoxShadowOuter)
 
 #ifdef MOZ_BUILD_WEBRENDER
   virtual bool CreateWebRenderCommands(
@@ -199,9 +195,8 @@ class nsDisplayButtonBorder final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame), mBFR(aRenderer) {
     MOZ_COUNT_CTOR(nsDisplayButtonBorder);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayButtonBorder() { MOZ_COUNT_DTOR(nsDisplayButtonBorder); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayButtonBorder)
+
   virtual bool MustPaintOnContentSide() const override { return true; }
 
   virtual void HitTest(nsDisplayListBuilder* aBuilder, const nsRect& aRect,
@@ -309,11 +304,7 @@ class nsDisplayButtonForeground final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame), mBFR(aRenderer) {
     MOZ_COUNT_CTOR(nsDisplayButtonForeground);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayButtonForeground() {
-    MOZ_COUNT_DTOR(nsDisplayButtonForeground);
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayButtonForeground)
 
   nsDisplayItemGeometry* AllocateGeometry(
       nsDisplayListBuilder* aBuilder) override;
@@ -359,7 +350,7 @@ void nsDisplayButtonForeground::Paint(nsDisplayListBuilder* aBuilder,
   nsPresContext* presContext = mFrame->PresContext();
   const nsStyleDisplay* disp = mFrame->StyleDisplay();
   if (!mFrame->IsThemed(disp) ||
-      !presContext->GetTheme()->ThemeDrawsFocusForWidget(disp->mAppearance)) {
+      presContext->Theme()->ThemeWantsButtonInnerFocusRing(disp->mAppearance)) {
     nsRect r = nsRect(ToReferenceFrame(), mFrame->GetSize());
 
     // Draw the -moz-focus-inner border
@@ -382,7 +373,7 @@ bool nsDisplayButtonForeground::CreateWebRenderCommands(
   nsPresContext* presContext = mFrame->PresContext();
   const nsStyleDisplay* disp = mFrame->StyleDisplay();
   if (!mFrame->IsThemed(disp) ||
-      !presContext->GetTheme()->ThemeDrawsFocusForWidget(disp->mAppearance)) {
+      presContext->Theme()->ThemeWantsButtonInnerFocusRing(disp->mAppearance)) {
     nsRect r = nsRect(ToReferenceFrame(), mFrame->GetSize());
     br = mBFR->CreateInnerFocusBorderRenderer(aDisplayListBuilder, presContext,
                                               nullptr, GetPaintRect(), r,

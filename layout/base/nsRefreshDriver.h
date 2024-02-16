@@ -449,7 +449,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   typedef nsTArray<RefPtr<VVPScrollEvent>> VisualViewportScrollEventArray;
   typedef nsTHashtable<nsISupportsHashKey> RequestTable;
   struct ImageStartData {
-    ImageStartData() {}
+    ImageStartData() = default;
 
     mozilla::Maybe<mozilla::TimeStamp> mStartTime;
     RequestTable mEntries;

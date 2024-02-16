@@ -93,6 +93,7 @@ with Files('nsVideoFrame.*'):
     BUG_COMPONENT = ('Core', 'Audio/Video')
 
 EXPORTS += [
+    'JustificationUtils.h',
     'nsCanvasFrame.h',
     'nsContainerFrame.h',
     'nsDirection.h',
@@ -112,6 +113,7 @@ EXPORTS += [
     'nsIStatefulFrame.h',
     'nsLineBox.h',
     'nsPageSequenceFrame.h',
+    'nsPlaceholderFrame.h',
     'nsPluginFrame.h',
     'nsQueryFrame.h',
     'nsRubyBaseContainerFrame.h',
@@ -121,6 +123,7 @@ EXPORTS += [
     'nsRubyTextFrame.h',
     'nsSplittableFrame.h',
     'nsSubDocumentFrame.h',
+    'nsTextFrame.h',
     'nsTextFrameUtils.h',
     'nsTextRunTransformations.h',
     'RubyUtils.h',
@@ -145,6 +148,7 @@ EXPORTS.mozilla += [
     'CSSOrderAwareFrameIterator.h',
     'ReflowInput.h',
     'ReflowOutput.h',
+    'ScrollbarPreferences.h',
     'ViewportFrame.h',
     'WritingModes.h',
 ]

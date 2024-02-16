@@ -185,16 +185,6 @@ impl TrackRepeat<LengthPercentage, Integer> {
 
                             values.push(track_size);
                             names.push(current_names);
-                            if is_auto {
-                                // FIXME: In the older version of the spec
-                                // (https://www.w3.org/TR/2015/WD-css-grid-1-20150917/#typedef-auto-repeat),
-                                // if the repeat type is `<auto-repeat>` we shouldn't try to parse more than
-                                // one `TrackSize`. But in current version of the spec, this is deprecated
-                                // but we are adding this for gecko parity. We should remove this when
-                                // gecko implements new spec.
-                                names.push(input.try(parse_line_names).unwrap_or_default());
-                                break;
-                            }
                         } else {
                             if values.is_empty() {
                                 // expecting at least one <track-size>
@@ -305,6 +295,18 @@ fn allow_grid_template_subgrids() -> bool {
     false
 }
 
+#[cfg(feature = "gecko")]
+#[inline]
+fn allow_grid_template_masonry() -> bool {
+    static_prefs::pref!("layout.css.grid-template-masonry-value.enabled")
+}
+
+#[cfg(feature = "servo")]
+#[inline]
+fn allow_grid_template_masonry() -> bool {
+    false
+}
+
 impl Parse for GridTemplateComponent<LengthPercentage, Integer> {
     fn parse<'i, 't>(
         context: &ParserContext,
@@ -329,7 +331,11 @@ impl GridTemplateComponent<LengthPercentage, Integer> {
                 return Ok(GridTemplateComponent::Subgrid(Box::new(t)));
             }
         }
-
+        if allow_grid_template_masonry() {
+            if input.try(|i| i.expect_ident_matching("masonry")).is_ok() {
+                return Ok(GridTemplateComponent::Masonry);
+            }
+        }
         let track_list = TrackList::parse(context, input)?;
         Ok(GridTemplateComponent::TrackList(Box::new(track_list)))
     }

@@ -260,9 +260,6 @@
   text-overflow: inherit;
   /* Both -moz-column-set and -moz-column-content need to be blocks. */
   display: block;
-  /* -moz-column-set and -moz-column-content's max block size cannot exceed
-   * ColumnSetWrapperFrame's block size. */
-  max-block-size: 100%;
 }
 
 *|*::-moz-column-set {
@@ -400,8 +397,7 @@ div:-moz-native-anonymous.moz-accessiblecaret {
   z-index: 2147483647;
 }
 
-div:-moz-native-anonymous.moz-accessiblecaret > #text-overlay,
-div:-moz-native-anonymous.moz-accessiblecaret > #image {
+div:-moz-native-anonymous.moz-accessiblecaret > :is(#text-overlay, #image) {
   width: 100%;
 
   /* Override this property in moz-custom-content-container to make dummy touch
@@ -420,8 +416,7 @@ div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
   background-image: url("resource://gre-resources/accessiblecaret-normal@1x.png");
 }
 
-div:-moz-native-anonymous.moz-accessiblecaret.left > #text-overlay,
-div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
+div:-moz-native-anonymous.moz-accessiblecaret.left > :is(#text-overlay, #image) {
   margin-left: -39%;
 }
 
@@ -429,8 +424,7 @@ div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
   background-image: url("resource://gre-resources/accessiblecaret-tilt-left@1x.png");
 }
 
-div:-moz-native-anonymous.moz-accessiblecaret.right > #text-overlay,
-div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
+div:-moz-native-anonymous.moz-accessiblecaret.right > :is(#text-overlay, #image) {
   margin-left: 41%;
 }
 
@@ -483,6 +477,84 @@ div:-moz-native-anonymous.moz-accessiblecaret.none {
     background-image: url("resource://gre-resources/accessiblecaret-tilt-right@2.25x.png");
   }
 }
+
+%ifdef ANDROID
+div:-moz-native-anonymous.moz-accessiblecaret > #text-overlay,
+div:-moz-native-anonymous.moz-accessiblecaret > #image {
+  /* border: 0.1px solid red; */ /* Uncomment border to see the touch target. */
+  padding-left: 59%; /* Enlarge the touch area. ((48-22)/2)px / 22px ~= 59% */
+  padding-right: 59%; /* Enlarge the touch area. */
+  margin-left: -59%;
+}
+
+div:-moz-native-anonymous.moz-accessiblecaret > #image {
+  padding-bottom: 59%; /* Enlarge the touch area. */
+}
+
+div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
+  background-image: url("chrome://geckoview/skin/images/accessiblecaret-normal-hdpi.png");
+}
+
+div:-moz-native-anonymous.moz-accessiblecaret.left > #text-overlay,
+div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
+  margin-left: -109%;
+}
+
+div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
+  background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-left-hdpi.png");
+}
+
+div:-moz-native-anonymous.moz-accessiblecaret.right > #text-overlay,
+div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
+  margin-left: -12%;
+}
+
+div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
+  background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-right-hdpi.png");
+}
+
+@media (min-resolution: 1.5dppx) {
+  div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
+    background-image: url("chrome://geckoview/skin/images/accessiblecaret-normal-hdpi.png");
+  }
+
+  div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
+    background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-left-hdpi.png");
+  }
+
+  div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
+    background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-right-hdpi.png");
+  }
+}
+
+@media (min-resolution: 2dppx) {
+  div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
+    background-image: url("chrome://geckoview/skin/images/accessiblecaret-normal-xhdpi.png");
+  }
+
+  div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
+    background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-left-xhdpi.png");
+  }
+
+  div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
+    background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-right-xhdpi.png");
+  }
+}
+
+@media (min-resolution: 2.25dppx) {
+  div:-moz-native-anonymous.moz-accessiblecaret.normal > #image {
+    background-image: url("chrome://geckoview/skin/images/accessiblecaret-normal-xxhdpi.png");
+  }
+
+  div:-moz-native-anonymous.moz-accessiblecaret.left > #image {
+    background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-left-xxhdpi.png");
+  }
+
+  div:-moz-native-anonymous.moz-accessiblecaret.right > #image {
+    background-image: url("chrome://geckoview/skin/images/accessiblecaret-tilt-right-xxhdpi.png");
+  }
+}
+%endif
 
 /* Custom content container in the CanvasFrame, positioned on top of everything
    everything else, not reacting to pointer events. */

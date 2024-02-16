@@ -69,7 +69,7 @@ NS_QUERYFRAME_HEAD(nsBulletFrame)
 NS_QUERYFRAME_TAIL_INHERITING(nsFrame)
 #endif
 
-nsBulletFrame::~nsBulletFrame() {}
+nsBulletFrame::~nsBulletFrame() = default;
 
 CounterStyle* nsBulletFrame::ResolveCounterStyle() {
   return PresContext()->CounterStyleManager()->ResolveCounterStyle(
@@ -556,9 +556,7 @@ class nsDisplayBullet final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayBullet);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayBullet() { MOZ_COUNT_DTOR(nsDisplayBullet); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayBullet)
 
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
                            bool* aSnap) const override {
@@ -1059,9 +1057,8 @@ void nsBulletFrame::AddInlinePrefISize(gfxContext* aRenderingContext,
   }
 }
 
-NS_IMETHODIMP
-nsBulletFrame::Notify(imgIRequest* aRequest, int32_t aType,
-                      const nsIntRect* aData) {
+void nsBulletFrame::Notify(imgIRequest* aRequest, int32_t aType,
+                           const nsIntRect* aData) {
   if (aType == imgINotificationObserver::SIZE_AVAILABLE) {
     nsCOMPtr<imgIContainer> image;
     aRequest->GetImage(getter_AddRefs(image));
@@ -1105,8 +1102,6 @@ nsBulletFrame::Notify(imgIRequest* aRequest, int32_t aType,
 
     InvalidateFrame();
   }
-
-  return NS_OK;
 }
 
 Document* nsBulletFrame::GetOurCurrentDoc() const {
@@ -1114,15 +1109,15 @@ Document* nsBulletFrame::GetOurCurrentDoc() const {
   return parentContent ? parentContent->GetComposedDoc() : nullptr;
 }
 
-nsresult nsBulletFrame::OnSizeAvailable(imgIRequest* aRequest,
-                                        imgIContainer* aImage) {
-  if (!aImage) return NS_ERROR_INVALID_ARG;
-  if (!aRequest) return NS_ERROR_INVALID_ARG;
+void nsBulletFrame::OnSizeAvailable(imgIRequest* aRequest,
+                                    imgIContainer* aImage) {
+  if (!aImage) return;
+  if (!aRequest) return;
 
   uint32_t status;
   aRequest->GetImageStatus(&status);
   if (status & imgIRequest::STATUS_ERROR) {
-    return NS_OK;
+    return;
   }
 
   nscoord w, h;
@@ -1153,8 +1148,6 @@ nsresult nsBulletFrame::OnSizeAvailable(imgIRequest* aRequest,
   // corresponding call to Decrement for this. This Increment will be
   // 'cleaned up' by the Request when it is destroyed, but only then.
   aRequest->IncrementAnimationConsumers();
-
-  return NS_OK;
 }
 
 void nsBulletFrame::GetLoadGroup(nsPresContext* aPresContext,
@@ -1185,7 +1178,7 @@ void nsBulletFrame::SetFontSizeInflation(float aInflation) {
   if (aInflation == 1.0f) {
     if (HasFontSizeInflation()) {
       RemoveStateBits(BULLET_FRAME_HAS_FONT_INFLATION);
-      DeleteProperty(FontSizeInflationProperty());
+      RemoveProperty(FontSizeInflationProperty());
     }
     return;
   }
@@ -1332,13 +1325,12 @@ NS_IMPL_ISUPPORTS(nsBulletListener, imgINotificationObserver)
 
 nsBulletListener::nsBulletListener() : mFrame(nullptr) {}
 
-nsBulletListener::~nsBulletListener() {}
+nsBulletListener::~nsBulletListener() = default;
 
-NS_IMETHODIMP
-nsBulletListener::Notify(imgIRequest* aRequest, int32_t aType,
-                         const nsIntRect* aData) {
+void nsBulletListener::Notify(imgIRequest* aRequest, int32_t aType,
+                              const nsIntRect* aData) {
   if (!mFrame) {
-    return NS_ERROR_FAILURE;
+    return;
   }
   return mFrame->Notify(aRequest, aType, aData);
 }

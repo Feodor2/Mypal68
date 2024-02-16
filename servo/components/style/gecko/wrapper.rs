@@ -74,7 +74,7 @@ use crate::values::computed::Length;
 use crate::values::specified::length::FontBaseSize;
 use crate::CaseSensitivityExt;
 use app_units::Au;
-use atomic_refcell::{AtomicRefCell, AtomicRefMut};
+use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
 use selectors::attr::{AttrSelectorOperation, AttrSelectorOperator};
 use selectors::attr::{CaseSensitivity, NamespaceConstraint};
 use selectors::matching::VisitedHandlingMode;
@@ -584,6 +584,12 @@ impl<'le> fmt::Debug for GeckoElement<'le> {
 }
 
 impl<'le> GeckoElement<'le> {
+    /// Gets the raw `ElementData` refcell for the element.
+    #[inline(always)]
+    pub fn get_data(&self) -> Option<&AtomicRefCell<ElementData>> {
+        unsafe { self.0.mServoData.get().as_ref() }
+    }
+
     #[inline(always)]
     fn attrs(&self) -> &[structs::AttrArray_InternalAttr] {
         unsafe {
@@ -1341,6 +1347,14 @@ impl<'le> TElement for GeckoElement<'le> {
         snapshot_helpers::each_class_or_part(attr, callback)
     }
 
+    #[inline]
+    fn each_exported_part<F>(&self, name: &Atom, callback: F)
+    where
+        F: FnMut(&Atom),
+    {
+        snapshot_helpers::each_exported_part(self.attrs(), name, callback)
+    }
+
     fn each_part<F>(&self, callback: F)
     where
         F: FnMut(&Atom),
@@ -1364,7 +1378,7 @@ impl<'le> TElement for GeckoElement<'le> {
     }
 
     unsafe fn set_handled_snapshot(&self) {
-        debug_assert!(self.get_data().is_some());
+        debug_assert!(self.has_data());
         self.set_flags(ELEMENT_HANDLED_SNAPSHOT as u32)
     }
 
@@ -1374,7 +1388,7 @@ impl<'le> TElement for GeckoElement<'le> {
     }
 
     unsafe fn set_dirty_descendants(&self) {
-        debug_assert!(self.get_data().is_some());
+        debug_assert!(self.has_data());
         debug!("Setting dirty descendants: {:?}", self);
         self.set_flags(ELEMENT_HAS_DIRTY_DESCENDANTS_FOR_SERVO as u32)
     }
@@ -1443,13 +1457,8 @@ impl<'le> TElement for GeckoElement<'le> {
         panic!("Atomic child count not implemented in Gecko");
     }
 
-    #[inline(always)]
-    fn get_data(&self) -> Option<&AtomicRefCell<ElementData>> {
-        unsafe { self.0.mServoData.get().as_ref() }
-    }
-
     unsafe fn ensure_data(&self) -> AtomicRefMut<ElementData> {
-        if self.get_data().is_none() {
+        if !self.has_data() {
             debug!("Creating ElementData for {:?}", self);
             let ptr = Box::into_raw(Box::new(AtomicRefCell::new(ElementData::default())));
             self.0.mServoData.set(ptr);
@@ -1502,7 +1511,7 @@ impl<'le> TElement for GeckoElement<'le> {
     #[inline]
     fn may_have_animations(&self) -> bool {
         if let Some(pseudo) = self.implemented_pseudo_element() {
-            if !pseudo.is_before_or_after() {
+            if !pseudo.is_animatable() {
                 return false;
             }
             // FIXME(emilio): When would the parent of a ::before / ::after
@@ -1621,9 +1630,7 @@ impl<'le> TElement for GeckoElement<'le> {
         before_change_style: &ComputedValues,
         after_change_style: &ComputedValues,
     ) -> bool {
-        use crate::gecko_bindings::structs::nsCSSPropertyID;
         use crate::properties::LonghandIdSet;
-        use crate::values::computed::TransitionProperty;
 
         debug_assert!(
             self.might_need_transitions_update(Some(before_change_style), after_change_style),
@@ -1632,53 +1639,21 @@ impl<'le> TElement for GeckoElement<'le> {
         );
 
         let after_change_box_style = after_change_style.get_box();
-        let transitions_count = after_change_box_style.transition_property_count();
         let existing_transitions = self.css_transitions_info();
-
-        // Check if this property is none, custom or unknown.
-        let is_none_or_custom_property = |property: nsCSSPropertyID| -> bool {
-            return property == nsCSSPropertyID::eCSSPropertyExtra_no_properties ||
-                property == nsCSSPropertyID::eCSSPropertyExtra_variable ||
-                property == nsCSSPropertyID::eCSSProperty_UNKNOWN;
-        };
-
         let mut transitions_to_keep = LonghandIdSet::new();
-
-        for i in 0..transitions_count {
-            let property = after_change_box_style.transition_nscsspropertyid_at(i);
-            let combined_duration = after_change_box_style.transition_combined_duration_at(i);
-
-            // We don't need to update transition for none/custom properties.
-            if is_none_or_custom_property(property) {
-                continue;
-            }
-
-            let transition_property: TransitionProperty = property.into();
-
-            let mut property_check_helper = |property: LonghandId| -> bool {
-                let property = property.to_physical(after_change_style.writing_mode);
-                transitions_to_keep.insert(property);
-                self.needs_transitions_update_per_property(
-                    property,
-                    combined_duration,
-                    before_change_style,
-                    after_change_style,
-                    &existing_transitions,
-                )
-            };
-
-            match transition_property {
-                TransitionProperty::Custom(..) | TransitionProperty::Unsupported(..) => {},
-                TransitionProperty::Shorthand(ref shorthand) => {
-                    if shorthand.longhands().any(property_check_helper) {
-                        return true;
-                    }
-                },
-                TransitionProperty::Longhand(longhand_id) => {
-                    if property_check_helper(longhand_id) {
-                        return true;
-                    }
-                },
+        for transition_property in after_change_style.transition_properties() {
+            let physical_longhand = transition_property
+                .longhand_id
+                .to_physical(after_change_style.writing_mode);
+            transitions_to_keep.insert(physical_longhand);
+            if self.needs_transitions_update_per_property(
+                physical_longhand,
+                after_change_box_style.transition_combined_duration_at(transition_property.index),
+                before_change_style,
+                after_change_style,
+                &existing_transitions,
+            ) {
+                return true;
             }
         }
 
@@ -1687,6 +1662,22 @@ impl<'le> TElement for GeckoElement<'le> {
         existing_transitions
             .keys()
             .any(|property| !transitions_to_keep.contains(*property))
+    }
+
+    /// Whether there is an ElementData container.
+    #[inline]
+    fn has_data(&self) -> bool {
+        self.get_data().is_some()
+    }
+
+    /// Immutably borrows the ElementData.
+    fn borrow_data(&self) -> Option<AtomicRef<ElementData>> {
+        self.get_data().map(|x| x.borrow())
+    }
+
+    /// Mutably borrows the ElementData.
+    fn mutate_data(&self) -> Option<AtomicRefMut<ElementData>> {
+        self.get_data().map(|x| x.borrow_mut())
     }
 
     #[inline]
@@ -1938,22 +1929,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
     #[inline]
     fn pseudo_element_originating_element(&self) -> Option<Self> {
         debug_assert!(self.is_pseudo_element());
-        let parent = self.closest_anon_subtree_root_parent()?;
-
-        // FIXME(emilio): Special-case for <input type="number">s
-        // pseudo-elements, which are nested NAC. Probably nsNumberControlFrame
-        // should instead inherit from nsTextControlFrame, and then this could
-        // go away.
-        if let Some(PseudoElement::MozNumberText) = parent.implemented_pseudo_element() {
-            debug_assert_eq!(
-                self.implemented_pseudo_element().unwrap(),
-                PseudoElement::Placeholder,
-                "You added a new pseudo, do you really want this?"
-            );
-            return parent.closest_anon_subtree_root_parent();
-        }
-
-        Some(parent)
+        self.closest_anon_subtree_root_parent()
     }
 
     #[inline]
@@ -2131,9 +2107,10 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozHandlerCrashed |
             NonTSPseudoClass::Required |
             NonTSPseudoClass::Optional |
-            NonTSPseudoClass::MozReadOnly |
-            NonTSPseudoClass::MozReadWrite |
+            NonTSPseudoClass::ReadOnly |
+            NonTSPseudoClass::ReadWrite |
             NonTSPseudoClass::FocusWithin |
+            NonTSPseudoClass::FocusVisible |
             NonTSPseudoClass::MozDragOver |
             NonTSPseudoClass::MozDevtoolsHighlighted |
             NonTSPseudoClass::MozStyleeditorTransitioning |
@@ -2155,6 +2132,7 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozDirAttrRTL |
             NonTSPseudoClass::MozDirAttrLikeAuto |
             NonTSPseudoClass::MozAutofill |
+            NonTSPseudoClass::MozModalDialog |
             NonTSPseudoClass::Active |
             NonTSPseudoClass::Hover |
             NonTSPseudoClass::MozAutofillPreview => {
@@ -2200,15 +2178,15 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 }
                 true
             },
-            NonTSPseudoClass::MozNativeAnonymous |
-            NonTSPseudoClass::MozNativeAnonymousNoSpecificity => {
-                self.is_in_native_anonymous_subtree()
-            },
+            NonTSPseudoClass::MozNativeAnonymous => self.is_in_native_anonymous_subtree(),
             NonTSPseudoClass::MozUseShadowTreeRoot => self.is_root_of_use_element_shadow_tree(),
             NonTSPseudoClass::MozTableBorderNonzero => unsafe {
                 bindings::Gecko_IsTableBorderNonzero(self.0)
             },
             NonTSPseudoClass::MozBrowserFrame => unsafe { bindings::Gecko_IsBrowserFrame(self.0) },
+            NonTSPseudoClass::MozSelectListBox => unsafe {
+                bindings::Gecko_IsSelectListBox(self.0)
+            },
             NonTSPseudoClass::MozIsHTML => self.is_html_element_in_html_document(),
             NonTSPseudoClass::MozLWTheme => self.document_theme() != DocumentTheme::Doc_Theme_None,
             NonTSPseudoClass::MozLWThemeBrightText => {
@@ -2226,10 +2204,6 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
                 self.document_state().contains(state_bit)
             },
             NonTSPseudoClass::MozPlaceholder => false,
-            NonTSPseudoClass::MozAny(ref sels) => context.nest(|context| {
-                sels.iter()
-                    .any(|s| matches_complex_selector(s.iter(), self, context, flags_setter))
-            }),
             NonTSPseudoClass::Lang(ref lang_arg) => self.match_element_lang(None, lang_arg),
             NonTSPseudoClass::MozLocaleDir(ref dir) => {
                 let state_bit = DocumentState::NS_DOCUMENT_STATE_RTL_LOCALE;
@@ -2292,11 +2266,6 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
         };
 
         snapshot_helpers::has_class_or_part(name, CaseSensitivity::CaseSensitive, attr)
-    }
-
-    #[inline]
-    fn exported_part(&self, name: &Atom) -> Option<Atom> {
-        snapshot_helpers::exported_part(self.attrs(), name)
     }
 
     #[inline]

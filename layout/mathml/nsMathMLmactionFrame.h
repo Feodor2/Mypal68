@@ -43,7 +43,7 @@ class nsMathMLmactionFrame final : public nsMathMLSelectedFrame {
 
   class MouseListener final : public nsIDOMEventListener {
    private:
-    ~MouseListener() {}
+    ~MouseListener() = default;
 
    public:
     NS_DECL_ISUPPORTS

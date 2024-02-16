@@ -11,6 +11,7 @@
 
 #include "mozilla/OverflowChangedTracker.h"
 #include "nsIFrame.h"
+#include "nsIFrameInlines.h"
 #include "nsIScrollableFrame.h"
 #include "nsLayoutUtils.h"
 

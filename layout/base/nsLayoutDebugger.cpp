@@ -180,7 +180,7 @@ static void PrintDisplayItemTo(nsDisplayListBuilder* aBuilder,
   }
 
   if (aItem->HasHitTestInfo()) {
-    auto* hitTestInfoItem = static_cast<nsDisplayHitTestInfoItem*>(aItem);
+    auto* hitTestInfoItem = static_cast<nsDisplayHitTestInfoBase*>(aItem);
 
     aStream << nsPrintfCString(" hitTestInfo(0x%x)",
                                hitTestInfoItem->HitTestFlags().serialize());
@@ -258,16 +258,23 @@ static void PrintDisplayListTo(nsDisplayListBuilder* aBuilder,
   }
 }
 
-void nsFrame::PrintDisplayList(nsDisplayListBuilder* aBuilder,
-                               const nsDisplayList& aList,
-                               std::stringstream& aStream, bool aDumpHtml) {
+void nsIFrame::PrintDisplayList(nsDisplayListBuilder* aBuilder,
+                                const nsDisplayList& aList, bool aDumpHtml) {
+  std::stringstream ss;
+  PrintDisplayList(aBuilder, aList, ss, aDumpHtml);
+  fprintf_stderr(stderr, "%s", ss.str().c_str());
+}
+
+void nsIFrame::PrintDisplayList(nsDisplayListBuilder* aBuilder,
+                                const nsDisplayList& aList,
+                                std::stringstream& aStream, bool aDumpHtml) {
   PrintDisplayListTo(aBuilder, aList, aStream, 0, aDumpHtml);
 }
 
-void nsFrame::PrintDisplayItem(nsDisplayListBuilder* aBuilder,
-                               nsDisplayItem* aItem, std::stringstream& aStream,
-                               uint32_t aIndent, bool aDumpSublist,
-                               bool aDumpHtml) {
+void nsIFrame::PrintDisplayItem(nsDisplayListBuilder* aBuilder,
+                                nsDisplayItem* aItem,
+                                std::stringstream& aStream, uint32_t aIndent,
+                                bool aDumpSublist, bool aDumpHtml) {
   PrintDisplayItemTo(aBuilder, aItem, aStream, aIndent, aDumpSublist,
                      aDumpHtml);
 }
@@ -305,9 +312,9 @@ static void PrintDisplayListSetItem(nsDisplayListBuilder* aBuilder,
   }
 }
 
-void nsFrame::PrintDisplayListSet(nsDisplayListBuilder* aBuilder,
-                                  const nsDisplayListSet& aSet,
-                                  std::stringstream& aStream, bool aDumpHtml) {
+void nsIFrame::PrintDisplayListSet(nsDisplayListBuilder* aBuilder,
+                                   const nsDisplayListSet& aSet,
+                                   std::stringstream& aStream, bool aDumpHtml) {
   if (aDumpHtml) {
     aStream << "<ul>";
   }

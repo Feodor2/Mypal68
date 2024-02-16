@@ -298,7 +298,7 @@ void nsSVGImageFrame::PaintSVG(gfxContext& aContext,
     }
 
     if (opacity != 1.0f ||
-        StyleEffects()->mMixBlendMode != NS_STYLE_BLEND_NORMAL) {
+        StyleEffects()->mMixBlendMode != StyleBlend::Normal) {
       aContext.PushGroupForBlendBack(gfxContentType::COLOR_ALPHA, opacity);
     }
 
@@ -373,7 +373,7 @@ void nsSVGImageFrame::PaintSVG(gfxContext& aContext,
     }
 
     if (opacity != 1.0f ||
-        StyleEffects()->mMixBlendMode != NS_STYLE_BLEND_NORMAL) {
+        StyleEffects()->mMixBlendMode != StyleBlend::Normal) {
       aContext.PopGroupAndBlend();
     }
     // gfxContextAutoSaveRestore goes out of scope & cleans up our gfxContext
@@ -545,11 +545,10 @@ NS_IMPL_ISUPPORTS(nsSVGImageListener, imgINotificationObserver)
 nsSVGImageListener::nsSVGImageListener(nsSVGImageFrame* aFrame)
     : mFrame(aFrame) {}
 
-NS_IMETHODIMP
-nsSVGImageListener::Notify(imgIRequest* aRequest, int32_t aType,
-                           const nsIntRect* aData) {
+void nsSVGImageListener::Notify(imgIRequest* aRequest, int32_t aType,
+                                const nsIntRect* aData) {
   if (!mFrame) {
-    return NS_ERROR_FAILURE;
+    return;
   }
 
   if (aType == imgINotificationObserver::LOAD_COMPLETE) {
@@ -583,6 +582,4 @@ nsSVGImageListener::Notify(imgIRequest* aRequest, int32_t aType,
                                     nsChangeHint_InvalidateRenderingObservers);
     nsSVGUtils::ScheduleReflowSVG(mFrame);
   }
-
-  return NS_OK;
 }

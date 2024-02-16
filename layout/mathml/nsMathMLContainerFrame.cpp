@@ -72,9 +72,7 @@ class nsDisplayMathMLError : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayMathMLError);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayMathMLError() { MOZ_COUNT_DTOR(nsDisplayMathMLError); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayMathMLError)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("MathMLError", TYPE_MATHML_ERROR)
@@ -156,7 +154,7 @@ void nsMathMLContainerFrame::GetReflowAndBoundingMetricsFor(
 void nsMathMLContainerFrame::ClearSavedChildMetrics() {
   nsIFrame* childFrame = mFrames.FirstChild();
   while (childFrame) {
-    childFrame->DeleteProperty(HTMLReflowOutputProperty());
+    childFrame->RemoveProperty(HTMLReflowOutputProperty());
     childFrame = childFrame->GetNextSibling();
   }
 }

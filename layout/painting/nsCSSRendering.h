@@ -64,7 +64,7 @@ struct nsBackgroundLayerState {
   /**
    * @param aFlags some combination of nsCSSRendering::PAINTBG_* flags
    */
-  nsBackgroundLayerState(nsIFrame* aForFrame, const nsStyleImage* aImage,
+  nsBackgroundLayerState(nsIFrame* aForFrame, const mozilla::StyleImage* aImage,
                          uint32_t aFlags)
       : mImageRenderer(aForFrame, aImage, aFlags) {}
 
@@ -679,39 +679,39 @@ struct nsCSSRendering {
   static nsRect GetTextDecorationRect(nsPresContext* aPresContext,
                                       const DecorationRectParams& aParams);
 
-  static CompositionOp GetGFXBlendMode(uint8_t mBlendMode) {
+  static CompositionOp GetGFXBlendMode(mozilla::StyleBlend mBlendMode) {
     switch (mBlendMode) {
-      case NS_STYLE_BLEND_NORMAL:
+      case mozilla::StyleBlend::Normal:
         return CompositionOp::OP_OVER;
-      case NS_STYLE_BLEND_MULTIPLY:
+      case mozilla::StyleBlend::Multiply:
         return CompositionOp::OP_MULTIPLY;
-      case NS_STYLE_BLEND_SCREEN:
+      case mozilla::StyleBlend::Screen:
         return CompositionOp::OP_SCREEN;
-      case NS_STYLE_BLEND_OVERLAY:
+      case mozilla::StyleBlend::Overlay:
         return CompositionOp::OP_OVERLAY;
-      case NS_STYLE_BLEND_DARKEN:
+      case mozilla::StyleBlend::Darken:
         return CompositionOp::OP_DARKEN;
-      case NS_STYLE_BLEND_LIGHTEN:
+      case mozilla::StyleBlend::Lighten:
         return CompositionOp::OP_LIGHTEN;
-      case NS_STYLE_BLEND_COLOR_DODGE:
+      case mozilla::StyleBlend::ColorDodge:
         return CompositionOp::OP_COLOR_DODGE;
-      case NS_STYLE_BLEND_COLOR_BURN:
+      case mozilla::StyleBlend::ColorBurn:
         return CompositionOp::OP_COLOR_BURN;
-      case NS_STYLE_BLEND_HARD_LIGHT:
+      case mozilla::StyleBlend::HardLight:
         return CompositionOp::OP_HARD_LIGHT;
-      case NS_STYLE_BLEND_SOFT_LIGHT:
+      case mozilla::StyleBlend::SoftLight:
         return CompositionOp::OP_SOFT_LIGHT;
-      case NS_STYLE_BLEND_DIFFERENCE:
+      case mozilla::StyleBlend::Difference:
         return CompositionOp::OP_DIFFERENCE;
-      case NS_STYLE_BLEND_EXCLUSION:
+      case mozilla::StyleBlend::Exclusion:
         return CompositionOp::OP_EXCLUSION;
-      case NS_STYLE_BLEND_HUE:
+      case mozilla::StyleBlend::Hue:
         return CompositionOp::OP_HUE;
-      case NS_STYLE_BLEND_SATURATION:
+      case mozilla::StyleBlend::Saturation:
         return CompositionOp::OP_SATURATION;
-      case NS_STYLE_BLEND_COLOR:
+      case mozilla::StyleBlend::Color:
         return CompositionOp::OP_COLOR;
-      case NS_STYLE_BLEND_LUMINOSITY:
+      case mozilla::StyleBlend::Luminosity:
         return CompositionOp::OP_LUMINOSITY;
       default:
         MOZ_ASSERT(false);
@@ -719,15 +719,16 @@ struct nsCSSRendering {
     }
   }
 
-  static CompositionOp GetGFXCompositeMode(uint8_t aCompositeMode) {
+  static CompositionOp GetGFXCompositeMode(
+      mozilla::StyleMaskComposite aCompositeMode) {
     switch (aCompositeMode) {
-      case NS_STYLE_MASK_COMPOSITE_ADD:
+      case mozilla::StyleMaskComposite::Add:
         return CompositionOp::OP_OVER;
-      case NS_STYLE_MASK_COMPOSITE_SUBTRACT:
+      case mozilla::StyleMaskComposite::Subtract:
         return CompositionOp::OP_OUT;
-      case NS_STYLE_MASK_COMPOSITE_INTERSECT:
+      case mozilla::StyleMaskComposite::Intersect:
         return CompositionOp::OP_IN;
-      case NS_STYLE_MASK_COMPOSITE_EXCLUDE:
+      case mozilla::StyleMaskComposite::Exclude:
         return CompositionOp::OP_XOR;
       default:
         MOZ_ASSERT(false);

@@ -78,8 +78,7 @@ class nsFrameList {
     VerifyList();
   }
 
-  nsFrameList(const nsFrameList& aOther)
-      : mFirstChild(aOther.mFirstChild), mLastChild(aOther.mLastChild) {}
+  nsFrameList(const nsFrameList& aOther) = default;
 
   /**
    * Infallibly allocate a nsFrameList from the shell arena.
@@ -357,14 +356,7 @@ class nsFrameList {
           mEnd(aEnd) {
     }
 
-    Slice(const Slice& aOther)
-        :
-#ifdef DEBUG
-          mList(aOther.mList),
-#endif
-          mStart(aOther.mStart),
-          mEnd(aOther.mEnd) {
-    }
+    Slice(const Slice& aOther) = default;
 
    private:
 #ifdef DEBUG
@@ -386,14 +378,7 @@ class nsFrameList {
           mEnd(aSlice.mEnd) {
     }
 
-    Enumerator(const Enumerator& aOther)
-        :
-#ifdef DEBUG
-          mSlice(aOther.mSlice),
-#endif
-          mFrame(aOther.mFrame),
-          mEnd(aOther.mEnd) {
-    }
+    Enumerator(const Enumerator& aOther) = default;
 
     bool AtEnd() const {
       // Can't just check mEnd, because some table code goes and destroys the
@@ -464,8 +449,7 @@ class nsFrameList {
     explicit FrameLinkEnumerator(const nsFrameList& aList)
         : Enumerator(aList), mPrev(nullptr) {}
 
-    FrameLinkEnumerator(const FrameLinkEnumerator& aOther)
-        : Enumerator(aOther), mPrev(aOther.mPrev) {}
+    FrameLinkEnumerator(const FrameLinkEnumerator& aOther) = default;
 
     /* This constructor needs to know about nsIFrame, and nsIFrame will need to
        know about nsFrameList methods, so in order to inline this put
@@ -507,8 +491,7 @@ class nsFrameList {
     Iterator(const nsFrameList& aList, nsIFrame* aCurrent)
         : mList(aList), mCurrent(aCurrent) {}
 
-    Iterator(const Iterator& aOther)
-        : mList(aOther.mList), mCurrent(aOther.mCurrent) {}
+    Iterator(const Iterator& aOther) = default;
 
     nsIFrame* operator*() const { return mCurrent; }
 

@@ -39,7 +39,6 @@ class nsDOMCSSValueList;
 struct nsMargin;
 class nsROCSSPrimitiveValue;
 class nsStyleGradient;
-struct nsStyleImage;
 
 class nsComputedDOMStyle final : public nsDOMCSSDeclaration,
                                  public nsStubMutationObserver {

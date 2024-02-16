@@ -382,25 +382,10 @@ enum class StyleFlexWrap : uint8_t {
 // (rather than an internal numerical representation of some keyword).
 #define NS_STYLE_ORDER_INITIAL 0
 
-// See nsStyleFont
-#define NS_STYLE_FONT_SIZE_XXSMALL 0
-#define NS_STYLE_FONT_SIZE_XSMALL 1
-#define NS_STYLE_FONT_SIZE_SMALL 2
-#define NS_STYLE_FONT_SIZE_MEDIUM 3
-#define NS_STYLE_FONT_SIZE_LARGE 4
-#define NS_STYLE_FONT_SIZE_XLARGE 5
-#define NS_STYLE_FONT_SIZE_XXLARGE 6
-#define NS_STYLE_FONT_SIZE_XXXLARGE \
-  7  // Only used by <font size="7">. Not specifiable in CSS.
-#define NS_STYLE_FONT_SIZE_LARGER 8
-#define NS_STYLE_FONT_SIZE_SMALLER 9
-#define NS_STYLE_FONT_SIZE_NO_KEYWORD \
-  10  // Used by Servo to track the "no keyword" case
-
-// grid-auto-flow keywords
-#define NS_STYLE_GRID_AUTO_FLOW_ROW (1 << 0)
-#define NS_STYLE_GRID_AUTO_FLOW_COLUMN (1 << 1)
-#define NS_STYLE_GRID_AUTO_FLOW_DENSE (1 << 2)
+#define NS_STYLE_MASONRY_PLACEMENT_PACK (1 << 0)
+#define NS_STYLE_MASONRY_ORDER_DEFINITE_FIRST (1 << 1)
+#define NS_STYLE_MASONRY_AUTO_FLOW_INITIAL_VALUE \
+  (NS_STYLE_MASONRY_PLACEMENT_PACK | NS_STYLE_MASONRY_ORDER_DEFINITE_FIRST)
 
 // 'subgrid' keyword in grid-template-{columns,rows}
 #define NS_STYLE_GRID_TEMPLATE_SUBGRID 0
@@ -530,20 +515,6 @@ enum class StyleObjectFit : uint8_t {
   None,
   ScaleDown,
 };
-
-// See nsStyleText
-#define NS_STYLE_TEXT_ALIGN_START 0
-#define NS_STYLE_TEXT_ALIGN_LEFT 1
-#define NS_STYLE_TEXT_ALIGN_RIGHT 2
-#define NS_STYLE_TEXT_ALIGN_CENTER 3
-#define NS_STYLE_TEXT_ALIGN_JUSTIFY 4
-#define NS_STYLE_TEXT_ALIGN_CHAR \
-  5  // align based on a certain character, for table cell
-#define NS_STYLE_TEXT_ALIGN_END 6
-#define NS_STYLE_TEXT_ALIGN_AUTO 7
-#define NS_STYLE_TEXT_ALIGN_MOZ_CENTER 8
-#define NS_STYLE_TEXT_ALIGN_MOZ_RIGHT 9
-#define NS_STYLE_TEXT_ALIGN_MOZ_LEFT 10
 
 // See nsStyleText
 #define NS_STYLE_TEXT_DECORATION_STYLE_NONE \
@@ -778,62 +749,48 @@ enum class StyleColorAdjust : uint8_t {
 };
 
 // color-interpolation and color-interpolation-filters
-#define NS_STYLE_COLOR_INTERPOLATION_AUTO 0
-#define NS_STYLE_COLOR_INTERPOLATION_SRGB 1
-#define NS_STYLE_COLOR_INTERPOLATION_LINEARRGB 2
+enum class StyleColorInterpolation : uint8_t {
+  Auto = 0,
+  Srgb = 1,
+  Linearrgb = 2,
+};
 
 // vector-effect
-#define NS_STYLE_VECTOR_EFFECT_NONE 0
-#define NS_STYLE_VECTOR_EFFECT_NON_SCALING_STROKE 1
+enum class StyleVectorEffect : uint8_t { None = 0, NonScalingStroke = 1 };
 
 // 3d Transforms - Backface visibility
-#define NS_STYLE_BACKFACE_VISIBILITY_VISIBLE 1
-#define NS_STYLE_BACKFACE_VISIBILITY_HIDDEN 0
+enum class StyleBackfaceVisibility : uint8_t { Hidden = 0, Visible = 1 };
 
 // blending
-#define NS_STYLE_BLEND_NORMAL 0
-#define NS_STYLE_BLEND_MULTIPLY 1
-#define NS_STYLE_BLEND_SCREEN 2
-#define NS_STYLE_BLEND_OVERLAY 3
-#define NS_STYLE_BLEND_DARKEN 4
-#define NS_STYLE_BLEND_LIGHTEN 5
-#define NS_STYLE_BLEND_COLOR_DODGE 6
-#define NS_STYLE_BLEND_COLOR_BURN 7
-#define NS_STYLE_BLEND_HARD_LIGHT 8
-#define NS_STYLE_BLEND_SOFT_LIGHT 9
-#define NS_STYLE_BLEND_DIFFERENCE 10
-#define NS_STYLE_BLEND_EXCLUSION 11
-#define NS_STYLE_BLEND_HUE 12
-#define NS_STYLE_BLEND_SATURATION 13
-#define NS_STYLE_BLEND_COLOR 14
-#define NS_STYLE_BLEND_LUMINOSITY 15
+enum class StyleBlend : uint8_t {
+  Normal = 0,
+  Multiply,
+  Screen,
+  Overlay,
+  Darken,
+  Lighten,
+  ColorDodge,
+  ColorBurn,
+  HardLight,
+  SoftLight,
+  Difference,
+  Exclusion,
+  Hue,
+  Saturation,
+  Color,
+  Luminosity,
+};
 
 // composite
-#define NS_STYLE_MASK_COMPOSITE_ADD 0
-#define NS_STYLE_MASK_COMPOSITE_SUBTRACT 1
-#define NS_STYLE_MASK_COMPOSITE_INTERSECT 2
-#define NS_STYLE_MASK_COMPOSITE_EXCLUDE 3
+enum class StyleMaskComposite : uint8_t {
+  Add = 0,
+  Subtract,
+  Intersect,
+  Exclude
+};
 
 // See nsStyleText::mControlCharacterVisibility
-#define NS_STYLE_CONTROL_CHARACTER_VISIBILITY_HIDDEN 0
-#define NS_STYLE_CONTROL_CHARACTER_VISIBILITY_VISIBLE 1
-
-// counter system
-#define NS_STYLE_COUNTER_SYSTEM_CYCLIC 0
-#define NS_STYLE_COUNTER_SYSTEM_NUMERIC 1
-#define NS_STYLE_COUNTER_SYSTEM_ALPHABETIC 2
-#define NS_STYLE_COUNTER_SYSTEM_SYMBOLIC 3
-#define NS_STYLE_COUNTER_SYSTEM_ADDITIVE 4
-#define NS_STYLE_COUNTER_SYSTEM_FIXED 5
-#define NS_STYLE_COUNTER_SYSTEM_EXTENDS 6
-
-#define NS_STYLE_COUNTER_RANGE_INFINITE 0
-
-#define NS_STYLE_COUNTER_SPEAKAS_BULLETS 0
-#define NS_STYLE_COUNTER_SPEAKAS_NUMBERS 1
-#define NS_STYLE_COUNTER_SPEAKAS_WORDS 2
-#define NS_STYLE_COUNTER_SPEAKAS_SPELL_OUT 3
-#define NS_STYLE_COUNTER_SPEAKAS_OTHER 255  // refer to another style
+enum class StyleControlCharacterVisibility : uint8_t { Hidden = 0, Visible };
 
 // scroll-behavior
 enum class StyleScrollBehavior : uint8_t {

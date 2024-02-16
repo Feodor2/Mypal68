@@ -24,8 +24,7 @@ pub type ErrorKind<'i> = ParseErrorKind<'i, StyleParseErrorKind<'i>>;
 
 /// An error reporter with all the data we need to report errors.
 pub struct ErrorReporter {
-    sheet: *const DomStyleSheet,
-    loader: *const Loader,
+    window_id: u64,
     uri: *mut nsIURI,
 }
 
@@ -37,7 +36,13 @@ impl ErrorReporter {
         loader: *mut Loader,
         extra_data: *mut RawUrlExtraData,
     ) -> Option<Self> {
-        if !Self::reporting_enabled(sheet, loader) {
+        let mut window_id = 0;
+
+        let enabled = unsafe {
+            bindings::Gecko_ErrorReportingEnabled(sheet, loader, &mut window_id)
+        };
+
+        if !enabled {
             return None;
         }
 
@@ -48,7 +53,7 @@ impl ErrorReporter {
                 .unwrap_or(ptr::null_mut())
         };
 
-        Some(ErrorReporter { sheet, loader, uri })
+        Some(ErrorReporter { window_id, uri })
     }
 }
 
@@ -165,7 +170,6 @@ fn extract_error_params<'a>(err: ErrorKind<'a>) -> Option<ErrorParams<'a>> {
             SelectorParseErrorKind::EmptySelector | SelectorParseErrorKind::DanglingCombinator => {
                 (None, None)
             },
-            SelectorParseErrorKind::EmptyNegation => (None, Some(ErrorString::Snippet(")".into()))),
             err => match extract_error_param(ParseErrorKind::Custom(
                 StyleParseErrorKind::SelectorError(err),
             )) {
@@ -296,6 +300,13 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
             ContextualParseError::InvalidRule(
                 _,
                 ParseError {
+                    kind: ParseErrorKind::Custom(StyleParseErrorKind::DisallowedImportRule),
+                    ..
+                },
+            ) => (cstr!("PEDisallowedImportRule"), Action::Nothing),
+            ContextualParseError::InvalidRule(
+                _,
+                ParseError {
                     kind: ParseErrorKind::Basic(BasicParseErrorKind::AtRuleInvalid(_)),
                     ..
                 },
@@ -352,9 +363,6 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
                             },
                             SelectorParseErrorKind::ClassNeedsIdent(_) => {
                                 Some(cstr!("PEClassSelNotIdent"))
-                            },
-                            SelectorParseErrorKind::EmptyNegation => {
-                                Some(cstr!("PENegationBadArg"))
                             },
                             _ => None,
                         }
@@ -414,13 +422,7 @@ impl<'a> ErrorHelpers<'a> for ContextualParseError<'a> {
 }
 
 impl ErrorReporter {
-    fn reporting_enabled(sheet: *const DomStyleSheet, loader: *const Loader) -> bool {
-        unsafe { bindings::Gecko_ErrorReportingEnabled(sheet, loader) }
-    }
-
     pub fn report(&self, location: SourceLocation, error: ContextualParseError) {
-        debug_assert!(Self::reporting_enabled(self.sheet, self.loader));
-
         let (pre, name, action) = error.to_gecko_message();
         let suffix = match action {
             Action::Nothing => ptr::null(),
@@ -440,8 +442,7 @@ impl ErrorReporter {
         let source = "";
         unsafe {
             bindings::Gecko_ReportUnexpectedCSSError(
-                self.sheet,
-                self.loader,
+                self.window_id,
                 self.uri,
                 name.as_ptr() as *const _,
                 param_ptr as *const _,

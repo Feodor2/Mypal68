@@ -25,10 +25,10 @@ class nsIGridPart;
 
 class nsBoxLayout : public nsISupports {
  protected:
-  virtual ~nsBoxLayout() {}
+  virtual ~nsBoxLayout() = default;
 
  public:
-  nsBoxLayout() {}
+  nsBoxLayout() = default;
 
   NS_DECL_ISUPPORTS
 
@@ -54,9 +54,9 @@ class nsBoxLayout : public nsISupports {
                            nsIFrame* aChildList) {}
   virtual void IntrinsicISizesDirty(nsIFrame* aBox, nsBoxLayoutState& aState) {}
 
-  virtual void AddBorderAndPadding(nsIFrame* aBox, nsSize& aSize);
-  virtual void AddMargin(nsIFrame* aChild, nsSize& aSize);
-  virtual void AddMargin(nsSize& aSize, const nsMargin& aMargin);
+  virtual void AddXULBorderAndPadding(nsIFrame* aBox, nsSize& aSize);
+  virtual void AddXULMargin(nsIFrame* aChild, nsSize& aSize);
+  virtual void AddXULMargin(nsSize& aSize, const nsMargin& aMargin);
 
   virtual nsIGridPart* AsGridPart() { return nullptr; }
 

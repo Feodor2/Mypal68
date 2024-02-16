@@ -33,16 +33,17 @@ static void ServoParsingBench() {
   cssStr.Append(css);
   ASSERT_EQ(Encoding::UTF8ValidUpTo(css), css.Length());
 
+  RefPtr<NullPrincipalURI> uri = new NullPrincipalURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   RefPtr<URLExtraData> data =
-      new URLExtraData(NullPrincipalURI::Create(), referrerInfo.forget(),
+      new URLExtraData(uri.forget(), referrerInfo.forget(),
                        NullPrincipal::CreateWithoutOriginAttributes());
   for (int i = 0; i < PARSING_REPETITIONS; i++) {
     RefPtr<RawServoStyleSheetContents> stylesheet =
         Servo_StyleSheet_FromUTF8Bytes(
             nullptr, nullptr, nullptr, &cssStr, eAuthorSheetFeatures, data, 0,
             eCompatibility_FullStandards, nullptr,
-            StyleSanitizationKind::None, nullptr)
+            StyleAllowImportRules::Yes, StyleSanitizationKind::None, nullptr)
             .Consume();
   }
 }
@@ -50,9 +51,10 @@ static void ServoParsingBench() {
 static void ServoSetPropertyByIdBench(const nsACString& css) {
   RefPtr<RawServoDeclarationBlock> block =
       Servo_DeclarationBlock_CreateEmpty().Consume();
+  RefPtr<NullPrincipalURI> uri = new NullPrincipalURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   RefPtr<URLExtraData> data =
-      new URLExtraData(NullPrincipalURI::Create(), referrerInfo.forget(),
+      new URLExtraData(uri.forget(), referrerInfo.forget(),
                        NullPrincipal::CreateWithoutOriginAttributes());
   ASSERT_TRUE(IsUtf8(css));
 
@@ -68,9 +70,10 @@ static void ServoGetPropertyValueById() {
   RefPtr<RawServoDeclarationBlock> block =
       Servo_DeclarationBlock_CreateEmpty().Consume();
 
+  RefPtr<NullPrincipalURI> uri = new NullPrincipalURI();
   nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo(nullptr);
   RefPtr<URLExtraData> data =
-      new URLExtraData(NullPrincipalURI::Create(), referrerInfo.forget(),
+      new URLExtraData(uri.forget(), referrerInfo.forget(),
                        NullPrincipal::CreateWithoutOriginAttributes());
   NS_NAMED_LITERAL_CSTRING(css_, "10px");
   const nsACString& css = css_;

@@ -20,7 +20,6 @@ XPIDL_SOURCES += [
 XPIDL_MODULE = 'layout_xul'
 
 EXPORTS += [
-    'nsBox.h',
     'nsIScrollbarMediator.h',
     'nsPIBoxObject.h',
     'nsXULPopupManager.h',

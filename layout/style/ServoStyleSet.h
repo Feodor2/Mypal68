@@ -9,7 +9,6 @@
 #include "mozilla/AtomArray.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/EventStates.h"
-#include "mozilla/MediaFeatureChange.h"
 #include "mozilla/PostTraversalTask.h"
 #include "mozilla/ServoBindingTypes.h"
 #include "mozilla/ServoUtils.h"
@@ -24,6 +23,7 @@
 #include "nsTArray.h"
 
 namespace mozilla {
+enum class MediaFeatureChangeReason : uint8_t;
 namespace css {
 class Rule;
 }  // namespace css
@@ -43,6 +43,7 @@ class gfxFontFeatureValueSet;
 class nsIContent;
 
 class nsPresContext;
+class nsWindowSizes;
 struct nsTimingFunction;
 struct TreeMatchContext;
 
@@ -64,6 +65,8 @@ enum class StylistState : uint8_t {
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(StylistState)
 
+enum class StyleOrigin : uint8_t;
+
 // Bitfield type to represent Servo stylesheet origins.
 enum class OriginFlags : uint8_t {
   UserAgent = 0x01,
@@ -80,14 +83,17 @@ MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(OriginFlags)
  */
 class ServoStyleSet {
   friend class RestyleManager;
-  typedef ServoElementSnapshotTable SnapshotTable;
-
+  using SnapshotTable = ServoElementSnapshotTable;
   using Origin = StyleOrigin;
 
- public:
-  static constexpr const StyleOrigin kOrigins[] = {
-      StyleOrigin::UserAgent, StyleOrigin::User, StyleOrigin::Author};
+  // We assert that these match the Servo ones in the definition of this array.
+  static constexpr Origin kOrigins[] = {
+    Origin(static_cast<uint8_t>(OriginFlags::UserAgent)),
+    Origin(static_cast<uint8_t>(OriginFlags::User)),
+    Origin(static_cast<uint8_t>(OriginFlags::Author)),
+  };
 
+ public:
   static bool IsInServoTraversal() { return mozilla::IsInServoTraversal(); }
 
 #ifdef DEBUG
@@ -222,21 +228,16 @@ class ServoStyleSet {
       ComputedStyle* aParentStyle, const AtomArray& aInputWord);
 #endif
 
-  // manage the set of style sheets in the style set
-  void AppendStyleSheet(Origin, StyleSheet*);
-  void RemoveStyleSheet(Origin, StyleSheet*);
-  void InsertStyleSheetBefore(Origin, StyleSheet*, StyleSheet* aReferenceSheet);
-
   size_t SheetCount(Origin) const;
   StyleSheet* SheetAt(Origin, size_t aIndex) const;
 
   void AppendAllNonDocumentAuthorSheets(nsTArray<StyleSheet*>& aArray) const;
 
-  void RemoveDocStyleSheet(StyleSheet* aSheet) {
-    RemoveStyleSheet(StyleOrigin::Author, aSheet);
-  }
-
-  void AddDocStyleSheet(StyleSheet* aSheet);
+  // Manage the set of style sheets in the style set
+  void AppendStyleSheet(StyleSheet&);
+  void InsertStyleSheetBefore(StyleSheet&, StyleSheet& aReferenceSheet);
+  void RemoveStyleSheet(StyleSheet&);
+  void AddDocStyleSheet(StyleSheet&);
 
   /**
    * Performs a Servo traversal to compute style for all dirty nodes in the
@@ -599,7 +600,7 @@ class UACacheReporter final : public nsIMemoryReporter {
   NS_DECL_NSIMEMORYREPORTER
 
  private:
-  ~UACacheReporter() {}
+  ~UACacheReporter() = default;
 };
 
 }  // namespace mozilla

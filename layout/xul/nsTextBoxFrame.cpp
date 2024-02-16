@@ -246,7 +246,7 @@ class nsDisplayXULTextBox final : public nsPaintedDisplayItem {
     MOZ_COUNT_CTOR(nsDisplayXULTextBox);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayXULTextBox() { MOZ_COUNT_DTOR(nsDisplayXULTextBox); }
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayXULTextBox)
 #endif
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
@@ -968,7 +968,7 @@ nsRect nsTextBoxFrame::GetComponentAlphaBounds() const {
   return mTextDrawRect;
 }
 
-bool nsTextBoxFrame::ComputesOwnOverflowArea() { return true; }
+bool nsTextBoxFrame::XULComputesOwnOverflowArea() { return true; }
 
 /* virtual */
 void nsTextBoxFrame::MarkIntrinsicISizesDirty() {
@@ -994,7 +994,7 @@ void nsTextBoxFrame::CalcTextSize(nsBoxLayoutState& aBoxLayoutState) {
     if (rendContext) {
       GetTextSize(*rendContext, mTitle, size, mAscent);
       if (GetWritingMode().IsVertical()) {
-        Swap(size.width, size.height);
+        std::swap(size.width, size.height);
       }
       mTextSize = size;
       mNeedsRecalc = false;
@@ -1035,12 +1035,12 @@ void nsTextBoxFrame::CalcDrawRect(gfxContext& aRenderingContext) {
 
   // Align our text within the overall rect by checking our text-align property.
   const nsStyleText* textStyle = StyleText();
-  if (textStyle->mTextAlign == NS_STYLE_TEXT_ALIGN_CENTER) {
+  if (textStyle->mTextAlign == StyleTextAlign::Center) {
     textRect.IStart(wm) += (outerISize - textRect.ISize(wm)) / 2;
-  } else if (textStyle->mTextAlign == NS_STYLE_TEXT_ALIGN_END ||
-             (textStyle->mTextAlign == NS_STYLE_TEXT_ALIGN_LEFT &&
+  } else if (textStyle->mTextAlign == StyleTextAlign::End ||
+             (textStyle->mTextAlign == StyleTextAlign::Left &&
               wm.IsBidiRTL()) ||
-             (textStyle->mTextAlign == NS_STYLE_TEXT_ALIGN_RIGHT &&
+             (textStyle->mTextAlign == StyleTextAlign::Right &&
               wm.IsBidiLTR())) {
     textRect.IStart(wm) += (outerISize - textRect.ISize(wm));
   }
@@ -1057,7 +1057,7 @@ nsSize nsTextBoxFrame::GetXULPrefSize(nsBoxLayoutState& aBoxLayoutState) {
   nsSize size = mTextSize;
   DISPLAY_PREF_SIZE(this, size);
 
-  AddBorderAndPadding(size);
+  AddXULBorderAndPadding(size);
   bool widthSet, heightSet;
   nsIFrame::AddXULPrefSize(this, size, widthSet, heightSet);
 
@@ -1082,9 +1082,9 @@ nsSize nsTextBoxFrame::GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) {
     }
   }
 
-  AddBorderAndPadding(size);
+  AddXULBorderAndPadding(size);
   bool widthSet, heightSet;
-  nsIFrame::AddXULMinSize(aBoxLayoutState, this, size, widthSet, heightSet);
+  nsIFrame::AddXULMinSize(this, size, widthSet, heightSet);
 
   return size;
 }

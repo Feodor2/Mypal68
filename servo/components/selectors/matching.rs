@@ -322,13 +322,7 @@ where
             },
         }
 
-        // The only other parser-allowed Component in this sequence is a state
-        // class. We just don't match in that case.
-        if let Some(s) = iter.next() {
-            debug_assert!(
-                matches!(*s, Component::NonTSPseudoClass(..)),
-                "Someone messed up pseudo-element parsing"
-            );
+        if !iter.matches_for_stateless_pseudo_element() {
             return false;
         }
 
@@ -754,7 +748,7 @@ where
                 &NamespaceConstraint::Specific(&crate::parser::namespace_empty_string::<E::Impl>()),
                 local_name,
                 &AttrSelectorOperation::WithValue {
-                    operator: operator,
+                    operator,
                     case_sensitivity: case_sensitivity.to_unconditional(is_html),
                     expected_value: value,
                 },
@@ -783,9 +777,9 @@ where
                         case_sensitivity,
                         ref expected_value,
                     } => AttrSelectorOperation::WithValue {
-                        operator: operator,
+                        operator,
                         case_sensitivity: case_sensitivity.to_unconditional(is_html),
-                        expected_value: expected_value,
+                        expected_value,
                     },
                 },
             )
@@ -848,14 +842,21 @@ where
             matches_generic_nth_child(element, context, 0, 1, true, false, flags_setter) &&
                 matches_generic_nth_child(element, context, 0, 1, true, true, flags_setter)
         },
-        Component::Negation(ref negated) => context.shared.nest_for_negation(|context| {
-            let mut local_context = LocalMatchingContext {
-                matches_hover_and_active_quirk: MatchesHoverAndActiveQuirk::No,
-                shared: context,
-            };
-            !negated
-                .iter()
-                .all(|ss| matches_simple_selector(ss, element, &mut local_context, flags_setter))
+        Component::Is(ref list) | Component::Where(ref list) => context.shared.nest(|context| {
+            for selector in &**list {
+                if matches_complex_selector(selector.iter(), element, context, flags_setter) {
+                    return true;
+                }
+            }
+            false
+        }),
+        Component::Negation(ref list) => context.shared.nest_for_negation(|context| {
+            for selector in &**list {
+                if matches_complex_selector(selector.iter(), element, context, flags_setter) {
+                    return false;
+                }
+            }
+            true
         }),
     }
 }

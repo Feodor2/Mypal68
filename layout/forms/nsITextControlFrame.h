@@ -22,8 +22,9 @@ class nsITextControlFrame : public nsIFormControlFrame {
 
   NS_IMETHOD_(already_AddRefed<mozilla::TextEditor>) GetTextEditor() = 0;
 
-  NS_IMETHOD SetSelectionRange(uint32_t aSelectionStart, uint32_t aSelectionEnd,
-                               SelectionDirection aDirection = eNone) = 0;
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD
+  SetSelectionRange(uint32_t aSelectionStart, uint32_t aSelectionEnd,
+                    SelectionDirection aDirection = eNone) = 0;
 
   NS_IMETHOD GetOwnedSelectionController(nsISelectionController** aSelCon) = 0;
   virtual nsFrameSelection* GetOwnedFrameSelection() = 0;
@@ -34,8 +35,6 @@ class nsITextControlFrame : public nsIFormControlFrame {
    * @throws various and sundry other things
    */
   virtual nsresult EnsureEditorInitialized() = 0;
-
-  virtual nsresult ScrollSelectionIntoView() = 0;
 };
 
 #endif

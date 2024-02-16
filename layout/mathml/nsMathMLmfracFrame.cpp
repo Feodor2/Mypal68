@@ -39,7 +39,7 @@ nsIFrame* NS_NewMathMLmfracFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
 
 NS_IMPL_FRAMEARENA_HELPERS(nsMathMLmfracFrame)
 
-nsMathMLmfracFrame::~nsMathMLmfracFrame() {}
+nsMathMLmfracFrame::~nsMathMLmfracFrame() = default;
 
 eMathMLFrameType nsMathMLmfracFrame::GetMathMLFrameType() {
   // frac is "inner" in TeXBook, Appendix G, rule 15e. See also page 170.
@@ -579,9 +579,7 @@ class nsDisplayMathMLSlash : public nsPaintedDisplayItem {
         mThickness(aThickness) {
     MOZ_COUNT_CTOR(nsDisplayMathMLSlash);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayMathMLSlash() { MOZ_COUNT_DTOR(nsDisplayMathMLSlash); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayMathMLSlash)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("MathMLSlash", TYPE_MATHML_SLASH)

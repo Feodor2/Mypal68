@@ -165,23 +165,6 @@ void nsStyleUtil::AppendEscapedCSSIdent(const nsAString& aIdent,
 }
 
 /* static */
-void nsStyleUtil::AppendBitmaskCSSValue(const nsCSSKTableEntry aTable[],
-                                        int32_t aMaskedValue,
-                                        int32_t aFirstMask, int32_t aLastMask,
-                                        nsAString& aResult) {
-  for (int32_t mask = aFirstMask; mask <= aLastMask; mask <<= 1) {
-    if (mask & aMaskedValue) {
-      AppendASCIItoUTF16(nsCSSProps::ValueToKeyword(mask, aTable), aResult);
-      aMaskedValue &= ~mask;
-      if (aMaskedValue) {  // more left
-        aResult.Append(char16_t(' '));
-      }
-    }
-  }
-  MOZ_ASSERT(aMaskedValue == 0, "unexpected bit remaining in bitfield");
-}
-
-/* static */
 float nsStyleUtil::ColorComponentToFloat(uint8_t aAlpha) {
   // Alpha values are expressed as decimals, so we should convert
   // back, using as few decimal places as possible for
@@ -291,7 +274,7 @@ bool nsStyleUtil::ObjectPropsMightCauseOverflow(
 
 /* static */
 bool nsStyleUtil::CSPAllowsInlineStyle(
-    Element* aElement, dom::Document* aDocument,
+    dom::Element* aElement, dom::Document* aDocument,
     nsIPrincipal* aTriggeringPrincipal, uint32_t aLineNumber,
     uint32_t aColumnNumber, const nsAString& aStyleText, nsresult* aRv) {
   nsresult rv;
@@ -324,7 +307,11 @@ bool nsStyleUtil::CSPAllowsInlineStyle(
   // query the nonce
   nsAutoString nonce;
   if (aElement && aElement->NodeInfo()->NameAtom() == nsGkAtoms::style) {
-    aElement->GetAttr(kNameSpaceID_None, nsGkAtoms::nonce, nonce);
+    nsString* cspNonce =
+        static_cast<nsString*>(aElement->GetProperty(nsGkAtoms::nonce));
+    if (cspNonce) {
+      nonce = *cspNonce;
+    }
   }
 
   bool allowInlineStyle = true;

@@ -22,7 +22,7 @@ use crate::shared_lock::Locked;
 use crate::stylist::CascadeData;
 use crate::traversal_flags::TraversalFlags;
 use crate::{Atom, LocalName, Namespace, WeakAtom};
-use atomic_refcell::{AtomicRef, AtomicRefCell, AtomicRefMut};
+use atomic_refcell::{AtomicRef, AtomicRefMut};
 use selectors::matching::{ElementSelectorFlags, QuirksMode, VisitedHandlingMode};
 use selectors::sink::Push;
 use selectors::Element as SelectorsElement;
@@ -32,26 +32,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 use std::ops::Deref;
 
-/// An opaque handle to a node, which, unlike UnsafeNode, cannot be transformed
-/// back into a non-opaque representation. The only safe operation that can be
-/// performed on this node is to compare it to another opaque handle or to another
-/// OpaqueNode.
-///
-/// Layout and Graphics use this to safely represent nodes for comparison purposes.
-/// Because the script task's GC does not trace layout, node data cannot be safely stored in layout
-/// data structures. Also, layout code tends to be faster when the DOM is not being accessed, for
-/// locality reasons. Using `OpaqueNode` enforces this invariant.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-#[cfg_attr(feature = "servo", derive(MallocSizeOf, Deserialize, Serialize))]
-pub struct OpaqueNode(pub usize);
-
-impl OpaqueNode {
-    /// Returns the address of this node, for debugging purposes.
-    #[inline]
-    pub fn id(&self) -> usize {
-        self.0
-    }
-}
+pub use style_traits::dom::OpaqueNode;
 
 /// Simple trait to provide basic information about the type of an element.
 ///
@@ -541,6 +522,14 @@ pub trait TElement:
     {
     }
 
+    /// Internal iterator for the part names that this element exports for a
+    /// given part name.
+    fn each_exported_part<F>(&self, _name: &Atom, _callback: F)
+    where
+        F: FnMut(&Atom),
+    {
+    }
+
     /// Whether a given element may generate a pseudo-element.
     ///
     /// This is useful to avoid computing, for example, pseudo styles for
@@ -708,18 +697,14 @@ pub trait TElement:
     /// Unsafe following the same reasoning as ensure_data.
     unsafe fn clear_data(&self);
 
-    /// Gets a reference to the ElementData container.
-    fn get_data(&self) -> Option<&AtomicRefCell<ElementData>>;
+    /// Whether there is an ElementData container.
+    fn has_data(&self) -> bool;
 
     /// Immutably borrows the ElementData.
-    fn borrow_data(&self) -> Option<AtomicRef<ElementData>> {
-        self.get_data().map(|x| x.borrow())
-    }
+    fn borrow_data(&self) -> Option<AtomicRef<ElementData>>;
 
     /// Mutably borrows the ElementData.
-    fn mutate_data(&self) -> Option<AtomicRefMut<ElementData>> {
-        self.get_data().map(|x| x.borrow_mut())
-    }
+    fn mutate_data(&self) -> Option<AtomicRefMut<ElementData>>;
 
     /// Whether we should skip any root- or item-based display property
     /// blockification on this element.  (This function exists so that Gecko

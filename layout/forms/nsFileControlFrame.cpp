@@ -210,6 +210,7 @@ static already_AddRefed<Element> MakeAnonButton(Document* aDoc,
   // NOTE: SetIsNativeAnonymousRoot() has to be called before setting any
   // attribute.
   button->SetIsNativeAnonymousRoot();
+  button->SetPseudoElementType(PseudoStyleType::fileChooserButton);
 
   // Set the file picking button text depending on the current locale.
   nsAutoString buttonTxt;
@@ -218,8 +219,8 @@ static already_AddRefed<Element> MakeAnonButton(Document* aDoc,
 
   // Set the browse button text. It's a bit of a pain to do because we want to
   // make sure we are not notifying.
-  RefPtr<nsTextNode> textContent =
-      new nsTextNode(button->NodeInfo()->NodeInfoManager());
+  RefPtr<nsTextNode> textContent = new (button->NodeInfo()->NodeInfoManager())
+      nsTextNode(button->NodeInfo()->NodeInfoManager());
 
   textContent->SetText(buttonTxt, false);
 
@@ -256,16 +257,20 @@ nsresult nsFileControlFrame::CreateAnonymousContent(
   fileContent->GetAccessKey(accessKey);
 
   mBrowseFilesOrDirs = MakeAnonButton(doc, "Browse", fileContent, accessKey);
-  if (!mBrowseFilesOrDirs || !aElements.AppendElement(mBrowseFilesOrDirs)) {
+  if (!mBrowseFilesOrDirs) {
     return NS_ERROR_OUT_OF_MEMORY;
   }
+  // XXX(Bug 1631371) Check if this should use a fallible operation as it
+  // pretended earlier, or change the return type to void.
+  aElements.AppendElement(mBrowseFilesOrDirs);
 
   // Create and setup the text showing the selected files.
   mTextContent = doc->CreateHTMLElement(nsGkAtoms::label);
   // NOTE: SetIsNativeAnonymousRoot() has to be called before setting any
   // attribute.
   mTextContent->SetIsNativeAnonymousRoot();
-  RefPtr<nsTextNode> text = new nsTextNode(doc->NodeInfoManager());
+  RefPtr<nsTextNode> text =
+      new (doc->NodeInfoManager()) nsTextNode(doc->NodeInfoManager());
   mTextContent->AppendChildTo(text, false);
 
   // Update the displayed text to reflect the current element's value.
@@ -485,10 +490,7 @@ bool nsFileControlFrame::DnDListener::IsValidDropData(
   }
 
   // We only support dropping files onto a file upload control
-  nsTArray<nsString> types;
-  aDataTransfer->GetTypes(types, CallerType::System);
-
-  return types.Contains(NS_LITERAL_STRING("Files"));
+  return aDataTransfer->HasFile();
 }
 
 bool nsFileControlFrame::DnDListener::CanDropTheseFiles(

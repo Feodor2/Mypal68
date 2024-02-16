@@ -6,7 +6,9 @@
 
 #include "mozilla/Preferences.h"
 #include "mozilla/ServoBindings.h"
+#include "mozilla/ServoUtils.h"
 #include "nsPresContext.h"
+
 namespace mozilla {
 
 static StaticPresData* sSingleton = nullptr;

@@ -151,14 +151,17 @@ void nsSVGForeignObjectFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   if (!static_cast<const SVGElement*>(GetContent())->HasValidDimensions()) {
     return;
   }
+#ifdef MOZ_BUILD_WEBRENDER
   nsDisplayList newList;
   nsDisplayListSet set(&newList, &newList, &newList, &newList, &newList,
                        &newList);
   DisplayOutline(aBuilder, set);
   BuildDisplayListForNonBlockChildren(aBuilder, set);
-#ifdef MOZ_BUILD_WEBRENDER
   aLists.Content()->AppendNewToTop<nsDisplayForeignObject>(aBuilder, this,
                                                            &newList);
+#else
+  DisplayOutline(aBuilder, aLists);
+  BuildDisplayListForNonBlockChildren(aBuilder, aLists);
 #endif
 }
 

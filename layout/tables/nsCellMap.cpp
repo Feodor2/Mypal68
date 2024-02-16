@@ -205,21 +205,28 @@ nsCellMap* nsTableCellMap::GetMapFor(const nsTableRowGroupFrame* aRowGroup,
     return map;
   }
 
-  // if aRowGroup is a repeated header or footer find the header or footer it
-  // was repeated from
+  // If aRowGroup is a repeated header or footer find the header or footer it
+  // was repeated from.
   if (aRowGroup->IsRepeatable()) {
-    nsTableFrame* fifTable =
-        static_cast<nsTableFrame*>(mTableFrame.FirstInFlow());
-
-    const nsStyleDisplay* display = aRowGroup->StyleDisplay();
-    nsTableRowGroupFrame* rgOrig =
-        (StyleDisplay::TableHeaderGroup == display->mDisplay)
-            ? fifTable->GetTHead()
-            : fifTable->GetTFoot();
-    // find the row group cell map using the original header/footer
-    if (rgOrig && rgOrig != aRowGroup) {
+    auto findOtherRowGroupOfType =
+        [aRowGroup](nsTableFrame* aTable) -> nsTableRowGroupFrame* {
+      const auto display = aRowGroup->StyleDisplay()->mDisplay;
+      auto* table = aTable->FirstContinuation();
+      for (; table; table = table->GetNextContinuation()) {
+        for (auto* child : table->PrincipalChildList()) {
+          if (child->StyleDisplay()->mDisplay == display &&
+              child != aRowGroup) {
+            return static_cast<nsTableRowGroupFrame*>(child);
+          }
+        }
+      }
+      return nullptr;
+    };
+    if (auto* rgOrig = findOtherRowGroupOfType(&mTableFrame)) {
       return GetMapFor(rgOrig, aStartHint);
     }
+    MOZ_ASSERT_UNREACHABLE("A repeated header/footer should always have an "
+                           "original header/footer it was repeated from");
   }
 
   return nullptr;
@@ -245,12 +252,9 @@ void nsTableCellMap::Synchronize(nsTableFrame* aTableFrame) {
     map = GetMapFor(static_cast<nsTableRowGroupFrame*>(rgFrame->FirstInFlow()),
                     map);
     if (map) {
-      if (!maps.AppendElement(map)) {
-        delete map;
-        map = nullptr;
-        NS_WARNING("Could not AppendElement");
-        break;
-      }
+      // XXX(Bug 1631371) Check if this should use a fallible operation as it
+      // pretended earlier, or change the return type to void.
+      maps.AppendElement(map);
     }
   }
   if (maps.IsEmpty()) {
@@ -373,13 +377,13 @@ CellData* nsTableCellMap::GetDataAt(int32_t aRowIndex,
 }
 
 void nsTableCellMap::AddColsAtEnd(uint32_t aNumCols) {
-  if (!mCols.AppendElements(aNumCols)) {
-    NS_WARNING("Could not AppendElement");
-  }
+  // XXX(Bug 1631371) Check if this should use a fallible operation as it
+  // pretended earlier.
+  mCols.AppendElements(aNumCols);
   if (mBCInfo) {
-    if (!mBCInfo->mBEndBorders.AppendElements(aNumCols)) {
-      NS_WARNING("Could not AppendElement");
-    }
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    mBCInfo->mBEndBorders.AppendElements(aNumCols);
   }
 }
 
@@ -1168,7 +1172,10 @@ bool nsCellMap::Grow(nsTableCellMap& aMap, int32_t aNumRows,
   uint32_t startRowIndex = (aRowIndex >= 0) ? aRowIndex : mRows.Length();
   NS_ASSERTION(startRowIndex <= mRows.Length(), "Missing grow call inbetween");
 
-  return mRows.InsertElementsAt(startRowIndex, aNumRows, numCols) != nullptr;
+  // XXX Change the return type of this function to void, or use a fallible
+  // operation.
+  mRows.InsertElementsAt(startRowIndex, aNumRows, numCols);
+  return true;
 }
 
 void nsCellMap::GrowRow(CellDataArray& aRow, int32_t aNumCols)
@@ -1636,16 +1643,8 @@ void nsCellMap::ExpandWithCells(nsTableCellMap& aMap,
       if (insertionIndex > startColIndex) {
         insertionIndex = startColIndex;
       }
-      if (!row.InsertElementsAt(insertionIndex,
-                                endColIndex - insertionIndex + 1,
-                                (CellData*)nullptr) &&
-          rowX == aRowIndex) {
-        // Failed to insert the slots, and this is the very first row.  That
-        // means that we need to clean up |origData| before returning, since
-        // the cellmap doesn't own it yet.
-        DestroyCellData(origData);
-        return;
-      }
+      row.InsertElementsAt(insertionIndex, endColIndex - insertionIndex + 1,
+                           (CellData*)nullptr);
 
       for (int32_t colX = startColIndex; colX <= endColIndex; colX++) {
         CellData* data = origData;

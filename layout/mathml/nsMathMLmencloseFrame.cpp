@@ -56,7 +56,7 @@ nsMathMLmencloseFrame::nsMathMLmencloseFrame(ComputedStyle* aStyle,
       mRadicalCharIndex(-1),
       mContentWidth(0) {}
 
-nsMathMLmencloseFrame::~nsMathMLmencloseFrame() {}
+nsMathMLmencloseFrame::~nsMathMLmencloseFrame() = default;
 
 nsresult nsMathMLmencloseFrame::AllocateMathMLChar(nsMencloseNotation mask) {
   // Is the char already allocated?
@@ -70,7 +70,9 @@ nsresult nsMathMLmencloseFrame::AllocateMathMLChar(nsMencloseNotation mask) {
   uint32_t i = mMathMLChar.Length();
   nsAutoString Char;
 
-  if (!mMathMLChar.AppendElement()) return NS_ERROR_OUT_OF_MEMORY;
+  // XXX(Bug 1631371) Check if this should use a fallible operation as it
+  // pretended earlier, or change the return type to void.
+  mMathMLChar.AppendElement();
 
   if (mask == NOTATION_LONGDIV) {
     Char.Assign(kLongDivChar);
@@ -715,11 +717,7 @@ class nsDisplayNotation final : public nsPaintedDisplayItem {
         mType(aType) {
     MOZ_COUNT_CTOR(nsDisplayNotation);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayNotation() { MOZ_COUNT_DTOR(nsDisplayNotation); }
-#endif
-
-  virtual uint16_t CalculatePerFrameKey() const override { return mType; }
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayNotation)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("MathMLMencloseNotation", TYPE_MATHML_MENCLOSE_NOTATION)
@@ -831,6 +829,7 @@ void nsMathMLmencloseFrame::DisplayNotation(nsDisplayListBuilder* aBuilder,
       aThickness <= 0)
     return;
 
-  aLists.Content()->AppendNewToTop<nsDisplayNotation>(aBuilder, aFrame, aRect,
-                                                      aThickness, aType);
+  const uint16_t index = aType;
+  aLists.Content()->AppendNewToTopWithIndex<nsDisplayNotation>(
+      aBuilder, aFrame, index, aRect, aThickness, aType);
 }

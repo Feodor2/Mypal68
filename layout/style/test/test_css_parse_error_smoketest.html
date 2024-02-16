@@ -10,6 +10,7 @@
 <style id="testbench"></style>
 <script>
   SpecialPowers.wrap(window).docShell.cssErrorReportingEnabled = true;
+  // Tests that apply to all types of style sheets
   var tests = [
     {
       css: "@unknown {}",
@@ -77,7 +78,7 @@
       error: "Expected identifier for class selector but found ‘ ’.  Ruleset ignored due to bad selector.",
     }, {
       css: ":not() {}",
-      error: "Missing argument in negation pseudo-class ‘)’.  Ruleset ignored due to bad selector.",
+      error: "Selector expected.  Ruleset ignored due to bad selector.",
     }, {
       css: "* { -webkit-text-size-adjust: 100% }",
       error: "Error in parsing value for ‘-webkit-text-size-adjust’.  Declaration dropped.",
@@ -108,7 +109,7 @@
       error: "Found invalid value for media feature.",
     }, {
       css: "@media (min-aspect-ratio: 1 invalid) {}",
-      error: "Found invalid value for media feature.",
+      error: "Unexpected token ‘invalid’ in media list.",
     }, {
       css: "@media (min-aspect-ratio: 1 / invalid) {}",
       error: "Found invalid value for media feature.",
@@ -122,6 +123,14 @@
     },
   ];
 
+  // Tests that apply only to constructed style sheets
+  var constructedSheetTests = [
+    {
+      css: '@import url("sheet.css");',
+      error: "@import rules are not yet valid in constructed stylesheets."
+    }
+  ];
+
   function assertMessages(messages, action) {
     return new Promise(resolve => {
       SimpleTest.expectConsoleMessages(action, messages, resolve);
@@ -133,6 +142,12 @@
       let messages = [ { cssSelectors, errorMessage: error } ];
       await assertMessages(messages, () => { testbench.innerHTML = css });
       await assertMessages(messages, () => { new CSSStyleSheet().replaceSync(css) });
+      await assertMessages(messages, async () => { await new CSSStyleSheet().replace(css) });
+    }
+    for (let {css, cssSelectors = "", error} of constructedSheetTests) {
+      let messages = [ { cssSelectors, errorMessage: error } ];
+      await assertMessages(messages, () => { new CSSStyleSheet().replaceSync(css) });
+      await assertMessages(messages, async () => { await new CSSStyleSheet().replace(css) });
     }
   }
 

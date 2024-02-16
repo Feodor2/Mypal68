@@ -37,7 +37,8 @@ BlockReflowInput::BlockReflowInput(const ReflowInput& aReflowInput,
       mContentArea(aReflowInput.GetWritingMode()),
       mPushedFloats(nullptr),
       mOverflowTracker(nullptr),
-      mBorderPadding(mReflowInput.ComputedLogicalBorderPadding()),
+      mBorderPadding(mReflowInput.ComputedLogicalBorderPadding().ApplySkipSides(
+          aFrame->GetLogicalSkipSides(&aReflowInput))),
       mPrevBEndMargin(),
       mLineNumber(0),
       mFloatBreakType(StyleClear::None),
@@ -46,12 +47,6 @@ BlockReflowInput::BlockReflowInput(const ReflowInput& aReflowInput,
                "The consumed block-size should be constrained!");
 
   WritingMode wm = aReflowInput.GetWritingMode();
-  mFlags.mIsFirstInflow = !aFrame->GetPrevInFlow();
-  mFlags.mIsOverflowContainer = IS_TRUE_OVERFLOW_CONTAINER(aFrame);
-
-  nsIFrame::LogicalSides logicalSkipSides =
-      aFrame->GetLogicalSkipSides(&aReflowInput);
-  mBorderPadding.ApplySkipSides(logicalSkipSides);
 
   // Note that mContainerSize is the physical size, needed to
   // convert logical block-coordinates in vertical-rl writing mode
@@ -119,12 +114,12 @@ BlockReflowInput::BlockReflowInput(const ReflowInput& aReflowInput,
     // We are in a paginated situation. The block-end edge is just inside the
     // block-end border and padding. The content area block-size doesn't include
     // either border or padding edge.
-    mBEndEdge = aReflowInput.AvailableBSize() - mBorderPadding.BEnd(wm);
-    mContentArea.BSize(wm) = std::max(0, mBEndEdge - mBorderPadding.BStart(wm));
+    mContentArea.BSize(wm) = std::max(
+        0, aReflowInput.AvailableBSize() - mBorderPadding.BStartEnd(wm));
   } else {
     // When we are not in a paginated situation, then we always use a
     // unconstrained block-size.
-    mContentArea.BSize(wm) = mBEndEdge = NS_UNCONSTRAINEDSIZE;
+    mContentArea.BSize(wm) = NS_UNCONSTRAINEDSIZE;
   }
   mContentArea.IStart(wm) = mBorderPadding.IStart(wm);
   mBCoord = mContentArea.BStart(wm) = mBorderPadding.BStart(wm);
@@ -191,9 +186,9 @@ void BlockReflowInput::ComputeBlockAvailSpace(
   aResult.BStart(wm) = mBCoord;
   aResult.BSize(wm) = availBSize == NS_UNCONSTRAINEDSIZE ? NS_UNCONSTRAINEDSIZE
                                                          : availBSize - mBCoord;
-  // mBCoord might be greater than mBEndEdge if the block's top margin pushes
-  // it off the page/column. Negative available block-size can confuse other
-  // code and is nonsense in principle.
+  // mBCoord might be greater than ContentBEnd() if the block's top margin
+  // pushes it off the page/column. Negative available block-size can confuse
+  // other code and is nonsense in principle.
 
   // XXX Do we really want this condition to be this restrictive (i.e.,
   // more restrictive than it used to be)?  The |else| here is allowed
@@ -652,9 +647,9 @@ static nscoord FloatMarginISize(const ReflowInput& aCBReflowInput,
 // Maybe all this code could be refactored to make this cleaner, but keeping the
 // two properties separated was slightly nicer.
 struct ShapeInvalidationData {
-  StyleShapeSource mShapeOutside;
+  StyleShapeOutside mShapeOutside{StyleShapeOutside::None()};
   float mShapeImageThreshold = 0.0;
-  mozilla::LengthPercentage mShapeMargin;
+  LengthPercentage mShapeMargin;
 
   ShapeInvalidationData() = default;
 
@@ -663,7 +658,7 @@ struct ShapeInvalidationData {
   }
 
   static bool IsNeeded(const nsStyleDisplay& aDisplay) {
-    return aDisplay.mShapeOutside.GetType() != StyleShapeSourceType::None;
+    return !aDisplay.mShapeOutside.IsNone();
   }
 
   void Update(const nsStyleDisplay& aDisplay) {
@@ -977,7 +972,7 @@ bool BlockReflowInput::FlowAndPlaceFloat(nsIFrame* aFloat) {
     }
   } else if (invalidationData) {
     invalidationData = nullptr;
-    aFloat->DeleteProperty(ShapeInvalidationDataProperty());
+    aFloat->RemoveProperty(ShapeInvalidationDataProperty());
   }
 
   if (!reflowStatus.IsFullyComplete()) {

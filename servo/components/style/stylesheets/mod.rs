@@ -40,7 +40,7 @@ use std::fmt;
 use std::mem::{self, ManuallyDrop};
 use style_traits::ParsingMode;
 #[cfg(feature = "gecko")]
-use to_shmem::{SharedMemoryBuilder, ToShmem};
+use to_shmem::{self, SharedMemoryBuilder, ToShmem};
 
 pub use self::counter_style_rule::CounterStyleRule;
 pub use self::document_rule::DocumentRule;
@@ -58,8 +58,8 @@ pub use self::rule_parser::{InsertRuleContext, State, TopLevelRuleParser};
 pub use self::rules_iterator::{AllRules, EffectiveRules};
 pub use self::rules_iterator::{NestedRuleIterationCondition, RulesIterator};
 pub use self::style_rule::StyleRule;
+pub use self::stylesheet::{AllowImportRules, SanitizationData, SanitizationKind};
 pub use self::stylesheet::{DocumentStyleSheet, Namespaces, Stylesheet};
-pub use self::stylesheet::{SanitizationData, SanitizationKind};
 pub use self::stylesheet::{StylesheetContents, StylesheetInDocument, UserAgentStylesheets};
 pub use self::supports_rule::SupportsRule;
 pub use self::viewport_rule::ViewportRule;
@@ -117,20 +117,25 @@ impl Drop for UrlExtraData {
 
 #[cfg(feature = "gecko")]
 impl ToShmem for UrlExtraData {
-    fn to_shmem(&self, _builder: &mut SharedMemoryBuilder) -> ManuallyDrop<Self> {
+    fn to_shmem(&self, _builder: &mut SharedMemoryBuilder) -> to_shmem::Result<Self> {
         if self.0 & 1 == 0 {
             let shared_extra_datas = unsafe { &structs::URLExtraData_sShared };
             let self_ptr = self.as_ref() as *const _ as *mut _;
             let sheet_id = shared_extra_datas
                 .iter()
-                .position(|r| r.mRawPtr == self_ptr)
-                .expect(
-                    "ToShmem failed for UrlExtraData: expected sheet's URLExtraData to be in \
-                     URLExtraData::sShared",
-                );
-            ManuallyDrop::new(UrlExtraData((sheet_id << 1) | 1))
+                .position(|r| r.mRawPtr == self_ptr);
+            let sheet_id = match sheet_id {
+                Some(id) => id,
+                None => {
+                    return Err(String::from(
+                        "ToShmem failed for UrlExtraData: expected sheet's URLExtraData to be in \
+                         URLExtraData::sShared",
+                    ));
+                },
+            };
+            Ok(ManuallyDrop::new(UrlExtraData((sheet_id << 1) | 1)))
         } else {
-            ManuallyDrop::new(UrlExtraData(self.0))
+            Ok(ManuallyDrop::new(UrlExtraData(self.0)))
         }
     }
 }
@@ -369,6 +374,7 @@ impl CssRule {
         shared_lock: &SharedRwLock,
         state: State,
         loader: Option<&dyn StylesheetLoader>,
+        allow_import_rules: AllowImportRules,
     ) -> Result<Self, RulesMutateError> {
         let url_data = parent_stylesheet_contents.url_data.read();
         let context = ParserContext::new(
@@ -394,6 +400,7 @@ impl CssRule {
             dom_error: None,
             namespaces: &mut *guard,
             insert_rule_context: Some(insert_rule_context),
+            allow_import_rules,
         };
 
         parse_one_rule(&mut input, &mut rule_parser)

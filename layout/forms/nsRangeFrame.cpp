@@ -46,7 +46,7 @@ nsIFrame* NS_NewRangeFrame(PresShell* aPresShell, ComputedStyle* aStyle) {
 nsRangeFrame::nsRangeFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
     : nsContainerFrame(aStyle, aPresContext, kClassID) {}
 
-nsRangeFrame::~nsRangeFrame() {}
+nsRangeFrame::~nsRangeFrame() = default;
 
 NS_IMPL_FRAMEARENA_HELPERS(nsRangeFrame)
 
@@ -69,11 +69,6 @@ void nsRangeFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   }
   aContent->AddEventListener(NS_LITERAL_STRING("touchstart"),
                              mDummyTouchListener, false);
-
-  ServoStyleSet* styleSet = PresContext()->StyleSet();
-
-  mOuterFocusStyle = styleSet->ProbePseudoElementStyle(
-      *aContent->AsElement(), PseudoStyleType::mozFocusOuter, Style());
 
   return nsContainerFrame::Init(aContent, aParent, aPrevInFlow);
 }
@@ -103,9 +98,9 @@ nsresult nsRangeFrame::MakeAnonymousDiv(Element** aResult,
   // Associate the pseudo-element with the anonymous child.
   resultElement->SetPseudoElementType(aPseudoType);
 
-  if (!aElements.AppendElement(resultElement)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  // XXX(Bug 1631371) Check if this should use a fallible operation as it
+  // pretended earlier, or change the return type to void.
+  aElements.AppendElement(resultElement);
 
   resultElement.forget(aResult);
   return NS_OK;
@@ -146,82 +141,6 @@ void nsRangeFrame::AppendAnonymousContentTo(nsTArray<nsIContent*>& aElements,
   }
 }
 
-class nsDisplayRangeFocusRing final : public nsPaintedDisplayItem {
- public:
-  nsDisplayRangeFocusRing(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame)
-      : nsPaintedDisplayItem(aBuilder, aFrame) {
-    MOZ_COUNT_CTOR(nsDisplayRangeFocusRing);
-  }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayRangeFocusRing() {
-    MOZ_COUNT_DTOR(nsDisplayRangeFocusRing);
-  }
-#endif
-
-  nsDisplayItemGeometry* AllocateGeometry(
-      nsDisplayListBuilder* aBuilder) override;
-  void ComputeInvalidationRegion(nsDisplayListBuilder* aBuilder,
-                                 const nsDisplayItemGeometry* aGeometry,
-                                 nsRegion* aInvalidRegion) const override;
-  virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
-                           bool* aSnap) const override;
-  virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
-  NS_DISPLAY_DECL_NAME("RangeFocusRing", TYPE_RANGE_FOCUS_RING)
-};
-
-nsDisplayItemGeometry* nsDisplayRangeFocusRing::AllocateGeometry(
-    nsDisplayListBuilder* aBuilder) {
-  return new nsDisplayItemGenericImageGeometry(this, aBuilder);
-}
-
-void nsDisplayRangeFocusRing::ComputeInvalidationRegion(
-    nsDisplayListBuilder* aBuilder, const nsDisplayItemGeometry* aGeometry,
-    nsRegion* aInvalidRegion) const {
-  auto geometry =
-      static_cast<const nsDisplayItemGenericImageGeometry*>(aGeometry);
-
-  if (aBuilder->ShouldSyncDecodeImages() &&
-      geometry->ShouldInvalidateToSyncDecodeImages()) {
-    bool snap;
-    aInvalidRegion->Or(*aInvalidRegion, GetBounds(aBuilder, &snap));
-  }
-
-  nsDisplayItem::ComputeInvalidationRegion(aBuilder, aGeometry, aInvalidRegion);
-}
-
-nsRect nsDisplayRangeFocusRing::GetBounds(nsDisplayListBuilder* aBuilder,
-                                          bool* aSnap) const {
-  *aSnap = false;
-  nsRect rect(ToReferenceFrame(), Frame()->GetSize());
-
-  // We want to paint as if specifying a border for ::-moz-focus-outer
-  // specifies an outline for our frame, so inflate by the border widths:
-  ComputedStyle* computedStyle =
-      static_cast<nsRangeFrame*>(mFrame)->mOuterFocusStyle;
-  MOZ_ASSERT(computedStyle, "We only exist if mOuterFocusStyle is non-null");
-  rect.Inflate(computedStyle->StyleBorder()->GetComputedBorder());
-
-  return rect;
-}
-
-void nsDisplayRangeFocusRing::Paint(nsDisplayListBuilder* aBuilder,
-                                    gfxContext* aCtx) {
-  bool unused;
-  ComputedStyle* computedStyle =
-      static_cast<nsRangeFrame*>(mFrame)->mOuterFocusStyle;
-  MOZ_ASSERT(computedStyle, "We only exist if mOuterFocusStyle is non-null");
-
-  PaintBorderFlags flags = aBuilder->ShouldSyncDecodeImages()
-                               ? PaintBorderFlags::SyncDecodeImages
-                               : PaintBorderFlags();
-
-  ImgDrawResult result = nsCSSRendering::PaintBorder(
-      mFrame->PresContext(), *aCtx, mFrame, GetPaintRect(),
-      GetBounds(aBuilder, &unused), computedStyle, flags);
-
-  nsDisplayItemGenericImageGeometry::UpdateDrawResult(this, result);
-}
-
 void nsRangeFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                     const nsDisplayListSet& aLists) {
   const nsStyleDisplay* disp = StyleDisplay();
@@ -242,33 +161,6 @@ void nsRangeFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   } else {
     BuildDisplayListForInline(aBuilder, aLists);
   }
-
-  // Draw a focus outline if appropriate:
-
-  if (!aBuilder->IsForPainting() || !IsVisibleForPainting()) {
-    // we don't want the focus ring item for hit-testing or if the item isn't
-    // in the area being [re]painted
-    return;
-  }
-
-  EventStates eventStates = mContent->AsElement()->State();
-  if (eventStates.HasState(NS_EVENT_STATE_DISABLED) ||
-      !eventStates.HasState(NS_EVENT_STATE_FOCUSRING)) {
-    return;  // can't have focus or doesn't match :-moz-focusring
-  }
-
-  if (!mOuterFocusStyle || !mOuterFocusStyle->StyleBorder()->HasBorder()) {
-    // no ::-moz-focus-outer specified border (how style specifies a focus ring
-    // for range)
-    return;
-  }
-
-  if (IsThemed(disp) &&
-      PresContext()->GetTheme()->ThemeDrawsFocusForWidget(disp->mAppearance)) {
-    return;  // the native theme displays its own visual indication of focus
-  }
-
-  aLists.Content()->AppendNewToTop<nsDisplayRangeFocusRing>(aBuilder, this);
 }
 
 void nsRangeFrame::Reflow(nsPresContext* aPresContext,
@@ -516,9 +408,9 @@ Decimal nsRangeFrame::GetValueAtEventPoint(WidgetGUIEvent* aEvent) {
     nsPresContext* presContext = PresContext();
     bool notUsedCanOverride;
     LayoutDeviceIntSize size;
-    presContext->GetTheme()->GetMinimumWidgetSize(presContext, this,
-                                                  StyleAppearance::RangeThumb,
-                                                  &size, &notUsedCanOverride);
+    presContext->Theme()->GetMinimumWidgetSize(presContext, this,
+                                               StyleAppearance::RangeThumb,
+                                               &size, &notUsedCanOverride);
     thumbSize.width = presContext->DevPixelsToAppUnits(size.width);
     thumbSize.height = presContext->DevPixelsToAppUnits(size.height);
     // For GTK, GetMinimumWidgetSize returns zero for the thumb dimension
@@ -725,8 +617,8 @@ nscoord nsRangeFrame::AutoCrossSize(nscoord aEm) {
     bool unused;
     LayoutDeviceIntSize size;
     nsPresContext* pc = PresContext();
-    pc->GetTheme()->GetMinimumWidgetSize(pc, this, StyleAppearance::RangeThumb,
-                                         &size, &unused);
+    pc->Theme()->GetMinimumWidgetSize(pc, this, StyleAppearance::RangeThumb,
+                                      &size, &unused);
     minCrossSize =
         pc->DevPixelsToAppUnits(IsHorizontal() ? size.height : size.width);
   }
@@ -802,17 +694,15 @@ double nsRangeFrame::GetValue() const {
       .toDouble();
 }
 
-#define STYLES_DISABLING_NATIVE_THEMING                          \
-  NS_AUTHOR_SPECIFIED_BACKGROUND | NS_AUTHOR_SPECIFIED_PADDING | \
-      NS_AUTHOR_SPECIFIED_BORDER
+#define STYLES_DISABLING_NATIVE_THEMING \
+  NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND | NS_AUTHOR_SPECIFIED_PADDING
 
 bool nsRangeFrame::ShouldUseNativeStyle() const {
   nsIFrame* trackFrame = mTrackDiv->GetPrimaryFrame();
   nsIFrame* progressFrame = mProgressDiv->GetPrimaryFrame();
   nsIFrame* thumbFrame = mThumbDiv->GetPrimaryFrame();
 
-  return (StyleDisplay()->mAppearance == StyleAppearance::Range) &&
-         trackFrame &&
+  return StyleDisplay()->mAppearance == StyleAppearance::Range && trackFrame &&
          !PresContext()->HasAuthorSpecifiedRules(
              trackFrame, STYLES_DISABLING_NATIVE_THEMING) &&
          progressFrame &&
@@ -821,23 +711,4 @@ bool nsRangeFrame::ShouldUseNativeStyle() const {
          thumbFrame &&
          !PresContext()->HasAuthorSpecifiedRules(
              thumbFrame, STYLES_DISABLING_NATIVE_THEMING);
-}
-
-ComputedStyle* nsRangeFrame::GetAdditionalComputedStyle(int32_t aIndex) const {
-  // We only implement this so that SetAdditionalComputedStyle will be
-  // called if style changes that would change the -moz-focus-outer
-  // pseudo-element have occurred.
-  if (aIndex != 0) {
-    return nullptr;
-  }
-  return mOuterFocusStyle;
-}
-
-void nsRangeFrame::SetAdditionalComputedStyle(int32_t aIndex,
-                                              ComputedStyle* aComputedStyle) {
-  MOZ_ASSERT(aIndex == 0,
-             "GetAdditionalComputedStyle is handling other indexes?");
-
-  // The -moz-focus-outer pseudo-element's style has changed.
-  mOuterFocusStyle = aComputedStyle;
 }

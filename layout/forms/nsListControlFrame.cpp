@@ -72,7 +72,7 @@ class nsListEventListener final : public nsIDOMEventListener {
   NS_IMETHOD HandleEvent(Event* aEvent) override;
 
  private:
-  ~nsListEventListener() {}
+  ~nsListEventListener() = default;
 
   nsListControlFrame* mFrame;
 };
@@ -1814,15 +1814,13 @@ void nsListControlFrame::ScrollToIndex(int32_t aIndex) {
 
 void nsListControlFrame::ScrollToFrame(dom::HTMLOptionElement& aOptElement) {
   // otherwise we find the content's frame and scroll to it
-  nsIFrame* childFrame = aOptElement.GetPrimaryFrame();
-  if (childFrame) {
+  if (nsIFrame* childFrame = aOptElement.GetPrimaryFrame()) {
     RefPtr<mozilla::PresShell> presShell = PresShell();
     presShell->ScrollFrameRectIntoView(
         childFrame, nsRect(nsPoint(0, 0), childFrame->GetSize()), ScrollAxis(),
         ScrollAxis(),
         ScrollFlags::ScrollOverflowHidden |
-            ScrollFlags::ScrollFirstAncestorOnly |
-            ScrollFlags::IgnoreMarginAndPadding);
+            ScrollFlags::ScrollFirstAncestorOnly);
   }
 }
 

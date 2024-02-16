@@ -103,18 +103,21 @@ class Layer;
 namespace mozilla {
 
 struct DisplayPortPropertyData {
-  DisplayPortPropertyData(const nsRect& aRect, uint32_t aPriority)
-      : mRect(aRect), mPriority(aPriority) {}
+  DisplayPortPropertyData(const nsRect& aRect, uint32_t aPriority,
+                          bool aPainted)
+      : mRect(aRect), mPriority(aPriority), mPainted(aPainted) {}
   nsRect mRect;
   uint32_t mPriority;
+  bool mPainted;
 };
 
 struct DisplayPortMarginsPropertyData {
   DisplayPortMarginsPropertyData(const ScreenMargin& aMargins,
-                                 uint32_t aPriority)
-      : mMargins(aMargins), mPriority(aPriority) {}
+                                 uint32_t aPriority, bool aPainted)
+      : mMargins(aMargins), mPriority(aPriority), mPainted(aPainted) {}
   ScreenMargin mMargins;
   uint32_t mPriority;
+  bool mPainted;
 };
 
 }  // namespace mozilla
@@ -215,12 +218,25 @@ class nsLayoutUtils {
    * defaulting to the scrollport.
    */
   static bool GetDisplayPort(nsIContent* aContent, nsRect* aResult,
-                             RelativeTo aRelativeTo = RelativeTo::ScrollPort);
+                             RelativeTo aRelativeTo = RelativeTo::ScrollPort,
+                             bool* aOutPainted = nullptr);
 
   /**
    * Check whether the given element has a displayport.
    */
   static bool HasDisplayPort(nsIContent* aContent);
+
+  /**
+   * Check whether the given element has a displayport that has already
+   * been sent to the compositor via a layers or WR transaction.
+   */
+  static bool HasPaintedDisplayPort(nsIContent* aContent);
+
+  /**
+   * Mark the displayport of a given element as having been sent to
+   * the compositor via a layers or WR transaction.
+   */
+  static void MarkDisplayPortAsPainted(nsIContent* aContent);
 
   /**
    * Check whether the given frame has a displayport. It returns false
@@ -299,7 +315,8 @@ class nsLayoutUtils {
   /**
    * Get the critical display port for the given element.
    */
-  static bool GetCriticalDisplayPort(nsIContent* aContent, nsRect* aResult);
+  static bool GetCriticalDisplayPort(nsIContent* aContent, nsRect* aResult,
+                                     bool* aOutPainted = nullptr);
 
   /**
    * Check whether the given element has a critical display port.
@@ -311,7 +328,8 @@ class nsLayoutUtils {
    * GetCriticalDisplayPort. Otherwise, delegates to GetDisplayPort.
    */
   static bool GetHighResolutionDisplayPort(nsIContent* aContent,
-                                           nsRect* aResult);
+                                           nsRect* aResult,
+                                           bool* aOutPainted = nullptr);
 
   /**
    * Remove the displayport for the given element.
@@ -601,6 +619,12 @@ class nsLayoutUtils {
       const nsIFrame* aFixedPosFrame, nsPresContext* aPresContext,
       const ContainerLayerParameters& aContainerParameters);
 
+  static mozilla::SideBits GetSideBitsAndAdjustAnchorForFixedPositionContent(
+      const nsIFrame* aViewportFrame, const nsIFrame* aFixedPosFrame,
+      mozilla::LayerPoint* aAnchor, const Rect* aAnchorRect);
+  static mozilla::SideBits GetSideBitsForFixedPositionContent(
+      const nsIFrame* aFixedPosFrame);
+
   /**
    * Get the scroll id for the root scrollframe of the presshell of the given
    * prescontext. Returns NULL_SCROLL_ID if it couldn't be found.
@@ -858,7 +882,7 @@ class nsLayoutUtils {
    * @param aPt the point, relative to the frame origin
    * @param aFlags some combination of FrameForPointOption.
    */
-  static nsIFrame* GetFrameForPoint(nsIFrame* aFrame, nsPoint aPt,
+  static nsIFrame* GetFrameForPoint(const nsIFrame* aFrame, nsPoint aPt,
                                     mozilla::EnumSet<FrameForPointOption> = {});
 
   /**
@@ -869,7 +893,7 @@ class nsLayoutUtils {
    * @param aOutFrames an array to add all the frames found
    * @param aFlags some combination of FrameForPointOption.
    */
-  static nsresult GetFramesForArea(nsIFrame* aFrame, const nsRect& aRect,
+  static nsresult GetFramesForArea(const nsIFrame* aFrame, const nsRect& aRect,
                                    nsTArray<nsIFrame*>& aOutFrames,
                                    mozilla::EnumSet<FrameForPointOption> = {});
 
@@ -974,6 +998,13 @@ class nsLayoutUtils {
   static void PostTranslate(Matrix4x4& aTransform, const nsPoint& aOrigin,
                             float aAppUnitsPerPixel, bool aRounded);
 
+  /*
+   * Whether the frame should snap to grid. This will end up being passed
+   * as the aRounded parameter in PostTranslate above. SVG frames should
+   * not have their translation rounded.
+   */
+  static bool ShouldSnapToGrid(const nsIFrame* aFrame);
+
   /**
    * Get the border-box of aElement's primary frame, transformed it to be
    * relative to aFrame.
@@ -1061,17 +1092,8 @@ class nsLayoutUtils {
    * @param aFactor The number of app units per graphics unit.
    * @return The smallest rectangle in app space that contains aRect.
    */
-  static nsRect RoundGfxRectToAppRect(const Rect& aRect, float aFactor);
-
-  /**
-   * Given a graphics rectangle in graphics space, return a rectangle in
-   * app space that contains the graphics rectangle, rounding out as necessary.
-   *
-   * @param aRect The graphics rect to round outward.
-   * @param aFactor The number of app units per graphics unit.
-   * @return The smallest rectangle in app space that contains aRect.
-   */
-  static nsRect RoundGfxRectToAppRect(const gfxRect& aRect, float aFactor);
+  template <typename T>
+  static nsRect RoundGfxRectToAppRect(const T& aRect, const float aFactor);
 
   /**
    * Returns a subrectangle of aContainedRect that is entirely inside the
@@ -1402,10 +1424,16 @@ class nsLayoutUtils {
   static nsIFrame* GetDisplayListParent(nsIFrame* aFrame);
 
   /**
-   * Get a frame's next-in-flow, or, if it doesn't have one, its
+   * Get a frame's previous continuation, or, if it doesn't have one, its
+   * previous block-in-inline-split sibling.
+   */
+  static nsIFrame* GetPrevContinuationOrIBSplitSibling(const nsIFrame* aFrame);
+
+  /**
+   * Get a frame's next continuation, or, if it doesn't have one, its
    * block-in-inline-split sibling.
    */
-  static nsIFrame* GetNextContinuationOrIBSplitSibling(nsIFrame* aFrame);
+  static nsIFrame* GetNextContinuationOrIBSplitSibling(const nsIFrame* aFrame);
 
   /**
    * Get the first frame in the continuation-plus-ib-split-sibling chain
@@ -2896,16 +2924,21 @@ class nsLayoutUtils {
   /**
    * Compute a rect to pre-render in cases where we want to render more of
    * something than what is visible (usually to support async transformation).
-   * @param aDirtyRect the area that's visible
-   * @param aOverflow the total size of the thing we're rendering
-   * @param aPrerenderSize how large of an area we're willing to render
+   * @param aFrame the target frame to be pre-rendered
+   * @param aDirtyRect the area that's visible in the coordinate system of
+   *        |aFrame|.
+   * @param aOverflow the total size of the thing we're rendering in the
+   *        coordinate system of |aFrame|.
+   * @param aPrerenderSize how large of an area we're willing to render in the
+   *        coordinate system of the root frame.
    * @return A rectangle that includes |aDirtyRect|, is clamped to |aOverflow|,
-   *         and is no larger than |aPrerenderSize| (unless |aPrerenderSize|
-   *         is smaller than |aDirtyRect|, in which case the returned rect
-   *         will still include |aDirtyRect| and thus be larger than
+   *         and is no larger than |aPrerenderSize| (unless |aPrerenderSize| is
+   *         smaller than |aDirtyRect|, in which case the returned rect will
+   *         still include |aDirtyRect| and thus be larger than
    *         |aPrerenderSize|).
    */
-  static nsRect ComputePartialPrerenderArea(const nsRect& aDirtyRect,
+  static nsRect ComputePartialPrerenderArea(nsIFrame* aFrame,
+                                            const nsRect& aDirtyRect,
                                             const nsRect& aOverflow,
                                             const nsSize& aPrerenderSize);
 
@@ -2927,15 +2960,20 @@ class nsLayoutUtils {
   static bool IsInvisibleBreak(nsINode* aNode,
                                nsIFrame** aNextLineFrame = nullptr);
 
-  static nsRect ComputeGeometryBox(nsIFrame* aFrame,
-                                   StyleGeometryBox aGeometryBox);
+  static nsRect ComputeGeometryBox(nsIFrame*, StyleGeometryBox);
+
+  static nsRect ComputeGeometryBox(nsIFrame*,
+                                   const mozilla::StyleShapeGeometryBox&);
+
+  static nsRect ComputeGeometryBox(nsIFrame*, const mozilla::StyleShapeBox&);
 
   static nsPoint ComputeOffsetToUserSpace(nsDisplayListBuilder* aBuilder,
                                           nsIFrame* aFrame);
 
   // Return the default value to be used for -moz-control-character-visibility,
   // from preferences.
-  static uint8_t ControlCharVisibilityDefault();
+  static mozilla::StyleControlCharacterVisibility
+  ControlCharVisibilityDefault();
 
   // Callers are responsible to ensure the user-font-set is up-to-date if
   // aUseUserFontSet is true.
@@ -2996,6 +3034,9 @@ class nsLayoutUtils {
                                     const std::string& aValue);
 
   static bool IsAPZTestLoggingEnabled();
+
+  static void ConstrainToCoordValues(gfxFloat& aStart, gfxFloat& aSize);
+  static void ConstrainToCoordValues(float& aStart, float& aSize);
 };
 
 MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(nsLayoutUtils::PaintFrameFlags)
@@ -3037,6 +3078,31 @@ template <typename PointType, typename RectType, typename CoordType>
   }
 
   return false;
+}
+
+template <typename T>
+nsRect nsLayoutUtils::RoundGfxRectToAppRect(const T& aRect,
+                                            const float aFactor) {
+  // Get a new Rect whose units are app units by scaling by the specified
+  // factor.
+  T scaledRect = aRect;
+  scaledRect.ScaleRoundOut(aFactor);
+
+  // We now need to constrain our results to the max and min values for coords.
+  ConstrainToCoordValues(scaledRect.x, scaledRect.width);
+  ConstrainToCoordValues(scaledRect.y, scaledRect.height);
+
+  if (!aRect.Width()) {
+    scaledRect.SetWidth(0);
+  }
+
+  if (!aRect.Height()) {
+    scaledRect.SetHeight(0);
+  }
+
+  // Now typecast everything back.  This is guaranteed to be safe.
+  return nsRect(nscoord(scaledRect.X()), nscoord(scaledRect.Y()),
+                nscoord(scaledRect.Width()), nscoord(scaledRect.Height()));
 }
 
 namespace mozilla {

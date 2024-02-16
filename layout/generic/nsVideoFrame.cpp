@@ -76,7 +76,7 @@ nsVideoFrame::nsVideoFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
   EnableVisibilityTracking();
 }
 
-nsVideoFrame::~nsVideoFrame() {}
+nsVideoFrame::~nsVideoFrame() = default;
 
 NS_QUERYFRAME_HEAD(nsVideoFrame)
   NS_QUERYFRAME_ENTRY(nsVideoFrame)
@@ -113,7 +113,9 @@ nsresult nsVideoFrame::CreateAnonymousContent(
 
     UpdatePosterSource(false);
 
-    if (!aElements.AppendElement(mPosterImage)) return NS_ERROR_OUT_OF_MEMORY;
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    aElements.AppendElement(mPosterImage);
 
     // Set up the caption overlay div for showing any TextTrack data
     nodeInfo = nodeInfoManager->GetNodeInfo(
@@ -125,7 +127,9 @@ nsresult nsVideoFrame::CreateAnonymousContent(
         static_cast<nsGenericHTMLElement*>(mCaptionDiv.get());
     div->SetClassName(NS_LITERAL_STRING("caption-box"));
 
-    if (!aElements.AppendElement(mCaptionDiv)) return NS_ERROR_OUT_OF_MEMORY;
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    aElements.AppendElement(mCaptionDiv);
     UpdateTextTrack();
   }
 
@@ -406,7 +410,7 @@ class nsDisplayVideo : public nsPaintedDisplayItem {
     MOZ_COUNT_CTOR(nsDisplayVideo);
   }
 #ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayVideo() { MOZ_COUNT_DTOR(nsDisplayVideo); }
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayVideo)
 #endif
 
   NS_DISPLAY_DECL_NAME("Video", TYPE_VIDEO)

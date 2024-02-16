@@ -13,57 +13,35 @@ use servo_arc::Arc;
 use std::fmt::{self, Write};
 use style_traits::{CssWriter, ToCss};
 
-/// An <image> | <none> (for background-image, for example).
-#[derive(
-    Clone,
-    Debug,
-    MallocSizeOf,
-    Parse,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToComputedValue,
-    ToCss,
-    ToResolvedValue,
-    ToShmem,
-)]
-pub enum GenericImageLayer<Image> {
-    /// The `none` value.
-    None,
-    /// The `<image>` value.
-    Image(Image),
-}
-
-pub use self::GenericImageLayer as ImageLayer;
-
-impl<I> ImageLayer<I> {
-    /// Returns `none`.
-    #[inline]
-    pub fn none() -> Self {
-        ImageLayer::None
-    }
-}
-
-/// An [image].
+/// An `<image> | none` value.
 ///
-/// [image]: https://drafts.csswg.org/css-images/#image-values
+/// https://drafts.csswg.org/css-images/#image-values
 #[derive(
     Clone, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToResolvedValue, ToShmem,
 )]
 #[repr(C, u8)]
-pub enum GenericImage<Gradient, MozImageRect, ImageUrl> {
+pub enum GenericImage<G, MozImageRect, ImageUrl> {
+    /// `none` variant.
+    None,
     /// A `<url()>` image.
     Url(ImageUrl),
+
     /// A `<gradient>` image.  Gradients are rather large, and not nearly as
     /// common as urls, so we box them here to keep the size of this enum sane.
-    Gradient(Box<Gradient>),
+    Gradient(Box<G>),
     /// A `-moz-image-rect` image.  Also fairly large and rare.
+    // not cfg’ed out on non-Gecko to avoid `error[E0392]: parameter `MozImageRect` is never used`
+    // Instead we make MozImageRect an empty enum
     Rect(Box<MozImageRect>),
+
     /// A `-moz-element(# <element-id>)`
+    #[cfg(feature = "gecko")]
     #[css(function = "-moz-element")]
     Element(Atom),
+
     /// A paint worklet image.
     /// <https://drafts.css-houdini.org/css-paint-api/>
-    #[cfg(feature = "servo")]
+    #[cfg(feature = "servo-layout-2013")]
     PaintWorklet(PaintWorklet),
 }
 
@@ -202,7 +180,7 @@ pub enum ShapeExtent {
     Clone, Copy, Debug, MallocSizeOf, PartialEq, ToComputedValue, ToCss, ToResolvedValue, ToShmem,
 )]
 #[repr(C, u8)]
-pub enum GenericGradientItem<Color, LengthPercentage> {
+pub enum GenericGradientItem<Color, T> {
     /// A simple color stop, without position.
     SimpleColorStop(Color),
     /// A complex color stop, with a position.
@@ -210,10 +188,10 @@ pub enum GenericGradientItem<Color, LengthPercentage> {
         /// The color for the stop.
         color: Color,
         /// The position for the stop.
-        position: LengthPercentage,
+        position: T,
     },
     /// An interpolation hint.
-    InterpolationHint(LengthPercentage),
+    InterpolationHint(T),
 }
 
 pub use self::GenericGradientItem as GradientItem;
@@ -223,17 +201,17 @@ pub use self::GenericGradientItem as GradientItem;
 #[derive(
     Clone, Copy, Debug, MallocSizeOf, PartialEq, ToComputedValue, ToCss, ToResolvedValue, ToShmem,
 )]
-pub struct ColorStop<Color, LengthPercentage> {
+pub struct ColorStop<Color, T> {
     /// The color of this stop.
     pub color: Color,
     /// The position of this stop.
-    pub position: Option<LengthPercentage>,
+    pub position: Option<T>,
 }
 
-impl<Color, LengthPercentage> ColorStop<Color, LengthPercentage> {
+impl<Color, T> ColorStop<Color, T> {
     /// Convert the color stop into an appropriate `GradientItem`.
     #[inline]
-    pub fn into_item(self) -> GradientItem<Color, LengthPercentage> {
+    pub fn into_item(self) -> GradientItem<Color, T> {
         match self.position {
             Some(position) => GradientItem::ComplexColorStop {
                 color: self.color,
@@ -254,6 +232,8 @@ pub struct PaintWorklet {
     /// The arguments for the worklet.
     /// TODO: store a parsed representation of the arguments.
     #[cfg_attr(feature = "servo", ignore_malloc_size_of = "Arc")]
+    #[compute(no_field_bound)]
+    #[resolve(no_field_bound)]
     pub arguments: Vec<Arc<custom_properties::SpecifiedValue>>,
 }
 
@@ -278,7 +258,7 @@ impl ToCss for PaintWorklet {
 ///
 /// `-moz-image-rect(<uri>, top, right, bottom, left);`
 #[allow(missing_docs)]
-#[css(comma, function)]
+#[css(comma, function = "-moz-image-rect")]
 #[derive(
     Clone,
     Debug,
@@ -290,13 +270,16 @@ impl ToCss for PaintWorklet {
     ToResolvedValue,
     ToShmem,
 )]
-pub struct MozImageRect<NumberOrPercentage, MozImageRectUrl> {
+#[repr(C)]
+pub struct GenericMozImageRect<NumberOrPercentage, MozImageRectUrl> {
     pub url: MozImageRectUrl,
     pub top: NumberOrPercentage,
     pub right: NumberOrPercentage,
     pub bottom: NumberOrPercentage,
     pub left: NumberOrPercentage,
 }
+
+pub use self::GenericMozImageRect as MozImageRect;
 
 impl<G, R, U> fmt::Debug for Image<G, R, U>
 where
@@ -320,11 +303,13 @@ where
         W: Write,
     {
         match *self {
+            Image::None => dest.write_str("none"),
             Image::Url(ref url) => url.to_css(dest),
             Image::Gradient(ref gradient) => gradient.to_css(dest),
             Image::Rect(ref rect) => rect.to_css(dest),
-            #[cfg(feature = "servo")]
+            #[cfg(feature = "servo-layout-2013")]
             Image::PaintWorklet(ref paint_worklet) => paint_worklet.to_css(dest),
+            #[cfg(feature = "gecko")]
             Image::Element(ref selector) => {
                 dest.write_str("-moz-element(#")?;
                 serialize_atom_identifier(selector, dest)?;

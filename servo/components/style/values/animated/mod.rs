@@ -23,7 +23,6 @@ pub mod color;
 pub mod effects;
 mod font;
 mod grid;
-mod length;
 mod svg;
 pub mod transform;
 
@@ -107,7 +106,7 @@ pub fn animate_multiplicative_factor(
 /// be equal or an error is returned.
 ///
 /// If a variant is annotated with `#[animation(error)]`, the corresponding
-/// `match` arm is not generated.
+/// `match` arm returns an error.
 ///
 /// If the two values are not similar, an error is returned unless a fallback
 /// function has been specified through `#[animate(fallback)]`.
@@ -448,6 +447,16 @@ where
 }
 
 impl<T> ToAnimatedZero for Vec<T>
+where
+    T: ToAnimatedZero,
+{
+    #[inline]
+    fn to_animated_zero(&self) -> Result<Self, ()> {
+        self.iter().map(|v| v.to_animated_zero()).collect()
+    }
+}
+
+impl<T> ToAnimatedZero for Box<[T]>
 where
     T: ToAnimatedZero,
 {

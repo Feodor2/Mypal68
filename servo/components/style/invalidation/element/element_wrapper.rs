@@ -62,9 +62,6 @@ pub trait ElementSnapshot: Sized {
     /// called if `has_attrs()` returns true.
     fn is_part(&self, name: &Atom) -> bool;
 
-    /// See Element::exported_part.
-    fn exported_part(&self, name: &Atom) -> Option<Atom>;
-
     /// See Element::imported_part.
     fn imported_part(&self, name: &Atom) -> Option<Atom>;
 
@@ -180,16 +177,6 @@ where
         // Some pseudo-classes need special handling to evaluate them against
         // the snapshot.
         match *pseudo_class {
-            #[cfg(feature = "gecko")]
-            NonTSPseudoClass::MozAny(ref selectors) => {
-                use selectors::matching::matches_complex_selector;
-                return context.nest(|context| {
-                    selectors
-                        .iter()
-                        .any(|s| matches_complex_selector(s.iter(), self, context, _setter))
-                });
-            },
-
             // :dir is implemented in terms of state flags, but which state flag
             // it maps to depends on the argument to :dir.  That means we can't
             // just add its state flags to the NonTSPseudoClass, because if we
@@ -238,6 +225,15 @@ where
                 if let Some(snapshot) = self.snapshot() {
                     if snapshot.has_other_pseudo_class_state() {
                         return snapshot.mIsMozBrowserFrame();
+                    }
+                }
+            },
+
+            #[cfg(feature = "gecko")]
+            NonTSPseudoClass::MozSelectListBox => {
+                if let Some(snapshot) = self.snapshot() {
+                    if snapshot.has_other_pseudo_class_state() {
+                        return snapshot.mIsSelectListBox();
                     }
                 }
             },
@@ -368,13 +364,6 @@ where
         match self.snapshot() {
             Some(snapshot) if snapshot.has_attrs() => snapshot.is_part(name),
             _ => self.element.is_part(name),
-        }
-    }
-
-    fn exported_part(&self, name: &Atom) -> Option<Atom> {
-        match self.snapshot() {
-            Some(snapshot) if snapshot.has_attrs() => snapshot.exported_part(name),
-            _ => self.element.exported_part(name),
         }
     }
 

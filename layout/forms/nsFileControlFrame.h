@@ -83,7 +83,7 @@ class nsFileControlFrame final : public nsBlockFrame,
     void ForgetFrame() { mFrame = nullptr; }
 
    protected:
-    virtual ~MouseListener() {}
+    virtual ~MouseListener() = default;
 
     nsFileControlFrame* mFrame;
   };

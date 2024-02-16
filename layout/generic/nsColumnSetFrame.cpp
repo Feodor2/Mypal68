@@ -27,12 +27,7 @@ class nsDisplayColumnRule : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayColumnRule);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayColumnRule() {
-    MOZ_COUNT_DTOR(nsDisplayColumnRule);
-    mBorderRenderers.Clear();
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayColumnRule)
 
   /**
    * Returns the frame's visual overflow rect instead of the frame's bounds.
@@ -241,7 +236,7 @@ void nsColumnSetFrame::CreateBorderRenderers(
         // Assert that we're not drawing a border-image here; if we were, we
         // couldn't ignore the ImgDrawResult that PaintBorderWithStyleBorder
         // returns.
-        MOZ_ASSERT(border.mBorderImageSource.GetType() == eStyleImageType_Null);
+        MOZ_ASSERT(border.mBorderImageSource.IsNone());
 
         gfx::DrawTarget* dt = aCtx ? aCtx->GetDrawTarget() : nullptr;
         bool borderIsEmpty = false;
@@ -268,19 +263,6 @@ static nscoord GetAvailableContentISize(const ReflowInput& aReflowInput) {
   return std::max(0, aReflowInput.AvailableISize() - borderPaddingISize);
 }
 
-nscoord nsColumnSetFrame::GetAvailableContentBSize(
-    const ReflowInput& aReflowInput) const {
-  if (aReflowInput.AvailableBSize() == NS_UNCONSTRAINEDSIZE) {
-    return NS_UNCONSTRAINEDSIZE;
-  }
-
-  WritingMode wm = aReflowInput.GetWritingMode();
-  LogicalMargin bp = aReflowInput.ComputedLogicalBorderPadding();
-  bp.ApplySkipSides(GetLogicalSkipSides(&aReflowInput));
-  bp.BEnd(wm) = aReflowInput.ComputedLogicalBorderPadding().BEnd(wm);
-  return std::max(0, aReflowInput.AvailableBSize() - bp.BStartEnd(wm));
-}
-
 static uint32_t ColumnBalancingDepth(const ReflowInput& aReflowInput,
                                      uint32_t aMaxDepth) {
   uint32_t depth = 0;
@@ -295,21 +277,11 @@ static uint32_t ColumnBalancingDepth(const ReflowInput& aReflowInput,
 
 nsColumnSetFrame::ReflowConfig nsColumnSetFrame::ChooseColumnStrategy(
     const ReflowInput& aReflowInput, bool aForceAuto = false) const {
-  WritingMode wm = aReflowInput.GetWritingMode();
-
   const nsStyleColumn* colStyle = StyleColumn();
   nscoord availContentISize = GetAvailableContentISize(aReflowInput);
   if (aReflowInput.ComputedISize() != NS_UNCONSTRAINEDSIZE) {
     availContentISize = aReflowInput.ComputedISize();
   }
-
-  nscoord consumedBSize = ConsumedBSize(wm);
-
-  // The effective computed block-size is the block-size of the current
-  // continuation of the column set frame. This should be the same as the
-  // computed block-size if we have an unconstrained available block-size.
-  nscoord computedBSize =
-      GetEffectiveComputedBSize(aReflowInput, consumedBSize);
 
   nscoord colBSize = aReflowInput.AvailableBSize();
   nscoord colGap =
@@ -420,8 +392,6 @@ nsColumnSetFrame::ReflowConfig nsColumnSetFrame::ChooseColumnStrategy(
   config.mForceAuto = aForceAuto;
   config.mKnownFeasibleBSize = NS_UNCONSTRAINEDSIZE;
   config.mKnownInfeasibleBSize = 0;
-  config.mComputedBSize = computedBSize;
-  config.mConsumedBSize = consumedBSize;
 
   COLUMN_SET_LOG(
       "%s: this=%p, mUsedColCount=%d, mColISize=%d, "
@@ -1018,7 +988,7 @@ void nsColumnSetFrame::FindBestBalanceBSize(const ReflowInput& aReflowInput,
                                             ReflowOutput& aDesiredSize,
                                             bool aUnboundedLastColumn,
                                             nsReflowStatus& aStatus) {
-  nscoord availableContentBSize = GetAvailableContentBSize(aReflowInput);
+  const nscoord availableContentBSize = aReflowInput.AvailableBSize();
 
   // Termination of the algorithm below is guaranteed because
   // aConfig.knownFeasibleBSize - aConfig.knownInfeasibleBSize decreases in
@@ -1175,13 +1145,17 @@ void nsColumnSetFrame::FindBestBalanceBSize(const ReflowInput& aReflowInput,
       aConfig.mColMaxBSize = aConfig.mKnownFeasibleBSize;
     }
 
-    // If our block-size is unconstrained, make sure that the last column is
+    // This is our last attempt to reflow. If our column container's available
+    // block-size is unconstrained, make sure that the last column is
     // allowed to have arbitrary block-size here, even though we were
     // balancing. Otherwise we'd have to split, and it's not clear what we'd
     // do with that.
+    const bool forceUnboundedLastColumn =
+        aReflowInput.mParentReflowInput->AvailableBSize() ==
+        NS_UNCONSTRAINEDSIZE;
     MarkPrincipalChildrenDirty(this);
     ReflowColumns(aDesiredSize, aReflowInput, aStatus, aConfig,
-                  availableContentBSize == NS_UNCONSTRAINEDSIZE);
+                  forceUnboundedLastColumn);
   }
 }
 
@@ -1202,13 +1176,8 @@ void nsColumnSetFrame::Reflow(nsPresContext* aPresContext,
              "The column container should have relevant column styles!");
   MOZ_ASSERT(aReflowInput.mParentReflowInput->mFrame->IsColumnSetWrapperFrame(),
              "The column container should be ColumnSetWrapperFrame!");
-
-  // Our children depend on our block-size if we have a fixed block-size.
-  if (aReflowInput.ComputedBSize() != NS_UNCONSTRAINEDSIZE) {
-    AddStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
-  } else {
-    RemoveStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
-  }
+  MOZ_ASSERT(aReflowInput.ComputedLogicalBorderPadding().IsAllZero(),
+             "Only the column container can have border and padding!");
 
 #ifdef DEBUG
   nsFrameList::Enumerator oc(GetChildList(kOverflowContainersList));

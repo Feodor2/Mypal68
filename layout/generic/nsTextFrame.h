@@ -253,7 +253,7 @@ class nsTextFrame : public nsFrame {
     // Setting a non-fluid continuation might affect our flow length (they're
     // quite rare so we assume it always does) so we delete our cached value:
     if (GetContent()->HasFlag(NS_HAS_FLOWLENGTH_PROPERTY)) {
-      GetContent()->DeleteProperty(nsGkAtoms::flowlength);
+      GetContent()->RemoveProperty(nsGkAtoms::flowlength);
       GetContent()->UnsetFlags(NS_HAS_FLOWLENGTH_PROPERTY);
     }
   }
@@ -275,7 +275,7 @@ class nsTextFrame : public nsFrame {
       // Changing from non-fluid to fluid continuation might affect our flow
       // length, so we delete our cached value:
       if (GetContent()->HasFlag(NS_HAS_FLOWLENGTH_PROPERTY)) {
-        GetContent()->DeleteProperty(nsGkAtoms::flowlength);
+        GetContent()->RemoveProperty(nsGkAtoms::flowlength);
         GetContent()->UnsetFlags(NS_HAS_FLOWLENGTH_PROPERTY);
       }
     }
@@ -312,7 +312,7 @@ class nsTextFrame : public nsFrame {
 
 #ifdef DEBUG_FRAME_DUMP
   void List(FILE* out = stderr, const char* aPrefix = "",
-            uint32_t aFlags = 0) const final;
+            ListFlags aFlags = ListFlags()) const final;
   nsresult GetFrameName(nsAString& aResult) const final;
   void ToCString(nsCString& aBuf, int32_t* aTotalContentLength) const;
 #endif
@@ -488,7 +488,7 @@ class nsTextFrame : public nsFrame {
    * b. GetContentLength() == 0
    * c. it contains only non-significant white-space
    */
-  bool HasNonSuppressedText();
+  bool HasNonSuppressedText() const;
 
   /**
    * Object with various callbacks for PaintText() to invoke for different parts
@@ -654,6 +654,8 @@ class nsTextFrame : public nsFrame {
 
   nscolor GetCaretColorAt(int32_t aOffset) final;
 
+  // @param aSelectionFlags may be multiple of nsISelectionDisplay::DISPLAY_*.
+  // @return nsISelectionController.idl's `getDisplaySelection`.
   int16_t GetSelectionStatus(int16_t* aSelectionFlags);
 
   int32_t GetContentOffset() const { return mContentOffset; }
@@ -693,11 +695,11 @@ class nsTextFrame : public nsFrame {
       const nsLineList::iterator* aLine = nullptr,
       uint32_t* aFlowEndInTextRun = nullptr);
 
-  gfxTextRun* GetTextRun(TextRunType aWhichTextRun) {
+  gfxTextRun* GetTextRun(TextRunType aWhichTextRun) const {
     if (aWhichTextRun == eInflated || !HasFontSizeInflation()) return mTextRun;
     return GetUninflatedTextRun();
   }
-  gfxTextRun* GetUninflatedTextRun();
+  gfxTextRun* GetUninflatedTextRun() const;
   void SetTextRun(gfxTextRun* aTextRun, TextRunType aWhichTextRun,
                   float aInflation);
   bool IsInTextRunUserData() const {
@@ -887,14 +889,7 @@ class nsTextFrame : public nsFrame {
           mStyle(aStyle),
           mTextUnderlinePosition(aUnderlinePosition) {}
 
-    LineDecoration(const LineDecoration& aOther)
-        : mFrame(aOther.mFrame),
-          mBaselineOffset(aOther.mBaselineOffset),
-          mTextUnderlineOffset(aOther.mTextUnderlineOffset),
-          mTextDecorationThickness(aOther.mTextDecorationThickness),
-          mColor(aOther.mColor),
-          mStyle(aOther.mStyle),
-          mTextUnderlinePosition(aOther.mTextUnderlinePosition) {}
+    LineDecoration(const LineDecoration& aOther) = default;
 
     bool operator==(const LineDecoration& aOther) const {
       return mFrame == aOther.mFrame && mStyle == aOther.mStyle &&
@@ -912,7 +907,7 @@ class nsTextFrame : public nsFrame {
   struct TextDecorations {
     AutoTArray<LineDecoration, 1> mOverlines, mUnderlines, mStrikes;
 
-    TextDecorations() {}
+    TextDecorations() = default;
 
     bool HasDecorationLines() const {
       return HasUnderline() || HasOverline() || HasStrikeout();

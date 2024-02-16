@@ -19,6 +19,7 @@ use style::global_style_data::GLOBAL_STYLE_DATA;
 use style::media_queries::MediaList;
 use style::parser::ParserContext;
 use style::shared_lock::{Locked, SharedRwLock};
+use style::stylesheets::AllowImportRules;
 use style::stylesheets::import_rule::ImportSheet;
 use style::stylesheets::{ImportRule, Origin, StylesheetLoader as StyleStylesheetLoader};
 use style::stylesheets::{StylesheetContents, UrlExtraData};
@@ -88,6 +89,7 @@ pub struct AsyncStylesheetParser {
     origin: Origin,
     quirks_mode: QuirksMode,
     line_number_offset: u32,
+    allow_import_rules: AllowImportRules,
 }
 
 impl AsyncStylesheetParser {
@@ -98,6 +100,7 @@ impl AsyncStylesheetParser {
         origin: Origin,
         quirks_mode: QuirksMode,
         line_number_offset: u32,
+        allow_import_rules: AllowImportRules,
     ) -> Self {
         AsyncStylesheetParser {
             load_data,
@@ -106,6 +109,7 @@ impl AsyncStylesheetParser {
             origin,
             quirks_mode,
             line_number_offset,
+            allow_import_rules,
         }
     }
 
@@ -125,6 +129,7 @@ impl AsyncStylesheetParser {
             None,
             self.quirks_mode.into(),
             self.line_number_offset,
+            self.allow_import_rules,
             /* sanitized_output = */ None,
         ));
 

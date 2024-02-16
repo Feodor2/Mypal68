@@ -51,6 +51,7 @@
 #  include "mozilla/layers/RenderRootStateManager.h"
 #  include "mozilla/layers/WebRenderLayerManager.h"
 #endif
+#include "mozilla/dom/ImageTracker.h"
 
 #if defined(XP_WIN)
 // Undefine LoadImage to prevent naming conflict with Windows.
@@ -152,11 +153,11 @@ nsImageBoxFrame::nsImageBoxFrame(ComputedStyle* aStyle,
   MarkIntrinsicISizesDirty();
 }
 
-nsImageBoxFrame::~nsImageBoxFrame() {}
+nsImageBoxFrame::~nsImageBoxFrame() = default;
 
 /* virtual */
 void nsImageBoxFrame::MarkIntrinsicISizesDirty() {
-  SizeNeedsRecalc(mImageSize);
+  XULSizeNeedsRecalc(mImageSize);
   nsLeafBoxFrame::MarkIntrinsicISizesDirty();
 }
 
@@ -167,6 +168,10 @@ void nsImageBoxFrame::DestroyFrom(nsIFrame* aDestructRoot,
                                           &mRequestRegistered);
 
     mImageRequest->UnlockImage();
+
+    if (mUseSrcAttr) {
+      PresContext()->Document()->ImageTracker()->Remove(mImageRequest);
+    }
 
     // Release image loader first so that it's refcnt can go to zero
     mImageRequest->CancelAndForgetObserver(NS_ERROR_FAILURE);
@@ -211,6 +216,7 @@ void nsImageBoxFrame::StopAnimation() {
 
 void nsImageBoxFrame::UpdateImage() {
   nsPresContext* presContext = PresContext();
+  Document* doc = presContext->Document();
 
   RefPtr<imgRequestProxy> oldImageRequest = mImageRequest;
 
@@ -218,6 +224,9 @@ void nsImageBoxFrame::UpdateImage() {
     nsLayoutUtils::DeregisterImageRequest(presContext, mImageRequest,
                                           &mRequestRegistered);
     mImageRequest->CancelAndForgetObserver(NS_ERROR_FAILURE);
+    if (mUseSrcAttr) {
+      doc->ImageTracker()->Remove(mImageRequest);
+    }
     mImageRequest = nullptr;
   }
 
@@ -226,40 +235,42 @@ void nsImageBoxFrame::UpdateImage() {
   mContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::src, src);
   mUseSrcAttr = !src.IsEmpty();
   if (mUseSrcAttr) {
-    Document* doc = mContent->GetComposedDoc();
-    if (doc) {
-      nsContentPolicyType contentPolicyType;
-      nsCOMPtr<nsIPrincipal> triggeringPrincipal;
-      uint64_t requestContextID = 0;
-      nsContentUtils::GetContentPolicyTypeForUIImageLoading(
-          mContent, getter_AddRefs(triggeringPrincipal), contentPolicyType,
-          &requestContextID);
+    nsContentPolicyType contentPolicyType;
+    nsCOMPtr<nsIPrincipal> triggeringPrincipal;
+    uint64_t requestContextID = 0;
+    nsContentUtils::GetContentPolicyTypeForUIImageLoading(
+        mContent, getter_AddRefs(triggeringPrincipal), contentPolicyType,
+        &requestContextID);
 
-      nsCOMPtr<nsIURI> uri;
-      nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(uri), src, doc,
-                                                mContent->GetBaseURI());
-      if (uri) {
-        nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
-        referrerInfo->InitWithNode(mContent);
+    nsCOMPtr<nsIURI> uri;
+    nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(uri), src, doc,
+                                              mContent->GetBaseURI());
+    if (uri) {
+      auto referrerInfo = MakeRefPtr<ReferrerInfo>(*mContent->AsElement());
+      nsresult rv = nsContentUtils::LoadImage(
+          uri, mContent, doc, triggeringPrincipal, requestContextID,
+          referrerInfo, mListener, mLoadFlags, EmptyString(),
+          getter_AddRefs(mImageRequest), contentPolicyType);
 
-        nsresult rv = nsContentUtils::LoadImage(
-            uri, mContent, doc, triggeringPrincipal, requestContextID,
-            referrerInfo, mListener, mLoadFlags, EmptyString(),
-            getter_AddRefs(mImageRequest), contentPolicyType);
+      if (NS_SUCCEEDED(rv) && mImageRequest) {
+        nsLayoutUtils::RegisterImageRequestIfAnimated(
+            presContext, mImageRequest, &mRequestRegistered);
 
-        if (NS_SUCCEEDED(rv) && mImageRequest) {
-          nsLayoutUtils::RegisterImageRequestIfAnimated(
-              presContext, mImageRequest, &mRequestRegistered);
-        }
+        // Add to the ImageTracker so that we can find it when media
+        // feature values change (e.g. when the system theme changes)
+        // and invalidate the image.  This allows favicons to respond
+        // to these changes.
+        doc->ImageTracker()->Add(mImageRequest);
       }
     }
   } else {
     // Only get the list-style-image if we aren't being drawn
     // by a native theme.
     auto* display = StyleDisplay();
-    if (!(display->HasAppearance() && nsBox::gTheme &&
-          nsBox::gTheme->ThemeSupportsWidget(nullptr, this,
-                                             display->mAppearance))) {
+    nsPresContext* pc = PresContext();
+    if (!(display->HasAppearance() &&
+          pc->Theme()->ThemeSupportsWidget(nullptr, this,
+                                           display->mAppearance))) {
       // get the list-style-image
       imgRequestProxy* styleRequest = StyleList()->GetListStyleImage();
       if (styleRequest) {
@@ -274,7 +285,7 @@ void nsImageBoxFrame::UpdateImage() {
     mIntrinsicSize.SizeTo(0, 0);
   } else {
     // We don't want discarding or decode-on-draw for xul images.
-    mImageRequest->StartDecoding(imgIContainer::FLAG_NONE);
+    mImageRequest->StartDecoding(imgIContainer::FLAG_ASYNC_NOTIFY);
     mImageRequest->LockImage();
   }
 
@@ -325,7 +336,8 @@ void nsImageBoxFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   nsDisplayList list;
   list.AppendNewToTop<nsDisplayXULImage>(aBuilder, this);
 
-  CreateOwnLayerIfNeeded(aBuilder, &list);
+  CreateOwnLayerIfNeeded(aBuilder, &list,
+                         nsDisplayOwnLayer::OwnLayerForImageBoxFrame);
 
   aLists.Content()->AppendToTop(&list);
 }
@@ -621,8 +633,9 @@ void nsImageBoxFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
 
   // If we're using a native theme implementation, we shouldn't draw anything.
   const nsStyleDisplay* disp = StyleDisplay();
-  if (disp->HasAppearance() && nsBox::gTheme &&
-      nsBox::gTheme->ThemeSupportsWidget(nullptr, this, disp->mAppearance))
+  nsPresContext* pc = PresContext();
+  if (disp->HasAppearance() &&
+      pc->Theme()->ThemeSupportsWidget(nullptr, this, disp->mAppearance))
     return;
 
   // If list-style-image changes, we have a new image.
@@ -655,12 +668,15 @@ void nsImageBoxFrame::GetImageSize() {
 nsSize nsImageBoxFrame::GetXULPrefSize(nsBoxLayoutState& aState) {
   nsSize size(0, 0);
   DISPLAY_PREF_SIZE(this, size);
-  if (DoesNeedRecalc(mImageSize)) GetImageSize();
+  if (XULNeedsRecalc(mImageSize)) {
+    GetImageSize();
+  }
 
-  if (!mUseSrcAttr && (mSubRect.width > 0 || mSubRect.height > 0))
+  if (!mUseSrcAttr && (mSubRect.width > 0 || mSubRect.height > 0)) {
     size = mSubRect.Size();
-  else
+  } else {
     size = mImageSize;
+  }
 
   nsSize intrinsicSize = size;
 
@@ -723,16 +739,16 @@ nsSize nsImageBoxFrame::GetXULPrefSize(nsBoxLayoutState& aState) {
     size.height += borderPadding.TopBottom();
   }
 
-  return BoundsCheck(minSize, size, maxSize);
+  return XULBoundsCheck(minSize, size, maxSize);
 }
 
 nsSize nsImageBoxFrame::GetXULMinSize(nsBoxLayoutState& aState) {
   // An image can always scale down to (0,0).
   nsSize size(0, 0);
   DISPLAY_MIN_SIZE(this, size);
-  AddBorderAndPadding(size);
+  AddXULBorderAndPadding(size);
   bool widthSet, heightSet;
-  nsIFrame::AddXULMinSize(aState, this, size, widthSet, heightSet);
+  nsIFrame::AddXULMinSize(this, size, widthSet, heightSet);
   return size;
 }
 
@@ -746,8 +762,8 @@ nsresult nsImageBoxFrame::GetFrameName(nsAString& aResult) const {
 }
 #endif
 
-nsresult nsImageBoxFrame::Notify(imgIRequest* aRequest, int32_t aType,
-                                 const nsIntRect* aData) {
+void nsImageBoxFrame::Notify(imgIRequest* aRequest, int32_t aType,
+                             const nsIntRect* aData) {
   if (aType == imgINotificationObserver::SIZE_AVAILABLE) {
     nsCOMPtr<imgIContainer> image;
     aRequest->GetImage(getter_AddRefs(image));
@@ -773,13 +789,13 @@ nsresult nsImageBoxFrame::Notify(imgIRequest* aRequest, int32_t aType,
   if (aType == imgINotificationObserver::FRAME_UPDATE) {
     return OnFrameUpdate(aRequest);
   }
-
-  return NS_OK;
 }
 
-nsresult nsImageBoxFrame::OnSizeAvailable(imgIRequest* aRequest,
-                                          imgIContainer* aImage) {
-  NS_ENSURE_ARG_POINTER(aImage);
+void nsImageBoxFrame::OnSizeAvailable(imgIRequest* aRequest,
+                                      imgIContainer* aImage) {
+  if (NS_WARN_IF(!aImage)) {
+    return;
+  }
 
   // Ensure the animation (if any) is started. Note: There is no
   // corresponding call to Decrement for this. This Increment will be
@@ -799,18 +815,14 @@ nsresult nsImageBoxFrame::OnSizeAvailable(imgIRequest* aRequest,
     PresShell()->FrameNeedsReflow(this, IntrinsicDirty::StyleChange,
                                   NS_FRAME_IS_DIRTY);
   }
-
-  return NS_OK;
 }
 
-nsresult nsImageBoxFrame::OnDecodeComplete(imgIRequest* aRequest) {
+void nsImageBoxFrame::OnDecodeComplete(imgIRequest* aRequest) {
   nsBoxLayoutState state(PresContext());
   this->XULRedraw(state);
-  return NS_OK;
 }
 
-nsresult nsImageBoxFrame::OnLoadComplete(imgIRequest* aRequest,
-                                         nsresult aStatus) {
+void nsImageBoxFrame::OnLoadComplete(imgIRequest* aRequest, nsresult aStatus) {
   if (NS_SUCCEEDED(aStatus)) {
     // Fire an onload DOM event.
     FireImageDOMEvent(mContent, eLoad);
@@ -821,21 +833,17 @@ nsresult nsImageBoxFrame::OnLoadComplete(imgIRequest* aRequest,
                                   NS_FRAME_IS_DIRTY);
     FireImageDOMEvent(mContent, eLoadError);
   }
-
-  return NS_OK;
 }
 
-nsresult nsImageBoxFrame::OnImageIsAnimated(imgIRequest* aRequest) {
+void nsImageBoxFrame::OnImageIsAnimated(imgIRequest* aRequest) {
   // Register with our refresh driver, if we're animated.
   nsLayoutUtils::RegisterImageRequest(PresContext(), aRequest,
                                       &mRequestRegistered);
-
-  return NS_OK;
 }
 
-nsresult nsImageBoxFrame::OnFrameUpdate(imgIRequest* aRequest) {
+void nsImageBoxFrame::OnFrameUpdate(imgIRequest* aRequest) {
   if ((0 == mRect.width) || (0 == mRect.height)) {
-    return NS_OK;
+    return;
   }
 
   // Check if WebRender has interacted with this frame. If it has
@@ -844,13 +852,11 @@ nsresult nsImageBoxFrame::OnFrameUpdate(imgIRequest* aRequest) {
 #ifdef MOZ_BUILD_WEBRENDER
   const auto producerId = aRequest->GetProducerId();
   if (WebRenderUserData::ProcessInvalidateForImage(this, type, producerId)) {
-    return NS_OK;
+    return;
   }
 #endif
 
   InvalidateLayer(type);
-
-  return NS_OK;
 }
 
 NS_IMPL_ISUPPORTS(nsImageBoxListener, imgINotificationObserver)
@@ -858,12 +864,13 @@ NS_IMPL_ISUPPORTS(nsImageBoxListener, imgINotificationObserver)
 nsImageBoxListener::nsImageBoxListener(nsImageBoxFrame* frame)
     : mFrame(frame) {}
 
-nsImageBoxListener::~nsImageBoxListener() {}
+nsImageBoxListener::~nsImageBoxListener() = default;
 
-NS_IMETHODIMP
-nsImageBoxListener::Notify(imgIRequest* request, int32_t aType,
-                           const nsIntRect* aData) {
-  if (!mFrame) return NS_OK;
+void nsImageBoxListener::Notify(imgIRequest* request, int32_t aType,
+                                const nsIntRect* aData) {
+  if (!mFrame) {
+    return;
+  }
 
   return mFrame->Notify(request, aType, aData);
 }

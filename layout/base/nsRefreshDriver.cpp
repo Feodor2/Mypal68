@@ -1667,8 +1667,8 @@ void nsRefreshDriver::RunFrameRequestCallbacks(TimeStamp aNowTime) {
   mFrameRequestCallbackDocs.Clear();
 
   if (!frameRequestCallbacks.IsEmpty()) {
-    AUTO_PROFILER_TRACING_DOCSHELL("Paint", "Scripts", GRAPHICS,
-                                   GetDocShell(mPresContext));
+    AUTO_PROFILER_TRACING_DOCSHELL("Paint", "requestAnimationFrame callbacks",
+                                   GRAPHICS, GetDocShell(mPresContext));
     for (const DocumentFrameCallbacks& docCallbacks : frameRequestCallbacks) {
       // XXXbz Bug 863140: GetInnerWindow can return the outer
       // window in some cases.
@@ -1743,13 +1743,13 @@ void nsRefreshDriver::CancelIdleRunnable(nsIRunnable* aRunnable) {
   }
 }
 
-static bool ReduceAnimations(Document& aDocument, void* aData) {
-  if (aDocument.GetPresContext() &&
-      aDocument.GetPresContext()->EffectCompositor()->NeedsReducing()) {
-    aDocument.GetPresContext()->EffectCompositor()->ReduceAnimations();
+static bool ReduceAnimations(Document& aDocument) {
+  if (nsPresContext* pc = aDocument.GetPresContext()) {
+    if (pc->EffectCompositor()->NeedsReducing()) {
+      pc->EffectCompositor()->ReduceAnimations();
+    }
   }
-  aDocument.EnumerateSubDocuments(ReduceAnimations, nullptr);
-
+  aDocument.EnumerateSubDocuments(ReduceAnimations);
   return true;
 }
 
@@ -1883,7 +1883,13 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime) {
     if (!mResizeEventFlushObservers.RemoveElement(presShell)) {
       continue;
     }
-    presShell->FireResizeEvent();
+    // MOZ_KnownLive because 'observers' is guaranteed to
+    // keep it alive.
+    //
+    // Fixing https://bugzilla.mozilla.org/show_bug.cgi?id=1620312 on its own
+    // won't help here, because 'observers' is non-const and we have the
+    // Reversed() going on too...
+    MOZ_KnownLive(presShell)->FireResizeEvent();
   }
   DispatchVisualViewportResizeEvents();
 
@@ -1917,7 +1923,7 @@ void nsRefreshDriver::Tick(VsyncId aId, TimeStamp aNowTime) {
     // https://drafts.csswg.org/web-animations-1/#update-animations-and-send-events
     if (i == 1) {
       nsAutoMicroTask mt;
-      ReduceAnimations(*mPresContext->Document(), nullptr);
+      ReduceAnimations(*mPresContext->Document());
     }
 
     // Check if running the microtask checkpoint caused the pres context to

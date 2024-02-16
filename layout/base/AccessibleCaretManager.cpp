@@ -624,13 +624,14 @@ nsresult AccessibleCaretManager::SelectWordOrShortcut(const nsPoint& aPoint) {
     RefPtr<nsFrameSelection> frameSelection = GetFrameSelection();
     if (frameSelection) {
       int32_t offset;
-      nsIFrame* theFrame = frameSelection->GetFrameForNodeOffset(
+      nsIFrame* theFrame = nsFrameSelection::GetFrameForNodeOffset(
           offsets.content, offsets.offset, offsets.associate, &offset);
       if (theFrame && theFrame != ptFrame) {
         SetSelectionDragState(true);
-        frameSelection->HandleClick(offsets.content, offsets.StartOffset(),
-                                    offsets.EndOffset(), false, false,
-                                    offsets.associate);
+        frameSelection->HandleClick(
+            offsets.content, offsets.StartOffset(), offsets.EndOffset(),
+            nsFrameSelection::FocusMode::kCollapseToNewPoint,
+            offsets.associate);
         SetSelectionDragState(false);
         ClearMaintainedSelection();
 
@@ -854,6 +855,13 @@ AccessibleCaretManager::CaretMode AccessibleCaretManager::GetCaretMode() const {
     return CaretMode::None;
   }
 
+  nsFocusManager* fm = nsFocusManager::GetFocusManager();
+  MOZ_ASSERT(fm);
+  if (fm->GetFocusedWindow() != mPresShell->GetDocument()->GetWindow()) {
+    // Hide carets if the window is not focused.
+    return CaretMode::None;
+  }
+
   if (selection->IsCollapsed()) {
     return CaretMode::Cursor;
   }
@@ -883,7 +891,7 @@ void AccessibleCaretManager::ChangeFocusToOrClearOldFocus(
     nsIContent* focusableContent = aFrame->GetContent();
     MOZ_ASSERT(focusableContent, "Focusable frame must have content!");
     RefPtr<Element> focusableElement = Element::FromNode(focusableContent);
-    fm->SetFocus(focusableElement, nsIFocusManager::FLAG_BYMOUSE);
+    fm->SetFocus(focusableElement, nsIFocusManager::FLAG_BYLONGPRESS);
   } else {
     nsPIDOMWindowOuter* win = mPresShell->GetDocument()->GetWindow();
     if (win) {
@@ -1033,7 +1041,7 @@ nsIFrame* AccessibleCaretManager::GetFrameForFirstRangeStartOrLastRangeEnd(
   MOZ_ASSERT(GetCaretMode() == CaretMode::Selection);
   MOZ_ASSERT(aOutOffset, "aOutOffset shouldn't be nullptr!");
 
-  nsRange* range = nullptr;
+  const nsRange* range = nullptr;
   RefPtr<nsINode> startNode;
   RefPtr<nsINode> endNode;
   int32_t nodeOffset = 0;
@@ -1057,9 +1065,8 @@ nsIFrame* AccessibleCaretManager::GetFrameForFirstRangeStartOrLastRangeEnd(
   }
 
   nsCOMPtr<nsIContent> startContent = do_QueryInterface(startNode);
-  RefPtr<nsFrameSelection> fs = GetFrameSelection();
-  nsIFrame* startFrame =
-      fs->GetFrameForNodeOffset(startContent, nodeOffset, hint, aOutOffset);
+  nsIFrame* startFrame = nsFrameSelection::GetFrameForNodeOffset(
+      startContent, nodeOffset, hint, aOutOffset);
 
   if (!startFrame) {
     ErrorResult err;
@@ -1249,9 +1256,12 @@ nsresult AccessibleCaretManager::DragCaretInternal(const nsPoint& aPoint) {
 
   ClearMaintainedSelection();
 
+  const nsFrameSelection::FocusMode focusMode =
+      (GetCaretMode() == CaretMode::Selection)
+          ? nsFrameSelection::FocusMode::kExtendSelection
+          : nsFrameSelection::FocusMode::kCollapseToNewPoint;
   fs->HandleClick(offsets.content, offsets.StartOffset(), offsets.EndOffset(),
-                  GetCaretMode() == CaretMode::Selection, false,
-                  offsets.associate);
+                  focusMode, offsets.associate);
   return NS_OK;
 }
 
@@ -1265,10 +1275,9 @@ nsRect AccessibleCaretManager::GetAllChildFrameRectsUnion(
        frame = frame->GetNextContinuation()) {
     nsRect frameRect;
 
-    for (nsIFrame::ChildListIterator lists(frame); !lists.IsDone();
-         lists.Next()) {
+    for (const auto& childList : frame->ChildLists()) {
       // Loop all children to union their scrollable overflow rect.
-      for (nsIFrame* child : lists.CurrentList()) {
+      for (nsIFrame* child : childList.mList) {
         nsRect childRect = child->GetScrollableOverflowRectRelativeToSelf();
         nsLayoutUtils::TransformRect(child, frame, childRect);
 

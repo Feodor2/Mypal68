@@ -120,7 +120,7 @@ bool nsInlineFrame::IsSelfEmpty() {
       // When direction=rtl, we need to consider logical rather than visual
       // start and end, so swap the flags.
       if (wm.IsBidiRTL()) {
-        Swap(haveStart, haveEnd);
+        std::swap(haveStart, haveEnd);
       }
       // For ib-split frames, ignore things we know we'll skip in GetSkipSides.
       // XXXbz should we be doing this for non-ib-split frames too, in a more
@@ -792,12 +792,12 @@ void nsInlineFrame::PushFrames(nsPresContext* aPresContext,
 
 nsIFrame::LogicalSides nsInlineFrame::GetLogicalSkipSides(
     const ReflowInput* aReflowInput) const {
+  LogicalSides skip(mWritingMode);
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
                    StyleBoxDecorationBreak::Clone)) {
-    return LogicalSides();
+    return skip;
   }
 
-  LogicalSides skip;
   if (!IsFirst()) {
     nsInlineFrame* prev = (nsInlineFrame*)GetPrevContinuation();
     if ((GetStateBits() & NS_INLINE_FRAME_BIDI_VISUAL_STATE_IS_SET) ||
@@ -829,7 +829,7 @@ nsIFrame::LogicalSides nsInlineFrame::GetLogicalSkipSides(
     // a split should skip the "start" side.  But figuring out which part of
     // the split we are involves getting our first continuation, which might be
     // expensive.  So don't bother if we already have the relevant bits set.
-    if (skip != LogicalSides(eLogicalSideBitsIBoth)) {
+    if (skip != LogicalSides(mWritingMode, eLogicalSideBitsIBoth)) {
       // We're missing one of the skip bits, so check whether we need to set it.
       // Only get the first continuation once, as an optimization.
       nsIFrame* firstContinuation = FirstContinuation();

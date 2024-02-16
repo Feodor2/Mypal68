@@ -17,6 +17,7 @@
 #include "mozilla/ServoStyleRuleMap.h"
 #include "mozilla/ServoTypes.h"
 #include "mozilla/SMILAnimationController.h"
+#include "mozilla/MediaFeatureChange.h"
 #include "mozilla/StyleAnimationValue.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/AnonymousContent.h"
@@ -47,6 +48,11 @@ bool ServoStyleSet::IsCurrentThreadInServoTraversal() {
   return sInServoTraversal && (NS_IsMainThread() || Servo_IsWorkerThread());
 }
 #endif
+
+// The definition of kOrigins relies on this.
+static_assert(static_cast<uint8_t>(StyleOrigin::UserAgent) == static_cast<uint8_t>(OriginFlags::UserAgent));
+static_assert(static_cast<uint8_t>(StyleOrigin::User) == static_cast<uint8_t>(OriginFlags::User));
+static_assert(static_cast<uint8_t>(StyleOrigin::Author) == static_cast<uint8_t>(OriginFlags::Author));
 
 constexpr const StyleOrigin ServoStyleSet::kOrigins[];
 
@@ -105,7 +111,7 @@ nsPresContext* ServoStyleSet::GetPresContext() {
 }
 
 template <typename Functor>
-void EnumerateShadowRoots(const Document& aDoc, const Functor& aCb) {
+static void EnumerateShadowRoots(const Document& aDoc, const Functor& aCb) {
   const Document::ShadowRootSet& shadowRoots = aDoc.ComposedShadowRoots();
   for (auto iter = shadowRoots.ConstIter(); !iter.Done(); iter.Next()) {
     ShadowRoot* root = iter.Get()->GetKey();
@@ -122,9 +128,9 @@ void ServoStyleSet::ShellDetachedFromDocument() {
   mStyleRuleMap = nullptr;
 
   // Remove all our stylesheets...
-  for (const Origin origin : kOrigins) {
+  for (auto origin : kOrigins) {
     for (size_t count = SheetCount(origin); count--;) {
-      RemoveStyleSheet(origin, SheetAt(origin, count));
+      RemoveStyleSheet(*SheetAt(origin, count));
     }
   }
 
@@ -553,62 +559,60 @@ already_AddRefed<ComputedStyle> ServoStyleSet::ResolveXULTreePseudoStyle(
 #endif
 
 // manage the set of style sheets in the style set
-void ServoStyleSet::AppendStyleSheet(StyleOrigin aOrigin, StyleSheet* aSheet) {
-  MOZ_ASSERT(aSheet);
-  MOZ_ASSERT(aSheet->IsApplicable());
-  MOZ_ASSERT(aSheet->RawContents(),
+void ServoStyleSet::AppendStyleSheet(StyleSheet& aSheet) {
+  MOZ_ASSERT(aSheet.IsApplicable());
+  MOZ_ASSERT(aSheet.RawContents(),
              "Raw sheet should be in place before insertion.");
 
-  aSheet->AddStyleSet(this);
+  aSheet.AddStyleSet(this);
 
   // Maintain a mirrored list of sheets on the servo side.
   // Servo will remove aSheet from its original position as part of the call
   // to Servo_StyleSet_AppendStyleSheet.
-  Servo_StyleSet_AppendStyleSheet(mRawSet.get(), aSheet);
+  Servo_StyleSet_AppendStyleSheet(mRawSet.get(), &aSheet);
   SetStylistStyleSheetsDirty();
 
   if (mStyleRuleMap) {
-    mStyleRuleMap->SheetAdded(*aSheet);
+    mStyleRuleMap->SheetAdded(aSheet);
   }
 }
 
-void ServoStyleSet::RemoveStyleSheet(StyleOrigin aOrigin, StyleSheet* aSheet) {
-  MOZ_ASSERT(aSheet);
-
-  aSheet->DropStyleSet(this);
+void ServoStyleSet::RemoveStyleSheet(StyleSheet& aSheet) {
+  aSheet.DropStyleSet(this);
 
   // Maintain a mirrored list of sheets on the servo side.
-  Servo_StyleSet_RemoveStyleSheet(mRawSet.get(), aSheet);
+  Servo_StyleSet_RemoveStyleSheet(mRawSet.get(), &aSheet);
   SetStylistStyleSheetsDirty();
 
   if (mStyleRuleMap) {
-    mStyleRuleMap->SheetRemoved(*aSheet);
+    mStyleRuleMap->SheetRemoved(aSheet);
   }
 }
 
-void ServoStyleSet::InsertStyleSheetBefore(Origin aOrigin,
-                                           StyleSheet* aNewSheet,
-                                           StyleSheet* aReferenceSheet) {
-  MOZ_ASSERT(aNewSheet);
-  MOZ_ASSERT(aReferenceSheet);
-  MOZ_ASSERT(aNewSheet->IsApplicable());
-  MOZ_ASSERT(aNewSheet != aReferenceSheet, "Can't place sheet before itself.");
-  MOZ_ASSERT(aNewSheet->RawContents(),
+void ServoStyleSet::InsertStyleSheetBefore(StyleSheet& aNewSheet,
+                                           StyleSheet& aReferenceSheet) {
+  MOZ_ASSERT(aNewSheet.IsApplicable());
+  MOZ_ASSERT(aReferenceSheet.IsApplicable());
+  MOZ_ASSERT(&aNewSheet != &aReferenceSheet,
+             "Can't place sheet before itself.");
+  MOZ_ASSERT(aNewSheet.GetOrigin() == aReferenceSheet.GetOrigin(),
+             "Sheets should be in the same origin");
+  MOZ_ASSERT(aNewSheet.RawContents(),
              "Raw sheet should be in place before insertion.");
-  MOZ_ASSERT(aReferenceSheet->RawContents(),
+  MOZ_ASSERT(aReferenceSheet.RawContents(),
              "Reference sheet should have a raw sheet.");
 
   // Servo will remove aNewSheet from its original position as part of the
   // call to Servo_StyleSet_InsertStyleSheetBefore.
-  aNewSheet->AddStyleSet(this);
+  aNewSheet.AddStyleSet(this);
 
   // Maintain a mirrored list of sheets on the servo side.
-  Servo_StyleSet_InsertStyleSheetBefore(mRawSet.get(), aNewSheet,
-                                        aReferenceSheet);
+  Servo_StyleSet_InsertStyleSheetBefore(mRawSet.get(), &aNewSheet,
+                                        &aReferenceSheet);
   SetStylistStyleSheetsDirty();
 
   if (mStyleRuleMap) {
-    mStyleRuleMap->SheetAdded(*aNewSheet);
+    mStyleRuleMap->SheetAdded(aNewSheet);
   }
 }
 
@@ -630,31 +634,29 @@ void ServoStyleSet::AppendAllNonDocumentAuthorSheets(
   });
 }
 
-void ServoStyleSet::AddDocStyleSheet(StyleSheet* aSheet) {
-  MOZ_ASSERT(aSheet->IsApplicable());
-  MOZ_ASSERT(aSheet->RawContents(),
+void ServoStyleSet::AddDocStyleSheet(StyleSheet& aSheet) {
+  MOZ_ASSERT(aSheet.IsApplicable());
+  MOZ_ASSERT(aSheet.RawContents(),
              "Raw sheet should be in place by this point.");
 
-  RefPtr<StyleSheet> strong(aSheet);
-
-  size_t index = mDocument->FindDocStyleSheetInsertionPoint(*aSheet);
-  aSheet->AddStyleSet(this);
+  size_t index = mDocument->FindDocStyleSheetInsertionPoint(aSheet);
+  aSheet.AddStyleSet(this);
 
   if (index < SheetCount(Origin::Author)) {
     // This case is insert before.
     StyleSheet* beforeSheet = SheetAt(Origin::Author, index);
 
     // Maintain a mirrored list of sheets on the servo side.
-    Servo_StyleSet_InsertStyleSheetBefore(mRawSet.get(), aSheet, beforeSheet);
+    Servo_StyleSet_InsertStyleSheetBefore(mRawSet.get(), &aSheet, beforeSheet);
     SetStylistStyleSheetsDirty();
   } else {
     // Maintain a mirrored list of sheets on the servo side.
-    Servo_StyleSet_AppendStyleSheet(mRawSet.get(), aSheet);
+    Servo_StyleSet_AppendStyleSheet(mRawSet.get(), &aSheet);
     SetStylistStyleSheetsDirty();
   }
 
   if (mStyleRuleMap) {
-    mStyleRuleMap->SheetAdded(*aSheet);
+    mStyleRuleMap->SheetAdded(aSheet);
   }
 }
 
@@ -961,22 +963,22 @@ already_AddRefed<RawServoAnimationValue> ServoStyleSet::ComputeAnimationValue(
 bool ServoStyleSet::EnsureUniqueInnerOnCSSSheets() {
   using SheetOwner = Variant<ServoStyleSet*, ShadowRoot*>;
 
-  AutoTArray<Pair<StyleSheet*, SheetOwner>, 32> queue;
+  AutoTArray<std::pair<StyleSheet*, SheetOwner>, 32> queue;
   EnumerateStyleSheets([&](StyleSheet& aSheet) {
-    queue.AppendElement(MakePair(&aSheet, SheetOwner{this}));
+    queue.AppendElement(std::make_pair(&aSheet, SheetOwner{this}));
   });
 
   EnumerateShadowRoots(*mDocument, [&](ShadowRoot& aShadowRoot) {
     for (auto index : IntegerRange(aShadowRoot.SheetCount())) {
       queue.AppendElement(
-          MakePair(aShadowRoot.SheetAt(index), SheetOwner{&aShadowRoot}));
+          std::make_pair(aShadowRoot.SheetAt(index), SheetOwner{&aShadowRoot}));
     }
   });
 
   while (!queue.IsEmpty()) {
     uint32_t idx = queue.Length() - 1;
-    auto* sheet = queue[idx].first();
-    SheetOwner owner = queue[idx].second();
+    auto* sheet = queue[idx].first;
+    SheetOwner owner = queue[idx].second;
     queue.RemoveElementAt(idx);
 
     // Only call EnsureUniqueInner for complete sheets. If we do call it on
@@ -991,7 +993,7 @@ bool ServoStyleSet::EnsureUniqueInnerOnCSSSheets() {
 
     // Enqueue all the sheet's children.
     for (StyleSheet* child : sheet->ChildSheets()) {
-      queue.AppendElement(MakePair(child, owner));
+      queue.AppendElement(std::make_pair(child, owner));
     }
   }
 

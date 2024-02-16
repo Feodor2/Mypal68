@@ -93,7 +93,7 @@ ComputedStyle* nsTreeStyleCache::GetComputedStyle(
       mCache = MakeUnique<ComputedStyleCache>();
     }
     result = newResult.get();
-    mCache->Put(currState, newResult.forget());
+    mCache->Put(currState, std::move(newResult));
   }
 
   return result;

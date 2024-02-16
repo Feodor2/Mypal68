@@ -159,7 +159,7 @@ void nsTreeBodyFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   // Call GetBaseElement so that mTree is assigned.
   GetBaseElement();
 
-  if (LookAndFeel::GetInt(LookAndFeel::eIntID_UseOverlayScrollbars) != 0) {
+  if (LookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars) != 0) {
     mScrollbarActivity =
         new ScrollbarActivity(static_cast<nsIScrollbarMediator*>(this));
   }
@@ -188,9 +188,9 @@ nsSize nsTreeBodyFrame::GetXULMinSize(nsBoxLayoutState& aBoxLayoutState) {
 
   min.height = mRowHeight * desiredRows;
 
-  AddBorderAndPadding(min);
+  AddXULBorderAndPadding(min);
   bool widthSet, heightSet;
-  nsIFrame::AddXULMinSize(aBoxLayoutState, this, min, widthSet, heightSet);
+  nsIFrame::AddXULMinSize(this, min, widthSet, heightSet);
 
   return min;
 }
@@ -1261,12 +1261,14 @@ void nsTreeBodyFrame::AdjustForCellText(nsAutoString& aText, int32_t aRowIndex,
                                                   aRenderingContext);
 
   switch (aColumn->GetTextAlignment()) {
-    case NS_STYLE_TEXT_ALIGN_RIGHT: {
+    case mozilla::StyleTextAlign::Right:
       aTextRect.x += aTextRect.width - width;
-    } break;
-    case NS_STYLE_TEXT_ALIGN_CENTER: {
+      break;
+    case mozilla::StyleTextAlign::Center:
       aTextRect.x += (aTextRect.width - width) / 2;
-    } break;
+      break;
+    default:
+      break;
   }
 
   aTextRect.width = width;
@@ -1805,9 +1807,9 @@ nsITheme* nsTreeBodyFrame::GetTwistyRect(int32_t aRowIndex,
   nsITheme* theme = nullptr;
   const nsStyleDisplay* twistyDisplayData = aTwistyContext->StyleDisplay();
   if (twistyDisplayData->mAppearance != StyleAppearance::None) {
-    theme = aPresContext->GetTheme();
-    if (theme && theme->ThemeSupportsWidget(aPresContext, nullptr,
-                                            twistyDisplayData->mAppearance))
+    theme = aPresContext->Theme();
+    if (theme->ThemeSupportsWidget(aPresContext, nullptr,
+                                   twistyDisplayData->mAppearance))
       useTheme = true;
   }
 
@@ -1914,8 +1916,7 @@ nsresult nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol,
           getter_AddRefs(srcURI), imageSrc, doc, mContent->GetBaseURI());
       if (!srcURI) return NS_ERROR_FAILURE;
 
-      nsCOMPtr<nsIReferrerInfo> referrerInfo = new mozilla::dom::ReferrerInfo();
-      referrerInfo->InitWithDocument(doc);
+      auto referrerInfo = MakeRefPtr<mozilla::dom::ReferrerInfo>(*doc);
 
       // XXXbz what's the origin principal for this stuff that comes from our
       // view?  I guess we should assume that it's the node's principal...
@@ -1924,6 +1925,11 @@ nsresult nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol,
           imgNotificationObserver, nsIRequest::LOAD_NORMAL, EmptyString(),
           getter_AddRefs(imageRequest));
       NS_ENSURE_SUCCESS(rv, rv);
+
+      // NOTE(heycam): If it's an SVG image, and we need to want the image to
+      // able to respond to media query changes, it needs to be added to the
+      // document's ImageTracker (like nsImageBoxFrame does).  For now, assume
+      // we don't need this.
     }
     listener->UnsuppressInvalidation();
 
@@ -2237,7 +2243,7 @@ Maybe<nsIFrame::Cursor> nsTreeBodyFrame::GetCursor(const nsPoint& aPoint) {
     if (child) {
       // Our scratch array is already prefilled.
       RefPtr<ComputedStyle> childContext = GetPseudoComputedStyle(child);
-      StyleCursorKind kind = childContext->StyleUI()->mCursor;
+      StyleCursorKind kind = childContext->StyleUI()->mCursor.keyword;
       if (kind == StyleCursorKind::Auto) {
         kind = StyleCursorKind::Default;
       }
@@ -2342,7 +2348,7 @@ nsresult nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
         }
 
         // Set a timer to trigger the tree scrolling.
-        CreateTimer(LookAndFeel::eIntID_TreeLazyScrollDelay, LazyScrollCallback,
+        CreateTimer(LookAndFeel::IntID::TreeLazyScrollDelay, LazyScrollCallback,
                     nsITimer::TYPE_ONE_SHOT, getter_AddRefs(mSlots->mTimer),
                     "nsTreeBodyFrame::LazyScrollCallback");
       }
@@ -2381,7 +2387,7 @@ nsresult nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
             mView->IsContainerOpen(mSlots->mDropRow, &isOpen);
             if (!isOpen) {
               // This node isn't expanded, set a timer to expand it.
-              CreateTimer(LookAndFeel::eIntID_TreeOpenDelay, OpenCallback,
+              CreateTimer(LookAndFeel::IntID::TreeOpenDelay, OpenCallback,
                           nsITimer::TYPE_ONE_SHOT,
                           getter_AddRefs(mSlots->mTimer),
                           "nsTreeBodyFrame::OpenCallback");
@@ -2453,7 +2459,7 @@ nsresult nsTreeBodyFrame::HandleEvent(nsPresContext* aPresContext,
 
     if (!mSlots->mArray.IsEmpty()) {
       // Close all spring loaded folders except the drop folder.
-      CreateTimer(LookAndFeel::eIntID_TreeCloseDelay, CloseCallback,
+      CreateTimer(LookAndFeel::IntID::TreeCloseDelay, CloseCallback,
                   nsITimer::TYPE_ONE_SHOT, getter_AddRefs(mSlots->mTimer),
                   "nsTreeBodyFrame::CloseCallback");
     }
@@ -2468,9 +2474,7 @@ class nsDisplayTreeBody final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayTreeBody);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayTreeBody() { MOZ_COUNT_DTOR(nsDisplayTreeBody); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayTreeBody)
 
   nsDisplayItemGeometry* AllocateGeometry(
       nsDisplayListBuilder* aBuilder) override {
@@ -2543,7 +2547,7 @@ void nsTreeBodyFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
   nsIFrame* treeFrame = tree ? tree->GetPrimaryFrame() : nullptr;
   nsCOMPtr<nsITreeSelection> selection;
   mView->GetSelection(getter_AddRefs(selection));
-  nsITheme* theme = PresContext()->GetTheme();
+  nsITheme* theme = PresContext()->Theme();
   // On Mac, we support native theming of selected rows. On 10.10 and higher,
   // this means applying vibrancy which require us to register the theme
   // geometrics for the row. In order to make the vibrancy effect to work
@@ -2747,7 +2751,7 @@ ImgDrawResult nsTreeBodyFrame::PaintRow(int32_t aRowIndex,
   nsITheme* theme = nullptr;
   auto appearance = rowContext->StyleDisplay()->mAppearance;
   if (appearance != StyleAppearance::None) {
-    theme = aPresContext->GetTheme();
+    theme = aPresContext->Theme();
   }
 
   if (theme && theme->ThemeSupportsWidget(aPresContext, nullptr, appearance)) {
@@ -2875,9 +2879,9 @@ ImgDrawResult nsTreeBodyFrame::PaintSeparator(int32_t aRowIndex,
   nsITheme* theme = nullptr;
   const nsStyleDisplay* displayData = separatorContext->StyleDisplay();
   if (displayData->HasAppearance()) {
-    theme = aPresContext->GetTheme();
-    if (theme && theme->ThemeSupportsWidget(aPresContext, nullptr,
-                                            displayData->mAppearance))
+    theme = aPresContext->Theme();
+    if (theme->ThemeSupportsWidget(aPresContext, nullptr,
+                                   displayData->mAppearance))
       useTheme = true;
   }
 
@@ -4076,7 +4080,7 @@ void nsTreeBodyFrame::ComputeDropPosition(WidgetGUIEvent* aEvent, int32_t* aRow,
   if (CanAutoScroll(*aRow)) {
     // Get the max value from the look and feel service.
     int32_t scrollLinesMax =
-        LookAndFeel::GetInt(LookAndFeel::eIntID_TreeScrollLinesMax, 0);
+        LookAndFeel::GetInt(LookAndFeel::IntID::TreeScrollLinesMax, 0);
     scrollLinesMax--;
     if (scrollLinesMax < 0) scrollLinesMax = 0;
 
@@ -4129,7 +4133,7 @@ void nsTreeBodyFrame::LazyScrollCallback(nsITimer* aTimer, void* aClosure) {
 
     if (self->mView) {
       // Set a new timer to scroll the tree repeatedly.
-      self->CreateTimer(LookAndFeel::eIntID_TreeScrollDelay, ScrollCallback,
+      self->CreateTimer(LookAndFeel::IntID::TreeScrollDelay, ScrollCallback,
                         nsITimer::TYPE_REPEATING_SLACK,
                         getter_AddRefs(self->mSlots->mTimer),
                         "nsTreeBodyFrame::ScrollCallback");
@@ -4350,8 +4354,6 @@ bool nsTreeBodyFrame::FullScrollbarsUpdate(bool aNeedsFullInvalidation) {
   return weakFrame.IsAlive();
 }
 
-nsresult nsTreeBodyFrame::OnImageIsAnimated(imgIRequest* aRequest) {
+void nsTreeBodyFrame::OnImageIsAnimated(imgIRequest* aRequest) {
   nsLayoutUtils::RegisterImageRequest(PresContext(), aRequest, nullptr);
-
-  return NS_OK;
 }

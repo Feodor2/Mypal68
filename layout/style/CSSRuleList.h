@@ -30,7 +30,7 @@ class CSSRuleList : public nsISupports, public nsWrapperCache {
   virtual uint32_t Length() = 0;
 
  protected:
-  virtual ~CSSRuleList() {}
+  virtual ~CSSRuleList() = default;
 };
 
 }  // namespace dom

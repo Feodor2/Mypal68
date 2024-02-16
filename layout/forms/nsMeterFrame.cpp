@@ -34,7 +34,7 @@ NS_IMPL_FRAMEARENA_HELPERS(nsMeterFrame)
 nsMeterFrame::nsMeterFrame(ComputedStyle* aStyle, nsPresContext* aPresContext)
     : nsContainerFrame(aStyle, aPresContext, kClassID), mBarDiv(nullptr) {}
 
-nsMeterFrame::~nsMeterFrame() {}
+nsMeterFrame::~nsMeterFrame() = default;
 
 void nsMeterFrame::DestroyFrom(nsIFrame* aDestructRoot,
                                PostDestroyData& aPostDestroyData) {
@@ -230,11 +230,9 @@ bool nsMeterFrame::ShouldUseNativeStyle() const {
   //   background.
   return StyleDisplay()->mAppearance == StyleAppearance::Meter &&
          !PresContext()->HasAuthorSpecifiedRules(
-             this,
-             NS_AUTHOR_SPECIFIED_BORDER | NS_AUTHOR_SPECIFIED_BACKGROUND) &&
+             this, NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND) &&
          barFrame &&
          barFrame->StyleDisplay()->mAppearance == StyleAppearance::Meterchunk &&
          !PresContext()->HasAuthorSpecifiedRules(
-             barFrame,
-             NS_AUTHOR_SPECIFIED_BORDER | NS_AUTHOR_SPECIFIED_BACKGROUND);
+             barFrame, NS_AUTHOR_SPECIFIED_BORDER_OR_BACKGROUND);
 }

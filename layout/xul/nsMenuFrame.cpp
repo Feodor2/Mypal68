@@ -29,7 +29,6 @@
 #include "nsISound.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/EventStateManager.h"
 #include "mozilla/Likely.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MouseEvents.h"
@@ -39,6 +38,7 @@
 #include "mozilla/TextEvents.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/Event.h"
+#include "mozilla/dom/UserActivation.h"
 #include <algorithm>
 
 using namespace mozilla;
@@ -238,7 +238,7 @@ nsFrameList* nsMenuFrame::GetPopupList() const {
 
 void nsMenuFrame::DestroyPopupList() {
   NS_ASSERTION(HasPopup(), "huh?");
-  nsFrameList* prop = RemoveProperty(PopupListProperty());
+  nsFrameList* prop = TakeProperty(PopupListProperty());
   NS_ASSERTION(prop && prop->IsEmpty(),
                "popup list must exist and be empty when destroying");
   RemoveStateBits(NS_STATE_MENU_HAS_POPUP_LIST);
@@ -476,7 +476,7 @@ nsresult nsMenuFrame::HandleEvent(nsPresContext* aPresContext,
     if (!IsDisabled() && IsMenu() && !IsOpen() && !mOpenTimer &&
         !menuParent->IsMenuBar()) {
       int32_t menuDelay =
-          LookAndFeel::GetInt(LookAndFeel::eIntID_SubmenuDelay, 300);  // ms
+          LookAndFeel::GetInt(LookAndFeel::IntID::SubmenuDelay, 300);  // ms
 
       // We're a menu, we're built, we're closed, and no timer has been kicked
       // off.
@@ -1066,7 +1066,7 @@ void nsMenuFrame::Execute(WidgetGUIEvent* aEvent) {
 
 bool nsMenuFrame::ShouldBlink() {
   int32_t shouldBlink =
-      LookAndFeel::GetInt(LookAndFeel::eIntID_ChosenMenuItemsShouldBlink, 0);
+      LookAndFeel::GetInt(LookAndFeel::IntID::ChosenMenuItemsShouldBlink, 0);
   if (!shouldBlink) return false;
 
   return true;
@@ -1130,7 +1130,7 @@ void nsMenuFrame::CreateMenuCommandEvent(WidgetGUIEvent* aEvent,
   // Because the command event is firing asynchronously, a flag is needed to
   // indicate whether user input is being handled. This ensures that a popup
   // window won't get blocked.
-  bool userinput = EventStateManager::IsHandlingUserInput();
+  bool userinput = UserActivation::IsHandlingUserInput();
 
   mDelayedMenuCommandEvent =
       new nsXULMenuCommandEvent(mContent->AsElement(), isTrusted, shift,
@@ -1242,7 +1242,7 @@ nsSize nsMenuFrame::GetXULPrefSize(nsBoxLayoutState& aState) {
     // We now need to ensure that size is within the min - max range.
     nsSize minSize = nsBoxFrame::GetXULMinSize(aState);
     nsSize maxSize = GetXULMaxSize(aState);
-    size = BoundsCheck(minSize, size, maxSize);
+    size = XULBoundsCheck(minSize, size, maxSize);
   }
 
   return size;
@@ -1306,7 +1306,7 @@ nsMenuTimerMediator::nsMenuTimerMediator(nsMenuFrame* aFrame) : mFrame(aFrame) {
   NS_ASSERTION(mFrame, "Must have frame");
 }
 
-nsMenuTimerMediator::~nsMenuTimerMediator() {}
+nsMenuTimerMediator::~nsMenuTimerMediator() = default;
 
 /**
  * Delegates the notification to the contained frame if it has not been

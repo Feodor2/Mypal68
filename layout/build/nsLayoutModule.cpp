@@ -42,6 +42,7 @@
 #include "mozilla/dom/LocalStorageCommon.h"
 #include "mozilla/dom/LocalStorageManager.h"
 #include "mozilla/dom/LocalStorageManager2.h"
+#include "mozilla/dom/SessionStorageManager.h"
 
 #ifdef MOZ_WEBSPEECH
 #  include "mozilla/dom/nsSynthVoiceRegistry.h"
@@ -237,6 +238,12 @@ nsresult LocalStorageManagerConstructor(nsISupports* aOuter, REFNSIID aIID,
   }
 
   RefPtr<LocalStorageManager> manager = new LocalStorageManager();
+  return manager->QueryInterface(aIID, aResult);
+}
+
+nsresult SessionStorageManagerConstructor(nsISupports* aOuter, REFNSIID aIID,
+                                          void** aResult) {
+  RefPtr<SessionStorageManager> manager = new SessionStorageManager();
   return manager->QueryInterface(aIID, aResult);
 }
 

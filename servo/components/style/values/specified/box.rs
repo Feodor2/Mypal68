@@ -277,8 +277,7 @@ impl Display {
     /// Whether this is `display: inline` (or `inline list-item`).
     #[inline]
     pub fn is_inline_flow(&self) -> bool {
-        self.outside() == DisplayOutside::Inline &&
-            self.inside() == DisplayInside::Flow
+        self.outside() == DisplayOutside::Inline && self.inside() == DisplayInside::Flow
     }
 
     /// Returns whether this `display` value is some kind of list-item.
@@ -361,7 +360,7 @@ impl Display {
     ///
     /// Also used for :root style adjustments.
     pub fn equivalent_block_display(&self, _is_root_element: bool) -> Self {
-        #[cfg(feature = "gecko")]
+        #[cfg(any(feature = "servo-layout-2020", feature = "gecko"))]
         {
             // Special handling for `contents` and `list-item`s on the root element.
             if _is_root_element && (self.is_contents() || self.is_list_item()) {
@@ -412,7 +411,7 @@ impl Display {
     #[inline]
     pub fn is_contents(&self) -> bool {
         match *self {
-            #[cfg(feature = "gecko")]
+            #[cfg(any(feature = "servo-layout-2020", feature = "gecko"))]
             Display::Contents => true,
             _ => false,
         }
@@ -1610,7 +1609,7 @@ pub enum Appearance {
     Meterchunk,
     /// The "arrowed" part of the dropdown button that open up a dropdown list.
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
-    MozMenulistButton,
+    MozMenulistArrowButton,
     /// For HTML's <input type=number>
     NumberInput,
     /// A horizontal progress bar.
@@ -1639,7 +1638,7 @@ pub enum Appearance {
     RadioLabel,
     /// nsRangeFrame and its subparts
     Range,
-    RangeThumb,
+    RangeThumb, // FIXME: This should not be exposed to content.
     /// The resizer background area in a status bar for the resizer widget in
     /// the corner of a window.
     #[parse(condition = "ParserContext::in_ua_or_chrome_sheet")]
@@ -1863,6 +1862,14 @@ pub enum Appearance {
     /// A dummy variant that should be last to let the GTK widget do hackery.
     #[css(skip)]
     Count,
+}
+
+impl Appearance {
+    /// Returns whether we're the `none` value.
+    #[inline]
+    pub fn is_none(self) -> bool {
+        self == Appearance::None
+    }
 }
 
 /// A kind of break between two boxes.

@@ -183,6 +183,10 @@ class MappedDeclarations final {
 
   void SetBackgroundImage(const nsAttrValue& value);
 
+  void SetAspectRatio(float aWidth, float aHeight) {
+    Servo_DeclarationBlock_SetAspectRatio(mDecl, aWidth, aHeight);
+  }
+
  private:
   dom::Document* const mDocument;
   RefPtr<RawServoDeclarationBlock> mDecl;

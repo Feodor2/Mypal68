@@ -173,6 +173,7 @@ HTTP load 1320423-1.html
 load 1321357-1.html
 load 1328535-1.html
 load 1331272.html
+load 1332550.html
 HTTP load 1333001-1.html
 load 1340248.html
 pref(dom.animations-api.core.enabled,true) pref(dom.animations-api.implicit-keyframes.enabled,true) load 1340344.html
@@ -310,9 +311,14 @@ pref(layout.css.resizeobserver.enabled,true) load 1552911.html
 load 1562361.html
 load 1566684.html
 load 1579788.html
+load 1580307.html
 load 1581579.html
-load 1599286.html
-pref(dom.paintWorklet.enabled,true) pref(dom.worklet.enabled,true) load 1593766.html
+skip-if(release_or_beta) pref(dom.paintWorklet.enabled,true) pref(dom.worklet.enabled,true) load 1593766.html # bug 1581896
 pref(layout.css.motion-path.enabled,true) load 1594949.html
 pref(layout.css.motion-path.enabled,true) pref(layout.css.individual-transform.enabled,true) load 1594960.html
+load 1586444.html
+load 1599286.html
+pref(layout.css.motion-path.enabled,true) load 1609786.html
 pref(layout.css.constructable-stylesheets.enabled,true) load 1616433.html
+pref(layout.css.constructable-stylesheets.enabled,true) load 1616407.html
+load 1639533.html

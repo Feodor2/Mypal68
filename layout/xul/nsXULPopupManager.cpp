@@ -35,8 +35,8 @@
 #include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/dom/MouseEvent.h"
 #include "mozilla/dom/UIEvent.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/EventStateManager.h"
 #include "mozilla/LookAndFeel.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
@@ -168,7 +168,7 @@ nsXULPopupManager::Observe(nsISupports* aSubject, const char* aTopic,
       mKeyListener->RemoveEventListener(NS_LITERAL_STRING("keyup"), this, true);
       mKeyListener = nullptr;
     }
-    mRangeParent = nullptr;
+    mRangeParentContent = nullptr;
     // mOpeningPopup is cleared explicitly soon after using it.
     nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
     if (obs) {
@@ -558,10 +558,6 @@ nsMenuChainItem* nsXULPopupManager::GetTopVisibleMenu() {
   return nullptr;
 }
 
-nsINode* nsXULPopupManager::GetMouseLocationParent() { return mRangeParent; }
-
-int32_t nsXULPopupManager::MouseLocationOffset() { return mRangeOffset; }
-
 void nsXULPopupManager::InitTriggerEvent(Event* aEvent, nsIContent* aPopup,
                                          nsIContent** aTriggerContent) {
   mCachedMousePoint = LayoutDeviceIntPoint(0, 0);
@@ -579,8 +575,9 @@ void nsXULPopupManager::InitTriggerEvent(Event* aEvent, nsIContent* aPopup,
 
   RefPtr<UIEvent> uiEvent = aEvent ? aEvent->AsUIEvent() : nullptr;
   if (uiEvent) {
-    mRangeParent = uiEvent->GetRangeParent();
-    mRangeOffset = uiEvent->RangeOffset();
+    mRangeOffset = -1;
+    mRangeParentContent =
+        uiEvent->GetRangeParentContentAndOffset(&mRangeOffset);
 
     // get the event coordinates relative to the root frame of the document
     // containing the popup.
@@ -630,7 +627,7 @@ void nsXULPopupManager::InitTriggerEvent(Event* aEvent, nsIContent* aPopup,
       }
     }
   } else {
-    mRangeParent = nullptr;
+    mRangeParentContent = nullptr;
     mRangeOffset = 0;
   }
 }
@@ -978,7 +975,7 @@ void nsXULPopupManager::HidePopup(nsIContent* aPopup, bool aHideChain,
 // This is used to hide the popup after a transition finishes.
 class TransitionEnder final : public nsIDOMEventListener {
  protected:
-  virtual ~TransitionEnder() {}
+  virtual ~TransitionEnder() = default;
 
  public:
   nsCOMPtr<nsIContent> mContent;
@@ -1102,7 +1099,7 @@ void nsXULPopupManager::HidePopupAfterDelay(nsMenuPopupFrame* aPopup) {
   KillMenuTimer();
 
   int32_t menuDelay =
-      LookAndFeel::GetInt(LookAndFeel::eIntID_SubmenuDelay, 300);  // ms
+      LookAndFeel::GetInt(LookAndFeel::IntID::SubmenuDelay, 300);  // ms
 
   // Kick off the timer.
   nsIEventTarget* target = nullptr;
@@ -1357,7 +1354,7 @@ void nsXULPopupManager::FirePopupShowingEvent(nsIContent* aPopup,
   }
 
   // clear these as they are no longer valid
-  mRangeParent = nullptr;
+  mRangeParentContent = nullptr;
   mRangeOffset = 0;
 
   // get the frame again in case it went away
@@ -1598,7 +1595,7 @@ bool nsXULPopupManager::MayShowPopup(nsMenuPopupFrame* aPopup) {
   if (!baseWin) return false;
 
   nsCOMPtr<nsIDocShellTreeItem> root;
-  dsti->GetRootTreeItem(getter_AddRefs(root));
+  dsti->GetInProcessRootTreeItem(getter_AddRefs(root));
   if (!root) {
     return false;
   }
@@ -2381,7 +2378,7 @@ bool nsXULPopupManager::IsValidMenuItem(nsIContent* aContent, bool aOnPopup) {
   bool skipNavigatingDisabledMenuItem = true;
   if (aOnPopup && (!menuFrame || !menuFrame->IsParentMenuList())) {
     skipNavigatingDisabledMenuItem =
-        LookAndFeel::GetInt(LookAndFeel::eIntID_SkipNavigatingDisabledMenuItem,
+        LookAndFeel::GetInt(LookAndFeel::IntID::SkipNavigatingDisabledMenuItem,
                             0) != 0;
   }
 

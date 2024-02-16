@@ -25,7 +25,7 @@ load 321224.xul
 load 322780-1.xul
 load 323381-1.html
 load 323381-2.html
-asserts-if(Android&&asyncPan,1) load 323386-1.html # Bug 718883
+load 323386-1.html
 load 323389-1.html
 load 323389-2.html
 load 323493-1.html
@@ -315,7 +315,7 @@ load 455171-3.html
 load 455643-1.xhtml
 load 457375.html
 load 457380-1.html
-asserts-if(!Android,1) load 459968.html # bug 1067022
+asserts(1) asserts-if(Android,0-1) load 459968.html # bug 1067022
 load 460910-1.xml
 load 461294-1.html
 load 462968.xhtml
@@ -509,7 +509,7 @@ load 790252-2.html
 load 790260-1.html
 test-pref(font.size.inflation.emPerLine,15) load 791601.xhtml
 test-pref(font.size.inflation.minTwips,120) load 794693.html
-asserts-if(!Android,1) load 798020-1.html
+asserts(1) asserts-if(Android,0-1) load 798020-1.html
 load 798235-1.html
 load 799207-1.html
 load 799207-2.html
@@ -581,10 +581,10 @@ load 1001258-1.html
 load 1001994.html
 load 1003441.xul
 load 1015562.html
-asserts(1-2) load 1015563-1.html
+asserts(1-2) asserts-if(Android,1-3) load 1015563-1.html
 asserts(1-2) load 1015563-2.html
-load 1015844.html
-pref(font.size.inflation.minTwips,200) load 1032450.html
+asserts-if(Android,48) load 1015844.html
+asserts-if(Android,0-358) pref(font.size.inflation.minTwips,200) load 1032450.html # Bug 1607658
 load 1032613-1.svg
 load 1032613-2.html
 load 1037903.html
@@ -691,6 +691,7 @@ load 1401709.html
 load 1401807.html
 load 1404222-empty-shape.html
 load 1405443.html
+load 1405896.html
 load 1406252-1.html
 load 1415185.html
 load 1416544.html
@@ -710,7 +711,7 @@ load 1474768.html
 load 1478178.html
 load 1483972.html
 load 1486457.html
-asserts(9) load 1488762-1.html # asserts from integer overflow & bogus sizes
+asserts(9) asserts-if(Android,14) load 1488762-1.html # asserts from integer overflow & bogus sizes
 load 1489287.html
 load 1489863.html
 load 1489770.html
@@ -733,9 +734,9 @@ load 1520798-1.xul
 load 1520798-2.html
 load 1528771.html
 load 1539656.html
+load 1542441.html
 load 1544060-1.html
 load 1544060-2.html
-load 1542441.html
 pref(layout.css.grid-template-subgrid-value.enabled,true) load 1553824.html
 load 1554824.html
 load 1555142.html
@@ -757,5 +758,25 @@ load 1574552.html
 load 1574993.html
 load 1582019.html
 load 1586470.html
+load 1588955-very-large-frameset.html
+load 1590569.html
 load 1596310.html
-load very-large-frameset.html
+skip load 1608851-1.html # bug 1639947
+load 1608851-2.html
+load 1613210.html
+load 1614101.html
+load 1618312.html
+load 1618564.html
+load 1625051-1.html
+load 1625051-2.html
+load 1626970.html
+load 1628804.html
+load 1629575-1.html
+load 1629575-2.html
+load 1630385.html
+load 1633434.html
+load 1633737-1.html
+load 1633737-2.html
+load 1633737-3.html
+load 1633737-4.html
+load 1633737-5.html

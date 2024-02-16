@@ -50,7 +50,7 @@ class nsImageBoxFrame final : public nsLeafBoxFrame {
   virtual nscoord GetXULBoxAscent(nsBoxLayoutState& aBoxLayoutState) override;
   virtual void MarkIntrinsicISizesDirty() override;
 
-  nsresult Notify(imgIRequest* aRequest, int32_t aType, const nsIntRect* aData);
+  void Notify(imgIRequest* aRequest, int32_t aType, const nsIntRect* aData);
 
   friend nsIFrame* NS_NewImageBoxFrame(mozilla::PresShell* aPresShell,
                                        ComputedStyle* aStyle);
@@ -118,11 +118,11 @@ class nsImageBoxFrame final : public nsLeafBoxFrame {
   virtual void GetImageSize();
 
  private:
-  nsresult OnSizeAvailable(imgIRequest* aRequest, imgIContainer* aImage);
-  nsresult OnDecodeComplete(imgIRequest* aRequest);
-  nsresult OnLoadComplete(imgIRequest* aRequest, nsresult aStatus);
-  nsresult OnImageIsAnimated(imgIRequest* aRequest);
-  nsresult OnFrameUpdate(imgIRequest* aRequest);
+  void OnSizeAvailable(imgIRequest* aRequest, imgIContainer* aImage);
+  void OnDecodeComplete(imgIRequest* aRequest);
+  void OnLoadComplete(imgIRequest* aRequest, nsresult aStatus);
+  void OnImageIsAnimated(imgIRequest* aRequest);
+  void OnFrameUpdate(imgIRequest* aRequest);
 
   nsRect mSubRect;  ///< If set, indicates that only the portion of the image
                     ///< specified by the rect should be used.
@@ -148,9 +148,7 @@ class nsDisplayXULImage final : public nsDisplayImageContainer {
       : nsDisplayImageContainer(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayXULImage);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayXULImage() { MOZ_COUNT_DTOR(nsDisplayXULImage); }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayXULImage)
 
   virtual bool CanOptimizeToImageLayer(LayerManager* aManager,
                                        nsDisplayListBuilder* aBuilder) override;

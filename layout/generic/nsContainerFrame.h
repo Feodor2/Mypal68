@@ -61,7 +61,7 @@ class nsContainerFrame : public nsSplittableFrame {
 
 #ifdef DEBUG_FRAME_DUMP
   void List(FILE* out = stderr, const char* aPrefix = "",
-            uint32_t aFlags = 0) const override;
+            ListFlags aFlags = ListFlags()) const override;
   void ListWithMatchedRules(FILE* out = stderr,
                             const char* aPrefix = "") const override;
 #endif
@@ -156,6 +156,24 @@ class nsContainerFrame : public nsSplittableFrame {
                                     nsIFrame* aOldParentFrame,
                                     nsIFrame* aNewParentFrame);
 
+  /**
+   * Reparent aFrame from aOldParent to aNewParent.
+   */
+  static void ReparentFrame(nsIFrame* aFrame, nsContainerFrame* aOldParent,
+                            nsContainerFrame* aNewParent);
+
+  /**
+   * Reparent all the frames in aFrameList from aOldParent to aNewParent.
+   *
+   * Note: Reparenting a large frame list can be have huge performance impact.
+   * For example, instead of using this method, nsInlineFrame uses a "lazy
+   * reparenting" technique that it reparents a child frame just before
+   * reflowing the child. (See InlineReflowInput::mSetParentPointer.)
+   */
+  static void ReparentFrames(nsFrameList& aFrameList,
+                             nsContainerFrame* aOldParent,
+                             nsContainerFrame* aNewParent);
+
   // Set the view's size and position after its frame has been reflowed.
   static void SyncFrameViewAfterReflow(
       nsPresContext* aPresContext, nsIFrame* aFrame, nsView* aView,
@@ -207,8 +225,9 @@ class nsContainerFrame : public nsSplittableFrame {
    * If the reflow status after reflowing the child is FullyComplete then any
    * next-in-flows are deleted using DeleteNextInFlowChild().
    *
-   * @param aWM Containing frame's writing-mode.
-   * @param aPos Position of the aKidFrame to be moved.
+   * @param aReflowInput the reflow input for aKidFrame.
+   * @param aWM aPos's writing-mode (any writing mode will do).
+   * @param aPos Position of the aKidFrame to be moved, in terms of aWM.
    * @param aContainerSize Size of the border-box of the containing frame.
    *
    * Note: If ReflowChildFlags::NoMoveFrame is requested, both aPos and
@@ -232,8 +251,9 @@ class nsContainerFrame : public nsSplittableFrame {
    * - sets the view's visibility, opacity, content transparency, and clip
    * - invoked the DidReflow() function
    *
-   * @param aWM Containing frame's writing-mode.
-   * @param aPos Position of the aKidFrame to be positioned.
+   * @param aReflowInput the reflow input for aKidFrame.
+   * @param aWM aPos's writing-mode (any writing mode will do).
+   * @param aPos Position of the aKidFrame to be moved, in terms of aWM.
    * @param aContainerSize Size of the border-box of the containing frame.
    *
    * Note: If ReflowChildFlags::NoMoveFrame is requested, both aPos and
@@ -427,13 +447,6 @@ class nsContainerFrame : public nsSplittableFrame {
   virtual mozilla::StyleAlignFlags CSSAlignmentForAbsPosChild(
       const ReflowInput& aChildRI, mozilla::LogicalAxis aLogicalAxis) const;
 
-#ifdef ACCESSIBILITY
-  /**
-   * Return the ::marker text equivalent, without flushing.
-   */
-  void GetSpokenMarkerText(nsAString& aText) const;
-#endif
-
 #define NS_DECLARE_FRAME_PROPERTY_FRAMELIST(prop) \
   NS_DECLARE_FRAME_PROPERTY_WITH_DTOR_NEVER_CALLED(prop, nsFrameList)
 
@@ -459,6 +472,11 @@ class nsContainerFrame : public nsSplittableFrame {
     return GetProperty(DebugReflowingWithInfiniteISize());
   }
 #endif
+
+  // Incorporate the child overflow areas into aOverflowAreas.
+  // If the child does not have a overflow, use the child area.
+  void ConsiderChildOverflow(nsOverflowAreas& aOverflowAreas,
+                             nsIFrame* aChildFrame);
 
  protected:
   nsContainerFrame(ComputedStyle* aStyle, nsPresContext* aPresContext,
@@ -551,6 +569,39 @@ class nsContainerFrame : public nsSplittableFrame {
   bool MoveOverflowToChildList();
 
   /**
+   * Merge a sorted frame list into our overflow list. aList becomes empty after
+   * this call.
+   */
+  void MergeSortedOverflow(nsFrameList& aList);
+
+  /**
+   * Merge a sorted frame list into our excess overflow containers list. aList
+   * becomes empty after this call.
+   */
+  void MergeSortedExcessOverflowContainers(nsFrameList& aList);
+
+  /**
+   * Moves all frames from aSrc into aDest such that the resulting aDest
+   * is still sorted in document content order and continuation order. aSrc
+   * becomes empty after this call.
+   *
+   * Precondition: both |aSrc| and |aDest| must be sorted to begin with.
+   * @param aCommonAncestor a hint for nsLayoutUtils::CompareTreePosition
+   */
+  static void MergeSortedFrameLists(nsFrameList& aDest, nsFrameList& aSrc,
+                                    nsIContent* aCommonAncestor);
+
+  /**
+   * This is intended to be used as a ChildFrameMerger argument for
+   * ReflowOverflowContainerChildren().
+   */
+  static inline void MergeSortedFrameListsFor(nsFrameList& aDest,
+                                              nsFrameList& aSrc,
+                                              nsContainerFrame* aParent) {
+    MergeSortedFrameLists(aDest, aSrc, aParent->GetContent());
+  }
+
+  /**
    * Basically same as MoveOverflowToChildList, except that this is for
    * handling inline children where children of prev-in-flow can be
    * pushed to overflow list even if a next-in-flow exists.
@@ -580,6 +631,54 @@ class nsContainerFrame : public nsSplittableFrame {
    * pusher's child count.
    */
   void PushChildren(nsIFrame* aFromChild, nsIFrame* aPrevSibling);
+
+  /**
+   * Iterate our children in our principal child list in the normal document
+   * order, and append them (or their next-in-flows) to either our overflow list
+   * or excess overflow container list according to their presence in
+   * aPushedItems, aIncompleteItems, or aOverflowIncompleteItems.
+   *
+   * Note: This method is only intended for Grid / Flex containers.
+   * aPushedItems, aIncompleteItems, and aOverflowIncompleteItems are expected
+   * to contain only Grid / Flex items. That is, they should contain only
+   * in-flow children.
+   *
+   * @return true if any items are moved; false otherwise.
+   */
+  using FrameHashtable = nsTHashtable<nsPtrHashKey<nsIFrame>>;
+  bool PushIncompleteChildren(const FrameHashtable& aPushedItems,
+                              const FrameHashtable& aIncompleteItems,
+                              const FrameHashtable& aOverflowIncompleteItems);
+
+  /**
+   * Prepare our child lists so that they are ready to reflow by the following
+   * operations:
+   *
+   * - Merge overflow list from our prev-in-flow into our principal child list.
+   * - Merge our own overflow list into our principal child list,
+   * - Push any child's next-in-flows in our principal child list to our
+   *   overflow list.
+   * - Pull up any first-in-flow child we might have pushed from our
+   *   next-in-flows.
+   */
+  void NormalizeChildLists();
+
+  /**
+   * Helper to implement AppendFrames / InsertFrames for flex / grid
+   * containers.
+   */
+  void NoteNewChildren(ChildListID aListID, const nsFrameList& aFrameList);
+
+  /**
+   * Helper to implement DrainSelfOverflowList() for flex / grid containers.
+   */
+  bool DrainAndMergeSelfOverflowList();
+
+  /**
+   * Helper to find the first non-anonymous-box frame in the subtree rooted at
+   * aFrame.
+   */
+  static nsIFrame* GetFirstNonAnonBoxInSubtree(nsIFrame* aFrame);
 
   /**
    * Reparent floats whose placeholders are inline descendants of aFrame from
@@ -657,7 +756,75 @@ class nsContainerFrame : public nsSplittableFrame {
   // be rendered vertically, based on writing-mode and -moz-orient properties.
   bool ResolvedOrientationIsVertical();
 
+  /**
+   * Calculate the used values for 'width' and 'height' for a replaced element.
+   *   http://www.w3.org/TR/CSS21/visudet.html#min-max-widths
+   */
+  mozilla::LogicalSize ComputeSizeWithIntrinsicDimensions(
+      gfxContext* aRenderingContext, mozilla::WritingMode aWM,
+      const mozilla::IntrinsicSize& aIntrinsicSize,
+      const mozilla::AspectRatio& aIntrinsicRatio,
+      const mozilla::LogicalSize& aCBSize, const mozilla::LogicalSize& aMargin,
+      const mozilla::LogicalSize& aBorder, const mozilla::LogicalSize& aPadding,
+      ComputeSizeFlags aFlags);
+
+  // Compute tight bounds assuming this frame honours its border, background
+  // and outline, its children's tight bounds, and nothing else.
+  nsRect ComputeSimpleTightBounds(mozilla::gfx::DrawTarget* aDrawTarget) const;
+
+  /*
+   * If this frame is dirty, marks all absolutely-positioned children of this
+   * frame dirty. If this frame isn't dirty, or if there are no
+   * absolutely-positioned children, does nothing.
+   *
+   * It's necessary to use PushDirtyBitToAbsoluteFrames() when you plan to
+   * reflow this frame's absolutely-positioned children after the dirty bit on
+   * this frame has already been cleared, which prevents ReflowInput from
+   * propagating the dirty bit normally. This situation generally only arises
+   * when a multipass layout algorithm is used.
+   */
+  void PushDirtyBitToAbsoluteFrames();
+
+  // Helper function that tests if the frame tree is too deep; if it is
+  // it marks the frame as "unflowable", zeroes out the metrics, sets
+  // the reflow status, and returns true. Otherwise, the frame is
+  // unmarked "unflowable" and the metrics and reflow status are not
+  // touched and false is returned.
+  bool IsFrameTreeTooDeep(const ReflowInput& aReflowInput,
+                          ReflowOutput& aMetrics, nsReflowStatus& aStatus);
+
+  /**
+   * @return true if we should avoid a page/column break in this frame.
+   */
+  bool ShouldAvoidBreakInside(const ReflowInput& aReflowInput) const;
+
+  /**
+   * To be called by |BuildDisplayLists| of this class or derived classes to add
+   * a translucent overlay if this frame's content is selected.
+   * @param aContentType an nsISelectionDisplay DISPLAY_ constant identifying
+   * which kind of content this is for
+   */
+  void DisplaySelectionOverlay(
+      nsDisplayListBuilder* aBuilder, nsDisplayList* aList,
+      uint16_t aContentType = nsISelectionDisplay::DISPLAY_FRAMES);
+
   // ==========================================================================
+
+#ifdef DEBUG
+  // A helper for flex / grid container to sanity check child lists before
+  // reflow. Intended to be called after calling NormalizeChildLists().
+  void SanityCheckChildListsBeforeReflow() const;
+
+  // A helper to set mDidPushItemsBitMayLie if needed. Intended to be called
+  // only in flex / grid container's RemoveFrame.
+  void SetDidPushItemsBitIfNeeded(ChildListID aListID, nsIFrame* aOldFrame);
+
+  // A flag for flex / grid containers. If true, NS_STATE_GRID_DID_PUSH_ITEMS or
+  // NS_STATE_FLEX_DID_PUSH_ITEMS may be set even though all pushed frames may
+  // have been removed. This is used to suppress an assertion in case
+  // RemoveFrame removed all associated child frames.
+  bool mDidPushItemsBitMayLie{false};
+#endif
 
   nsFrameList mFrames;
 };
@@ -830,7 +997,7 @@ inline nsFrameList* nsContainerFrame::GetOverflowFrames() const {
 }
 
 inline nsFrameList* nsContainerFrame::StealOverflowFrames() {
-  nsFrameList* list = RemoveProperty(OverflowProperty());
+  nsFrameList* list = TakeProperty(OverflowProperty());
   NS_ASSERTION(!list || !list->IsEmpty(), "Unexpected empty overflow list");
   return list;
 }
@@ -840,5 +1007,137 @@ inline void nsContainerFrame::DestroyOverflowList() {
   MOZ_ASSERT(list && list->IsEmpty());
   list->Delete(PresShell());
 }
+
+// Start Display Reflow Debugging
+#ifdef DEBUG
+
+struct DR_cookie {
+  DR_cookie(nsPresContext* aPresContext, nsIFrame* aFrame,
+            const mozilla::ReflowInput& aReflowInput,
+            mozilla::ReflowOutput& aMetrics, nsReflowStatus& aStatus);
+  ~DR_cookie();
+  void Change() const;
+
+  nsPresContext* mPresContext;
+  nsIFrame* mFrame;
+  const mozilla::ReflowInput& mReflowInput;
+  mozilla::ReflowOutput& mMetrics;
+  nsReflowStatus& mStatus;
+  void* mValue;
+};
+
+struct DR_layout_cookie {
+  explicit DR_layout_cookie(nsIFrame* aFrame);
+  ~DR_layout_cookie();
+
+  nsIFrame* mFrame;
+  void* mValue;
+};
+
+struct DR_intrinsic_inline_size_cookie {
+  DR_intrinsic_inline_size_cookie(nsIFrame* aFrame, const char* aType,
+                                  nscoord& aResult);
+  ~DR_intrinsic_inline_size_cookie();
+
+  nsIFrame* mFrame;
+  const char* mType;
+  nscoord& mResult;
+  void* mValue;
+};
+
+struct DR_intrinsic_size_cookie {
+  DR_intrinsic_size_cookie(nsIFrame* aFrame, const char* aType,
+                           nsSize& aResult);
+  ~DR_intrinsic_size_cookie();
+
+  nsIFrame* mFrame;
+  const char* mType;
+  nsSize& mResult;
+  void* mValue;
+};
+
+struct DR_init_constraints_cookie {
+  DR_init_constraints_cookie(nsIFrame* aFrame, mozilla::ReflowInput* aState,
+                             nscoord aCBWidth, nscoord aCBHeight,
+                             const nsMargin* aMargin, const nsMargin* aPadding);
+  ~DR_init_constraints_cookie();
+
+  nsIFrame* mFrame;
+  mozilla::ReflowInput* mState;
+  void* mValue;
+};
+
+struct DR_init_offsets_cookie {
+  DR_init_offsets_cookie(nsIFrame* aFrame,
+                         mozilla::SizeComputationInput* aState,
+                         nscoord aPercentBasis,
+                         mozilla::WritingMode aCBWritingMode,
+                         const nsMargin* aMargin, const nsMargin* aPadding);
+  ~DR_init_offsets_cookie();
+
+  nsIFrame* mFrame;
+  mozilla::SizeComputationInput* mState;
+  void* mValue;
+};
+
+struct DR_init_type_cookie {
+  DR_init_type_cookie(nsIFrame* aFrame, mozilla::ReflowInput* aState);
+  ~DR_init_type_cookie();
+
+  nsIFrame* mFrame;
+  mozilla::ReflowInput* mState;
+  void* mValue;
+};
+
+#  define DISPLAY_REFLOW(dr_pres_context, dr_frame, dr_rf_state,               \
+                         dr_rf_metrics, dr_rf_status)                          \
+    DR_cookie dr_cookie(dr_pres_context, dr_frame, dr_rf_state, dr_rf_metrics, \
+                        dr_rf_status);
+#  define DISPLAY_REFLOW_CHANGE() dr_cookie.Change();
+#  define DISPLAY_LAYOUT(dr_frame) DR_layout_cookie dr_cookie(dr_frame);
+#  define DISPLAY_MIN_INLINE_SIZE(dr_frame, dr_result) \
+    DR_intrinsic_inline_size_cookie dr_cookie(dr_frame, "Min", dr_result)
+#  define DISPLAY_PREF_INLINE_SIZE(dr_frame, dr_result) \
+    DR_intrinsic_inline_size_cookie dr_cookie(dr_frame, "Pref", dr_result)
+#  define DISPLAY_PREF_SIZE(dr_frame, dr_result) \
+    DR_intrinsic_size_cookie dr_cookie(dr_frame, "Pref", dr_result)
+#  define DISPLAY_MIN_SIZE(dr_frame, dr_result) \
+    DR_intrinsic_size_cookie dr_cookie(dr_frame, "Min", dr_result)
+#  define DISPLAY_MAX_SIZE(dr_frame, dr_result) \
+    DR_intrinsic_size_cookie dr_cookie(dr_frame, "Max", dr_result)
+#  define DISPLAY_INIT_CONSTRAINTS(dr_frame, dr_state, dr_cbw, dr_cbh, dr_bdr, \
+                                   dr_pad)                                     \
+    DR_init_constraints_cookie dr_cookie(dr_frame, dr_state, dr_cbw, dr_cbh,   \
+                                         dr_bdr, dr_pad)
+#  define DISPLAY_INIT_OFFSETS(dr_frame, dr_state, dr_pb, dr_cbwm, dr_bdr, \
+                               dr_pad)                                     \
+    DR_init_offsets_cookie dr_cookie(dr_frame, dr_state, dr_pb, dr_cbwm,   \
+                                     dr_bdr, dr_pad)
+#  define DISPLAY_INIT_TYPE(dr_frame, dr_result) \
+    DR_init_type_cookie dr_cookie(dr_frame, dr_result)
+
+#else
+
+#  define DISPLAY_REFLOW(dr_pres_context, dr_frame, dr_rf_state, \
+                         dr_rf_metrics, dr_rf_status)
+#  define DISPLAY_REFLOW_CHANGE()
+#  define DISPLAY_LAYOUT(dr_frame) PR_BEGIN_MACRO PR_END_MACRO
+#  define DISPLAY_MIN_INLINE_SIZE(dr_frame, dr_result) \
+    PR_BEGIN_MACRO PR_END_MACRO
+#  define DISPLAY_PREF_INLINE_SIZE(dr_frame, dr_result) \
+    PR_BEGIN_MACRO PR_END_MACRO
+#  define DISPLAY_PREF_SIZE(dr_frame, dr_result) PR_BEGIN_MACRO PR_END_MACRO
+#  define DISPLAY_MIN_SIZE(dr_frame, dr_result) PR_BEGIN_MACRO PR_END_MACRO
+#  define DISPLAY_MAX_SIZE(dr_frame, dr_result) PR_BEGIN_MACRO PR_END_MACRO
+#  define DISPLAY_INIT_CONSTRAINTS(dr_frame, dr_state, dr_cbw, dr_cbh, dr_bdr, \
+                                   dr_pad)                                     \
+    PR_BEGIN_MACRO PR_END_MACRO
+#  define DISPLAY_INIT_OFFSETS(dr_frame, dr_state, dr_pb, dr_cbwm, dr_bdr, \
+                               dr_pad)                                     \
+    PR_BEGIN_MACRO PR_END_MACRO
+#  define DISPLAY_INIT_TYPE(dr_frame, dr_result) PR_BEGIN_MACRO PR_END_MACRO
+
+#endif
+// End Display Reflow Debugging
 
 #endif /* nsContainerFrame_h___ */

@@ -34,7 +34,7 @@ nsMathMLmrootFrame::nsMathMLmrootFrame(ComputedStyle* aStyle,
       mSqrChar(),
       mBarRect() {}
 
-nsMathMLmrootFrame::~nsMathMLmrootFrame() {}
+nsMathMLmrootFrame::~nsMathMLmrootFrame() = default;
 
 void nsMathMLmrootFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
                               nsIFrame* aPrevInFlow) {

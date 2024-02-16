@@ -819,7 +819,8 @@ void nsTableFrame::RemoveCell(nsTableCellFrame* aCellFrame, int32_t aRowIndex) {
   }
 }
 
-int32_t nsTableFrame::GetStartRowIndex(nsTableRowGroupFrame* aRowGroupFrame) {
+int32_t nsTableFrame::GetStartRowIndex(
+    const nsTableRowGroupFrame* aRowGroupFrame) const {
   RowGroupArray orderedRowGroups;
   OrderRowGroups(orderedRowGroups);
 
@@ -1171,11 +1172,7 @@ class nsDisplayTableBorderCollapse final : public nsDisplayTableItem {
       : nsDisplayTableItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayTableBorderCollapse);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayTableBorderCollapse() {
-    MOZ_COUNT_DTOR(nsDisplayTableBorderCollapse);
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayTableBorderCollapse)
 
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
 #ifdef MOZ_BUILD_WEBRENDER
@@ -1525,12 +1522,12 @@ nsMargin nsTableFrame::GetDeflationForBackground(
 
 nsIFrame::LogicalSides nsTableFrame::GetLogicalSkipSides(
     const ReflowInput* aReflowInput) const {
+  LogicalSides skip(mWritingMode);
   if (MOZ_UNLIKELY(StyleBorder()->mBoxDecorationBreak ==
                    StyleBoxDecorationBreak::Clone)) {
-    return LogicalSides();
+    return skip;
   }
 
-  LogicalSides skip;
   // frame attribute was accounted for in nsHTMLTableElement::MapTableBorderInto
   // account for pagination
   if (nullptr != GetPrevInFlow()) {
@@ -2829,19 +2826,15 @@ LogicalMargin nsTableFrame::GetChildAreaOffset(
 }
 
 void nsTableFrame::InitChildReflowInput(ReflowInput& aReflowInput) {
-  nsMargin collapseBorder;
-  nsMargin padding(0, 0, 0, 0);
-  nsMargin* pCollapseBorder = nullptr;
-  nsPresContext* presContext = PresContext();
+  nsMargin border;
   if (IsBorderCollapse()) {
     nsTableRowGroupFrame* rgFrame =
         static_cast<nsTableRowGroupFrame*>(aReflowInput.mFrame);
     WritingMode wm = GetWritingMode();
-    LogicalMargin border = rgFrame->GetBCBorderWidth(wm);
-    collapseBorder = border.GetPhysicalMargin(wm);
-    pCollapseBorder = &collapseBorder;
+    border = rgFrame->GetBCBorderWidth(wm).GetPhysicalMargin(wm);
   }
-  aReflowInput.Init(presContext, Nothing(), pCollapseBorder, &padding);
+  const nsMargin padding;
+  aReflowInput.Init(PresContext(), Nothing(), &border, &padding);
 
   NS_ASSERTION(!mBits.mResizedColumns ||
                    !aReflowInput.mParentReflowInput->mFlags.mSpecialBSizeReflow,
@@ -2936,46 +2929,6 @@ void nsTableFrame::OrderRowGroups(RowGroupArray& aChildren,
     aChildren.AppendElement(foot);
   }
   if (aFoot) *aFoot = foot;
-}
-
-nsTableRowGroupFrame* nsTableFrame::GetTHead() const {
-  nsIFrame* kidFrame = mFrames.FirstChild();
-  while (kidFrame) {
-    if (kidFrame->StyleDisplay()->mDisplay ==
-        mozilla::StyleDisplay::TableHeaderGroup) {
-      return static_cast<nsTableRowGroupFrame*>(kidFrame);
-    }
-
-    // Get the next sibling but skip it if it's also the next-in-flow, since
-    // a next-in-flow will not be part of the current table.
-    while (kidFrame) {
-      nsIFrame* nif = kidFrame->GetNextInFlow();
-      kidFrame = kidFrame->GetNextSibling();
-      if (kidFrame != nif) break;
-    }
-  }
-
-  return nullptr;
-}
-
-nsTableRowGroupFrame* nsTableFrame::GetTFoot() const {
-  nsIFrame* kidFrame = mFrames.FirstChild();
-  while (kidFrame) {
-    if (kidFrame->StyleDisplay()->mDisplay ==
-        mozilla::StyleDisplay::TableFooterGroup) {
-      return static_cast<nsTableRowGroupFrame*>(kidFrame);
-    }
-
-    // Get the next sibling but skip it if it's also the next-in-flow, since
-    // a next-in-flow will not be part of the current table.
-    while (kidFrame) {
-      nsIFrame* nif = kidFrame->GetNextInFlow();
-      kidFrame = kidFrame->GetNextSibling();
-      if (kidFrame != nif) break;
-    }
-  }
-
-  return nullptr;
 }
 
 static bool IsRepeatable(nscoord aFrameHeight, nscoord aPageHeight) {
@@ -3297,9 +3250,8 @@ void nsTableFrame::ReflowChildren(TableReflowInput& aReflowInput,
           // The child doesn't have a next-in-flow so create a continuing
           // frame. This hooks the child into the flow
           kidNextInFlow =
-              presContext->PresShell()
-                  ->FrameConstructor()
-                  ->CreateContinuingFrame(presContext, kidFrame, this);
+              PresShell()->FrameConstructor()->CreateContinuingFrame(kidFrame,
+                                                                     this);
 
           // Insert the kid's new next-in-flow into our sibling list...
           mFrames.InsertFrame(nullptr, kidFrame, kidNextInFlow);
@@ -6989,8 +6941,8 @@ Maybe<BCBorderParameters> BCBlockDirSeg::BuildBorderParameters(
   // end of the border-segment. We've got them reversed, since our block dir
   // is RTL, so we have to swap them here.)
   if (aIter.mTableWM.IsVerticalRL()) {
-    Swap(result.mStartBevelSide, result.mEndBevelSide);
-    Swap(result.mStartBevelOffset, result.mEndBevelOffset);
+    std::swap(result.mStartBevelSide, result.mEndBevelSide);
+    std::swap(result.mStartBevelOffset, result.mEndBevelOffset);
   }
 
   return Some(result);
@@ -7383,8 +7335,8 @@ Maybe<BCBorderParameters> BCInlineDirSeg::BuildBorderParameters(
   // "end" will be reversed from this physical-coord view, so we have to swap
   // them here.
   if (aIter.mTableWM.IsBidiRTL()) {
-    Swap(result.mStartBevelSide, result.mEndBevelSide);
-    Swap(result.mStartBevelOffset, result.mEndBevelOffset);
+    std::swap(result.mStartBevelSide, result.mEndBevelSide);
+    std::swap(result.mStartBevelOffset, result.mEndBevelOffset);
   }
 
   return Some(result);

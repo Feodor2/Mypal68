@@ -141,7 +141,7 @@ void nsMenuPopupFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
   // lookup if we're allowed to overlap the OS bar (menubar/taskbar) from the
   // look&feel object
   mMenuCanOverlapOSBar =
-      LookAndFeel::GetInt(LookAndFeel::eIntID_MenusCanOverlapOSBar) != 0;
+      LookAndFeel::GetInt(LookAndFeel::IntID::MenusCanOverlapOSBar) != 0;
 
   CreatePopupView();
 
@@ -484,7 +484,7 @@ void nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState,
   // own.
   if (mIsOpenChanged && !IsMenuList()) {
     nsIScrollableFrame* scrollframe =
-        do_QueryFrame(nsBox::GetChildXULBox(this));
+        do_QueryFrame(nsIFrame::GetChildXULBox(this));
     if (scrollframe) {
       AutoWeakFrame weakFrame(this);
       scrollframe->ScrollTo(nsPoint(0, 0), ScrollMode::Instant);
@@ -503,7 +503,7 @@ void nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState,
   if (aSizedToPopup) {
     prefSize.width = aParentMenu->GetRect().width;
   }
-  prefSize = BoundsCheck(minSize, prefSize, maxSize);
+  prefSize = XULBoundsCheck(minSize, prefSize, maxSize);
 
   // if the size changed then set the bounds to be the preferred size
   bool sizeChanged = (mPrefSize != prefSize);
@@ -559,7 +559,7 @@ void nsMenuPopupFrame::LayoutPopup(nsBoxLayoutState& aState,
     nsViewManager* viewManager = view->GetViewManager();
     nsRect rect = GetRect();
     rect.x = rect.y = 0;
-    rect.SizeTo(BoundsCheck(minSize, rect.Size(), maxSize));
+    rect.SizeTo(XULBoundsCheck(minSize, rect.Size(), maxSize));
     viewManager->ResizeView(view, rect);
 
     if (mPopupState == ePopupOpening) {
@@ -1456,11 +1456,11 @@ nsresult nsMenuPopupFrame::SetPopupPosition(nsIFrame* aAnchorFrame,
       nsPoint offsetForContextMenuDev;
       offsetForContextMenuDev.x =
           nsPresContext::CSSPixelsToAppUnits(LookAndFeel::GetInt(
-              LookAndFeel::eIntID_ContextMenuOffsetHorizontal)) /
+              LookAndFeel::IntID::ContextMenuOffsetHorizontal)) /
           factor;
       offsetForContextMenuDev.y =
           nsPresContext::CSSPixelsToAppUnits(LookAndFeel::GetInt(
-              LookAndFeel::eIntID_ContextMenuOffsetVertical)) /
+              LookAndFeel::IntID::ContextMenuOffsetVertical)) /
           factor;
       offsetForContextMenu.x =
           presContext->DevPixelsToAppUnits(offsetForContextMenuDev.x);
@@ -1814,8 +1814,7 @@ void nsMenuPopupFrame::EnsureMenuItemIsVisible(nsMenuFrame* aMenuItem) {
         aMenuItem, nsRect(nsPoint(0, 0), aMenuItem->GetRect().Size()),
         ScrollAxis(), ScrollAxis(),
         ScrollFlags::ScrollOverflowHidden |
-            ScrollFlags::ScrollFirstAncestorOnly |
-            ScrollFlags::IgnoreMarginAndPadding);
+            ScrollFlags::ScrollFirstAncestorOnly);
   }
 }
 
@@ -2271,9 +2270,9 @@ void nsMenuPopupFrame::MoveTo(const CSSIntPoint& aPos, bool aUpdateAttrs) {
   // Workaround for bug 788189.  See also bug 708278 comment #25 and following.
   if (mAdjustOffsetForContextMenu) {
     margin.left += nsPresContext::CSSPixelsToAppUnits(
-        LookAndFeel::GetInt(LookAndFeel::eIntID_ContextMenuOffsetHorizontal));
+        LookAndFeel::GetInt(LookAndFeel::IntID::ContextMenuOffsetHorizontal));
     margin.top += nsPresContext::CSSPixelsToAppUnits(
-        LookAndFeel::GetInt(LookAndFeel::eIntID_ContextMenuOffsetVertical));
+        LookAndFeel::GetInt(LookAndFeel::IntID::ContextMenuOffsetVertical));
   }
 
   mAnchorType = MenuPopupAnchorType_Point;

@@ -10,17 +10,16 @@ use crate::dom::TElement;
 use crate::font_metrics::FontMetricsProvider;
 use crate::logical_geometry::WritingMode;
 use crate::media_queries::Device;
-use crate::properties::{ComputedValues, StyleBuilder};
-use crate::properties::{LonghandId, LonghandIdSet, CSSWideKeyword};
+use crate::properties::{ComputedValues, StyleBuilder, Importance};
+use crate::properties::{LonghandId, LonghandIdSet, CSSWideKeyword, PropertyFlags};
 use crate::properties::{PropertyDeclaration, PropertyDeclarationId, DeclarationImportanceIterator};
-use crate::properties::CASCADE_PROPERTY;
+use crate::properties::{CASCADE_PROPERTY, ComputedValueFlags};
 use crate::rule_cache::{RuleCache, RuleCacheConditions};
 use crate::rule_tree::StrongRuleNode;
 use crate::selector_parser::PseudoElement;
 use crate::stylesheets::{Origin, PerOrigin};
 use servo_arc::Arc;
 use crate::shared_lock::StylesheetGuards;
-use smallbitvec::SmallBitVec;
 use smallvec::SmallVec;
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -108,6 +107,84 @@ where
     )
 }
 
+struct DeclarationIterator<'a> {
+    // Global to the iteration.
+    guards: &'a StylesheetGuards<'a>,
+    restriction: Option<PropertyFlags>,
+    // The rule we're iterating over.
+    current_rule_node: Option<&'a StrongRuleNode>,
+    // Per rule state.
+    declarations: DeclarationImportanceIterator<'a>,
+    origin: Origin,
+    importance: Importance,
+}
+
+impl<'a> DeclarationIterator<'a> {
+    #[inline]
+    fn new(rule_node: &'a StrongRuleNode, guards: &'a StylesheetGuards, pseudo: Option<&PseudoElement>) -> Self {
+        let restriction = pseudo.and_then(|p| p.property_restriction());
+        let mut iter = Self {
+            guards,
+            current_rule_node: Some(rule_node),
+            origin: Origin::Author,
+            importance: Importance::Normal,
+            declarations: DeclarationImportanceIterator::default(),
+            restriction,
+        };
+        iter.update_for_node(rule_node);
+        iter
+    }
+
+    fn update_for_node(&mut self, node: &'a StrongRuleNode) {
+        let origin = node.cascade_level().origin();
+        self.origin = origin;
+        self.importance = node.importance();
+        let guard = match origin {
+            Origin::Author => self.guards.author,
+            Origin::User | Origin::UserAgent => self.guards.ua_or_user,
+        };
+        self.declarations = match node.style_source() {
+            Some(source) => source.read(guard).declaration_importance_iter(),
+            None => DeclarationImportanceIterator::default(),
+        };
+    }
+
+}
+
+impl<'a> Iterator for DeclarationIterator<'a> {
+    type Item = (&'a PropertyDeclaration, Origin);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some((decl, importance)) = self.declarations.next_back() {
+                if self.importance != importance {
+                    continue;
+                }
+
+                let origin = self.origin;
+                if let Some(restriction) = self.restriction {
+                    // decl.id() is either a longhand or a custom
+                    // property.  Custom properties are always allowed, but
+                    // longhands are only allowed if they have our
+                    // restriction flag set.
+                    if let PropertyDeclarationId::Longhand(id) = decl.id() {
+                        if !id.flags().contains(restriction) && origin != Origin::UserAgent {
+                            continue;
+                        }
+                    }
+                }
+
+                return Some((decl, origin));
+            }
+
+            let next_node = self.current_rule_node.take()?.parent()?;
+            self.current_rule_node = Some(next_node);
+            self.update_for_node(next_node);
+        }
+    }
+}
+
 fn cascade_rules<E>(
     device: &Device,
     pseudo: Option<&PseudoElement>,
@@ -130,54 +207,12 @@ where
         parent_style.is_some(),
         parent_style_ignoring_first_line.is_some()
     );
-    let empty = SmallBitVec::new();
-    let restriction = pseudo.and_then(|p| p.property_restriction());
-    let iter_declarations = || {
-        rule_node.self_and_ancestors().flat_map(|node| {
-            let origin = node.cascade_level().origin();
-            let node_importance = node.importance();
-            let guard = match origin {
-                Origin::Author => guards.author,
-                Origin::User | Origin::UserAgent => guards.ua_or_user,
-            };
-            let declarations = match node.style_source() {
-                Some(source) => source
-                    .read(guard)
-                    .declaration_importance_iter(),
-                None => DeclarationImportanceIterator::new(&[], &empty),
-            };
-
-            declarations
-                // Yield declarations later in source order (with more precedence) first.
-                .rev()
-                .filter_map(move |(declaration, declaration_importance)| {
-                    if let Some(restriction) = restriction {
-                        // declaration.id() is either a longhand or a custom
-                        // property.  Custom properties are always allowed, but
-                        // longhands are only allowed if they have our
-                        // restriction flag set.
-                        if let PropertyDeclarationId::Longhand(id) = declaration.id() {
-                            if !id.flags().contains(restriction) && origin != Origin::UserAgent {
-                                return None;
-                            }
-                        }
-                    }
-
-                    if declaration_importance == node_importance {
-                        Some((declaration, origin))
-                    } else {
-                        None
-                    }
-                })
-        })
-    };
-
     apply_declarations(
         device,
         pseudo,
         rule_node,
         guards,
-        iter_declarations,
+        DeclarationIterator::new(rule_node, guards, pseudo),
         parent_style,
         parent_style_ignoring_first_line,
         layout_parent_style,
@@ -208,12 +243,12 @@ pub enum CascadeMode<'a> {
 
 /// NOTE: This function expects the declaration with more priority to appear
 /// first.
-pub fn apply_declarations<'a, E, F, I>(
+pub fn apply_declarations<'a, E, I>(
     device: &Device,
     pseudo: Option<&PseudoElement>,
     rules: &StrongRuleNode,
     guards: &StylesheetGuards,
-    iter_declarations: F,
+    iter: I,
     parent_style: Option<&ComputedValues>,
     parent_style_ignoring_first_line: Option<&ComputedValues>,
     layout_parent_style: Option<&ComputedValues>,
@@ -226,7 +261,6 @@ pub fn apply_declarations<'a, E, F, I>(
 ) -> Arc<ComputedValues>
 where
     E: TElement,
-    F: Fn() -> I,
     I: Iterator<Item = (&'a PropertyDeclaration, Origin)>,
 {
     debug_assert!(layout_parent_style.is_none() || parent_style.is_some());
@@ -253,7 +287,7 @@ where
             device.environment(),
         );
 
-        for (declaration, origin) in iter_declarations() {
+        for (declaration, origin) in iter {
             declarations.push((declaration, origin));
             if let PropertyDeclaration::Custom(ref declaration) = *declaration {
                 builder.cascade(declaration, origin);
@@ -337,89 +371,123 @@ where
     context.builder.build()
 }
 
-/// How should a declaration behave when ignoring document colors?
-enum DeclarationApplication {
-    /// We should apply the declaration.
-    Apply,
-    /// We should ignore the declaration.
-    Ignore,
-    /// We should apply the following declaration, only if any other declaration
-    /// hasn't set it before.
-    ApplyUnlessOverriden(PropertyDeclaration),
-}
+/// For ignored colors mode, we sometimes want to do something equivalent to
+/// "revert-or-initial", where we `revert` for a given origin, but then apply a
+/// given initial value if nothing in other origins did override it.
+///
+/// This is a bit of a clunky way of achieving this.
+type DeclarationsToApplyUnlessOverriden = SmallVec::<[PropertyDeclaration; 2]>;
 
-fn application_when_ignoring_colors(
+fn tweak_when_ignoring_colors(
     builder: &StyleBuilder,
     longhand_id: LonghandId,
     origin: Origin,
-    declaration: &PropertyDeclaration,
-) -> DeclarationApplication {
+    declaration: &mut Cow<PropertyDeclaration>,
+    declarations_to_apply_unless_overriden: &mut DeclarationsToApplyUnlessOverriden,
+) {
+    use crate::values::specified::Color;
+
     if !longhand_id.ignored_when_document_colors_disabled() {
-        return DeclarationApplication::Apply;
+        return;
     }
 
     let is_ua_or_user_rule = matches!(origin, Origin::User | Origin::UserAgent);
     if is_ua_or_user_rule {
-        return DeclarationApplication::Apply;
+        return;
     }
 
     // Don't override background-color on ::-moz-color-swatch. It is set as an
     // author style (via the style attribute), but it's pretty important for it
     // to show up for obvious reasons :)
     if builder.pseudo.map_or(false, |p| p.is_color_swatch()) && longhand_id == LonghandId::BackgroundColor {
-        return DeclarationApplication::Apply;
+        return;
     }
 
-    // Treat background-color a bit differently.  If the specified color is
-    // anything other than a fully transparent color, convert it into the
-    // Device's default background color.
-    // Also: for now, we treat background-image a bit differently, too.
-    // background-image is marked as ignored, but really, we only ignore
-    // it when backplates are disabled (since then text may be unreadable over
-    // a background image, if we're ignoring document colors).
-    // Here we check backplate status to decide if ignoring background-image
-    // is the right decision.
-    match *declaration {
+    fn alpha_channel(color: &Color) -> u8 {
+        match *color {
+            // Seems safe enough to assume that the default color and system
+            // colors are opaque in HCM, though maybe we shouldn't asume the
+            // later?
+            #[cfg(feature = "gecko")]
+            Color::InheritFromBodyQuirk | Color::System(..) => 255,
+            // We don't have the actual color here, but since except for color:
+            // transparent we force opaque text colors, it seems sane to do
+            // this. You can technically fool this bit of code with:
+            //
+            //   color: transparent; background-color: currentcolor;
+            //
+            // but this is best-effort, and that seems unlikely to happen in
+            // practice.
+            Color::CurrentColor => 255,
+            // Complex colors are results of interpolation only and probably
+            // shouldn't show up around here in HCM, but we've always treated
+            // them as opaque effectively so keep doing it.
+            Color::Complex { .. } => 255,
+            Color::Numeric { ref parsed, .. } => parsed.alpha,
+        }
+    }
+
+    // A few special-cases ahead.
+    match **declaration {
         PropertyDeclaration::BackgroundColor(ref color) => {
-            if color.is_transparent() {
-                return DeclarationApplication::Apply;
+            // For background-color, we revert or initial-with-preserved-alpha
+            // otherwise, this is needed to preserve semi-transparent
+            // backgrounds.
+            //
+            // NOTE(emilio): We honor transparent unconditionally, like we do
+            // for color, even though it causes issues like bug 1625036. The
+            // reasoning is that the conditions that trigger that (having
+            // mismatched widget and default backgrounds) are both uncommon, and
+            // broken in other applications as well, and not honoring
+            // transparent makes stuff uglier or break unconditionally
+            // (bug 1666059, bug 1755713).
+            let alpha = alpha_channel(color);
+            if alpha == 0 {
+                return;
             }
-            let color = builder.device.default_background_color();
-            DeclarationApplication::ApplyUnlessOverriden(
+            let mut color = builder.device.default_background_color();
+            color.alpha = alpha;
+            declarations_to_apply_unless_overriden.push(
                 PropertyDeclaration::BackgroundColor(color.into())
             )
         }
         PropertyDeclaration::Color(ref color) => {
-            if color.0.is_transparent() {
-                return DeclarationApplication::Apply;
+            // We honor color: transparent, and "revert-or-initial" otherwise.
+            if alpha_channel(&color.0) == 0 {
+                return;
             }
-            if builder.get_parent_inherited_text().clone_color().alpha != 0 {
-                return DeclarationApplication::Ignore;
+            // If the inherited color would be transparent, but we would
+            // override this with a non-transparent color, then override it with
+            // the default color. Otherwise just let it inherit through.
+            if builder.get_parent_inherited_text().clone_color().alpha == 0 {
+                let color = builder.device.default_color();
+                declarations_to_apply_unless_overriden.push(
+                    PropertyDeclaration::Color(specified::ColorPropertyValue(color.into()))
+                )
             }
-            let color = builder.device.default_color();
-            DeclarationApplication::ApplyUnlessOverriden(
-                PropertyDeclaration::Color(specified::ColorPropertyValue(color.into()))
-            )
         },
-        // In the future, if/when we remove the backplate pref, we can remove this
-        // special case along with the 'ignored_when_colors_disabled=True' mako line
-        // for the "background-image" property.
+        // We honor url background-images if backplating.
         #[cfg(feature = "gecko")]
-        PropertyDeclaration::BackgroundImage(..) => {
+        PropertyDeclaration::BackgroundImage(ref bkg) => {
+            use crate::values::generics::image::Image;
             if static_prefs::pref!("browser.display.permit_backplate") {
-                DeclarationApplication::Apply
-            } else {
-                DeclarationApplication::Ignore
+                if bkg.0.iter().all(|image| matches!(*image, Image::Url(..))) {
+                    return;
+                }
             }
         },
-        _ => DeclarationApplication::Ignore,
+        _ => {},
     }
+
+    *declaration.to_mut() = PropertyDeclaration::css_wide_keyword(longhand_id, CSSWideKeyword::Revert);
+
 }
 
 struct Cascade<'a, 'b: 'a> {
     context: &'a mut computed::Context<'b>,
     cascade_mode: CascadeMode<'a>,
     seen: LonghandIdSet,
+    author_specified: LonghandIdSet,
     reverted: PerOrigin<LonghandIdSet>,
 }
 
@@ -429,6 +497,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             context,
             cascade_mode,
             seen: LonghandIdSet::default(),
+            author_specified: LonghandIdSet::default(),
             reverted: Default::default(),
         }
     }
@@ -491,7 +560,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
 
         let ignore_colors = !self.context.builder.device.use_document_colors();
         let mut declarations_to_apply_unless_overriden =
-            SmallVec::<[PropertyDeclaration; 2]>::new();
+            DeclarationsToApplyUnlessOverriden::new();
 
         for (declaration, origin) in declarations {
             let declaration_id = declaration.id();
@@ -533,26 +602,23 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
                 continue;
             }
 
-            let declaration = self.substitute_variables_if_needed(declaration);
+            let mut declaration = self.substitute_variables_if_needed(declaration);
 
             // When document colors are disabled, do special handling of
             // properties that are marked as ignored in that mode.
             if ignore_colors {
-                let application = application_when_ignoring_colors(
+                tweak_when_ignoring_colors(
                     &self.context.builder,
                     longhand_id,
                     origin,
-                    &declaration,
+                    &mut declaration,
+                    &mut declarations_to_apply_unless_overriden,
                 );
-
-                match application {
-                    DeclarationApplication::Ignore => continue,
-                    DeclarationApplication::Apply => {},
-                    DeclarationApplication::ApplyUnlessOverriden(decl) => {
-                        declarations_to_apply_unless_overriden.push(decl);
-                        continue;
-                    }
-                }
+                debug_assert_eq!(
+                    declaration.id(),
+                    PropertyDeclarationId::Longhand(longhand_id),
+                    "Shouldn't change the declaration id!",
+                );
             }
 
             let css_wide_keyword = declaration.get_css_wide_keyword();
@@ -569,6 +635,9 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             }
 
             self.seen.insert(physical_longhand_id);
+            if origin == Origin::Author {
+                self.author_specified.insert(physical_longhand_id);
+            }
 
             let unset = css_wide_keyword.map_or(false, |css_wide_keyword| {
                 match css_wide_keyword {
@@ -691,6 +760,14 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             if let Some(svg) = builder.get_svg_if_mutated() {
                 svg.fill_arrays();
             }
+
+        }
+
+        if self.author_specified.contains_any(LonghandIdSet::border_background_properties()) {
+            builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_BORDER_BACKGROUND);
+        }
+        if self.author_specified.contains_any(LonghandIdSet::padding_properties()) {
+            builder.add_flags(ComputedValueFlags::HAS_AUTHOR_SPECIFIED_PADDING);
         }
 
         #[cfg(feature = "servo")]
@@ -711,12 +788,26 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             None => return false,
         };
 
-        let cached_style = match cache.find(guards, &self.context.builder) {
+        let builder = &mut self.context.builder;
+
+        let cached_style = match cache.find(guards, &builder) {
             Some(style) => style,
             None => return false,
         };
 
-        self.context.builder.copy_reset_from(cached_style);
+        builder.copy_reset_from(cached_style);
+
+        // We're using the same reset style as another element, and we'll skip
+        // applying the relevant properties. So we need to do the relevant
+        // bookkeeping here to keep these two bits correct.
+        //
+        // Note that all the properties involved are non-inherited, so we don't
+        // need to do anything else other than just copying the bits over.
+        let reset_props_bits =
+            ComputedValueFlags::HAS_AUTHOR_SPECIFIED_BORDER_BACKGROUND |
+            ComputedValueFlags::HAS_AUTHOR_SPECIFIED_PADDING;
+        builder.add_flags(cached_style.flags & reset_props_bits);
+
         true
     }
 
@@ -801,12 +892,13 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
 
         let new_size = {
             let font = self.context.builder.get_font();
-            let new_size = match font.clone_font_size().keyword_info {
-                Some(info) => {
+            let info = font.clone_font_size().keyword_info;
+            let new_size = match info.kw {
+                specified::FontSizeKeyword::None => return,
+                _ => {
                     self.context.for_non_inherited_property = None;
                     specified::FontSize::Keyword(info).to_computed_value(self.context)
                 }
-                None => return,
             };
 
             if font.gecko().mScriptUnconstrainedSize == Au::from(new_size.size()).0 {
@@ -867,8 +959,8 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
 
         let builder = &mut self.context.builder;
 
-        let parent_zoom = builder.get_parent_font().gecko().mAllowZoom;
-        let zoom = builder.get_font().gecko().mAllowZoom;
+        let parent_zoom = builder.get_parent_font().gecko().mAllowZoomAndMinSize;
+        let zoom = builder.get_font().gecko().mAllowZoomAndMinSize;
         if zoom == parent_zoom {
             return;
         }
@@ -915,7 +1007,7 @@ impl<'a, 'b: 'a> Cascade<'a, 'b> {
             }
 
             let mut min = Au(parent_font.mScriptMinSize);
-            if font.mAllowZoom {
+            if font.mAllowZoomAndMinSize {
                 min = builder.device.zoom_text(min);
             }
 

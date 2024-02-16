@@ -525,6 +525,7 @@ const ExpectComparisonTo = {
           };
           break;
         }
+      // fall through
       case "transform":
         normalize = convertTo3dMatrix;
         compare = matricesRoughlyEqual;
@@ -596,6 +597,14 @@ const ExpectComparisonTo = {
           desc + ": should NOT be animating on compositor"
         );
         actualStr = compositorStr === "" ? computedStr : compositorStr;
+        break;
+
+      case RunningOn.TodoCompositor:
+        todo(
+          compositorStr !== "",
+          desc + ": should be animating on compositor"
+        );
+        actualStr = compositorStr !== "" ? computedStr : compositorStr;
         break;
 
       default:

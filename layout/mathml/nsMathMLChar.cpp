@@ -83,7 +83,7 @@ static const nsGlyphCode kNullGlyph = {{{0, 0}}, 0};
 
 class nsGlyphTable {
  public:
-  virtual ~nsGlyphTable() {}
+  virtual ~nsGlyphTable() = default;
 
   virtual const FontFamilyName& FontNameFor(
       const nsGlyphCode& aGlyphCode) const = 0;
@@ -168,7 +168,7 @@ class nsPropertiesTable final : public nsGlyphTable {
         aPrimaryFontName, StyleFontFamilyNameSyntax::Identifiers));
   }
 
-  ~nsPropertiesTable() { MOZ_COUNT_DTOR(nsPropertiesTable); }
+  MOZ_COUNTED_DTOR(nsPropertiesTable)
 
   const FontFamilyName& PrimaryFontName() const { return mGlyphCodeFonts[0]; }
 
@@ -376,7 +376,7 @@ already_AddRefed<gfxTextRun> nsPropertiesTable::MakeTextRun(
 // forwarded to the gfx code.
 class nsOpenTypeTable final : public nsGlyphTable {
  public:
-  ~nsOpenTypeTable() { MOZ_COUNT_DTOR(nsOpenTypeTable); }
+  MOZ_COUNTED_DTOR(nsOpenTypeTable)
 
   virtual nsGlyphCode ElementAt(DrawTarget* aDrawTarget,
                                 int32_t aAppUnitsPerDevPixel,
@@ -558,7 +558,7 @@ class nsGlyphTableList final : public nsIObserver {
   nsGlyphTable* GetGlyphTableFor(const nsACString& aFamily);
 
  private:
-  ~nsGlyphTableList() {}
+  ~nsGlyphTableList() = default;
 
   nsPropertiesTable* PropertiesTableAt(int32_t aIndex) {
     return &mPropertiesTableList.ElementAt(aIndex);
@@ -1687,11 +1687,7 @@ class nsDisplayMathMLSelectionRect final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame), mRect(aRect) {
     MOZ_COUNT_CTOR(nsDisplayMathMLSelectionRect);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayMathMLSelectionRect() {
-    MOZ_COUNT_DTOR(nsDisplayMathMLSelectionRect);
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayMathMLSelectionRect)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("MathMLSelectionRect", TYPE_MATHML_SELECTION_RECT)
@@ -1715,18 +1711,13 @@ class nsDisplayMathMLCharForeground final : public nsPaintedDisplayItem {
  public:
   nsDisplayMathMLCharForeground(nsDisplayListBuilder* aBuilder,
                                 nsIFrame* aFrame, nsMathMLChar* aChar,
-                                uint16_t aIndex, bool aIsSelected)
+                                const bool aIsSelected)
       : nsPaintedDisplayItem(aBuilder, aFrame),
         mChar(aChar),
-        mIndex(aIndex),
         mIsSelected(aIsSelected) {
     MOZ_COUNT_CTOR(nsDisplayMathMLCharForeground);
   }
-#ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayMathMLCharForeground() {
-    MOZ_COUNT_DTOR(nsDisplayMathMLCharForeground);
-  }
-#endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayMathMLCharForeground)
 
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
                            bool* aSnap) const override {
@@ -1756,11 +1747,8 @@ class nsDisplayMathMLCharForeground final : public nsPaintedDisplayItem {
     return GetBounds(aBuilder, &snap);
   }
 
-  virtual uint16_t CalculatePerFrameKey() const override { return mIndex; }
-
  private:
   nsMathMLChar* mChar;
-  uint16_t mIndex;
   bool mIsSelected;
 };
 
@@ -1772,11 +1760,7 @@ class nsDisplayMathMLCharDebug final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame), mRect(aRect) {
     MOZ_COUNT_CTOR(nsDisplayMathMLCharDebug);
   }
-#  ifdef NS_BUILD_REFCNT_LOGGING
-  virtual ~nsDisplayMathMLCharDebug() {
-    MOZ_COUNT_DTOR(nsDisplayMathMLCharDebug);
-  }
-#  endif
+  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayMathMLCharDebug)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("MathMLCharDebug", TYPE_MATHML_CHAR_DEBUG)
@@ -1821,13 +1805,17 @@ void nsMathMLChar::Display(nsDisplayListBuilder* aBuilder, nsIFrame* aForFrame,
     computedStyle = aForFrame->Style();
   }
 
-  if (!computedStyle->StyleVisibility()->IsVisible()) return;
+  if (!computedStyle->StyleVisibility()->IsVisible()) {
+    return;
+  }
+
+  const bool isSelected = aSelectedRect && !aSelectedRect->IsEmpty();
 
   // if the leaf computed style that we use for stretchy chars has a background
   // color we use it -- this feature is mostly used for testing and debugging
   // purposes. Normally, users will set the background on the container frame.
   // paint the selection background -- beware MathML frames overlap a lot
-  if (aSelectedRect && !aSelectedRect->IsEmpty()) {
+  if (isSelected) {
     aLists.BorderBackground()->AppendNewToTop<nsDisplayMathMLSelectionRect>(
         aBuilder, aForFrame, *aSelectedRect);
   } else if (mRect.width && mRect.height) {
@@ -1847,9 +1835,8 @@ void nsMathMLChar::Display(nsDisplayListBuilder* aBuilder, nsIFrame* aForFrame,
         aBuilder, aForFrame, mRect);
 #endif
   }
-  aLists.Content()->AppendNewToTop<nsDisplayMathMLCharForeground>(
-      aBuilder, aForFrame, this, aIndex,
-      aSelectedRect && !aSelectedRect->IsEmpty());
+  aLists.Content()->AppendNewToTopWithIndex<nsDisplayMathMLCharForeground>(
+      aBuilder, aForFrame, aIndex, this, isSelected);
 }
 
 void nsMathMLChar::ApplyTransforms(gfxContext* aThebesContext,

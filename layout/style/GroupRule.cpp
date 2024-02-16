@@ -11,6 +11,8 @@
 
 #include "mozilla/dom/CSSRuleList.h"
 
+#include "nsPrintfCString.h"
+
 using namespace mozilla::dom;
 
 namespace mozilla {

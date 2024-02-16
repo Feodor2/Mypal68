@@ -12,6 +12,8 @@ use crate::context::{ElementCascadeInputs, QuirksMode, SelectorFlagsMap};
 use crate::context::{SharedStyleContext, StyleContext};
 use crate::data::ElementData;
 use crate::dom::TElement;
+#[cfg(feature = "servo")]
+use crate::dom::TNode;
 use crate::invalidation::element::restyle_hints::RestyleHint;
 use crate::properties::longhands::display::computed_value::T as Display;
 use crate::properties::ComputedValues;
@@ -435,43 +437,39 @@ trait PrivateMatchMethods: TElement {
         _restyle_hint: RestyleHint,
         _important_rules_changed: bool,
     ) {
-        use crate::animation;
-        use crate::dom::TNode;
+        use crate::animation::AnimationState;
 
-        let mut possibly_expired_animations = vec![];
-        let shared_context = context.shared;
-        if let Some(ref mut old) = *old_values {
-            // FIXME(emilio, #20116): This makes no sense.
-            self.update_animations_for_cascade(
-                shared_context,
-                old,
-                &mut possibly_expired_animations,
-                &context.thread_local.font_metrics_provider,
-            );
-        }
-
-        let new_animations_sender = &context.thread_local.new_animations_sender;
         let this_opaque = self.as_node().opaque();
-        // Trigger any present animations if necessary.
-        animation::maybe_start_animations(
-            *self,
+        let shared_context = context.shared;
+        let mut animation_states = shared_context.animation_states.write();
+        let mut animation_state = animation_states.remove(&this_opaque).unwrap_or_default();
+
+        animation_state.update_animations_for_new_style(*self, &shared_context, &new_values);
+
+        animation_state.update_transitions_for_new_style::<Self>(
             &shared_context,
-            new_animations_sender,
             this_opaque,
-            &new_values,
+            old_values.as_ref(),
+            new_values,
+            &context.thread_local.font_metrics_provider,
         );
 
-        // Trigger transitions if necessary. This will reset `new_values` back
-        // to its old value if it did trigger a transition.
-        if let Some(ref values) = *old_values {
-            animation::start_transitions_if_applicable(
-                new_animations_sender,
-                this_opaque,
-                &values,
-                new_values,
-                &shared_context.timer,
-                &possibly_expired_animations,
-            );
+        animation_state.apply_active_animations::<Self>(
+            shared_context,
+            new_values,
+            &context.thread_local.font_metrics_provider,
+        );
+
+        // We clear away any finished transitions, but retain animations, because they
+        // might still be used for proper calculation of `animation-fill-mode`.
+        animation_state
+            .transitions
+            .retain(|transition| transition.state != AnimationState::Finished);
+
+        // If the ElementAnimationSet is empty, and don't store it in order to
+        // save memory and to avoid extra processing later.
+        if !animation_state.is_empty() {
+            animation_states.insert(this_opaque, animation_state);
         }
     }
 
@@ -587,63 +585,6 @@ trait PrivateMatchMethods: TElement {
         // properties, we can stop the cascade.
         ChildCascadeRequirement::MustCascadeChildrenIfInheritResetStyle
     }
-
-    // FIXME(emilio, #20116): It's not clear to me that the name of this method
-    // represents anything of what it does.
-    //
-    // Also, this function gets the old style, for some reason I don't really
-    // get, but the functions called (mainly update_style_for_animation) expects
-    // the new style, wtf?
-    #[cfg(feature = "servo")]
-    fn update_animations_for_cascade(
-        &self,
-        context: &SharedStyleContext,
-        style: &mut Arc<ComputedValues>,
-        possibly_expired_animations: &mut Vec<crate::animation::PropertyAnimation>,
-        font_metrics: &dyn crate::font_metrics::FontMetricsProvider,
-    ) {
-        use crate::animation::{self, Animation, AnimationUpdate};
-        use crate::dom::TNode;
-
-        // Finish any expired transitions.
-        let this_opaque = self.as_node().opaque();
-        animation::complete_expired_transitions(this_opaque, style, context);
-
-        // Merge any running animations into the current style, and cancel them.
-        let had_running_animations = context
-            .running_animations
-            .read()
-            .get(&this_opaque)
-            .is_some();
-        if !had_running_animations {
-            return;
-        }
-
-        let mut all_running_animations = context.running_animations.write();
-        for mut running_animation in all_running_animations.get_mut(&this_opaque).unwrap() {
-            if let Animation::Transition(_, _, ref frame) = *running_animation {
-                possibly_expired_animations.push(frame.property_animation.clone());
-                continue;
-            }
-
-            let update = animation::update_style_for_animation::<Self>(
-                context,
-                &mut running_animation,
-                style,
-                font_metrics,
-            );
-
-            match *running_animation {
-                Animation::Transition(..) => unreachable!(),
-                Animation::Keyframes(_, _, _, ref mut state) => match update {
-                    AnimationUpdate::Regular => {},
-                    AnimationUpdate::AnimationCanceled => {
-                        state.expired = true;
-                    },
-                },
-            }
-        }
-    }
 }
 
 impl<E: TElement> PrivateMatchMethods for E {}
@@ -706,7 +647,10 @@ pub trait MatchMethods: TElement {
         let new_primary_style = data.styles.primary.as_ref().unwrap();
 
         let mut cascade_requirement = ChildCascadeRequirement::CanSkipCascade;
-        if new_primary_style.flags.contains(ComputedValueFlags::IS_ROOT_ELEMENT_STYLE) {
+        if new_primary_style
+            .flags
+            .contains(ComputedValueFlags::IS_ROOT_ELEMENT_STYLE)
+        {
             let device = context.shared.stylist.device();
             let new_font_size = new_primary_style.get_font().clone_font_size();
 

@@ -116,7 +116,7 @@ class nsPlaceholderFrame final : public nsFrame {
 
 #ifdef DEBUG_FRAME_DUMP
   void List(FILE* out = stderr, const char* aPrefix = "",
-            uint32_t aFlags = 0) const override;
+            ListFlags aFlags = ListFlags()) const override;
   virtual nsresult GetFrameName(nsAString& aResult) const override;
 #endif  // DEBUG
 

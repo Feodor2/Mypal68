@@ -28,8 +28,9 @@
 #include "nsViewManager.h"
 #include "nsGkAtoms.h"
 #include "nsStyleConsts.h"
+#include "nsStyleStruct.h"
+#include "nsStyleStructInlines.h"
 #include "nsFrameSetFrame.h"
-#include "nsIScrollable.h"
 #include "nsNameSpaceManager.h"
 #include "nsDisplayList.h"
 #include "nsIScrollableFrame.h"
@@ -43,7 +44,8 @@
 #include "RetainedDisplayListBuilder.h"
 
 using namespace mozilla;
-using mozilla::dom::Document;
+using namespace mozilla::dom;
+using namespace mozilla::gfx;
 using mozilla::layout::RenderFrame;
 
 static Document* GetDocumentFromView(nsView* aView) {
@@ -181,10 +183,10 @@ void nsSubDocumentFrame::ShowViewer() {
       mCallingShow = true;
       const nsAttrValue* attrValue =
           GetContent()->AsElement()->GetParsedAttr(nsGkAtoms::scrolling);
-      int32_t scrolling =
+      ScrollbarPreference scrolling =
           nsGenericHTMLFrameElement::MapScrollingAttribute(attrValue);
-      bool didCreateDoc = frameloader->Show(margin.width, margin.height,
-                                            scrolling, scrolling, this);
+      bool didCreateDoc =
+          frameloader->Show(margin.width, margin.height, scrolling, this);
       if (!weakThis.IsAlive()) {
         return;
       }
@@ -304,8 +306,11 @@ static void WrapBackgroundColorInOwnLayer(nsDisplayListBuilder* aBuilder,
     if (item->GetType() == DisplayItemType::TYPE_BACKGROUND_COLOR) {
       nsDisplayList tmpList;
       tmpList.AppendToTop(item);
-      item = MakeDisplayItem<nsDisplayOwnLayer>(
-          aBuilder, aFrame, &tmpList, aBuilder->CurrentActiveScrolledRoot());
+      item = MakeDisplayItemWithIndex<nsDisplayOwnLayer>(
+          aBuilder, aFrame, /* aIndex = */ nsDisplayOwnLayer::OwnLayerForSubdoc,
+          &tmpList, aBuilder->CurrentActiveScrolledRoot(),
+          nsDisplayOwnLayerFlags::None, mozilla::layers::ScrollbarData{}, true,
+          false);
     }
     if (item) {
       tempItems.AppendToTop(item);
@@ -602,12 +607,12 @@ nscoord nsSubDocumentFrame::GetIntrinsicBSize() {
 
 #ifdef DEBUG_FRAME_DUMP
 void nsSubDocumentFrame::List(FILE* out, const char* aPrefix,
-                              uint32_t aFlags) const {
+                              ListFlags aFlags) const {
   nsCString str;
   ListGeneric(str, aPrefix, aFlags);
   fprintf_stderr(out, "%s\n", str.get());
 
-  if (aFlags & TRAVERSE_SUBDOCUMENT_FRAMES) {
+  if (aFlags.contains(ListFlag::TraverseSubdocumentFrames)) {
     nsSubDocumentFrame* f = const_cast<nsSubDocumentFrame*>(this);
     nsIFrame* subdocRootFrame = f->GetSubdocumentRootFrame();
     if (subdocRootFrame) {
@@ -931,7 +936,6 @@ void nsSubDocumentFrame::DestroyFrom(nsIFrame* aDestructRoot,
         ::BeginSwapDocShellsForViews(mInnerView->GetFirstChild());
 
     if (detachedViews && detachedViews->GetFrame()) {
-      MOZ_ASSERT(mContent->OwnerDoc());
       frameloader->SetDetachedSubdocFrame(detachedViews->GetFrame(),
                                           mContent->OwnerDoc());
 
@@ -979,6 +983,7 @@ nsFrameLoader* nsSubDocumentFrame::FrameLoader() const {
 
 void nsSubDocumentFrame::ResetFrameLoader() {
   mFrameLoader = nullptr;
+  ClearDisplayItems();
   nsContentUtils::AddScriptRunner(new AsyncFrameInit(this));
 }
 
@@ -995,16 +1000,14 @@ nsIDocShell* nsSubDocumentFrame::GetDocShell() {
 static void DestroyDisplayItemDataForFrames(nsIFrame* aFrame) {
   FrameLayerBuilder::DestroyDisplayItemDataFor(aFrame);
 
-  nsIFrame::ChildListIterator lists(aFrame);
-  for (; !lists.IsDone(); lists.Next()) {
-    nsFrameList::Enumerator childFrames(lists.CurrentList());
-    for (; !childFrames.AtEnd(); childFrames.Next()) {
-      DestroyDisplayItemDataForFrames(childFrames.get());
+  for (const auto& childList : aFrame->ChildLists()) {
+    for (nsIFrame* child : childList.mList) {
+      DestroyDisplayItemDataForFrames(child);
     }
   }
 }
 
-static bool BeginSwapDocShellsForDocument(Document& aDocument, void*) {
+static bool BeginSwapDocShellsForDocument(Document& aDocument) {
   if (PresShell* presShell = aDocument.GetPresShell()) {
     // Disable painting while the views are detached, see bug 946929.
     presShell->SetNeverPainting(true);
@@ -1013,9 +1016,8 @@ static bool BeginSwapDocShellsForDocument(Document& aDocument, void*) {
       ::DestroyDisplayItemDataForFrames(rootFrame);
     }
   }
-  aDocument.EnumerateActivityObservers(nsPluginFrame::BeginSwapDocShells,
-                                       nullptr);
-  aDocument.EnumerateSubDocuments(BeginSwapDocShellsForDocument, nullptr);
+  aDocument.EnumerateActivityObservers(nsPluginFrame::BeginSwapDocShells);
+  aDocument.EnumerateSubDocuments(BeginSwapDocShellsForDocument);
   return true;
 }
 
@@ -1024,7 +1026,7 @@ static nsView* BeginSwapDocShellsForViews(nsView* aSibling) {
   nsView* removedViews = nullptr;
   while (aSibling) {
     if (Document* doc = ::GetDocumentFromView(aSibling)) {
-      ::BeginSwapDocShellsForDocument(*doc, nullptr);
+      ::BeginSwapDocShellsForDocument(*doc);
     }
     nsView* next = aSibling->GetNextSibling();
     aSibling->GetViewManager()->RemoveChild(aSibling);
@@ -1077,7 +1079,7 @@ nsresult nsSubDocumentFrame::BeginSwapDocShells(nsIFrame* aOther) {
   return NS_OK;
 }
 
-static bool EndSwapDocShellsForDocument(Document& aDocument, void*) {
+static bool EndSwapDocShellsForDocument(Document& aDocument) {
   // Our docshell and view trees have been updated for the new hierarchy.
   // Now also update all nsDeviceContext::mWidget to that of the
   // container view in the new hierarchy.
@@ -1098,16 +1100,15 @@ static bool EndSwapDocShellsForDocument(Document& aDocument, void*) {
     }
   }
 
-  aDocument.EnumerateActivityObservers(nsPluginFrame::EndSwapDocShells,
-                                       nullptr);
-  aDocument.EnumerateSubDocuments(EndSwapDocShellsForDocument, nullptr);
+  aDocument.EnumerateActivityObservers(nsPluginFrame::EndSwapDocShells);
+  aDocument.EnumerateSubDocuments(EndSwapDocShellsForDocument);
   return true;
 }
 
 static void EndSwapDocShellsForViews(nsView* aSibling) {
   for (; aSibling; aSibling = aSibling->GetNextSibling()) {
     if (Document* doc = ::GetDocumentFromView(aSibling)) {
-      ::EndSwapDocShellsForDocument(*doc, nullptr);
+      ::EndSwapDocShellsForDocument(*doc);
     }
     nsIFrame* frame = aSibling->GetFrame();
     if (frame) {

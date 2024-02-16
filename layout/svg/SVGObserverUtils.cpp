@@ -54,7 +54,7 @@ class URLAndReferrerInfoHashKey : public PLDHashEntryHdr {
       : PLDHashEntryHdr(std::move(aToMove)), mKey(std::move(aToMove.mKey)) {
     MOZ_COUNT_CTOR(URLAndReferrerInfoHashKey);
   }
-  ~URLAndReferrerInfoHashKey() { MOZ_COUNT_DTOR(URLAndReferrerInfoHashKey); }
+  MOZ_COUNTED_DTOR(URLAndReferrerInfoHashKey)
 
   const URLAndReferrerInfo* GetKey() const { return mKey; }
 
@@ -853,7 +853,7 @@ SVGMaskObserverList::SVGMaskObserverList(nsIFrame* aFrame) : mFrame(aFrame) {
 
   for (uint32_t i = 0; i < svgReset->mMask.mImageCount; i++) {
     const StyleComputedImageUrl* data =
-        svgReset->mMask.mLayers[i].mImage.GetURLValue();
+        svgReset->mMask.mLayers[i].mImage.GetImageRequestURLValue();
     RefPtr<URLAndReferrerInfo> maskUri;
     if (data) {
       maskUri = ResolveURLUsingLocalRef(aFrame, *data);
@@ -880,18 +880,16 @@ void SVGMaskObserverList::ResolveImage(uint32_t aIndex) {
   const nsStyleSVGReset* svgReset = mFrame->StyleSVGReset();
   MOZ_ASSERT(aIndex < svgReset->mMask.mImageCount);
 
-  nsStyleImage& image =
-      const_cast<nsStyleImage&>(svgReset->mMask.mLayers[aIndex].mImage);
-
-  if (!image.IsResolved()) {
-    MOZ_ASSERT(image.GetType() == nsStyleImageType::eStyleImageType_Image);
-    image.ResolveImage(*mFrame->PresContext()->Document(), nullptr);
-
-    mozilla::css::ImageLoader* imageLoader =
-        mFrame->PresContext()->Document()->StyleImageLoader();
-    if (imgRequestProxy* req = image.GetImageData()) {
-      imageLoader->AssociateRequestToFrame(req, mFrame, 0);
-    }
+  auto& image = const_cast<StyleImage&>(svgReset->mMask.mLayers[aIndex].mImage);
+  if (image.IsResolved()) {
+    return;
+  }
+  MOZ_ASSERT(image.IsImageRequestType());
+  Document* doc = mFrame->PresContext()->Document();
+  image.ResolveImage(*doc, nullptr);
+  if (imgRequestProxy* req = image.GetImageRequest()) {
+    // FIXME(emilio): What disassociates this request?
+    doc->StyleImageLoader()->AssociateRequestToFrame(req, mFrame, 0);
   }
 }
 
@@ -1267,13 +1265,12 @@ static nsSVGPaintingProperty* GetOrCreateClipPathObserver(
              "Require first continuation");
 
   const nsStyleSVGReset* svgStyleReset = aClippedFrame->StyleSVGReset();
-  if (svgStyleReset->mClipPath.GetType() != StyleShapeSourceType::Image) {
+  if (!svgStyleReset->mClipPath.IsUrl()) {
     return nullptr;
   }
-  const auto* url = svgStyleReset->mClipPath.ShapeImage().GetURLValue();
-  MOZ_ASSERT(url);
+  const auto& url = svgStyleReset->mClipPath.AsUrl();
   RefPtr<URLAndReferrerInfo> pathURI =
-      ResolveURLUsingLocalRef(aClippedFrame, *url);
+      ResolveURLUsingLocalRef(aClippedFrame, url);
   return GetPaintingProperty(pathURI, aClippedFrame, ClipPathProperty());
 }
 
@@ -1412,7 +1409,7 @@ void SVGObserverUtils::InitiateResourceDocLoads(nsIFrame* aFrame) {
 }
 
 void SVGObserverUtils::RemoveTextPathObserver(nsIFrame* aTextPathFrame) {
-  aTextPathFrame->DeleteProperty(HrefAsTextPathProperty());
+  aTextPathFrame->RemoveProperty(HrefAsTextPathProperty());
 }
 
 nsIFrame* SVGObserverUtils::GetAndObserveTemplate(
@@ -1448,7 +1445,7 @@ nsIFrame* SVGObserverUtils::GetAndObserveTemplate(
 }
 
 void SVGObserverUtils::RemoveTemplateObserver(nsIFrame* aFrame) {
-  aFrame->DeleteProperty(HrefToTemplateProperty());
+  aFrame->RemoveProperty(HrefToTemplateProperty());
 }
 
 Element* SVGObserverUtils::GetAndObserveBackgroundImage(nsIFrame* aFrame,
@@ -1547,15 +1544,15 @@ void SVGObserverUtils::UpdateEffects(nsIFrame* aFrame) {
   NS_ASSERTION(aFrame->GetContent()->IsElement(),
                "aFrame's content should be an element");
 
-  aFrame->DeleteProperty(FilterProperty());
-  aFrame->DeleteProperty(MaskProperty());
-  aFrame->DeleteProperty(ClipPathProperty());
-  aFrame->DeleteProperty(MarkerStartProperty());
-  aFrame->DeleteProperty(MarkerMidProperty());
-  aFrame->DeleteProperty(MarkerEndProperty());
-  aFrame->DeleteProperty(FillProperty());
-  aFrame->DeleteProperty(StrokeProperty());
-  aFrame->DeleteProperty(BackgroundImageProperty());
+  aFrame->RemoveProperty(FilterProperty());
+  aFrame->RemoveProperty(MaskProperty());
+  aFrame->RemoveProperty(ClipPathProperty());
+  aFrame->RemoveProperty(MarkerStartProperty());
+  aFrame->RemoveProperty(MarkerMidProperty());
+  aFrame->RemoveProperty(MarkerEndProperty());
+  aFrame->RemoveProperty(FillProperty());
+  aFrame->RemoveProperty(StrokeProperty());
+  aFrame->RemoveProperty(BackgroundImageProperty());
 
   // Ensure that the filter is repainted correctly
   // We can't do that in OnRenderingChange as the referenced frame may
@@ -1621,7 +1618,7 @@ void SVGObserverUtils::InvalidateRenderingObservers(nsIFrame* aFrame) {
   }
 
   // If the rendering has changed, the bounds may well have changed too:
-  aFrame->DeleteProperty(nsSVGUtils::ObjectBoundingBoxProperty());
+  aFrame->RemoveProperty(nsSVGUtils::ObjectBoundingBoxProperty());
 
   SVGRenderingObserverSet* observers = GetObserverSet(content->AsElement());
   if (observers) {
@@ -1645,10 +1642,9 @@ void SVGObserverUtils::InvalidateRenderingObservers(nsIFrame* aFrame) {
 
 void SVGObserverUtils::InvalidateDirectRenderingObservers(
     Element* aElement, uint32_t aFlags /* = 0 */) {
-  nsIFrame* frame = aElement->GetPrimaryFrame();
-  if (frame) {
+  if (nsIFrame* frame = aElement->GetPrimaryFrame()) {
     // If the rendering has changed, the bounds may well have changed too:
-    frame->DeleteProperty(nsSVGUtils::ObjectBoundingBoxProperty());
+    frame->RemoveProperty(nsSVGUtils::ObjectBoundingBoxProperty());
   }
 
   if (aElement->HasRenderingObservers()) {

@@ -222,7 +222,8 @@ char* nsLineBox::StateToString(char* aBuf, int32_t aBufSize) const {
   return aBuf;
 }
 
-void nsLineBox::List(FILE* out, int32_t aIndent, uint32_t aFlags) const {
+void nsLineBox::List(FILE* out, int32_t aIndent,
+                     nsIFrame::ListFlags aFlags) const {
   nsCString str;
   while (aIndent-- > 0) {
     str += "  ";
@@ -230,7 +231,8 @@ void nsLineBox::List(FILE* out, int32_t aIndent, uint32_t aFlags) const {
   List(out, str.get(), aFlags);
 }
 
-void nsLineBox::List(FILE* out, const char* aPrefix, uint32_t aFlags) const {
+void nsLineBox::List(FILE* out, const char* aPrefix,
+                     nsIFrame::ListFlags aFlags) const {
   nsCString str(aPrefix);
   char cbuf[100];
   str += nsPrintfCString("line %p: count=%d state=%s ",
@@ -594,13 +596,13 @@ nsresult nsLineIterator::Init(nsLineList& aLines, bool aRightToLeft) {
   return NS_OK;
 }
 
-int32_t nsLineIterator::GetNumLines() { return mNumLines; }
+int32_t nsLineIterator::GetNumLines() const { return mNumLines; }
 
 bool nsLineIterator::GetDirection() { return mRightToLeft; }
 
 NS_IMETHODIMP
 nsLineIterator::GetLine(int32_t aLineNumber, nsIFrame** aFirstFrameOnLine,
-                        int32_t* aNumFramesOnLine, nsRect& aLineBounds) {
+                        int32_t* aNumFramesOnLine, nsRect& aLineBounds) const {
   NS_ENSURE_ARG_POINTER(aFirstFrameOnLine);
   NS_ENSURE_ARG_POINTER(aNumFramesOnLine);
 
@@ -663,7 +665,7 @@ NS_IMETHODIMP
 nsLineIterator::FindFrameAt(int32_t aLineNumber, nsPoint aPos,
                             nsIFrame** aFrameFound,
                             bool* aPosIsBeforeFirstFrame,
-                            bool* aPosIsAfterLastFrame) {
+                            bool* aPosIsAfterLastFrame) const {
   MOZ_ASSERT(aFrameFound && aPosIsBeforeFirstFrame && aPosIsAfterLastFrame,
              "null OUT ptr");
 
@@ -744,7 +746,8 @@ nsLineIterator::FindFrameAt(int32_t aLineNumber, nsPoint aPos,
 }
 
 NS_IMETHODIMP
-nsLineIterator::GetNextSiblingOnLine(nsIFrame*& aFrame, int32_t aLineNumber) {
+nsLineIterator::GetNextSiblingOnLine(nsIFrame*& aFrame,
+                                     int32_t aLineNumber) const {
   aFrame = aFrame->GetNextSibling();
   return NS_OK;
 }

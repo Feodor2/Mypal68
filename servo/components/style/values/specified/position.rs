@@ -12,18 +12,19 @@ use crate::selector_map::PrecomputedHashMap;
 use crate::str::HTML_SPACE_CHARACTERS;
 use crate::values::computed::LengthPercentage as ComputedLengthPercentage;
 use crate::values::computed::{Context, Percentage, ToComputedValue};
+use crate::values::generics::position::AspectRatio as GenericAspectRatio;
 use crate::values::generics::position::Position as GenericPosition;
 use crate::values::generics::position::PositionOrAuto as GenericPositionOrAuto;
+use crate::values::generics::position::Ratio as GenericRatio;
 use crate::values::generics::position::ZIndex as GenericZIndex;
-use crate::values::specified::{AllowQuirks, Integer, LengthPercentage};
-use crate::Atom;
-use crate::Zero;
+use crate::values::specified::{AllowQuirks, Integer, LengthPercentage, NonNegativeNumber};
+use crate::{Atom, One, Zero};
 use cssparser::Parser;
 use selectors::parser::SelectorParseErrorKind;
 use servo_arc::Arc;
 use std::fmt::{self, Write};
-use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
 use style_traits::values::specified::AllowedNumericType;
+use style_traits::{CssWriter, ParseError, StyleParseErrorKind, ToCss};
 
 /// The specified value of a CSS `<position>`
 pub type Position = GenericPosition<HorizontalPosition, VerticalPosition>;
@@ -295,10 +296,8 @@ impl<S: Side> ToComputedValue for PositionComponent<S> {
             },
             PositionComponent::Side(ref keyword, Some(ref length)) if !keyword.is_start() => {
                 let length = length.to_computed_value(context);
-                let p = Percentage(1. - length.percentage());
-                let l = -length.unclamped_length();
                 // We represent `<end-side> <length>` as `calc(100% - <length>)`.
-                ComputedLengthPercentage::new_calc(l, Some(p), AllowedNumericType::All)
+                ComputedLengthPercentage::hundred_percent_minus(length, AllowedNumericType::All)
             },
             PositionComponent::Side(_, Some(ref length)) |
             PositionComponent::Length(ref length) => length.to_computed_value(context),
@@ -350,32 +349,26 @@ impl Side for VerticalPositionKeyword {
     }
 }
 
-#[derive(
-    Clone,
-    Copy,
-    Debug,
-    Eq,
-    MallocSizeOf,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToComputedValue,
-    ToCss,
-    ToResolvedValue,
-    ToShmem,
-)]
-/// Auto-placement algorithm Option
-pub enum AutoFlow {
-    /// The auto-placement algorithm places items by filling each row in turn,
-    /// adding new rows as necessary.
-    Row,
-    /// The auto-placement algorithm places items by filling each column in turn,
-    /// adding new columns as necessary.
-    Column,
-}
-
-/// If `dense` is specified, `row` is implied.
-fn is_row_dense(autoflow: &AutoFlow, dense: &bool) -> bool {
-    *autoflow == AutoFlow::Row && *dense
+bitflags! {
+    /// Controls how the auto-placement algorithm works
+    /// specifying exactly how auto-placed items get flowed into the grid
+    #[derive(
+        MallocSizeOf,
+        SpecifiedValueInfo,
+        ToComputedValue,
+        ToResolvedValue,
+        ToShmem
+    )]
+    #[value_info(other_values = "row,column,dense")]
+    #[repr(C)]
+    pub struct GridAutoFlow: u8 {
+        /// 'row' - mutually exclusive with 'column'
+        const ROW = 1 << 0;
+        /// 'column' - mutually exclusive with 'row'
+        const COLUMN = 1 << 1;
+        /// 'dense'
+        const DENSE = 1 << 2;
+    }
 }
 
 #[derive(
@@ -391,51 +384,109 @@ fn is_row_dense(autoflow: &AutoFlow, dense: &bool) -> bool {
     ToResolvedValue,
     ToShmem,
 )]
-/// Controls how the auto-placement algorithm works
-/// specifying exactly how auto-placed items get flowed into the grid
-pub struct GridAutoFlow {
-    /// Specifiy how auto-placement algorithm fills each `row` or `column` in turn
-    #[css(contextual_skip_if = "is_row_dense")]
-    pub autoflow: AutoFlow,
-    /// Specify use `dense` packing algorithm or not
-    #[css(represents_keyword)]
-    pub dense: bool,
+/// Masonry auto-placement algorithm packing.
+pub enum MasonryPlacement {
+    /// Place the item in the track(s) with the smallest extent so far.
+    Pack,
+    /// Place the item after the last item, from start to end.
+    Next,
 }
 
-impl GridAutoFlow {
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+/// Masonry auto-placement algorithm item sorting option.
+pub enum MasonryItemOrder {
+    /// Place all items with a definite placement before auto-placed items.
+    DefiniteFirst,
+    /// Place items in `order-modified document order`.
+    Ordered,
+}
+
+#[derive(
+    Clone,
+    Copy,
+    Debug,
+    Eq,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToCss,
+    ToResolvedValue,
+    ToShmem,
+)]
+/// Controls how the Masonry layout algorithm works
+/// specifying exactly how auto-placed items get flowed in the masonry axis.
+pub struct MasonryAutoFlow {
+    /// Specify how to pick a auto-placement track.
+    #[css(contextual_skip_if = "is_pack_with_non_default_order")]
+    pub placement: MasonryPlacement,
+    /// Specify how to pick an item to place.
+    #[css(skip_if = "is_item_order_definite_first")]
+    pub order: MasonryItemOrder,
+}
+
+#[inline]
+fn is_pack_with_non_default_order(placement: &MasonryPlacement, order: &MasonryItemOrder) -> bool {
+    *placement == MasonryPlacement::Pack && *order != MasonryItemOrder::DefiniteFirst
+}
+
+#[inline]
+fn is_item_order_definite_first(order: &MasonryItemOrder) -> bool {
+    *order == MasonryItemOrder::DefiniteFirst
+}
+
+impl MasonryAutoFlow {
     #[inline]
-    /// Get default `grid-auto-flow` as `row`
-    pub fn row() -> GridAutoFlow {
-        GridAutoFlow {
-            autoflow: AutoFlow::Row,
-            dense: false,
+    /// Get initial `masonry-auto-flow` value.
+    pub fn initial() -> MasonryAutoFlow {
+        MasonryAutoFlow {
+            placement: MasonryPlacement::Pack,
+            order: MasonryItemOrder::DefiniteFirst,
         }
     }
 }
 
-impl Parse for GridAutoFlow {
-    /// [ row | column ] || dense
+impl Parse for MasonryAutoFlow {
+    /// [ definite-first | ordered ] || [ pack | next ]
     fn parse<'i, 't>(
         _context: &ParserContext,
         input: &mut Parser<'i, 't>,
-    ) -> Result<GridAutoFlow, ParseError<'i>> {
-        let mut value = None;
-        let mut dense = false;
-
+    ) -> Result<MasonryAutoFlow, ParseError<'i>> {
+        let mut value = MasonryAutoFlow::initial();
+        let mut got_placement = false;
+        let mut got_order = false;
         while !input.is_exhausted() {
             let location = input.current_source_location();
             let ident = input.expect_ident()?;
             let success = match_ignore_ascii_case! { &ident,
-                "row" if value.is_none() => {
-                    value = Some(AutoFlow::Row);
+                "pack" if !got_placement => {
+                    got_placement = true;
                     true
                 },
-                "column" if value.is_none() => {
-                    value = Some(AutoFlow::Column);
+                "next" if !got_placement => {
+                    value.placement = MasonryPlacement::Next;
+                    got_placement = true;
                     true
                 },
-                "dense" if !dense => {
-                    dense = true;
+                "definite-first" if !got_order => {
+                    got_order = true;
+                    true
+                },
+                "ordered" if !got_order => {
+                    value.order = MasonryItemOrder::Ordered;
+                    got_order = true;
                     true
                 },
                 _ => false
@@ -446,11 +497,8 @@ impl Parse for GridAutoFlow {
             }
         }
 
-        if value.is_some() || dense {
-            Ok(GridAutoFlow {
-                autoflow: value.unwrap_or(AutoFlow::Row),
-                dense: dense,
-            })
+        if got_placement || got_order {
+            Ok(value)
         } else {
             Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
         }
@@ -458,35 +506,100 @@ impl Parse for GridAutoFlow {
 }
 
 #[cfg(feature = "gecko")]
-impl From<u8> for GridAutoFlow {
-    fn from(bits: u8) -> GridAutoFlow {
+impl From<u8> for MasonryAutoFlow {
+    fn from(bits: u8) -> MasonryAutoFlow {
         use crate::gecko_bindings::structs;
-
-        GridAutoFlow {
-            autoflow: if bits & structs::NS_STYLE_GRID_AUTO_FLOW_ROW as u8 != 0 {
-                AutoFlow::Row
-            } else {
-                AutoFlow::Column
-            },
-            dense: bits & structs::NS_STYLE_GRID_AUTO_FLOW_DENSE as u8 != 0,
+        let mut value = MasonryAutoFlow::initial();
+        if bits & structs::NS_STYLE_MASONRY_PLACEMENT_PACK as u8 == 0 {
+            value.placement = MasonryPlacement::Next;
         }
+        if bits & structs::NS_STYLE_MASONRY_ORDER_DEFINITE_FIRST as u8 == 0 {
+            value.order = MasonryItemOrder::Ordered;
+        }
+        value
     }
 }
 
 #[cfg(feature = "gecko")]
-impl From<GridAutoFlow> for u8 {
-    fn from(v: GridAutoFlow) -> u8 {
+impl From<MasonryAutoFlow> for u8 {
+    fn from(v: MasonryAutoFlow) -> u8 {
         use crate::gecko_bindings::structs;
 
-        let mut result: u8 = match v.autoflow {
-            AutoFlow::Row => structs::NS_STYLE_GRID_AUTO_FLOW_ROW as u8,
-            AutoFlow::Column => structs::NS_STYLE_GRID_AUTO_FLOW_COLUMN as u8,
-        };
-
-        if v.dense {
-            result |= structs::NS_STYLE_GRID_AUTO_FLOW_DENSE as u8;
+        let mut result: u8 = 0;
+        if v.placement == MasonryPlacement::Pack {
+            result |= structs::NS_STYLE_MASONRY_PLACEMENT_PACK as u8;
+        }
+        if v.order == MasonryItemOrder::DefiniteFirst {
+            result |= structs::NS_STYLE_MASONRY_ORDER_DEFINITE_FIRST as u8;
         }
         result
+    }
+}
+
+impl Parse for GridAutoFlow {
+    /// [ row | column ] || dense
+    fn parse<'i, 't>(
+        _context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<GridAutoFlow, ParseError<'i>> {
+        let mut track = None;
+        let mut dense = GridAutoFlow::empty();
+
+        while !input.is_exhausted() {
+            let location = input.current_source_location();
+            let ident = input.expect_ident()?;
+            let success = match_ignore_ascii_case! { &ident,
+                "row" if track.is_none() => {
+                    track = Some(GridAutoFlow::ROW);
+                    true
+                },
+                "column" if track.is_none() => {
+                    track = Some(GridAutoFlow::COLUMN);
+                    true
+                },
+                "dense" if dense.is_empty() => {
+                    dense = GridAutoFlow::DENSE;
+                    true
+                },
+                _ => false,
+            };
+            if !success {
+                return Err(location
+                    .new_custom_error(SelectorParseErrorKind::UnexpectedIdent(ident.clone())));
+            }
+        }
+
+        if track.is_some() || !dense.is_empty() {
+            Ok(track.unwrap_or(GridAutoFlow::ROW) | dense)
+        } else {
+            Err(input.new_custom_error(StyleParseErrorKind::UnspecifiedError))
+        }
+    }
+}
+
+impl ToCss for GridAutoFlow {
+    fn to_css<W>(&self, dest: &mut CssWriter<W>) -> fmt::Result
+    where
+        W: Write,
+    {
+        if *self == GridAutoFlow::ROW {
+            return dest.write_str("row");
+        }
+
+        if *self == GridAutoFlow::COLUMN {
+            return dest.write_str("column");
+        }
+
+        if *self == GridAutoFlow::ROW | GridAutoFlow::DENSE {
+            return dest.write_str("dense");
+        }
+
+        if *self == GridAutoFlow::COLUMN | GridAutoFlow::DENSE {
+            return dest.write_str("column dense");
+        }
+
+        debug_assert!(false, "Unknown or invalid grid-autoflow value");
+        Ok(())
     }
 }
 
@@ -592,7 +705,7 @@ impl TemplateAreas {
         Ok(TemplateAreas {
             areas: areas.into(),
             strings: strings.into(),
-            width: width,
+            width,
         })
     }
 }
@@ -642,7 +755,16 @@ impl Parse for TemplateAreasArc {
 /// A range of rows or columns. Using this instead of std::ops::Range for FFI
 /// purposes.
 #[repr(C)]
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToShmem)]
+#[derive(
+    Clone,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
 pub struct UnsignedRange {
     /// The start of the range.
     pub start: u32,
@@ -650,7 +772,16 @@ pub struct UnsignedRange {
     pub end: u32,
 }
 
-#[derive(Clone, Debug, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToShmem)]
+#[derive(
+    Clone,
+    Debug,
+    MallocSizeOf,
+    PartialEq,
+    SpecifiedValueInfo,
+    ToComputedValue,
+    ToResolvedValue,
+    ToShmem,
+)]
 #[repr(C)]
 /// Not associated with any particular grid item, but can be referenced from the
 /// grid-placement properties.
@@ -733,3 +864,74 @@ impl GridTemplateAreas {
 
 /// A specified value for the `z-index` property.
 pub type ZIndex = GenericZIndex<Integer>;
+
+/// A specified value for the `aspect-ratio` property.
+pub type AspectRatio = GenericAspectRatio<NonNegativeNumber>;
+
+impl Parse for AspectRatio {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        use crate::values::generics::position::PreferredRatio;
+
+        let location = input.current_source_location();
+        let mut auto = input.try(|i| i.expect_ident_matching("auto"));
+        let ratio = input.try(|i| Ratio::parse(context, i));
+        if auto.is_err() {
+            auto = input.try(|i| i.expect_ident_matching("auto"));
+        }
+
+        if auto.is_err() && ratio.is_err() {
+            return Err(location.new_custom_error(StyleParseErrorKind::UnspecifiedError));
+        }
+
+        Ok(AspectRatio {
+            auto: auto.is_ok(),
+            ratio: match ratio {
+                Ok(ratio) => PreferredRatio::Ratio(ratio),
+                Err(..) => PreferredRatio::None,
+            },
+        })
+    }
+}
+
+impl AspectRatio {
+    /// Returns Self by a valid ratio.
+    pub fn from_mapped_ratio(w: f32, h: f32) -> Self {
+        use crate::values::generics::position::PreferredRatio;
+        AspectRatio {
+            auto: true,
+            ratio: PreferredRatio::Ratio(GenericRatio(
+                NonNegativeNumber::new(w),
+                NonNegativeNumber::new(h),
+            )),
+        }
+    }
+}
+
+/// A specified <ratio> value.
+pub type Ratio = GenericRatio<NonNegativeNumber>;
+
+// https://drafts.csswg.org/css-values-4/#ratios
+impl Parse for Ratio {
+    fn parse<'i, 't>(
+        context: &ParserContext,
+        input: &mut Parser<'i, 't>,
+    ) -> Result<Self, ParseError<'i>> {
+        let a = NonNegativeNumber::parse(context, input)?;
+        let b = match input.try_parse(|input| input.expect_delim('/')) {
+            Ok(()) => NonNegativeNumber::parse(context, input)?,
+            _ => One::one(),
+        };
+
+        // The computed value of a <ratio> is the pair of numbers provided, unless
+        // both numbers are zero, in which case the computed value is the pair (1, 0)
+        // (same as 1 / 0).
+        // https://drafts.csswg.org/css-values-4/#ratios
+        if a.is_zero() && b.is_zero() {
+            return Ok(GenericRatio(One::one(), Zero::zero()));
+        }
+        return Ok(GenericRatio(a, b));
+    }
+}

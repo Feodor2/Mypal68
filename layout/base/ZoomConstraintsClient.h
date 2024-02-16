@@ -15,6 +15,7 @@
 namespace mozilla {
 class PresShell;
 namespace dom {
+class Document;
 class EventTarget;
 }  // namespace dom
 }  // namespace mozilla

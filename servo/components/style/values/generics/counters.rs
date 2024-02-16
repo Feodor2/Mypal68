@@ -8,7 +8,7 @@
 use crate::computed_values::list_style_type::T as ListStyleType;
 #[cfg(feature = "gecko")]
 use crate::values::generics::CounterStyle;
-#[cfg(feature = "gecko")]
+#[cfg(any(feature = "gecko", feature = "servo-layout-2020"))]
 use crate::values::specified::Attr;
 use crate::values::CustomIdent;
 use std::ops::Deref;
@@ -143,15 +143,7 @@ fn is_decimal(counter_type: &CounterStyleType) -> bool {
 ///
 /// https://drafts.csswg.org/css-content/#propdef-content
 #[derive(
-    Clone,
-    Debug,
-    Eq,
-    MallocSizeOf,
-    PartialEq,
-    SpecifiedValueInfo,
-    ToComputedValue,
-    ToCss,
-    ToShmem,
+    Clone, Debug, Eq, MallocSizeOf, PartialEq, SpecifiedValueInfo, ToComputedValue, ToCss, ToShmem,
 )]
 #[repr(u8)]
 pub enum GenericContent<ImageUrl> {
@@ -166,8 +158,9 @@ pub enum GenericContent<ImageUrl> {
 pub use self::GenericContent as Content;
 
 impl<ImageUrl> Content<ImageUrl> {
+    /// Whether `self` represents list of items.
     #[inline]
-    pub(crate) fn is_items(&self) -> bool {
+    pub fn is_items(&self) -> bool {
         matches!(*self, Self::Items(..))
     }
 
@@ -217,7 +210,7 @@ pub enum GenericContentItem<ImageUrl> {
     #[cfg(feature = "gecko")]
     MozAltContent,
     /// `attr([namespace? `|`]? ident)`
-    #[cfg(feature = "gecko")]
+    #[cfg(any(feature = "gecko", feature = "servo-layout-2020"))]
     Attr(Attr),
     /// `url(url)`
     Url(ImageUrl),

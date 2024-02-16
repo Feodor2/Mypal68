@@ -13,7 +13,7 @@
 [package]
 edition = "2018"
 name = "rkv"
-version = "0.10.2"
+version = "0.10.4"
 authors = ["Richard Newman <rnewman@twinql.com>", "Nan Jiang <najiang@mozilla.com>", "Myk Melez <myk@mykzilla.org>", "Victor Porof <vporof@mozilla.com>"]
 exclude = ["/tests/envs/*"]
 description = "a simple, humane, typed Rust interface to LMDB"
@@ -45,7 +45,7 @@ default_features = false
 version = "1.0"
 
 [dependencies.lmdb-rkv]
-version = "0.12.3"
+version = "0.14"
 
 [dependencies.ordered-float]
 version = "1.0"
@@ -60,7 +60,7 @@ version = "1.0"
 version = "2.0"
 
 [dependencies.uuid]
-version = "0.7"
+version = "0.8"
 [dev-dependencies.byteorder]
 version = "1"
 

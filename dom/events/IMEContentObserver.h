@@ -168,7 +168,7 @@ class IMEContentObserver final : public nsStubMutationObserver,
   void CancelEditAction();
 
  private:
-  ~IMEContentObserver() {}
+  ~IMEContentObserver() = default;
 
   enum State {
     eState_NotObserving,

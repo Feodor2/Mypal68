@@ -16,7 +16,7 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(TableCell)
 namespace mozilla {
 namespace dom {
 
-HTMLTableCellElement::~HTMLTableCellElement() {}
+HTMLTableCellElement::~HTMLTableCellElement() = default;
 
 JSObject* HTMLTableCellElement::WrapNode(JSContext* aCx,
                                          JS::Handle<JSObject*> aGivenProto) {

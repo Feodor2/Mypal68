@@ -64,7 +64,7 @@ FileSystemRootDirectoryReader::FileSystemRootDirectoryReader(
   MOZ_ASSERT(aFileSystem);
 }
 
-FileSystemRootDirectoryReader::~FileSystemRootDirectoryReader() {}
+FileSystemRootDirectoryReader::~FileSystemRootDirectoryReader() = default;
 
 void FileSystemRootDirectoryReader::ReadEntries(
     FileSystemEntriesCallback& aSuccessCallback,

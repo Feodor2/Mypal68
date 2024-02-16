@@ -12,7 +12,7 @@ namespace media {
 MediaSystemResourceManagerChild::MediaSystemResourceManagerChild()
     : mDestroyed(false), mManager(nullptr) {}
 
-MediaSystemResourceManagerChild::~MediaSystemResourceManagerChild() {}
+MediaSystemResourceManagerChild::~MediaSystemResourceManagerChild() = default;
 
 mozilla::ipc::IPCResult MediaSystemResourceManagerChild::RecvResponse(
     const uint32_t& aId, const bool& aSuccess) {

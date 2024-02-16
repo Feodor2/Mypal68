@@ -26,13 +26,15 @@ class Document;
 // Attribute helper class used to wrap up an attribute with a dom
 // object that implements the DOM Attr interface.
 class Attr final : public nsINode {
-  virtual ~Attr() {}
+  virtual ~Attr() = default;
 
  public:
   Attr(nsDOMAttributeMap* aAttrMap, already_AddRefed<dom::NodeInfo>&& aNodeInfo,
        const nsAString& aValue);
 
-  NS_DECL_CYCLE_COLLECTING_ISUPPORTS
+  NS_DECL_CYCLE_COLLECTING_ISUPPORTS_FINAL_DELETECYCLECOLLECTABLE
+
+  NS_DECL_DOMARENA_DESTROY
 
   NS_IMPL_FROMNODE_HELPER(Attr, IsAttr())
 

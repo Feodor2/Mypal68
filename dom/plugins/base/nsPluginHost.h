@@ -197,8 +197,7 @@ class nsPluginHost final : public nsIPluginHost,
 
   static nsresult PostPluginUnloadEvent(PRLibrary* aLibrary);
 
-  void PluginCrashed(nsNPAPIPlugin* plugin, const nsAString& pluginDumpID,
-                     const nsAString& browserDumpID);
+  void PluginCrashed(nsNPAPIPlugin* plugin, const nsAString& pluginDumpID);
 
   nsNPAPIPluginInstance* FindInstance(const char* mimetype);
   nsNPAPIPluginInstance* FindOldestStoppedInstance();

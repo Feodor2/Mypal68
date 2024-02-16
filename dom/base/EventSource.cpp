@@ -929,10 +929,9 @@ void EventSourceImpl::SetupHttpChannel() {
 nsresult EventSourceImpl::SetupReferrerInfo() {
   AssertIsOnMainThread();
   MOZ_ASSERT(!IsShutDown());
-  nsCOMPtr<Document> doc = mEventSource->GetDocumentIfCurrent();
-  if (doc) {
-    nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
-    referrerInfo->InitWithDocument(doc);
+
+  if (nsCOMPtr<Document> doc = mEventSource->GetDocumentIfCurrent()) {
+    auto referrerInfo = MakeRefPtr<ReferrerInfo>(*doc);
     nsresult rv = mHttpChannel->SetReferrerInfoWithoutClone(referrerInfo);
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -1781,7 +1780,7 @@ EventSource::EventSource(nsIGlobalObject* aGlobal,
   mImpl = new EventSourceImpl(this, aCookieSettings);
 }
 
-EventSource::~EventSource() {}
+EventSource::~EventSource() = default;
 
 nsresult EventSource::CreateAndDispatchSimpleEvent(const nsAString& aName) {
   RefPtr<Event> event = NS_NewDOMEvent(this, nullptr, nullptr);

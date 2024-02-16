@@ -23,6 +23,7 @@
 #include "mozilla/dom/BrowserBridgeParent.h"
 #include "mozilla/dom/RemoteWebProgress.h"
 #include "mozilla/dom/RemoteWebProgressRequest.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/EventStateManager.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
@@ -633,7 +634,7 @@ void BrowserParent::Destroy() {
 
   mIsDestroyed = true;
 
-  ContentParent::NotifyTabDestroying(this->GetTabId(), Manager()->ChildID());
+  Manager()->NotifyTabDestroying();
 
   mMarkedDestroying = true;
 }
@@ -648,13 +649,13 @@ mozilla::ipc::IPCResult BrowserParent::RecvEnsureLayersConnected(
 
 mozilla::ipc::IPCResult BrowserParent::Recv__delete__() {
   MOZ_RELEASE_ASSERT(XRE_IsParentProcess());
-  ContentParent::UnregisterRemoteFrame(mTabId, Manager()->ChildID(),
-                                       mMarkedDestroying);
-
+  Manager()->NotifyTabDestroyed(mTabId, mMarkedDestroying);
   return IPC_OK();
 }
 
 void BrowserParent::ActorDestroy(ActorDestroyReason why) {
+  ContentProcessManager::GetSingleton()->UnregisterRemoteFrame(mTabId);
+
   if (mRenderFrame.IsInitialized()) {
     // It's important to unmap layers after the remote browser has been
     // destroyed, otherwise it may still send messages to the compositor which
@@ -1115,20 +1116,15 @@ void BrowserParent::Deactivate(bool aWindowLowering) {
   }
 }
 
+#ifdef ACCESSIBILITY
 a11y::PDocAccessibleParent* BrowserParent::AllocPDocAccessibleParent(
     PDocAccessibleParent* aParent, const uint64_t&, const uint32_t&,
     const IAccessibleHolder&) {
-#ifdef ACCESSIBILITY
   return new a11y::DocAccessibleParent();
-#else
-  return nullptr;
-#endif
 }
 
 bool BrowserParent::DeallocPDocAccessibleParent(PDocAccessibleParent* aParent) {
-#ifdef ACCESSIBILITY
   delete static_cast<a11y::DocAccessibleParent*>(aParent);
-#endif
   return true;
 }
 
@@ -1136,7 +1132,6 @@ mozilla::ipc::IPCResult BrowserParent::RecvPDocAccessibleConstructor(
     PDocAccessibleParent* aDoc, PDocAccessibleParent* aParentDoc,
     const uint64_t& aParentID, const uint32_t& aMsaaID,
     const IAccessibleHolder& aDocCOMProxy) {
-#ifdef ACCESSIBILITY
   auto doc = static_cast<a11y::DocAccessibleParent*>(aDoc);
 
   // If this tab is already shutting down just mark the new actor as shutdown
@@ -1197,9 +1192,9 @@ mozilla::ipc::IPCResult BrowserParent::RecvPDocAccessibleConstructor(
     }
 #  endif
   }
-#endif
   return IPC_OK();
 }
+#endif
 
 PFilePickerParent* BrowserParent::AllocPFilePickerParent(const nsString& aTitle,
                                                          const int16_t& aMode) {
@@ -1547,8 +1542,9 @@ mozilla::ipc::IPCResult BrowserParent::RecvRequestNativeKeyBindings(
     return IPC_OK();
   }
 
-  localEvent.InitEditCommandsFor(keyBindingsType);
-  *aCommands = localEvent.EditCommandsConstRef(keyBindingsType);
+  if (localEvent.InitEditCommandsFor(keyBindingsType)) {
+    *aCommands = localEvent.EditCommandsConstRef(keyBindingsType);
+  }
 
   return IPC_OK();
 }

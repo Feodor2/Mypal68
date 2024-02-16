@@ -340,7 +340,7 @@ struct RefCounter {
   int mVal;
 
  private:
-  ~RefCounter() {}
+  ~RefCounter() = default;
 };
 
 /*

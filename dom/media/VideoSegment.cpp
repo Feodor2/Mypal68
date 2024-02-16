@@ -26,7 +26,7 @@ VideoFrame::VideoFrame()
       mForceBlack(false),
       mPrincipalHandle(PRINCIPAL_HANDLE_NONE) {}
 
-VideoFrame::~VideoFrame() {}
+VideoFrame::~VideoFrame() = default;
 
 void VideoFrame::SetNull() {
   mImage = nullptr;
@@ -108,6 +108,6 @@ VideoSegment::VideoSegment()
 VideoSegment::VideoSegment(VideoSegment&& aSegment)
     : MediaSegmentBase<VideoSegment, VideoChunk>(std::move(aSegment)) {}
 
-VideoSegment::~VideoSegment() {}
+VideoSegment::~VideoSegment() = default;
 
 }  // namespace mozilla

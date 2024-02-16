@@ -33,7 +33,7 @@ class SourceBufferResource;
 
 class SourceBufferTaskQueue {
  public:
-  SourceBufferTaskQueue() {}
+  SourceBufferTaskQueue() = default;
 
   ~SourceBufferTaskQueue() {
     MOZ_ASSERT(mQueue.IsEmpty(), "All tasks must have been processed");

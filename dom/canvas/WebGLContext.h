@@ -782,9 +782,9 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
 
   //////////////////////////
 
-  typedef dom::Float32ArrayOrUnrestrictedFloatSequence Float32ListU;
-  typedef dom::Int32ArrayOrLongSequence Int32ListU;
-  typedef dom::Uint32ArrayOrUnsignedLongSequence Uint32ListU;
+  typedef dom::MaybeSharedFloat32ArrayOrUnrestrictedFloatSequence Float32ListU;
+  typedef dom::MaybeSharedInt32ArrayOrLongSequence Int32ListU;
+  typedef dom::MaybeSharedUint32ArrayOrUnsignedLongSequence Uint32ListU;
 
  protected:
   template <typename elemT, typename viewT>
@@ -794,7 +794,7 @@ class WebGLContext : public nsICanvasRenderingContextInternal,
 
    private:
     static size_t ComputeAndReturnLength(const viewT& view) {
-      view.ComputeLengthAndData();
+      view.ComputeState();
       return view.Length();
     }
 

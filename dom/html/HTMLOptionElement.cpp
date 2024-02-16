@@ -3,6 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/dom/HTMLOptionElement.h"
+
+#include "HTMLOptGroupElement.h"
 #include "mozilla/dom/HTMLOptionElementBinding.h"
 #include "mozilla/dom/HTMLSelectElement.h"
 #include "nsGkAtoms.h"
@@ -40,7 +42,7 @@ HTMLOptionElement::HTMLOptionElement(
   AddStatesSilently(NS_EVENT_STATE_ENABLED);
 }
 
-HTMLOptionElement::~HTMLOptionElement() {}
+HTMLOptionElement::~HTMLOptionElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLOptionElement)
 
@@ -304,12 +306,14 @@ already_AddRefed<HTMLOptionElement> HTMLOptionElement::Option(
   RefPtr<mozilla::dom::NodeInfo> nodeInfo = doc->NodeInfoManager()->GetNodeInfo(
       nsGkAtoms::option, nullptr, kNameSpaceID_XHTML, ELEMENT_NODE);
 
-  RefPtr<HTMLOptionElement> option = new HTMLOptionElement(nodeInfo.forget());
+  auto* nim = nodeInfo->NodeInfoManager();
+  RefPtr<HTMLOptionElement> option =
+      new (nim) HTMLOptionElement(nodeInfo.forget());
 
   if (!aText.IsEmpty()) {
     // Create a new text node and append it to the option
-    RefPtr<nsTextNode> textContent =
-        new nsTextNode(option->NodeInfo()->NodeInfoManager());
+    RefPtr<nsTextNode> textContent = new (option->NodeInfo()->NodeInfoManager())
+        nsTextNode(option->NodeInfo()->NodeInfoManager());
 
     textContent->SetText(aText, false);
 

@@ -85,7 +85,7 @@ class nsForceXMLListener : public nsIStreamListener {
 nsForceXMLListener::nsForceXMLListener(nsIStreamListener* aListener)
     : mListener(aListener) {}
 
-nsForceXMLListener::~nsForceXMLListener() {}
+nsForceXMLListener::~nsForceXMLListener() = default;
 
 NS_IMPL_ISUPPORTS(nsForceXMLListener, nsIStreamListener, nsIRequestObserver)
 
@@ -135,11 +135,10 @@ nsresult nsSyncLoader::LoadDocument(nsIChannel* aChannel, bool aChannelIsSync,
         false);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
     nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
-    nsCOMPtr<nsIURI> loaderUri;
-    loadInfo->TriggeringPrincipal()->GetURI(getter_AddRefs(loaderUri));
-    if (loaderUri) {
-      nsCOMPtr<nsIReferrerInfo> referrerInfo =
-          new ReferrerInfo(loaderUri, aReferrerPolicy);
+    nsCOMPtr<nsIReferrerInfo> referrerInfo;
+    loadInfo->TriggeringPrincipal()->CreateReferrerInfo(
+        aReferrerPolicy, getter_AddRefs(referrerInfo));
+    if (referrerInfo) {
       rv = http->SetReferrerInfoWithoutClone(referrerInfo);
       MOZ_ASSERT(NS_SUCCEEDED(rv));
     }

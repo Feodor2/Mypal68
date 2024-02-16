@@ -67,7 +67,7 @@ void SVGAnimatedString::SetAnimValue(const nsAString& aValue,
       return;
     }
     if (!mAnimVal) {
-      mAnimVal = new nsString();
+      mAnimVal = MakeUnique<nsString>();
     }
     *mAnimVal = aValue;
     aSVGElement->DidAnimateString(mAttrEnum);

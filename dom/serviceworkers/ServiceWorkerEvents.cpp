@@ -117,10 +117,9 @@ FetchEvent::FetchEvent(EventTarget* aOwner)
     : ExtendableEvent(aOwner),
       mPreventDefaultLineNumber(0),
       mPreventDefaultColumnNumber(0),
-      mIsReload(false),
       mWaitToRespond(false) {}
 
-FetchEvent::~FetchEvent() {}
+FetchEvent::~FetchEvent() = default;
 
 void FetchEvent::PostInit(
     nsMainThreadPtrHandle<nsIInterceptedChannel>& aChannel,
@@ -145,7 +144,6 @@ already_AddRefed<FetchEvent> FetchEvent::Constructor(
   e->mRequest = aOptions.mRequest;
   e->mClientId = aOptions.mClientId;
   e->mResultingClientId = aOptions.mResultingClientId;
-  e->mIsReload = aOptions.mIsReload;
   return e.forget();
 }
 
@@ -202,7 +200,7 @@ class FinishResponse final : public Runnable {
 class BodyCopyHandle final : public nsIInterceptedBodyCallback {
   UniquePtr<RespondWithClosure> mClosure;
 
-  ~BodyCopyHandle() {}
+  ~BodyCopyHandle() = default;
 
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -769,7 +767,7 @@ void RespondWithHandler::CancelRequest(nsresult aStatus) {
 }  // namespace
 
 void FetchEvent::RespondWith(JSContext* aCx, Promise& aArg, ErrorResult& aRv) {
-  if (EventPhase() == Event_Binding::NONE || mWaitToRespond) {
+  if (!GetDispatchFlag() || mWaitToRespond) {
     aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
   }
@@ -847,7 +845,7 @@ class WaitUntilHandler final : public PromiseNativeHandler {
   uint32_t mColumn;
   nsString mRejectValue;
 
-  ~WaitUntilHandler() {}
+  ~WaitUntilHandler() = default;
 
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -921,6 +919,27 @@ NS_IMPL_ISUPPORTS0(WaitUntilHandler)
 
 }  // anonymous namespace
 
+ExtendableEvent::ExtensionsHandler::~ExtensionsHandler() {
+  MOZ_ASSERT(!mExtendableEvent);
+}
+
+bool ExtendableEvent::ExtensionsHandler::GetDispatchFlag() const {
+  // mExtendableEvent should set itself as nullptr in its destructor, and we
+  // can't be dispatching an event that doesn't exist, so this should work for
+  // as long as it's not needed to determine whether the event is still alive,
+  // which seems unlikely.
+  if (!mExtendableEvent) {
+    return false;
+  }
+
+  return mExtendableEvent->GetDispatchFlag();
+}
+
+void ExtendableEvent::ExtensionsHandler::SetExtendableEvent(
+    const ExtendableEvent* const aExtendableEvent) {
+  mExtendableEvent = aExtendableEvent;
+}
+
 NS_IMPL_ADDREF_INHERITED(FetchEvent, ExtendableEvent)
 NS_IMPL_RELEASE_INHERITED(FetchEvent, ExtendableEvent)
 
@@ -946,6 +965,7 @@ void ExtendableEvent::SetKeepAliveHandler(
   MOZ_ASSERT(worker);
   worker->AssertIsOnWorkerThread();
   mExtensionsHandler = aExtensionsHandler;
+  mExtensionsHandler->SetExtendableEvent(this);
 }
 
 void ExtendableEvent::WaitUntil(JSContext* aCx, Promise& aPromise,
@@ -1021,7 +1041,7 @@ PushMessageData::PushMessageData(nsIGlobalObject* aOwner,
                                  nsTArray<uint8_t>&& aBytes)
     : mOwner(aOwner), mBytes(std::move(aBytes)) {}
 
-PushMessageData::~PushMessageData() {}
+PushMessageData::~PushMessageData() = default;
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(PushMessageData, mOwner)
 

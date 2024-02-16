@@ -8,7 +8,6 @@
 #include <numeric>
 #include <stdint.h>  // UINTPTR_MAX, uintptr_t
 #include <utility>
-#include "FileInfo.h"
 #include "FileManager.h"
 #include "IDBCursorType.h"
 #include "IDBObjectStore.h"
@@ -16,7 +15,6 @@
 #include "IndexedDatabase.h"
 #include "IndexedDatabaseInlines.h"
 #include "IndexedDatabaseManager.h"
-#include "InitializedOnce.h"
 #include "js/StructuredClone.h"
 #include "js/Value.h"
 #include "jsapi.h"
@@ -25,13 +23,18 @@
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/ErrorNames.h"
+#include "mozilla/InitializedOnce.h"
+#include "mozilla/JSObjectHolder.h"
 #include "mozilla/LazyIdleThread.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/NullPrincipal.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Result.h"
+#include "mozilla/ResultExtensions.h"
 #include "mozilla/SnappyCompressOutputStream.h"
 #include "mozilla/SnappyUncompressInputStream.h"
 #include "mozilla/StaticPtr.h"
@@ -43,7 +46,6 @@
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/File.h"
 #include "mozilla/dom/FileBlobImpl.h"
-#include "mozilla/dom/StructuredCloneTags.h"
 #include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/filehandle/ActorsParent.h"
 #include "mozilla/dom/indexedDB/PBackgroundIDBCursorParent.h"
@@ -100,6 +102,7 @@
 #include "nsITimer.h"
 #include "nsIURI.h"
 #include "nsIURIMutator.h"
+#include "nsIXPConnect.h"
 #include "nsNetUtil.h"
 #include "nsPrintfCString.h"
 #include "nsQueryObject.h"
@@ -139,8 +142,7 @@ namespace mozilla {
 MOZ_TYPE_SPECIFIC_SCOPED_POINTER_TEMPLATE(ScopedPRFileDesc, PRFileDesc,
                                           PR_Close);
 
-namespace dom {
-namespace indexedDB {
+namespace dom::indexedDB {
 
 using namespace mozilla::dom::quota;
 using namespace mozilla::ipc;
@@ -531,7 +533,7 @@ struct IndexDataValue final {
     MOZ_COUNT_CTOR(IndexDataValue);
   }
 
-  ~IndexDataValue() { MOZ_COUNT_DTOR(IndexDataValue); }
+  MOZ_COUNTED_DTOR(IndexDataValue)
 
   bool operator==(const IndexDataValue& aOther) const {
     if (mIndexId != aOther.mIndexId) {
@@ -2531,7 +2533,7 @@ class UpgradeSchemaFrom17_0To18_0Helper final {
 class UpgradeSchemaFrom17_0To18_0Helper::InsertIndexDataValuesFunction final
     : public mozIStorageFunction {
  public:
-  InsertIndexDataValuesFunction() {}
+  InsertIndexDataValuesFunction() = default;
 
   NS_DECL_ISUPPORTS
 
@@ -2634,7 +2636,7 @@ UpgradeSchemaFrom17_0To18_0Helper::InsertIndexDataValuesFunction::
 class UpgradeSchemaFrom17_0To18_0Helper::UpgradeKeyFunction final
     : public mozIStorageFunction {
  public:
-  UpgradeKeyFunction() {}
+  UpgradeKeyFunction() = default;
 
   static nsresult CopyAndUpgradeKeyBuffer(const uint8_t* aSource,
                                           const uint8_t* aSourceEnd,
@@ -3806,7 +3808,7 @@ class StripObsoleteOriginAttributesFunction final : public mozIStorageFunction {
   NS_DECL_ISUPPORTS
 
  private:
-  ~StripObsoleteOriginAttributesFunction() {}
+  ~StripObsoleteOriginAttributesFunction() = default;
 
   NS_IMETHOD
   OnFunctionCall(mozIStorageValueArray* aArguments,
@@ -4714,9 +4716,9 @@ class DatabaseConnection final {
   class UpdateRefcountFunction;
 
  private:
-  InitializedOnceMustBeTrue<const nsCOMPtr<mozIStorageConnection>>
+  InitializedOnceNotNull<const nsCOMPtr<mozIStorageConnection>>
       mStorageConnection;
-  InitializedOnceMustBeTrue<const RefPtr<FileManager>> mFileManager;
+  InitializedOnceNotNull<const RefPtr<FileManager>> mFileManager;
   nsInterfaceHashtable<nsCStringHashKey, mozIStorageStatement>
       mCachedStatements;
   RefPtr<UpdateRefcountFunction> mUpdateRefcountFunction;
@@ -4949,17 +4951,38 @@ class DatabaseConnection::UpdateRefcountFunction::DatabaseUpdateFunction final {
 };
 
 class DatabaseConnection::UpdateRefcountFunction::FileInfoEntry final {
-  friend class UpdateRefcountFunction;
-
   RefPtr<FileInfo> mFileInfo;
   int32_t mDelta;
   int32_t mSavepointDelta;
 
  public:
-  explicit FileInfoEntry(FileInfo* aFileInfo)
-      : mFileInfo(aFileInfo), mDelta(0), mSavepointDelta(0) {
+  explicit FileInfoEntry(RefPtr<FileInfo> aFileInfo)
+      : mFileInfo(std::move(aFileInfo)), mDelta(0), mSavepointDelta(0) {
     MOZ_COUNT_CTOR(DatabaseConnection::UpdateRefcountFunction::FileInfoEntry);
   }
+
+  void IncDeltas(bool aUpdateSavepointDelta) {
+    ++mDelta;
+    if (aUpdateSavepointDelta) {
+      ++mSavepointDelta;
+    }
+  }
+  void DecDeltas(bool aUpdateSavepointDelta) {
+    --mDelta;
+    if (aUpdateSavepointDelta) {
+      --mSavepointDelta;
+    }
+  }
+  void DecBySavepointDelta() { mDelta -= mSavepointDelta; }
+  RefPtr<FileInfo> ReleaseFileInfo() { return std::move(mFileInfo); }
+  void MaybeUpdateDBRefs() {
+    if (mDelta) {
+      mFileInfo->UpdateDBRefs(mDelta);
+    }
+  }
+
+  int32_t Delta() const { return mDelta; }
+  int32_t SavepointDelta() const { return mSavepointDelta; }
 
   ~FileInfoEntry() {
     MOZ_COUNT_DTOR(DatabaseConnection::UpdateRefcountFunction::FileInfoEntry);
@@ -5242,7 +5265,7 @@ class NS_NO_VTABLE ConnectionPool::FinishCallback : public nsIRunnable {
   virtual void TransactionFinishedAfterUnblock() = 0;
 
  protected:
-  FinishCallback() {}
+  FinishCallback() = default;
 
   virtual ~FinishCallback() = default;
 };
@@ -5282,7 +5305,7 @@ struct ConnectionPool::IdleResource {
 };
 
 struct ConnectionPool::IdleDatabaseInfo final : public IdleResource {
-  InitializedOnceMustBeTrue<DatabaseInfo* const> mDatabaseInfo;
+  InitializedOnceNotNull<DatabaseInfo* const> mDatabaseInfo;
 
  public:
   explicit IdleDatabaseInfo(DatabaseInfo* aDatabaseInfo);
@@ -5510,12 +5533,13 @@ class DatabaseOperationBase : public Runnable,
 
   bool HasFailed() const { return NS_FAILED(mResultCode); }
 
-  static nsresult GetStructuredCloneReadInfoFromStatement(
-      mozIStorageStatement* aStatement, uint32_t aDataIndex,
-      uint32_t aFileIdsIndex, const FileManager& aFileManager,
-      StructuredCloneReadInfo* aInfo) {
-    return GetStructuredCloneReadInfoFromSource(
-        aStatement, aDataIndex, aFileIdsIndex, aFileManager, aInfo);
+  static Result<StructuredCloneReadInfoParent, nsresult>
+  GetStructuredCloneReadInfoFromStatement(mozIStorageStatement* aStatement,
+                                          uint32_t aDataIndex,
+                                          uint32_t aFileIdsIndex,
+                                          const FileManager& aFileManager) {
+    return GetStructuredCloneReadInfoFromSource(aStatement, aDataIndex,
+                                                aFileIdsIndex, aFileManager);
   }
 
  protected:
@@ -5546,12 +5570,13 @@ class DatabaseOperationBase : public Runnable,
 
   static uint64_t ReinterpretDoubleAsUInt64(double aDouble);
 
-  static nsresult GetStructuredCloneReadInfoFromValueArray(
-      mozIStorageValueArray* aValues, uint32_t aDataIndex,
-      uint32_t aFileIdsIndex, const FileManager& aFileManager,
-      StructuredCloneReadInfo* aInfo) {
-    return GetStructuredCloneReadInfoFromSource(
-        aValues, aDataIndex, aFileIdsIndex, aFileManager, aInfo);
+  static Result<StructuredCloneReadInfoParent, nsresult>
+  GetStructuredCloneReadInfoFromValueArray(mozIStorageValueArray* aValues,
+                                           uint32_t aDataIndex,
+                                           uint32_t aFileIdsIndex,
+                                           const FileManager& aFileManager) {
+    return GetStructuredCloneReadInfoFromSource(aValues, aDataIndex,
+                                                aFileIdsIndex, aFileManager);
   }
 
   static nsresult BindKeyRangeToStatement(const SerializedKeyRange& aKeyRange,
@@ -5595,18 +5620,21 @@ class DatabaseOperationBase : public Runnable,
 
  private:
   template <typename T>
-  static nsresult GetStructuredCloneReadInfoFromSource(
-      T* aSource, uint32_t aDataIndex, uint32_t aFileIdsIndex,
-      const FileManager& aFileManager, StructuredCloneReadInfo* aInfo);
+  static Result<StructuredCloneReadInfoParent, nsresult>
+  GetStructuredCloneReadInfoFromSource(T* aSource, uint32_t aDataIndex,
+                                       uint32_t aFileIdsIndex,
+                                       const FileManager& aFileManager);
 
-  static nsresult GetStructuredCloneReadInfoFromBlob(
-      const uint8_t* aBlobData, uint32_t aBlobDataLength,
-      const FileManager& aFileManager, const nsAString& aFileIds,
-      StructuredCloneReadInfo* aInfo);
+  static Result<StructuredCloneReadInfoParent, nsresult>
+  GetStructuredCloneReadInfoFromBlob(const uint8_t* aBlobData,
+                                     uint32_t aBlobDataLength,
+                                     const FileManager& aFileManager,
+                                     const nsAString& aFileIds);
 
-  static nsresult GetStructuredCloneReadInfoFromExternalBlob(
-      uint64_t aIntData, const FileManager& aFileManager,
-      const nsAString& aFileIds, StructuredCloneReadInfo* aInfo);
+  static Result<StructuredCloneReadInfoParent, nsresult>
+  GetStructuredCloneReadInfoFromExternalBlob(uint64_t aIntData,
+                                             const FileManager& aFileManager,
+                                             const nsAString& aFileIds);
 
   template <typename KeyTransformation>
   static nsresult MaybeBindKeyToStatement(
@@ -5650,7 +5678,7 @@ class TransactionDatabaseOperationBase : public DatabaseOperationBase {
     Completed
   };
 
-  InitializedOnce<const OwningNonNull<TransactionBase>> mTransaction;
+  InitializedOnceNotNull<const RefPtr<TransactionBase>> mTransaction;
   InternalState mInternalState = InternalState::Initial;
   bool mWaitingForContinue = false;
   const bool mTransactionIsAborted;
@@ -5793,8 +5821,6 @@ class Factory final : public PBackgroundIDBFactoryParent {
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
   mozilla::ipc::IPCResult RecvDeleteMe() override;
-
-  mozilla::ipc::IPCResult RecvIncrementLoggingRequestSerialNumber() override;
 
   PBackgroundIDBFactoryRequestParent* AllocPBackgroundIDBFactoryRequestParent(
       const FactoryRequestParams& aParams) override;
@@ -5982,7 +6008,7 @@ class Database final
 
   void SetActorAlive();
 
-  void MapBlob(const IPCBlob& aIPCBlob, FileInfo* aFileInfo);
+  void MapBlob(const IPCBlob& aIPCBlob, RefPtr<FileInfo> aFileInfo);
 
   bool IsActorAlive() const {
     AssertIsOnBackgroundThread();
@@ -6097,6 +6123,9 @@ class Database final
   mozilla::ipc::IPCResult RecvBlocked() override;
 
   mozilla::ipc::IPCResult RecvClose() override;
+
+  template <typename T>
+  static bool InvalidateAll(const nsTHashtable<nsPtrHashKey<T>>& aTable);
 };
 
 class Database::StartTransactionOp final
@@ -6174,8 +6203,6 @@ class Database::UnmapBlobCallback final
  * op is holding a reference to us.
  */
 class DatabaseFile final : public PBackgroundIDBDatabaseFileParent {
-  friend class Database;
-
   // mBlobImpl's ownership lifecycle:
   // - Initialized on the background thread at creation time.  Then
   //   responsibility is handed off to the connection thread.
@@ -6183,13 +6210,13 @@ class DatabaseFile final : public PBackgroundIDBDatabaseFileParent {
   //   the blob to disk by an add/put operation.
   // - Cleared on the connection thread once the file has successfully been
   //   written to disk.
-  RefPtr<BlobImpl> mBlobImpl;
-  RefPtr<FileInfo> mFileInfo;
+  InitializedOnce<const RefPtr<BlobImpl>> mBlobImpl;
+  const RefPtr<FileInfo> mFileInfo;
 
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(mozilla::dom::indexedDB::DatabaseFile);
 
-  FileInfo* GetFileInfo() const {
+  const RefPtr<FileInfo>& GetFileInfo() const {
     AssertIsOnBackgroundThread();
 
     return mFileInfo;
@@ -6212,24 +6239,27 @@ class DatabaseFile final : public PBackgroundIDBDatabaseFileParent {
   void WriteSucceededClearBlobImpl() {
     MOZ_ASSERT(!IsOnBackgroundThread());
 
-    mBlobImpl = nullptr;
+    MOZ_ASSERT(*mBlobImpl);
+    mBlobImpl.destroy();
   }
 
- private:
+ public:
   // Called when sending to the child.
-  explicit DatabaseFile(FileInfo* aFileInfo) : mFileInfo(aFileInfo) {
+  explicit DatabaseFile(FileInfo* aFileInfo)
+      : mBlobImpl{nullptr}, mFileInfo(aFileInfo) {
     AssertIsOnBackgroundThread();
-    MOZ_ASSERT(aFileInfo);
+    MOZ_ASSERT(mFileInfo);
   }
 
   // Called when receiving from the child.
-  DatabaseFile(BlobImpl* aBlobImpl, FileInfo* aFileInfo)
-      : mBlobImpl(aBlobImpl), mFileInfo(aFileInfo) {
+  DatabaseFile(RefPtr<BlobImpl> aBlobImpl, FileInfo* aFileInfo)
+      : mBlobImpl(std::move(aBlobImpl)), mFileInfo(aFileInfo) {
     AssertIsOnBackgroundThread();
-    MOZ_ASSERT(aBlobImpl);
-    MOZ_ASSERT(aFileInfo);
+    MOZ_ASSERT(*mBlobImpl);
+    MOZ_ASSERT(mFileInfo);
   }
 
+ private:
   ~DatabaseFile() override = default;
 
   void ActorDestroy(ActorDestroyReason aWhy) override {
@@ -6242,12 +6272,14 @@ nsCOMPtr<nsIInputStream> DatabaseFile::GetInputStream(ErrorResult& rv) const {
   // thread.
   MOZ_ASSERT(!IsOnBackgroundThread());
 
-  if (!mBlobImpl) {
+  // If we were constructed without a BlobImpl, or WriteSucceededClearBlobImpl
+  // was already called, return nullptr.
+  if (!mBlobImpl || !*mBlobImpl) {
     return nullptr;
   }
 
   nsCOMPtr<nsIInputStream> inputStream;
-  mBlobImpl->CreateInputStream(getter_AddRefs(inputStream), rv);
+  (*mBlobImpl)->CreateInputStream(getter_AddRefs(inputStream), rv);
   if (rv.Failed()) {
     return nullptr;
   }
@@ -6270,7 +6302,7 @@ class TransactionBase {
   const RefPtr<Database> mDatabase;
   nsTArray<RefPtr<FullObjectStoreMetadata>>
       mModifiedAutoIncrementObjectStoreMetadataArray;
-  InitializedOnceMustBeTrue<const uint64_t, LazyInit::Allow> mTransactionId;
+  LazyInitializedOnceNotNull<const uint64_t> mTransactionId;
   const nsCString mDatabaseId;
   const int64_t mLoggingSerialNumber;
   uint64_t mActiveRequestCount;
@@ -6625,24 +6657,22 @@ class VersionChangeTransaction final
 };
 
 class MutableFile : public BackgroundMutableFileParentBase {
-  RefPtr<Database> mDatabase;
-  RefPtr<FileInfo> mFileInfo;
+  const RefPtr<Database> mDatabase;
+  const RefPtr<FileInfo> mFileInfo;
 
  public:
   static MOZ_MUST_USE RefPtr<MutableFile> Create(nsIFile* aFile,
                                                  Database* aDatabase,
-                                                 FileInfo* aFileInfo);
+                                                 RefPtr<FileInfo> aFileInfo);
 
-  Database* GetDatabase() const {
+  const Database& GetDatabase() const {
     AssertIsOnBackgroundThread();
-    MOZ_ASSERT(mDatabase);
 
-    return mDatabase;
+    return *mDatabase;
   }
 
-  FileInfo* GetFileInfo() const {
+  const RefPtr<FileInfo>& GetFileInfo() const {
     AssertIsOnBackgroundThread();
-    MOZ_ASSERT(mFileInfo);
 
     return mFileInfo;
   }
@@ -6658,7 +6688,8 @@ class MutableFile : public BackgroundMutableFileParentBase {
   already_AddRefed<BlobImpl> CreateBlobImpl() override;
 
  private:
-  MutableFile(nsIFile* aFile, Database* aDatabase, FileInfo* aFileInfo);
+  MutableFile(nsIFile* aFile, RefPtr<Database> aDatabase,
+              RefPtr<FileInfo> aFileInfo);
 
   ~MutableFile() override;
 
@@ -7136,7 +7167,7 @@ class DatabaseOp : public DatabaseOperationBase,
 class CreateFileOp final : public DatabaseOp {
   const CreateFileParams mParams;
 
-  RefPtr<FileInfo> mFileInfo;
+  LazyInitializedOnce<const RefPtr<FileInfo>> mFileInfo;
 
  public:
   CreateFileOp(Database* aDatabase, const DatabaseRequestParams& aParams);
@@ -7382,7 +7413,7 @@ class ObjectStoreAddOrPutRequestOp final : public NormalTransactionOp {
 
   typedef mozilla::dom::quota::PersistenceType PersistenceType;
 
-  struct StoredFileInfo;
+  class StoredFileInfo;
   class SCInputStream;
 
   const ObjectStoreAddPutParams mParams;
@@ -7392,7 +7423,7 @@ class ObjectStoreAddOrPutRequestOp final : public NormalTransactionOp {
   // if we are modifying an autoIncrement objectStore.
   RefPtr<FullObjectStoreMetadata> mMetadata;
 
-  FallibleTArray<StoredFileInfo> mStoredFileInfos;
+  nsTArray<StoredFileInfo> mStoredFileInfos;
 
   Key mResponse;
   const nsCString mGroup;
@@ -7420,58 +7451,227 @@ class ObjectStoreAddOrPutRequestOp final : public NormalTransactionOp {
   void Cleanup() override;
 };
 
-struct ObjectStoreAddOrPutRequestOp::StoredFileInfo final {
-  RefPtr<DatabaseFile> mFileActor;
-  RefPtr<FileInfo> mFileInfo;
-  // A non-Blob-backed inputstream to write to disk.  If null, mFileActor may
-  // still have a stream for us to write.
-  nsCOMPtr<nsIInputStream> mInputStream;
-  StructuredCloneFile::FileType mType;
+class ObjectStoreAddOrPutRequestOp::StoredFileInfo final {
+  InitializedOnceNotNull<const RefPtr<FileInfo>> mFileInfo;
+  // Either nothing, a file actor or a non-Blob-backed inputstream to write to
+  // disk.
+  using FileActorOrInputStream =
+      Variant<Nothing, RefPtr<DatabaseFile>, nsCOMPtr<nsIInputStream>>;
+  InitializedOnce<const FileActorOrInputStream> mFileActorOrInputStream;
+#ifdef DEBUG
+  const StructuredCloneFileBase::FileType mType;
+#endif
 
-  StoredFileInfo() : mType(StructuredCloneFile::eBlob) {
+  void AssertInvariants() const {
+    // The only allowed types are eStructuredClone, eBlob and eMutableFile.
+    MOZ_ASSERT(StructuredCloneFileBase::eStructuredClone == mType ||
+               StructuredCloneFileBase::eBlob == mType ||
+               StructuredCloneFileBase::eMutableFile == mType);
+
+    // mFileInfo and a file actor in mFileActorOrInputStream are present until
+    // the object is moved away, but an inputStream in mFileActorOrInputStream
+    // can be released early.
+    MOZ_ASSERT_IF(static_cast<bool>(mFileActorOrInputStream) &&
+                      mFileActorOrInputStream->is<RefPtr<DatabaseFile>>(),
+                  static_cast<bool>(mFileInfo));
+
+    if (mFileInfo) {
+      // In a non-moved StoredFileInfo, then one of the following is true:
+      // - This was an overflow structured clone (eStructuredClone) and
+      //   storedFileInfo.mFileActorOrInputStream CAN be a non-nullptr input
+      //   stream (but that might have been release by ReleaseInputStream).
+      MOZ_ASSERT_IF(
+          StructuredCloneFileBase::eStructuredClone == mType,
+          !mFileActorOrInputStream ||
+              (mFileActorOrInputStream->is<nsCOMPtr<nsIInputStream>>() &&
+               mFileActorOrInputStream->as<nsCOMPtr<nsIInputStream>>()));
+
+      // - This is a reference to a Blob (eBlob) that may or may not have
+      //   already been written to disk.  storedFileInfo.mFileActorOrInputStream
+      //   MUST be a non-null file actor, but its GetInputStream may return
+      //   nullptr (so don't assert on that).
+      MOZ_ASSERT_IF(StructuredCloneFileBase::eBlob == mType,
+                    mFileActorOrInputStream->is<RefPtr<DatabaseFile>>() &&
+                        mFileActorOrInputStream->as<RefPtr<DatabaseFile>>());
+
+      // - It's a mutable file (eMutableFile).  No writing will be performed,
+      // and storedFileInfo.mFileActorOrInputStream is Nothing.
+      MOZ_ASSERT_IF(StructuredCloneFileBase::eMutableFile == mType,
+                    mFileActorOrInputStream->is<Nothing>());
+    }
+  }
+
+  explicit StoredFileInfo(RefPtr<FileInfo> aFileInfo)
+      : mFileInfo{std::move(aFileInfo)}, mFileActorOrInputStream {
+    Nothing {}
+  }
+#ifdef DEBUG
+  , mType { StructuredCloneFileBase::eMutableFile }
+#endif
+  {
     AssertIsOnBackgroundThread();
+    AssertInvariants();
 
     MOZ_COUNT_CTOR(ObjectStoreAddOrPutRequestOp::StoredFileInfo);
   }
 
+  StoredFileInfo(RefPtr<FileInfo> aFileInfo, RefPtr<DatabaseFile> aFileActor)
+      : mFileInfo{std::move(aFileInfo)}, mFileActorOrInputStream {
+    std::move(aFileActor)
+  }
+#ifdef DEBUG
+  , mType { StructuredCloneFileBase::eBlob }
+#endif
+  {
+    AssertIsOnBackgroundThread();
+    AssertInvariants();
+
+    MOZ_COUNT_CTOR(ObjectStoreAddOrPutRequestOp::StoredFileInfo);
+  }
+
+  StoredFileInfo(RefPtr<FileInfo> aFileInfo,
+                 nsCOMPtr<nsIInputStream> aInputStream)
+      : mFileInfo{std::move(aFileInfo)}, mFileActorOrInputStream {
+    std::move(aInputStream)
+  }
+#ifdef DEBUG
+  , mType { StructuredCloneFileBase::eStructuredClone }
+#endif
+  {
+    AssertIsOnBackgroundThread();
+    AssertInvariants();
+
+    MOZ_COUNT_CTOR(ObjectStoreAddOrPutRequestOp::StoredFileInfo);
+  }
+
+ public:
+#if defined(NS_BUILD_REFCNT_LOGGING)
+  // Only for MOZ_COUNT_CTOR.
+  StoredFileInfo(StoredFileInfo&& aOther)
+      : mFileInfo{std::move(aOther.mFileInfo)}, mFileActorOrInputStream {
+    std::move(aOther.mFileActorOrInputStream)
+  }
+#  ifdef DEBUG
+  , mType { aOther.mType }
+#  endif
+  { MOZ_COUNT_CTOR(ObjectStoreAddOrPutRequestOp::StoredFileInfo); }
+#else
+  StoredFileInfo(StoredFileInfo&&) = default;
+#endif
+
+  static StoredFileInfo CreateForMutableFile(RefPtr<FileInfo> aFileInfo) {
+    return StoredFileInfo{std::move(aFileInfo)};
+  }
+  static StoredFileInfo CreateForBlob(RefPtr<FileInfo> aFileInfo,
+                                      RefPtr<DatabaseFile> aFileActor) {
+    return {std::move(aFileInfo), std::move(aFileActor)};
+  }
+  static StoredFileInfo CreateForStructuredClone(
+      RefPtr<FileInfo> aFileInfo, nsCOMPtr<nsIInputStream> aInputStream) {
+    return {std::move(aFileInfo), std::move(aInputStream)};
+  }
+
+#if defined(DEBUG) || defined(NS_BUILD_REFCNT_LOGGING)
   ~StoredFileInfo() {
     AssertIsOnBackgroundThread();
+    AssertInvariants();
 
     MOZ_COUNT_DTOR(ObjectStoreAddOrPutRequestOp::StoredFileInfo);
   }
+#endif
+
+  bool IsValid() const { return static_cast<bool>(mFileInfo); }
+
+  const FileInfo& GetFileInfo() const { return **mFileInfo; }
+
+  bool ShouldCompress() const {
+    // Must not be called after moving.
+    MOZ_ASSERT(IsValid());
+
+    // Compression is only necessary for eStructuredClone, i.e. when
+    // mFileActorOrInputStream stored an input stream. However, this is only
+    // called after GetInputStream, when mFileActorOrInputStream has been
+    // cleared, which is only possible for this type.
+    const bool res = !mFileActorOrInputStream;
+    MOZ_ASSERT(res == (StructuredCloneFileBase::eStructuredClone == mType));
+    return res;
+  }
+
+  void NotifyWriteSucceeded() const {
+    MOZ_ASSERT(IsValid());
+
+    // For eBlob, clear the blob implementation.
+    if (mFileActorOrInputStream &&
+        mFileActorOrInputStream->is<RefPtr<DatabaseFile>>()) {
+      mFileActorOrInputStream->as<RefPtr<DatabaseFile>>()
+          ->WriteSucceededClearBlobImpl();
+    }
+
+    // For the other types, no action is necessary.
+  }
+
+  using InputStreamResult = mozilla::Result<nsCOMPtr<nsIInputStream>, nsresult>;
+  InputStreamResult GetInputStream() {
+    if (!mFileActorOrInputStream) {
+      MOZ_ASSERT(StructuredCloneFileBase::eStructuredClone == mType);
+      return nsCOMPtr<nsIInputStream>{};
+    }
+
+    // For the different cases, see also the comments in AssertInvariants.
+    return mFileActorOrInputStream->match(
+        [](const Nothing&) -> InputStreamResult {
+          return nsCOMPtr<nsIInputStream>{};
+        },
+        [](const RefPtr<DatabaseFile>& databaseActor) -> InputStreamResult {
+          ErrorResult rv;
+          auto inputStream = databaseActor->GetInputStream(rv);
+          if (NS_WARN_IF(rv.Failed())) {
+            return Err(rv.StealNSResult());
+          }
+
+          return inputStream;
+        },
+        [this](
+            const nsCOMPtr<nsIInputStream>& inputStream) -> InputStreamResult {
+          auto res = inputStream;
+          // destroy() clears the inputStream parameter, so we needed to make a
+          // copy before
+          mFileActorOrInputStream.destroy();
+          AssertInvariants();
+          return res;
+        });
+  }
 
   void Serialize(nsString& aText) const {
-    MOZ_ASSERT(mFileInfo);
+    AssertInvariants();
+    MOZ_ASSERT(IsValid());
 
-    const int64_t id = mFileInfo->Id();
+    const int64_t id = (*mFileInfo)->Id();
 
-    switch (mType) {
-      case StructuredCloneFile::eBlob:
-        aText.AppendInt(id);
-        break;
+    auto structuredCloneHandler = [&aText,
+                                   id](const nsCOMPtr<nsIInputStream>&) {
+      // eStructuredClone
+      aText.Append('.');
+      aText.AppendInt(id);
+    };
 
-      case StructuredCloneFile::eMutableFile:
-        aText.AppendInt(-id);
-        break;
-
-      case StructuredCloneFile::eStructuredClone:
-        aText.Append('.');
-        aText.AppendInt(id);
-        break;
-
-      case StructuredCloneFile::eWasmBytecode:
-        aText.Append('/');
-        aText.AppendInt(id);
-        break;
-
-      case StructuredCloneFile::eWasmCompiled:
-        aText.Append('\\');
-        aText.AppendInt(id);
-        break;
-
-      default:
-        MOZ_CRASH("Should never get here!");
+    // If mFileActorOrInputStream was moved, we had an inputStream before.
+    if (!mFileActorOrInputStream) {
+      structuredCloneHandler(nullptr);
+      return;
     }
+
+    // This encoding is parsed in DeserializeStructuredCloneFile.
+    mFileActorOrInputStream->match(
+        [&aText, id](const Nothing&) {
+          // eMutableFile
+          aText.AppendInt(-id);
+        },
+        [&aText, id](const RefPtr<DatabaseFile>&) {
+          // eBlob
+          aText.AppendInt(id);
+        },
+        structuredCloneHandler);
   }
 };
 
@@ -7497,7 +7697,7 @@ class ObjectStoreGetRequestOp final : public NormalTransactionOp {
   const IndexOrObjectStoreId mObjectStoreId;
   RefPtr<Database> mDatabase;
   const Maybe<SerializedKeyRange> mOptionalKeyRange;
-  AutoTArray<StructuredCloneReadInfo, 1> mResponse;
+  AutoTArray<StructuredCloneReadInfoParent, 1> mResponse;
   PBackgroundParent* mBackgroundParent;
   uint32_t mPreprocessInfoCount;
   const uint32_t mLimit;
@@ -7511,7 +7711,7 @@ class ObjectStoreGetRequestOp final : public NormalTransactionOp {
   ~ObjectStoreGetRequestOp() override = default;
 
   template <bool aForPreprocess, typename T>
-  nsresult ConvertResponse(StructuredCloneReadInfo& aInfo, T& aResult);
+  nsresult ConvertResponse(StructuredCloneReadInfoParent& aInfo, T& aResult);
 
   nsresult DoDatabaseWork(DatabaseConnection* aConnection) override;
 
@@ -7628,7 +7828,7 @@ class IndexGetRequestOp final : public IndexRequestOpBase {
 
   RefPtr<Database> mDatabase;
   const Maybe<SerializedKeyRange> mOptionalKeyRange;
-  AutoTArray<StructuredCloneReadInfo, 1> mResponse;
+  AutoTArray<StructuredCloneReadInfoParent, 1> mResponse;
   PBackgroundParent* mBackgroundParent;
   const uint32_t mLimit;
   const bool mGetAll;
@@ -7738,12 +7938,12 @@ class CursorBase : public PBackgroundIDBCursorParent {
   // This should only be touched on the PBackground thread to check whether
   // the objectStore has been deleted. Holding these saves a hash lookup for
   // every call to continue()/advance().
-  InitializedOnceMustBeTrue<const RefPtr<FullObjectStoreMetadata>>
+  InitializedOnceNotNull<const RefPtr<FullObjectStoreMetadata>>
       mObjectStoreMetadata;
 
   const IndexOrObjectStoreId mObjectStoreId;
 
-  InitializedOnce<const Key, LazyInit::Allow>
+  LazyInitializedOnce<const Key>
       mLocaleAwareRangeBound;  ///< If the cursor is based on a key range, the
                                ///< bound in the direction of iteration (e.g.
                                ///< the upper bound in case of mDirection ==
@@ -7797,7 +7997,7 @@ class IndexCursorBase : public CursorBase {
   // This should only be touched on the PBackground thread to check whether
   // the index has been deleted. Holding these saves a hash lookup for every
   // call to continue()/advance().
-  InitializedOnceMustBeTrue<const RefPtr<FullIndexMetadata>> mIndexMetadata;
+  InitializedOnceNotNull<const RefPtr<FullIndexMetadata>> mIndexMetadata;
   const IndexOrObjectStoreId mIndexId;
   const bool mUniqueIndex;
   const nsCString
@@ -7838,7 +8038,7 @@ class ObjectStoreCursorBase : public CursorBase {
   };
 };
 
-using FilesArray = nsTArray<FallibleTArray<StructuredCloneFile>>;
+using FilesArray = nsTArray<FallibleTArray<StructuredCloneFileParent>>;
 
 struct PseudoFilesArray {
   static constexpr bool IsEmpty() { return true; }
@@ -7871,7 +8071,7 @@ class ValueCursorBase {
   const RefPtr<Database> mDatabase;
   const RefPtr<FileManager> mFileManager;
 
-  InitializedOnceMustBeTrue<PBackgroundParent* const> mBackgroundParent;
+  InitializedOnceNotNull<PBackgroundParent* const> mBackgroundParent;
 };
 
 class KeyCursorBase {
@@ -7928,8 +8128,7 @@ class Cursor final
 
   CursorOpBase* mCurrentlyRunningOp = nullptr;
 
-  InitializedOnce<const typename Base::ContinueQueries, LazyInit::Allow>
-      mContinueQueries;
+  LazyInitializedOnce<const typename Base::ContinueQueries> mContinueQueries;
 
   // Only called by TransactionBase.
   bool Start(const OpenCursorParams& aParams) final;
@@ -8232,49 +8431,7 @@ class Utils final : public PBackgroundIndexedDBUtilsParent {
   mozilla::ipc::IPCResult RecvGetFileReferences(
       const PersistenceType& aPersistenceType, const nsCString& aOrigin,
       const nsString& aDatabaseName, const int64_t& aFileId, int32_t* aRefCnt,
-      int32_t* aDBRefCnt, int32_t* aSliceRefCnt, bool* aResult) override;
-};
-
-class GetFileReferencesHelper final : public Runnable {
-  PersistenceType mPersistenceType;
-  nsCString mOrigin;
-  nsString mDatabaseName;
-  int64_t mFileId;
-
-  Lock mMutex;
-  ConditionVariable mCondVar;
-  int32_t mMemRefCnt;
-  int32_t mDBRefCnt;
-  int32_t mSliceRefCnt;
-  bool mResult;
-  bool mWaiting;
-
- public:
-  GetFileReferencesHelper(PersistenceType aPersistenceType,
-                          const nsACString& aOrigin,
-                          const nsAString& aDatabaseName, int64_t aFileId)
-      : Runnable("dom::indexedDB::GetFileReferencesHelper"),
-        mPersistenceType(aPersistenceType),
-        mOrigin(aOrigin),
-        mDatabaseName(aDatabaseName),
-        mFileId(aFileId),
-        mMutex("GetFileReferencesHelper::mMutex"),
-        mCondVar(mMutex, "GetFileReferencesHelper::mCondVar"),
-        mMemRefCnt(-1),
-        mDBRefCnt(-1),
-        mSliceRefCnt(-1),
-        mResult(false),
-        mWaiting(true) {}
-
-  nsresult DispatchAndReturnFileReferences(int32_t* aMemRefCnt,
-                                           int32_t* aDBRefCnt,
-                                           int32_t* aSliceRefCnt,
-                                           bool* aResult);
-
- private:
-  ~GetFileReferencesHelper() override = default;
-
-  NS_DECL_NSIRUNNABLE
+      int32_t* aDBRefCnt, bool* aResult) override;
 };
 
 /*******************************************************************************
@@ -8517,8 +8674,6 @@ class DeleteFilesRunnable final : public Runnable,
   nsCOMPtr<nsIEventTarget> mOwningEventTarget;
   RefPtr<FileManager> mFileManager;
   RefPtr<DirectoryLock> mDirectoryLock;
-  nsCOMPtr<nsIFile> mDirectory;
-  nsCOMPtr<nsIFile> mJournalDirectory;
   nsTArray<int64_t> mFileIds;
   State mState;
 
@@ -8531,8 +8686,6 @@ class DeleteFilesRunnable final : public Runnable,
   ~DeleteFilesRunnable() = default;
 
   nsresult Open();
-
-  nsresult DeleteFile(int64_t aFileId);
 
   nsresult DoDatabaseWork();
 
@@ -8917,35 +9070,39 @@ class DEBUGThreadSlower final : public nsIThreadObserver {
  * Helper classes
  ******************************************************************************/
 
+// XXX Get rid of FileHelper and move the functions into FileManager.
+// Then, FileManager::Get(Journal)Directory and FileManager::GetFileForId might
+// eventually be made private.
 class MOZ_STACK_CLASS FileHelper final {
-  RefPtr<FileManager> mFileManager;
+  const RefPtr<FileManager> mFileManager;
 
-  nsCOMPtr<nsIFile> mFileDirectory;
-  nsCOMPtr<nsIFile> mJournalDirectory;
+  LazyInitializedOnceNotNull<const nsCOMPtr<nsIFile>> mFileDirectory;
+  LazyInitializedOnceNotNull<const nsCOMPtr<nsIFile>> mJournalDirectory;
 
   class ReadCallback;
-  RefPtr<ReadCallback> mReadCallback;
+  LazyInitializedOnceNotNull<const RefPtr<ReadCallback>> mReadCallback;
 
  public:
-  explicit FileHelper(FileManager* aFileManager) : mFileManager(aFileManager) {}
+  explicit FileHelper(RefPtr<FileManager>&& aFileManager)
+      : mFileManager(std::move(aFileManager)) {
+    MOZ_ASSERT(mFileManager);
+  }
 
   nsresult Init();
 
-  MOZ_MUST_USE nsCOMPtr<nsIFile> GetFile(FileInfo* aFileInfo);
+  MOZ_MUST_USE nsCOMPtr<nsIFile> GetFile(const FileInfo& aFileInfo);
 
-  MOZ_MUST_USE nsCOMPtr<nsIFile> GetJournalFile(FileInfo* aFileInfo);
+  MOZ_MUST_USE nsCOMPtr<nsIFile> GetJournalFile(const FileInfo& aFileInfo);
 
-  nsresult CreateFileFromStream(nsIFile* aFile, nsIFile* aJournalFile,
-                                nsIInputStream* aInputStream, bool aCompress);
-
-  nsresult RemoveFile(nsIFile* aFile, nsIFile* aJournalFile);
+  nsresult CreateFileFromStream(nsIFile& aFile, nsIFile& aJournalFile,
+                                nsIInputStream& aInputStream, bool aCompress);
 
  private:
-  nsresult SyncCopy(nsIInputStream* aInputStream,
-                    nsIOutputStream* aOutputStream, char* aBuffer,
+  nsresult SyncCopy(nsIInputStream& aInputStream,
+                    nsIOutputStream& aOutputStream, char* aBuffer,
                     uint32_t aBufferSize);
 
-  nsresult SyncRead(nsIInputStream* aInputStream, char* aBuffer,
+  nsresult SyncRead(nsIInputStream& aInputStream, char* aBuffer,
                     uint32_t aBufferSize, uint32_t* aRead);
 };
 
@@ -8955,39 +9112,37 @@ class MOZ_STACK_CLASS FileHelper final {
 
 bool TokenizerIgnoreNothing(char16_t /* aChar */) { return false; }
 
-nsresult DeserializeStructuredCloneFile(const FileManager& aFileManager,
-                                        const nsDependentSubstring& aText,
-                                        StructuredCloneFile* aFile) {
+Result<StructuredCloneFileParent, nsresult> DeserializeStructuredCloneFile(
+    const FileManager& aFileManager, const nsDependentSubstring& aText) {
   MOZ_ASSERT(!aText.IsEmpty());
-  MOZ_ASSERT(aFile);
 
-  StructuredCloneFile::FileType type;
+  StructuredCloneFileBase::FileType type;
 
   switch (aText.First()) {
     case char16_t('-'):
-      type = StructuredCloneFile::eMutableFile;
+      type = StructuredCloneFileBase::eMutableFile;
       break;
 
     case char16_t('.'):
-      type = StructuredCloneFile::eStructuredClone;
+      type = StructuredCloneFileBase::eStructuredClone;
       break;
 
     case char16_t('/'):
-      type = StructuredCloneFile::eWasmBytecode;
+      type = StructuredCloneFileBase::eWasmBytecode;
       break;
 
     case char16_t('\\'):
-      type = StructuredCloneFile::eWasmCompiled;
+      type = StructuredCloneFileBase::eWasmCompiled;
       break;
 
     default:
-      type = StructuredCloneFile::eBlob;
+      type = StructuredCloneFileBase::eBlob;
   }
 
   nsresult rv;
   int32_t id;
 
-  if (type == StructuredCloneFile::eBlob) {
+  if (type == StructuredCloneFileBase::eBlob) {
     id = aText.ToInteger(&rv);
   } else {
     nsString text(Substring(aText, 1));
@@ -8995,7 +9150,7 @@ nsresult DeserializeStructuredCloneFile(const FileManager& aFileManager,
     id = text.ToInteger(&rv);
   }
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+    return Err(rv);
   }
 
   RefPtr<FileInfo> fileInfo = aFileManager.GetFileInfo(id);
@@ -9009,39 +9164,36 @@ nsresult DeserializeStructuredCloneFile(const FileManager& aFileManager,
         "database request. Bug 1519859 will address this problem.");
     Telemetry::ScalarAdd(Telemetry::ScalarID::IDB_FAILURE_FILEINFO_ERROR, 1);
 
-    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+    return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
   }
 
-  aFile->mFileInfo = std::move(fileInfo);
-  aFile->mType = type;
-
-  return NS_OK;
+  return StructuredCloneFileParent{type, std::move(fileInfo)};
 }
 
-nsresult DeserializeStructuredCloneFiles(
-    const FileManager& aFileManager, const nsAString& aText,
-    nsTArray<StructuredCloneFile>& aResult) {
+Result<nsTArray<StructuredCloneFileParent>, nsresult>
+DeserializeStructuredCloneFiles(const FileManager& aFileManager,
+                                const nsAString& aText) {
   MOZ_ASSERT(!IsOnBackgroundThread());
 
   nsCharSeparatedTokenizerTemplate<TokenizerIgnoreNothing> tokenizer(aText,
                                                                      ' ');
 
-  nsresult rv;
-
+  nsTArray<StructuredCloneFileParent> result;
   while (tokenizer.hasMoreTokens()) {
     const auto& token = tokenizer.nextToken();
     MOZ_ASSERT(!token.IsEmpty());
 
-    auto* const file = aResult.EmplaceBack(StructuredCloneFile::eBlob);
-    MOZ_ASSERT(file);
-
-    rv = DeserializeStructuredCloneFile(aFileManager, token, file);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    auto structuredCloneFileOrErr =
+        DeserializeStructuredCloneFile(aFileManager, token);
+    if (NS_WARN_IF(structuredCloneFileOrErr.isErr())) {
+      // XXX Can't this be written in a simpler way?
+      return Err(structuredCloneFileOrErr.unwrapErr());
     }
+
+    result.EmplaceBack(structuredCloneFileOrErr.unwrap());
   }
 
-  return NS_OK;
+  return result;
 }
 
 bool GetBaseFilename(const nsAString& aFilename, const nsAString& aSuffix,
@@ -9063,7 +9215,7 @@ bool GetBaseFilename(const nsAString& aFilename, const nsAString& aSuffix,
 mozilla::Result<nsTArray<SerializedStructuredCloneFile>, nsresult>
 SerializeStructuredCloneFiles(PBackgroundParent* aBackgroundActor,
                               Database* aDatabase,
-                              const nsTArray<StructuredCloneFile>& aFiles,
+                              const nsTArray<StructuredCloneFileParent>& aFiles,
                               bool aForPreprocess) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aBackgroundActor);
@@ -9089,12 +9241,13 @@ SerializeStructuredCloneFiles(PBackgroundParent* aBackgroundActor,
     return Err(NS_ERROR_OUT_OF_MEMORY);
   }
 
-  for (const StructuredCloneFile& file : aFiles) {
-    if (aForPreprocess && file.mType != StructuredCloneFile::eStructuredClone) {
+  for (const StructuredCloneFileParent& file : aFiles) {
+    if (aForPreprocess &&
+        file.Type() != StructuredCloneFileBase::eStructuredClone) {
       continue;
     }
 
-    const int64_t fileId = file.mFileInfo->Id();
+    const int64_t fileId = file.FileInfo().Id();
     MOZ_ASSERT(fileId > 0);
 
     nsCOMPtr<nsIFile> nativeFile =
@@ -9105,10 +9258,10 @@ SerializeStructuredCloneFiles(PBackgroundParent* aBackgroundActor,
       return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
     }
 
-    switch (file.mType) {
-      case StructuredCloneFile::eBlob: {
+    switch (file.Type()) {
+      case StructuredCloneFileBase::eBlob: {
         RefPtr<FileBlobImpl> impl = new FileBlobImpl(nativeFile);
-        impl->SetFileId(file.mFileInfo->Id());
+        impl->SetFileId(file.FileInfo().Id());
 
         IPCBlob ipcBlob;
         nsresult rv = IPCBlobUtils::Serialize(impl, aBackgroundActor, ipcBlob);
@@ -9118,18 +9271,18 @@ SerializeStructuredCloneFiles(PBackgroundParent* aBackgroundActor,
           return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
         }
 
-        result.EmplaceBack(ipcBlob, StructuredCloneFile::eBlob);
+        result.EmplaceBack(ipcBlob, StructuredCloneFileBase::eBlob);
 
-        aDatabase->MapBlob(ipcBlob, file.mFileInfo);
+        aDatabase->MapBlob(ipcBlob, file.FileInfoPtr());
         break;
       }
 
-      case StructuredCloneFile::eMutableFile: {
+      case StructuredCloneFileBase::eMutableFile: {
         if (aDatabase->IsFileHandleDisabled()) {
-          result.EmplaceBack(null_t(), StructuredCloneFile::eMutableFile);
+          result.EmplaceBack(null_t(), StructuredCloneFileBase::eMutableFile);
         } else {
           RefPtr<MutableFile> actor =
-              MutableFile::Create(nativeFile, aDatabase, file.mFileInfo);
+              MutableFile::Create(nativeFile, aDatabase, file.FileInfoPtr());
           if (!actor) {
             IDB_REPORT_INTERNAL_ERR();
             return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
@@ -9145,18 +9298,20 @@ SerializeStructuredCloneFiles(PBackgroundParent* aBackgroundActor,
             return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
           }
 
-          result.EmplaceBack(actor.get(), StructuredCloneFile::eMutableFile);
+          result.EmplaceBack(actor.get(),
+                             StructuredCloneFileBase::eMutableFile);
         }
 
         break;
       }
 
-      case StructuredCloneFile::eStructuredClone: {
+      case StructuredCloneFileBase::eStructuredClone: {
         if (!aForPreprocess) {
-          result.EmplaceBack(null_t(), StructuredCloneFile::eStructuredClone);
+          result.EmplaceBack(null_t(),
+                             StructuredCloneFileBase::eStructuredClone);
         } else {
           RefPtr<FileBlobImpl> impl = new FileBlobImpl(nativeFile);
-          impl->SetFileId(file.mFileInfo->Id());
+          impl->SetFileId(file.FileInfo().Id());
 
           IPCBlob ipcBlob;
           nsresult rv =
@@ -9167,22 +9322,23 @@ SerializeStructuredCloneFiles(PBackgroundParent* aBackgroundActor,
             return Err(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
           }
 
-          result.EmplaceBack(ipcBlob, StructuredCloneFile::eStructuredClone);
+          result.EmplaceBack(ipcBlob,
+                             StructuredCloneFileBase::eStructuredClone);
 
-          aDatabase->MapBlob(ipcBlob, file.mFileInfo);
+          aDatabase->MapBlob(ipcBlob, file.FileInfoPtr());
         }
 
         break;
       }
 
-      case StructuredCloneFile::eWasmBytecode:
-      case StructuredCloneFile::eWasmCompiled: {
+      case StructuredCloneFileBase::eWasmBytecode:
+      case StructuredCloneFileBase::eWasmCompiled: {
         // Set file() to null, support for storing WebAssembly.Modules has been
         // removed in bug 1469395. Support for de-serialization of
         // WebAssembly.Modules modules has been removed in bug 1561876. Full
         // removal is tracked in bug 1487479.
 
-        result.EmplaceBack(null_t(), file.mType);
+        result.EmplaceBack(null_t(), file.Type());
 
         break;
       }
@@ -9195,36 +9351,28 @@ SerializeStructuredCloneFiles(PBackgroundParent* aBackgroundActor,
   return std::move(result);
 }
 
-// Idempotently delete a file, decreasing the quota usage as appropriate. If the
-// file no longer exists, success is returned, although quota usage can't be
-// decreased. (With the assumption being that the file was already deleted prior
-// to this logic running, and the non-existent file was no longer tracked by
-// quota because it didn't exist at initialization time or a previous deletion
-// call updated the usage.)
-nsresult DeleteFile(nsIFile* aDirectory, const nsAString& aFilename,
-                    QuotaManager* aQuotaManager,
+enum struct Idempotency { Yes, No };
+
+// Delete a file, decreasing the quota usage as appropriate. If the file no
+// longer exists but aIdempotent is true, success is returned, although quota
+// usage can't be decreased. (With the assumption being that the file was
+// already deleted prior to this logic running, and the non-existent file was no
+// longer tracked by quota because it didn't exist at initialization time or a
+// previous deletion call updated the usage.)
+nsresult DeleteFile(nsIFile& aFile, QuotaManager* const aQuotaManager,
                     const PersistenceType aPersistenceType,
-                    const nsACString& aGroup, const nsACString& aOrigin) {
-  AssertIsOnIOThread();
-  MOZ_ASSERT(aDirectory);
-  MOZ_ASSERT(!aFilename.IsEmpty());
+                    const nsACString& aGroup, const nsACString& aOrigin,
+                    const Idempotency aIdempotent) {
+  MOZ_ASSERT(!NS_IsMainThread());
+  MOZ_ASSERT(!IsOnBackgroundThread());
 
-  nsCOMPtr<nsIFile> file;
-  nsresult rv = aDirectory->Clone(getter_AddRefs(file));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  rv = file->Append(aFilename);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
+  nsresult rv;
   int64_t fileSize;
   if (aQuotaManager) {
-    rv = file->GetFileSize(&fileSize);
-    if (rv == NS_ERROR_FILE_NOT_FOUND ||
-        rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST) {
+    rv = aFile.GetFileSize(&fileSize);
+    if (aIdempotent == Idempotency::Yes &&
+        (rv == NS_ERROR_FILE_NOT_FOUND ||
+         rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST)) {
       return NS_OK;
     }
 
@@ -9235,9 +9383,10 @@ nsresult DeleteFile(nsIFile* aDirectory, const nsAString& aFilename,
     MOZ_ASSERT(fileSize >= 0);
   }
 
-  rv = file->Remove(false);
-  if (rv == NS_ERROR_FILE_NOT_FOUND ||
-      rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST) {
+  rv = aFile.Remove(false);
+  if (aIdempotent == Idempotency::Yes &&
+      (rv == NS_ERROR_FILE_NOT_FOUND ||
+       rv == NS_ERROR_FILE_TARGET_DOES_NOT_EXIST)) {
     return NS_OK;
   }
 
@@ -9253,12 +9402,35 @@ nsresult DeleteFile(nsIFile* aDirectory, const nsAString& aFilename,
   return NS_OK;
 }
 
+nsresult DeleteFile(nsIFile& aDirectory, const nsAString& aFilename,
+                    QuotaManager* const aQuotaManager,
+                    const PersistenceType aPersistenceType,
+                    const nsACString& aGroup, const nsACString& aOrigin,
+                    const Idempotency aIdempotent) {
+  AssertIsOnIOThread();
+  MOZ_ASSERT(!aFilename.IsEmpty());
+
+  nsCOMPtr<nsIFile> file;
+  nsresult rv = aDirectory.Clone(getter_AddRefs(file));
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = file->Append(aFilename);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  return DeleteFile(*file, aQuotaManager, aPersistenceType, aGroup, aOrigin,
+                    aIdempotent);
+}
+
 nsresult DeleteFilesNoQuota(nsIFile* aDirectory, const nsAString& aFilename) {
   AssertIsOnIOThread();
   MOZ_ASSERT(aDirectory);
   MOZ_ASSERT(!aFilename.IsEmpty());
 
-  // The current using function hasn't initialzed the origin, so in here we
+  // The current using function hasn't initialized the origin, so in here we
   // don't update the size of origin. Adding this assertion for preventing from
   // misusing.
   DebugOnly<QuotaManager*> quotaManager = QuotaManager::Get();
@@ -9291,15 +9463,14 @@ nsresult DeleteFilesNoQuota(nsIFile* aDirectory, const nsAString& aFilename) {
 // CreateMarkerFile and RemoveMarkerFile are a pair of functions to indicate
 // whether having removed all the files successfully. The marker file should
 // be checked before executing the next operation or initialization.
-nsresult CreateMarkerFile(nsIFile* aBaseDirectory,
+nsresult CreateMarkerFile(nsIFile& aBaseDirectory,
                           const nsAString& aDatabaseNameBase,
                           nsCOMPtr<nsIFile>* aMarkerFileOut) {
   AssertIsOnIOThread();
-  MOZ_ASSERT(aBaseDirectory);
   MOZ_ASSERT(!aDatabaseNameBase.IsEmpty());
 
   nsCOMPtr<nsIFile> markerFile;
-  nsresult rv = aBaseDirectory->Clone(getter_AddRefs(markerFile));
+  nsresult rv = aBaseDirectory.Clone(getter_AddRefs(markerFile));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -9343,7 +9514,7 @@ nsresult RemoveMarkerFile(nsIFile* aMarkerFile) {
 // called on a partially deleted database, this method uses DeleteFile which
 // succeeds when the file we ask it to delete does not actually exist. The
 // marker file is removed once deletion has successfully completed.
-nsresult RemoveDatabaseFilesAndDirectory(nsIFile* aBaseDirectory,
+nsresult RemoveDatabaseFilesAndDirectory(nsIFile& aBaseDirectory,
                                          const nsAString& aFilenameBase,
                                          QuotaManager* aQuotaManager,
                                          const PersistenceType aPersistenceType,
@@ -9351,7 +9522,6 @@ nsresult RemoveDatabaseFilesAndDirectory(nsIFile* aBaseDirectory,
                                          const nsACString& aOrigin,
                                          const nsAString& aDatabaseName) {
   AssertIsOnIOThread();
-  MOZ_ASSERT(aBaseDirectory);
   MOZ_ASSERT(!aFilenameBase.IsEmpty());
 
   AUTO_PROFILER_LABEL("RemoveDatabaseFilesAndDirectory", DOM);
@@ -9364,7 +9534,7 @@ nsresult RemoveDatabaseFilesAndDirectory(nsIFile* aBaseDirectory,
 
   // The database file counts towards quota.
   rv = DeleteFile(aBaseDirectory, aFilenameBase + kSQLiteSuffix, aQuotaManager,
-                  aPersistenceType, aGroup, aOrigin);
+                  aPersistenceType, aGroup, aOrigin, Idempotency::Yes);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -9372,7 +9542,7 @@ nsresult RemoveDatabaseFilesAndDirectory(nsIFile* aBaseDirectory,
   // .sqlite-journal files don't count towards quota.
   rv = DeleteFile(aBaseDirectory, aFilenameBase + kSQLiteJournalSuffix,
                   /* doesn't count */ nullptr, aPersistenceType, aGroup,
-                  aOrigin);
+                  aOrigin, Idempotency::Yes);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -9380,20 +9550,21 @@ nsresult RemoveDatabaseFilesAndDirectory(nsIFile* aBaseDirectory,
   // .sqlite-shm files don't count towards quota.
   rv = DeleteFile(aBaseDirectory, aFilenameBase + kSQLiteSHMSuffix,
                   /* doesn't count */ nullptr, aPersistenceType, aGroup,
-                  aOrigin);
+                  aOrigin, Idempotency::Yes);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
   // .sqlite-wal files do count towards quota.
   rv = DeleteFile(aBaseDirectory, aFilenameBase + kSQLiteWALSuffix,
-                  aQuotaManager, aPersistenceType, aGroup, aOrigin);
+                  aQuotaManager, aPersistenceType, aGroup, aOrigin,
+                  Idempotency::Yes);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
 
   nsCOMPtr<nsIFile> fmDirectory;
-  rv = aBaseDirectory->Clone(getter_AddRefs(fmDirectory));
+  rv = aBaseDirectory.Clone(getter_AddRefs(fmDirectory));
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -9848,14 +10019,14 @@ struct CommonPopulateResponseHelper {
   }
 
   template <typename Response>
-  void FillKeys(Response* const aResponse) {
+  void FillKeys(Response& aResponse) {
     MOZ_ASSERT(!mPosition.IsUnset());
-    aResponse->key() = std::move(mPosition);
+    aResponse.key() = std::move(mPosition);
   }
 
   template <typename Response>
-  static size_t GetKeySize(const Response* const aResponse) {
-    return aResponse->key().GetBuffer().Length();
+  static size_t GetKeySize(const Response& aResponse) {
+    return aResponse.key().GetBuffer().Length();
   }
 
  protected:
@@ -9898,20 +10069,20 @@ struct IndexPopulateResponseHelper : CommonPopulateResponseHelper {
   }
 
   template <typename Response>
-  void FillKeys(Response* const aResponse) {
+  void FillKeys(Response& aResponse) {
     MOZ_ASSERT(!mLocaleAwarePosition.IsUnset());
     MOZ_ASSERT(!mObjectStorePosition.IsUnset());
 
     CommonPopulateResponseHelper::FillKeys(aResponse);
-    aResponse->sortKey() = std::move(mLocaleAwarePosition);
-    aResponse->objectKey() = std::move(mObjectStorePosition);
+    aResponse.sortKey() = std::move(mLocaleAwarePosition);
+    aResponse.objectKey() = std::move(mObjectStorePosition);
   }
 
   template <typename Response>
-  static size_t GetKeySize(const Response* const aResponse) {
+  static size_t GetKeySize(Response& aResponse) {
     return CommonPopulateResponseHelper::GetKeySize(aResponse) +
-           aResponse->sortKey().GetBuffer().Length() +
-           aResponse->objectKey().GetBuffer().Length();
+           aResponse.sortKey().GetBuffer().Length() +
+           aResponse.objectKey().GetBuffer().Length();
   }
 
  private:
@@ -9925,12 +10096,11 @@ struct KeyPopulateResponseHelper {
   }
 
   template <typename Response>
-  static constexpr void MaybeFillCloneInfo(Response* const /*aResponse*/,
+  static constexpr void MaybeFillCloneInfo(Response& /*aResponse*/,
                                            FilesArray* const /*aFiles*/) {}
 
   template <typename Response>
-  static constexpr size_t MaybeGetCloneInfoSize(
-      const Response* const /*aResponse*/) {
+  static constexpr size_t MaybeGetCloneInfoSize(const Response& /*aResponse*/) {
     return 0;
   }
 };
@@ -9943,14 +10113,16 @@ struct ValuePopulateResponseHelper {
 
     constexpr auto offset = StatementHasIndexKeyBindings ? 2 : 0;
 
-    const nsresult rv =
+    auto cloneInfoOrErr =
         DatabaseOperationBase::GetStructuredCloneReadInfoFromStatement(
-            aStmt, 2 + offset, 1 + offset, *aCursor.mFileManager, &mCloneInfo);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+            aStmt, 2 + offset, 1 + offset, *aCursor.mFileManager);
+    if (NS_WARN_IF(cloneInfoOrErr.isErr())) {
+      return cloneInfoOrErr.unwrapErr();
     }
 
-    if (mCloneInfo.mHasPreprocessInfo) {
+    mCloneInfo.init(cloneInfoOrErr.unwrap());
+
+    if (mCloneInfo->HasPreprocessInfo()) {
       IDB_WARNING("Preprocessing for cursors not yet implemented!");
       return NS_ERROR_NOT_IMPLEMENTED;
     }
@@ -9959,19 +10131,28 @@ struct ValuePopulateResponseHelper {
   }
 
   template <typename Response>
-  void MaybeFillCloneInfo(Response* const aResponse, FilesArray* const aFiles) {
-    aResponse->cloneInfo().data().data = std::move(mCloneInfo.mData);
-    aFiles->AppendElement(std::move(mCloneInfo.mFiles));
+  void MaybeFillCloneInfo(Response& aResponse, FilesArray* const aFiles) {
+    auto cloneInfo = mCloneInfo.release();
+    aResponse.cloneInfo().data().data = cloneInfo.ReleaseData();
+
+    // TODO (Bug 1620632) On gcc, the following fails to compile:
+    //     aFiles->AppendElement(cloneInfo.ReleaseFiles());
+    // so we construct a FallibleTArray and swap the elements...
+
+    auto files = cloneInfo.ReleaseFiles();
+    FallibleTArray<mozilla::dom::indexedDB::StructuredCloneFileParent> temp;
+    temp.SwapElements(files);
+    aFiles->AppendElement(std::move(temp));
   }
 
   template <typename Response>
-  static size_t MaybeGetCloneInfoSize(const Response* const aResponse) {
-    return aResponse->cloneInfo().data().data.Size();
+  static size_t MaybeGetCloneInfoSize(const Response& aResponse) {
+    return aResponse.cloneInfo().data().data.Size();
   }
 
  private:
-  StructuredCloneReadInfo mCloneInfo{
-      JS::StructuredCloneScope::DifferentProcess};
+  LazyInitializedOnceEarlyDestructible<const StructuredCloneReadInfoParent>
+      mCloneInfo;
 };
 
 template <>
@@ -10013,6 +10194,386 @@ struct PopulateResponseHelper<IDBCursorType::IndexKey>
     return aResponse->get_ArrayOfIndexKeyCursorResponse();
   }
 };
+
+nsresult DispatchAndReturnFileReferences(
+    PersistenceType aPersistenceType, const nsACString& aOrigin,
+    const nsAString& aDatabaseName, const int64_t aFileId,
+    int32_t* const aMemRefCnt, int32_t* const aDBRefCnt, bool* const aResult) {
+  AssertIsOnBackgroundThread();
+  MOZ_ASSERT(aMemRefCnt);
+  MOZ_ASSERT(aDBRefCnt);
+  MOZ_ASSERT(aResult);
+
+  *aResult = false;
+  *aMemRefCnt = -1;
+  *aDBRefCnt = -1;
+
+  mozilla::Monitor2 monitor(__func__);
+  bool waiting = true;
+
+  auto lambda = [&] {
+    AssertIsOnIOThread();
+
+    {
+      IndexedDatabaseManager* const mgr = IndexedDatabaseManager::Get();
+      MOZ_ASSERT(mgr);
+
+      const RefPtr<FileManager> fileManager =
+          mgr->GetFileManager(aPersistenceType, aOrigin, aDatabaseName);
+
+      if (fileManager) {
+        const RefPtr<FileInfo> fileInfo = fileManager->GetFileInfo(aFileId);
+
+        if (fileInfo) {
+          fileInfo->GetReferences(aMemRefCnt, aDBRefCnt);
+
+          if (*aMemRefCnt != -1) {
+            // We added an extra temp ref, so account for that accordingly.
+            (*aMemRefCnt)--;
+          }
+
+          *aResult = true;
+        }
+      }
+    }
+
+    mozilla::Monitor2AutoLock lock(monitor);
+    MOZ_ASSERT(waiting);
+
+    waiting = false;
+    lock.Signal();
+  };
+
+  QuotaManager* const quotaManager = QuotaManager::Get();
+  MOZ_ASSERT(quotaManager);
+
+  // XXX can't we simply use NS_DISPATCH_SYNC instead of using a monitor?
+  const nsresult rv = quotaManager->IOThread()->Dispatch(
+      NS_NewRunnableFunction("GetFileReferences", std::move(lambda)),
+      NS_DISPATCH_NORMAL);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  mozilla::Monitor2AutoLock autolock(monitor);
+  while (waiting) {
+    autolock.Wait();
+  }
+
+  return NS_OK;
+}
+
+// This class helps to create only 1 sandbox.
+class SandboxHolder final {
+ public:
+  NS_INLINE_DECL_REFCOUNTING(SandboxHolder)
+
+  static JSObject* GetSandbox(JSContext* aCx) {
+    SandboxHolder* holder = GetOrCreate();
+    return holder->GetSandboxInternal(aCx);
+  }
+
+ private:
+  ~SandboxHolder() = default;
+
+  static SandboxHolder* GetOrCreate() {
+    MOZ_ASSERT(XRE_IsParentProcess());
+    MOZ_ASSERT(NS_IsMainThread());
+
+    static StaticRefPtr<SandboxHolder> sHolder;
+    if (!sHolder) {
+      sHolder = new SandboxHolder();
+      ClearOnShutdown(&sHolder);
+    }
+    return sHolder;
+  }
+
+  JSObject* GetSandboxInternal(JSContext* aCx) {
+    if (!mSandbox) {
+      nsIXPConnect* const xpc = nsContentUtils::XPConnect();
+      MOZ_ASSERT(xpc, "This should never be null!");
+
+      // Let's use a null principal.
+      const nsCOMPtr<nsIPrincipal> principal =
+          NullPrincipal::CreateWithoutOriginAttributes();
+
+      JS::Rooted<JSObject*> sandbox(aCx);
+      nsresult rv = xpc->CreateSandbox(aCx, principal, sandbox.address());
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        return nullptr;
+      }
+
+      mSandbox = new JSObjectHolder(aCx, sandbox);
+    }
+
+    return mSandbox->GetJSObject();
+  }
+
+  RefPtr<JSObjectHolder> mSandbox;
+};
+
+class DeserializeIndexValueHelper final : public Runnable {
+ public:
+  DeserializeIndexValueHelper(int64_t aIndexID, const KeyPath& aKeyPath,
+                              bool aMultiEntry, const nsCString& aLocale,
+                              StructuredCloneReadInfoParent& aCloneReadInfo,
+                              nsTArray<IndexUpdateInfo>& aUpdateInfoArray)
+      : Runnable("DeserializeIndexValueHelper"),
+        mMonitor("DeserializeIndexValueHelper::mMonitor"),
+        mIndexID(aIndexID),
+        mKeyPath(aKeyPath),
+        mMultiEntry(aMultiEntry),
+        mLocale(aLocale),
+        mCloneReadInfo(aCloneReadInfo),
+        mUpdateInfoArray(aUpdateInfoArray),
+        mStatus(NS_ERROR_FAILURE) {}
+
+  void DispatchAndWait(ErrorResult& aRv) {
+    // We don't need to go to the main-thread and use the sandbox. Let's create
+    // the updateInfo data here.
+    if (!mCloneReadInfo.Data().Size()) {
+      AutoJSAPI jsapi;
+      jsapi.Init();
+
+      JS::Rooted<JS::Value> value(jsapi.cx());
+      value.setUndefined();
+
+      IDBObjectStore::AppendIndexUpdateInfo(mIndexID, mKeyPath, mMultiEntry,
+                                            mLocale, jsapi.cx(), value,
+                                            &mUpdateInfoArray, &aRv);
+      return;
+    }
+
+    // The operation will continue on the main-thread.
+
+    MOZ_ASSERT(!(mCloneReadInfo.Data().Size() % sizeof(uint64_t)));
+
+    Monitor2AutoLock lock(mMonitor);
+
+    RefPtr<Runnable> self = this;
+    const nsresult rv =
+        SystemGroup::Dispatch(TaskCategory::Other, self.forget());
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      aRv.Throw(rv);
+      return;
+    }
+
+    lock.Wait();
+    aRv = mStatus;
+  }
+
+  NS_IMETHOD
+  Run() override {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    AutoJSAPI jsapi;
+    jsapi.Init();
+    JSContext* const cx = jsapi.cx();
+
+    JS::Rooted<JSObject*> global(cx, SandboxHolder::GetSandbox(cx));
+    if (NS_WARN_IF(!global)) {
+      OperationCompleted(NS_ERROR_FAILURE);
+      return NS_OK;
+    }
+
+    const JSAutoRealm ar(cx, global);
+
+    JS::Rooted<JS::Value> value(cx);
+    const nsresult rv = DeserializeIndexValue(cx, &value);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      OperationCompleted(rv);
+      return NS_OK;
+    }
+
+    ErrorResult errorResult;
+    IDBObjectStore::AppendIndexUpdateInfo(mIndexID, mKeyPath, mMultiEntry,
+                                          mLocale, cx, value, &mUpdateInfoArray,
+                                          &errorResult);
+    if (NS_WARN_IF(errorResult.Failed())) {
+      OperationCompleted(errorResult.StealNSResult());
+      return NS_OK;
+    }
+
+    OperationCompleted(NS_OK);
+    return NS_OK;
+  }
+
+ private:
+  nsresult DeserializeIndexValue(JSContext* aCx,
+                                 JS::MutableHandle<JS::Value> aValue) {
+    static const JSStructuredCloneCallbacks callbacks = {
+        StructuredCloneReadCallback<StructuredCloneReadInfoParent>,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr};
+
+    if (!JS_ReadStructuredClone(
+            aCx, mCloneReadInfo.Data(), JS_STRUCTURED_CLONE_VERSION,
+            JS::StructuredCloneScope::DifferentProcessForIndexedDB, aValue,
+            &callbacks, &mCloneReadInfo)) {
+      return NS_ERROR_DOM_DATA_CLONE_ERR;
+    }
+
+    return NS_OK;
+  }
+
+  void OperationCompleted(nsresult aStatus) {
+    mStatus = aStatus;
+
+    Monitor2AutoLock lock(mMonitor);
+    lock.Signal();
+  }
+
+  Monitor2 mMonitor;
+
+  const int64_t mIndexID;
+  const KeyPath& mKeyPath;
+  const bool mMultiEntry;
+  const nsCString mLocale;
+  StructuredCloneReadInfoParent& mCloneReadInfo;
+  nsTArray<IndexUpdateInfo>& mUpdateInfoArray;
+  nsresult mStatus;
+};
+
+class DeserializeUpgradeValueHelper final : public Runnable {
+ public:
+  explicit DeserializeUpgradeValueHelper(
+      StructuredCloneReadInfoParent& aCloneReadInfo)
+      : Runnable("DeserializeUpgradeValueHelper"),
+        mMonitor("DeserializeUpgradeValueHelper::mMonitor"),
+        mCloneReadInfo(aCloneReadInfo),
+        mStatus(NS_ERROR_FAILURE) {}
+
+  nsresult DispatchAndWait(nsAString& aFileIds) {
+    // We don't need to go to the main-thread and use the sandbox.
+    if (!mCloneReadInfo.Data().Size()) {
+      PopulateFileIds(aFileIds);
+      return NS_OK;
+    }
+
+    // The operation will continue on the main-thread.
+
+    MOZ_ASSERT(!(mCloneReadInfo.Data().Size() % sizeof(uint64_t)));
+
+    Monitor2AutoLock lock(mMonitor);
+
+    RefPtr<Runnable> self = this;
+    const nsresult rv =
+        SystemGroup::Dispatch(TaskCategory::Other, self.forget());
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+
+    lock.Wait();
+
+    if (NS_FAILED(mStatus)) {
+      return mStatus;
+    }
+
+    PopulateFileIds(aFileIds);
+    return NS_OK;
+  }
+
+  NS_IMETHOD
+  Run() override {
+    MOZ_ASSERT(NS_IsMainThread());
+
+    AutoJSAPI jsapi;
+    jsapi.Init();
+    JSContext* cx = jsapi.cx();
+
+    JS::Rooted<JSObject*> global(cx, SandboxHolder::GetSandbox(cx));
+    if (NS_WARN_IF(!global)) {
+      OperationCompleted(NS_ERROR_FAILURE);
+      return NS_OK;
+    }
+
+    const JSAutoRealm ar(cx, global);
+
+    JS::Rooted<JS::Value> value(cx);
+    const nsresult rv = DeserializeUpgradeValue(cx, &value);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      OperationCompleted(rv);
+      return NS_OK;
+    }
+
+    OperationCompleted(NS_OK);
+    return NS_OK;
+  }
+
+ private:
+  nsresult DeserializeUpgradeValue(JSContext* aCx,
+                                   JS::MutableHandle<JS::Value> aValue) {
+    static const JSStructuredCloneCallbacks callbacks = {
+        StructuredCloneReadCallback<StructuredCloneReadInfoParent>,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr,
+        nullptr};
+
+    if (!JS_ReadStructuredClone(
+            aCx, mCloneReadInfo.Data(), JS_STRUCTURED_CLONE_VERSION,
+            JS::StructuredCloneScope::DifferentProcessForIndexedDB, aValue,
+            &callbacks, &mCloneReadInfo)) {
+      return NS_ERROR_DOM_DATA_CLONE_ERR;
+    }
+
+    return NS_OK;
+  }
+
+  void PopulateFileIds(nsAString& aFileIds) {
+    for (uint32_t count = mCloneReadInfo.Files().Length(), index = 0;
+         index < count; index++) {
+      const StructuredCloneFileParent& file = mCloneReadInfo.Files()[index];
+
+      const int64_t id = file.FileInfo().Id();
+
+      if (index) {
+        aFileIds.Append(' ');
+      }
+      aFileIds.AppendInt(file.Type() == StructuredCloneFileBase::eBlob ? id
+                                                                       : -id);
+    }
+  }
+
+  void OperationCompleted(nsresult aStatus) {
+    mStatus = aStatus;
+
+    Monitor2AutoLock lock(mMonitor);
+    lock.Signal();
+  }
+
+  Monitor2 mMonitor;
+  StructuredCloneReadInfoParent& mCloneReadInfo;
+  nsresult mStatus;
+};
+
+void DeserializeIndexValueToUpdateInfos(
+    int64_t aIndexID, const KeyPath& aKeyPath, bool aMultiEntry,
+    const nsCString& aLocale, StructuredCloneReadInfoParent& aCloneReadInfo,
+    nsTArray<IndexUpdateInfo>& aUpdateInfoArray, ErrorResult& aRv) {
+  MOZ_ASSERT(!NS_IsMainThread());
+
+  const RefPtr<DeserializeIndexValueHelper> helper =
+      new DeserializeIndexValueHelper(aIndexID, aKeyPath, aMultiEntry, aLocale,
+                                      aCloneReadInfo, aUpdateInfoArray);
+  helper->DispatchAndWait(aRv);
+}
+
+nsresult DeserializeUpgradeValueToFileIds(
+    StructuredCloneReadInfoParent& aCloneReadInfo, nsAString& aFileIds) {
+  MOZ_ASSERT(!NS_IsMainThread());
+
+  const RefPtr<DeserializeUpgradeValueHelper> helper =
+      new DeserializeUpgradeValueHelper(aCloneReadInfo);
+  return helper->DispatchAndWait(aFileIds);
+}
+
 }  // namespace
 
 /*******************************************************************************
@@ -10110,12 +10671,13 @@ FileHandleThreadPool* GetFileHandleThreadPool() {
   return gFileHandleThreadPool;
 }
 
-nsresult AsyncDeleteFile(FileManager* aFileManager, int64_t aFileId) {
+nsresult FileManager::AsyncDeleteFile(int64_t aFileId) {
   AssertIsOnBackgroundThread();
+  MOZ_ASSERT(!mFileInfos.Contains(aFileId));
 
   QuotaClient* quotaClient = QuotaClient::GetInstance();
   if (quotaClient) {
-    nsresult rv = quotaClient->AsyncDeleteFile(aFileManager, aFileId);
+    nsresult rv = quotaClient->AsyncDeleteFile(this, aFileId);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -10728,9 +11290,9 @@ void DatabaseConnection::Close() {
   mCachedStatements.Clear();
 
   MOZ_ALWAYS_SUCCEEDS((*mStorageConnection)->Close());
-  mStorageConnection.reset();
+  mStorageConnection.destroy();
 
-  mFileManager.reset();
+  mFileManager.destroy();
 }
 
 nsresult DatabaseConnection::DisableQuotaChecks() {
@@ -10759,7 +11321,14 @@ nsresult DatabaseConnection::DisableQuotaChecks() {
 
 void DatabaseConnection::EnableQuotaChecks() {
   AssertIsOnConnectionThread();
-  MOZ_ASSERT(mQuotaObject);
+  if (!mQuotaObject) {
+    MOZ_ASSERT(!mJournalQuotaObject);
+
+    // DisableQuotaChecks failed earlier, so we don't need to enable quota
+    // checks again.
+    return;
+  }
+
   MOZ_ASSERT(mJournalQuotaObject);
 
   const RefPtr<QuotaObject> quotaObject = std::move(mQuotaObject);
@@ -10989,7 +11558,8 @@ nsresult DatabaseConnection::UpdateRefcountFunction::WillCommit() {
     const auto& value = entry.GetData();
     MOZ_ASSERT(value);
 
-    if (value->mDelta && !function.Update(entry.GetKey(), value->mDelta)) {
+    const auto delta = value->Delta();
+    if (delta && !function.Update(entry.GetKey(), delta)) {
       break;
     }
   }
@@ -11018,10 +11588,7 @@ void DatabaseConnection::UpdateRefcountFunction::DidCommit() {
     const auto& value = entry.GetData();
 
     MOZ_ASSERT(value);
-
-    if (value->mDelta) {
-      value->mFileInfo->UpdateDBRefs(value->mDelta);
-    }
+    value->MaybeUpdateDBRefs();
   }
 
   if (NS_FAILED(RemoveJournals(mJournalsToRemoveAfterCommit))) {
@@ -11067,7 +11634,7 @@ void DatabaseConnection::UpdateRefcountFunction::RollbackSavepoint() {
 
   for (const auto& entry : mSavepointEntriesIndex) {
     auto* const value = entry.GetData();
-    value->mDelta -= value->mSavepointDelta;
+    value->DecBySavepointDelta();
   }
 
   mInSavepoint = false;
@@ -11080,70 +11647,6 @@ void DatabaseConnection::UpdateRefcountFunction::Reset() {
   MOZ_ASSERT(!mSavepointEntriesIndex.Count());
   MOZ_ASSERT(!mInSavepoint);
 
-  class MOZ_STACK_CLASS CustomCleanupCallback final
-      : public FileInfo::CustomCleanupCallback {
-    nsCOMPtr<nsIFile> mDirectory;
-    nsCOMPtr<nsIFile> mJournalDirectory;
-
-   public:
-    nsresult Cleanup(FileManager* aFileManager, int64_t aId) override {
-      if (!mDirectory) {
-        MOZ_ASSERT(!mJournalDirectory);
-
-        mDirectory = aFileManager->GetDirectory();
-        if (NS_WARN_IF(!mDirectory)) {
-          return NS_ERROR_FAILURE;
-        }
-
-        mJournalDirectory = aFileManager->GetJournalDirectory();
-        if (NS_WARN_IF(!mJournalDirectory)) {
-          return NS_ERROR_FAILURE;
-        }
-      }
-
-      nsCOMPtr<nsIFile> file = FileManager::GetFileForId(mDirectory, aId);
-      if (NS_WARN_IF(!file)) {
-        return NS_ERROR_FAILURE;
-      }
-
-      nsresult rv;
-      int64_t fileSize;
-
-      if (aFileManager->EnforcingQuota()) {
-        rv = file->GetFileSize(&fileSize);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return rv;
-        }
-      }
-
-      rv = file->Remove(false);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-
-      if (aFileManager->EnforcingQuota()) {
-        QuotaManager* const quotaManager = QuotaManager::Get();
-        MOZ_ASSERT(quotaManager);
-
-        quotaManager->DecreaseUsageForOrigin(
-            aFileManager->Type(), aFileManager->Group(), aFileManager->Origin(),
-            Client::IDB, fileSize);
-      }
-
-      file = FileManager::GetFileForId(mJournalDirectory, aId);
-      if (NS_WARN_IF(!file)) {
-        return NS_ERROR_FAILURE;
-      }
-
-      rv = file->Remove(false);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-
-      return NS_OK;
-    }
-  };
-
   mJournalsToCreateBeforeCommit.Clear();
   mJournalsToRemoveAfterCommit.Clear();
   mJournalsToRemoveAfterAbort.Clear();
@@ -11155,11 +11658,12 @@ void DatabaseConnection::UpdateRefcountFunction::Reset() {
     const auto& value = entry.GetData();
     MOZ_ASSERT(value);
 
-    FileInfo* const fileInfo = value->mFileInfo.forget().take();
+    // We need to move mFileInfo into a raw pointer in order to release it
+    // explicitly with aSyncDeleteFile == true.
+    FileInfo* const fileInfo = value->ReleaseFileInfo().forget().take();
     MOZ_ASSERT(fileInfo);
 
-    CustomCleanupCallback customCleanupCallback;
-    fileInfo->Release(&customCleanupCallback);
+    fileInfo->Release(/* aSyncDeleteFile */ true);
   }
 
   mFileInfoEntries.Clear();
@@ -11190,18 +11694,17 @@ nsresult DatabaseConnection::UpdateRefcountFunction::ProcessValue(
     return rv;
   }
 
-  nsTArray<StructuredCloneFile> files;
-  rv = DeserializeStructuredCloneFiles(*mFileManager, ids, files);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  auto filesOrErr = DeserializeStructuredCloneFiles(*mFileManager, ids);
+  if (NS_WARN_IF(filesOrErr.isErr())) {
+    return filesOrErr.unwrapErr();
   }
-  for (const StructuredCloneFile& file : files) {
-    const int64_t id = file.mFileInfo->Id();
+  for (const StructuredCloneFileParent& file : filesOrErr.inspect()) {
+    const int64_t id = file.FileInfo().Id();
     MOZ_ASSERT(id > 0);
 
     FileInfoEntry* entry;
     if (!mFileInfoEntries.Get(id, &entry)) {
-      entry = new FileInfoEntry(file.mFileInfo);
+      entry = new FileInfoEntry(file.FileInfoPtr());
       mFileInfoEntries.Put(id, entry);
     }
 
@@ -11211,16 +11714,10 @@ nsresult DatabaseConnection::UpdateRefcountFunction::ProcessValue(
 
     switch (aUpdateType) {
       case UpdateType::Increment:
-        entry->mDelta++;
-        if (mInSavepoint) {
-          entry->mSavepointDelta++;
-        }
+        entry->IncDeltas(mInSavepoint);
         break;
       case UpdateType::Decrement:
-        entry->mDelta--;
-        if (mInSavepoint) {
-          entry->mSavepointDelta--;
-        }
+        entry->DecDeltas(mInSavepoint);
         break;
       default:
         MOZ_CRASH("Unknown update type!");
@@ -11809,20 +12306,20 @@ void ConnectionPool::Cleanup() {
 
   if (!mCompleteCallbacks.IsEmpty()) {
     // Run all callbacks manually now.
-    // TODO: Can a callback cause another entry to be added to
-    // mCompleteCallbacks? This would be skipped when iterating like this.
-    for (uint32_t count = mCompleteCallbacks.Length(), index = 0; index < count;
-         index++) {
-      // TODO: Why do we need to move the callback here to a local variable?
-      // mCompleteCallbacks is cleared afterwards anyway.
-      const auto completeCallback = std::move(mCompleteCallbacks[index]);
-      MOZ_ASSERT(completeCallback);
-      MOZ_ASSERT(completeCallback->mCallback);
 
-      Unused << completeCallback->mCallback->Run();
+    {
+      auto completeCallbacks = std::move(mCompleteCallbacks);
+      for (const auto& completeCallback : completeCallbacks) {
+        MOZ_ASSERT(completeCallback);
+        MOZ_ASSERT(completeCallback->mCallback);
+
+        Unused << completeCallback->mCallback->Run();
+      }
+
+      // We expect no new callbacks being completed by running the existing
+      // ones.
+      MOZ_ASSERT(mCompleteCallbacks.IsEmpty());
     }
-
-    mCompleteCallbacks.Clear();
 
     // And make sure they get processed.
     nsIThread* currentThread = NS_GetCurrentThread();
@@ -12858,7 +13355,7 @@ RefPtr<FullDatabaseMetadata> FullDatabaseMetadata::Duplicate() const {
       newIndexMetadata->mCommonMetadata = value->mCommonMetadata;
 
       if (NS_WARN_IF(!newOSMetadata->mIndexes.Put(
-              indexEntry.GetKey(), newIndexMetadata.forget(), fallible))) {
+              indexEntry.GetKey(), std::move(newIndexMetadata), fallible))) {
         return nullptr;
       }
     }
@@ -12867,7 +13364,7 @@ RefPtr<FullDatabaseMetadata> FullDatabaseMetadata::Duplicate() const {
                newOSMetadata->mIndexes.Count());
 
     if (NS_WARN_IF(!newMetadata->mObjectStores.Put(
-            objectStoreEntry.GetKey(), newOSMetadata.forget(), fallible))) {
+            objectStoreEntry.GetKey(), std::move(newOSMetadata), fallible))) {
       return nullptr;
     }
   }
@@ -12967,14 +13464,6 @@ mozilla::ipc::IPCResult Factory::RecvDeleteMe() {
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult Factory::RecvIncrementLoggingRequestSerialNumber() {
-  AssertIsOnBackgroundThread();
-  MOZ_ASSERT(mLoggingInfo);
-
-  mLoggingInfo->NextRequestSN();
-  return IPC_OK();
-}
-
 PBackgroundIDBFactoryRequestParent*
 Factory::AllocPBackgroundIDBFactoryRequestParent(
     const FactoryRequestParams& aParams) {
@@ -13009,9 +13498,7 @@ Factory::AllocPBackgroundIDBFactoryRequestParent(
   MOZ_ASSERT(commonParams);
 
   const DatabaseMetadata& metadata = commonParams->metadata();
-  if (NS_WARN_IF(metadata.persistenceType() != PERSISTENCE_TYPE_PERSISTENT &&
-                 metadata.persistenceType() != PERSISTENCE_TYPE_TEMPORARY &&
-                 metadata.persistenceType() != PERSISTENCE_TYPE_DEFAULT)) {
+  if (NS_WARN_IF(!IsValidPersistenceType(metadata.persistenceType()))) {
     ASSERT_UNLESS_FUZZING();
     return nullptr;
   }
@@ -13228,79 +13715,42 @@ Database::Database(RefPtr<Factory> aFactory,
   mDirectoryLockId = mDirectoryLock->Id();
 }
 
-void Database::Invalidate() {
+template <typename T>
+bool Database::InvalidateAll(const nsTHashtable<nsPtrHashKey<T>>& aTable) {
   AssertIsOnBackgroundThread();
 
-  class MOZ_STACK_CLASS Helper final {
-   public:
-    static bool InvalidateTransactions(
-        nsTHashtable<nsPtrHashKey<TransactionBase>>& aTable) {
-      AssertIsOnBackgroundThread();
+  const uint32_t count = aTable.Count();
+  if (!count) {
+    return true;
+  }
 
-      const uint32_t count = aTable.Count();
-      if (!count) {
-        return true;
-      }
+  FallibleTArray<RefPtr<T>> elementsToInvalidate;
+  if (NS_WARN_IF(!elementsToInvalidate.SetCapacity(count, fallible))) {
+    return false;
+  }
 
-      FallibleTArray<RefPtr<TransactionBase>> transactions;
-      if (NS_WARN_IF(!transactions.SetCapacity(count, fallible))) {
-        return false;
-      }
-
-      for (auto iter = aTable.Iter(); !iter.Done(); iter.Next()) {
-        if (NS_WARN_IF(
-                !transactions.AppendElement(iter.Get()->GetKey(), fallible))) {
-          return false;
-        }
-      }
-
-      if (count) {
-        IDB_REPORT_INTERNAL_ERR();
-
-        for (auto& transaction : transactions) {
-          MOZ_ASSERT(transaction);
-
-          transaction->Invalidate();
-        }
-      }
-
-      return true;
+  for (auto iter = aTable.ConstIter(); !iter.Done(); iter.Next()) {
+    if (NS_WARN_IF(!elementsToInvalidate.AppendElement(iter.Get()->GetKey(),
+                                                       fallible))) {
+      return false;
     }
+  }
 
-    static bool InvalidateMutableFiles(
-        nsTHashtable<nsPtrHashKey<MutableFile>>& aTable) {
-      AssertIsOnBackgroundThread();
+  if (count) {
+    IDB_REPORT_INTERNAL_ERR();
 
-      const uint32_t count = aTable.Count();
-      if (!count) {
-        return true;
-      }
+    for (const auto& elementToInvalidate : elementsToInvalidate) {
+      MOZ_ASSERT(elementToInvalidate);
 
-      FallibleTArray<RefPtr<MutableFile>> mutableFiles;
-      if (NS_WARN_IF(!mutableFiles.SetCapacity(count, fallible))) {
-        return false;
-      }
-
-      for (auto iter = aTable.Iter(); !iter.Done(); iter.Next()) {
-        if (NS_WARN_IF(
-                !mutableFiles.AppendElement(iter.Get()->GetKey(), fallible))) {
-          return false;
-        }
-      }
-
-      if (count) {
-        IDB_REPORT_INTERNAL_ERR();
-
-        for (auto& mutableFile : mutableFiles) {
-          MOZ_ASSERT(mutableFile);
-
-          mutableFile->Invalidate();
-        }
-      }
-
-      return true;
+      elementToInvalidate->Invalidate();
     }
-  };
+  }
+
+  return true;
+}
+
+void Database::Invalidate() {
+  AssertIsOnBackgroundThread();
 
   if (mInvalidated) {
     return;
@@ -13312,11 +13762,11 @@ void Database::Invalidate() {
     Unused << SendInvalidate();
   }
 
-  if (!Helper::InvalidateTransactions(mTransactions)) {
+  if (!InvalidateAll(mTransactions)) {
     NS_WARNING("Failed to abort all transactions!");
   }
 
-  if (!Helper::InvalidateMutableFiles(mMutableFiles)) {
+  if (!InvalidateAll(mMutableFiles)) {
     NS_WARNING("Failed to abort all mutable files!");
   }
 
@@ -13432,7 +13882,7 @@ void Database::SetActorAlive() {
   AddRef();
 }
 
-void Database::MapBlob(const IPCBlob& aIPCBlob, FileInfo* aFileInfo) {
+void Database::MapBlob(const IPCBlob& aIPCBlob, RefPtr<FileInfo> aFileInfo) {
   AssertIsOnBackgroundThread();
 
   const IPCBlobStream& stream = aIPCBlob.inputStream();
@@ -13442,7 +13892,7 @@ void Database::MapBlob(const IPCBlob& aIPCBlob, FileInfo* aFileInfo) {
       stream.get_PIPCBlobInputStreamParent());
 
   MOZ_ASSERT(!mMappedBlobs.GetWeak(actor->ID()));
-  mMappedBlobs.Put(actor->ID(), aFileInfo);
+  mMappedBlobs.Put(actor->ID(), std::move(aFileInfo));
 
   RefPtr<UnmapBlobCallback> callback = new UnmapBlobCallback(this);
   actor->SetCallback(callback);
@@ -13469,7 +13919,7 @@ void Database::Stringify(nsACString& aResult) const {
   aResult.Append(kQuotaGenericDelimiter);
 
   aResult.AppendLiteral("PersistenceType:");
-  aResult.Append(PersistenceTypeString(mPersistenceType));
+  aResult.Append(PersistenceTypeToString(mPersistenceType));
   aResult.Append(kQuotaGenericDelimiter);
 
   aResult.AppendLiteral("Closed:");
@@ -13658,9 +14108,6 @@ PBackgroundIDBDatabaseFileParent*
 Database::AllocPBackgroundIDBDatabaseFileParent(const IPCBlob& aIPCBlob) {
   AssertIsOnBackgroundThread();
 
-  RefPtr<BlobImpl> blobImpl = IPCBlobUtils::Deserialize(aIPCBlob);
-  MOZ_ASSERT(blobImpl);
-
   RefPtr<FileInfo> fileInfo = GetBlob(aIPCBlob);
   RefPtr<DatabaseFile> actor;
 
@@ -13668,10 +14115,10 @@ Database::AllocPBackgroundIDBDatabaseFileParent(const IPCBlob& aIPCBlob) {
     actor = new DatabaseFile(fileInfo);
   } else {
     // This is a blob we haven't seen before.
-    fileInfo = mFileManager->GetNewFileInfo();
+    fileInfo = mFileManager->CreateFileInfo();
     MOZ_ASSERT(fileInfo);
 
-    actor = new DatabaseFile(blobImpl, fileInfo);
+    actor = new DatabaseFile(IPCBlobUtils::Deserialize(aIPCBlob), fileInfo);
   }
 
   MOZ_ASSERT(actor);
@@ -13989,10 +14436,10 @@ nsresult Database::StartTransactionOp::DoDatabaseWork(
   Transaction().SetActiveOnConnectionThread();
 
   if (Transaction().GetMode() == IDBTransaction::Mode::Cleanup) {
-    nsresult rv = aConnection->DisableQuotaChecks();
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
+    DebugOnly<nsresult> rv = aConnection->DisableQuotaChecks();
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                         "DisableQuotaChecks failed, trying to continue "
+                         "cleanup transaction with quota checks enabled");
   }
 
   if (Transaction().GetMode() != IDBTransaction::Mode::ReadOnly) {
@@ -14541,7 +14988,7 @@ bool TransactionBase::VerifyRequestParams(
     MOZ_ASSERT(file.type() != DatabaseOrMutableFile::T__None);
 
     switch (fileAddInfo.type()) {
-      case StructuredCloneFile::eBlob:
+      case StructuredCloneFileBase::eBlob:
         if (NS_WARN_IF(
                 file.type() !=
                 DatabaseOrMutableFile::TPBackgroundIDBDatabaseFileParent)) {
@@ -14554,7 +15001,7 @@ bool TransactionBase::VerifyRequestParams(
         }
         break;
 
-      case StructuredCloneFile::eMutableFile: {
+      case StructuredCloneFileBase::eMutableFile: {
         if (NS_WARN_IF(file.type() !=
                        DatabaseOrMutableFile::TPBackgroundMutableFileParent)) {
           ASSERT_UNLESS_FUZZING();
@@ -14574,13 +15021,8 @@ bool TransactionBase::VerifyRequestParams(
           return false;
         }
 
-        Database* database = mutableFile->GetDatabase();
-        if (NS_WARN_IF(!database)) {
-          ASSERT_UNLESS_FUZZING();
-          return false;
-        }
-
-        if (NS_WARN_IF(database->Id() != mDatabase->Id())) {
+        const Database& database = mutableFile->GetDatabase();
+        if (NS_WARN_IF(database.Id() != mDatabase->Id())) {
           ASSERT_UNLESS_FUZZING();
           return false;
         }
@@ -14588,10 +15030,10 @@ bool TransactionBase::VerifyRequestParams(
         break;
       }
 
-      case StructuredCloneFile::eStructuredClone:
-      case StructuredCloneFile::eWasmBytecode:
-      case StructuredCloneFile::eWasmCompiled:
-      case StructuredCloneFile::eEndGuard:
+      case StructuredCloneFileBase::eStructuredClone:
+      case StructuredCloneFileBase::eWasmBytecode:
+      case StructuredCloneFileBase::eWasmCompiled:
+      case StructuredCloneFileBase::eEndGuard:
         ASSERT_UNLESS_FUZZING();
         return false;
 
@@ -15090,29 +15532,27 @@ void VersionChangeTransaction::UpdateMetadata(nsresult aResult) {
 
   if (NS_SUCCEEDED(aResult)) {
     // Remove all deleted objectStores and indexes, then mark immutable.
-    for (auto objectStoreIter = info->mMetadata->mObjectStores.Iter();
-         !objectStoreIter.Done(); objectStoreIter.Next()) {
+    info->mMetadata->mObjectStores.RemoveIf([](const auto& objectStoreIter) {
       MOZ_ASSERT(objectStoreIter.Key());
-      RefPtr<FullObjectStoreMetadata>& metadata = objectStoreIter.Data();
+      const RefPtr<FullObjectStoreMetadata>& metadata = objectStoreIter.Data();
       MOZ_ASSERT(metadata);
 
       if (metadata->mDeleted) {
-        objectStoreIter.Remove();
-        continue;
+        return true;
       }
 
-      for (auto indexIter = metadata->mIndexes.Iter(); !indexIter.Done();
-           indexIter.Next()) {
+      metadata->mIndexes.RemoveIf([](const auto& indexIter) -> bool {
         MOZ_ASSERT(indexIter.Key());
-        RefPtr<FullIndexMetadata>& index = indexIter.Data();
+        const RefPtr<FullIndexMetadata>& index = indexIter.Data();
         MOZ_ASSERT(index);
 
-        if (index->mDeleted) {
-          indexIter.Remove();
-        }
-      }
+        return index->mDeleted;
+      });
       metadata->mIndexes.MarkImmutable();
-    }
+
+      return false;
+    });
+
     info->mMetadata->mObjectStores.MarkImmutable();
   } else {
     // Replace metadata pointers for all live databases.
@@ -15236,8 +15676,8 @@ mozilla::ipc::IPCResult VersionChangeTransaction::RecvCreateObjectStore(
   newMetadata->mNextAutoIncrementId = aMetadata.autoIncrement() ? 1 : 0;
   newMetadata->mCommittedAutoIncrementId = newMetadata->mNextAutoIncrementId;
 
-  if (NS_WARN_IF(!dbMetadata->mObjectStores.Put(aMetadata.id(), newMetadata,
-                                                fallible))) {
+  if (NS_WARN_IF(!dbMetadata->mObjectStores.Put(
+          aMetadata.id(), std::move(newMetadata), fallible))) {
     return IPC_FAIL_NO_REASON(this);
   }
 
@@ -15409,7 +15849,7 @@ mozilla::ipc::IPCResult VersionChangeTransaction::RecvCreateIndex(
   newMetadata->mCommonMetadata = aMetadata;
 
   if (NS_WARN_IF(!foundObjectStoreMetadata->mIndexes.Put(
-          aMetadata.id(), newMetadata, fallible))) {
+          aMetadata.id(), std::move(newMetadata), fallible))) {
     return IPC_FAIL_NO_REASON(this);
   }
 
@@ -15900,11 +16340,11 @@ void Cursor<CursorType>::ActorDestroy(ActorDestroyReason aWhy) {
   }
 
   if constexpr (IsValueCursor) {
-    this->mBackgroundParent.reset();
+    this->mBackgroundParent.destroy();
   }
-  this->mObjectStoreMetadata.reset();
+  this->mObjectStoreMetadata.destroy();
   if constexpr (IsIndexCursor) {
-    this->mIndexMetadata.reset();
+    this->mIndexMetadata.destroy();
   }
 }
 
@@ -16003,6 +16443,8 @@ mozilla::ipc::IPCResult Cursor<CursorType>::RecvContinue(
  * FileManager
  ******************************************************************************/
 
+FileManager::MutexType FileManager::sMutex;
+
 FileManager::FileManager(PersistenceType aPersistenceType,
                          const nsACString& aGroup, const nsACString& aOrigin,
                          const nsAString& aDatabaseName, bool aEnforcingQuota)
@@ -16010,9 +16452,7 @@ FileManager::FileManager(PersistenceType aPersistenceType,
       mGroup(aGroup),
       mOrigin(aOrigin),
       mDatabaseName(aDatabaseName),
-      mLastFileId(0),
-      mEnforcingQuota(aEnforcingQuota),
-      mInvalidated(false) {}
+      mEnforcingQuota(aEnforcingQuota) {}
 
 nsresult FileManager::Init(nsIFile* aDirectory,
                            mozIStorageConnection* aConnection) {
@@ -16043,9 +16483,13 @@ nsresult FileManager::Init(nsIFile* aDirectory,
     }
   }
 
-  rv = aDirectory->GetPath(mDirectoryPath);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  {
+    nsString directoryPath;
+    rv = aDirectory->GetPath(directoryPath);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    mDirectoryPath.init(std::move(directoryPath));
   }
 
   nsCOMPtr<nsIFile> journalDirectory;
@@ -16076,9 +16520,13 @@ nsresult FileManager::Init(nsIFile* aDirectory,
     }
   }
 
-  rv = journalDirectory->GetPath(mJournalDirectoryPath);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+  {
+    nsString journalDirectoryPath;
+    rv = journalDirectory->GetPath(journalDirectoryPath);
+    if (NS_WARN_IF(NS_FAILED(rv))) {
+      return rv;
+    }
+    mJournalDirectoryPath.init(std::move(journalDirectoryPath));
   }
 
   nsCOMPtr<mozIStorageStatement> stmt;
@@ -16097,18 +16545,18 @@ nsresult FileManager::Init(nsIFile* aDirectory,
       return rv;
     }
 
-    int32_t refcount;
-    rv = stmt->GetInt32(1, &refcount);
+    int32_t dbRefCnt;
+    rv = stmt->GetInt32(1, &dbRefCnt);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
 
-    MOZ_ASSERT(refcount > 0);
-
-    RefPtr<FileInfo> fileInfo = FileInfo::Create(this, id);
-    fileInfo->mDBRefCnt = static_cast<nsrefcnt>(refcount);
-
-    mFileInfos.Put(id, fileInfo);
+    // We put a raw pointer into the hash table, so the memory refcount will be
+    // 0, but the dbRefCnt is non-zero, which will keep the FileInfo object
+    // alive.
+    MOZ_ASSERT(dbRefCnt > 0);
+    mFileInfos.Put(id, new FileInfo(FileManagerGuard{}, this, id,
+                                    static_cast<nsrefcnt>(dbRefCnt)));
 
     mLastFileId = std::max(id, mLastFileId);
   }
@@ -16120,31 +16568,12 @@ nsresult FileManager::Init(nsIFile* aDirectory,
   return NS_OK;
 }
 
-nsresult FileManager::Invalidate() {
-  if (IndexedDatabaseManager::IsClosed()) {
-    MOZ_ASSERT(false, "Shouldn't be called after shutdown!");
-    return NS_ERROR_UNEXPECTED;
-  }
-
-  MutexAutoLock lock(IndexedDatabaseManager::FileMutex());
-
-  MOZ_ASSERT(!mInvalidated);
-  mInvalidated = true;
-
-  for (auto iter = mFileInfos.Iter(); !iter.Done(); iter.Next()) {
-    FileInfo* info = iter.Data();
-    MOZ_ASSERT(info);
-
-    if (!info->LockedClearDBRefs()) {
-      iter.Remove();
-    }
-  }
-
-  return NS_OK;
-}
-
 nsCOMPtr<nsIFile> FileManager::GetDirectory() {
-  return GetFileForPath(mDirectoryPath);
+  if (!this->AssertValid()) {
+    return nullptr;
+  }
+
+  return GetFileForPath(*mDirectoryPath);
 }
 
 nsCOMPtr<nsIFile> FileManager::GetCheckedDirectory() {
@@ -16165,14 +16594,18 @@ nsCOMPtr<nsIFile> FileManager::GetCheckedDirectory() {
 }
 
 nsCOMPtr<nsIFile> FileManager::GetJournalDirectory() {
-  return GetFileForPath(mJournalDirectoryPath);
+  if (!this->AssertValid()) {
+    return nullptr;
+  }
+
+  return GetFileForPath(*mJournalDirectoryPath);
 }
 
 nsCOMPtr<nsIFile> FileManager::EnsureJournalDirectory() {
   // This can happen on the IO or on a transaction thread.
   MOZ_ASSERT(!NS_IsMainThread());
 
-  auto journalDirectory = GetFileForPath(mJournalDirectoryPath);
+  auto journalDirectory = GetFileForPath(*mJournalDirectoryPath);
   if (NS_WARN_IF(!journalDirectory)) {
     return nullptr;
   }
@@ -16201,46 +16634,6 @@ nsCOMPtr<nsIFile> FileManager::EnsureJournalDirectory() {
   }
 
   return journalDirectory;
-}
-
-RefPtr<FileInfo> FileManager::GetFileInfo(int64_t aId) const {
-  if (IndexedDatabaseManager::IsClosed()) {
-    MOZ_ASSERT(false, "Shouldn't be called after shutdown!");
-    return nullptr;
-  }
-
-  // TODO: We cannot simply change this to RefPtr<FileInfo>, because
-  // FileInfo::AddRef also acquires the IndexedDatabaseManager::FileMutex. This
-  // looks quirky at least.
-  FileInfo* fileInfo;
-  {
-    MutexAutoLock lock(IndexedDatabaseManager::FileMutex());
-    fileInfo = mFileInfos.Get(aId);
-  }
-
-  return fileInfo;
-}
-
-RefPtr<FileInfo> FileManager::GetNewFileInfo() {
-  MOZ_ASSERT(!IndexedDatabaseManager::IsClosed());
-
-  // TODO: We cannot simply change this to RefPtr<FileInfo>, because
-  // FileInfo::AddRef also acquires the IndexedDatabaseManager::FileMutex. This
-  // looks quirky at least.
-  FileInfo* fileInfo;
-  {
-    MutexAutoLock lock(IndexedDatabaseManager::FileMutex());
-
-    int64_t id = mLastFileId + 1;
-
-    fileInfo = FileInfo::Create(this, id);
-
-    mFileInfos.Put(id, fileInfo);
-
-    mLastFileId = id;
-  }
-
-  return fileInfo;
 }
 
 // static
@@ -16518,6 +16911,55 @@ nsresult FileManager::GetUsage(nsIFile* aDirectory, uint64_t& aUsage) {
   }
 
   aUsage = usage.valueOr(0);
+  return NS_OK;
+}
+
+nsresult FileManager::SyncDeleteFile(const int64_t aId) {
+  MOZ_ASSERT(!mFileInfos.Contains(aId));
+
+  if (!this->AssertValid()) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  const auto directory = GetDirectory();
+  if (NS_WARN_IF(!directory)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  const auto journalDirectory = GetJournalDirectory();
+  if (NS_WARN_IF(!journalDirectory)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsIFile> file = GetFileForId(directory, aId);
+  if (NS_WARN_IF(!file)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsCOMPtr<nsIFile> journalFile = GetFileForId(journalDirectory, aId);
+  if (NS_WARN_IF(!journalFile)) {
+    return NS_ERROR_FAILURE;
+  }
+
+  return SyncDeleteFile(*file, *journalFile);
+}
+
+nsresult FileManager::SyncDeleteFile(nsIFile& aFile, nsIFile& aJournalFile) {
+  QuotaManager* const quotaManager =
+      EnforcingQuota() ? QuotaManager::Get() : nullptr;
+  MOZ_ASSERT_IF(EnforcingQuota(), quotaManager);
+
+  nsresult rv = DeleteFile(aFile, quotaManager, Type(), Group(), Origin(),
+                           Idempotency::No);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
+  rv = aJournalFile.Remove(false);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return rv;
+  }
+
   return NS_OK;
 }
 
@@ -16822,7 +17264,7 @@ nsresult QuotaClient::InitOrigin(PersistenceType aPersistenceType,
     }
 
     if (obsoleteFilenames.Contains(subdirNameBase)) {
-      rv = RemoveDatabaseFilesAndDirectory(directory, subdirNameBase, nullptr,
+      rv = RemoveDatabaseFilesAndDirectory(*directory, subdirNameBase, nullptr,
                                            aPersistenceType, aGroup, aOrigin,
                                            EmptyString());
       if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -17041,7 +17483,7 @@ void QuotaClient::StopIdleMaintenance() {
     mCurrentMaintenance->Abort();
   }
 
-  for (RefPtr<Maintenance>& maintenance : mMaintenanceQueue) {
+  for (const auto& maintenance : mMaintenanceQueue) {
     maintenance->Abort();
   }
 }
@@ -17456,45 +17898,10 @@ nsresult DeleteFilesRunnable::Open() {
 
   mState = State_DirectoryOpenPending;
 
-  quotaManager->OpenDirectory(mFileManager->Type(), mFileManager->Group(),
-                              mFileManager->Origin(), quota::Client::IDB,
-                              /* aExclusive */ false, this);
-
-  return NS_OK;
-}
-
-nsresult DeleteFilesRunnable::DeleteFile(int64_t aFileId) {
-  MOZ_ASSERT(mDirectory);
-  MOZ_ASSERT(mJournalDirectory);
-
-  nsCOMPtr<nsIFile> file = mFileManager->GetFileForId(mDirectory, aFileId);
-  NS_ENSURE_TRUE(file, NS_ERROR_FAILURE);
-
-  nsresult rv;
-  int64_t fileSize;
-
-  if (mFileManager->EnforcingQuota()) {
-    rv = file->GetFileSize(&fileSize);
-    NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
-  }
-
-  rv = file->Remove(false);
-  NS_ENSURE_SUCCESS(rv, NS_ERROR_FAILURE);
-
-  if (mFileManager->EnforcingQuota()) {
-    QuotaManager* const quotaManager = QuotaManager::Get();
-    NS_ASSERTION(quotaManager, "Shouldn't be null!");
-
-    quotaManager->DecreaseUsageForOrigin(
-        mFileManager->Type(), mFileManager->Group(), mFileManager->Origin(),
-        Client::IDB, fileSize);
-  }
-
-  file = mFileManager->GetFileForId(mJournalDirectory, aFileId);
-  NS_ENSURE_TRUE(file, NS_ERROR_FAILURE);
-
-  rv = file->Remove(false);
-  NS_ENSURE_SUCCESS(rv, rv);
+  RefPtr<DirectoryLock> pendingDirectoryLock =
+      quotaManager->OpenDirectory(mFileManager->Type(), mFileManager->Group(),
+                                  mFileManager->Origin(), quota::Client::IDB,
+                                  /* aExclusive */ false, this);
 
   return NS_OK;
 }
@@ -17504,18 +17911,8 @@ nsresult DeleteFilesRunnable::DoDatabaseWork() {
   MOZ_ASSERT(mState == State_DatabaseWorkOpen);
 
   if (!mFileManager->Invalidated()) {
-    mDirectory = mFileManager->GetDirectory();
-    if (NS_WARN_IF(!mDirectory)) {
-      return NS_ERROR_FAILURE;
-    }
-
-    mJournalDirectory = mFileManager->GetJournalDirectory();
-    if (NS_WARN_IF(!mJournalDirectory)) {
-      return NS_ERROR_FAILURE;
-    }
-
     for (int64_t fileId : mFileIds) {
-      if (NS_FAILED(DeleteFile(fileId))) {
+      if (NS_FAILED(mFileManager->SyncDeleteFile(fileId))) {
         NS_WARNING("Failed to delete file!");
       }
     }
@@ -17712,10 +18109,11 @@ nsresult Maintenance::OpenDirectory() {
   // Get a shared lock for <profile>/storage/*/*/idb
 
   mState = State::DirectoryOpenPending;
-  QuotaManager::Get()->OpenDirectoryInternal(
-      Nullable<PersistenceType>(), OriginScope::FromNull(),
-      Nullable<Client::Type>(Client::IDB),
-      /* aExclusive */ false, this);
+  RefPtr<DirectoryLock> pendingDirectoryLock =
+      QuotaManager::Get()->OpenDirectoryInternal(
+          Nullable<PersistenceType>(), OriginScope::FromNull(),
+          Nullable<Client::Type>(Client::IDB),
+          /* aExclusive */ false, this);
 
   return NS_OK;
 }
@@ -17767,6 +18165,18 @@ nsresult Maintenance::DirectoryWork() {
     return rv;
   }
 
+  bool initTemporaryStorageFailed = false;
+
+  // Since idle maintenance may occur before temporary storage is initialized,
+  // make sure it's initialized here (all non-persistent origins need to be
+  // cleaned up and quota info needs to be loaded for them).
+  rv = quotaManager->EnsureTemporaryStorageIsInitialized();
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    // Don't fail whole idle maintenance, the persistent repository can still
+    // be processed.
+    initTemporaryStorageFailed = true;
+  }
+
   const nsCOMPtr<nsIFile> storageDir =
       GetFileForPath(quotaManager->GetStoragePath());
   if (NS_WARN_IF(!storageDir)) {
@@ -17812,12 +18222,20 @@ nsresult Maintenance::DirectoryWork() {
       return NS_ERROR_ABORT;
     }
 
+    const bool persistent = persistenceType == PERSISTENCE_TYPE_PERSISTENT;
+
+    if (!persistent && initTemporaryStorageFailed) {
+      // Non-persistent (best effort) repositories can't be processed if
+      // temporary storage initialization failed.
+      continue;
+    }
+
     nsAutoCString persistenceTypeString;
     if (persistenceType == PERSISTENCE_TYPE_PERSISTENT) {
       // XXX This shouldn't be a special case...
       persistenceTypeString.AssignLiteral("permanent");
     } else {
-      PersistenceTypeToText(persistenceType, persistenceTypeString);
+      persistenceTypeString.Assign(PersistenceTypeToString(persistenceType));
     }
 
     nsCOMPtr<nsIFile> persistenceDir;
@@ -17893,6 +18311,42 @@ nsresult Maintenance::DirectoryWork() {
         continue;
       }
 
+      // Get the necessary information about the origin
+      // (GetDirectoryMetadata2WithRestore also checks if it's a valid origin).
+
+      int64_t timestamp;
+      bool persisted;
+      nsCString suffix;
+      nsCString group;
+      nsCString origin;
+      rv = quotaManager->GetDirectoryMetadata2WithRestore(
+          originDir, persistent, &timestamp, &persisted, suffix, group, origin);
+      if (NS_WARN_IF(NS_FAILED(rv))) {
+        // Not much we can do here...
+        continue;
+      }
+
+      if (persistent) {
+        // We have to check that all persistent origins are cleaned up, but
+        // there's no way to do that by one call, we need to initialize (and
+        // possibly clean up) them one by one
+        // (EnsureTemporaryStorageIsInitialized cleans up only non-persistent
+        // origins).
+
+        nsCOMPtr<nsIFile> directory;
+        bool created;
+        rv = quotaManager->EnsurePersistentOriginIsInitialized(
+            suffix, group, origin, getter_AddRefs(directory), &created);
+        if (NS_WARN_IF(NS_FAILED(rv))) {
+          continue;
+        }
+
+        // We found this origin directory by traversing the repository, so
+        // EnsurePersistentOriginIsInitialized shouldn't report that a new
+        // directory has been created.
+        MOZ_ASSERT(!created);
+      }
+
       nsCOMPtr<nsIFile> idbDir;
       rv = originDir->Clone(getter_AddRefs(idbDir));
       if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -17932,9 +18386,6 @@ nsresult Maintenance::DirectoryWork() {
         continue;
       }
 
-      nsCString suffix;
-      nsCString group;
-      nsCString origin;
       nsTArray<nsString> databasePaths;
 
       while (true) {
@@ -17981,20 +18432,6 @@ nsresult Maintenance::DirectoryWork() {
         }
 
         // Found a database.
-        if (databasePaths.IsEmpty()) {
-          MOZ_ASSERT(suffix.IsEmpty());
-          MOZ_ASSERT(group.IsEmpty());
-          MOZ_ASSERT(origin.IsEmpty());
-
-          int64_t dummyTimeStamp;
-          bool dummyPersisted;
-          if (NS_WARN_IF(NS_FAILED(quotaManager->GetDirectoryMetadata2(
-                  originDir, &dummyTimeStamp, &dummyPersisted, suffix, group,
-                  origin)))) {
-            // Not much we can do here...
-            continue;
-          }
-        }
 
         MOZ_ASSERT(!databasePaths.Contains(idbFilePath));
 
@@ -18004,19 +18441,6 @@ nsresult Maintenance::DirectoryWork() {
       if (!databasePaths.IsEmpty()) {
         mDirectoryInfos.EmplaceBack(persistenceType, group, origin,
                                     std::move(databasePaths));
-
-        nsCOMPtr<nsIFile> directory;
-
-        // Idle maintenance may occur before origin is initailized.
-        // Ensure origin is initialized first. It will initialize all origins
-        // for temporary storage including IDB origins.
-        rv = quotaManager->EnsureStorageAndOriginIsInitialized(
-            persistenceType, suffix, group, origin, Client::IDB,
-            getter_AddRefs(directory));
-
-        if (NS_WARN_IF(NS_FAILED(rv))) {
-          return rv;
-        }
       }
     }
   }
@@ -18236,7 +18660,7 @@ void DatabaseMaintenance::Stringify(nsACString& aResult) const {
   aResult.Append(kQuotaGenericDelimiter);
 
   aResult.AppendLiteral("PersistenceType:");
-  aResult.Append(PersistenceTypeString(mPersistenceType));
+  aResult.Append(PersistenceTypeToString(mPersistenceType));
   aResult.Append(kQuotaGenericDelimiter);
 
   aResult.AppendLiteral("Duration:");
@@ -18869,12 +19293,18 @@ UpgradeFileIdsFunction::OnFunctionCall(mozIStorageValueArray* aArguments,
     return NS_ERROR_UNEXPECTED;
   }
 
-  StructuredCloneReadInfo cloneInfo(JS::StructuredCloneScope::DifferentProcess);
-  DatabaseOperationBase::GetStructuredCloneReadInfoFromValueArray(
-      aArguments, 1, 0, *mFileManager, &cloneInfo);
+  auto cloneInfoOrError =
+      DatabaseOperationBase::GetStructuredCloneReadInfoFromValueArray(
+          aArguments, 1, 0, *mFileManager);
+  if (NS_WARN_IF(cloneInfoOrError.isErr())) {
+    return cloneInfoOrError.unwrapErr();
+  }
+
+  auto cloneInfo = cloneInfoOrError.unwrap();
 
   nsAutoString fileIds;
-  rv = IDBObjectStore::DeserializeUpgradeValueToFileIds(cloneInfo, fileIds);
+  // XXX does this really need non-const cloneInfo?
+  rv = DeserializeUpgradeValueToFileIds(cloneInfo, fileIds);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return NS_ERROR_DOM_DATA_CLONE_ERR;
   }
@@ -18944,17 +19374,17 @@ uint64_t DatabaseOperationBase::ReinterpretDoubleAsUInt64(double aDouble) {
 
 // static
 template <typename T>
-nsresult DatabaseOperationBase::GetStructuredCloneReadInfoFromSource(
+Result<StructuredCloneReadInfoParent, nsresult>
+DatabaseOperationBase::GetStructuredCloneReadInfoFromSource(
     T* aSource, uint32_t aDataIndex, uint32_t aFileIdsIndex,
-    const FileManager& aFileManager, StructuredCloneReadInfo* aInfo) {
+    const FileManager& aFileManager) {
   MOZ_ASSERT(!IsOnBackgroundThread());
   MOZ_ASSERT(aSource);
-  MOZ_ASSERT(aInfo);
 
   int32_t columnType;
   nsresult rv = aSource->GetTypeOfIndex(aDataIndex, &columnType);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+    return Err(rv);
   }
 
   MOZ_ASSERT(columnType == mozIStorageStatement::VALUE_TYPE_BLOB ||
@@ -18963,7 +19393,7 @@ nsresult DatabaseOperationBase::GetStructuredCloneReadInfoFromSource(
   bool isNull;
   rv = aSource->GetIsNull(aFileIdsIndex, &isNull);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+    return Err(rv);
   }
 
   nsString fileIds;
@@ -18973,7 +19403,7 @@ nsresult DatabaseOperationBase::GetStructuredCloneReadInfoFromSource(
   } else {
     rv = aSource->GetString(aFileIdsIndex, fileIds);
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+      return Err(rv);
     }
   }
 
@@ -18981,36 +19411,30 @@ nsresult DatabaseOperationBase::GetStructuredCloneReadInfoFromSource(
     uint64_t intData;
     rv = aSource->GetInt64(aDataIndex, reinterpret_cast<int64_t*>(&intData));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+      return Err(rv);
     }
 
-    rv = GetStructuredCloneReadInfoFromExternalBlob(intData, aFileManager,
-                                                    fileIds, aInfo);
-  } else {
-    const uint8_t* blobData;
-    uint32_t blobDataLength;
-    rv = aSource->GetSharedBlob(aDataIndex, &blobDataLength, &blobData);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    rv = GetStructuredCloneReadInfoFromBlob(blobData, blobDataLength,
-                                            aFileManager, fileIds, aInfo);
+    return GetStructuredCloneReadInfoFromExternalBlob(intData, aFileManager,
+                                                      fileIds);
   }
+
+  const uint8_t* blobData;
+  uint32_t blobDataLength;
+  rv = aSource->GetSharedBlob(aDataIndex, &blobDataLength, &blobData);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+    return Err(rv);
   }
 
-  return NS_OK;
+  return GetStructuredCloneReadInfoFromBlob(blobData, blobDataLength,
+                                            aFileManager, fileIds);
 }
 
 // static
-nsresult DatabaseOperationBase::GetStructuredCloneReadInfoFromBlob(
+Result<StructuredCloneReadInfoParent, nsresult>
+DatabaseOperationBase::GetStructuredCloneReadInfoFromBlob(
     const uint8_t* aBlobData, uint32_t aBlobDataLength,
-    const FileManager& aFileManager, const nsAString& aFileIds,
-    StructuredCloneReadInfo* aInfo) {
+    const FileManager& aFileManager, const nsAString& aFileIds) {
   MOZ_ASSERT(!IsOnBackgroundThread());
-  MOZ_ASSERT(aInfo);
 
   AUTO_PROFILER_LABEL(
       "DatabaseOperationBase::GetStructuredCloneReadInfoFromBlob", DOM);
@@ -19021,12 +19445,12 @@ nsresult DatabaseOperationBase::GetStructuredCloneReadInfoFromBlob(
   size_t uncompressedLength;
   if (NS_WARN_IF(!snappy::GetUncompressedLength(compressed, compressedLength,
                                                 &uncompressedLength))) {
-    return NS_ERROR_FILE_CORRUPTED;
+    return Err(NS_ERROR_FILE_CORRUPTED);
   }
 
   AutoTArray<uint8_t, 512> uncompressed;
   if (NS_WARN_IF(!uncompressed.SetLength(uncompressedLength, fallible))) {
-    return NS_ERROR_OUT_OF_MEMORY;
+    return Err(NS_ERROR_OUT_OF_MEMORY);
   }
 
   char* const uncompressedBuffer =
@@ -19034,96 +19458,104 @@ nsresult DatabaseOperationBase::GetStructuredCloneReadInfoFromBlob(
 
   if (NS_WARN_IF(!snappy::RawUncompress(compressed, compressedLength,
                                         uncompressedBuffer))) {
-    return NS_ERROR_FILE_CORRUPTED;
+    return Err(NS_ERROR_FILE_CORRUPTED);
   }
 
-  if (!aInfo->mData.AppendBytes(uncompressedBuffer, uncompressed.Length())) {
-    return NS_ERROR_OUT_OF_MEMORY;
+  JSStructuredCloneData data(JS::StructuredCloneScope::DifferentProcess);
+  if (!data.AppendBytes(uncompressedBuffer, uncompressed.Length())) {
+    return Err(NS_ERROR_OUT_OF_MEMORY);
   }
 
+  nsTArray<StructuredCloneFileParent> files;
   if (!aFileIds.IsVoid()) {
-    nsresult rv =
-        DeserializeStructuredCloneFiles(aFileManager, aFileIds, aInfo->mFiles);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    auto filesOrErr = DeserializeStructuredCloneFiles(aFileManager, aFileIds);
+    if (NS_WARN_IF(filesOrErr.isErr())) {
+      return Err(filesOrErr.unwrapErr());
     }
+
+    files = filesOrErr.unwrap();
   }
 
-  return NS_OK;
+  return StructuredCloneReadInfoParent{std::move(data), std::move(files),
+                                       false};
 }
 
 // static
-nsresult DatabaseOperationBase::GetStructuredCloneReadInfoFromExternalBlob(
+Result<StructuredCloneReadInfoParent, nsresult>
+DatabaseOperationBase::GetStructuredCloneReadInfoFromExternalBlob(
     uint64_t aIntData, const FileManager& aFileManager,
-    const nsAString& aFileIds, StructuredCloneReadInfo* aInfo) {
+    const nsAString& aFileIds) {
   MOZ_ASSERT(!IsOnBackgroundThread());
-  MOZ_ASSERT(aInfo);
 
   AUTO_PROFILER_LABEL(
       "DatabaseOperationBase::GetStructuredCloneReadInfoFromExternalBlob", DOM);
 
   nsresult rv;
 
+  nsTArray<StructuredCloneFileParent> files;
   if (!aFileIds.IsVoid()) {
-    rv = DeserializeStructuredCloneFiles(aFileManager, aFileIds, aInfo->mFiles);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+    auto filesOrErr = DeserializeStructuredCloneFiles(aFileManager, aFileIds);
+    if (NS_WARN_IF(filesOrErr.isErr())) {
+      return Err(filesOrErr.unwrapErr());
     }
+
+    files = filesOrErr.unwrap();
   }
 
   // Higher and lower 32 bits described
   // in ObjectStoreAddOrPutRequestOp::DoDatabaseWork.
   const uint32_t index = uint32_t(aIntData & 0xFFFFFFFF);
 
-  if (index >= aInfo->mFiles.Length()) {
+  if (index >= files.Length()) {
     MOZ_ASSERT(false, "Bad index value!");
-    return NS_ERROR_UNEXPECTED;
+    return Err(NS_ERROR_UNEXPECTED);
   }
 
   if (IndexedDatabaseManager::PreprocessingEnabled()) {
-    aInfo->mHasPreprocessInfo = true;
-    return NS_OK;
+    return StructuredCloneReadInfoParent{
+        JSStructuredCloneData{JS::StructuredCloneScope::DifferentProcess},
+        std::move(files), true};
   }
 
-  StructuredCloneFile& file = aInfo->mFiles[index];
-  MOZ_ASSERT(file.mFileInfo);
-  MOZ_ASSERT(file.mType == StructuredCloneFile::eStructuredClone);
+  // XXX Why can there be multiple files, but we use only a single one here?
+  const StructuredCloneFileParent& file = files[index];
+  MOZ_ASSERT(file.Type() == StructuredCloneFileBase::eStructuredClone);
 
-  const nsCOMPtr<nsIFile> nativeFile =
-      FileInfo::GetFileForFileInfo(file.mFileInfo);
+  const nsCOMPtr<nsIFile> nativeFile = file.FileInfo().GetFileForFileInfo();
   if (NS_WARN_IF(!nativeFile)) {
-    return NS_ERROR_FAILURE;
+    return Err(NS_ERROR_FAILURE);
   }
 
   nsCOMPtr<nsIInputStream> fileInputStream;
   rv = NS_NewLocalFileInputStream(getter_AddRefs(fileInputStream), nativeFile);
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+    return Err(rv);
   }
 
   const auto snappyInputStream =
       MakeRefPtr<SnappyUncompressInputStream>(fileInputStream);
 
+  auto data = JSStructuredCloneData{JS::StructuredCloneScope::DifferentProcess};
   do {
     char buffer[kFileCopyBufferSize];
 
     uint32_t numRead;
     rv = snappyInputStream->Read(buffer, sizeof(buffer), &numRead);
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      break;
+      return Err(rv);
     }
 
     if (!numRead) {
       break;
     }
 
-    if (NS_WARN_IF(!aInfo->mData.AppendBytes(buffer, numRead))) {
-      rv = NS_ERROR_OUT_OF_MEMORY;
-      break;
+    if (NS_WARN_IF(!data.AppendBytes(buffer, numRead))) {
+      return Err(NS_ERROR_OUT_OF_MEMORY);
     }
   } while (true);
 
-  return rv;
+  return StructuredCloneReadInfoParent{std::move(data), std::move(files),
+                                       false};
 }
 
 // static
@@ -19808,25 +20240,25 @@ void DatabaseOperationBase::AutoSetProgressHandler::Unregister() {
   mConnection = nullptr;
 }
 
-MutableFile::MutableFile(nsIFile* aFile, Database* aDatabase,
-                         FileInfo* aFileInfo)
+MutableFile::MutableFile(nsIFile* aFile, RefPtr<Database> aDatabase,
+                         RefPtr<FileInfo> aFileInfo)
     : BackgroundMutableFileParentBase(FILE_HANDLE_STORAGE_IDB, aDatabase->Id(),
                                       IntString(aFileInfo->Id()), aFile),
-      mDatabase(aDatabase),
-      mFileInfo(aFileInfo) {
+      mDatabase(std::move(aDatabase)),
+      mFileInfo(std::move(aFileInfo)) {
   AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aDatabase);
-  MOZ_ASSERT(aFileInfo);
+  MOZ_ASSERT(mDatabase);
+  MOZ_ASSERT(mFileInfo);
 }
 
 MutableFile::~MutableFile() { mDatabase->UnregisterMutableFile(this); }
 
 RefPtr<MutableFile> MutableFile::Create(nsIFile* aFile, Database* aDatabase,
-                                        FileInfo* aFileInfo) {
+                                        RefPtr<FileInfo> aFileInfo) {
   AssertIsOnBackgroundThread();
 
   RefPtr<MutableFile> newMutableFile =
-      new MutableFile(aFile, aDatabase, aFileInfo);
+      new MutableFile(aFile, aDatabase, std::move(aFileInfo));
 
   if (!aDatabase->RegisterMutableFile(newMutableFile)) {
     return nullptr;
@@ -19851,7 +20283,7 @@ PBackgroundParent* MutableFile::GetBackgroundParent() const {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(!IsActorDestroyed());
 
-  return GetDatabase()->GetBackgroundParent();
+  return GetDatabase().GetBackgroundParent();
 }
 
 already_AddRefed<nsISupports> MutableFile::CreateStream(bool aReadOnly) {
@@ -20106,7 +20538,7 @@ void FactoryOp::Stringify(nsACString& aResult) const {
 
   aResult.AppendLiteral("PersistenceType:");
   aResult.Append(
-      PersistenceTypeString(mCommonParams.metadata().persistenceType()));
+      PersistenceTypeToString(mCommonParams.metadata().persistenceType()));
   aResult.Append(kQuotaGenericDelimiter);
 
   aResult.AppendLiteral("Origin:");
@@ -20639,8 +21071,9 @@ nsresult FactoryOp::OpenDirectory() {
 
   mState = State::DirectoryOpenPending;
 
-  quotaManager->OpenDirectory(persistenceType, mGroup, mOrigin, Client::IDB,
-                              /* aExclusive */ false, this);
+  RefPtr<DirectoryLock> pendingDirectoryLock =
+      quotaManager->OpenDirectory(persistenceType, mGroup, mOrigin, Client::IDB,
+                                  /* aExclusive */ false, this);
 
   return NS_OK;
 }
@@ -20918,7 +21351,7 @@ nsresult OpenDatabaseOp::DoDatabaseWork() {
     // previous operation.
     // Note: only update usage to the QuotaManager when mEnforcingQuota == true
     rv = RemoveDatabaseFilesAndDirectory(
-        dbDirectory, filename, mEnforcingQuota ? quotaManager : nullptr,
+        *dbDirectory, filename, mEnforcingQuota ? quotaManager : nullptr,
         persistenceType, mGroup, mOrigin, databaseName);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
@@ -21185,7 +21618,8 @@ nsresult OpenDatabaseOp::LoadDatabaseInformation(
     metadata->mNextAutoIncrementId = nextAutoIncrementId;
     metadata->mCommittedAutoIncrementId = nextAutoIncrementId;
 
-    if (NS_WARN_IF(!objectStores.Put(objectStoreId, metadata, fallible))) {
+    if (NS_WARN_IF(
+            !objectStores.Put(objectStoreId, std::move(metadata), fallible))) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
@@ -21338,8 +21772,8 @@ nsresult OpenDatabaseOp::LoadDatabaseInformation(
       }
     }
 
-    if (NS_WARN_IF(!objectStoreMetadata->mIndexes.Put(indexId, indexMetadata,
-                                                      fallible))) {
+    if (NS_WARN_IF(!objectStoreMetadata->mIndexes.Put(
+            indexId, std::move(indexMetadata), fallible))) {
       return NS_ERROR_OUT_OF_MEMORY;
     }
 
@@ -22346,7 +22780,7 @@ nsresult DeleteDatabaseOp::VersionChangeOp::RunOnIOThread() {
   }
 
   nsresult rv = RemoveDatabaseFilesAndDirectory(
-      directory, mDeleteDatabaseOp->mDatabaseFilenameBase, quotaManager,
+      *directory, mDeleteDatabaseOp->mDatabaseFilenameBase, quotaManager,
       persistenceType, mDeleteDatabaseOp->mGroup, mDeleteDatabaseOp->mOrigin,
       mDeleteDatabaseOp->mCommonParams.metadata().name());
   if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -22696,7 +23130,7 @@ void TransactionDatabaseOperationBase::Cleanup() {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mInternalState == InternalState::SendingResults);
 
-  mTransaction.reset();
+  mTransaction.destroy();
 }
 
 NS_IMETHODIMP
@@ -22801,7 +23235,7 @@ void TransactionBase::CommitOp::CommitOrRollbackAutoIncrementCounts() {
              mTransaction->GetMode() == IDBTransaction::Mode::Cleanup ||
              mTransaction->GetMode() == IDBTransaction::Mode::VersionChange);
 
-  nsTArray<RefPtr<FullObjectStoreMetadata>>& metadataArray =
+  const auto& metadataArray =
       mTransaction->mModifiedAutoIncrementObjectStoreMetadataArray;
 
   if (!metadataArray.IsEmpty()) {
@@ -23057,14 +23491,14 @@ CreateFileOp::CreateFileOp(Database* aDatabase,
 }
 
 nsresult CreateFileOp::CreateMutableFile(RefPtr<MutableFile>* aMutableFile) {
-  nsCOMPtr<nsIFile> file = FileInfo::GetFileForFileInfo(mFileInfo);
+  nsCOMPtr<nsIFile> file = (*mFileInfo)->GetFileForFileInfo();
   if (NS_WARN_IF(!file)) {
     IDB_REPORT_INTERNAL_ERR();
     return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
   }
 
   RefPtr<MutableFile> mutableFile =
-      MutableFile::Create(file, mDatabase, mFileInfo);
+      MutableFile::Create(file, mDatabase, *mFileInfo);
   if (NS_WARN_IF(!mutableFile)) {
     IDB_REPORT_INTERNAL_ERR();
     return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
@@ -23096,13 +23530,13 @@ nsresult CreateFileOp::DoDatabaseWork() {
 
   FileManager* fileManager = mDatabase->GetFileManager();
 
-  mFileInfo = fileManager->GetNewFileInfo();
-  if (NS_WARN_IF(!mFileInfo)) {
+  mFileInfo.init(fileManager->CreateFileInfo());
+  if (NS_WARN_IF(!*mFileInfo)) {
     IDB_REPORT_INTERNAL_ERR();
     return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
   }
 
-  const int64_t fileId = mFileInfo->Id();
+  const int64_t fileId = (*mFileInfo)->Id();
 
   const auto journalDirectory = fileManager->EnsureJournalDirectory();
   if (NS_WARN_IF(!journalDirectory)) {
@@ -23820,23 +24254,25 @@ CreateIndexOp::UpdateIndexDataValuesFunction::OnFunctionCall(
   }
 #endif
 
-  StructuredCloneReadInfo cloneInfo(JS::StructuredCloneScope::DifferentProcess);
-  nsresult rv = GetStructuredCloneReadInfoFromValueArray(
+  auto cloneInfoOrErr = GetStructuredCloneReadInfoFromValueArray(
       aValues,
       /* aDataIndex */ 3,
-      /* aFileIdsIndex */ 2, *mOp->mFileManager, &cloneInfo);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
+      /* aFileIdsIndex */ 2, *mOp->mFileManager);
+  if (NS_WARN_IF(cloneInfoOrErr.isErr())) {
+    return Err(cloneInfoOrErr.unwrapErr());
   }
+
+  auto cloneInfo = cloneInfoOrErr.unwrap();
 
   const IndexMetadata& metadata = mOp->mMetadata;
   const IndexOrObjectStoreId& objectStoreId = mOp->mObjectStoreId;
 
   AutoTArray<IndexUpdateInfo, 32> updateInfos;
   ErrorResult errorResult;
-  IDBObjectStore::DeserializeIndexValueToUpdateInfos(
-      metadata.id(), metadata.keyPath(), metadata.multiEntry(),
-      metadata.locale(), cloneInfo, updateInfos, errorResult);
+  // XXX does this really need a non-const cloneInfo?
+  DeserializeIndexValueToUpdateInfos(metadata.id(), metadata.keyPath(),
+                                     metadata.multiEntry(), metadata.locale(),
+                                     cloneInfo, updateInfos, errorResult);
   if (NS_WARN_IF(errorResult.Failed())) {
     return errorResult.StealNSResult();
   }
@@ -23848,7 +24284,7 @@ CreateIndexOp::UpdateIndexDataValuesFunction::OnFunctionCall(
 
     // No changes needed, just return the original value.
     int32_t valueType;
-    rv = aValues->GetTypeOfIndex(1, &valueType);
+    nsresult rv = aValues->GetTypeOfIndex(1, &valueType);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -23888,7 +24324,7 @@ CreateIndexOp::UpdateIndexDataValuesFunction::OnFunctionCall(
   }
 
   Key key;
-  rv = key.SetFromValueArray(aValues, 0);
+  nsresult rv = key.SetFromValueArray(aValues, 0);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -24776,31 +25212,26 @@ bool ObjectStoreAddOrPutRequestOp::Init(TransactionBase* aTransaction) {
     }
 
     for (const auto& fileAddInfo : fileAddInfos) {
-      MOZ_ASSERT(fileAddInfo.type() == StructuredCloneFile::eBlob ||
-                 fileAddInfo.type() == StructuredCloneFile::eMutableFile);
+      MOZ_ASSERT(fileAddInfo.type() == StructuredCloneFileBase::eBlob ||
+                 fileAddInfo.type() == StructuredCloneFileBase::eMutableFile);
 
       const DatabaseOrMutableFile& file = fileAddInfo.file();
 
-      StoredFileInfo* storedFileInfo = mStoredFileInfos.AppendElement(fallible);
-      MOZ_ASSERT(storedFileInfo);
-
       switch (fileAddInfo.type()) {
-        case StructuredCloneFile::eBlob: {
+        case StructuredCloneFileBase::eBlob: {
           MOZ_ASSERT(file.type() ==
                      DatabaseOrMutableFile::TPBackgroundIDBDatabaseFileParent);
 
-          storedFileInfo->mFileActor = static_cast<DatabaseFile*>(
+          auto* const fileActor = static_cast<DatabaseFile*>(
               file.get_PBackgroundIDBDatabaseFileParent());
-          MOZ_ASSERT(storedFileInfo->mFileActor);
+          MOZ_ASSERT(fileActor);
 
-          storedFileInfo->mFileInfo = storedFileInfo->mFileActor->GetFileInfo();
-          MOZ_ASSERT(storedFileInfo->mFileInfo);
-
-          storedFileInfo->mType = StructuredCloneFile::eBlob;
+          mStoredFileInfos.EmplaceBack(StoredFileInfo::CreateForBlob(
+              fileActor->GetFileInfo(), fileActor));
           break;
         }
 
-        case StructuredCloneFile::eMutableFile: {
+        case StructuredCloneFileBase::eMutableFile: {
           MOZ_ASSERT(file.type() ==
                      DatabaseOrMutableFile::TPBackgroundMutableFileParent);
 
@@ -24808,10 +25239,9 @@ bool ObjectStoreAddOrPutRequestOp::Init(TransactionBase* aTransaction) {
               file.get_PBackgroundMutableFileParent());
           MOZ_ASSERT(mutableFileActor);
 
-          storedFileInfo->mFileInfo = mutableFileActor->GetFileInfo();
-          MOZ_ASSERT(storedFileInfo->mFileInfo);
+          mStoredFileInfos.EmplaceBack(StoredFileInfo::CreateForMutableFile(
+              mutableFileActor->GetFileInfo()));
 
-          storedFileInfo->mType = StructuredCloneFile::eMutableFile;
           break;
         }
 
@@ -24822,19 +25252,9 @@ bool ObjectStoreAddOrPutRequestOp::Init(TransactionBase* aTransaction) {
   }
 
   if (mDataOverThreshold) {
-    StoredFileInfo* storedFileInfo = mStoredFileInfos.AppendElement(fallible);
-    MOZ_ASSERT(storedFileInfo);
-
-    RefPtr<FileManager> fileManager =
-        aTransaction->GetDatabase()->GetFileManager();
-    MOZ_ASSERT(fileManager);
-
-    storedFileInfo->mFileInfo = fileManager->GetNewFileInfo();
-
-    storedFileInfo->mInputStream =
-        new SCInputStream(mParams.cloneInfo().data().data);
-
-    storedFileInfo->mType = StructuredCloneFile::eStructuredClone;
+    mStoredFileInfos.EmplaceBack(StoredFileInfo::CreateForStructuredClone(
+        aTransaction->GetDatabase()->GetFileManager()->CreateFileInfo(),
+        MakeRefPtr<SCInputStream>(mParams.cloneInfo().data().data)));
   }
 
   return true;
@@ -25023,37 +25443,21 @@ nsresult ObjectStoreAddOrPutRequestOp::DoDatabaseWork(
     nsAutoString fileIds;
 
     for (auto& storedFileInfo : mStoredFileInfos) {
-      MOZ_ASSERT(storedFileInfo.mFileInfo);
+      MOZ_ASSERT(storedFileInfo.IsValid());
 
-      // If there is a StoredFileInfo, then one of the following is true:
-      // - This was an overflow structured clone and storedFileInfo.mInputStream
-      //   MUST be non-null.
-      // - This is a reference to a Blob that may or may not have already been
-      //   written to disk.  storedFileInfo.mFileActor MUST be non-null, but
-      //   its GetInputStream may return null (so don't assert on them).
-      // - It's a mutable file.  No writing will be performed.
-      MOZ_ASSERT(storedFileInfo.mInputStream || storedFileInfo.mFileActor ||
-                 storedFileInfo.mType == StructuredCloneFile::eMutableFile);
-
-      // Check for an explicit stream, like a structured clone stream.
-      nsCOMPtr<nsIInputStream> inputStream =
-          std::move(storedFileInfo.mInputStream);
-      // Check for a blob-backed stream otherwise.
-      if (!inputStream && storedFileInfo.mFileActor) {
-        ErrorResult streamRv;
-        inputStream = storedFileInfo.mFileActor->GetInputStream(streamRv);
-        if (NS_WARN_IF(streamRv.Failed())) {
-          return streamRv.StealNSResult();
-        }
+      auto inputStreamOrErr = storedFileInfo.GetInputStream();
+      if (inputStreamOrErr.isErr()) {
+        return inputStreamOrErr.unwrapErr();
       }
+
+      const auto inputStream = inputStreamOrErr.unwrap();
+
+      auto* const fileManager = Transaction().GetDatabase()->GetFileManager();
+      MOZ_ASSERT(fileManager);
 
       if (inputStream) {
         if (fileHelper.isNothing()) {
-          RefPtr<FileManager> fileManager =
-              Transaction().GetDatabase()->GetFileManager();
-          MOZ_ASSERT(fileManager);
-
-          fileHelper.emplace(fileManager);
+          fileHelper.emplace(RefPtr{fileManager});
           rv = fileHelper->Init();
           if (NS_WARN_IF(NS_FAILED(rv))) {
             IDB_REPORT_INTERNAL_ERR();
@@ -25061,7 +25465,7 @@ nsresult ObjectStoreAddOrPutRequestOp::DoDatabaseWork(
           }
         }
 
-        const RefPtr<FileInfo>& fileInfo = storedFileInfo.mFileInfo;
+        const FileInfo& fileInfo = storedFileInfo.GetFileInfo();
 
         const auto file = fileHelper->GetFile(fileInfo);
         if (NS_WARN_IF(!file)) {
@@ -25075,10 +25479,9 @@ nsresult ObjectStoreAddOrPutRequestOp::DoDatabaseWork(
           return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
         }
 
-        bool compress =
-            storedFileInfo.mType == StructuredCloneFile::eStructuredClone;
+        const bool compress = storedFileInfo.ShouldCompress();
 
-        rv = fileHelper->CreateFileFromStream(file, journalFile, inputStream,
+        rv = fileHelper->CreateFileFromStream(*file, *journalFile, *inputStream,
                                               compress);
         if (NS_FAILED(rv) &&
             NS_ERROR_GET_MODULE(rv) != NS_ERROR_MODULE_DOM_INDEXEDDB) {
@@ -25087,16 +25490,14 @@ nsresult ObjectStoreAddOrPutRequestOp::DoDatabaseWork(
         }
         if (NS_WARN_IF(NS_FAILED(rv))) {
           // Try to remove the file if the copy failed.
-          nsresult rv2 = fileHelper->RemoveFile(file, journalFile);
+          nsresult rv2 = fileManager->SyncDeleteFile(*file, *journalFile);
           if (NS_WARN_IF(NS_FAILED(rv2))) {
             return rv;
           }
           return rv;
         }
 
-        if (storedFileInfo.mFileActor) {
-          storedFileInfo.mFileActor->WriteSucceededClearBlobImpl();
-        }
+        storedFileInfo.NotifyWriteSucceeded();
       }
 
       if (!fileIds.IsEmpty()) {
@@ -25265,27 +25666,27 @@ ObjectStoreGetRequestOp::ObjectStoreGetRequestOp(
 }
 
 template <typename T>
-void MoveData(StructuredCloneReadInfo& aInfo, T& aResult);
+void MoveData(StructuredCloneReadInfoParent& aInfo, T& aResult);
 
 template <>
 void MoveData<SerializedStructuredCloneReadInfo>(
-    StructuredCloneReadInfo& aInfo,
+    StructuredCloneReadInfoParent& aInfo,
     SerializedStructuredCloneReadInfo& aResult) {
-  aResult.data().data = std::move(aInfo.mData);
-  aResult.hasPreprocessInfo() = aInfo.mHasPreprocessInfo;
+  aResult.data().data = aInfo.ReleaseData();
+  aResult.hasPreprocessInfo() = aInfo.HasPreprocessInfo();
 }
 
 template <>
-void MoveData<PreprocessInfo>(StructuredCloneReadInfo& aInfo,
+void MoveData<PreprocessInfo>(StructuredCloneReadInfoParent& aInfo,
                               PreprocessInfo& aResult) {}
 
 template <bool aForPreprocess, typename T>
 nsresult ObjectStoreGetRequestOp::ConvertResponse(
-    StructuredCloneReadInfo& aInfo, T& aResult) {
+    StructuredCloneReadInfoParent& aInfo, T& aResult) {
   MoveData(aInfo, aResult);
 
   auto res = SerializeStructuredCloneFiles(mBackgroundParent, mDatabase,
-                                           aInfo.mFiles, aForPreprocess);
+                                           aInfo.Files(), aForPreprocess);
   if (NS_WARN_IF(res.isErr())) {
     return res.unwrapErr();
   }
@@ -25342,19 +25743,18 @@ nsresult ObjectStoreGetRequestOp::DoDatabaseWork(
 
   bool hasResult;
   while (NS_SUCCEEDED((rv = stmt->ExecuteStep(&hasResult))) && hasResult) {
-    StructuredCloneReadInfo* cloneInfo = mResponse.AppendElement(fallible);
-    if (NS_WARN_IF(!cloneInfo)) {
-      return NS_ERROR_OUT_OF_MEMORY;
+    auto cloneInfoOrErr = GetStructuredCloneReadInfoFromStatement(
+        &*stmt, 1, 0, *mDatabase->GetFileManager());
+    if (NS_WARN_IF(cloneInfoOrErr.isErr())) {
+      return Err(cloneInfoOrErr.unwrapErr());
     }
 
-    rv = GetStructuredCloneReadInfoFromStatement(
-        &*stmt, 1, 0, *mDatabase->GetFileManager(), cloneInfo);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    if (cloneInfo->mHasPreprocessInfo) {
+    if (cloneInfoOrErr.inspect().HasPreprocessInfo()) {
       mPreprocessInfoCount++;
+    }
+
+    if (NS_WARN_IF(!mResponse.EmplaceBack(fallible, cloneInfoOrErr.unwrap()))) {
+      return NS_ERROR_OUT_OF_MEMORY;
     }
   }
 
@@ -25387,7 +25787,7 @@ nsresult ObjectStoreGetRequestOp::GetPreprocessParams(
 
     uint32_t fallibleIndex = 0;
     for (auto& info : mResponse) {
-      if (info.mHasPreprocessInfo) {
+      if (info.HasPreprocessInfo()) {
         nsresult rv = ConvertResponse<true>(
             info, falliblePreprocessInfos[fallibleIndex++]);
         if (NS_WARN_IF(NS_FAILED(rv))) {
@@ -25928,20 +26328,19 @@ nsresult IndexGetRequestOp::DoDatabaseWork(DatabaseConnection* aConnection) {
 
   bool hasResult;
   while (NS_SUCCEEDED((rv = stmt->ExecuteStep(&hasResult))) && hasResult) {
-    StructuredCloneReadInfo* cloneInfo = mResponse.AppendElement(fallible);
-    if (NS_WARN_IF(!cloneInfo)) {
-      return NS_ERROR_OUT_OF_MEMORY;
+    auto cloneInfoOrErr = GetStructuredCloneReadInfoFromStatement(
+        &*stmt, 1, 0, *mDatabase->GetFileManager());
+    if (NS_WARN_IF(cloneInfoOrErr.isErr())) {
+      return cloneInfoOrErr.unwrapErr();
     }
 
-    rv = GetStructuredCloneReadInfoFromStatement(
-        &*stmt, 1, 0, *mDatabase->GetFileManager(), cloneInfo);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-
-    if (cloneInfo->mHasPreprocessInfo) {
+    if (cloneInfoOrErr.inspect().HasPreprocessInfo()) {
       IDB_WARNING("Preprocessing for indexes not yet implemented!");
       return NS_ERROR_NOT_IMPLEMENTED;
+    }
+
+    if (NS_WARN_IF(!mResponse.EmplaceBack(fallible, cloneInfoOrErr.unwrap()))) {
+      return NS_ERROR_OUT_OF_MEMORY;
     }
   }
 
@@ -25972,16 +26371,16 @@ void IndexGetRequestOp::GetResponse(RequestResponse& aResponse,
 
       for (uint32_t count = mResponse.Length(), index = 0; index < count;
            index++) {
-        StructuredCloneReadInfo& info = mResponse[index];
+        StructuredCloneReadInfoParent& info = mResponse[index];
         *aResponseSize += info.Size();
 
         SerializedStructuredCloneReadInfo& serializedInfo =
             fallibleCloneInfos[index];
 
-        serializedInfo.data().data = std::move(info.mData);
+        serializedInfo.data().data = info.ReleaseData();
 
         auto res = SerializeStructuredCloneFiles(mBackgroundParent, mDatabase,
-                                                 info.mFiles,
+                                                 info.Files(),
                                                  /* aForPreprocess */ false);
         if (NS_WARN_IF(res.isErr())) {
           aResponse = res.unwrapErr();
@@ -26006,17 +26405,17 @@ void IndexGetRequestOp::GetResponse(RequestResponse& aResponse,
   *aResponseSize = 0;
 
   if (!mResponse.IsEmpty()) {
-    StructuredCloneReadInfo& info = mResponse[0];
+    StructuredCloneReadInfoParent& info = mResponse[0];
     *aResponseSize += info.Size();
 
     SerializedStructuredCloneReadInfo& serializedInfo =
         aResponse.get_IndexGetResponse().cloneInfo();
 
-    serializedInfo.data().data = std::move(info.mData);
+    serializedInfo.data().data = info.ReleaseData();
 
-    auto res =
-        SerializeStructuredCloneFiles(mBackgroundParent, mDatabase, info.mFiles,
-                                      /* aForPreprocess */ false);
+    auto res = SerializeStructuredCloneFiles(mBackgroundParent, mDatabase,
+                                             info.Files(),
+                                             /* aForPreprocess */ false);
     if (NS_WARN_IF(res.isErr())) {
       aResponse = res.unwrapErr();
       return;
@@ -26313,7 +26712,7 @@ CursorOpBaseHelperBase<CursorType>::PopulateResponseFromStatement(
   }
 
   auto& responses = populateResponseHelper.GetTypedResponse(&mOp.mResponse);
-  auto* response = responses.AppendElement();
+  auto& response = *responses.AppendElement();
 
   populateResponseHelper.FillKeys(response);
   if constexpr (!CursorTypeTraits<CursorType>::IsKeyOnlyCursor) {
@@ -27143,11 +27542,10 @@ mozilla::ipc::IPCResult Utils::RecvDeleteMe() {
 mozilla::ipc::IPCResult Utils::RecvGetFileReferences(
     const PersistenceType& aPersistenceType, const nsCString& aOrigin,
     const nsString& aDatabaseName, const int64_t& aFileId, int32_t* aRefCnt,
-    int32_t* aDBRefCnt, int32_t* aSliceRefCnt, bool* aResult) {
+    int32_t* aDBRefCnt, bool* aResult) {
   AssertIsOnBackgroundThread();
   MOZ_ASSERT(aRefCnt);
   MOZ_ASSERT(aDBRefCnt);
-  MOZ_ASSERT(aSliceRefCnt);
   MOZ_ASSERT(aResult);
   MOZ_ASSERT(!mActorDestroyed);
 
@@ -27161,9 +27559,7 @@ mozilla::ipc::IPCResult Utils::RecvGetFileReferences(
     return IPC_FAIL_NO_REASON(this);
   }
 
-  if (NS_WARN_IF(aPersistenceType != quota::PERSISTENCE_TYPE_PERSISTENT &&
-                 aPersistenceType != quota::PERSISTENCE_TYPE_TEMPORARY &&
-                 aPersistenceType != quota::PERSISTENCE_TYPE_DEFAULT)) {
+  if (NS_WARN_IF(!IsValidPersistenceType(aPersistenceType))) {
     ASSERT_UNLESS_FUZZING();
     return IPC_FAIL_NO_REASON(this);
   }
@@ -27183,80 +27579,14 @@ mozilla::ipc::IPCResult Utils::RecvGetFileReferences(
     return IPC_FAIL_NO_REASON(this);
   }
 
-  RefPtr<GetFileReferencesHelper> helper = new GetFileReferencesHelper(
-      aPersistenceType, aOrigin, aDatabaseName, aFileId);
-
-  nsresult rv = helper->DispatchAndReturnFileReferences(aRefCnt, aDBRefCnt,
-                                                        aSliceRefCnt, aResult);
+  nsresult rv =
+      DispatchAndReturnFileReferences(aPersistenceType, aOrigin, aDatabaseName,
+                                      aFileId, aRefCnt, aDBRefCnt, aResult);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return IPC_FAIL_NO_REASON(this);
   }
 
   return IPC_OK();
-}
-
-nsresult GetFileReferencesHelper::DispatchAndReturnFileReferences(
-    int32_t* aMemRefCnt, int32_t* aDBRefCnt, int32_t* aSliceRefCnt,
-    bool* aResult) {
-  AssertIsOnBackgroundThread();
-  MOZ_ASSERT(aMemRefCnt);
-  MOZ_ASSERT(aDBRefCnt);
-  MOZ_ASSERT(aSliceRefCnt);
-  MOZ_ASSERT(aResult);
-
-  QuotaManager* const quotaManager = QuotaManager::Get();
-  MOZ_ASSERT(quotaManager);
-
-  nsresult rv = quotaManager->IOThread()->Dispatch(this, NS_DISPATCH_NORMAL);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  AutoLock autolock(mMutex);
-  while (mWaiting) {
-    mCondVar.Wait();
-  }
-
-  *aMemRefCnt = mMemRefCnt;
-  *aDBRefCnt = mDBRefCnt;
-  *aSliceRefCnt = mSliceRefCnt;
-  *aResult = mResult;
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-GetFileReferencesHelper::Run() {
-  AssertIsOnIOThread();
-
-  IndexedDatabaseManager* mgr = IndexedDatabaseManager::Get();
-  MOZ_ASSERT(mgr);
-
-  RefPtr<FileManager> fileManager =
-      mgr->GetFileManager(mPersistenceType, mOrigin, mDatabaseName);
-
-  if (fileManager) {
-    RefPtr<FileInfo> fileInfo = fileManager->GetFileInfo(mFileId);
-
-    if (fileInfo) {
-      fileInfo->GetReferences(&mMemRefCnt, &mDBRefCnt, &mSliceRefCnt);
-
-      if (mMemRefCnt != -1) {
-        // We added an extra temp ref, so account for that accordingly.
-        mMemRefCnt--;
-      }
-
-      mResult = true;
-    }
-  }
-
-  AutoLock lock(mMutex);
-  MOZ_ASSERT(mWaiting);
-
-  mWaiting = false;
-  mCondVar.Signal();
-
-  return NS_OK;
 }
 
 void PermissionRequestHelper::OnPromptComplete(
@@ -27293,7 +27623,6 @@ DEBUGThreadSlower::AfterProcessNextEvent(nsIThreadInternal* /* aThread */,
 
 nsresult FileHelper::Init() {
   MOZ_ASSERT(!IsOnBackgroundThread());
-  MOZ_ASSERT(mFileManager);
 
   auto fileDirectory = mFileManager->GetCheckedDirectory();
   if (NS_WARN_IF(!fileDirectory)) {
@@ -27313,49 +27642,31 @@ nsresult FileHelper::Init() {
   MOZ_ASSERT(NS_SUCCEEDED(journalDirectory->IsDirectory(&isDirectory)));
   MOZ_ASSERT(isDirectory);
 
-  mFileDirectory = std::move(fileDirectory);
-  mJournalDirectory = std::move(journalDirectory);
+  mFileDirectory.init(std::move(fileDirectory));
+  mJournalDirectory.init(std::move(journalDirectory));
 
   return NS_OK;
 }
 
-nsCOMPtr<nsIFile> FileHelper::GetFile(FileInfo* aFileInfo) {
+nsCOMPtr<nsIFile> FileHelper::GetFile(const FileInfo& aFileInfo) {
   MOZ_ASSERT(!IsOnBackgroundThread());
-  MOZ_ASSERT(aFileInfo);
-  MOZ_ASSERT(mFileManager);
-  MOZ_ASSERT(mFileDirectory);
 
-  const int64_t fileId = aFileInfo->Id();
-  MOZ_ASSERT(fileId > 0);
-
-  return mFileManager->GetFileForId(mFileDirectory, fileId);
+  return mFileManager->GetFileForId(*mFileDirectory, aFileInfo.Id());
 }
 
-nsCOMPtr<nsIFile> FileHelper::GetJournalFile(FileInfo* aFileInfo) {
+nsCOMPtr<nsIFile> FileHelper::GetJournalFile(const FileInfo& aFileInfo) {
   MOZ_ASSERT(!IsOnBackgroundThread());
-  MOZ_ASSERT(aFileInfo);
-  MOZ_ASSERT(mFileManager);
-  MOZ_ASSERT(mJournalDirectory);
 
-  const int64_t fileId = aFileInfo->Id();
-  MOZ_ASSERT(fileId > 0);
-
-  return mFileManager->GetFileForId(mJournalDirectory, fileId);
+  return mFileManager->GetFileForId(*mJournalDirectory, aFileInfo.Id());
 }
 
-nsresult FileHelper::CreateFileFromStream(nsIFile* aFile, nsIFile* aJournalFile,
-                                          nsIInputStream* aInputStream,
+nsresult FileHelper::CreateFileFromStream(nsIFile& aFile, nsIFile& aJournalFile,
+                                          nsIInputStream& aInputStream,
                                           bool aCompress) {
   MOZ_ASSERT(!IsOnBackgroundThread());
-  MOZ_ASSERT(aFile);
-  MOZ_ASSERT(aJournalFile);
-  MOZ_ASSERT(aInputStream);
-  MOZ_ASSERT(mFileManager);
-  MOZ_ASSERT(mFileDirectory);
-  MOZ_ASSERT(mJournalDirectory);
 
   bool exists;
-  nsresult rv = aFile->Exists(&exists);
+  nsresult rv = aFile.Exists(&exists);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -27374,7 +27685,7 @@ nsresult FileHelper::CreateFileFromStream(nsIFile* aFile, nsIFile* aJournalFile,
   // This corner case is partially simulated in test_file_copy_failure.js
   if (exists) {
     bool isFile;
-    rv = aFile->IsFile(&isFile);
+    rv = aFile.IsFile(&isFile);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -27383,7 +27694,7 @@ nsresult FileHelper::CreateFileFromStream(nsIFile* aFile, nsIFile* aJournalFile,
       return NS_ERROR_FAILURE;
     }
 
-    rv = aJournalFile->Exists(&exists);
+    rv = aJournalFile.Exists(&exists);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -27392,7 +27703,7 @@ nsresult FileHelper::CreateFileFromStream(nsIFile* aFile, nsIFile* aJournalFile,
       return NS_ERROR_FAILURE;
     }
 
-    rv = aJournalFile->IsFile(&isFile);
+    rv = aJournalFile.IsFile(&isFile);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -27403,14 +27714,14 @@ nsresult FileHelper::CreateFileFromStream(nsIFile* aFile, nsIFile* aJournalFile,
 
     IDB_WARNING("Deleting orphaned file!");
 
-    rv = RemoveFile(aFile, aJournalFile);
+    rv = mFileManager->SyncDeleteFile(aFile, aJournalFile);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
   }
 
   // Create a journal file first.
-  rv = aJournalFile->Create(nsIFile::NORMAL_FILE_TYPE, 0644);
+  rv = aJournalFile.Create(nsIFile::NORMAL_FILE_TYPE, 0644);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -27418,58 +27729,29 @@ nsresult FileHelper::CreateFileFromStream(nsIFile* aFile, nsIFile* aJournalFile,
   // Now try to copy the stream.
   RefPtr<FileOutputStream> fileOutputStream =
       CreateFileOutputStream(mFileManager->Type(), mFileManager->Group(),
-                             mFileManager->Origin(), Client::IDB, aFile);
+                             mFileManager->Origin(), Client::IDB, &aFile);
   if (NS_WARN_IF(!fileOutputStream)) {
     return NS_ERROR_FAILURE;
   }
 
-  if (aCompress) {
-    RefPtr<SnappyCompressOutputStream> snappyOutputStream =
-        new SnappyCompressOutputStream(fileOutputStream);
+  AutoTArray<char, kFileCopyBufferSize> buffer;
+  const auto actualOutputStream =
+      [aCompress, &buffer, &fileOutputStream]() -> nsCOMPtr<nsIOutputStream> {
+    if (aCompress) {
+      auto snappyOutputStream =
+          MakeRefPtr<SnappyCompressOutputStream>(fileOutputStream);
 
-    UniquePtr<char[]> buffer(new char[snappyOutputStream->BlockSize()]);
+      buffer.SetLength(snappyOutputStream->BlockSize());
 
-    rv = SyncCopy(aInputStream, snappyOutputStream, buffer.get(),
-                  snappyOutputStream->BlockSize());
-  } else {
-    char buffer[kFileCopyBufferSize];
-
-    rv = SyncCopy(aInputStream, fileOutputStream, buffer, kFileCopyBufferSize);
-  }
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
-
-  return NS_OK;
-}
-
-nsresult FileHelper::RemoveFile(nsIFile* aFile, nsIFile* aJournalFile) {
-  nsresult rv;
-
-  int64_t fileSize;
-
-  if (mFileManager->EnforcingQuota()) {
-    rv = aFile->GetFileSize(&fileSize);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
+      return snappyOutputStream;
     }
-  }
 
-  rv = aFile->Remove(false);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
+    buffer.SetLength(kFileCopyBufferSize);
+    return std::move(fileOutputStream);
+  }();
 
-  if (mFileManager->EnforcingQuota()) {
-    QuotaManager* const quotaManager = QuotaManager::Get();
-    MOZ_ASSERT(quotaManager);
-
-    quotaManager->DecreaseUsageForOrigin(
-        mFileManager->Type(), mFileManager->Group(), mFileManager->Origin(),
-        Client::IDB, fileSize);
-  }
-
-  rv = aJournalFile->Remove(false);
+  rv = SyncCopy(aInputStream, *actualOutputStream, buffer.Elements(),
+                buffer.Length());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -27530,25 +27812,25 @@ NS_INTERFACE_MAP_BEGIN(FileHelper::ReadCallback)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIInputStreamCallback)
 NS_INTERFACE_MAP_END
 
-nsresult FileHelper::SyncRead(nsIInputStream* aInputStream, char* aBuffer,
-                              uint32_t aBufferSize, uint32_t* aRead) {
+nsresult FileHelper::SyncRead(nsIInputStream& aInputStream, char* const aBuffer,
+                              const uint32_t aBufferSize,
+                              uint32_t* const aRead) {
   MOZ_ASSERT(!IsOnBackgroundThread());
-  MOZ_ASSERT(aInputStream);
 
   // Let's try to read, directly.
-  nsresult rv = aInputStream->Read(aBuffer, aBufferSize, aRead);
+  nsresult rv = aInputStream.Read(aBuffer, aBufferSize, aRead);
   if (NS_SUCCEEDED(rv) || rv != NS_BASE_STREAM_WOULD_BLOCK) {
     return rv;
   }
 
   // We need to proceed async.
-  nsCOMPtr<nsIAsyncInputStream> asyncStream = do_QueryInterface(aInputStream);
+  nsCOMPtr<nsIAsyncInputStream> asyncStream = do_QueryInterface(&aInputStream);
   if (!asyncStream) {
     return rv;
   }
 
   if (!mReadCallback) {
-    mReadCallback = new ReadCallback();
+    mReadCallback.init(new ReadCallback());
   }
 
   // We just need any thread with an event loop for receiving the
@@ -27557,7 +27839,7 @@ nsresult FileHelper::SyncRead(nsIInputStream* aInputStream, char* aBuffer,
       do_GetService(NS_STREAMTRANSPORTSERVICE_CONTRACTID);
   MOZ_ASSERT(target);
 
-  rv = mReadCallback->AsyncWait(asyncStream, aBufferSize, target);
+  rv = (*mReadCallback)->AsyncWait(asyncStream, aBufferSize, target);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -27565,12 +27847,10 @@ nsresult FileHelper::SyncRead(nsIInputStream* aInputStream, char* aBuffer,
   return SyncRead(aInputStream, aBuffer, aBufferSize, aRead);
 }
 
-nsresult FileHelper::SyncCopy(nsIInputStream* aInputStream,
-                              nsIOutputStream* aOutputStream, char* aBuffer,
-                              uint32_t aBufferSize) {
+nsresult FileHelper::SyncCopy(nsIInputStream& aInputStream,
+                              nsIOutputStream& aOutputStream,
+                              char* const aBuffer, const uint32_t aBufferSize) {
   MOZ_ASSERT(!IsOnBackgroundThread());
-  MOZ_ASSERT(aInputStream);
-  MOZ_ASSERT(aOutputStream);
 
   AUTO_PROFILER_LABEL("FileHelper::SyncCopy", DOM);
 
@@ -27588,7 +27868,7 @@ nsresult FileHelper::SyncCopy(nsIInputStream* aInputStream,
     }
 
     uint32_t numWrite;
-    rv = aOutputStream->Write(aBuffer, numRead, &numWrite);
+    rv = aOutputStream.Write(aBuffer, numRead, &numWrite);
     if (rv == NS_ERROR_FILE_NO_DEVICE_SPACE) {
       rv = NS_ERROR_DOM_INDEXEDDB_QUOTA_ERR;
     }
@@ -27603,13 +27883,13 @@ nsresult FileHelper::SyncCopy(nsIInputStream* aInputStream,
   } while (true);
 
   if (NS_SUCCEEDED(rv)) {
-    rv = aOutputStream->Flush();
+    rv = aOutputStream.Flush();
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
   }
 
-  nsresult rv2 = aOutputStream->Close();
+  nsresult rv2 = aOutputStream.Close();
   if (NS_WARN_IF(NS_FAILED(rv2))) {
     return NS_SUCCEEDED(rv) ? rv2 : rv;
   }
@@ -27617,8 +27897,7 @@ nsresult FileHelper::SyncCopy(nsIInputStream* aInputStream,
   return rv;
 }
 
-}  // namespace indexedDB
-}  // namespace dom
+}  // namespace dom::indexedDB
 }  // namespace mozilla
 
 #undef IDB_MOBILE

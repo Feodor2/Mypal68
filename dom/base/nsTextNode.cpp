@@ -47,8 +47,8 @@ class nsAttributeTextNode final : public nsTextNode,
 
   virtual already_AddRefed<CharacterData> CloneDataNode(
       mozilla::dom::NodeInfo* aNodeInfo, bool aCloneText) const override {
-    RefPtr<nsAttributeTextNode> it =
-        new nsAttributeTextNode(do_AddRef(aNodeInfo), mNameSpaceID, mAttrName);
+    RefPtr<nsAttributeTextNode> it = new (aNodeInfo->NodeInfoManager())
+        nsAttributeTextNode(do_AddRef(aNodeInfo), mNameSpaceID, mAttrName);
     if (aCloneText) {
       it->mText = mText;
     }
@@ -77,7 +77,7 @@ class nsAttributeTextNode final : public nsTextNode,
   RefPtr<nsAtom> mAttrName;
 };
 
-nsTextNode::~nsTextNode() {}
+nsTextNode::~nsTextNode() = default;
 
 // Use the CC variant of this, even though this class does not define
 // a new CC participant, to make QIing to the CC interfaces faster.
@@ -92,7 +92,8 @@ bool nsTextNode::IsNodeOfType(uint32_t aFlags) const { return false; }
 
 already_AddRefed<CharacterData> nsTextNode::CloneDataNode(
     mozilla::dom::NodeInfo* aNodeInfo, bool aCloneText) const {
-  RefPtr<nsTextNode> it = new nsTextNode(do_AddRef(aNodeInfo));
+  RefPtr<nsTextNode> it =
+      new (aNodeInfo->NodeInfoManager()) nsTextNode(do_AddRef(aNodeInfo));
   if (aCloneText) {
     it->mText = mText;
   }
@@ -180,8 +181,8 @@ nsresult NS_NewAttributeContent(nsNodeInfoManager* aNodeInfoManager,
 
   RefPtr<mozilla::dom::NodeInfo> ni = aNodeInfoManager->GetTextNodeInfo();
 
-  RefPtr<nsAttributeTextNode> textNode =
-      new nsAttributeTextNode(ni.forget(), aNameSpaceID, aAttrName);
+  RefPtr<nsAttributeTextNode> textNode = new (aNodeInfoManager)
+      nsAttributeTextNode(ni.forget(), aNameSpaceID, aAttrName);
   textNode.forget(aResult);
 
   return NS_OK;

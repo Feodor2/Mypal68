@@ -88,7 +88,7 @@ class txStylesheetSink final : public nsIXMLContentSink,
   bool mCheckedForXML;
 
  protected:
-  ~txStylesheetSink() {}
+  ~txStylesheetSink() = default;
 
   // This exists solely to suppress a warning from nsDerivedSafe
   txStylesheetSink();
@@ -342,7 +342,7 @@ class txCompileObserver final : public txACompileObserver {
   txCompileObserver();
 
   // Private destructor, to discourage deletion outside of Release():
-  ~txCompileObserver() {}
+  ~txCompileObserver() = default;
 };
 
 txCompileObserver::txCompileObserver(txMozillaXSLTProcessor* aProcessor,
@@ -520,7 +520,7 @@ class txSyncCompileObserver final : public txACompileObserver {
 
  private:
   // Private destructor, to discourage deletion outside of Release():
-  ~txSyncCompileObserver() {}
+  ~txSyncCompileObserver() = default;
 
   RefPtr<txMozillaXSLTProcessor> mProcessor;
 };

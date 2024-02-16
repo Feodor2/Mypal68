@@ -5,6 +5,7 @@
 #include "EffectSet.h"
 #include "mozilla/dom/Element.h"  // For Element
 #include "mozilla/RestyleManager.h"
+#include "mozilla/LayerAnimationInfo.h"
 #include "nsCSSPseudoElements.h"         // For PseudoStyleType
 #include "nsCycleCollectionNoteChild.h"  // For CycleCollectionNoteChild
 #include "nsPresContext.h"
@@ -135,7 +136,7 @@ void EffectSet::DestroyEffectSet(dom::Element* aElement,
              "Should not destroy an effect set while it is being enumerated");
   effectSet = nullptr;
 
-  aElement->DeleteProperty(propName);
+  aElement->RemoveProperty(propName);
 }
 
 void EffectSet::UpdateAnimationGeneration(nsPresContext* aPresContext) {

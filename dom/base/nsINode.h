@@ -184,8 +184,12 @@ enum {
 
   NODE_HAS_BEEN_IN_UA_WIDGET = NODE_FLAG_BIT(18),
 
+  // Set if the node has a nonce value and a header delivered CSP.
+  NODE_HAS_NONCE_AND_HEADER_CSP = NODE_FLAG_BIT(19),
+
+  NODE_KEEPS_DOMARENA = NODE_FLAG_BIT(20),
   // Remaining bits are node type specific.
-  NODE_TYPE_SPECIFIC_BITS_OFFSET = 19
+  NODE_TYPE_SPECIFIC_BITS_OFFSET = 21
 };
 
 // Make sure we have space for our bits
@@ -313,6 +317,11 @@ class nsINode : public mozilla::dom::EventTarget {
   static const auto DOCUMENT_FRAGMENT_NODE =
       mozilla::dom::Node_Binding::DOCUMENT_FRAGMENT_NODE;
   static const auto NOTATION_NODE = mozilla::dom::Node_Binding::NOTATION_NODE;
+  static const auto MAX_NODE_TYPE = NOTATION_NODE;
+
+  void* operator new(size_t aSize, nsNodeInfoManager* aManager);
+  void* operator new(size_t aSize) = delete;
+  void operator delete(void* aPtr);
 
   template <class T>
   using Sequence = mozilla::dom::Sequence<T>;
@@ -886,17 +895,17 @@ class nsINode : public mozilla::dom::EventTarget {
   }
 
   /**
-   * Destroys a property associated with this node. The value is destroyed
-   * using the destruction function given when that value was set.
+   * Removes a property associated with this node. The value is destroyed using
+   * the destruction function given when that value was set.
    *
    * @param aPropertyName  name of property to destroy.
    */
-  void DeleteProperty(const nsAtom* aPropertyName);
+  void RemoveProperty(const nsAtom* aPropertyName);
 
   /**
-   * Unset a property associated with this node. The value will not be
-   * destroyed but rather returned. It is the caller's responsibility to
-   * destroy the value after that point.
+   * Take a property associated with this node. The value will not be destroyed
+   * but rather returned. It is the caller's responsibility to destroy the value
+   * after that point.
    *
    * @param aPropertyName  name of property to unset.
    * @param aStatus        out parameter for storing resulting status.
@@ -906,7 +915,7 @@ class nsINode : public mozilla::dom::EventTarget {
    *                       (though a null return value does not imply the
    *                       property was not set, i.e. it can be set to null).
    */
-  void* UnsetProperty(const nsAtom* aPropertyName, nsresult* aStatus = nullptr);
+  void* TakeProperty(const nsAtom* aPropertyName, nsresult* aStatus = nullptr);
 
   bool HasProperties() const { return HasFlag(NODE_HAS_PROPERTIES); }
 
@@ -981,6 +990,12 @@ class nsINode : public mozilla::dom::EventTarget {
    * to its host if necessary.
    */
   mozilla::dom::Element* GetParentElementCrossingShadowRoot() const;
+
+  /**
+   * Get closest element node for the node.  Meaning that if the node is an
+   * element node, returns itself.  Otherwise, returns parent element or null.
+   */
+  inline mozilla::dom::Element* GetAsElementOrParentElement() const;
 
   /**
    * Get the root of the subtree this node belongs to.  This never returns
@@ -1256,6 +1271,28 @@ class nsINode : public mozilla::dom::EventTarget {
 
   bool IsInAnonymousSubtree() const;
 
+  /**
+   * If |this| or any ancestor is native anonymous, return the root of the
+   * native anonymous subtree. Note that in case of nested native anonymous
+   * content, this returns the innermost root, not the outermost.
+   */
+  nsIContent* GetClosestNativeAnonymousSubtreeRoot() const;
+
+  /**
+   * If |this| or any ancestor is native anonymous, return the parent of the
+   * native anonymous subtree. Note that in case of nested native anonymous
+   * content, this returns the parent of the innermost root, not the outermost.
+   */
+  nsIContent* GetClosestNativeAnonymousSubtreeRootParent() const {
+    const nsIContent* root = GetClosestNativeAnonymousSubtreeRoot();
+    if (!root) {
+      return nullptr;
+    }
+    // We could put this in nsIContentInlines.h or such to avoid this
+    // reinterpret_cast, but it doesn't seem worth it.
+    return reinterpret_cast<const nsINode*>(root)->GetParent();
+  }
+
   bool IsInSVGUseShadowTree() const {
     return !!GetContainingSVGUseShadowHost();
   }
@@ -1305,7 +1342,7 @@ class nsINode : public mozilla::dom::EventTarget {
    * ancestor. This node is definitely not selected when |false| is returned,
    * but it may or may not be selected when |true| is returned.
    */
-  bool IsSelectionDescendant() const {
+  bool IsMaybeSelected() const {
     return IsDescendantOfClosestCommonInclusiveAncestorForRangeInSelection() ||
            IsClosestCommonInclusiveAncestorForRangeInSelection();
   }

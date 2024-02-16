@@ -1584,7 +1584,9 @@ nsCSPContext::ToJSON(nsAString& outCSPinJSON) {
   for (uint32_t p = 0; p < mPolicies.Length(); p++) {
     dom::CSP jsonCSP;
     mPolicies[p]->toDomCSPStruct(jsonCSP);
-    jsonPolicies.mCsp_policies.Value().AppendElement(jsonCSP, fallible);
+    if (!jsonPolicies.mCsp_policies.Value().AppendElement(jsonCSP, fallible)) {
+      return NS_ERROR_OUT_OF_MEMORY;
+    }
   }
 
   // convert the gathered information to JSON
@@ -1640,9 +1642,9 @@ nsCSPContext::GetCSPSandboxFlags(uint32_t* aOutSandboxFlags) {
 NS_IMPL_ISUPPORTS(CSPViolationReportListener, nsIStreamListener,
                   nsIRequestObserver, nsISupports);
 
-CSPViolationReportListener::CSPViolationReportListener() {}
+CSPViolationReportListener::CSPViolationReportListener() = default;
 
-CSPViolationReportListener::~CSPViolationReportListener() {}
+CSPViolationReportListener::~CSPViolationReportListener() = default;
 
 nsresult AppendSegmentToString(nsIInputStream* aInputStream, void* aClosure,
                                const char* aRawSegment, uint32_t aToOffset,
@@ -1679,9 +1681,9 @@ CSPViolationReportListener::OnStartRequest(nsIRequest* aRequest) {
 NS_IMPL_ISUPPORTS(CSPReportRedirectSink, nsIChannelEventSink,
                   nsIInterfaceRequestor);
 
-CSPReportRedirectSink::CSPReportRedirectSink() {}
+CSPReportRedirectSink::CSPReportRedirectSink() = default;
 
-CSPReportRedirectSink::~CSPReportRedirectSink() {}
+CSPReportRedirectSink::~CSPReportRedirectSink() = default;
 
 NS_IMETHODIMP
 CSPReportRedirectSink::AsyncOnChannelRedirect(
@@ -1745,10 +1747,12 @@ nsCSPContext::Read(nsIObjectInputStream* aStream) {
   mSelfURI = do_QueryInterface(supports);
   MOZ_ASSERT(mSelfURI, "need a self URI to de-serialize");
 
-  rv = NS_ReadOptionalObject(aStream, true, getter_AddRefs(supports));
+  nsAutoCString JSON;
+  rv = aStream->ReadCString(JSON);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  mLoadingPrincipal = do_QueryInterface(supports);
+  nsCOMPtr<nsIPrincipal> principal = BasePrincipal::FromJSON(JSON);
+  mLoadingPrincipal = principal;
   MOZ_ASSERT(mLoadingPrincipal, "need a loadingPrincipal to de-serialize");
 
   uint32_t numPolicies;
@@ -1783,8 +1787,9 @@ nsCSPContext::Write(nsIObjectOutputStream* aStream) {
                                                NS_GET_IID(nsIURI), true);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  rv = NS_WriteOptionalCompoundObject(aStream, mLoadingPrincipal,
-                                      NS_GET_IID(nsIPrincipal), true);
+  nsAutoCString JSON;
+  BasePrincipal::Cast(mLoadingPrincipal)->ToJSON(JSON);
+  rv = aStream->WriteStringZ(JSON.get());
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Serialize all the policies.

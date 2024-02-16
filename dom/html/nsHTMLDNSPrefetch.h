@@ -5,13 +5,14 @@
 #ifndef nsHTMLDNSPrefetch_h___
 #define nsHTMLDNSPrefetch_h___
 
+#include "mozilla/OriginAttributes.h"
 #include "nsCOMPtr.h"
-#include "nsString.h"
-
 #include "nsIDNSListener.h"
-#include "nsIWebProgressListener.h"
-#include "nsWeakReference.h"
 #include "nsIObserver.h"
+#include "nsIRequest.h"
+#include "nsIWebProgressListener.h"
+#include "nsString.h"
+#include "nsWeakReference.h"
 
 class nsITimer;
 namespace mozilla {
@@ -84,10 +85,10 @@ class nsHTMLDNSPrefetch {
     NS_DECL_THREADSAFE_ISUPPORTS
     NS_DECL_NSIDNSLISTENER
 
-    nsListener() {}
+    nsListener() = default;
 
    private:
-    ~nsListener() {}
+    ~nsListener() = default;
   };
 
   class nsDeferrals final : public nsIWebProgressListener,

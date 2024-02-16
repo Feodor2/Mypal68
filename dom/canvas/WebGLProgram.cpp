@@ -1036,7 +1036,7 @@ JS::Value WebGLProgram::GetActiveUniformBlockActiveUniforms(
   dom::Uint32Array result;
   DebugOnly<bool> inited = result.Init(obj);
   MOZ_ASSERT(inited);
-  result.ComputeLengthAndData();
+  result.ComputeState();
   gl->fGetActiveUniformBlockiv(mGLName, uniformBlockIndex,
                                LOCAL_GL_UNIFORM_BLOCK_ACTIVE_UNIFORM_INDICES,
                                (GLint*)result.Data());

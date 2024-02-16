@@ -16,7 +16,7 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Pre)
 namespace mozilla {
 namespace dom {
 
-HTMLPreElement::~HTMLPreElement() {}
+HTMLPreElement::~HTMLPreElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLPreElement)
 

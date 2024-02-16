@@ -6,6 +6,7 @@
 #define StereoPannerNode_h_
 
 #include "AudioNode.h"
+#include "nsPrintfCString.h"
 #include "mozilla/dom/StereoPannerNodeBinding.h"
 
 namespace mozilla {
@@ -34,7 +35,8 @@ class StereoPannerNode final : public AudioNode {
   virtual void SetChannelCount(uint32_t aChannelCount,
                                ErrorResult& aRv) override {
     if (aChannelCount > 2) {
-      aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+      aRv.ThrowNotSupportedError(
+          nsPrintfCString("%u is greater than 2", aChannelCount));
       return;
     }
     AudioNode::SetChannelCount(aChannelCount, aRv);
@@ -42,7 +44,7 @@ class StereoPannerNode final : public AudioNode {
   virtual void SetChannelCountModeValue(ChannelCountMode aMode,
                                         ErrorResult& aRv) override {
     if (aMode == ChannelCountMode::Max) {
-      aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+      aRv.ThrowNotSupportedError("Cannot set channel count mode to \"max\"");
       return;
     }
     AudioNode::SetChannelCountModeValue(aMode, aRv);

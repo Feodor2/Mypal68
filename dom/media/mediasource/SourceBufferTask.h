@@ -42,7 +42,7 @@ class SourceBufferTask {
   }
 
  protected:
-  virtual ~SourceBufferTask() {}
+  virtual ~SourceBufferTask() = default;
 };
 
 class AppendBufferTask : public SourceBufferTask {

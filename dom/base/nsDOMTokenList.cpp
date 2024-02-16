@@ -30,7 +30,7 @@ nsDOMTokenList::nsDOMTokenList(
   // we'll be told to drop our reference
 }
 
-nsDOMTokenList::~nsDOMTokenList() {}
+nsDOMTokenList::~nsDOMTokenList() = default;
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(nsDOMTokenList, mElement)
 
@@ -368,7 +368,8 @@ bool nsDOMTokenList::ReplaceInternal(const nsAttrValue* aAttr,
 bool nsDOMTokenList::Supports(const nsAString& aToken, ErrorResult& aError) {
   if (!mSupportedTokens) {
     aError.ThrowTypeError<MSG_TOKENLIST_NO_SUPPORTED_TOKENS>(
-        mElement->LocalName(), nsDependentAtomString(mAttrAtom));
+        NS_ConvertUTF16toUTF8(mElement->LocalName()),
+        NS_ConvertUTF16toUTF8(nsDependentAtomString(mAttrAtom)));
     return false;
   }
 

@@ -41,7 +41,7 @@ class ThreadSharedObject {
 
  protected:
   // Protected destructor, to discourage deletion outside of Release():
-  virtual ~ThreadSharedObject() {}
+  virtual ~ThreadSharedObject() = default;
 };
 
 /**

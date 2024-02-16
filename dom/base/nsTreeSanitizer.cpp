@@ -1155,6 +1155,7 @@ void nsTreeSanitizer::SanitizeStyleSheet(const nsAString& aOriginal,
           css::SheetParsingMode::eAuthorSheetFeatures, extraData.get(),
           /* line_number_offset = */ 0, aDocument->GetCompatibilityMode(),
           /* reusable_sheets = */ nullptr,
+          StyleAllowImportRules::Yes,
           sanitizationKind, &aSanitized)
           .Consume();
 

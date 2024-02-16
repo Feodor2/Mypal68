@@ -25,7 +25,7 @@ class DecryptJob {
   RefPtr<MediaRawData> mSample;
 
  private:
-  ~DecryptJob() {}
+  ~DecryptJob() = default;
   MozPromiseHolder<DecryptPromise> mPromise;
 };
 

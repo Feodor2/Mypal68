@@ -34,7 +34,7 @@ void FilePickerParent::FilePickerShownCallback::Destroy() {
   mFilePickerParent = nullptr;
 }
 
-FilePickerParent::~FilePickerParent() {}
+FilePickerParent::~FilePickerParent() = default;
 
 // We run code in three places:
 // 1. The main thread calls Dispatch() to start the runnable.

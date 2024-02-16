@@ -142,7 +142,7 @@ ThirdPartyUtil::GetContentBlockingAllowListPrincipalFromWindow(
     mozIDOMWindowProxy* aWin, nsIURI* aURIBeingLoaded, nsIPrincipal** result) {
   nsPIDOMWindowOuter* outerWindow = nsPIDOMWindowOuter::From(aWin);
   nsPIDOMWindowInner* innerWindow = outerWindow->GetCurrentInnerWindow();
-  Document* doc = innerWindow ? innerWindow->GetExtantDoc() : nullptr;
+  mozilla::dom::Document* doc = innerWindow ? innerWindow->GetExtantDoc() : nullptr;
   if (!doc) {
     return GetPrincipalFromWindow(aWin, result);
   }
@@ -153,9 +153,9 @@ ThirdPartyUtil::GetContentBlockingAllowListPrincipalFromWindow(
     // If we have an initial principal during navigation, recompute it to get
     // the real content blocking allow list principal.
     nsIDocShell* docShell = doc->GetDocShell();
-    OriginAttributes attrs =
+    mozilla::OriginAttributes attrs =
         docShell ? nsDocShell::Cast(docShell)->GetOriginAttributes()
-                 : OriginAttributes();
+                 : mozilla::OriginAttributes();
     principal =
         doc->RecomputeContentBlockingAllowListPrincipal(aURIBeingLoaded, attrs);
   }

@@ -15,7 +15,7 @@
 
 class GMPVideoEncoderCallbackProxy : public GMPCallbackBase {
  public:
-  virtual ~GMPVideoEncoderCallbackProxy() {}
+  virtual ~GMPVideoEncoderCallbackProxy() = default;
   virtual void Encoded(GMPVideoEncodedFrame* aEncodedFrame,
                        const nsTArray<uint8_t>& aCodecSpecificInfo) = 0;
   virtual void Error(GMPErr aError) = 0;

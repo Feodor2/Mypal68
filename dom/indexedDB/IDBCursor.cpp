@@ -64,7 +64,7 @@ IDBTypedCursor<CursorType>::~IDBTypedCursor() {
 // static
 RefPtr<IDBObjectStoreCursor> IDBCursor::Create(
     BackgroundCursorChild<Type::ObjectStore>* const aBackgroundActor, Key aKey,
-    StructuredCloneReadInfo&& aCloneInfo) {
+    StructuredCloneReadInfoChild&& aCloneInfo) {
   MOZ_ASSERT(aBackgroundActor);
   aBackgroundActor->AssertIsOnOwningThread();
   MOZ_ASSERT(!aKey.IsUnset());
@@ -87,7 +87,7 @@ RefPtr<IDBObjectStoreKeyCursor> IDBCursor::Create(
 // static
 RefPtr<IDBIndexCursor> IDBCursor::Create(
     BackgroundCursorChild<Type::Index>* const aBackgroundActor, Key aKey,
-    Key aSortKey, Key aPrimaryKey, StructuredCloneReadInfo&& aCloneInfo) {
+    Key aSortKey, Key aPrimaryKey, StructuredCloneReadInfoChild&& aCloneInfo) {
   MOZ_ASSERT(aBackgroundActor);
   aBackgroundActor->AssertIsOnOwningThread();
   MOZ_ASSERT(!aKey.IsUnset());
@@ -304,12 +304,13 @@ void IDBTypedCursor<CursorType>::GetValue(JSContext* const aCx,
       }
 
       JS::Rooted<JS::Value> val(aCx);
-      if (NS_WARN_IF(
-              !IDBObjectStore::DeserializeValue(aCx, mData.mCloneInfo, &val))) {
+      if (NS_WARN_IF(!IDBObjectStore::DeserializeValue(
+              aCx, std::move(mData.mCloneInfo), &val))) {
         aRv.Throw(NS_ERROR_DOM_DATA_CLONE_ERR);
         return;
       }
 
+      // XXX This seems redundant, sine mData.mCloneInfo is moved above.
       IDBObjectStore::ClearCloneReadInfo(mData.mCloneInfo);
 
       mCachedValue = val;
@@ -532,7 +533,7 @@ void IDBTypedCursor<CursorType>::Advance(const uint32_t aCount,
   AssertIsOnOwningThread();
 
   if (!aCount) {
-    aRv.ThrowTypeError(u"0 (Zero) is not a valid advance count.");
+    aRv.ThrowTypeError("0 (Zero) is not a valid advance count.");
     return;
   }
 
@@ -861,6 +862,11 @@ bool IDBTypedCursor<CursorType>::IsLocaleAware() const {
     return !GetSourceRef().Locale().IsEmpty();
   }
 }
+
+template class IDBTypedCursor<IDBCursorType::ObjectStore>;
+template class IDBTypedCursor<IDBCursorType::ObjectStoreKey>;
+template class IDBTypedCursor<IDBCursorType::Index>;
+template class IDBTypedCursor<IDBCursorType::IndexKey>;
 
 }  // namespace dom
 }  // namespace mozilla

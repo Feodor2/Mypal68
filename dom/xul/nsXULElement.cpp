@@ -105,8 +105,8 @@ nsXULElement::nsXULElement(already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
 
   // We may be READWRITE by default; check.
   if (IsReadWriteTextElement()) {
-    AddStatesSilently(NS_EVENT_STATE_MOZ_READWRITE);
-    RemoveStatesSilently(NS_EVENT_STATE_MOZ_READONLY);
+    AddStatesSilently(NS_EVENT_STATE_READWRITE);
+    RemoveStatesSilently(NS_EVENT_STATE_READONLY);
   }
 }
 
@@ -128,7 +128,9 @@ void nsXULElement::MaybeUpdatePrivateLifetime() {
 /* static */
 nsXULElement* NS_NewBasicXULElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo) {
-  return new nsXULElement(std::move(aNodeInfo));
+  RefPtr<mozilla::dom::NodeInfo> nodeInfo(std::move(aNodeInfo));
+  auto* nim = nodeInfo->NodeInfoManager();
+  return new (nim) nsXULElement(nodeInfo.forget());
 }
 
 /* static */
@@ -137,7 +139,8 @@ nsXULElement* nsXULElement::Construct(
   RefPtr<mozilla::dom::NodeInfo> nodeInfo = aNodeInfo;
   if (nodeInfo->Equals(nsGkAtoms::label) ||
       nodeInfo->Equals(nsGkAtoms::description)) {
-    return new XULTextElement(nodeInfo.forget());
+    auto* nim = nodeInfo->NodeInfoManager();
+    return new (nim) XULTextElement(nodeInfo.forget());
   }
 
   if (nodeInfo->Equals(nsGkAtoms::menupopup) ||
@@ -153,16 +156,19 @@ nsXULElement* nsXULElement::Construct(
   if (nodeInfo->Equals(nsGkAtoms::iframe) ||
       nodeInfo->Equals(nsGkAtoms::browser) ||
       nodeInfo->Equals(nsGkAtoms::editor)) {
-    return new XULFrameElement(nodeInfo.forget());
+    auto* nim = nodeInfo->NodeInfoManager();
+    return new (nim) XULFrameElement(nodeInfo.forget());
   }
 
   if (nodeInfo->Equals(nsGkAtoms::menu) ||
       nodeInfo->Equals(nsGkAtoms::menulist)) {
-    return new XULMenuElement(nodeInfo.forget());
+    auto* nim = nodeInfo->NodeInfoManager();
+    return new (nim) XULMenuElement(nodeInfo.forget());
   }
 
   if (nodeInfo->Equals(nsGkAtoms::tree)) {
-    return new XULTreeElement(nodeInfo.forget());
+    auto* nim = nodeInfo->NodeInfoManager();
+    return new (nim) XULTreeElement(nodeInfo.forget());
   }
 
   return NS_NewBasicXULElement(nodeInfo.forget());
@@ -394,11 +400,12 @@ bool nsXULElement::IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) {
   }
 
   if (aTabIndex) {
-    if (HasAttr(kNameSpaceID_None, nsGkAtoms::tabindex)) {
+    Maybe<int32_t> attrVal = GetTabIndexAttrValue();
+    if (attrVal.isSome()) {
       // The tabindex attribute was specified, so the element becomes
       // focusable.
       shouldFocus = true;
-      *aTabIndex = TabIndex();
+      *aTabIndex = attrVal.value();
     } else {
       // otherwise, if there is no tabindex attribute, just use the value of
       // *aTabIndex to indicate focusability. Reset any supplied tabindex to 0.
@@ -1169,8 +1176,8 @@ EventStates nsXULElement::IntrinsicState() const {
   EventStates state = nsStyledElement::IntrinsicState();
 
   if (IsReadWriteTextElement()) {
-    state |= NS_EVENT_STATE_MOZ_READWRITE;
-    state &= ~NS_EVENT_STATE_MOZ_READONLY;
+    state |= NS_EVENT_STATE_READWRITE;
+    state &= ~NS_EVENT_STATE_READONLY;
   }
 
   return state;
@@ -1396,9 +1403,9 @@ JSObject* nsXULElement::WrapNode(JSContext* aCx,
   return dom::XULElement_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-bool nsXULElement::IsInteractiveHTMLContent(bool aIgnoreTabindex) const {
+bool nsXULElement::IsInteractiveHTMLContent() const {
   return IsXULElement(nsGkAtoms::menupopup) ||
-         Element::IsInteractiveHTMLContent(aIgnoreTabindex);
+         Element::IsInteractiveHTMLContent();
 }
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(nsXULPrototypeNode)

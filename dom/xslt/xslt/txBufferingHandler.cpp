@@ -22,7 +22,7 @@ class txOutputTransaction {
   explicit txOutputTransaction(txTransactionType aType) : mType(aType) {
     MOZ_COUNT_CTOR(txOutputTransaction);
   }
-  virtual ~txOutputTransaction() { MOZ_COUNT_DTOR(txOutputTransaction); }
+  MOZ_COUNTED_DTOR_VIRTUAL(txOutputTransaction)
   txTransactionType mType;
 };
 
@@ -287,9 +287,9 @@ txResultBuffer::~txResultBuffer() {
 }
 
 nsresult txResultBuffer::addTransaction(txOutputTransaction* aTransaction) {
-  if (mTransactions.AppendElement(aTransaction) == nullptr) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  // XXX(Bug 1631371) Check if this should use a fallible operation as it
+  // pretended earlier, or change the return type to void.
+  mTransactions.AppendElement(aTransaction);
   return NS_OK;
 }
 

@@ -2,14 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef NumericInputTypes_h__
-#define NumericInputTypes_h__
+#ifndef mozilla_dom_NumericInputTypes_h__
+#define mozilla_dom_NumericInputTypes_h__
 
-#include "InputType.h"
+#include "mozilla/dom/InputType.h"
 
-class NumericInputTypeBase : public ::InputType {
+namespace mozilla {
+namespace dom {
+
+class NumericInputTypeBase : public InputType {
  public:
-  ~NumericInputTypeBase() override {}
+  ~NumericInputTypeBase() override = default;
 
   bool IsRangeOverflow() const override;
   bool IsRangeUnderflow() const override;
@@ -18,21 +21,20 @@ class NumericInputTypeBase : public ::InputType {
   nsresult GetRangeOverflowMessage(nsAString& aMessage) override;
   nsresult GetRangeUnderflowMessage(nsAString& aMessage) override;
 
-  bool ConvertStringToNumber(nsAString& aValue,
-                             mozilla::Decimal& aResultValue) const override;
-  bool ConvertNumberToString(mozilla::Decimal aValue,
+  StringToNumberResult ConvertStringToNumber(
+      const nsAString& aValue) const override;
+  bool ConvertNumberToString(Decimal aValue,
                              nsAString& aResultString) const override;
 
  protected:
-  explicit NumericInputTypeBase(mozilla::dom::HTMLInputElement* aInputElement)
+  explicit NumericInputTypeBase(HTMLInputElement* aInputElement)
       : InputType(aInputElement) {}
 };
 
 // input type=number
-class NumberInputType : public NumericInputTypeBase {
+class NumberInputType final : public NumericInputTypeBase {
  public:
-  static InputType* Create(mozilla::dom::HTMLInputElement* aInputElement,
-                           void* aMemory) {
+  static InputType* Create(HTMLInputElement* aInputElement, void* aMemory) {
     return new (aMemory) NumberInputType(aInputElement);
   }
 
@@ -42,19 +44,22 @@ class NumberInputType : public NumericInputTypeBase {
   nsresult GetValueMissingMessage(nsAString& aMessage) override;
   nsresult GetBadInputMessage(nsAString& aMessage) override;
 
+  StringToNumberResult ConvertStringToNumber(const nsAString&) const override;
+  bool ConvertNumberToString(Decimal aValue,
+                             nsAString& aResultString) const override;
+
  protected:
   bool IsMutable() const override;
 
  private:
-  explicit NumberInputType(mozilla::dom::HTMLInputElement* aInputElement)
+  explicit NumberInputType(HTMLInputElement* aInputElement)
       : NumericInputTypeBase(aInputElement) {}
 };
 
 // input type=range
 class RangeInputType : public NumericInputTypeBase {
  public:
-  static InputType* Create(mozilla::dom::HTMLInputElement* aInputElement,
-                           void* aMemory) {
+  static InputType* Create(HTMLInputElement* aInputElement, void* aMemory) {
     return new (aMemory) RangeInputType(aInputElement);
   }
 
@@ -62,8 +67,11 @@ class RangeInputType : public NumericInputTypeBase {
   nsresult MinMaxStepAttrChanged() override;
 
  private:
-  explicit RangeInputType(mozilla::dom::HTMLInputElement* aInputElement)
+  explicit RangeInputType(HTMLInputElement* aInputElement)
       : NumericInputTypeBase(aInputElement) {}
 };
 
-#endif /* NumericInputTypes_h__ */
+}  // namespace dom
+}  // namespace mozilla
+
+#endif /* mozilla_dom_NumericInputTypes_h__ */

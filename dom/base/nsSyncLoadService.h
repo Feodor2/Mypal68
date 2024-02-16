@@ -10,7 +10,11 @@
 #ifndef nsSyncLoadService_h__
 #define nsSyncLoadService_h__
 
+#include "mozilla/AlreadyAddRefed.h"
 #include "nscore.h"
+#include "nsIContentPolicy.h"
+#include "nsILoadInfo.h"
+#include "nsIReferrerInfo.h"
 
 class nsICookieSettings;
 class nsIInputStream;

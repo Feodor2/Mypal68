@@ -14,6 +14,7 @@
 #include "nsDataHashtable.h"
 #include "PlatformDecoderModule.h"
 #include "ImageContainer.h"
+#include "mozilla/ErrorResult.h"
 #include "mozilla/Span.h"
 #include "ReorderQueue.h"
 
@@ -88,7 +89,7 @@ class ChromiumCDMParent final : public PChromiumCDMParent,
   void Shutdown();
 
  protected:
-  ~ChromiumCDMParent() {}
+  ~ChromiumCDMParent() = default;
 
   ipc::IPCResult Recv__delete__() override;
   ipc::IPCResult RecvOnResolvePromiseWithKeyStatus(const uint32_t& aPromiseId,
@@ -129,10 +130,16 @@ class ChromiumCDMParent final : public PChromiumCDMParent,
 
   void ReorderAndReturnOutput(RefPtr<VideoData>&& aFrame);
 
-  void RejectPromise(uint32_t aPromiseId, nsresult aError,
+  void RejectPromise(uint32_t aPromiseId, ErrorResult&& aException,
                      const nsCString& aErrorMessage);
 
   void ResolvePromise(uint32_t aPromiseId);
+  // Helpers to reject our promise if we are shut down.
+  void RejectPromiseShutdown(uint32_t aPromiseId);
+  // Helper to reject our promise with an InvalidStateError and the given
+  // message.
+  void RejectPromiseWithStateError(uint32_t aPromiseId,
+                                   const nsCString& aErrorMessage);
 
   bool InitCDMInputBuffer(gmp::CDMInputBuffer& aBuffer, MediaRawData* aSample);
 

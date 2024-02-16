@@ -32,6 +32,8 @@ class nsWrapperCache;
 namespace mozilla {
 namespace dom {
 
+class BindingCallContext;
+
 // Struct that serves as a base class for all dictionaries.  Particularly useful
 // so we can use std::is_base_of to detect dictionary template arguments.
 struct DictionaryBase {
@@ -128,7 +130,7 @@ class MOZ_STACK_CLASS GlobalObject {
 template <typename T, typename InternalType>
 class Optional_base {
  public:
-  Optional_base() {}
+  Optional_base() = default;
 
   explicit Optional_base(const T& aValue) { mImpl.emplace(aValue); }
 
@@ -215,7 +217,7 @@ class Optional<JS::Handle<T> >
 template <>
 class Optional<JSObject*> : public Optional_base<JSObject*, JSObject*> {
  public:
-  Optional() : Optional_base<JSObject*, JSObject*>() {}
+  Optional() = default;
 
   explicit Optional(JSObject* aValue)
       : Optional_base<JSObject*, JSObject*>(aValue) {}
@@ -410,6 +412,26 @@ template <typename T>
 class Sequence : public FallibleTArray<T> {
  public:
   Sequence() : FallibleTArray<T>() {}
+
+  Sequence(Sequence&&) = default;
+  Sequence& operator=(Sequence&&) = default;
+
+  // XXX(Bug 1631461) Codegen.py must be adapted to allow making Sequence
+  // uncopyable.
+  Sequence(const Sequence& aOther) {
+    if (!this->AppendElements(aOther, fallible)) {
+      MOZ_CRASH("Out of memory");
+    }
+  }
+  Sequence& operator=(const Sequence& aOther) {
+    if (this != &aOther) {
+      this->Clear();
+      if (!this->AppendElements(aOther, fallible)) {
+        MOZ_CRASH("Out of memory");
+      }
+    }
+    return *this;
+  }
 };
 
 inline nsWrapperCache* GetWrapperCache(nsWrapperCache* cache) { return cache; }
@@ -459,7 +481,7 @@ class AutoSequence : public AutoTArray<T, 16> {
   AutoSequence() : AutoTArray<T, 16>() {}
 
   // Allow converting to const sequences as needed
-  operator const Sequence<T>&() const {
+  operator const Sequence<T> &() const {
     return *reinterpret_cast<const Sequence<T>*>(this);
   }
 };

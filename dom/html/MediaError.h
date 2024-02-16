@@ -14,7 +14,7 @@ namespace mozilla {
 namespace dom {
 
 class MediaError final : public nsISupports, public nsWrapperCache {
-  ~MediaError() {}
+  ~MediaError() = default;
 
  public:
   MediaError(HTMLMediaElement* aParent, uint16_t aCode,

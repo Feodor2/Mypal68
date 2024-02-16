@@ -57,8 +57,6 @@ interface HTMLInputElement : HTMLElement {
            attribute unsigned long height;
   [Pure]
            attribute boolean indeterminate;
-  [CEReactions, Pure, SetterThrows, Pref="dom.forms.inputmode"]
-           attribute DOMString inputMode;
   [Pure]
   readonly attribute HTMLElement? list;
   [CEReactions, Pure, SetterThrows]
@@ -169,18 +167,6 @@ partial interface HTMLInputElement {
   [ChromeOnly]
   void mozSetDndFilesAndDirectories(sequence<(File or Directory)> list);
 
-  // Number controls (<input type=number>) have an anonymous text control
-  // (<input type=text>) in the anonymous shadow tree that they contain. On
-  // such an anonymous text control this property provides access to the
-  // number control that owns the text control. This is useful, for example,
-  // in code that looks at the currently focused element to make decisions
-  // about which IME to bring up. Such code needs to be able to check for any
-  // owning number control since it probably wants to bring up a number pad
-  // instead of the standard keyboard, even when the anonymous text control has
-  // focus.
-  [ChromeOnly]
-  readonly attribute HTMLInputElement? ownerNumberControl;
-
   boolean mozIsTextField(boolean aExcludePassword);
 
   [ChromeOnly]
@@ -196,8 +182,16 @@ partial interface HTMLInputElement {
 };
 
 interface mixin MozEditableElement {
+  // Returns an nsIEditor instance which is associated with the element.
+  // If the element can be associated with an editor but not yet created,
+  // this creates new one automatically.
   [Pure, ChromeOnly]
   readonly attribute nsIEditor? editor;
+
+  // Returns true if an nsIEditor instance has already been associated with
+  // the element.
+  [Pure, ChromeOnly]
+  readonly attribute boolean hasEditor;
 
   // This is set to true if "input" event should be fired with InputEvent on
   // the element.  Otherwise, i.e., if "input" event should be fired with

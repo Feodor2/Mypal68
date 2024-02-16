@@ -5,8 +5,8 @@
 #include "mozilla/dom/BarProps.h"
 #include "mozilla/dom/BarPropBinding.h"
 #include "nsContentUtils.h"
+#include "nsDocShell.h"
 #include "nsGlobalWindow.h"
-#include "nsIScrollable.h"
 #include "nsIWebBrowserChrome.h"
 
 namespace mozilla {
@@ -17,7 +17,7 @@ namespace dom {
 //
 BarProp::BarProp(nsGlobalWindowInner* aWindow) : mDOMWindow(aWindow) {}
 
-BarProp::~BarProp() {}
+BarProp::~BarProp() = default;
 
 nsPIDOMWindowInner* BarProp::GetParentObject() const { return mDOMWindow; }
 
@@ -88,7 +88,7 @@ already_AddRefed<nsIWebBrowserChrome> BarProp::GetBrowserChrome() {
 
 MenubarProp::MenubarProp(nsGlobalWindowInner* aWindow) : BarProp(aWindow) {}
 
-MenubarProp::~MenubarProp() {}
+MenubarProp::~MenubarProp() = default;
 
 bool MenubarProp::GetVisible(CallerType aCallerType, ErrorResult& aRv) {
   return BarProp::GetVisibleByFlag(nsIWebBrowserChrome::CHROME_MENUBAR, aRv);
@@ -106,7 +106,7 @@ void MenubarProp::SetVisible(bool aVisible, CallerType aCallerType,
 
 ToolbarProp::ToolbarProp(nsGlobalWindowInner* aWindow) : BarProp(aWindow) {}
 
-ToolbarProp::~ToolbarProp() {}
+ToolbarProp::~ToolbarProp() = default;
 
 bool ToolbarProp::GetVisible(CallerType aCallerType, ErrorResult& aRv) {
   return BarProp::GetVisibleByFlag(nsIWebBrowserChrome::CHROME_TOOLBAR, aRv);
@@ -125,7 +125,7 @@ void ToolbarProp::SetVisible(bool aVisible, CallerType aCallerType,
 LocationbarProp::LocationbarProp(nsGlobalWindowInner* aWindow)
     : BarProp(aWindow) {}
 
-LocationbarProp::~LocationbarProp() {}
+LocationbarProp::~LocationbarProp() = default;
 
 bool LocationbarProp::GetVisible(CallerType aCallerType, ErrorResult& aRv) {
   return BarProp::GetVisibleByFlag(nsIWebBrowserChrome::CHROME_LOCATIONBAR,
@@ -145,7 +145,7 @@ void LocationbarProp::SetVisible(bool aVisible, CallerType aCallerType,
 PersonalbarProp::PersonalbarProp(nsGlobalWindowInner* aWindow)
     : BarProp(aWindow) {}
 
-PersonalbarProp::~PersonalbarProp() {}
+PersonalbarProp::~PersonalbarProp() = default;
 
 bool PersonalbarProp::GetVisible(CallerType aCallerType, ErrorResult& aRv) {
   return BarProp::GetVisibleByFlag(nsIWebBrowserChrome::CHROME_PERSONAL_TOOLBAR,
@@ -164,7 +164,7 @@ void PersonalbarProp::SetVisible(bool aVisible, CallerType aCallerType,
 
 StatusbarProp::StatusbarProp(nsGlobalWindowInner* aWindow) : BarProp(aWindow) {}
 
-StatusbarProp::~StatusbarProp() {}
+StatusbarProp::~StatusbarProp() = default;
 
 bool StatusbarProp::GetVisible(CallerType aCallerType, ErrorResult& aRv) {
   return BarProp::GetVisibleByFlag(nsIWebBrowserChrome::CHROME_STATUSBAR, aRv);
@@ -183,60 +183,24 @@ void StatusbarProp::SetVisible(bool aVisible, CallerType aCallerType,
 ScrollbarsProp::ScrollbarsProp(nsGlobalWindowInner* aWindow)
     : BarProp(aWindow) {}
 
-ScrollbarsProp::~ScrollbarsProp() {}
+ScrollbarsProp::~ScrollbarsProp() = default;
 
 bool ScrollbarsProp::GetVisible(CallerType aCallerType, ErrorResult& aRv) {
   if (!mDOMWindow) {
     return true;
   }
 
-  nsCOMPtr<nsIScrollable> scroller =
-      do_QueryInterface(mDOMWindow->GetDocShell());
-
-  if (!scroller) {
+  nsIDocShell* ds = mDOMWindow->GetDocShell();
+  if (!ds) {
     return true;
   }
 
-  int32_t prefValue;
-  scroller->GetDefaultScrollbarPreferences(nsIScrollable::ScrollOrientation_Y,
-                                           &prefValue);
-  if (prefValue != nsIScrollable::Scrollbar_Never) {
-    return true;
-  }
-
-  scroller->GetDefaultScrollbarPreferences(nsIScrollable::ScrollOrientation_X,
-                                           &prefValue);
-  return prefValue != nsIScrollable::Scrollbar_Never;
+  ScrollbarPreference pref = nsDocShell::Cast(ds)->ScrollbarPreference();
+  return pref != ScrollbarPreference::Never;
 }
 
-void ScrollbarsProp::SetVisible(bool aVisible, CallerType aCallerType,
-                                ErrorResult& aRv) {
-  if (aCallerType != CallerType::System) {
-    return;
-  }
-
-  /* Scrollbars, unlike the other barprops, implement visibility directly
-     rather than handing off to the superclass (and from there to the
-     chrome window) because scrollbar visibility uniquely applies only
-     to the window making the change (arguably. it does now, anyway.)
-     and because embedding apps have no interface for implementing this
-     themselves, and therefore the implementation must be internal. */
-
-  nsContentUtils::SetScrollbarsVisibility(mDOMWindow->GetDocShell(), aVisible);
-
-  /* Notably absent is the part where we notify the chrome window using
-     GetBrowserChrome()->SetChromeFlags(). Given the possibility of multiple
-     DOM windows (multiple top-level windows, even) within a single
-     chrome window, the historical concept of a single "has scrollbars"
-     flag in the chrome is inapplicable, and we can't tell at this level
-     whether we represent the particular DOM window that makes this decision
-     for the chrome.
-
-     So only this object (and its corresponding DOM window) knows whether
-     scrollbars are visible. The corresponding chrome window will need to
-     ask (one of) its DOM window(s) when it needs to know about scrollbar
-     visibility, rather than caching its own copy of that information.
-  */
+void ScrollbarsProp::SetVisible(bool aVisible, CallerType, ErrorResult&) {
+  /* Do nothing */
 }
 
 }  // namespace dom

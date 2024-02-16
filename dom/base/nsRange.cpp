@@ -30,6 +30,7 @@
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/dom/Text.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/RangeUtils.h"
 #include "mozilla/Telemetry.h"
@@ -120,6 +121,8 @@ static void InvalidateAllFrames(nsINode* aNode) {
  * constructor/destructor
  ******************************************************/
 
+nsTArray<RefPtr<nsRange>>* nsRange::sCachedRanges = nullptr;
+
 nsRange::~nsRange() {
   NS_ASSERTION(!IsInSelection(), "deleting nsRange that is in use");
 
@@ -138,13 +141,24 @@ nsRange::nsRange(nsINode* aNode)
 }
 
 /* static */
+already_AddRefed<nsRange> nsRange::Create(nsINode* aNode) {
+  MOZ_ASSERT(aNode);
+  if (!sCachedRanges || sCachedRanges->IsEmpty()) {
+    return do_AddRef(new nsRange(aNode));
+  }
+  RefPtr<nsRange> range = sCachedRanges->PopLastElement().forget();
+  range->Init(aNode);
+  return range.forget();
+}
+
+/* static */
 template <typename SPT, typename SRT, typename EPT, typename ERT>
 already_AddRefed<nsRange> nsRange::Create(
     const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
     const RangeBoundaryBase<EPT, ERT>& aEndBoundary, ErrorResult& aRv) {
   // If we fail to initialize the range a lot, nsRange should have a static
   // initializer since the allocation cost is not cheap in hot path.
-  RefPtr<nsRange> range = new nsRange(aStartBoundary.Container());
+  RefPtr<nsRange> range = nsRange::Create(aStartBoundary.Container());
   aRv = range->SetStartAndEnd(aStartBoundary, aEndBoundary);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
@@ -157,8 +171,9 @@ already_AddRefed<nsRange> nsRange::Create(
  ******************************************************/
 
 NS_IMPL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_ADDREF(nsRange)
-NS_IMPL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE(
-    nsRange, DoSetRange(RawRangeBoundary(), RawRangeBoundary(), nullptr))
+NS_IMPL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_RELEASE_WITH_INTERRUPTABLE_LAST_RELEASE(
+    nsRange, DoSetRange(RawRangeBoundary(), RawRangeBoundary(), nullptr),
+    MaybeInterruptLastRelease())
 
 // QueryInterface implementation for nsRange
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsRange)
@@ -189,12 +204,18 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 NS_IMPL_CYCLE_COLLECTION_TRACE_BEGIN_INHERITED(nsRange, AbstractRange)
 NS_IMPL_CYCLE_COLLECTION_TRACE_END
 
+bool nsRange::MaybeInterruptLastRelease() {
+  bool interrupt = AbstractRange::MaybeCacheToReuse(*this);
+  MOZ_ASSERT(!interrupt || IsCleared());
+  return interrupt;
+}
+
 static void MarkDescendants(nsINode* aNode) {
   // Set NodeIsDescendantOfClosestCommonInclusiveAncestorForRangeInSelection on
   // aNode's descendants unless aNode is already marked as a range common
   // ancestor or a descendant of one, in which case all of our descendants have
   // the bit set already.
-  if (!aNode->IsSelectionDescendant()) {
+  if (!aNode->IsMaybeSelected()) {
     // don't set the Descendant bit on |aNode| itself
     nsINode* node = aNode->GetNextNode(aNode);
     while (node) {
@@ -375,14 +396,7 @@ nsRange::DetermineNewRangeBoundariesAndRootOnCharacterDataMerge(
 void nsRange::CharacterDataChanged(nsIContent* aContent,
                                    const CharacterDataChangeInfo& aInfo) {
   MOZ_ASSERT(aContent);
-
-  // If this is called when this is not positioned, it means that this range
-  // will be initialized again or destroyed soon.  See Selection::mCachedRange.
-  if (!mIsPositioned) {
-    MOZ_ASSERT(mRoot);
-    return;
-  }
-
+  MOZ_ASSERT(mIsPositioned);
   MOZ_ASSERT(!mNextEndRef);
   MOZ_ASSERT(!mNextStartRef);
 
@@ -529,16 +543,11 @@ void nsRange::CharacterDataChanged(nsIContent* aContent,
 }
 
 void nsRange::ContentAppended(nsIContent* aFirstNewContent) {
-  // If this is called when this is not positioned, it means that this range
-  // will be initialized again or destroyed soon.  See Selection::mCachedRange.
-  if (!mIsPositioned) {
-    MOZ_ASSERT(mRoot);
-    return;
-  }
+  MOZ_ASSERT(mIsPositioned);
 
   nsINode* container = aFirstNewContent->GetParentNode();
   MOZ_ASSERT(container);
-  if (container->IsSelectionDescendant() && IsInSelection()) {
+  if (container->IsMaybeSelected() && IsInSelection()) {
     nsINode* child = aFirstNewContent;
     while (child) {
       if (!child
@@ -569,12 +578,7 @@ void nsRange::ContentAppended(nsIContent* aFirstNewContent) {
 }
 
 void nsRange::ContentInserted(nsIContent* aChild) {
-  // If this is called when this is not positioned, it means that this range
-  // will be initialized again or destroyed soon.  See Selection::mCachedRange.
-  if (!mIsPositioned) {
-    MOZ_ASSERT(mRoot);
-    return;
-  }
+  MOZ_ASSERT(mIsPositioned);
 
   bool updateBoundaries = false;
   nsINode* container = aChild->GetParentNode();
@@ -595,7 +599,7 @@ void nsRange::ContentInserted(nsIContent* aChild) {
     updateBoundaries = true;
   }
 
-  if (container->IsSelectionDescendant() &&
+  if (container->IsMaybeSelected() &&
       !aChild
            ->IsDescendantOfClosestCommonInclusiveAncestorForRangeInSelection()) {
     MarkDescendants(aChild);
@@ -623,12 +627,7 @@ void nsRange::ContentInserted(nsIContent* aChild) {
 }
 
 void nsRange::ContentRemoved(nsIContent* aChild, nsIContent* aPreviousSibling) {
-  // If this is called when this is not positioned, it means that this range
-  // will be initialized again or destroyed soon.  See Selection::mCachedRange.
-  if (!mIsPositioned) {
-    MOZ_ASSERT(mRoot);
-    return;
-  }
+  MOZ_ASSERT(mIsPositioned);
 
   nsINode* container = aChild->GetParentNode();
   MOZ_ASSERT(container);
@@ -682,7 +681,7 @@ void nsRange::ContentRemoved(nsIContent* aChild, nsIContent* aPreviousSibling) {
   MOZ_ASSERT(mStart.Ref() != aChild);
   MOZ_ASSERT(mEnd.Ref() != aChild);
 
-  if (container->IsSelectionDescendant() &&
+  if (container->IsMaybeSelected() &&
       aChild
           ->IsDescendantOfClosestCommonInclusiveAncestorForRangeInSelection()) {
     aChild
@@ -839,13 +838,12 @@ void nsRange::DoSetRange(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
                          bool aNotInsertedYet /* = false */) {
   mIsPositioned = aStartBoundary.IsSetAndValid() &&
                   aEndBoundary.IsSetAndValid() && aRootNode;
-  MOZ_ASSERT(
-      mIsPositioned || (!aStartBoundary.IsSet() && !aEndBoundary.IsSet()),
-      "Set all or none");
+  MOZ_ASSERT(mIsPositioned || (!aStartBoundary.IsSet() &&
+                               !aEndBoundary.IsSet() && !aRootNode),
+             "Set all or none");
 
   MOZ_ASSERT(
-      !aRootNode || (!aStartBoundary.IsSet() && !aEndBoundary.IsSet()) ||
-          aNotInsertedYet ||
+      !aRootNode || aNotInsertedYet ||
           (aStartBoundary.Container()->IsInclusiveDescendantOf(aRootNode) &&
            aEndBoundary.Container()->IsInclusiveDescendantOf(aRootNode) &&
            aRootNode ==
@@ -854,7 +852,7 @@ void nsRange::DoSetRange(const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
       "Wrong root");
 
   MOZ_ASSERT(
-      !aRootNode || (!aStartBoundary.IsSet() && !aEndBoundary.IsSet()) ||
+      !aRootNode ||
           (aStartBoundary.Container()->IsContent() &&
            aEndBoundary.Container()->IsContent() &&
            aRootNode == static_cast<nsIContent*>(aStartBoundary.Container())
@@ -931,30 +929,33 @@ static int32_t IndexOf(nsINode* aChild) {
   return parent ? parent->ComputeIndexOf(aChild) : -1;
 }
 
-void nsRange::SetSelection(mozilla::dom::Selection* aSelection) {
-  if (mSelection == aSelection) {
+void nsRange::RegisterSelection(Selection& aSelection) {
+  // A range can belong to at most one Selection instance.
+  MOZ_ASSERT(!mSelection);
+
+  if (mSelection == &aSelection) {
     return;
   }
 
-  // At least one of aSelection and mSelection must be null
-  // aSelection will be null when we are removing from a selection
-  // and a range can't be in more than one selection at a time,
-  // thus mSelection must be null too.
-  MOZ_ASSERT(!aSelection || !mSelection);
-
-  // Extra step in case our parent failed to ensure the above
-  // invariant.
-  if (aSelection && mSelection) {
-    mSelection->RemoveRangeAndUnselectFramesAndNotifyListeners(*this,
-                                                               IgnoreErrors());
+  // Extra step in case our parent failed to ensure the above precondition.
+  if (mSelection) {
+    const RefPtr<nsRange> range{this};
+    const RefPtr<Selection> selection{mSelection};
+    selection->RemoveRangeAndUnselectFramesAndNotifyListeners(*range,
+                                                              IgnoreErrors());
   }
 
-  mSelection = aSelection;
-  if (mSelection) {
-    nsINode* commonAncestor = GetClosestCommonInclusiveAncestor();
-    NS_ASSERTION(commonAncestor, "unexpected disconnected nodes");
-    RegisterClosestCommonInclusiveAncestor(commonAncestor);
-  } else if (mRegisteredClosestCommonInclusiveAncestor) {
+  mSelection = &aSelection;
+
+  nsINode* commonAncestor = GetClosestCommonInclusiveAncestor();
+  MOZ_ASSERT(commonAncestor, "unexpected disconnected nodes");
+  RegisterClosestCommonInclusiveAncestor(commonAncestor);
+}
+
+void nsRange::UnregisterSelection() {
+  mSelection = nullptr;
+
+  if (mRegisteredClosestCommonInclusiveAncestor) {
     UnregisterClosestCommonInclusiveAncestor(
         mRegisteredClosestCommonInclusiveAncestor, false);
     MOZ_DIAGNOSTIC_ASSERT(
@@ -1274,7 +1275,7 @@ class MOZ_STACK_CLASS RangeSubtreeIterator {
  private:
   enum RangeSubtreeIterState { eDone = 0, eUseStart, eUseIterator, eUseEnd };
 
-  UniquePtr<ContentSubtreeIterator> mSubtreeIter;
+  Maybe<ContentSubtreeIterator> mSubtreeIter;
   RangeSubtreeIterState mIterState;
 
   nsCOMPtr<nsINode> mStart;
@@ -1343,7 +1344,7 @@ nsresult RangeSubtreeIterator::Init(nsRange* aRange) {
     // Now create a Content Subtree Iterator to be used
     // for the subtrees between the end points!
 
-    mSubtreeIter = MakeUnique<ContentSubtreeIterator>();
+    mSubtreeIter.emplace();
 
     nsresult res = mSubtreeIter->Init(aRange);
     if (NS_FAILED(res)) return res;
@@ -1353,7 +1354,7 @@ nsresult RangeSubtreeIterator::Init(nsRange* aRange) {
       // to iterate over, so just free it up so we
       // don't accidentally call into it.
 
-      mSubtreeIter = nullptr;
+      mSubtreeIter.reset();
     }
   }
 
@@ -1591,7 +1592,8 @@ nsresult nsRange::CutContents(DocumentFragment** aFragment) {
   // If aFragment isn't null, create a temporary fragment to hold our return.
   RefPtr<DocumentFragment> retval;
   if (aFragment) {
-    retval = new DocumentFragment(doc->NodeInfoManager());
+    retval =
+        new (doc->NodeInfoManager()) DocumentFragment(doc->NodeInfoManager());
   }
   nsCOMPtr<nsINode> commonCloneAncestor = retval.get();
 
@@ -2020,7 +2022,7 @@ already_AddRefed<DocumentFragment> nsRange::CloneContents(ErrorResult& aRv) {
   // which might be null
 
   RefPtr<DocumentFragment> clonedFrag =
-      new DocumentFragment(doc->NodeInfoManager());
+      new (doc->NodeInfoManager()) DocumentFragment(doc->NodeInfoManager());
 
   if (Collapsed()) {
     return clonedFrag.forget();
@@ -2201,10 +2203,8 @@ already_AddRefed<DocumentFragment> nsRange::CloneContents(ErrorResult& aRv) {
 }
 
 already_AddRefed<nsRange> nsRange::CloneRange() const {
-  RefPtr<nsRange> range = new nsRange(mOwner);
-
+  RefPtr<nsRange> range = nsRange::Create(mOwner);
   range->DoSetRange(mStart, mEnd, mRoot);
-
   return range.forget();
 }
 
@@ -2487,7 +2487,7 @@ void nsRange::ToString(nsAString& aReturn, ErrorResult& aErr) {
 void nsRange::Detach() {}
 
 already_AddRefed<DocumentFragment> nsRange::CreateContextualFragment(
-    const nsAString& aFragment, ErrorResult& aRv) {
+    const nsAString& aFragment, ErrorResult& aRv) const {
   if (!mIsPositioned) {
     aRv.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -2625,7 +2625,8 @@ static nsresult GetPartialTextRect(nsLayoutUtils::RectCallback* aCallback,
                                nsIFrame::TextOffsetType::OffsetsInContentText,
                                nsIFrame::TrailingWhitespace::DontTrim);
 
-        aTextList->AppendElement(renderedText.mString, fallible);
+        NS_ENSURE_TRUE(aTextList->AppendElement(renderedText.mString, fallible),
+                       NS_ERROR_OUT_OF_MEMORY);
       }
     }
   }

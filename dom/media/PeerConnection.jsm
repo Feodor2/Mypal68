@@ -355,64 +355,6 @@ setupPrototype(RTCStatsReport, {
   QueryInterface: ChromeUtils.generateQI([]),
 });
 
-// Records PC related telemetry
-class PeerConnectionTelemetry {
-  // Record which style(s) of invocation for getStats are used
-  recordGetStats() {
-    Services.telemetry.scalarAdd("webrtc.peerconnection.promise_stats_used", 1);
-    this.recordGetStats = () => {};
-  }
-  // ICE connection state enters connected or completed.
-  recordConnected() {
-    Services.telemetry.scalarAdd("webrtc.peerconnection.connected", 1);
-    this.recordConnected = () => {};
-  }
-  // DataChannel is created
-  _recordDataChannelCreated() {
-    Services.telemetry.scalarAdd(
-      "webrtc.peerconnection.datachannel_created",
-      1
-    );
-    this._recordDataChannelCreated = () => {};
-  }
-  // DataChannel initialized with maxRetransmitTime
-  _recordMaxRetransmitTime(maxRetransmitTime) {
-    if (maxRetransmitTime === undefined) {
-      return false;
-    }
-    Services.telemetry.scalarAdd(
-      "webrtc.peerconnection.datachannel_max_retx_used",
-      1
-    );
-    this._recordMaxRetransmitTime = () => true;
-    return true;
-  }
-  // DataChannel initialized with maxPacketLifeTime
-  _recordMaxPacketLifeTime(maxPacketLifeTime) {
-    if (maxPacketLifeTime === undefined) {
-      return false;
-    }
-    Services.telemetry.scalarAdd(
-      "webrtc.peerconnection.datachannel_max_life_used",
-      1
-    );
-    this._recordMaxPacketLifeTime = () => true;
-    return true;
-  }
-  // DataChannel initialized
-  recordDataChannelInit(maxRetransmitTime, maxPacketLifeTime) {
-    const retxUsed = this._recordMaxRetransmitTime(maxRetransmitTime);
-    if (this._recordMaxPacketLifeTime(maxPacketLifeTime) && retxUsed) {
-      Services.telemetry.scalarAdd(
-        "webrtc.peerconnection.datachannel_max_retx_and_life_used",
-        1
-      );
-      this.recordDataChannelInit = () => {};
-    }
-    this._recordDataChannelCreated();
-  }
-}
-
 // Cache for RTPSourceEntries
 // Note: each cache is only valid for one JS event loop execution
 class RTCRtpSourceCache {
@@ -456,8 +398,6 @@ class RTCPeerConnection {
     this._storedRtpSourceReferenceTime = null;
     // Stores cached RTP sources state
     this._rtpSourceCache = new RTCRtpSourceCache();
-    // Records telemetry
-    this._pcTelemetry = new PeerConnectionTelemetry();
   }
 
   init(win) {
@@ -1293,9 +1233,8 @@ class RTCPeerConnection {
       cand.sdpMid == null &&
       cand.sdpMLineIndex == null
     ) {
-      throw new this._win.DOMException(
-        "Cannot add a candidate without specifying either sdpMid or sdpMLineIndex",
-        "TypeError"
+      throw new this._win.TypeError(
+        "Cannot add a candidate without specifying either sdpMid or sdpMLineIndex"
       );
     }
     return this._auto(onSucc, onErr, () => this._addIceCandidate(cand));
@@ -1804,13 +1743,6 @@ class RTCPeerConnection {
       }
     }
 
-    if (
-      this._iceConnectionState === "completed" ||
-      this._iceConnectionState === "connected"
-    ) {
-      this._pcTelemetry.recordGetStats();
-    }
-
     return this._auto(onSucc, onErr, () => this._getStats(selector));
   }
 
@@ -1839,10 +1771,6 @@ class RTCPeerConnection {
     } = {}
   ) {
     this._checkClosed();
-    this._pcTelemetry.recordDataChannelInit(
-      maxRetransmitTime,
-      maxPacketLifeTime
-    );
 
     if (maxPacketLifeTime === undefined) {
       maxPacketLifeTime = maxRetransmitTime;
@@ -1861,9 +1789,8 @@ class RTCPeerConnection {
       const byteCounter = new TextEncoder("utf-8");
 
       if (byteCounter.encode(protocol).length > 65535) {
-        throw new this._win.DOMException(
-          "protocol cannot be longer than 65535 bytes",
-          "TypeError"
+        throw new this._win.TypeError(
+          "protocol cannot be longer than 65535 bytes"
         );
       }
     }
@@ -1871,9 +1798,8 @@ class RTCPeerConnection {
     if (label.length > 32767) {
       const byteCounter = new TextEncoder("utf-8");
       if (byteCounter.encode(label).length > 65535) {
-        throw new this._win.DOMException(
-          "label cannot be longer than 65535 bytes",
-          "TypeError"
+        throw new this._win.TypeError(
+          "label cannot be longer than 65535 bytes"
         );
       }
     }
@@ -1881,19 +1807,15 @@ class RTCPeerConnection {
     if (!negotiated) {
       id = null;
     } else if (id === null) {
-      throw new this._win.DOMException(
-        "id is required when negotiated is true",
-        "TypeError"
-      );
+      throw new this._win.TypeError("id is required when negotiated is true");
     }
     if (maxPacketLifeTime !== undefined && maxRetransmits !== undefined) {
-      throw new this._win.DOMException(
-        "Both maxPacketLifeTime and maxRetransmits cannot be provided",
-        "TypeError"
+      throw new this._win.TypeError(
+        "Both maxPacketLifeTime and maxRetransmits cannot be provided"
       );
     }
     if (id == 65535) {
-      throw new this._win.DOMException("id cannot be 65535", "TypeError");
+      throw new this._win.TypeError("id cannot be 65535");
     }
     // Must determine the type where we still know if entries are undefined.
     let type;
@@ -2220,10 +2142,7 @@ class RTCRtpSender {
   async _replaceTrack(withTrack) {
     let pc = this._pc;
     if (withTrack && withTrack.kind != this._transceiver.getKind()) {
-      throw new pc._win.DOMException(
-        "Cannot replaceTrack with a different kind!",
-        "TypeError"
-      );
+      throw new pc._win.TypeError("Cannot replaceTrack with a different kind!");
     }
 
     pc._checkClosed();
@@ -2280,10 +2199,10 @@ class RTCRtpSender {
           );
         }
         if (!rid && parameters.encodings.length > 1) {
-          throw new this._pc._win.DOMException("Missing rid", "TypeError");
+          throw new this._pc._win.TypeError("Missing rid");
         }
         if (uniqueRids[rid]) {
-          throw new this._pc._win.DOMException("Duplicate rid", "TypeError");
+          throw new this._pc._win.TypeError("Duplicate rid");
         }
         uniqueRids[rid] = true;
         return uniqueRids;

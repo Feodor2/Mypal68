@@ -20,7 +20,7 @@ class Promise;
 typedef ArrayBufferViewOrArrayBuffer CryptoOperationData;
 
 class SubtleCrypto final : public nsISupports, public nsWrapperCache {
-  ~SubtleCrypto() {}
+  ~SubtleCrypto() = default;
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS

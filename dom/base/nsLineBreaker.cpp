@@ -59,9 +59,9 @@ static void SetupCapitalization(const char16_t* aWord, uint32_t aLength,
 nsresult nsLineBreaker::FlushCurrentWord() {
   uint32_t length = mCurrentWord.Length();
   AutoTArray<uint8_t, 4000> breakState;
-  if (!breakState.AppendElements(length)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  // XXX(Bug 1631371) Check if this should use a fallible operation as it
+  // pretended earlier.
+  breakState.AppendElements(length);
 
   nsTArray<bool> capitalizationState;
 
@@ -126,8 +126,9 @@ nsresult nsLineBreaker::FlushCurrentWord() {
 
       if (!mWordContinuation && (ti->mFlags & BREAK_NEED_CAPITALIZATION)) {
         if (capitalizationState.Length() == 0) {
-          if (!capitalizationState.AppendElements(length))
-            return NS_ERROR_OUT_OF_MEMORY;
+          // XXX(Bug 1631371) Check if this should use a fallible operation as
+          // it pretended earlier.
+          capitalizationState.AppendElements(length);
           memset(capitalizationState.Elements(), false, length * sizeof(bool));
           SetupCapitalization(mCurrentWord.Elements(), length,
                               capitalizationState.Elements());
@@ -190,14 +191,17 @@ nsresult nsLineBreaker::AppendText(nsAtom* aHyphenationLanguage,
 
   AutoTArray<uint8_t, 4000> breakState;
   if (aSink) {
-    if (!breakState.AppendElements(aLength)) return NS_ERROR_OUT_OF_MEMORY;
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    breakState.AppendElements(aLength);
   }
 
   bool noCapitalizationNeeded = true;
   nsTArray<bool> capitalizationState;
   if (aSink && (aFlags & BREAK_NEED_CAPITALIZATION)) {
-    if (!capitalizationState.AppendElements(aLength))
-      return NS_ERROR_OUT_OF_MEMORY;
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    capitalizationState.AppendElements(aLength);
     memset(capitalizationState.Elements(), false, aLength * sizeof(bool));
     noCapitalizationNeeded = false;
   }
@@ -368,7 +372,9 @@ nsresult nsLineBreaker::AppendText(nsAtom* aHyphenationLanguage,
 
   AutoTArray<uint8_t, 4000> breakState;
   if (aSink) {
-    if (!breakState.AppendElements(aLength)) return NS_ERROR_OUT_OF_MEMORY;
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    breakState.AppendElements(aLength);
   }
 
   uint32_t start = offset;

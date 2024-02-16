@@ -115,7 +115,7 @@ class ImageUtils::Impl {
   }
 
  protected:
-  Impl() {}
+  Impl() = default;
 
   DataSourceSurface* Surface() const {
     if (!mSurface) {

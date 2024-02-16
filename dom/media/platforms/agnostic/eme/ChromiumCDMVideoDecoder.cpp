@@ -20,7 +20,7 @@ ChromiumCDMVideoDecoder::ChromiumCDMVideoDecoder(
       mGMPThread(GetGMPAbstractThread()),
       mImageContainer(aParams.mImageContainer) {}
 
-ChromiumCDMVideoDecoder::~ChromiumCDMVideoDecoder() {}
+ChromiumCDMVideoDecoder::~ChromiumCDMVideoDecoder() = default;
 
 static uint32_t ToCDMH264Profile(uint8_t aProfile) {
   switch (aProfile) {

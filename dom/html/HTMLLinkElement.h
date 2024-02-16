@@ -183,6 +183,11 @@ class HTMLLinkElement final : public nsGenericHTMLElement,
                      const nsAttrValue* aOldValue);
   void CancelPrefetchOrPreload();
 
+  // Returns whether the type attribute specifies the text/css mime type for
+  // link elements.
+  static bool IsCSSMimeTypeAttributeForLinkElement(
+      const mozilla::dom::Element&);
+
   // nsStyleLinkElement
   Maybe<SheetInfo> GetStyleSheetInfo() final;
 

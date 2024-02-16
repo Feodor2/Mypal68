@@ -38,9 +38,7 @@ class HTMLDetailsElement final : public nsGenericHTMLElement {
                          const nsAttrValueOrString* aValue,
                          bool aNotify) override;
 
-  bool IsInteractiveHTMLContent(bool aIgnoreTabindex) const override {
-    return true;
-  }
+  bool IsInteractiveHTMLContent() const override { return true; }
 
   // HTMLDetailsElement WebIDL
   bool Open() const { return GetBoolAttr(nsGkAtoms::open); }

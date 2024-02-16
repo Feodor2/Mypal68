@@ -221,11 +221,11 @@ bool GMPChild::SetMacSandboxInfo(bool aAllowWindowServer) {
 #endif    // XP_MACOSX
 
 bool GMPChild::Init(const nsAString& aPluginPath, base::ProcessId aParentPid,
-                    MessageLoop* aIOLoop, IPC::Channel* aChannel) {
+                    MessageLoop* aIOLoop, UniquePtr<IPC::Channel> aChannel) {
   LOGD("%s pluginPath=%s", __FUNCTION__,
        NS_ConvertUTF16toUTF8(aPluginPath).get());
 
-  if (NS_WARN_IF(!Open(aChannel, aParentPid, aIOLoop))) {
+  if (NS_WARN_IF(!Open(std::move(aChannel), aParentPid, aIOLoop))) {
     return false;
   }
 

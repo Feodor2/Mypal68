@@ -88,7 +88,7 @@ class PresentationSessionInfo
 
   nsresult Close(nsresult aReason, uint32_t aState);
 
-  nsresult OnTerminate(nsIPresentationControlChannel* aControlChannel);
+  void OnTerminate(nsIPresentationControlChannel* aControlChannel);
 
   nsresult ReplyError(nsresult aReason);
 

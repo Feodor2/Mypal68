@@ -83,12 +83,12 @@ void ChromeUtils::Base64URLEncode(GlobalObject& aGlobal,
   uint8_t* data = nullptr;
   if (aSource.IsArrayBuffer()) {
     const ArrayBuffer& buffer = aSource.GetAsArrayBuffer();
-    buffer.ComputeLengthAndData();
+    buffer.ComputeState();
     length = buffer.Length();
     data = buffer.Data();
   } else if (aSource.IsArrayBufferView()) {
     const ArrayBufferView& view = aSource.GetAsArrayBufferView();
-    view.ComputeLengthAndData();
+    view.ComputeState();
     length = view.Length();
     data = view.Data();
   } else {
@@ -774,7 +774,7 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
                     thread->mCpuKernel = entry.cpuKernel;
                     thread->mTid = entry.tid;
                   }
-                  procInfo.mThreads = threads;
+                  procInfo.mThreads = std::move(threads);
 
                   mozilla::dom::Sequence<mozilla::dom::ChildProcInfoDictionary>
                       children;
@@ -810,9 +810,9 @@ already_AddRefed<Promise> ChromeUtils::RequestProcInfo(GlobalObject& aGlobal,
                       thread->mTid = entry.tid;
                       thread->mName.Assign(entry.name);
                     }
-                    childProcInfo->mThreads = threads;
+                    childProcInfo->mThreads = std::move(threads);
                   }
-                  procInfo.mChildren = children;
+                  procInfo.mChildren = std::move(children);
                   domPromise->MaybeResolve(procInfo);
                 };  // end of ProcInfoResolver
 

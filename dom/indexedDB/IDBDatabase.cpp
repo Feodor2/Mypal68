@@ -4,7 +4,6 @@
 
 #include "IDBDatabase.h"
 
-#include "FileInfo.h"
 #include "IDBEvents.h"
 #include "IDBFactory.h"
 #include "IDBIndex.h"
@@ -13,6 +12,7 @@
 #include "IDBRequest.h"
 #include "IDBTransaction.h"
 #include "IDBFactory.h"
+#include "IndexedDatabaseInlines.h"
 #include "IndexedDatabaseManager.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/EventDispatcher.h"
@@ -478,56 +478,48 @@ RefPtr<IDBTransaction> IDBDatabase::Transaction(
     // Pretend that this mode doesn't exist. We don't have a way to annotate
     // certain enum values as depending on preferences so we just duplicate the
     // normal exception generation here.
-    aRv.ThrowTypeError<MSG_INVALID_ENUM_VALUE>(
-        NS_LITERAL_STRING("Argument 2 of IDBDatabase.transaction"),
-        NS_LITERAL_STRING("readwriteflush"),
-        NS_LITERAL_STRING("IDBTransactionMode"));
+    aRv.ThrowTypeError<MSG_INVALID_ENUM_VALUE>("argument 2", "readwriteflush",
+                                               "IDBTransactionMode");
     return nullptr;
-  }
-
-  RefPtr<IDBTransaction> transaction;
-  aRv = Transaction(aCx, aStoreNames, aMode, &transaction);
-  if (NS_WARN_IF(aRv.Failed())) {
-    return nullptr;
-  }
-
-  return transaction;
-}
-
-nsresult IDBDatabase::Transaction(JSContext* aCx,
-                                  const StringOrStringSequence& aStoreNames,
-                                  IDBTransactionMode aMode,
-                                  RefPtr<IDBTransaction>* aTransaction) {
-  AssertIsOnOwningThread();
-  MOZ_ASSERT(aTransaction);
-
-  if (NS_WARN_IF((aMode == IDBTransactionMode::Readwriteflush ||
-                  aMode == IDBTransactionMode::Cleanup) &&
-                 !IndexedDatabaseManager::ExperimentalFeaturesEnabled())) {
-    IDB_REPORT_INTERNAL_ERR();
-    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
   }
 
   if (QuotaManager::IsShuttingDown()) {
     IDB_REPORT_INTERNAL_ERR();
-    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+    aRv.ThrowUnknownError("Can't start IndexedDB transaction during shutdown");
+    return nullptr;
   }
 
-  if (mClosed || RunningVersionChangeTransaction()) {
-    return NS_ERROR_DOM_INDEXEDDB_NOT_ALLOWED_ERR;
+  // https://w3c.github.io/IndexedDB/#dom-idbdatabase-transaction
+  // Step 1.
+  if (RunningVersionChangeTransaction()) {
+    aRv.ThrowInvalidStateError(
+        "Can't start a transaction while running an upgrade transaction");
+    return nullptr;
   }
 
+  // Step 2.
+  if (mClosed) {
+    aRv.ThrowInvalidStateError(
+        "Can't start a transaction on a closed database");
+    return nullptr;
+  }
+
+  // Step 3.
   AutoTArray<nsString, 1> stackSequence;
 
   if (aStoreNames.IsString()) {
     stackSequence.AppendElement(aStoreNames.GetAsString());
   } else {
     MOZ_ASSERT(aStoreNames.IsStringSequence());
+    // Step 5, but it can be done before step 4 because those steps
+    // can't both throw.
     if (aStoreNames.GetAsStringSequence().IsEmpty()) {
-      return NS_ERROR_DOM_INVALID_ACCESS_ERR;
+      aRv.ThrowInvalidAccessError("Empty scope passed in");
+      return nullptr;
     }
   }
 
+  // Step 4.
   const nsTArray<nsString>& storeNames =
       aStoreNames.IsString() ? stackSequence
                              : static_cast<const nsTArray<nsString>&>(
@@ -550,7 +542,11 @@ nsresult IDBDatabase::Transaction(JSContext* aCx,
           return objectStore.metadata().name() == name;
         });
     if (foundIt == end) {
-      return NS_ERROR_DOM_INDEXEDDB_NOT_FOUND_ERR;
+      // Not using nsPrintfCString in case "name" has embedded nulls.
+      aRv.ThrowNotFoundError(
+          NS_LITERAL_CSTRING("'") + NS_ConvertUTF16toUTF8(name) +
+          NS_LITERAL_CSTRING("' is not a known object store name"));
+      return nullptr;
     }
 
     sortedStoreNames.EmplaceBack(name);
@@ -582,19 +578,23 @@ nsresult IDBDatabase::Transaction(JSContext* aCx,
       mQuotaExceeded = false;
       break;
     case IDBTransactionMode::Versionchange:
-      return NS_ERROR_DOM_TYPE_ERR;
+      // Step 6.
+      aRv.ThrowTypeError("Invalid transaction mode");
+      return nullptr;
 
     default:
       MOZ_CRASH("Unknown mode!");
   }
 
-  *aTransaction = IDBTransaction::Create(aCx, this, sortedStoreNames, mode);
-  if (NS_WARN_IF(!*aTransaction)) {
+  RefPtr<IDBTransaction> transaction =
+      IDBTransaction::Create(aCx, this, sortedStoreNames, mode);
+  if (NS_WARN_IF(!transaction)) {
     IDB_REPORT_INTERNAL_ERR();
-    return NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR;
+    MOZ_ASSERT(!NS_IsMainThread(),
+               "Transaction creation can only fail on workers");
+    aRv.ThrowUnknownError("Failed to create IndexedDB transaction on worker");
+    return nullptr;
   }
-
-  const auto& transaction = *aTransaction;
 
   BackgroundTransactionChild* actor =
       new BackgroundTransactionChild(transaction);
@@ -615,14 +615,14 @@ nsresult IDBDatabase::Transaction(JSContext* aCx,
     ExpireFileActors(/* aExpireAll */ true);
   }
 
-  return NS_OK;
+  return transaction;
 }
 
 StorageType IDBDatabase::Storage() const {
   AssertIsOnOwningThread();
   MOZ_ASSERT(mSpec);
 
-  return PersistenceTypeToStorage(mSpec->metadata().persistenceType());
+  return PersistenceTypeToStorageType(mSpec->metadata().persistenceType());
 }
 
 RefPtr<IDBRequest> IDBDatabase::CreateMutableFile(
@@ -693,104 +693,90 @@ void IDBDatabase::UnregisterTransaction(IDBTransaction* aTransaction) {
 void IDBDatabase::AbortTransactions(bool aShouldWarn) {
   AssertIsOnOwningThread();
 
-  class MOZ_STACK_CLASS Helper final {
-    typedef AutoTArray<RefPtr<IDBTransaction>, 20> StrongTransactionArray;
-    typedef AutoTArray<IDBTransaction*, 20> WeakTransactionArray;
+  constexpr size_t StackExceptionLimit = 20;
+  using StrongTransactionArray =
+      AutoTArray<RefPtr<IDBTransaction>, StackExceptionLimit>;
+  using WeakTransactionArray = AutoTArray<IDBTransaction*, StackExceptionLimit>;
 
-   public:
-    static void AbortTransactions(IDBDatabase* aDatabase,
-                                  const bool aShouldWarn) {
-      MOZ_ASSERT(aDatabase);
-      aDatabase->AssertIsOnOwningThread();
+  if (!mTransactions.Count()) {
+    // Return early as an optimization, the remainder is a no-op in this
+    // case.
+    return;
+  }
 
-      nsTHashtable<nsPtrHashKey<IDBTransaction>>& transactionTable =
-          aDatabase->mTransactions;
+  StrongTransactionArray transactionsToAbort;
+  transactionsToAbort.SetCapacity(mTransactions.Count());
 
-      if (!transactionTable.Count()) {
-        // Return early as an optimization, the remainder is a no-op in this
-        // case.
-        return;
-      }
+  for (auto iter = mTransactions.ConstIter(); !iter.Done(); iter.Next()) {
+    IDBTransaction* transaction = iter.Get()->GetKey();
+    MOZ_ASSERT(transaction);
 
-      StrongTransactionArray transactionsToAbort;
-      transactionsToAbort.SetCapacity(transactionTable.Count());
+    transaction->AssertIsOnOwningThread();
 
-      for (auto iter = transactionTable.Iter(); !iter.Done(); iter.Next()) {
-        IDBTransaction* transaction = iter.Get()->GetKey();
-        MOZ_ASSERT(transaction);
-
-        transaction->AssertIsOnOwningThread();
-
-        // Transactions that are already done can simply be ignored. Otherwise
-        // there is a race here and it's possible that the transaction has not
-        // been successfully committed yet so we will warn the user.
-        if (!transaction->IsFinished()) {
-          transactionsToAbort.AppendElement(transaction);
-        }
-      }
-      MOZ_ASSERT(transactionsToAbort.Length() <= transactionTable.Count());
-
-      if (transactionsToAbort.IsEmpty()) {
-        // Return early as an optimization, the remainder is a no-op in this
-        // case.
-        return;
-      }
-
-      // We want to abort transactions as soon as possible so we iterate the
-      // transactions once and abort them all first, collecting the transactions
-      // that need to have a warning issued along the way. Those that need a
-      // warning will be a subset of those that are aborted, so we don't need
-      // additional strong references here.
-      WeakTransactionArray transactionsThatNeedWarning;
-
-      for (RefPtr<IDBTransaction>& transaction : transactionsToAbort) {
-        MOZ_ASSERT(transaction);
-        MOZ_ASSERT(!transaction->IsFinished());
-
-        // We warn for any transactions that could have written data, but
-        // ignore read-only transactions.
-        if (aShouldWarn && transaction->IsWriteAllowed()) {
-          transactionsThatNeedWarning.AppendElement(transaction);
-        }
-
-        transaction->Abort(NS_ERROR_DOM_INDEXEDDB_ABORT_ERR);
-      }
-
-      static const char kWarningMessage[] =
-          "IndexedDBTransactionAbortNavigation";
-
-      for (IDBTransaction* transaction : transactionsThatNeedWarning) {
-        MOZ_ASSERT(transaction);
-
-        nsString filename;
-        uint32_t lineNo, column;
-        transaction->GetCallerLocation(filename, &lineNo, &column);
-
-        aDatabase->LogWarning(kWarningMessage, filename, lineNo, column);
-      }
+    // Transactions that are already done can simply be ignored. Otherwise
+    // there is a race here and it's possible that the transaction has not
+    // been successfully committed yet so we will warn the user.
+    if (!transaction->IsFinished()) {
+      transactionsToAbort.AppendElement(transaction);
     }
-  };
+  }
+  MOZ_ASSERT(transactionsToAbort.Length() <= mTransactions.Count());
 
-  Helper::AbortTransactions(this, aShouldWarn);
+  if (transactionsToAbort.IsEmpty()) {
+    // Return early as an optimization, the remainder is a no-op in this
+    // case.
+    return;
+  }
+
+  // We want to abort transactions as soon as possible so we iterate the
+  // transactions once and abort them all first, collecting the transactions
+  // that need to have a warning issued along the way. Those that need a
+  // warning will be a subset of those that are aborted, so we don't need
+  // additional strong references here.
+  WeakTransactionArray transactionsThatNeedWarning;
+
+  for (const auto& transaction : transactionsToAbort) {
+    MOZ_ASSERT(transaction);
+    MOZ_ASSERT(!transaction->IsFinished());
+
+    // We warn for any transactions that could have written data, but
+    // ignore read-only transactions.
+    if (aShouldWarn && transaction->IsWriteAllowed()) {
+      transactionsThatNeedWarning.AppendElement(transaction);
+    }
+
+    transaction->Abort(NS_ERROR_DOM_INDEXEDDB_ABORT_ERR);
+  }
+
+  static const char kWarningMessage[] = "IndexedDBTransactionAbortNavigation";
+
+  for (IDBTransaction* transaction : transactionsThatNeedWarning) {
+    MOZ_ASSERT(transaction);
+
+    nsString filename;
+    uint32_t lineNo, column;
+    transaction->GetCallerLocation(filename, &lineNo, &column);
+
+    LogWarning(kWarningMessage, filename, lineNo, column);
+  }
 }
 
 PBackgroundIDBDatabaseFileChild* IDBDatabase::GetOrCreateFileActorForBlob(
-    Blob* aBlob) {
+    Blob& aBlob) {
   AssertIsOnOwningThread();
-  MOZ_ASSERT(aBlob);
   MOZ_ASSERT(mBackgroundActor);
 
   // We use the File's nsIWeakReference as the key to the table because
   // a) it is unique per blob, b) it is reference-counted so that we can
   // guarantee that it stays alive, and c) it doesn't hold the actual File
   // alive.
-  nsWeakPtr weakRef = do_GetWeakReference(aBlob);
+  nsWeakPtr weakRef = do_GetWeakReference(&aBlob);
   MOZ_ASSERT(weakRef);
 
   PBackgroundIDBDatabaseFileChild* actor = nullptr;
 
   if (!mFileActors.Get(weakRef, &actor)) {
-    BlobImpl* blobImpl = aBlob->Impl();
+    BlobImpl* blobImpl = aBlob.Impl();
     MOZ_ASSERT(blobImpl);
 
     PBackgroundChild* backgroundManager =
@@ -826,15 +812,13 @@ void IDBDatabase::NoteFinishedFileActor(
   AssertIsOnOwningThread();
   MOZ_ASSERT(aFileActor);
 
-  for (auto iter = mFileActors.Iter(); !iter.Done(); iter.Next()) {
+  mFileActors.RemoveIf([aFileActor](const auto& iter) {
     MOZ_ASSERT(iter.Key());
     PBackgroundIDBDatabaseFileChild* actor = iter.Data();
     MOZ_ASSERT(actor);
 
-    if (actor == aFileActor) {
-      iter.Remove();
-    }
-  }
+    return actor == aFileActor;
+  });
 }
 
 void IDBDatabase::NoteActiveTransaction() {
@@ -1141,12 +1125,12 @@ nsresult IDBDatabase::RenameObjectStore(int64_t aObjectStoreId,
   // Find the matched object store spec and check if 'aName' is already used by
   // another object store.
 
-  for (const auto& objSpec : objectStores) {
+  for (auto& objSpec : objectStores) {
     const bool idIsCurrent = objSpec.metadata().id() == aObjectStoreId;
 
     if (idIsCurrent) {
       MOZ_ASSERT(!foundObjectStoreSpec);
-      foundObjectStoreSpec = const_cast<ObjectStoreSpec*>(&objSpec);
+      foundObjectStoreSpec = &objSpec;
     }
 
     if (objSpec.metadata().name() == aName) {

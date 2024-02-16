@@ -10,4 +10,6 @@ UNIFIED_SOURCES += [
     'MediaCapabilities.cpp',
 ]
 
+include('/ipc/chromium/chromium-config.mozbuild')
+
 FINAL_LIBRARY = 'xul'

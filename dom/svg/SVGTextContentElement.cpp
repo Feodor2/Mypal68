@@ -121,7 +121,7 @@ void SVGTextContentElement::SelectSubString(uint32_t charnum, uint32_t nchars,
   SVGTextFrame* textFrame = GetSVGTextFrame();
   if (!textFrame) return;
 
-  rv = textFrame->SelectSubString(this, charnum, nchars);
+  textFrame->SelectSubString(this, charnum, nchars, rv);
 }
 
 float SVGTextContentElement::GetSubStringLength(uint32_t charnum,
@@ -130,35 +130,29 @@ float SVGTextContentElement::GetSubStringLength(uint32_t charnum,
   SVGTextFrame* textFrame = GetSVGTextFrameForNonLayoutDependentQuery();
   if (!textFrame) return 0.0f;
 
-  float length = 0.0f;
-  rv = textFrame->GetSubStringLength(this, charnum, nchars, &length);
-  return length;
+  return textFrame->GetSubStringLength(this, charnum, nchars, rv);
 }
 
 already_AddRefed<nsISVGPoint> SVGTextContentElement::GetStartPositionOfChar(
     uint32_t charnum, ErrorResult& rv) {
   SVGTextFrame* textFrame = GetSVGTextFrame();
   if (!textFrame) {
-    rv.Throw(NS_ERROR_FAILURE);
+    rv.ThrowInvalidStateError("No layout information available for SVG text");
     return nullptr;
   }
 
-  nsCOMPtr<nsISVGPoint> point;
-  rv = textFrame->GetStartPositionOfChar(this, charnum, getter_AddRefs(point));
-  return point.forget();
+  return textFrame->GetStartPositionOfChar(this, charnum, rv);
 }
 
 already_AddRefed<nsISVGPoint> SVGTextContentElement::GetEndPositionOfChar(
     uint32_t charnum, ErrorResult& rv) {
   SVGTextFrame* textFrame = GetSVGTextFrame();
   if (!textFrame) {
-    rv.Throw(NS_ERROR_FAILURE);
+    rv.ThrowInvalidStateError("No layout information available for SVG text");
     return nullptr;
   }
 
-  nsCOMPtr<nsISVGPoint> point;
-  rv = textFrame->GetEndPositionOfChar(this, charnum, getter_AddRefs(point));
-  return point.forget();
+  return textFrame->GetEndPositionOfChar(this, charnum, rv);
 }
 
 already_AddRefed<SVGRect> SVGTextContentElement::GetExtentOfChar(
@@ -166,13 +160,11 @@ already_AddRefed<SVGRect> SVGTextContentElement::GetExtentOfChar(
   SVGTextFrame* textFrame = GetSVGTextFrame();
 
   if (!textFrame) {
-    rv.Throw(NS_ERROR_FAILURE);
+    rv.ThrowInvalidStateError("No layout information available for SVG text");
     return nullptr;
   }
 
-  RefPtr<SVGRect> rect;
-  rv = textFrame->GetExtentOfChar(this, charnum, getter_AddRefs(rect));
-  return rect.forget();
+  return textFrame->GetExtentOfChar(this, charnum, rv);
 }
 
 float SVGTextContentElement::GetRotationOfChar(uint32_t charnum,
@@ -180,13 +172,11 @@ float SVGTextContentElement::GetRotationOfChar(uint32_t charnum,
   SVGTextFrame* textFrame = GetSVGTextFrame();
 
   if (!textFrame) {
-    rv.Throw(NS_ERROR_FAILURE);
+    rv.ThrowInvalidStateError("No layout information available for SVG text");
     return 0.0f;
   }
 
-  float rotation;
-  rv = textFrame->GetRotationOfChar(this, charnum, &rotation);
-  return rotation;
+  return textFrame->GetRotationOfChar(this, charnum, rv);
 }
 
 int32_t SVGTextContentElement::GetCharNumAtPosition(

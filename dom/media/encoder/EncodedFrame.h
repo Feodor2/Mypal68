@@ -59,7 +59,7 @@ class EncodedFrame final {
 
  private:
   // Private destructor, to discourage deletion outside of Release():
-  ~EncodedFrame() {}
+  ~EncodedFrame() = default;
 
   // Encoded data
   nsTArray<uint8_t> mFrameData;

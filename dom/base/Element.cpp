@@ -24,6 +24,7 @@
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/ScriptLoader.h"
 #include "mozilla/dom/Text.h"
+#include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/gfx/Matrix.h"
 #include "nsAtom.h"
 #include "nsDOMAttributeMap.h"
@@ -260,8 +261,7 @@ Element::QueryInterface(REFNSIID aIID, void** aInstancePtr) {
 }
 
 EventStates Element::IntrinsicState() const {
-  return IsEditable() ? NS_EVENT_STATE_MOZ_READWRITE
-                      : NS_EVENT_STATE_MOZ_READONLY;
+  return IsEditable() ? NS_EVENT_STATE_READWRITE : NS_EVENT_STATE_READONLY;
 }
 
 void Element::NotifyStateChange(EventStates aStates) {
@@ -299,13 +299,26 @@ void Element::UpdateState(bool aNotify) {
 }  // namespace mozilla
 
 void nsIContent::UpdateEditableState(bool aNotify) {
-  nsIContent* parent = GetParent();
+  if (IsInNativeAnonymousSubtree()) {
+    // Don't propagate the editable flag into native anonymous subtrees.
+    if (IsRootOfNativeAnonymousSubtree()) {
+      return;
+    }
 
-  // Don't implicitly set the flag on the root of a native anonymous subtree.
-  // This needs to be set explicitly, see for example
-  // nsTextControlFrame::CreateRootNode().
-  SetEditableFlag(parent && parent->HasFlag(NODE_IS_EDITABLE) &&
-                  !IsRootOfNativeAnonymousSubtree());
+    // We allow setting the flag on NAC (explicitly, see
+    // nsTextControlFrame::CreateAnonymousContent for example), but not
+    // unsetting it.
+    //
+    // Otherwise, just the act of binding the NAC subtree into our non-anonymous
+    // parent would clear the flag, which is not good. As we shouldn't move NAC
+    // around, this is fine.
+    if (HasFlag(NODE_IS_EDITABLE)) {
+      return;
+    }
+  }
+
+  nsIContent* parent = GetParent();
+  SetEditableFlag(parent && parent->HasFlag(NODE_IS_EDITABLE));
 }
 
 namespace mozilla {
@@ -321,19 +334,28 @@ void Element::UpdateEditableState(bool aNotify) {
     // insertion into the document and UpdateState can be slow for
     // some kinds of elements even when not notifying.
     if (IsEditable()) {
-      RemoveStatesSilently(NS_EVENT_STATE_MOZ_READONLY);
-      AddStatesSilently(NS_EVENT_STATE_MOZ_READWRITE);
+      RemoveStatesSilently(NS_EVENT_STATE_READONLY);
+      AddStatesSilently(NS_EVENT_STATE_READWRITE);
     } else {
-      RemoveStatesSilently(NS_EVENT_STATE_MOZ_READWRITE);
-      AddStatesSilently(NS_EVENT_STATE_MOZ_READONLY);
+      RemoveStatesSilently(NS_EVENT_STATE_READWRITE);
+      AddStatesSilently(NS_EVENT_STATE_READONLY);
     }
   }
 }
 
-int32_t Element::TabIndex() {
-  const nsAttrValue* attrVal = mAttrs.GetAttr(nsGkAtoms::tabindex);
+Maybe<int32_t> Element::GetTabIndexAttrValue() {
+  const nsAttrValue* attrVal = GetParsedAttr(nsGkAtoms::tabindex);
   if (attrVal && attrVal->Type() == nsAttrValue::eInteger) {
-    return attrVal->GetIntegerValue();
+    return Some(attrVal->GetIntegerValue());
+  }
+
+  return Nothing();
+}
+
+int32_t Element::TabIndex() {
+  Maybe<int32_t> attrVal = GetTabIndexAttrValue();
+  if (attrVal.isSome()) {
+    return attrVal.value();
   }
 
   return TabIndexDefault();
@@ -341,21 +363,21 @@ int32_t Element::TabIndex() {
 
 void Element::Focus(const FocusOptions& aOptions, ErrorResult& aError) {
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
+  if (!fm) {
+    return;
+  }
   // Also other browsers seem to have the hack to not re-focus (and flush) when
   // the element is already focused.
   // Until https://github.com/whatwg/html/issues/4512 is clarified, we'll
   // maintain interoperatibility by not re-focusing, independent of aOptions.
   // I.e., `focus({ preventScroll: true})` followed by `focus( { preventScroll:
   // false })` won't re-focus.
-  if (fm) {
-    if (fm->CanSkipFocus(this)) {
-      fm->NeedsFlushBeforeEventHandling(this);
-    } else {
-      aError = fm->SetFocus(
-          this, nsIFocusManager::FLAG_BYELEMENTFOCUS |
-                    nsFocusManager::FocusOptionsToFocusManagerFlags(aOptions));
-    }
+  if (fm->CanSkipFocus(this)) {
+    fm->NeedsFlushBeforeEventHandling(this);
+    return;
   }
+  aError = fm->SetFocus(
+      this, nsFocusManager::FocusOptionsToFocusManagerFlags(aOptions));
 }
 
 void Element::SetTabIndex(int32_t aTabIndex, mozilla::ErrorResult& aError) {
@@ -493,7 +515,7 @@ void Element::UnlockStyleStates(EventStates aStates) {
   locks->mLocks &= ~aStates;
 
   if (locks->mLocks.IsEmpty()) {
-    DeleteProperty(nsGkAtoms::lockedStyleStates);
+    RemoveProperty(nsGkAtoms::lockedStyleStates);
     ClearHasLockedStyleStates();
     delete locks;
   } else {
@@ -507,7 +529,7 @@ void Element::UnlockStyleStates(EventStates aStates) {
 void Element::ClearStyleStateLocks() {
   StyleStateLocks locks = LockedStyleStates();
 
-  DeleteProperty(nsGkAtoms::lockedStyleStates);
+  RemoveProperty(nsGkAtoms::lockedStyleStates);
   ClearHasLockedStyleStates();
 
   NotifyStyleStateChange(locks.mLocks);
@@ -967,7 +989,7 @@ nsRect Element::GetClientAreaRect() {
   // document, we have overlay scrollbars, and we aren't embedded in another
   // document
   bool overlayScrollbars =
-      LookAndFeel::GetInt(LookAndFeel::eIntID_UseOverlayScrollbars) != 0;
+      LookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars) != 0;
   bool rootContentDocument =
       presContext && presContext->IsRootContentDocument();
   if (overlayScrollbars && rootContentDocument &&
@@ -1218,8 +1240,9 @@ already_AddRefed<ShadowRoot> Element::AttachShadowWithoutNameChecks(
    *    context object's node document, host is context object,
    *    and mode is init's mode.
    */
+  auto* nim = nodeInfo->NodeInfoManager();
   RefPtr<ShadowRoot> shadowRoot =
-      new ShadowRoot(this, aMode, nodeInfo.forget());
+      new (nim) ShadowRoot(this, aMode, nodeInfo.forget());
 
   if (NodeOrAncestorHasDirAuto()) {
     shadowRoot->SetAncestorHasDirAuto();
@@ -1726,7 +1749,6 @@ nsresult Element::BindToTree(BindContext& aContext, nsINode& aParent) {
   // Now recurse into our kids. Ensure this happens after binding the shadow
   // root so that directionality of slots is updated.
   {
-    BindContext::NestingLevel level(aContext, *this);
     for (nsIContent* child = GetFirstChild(); child;
          child = child->GetNextSibling()) {
       rv = child->BindToTree(aContext, *this);
@@ -1911,14 +1933,14 @@ void Element::UnbindFromTree(bool aNullParent) {
   //
   // FIXME (Bug 522599): Need a test for this.
   if (MayHaveAnimations()) {
-    DeleteProperty(nsGkAtoms::transitionsOfBeforeProperty);
-    DeleteProperty(nsGkAtoms::transitionsOfAfterProperty);
-    DeleteProperty(nsGkAtoms::transitionsOfMarkerProperty);
-    DeleteProperty(nsGkAtoms::transitionsProperty);
-    DeleteProperty(nsGkAtoms::animationsOfBeforeProperty);
-    DeleteProperty(nsGkAtoms::animationsOfAfterProperty);
-    DeleteProperty(nsGkAtoms::animationsOfMarkerProperty);
-    DeleteProperty(nsGkAtoms::animationsProperty);
+    RemoveProperty(nsGkAtoms::transitionsOfBeforeProperty);
+    RemoveProperty(nsGkAtoms::transitionsOfAfterProperty);
+    RemoveProperty(nsGkAtoms::transitionsOfMarkerProperty);
+    RemoveProperty(nsGkAtoms::transitionsProperty);
+    RemoveProperty(nsGkAtoms::animationsOfBeforeProperty);
+    RemoveProperty(nsGkAtoms::animationsOfAfterProperty);
+    RemoveProperty(nsGkAtoms::animationsOfMarkerProperty);
+    RemoveProperty(nsGkAtoms::animationsProperty);
     if (document) {
       if (nsPresContext* presContext = document->GetPresContext()) {
         // We have to clear all pending restyle requests for the animations on
@@ -2050,9 +2072,7 @@ void Element::SetSMILOverrideStyleDeclaration(DeclarationBlock& aDeclaration) {
 
 bool Element::IsLabelable() const { return false; }
 
-bool Element::IsInteractiveHTMLContent(bool aIgnoreTabindex) const {
-  return false;
-}
+bool Element::IsInteractiveHTMLContent() const { return false; }
 
 DeclarationBlock* Element::GetInlineStyleDeclaration() const {
   if (!MayHaveStyle()) {
@@ -2613,8 +2633,7 @@ bool Element::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
       return true;
     }
 
-    if (aAttribute == nsGkAtoms::exportparts &&
-        StaticPrefs::layout_css_shadow_parts_enabled()) {
+    if (aAttribute == nsGkAtoms::exportparts) {
       aResult.ParsePartMapping(aValue);
       return true;
     }
@@ -3325,20 +3344,84 @@ CORSMode Element::AttrValueToCORSMode(const nsAttrValue* aValue) {
   return CORSMode(aValue->GetEnumValue());
 }
 
+/**
+ * Returns nullptr if requests for fullscreen are allowed in the current
+ * context. Requests are only allowed if the user initiated them (like with
+ * a mouse-click or key press), unless this check has been disabled by
+ * setting the pref "full-screen-api.allow-trusted-requests-only" to false
+ * or if the caller is privileged. Feature policy may also deny requests.
+ * If fullscreen is not allowed, a key for the error message is returned.
+ */
 static const char* GetFullscreenError(CallerType aCallerType) {
-  return nsContentUtils::CheckRequestFullscreenAllowed(aCallerType);
+  // Privileged callers can always request fullscreen
+  if (aCallerType == CallerType::System) {
+    return nullptr;
+  }
+
+  // Ensure feature policy allows using the fullscreen API
+  /*if (!FeaturePolicyUtils::IsFeatureAllowed(aDocument,
+                                            NS_LITERAL_STRING("fullscreen"))) {
+    return "FullscreenDeniedFeaturePolicy";
+  }*/
+
+  // Bypass user interaction checks if preference is set
+  if (!StaticPrefs::full_screen_api_allow_trusted_requests_only()) {
+    return nullptr;
+  }
+
+  if (!UserActivation::IsHandlingUserInput()) {
+    return "FullscreenDeniedNotInputDriven";
+  }
+
+  // If more time has elapsed since the user input than is specified by the
+  // dom.event.handling-user-input-time-limit pref (default 1 second),
+  // disallow fullscreen
+  TimeDuration timeout = nsContentUtils::HandlingUserInputTimeout();
+  if (timeout > TimeDuration(nullptr) &&
+      (TimeStamp::Now() - UserActivation::GetHandlingInputStart()) > timeout) {
+    return "FullscreenDeniedNotInputDriven";
+  }
+
+  // Entering full-screen on mouse mouse event is only allowed with left mouse
+  // button
+  if (StaticPrefs::full_screen_api_mouse_event_allow_left_button_only() &&
+      (EventStateManager::sCurrentMouseBtn == MouseButton::eMiddle ||
+       EventStateManager::sCurrentMouseBtn == MouseButton::eRight)) {
+    return "FullscreenDeniedMouseEventOnlyLeftBtn";
+  }
+
+  return nullptr;
+}
+
+void Element::SetCapture(bool aRetargetToElement) {
+  // If there is already an active capture, ignore this request. This would
+  // occur if a splitter, frame resizer, etc had already captured and we don't
+  // want to override those.
+  if (!PresShell::GetCapturingContent()) {
+    PresShell::SetCapturingContent(
+        this, CaptureFlags::PreventDragStart |
+                  (aRetargetToElement ? CaptureFlags::RetargetToElement
+                                      : CaptureFlags::None));
+  }
+}
+
+void Element::SetCaptureAlways(bool aRetargetToElement) {
+  PresShell::SetCapturingContent(
+      this, CaptureFlags::PreventDragStart | CaptureFlags::IgnoreAllowedState |
+                (aRetargetToElement ? CaptureFlags::RetargetToElement
+                                    : CaptureFlags::None));
+}
+
+void Element::ReleaseCapture() {
+  if (PresShell::GetCapturingContent() == this) {
+    PresShell::ReleaseCapturingContent();
+  }
 }
 
 already_AddRefed<Promise> Element::RequestFullscreen(CallerType aCallerType,
                                                      ErrorResult& aRv) {
   auto request = FullscreenRequest::Create(this, aCallerType, aRv);
   RefPtr<Promise> promise = request->GetPromise();
-
-  if (!FeaturePolicyUtils::IsFeatureAllowed(OwnerDoc(),
-                                            NS_LITERAL_STRING("fullscreen"))) {
-    request->Reject("FullscreenDeniedFeaturePolicy");
-    return promise.forget();
-  }
 
   // Only grant fullscreen requests if this is called from inside a trusted
   // event handler (i.e. inside an event handler for a user initiated event).
@@ -3360,12 +3443,11 @@ void Element::RequestPointerLock(CallerType aCallerType) {
 }
 
 already_AddRefed<Flex> Element::GetAsFlexContainer() {
-  nsIFrame* frame = GetPrimaryFrame();
-
   // We need the flex frame to compute additional info, and use
   // that annotated version of the frame.
   nsFlexContainerFrame* flexFrame =
-      nsFlexContainerFrame::GetFlexFrameWithComputedInfo(frame);
+      nsFlexContainerFrame::GetFlexFrameWithComputedInfo(
+          GetPrimaryFrame(FlushType::Layout));
 
   if (flexFrame) {
     RefPtr<Flex> flex = new Flex(this, flexFrame);
@@ -3376,7 +3458,8 @@ already_AddRefed<Flex> Element::GetAsFlexContainer() {
 
 void Element::GetGridFragments(nsTArray<RefPtr<Grid>>& aResult) {
   nsGridContainerFrame* frame =
-      nsGridContainerFrame::GetGridFrameWithComputedInfo(GetPrimaryFrame());
+      nsGridContainerFrame::GetGridFrameWithComputedInfo(
+          GetPrimaryFrame(FlushType::Layout));
 
   // If we get a nsGridContainerFrame from the prior call,
   // all the next-in-flow frames will also be nsGridContainerFrames.
@@ -3442,29 +3525,7 @@ already_AddRefed<Animation> Element::Animate(
     JSContext* aContext, JS::Handle<JSObject*> aKeyframes,
     const UnrestrictedDoubleOrKeyframeAnimationOptions& aOptions,
     ErrorResult& aError) {
-  Nullable<ElementOrCSSPseudoElement> target;
-  target.SetValue().SetAsElement() = this;
-  return Animate(target, aContext, aKeyframes, aOptions, aError);
-}
-
-/* static */
-already_AddRefed<Animation> Element::Animate(
-    const Nullable<ElementOrCSSPseudoElement>& aTarget, JSContext* aContext,
-    JS::Handle<JSObject*> aKeyframes,
-    const UnrestrictedDoubleOrKeyframeAnimationOptions& aOptions,
-    ErrorResult& aError) {
-  MOZ_ASSERT(!aTarget.IsNull() && (aTarget.Value().IsElement() ||
-                                   aTarget.Value().IsCSSPseudoElement()),
-             "aTarget should be initialized");
-
-  RefPtr<Element> referenceElement;
-  if (aTarget.Value().IsElement()) {
-    referenceElement = &aTarget.Value().GetAsElement();
-  } else {
-    referenceElement = aTarget.Value().GetAsCSSPseudoElement().Element();
-  }
-
-  nsCOMPtr<nsIGlobalObject> ownerGlobal = referenceElement->GetOwnerGlobal();
+  nsCOMPtr<nsIGlobalObject> ownerGlobal = GetOwnerGlobal();
   if (!ownerGlobal) {
     aError.Throw(NS_ERROR_FAILURE);
     return nullptr;
@@ -3476,8 +3537,8 @@ already_AddRefed<Animation> Element::Animate(
   // convention and needs to be called in caller's compartment.
   // This should match to RunConstructorInCallerCompartment attribute in
   // KeyframeEffect.webidl.
-  RefPtr<KeyframeEffect> effect = KeyframeEffect::Constructor(
-      global, aTarget, aKeyframes, aOptions, aError);
+  RefPtr<KeyframeEffect> effect =
+      KeyframeEffect::Constructor(global, this, aKeyframes, aOptions, aError);
   if (aError.Failed()) {
     return nullptr;
   }
@@ -3486,7 +3547,7 @@ already_AddRefed<Animation> Element::Animate(
   // needs to be called in the target element's realm.
   JSAutoRealm ar(aContext, global.Get());
 
-  AnimationTimeline* timeline = referenceElement->OwnerDoc()->Timeline();
+  AnimationTimeline* timeline = OwnerDoc()->Timeline();
   RefPtr<Animation> animation = Animation::Constructor(
       global, effect, Optional<AnimationTimeline*>(timeline), aError);
   if (aError.Failed()) {
@@ -3506,23 +3567,26 @@ already_AddRefed<Animation> Element::Animate(
 }
 
 void Element::GetAnimations(const GetAnimationsOptions& aOptions,
-                            nsTArray<RefPtr<Animation>>& aAnimations,
-                            Flush aFlush) {
-  if (aFlush == Flush::Yes) {
-    if (Document* doc = GetComposedDoc()) {
-      // We don't need to explicitly flush throttled animations here, since
-      // updating the animation style of elements will never affect the set of
-      // running animations and it's only the set of running animations that is
-      // important here.
-      //
-      // NOTE: Any changes to the flags passed to the following call should
-      // be reflected in the flags passed in DocumentOrShadowRoot::GetAnimations
-      // too.
-      doc->FlushPendingNotifications(
-          ChangesToFlush(FlushType::Style, false /* flush animations */));
-    }
+                            nsTArray<RefPtr<Animation>>& aAnimations) {
+  if (Document* doc = GetComposedDoc()) {
+    // We don't need to explicitly flush throttled animations here, since
+    // updating the animation style of elements will never affect the set of
+    // running animations and it's only the set of running animations that is
+    // important here.
+    //
+    // NOTE: Any changes to the flags passed to the following call should
+    // be reflected in the flags passed in DocumentOrShadowRoot::GetAnimations
+    // too.
+    doc->FlushPendingNotifications(
+        ChangesToFlush(FlushType::Style, false /* flush animations */));
   }
 
+  GetAnimationsWithoutFlush(aOptions, aAnimations);
+}
+
+void Element::GetAnimationsWithoutFlush(
+    const GetAnimationsOptions& aOptions,
+    nsTArray<RefPtr<Animation>>& aAnimations) {
   Element* elem = this;
   PseudoStyleType pseudoType = PseudoStyleType::NotPseudo;
   // For animations on generated-content elements, the animations are stored
@@ -3632,8 +3696,8 @@ void Element::SetOuterHTML(const nsAString& aOuterHTML, ErrorResult& aError) {
       localName = nsGkAtoms::body;
       namespaceID = kNameSpaceID_XHTML;
     }
-    RefPtr<DocumentFragment> fragment =
-        new DocumentFragment(OwnerDoc()->NodeInfoManager());
+    RefPtr<DocumentFragment> fragment = new (OwnerDoc()->NodeInfoManager())
+        DocumentFragment(OwnerDoc()->NodeInfoManager());
     nsContentUtils::ParseFragmentHTML(
         aOuterHTML, fragment, localName, namespaceID,
         OwnerDoc()->GetCompatibilityMode() == eCompatibility_NavQuirks, true);
@@ -3869,15 +3933,32 @@ float Element::FontSizeInflation() {
   return 1.0;
 }
 
-ReferrerPolicy Element::GetReferrerPolicyAsEnum() {
+void Element::GetImplementedPseudoElement(nsAString& aPseudo) const {
+  PseudoStyleType pseudoType = GetPseudoElementType();
+  if (pseudoType == PseudoStyleType::NotPseudo) {
+    return SetDOMStringToNull(aPseudo);
+  }
+  nsDependentAtomString pseudo(nsCSSPseudoElements::GetPseudoAtom(pseudoType));
+
+  // We want to use the modern syntax (::placeholder, etc), but the atoms only
+  // contain one semi-colon.
+  MOZ_ASSERT(pseudo.Length() > 2 && pseudo[0] == ':' && pseudo[1] != ':');
+
+  aPseudo.Truncate();
+  aPseudo.SetCapacity(pseudo.Length() + 1);
+  aPseudo.Append(':');
+  aPseudo.Append(pseudo);
+}
+
+ReferrerPolicy Element::GetReferrerPolicyAsEnum() const {
   if (IsHTMLElement()) {
-    const nsAttrValue* referrerValue = GetParsedAttr(nsGkAtoms::referrerpolicy);
-    return ReferrerPolicyFromAttr(referrerValue);
+    return ReferrerPolicyFromAttr(GetParsedAttr(nsGkAtoms::referrerpolicy));
   }
   return ReferrerPolicy::_empty;
 }
 
-ReferrerPolicy Element::ReferrerPolicyFromAttr(const nsAttrValue* aValue) {
+ReferrerPolicy Element::ReferrerPolicyFromAttr(
+    const nsAttrValue* aValue) const {
   if (aValue && aValue->Type() == nsAttrValue::eEnum) {
     return ReferrerPolicy(aValue->GetEnumValue());
   }
@@ -3952,14 +4033,14 @@ void Element::UnregisterIntersectionObserver(
   if (observers) {
     observers->Remove(aObserver);
     if (observers->IsEmpty()) {
-      DeleteProperty(nsGkAtoms::intersectionobserverlist);
+      RemoveProperty(nsGkAtoms::intersectionobserverlist);
     }
   }
 }
 
 void Element::UnlinkIntersectionObservers() {
   // IntersectionObserverPropertyDtor takes care of the hard work.
-  DeleteProperty(nsGkAtoms::intersectionobserverlist);
+  RemoveProperty(nsGkAtoms::intersectionobserverlist);
 }
 
 bool Element::UpdateIntersectionObservation(DOMIntersectionObserver* aObserver,

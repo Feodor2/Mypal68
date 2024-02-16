@@ -11,17 +11,18 @@
 #include "mozilla/EventListenerManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/MouseEvents.h"
-#include "mozilla/Preferences.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_intl.h"
 #include "mozilla/TextComposition.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/BrowserBridgeChild.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/HTMLTextAreaElement.h"
 #include "mozilla/dom/MouseEventBinding.h"
-#include "mozilla/dom/BrowserParent.h"
+#include "mozilla/dom/UserActivation.h"
 
 #include "HTMLInputElement.h"
 #include "IMEContentObserver.h"
@@ -72,6 +73,8 @@ static const char* GetActionCauseName(InputContextAction::Cause aCause) {
       return "CAUSE_MOUSE";
     case InputContextAction::CAUSE_TOUCH:
       return "CAUSE_TOUCH";
+    case InputContextAction::CAUSE_LONGPRESS:
+      return "CAUSE_LONGPRESS";
     default:
       return "illegal value";
   }
@@ -135,15 +138,9 @@ InputContext::Origin IMEStateManager::sOrigin = InputContext::ORIGIN_MAIN;
 InputContext IMEStateManager::sActiveChildInputContext;
 bool IMEStateManager::sInstalledMenuKeyboardListener = false;
 bool IMEStateManager::sIsGettingNewIMEState = false;
-bool IMEStateManager::sCheckForIMEUnawareWebApps = false;
 
 // static
 void IMEStateManager::Init() {
-  Preferences::AddBoolVarCache(
-      &sCheckForIMEUnawareWebApps,
-      "intl.ime.hack.on_ime_unaware_apps.fire_key_events_for_composition",
-      false);
-
   sOrigin = XRE_IsParentProcess() ? InputContext::ORIGIN_MAIN
                                   : InputContext::ORIGIN_CONTENT;
   ResetActiveChildInputContext();
@@ -1182,7 +1179,7 @@ void IMEStateManager::SetInputContextForChildProcess(
   SetInputContext(widget, aInputContext, aAction);
 }
 
-static bool IsNextFocusableElementTextOrNumberControl(Element* aInputContent) {
+static bool IsNextFocusableElementTextControl(Element* aInputContent) {
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (!fm) {
     return false;
@@ -1196,7 +1193,7 @@ static bool IsNextFocusableElementTextOrNumberControl(Element* aInputContent) {
   }
   nextContent = nextContent->FindFirstNonChromeOnlyAccessContent();
   nsCOMPtr<nsIFormControl> nextControl = do_QueryInterface(nextContent);
-  if (!nextControl || !nextControl->IsTextOrNumberControl(false)) {
+  if (!nextControl || !nextControl->IsTextControl(false)) {
     return false;
   }
 
@@ -1277,8 +1274,7 @@ static void GetActionHint(nsIContent& aContent, nsAString& aActionHint) {
     if (!isLastElement && formElement) {
       // If next tabbable content in form is text control, hint should be "next"
       // even there is submit in form.
-      if (IsNextFocusableElementTextOrNumberControl(
-              inputContent->AsElement())) {
+      if (IsNextFocusableElementTextControl(inputContent->AsElement())) {
         // This is focusable text control
         // XXX What good hint for read only field?
         aActionHint.AssignLiteral("next");
@@ -1321,9 +1317,11 @@ void IMEStateManager::SetIMEState(const IMEState& aState,
   InputContext context;
   context.mIMEState = aState;
   context.mOrigin = aOrigin;
-  context.mMayBeIMEUnaware = context.mIMEState.IsEditable() &&
-                             sCheckForIMEUnawareWebApps &&
-                             MayBeIMEUnawareWebApp(aContent);
+  context.mMayBeIMEUnaware =
+      context.mIMEState.IsEditable() &&
+      StaticPrefs::
+          intl_ime_hack_on_ime_unaware_apps_fire_key_events_for_composition() &&
+      MayBeIMEUnawareWebApp(aContent);
 
   context.mHasHandledUserInput =
       aPresContext && aPresContext->PresShell()->HasHandledUserInput();
@@ -1332,55 +1330,43 @@ void IMEStateManager::SetIMEState(const IMEState& aState,
       aPresContext &&
       nsContentUtils::IsInPrivateBrowsing(aPresContext->Document());
 
-  if (aContent &&
-      aContent->IsAnyOfHTMLElements(nsGkAtoms::input, nsGkAtoms::textarea)) {
-    if (!aContent->IsHTMLElement(nsGkAtoms::textarea)) {
-      // <input type=number> has an anonymous <input type=text> descendant
-      // that gets focus whenever anyone tries to focus the number control. We
-      // need to check if aContent is one of those anonymous text controls and,
-      // if so, use the number control instead:
-      Element* element = aContent->AsElement();
-      HTMLInputElement* inputElement =
-          HTMLInputElement::FromNodeOrNull(aContent);
-      if (inputElement) {
-        HTMLInputElement* ownerNumberControl =
-            inputElement->GetOwnerNumberControl();
-        if (ownerNumberControl) {
-          element = ownerNumberControl;  // an <input type=number>
-        }
-      }
-      element->GetAttr(kNameSpaceID_None, nsGkAtoms::type,
-                       context.mHTMLInputType);
-    } else {
+  if (aContent) {
+    if (aContent->IsHTMLElement(nsGkAtoms::input)) {
+      HTMLInputElement::FromNode(aContent)->GetType(context.mHTMLInputType);
+      GetActionHint(*aContent, context.mActionHint);
+    } else if (aContent->IsHTMLElement(nsGkAtoms::textarea)) {
       context.mHTMLInputType.Assign(nsGkAtoms::textarea->GetUTF16String());
+      GetActionHint(*aContent, context.mActionHint);
     }
 
-    if (StaticPrefs::dom_forms_inputmode() ||
-        nsContentUtils::IsChromeDoc(aContent->OwnerDoc())) {
+    if (aContent->IsHTMLElement() && aState.IsEditable() &&
+        (StaticPrefs::dom_forms_inputmode() ||
+         nsContentUtils::IsChromeDoc(aContent->OwnerDoc()))) {
       aContent->AsElement()->GetAttr(kNameSpaceID_None, nsGkAtoms::inputmode,
                                      context.mHTMLInputInputmode);
-      if (context.mHTMLInputInputmode.EqualsLiteral("mozAwesomebar") &&
-          !nsContentUtils::IsChromeDoc(aContent->OwnerDoc())) {
-        // mozAwesomebar should be allowed only in chrome
-        context.mHTMLInputInputmode.Truncate();
+      if (aContent->IsHTMLElement(nsGkAtoms::input) &&
+          context.mHTMLInputInputmode.EqualsLiteral("mozAwesomebar")) {
+        if (!nsContentUtils::IsChromeDoc(aContent->OwnerDoc())) {
+          // mozAwesomebar should be allowed only in chrome
+          context.mHTMLInputInputmode.Truncate();
+        }
+      } else {
+        // Except to mozAwesomebar, inputmode should be lower case.
+        ToLowerCase(context.mHTMLInputInputmode);
       }
     }
-
-    GetActionHint(*aContent, context.mActionHint);
   }
 
-  // XXX I think that we should use nsContentUtils::IsCallerChrome() instead
-  //     of the process type.
   if (aAction.mCause == InputContextAction::CAUSE_UNKNOWN &&
-      !XRE_IsContentProcess()) {
+      nsContentUtils::LegacyIsCallerChromeOrNativeCode()) {
     aAction.mCause = InputContextAction::CAUSE_UNKNOWN_CHROME;
   }
 
   if ((aAction.mCause == InputContextAction::CAUSE_UNKNOWN ||
        aAction.mCause == InputContextAction::CAUSE_UNKNOWN_CHROME) &&
-      EventStateManager::IsHandlingUserInput()) {
+      UserActivation::IsHandlingUserInput()) {
     aAction.mCause =
-        EventStateManager::IsHandlingKeyboardInput()
+        UserActivation::IsHandlingKeyboardInput()
             ? InputContextAction::CAUSE_UNKNOWN_DURING_KEYBOARD_INPUT
             : InputContextAction::CAUSE_UNKNOWN_DURING_NON_KEYBOARD_INPUT;
   }
@@ -1817,7 +1803,7 @@ bool IMEStateManager::IsEditable(nsINode* node) {
   }
   // |node| might be readwrite (for example, a text control)
   if (node->IsElement() &&
-      node->AsElement()->State().HasState(NS_EVENT_STATE_MOZ_READWRITE)) {
+      node->AsElement()->State().HasState(NS_EVENT_STATE_READWRITE)) {
     return true;
   }
   return false;

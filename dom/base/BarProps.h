@@ -36,8 +36,7 @@ class BarProp : public nsISupports, public nsWrapperCache {
 
   nsPIDOMWindowInner* GetParentObject() const;
 
-  virtual JSObject* WrapObject(JSContext* aCx,
-                               JS::Handle<JSObject*> aGivenProto) override;
+  JSObject* WrapObject(JSContext* aCx, JS::Handle<JSObject*> aGivenProto) final;
 
   virtual bool GetVisible(CallerType aCallerType, ErrorResult& aRv) = 0;
   virtual void SetVisible(bool aVisible, CallerType aCallerType,
@@ -61,9 +60,9 @@ class MenubarProp final : public BarProp {
   explicit MenubarProp(nsGlobalWindowInner* aWindow);
   virtual ~MenubarProp();
 
-  virtual bool GetVisible(CallerType aCallerType, ErrorResult& aRv) override;
-  virtual void SetVisible(bool aVisible, CallerType aCallerType,
-                          ErrorResult& aRv) override;
+  bool GetVisible(CallerType aCallerType, ErrorResult& aRv) override;
+  void SetVisible(bool aVisible, CallerType aCallerType,
+                  ErrorResult& aRv) override;
 };
 
 // Script "toolbar" object
@@ -72,9 +71,9 @@ class ToolbarProp final : public BarProp {
   explicit ToolbarProp(nsGlobalWindowInner* aWindow);
   virtual ~ToolbarProp();
 
-  virtual bool GetVisible(CallerType aCallerType, ErrorResult& aRv) override;
-  virtual void SetVisible(bool aVisible, CallerType aCallerType,
-                          ErrorResult& aRv) override;
+  bool GetVisible(CallerType aCallerType, ErrorResult& aRv) override;
+  void SetVisible(bool aVisible, CallerType aCallerType,
+                  ErrorResult& aRv) override;
 };
 
 // Script "locationbar" object
@@ -83,9 +82,9 @@ class LocationbarProp final : public BarProp {
   explicit LocationbarProp(nsGlobalWindowInner* aWindow);
   virtual ~LocationbarProp();
 
-  virtual bool GetVisible(CallerType aCallerType, ErrorResult& aRv) override;
-  virtual void SetVisible(bool aVisible, CallerType aCallerType,
-                          ErrorResult& aRv) override;
+  bool GetVisible(CallerType aCallerType, ErrorResult& aRv) override;
+  void SetVisible(bool aVisible, CallerType aCallerType,
+                  ErrorResult& aRv) override;
 };
 
 // Script "personalbar" object
@@ -94,9 +93,9 @@ class PersonalbarProp final : public BarProp {
   explicit PersonalbarProp(nsGlobalWindowInner* aWindow);
   virtual ~PersonalbarProp();
 
-  virtual bool GetVisible(CallerType aCallerType, ErrorResult& aRv) override;
-  virtual void SetVisible(bool aVisible, CallerType aCallerType,
-                          ErrorResult& aRv) override;
+  bool GetVisible(CallerType aCallerType, ErrorResult& aRv) override;
+  void SetVisible(bool aVisible, CallerType aCallerType,
+                  ErrorResult& aRv) override;
 };
 
 // Script "statusbar" object
@@ -105,9 +104,9 @@ class StatusbarProp final : public BarProp {
   explicit StatusbarProp(nsGlobalWindowInner* aWindow);
   virtual ~StatusbarProp();
 
-  virtual bool GetVisible(CallerType aCallerType, ErrorResult& aRv) override;
-  virtual void SetVisible(bool aVisible, CallerType aCallerType,
-                          ErrorResult& aRv) override;
+  bool GetVisible(CallerType aCallerType, ErrorResult& aRv) override;
+  void SetVisible(bool aVisible, CallerType aCallerType,
+                  ErrorResult& aRv) override;
 };
 
 // Script "scrollbars" object
@@ -116,9 +115,9 @@ class ScrollbarsProp final : public BarProp {
   explicit ScrollbarsProp(nsGlobalWindowInner* aWindow);
   virtual ~ScrollbarsProp();
 
-  virtual bool GetVisible(CallerType aCallerType, ErrorResult& aRv) override;
-  virtual void SetVisible(bool aVisible, CallerType aCallerType,
-                          ErrorResult& aRv) override;
+  bool GetVisible(CallerType aCallerType, ErrorResult& aRv) override;
+  void SetVisible(bool aVisible, CallerType aCallerType,
+                  ErrorResult& aRv) override;
 };
 
 }  // namespace dom

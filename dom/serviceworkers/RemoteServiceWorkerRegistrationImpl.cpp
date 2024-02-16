@@ -47,6 +47,7 @@ void RemoteServiceWorkerRegistrationImpl::ClearServiceWorkerRegistration(
 }
 
 void RemoteServiceWorkerRegistrationImpl::Update(
+    const nsCString& aNewestWorkerScriptUrl,
     ServiceWorkerRegistrationCallback&& aSuccessCB,
     ServiceWorkerFailureCallback&& aFailureCB) {
   if (!mActor) {
@@ -55,6 +56,7 @@ void RemoteServiceWorkerRegistrationImpl::Update(
   }
 
   mActor->SendUpdate(
+      aNewestWorkerScriptUrl,
       [successCB = std::move(aSuccessCB), aFailureCB](
           const IPCServiceWorkerRegistrationDescriptorOrCopyableErrorResult&
               aResult) {
@@ -90,7 +92,7 @@ void RemoteServiceWorkerRegistrationImpl::Unregister(
        aFailureCB](Tuple<bool, CopyableErrorResult>&& aResult) {
         if (Get<1>(aResult).Failed()) {
           // application layer error
-          aFailureCB(Get<1>(aResult));
+          aFailureCB(std::move(Get<1>(aResult)));
           return;
         }
         // success

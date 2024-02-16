@@ -37,7 +37,7 @@ class Key;
 class KeyPath;
 class IndexUpdateInfo;
 class ObjectStoreSpec;
-struct StructuredCloneReadInfo;
+struct StructuredCloneReadInfoChild;
 }  // namespace indexedDB
 
 class IDBObjectStore final : public nsISupports, public nsWrapperCache {
@@ -45,7 +45,7 @@ class IDBObjectStore final : public nsISupports, public nsWrapperCache {
   typedef indexedDB::Key Key;
   typedef indexedDB::KeyPath KeyPath;
   typedef indexedDB::ObjectStoreSpec ObjectStoreSpec;
-  typedef indexedDB::StructuredCloneReadInfo StructuredCloneReadInfo;
+  typedef indexedDB::StructuredCloneReadInfoChild StructuredCloneReadInfoChild;
 
   // For AddOrPut() and DeleteInternal().
   // TODO Consider removing this, and making the functions public?
@@ -63,7 +63,7 @@ class IDBObjectStore final : public nsISupports, public nsWrapperCache {
   // object. However, if this objectStore is part of a versionchange transaction
   // and it gets deleted then the spec is copied into mDeletedSpec and mSpec is
   // set to point at mDeletedSpec.
-  const ObjectStoreSpec* mSpec;
+  ObjectStoreSpec* mSpec;
   UniquePtr<ObjectStoreSpec> mDeletedSpec;
 
   nsTArray<RefPtr<IDBIndex>> mIndexes;
@@ -86,7 +86,7 @@ class IDBObjectStore final : public nsISupports, public nsWrapperCache {
       MOZ_COUNT_CTOR(IDBObjectStore::ValueWrapper);
     }
 
-    ~ValueWrapper() { MOZ_COUNT_DTOR(IDBObjectStore::ValueWrapper); }
+    MOZ_COUNTED_DTOR_NESTED(ValueWrapper, IDBObjectStore::ValueWrapper)
 
     const JS::Rooted<JS::Value>& Value() const { return mValue; }
 
@@ -94,7 +94,7 @@ class IDBObjectStore final : public nsISupports, public nsWrapperCache {
   };
 
   static MOZ_MUST_USE RefPtr<IDBObjectStore> Create(
-      IDBTransaction* aTransaction, const ObjectStoreSpec& aSpec);
+      IDBTransaction* aTransaction, ObjectStoreSpec& aSpec);
 
   static void AppendIndexUpdateInfo(int64_t aIndexID, const KeyPath& aKeyPath,
                                     bool aMultiEntry, const nsCString& aLocale,
@@ -102,19 +102,12 @@ class IDBObjectStore final : public nsISupports, public nsWrapperCache {
                                     nsTArray<IndexUpdateInfo>* aUpdateInfoArray,
                                     ErrorResult* aRv);
 
-  static void DeserializeIndexValueToUpdateInfos(
-      int64_t aIndexID, const KeyPath& aKeyPath, bool aMultiEntry,
-      const nsCString& aLocale, StructuredCloneReadInfo& aCloneReadInfo,
-      nsTArray<IndexUpdateInfo>& aUpdateInfoArray, ErrorResult& aRv);
-
-  static void ClearCloneReadInfo(StructuredCloneReadInfo& aReadInfo);
+  static void ClearCloneReadInfo(
+      indexedDB::StructuredCloneReadInfoChild& aReadInfo);
 
   static bool DeserializeValue(JSContext* aCx,
-                               StructuredCloneReadInfo& aCloneReadInfo,
+                               StructuredCloneReadInfoChild&& aCloneReadInfo,
                                JS::MutableHandle<JS::Value> aValue);
-
-  static nsresult DeserializeUpgradeValueToFileIds(
-      StructuredCloneReadInfo& aCloneReadInfo, nsAString& aFileIds);
 
   static const JSClass* DummyPropClass() { return &sDummyPropJSClass; }
 
@@ -241,7 +234,7 @@ class IDBObjectStore final : public nsISupports, public nsWrapperCache {
                                JS::Handle<JSObject*> aGivenProto) override;
 
  private:
-  IDBObjectStore(IDBTransaction* aTransaction, const ObjectStoreSpec* aSpec);
+  IDBObjectStore(IDBTransaction* aTransaction, ObjectStoreSpec* aSpec);
 
   ~IDBObjectStore();
 

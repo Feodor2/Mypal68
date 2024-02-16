@@ -15,6 +15,7 @@
 #include "mozilla/dom/IDBFactoryBinding.h"
 #include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackground.h"
@@ -372,13 +373,6 @@ bool IDBFactory::IsChrome() const {
   return mPrincipalInfo->type() == PrincipalInfo::TSystemPrincipalInfo;
 }
 
-void IDBFactory::IncrementParentLoggingRequestSerialNumber() {
-  AssertIsOnOwningThread();
-  MOZ_ASSERT(mBackgroundActor);
-
-  mBackgroundActor->SendIncrementLoggingRequestSerialNumber();
-}
-
 RefPtr<IDBOpenDBRequest> IDBFactory::Open(JSContext* aCx,
                                           const nsAString& aName,
                                           uint64_t aVersion,
@@ -502,7 +496,10 @@ RefPtr<IDBOpenDBRequest> IDBFactory::OpenInternal(
     const Optional<uint64_t>& aVersion,
     const Optional<StorageType>& aStorageType, bool aDeleting,
     CallerType aCallerType, ErrorResult& aRv) {
-  MOZ_ASSERT(mGlobal);
+  if (NS_WARN_IF(!mGlobal)) {
+    aRv.Throw(NS_ERROR_DOM_INDEXEDDB_UNKNOWN_ERR);
+    return nullptr;
+  }
 
   CommonFactoryRequestParams commonParams;
 
@@ -544,7 +541,7 @@ RefPtr<IDBOpenDBRequest> IDBFactory::OpenInternal(
   uint64_t version = 0;
   if (!aDeleting && aVersion.WasPassed()) {
     if (aVersion.Value() < 1) {
-      aRv.ThrowTypeError(u"0 (Zero) is not a valid database version.");
+      aRv.ThrowTypeError("0 (Zero) is not a valid database version.");
       return nullptr;
     }
     version = aVersion.Value();
@@ -585,8 +582,9 @@ RefPtr<IDBOpenDBRequest> IDBFactory::OpenInternal(
   if (isInternal) {
     // Chrome privilege and internal origins always get persistent storage.
     persistenceType = PERSISTENCE_TYPE_PERSISTENT;
-  } else if (isAddon || StaticPrefs::dom_indexedDB_storageOption_enabled()) {
-    persistenceType = PersistenceTypeFromStorage(aStorageType);
+  } else if ((isAddon || StaticPrefs::dom_indexedDB_storageOption_enabled()) &&
+             aStorageType.WasPassed()) {
+    persistenceType = PersistenceTypeFromStorageType(aStorageType.Value());
   } else {
     persistenceType = PERSISTENCE_TYPE_DEFAULT;
   }
@@ -608,11 +606,11 @@ RefPtr<IDBOpenDBRequest> IDBFactory::OpenInternal(
     BackgroundChildImpl::ThreadLocal* threadLocal =
         BackgroundChildImpl::GetThreadLocalForCurrentThread();
 
-    nsAutoPtr<ThreadLocal> newIDBThreadLocal;
+    UniquePtr<ThreadLocal> newIDBThreadLocal;
     ThreadLocal* idbThreadLocal;
 
     if (threadLocal && threadLocal->mIndexedDBThreadLocal) {
-      idbThreadLocal = threadLocal->mIndexedDBThreadLocal;
+      idbThreadLocal = threadLocal->mIndexedDBThreadLocal.get();
     } else {
       nsCOMPtr<nsIUUIDGenerator> uuidGen =
           do_GetService("@mozilla.org/uuid-generator;1");
@@ -621,7 +619,8 @@ RefPtr<IDBOpenDBRequest> IDBFactory::OpenInternal(
       nsID id;
       MOZ_ALWAYS_SUCCEEDS(uuidGen->GenerateUUIDInPlace(&id));
 
-      newIDBThreadLocal = idbThreadLocal = new ThreadLocal(id);
+      newIDBThreadLocal = WrapUnique(new ThreadLocal(id));
+      idbThreadLocal = newIDBThreadLocal.get();
     }
 
     PBackgroundChild* backgroundActor =

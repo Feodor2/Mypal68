@@ -35,7 +35,7 @@ class AnimationEvent : public Event {
   void GetPseudoElement(nsAString& aPseudoElement);
 
  protected:
-  ~AnimationEvent() {}
+  ~AnimationEvent() = default;
 };
 
 }  // namespace dom

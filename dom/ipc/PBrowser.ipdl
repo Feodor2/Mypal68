@@ -4,7 +4,9 @@
 
 include protocol PColorPicker;
 include protocol PContent;
+#ifdef ACCESSIBILITY
 include protocol PDocAccessible;
+#endif
 include protocol PFilePicker;
 include protocol PPluginWidget;
 include protocol PRemotePrintJob;
@@ -68,7 +70,6 @@ using struct mozilla::layers::TextureFactoryIdentifier from "mozilla/layers/Comp
 using mozilla::layers::CompositorOptions from "mozilla/layers/CompositorOptions.h";
 using mozilla::CSSToScreenScale from "Units.h";
 using mozilla::CommandInt from "mozilla/EventForwards.h";
-using mozilla::WritingMode from "mozilla/WritingModes.h";
 using nsIWidget::TouchPointerState from "nsIWidget.h";
 using nsCursor from "nsIWidget.h";
 using struct LookAndFeelInt from "mozilla/widget/WidgetMessageUtils.h";
@@ -171,7 +172,11 @@ nested(upto inside_cpow) sync refcounted protocol PBrowser
     manager PContent;
 
     manages PColorPicker;
+
+#ifdef ACCESSIBILITY
     manages PDocAccessible;
+#endif
+
     manages PFilePicker;
     manages PPluginWidget;
     manages PWindowGlobal;
@@ -182,6 +187,7 @@ both:
                        nsIPrincipal aPrincipal, ClonedMessageData aData);
 
 parent:
+#ifdef ACCESSIBILITY
     /**
      * Tell the parent process a new accessible document has been created.
      * aParentDoc is the accessible document it was created in if any, and
@@ -192,6 +198,7 @@ parent:
      */
     async PDocAccessible(nullable PDocAccessible aParentDoc, uint64_t aParentAcc,
                          uint32_t aMsaaID, IAccessibleHolder aDocCOMProxy);
+#endif
 
     /*
      * Creates a new remoted nsIWidget connection for windowed plugins

@@ -22,7 +22,7 @@ nsOpenURIInFrameParams::nsOpenURIInFrameParams(
     mozilla::dom::Element* aOpener)
     : mOpenerOriginAttributes(aOriginAttributes), mOpenerBrowser(aOpener) {}
 
-nsOpenURIInFrameParams::~nsOpenURIInFrameParams() {}
+nsOpenURIInFrameParams::~nsOpenURIInFrameParams() = default;
 
 NS_IMETHODIMP
 nsOpenURIInFrameParams::GetReferrerInfo(nsIReferrerInfo** aReferrerInfo) {

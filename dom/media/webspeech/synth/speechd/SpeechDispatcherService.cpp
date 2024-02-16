@@ -138,7 +138,7 @@ class SpeechDispatcherVoice {
   nsString mLanguage;
 
  private:
-  ~SpeechDispatcherVoice() {}
+  ~SpeechDispatcherVoice() = default;
 };
 
 class SpeechDispatcherCallback final : public nsISpeechTaskCallback {
@@ -156,7 +156,7 @@ class SpeechDispatcherCallback final : public nsISpeechTaskCallback {
   bool OnSpeechEvent(SPDNotificationType state);
 
  private:
-  ~SpeechDispatcherCallback() {}
+  ~SpeechDispatcherCallback() = default;
 
   // This pointer is used to dispatch events
   nsCOMPtr<nsISpeechTask> mTask;
@@ -396,9 +396,9 @@ void SpeechDispatcherService::Setup() {
 
       uri.Append(NS_ConvertUTF8toUTF16(lang));
 
-      mVoices.Put(
-          uri, new SpeechDispatcherVoice(NS_ConvertUTF8toUTF16(list[i]->name),
-                                         NS_ConvertUTF8toUTF16(lang)));
+      mVoices.Put(uri, MakeRefPtr<SpeechDispatcherVoice>(
+                           NS_ConvertUTF8toUTF16(list[i]->name),
+                           NS_ConvertUTF8toUTF16(lang)));
     }
   }
 
@@ -500,7 +500,7 @@ SpeechDispatcherService::Speak(const nsAString& aText, const nsAString& aUri,
       return NS_ERROR_FAILURE;
     }
 
-    mCallbacks.Put(msg_id, callback);
+    mCallbacks.Put(msg_id, std::move(callback));
   } else {
     // Speech dispatcher does not work well with empty strings.
     // In that case, don't send empty string to speechd,

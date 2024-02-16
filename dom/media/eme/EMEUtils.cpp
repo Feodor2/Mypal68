@@ -26,12 +26,12 @@ ArrayData GetArrayBufferViewOrArrayBufferData(
   JS::AutoCheckCannotGC nogc;
   if (aBufferOrView.IsArrayBuffer()) {
     const dom::ArrayBuffer& buffer = aBufferOrView.GetAsArrayBuffer();
-    buffer.ComputeLengthAndData();
+    buffer.ComputeState();
     return ArrayData(buffer.Data(), buffer.Length());
   } else if (aBufferOrView.IsArrayBufferView()) {
     const dom::ArrayBufferView& bufferview =
         aBufferOrView.GetAsArrayBufferView();
-    bufferview.ComputeLengthAndData();
+    bufferview.ComputeState();
     return ArrayData(bufferview.Data(), bufferview.Length());
   }
   return ArrayData(nullptr, 0);

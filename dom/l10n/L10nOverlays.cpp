@@ -461,7 +461,8 @@ void L10nOverlays::TranslateElement(Element& aElement,
       // Else parse the translation's HTML into a DocumentFragment,
       // sanitize it and replace the element's content.
       RefPtr<DocumentFragment> fragment =
-          new DocumentFragment(aElement.OwnerDoc()->NodeInfoManager());
+          new (aElement.OwnerDoc()->NodeInfoManager())
+              DocumentFragment(aElement.OwnerDoc()->NodeInfoManager());
       nsContentUtils::ParseFragmentHTML(aTranslation.mValue, fragment,
                                         nsGkAtoms::_template,
                                         kNameSpaceID_XHTML, false, true);

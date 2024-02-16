@@ -119,7 +119,7 @@ class FileBlockCache : public MediaBlockCacheBase {
 
    private:
     // Private destructor, to discourage deletion outside of Release():
-    ~BlockChange() {}
+    ~BlockChange() = default;
   };
 
  private:

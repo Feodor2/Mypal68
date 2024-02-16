@@ -8,6 +8,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/IDBTransactionBinding.h"
 #include "mozilla/dom/StorageTypeBinding.h"
+#include "mozilla/dom/indexedDB/PBackgroundIDBSharedTypes.h"
 #include "mozilla/dom/quota/PersistenceType.h"
 #include "mozilla/DOMEventTargetHelper.h"
 #include "mozilla/UniquePtr.h"
@@ -41,7 +42,6 @@ class StringOrStringSequence;
 
 namespace indexedDB {
 class BackgroundDatabaseChild;
-class DatabaseSpec;
 class PBackgroundIDBDatabaseFileChild;
 }  // namespace indexedDB
 
@@ -158,7 +158,7 @@ class IDBDatabase final : public DOMEventTargetHelper {
   void AbortTransactions(bool aShouldWarn);
 
   indexedDB::PBackgroundIDBDatabaseFileChild* GetOrCreateFileActorForBlob(
-      Blob* aBlob);
+      Blob& aBlob);
 
   void NoteFinishedFileActor(
       indexedDB::PBackgroundIDBDatabaseFileChild* aFileActor);
@@ -190,12 +190,6 @@ class IDBDatabase final : public DOMEventTargetHelper {
       JSContext* aCx, const StringOrStringSequence& aStoreNames,
       IDBTransactionMode aMode, ErrorResult& aRv);
 
-  // This can be called from C++ to avoid JS exception.
-  nsresult Transaction(JSContext* aCx,
-                       const StringOrStringSequence& aStoreNames,
-                       IDBTransactionMode aMode,
-                       RefPtr<IDBTransaction>* aTransaction);
-
   StorageType Storage() const;
 
   IMPL_EVENT_HANDLER(abort)
@@ -218,6 +212,14 @@ class IDBDatabase final : public DOMEventTargetHelper {
   }
 
   const DatabaseSpec* Spec() const { return mSpec.get(); }
+
+  template <typename Pred>
+  indexedDB::ObjectStoreSpec* LookupModifiableObjectStoreSpec(Pred&& aPred) {
+    auto& objectStores = mSpec->objectStores();
+    const auto foundIt =
+        std::find_if(objectStores.begin(), objectStores.end(), aPred);
+    return foundIt != objectStores.end() ? &*foundIt : nullptr;
+  }
 
   NS_DECL_ISUPPORTS_INHERITED
   NS_DECL_CYCLE_COLLECTION_CLASS_INHERITED(IDBDatabase, DOMEventTargetHelper)

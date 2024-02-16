@@ -108,7 +108,7 @@ class ContentChild final : public PContentChild,
       mozIDOMWindowProxy** aReturn);
 
   bool Init(MessageLoop* aIOLoop, base::ProcessId aParentPid,
-            const char* aParentBuildID, IPC::Channel* aChannel,
+            const char* aParentBuildID, UniquePtr<IPC::Channel> aChannel,
             uint64_t aChildID, bool aIsForBrowser);
 
   void InitXPCOM(const XPCOMInitData& aXPCOMInit,
@@ -277,9 +277,10 @@ class ContentChild final : public PContentChild,
 
   mozilla::ipc::IPCResult RecvNotifyEmptyHTTPCache();
 
+#ifdef MOZ_WEBSPEECH
   PSpeechSynthesisChild* AllocPSpeechSynthesisChild();
-
   bool DeallocPSpeechSynthesisChild(PSpeechSynthesisChild* aActor);
+#endif
 
   mozilla::ipc::IPCResult RecvRegisterChrome(
       nsTArray<ChromePackage>&& packages,
@@ -507,8 +508,8 @@ class ContentChild final : public PContentChild,
       const nsTArray<PermissionRequest>& aRequests,
       const IPC::Principal& aPrincipal,
       const IPC::Principal& aTopLevelPrincipal,
-      const bool& aIsHandlingUserInput, const bool& aDocumentHasUserInput,
-      const DOMTimeStamp aPageLoadTimestamp, const TabId& aTabId);
+      const bool& aIsHandlingUserInput,
+      const TabId& aTabId);
   bool DeallocPContentPermissionRequestChild(
       PContentPermissionRequestChild* actor);
 

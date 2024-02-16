@@ -104,8 +104,8 @@ class Response final : public FetchBody<Response>, public nsWrapperCache {
 
   static already_AddRefed<Response> Constructor(
       const GlobalObject& aGlobal,
-      const Optional<Nullable<fetch::ResponseBodyInit>>& aBody,
-      const ResponseInit& aInit, ErrorResult& rv);
+      const Nullable<fetch::ResponseBodyInit>& aBody, const ResponseInit& aInit,
+      ErrorResult& rv);
 
   nsIGlobalObject* GetParentObject() const { return mOwner; }
 

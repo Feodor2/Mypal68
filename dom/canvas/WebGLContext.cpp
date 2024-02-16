@@ -2239,7 +2239,7 @@ bool WebGLContext::ValidateArrayBufferView(const dom::ArrayBufferView& view,
                                            const GLenum errorEnum,
                                            uint8_t** const out_bytes,
                                            size_t* const out_byteLen) const {
-  view.ComputeLengthAndData();
+  view.ComputeState();
   uint8_t* const bytes = view.Data();
   const size_t byteLen = view.Length();
 

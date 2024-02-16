@@ -329,7 +329,7 @@ void WebGLContext::BufferData(GLenum target,
   if (!ValidateNonNull("src", maybeSrc)) return;
   const auto& src = maybeSrc.Value();
 
-  src.ComputeLengthAndData();
+  src.ComputeState();
   BufferDataImpl(target, src.Length(), src.Data(), usage);
 }
 
@@ -370,7 +370,7 @@ void WebGLContext::BufferSubData(GLenum target, WebGLsizeiptr dstByteOffset,
   const FuncScope funcScope(*this, "bufferSubData");
   if (IsContextLost()) return;
 
-  src.ComputeLengthAndData();
+  src.ComputeState();
   BufferSubDataImpl(target, dstByteOffset, src.Length(),
                     src.Data());
 }

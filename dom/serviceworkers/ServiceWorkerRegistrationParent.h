@@ -26,7 +26,8 @@ class ServiceWorkerRegistrationParent final
   mozilla::ipc::IPCResult RecvUnregister(
       UnregisterResolver&& aResolver) override;
 
-  mozilla::ipc::IPCResult RecvUpdate(UpdateResolver&& aResolver) override;
+  mozilla::ipc::IPCResult RecvUpdate(const nsCString& aNewestWorkerScriptUrl,
+                                     UpdateResolver&& aResolver) override;
 
  public:
   ServiceWorkerRegistrationParent();

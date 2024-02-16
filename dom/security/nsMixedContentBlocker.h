@@ -43,7 +43,7 @@ class nsMixedContentBlocker : public nsIContentPolicy,
   NS_DECL_NSICONTENTPOLICY
   NS_DECL_NSICHANNELEVENTSINK
 
-  nsMixedContentBlocker();
+  nsMixedContentBlocker() = default;
 
   // See:
   // https://w3c.github.io/webappsec-secure-contexts/#is-origin-trustworthy
@@ -74,12 +74,7 @@ class nsMixedContentBlocker : public nsIContentPolicy,
 
   static bool URISafeToBeLoadedInSecureContext(nsIURI* aURI);
 
-  static bool ShouldUpgradeMixedDisplayContent();
 
-  static bool sBlockMixedScript;
-  static bool sBlockMixedObjectSubrequest;
-  static bool sBlockMixedDisplay;
-  static bool sUpgradeMixedDisplay;
 };
 
 #endif /* nsMixedContentBlocker_h___ */

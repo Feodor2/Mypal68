@@ -5,6 +5,7 @@
 #include "DocumentL10n.h"
 #include "nsIContentSink.h"
 #include "mozilla/dom/DocumentL10nBinding.h"
+#include "mozilla/mozalloc_oom.h"
 
 using namespace mozilla::dom;
 
@@ -130,7 +131,15 @@ void DocumentL10n::TriggerInitialDocumentTranslation() {
       Element* elem = elements.ElementAt(i - 1);
       MOZ_RELEASE_ASSERT(elem->HasAttr(nsGkAtoms::datal10nid));
       if (!elem->HasElementCreatedFromPrototypeAndHasUnmodifiedL10n()) {
-        nonProtoElements.AppendElement(*elem, fallible);
+        if (!nonProtoElements.AppendElement(*elem, fallible)) {
+          mozalloc_handle_oom(0);
+        }
+        // XXX(Bug 1631381) Consider making this fallible again like this:
+        // if (NS_WARN_IF(!nonProtoElements.AppendElement(*elem, fallible))) {
+        //   InitialDocumentTranslationCompleted();
+        //   mReady->MaybeRejectWithUndefined();
+        //   return;
+        // }
         elements.RemoveElement(elem);
       }
       i--;

@@ -27,7 +27,6 @@
 #include "nsUnicharUtils.h"
 #include "nsIScriptGlobalObject.h"
 #include "nsIScriptSecurityManager.h"
-#include "nsIScrollable.h"
 #include "nsFrameLoader.h"
 #include "nsFrameLoaderOwner.h"
 #include "nsIFrame.h"
@@ -634,8 +633,7 @@ nsresult nsFrameLoader::ReallyStartLoadingInternal() {
     loadState->SetBaseURI(mOwnerContent->GetBaseURI());
   }
 
-  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
-  referrerInfo->InitWithNode(mOwnerContent);
+  auto referrerInfo = MakeRefPtr<ReferrerInfo>(*mOwnerContent);
   loadState->SetReferrerInfo(referrerInfo);
 
   // Default flags:
@@ -845,7 +843,7 @@ void nsFrameLoader::MaybeShowFrame() {
 }
 
 bool nsFrameLoader::Show(int32_t marginWidth, int32_t marginHeight,
-                         int32_t scrollbarPrefX, int32_t scrollbarPrefY,
+                         ScrollbarPreference aScrollbarPref,
                          nsSubDocumentFrame* frame) {
   if (mInShow) {
     return false;
@@ -870,11 +868,7 @@ bool nsFrameLoader::Show(int32_t marginWidth, int32_t marginHeight,
 
   GetDocShell()->SetMarginWidth(marginWidth);
   GetDocShell()->SetMarginHeight(marginHeight);
-
-  GetDocShell()->SetDefaultScrollbarPreferences(
-      nsIScrollable::ScrollOrientation_X, scrollbarPrefX);
-  GetDocShell()->SetDefaultScrollbarPreferences(
-      nsIScrollable::ScrollOrientation_Y, scrollbarPrefY);
+  GetDocShell()->SetScrollbarPreference(aScrollbarPref);
 
   if (PresShell* presShell = GetDocShell()->GetPresShell()) {
     // Ensure root scroll frame is reflowed in case scroll preferences or
@@ -1986,13 +1980,6 @@ bool nsFrameLoader::ShouldUseRemoteProcess() {
     return false;
   }
 
-  // Check if the force fission test attribute is enabled.
-  if (XRE_IsContentProcess() &&
-      Preferences::GetBool("fission.oopif.attribute", false) &&
-      mOwnerContent->HasAttr(kNameSpaceID_None, nsGkAtoms::fission)) {
-    return true;
-  }
-
   if (XRE_IsContentProcess() &&
       !(PR_GetEnv("MOZ_NESTED_OOP_TABS") ||
         Preferences::GetBool("dom.ipc.tabs.nested.enabled", false))) {
@@ -2687,7 +2674,7 @@ bool nsFrameLoader::TryRemoteBrowser() {
   mChildID = mBrowserParent->Manager()->ChildID();
 
   nsCOMPtr<nsIDocShellTreeItem> rootItem;
-  parentDocShell->GetRootTreeItem(getter_AddRefs(rootItem));
+  parentDocShell->GetInProcessRootTreeItem(getter_AddRefs(rootItem));
   nsCOMPtr<nsPIDOMWindowOuter> rootWin = rootItem->GetWindow();
   nsCOMPtr<nsIDOMChromeWindow> rootChromeWin = do_QueryInterface(rootWin);
 
@@ -2883,8 +2870,8 @@ nsresult nsFrameLoader::DoSendAsyncMessage(JSContext* aCx,
     if (aCpows && (!mgr || !mgr->Wrap(aCx, aCpows, &cpows))) {
       return NS_ERROR_UNEXPECTED;
     }
-    if (browserParent->SendAsyncMessage(nsString(aMessage), cpows,
-                                        IPC::Principal(aPrincipal), data)) {
+    if (browserParent->SendAsyncMessage(nsString(aMessage), cpows, aPrincipal,
+                                        data)) {
       return NS_OK;
     } else {
       return NS_ERROR_UNEXPECTED;

@@ -53,8 +53,8 @@ class PresentationIPCService final
 
  private:
   virtual ~PresentationIPCService();
-  nsresult SendRequest(nsIPresentationServiceCallback* aCallback,
-                       const PresentationIPCRequest& aRequest);
+  void SendRequest(nsIPresentationServiceCallback* aCallback,
+                   const PresentationIPCRequest& aRequest);
 
   nsRefPtrHashtable<nsStringHashKey, nsIPresentationSessionListener>
       mSessionListeners;

@@ -35,7 +35,7 @@ class MOZ_STACK_CLASS RangeFinder {
 };
 
 bool RangeFinder::Contains(MediaByteRange aByteRange) {
-  if (!mRanges.Length()) {
+  if (mRanges.IsEmpty()) {
     return false;
   }
 
@@ -464,7 +464,7 @@ Index::Index(const IndiceWrapper& aIndices, ByteStream* aSource,
   }
 }
 
-Index::~Index() {}
+Index::~Index() = default;
 
 void Index::UpdateMoofIndex(const MediaByteRangeSet& aByteRanges) {
   UpdateMoofIndex(aByteRanges, false);

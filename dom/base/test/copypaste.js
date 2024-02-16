@@ -50,15 +50,12 @@ async function testCopyPaste(isXHTML) {
     );
     if (!suppressUnicodeCheck) {
       ok(
-        clipboard.hasDataMatchingFlavors(["text/unicode"], 1, 1),
+        clipboard.hasDataMatchingFlavors(["text/unicode"], 1),
         "check text/unicode"
       );
     }
     if (!suppressHTMLCheck) {
-      ok(
-        clipboard.hasDataMatchingFlavors(["text/html"], 1, 1),
-        "check text/html"
-      );
+      ok(clipboard.hasDataMatchingFlavors(["text/html"], 1), "check text/html");
     }
   }
   function clear(node, suppressUnicodeCheck) {

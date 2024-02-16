@@ -20,6 +20,7 @@
 #include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/Event.h"
 #include "mozilla/dom/Touch.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/PendingAnimationTracker.h"
 #include "nsIObjectLoadingContent.h"
 #include "nsFrame.h"
@@ -40,7 +41,6 @@
 #include "nsJSUtils.h"
 
 #include "mozilla/ChaosMode.h"
-#include "mozilla/EventStateManager.h"
 #include "mozilla/MiscEvents.h"
 #include "mozilla/MouseEvents.h"
 #include "mozilla/PresShell.h"
@@ -168,7 +168,7 @@ namespace {
 
 class NativeInputRunnable final : public PrioritizableRunnable {
   explicit NativeInputRunnable(already_AddRefed<nsIRunnable>&& aEvent);
-  ~NativeInputRunnable() {}
+  ~NativeInputRunnable() = default;
 
  public:
   static already_AddRefed<nsIRunnable> Create(
@@ -444,6 +444,7 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
   }
 
   bool hadDisplayPort = false;
+  bool wasPainted = false;
   nsRect oldDisplayPort;
   {
     DisplayPortPropertyData* currentData =
@@ -455,6 +456,7 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
       }
       hadDisplayPort = true;
       oldDisplayPort = currentData->mRect;
+      wasPainted = currentData->mPainted;
     }
   }
 
@@ -463,9 +465,10 @@ nsDOMWindowUtils::SetDisplayPortForElement(float aXPx, float aYPx,
                      nsPresContext::CSSPixelsToAppUnits(aWidthPx),
                      nsPresContext::CSSPixelsToAppUnits(aHeightPx));
 
-  aElement->SetProperty(nsGkAtoms::DisplayPort,
-                        new DisplayPortPropertyData(displayport, aPriority),
-                        nsINode::DeleteProperty<DisplayPortPropertyData>);
+  aElement->SetProperty(
+      nsGkAtoms::DisplayPort,
+      new DisplayPortPropertyData(displayport, aPriority, wasPainted),
+      nsINode::DeleteProperty<DisplayPortPropertyData>);
 
   nsLayoutUtils::InvalidateForDisplayPortChange(aElement, hadDisplayPort,
                                                 oldDisplayPort, displayport);
@@ -1150,12 +1153,10 @@ nsDOMWindowUtils::NodesFromRect(float aX, float aY, float aTopSize,
                                 float aLeftSize, bool aIgnoreRootScrollFrame,
                                 bool aFlushLayout, bool aOnlyVisible,
                                 nsINodeList** aReturn) {
-  nsCOMPtr<Document> doc = GetDocument();
+  RefPtr<Document> doc = GetDocument();
   NS_ENSURE_STATE(doc);
 
-  nsSimpleContentList* list = new nsSimpleContentList(doc);
-  NS_ADDREF(list);
-  *aReturn = list;
+  auto list = MakeRefPtr<nsSimpleContentList>(doc);
 
   AutoTArray<RefPtr<nsINode>, 8> nodes;
   doc->NodesFromRect(aX, aY, aTopSize, aRightSize, aBottomSize, aLeftSize,
@@ -1164,6 +1165,8 @@ nsDOMWindowUtils::NodesFromRect(float aX, float aY, float aTopSize,
   for (auto& node : nodes) {
     list->AppendElement(node->AsContent());
   }
+
+  list.forget(aReturn);
   return NS_OK;
 }
 
@@ -1685,13 +1688,15 @@ nsDOMWindowUtils::GetFullZoom(float* aFullZoom) {
   return NS_OK;
 }
 
-NS_IMETHODIMP
-nsDOMWindowUtils::DispatchDOMEventViaPresShell(nsINode* aTarget, Event* aEvent,
-                                               bool* aRetVal) {
+NS_IMETHODIMP nsDOMWindowUtils::DispatchDOMEventViaPresShellForTesting(
+    nsINode* aTarget, Event* aEvent, bool* aRetVal) {
   NS_ENSURE_STATE(aEvent);
   aEvent->SetTrusted(true);
   WidgetEvent* internalEvent = aEvent->WidgetEventPtr();
   NS_ENSURE_STATE(internalEvent);
+  // This API is currently used only by EventUtils.js.  Thus we should always
+  // set mIsSynthesizedForTests to true.
+  internalEvent->mFlags.mIsSynthesizedForTests = true;
   nsCOMPtr<nsIContent> content = do_QueryInterface(aTarget);
   NS_ENSURE_STATE(content);
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
@@ -2536,9 +2541,7 @@ nsDOMWindowUtils::ComputeAnimationDistance(Element* aElement,
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
-  RefPtr<ComputedStyle> computedStyle =
-      nsComputedDOMStyle::GetComputedStyle(aElement, nullptr);
-  *aResult = v1.ComputeDistance(property, v2, computedStyle);
+  *aResult = v1.ComputeDistance(property, v2);
   return NS_OK;
 }
 
@@ -2874,8 +2877,7 @@ NS_IMETHODIMP
 nsDOMWindowUtils::GetFileReferences(const nsAString& aDatabaseName, int64_t aId,
                                     JS::Handle<JS::Value> aOptions,
                                     int32_t* aRefCnt, int32_t* aDBRefCnt,
-                                    int32_t* aSliceRefCnt, JSContext* aCx,
-                                    bool* aResult) {
+                                    JSContext* aCx, bool* aResult) {
   nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
@@ -2890,18 +2892,19 @@ nsDOMWindowUtils::GetFileReferences(const nsAString& aDatabaseName, int64_t aId,
     return NS_ERROR_UNEXPECTED;
   }
 
-  quota::PersistenceType persistenceType =
-      quota::PersistenceTypeFromStorage(options.mStorage);
+  const quota::PersistenceType persistenceType =
+      options.mStorage.WasPassed()
+          ? quota::PersistenceTypeFromStorageType(options.mStorage.Value())
+          : quota::PERSISTENCE_TYPE_DEFAULT;
 
   RefPtr<IndexedDatabaseManager> mgr = IndexedDatabaseManager::Get();
 
   if (mgr) {
     rv = mgr->BlockAndGetFileReferences(persistenceType, origin, aDatabaseName,
-                                        aId, aRefCnt, aDBRefCnt, aSliceRefCnt,
-                                        aResult);
+                                        aId, aRefCnt, aDBRefCnt, aResult);
     NS_ENSURE_SUCCESS(rv, rv);
   } else {
-    *aRefCnt = *aDBRefCnt = *aSliceRefCnt = -1;
+    *aRefCnt = *aDBRefCnt = -1;
     *aResult = false;
   }
 
@@ -3260,7 +3263,7 @@ nsDOMWindowUtils::RemoveSheetUsingURIString(const nsACString& aSheetURI,
 
 NS_IMETHODIMP
 nsDOMWindowUtils::GetIsHandlingUserInput(bool* aHandlingUserInput) {
-  *aHandlingUserInput = EventStateManager::IsHandlingUserInput();
+  *aHandlingUserInput = UserActivation::IsHandlingUserInput();
 
   return NS_OK;
 }
@@ -3268,7 +3271,7 @@ nsDOMWindowUtils::GetIsHandlingUserInput(bool* aHandlingUserInput) {
 NS_IMETHODIMP
 nsDOMWindowUtils::GetMillisSinceLastUserInput(
     double* aMillisSinceLastUserInput) {
-  TimeStamp lastInput = EventStateManager::LatestUserInputStart();
+  TimeStamp lastInput = UserActivation::LatestUserInputStart();
   if (lastInput.IsNull()) {
     *aMillisSinceLastUserInput = -1.0f;
     return NS_OK;
@@ -3435,11 +3438,6 @@ nsDOMWindowUtils::GetOMTAStyle(Element* aElement, const nsAString& aProperty,
 
   RefPtr<nsROCSSPrimitiveValue> cssValue = nullptr;
   if (frame && nsLayoutUtils::AreAsyncAnimationsEnabled()) {
-    RefPtr<LayerManager> widgetLayerManager;
-    if (nsIWidget* widget = GetWidget()) {
-      widgetLayerManager = widget->GetLayerManager();
-    }
-
     if (aProperty.EqualsLiteral("opacity")) {
       OMTAValue value = GetOMTAValue(frame, DisplayItemType::TYPE_OPACITY
 #ifdef MOZ_BUILD_WEBRENDER
@@ -3604,7 +3602,7 @@ NS_IMPL_ISUPPORTS(HandlingUserInputHelper, nsIJSRAIIHelper)
 HandlingUserInputHelper::HandlingUserInputHelper(bool aHandlingUserInput)
     : mHandlingUserInput(aHandlingUserInput), mDestructCalled(false) {
   if (aHandlingUserInput) {
-    EventStateManager::StartHandlingUserInput(eVoidEvent);
+    UserActivation::StartHandlingUserInput(eVoidEvent);
   }
 }
 
@@ -3624,7 +3622,7 @@ HandlingUserInputHelper::Destruct() {
 
   mDestructCalled = true;
   if (mHandlingUserInput) {
-    EventStateManager::StopHandlingUserInput(eVoidEvent);
+    UserActivation::StopHandlingUserInput(eVoidEvent);
   }
 
   return NS_OK;
@@ -4201,5 +4199,12 @@ nsDOMWindowUtils::GetSystemFont(nsACString& aFontName) {
 NS_IMETHODIMP
 nsDOMWindowUtils::GetUsesOverlayScrollbars(bool* aResult) {
   *aResult = Document::UseOverlayScrollbars(GetDocument());
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::GetPaintCount(uint64_t* aPaintCount) {
+  auto* presShell = GetPresShell();
+  *aPaintCount = presShell ? presShell->GetPaintCount() : 0;
   return NS_OK;
 }

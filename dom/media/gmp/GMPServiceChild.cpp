@@ -423,9 +423,9 @@ void GeckoMediaPluginServiceChild::RemoveGMPContentParent(
   }
 }
 
-GMPServiceChild::GMPServiceChild() {}
+GMPServiceChild::GMPServiceChild() = default;
 
-GMPServiceChild::~GMPServiceChild() {}
+GMPServiceChild::~GMPServiceChild() = default;
 
 already_AddRefed<GMPContentParent> GMPServiceChild::GetBridgedGMPContentParent(
     ProcessId aOtherPid, ipc::Endpoint<PGMPContentParent>&& endpoint) {
@@ -443,7 +443,7 @@ already_AddRefed<GMPContentParent> GMPServiceChild::GetBridgedGMPContentParent(
   DebugOnly<bool> ok = endpoint.Bind(parent);
   MOZ_ASSERT(ok);
 
-  mContentParents.Put(aOtherPid, parent);
+  mContentParents.Put(aOtherPid, RefPtr{parent});
 
   return parent.forget();
 }

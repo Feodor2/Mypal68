@@ -157,7 +157,7 @@ nsresult ChannelFromScriptURL(
 
   bool isData = uri->SchemeIs("data");
   bool isURIUniqueOrigin =
-      net::nsIOService::IsDataURIUniqueOpaqueOrigin() && isData;
+      StaticPrefs::security_data_uri_unique_opaque_origin() && isData;
   if (inheritAttrs && !isURIUniqueOrigin) {
     secFlags |= nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL;
   }
@@ -2155,7 +2155,7 @@ void ScriptExecutorRunnable::LogExceptionToConsole(
   MOZ_ASSERT(mScriptLoader.mRv.IsJSException());
 
   JS::Rooted<JS::Value> exn(aCx);
-  if (!ToJSValue(aCx, mScriptLoader.mRv, &exn)) {
+  if (!ToJSValue(aCx, std::move(mScriptLoader.mRv), &exn)) {
     return;
   }
 

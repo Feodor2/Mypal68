@@ -10,6 +10,7 @@
 #include "mozilla/dom/ImageDocumentBinding.h"
 #include "mozilla/dom/HTMLImageElement.h"
 #include "mozilla/dom/MouseEvent.h"
+#include "mozilla/LoadInfo.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "nsRect.h"
@@ -62,7 +63,7 @@ class ImageListener : public MediaDocumentStreamListener {
 ImageListener::ImageListener(ImageDocument* aDocument)
     : MediaDocumentStreamListener(aDocument) {}
 
-ImageListener::~ImageListener() {}
+ImageListener::~ImageListener() = default;
 
 NS_IMETHODIMP
 ImageListener::OnStartRequest(nsIRequest* request) {
@@ -157,7 +158,7 @@ ImageDocument::ImageDocument()
 {
 }
 
-ImageDocument::~ImageDocument() {}
+ImageDocument::~ImageDocument() = default;
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(ImageDocument, MediaDocument, mImageContent)
 
@@ -479,9 +480,8 @@ void ImageDocument::NotifyPossibleTitleChange(bool aBoundTitleElement) {
   Document::NotifyPossibleTitleChange(aBoundTitleElement);
 }
 
-NS_IMETHODIMP
-ImageDocument::Notify(imgIRequest* aRequest, int32_t aType,
-                      const nsIntRect* aData) {
+void ImageDocument::Notify(imgIRequest* aRequest, int32_t aType,
+                           const nsIntRect* aData) {
   if (aType == imgINotificationObserver::SIZE_AVAILABLE) {
     nsCOMPtr<imgIContainer> image;
     aRequest->GetImage(getter_AddRefs(image));
@@ -504,8 +504,6 @@ ImageDocument::Notify(imgIRequest* aRequest, int32_t aType,
         reqStatus & imgIRequest::STATUS_ERROR ? NS_ERROR_FAILURE : NS_OK;
     return OnLoadComplete(aRequest, status);
   }
-
-  return NS_OK;
 }
 
 void ImageDocument::OnHasTransparency() {
@@ -543,8 +541,8 @@ void ImageDocument::SetModeClass(eModeClasses mode) {
   rv.SuppressException();
 }
 
-nsresult ImageDocument::OnSizeAvailable(imgIRequest* aRequest,
-                                        imgIContainer* aImage) {
+void ImageDocument::OnSizeAvailable(imgIRequest* aRequest,
+                                    imgIContainer* aImage) {
   int32_t oldWidth = mImageWidth;
   int32_t oldHeight = mImageHeight;
 
@@ -557,7 +555,7 @@ nsresult ImageDocument::OnSizeAvailable(imgIRequest* aRequest,
   // doesn't change our size. (We may not even support changing size in
   // multipart images in the future.)
   if (oldWidth == mImageWidth && oldHeight == mImageHeight) {
-    return NS_OK;
+    return;
   }
 
   nsCOMPtr<nsIRunnable> runnable =
@@ -565,12 +563,9 @@ nsresult ImageDocument::OnSizeAvailable(imgIRequest* aRequest,
                         &ImageDocument::DefaultCheckOverflowing);
   nsContentUtils::AddScriptRunner(runnable);
   UpdateTitleAndCharset();
-
-  return NS_OK;
 }
 
-nsresult ImageDocument::OnLoadComplete(imgIRequest* aRequest,
-                                       nsresult aStatus) {
+void ImageDocument::OnLoadComplete(imgIRequest* aRequest, nsresult aStatus) {
   UpdateTitleAndCharset();
 
   // mImageContent can be null if the document is already destroyed
@@ -584,8 +579,6 @@ nsresult ImageDocument::OnLoadComplete(imgIRequest* aRequest,
 
     mImageContent->SetAttr(kNameSpaceID_None, nsGkAtoms::alt, errorMsg, false);
   }
-
-  return NS_OK;
 }
 
 NS_IMETHODIMP

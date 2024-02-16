@@ -328,7 +328,7 @@ void WaveShaperNode::SetCurve(const Nullable<Float32Array>& aCurve,
   }
 
   const Float32Array& floats = aCurve.Value();
-  floats.ComputeLengthAndData();
+  floats.ComputeState();
 
   nsTArray<float> curve;
   uint32_t argLength = floats.Length();
@@ -344,7 +344,7 @@ void WaveShaperNode::SetCurve(const Nullable<Float32Array>& aCurve,
 void WaveShaperNode::SetCurveInternal(const nsTArray<float>& aCurve,
                                       ErrorResult& aRv) {
   if (aCurve.Length() < 2) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    aRv.ThrowInvalidStateError("Must have at least two entries");
     return;
   }
 

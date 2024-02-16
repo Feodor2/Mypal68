@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <stdint.h>  // for UINT32_MAX, uintptr_t
+#include "IndexedDatabase.h"
+#include "IndexedDatabaseInlines.h"
 #include "IndexedDatabaseManager.h"
 #include "js/Array.h"        // JS::NewArrayObject
 #include "js/ArrayBuffer.h"  // JS::{IsArrayBufferObject,NewArrayBuffer{,WithContents},GetArrayBufferLengthAndData}
@@ -25,9 +27,7 @@
 #include "unicode/ucol.h"
 #include "xpcpublic.h"
 
-namespace mozilla {
-namespace dom {
-namespace indexedDB {
+namespace mozilla::dom::indexedDB {
 
 /*
  Here's how we encode keys:
@@ -895,6 +895,4 @@ nsresult Key::SetFromSource(T* aSource, uint32_t aIndex) {
   return NS_OK;
 }
 
-}  // namespace indexedDB
-}  // namespace dom
-}  // namespace mozilla
+}  // namespace mozilla::dom::indexedDB

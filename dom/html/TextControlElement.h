@@ -88,14 +88,16 @@ class TextControlElement : public nsGenericHTMLFormElementWithState {
   virtual bool ValueChanged() const = 0;
 
   /**
+   * Returns the used maxlength attribute value.
+   */
+  virtual int32_t UsedMaxLength() const = 0;
+
+  /**
    * Get the current value of the text editor.
    *
    * @param aValue the buffer to retrieve the value in
-   * @param aIgnoreWrap whether to ignore the text wrapping behavior specified
-   * for the element.
    */
-  virtual void GetTextEditorValue(nsAString& aValue,
-                                  bool aIgnoreWrap) const = 0;
+  virtual void GetTextEditorValue(nsAString& aValue) const = 0;
 
   /**
    * Get the editor object associated with the text editor.
@@ -122,6 +124,7 @@ class TextControlElement : public nsGenericHTMLFormElementWithState {
   /**
    * Binds a frame to the text control.  This is performed when a frame
    * is created for the content node.
+   * Be aware, this must be called with script blocker.
    */
   virtual nsresult BindToFrame(nsTextControlFrame* aFrame) = 0;
 
@@ -129,7 +132,7 @@ class TextControlElement : public nsGenericHTMLFormElementWithState {
    * Unbinds a frame from the text control.  This is performed when a frame
    * belonging to a content node is destroyed.
    */
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY virtual void UnbindFromFrame(
+  MOZ_CAN_RUN_SCRIPT virtual void UnbindFromFrame(
       nsTextControlFrame* aFrame) = 0;
 
   /**
@@ -189,13 +192,14 @@ class TextControlElement : public nsGenericHTMLFormElementWithState {
   /**
    * Callback called whenever the value is changed.
    */
-  virtual void OnValueChanged(bool aNotify, ValueChangeKind) = 0;
+  virtual void OnValueChanged(ValueChangeKind) = 0;
 
   /**
    * Helpers for value manipulation from SetRangeText.
    */
   virtual void GetValueFromSetRangeText(nsAString& aValue) = 0;
-  virtual nsresult SetValueFromSetRangeText(const nsAString& aValue) = 0;
+  MOZ_CAN_RUN_SCRIPT virtual nsresult SetValueFromSetRangeText(
+      const nsAString& aValue) = 0;
 
   static const int32_t DEFAULT_COLS = 20;
   static const int32_t DEFAULT_ROWS = 1;

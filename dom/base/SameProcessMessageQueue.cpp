@@ -10,7 +10,7 @@ using namespace mozilla::dom;
 
 SameProcessMessageQueue* SameProcessMessageQueue::sSingleton;
 
-SameProcessMessageQueue::SameProcessMessageQueue() {}
+SameProcessMessageQueue::SameProcessMessageQueue() = default;
 
 SameProcessMessageQueue::~SameProcessMessageQueue() {
   // This code should run during shutdown, and we should already have pumped the

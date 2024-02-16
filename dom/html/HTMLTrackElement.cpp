@@ -36,7 +36,9 @@ static mozilla::LazyLogModule gTrackElementLog("nsTrackElement");
 nsGenericHTMLElement* NS_NewHTMLTrackElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
     mozilla::dom::FromParser aFromParser) {
-  return new mozilla::dom::HTMLTrackElement(std::move(aNodeInfo));
+  RefPtr<mozilla::dom::NodeInfo> nodeInfo(aNodeInfo);
+  auto* nim = nodeInfo->NodeInfoManager();
+  return new (nim) mozilla::dom::HTMLTrackElement(nodeInfo.forget());
 }
 
 namespace mozilla {
@@ -97,7 +99,8 @@ class WindowDestroyObserver final : public nsIObserver {
   }
 
  private:
-  ~WindowDestroyObserver(){};
+  ~WindowDestroyObserver() = default;
+
   HTMLTrackElement* mTrackElement;
   uint64_t mInnerID;
 };

@@ -243,7 +243,7 @@ class nsDocumentEncoder : public nsIDocumentEncoder {
                             nsINode* aFixupNode = nullptr);
   // This serializes the content of aNode.
   nsresult SerializeToStringIterative(nsINode* aNode);
-  nsresult SerializeRangeToString(nsRange* aRange);
+  nsresult SerializeRangeToString(const nsRange* aRange);
   nsresult SerializeRangeNodes(const nsRange* aRange, nsINode* aNode,
                                int32_t aDepth);
   nsresult SerializeRangeContextStart(const nsTArray<nsINode*>& aAncestorArray);
@@ -419,14 +419,14 @@ nsresult nsDocumentEncoder::SerializeSelection() {
   NS_ENSURE_TRUE(mEncodingScope.mSelection, NS_ERROR_FAILURE);
 
   nsresult rv = NS_OK;
-  Selection* selection = mEncodingScope.mSelection;
+  const Selection* selection = mEncodingScope.mSelection;
   uint32_t count = selection->RangeCount();
 
   nsCOMPtr<nsINode> node;
   nsCOMPtr<nsINode> prevNode;
   uint32_t firstRangeStartDepth = 0;
   for (uint32_t i = 0; i < count; ++i) {
-    RefPtr<nsRange> range = selection->GetRangeAt(i);
+    RefPtr<const nsRange> range = selection->GetRangeAt(i);
 
     // Bug 236546: newlines not added when copying table cells into clipboard
     // Each selected cell shows up as a range containing a row with a single
@@ -1016,7 +1016,7 @@ nsresult nsDocumentEncoder::SerializeRangeContextEnd() {
   return rv;
 }
 
-nsresult nsDocumentEncoder::SerializeRangeToString(nsRange* aRange) {
+nsresult nsDocumentEncoder::SerializeRangeToString(const nsRange* aRange) {
   if (!aRange || aRange->Collapsed()) return NS_OK;
 
   mClosestCommonInclusiveAncestorOfRange =
@@ -1285,7 +1285,7 @@ class nsHTMLCopyEncoder : public nsDocumentEncoder {
 
 nsHTMLCopyEncoder::nsHTMLCopyEncoder() { mIsTextWidget = false; }
 
-nsHTMLCopyEncoder::~nsHTMLCopyEncoder() {}
+nsHTMLCopyEncoder::~nsHTMLCopyEncoder() = default;
 
 NS_IMETHODIMP
 nsHTMLCopyEncoder::Init(Document* aDocument, const nsAString& aMimeType,
@@ -1376,7 +1376,7 @@ nsHTMLCopyEncoder::SetSelection(Selection* aSelection) {
   // there's no Clone() for selection! fix...
   // nsresult rv = aSelection->Clone(getter_AddRefs(mSelection);
   // NS_ENSURE_SUCCESS(rv, rv);
-  mEncodingScope.mSelection = new Selection();
+  mEncodingScope.mSelection = new Selection(SelectionType::eNormal, nullptr);
 
   // loop thru the ranges in the selection
   for (uint32_t rangeIdx = 0; rangeIdx < rangeCount; ++rangeIdx) {

@@ -10,6 +10,7 @@
 #include "mozilla/dom/PushManager.h"
 #include "mozilla/dom/ServiceWorker.h"
 #include "mozilla/dom/ServiceWorkerRegistrationBinding.h"
+#include "mozilla/dom/ServiceWorkerUtils.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsPIDOMWindow.h"
@@ -196,9 +197,38 @@ already_AddRefed<Promise> ServiceWorkerRegistration::Update(ErrorResult& aRv) {
     return nullptr;
   }
 
+  // `ServiceWorker` objects are not exposed on worker threads yet, so calling
+  // `ServiceWorkerRegistration::Get{Installing,Waiting,Active}` won't work.
+  const Maybe<ServiceWorkerDescriptor> newestWorkerDescriptor =
+      mDescriptor.Newest();
+
+  // "If newestWorker is null, return a promise rejected with an
+  // "InvalidStateError" DOMException and abort these steps."
+  if (newestWorkerDescriptor.isNothing()) {
+    outer->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
+    return outer.forget();
+  }
+
+  // "If the context object’s relevant settings object’s global object
+  // globalObject is a ServiceWorkerGlobalScope object, and globalObject’s
+  // associated service worker's state is "installing", return a promise
+  // rejected with an "InvalidStateError" DOMException and abort these steps."
+  if (!NS_IsMainThread()) {
+    WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate();
+    MOZ_ASSERT(workerPrivate);
+
+    if (workerPrivate->IsServiceWorker() &&
+        (workerPrivate->GetServiceWorkerDescriptor().State() ==
+         ServiceWorkerState::Installing)) {
+      outer->MaybeReject(NS_ERROR_DOM_INVALID_STATE_ERR);
+      return outer.forget();
+    }
+  }
+
   RefPtr<ServiceWorkerRegistration> self = this;
 
   mInner->Update(
+      newestWorkerDescriptor.ref().ScriptURL(),
       [outer, self](const ServiceWorkerRegistrationDescriptor& aDesc) {
         nsIGlobalObject* global = self->GetParentObject();
         MOZ_DIAGNOSTIC_ASSERT(global);
@@ -210,7 +240,7 @@ already_AddRefed<Promise> ServiceWorkerRegistration::Update(ErrorResult& aRv) {
         }
         outer->MaybeResolve(ref);
       },
-      [outer, self](ErrorResult& aRv) { outer->MaybeReject(aRv); });
+      [outer, self](ErrorResult&& aRv) { outer->MaybeReject(std::move(aRv)); });
 
   return outer.forget();
 }
@@ -234,9 +264,10 @@ already_AddRefed<Promise> ServiceWorkerRegistration::Unregister(
   }
 
   mInner->Unregister([outer](bool aSuccess) { outer->MaybeResolve(aSuccess); },
-                     [outer](ErrorResult& aRv) {
+                     [outer](ErrorResult&& aRv) {
                        // register() should be resilient and resolve false
                        // instead of rejecting in most cases.
+                       aRv.SuppressException();
                        outer->MaybeResolve(false);
                      });
 
@@ -274,15 +305,15 @@ already_AddRefed<Promise> ServiceWorkerRegistration::ShowNotification(
     return nullptr;
   }
 
-  NS_ConvertUTF8toUTF16 scope(mDescriptor.Scope());
-
   // Until we ship ServiceWorker objects on worker threads the active
   // worker will always be nullptr.  So limit this check to main
   // thread for now.
   if (mDescriptor.GetActive().isNothing() && NS_IsMainThread()) {
-    aRv.ThrowTypeError<MSG_NO_ACTIVE_WORKER>(scope);
+    aRv.ThrowTypeError<MSG_NO_ACTIVE_WORKER>(mDescriptor.Scope());
     return nullptr;
   }
+
+  NS_ConvertUTF8toUTF16 scope(mDescriptor.Scope());
 
   RefPtr<Promise> p = Notification::ShowPersistentNotification(
       aCx, global, scope, aTitle, aOptions, mDescriptor, aRv);

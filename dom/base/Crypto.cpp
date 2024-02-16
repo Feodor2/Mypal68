@@ -29,7 +29,7 @@ NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(Crypto, mParent, mSubtle)
 
 Crypto::Crypto(nsIGlobalObject* aParent) : mParent(aParent) {}
 
-Crypto::~Crypto() {}
+Crypto::~Crypto() = default;
 
 /* virtual */
 JSObject* Crypto::WrapObject(JSContext* aCx,
@@ -58,7 +58,7 @@ void Crypto::GetRandomValues(JSContext* aCx, const ArrayBufferView& aArray,
       return;
   }
 
-  aArray.ComputeLengthAndData();
+  aArray.ComputeState();
   uint32_t dataLen = aArray.Length();
   if (dataLen == 0) {
     NS_WARNING("ArrayBufferView length is 0, cannot continue");

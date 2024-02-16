@@ -154,8 +154,8 @@ nsresult nsXULPrototypeCache::PutPrototype(nsXULPrototypeDocument* aDocument) {
   nsCOMPtr<nsIURI> uri;
   NS_GetURIWithoutRef(aDocument->GetURI(), getter_AddRefs(uri));
 
-  // Put() releases any old value and addrefs the new one
-  mPrototypeTable.Put(uri, aDocument);
+  // Put() releases any old value
+  mPrototypeTable.Put(uri, RefPtr{aDocument});
 
   return NS_OK;
 }
@@ -164,9 +164,9 @@ mozilla::StyleSheet* nsXULPrototypeCache::GetStyleSheet(nsIURI* aURI) {
   return mStyleSheetTable.GetWeak(aURI);
 }
 
-nsresult nsXULPrototypeCache::PutStyleSheet(StyleSheet* aStyleSheet) {
+nsresult nsXULPrototypeCache::PutStyleSheet(RefPtr<StyleSheet>&& aStyleSheet) {
   nsIURI* uri = aStyleSheet->GetSheetURI();
-  mStyleSheetTable.Put(uri, aStyleSheet);
+  mStyleSheetTable.Put(uri, std::move(aStyleSheet));
   return NS_OK;
 }
 
@@ -203,7 +203,7 @@ nsresult nsXULPrototypeCache::PutXBLDocumentInfo(
   nsIURI* uri = aDocumentInfo->DocumentURI();
   nsXBLDocumentInfo* info = mXBLDocTable.GetWeak(uri);
   if (!info) {
-    mXBLDocTable.Put(uri, aDocumentInfo);
+    mXBLDocTable.Put(uri, RefPtr{aDocumentInfo});
   }
   return NS_OK;
 }
@@ -533,7 +533,13 @@ void nsXULPrototypeCache::CollectMemoryReports(
   // TODO Report content in mPrototypeTable?
 
   other += sInstance->mStyleSheetTable.ShallowSizeOfExcludingThis(mallocSizeOf);
-  // TODO Report content inside mStyleSheetTable?
+  for (auto iter = sInstance->mStyleSheetTable.ConstIter(); !iter.Done();
+       iter.Next()) {
+    // NOTE: If Loader::DoSheetComplete() is ever modified to stop clongin
+    // sheets before inserting into this cache, we will need to stop using
+    // SizeOfIncludingThis()
+    other += iter.Data()->SizeOfIncludingThis(mallocSizeOf);
+  }
 
   other += sInstance->mScriptTable.ShallowSizeOfExcludingThis(mallocSizeOf);
   // TODO Report content inside mScriptTable?

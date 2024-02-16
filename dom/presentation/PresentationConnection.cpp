@@ -256,7 +256,7 @@ void PresentationConnection::Send(const ArrayBuffer& aData, ErrorResult& aRv) {
     return;
   }
 
-  aData.ComputeLengthAndData();
+  aData.ComputeState();
 
   static_assert(sizeof(*aData.Data()) == 1, "byte-sized data required");
 
@@ -290,7 +290,7 @@ void PresentationConnection::Send(const ArrayBufferView& aData,
     return;
   }
 
-  aData.ComputeLengthAndData();
+  aData.ComputeState();
 
   static_assert(sizeof(*aData.Data()) == 1, "byte-sized data required");
 

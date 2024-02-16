@@ -20,7 +20,7 @@ class RDDParent final : public PRDDParent {
   static RDDParent* GetSingleton();
 
   bool Init(base::ProcessId aParentPid, const char* aParentBuildID,
-            MessageLoop* aIOLoop, IPC::Channel* aChannel);
+            MessageLoop* aIOLoop, UniquePtr<IPC::Channel> aChannel);
 
   mozilla::ipc::IPCResult RecvInit(const Maybe<ipc::FileDescriptor>& aBrokerFd,
                                    bool aStartMacSandbox);

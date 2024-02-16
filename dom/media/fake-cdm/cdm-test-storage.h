@@ -18,7 +18,7 @@
 
 class ReadContinuation {
  public:
-  virtual ~ReadContinuation() {}
+  virtual ~ReadContinuation() = default;
   virtual void operator()(bool aSuccess, const uint8_t* aData,
                           uint32_t aDataSize) = 0;
 };
@@ -38,7 +38,7 @@ void ReadRecord(
 
 class OpenContinuation {
  public:
-  virtual ~OpenContinuation() {}
+  virtual ~OpenContinuation() = default;
   virtual void operator()(bool aSuccess) = 0;
 };
 

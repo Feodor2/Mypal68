@@ -48,6 +48,11 @@ struct ParamTraits<mozilla::ErrorResult> {
     }
   }
 
+  static void Write(Message* aMsg, paramType&& aParam) {
+    Write(aMsg, static_cast<const paramType&>(aParam));
+    aParam.SuppressException();
+  }
+
   static bool Read(const Message* aMsg, PickleIterator* aIter,
                    paramType* aResult) {
     paramType readValue;
@@ -87,8 +92,10 @@ struct ParamTraits<mozilla::CopyableErrorResult> {
 
   static bool Read(const Message* aMsg, PickleIterator* aIter,
                    paramType* aResult) {
-    mozilla::ErrorResult& ref = static_cast<mozilla::ErrorResult&>(*aResult);
-    return ParamTraits<mozilla::ErrorResult>::Read(aMsg, aIter, &ref);
+    // We can't cast *aResult to ErrorResult&, so cheat and just cast
+    // to ErrorResult*.
+    return ParamTraits<mozilla::ErrorResult>::Read(
+        aMsg, aIter, reinterpret_cast<mozilla::ErrorResult*>(aResult));
   }
 };
 

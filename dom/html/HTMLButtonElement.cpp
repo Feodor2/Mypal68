@@ -60,7 +60,7 @@ HTMLButtonElement::HTMLButtonElement(
   AddStatesSilently(NS_EVENT_STATE_ENABLED);
 }
 
-HTMLButtonElement::~HTMLButtonElement() {}
+HTMLButtonElement::~HTMLButtonElement() = default;
 
 // nsISupports
 
@@ -300,7 +300,7 @@ HTMLButtonElement::SubmitNamesValues(HTMLFormSubmission* aFormSubmission) {
   //
   // We only submit if we were the button pressed
   //
-  if (aFormSubmission->GetOriginatingElement() != this) {
+  if (aFormSubmission->GetSubmitterElement() != this) {
     return NS_OK;
   }
 

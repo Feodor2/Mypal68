@@ -187,7 +187,7 @@ class AudioStream final
     virtual uint32_t Rate() const = 0;
     // Return a writable pointer for downmixing.
     virtual AudioDataValue* GetWritable() const = 0;
-    virtual ~Chunk() {}
+    virtual ~Chunk() = default;
   };
 
   class DataSource {

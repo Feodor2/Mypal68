@@ -196,16 +196,6 @@ SVGAElement::IsAttributeMapped(const nsAtom* name) const {
 
 int32_t SVGAElement::TabIndexDefault() { return 0; }
 
-static bool IsNodeInEditableRegion(nsINode* aNode) {
-  while (aNode) {
-    if (aNode->IsEditable()) {
-      return true;
-    }
-    aNode = aNode->GetParent();
-  }
-  return false;
-}
-
 bool SVGAElement::IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) {
   bool isFocusable = false;
   if (IsSVGFocusable(&isFocusable, aTabIndex)) {
@@ -218,14 +208,14 @@ bool SVGAElement::IsFocusableInternal(int32_t* aTabIndex, bool aWithMouse) {
 
   // Links that are in an editable region should never be focusable, even if
   // they are in a contenteditable="false" region.
-  if (IsNodeInEditableRegion(this)) {
+  if (nsContentUtils::IsNodeInEditableRegion(this)) {
     if (aTabIndex) {
       *aTabIndex = -1;
     }
     return false;
   }
 
-  if (!HasAttr(kNameSpaceID_None, nsGkAtoms::tabindex)) {
+  if (GetTabIndexAttrValue().isNothing()) {
     // check whether we're actually a link
     if (!Link::HasURI()) {
       // Not tabbable or focusable without href (bug 17605), unless

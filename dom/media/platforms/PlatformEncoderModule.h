@@ -40,7 +40,8 @@ class PlatformEncoderModule {
 
  protected:
   PlatformEncoderModule() = default;
-  virtual ~PlatformEncoderModule(){};
+  virtual ~PlatformEncoderModule() = default;
+  ;
 };
 
 class MediaDataEncoder {
@@ -169,7 +170,7 @@ class MediaDataEncoder {
                const Rate aBitsPerSec)
         : mCodecType(aCodecType), mUsage(aUsage), mBitsPerSec(aBitsPerSec) {}
 
-    virtual ~BaseConfig() {}
+    virtual ~BaseConfig() = default;
   };
 
   template <typename T>
@@ -199,7 +200,7 @@ class MediaDataEncoder {
           mSampleRate(aSampleRate) {}
   };
 
-  virtual ~MediaDataEncoder() {}
+  virtual ~MediaDataEncoder() = default;
 
  public:
   using H264Config = VideoConfig<H264Specific>;

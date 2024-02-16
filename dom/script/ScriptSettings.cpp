@@ -27,7 +27,6 @@ namespace mozilla {
 namespace dom {
 
 static MOZ_THREAD_LOCAL(ScriptSettingsStackEntry*) sScriptSettingsTLS;
-static bool sScriptSettingsTLSInitialized;
 
 class ScriptSettingsStack {
  public:
@@ -116,14 +115,11 @@ void InitScriptSettings() {
   }
 
   sScriptSettingsTLS.set(nullptr);
-  sScriptSettingsTLSInitialized = true;
 }
 
 void DestroyScriptSettings() {
   MOZ_ASSERT(sScriptSettingsTLS.get() == nullptr);
 }
-
-bool ScriptSettingsInitialized() { return sScriptSettingsTLSInitialized; }
 
 ScriptSettingsStackEntry::ScriptSettingsStackEntry(nsIGlobalObject* aGlobal,
                                                    Type aType)
@@ -600,7 +596,7 @@ AutoEntryScript::AutoEntryScript(JSObject* aObject, const char* aReason,
   // aObject is not a CCW.
 }
 
-AutoEntryScript::~AutoEntryScript() {}
+AutoEntryScript::~AutoEntryScript() = default;
 
 AutoEntryScript::DocshellEntryMonitor::DocshellEntryMonitor(JSContext* aCx,
                                                             const char* aReason)
@@ -650,8 +646,7 @@ void AutoEntryScript::DocshellEntryMonitor::Entry(
 
   if (!filename.IsEmpty() || !functionName.IsEmpty()) {
     docShellForJSRunToCompletion->NotifyJSRunToCompletionStart(
-        mReason, functionName.get(), filename.get(), lineNumber, aAsyncStack,
-        aAsyncCause);
+        mReason, functionName, filename, lineNumber, aAsyncStack, aAsyncCause);
   }
 }
 

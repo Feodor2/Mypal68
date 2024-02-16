@@ -50,7 +50,7 @@ FileSystemEntry::FileSystemEntry(nsIGlobalObject* aGlobal,
   MOZ_ASSERT(aFileSystem);
 }
 
-FileSystemEntry::~FileSystemEntry() {}
+FileSystemEntry::~FileSystemEntry() = default;
 
 JSObject* FileSystemEntry::WrapObject(JSContext* aCx,
                                       JS::Handle<JSObject*> aGivenProto) {

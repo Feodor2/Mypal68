@@ -938,8 +938,8 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute float fullZoom;
 
   /**
-   * Dispatches aEvent as a trusted event via the PresShell object of the
-   * window's document.
+   * Dispatches aEvent as a synthesized trusted event for tests via the
+   * PresShell object of the window's document.
    * The event is dispatched to aTarget, which should be an object
    * which implements nsIContent interface (#element, #text, etc).
    *
@@ -951,8 +951,8 @@ interface nsIDOMWindowUtils : nsISupports {
    *       Also, aEvent should not be reused.
    */
   [can_run_script]
-  boolean dispatchDOMEventViaPresShell(in Node aTarget,
-                                       in Event aEvent);
+  boolean dispatchDOMEventViaPresShellForTesting(in Node aTarget,
+                                                 in Event aEvent);
 
   /**
    * Sets WidgetEvent::mFlags::mOnlyChromeDispatch to true to ensure that
@@ -1526,8 +1526,7 @@ interface nsIDOMWindowUtils : nsISupports {
   boolean getFileReferences(in AString aDatabaseName, in long long aId,
                             [optional] in jsval aOptions,
                             [optional] out long aRefCnt,
-                            [optional] out long aDBRefCnt,
-                            [optional] out long aSliceRefCnt);
+                            [optional] out long aDBRefCnt);
 
   void flushPendingFileDeletions();
 
@@ -1928,6 +1927,11 @@ interface nsIDOMWindowUtils : nsISupports {
    */
   attribute ACString systemFont;
 
+  /**
+   * Returns the number of times this document for this window has
+   * been painted to the screen.
+   */
+  readonly attribute unsigned long long paintCount;
 
   /**
    * Simulate the system setting corresponding to 'prefers-reduced-motion'

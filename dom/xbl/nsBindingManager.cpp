@@ -384,7 +384,7 @@ void nsBindingManager::ExecuteDetachedHandlers() {
 
   for (auto iter = mBoundContentSet->Iter(); !iter.Done(); iter.Next()) {
     nsXBLBinding* binding = iter.Get()->GetKey()->GetXBLBinding();
-    if (binding && bindings.AppendElement(binding)) {
+    if (binding && bindings.AppendElement(binding, fallible)) {
       if (!boundElements.AppendObject(binding->GetBoundElement())) {
         bindings.RemoveLastElement();
       }
@@ -405,7 +405,7 @@ nsresult nsBindingManager::PutXBLDocumentInfo(
     mDocumentTable = new nsRefPtrHashtable<nsURIHashKey, nsXBLDocumentInfo>();
   }
 
-  mDocumentTable->Put(aDocumentInfo->DocumentURI(), aDocumentInfo);
+  mDocumentTable->Put(aDocumentInfo->DocumentURI(), RefPtr{aDocumentInfo});
 
   return NS_OK;
 }

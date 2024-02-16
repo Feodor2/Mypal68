@@ -44,7 +44,7 @@ class RemoteDecoderManagerThreadHolder {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(RemoteDecoderManagerThreadHolder)
 
  public:
-  RemoteDecoderManagerThreadHolder() {}
+  RemoteDecoderManagerThreadHolder() = default;
 
  private:
   ~RemoteDecoderManagerThreadHolder() {

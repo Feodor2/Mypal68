@@ -34,8 +34,8 @@ class txXPathTreeWalker;
  **/
 class Expr {
  public:
-  Expr() { MOZ_COUNT_CTOR(Expr); }
-  virtual ~Expr() { MOZ_COUNT_DTOR(Expr); }
+  MOZ_COUNTED_DEFAULT_CTOR(Expr)
+  MOZ_COUNTED_DTOR_VIRTUAL(Expr)
 
   /**
    * Evaluates this Expr based on the given context node and processor state
@@ -224,7 +224,10 @@ class FunctionCall : public Expr {
    * @return nsresult indicating out of memory
    */
   nsresult addParam(Expr* aExpr) {
-    return mParams.AppendElement(aExpr) ? NS_OK : NS_ERROR_OUT_OF_MEMORY;
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier, or change the return type to void.
+    mParams.AppendElement(aExpr);
+    return NS_OK;
   }
 
   /**
@@ -329,8 +332,8 @@ class txCoreFunctionCall : public FunctionCall {
  */
 class txNodeTest {
  public:
-  txNodeTest() { MOZ_COUNT_CTOR(txNodeTest); }
-  virtual ~txNodeTest() { MOZ_COUNT_DTOR(txNodeTest); }
+  MOZ_COUNTED_DEFAULT_CTOR(txNodeTest)
+  MOZ_COUNTED_DTOR_VIRTUAL(txNodeTest)
 
   /*
    * Virtual methods
@@ -447,7 +450,10 @@ class PredicateList {
    */
   nsresult add(Expr* aExpr) {
     NS_ASSERTION(aExpr, "missing expression");
-    return mPredicates.AppendElement(aExpr) ? NS_OK : NS_ERROR_OUT_OF_MEMORY;
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier, or change the return type to void.
+    mPredicates.AppendElement(aExpr);
+    return NS_OK;
   }
 
   nsresult evaluatePredicates(txNodeSet* aNodes, txIMatchContext* aContext);
@@ -783,7 +789,10 @@ class UnionExpr : public Expr {
    * @return nsresult indicating out of memory
    */
   nsresult addExpr(Expr* aExpr) {
-    return mExpressions.AppendElement(aExpr) ? NS_OK : NS_ERROR_OUT_OF_MEMORY;
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier, or change the return type to void.
+    mExpressions.AppendElement(aExpr);
+    return NS_OK;
   }
 
   /**
@@ -825,7 +834,10 @@ class txNamedAttributeStep : public Expr {
 class txUnionNodeTest : public txNodeTest {
  public:
   nsresult addNodeTest(txNodeTest* aNodeTest) {
-    return mNodeTests.AppendElement(aNodeTest) ? NS_OK : NS_ERROR_OUT_OF_MEMORY;
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier, or change the return type to void.
+    mNodeTests.AppendElement(aNodeTest);
+    return NS_OK;
   }
 
   TX_DECL_NODE_TEST

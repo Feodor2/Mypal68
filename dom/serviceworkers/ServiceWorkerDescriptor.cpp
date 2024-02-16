@@ -27,6 +27,8 @@ ServiceWorkerDescriptor::ServiceWorkerDescriptor(
   mData->scope() = aScope;
   mData->scriptURL() = aScriptURL;
   mData->state() = aState;
+  // Set HandlesFetch as true in default
+  mData->handlesFetch() = true;
 }
 
 ServiceWorkerDescriptor::ServiceWorkerDescriptor(
@@ -35,7 +37,7 @@ ServiceWorkerDescriptor::ServiceWorkerDescriptor(
     const nsACString& aScriptURL, ServiceWorkerState aState)
     : mData(MakeUnique<IPCServiceWorkerDescriptor>(
           aId, aRegistrationId, aRegistrationVersion, aPrincipalInfo,
-          nsCString(aScriptURL), nsCString(aScope), aState)) {}
+          nsCString(aScriptURL), nsCString(aScope), aState, true)) {}
 
 ServiceWorkerDescriptor::ServiceWorkerDescriptor(
     const IPCServiceWorkerDescriptor& aDescriptor)
@@ -67,7 +69,7 @@ ServiceWorkerDescriptor& ServiceWorkerDescriptor::operator=(
   return *this;
 }
 
-ServiceWorkerDescriptor::~ServiceWorkerDescriptor() {}
+ServiceWorkerDescriptor::~ServiceWorkerDescriptor() = default;
 
 bool ServiceWorkerDescriptor::operator==(
     const ServiceWorkerDescriptor& aRight) const {
@@ -114,6 +116,14 @@ void ServiceWorkerDescriptor::SetState(ServiceWorkerState aState) {
 void ServiceWorkerDescriptor::SetRegistrationVersion(uint64_t aVersion) {
   MOZ_DIAGNOSTIC_ASSERT(aVersion > mData->registrationVersion());
   mData->registrationVersion() = aVersion;
+}
+
+bool ServiceWorkerDescriptor::HandlesFetch() const {
+  return mData->handlesFetch();
+}
+
+void ServiceWorkerDescriptor::SetHandlesFetch(bool aHandlesFetch) {
+  mData->handlesFetch() = aHandlesFetch;
 }
 
 bool ServiceWorkerDescriptor::Matches(

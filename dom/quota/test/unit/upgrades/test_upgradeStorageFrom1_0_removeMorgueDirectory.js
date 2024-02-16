@@ -12,15 +12,28 @@ var testGenerator = testSteps();
 function* testSteps() {
   const morgueFile = "storage/default/http+++example.com/morgue";
 
+  const packages = [
+    // Storage used by FF 49-54 (storage version 1.0 with morgue directory).
+    "version1_0_morgueDirectory_profile",
+    "../defaultStorageDirectory_shared",
+  ];
+
   info("Clearing");
 
   clear(continueToNextStepSync);
   yield undefined;
 
-  info("Installing package");
+  info("Verifying storage");
 
-  // Storage used by FF 49-54 (storage version 1.0 with morgue directory).
-  installPackage("version1_0_morgueDirectory_profile");
+  verifyStorage(packages, "beforeInstall");
+
+  info("Installing packages");
+
+  installPackages(packages);
+
+  info("Verifying storage");
+
+  verifyStorage(packages, "afterInstall");
 
   info("Checking morgue file");
 
@@ -35,6 +48,10 @@ function* testSteps() {
   yield undefined;
 
   ok(request.resultCode == NS_OK, "Initialization succeeded");
+
+  info("Verifying storage");
+
+  verifyStorage(packages, "afterInit");
 
   info("Checking morgue file");
 

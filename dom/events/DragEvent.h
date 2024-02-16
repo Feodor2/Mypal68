@@ -42,7 +42,7 @@ class DragEvent : public MouseEvent {
                                                  const DragEventInit& aParam);
 
  protected:
-  ~DragEvent() {}
+  ~DragEvent() = default;
 };
 
 }  // namespace dom

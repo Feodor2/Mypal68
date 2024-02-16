@@ -57,7 +57,7 @@ class XPathEvaluatorParseContext : public txIParseContext {
 XPathEvaluator::XPathEvaluator(Document* aDocument)
     : mDocument(do_GetWeakReference(aDocument)) {}
 
-XPathEvaluator::~XPathEvaluator() {}
+XPathEvaluator::~XPathEvaluator() = default;
 
 XPathExpression* XPathEvaluator::CreateExpression(const nsAString& aExpression,
                                                   XPathNSResolver* aResolver,

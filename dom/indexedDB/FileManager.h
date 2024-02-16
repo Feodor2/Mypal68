@@ -5,11 +5,9 @@
 #ifndef mozilla_dom_indexeddb_filemanager_h__
 #define mozilla_dom_indexeddb_filemanager_h__
 
-#include "mozilla/Attributes.h"
 #include "mozilla/dom/quota/PersistenceType.h"
-#include "nsDataHashtable.h"
-#include "nsHashKeys.h"
-#include "nsISupportsImpl.h"
+#include "mozilla/InitializedOnce.h"
+#include "FileManagerBase.h"
 
 class nsIFile;
 class mozIStorageConnection;
@@ -18,29 +16,25 @@ namespace mozilla {
 namespace dom {
 namespace indexedDB {
 
-class FileInfo;
-
 // Implemented in ActorsParent.cpp.
-class FileManager final {
-  friend class FileInfo;
+class FileManager final : public FileManagerBase<FileManager> {
+  using PersistenceType = mozilla::dom::quota::PersistenceType;
+  using FileManagerBase<FileManager>::MutexType;
 
-  typedef mozilla::dom::quota::PersistenceType PersistenceType;
+  const PersistenceType mPersistenceType;
+  const nsCString mGroup;
+  const nsCString mOrigin;
+  const nsString mDatabaseName;
 
-  PersistenceType mPersistenceType;
-  nsCString mGroup;
-  nsCString mOrigin;
-  nsString mDatabaseName;
-
-  nsString mDirectoryPath;
-  nsString mJournalDirectoryPath;
-
-  int64_t mLastFileId;
-
-  // Protected by IndexedDatabaseManager::FileMutex()
-  nsDataHashtable<nsUint64HashKey, FileInfo*> mFileInfos;
+  LazyInitializedOnce<const nsString> mDirectoryPath;
+  LazyInitializedOnce<const nsString> mJournalDirectoryPath;
 
   const bool mEnforcingQuota;
-  bool mInvalidated;
+
+  // Lock protecting FileManager.mFileInfos.
+  // It's s also used to atomically update FileInfo.mRefCnt and
+  // FileInfo.mDBRefCnt
+  static MutexType sMutex;
 
  public:
   static MOZ_MUST_USE nsCOMPtr<nsIFile> GetFileForId(nsIFile* aDirectory,
@@ -71,11 +65,7 @@ class FileManager final {
 
   bool EnforcingQuota() const { return mEnforcingQuota; }
 
-  bool Invalidated() const { return mInvalidated; }
-
   nsresult Init(nsIFile* aDirectory, mozIStorageConnection* aConnection);
-
-  nsresult Invalidate();
 
   MOZ_MUST_USE nsCOMPtr<nsIFile> GetDirectory();
 
@@ -85,11 +75,17 @@ class FileManager final {
 
   MOZ_MUST_USE nsCOMPtr<nsIFile> EnsureJournalDirectory();
 
-  MOZ_MUST_USE RefPtr<FileInfo> GetFileInfo(int64_t aId) const;
+  MOZ_MUST_USE nsresult SyncDeleteFile(int64_t aId);
 
-  MOZ_MUST_USE RefPtr<FileInfo> GetNewFileInfo();
+  // XXX When getting rid of FileHelper, this method should be removed/made
+  // private.
+  MOZ_MUST_USE nsresult SyncDeleteFile(nsIFile& aFile, nsIFile& aJournalFile);
+
+  MOZ_MUST_USE nsresult AsyncDeleteFile(int64_t aFileId);
 
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(FileManager)
+
+  static StaticMutex& Mutex() { return sMutex; }
 
  private:
   ~FileManager() = default;

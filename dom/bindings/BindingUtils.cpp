@@ -27,8 +27,8 @@
 #include "nsHTMLTags.h"
 #include "nsIDOMGlobalPropertyInitializer.h"
 #include "nsINode.h"
+#include "nsIOService.h"
 #include "nsIPrincipal.h"
-#include "nsIURIFixup.h"
 #include "nsIXPConnect.h"
 #include "nsUTF8Utils.h"
 #include "WorkerPrivate.h"
@@ -65,6 +65,7 @@
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/XrayExpandoClass.h"
 #include "mozilla/dom/WindowProxyHolder.h"
+#include "mozilla/Encoding.h"
 #include "mozilla/jsipc/CrossProcessObjectWrappers.h"
 #include "ipc/ErrorIPCUtils.h"
 #include "mozilla/dom/DocGroup.h"
@@ -122,11 +123,52 @@ uint16_t GetErrorArgCount(const ErrNum aErrorNumber) {
   return GetErrorMessage(nullptr, aErrorNumber)->argCount;
 }
 
+// aErrorNumber needs to be unsigned, not an ErrNum, because the latter makes
+// va_start have undefined behavior, and we do not want undefined behavior.
 void binding_detail::ThrowErrorMessage(JSContext* aCx,
                                        const unsigned aErrorNumber, ...) {
   va_list ap;
   va_start(ap, aErrorNumber);
-  JS_ReportErrorNumberUTF8VA(aCx, GetErrorMessage, nullptr, aErrorNumber, ap);
+
+  if (!ErrorFormatHasContext[aErrorNumber]) {
+    JS_ReportErrorNumberUTF8VA(aCx, GetErrorMessage, nullptr, aErrorNumber, ap);
+    va_end(ap);
+    return;
+  }
+
+  // Our first arg is the context arg.  We want to replace nullptr with empty
+  // string, leave empty string alone, and for anything else append ": " to the
+  // end.  See also the behavior of
+  // TErrorResult::SetPendingExceptionWithMessage, which this is mirroring for
+  // exceptions that are thrown directly, not via an ErrorResult.
+  //
+  // XXXbz Once bug 1619087 is fixed, we can avoid the conversions to UTF-16
+  // here.
+  const char16_t* args[JS::MaxNumErrorArguments + 1];
+  size_t argCount = GetErrorArgCount(static_cast<ErrNum>(aErrorNumber));
+  MOZ_ASSERT(argCount > 0, "We have a context arg!");
+  // We statically assert that all these arg counts are smaller than
+  // JS::MaxNumErrorArguments already.
+  nsTArray<nsString> argHolders(argCount);
+
+  for (size_t i = 0; i < argCount; ++i) {
+    const char* arg = va_arg(ap, const char*);
+    if (i == 0) {
+      if (!arg || !*arg) {
+        // Append an empty string
+        argHolders.AppendElement();
+      } else {
+        argHolders.AppendElement(NS_ConvertUTF8toUTF16(arg));
+        argHolders[0].AppendLiteral(": ");
+      }
+    } else {
+      argHolders.AppendElement(NS_ConvertUTF8toUTF16(arg));
+    }
+    args[i] = argHolders[i].get();
+  }
+
+  JS_ReportErrorNumberUCArray(aCx, GetErrorMessage, nullptr, aErrorNumber,
+                              args);
   va_end(ap);
 }
 
@@ -183,7 +225,8 @@ struct TErrorResult<CleanupPolicy>::Message {
   }
   ~Message() { MOZ_COUNT_DTOR(TErrorResult::Message); }
 
-  nsTArray<nsString> mArgs;
+  // UTF-8 strings (probably ASCII in most cases) in mArgs.
+  nsTArray<nsCString> mArgs;
   dom::ErrNum mErrorNumber;
 
   bool HasCorrectNumberOfArguments() {
@@ -196,7 +239,7 @@ struct TErrorResult<CleanupPolicy>::Message {
 };
 
 template <typename CleanupPolicy>
-nsTArray<nsString>& TErrorResult<CleanupPolicy>::CreateErrorMessageHelper(
+nsTArray<nsCString>& TErrorResult<CleanupPolicy>::CreateErrorMessageHelper(
     const dom::ErrNum errorNumber, nsresult errorType) {
   AssertInOwningThread();
   mResult = errorType;
@@ -258,15 +301,15 @@ void TErrorResult<CleanupPolicy>::SetPendingExceptionWithMessage(
     }
   }
   const uint32_t argCount = message->mArgs.Length();
-  const char16_t* args[JS::MaxNumErrorArguments + 1];
+  const char* args[JS::MaxNumErrorArguments + 1];
   for (uint32_t i = 0; i < argCount; ++i) {
     args[i] = message->mArgs.ElementAt(i).get();
   }
   args[argCount] = nullptr;
 
-  JS_ReportErrorNumberUCArray(aCx, dom::GetErrorMessage, nullptr,
-                              static_cast<unsigned>(message->mErrorNumber),
-                              argCount > 0 ? args : nullptr);
+  JS_ReportErrorNumberUTF8Array(aCx, dom::GetErrorMessage, nullptr,
+                                static_cast<unsigned>(message->mErrorNumber),
+                                argCount > 0 ? args : nullptr);
 
   ClearMessage();
   mResult = NS_OK;
@@ -624,6 +667,19 @@ void TErrorResult<CleanupPolicy>::NoteJSContextException(JSContext* aCx) {
     mResult = NS_ERROR_INTERNAL_ERRORRESULT_EXCEPTION_ON_JSCONTEXT;
   } else {
     mResult = NS_ERROR_UNCATCHABLE_EXCEPTION;
+  }
+}
+
+/* static */
+template <typename CleanupPolicy>
+void TErrorResult<CleanupPolicy>::EnsureUTF8Validity(nsCString& aValue,
+                                                     size_t aValidUpTo) {
+  nsCString valid;
+  if (NS_SUCCEEDED(UTF_8_ENCODING->DecodeWithoutBOMHandling(aValue, valid,
+                                                            aValidUpTo))) {
+    aValue = valid;
+  } else {
+    aValue.SetLength(aValidUpTo);
   }
 }
 
@@ -1327,7 +1383,7 @@ void GetInterfaceImpl(JSContext* aCx, nsIInterfaceRequestor* aRequestor,
 }
 
 bool ThrowingConstructor(JSContext* cx, unsigned argc, JS::Value* vp) {
-  return ThrowErrorMessage<MSG_ILLEGAL_CONSTRUCTOR>(cx, "");
+  return ThrowErrorMessage<MSG_ILLEGAL_CONSTRUCTOR>(cx, nullptr);
 }
 
 bool ThrowConstructorWithoutNew(JSContext* cx, const char* name) {
@@ -1834,11 +1890,11 @@ static void DEBUG_CheckXBLLookup(JSContext* cx, JS::PropertyDescriptor* desc) {
 bool XrayDefineProperty(JSContext* cx, JS::Handle<JSObject*> wrapper,
                         JS::Handle<JSObject*> obj, JS::Handle<jsid> id,
                         JS::Handle<JS::PropertyDescriptor> desc,
-                        JS::ObjectOpResult& result, bool* defined) {
+                        JS::ObjectOpResult& result, bool* done) {
   if (!js::IsProxy(obj)) return true;
 
   const DOMProxyHandler* handler = GetDOMProxyHandler(obj);
-  return handler->defineProperty(cx, wrapper, id, desc, result, defined);
+  return handler->defineProperty(cx, wrapper, id, desc, result, done);
 }
 
 template <typename SpecType>
@@ -2557,7 +2613,7 @@ bool ReportLenientThisUnwrappingFailure(JSContext* cx, JSObject* obj) {
   return true;
 }
 
-bool GetContentGlobalForJSImplementedObject(JSContext* cx,
+bool GetContentGlobalForJSImplementedObject(BindingCallContext& cx,
                                             JS::Handle<JSObject*> obj,
                                             nsIGlobalObject** globalObj) {
   // Be very careful to not get tricked here.
@@ -2573,7 +2629,7 @@ bool GetContentGlobalForJSImplementedObject(JSContext* cx,
   }
 
   if (!domImplVal.isObject()) {
-    ThrowErrorMessage<MSG_NOT_OBJECT>(cx, "Value");
+    cx.ThrowErrorMessage<MSG_NOT_OBJECT>("Value");
     return false;
   }
 
@@ -2693,8 +2749,9 @@ bool NormalizeUSVString(binding_detail::FakeString<char16_t>& aString) {
   return true;
 }
 
-bool ConvertJSValueToByteString(JSContext* cx, JS::Handle<JS::Value> v,
-                                bool nullable, nsACString& result) {
+bool ConvertJSValueToByteString(BindingCallContext& cx, JS::Handle<JS::Value> v,
+                                bool nullable, const char* sourceDescription,
+                                nsACString& result) {
   JS::Rooted<JSString*> s(cx);
   if (v.isString()) {
     s = v.toString();
@@ -2751,7 +2808,8 @@ bool ConvertJSValueToByteString(JSContext* cx, JS::Handle<JS::Value> v,
       char badCharArray[6];
       static_assert(sizeof(char16_t) <= 2, "badCharArray too small");
       SprintfLiteral(badCharArray, "%d", badChar);
-      ThrowErrorMessage<MSG_INVALID_BYTESTRING>(cx, index, badCharArray);
+      cx.ThrowErrorMessage<MSG_INVALID_BYTESTRING>(sourceDescription, index,
+                                                   badCharArray);
       return false;
     }
   } else {
@@ -3941,8 +3999,8 @@ bool HTMLConstructor(JSContext* aCx, unsigned aArgc, JS::Value* aVp,
     // Step 10.
     if (element == ALREADY_CONSTRUCTED_MARKER) {
       rv.ThrowTypeError(
-          u"Cannot instantiate a custom element inside its own constructor "
-          u"during upgrades");
+          "Cannot instantiate a custom element inside its own constructor "
+          "during upgrades");
       return false;
     }
 
@@ -4024,20 +4082,9 @@ void ReportDeprecation(nsPIDOMWindowInner* aWindow, nsIURI* aURI,
   // Anonymize the URL.
   // Strip the URL of any possible username/password and make it ready to be
   // presented in the UI.
-  nsCOMPtr<nsIURIFixup> urifixup = services::GetURIFixup();
-  if (NS_WARN_IF(!urifixup)) {
-    return;
-  }
-
-  nsCOMPtr<nsIURI> exposableURI;
-  nsresult rv =
-      urifixup->CreateExposableURI(aURI, getter_AddRefs(exposableURI));
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
-
+  nsCOMPtr<nsIURI> exposableURI = net::nsIOService::CreateExposableURI(aURI);
   nsAutoCString spec;
-  rv = exposableURI->GetSpec(spec);
+  nsresult rv = exposableURI->GetSpec(spec);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return;
   }

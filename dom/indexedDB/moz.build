@@ -22,6 +22,7 @@ XPCSHELL_TESTS_MANIFESTS += [
 TEST_DIRS += ['test/gtest']
 
 EXPORTS.mozilla.dom += [
+    'FileInfoFwd.h',
     'FlippedOnce.h',
     'IDBCursor.h',
     'IDBCursorType.h',
@@ -38,10 +39,10 @@ EXPORTS.mozilla.dom += [
     'IDBTransaction.h',
     'IndexedDatabase.h',
     'IndexedDatabaseManager.h',
-    'InitializedOnce.h',
 ]
 
 EXPORTS.mozilla.dom.indexedDB += [
+    'ActorsChild.h',
     'ActorsParent.h',
     'IDBResult.h',
     'Key.h',
@@ -66,6 +67,7 @@ UNIFIED_SOURCES += [
     'IDBObjectStore.cpp',
     'IDBRequest.cpp',
     'IDBTransaction.cpp',
+    'IndexedDatabase.cpp',
     'IndexedDatabaseManager.cpp',
     'KeyPath.cpp',
     'PermissionRequestBase.cpp',
@@ -103,10 +105,10 @@ if CONFIG['CC_TYPE'] in ('clang', 'gcc'):
     CXXFLAGS += ['-Wno-error=shadow']
 
 LOCAL_INCLUDES += [
-    '/db/sqlite3/src',
     '/dom/base',
     '/dom/storage',
     '/ipc/glue',
+    '/third_party/sqlite3/src',
     '/xpcom/build',
 ]
 

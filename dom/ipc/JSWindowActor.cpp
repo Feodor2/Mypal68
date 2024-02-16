@@ -130,7 +130,7 @@ already_AddRefed<Promise> JSWindowActor::SendQuery(
   meta.queryId() = mNextQueryId++;
   meta.kind() = JSWindowActorMessageKind::Query;
 
-  mPendingQueries.Put(meta.queryId(), promise);
+  mPendingQueries.Put(meta.queryId(), RefPtr{promise});
 
   SendRawMessage(meta, std::move(data), aRv);
   return promise.forget();
@@ -210,7 +210,7 @@ void JSWindowActor::ReceiveMessageOrQuery(
   // If we have a promise, resolve or reject it respectively.
   if (promise) {
     if (aRv.Failed()) {
-      promise->MaybeReject(aRv);
+      promise->MaybeReject(std::move(aRv));
     } else {
       promise->MaybeResolve(retval);
     }

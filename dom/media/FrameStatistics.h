@@ -159,7 +159,7 @@ class FrameStatistics {
   };
 
  private:
-  ~FrameStatistics() {}
+  ~FrameStatistics() = default;
 
   // ReentrantMonitor to protect access of playback statistics.
   mutable ReentrantMonitor mReentrantMonitor;

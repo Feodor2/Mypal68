@@ -37,7 +37,7 @@ DOMParser::DOMParser(nsIGlobalObject* aOwner, nsIPrincipal* aDocPrincipal,
   MOZ_ASSERT(aDocumentURI);
 }
 
-DOMParser::~DOMParser() {}
+DOMParser::~DOMParser() = default;
 
 // QueryInterface implementation for DOMParser
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(DOMParser)
@@ -116,7 +116,7 @@ already_AddRefed<Document> DOMParser::ParseFromSafeString(const nsAString& aStr,
 already_AddRefed<Document> DOMParser::ParseFromBuffer(const Uint8Array& aBuf,
                                                       SupportedType aType,
                                                       ErrorResult& aRv) {
-  aBuf.ComputeLengthAndData();
+  aBuf.ComputeState();
   return ParseFromBuffer(MakeSpan(aBuf.Data(), aBuf.Length()), aType, aRv);
 }
 

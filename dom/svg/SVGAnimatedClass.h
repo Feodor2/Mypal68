@@ -5,7 +5,6 @@
 #ifndef __NS_SVGCLASS_H__
 #define __NS_SVGCLASS_H__
 
-#include "nsAutoPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsError.h"
 #include "nsString.h"
@@ -41,7 +40,7 @@ class SVGAnimatedClass {
   mozilla::UniquePtr<SMILAttr> ToSMILAttr(SVGElement* aSVGElement);
 
  private:
-  nsAutoPtr<nsString> mAnimVal;
+  UniquePtr<nsString> mAnimVal;
 
  public:
   struct SMILString : public SMILAttr {

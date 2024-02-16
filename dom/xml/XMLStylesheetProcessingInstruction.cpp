@@ -122,15 +122,13 @@ XMLStylesheetProcessingInstruction::GetStyleSheetInfo() {
   auto encoding = doc->GetDocumentCharacterSet();
   nsCOMPtr<nsIURI> uri;
   NS_NewURI(getter_AddRefs(uri), href, encoding, baseURL);
-  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
-  referrerInfo->InitWithDocument(doc);
 
   return Some(SheetInfo{
       *doc,
       this,
       uri.forget(),
       nullptr,
-      referrerInfo.forget(),
+      MakeAndAddRef<ReferrerInfo>(*doc),
       CORS_NONE,
       title,
       media,
@@ -148,7 +146,9 @@ XMLStylesheetProcessingInstruction::CloneDataNode(
   nsAutoString data;
   GetData(data);
   RefPtr<mozilla::dom::NodeInfo> ni = aNodeInfo;
-  return do_AddRef(new XMLStylesheetProcessingInstruction(ni.forget(), data));
+  auto* nim = ni->NodeInfoManager();
+  return do_AddRef(new (nim)
+                       XMLStylesheetProcessingInstruction(ni.forget(), data));
 }
 
 }  // namespace dom

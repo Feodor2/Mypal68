@@ -7,13 +7,13 @@
 
 #include "IDBCursorType.h"
 #include "IndexedDatabase.h"
-#include "InitializedOnce.h"
 #include "js/RootingAPI.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/IDBCursorBinding.h"
 #include "mozilla/dom/IDBTransaction.h"
 #include "mozilla/dom/indexedDB/Key.h"
 #include "mozilla/dom/quota/CheckedUnsafePtr.h"
+#include "mozilla/InitializedOnce.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsWrapperCache.h"
 
@@ -44,13 +44,13 @@ class BackgroundCursorChild;
 class IDBCursor : public nsISupports, public nsWrapperCache {
  public:
   using Key = indexedDB::Key;
-  using StructuredCloneReadInfo = indexedDB::StructuredCloneReadInfo;
+  using StructuredCloneReadInfoChild = indexedDB::StructuredCloneReadInfoChild;
 
   using Direction = IDBCursorDirection;
   using Type = IDBCursorType;
 
  protected:
-  InitializedOnceMustBeTrue<indexedDB::BackgroundCursorChildBase* const>
+  InitializedOnceNotNull<indexedDB::BackgroundCursorChildBase* const>
       mBackgroundActor;
 
   // TODO: mRequest could be made const if Bug 1575173 is resolved. It is
@@ -78,7 +78,7 @@ class IDBCursor : public nsISupports, public nsWrapperCache {
  public:
   static MOZ_MUST_USE RefPtr<IDBObjectStoreCursor> Create(
       indexedDB::BackgroundCursorChild<Type::ObjectStore>* aBackgroundActor,
-      Key aKey, StructuredCloneReadInfo&& aCloneInfo);
+      Key aKey, StructuredCloneReadInfoChild&& aCloneInfo);
 
   static MOZ_MUST_USE RefPtr<IDBObjectStoreKeyCursor> Create(
       indexedDB::BackgroundCursorChild<Type::ObjectStoreKey>* aBackgroundActor,
@@ -86,7 +86,7 @@ class IDBCursor : public nsISupports, public nsWrapperCache {
 
   static MOZ_MUST_USE RefPtr<IDBIndexCursor> Create(
       indexedDB::BackgroundCursorChild<Type::Index>* aBackgroundActor, Key aKey,
-      Key aSortKey, Key aPrimaryKey, StructuredCloneReadInfo&& aCloneInfo);
+      Key aSortKey, Key aPrimaryKey, StructuredCloneReadInfoChild&& aCloneInfo);
 
   static MOZ_MUST_USE RefPtr<IDBIndexKeyCursor> Create(
       indexedDB::BackgroundCursorChild<Type::IndexKey>* aBackgroundActor,
@@ -142,7 +142,7 @@ class IDBCursor : public nsISupports, public nsWrapperCache {
   void ClearBackgroundActor() {
     AssertIsOnOwningThread();
 
-    mBackgroundActor.reset();
+    mBackgroundActor.destroy();
   }
 
   virtual void InvalidateCachedResponses() = 0;

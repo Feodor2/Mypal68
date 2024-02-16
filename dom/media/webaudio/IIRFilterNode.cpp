@@ -8,6 +8,7 @@
 #include "blink/IIRFilter.h"
 #include "PlayingRefChangeHandler.h"
 #include "AlignmentUtils.h"
+#include "nsPrintfCString.h"
 
 #include "nsGkAtoms.h"
 
@@ -161,12 +162,16 @@ already_AddRefed<IIRFilterNode> IIRFilterNode::Create(
     ErrorResult& aRv) {
   if (aOptions.mFeedforward.Length() == 0 ||
       aOptions.mFeedforward.Length() > 20) {
-    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    aRv.ThrowNotSupportedError(
+        nsPrintfCString("\"feedforward\" length %zu is not in the range [1,20]",
+                        aOptions.mFeedforward.Length()));
     return nullptr;
   }
 
   if (aOptions.mFeedback.Length() == 0 || aOptions.mFeedback.Length() > 20) {
-    aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+    aRv.ThrowNotSupportedError(
+        nsPrintfCString("\"feedback\" length %zu is not in the range [1,20]",
+                        aOptions.mFeedforward.Length()));
     return nullptr;
   }
 
@@ -174,11 +179,18 @@ already_AddRefed<IIRFilterNode> IIRFilterNode::Create(
   for (size_t i = 0; i < aOptions.mFeedforward.Length(); ++i) {
     if (aOptions.mFeedforward.Elements()[i] != 0.0) {
       feedforwardAllZeros = false;
+      break;
     }
   }
 
-  if (feedforwardAllZeros || aOptions.mFeedback.Elements()[0] == 0.0) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+  if (feedforwardAllZeros) {
+    aRv.ThrowInvalidStateError(
+        "\"feedforward\" must contain some nonzero values");
+    return nullptr;
+  }
+
+  if (aOptions.mFeedback[0] == 0.0) {
+    aRv.ThrowInvalidStateError("First value in \"feedback\" must be nonzero");
     return nullptr;
   }
 
@@ -210,9 +222,9 @@ JSObject* IIRFilterNode::WrapObject(JSContext* aCx,
 void IIRFilterNode::GetFrequencyResponse(const Float32Array& aFrequencyHz,
                                          const Float32Array& aMagResponse,
                                          const Float32Array& aPhaseResponse) {
-  aFrequencyHz.ComputeLengthAndData();
-  aMagResponse.ComputeLengthAndData();
-  aPhaseResponse.ComputeLengthAndData();
+  aFrequencyHz.ComputeState();
+  aMagResponse.ComputeState();
+  aPhaseResponse.ComputeState();
 
   uint32_t length =
       std::min(std::min(aFrequencyHz.Length(), aMagResponse.Length()),

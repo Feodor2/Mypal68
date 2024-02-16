@@ -7,7 +7,6 @@
 
 #include "DOMSVGAnimatedAngle.h"
 #include "DOMSVGAnimatedEnumeration.h"
-#include "nsAutoPtr.h"
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedLength.h"
 #include "SVGAnimatedOrient.h"
@@ -16,6 +15,7 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/SVGElement.h"
 #include "mozilla/dom/SVGMarkerElementBinding.h"
+#include "mozilla/UniquePtr.h"
 
 class nsSVGMarkerFrame;
 
@@ -96,7 +96,7 @@ class SVGMarkerElement : public SVGMarkerElementBase {
   SVGAnimatedPreserveAspectRatio mPreserveAspectRatio;
 
   SVGViewportElement* mCoordCtx;
-  nsAutoPtr<gfx::Matrix> mViewBoxToViewportTransform;
+  UniquePtr<gfx::Matrix> mViewBoxToViewportTransform;
 };
 
 }  // namespace dom

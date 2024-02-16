@@ -239,45 +239,6 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
                      const Maybe<gfx::IntPoint>& aHotspot, nsIWidget* aWidget,
                      bool aLockCursor);
 
-  /**
-   * Returns true if the event is considered as user interaction event. I.e.,
-   * enough obvious input to allow to open popup, etc. Otherwise, returns false.
-   */
-  static bool IsUserInteractionEvent(const WidgetEvent* aEvent);
-
-  /**
-   * StartHandlingUserInput() is called when we start to handle a user input.
-   * StopHandlingUserInput() is called when we finish handling a user input.
-   * If the caller knows which input event caused that, it should set
-   * aMessage to the event message.  Otherwise, set eVoidEvent.
-   * Note that StopHandlingUserInput() caller should call it with exactly same
-   * event message as its corresponding StartHandlingUserInput() call because
-   * these methods may count the number of specific event message.
-   */
-  static void StartHandlingUserInput(EventMessage aMessage);
-  static void StopHandlingUserInput(EventMessage aMessage);
-
-  static TimeStamp GetHandlingInputStart() { return sHandlingInputStart; }
-
-  /**
-   * Returns true if the current code is being executed as a result of
-   * user input or keyboard input.  The former includes anything that is
-   * initiated by user, with the exception of page load events or mouse
-   * over events.  And the latter returns true when one of the user inputs
-   * is an input from keyboard.  If these methods are called from asynchronously
-   * executed code, such as during layout reflows, it will return false.
-   */
-  static bool IsHandlingUserInput();
-  static bool IsHandlingKeyboardInput();
-
-  /**
-   * Get the timestamp at which the latest user input was handled.
-   *
-   * Guaranteed to be monotonic. Until the first user input, return
-   * the epoch.
-   */
-  static TimeStamp LatestUserInputStart() { return sLatestUserInputStart; }
-
   nsPresContext* GetPresContext() { return mPresContext; }
 
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(EventStateManager, nsIObserver)
@@ -548,7 +509,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
 
   void EnsureDocument(nsPresContext* aPresContext);
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  void FlushPendingEvents(nsPresContext* aPresContext);
+  void FlushLayout(nsPresContext* aPresContext);
 
   /**
    * The phases of WalkESMTreeToHandleAccessKey processing. See below.
@@ -1047,7 +1008,12 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
 
   friend class mozilla::dom::BrowserParent;
   void BeginTrackingRemoteDragGesture(nsIContent* aContent);
-  void StopTrackingDragGesture();
+
+  // Stop tracking a possible drag. If aClearInChildProcesses is true, send
+  // a notification to any child processes that are in the drag service that
+  // tried to start a drag.
+  void StopTrackingDragGesture(bool aClearInChildProcesses);
+
   MOZ_CAN_RUN_SCRIPT
   void GenerateDragGesture(nsPresContext* aPresContext,
                            WidgetInputEvent* aEvent);
@@ -1066,6 +1032,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    *
    * aSelectionTarget - target to check for selection
    * aDataTransfer - data transfer object that will contain the data to drag
+   * aAllowEmptyDataTransfer - [out] set to true, if dnd operation can be
+   *                           started even if DataTransfer is empty
    * aSelection - [out] set to the selection to be dragged
    * aTargetNode - [out] the draggable node, or null if there isn't one
    * aPrincipal - [out] set to the triggering principal of the drag, or null
@@ -1074,6 +1042,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   void DetermineDragTargetAndDefaultData(nsPIDOMWindowOuter* aWindow,
                                          nsIContent* aSelectionTarget,
                                          dom::DataTransfer* aDataTransfer,
+                                         bool* aAllowEmptyDataTransfer,
                                          dom::Selection** aSelection,
                                          nsIContent** aTargetNode,
                                          nsIPrincipal** aPrincipal);
@@ -1085,6 +1054,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    *
    * aDragEvent - the dragstart event
    * aDataTransfer - the data transfer that holds the data to be dragged
+   * aAllowEmptyDataTransfer - if true, dnd can be started even if there is no
+   *                           data to drag
    * aDragTarget - the target of the drag
    * aSelection - the selection to be dragged
    * aPrincipal - the triggering principal of the drag, or null if it's from
@@ -1094,6 +1065,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   bool DoDefaultDragStart(nsPresContext* aPresContext,
                           WidgetDragEvent* aDragEvent,
                           dom::DataTransfer* aDataTransfer,
+                          bool aAllowEmptyDataTransfer,
                           nsIContent* aDragTarget, dom::Selection* aSelection,
                           nsIPrincipal* aPrincipal);
 
@@ -1118,7 +1090,8 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
    * If you need to check if the event is posted to a remote process, you
    * can use aEvent->HasBeenPostedToRemoteProcess().
    */
-  void DispatchCrossProcessEvent(WidgetEvent* aEvent, nsFrameLoader* aRemote,
+  void DispatchCrossProcessEvent(WidgetEvent* aEvent,
+                                 dom::BrowserParent* aRemoteTarget,
                                  nsEventStatus* aStatus);
   /**
    * HandleCrossProcessEvent() may post aEvent to target remote processes.
@@ -1237,14 +1210,6 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
 
   bool m_haveShutdown;
 
-  // Time at which we began handling user input. Reset to the epoch
-  // once we have finished handling user input.
-  static TimeStamp sHandlingInputStart;
-
-  // Time at which we began handling the latest user input. Not reset
-  // at the end of the input.
-  static TimeStamp sLatestUserInputStart;
-
   RefPtr<OverOutElementsWrapper> mMouseEnterLeaveHelper;
   nsRefPtrHashtable<nsUint32HashKey, OverOutElementsWrapper>
       mPointersEnterLeaveHelper;
@@ -1253,15 +1218,6 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   static nsresult UpdateUserActivityTimer(void);
   // Array for accesskey support
   nsCOMArray<nsIContent> mAccessKeys;
-
-  // The current depth of user and keyboard inputs. sUserInputEventDepth
-  // is the number of any user input events, page load events and mouse over
-  // events.  sUserKeyboardEventDepth is the number of keyboard input events.
-  // Incremented whenever we start handling a user input, decremented when we
-  // have finished handling a user input. This depth is *not* reset in case
-  // of nested event loops.
-  static int32_t sUserInputEventDepth;
-  static int32_t sUserKeyboardEventDepth;
 
   static bool sNormalLMouseEventInProcess;
   static int16_t sCurrentMouseBtn;
@@ -1280,21 +1236,6 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   MOZ_CAN_RUN_SCRIPT static void SetPointerLock(nsIWidget* aWidget,
                                                 nsIContent* aElement);
   static void sClickHoldCallback(nsITimer* aTimer, void* aESM);
-};
-
-/**
- * This class is used while processing real user input. During this time, popups
- * are allowed. For mousedown events, mouse capturing is also permitted.
- */
-class MOZ_RAII AutoHandlingUserInputStatePusher final {
- public:
-  explicit AutoHandlingUserInputStatePusher(bool aIsHandlingUserInput,
-                                            WidgetEvent* aEvent = nullptr);
-  ~AutoHandlingUserInputStatePusher();
-
- protected:
-  EventMessage mMessage;
-  bool mIsHandlingUserInput;
 };
 
 }  // namespace mozilla

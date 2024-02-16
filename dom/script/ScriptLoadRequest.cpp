@@ -37,7 +37,7 @@ ScriptFetchOptions::ScriptFetchOptions(mozilla::CORSMode aCORSMode,
   MOZ_ASSERT(mTriggeringPrincipal);
 }
 
-ScriptFetchOptions::~ScriptFetchOptions() {}
+ScriptFetchOptions::~ScriptFetchOptions() = default;
 
 //////////////////////////////////////////////////////////////
 // ScriptLoadRequest

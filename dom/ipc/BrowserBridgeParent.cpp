@@ -51,12 +51,7 @@ nsresult BrowserBridgeParent::Init(const nsString& aPresentationURL,
   aBrowsingContext->Group()->EnsureSubscribed(constructorSender);
   aBrowsingContext->SetOwnerProcessId(constructorSender->ChildID());
 
-  ContentProcessManager* cpm = ContentProcessManager::GetSingleton();
   TabId tabId(nsContentUtils::GenerateTabId());
-  cpm->RegisterRemoteFrame(tabId, ContentParentId(0), TabId(0),
-                           tabContext.AsIPCTabContext(),
-                           constructorSender->ChildID());
-
   // Construct the BrowserParent object for our subframe.
   RefPtr<BrowserParent> browserParent(
       new BrowserParent(constructorSender, tabId, tabContext, aBrowsingContext,
@@ -69,6 +64,9 @@ nsresult BrowserBridgeParent::Init(const nsString& aPresentationURL,
     MOZ_ASSERT(false, "Browser Open Endpoint Failed");
     return NS_ERROR_FAILURE;
   }
+
+  ContentProcessManager* cpm = ContentProcessManager::GetSingleton();
+  cpm->RegisterRemoteFrame(browserParent);
 
   // Tell the content process to set up its PBrowserChild.
   bool ok = constructorSender->SendConstructBrowser(

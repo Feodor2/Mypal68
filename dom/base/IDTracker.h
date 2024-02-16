@@ -112,7 +112,7 @@ class IDTracker {
    public:
     virtual void SetTo(Element* aTo) = 0;
     virtual void Clear() { mTarget = nullptr; }
-    virtual ~Notification() {}
+    virtual ~Notification() = default;
 
    protected:
     explicit Notification(IDTracker* aTarget) : mTarget(aTarget) {
@@ -147,7 +147,7 @@ class IDTracker {
     }
 
    protected:
-    virtual ~ChangeNotification() {}
+    virtual ~ChangeNotification() = default;
 
     RefPtr<Element> mFrom;
     RefPtr<Element> mTo;
@@ -166,7 +166,7 @@ class IDTracker {
     NS_DECL_ISUPPORTS
     NS_DECL_NSIOBSERVER
    private:
-    virtual ~DocumentLoadNotification() {}
+    virtual ~DocumentLoadNotification() = default;
 
     virtual void SetTo(Element* aTo) override {}
 

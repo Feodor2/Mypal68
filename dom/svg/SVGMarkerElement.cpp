@@ -105,7 +105,7 @@ already_AddRefed<DOMSVGAnimatedAngle> SVGMarkerElement::OrientAngle() {
 }
 
 void SVGMarkerElement::SetOrientToAuto() {
-  mOrient.SetBaseType(SVG_MARKER_ORIENT_AUTO, this);
+  mOrient.SetBaseType(SVG_MARKER_ORIENT_AUTO, this, IgnoreErrors());
 }
 
 void SVGMarkerElement::SetOrientToAngle(DOMSVGAngle& angle, ErrorResult& rv) {
@@ -232,7 +232,7 @@ gfx::Matrix SVGMarkerElement::GetViewBoxTransform() {
     Matrix TM = viewBoxTM;
     TM.PostTranslate(-ref.x, -ref.y);
 
-    mViewBoxToViewportTransform = new gfx::Matrix(TM);
+    mViewBoxToViewportTransform = MakeUnique<gfx::Matrix>(TM);
   }
 
   return *mViewBoxToViewportTransform;

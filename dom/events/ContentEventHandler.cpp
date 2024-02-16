@@ -269,7 +269,7 @@ nsresult ContentEventHandler::InitRootContent(Selection* aNormalSelection) {
     return NS_OK;
   }
 
-  RefPtr<nsRange> range(aNormalSelection->GetRangeAt(0));
+  RefPtr<const nsRange> range(aNormalSelection->GetRangeAt(0));
   if (NS_WARN_IF(!range)) {
     return NS_ERROR_UNEXPECTED;
   }
@@ -315,16 +315,15 @@ nsresult ContentEventHandler::InitCommon(SelectionType aSelectionType,
   nsresult rv = InitBasic(aRequireFlush);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  nsCOMPtr<nsISelectionController> selectionController;
+  RefPtr<nsFrameSelection> frameSel;
   if (PresShell* presShell = mDocument->GetPresShell()) {
-    selectionController = presShell->GetSelectionControllerForFocusedContent();
+    frameSel = presShell->GetLastFocusedFrameSelection();
   }
-  if (NS_WARN_IF(!selectionController)) {
+  if (NS_WARN_IF(!frameSel)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  mSelection =
-      selectionController->GetSelection(ToRawSelectionType(aSelectionType));
+  mSelection = frameSel->GetSelection(aSelectionType);
   if (NS_WARN_IF(!mSelection)) {
     return NS_ERROR_NOT_AVAILABLE;
   }
@@ -333,8 +332,7 @@ nsresult ContentEventHandler::InitCommon(SelectionType aSelectionType,
   if (mSelection->Type() == SelectionType::eNormal) {
     normalSelection = mSelection;
   } else {
-    normalSelection = selectionController->GetSelection(
-        nsISelectionController::SELECTION_NORMAL);
+    normalSelection = frameSel->GetSelection(SelectionType::eNormal);
     if (NS_WARN_IF(!normalSelection)) {
       return NS_ERROR_NOT_AVAILABLE;
     }
@@ -960,12 +958,11 @@ nsresult ContentEventHandler::ExpandToClusterBoundary(nsIContent* aContent,
   NS_ASSERTION(*aXPOffset <= aContent->TextLength(), "offset is out of range.");
 
   MOZ_DIAGNOSTIC_ASSERT(mDocument->GetPresShell());
-  RefPtr<nsFrameSelection> fs = mDocument->GetPresShell()->FrameSelection();
   int32_t offsetInFrame;
   CaretAssociationHint hint =
       aForward ? CARET_ASSOCIATE_BEFORE : CARET_ASSOCIATE_AFTER;
-  nsIFrame* frame = fs->GetFrameForNodeOffset(aContent, int32_t(*aXPOffset),
-                                              hint, &offsetInFrame);
+  nsIFrame* frame = nsFrameSelection::GetFrameForNodeOffset(
+      aContent, int32_t(*aXPOffset), hint, &offsetInFrame);
   if (frame) {
     int32_t startOffset, endOffset;
     nsresult rv = frame->GetOffsets(startOffset, endOffset);
@@ -3019,8 +3016,11 @@ nsresult ContentEventHandler::OnSelectionEvent(WidgetSelectionEvent* aEvent) {
     }
   }
 
-  mSelection->ScrollIntoView(nsISelectionController::SELECTION_FOCUS_REGION,
-                             ScrollAxis(), ScrollAxis(), 0);
+  // `ContentEventHandler` is a `MOZ_STACK_CLASS`, so `mSelection` is known to
+  // be alive.
+  MOZ_KnownLive(mSelection)
+      ->ScrollIntoView(nsISelectionController::SELECTION_FOCUS_REGION,
+                       ScrollAxis(), ScrollAxis(), 0);
   aEvent->mSucceeded = true;
   return NS_OK;
 }

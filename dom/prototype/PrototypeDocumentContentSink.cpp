@@ -537,7 +537,8 @@ nsresult PrototypeDocumentContentSink::ResumeWalkInternal() {
 
         case nsXULPrototypeNode::eType_Text: {
           // A simple text node.
-          RefPtr<nsTextNode> text = new nsTextNode(mNodeInfoManager);
+          RefPtr<nsTextNode> text =
+              new (mNodeInfoManager) nsTextNode(mNodeInfoManager);
 
           nsXULPrototypeText* textproto =
               static_cast<nsXULPrototypeText*>(childproto);
@@ -1044,7 +1045,7 @@ nsresult PrototypeDocumentContentSink::CreateElementFromPrototype(
   }
 
   if (result->HasAttr(kNameSpaceID_None, nsGkAtoms::datal10nid)) {
-    mDocument->mL10nProtoElements.Put(result, aPrototype);
+    mDocument->mL10nProtoElements.Put(result, RefPtr{aPrototype});
     result->SetElementCreatedFromPrototypeAndHasUnmodifiedL10n();
   }
   result.forget(aResult);

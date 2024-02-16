@@ -244,7 +244,7 @@ MediaChangeMonitor::MediaChangeMonitor(PlatformDecoderModule* aPDM,
   mInConstructor = false;
 }
 
-MediaChangeMonitor::~MediaChangeMonitor() {}
+MediaChangeMonitor::~MediaChangeMonitor() = default;
 
 RefPtr<MediaDataDecoder::InitPromise> MediaChangeMonitor::Init() {
   RefPtr<MediaChangeMonitor> self = this;

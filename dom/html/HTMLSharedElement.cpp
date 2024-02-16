@@ -27,7 +27,7 @@ namespace dom {
 
 extern nsAttrValue::EnumTable kListTypeTable[];
 
-HTMLSharedElement::~HTMLSharedElement() {}
+HTMLSharedElement::~HTMLSharedElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLSharedElement)
 

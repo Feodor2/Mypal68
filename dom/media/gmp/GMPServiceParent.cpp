@@ -531,7 +531,7 @@ class NotifyObserversTask final : public mozilla::Runnable {
   }
 
  private:
-  ~NotifyObserversTask() {}
+  ~NotifyObserversTask() = default;
   const char* mTopic;
   const nsString mData;
 };
@@ -916,7 +916,7 @@ void GeckoMediaPluginServiceParent::RemoveOnGMPThread(
 }
 
 // May remove when Bug 1043671 is fixed
-static void Dummy(RefPtr<GMPParent>& aOnDeathsDoor) {
+static void Dummy(RefPtr<GMPParent> aOnDeathsDoor) {
   // exists solely to do nothing and let the Runnable kill the GMPParent
   // when done.
 }
@@ -1045,7 +1045,7 @@ already_AddRefed<GMPStorage> GeckoMediaPluginServiceParent::GetMemoryStorageFor(
   RefPtr<GMPStorage> s;
   if (!mTempGMPStorage.Get(aNodeId, getter_AddRefs(s))) {
     s = CreateGMPMemoryStorage();
-    mTempGMPStorage.Put(aNodeId, s);
+    mTempGMPStorage.Put(aNodeId, RefPtr{s});
   }
   return s.forget();
 }
@@ -1690,45 +1690,12 @@ mozilla::ipc::IPCResult GMPServiceParent::RecvGetGMPNodeId(
   return IPC_OK();
 }
 
-void GMPServiceParent::CloseTransport(Monitor2* aSyncMonitor, bool* aCompleted) {
-  MOZ_ASSERT(MessageLoop::current() == XRE_GetIOMessageLoop());
-
-  Monitor2AutoLock lock(*aSyncMonitor);
-
-  // This deletes the transport.
-  SetTransport(nullptr);
-
-  *aCompleted = true;
-  lock.Broadcast();
-}
-
-void GMPServiceParent::ActorDestroy(ActorDestroyReason aWhy) {
-  Monitor2 monitor("DeleteGMPServiceParent");
-  bool completed = false;
-
-  // Make sure the IPC channel is closed before destroying mToDelete.
-  Monitor2AutoLock lock(monitor);
-  RefPtr<Runnable> task = NewNonOwningRunnableMethod<Monitor2*, bool*>(
-      "gmp::GMPServiceParent::CloseTransport", this,
-      &GMPServiceParent::CloseTransport, &monitor, &completed);
-  XRE_GetIOMessageLoop()->PostTask(task.forget());
-
-  while (!completed) {
-    lock.Wait();
-  }
-
-  // Dispatch a task to the current thread to ensure we don't delete the
-  // GMPServiceParent until the current calling context is finished with
-  // the object.
-  GMPServiceParent* self = this;
-  NS_DispatchToCurrentThread(
-      NS_NewRunnableFunction("gmp::GMPServiceParent::ActorDestroy", [self]() {
-        // The GMPServiceParent must be destroyed on the main thread.
-        self->mService->mMainThread->Dispatch(
-            NS_NewRunnableFunction("gmp::GMPServiceParent::ActorDestroy",
-                                   [self]() { delete self; }),
-            NS_DISPATCH_NORMAL);
-      }));
+void GMPServiceParent::ActorDealloc() {
+  // The GMPServiceParent must be destroyed on the main thread.
+  mService->mMainThread->Dispatch(
+      NS_NewRunnableFunction("gmp::GMPServiceParent::ActorDealloc",
+                             [this]() { delete this; }),
+      NS_DISPATCH_NORMAL);
 }
 
 class OpenPGMPServiceParent : public mozilla::Runnable {

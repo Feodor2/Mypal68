@@ -76,7 +76,6 @@
 #include "mozilla/dom/PluginCrashedEvent.h"
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/EventDispatcher.h"
-#include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/IMEStateManager.h"
 #include "mozilla/widget/IMEData.h"
@@ -84,9 +83,11 @@
 #include "mozilla/dom/HTMLObjectElementBinding.h"
 #include "mozilla/dom/HTMLEmbedElement.h"
 #include "mozilla/dom/HTMLObjectElement.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "mozilla/LoadInfo.h"
 #include "mozilla/PresShell.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "nsChannelClassifier.h"
 #include "nsFocusManager.h"
 #include "ReferrerInfo.h"
@@ -302,20 +303,17 @@ class nsPluginCrashedEvent : public Runnable {
  public:
   nsCOMPtr<nsIContent> mContent;
   nsString mPluginDumpID;
-  nsString mBrowserDumpID;
   nsString mPluginName;
   nsString mPluginFilename;
   bool mSubmittedCrashReport;
 
   nsPluginCrashedEvent(nsIContent* aContent, const nsAString& aPluginDumpID,
-                       const nsAString& aBrowserDumpID,
                        const nsAString& aPluginName,
                        const nsAString& aPluginFilename,
                        bool submittedCrashReport)
       : Runnable("nsPluginCrashedEvent"),
         mContent(aContent),
         mPluginDumpID(aPluginDumpID),
-        mBrowserDumpID(aBrowserDumpID),
         mPluginName(aPluginName),
         mPluginFilename(aPluginFilename),
         mSubmittedCrashReport(submittedCrashReport) {}
@@ -337,7 +335,6 @@ nsPluginCrashedEvent::Run() {
 
   PluginCrashedEventInit init;
   init.mPluginDumpID = mPluginDumpID;
-  init.mBrowserDumpID = mBrowserDumpID;
   init.mPluginName = mPluginName;
   init.mPluginFilename = mPluginFilename;
   init.mSubmittedCrashReport = mSubmittedCrashReport;
@@ -2282,7 +2279,8 @@ nsresult nsObjectLoadingContent::OpenChannel() {
       nsILoadInfo::SEC_ALLOW_CROSS_ORIGIN_DATA_IS_NULL;
 
   bool isURIUniqueOrigin =
-      nsIOService::IsDataURIUniqueOpaqueOrigin() && mURI->SchemeIs("data");
+      StaticPrefs::security_data_uri_unique_opaque_origin() &&
+      mURI->SchemeIs("data");
 
   if (inherit && !isURIUniqueOrigin) {
     securityFlags |= nsILoadInfo::SEC_FORCE_INHERIT_PRINCIPAL;
@@ -2310,8 +2308,7 @@ nsresult nsObjectLoadingContent::OpenChannel() {
   // Referrer
   nsCOMPtr<nsIHttpChannel> httpChan(do_QueryInterface(chan));
   if (httpChan) {
-    nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
-    referrerInfo->InitWithDocument(doc);
+    auto referrerInfo = MakeRefPtr<ReferrerInfo>(*doc);
 
     rv = httpChan->SetReferrerInfoWithoutClone(referrerInfo);
     MOZ_ASSERT(NS_SUCCEEDED(rv));
@@ -2323,7 +2320,7 @@ nsresult nsObjectLoadingContent::OpenChannel() {
     }
 
     nsCOMPtr<nsIClassOfService> cos(do_QueryInterface(httpChan));
-    if (cos && EventStateManager::IsHandlingUserInput()) {
+    if (cos && UserActivation::IsHandlingUserInput()) {
       cos->AddClassFlags(nsIClassOfService::UrgentStart);
     }
   }
@@ -2564,7 +2561,6 @@ nsObjectLoadingContent::PluginDestroyed() {
 NS_IMETHODIMP
 nsObjectLoadingContent::PluginCrashed(nsIPluginTag* aPluginTag,
                                       const nsAString& pluginDumpID,
-                                      const nsAString& browserDumpID,
                                       bool submittedCrashReport) {
   LOG(("OBJLC [%p]: Plugin Crashed, queuing crash event", this));
   NS_ASSERTION(mType == eType_Plugin, "PluginCrashed at non-plugin type");
@@ -2591,9 +2587,8 @@ nsObjectLoadingContent::PluginCrashed(nsIPluginTag* aPluginTag,
   aPluginTag->GetFilename(pluginFilename);
 
   nsCOMPtr<nsIRunnable> ev = new nsPluginCrashedEvent(
-      thisContent, pluginDumpID, browserDumpID,
-      NS_ConvertUTF8toUTF16(pluginName), NS_ConvertUTF8toUTF16(pluginFilename),
-      submittedCrashReport);
+      thisContent, pluginDumpID, NS_ConvertUTF8toUTF16(pluginName),
+      NS_ConvertUTF8toUTF16(pluginFilename), submittedCrashReport);
   nsresult rv = NS_DispatchToCurrentThread(ev);
   if (NS_FAILED(rv)) {
     NS_WARNING("failed to dispatch nsPluginCrashedEvent");

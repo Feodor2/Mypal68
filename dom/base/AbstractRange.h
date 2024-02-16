@@ -23,6 +23,11 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
   AbstractRange() = delete;
   explicit AbstractRange(const AbstractRange& aOther) = delete;
 
+  /**
+   * Called when the process is shutting down.
+   */
+  static void Shutdown();
+
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_SCRIPT_HOLDER_CLASS(AbstractRange)
 
@@ -83,6 +88,22 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
       const RangeBoundaryBase<SPT, SRT>& aStartBoundary,
       const RangeBoundaryBase<EPT, ERT>& aEndBoundary, RangeType* aRange);
 
+  template <class RangeType>
+  static bool MaybeCacheToReuse(RangeType& aInstance);
+
+  void Init(nsINode* aNode);
+
+ private:
+  void ClearForReuse() {
+    mOwner = nullptr;
+    mStart = RangeBoundary();
+    mEnd = RangeBoundary();
+    mIsPositioned = false;
+    mIsGenerated = false;
+    mCalledByJS = false;
+  }
+
+ protected:
   RefPtr<Document> mOwner;
   RangeBoundary mStart;
   RangeBoundary mEnd;
@@ -94,6 +115,8 @@ class AbstractRange : public nsISupports, public nsWrapperCache {
   bool mIsGenerated;
   // Used by nsRange, but this should have this for minimizing the size.
   bool mCalledByJS;
+
+  static bool sHasShutDown;
 };
 
 }  // namespace dom

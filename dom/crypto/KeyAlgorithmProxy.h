@@ -33,35 +33,7 @@ struct RsaHashedKeyAlgorithmStorage {
     aRsa.mModulusLength = mModulusLength;
     aRsa.mHash.mName = mHash.mName;
     aRsa.mPublicExponent.Init(exponent);
-    aRsa.mPublicExponent.ComputeLengthAndData();
-
-    return true;
-  }
-};
-
-// A heap-safe variant of DhKeyAlgorithm
-// The only difference is that it uses CryptoBuffers instead of Uint8Arrays
-struct DhKeyAlgorithmStorage {
-  nsString mName;
-  CryptoBuffer mPrime;
-  CryptoBuffer mGenerator;
-
-  bool ToKeyAlgorithm(JSContext* aCx, DhKeyAlgorithm& aDh) const {
-    JS::Rooted<JSObject*> prime(aCx, mPrime.ToUint8Array(aCx));
-    if (!prime) {
-      return false;
-    }
-
-    JS::Rooted<JSObject*> generator(aCx, mGenerator.ToUint8Array(aCx));
-    if (!generator) {
-      return false;
-    }
-
-    aDh.mName = mName;
-    aDh.mPrime.Init(prime);
-    aDh.mPrime.ComputeLengthAndData();
-    aDh.mGenerator.Init(generator);
-    aDh.mGenerator.ComputeLengthAndData();
+    aRsa.mPublicExponent.ComputeState();
 
     return true;
   }
@@ -75,7 +47,6 @@ struct KeyAlgorithmProxy {
     HMAC,
     RSA,
     EC,
-    DH,
   };
   KeyAlgorithmType mType;
 
@@ -86,7 +57,6 @@ struct KeyAlgorithmProxy {
   HmacKeyAlgorithm mHmac;
   RsaHashedKeyAlgorithmStorage mRsa;
   EcKeyAlgorithm mEc;
-  DhKeyAlgorithmStorage mDh;
 
   // Structured clone
   bool WriteStructuredClone(JSStructuredCloneWriter* aWriter) const;
@@ -135,20 +105,6 @@ struct KeyAlgorithmProxy {
     mName = aName;
     mEc.mName = aName;
     mEc.mNamedCurve = aNamedCurve;
-  }
-
-  bool MakeDh(const nsString& aName, const CryptoBuffer& aPrime,
-              const CryptoBuffer& aGenerator) {
-    mType = DH;
-    mName = aName;
-    mDh.mName = aName;
-    if (!mDh.mPrime.Assign(aPrime)) {
-      return false;
-    }
-    if (!mDh.mGenerator.Assign(aGenerator)) {
-      return false;
-    }
-    return true;
   }
 };
 

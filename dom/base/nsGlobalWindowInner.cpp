@@ -251,6 +251,7 @@
 #include "mozilla/net/CookieSettings.h"
 
 #include "AccessCheck.h"
+#include "SessionStorageCache.h"
 
 #ifdef ANDROID
 #  include <android/log.h>
@@ -409,7 +410,7 @@ class IdleRequestExecutorTimeoutHandler final : public TimeoutHandler {
   bool Call(const char* /* unused */) override;
 
  private:
-  ~IdleRequestExecutorTimeoutHandler() override {}
+  ~IdleRequestExecutorTimeoutHandler() override = default;
   RefPtr<IdleRequestExecutor> mExecutor;
 };
 
@@ -468,7 +469,7 @@ class IdleRequestExecutor final : public nsIRunnable,
 
   void DelayedDispatch(uint32_t aDelay);
 
-  ~IdleRequestExecutor() override {}
+  ~IdleRequestExecutor() override = default;
 
   bool mDispatched;
   TimeStamp mDeadline;
@@ -709,7 +710,7 @@ class IdleRequestTimeoutHandler final : public TimeoutHandler {
   }
 
  private:
-  ~IdleRequestTimeoutHandler() override {}
+  ~IdleRequestTimeoutHandler() override = default;
 
   RefPtr<IdleRequest> mIdleRequest;
   nsCOMPtr<nsPIDOMWindowInner> mWindow;
@@ -802,7 +803,7 @@ class PromiseDocumentFlushedResolver final {
     mCallback->Call(&returnVal, error);
 
     if (error.Failed()) {
-      mPromise->MaybeReject(error);
+      mPromise->MaybeReject(std::move(error));
     } else if (guard.Mutated(0)) {
       // Something within the callback mutated the DOM.
       mPromise->MaybeReject(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
@@ -974,8 +975,6 @@ nsGlobalWindowInner::~nsGlobalWindowInner() {
   FreeInnerObjects();
 
   if (sInnerWindowsById) {
-    MOZ_ASSERT(sInnerWindowsById->Get(mWindowID),
-               "This window should be in the hash table");
     sInnerWindowsById->Remove(mWindowID);
   }
 
@@ -1086,6 +1085,7 @@ void nsGlobalWindowInner::FreeInnerObjects() {
   mChromeEventHandler = nullptr;
 
   if (mListenerManager) {
+    mListenerManager->RemoveAllListeners();
     mListenerManager->Disconnect();
     mListenerManager = nullptr;
   }
@@ -1378,6 +1378,7 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mIntlUtils)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReportRecords)
   NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mReportingObservers)
+  NS_IMPL_CYCLE_COLLECTION_TRAVERSE(mVisualViewport)
 
   tmp->TraverseHostObjectURIs(cb);
 
@@ -1398,6 +1399,11 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(nsGlobalWindowInner)
 NS_IMPL_CYCLE_COLLECTION_TRAVERSE_END
 
 NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
+  tmp->ClearWeakReferences();
+  if (sInnerWindowsById) {
+    sInnerWindowsById->Remove(tmp->mWindowID);
+  }
+
   JSObject* wrapper = tmp->GetWrapperPreserveColor();
   if (wrapper) {
     // Mark our realm as dead, so the JS engine won't hand out our
@@ -1482,6 +1488,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(nsGlobalWindowInner)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mIntlUtils)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mReportRecords)
   NS_IMPL_CYCLE_COLLECTION_UNLINK(mReportingObservers)
+  NS_IMPL_CYCLE_COLLECTION_UNLINK(mVisualViewport)
 
   tmp->UnlinkHostObjectURIs();
 
@@ -1579,18 +1586,16 @@ bool nsGlobalWindowInner::ShouldResetBrowsingContextUserGestureActivation() {
          Window()->GetUserGestureActivation();
 }
 
-void nsGlobalWindowInner::InnerSetNewDocument(JSContext* aCx,
-                                              Document* aDocument) {
-  MOZ_ASSERT(aDocument);
+void nsGlobalWindowInner::InitDocumentDependentState(JSContext* aCx) {
+  MOZ_ASSERT(mDoc);
 
   if (MOZ_LOG_TEST(gDOMLeakPRLogInner, LogLevel::Debug)) {
-    nsIURI* uri = aDocument->GetDocumentURI();
+    nsIURI* uri = mDoc->GetDocumentURI();
     MOZ_LOG(gDOMLeakPRLogInner, LogLevel::Debug,
             ("DOMWINDOW %p SetNewDocument %s", this,
              uri ? uri->GetSpecOrDefault().get() : ""));
   }
 
-  mDoc = aDocument;
   mFocusedElement = nullptr;
   mLocalStorage = nullptr;
   mSessionStorage = nullptr;
@@ -1616,7 +1621,7 @@ void nsGlobalWindowInner::InnerSetNewDocument(JSContext* aCx,
   }
 
 #ifdef DEBUG
-  mLastOpenedURI = aDocument->GetDocumentURI();
+  mLastOpenedURI = mDoc->GetDocumentURI();
 #endif
 
   Telemetry::Accumulate(Telemetry::INNERWINDOWS_WITH_MUTATION_LISTENERS,
@@ -2712,7 +2717,6 @@ const InterfaceShimEntry kInterfaceShimMap[] = {
     {"nsIDOMUIEvent", "UIEvent"},
     {"nsIDOMHTMLMediaElement", "HTMLMediaElement"},
     {"nsIDOMRange", "Range"},
-    {"nsIDOMSVGLength", "SVGLength"},
     // Think about whether Ci.nsINodeFilter can just go away for websites!
     {"nsIDOMNodeFilter", "NodeFilter"},
     {"nsIDOMXPathResult", "XPathResult"}};
@@ -2811,14 +2815,7 @@ bool nsGlobalWindowInner::DoResolve(
   // We support a cut-down Components.interfaces in case websites are
   // using Components.interfaces.nsIFoo.CONSTANT_NAME for the ones
   // that have constants.
-  static bool watchingComponentsPref = false;
-  static bool useComponentsShim = false;
-  if (!watchingComponentsPref) {
-    watchingComponentsPref = true;
-    Preferences::AddBoolVarCache(&useComponentsShim, "dom.use_components_shim",
-                                 true);
-  }
-  if (useComponentsShim &&
+  if (StaticPrefs::dom_use_components_shim() &&
       aId == XPCJSRuntime::Get()->GetStringID(XPCJSContext::IDX_COMPONENTS)) {
     return ResolveComponentsShim(aCx, aObj, aDesc);
   }
@@ -3249,10 +3246,6 @@ double nsGlobalWindowInner::GetDevicePixelRatio(CallerType aCallerType,
                             0.0);
 }
 
-uint64_t nsGlobalWindowInner::GetMozPaintCount(ErrorResult& aError) {
-  FORWARD_TO_OUTER_OR_THROW(GetMozPaintCountOuter, (), aError, 0);
-}
-
 int32_t nsGlobalWindowInner::RequestAnimationFrame(
     FrameRequestCallback& aCallback, ErrorResult& aError) {
   if (!mDoc) {
@@ -3664,8 +3657,7 @@ void nsGlobalWindowInner::ScrollByLines(int32_t numLines,
                                 ? ScrollMode::SmoothMsd
                                 : ScrollMode::Instant;
 
-    sf->ScrollBy(nsIntPoint(0, numLines), nsIScrollableFrame::LINES,
-                 scrollMode);
+    sf->ScrollBy(nsIntPoint(0, numLines), ScrollUnit::LINES, scrollMode);
   }
 }
 
@@ -3681,8 +3673,7 @@ void nsGlobalWindowInner::ScrollByPages(int32_t numPages,
                                 ? ScrollMode::SmoothMsd
                                 : ScrollMode::Instant;
 
-    sf->ScrollBy(nsIntPoint(0, numPages), nsIScrollableFrame::PAGES,
-                 scrollMode);
+    sf->ScrollBy(nsIntPoint(0, numPages), ScrollUnit::PAGES, scrollMode);
   }
 }
 
@@ -4234,8 +4225,6 @@ nsresult nsGlobalWindowInner::FireHashchange(const nsAString& aOldURL,
   NS_ENSURE_STATE(IsCurrentInnerWindow());
 
   HashChangeEventInit init;
-  init.mBubbles = true;
-  init.mCancelable = false;
   init.mNewURL = aNewURL;
   init.mOldURL = aOldURL;
 
@@ -4275,8 +4264,6 @@ nsresult nsGlobalWindowInner::DispatchSyncPopState() {
   NS_ENSURE_TRUE(result, NS_ERROR_FAILURE);
 
   RootedDictionary<PopStateEventInit> init(cx);
-  init.mBubbles = true;
-  init.mCancelable = false;
   init.mState = stateJSValue;
 
   RefPtr<PopStateEvent> event =
@@ -4486,6 +4473,7 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
   StorageAccess access = StorageAllowedForWindow(this);
 
   // We allow partitioned localStorage only to some hosts.
+  bool isolated = false;
   if (ShouldPartitionStorage(access)) {
     if (!mDoc) {
       access = StorageAccess::eDeny;
@@ -4497,6 +4485,8 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
       mDoc->NodePrincipal()->IsURIInPrefList(kPrefName, &isInList);
       if (!isInList) {
         access = StorageAccess::eDeny;
+      } else {
+        isolated = true;
       }
     }
   }
@@ -4513,16 +4503,22 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
     cookieSettings = net::CookieSettings::CreateBlockingAll();
   }
 
+  bool partitioningEnabled = StoragePartitioningEnabled(access, cookieSettings);
+  bool shouldPartition = ShouldPartitionStorage(access);
+  bool partition = partitioningEnabled && shouldPartition;
+
   // Note that this behavior is observable: if we grant storage permission to a
   // tracker, we pass from the partitioned LocalStorage (or a partitioned cookie
   // jar) to the 'normal' one. The previous data is lost and the 2
   // window.localStorage objects, before and after the permission granted, will
   // be different.
-  if ((StoragePartitioningEnabled(access, cookieSettings) ||
-       !ShouldPartitionStorage(access)) &&
-      (!mLocalStorage ||
-       mLocalStorage->Type() == Storage::ePartitionedLocalStorage ||
-       mLocalStorage->StoragePrincipal() != GetEffectiveStoragePrincipal())) {
+  if ((partitioningEnabled || !shouldPartition) &&
+      ((mLocalStorage && ((mLocalStorage->Type() !=
+                           (partition ? Storage::ePartitionedLocalStorage
+                                      : Storage::eLocalStorage)) ||
+                          mLocalStorage->StoragePrincipal() !=
+                              GetEffectiveStoragePrincipal())) ||
+       (!partition && !mLocalStorage))) {
     RefPtr<Storage> storage;
 
     if (NextGenLocalStorageEnabled()) {
@@ -4569,7 +4565,16 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
     MOZ_ASSERT(mLocalStorage);
   }
 
-  if (ShouldPartitionStorage(access) && !mLocalStorage) {
+  if (((partitioningEnabled && shouldPartition) || isolated) &&
+      !mLocalStorage) {
+    nsresult rv;
+    nsCOMPtr<nsIDOMSessionStorageManager> storageManager =
+        do_GetService("@mozilla.org/dom/sessionStorage-manager;1", &rv);
+    if (NS_FAILED(rv)) {
+      aError.Throw(rv);
+      return nullptr;
+    }
+
     nsIPrincipal* principal = GetPrincipal();
     if (!principal) {
       aError.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -4582,14 +4587,26 @@ Storage* nsGlobalWindowInner::GetLocalStorage(ErrorResult& aError) {
       return nullptr;
     }
 
+    RefPtr<SessionStorageCache> cache;
+    if (isolated) {
+      cache = new SessionStorageCache();
+    } else {
+      // This will clone the session storage if it exists.
+      rv = storageManager->GetSessionStorageCache(principal, storagePrincipal,
+                                                  &cache);
+      if (NS_FAILED(rv)) {
+        aError.Throw(rv);
+        return nullptr;
+      }
+    }
+
     mLocalStorage =
-        new PartitionedLocalStorage(this, principal, storagePrincipal);
+        new PartitionedLocalStorage(this, principal, storagePrincipal, cache);
   }
 
-  MOZ_ASSERT_IF(
-      !StoragePartitioningEnabled(access, cookieSettings),
-      ShouldPartitionStorage(access) ==
-          (mLocalStorage->Type() == Storage::ePartitionedLocalStorage));
+  MOZ_ASSERT_IF(!partitioningEnabled,
+                shouldPartition == (mLocalStorage->Type() ==
+                                    Storage::ePartitionedLocalStorage));
 
   return mLocalStorage;
 }
@@ -5178,8 +5195,13 @@ void nsGlobalWindowInner::Resume() {
   // in Suspend() and ensures all children have the correct mSuspendDepth.
   CallOnChildren(&nsGlobalWindowInner::Resume);
 
-  MOZ_ASSERT(mSuspendDepth != 0);
+  if (mSuspendDepth == 0) {
+    // Ignore if the window is not suspended.
+    return;
+  }
+
   mSuspendDepth -= 1;
+
   if (mSuspendDepth != 0) {
     return;
   }
@@ -5649,7 +5671,7 @@ class WindowScriptTimeoutHandler final : public ScriptTimeoutHandler {
   MOZ_CAN_RUN_SCRIPT virtual bool Call(const char* aExecutionReason) override;
 
  private:
-  virtual ~WindowScriptTimeoutHandler() {}
+  virtual ~WindowScriptTimeoutHandler() = default;
 
   // Initiating script for use when evaluating mExpr on the main thread.
   RefPtr<LoadedScript> mInitiatingScript;
@@ -6141,7 +6163,7 @@ void nsGlobalWindowInner::AddGamepad(uint32_t aIndex, Gamepad* aGamepad) {
   }
   mGamepadIndexSet.Put(index);
   aGamepad->SetIndex(index);
-  mGamepads.Put(aIndex, aGamepad);
+  mGamepads.Put(aIndex, RefPtr{aGamepad});
 }
 
 void nsGlobalWindowInner::RemoveGamepad(uint32_t aIndex) {
@@ -6814,7 +6836,7 @@ void nsGlobalWindowInner::SetReplaceableWindowCoord(
   }
 
   int32_t value;
-  if (!ValueToPrimitive<int32_t, eDefault>(aCx, aValue, &value)) {
+  if (!ValueToPrimitive<int32_t, eDefault>(aCx, aValue, aPropName, &value)) {
     aError.Throw(NS_ERROR_UNEXPECTED);
     return;
   }
@@ -6933,24 +6955,19 @@ already_AddRefed<Promise> nsGlobalWindowInner::CreateImageBitmap(
                              Some(gfx::IntRect(aSx, aSy, aSw, aSh)), aRv);
 }
 
-mozilla::dom::TabGroup* nsGlobalWindowInner::TabGroupInner() {
+mozilla::dom::TabGroup* nsGlobalWindowInner::MaybeTabGroupInner() {
   // If we don't have a TabGroup yet, try to get it from the outer window and
   // cache it.
   if (!mTabGroup) {
     nsGlobalWindowOuter* outer = GetOuterWindowInternal();
-    // This will never be called without either an outer window, or a cached tab
-    // group. This is because of the following:
-    // * This method is only called on inner windows
-    // * This method is called as a document is attached to it's script global
-    //   by the document
-    // * Inner windows are created in nsGlobalWindowInner::SetNewDocument, which
-    //   immediately sets a document, which will call this method, causing
-    //   the TabGroup to be cached.
-    MOZ_RELEASE_ASSERT(
-        outer, "Inner window without outer window has no cached tab group!");
-    mTabGroup = outer->TabGroup();
+    if (!outer) {
+      return nullptr;
+    }
+    mTabGroup = outer->MaybeTabGroup();
+    if (!mTabGroup) {
+      return nullptr;
+    }
   }
-  MOZ_ASSERT(mTabGroup);
 
 #ifdef DEBUG
   nsGlobalWindowOuter* outer = GetOuterWindowInternal();
@@ -6958,6 +6975,24 @@ mozilla::dom::TabGroup* nsGlobalWindowInner::TabGroupInner() {
 #endif
 
   return mTabGroup;
+}
+
+mozilla::dom::TabGroup* nsGlobalWindowInner::TabGroupInner() {
+  // This will never be called without either an outer window, or a cached tab
+  // group. This is because of the following:
+  // * This method is only called on inner windows
+  // * This method is called as a document is attached to its script global
+  //   by the document
+  // * Inner windows are created in nsGlobalWindowInner::SetNewDocument, which
+  //   immediately sets a document, which will call this method, causing
+  //   the TabGroup to be cached.
+  MOZ_RELEASE_ASSERT(
+      mTabGroup || GetOuterWindowInternal(),
+      "Inner window without outer window has no cached tab group!");
+
+  mozilla::dom::TabGroup* tabGroup = MaybeTabGroupInner();
+  MOZ_RELEASE_ASSERT(tabGroup);
+  return tabGroup;
 }
 
 nsresult nsGlobalWindowInner::Dispatch(
@@ -7076,10 +7111,19 @@ void nsGlobalWindowInner::StorageAccessGranted() {
 
   // Reset DOM Cache
   mCacheStorage = nullptr;
+
+  // Reset the active storage principal
+  if (mDoc) {
+    mDoc->ClearActiveStoragePrincipal();
+  }
 }
 
 mozilla::dom::TabGroup* nsPIDOMWindowInner::TabGroup() {
   return nsGlobalWindowInner::Cast(this)->TabGroupInner();
+}
+
+mozilla::dom::TabGroup* nsPIDOMWindowInner::MaybeTabGroup() {
+  return nsGlobalWindowInner::Cast(this)->MaybeTabGroupInner();
 }
 
 /* static */
@@ -7136,6 +7180,17 @@ void nsPIDOMWindowInner::SaveStorageAccessGranted(
   if (!HasStorageAccessGranted(aPermissionKey)) {
     mStorageAccessGranted.AppendElement(aPermissionKey);
   }
+
+  nsGlobalWindowInner::Cast(this)->ClearActiveStoragePrincipal();
+}
+
+void nsGlobalWindowInner::ClearActiveStoragePrincipal() {
+  Document* doc = GetExtantDoc();
+  if (doc) {
+    doc->ClearActiveStoragePrincipal();
+  }
+
+  CallOnChildren(&nsGlobalWindowInner::ClearActiveStoragePrincipal);
 }
 
 bool nsPIDOMWindowInner::HasStorageAccessGranted(
@@ -7217,13 +7272,19 @@ void nsPIDOMWindowInner::BroadcastReport(Report* aReport) {
 }
 
 void nsPIDOMWindowInner::NotifyReportingObservers() {
-  nsTArray<RefPtr<ReportingObserver>> reportingObservers(mReportingObservers);
-  for (RefPtr<ReportingObserver>& observer : reportingObservers) {
-    observer->MaybeNotify();
+  const nsTArray<RefPtr<ReportingObserver>> reportingObservers(
+      mReportingObservers);
+  for (auto& observer : reportingObservers) {
+    // MOZ_KnownLive because 'reportingObservers' is guaranteed to
+    // keep it alive.
+    //
+    // This can go away once
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=1620312 is fixed.
+    MOZ_KnownLive(observer)->MaybeNotify();
   }
 }
 
-nsPIDOMWindowInner::~nsPIDOMWindowInner() {}
+nsPIDOMWindowInner::~nsPIDOMWindowInner() = default;
 
 #undef FORWARD_TO_OUTER
 #undef FORWARD_TO_OUTER_OR_THROW

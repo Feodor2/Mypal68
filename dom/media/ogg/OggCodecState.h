@@ -544,7 +544,7 @@ class SkeletonState : public OggCodecState {
       MOZ_COUNT_CTOR(nsKeyFrameIndex);
     }
 
-    ~nsKeyFrameIndex() { MOZ_COUNT_DTOR(nsKeyFrameIndex); }
+    MOZ_COUNTED_DTOR(nsKeyFrameIndex)
 
     void Add(int64_t aOffset, int64_t aTimeMs) {
       mKeyPoints.AppendElement(nsKeyPoint(aOffset, aTimeMs));

@@ -121,9 +121,8 @@ class HTMLInputElement;
  * mValue member of the TextControlState object.
  *
  *   * If an editor has been initialized for the control, the value is set and
- * retrievd via the nsIPlaintextEditor interface, and is internally managed by
- * the editor as the native anonymous content tree attached to the control's
- * frame.
+ * retrievd via the nsIEditor interface, and is internally managed by the
+ * editor as the native anonymous content tree attached to the control's frame.
  *
  *   * If the text control state object is unbound from the control's frame, the
  * value is transferred to the mValue member variable, and will be managed there
@@ -141,12 +140,14 @@ class TextControlState final : public SupportsWeakPtr<TextControlState> {
 
   static TextControlState* Construct(TextControlElement* aOwningElement);
 
-  static void Shutdown();
+  // Note that this does not run script actually because of `sHasShutDown`
+  // is set to true before calling `DeleteOrCacheForReuse()`.
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY static void Shutdown();
 
   /**
    * Destroy() deletes the instance immediately or later.
    */
-  void Destroy();
+  MOZ_CAN_RUN_SCRIPT void Destroy();
 
   TextControlState() = delete;
   explicit TextControlState(const TextControlState&) = delete;
@@ -160,14 +161,13 @@ class TextControlState final : public SupportsWeakPtr<TextControlState> {
 
   bool IsBusy() const { return !!mHandlingState || mValueTransferInProgress; }
 
-  TextEditor* GetTextEditor();
+  MOZ_CAN_RUN_SCRIPT TextEditor* GetTextEditor();
   TextEditor* GetTextEditorWithoutCreation();
   nsISelectionController* GetSelectionController() const;
   nsFrameSelection* GetConstFrameSelection();
   nsresult BindToFrame(nsTextControlFrame* aFrame);
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY void UnbindFromFrame(nsTextControlFrame* aFrame);
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY nsresult
-  PrepareEditor(const nsAString* aValue = nullptr);
+  MOZ_CAN_RUN_SCRIPT void UnbindFromFrame(nsTextControlFrame* aFrame);
+  MOZ_CAN_RUN_SCRIPT nsresult PrepareEditor(const nsAString* aValue = nullptr);
   void InitializeKeyboardEventListeners();
 
   /**
@@ -196,10 +196,10 @@ class TextControlState final : public SupportsWeakPtr<TextControlState> {
     // TODO(mbrodesser): update comment and enumerator identifier to reflect
     // that also the direction is set to forward.
     eSetValue_MoveCursorToEndIfValueChanged = 1 << 4,
-    // The value is changed for a XUL text control as opposed to for an HTML
-    // text control.  Such value changes are different in that they preserve the
-    // undo history.
-    eSetValue_ForXUL = 1 << 5,
+
+    // The value change should preserve undo history.
+    eSetValue_PreserveHistory = 1 << 5,
+
     // Whether it should be tried to move the cursor to the beginning of the
     // text control and set the selection direction to "forward".
     // TODO(mbrodesser): As soon as "none" is supported
@@ -275,15 +275,6 @@ class TextControlState final : public SupportsWeakPtr<TextControlState> {
   void GetPreviewText(nsAString& aValue);
   bool GetPreviewVisibility() { return mPreviewVisibility; }
 
-  /**
-   * Get the maxlength attribute
-   * @param aMaxLength the value of the max length attr
-   * @returns false if attr not defined
-   */
-  int32_t GetMaxLength();
-
-  void HideSelectionIfBlurred();
-
   struct SelectionProperties {
    public:
     SelectionProperties()
@@ -320,10 +311,9 @@ class TextControlState final : public SupportsWeakPtr<TextControlState> {
     nsITextControlFrame::SelectionDirection mDirection;
   };
 
-  bool IsSelectionCached() const;
-  SelectionProperties& GetSelectionProperties();
-  void SetSelectionProperties(SelectionProperties& aProps);
-  void WillInitEagerly() { mSelectionRestoreEagerInit = true; }
+  bool IsSelectionCached() const { return mSelectionCached; }
+  SelectionProperties& GetSelectionProperties() { return mSelectionProperties; }
+  MOZ_CAN_RUN_SCRIPT void SetSelectionProperties(SelectionProperties& aProps);
   bool HasNeverInitializedBefore() const { return !mEverInited; }
   // Sync up our selection properties with our editor prior to being destroyed.
   // This will invoke UnbindFromFrame() to ensure that we grab whatever
@@ -350,27 +340,28 @@ class TextControlState final : public SupportsWeakPtr<TextControlState> {
   //
   // XXXbz This should really take uint32_t, but none of our guts (either the
   // frame or our cached selection state) work with uint32_t at the moment...
-  void SetSelectionRange(uint32_t aStart, uint32_t aEnd,
-                         nsITextControlFrame::SelectionDirection aDirection,
-                         ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void SetSelectionRange(
+      uint32_t aStart, uint32_t aEnd,
+      nsITextControlFrame::SelectionDirection aDirection, ErrorResult& aRv);
 
   // Set the selection range, but with an optional string for the direction.
   // This will convert aDirection to an nsITextControlFrame::SelectionDirection
   // and then call our other SetSelectionRange overload.
-  void SetSelectionRange(uint32_t aSelectionStart, uint32_t aSelectionEnd,
-                         const dom::Optional<nsAString>& aDirection,
-                         ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void SetSelectionRange(
+      uint32_t aSelectionStart, uint32_t aSelectionEnd,
+      const dom::Optional<nsAString>& aDirection, ErrorResult& aRv);
 
   // Set the selection start.  This basically implements the
   // https://html.spec.whatwg.org/multipage/forms.html#dom-textarea/input-selectionstart
   // setter.
-  void SetSelectionStart(const dom::Nullable<uint32_t>& aStart,
-                         ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void SetSelectionStart(
+      const dom::Nullable<uint32_t>& aStart, ErrorResult& aRv);
 
   // Set the selection end.  This basically implements the
   // https://html.spec.whatwg.org/multipage/forms.html#dom-textarea/input-selectionend
   // setter.
-  void SetSelectionEnd(const dom::Nullable<uint32_t>& aEnd, ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void SetSelectionEnd(const dom::Nullable<uint32_t>& aEnd,
+                                          ErrorResult& aRv);
 
   // Get the selection direction as a string.  This implements the
   // https://html.spec.whatwg.org/multipage/forms.html#dom-textarea/input-selectiondirection
@@ -380,42 +371,33 @@ class TextControlState final : public SupportsWeakPtr<TextControlState> {
   // Set the selection direction.  This basically implements the
   // https://html.spec.whatwg.org/multipage/forms.html#dom-textarea/input-selectiondirection
   // setter.
-  void SetSelectionDirection(const nsAString& aDirection, ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void SetSelectionDirection(const nsAString& aDirection,
+                                                ErrorResult& aRv);
 
   // Set the range text.  This basically implements
   // https://html.spec.whatwg.org/multipage/forms.html#dom-textarea/input-setrangetext
-  void SetRangeText(const nsAString& aReplacement, ErrorResult& aRv);
+  MOZ_CAN_RUN_SCRIPT void SetRangeText(const nsAString& aReplacement,
+                                       ErrorResult& aRv);
   // The last two arguments are -1 if we don't know our selection range;
   // otherwise they're the start and end of our selection range.
-  void SetRangeText(const nsAString& aReplacement, uint32_t aStart,
-                    uint32_t aEnd, dom::SelectionMode aSelectMode,
-                    ErrorResult& aRv,
-                    const Maybe<uint32_t>& aSelectionStart = Nothing(),
-                    const Maybe<uint32_t>& aSelectionEnd = Nothing());
-
-  void UpdateEditableState(bool aNotify) {
-    if (auto* root = GetRootNode()) {
-      root->UpdateEditableState(aNotify);
-    }
-  }
+  MOZ_CAN_RUN_SCRIPT void SetRangeText(
+      const nsAString& aReplacement, uint32_t aStart, uint32_t aEnd,
+      dom::SelectionMode aSelectMode, ErrorResult& aRv,
+      const Maybe<uint32_t>& aSelectionStart = Nothing(),
+      const Maybe<uint32_t>& aSelectionEnd = Nothing());
 
  private:
   explicit TextControlState(TextControlElement* aOwningElement);
-  MOZ_CAN_RUN_SCRIPT_BOUNDARY ~TextControlState();
+  MOZ_CAN_RUN_SCRIPT ~TextControlState();
 
   /**
    * Delete the instance or cache to reuse it if possible.
    */
-  void DeleteOrCacheForReuse();
+  MOZ_CAN_RUN_SCRIPT void DeleteOrCacheForReuse();
 
-  void PrepareForReuse() {
-    MOZ_ASSERT(!IsBusy());
-    Unlink();
-    mValue.reset();
-    mTextCtrlElement = nullptr;
-  }
+  MOZ_CAN_RUN_SCRIPT void UnlinkInternal();
 
-  void ValueWasChanged(bool aNotify);
+  void ValueWasChanged();
 
   MOZ_CAN_RUN_SCRIPT void DestroyEditor();
   MOZ_CAN_RUN_SCRIPT void Clear();
@@ -423,8 +405,6 @@ class TextControlState final : public SupportsWeakPtr<TextControlState> {
   nsresult InitializeRootNode();
 
   void FinishedRestoringSelection();
-
-  HTMLInputElement* GetParentNumberControl(nsFrame* aFrame) const;
 
   bool EditorHasComposition();
 
@@ -474,8 +454,6 @@ class TextControlState final : public SupportsWeakPtr<TextControlState> {
   bool mValueTransferInProgress;  // Whether a value is being transferred to the
                                   // frame
   bool mSelectionCached;          // Whether mSelectionProperties is valid
-  mutable bool mSelectionRestoreEagerInit;  // Whether we're eager initing
-                                            // because of selection restore
   bool mPlaceholderVisibility;
   bool mPreviewVisibility;
 

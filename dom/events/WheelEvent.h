@@ -45,7 +45,7 @@ class WheelEvent : public MouseEvent {
                       double aDeltaY, double aDeltaZ, uint32_t aDeltaMode);
 
  protected:
-  ~WheelEvent() {}
+  ~WheelEvent() = default;
 
  private:
   int32_t mAppUnitsPerDevPixel;

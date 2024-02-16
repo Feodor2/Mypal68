@@ -50,6 +50,10 @@ DocGroup::DocGroup(TabGroup* aTabGroup, const nsACString& aKey)
     : mKey(aKey), mTabGroup(aTabGroup) {
   // This method does not add itself to mTabGroup->mDocGroups as the caller does
   // it for us.
+  if (StaticPrefs::dom_arena_allocator_enabled_AtStartup()) {
+    mArena = new mozilla::dom::DOMArena();
+  }
+
   mPerformanceCounter =
       new mozilla::PerformanceCounter(NS_LITERAL_CSTRING("DocGroup:") + aKey);
 }
@@ -60,6 +64,8 @@ DocGroup::~DocGroup() {
     nsIEventTarget* target = EventTargetFor(TaskCategory::Other);
     NS_ProxyRelease("DocGroup::mReactionsStack", target,
                     mReactionsStack.forget());
+
+    NS_ProxyRelease("DocGroup::mArena", target, mArena.forget());
   }
 
   mTabGroup->mDocGroups.RemoveEntry(mKey);
@@ -144,7 +150,7 @@ RefPtr<PerformanceInfoPromise> DocGroup::ReportPerformanceInfo() {
       ->Then(
           mainThread, __func__,
           [self, host, pid, windowID, duration, isTopLevel,
-           items](const PerformanceMemoryInfo& aMemoryInfo) {
+           items = std::move(items)](const PerformanceMemoryInfo& aMemoryInfo) {
             PerformanceInfo info =
                 PerformanceInfo(host, pid, windowID, duration,
                                 self->mPerformanceCounter->GetID(), false,

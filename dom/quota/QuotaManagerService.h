@@ -7,7 +7,7 @@
 
 #include "mozilla/dom/ipc/IdType.h"
 #include "mozilla/HalBatteryInformation.h"
-#include "nsAutoPtr.h"
+#include "mozilla/UniquePtr.h"
 #include "nsIObserver.h"
 #include "nsIQuotaManagerService.h"
 
@@ -73,7 +73,7 @@ class QuotaManagerService final : public nsIQuotaManagerService,
 
   nsresult EnsureBackgroundActor();
 
-  nsresult InitiateRequest(nsAutoPtr<PendingRequestInfo>& aInfo);
+  nsresult InitiateRequest(PendingRequestInfo& aInfo);
 
   void PerformIdleMaintenance();
 

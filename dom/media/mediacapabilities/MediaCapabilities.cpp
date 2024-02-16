@@ -107,8 +107,8 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
   if (!aConfiguration.mVideo.WasPassed() &&
       !aConfiguration.mAudio.WasPassed()) {
     aRv.ThrowTypeError<MSG_MISSING_REQUIRED_DICTIONARY_MEMBER>(
-        NS_LITERAL_STRING("'audio' or 'video' member of argument of "
-                          "MediaCapabilities.decodingInfo"));
+        "'audio' or 'video' member of argument of "
+        "MediaCapabilities.decodingInfo");
     return nullptr;
   }
 
@@ -167,7 +167,7 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
     // parameters.
     if (videoTracks.Length() != 1) {
       promise->MaybeRejectWithTypeError<MSG_NO_CODECS_PARAMETER>(
-          NS_ConvertUTF8toUTF16(videoContainer->OriginalString()));
+          videoContainer->OriginalString());
       return promise.forget();
     }
     MOZ_DIAGNOSTIC_ASSERT(videoTracks.ElementAt(0),
@@ -183,7 +183,7 @@ already_AddRefed<Promise> MediaCapabilities::DecodingInfo(
     // parameters.
     if (audioTracks.Length() != 1) {
       promise->MaybeRejectWithTypeError<MSG_NO_CODECS_PARAMETER>(
-          NS_ConvertUTF8toUTF16(audioContainer->OriginalString()));
+          audioContainer->OriginalString());
       return promise.forget();
     }
     MOZ_DIAGNOSTIC_ASSERT(audioTracks.ElementAt(0),
@@ -415,8 +415,8 @@ already_AddRefed<Promise> MediaCapabilities::EncodingInfo(
   if (!aConfiguration.mVideo.WasPassed() &&
       !aConfiguration.mAudio.WasPassed()) {
     aRv.ThrowTypeError<MSG_MISSING_REQUIRED_DICTIONARY_MEMBER>(
-        NS_LITERAL_STRING("'audio' or 'video' member of argument of "
-                          "MediaCapabilities.encodingInfo"));
+        "'audio' or 'video' member of argument of "
+        "MediaCapabilities.encodingInfo");
     return nullptr;
   }
 

@@ -61,7 +61,7 @@ static bool IsInActiveTab(nsPIDOMWindowInner* aParent) {
   }
 
   nsCOMPtr<nsIDocShellTreeItem> rootItem;
-  docShell->GetRootTreeItem(getter_AddRefs(rootItem));
+  docShell->GetInProcessRootTreeItem(getter_AddRefs(rootItem));
   if (!rootItem) {
     return false;
   }
@@ -122,7 +122,7 @@ CredentialsContainer::CredentialsContainer(nsPIDOMWindowInner* aParent)
   MOZ_ASSERT(aParent);
 }
 
-CredentialsContainer::~CredentialsContainer() {}
+CredentialsContainer::~CredentialsContainer() = default;
 
 void CredentialsContainer::EnsureWebAuthnManager() {
   MOZ_ASSERT(NS_IsMainThread());

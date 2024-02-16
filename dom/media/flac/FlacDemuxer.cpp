@@ -588,7 +588,7 @@ FlacTrackDemuxer::FlacTrackDemuxer(MediaResource* aSource)
   Reset();
 }
 
-FlacTrackDemuxer::~FlacTrackDemuxer() {}
+FlacTrackDemuxer::~FlacTrackDemuxer() = default;
 
 bool FlacTrackDemuxer::Init() {
   static const int BUFFER_SIZE = 4096;

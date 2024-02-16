@@ -18,7 +18,7 @@ MediaTrackList::MediaTrackList(nsIGlobalObject* aOwnerObject,
                                HTMLMediaElement* aMediaElement)
     : DOMEventTargetHelper(aOwnerObject), mMediaElement(aMediaElement) {}
 
-MediaTrackList::~MediaTrackList() {}
+MediaTrackList::~MediaTrackList() = default;
 
 NS_IMPL_CYCLE_COLLECTION_INHERITED(MediaTrackList, DOMEventTargetHelper,
                                    mTracks, mMediaElement)

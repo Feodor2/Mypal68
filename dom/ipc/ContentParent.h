@@ -335,8 +335,7 @@ class ContentParent final : public PContentParent,
                                       nsIPrincipal* aPrincipal) override;
 
   /** Notify that a tab is beginning its destruction sequence. */
-  static void NotifyTabDestroying(const TabId& aTabId,
-                                  const ContentParentId& aCpId);
+  void NotifyTabDestroying();
 
   /** Notify that a tab was destroyed during normal operation. */
   void NotifyTabDestroyed(const TabId& aTabId, bool aNotifiedDestroying);
@@ -348,10 +347,6 @@ class ContentParent final : public PContentParent,
   TestShellParent* GetTestShellSingleton();
 
   jsipc::CPOWManager* GetCPOWManager() override;
-
-  static void UnregisterRemoteFrame(const TabId& aTabId,
-                                    const ContentParentId& aCpId,
-                                    bool aMarkedDestroying);
 
   // This method can be called on any thread.
   void RegisterRemoteWorkerActor();
@@ -467,14 +462,8 @@ class ContentParent final : public PContentParent,
                             nsICycleCollectorLogSink* aSink,
                             nsIDumpGCAndCCLogsCallback* aCallback);
 
-  mozilla::ipc::IPCResult RecvUnregisterRemoteFrame(
-      const TabId& aTabId, const ContentParentId& aCpId,
-      const bool& aMarkedDestroying);
-
   mozilla::ipc::IPCResult RecvNotifyTabDestroying(const TabId& aTabId,
                                                   const ContentParentId& aCpId);
-
-  nsTArray<TabContext> GetManagedTabContext();
 
   already_AddRefed<POfflineCacheUpdateParent> AllocPOfflineCacheUpdateParent(
       const URIParams& aManifestURI, const URIParams& aDocumentURI,
@@ -498,8 +487,8 @@ class ContentParent final : public PContentParent,
       const nsTArray<PermissionRequest>& aRequests,
       const IPC::Principal& aPrincipal,
       const IPC::Principal& aTopLevelPrincipal,
-      const bool& aIsHandlingUserInput, const bool& aDocumentHasUserInput,
-      const DOMTimeStamp& aPageLoadTimestamp, const TabId& aTabId);
+      const bool& aIsHandlingUserInput,
+      const TabId& aTabId);
 
   bool DeallocPContentPermissionRequestParent(
       PContentPermissionRequestParent* actor);
@@ -877,12 +866,13 @@ class ContentParent final : public PContentParent,
   virtual mozilla::ipc::IPCResult RecvPPresentationConstructor(
       PPresentationParent* aActor) override;
 
+#ifdef MOZ_WEBSPEECH
   PSpeechSynthesisParent* AllocPSpeechSynthesisParent();
-
   bool DeallocPSpeechSynthesisParent(PSpeechSynthesisParent* aActor);
 
   virtual mozilla::ipc::IPCResult RecvPSpeechSynthesisConstructor(
       PSpeechSynthesisParent* aActor) override;
+#endif
 
   PWebBrowserPersistDocumentParent* AllocPWebBrowserPersistDocumentParent(
       PBrowserParent* aBrowser, const uint64_t& aOuterWindowID);
@@ -1134,8 +1124,7 @@ class ContentParent final : public PContentParent,
 
   mozilla::ipc::IPCResult RecvFirstPartyStorageAccessGrantedForOrigin(
       const Principal& aParentPrincipal, const Principal& aTrackingPrincipal,
-      const nsCString& aTrackingOrigin, const nsCString& aGrantedOrigin,
-      const int& aAllowMode,
+      const nsCString& aTrackingOrigin, const int& aAllowMode,
       FirstPartyStorageAccessGrantedForOriginResolver&& aResolver);
 
   mozilla::ipc::IPCResult RecvStoreUserInteractionAsPermission(
@@ -1319,7 +1308,7 @@ class ParentIdleListener : public nsIObserver {
       : mParent(aParent), mObserver(aObserver), mTime(aTime) {}
 
  private:
-  virtual ~ParentIdleListener() {}
+  virtual ~ParentIdleListener() = default;
 
   RefPtr<mozilla::dom::ContentParent> mParent;
   uint64_t mObserver;

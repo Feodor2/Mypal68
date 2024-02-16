@@ -23,7 +23,7 @@ class txVariableMapBase {
   void removeVariable(const txExpandedName& aName);
 
  protected:
-  txVariableMapBase() {}
+  txVariableMapBase() = default;
   ~txVariableMapBase();
 
   txExpandedNameMap<txAExprResult> mMap;
@@ -36,7 +36,7 @@ class txVariableMapBase {
 class txVariableMap : public txVariableMapBase {
  public:
   txVariableMap() : txVariableMapBase() { MOZ_COUNT_CTOR(txVariableMap); }
-  ~txVariableMap() { MOZ_COUNT_DTOR(txVariableMap); }
+  MOZ_COUNTED_DTOR(txVariableMap)
 };
 
 /**
@@ -48,7 +48,7 @@ class txParameterMap : public txVariableMapBase {
   NS_INLINE_DECL_REFCOUNTING(txParameterMap)
 
  private:
-  ~txParameterMap() {}
+  ~txParameterMap() = default;
 };
 
 inline txVariableMapBase::~txVariableMapBase() {

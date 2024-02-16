@@ -163,6 +163,17 @@ int32_t nsNameSpaceManager::GetNameSpaceID(nsAtom* aURI, bool aInChromeDoc) {
   return kNameSpaceID_Unknown;
 }
 
+// static
+const char* nsNameSpaceManager::GetNameSpaceDisplayName(uint32_t aNameSpaceID) {
+  static const char* kNSURIs[] = {"([none])", "(xmlns)", "(xml)",    "(xhtml)",
+                                  "(XLink)",  "(XSLT)",  "(XBL)",  "(MathML)",
+                                  "(RDF)", "(XUL)",    "(SVG)"};
+  if (aNameSpaceID < ArrayLength(kNSURIs)) {
+    return kNSURIs[aNameSpaceID];
+  }
+  return "";
+}
+
 nsresult NS_NewElement(Element** aResult,
                        already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
                        FromParser aFromParser, const nsAString* aIs) {
@@ -203,7 +214,9 @@ nsresult NS_NewElement(Element** aResult,
     return NS_NewXMLElement(aResult, genericXMLNI.forget());
   }
   if (ns == kNameSpaceID_XBL && ni->Equals(nsGkAtoms::children)) {
-    NS_ADDREF(*aResult = new XBLChildrenElement(ni.forget()));
+    RefPtr<mozilla::dom::NodeInfo> nodeInfo(ni);
+    auto* nim = nodeInfo->NodeInfoManager();
+    NS_ADDREF(*aResult = new (nim) XBLChildrenElement(nodeInfo.forget()));
     return NS_OK;
   }
 

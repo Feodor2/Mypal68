@@ -56,7 +56,8 @@ class InputStreamReader final : public nsIInputStreamCallback {
   OnInputStreamReady(nsIAsyncInputStream* aStream) override {
     // Let's continue with SyncRead().
     Monitor2AutoLock lock(mMonitor);
-    return lock.Signal();
+    lock.Signal();
+    return NS_OK;
   }
 
  private:

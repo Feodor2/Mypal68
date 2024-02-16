@@ -261,6 +261,8 @@ void TestFunctions::TestNotAllowShared(const ArrayBufferView& aBuffer) {}
 
 void TestFunctions::TestNotAllowShared(const ArrayBuffer& aBuffer) {}
 
+void TestFunctions::TestNotAllowShared(const nsAString& aBuffer) {}
+
 void TestFunctions::TestAllowShared(const ArrayBufferView& aBuffer) {}
 
 void TestFunctions::TestAllowShared(const ArrayBuffer& aBuffer) {}
@@ -269,7 +271,7 @@ void TestFunctions::TestDictWithAllowShared(
     const DictWithAllowSharedBufferSource& aDict) {}
 
 void TestFunctions::TestUnionOfBuffferSource(
-    const ArrayBufferOrArrayBufferView& aUnion) {}
+    const ArrayBufferOrArrayBufferViewOrString& aUnion) {}
 
 void TestFunctions::TestUnionOfAllowSharedBuffferSource(
     const MaybeSharedArrayBufferOrMaybeSharedArrayBufferView& aUnion) {}

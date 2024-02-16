@@ -34,7 +34,7 @@ SpeechSynthesisUtterance::SpeechSynthesisUtterance(
       mPitch(1),
       mPaused(false) {}
 
-SpeechSynthesisUtterance::~SpeechSynthesisUtterance() {}
+SpeechSynthesisUtterance::~SpeechSynthesisUtterance() = default;
 
 JSObject* SpeechSynthesisUtterance::WrapObject(
     JSContext* aCx, JS::Handle<JSObject*> aGivenProto) {

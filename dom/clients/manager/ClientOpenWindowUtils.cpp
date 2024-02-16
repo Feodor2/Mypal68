@@ -167,14 +167,14 @@ void OpenWindow(const ClientOpenWindowArgs& aArgs, nsPIDOMWindowOuter** aWindow,
   nsresult rv = NS_NewURI(getter_AddRefs(baseURI), aArgs.baseURL());
   if (NS_WARN_IF(NS_FAILED(rv))) {
     nsPrintfCString err("Invalid base URL \"%s\"", aArgs.baseURL().get());
-    aRv.ThrowTypeError(NS_ConvertUTF8toUTF16(err));
+    aRv.ThrowTypeError(err);
     return;
   }
 
   rv = NS_NewURI(getter_AddRefs(uri), aArgs.url(), nullptr, baseURI);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     nsPrintfCString err("Invalid URL \"%s\"", aArgs.url().get());
-    aRv.ThrowTypeError(NS_ConvertUTF8toUTF16(err));
+    aRv.ThrowTypeError(err);
     return;
   }
 
@@ -202,7 +202,7 @@ void OpenWindow(const ClientOpenWindowArgs& aArgs, nsPIDOMWindowOuter** aWindow,
     JS::Rooted<JSObject*> sandbox(cx);
     rv = xpc->CreateSandbox(cx, principal, sandbox.address());
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      aRv.ThrowTypeError(u"Unable to open window");
+      aRv.ThrowTypeError("Unable to open window");
       return;
     }
 
@@ -212,19 +212,19 @@ void OpenWindow(const ClientOpenWindowArgs& aArgs, nsPIDOMWindowOuter** aWindow,
     nsCOMPtr<nsIWindowWatcher> wwatch =
         do_GetService(NS_WINDOWWATCHER_CONTRACTID, &rv);
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      aRv.ThrowTypeError(u"Unable to open window");
+      aRv.ThrowTypeError("Unable to open window");
       return;
     }
     nsCOMPtr<nsPIWindowWatcher> pwwatch(do_QueryInterface(wwatch));
     if (NS_WARN_IF(!pwwatch)) {
-      aRv.ThrowTypeError(u"Unable to open window");
+      aRv.ThrowTypeError("Unable to open window");
       return;
     }
 
     nsCString spec;
     rv = uri->GetSpec(spec);
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      aRv.ThrowTypeError(u"Unable to open window");
+      aRv.ThrowTypeError("Unable to open window");
       return;
     }
 
@@ -240,7 +240,7 @@ void OpenWindow(const ClientOpenWindowArgs& aArgs, nsPIDOMWindowOuter** aWindow,
         /* aForceNoReferrer = */ false,
         /* aLoadInfp = */ nullptr, getter_AddRefs(newWindow));
     if (NS_WARN_IF(NS_FAILED(rv))) {
-      aRv.ThrowTypeError(u"Unable to open window");
+      aRv.ThrowTypeError("Unable to open window");
       return;
     }
     nsCOMPtr<nsPIDOMWindowOuter> pwindow = nsPIDOMWindowOuter::From(newWindow);
@@ -256,14 +256,14 @@ void OpenWindow(const ClientOpenWindowArgs& aArgs, nsPIDOMWindowOuter** aWindow,
     // It is possible to be running without a browser window on Mac OS, so
     // we need to open a new chrome window.
     // TODO(catalinb): open new chrome window. Bug 1218080
-    aRv.ThrowTypeError(u"Unable to open window");
+    aRv.ThrowTypeError("Unable to open window");
     return;
   }
 
   nsCOMPtr<nsIDOMChromeWindow> chromeWin = do_QueryInterface(browserWindow);
   if (NS_WARN_IF(!chromeWin)) {
     // XXXbz Can this actually happen?  Seems unlikely.
-    aRv.ThrowTypeError(u"Unable to open window");
+    aRv.ThrowTypeError("Unable to open window");
     return;
   }
 
@@ -271,7 +271,7 @@ void OpenWindow(const ClientOpenWindowArgs& aArgs, nsPIDOMWindowOuter** aWindow,
   chromeWin->GetBrowserDOMWindow(getter_AddRefs(bwin));
 
   if (NS_WARN_IF(!bwin)) {
-    aRv.ThrowTypeError(u"Unable to open window");
+    aRv.ThrowTypeError("Unable to open window");
     return;
   }
 
@@ -280,7 +280,7 @@ void OpenWindow(const ClientOpenWindowArgs& aArgs, nsPIDOMWindowOuter** aWindow,
                      nsIBrowserDOMWindow::OPEN_NEW, principal, csp,
                      getter_AddRefs(win));
   if (NS_WARN_IF(NS_FAILED(rv))) {
-    aRv.ThrowTypeError(u"Unable to open window");
+    aRv.ThrowTypeError("Unable to open window");
     return;
   }
 
@@ -447,7 +447,7 @@ RefPtr<ClientOpPromise> ClientOpenWindowInCurrentProcess(
 #endif  // MOZ_WIDGET_ANDROID
 
   nsCOMPtr<nsPIDOMWindowOuter> outerWindow;
-  CopyableErrorResult rv;
+  ErrorResult rv;
   OpenWindow(aArgs, getter_AddRefs(outerWindow), rv);
 
   if (NS_WARN_IF(rv.Failed())) {

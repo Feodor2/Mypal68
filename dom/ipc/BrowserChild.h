@@ -21,6 +21,7 @@
 #include "nsFrameMessageManager.h"
 #include "nsWeakReference.h"
 #include "nsIBrowserChild.h"
+#include "nsIRemoteTab.h"
 #include "nsITooltipListener.h"
 #include "nsIWebProgressListener.h"
 #include "nsIWebProgressListener2.h"
@@ -433,12 +434,13 @@ class BrowserChild final : public BrowserChildBase,
   mozilla::ipc::IPCResult RecvSwappedWithOtherRemoteLoader(
       const IPCTabContext& aContext);
 
+#ifdef ACCESSIBILITY
   PDocAccessibleChild* AllocPDocAccessibleChild(PDocAccessibleChild*,
                                                 const uint64_t&,
                                                 const uint32_t&,
                                                 const IAccessibleHolder&);
-
   bool DeallocPDocAccessibleChild(PDocAccessibleChild*);
+#endif
 
   PColorPickerChild* AllocPColorPickerChild(const nsString& aTitle,
                                             const nsString& aInitialColor);

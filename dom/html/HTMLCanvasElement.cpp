@@ -226,7 +226,7 @@ HTMLCanvasPrintState::HTMLCanvasPrintState(
       mContext(aContext),
       mCallback(aCallback) {}
 
-HTMLCanvasPrintState::~HTMLCanvasPrintState() {}
+HTMLCanvasPrintState::~HTMLCanvasPrintState() = default;
 
 /* virtual */
 JSObject* HTMLCanvasPrintState::WrapObject(JSContext* aCx,
@@ -461,14 +461,13 @@ void HTMLCanvasElement::AfterMaybeChangeAttr(int32_t aNamespaceID,
   }
 }
 
-void HTMLCanvasElement::HandlePrintCallback(
-    nsPresContext::nsPresContextType aType) {
+void HTMLCanvasElement::HandlePrintCallback(nsPresContext* aPresContext) {
   // Only call the print callback here if 1) we're in a print testing mode or
   // print preview mode, 2) the canvas has a print callback and 3) the callback
   // hasn't already been called. For real printing the callback is handled in
   // nsSimplePageSequenceFrame::PrePrintNextPage.
-  if ((aType == nsPresContext::eContext_PageLayout ||
-       aType == nsPresContext::eContext_PrintPreview) &&
+  if ((aPresContext->Type() == nsPresContext::eContext_PageLayout ||
+       aPresContext->Type() == nsPresContext::eContext_PrintPreview) &&
       !mPrintState && GetMozPrintCallback()) {
     DispatchPrintCallback(nullptr);
   }
@@ -647,7 +646,7 @@ class CanvasCaptureTrackSource : public MediaStreamTrackSource {
   void Enable() override {}
 
  private:
-  virtual ~CanvasCaptureTrackSource() {}
+  virtual ~CanvasCaptureTrackSource() = default;
 
   RefPtr<CanvasCaptureMediaStream> mCaptureStream;
 };

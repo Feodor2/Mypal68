@@ -71,7 +71,7 @@ class KeyboardEvent : public UIEvent {
                            bool aMetaKey);
 
  protected:
-  ~KeyboardEvent() {}
+  ~KeyboardEvent() = default;
 
   void InitWithKeyboardEventInit(EventTarget* aOwner, const nsAString& aType,
                                  const KeyboardEventInit& aParam);

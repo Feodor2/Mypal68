@@ -5,6 +5,8 @@
 #ifndef mozilla_dom_simpledb_ActorsParent_h
 #define mozilla_dom_simpledb_ActorsParent_h
 
+#include "mozilla/dom/quota/PersistenceType.h"
+
 template <class>
 struct already_AddRefed;
 
@@ -27,10 +29,12 @@ class Client;
 }  // namespace quota
 
 PBackgroundSDBConnectionParent* AllocPBackgroundSDBConnectionParent(
+    const mozilla::dom::quota::PersistenceType& aPersistenceType,
     const mozilla::ipc::PrincipalInfo& aPrincipalInfo);
 
 bool RecvPBackgroundSDBConnectionConstructor(
     PBackgroundSDBConnectionParent* aActor,
+    const mozilla::dom::quota::PersistenceType& aPersistenceType,
     const mozilla::ipc::PrincipalInfo& aPrincipalInfo);
 
 bool DeallocPBackgroundSDBConnectionParent(

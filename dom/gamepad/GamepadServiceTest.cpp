@@ -184,7 +184,7 @@ void GamepadServiceTest::NewPoseMove(
                     GamepadCapabilityFlags::Cap_LinearAcceleration;
   if (!aOrient.IsNull()) {
     const Float32Array& value = aOrient.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 4);
     poseState.orientation[0] = value.Data()[0];
     poseState.orientation[1] = value.Data()[1];
@@ -194,7 +194,7 @@ void GamepadServiceTest::NewPoseMove(
   }
   if (!aPos.IsNull()) {
     const Float32Array& value = aPos.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     poseState.position[0] = value.Data()[0];
     poseState.position[1] = value.Data()[1];
@@ -203,7 +203,7 @@ void GamepadServiceTest::NewPoseMove(
   }
   if (!aAngVelocity.IsNull()) {
     const Float32Array& value = aAngVelocity.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     poseState.angularVelocity[0] = value.Data()[0];
     poseState.angularVelocity[1] = value.Data()[1];
@@ -211,7 +211,7 @@ void GamepadServiceTest::NewPoseMove(
   }
   if (!aAngAcceleration.IsNull()) {
     const Float32Array& value = aAngAcceleration.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     poseState.angularAcceleration[0] = value.Data()[0];
     poseState.angularAcceleration[1] = value.Data()[1];
@@ -219,7 +219,7 @@ void GamepadServiceTest::NewPoseMove(
   }
   if (!aLinVelocity.IsNull()) {
     const Float32Array& value = aLinVelocity.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     poseState.linearVelocity[0] = value.Data()[0];
     poseState.linearVelocity[1] = value.Data()[1];
@@ -227,7 +227,7 @@ void GamepadServiceTest::NewPoseMove(
   }
   if (!aLinAcceleration.IsNull()) {
     const Float32Array& value = aLinAcceleration.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     poseState.linearAcceleration[0] = value.Data()[0];
     poseState.linearAcceleration[1] = value.Data()[1];

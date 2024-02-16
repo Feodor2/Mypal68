@@ -66,6 +66,9 @@ bool AnimationPerformanceWarning::ToLocalizedString(
     case Type::HasRenderingObserver:
       key = "CompositorAnimationWarningHasRenderingObserver";
       break;
+    case Type::HasCurrentColor:
+      key = "CompositorAnimationWarningHasCurrentColor";
+      break;
     case Type::None:
       MOZ_ASSERT_UNREACHABLE("Uninitialized type shouldn't be used");
       return false;

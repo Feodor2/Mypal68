@@ -19,6 +19,7 @@ class ServiceWorkerRegistrationProxy::DelayedUpdate final
   RefPtr<ServiceWorkerRegistrationProxy> mProxy;
   RefPtr<ServiceWorkerRegistrationPromise::Private> mPromise;
   nsCOMPtr<nsITimer> mTimer;
+  nsCString mNewestWorkerScriptUrl;
 
   ~DelayedUpdate() = default;
 
@@ -28,8 +29,10 @@ class ServiceWorkerRegistrationProxy::DelayedUpdate final
 
   DelayedUpdate(RefPtr<ServiceWorkerRegistrationProxy>&& aProxy,
                 RefPtr<ServiceWorkerRegistrationPromise::Private>&& aPromise,
-                uint32_t delay);
+                nsCString&& aNewestWorkerScriptUrl, uint32_t delay);
   void Reject();
+
+  void SetNewestWorkerScriptUrl(nsCString&& aNewestWorkerScriptUrl);
 };
 
 ServiceWorkerRegistrationProxy::~ServiceWorkerRegistrationProxy() {
@@ -74,6 +77,11 @@ void ServiceWorkerRegistrationProxy::InitOnMainThread() {
   RefPtr<ServiceWorkerRegistrationInfo> reg =
       swm->GetRegistration(mDescriptor.PrincipalInfo(), mDescriptor.Scope());
   NS_ENSURE_TRUE_VOID(reg);
+
+  if (reg->Id() != mDescriptor.Id()) {
+    // This registration has already been replaced by another one.
+    return;
+  }
 
   scopeExit.release();
 
@@ -250,10 +258,13 @@ NS_IMPL_ISUPPORTS(ServiceWorkerRegistrationProxy::DelayedUpdate,
 ServiceWorkerRegistrationProxy::DelayedUpdate::DelayedUpdate(
     RefPtr<ServiceWorkerRegistrationProxy>&& aProxy,
     RefPtr<ServiceWorkerRegistrationPromise::Private>&& aPromise,
-    uint32_t delay)
-    : mProxy(std::move(aProxy)), mPromise(std::move(aPromise)) {
+    nsCString&& aNewestWorkerScriptUrl, uint32_t delay)
+    : mProxy(std::move(aProxy)),
+      mPromise(std::move(aPromise)),
+      mNewestWorkerScriptUrl(std::move(aNewestWorkerScriptUrl)) {
   MOZ_DIAGNOSTIC_ASSERT(mProxy);
   MOZ_DIAGNOSTIC_ASSERT(mPromise);
+  MOZ_ASSERT(!mNewestWorkerScriptUrl.IsEmpty());
   mProxy->mDelayedUpdate = this;
   Result<nsCOMPtr<nsITimer>, nsresult> result =
       NS_NewTimerWithCallback(this, delay, nsITimer::TYPE_ONE_SHOT,
@@ -271,6 +282,12 @@ void ServiceWorkerRegistrationProxy::DelayedUpdate::Reject() {
   mPromise->Reject(NS_ERROR_DOM_INVALID_STATE_ERR, __func__);
 }
 
+void ServiceWorkerRegistrationProxy::DelayedUpdate::SetNewestWorkerScriptUrl(
+    nsCString&& aNewestWorkerScriptUrl) {
+  MOZ_ASSERT(NS_IsMainThread());
+  mNewestWorkerScriptUrl = std::move(aNewestWorkerScriptUrl);
+}
+
 NS_IMETHODIMP
 ServiceWorkerRegistrationProxy::DelayedUpdate::Notify(nsITimer* aTimer) {
   auto scopeExit = MakeScopeExit(
@@ -283,7 +300,8 @@ ServiceWorkerRegistrationProxy::DelayedUpdate::Notify(nsITimer* aTimer) {
   NS_ENSURE_TRUE(swm, NS_ERROR_FAILURE);
 
   RefPtr<UpdateCallback> cb = new UpdateCallback(std::move(mPromise));
-  swm->Update(mProxy->mReg->Principal(), mProxy->mReg->Scope(), cb);
+  swm->Update(mProxy->mReg->Principal(), mProxy->mReg->Scope(),
+              std::move(mNewestWorkerScriptUrl), cb);
 
   mTimer = nullptr;
   mProxy->mDelayedUpdate = nullptr;
@@ -292,16 +310,17 @@ ServiceWorkerRegistrationProxy::DelayedUpdate::Notify(nsITimer* aTimer) {
   return NS_OK;
 }
 
-RefPtr<ServiceWorkerRegistrationPromise>
-ServiceWorkerRegistrationProxy::Update() {
+RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerRegistrationProxy::Update(
+    const nsCString& aNewestWorkerScriptUrl) {
   AssertIsOnBackgroundThread();
 
   RefPtr<ServiceWorkerRegistrationProxy> self = this;
   RefPtr<ServiceWorkerRegistrationPromise::Private> promise =
       new ServiceWorkerRegistrationPromise::Private(__func__);
 
-  nsCOMPtr<nsIRunnable> r =
-      NS_NewRunnableFunction(__func__, [self, promise]() mutable {
+  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
+      __func__, [self, promise,
+                 newestWorkerScriptUrl = aNewestWorkerScriptUrl]() mutable {
         auto scopeExit = MakeScopeExit(
             [&] { promise->Reject(NS_ERROR_DOM_INVALID_STATE_ERR, __func__); });
 
@@ -314,14 +333,16 @@ ServiceWorkerRegistrationProxy::Update() {
         if (delay) {
           RefPtr<ServiceWorkerRegistrationProxy::DelayedUpdate> du =
               new ServiceWorkerRegistrationProxy::DelayedUpdate(
-                  std::move(self), std::move(promise), delay);
+                  std::move(self), std::move(promise),
+                  std::move(newestWorkerScriptUrl), delay);
         } else {
           RefPtr<ServiceWorkerManager> swm =
               ServiceWorkerManager::GetInstance();
           NS_ENSURE_TRUE_VOID(swm);
 
           RefPtr<UpdateCallback> cb = new UpdateCallback(std::move(promise));
-          swm->Update(self->mReg->Principal(), self->mReg->Scope(), cb);
+          swm->Update(self->mReg->Principal(), self->mReg->Scope(),
+                      std::move(newestWorkerScriptUrl), cb);
         }
         scopeExit.release();
       });

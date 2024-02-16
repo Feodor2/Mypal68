@@ -31,7 +31,7 @@ class GetFilesCallback {
                         const FallibleTArray<RefPtr<BlobImpl>>& aBlobImpls) = 0;
 
  protected:
-  virtual ~GetFilesCallback() {}
+  virtual ~GetFilesCallback() = default;
 };
 
 class GetFilesHelperBase {
@@ -39,7 +39,7 @@ class GetFilesHelperBase {
   explicit GetFilesHelperBase(bool aRecursiveFlag)
       : mRecursiveFlag(aRecursiveFlag) {}
 
-  virtual ~GetFilesHelperBase() {}
+  virtual ~GetFilesHelperBase() = default;
 
   virtual bool IsCanceled() { return false; }
 

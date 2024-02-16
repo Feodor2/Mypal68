@@ -32,9 +32,7 @@ void LSWriteOptimizerBase::DeleteItem(const nsAString& aKey, int64_t aDelta) {
       existingWriteInfo->GetType() == WriteInfo::InsertItem) {
     mWriteInfos.Remove(aKey);
   } else {
-    nsAutoPtr<WriteInfo> newWriteInfo(
-        new DeleteItemInfo(NextSerialNumber(), aKey));
-    mWriteInfos.Put(aKey, newWriteInfo.forget());
+    mWriteInfos.Put(aKey, MakeUnique<DeleteItemInfo>(NextSerialNumber(), aKey));
   }
 
   mTotalDelta += aDelta;
@@ -46,7 +44,7 @@ void LSWriteOptimizerBase::Truncate(int64_t aDelta) {
   mWriteInfos.Clear();
 
   if (!mTruncateInfo) {
-    mTruncateInfo = new TruncateInfo(NextSerialNumber());
+    mTruncateInfo = MakeUnique<TruncateInfo>(NextSerialNumber());
   }
 
   mTotalDelta += aDelta;
@@ -57,7 +55,7 @@ void LSWriteOptimizerBase::GetSortedWriteInfos(
   AssertIsOnOwningThread();
 
   if (mTruncateInfo) {
-    aWriteInfos.InsertElementSorted(mTruncateInfo, WriteInfoComparator());
+    aWriteInfos.InsertElementSorted(mTruncateInfo.get(), WriteInfoComparator());
   }
 
   for (auto iter = mWriteInfos.ConstIter(); !iter.Done(); iter.Next()) {
@@ -73,7 +71,7 @@ void LSWriteOptimizer<T, U>::InsertItem(const nsAString& aKey, const T& aValue,
   AssertIsOnOwningThread();
 
   WriteInfo* existingWriteInfo;
-  nsAutoPtr<WriteInfo> newWriteInfo;
+  UniquePtr<WriteInfo> newWriteInfo;
   if (mWriteInfos.Get(aKey, &existingWriteInfo) &&
       existingWriteInfo->GetType() == WriteInfo::DeleteItem) {
     // We could just simply replace the deletion with ordinary update, but that
@@ -85,12 +83,12 @@ void LSWriteOptimizer<T, U>::InsertItem(const nsAString& aKey, const T& aValue,
     // deletion followed by an insertion. We use the UpdateWithMove flag for
     // this.
 
-    newWriteInfo = new UpdateItemInfo(NextSerialNumber(), aKey, aValue,
-                                      /* aUpdateWithMove */ true);
+    newWriteInfo = MakeUnique<UpdateItemInfo>(NextSerialNumber(), aKey, aValue,
+                                              /* aUpdateWithMove */ true);
   } else {
-    newWriteInfo = new InsertItemInfo(NextSerialNumber(), aKey, aValue);
+    newWriteInfo = MakeUnique<InsertItemInfo>(NextSerialNumber(), aKey, aValue);
   }
-  mWriteInfos.Put(aKey, newWriteInfo.forget());
+  mWriteInfos.Put(aKey, std::move(newWriteInfo));
 
   mTotalDelta += aDelta;
 }
@@ -101,15 +99,15 @@ void LSWriteOptimizer<T, U>::UpdateItem(const nsAString& aKey, const T& aValue,
   AssertIsOnOwningThread();
 
   WriteInfo* existingWriteInfo;
-  nsAutoPtr<WriteInfo> newWriteInfo;
+  UniquePtr<WriteInfo> newWriteInfo;
   if (mWriteInfos.Get(aKey, &existingWriteInfo) &&
       existingWriteInfo->GetType() == WriteInfo::InsertItem) {
-    newWriteInfo = new InsertItemInfo(NextSerialNumber(), aKey, aValue);
+    newWriteInfo = MakeUnique<InsertItemInfo>(NextSerialNumber(), aKey, aValue);
   } else {
-    newWriteInfo = new UpdateItemInfo(NextSerialNumber(), aKey, aValue,
-                                      /* aUpdateWithMove */ false);
+    newWriteInfo = MakeUnique<UpdateItemInfo>(NextSerialNumber(), aKey, aValue,
+                                              /* aUpdateWithMove */ false);
   }
-  mWriteInfos.Put(aKey, newWriteInfo.forget());
+  mWriteInfos.Put(aKey, std::move(newWriteInfo));
 
   mTotalDelta += aDelta;
 }

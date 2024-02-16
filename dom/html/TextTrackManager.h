@@ -176,7 +176,8 @@ class TextTrackManager final : public nsIDOMEventListener {
     void Unregister();
 
    private:
-    ~ShutdownObserverProxy(){};
+    ~ShutdownObserverProxy() = default;
+
     TextTrackManager* mManager;
   };
 

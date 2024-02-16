@@ -123,19 +123,11 @@ class IndexedDatabaseManager final {
                                      const nsACString& aOrigin,
                                      const nsAString& aDatabaseName,
                                      int64_t aFileId, int32_t* aRefCnt,
-                                     int32_t* aDBRefCnt, int32_t* aSliceRefCnt,
-                                     bool* aResult);
+                                     int32_t* aDBRefCnt, bool* aResult);
 
   nsresult FlushPendingFileDeletions();
 
   static const nsCString& GetLocale();
-
-  static mozilla::Mutex& FileMutex() {
-    IndexedDatabaseManager* mgr = Get();
-    NS_ASSERTION(mgr, "Must have a manager here!");
-
-    return mgr->mFileMutex;
-  }
 
   static nsresult CommonPostHandleEvent(EventChainPostVisitor& aVisitor,
                                         IDBFactory* aFactory);
@@ -161,11 +153,6 @@ class IndexedDatabaseManager final {
 
   nsClassHashtable<nsRefPtrHashKey<FileManager>, nsTArray<int64_t>>
       mPendingDeleteInfos;
-
-  // Lock protecting FileManager.mFileInfos.
-  // It's s also used to atomically update FileInfo.mRefCnt, FileInfo.mDBRefCnt
-  // and FileInfo.mSliceRefCnt
-  mozilla::Mutex mFileMutex;
 
   nsCString mLocale;
 

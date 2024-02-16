@@ -25,7 +25,7 @@ class FormData final : public nsISupports,
                        public nsWrapperCache {
  private:
   FormData(const FormData& aFormData);
-  ~FormData() {}
+  ~FormData() = default;
 
   struct FormDataTuple {
     nsString name;
@@ -50,7 +50,7 @@ class FormData final : public nsISupports,
  public:
   explicit FormData(nsISupports* aOwner = nullptr,
                     NotNull<const Encoding*> aEncoding = UTF_8_ENCODING,
-                    Element* aOriginatingElement = nullptr);
+                    Element* aSubmitter = nullptr);
 
   already_AddRefed<FormData> Clone();
 

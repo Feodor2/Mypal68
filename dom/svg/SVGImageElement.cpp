@@ -5,7 +5,6 @@
 #include "mozilla/dom/SVGImageElement.h"
 
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/gfx/2D.h"
 #include "nsCOMPtr.h"
@@ -14,6 +13,7 @@
 #include "imgINotificationObserver.h"
 #include "mozilla/dom/SVGImageElementBinding.h"
 #include "mozilla/dom/SVGLengthBinding.h"
+#include "mozilla/dom/UserActivation.h"
 #include "nsContentUtils.h"
 #include "SVGGeometryProperty.h"
 
@@ -140,7 +140,7 @@ nsresult SVGImageElement::LoadSVGImage(bool aForce, bool aNotify) {
 
   // Mark channel as urgent-start before load image if the image load is
   // initaiated by a user interaction.
-  mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+  mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
   return LoadImage(href, aForce, aNotify, eImageLoadType_Normal);
 }

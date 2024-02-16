@@ -10,7 +10,6 @@
 #include "nsINode.h"
 #include "nsIStreamListener.h"
 #include "nsILoadInfo.h"
-#include "nsIOService.h"
 #include "nsContentUtils.h"
 #include "nsCORSListenerProxy.h"
 #include "nsIStreamListener.h"
@@ -23,34 +22,13 @@
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/Components.h"
 #include "mozilla/Logging.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "xpcpublic.h"
 
 NS_IMPL_ISUPPORTS(nsContentSecurityManager, nsIContentSecurityManager,
                   nsIChannelEventSink)
 
 static mozilla::LazyLogModule sCSMLog("CSMLog");
-
-// This allowlist contains files that are permanently allowed to use eval()-like
-// functions. It is supposed to be restricted to files that are exclusively used
-// in testing contexts.
-static nsLiteralCString evalAllowlist[] = {
-    // Test-only third-party library
-    NS_LITERAL_CSTRING("resource://testing-common/sinon-7.2.7.js"),
-    // Test-only third-party library
-    NS_LITERAL_CSTRING("resource://testing-common/ajv-4.1.1.js"),
-    // Test-only utility
-    NS_LITERAL_CSTRING("resource://testing-common/content-task.js"),
-
-    // The Browser Toolbox/Console
-    NS_LITERAL_CSTRING("debugger"),
-};
-
-// We also permit two specific idioms in eval()-like contexts. We'd like to
-// elminate these too; but there are in-the-wild Mozilla privileged extensions
-// that use them.
-static NS_NAMED_LITERAL_STRING(sAllowedEval1, "this");
-static NS_NAMED_LITERAL_STRING(sAllowedEval2,
-                               "function anonymous(\n) {\nreturn this\n}");
 
 /* static */
 bool nsContentSecurityManager::AllowTopLevelNavigationToDataURI(
@@ -177,87 +155,12 @@ bool nsContentSecurityManager::AllowInsecureRedirectToDataURI(
 }
 
 /* static */
-void nsContentSecurityManager::AssertEvalNotUsingSystemPrincipal(
-    JSContext* cx, nsIPrincipal* aSubjectPrincipal, const nsAString& aScript) {
-  if (!aSubjectPrincipal->IsSystemPrincipal()) {
-    return;
-  }
-
-  // Use static pref for performance reasons.
-  if (StaticPrefs::security_allow_eval_with_system_principal()) {
-    MOZ_LOG(sCSMLog, LogLevel::Debug,
-            ("Allowing eval() with SystemPrincipal because allowing pref is "
-             "enabled"));
-    return;
-  }
-
-  // This preferences is a file used for autoconfiguration of Firefox
-  // by administrators. It has also been (ab)used by the userChromeJS
-  // project to run legacy-style 'extensions', some of which use eval,
-  // all of which run in the System Principal context.
-  nsAutoString configPref;
-  Preferences::GetString("general.config.filename", configPref);
-  if (!configPref.IsEmpty()) {
-    MOZ_LOG(sCSMLog, LogLevel::Debug,
-            ("Allowing eval() with SystemPrincipal because of "
-             "general.config.filename"));
-    return;
-  }
-
-  // We permit these two common idioms to get access to the global JS object
-  if (!aScript.IsEmpty() &&
-      (aScript == sAllowedEval1 || aScript == sAllowedEval2)) {
-    MOZ_LOG(sCSMLog, LogLevel::Debug,
-            ("Allowing eval() with SystemPrincipal because a key string is "
-             "provided"));
-    return;
-  }
-
-  nsAutoCString fileName;
-  JS::AutoFilename scriptFilename;
-  if (JS::DescribeScriptedCaller(cx, &scriptFilename)) {
-    nsDependentCSubstring fileName_(scriptFilename.get(),
-                                    strlen(scriptFilename.get()));
-    ToLowerCase(fileName_);
-    // Extract file name alone if scriptFilename contains line number
-    // separated by multiple space delimiters in few cases.
-    int32_t fileNameIndex = fileName_.FindChar(' ');
-    if (fileNameIndex != -1) {
-      fileName_.SetLength(fileNameIndex);
-    }
-
-    for (const nsLiteralCString& allowlistEntry : evalAllowlist) {
-      if (fileName_.Equals(allowlistEntry)) {
-        return;
-      }
-    }
-
-    fileName = fileName_;
-  }
-
-#ifdef DEBUG
-  MOZ_CRASH_UNSAFE_PRINTF(
-      "Blocking eval() with SystemPrincipal from file %s and script provided "
-      "%s",
-      fileName.get(), NS_ConvertUTF16toUTF8(aScript).get());
-#else
-  MOZ_LOG(sCSMLog, LogLevel::Debug,
-          ("Blocking eval() with SystemPrincipal from file %s and script "
-           "provided %s",
-           fileName.get(), NS_ConvertUTF16toUTF8(aScript).get()));
-#endif
-
-  // In the future, we will change this function to return false and abort JS
-  // execution without crashing the process. For now, just collect data.
-}
-
-/* static */
 nsresult nsContentSecurityManager::CheckFTPSubresourceLoad(
     nsIChannel* aChannel) {
   // We dissallow using FTP resources as a subresource almost everywhere.
   // The only valid way to use FTP resources is loading it as
   // a top level document.
-  if (!mozilla::net::nsIOService::BlockFTPSubresources()) {
+  if (!StaticPrefs::security_block_ftp_subresources()) {
     return NS_OK;
   }
 
@@ -364,7 +267,7 @@ static bool IsImageLoadInEditorAppType(nsILoadInfo* aLoadInfo) {
   }
 
   nsCOMPtr<nsIDocShellTreeItem> root;
-  docShellTreeItem->GetRootTreeItem(getter_AddRefs(root));
+  docShellTreeItem->GetInProcessRootTreeItem(getter_AddRefs(root));
   nsCOMPtr<nsIDocShell> docShell(do_QueryInterface(root));
   if (docShell) {
     appType = docShell->GetAppType();
@@ -858,39 +761,65 @@ static void DebugDoContentSecurityCheck(nsIChannel* aChannel,
 }
 
 /* static */
-nsresult nsContentSecurityManager::CheckSystemPrincipalLoads(
+nsresult nsContentSecurityManager::CheckAllowLoadInSystemPrivilegedContext(
     nsIChannel* aChannel) {
-  // Assert that we never use the SystemPrincipal to load remote documents
-  // i.e., HTTP, HTTPS, FTP URLs
+  // Check and assert that we never allow remote documents/scripts (http:,
+  // https:, ...) to load in system privileged contexts.
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
 
-  // bail out, if we're not loading with a SystemPrincipal
+  // nothing to do here if we are not loading a resource into a
+  // system prvileged context.
   if (!loadInfo->LoadingPrincipal() ||
       !loadInfo->LoadingPrincipal()->IsSystemPrincipal()) {
     return NS_OK;
   }
-  nsContentPolicyType contentPolicyType =
-      loadInfo->GetExternalContentPolicyType();
-  if ((contentPolicyType != nsIContentPolicy::TYPE_DOCUMENT) &&
-      (contentPolicyType != nsIContentPolicy::TYPE_SUBDOCUMENT)) {
-    return NS_OK;
-  }
+
   nsCOMPtr<nsIURI> finalURI;
   NS_GetFinalChannelURI(aChannel, getter_AddRefs(finalURI));
-  // bail out, if URL isn't pointing to remote resource
+
+  // nothing to do here if we are not loading a resource using http:, https:,
+  // etc.
   if (!nsContentUtils::SchemeIs(finalURI, "http") &&
       !nsContentUtils::SchemeIs(finalURI, "https") &&
       !nsContentUtils::SchemeIs(finalURI, "ftp")) {
     return NS_OK;
   }
 
+  nsContentPolicyType contentPolicyType =
+      loadInfo->GetExternalContentPolicyType();
+
+  // We distinguish between 2 cases:
+  // a) remote scripts
+  //    which should never be loaded into system privileged contexts
+  // b) remote documents/frames
+  //    which generally should also never be loaded into system
+  //    privileged contexts but with some exceptions, like e.g. the
+  //    discoverURL.
+  if (contentPolicyType == nsIContentPolicy::TYPE_SCRIPT) {
+    if (Preferences::GetBool("domsecurity.skip_remote_script_assertion_in_"
+                             "system_priv_context")) {
+      return NS_OK;
+    }
+    nsAutoCString scriptSpec;
+    finalURI->GetSpec(scriptSpec);
+    MOZ_LOG(
+        sCSMLog, LogLevel::Warning,
+        ("Do not load remote scripts into system privileged contexts, url: %s",
+         scriptSpec.get()));
+    MOZ_ASSERT(false,
+               "Do not load remote scripts into system privileged contexts");
+    // Bug 1607673: Do not only assert but cancel the channel and
+    // return NS_ERROR_CONTENT_BLOCKED.
+    return NS_OK;
+  }
+
+  if ((contentPolicyType != nsIContentPolicy::TYPE_DOCUMENT) &&
+      (contentPolicyType != nsIContentPolicy::TYPE_SUBDOCUMENT)) {
+    return NS_OK;
+  }
+
   nsAutoCString requestedURL;
   finalURI->GetAsciiSpec(requestedURL);
-  MOZ_LOG(
-      sCSMLog, LogLevel::Verbose,
-      ("SystemPrincipal must not load remote documents. URL: %s", requestedURL)
-          .get());
-
   if (xpc::AreNonLocalConnectionsDisabled()) {
     bool disallowSystemPrincipalRemoteDocuments = Preferences::GetBool(
         "security.disallow_non_local_systemprincipal_in_tests");
@@ -903,6 +832,10 @@ nsresult nsContentSecurityManager::CheckSystemPrincipalLoads(
     // but other mochitest are exempt from this
     return NS_OK;
   }
+  MOZ_LOG(
+      sCSMLog, LogLevel::Warning,
+      ("SystemPrincipal must not load remote documents. URL: %s", requestedURL)
+          .get());
   MOZ_ASSERT(false, "SystemPrincipal must not load remote documents.");
   aChannel->Cancel(NS_ERROR_CONTENT_BLOCKED);
   return NS_ERROR_CONTENT_BLOCKED;
@@ -934,7 +867,7 @@ nsresult nsContentSecurityManager::doContentSecurityCheck(
     DebugDoContentSecurityCheck(aChannel, loadInfo);
   }
 
-  nsresult rv = CheckSystemPrincipalLoads(aChannel);
+  nsresult rv = CheckAllowLoadInSystemPrivilegedContext(aChannel);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // if dealing with a redirected channel then we have already installed
@@ -1107,32 +1040,5 @@ nsContentSecurityManager::PerformSecurityCheck(
   NS_ENSURE_SUCCESS(rv, rv);
 
   inAndOutListener.forget(outStreamListener);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsContentSecurityManager::IsOriginPotentiallyTrustworthy(
-    nsIPrincipal* aPrincipal, bool* aIsTrustWorthy) {
-  MOZ_ASSERT(NS_IsMainThread());
-  NS_ENSURE_ARG_POINTER(aPrincipal);
-  NS_ENSURE_ARG_POINTER(aIsTrustWorthy);
-
-  if (aPrincipal->IsSystemPrincipal()) {
-    *aIsTrustWorthy = true;
-    return NS_OK;
-  }
-  *aIsTrustWorthy = false;
-  if (aPrincipal->GetIsNullPrincipal()) {
-    return NS_OK;
-  }
-
-  MOZ_ASSERT(aPrincipal->GetIsCodebasePrincipal(),
-             "Nobody is expected to call us with an nsIExpandedPrincipal");
-
-  nsCOMPtr<nsIURI> uri;
-  nsresult rv = aPrincipal->GetURI(getter_AddRefs(uri));
-  NS_ENSURE_SUCCESS(rv, rv);
-  *aIsTrustWorthy = nsMixedContentBlocker::IsPotentiallyTrustworthyOrigin(uri);
-
   return NS_OK;
 }

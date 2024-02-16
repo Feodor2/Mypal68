@@ -155,7 +155,7 @@ class OriginKeyStore : public nsISupports {
 
   class OriginKeysLoader : public OriginKeysTable {
    public:
-    OriginKeysLoader() {}
+    OriginKeysLoader() = default;
 
     nsresult GetPrincipalKey(const ipc::PrincipalInfo& aPrincipalInfo,
                              nsCString& aResult, bool aPersist = false) {

@@ -94,7 +94,7 @@ class ImageBitmapShutdownObserver final : public nsIObserver {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOBSERVER
  private:
-  ~ImageBitmapShutdownObserver() {}
+  ~ImageBitmapShutdownObserver() = default;
 
   class SendShutdownToWorkerThread : public MainThreadWorkerControlRunnable {
    public:
@@ -864,7 +864,7 @@ already_AddRefed<ImageBitmap> ImageBitmap::CreateInternal(
   DebugOnly<bool> inited = array.Init(aImageData.GetDataObject());
   MOZ_ASSERT(inited);
 
-  array.ComputeLengthAndData();
+  array.ComputeState();
   const SurfaceFormat FORMAT = SurfaceFormat::R8G8B8A8;
   // ImageData's underlying data is not alpha-premultiplied.
   const auto alphaType = gfxAlphaType::NonPremult;
@@ -1083,7 +1083,7 @@ class CreateImageBitmapFromBlob final : public CancelableRunnable,
         mMainThreadEventTarget(aMainThreadEventTarget),
         mThread(PR_GetCurrentThread()) {}
 
-  virtual ~CreateImageBitmapFromBlob() {}
+  virtual ~CreateImageBitmapFromBlob() = default;
 
   bool IsCurrentThread() const { return mThread == PR_GetCurrentThread(); }
 
@@ -1197,13 +1197,13 @@ already_AddRefed<Promise> ImageBitmap::Create(
   if (aCropRect.isSome()) {
     if (aCropRect->Width() == 0) {
       aRv.ThrowRangeError(
-          u"The crop rect width passed to createImageBitmap must be nonzero");
+          "The crop rect width passed to createImageBitmap must be nonzero");
       return promise.forget();
     }
 
     if (aCropRect->Height() == 0) {
       aRv.ThrowRangeError(
-          u"The crop rect height passed to createImageBitmap must be nonzero");
+          "The crop rect height passed to createImageBitmap must be nonzero");
       return promise.forget();
     }
   }
@@ -1550,8 +1550,9 @@ CreateImageBitmapFromBlob::OnImageReady(imgIContainer* aImgContainer,
   MOZ_ASSERT(aImgContainer);
 
   // Get the surface out.
-  uint32_t frameFlags =
-      imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_WANT_DATA_SURFACE;
+  uint32_t frameFlags = imgIContainer::FLAG_SYNC_DECODE |
+                        imgIContainer::FLAG_ASYNC_NOTIFY |
+                        imgIContainer::FLAG_WANT_DATA_SURFACE;
   uint32_t whichFrame = imgIContainer::FRAME_FIRST;
   RefPtr<SourceSurface> surface =
       aImgContainer->GetFrame(whichFrame, frameFlags);
@@ -1661,7 +1662,7 @@ void CreateImageBitmapFromBlob::
     imageBitmap->SetPictureRect(mCropRect.ref(), rv);
 
     if (rv.Failed()) {
-      mPromise->MaybeReject(rv);
+      mPromise->MaybeReject(std::move(rv));
       return;
     }
   }

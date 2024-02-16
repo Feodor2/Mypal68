@@ -114,7 +114,7 @@ IPCResult ServiceWorkerContainerParent::RecvGetReady(
   return IPC_OK();
 }
 
-ServiceWorkerContainerParent::ServiceWorkerContainerParent() {}
+ServiceWorkerContainerParent::ServiceWorkerContainerParent() = default;
 
 ServiceWorkerContainerParent::~ServiceWorkerContainerParent() {
   MOZ_DIAGNOSTIC_ASSERT(!mProxy);

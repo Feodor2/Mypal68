@@ -64,7 +64,7 @@ HTMLLinkElement::HTMLLinkElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo)
     : nsGenericHTMLElement(std::move(aNodeInfo)), Link(this) {}
 
-HTMLLinkElement::~HTMLLinkElement() {}
+HTMLLinkElement::~HTMLLinkElement() = default;
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLLinkElement)
 
@@ -426,7 +426,7 @@ Maybe<nsStyleLinkElement::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
     return Nothing();
   }
 
-  if (!IsCSSMimeTypeAttribute(*this)) {
+  if (!IsCSSMimeTypeAttributeForLinkElement(*this)) {
     return Nothing();
   }
 
@@ -455,18 +455,19 @@ Maybe<nsStyleLinkElement::SheetInfo> HTMLLinkElement::GetStyleSheetInfo() {
 
   nsCOMPtr<nsIURI> uri = Link::GetURI();
   nsCOMPtr<nsIPrincipal> prin = mTriggeringPrincipal;
-  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
-  referrerInfo->InitWithNode(this);
 
   nsAutoString nonce;
-  GetAttr(kNameSpaceID_None, nsGkAtoms::nonce, nonce);
+  nsString* cspNonce = static_cast<nsString*>(GetProperty(nsGkAtoms::nonce));
+  if (cspNonce) {
+    nonce = *cspNonce;
+  }
 
   return Some(SheetInfo{
       *OwnerDoc(),
       this,
       uri.forget(),
       prin.forget(),
-      referrerInfo.forget(),
+      MakeAndAddRef<ReferrerInfo>(*this),
       GetCORSMode(),
       title,
       media,
@@ -602,8 +603,7 @@ void HTMLLinkElement::
           }
         }
 
-        nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
-        referrerInfo->InitWithNode(this);
+        auto referrerInfo = MakeRefPtr<ReferrerInfo>(*this);
         if (preload) {
           prefetchService->PreloadURI(uri, referrerInfo, this, policyType);
         } else {
@@ -687,8 +687,7 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
     if (corsMode != oldCorsMode) {
       prefetchService->CancelPrefetchPreloadURI(uri, this);
 
-      nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
-      referrerInfo->InitWithNode(this);
+      auto referrerInfo = MakeRefPtr<ReferrerInfo>(*this);
       prefetchService->PreloadURI(uri, referrerInfo, this, policyType);
     }
     return;
@@ -745,8 +744,7 @@ void HTMLLinkElement::UpdatePreload(nsAtom* aName, const nsAttrValue* aValue,
   // trigger an error event.
   if ((policyType != oldPolicyType) ||
       (policyType == nsIContentPolicy::TYPE_INVALID)) {
-    nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
-    referrerInfo->InitWithNode(this);
+    auto referrerInfo = MakeRefPtr<ReferrerInfo>(*this);
     prefetchService->PreloadURI(uri, referrerInfo, this, policyType);
   }
 }
@@ -860,6 +858,19 @@ bool HTMLLinkElement::CheckPreloadAttrs(const nsAttrValue& aAs,
     }
   }
   return false;
+}
+
+bool HTMLLinkElement::IsCSSMimeTypeAttributeForLinkElement(
+    const Element& aSelf) {
+  // Processing the type attribute per
+  // https://html.spec.whatwg.org/multipage/semantics.html#processing-the-type-attribute
+  // for HTML link elements.
+  nsAutoString type;
+  nsAutoString mimeType;
+  nsAutoString notUsed;
+  aSelf.GetAttr(kNameSpaceID_None, nsGkAtoms::type, type);
+  nsContentUtils::SplitMimeType(type, mimeType, notUsed);
+  return mimeType.IsEmpty() || mimeType.LowerCaseEqualsLiteral("text/css");
 }
 
 }  // namespace dom

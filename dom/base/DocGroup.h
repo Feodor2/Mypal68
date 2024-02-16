@@ -56,6 +56,9 @@ class DocGroup final {
   RefPtr<PerformanceInfoPromise> ReportPerformanceInfo();
 
   TabGroup* GetTabGroup() { return mTabGroup; }
+
+  mozilla::dom::DOMArena* ArenaAllocator() { return mArena; }
+
   mozilla::dom::CustomElementReactionsStack* CustomElementReactionsStack() {
     MOZ_ASSERT(NS_IsMainThread());
     if (!mReactionsStack) {
@@ -124,6 +127,8 @@ class DocGroup final {
 
   RefPtr<mozilla::ThrottledEventQueue> mIframePostMessageQueue;
   nsTHashtable<nsUint64HashKey> mIframesUsedPostMessageQueue;
+
+  RefPtr<mozilla::dom::DOMArena> mArena;
 };
 
 }  // namespace dom

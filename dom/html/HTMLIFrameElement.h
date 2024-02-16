@@ -27,9 +27,7 @@ class HTMLIFrameElement final : public nsGenericHTMLFrameElement {
                                            nsGenericHTMLFrameElement)
 
   // Element
-  virtual bool IsInteractiveHTMLContent(bool aIgnoreTabindex) const override {
-    return true;
-  }
+  virtual bool IsInteractiveHTMLContent() const override { return true; }
 
   // nsIContent
   virtual nsresult BindToTree(BindContext&, nsINode& aParent) override;

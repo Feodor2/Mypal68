@@ -49,6 +49,10 @@ interface HTMLElement : Element {
   //         attribute HTMLMenuElement? contextMenu;
   [CEReactions, SetterThrows, Pure]
            attribute boolean spellcheck;
+  [CEReactions, Pure, SetterThrows, Pref="dom.forms.inputmode"]
+           attribute DOMString inputMode;
+
+  attribute DOMString nonce;
 
   // command API
   //readonly attribute DOMString? commandType;

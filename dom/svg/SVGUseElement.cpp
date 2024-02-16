@@ -130,7 +130,8 @@ nsresult SVGUseElement::AfterSetAttr(int32_t aNamespaceID, nsAtom* aAttribute,
 nsresult SVGUseElement::Clone(dom::NodeInfo* aNodeInfo,
                               nsINode** aResult) const {
   *aResult = nullptr;
-  SVGUseElement* it = new SVGUseElement(do_AddRef(aNodeInfo));
+  SVGUseElement* it =
+      new (aNodeInfo->NodeInfoManager()) SVGUseElement(do_AddRef(aNodeInfo));
 
   nsCOMPtr<nsINode> kungFuDeathGrip(it);
   nsresult rv1 = it->Init();
@@ -331,9 +332,7 @@ void SVGUseElement::UpdateShadowTree() {
 
   // Bug 1415044 the specs do not say which referrer information we should use.
   // This may change if there's any spec comes out.
-  nsCOMPtr<nsIReferrerInfo> referrerInfo = new mozilla::dom::ReferrerInfo();
-  referrerInfo->InitWithNode(this);
-
+  auto referrerInfo = MakeRefPtr<ReferrerInfo>(*this);
   mContentURLData = new URLExtraData(baseURI.forget(), referrerInfo.forget(),
                                      do_AddRef(NodePrincipal()));
 
@@ -446,8 +445,8 @@ gfxMatrix SVGUseElement::PrependLocalTransformsTo(
   gfxMatrix userToParent;
 
   if (aWhich == eUserSpaceToParent || aWhich == eAllTransforms) {
-    userToParent =
-        GetUserToParentTransform(mAnimateMotionTransform, mTransforms);
+    userToParent = GetUserToParentTransform(mAnimateMotionTransform.get(),
+                                            mTransforms.get());
     if (aWhich == eUserSpaceToParent) {
       return userToParent * aMatrix;
     }

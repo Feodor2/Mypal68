@@ -133,7 +133,7 @@ class EventTargetChainItem {
     MOZ_COUNT_CTOR(EventTargetChainItem);
   }
 
-  ~EventTargetChainItem() { MOZ_COUNT_DTOR(EventTargetChainItem); }
+  MOZ_COUNTED_DTOR(EventTargetChainItem)
 
   static EventTargetChainItem* Create(nsTArray<EventTargetChainItem>& aChain,
                                       EventTarget* aTarget,
@@ -1123,6 +1123,11 @@ nsresult EventDispatcher::DispatchDOMEvent(nsISupports* aTarget,
   if (aDOMEvent) {
     WidgetEvent* innerEvent = aDOMEvent->WidgetEventPtr();
     NS_ENSURE_TRUE(innerEvent, NS_ERROR_ILLEGAL_VALUE);
+
+    // Don't modify the event if it's being dispatched right now.
+    if (innerEvent->mFlags.mIsBeingDispatched) {
+      return NS_ERROR_DOM_INVALID_STATE_ERR;
+    }
 
     bool dontResetTrusted = false;
     if (innerEvent->mFlags.mDispatchedAtLeastOnce) {

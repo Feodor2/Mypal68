@@ -16,13 +16,14 @@ namespace dom {
 class SessionStorageCache;
 class SessionStorageObserver;
 
-class SessionStorageManager final : public nsIDOMStorageManager,
+class SessionStorageManager final : public nsIDOMSessionStorageManager,
                                     public StorageObserverSink {
  public:
   SessionStorageManager();
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIDOMSTORAGEMANAGER
+  NS_DECL_NSIDOMSESSIONSTORAGEMANAGER
 
  private:
   ~SessionStorageManager();
@@ -40,6 +41,12 @@ class SessionStorageManager final : public nsIDOMStorageManager,
   void ClearStorages(ClearStorageType aType,
                      const OriginAttributesPattern& aPattern,
                      const nsACString& aOriginScope);
+
+  nsresult GetSessionStorageCacheHelper(nsIPrincipal* aPrincipal,
+                                        nsIPrincipal* aStoragePrincipal,
+                                        bool aMakeIfNeeded,
+                                        SessionStorageCache* aCloneFrom,
+                                        RefPtr<SessionStorageCache>* aRetVal);
 
   typedef nsRefPtrHashtable<nsCStringHashKey, SessionStorageCache>
       OriginKeyHashTable;

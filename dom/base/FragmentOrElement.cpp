@@ -146,8 +146,11 @@ NS_INTERFACE_MAP_BEGIN(nsIContent)
 NS_INTERFACE_MAP_END
 
 NS_IMPL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_ADDREF(nsIContent)
-NS_IMPL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE(
-    nsIContent, LastRelease())
+
+NS_IMPL_DOMARENA_DESTROY(nsIContent)
+
+NS_IMPL_MAIN_THREAD_ONLY_CYCLE_COLLECTING_RELEASE_WITH_LAST_RELEASE_AND_DESTROY(
+    nsIContent, LastRelease(), Destroy())
 
 nsIContent* nsIContent::FindFirstNonChromeOnlyAccessContent() const {
   // This handles also nested native anonymous content.
@@ -196,7 +199,7 @@ nsIContent::IMEState nsIContent::GetDesiredIMEState() {
     // Check for the special case where we're dealing with elements which don't
     // have the editable flag set, but are readwrite (such as text controls).
     if (!IsElement() ||
-        !AsElement()->State().HasState(NS_EVENT_STATE_MOZ_READWRITE)) {
+        !AsElement()->State().HasState(NS_EVENT_STATE_READWRITE)) {
       return IMEState(IMEState::DISABLED);
     }
   }
@@ -226,7 +229,7 @@ nsIContent::IMEState nsIContent::GetDesiredIMEState() {
   return state;
 }
 
-bool nsIContent::HasIndependentSelection() {
+bool nsIContent::HasIndependentSelection() const {
   nsIFrame* frame = GetPrimaryFrame();
   return (frame && frame->GetStateBits() & NS_FRAME_INDEPENDENT_SELECTION);
 }
@@ -279,22 +282,18 @@ nsresult nsIContent::LookupNamespaceURIInternal(
   }
   // Trace up the content parent chain looking for the namespace
   // declaration that declares aNamespacePrefix.
-  const nsIContent* content = this;
-  do {
-    if (content->IsElement() &&
-        content->AsElement()->GetAttr(kNameSpaceID_XMLNS, name, aNamespaceURI))
+  for (Element* element = GetAsElementOrParentElement(); element;
+       element = element->GetParentElement()) {
+    if (element->GetAttr(kNameSpaceID_XMLNS, name, aNamespaceURI)) {
       return NS_OK;
-  } while ((content = content->GetParent()));
+    }
+  }
   return NS_ERROR_FAILURE;
 }
 
 nsAtom* nsIContent::GetLang() const {
-  for (const auto* content = this; content; content = content->GetParent()) {
-    if (!content->IsElement()) {
-      continue;
-    }
-
-    auto* element = content->AsElement();
+  for (const Element* element = GetAsElementOrParentElement(); element;
+       element = element->GetParentElement()) {
     if (!element->GetAttrCount()) {
       continue;
     }
@@ -1325,14 +1324,14 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(FragmentOrElement)
       nsStaticAtom* const* props =
           Element::HTMLSVGPropertiesToTraverseAndUnlink();
       for (uint32_t i = 0; props[i]; ++i) {
-        tmp->DeleteProperty(props[i]);
+        tmp->RemoveProperty(props[i]);
       }
     }
 
     if (tmp->MayHaveAnimations()) {
       nsAtom** effectProps = EffectSet::GetEffectSetPropertyAtoms();
       for (uint32_t i = 0; effectProps[i]; ++i) {
-        tmp->DeleteProperty(effectProps[i]);
+        tmp->RemoveProperty(effectProps[i]);
       }
     }
   }
@@ -1794,12 +1793,8 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(FragmentOrElement)
       orphan.AppendLiteral(" (orphan)");
     }
 
-    static const char* kNSURIs[] = {" ([none])", " (xmlns)",  " (xml)",
-                                    " (xhtml)",  " (XLink)",  " (XSLT)",
-                                    " (XBL)",    " (MathML)", " (RDF)",
-                                    " (XUL)",    " (SVG)",    " (XML Events)"};
-    const char* nsuri = nsid < ArrayLength(kNSURIs) ? kNSURIs[nsid] : "";
-    SprintfLiteral(name, "FragmentOrElement%s %s%s%s%s %s", nsuri,
+    const char* nsuri = nsNameSpaceManager::GetNameSpaceDisplayName(nsid);
+    SprintfLiteral(name, "FragmentOrElement %s %s%s%s%s %s", nsuri,
                    localName.get(), NS_ConvertUTF16toUTF8(id).get(),
                    NS_ConvertUTF16toUTF8(classes).get(), orphan.get(),
                    uri.get());
@@ -2048,16 +2043,17 @@ void FragmentOrElement::SetInnerHTMLInternal(const nsAString& aInnerHTML,
 
   nsAutoScriptLoaderDisabler sld(doc);
 
-  nsAtom* contextLocalName = NodeInfo()->NameAtom();
-  int32_t contextNameSpaceID = GetNameSpaceID();
-
+  FragmentOrElement* parseContext = this;
   if (ShadowRoot* shadowRoot = ShadowRoot::FromNode(this)) {
-    // Fix up the context to be the host of the ShadowRoot.
-    contextLocalName = shadowRoot->GetHost()->NodeInfo()->NameAtom();
-    contextNameSpaceID = shadowRoot->GetHost()->GetNameSpaceID();
+    // Fix up the context to be the host of the ShadowRoot.  See
+    // https://w3c.github.io/DOM-Parsing/#dom-innerhtml-innerhtml setter step 1.
+    parseContext = shadowRoot->GetHost();
   }
 
   if (doc->IsHTMLDocument()) {
+    nsAtom* contextLocalName = parseContext->NodeInfo()->NameAtom();
+    int32_t contextNameSpaceID = parseContext->GetNameSpaceID();
+
     int32_t oldChildCount = target->GetChildCount();
     aError = nsContentUtils::ParseFragmentHTML(
         aInnerHTML, target, contextLocalName, contextNameSpaceID,
@@ -2068,14 +2064,14 @@ void FragmentOrElement::SetInnerHTMLInternal(const nsAString& aInnerHTML,
                                                        oldChildCount);
   } else {
     RefPtr<DocumentFragment> df = nsContentUtils::CreateContextualFragment(
-        target, aInnerHTML, true, aError);
+        parseContext, aInnerHTML, true, aError);
     if (!aError.Failed()) {
       // Suppress assertion about node removal mutation events that can't have
       // listeners anyway, because no one has had the chance to register
       // mutation listeners on the fragment that comes from the parser.
       nsAutoScriptBlockerSuppressNodeRemoved scriptBlocker;
 
-      static_cast<nsINode*>(target)->AppendChild(*df, aError);
+      target->AppendChild(*df, aError);
       mb.NodesAdded();
     }
   }

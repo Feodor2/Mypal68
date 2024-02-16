@@ -52,7 +52,7 @@ class ServiceWorkerRegistrar;
 
 class ServiceWorkerUpdateFinishCallback {
  protected:
-  virtual ~ServiceWorkerUpdateFinishCallback() {}
+  virtual ~ServiceWorkerUpdateFinishCallback() = default;
 
  public:
   NS_INLINE_DECL_REFCOUNTING(ServiceWorkerUpdateFinishCallback)
@@ -115,7 +115,14 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
 
   nsTArray<UniquePtr<PendingReadyData>> mPendingReadyList;
 
-  bool IsAvailable(nsIPrincipal* aPrincipal, nsIURI* aURI);
+  // Return true if the given principal and URI matches a registered service
+  // worker which handles fetch event.
+  // If there is a matched service worker but doesn't handle fetch events, this
+  // method will try to set the matched service worker as the controller of the
+  // passed in channel. Then also schedule a soft-update job for the service
+  // worker.
+  bool IsAvailable(nsIPrincipal* aPrincipal, nsIURI* aURI,
+                   nsIChannel* aChannel);
 
   // Return true if the given content process could potentially be executing
   // service worker code with the given principal.  At the current time, this
@@ -138,9 +145,11 @@ class ServiceWorkerManager final : public nsIServiceWorkerManager,
   void DispatchFetchEvent(nsIInterceptedChannel* aChannel, ErrorResult& aRv);
 
   void Update(nsIPrincipal* aPrincipal, const nsACString& aScope,
+              nsCString aNewestWorkerScriptUrl,
               ServiceWorkerUpdateFinishCallback* aCallback);
 
   void UpdateInternal(nsIPrincipal* aPrincipal, const nsACString& aScope,
+                      nsCString&& aNewestWorkerScriptUrl,
                       ServiceWorkerUpdateFinishCallback* aCallback);
 
   void SoftUpdate(const OriginAttributes& aOriginAttributes,

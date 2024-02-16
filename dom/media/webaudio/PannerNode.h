@@ -7,6 +7,7 @@
 
 #include "AudioNode.h"
 #include "AudioParam.h"
+#include "nsPrintfCString.h"
 #include "mozilla/dom/PannerNodeBinding.h"
 #include "ThreeDPoint.h"
 #include <limits>
@@ -37,7 +38,8 @@ class PannerNode final : public AudioNode {
 
   void SetChannelCount(uint32_t aChannelCount, ErrorResult& aRv) override {
     if (aChannelCount > 2) {
-      aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+      aRv.ThrowNotSupportedError(
+          nsPrintfCString("%u is greater than 2", aChannelCount));
       return;
     }
     AudioNode::SetChannelCount(aChannelCount, aRv);
@@ -45,7 +47,7 @@ class PannerNode final : public AudioNode {
   void SetChannelCountModeValue(ChannelCountMode aMode,
                                 ErrorResult& aRv) override {
     if (aMode == ChannelCountMode::Max) {
-      aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+      aRv.ThrowNotSupportedError("Cannot set channel count mode to \"max\"");
       return;
     }
     AudioNode::SetChannelCountModeValue(aMode, aRv);
@@ -93,7 +95,7 @@ class PannerNode final : public AudioNode {
 
     if (aRefDistance < 0) {
       aRv.ThrowRangeError(
-          u"The refDistance value passed to PannerNode must not be negative.");
+          "The refDistance value passed to PannerNode must not be negative.");
       return;
     }
 
@@ -109,7 +111,7 @@ class PannerNode final : public AudioNode {
 
     if (aMaxDistance <= 0) {
       aRv.ThrowRangeError(
-          u"The maxDistance value passed to PannerNode must be positive.");
+          "The maxDistance value passed to PannerNode must be positive.");
       return;
     }
 
@@ -125,8 +127,7 @@ class PannerNode final : public AudioNode {
 
     if (aRolloffFactor < 0) {
       aRv.ThrowRangeError(
-          u"The rolloffFactor value passed to PannerNode must not be "
-          u"negative.");
+          "The rolloffFactor value passed to PannerNode must not be negative.");
       return;
     }
 
@@ -159,7 +160,8 @@ class PannerNode final : public AudioNode {
     }
 
     if (aConeOuterGain < 0 || aConeOuterGain > 1) {
-      aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+      aRv.ThrowInvalidStateError(
+          nsPrintfCString("%g is not in the range [0, 1]", aConeOuterGain));
       return;
     }
 

@@ -245,7 +245,7 @@ already_AddRefed<Promise> WebAuthnManager::MakeCredential(
   nsCString rpId;
   rv = GetOrigin(mParent, origin, rpId);
   if (NS_WARN_IF(rv.Failed())) {
-    promise->MaybeReject(rv);
+    promise->MaybeReject(std::move(rv));
     return promise.forget();
   }
 
@@ -256,7 +256,7 @@ already_AddRefed<Promise> WebAuthnManager::MakeCredential(
   CryptoBuffer userId;
   userId.Assign(aOptions.mUser.mId);
   if (userId.Length() > 64) {
-    promise->MaybeReject(NS_ERROR_DOM_TYPE_ERR);
+    promise->MaybeRejectWithTypeError("user.id is too long");
     return promise.forget();
   }
 
@@ -464,7 +464,7 @@ already_AddRefed<Promise> WebAuthnManager::GetAssertion(
   nsCString rpId;
   rv = GetOrigin(mParent, origin, rpId);
   if (NS_WARN_IF(rv.Failed())) {
-    promise->MaybeReject(rv);
+    promise->MaybeReject(std::move(rv));
     return promise.forget();
   }
 

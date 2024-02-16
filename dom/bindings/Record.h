@@ -23,7 +23,7 @@ namespace binding_detail {
 template <typename KeyType, typename ValueType>
 class RecordEntry {
  public:
-  RecordEntry() {}
+  RecordEntry() = default;
 
   // Move constructor so we can do Records of Records.
   RecordEntry(RecordEntry<KeyType, ValueType>&& aOther)
@@ -56,7 +56,7 @@ class Record {
   typedef typename binding_detail::RecordEntry<KeyType, ValueType> EntryType;
   typedef Record<KeyType, ValueType> SelfType;
 
-  Record() {}
+  Record() = default;
 
   // Move constructor so we can do Record of Record.
   Record(SelfType&& aOther) : mEntries(std::move(aOther.mEntries)) {}

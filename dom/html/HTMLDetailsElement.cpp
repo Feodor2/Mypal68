@@ -11,7 +11,7 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Details)
 namespace mozilla {
 namespace dom {
 
-HTMLDetailsElement::~HTMLDetailsElement() {}
+HTMLDetailsElement::~HTMLDetailsElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLDetailsElement)
 

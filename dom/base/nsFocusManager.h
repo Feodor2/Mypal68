@@ -421,7 +421,8 @@ class nsFocusManager final : public nsIFocusManager,
   /**
    * Helper method to move the caret to the focused element aContent.
    */
-  void MoveCaretToFocus(mozilla::PresShell* aPresShell, nsIContent* aContent);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY void MoveCaretToFocus(
+      mozilla::PresShell* aPresShell, nsIContent* aContent);
 
   /**
    * Makes the caret visible or not, depending on aVisible.
@@ -625,7 +626,7 @@ class nsFocusManager final : public nsIFocusManager,
   static void NotifyFocusStateChange(nsIContent* aContent,
                                      nsIContent* aContentToFocus,
                                      bool aWindowShouldShowFocusRing,
-                                     bool aGettingFocus);
+                                     int32_t aFlags, bool aGettingFocus);
 
   void SetFocusedWindowInternal(nsPIDOMWindowOuter* aWindow);
 

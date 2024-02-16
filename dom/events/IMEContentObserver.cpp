@@ -77,7 +77,7 @@ class WritingModeToString final : public nsAutoCString {
     }
     AssignLiteral("Vertical (RL)");
   }
-  virtual ~WritingModeToString() {}
+  virtual ~WritingModeToString() = default;
 };
 
 class SelectionChangeDataToString final : public nsAutoCString {
@@ -103,7 +103,7 @@ class SelectionChangeDataToString final : public nsAutoCString {
         ToChar(aData.mReversed), ToChar(aData.mCausedByComposition),
         ToChar(aData.mCausedBySelectionEvent));
   }
-  virtual ~SelectionChangeDataToString() {}
+  virtual ~SelectionChangeDataToString() = default;
 };
 
 class TextChangeDataToString final : public nsAutoCString {
@@ -124,7 +124,7 @@ class TextChangeDataToString final : public nsAutoCString {
         ToChar(aData.mIncludingChangesDuringComposition),
         ToChar(aData.mIncludingChangesWithoutComposition));
   }
-  virtual ~TextChangeDataToString() {}
+  virtual ~TextChangeDataToString() = default;
 };
 
 /******************************************************************************
@@ -327,7 +327,7 @@ bool IMEContentObserver::InitWithEditor(nsPresContext* aPresContext,
     return false;
   }
 
-  if (nsRange* selRange = mSelection->GetRangeAt(0)) {
+  if (const nsRange* selRange = mSelection->GetRangeAt(0)) {
     if (NS_WARN_IF(!selRange->GetStartContainer())) {
       return false;
     }
@@ -1682,14 +1682,19 @@ IMEContentObserver::IMENotificationSender::Run() {
 
   // If a text change notification causes another text change again, we should
   // notify IME of that before sending a selection change notification.
+  // Otherwise, even if the observer hasn't received selection change, let's
+  // try to send selection change notification to IME because selection
+  // start offset may be changed if the previous contents of selection start
+  // are changed.  For example, when previous `<p>` element of another `<p>`
+  // element which contains caret is removed by a DOM mutation, selection
+  // change event won't be fired, but selection start offset should be
+  // decreased by the length of removed `<p>` element.
   if (!observer->mNeedsToNotifyIMEOfTextChange) {
     // Be aware, PuppetWidget depends on the order of this. A selection change
     // notification should not be sent before a text change notification because
     // PuppetWidget shouldn't query new text content every selection change.
-    if (observer->mNeedsToNotifyIMEOfSelectionChange) {
-      observer->mNeedsToNotifyIMEOfSelectionChange = false;
-      SendSelectionChange();
-    }
+    observer->mNeedsToNotifyIMEOfSelectionChange = false;
+    SendSelectionChange();
   }
 
   // If a text change notification causes another text change again or a

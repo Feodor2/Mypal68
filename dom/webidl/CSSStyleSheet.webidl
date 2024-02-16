@@ -15,9 +15,8 @@ enum CSSStyleSheetParsingMode {
 
 dictionary CSSStyleSheetInit {
   (MediaList or DOMString) media = "";
-  DOMString title = "";
-  boolean alternate = false;
   boolean disabled = false;
+  UTF8String baseURL;
 };
 
 [Exposed=Window]

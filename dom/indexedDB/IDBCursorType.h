@@ -10,6 +10,13 @@
 
 namespace mozilla {
 namespace dom {
+namespace indexedDB {
+class ObjectStoreCursorResponse;
+class ObjectStoreKeyCursorResponse;
+class IndexCursorResponse;
+class IndexKeyCursorResponse;
+}  // namespace indexedDB
+
 enum struct IDBCursorType {
   ObjectStore,
   ObjectStoreKey,
@@ -31,6 +38,7 @@ class IDBObjectStoreKeyCursor;
 template <>
 struct CursorTypeTraits<IDBCursorType::Index> {
   using Type = IDBIndexCursor;
+  using ResponseType = indexedDB::IndexCursorResponse;
   static constexpr bool IsObjectStoreCursor = false;
   static constexpr bool IsKeyOnlyCursor = false;
 };
@@ -38,6 +46,7 @@ struct CursorTypeTraits<IDBCursorType::Index> {
 template <>
 struct CursorTypeTraits<IDBCursorType::IndexKey> {
   using Type = IDBIndexKeyCursor;
+  using ResponseType = indexedDB::IndexKeyCursorResponse;
   static constexpr bool IsObjectStoreCursor = false;
   static constexpr bool IsKeyOnlyCursor = true;
 };
@@ -45,6 +54,7 @@ struct CursorTypeTraits<IDBCursorType::IndexKey> {
 template <>
 struct CursorTypeTraits<IDBCursorType::ObjectStore> {
   using Type = IDBObjectStoreCursor;
+  using ResponseType = indexedDB::ObjectStoreCursorResponse;
   static constexpr bool IsObjectStoreCursor = true;
   static constexpr bool IsKeyOnlyCursor = false;
 };
@@ -52,6 +62,7 @@ struct CursorTypeTraits<IDBCursorType::ObjectStore> {
 template <>
 struct CursorTypeTraits<IDBCursorType::ObjectStoreKey> {
   using Type = IDBObjectStoreKeyCursor;
+  using ResponseType = indexedDB::ObjectStoreKeyCursorResponse;
   static constexpr bool IsObjectStoreCursor = true;
   static constexpr bool IsKeyOnlyCursor = true;
 };
@@ -62,7 +73,7 @@ using CursorSourceType =
                        IDBObjectStore, IDBIndex>;
 
 using Key = indexedDB::Key;
-using StructuredCloneReadInfo = indexedDB::StructuredCloneReadInfo;
+using StructuredCloneReadInfoChild = indexedDB::StructuredCloneReadInfoChild;
 
 struct CommonCursorDataBase {
   CommonCursorDataBase() = delete;
@@ -107,9 +118,9 @@ struct IndexCursorDataBase : CommonCursorDataBase {
 };
 
 struct ValueCursorDataBase {
-  explicit ValueCursorDataBase(StructuredCloneReadInfo&& aCloneInfo);
+  explicit ValueCursorDataBase(StructuredCloneReadInfoChild&& aCloneInfo);
 
-  StructuredCloneReadInfo mCloneInfo;
+  StructuredCloneReadInfoChild mCloneInfo;
 };
 
 template <>
@@ -120,7 +131,7 @@ struct CursorData<IDBCursorType::ObjectStoreKey> : ObjectStoreCursorDataBase {
 template <>
 struct CursorData<IDBCursorType::ObjectStore> : ObjectStoreCursorDataBase,
                                                 ValueCursorDataBase {
-  CursorData(Key aKey, StructuredCloneReadInfo&& aCloneInfo);
+  CursorData(Key aKey, StructuredCloneReadInfoChild&& aCloneInfo);
 };
 
 template <>
@@ -132,7 +143,7 @@ template <>
 struct CursorData<IDBCursorType::Index> : IndexCursorDataBase,
                                           ValueCursorDataBase {
   CursorData(Key aKey, Key aLocaleAwareKey, Key aObjectStoreKey,
-             StructuredCloneReadInfo&& aCloneInfo);
+             StructuredCloneReadInfoChild&& aCloneInfo);
 };
 
 }  // namespace dom

@@ -168,7 +168,7 @@ class DOMException : public Exception {
                                                const nsACString& aMessage);
 
  protected:
-  virtual ~DOMException() {}
+  virtual ~DOMException() = default;
 
   uint16_t mCode;
 };

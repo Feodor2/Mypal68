@@ -102,7 +102,7 @@ class TimerDriver : public OutputStreamDriver {
   }
 
  protected:
-  virtual ~TimerDriver() {}
+  virtual ~TimerDriver() = default;
 
  private:
   const double mFPS;
@@ -129,7 +129,7 @@ class AutoDriver : public OutputStreamDriver {
   }
 
  protected:
-  virtual ~AutoDriver() {}
+  virtual ~AutoDriver() = default;
 };
 
 // ----------------------------------------------------------------------

@@ -42,8 +42,6 @@
 #include "nsNetUtil.h"
 #include "nsReadableUtils.h"
 
-#define MOZ_CALLS_ENABLED_PREF "dom.datatransfer.mozAtAPIs"
-
 namespace mozilla {
 namespace dom {
 
@@ -231,7 +229,7 @@ DataTransfer::DataTransfer(nsISupports* aParent, EventMessage aEventMessage,
                "invalid event type for DataTransfer constructor");
 }
 
-DataTransfer::~DataTransfer() {}
+DataTransfer::~DataTransfer() = default;
 
 // static
 already_AddRefed<DataTransfer> DataTransfer::Constructor(
@@ -328,43 +326,14 @@ void DataTransfer::GetTypes(nsTArray<nsString>& aTypes,
   // Gecko-internal callers too, clear it to be safe.
   aTypes.Clear();
 
-  const nsTArray<RefPtr<DataTransferItem>>* items = mItems->MozItemsAt(0);
-  if (NS_WARN_IF(!items)) {
-    return;
-  }
-
-  for (uint32_t i = 0; i < items->Length(); i++) {
-    DataTransferItem* item = items->ElementAt(i);
-    MOZ_ASSERT(item);
-
-    if (item->ChromeOnly() && aCallerType != CallerType::System) {
-      continue;
-    }
-
-    // NOTE: The reason why we get the internal type here is because we want
-    // kFileMime to appear in the types list for backwards compatibility
-    // reasons.
-    nsAutoString type;
-    item->GetInternalType(type);
-    if (item->Kind() != DataTransferItem::KIND_FILE ||
-        type.EqualsASCII(kFileMime)) {
-      // If the entry has kind KIND_STRING or KIND_OTHER we want to add it to
-      // the list.
-      aTypes.AppendElement(type);
-    }
-  }
-
-  for (uint32_t i = 0; i < mItems->Length(); ++i) {
-    bool found = false;
-    DataTransferItem* item = mItems->IndexedGetter(i, found);
-    MOZ_ASSERT(found);
-    if (item->Kind() != DataTransferItem::KIND_FILE) {
-      continue;
-    }
-    aTypes.AppendElement(NS_LITERAL_STRING("Files"));
-    break;
-  }
+  return mItems->GetTypes(aTypes, aCallerType);
 }
+
+bool DataTransfer::HasType(const nsAString& aType) const {
+  return mItems->HasType(aType);
+}
+
+bool DataTransfer::HasFile() const { return mItems->HasFile(); }
 
 void DataTransfer::GetData(const nsAString& aFormat, nsAString& aData,
                            nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
@@ -661,10 +630,9 @@ void DataTransfer::GetExternalClipboardFormats(const int32_t& aWhichClipboard,
 
   if (aPlainTextOnly) {
     bool hasType;
-    static const char* unicodeMime[] = {kUnicodeMime};
-    nsresult rv = clipboard->HasDataMatchingFlavors(
-        unicodeMime,
-        /* number of flavors to check */ 1, aWhichClipboard, &hasType);
+    AutoTArray<nsCString, 1> unicodeMime = {nsDependentCString(kUnicodeMime)};
+    nsresult rv = clipboard->HasDataMatchingFlavors(unicodeMime,
+                                                    aWhichClipboard, &hasType);
     NS_SUCCEEDED(rv);
     if (hasType) {
       aResult->AppendElement(kUnicodeMime);
@@ -679,9 +647,9 @@ void DataTransfer::GetExternalClipboardFormats(const int32_t& aWhichClipboard,
 
   for (uint32_t f = 0; f < mozilla::ArrayLength(formats); ++f) {
     bool hasType;
-    nsresult rv = clipboard->HasDataMatchingFlavors(
-        &(formats[f]),
-        /* number of flavors to check */ 1, aWhichClipboard, &hasType);
+    AutoTArray<nsCString, 1> format = {nsDependentCString(formats[f])};
+    nsresult rv =
+        clipboard->HasDataMatchingFlavors(format, aWhichClipboard, &hasType);
     NS_SUCCEEDED(rv);
     if (hasType) {
       aResult->AppendElement(formats[f]);
@@ -1576,17 +1544,9 @@ void DataTransfer::SetMode(DataTransfer::Mode aMode) {
 
 /* static */
 bool DataTransfer::MozAtAPIsEnabled(JSContext* aCx, JSObject* aObj /*unused*/) {
-  // Read the pref
-  static bool sPrefCached = false;
-  static bool sPrefCacheValue = false;
-
-  if (!sPrefCached) {
-    sPrefCached = true;
-    Preferences::AddBoolVarCache(&sPrefCacheValue, MOZ_CALLS_ENABLED_PREF);
-  }
-
   // We can expose moz* APIs if we are chrome code or if pref is enabled
-  return nsContentUtils::IsSystemCaller(aCx) || sPrefCacheValue;
+  return nsContentUtils::IsSystemCaller(aCx) ||
+         StaticPrefs::dom_datatransfer_mozAtAPIs_DoNotUseDirectly();
 }
 
 }  // namespace dom

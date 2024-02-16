@@ -51,7 +51,7 @@ const nsID RefMessageBodyService::Register(
   }
 
   StaticMutexAutoLock lock(sRefMessageBodyServiceMutex);
-  GetOrCreateInternal(lock)->mMessages.Put(uuid, body);
+  GetOrCreateInternal(lock)->mMessages.Put(uuid, std::move(body));
   return uuid;
 }
 

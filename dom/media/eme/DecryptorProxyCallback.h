@@ -8,6 +8,7 @@
 #include "mozilla/dom/MediaKeyStatusMapBinding.h"     // For MediaKeyStatus
 #include "mozilla/dom/MediaKeyMessageEventBinding.h"  // For MediaKeyMessageType
 #include "mozilla/CDMProxy.h"
+#include "mozilla/ErrorResult.h"
 
 class DecryptorProxyCallback {
  public:
@@ -23,7 +24,8 @@ class DecryptorProxyCallback {
 
   virtual void ResolvePromise(uint32_t aPromiseId) = 0;
 
-  virtual void RejectPromise(uint32_t aPromiseId, nsresult aException,
+  virtual void RejectPromise(uint32_t aPromiseId,
+                             mozilla::ErrorResult&& aException,
                              const nsCString& aSessionId) = 0;
 
   virtual void SessionMessage(const nsCString& aSessionId,

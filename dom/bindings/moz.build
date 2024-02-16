@@ -25,6 +25,7 @@ EXPORTS.mozilla += [
 
 EXPORTS.mozilla.dom += [
     'AtomList.h',
+    'BindingCallContext.h',
     'BindingDeclarations.h',
     'BindingUtils.h',
     'CallbackFunction.h',
@@ -90,9 +91,8 @@ LOCAL_INCLUDES += [
     '/media/webrtc/signaling/src/common/time_profiling',
     '/media/webrtc/signaling/src/peerconnection',
     '/media/webrtc/trunk/',
+    '/netwerk/base/'
 ]
-
-LOCAL_INCLUDES += ['/third_party/msgpack/include']
 
 DEFINES['GOOGLE_PROTOBUF_NO_RTTI'] = True
 DEFINES['GOOGLE_PROTOBUF_NO_STATIC_INITIALIZER'] = True

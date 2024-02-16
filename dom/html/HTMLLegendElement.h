@@ -45,6 +45,15 @@ class HTMLLegendElement final : public nsGenericHTMLElement {
     return fieldsetControl ? fieldsetControl->GetFormElement() : nullptr;
   }
 
+  enum class LegendAlignValue : uint8_t {
+    Left,
+    Right,
+    Center,
+    Bottom,
+    Top,
+    InlineStart,
+    InlineEnd,
+  };
   /**
    * WebIDL Interface
    */

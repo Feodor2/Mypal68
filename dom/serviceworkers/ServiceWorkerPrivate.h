@@ -113,7 +113,7 @@ class ServiceWorkerPrivate final {
 
   nsresult SendFetchEvent(nsIInterceptedChannel* aChannel,
                           nsILoadGroup* aLoadGroup, const nsAString& aClientId,
-                          const nsAString& aResultingClientId, bool aIsReload);
+                          const nsAString& aResultingClientId);
 
   bool MaybeStoreISupports(nsISupports* aSupports);
 

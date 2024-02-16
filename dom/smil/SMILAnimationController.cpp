@@ -342,7 +342,7 @@ void SMILAnimationController::DoSample(bool aSkipUnchangedContainers) {
   // save iterating over the animation elements twice.
 
   // Create the compositor table
-  nsAutoPtr<SMILCompositorTable> currentCompositorTable(
+  UniquePtr<SMILCompositorTable> currentCompositorTable(
       new SMILCompositorTable(0));
   nsTArray<RefPtr<SVGAnimationElement>> animElems(
       mAnimationElementTable.Count());
@@ -350,7 +350,7 @@ void SMILAnimationController::DoSample(bool aSkipUnchangedContainers) {
   for (auto iter = mAnimationElementTable.Iter(); !iter.Done(); iter.Next()) {
     SVGAnimationElement* animElem = iter.Get()->GetKey();
     SampleTimedElement(animElem, &activeContainers);
-    AddAnimationToCompositorTable(animElem, currentCompositorTable,
+    AddAnimationToCompositorTable(animElem, currentCompositorTable.get(),
                                   isStyleFlushNeeded);
     animElems.AppendElement(animElem);
   }
@@ -413,7 +413,7 @@ void SMILAnimationController::DoSample(bool aSkipUnchangedContainers) {
   }
 
   // Update last compositor table
-  mLastCompositorTable = currentCompositorTable.forget();
+  mLastCompositorTable = std::move(currentCompositorTable);
   mMightHavePendingStyleUpdates = mightHavePendingStyleUpdates;
 
   NS_ASSERTION(!mResampleNeeded, "Resample dirty flag set during sample!");

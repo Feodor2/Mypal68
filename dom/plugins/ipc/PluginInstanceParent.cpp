@@ -615,7 +615,7 @@ mozilla::ipc::IPCResult PluginInstanceParent::RecvInitDXGISurface(
 
   RefPtr<D3D11SurfaceHolder> holder =
       new D3D11SurfaceHolder(back, format, size);
-  mD3D11Surfaces.Put(reinterpret_cast<void*>(sharedHandle), holder);
+  mD3D11Surfaces.Put(reinterpret_cast<void*>(sharedHandle), std::move(holder));
 
   *outHandle = reinterpret_cast<uintptr_t>(sharedHandle);
   *outError = NPERR_NO_ERROR;

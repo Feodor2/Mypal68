@@ -1257,8 +1257,8 @@ PeerConnectionWrapper.prototype = {
         ok(e.channel, message);
         is(
           e.channel.readyState,
-          "connecting",
-          "data channel in 'connecting after 'ondatachannel''"
+          "open",
+          "data channel in 'open' after 'ondatachannel'"
         );
         resolve(e.channel);
       };
@@ -1280,16 +1280,7 @@ PeerConnectionWrapper.prototype = {
       this.expectNegotiationNeeded();
     }
     var channel = this._pc.createDataChannel(label, options);
-    if (!this.dataChannels.length) {
-      is(
-        channel.readyState,
-        "connecting",
-        "initial readyState is 'connecting'"
-      );
-    } else {
-      // TODO: Bug 1441723 Update firefox to spec.
-      is(channel.readyState, "open", "subsequent readyState is 'open'");
-    }
+    is(channel.readyState, "connecting", "initial readyState is 'connecting'");
     var wrapper = new DataChannelWrapper(channel, this);
     this.dataChannels.push(wrapper);
     return wrapper;

@@ -108,11 +108,13 @@ nsXULPrototypeDocument::Read(nsIObjectInputStream* aStream) {
   mURI = do_QueryInterface(supports);
 
   // nsIPrincipal mNodeInfoManager->mPrincipal
-  rv = aStream->ReadObject(true, getter_AddRefs(supports));
+  nsAutoCString JSON;
+  rv = aStream->ReadCString(JSON);
   if (NS_FAILED(rv)) {
     return rv;
   }
-  nsCOMPtr<nsIPrincipal> principal = do_QueryInterface(supports);
+  nsCOMPtr<nsIPrincipal> principal = mozilla::BasePrincipal::FromJSON(JSON);
+
   // Better safe than sorry....
   mNodeInfoManager->SetDocumentPrincipal(principal);
 
@@ -248,8 +250,10 @@ nsXULPrototypeDocument::Write(nsIObjectOutputStream* aStream) {
   rv = aStream->WriteCompoundObject(mURI, NS_GET_IID(nsIURI), true);
 
   // nsIPrincipal mNodeInfoManager->mPrincipal
-  nsresult tmp =
-      aStream->WriteObject(mNodeInfoManager->DocumentPrincipal(), true);
+  nsAutoCString JSON;
+  mozilla::BasePrincipal::Cast(mNodeInfoManager->DocumentPrincipal())
+      ->ToJSON(JSON);
+  nsresult tmp = aStream->WriteStringZ(JSON.get());
   if (NS_FAILED(tmp)) {
     rv = tmp;
   }
@@ -362,9 +366,9 @@ void nsXULPrototypeDocument::SetRootElement(nsXULPrototypeElement* aElement) {
 nsresult nsXULPrototypeDocument::AddProcessingInstruction(
     nsXULPrototypePI* aPI) {
   MOZ_ASSERT(aPI, "null ptr");
-  if (!mProcessingInstructions.AppendElement(aPI)) {
-    return NS_ERROR_OUT_OF_MEMORY;
-  }
+  // XXX(Bug 1631371) Check if this should use a fallible operation as it
+  // pretended earlier, or change the return type to void.
+  mProcessingInstructions.AppendElement(aPI);
   return NS_OK;
 }
 
@@ -397,9 +401,9 @@ nsresult nsXULPrototypeDocument::AwaitLoadDone(Callback&& aCallback,
   *aResult = mLoaded;
 
   if (!mLoaded) {
-    rv = mPrototypeWaiters.AppendElement(std::move(aCallback))
-             ? NS_OK
-             : NS_ERROR_OUT_OF_MEMORY;  // addrefs
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier, or change the return type to void.
+    mPrototypeWaiters.AppendElement(std::move(aCallback));
   }
 
   return rv;

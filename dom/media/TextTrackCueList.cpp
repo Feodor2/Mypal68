@@ -30,7 +30,7 @@ NS_INTERFACE_MAP_END
 
 TextTrackCueList::TextTrackCueList(nsISupports* aParent) : mParent(aParent) {}
 
-TextTrackCueList::~TextTrackCueList() {}
+TextTrackCueList::~TextTrackCueList() = default;
 
 JSObject* TextTrackCueList::WrapObject(JSContext* aCx,
                                        JS::Handle<JSObject*> aGivenProto) {

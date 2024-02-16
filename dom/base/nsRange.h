@@ -46,13 +46,18 @@ class nsRange final : public mozilla::dom::AbstractRange,
   typedef mozilla::RawRangeBoundary RawRangeBoundary;
 
   virtual ~nsRange();
-
- public:
   explicit nsRange(nsINode* aNode);
 
+ public:
   /**
-   * Create() may return `nsRange` instance which is initialized with
-   * given range or points.  If it fails initializing new range with the
+   * The following Create() returns `nsRange` instance which is initialized
+   * only with aNode.  The result is never positioned.
+   */
+  static already_AddRefed<nsRange> Create(nsINode* aNode);
+
+  /**
+   * The following Create() may return `nsRange` instance which is initialized
+   * with given range or points.  If it fails initializing new range with the
    * arguments, returns `nullptr`.  `ErrorResult` is set to an error only
    * when this returns `nullptr`.  The error code indicates the reason why
    * it couldn't initialize the instance.
@@ -90,10 +95,10 @@ class nsRange final : public mozilla::dom::AbstractRange,
    */
   bool IsInSelection() const { return !!mSelection; }
 
-  /**
-   * Called when the range is added/removed from a Selection.
-   */
-  void SetSelection(mozilla::dom::Selection* aSelection);
+  MOZ_CAN_RUN_SCRIPT void RegisterSelection(
+      mozilla::dom::Selection& aSelection);
+
+  void UnregisterSelection();
 
   /**
    * Returns pointer to a Selection if the range is associated with a Selection.
@@ -116,16 +121,6 @@ class nsRange final : public mozilla::dom::AbstractRange,
   void SetIsGenerated(bool aIsGenerated) { mIsGenerated = aIsGenerated; }
 
   void Reset();
-
-  /**
-   * ResetTemporarily() is called when Selection starts to cache the instance
-   * to reuse later.  This method clears mStart, mEnd and mIsPositioned but
-   * does not clear mRoot for reducing the cost to register this as a mutation
-   * observer again.
-   */
-  void ResetTemporarily() {
-    DoSetRange(RawRangeBoundary(), RawRangeBoundary(), mRoot);
-  }
 
   /**
    * SetStart() and SetEnd() sets start point or end point separately.
@@ -209,7 +204,7 @@ class nsRange final : public mozilla::dom::AbstractRange,
       const mozilla::dom::GlobalObject& global, mozilla::ErrorResult& aRv);
 
   already_AddRefed<mozilla::dom::DocumentFragment> CreateContextualFragment(
-      const nsAString& aString, ErrorResult& aError);
+      const nsAString& aString, ErrorResult& aError) const;
   already_AddRefed<mozilla::dom::DocumentFragment> CloneContents(
       ErrorResult& aErr);
   int16_t CompareBoundaryPoints(uint16_t aHow, nsRange& aOther,
@@ -428,6 +423,15 @@ class nsRange final : public mozilla::dom::AbstractRange,
     static bool sIsNested;
   };
 
+  bool MaybeInterruptLastRelease();
+
+#ifdef DEBUG
+  bool IsCleared() const {
+    return !mRoot && !mRegisteredClosestCommonInclusiveAncestor &&
+           !mSelection && !mNextStartRef && !mNextEndRef;
+  }
+#endif  // #ifdef DEBUG
+
   nsCOMPtr<nsINode> mRoot;
   // mRegisteredClosestCommonInclusiveAncestor is only non-null when the range
   // IsInSelection().  It's kept alive via mStart/mEnd,
@@ -442,6 +446,8 @@ class nsRange final : public mozilla::dom::AbstractRange,
   // notifications while holding a strong reference to the new child.
   nsIContent* MOZ_NON_OWNING_REF mNextStartRef;
   nsIContent* MOZ_NON_OWNING_REF mNextEndRef;
+
+  static nsTArray<RefPtr<nsRange>>* sCachedRanges;
 
   friend class mozilla::dom::AbstractRange;
 };

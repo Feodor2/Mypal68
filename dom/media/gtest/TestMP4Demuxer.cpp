@@ -142,7 +142,7 @@ class MP4DemuxerBinding {
     Unused << mTaskQueue->Dispatch(r.forget());
   }
 
-  virtual ~MP4DemuxerBinding() {}
+  virtual ~MP4DemuxerBinding() = default;
 };
 
 TEST(MP4Demuxer, Seek)

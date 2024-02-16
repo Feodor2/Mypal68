@@ -8,7 +8,6 @@
 #include "mozilla/Attributes.h"
 #include "mozilla/SMILAttr.h"
 #include "mozilla/UniquePtr.h"
-#include "nsAutoPtr.h"
 #include "SVGNumberList.h"
 
 namespace mozilla {
@@ -83,7 +82,7 @@ class SVGAnimatedNumberList {
   // the empty string (<set to="">).
 
   SVGNumberList mBaseVal;
-  nsAutoPtr<SVGNumberList> mAnimVal;
+  UniquePtr<SVGNumberList> mAnimVal;
   bool mIsBaseSet;
 
   struct SMILAnimatedNumberList : public SMILAttr {

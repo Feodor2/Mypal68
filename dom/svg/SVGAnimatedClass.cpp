@@ -90,7 +90,7 @@ void SVGAnimatedClass::SetAnimValue(const nsAString& aValue,
     return;
   }
   if (!mAnimVal) {
-    mAnimVal = new nsString();
+    mAnimVal = MakeUnique<nsString>();
   }
   *mAnimVal = aValue;
   aSVGElement->SetMayHaveClass();

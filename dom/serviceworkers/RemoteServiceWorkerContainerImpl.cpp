@@ -55,7 +55,7 @@ void RemoteServiceWorkerContainerImpl::Register(
   if (!mActor) {
     CopyableErrorResult rv;
     rv.ThrowInvalidStateError("Can't register service worker");
-    aFailureCB(rv);
+    aFailureCB(std::move(rv));
     return;
   }
 
@@ -82,7 +82,7 @@ void RemoteServiceWorkerContainerImpl::Register(
         // IPC layer error
         CopyableErrorResult rv;
         rv.ThrowInvalidStateError("Failed to register service worker");
-        aFailureCB(rv);
+        aFailureCB(std::move(rv));
       });
 }
 

@@ -7,13 +7,15 @@
 #include "mozilla/EventStates.h"  // for EventStates
 #include "mozilla/FlushType.h"    // for enum
 #include "mozilla/MozPromise.h"   // for MozPromise
+#include "mozilla/FunctionRef.h"  // for FunctionRef
 #include "mozilla/Pair.h"         // for Pair
 #include "nsAutoPtr.h"            // for member
 #include "nsCOMArray.h"           // for member
 #include "nsCompatibility.h"      // for member
 #include "nsCOMPtr.h"             // for member
 #include "nsICookieSettings.h"
-#include "nsGkAtoms.h"  // for static class members
+#include "nsGkAtoms.h"           // for static class members
+#include "nsNameSpaceManager.h"  // for static class members
 #include "nsIApplicationCache.h"
 #include "nsIApplicationCacheContainer.h"
 #include "nsIContentViewer.h"
@@ -144,6 +146,7 @@ class ServoStyleSet;
 enum class StyleOrigin : uint8_t;
 class SMILAnimationController;
 enum class StyleCursorKind : uint8_t;
+enum class StylePrefersColorScheme : uint8_t;
 template <typename>
 class OwningNonNull;
 struct URLExtraData;
@@ -284,7 +287,7 @@ class DocHeaderData {
 };
 
 class ExternalResourceMap {
-  typedef bool (*SubDocEnumFunc)(Document& aDocument, void* aData);
+  using SubDocEnumFunc = FunctionRef<bool(Document&)>;
 
  public:
   /**
@@ -327,7 +330,7 @@ class ExternalResourceMap {
    * Enumerate the resource documents.  See
    * Document::EnumerateExternalResources.
    */
-  void EnumerateResources(SubDocEnumFunc aCallback, void* aData);
+  void EnumerateResources(SubDocEnumFunc aCallback);
 
   /**
    * Traverse ourselves for cycle-collection
@@ -362,7 +365,7 @@ class ExternalResourceMap {
 
  protected:
   class PendingLoad : public ExternalResourceLoad, public nsIStreamListener {
-    ~PendingLoad() {}
+    ~PendingLoad() = default;
 
    public:
     explicit PendingLoad(Document* aDisplayDocument)
@@ -393,7 +396,7 @@ class ExternalResourceMap {
   friend class PendingLoad;
 
   class LoadgroupCallbacks final : public nsIInterfaceRequestor {
-    ~LoadgroupCallbacks() {}
+    ~LoadgroupCallbacks() = default;
 
    public:
     explicit LoadgroupCallbacks(nsIInterfaceRequestor* aOtherCallbacks)
@@ -464,6 +467,8 @@ class Document : public nsINode,
                  public nsStubMutationObserver,
                  public DispatcherTrait,
                  public SupportsWeakPtr<Document> {
+  friend class DocumentOrShadowRoot;
+
  protected:
   explicit Document(const char* aContentType);
   virtual ~Document();
@@ -474,6 +479,12 @@ class Document : public nsINode,
  public:
   typedef dom::ExternalResourceMap::ExternalResourceLoad ExternalResourceLoad;
   typedef dom::ReferrerPolicy ReferrerPolicyEnum;
+  using AdoptedStyleSheetCloneCache =
+      nsRefPtrHashtable<nsPtrHashKey<const StyleSheet>, StyleSheet>;
+
+  // nsINode overrides the new operator for DOM Arena allocation.
+  // to use the default one, we need to bring it back again
+  void* operator new(size_t aSize) { return ::operator new(aSize); }
 
   /**
    * Called when XPCOM shutdown.
@@ -564,6 +575,8 @@ class Document : public nsINode,
   nsIPrincipal* IntrinsicStoragePrincipal() const {
     return mIntrinsicStoragePrincipal;
   }
+
+  void ClearActiveStoragePrincipal() { mActiveStoragePrincipal = nullptr; }
 
   nsIPrincipal* GetContentBlockingAllowListPrincipal() const {
     return mContentBlockingAllowListPrincipal;
@@ -1101,6 +1114,14 @@ class Document : public nsINode,
    */
   void SetHasUnsafeEvalCSP(bool aHasUnsafeEvalCSP) {
     mHasUnsafeEvalCSP = aHasUnsafeEvalCSP;
+  }
+
+  /**
+   * Returns true if the document holds a CSP
+   * delivered through an HTTP Header.
+   */
+  bool GetHasCSPDeliveredThroughHeader() {
+    return mHasCSPDeliveredThroughHeader;
   }
 
   /**
@@ -1779,7 +1800,7 @@ class Document : public nsINode,
 
     nsExpirationState* GetExpirationState() { return &mState; }
 
-    ~SelectorCacheKey() { MOZ_COUNT_DTOR(SelectorCacheKey); }
+    MOZ_COUNTED_DTOR(SelectorCacheKey)
   };
 
   class SelectorCacheKeyDeleter;
@@ -1879,11 +1900,6 @@ class Document : public nsINode,
   }
 
   /**
-   * Remove a stylesheet from the document
-   */
-  void RemoveStyleSheet(StyleSheet&);
-
-  /**
    * Notify the document that the applicable state of the sheet changed
    * and that observers should be notified and style sets updated
    */
@@ -1905,8 +1921,6 @@ class Document : public nsINode,
   StyleSheet* GetFirstAdditionalAuthorSheet() {
     return mAdditionalSheets[eAuthorSheet].SafeElementAt(0);
   }
-
-  void AppendAdoptedStyleSheet(StyleSheet& aSheet);
 
   /**
    * Returns the index that aSheet should be inserted at to maintain document
@@ -2028,14 +2042,14 @@ class Document : public nsINode,
   void RemoveFromNameTable(Element* aElement, nsAtom* aName);
 
   /**
-   * Returns all elements in the fullscreen stack in the insertion order.
+   * Returns all elements in the top layer in the insertion order.
    */
-  nsTArray<Element*> GetFullscreenStack() const;
+  nsTArray<Element*> GetTopLayer() const;
 
   /**
    * Asynchronously requests that the document make aElement the fullscreen
    * element, and move into fullscreen mode. The current fullscreen element
-   * (if any) is pushed onto the fullscreen element stack, and it can be
+   * (if any) is pushed onto the top layer, and it can be
    * returned to fullscreen status by calling RestorePreviousFullscreenState().
    *
    * Note that requesting fullscreen in a document also makes the element which
@@ -2048,25 +2062,30 @@ class Document : public nsINode,
   // Do the "fullscreen element ready check" from the fullscreen spec.
   // It returns true if the given element is allowed to go into fullscreen.
   // It is responsive to dispatch "fullscreenerror" event when necessary.
-  bool FullscreenElementReadyCheck(const FullscreenRequest&);
+  bool FullscreenElementReadyCheck(FullscreenRequest&);
 
   // This is called asynchronously by Document::AsyncRequestFullscreen()
   // to move this document into fullscreen mode if allowed.
   void RequestFullscreen(UniquePtr<FullscreenRequest> aRequest);
 
-  // Removes all elements from the fullscreen stack, removing full-scren
-  // styles from the top element in the stack.
+  // Removes all the elements with fullscreen flag set from the top layer, and
+  // clears their fullscreen flag.
   void CleanupFullscreenState();
 
-  // Pushes aElement onto the fullscreen stack, and removes fullscreen styles
-  // from the former fullscreen stack top, and its ancestors, and applies the
-  // styles to aElement. aElement becomes the new "fullscreen element".
-  bool FullscreenStackPush(Element* aElement);
+  // Pushes aElement onto the top layer
+  bool TopLayerPush(Element* aElement);
 
-  // Remove the top element from the fullscreen stack. Removes the fullscreen
-  // styles from the former top element, and applies them to the new top
-  // element, if there is one.
-  void FullscreenStackPop();
+  // Removes the topmost element which have aPredicate return true from the top
+  // layer. The removed element, if any, is returned.
+  Element* TopLayerPop(FunctionRef<bool(Element*)> aPredicateFunc);
+
+  // Pops the fullscreen element from the top layer and clears its
+  // fullscreen flag.
+  void UnsetFullscreenElement();
+
+  // Pushes the given element into the top of top layer and set fullscreen
+  // flag.
+  bool SetFullscreenElement(Element* aElement);
 
   /**
    * Called when a frame in a child process has entered fullscreen or when a
@@ -2078,7 +2097,7 @@ class Document : public nsINode,
 
   /**
    * Called when a frame in a remote child document has rolled back fullscreen
-   * so that all its fullscreen element stacks are empty; we must continue the
+   * so that all its top layer are empty; we must continue the
    * rollback in this parent process' doc tree branch which is fullscreen.
    * Note that only one branch of the document tree can have its documents in
    * fullscreen state at one time. We're in inconsistent state if a
@@ -2106,6 +2125,8 @@ class Document : public nsINode,
    * fullscreen.
    */
   Document* GetFullscreenRoot();
+
+  size_t CountFullscreenElements() const;
 
   /**
    * Sets the fullscreen root to aRoot. This stores a weak reference to aRoot
@@ -2412,8 +2433,8 @@ class Document : public nsINode,
    */
   int32_t GetDefaultNamespaceID() const { return mDefaultElementType; }
 
-  void DeleteAllProperties();
-  void DeleteAllPropertiesFor(nsINode* aNode);
+  void RemoveAllProperties();
+  void RemoveAllPropertiesFor(nsINode* aNode);
 
   nsPropertyTable& PropertyTable() { return mPropertyTable; }
 
@@ -2438,8 +2459,8 @@ class Document : public nsINode,
    * The enumerator callback should return true to continue enumerating, or
    * false to stop.  This will never get passed a null aDocument.
    */
-  typedef bool (*SubDocEnumFunc)(Document&, void* aData);
-  void EnumerateSubDocuments(SubDocEnumFunc aCallback, void* aData);
+  using SubDocEnumFunc = FunctionRef<bool(Document&)>;
+  void EnumerateSubDocuments(SubDocEnumFunc aCallback);
 
   /**
    * Collect all the descendant documents for which |aCalback| returns true.
@@ -2768,7 +2789,7 @@ class Document : public nsINode,
    * The enumerator callback should return true to continue enumerating, or
    * false to stop.  This callback will never get passed a null aDocument.
    */
-  void EnumerateExternalResources(SubDocEnumFunc aCallback, void* aData);
+  void EnumerateExternalResources(SubDocEnumFunc aCallback);
 
   dom::ExternalResourceMap& ExternalResourceMap() {
     return mExternalResourceMap;
@@ -2836,9 +2857,8 @@ class Document : public nsINode,
   void RegisterActivityObserver(nsISupports* aSupports);
   bool UnregisterActivityObserver(nsISupports* aSupports);
   // Enumerate all the observers in mActivityObservers by the aEnumerator.
-  typedef void (*ActivityObserverEnumerator)(nsISupports*, void*);
-  void EnumerateActivityObservers(ActivityObserverEnumerator aEnumerator,
-                                  void* aData);
+  using ActivityObserverEnumerator = FunctionRef<void(nsISupports*)>;
+  void EnumerateActivityObservers(ActivityObserverEnumerator aEnumerator);
 
   // Indicates whether mAnimationController has been (lazily) initialized.
   // If this returns true, we're promising that GetAnimationController()
@@ -2986,7 +3006,7 @@ class Document : public nsINode,
    * Note that static documents are also "loaded as data" (if this method
    * returns true, IsLoadedAsData() will also return true).
    */
-  bool IsStaticDocument() { return mIsStaticDocument; }
+  bool IsStaticDocument() const { return mIsStaticDocument; }
 
   /**
    * Clones the document along with any subdocuments, stylesheet, etc.
@@ -3490,6 +3510,7 @@ class Document : public nsINode,
                mozilla::ErrorResult& rv);
   Nullable<WindowProxyHolder> GetDefaultView() const;
   Element* GetActiveElement();
+  nsIContent* GetUnretargetedFocusedContent() const;
   bool HasFocus(ErrorResult& rv) const;
   void GetDesignMode(nsAString& aDesignMode);
   void SetDesignMode(const nsAString& aDesignMode,
@@ -3526,7 +3547,9 @@ class Document : public nsINode,
   nsIURI* GetDocumentURIObject() const;
   // Not const because all the fullscreen goop is not const
   bool FullscreenEnabled(CallerType aCallerType);
-  Element* FullscreenStackTop();
+  Element* GetTopLayerTop();
+  // Return the fullscreen element in the top layer
+  Element* GetUnretargetedFullScreenElement();
   bool Fullscreen() { return !!GetFullscreenElement(); }
   already_AddRefed<Promise> ExitFullscreen(ErrorResult&);
   void ExitPointerLock() { UnlockPointer(this); }
@@ -3718,16 +3741,6 @@ class Document : public nsINode,
 
   bool IsSynthesized();
 
-  void AddToVisibleContentHeuristic(size_t aNumber) {
-    if (MOZ_UNLIKELY(SIZE_MAX - mVisibleContentHeuristic < aNumber)) {
-      mVisibleContentHeuristic = SIZE_MAX;
-    } else {
-      mVisibleContentHeuristic += aNumber;
-    }
-  }
-
-  size_t GetVisibleContentHeuristic() const { return mVisibleContentHeuristic; }
-
   // Called to track whether this document has had any interaction.
   // This is used to track whether we should permit "beforeunload".
   void SetUserHasInteracted();
@@ -3776,6 +3789,8 @@ class Document : public nsINode,
 #endif
     return mDocGroup;
   }
+
+  DocGroup* GetDocGroupOrCreate();
 
   /**
    * If we're a sub-document, the parent document's layout can affect our style
@@ -4052,6 +4067,9 @@ class Document : public nsINode,
   bool InRDMPane() const { return mInRDMPane; }
   void SetInRDMPane(bool aInRDMPane) { mInRDMPane = aInRDMPane; }
 
+  // CSS prefers-color-scheme media feature for this document.
+  StylePrefersColorScheme PrefersColorScheme() const;
+
   // Returns true if we use overlay scrollbars on the system wide or on the
   // given document.
   static bool UseOverlayScrollbars(const Document* aDocument);
@@ -4059,10 +4077,6 @@ class Document : public nsINode,
   static bool HasRecentlyStartedForegroundLoads();
 
   static bool AutomaticStorageAccessCanBeGranted(nsIPrincipal* aPrincipal);
-
-  void SetAdoptedStyleSheets(
-      const Sequence<OwningNonNull<StyleSheet>>& aAdoptedStyleSheets,
-      ErrorResult& aRv);
 
  protected:
   void DoUpdateSVGUseElementShadowTrees();
@@ -4104,8 +4118,6 @@ class Document : public nsINode,
   bool ApplyFullscreen(UniquePtr<FullscreenRequest>);
 
   void RemoveDocStyleSheetsFromStyleSets();
-  void RemoveStyleSheetsFromStyleSets(
-      const nsTArray<RefPtr<StyleSheet>>& aSheets, StyleOrigin);
   void ResetStylesheetsToURI(nsIURI* aURI);
   void FillStyleSet();
   void FillStyleSetUserAndUASheets();
@@ -4118,8 +4130,8 @@ class Document : public nsINode,
   }
   void AddContentEditableStyleSheetsToStyleSet(bool aDesignMode);
   void RemoveContentEditableStyleSheets();
-  void AddStyleSheetToStyleSets(StyleSheet* aSheet);
-  void RemoveStyleSheetFromStyleSets(StyleSheet* aSheet);
+  void AddStyleSheetToStyleSets(StyleSheet&);
+  void RemoveStyleSheetFromStyleSets(StyleSheet&);
   void NotifyStyleSheetApplicableStateChanged();
   // Just like EnableStyleSheetsForSet, but doesn't check whether
   // aSheetSet is null and allows the caller to control whether to set
@@ -4564,6 +4576,9 @@ class Document : public nsINode,
   // True if a document load has a CSP with unsafe-inline attached.
   bool mHasUnsafeInlineCSP : 1;
 
+  // True if the document has a CSP delivered throuh a header
+  bool mHasCSPDeliveredThroughHeader : 1;
+
   // True if DisallowBFCaching has been called on this document.
   bool mBFCacheDisallowed : 1;
 
@@ -4917,16 +4932,6 @@ class Document : public nsINode,
   // Array of observers
   nsTObserverArray<nsIDocumentObserver*> mObservers;
 
-  // An ever-increasing heuristic number that is higher the more content is
-  // likely to be visible in the page.
-  //
-  // Right now it effectively measures amount of text content that has ever been
-  // connected to the document in some way, and is not under a <script> or
-  // <style>.
-  //
-  // Note that this is only measured during load.
-  size_t mVisibleContentHeuristic = 0;
-
   // Whether the user has interacted with the document or not:
   bool mUserHasInteracted;
 
@@ -5019,10 +5024,8 @@ class Document : public nsINode,
   // Array of intersection observers
   nsTHashtable<nsPtrHashKey<DOMIntersectionObserver>> mIntersectionObservers;
 
-  // Stack of fullscreen elements. When we request fullscreen we push the
-  // fullscreen element onto this stack, and when we cancel fullscreen we
-  // pop one off this stack, restoring the previous fullscreen state
-  nsTArray<nsWeakPtr> mFullscreenStack;
+  // Stack of top layer elements.
+  nsTArray<nsWeakPtr> mTopLayer;
 
   // The root of the doc tree in which this document is in. This is only
   // non-null when this document is in fullscreen mode.
@@ -5169,6 +5172,11 @@ class Document : public nsINode,
 
   // The principal to use for the storage area of this document.
   nsCOMPtr<nsIPrincipal> mIntrinsicStoragePrincipal;
+
+  // The cached storage principal for this document.
+  // This is mutable so that we can keep EffectiveStoragePrincipal() const
+  // which is required due to its CloneDocHelper() call site.  :-(
+  mutable nsCOMPtr<nsIPrincipal> mActiveStoragePrincipal;
 
   // The principal to use for the content blocking allow list.
   nsCOMPtr<nsIPrincipal> mContentBlockingAllowListPrincipal;

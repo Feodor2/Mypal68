@@ -41,6 +41,13 @@ function* testSteps() {
 
   const metadataFileName = ".metadata-v2";
 
+  const packages = [
+    // Storage used by FF 49-54 (storage version 1.0 with obsolete origin
+    // attributes).
+    "version1_0_obsoleteOriginAttributes_profile",
+    "../defaultStorageDirectory_shared",
+  ];
+
   let metadataBuffers = [];
 
   info("Clearing");
@@ -48,11 +55,17 @@ function* testSteps() {
   clear(continueToNextStepSync);
   yield undefined;
 
-  info("Installing package");
+  info("Verifying storage");
 
-  // Storage used by FF 49-54 (storage version 1.0 with obsolete origin
-  // attributes).
-  installPackage("version1_0_obsoleteOriginAttributes_profile");
+  verifyStorage(packages, "beforeInstall");
+
+  info("Installing packages");
+
+  installPackages(packages);
+
+  info("Verifying storage");
+
+  verifyStorage(packages, "afterInstall");
 
   info("Checking origin directories");
 
@@ -88,6 +101,15 @@ function* testSteps() {
   yield undefined;
 
   ok(request.resultCode == NS_OK, "Initialization succeeded");
+
+  info("Verifying storage");
+
+  verifyStorage(packages, "afterInit");
+
+  // TODO: Remove this block once temporary storage initialization is able to
+  //       ignore unknown directories.
+  getRelativeFile("storage/default/invalid+++example.com").remove(false);
+  getRelativeFile("storage/temporary/invalid+++example.com").remove(false);
 
   info("Checking origin directories");
 

@@ -35,7 +35,7 @@ class ScreenLuminance final : public nsWrapperCache {
                        JS::Handle<JSObject*> aGivenProto) override;
 
  private:
-  virtual ~ScreenLuminance() {}
+  virtual ~ScreenLuminance() = default;
 
   RefPtr<nsScreen> mScreen;
   double mMin;

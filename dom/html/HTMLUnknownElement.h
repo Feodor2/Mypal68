@@ -31,7 +31,7 @@ class HTMLUnknownElement final : public nsGenericHTMLElement {
   virtual nsresult Clone(dom::NodeInfo*, nsINode** aResult) const override;
 
  protected:
-  virtual ~HTMLUnknownElement() {}
+  virtual ~HTMLUnknownElement() = default;
   virtual JSObject* WrapNode(JSContext* aCx,
                              JS::Handle<JSObject*> aGivenProto) override;
 };

@@ -82,7 +82,7 @@ nsresult SVGAnimatedLengthList::SetAnimValue(const SVGLengthList& aNewAnimValue,
     domWrapper->InternalAnimValListWillChangeTo(aNewAnimValue);
   }
   if (!mAnimVal) {
-    mAnimVal = new SVGLengthList();
+    mAnimVal = MakeUnique<SVGLengthList>();
   }
   nsresult rv = mAnimVal->CopyFrom(aNewAnimValue);
   if (NS_FAILED(rv)) {

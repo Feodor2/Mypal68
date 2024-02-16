@@ -116,7 +116,7 @@ struct TypedArray_base : public SpiderMonkeyInterfaceObjectStorage,
     return mLength;
   }
 
-  inline void ComputeLengthAndData() const {
+  inline void ComputeState() const {
     MOZ_ASSERT(inited());
     MOZ_ASSERT(!mComputed);
     GetLengthAndDataAndSharedness(mImplObj, &mLength, &mShared, &mData);
@@ -137,9 +137,9 @@ struct TypedArray
   typedef TypedArray_base<T, UnwrapArray, GetLengthAndDataAndSharedness> Base;
 
  public:
-  TypedArray() : Base() {}
+  TypedArray() = default;
 
-  TypedArray(TypedArray&& aOther) : Base(std::move(aOther)) {}
+  TypedArray(TypedArray&& aOther) = default;
 
   static inline JSObject* Create(JSContext* cx, nsWrapperCache* creator,
                                  uint32_t length, const T* data = nullptr) {

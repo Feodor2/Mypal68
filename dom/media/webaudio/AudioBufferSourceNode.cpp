@@ -582,7 +582,8 @@ AudioBufferSourceNode::AudioBufferSourceNode(AudioContext* aContext)
       mLoopEnd(0.0),
       // mOffset and mDuration are initialized in Start().
       mLoop(false),
-      mStartCalled(false) {
+      mStartCalled(false),
+      mBufferSet(false) {
   CreateAudioParam(mPlaybackRate, PLAYBACKRATE, "playbackRate", 1.0f);
   CreateAudioParam(mDetune, DETUNE, "detune", 0.0f);
   AudioBufferSourceNodeEngine* engine =
@@ -602,8 +603,9 @@ already_AddRefed<AudioBufferSourceNode> AudioBufferSourceNode::Create(
       new AudioBufferSourceNode(&aAudioContext);
 
   if (aOptions.mBuffer.WasPassed()) {
+    ErrorResult ignored;
     MOZ_ASSERT(aCx);
-    audioNode->SetBuffer(aCx, aOptions.mBuffer.Value());
+    audioNode->SetBuffer(aCx, aOptions.mBuffer.Value(), ignored);
   }
 
   audioNode->Detune()->SetValue(aOptions.mDetune);
@@ -647,21 +649,21 @@ void AudioBufferSourceNode::Start(double aWhen, double aOffset,
                                   const Optional<double>& aDuration,
                                   ErrorResult& aRv) {
   if (!WebAudioUtils::IsTimeValid(aWhen)) {
-    aRv.ThrowRangeError<MSG_VALUE_OUT_OF_RANGE>(
-        NS_LITERAL_STRING("start time"));
+    aRv.ThrowRangeError<MSG_VALUE_OUT_OF_RANGE>("start time");
     return;
   }
   if (aOffset < 0) {
-    aRv.ThrowRangeError<MSG_VALUE_OUT_OF_RANGE>(NS_LITERAL_STRING("offset"));
+    aRv.ThrowRangeError<MSG_VALUE_OUT_OF_RANGE>("offset");
     return;
   }
   if (aDuration.WasPassed() && !WebAudioUtils::IsTimeValid(aDuration.Value())) {
-    aRv.ThrowRangeError<MSG_VALUE_OUT_OF_RANGE>(NS_LITERAL_STRING("duration"));
+    aRv.ThrowRangeError<MSG_VALUE_OUT_OF_RANGE>("duration");
     return;
   }
 
   if (mStartCalled) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    aRv.ThrowInvalidStateError(
+        "Start has already been called on this AudioBufferSourceNode.");
     return;
   }
   mStartCalled = true;
@@ -753,12 +755,13 @@ void AudioBufferSourceNode::SendOffsetAndDurationParametersToTrack(
 
 void AudioBufferSourceNode::Stop(double aWhen, ErrorResult& aRv) {
   if (!WebAudioUtils::IsTimeValid(aWhen)) {
-    aRv.ThrowRangeError<MSG_VALUE_OUT_OF_RANGE>(NS_LITERAL_STRING("stop time"));
+    aRv.ThrowRangeError<MSG_VALUE_OUT_OF_RANGE>("stop time");
     return;
   }
 
   if (!mStartCalled) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
+    aRv.ThrowInvalidStateError(
+        "Start has not been called on this AudioBufferSourceNode.");
     return;
   }
 

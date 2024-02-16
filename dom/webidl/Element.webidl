@@ -33,7 +33,7 @@ interface Element : Node {
   readonly attribute DOMTokenList classList;
 
   // https://drafts.csswg.org/css-shadow-parts/#idl
-  [SameObject, PutForwards=value, Pref="layout.css.shadow-parts.enabled"]
+  [SameObject, PutForwards=value]
   readonly attribute DOMTokenList part;
 
   [SameObject]
@@ -76,7 +76,7 @@ interface Element : Node {
   [Pure]
   HTMLCollection getElementsByClassName(DOMString classNames);
 
-  [CEReactions, Throws, Pure]
+  [CEReactions, Throws]
   Element? insertAdjacentElement(DOMString where, Element element); // historical
 
   [Throws]
@@ -95,6 +95,13 @@ interface Element : Node {
    */
   [ChromeOnly]
   readonly attribute float fontSizeInflation;
+
+  /**
+   * Returns the pseudo-element string if this element represents a
+   * pseudo-element, or null otherwise.
+   */
+  [ChromeOnly]
+  readonly attribute DOMString? implementedPseudoElement;
 
   // Selectors API
   /**

@@ -105,7 +105,7 @@ DeviceAcceleration::DeviceAcceleration(DeviceMotionEvent* aOwner,
                                        const Nullable<double>& aZ)
     : mOwner(aOwner), mX(aX), mY(aY), mZ(aZ) {}
 
-DeviceAcceleration::~DeviceAcceleration() {}
+DeviceAcceleration::~DeviceAcceleration() = default;
 
 /******************************************************************************
  * DeviceRotationRate
@@ -122,7 +122,7 @@ DeviceRotationRate::DeviceRotationRate(DeviceMotionEvent* aOwner,
                                        const Nullable<double>& aGamma)
     : mOwner(aOwner), mAlpha(aAlpha), mBeta(aBeta), mGamma(aGamma) {}
 
-DeviceRotationRate::~DeviceRotationRate() {}
+DeviceRotationRate::~DeviceRotationRate() = default;
 
 }  // namespace dom
 }  // namespace mozilla

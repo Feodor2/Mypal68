@@ -87,7 +87,7 @@ void VRMockDisplay::SetPose(
 
   if (!aOrientation.IsNull()) {
     const Float32Array& value = aOrientation.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 4);
     mSensorState.pose.orientation[0] = value.Data()[0];
     mSensorState.pose.orientation[1] = value.Data()[1];
@@ -96,7 +96,7 @@ void VRMockDisplay::SetPose(
   }
   if (!aAngularVelocity.IsNull()) {
     const Float32Array& value = aAngularVelocity.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     mSensorState.pose.angularVelocity[0] = value.Data()[0];
     mSensorState.pose.angularVelocity[1] = value.Data()[1];
@@ -104,7 +104,7 @@ void VRMockDisplay::SetPose(
   }
   if (!aAngularAcceleration.IsNull()) {
     const Float32Array& value = aAngularAcceleration.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     mSensorState.pose.angularAcceleration[0] = value.Data()[0];
     mSensorState.pose.angularAcceleration[1] = value.Data()[1];
@@ -112,7 +112,7 @@ void VRMockDisplay::SetPose(
   }
   if (!aPosition.IsNull()) {
     const Float32Array& value = aPosition.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     mSensorState.pose.position[0] = value.Data()[0];
     mSensorState.pose.position[1] = value.Data()[1];
@@ -120,7 +120,7 @@ void VRMockDisplay::SetPose(
   }
   if (!aLinearVelocity.IsNull()) {
     const Float32Array& value = aLinearVelocity.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     mSensorState.pose.linearVelocity[0] = value.Data()[0];
     mSensorState.pose.linearVelocity[1] = value.Data()[1];
@@ -128,7 +128,7 @@ void VRMockDisplay::SetPose(
   }
   if (!aLinearAcceleration.IsNull()) {
     const Float32Array& value = aLinearAcceleration.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     mSensorState.pose.linearAcceleration[0] = value.Data()[0];
     mSensorState.pose.linearAcceleration[1] = value.Data()[1];
@@ -193,7 +193,7 @@ void VRMockController::NewPoseMove(
                     GamepadCapabilityFlags::Cap_LinearAcceleration;
   if (!aOrientation.IsNull()) {
     const Float32Array& value = aOrientation.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 4);
     poseState.orientation[0] = value.Data()[0];
     poseState.orientation[1] = value.Data()[1];
@@ -203,7 +203,7 @@ void VRMockController::NewPoseMove(
   }
   if (!aPosition.IsNull()) {
     const Float32Array& value = aPosition.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     poseState.position[0] = value.Data()[0];
     poseState.position[1] = value.Data()[1];
@@ -212,7 +212,7 @@ void VRMockController::NewPoseMove(
   }
   if (!aAngularVelocity.IsNull()) {
     const Float32Array& value = aAngularVelocity.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     poseState.angularVelocity[0] = value.Data()[0];
     poseState.angularVelocity[1] = value.Data()[1];
@@ -220,7 +220,7 @@ void VRMockController::NewPoseMove(
   }
   if (!aAngularAcceleration.IsNull()) {
     const Float32Array& value = aAngularAcceleration.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     poseState.angularAcceleration[0] = value.Data()[0];
     poseState.angularAcceleration[1] = value.Data()[1];
@@ -228,7 +228,7 @@ void VRMockController::NewPoseMove(
   }
   if (!aLinearVelocity.IsNull()) {
     const Float32Array& value = aLinearVelocity.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     poseState.linearVelocity[0] = value.Data()[0];
     poseState.linearVelocity[1] = value.Data()[1];
@@ -236,7 +236,7 @@ void VRMockController::NewPoseMove(
   }
   if (!aLinearAcceleration.IsNull()) {
     const Float32Array& value = aLinearAcceleration.Value();
-    value.ComputeLengthAndData();
+    value.ComputeState();
     MOZ_ASSERT(value.Length() == 3);
     poseState.linearAcceleration[0] = value.Data()[0];
     poseState.linearAcceleration[1] = value.Data()[1];

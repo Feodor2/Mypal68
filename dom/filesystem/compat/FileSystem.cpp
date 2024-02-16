@@ -50,7 +50,7 @@ FileSystem::FileSystem(nsIGlobalObject* aGlobal, const nsAString& aName)
   MOZ_ASSERT(aGlobal);
 }
 
-FileSystem::~FileSystem() {}
+FileSystem::~FileSystem() = default;
 
 JSObject* FileSystem::WrapObject(JSContext* aCx,
                                  JS::Handle<JSObject*> aGivenProto) {

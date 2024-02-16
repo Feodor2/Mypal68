@@ -129,8 +129,14 @@ class TextEditor;
 
 enum class StorageAccess;
 
+struct InputEventOptions;
+
 namespace dom {
+class BrowserChild;
+class BrowserParent;
+class ContentChild;
 class ContentFrameMessageManager;
+class ContentParent;
 struct CustomElementDefinition;
 class DataTransfer;
 class DocumentFragment;
@@ -144,11 +150,8 @@ struct LifecycleCallbackArgs;
 struct LifecycleAdoptedCallbackArgs;
 class MessageBroadcaster;
 class NodeInfo;
-class ContentChild;
-class ContentParent;
-class BrowserChild;
 class Selection;
-class BrowserParent;
+class StaticRange;
 class WorkerPrivate;
 }  // namespace dom
 
@@ -1414,12 +1417,16 @@ class nsContentUtils {
    * @param aDefaultAction Set to true if default action should be taken,
    *                       see EventTarget::DispatchEvent.
    */
+  // TODO: annotate with `MOZ_CAN_RUN_SCRIPT`
+  // (https://bugzilla.mozilla.org/show_bug.cgi?id=1625902).
   static nsresult DispatchTrustedEvent(Document* aDoc, nsISupports* aTarget,
                                        const nsAString& aEventName, CanBubble,
                                        Cancelable,
                                        Composed aComposed = Composed::eDefault,
                                        bool* aDefaultAction = nullptr);
 
+  // TODO: annotate with `MOZ_CAN_RUN_SCRIPT`
+  // (https://bugzilla.mozilla.org/show_bug.cgi?id=1625902).
   static nsresult DispatchTrustedEvent(Document* aDoc, nsISupports* aTarget,
                                        const nsAString& aEventName,
                                        CanBubble aCanBubble,
@@ -1455,15 +1462,19 @@ class nsContentUtils {
   }
 
   /**
-   * This method dispatches "input" event with proper event class.  If it's
-   * unsafe to dispatch, this put the event into the script runner queue.
+   * This method dispatches "beforeinput" event with EditorInputEvent or
+   * "input" event with proper event class.  If it's unsafe to dispatch,
+   * this put the event into the script runner queue.  In such case, the
+   * event becomes not cancelable even if it's defined as cancelable by
+   * the spec.
    * Input Events spec defines as:
    *   Input events are dispatched on elements that act as editing hosts,
    *   including elements with the contenteditable attribute set, textarea
    *   elements, and input elements that permit text input.
    *
-   * @param aEventTarget        The event target element of the "input" event.
-   *                            Must not be nullptr.
+   * @param aEventTarget        The event target element of the "beforeinput"
+   *                            or "input" event.  Must not be nullptr.
+   * @param aEventMessage       Muse be eEditorBeforeInput or eEditorInput.
    * @param aEditorInputType    The inputType value of InputEvent.
    *                            If aEventTarget won't dispatch "input" event
    *                            with InputEvent, set EditorInputType::eUnknown.
@@ -1473,26 +1484,19 @@ class nsContentUtils {
    * @param aOptions            Optional.  If aEditorInputType value requires
    *                            some additional data, they should be properly
    *                            set with this argument.
+   * @param aEventStatus        Returns nsEventStatus_eConsumeNoDefault if
+   *                            the dispatching event is cancelable and the
+   *                            event was canceled by script (including
+   *                            chrome script).  Otherwise, returns given
+   *                            value.  Note that this can be nullptr only
+   *                            when the dispatching event is not cancelable.
    */
-  MOZ_CAN_RUN_SCRIPT
-  static nsresult DispatchInputEvent(Element* aEventTarget) {
-    return DispatchInputEvent(aEventTarget, mozilla::EditorInputType::eUnknown,
-                              nullptr, InputEventOptions());
-  }
-  struct MOZ_STACK_CLASS InputEventOptions final {
-    InputEventOptions() = default;
-    explicit InputEventOptions(const nsAString& aData)
-        : mData(aData), mDataTransfer(nullptr) {}
-    explicit InputEventOptions(mozilla::dom::DataTransfer* aDataTransfer);
-
-    nsString mData;
-    mozilla::dom::DataTransfer* mDataTransfer;
-  };
-  MOZ_CAN_RUN_SCRIPT
-  static nsresult DispatchInputEvent(Element* aEventTarget,
-                                     mozilla::EditorInputType aEditorInputType,
-                                     mozilla::TextEditor* aTextEditor,
-                                     const InputEventOptions& aOptions);
+  MOZ_CAN_RUN_SCRIPT static nsresult DispatchInputEvent(Element* aEventTarget);
+  MOZ_CAN_RUN_SCRIPT static nsresult DispatchInputEvent(
+      Element* aEventTarget, mozilla::EventMessage aEventMessage,
+      mozilla::EditorInputType aEditorInputType,
+      mozilla::TextEditor* aTextEditor, mozilla::InputEventOptions&& aOptions,
+      nsEventStatus* aEventStatus = nullptr);
 
   /**
    * This method creates and dispatches a untrusted event.
@@ -1669,6 +1673,12 @@ class nsContentUtils {
   static mozilla::EventListenerManager* GetExistingListenerManagerForNode(
       const nsINode* aNode);
 
+  static void AddEntryToDOMArenaTable(nsINode* aNode,
+                                      mozilla::dom::DOMArena* aDOMArena);
+
+  static already_AddRefed<mozilla::dom::DOMArena> TakeEntryFromDOMArenaTable(
+      const nsINode* aNode);
+
   static void UnmarkGrayJSListenersInCCGenerationDocuments();
 
   /**
@@ -1733,12 +1743,19 @@ class nsContentUtils {
    * @return NS_ERROR_DOM_INVALID_STATE_ERR if a re-entrant attempt to parse
    *         fragments is made, NS_ERROR_OUT_OF_MEMORY if aSourceBuffer is too
    *         long and NS_OK otherwise.
+   * @param aFlags defaults to -1 indicating that ParseFragmentHTML will do
+   *        default sanitization for system privileged calls to it. Only
+   *        ParserUtils::ParseFragment() should ever pass explicit aFlags
+   *        which will then used for sanitization of the fragment.
+   *        To pass explicit aFlags use any of the sanitization flags
+   *        listed in nsIParserUtils.idl.
    */
   static nsresult ParseFragmentHTML(const nsAString& aSourceBuffer,
                                     nsIContent* aTargetNode,
                                     nsAtom* aContextLocalName,
                                     int32_t aContextNamespace, bool aQuirks,
-                                    bool aPreventScriptExecution);
+                                    bool aPreventScriptExecution,
+                                    int32_t aFlags = -1);
 
   /**
    * Invoke the fragment parsing algorithm (innerHTML) using the XML parser.
@@ -1751,6 +1768,12 @@ class nsContentUtils {
    * @param aDocument the target document
    * @param aTagStack the namespace mapping context
    * @param aPreventExecution whether to mark scripts as already started
+   * @param aFlags, pass -1 and ParseFragmentXML will do default
+   *        sanitization for system privileged calls to it. Only
+   *        ParserUtils::ParseFragment() should ever pass explicit aFlags
+   *        which will then used for sanitization of the fragment.
+   *        To pass explicit aFlags use any of the sanitization flags
+   *        listed in nsIParserUtils.idl.
    * @param aReturn the result fragment
    * @return NS_ERROR_DOM_INVALID_STATE_ERR if a re-entrant attempt to parse
    *         fragments is made, a return code from the XML parser.
@@ -1758,7 +1781,7 @@ class nsContentUtils {
   static nsresult ParseFragmentXML(const nsAString& aSourceBuffer,
                                    Document* aDocument,
                                    nsTArray<nsString>& aTagStack,
-                                   bool aPreventScriptExecution,
+                                   bool aPreventScriptExecution, int32_t aFlags,
                                    mozilla::dom::DocumentFragment** aReturn);
 
   /**
@@ -2355,16 +2378,6 @@ class nsContentUtils {
   static bool IsFocusedContent(const nsIContent* aContent);
 
   /**
-   * Returns nullptr if requests for fullscreen are allowed in the current
-   * context. Requests are only allowed if the user initiated them (like with
-   * a mouse-click or key press), unless this check has been disabled by
-   * setting the pref "full-screen-api.allow-trusted-requests-only" to false.
-   * If fullscreen is not allowed, a key for the error message is returned.
-   */
-  static const char* CheckRequestFullscreenAllowed(
-      mozilla::dom::CallerType aCallerType);
-
-  /**
    * Returns true if calling execCommand with 'cut' or 'copy' arguments is
    * allowed for the given subject principal. These are only allowed if the user
    * initiated them (like with a mouse-click or key press).
@@ -2698,6 +2711,13 @@ class nsContentUtils {
    */
   static mozilla::TextEditor* GetTextEditorFromAnonymousNodeWithoutCreation(
       nsIContent* aAnonymousContent);
+
+  /**
+   * Returns whether a node has an editable ancestor.
+   *
+   * @param aNode The node to test.
+   */
+  static bool IsNodeInEditableRegion(nsINode* aNode);
 
   /**
    * Returns a LogModule that dump calls from content script are logged to.

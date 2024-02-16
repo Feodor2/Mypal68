@@ -19,7 +19,7 @@ void TextDecoder::Init(const nsAString& aLabel,
   // (https://encoding.spec.whatwg.org/#dom-textdecoder).
   const Encoding* encoding = Encoding::ForLabelNoReplacement(aLabel);
   if (!encoding) {
-    nsAutoString label(aLabel);
+    NS_ConvertUTF16toUTF8 label(aLabel);
     label.Trim(" \t\n\f\r");
     aRv.ThrowRangeError<MSG_ENCODING_NOT_SUPPORTED>(label);
     return;
@@ -101,12 +101,12 @@ void TextDecoder::Decode(const Optional<ArrayBufferViewOrArrayBuffer>& aBuffer,
   uint8_t* data;
   uint32_t length;
   if (buf.IsArrayBufferView()) {
-    buf.GetAsArrayBufferView().ComputeLengthAndData();
+    buf.GetAsArrayBufferView().ComputeState();
     data = buf.GetAsArrayBufferView().Data();
     length = buf.GetAsArrayBufferView().Length();
   } else {
     MOZ_ASSERT(buf.IsArrayBuffer());
-    buf.GetAsArrayBuffer().ComputeLengthAndData();
+    buf.GetAsArrayBuffer().ComputeState();
     data = buf.GetAsArrayBuffer().Data();
     length = buf.GetAsArrayBuffer().Length();
   }

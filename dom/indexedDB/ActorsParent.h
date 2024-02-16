@@ -69,8 +69,6 @@ class PermissionRequestHelper final : public PermissionRequestBase {
   void OnPromptComplete(PermissionValue aPermissionValue) override;
 };
 
-nsresult AsyncDeleteFile(FileManager* aFileManager, int64_t aFileId);
-
 }  // namespace indexedDB
 }  // namespace dom
 }  // namespace mozilla

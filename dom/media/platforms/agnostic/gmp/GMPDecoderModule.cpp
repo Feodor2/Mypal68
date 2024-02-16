@@ -20,9 +20,9 @@
 
 namespace mozilla {
 
-GMPDecoderModule::GMPDecoderModule() {}
+GMPDecoderModule::GMPDecoderModule() = default;
 
-GMPDecoderModule::~GMPDecoderModule() {}
+GMPDecoderModule::~GMPDecoderModule() = default;
 
 static already_AddRefed<MediaDataDecoderProxy> CreateDecoderWrapper() {
   RefPtr<gmp::GeckoMediaPluginService> s(

@@ -20,6 +20,7 @@
 #include "nsFocusManager.h"
 #include "mozilla/dom/HTMLFormElement.h"
 #include "mozilla/dom/MutationEventBinding.h"
+#include "mozilla/dom/UserActivation.h"
 #include "nsAttrValueOrString.h"
 #include "imgLoader.h"
 
@@ -125,9 +126,9 @@ NS_IMPL_ISUPPORTS_CYCLE_COLLECTION_INHERITED(HTMLImageElement,
 
 NS_IMPL_ELEMENT_CLONE(HTMLImageElement)
 
-bool HTMLImageElement::IsInteractiveHTMLContent(bool aIgnoreTabindex) const {
+bool HTMLImageElement::IsInteractiveHTMLContent() const {
   return HasAttr(kNameSpaceID_None, nsGkAtoms::usemap) ||
-         nsGenericHTMLElement::IsInteractiveHTMLContent(aIgnoreTabindex);
+         nsGenericHTMLElement::IsInteractiveHTMLContent();
 }
 
 void HTMLImageElement::AsyncEventRunning(AsyncEventDispatcher* aEvent) {
@@ -219,11 +220,11 @@ bool HTMLImageElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
 
 void HTMLImageElement::MapAttributesIntoRule(
     const nsMappedAttributes* aAttributes, MappedDeclarations& aDecls) {
-  nsGenericHTMLElement::MapImageAlignAttributeInto(aAttributes, aDecls);
-  nsGenericHTMLElement::MapImageBorderAttributeInto(aAttributes, aDecls);
-  nsGenericHTMLElement::MapImageMarginAttributeInto(aAttributes, aDecls);
-  nsGenericHTMLElement::MapImageSizeAttributesInto(aAttributes, aDecls);
-  nsGenericHTMLElement::MapCommonAttributesInto(aAttributes, aDecls);
+  MapImageAlignAttributeInto(aAttributes, aDecls);
+  MapImageBorderAttributeInto(aAttributes, aDecls);
+  MapImageMarginAttributeInto(aAttributes, aDecls);
+  MapImageSizeAttributesInto(aAttributes, aDecls, MapAspectRatio::Yes);
+  MapCommonAttributesInto(aAttributes, aDecls);
 }
 
 nsChangeHint HTMLImageElement::GetAttributeChangeHint(const nsAtom* aAttribute,
@@ -302,7 +303,7 @@ nsresult HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   if (aName == nsGkAtoms::src && aNameSpaceID == kNameSpaceID_None && !aValue) {
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     // SetAttr handles setting src since it needs to catch img.src =
     // img.src, so we only need to handle the unset case
@@ -318,7 +319,7 @@ nsresult HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   } else if (aName == nsGkAtoms::srcset && aNameSpaceID == kNameSpaceID_None) {
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     mSrcsetTriggeringPrincipal = aMaybeScriptedPrincipal;
 
@@ -326,7 +327,7 @@ nsresult HTMLImageElement::AfterSetAttr(int32_t aNameSpaceID, nsAtom* aName,
   } else if (aName == nsGkAtoms::sizes && aNameSpaceID == kNameSpaceID_None) {
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     PictureSourceSizesChanged(this, attrVal.String(), aNotify);
   } else if (aName == nsGkAtoms::decoding &&
@@ -369,7 +370,7 @@ void HTMLImageElement::AfterMaybeChangeAttr(
   if (aNamespaceID == kNameSpaceID_None && aName == nsGkAtoms::src) {
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     mSrcTriggeringPrincipal = nsContentUtils::GetAttrTriggeringPrincipal(
         this, aValue.String(), aMaybeScriptedPrincipal);
@@ -432,7 +433,7 @@ void HTMLImageElement::AfterMaybeChangeAttr(
   if (forceReload) {
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     if (InResponsiveMode()) {
       // per spec, full selection runs when this changes, even though
@@ -483,7 +484,7 @@ bool HTMLImageElement::IsHTMLFocusable(bool aWithMouse, bool* aIsFocusable,
 #ifdef XP_MACOSX
       (!aWithMouse || nsFocusManager::sMouseFocusesFormControl) &&
 #endif
-      (tabIndex >= 0 || HasAttr(kNameSpaceID_None, nsGkAtoms::tabindex));
+      (tabIndex >= 0 || GetTabIndexAttrValue().isSome());
 
   return false;
 }
@@ -504,7 +505,7 @@ nsresult HTMLImageElement::BindToTree(BindContext& aContext, nsINode& aParent) {
 
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     // Run selection algorithm when an img element is inserted into a document
     // in order to react to changes in the environment. See note of
@@ -520,7 +521,7 @@ nsresult HTMLImageElement::BindToTree(BindContext& aContext, nsINode& aParent) {
 
     // Mark channel as urgent-start before load image if the image load is
     // initaiated by a user interaction.
-    mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+    mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
     // We still act synchronously for the non-responsive case (Bug
     // 1076583), but still need to delay if it is unsafe to run
@@ -634,7 +635,8 @@ already_AddRefed<HTMLImageElement> HTMLImageElement::Image(
   RefPtr<mozilla::dom::NodeInfo> nodeInfo = doc->NodeInfoManager()->GetNodeInfo(
       nsGkAtoms::img, nullptr, kNameSpaceID_XHTML, ELEMENT_NODE);
 
-  RefPtr<HTMLImageElement> img = new HTMLImageElement(nodeInfo.forget());
+  auto* nim = nodeInfo->NodeInfoManager();
+  RefPtr<HTMLImageElement> img = new (nim) HTMLImageElement(nodeInfo.forget());
 
   if (aWidth.WasPassed()) {
     img->SetWidth(aWidth.Value(), aError);
@@ -708,7 +710,7 @@ nsresult HTMLImageElement::CopyInnerTo(HTMLImageElement* aDest) {
         aDest->OwnerDoc()->ShouldLoadImages()) {
       // Mark channel as urgent-start before load image if the image load is
       // initaiated by a user interaction.
-      mUseUrgentStartForChannel = EventStateManager::IsHandlingUserInput();
+      mUseUrgentStartForChannel = UserActivation::IsHandlingUserInput();
 
       nsContentUtils::AddScriptRunner(NewRunnableMethod<bool>(
           "dom::HTMLImageElement::MaybeLoadImage", aDest,

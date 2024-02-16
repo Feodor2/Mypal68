@@ -7,15 +7,15 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/Element.h"
-#include "mozilla/EventStateManager.h"
+#include "mozilla/dom/UserActivation.h"
 #include "nsCOMPtr.h"
 #include "mozilla/Encoding.h"
 #include "nsString.h"
+#include "nsIMultiplexInputStream.h"
 
 class nsIURI;
 class nsIInputStream;
 class nsGenericHTMLElement;
-class nsIMultiplexInputStream;
 
 namespace mozilla {
 namespace dom {
@@ -35,11 +35,11 @@ class HTMLFormSubmission {
    * METHOD)
    *
    * @param aForm the form to get a submission object based on
-   * @param aOriginatingElement the originating element (can be null)
+   * @param aSubmitter the submitter element (can be null)
    * @param aFormSubmission the form submission object (out param)
    */
   static nsresult GetFromForm(HTMLFormElement* aForm,
-                              nsGenericHTMLElement* aOriginatingElement,
+                              nsGenericHTMLElement* aSubmitter,
                               NotNull<const Encoding*>& aEncoding,
                               HTMLFormSubmission** aFormSubmission);
 
@@ -91,7 +91,7 @@ class HTMLFormSubmission {
    */
   void GetCharset(nsACString& aCharset) { mEncoding->Name(aCharset); }
 
-  Element* GetOriginatingElement() const { return mOriginatingElement.get(); }
+  Element* GetSubmitterElement() const { return mSubmitter.get(); }
 
   /**
    * Get the action URI that will be used for submission.
@@ -113,16 +113,16 @@ class HTMLFormSubmission {
    * Can only be constructed by subclasses.
    *
    * @param aEncoding the character encoding of the form
-   * @param aOriginatingElement the originating element (can be null)
+   * @param aSubmitter the submitter element (can be null)
    */
   HTMLFormSubmission(nsIURI* aActionURL, const nsAString& aTarget,
                      mozilla::NotNull<const mozilla::Encoding*> aEncoding,
-                     Element* aOriginatingElement)
+                     Element* aSubmitter)
       : mActionURL(aActionURL),
         mTarget(aTarget),
         mEncoding(aEncoding),
-        mOriginatingElement(aOriginatingElement),
-        mInitiatedFromUserInput(EventStateManager::IsHandlingUserInput()) {
+        mSubmitter(aSubmitter),
+        mInitiatedFromUserInput(UserActivation::IsHandlingUserInput()) {
     MOZ_COUNT_CTOR(HTMLFormSubmission);
   }
 
@@ -135,8 +135,8 @@ class HTMLFormSubmission {
   // The character encoding of this form submission
   mozilla::NotNull<const mozilla::Encoding*> mEncoding;
 
-  // Originating element.
-  RefPtr<Element> mOriginatingElement;
+  // Submitter element.
+  RefPtr<Element> mSubmitter;
 
   // Keep track of whether this form submission was user-initiated or not
   bool mInitiatedFromUserInput;
@@ -146,7 +146,7 @@ class EncodingFormSubmission : public HTMLFormSubmission {
  public:
   EncodingFormSubmission(nsIURI* aActionURL, const nsAString& aTarget,
                          mozilla::NotNull<const mozilla::Encoding*> aEncoding,
-                         Element* aOriginatingElement);
+                         Element* aSubmitter);
 
   virtual ~EncodingFormSubmission();
 
@@ -174,7 +174,7 @@ class FSMultipartFormData : public EncodingFormSubmission {
    */
   FSMultipartFormData(nsIURI* aActionURL, const nsAString& aTarget,
                       mozilla::NotNull<const mozilla::Encoding*> aEncoding,
-                      Element* aOriginatingElement);
+                      Element* aSubmitter);
   ~FSMultipartFormData();
 
   virtual nsresult AddNameValuePair(const nsAString& aName,

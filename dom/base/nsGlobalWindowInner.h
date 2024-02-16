@@ -312,6 +312,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   nsresult PostHandleEvent(mozilla::EventChainPostVisitor& aVisitor) override;
 
+  void ClearActiveStoragePrincipal();
+
   void Suspend();
   void Resume();
   virtual bool IsSuspended() const override;
@@ -868,7 +870,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   bool Find(const nsAString& aString, bool aCaseSensitive, bool aBackwards,
             bool aWrapAround, bool aWholeWord, bool aSearchInFrames,
             bool aShowDialog, mozilla::ErrorResult& aError);
-  uint64_t GetMozPaintCount(mozilla::ErrorResult& aError);
 
   bool ShouldResistFingerprinting();
 
@@ -1024,9 +1025,9 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   void FreeInnerObjects();
 
-  // Only to be called on an inner window.
-  // aDocument must not be null.
-  void InnerSetNewDocument(JSContext* aCx, Document* aDocument);
+  // Initialize state that depends on the document.  By this point, mDoc should
+  // be set correctly and have us set as its script global object.
+  void InitDocumentDependentState(JSContext* aCx);
 
   nsresult EnsureClientSource();
   nsresult ExecutionReady();
@@ -1197,6 +1198,10 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   friend class nsPIDOMWindowOuter;
 
   mozilla::dom::TabGroup* TabGroupInner();
+
+  // Like TabGroupInner, but it is more tolerant of being called at peculiar
+  // times, and it can return null.
+  mozilla::dom::TabGroup* MaybeTabGroupInner();
 
   bool IsBackgroundInternal() const;
 

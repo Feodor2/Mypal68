@@ -66,7 +66,7 @@ SpeechSynthesis::SpeechSynthesis(nsPIDOMWindowInner* aParent)
   }
 }
 
-SpeechSynthesis::~SpeechSynthesis() {}
+SpeechSynthesis::~SpeechSynthesis() = default;
 
 JSObject* SpeechSynthesis::WrapObject(JSContext* aCx,
                                       JS::Handle<JSObject*> aGivenProto) {
@@ -246,7 +246,7 @@ void SpeechSynthesis::GetVoices(
 
   for (uint32_t i = 0; i < aResult.Length(); i++) {
     SpeechSynthesisVoice* voice = aResult[i];
-    mVoiceCache.Put(voice->mUri, voice);
+    mVoiceCache.Put(voice->mUri, RefPtr{voice});
   }
 }
 

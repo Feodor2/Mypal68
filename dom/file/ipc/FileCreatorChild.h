@@ -20,8 +20,7 @@ class FileCreatorChild final : public mozilla::dom::PFileCreatorChild {
   void SetPromise(Promise* aPromise);
 
  private:
-  mozilla::ipc::IPCResult Recv__delete__(
-      const FileCreationResult& aResult) override;
+  mozilla::ipc::IPCResult Recv__delete__(const FileCreationResult& aResult);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 

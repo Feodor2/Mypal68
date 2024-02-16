@@ -91,7 +91,7 @@ TextTrack::TextTrack(nsPIDOMWindowInner* aOwnerWindow,
   SetDefaultSettings();
 }
 
-TextTrack::~TextTrack() {}
+TextTrack::~TextTrack() = default;
 
 void TextTrack::SetDefaultSettings() {
   nsPIDOMWindowInner* ownerWindow = GetOwner();
@@ -136,7 +136,7 @@ void TextTrack::GetId(nsAString& aId) const {
   // If the track has a track element then its id should be the same as the
   // track element's id.
   if (mTrackElement) {
-    mTrackElement->GetAttribute(NS_LITERAL_STRING("id"), aId);
+    mTrackElement->GetAttr(nsGkAtoms::id, aId);
   }
 }
 

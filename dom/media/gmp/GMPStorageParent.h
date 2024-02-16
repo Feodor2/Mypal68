@@ -32,7 +32,7 @@ class GMPStorageParent : public PGMPStorageParent {
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
  private:
-  ~GMPStorageParent() {}
+  ~GMPStorageParent() = default;
 
   RefPtr<GMPStorage> mStorage;
 

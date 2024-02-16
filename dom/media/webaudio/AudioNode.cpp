@@ -191,13 +191,21 @@ void AudioNode::DisconnectFromGraph() {
 
 AudioNode* AudioNode::Connect(AudioNode& aDestination, uint32_t aOutput,
                               uint32_t aInput, ErrorResult& aRv) {
-  if (aOutput >= NumberOfOutputs() || aInput >= aDestination.NumberOfInputs()) {
-    aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+  if (aOutput >= NumberOfOutputs()) {
+    aRv.ThrowIndexSizeError(
+        nsPrintfCString("Output index %u is out of bounds", aOutput));
+    return nullptr;
+  }
+
+  if (aInput >= aDestination.NumberOfInputs()) {
+    aRv.ThrowIndexSizeError(
+        nsPrintfCString("Input index %u is out of bounds", aInput));
     return nullptr;
   }
 
   if (Context() != aDestination.Context()) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_ACCESS_ERR);
+    aRv.ThrowInvalidAccessError(
+        "Can't connect nodes from different AudioContexts");
     return nullptr;
   }
 
@@ -236,12 +244,14 @@ AudioNode* AudioNode::Connect(AudioNode& aDestination, uint32_t aOutput,
 void AudioNode::Connect(AudioParam& aDestination, uint32_t aOutput,
                         ErrorResult& aRv) {
   if (aOutput >= NumberOfOutputs()) {
-    aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    aRv.ThrowIndexSizeError(
+        nsPrintfCString("Output index %u is out of bounds", aOutput));
     return;
   }
 
   if (Context() != aDestination.GetParentObject()) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_ACCESS_ERR);
+    aRv.ThrowInvalidAccessError(
+        "Can't connect a node to an AudioParam from a different AudioContext");
     return;
   }
 
@@ -408,7 +418,8 @@ void AudioNode::Disconnect(ErrorResult& aRv) {
 
 void AudioNode::Disconnect(uint32_t aOutput, ErrorResult& aRv) {
   if (aOutput >= NumberOfOutputs()) {
-    aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    aRv.ThrowIndexSizeError(
+        nsPrintfCString("Output index %u is out of bounds", aOutput));
     return;
   }
 
@@ -442,7 +453,8 @@ void AudioNode::Disconnect(AudioNode& aDestination, ErrorResult& aRv) {
   }
 
   if (!wasConnected) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_ACCESS_ERR);
+    aRv.ThrowInvalidAccessError(
+        "Trying to disconnect from a node we're not connected to");
     return;
   }
 }
@@ -450,7 +462,8 @@ void AudioNode::Disconnect(AudioNode& aDestination, ErrorResult& aRv) {
 void AudioNode::Disconnect(AudioNode& aDestination, uint32_t aOutput,
                            ErrorResult& aRv) {
   if (aOutput >= NumberOfOutputs()) {
-    aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    aRv.ThrowIndexSizeError(
+        nsPrintfCString("Output index %u is out of bounds", aOutput));
     return;
   }
 
@@ -468,7 +481,8 @@ void AudioNode::Disconnect(AudioNode& aDestination, uint32_t aOutput,
   }
 
   if (!wasConnected) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_ACCESS_ERR);
+    aRv.ThrowInvalidAccessError(
+        "Trying to disconnect from a node we're not connected to");
     return;
   }
 }
@@ -476,12 +490,14 @@ void AudioNode::Disconnect(AudioNode& aDestination, uint32_t aOutput,
 void AudioNode::Disconnect(AudioNode& aDestination, uint32_t aOutput,
                            uint32_t aInput, ErrorResult& aRv) {
   if (aOutput >= NumberOfOutputs()) {
-    aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    aRv.ThrowIndexSizeError(
+        nsPrintfCString("Output index %u is out of bounds", aOutput));
     return;
   }
 
   if (aInput >= aDestination.NumberOfInputs()) {
-    aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    aRv.ThrowIndexSizeError(
+        nsPrintfCString("Input index %u is out of bounds", aInput));
     return;
   }
 
@@ -500,7 +516,8 @@ void AudioNode::Disconnect(AudioNode& aDestination, uint32_t aOutput,
   }
 
   if (!wasConnected) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_ACCESS_ERR);
+    aRv.ThrowInvalidAccessError(
+        "Trying to disconnect from a node we're not connected to");
     return;
   }
 }
@@ -518,7 +535,8 @@ void AudioNode::Disconnect(AudioParam& aDestination, ErrorResult& aRv) {
   }
 
   if (!wasConnected) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_ACCESS_ERR);
+    aRv.ThrowInvalidAccessError(
+        "Trying to disconnect from an AudioParam we're not connected to");
     return;
   }
 }
@@ -526,7 +544,8 @@ void AudioNode::Disconnect(AudioParam& aDestination, ErrorResult& aRv) {
 void AudioNode::Disconnect(AudioParam& aDestination, uint32_t aOutput,
                            ErrorResult& aRv) {
   if (aOutput >= NumberOfOutputs()) {
-    aRv.Throw(NS_ERROR_DOM_INDEX_SIZE_ERR);
+    aRv.ThrowIndexSizeError(
+        nsPrintfCString("Output index %u is out of bounds", aOutput));
     return;
   }
 
@@ -544,7 +563,8 @@ void AudioNode::Disconnect(AudioParam& aDestination, uint32_t aOutput,
   }
 
   if (!wasConnected) {
-    aRv.Throw(NS_ERROR_DOM_INVALID_ACCESS_ERR);
+    aRv.ThrowInvalidAccessError(
+        "Trying to disconnect from an AudioParam we're not connected to");
     return;
   }
 }

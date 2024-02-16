@@ -53,17 +53,6 @@ MediaDevices::~MediaDevices() {
   }
 }
 
-static bool IsSameOriginWithAllParentDocs(nsINode* aDoc) {
-  MOZ_ASSERT(aDoc);
-  nsINode* node = aDoc;
-  while ((node = nsContentUtils::GetCrossDocParentNode(node))) {
-    if (NS_FAILED(nsContentUtils::CheckSameOrigin(aDoc, node))) {
-      return false;
-    }
-  }
-  return true;
-}
-
 already_AddRefed<Promise> MediaDevices::GetUserMedia(
     const MediaStreamConstraints& aConstraints, CallerType aCallerType,
     ErrorResult& aRv) {

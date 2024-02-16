@@ -458,7 +458,7 @@ void WebMDemuxer::EnsureUpToDateIndex() {
       Resource(TrackInfo::kVideoTrack).GetResource());
   MediaByteRangeSet byteRanges;
   nsresult rv = resource->GetCachedRanges(byteRanges);
-  if (NS_FAILED(rv) || !byteRanges.Length()) {
+  if (NS_FAILED(rv) || byteRanges.IsEmpty()) {
     return;
   }
   mBufferedState->UpdateIndex(byteRanges, resource);
@@ -1176,7 +1176,7 @@ void WebMTrackDemuxer::Reset() {
   mSamples.Reset();
   media::TimeIntervals buffered = GetBuffered();
   mNeedKeyframe = true;
-  if (buffered.Length()) {
+  if (!buffered.IsEmpty()) {
     WEBM_DEBUG("Seek to start point: %f", buffered.Start(0).ToSeconds());
     mParent->SeekInternal(mType, buffered.Start(0));
     SetNextKeyFrameTime();

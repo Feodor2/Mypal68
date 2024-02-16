@@ -7,6 +7,7 @@
 
 #include "AudioNode.h"
 #include "AudioBuffer.h"
+#include "nsPrintfCString.h"
 
 namespace mozilla {
 namespace dom {
@@ -42,7 +43,8 @@ class ConvolverNode final : public AudioNode {
 
   void SetChannelCount(uint32_t aChannelCount, ErrorResult& aRv) override {
     if (aChannelCount > 2) {
-      aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+      aRv.ThrowNotSupportedError(
+          nsPrintfCString("%u is greater than 2", aChannelCount));
       return;
     }
     AudioNode::SetChannelCount(aChannelCount, aRv);
@@ -50,7 +52,7 @@ class ConvolverNode final : public AudioNode {
   void SetChannelCountModeValue(ChannelCountMode aMode,
                                 ErrorResult& aRv) override {
     if (aMode == ChannelCountMode::Max) {
-      aRv.Throw(NS_ERROR_DOM_NOT_SUPPORTED_ERR);
+      aRv.ThrowNotSupportedError("Cannot set channel count mode to \"max\"");
       return;
     }
     AudioNode::SetChannelCountModeValue(aMode, aRv);

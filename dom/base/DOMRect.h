@@ -25,7 +25,7 @@ struct DOMRectInit;
 
 class DOMRectReadOnly : public nsISupports, public nsWrapperCache {
  protected:
-  virtual ~DOMRectReadOnly() {}
+  virtual ~DOMRectReadOnly() = default;
 
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
@@ -129,11 +129,11 @@ class DOMRect final : public DOMRectReadOnly {
   }
 
  private:
-  ~DOMRect() {}
+  ~DOMRect() = default;
 };
 
 class DOMRectList final : public nsISupports, public nsWrapperCache {
-  ~DOMRectList() {}
+  ~DOMRectList() = default;
 
  public:
   explicit DOMRectList(nsISupports* aParent) : mParent(aParent) {}

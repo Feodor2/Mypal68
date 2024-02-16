@@ -47,7 +47,7 @@ class ServiceWorkerManagerChild final : public PServiceWorkerManagerChild {
  private:
   ServiceWorkerManagerChild() : mShuttingDown(false) {}
 
-  ~ServiceWorkerManagerChild() {}
+  ~ServiceWorkerManagerChild() = default;
 
   bool mShuttingDown;
 };

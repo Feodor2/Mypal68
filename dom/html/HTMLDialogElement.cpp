@@ -11,17 +11,19 @@
 nsGenericHTMLElement* NS_NewHTMLDialogElement(
     already_AddRefed<mozilla::dom::NodeInfo>&& aNodeInfo,
     mozilla::dom::FromParser aFromParser) {
+  RefPtr<mozilla::dom::NodeInfo> nodeInfo(aNodeInfo);
+  auto* nim = nodeInfo->NodeInfoManager();
   if (!mozilla::dom::HTMLDialogElement::IsDialogEnabled()) {
-    return new mozilla::dom::HTMLUnknownElement(std::move(aNodeInfo));
+    return new (nim) mozilla::dom::HTMLUnknownElement(nodeInfo.forget());
   }
 
-  return new mozilla::dom::HTMLDialogElement(std::move(aNodeInfo));
+  return new (nim) mozilla::dom::HTMLDialogElement(nodeInfo.forget());
 }
 
 namespace mozilla {
 namespace dom {
 
-HTMLDialogElement::~HTMLDialogElement() {}
+HTMLDialogElement::~HTMLDialogElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLDialogElement)
 
@@ -40,6 +42,9 @@ void HTMLDialogElement::Close(
   ErrorResult ignored;
   SetOpen(false, ignored);
   ignored.SuppressException();
+
+  RemoveFromTopLayerIfNeeded();
+
   RefPtr<AsyncEventDispatcher> eventDispatcher = new AsyncEventDispatcher(
       this, NS_LITERAL_STRING("close"), CanBubble::eNo);
   eventDispatcher->PostDOMEvent();
@@ -54,10 +59,34 @@ void HTMLDialogElement::Show() {
   ignored.SuppressException();
 }
 
+bool HTMLDialogElement::IsInTopLayer() const {
+  return State().HasState(NS_EVENT_STATE_MODAL_DIALOG);
+}
+
+void HTMLDialogElement::RemoveFromTopLayerIfNeeded() {
+  if (!IsInTopLayer()) {
+    return;
+  }
+  auto predictFunc = [&](Element* element) { return element == this; };
+
+  DebugOnly<Element*> removedElement = OwnerDoc()->TopLayerPop(predictFunc);
+  MOZ_ASSERT(removedElement == this);
+  RemoveStates(NS_EVENT_STATE_MODAL_DIALOG);
+}
+
+void HTMLDialogElement::UnbindFromTree(bool aNullParent) {
+  RemoveFromTopLayerIfNeeded();
+  nsGenericHTMLElement::UnbindFromTree(aNullParent);
+}
+
 void HTMLDialogElement::ShowModal(ErrorResult& aError) {
   if (!IsInComposedDoc() || Open()) {
     aError.Throw(NS_ERROR_DOM_INVALID_STATE_ERR);
     return;
+  }
+
+  if (!IsInTopLayer() && OwnerDoc()->TopLayerPush(this)) {
+    AddStates(NS_EVENT_STATE_MODAL_DIALOG);
   }
 
   SetOpen(true, aError);

@@ -544,9 +544,9 @@ void nsMathMLElement::MapMathMLAttributesInto(
                            nullptr) &&
         parseSizeKeywords) {
       static const char sizes[3][7] = {"small", "normal", "big"};
-      static const int32_t values[MOZ_ARRAY_LENGTH(sizes)] = {
-          NS_STYLE_FONT_SIZE_SMALL, NS_STYLE_FONT_SIZE_MEDIUM,
-          NS_STYLE_FONT_SIZE_LARGE};
+      static const StyleFontSizeKeyword values[MOZ_ARRAY_LENGTH(sizes)] = {
+          StyleFontSizeKeyword::Small, StyleFontSizeKeyword::Medium,
+          StyleFontSizeKeyword::Large};
       str.CompressWhitespace();
       for (uint32_t i = 0; i < ArrayLength(sizes); ++i) {
         if (str.EqualsASCII(sizes[i])) {

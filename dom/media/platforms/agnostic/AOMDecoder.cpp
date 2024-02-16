@@ -80,7 +80,7 @@ AOMDecoder::AOMDecoder(const CreateDecoderParams& aParams)
   PodZero(&mCodec);
 }
 
-AOMDecoder::~AOMDecoder() {}
+AOMDecoder::~AOMDecoder() = default;
 
 RefPtr<ShutdownPromise> AOMDecoder::Shutdown() {
   RefPtr<AOMDecoder> self = this;

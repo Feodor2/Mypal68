@@ -11,6 +11,7 @@
 #include "js/Array.h"  // JS::GetArrayLength, JS::IsArrayObject
 #include "mozilla/dom/AudioWorkletGlobalScopeBinding.h"
 #include "mozilla/dom/AudioWorkletProcessor.h"
+#include "mozilla/dom/BindingCallContext.h"
 #include "mozilla/dom/MessagePort.h"
 #include "mozilla/dom/StructuredCloneHolder.h"
 #include "mozilla/dom/WorkletPrincipals.h"
@@ -77,7 +78,7 @@ void AudioWorkletGlobalScope::RegisterProcessor(
   if (!constructorUnwrapped) {
     // If the caller's compartment does not have permission to access the
     // unwrapped constructor then throw.
-    aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
+    aRv.ThrowSecurityError("Constructor cannot be called");
     return;
   }
 
@@ -86,8 +87,7 @@ void AudioWorkletGlobalScope::RegisterProcessor(
    *    throw a TypeError and abort these steps.
    */
   if (!JS::IsConstructor(constructorUnwrapped)) {
-    aRv.ThrowTypeError<MSG_NOT_CONSTRUCTOR>(NS_LITERAL_STRING(
-        "Argument 2 of AudioWorkletGlobalScope.registerProcessor"));
+    aRv.ThrowTypeError<MSG_NOT_CONSTRUCTOR>("Argument 2");
     return;
   }
 
@@ -108,9 +108,7 @@ void AudioWorkletGlobalScope::RegisterProcessor(
    *    TypeError and abort all these steps.
    */
   if (!prototype.isObject()) {
-    aRv.ThrowTypeError<MSG_NOT_OBJECT>(NS_LITERAL_STRING(
-        "Argument 2 of AudioWorkletGlobalScope.registerProcessor "
-        "processorCtor.prototype"));
+    aRv.ThrowTypeError<MSG_NOT_OBJECT>("processorCtor.prototype");
     return;
   }
   /**
@@ -142,7 +140,7 @@ void AudioWorkletGlobalScope::RegisterProcessor(
 
   if (!descriptors.isUndefined() && !isArray) {
     aRv.ThrowTypeError<MSG_NOT_ARRAY_NOR_UNDEFINED>(
-        NS_LITERAL_STRING(".constructor.parameterDescriptors of argument 2"));
+        ".constructor.parameterDescriptors of argument 2");
     return;
   }
 
@@ -153,7 +151,7 @@ void AudioWorkletGlobalScope::RegisterProcessor(
    * 10. Add the key-value pair (name - definition) to the node name to
    *     processor definition map of the associated AudioWorkletGlobalScope.
    */
-  if (!mNameToProcessorMap.Put(aName, &aProcessorCtor, fallible)) {
+  if (!mNameToProcessorMap.Put(aName, RefPtr{&aProcessorCtor}, fallible)) {
     aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
     return;
   }
@@ -217,6 +215,7 @@ AudioParamDescriptorMap AudioWorkletGlobalScope::DescriptorsFromJS(
     return AudioParamDescriptorMap();
   }
 
+  BindingCallContext callCx(aCx, "AudioWorkletGlobalScope.registerProcessor");
   for (uint32_t i = 0; i < length; ++i) {
     JS::Rooted<JS::Value> descriptorElement(aCx);
     if (!JS_GetElement(aCx, aDescriptorsArray, i, &descriptorElement)) {
@@ -226,7 +225,7 @@ AudioParamDescriptorMap AudioWorkletGlobalScope::DescriptorsFromJS(
 
     AudioParamDescriptor descriptor;
     nsPrintfCString sourceDescription("Element %u in parameterDescriptors", i);
-    if (!descriptor.Init(aCx, descriptorElement, sourceDescription.get())) {
+    if (!descriptor.Init(callCx, descriptorElement, sourceDescription.get())) {
       aRv.NoteJSContextException(aCx);
       return AudioParamDescriptorMap();
     }
@@ -257,7 +256,7 @@ AudioParamDescriptorMap AudioWorkletGlobalScope::DescriptorsFromJS(
       return AudioParamDescriptorMap();
     }
 
-    if (!res.AppendElement(descriptor)) {
+    if (!res.AppendElement(descriptor, fallible)) {
       aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
       return AudioParamDescriptorMap();
     }

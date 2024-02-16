@@ -12,7 +12,7 @@ NS_IMPL_NS_NEW_HTML_ELEMENT(Legend)
 namespace mozilla {
 namespace dom {
 
-HTMLLegendElement::~HTMLLegendElement() {}
+HTMLLegendElement::~HTMLLegendElement() = default;
 
 NS_IMPL_ELEMENT_CLONE(HTMLLegendElement)
 
@@ -32,9 +32,9 @@ bool HTMLLegendElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                        nsAttrValue& aResult) {
   // this contains center, because IE4 does
   static const nsAttrValue::EnumTable kAlignTable[] = {
-      {"left", NS_STYLE_TEXT_ALIGN_LEFT},
-      {"right", NS_STYLE_TEXT_ALIGN_RIGHT},
-      {"center", NS_STYLE_TEXT_ALIGN_CENTER},
+      {"left", LegendAlignValue::Left},
+      {"right", LegendAlignValue::Right},
+      {"center", LegendAlignValue::Center},
       {nullptr, 0}};
 
   if (aAttribute == nsGkAtoms::align && aNamespaceID == kNameSpaceID_None) {
@@ -88,7 +88,6 @@ void HTMLLegendElement::Focus(const FocusOptions& aOptions,
   aError = fm->MoveFocus(
       nullptr, this, nsIFocusManager::MOVEFOCUS_FORWARD,
       nsIFocusManager::FLAG_NOPARENTFRAME |
-          nsIFocusManager::FLAG_BYELEMENTFOCUS |
           nsFocusManager::FocusOptionsToFocusManagerFlags(aOptions),
       getter_AddRefs(result));
 }

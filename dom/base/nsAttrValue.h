@@ -131,7 +131,7 @@ class nsAttrValue {
 
   inline const nsAttrValue& operator=(const nsAttrValue& aOther);
 
-  static nsresult Init();
+  static void Init();
   static void Shutdown();
 
   inline ValueType Type() const;

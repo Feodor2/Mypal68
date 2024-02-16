@@ -656,8 +656,7 @@ bool CustomElementRegistry::JSObjectToAtomArray(
 
   if (!iterable.isUndefined()) {
     if (!iterable.isObject()) {
-      aRv.ThrowTypeError<MSG_NOT_SEQUENCE>(
-          NS_LITERAL_STRING("CustomElementRegistry.define: ") + aName);
+      aRv.ThrowTypeError<MSG_NOT_SEQUENCE>(NS_ConvertUTF16toUTF8(aName));
       return false;
     }
 
@@ -668,8 +667,7 @@ bool CustomElementRegistry::JSObjectToAtomArray(
     }
 
     if (!iter.valueIsIterable()) {
-      aRv.ThrowTypeError<MSG_NOT_SEQUENCE>(
-          NS_LITERAL_STRING("CustomElementRegistry.define: ") + aName);
+      aRv.ThrowTypeError<MSG_NOT_SEQUENCE>(NS_ConvertUTF16toUTF8(aName));
       return false;
     }
 
@@ -691,10 +689,9 @@ bool CustomElementRegistry::JSObjectToAtomArray(
         return false;
       }
 
-      if (!aArray.AppendElement(NS_Atomize(attrStr))) {
-        aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-        return false;
-      }
+      // XXX(Bug 1631371) Check if this should use a fallible operation as it
+      // pretended earlier.
+      aArray.AppendElement(NS_Atomize(attrStr));
     }
   }
 
@@ -728,8 +725,7 @@ void CustomElementRegistry::Define(
    *    these steps.
    */
   if (!JS::IsConstructor(constructorUnwrapped)) {
-    aRv.ThrowTypeError<MSG_NOT_CONSTRUCTOR>(
-        NS_LITERAL_STRING("Argument 2 of CustomElementRegistry.define"));
+    aRv.ThrowTypeError<MSG_NOT_CONSTRUCTOR>("Argument 2");
     return;
   }
 
@@ -868,8 +864,7 @@ void CustomElementRegistry::Define(
      * 14.2. If Type(prototype) is not Object, then throw a TypeError exception.
      */
     if (!prototype.isObject()) {
-      aRv.ThrowTypeError<MSG_NOT_OBJECT>(NS_LITERAL_STRING(
-          "CustomElementRegistry.define: constructor.prototype"));
+      aRv.ThrowTypeError<MSG_NOT_OBJECT>("constructor.prototype");
       return;
     }
 
@@ -961,7 +956,7 @@ void CustomElementRegistry::Define(
       disableInternals, disableShadow);
 
   CustomElementDefinition* def = definition.get();
-  mCustomDefinitions.Put(nameAtom, definition.forget());
+  mCustomDefinitions.Put(nameAtom, std::move(definition));
 
   MOZ_ASSERT(mCustomDefinitions.Count() == mConstructors.count(),
              "Number of entries should be the same");
@@ -1020,7 +1015,7 @@ void CustomElementRegistry::SetElementCreationCallback(
   }
 
   RefPtr<CustomElementCreationCallback> callback = &aCallback;
-  mElementCreationCallbacks.Put(nameAtom, callback.forget());
+  mElementCreationCallbacks.Put(nameAtom, std::move(callback));
 }
 
 void CustomElementRegistry::Upgrade(nsINode& aRoot) {
@@ -1119,7 +1114,7 @@ static void DoUpgrade(Element* aElement, CustomElementDefinition* aDefinition,
   // always forms the return value from a JSObject.
   if (NS_FAILED(UNWRAP_OBJECT(Element, &constructResult, element)) ||
       element != aElement) {
-    aRv.ThrowTypeError(u"Custom element constructor returned a wrong element");
+    aRv.ThrowTypeError("Custom element constructor returned a wrong element");
     return;
   }
 }

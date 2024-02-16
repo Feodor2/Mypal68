@@ -756,8 +756,8 @@ already_AddRefed<Notification> Notification::Constructor(
   UNWRAP_OBJECT(ServiceWorkerGlobalScope, aGlobal.Get(), scope);
   if (scope) {
     aRv.ThrowTypeError(
-        u"Notification constructor cannot be used in ServiceWorkerGlobalScope. "
-        u"Use registration.showNotification() instead.");
+        "Notification constructor cannot be used in ServiceWorkerGlobalScope. "
+        "Use registration.showNotification() instead.");
     return nullptr;
   }
 
@@ -2128,7 +2128,7 @@ already_AddRefed<Promise> Notification::ShowPersistentNotification(
 
     if (NS_WARN_IF(NS_FAILED(loadChecker->Result()))) {
       if (loadChecker->Result() == NS_ERROR_NOT_AVAILABLE) {
-        aRv.ThrowTypeError<MSG_NO_ACTIVE_WORKER>(aScope);
+        aRv.ThrowTypeError<MSG_NO_ACTIVE_WORKER>(NS_ConvertUTF16toUTF8(aScope));
       } else {
         aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
       }
@@ -2149,7 +2149,7 @@ already_AddRefed<Promise> Notification::ShowPersistentNotification(
   // with a TypeError exception, and terminate these substeps."
   if (NS_WARN_IF(aRv.Failed()) ||
       permission == NotificationPermission::Denied) {
-    p->MaybeRejectWithTypeError(u"Permission to show Notification denied.");
+    p->MaybeRejectWithTypeError("Permission to show Notification denied.");
     return p.forget();
   }
 

@@ -28,7 +28,7 @@ class MockMP3MediaResource
       : MockMediaResource(aFileName) {}
 
  protected:
-  virtual ~MockMP3MediaResource() {}
+  virtual ~MockMP3MediaResource() = default;
 };
 
 // MP3 stream mock resource.
@@ -42,7 +42,7 @@ class MockMP3StreamMediaResource
   int64_t GetLength() override { return -1; }
 
  protected:
-  virtual ~MockMP3StreamMediaResource() {}
+  virtual ~MockMP3StreamMediaResource() = default;
 };
 
 struct MP3Resource {

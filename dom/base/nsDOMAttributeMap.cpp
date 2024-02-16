@@ -121,7 +121,8 @@ Attr* nsDOMAttributeMap::GetAttribute(mozilla::dom::NodeInfo* aNodeInfo) {
   if (!node) {
     // Newly inserted entry!
     RefPtr<mozilla::dom::NodeInfo> ni = aNodeInfo;
-    entryValue = new Attr(this, ni.forget(), EmptyString());
+    auto* nim = ni->NodeInfoManager();
+    entryValue = new (nim) Attr(this, ni.forget(), EmptyString());
     node = entryValue;
   }
 
@@ -255,7 +256,7 @@ already_AddRefed<Attr> nsDOMAttributeMap::SetNamedItemNS(Attr& aAttr,
   // Add the new attribute to the attribute map before updating
   // its value in the element. @see bug 364413.
   nsAttrKey attrkey(ni->NamespaceID(), ni->NameAtom());
-  mAttributeCache.Put(attrkey, &aAttr);
+  mAttributeCache.Put(attrkey, RefPtr{&aAttr});
   aAttr.SetMap(this);
 
   rv = mContent->SetAttr(ni->NamespaceID(), ni->NameAtom(), ni->GetPrefixAtom(),

@@ -26,17 +26,13 @@ class PointerCaptureInfo final {
     MOZ_COUNT_CTOR(PointerCaptureInfo);
   }
 
-  ~PointerCaptureInfo() { MOZ_COUNT_DTOR(PointerCaptureInfo); }
+  MOZ_COUNTED_DTOR(PointerCaptureInfo)
 
   bool Empty() { return !(mPendingContent || mOverrideContent); }
 };
 
 class PointerEventHandler final {
  public:
-  // Called in PresShell::Initialize to initialize pointer event related
-  // preferences.
-  static void Initialize();
-
   // Called in nsLayoutStatics::Initialize/Shutdown to initialize pointer event
   // related static variables.
   static void InitializeStatics();

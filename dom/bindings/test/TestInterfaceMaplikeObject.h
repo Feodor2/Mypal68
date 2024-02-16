@@ -40,7 +40,7 @@ class TestInterfaceMaplikeObject final : public nsISupports,
   bool HasInternal(const nsAString& aKey);
 
  private:
-  virtual ~TestInterfaceMaplikeObject() {}
+  virtual ~TestInterfaceMaplikeObject() = default;
   nsCOMPtr<nsPIDOMWindowInner> mParent;
 };
 

@@ -621,7 +621,6 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   bool FindOuter(const nsAString& aString, bool aCaseSensitive, bool aBackwards,
                  bool aWrapAround, bool aWholeWord, bool aSearchInFrames,
                  bool aShowDialog, mozilla::ErrorResult& aError);
-  uint64_t GetMozPaintCountOuter();
 
   bool ShouldResistFingerprinting();
 
@@ -1034,6 +1033,10 @@ class nsGlobalWindowOuter final : public mozilla::dom::EventTarget,
   friend class nsPIDOMWindowOuter;
 
   mozilla::dom::TabGroup* TabGroupOuter();
+
+  // Like TabGroupOuter, but it is more tolerant of being called at peculiar
+  // times, and it can return null.
+  mozilla::dom::TabGroup* MaybeTabGroupOuter();
 
   void SetIsBackgroundInternal(bool aIsBackground);
 

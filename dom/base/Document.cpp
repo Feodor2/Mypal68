@@ -24,6 +24,7 @@
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Likely.h"
 #include "mozilla/LoadInfo.h"
+#include "mozilla/MediaFeatureChange.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/PresShellInlines.h"
 #include "mozilla/RestyleManager.h"
@@ -35,6 +36,7 @@
 #include "mozilla/StaticPrefs_plugins.h"
 #include "mozilla/StaticPrefs_privacy.h"
 #include "mozilla/StaticPrefs_security.h"
+#include "mozilla/StaticPresData.h"
 #include "mozilla/StorageAccess.h"
 #include "mozilla/TextControlElement.h"
 #include "mozilla/TextEditor.h"
@@ -55,7 +57,6 @@
 #include "nsITextControlFrame.h"
 #include "nsCommandManager.h"
 #include "nsCommandParams.h"
-#include "nsNumberControlFrame.h"
 #include "nsUnicharUtils.h"
 #include "nsContentList.h"
 #include "nsCSSPseudoElements.h"
@@ -107,6 +108,7 @@
 #include "mozilla/dom/ShadowIncludingTreeIterator.h"
 #include "mozilla/dom/StyleSheetList.h"
 #include "mozilla/dom/SVGUseElement.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/net/CookieSettings.h"
 #include "nsGenericHTMLElement.h"
 #include "mozilla/dom/CDATASection.h"
@@ -383,16 +385,6 @@ IdentifierMapEntry::IdentifierMapEntry(
     const IdentifierMapEntry::DependentAtomOrString* aKey)
     : mKey(aKey ? *aKey : nullptr) {}
 
-IdentifierMapEntry::~IdentifierMapEntry() {}
-
-IdentifierMapEntry::IdentifierMapEntry(IdentifierMapEntry&& aOther)
-    : PLDHashEntryHdr(std::move(aOther)),
-      mKey(std::move(aOther.mKey)),
-      mIdContentList(std::move(aOther.mIdContentList)),
-      mNameContentList(std::move(aOther.mNameContentList)),
-      mChangeCallbacks(std::move(aOther.mChangeCallbacks)),
-      mImageElement(std::move(aOther.mImageElement)) {}
-
 void IdentifierMapEntry::Traverse(
     nsCycleCollectionTraversalCallback* aCallback) {
   NS_CYCLE_COLLECTION_NOTE_EDGE_NAME(*aCallback,
@@ -586,7 +578,7 @@ class SimpleHTMLCollection final : public nsSimpleContentList,
   using nsBaseContentList::Item;
 
  private:
-  virtual ~SimpleHTMLCollection() {}
+  virtual ~SimpleHTMLCollection() = default;
 };
 
 NS_IMPL_ISUPPORTS_INHERITED(SimpleHTMLCollection, nsSimpleContentList,
@@ -630,13 +622,13 @@ class SubDocMapEntry : public PLDHashEntryHdr {
 
 class OnloadBlocker final : public nsIRequest {
  public:
-  OnloadBlocker() {}
+  OnloadBlocker() = default;
 
   NS_DECL_ISUPPORTS
   NS_DECL_NSIREQUEST
 
  private:
-  ~OnloadBlocker() {}
+  ~OnloadBlocker() = default;
 };
 
 NS_IMPL_ISUPPORTS(OnloadBlocker, nsIRequest)
@@ -738,17 +730,16 @@ Document* ExternalResourceMap::RequestResource(
   return nullptr;
 }
 
-void ExternalResourceMap::EnumerateResources(SubDocEnumFunc aCallback,
-                                             void* aData) {
+void ExternalResourceMap::EnumerateResources(SubDocEnumFunc aCallback) {
   nsTArray<RefPtr<Document>> docs(mMap.Count());
-  for (auto iter = mMap.ConstIter(); !iter.Done(); iter.Next()) {
-    if (Document* doc = iter.Data()->mDocument) {
+  for (const auto& entry : mMap) {
+    if (Document* doc = entry.GetData()->mDocument) {
       docs.AppendElement(doc);
     }
   }
 
   for (auto& doc : docs) {
-    if (!aCallback(*doc, aData)) {
+    if (!aCallback(*doc)) {
       return;
     }
   }
@@ -1241,6 +1232,7 @@ Document::Document(const char* aContentType)
       mHasCSP(false),
       mHasUnsafeEvalCSP(false),
       mHasUnsafeInlineCSP(false),
+      mHasCSPDeliveredThroughHeader(false),
       mBFCacheDisallowed(false),
       mHasHadDefaultView(false),
       mStyleSheetChangeEventsEnabled(false),
@@ -1652,15 +1644,9 @@ NS_IMPL_CYCLE_COLLECTION_TRAVERSE_BEGIN_INTERNAL(Document)
     uint32_t nsid = tmp->GetDefaultNamespaceID();
     nsAutoCString uri;
     if (tmp->mDocumentURI) uri = tmp->mDocumentURI->GetSpecOrDefault();
-    static const char* kNSURIs[] = {"([none])", "(xmlns)", "(xml)", "(xhtml)",
-                                    "(XLink)",  "(XSLT)",  "(XBL)", "(MathML)",
-                                    "(RDF)",    "(XUL)"};
-    if (nsid < ArrayLength(kNSURIs)) {
-      SprintfLiteral(name, "Document %s %s %s", loadedAsData.get(),
-                     kNSURIs[nsid], uri.get());
-    } else {
-      SprintfLiteral(name, "Document %s %s", loadedAsData.get(), uri.get());
-    }
+    const char* nsuri = nsNameSpaceManager::GetNameSpaceDisplayName(nsid);
+    SprintfLiteral(name, "Document %s %s %s", loadedAsData.get(), nsuri,
+                   uri.get());
     cb.DescribeRefCountedNode(tmp->mRefCnt.get(), name);
   } else {
     NS_IMPL_CYCLE_COLLECTION_DESCRIBE(Document, tmp->mRefCnt.get())
@@ -1964,10 +1950,10 @@ nsresult Document::Init() {
   return NS_OK;
 }
 
-void Document::DeleteAllProperties() { PropertyTable().DeleteAllProperties(); }
+void Document::RemoveAllProperties() { PropertyTable().RemoveAllProperties(); }
 
-void Document::DeleteAllPropertiesFor(nsINode* aNode) {
-  PropertyTable().DeleteAllPropertiesFor(aNode);
+void Document::RemoveAllPropertiesFor(nsINode* aNode) {
+  PropertyTable().RemoveAllPropertiesFor(aNode);
 }
 
 bool Document::IsVisibleConsideringAncestors() const {
@@ -2264,69 +2250,34 @@ size_t Document::FindDocStyleSheetInsertionPoint(const StyleSheet& aSheet) {
   return index;
 }
 
-void Document::AppendAdoptedStyleSheet(StyleSheet& aSheet) {
-  DocumentOrShadowRoot::InsertAdoptedSheetAt(mAdoptedStyleSheets.Length(),
-                                             aSheet);
-  if (aSheet.IsApplicable()) {
-    AddStyleSheetToStyleSets(&aSheet);
-  }
-}
-
-void Document::RemoveDocStyleSheetsFromStyleSets() {
-  MOZ_ASSERT(mStyleSetFilled);
-  // The stylesheets should forget us
-  for (StyleSheet* sheet : Reversed(mStyleSheets)) {
-    sheet->ClearAssociatedDocumentOrShadowRoot();
-    if (sheet->IsApplicable()) {
-      mStyleSet->RemoveDocStyleSheet(sheet);
-    }
-    // XXX Tell observers?
-  }
-}
-
-void Document::RemoveStyleSheetsFromStyleSets(
-    const nsTArray<RefPtr<StyleSheet>>& aSheets, StyleOrigin aType) {
-  // The stylesheets should forget us
-  for (StyleSheet* sheet : Reversed(aSheets)) {
-    sheet->ClearAssociatedDocumentOrShadowRoot();
-    if (mStyleSetFilled && sheet->IsApplicable()) {
-      mStyleSet->RemoveStyleSheet(aType, sheet);
-    }
-    // XXX Tell observers?
-  }
-}
-
 void Document::ResetStylesheetsToURI(nsIURI* aURI) {
   MOZ_ASSERT(aURI);
 
-  if (mStyleSetFilled) {
-    // Skip removing style sheets from the style set if we know we haven't
-    // filled the style set.  (This allows us to avoid calling
-    // GetStyleBackendType() too early.)
-    RemoveDocStyleSheetsFromStyleSets();
-    RemoveStyleSheetsFromStyleSets(mAdditionalSheets[eAgentSheet],
-                                   StyleOrigin::UserAgent);
-    RemoveStyleSheetsFromStyleSets(mAdditionalSheets[eUserSheet],
-                                   StyleOrigin::User);
-    RemoveStyleSheetsFromStyleSets(mAdditionalSheets[eAuthorSheet],
-                                   StyleOrigin::Author);
+  ClearAdoptedStyleSheets();
 
-    if (nsStyleSheetService* sheetService =
-            nsStyleSheetService::GetInstance()) {
-      RemoveStyleSheetsFromStyleSets(*sheetService->AuthorStyleSheets(),
-                                     StyleOrigin::Author);
+  auto ClearSheetList = [&](nsTArray<RefPtr<StyleSheet>>& aSheetList) {
+    for (auto& sheet : Reversed(aSheetList)) {
+      sheet->ClearAssociatedDocumentOrShadowRoot();
+      if (mStyleSetFilled) {
+        mStyleSet->RemoveStyleSheet(*sheet);
+      }
+    }
+    aSheetList.Clear();
+  };
+  ClearSheetList(mStyleSheets);
+  for (auto& sheets : mAdditionalSheets) {
+    ClearSheetList(sheets);
+  }
+  if (mStyleSetFilled) {
+    if (auto* ss = nsStyleSheetService::GetInstance()) {
+      for (auto& sheet : Reversed(*ss->AuthorStyleSheets())) {
+        MOZ_ASSERT(!sheet->GetAssociatedDocumentOrShadowRoot());
+        if (sheet->IsApplicable()) {
+          mStyleSet->RemoveStyleSheet(*sheet);
+        }
+      }
     }
   }
-
-  // Release all the sheets
-  mStyleSheets.Clear();
-  for (auto& sheets : mAdditionalSheets) {
-    sheets.Clear();
-  }
-
-  // NOTE:  We don't release the catalog sheets.  It doesn't really matter
-  // now, but it could in the future -- in which case not releasing them
-  // is probably the right thing to do.
 
   // Now reset our inline style and attribute sheets.
   if (mAttrStyleSheet) {
@@ -2349,11 +2300,10 @@ void Document::ResetStylesheetsToURI(nsIURI* aURI) {
   }
 }
 
-static void AppendSheetsToStyleSet(ServoStyleSet* aStyleSet,
-                                   const nsTArray<RefPtr<StyleSheet>>& aSheets,
-                                   StyleOrigin aOrigin) {
+static void AppendSheetsToStyleSet(
+    ServoStyleSet* aStyleSet, const nsTArray<RefPtr<StyleSheet>>& aSheets) {
   for (StyleSheet* sheet : Reversed(aSheets)) {
-    aStyleSet->AppendStyleSheet(aOrigin, sheet);
+    aStyleSet->AppendStyleSheet(*sheet);
   }
 }
 
@@ -2370,59 +2320,61 @@ void Document::FillStyleSetUserAndUASheets() {
              "service has gone");
 
   for (StyleSheet* sheet : *sheetService->UserStyleSheets()) {
-    mStyleSet->AppendStyleSheet(StyleOrigin::User, sheet);
+    mStyleSet->AppendStyleSheet(*sheet);
   }
 
   StyleSheet* sheet = IsInChromeDocShell() ? cache->GetUserChromeSheet()
                                            : cache->GetUserContentSheet();
   if (sheet) {
-    mStyleSet->AppendStyleSheet(StyleOrigin::User, sheet);
+    mStyleSet->AppendStyleSheet(*sheet);
   }
 
-  mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, cache->UASheet());
+  mStyleSet->AppendStyleSheet(*cache->UASheet());
 
   if (MOZ_LIKELY(NodeInfoManager()->MathMLEnabled())) {
-    mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, cache->MathMLSheet());
+    mStyleSet->AppendStyleSheet(*cache->MathMLSheet());
   }
 
   if (MOZ_LIKELY(NodeInfoManager()->SVGEnabled())) {
-    mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, cache->SVGSheet());
+    mStyleSet->AppendStyleSheet(*cache->SVGSheet());
   }
 
-  mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, cache->HTMLSheet());
+  mStyleSet->AppendStyleSheet(*cache->HTMLSheet());
 
   if (nsLayoutUtils::ShouldUseNoFramesSheet(this)) {
-    mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, cache->NoFramesSheet());
+    mStyleSet->AppendStyleSheet(*cache->NoFramesSheet());
   }
 
   if (nsLayoutUtils::ShouldUseNoScriptSheet(this)) {
-    mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, cache->NoScriptSheet());
+    mStyleSet->AppendStyleSheet(*cache->NoScriptSheet());
   }
 
-  mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent,
-                              cache->CounterStylesSheet());
+  mStyleSet->AppendStyleSheet(*cache->CounterStylesSheet());
 
   // Load the minimal XUL rules for scrollbars and a few other XUL things
   // that non-XUL (typically HTML) documents commonly use.
-  mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, cache->MinimalXULSheet());
+  mStyleSet->AppendStyleSheet(*cache->MinimalXULSheet());
 
   // Only load the full XUL sheet if we'll need it.
   if (LoadsFullXULStyleSheetUpFront()) {
-    mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, cache->XULSheet());
+    mStyleSet->AppendStyleSheet(*cache->XULSheet());
   }
 
-  mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, cache->FormsSheet());
-  mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, cache->ScrollbarsSheet());
-  mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent,
-                              cache->PluginProblemSheet());
+  mStyleSet->AppendStyleSheet(*cache->FormsSheet());
+  mStyleSet->AppendStyleSheet(*cache->ScrollbarsSheet());
+  mStyleSet->AppendStyleSheet(*cache->PluginProblemSheet());
+
+  if (StyleSheet* sheet = cache->GetGeckoViewSheet()) {
+    mStyleSet->AppendStyleSheet(*sheet);
+  }
 
   for (StyleSheet* sheet : *sheetService->AgentStyleSheets()) {
-    mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, sheet);
+    mStyleSet->AppendStyleSheet(*sheet);
   }
 
   MOZ_ASSERT(!mQuirkSheetAdded);
   if (NeedsQuirksSheet()) {
-    mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, cache->QuirkSheet());
+    mStyleSet->AppendStyleSheet(*cache->QuirkSheet());
     mQuirkSheetAdded = true;
   }
 }
@@ -2440,14 +2392,12 @@ void Document::RemoveContentEditableStyleSheets() {
   auto* cache = GlobalStyleSheetCache::Singleton();
   bool changed = false;
   if (mDesignModeSheetAdded) {
-    mStyleSet->RemoveStyleSheet(StyleOrigin::UserAgent,
-                                cache->DesignModeSheet());
+    mStyleSet->RemoveStyleSheet(*cache->DesignModeSheet());
     mDesignModeSheetAdded = false;
     changed = true;
   }
   if (mContentEditableSheetAdded) {
-    mStyleSet->RemoveStyleSheet(StyleOrigin::UserAgent,
-                                cache->ContentEditableSheet());
+    mStyleSet->RemoveStyleSheet(*cache->ContentEditableSheet());
     mContentEditableSheetAdded = false;
     changed = true;
   }
@@ -2465,18 +2415,15 @@ void Document::AddContentEditableStyleSheetsToStyleSet(bool aDesignMode) {
   auto* cache = GlobalStyleSheetCache::Singleton();
   bool changed = false;
   if (!mContentEditableSheetAdded) {
-    mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent,
-                                cache->ContentEditableSheet());
+    mStyleSet->AppendStyleSheet(*cache->ContentEditableSheet());
     mContentEditableSheetAdded = true;
     changed = true;
   }
   if (mDesignModeSheetAdded != aDesignMode) {
     if (mDesignModeSheetAdded) {
-      mStyleSet->RemoveStyleSheet(StyleOrigin::UserAgent,
-                                  cache->DesignModeSheet());
+      mStyleSet->RemoveStyleSheet(*cache->DesignModeSheet());
     } else {
-      mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent,
-                                  cache->DesignModeSheet());
+      mStyleSet->AppendStyleSheet(*cache->DesignModeSheet());
     }
     mDesignModeSheetAdded = !mDesignModeSheetAdded;
     changed = true;
@@ -2490,31 +2437,32 @@ void Document::FillStyleSetDocumentSheets() {
   MOZ_ASSERT(mStyleSet->SheetCount(StyleOrigin::Author) == 0,
              "Style set already has document sheets?");
 
-  // Sheets are added in reverse order to avoid worst-case
-  // time complexity when looking up the index of a sheet
+  // Sheets are added in reverse order to avoid worst-case time complexity when
+  // looking up the index of a sheet.
+  //
+  // Note that usually appending is faster (rebuilds less stuff in the
+  // styleset), but in this case it doesn't matter since we're filling the
+  // styleset from scratch anyway.
   for (StyleSheet* sheet : Reversed(mStyleSheets)) {
     if (sheet->IsApplicable()) {
-      mStyleSet->AddDocStyleSheet(sheet);
+      mStyleSet->AddDocStyleSheet(*sheet);
     }
   }
 
-  for (StyleSheet* sheet : Reversed(mAdoptedStyleSheets)) {
-    if (sheet->IsApplicable()) {
-      mStyleSet->AddDocStyleSheet(sheet);
+  EnumerateUniqueAdoptedStyleSheetsBackToFront([&](StyleSheet& aSheet) {
+    if (aSheet.IsApplicable()) {
+      mStyleSet->AddDocStyleSheet(aSheet);
     }
-  }
+  });
 
   nsStyleSheetService* sheetService = nsStyleSheetService::GetInstance();
   for (StyleSheet* sheet : *sheetService->AuthorStyleSheets()) {
-    mStyleSet->AppendStyleSheet(StyleOrigin::Author, sheet);
+    mStyleSet->AppendStyleSheet(*sheet);
   }
 
-  AppendSheetsToStyleSet(mStyleSet.get(), mAdditionalSheets[eAgentSheet],
-                         StyleOrigin::UserAgent);
-  AppendSheetsToStyleSet(mStyleSet.get(), mAdditionalSheets[eUserSheet],
-                         StyleOrigin::User);
-  AppendSheetsToStyleSet(mStyleSet.get(), mAdditionalSheets[eAuthorSheet],
-                         StyleOrigin::Author);
+  AppendSheetsToStyleSet(mStyleSet.get(), mAdditionalSheets[eAgentSheet]);
+  AppendSheetsToStyleSet(mStyleSet.get(), mAdditionalSheets[eUserSheet]);
+  AppendSheetsToStyleSet(mStyleSet.get(), mAdditionalSheets[eAuthorSheet]);
 }
 
 void Document::CompatibilityModeChanged() {
@@ -2536,9 +2484,9 @@ void Document::CompatibilityModeChanged() {
   auto* cache = GlobalStyleSheetCache::Singleton();
   StyleSheet* sheet = cache->QuirkSheet();
   if (mQuirkSheetAdded) {
-    mStyleSet->RemoveStyleSheet(StyleOrigin::UserAgent, sheet);
+    mStyleSet->RemoveStyleSheet(*sheet);
   } else {
-    mStyleSet->AppendStyleSheet(StyleOrigin::UserAgent, sheet);
+    mStyleSet->AppendStyleSheet(*sheet);
   }
   mQuirkSheetAdded = !mQuirkSheetAdded;
   ApplicableStylesChanged();
@@ -2934,6 +2882,7 @@ nsresult Document::InitCSP(nsIChannel* aChannel) {
 
   // ----- if there's a full-strength CSP header, apply it.
   if (!cspHeaderValue.IsEmpty()) {
+    mHasCSPDeliveredThroughHeader = true;
     rv = CSP_AppendCSPFromHeader(mCSP, cspHeaderValue, false);
     NS_ENSURE_SUCCESS(rv, rv);
   }
@@ -4840,7 +4789,7 @@ nsresult Document::EditingStateChanged() {
     // if this is actually the case.
     uint32_t flags = 0;
     htmlEditor->GetFlags(&flags);
-    if (flags & nsIPlaintextEditor::eEditorMailMask) {
+    if (flags & nsIEditor::eEditorMailMask) {
       // We already have a mail editor, then we should not attempt to create
       // another one.
       return NS_OK;
@@ -5062,7 +5011,7 @@ void Document::DeferredContentEditableCountChange(Element* aElement) {
 
       RefPtr<HTMLEditor> htmlEditor = docshell->GetHTMLEditor();
       if (htmlEditor) {
-        RefPtr<nsRange> range = new nsRange(aElement);
+        RefPtr<nsRange> range = nsRange::Create(aElement);
         IgnoredErrorResult res;
         range->SelectNode(*aElement, res);
         if (res.Failed()) {
@@ -5408,6 +5357,29 @@ Nullable<WindowProxyHolder> Document::GetDefaultView() const {
   return WindowProxyHolder(win->GetBrowsingContext());
 }
 
+nsIContent* Document::GetUnretargetedFocusedContent() const {
+  nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow();
+  if (!window) {
+    return nullptr;
+  }
+  nsCOMPtr<nsPIDOMWindowOuter> focusedWindow;
+  nsIContent* focusedContent = nsFocusManager::GetFocusedDescendant(
+      window, nsFocusManager::eOnlyCurrentWindow,
+      getter_AddRefs(focusedWindow));
+  if (!focusedContent) {
+    return nullptr;
+  }
+  // be safe and make sure the element is from this document
+  if (focusedContent->OwnerDoc() != this) {
+    return nullptr;
+  }
+
+  if (focusedContent->ChromeOnlyAccess()) {
+    return focusedContent->FindFirstNonChromeOnlyAccessContent();
+  }
+  return focusedContent;
+}
+
 Element* Document::GetActiveElement() {
   // Get the focused element.
   Element* focusedElement = GetRetargetedFocusedElement();
@@ -5510,7 +5482,7 @@ void Document::SetDocumentCharacterSet(NotNull<const Encoding*> aEncoding) {
     RecomputeLanguageFromCharset();
 
     if (nsPresContext* context = GetPresContext()) {
-      context->DispatchCharSetChange(aEncoding);
+      context->DocumentCharSetChanged(aEncoding);
     }
   }
 }
@@ -5865,7 +5837,6 @@ nsresult Document::SetSubDocumentFor(Element* aElement, Document* aSubDoc) {
     // aSubDoc is nullptr, remove the mapping
 
     if (mSubDocuments) {
-      Document* subDoc = GetSubDocumentFor(aElement);
       mSubDocuments->Remove(aElement);
     }
   } else {
@@ -5993,7 +5964,7 @@ void Document::RemoveChildNode(nsIContent* aKid, bool aNotify) {
              "(maybe somebody called GetRootElement() too early?)");
 }
 
-void Document::AddStyleSheetToStyleSets(StyleSheet* aSheet) {
+void Document::AddStyleSheetToStyleSets(StyleSheet& aSheet) {
   if (mStyleSetFilled) {
     mStyleSet->AddDocStyleSheet(aSheet);
     ApplicableStylesChanged();
@@ -6029,33 +6000,18 @@ void Document::ApplicableStylesChanged() {
   pc->RestyleManager()->NextRestyleIsForCSSRuleChanges();
 }
 
-void Document::RemoveStyleSheetFromStyleSets(StyleSheet* aSheet) {
+void Document::RemoveStyleSheetFromStyleSets(StyleSheet& aSheet) {
   if (mStyleSetFilled) {
-    mStyleSet->RemoveDocStyleSheet(aSheet);
+    mStyleSet->RemoveStyleSheet(aSheet);
     ApplicableStylesChanged();
   }
-}
-
-void Document::RemoveStyleSheet(StyleSheet& aSheet) {
-  RefPtr<StyleSheet> sheet = DocumentOrShadowRoot::RemoveSheet(aSheet);
-
-  if (!sheet) {
-    NS_ASSERTION(mInUnlinkOrDeletion, "stylesheet not found");
-    return;
-  }
-
-  if (!mIsGoingAway && sheet->IsApplicable()) {
-    RemoveStyleSheetFromStyleSets(sheet);
-  }
-
-  sheet->ClearAssociatedDocumentOrShadowRoot();
 }
 
 void Document::InsertSheetAt(size_t aIndex, StyleSheet& aSheet) {
   DocumentOrShadowRoot::InsertSheetAt(aIndex, aSheet);
 
   if (aSheet.IsApplicable()) {
-    AddStyleSheetToStyleSets(&aSheet);
+    AddStyleSheetToStyleSets(aSheet);
   }
 }
 
@@ -6064,9 +6020,9 @@ void Document::StyleSheetApplicableStateChanged(StyleSheet& aSheet) {
   // If we're actually in the document style sheet list
   if (StyleOrderIndexOfSheet(aSheet) >= 0) {
     if (applicable) {
-      AddStyleSheetToStyleSets(&aSheet);
+      AddStyleSheetToStyleSets(aSheet);
     } else {
-      RemoveStyleSheetFromStyleSets(&aSheet);
+      RemoveStyleSheetFromStyleSets(aSheet);
     }
   }
 
@@ -6106,20 +6062,6 @@ void Document::NotifyStyleSheetApplicableStateChanged() {
   if (observerService) {
     observerService->NotifyObservers(
         ToSupports(this), "style-sheet-applicable-state-changed", nullptr);
-  }
-}
-
-static StyleOrigin ConvertAdditionalSheetType(
-    Document::additionalSheetType aType) {
-  switch (aType) {
-    case Document::eAgentSheet:
-      return StyleOrigin::UserAgent;
-    case Document::eUserSheet:
-      return StyleOrigin::User;
-    case Document::eAuthorSheet:
-      return StyleOrigin::Author;
-    default:
-      MOZ_CRASH("Wrong sheet type");
   }
 }
 
@@ -6173,8 +6115,7 @@ nsresult Document::LoadAdditionalStyleSheet(additionalSheetType aType,
 
   RefPtr<StyleSheet> sheet = result.unwrap();
 
-  sheet->SetAssociatedDocumentOrShadowRoot(
-      this, StyleSheet::OwnedByDocumentOrShadowRoot);
+  sheet->SetAssociatedDocumentOrShadowRoot(this);
   MOZ_ASSERT(sheet->IsApplicable());
 
   return AddAdditionalStyleSheet(aType, sheet);
@@ -6193,7 +6134,7 @@ nsresult Document::AddAdditionalStyleSheet(additionalSheetType aType,
   mAdditionalSheets[aType].AppendElement(aSheet);
 
   if (mStyleSetFilled) {
-    mStyleSet->AppendStyleSheet(ConvertAdditionalSheetType(aType), aSheet);
+    mStyleSet->AppendStyleSheet(*aSheet);
     ApplicableStylesChanged();
   }
   return NS_OK;
@@ -6207,14 +6148,13 @@ void Document::RemoveAdditionalStyleSheet(additionalSheetType aType,
 
   int32_t i = FindSheet(mAdditionalSheets[aType], aSheetURI);
   if (i >= 0) {
-    RefPtr<StyleSheet> sheetRef = sheets[i];
+    RefPtr<StyleSheet> sheetRef = std::move(sheets[i]);
     sheets.RemoveElementAt(i);
 
     if (!mIsGoingAway) {
       MOZ_ASSERT(sheetRef->IsApplicable());
       if (mStyleSetFilled) {
-        mStyleSet->RemoveStyleSheet(ConvertAdditionalSheetType(aType),
-                                    sheetRef);
+        mStyleSet->RemoveStyleSheet(*sheetRef);
         ApplicableStylesChanged();
       }
     }
@@ -6225,6 +6165,25 @@ void Document::RemoveAdditionalStyleSheet(additionalSheetType aType,
 nsIGlobalObject* Document::GetScopeObject() const {
   nsCOMPtr<nsIGlobalObject> scope(do_QueryReferent(mScopeObject));
   return scope;
+}
+
+DocGroup* Document::GetDocGroupOrCreate() {
+  if (!mDocGroup) {
+    nsAutoCString docGroupKey;
+    nsresult rv = mozilla::dom::DocGroup::GetKey(NodePrincipal(), docGroupKey);
+    if (NS_SUCCEEDED(rv)) {
+      if (mDocumentContainer) {
+        nsPIDOMWindowOuter* window = mDocumentContainer->GetWindow();
+        if (window) {
+          TabGroup* tabgroup = window->MaybeTabGroup();
+          if (tabgroup) {
+            mDocGroup = tabgroup->AddDocument(docGroupKey, this);
+          }
+        }
+      }
+    }
+  }
+  return mDocGroup;
 }
 
 void Document::SetScopeObject(nsIGlobalObject* aGlobal) {
@@ -6251,48 +6210,48 @@ void Document::SetScopeObject(nsIGlobalObject* aGlobal) {
         mDocGroup = tabgroup->AddDocument(docGroupKey, this);
         MOZ_ASSERT(mDocGroup);
       }
-    }
-  }
-}
 
-static void CheckIfContainsEMEContent(nsISupports* aSupports,
-                                      void* aContainsEME) {
-  nsCOMPtr<nsIContent> content(do_QueryInterface(aSupports));
-  if (auto mediaElem = HTMLMediaElement::FromNodeOrNull(content)) {
-    bool* contains = static_cast<bool*>(aContainsEME);
-    if (mediaElem->GetMediaKeys()) {
-      *contains = true;
+      MOZ_ASSERT_IF(
+          mNodeInfoManager->GetArenaAllocator(),
+          mNodeInfoManager->GetArenaAllocator() == mDocGroup->ArenaAllocator());
     }
   }
 }
 
 bool Document::ContainsEMEContent() {
   bool containsEME = false;
-  EnumerateActivityObservers(CheckIfContainsEMEContent,
-                             static_cast<void*>(&containsEME));
-  return containsEME;
-}
 
-static void CheckIfContainsMSEContent(nsISupports* aSupports,
-                                      void* aContainsMSE) {
-  nsCOMPtr<nsIContent> content(do_QueryInterface(aSupports));
-  if (auto mediaElem = HTMLMediaElement::FromNodeOrNull(content)) {
-    bool* contains = static_cast<bool*>(aContainsMSE);
-    RefPtr<MediaSource> ms = mediaElem->GetMozMediaSourceObject();
-    if (ms) {
-      *contains = true;
+  auto check = [&containsEME](nsISupports* aSupports) {
+    nsCOMPtr<nsIContent> content(do_QueryInterface(aSupports));
+    if (auto* mediaElem = HTMLMediaElement::FromNodeOrNull(content)) {
+      if (mediaElem->GetMediaKeys()) {
+        containsEME = true;
+      }
     }
-  }
+  };
+
+  EnumerateActivityObservers(check);
+  return containsEME;
 }
 
 bool Document::ContainsMSEContent() {
   bool containsMSE = false;
-  EnumerateActivityObservers(CheckIfContainsMSEContent,
-                             static_cast<void*>(&containsMSE));
+
+  auto check = [&containsMSE](nsISupports* aSupports) {
+    nsCOMPtr<nsIContent> content(do_QueryInterface(aSupports));
+    if (auto* mediaElem = HTMLMediaElement::FromNodeOrNull(content)) {
+      RefPtr<MediaSource> ms = mediaElem->GetMozMediaSourceObject();
+      if (ms) {
+        containsMSE = true;
+      }
+    }
+  };
+
+  EnumerateActivityObservers(check);
   return containsMSE;
 }
 
-static void NotifyActivityChanged(nsISupports* aSupports, void* aUnused) {
+static void NotifyActivityChanged(nsISupports* aSupports) {
   nsCOMPtr<nsIContent> content(do_QueryInterface(aSupports));
   if (auto mediaElem = HTMLMediaElement::FromNodeOrNull(content)) {
     mediaElem->NotifyOwnerDocumentActivityChanged();
@@ -6325,7 +6284,7 @@ bool Document::IsTopLevelWindowInactive() const {
   }
 
   nsCOMPtr<nsIDocShellTreeItem> rootItem;
-  treeItem->GetRootTreeItem(getter_AddRefs(rootItem));
+  treeItem->GetInProcessRootTreeItem(getter_AddRefs(rootItem));
   if (!rootItem) {
     return false;
   }
@@ -6344,7 +6303,7 @@ void Document::SetContainer(nsDocShell* aContainer) {
   mInChromeDocShell =
       aContainer && aContainer->ItemType() == nsIDocShellTreeItem::typeChrome;
 
-  EnumerateActivityObservers(NotifyActivityChanged, nullptr);
+  EnumerateActivityObservers(NotifyActivityChanged);
 
   // IsTopLevelWindowInactive depends on the docshell, so
   // update the cached value now that it's available.
@@ -6489,7 +6448,7 @@ void Document::SetScriptGlobalObject(
   // call, the document becomes not hidden. At the time, MediaDecoder needs
   // to know it and needs to start updating decoding.
   if (oldState != mVisibilityState) {
-    EnumerateActivityObservers(NotifyActivityChanged, nullptr);
+    EnumerateActivityObservers(NotifyActivityChanged);
   }
 
   // The global in the template contents owner document should be the same.
@@ -7255,27 +7214,29 @@ already_AddRefed<Element> Document::CreateXULElement(
 }
 
 already_AddRefed<nsTextNode> Document::CreateEmptyTextNode() const {
-  RefPtr<nsTextNode> text = new nsTextNode(mNodeInfoManager);
+  RefPtr<nsTextNode> text = new (mNodeInfoManager) nsTextNode(mNodeInfoManager);
   return text.forget();
 }
 
 already_AddRefed<nsTextNode> Document::CreateTextNode(
     const nsAString& aData) const {
-  RefPtr<nsTextNode> text = new nsTextNode(mNodeInfoManager);
+  RefPtr<nsTextNode> text = new (mNodeInfoManager) nsTextNode(mNodeInfoManager);
   // Don't notify; this node is still being created.
   text->SetText(aData, false);
   return text.forget();
 }
 
 already_AddRefed<DocumentFragment> Document::CreateDocumentFragment() const {
-  RefPtr<DocumentFragment> frag = new DocumentFragment(mNodeInfoManager);
+  RefPtr<DocumentFragment> frag =
+      new (mNodeInfoManager) DocumentFragment(mNodeInfoManager);
   return frag.forget();
 }
 
 // Unfortunately, bareword "Comment" is ambiguous with some Mac system headers.
 already_AddRefed<dom::Comment> Document::CreateComment(
     const nsAString& aData) const {
-  RefPtr<dom::Comment> comment = new dom::Comment(mNodeInfoManager);
+  RefPtr<dom::Comment> comment =
+      new (mNodeInfoManager) dom::Comment(mNodeInfoManager);
 
   // Don't notify; this node is still being created.
   comment->SetText(aData, false);
@@ -7294,7 +7255,8 @@ already_AddRefed<CDATASection> Document::CreateCDATASection(
     return nullptr;
   }
 
-  RefPtr<CDATASection> cdata = new CDATASection(mNodeInfoManager);
+  RefPtr<CDATASection> cdata =
+      new (mNodeInfoManager) CDATASection(mNodeInfoManager);
 
   // Don't notify; this node is still being created.
   cdata->SetText(aData, false);
@@ -7349,7 +7311,8 @@ already_AddRefed<Attr> Document::CreateAttribute(const nsAString& aName,
     return nullptr;
   }
 
-  RefPtr<Attr> attribute = new Attr(nullptr, nodeInfo.forget(), EmptyString());
+  RefPtr<Attr> attribute =
+      new (mNodeInfoManager) Attr(nullptr, nodeInfo.forget(), EmptyString());
   return attribute.forget();
 }
 
@@ -7364,7 +7327,8 @@ already_AddRefed<Attr> Document::CreateAttributeNS(
     return nullptr;
   }
 
-  RefPtr<Attr> attribute = new Attr(nullptr, nodeInfo.forget(), EmptyString());
+  RefPtr<Attr> attribute =
+      new (mNodeInfoManager) Attr(nullptr, nodeInfo.forget(), EmptyString());
   return attribute.forget();
 }
 
@@ -7601,14 +7565,7 @@ nsINodeList* Document::GetAnonymousNodes(Element& aElement) {
 }
 
 already_AddRefed<nsRange> Document::CreateRange(ErrorResult& rv) {
-  RefPtr<nsRange> range = new nsRange(this);
-  nsresult res = range->CollapseTo(this, 0);
-  if (NS_FAILED(res)) {
-    rv.Throw(res);
-    return nullptr;
-  }
-
-  return range.forget();
+  return nsRange::Create(this, 0, this, 0, rv);
 }
 
 already_AddRefed<NodeIterator> Document::CreateNodeIterator(
@@ -8208,9 +8165,8 @@ Document* Document::RequestExternalResource(
       aURI, aReferrerInfo, aRequestingNode, this, aPendingLoad);
 }
 
-void Document::EnumerateExternalResources(SubDocEnumFunc aCallback,
-                                          void* aData) {
-  mExternalResourceMap.EnumerateResources(aCallback, aData);
+void Document::EnumerateExternalResources(SubDocEnumFunc aCallback) {
+  mExternalResourceMap.EnumerateResources(aCallback);
 }
 
 SMILAnimationController* Document::GetAnimationController() {
@@ -9661,12 +9617,12 @@ void Document::FlushExternalResources(FlushType aType) {
     return;
   }
 
-  EnumerateExternalResources(
-      [](Document& aDoc, void* aData) -> bool {
-        aDoc.FlushPendingNotifications(*static_cast<FlushType*>(aData));
-        return true;
-      },
-      &aType);
+  auto flush = [aType](Document& aDoc) {
+    aDoc.FlushPendingNotifications(aType);
+    return true;
+  };
+
+  EnumerateExternalResources(flush);
 }
 
 void Document::SetXMLDeclaration(const char16_t* aVersion,
@@ -9891,7 +9847,7 @@ void Document::Sanitize() {
   }
 }
 
-void Document::EnumerateSubDocuments(SubDocEnumFunc aCallback, void* aData) {
+void Document::EnumerateSubDocuments(SubDocEnumFunc aCallback) {
   if (!mSubDocuments) {
     return;
   }
@@ -9906,7 +9862,7 @@ void Document::EnumerateSubDocuments(SubDocEnumFunc aCallback, void* aData) {
     }
   }
   for (auto& subdoc : subdocs) {
-    if (!aCallback(*subdoc, aData)) {
+    if (!aCallback(*subdoc)) {
       break;
     }
   }
@@ -10159,7 +10115,7 @@ void Document::RemovedFromDocShell() {
   if (mRemovedFromDocShell) return;
 
   mRemovedFromDocShell = true;
-  EnumerateActivityObservers(NotifyActivityChanged, nullptr);
+  EnumerateActivityObservers(NotifyActivityChanged);
 
   for (nsIContent* child = GetFirstChild(); child;
        child = child->GetNextSibling()) {
@@ -10382,12 +10338,6 @@ void Document::DispatchPageTransition(EventTarget* aDispatchTarget,
                                     nullptr);
 }
 
-static bool NotifyPageShow(Document& aDocument, void* aData) {
-  const bool* aPersistedPtr = static_cast<const bool*>(aData);
-  aDocument.OnPageShow(*aPersistedPtr, nullptr);
-  return true;
-}
-
 void Document::OnPageShow(bool aPersisted, EventTarget* aDispatchStartTarget,
                           bool aOnlySystemGroup) {
   const bool inFrameLoaderSwap = !!aDispatchStartTarget;
@@ -10421,8 +10371,13 @@ void Document::OnPageShow(bool aPersisted, EventTarget* aDispatchStartTarget,
     UpdateVisibilityState();
   }
 
-  EnumerateActivityObservers(NotifyActivityChanged, nullptr);
-  EnumerateExternalResources(NotifyPageShow, &aPersisted);
+  EnumerateActivityObservers(NotifyActivityChanged);
+
+  auto notifyExternal = [aPersisted](Document& aExternalResource) {
+    aExternalResource.OnPageShow(aPersisted, nullptr);
+    return true;
+  };
+  EnumerateExternalResources(notifyExternal);
 
   if (mAnimationController) {
     mAnimationController->OnPageShow();
@@ -10446,12 +10401,6 @@ void Document::OnPageShow(bool aPersisted, EventTarget* aDispatchStartTarget,
     DispatchPageTransition(target, NS_LITERAL_STRING("pageshow"),
                            inFrameLoaderSwap, aPersisted, aOnlySystemGroup);
   }
-}
-
-static bool NotifyPageHide(Document& aDocument, void* aData) {
-  const bool* aPersistedPtr = static_cast<const bool*>(aData);
-  aDocument.OnPageHide(*aPersistedPtr, nullptr);
-  return true;
 }
 
 static void DispatchFullscreenChange(Document& aDocument, nsINode* aTarget) {
@@ -10549,11 +10498,15 @@ void Document::OnPageHide(bool aPersisted, EventTarget* aDispatchStartTarget,
     UpdateVisibilityState();
   }
 
-  EnumerateExternalResources(NotifyPageHide, &aPersisted);
-  EnumerateActivityObservers(NotifyActivityChanged, nullptr);
+  auto notifyExternal = [aPersisted](Document& aExternalResource) {
+    aExternalResource.OnPageHide(aPersisted, nullptr);
+    return true;
+  };
+  EnumerateExternalResources(notifyExternal);
+  EnumerateActivityObservers(NotifyActivityChanged);
 
   ClearPendingFullscreenRequests(this);
-  if (FullscreenStackTop()) {
+  if (GetUnretargetedFullScreenElement()) {
     // If this document was fullscreen, we should exit fullscreen in this
     // doctree branch. This ensures that if the user navigates while in
     // fullscreen mode we don't leave its still visible ancestor documents
@@ -10762,11 +10715,6 @@ nsresult Document::CloneDocHelper(Document* clone) const {
   return NS_OK;
 }
 
-static bool SetLoadingInSubDocument(Document& aDocument, void* aData) {
-  aDocument.SetAncestorLoading(*(static_cast<bool*>(aData)));
-  return true;
-}
-
 void Document::SetAncestorLoading(bool aAncestorIsLoading) {
   NotifyLoading(mAncestorIsLoading, aAncestorIsLoading, mReadyState,
                 mReadyState);
@@ -10790,7 +10738,12 @@ void Document::NotifyLoading(const bool& aCurrentParentIsLoading,
     if (inner) {
       inner->SetActiveLoadingState(is_loading);
     }
-    EnumerateSubDocuments(SetLoadingInSubDocument, &is_loading);
+    auto loadingInSubDoc = [is_loading](Document& aSubDoc) {
+      aSubDoc.SetAncestorLoading(is_loading);
+      return true;
+    };
+
+    EnumerateSubDocuments(loadingInSubDoc);
   }
 }
 
@@ -10873,11 +10826,6 @@ void Document::GetReadyState(nsAString& aReadyState) const {
   }
 }
 
-static bool SuppressEventHandlingInDocument(Document& aDocument, void* aData) {
-  aDocument.SuppressEventHandling(*static_cast<uint32_t*>(aData));
-  return true;
-}
-
 void Document::SuppressEventHandling(uint32_t aIncrease) {
   mEventsSuppressed += aIncrease;
   UpdateFrameRequestCallbackSchedulingState();
@@ -10885,7 +10833,12 @@ void Document::SuppressEventHandling(uint32_t aIncrease) {
     ScriptLoader()->AddExecuteBlocker();
   }
 
-  EnumerateSubDocuments(SuppressEventHandlingInDocument, &aIncrease);
+  auto suppressInSubDoc = [aIncrease](Document& aSubDoc) {
+    aSubDoc.SuppressEventHandling(aIncrease);
+    return true;
+  };
+
+  EnumerateSubDocuments(suppressInSubDoc);
 }
 
 static void FireOrClearDelayedEvents(nsTArray<nsCOMPtr<Document>>& aDocuments,
@@ -11011,7 +10964,7 @@ void Document::MaybePreLoadImage(nsIURI* uri, const nsAString& aCrossOriginAttr,
   // the "real" load occurs. Unpinned in DispatchContentLoadedEvents and
   // unlink
   if (NS_SUCCEEDED(rv)) {
-    mPreloadingImages.Put(uri, request.forget());
+    mPreloadingImages.Put(uri, std::move(request));
   }
 }
 
@@ -11106,7 +11059,7 @@ namespace {
  * the CSSLoader's style cache
  */
 class StubCSSLoaderObserver final : public nsICSSLoaderObserver {
-  ~StubCSSLoaderObserver() {}
+  ~StubCSSLoaderObserver() = default;
 
  public:
   NS_IMETHOD
@@ -11198,7 +11151,7 @@ class nsDelayedEventDispatcher : public Runnable {
       : mozilla::Runnable("nsDelayedEventDispatcher") {
     mDocuments.SwapElements(aDocuments);
   }
-  virtual ~nsDelayedEventDispatcher() {}
+  virtual ~nsDelayedEventDispatcher() = default;
 
   NS_IMETHOD Run() override {
     FireOrClearDelayedEvents(mDocuments, true);
@@ -11209,22 +11162,22 @@ class nsDelayedEventDispatcher : public Runnable {
   nsTArray<nsCOMPtr<Document>> mDocuments;
 };
 
-static bool GetAndUnsuppressSubDocuments(Document& aDocument, void* aData) {
+static void GetAndUnsuppressSubDocuments(Document& aDocument, nsTArray<nsCOMPtr<Document>>& aDocuments) {
   if (aDocument.EventHandlingSuppressed() > 0) {
     aDocument.DecreaseEventSuppression();
     aDocument.ScriptLoader()->RemoveExecuteBlocker();
   }
-
-  auto* docs = static_cast<nsTArray<nsCOMPtr<Document>>*>(aData);
-
-  docs->AppendElement(&aDocument);
-  aDocument.EnumerateSubDocuments(GetAndUnsuppressSubDocuments, aData);
-  return true;
+  aDocuments.AppendElement(&aDocument);
+  auto recurse = [&aDocuments](Document& aSubDoc) {
+    GetAndUnsuppressSubDocuments(aSubDoc, aDocuments);
+    return true;
+  };
+  aDocument.EnumerateSubDocuments(recurse);
 }
 
 void Document::UnsuppressEventHandlingAndFireEvents(bool aFireEvents) {
   nsTArray<nsCOMPtr<Document>> documents;
-  GetAndUnsuppressSubDocuments(*this, &documents);
+  GetAndUnsuppressSubDocuments(*this, documents);
 
   if (aFireEvents) {
     MOZ_RELEASE_ASSERT(NS_IsMainThread());
@@ -11285,13 +11238,11 @@ void Document::FireOrClearPostMessageEvents(bool aFireEvents) {
 
 void Document::SetSuppressedEventListener(EventListener* aListener) {
   mSuppressedEventListener = aListener;
-  EnumerateSubDocuments(
-      [](Document& aDocument, void* aData) {
-        aDocument.SetSuppressedEventListener(
-            static_cast<EventListener*>(aData));
-        return true;
-      },
-      aListener);
+  auto setOnSubDocs = [&](Document& aDocument) {
+    aDocument.SetSuppressedEventListener(aListener);
+    return true;
+  };
+  EnumerateSubDocuments(setOnSubDocs);
 }
 
 nsISupports* Document::GetCurrentContentSink() {
@@ -11550,7 +11501,7 @@ bool Document::UnregisterActivityObserver(nsISupports* aSupports) {
 }
 
 void Document::EnumerateActivityObservers(
-    ActivityObserverEnumerator aEnumerator, void* aData) {
+    ActivityObserverEnumerator aEnumerator) {
   if (!mActivityObservers) {
     return;
   }
@@ -11561,7 +11512,7 @@ void Document::EnumerateActivityObservers(
   }
 
   for (auto& observer : observers) {
-    aEnumerator(observer.get(), aData);
+    aEnumerator(observer.get());
   }
 }
 
@@ -11621,7 +11572,11 @@ void Document::FlushPendingLinkUpdates() {
 
 already_AddRefed<Document> Document::CreateStaticClone(
     nsIDocShell* aCloneContainer) {
+  MOZ_ASSERT(!mCreatingStaticClone);
+  MOZ_ASSERT(!GetProperty(nsGkAtoms::adoptedsheetclones));
   mCreatingStaticClone = true;
+  SetProperty(nsGkAtoms::adoptedsheetclones, new AdoptedStyleSheetCloneCache(),
+              nsINode::DeleteProperty<AdoptedStyleSheetCloneCache>);
 
   // Make document use different container during cloning.
   RefPtr<nsDocShell> originalShell = mDocumentContainer.get();
@@ -11662,6 +11617,7 @@ already_AddRefed<Document> Document::CreateStaticClone(
           }
         }
       }
+      clonedDoc->CloneAdoptedSheetsFrom(*this);
 
       for (int t = 0; t < AdditionalSheetTypeCount; ++t) {
         auto& sheets = mAdditionalSheets[additionalSheetType(t)];
@@ -11690,6 +11646,7 @@ already_AddRefed<Document> Document::CreateStaticClone(
       clonedDoc->mPreloadReferrerInfo = clonedDoc->mReferrerInfo;
     }
   }
+  RemoveProperty(nsGkAtoms::adoptedsheetclones);
   mCreatingStaticClone = false;
   return clonedDoc.forget();
 }
@@ -11711,9 +11668,7 @@ nsresult Document::ScheduleFrameRequestCallback(FrameRequestCallback& aCallback,
   }
   int32_t newHandle = ++mFrameRequestCallbackCounter;
 
-  DebugOnly<FrameRequest*> request =
-      mFrameRequestCallbacks.AppendElement(FrameRequest(aCallback, newHandle));
-  NS_ASSERTION(request, "This is supposed to be infallible!");
+  mFrameRequestCallbacks.AppendElement(FrameRequest(aCallback, newHandle));
   UpdateFrameRequestCallbackSchedulingState();
 
   *aHandle = newHandle;
@@ -11827,20 +11782,16 @@ mozilla::dom::ImageTracker* Document::ImageTracker() {
   return mImageTracker;
 }
 
-static bool AllSubDocumentPluginEnum(Document& aDocument, void* userArg) {
-  nsTArray<nsIObjectLoadingContent*>* plugins =
-      reinterpret_cast<nsTArray<nsIObjectLoadingContent*>*>(userArg);
-  MOZ_ASSERT(plugins);
-  aDocument.GetPlugins(*plugins);
-  return true;
-}
-
 void Document::GetPlugins(nsTArray<nsIObjectLoadingContent*>& aPlugins) {
   aPlugins.SetCapacity(aPlugins.Length() + mPlugins.Count());
   for (auto iter = mPlugins.ConstIter(); !iter.Done(); iter.Next()) {
     aPlugins.AppendElement(iter.Get()->GetKey());
   }
-  EnumerateSubDocuments(AllSubDocumentPluginEnum, &aPlugins);
+  auto recurse = [&aPlugins] (Document& aSubDoc) {
+    aSubDoc.GetPlugins(aPlugins);
+    return true;
+  };
+  EnumerateSubDocuments(recurse);
 }
 
 void Document::ScheduleSVGUseElementShadowTreeUpdate(
@@ -11976,9 +11927,7 @@ already_AddRefed<nsDOMCaretPosition> Document::CaretPositionFromPoint(
     nsIContent* nonanon = node->FindFirstNonChromeOnlyAccessContent();
     HTMLTextAreaElement* textArea = HTMLTextAreaElement::FromNode(nonanon);
     nsITextControlFrame* textFrame = do_QueryFrame(nonanon->GetPrimaryFrame());
-    nsNumberControlFrame* numberFrame =
-        do_QueryFrame(nonanon->GetPrimaryFrame());
-    if (textFrame || numberFrame) {
+    if (textFrame) {
       // If the anonymous content node has a child, then we need to make sure
       // that we get the appropriate child, as otherwise the offset may not be
       // correct when we construct a range for it.
@@ -12369,8 +12318,8 @@ class FullscreenRoots {
   static bool IsEmpty();
 
  private:
-  FullscreenRoots() { MOZ_COUNT_CTOR(FullscreenRoots); }
-  ~FullscreenRoots() { MOZ_COUNT_DTOR(FullscreenRoots); }
+  MOZ_COUNTED_DEFAULT_CTOR(FullscreenRoots)
+  MOZ_COUNTED_DTOR(FullscreenRoots)
 
   enum { NotFound = uint32_t(-1) };
   // Looks in mRoots for aRoot. Returns the index if found, otherwise NotFound.
@@ -12496,8 +12445,9 @@ class PendingFullscreenChangeList {
           // Use a temporary to avoid undefined behavior from passing
           // mRootShellForIteration.
           nsCOMPtr<nsIDocShellTreeItem> root;
-          mRootShellForIteration->GetRootTreeItem(getter_AddRefs(root));
-          mRootShellForIteration = root.forget();
+          mRootShellForIteration->GetInProcessRootTreeItem(
+              getter_AddRefs(root));
+          mRootShellForIteration = std::move(root);
         }
         SkipToNextMatch();
       }
@@ -12526,13 +12476,13 @@ class PendingFullscreenChangeList {
             // Always automatically drop fullscreen changes which are
             // from a document detached from the doc shell.
             UniquePtr<T> change = TakeAndNextInternal();
-            change->MayRejectPromise();
+            change->MayRejectPromise("Document is not active");
             continue;
           }
           while (docShell && docShell != mRootShellForIteration) {
             nsCOMPtr<nsIDocShellTreeItem> parent;
             docShell->GetInProcessParent(getter_AddRefs(parent));
-            docShell = parent.forget();
+            docShell = std::move(parent);
           }
           if (docShell) {
             break;
@@ -12558,6 +12508,18 @@ LinkedList<FullscreenChange> PendingFullscreenChangeList::sList;
 Document* Document::GetFullscreenRoot() {
   nsCOMPtr<Document> root = do_QueryReferent(mFullscreenRoot);
   return root;
+}
+
+size_t Document::CountFullscreenElements() const {
+  size_t count = 0;
+  for (const nsWeakPtr& ptr : mTopLayer) {
+    if (nsCOMPtr<Element> elem = do_QueryReferent(ptr)) {
+      if (elem->State().HasState(NS_EVENT_STATE_FULLSCREEN)) {
+        count++;
+      }
+    }
+  }
+  return count;
 }
 
 void Document::SetFullscreenRoot(Document* aRoot) {
@@ -12612,67 +12574,57 @@ void Document::AsyncExitFullscreen(Document* aDoc) {
   }
 }
 
-static bool CountFullscreenSubDocuments(Document& aDoc, void* aData) {
-  if (aDoc.FullscreenStackTop()) {
-    uint32_t* count = static_cast<uint32_t*>(aData);
-    (*count)++;
-  }
-  return true;
-}
-
 static uint32_t CountFullscreenSubDocuments(Document& aDoc) {
   uint32_t count = 0;
-  aDoc.EnumerateSubDocuments(CountFullscreenSubDocuments, &count);
+  // FIXME(emilio): Should this be recursive and dig into our nested subdocs?
+  auto subDoc = [&count](Document& aSubDoc) {
+    if (aSubDoc.GetUnretargetedFullScreenElement()) {
+      count++;
+    }
+    return true;
+  };
+  aDoc.EnumerateSubDocuments(subDoc);
   return count;
 }
 
 bool Document::IsFullscreenLeaf() {
   // A fullscreen leaf document is fullscreen, and has no fullscreen
   // subdocuments.
-  if (!FullscreenStackTop()) {
+  if (!GetUnretargetedFullScreenElement()) {
     return false;
   }
   return CountFullscreenSubDocuments(*this) == 0;
 }
 
-bool GetFullscreenLeaf(Document& aDoc, void* aData) {
+Document* GetFullscreenLeaf(Document& aDoc) {
   if (aDoc.IsFullscreenLeaf()) {
-    Document** result = static_cast<Document**>(aData);
-    *result = &aDoc;
-    return false;
+    return &aDoc;
   }
-  if (aDoc.FullscreenStackTop()) {
-    aDoc.EnumerateSubDocuments(GetFullscreenLeaf, aData);
+  if (aDoc.GetUnretargetedFullScreenElement()) {
+    aDoc.EnumerateSubDocuments(GetFullscreenLeaf);
   }
-  return true;
+  return nullptr;
 }
 
 static Document* GetFullscreenLeaf(Document* aDoc) {
-  Document* leaf = nullptr;
-  GetFullscreenLeaf(*aDoc, &leaf);
-  if (leaf) {
+  if (Document* leaf = GetFullscreenLeaf(*aDoc)) {
     return leaf;
   }
   // Otherwise we could be either in a non-fullscreen doc tree, or we're
   // below the fullscreen doc. Start the search from the root.
   Document* root = nsContentUtils::GetRootDocument(aDoc);
-  // Check that the root is actually fullscreen so we don't waste time walking
-  // around its descendants.
-  if (!root->FullscreenStackTop()) {
-    return nullptr;
-  }
-  GetFullscreenLeaf(*root, &leaf);
-  return leaf;
+  return GetFullscreenLeaf(*root);
 }
 
-static bool ResetFullscreen(Document& aDocument, void* aData) {
-  if (Element* fsElement = aDocument.FullscreenStackTop()) {
+static bool ResetFullscreen(Document& aDocument) {
+  if (Element* fsElement = aDocument.GetUnretargetedFullScreenElement()) {
     NS_ASSERTION(CountFullscreenSubDocuments(aDocument) <= 1,
                  "Should have at most 1 fullscreen subdocument.");
     aDocument.CleanupFullscreenState();
-    NS_ASSERTION(!aDocument.FullscreenStackTop(), "Should reset fullscreen");
+    NS_ASSERTION(!aDocument.GetUnretargetedFullScreenElement(),
+                 "Should reset fullscreen");
     DispatchFullscreenChange(aDocument, fsElement);
-    aDocument.EnumerateSubDocuments(ResetFullscreen, nullptr);
+    aDocument.EnumerateSubDocuments(ResetFullscreen);
   }
   return true;
 }
@@ -12723,7 +12675,7 @@ void Document::ExitFullscreenInDocTree(Document* aMaybeNotARootDoc) {
   }
 
   nsCOMPtr<Document> root = aMaybeNotARootDoc->GetFullscreenRoot();
-  if (!root || !root->FullscreenStackTop()) {
+  if (!root || !root->GetUnretargetedFullScreenElement()) {
     // If a document was detached before exiting from fullscreen, it is
     // possible that the root had left fullscreen state. In this case,
     // we would not get anything from the ResetFullscreen() call. Root's
@@ -12742,9 +12694,9 @@ void Document::ExitFullscreenInDocTree(Document* aMaybeNotARootDoc) {
   Document* fullscreenLeaf = GetFullscreenLeaf(root);
 
   // Walk the tree of fullscreen documents, and reset their fullscreen state.
-  ResetFullscreen(*root, nullptr);
+  ResetFullscreen(*root);
 
-  NS_ASSERTION(!root->FullscreenStackTop(),
+  NS_ASSERTION(!root->GetUnretargetedFullScreenElement(),
                "Fullscreen root should no longer be a fullscreen doc...");
 
   // Move the top-level window out of fullscreen mode.
@@ -12762,11 +12714,16 @@ static void DispatchFullscreenNewOriginEvent(Document* aDoc) {
 }
 
 void Document::RestorePreviousFullscreenState(UniquePtr<FullscreenExit> aExit) {
-  NS_ASSERTION(!FullscreenStackTop() || !FullscreenRoots::IsEmpty(),
-               "Should have at least 1 fullscreen root when fullscreen!");
+  NS_ASSERTION(
+      !GetUnretargetedFullScreenElement() || !FullscreenRoots::IsEmpty(),
+      "Should have at least 1 fullscreen root when fullscreen!");
 
-  if (!FullscreenStackTop() || !GetWindow() || FullscreenRoots::IsEmpty()) {
-    aExit->MayRejectPromise();
+  if (!GetWindow()) {
+    aExit->MayRejectPromise("No active window");
+    return;
+  }
+  if (!GetUnretargetedFullScreenElement() || FullscreenRoots::IsEmpty()) {
+    aExit->MayRejectPromise("Not in fullscreen mode");
     return;
   }
 
@@ -12776,7 +12733,7 @@ void Document::RestorePreviousFullscreenState(UniquePtr<FullscreenExit> aExit) {
   Document* doc = fullScreenDoc;
   // Collect all subdocuments.
   for (; doc != this; doc = doc->GetInProcessParentDocument()) {
-    Element* fsElement = doc->FullscreenStackTop();
+    Element* fsElement = doc->GetUnretargetedFullScreenElement();
     MOZ_ASSERT(fsElement,
                "Parent document of "
                "a fullscreen document without fullscreen element?");
@@ -12785,9 +12742,9 @@ void Document::RestorePreviousFullscreenState(UniquePtr<FullscreenExit> aExit) {
   MOZ_ASSERT(doc == this, "Must have reached this doc");
   // Collect all ancestor documents which we are going to change.
   for (; doc; doc = doc->GetInProcessParentDocument()) {
-    MOZ_ASSERT(!doc->mFullscreenStack.IsEmpty(),
+    Element* fsElement = doc->GetUnretargetedFullScreenElement();
+    MOZ_ASSERT(fsElement,
                "Ancestor of fullscreen document must also be in fullscreen");
-    Element* fsElement = doc->FullscreenStackTop();
     if (doc != this) {
       if (auto* iframe = HTMLIFrameElement::FromNode(fsElement)) {
         if (iframe->FullscreenFlag()) {
@@ -12798,14 +12755,14 @@ void Document::RestorePreviousFullscreenState(UniquePtr<FullscreenExit> aExit) {
       }
     }
     exitElements.AppendElement(fsElement);
-    if (doc->mFullscreenStack.Length() > 1) {
+    if (doc->CountFullscreenElements() > 1) {
       break;
     }
   }
 
   Document* lastDoc = exitElements.LastElement()->OwnerDoc();
-  if (!lastDoc->GetInProcessParentDocument() &&
-      lastDoc->mFullscreenStack.Length() == 1) {
+  size_t fullscreenCount = lastDoc->CountFullscreenElements();
+  if (!lastDoc->GetInProcessParentDocument() && fullscreenCount == 1) {
     // If we are fully exiting fullscreen, don't touch anything here,
     // just wait for the window to get out from fullscreen first.
     PendingFullscreenChangeList::Add(std::move(aExit));
@@ -12823,8 +12780,8 @@ void Document::RestorePreviousFullscreenState(UniquePtr<FullscreenExit> aExit) {
   // The last document will either rollback one fullscreen element, or
   // completely exit from the fullscreen state as well.
   Document* newFullscreenDoc;
-  if (lastDoc->mFullscreenStack.Length() > 1) {
-    lastDoc->FullscreenStackPop();
+  if (fullscreenCount > 1) {
+    lastDoc->UnsetFullscreenElement();
     newFullscreenDoc = lastDoc;
   } else {
     lastDoc->CleanupFullscreenState();
@@ -12891,19 +12848,27 @@ static void ClearFullscreenStateOnElement(Element* aElement) {
 }
 
 void Document::CleanupFullscreenState() {
-  // Iterate the fullscreen stack and clear the fullscreen states.
+  // Iterate the top layer and clear the fullscreen states.
   // Since we also need to clear the fullscreen-ancestor state, and
   // currently fullscreen elements can only be placed in hierarchy
   // order in the stack, reversely iterating the stack could be more
   // efficient. NOTE that fullscreen-ancestor state would be removed
   // in bug 1199529, and the elements may not in hierarchy order
   // after bug 1195213.
-  for (nsWeakPtr& weakPtr : Reversed(mFullscreenStack)) {
-    if (nsCOMPtr<Element> element = do_QueryReferent(weakPtr)) {
-      ClearFullscreenStateOnElement(element);
+  mTopLayer.RemoveElementsBy([&](const nsWeakPtr& weakPtr) {
+    nsCOMPtr<Element> element(do_QueryReferent(weakPtr));
+    if (!element || !element->IsInComposedDoc() ||
+        element->OwnerDoc() != this) {
+      return true;
     }
-  }
-  mFullscreenStack.Clear();
+
+    if (element->State().HasState(NS_EVENT_STATE_FULLSCREEN)) {
+      ClearFullscreenStateOnElement(element);
+      return true;
+    }
+    return false;
+  });
+
   mFullscreenRoot = nullptr;
 
   // Restore the zoom level that was in place prior to entering fullscreen.
@@ -12917,71 +12882,102 @@ void Document::CleanupFullscreenState() {
   UpdateViewportScrollbarOverrideForFullscreen(this);
 }
 
-bool Document::FullscreenStackPush(Element* aElement) {
-  NS_ASSERTION(aElement, "Must pass non-null to FullscreenStackPush()");
-  Element* top = FullscreenStackTop();
-  if (top == aElement || !aElement) {
-    return false;
-  }
-  EventStateManager::SetFullscreenState(aElement, true);
-  mFullscreenStack.AppendElement(do_GetWeakReference(aElement));
-  NS_ASSERTION(FullscreenStackTop() == aElement, "Should match");
+void Document::UnsetFullscreenElement() {
+  Element* removedElement = TopLayerPop([](Element* element) -> bool {
+    return element->State().HasState(NS_EVENT_STATE_FULLSCREEN);
+  });
+
+  MOZ_ASSERT(removedElement->State().HasState(NS_EVENT_STATE_FULLSCREEN));
+  ClearFullscreenStateOnElement(removedElement);
   UpdateViewportScrollbarOverrideForFullscreen(this);
+}
+
+bool Document::SetFullscreenElement(Element* aElement) {
+  if (TopLayerPush(aElement)) {
+    EventStateManager::SetFullscreenState(aElement, true);
+    UpdateViewportScrollbarOverrideForFullscreen(this);
+    return true;
+  }
+  return false;
+}
+
+bool Document::TopLayerPush(Element* aElement) {
+  NS_ASSERTION(aElement, "Must pass non-null to TopLayerPush()");
+  auto predictFunc = [&aElement](Element* element) {
+    return element == aElement;
+  };
+  TopLayerPop(predictFunc);
+
+  mTopLayer.AppendElement(do_GetWeakReference(aElement));
+  NS_ASSERTION(GetTopLayerTop() == aElement, "Should match");
   return true;
 }
 
-void Document::FullscreenStackPop() {
-  if (mFullscreenStack.IsEmpty()) {
-    return;
+Element* Document::TopLayerPop(FunctionRef<bool(Element*)> aPredicateFunc) {
+  if (mTopLayer.IsEmpty()) {
+    return nullptr;
   }
 
-  ClearFullscreenStateOnElement(FullscreenStackTop());
-
-  // Remove top element. Note the remaining top element in the stack
-  // will not have fullscreen style bits set, so we will need to restore
-  // them on the new top element before returning.
-  uint32_t last = mFullscreenStack.Length() - 1;
-  mFullscreenStack.RemoveElementAt(last);
+  // Remove the topmost element that qualifies aPredicate; This
+  // is required is because the top layer contains not only
+  // fullscreen elements, but also dialog elements.
+  Element* removedElement;
+  for (auto i : Reversed(IntegerRange(mTopLayer.Length()))) {
+    nsCOMPtr<Element> element(do_QueryReferent(mTopLayer[i]));
+    if (element && aPredicateFunc(element)) {
+      removedElement = element;
+      mTopLayer.RemoveElementAt(i);
+      break;
+    }
+  }
 
   // Pop from the stack null elements (references to elements which have
   // been GC'd since they were added to the stack) and elements which are
   // no longer in this document.
-  while (!mFullscreenStack.IsEmpty()) {
-    Element* element = FullscreenStackTop();
+  while (!mTopLayer.IsEmpty()) {
+    Element* element = GetTopLayerTop();
     if (!element || !element->IsInUncomposedDoc() ||
         element->OwnerDoc() != this) {
-      NS_ASSERTION(!element->State().HasState(NS_EVENT_STATE_FULLSCREEN),
-                   "Should have already removed fullscreen styles");
-      uint32_t last = mFullscreenStack.Length() - 1;
-      mFullscreenStack.RemoveElementAt(last);
+      mTopLayer.RemoveLastElement();
     } else {
       // The top element of the stack is now an in-doc element. Return here.
       break;
     }
   }
 
-  UpdateViewportScrollbarOverrideForFullscreen(this);
+  return removedElement;
 }
 
-Element* Document::FullscreenStackTop() {
-  if (mFullscreenStack.IsEmpty()) {
+Element* Document::GetTopLayerTop() {
+  if (mTopLayer.IsEmpty()) {
     return nullptr;
   }
-  uint32_t last = mFullscreenStack.Length() - 1;
-  nsCOMPtr<Element> element(do_QueryReferent(mFullscreenStack[last]));
-  NS_ASSERTION(element, "Should have fullscreen element!");
+  uint32_t last = mTopLayer.Length() - 1;
+  nsCOMPtr<Element> element(do_QueryReferent(mTopLayer[last]));
+  NS_ASSERTION(element, "Should have a top layer element!");
   NS_ASSERTION(element->IsInComposedDoc(),
-               "Fullscreen element should be in doc");
+               "Top layer element should be in doc");
   NS_ASSERTION(element->OwnerDoc() == this,
-               "Fullscreen element should be in this doc");
+               "Top layer element should be in this doc");
   return element;
 }
 
-nsTArray<Element*> Document::GetFullscreenStack() const {
+Element* Document::GetUnretargetedFullScreenElement() {
+  for (const nsWeakPtr& weakPtr : Reversed(mTopLayer)) {
+    nsCOMPtr<Element> element(do_QueryReferent(weakPtr));
+    // Per spec, the fullscreen element is the topmost element in the document’s
+    // top layer whose fullscreen flag is set, if any, and null otherwise.
+    if (element && element->State().HasState(NS_EVENT_STATE_FULLSCREEN)) {
+      return element;
+    }
+  }
+  return nullptr;
+}
+
+nsTArray<Element*> Document::GetTopLayer() const {
   nsTArray<Element*> elements;
-  for (const nsWeakPtr& ptr : mFullscreenStack) {
+  for (const nsWeakPtr& ptr : mTopLayer) {
     if (nsCOMPtr<Element> elem = do_QueryReferent(ptr)) {
-      MOZ_ASSERT(elem->State().HasState(NS_EVENT_STATE_FULLSCREEN));
       elements.AppendElement(elem);
     }
   }
@@ -13002,7 +12998,7 @@ static bool IsInActiveTab(Document* aDoc) {
   }
 
   nsCOMPtr<nsIDocShellTreeItem> rootItem;
-  docshell->GetRootTreeItem(getter_AddRefs(rootItem));
+  docshell->GetInProcessRootTreeItem(getter_AddRefs(rootItem));
   if (!rootItem) {
     return false;
   }
@@ -13072,14 +13068,15 @@ static const char* GetFullscreenError(Document* aDoc, CallerType aCallerType) {
   return nullptr;
 }
 
-bool Document::FullscreenElementReadyCheck(const FullscreenRequest& aRequest) {
+bool Document::FullscreenElementReadyCheck(FullscreenRequest& aRequest) {
   Element* elem = aRequest.Element();
   // Strictly speaking, this isn't part of the fullscreen element ready
   // check in the spec, but per steps in the spec, when an element which
   // is already the fullscreen element requests fullscreen, nothing
   // should change and no event should be dispatched, but we still need
   // to resolve the returned promise.
-  if (elem == FullscreenStackTop()) {
+  Element* fullscreenElement = GetUnretargetedFullScreenElement();
+  if (elem == fullscreenElement) {
     aRequest.MayResolvePromise();
     return false;
   }
@@ -13105,9 +13102,8 @@ bool Document::FullscreenElementReadyCheck(const FullscreenRequest& aRequest) {
   }
   // XXXsmaug Note, we don't follow the latest fullscreen spec here.
   //         This whole check could be probably removed.
-  if (FullscreenStackTop() &&
-      !nsContentUtils::ContentIsHostIncludingDescendantOf(
-          elem, FullscreenStackTop())) {
+  if (fullscreenElement && !nsContentUtils::ContentIsHostIncludingDescendantOf(
+                               elem, fullscreenElement)) {
     // If this document is fullscreen, only grant fullscreen requests from
     // a descendant of the current fullscreen element.
     aRequest.Reject("FullscreenDeniedNotDescendant");
@@ -13121,7 +13117,7 @@ bool Document::FullscreenElementReadyCheck(const FullscreenRequest& aRequest) {
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (!fm) {
     NS_WARNING("Failed to retrieve focus manager in fullscreen request.");
-    aRequest.MayRejectPromise();
+    aRequest.MayRejectPromise("An unexpected error occurred");
     return false;
   }
   if (nsContentUtils::HasPluginWithUncontrolledEventDispatch(
@@ -13138,7 +13134,7 @@ static nsCOMPtr<nsPIDOMWindowOuter> GetRootWindow(Document* aDoc) {
     return nullptr;
   }
   nsCOMPtr<nsIDocShellTreeItem> rootItem;
-  docShell->GetRootTreeItem(getter_AddRefs(rootItem));
+  docShell->GetInProcessRootTreeItem(getter_AddRefs(rootItem));
   return rootItem ? rootItem->GetWindow() : nullptr;
 }
 
@@ -13148,7 +13144,8 @@ static bool ShouldApplyFullscreenDirectly(Document* aDoc,
     // If we are in the content process, we can apply the fullscreen
     // state directly only if we have been in DOM fullscreen, because
     // otherwise we always need to notify the chrome.
-    return !!nsContentUtils::GetRootDocument(aDoc)->GetFullscreenElement();
+    return !!nsContentUtils::GetRootDocument(aDoc)
+                 ->GetUnretargetedFullScreenElement();
   } else {
     // If we are in the chrome process, and the window has not been in
     // fullscreen, we certainly need to make that fullscreen first.
@@ -13176,7 +13173,7 @@ static bool ShouldApplyFullscreenDirectly(Document* aDoc,
 void Document::RequestFullscreen(UniquePtr<FullscreenRequest> aRequest) {
   nsCOMPtr<nsPIDOMWindowOuter> rootWin = GetRootWindow(this);
   if (!rootWin) {
-    aRequest->MayRejectPromise();
+    aRequest->MayRejectPromise("No active window");
     return;
   }
 
@@ -13234,7 +13231,7 @@ static void ClearPendingFullscreenRequests(Document* aDoc) {
       aDoc, PendingFullscreenChangeList::eInclusiveDescendants);
   while (!iter.AtEnd()) {
     UniquePtr<FullscreenRequest> request = iter.TakeAndNext();
-    request->MayRejectPromise();
+    request->MayRejectPromise("Fullscreen request aborted");
   }
 }
 
@@ -13267,8 +13264,8 @@ bool Document::ApplyFullscreen(UniquePtr<FullscreenRequest> aRequest) {
   // element, and the fullscreen-ancestor styles on ancestors of the element
   // in this document.
   Element* elem = aRequest->Element();
-  DebugOnly<bool> x = FullscreenStackPush(elem);
-  NS_ASSERTION(x, "Fullscreen state of requesting doc should always change!");
+  DebugOnly<bool> x = SetFullscreenElement(elem);
+  MOZ_ASSERT(x, "Fullscreen state of requesting doc should always change!");
   // Set the iframe fullscreen flag.
   if (auto* iframe = HTMLIFrameElement::FromNode(elem)) {
     iframe->SetFullscreenFlag(true);
@@ -13308,14 +13305,14 @@ bool Document::ApplyFullscreen(UniquePtr<FullscreenRequest> aRequest) {
     }
     Document* parent = child->GetInProcessParentDocument();
     Element* element = parent->FindContentForSubDocument(child);
-    if (parent->FullscreenStackPush(element)) {
+    if (parent->SetFullscreenElement(element)) {
       changed.AppendElement(parent);
       child = parent;
     } else {
       // We've reached either the root, or a point in the doctree where the
       // new fullscreen element container is the same as the previous
       // fullscreen element's container. No more changes need to be made
-      // to the fullscreen stacks of documents further up the tree.
+      // to the top layer of documents further up the tree.
       break;
     }
   }
@@ -13349,7 +13346,7 @@ bool Document::ApplyFullscreen(UniquePtr<FullscreenRequest> aRequest) {
   // reversed so that events are dispatched in the tree order as
   // indicated in the spec.
   for (Document* d : Reversed(changed)) {
-    DispatchFullscreenChange(*d, d->FullscreenStackTop());
+    DispatchFullscreenChange(*d, d->GetUnretargetedFullScreenElement());
   }
   aRequest->MayResolvePromise();
   return true;
@@ -13523,7 +13520,8 @@ PointerLockRequest::Run() {
   }
   // If it is neither user input initiated, nor requested in fullscreen,
   // it should be rejected.
-  if (!error && !mUserInputOrChromeCaller && !doc->GetFullscreenElement()) {
+  if (!error && !mUserInputOrChromeCaller &&
+      !doc->GetUnretargetedFullScreenElement()) {
     error = "PointerLockDeniedNotInputDriven";
   }
   if (!error && !doc->SetPointerLock(e, StyleCursorKind::None)) {
@@ -13557,7 +13555,7 @@ void Document::RequestPointerLock(Element* aElement, CallerType aCallerType) {
     return;
   }
 
-  bool userInputOrSystemCaller = EventStateManager::IsHandlingUserInput() ||
+  bool userInputOrSystemCaller = UserActivation::IsHandlingUserInput() ||
                                  aCallerType == CallerType::System;
   nsCOMPtr<nsIRunnable> request =
       new PointerLockRequest(aElement, userInputOrSystemCaller);
@@ -13645,7 +13643,7 @@ void Document::UpdateVisibilityState() {
     nsContentUtils::DispatchTrustedEvent(this, ToSupports(this),
                                          NS_LITERAL_STRING("visibilitychange"),
                                          CanBubble::eYes, Cancelable::eNo);
-    EnumerateActivityObservers(NotifyActivityChanged, nullptr);
+    EnumerateActivityObservers(NotifyActivityChanged);
   }
 
   if (mVisibilityState == dom::VisibilityState::Visible) {
@@ -14043,19 +14041,24 @@ void Document::NotifyIntersectionObservers() {
   }
   for (const auto& observer : observers) {
     if (observer) {
-      observer->Notify();
+      // MOZ_KnownLive because 'observers' is guaranteed to
+      // keep it alive.
+      //
+      // Even with https://bugzilla.mozilla.org/show_bug.cgi?id=1620312 fixed
+      // this might need to stay, because 'observers' is not const, so it's not
+      // obvious how to prove via static analysis that it won't change and
+      // release us.
+      MOZ_KnownLive(observer)->Notify();
     }
   }
 }
 
-static bool NotifyLayerManagerRecreatedCallback(Document& aDocument, void*) {
-  aDocument.NotifyLayerManagerRecreated();
-  return true;
-}
-
 void Document::NotifyLayerManagerRecreated() {
-  EnumerateActivityObservers(NotifyActivityChanged, nullptr);
-  EnumerateSubDocuments(NotifyLayerManagerRecreatedCallback, nullptr);
+  EnumerateActivityObservers(NotifyActivityChanged);
+  EnumerateSubDocuments([] (Document& aSubDoc) {
+    aSubDoc.NotifyLayerManagerRecreated();
+    return true;
+  });
 }
 
 XPathEvaluator* Document::XPathEvaluator() {
@@ -14140,14 +14143,17 @@ already_AddRefed<Element> Document::CreateHTMLElement(nsAtom* aTag) {
   return element.forget();
 }
 
-bool MarkDocumentTreeToBeInSyncOperation(Document& aDoc, void* aData) {
-  auto* documents = static_cast<nsTArray<nsCOMPtr<Document>>*>(aData);
+bool MarkDocumentTreeToBeInSyncOperation(
+    Document& aDoc, nsTArray<RefPtr<Document>>& aDocuments) {
   aDoc.SetIsInSyncOperation(true);
   if (nsCOMPtr<nsPIDOMWindowInner> window = aDoc.GetInnerWindow()) {
     window->TimeoutManager().BeginSyncOperation();
   }
-  documents->AppendElement(&aDoc);
-  aDoc.EnumerateSubDocuments(MarkDocumentTreeToBeInSyncOperation, aData);
+  aDocuments.AppendElement(&aDoc);
+  auto recurse = [&aDocuments](Document& aSubDoc) {
+    return MarkDocumentTreeToBeInSyncOperation(aSubDoc, aDocuments);
+  };
+  aDoc.EnumerateSubDocuments(recurse);
   return true;
 }
 
@@ -14162,7 +14168,7 @@ nsAutoSyncOperation::nsAutoSyncOperation(Document* aDoc) {
     if (nsPIDOMWindowOuter* win = aDoc->GetWindow()) {
       if (nsCOMPtr<nsPIDOMWindowOuter> top = win->GetInProcessTop()) {
         if (RefPtr<Document> doc = top->GetExtantDoc()) {
-          MarkDocumentTreeToBeInSyncOperation(*doc, &mDocuments);
+          MarkDocumentTreeToBeInSyncOperation(*doc, mDocuments);
         }
       }
     }
@@ -14920,7 +14926,7 @@ already_AddRefed<Promise> Document::RequestStorageAccess(ErrorResult& aRv) {
   }
 
   // Step 8. If the browser is not processing a user gesture, reject.
-  if (!EventStateManager::IsHandlingUserInput()) {
+  if (!UserActivation::IsHandlingUserInput()) {
     promise->MaybeRejectWithUndefined();
     return promise.forget();
   }
@@ -15329,12 +15335,17 @@ nsIPrincipal* Document::EffectiveStoragePrincipal() const {
     return NodePrincipal();
   }
 
+  // Return our cached storage principal if one exists.
+  if (mActiveStoragePrincipal) {
+    return mActiveStoragePrincipal;
+  }
+
   // We use the lower-level AntiTrackingCommon API here to ensure this
   // check doesn't send notifications.
   uint32_t rejectedReason = 0;
   if (AntiTrackingCommon::IsFirstPartyStorageAccessGrantedFor(
           inner, GetDocumentURI(), &rejectedReason)) {
-    return NodePrincipal();
+    return mActiveStoragePrincipal = NodePrincipal();
   }
 
   // Let's use the storage principal only if we need to partition the cookie
@@ -15343,10 +15354,10 @@ nsIPrincipal* Document::EffectiveStoragePrincipal() const {
   if (ShouldPartitionStorage(rejectedReason) &&
       !StoragePartitioningEnabled(
           rejectedReason, const_cast<Document*>(this)->CookieSettings())) {
-    return NodePrincipal();
+    return mActiveStoragePrincipal = NodePrincipal();
   }
 
-  return mIntrinsicStoragePrincipal;
+  return mActiveStoragePrincipal = mIntrinsicStoragePrincipal;
 }
 
 void Document::AddToplevelLoadingDocument(Document* aDoc) {
@@ -15375,9 +15386,36 @@ void Document::RemoveToplevelLoadingDocument(Document* aDoc) {
   }
 }
 
+StylePrefersColorScheme Document::PrefersColorScheme() const {
+  if (nsContentUtils::ShouldResistFingerprinting(this)) {
+    return StylePrefersColorScheme::Light;
+  }
+
+  if (nsPresContext* pc = GetPresContext()) {
+    if (pc->IsPrintingOrPrintPreview()) {
+      return StylePrefersColorScheme::Light;
+    }
+  }
+
+  // If LookAndFeel::IntID::SystemUsesDarkTheme fails then return 2
+  // (no-preference)
+  switch (LookAndFeel::GetInt(LookAndFeel::IntID::SystemUsesDarkTheme, 2)) {
+    case 0:
+      return StylePrefersColorScheme::Light;
+    case 1:
+      return StylePrefersColorScheme::Dark;
+    case 2:
+      return StylePrefersColorScheme::NoPreference;
+    default:
+      // This only occurs if the user has set the ui.systemUsesDarkTheme pref to
+      // an invalid value.
+      return StylePrefersColorScheme::Light;
+  }
+}
+
 // static
 bool Document::UseOverlayScrollbars(const Document* aDocument) {
-  return LookAndFeel::GetInt(LookAndFeel::eIntID_UseOverlayScrollbars) ||
+  return LookAndFeel::GetInt(LookAndFeel::IntID::UseOverlayScrollbars) ||
          (aDocument && aDocument->InRDMPane());
 }
 
@@ -15416,35 +15454,6 @@ Document::RecomputeContentBlockingAllowListPrincipal(
 
   nsCOMPtr<nsIPrincipal> copy = mContentBlockingAllowListPrincipal;
   return copy.forget();
-}
-
-// https://wicg.github.io/construct-stylesheets/#dom-documentorshadowroot-adoptedstylesheets
-void Document::SetAdoptedStyleSheets(
-    const Sequence<OwningNonNull<StyleSheet>>& aAdoptedStyleSheets,
-    ErrorResult& aRv) {
-  // Step 1 is a variable declaration
-
-  // 2.1 Check if all sheets are constructed, else throw NotAllowedError
-  // 2.2 Check if all sheets' constructor documents match the
-  // DocumentOrShadowRoot's node document, else throw NotAlloweError
-  EnsureAdoptedSheetsAreValid(aAdoptedStyleSheets, aRv);
-  if (aRv.Failed()) {
-    return;
-  }
-
-  // 3. Set the adopted style sheets to the new sheets
-  for (const RefPtr<StyleSheet>& sheet : mAdoptedStyleSheets) {
-    if (sheet->IsApplicable()) {
-      RemoveStyleSheetFromStyleSets(sheet);
-    }
-    sheet->RemoveAdopter(*this);
-  }
-  mAdoptedStyleSheets.ClearAndRetainStorage();
-  mAdoptedStyleSheets.SetCapacity(aAdoptedStyleSheets.Length());
-  for (const OwningNonNull<StyleSheet>& sheet : aAdoptedStyleSheets) {
-    sheet->AddAdopter(*this);
-    AppendAdoptedStyleSheet(*sheet);
-  }
 }
 
 }  // namespace dom

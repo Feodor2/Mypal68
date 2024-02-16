@@ -5,12 +5,12 @@
 #ifndef __NS_SVGGRADIENTELEMENT_H__
 #define __NS_SVGGRADIENTELEMENT_H__
 
-#include "nsAutoPtr.h"
 #include "SVGAnimatedEnumeration.h"
 #include "SVGAnimatedLength.h"
 #include "SVGAnimatedString.h"
 #include "SVGAnimatedTransformList.h"
 #include "mozilla/dom/SVGElement.h"
+#include "mozilla/UniquePtr.h"
 
 class nsSVGGradientFrame;
 class nsSVGLinearGradientFrame;
@@ -71,7 +71,7 @@ class SVGGradientElement : public SVGGradientElementBase {
   static StringInfo sStringInfo[2];
 
   // SVGGradientElement values
-  nsAutoPtr<SVGAnimatedTransformList> mGradientTransform;
+  UniquePtr<SVGAnimatedTransformList> mGradientTransform;
 };
 
 //---------------------Linear Gradients------------------------

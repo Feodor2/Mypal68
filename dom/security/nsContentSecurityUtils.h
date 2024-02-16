@@ -15,8 +15,11 @@ class Document;
 
 class nsContentSecurityUtils {
  public:
+  static bool IsEvalAllowed(JSContext* cx, nsIPrincipal* aSubjectPrincipal,
+                            const nsAString& aScript);
+
 #if defined(DEBUG) && !defined(ANDROID)
-  static void AssertAboutPageHasCSP(Document* aDocument);
+  static void AssertAboutPageHasCSP(mozilla::dom::Document* aDocument);
 #endif
 };
 

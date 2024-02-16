@@ -55,7 +55,7 @@ class FilePickerParent : public PFilePickerParent {
     void Destroy();
 
    private:
-    virtual ~FilePickerShownCallback() {}
+    virtual ~FilePickerShownCallback() = default;
     FilePickerParent* mFilePickerParent;
   };
 

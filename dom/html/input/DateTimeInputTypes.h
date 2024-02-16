@@ -2,14 +2,17 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef DateTimeInputTypes_h__
-#define DateTimeInputTypes_h__
+#ifndef mozilla_dom_DateTimeInputTypes_h__
+#define mozilla_dom_DateTimeInputTypes_h__
 
-#include "InputType.h"
+#include "mozilla/dom/InputType.h"
 
-class DateTimeInputTypeBase : public ::InputType {
+namespace mozilla {
+namespace dom {
+
+class DateTimeInputTypeBase : public InputType {
  public:
-  ~DateTimeInputTypeBase() override {}
+  ~DateTimeInputTypeBase() override = default;
 
   bool IsValueMissing() const override;
   bool IsRangeOverflow() const override;
@@ -23,7 +26,7 @@ class DateTimeInputTypeBase : public ::InputType {
   nsresult MinMaxStepAttrChanged() override;
 
  protected:
-  explicit DateTimeInputTypeBase(mozilla::dom::HTMLInputElement* aInputElement)
+  explicit DateTimeInputTypeBase(HTMLInputElement* aInputElement)
       : InputType(aInputElement) {}
 
   bool IsMutable() const override;
@@ -50,8 +53,7 @@ class DateTimeInputTypeBase : public ::InputType {
 // input type=date
 class DateInputType : public DateTimeInputTypeBase {
  public:
-  static InputType* Create(mozilla::dom::HTMLInputElement* aInputElement,
-                           void* aMemory) {
+  static InputType* Create(HTMLInputElement* aInputElement, void* aMemory) {
     return new (aMemory) DateInputType(aInputElement);
   }
 
@@ -61,86 +63,89 @@ class DateInputType : public DateTimeInputTypeBase {
   // be treated as '02' and automatically advance to the next field.
   nsresult GetBadInputMessage(nsAString& aMessage) override;
 
-  bool ConvertStringToNumber(nsAString& aValue,
-                             mozilla::Decimal& aResultValue) const override;
-  bool ConvertNumberToString(mozilla::Decimal aValue,
+  StringToNumberResult ConvertStringToNumber(const nsAString&) const override;
+  bool ConvertNumberToString(Decimal aValue,
                              nsAString& aResultString) const override;
 
  private:
-  explicit DateInputType(mozilla::dom::HTMLInputElement* aInputElement)
+  explicit DateInputType(HTMLInputElement* aInputElement)
       : DateTimeInputTypeBase(aInputElement) {}
 };
 
 // input type=time
 class TimeInputType : public DateTimeInputTypeBase {
  public:
-  static InputType* Create(mozilla::dom::HTMLInputElement* aInputElement,
-                           void* aMemory) {
+  static InputType* Create(HTMLInputElement* aInputElement, void* aMemory) {
     return new (aMemory) TimeInputType(aInputElement);
   }
 
-  bool ConvertStringToNumber(nsAString& aValue,
-                             mozilla::Decimal& aResultValue) const override;
-  bool ConvertNumberToString(mozilla::Decimal aValue,
+  StringToNumberResult ConvertStringToNumber(const nsAString&) const override;
+  bool ConvertNumberToString(Decimal aValue,
                              nsAString& aResultString) const override;
+  bool IsRangeOverflow() const override;
+  bool IsRangeUnderflow() const override;
+  nsresult GetRangeOverflowMessage(nsAString& aMessage) override;
+  nsresult GetRangeUnderflowMessage(nsAString& aMessage) override;
 
  private:
-  explicit TimeInputType(mozilla::dom::HTMLInputElement* aInputElement)
+  explicit TimeInputType(HTMLInputElement* aInputElement)
       : DateTimeInputTypeBase(aInputElement) {}
+
+  // https://html.spec.whatwg.org/multipage/input.html#has-a-reversed-range
+  bool HasReversedRange() const;
+  bool IsReversedRangeUnderflowAndOverflow() const;
+  nsresult GetReversedRangeUnderflowAndOverflowMessage(nsAString& aMessage);
 };
 
 // input type=week
 class WeekInputType : public DateTimeInputTypeBase {
  public:
-  static InputType* Create(mozilla::dom::HTMLInputElement* aInputElement,
-                           void* aMemory) {
+  static InputType* Create(HTMLInputElement* aInputElement, void* aMemory) {
     return new (aMemory) WeekInputType(aInputElement);
   }
 
-  bool ConvertStringToNumber(nsAString& aValue,
-                             mozilla::Decimal& aResultValue) const override;
-  bool ConvertNumberToString(mozilla::Decimal aValue,
+  StringToNumberResult ConvertStringToNumber(const nsAString&) const override;
+  bool ConvertNumberToString(Decimal aValue,
                              nsAString& aResultString) const override;
 
  private:
-  explicit WeekInputType(mozilla::dom::HTMLInputElement* aInputElement)
+  explicit WeekInputType(HTMLInputElement* aInputElement)
       : DateTimeInputTypeBase(aInputElement) {}
 };
 
 // input type=month
 class MonthInputType : public DateTimeInputTypeBase {
  public:
-  static InputType* Create(mozilla::dom::HTMLInputElement* aInputElement,
-                           void* aMemory) {
+  static InputType* Create(HTMLInputElement* aInputElement, void* aMemory) {
     return new (aMemory) MonthInputType(aInputElement);
   }
 
-  bool ConvertStringToNumber(nsAString& aValue,
-                             mozilla::Decimal& aResultValue) const override;
-  bool ConvertNumberToString(mozilla::Decimal aValue,
+  StringToNumberResult ConvertStringToNumber(const nsAString&) const override;
+  bool ConvertNumberToString(Decimal aValue,
                              nsAString& aResultString) const override;
 
  private:
-  explicit MonthInputType(mozilla::dom::HTMLInputElement* aInputElement)
+  explicit MonthInputType(HTMLInputElement* aInputElement)
       : DateTimeInputTypeBase(aInputElement) {}
 };
 
 // input type=datetime-local
 class DateTimeLocalInputType : public DateTimeInputTypeBase {
  public:
-  static InputType* Create(mozilla::dom::HTMLInputElement* aInputElement,
-                           void* aMemory) {
+  static InputType* Create(HTMLInputElement* aInputElement, void* aMemory) {
     return new (aMemory) DateTimeLocalInputType(aInputElement);
   }
 
-  bool ConvertStringToNumber(nsAString& aValue,
-                             mozilla::Decimal& aResultValue) const override;
-  bool ConvertNumberToString(mozilla::Decimal aValue,
+  StringToNumberResult ConvertStringToNumber(const nsAString&) const override;
+  bool ConvertNumberToString(Decimal aValue,
                              nsAString& aResultString) const override;
 
  private:
-  explicit DateTimeLocalInputType(mozilla::dom::HTMLInputElement* aInputElement)
+  explicit DateTimeLocalInputType(HTMLInputElement* aInputElement)
       : DateTimeInputTypeBase(aInputElement) {}
 };
 
-#endif /* DateTimeInputTypes_h__ */
+}  // namespace dom
+}  // namespace mozilla
+
+#endif /* mozilla_dom_DateTimeInputTypes_h__ */

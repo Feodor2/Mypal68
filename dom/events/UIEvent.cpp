@@ -130,7 +130,8 @@ void UIEvent::InitUIEvent(const nsAString& typeArg, bool canBubbleArg,
   mView = viewArg ? viewArg->GetOuterWindow() : nullptr;
 }
 
-already_AddRefed<nsINode> UIEvent::GetRangeParent() {
+already_AddRefed<nsIContent> UIEvent::GetRangeParentContentAndOffset(
+    int32_t* aOffset) {
   if (NS_WARN_IF(!mPresContext)) {
     return nullptr;
   }
@@ -140,7 +141,7 @@ already_AddRefed<nsINode> UIEvent::GetRangeParent() {
   }
   nsCOMPtr<nsIContent> container;
   nsLayoutUtils::GetContainerAndOffsetAtEvent(
-      presShell, mEvent, getter_AddRefs(container), nullptr);
+      presShell, mEvent, getter_AddRefs(container), aOffset);
   return container.forget();
 }
 

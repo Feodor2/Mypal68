@@ -483,7 +483,7 @@ void PluginModuleChromeParent::OnProcessLaunched(const bool aSucceeded) {
     return;
   }
 
-  Open(mSubprocess->GetChannel(),
+  Open(mSubprocess->TakeChannel(),
        base::GetProcId(mSubprocess->GetChildProcessHandle()));
 
   // Request Windows message deferral behavior on our channel. This
@@ -1418,13 +1418,12 @@ void PluginModuleParent::NotifyPluginCrashed() {
   }
 
   nsString dumpID;
-  nsString browserDumpID;
 
   if (mCrashReporter && mCrashReporter->HasMinidump()) {
     dumpID = mCrashReporter->MinidumpID();
   }
 
-  mPlugin->PluginCrashed(dumpID, browserDumpID);
+  mPlugin->PluginCrashed(dumpID);
 }
 
 PPluginInstanceParent* PluginModuleParent::AllocPPluginInstanceParent(

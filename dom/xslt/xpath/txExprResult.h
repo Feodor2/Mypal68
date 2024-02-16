@@ -34,7 +34,7 @@ class txAExprResult {
   };
 
   explicit txAExprResult(txResultRecycler* aRecycler) : mRecycler(aRecycler) {}
-  virtual ~txAExprResult() {}
+  virtual ~txAExprResult() = default;
 
   void AddRef() {
     ++mRefCnt;

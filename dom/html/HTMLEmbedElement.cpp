@@ -174,8 +174,6 @@ nsIContent::IMEState HTMLEmbedElement::GetDesiredIMEState() {
   return nsGenericHTMLElement::GetDesiredIMEState();
 }
 
-int32_t HTMLEmbedElement::TabIndexDefault() { return -1; }
-
 bool HTMLEmbedElement::ParseAttribute(int32_t aNamespaceID, nsAtom* aAttribute,
                                       const nsAString& aValue,
                                       nsIPrincipal* aMaybeScriptedPrincipal,

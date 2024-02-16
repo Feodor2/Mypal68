@@ -109,7 +109,7 @@ ServiceWorker::ServiceWorker(nsIGlobalObject* aGlobal,
               global->GetOrCreateServiceWorkerRegistration(aDescriptor);
           self->MaybeAttachToRegistration(reg);
         },
-        [](ErrorResult& aRv) {
+        [](ErrorResult&& aRv) {
           // do nothing
           aRv.SuppressException();
         });

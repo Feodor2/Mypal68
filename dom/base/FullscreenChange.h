@@ -39,11 +39,15 @@ class FullscreenChange : public LinkedListElement<FullscreenChange> {
     }
   }
 
-  void MayRejectPromise() const {
+  void MayRejectPromise(const nsACString& aMessage) {
     if (mPromise) {
       MOZ_ASSERT(mPromise->State() == Promise::PromiseState::Pending);
-      mPromise->MaybeReject(NS_ERROR_DOM_TYPE_ERR);
+      mPromise->MaybeRejectWithTypeError(aMessage);
     }
+  }
+  template <int N>
+  void MayRejectPromise(const char (&aMessage)[N]) {
+    MayRejectPromise(nsLiteralCString(aMessage));
   }
 
  protected:
@@ -89,14 +93,14 @@ class FullscreenRequest : public FullscreenChange {
 
   // Reject the fullscreen request with the given reason.
   // It will dispatch the fullscreenerror event.
-  void Reject(const char* aReason) const {
+  void Reject(const char* aReason) {
     if (nsPresContext* presContext = Document()->GetPresContext()) {
       auto pendingEvent = MakeUnique<PendingFullscreenEvent>(
           FullscreenEventType::Error, Document(), mElement);
       presContext->RefreshDriver()->ScheduleFullscreenEvent(
           std::move(pendingEvent));
     }
-    MayRejectPromise();
+    MayRejectPromise("Fullscreen request denied");
     nsContentUtils::ReportToConsole(nsIScriptError::warningFlag,
                                     NS_LITERAL_CSTRING("DOM"), Document(),
                                     nsContentUtils::eDOM_PROPERTIES, aReason);
@@ -143,7 +147,7 @@ class FullscreenExit : public FullscreenChange {
     return WrapUnique(new FullscreenExit(aDoc, nullptr));
   }
 
-  ~FullscreenExit() { MOZ_COUNT_DTOR(FullscreenExit); }
+  MOZ_COUNTED_DTOR(FullscreenExit)
 
  private:
   FullscreenExit(dom::Document* aDoc, already_AddRefed<Promise> aPromise)

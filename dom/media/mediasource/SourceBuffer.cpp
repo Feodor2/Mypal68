@@ -54,8 +54,8 @@ void SourceBuffer::SetMode(SourceBufferAppendMode aMode, ErrorResult& aRv) {
   if (mCurrentAttributes.mGenerateTimestamps &&
       aMode == SourceBufferAppendMode::Segments) {
     aRv.ThrowTypeError(
-        u"Can't set mode to \"segments\" when the byte stream generates "
-        u"timestamps");
+        "Can't set mode to \"segments\" when the byte stream generates "
+        "timestamps");
     return;
   }
   MOZ_ASSERT(mMediaSource->ReadyState() != MediaSourceReadyState::Closed);
@@ -143,7 +143,7 @@ void SourceBuffer::SetAppendWindowStart(double aAppendWindowStart,
   }
   if (aAppendWindowStart < 0 ||
       aAppendWindowStart >= mCurrentAttributes.GetAppendWindowEnd()) {
-    aRv.ThrowTypeError(u"Invalid appendWindowStart value");
+    aRv.ThrowTypeError("Invalid appendWindowStart value");
     return;
   }
   mCurrentAttributes.SetAppendWindowStart(aAppendWindowStart);
@@ -160,7 +160,7 @@ void SourceBuffer::SetAppendWindowEnd(double aAppendWindowEnd,
   }
   if (IsNaN(aAppendWindowEnd) ||
       aAppendWindowEnd <= mCurrentAttributes.GetAppendWindowStart()) {
-    aRv.ThrowTypeError(u"Invalid appendWindowEnd value");
+    aRv.ThrowTypeError("Invalid appendWindowEnd value");
     return;
   }
   mCurrentAttributes.SetAppendWindowEnd(aAppendWindowEnd);
@@ -169,7 +169,7 @@ void SourceBuffer::SetAppendWindowEnd(double aAppendWindowEnd,
 void SourceBuffer::AppendBuffer(const ArrayBuffer& aData, ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
   MSE_API("AppendBuffer(ArrayBuffer)");
-  aData.ComputeLengthAndData();
+  aData.ComputeState();
   DDLOG(DDLogCategory::API, "AppendBuffer", aData.Length());
   AppendData(aData.Data(), aData.Length(), aRv);
 }
@@ -178,7 +178,7 @@ void SourceBuffer::AppendBuffer(const ArrayBufferView& aData,
                                 ErrorResult& aRv) {
   MOZ_ASSERT(NS_IsMainThread());
   MSE_API("AppendBuffer(ArrayBufferView)");
-  aData.ComputeLengthAndData();
+  aData.ComputeState();
   DDLOG(DDLogCategory::API, "AppendBuffer", aData.Length());
   AppendData(aData.Data(), aData.Length(), aRv);
 }
@@ -188,7 +188,7 @@ already_AddRefed<Promise> SourceBuffer::AppendBufferAsync(
   MOZ_ASSERT(NS_IsMainThread());
 
   MSE_API("AppendBufferAsync(ArrayBuffer)");
-  aData.ComputeLengthAndData();
+  aData.ComputeState();
   DDLOG(DDLogCategory::API, "AppendBufferAsync", aData.Length());
 
   return AppendDataAsync(aData.Data(), aData.Length(), aRv);
@@ -199,7 +199,7 @@ already_AddRefed<Promise> SourceBuffer::AppendBufferAsync(
   MOZ_ASSERT(NS_IsMainThread());
 
   MSE_API("AppendBufferAsync(ArrayBufferView)");
-  aData.ComputeLengthAndData();
+  aData.ComputeState();
   DDLOG(DDLogCategory::API, "AppendBufferAsync", aData.Length());
 
   return AppendDataAsync(aData.Data(), aData.Length(), aRv);
@@ -305,15 +305,15 @@ void SourceBuffer::PrepareRemove(double aStart, double aEnd, ErrorResult& aRv) {
     return;
   }
   if (IsNaN(mMediaSource->Duration())) {
-    aRv.ThrowTypeError(u"Duration is NaN");
+    aRv.ThrowTypeError("Duration is NaN");
     return;
   }
   if (aStart < 0 || aStart > mMediaSource->Duration()) {
-    aRv.ThrowTypeError(u"Invalid start value");
+    aRv.ThrowTypeError("Invalid start value");
     return;
   }
   if (aEnd <= aStart || IsNaN(aEnd)) {
-    aRv.ThrowTypeError(u"Invalid end value");
+    aRv.ThrowTypeError("Invalid end value");
     return;
   }
   if (mMediaSource->ReadyState() == MediaSourceReadyState::Ended) {
@@ -343,7 +343,7 @@ void SourceBuffer::ChangeType(const nsAString& aType, ErrorResult& aRv) {
   // 1. If type is an empty string then throw a TypeError exception and abort
   //    these steps.
   if (aType.IsEmpty()) {
-    aRv.ThrowTypeError(u"Type must not be empty");
+    aRv.ThrowTypeError("Type must not be empty");
     return;
   }
 

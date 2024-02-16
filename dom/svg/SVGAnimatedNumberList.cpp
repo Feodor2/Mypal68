@@ -83,7 +83,7 @@ nsresult SVGAnimatedNumberList::SetAnimValue(const SVGNumberList& aNewAnimValue,
     domWrapper->InternalAnimValListWillChangeTo(aNewAnimValue);
   }
   if (!mAnimVal) {
-    mAnimVal = new SVGNumberList();
+    mAnimVal = MakeUnique<SVGNumberList>();
   }
   nsresult rv = mAnimVal->CopyFrom(aNewAnimValue);
   if (NS_FAILED(rv)) {

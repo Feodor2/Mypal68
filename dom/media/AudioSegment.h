@@ -22,7 +22,7 @@ namespace mozilla {
 struct AudioChunk;
 class AudioSegment;
 }  // namespace mozilla
-DECLARE_USE_COPY_CONSTRUCTORS(mozilla::AudioChunk)
+MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(mozilla::AudioChunk)
 
 /**
  * This allows compilation of nsTArray<AudioSegment> and
@@ -32,7 +32,7 @@ DECLARE_USE_COPY_CONSTRUCTORS(mozilla::AudioChunk)
  * Note that AudioSegment(const AudioSegment&) is deleted, so this should
  * never come into effect.
  */
-DECLARE_USE_COPY_CONSTRUCTORS(mozilla::AudioSegment)
+MOZ_DECLARE_RELOCATE_USING_MOVE_CONSTRUCTOR(mozilla::AudioSegment)
 
 namespace mozilla {
 
@@ -287,13 +287,12 @@ class AudioSegment : public MediaSegmentBase<AudioSegment, AudioChunk> {
 
   AudioSegment() : MediaSegmentBase<AudioSegment, AudioChunk>(AUDIO) {}
 
-  AudioSegment(AudioSegment&& aSegment)
-      : MediaSegmentBase<AudioSegment, AudioChunk>(std::move(aSegment)) {}
+  AudioSegment(AudioSegment&& aSegment) = default;
 
   AudioSegment(const AudioSegment&) = delete;
   AudioSegment& operator=(const AudioSegment&) = delete;
 
-  ~AudioSegment() {}
+  ~AudioSegment() = default;
 
   // Resample the whole segment in place.  `aResampler` is an instance of a
   // resampler, initialized with `aResamplerChannelCount` channels. If this

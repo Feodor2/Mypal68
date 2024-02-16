@@ -43,8 +43,9 @@ bool IsValidPutRequestURL(const nsAString& aUrl, ErrorResult& aRv) {
   }
 
   if (!validScheme) {
-    aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>(NS_LITERAL_STRING("Request"),
-                                               aUrl);
+    // `url` has been modified, so don't use it here.
+    aRv.ThrowTypeError<MSG_INVALID_URL_SCHEME>("Request",
+                                               NS_ConvertUTF16toUTF8(aUrl));
     return false;
   }
 
@@ -55,8 +56,7 @@ static bool IsValidPutRequestMethod(const Request& aRequest, ErrorResult& aRv) {
   nsAutoCString method;
   aRequest.GetMethod(method);
   if (!method.LowerCaseEqualsLiteral("get")) {
-    NS_ConvertASCIItoUTF16 label(method);
-    aRv.ThrowTypeError<MSG_INVALID_REQUEST_METHOD>(label);
+    aRv.ThrowTypeError<MSG_INVALID_REQUEST_METHOD>(method);
     return false;
   }
 
@@ -78,13 +78,13 @@ static bool IsValidPutResponseStatus(Response& aResponse,
                                      ErrorResult& aRv) {
   if ((aPolicy == PutStatusPolicy::RequireOK && !aResponse.Ok()) ||
       aResponse.Status() == 206) {
-    NS_ConvertASCIItoUTF16 type(
-        ResponseTypeValues::GetString(aResponse.Type()));
-    nsAutoString status;
+    nsCString type(ResponseTypeValues::GetString(aResponse.Type()));
+    nsAutoCString status;
     status.AppendInt(aResponse.Status());
     nsAutoString url;
     aResponse.GetUrl(url);
-    aRv.ThrowTypeError<MSG_CACHE_ADD_FAILED_RESPONSE>(type, status, url);
+    aRv.ThrowTypeError<MSG_CACHE_ADD_FAILED_RESPONSE>(
+        type, status, NS_ConvertUTF16toUTF8(url));
     return false;
   }
 
@@ -175,7 +175,7 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
       if (!IsValidPutResponseStatus(*response, PutStatusPolicy::RequireOK,
                                     errorResult)) {
         // TODO: abort the fetch requests we have running (bug 1157434)
-        mPromise->MaybeReject(errorResult);
+        mPromise->MaybeReject(std::move(errorResult));
         return;
       }
 
@@ -194,7 +194,7 @@ class Cache::FetchHandler final : public PromiseNativeHandler {
     result.WouldReportJSException();
     if (NS_WARN_IF(result.Failed())) {
       // TODO: abort the fetch requests we have running (bug 1157434)
-      mPromise->MaybeReject(result);
+      mPromise->MaybeReject(std::move(result));
       return;
     }
 

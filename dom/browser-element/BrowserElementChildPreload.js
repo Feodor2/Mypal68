@@ -1135,7 +1135,7 @@ BrowserElementChild.prototype = {
       }
 
       // Remove password from uri.
-      location = Services.uriFixup.createExposableURI(location);
+      location = Services.io.createExposableURI(location);
 
       var webNav = docShell.QueryInterface(Ci.nsIWebNavigation);
 
@@ -1171,6 +1171,7 @@ BrowserElementChild.prototype = {
           case Cr.NS_BINDING_ABORTED:
           // Ignoring NS_BINDING_ABORTED, which is set when loading page is
           // stopped.
+          // fall through
           case Cr.NS_ERROR_PARSED_DATA_CACHED:
             return;
 

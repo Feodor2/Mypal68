@@ -81,7 +81,7 @@ class PeriodicWave {
  private:
   explicit PeriodicWave(float sampleRate, size_t numberOfComponents,
                         bool disableNormalization);
-  ~PeriodicWave() {}
+  ~PeriodicWave() = default;
 
   void generateBasicWaveform(mozilla::dom::OscillatorType);
 

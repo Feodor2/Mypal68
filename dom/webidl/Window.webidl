@@ -299,12 +299,6 @@ partial interface Window {
                            optional boolean searchInFrames = false,
                            optional boolean showDialog = false);
 
-  /**
-   * Returns the number of times this document for this window has
-   * been painted to the screen.
-   */
-  [Throws] readonly attribute unsigned long long mozPaintCount;
-
            attribute EventHandler ondevicemotion;
            attribute EventHandler ondeviceorientation;
            attribute EventHandler onabsolutedeviceorientation;

@@ -36,7 +36,7 @@ HTMLScriptElement::HTMLScriptElement(
   AddMutationObserver(this);
 }
 
-HTMLScriptElement::~HTMLScriptElement() {}
+HTMLScriptElement::~HTMLScriptElement() = default;
 
 NS_IMPL_ISUPPORTS_INHERITED(HTMLScriptElement, nsGenericHTMLElement,
                             nsIScriptLoaderObserver, nsIScriptElement,
@@ -78,8 +78,8 @@ nsresult HTMLScriptElement::Clone(dom::NodeInfo* aNodeInfo,
                                   nsINode** aResult) const {
   *aResult = nullptr;
 
-  HTMLScriptElement* it =
-      new HTMLScriptElement(do_AddRef(aNodeInfo), NOT_FROM_PARSER);
+  HTMLScriptElement* it = new (aNodeInfo->NodeInfoManager())
+      HTMLScriptElement(do_AddRef(aNodeInfo), NOT_FROM_PARSER);
 
   nsCOMPtr<nsINode> kungFuDeathGrip = it;
   nsresult rv = const_cast<HTMLScriptElement*>(this)->CopyInnerTo(it);

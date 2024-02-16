@@ -28,7 +28,9 @@ include protocol PPrinting;
 include protocol PChildToParentStream;
 include protocol PParentToChildStream;
 include protocol POfflineCacheUpdate;
+#ifdef MOZ_WEBSPEECH
 include protocol PSpeechSynthesis;
+#endif
 include protocol PTestShell;
 include protocol PJavaScript;
 include protocol PRemoteSpellcheckEngine;
@@ -209,7 +211,7 @@ struct BlobURLRegistrationData
 {
   nsCString url;
   IPCBlob blob;
-  Principal principal;
+  nsIPrincipal principal;
   bool revoked;
 };
 
@@ -342,7 +344,9 @@ nested(upto inside_cpow) sync protocol PContent
     manages PPrinting;
     manages PChildToParentStream;
     manages PParentToChildStream;
+#ifdef MOZ_WEBSPEECH
     manages PSpeechSynthesis;
+#endif
     manages PTestShell;
     manages PJavaScript;
     manages PRemoteSpellcheckEngine;
@@ -864,7 +868,9 @@ parent:
 
     async PChildToParentStream();
 
+#ifdef MOZ_WEBSPEECH
     async PSpeechSynthesis();
+#endif
 
     async PMedia();
 
@@ -1042,16 +1048,6 @@ parent:
 
     async RequestAnonymousTemporaryFile(uint64_t aID);
 
-    /** Clear RemoteFrameInfo of the given tab id. */
-    async UnregisterRemoteFrame(TabId tabId,
-                                ContentParentId cpId,
-                                bool aMarkedDestroying);
-
-    /**
-     * Tell the chrome process there is a destruction of PBrowser(Tab)
-     */
-    async NotifyTabDestroying(TabId tabId,
-                              ContentParentId cpId);
     /**
      * Starts an offline application cache update.
      * @param manifestURI
@@ -1115,7 +1111,7 @@ parent:
      */
     async PContentPermissionRequest(PermissionRequest[] aRequests, Principal aPrincipal,
                                     Principal aTopLevelPrincipal, bool aIsHandlingUserInput,
-                                    bool aDocumentHasUserInput, uint64_t aPageLoadTimestamp, TabId tabId);
+                                    TabId tabId);
 
     async ShutdownProfile(nsCString aProfile);
 
@@ -1376,7 +1372,6 @@ parent:
     async FirstPartyStorageAccessGrantedForOrigin(Principal aParentPrincipal,
                                                   Principal aTrackingPrincipal,
                                                   nsCString aTrackingOrigin,
-                                                  nsCString aGrantedOrigin,
                                                   int aAllowMode)
           returns (bool unused);
 

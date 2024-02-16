@@ -73,14 +73,14 @@ void MediaKeySystemAccessManager::Request(
           NS_ConvertUTF16toUTF8(aKeySystem).get());
 
   if (aKeySystem.IsEmpty()) {
-    aPromise->MaybeRejectWithTypeError(u"Key system string is empty");
+    aPromise->MaybeRejectWithTypeError("Key system string is empty");
     // Don't notify DecoderDoctor, as there's nothing we or the user can
     // do to fix this situation; the site is using the API wrong.
     return;
   }
   if (aConfigs.IsEmpty()) {
     aPromise->MaybeRejectWithTypeError(
-        u"Candidate MediaKeySystemConfigs is empty");
+        "Candidate MediaKeySystemConfigs is empty");
     // Don't notify DecoderDoctor, as there's nothing we or the user can
     // do to fix this situation; the site is using the API wrong.
     return;

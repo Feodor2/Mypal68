@@ -76,8 +76,8 @@ nsresult UDPSocketChild::Bind(nsIUDPSocketInternal* aSocket,
     if (aMainThreadEventTarget) {
       gNeckoChild->SetEventTargetForActor(this, aMainThreadEventTarget);
     }
-    if (!gNeckoChild->SendPUDPSocketConstructor(
-            this, IPC::Principal(aPrincipal), mFilterName)) {
+    if (!gNeckoChild->SendPUDPSocketConstructor(this, aPrincipal,
+                                                mFilterName)) {
       return NS_ERROR_FAILURE;
     }
   } else {

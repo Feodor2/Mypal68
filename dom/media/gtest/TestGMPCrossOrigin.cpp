@@ -19,7 +19,7 @@ using namespace mozilla::gmp;
 struct GMPTestRunner {
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(GMPTestRunner)
 
-  GMPTestRunner() {}
+  GMPTestRunner() = default;
   void DoTest(void (GMPTestRunner::*aTestMethod)(GMPTestMonitor&));
   void RunTestGMPTestCodec1(GMPTestMonitor& aMonitor);
   void RunTestGMPTestCodec2(GMPTestMonitor& aMonitor);
@@ -30,7 +30,7 @@ struct GMPTestRunner {
   void RunTestGMPCrossOrigin4(GMPTestMonitor& aMonitor);
 
  private:
-  ~GMPTestRunner() {}
+  ~GMPTestRunner() = default;
 };
 
 template <class T, class Base,

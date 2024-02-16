@@ -7,6 +7,17 @@
 
 #include "LSValue.h"
 
+#include "mozilla/UniquePtr.h"
+
+#include "nsCOMPtr.h"
+#include "nsDataHashtable.h"
+#include "nsIRunnable.h"
+#include "nsHashKeys.h"
+#include "nsIRunnable.h"
+#include "nsTHashtable.h"
+
+class nsITimer;
+
 namespace mozilla {
 namespace dom {
 
@@ -16,6 +27,9 @@ class LSSnapshotChild;
 class LSSnapshotInitInfo;
 class LSWriteAndNotifyInfo;
 class SnapshotWriteOptimizer;
+
+template <typename> class Optional;
+
 
 class LSSnapshot final : public nsIRunnable {
  public:
@@ -78,8 +92,8 @@ class LSSnapshot final : public nsIRunnable {
   nsTHashtable<nsStringHashKey> mLoadedItems;
   nsTHashtable<nsStringHashKey> mUnknownItems;
   nsDataHashtable<nsStringHashKey, nsString> mValues;
-  nsAutoPtr<SnapshotWriteOptimizer> mWriteOptimizer;
-  nsAutoPtr<nsTArray<LSWriteAndNotifyInfo>> mWriteAndNotifyInfos;
+  UniquePtr<SnapshotWriteOptimizer> mWriteOptimizer;
+  UniquePtr<nsTArray<LSWriteAndNotifyInfo>> mWriteAndNotifyInfos;
 
   uint32_t mInitLength;
   uint32_t mLength;

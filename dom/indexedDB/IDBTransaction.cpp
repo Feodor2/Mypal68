@@ -57,7 +57,7 @@ ThreadLocal* GetIndexedDBThreadLocal() {
       BackgroundChildImpl::GetThreadLocalForCurrentThread();
   MOZ_ASSERT(threadLocal);
 
-  ThreadLocal* idbThreadLocal = threadLocal->mIndexedDBThreadLocal;
+  ThreadLocal* idbThreadLocal = threadLocal->mIndexedDBThreadLocal.get();
   MOZ_ASSERT(idbThreadLocal);
 
   return idbThreadLocal;
@@ -459,7 +459,7 @@ void IDBTransaction::GetCallerLocation(nsAString& aFilename,
 }
 
 RefPtr<IDBObjectStore> IDBTransaction::CreateObjectStore(
-    const ObjectStoreSpec& aSpec) {
+    ObjectStoreSpec& aSpec) {
   AssertIsOnOwningThread();
   MOZ_ASSERT(aSpec.metadata().id());
   MOZ_ASSERT(Mode::VersionChange == mMode);
@@ -871,22 +871,16 @@ RefPtr<IDBObjectStore> IDBTransaction::ObjectStore(const nsAString& aName,
     return nullptr;
   }
 
-  const ObjectStoreSpec* spec = nullptr;
-
-  if (IDBTransaction::Mode::VersionChange == mMode ||
-      mObjectStoreNames.Contains(aName)) {
-    const nsTArray<ObjectStoreSpec>& objectStores =
-        mDatabase->Spec()->objectStores();
-
-    const auto foundIt =
-        std::find_if(objectStores.cbegin(), objectStores.cend(),
-                     [&aName](const auto& objectStore) {
-                       return objectStore.metadata().name() == aName;
-                     });
-    if (foundIt != objectStores.cend()) {
-      spec = &*foundIt;
+  auto* const spec = [this, &aName]() -> ObjectStoreSpec* {
+    if (IDBTransaction::Mode::VersionChange == mMode ||
+        mObjectStoreNames.Contains(aName)) {
+      return mDatabase->LookupModifiableObjectStoreSpec(
+          [&aName](const auto& objectStore) {
+            return objectStore.metadata().name() == aName;
+          });
     }
-  }
+    return nullptr;
+  }();
 
   if (!spec) {
     aRv.Throw(NS_ERROR_DOM_INDEXEDDB_NOT_FOUND_ERR);

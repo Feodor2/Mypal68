@@ -59,7 +59,7 @@ MediaKeySystemAccess::MediaKeySystemAccess(
           mozilla::dom::ToCString(mConfig).get());
 }
 
-MediaKeySystemAccess::~MediaKeySystemAccess() {}
+MediaKeySystemAccess::~MediaKeySystemAccess() = default;
 
 JSObject* MediaKeySystemAccess::WrapObject(JSContext* aCx,
                                            JS::Handle<JSObject*> aGivenProto) {
@@ -816,8 +816,8 @@ static Sequence<nsString> UnboxSessionTypes(
     sessionTypes = aSessionTypes.Value();
   } else {
     // Note: fallible. Results in an empty array.
-    sessionTypes.AppendElement(ToString(MediaKeySessionType::Temporary),
-                               mozilla::fallible);
+    (void)sessionTypes.AppendElement(ToString(MediaKeySessionType::Temporary),
+                                     mozilla::fallible);
   }
   return sessionTypes;
 }

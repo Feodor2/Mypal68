@@ -100,7 +100,7 @@ class TrackInfo {
 
   virtual UniquePtr<TrackInfo> Clone() const = 0;
 
-  virtual ~TrackInfo() { MOZ_COUNT_DTOR(TrackInfo); }
+  MOZ_COUNTED_DTOR_VIRTUAL(TrackInfo)
 
  protected:
   TrackInfo(const TrackInfo& aOther) {
@@ -449,7 +449,7 @@ class TrackInfoSharedPtr {
   }
 
  private:
-  ~TrackInfoSharedPtr() {}
+  ~TrackInfoSharedPtr() = default;
   UniquePtr<TrackInfo> mInfo;
   // A unique ID, guaranteed to change when changing streams.
   uint32_t mStreamSourceID;

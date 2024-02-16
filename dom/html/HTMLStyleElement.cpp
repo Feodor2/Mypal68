@@ -22,7 +22,7 @@ HTMLStyleElement::HTMLStyleElement(
   AddMutationObserver(this);
 }
 
-HTMLStyleElement::~HTMLStyleElement() {}
+HTMLStyleElement::~HTMLStyleElement() = default;
 
 NS_IMPL_CYCLE_COLLECTION_CLASS(HTMLStyleElement)
 
@@ -162,7 +162,7 @@ void HTMLStyleElement::SetTextContentInternal(const nsAString& aTextContent,
 }
 
 Maybe<nsStyleLinkElement::SheetInfo> HTMLStyleElement::GetStyleSheetInfo() {
-  if (!IsCSSMimeTypeAttribute(*this)) {
+  if (!IsCSSMimeTypeAttributeForStyleElement(*this)) {
     return Nothing();
   }
 
@@ -170,15 +170,12 @@ Maybe<nsStyleLinkElement::SheetInfo> HTMLStyleElement::GetStyleSheetInfo() {
   nsAutoString media;
   GetTitleAndMediaForElement(*this, title, media);
 
-  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
-  referrerInfo->InitWithNode(this);
-
   return Some(SheetInfo{
       *OwnerDoc(),
       this,
       nullptr,
       do_AddRef(mTriggeringPrincipal),
-      referrerInfo.forget(),
+      MakeAndAddRef<ReferrerInfo>(*this),
       CORS_NONE,
       title,
       media,

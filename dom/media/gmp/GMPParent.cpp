@@ -157,7 +157,7 @@ nsresult GMPParent::LoadProcess() {
     mChildPid = base::GetProcId(mProcess->GetChildProcessHandle());
     LOGD("%s: Launched new child process", __FUNCTION__);
 
-    bool opened = Open(mProcess->GetChannel(),
+    bool opened = Open(mProcess->TakeChannel(),
                        base::GetProcId(mProcess->GetChildProcessHandle()));
     if (!opened) {
       LOGD("%s: Failed to open channel to new child process", __FUNCTION__);

@@ -33,7 +33,7 @@ class MemoryOutputStream final : public nsIOutputStream {
  private:
   MemoryOutputStream() : mOffset(0) {}
 
-  virtual ~MemoryOutputStream() {}
+  virtual ~MemoryOutputStream() = default;
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIOUTPUTSTREAM

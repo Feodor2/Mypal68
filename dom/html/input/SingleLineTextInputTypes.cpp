@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "SingleLineTextInputTypes.h"
+#include "mozilla/dom/SingleLineTextInputTypes.h"
 
 #include "mozilla/dom/HTMLInputElement.h"
 #include "mozilla/dom/BindingDeclarations.h"
@@ -31,8 +31,7 @@ bool SingleLineTextInputTypeBase::IsTooLong() const {
     return false;
   }
 
-  int32_t textLength =
-      mInputElement->InputTextLength(mozilla::dom::CallerType::System);
+  int32_t textLength = mInputElement->InputTextLength(CallerType::System);
 
   return textLength > maxLength;
 }
@@ -45,8 +44,7 @@ bool SingleLineTextInputTypeBase::IsTooShort() const {
     return false;
   }
 
-  int32_t textLength =
-      mInputElement->InputTextLength(mozilla::dom::CallerType::System);
+  int32_t textLength = mInputElement->InputTextLength(CallerType::System);
 
   return textLength && textLength < minLength;
 }

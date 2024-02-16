@@ -28,6 +28,7 @@ struct AnimationPerformanceWarning {
     TransformIsBlockedByImportantRules,
     OpacityFrameInactive,
     HasRenderingObserver,
+    HasCurrentColor,
   };
 
   explicit AnimationPerformanceWarning(Type aType) : mType(aType) {

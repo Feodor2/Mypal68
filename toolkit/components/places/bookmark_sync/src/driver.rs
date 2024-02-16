@@ -120,7 +120,7 @@ impl Log for Logger {
                         message,
                     };
                     let _ = TaskRunnable::new("bookmark_sync::Logger::log", Box::new(task))
-                        .and_then(|r| r.dispatch(logger.owning_thread()));
+                        .and_then(|r| TaskRunnable::dispatch(r, logger.owning_thread()));
                 }
                 Err(_) => {}
             }

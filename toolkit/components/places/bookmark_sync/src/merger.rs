@@ -109,7 +109,7 @@ impl SyncedBookmarksMerger {
             "bookmark_sync::SyncedBookmarksMerger::merge",
             Box::new(task),
         )?;
-        runnable.dispatch(&async_thread)
+        TaskRunnable::dispatch(runnable, &async_thread)
     }
 
     xpcom_method!(finalize => Finalize());

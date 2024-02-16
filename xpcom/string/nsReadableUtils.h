@@ -63,9 +63,9 @@ inline size_t Distance(const nsReadingIterator<char>& aStart,
 // UTF-8 to UTF-16
 // Invalid UTF-8 byte sequences are replaced with the REPLACEMENT CHARACTER.
 
-inline MOZ_MUST_USE bool CopyUTF8toUTF16(mozilla::Span<const char> aSource,
-                                         nsAString& aDest,
-                                         const mozilla::fallible_t&) {
+[[nodiscard]] inline bool CopyUTF8toUTF16(mozilla::Span<const char> aSource,
+                                          nsAString& aDest,
+                                          const mozilla::fallible_t&) {
   return nsstring_fallible_append_utf8_impl(&aDest, aSource.Elements(),
                                             aSource.Length(), 0);
 }
@@ -77,9 +77,9 @@ inline void CopyUTF8toUTF16(mozilla::Span<const char> aSource,
   }
 }
 
-inline MOZ_MUST_USE bool AppendUTF8toUTF16(mozilla::Span<const char> aSource,
-                                           nsAString& aDest,
-                                           const mozilla::fallible_t&) {
+[[nodiscard]] inline bool AppendUTF8toUTF16(mozilla::Span<const char> aSource,
+                                            nsAString& aDest,
+                                            const mozilla::fallible_t&) {
   return nsstring_fallible_append_utf8_impl(&aDest, aSource.Elements(),
                                             aSource.Length(), aDest.Length());
 }
@@ -96,9 +96,9 @@ inline void AppendUTF8toUTF16(mozilla::Span<const char> aSource,
 // windows-1252!). The function names say "ASCII" instead of "Latin1" for
 // legacy reasons.
 
-inline MOZ_MUST_USE bool CopyASCIItoUTF16(mozilla::Span<const char> aSource,
-                                          nsAString& aDest,
-                                          const mozilla::fallible_t&) {
+[[nodiscard]] inline bool CopyASCIItoUTF16(mozilla::Span<const char> aSource,
+                                           nsAString& aDest,
+                                           const mozilla::fallible_t&) {
   return nsstring_fallible_append_latin1_impl(&aDest, aSource.Elements(),
                                               aSource.Length(), 0, true);
 }
@@ -110,9 +110,9 @@ inline void CopyASCIItoUTF16(mozilla::Span<const char> aSource,
   }
 }
 
-inline MOZ_MUST_USE bool AppendASCIItoUTF16(mozilla::Span<const char> aSource,
-                                            nsAString& aDest,
-                                            const mozilla::fallible_t&) {
+[[nodiscard]] inline bool AppendASCIItoUTF16(mozilla::Span<const char> aSource,
+                                             nsAString& aDest,
+                                             const mozilla::fallible_t&) {
   return nsstring_fallible_append_latin1_impl(
       &aDest, aSource.Elements(), aSource.Length(), aDest.Length(), false);
 }
@@ -127,9 +127,9 @@ inline void AppendASCIItoUTF16(mozilla::Span<const char> aSource,
 // UTF-16 to UTF-8
 // Unpaired surrogates are replaced with the REPLACEMENT CHARACTER.
 
-inline MOZ_MUST_USE bool CopyUTF16toUTF8(mozilla::Span<const char16_t> aSource,
-                                         nsACString& aDest,
-                                         const mozilla::fallible_t&) {
+[[nodiscard]] inline bool CopyUTF16toUTF8(mozilla::Span<const char16_t> aSource,
+                                          nsACString& aDest,
+                                          const mozilla::fallible_t&) {
   return nscstring_fallible_append_utf16_to_utf8_impl(
       &aDest, aSource.Elements(), aSource.Length(), 0);
 }
@@ -141,7 +141,7 @@ inline void CopyUTF16toUTF8(mozilla::Span<const char16_t> aSource,
   }
 }
 
-inline MOZ_MUST_USE bool AppendUTF16toUTF8(
+[[nodiscard]] inline bool AppendUTF16toUTF8(
     mozilla::Span<const char16_t> aSource, nsACString& aDest,
     const mozilla::fallible_t&) {
   return nscstring_fallible_append_utf16_to_utf8_impl(
@@ -163,7 +163,7 @@ inline void AppendUTF16toUTF8(mozilla::Span<const char16_t> aSource,
 // based on CPU architecture and must not be relied upon. The names say
 // "ASCII" instead of "Latin1" for legacy reasons.
 
-inline MOZ_MUST_USE bool LossyCopyUTF16toASCII(
+[[nodiscard]] inline bool LossyCopyUTF16toASCII(
     mozilla::Span<const char16_t> aSource, nsACString& aDest,
     const mozilla::fallible_t&) {
   return nscstring_fallible_append_utf16_to_latin1_lossy_impl(
@@ -177,7 +177,7 @@ inline void LossyCopyUTF16toASCII(mozilla::Span<const char16_t> aSource,
   }
 }
 
-inline MOZ_MUST_USE bool LossyAppendUTF16toASCII(
+[[nodiscard]] inline bool LossyAppendUTF16toASCII(
     mozilla::Span<const char16_t> aSource, nsACString& aDest,
     const mozilla::fallible_t&) {
   return nscstring_fallible_append_utf16_to_latin1_lossy_impl(
@@ -198,9 +198,9 @@ inline void LossyAppendUTF16toASCII(mozilla::Span<const char16_t> aSource,
 // If the input is ASCII, the heap-allocated nsStringBuffer is shared if
 // possible.
 
-inline MOZ_MUST_USE bool CopyLatin1toUTF8(const nsACString& aSource,
-                                          nsACString& aDest,
-                                          const mozilla::fallible_t&) {
+[[nodiscard]] inline bool CopyLatin1toUTF8(const nsACString& aSource,
+                                           nsACString& aDest,
+                                           const mozilla::fallible_t&) {
   return nscstring_fallible_append_latin1_to_utf8_check(&aDest, &aSource, 0);
 }
 
@@ -210,9 +210,9 @@ inline void CopyLatin1toUTF8(const nsACString& aSource, nsACString& aDest) {
   }
 }
 
-inline MOZ_MUST_USE bool AppendLatin1toUTF8(const nsACString& aSource,
-                                            nsACString& aDest,
-                                            const mozilla::fallible_t&) {
+[[nodiscard]] inline bool AppendLatin1toUTF8(const nsACString& aSource,
+                                             nsACString& aDest,
+                                             const mozilla::fallible_t&) {
   return nscstring_fallible_append_latin1_to_utf8_check(&aDest, &aSource,
                                                         aDest.Length());
 }
@@ -232,9 +232,9 @@ inline void AppendLatin1toUTF8(const nsACString& aSource, nsACString& aDest) {
 // If the input is ASCII, the heap-allocated nsStringBuffer is shared if
 // possible.
 
-inline MOZ_MUST_USE bool LossyCopyUTF8toLatin1(const nsACString& aSource,
-                                               nsACString& aDest,
-                                               const mozilla::fallible_t&) {
+[[nodiscard]] inline bool LossyCopyUTF8toLatin1(const nsACString& aSource,
+                                                nsACString& aDest,
+                                                const mozilla::fallible_t&) {
   return nscstring_fallible_append_utf8_to_latin1_lossy_check(&aDest, &aSource,
                                                               0);
 }
@@ -246,9 +246,9 @@ inline void LossyCopyUTF8toLatin1(const nsACString& aSource,
   }
 }
 
-inline MOZ_MUST_USE bool LossyAppendUTF8toLatin1(const nsACString& aSource,
-                                                 nsACString& aDest,
-                                                 const mozilla::fallible_t&) {
+[[nodiscard]] inline bool LossyAppendUTF8toLatin1(const nsACString& aSource,
+                                                  nsACString& aDest,
+                                                  const mozilla::fallible_t&) {
   return nscstring_fallible_append_utf8_to_latin1_lossy_check(&aDest, &aSource,
                                                               aDest.Length());
 }
@@ -383,7 +383,7 @@ char16_t* CopyUnicodeTo(const nsAString& aSource, uint32_t aSrcOffset,
  * Copies a shared string buffer or an otherwise read-only
  * buffer only if there are unpaired surrogates.
  */
-inline MOZ_MUST_USE bool EnsureUTF16Validity(nsAString& aString) {
+[[nodiscard]] inline bool EnsureUTF16Validity(nsAString& aString) {
   uint32_t upTo = mozilla::Utf16ValidUpTo(aString);
   uint32_t len = aString.Length();
   if (upTo == len) {
@@ -399,7 +399,7 @@ inline MOZ_MUST_USE bool EnsureUTF16Validity(nsAString& aString) {
   return true;
 }
 
-bool ParseString(const nsACString& aAstring, char aDelimiter,
+void ParseString(const nsACString& aSource, char aDelimiter,
                  nsTArray<nsCString>& aArray);
 
 /**

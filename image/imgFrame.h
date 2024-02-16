@@ -5,13 +5,16 @@
 #ifndef mozilla_image_imgFrame_h
 #define mozilla_image_imgFrame_h
 
+#include <functional>
+
+#include "AnimationParams.h"
+#include "MainThreadUtils.h"
+#include "gfxDrawable.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Monitor2.h"
 #include "mozilla/Move.h"
-#include "AnimationParams.h"
-#include "gfxDrawable.h"
-#include "MainThreadUtils.h"
+#include "nsRect.h"
 
 namespace mozilla {
 namespace image {
@@ -357,8 +360,11 @@ class DrawableFrameRef final {
         mFrame = nullptr;
         mRef.reset();
       }
-    } else {
-      MOZ_ASSERT(aFrame->mOptSurface);
+    } else if (!aFrame->mOptSurface || !aFrame->mOptSurface->IsValid()) {
+      // The optimized surface has become invalid, so we need to redecode.
+      // For example, on Windows, there may have been a device reset, and
+      // all D2D surfaces now need to be recreated.
+      mFrame = nullptr;
     }
   }
 

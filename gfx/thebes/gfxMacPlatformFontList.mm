@@ -1018,7 +1018,7 @@ void gfxMacPlatformFontList::AddFamily(const nsACString& aFamilyName, bool aSyst
   ToLowerCase(aFamilyName, key);
 
   RefPtr<gfxFontFamily> familyEntry = new gfxMacFontFamily(aFamilyName, sizeHint);
-  table.Put(key, familyEntry);
+  table.Put(key, RefPtr{familyEntry});
 
   // check the bad underline blacklist
   if (mBadUnderlineFamilyNames.ContainsSorted(key)) {
@@ -1271,7 +1271,7 @@ void gfxMacPlatformFontList::InitSingleFaceList() {
           fe->Name(), fe->Weight(), true, static_cast<const MacOSFontEntry*>(fe)->mSizeHint);
       familyEntry->AddFontEntry(fontEntry);
       familyEntry->SetHasStyles(true);
-      mFontFamilies.Put(key, familyEntry);
+      mFontFamilies.Put(key, std::move(familyEntry));
       LOG_FONTLIST(
           ("(fontlist-singleface) added new family: %s, key: %s\n", familyName.get(), key.get()));
     }
@@ -1606,42 +1606,42 @@ void gfxMacPlatformFontList::LookupSystemFont(LookAndFeel::FontID aSystemFontID,
   NSFont* font = nullptr;
   char* systemFontName = nullptr;
   switch (aSystemFontID) {
-    case LookAndFeel::eFont_MessageBox:
-    case LookAndFeel::eFont_StatusBar:
-    case LookAndFeel::eFont_List:
-    case LookAndFeel::eFont_Field:
-    case LookAndFeel::eFont_Button:
-    case LookAndFeel::eFont_Widget:
+    case LookAndFeel::FontID::MessageBox:
+    case LookAndFeel::FontID::StatusBar:
+    case LookAndFeel::FontID::List:
+    case LookAndFeel::FontID::Field:
+    case LookAndFeel::FontID::Button:
+    case LookAndFeel::FontID::Widget:
       font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
       systemFontName = (char*)kSystemFont_system;
       break;
 
-    case LookAndFeel::eFont_SmallCaption:
+    case LookAndFeel::FontID::SmallCaption:
       font = [NSFont boldSystemFontOfSize:[NSFont smallSystemFontSize]];
       systemFontName = (char*)kSystemFont_system;
       break;
 
-    case LookAndFeel::eFont_Icon:  // used in urlbar; tried labelFont, but too small
-    case LookAndFeel::eFont_Workspace:
-    case LookAndFeel::eFont_Desktop:
-    case LookAndFeel::eFont_Info:
+    case LookAndFeel::FontID::Icon:  // used in urlbar; tried labelFont, but too small
+    case LookAndFeel::FontID::Workspace:
+    case LookAndFeel::FontID::Desktop:
+    case LookAndFeel::FontID::Info:
       font = [NSFont controlContentFontOfSize:0.0];
       systemFontName = (char*)kSystemFont_system;
       break;
 
-    case LookAndFeel::eFont_PullDownMenu:
+    case LookAndFeel::FontID::PullDownMenu:
       font = [NSFont menuBarFontOfSize:0.0];
       systemFontName = (char*)kSystemFont_system;
       break;
 
-    case LookAndFeel::eFont_Tooltips:
+    case LookAndFeel::FontID::Tooltips:
       font = [NSFont toolTipsFontOfSize:0.0];
       systemFontName = (char*)kSystemFont_system;
       break;
 
-    case LookAndFeel::eFont_Caption:
-    case LookAndFeel::eFont_Menu:
-    case LookAndFeel::eFont_Dialog:
+    case LookAndFeel::FontID::Caption:
+    case LookAndFeel::FontID::Menu:
+    case LookAndFeel::FontID::Dialog:
     default:
       font = [NSFont systemFontOfSize:0.0];
       systemFontName = (char*)kSystemFont_system;

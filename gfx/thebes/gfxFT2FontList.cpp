@@ -1137,7 +1137,7 @@ void gfxFT2FontList::AddFaceToList(const nsCString& aEntryName, uint32_t aIndex,
     RefPtr<gfxFontFamily> family = mFontFamilies.GetWeak(name);
     if (!family) {
       family = new FT2FontFamily(name);
-      mFontFamilies.Put(name, family);
+      mFontFamilies.Put(name, RefPtr{family});
       if (mSkipSpaceLookupCheckFamilies.Contains(name)) {
         family->SetSkipSpaceFeatureCheck(true);
       }
@@ -1422,7 +1422,7 @@ void gfxFT2FontList::AppendFaceFromFontListEntry(const FontListEntry& aFLE,
     RefPtr<gfxFontFamily> family = mFontFamilies.GetWeak(aFLE.familyName());
     if (!family) {
       family = new FT2FontFamily(aFLE.familyName());
-      mFontFamilies.Put(aFLE.familyName(), family);
+      mFontFamilies.Put(aFLE.familyName(), RefPtr{family});
       if (mSkipSpaceLookupCheckFamilies.Contains(aFLE.familyName())) {
         family->SetSkipSpaceFeatureCheck(true);
       }

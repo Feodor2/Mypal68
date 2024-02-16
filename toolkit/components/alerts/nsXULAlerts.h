@@ -33,12 +33,12 @@ class nsXULAlerts : public nsIAlertsService,
   NS_DECL_NSIALERTSSERVICE
   NS_DECL_ISUPPORTS
 
-  nsXULAlerts() {}
+  nsXULAlerts() = default;
 
   static already_AddRefed<nsXULAlerts> GetInstance();
 
  protected:
-  virtual ~nsXULAlerts() {}
+  virtual ~nsXULAlerts() = default;
   void PersistentAlertFinished();
 
   nsInterfaceHashtable<nsStringHashKey, mozIDOMWindowProxy> mNamedWindows;
@@ -68,7 +68,7 @@ class nsXULAlertObserver : public nsIObserver {
   void SetAlertWindow(mozIDOMWindowProxy* aWindow) { mAlertWindow = aWindow; }
 
  protected:
-  virtual ~nsXULAlertObserver() {}
+  virtual ~nsXULAlertObserver() = default;
 
   RefPtr<nsXULAlerts> mXULAlerts;
   nsString mAlertName;

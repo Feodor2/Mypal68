@@ -177,6 +177,7 @@ static bool gCMSRGBTransformFailed = false;
 static qcms_transform* gCMSRGBTransform = nullptr;
 static qcms_transform* gCMSInverseRGBTransform = nullptr;
 static qcms_transform* gCMSRGBATransform = nullptr;
+static qcms_transform* gCMSBGRATransform = nullptr;
 
 static bool gCMSInitialized = false;
 static eCMSMode gCMSMode = eCMSMode_Off;
@@ -2200,6 +2201,22 @@ qcms_transform* gfxPlatform::GetCMSRGBATransform() {
   return gCMSRGBATransform;
 }
 
+qcms_transform* gfxPlatform::GetCMSBGRATransform() {
+  if (!gCMSBGRATransform) {
+    qcms_profile *inProfile, *outProfile;
+    outProfile = GetCMSOutputProfile();
+    inProfile = GetCMSsRGBProfile();
+
+    if (!inProfile || !outProfile) return nullptr;
+
+    gCMSBGRATransform =
+        qcms_transform_create(inProfile, QCMS_DATA_BGRA_8, outProfile,
+                              QCMS_DATA_BGRA_8, QCMS_INTENT_PERCEPTUAL);
+  }
+
+  return gCMSBGRATransform;
+}
+
 /* Shuts down various transforms and profiles for CMS. */
 static void ShutdownCMS() {
   if (gCMSRGBTransform) {
@@ -2213,6 +2230,10 @@ static void ShutdownCMS() {
   if (gCMSRGBATransform) {
     qcms_transform_release(gCMSRGBATransform);
     gCMSRGBATransform = nullptr;
+  }
+  if (gCMSBGRATransform) {
+    qcms_transform_release(gCMSBGRATransform);
+    gCMSBGRATransform = nullptr;
   }
   if (gCMSOutputProfile) {
     qcms_profile_release(gCMSOutputProfile);

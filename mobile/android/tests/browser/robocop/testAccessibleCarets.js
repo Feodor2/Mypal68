@@ -378,7 +378,6 @@ add_task(async function testAccessibleCarets_designMode() {
   let flavors = ["text/unicode"];
   let clipboardHasText = Services.clipboard.hasDataMatchingFlavors(
     flavors,
-    flavors.length,
     Ci.nsIClipboard.kGlobalClipboard
   );
   is(

@@ -462,11 +462,6 @@
   value: 1.0f
   mirror: always
 
-- name: apz.overscroll.spring_stiffness
-  type: AtomicFloat
-  value: 0.001f
-  mirror: always
-
 - name: apz.overscroll.stop_distance_threshold
   type: AtomicFloat
   value: 5.0f
@@ -793,6 +788,18 @@
   value: true
   mirror: always
   rust: true
+
+# Whether we should suppress the background-image of the canvas (the root
+# frame) if we're in forced colors mode.
+#
+# This is important because some sites use background-image with a plain color
+# and it causes undesirable results in high-contrast mode.
+#
+# See bug 1614921 for example.
+- name: browser.display.suppress_canvas_background_image_on_forced_colors
+  type: bool
+  value: true
+  mirror: always
 
 - name: browser.display.focus_ring_on_anything
   type: bool
@@ -1196,6 +1203,12 @@
   value: false
   mirror: always
 
+# Checks if offscreen animation throttling is enabled.
+- name: dom.animations.offscreen-throttling
+  type: bool
+  value: true
+  mirror: always
+
 # Is support for automatically removing replaced filling animations enabled?
 - name: dom.animations-api.autoremove.enabled
   type: bool
@@ -1216,26 +1229,29 @@
 
 # Is support for Document.getAnimations() and Element.getAnimations()
 # supported?
-#
-# Before enabling this by default, make sure also CSSPseudoElement interface
-# has been spec'ed properly, or we should add a separate pref for
-# CSSPseudoElement interface. See Bug 1174575 for further details.
 - name: dom.animations-api.getAnimations.enabled
   type: bool
-  value: @IS_NOT_RELEASE_OR_BETA@
+  value: true
   mirror: always
 
 # Is support for animations from the Web Animations API without 0%/100%
 # keyframes enabled?
 - name: dom.animations-api.implicit-keyframes.enabled
   type: bool
-  value: @IS_NOT_RELEASE_OR_BETA@
+  value: true
   mirror: always
 
 # Is support for timelines from the Web Animations API enabled?
 - name: dom.animations-api.timelines.enabled
   type: bool
-  value: @IS_NOT_RELEASE_OR_BETA@
+  value: true
+  mirror: always
+
+# Synchronize transform animations with geometric animations on the
+# main thread.
+- name: dom.animations.mainthread-synchronization-with-geometric-animations
+  type: bool
+  value: true
   mirror: always
 
 # Is support for AudioWorklet enabled?
@@ -1262,6 +1278,25 @@
   value: true
   mirror: always
 
+# Whether window.location.reload() and window.history.go(0) should be blocked
+# if called directly from a window resize event handler.
+#
+# This used to be necessary long ago to prevent terrible UX when using stuff
+# like TypeAheadFind (bug 258917), but it also causes compat issues on mobile
+# (bug 1570566).
+#
+# So for now disable it on Android and Desktop Nightly, to see if we have any
+# desktop regression before removing it completely. Note that this means that
+# non-nightly RDM behaves different than Android in this case.
+- name: dom.block_reload_from_resize_event_handler
+  type: bool
+#if defined(MOZ_WIDGET_ANDROID) || defined(NIGHTLY_BUILD)
+  value: false
+#else
+  value: true
+#endif
+  mirror: always
+
 # SW Cache API
 - name: dom.caches.enabled
   type: RelaxedAtomicBool
@@ -1279,6 +1314,20 @@
   type: bool
   value: true
   mirror: always
+
+# Is support for CSSPseudoElement enabled?
+- name: dom.css_pseudo_element.enabled
+  type: bool
+  value: false
+  mirror: always
+
+# Disable moz* APIs in DataTransfer.
+# Should be accessed via DataTransfer::MozAtAPIsEnabled.
+- name: dom.datatransfer.mozAtAPIs
+  type: bool
+  value: false
+  mirror: always
+  do_not_use_directly: true
 
 # Any how many seconds we allow external protocol URLs in iframe when not in
 # single events
@@ -1303,6 +1352,16 @@
 - name: dom.disable_open_during_load
   type: bool
   value: false
+  mirror: always
+
+- name: dom.disable_beforeunload
+  type: bool
+  value: false
+  mirror: always
+
+- name: dom.require_user_interaction_for_beforeunload
+  type: bool
+  value: true
   mirror: always
 
 - name: dom.enable_window_print
@@ -1360,6 +1419,18 @@
   value: 1000
   mirror: always
 
+# Whether touch event listeners are passive by default.
+- name: dom.event.default_to_passive_touch_listeners
+  type: bool
+  value: true
+  mirror: always
+
+# Whether wheel listeners are passive by default.
+- name: dom.event.default_to_passive_wheel_listeners
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
 # Enable clipboard readText() and writeText() by default
 - name: dom.events.asyncClipboard
   type: bool
@@ -1371,6 +1442,14 @@
   type: bool
   value: false
   mirror: always
+
+# Should only be enabled in tests.
+# Access with Clipboard::IsTestingPrefEnabled().
+- name: dom.events.testing.asyncClipboard
+  type: bool
+  value: false
+  mirror: always
+  do_not_use_directly: true
 
 # This pref controls whether or not the `protected` dataTransfer state is
 # enabled. If the `protected` dataTransfer stae is disabled, then the
@@ -1471,6 +1550,11 @@
   value: false
   mirror: always
 
+- name: dom.input_events.beforeinput.enabled
+  type: bool
+  value: false
+  mirror: always
+
 # Whether we conform to Input Events Level 1 or Input Events Level 2.
 # true:  conforming to Level 1
 # false: conforming to Level 2
@@ -1507,6 +1591,15 @@
   value: false
   mirror: always
 
+# Process launch delay (im milliseconds).
+- name: dom.ipc.processPrelaunch.delayMs
+  type: uint32_t
+# This number is fairly arbitrary ... the intention is to put off
+# launching another app process until the last one has finished
+# loading its content, to reduce CPU/memory/IO contention.
+  value: 1000
+  mirror: always
+
 - name: dom.ipc.processPriorityManager.enabled
   type: bool
   value: false
@@ -1515,6 +1608,16 @@
 - name: dom.ipc.processPriorityManager.testMode
   type: bool
   value: false
+  mirror: always
+
+- name: dom.ipc.processPriorityManager.backgroundPerceivableGracePeriodMS
+  type: uint32_t
+  value: 0
+  mirror: always
+
+- name: dom.ipc.processPriorityManager.backgroundGracePeriodMS
+  type: uint32_t
+  value: 0
   mirror: always
 
 # Is support for input type=date and type=time enabled?
@@ -1613,6 +1716,11 @@
   mirror: always
 
 - name: dom.largeAllocation.forceEnable
+  type: bool
+  value: false
+  mirror: always
+
+- name: dom.largeAllocation.testing.allHttpLoads
   type: bool
   value: false
   mirror: always
@@ -1979,10 +2087,21 @@
   value: true
   mirror: always
 
+# Whether or not selection events on text controls are enabled.
+- name: dom.select_events.textcontrols.enabled
+  type: bool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+
 - name: dom.separate_event_queue_for_post_message.enabled
   type: bool
   value: true
   mirror: always
+
+- name: dom.arena_allocator.enabled
+  type: bool
+  value: true
+  mirror: once
 
 - name: dom.serviceWorkers.enabled
   type: RelaxedAtomicBool
@@ -2085,6 +2204,26 @@
   value: false
   mirror: always
 
+- name: dom.textMetrics.actualBoundingBox.enabled
+  type: bool
+  value: true
+  mirror: always
+
+- name: dom.textMetrics.baselines.enabled
+  type: bool
+  value: false
+  mirror: always
+
+- name: dom.textMetrics.emHeight.enabled
+  type: bool
+  value: false
+  mirror: always
+
+- name: dom.textMetrics.fontBoundingBox.enabled
+  type: bool
+  value: false
+  mirror: always
+
 # Time (in ms) that it takes to regenerate 1ms.
 - name: dom.timeout.background_budget_regeneration_rate
   type: int32_t
@@ -2155,10 +2294,31 @@
   value: false
   mirror: always
 
+# Whether to shim a Components object on untrusted windows.
+- name: dom.use_components_shim
+  type: bool
+  value: @IS_NOT_NIGHTLY_BUILD@
+  mirror: always
+
+- name: dom.vibrator.enabled
+  type: bool
+  value: true
+  mirror: always
+
+- name: dom.vibrator.max_vibrate_ms
+  type: uint32_t
+  value: 10000
+  mirror: always
+
+- name: dom.vibrator.max_vibrate_list_len
+  type: uint32_t
+  value: 128
+  mirror: always
+
 # Is support for Window.visualViewport enabled?
 - name: dom.visualviewport.enabled
   type: bool
-  value: false
+  value: true
   mirror: always
 
 # Is support for WebVR APIs enabled?
@@ -2404,6 +2564,12 @@
     mirror: always
 #endif
 
+# W3C pointer events draft.
+- name: dom.w3c_pointer_events.implicit_capture
+  type: bool
+  value: false
+  mirror: always
+
 # Is support for Navigator.webdriver enabled?
 - name: dom.webdriver.enabled
   type: bool
@@ -2595,6 +2761,26 @@
 - name: editor.positioning.enabled_by_default
   type: bool
   value: false
+  mirror: always
+
+# Whether user pastes should be truncated.
+- name: editor.truncate_user_pastes
+  type: bool
+  value: true
+  mirror: always
+
+# How line breakers are treated in single line editor:
+# * 0: Only remove the leading and trailing newlines.
+# * 1: Remove the first newline and all characters following it.
+# * 2: Replace newlines with spaces (default of Firefox).
+# * 3: Remove newlines from the string.
+# * 4: Replace newlines with commas (default of Thunderbird).
+# * 5: Collapse newlines and surrounding whitespace characters and
+#      remove them from the string.
+# Other values are treated as 1.
+- name: editor.singleLine.pasteNewlines
+  type: int32_t
+  value: 2
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -3669,6 +3855,18 @@
 #endif
   mirror: always
 
+# Android-specific pref to control if keydown and keyup events are fired even
+# during composition.  Note that those prefs are ignored if
+# dom.keyboardevent.dispatch_during_composition is false.
+- name: intl.ime.hack.on_ime_unaware_apps.fire_key_events_for_composition
+  type: bool
+# If true and intl.ime.hack.on_any_apps.fire_key_events_for_composition is
+# false, dispatch the keydown and keyup events only on IME-unaware web apps.
+# So, this supports web apps which listen to only keydown or keyup events
+# to get a change to do something at every text input.
+  value: @IS_ANDROID@
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "javascript."
 #---------------------------------------------------------------------------
@@ -3843,7 +4041,7 @@
 #ifdef XP_WIN
 - name: layers.allow-d3d9-fallback
   type: bool
-  value: false
+  value: true
   mirror: once
 #endif
 
@@ -4020,10 +4218,12 @@
   value: false
   mirror: always
 
+#ifdef MOZ_BUILD_WEBRENDER
 - name: layers.force-synchronous-resize
   type: RelaxedAtomicBool
   value: true
   mirror: always
+#endif
 
 # Whether to enable arbitrary layer geometry for OpenGL compositor.
 - name: layers.geometry.opengl.enabled
@@ -4320,10 +4520,12 @@
   value: false
   mirror: once
 
+#if defined(MOZ_WIDGET_GTK)
 - name: layers.use-image-offscreen-surfaces
   type: bool
   value: true
   mirror: once
+#endif
 
 #---------------------------------------------------------------------------
 # Prefs starting with "layout."
@@ -4435,14 +4637,10 @@
 
 # One of several prefs affecting the maximum area to pre-render when animating
 # a large element on the compositor.
-- name: layout.animation.prerender.viewport-ratio-limit-x
-  type: AtomicFloat
-  value: 1.125f
-  mirror: always
-
-# One of several prefs affecting the maximum area to pre-render when animating
-# a large element on the compositor.
-- name: layout.animation.prerender.viewport-ratio-limit-y
+# This value is applied to both x and y axes and a perfect square contructed
+# by the greater axis value which will be capped by the absolute limits is used
+# for the partial pre-render area.
+- name: layout.animation.prerender.viewport-ratio-limit
   type: AtomicFloat
   value: 1.125f
   mirror: always
@@ -4474,10 +4672,26 @@
   mirror: always
   rust: true
 
-# Allow <number> and <number>/<number> both for <aspect-ratio>
-# https://github.com/w3c/csswg-drafts/issues/3757
-- name: layout.css.aspect-ratio-number.enabled
+# Whether `min()` / `max()` / `clamp()` are enabled.
+- name: layout.css.comparison-functions.enabled
   type: RelaxedAtomicBool
+  value: true
+  mirror: always
+  rust: true
+
+# Whether the `:focus-visible` pseudo-class is enabled.
+#
+# TODO: There are various ambiguities in the spec about this, so we shouldn't
+# ship this until those are sorted out.
+- name: layout.css.focus-visible.enabled
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+  rust: true
+
+# Whether the `aspect-ratio` in css-sizing-4 is enabled.
+- name: layout.css.aspect-ratio.enabled
+  type: bool
   value: false
   mirror: always
   rust: true
@@ -4540,17 +4754,12 @@
   value: false
   mirror: always
 
-# Is support for CSS contain enabled?
-- name: layout.css.contain.enabled
-  type: bool
-  value: true
-  mirror: always
-
 # Should stray control characters be rendered visibly?
 - name: layout.css.control-characters.visible
-  type: bool
+  type: RelaxedAtomicBool
   value: @IS_NOT_RELEASE_OR_BETA@
   mirror: always
+  rust: true
 
 # Is support for GeometryUtils.convert*FromNode enabled?
 - name: layout.css.convertFromNode.enabled
@@ -4611,6 +4820,13 @@
 # Is support for CSS "grid-template-{columns,rows}: subgrid X" enabled?
 - name: layout.css.grid-template-subgrid-value.enabled
   type: RelaxedAtomicBool
+  value: true
+  mirror: always
+  rust: true
+
+# Is support for CSS masonry layout enabled?
+- name: layout.css.grid-template-masonry-value.enabled
+  type: RelaxedAtomicBool
   value: false
   mirror: always
   rust: true
@@ -4618,8 +4834,15 @@
 # Is support for CSS individual transform enabled?
 - name: layout.css.individual-transform.enabled
   type: bool
-  value: @IS_NOT_RELEASE_OR_BETA@
+  value: true
   mirror: always
+
+# Is the initial value for the image-orientation property 'from-image'?
+- name: layout.css.image-orientation.initial-from-image
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+  rust: true
 
 # Is support for CSS initial-letter property enabled?
 - name: layout.css.initial-letter.enabled
@@ -4674,6 +4897,13 @@
 - name: layout.css.moz-document.content.enabled
   type: RelaxedAtomicBool
   value: false
+  mirror: always
+  rust: true
+
+# Whether the ::-moz-focus-outer pseudo-class is parsed.
+- name: layout.css.moz-focus-outer.enabled
+  type: RelaxedAtomicBool
+  value: @IS_NOT_NIGHTLY_BUILD@
   mirror: always
   rust: true
 
@@ -4871,12 +5101,6 @@
   value: true
   mirror: always
 
-# Is the '-webkit-appearance' alias for '-moz-appearance' enabled?
-- name: layout.css.webkit-appearance.enabled
-  type: bool
-  value: true
-  mirror: always
-
 - name: layout.css.xul-display-values.content.enabled
   type: RelaxedAtomicBool
   value: false
@@ -5031,6 +5255,20 @@
   value: false
   mirror: always
 
+# Controls caret style and word-delete during text selection.
+# 0: Use platform default
+# 1: Caret moves and blinks as when there is no selection; word
+#    delete deselects the selection and then deletes word.
+# 2: Caret moves to selection edge and is not visible during selection;
+#    word delete deletes the selection (Mac and Linux default).
+# 3: Caret moves and blinks as when there is no selection; word delete
+#    deletes the selection.
+# Windows default is 1 for word delete behavior, the rest as for 2.
+- name: layout.selection.caret_style
+  type: int32_t
+  value: 0
+  mirror: always
+
 # If layout.show_previous_page is true then during loading of a new page we
 # will draw the previous page if the new page has painting suppressed.
 - name: layout.show_previous_page
@@ -5040,6 +5278,12 @@
 
 - name: layout.smaller-painted-layers
   type: RelaxedAtomicBool
+  value: false
+  mirror: always
+
+# Pref to stop overlay scrollbars from fading out, for testing purposes.
+- name: layout.testing.overlay-scrollbars.always-visible
+  type: bool
   value: false
   mirror: always
 
@@ -5106,12 +5350,6 @@
   value: true
   mirror: always
 
-- name: layout.css.shadow-parts.enabled
-  type: RelaxedAtomicBool
-  value: true
-  mirror: always
-  rust: true
-
 # Is support for CSS text-justify property enabled?
 - name: layout.css.text-justify.enabled
   type: bool
@@ -5123,6 +5361,13 @@
   type: bool
   value: true
   mirror: always
+
+# Is support for the ::file-chooser-button pseudo-element enabled?
+- name: layout.css.file-chooser-button.enabled
+  type: RelaxedAtomicBool
+  value: @IS_NIGHTLY_BUILD@
+  mirror: always
+  rust: true
 
 # Whether the computed value of line-height: normal returns the `normal`
 # keyword rather than a pixel value based on the first available font.
@@ -5146,11 +5391,57 @@
   value: true
   mirror: always
 
+# Whether :is() and :where() ignore errors inside their selector lists
+# internally, rather than failing to parse altogether.
+#
+# See https://github.com/w3c/csswg-drafts/issues/3264
+- name: layout.css.is-and-where-better-error-recovery.enabled
+  type: RelaxedAtomicBool
+  value: @IS_EARLY_BETA_OR_EARLIER@
+  mirror: always
+  rust: true
+
+# Whether frame visibility tracking is enabled globally.
+- name: layout.framevisibility.enabled
+  type: bool
+  value: true
+  mirror: always
+
+# The fraction of the scrollport we allow to horizontally scroll by before we
+# schedule an update of frame visibility.
+- name: layout.framevisibility.amountscrollbeforeupdatehorizontal
+  type: int32_t
+  value: 2
+  mirror: always
+
+# The fraction of the scrollport we allow to vertically scroll by before we
+# schedule an update of frame visibility.
+- name: layout.framevisibility.amountscrollbeforeupdatevertical
+  type: int32_t
+  value: 2
+  mirror: always
+
+# The number of scrollports wide to expand when tracking frame visibility.
+- name: layout.framevisibility.numscrollportwidths
+  type: uint32_t
+#ifdef ANDROID
+  value: 1
+#else
+  value: 0
+#endif
+  mirror: always
+
+# The number of scrollports high to expand when tracking frame visibility.
+- name: layout.framevisibility.numscrollportheights
+  type: uint32_t
+  value: 1
+  mirror: always
+
 # Whether we expand the layout viewport even if the expanded viewport doesn't
 # contain any contents in the area.
 - name: layout.viewport_contains_no_contents_area
   type: bool
-  value: @IS_NIGHTLY_BUILD@
+  value: true
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -5911,6 +6202,15 @@
   value: false
   mirror: always
 
+- name: media.block-autoplay-until-in-foreground
+  type: bool
+#if !defined(MOZ_WIDGET_ANDROID)
+  value: true
+#else
+  value: false
+#endif
+  mirror: always
+
 #---------------------------------------------------------------------------
 # Prefs starting with "mousewheel."
 #---------------------------------------------------------------------------
@@ -5968,6 +6268,13 @@
 - name: mousewheel.transaction.timeout
   type: RelaxedAtomicInt32
   value: 1500
+  mirror: always
+
+# If line-height is lower than this value (in device pixels), 1 line scroll
+# scrolls this height.
+- name: mousewheel.min_line_scroll_amount
+  type: int32_t
+  value: 5
   mirror: always
 
 #---------------------------------------------------------------------------
@@ -6239,11 +6546,6 @@
   value: 500
   mirror: always
 
-- name: network.predictor.cleaned-up
-  type: bool
-  value: false
-  mirror: never
-
 # A testing flag.
 - name: network.predictor.doing-tests
   type: bool
@@ -6376,6 +6678,11 @@
 - name: privacy.file_unique_origin
   type: bool
   value: true
+  mirror: always
+
+- name: privacy.fuzzyfox.clockgrainus
+  type: RelaxedAtomicUint32
+  value: 100
   mirror: always
 
 # Annotate trackers using the strict list. If set to false, the basic list will
@@ -6623,6 +6930,16 @@
   value: 40
   mirror: always
 
+# TODO: Bug 1324406: Treat 'data:' documents as unique, opaque origins
+# If true, data: URIs will be treated as unique opaque origins, hence will use
+# a NullPrincipal as the security context.
+# Otherwise it will inherit the origin from parent node, this is the legacy
+# behavior of Firefox.
+- name: security.data_uri.unique_opaque_origin
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
 # Allowed by default so it doesn't affect Thunderbird/SeaMonkey, but
 # not allowed for Firefox Desktop in firefox.js
 - name: security.allow_eval_with_system_principal
@@ -6630,8 +6947,39 @@
   value: true
   mirror: always
 
+# Pref to block mixed scripts (fonts, plugin content, scripts, stylesheets,
+# iframes, websockets, XHR).
+- name: security.mixed_content.block_active_content
+  type: bool
+  value: @IS_ANDROID@
+  mirror: always
+
+# Pref to block sub requests that happen within an object.
+- name: security.mixed_content.block_object_subrequest
+  type: bool
+  value: false
+  mirror: always
+
+# Pref for mixed display content blocking (images, audio, video).
+- name: security.mixed_content.block_display_content
+  type: bool
+  value: false
+  mirror: always
+
+# Pref for mixed display content upgrading (images, audio, video).
+- name: security.mixed_content.upgrade_display_content
+  type: bool
+  value: false
+  mirror: always
+
 # Whether strict file origin policy is in effect. "False" is traditional.
 - name: security.fileuri.strict_origin_policy
+  type: RelaxedAtomicBool
+  value: true
+  mirror: always
+
+# If true, all FTP subresource loads will be blocked.
+- name: security.block_ftp_subresources
   type: RelaxedAtomicBool
   value: true
   mirror: always
@@ -6830,6 +7178,18 @@
   # 0 = disabled, 1 = Shift, 2 = Ctrl, 4 = Alt, 5 =  Alt+Shift,
   # 8 = Meta, 16 = Win
   value: 5
+#endif
+  mirror: always
+
+# Does the access key by itself focus the menu bar?
+- name: ui.key.menuAccessKeyFocuses
+  type: bool
+#if defined(XP_WIN) || defined(MOZ_WIDGET_GTK)
+  # On Windows and Linux, we now default to showing the menu bar only when alt
+  # is pressed.
+  value: true
+#else
+  value: false
 #endif
   mirror: always
 
@@ -7114,6 +7474,12 @@
 #---------------------------------------------------------------------------
 # Prefs starting with "widget."
 #---------------------------------------------------------------------------
+
+# Global user preference for disabling native theme. Used in NativeWindowTheme.
+- name: widget.disable-native-theme
+  type: bool
+  value: false
+  mirror: always
 
 - name: widget.window-transforms.disabled
   type: RelaxedAtomicBool

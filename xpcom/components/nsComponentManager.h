@@ -77,7 +77,7 @@ class SafeMutex {
   explicit SafeMutex(const char* aName)
       : mMutex(aName), mOwnerThread(nullptr) {}
 
-  ~SafeMutex() {}
+  ~SafeMutex() = default;
 
   void Lock() {
     AssertNotCurrentThreadOwns();
@@ -241,7 +241,7 @@ class nsComponentManagerImpl final : public nsIComponentManager,
                               mozilla::FileLocation& aFile, bool aChromeOnly)
         : mType(aType), mFile(aFile), mChromeOnly(aChromeOnly) {}
 
-    ~ManifestProcessingContext() {}
+    ~ManifestProcessingContext() = default;
 
     NSLocationType mType;
     mozilla::FileLocation mFile;

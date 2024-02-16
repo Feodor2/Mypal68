@@ -32,8 +32,8 @@ struct StaticXREAppData;
  */
 class XREAppData {
  public:
-  XREAppData() {}
-  ~XREAppData() {}
+  XREAppData() = default;
+  ~XREAppData() = default;
   XREAppData(const XREAppData& aOther) { *this = aOther; }
 
   explicit XREAppData(const StaticXREAppData& aOther) { *this = aOther; }

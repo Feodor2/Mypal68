@@ -99,7 +99,7 @@ class WaitForTopicSpinner final : public nsIObserver {
   }
 
  private:
-  ~WaitForTopicSpinner() {}
+  ~WaitForTopicSpinner() = default;
 
   bool mTopicReceived;
   PRIntervalTime mStartTime;
@@ -119,7 +119,7 @@ class PlacesAsyncStatementSpinner final : public mozIStorageStatementCallback {
   uint16_t completionReason;
 
  protected:
-  ~PlacesAsyncStatementSpinner() {}
+  ~PlacesAsyncStatementSpinner() = default;
 
   volatile bool mCompleted;
 };
@@ -313,7 +313,7 @@ static const char TOPIC_PLACES_CONNECTION_CLOSED[] = "places-connection-closed";
 class WaitForConnectionClosed final : public nsIObserver {
   RefPtr<WaitForTopicSpinner> mSpinner;
 
-  ~WaitForConnectionClosed() {}
+  ~WaitForConnectionClosed() = default;
 
  public:
   NS_DECL_ISUPPORTS

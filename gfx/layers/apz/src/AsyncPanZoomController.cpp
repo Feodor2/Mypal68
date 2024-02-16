@@ -43,6 +43,7 @@
 #include "mozilla/Preferences.h"             // for Preferences
 #include "mozilla/RecursiveMutex.h"          // for RecursiveMutexAutoLock, etc
 #include "mozilla/RefPtr.h"                  // for RefPtr
+#include "mozilla/ScrollTypes.h"
 #include "mozilla/StaticPrefs_apz.h"
 #include "mozilla/StaticPrefs_general.h"
 #include "mozilla/StaticPrefs_gfx.h"
@@ -377,18 +378,6 @@ typedef PlatformSpecificStateBase
  * The maximum stretch along an axis is a factor of (1 + kStretchFactor).
  * (So if kStretchFactor is 0, you can't stretch at all; if kStretchFactor
  * is 1, you can stretch at most by a factor of 2).
- *
- * \li\b apz.overscroll.spring_stiffness
- * The stiffness of the spring used in the physics model for the overscroll
- * animation.
- *
- * \li\b apz.overscroll.spring_friction
- * The friction of the spring used in the physics model for the overscroll
- * animation.
- * Even though a realistic physics model would dictate that this be the same
- * as \b apz.fling_friction, we allow it to be set to be something different,
- * because in practice we want flings to skate smoothly (low friction), while
- * we want the overscroll bounce-back to oscillate few times (high friction).
  *
  * \li\b apz.overscroll.stop_distance_threshold
  * \li\b apz.overscroll.stop_velocity_threshold
@@ -5181,7 +5170,7 @@ void AsyncPanZoomController::SetTestAsyncZoom(
 }
 
 Maybe<CSSPoint> AsyncPanZoomController::FindSnapPointNear(
-    const CSSPoint& aDestination, nsIScrollableFrame::ScrollUnit aUnit) {
+    const CSSPoint& aDestination, ScrollUnit aUnit) {
   mRecursiveMutex.AssertCurrentThreadIn();
   APZC_LOG("%p scroll snapping near %s\n", this,
            Stringify(aDestination).c_str());
@@ -5203,7 +5192,7 @@ Maybe<CSSPoint> AsyncPanZoomController::FindSnapPointNear(
 
 void AsyncPanZoomController::ScrollSnapNear(const CSSPoint& aDestination) {
   if (Maybe<CSSPoint> snapPoint =
-          FindSnapPointNear(aDestination, nsIScrollableFrame::DEVICE_PIXELS)) {
+          FindSnapPointNear(aDestination, ScrollUnit::DEVICE_PIXELS)) {
     if (*snapPoint != Metrics().GetScrollOffset()) {
       APZC_LOG("%p smooth scrolling to snap point %s\n", this,
                Stringify(*snapPoint).c_str());
@@ -5242,8 +5231,8 @@ void AsyncPanZoomController::ScrollSnapToDestination() {
   }
 
   CSSPoint startPosition = Metrics().GetScrollOffset();
-  if (MaybeAdjustDeltaForScrollSnapping(nsIScrollableFrame::LINES,
-                                        predictedDelta, startPosition)) {
+  if (MaybeAdjustDeltaForScrollSnapping(ScrollUnit::LINES, predictedDelta,
+                                        startPosition)) {
     APZC_LOG(
         "%p fling snapping.  friction: %f velocity: %f, %f "
         "predictedDelta: %f, %f position: %f, %f "
@@ -5258,8 +5247,7 @@ void AsyncPanZoomController::ScrollSnapToDestination() {
 }
 
 bool AsyncPanZoomController::MaybeAdjustDeltaForScrollSnapping(
-    nsIScrollableFrame::ScrollUnit aUnit, ParentLayerPoint& aDelta,
-    CSSPoint& aStartPosition) {
+    ScrollUnit aUnit, ParentLayerPoint& aDelta, CSSPoint& aStartPosition) {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
   CSSToParentLayerScale2D zoom = Metrics().GetZoom();
   CSSPoint destination = Metrics().CalculateScrollRange().ClampPoint(
@@ -5290,8 +5278,7 @@ bool AsyncPanZoomController::MaybeAdjustDeltaForScrollSnappingOnWheelInput(
 bool AsyncPanZoomController::MaybeAdjustDestinationForScrollSnapping(
     const KeyboardInput& aEvent, CSSPoint& aDestination) {
   RecursiveMutexAutoLock lock(mRecursiveMutex);
-  nsIScrollableFrame::ScrollUnit unit =
-      KeyboardScrollAction::GetScrollUnit(aEvent.mAction.mType);
+  ScrollUnit unit = KeyboardScrollAction::GetScrollUnit(aEvent.mAction.mType);
 
   if (Maybe<CSSPoint> snapPoint = FindSnapPointNear(aDestination, unit)) {
     aDestination = *snapPoint;

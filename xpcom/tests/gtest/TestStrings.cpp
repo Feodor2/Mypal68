@@ -1282,7 +1282,7 @@ static void test_parse_string_helper(const char* str, char separator, int len,
                                      const char* s1, const char* s2) {
   nsCString data(str);
   nsTArray<nsCString> results;
-  EXPECT_TRUE(ParseString(data, separator, results));
+  ParseString(data, separator, results);
   EXPECT_EQ(int(results.Length()), len);
   const char* strings[] = {s1, s2};
   for (int i = 0; i < len; ++i) {
@@ -1941,6 +1941,40 @@ TEST_F(Strings, latin1_to_utf8) {
   CopyLatin1toUTF8(s, t);
   // EqualsLiteral requires ASCII
   EXPECT_TRUE(t.Equals("\xC3\xA4"));
+}
+
+TEST_F(Strings, ConvertToSpan) {
+  nsString string;
+
+  // from const string
+  {
+    const auto& constStringRef = string;
+
+    auto span = Span{constStringRef};
+    static_assert(std::is_same_v<decltype(span), Span<const char16_t>>);
+  }
+
+  // from non-const string
+  {
+    auto span = Span{string};
+    static_assert(std::is_same_v<decltype(span), Span<char16_t>>);
+  }
+
+  nsCString cstring;
+
+  // from const string
+  {
+    const auto& constCStringRef = cstring;
+
+    auto span = Span{constCStringRef};
+    static_assert(std::is_same_v<decltype(span), Span<const char>>);
+  }
+
+  // from non-const string
+  {
+    auto span = Span{cstring};
+    static_assert(std::is_same_v<decltype(span), Span<char>>);
+  }
 }
 
 // Note the five calls in the loop, so divide by 100k

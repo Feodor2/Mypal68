@@ -83,15 +83,12 @@ struct BlobItemData {
   UniquePtr<nsDisplayItemGeometry> mGeometry;
   DisplayItemClip mClip;
   bool mUsed;  // initialized near construction
+  // XXX: only used for debugging
+  bool mInvalid;
 
   // a weak pointer to the group that owns this item
   // we use this to track whether group for a particular item has changed
   struct DIGroup* mGroup;
-
-  // XXX: only used for debugging
-  bool mInvalid;
-  bool mInvalidRegion;
-  bool mEmpty;
 
   // properties that are used to emulate layer tree invalidation
   Matrix mMatrix;  // updated to track the current transform to device space
@@ -103,13 +100,10 @@ struct BlobItemData {
   std::vector<RefPtr<SourceSurface>> mExternalSurfaces;
 
   IntRect mImageRect;
-  LayerIntPoint mGroupOffset;
 
   BlobItemData(DIGroup* aGroup, nsDisplayItem* aItem)
       : mUsed(false), mGroup(aGroup) {
     mInvalid = false;
-    mInvalidRegion = false;
-    mEmpty = false;
     mDisplayItemKey = aItem->GetPerFrameKey();
     AddFrame(aItem->Frame());
   }
@@ -140,7 +134,7 @@ struct BlobItemData {
     if (mArray->IsEmpty()) {
       // If the frame is in the process of being destroyed this will fail
       // but that's ok, because the the property will be removed then anyways
-      mFrame->DeleteProperty(BlobGroupDataProperty());
+      mFrame->RemoveProperty(BlobGroupDataProperty());
     }
     mFrame = nullptr;
   }
@@ -234,7 +228,7 @@ struct Grouper {
                                    wr::IpcResourceUpdateQueue& aResources,
                                    DIGroup* aGroup, nsDisplayItem* aItem,
                                    const StackingContextHelper& aSc);
-  ~Grouper() {}
+  ~Grouper() = default;
 };
 
 // Returns whether this is an item for which complete invalidation was
@@ -381,7 +375,6 @@ struct DIGroup {
     /*if (aItem->IsReused() && aData->mGeometry) {
       return;
     }*/
-    aData->mInvalidRegion = false;
 
     GP("pre mInvalidRect: %s %p-%d - inv: %d %d %d %d\n", aItem->Name(),
        aItem->Frame(), aItem->GetPerFrameKey(), mInvalidRect.x, mInvalidRect.y,
@@ -456,7 +449,6 @@ struct DIGroup {
         InvalidateRect(aData->mRect);
 
         aData->mInvalid = true;
-        aData->mInvalidRegion = true;
       } else {
         if (aData->mClip != clip) {
           UniquePtr<nsDisplayItemGeometry> geometry(
@@ -728,7 +720,6 @@ struct DIGroup {
       }
     }
     mFonts = std::move(fonts);
-    mInvalidRect.SetEmpty();
     aResources.SetBlobImageVisibleArea(
         mKey.value().second(),
         ViewAs<ImagePixel>(mVisibleRect, PixelCastJustification::LayerIsImage));
@@ -755,7 +746,7 @@ struct DIGroup {
     // cf. Bug 1455422.
     // wr::LayoutRect clip = wr::ToLayoutRect(bounds.Intersect(mVisibleRect));
 
-    aBuilder.SetHitTestInfo(mScrollId, hitInfo);
+    aBuilder.SetHitTestInfo(mScrollId, hitInfo, SideBits::eNone);
     aBuilder.PushImage(dest, dest, !backfaceHidden,
                        wr::ToImageRendering(sampleFilter),
                        wr::AsImageKey(mKey.value().second()));
@@ -791,22 +782,7 @@ struct DIGroup {
         dirty = false;
         BlobItemData* data = GetBlobItemData(item);
         if (data->mInvalid) {
-          if (item->GetType() == DisplayItemType::TYPE_TRANSFORM) {
-            nsDisplayTransform* transformItem =
-                static_cast<nsDisplayTransform*>(item);
-            const Matrix4x4Flagged& t = transformItem->GetTransform();
-            Matrix t2d;
-            bool is2D = t.Is2D(&t2d);
-            gfxCriticalError()
-                << "DIT-" << is2D << "-r-" << data->mInvalidRegion << "-"
-                << bounds.x << "-" << bounds.y << "-" << bounds.width << "-"
-                << bounds.height << "," << mInvalidRect.x << "-"
-                << mInvalidRect.y << "-" << mInvalidRect.width << "-"
-                << mInvalidRect.height << "-sbi";
-          } else {
-            gfxCriticalError() << "DisplayItem" << item->Name() << "-region-"
-                               << data->mInvalidRegion << "-should be invalid";
-          }
+          gfxCriticalError() << "DisplayItem" << item->Name() << "-should be invalid";
         }
         // if the item is invalid it needs to be fully contained
         MOZ_RELEASE_ASSERT(!data->mInvalid);
@@ -1056,8 +1032,20 @@ void WebRenderScrollDataCollection::AppendRoot(
       layerScrollData.back().InitializeRoot(layerScrollData.size() - 1);
 
       if (aRootMetadata) {
-        layerScrollData.back().AppendScrollMetadata(aScrollDatas[renderRoot],
-                                                    aRootMetadata.ref());
+        // Put the fallback root metadata on the rootmost layer that is
+        // a matching async zoom container, or the root layer that we just
+        // created above.
+        size_t rootMetadataTarget = layerScrollData.size() - 1;
+        for (size_t i = rootMetadataTarget; i > 0; i--) {
+          if (auto zoomContainerId = layerScrollData[i - 1].GetAsyncZoomContainerId()) {
+            if (*zoomContainerId == aRootMetadata->GetMetrics().GetScrollId()) {
+              rootMetadataTarget = i - 1;
+              break;
+            }
+          }
+        }
+        layerScrollData[rootMetadataTarget].AppendScrollMetadata(
+            aScrollDatas[renderRoot], aRootMetadata.ref());
       }
     }
   }
@@ -1200,6 +1188,8 @@ void Grouper::ConstructGroups(nsDisplayListBuilder* aDisplayListBuilder,
       RefPtr<WebRenderGroupData> groupData =
           aCommandBuilder->CreateOrRecycleWebRenderUserData<WebRenderGroupData>(
               item, aBuilder.GetRenderRoot());
+
+      groupData->mFollowingGroup.mInvalidRect.SetEmpty();
 
       // Initialize groupData->mFollowingGroup with data from currentGroup.
       // We want to copy out this information before calling EndGroup because
@@ -1477,6 +1467,8 @@ void WebRenderCommandBuilder::DoGroupingForDisplayList(
   GP("Inherrited scale %f %f\n", scale.width, scale.height);
   GP("Bounds: %d %d %d %d vs %d %d %d %d\n", p.x, p.y, p.width, p.height, q.x,
      q.y, q.width, q.height);
+
+  group.mInvalidRect.SetEmpty();
   if (!group.mVisibleRect.IsEqualEdges(visibleRect) ||
       !group.mGroupBounds.IsEqualEdges(groupBounds) ||
       group.mAppUnitsPerDevPixel != appUnitsPerDevPixel ||
@@ -2126,8 +2118,9 @@ WebRenderCommandBuilder::GenerateFallbackData(
     nsDisplayItem* aItem, wr::DisplayListBuilder& aBuilder,
     wr::IpcResourceUpdateQueue& aResources, const StackingContextHelper& aSc,
     nsDisplayListBuilder* aDisplayListBuilder, LayoutDeviceRect& aImageRect) {
-  bool useBlobImage = StaticPrefs::gfx_webrender_blob_images() &&
-                      !aItem->MustPaintOnContentSide();
+  const bool paintOnContentSide = aItem->MustPaintOnContentSide();
+  bool useBlobImage =
+      StaticPrefs::gfx_webrender_blob_images() && !paintOnContentSide;
   Maybe<gfx::Color> highlight = Nothing();
   if (StaticPrefs::gfx_webrender_highlight_painted_layers()) {
     highlight = Some(useBlobImage ? gfx::Color(1.0, 0.0, 0.0, 0.5)
@@ -2144,15 +2137,12 @@ WebRenderCommandBuilder::GenerateFallbackData(
   // Blob images will only draw the visible area of the blob so we don't need to
   // clip them here and can just rely on the webrender clipping.
   // TODO We also don't clip native themed widget to avoid over-invalidation
-  // during scrolling. it would be better to support a sort of straming/tiling
+  // during scrolling. It would be better to support a sort of streaming/tiling
   // scheme for large ones but the hope is that we should not have large native
   // themed items.
-  nsRect paintBounds = itemBounds;
-  if (useBlobImage || aItem->MustPaintOnContentSide()) {
-    paintBounds = itemBounds;
-  } else {
-    paintBounds = aItem->GetClippedBounds(aDisplayListBuilder);
-  }
+  nsRect paintBounds = (useBlobImage || paintOnContentSide)
+                           ? itemBounds
+                           : aItem->GetClippedBounds(aDisplayListBuilder);
 
   // nsDisplayItem::Paint() may refer the variables that come from
   // ComputeVisibility(). So we should call ComputeVisibility() before painting.
@@ -2526,7 +2516,7 @@ Maybe<wr::ImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
                            .PreScale(scale.width, scale.height));
 
     bool maskPainted = false;
-    bool paintFinished =
+    bool maskIsComplete =
         aMaskItem->PaintMask(aDisplayListBuilder, context, &maskPainted);
     if (!maskPainted) {
       return Nothing();
@@ -2557,7 +2547,7 @@ Maybe<wr::ImageMask> WebRenderCommandBuilder::BuildWrMaskImage(
         recorder, maskData->mExternalSurfaces,
         mManager->GetRenderRootStateManager(aBuilder.GetRenderRoot()),
         aResources);
-    if (paintFinished) {
+    if (maskIsComplete) {
       maskData->mItemRect = itemRect;
       maskData->mMaskOffset = maskOffset;
       maskData->mScale = scale;
@@ -2610,7 +2600,7 @@ void WebRenderCommandBuilder::RemoveUnusedAndResetWebRenderUserData() {
 
       if (!userDataTable->Count()) {
         frame->RemoveProperty(WebRenderUserDataProperty::Key());
-        delete userDataTable;
+        userDataTable = nullptr;
       }
 
       if (data->GetType() == WebRenderUserData::UserDataType::eCanvas) {

@@ -16,4 +16,4 @@ futures-cpupool = { version="0.1.8", default-features=false }
 libc = "0.2"
 log = "0.4"
 tokio-core = "0.1"
-tokio-uds = "0.1.7"
+tokio-uds = "0.2.5"

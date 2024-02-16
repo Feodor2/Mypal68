@@ -1333,7 +1333,7 @@ void gfxDWriteFontList::GetFontsFromCollection(
     if (mBadUnderlineFamilyNames.ContainsSorted(name)) {
       fam->SetBadUnderlineFamily();
     }
-    mFontFamilies.Put(name, fam);
+    mFontFamilies.Put(name, RefPtr{fam});
 
     // now add other family name localizations, if present
     uint32_t nameCount = names->GetCount();
@@ -1441,7 +1441,7 @@ nsresult gfxDWriteFontList::GetFontSubstitutes() {
       gfxFontFamily* ff;
       if (!actualFontName.IsEmpty() &&
           (ff = mFontFamilies.GetWeak(actualFontName))) {
-        mFontSubstitutes.Put(substituteName, ff);
+        mFontSubstitutes.Put(substituteName, RefPtr{ff});
       } else {
         mNonExistingFonts.AppendElement(substituteName);
       }
@@ -1489,7 +1489,7 @@ void gfxDWriteFontList::GetDirectWriteSubstitutes() {
       BuildKeyNameFromFontName(actualFontName);
       gfxFontFamily* ff;
       if (nullptr != (ff = mFontFamilies.GetWeak(actualFontName))) {
-        mFontSubstitutes.Put(substituteName, ff);
+        mFontSubstitutes.Put(substituteName, RefPtr{ff});
       } else {
         mNonExistingFonts.AppendElement(substituteName);
       }

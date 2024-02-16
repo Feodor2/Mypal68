@@ -7,13 +7,12 @@
 
 #include "mozilla/EditorDOMPoint.h"
 #include "mozilla/EditTransactionBase.h"
-#include "nsCOMPtr.h"
+#include "mozilla/RefPtr.h"
+#include "mozilla/dom/Element.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsISupportsImpl.h"
 
 class nsAtom;
-class nsIContent;
-class nsINode;
 
 /**
  * A transaction that creates a new node in the content tree.
@@ -21,9 +20,6 @@ class nsINode;
 namespace mozilla {
 
 class EditorBase;
-namespace dom {
-class Element;
-}  // namespace dom
 
 class CreateElementTransaction final : public EditTransactionBase {
  protected:
@@ -53,18 +49,19 @@ class CreateElementTransaction final : public EditTransactionBase {
                                            EditTransactionBase)
 
   NS_DECL_EDITTRANSACTIONBASE
+  NS_DECL_EDITTRANSACTIONBASE_GETASMETHODS_OVERRIDE(CreateElementTransaction)
 
-  NS_IMETHOD RedoTransaction() override;
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD RedoTransaction() override;
 
-  already_AddRefed<dom::Element> GetNewNode();
+  dom::Element* GetNewElement() const { return mNewElement; }
 
  protected:
-  virtual ~CreateElementTransaction();
+  virtual ~CreateElementTransaction() = default;
 
   /**
    * InsertNewNode() inserts mNewNode before the child node at mPointToInsert.
    */
-  void InsertNewNode(ErrorResult& aError);
+  MOZ_CAN_RUN_SCRIPT void InsertNewNode(ErrorResult& aError);
 
   // The document into which the new node will be inserted.
   RefPtr<EditorBase> mEditorBase;
@@ -76,7 +73,7 @@ class CreateElementTransaction final : public EditTransactionBase {
   EditorDOMPoint mPointToInsert;
 
   // The new node to insert.
-  nsCOMPtr<dom::Element> mNewNode;
+  RefPtr<dom::Element> mNewElement;
 };
 
 }  // namespace mozilla

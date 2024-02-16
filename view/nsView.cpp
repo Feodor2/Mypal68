@@ -1016,7 +1016,7 @@ void nsView::DidCompositeWindow(mozilla::layers::TransactionId aTransactionId,
     return;
   }
 
-  nsIDocShell* docShell = context->GetDocShell();
+  nsIDocShell* docShell =  context->GetDocShell();
   RefPtr<TimelineConsumers> timelines = TimelineConsumers::Get();
 
   if (timelines && timelines->HasConsumer(docShell)) {

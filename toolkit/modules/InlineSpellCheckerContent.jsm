@@ -60,9 +60,8 @@ var InlineSpellCheckerContent = {
       };
     }
 
-    let dictionaryList = {};
     let realSpellChecker = spellChecker.mInlineSpellChecker.spellChecker;
-    realSpellChecker.GetDictionaryList(dictionaryList, {});
+    let dictionaryList = realSpellChecker.GetDictionaryList();
 
     return {
       canSpellCheck: spellChecker.canSpellCheck,
@@ -72,7 +71,7 @@ var InlineSpellCheckerContent = {
       misspelling: spellChecker.mMisspelling,
       spellSuggestions: this._generateSpellSuggestions(),
       currentDictionary: spellChecker.mInlineSpellChecker.spellChecker.GetCurrentDictionary(),
-      dictionaryList: dictionaryList.value,
+      dictionaryList,
     };
   },
 

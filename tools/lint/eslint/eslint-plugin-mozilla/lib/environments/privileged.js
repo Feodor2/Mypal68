@@ -432,7 +432,6 @@ module.exports = {
     PresentationConnectionList: false,
     PresentationReceiver: false,
     PresentationRequest: false,
-    PrioEncoder: false,
     ProcessMessageManager: false,
     ProcessingInstruction: false,
     ProgressEvent: false,

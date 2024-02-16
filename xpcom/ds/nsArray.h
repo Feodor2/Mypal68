@@ -36,7 +36,7 @@ class nsArrayBase : public nsIMutableArray {
                                    void** aResult);
 
  protected:
-  nsArrayBase() {}
+  nsArrayBase() = default;
   nsArrayBase(const nsArrayBase& aOther);
   explicit nsArrayBase(const nsCOMArray_base& aBaseArray)
       : mArray(aBaseArray) {}
@@ -56,7 +56,7 @@ class nsArray final : public nsArrayBase {
   nsArray(const nsArray& aOther);
   explicit nsArray(const nsCOMArray_base& aBaseArray)
       : nsArrayBase(aBaseArray) {}
-  ~nsArray() {}
+  ~nsArray() = default;
 };
 
 class nsArrayCC final : public nsArrayBase {
@@ -71,7 +71,7 @@ class nsArrayCC final : public nsArrayBase {
   nsArrayCC(const nsArrayCC& aOther);
   explicit nsArrayCC(const nsCOMArray_base& aBaseArray)
       : nsArrayBase(aBaseArray) {}
-  ~nsArrayCC() {}
+  ~nsArrayCC() = default;
 };
 
 #endif

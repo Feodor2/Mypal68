@@ -13,7 +13,7 @@ namespace mozilla {
 namespace gl {
 
 class GfxTexturesReporter final : public nsIMemoryReporter {
-  ~GfxTexturesReporter() {}
+  ~GfxTexturesReporter() = default;
 
  public:
   NS_DECL_ISUPPORTS

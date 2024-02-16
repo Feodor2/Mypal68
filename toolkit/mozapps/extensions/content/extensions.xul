@@ -188,11 +188,6 @@
               <button id="show-all-extensions" hidden="true"
                       data-l10n-id="show-all-extensions-button"
                       command="cmd_showAllExtensions"/>
-              <spacer flex="1"/>
-              <label id="search-label" control="header-search"/>
-              <textbox id="header-search" is="search-textbox" searchbutton="true"
-                       data-l10n-id="search-header"
-                       data-l10n-attrs="searchbuttonlabel" maxlength="100"/>
             </hbox>
           </hbox>
 

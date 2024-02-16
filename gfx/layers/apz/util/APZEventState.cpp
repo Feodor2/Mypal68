@@ -112,7 +112,7 @@ APZEventState::APZEventState(nsIWidget* aWidget,
              " does not support weak references. APZ will NOT work!");
 }
 
-APZEventState::~APZEventState() {}
+APZEventState::~APZEventState() = default;
 
 class DelayedFireSingleTapEvent final : public nsITimerCallback,
                                         public nsINamed {
@@ -150,7 +150,7 @@ class DelayedFireSingleTapEvent final : public nsITimerCallback,
   void ClearTimer() { mTimer = nullptr; }
 
  private:
-  ~DelayedFireSingleTapEvent() {}
+  ~DelayedFireSingleTapEvent() = default;
 
   nsWeakPtr mWidget;
   LayoutDevicePoint mPoint;
@@ -471,15 +471,6 @@ void APZEventState::ProcessAPZStateChange(ViewID aViewId,
       break;
     }
   }
-}
-
-void APZEventState::ProcessClusterHit() {
-  // If we hit a cluster of links then we shouldn't activate any of them,
-  // as we will be showing the zoomed view. (This is only called on Fennec).
-#ifndef MOZ_WIDGET_ANDROID
-  MOZ_ASSERT(false);
-#endif
-  mActiveElementManager->ClearActivation();
 }
 
 bool APZEventState::SendPendingTouchPreventedResponse(bool aPreventDefault) {

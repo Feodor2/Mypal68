@@ -154,16 +154,14 @@ void MediaTransportHandlerIPC::Destroy() {
 
 // We will probably be able to move the proxy lookup stuff into
 // this class once we move mtransport to its own process.
-void MediaTransportHandlerIPC::SetProxyServer(
+void MediaTransportHandlerIPC::SetProxyConfig(
     NrSocketProxyConfig&& aProxyConfig) {
   mInitPromise->Then(
       mCallbackThread, __func__,
       [aProxyConfig = std::move(aProxyConfig), this,
        self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) mutable {
         if (mChild) {
-          mChild->SendSetProxyServer(dom::TabId(aProxyConfig.GetTabId()),
-                                     aProxyConfig.GetLoadInfoArgs(),
-                                     aProxyConfig.GetAlpn());
+          mChild->SendSetProxyConfig(aProxyConfig.GetConfig());
         }
       },
       [](const nsCString& aError) {});
@@ -274,14 +272,15 @@ void MediaTransportHandlerIPC::SendPacket(const std::string& aTransportId,
       [](const nsCString& aError) {});
 }
 
-void MediaTransportHandlerIPC::AddIceCandidate(const std::string& aTransportId,
-                                               const std::string& aCandidate,
-                                               const std::string& aUfrag) {
+void MediaTransportHandlerIPC::AddIceCandidate(
+    const std::string& aTransportId, const std::string& aCandidate,
+    const std::string& aUfrag, const std::string& aObfuscatedAddress) {
   mInitPromise->Then(
       mCallbackThread, __func__,
       [=, self = RefPtr<MediaTransportHandlerIPC>(this)](bool /*dummy*/) {
         if (mChild) {
-          mChild->SendAddIceCandidate(aTransportId, aCandidate, aUfrag);
+          mChild->SendAddIceCandidate(aTransportId, aCandidate, aUfrag,
+                                      aObfuscatedAddress);
         }
       },
       [](const nsCString& aError) {});

@@ -190,7 +190,10 @@
 
       obj = {
         role: ROLE_PARAGRAPH,
-        children: [ { role: ROLE_WHITESPACE } ],
+        children: [
+          { role: ROLE_WHITESPACE },
+          { role: ROLE_WHITESPACE }
+        ]
       };
       testElm("br_container", obj);
 
@@ -707,25 +710,9 @@
 
       obj = {
         role: ROLE_SPINBUTTON,
-        interfaces: [ nsIAccessibleValue ],
+        interfaces: [ nsIAccessibleValue, nsIAccessibleText, nsIAccessibleEditableText ],
         children: [
-          {
-            role: ROLE_ENTRY,
-            extraStates: EXT_STATE_EDITABLE | EXT_STATE_SINGLE_LINE,
-            actions: "activate",
-            interfaces: [ nsIAccessibleText, nsIAccessibleEditableText ],
-            children: [
-              { role: ROLE_TEXT_LEAF },
-            ],
-          },
-          {
-            role: ROLE_PUSHBUTTON,
-            actions: "press",
-          },
-          {
-            role: ROLE_PUSHBUTTON,
-            actions: "press",
-          },
+          { role: ROLE_TEXT_LEAF },
         ],
       };
       testElm("input_number", obj);
@@ -1114,7 +1101,7 @@
       // HTML:output
 
       obj = {
-        role: ROLE_SECTION,
+        role: ROLE_STATUSBAR,
         attributes: { "live": "polite" },
         todo_relations: {
           RELATION_CONTROLLED_BY: "output_input",
@@ -1428,7 +1415,7 @@
     <p>This is a quotation taken from the Mozilla Developer Center.</p>
   </blockquote>
 
-  <!--  two BRs, one will be eaten -->
+  <!--  two BRs, both will be present -->
   <p id="br_container"><br><br></p>
 
   <button id="button">button</button>

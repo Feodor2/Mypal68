@@ -13,7 +13,6 @@
 #include "nsServiceManagerUtils.h"
 #include "nsIWebProgressListener.h"
 #include "PrintingParent.h"
-#include "PrintDataUtils.h"
 #include "PrintProgressDialogParent.h"
 #include "PrintSettingsDialogParent.h"
 #include "mozilla/layout/RemotePrintJobParent.h"
@@ -43,7 +42,7 @@ mozilla::ipc::IPCResult PrintingParent::RecvShowProgress(
   nsresult rv = NS_ERROR_INVALID_ARG;
   if (parentWin && pps) {
     rv = pps->ShowPrintProgressDialog(
-        parentWin, nullptr, nullptr, observer, isForPrinting,
+        parentWin, nullptr, observer, isForPrinting,
         getter_AddRefs(printProgressListener),
         getter_AddRefs(printProgressParams), &notifyOnOpen);
   }
@@ -98,11 +97,6 @@ nsresult PrintingParent::ShowPrintDialog(PBrowserParent* aParent,
     return NS_ERROR_FAILURE;
   }
 
-  // The initSettings we got can be wrapped using
-  // PrintDataUtils' MockWebBrowserPrint, which implements enough of
-  // nsIWebBrowserPrint to keep the dialogs happy.
-  nsCOMPtr<nsIWebBrowserPrint> wbp = new MockWebBrowserPrint(aData);
-
   // Use the existing RemotePrintJob and its settings, if we have one, to make
   // sure they stay current.
   RemotePrintJobParent* remotePrintJob =
@@ -150,13 +144,13 @@ nsresult PrintingParent::ShowPrintDialog(PBrowserParent* aParent,
     settings->SetIsInitializedFromPrinter(false);
     mPrintSettingsSvc->InitPrintSettingsFromPrinter(printerName, settings);
   } else {
-    rv = pps->ShowPrintDialog(parentWin, wbp, settings);
+    rv = pps->ShowPrintDialog(parentWin, settings);
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
   if (isPrintPreview) {
     // For print preview we don't want a RemotePrintJob just the settings.
-    rv = mPrintSettingsSvc->SerializeToPrintData(settings, nullptr, aResult);
+    rv = mPrintSettingsSvc->SerializeToPrintData(settings, aResult);
   } else {
     rv = SerializeAndEnsureRemotePrintJob(settings, nullptr, remotePrintJob,
                                           aResult);
@@ -289,8 +283,7 @@ nsresult PrintingParent::SerializeAndEnsureRemotePrintJob(
     }
   }
 
-  rv = mPrintSettingsSvc->SerializeToPrintData(printSettings, nullptr,
-                                               aPrintData);
+  rv = mPrintSettingsSvc->SerializeToPrintData(printSettings, aPrintData);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
@@ -316,7 +309,7 @@ PrintingParent::PrintingParent() {
   MOZ_ASSERT(mPrintSettingsSvc);
 }
 
-PrintingParent::~PrintingParent() {}
+PrintingParent::~PrintingParent() = default;
 
 }  // namespace embedding
 }  // namespace mozilla

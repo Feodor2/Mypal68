@@ -784,7 +784,7 @@ static bool ValidateSecurityInfo(imgRequest* request, bool forcePrincipalCheck,
   // If the referrer policy doesn't match, we can't use this request.
   // XXX: Note that we only validate referrer policy, not referrerInfo object.
   // We should do with referrerInfo object, but it will cause us to use more
-  // resources in the common case (the same policies but diferrent original
+  // resources in the common case (the same policies but different original
   // referrers).
   // XXX: this will return false if an image has different referrer attributes,
   // i.e. we currently don't use the cached image but reload the image with
@@ -1597,7 +1597,7 @@ bool imgLoader::PutIntoCache(const ImageCacheKey& aKey, imgCacheEntry* entry) {
              nullptr));
   }
 
-  cache.Put(aKey, entry);
+  cache.Put(aKey, RefPtr{entry});
 
   // We can be called to resurrect an evicted entry.
   if (entry->Evicted()) {
@@ -1733,7 +1733,7 @@ bool imgLoader::ValidateRequestWithNewChannel(
     nsContentPolicyType aLoadPolicyType, imgRequestProxy** aProxyRequest,
     nsIPrincipal* aTriggeringPrincipal, int32_t aCORSMode,
     bool* aNewChannelCreated) {
-  // now we need to insert a new channel request object inbetween the real
+  // now we need to insert a new channel request object in between the real
   // request and the proxy that basically delays loading the image until it
   // gets a 304 or figures out that this needs to be a new request
 
@@ -2579,7 +2579,7 @@ nsresult imgLoader::LoadImageWithChannel(nsIChannel* channel,
 
     // No principal specified here, because we're not passed one.
     // In LoadImageWithChannel, the redirects that may have been
-    // assoicated with this load would have gone through necko.
+    // associated with this load would have gone through necko.
     // We only have the final URI in ImageLib and hence don't know
     // if the request went through insecure redirects.  But if it did,
     // the necko cache should have handled that (since all necko cache hits

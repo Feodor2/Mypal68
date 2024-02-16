@@ -1,0 +1,19 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
+include NeckoChannelParams;
+
+namespace mozilla {
+namespace net {
+
+struct WebrtcProxyConfig {
+  TabId tabId;
+  nsCString alpn;
+  LoadInfoArgs loadInfoArgs;
+  bool forceProxy;
+};
+
+} // namespace net
+} // namespace mozilla

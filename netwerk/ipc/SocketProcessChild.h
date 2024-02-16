@@ -27,7 +27,7 @@ class SocketProcessChild final : public PSocketProcessChild {
   static SocketProcessChild* GetSingleton();
 
   bool Init(base::ProcessId aParentPid, const char* aParentBuildID,
-            MessageLoop* aIOLoop, IPC::Channel* aChannel);
+            MessageLoop* aIOLoop, UniquePtr<IPC::Channel> aChannel);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -44,15 +44,12 @@ class SocketProcessChild final : public PSocketProcessChild {
       Endpoint<mozilla::PProfilerChild>&& aEndpoint);
   mozilla::ipc::IPCResult RecvSocketProcessTelemetryPing();
 
-  PWebrtcProxyChannelChild* AllocPWebrtcProxyChannelChild(
-      const PBrowserOrId& browser);
-  bool DeallocPWebrtcProxyChannelChild(PWebrtcProxyChannelChild* aActor);
+  PWebrtcTCPSocketChild* AllocPWebrtcTCPSocketChild(const Maybe<TabId>& tabId);
+  bool DeallocPWebrtcTCPSocketChild(PWebrtcTCPSocketChild* aActor);
   PDNSRequestChild* AllocPDNSRequestChild(
       const nsCString& aHost, const OriginAttributes& aOriginAttributes,
       const uint32_t& aFlags);
   bool DeallocPDNSRequestChild(PDNSRequestChild*);
-  PProxyConfigLookupChild* AllocPProxyConfigLookupChild();
-  bool DeallocPProxyConfigLookupChild(PProxyConfigLookupChild* aActor);
 
   void CleanUp();
   void DestroySocketProcessBridgeParent(ProcessId aId);

@@ -22,19 +22,20 @@
 #ifndef mozilla_Span_h
 #define mozilla_Span_h
 
+#include <algorithm>
+#include <array>
+#include <cstring>
+#include <iterator>
+#include <limits>
+#include <type_traits>
+#include <utility>
+
 #include "mozilla/Array.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Casting.h"
 #include "mozilla/IntegerTypeTraits.h"
-#include "mozilla/Move.h"
 #include "mozilla/TypeTraits.h"
 #include "mozilla/UniquePtr.h"
-
-#include <algorithm>
-#include <array>
-#include <limits>
-#include <cstring>
-#include <iterator>
 
 namespace mozilla {
 
@@ -76,8 +77,6 @@ template <class T>
 using remove_const_t = typename mozilla::RemoveConst<T>::Type;
 template <bool B, class T, class F>
 using conditional_t = typename mozilla::Conditional<B, T, F>::Type;
-template <class T>
-using add_pointer_t = typename mozilla::AddPointer<T>::Type;
 template <bool B, class T = void>
 using enable_if_t = typename mozilla::EnableIf<B, T>::Type;
 
@@ -122,7 +121,7 @@ class span_iterator {
   using difference_type = typename Span::index_type;
 
   using reference = conditional_t<IsConst, const element_type_, element_type_>&;
-  using pointer = add_pointer_t<reference>;
+  using pointer = std::add_pointer_t<reference>;
 
   constexpr span_iterator() : span_iterator(nullptr, 0) {}
 
@@ -190,11 +189,7 @@ class span_iterator {
     return ret -= n;
   }
 
-  constexpr span_iterator& operator-=(difference_type n)
-
-  {
-    return *this += -n;
-  }
+  constexpr span_iterator& operator-=(difference_type n) { return *this += -n; }
 
   constexpr difference_type operator-(const span_iterator& rhs) const {
     MOZ_RELEASE_ASSERT(span_ == rhs.span_);
@@ -408,6 +403,17 @@ class Span {
       : storage_(aStartPtr, std::distance(aStartPtr, aEndPtr)) {}
 
   /**
+   * Constructor for pair of Span iterators.
+   */
+  template <typename OtherElementType, size_t OtherExtent, bool IsConst>
+  constexpr Span(
+      span_details::span_iterator<Span<OtherElementType, OtherExtent>, IsConst>
+          aBegin,
+      span_details::span_iterator<Span<OtherElementType, OtherExtent>, IsConst>
+          aEnd)
+      : storage_(aBegin == aEnd ? nullptr : &*aBegin, aEnd - aBegin) {}
+
+  /**
    * Constructor for C array.
    */
   template <size_t N>
@@ -487,7 +493,7 @@ class Span {
   template <
       class Container,
       class = span_details::enable_if_t<
-          mozilla::IsConst<element_type>::value &&
+          std::is_const_v<element_type> &&
           !span_details::is_span<Container>::value &&
           mozilla::IsConvertible<typename Container::pointer, pointer>::value &&
           mozilla::IsConvertible<
@@ -701,6 +707,22 @@ class Span {
     return const_reverse_iterator{cbegin()};
   }
 
+  template <size_t SplitPoint>
+  constexpr std::pair<Span<ElementType, SplitPoint>,
+                      Span<ElementType, Extent - SplitPoint>>
+  SplitAt() const {
+    static_assert(Extent != dynamic_extent);
+    static_assert(SplitPoint <= Extent);
+    return {First<SplitPoint>(), Last<Extent - SplitPoint>()};
+  }
+
+  constexpr std::pair<Span<ElementType, dynamic_extent>,
+                      Span<ElementType, dynamic_extent>>
+  SplitAt(const index_type aSplitPoint) const {
+    MOZ_RELEASE_ASSERT(aSplitPoint <= Length());
+    return {First(aSplitPoint), Last(Length() - aSplitPoint)};
+  }
+
  private:
   // this implementation detail class lets us take advantage of the
   // empty base class optimization to pay for only storage of a single
@@ -730,6 +752,20 @@ class Span {
 
   storage_type<span_details::extent_type<Extent>> storage_;
 };
+
+template <typename T, size_t OtherExtent, bool IsConst>
+Span(span_details::span_iterator<Span<T, OtherExtent>, IsConst> aBegin,
+     span_details::span_iterator<Span<T, OtherExtent>, IsConst> aEnd)
+    -> Span<std::conditional_t<IsConst, std::add_const_t<T>, T>>;
+
+template <typename T, size_t Extent>
+Span(T (&aArr)[Extent]) -> Span<T, Extent>;
+
+template <class Container>
+Span(Container&) -> Span<typename Container::value_type>;
+
+template <class Container>
+Span(const Container&) -> Span<const typename Container::value_type>;
 
 // [Span.comparison], Span comparison operators
 template <class ElementType, size_t FirstExtent, size_t SecondExtent>
@@ -801,9 +837,8 @@ AsBytes(Span<ElementType, Extent> s) {
 /**
  * View span as Span<uint8_t>.
  */
-template <
-    class ElementType, size_t Extent,
-    class = span_details::enable_if_t<!mozilla::IsConst<ElementType>::value>>
+template <class ElementType, size_t Extent,
+          class = span_details::enable_if_t<!std::is_const_v<ElementType>>>
 Span<uint8_t, span_details::calculate_byte_size<ElementType, Extent>::value>
 AsWritableBytes(Span<ElementType, Extent> s) {
   return {reinterpret_cast<uint8_t*>(s.data()), s.size_bytes()};

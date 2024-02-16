@@ -161,9 +161,9 @@ class ExpirationTrackerImpl {
         return rv;
       }
     }
-    if (!generation.AppendElement(aObj)) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    generation.AppendElement(aObj);
     state->mGeneration = mNewestGeneration;
     state->mIndexInGeneration = index;
     return NS_OK;
@@ -501,7 +501,7 @@ class nsExpirationTracker
       : ::detail::SingleThreadedExpirationTracker<T, K>(aTimerPeriod, aName,
                                                         aEventTarget) {}
 
-  virtual ~nsExpirationTracker() {}
+  virtual ~nsExpirationTracker() = default;
 
   nsresult AddObject(T* aObj) {
     return this->AddObjectLocked(aObj, FakeLock());

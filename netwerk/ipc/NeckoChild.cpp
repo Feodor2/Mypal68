@@ -24,9 +24,8 @@
 #include "mozilla/net/ClassifierDummyChannelChild.h"
 #include "mozilla/net/SocketProcessBridgeChild.h"
 #ifdef MOZ_WEBRTC
-#  include "mozilla/net/ProxyConfigLookupChild.h"
 #  include "mozilla/net/StunAddrsRequestChild.h"
-#  include "mozilla/net/WebrtcProxyChannelChild.h"
+#  include "mozilla/net/WebrtcTCPSocketChild.h"
 #endif
 
 #include "SerializedLoadContext.h"
@@ -92,21 +91,19 @@ bool NeckoChild::DeallocPStunAddrsRequestChild(PStunAddrsRequestChild* aActor) {
   return true;
 }
 
-PWebrtcProxyChannelChild* NeckoChild::AllocPWebrtcProxyChannelChild(
-    const TabId& tabId) {
+PWebrtcTCPSocketChild* NeckoChild::AllocPWebrtcTCPSocketChild(
+    const Maybe<TabId>& tabId) {
   // We don't allocate here: instead we always use IPDL constructor that takes
   // an existing object
   MOZ_ASSERT_UNREACHABLE(
-      "AllocPWebrtcProxyChannelChild should not be called on"
+      "AllocPWebrtcTCPSocketChild should not be called on"
       " child");
   return nullptr;
 }
 
-bool NeckoChild::DeallocPWebrtcProxyChannelChild(
-    PWebrtcProxyChannelChild* aActor) {
+bool NeckoChild::DeallocPWebrtcTCPSocketChild(PWebrtcTCPSocketChild* aActor) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelChild* child =
-      static_cast<WebrtcProxyChannelChild*>(aActor);
+  WebrtcTCPSocketChild* child = static_cast<WebrtcTCPSocketChild*>(aActor);
   child->ReleaseIPDLReference();
 #endif
   return true;
@@ -301,12 +298,13 @@ mozilla::ipc::IPCResult NeckoChild::RecvAsyncAuthPromptForNestedFrame(
 
 /* Predictor Messages */
 mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictPrefetch(
-    const URIParams& aURI, const uint32_t& aHttpStatus) {
+    nsIURI* aURI, const uint32_t& aHttpStatus) {
   MOZ_ASSERT(NS_IsMainThread(),
              "PredictorChild::RecvOnPredictPrefetch "
              "off main thread.");
-
-  nsCOMPtr<nsIURI> uri = DeserializeURI(aURI);
+  if (!aURI) {
+    return IPC_FAIL(this, "aURI is null");
+  }
 
   // Get the current predictor
   nsresult rv = NS_OK;
@@ -314,43 +312,41 @@ mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictPrefetch(
       do_GetService("@mozilla.org/network/predictor;1", &rv);
   NS_ENSURE_SUCCESS(rv, IPC_FAIL_NO_REASON(this));
 
-  predictor->OnPredictPrefetch(uri, aHttpStatus);
+  predictor->OnPredictPrefetch(aURI, aHttpStatus);
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictPreconnect(
-    const URIParams& aURI) {
+mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictPreconnect(nsIURI* aURI) {
   MOZ_ASSERT(NS_IsMainThread(),
              "PredictorChild::RecvOnPredictPreconnect "
              "off main thread.");
-
-  nsCOMPtr<nsIURI> uri = DeserializeURI(aURI);
-
+  if (!aURI) {
+    return IPC_FAIL(this, "aURI is null");
+  }
   // Get the current predictor
   nsresult rv = NS_OK;
   nsCOMPtr<nsINetworkPredictorVerifier> predictor =
       do_GetService("@mozilla.org/network/predictor;1", &rv);
   NS_ENSURE_SUCCESS(rv, IPC_FAIL_NO_REASON(this));
 
-  predictor->OnPredictPreconnect(uri);
+  predictor->OnPredictPreconnect(aURI);
   return IPC_OK();
 }
 
-mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictDNS(
-    const URIParams& aURI) {
+mozilla::ipc::IPCResult NeckoChild::RecvPredOnPredictDNS(nsIURI* aURI) {
   MOZ_ASSERT(NS_IsMainThread(),
              "PredictorChild::RecvOnPredictDNS off "
              "main thread.");
-
-  nsCOMPtr<nsIURI> uri = DeserializeURI(aURI);
-
+  if (!aURI) {
+    return IPC_FAIL(this, "aURI is null");
+  }
   // Get the current predictor
   nsresult rv = NS_OK;
   nsCOMPtr<nsINetworkPredictorVerifier> predictor =
       do_GetService("@mozilla.org/network/predictor;1", &rv);
   NS_ENSURE_SUCCESS(rv, IPC_FAIL_NO_REASON(this));
 
-  predictor->OnPredictDNS(uri);
+  predictor->OnPredictDNS(aURI);
   return IPC_OK();
 }
 
@@ -383,19 +379,6 @@ PClassifierDummyChannelChild* NeckoChild::AllocPClassifierDummyChannelChild(
 bool NeckoChild::DeallocPClassifierDummyChannelChild(
     PClassifierDummyChannelChild* aActor) {
   delete static_cast<ClassifierDummyChannelChild*>(aActor);
-  return true;
-}
-
-PProxyConfigLookupChild* NeckoChild::AllocPProxyConfigLookupChild() {
-  MOZ_CRASH("AllocPProxyConfigLookupChild should not be called");
-  return nullptr;
-}
-
-bool NeckoChild::DeallocPProxyConfigLookupChild(
-    PProxyConfigLookupChild* aActor) {
-#ifdef MOZ_WEBRTC
-  delete static_cast<ProxyConfigLookupChild*>(aActor);
-#endif
   return true;
 }
 

@@ -296,27 +296,6 @@ function isLegacyExtension(addon) {
   return legacy;
 }
 
-function setSearchLabel(type) {
-  let searchLabel = document.getElementById("search-label");
-  document
-    .getElementById("header-search")
-    .setAttribute("data-addon-type", type);
-  let keyMap = {
-    extension: "extension",
-    shortcuts: "extension",
-    theme: "theme",
-  };
-  if (type in keyMap) {
-    searchLabel.textContent = gStrings.ext.GetStringFromName(
-      `searchLabel.${keyMap[type]}`
-    );
-    searchLabel.hidden = false;
-  } else {
-    searchLabel.textContent = "";
-    searchLabel.hidden = true;
-  }
-}
-
 /**
  * A wrapper around the HTML5 session history service that allows the browser
  * back/forward controls to work within the manager
@@ -908,7 +887,6 @@ var gViewController = {
     }
 
     headingName.textContent = headingLabel;
-    setSearchLabel(view.param);
 
     if (aViewId == aPreviousView) {
       this.currentViewObj.refresh(
@@ -2496,8 +2474,6 @@ var gDetailView = {
     if (this.restartingAddon) {
       return;
     }
-
-    setSearchLabel(aAddon.type);
 
     // Set the preview image for themes, if available.
     this.headingImage.src = "";

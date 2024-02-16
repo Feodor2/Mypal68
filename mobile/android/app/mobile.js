@@ -400,9 +400,6 @@ pref("security.alternate_certificate_error_page", "certerror");
 
 pref("security.warn_viewing_mixed", false); // Warning is disabled.  See Bug 616712.
 
-// Block insecure active content on https pages
-pref("security.mixed_content.block_active_content", true);
-
 // Enable pinning
 pref("security.cert_pinning.enforcement_level", 1);
 
@@ -444,9 +441,6 @@ pref("ui.windowframe", "#efebe7");
   pref("app.update.channel", "@MOZ_UPDATE_CHANNEL@");
 #endif
 
-// replace newlines with spaces on paste into single-line text boxes
-pref("editor.singleLine.pasteNewlines", 2);
-
 // threshold where a tap becomes a drag, in 1/240" reference pixels
 // The names of the preferences are to be in sync with EventStateManager.cpp
 pref("ui.dragThresholdX", 25);
@@ -476,9 +470,6 @@ pref("apz.overscroll.enabled", true);
 pref("apz.second_tap_tolerance", "0.3");
 pref("apz.touch_move_tolerance", "0.03");
 pref("apz.touch_start_tolerance", "0.06");
-
-// Enable the Visual Viewport API
-pref("dom.visualviewport.enabled", true);
 
 pref("layers.progressive-paint", true);
 pref("layers.low-precision-buffer", true);
@@ -635,9 +626,6 @@ pref("media.stagefright.omxcodec.flags", 0);
 // Coalesce touch events to prevent them from flooding the event queue
 pref("dom.event.touch.coalescing.enabled", false);
 
-pref("layout.framevisibility.numscrollportwidths", 1);
-pref("layout.framevisibility.numscrollportheights", 1);
-
 pref("layers.enable-tiles", true);
 
 // Enable the dynamic toolbar
@@ -779,7 +767,6 @@ pref("identity.sync.tokenserver.uri", "https://token.services.mozilla.com/1.0/sy
 
 pref("dom.audiochannel.audioCompeting", true);
 pref("dom.audiochannel.mediaControl", true);
-pref("media.block-autoplay-until-in-foreground", false);
 
 // Space separated list of URLS that are allowed to send objects (instead of
 // only strings) through webchannels. This list is duplicated in browser/app/profile/firefox.js

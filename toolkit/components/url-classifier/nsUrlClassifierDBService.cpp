@@ -1358,8 +1358,9 @@ nsresult nsUrlClassifierLookupCallback::ProcessComplete(
     RefPtr<CacheResult> aCacheResult) {
   NS_ENSURE_ARG_POINTER(mResults);
 
-  // OK if this fails, we just won't cache the item.
-  mCacheResults.AppendElement(aCacheResult, fallible);
+  if (!mCacheResults.AppendElement(aCacheResult, fallible)) {
+    // OK if this failed, we just won't cache the item.
+  }
 
   // Check if this matched any of our results.
   for (const auto& result : *mResults) {
@@ -1498,7 +1499,7 @@ class nsUrlClassifierClassifyCallback final
     nsresult errorCode;
   };
 
-  ~nsUrlClassifierClassifyCallback(){};
+  ~nsUrlClassifierClassifyCallback() = default;
 
   nsCOMPtr<nsIURIClassifierCallback> mCallback;
   nsTArray<ClassifyMatchedInfo> mMatchedArray;

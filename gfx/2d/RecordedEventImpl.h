@@ -937,7 +937,7 @@ class RecordedExternalSurfaceCreation
         mRefPtr(aRefPtr),
         mKey(aKey) {}
 
-  ~RecordedExternalSurfaceCreation() {}
+  ~RecordedExternalSurfaceCreation() = default;
 
   virtual bool PlayEvent(Translator* aTranslator) const;
 
@@ -2926,7 +2926,7 @@ inline void RecordedExternalSurfaceCreation::OutputSimpleEventInfo(
                 << "] SourceSurfaceSharedData created (Key: " << mKey << ")";
 }
 
-inline RecordedFilterNodeCreation::~RecordedFilterNodeCreation() {}
+inline RecordedFilterNodeCreation::~RecordedFilterNodeCreation() = default;
 
 inline bool RecordedFilterNodeCreation::PlayEvent(
     Translator* aTranslator) const {
@@ -3174,7 +3174,7 @@ RecordedFontData::RecordedFontData(S& aStream)
   }
 }
 
-inline RecordedFontDescriptor::~RecordedFontDescriptor() {}
+inline RecordedFontDescriptor::~RecordedFontDescriptor() = default;
 
 inline bool RecordedFontDescriptor::PlayEvent(Translator* aTranslator) const {
   RefPtr<UnscaledFont> font = Factory::CreateUnscaledFontFromFontDescriptor(

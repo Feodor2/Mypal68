@@ -34,7 +34,7 @@ class TestObserver final : public nsIObserver, public nsSupportsWeakReference {
   nsString mExpectedData;
 
  private:
-  ~TestObserver() {}
+  ~TestObserver() = default;
 };
 
 NS_IMPL_ISUPPORTS(TestObserver, nsIObserver, nsISupportsWeakReference)

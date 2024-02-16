@@ -35,7 +35,6 @@ exclude = [
   "gfx/webrender_bindings",
   "media/mp4parse-rust/mp4parse",
   "media/mp4parse-rust/mp4parse_capi",
-  "media/mp4parse-rust/mp4parse_fallible",
   "xpcom/rust/gkrust_utils",
 ]
 

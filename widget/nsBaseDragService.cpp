@@ -36,6 +36,7 @@
 #include "mozilla/dom/BindingDeclarations.h"
 #include "mozilla/dom/DataTransferItemList.h"
 #include "mozilla/dom/DataTransfer.h"
+#include "mozilla/dom/DocumentInlines.h"
 #include "mozilla/dom/DragEvent.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/dom/Selection.h"
@@ -43,7 +44,7 @@
 #include "mozilla/Unused.h"
 #include "nsFrameLoader.h"
 #include "BrowserParent.h"
-
+#include "nsIMutableArray.h"
 #include "gfxContext.h"
 #include "gfxPlatform.h"
 #include <algorithm>
@@ -59,12 +60,14 @@ nsBaseDragService::nsBaseDragService()
     : mCanDrop(false),
       mOnlyChromeDrop(false),
       mDoingDrag(false),
+      mSessionIsSynthesizedForTests(false),
       mEndingSession(false),
       mHasImage(false),
       mUserCancelled(false),
       mDragEventDispatchedToChildProcess(false),
       mDragAction(DRAGDROP_ACTION_NONE),
       mDragActionFromChildProcess(DRAGDROP_ACTION_UNINITIALIZED),
+      mEffectAllowedForTests(DRAGDROP_ACTION_UNINITIALIZED),
       mContentPolicyType(nsIContentPolicy::TYPE_OTHER),
       mSuppressLevel(0),
       mInputSource(MouseEvent_Binding::MOZ_SOURCE_MOUSE) {}
@@ -195,6 +198,33 @@ void nsBaseDragService::SetDataTransfer(DataTransfer* aDataTransfer) {
   mDataTransfer = aDataTransfer;
 }
 
+bool nsBaseDragService::IsSynthesizedForTests() {
+  return mSessionIsSynthesizedForTests;
+}
+
+uint32_t nsBaseDragService::GetEffectAllowedForTests() {
+  MOZ_ASSERT(mSessionIsSynthesizedForTests);
+  return mEffectAllowedForTests;
+}
+
+NS_IMETHODIMP nsBaseDragService::SetDragEndPointForTests(int32_t aScreenX,
+                                                         int32_t aScreenY) {
+  MOZ_ASSERT(mDoingDrag);
+  MOZ_ASSERT(mSourceDocument);
+  MOZ_ASSERT(mSessionIsSynthesizedForTests);
+  if (!mDoingDrag || !mSourceDocument || !mSessionIsSynthesizedForTests) {
+    return NS_ERROR_FAILURE;
+  }
+  nsPresContext* presContext = mSourceDocument->GetPresContext();
+  if (NS_WARN_IF(!presContext)) {
+    return NS_ERROR_FAILURE;
+  }
+  SetDragEndPoint(
+      LayoutDeviceIntPoint(presContext->CSSPixelsToDevPixels(aScreenX),
+                           presContext->CSSPixelsToDevPixels(aScreenY)));
+  return NS_OK;
+}
+
 //-------------------------------------------------------------------------
 NS_IMETHODIMP
 nsBaseDragService::InvokeDragSession(
@@ -202,6 +232,29 @@ nsBaseDragService::InvokeDragSession(
     uint32_t aActionType,
     nsContentPolicyType aContentPolicyType = nsIContentPolicy::TYPE_OTHER) {
   AUTO_PROFILER_LABEL("nsBaseDragService::InvokeDragSession", OTHER);
+
+  NS_ENSURE_TRUE(aDOMNode, NS_ERROR_INVALID_ARG);
+  NS_ENSURE_TRUE(mSuppressLevel == 0, NS_ERROR_FAILURE);
+
+  // stash the document of the dom node
+  mSourceDocument = aDOMNode->OwnerDoc();
+  mTriggeringPrincipal = aPrincipal;
+  mSourceNode = aDOMNode;
+  mContentPolicyType = aContentPolicyType;
+  mEndDragPoint = LayoutDeviceIntPoint(0, 0);
+
+  // When the mouse goes down, the selection code starts a mouse
+  // capture. However, this gets in the way of determining drag
+  // feedback for things like trees because the event coordinates
+  // are in the wrong coord system, so turn off mouse capture.
+  PresShell::ClearMouseCapture(nullptr);
+
+  if (mSessionIsSynthesizedForTests) {
+    mDoingDrag = true;
+    mDragAction = aActionType;
+    mEffectAllowedForTests = aActionType;
+    return NS_OK;
+  }
 
   // If you're hitting this, a test is causing the browser to attempt to enter
   // the drag-drop native nested event loop, which will put the browser in a
@@ -220,30 +273,30 @@ nsBaseDragService::InvokeDragSession(
         "tests from running properly.");
   }
 
-  NS_ENSURE_TRUE(aDOMNode, NS_ERROR_INVALID_ARG);
-  NS_ENSURE_TRUE(mSuppressLevel == 0, NS_ERROR_FAILURE);
-
-  // stash the document of the dom node
-  mSourceDocument = aDOMNode->OwnerDoc();
-  mTriggeringPrincipal = aPrincipal;
-  mSourceNode = aDOMNode;
-  mContentPolicyType = aContentPolicyType;
-  mEndDragPoint = LayoutDeviceIntPoint(0, 0);
-
-  // When the mouse goes down, the selection code starts a mouse
-  // capture. However, this gets in the way of determining drag
-  // feedback for things like trees because the event coordinates
-  // are in the wrong coord system, so turn off mouse capture.
-  PresShell::ClearMouseCapture(nullptr);
-
   uint32_t length = 0;
   mozilla::Unused << aTransferableArray->GetLength(&length);
-  for (uint32_t i = 0; i < length; ++i) {
-    nsCOMPtr<nsITransferable> trans = do_QueryElementAt(aTransferableArray, i);
-    if (trans) {
-      // Set the requestingPrincipal on the transferable.
+  if (!length) {
+    nsCOMPtr<nsIMutableArray> mutableArray =
+        do_QueryInterface(aTransferableArray);
+    if (mutableArray) {
+      // In order to be able trigger dnd, we need to have some transferable
+      // object.
+      nsCOMPtr<nsITransferable> trans =
+          do_CreateInstance("@mozilla.org/widget/transferable;1");
+      trans->Init(nullptr);
       trans->SetRequestingPrincipal(mSourceNode->NodePrincipal());
       trans->SetContentPolicyType(mContentPolicyType);
+      mutableArray->AppendElement(trans);
+    }
+  } else {
+    for (uint32_t i = 0; i < length; ++i) {
+      nsCOMPtr<nsITransferable> trans =
+          do_QueryElementAt(aTransferableArray, i);
+      if (trans) {
+        // Set the requestingPrincipal on the transferable.
+        trans->SetRequestingPrincipal(mSourceNode->NodePrincipal());
+        trans->SetContentPolicyType(mContentPolicyType);
+      }
     }
   }
 
@@ -268,6 +321,8 @@ nsBaseDragService::InvokeDragSessionWithImage(
   NS_ENSURE_TRUE(aDataTransfer, NS_ERROR_NULL_POINTER);
   NS_ENSURE_TRUE(mSuppressLevel == 0, NS_ERROR_FAILURE);
 
+  mSessionIsSynthesizedForTests =
+      aDragEvent->WidgetEventPtr()->mFlags.mIsSynthesizedForTests;
   mDataTransfer = aDataTransfer;
   mSelection = nullptr;
   mHasImage = true;
@@ -316,6 +371,8 @@ nsBaseDragService::InvokeDragSessionWithSelection(Selection* aSelection,
   NS_ENSURE_TRUE(aDragEvent, NS_ERROR_NULL_POINTER);
   NS_ENSURE_TRUE(mSuppressLevel == 0, NS_ERROR_FAILURE);
 
+  mSessionIsSynthesizedForTests =
+      aDragEvent->WidgetEventPtr()->mFlags.mIsSynthesizedForTests;
   mDataTransfer = aDataTransfer;
   mSelection = aSelection;
   mHasImage = true;
@@ -363,6 +420,17 @@ nsBaseDragService::StartDragSession() {
   // By default dispatch drop also to content.
   mOnlyChromeDrop = false;
 
+  return NS_OK;
+}
+
+NS_IMETHODIMP nsBaseDragService::StartDragSessionForTests(
+    uint32_t aAllowedEffect) {
+  if (NS_WARN_IF(NS_FAILED(StartDragSession()))) {
+    return NS_ERROR_FAILURE;
+  }
+  mDragAction = aAllowedEffect;
+  mEffectAllowedForTests = aAllowedEffect;
+  mSessionIsSynthesizedForTests = true;
   return NS_OK;
 }
 
@@ -426,6 +494,8 @@ nsBaseDragService::EndDragSession(bool aDoneDrag, uint32_t aKeyModifiers) {
   }
 
   mDoingDrag = false;
+  mSessionIsSynthesizedForTests = false;
+  mEffectAllowedForTests = nsIDragService::DRAGDROP_ACTION_UNINITIALIZED;
   mEndingSession = false;
   mCanDrop = false;
 
@@ -480,6 +550,7 @@ nsBaseDragService::FireDragEventAtSource(EventMessage aEventMessage,
     if (presShell) {
       nsEventStatus status = nsEventStatus_eIgnore;
       WidgetDragEvent event(true, aEventMessage, nullptr);
+      event.mFlags.mIsSynthesizedForTests = mSessionIsSynthesizedForTests;
       event.mInputSource = mInputSource;
       if (aEventMessage == eDragEnd) {
         event.mRefPoint = mEndDragPoint;
@@ -820,4 +891,13 @@ bool nsBaseDragService::MaybeAddChildProcess(
     return true;
   }
   return false;
+}
+
+bool nsBaseDragService::RemoveAllChildProcesses() {
+  for (uint32_t c = 0; c < mChildProcesses.Length(); c++) {
+    mozilla::Unused << mChildProcesses[c]->SendEndDragSession(
+        true, false, LayoutDeviceIntPoint(), 0);
+  }
+  mChildProcesses.Clear();
+  return true;
 }

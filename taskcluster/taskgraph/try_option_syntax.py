@@ -133,7 +133,6 @@ UNITTEST_PLATFORM_PRETTY_NAMES = {
     'Android 7.0 Moto G5 32bit': ['android-hw-g5-7.0-arm7-api-16'],
     'Android 8.0 Google Pixel 2 32bit': ['android-hw-p2-8.0-arm7-api-16'],
     'Android 8.0 Google Pixel 2 64bit': ['android-hw-p2-8.0-android-aarch64'],
-    '10.10': ['macosx1010-64'],
     '10.14': ['macosx1014-64'],
     # other commonly-used substrings for platforms not yet supported with
     # in-tree taskgraphs:
@@ -586,22 +585,25 @@ class TryOptionSyntax(object):
             run_by_default = True
             if attr('build_type') not in self.build_types:
                 return False
-            if self.platforms is not None:
-                if attr('build_platform') not in self.platforms:
-                    return False
-            else:
-                if not check_run_on_projects():
-                    run_by_default = False
+
+            if self.platforms is not None and attr('build_platform') not in self.platforms:
+                return False
+            elif not check_run_on_projects():
+                run_by_default = False
+
             if try_spec is None:
                 return run_by_default
+
             # TODO: optimize this search a bit
             for test in try_spec:
                 if attr(attr_name) == test['test']:
                     break
             else:
                 return False
+
             if 'only_chunks' in test and attr('test_chunk') not in test['only_chunks']:
                 return False
+
             tier = task.task['extra']['treeherder']['tier']
             if 'platforms' in test:
                 if 'all' in test['platforms']:

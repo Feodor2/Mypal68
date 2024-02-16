@@ -41,7 +41,7 @@ class OffTheBooksCondVar : BlockingResourceBase {
    * ~OffTheBooksCondVar
    * Clean up after this OffTheBooksCondVar, but NOT its associated Mutex.
    **/
-  ~OffTheBooksCondVar() {}
+  ~OffTheBooksCondVar() = default;
 
   /**
    * Wait
@@ -71,19 +71,13 @@ class OffTheBooksCondVar : BlockingResourceBase {
    * Notify
    * @see prcvar.h
    **/
-  nsresult Notify() {
-    mImpl.notify_one();
-    return NS_OK;
-  }
+  void Notify() { mImpl.notify_one(); }
 
   /**
    * NotifyAll
    * @see prcvar.h
    **/
-  nsresult NotifyAll() {
-    mImpl.notify_all();
-    return NS_OK;
-  }
+  void NotifyAll() { mImpl.notify_all(); }
 
 #ifdef DEBUG
   /**
@@ -127,7 +121,7 @@ class CondVar : public OffTheBooksCondVar {
     MOZ_COUNT_CTOR(CondVar);
   }
 
-  ~CondVar() { MOZ_COUNT_DTOR(CondVar); }
+  MOZ_COUNTED_DTOR(CondVar)
 
  private:
   CondVar();

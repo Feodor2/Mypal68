@@ -766,7 +766,7 @@ class PrincipalsCollector {
   async getAllPrincipalsInternal(progress) {
     progress.step = "principals-quota-manager";
     let principals = await new Promise(resolve => {
-      quotaManagerService.listOrigins(request => {
+      quotaManagerService.listOrigins().callback = request => {
         progress.step = "principals-quota-manager-listOrigins";
         if (request.resultCode != Cr.NS_OK) {
           // We are probably shutting down. We don't want to propagate the
@@ -776,9 +776,9 @@ class PrincipalsCollector {
         }
 
         let list = [];
-        for (let item of request.result) {
+        for (const origin of request.result) {
           let principal = Services.scriptSecurityManager.createCodebasePrincipalFromOrigin(
-            item.origin
+            origin
           );
           let uri = principal.URI;
           if (isSupportedURI(uri)) {
@@ -788,7 +788,7 @@ class PrincipalsCollector {
 
         progress.step = "principals-quota-manager-completed";
         resolve(list);
-      });
+      };
     }).catch(ex => {
       Cu.reportError("QuotaManagerService promise failed: " + ex);
       return [];

@@ -13,6 +13,10 @@
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
 
+namespace Json {
+class Value;
+}
+
 namespace mozilla {
 
 class ContentPrincipal final : public BasePrincipal {
@@ -49,6 +53,14 @@ class ContentPrincipal final : public BasePrincipal {
 
   nsCOMPtr<nsIURI> mDomain;
   nsCOMPtr<nsIURI> mCodebase;
+
+  virtual nsresult PopulateJSONObject(Json::Value& aObject) override;
+  // Serializable keys are the valid enum fields the serialization supports
+  enum SerializableKeys : uint8_t { eURI = 0, eDomain, eSuffix, eMax = eSuffix };
+  typedef mozilla::BasePrincipal::KeyValT<SerializableKeys> KeyVal;
+
+  static already_AddRefed<BasePrincipal> FromProperties(
+      nsTArray<ContentPrincipal::KeyVal>& aFields);
 
  protected:
   virtual ~ContentPrincipal();

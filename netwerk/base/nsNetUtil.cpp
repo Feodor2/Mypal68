@@ -27,6 +27,7 @@
 #include "nsIAuthPrompt2.h"
 #include "nsIAuthPromptAdapterFactory.h"
 #include "nsIBufferedStreams.h"
+#include "nsBufferedStreams.h"
 #include "nsIChannelEventSink.h"
 #include "nsIContentSniffer.h"
 #include "mozilla/dom/Document.h"
@@ -57,6 +58,7 @@
 #include "nsIIncrementalStreamLoader.h"
 #include "nsStringStream.h"
 #include "nsSyncStreamListener.h"
+#include "nsITextToSubURI.h"
 #include "nsIURIWithSpecialOrigin.h"
 #include "nsIViewSourceChannel.h"
 #include "nsInterfaceRequestorAgg.h"
@@ -1254,7 +1256,9 @@ MOZ_MUST_USE nsresult NS_NewBufferedInputStream(
   if (NS_SUCCEEDED(rv)) {
     rv = in->Init(inputStream, aBufferSize);
     if (NS_SUCCEEDED(rv)) {
-      in.forget(aResult);
+      *aResult = static_cast<nsBufferedInputStream*>(in.get())
+                     ->GetInputStream()
+                     .take();
     }
   }
   return rv;
@@ -2613,6 +2617,18 @@ nsresult NS_GetFilenameFromDisposition(nsAString& aFilename,
   }
 
   if (aFilename.IsEmpty()) return NS_ERROR_NOT_AVAILABLE;
+
+  // Filename may still be percent-encoded. Fix:
+  if (aFilename.FindChar('%') != -1) {
+    nsCOMPtr<nsITextToSubURI> textToSubURI =
+        do_GetService(NS_ITEXTTOSUBURI_CONTRACTID, &rv);
+    if (NS_SUCCEEDED(rv)) {
+      nsAutoString unescaped;
+      textToSubURI->UnEscapeURIForUI(NS_ConvertUTF16toUTF8(aFilename),
+                                     unescaped);
+      aFilename.Assign(unescaped);
+    }
+  }
 
   return NS_OK;
 }

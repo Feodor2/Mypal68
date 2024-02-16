@@ -160,7 +160,7 @@ class MyParseCallback final : public nsIUrlClassifierParseFindFullHashCallback {
     ASSERT_TRUE(aToVerify == aExpected.mSecs);
   }
 
-  ~MyParseCallback() {}
+  ~MyParseCallback() = default;
 
   uint32_t& mCallbackCount;
 };

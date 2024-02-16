@@ -177,7 +177,7 @@ class MOZ_STACK_CLASS AutoBufferUploadBase {
 template <typename T>
 class AutoBufferUpload : public AutoBufferUploadBase {
  public:
-  AutoBufferUpload() {}
+  AutoBufferUpload() = default;
 
   T* operator->() const { return reinterpret_cast<T*>(mPtr); }
 };

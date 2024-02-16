@@ -19,7 +19,7 @@ namespace mozilla {
 
 using namespace dom;
 
-InputData::~InputData() {}
+InputData::~InputData() = default;
 
 InputData::InputData(InputType aInputType)
     : mInputType(aInputType),
@@ -665,19 +665,19 @@ uint32_t ScrollWheelInput::DeltaModeForDeltaType(ScrollDeltaType aDeltaType) {
   }
 }
 
-nsIScrollableFrame::ScrollUnit ScrollWheelInput::ScrollUnitForDeltaType(
+ScrollUnit ScrollWheelInput::ScrollUnitForDeltaType(
     ScrollDeltaType aDeltaType) {
   switch (aDeltaType) {
     case SCROLLDELTA_LINE:
-      return nsIScrollableFrame::LINES;
+      return ScrollUnit::LINES;
     case SCROLLDELTA_PAGE:
-      return nsIScrollableFrame::PAGES;
+      return ScrollUnit::PAGES;
     case SCROLLDELTA_PIXEL:
-      return nsIScrollableFrame::DEVICE_PIXELS;
+      return ScrollUnit::DEVICE_PIXELS;
     default:
       MOZ_CRASH();
   }
-  return nsIScrollableFrame::LINES;
+  return ScrollUnit::LINES;
 }
 
 WidgetWheelEvent ScrollWheelInput::ToWidgetWheelEvent(

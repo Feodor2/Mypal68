@@ -230,9 +230,9 @@ function run_test() {
   );
   let latestNow = Number(Date.now());
 
-  // The schema should be upgraded to 10, and a 'modificationTime' column should
+  // The schema should be upgraded to 11, and a 'modificationTime' column should
   // exist with all records having a value of 0.
-  Assert.equal(connection.schemaVersion, 10);
+  Assert.equal(connection.schemaVersion, 11);
 
   let select = connection.createStatement(
     "SELECT modificationTime FROM moz_perms"

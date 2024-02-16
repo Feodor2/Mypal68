@@ -19,7 +19,6 @@
 #include "nsIWindowMediator.h"
 #include "nsIXULBrowserWindow.h"
 #include "nsIPrincipal.h"
-#include "nsIURIFixup.h"
 #include "nsIWebNavigation.h"
 #include "nsDocShellCID.h"
 #include "nsIExternalURLHandlerService.h"
@@ -32,6 +31,7 @@
 #include "nsDocShell.h"
 #include "nsDocShellLoadState.h"
 
+#include "nsIOService.h"
 #include "nsIScriptObjectPrincipal.h"
 #include "nsIURI.h"
 #include "mozilla/dom/Document.h"
@@ -658,25 +658,17 @@ NS_IMETHODIMP nsContentTreeOwner::SetTitle(const nsAString& aTitle) {
             //
             // remove any user:pass information
             //
-            nsCOMPtr<nsIURIFixup> fixup(components::URIFixup::Service());
-            if (fixup) {
-              nsCOMPtr<nsIURI> tmpuri;
-              nsresult rv =
-                  fixup->CreateExposableURI(uri, getter_AddRefs(tmpuri));
-              if (NS_SUCCEEDED(rv) && tmpuri) {
-                // (don't bother if there's no host)
-                nsAutoCString host;
-                nsAutoCString prepath;
-                tmpuri->GetHost(host);
-                tmpuri->GetPrePath(prepath);
-                if (!host.IsEmpty()) {
-                  //
-                  // We have a scheme/host, update the title
-                  //
-                  title.Insert(NS_ConvertUTF8toUTF16(prepath) + mTitleSeparator,
-                               0);
-                }
-              }
+            nsCOMPtr<nsIURI> tmpuri = net::nsIOService::CreateExposableURI(uri);
+            nsAutoCString host;
+            nsAutoCString prepath;
+            tmpuri->GetHost(host);
+            tmpuri->GetPrePath(prepath);
+            if (!host.IsEmpty()) {
+              //
+              // We have a scheme/host, update the title
+              //
+              title.Insert(NS_ConvertUTF8toUTF16(prepath) + mTitleSeparator,
+                           0);
             }
           }
         }

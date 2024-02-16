@@ -483,9 +483,9 @@ GtkWidget* nsPrintDialogWidgetGTK::ConstructHeaderFooterDropdown(
 
 NS_IMPL_ISUPPORTS(nsPrintDialogServiceGTK, nsIPrintDialogService)
 
-nsPrintDialogServiceGTK::nsPrintDialogServiceGTK() {}
+nsPrintDialogServiceGTK::nsPrintDialogServiceGTK() = default;
 
-nsPrintDialogServiceGTK::~nsPrintDialogServiceGTK() {}
+nsPrintDialogServiceGTK::~nsPrintDialogServiceGTK() = default;
 
 NS_IMETHODIMP
 nsPrintDialogServiceGTK::Init() { return NS_OK; }
@@ -916,8 +916,7 @@ nsFlatpakPrintPortal::~nsFlatpakPrintPortal() {
 
 NS_IMETHODIMP
 nsPrintDialogServiceGTK::Show(nsPIDOMWindowOuter* aParent,
-                              nsIPrintSettings* aSettings,
-                              nsIWebBrowserPrint* aWebBrowserPrint) {
+                              nsIPrintSettings* aSettings) {
   MOZ_ASSERT(aParent, "aParent must not be null");
   MOZ_ASSERT(aSettings, "aSettings must not be null");
 

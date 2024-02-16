@@ -31,7 +31,7 @@ class WebRenderUserData;
 
 class WebRenderScrollDataCollection {
  public:
-  WebRenderScrollDataCollection() : mSeenRenderRoot{} {}
+  WebRenderScrollDataCollection() = default;
 
   std::vector<WebRenderLayerScrollData>& operator[](
       wr::RenderRoot aRenderRoot) {

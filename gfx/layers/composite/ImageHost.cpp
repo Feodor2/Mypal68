@@ -27,7 +27,7 @@ class ISurfaceAllocator;
 ImageHost::ImageHost(const TextureInfo& aTextureInfo)
     : CompositableHost(aTextureInfo), ImageComposite(), mLocked(false) {}
 
-ImageHost::~ImageHost() {}
+ImageHost::~ImageHost() = default;
 
 void ImageHost::UseTextureHost(const nsTArray<TimedTexture>& aTextures) {
   MOZ_ASSERT(!mLocked);

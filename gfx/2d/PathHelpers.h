@@ -14,8 +14,7 @@ namespace mozilla {
 namespace gfx {
 
 struct PathOp {
-  PathOp() {}
-  ~PathOp() {}
+  ~PathOp() = default;
 
   enum OpType {
     OP_MOVETO = 0,
@@ -29,6 +28,8 @@ struct PathOp {
   OpType mType;
   Point mP1;
 #if (!defined(__GNUC__) || __GNUC__ >= 7) && defined(__clang__)
+  PathOp() {}
+
   union {
     struct {
       Point mP2;
@@ -42,6 +43,8 @@ struct PathOp {
     };
   };
 #else
+  PathOp() = default;
+
   Point mP2;
   Point mP3;
   float mRadius;

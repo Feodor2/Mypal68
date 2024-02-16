@@ -18,7 +18,6 @@
 #include "mozilla/layers/LayersTypes.h"  // for LayersBackend, etc
 #include "mozilla/layers/CompositorTypes.h"
 #include "mozilla/mozalloc.h"  // for operator delete, etc
-#include "nsAutoPtr.h"         // for nsRefPtr, nsAutoArrayPtr, etc
 #include "nsAutoRef.h"         // for nsCountedRef
 #include "nsCOMPtr.h"          // for already_AddRefed
 #include "nsDebug.h"           // for NS_ASSERTION
@@ -164,7 +163,7 @@ struct ImageBackendData {
   virtual ~ImageBackendData() = default;
 
  protected:
-  ImageBackendData() {}
+  ImageBackendData() = default;
 };
 
 /* Forward declarations for Image derivatives. */
@@ -205,10 +204,10 @@ class Image {
   }
 
   ImageBackendData* GetBackendData(LayersBackend aBackend) {
-    return mBackendData[aBackend];
+    return mBackendData[aBackend].get();
   }
   void SetBackendData(LayersBackend aBackend, ImageBackendData* aData) {
-    mBackendData[aBackend] = aData;
+    mBackendData[aBackend] = mozilla::WrapUnique(aData);
   }
 
   int32_t GetSerial() const { return mSerial; }
@@ -246,7 +245,7 @@ class Image {
 
   mozilla::EnumeratedArray<mozilla::layers::LayersBackend,
                            mozilla::layers::LayersBackend::LAYERS_LAST,
-                           nsAutoPtr<ImageBackendData>>
+                           UniquePtr<ImageBackendData>>
       mBackendData;
 
   void* mImplData;
@@ -280,7 +279,7 @@ class BufferRecycleBin final {
   typedef mozilla::Mutex Mutex;
 
   // Private destructor, to discourage deletion outside of Release():
-  ~BufferRecycleBin() {}
+  ~BufferRecycleBin() = default;
 
   // This protects mRecycledBuffers, mRecycledBufferSize, mRecycledTextures
   // and mRecycledTextureSizes
@@ -314,7 +313,7 @@ class ImageFactory {
  protected:
   friend class ImageContainer;
 
-  ImageFactory() {}
+  ImageFactory() = default;
   virtual ~ImageFactory() = default;
 
   virtual RefPtr<PlanarYCbCrImage> CreatePlanarYCbCrImage(

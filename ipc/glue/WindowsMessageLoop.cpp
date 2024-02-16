@@ -8,7 +8,6 @@
 #include "Neutering.h"
 #include "MessageChannel.h"
 
-#include "nsAutoPtr.h"
 #include "nsServiceManagerUtils.h"
 #include "nsString.h"
 #include "WinUtils.h"
@@ -16,6 +15,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/ipc/ProtocolUtils.h"
 #include "mozilla/PaintTracker.h"
+#include "mozilla/UniquePtr.h"
 #include "mozilla/WindowsVersion.h"
 
 using namespace mozilla;
@@ -87,7 +87,7 @@ enum { WM_XP_THEMECHANGED = 0x031A };
 
 nsTArray<HWND>* gNeuteredWindows = nullptr;
 
-typedef nsTArray<nsAutoPtr<DeferredMessage> > DeferredMessageArray;
+typedef nsTArray<UniquePtr<DeferredMessage>> DeferredMessageArray;
 DeferredMessageArray* gDeferredMessages = nullptr;
 
 HHOOK gDeferredGetMsgHook = nullptr;
@@ -175,7 +175,7 @@ LRESULT CALLBACK DeferredMessageHook(int nCode, WPARAM wParam, LPARAM lParam) {
     gDeferredCallWndProcHook = 0;
 
     // Unset the global and make sure we delete it when we're done here.
-    nsAutoPtr<DeferredMessageArray> messages(gDeferredMessages);
+    auto messages = WrapUnique(gDeferredMessages);
     gDeferredMessages = nullptr;
 
     // Run all the deferred messages in order.
@@ -247,7 +247,7 @@ static void DumpNeuteredMessage(HWND hwnd, UINT uMsg) {
 
 LRESULT
 ProcessOrDeferMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-  DeferredMessage* deferred = nullptr;
+  UniquePtr<DeferredMessage> deferred;
 
   // Most messages ask for 0 to be returned if the message is processed.
   LRESULT res = 0;
@@ -273,7 +273,7 @@ ProcessOrDeferMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     case WM_DISPLAYCHANGE:
     case WM_SHOWWINDOW:  // Intentional fall-through.
     case WM_XP_THEMECHANGED: {
-      deferred = new DeferredSendMessage(hwnd, uMsg, wParam, lParam);
+      deferred = MakeUnique<DeferredSendMessage>(hwnd, uMsg, wParam, lParam);
       break;
     }
 
@@ -283,13 +283,13 @@ ProcessOrDeferMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     case WM_SETCURSOR: {
       // Friggin unconventional return value...
       res = TRUE;
-      deferred = new DeferredSendMessage(hwnd, uMsg, wParam, lParam);
+      deferred = MakeUnique<DeferredSendMessage>(hwnd, uMsg, wParam, lParam);
       break;
     }
 
     case WM_MOUSEACTIVATE: {
       res = MA_NOACTIVATE;
-      deferred = new DeferredSendMessage(hwnd, uMsg, wParam, lParam);
+      deferred = MakeUnique<DeferredSendMessage>(hwnd, uMsg, wParam, lParam);
       break;
     }
 
@@ -299,46 +299,49 @@ ProcessOrDeferMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     case WM_ERASEBKGND: {
       UINT flags = RDW_INVALIDATE | RDW_ERASE | RDW_NOINTERNALPAINT |
                    RDW_NOFRAME | RDW_NOCHILDREN | RDW_ERASENOW;
-      deferred = new DeferredRedrawMessage(hwnd, flags);
+      deferred = MakeUnique<DeferredRedrawMessage>(hwnd, flags);
       break;
     }
 
     // This message will generate a WM_PAINT message if there are invalid
     // areas.
     case WM_PAINT: {
-      deferred = new DeferredUpdateMessage(hwnd);
+      deferred = MakeUnique<DeferredUpdateMessage>(hwnd);
       break;
     }
 
     // This message holds a string in its lParam that we must copy.
     case WM_SETTINGCHANGE: {
-      deferred = new DeferredSettingChangeMessage(hwnd, uMsg, wParam, lParam);
+      deferred =
+          MakeUnique<DeferredSettingChangeMessage>(hwnd, uMsg, wParam, lParam);
       break;
     }
 
     // These messages are faked via a call to SetWindowPos.
     case WM_WINDOWPOSCHANGED: {
-      deferred = new DeferredWindowPosMessage(hwnd, lParam);
+      deferred = MakeUnique<DeferredWindowPosMessage>(hwnd, lParam);
       break;
     }
     case WM_NCCALCSIZE: {
-      deferred = new DeferredWindowPosMessage(hwnd, lParam, true, wParam);
+      deferred =
+          MakeUnique<DeferredWindowPosMessage>(hwnd, lParam, true, wParam);
       break;
     }
 
     case WM_COPYDATA: {
-      deferred = new DeferredCopyDataMessage(hwnd, uMsg, wParam, lParam);
+      deferred =
+          MakeUnique<DeferredCopyDataMessage>(hwnd, uMsg, wParam, lParam);
       res = TRUE;
       break;
     }
 
     case WM_STYLECHANGED: {
-      deferred = new DeferredStyleChangeMessage(hwnd, wParam, lParam);
+      deferred = MakeUnique<DeferredStyleChangeMessage>(hwnd, wParam, lParam);
       break;
     }
 
     case WM_SETICON: {
-      deferred = new DeferredSetIconMessage(hwnd, uMsg, wParam, lParam);
+      deferred = MakeUnique<DeferredSetIconMessage>(hwnd, uMsg, wParam, lParam);
       break;
     }
 
@@ -388,7 +391,7 @@ ProcessOrDeferMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
       // DefWindowProc.
       if (uMsg && uMsg == sAppShellGeckoMsgId) {
         // Widget's registered native event callback
-        deferred = new DeferredSendMessage(hwnd, uMsg, wParam, lParam);
+        deferred = MakeUnique<DeferredSendMessage>(hwnd, uMsg, wParam, lParam);
       }
     }
   }
@@ -402,12 +405,11 @@ ProcessOrDeferMessage(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 
   // Create the deferred message array if it doesn't exist already.
   if (!gDeferredMessages) {
-    gDeferredMessages = new nsTArray<nsAutoPtr<DeferredMessage> >(20);
-    NS_ASSERTION(gDeferredMessages, "Out of memory!");
+    gDeferredMessages = new DeferredMessageArray(20);
   }
 
   // Save for later. The array takes ownership of |deferred|.
-  gDeferredMessages->AppendElement(deferred);
+  gDeferredMessages->AppendElement(std::move(deferred));
   return res;
 }
 
@@ -535,10 +537,9 @@ LRESULT CALLBACK CallWindowProcedureHook(int nCode, WPARAM wParam,
     if (!gNeuteredWindows->Contains(hWnd) &&
         !SuppressedNeuteringRegion::IsNeuteringSuppressed() &&
         NeuterWindowProcedure(hWnd)) {
-      if (!gNeuteredWindows->AppendElement(hWnd)) {
-        NS_ERROR("Out of memory!");
-        RestoreWindowProcedure(hWnd);
-      }
+      // XXX(Bug 1631371) Check if this should use a fallible operation as it
+      // pretended earlier.
+      gNeuteredWindows->AppendElement(hWnd);
     }
   }
   return CallNextHookEx(nullptr, nCode, wParam, lParam);

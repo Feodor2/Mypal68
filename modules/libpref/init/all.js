@@ -184,7 +184,6 @@ pref("security.remote_settings.intermediates.bucket", "security-state");
 pref("security.remote_settings.intermediates.collection", "intermediates");
 pref("security.remote_settings.intermediates.checked", 0);
 pref("security.remote_settings.intermediates.downloads_per_poll", 100);
-pref("security.remote_settings.intermediates.parallel_downloads", 8);
 pref("security.remote_settings.intermediates.signer", "onecrl.content-signature.mozilla.org");
 
 pref("general.useragent.compatMode.firefox", true);
@@ -236,13 +235,6 @@ pref("dom.indexedDB.logging.profiler-marks", false);
 
 // Whether or not File Handle is enabled.
 pref("dom.fileHandle.enabled", true);
-
-// Whether or not selection events on text controls are enabled
-#ifdef NIGHTLY_BUILD
-  pref("dom.select_events.textcontrols.enabled", true);
-#else
-  pref("dom.select_events.textcontrols.enabled", false);
-#endif
 
 // The number of workers per domain allowed to run concurrently.
 // We're going for effectively infinite, while preventing abuse.
@@ -569,8 +561,6 @@ pref("media.audiograph.single_thread.enabled", false);
 
 // APZ preferences. For documentation/details on what these prefs do, check
 // gfx/layers/apz/src/AsyncPanZoomController.cpp.
-pref("apz.overscroll.spring_friction", "0.015");
-pref("apz.overscroll.spring_stiffness", "0.0018");
 pref("apz.overscroll.stop_velocity_threshold", "0.01");
 pref("apz.overscroll.stretch_factor", "0.35");
 
@@ -839,12 +829,6 @@ pref("nglayout.enable_drag_images", true);
 pref("nglayout.debug.paint_flashing", false);
 pref("nglayout.debug.paint_flashing_chrome", false);
 
-// Whether frame visibility tracking is enabled globally.
-pref("layout.framevisibility.enabled", true);
-
-pref("layout.framevisibility.numscrollportwidths", 0);
-pref("layout.framevisibility.numscrollportheights", 1);
-
 // URI fixup prefs
 pref("browser.fixup.alternate.enabled", true);
 pref("browser.fixup.alternate.prefix", "www.");
@@ -916,14 +900,12 @@ pref("editor.use_div_for_default_newlines",  true);
 // Prefs specific to seamonkey composer belong in
 // comm-central/editor/ui/composer.js
 pref("editor.use_custom_colors", false);
-pref("editor.singleLine.pasteNewlines",      2);
 pref("editor.use_css",                       false);
 pref("editor.css.default_length_unit",       "px");
 pref("editor.resizing.preserve_ratio",       true);
 pref("editor.positioning.offset",            0);
 
 // Scripts & Windows prefs
-pref("dom.disable_beforeunload",            false);
 pref("dom.disable_window_flip",             false);
 pref("dom.disable_window_move_resize",      false);
 
@@ -938,8 +920,6 @@ pref("dom.disable_window_open_feature.minimizable", false);
 pref("dom.disable_window_open_feature.status",      true);
 
 pref("dom.allow_scripts_to_close_windows",          false);
-
-pref("dom.require_user_interaction_for_beforeunload", true);
 
 pref("dom.popup_maximum",                           20);
 pref("dom.popup_allowed_events", "change click dblclick auxclick mouseup pointerup notificationclick reset submit touchend contextmenu");
@@ -987,13 +967,6 @@ pref("dom.forms.selectSearch", false);
 pref("dom.select_popup_in_parent.enabled", false);
 
 pref("dom.cycle_collector.incremental", true);
-
-// Whether to shim a Components object on untrusted windows.
-#ifdef NIGHTLY_BUILD
-  pref("dom.use_components_shim", false);
-#else // NIGHTLY_BUILD
-  pref("dom.use_components_shim", true);
-#endif // NIGHTLY_BUILD
 
 // Disable popups from plugins by default
 //   0 = openAllowed
@@ -1955,19 +1928,6 @@ pref("intl.regional_prefs.use_os_locales",  false);
 pref("intl.fallbackCharsetList.ISO-8859-1", "windows-1252");
 pref("font.language.group",                 "chrome://global/locale/intl.properties");
 
-// Android-specific pref to control if keydown and keyup events are fired even
-// in during composition.  Note that those prefs are ignored if
-// "dom.keyboardevent.dispatch_during_composition" is false.
-#ifdef MOZ_WIDGET_ANDROID
-  // If true and intl.ime.hack.on_any_apps.fire_key_events_for_composition is
-  // false, dispatch the keydown and keyup events only on IME-unaware web apps.
-  // So, this supports web apps which listen to only keydown or keyup events
-  // to get a change to do something at every text input.
-  pref("intl.ime.hack.on_ime_unaware_apps.fire_key_events_for_composition", true);
-#else
-  pref("intl.ime.hack.on_ime_unaware_apps.fire_key_events_for_composition", false);
-#endif // MOZ_WIDGET_ANDROID
-
 // If you use legacy Chinese IME which puts an ideographic space to composition
 // string as placeholder, this pref might be useful.  If this is true and when
 // web contents forcibly commits composition (e.g., moving focus), the
@@ -2205,22 +2165,20 @@ pref("security.notification_enable_delay", 500);
   // the following prefs are for testing purposes only.
   pref("csp.overrule_about_uris_without_csp_whitelist", false);
   pref("csp.skip_about_page_has_csp_assert", false);
+  // For testing purposes only: Flipping this pref to true allows
+  // to skip the assertion that HTML fragments (e.g. innerHTML) can
+  // not be used within chrome code or about: pages.
+  pref("domsecurity.skip_html_fragment_assertion", false);
+  // For testing purposes only; Flipping this pref to true allows
+  // to skip the assertion that remote scripts can not be loaded
+  // in system privileged contexts.
+  pref("domsecurity.skip_remote_script_assertion_in_system_priv_context", false);
 #endif
 
 #ifdef EARLY_BETA_OR_EARLIER
   // Disallow web documents loaded with the SystemPrincipal
   pref("security.disallow_non_local_systemprincipal_in_tests", false);
 #endif
-
-// Mixed content blocking
-pref("security.mixed_content.block_active_content", false);
-pref("security.mixed_content.block_display_content", false);
-
-// Upgrade mixed display content before it's blocked
-pref("security.mixed_content.upgrade_display_content", false);
-
-// Block sub requests that happen within an object
-pref("security.mixed_content.block_object_subrequest", false);
 
 // Sub-resource integrity
 pref("security.sri.enable", true);
@@ -2300,8 +2258,6 @@ pref("services.blocklist.gfx.signer", "remote-settings.content-signature.mozilla
 pref("ui.key.accelKey", 17);
 pref("ui.key.menuAccessKey", 18);
 
-pref("ui.key.menuAccessKeyFocuses", false); // overridden below
-
 // Middle-mouse handling
 pref("middlemouse.paste", false);
 pref("middlemouse.contentLoadURL", false);
@@ -2372,10 +2328,6 @@ pref("mousewheel.with_shift.delta_multiplier_z", 100);
 pref("mousewheel.with_win.delta_multiplier_x", 100);
 pref("mousewheel.with_win.delta_multiplier_y", 100);
 pref("mousewheel.with_win.delta_multiplier_z", 100);
-
-// If line-height is lower than this value (in device pixels), 1 line scroll
-// scrolls this height.
-pref("mousewheel.min_line_scroll_amount", 5);
 
 // Auto-dir is a feature which treats any single-wheel scroll as a scroll in the
 // only one scrollable direction if the target has only one scrollable
@@ -2464,17 +2416,6 @@ pref("layout.word_select.stop_at_punctuation", true);
 // word selection/arrow-key movement purposes.
 pref("layout.word_select.stop_at_underscore", false);
 
-// controls caret style and word-delete during text selection
-// 0 = use platform default
-// 1 = caret moves and blinks as when there is no selection; word
-//     delete deselects the selection and then deletes word
-// 2 = caret moves to selection edge and is not visible during selection;
-//     word delete deletes the selection (Mac and Linux default)
-// 3 = caret moves and blinks as when there is no selection; word delete
-//     deletes the selection
-// Windows default is 1 for word delete behavior, the rest as for 2.
-pref("layout.selection.caret_style", 0);
-
 // Override DPI. A value of -1 means use the maximum of 96 and the system DPI.
 // A value of 0 means use the system DPI. A positive value is used as the DPI.
 // This sets the physical size of a device pixel and thus controls the
@@ -2488,14 +2429,8 @@ pref("layout.css.dpi", -1);
 // 3 = left
 pref("layout.scrollbar.side", 0);
 
-// pref to stop overlay scrollbars from fading out, for testing purposes
-pref("layout.testing.overlay-scrollbars.always-visible", false);
-
 // pref to control whether layout warnings that are hit quite often are enabled
 pref("layout.spammy_warnings.enabled", false);
-
-// Pref to throttle offsreen animations
-pref("dom.animations.offscreen-throttling", true);
 
 // if true, allow plug-ins to override internal imglib decoder mime types in full-page mode
 pref("plugin.override_internal_types", false);
@@ -3029,8 +2964,6 @@ pref("ui.mouse.radius.inputSource.touchOnly", true);
   // The maximum size at which we will force GDI classic mode using
   // force_gdi_classic_for_families.
   pref("gfx.font_rendering.cleartype_params.force_gdi_classic_max_size", 15);
-
-  pref("ui.key.menuAccessKeyFocuses", true);
 
   // override double-click word selection behavior.
   pref("layout.word_select.eat_space_to_next_word", true);
@@ -4020,10 +3953,6 @@ pref("full-screen-api.warning.delay", 500);
 // time for the warning box stays on the screen before sliding out, unit: ms
 pref("pointer-lock-api.warning.timeout", 3000);
 
-pref("dom.vibrator.enabled", true);
-pref("dom.vibrator.max_vibrate_ms", 10000);
-pref("dom.vibrator.max_vibrate_list_len", 128);
-
 // Push
 
 pref("dom.push.loglevel", "Error");
@@ -4072,9 +4001,6 @@ pref("dom.push.http2.retryInterval", 5000);
 #else
   pref("dom.w3c_touch_events.enabled", 2);
 #endif
-
-// W3C pointer events draft
-pref("dom.w3c_pointer_events.implicit_capture", false);
 
 // W3C MediaDevices devicechange fake event
 pref("media.ondevicechange.fakeDeviceChangeEvent.enabled", false);
@@ -4466,22 +4392,10 @@ pref("dom.maxHardwareConcurrency", 16);
   pref("osfile.reset_worker_delay", 30000);
 #endif
 
-pref("media.block-autoplay-until-in-foreground", true);
-
-// TODO: Bug 1324406: Treat 'data:' documents as unique, opaque origins
-// If true, data: URIs will be treated as unique opaque origins, hence will use
-// a NullPrincipal as the security context.
-// Otherwise it will inherit the origin from parent node, this is the legacy
-// behavior of Firefox.
-pref("security.data_uri.unique_opaque_origin", true);
-
 // If true, all toplevel data: URI navigations will be blocked.
 // Please note that manually entering a data: URI in the
 // URL-Bar will not be blocked when flipping this pref.
 pref("security.data_uri.block_toplevel_data_uri_navigations", true);
-
-// If true, all FTP subresource loads will be blocked.
-pref("security.block_ftp_subresources", true);
 
 pref("dom.storageManager.prompt.testing", false);
 pref("dom.storageManager.prompt.testing.allow", false);
@@ -4541,27 +4455,9 @@ pref("dom.noopener.newprocess.enabled", true);
 // loops with faulty converters involved.
 pref("general.document_open_conversion_depth_limit", 20);
 
-// If true, touchstart and touchmove listeners on window, document,
-// documentElement and document.body are passive by default.
-pref("dom.event.default_to_passive_touch_listeners", true);
-
-// Should only be enabled in tests
-pref("dom.events.testing.asyncClipboard", false);
-
-#ifdef NIGHTLY_BUILD
-  // Disable moz* APIs in DataTransfer
-  pref("dom.datatransfer.mozAtAPIs", false);
-#else
-  pref("dom.datatransfer.mozAtAPIs", true);
-#endif
-
 // Turn off fission frameloader swapping while regressions are being fixed.
 // Should be turned back on to resolve bug 1551993.
 pref("fission.rebuild_frameloaders_on_remoteness_change", false);
-
-// If true, preserve browsing contexts between process swaps. Should be set to
-// true in bug 1550571.
-pref("fission.preserve_browsing_contexts", false);
 
 // Support for legacy customizations that rely on checking the
 // user profile directory for these stylesheets:

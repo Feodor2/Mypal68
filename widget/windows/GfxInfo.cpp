@@ -16,6 +16,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/gfx/DeviceManagerDx.h"
 #include "mozilla/gfx/Logging.h"
+#include "mozilla/SSE.h"
 #include "nsExceptionHandler.h"
 #include "nsPrintfCString.h"
 #include "jsapi.h"
@@ -30,8 +31,6 @@ using namespace mozilla::widget;
 #ifdef DEBUG
 NS_IMPL_ISUPPORTS_INHERITED(GfxInfo, GfxInfoBase, nsIGfxInfoDebug)
 #endif
-
-static const uint32_t allWindowsVersions = 0xffffffff;
 
 GfxInfo::GfxInfo()
     : mWindowsVersion(0), mActiveGPUIndex(0), mHasDualGPU(false) {}
@@ -1016,7 +1015,7 @@ static inline bool DetectBrokenAVX() {
   }
 
   const unsigned AVX_CTRL_BITS = (1 << 1) | (1 << 2);
-  return (_xgetbv(0) & AVX_CTRL_BITS) != AVX_CTRL_BITS;
+  return (xgetbv(0) & AVX_CTRL_BITS) != AVX_CTRL_BITS;
 }
 #endif
 

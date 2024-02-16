@@ -194,7 +194,7 @@ class UrlClassifierDBServiceWorkerProxy final
                         nsIUrlClassifierGetCacheCallback* aCallback) const;
 
  private:
-  ~UrlClassifierDBServiceWorkerProxy() {}
+  ~UrlClassifierDBServiceWorkerProxy() = default;
 
   const RefPtr<nsUrlClassifierDBServiceWorker> mTarget;
 };
@@ -230,7 +230,7 @@ class UrlClassifierLookupCallbackProxy final
   };
 
  private:
-  ~UrlClassifierLookupCallbackProxy() {}
+  ~UrlClassifierLookupCallbackProxy() = default;
 
   const nsMainThreadPtrHandle<nsIUrlClassifierLookupCallback> mTarget;
 };
@@ -261,7 +261,7 @@ class UrlClassifierCallbackProxy final : public nsIUrlClassifierCallback {
   };
 
  private:
-  ~UrlClassifierCallbackProxy() {}
+  ~UrlClassifierCallbackProxy() = default;
 
   const nsMainThreadPtrHandle<nsIUrlClassifierCallback> mTarget;
 };
@@ -350,7 +350,7 @@ class UrlClassifierUpdateObserverProxy final
   };
 
  private:
-  ~UrlClassifierUpdateObserverProxy() {}
+  ~UrlClassifierUpdateObserverProxy() = default;
 
   const nsMainThreadPtrHandle<nsIUrlClassifierUpdateObserver> mTarget;
 };

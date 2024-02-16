@@ -47,6 +47,12 @@ SystemPrincipal::GetURI(nsIURI** aURI) {
 }
 
 NS_IMETHODIMP
+SystemPrincipal::GetIsOriginPotentiallyTrustworthy(bool* aResult) {
+  *aResult = true;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 SystemPrincipal::GetDomain(nsIURI** aDomain) {
   *aDomain = nullptr;
   return NS_OK;
@@ -79,6 +85,7 @@ SystemPrincipal::Read(nsIObjectInputStream* aStream) {
 
 NS_IMETHODIMP
 SystemPrincipal::Write(nsIObjectOutputStream* aStream) {
-  // no-op: CID is sufficient to identify the mSystemPrincipal singleton
+  // Read is used still for legacy principals
+  MOZ_RELEASE_ASSERT(false, "Old style serialization is removed");
   return NS_OK;
 }

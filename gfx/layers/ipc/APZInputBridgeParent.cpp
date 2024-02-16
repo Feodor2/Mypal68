@@ -19,7 +19,7 @@ APZInputBridgeParent::APZInputBridgeParent(const LayersId& aLayersId) {
   MOZ_ASSERT(mTreeManager);
 }
 
-APZInputBridgeParent::~APZInputBridgeParent() {}
+APZInputBridgeParent::~APZInputBridgeParent() = default;
 
 mozilla::ipc::IPCResult APZInputBridgeParent::RecvReceiveMultiTouchInputEvent(
     const MultiTouchInput& aEvent, APZEventResult* aOutResult,

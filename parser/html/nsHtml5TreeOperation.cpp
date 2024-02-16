@@ -233,7 +233,7 @@ nsresult nsHtml5TreeOperation::AppendText(const char16_t* aBuffer,
   }
 
   nsNodeInfoManager* nodeInfoManager = aParent->OwnerDoc()->NodeInfoManager();
-  RefPtr<nsTextNode> text = new nsTextNode(nodeInfoManager);
+  RefPtr<nsTextNode> text = new (nodeInfoManager) nsTextNode(nodeInfoManager);
   NS_ASSERTION(text, "Infallible malloc failed?");
   rv = text->SetText(aBuffer, aLength, false);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -652,7 +652,7 @@ nsresult nsHtml5TreeOperation::FosterParentText(
 
     nsNodeInfoManager* nodeInfoManager =
         aStackParent->OwnerDoc()->NodeInfoManager();
-    RefPtr<nsTextNode> text = new nsTextNode(nodeInfoManager);
+    RefPtr<nsTextNode> text = new (nodeInfoManager) nsTextNode(nodeInfoManager);
     NS_ASSERTION(text, "Infallible malloc failed?");
     rv = text->SetText(aBuffer, aLength, false);
     NS_ENSURE_SUCCESS(rv, rv);
@@ -670,7 +670,8 @@ nsresult nsHtml5TreeOperation::AppendComment(nsIContent* aParent,
                                              char16_t* aBuffer, int32_t aLength,
                                              nsHtml5DocumentBuilder* aBuilder) {
   nsNodeInfoManager* nodeInfoManager = aParent->OwnerDoc()->NodeInfoManager();
-  RefPtr<dom::Comment> comment = new dom::Comment(nodeInfoManager);
+  RefPtr<dom::Comment> comment =
+      new (nodeInfoManager) dom::Comment(nodeInfoManager);
   NS_ASSERTION(comment, "Infallible malloc failed?");
   nsresult rv = comment->SetText(aBuffer, aLength, false);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -680,8 +681,8 @@ nsresult nsHtml5TreeOperation::AppendComment(nsIContent* aParent,
 
 nsresult nsHtml5TreeOperation::AppendCommentToDocument(
     char16_t* aBuffer, int32_t aLength, nsHtml5DocumentBuilder* aBuilder) {
-  RefPtr<dom::Comment> comment =
-      new dom::Comment(aBuilder->GetNodeInfoManager());
+  RefPtr<dom::Comment> comment = new (aBuilder->GetNodeInfoManager())
+      dom::Comment(aBuilder->GetNodeInfoManager());
   NS_ASSERTION(comment, "Infallible malloc failed?");
   nsresult rv = comment->SetText(aBuffer, aLength, false);
   NS_ENSURE_SUCCESS(rv, rv);

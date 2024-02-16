@@ -31,6 +31,7 @@ class nsIFrame;
 namespace mozilla {
 class TimeStamp;
 class SVGImageContext;
+struct MediaFeatureChange;
 }
 
 namespace mozilla {
@@ -104,6 +105,16 @@ interface imgIContainer : nsISupports
   [notxpcom, nostdcall] readonly attribute MaybeAspectRatio intrinsicRatio;
 
   /**
+   * The x coordinate of the image's hotspot, or 0 if there is no hotspot.
+   */
+  readonly attribute int32_t hotspotX;
+
+  /**
+   * The y coordinate of the image's hotspot, or 0 if there is no hotspot.
+   */
+  readonly attribute int32_t hotspotY;
+
+  /**
    * Given a size at which this image will be displayed, and the drawing
    * parameters affecting how it will be drawn, returns the image size which
    * should be used to draw to produce the highest quality result. This is the
@@ -161,7 +172,7 @@ interface imgIContainer : nsISupports
    * be performed only if ImageLib estimates it can be completed very quickly.
    *
    * FLAG_ASYNC_NOTIFY: Send notifications asynchronously, even if we decode
-   * synchronously beause of FLAG_SYNC_DECODE or FLAG_SYNC_DECODE_IF_FAST.
+   * synchronously because of FLAG_SYNC_DECODE or FLAG_SYNC_DECODE_IF_FAST.
    *
    * FLAG_DECODE_NO_PREMULTIPLY_ALPHA: Do not premultiply alpha if
    * it's not already premultiplied in the image data.
@@ -638,6 +649,14 @@ interface imgIContainer : nsISupports
   [notxpcom, nostdcall] TempRefImgIContainer unwrap();
 
   %{C++
+  /*
+   * Called when media feature values that apply to all documents (such as
+   * those based on system metrics) have changed.  If this image is a type
+   * that can respond to media queries (i.e., an SVG image), this function
+   * is overridden to handle restyling and invalidating the image.
+   */
+  virtual void MediaFeatureValuesChangedAllDocuments(const mozilla::MediaFeatureChange& aChange) {}
+
   /*
    * Get the set of sizes the image can decode to natively.
    */

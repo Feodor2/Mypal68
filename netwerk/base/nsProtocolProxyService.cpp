@@ -226,6 +226,14 @@ class nsAsyncResolveRequest final : public nsIRunnable,
     nsCOMPtr<nsIEventTarget> mProcessingThread;
   };
 
+  void EnsureResolveFlagsMatch() {
+    nsCOMPtr<nsIProxyInfo> proxyInfo = mProxyInfo;
+    while (proxyInfo) {
+      proxyInfo->SetResolveFlags(mResolveFlags);
+      proxyInfo->GetFailoverProxy(getter_AddRefs(proxyInfo));
+    }
+  }
+
  public:
   nsresult ProcessLocally(nsProtocolInfo& info, nsIProxyInfo* pi,
                           bool isSyncOK) {
@@ -350,6 +358,7 @@ class nsAsyncResolveRequest final : public nsIRunnable,
           self->mPPS->MaybeDisableDNSPrefetch(self->mProxyInfo);
         }
 
+        self->EnsureResolveFlagsMatch();
         self->mCallback->OnProxyAvailable(self, self->mChannel,
                                           self->mProxyInfo, self->mStatus);
 
@@ -388,6 +397,7 @@ class nsAsyncResolveRequest final : public nsIRunnable,
       LOG(("pac thread callback did not provide information %" PRIX32 "\n",
            static_cast<uint32_t>(mStatus)));
       if (NS_SUCCEEDED(mStatus)) mPPS->MaybeDisableDNSPrefetch(mProxyInfo);
+      EnsureResolveFlagsMatch();
       mCallback->OnProxyAvailable(this, mChannel, mProxyInfo, mStatus);
     }
 

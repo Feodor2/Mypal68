@@ -12,7 +12,7 @@
 #include "gtest/gtest.h"
 
 class nsRunner final : public nsIRunnable {
-  ~nsRunner() {}
+  ~nsRunner() = default;
 
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
@@ -199,7 +199,7 @@ class SameThreadSentinel : public nsIRunnable {
   }
 
  private:
-  virtual ~SameThreadSentinel() {}
+  virtual ~SameThreadSentinel() = default;
 };
 
 NS_IMPL_ISUPPORTS(SameThreadSentinel, nsIRunnable)

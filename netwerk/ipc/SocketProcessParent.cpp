@@ -11,8 +11,7 @@
 #ifdef MOZ_WEBRTC
 #  include "mozilla/dom/ContentProcessManager.h"
 #  include "mozilla/dom/BrowserParent.h"
-#  include "mozilla/net/ProxyConfigLookupParent.h"
-#  include "mozilla/net/WebrtcProxyChannelParent.h"
+#  include "mozilla/net/WebrtcTCPSocketParent.h"
 #endif
 
 namespace mozilla {
@@ -121,10 +120,10 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvRecordDiscardedData(
   return IPC_OK();
 }
 
-PWebrtcProxyChannelParent* SocketProcessParent::AllocPWebrtcProxyChannelParent(
-    const TabId& aTabId) {
+PWebrtcTCPSocketParent* SocketProcessParent::AllocPWebrtcTCPSocketParent(
+    const Maybe<TabId>& aTabId) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelParent* parent = new WebrtcProxyChannelParent(aTabId);
+  WebrtcTCPSocketParent* parent = new WebrtcTCPSocketParent(aTabId);
   parent->AddRef();
   return parent;
 #else
@@ -132,11 +131,10 @@ PWebrtcProxyChannelParent* SocketProcessParent::AllocPWebrtcProxyChannelParent(
 #endif
 }
 
-bool SocketProcessParent::DeallocPWebrtcProxyChannelParent(
-    PWebrtcProxyChannelParent* aActor) {
+bool SocketProcessParent::DeallocPWebrtcTCPSocketParent(
+    PWebrtcTCPSocketParent* aActor) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelParent* parent =
-      static_cast<WebrtcProxyChannelParent*>(aActor);
+  WebrtcTCPSocketParent* parent = static_cast<WebrtcTCPSocketParent*>(aActor);
   parent->Release();
 #endif
   return true;
@@ -161,35 +159,6 @@ mozilla::ipc::IPCResult SocketProcessParent::RecvPDNSRequestConstructor(
 bool SocketProcessParent::DeallocPDNSRequestParent(PDNSRequestParent* aParent) {
   DNSRequestParent* p = static_cast<DNSRequestParent*>(aParent);
   p->Release();
-  return true;
-}
-
-PProxyConfigLookupParent* SocketProcessParent::AllocPProxyConfigLookupParent() {
-#ifdef MOZ_WEBRTC
-  RefPtr<ProxyConfigLookupParent> actor = new ProxyConfigLookupParent();
-  return actor.forget().take();
-#else
-  return nullptr;
-#endif
-}
-
-mozilla::ipc::IPCResult SocketProcessParent::RecvPProxyConfigLookupConstructor(
-    PProxyConfigLookupParent* aActor) {
-#ifdef MOZ_WEBRTC
-  ProxyConfigLookupParent* actor =
-      static_cast<ProxyConfigLookupParent*>(aActor);
-  actor->DoProxyLookup();
-#endif
-  return IPC_OK();
-}
-
-bool SocketProcessParent::DeallocPProxyConfigLookupParent(
-    PProxyConfigLookupParent* aActor) {
-#ifdef MOZ_WEBRTC
-  RefPtr<ProxyConfigLookupParent> actor =
-      dont_AddRef(static_cast<ProxyConfigLookupParent*>(aActor));
-  MOZ_ASSERT(actor);
-#endif
   return true;
 }
 

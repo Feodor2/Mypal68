@@ -27,7 +27,7 @@ class nsTerminator final : public nsIObserver {
   void UpdateTelemetry();
   void UpdateCrashReport(const char* aTopic);
 
-  ~nsTerminator() {}
+  ~nsTerminator() = default;
 
   bool mInitialized;
   int32_t mCurrentStep;

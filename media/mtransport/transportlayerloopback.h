@@ -14,7 +14,6 @@
 #include <memory>
 #include <queue>
 
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsINamed.h"
 #include "nsITimer.h"

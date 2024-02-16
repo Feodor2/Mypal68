@@ -214,16 +214,16 @@ angle::Result TextureStorage9_2D::generateMipmap(const gl::Context *context,
                                                  const gl::ImageIndex &sourceIndex,
                                                  const gl::ImageIndex &destIndex)
 {
-    IDirect3DSurface9 *upper = nullptr;
+    angle::ComPtr<IDirect3DSurface9> upper = nullptr;
     ANGLE_TRY(getSurfaceLevel(context, gl::TextureTarget::_2D, sourceIndex.getLevelIndex(), false,
                               &upper));
 
-    IDirect3DSurface9 *lower = nullptr;
+    angle::ComPtr<IDirect3DSurface9> lower = nullptr;
     ANGLE_TRY(
         getSurfaceLevel(context, gl::TextureTarget::_2D, destIndex.getLevelIndex(), true, &lower));
 
     ASSERT(upper && lower);
-    return mRenderer->boxFilter(GetImplAs<Context9>(context), upper, lower);
+    return mRenderer->boxFilter(GetImplAs<Context9>(context), upper.Get(), lower.Get());
 }
 
 angle::Result TextureStorage9_2D::getBaseTexture(const gl::Context *context,
@@ -257,14 +257,14 @@ angle::Result TextureStorage9_2D::copyToStorage(const gl::Context *context,
     int levels = getLevelCount();
     for (int i = 0; i < levels; ++i)
     {
-        IDirect3DSurface9 *srcSurf = nullptr;
+        angle::ComPtr<IDirect3DSurface9> srcSurf = nullptr;
         ANGLE_TRY(getSurfaceLevel(context, gl::TextureTarget::_2D, i, false, &srcSurf));
 
-        IDirect3DSurface9 *dstSurf = nullptr;
+        angle::ComPtr<IDirect3DSurface9> dstSurf = nullptr;
         ANGLE_TRY(dest9->getSurfaceLevel(context, gl::TextureTarget::_2D, i, true, &dstSurf));
 
         ANGLE_TRY(
-            mRenderer->copyToRenderTarget(context, dstSurf, srcSurf, isManaged()));
+            mRenderer->copyToRenderTarget(context, dstSurf.Get(), srcSurf.Get(), isManaged()));
     }
 
     return angle::Result::Continue;
@@ -347,7 +347,7 @@ angle::Result TextureStorage9_EGLImage::copyToStorage(const gl::Context *context
 
     IDirect3DTexture9 *destTexture9 = static_cast<IDirect3DTexture9 *>(destBaseTexture9);
 
-    IDirect3DSurface9 *destSurface = nullptr;
+    angle::ComPtr<IDirect3DSurface9> destSurface = nullptr;
     HRESULT result = destTexture9->GetSurfaceLevel(destStorage->getTopLevel(), &destSurface);
     ANGLE_TRY_HR(GetImplAs<Context9>(context), result, "Failed to get the surface from a texture");
 
@@ -355,7 +355,7 @@ angle::Result TextureStorage9_EGLImage::copyToStorage(const gl::Context *context
     ANGLE_TRY(mImage->getRenderTarget(context, &sourceRenderTarget));
 
     RenderTarget9 *sourceRenderTarget9 = GetAs<RenderTarget9>(sourceRenderTarget);
-    ANGLE_TRY(mRenderer->copyToRenderTarget(context, destSurface,
+    ANGLE_TRY(mRenderer->copyToRenderTarget(context, destSurface.Get(),
                                             sourceRenderTarget9->getSurface(), isManaged()));
 
     if (destStorage->getTopLevel() != 0)
@@ -462,16 +462,16 @@ angle::Result TextureStorage9_Cube::generateMipmap(const gl::Context *context,
                                                    const gl::ImageIndex &sourceIndex,
                                                    const gl::ImageIndex &destIndex)
 {
-    IDirect3DSurface9 *upper = nullptr;
+    angle::ComPtr<IDirect3DSurface9> upper = nullptr;
     ANGLE_TRY(getSurfaceLevel(context, sourceIndex.getTarget(), sourceIndex.getLevelIndex(), false,
                               &upper));
 
-    IDirect3DSurface9 *lower = nullptr;
+    angle::ComPtr<IDirect3DSurface9> lower = nullptr;
     ANGLE_TRY(
         getSurfaceLevel(context, destIndex.getTarget(), destIndex.getLevelIndex(), true, &lower));
 
     ASSERT(upper && lower);
-    return mRenderer->boxFilter(GetImplAs<Context9>(context), upper, lower);
+    return mRenderer->boxFilter(GetImplAs<Context9>(context), upper.Get(), lower.Get());
 }
 
 angle::Result TextureStorage9_Cube::getBaseTexture(const gl::Context *context,
@@ -507,14 +507,14 @@ angle::Result TextureStorage9_Cube::copyToStorage(const gl::Context *context,
     {
         for (int i = 0; i < levels; i++)
         {
-            IDirect3DSurface9 *srcSurf = nullptr;
+            angle::ComPtr<IDirect3DSurface9> srcSurf = nullptr;
             ANGLE_TRY(getSurfaceLevel(context, face, i, false, &srcSurf));
 
-            IDirect3DSurface9 *dstSurf = nullptr;
+            angle::ComPtr<IDirect3DSurface9> dstSurf = nullptr;
             ANGLE_TRY(dest9->getSurfaceLevel(context, face, i, true, &dstSurf));
 
             ANGLE_TRY(
-                mRenderer->copyToRenderTarget(context, dstSurf, srcSurf, isManaged()));
+                mRenderer->copyToRenderTarget(context, dstSurf.Get(), srcSurf.Get(), isManaged()));
         }
     }
 

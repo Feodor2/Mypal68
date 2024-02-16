@@ -152,7 +152,7 @@ class nsPreflightCache {
     nsTArray<TokenTime> mHeaders;
   };
 
-  nsPreflightCache() { MOZ_COUNT_CTOR(nsPreflightCache); }
+  MOZ_COUNTED_DEFAULT_CTOR(nsPreflightCache)
 
   ~nsPreflightCache() {
     Clear();
@@ -168,9 +168,6 @@ class nsPreflightCache {
   void Clear();
 
  private:
-  static bool GetCacheKey(nsIURI* aURI, nsIPrincipal* aPrincipal,
-                          bool aWithCredentials, nsACString& _retval);
-
   nsClassHashtable<nsCStringHashKey, CacheEntry> mTable;
   LinkedList<CacheEntry> mList;
 };
@@ -244,7 +241,8 @@ nsPreflightCache::CacheEntry* nsPreflightCache::GetEntry(
     nsIURI* aURI, nsIPrincipal* aPrincipal, bool aWithCredentials,
     bool aCreate) {
   nsCString key;
-  if (!GetCacheKey(aURI, aPrincipal, aWithCredentials, key)) {
+  if (NS_FAILED(
+          aPrincipal->GetPrefLightCacheKey(aURI, aWithCredentials, key))) {
     NS_WARNING("Invalid cache key!");
     return nullptr;
   }
@@ -314,12 +312,14 @@ nsPreflightCache::CacheEntry* nsPreflightCache::GetEntry(
 void nsPreflightCache::RemoveEntries(nsIURI* aURI, nsIPrincipal* aPrincipal) {
   CacheEntry* entry;
   nsCString key;
-  if (GetCacheKey(aURI, aPrincipal, true, key) && mTable.Get(key, &entry)) {
+  if (NS_SUCCEEDED(aPrincipal->GetPrefLightCacheKey(aURI, true, key)) &&
+      mTable.Get(key, &entry)) {
     entry->removeFrom(mList);
     mTable.Remove(key);
   }
 
-  if (GetCacheKey(aURI, aPrincipal, false, key) && mTable.Get(key, &entry)) {
+  if (NS_SUCCEEDED(aPrincipal->GetPrefLightCacheKey(aURI, false, key)) &&
+      mTable.Get(key, &entry)) {
     entry->removeFrom(mList);
     mTable.Remove(key);
   }
@@ -328,40 +328,6 @@ void nsPreflightCache::RemoveEntries(nsIURI* aURI, nsIPrincipal* aPrincipal) {
 void nsPreflightCache::Clear() {
   mList.clear();
   mTable.Clear();
-}
-
-/* static */
-bool nsPreflightCache::GetCacheKey(nsIURI* aURI, nsIPrincipal* aPrincipal,
-                                   bool aWithCredentials, nsACString& _retval) {
-  NS_ASSERTION(aURI, "Null uri!");
-  NS_ASSERTION(aPrincipal, "Null principal!");
-
-  NS_NAMED_LITERAL_CSTRING(space, " ");
-
-  nsCOMPtr<nsIURI> uri;
-  nsresult rv = aPrincipal->GetURI(getter_AddRefs(uri));
-  NS_ENSURE_SUCCESS(rv, false);
-
-  nsAutoCString scheme, host, port;
-  if (uri) {
-    uri->GetScheme(scheme);
-    uri->GetHost(host);
-    port.AppendInt(NS_GetRealPort(uri));
-  }
-
-  if (aWithCredentials) {
-    _retval.AssignLiteral("cred");
-  } else {
-    _retval.AssignLiteral("nocred");
-  }
-
-  nsAutoCString spec;
-  rv = aURI->GetSpec(spec);
-  NS_ENSURE_SUCCESS(rv, false);
-
-  _retval.Append(space + scheme + space + host + space + port + space + spec);
-
-  return true;
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -834,15 +800,6 @@ bool CheckUpgradeInsecureRequestsPreventsCORS(
     return false;
   }
 
-  nsCOMPtr<nsIURI> principalURI;
-  rv = aRequestingPrincipal->GetURI(getter_AddRefs(principalURI));
-  NS_ENSURE_SUCCESS(rv, false);
-
-  // if the requestingPrincipal does not have a uri, there is nothing to do
-  if (!principalURI) {
-    return false;
-  }
-
   nsCOMPtr<nsIURI> originalURI;
   rv = aChannel->GetOriginalURI(getter_AddRefs(originalURI));
   NS_ENSURE_SUCCESS(rv, false);
@@ -850,7 +807,7 @@ bool CheckUpgradeInsecureRequestsPreventsCORS(
   nsAutoCString principalHost, channelHost, origChannelHost;
 
   // if we can not query a host from the uri, there is nothing to do
-  if (NS_FAILED(principalURI->GetAsciiHost(principalHost)) ||
+  if (NS_FAILED(aRequestingPrincipal->GetAsciiHost(principalHost)) ||
       NS_FAILED(channelURI->GetAsciiHost(channelHost)) ||
       NS_FAILED(originalURI->GetAsciiHost(origChannelHost))) {
     return false;
@@ -963,7 +920,7 @@ nsresult nsCORSListenerProxy::UpdateChannel(nsIChannel* aChannel,
 
   // Add the Origin header
   nsAutoCString origin;
-  rv = nsContentUtils::GetASCIIOrigin(mOriginHeaderPrincipal, origin);
+  rv = mOriginHeaderPrincipal->GetAsciiOrigin(origin);
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIHttpChannel> http = do_QueryInterface(aChannel);
@@ -971,21 +928,7 @@ nsresult nsCORSListenerProxy::UpdateChannel(nsIChannel* aChannel,
 
   // hide the Origin header when requesting from .onion and requesting CORS
   if (StaticPrefs::network_http_referer_hideOnionSource()) {
-    nsCOMPtr<nsIURI> potentialOnionUri;  // the candidate uri in header Origin:
-    rv = mOriginHeaderPrincipal->GetURI(getter_AddRefs(potentialOnionUri));
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    nsAutoCString potentialOnionHost;
-    rv = potentialOnionUri ? potentialOnionUri->GetAsciiHost(potentialOnionHost)
-                           : NS_ERROR_FAILURE;
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    nsAutoCString currentOrgin;
-    rv = nsContentUtils::GetASCIIOrigin(originalURI, currentOrgin);
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    if (!currentOrgin.EqualsIgnoreCase(origin.get()) &&
-        StringEndsWith(potentialOnionHost, NS_LITERAL_CSTRING(".onion"))) {
+    if (mOriginHeaderPrincipal->GetIsOnion()) {
       origin.AssignLiteral("null");
     }
   }

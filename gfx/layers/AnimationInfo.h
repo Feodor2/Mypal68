@@ -5,17 +5,28 @@
 #ifndef GFX_ANIMATIONINFO_H
 #define GFX_ANIMATIONINFO_H
 
-#include "nsAutoPtr.h"
 #include "nsCSSPropertyIDSet.h"
 #include "nsDisplayItemTypes.h"
 #include "mozilla/Array.h"
+#include "mozilla/UniquePtr.h"
+#include "mozilla/layers/LayersMessages.h"  // for TransformData
 
 struct RawServoAnimationValue;
 class nsIContent;
 class nsIFrame;
+class nsDisplayListBuilder;
+class nsDisplayItem;
 
 namespace mozilla {
-namespace gfx{
+
+class EffectSet;
+struct AnimationProperty;
+
+namespace dom {
+class Animation;
+}  // namespace dom
+
+namespace gfx {
 class Path;
 }  // namespace gfx
 
@@ -27,6 +38,7 @@ class Layer;
 class LayerManager;
 struct CompositorAnimationData;
 struct PropertyAnimationGroup;
+enum class LayersBackend : int8_t;
 
 class AnimationInfo final {
   typedef nsTArray<Animation> AnimationArray;
@@ -72,8 +84,8 @@ class AnimationInfo final {
   nsTArray<PropertyAnimationGroup>& GetPropertyAnimationGroups() {
     return mPropertyAnimationGroups;
   }
-  const CompositorAnimationData* GetTransformLikeMetaData() const {
-    return mTransformLikeMetaData.get();
+  const Maybe<TransformData>& GetTransformData() const {
+    return mTransformData;
   }
   bool ApplyPendingUpdatesForThisTransaction();
   bool HasTransformAnimation() const;
@@ -99,6 +111,32 @@ class AnimationInfo final {
       const CompositorAnimatableDisplayItemTypes& aDisplayItemTypes,
       const AnimationGenerationCallback& aCallback);
 
+  void AddAnimationsForDisplayItem(nsIFrame* aFrame,
+                                   nsDisplayListBuilder* aBuilder,
+                                   nsDisplayItem* aItem, DisplayItemType aType,
+                                   LayersBackend aLayersBackend);
+
+ private:
+  enum class Send {
+    NextTransaction,
+    Immediate,
+  };
+  void AddAnimationForProperty(nsIFrame* aFrame,
+                               const AnimationProperty& aProperty,
+                               dom::Animation* aAnimation,
+                               const Maybe<TransformData>& aTransformData,
+                               Send aSendFlag);
+
+  bool AddAnimationsForProperty(
+      nsIFrame* aFrame, const EffectSet* aEffects,
+      const nsTArray<RefPtr<dom::Animation>>& aCompositorAnimations,
+      const Maybe<TransformData>& aTransformData, nsCSSPropertyID aProperty,
+      Send aSendFlag);
+
+  void AddNonAnimatingTransformLikePropertiesStyles(
+      const nsCSSPropertyIDSet& aNonAnimatingProperties, nsIFrame* aFrame,
+      Send aSendFlag);
+
  protected:
   // mAnimations (and mPendingAnimations) are only set on the main thread.
   //
@@ -108,7 +146,7 @@ class AnimationInfo final {
   // readily use for sampling and then store it in mPropertyAnimationGroups
   // (below) or CompositorAnimationStorage.mAnimations for WebRender.
   AnimationArray mAnimations;
-  nsAutoPtr<AnimationArray> mPendingAnimations;
+  UniquePtr<AnimationArray> mPendingAnimations;
 
   uint64_t mCompositorAnimationsId;
   // The extracted data produced by AnimationHelper::ExtractAnimations().
@@ -120,7 +158,7 @@ class AnimationInfo final {
   // AnimationHelper.h causes build errors (because other modules may include
   // this file but cannot see LayersMessages.h).
   nsTArray<PropertyAnimationGroup> mPropertyAnimationGroups;
-  UniquePtr<CompositorAnimationData> mTransformLikeMetaData;
+  Maybe<TransformData> mTransformData;
   // For motion path. We cached the gfx path for optimization.
   RefPtr<gfx::Path> mCachedMotionPath;
   // If this layer is used for OMTA, then this counter is used to ensure we

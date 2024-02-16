@@ -21,7 +21,7 @@ serde = "1.*.*"
 serde_derive = "1.*.*"
 tokio-core = "0.1"
 tokio-io = "0.1"
-tokio-uds = "0.1.7"
+tokio-uds = "0.2.5"
 winapi = "0.3.6"
 mio-named-pipes = "=0.1.5"
 

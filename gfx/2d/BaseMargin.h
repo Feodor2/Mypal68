@@ -86,7 +86,7 @@ struct BaseMargin {
     return *(&top + int(aSide));
   }
 
-  void ApplySkipSides(Sides aSkipSides) {
+  Sub& ApplySkipSides(Sides aSkipSides) {
     if (aSkipSides.Top()) {
       top = 0;
     }
@@ -99,6 +99,7 @@ struct BaseMargin {
     if (aSkipSides.Left()) {
       left = 0;
     }
+    return *static_cast<Sub*>(this);
   }
 
   // Overloaded operators. Note that '=' isn't defined so we'll get the

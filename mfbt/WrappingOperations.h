@@ -26,6 +26,7 @@
 #include "mozilla/TypeTraits.h"
 
 #include <limits.h>
+#include <type_traits>
 
 namespace mozilla {
 
@@ -33,10 +34,10 @@ namespace detail {
 
 template <typename UnsignedType>
 struct WrapToSignedHelper {
-  static_assert(mozilla::IsUnsigned<UnsignedType>::value,
+  static_assert(std::is_unsigned_v<UnsignedType>,
                 "WrapToSigned must be passed an unsigned type");
 
-  using SignedType = typename mozilla::MakeSigned<UnsignedType>::Type;
+  using SignedType = std::make_signed_t<UnsignedType>;
 
   static constexpr SignedType MaxValue =
       (UnsignedType(1) << (CHAR_BIT * sizeof(SignedType) - 1)) - 1;
@@ -99,16 +100,16 @@ WrapToSigned(UnsignedType aValue) {
 namespace detail {
 
 template <typename T>
-constexpr T ToResult(typename MakeUnsigned<T>::Type aUnsigned) {
+constexpr T ToResult(std::make_unsigned_t<T> aUnsigned) {
   // We could *always* return WrapToSigned and rely on unsigned conversion to
   // undo the wrapping when |T| is unsigned, but this seems clearer.
-  return IsSigned<T>::value ? WrapToSigned(aUnsigned) : aUnsigned;
+  return std::is_signed_v<T> ? WrapToSigned(aUnsigned) : aUnsigned;
 }
 
 template <typename T>
 struct WrappingAddHelper {
  private:
-  using UnsignedT = typename MakeUnsigned<T>::Type;
+  using UnsignedT = std::make_unsigned_t<T>;
 
  public:
   MOZ_NO_SANITIZE_UNSIGNED_OVERFLOW
@@ -156,7 +157,7 @@ namespace detail {
 template <typename T>
 struct WrappingSubtractHelper {
  private:
-  using UnsignedT = typename MakeUnsigned<T>::Type;
+  using UnsignedT = std::make_unsigned_t<T>;
 
  public:
   MOZ_NO_SANITIZE_UNSIGNED_OVERFLOW
@@ -202,7 +203,7 @@ namespace detail {
 template <typename T>
 struct WrappingMultiplyHelper {
  private:
-  using UnsignedT = typename MakeUnsigned<T>::Type;
+  using UnsignedT = std::make_unsigned_t<T>;
 
  public:
   MOZ_NO_SANITIZE_UNSIGNED_OVERFLOW

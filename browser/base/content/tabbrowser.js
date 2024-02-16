@@ -1001,7 +1001,7 @@
       // XXX https://bugzilla.mozilla.org/show_bug.cgi?id=22183#c239
       try {
         if (docElement.getAttribute("chromehidden").includes("location")) {
-          var uri = Services.uriFixup.createExposableURI(aBrowser.currentURI);
+          var uri = Services.io.createExposableURI(aBrowser.currentURI);
           if (uri.scheme == "about") {
             newTitle = uri.spec + sep + newTitle;
           } else {
@@ -1494,7 +1494,7 @@
         // See if we can use the URI as the title.
         if (browser.currentURI.displaySpec) {
           try {
-            title = Services.uriFixup.createExposableURI(browser.currentURI)
+            title = Services.io.createExposableURI(browser.currentURI)
               .displaySpec;
           } catch (ex) {
             title = browser.currentURI.displaySpec;

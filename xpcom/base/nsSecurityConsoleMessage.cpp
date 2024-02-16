@@ -6,9 +6,9 @@
 
 NS_IMPL_ISUPPORTS(nsSecurityConsoleMessage, nsISecurityConsoleMessage)
 
-nsSecurityConsoleMessage::nsSecurityConsoleMessage() {}
+nsSecurityConsoleMessage::nsSecurityConsoleMessage() = default;
 
-nsSecurityConsoleMessage::~nsSecurityConsoleMessage() {}
+nsSecurityConsoleMessage::~nsSecurityConsoleMessage() = default;
 
 NS_IMETHODIMP
 nsSecurityConsoleMessage::GetTag(nsAString& aTag) {

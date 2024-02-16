@@ -532,13 +532,18 @@ bool PuppetWidget::AsyncPanZoomEnabled() const {
   return mBrowserChild && mBrowserChild->AsyncPanZoomEnabled();
 }
 
-void PuppetWidget::GetEditCommands(NativeKeyBindingsType aType,
+bool PuppetWidget::GetEditCommands(NativeKeyBindingsType aType,
                                    const WidgetKeyboardEvent& aEvent,
                                    nsTArray<CommandInt>& aCommands) {
   // Validate the arguments.
-  nsIWidget::GetEditCommands(aType, aEvent, aCommands);
-
+  if (NS_WARN_IF(!nsIWidget::GetEditCommands(aType, aEvent, aCommands))) {
+    return false;
+  }
+  if (NS_WARN_IF(!mBrowserChild)) {
+    return false;
+  }
   mBrowserChild->RequestEditCommands(aType, aEvent, aCommands);
+  return true;
 }
 
 LayerManager* PuppetWidget::GetLayerManager(
@@ -947,7 +952,8 @@ void PuppetWidget::SetCursor(nsCursor aCursor, imgIContainer* aCursorImage,
 
   if (aCursorImage) {
     RefPtr<SourceSurface> surface = aCursorImage->GetFrame(
-        imgIContainer::FRAME_CURRENT, imgIContainer::FLAG_SYNC_DECODE);
+        imgIContainer::FRAME_CURRENT,
+        imgIContainer::FLAG_SYNC_DECODE | imgIContainer::FLAG_ASYNC_NOTIFY);
     if (surface) {
       if (RefPtr<DataSourceSurface> dataSurface = surface->GetDataSurface()) {
         hasCustomCursor = true;
@@ -1174,7 +1180,7 @@ void PuppetWidget::StartAsyncScrollbarDrag(
 
 PuppetScreen::PuppetScreen(void* nativeScreen) {}
 
-PuppetScreen::~PuppetScreen() {}
+PuppetScreen::~PuppetScreen() = default;
 
 static ScreenConfiguration ScreenConfig() {
   ScreenConfiguration config;
@@ -1219,7 +1225,7 @@ PuppetScreenManager::PuppetScreenManager() {
   mOneScreen = new PuppetScreen(nullptr);
 }
 
-PuppetScreenManager::~PuppetScreenManager() {}
+PuppetScreenManager::~PuppetScreenManager() = default;
 
 NS_IMETHODIMP
 PuppetScreenManager::GetPrimaryScreen(nsIScreen** outScreen) {

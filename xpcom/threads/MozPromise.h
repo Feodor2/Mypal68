@@ -5,6 +5,8 @@
 #if !defined(MozPromise_h_)
 #  define MozPromise_h_
 
+#  include <type_traits>
+
 #  include "mozilla/Logging.h"
 #  include "mozilla/Maybe.h"
 #  include "mozilla/Monitor2.h"
@@ -133,7 +135,7 @@ class MozPromiseRefcountable {
  public:
   NS_INLINE_DECL_THREADSAFE_REFCOUNTING(MozPromiseRefcountable)
  protected:
-  virtual ~MozPromiseRefcountable() {}
+  virtual ~MozPromiseRefcountable() = default;
 };
 
 class MozPromiseBase : public MozPromiseRefcountable {
@@ -351,7 +353,7 @@ class MozPromise : public MozPromiseBase {
 
    protected:
     Request() : mComplete(false), mDisconnected(false) {}
-    virtual ~Request() {}
+    virtual ~Request() = default;
 
     bool mComplete;
     bool mDisconnected;
@@ -1221,7 +1223,7 @@ class MozPromiseHolder {
 template <typename PromiseType>
 class MozPromiseRequestHolder {
  public:
-  MozPromiseRequestHolder() {}
+  MozPromiseRequestHolder() = default;
   ~MozPromiseRequestHolder() { MOZ_ASSERT(!mRequest); }
 
   void Track(already_AddRefed<typename PromiseType::Request> aRequest) {
@@ -1270,8 +1272,8 @@ namespace detail {
 // assertions when used on templated types.
 class MethodCallBase {
  public:
-  MethodCallBase() { MOZ_COUNT_CTOR(MethodCallBase); }
-  virtual ~MethodCallBase() { MOZ_COUNT_DTOR(MethodCallBase); }
+  MOZ_COUNTED_DEFAULT_CTOR(MethodCallBase)
+  MOZ_COUNTED_DTOR_VIRTUAL(MethodCallBase)
 };
 
 template <typename PromiseType, typename MethodType, typename ThisType,
@@ -1388,13 +1390,13 @@ static RefPtr<PromiseType> InvokeAsync(
     ActualArgTypes&&... aArgs) {
   static_assert(
       !detail::Any(
-          IsPointer<typename RemoveReference<ActualArgTypes>::Type>::value...),
+          std::is_pointer_v<typename RemoveReference<ActualArgTypes>::Type>...),
       "Cannot pass pointer types through InvokeAsync, Storages must be "
       "provided");
   static_assert(sizeof...(ArgTypes) == sizeof...(ActualArgTypes),
                 "Method's ArgTypes and ActualArgTypes should have equal sizes");
   return detail::InvokeAsyncImpl<
-      StoreCopyPassByRRef<typename Decay<ActualArgTypes>::Type>...>(
+      StoreCopyPassByRRef<std::decay_t<ActualArgTypes>>...>(
       aTarget, aThisVal, aCallerName, aMethod,
       std::forward<ActualArgTypes>(aArgs)...);
 }
@@ -1403,7 +1405,7 @@ namespace detail {
 
 template <typename Function, typename PromiseType>
 class ProxyFunctionRunnable : public CancelableRunnable {
-  typedef typename Decay<Function>::Type FunctionStorage;
+  using FunctionStorage = std::decay_t<Function>;
 
  public:
   template <typename F>
@@ -1467,7 +1469,7 @@ static auto InvokeAsync(nsISerialEventTarget* aTarget, const char* aCallerName,
 template <typename Function>
 static auto InvokeAsync(nsISerialEventTarget* aTarget, const char* aCallerName,
                         Function&& aFunction) -> decltype(aFunction()) {
-  static_assert(!IsLvalueReference<Function>::value,
+  static_assert(!std::is_lvalue_reference_v<Function>,
                 "Function object must not be passed by lvalue-ref (to avoid "
                 "unplanned copies); Consider move()ing the object.");
   return detail::InvokeAsync(aTarget, aCallerName,

@@ -30,7 +30,7 @@ class JSObjectHolder final : public nsISupports {
   JSObject* GetJSObject() { return mJSObject; }
 
  private:
-  ~JSObjectHolder() {}
+  ~JSObjectHolder() = default;
 
   JS::PersistentRooted<JSObject*> mJSObject;
 };

@@ -367,7 +367,7 @@ class LayerHandle final {
 
  public:
   LayerHandle() : mHandle(0) {}
-  LayerHandle(const LayerHandle& aOther) : mHandle(aOther.mHandle) {}
+  LayerHandle(const LayerHandle& aOther) = default;
   explicit LayerHandle(uint64_t aHandle) : mHandle(aHandle) {}
   bool IsValid() const { return mHandle != 0; }
   explicit operator bool() const { return IsValid(); }
@@ -389,8 +389,7 @@ class CompositableHandle final {
 
  public:
   CompositableHandle() : mHandle(0) {}
-  CompositableHandle(const CompositableHandle& aOther)
-      : mHandle(aOther.mHandle) {}
+  CompositableHandle(const CompositableHandle& aOther) = default;
   explicit CompositableHandle(uint64_t aHandle) : mHandle(aHandle) {}
   bool IsValid() const { return mHandle != 0; }
   explicit operator bool() const { return IsValid(); }

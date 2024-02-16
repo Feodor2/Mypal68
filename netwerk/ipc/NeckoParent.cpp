@@ -27,9 +27,8 @@
 #include "mozilla/net/SocketProcessParent.h"
 #include "mozilla/net/PSocketProcessBridgeParent.h"
 #ifdef MOZ_WEBRTC
-#  include "mozilla/net/ProxyConfigLookupParent.h"
 #  include "mozilla/net/StunAddrsRequestParent.h"
-#  include "mozilla/net/WebrtcProxyChannelParent.h"
+#  include "mozilla/net/WebrtcTCPSocketParent.h"
 #endif
 #include "mozilla/dom/ChromeUtils.h"
 #include "mozilla/dom/ContentParent.h"
@@ -169,24 +168,23 @@ const char* NeckoParent::GetValidatedOriginAttributes(
     return "SerializedLoadContext from child is null";
   }
 
-  nsTArray<TabContext> contextArray =
-      static_cast<ContentParent*>(aContent)->GetManagedTabContext();
-
   nsAutoCString serializedSuffix;
   aSerialized.mOriginAttributes.CreateAnonymizedSuffix(serializedSuffix);
 
   nsAutoCString debugString;
-  for (uint32_t i = 0; i < contextArray.Length(); i++) {
-    const TabContext& tabContext = contextArray[i];
+  const auto& browsers = aContent->ManagedPBrowserParent();
+  for (auto iter = browsers.ConstIter(); !iter.Done(); iter.Next()) {
+    auto* browserParent = BrowserParent::GetFrom(iter.Get()->GetKey());
 
     if (!ChromeUtils::IsOriginAttributesEqual(
-            aSerialized.mOriginAttributes, tabContext.OriginAttributesRef())) {
+            aSerialized.mOriginAttributes,
+            browserParent->OriginAttributesRef())) {
       debugString.AppendLiteral("(");
       debugString.Append(serializedSuffix);
       debugString.AppendLiteral(",");
 
       nsAutoCString tabSuffix;
-      tabContext.OriginAttributesRef().CreateAnonymizedSuffix(tabSuffix);
+      browserParent->OriginAttributesRef().CreateAnonymizedSuffix(tabSuffix);
       debugString.Append(tabSuffix);
 
       debugString.AppendLiteral(")");
@@ -321,10 +319,10 @@ bool NeckoParent::DeallocPStunAddrsRequestParent(
   return true;
 }
 
-PWebrtcProxyChannelParent* NeckoParent::AllocPWebrtcProxyChannelParent(
-    const TabId& aTabId) {
+PWebrtcTCPSocketParent* NeckoParent::AllocPWebrtcTCPSocketParent(
+    const Maybe<TabId>& aTabId) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelParent* parent = new WebrtcProxyChannelParent(aTabId);
+  WebrtcTCPSocketParent* parent = new WebrtcTCPSocketParent(aTabId);
   parent->AddRef();
   return parent;
 #else
@@ -332,11 +330,10 @@ PWebrtcProxyChannelParent* NeckoParent::AllocPWebrtcProxyChannelParent(
 #endif
 }
 
-bool NeckoParent::DeallocPWebrtcProxyChannelParent(
-    PWebrtcProxyChannelParent* aActor) {
+bool NeckoParent::DeallocPWebrtcTCPSocketParent(
+    PWebrtcTCPSocketParent* aActor) {
 #ifdef MOZ_WEBRTC
-  WebrtcProxyChannelParent* parent =
-      static_cast<WebrtcProxyChannelParent*>(aActor);
+  WebrtcTCPSocketParent* parent = static_cast<WebrtcTCPSocketParent*>(aActor);
   parent->Release();
 #endif
   return true;
@@ -721,12 +718,8 @@ mozilla::ipc::IPCResult NeckoParent::RecvOnAuthCancelled(
 
 /* Predictor Messages */
 mozilla::ipc::IPCResult NeckoParent::RecvPredPredict(
-    const Maybe<ipc::URIParams>& aTargetURI,
-    const Maybe<ipc::URIParams>& aSourceURI, const uint32_t& aReason,
+    nsIURI* aTargetURI, nsIURI* aSourceURI, const uint32_t& aReason,
     const OriginAttributes& aOriginAttributes, const bool& hasVerifier) {
-  nsCOMPtr<nsIURI> targetURI = DeserializeURI(aTargetURI);
-  nsCOMPtr<nsIURI> sourceURI = DeserializeURI(aSourceURI);
-
   // Get the current predictor
   nsresult rv = NS_OK;
   nsCOMPtr<nsINetworkPredictor> predictor =
@@ -737,16 +730,17 @@ mozilla::ipc::IPCResult NeckoParent::RecvPredPredict(
   if (hasVerifier) {
     verifier = do_QueryInterface(predictor);
   }
-  predictor->PredictNative(targetURI, sourceURI, aReason, aOriginAttributes,
+  predictor->PredictNative(aTargetURI, aSourceURI, aReason, aOriginAttributes,
                            verifier);
   return IPC_OK();
 }
 
 mozilla::ipc::IPCResult NeckoParent::RecvPredLearn(
-    const ipc::URIParams& aTargetURI, const Maybe<ipc::URIParams>& aSourceURI,
-    const uint32_t& aReason, const OriginAttributes& aOriginAttributes) {
-  nsCOMPtr<nsIURI> targetURI = DeserializeURI(aTargetURI);
-  nsCOMPtr<nsIURI> sourceURI = DeserializeURI(aSourceURI);
+    nsIURI* aTargetURI, nsIURI* aSourceURI, const uint32_t& aReason,
+    const OriginAttributes& aOriginAttributes) {
+  if (!aTargetURI) {
+    return IPC_FAIL(this, "aTargetURI is null");
+  }
 
   // Get the current predictor
   nsresult rv = NS_OK;
@@ -754,7 +748,7 @@ mozilla::ipc::IPCResult NeckoParent::RecvPredLearn(
       do_GetService("@mozilla.org/network/predictor;1", &rv);
   NS_ENSURE_SUCCESS(rv, IPC_FAIL_NO_REASON(this));
 
-  predictor->LearnNative(targetURI, sourceURI, aReason, aOriginAttributes);
+  predictor->LearnNative(aTargetURI, aSourceURI, aReason, aOriginAttributes);
   return IPC_OK();
 }
 
@@ -966,35 +960,6 @@ mozilla::ipc::IPCResult NeckoParent::RecvEnsureHSTSData(
       new HSTSDataCallbackWrapper(std::move(callback));
   gHttpHandler->EnsureHSTSDataReadyNative(wrapper.forget());
   return IPC_OK();
-}
-
-PProxyConfigLookupParent* NeckoParent::AllocPProxyConfigLookupParent() {
-#ifdef MOZ_WEBRTC
-  RefPtr<ProxyConfigLookupParent> actor = new ProxyConfigLookupParent();
-  return actor.forget().take();
-#else
-  return nullptr;
-#endif
-}
-
-mozilla::ipc::IPCResult NeckoParent::RecvPProxyConfigLookupConstructor(
-    PProxyConfigLookupParent* aActor) {
-#ifdef MOZ_WEBRTC
-  ProxyConfigLookupParent* actor =
-      static_cast<ProxyConfigLookupParent*>(aActor);
-  actor->DoProxyLookup();
-#endif
-  return IPC_OK();
-}
-
-bool NeckoParent::DeallocPProxyConfigLookupParent(
-    PProxyConfigLookupParent* aActor) {
-#ifdef MOZ_WEBRTC
-  RefPtr<ProxyConfigLookupParent> actor =
-      dont_AddRef(static_cast<ProxyConfigLookupParent*>(aActor));
-  MOZ_ASSERT(actor);
-#endif
-  return true;
 }
 
 }  // namespace net

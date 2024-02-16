@@ -23,7 +23,7 @@ typedef AutoTArray<RefPtr<dom::Element>, 16> ManualNACArray;
  */
 class ManualNACPtr final {
  public:
-  ManualNACPtr() {}
+  ManualNACPtr() = default;
   MOZ_IMPLICIT ManualNACPtr(decltype(nullptr)) {}
   explicit ManualNACPtr(already_AddRefed<dom::Element> aNewNAC)
       : mPtr(aNewNAC) {
@@ -63,6 +63,15 @@ class ManualNACPtr final {
     RemoveContentFromNACArray(ptr);
   }
 
+  static bool IsManualNAC(nsIContent* aAnonContent) {
+    MOZ_ASSERT(aAnonContent->IsRootOfNativeAnonymousSubtree());
+    MOZ_ASSERT(aAnonContent->IsInComposedDoc());
+
+    auto* nac = static_cast<ManualNACArray*>(
+        aAnonContent->GetParent()->GetProperty(nsGkAtoms::manualNACProperty));
+    return nac && nac->Contains(aAnonContent);
+  }
+
   static void RemoveContentFromNACArray(nsIContent* aAnonymousContent) {
     nsIContent* parentContent = aAnonymousContent->GetParent();
     if (!parentContent) {
@@ -78,7 +87,7 @@ class ManualNACPtr final {
     if (nac) {
       nac->RemoveElement(aAnonymousContent);
       if (nac->IsEmpty()) {
-        parentContent->DeleteProperty(nsGkAtoms::manualNACProperty);
+        parentContent->RemoveProperty(nsGkAtoms::manualNACProperty);
       }
     }
 

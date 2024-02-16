@@ -213,7 +213,7 @@ already_AddRefed<DataStorage> DataStorage::GetFromRawFileName(
   RefPtr<DataStorage> storage;
   if (!sDataStorages->Get(aFilename, getter_AddRefs(storage))) {
     storage = new DataStorage(aFilename);
-    sDataStorages->Put(aFilename, storage);
+    sDataStorages->Put(aFilename, RefPtr{storage});
   }
   return storage.forget();
 }
@@ -402,8 +402,7 @@ DataStorage::Reader::~Reader() {
   {
     Monitor2AutoLock readyLock(mDataStorage->mReadyMonitor);
     mDataStorage->mReady = true;
-    nsresult rv = mDataStorage->mReadyMonitor.Broadcast();
-    Unused << NS_WARN_IF(NS_FAILED(rv));
+    mDataStorage->mReadyMonitor.Broadcast();
   }
 
   // This is for tests.

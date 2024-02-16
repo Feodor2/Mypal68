@@ -362,7 +362,6 @@ PlacesController.prototype = {
     var clipboard = this.clipboard;
     var hasPlacesData = clipboard.hasDataMatchingFlavors(
       flavors,
-      flavors.length,
       Ci.nsIClipboard.kGlobalClipboard
     );
     if (hasPlacesData) {

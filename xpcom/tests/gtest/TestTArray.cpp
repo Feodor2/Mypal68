@@ -45,22 +45,23 @@ struct Movable {
 }  // namespace TestTArray
 
 template <>
-struct nsTArray_CopyChooser<TestTArray::Copyable> {
-  typedef nsTArray_CopyWithConstructors<TestTArray::Copyable> Type;
+struct nsTArray_RelocationStrategy<TestTArray::Copyable> {
+  using Type = nsTArray_RelocateUsingMoveConstructor<TestTArray::Copyable>;
 };
 
 template <>
-struct nsTArray_CopyChooser<TestTArray::Movable> {
-  typedef nsTArray_CopyWithConstructors<TestTArray::Movable> Type;
+struct nsTArray_RelocationStrategy<TestTArray::Movable> {
+  using Type = nsTArray_RelocateUsingMoveConstructor<TestTArray::Movable>;
 };
 
 namespace TestTArray {
 
+constexpr int dummyArrayData[] = {4, 1, 2, 8};
+
 static const nsTArray<int>& DummyArray() {
   static nsTArray<int> sArray;
   if (sArray.IsEmpty()) {
-    const int data[] = {4, 1, 2, 8};
-    sArray.AppendElements(data, ArrayLength(data));
+    sArray.AppendElements(dummyArrayData, ArrayLength(dummyArrayData));
   }
   return sArray;
 }
@@ -78,17 +79,91 @@ static const nsTArray<int>& FakeHugeArray() {
 }
 #endif
 
-TEST(TArray, AppendElementsRvalue)
+TEST(TArray, int_AppendElements_PlainArray)
+{
+  nsTArray<int> array;
+
+  int* ptr = array.AppendElements(dummyArrayData, ArrayLength(dummyArrayData));
+  ASSERT_EQ(&array[0], ptr);
+  ASSERT_EQ(DummyArray(), array);
+
+  ptr = array.AppendElements(dummyArrayData, ArrayLength(dummyArrayData));
+  ASSERT_EQ(&array[DummyArray().Length()], ptr);
+  nsTArray<int> expected;
+  expected.AppendElements(DummyArray());
+  expected.AppendElements(DummyArray());
+  ASSERT_EQ(expected, array);
+}
+
+TEST(TArray, int_AppendElements_PlainArray_Fallible)
+{
+  nsTArray<int> array;
+
+  int* ptr = array.AppendElements(dummyArrayData, ArrayLength(dummyArrayData),
+                                  fallible);
+  ASSERT_EQ(&array[0], ptr);
+  ASSERT_EQ(DummyArray(), array);
+
+  ptr = array.AppendElements(dummyArrayData, ArrayLength(dummyArrayData),
+                             fallible);
+  ASSERT_EQ(&array[DummyArray().Length()], ptr);
+  nsTArray<int> expected;
+  expected.AppendElements(DummyArray());
+  expected.AppendElements(DummyArray());
+  ASSERT_EQ(expected, array);
+}
+
+TEST(TArray, int_AppendElements_TArray_Copy)
+{
+  nsTArray<int> array;
+
+  const nsTArray<int> temp(DummyArray());
+  int* ptr = array.AppendElements(temp);
+  ASSERT_EQ(&array[0], ptr);
+  ASSERT_EQ(DummyArray(), array);
+  ASSERT_FALSE(temp.IsEmpty());
+
+  ptr = array.AppendElements(temp);
+  ASSERT_EQ(&array[DummyArray().Length()], ptr);
+  nsTArray<int> expected;
+  expected.AppendElements(DummyArray());
+  expected.AppendElements(DummyArray());
+  ASSERT_EQ(expected, array);
+  ASSERT_FALSE(temp.IsEmpty());
+}
+
+TEST(TArray, int_AppendElements_TArray_Copy_Fallible)
+{
+  nsTArray<int> array;
+
+  const nsTArray<int> temp(DummyArray());
+  int* ptr = array.AppendElements(temp, fallible);
+  ASSERT_EQ(&array[0], ptr);
+  ASSERT_EQ(DummyArray(), array);
+  ASSERT_FALSE(temp.IsEmpty());
+
+  ptr = array.AppendElements(temp, fallible);
+  ASSERT_EQ(&array[DummyArray().Length()], ptr);
+  nsTArray<int> expected;
+  expected.AppendElements(DummyArray());
+  expected.AppendElements(DummyArray());
+  ASSERT_EQ(expected, array);
+  ASSERT_FALSE(temp.IsEmpty());
+}
+
+TEST(TArray, int_AppendElements_TArray_Rvalue)
 {
   nsTArray<int> array;
 
   nsTArray<int> temp(DummyArray());
-  array.AppendElements(std::move(temp));
+  int* ptr = array.AppendElements(std::move(temp));
+  ASSERT_EQ(&array[0], ptr);
   ASSERT_EQ(DummyArray(), array);
   ASSERT_TRUE(temp.IsEmpty());
 
   temp = DummyArray();
-  array.AppendElements(std::move(temp));
+  ptr = array.AppendElements(std::move(temp));
+  ASSERT_EQ(&array[DummyArray().Length()], ptr);
   nsTArray<int> expected;
   expected.AppendElements(DummyArray());
   expected.AppendElements(DummyArray());
@@ -96,7 +171,300 @@ TEST(TArray, AppendElementsRvalue)
   ASSERT_TRUE(temp.IsEmpty());
 }
 
-TEST(TArray, Assign)
+TEST(TArray, int_AppendElements_TArray_Rvalue_Fallible)
+{
+  nsTArray<int> array;
+
+  nsTArray<int> temp(DummyArray());
+  int* ptr = array.AppendElements(std::move(temp), fallible);
+  ASSERT_EQ(&array[0], ptr);
+  ASSERT_EQ(DummyArray(), array);
+  ASSERT_TRUE(temp.IsEmpty());
+
+  temp = DummyArray();
+  ptr = array.AppendElements(std::move(temp), fallible);
+  ASSERT_EQ(&array[DummyArray().Length()], ptr);
+  nsTArray<int> expected;
+  expected.AppendElements(DummyArray());
+  expected.AppendElements(DummyArray());
+  ASSERT_EQ(expected, array);
+  ASSERT_TRUE(temp.IsEmpty());
+}
+
+TEST(TArray, int_AppendElements_FallibleArray_Rvalue)
+{
+  nsTArray<int> array;
+
+  FallibleTArray<int> temp(DummyArray());
+  int* ptr = array.AppendElements(std::move(temp));
+  ASSERT_EQ(&array[0], ptr);
+  ASSERT_EQ(DummyArray(), array);
+  ASSERT_TRUE(temp.IsEmpty());
+
+  temp = DummyArray();
+  ptr = array.AppendElements(std::move(temp));
+  ASSERT_EQ(&array[DummyArray().Length()], ptr);
+  nsTArray<int> expected;
+  expected.AppendElements(DummyArray());
+  expected.AppendElements(DummyArray());
+  ASSERT_EQ(expected, array);
+  ASSERT_TRUE(temp.IsEmpty());
+}
+
+TEST(TArray, int_AppendElements_FallibleArray_Rvalue_Fallible)
+{
+  nsTArray<int> array;
+
+  FallibleTArray<int> temp(DummyArray());
+  int* ptr = array.AppendElements(std::move(temp), fallible);
+  ASSERT_EQ(&array[0], ptr);
+  ASSERT_EQ(DummyArray(), array);
+  ASSERT_TRUE(temp.IsEmpty());
+
+  temp = DummyArray();
+  ptr = array.AppendElements(std::move(temp), fallible);
+  ASSERT_EQ(&array[DummyArray().Length()], ptr);
+  nsTArray<int> expected;
+  expected.AppendElements(DummyArray());
+  expected.AppendElements(DummyArray());
+  ASSERT_EQ(expected, array);
+  ASSERT_TRUE(temp.IsEmpty());
+}
+
+TEST(TArray, AppendElementsSpan)
+{
+  nsTArray<int> array;
+
+  nsTArray<int> temp(DummyArray());
+  Span<int> span = temp;
+  array.AppendElements(span);
+  ASSERT_EQ(DummyArray(), array);
+
+  Span<const int> constSpan = temp;
+  array.AppendElements(constSpan);
+  nsTArray<int> expected;
+  expected.AppendElements(DummyArray());
+  expected.AppendElements(DummyArray());
+  ASSERT_EQ(expected, array);
+}
+
+TEST(TArray, int_AppendElement_NoElementArg)
+{
+  nsTArray<int> array;
+  array.AppendElement();
+
+  ASSERT_EQ(1u, array.Length());
+}
+
+TEST(TArray, int_AppendElement_NoElementArg_Fallible)
+{
+  nsTArray<int> array;
+  ASSERT_NE(nullptr, array.AppendElement(fallible));
+
+  ASSERT_EQ(1u, array.Length());
+}
+
+TEST(TArray, int_AppendElement_NoElementArg_Address)
+{
+  nsTArray<int> array;
+  *array.AppendElement() = 42;
+
+  ASSERT_EQ(1u, array.Length());
+  ASSERT_EQ(42, array[0]);
+}
+
+TEST(TArray, int_AppendElement_NoElementArg_Fallible_Address)
+{
+  nsTArray<int> array;
+  *array.AppendElement(fallible) = 42;
+
+  ASSERT_EQ(1u, array.Length());
+  ASSERT_EQ(42, array[0]);
+}
+
+TEST(TArray, int_AppendElement_ElementArg)
+{
+  nsTArray<int> array;
+  array.AppendElement(42);
+
+  ASSERT_EQ(1u, array.Length());
+  ASSERT_EQ(42, array[0]);
+}
+
+TEST(TArray, int_AppendElement_ElementArg_Fallible)
+{
+  nsTArray<int> array;
+  ASSERT_NE(nullptr, array.AppendElement(42, fallible));
+
+  ASSERT_EQ(1u, array.Length());
+  ASSERT_EQ(42, array[0]);
+}
+
+constexpr size_t dummyMovableArrayLength = 4;
+uint32_t dummyMovableArrayDestructorCounter;
+
+static nsTArray<Movable> DummyMovableArray() {
+  nsTArray<Movable> res;
+  res.SetLength(dummyMovableArrayLength);
+  for (size_t i = 0; i < dummyMovableArrayLength; ++i) {
+    res[i].mDestructionCounter = &dummyMovableArrayDestructorCounter;
+  }
+  return res;
+}
+
+TEST(TArray, Movable_AppendElements_TArray_Rvalue)
+{
+  dummyMovableArrayDestructorCounter = 0;
+  {
+    nsTArray<Movable> array;
+
+    nsTArray<Movable> temp(DummyMovableArray());
+    Movable* ptr = array.AppendElements(std::move(temp));
+    ASSERT_EQ(&array[0], ptr);
+    ASSERT_TRUE(temp.IsEmpty());
+
+    temp = DummyMovableArray();
+    ptr = array.AppendElements(std::move(temp));
+    ASSERT_EQ(&array[dummyMovableArrayLength], ptr);
+    ASSERT_TRUE(temp.IsEmpty());
+  }
+  ASSERT_EQ(2 * dummyMovableArrayLength, dummyMovableArrayDestructorCounter);
+}
+
+TEST(TArray, Movable_AppendElements_TArray_Rvalue_Fallible)
+{
+  dummyMovableArrayDestructorCounter = 0;
+  {
+    nsTArray<Movable> array;
+
+    nsTArray<Movable> temp(DummyMovableArray());
+    Movable* ptr = array.AppendElements(std::move(temp), fallible);
+    ASSERT_EQ(&array[0], ptr);
+    ASSERT_TRUE(temp.IsEmpty());
+
+    temp = DummyMovableArray();
+    ptr = array.AppendElements(std::move(temp), fallible);
+    ASSERT_EQ(&array[dummyMovableArrayLength], ptr);
+    ASSERT_TRUE(temp.IsEmpty());
+  }
+  ASSERT_EQ(2 * dummyMovableArrayLength, dummyMovableArrayDestructorCounter);
+}
+
+TEST(TArray, Movable_AppendElements_FallibleArray_Rvalue)
+{
+  dummyMovableArrayDestructorCounter = 0;
+  {
+    nsTArray<Movable> array;
+
+    FallibleTArray<Movable> temp(DummyMovableArray());
+    Movable* ptr = array.AppendElements(std::move(temp));
+    ASSERT_EQ(&array[0], ptr);
+    ASSERT_TRUE(temp.IsEmpty());
+
+    temp = DummyMovableArray();
+    ptr = array.AppendElements(std::move(temp));
+    ASSERT_EQ(&array[dummyMovableArrayLength], ptr);
+    ASSERT_TRUE(temp.IsEmpty());
+  }
+  ASSERT_EQ(2 * dummyMovableArrayLength, dummyMovableArrayDestructorCounter);
+}
+
+TEST(TArray, Movable_AppendElements_FallibleArray_Rvalue_Fallible)
+{
+  dummyMovableArrayDestructorCounter = 0;
+  {
+    nsTArray<Movable> array;
+
+    FallibleTArray<Movable> temp(DummyMovableArray());
+    Movable* ptr = array.AppendElements(std::move(temp), fallible);
+    ASSERT_EQ(&array[0], ptr);
+    ASSERT_TRUE(temp.IsEmpty());
+
+    temp = DummyMovableArray();
+    ptr = array.AppendElements(std::move(temp), fallible);
+    ASSERT_EQ(&array[dummyMovableArrayLength], ptr);
+    ASSERT_TRUE(temp.IsEmpty());
+  }
+  ASSERT_EQ(2 * dummyMovableArrayLength, dummyMovableArrayDestructorCounter);
+}
+
+TEST(TArray, Movable_AppendElement_NoElementArg)
+{
+  nsTArray<Movable> array;
+  array.AppendElement();
+
+  ASSERT_EQ(1u, array.Length());
+}
+
+TEST(TArray, Movable_AppendElement_NoElementArg_Fallible)
+{
+  nsTArray<Movable> array;
+  ASSERT_NE(nullptr, array.AppendElement(fallible));
+
+  ASSERT_EQ(1u, array.Length());
+}
+
+TEST(TArray, Movable_AppendElement_NoElementArg_Address)
+{
+  dummyMovableArrayDestructorCounter = 0;
+  {
+    nsTArray<Movable> array;
+    array.AppendElement()->mDestructionCounter =
+        &dummyMovableArrayDestructorCounter;
+
+    ASSERT_EQ(1u, array.Length());
+  }
+  ASSERT_EQ(1u, dummyMovableArrayDestructorCounter);
+}
+
+TEST(TArray, Movable_AppendElement_NoElementArg_Fallible_Address)
+{
+  dummyMovableArrayDestructorCounter = 0;
+  {
+    nsTArray<Movable> array;
+    array.AppendElement(fallible)->mDestructionCounter =
+        &dummyMovableArrayDestructorCounter;
+
+    ASSERT_EQ(1u, array.Length());
+    ASSERT_EQ(&dummyMovableArrayDestructorCounter,
+              array[0].mDestructionCounter);
+  }
+  ASSERT_EQ(1u, dummyMovableArrayDestructorCounter);
+}
+
+TEST(TArray, Movable_AppendElement_ElementArg)
+{
+  dummyMovableArrayDestructorCounter = 0;
+  Movable movable;
+  movable.mDestructionCounter = &dummyMovableArrayDestructorCounter;
+  {
+    nsTArray<Movable> array;
+    array.AppendElement(std::move(movable));
+
+    ASSERT_EQ(1u, array.Length());
+    ASSERT_EQ(&dummyMovableArrayDestructorCounter,
+              array[0].mDestructionCounter);
+  }
+  ASSERT_EQ(1u, dummyMovableArrayDestructorCounter);
+}
+
+TEST(TArray, Movable_AppendElement_ElementArg_Fallible)
+{
+  dummyMovableArrayDestructorCounter = 0;
+  Movable movable;
+  movable.mDestructionCounter = &dummyMovableArrayDestructorCounter;
+  {
+    nsTArray<Movable> array;
+    ASSERT_NE(nullptr, array.AppendElement(std::move(movable), fallible));
+
+    ASSERT_EQ(1u, array.Length());
+    ASSERT_EQ(&dummyMovableArrayDestructorCounter,
+              array[0].mDestructionCounter);
+  }
+  ASSERT_EQ(1u, dummyMovableArrayDestructorCounter);
+}
+
+TEST(TArray, int_Assign)
 {
   nsTArray<int> array;
   array.Assign(DummyArray());
@@ -115,7 +483,7 @@ TEST(TArray, Assign)
   ASSERT_EQ(DummyArray(), array2);
 }
 
-TEST(TArray, AssignmentOperatorSelfAssignment)
+TEST(TArray, int_AssignmentOperatorSelfAssignment)
 {
   nsTArray<int> array;
   array = DummyArray();
@@ -134,7 +502,7 @@ TEST(TArray, AssignmentOperatorSelfAssignment)
 #endif
 }
 
-TEST(TArray, CopyOverlappingForwards)
+TEST(TArray, Movable_CopyOverlappingForwards)
 {
   const size_t rangeLength = 8;
   const size_t initialLength = 2 * rangeLength;
@@ -162,7 +530,7 @@ TEST(TArray, CopyOverlappingForwards)
 
 // The code to copy overlapping regions had a bug in that it wouldn't correctly
 // destroy all over the source elements being copied.
-TEST(TArray, CopyOverlappingBackwards)
+TEST(TArray, Copyable_CopyOverlappingBackwards)
 {
   const size_t rangeLength = 8;
   const size_t initialLength = 2 * rangeLength;
@@ -198,11 +566,10 @@ TEST(TArray, CopyOverlappingBackwards)
 namespace {
 
 class E {
-public:
+ public:
   E() : mA(-1), mB(-2) { constructCount++; }
   E(int a, int b) : mA(a), mB(b) { constructCount++; }
-  E(E&& aRhs)
-    : mA(aRhs.mA), mB(aRhs.mB) {
+  E(E&& aRhs) : mA(aRhs.mA), mB(aRhs.mB) {
     aRhs.mA = 0;
     aRhs.mB = 0;
     moveCount++;
@@ -217,7 +584,6 @@ public:
     return *this;
   }
 
-
   int a() const { return mA; }
   int b() const { return mB; }
 
@@ -227,7 +593,7 @@ public:
   static size_t constructCount;
   static size_t moveCount;
 
-private:
+ private:
   int mA;
   int mB;
 };
@@ -235,7 +601,7 @@ private:
 size_t E::constructCount = 0;
 size_t E::moveCount = 0;
 
-}
+}  // namespace
 
 TEST(TArray, Emplace)
 {
@@ -482,17 +848,34 @@ TEST(TArray, MakeBackInserter_Move)
   ASSERT_EQ(1u, destructionCounter);
 }
 
+TEST(TArray, ConvertToSpan)
+{
+  nsTArray<int> arr = {1, 2, 3, 4, 5};
+
+  // from const
+  {
+    const auto& constArrRef = arr;
+
+    auto span = Span{constArrRef};
+    static_assert(std::is_same_v<decltype(span), Span<const int>>);
+  }
+
+  // from non-const
+  {
+    auto span = Span{arr};
+    static_assert(std::is_same_v<decltype(span), Span<int>>);
+  }
+}
+
 // This should compile:
 struct RefCounted;
 
 class Foo {
-  ~Foo(); // Intentionally out of line
+  ~Foo();  // Intentionally out of line
 
   nsTArray<RefPtr<RefCounted>> mArray;
 
-  const RefCounted* GetFirst() const {
-    return mArray.SafeElementAt(0);
-  }
+  const RefCounted* GetFirst() const { return mArray.SafeElementAt(0); }
 };
 
 }  // namespace TestTArray

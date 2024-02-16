@@ -24,7 +24,7 @@ using namespace mozilla::gfx;
 RemoteContentController::RemoteContentController()
     : mCompositorThread(MessageLoop::current()), mCanSend(true) {}
 
-RemoteContentController::~RemoteContentController() {}
+RemoteContentController::~RemoteContentController() = default;
 
 void RemoteContentController::NotifyLayerTransforms(
     const nsTArray<MatrixMessage>& aTransforms) {

@@ -7,9 +7,9 @@
 
 NS_IMPL_ISUPPORTS(nsPrintProgressParams, nsIPrintProgressParams)
 
-nsPrintProgressParams::nsPrintProgressParams() {}
+nsPrintProgressParams::nsPrintProgressParams() = default;
 
-nsPrintProgressParams::~nsPrintProgressParams() {}
+nsPrintProgressParams::~nsPrintProgressParams() = default;
 
 NS_IMETHODIMP
 nsPrintProgressParams::GetDocTitle(nsAString& aDocTitle) {

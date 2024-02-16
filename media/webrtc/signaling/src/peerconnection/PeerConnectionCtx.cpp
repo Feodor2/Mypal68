@@ -122,7 +122,7 @@ PeerConnectionCtx::mGetPeerConnections() {
 }
 
 nsresult PeerConnectionCtx::InitializeGlobal(nsIThread* mainThread,
-                                             nsIEventTarget* stsThread) {
+                                             nsISerialEventTarget* stsThread) {
   if (!gMainThread) {
     gMainThread = mainThread;
   } else {

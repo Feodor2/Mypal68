@@ -6,11 +6,12 @@
 #define mozilla_BasicEvents_h__
 
 #include <stdint.h>
+#include <type_traits>
 
-#include "mozilla/dom/EventTarget.h"
-#include "mozilla/layers/LayersTypes.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/TimeStamp.h"
+#include "mozilla/dom/EventTarget.h"
+#include "mozilla/layers/LayersTypes.h"
 #include "nsCOMPtr.h"
 #include "nsAtom.h"
 #include "nsISupportsImpl.h"
@@ -99,7 +100,9 @@ struct BaseEventFlags {
   // dispatching into the DOM tree and not completed.
   bool mIsBeingDispatched : 1;
   // If mDispatchedAtLeastOnce is true, the event has been dispatched
-  // as a DOM event and the dispatch has been completed.
+  // as a DOM event and the dispatch has been completed in the process.
+  // So, this is false even if the event has already been dispatched
+  // in another process.
   bool mDispatchedAtLeastOnce : 1;
   // If mIsSynthesizedForTests is true, the event has been synthesized for
   // automated tests or something hacky approach of an add-on.
@@ -316,6 +319,8 @@ struct BaseEventFlags {
     if (IsWaitingReplyFromRemoteProcess()) {
       mPropagationStopped = mImmediatePropagationStopped = false;
     }
+    // mDispatchedAtLeastOnce indicates the state in current process.
+    mDispatchedAtLeastOnce = false;
   }
   /**
    * Return true if the event has been posted to a remote process.
@@ -496,7 +501,7 @@ class WidgetEvent : public WidgetEventTime {
   WidgetEvent(bool aIsTrusted, EventMessage aMessage)
       : WidgetEvent(aIsTrusted, aMessage, eBasicEventClass) {}
 
-  virtual ~WidgetEvent() { MOZ_COUNT_DTOR(WidgetEvent); }
+  MOZ_COUNTED_DTOR_VIRTUAL(WidgetEvent)
 
   WidgetEvent(const WidgetEvent& aOther) : WidgetEventTime() {
     MOZ_COUNT_CTOR(WidgetEvent);
@@ -834,9 +839,9 @@ class WidgetEvent : public WidgetEventTime {
   void SetDefaultComposed() {
     switch (mClass) {
       case eCompositionEventClass:
-        mFlags.mComposed = mMessage == eCompositionStart ||
-                           mMessage == eCompositionUpdate ||
-                           mMessage == eCompositionEnd;
+        mFlags.mComposed =
+            mMessage == eCompositionStart || mMessage == eCompositionUpdate ||
+            mMessage == eCompositionChange || mMessage == eCompositionEnd;
         break;
       case eDragEventClass:
         // All drag & drop events are composed
@@ -846,7 +851,8 @@ class WidgetEvent : public WidgetEventTime {
                            mMessage == eDragStart || mMessage == eDrop;
         break;
       case eEditorInputEventClass:
-        mFlags.mComposed = mMessage == eEditorInput;
+        mFlags.mComposed =
+            mMessage == eEditorInput || mMessage == eEditorBeforeInput;
         break;
       case eFocusEventClass:
         mFlags.mComposed = mMessage == eBlur || mMessage == eFocus ||
@@ -899,6 +905,7 @@ class WidgetEvent : public WidgetEventTime {
         aEventTypeArg.EqualsLiteral("compositionstart") ||
         aEventTypeArg.EqualsLiteral("compositionupdate") ||
         aEventTypeArg.EqualsLiteral("compositionend") ||
+        aEventTypeArg.EqualsLiteral("text") ||
         // drag and drop events
         aEventTypeArg.EqualsLiteral("dragstart") ||
         aEventTypeArg.EqualsLiteral("drag") ||
@@ -1008,7 +1015,7 @@ class NativeEventData final {
 
   template <typename T>
   void Copy(const T& other) {
-    static_assert(!mozilla::IsPointer<T>::value, "Don't want a pointer!");
+    static_assert(!std::is_pointer_v<T>, "Don't want a pointer!");
     mBuffer.SetLength(sizeof(T));
     memcpy(mBuffer.Elements(), &other, mBuffer.Length());
   }
@@ -1026,7 +1033,7 @@ class WidgetGUIEvent : public WidgetEvent {
                  EventClassID aEventClassID)
       : WidgetEvent(aIsTrusted, aMessage, aEventClassID), mWidget(aWidget) {}
 
-  WidgetGUIEvent() {}
+  WidgetGUIEvent() = default;
 
  public:
   virtual WidgetGUIEvent* AsGUIEvent() override { return this; }

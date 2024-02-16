@@ -90,7 +90,7 @@ struct nsWatcherWindowEntry {
     }
     ReferenceSelf();
   }
-  ~nsWatcherWindowEntry() {}
+  ~nsWatcherWindowEntry() = default;
 
   void InsertAfter(nsWatcherWindowEntry* aOlder);
   void Unlink();
@@ -1041,7 +1041,7 @@ nsresult nsWindowWatcher::OpenWindowInternal(
 
   if (isNewToplevelWindow) {
     nsCOMPtr<nsIDocShellTreeItem> childRoot;
-    newDocShellItem->GetRootTreeItem(getter_AddRefs(childRoot));
+    newDocShellItem->GetInProcessRootTreeItem(getter_AddRefs(childRoot));
     nsCOMPtr<nsILoadContext> childContext = do_QueryInterface(childRoot);
     if (childContext) {
       childContext->SetPrivateBrowsing(isPrivateBrowsingWindow);
@@ -1085,8 +1085,7 @@ nsresult nsWindowWatcher::OpenWindowInternal(
         doc = parentWindow->GetExtantDoc();
       }
       if (doc) {
-        nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
-        referrerInfo->InitWithDocument(doc);
+        auto referrerInfo = MakeRefPtr<ReferrerInfo>(*doc);
         loadState->SetReferrerInfo(referrerInfo);
       }
     }
@@ -1353,7 +1352,7 @@ nsWindowWatcher::HasWindowCreator(bool* aResult) {
 NS_IMETHODIMP
 nsWindowWatcher::GetActiveWindow(mozIDOMWindowProxy** aActiveWindow) {
   *aActiveWindow = nullptr;
-  nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
+  nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (fm) {
     return fm->GetActiveWindow(aActiveWindow);
   }
@@ -1541,7 +1540,10 @@ nsWindowWatcher::GetWindowByName(const nsAString& aTargetName,
 
 bool nsWindowWatcher::AddEnumerator(nsWatcherWindowEnumerator* aEnumerator) {
   // (requires a lock; assumes it's called by someone holding the lock)
-  return mEnumeratorList.AppendElement(aEnumerator) != nullptr;
+  // XXX(Bug 1631371) Check if this should use a fallible operation as it
+  // pretended earlier, or change the return type to void.
+  mEnumeratorList.AppendElement(aEnumerator);
+  return true;
 }
 
 bool nsWindowWatcher::RemoveEnumerator(nsWatcherWindowEnumerator* aEnumerator) {

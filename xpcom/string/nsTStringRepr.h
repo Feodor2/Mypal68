@@ -21,7 +21,7 @@ class nsTStringComparator {
  public:
   typedef T char_type;
 
-  nsTStringComparator() {}
+  nsTStringComparator() = default;
 
   virtual int operator()(const char_type*, const char_type*, uint32_t,
                          uint32_t) const = 0;
@@ -33,7 +33,7 @@ class nsTDefaultStringComparator : public nsTStringComparator<T> {
  public:
   typedef T char_type;
 
-  nsTDefaultStringComparator() {}
+  nsTDefaultStringComparator() = default;
 
   virtual int operator()(const char_type*, const char_type*, uint32_t,
                          uint32_t) const override;

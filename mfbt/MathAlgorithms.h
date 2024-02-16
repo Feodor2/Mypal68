@@ -13,6 +13,7 @@
 #include <cmath>
 #include <limits.h>
 #include <stdint.h>
+#include <type_traits>
 
 namespace mozilla {
 
@@ -444,7 +445,7 @@ inline size_t RoundUpPow2(size_t aValue) {
 template <typename T>
 MOZ_NO_SANITIZE_UNSIGNED_OVERFLOW inline T RotateLeft(const T aValue,
                                                       uint_fast8_t aShift) {
-  static_assert(IsUnsigned<T>::value, "Rotates require unsigned values");
+  static_assert(std::is_unsigned_v<T>, "Rotates require unsigned values");
 
   MOZ_ASSERT(aShift < sizeof(T) * CHAR_BIT, "Shift value is too large!");
   MOZ_ASSERT(aShift > 0,
@@ -462,7 +463,7 @@ MOZ_NO_SANITIZE_UNSIGNED_OVERFLOW inline T RotateLeft(const T aValue,
 template <typename T>
 MOZ_NO_SANITIZE_UNSIGNED_OVERFLOW inline T RotateRight(const T aValue,
                                                        uint_fast8_t aShift) {
-  static_assert(IsUnsigned<T>::value, "Rotates require unsigned values");
+  static_assert(std::is_unsigned_v<T>, "Rotates require unsigned values");
 
   MOZ_ASSERT(aShift < sizeof(T) * CHAR_BIT, "Shift value is too large!");
   MOZ_ASSERT(aShift > 0,
@@ -480,13 +481,13 @@ MOZ_NO_SANITIZE_UNSIGNED_OVERFLOW inline T RotateRight(const T aValue,
  */
 template <typename T>
 constexpr bool IsPowerOfTwo(T x) {
-  static_assert(IsUnsigned<T>::value, "IsPowerOfTwo requires unsigned values");
+  static_assert(std::is_unsigned_v<T>, "IsPowerOfTwo requires unsigned values");
   return x && (x & (x - 1)) == 0;
 }
 
 template <typename T>
 inline T Clamp(const T aValue, const T aMin, const T aMax) {
-  static_assert(IsIntegral<T>::value,
+  static_assert(std::is_integral_v<T>,
                 "Clamp accepts only integral types, so that it doesn't have"
                 " to distinguish differently-signed zeroes (which users may"
                 " or may not care to distinguish, likely at a perf cost) or"

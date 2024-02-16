@@ -95,7 +95,7 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
     UntypedCallbackHolder(ActorIdType aActorId, RejectCallback&& aReject)
         : mActorId(aActorId), mReject(std::move(aReject)) {}
 
-    virtual ~UntypedCallbackHolder() {}
+    virtual ~UntypedCallbackHolder() = default;
 
     void Reject(ResponseRejectReason&& aReason) { mReject(std::move(aReason)); }
 
@@ -136,7 +136,7 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
   //
   // Returns true if the transport layer was successfully connected,
   // i.e., mChannelState == ChannelConnected.
-  bool Open(Transport* aTransport, MessageLoop* aIOLoop = 0,
+  bool Open(UniquePtr<Transport> aTransport, MessageLoop* aIOLoop = 0,
             Side aSide = UnknownSide);
 
   // "Open" a connection to another thread in the same process.
@@ -571,7 +571,7 @@ class MessageChannel : HasResultCodes, MessageLoop::DestructionObserver {
    private:
     MessageTask() = delete;
     MessageTask(const MessageTask&) = delete;
-    ~MessageTask() {}
+    ~MessageTask() = default;
 
     MessageChannel* mChannel;
     Message mMessage;

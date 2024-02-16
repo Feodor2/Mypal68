@@ -128,9 +128,17 @@ class HitTestingTreeNode {
   /* Fixed pos info */
 
   void SetFixedPosData(ScrollableLayerGuid::ViewID aFixedPosTarget,
-                       SideBits aFixedPosSides);
+                       SideBits aFixedPosSides
+#ifdef MOZ_BUILD_WEBRENDER
+                       ,
+                       const Maybe<uint64_t>& aFixedPositionAnimationId
+#endif
+  );
   ScrollableLayerGuid::ViewID GetFixedPosTarget() const;
   SideBits GetFixedPosSides() const;
+#ifdef MOZ_BUILD_WEBRENDER
+  Maybe<uint64_t> GetFixedPositionAnimationId() const;
+#endif
 
   /* Convert |aPoint| into the LayerPixel space for the layer corresponding to
    * this node. |aTransform| is the complete (content + async) transform for
@@ -178,6 +186,10 @@ class HitTestingTreeNode {
   // where IsScrollThumbNode() returns true. It holds the animation id that we
   // use to move the thumb node to reflect async scrolling.
   Maybe<uint64_t> mScrollbarAnimationId;
+
+  // This is only set if WebRender is enabled. It holds the animation id that
+  // we use to adjust fixed position content for the toolbar.
+  Maybe<uint64_t> mFixedPositionAnimationId;
 #endif
 
   // This is set for scrollbar Container and Thumb layers.

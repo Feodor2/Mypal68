@@ -184,10 +184,7 @@ class UrlbarResult {
       if (UrlbarPrefs.get("trimURLs")) {
         url = BrowserUtils.trimURL(url || "");
       }
-      payloadInfo.displayUrl[0] = Services.textToSubURI.unEscapeURIForUI(
-        "UTF-8",
-        url
-      );
+      payloadInfo.displayUrl[0] = Services.textToSubURI.unEscapeURIForUI(url);
     }
 
     // For performance reasons limit excessive string lengths, to reduce the

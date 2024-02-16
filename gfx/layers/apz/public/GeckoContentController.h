@@ -193,7 +193,7 @@ class GeckoContentController {
   virtual void UpdateOverscrollOffset(float aX, float aY, bool aIsRootContent) {
   }
 
-  GeckoContentController() {}
+  GeckoContentController() = default;
 
   /**
    * Needs to be called on the main thread.

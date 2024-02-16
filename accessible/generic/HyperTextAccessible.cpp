@@ -68,7 +68,7 @@ role HyperTextAccessible::NativeRole() const {
 uint64_t HyperTextAccessible::NativeState() const {
   uint64_t states = AccessibleWrap::NativeState();
 
-  if (mContent->AsElement()->State().HasState(NS_EVENT_STATE_MOZ_READWRITE)) {
+  if (mContent->AsElement()->State().HasState(NS_EVENT_STATE_READWRITE)) {
     states |= states::EDITABLE;
 
   } else if (mContent->IsHTMLElement(nsGkAtoms::article)) {
@@ -324,7 +324,7 @@ static nsIContent* GetElementAsContentOf(nsINode* aNode) {
 
 bool HyperTextAccessible::OffsetsToDOMRange(int32_t aStartOffset,
                                             int32_t aEndOffset,
-                                            nsRange* aRange) {
+                                            nsRange* aRange) const {
   DOMPoint startPoint = OffsetToDOMPoint(aStartOffset);
   if (!startPoint.node) return false;
 
@@ -357,7 +357,7 @@ bool HyperTextAccessible::OffsetsToDOMRange(int32_t aStartOffset,
   return true;
 }
 
-DOMPoint HyperTextAccessible::OffsetToDOMPoint(int32_t aOffset) {
+DOMPoint HyperTextAccessible::OffsetToDOMPoint(int32_t aOffset) const {
   // 0 offset is valid even if no children. In this case the associated editor
   // is empty so return a DOM point for editor root element.
   if (aOffset == 0) {
@@ -404,7 +404,7 @@ DOMPoint HyperTextAccessible::OffsetToDOMPoint(int32_t aOffset) {
 }
 
 DOMPoint HyperTextAccessible::ClosestNotGeneratedDOMPoint(
-    const DOMPoint& aDOMPoint, nsIContent* aElementContent) {
+    const DOMPoint& aDOMPoint, nsIContent* aElementContent) const {
   MOZ_ASSERT(aDOMPoint.node, "The node must not be null");
 
   // ::before pseudo element
@@ -521,8 +521,10 @@ uint32_t HyperTextAccessible::FindOffset(uint32_t aOffset,
   nsresult rv = frameAtOffset->PeekOffset(&pos);
 
   // PeekOffset fails on last/first lines of the text in certain cases.
+  bool fallBackToSelectEndLine = false;
   if (NS_FAILED(rv) && aAmount == eSelectLine) {
-    pos.mAmount = (aDirection == eDirNext) ? eSelectEndLine : eSelectBeginLine;
+    fallBackToSelectEndLine = aDirection == eDirNext;
+    pos.mAmount = fallBackToSelectEndLine ? eSelectEndLine : eSelectBeginLine;
     frameAtOffset->PeekOffset(&pos);
   }
   if (!pos.mResultContent) {
@@ -533,6 +535,14 @@ uint32_t HyperTextAccessible::FindOffset(uint32_t aOffset,
   // Turn the resulting DOM point into an offset.
   uint32_t hyperTextOffset = DOMPointToOffset(
       pos.mResultContent, pos.mContentOffset, aDirection == eDirNext);
+
+  if (fallBackToSelectEndLine && IsLineEndCharAt(hyperTextOffset)) {
+    // We used eSelectEndLine, but the caller requested eSelectLine.
+    // If there's a '\n' at the end of the line, eSelectEndLine will stop
+    // on it rather than after it. This is not what we want, since the caller
+    // wants the next line, not the same line.
+    ++hyperTextOffset;
+  }
 
   if (aDirection == eDirPrevious) {
     // If we reached the end during search, this means we didn't find the DOM
@@ -1260,13 +1270,15 @@ nsresult HyperTextAccessible::SetSelectionRange(int32_t aStartPos,
   // some input controls
   if (isFocusable) TakeFocus();
 
-  dom::Selection* domSel = DOMSelection();
+  RefPtr<dom::Selection> domSel = DOMSelection();
   NS_ENSURE_STATE(domSel);
 
   // Set up the selection.
-  for (int32_t idx = domSel->RangeCount() - 1; idx > 0; idx--)
-    domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(
-        *domSel->GetRangeAt(idx), IgnoreErrors());
+  for (int32_t idx = domSel->RangeCount() - 1; idx > 0; idx--) {
+    RefPtr<nsRange> range{domSel->GetRangeAt(idx)};
+    domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(*range,
+                                                           IgnoreErrors());
+  }
   SetSelectionBoundsAt(0, aStartPos, aEndPos);
 
   // Make sure it is visible
@@ -1552,15 +1564,16 @@ bool HyperTextAccessible::SetSelectionBoundsAt(int32_t aSelectionNum,
     return false;
   }
 
-  dom::Selection* domSel = DOMSelection();
+  RefPtr<dom::Selection> domSel = DOMSelection();
   if (!domSel) return false;
 
   RefPtr<nsRange> range;
   uint32_t rangeCount = domSel->RangeCount();
-  if (aSelectionNum == static_cast<int32_t>(rangeCount))
-    range = new nsRange(mContent);
-  else
+  if (aSelectionNum == static_cast<int32_t>(rangeCount)) {
+    range = nsRange::Create(mContent);
+  } else {
     range = domSel->GetRangeAt(aSelectionNum);
+  }
 
   if (!range) return false;
 
@@ -1589,22 +1602,23 @@ bool HyperTextAccessible::SetSelectionBoundsAt(int32_t aSelectionNum,
 }
 
 bool HyperTextAccessible::RemoveFromSelection(int32_t aSelectionNum) {
-  dom::Selection* domSel = DOMSelection();
+  RefPtr<dom::Selection> domSel = DOMSelection();
   if (!domSel) return false;
 
   if (aSelectionNum < 0 ||
       aSelectionNum >= static_cast<int32_t>(domSel->RangeCount()))
     return false;
 
-  domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(
-      *domSel->GetRangeAt(aSelectionNum), IgnoreErrors());
+  const RefPtr<nsRange> range{domSel->GetRangeAt(aSelectionNum)};
+  domSel->RemoveRangeAndUnselectFramesAndNotifyListeners(*range,
+                                                         IgnoreErrors());
   return true;
 }
 
 void HyperTextAccessible::ScrollSubstringTo(int32_t aStartOffset,
                                             int32_t aEndOffset,
                                             uint32_t aScrollType) {
-  RefPtr<nsRange> range = new nsRange(mContent);
+  RefPtr<nsRange> range = nsRange::Create(mContent);
   if (OffsetsToDOMRange(aStartOffset, aEndOffset, range))
     nsCoreUtils::ScrollSubstringTo(GetFrame(), range, aScrollType);
 }
@@ -1619,7 +1633,7 @@ void HyperTextAccessible::ScrollSubstringToPoint(int32_t aStartOffset,
   nsIntPoint coords =
       nsAccUtils::ConvertToScreenCoords(aX, aY, aCoordinateType, this);
 
-  RefPtr<nsRange> range = new nsRange(mContent);
+  RefPtr<nsRange> range = nsRange::Create(mContent);
   if (!OffsetsToDOMRange(aStartOffset, aEndOffset, range)) return;
 
   nsPresContext* presContext = frame->PresContext();
@@ -1683,7 +1697,7 @@ void HyperTextAccessible::SelectionRanges(
   aRanges->SetCapacity(sel->RangeCount());
 
   for (uint32_t idx = 0; idx < sel->RangeCount(); idx++) {
-    nsRange* DOMRange = sel->GetRangeAt(idx);
+    const nsRange* DOMRange = sel->GetRangeAt(idx);
     HyperTextAccessible* startContainer =
         nsAccUtils::GetTextContainer(DOMRange->GetStartContainer());
     HyperTextAccessible* endContainer =
@@ -2003,7 +2017,7 @@ void HyperTextAccessible::GetSpellTextAttr(
 
   uint32_t startOffset = 0, endOffset = 0;
   for (int32_t idx = 0; idx < rangeCount; idx++) {
-    nsRange* range = domSel->GetRangeAt(idx);
+    const nsRange* range = domSel->GetRangeAt(idx);
     if (range->Collapsed()) continue;
 
     // See if the point comes after the range in which case we must continue in
@@ -2057,7 +2071,7 @@ void HyperTextAccessible::GetSpellTextAttr(
     endOffset = DOMPointToOffset(startNode, startNodeOffset);
 
     if (idx > 0) {
-      nsRange* prevRange = domSel->GetRangeAt(idx - 1);
+      const nsRange* prevRange = domSel->GetRangeAt(idx - 1);
       startOffset = DOMPointToOffset(prevRange->GetEndContainer(),
                                      prevRange->EndOffset());
     }
@@ -2077,7 +2091,7 @@ void HyperTextAccessible::GetSpellTextAttr(
   // the point is not in a range, that we do not need to compute an end offset,
   // and that we should use the end offset of the last range to compute the
   // start offset of the text attribute range.
-  nsRange* prevRange = domSel->GetRangeAt(rangeCount - 1);
+  const nsRange* prevRange = domSel->GetRangeAt(rangeCount - 1);
   startOffset =
       DOMPointToOffset(prevRange->GetEndContainer(), prevRange->EndOffset());
 

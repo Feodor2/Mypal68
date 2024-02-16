@@ -11,9 +11,11 @@
 #include "mozilla/BasicEvents.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/DataTransfer.h"
+#include "mozilla/dom/StaticRange.h"
 #include "mozilla/EventForwards.h"  // for KeyNameIndex, temporarily
 #include "mozilla/FontRange.h"
 #include "mozilla/Maybe.h"
+#include "mozilla/OwningNonNull.h"
 #include "mozilla/TextRange.h"
 #include "mozilla/WritingModes.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
@@ -452,8 +454,12 @@ class WidgetKeyboardEvent : public WidgetInputEvent {
   /**
    * Retrieves edit commands from mWidget only for aType.  This shouldn't be
    * called when the instance is an untrusted event or doesn't have widget.
+   *
+   * @return            false if some resource is not available to get
+   *                    commands unexpectedly.  Otherwise, true even if
+   *                    retrieved command is nothing.
    */
-  void InitEditCommandsFor(nsIWidget::NativeKeyBindingsType aType);
+  bool InitEditCommandsFor(nsIWidget::NativeKeyBindingsType aType);
 
   /**
    * PreventNativeKeyBindings() makes the instance to not cause any edit
@@ -1220,6 +1226,7 @@ class InternalEditorInputEvent : public InternalUIEvent {
 
   nsString mData;
   RefPtr<dom::DataTransfer> mDataTransfer;
+  OwningNonNullStaticRangeArray mTargetRanges;
 
   EditorInputType mInputType;
 
@@ -1231,6 +1238,7 @@ class InternalEditorInputEvent : public InternalUIEvent {
 
     mData = aEvent.mData;
     mDataTransfer = aEvent.mDataTransfer;
+    mTargetRanges = aEvent.mTargetRanges;
     mInputType = aEvent.mInputType;
     mIsComposing = aEvent.mIsComposing;
   }

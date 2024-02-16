@@ -18,6 +18,7 @@
 #include "SourceBuffer.h"
 #include "StreamingLexer.h"
 #include "SurfaceFlags.h"
+#include "qcms.h"
 
 namespace mozilla {
 
@@ -557,6 +558,12 @@ class Decoder {
 
  protected:
   Maybe<Downscaler> mDownscaler;
+
+  /// Color management profile from the ICCP chunk in the image.
+  qcms_profile* mInProfile;
+
+  /// Color management transform to apply to image data.
+  qcms_transform* mTransform;
 
   uint8_t* mImageData;  // Pointer to image data in BGRA/X
   uint32_t mImageDataLength;

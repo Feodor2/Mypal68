@@ -31,7 +31,7 @@ class FileDescriptorFile final : public nsIFile {
   NS_DECL_NSIFILE
 
  private:
-  ~FileDescriptorFile() {}
+  ~FileDescriptorFile() = default;
 
   FileDescriptorFile(const FileDescriptorFile& other);
 

@@ -23,6 +23,7 @@ gecko_profiler_parse_elf = ["gkrust-shared/gecko_profiler_parse_elf"]
 bitsdownload = ["gkrust-shared/bitsdownload"]
 new_xulstore = ["gkrust-shared/new_xulstore"]
 new_cert_storage = ["gkrust-shared/new_cert_storage"]
+webrtc = ["gkrust-shared/webrtc"]
 
 [dependencies]
 bench-collections-gtest = { path = "../../../../xpcom/rust/gtest/bench-collections" }

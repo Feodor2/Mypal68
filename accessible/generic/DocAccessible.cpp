@@ -35,15 +35,16 @@
 #include "nsFocusManager.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Assertions.h"
-#include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/HTMLEditor.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/TextEditor.h"
+#include "mozilla/dom/AncestorIterator.h"
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/DocumentType.h"
 #include "mozilla/dom/Element.h"
 #include "mozilla/dom/MutationEventBinding.h"
+#include "mozilla/dom/UserActivation.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -290,7 +291,7 @@ void DocAccessible::TakeFocus() const {
   // Focus the document.
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
   RefPtr<dom::Element> newFocus;
-  AutoHandlingUserInputStatePusher inputStatePusher(true);
+  dom::AutoHandlingUserInputStatePusher inputStatePusher(true);
   fm->MoveFocus(mDocumentNode->GetWindow(), nullptr,
                 nsFocusManager::MOVEFOCUS_ROOT, 0, getter_AddRefs(newFocus));
 }
@@ -1136,24 +1137,20 @@ Accessible* DocAccessible::GetAccessibleOrContainer(
     return nullptr;
   }
 
-  nsINode* currNode = nullptr;
-  if (aNode->IsShadowRoot()) {
+  nsINode* start = aNode;
+  if (auto* shadowRoot = dom::ShadowRoot::FromNode(aNode)) {
     // This can happen, for example, when called within
     // SelectionManager::ProcessSelectionChanged due to focusing a direct
     // child of a shadow root.
     // GetFlattenedTreeParent works on children of a shadow root, but not the
     // shadow root itself.
-    const dom::ShadowRoot* shadowRoot = dom::ShadowRoot::FromNode(aNode);
-    currNode = shadowRoot->GetHost();
-    if (!currNode) {
+    start = shadowRoot->GetHost();
+    if (!start) {
       return nullptr;
     }
-  } else {
-    currNode = aNode;
   }
 
-  MOZ_ASSERT(currNode);
-  for (; currNode; currNode = currNode->GetFlattenedTreeParentNode()) {
+  for (nsINode* currNode : dom::InclusiveFlatTreeAncestors(*start)) {
     // No container if is inside of aria-hidden subtree.
     if (aNoContainerIfPruned && currNode->IsElement() &&
         aria::HasDefinedARIAHidden(currNode->AsElement())) {
@@ -1218,7 +1215,7 @@ void DocAccessible::BindToDocument(Accessible* aAccessible,
     mNodeToAccessibleMap.Put(aAccessible->GetNode(), aAccessible);
 
   // Put into unique ID cache.
-  mAccessibleCache.Put(aAccessible->UniqueID(), aAccessible);
+  mAccessibleCache.Put(aAccessible->UniqueID(), RefPtr{aAccessible});
 
   aAccessible->SetRoleMapEntry(aRoleMapEntry);
 
@@ -1639,7 +1636,7 @@ class InsertIterator final {
     MOZ_ASSERT(aNodes, "No nodes to search for accessible elements");
     MOZ_COUNT_CTOR(InsertIterator);
   }
-  ~InsertIterator() { MOZ_COUNT_DTOR(InsertIterator); }
+  MOZ_COUNTED_DTOR(InsertIterator)
 
   Accessible* Context() const { return mWalker.Context(); }
   Accessible* Child() const { return mChild; }
@@ -2287,7 +2284,7 @@ bool DocAccessible::IsLoadEventTarget() const {
     // Return true if it's either:
     // a) tab document;
     nsCOMPtr<nsIDocShellTreeItem> rootTreeItem;
-    treeItem->GetRootTreeItem(getter_AddRefs(rootTreeItem));
+    treeItem->GetInProcessRootTreeItem(getter_AddRefs(rootTreeItem));
     if (parentTreeItem == rootTreeItem) return true;
 
     // b) frame/iframe document and its parent document is not in loading state

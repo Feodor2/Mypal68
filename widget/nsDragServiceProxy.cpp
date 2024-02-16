@@ -19,9 +19,9 @@ using mozilla::gfx::SourceSurface;
 using mozilla::gfx::SurfaceFormat;
 using mozilla::ipc::Shmem;
 
-nsDragServiceProxy::nsDragServiceProxy() {}
+nsDragServiceProxy::nsDragServiceProxy() = default;
 
-nsDragServiceProxy::~nsDragServiceProxy() {}
+nsDragServiceProxy::~nsDragServiceProxy() = default;
 
 nsresult nsDragServiceProxy::InvokeDragSessionImpl(
     nsIArray* aArrayTransferables, const Maybe<CSSIntRegion>& aRegion,
@@ -65,7 +65,7 @@ nsresult nsDragServiceProxy::InvokeDragSessionImpl(
 
         mozilla::Unused << child->SendInvokeDragSession(
             dataTransfers, aActionType, Some(std::move(surfaceData)), stride,
-            dataSurface->GetFormat(), dragRect, IPC::Principal(principal));
+            dataSurface->GetFormat(), dragRect, principal);
         StartDragSession();
         return NS_OK;
       }
@@ -74,7 +74,7 @@ nsresult nsDragServiceProxy::InvokeDragSessionImpl(
 
   mozilla::Unused << child->SendInvokeDragSession(
       dataTransfers, aActionType, Nothing(), 0, static_cast<SurfaceFormat>(0),
-      dragRect, IPC::Principal(principal));
+      dragRect, principal);
   StartDragSession();
   return NS_OK;
 }

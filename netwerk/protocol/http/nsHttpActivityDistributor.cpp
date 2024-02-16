@@ -96,7 +96,9 @@ nsHttpActivityDistributor::AddObserver(nsIHttpActivityObserver* aObserver) {
 
   ObserverHandle observer(
       new ObserverHolder("nsIHttpActivityObserver", aObserver));
-  if (!mObservers.AppendElement(observer)) return NS_ERROR_OUT_OF_MEMORY;
+  // XXX(Bug 1631371) Check if this should use a fallible operation as it
+  // pretended earlier.
+  mObservers.AppendElement(observer);
 
   return NS_OK;
 }

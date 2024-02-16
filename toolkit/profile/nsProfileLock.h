@@ -69,7 +69,7 @@ class nsProfileLock
 #elif defined(XP_UNIX)
 
   struct RemovePidLockFilesExiting {
-    RemovePidLockFilesExiting() {}
+    RemovePidLockFilesExiting() = default;
     ~RemovePidLockFilesExiting() { RemovePidLockFiles(false); }
   };
 

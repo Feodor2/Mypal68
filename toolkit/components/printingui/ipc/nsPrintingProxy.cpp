@@ -15,7 +15,6 @@
 #include "nsPIDOMWindow.h"
 #include "nsPrintSettingsService.h"
 #include "nsServiceManagerUtils.h"
-#include "PrintDataUtils.h"
 #include "PrintProgressDialogChild.h"
 #include "PrintSettingsDialogChild.h"
 
@@ -28,9 +27,9 @@ static StaticRefPtr<nsPrintingProxy> sPrintingProxyInstance;
 
 NS_IMPL_ISUPPORTS(nsPrintingProxy, nsIPrintingPromptService)
 
-nsPrintingProxy::nsPrintingProxy() {}
+nsPrintingProxy::nsPrintingProxy() = default;
 
-nsPrintingProxy::~nsPrintingProxy() {}
+nsPrintingProxy::~nsPrintingProxy() = default;
 
 /* static */
 already_AddRefed<nsPrintingProxy> nsPrintingProxy::GetInstance() {
@@ -59,9 +58,7 @@ nsresult nsPrintingProxy::Init() {
 
 NS_IMETHODIMP
 nsPrintingProxy::ShowPrintDialog(mozIDOMWindowProxy* parent,
-                                 nsIWebBrowserPrint* webBrowserPrint,
                                  nsIPrintSettings* printSettings) {
-  NS_ENSURE_ARG(webBrowserPrint);
   NS_ENSURE_ARG(printSettings);
 
   // If parent is null we are just being called to retrieve the print settings
@@ -88,8 +85,7 @@ nsPrintingProxy::ShowPrintDialog(mozIDOMWindowProxy* parent,
   NS_ENSURE_SUCCESS(rv, rv);
 
   PrintData inSettings;
-  rv = printSettingsSvc->SerializeToPrintData(printSettings, webBrowserPrint,
-                                              &inSettings);
+  rv = printSettingsSvc->SerializeToPrintData(printSettings, &inSettings);
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Now, the waiting game. The parent process should be showing
@@ -115,9 +111,8 @@ nsPrintingProxy::ShowPrintDialog(mozIDOMWindowProxy* parent,
 NS_IMETHODIMP
 nsPrintingProxy::ShowPrintProgressDialog(
     mozIDOMWindowProxy* parent,
-    nsIWebBrowserPrint* webBrowserPrint,  // ok to be null
-    nsIPrintSettings* printSettings,      // ok to be null
-    nsIObserver* openDialogObserver,      // ok to be null
+    nsIPrintSettings* printSettings,  // ok to be null
+    nsIObserver* openDialogObserver,  // ok to be null
     bool isForPrinting, nsIWebProgressListener** webProgressListener,
     nsIPrintProgressParams** printProgressParams, bool* notifyOnOpen) {
   NS_ENSURE_ARG(parent);
@@ -182,7 +177,7 @@ nsresult nsPrintingProxy::SavePrintSettings(nsIPrintSettings* aPS,
   NS_ENSURE_SUCCESS(rv, rv);
 
   PrintData settings;
-  rv = printSettingsSvc->SerializeToPrintData(aPS, nullptr, &settings);
+  rv = printSettingsSvc->SerializeToPrintData(aPS, &settings);
   NS_ENSURE_SUCCESS(rv, rv);
 
   Unused << SendSavePrintSettings(settings, aUsePrinterNamePrefix, aFlags, &rv);

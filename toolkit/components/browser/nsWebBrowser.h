@@ -19,7 +19,6 @@
 #include "nsIDocShellTreeItem.h"
 #include "nsIInterfaceRequestor.h"
 #include "nsIInterfaceRequestorUtils.h"
-#include "nsIScrollable.h"
 #include "nsIWidget.h"
 #include "nsIWebProgress.h"
 #include "nsIWebBrowser.h"
@@ -58,7 +57,6 @@ class nsWebBrowser final : public nsIWebBrowser,
                            public nsIWebNavigation,
                            public nsIDocShellTreeItem,
                            public nsIBaseWindow,
-                           public nsIScrollable,
                            public nsIInterfaceRequestor,
                            public nsIWebBrowserPersist,
                            public nsIWebProgressListener,
@@ -90,7 +88,6 @@ class nsWebBrowser final : public nsIWebBrowser,
   NS_DECL_NSIBASEWINDOW
   NS_DECL_NSIDOCSHELLTREEITEM
   NS_DECL_NSIINTERFACEREQUESTOR
-  NS_DECL_NSISCROLLABLE
   NS_DECL_NSIWEBBROWSER
   NS_DECL_NSIWEBNAVIGATION
   NS_DECL_NSIWEBBROWSERPERSIST
@@ -132,15 +129,12 @@ class nsWebBrowser final : public nsIWebBrowser,
   nsCOMPtr<nsIInterfaceRequestor> mDocShellAsReq;
   nsCOMPtr<nsIBaseWindow> mDocShellAsWin;
   nsCOMPtr<nsIWebNavigation> mDocShellAsNav;
-  nsCOMPtr<nsIScrollable> mDocShellAsScrollable;
   mozilla::OriginAttributes mOriginAttributes;
 
   nsCOMPtr<nsIWidget> mInternalWidget;
   nsCOMPtr<nsIWindowWatcher> mWWatch;
   const uint32_t mContentType;
-  bool mActivating;
   bool mShouldEnableHistory;
-  bool mIsActive;
   nativeWindow mParentNativeWindow;
   nsIWebProgressListener* mProgressListener;
   nsCOMPtr<nsIWebProgress> mWebProgress;

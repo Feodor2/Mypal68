@@ -31,7 +31,7 @@ class PuppetWidget;
  */
 
 class TextEventDispatcher final {
-  ~TextEventDispatcher() {}
+  ~TextEventDispatcher() = default;
 
   NS_INLINE_DECL_REFCOUNTING(TextEventDispatcher)
 

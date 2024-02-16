@@ -16,9 +16,6 @@
           "nsIURIContentListener",
           "nsISupportsWeakReference",
         ]),
-        onStartURIOpen(uri) {
-          return false;
-        },
         doContent(contentType, isContentPreferred, request, contentHandler) {
           return false;
         },
@@ -142,12 +139,18 @@
     }
 
     makeEditable(editortype, waitForUrlLoad) {
+      let win = this.contentWindow;
+      let winUtils = win.windowUtils;
       this.editingSession.makeWindowEditable(
-        this.contentWindow,
+        win,
         editortype,
         waitForUrlLoad,
         true,
         false
+      );
+      winUtils.loadSheetUsingURIString(
+        "resource://gre/res/EditorOverride.css",
+        winUtils.AGENT_SHEET
       );
       this.setAttribute("editortype", editortype);
 

@@ -66,7 +66,7 @@ class nsBaseHashtableET : public KeyClass {
 
   explicit nsBaseHashtableET(KeyTypePointer aKey);
   nsBaseHashtableET(nsBaseHashtableET<KeyClass, DataType>&& aToMove);
-  ~nsBaseHashtableET();
+  ~nsBaseHashtableET() = default;
 };
 
 /**
@@ -98,7 +98,7 @@ class nsBaseHashtable
   using nsTHashtable<EntryType>::SizeOfExcludingThis;
   using nsTHashtable<EntryType>::SizeOfIncludingThis;
 
-  nsBaseHashtable() {}
+  nsBaseHashtable() = default;
   explicit nsBaseHashtable(uint32_t aInitLength)
       : nsTHashtable<EntryType>(aInitLength) {}
 
@@ -176,8 +176,8 @@ class nsBaseHashtable
     }
   }
 
-  MOZ_MUST_USE bool Put(KeyType aKey, const UserDataType& aData,
-                        const fallible_t&) {
+  [[nodiscard]] bool Put(KeyType aKey, const UserDataType& aData,
+                         const fallible_t&) {
     EntryType* ent = this->PutEntry(aKey, mozilla::fallible);
     if (!ent) {
       return false;
@@ -199,7 +199,8 @@ class nsBaseHashtable
     }
   }
 
-  MOZ_MUST_USE bool Put(KeyType aKey, UserDataType&& aData, const fallible_t&) {
+  [[nodiscard]] bool Put(KeyType aKey, UserDataType&& aData,
+                         const fallible_t&) {
     EntryType* ent = this->PutEntry(aKey, mozilla::fallible);
     if (!ent) {
       return false;
@@ -266,11 +267,25 @@ class nsBaseHashtable
       mEntry = nullptr;
     }
 
-    MOZ_MUST_USE DataType& Data() {
+    [[nodiscard]] DataType& Data() {
       MOZ_ASSERT(!!*this, "must have an entry to access its value");
       return mEntry->mData;
     }
   };
+
+  /**
+   * Removes all entries matching a predicate.
+   *
+   * The predicate must be compatible with signature bool (const Iterator &).
+   */
+  template <typename Pred>
+  void RemoveIf(Pred&& aPred) {
+    for (auto iter = Iter(); !iter.Done(); iter.Next()) {
+      if (aPred(const_cast<std::add_const_t<decltype(iter)>&>(iter))) {
+        iter.Remove();
+      }
+    }
+  }
 
   /**
    * Looks up aKey in the hashtable and returns an object that allows you to
@@ -290,7 +305,7 @@ class nsBaseHashtable
    * lookups.  If you want to insert a new entry if one does not exist, then use
    * LookupForAdd instead, see below.
    */
-  MOZ_MUST_USE LookupResult Lookup(KeyType aKey) {
+  [[nodiscard]] LookupResult Lookup(KeyType aKey) {
     return LookupResult(this->GetEntry(aKey), *this);
   }
 
@@ -348,7 +363,7 @@ class nsBaseHashtable
       mEntry = nullptr;
     }
 
-    MOZ_MUST_USE DataType& Data() {
+    [[nodiscard]] DataType& Data() {
       MOZ_ASSERT(mTableGeneration == mTable.GetGeneration());
       MOZ_ASSERT(mEntry);
       return mEntry->mData;
@@ -380,7 +395,7 @@ class nsBaseHashtable
    * hashtable if one doesn't exist before but would like to avoid two hashtable
    * lookups.
    */
-  MOZ_MUST_USE EntryPtr LookupForAdd(KeyType aKey) {
+  [[nodiscard]] EntryPtr LookupForAdd(KeyType aKey) {
     auto count = Count();
     EntryType* ent = this->PutEntry(aKey);
     return EntryPtr(*this, ent, count == Count());
@@ -403,7 +418,7 @@ class nsBaseHashtable
 
     explicit Iterator(nsBaseHashtable* aTable) : Base(&aTable->mTable) {}
     Iterator(Iterator&& aOther) : Base(aOther.mTable) {}
-    ~Iterator() {}
+    ~Iterator() = default;
 
     KeyType Key() const { return static_cast<EntryType*>(Get())->GetKey(); }
     UserDataType UserData() const {
@@ -554,8 +569,5 @@ template <class KeyClass, class DataType>
 nsBaseHashtableET<KeyClass, DataType>::nsBaseHashtableET(
     nsBaseHashtableET<KeyClass, DataType>&& aToMove)
     : KeyClass(std::move(aToMove)), mData(std::move(aToMove.mData)) {}
-
-template <class KeyClass, class DataType>
-nsBaseHashtableET<KeyClass, DataType>::~nsBaseHashtableET() {}
 
 #endif  // nsBaseHashtable_h__

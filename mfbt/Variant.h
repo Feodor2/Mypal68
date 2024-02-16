@@ -13,6 +13,7 @@
 #include "mozilla/OperatorNewExtensions.h"
 #include "mozilla/TemplateLib.h"
 #include "mozilla/TypeTraits.h"
+#include <type_traits>
 #include <utility>
 
 #ifndef mozilla_Variant_h
@@ -96,8 +97,8 @@ struct SelectVariantTypeHelper<T, Head, Variants...>
 template <typename T, typename... Variants>
 struct SelectVariantType
     : public SelectVariantTypeHelper<
-          typename RemoveConst<typename RemoveReference<T>::Type>::Type,
-          Variants...> {};
+          typename RemoveConst<std::remove_reference_t<T>>::Type, Variants...> {
+};
 
 // Compute a fast, compact type that can be used to hold integral values that
 // distinctly map to every type in Ts.
@@ -148,8 +149,7 @@ template <typename Tag, size_t N, typename T>
 struct VariantImplementation<Tag, N, T> {
   template <typename U>
   static Tag tag() {
-    static_assert(mozilla::IsSame<T, U>::value,
-                  "mozilla::Variant: tag: bad type!");
+    static_assert(std::is_same_v<T, U>, "mozilla::Variant: tag: bad type!");
     return Tag(N);
   }
 
@@ -192,7 +192,7 @@ struct VariantImplementation<Tag, N, T, Ts...> {
 
   template <typename U>
   static Tag tag() {
-    return TagHelper<Tag, N, T, U, Next, IsSame<T, U>::value>::tag();
+    return TagHelper<Tag, N, T, U, Next, std::is_same_v<T, U>>::tag();
   }
 
   template <typename Variant>
@@ -288,7 +288,7 @@ struct AsVariantTemporary {
   void operator=(const AsVariantTemporary&) = delete;
   void operator=(AsVariantTemporary&&) = delete;
 
-  typename RemoveConst<typename RemoveReference<T>::Type>::Type mValue;
+  typename RemoveConst<std::remove_reference_t<T>>::Type mValue;
 };
 
 }  // namespace detail
@@ -726,11 +726,11 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_NON_PARAM Variant {
         "Variant<T...>::match() takes either one callable argument that "
         "accepts every type T; or one for each type T, in order");
     static_assert(
-        tl::And<IsSame<typename FunctionTypeTraits<M0>::ReturnType,
-                       typename FunctionTypeTraits<M1>::ReturnType>::value,
-                IsSame<typename FunctionTypeTraits<M1>::ReturnType,
-                       typename FunctionTypeTraits<Ms>::ReturnType>::value...>::
-            value,
+        tl::And<std::is_same_v<typename FunctionTypeTraits<M0>::ReturnType,
+                               typename FunctionTypeTraits<M1>::ReturnType>,
+                std::is_same_v<
+                    typename FunctionTypeTraits<M1>::ReturnType,
+                    typename FunctionTypeTraits<Ms>::ReturnType>...>::value,
         "all matchers must have the same return type");
     return Impl::matchN(*this, std::forward<M0>(aM0), std::forward<M1>(aM1),
                         std::forward<Ms>(aMs)...);
@@ -749,11 +749,11 @@ class MOZ_INHERIT_TYPE_ANNOTATIONS_FROM_TEMPLATE_ARGS MOZ_NON_PARAM Variant {
         "Variant<T...>::match() takes either one callable argument that "
         "accepts every type T; or one for each type T, in order");
     static_assert(
-        tl::And<IsSame<typename FunctionTypeTraits<M0>::ReturnType,
-                       typename FunctionTypeTraits<M1>::ReturnType>::value,
-                IsSame<typename FunctionTypeTraits<M0>::ReturnType,
-                       typename FunctionTypeTraits<Ms>::ReturnType>::value...>::
-            value,
+        tl::And<std::is_same_v<typename FunctionTypeTraits<M0>::ReturnType,
+                               typename FunctionTypeTraits<M1>::ReturnType>,
+                std::is_same_v<
+                    typename FunctionTypeTraits<M0>::ReturnType,
+                    typename FunctionTypeTraits<Ms>::ReturnType>...>::value,
         "all matchers must have the same return type");
     return Impl::matchN(*this, std::forward<M0>(aM0), std::forward<M1>(aM1),
                         std::forward<Ms>(aMs)...);

@@ -19,9 +19,9 @@ using namespace mozilla;
 
 NS_IMPL_ISUPPORTS(nsApplicationChooser, nsIApplicationChooser)
 
-nsApplicationChooser::nsApplicationChooser() {}
+nsApplicationChooser::nsApplicationChooser() = default;
 
-nsApplicationChooser::~nsApplicationChooser() {}
+nsApplicationChooser::~nsApplicationChooser() = default;
 
 NS_IMETHODIMP
 nsApplicationChooser::Init(mozIDOMWindowProxy* aParent,

@@ -385,8 +385,7 @@ nsFormFillController::SetPopupOpen(bool aPopupOpen) {
       presShell->ScrollContentIntoView(
           content, ScrollAxis(kScrollMinimum, WhenToScroll::IfNotVisible),
           ScrollAxis(kScrollMinimum, WhenToScroll::IfNotVisible),
-          ScrollFlags::ScrollOverflowHidden |
-              ScrollFlags::IgnoreMarginAndPadding);
+          ScrollFlags::ScrollOverflowHidden);
       // mFocusedPopup can be destroyed after ScrollContentIntoView, see bug
       // 420089
       if (mFocusedPopup) {
@@ -576,14 +575,15 @@ nsFormFillController::GetSelectionEnd(int32_t* aSelectionEnd) {
   return rv.StealNSResult();
 }
 
-NS_IMETHODIMP
+MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP
 nsFormFillController::SelectTextRange(int32_t aStartIndex, int32_t aEndIndex) {
   if (!mFocusedInput) {
     return NS_ERROR_UNEXPECTED;
   }
+  RefPtr<HTMLInputElement> focusedInput(mFocusedInput);
   ErrorResult rv;
-  mFocusedInput->SetSelectionRange(aStartIndex, aEndIndex,
-                                   Optional<nsAString>(), rv);
+  focusedInput->SetSelectionRange(aStartIndex, aEndIndex, Optional<nsAString>(),
+                                  rv);
   return rv.StealNSResult();
 }
 

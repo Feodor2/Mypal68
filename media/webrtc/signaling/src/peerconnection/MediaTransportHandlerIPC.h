@@ -29,7 +29,7 @@ class MediaTransportHandlerIPC : public MediaTransportHandler {
 
   // We will probably be able to move the proxy lookup stuff into
   // this class once we move mtransport to its own process.
-  void SetProxyServer(NrSocketProxyConfig&& aProxyConfig) override;
+  void SetProxyConfig(NrSocketProxyConfig&& aProxyConfig) override;
 
   void EnsureProvisionalTransport(const std::string& aTransportId,
                                   const std::string& aLocalUfrag,
@@ -66,8 +66,8 @@ class MediaTransportHandlerIPC : public MediaTransportHandler {
                   MediaPacket&& aPacket) override;
 
   void AddIceCandidate(const std::string& aTransportId,
-                       const std::string& aCandidate,
-                       const std::string& aUfrag) override;
+                       const std::string& aCandidate, const std::string& aUfrag,
+                       const std::string& aObfuscatedAddress) override;
 
   void UpdateNetworkState(bool aOnline) override;
 

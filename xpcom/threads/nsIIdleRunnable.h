@@ -37,8 +37,8 @@ class nsIIdleRunnable : public nsISupports {
   };
 
  protected:
-  nsIIdleRunnable() {}
-  virtual ~nsIIdleRunnable() {}
+  nsIIdleRunnable() = default;
+  virtual ~nsIIdleRunnable() = default;
 };
 
 NS_DEFINE_STATIC_IID_ACCESSOR(nsIIdleRunnable, NS_IIDLERUNNABLE_IID)

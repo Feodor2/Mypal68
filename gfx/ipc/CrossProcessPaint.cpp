@@ -302,7 +302,7 @@ void CrossProcessPaint::MaybeResolve() {
     mPromise->MaybeResolve(bitmap);
   } else {
     CPP_LOG("Couldn't create ImageBitmap for SourceSurface.\n");
-    mPromise->MaybeReject(rv);
+    mPromise->MaybeReject(std::move(rv));
   }
   Clear();
 }
@@ -359,7 +359,7 @@ bool CrossProcessPaint::ResolveInternal(dom::TabId aId,
     aResolved->Remove(dependency);
   }
 
-  aResolved->Put(aId, snapshot);
+  aResolved->Put(aId, std::move(snapshot));
   return true;
 }
 

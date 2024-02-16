@@ -13,7 +13,7 @@ namespace layers {
 class MatrixMessage {
  public:
   // Don't use this one directly
-  MatrixMessage() {}
+  MatrixMessage() = default;
 
   MatrixMessage(const LayerToScreenMatrix4x4& aMatrix,
                 const LayersId& aLayersId)

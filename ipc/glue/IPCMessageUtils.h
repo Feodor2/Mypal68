@@ -98,7 +98,7 @@ struct SerializedStructuredCloneBuffer final {
     return false;
   }
 
-  JSStructuredCloneData data;
+  JSStructuredCloneData data{JS::StructuredCloneScope::Unassigned};
 };
 
 }  // namespace mozilla
@@ -256,8 +256,10 @@ struct BitFlagsEnumSerializer
  */
 template <typename T>
 struct PlainOldDataSerializer {
-  // TODO: Once the mozilla::IsPod trait is in good enough shape (bug 900042),
-  //       static_assert that mozilla::IsPod<T>::value is true.
+  static_assert(
+      std::is_trivially_copyable<T>::value,
+      "PlainOldDataSerializer can only be used with trivially copyable types!");
+
   typedef T paramType;
 
   static void Write(Message* aMsg, const paramType& aParam) {
@@ -547,7 +549,7 @@ struct ParamTraits<nsTArray<E>> {
   // a data structure T for which IsPod<T>::value is true, yet also have a
   // ParamTraits<T> specialization.
   static const bool sUseWriteBytes =
-      (mozilla::IsIntegral<E>::value || mozilla::IsFloatingPoint<E>::value);
+      (std::is_integral_v<E> || std::is_floating_point_v<E>);
 
   static void Write(Message* aMsg, const paramType& aParam) {
     uint32_t length = aParam.Length();

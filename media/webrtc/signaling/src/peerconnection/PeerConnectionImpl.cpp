@@ -836,7 +836,7 @@ PeerConnectionImpl::EnsureDataConnection(uint16_t aLocalPort,
     return NS_OK;
   }
 
-  nsCOMPtr<nsIEventTarget> target =
+  nsCOMPtr<nsISerialEventTarget> target =
       mWindow ? mWindow->EventTargetFor(TaskCategory::Other) : nullptr;
   Maybe<uint64_t> mms = aMMSSet ? Some(aMaxMessageSize) : Nothing();
   if (auto res = DataChannelConnection::Create(this, target, mTransportHandler,
@@ -949,13 +949,29 @@ already_AddRefed<TransceiverImpl> PeerConnectionImpl::CreateTransceiverImpl(
     aSendTrack->AddPrincipalChangeObserver(this);
   }
 
+  // Set the principal used for the receive tracks. This makes the track
+  // data (audio/video samples) accessible to the receiving page. We're
+  // only certain that privacy has been requested if we're connected.
+  RefPtr<nsIPrincipal> principal;
+  Document* doc = GetWindow()->GetExtantDoc();
+  MOZ_ASSERT(doc);
+  if (mPrivacyRequested.valueOr(false)) {
+    principal =
+        NullPrincipal::CreateWithInheritedAttributes(doc->NodePrincipal());
+  } else {
+    // We're either certain that we don't need isolation for the tracks, OR
+    // we're not sure and the pipeline fixes the track later in
+    // MediaPipeline::AlpnNegotiated.
+    principal = doc->NodePrincipal();
+  }
+
   OwningNonNull<dom::MediaStreamTrack> receiveTrack =
-      CreateReceiveTrack(aJsepTransceiver->GetMediaType());
+      CreateReceiveTrack(aJsepTransceiver->GetMediaType(), principal);
 
   RefPtr<TransceiverImpl> transceiverImpl;
-
-  aRv = mMedia->AddTransceiver(aJsepTransceiver, *receiveTrack, aSendTrack,
-                               &transceiverImpl);
+  aRv =
+      mMedia->AddTransceiver(aJsepTransceiver, *receiveTrack, aSendTrack,
+                             MakePrincipalHandle(principal), &transceiverImpl);
 
   return transceiverImpl.forget();
 }
@@ -1106,16 +1122,6 @@ PeerConnectionImpl::CreateDataChannel(
   return NS_OK;
 }
 
-// Not a member function so that we don't need to keep the PC live.
-static void NotifyDataChannel_m(
-    const RefPtr<nsDOMDataChannel>& aChannel,
-    const RefPtr<PeerConnectionObserver>& aObserver) {
-  MOZ_ASSERT(NS_IsMainThread());
-  JSErrorResult rv;
-  aObserver->NotifyDataChannel(*aChannel, rv);
-  aChannel->AppReady();
-}
-
 void PeerConnectionImpl::NotifyDataChannel(
     already_AddRefed<DataChannel> aChannel) {
   PC_AUTO_ENTER_API_CALL_NO_CHECK();
@@ -1129,10 +1135,8 @@ void PeerConnectionImpl::NotifyDataChannel(
                                      getter_AddRefs(domchannel));
   NS_ENSURE_SUCCESS_VOID(rv);
 
-  RUN_ON_THREAD(
-      mThread,
-      WrapRunnableNM(NotifyDataChannel_m, domchannel.forget(), mPCObserver),
-      NS_DISPATCH_NORMAL);
+  JSErrorResult jrv;
+  mPCObserver->NotifyDataChannel(*domchannel, jrv);
 }
 
 NS_IMETHODIMP
@@ -1582,28 +1586,14 @@ PeerConnectionImpl::SetPeerIdentity(const nsAString& aPeerIdentity) {
   return NS_OK;
 }
 
-nsresult PeerConnectionImpl::OnAlpnNegotiated(const std::string& aAlpn) {
+nsresult PeerConnectionImpl::OnAlpnNegotiated(bool aPrivacyRequested) {
   PC_AUTO_ENTER_API_CALL(false);
   if (mPrivacyRequested.isSome()) {
+    MOZ_DIAGNOSTIC_ASSERT(*mPrivacyRequested == aPrivacyRequested);
     return NS_OK;
   }
 
-  mPrivacyRequested = Some(aAlpn == "c-webrtc");
-
-  // For this, as with mPrivacyRequested, once we've connected to a peer, we
-  // fixate on that peer.  Dealing with multiple peers or connections is more
-  // than this run-down wreck of an object can handle.
-  // Besides, this is only used to say if we have been connected ever.
-  if (!*mPrivacyRequested) {
-    // Neither side wants privacy
-    Document* doc = GetWindow()->GetExtantDoc();
-    if (!doc) {
-      CSFLogInfo(LOGTAG, "Can't update principal on streams; document gone");
-      return NS_ERROR_FAILURE;
-    }
-    mMedia->UpdateRemoteStreamPrincipals_m(doc->NodePrincipal());
-  }
-
+  mPrivacyRequested = Some(aPrivacyRequested);
   return NS_OK;
 }
 
@@ -1783,23 +1773,8 @@ static int GetDTMFToneCode(uint16_t c) {
 }
 
 OwningNonNull<dom::MediaStreamTrack> PeerConnectionImpl::CreateReceiveTrack(
-    SdpMediaSection::MediaType type) {
+    SdpMediaSection::MediaType type, nsIPrincipal* aPrincipal) {
   bool audio = (type == SdpMediaSection::MediaType::kAudio);
-
-  // Set the principal used for creating the tracks. This makes the track
-  // data (audio/video samples) accessible to the receiving page. We're
-  // only certain that privacy hasn't been requested if we're connected.
-  nsCOMPtr<nsIPrincipal> principal;
-  Document* doc = GetWindow()->GetExtantDoc();
-  MOZ_ASSERT(doc);
-  if (mPrivacyRequested.isSome() && !*mPrivacyRequested) {
-    principal = doc->NodePrincipal();
-  } else {
-    // we're either certain that we need isolation for the tracks, OR
-    // we're not sure and we can fix the track in SetDtlsConnected
-    principal =
-        NullPrincipal::CreateWithInheritedAttributes(doc->NodePrincipal());
-  }
 
   MediaTrackGraph* graph = MediaTrackGraph::GetInstance(
       audio ? MediaTrackGraph::AUDIO_THREAD_DRIVER
@@ -1811,13 +1786,13 @@ OwningNonNull<dom::MediaStreamTrack> PeerConnectionImpl::CreateReceiveTrack(
   if (audio) {
     RefPtr<SourceMediaTrack> source =
         graph->CreateSourceTrack(MediaSegment::AUDIO);
-    trackSource = new RemoteTrackSource(source, principal,
+    trackSource = new RemoteTrackSource(source, aPrincipal,
                                         NS_ConvertASCIItoUTF16("remote audio"));
     track = new AudioStreamTrack(GetWindow(), source, trackSource);
   } else {
     RefPtr<SourceMediaTrack> source =
         graph->CreateSourceTrack(MediaSegment::VIDEO);
-    trackSource = new RemoteTrackSource(source, principal,
+    trackSource = new RemoteTrackSource(source, aPrincipal,
                                         NS_ConvertASCIItoUTF16("remote video"));
     track = new VideoStreamTrack(GetWindow(), source, trackSource);
   }
@@ -2567,8 +2542,10 @@ nsresult PeerConnectionImpl::BuildStatsQuery_m(
           NS_ConvertASCIItoUTF16(remoteDescription.c_str()));
       query->report->mOfferer.Construct(mJsepSession->IsOfferer());
       for (const auto& candidate : mRawTrickledCandidates) {
-        query->report->mRawRemoteCandidates.Value().AppendElement(
-            NS_ConvertASCIItoUTF16(candidate.c_str()), fallible);
+        if (!query->report->mRawRemoteCandidates.Value().AppendElement(
+                NS_ConvertASCIItoUTF16(candidate.c_str()), fallible)) {
+          mozalloc_handle_oom(0);
+        }
       }
     }
   }
@@ -2649,8 +2626,10 @@ RefPtr<RTCStatsQueryPromise> PeerConnectionImpl::ExecuteStatsQuery_s(
             s.mBytesReceived.Construct(bytesReceived);
             s.mPacketsLost.Construct(packetsLost);
             rtt.apply([&s](auto r) { s.mRoundTripTime.Construct(r); });
-            query->report->mRemoteInboundRtpStreamStats.Value().AppendElement(
-                s, fallible);
+            if (!query->report->mRemoteInboundRtpStreamStats.Value()
+                     .AppendElement(s, fallible)) {
+              mozalloc_handle_oom(0);
+            }
           }
         }
         // Then, fill in local side (with cross-link to remote only if present)
@@ -2699,8 +2678,10 @@ RefPtr<RTCStatsQueryPromise> PeerConnectionImpl::ExecuteStatsQuery_s(
               qpSum.apply([&s](uint64_t aQp) { s.mQpSum.Construct(aQp); });
             }
           });
-          query->report->mOutboundRtpStreamStats.Value().AppendElement(
-              s, fallible);
+          if (!query->report->mOutboundRtpStreamStats.Value().AppendElement(
+                  s, fallible)) {
+            mozalloc_handle_oom(0);
+          }
         }
         break;
       }
@@ -2730,8 +2711,10 @@ RefPtr<RTCStatsQueryPromise> PeerConnectionImpl::ExecuteStatsQuery_s(
             s.mLocalId.Construct(localId);
             s.mPacketsSent.Construct(packetsSent);
             s.mBytesSent.Construct(bytesSent);
-            query->report->mRemoteOutboundRtpStreamStats.Value().AppendElement(
-                s, fallible);
+            if (!query->report->mRemoteOutboundRtpStreamStats.Value()
+                     .AppendElement(s, fallible)) {
+              mozalloc_handle_oom(0);
+            }
           }
         }
         // Then, fill in local side (with cross-link to remote only if present)
@@ -2782,8 +2765,10 @@ RefPtr<RTCStatsQueryPromise> PeerConnectionImpl::ExecuteStatsQuery_s(
             s.mFramesDecoded.Construct(framesDecoded);
           }
         });
-        query->report->mInboundRtpStreamStats.Value().AppendElement(s,
-                                                                    fallible);
+        if (!query->report->mInboundRtpStreamStats.Value().AppendElement(
+                s, fallible)) {
+          mozalloc_handle_oom(0);
+        }
         // Fill in Contributing Source statistics
         mp.GetContributingSourceStats(
             localId, query->report->mRtpContributingSourceStats.Value());

@@ -10,6 +10,7 @@
 #include "mozilla/DebugOnly.h"
 #include "mozilla/EndianUtils.h"
 #include "mozilla/NullPrincipal.h"
+#include "mozilla/CheckedInt.h"
 #include <algorithm>
 
 #include <gio/gio.h>
@@ -29,6 +30,8 @@
 #include "prlink.h"
 #include "gfxPlatform.h"
 
+using mozilla::CheckedInt32;
+
 NS_IMPL_ISUPPORTS(nsIconChannel, nsIRequest, nsIChannel)
 
 static nsresult moz_gdk_pixbuf_to_channel(GdkPixbuf* aPixbuf, nsIURI* aURI,
@@ -43,8 +46,12 @@ static nsresult moz_gdk_pixbuf_to_channel(GdkPixbuf* aPixbuf, nsIURI* aURI,
                  NS_ERROR_UNEXPECTED);
 
   const int n_channels = 4;
-  gsize buf_size = 2 + n_channels * height * width;
-  uint8_t* const buf = (uint8_t*)moz_xmalloc(buf_size);
+  CheckedInt32 buf_size =
+      2 + n_channels * CheckedInt32(height) * CheckedInt32(width);
+  if (!buf_size.isValid()) {
+    return NS_ERROR_OUT_OF_MEMORY;
+  }
+  uint8_t* const buf = (uint8_t*)moz_xmalloc(buf_size.value());
   uint8_t* out = buf;
 
   *(out++) = width;
@@ -77,7 +84,7 @@ static nsresult moz_gdk_pixbuf_to_channel(GdkPixbuf* aPixbuf, nsIURI* aURI,
     }
   }
 
-  NS_ASSERTION(out == buf + buf_size, "size miscalculation");
+  NS_ASSERTION(out == buf + buf_size.value(), "size miscalculation");
 
   nsresult rv;
   nsCOMPtr<nsIStringInputStream> stream =
@@ -91,7 +98,7 @@ static nsresult moz_gdk_pixbuf_to_channel(GdkPixbuf* aPixbuf, nsIURI* aURI,
 
   // stream takes ownership of buf and will free it on destruction.
   // This function cannot fail.
-  rv = stream->AdoptData((char*)buf, buf_size);
+  rv = stream->AdoptData((char*)buf, buf_size.value());
 
   // If this no longer holds then re-examine buf's lifetime.
   MOZ_ASSERT(NS_SUCCEEDED(rv));
@@ -99,7 +106,7 @@ static nsresult moz_gdk_pixbuf_to_channel(GdkPixbuf* aPixbuf, nsIURI* aURI,
 
   // nsIconProtocolHandler::NewChannel will provide the correct loadInfo for
   // this iconChannel. Use the most restrictive security settings for the
-  // temporary loadInfo to make sure the channel can not be openend.
+  // temporary loadInfo to make sure the channel can not be opened.
   nsCOMPtr<nsIPrincipal> nullPrincipal =
       mozilla::NullPrincipal::CreateWithoutOriginAttributes();
   return NS_NewInputStreamChannel(
@@ -327,7 +334,7 @@ nsresult nsIconChannel::Init(nsIURI* aURI) {
     GtkIconTheme* icon_theme = gtk_icon_theme_get_default();
     // Micking what gtk_icon_set_render_icon does with sizes, though it's not
     // critical as icons will be scaled to suit size.  It just means we follow
-    // the same pathes and so share caches.
+    // the same paths and so share caches.
     gint width, height;
     if (gtk_icon_size_lookup(icon_size, &width, &height)) {
       gint size = std::min(width, height);
@@ -352,7 +359,7 @@ nsresult nsIconChannel::Init(nsIURI* aURI) {
   }
 
   if (!icon_set) {
-    // Either we have choosen icon-name lookup for a bidi icon, or stockIcon is
+    // Either we have chosen icon-name lookup for a bidi icon, or stockIcon is
     // not a stock id so we assume it is an icon name.
     useIconName = true;
     // Creating a GtkIconSet is a convenient way to allow the style to

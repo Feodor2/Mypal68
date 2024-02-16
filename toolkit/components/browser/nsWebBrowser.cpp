@@ -34,6 +34,7 @@
 
 // for painting the background window
 #include "mozilla/LookAndFeel.h"
+#include "mozilla/ServoStyleConsts.h"
 
 // Printing Includes
 #ifdef NS_PRINTING
@@ -51,9 +52,7 @@ using namespace mozilla::layers;
 
 nsWebBrowser::nsWebBrowser(int aItemType)
     : mContentType(aItemType),
-      mActivating(false),
       mShouldEnableHistory(true),
-      mIsActive(true),
       mParentNativeWindow(nullptr),
       mProgressListener(nullptr),
       mWidgetListenerDelegate(this),
@@ -196,15 +195,13 @@ NS_IMPL_CYCLE_COLLECTING_ADDREF(nsWebBrowser)
 NS_IMPL_CYCLE_COLLECTING_RELEASE(nsWebBrowser)
 
 NS_IMPL_CYCLE_COLLECTION(nsWebBrowser, mDocShell, mDocShellAsReq,
-                         mDocShellAsWin, mDocShellAsNav, mDocShellAsScrollable,
-                         mWebProgress)
+                         mDocShellAsWin, mDocShellAsNav, mWebProgress)
 
 NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsWebBrowser)
   NS_INTERFACE_MAP_ENTRY_AMBIGUOUS(nsISupports, nsIWebBrowser)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowser)
   NS_INTERFACE_MAP_ENTRY(nsIWebNavigation)
   NS_INTERFACE_MAP_ENTRY(nsIBaseWindow)
-  NS_INTERFACE_MAP_ENTRY(nsIScrollable)
   NS_INTERFACE_MAP_ENTRY(nsIDocShellTreeItem)
   NS_INTERFACE_MAP_ENTRY(nsIInterfaceRequestor)
   NS_INTERFACE_MAP_ENTRY(nsIWebBrowserPersist)
@@ -351,7 +348,7 @@ nsWebBrowser::GetInProcessSameTypeParent(nsIDocShellTreeItem** aParent) {
 }
 
 NS_IMETHODIMP
-nsWebBrowser::GetRootTreeItem(nsIDocShellTreeItem** aRootTreeItem) {
+nsWebBrowser::GetInProcessRootTreeItem(nsIDocShellTreeItem** aRootTreeItem) {
   NS_ENSURE_ARG_POINTER(aRootTreeItem);
   *aRootTreeItem = static_cast<nsIDocShellTreeItem*>(this);
 
@@ -1134,7 +1131,7 @@ nsWebBrowser::SetFocus() {
   nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow();
   NS_ENSURE_TRUE(window, NS_ERROR_FAILURE);
 
-  nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
+  nsFocusManager* fm = nsFocusManager::GetFocusManager();
   return fm ? fm->SetFocusedWindow(window) : NS_OK;
 }
 
@@ -1157,37 +1154,6 @@ nsWebBrowser::SetTitle(const nsAString& aTitle) {
 }
 
 //*****************************************************************************
-// nsWebBrowser::nsIScrollable
-//*****************************************************************************
-
-NS_IMETHODIMP
-nsWebBrowser::GetDefaultScrollbarPreferences(int32_t aScrollOrientation,
-                                             int32_t* aScrollbarPref) {
-  NS_ENSURE_STATE(mDocShell);
-
-  return mDocShellAsScrollable->GetDefaultScrollbarPreferences(
-      aScrollOrientation, aScrollbarPref);
-}
-
-NS_IMETHODIMP
-nsWebBrowser::SetDefaultScrollbarPreferences(int32_t aScrollOrientation,
-                                             int32_t aScrollbarPref) {
-  NS_ENSURE_STATE(mDocShell);
-
-  return mDocShellAsScrollable->SetDefaultScrollbarPreferences(
-      aScrollOrientation, aScrollbarPref);
-}
-
-NS_IMETHODIMP
-nsWebBrowser::GetScrollbarVisibility(bool* aVerticalVisible,
-                                     bool* aHorizontalVisible) {
-  NS_ENSURE_STATE(mDocShell);
-
-  return mDocShellAsScrollable->GetScrollbarVisibility(aVerticalVisible,
-                                                       aHorizontalVisible);
-}
-
-//*****************************************************************************
 // nsWebBrowser: Listener Helpers
 //*****************************************************************************
 
@@ -1204,27 +1170,18 @@ nsWebBrowser::SetDocShell(nsIDocShell* aDocShell) {
     nsCOMPtr<nsIInterfaceRequestor> req(do_QueryInterface(aDocShell));
     nsCOMPtr<nsIBaseWindow> baseWin(do_QueryInterface(aDocShell));
     nsCOMPtr<nsIWebNavigation> nav(do_QueryInterface(aDocShell));
-    nsCOMPtr<nsIScrollable> scrollable(do_QueryInterface(aDocShell));
     nsCOMPtr<nsIWebProgress> progress(do_GetInterface(aDocShell));
-    NS_ENSURE_TRUE(req && baseWin && nav && scrollable && progress,
-                   NS_ERROR_FAILURE);
+    NS_ENSURE_TRUE(req && baseWin && nav && progress, NS_ERROR_FAILURE);
 
     mDocShell = aDocShell;
     mDocShellAsReq = req;
     mDocShellAsWin = baseWin;
     mDocShellAsNav = nav;
-    mDocShellAsScrollable = scrollable;
     mWebProgress = progress;
 
     // By default, do not allow DNS prefetch, so we don't break our frozen
     // API.  Embeddors who decide to enable it should do so manually.
     mDocShell->SetAllowDNSPrefetch(false);
-
-    // It's possible to call setIsActive() on us before we have a docshell.
-    // If we're getting a docshell now, pass along our desired value. The
-    // default here (true) matches the default of the docshell, so this is
-    // a no-op unless setIsActive(false) has been called on us.
-    mDocShell->SetIsActive(mIsActive);
   } else {
     if (mDocShellTreeOwner) {
       mDocShellTreeOwner->RemoveFromWatcher();  // evil twin of Add in Create()
@@ -1237,7 +1194,6 @@ nsWebBrowser::SetDocShell(nsIDocShell* aDocShell) {
     mDocShellAsReq = nullptr;
     mDocShellAsWin = nullptr;
     mDocShellAsNav = nullptr;
-    mDocShellAsScrollable = nullptr;
     mWebProgress = nullptr;
   }
 
@@ -1311,7 +1267,7 @@ bool nsWebBrowser::PaintWindow(nsIWidget* aWidget,
 }
 
 void nsWebBrowser::FocusActivate() {
-  nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
+  nsFocusManager* fm = nsFocusManager::GetFocusManager();
   nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow();
   if (fm && window) {
     fm->WindowRaised(window);
@@ -1319,7 +1275,7 @@ void nsWebBrowser::FocusActivate() {
 }
 
 void nsWebBrowser::FocusDeactivate() {
-  nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
+  nsFocusManager* fm = nsFocusManager::GetFocusManager();
   nsCOMPtr<nsPIDOMWindowOuter> window = GetWindow();
   if (fm && window) {
     fm->WindowLowered(window);

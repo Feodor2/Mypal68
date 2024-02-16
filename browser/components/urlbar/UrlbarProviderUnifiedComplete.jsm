@@ -115,9 +115,6 @@ class ProviderUnifiedComplete extends UrlbarProvider {
     // This is necessary because we insert matches one by one, thus we don't
     // want UnifiedComplete to reuse results.
     params.push(`insert-method:${UrlbarUtils.INSERTMETHOD.APPEND}`);
-    // The Quantum Bar has its own telemetry measurement, thus disable old
-    // telemetry logged by UnifiedComplete.
-    params.push("disable-telemetry");
     if (queryContext.isPrivate) {
       params.push("private-window");
       if (!PrivateBrowsingUtils.permanentPrivateBrowsing) {
@@ -285,10 +282,7 @@ function makeUrlbarResult(tokens, info) {
         if (!title) {
           // If the url doesn't have an host (e.g. javascript urls), comment
           // will be empty, and we can't build the usual title. Thus use the url.
-          title = Services.textToSubURI.unEscapeURIForUI(
-            "UTF-8",
-            action.params.url
-          );
+          title = Services.textToSubURI.unEscapeURIForUI(action.params.url);
         } else if (tokens && tokens.length > 1) {
           title = bundle.formatStringFromName(
             "bookmarkKeywordSearch",

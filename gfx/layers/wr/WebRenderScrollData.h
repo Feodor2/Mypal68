@@ -109,6 +109,18 @@ class WebRenderLayerScrollData final {
     return mScrollbarAnimationId;
   }
 
+  void SetFixedPositionAnimationId(const uint64_t& aId) {
+    mFixedPositionAnimationId = Some(aId);
+  }
+  Maybe<uint64_t> GetFixedPositionAnimationId() const {
+    return mFixedPositionAnimationId;
+  }
+
+  void SetFixedPositionSides(const SideBits& aSideBits) {
+    mFixedPositionSides = aSideBits;
+  }
+  SideBits GetFixedPositionSides() const { return mFixedPositionSides; }
+
   void SetFixedPositionScrollContainerId(ScrollableLayerGuid::ViewID aId) {
     mFixedPosScrollContainerId = aId;
   }
@@ -120,6 +132,14 @@ class WebRenderLayerScrollData final {
 
   void SetZoomAnimationId(const uint64_t& aId) { mZoomAnimationId = Some(aId); }
   Maybe<uint64_t> GetZoomAnimationId() const { return mZoomAnimationId; }
+
+  void SetAsyncZoomContainerId(const ScrollableLayerGuid::ViewID aId) {
+    mAsyncZoomContainerId = Some(aId);
+  }
+  Maybe<ScrollableLayerGuid::ViewID> GetAsyncZoomContainerId() const {
+    return mAsyncZoomContainerId;
+  }
+  bool IsAsyncZoomContainer() const { return mAsyncZoomContainerId.isSome(); }
 
   void Dump(const WebRenderScrollData& aOwner) const;
 
@@ -151,9 +171,12 @@ class WebRenderLayerScrollData final {
   EventRegionsOverride mEventRegionsOverride;
   ScrollbarData mScrollbarData;
   Maybe<uint64_t> mScrollbarAnimationId;
+  Maybe<uint64_t> mFixedPositionAnimationId;
+  SideBits mFixedPositionSides;
   ScrollableLayerGuid::ViewID mFixedPosScrollContainerId;
   wr::RenderRoot mRenderRoot;
   Maybe<uint64_t> mZoomAnimationId;
+  Maybe<ScrollableLayerGuid::ViewID> mAsyncZoomContainerId;
 };
 
 // Data needed by APZ, for the whole layer tree. One instance of this class
@@ -239,16 +262,6 @@ template <>
 struct ParamTraits<mozilla::layers::RenderRootBoundary>
     : public PlainOldDataSerializer<mozilla::layers::RenderRootBoundary> {};
 
-// When ScrollbarData is stored on the layer tree, it's part of
-// SimpleAttributes which itself uses PlainOldDataSerializer, so
-// we don't need a ParamTraits specialization for ScrollbarData
-// separately. Here, however, ScrollbarData is stored as part
-// of WebRenderLayerScrollData whose fields are serialized
-// individually, so we do.
-template <>
-struct ParamTraits<mozilla::layers::ScrollbarData>
-    : public PlainOldDataSerializer<mozilla::layers::ScrollbarData> {};
-
 template <>
 struct ParamTraits<mozilla::layers::WebRenderLayerScrollData> {
   typedef mozilla::layers::WebRenderLayerScrollData paramType;
@@ -266,9 +279,12 @@ struct ParamTraits<mozilla::layers::WebRenderLayerScrollData> {
     WriteParam(aMsg, aParam.mEventRegionsOverride);
     WriteParam(aMsg, aParam.mScrollbarData);
     WriteParam(aMsg, aParam.mScrollbarAnimationId);
+    WriteParam(aMsg, aParam.mFixedPositionAnimationId);
+    WriteParam(aMsg, aParam.mFixedPositionSides);
     WriteParam(aMsg, aParam.mFixedPosScrollContainerId);
     WriteParam(aMsg, aParam.mRenderRoot);
     WriteParam(aMsg, aParam.mZoomAnimationId);
+    WriteParam(aMsg, aParam.mAsyncZoomContainerId);
   }
 
   static bool Read(const Message* aMsg, PickleIterator* aIter,
@@ -285,9 +301,12 @@ struct ParamTraits<mozilla::layers::WebRenderLayerScrollData> {
            ReadParam(aMsg, aIter, &aResult->mEventRegionsOverride) &&
            ReadParam(aMsg, aIter, &aResult->mScrollbarData) &&
            ReadParam(aMsg, aIter, &aResult->mScrollbarAnimationId) &&
+           ReadParam(aMsg, aIter, &aResult->mFixedPositionAnimationId) &&
+           ReadParam(aMsg, aIter, &aResult->mFixedPositionSides) &&
            ReadParam(aMsg, aIter, &aResult->mFixedPosScrollContainerId) &&
            ReadParam(aMsg, aIter, &aResult->mRenderRoot) &&
-           ReadParam(aMsg, aIter, &aResult->mZoomAnimationId);
+           ReadParam(aMsg, aIter, &aResult->mZoomAnimationId) &&
+           ReadParam(aMsg, aIter, &aResult->mAsyncZoomContainerId);
   }
 };
 

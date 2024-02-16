@@ -18,7 +18,7 @@ namespace layers {
 class X11DataTextureSourceBasic : public DataTextureSource,
                                   public TextureSourceBasic {
  public:
-  X11DataTextureSourceBasic(){};
+  X11DataTextureSourceBasic() = default;
 
   const char* Name() const override { return "X11DataTextureSourceBasic"; }
 

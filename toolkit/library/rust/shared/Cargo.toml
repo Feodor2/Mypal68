@@ -8,7 +8,7 @@ description = "Shared Rust code for libxul"
 [dependencies]
 geckoservo = { path = "../../../../servo/ports/geckolib" }
 kvstore = { path = "../../../components/kvstore" }
-lmdb-rkv-sys = { version = "0.9.3", features = ["mdb_idl_logn_9"] }
+lmdb-rkv-sys = { version = "0.11", features = ["mdb_idl_logn_9"] }
 mp4parse_capi = { path = "../../../../media/mp4parse-rust/mp4parse_capi" }
 nserror = { path = "../../../../xpcom/rust/nserror" }
 nsstring = { path = "../../../../xpcom/rust/nsstring" }
@@ -37,7 +37,7 @@ cert_storage = { path = "../../../../security/manager/ssl/cert_storage", optiona
 bitsdownload = { path = "../../../components/bitsdownload", optional = true }
 storage = { path = "../../../../storage/rust" }
 bookmark_sync = { path = "../../../components/places/bookmark_sync", optional = true }
-mdns_service = { path="../../../../media/mtransport/mdns_service" }
+mdns_service = { path="../../../../media/mtransport/mdns_service", optional = true }
 mapped_hyph = { git = "https://github.com/jfkthame/mapped_hyph.git", tag = "v0.3.0" }
 
 unic-langid = { version = "0.7.1", features = ["likelysubtags"] }
@@ -67,6 +67,7 @@ gecko_profiler = ["profiler_helper", "geckoservo/gecko_profiler"]
 gecko_profiler_parse_elf = ["profiler_helper/parse_elf"]
 new_xulstore = ["xulstore"]
 new_cert_storage = ["cert_storage"]
+webrtc = ["mdns_service"]
 
 [lib]
 path = "lib.rs"

@@ -4,6 +4,8 @@
 #include "chrome/common/ipc_message_utils.h"
 #include "mozilla/UniquePtr.h"
 
+#include <type_traits>
+
 namespace mozilla {
 namespace ipc {
 
@@ -50,8 +52,8 @@ struct IPDLParamTraits {
 template <typename P>
 static MOZ_NEVER_INLINE void WriteIPDLParam(IPC::Message* aMsg,
                                             IProtocol* aActor, P&& aParam) {
-  IPDLParamTraits<typename Decay<P>::Type>::Write(aMsg, aActor,
-                                                  std::forward<P>(aParam));
+  IPDLParamTraits<std::decay_t<P>>::Write(aMsg, aActor,
+                                          std::forward<P>(aParam));
 }
 
 template <typename P>
@@ -214,7 +216,7 @@ struct IPDLParamTraits<nsTArray<T>> {
   // a data structure T for which IsPod<T>::value is true, yet also have a
   // {IPDL,}ParamTraits<T> specialization.
   static const bool sUseWriteBytes =
-      (mozilla::IsIntegral<T>::value || mozilla::IsFloatingPoint<T>::value);
+      (std::is_integral_v<T> || std::is_floating_point_v<T>);
 };
 
 // Maybe support for IPDLParamTraits

@@ -103,6 +103,7 @@ class GeckoChildProcessHost : public ChildProcessHost {
 
   virtual bool CanShutdown() override { return true; }
 
+  using ChildProcessHost::TakeChannel;
   IPC::Channel* GetChannel() { return channelp(); }
 
   // Returns a "borrowed" handle to the child process - the handle returned

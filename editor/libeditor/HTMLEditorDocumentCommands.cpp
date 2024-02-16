@@ -63,42 +63,43 @@ nsresult SetDocumentStateCommand::DoCommandParam(
       if (aBoolParam.value()) {
         nsresult rv = aTextEditor.IncrementModificationCount(1);
         NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                             "IncrementModificationCount() failed");
+                             "EditorBase::IncrementModificationCount() failed");
         return rv;
       }
       nsresult rv = aTextEditor.ResetModificationCount();
-      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "ResetModificationCount() failed");
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                           "EditorBase::ResetModificationCount() failed");
       return rv;
     }
     case Command::SetDocumentReadOnly: {
       ErrorResult error;
       if (aBoolParam.value()) {
-        nsresult rv =
-            aTextEditor.AddFlags(nsIPlaintextEditor::eEditorReadonlyMask);
+        nsresult rv = aTextEditor.AddFlags(nsIEditor::eEditorReadonlyMask);
         NS_WARNING_ASSERTION(
             NS_SUCCEEDED(rv),
-            "AddFlags(nsIPlaintextEditor::eEditorReadonlyMask) failed");
+            "EditorBase::AddFlags(nsIEditor::eEditorReadonlyMask) failed");
         return rv;
       }
-      nsresult rv =
-          aTextEditor.RemoveFlags(nsIPlaintextEditor::eEditorReadonlyMask);
+      nsresult rv = aTextEditor.RemoveFlags(nsIEditor::eEditorReadonlyMask);
       NS_WARNING_ASSERTION(
           NS_SUCCEEDED(rv),
-          "RemoveFlags(nsIPlaintextEditor::eEditorReadonlyMask) failed");
+          "EditorBase::RemoveFlags(nsIEditor::eEditorReadonlyMask) failed");
       return rv;
     }
     case Command::SetDocumentUseCSS: {
       nsresult rv =
           aTextEditor.AsHTMLEditor()->SetIsCSSEnabled(aBoolParam.value());
-      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "SetIsCSSEnabled() failed");
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                           "HTMLEditor::SetIsCSSEnabled() failed");
       return rv;
     }
     case Command::SetDocumentInsertBROnEnterKeyPress: {
       nsresult rv =
           aTextEditor.AsHTMLEditor()->SetReturnInParagraphCreatesNewParagraph(
               !aBoolParam.value());
-      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                           "SetReturnInParagraphCreatesNewParagraph() failed");
+      NS_WARNING_ASSERTION(
+          NS_SUCCEEDED(rv),
+          "HTMLEditor::SetReturnInParagraphCreatesNewParagraph() failed");
       return rv;
     }
     case Command::ToggleObjectResizers: {
@@ -189,23 +190,22 @@ nsresult SetDocumentStateCommand::GetCommandStateParams(
     case Command::SetDocumentModified: {
       bool modified;
       rv = aTextEditor->GetDocumentModified(&modified);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
+      if (NS_FAILED(rv)) {
+        NS_WARNING("EditorBase::GetDocumentModified() failed");
         return rv;
       }
       // XXX Nobody refers this result due to wrong type.
       rv = aParams.SetBool(STATE_ATTRIBUTE, modified);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-      return NS_OK;
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                           "nsCommandParams::SetBool(STATE_ATTRIBUTE) failed");
+      return rv;
     }
     case Command::SetDocumentReadOnly: {
       // XXX Nobody refers this result due to wrong type.
       rv = aParams.SetBool(STATE_ATTRIBUTE, aTextEditor->IsReadonly());
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-      return NS_OK;
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                           "nsCommandParams::SetBool(STATE_ATTRIBUTE) failed");
+      return rv;
     }
     case Command::SetDocumentUseCSS: {
       HTMLEditor* htmlEditor = aTextEditor->AsHTMLEditor();
@@ -213,10 +213,9 @@ nsresult SetDocumentStateCommand::GetCommandStateParams(
         return NS_ERROR_INVALID_ARG;
       }
       rv = aParams.SetBool(STATE_ALL, htmlEditor->IsCSSEnabled());
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-      return NS_OK;
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                           "nsCommandParams::SetBool(STATE_ALL) failed");
+      return rv;
     }
     case Command::SetDocumentInsertBROnEnterKeyPress: {
       HTMLEditor* htmlEditor = aTextEditor->AsHTMLEditor();
@@ -224,13 +223,16 @@ nsresult SetDocumentStateCommand::GetCommandStateParams(
         return NS_ERROR_INVALID_ARG;
       }
       bool createPOnReturn;
-      htmlEditor->GetReturnInParagraphCreatesNewParagraph(&createPOnReturn);
+      DebugOnly<nsresult> rvIgnored =
+          htmlEditor->GetReturnInParagraphCreatesNewParagraph(&createPOnReturn);
+      NS_WARNING_ASSERTION(
+          NS_SUCCEEDED(rvIgnored),
+          "HTMLEditor::GetReturnInParagraphCreatesNewParagraph() failed");
       // XXX Nobody refers this result due to wrong type.
       rv = aParams.SetBool(STATE_ATTRIBUTE, !createPOnReturn);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-      return NS_OK;
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                           "nsCommandParams::SetBool(STATE_ATTRIBUTE) failed");
+      return rv;
     }
     case Command::SetDocumentDefaultParagraphSeparator: {
       HTMLEditor* htmlEditor = aTextEditor->AsHTMLEditor();
@@ -276,10 +278,9 @@ nsresult SetDocumentStateCommand::GetCommandStateParams(
       // nsHTMLDocument::QueryCommandValue() and
       // nsHTMLDocument::QueryCommandState().
       rv = aParams.SetBool(STATE_ALL, htmlEditor->IsObjectResizerEnabled());
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-      return NS_OK;
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                           "nsCommandParams::SetBool(STATE_ALL) failed");
+      return rv;
     }
     case Command::ToggleInlineTableEditor: {
       HTMLEditor* htmlEditor = aTextEditor->AsHTMLEditor();
@@ -291,10 +292,9 @@ nsresult SetDocumentStateCommand::GetCommandStateParams(
       // nsHTMLDocument::QueryCommandValue() and
       // nsHTMLDocument::QueryCommandState().
       rv = aParams.SetBool(STATE_ALL, htmlEditor->IsInlineTableEditorEnabled());
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-      return NS_OK;
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                           "nsCommandParams::SetBool(STATE_ALL) failed");
+      return rv;
     }
     case Command::ToggleAbsolutePositionEditor: {
       HTMLEditor* htmlEditor = aTextEditor->AsHTMLEditor();
@@ -372,7 +372,8 @@ nsresult DocumentStateCommand::GetCommandStateParams(
         // status if this fails.  If called before startup is finished,
         // status will be eEditorCreationInProgress.
         nsresult rv = aEditingSession->GetEditorStatus(&editorStatus);
-        if (NS_WARN_IF(NS_FAILED(rv))) {
+        if (NS_FAILED(rv)) {
+          NS_WARNING("nsIEditingSession::GetEditorStatus() failed");
           return rv;
         }
       } else if (aTextEditor) {
@@ -382,15 +383,16 @@ nsresult DocumentStateCommand::GetCommandStateParams(
 
       // Note that if refCon is not-null, but is neither
       // an nsIEditingSession or nsIEditor, we return "eEditorErrorUnknown"
-      DebugOnly<nsresult> rv = aParams.SetInt(STATE_DATA, editorStatus);
-      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to set editor status");
+      DebugOnly<nsresult> rvIgnored = aParams.SetInt(STATE_DATA, editorStatus);
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rvIgnored),
+                           "Failed to set editor status");
       return NS_OK;
     }
     case Command::EditorObserverDocumentLocationChanged: {
       if (!aTextEditor) {
         return NS_OK;
       }
-      Document* document = aTextEditor->GetDocument();
+      dom::Document* document = aTextEditor->GetDocument();
       if (NS_WARN_IF(!document)) {
         return NS_ERROR_FAILURE;
       }
@@ -399,10 +401,9 @@ nsresult DocumentStateCommand::GetCommandStateParams(
         return NS_ERROR_FAILURE;
       }
       nsresult rv = aParams.SetISupports(STATE_DATA, uri);
-      if (NS_WARN_IF(NS_FAILED(rv))) {
-        return rv;
-      }
-      return NS_OK;
+      NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                           "nsCOmmandParms::SetISupports(STATE_DATA) failed");
+      return rv;
     }
     default:
       return NS_ERROR_NOT_IMPLEMENTED;

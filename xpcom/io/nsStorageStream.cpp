@@ -341,7 +341,7 @@ class nsStorageInputStream final : public nsIInputStream,
   NS_DECL_NSICLONEABLEINPUTSTREAM
 
  private:
-  ~nsStorageInputStream() {}
+  ~nsStorageInputStream() = default;
 
  protected:
   nsresult Seek(uint32_t aPosition);

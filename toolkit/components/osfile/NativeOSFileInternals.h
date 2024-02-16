@@ -16,7 +16,7 @@ class NativeOSFileInternalsService final
   NS_DECL_ISUPPORTS
   NS_DECL_NSINATIVEOSFILEINTERNALSSERVICE
  private:
-  ~NativeOSFileInternalsService() {}
+  ~NativeOSFileInternalsService() = default;
   // Avoid accidental use of built-in operator=
   void operator=(const NativeOSFileInternalsService& other) = delete;
 };

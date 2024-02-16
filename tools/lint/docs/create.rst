@@ -11,6 +11,9 @@ For a linter to be integrated into the mozilla-central tree, it needs to have:
 * Running ``./mach lint`` command must pass (note, linters can be disabled for individual directories)
 * Taskcluster/Treeherder integration
 * In tree documentation (under ``tools/lint/docs``) to give a basic summary, links and any other useful information
+* Unit tests (under ``tools/lint/test``) to make sure that the linter works as expected and we don't regress.
+
+The review group in Phabricator is ``#linter-reviewers``.
 
 Linter Basics
 -------------
@@ -22,7 +25,7 @@ Here's a trivial example:
 
 no-eval.yml
 
-.. code-block::
+.. code-block:: yaml
 
     EvalLinter:
         description: Ensures the string eval doesn't show up.
@@ -98,7 +101,7 @@ Example
 -------
 
 Here is an example of an external linter that shells out to the python flake8 linter,
-let's call the file ``flake8_lint.py``:
+let's call the file ``flake8_lint.py`` (`in-tree version <https://searchfox.org/mozilla-central/source/tools/lint/python/flake8.py>`_):
 
 .. code-block:: python
 
@@ -160,7 +163,7 @@ let's call the file ``flake8_lint.py``:
 
 Now here is the linter definition that would call it:
 
-.. code-block:: yml
+.. code-block:: yaml
 
     flake8:
         description: Python linter
@@ -182,6 +185,66 @@ to the running of the linter itself. If using ``--outgoing`` or ``--workdir``
 and one of these files was modified, the entire tree will be linted instead of
 just the modified files.
 
+Result definition
+-----------------
+
+When generating the list of results, the following values are available.
+
+.. csv-table::
+   :header: "Name", "Description", "Optional"
+   :widths: 20, 40, 10
+
+    "linter", "Name of the linter that flagged this error", ""
+    "path", "Path to the file containing the error", ""
+    "message", "Text describing the error", ""
+    "lineno", "Line number that contains the error", ""
+    "column", "Column containing the error", ""
+    "level", "Severity of the error, either 'warning' or 'error' (default 'error')", "Yes"
+    "hint", "Suggestion for fixing the error", "Yes"
+    "source", "Source code context of the error", "Yes"
+    "rule", "Name of the rule that was violated", "Yes"
+    "lineoffset", "Denotes an error spans multiple lines, of the form (<lineno offset>, <num lines>)", "Yes"
+    "diff", "A diff describing the changes that need to be made to the code", "Yes"
+
+
+Automated testing
+-----------------
+
+Every new checker must have tests associated.
+
+They should be pretty easy to write as most of the work is managed by the Mozlint
+framework. The key declaration is the ``LINTER`` variable which must match
+the linker declaration.
+
+As an example, the `Flake8 test <https://searchfox.org/mozilla-central/source/tools/lint/test/test_flake8.py>`_ looks like the following snippet:
+
+.. code-block:: python
+
+    import mozunit
+    LINTER = 'flake8'
+
+    def test_lint_single_file(lint, paths):
+        results = lint(paths('bad.py'))
+        assert len(results) == 2
+        assert results[0].rule == 'F401'
+        assert results[1].rule == 'E501'
+        assert results[1].lineno == 5
+
+    if __name__ == '__main__':
+        mozunit.main()
+
+As always with tests, please make sure that enough positive and negative cases are covered.
+
+To run the tests:
+
+.. code-block:: shell
+
+    $ ./mach python-test --python 3 --subsuite mozlint
+
+
+More tests can be `found in-tree <https://searchfox.org/mozilla-central/source/tools/lint/test>`_.
+
+
 
 Bootstrapping Dependencies
 --------------------------
@@ -193,9 +256,9 @@ complicated as pulling a whole graph of tools, plugins and their dependencies.
 Either way, to reduce the burden on users, linters should strive to provide
 automated bootstrapping of all their dependencies. To help with this,
 ``mozlint`` allows linters to define a ``setup`` config, which has the same
-path object format as an external payload. For example:
+path object format as an external payload. For example (`in-tree version <https://searchfox.org/mozilla-central/source/tools/lint/flake8.yml>`_):
 
-.. code-block:: yml
+.. code-block:: yaml
 
     flake8:
         description: Python linter
@@ -214,6 +277,7 @@ linted. In the case of ``flake8``, it might look like:
     from distutils.spawn import find_executable
 
     def setup(root, **lintargs):
+        # This is a simple example. Please look at the actual source for better examples.
         if not find_executable('flake8'):
             subprocess.call(['pip', 'install', 'flake8'])
 
@@ -224,3 +288,32 @@ be performed.
 The setup functions can also be called explicitly by running ``mach lint
 --setup``. This will only perform setup and not perform any linting. It is
 mainly useful for other tools like ``mach bootstrap`` to call into.
+
+
+Adding the linter to the CI
+---------------------------
+
+First, the job will have to be declared in Taskcluster.
+
+This should be done in the `mozlint Taskcluster configuration <https://searchfox.org/mozilla-central/source/taskcluster/ci/source-test/mozlint.yml>`_.
+You will need to define a symbol, how it is executed and on what kind of change.
+
+For example, for flake8, the configuration is the following:
+
+.. code-block:: yaml
+
+    py-flake8:
+        description: flake8 run over the gecko codebase
+        treeherder:
+            symbol: py(f8)
+        run:
+            mach: lint -l flake8 -f treeherder -f json:/builds/worker/mozlint.json
+        when:
+            files-changed:
+                - '**/*.py'
+                - '**/.flake8'
+                # moz.configure files are also Python files.
+                - '**/*.configure'
+
+If the linter requires an external program, you will have to install it in the `setup script <https://searchfox.org/mozilla-central/source/taskcluster/docker/lint/system-setup.sh>`_
+and maybe install the necessary files in the `Docker configuration <https://searchfox.org/mozilla-central/source/taskcluster/docker/lint/Dockerfile>`_.

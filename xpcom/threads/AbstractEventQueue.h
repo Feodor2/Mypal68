@@ -86,7 +86,7 @@ class AbstractEventQueue {
   virtual size_t SizeOfExcludingThis(
       mozilla::MallocSizeOf aMallocSizeOf) const = 0;
 
-  virtual ~AbstractEventQueue() {}
+  virtual ~AbstractEventQueue() = default;
 };
 
 }  // namespace mozilla

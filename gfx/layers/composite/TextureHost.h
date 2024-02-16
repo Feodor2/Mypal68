@@ -236,7 +236,7 @@ class TextureSource : public RefCounted<TextureSource> {
 template <typename T>
 class CompositableTextureRef {
  public:
-  CompositableTextureRef() {}
+  CompositableTextureRef() = default;
 
   explicit CompositableTextureRef(const CompositableTextureRef& aOther) {
     *this = aOther;

@@ -3544,7 +3544,7 @@ impl<'a, T> TextureUploader<'a, T> {
             Some(ref mut buffer) => {
                 if buffer.size_used + dst_size > buffer.size_allocated {
                     // flush
-                    for chunk in buffer.chunks.drain() {
+                    for chunk in buffer.chunks.drain(..) {
                         self.target.update_impl(chunk);
                     }
                     buffer.size_used = 0;

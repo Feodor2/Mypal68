@@ -1270,9 +1270,9 @@ NativeWindowD3D *Renderer11::createNativeWindow(EGLNativeWindowType window,
                                                 const egl::Config *config,
                                                 const egl::AttributeMap &attribs) const
 {
-    auto useWinUiComp = window != nullptr && !NativeWindow11Win32::IsValidNativeWindow(window);
+    /*auto useWinUiComp = window != nullptr && !NativeWindow11Win32::IsValidNativeWindow(window);
 
-    /*if (useWinUiComp)
+    if (useWinUiComp)
     {
         return new CompositorNativeWindow11(window, config->alphaSize > 0);
     }

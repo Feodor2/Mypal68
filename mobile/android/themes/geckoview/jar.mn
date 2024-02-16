@@ -7,7 +7,6 @@ geckoview.jar:
 
 % skin geckoview classic/1.0 %skin/
   skin/config.css                           (config.css)
-  skin/content.css                          (content.css)
   skin/defines.css                          (defines.css)
   skin/images/accessiblecaret-normal-hdpi.png       (images/accessiblecaret-normal-hdpi.png)
   skin/images/accessiblecaret-normal-xhdpi.png      (images/accessiblecaret-normal-xhdpi.png)
@@ -28,4 +27,3 @@ geckoview.jar:
   skin/images/search.png                    (images/search.png)
   skin/images/textfield.png                 (images/textfield.png)
   skin/images/throbber.png                  (images/throbber.png)
-  skin/scrollbar.css                        (scrollbar-apz.css)

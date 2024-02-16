@@ -1884,6 +1884,7 @@
             }
             // don't break here. we need to eat keydown events.
           }
+          // fall through
           case "keypress":
           case "keyup": {
             // All keyevents should be eaten here during autoscrolling.

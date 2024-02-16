@@ -7,6 +7,7 @@
 
 #include "GLContext.h"
 #include "GLLibraryEGL.h"
+#include "nsRegion.h"
 
 class gfxASurface;
 namespace mozilla {

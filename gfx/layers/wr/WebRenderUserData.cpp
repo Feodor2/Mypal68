@@ -81,7 +81,7 @@ WebRenderUserData::WebRenderUserData(RenderRootStateManager* aManager,
       mTable(aManager->GetWebRenderUserDataTable()),
       mUsed(false) {}
 
-WebRenderUserData::~WebRenderUserData() {}
+WebRenderUserData::~WebRenderUserData() = default;
 
 void WebRenderUserData::RemoveFromTable() { mTable->RemoveEntry(this); }
 
@@ -384,7 +384,7 @@ RenderRootBoundary& WebRenderRenderRootData::EnsureHasBoundary(
   return mBoundary.ref();
 }
 
-WebRenderRenderRootData::~WebRenderRenderRootData() {}
+WebRenderRenderRootData::~WebRenderRenderRootData() = default;
 
 void DestroyWebRenderUserDataTable(WebRenderUserDataTable* aTable) {
   for (auto iter = aTable->Iter(); !iter.Done(); iter.Next()) {

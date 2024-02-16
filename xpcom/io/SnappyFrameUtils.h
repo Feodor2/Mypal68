@@ -66,8 +66,8 @@ class SnappyFrameUtils {
   static size_t MaxCompressedBufferLength(size_t aSourceLength);
 
  protected:
-  SnappyFrameUtils() {}
-  virtual ~SnappyFrameUtils() {}
+  SnappyFrameUtils() = default;
+  virtual ~SnappyFrameUtils() = default;
 };
 
 }  // namespace detail

@@ -112,7 +112,7 @@ SetEventJob::SetEventJob(EventObject* aEvent, SyncObject* aStart,
                          SyncObject* aCompletion, WorkerThread* aWorker)
     : Job(aStart, aCompletion, aWorker), mEvent(aEvent) {}
 
-SetEventJob::~SetEventJob() {}
+SetEventJob::~SetEventJob() = default;
 
 SyncObject::SyncObject(uint32_t aNumPrerequisites)
     : mSignals(aNumPrerequisites),

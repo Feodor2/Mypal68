@@ -94,7 +94,7 @@ class IOInterposeObserver {
     /** Request filename associated with the I/O operation, empty if unknown */
     virtual void Filename(nsAString& aString) { aString.Truncate(); }
 
-    virtual ~Observation() {}
+    virtual ~Observation() = default;
 
    protected:
     void Report();
@@ -118,7 +118,7 @@ class IOInterposeObserver {
    */
   virtual void Observe(Observation& aObservation) = 0;
 
-  virtual ~IOInterposeObserver() {}
+  virtual ~IOInterposeObserver() = default;
 
  protected:
   /**

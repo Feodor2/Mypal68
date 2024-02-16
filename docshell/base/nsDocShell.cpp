@@ -34,6 +34,7 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "mozilla/StaticPrefs_privacy.h"
+#include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StaticPrefs_ui.h"
 #include "mozilla/StartupTimeline.h"
 #include "mozilla/StorageAccess.h"
@@ -63,6 +64,7 @@
 #include "mozilla/dom/BrowserChild.h"
 #include "mozilla/dom/TabGroup.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/ChildSHistory.h"
 #include "mozilla/dom/nsCSPContext.h"
 #include "mozilla/dom/LoadURIOptionsBinding.h"
@@ -306,7 +308,7 @@ nsDocShell::nsDocShell(BrowsingContext* aBrowsingContext)
       mForcedCharset(nullptr),
       mParentCharset(nullptr),
       mTreeOwner(nullptr),
-      mDefaultScrollbarPref(Scrollbar_Auto, Scrollbar_Auto),
+      mScrollbarPref(ScrollbarPreference::Auto),
       mCharsetReloadState(eCharsetReloadInit),
       mOrientationLock(hal::eScreenOrientation_None),
       mParentCharsetSource(0),
@@ -548,7 +550,6 @@ NS_INTERFACE_MAP_BEGIN_CYCLE_COLLECTION(nsDocShell)
   NS_INTERFACE_MAP_ENTRY(nsIDocShellTreeItem)
   NS_INTERFACE_MAP_ENTRY(nsIWebNavigation)
   NS_INTERFACE_MAP_ENTRY(nsIBaseWindow)
-  NS_INTERFACE_MAP_ENTRY(nsIScrollable)
   NS_INTERFACE_MAP_ENTRY(nsIRefreshURI)
   NS_INTERFACE_MAP_ENTRY(nsIWebProgressListener)
   NS_INTERFACE_MAP_ENTRY(nsISupportsWeakReference)
@@ -2741,7 +2742,7 @@ nsDocShell::GetSameTypeParentIgnoreBrowserBoundaries(nsIDocShell** aParent) {
 }
 
 NS_IMETHODIMP
-nsDocShell::GetRootTreeItem(nsIDocShellTreeItem** aRootTreeItem) {
+nsDocShell::GetInProcessRootTreeItem(nsIDocShellTreeItem** aRootTreeItem) {
   NS_ENSURE_ARG_POINTER(aRootTreeItem);
 
   RefPtr<nsDocShell> root = this;
@@ -4430,8 +4431,7 @@ nsDocShell::DisplayLoadError(nsresult aError, nsIURI* aURI,
       nsCOMPtr<nsITextToSubURI> textToSubURI(
           do_GetService(NS_ITEXTTOSUBURI_CONTRACTID, &rv));
       if (NS_SUCCEEDED(rv)) {
-        rv = textToSubURI->UnEscapeURIForUI(NS_LITERAL_CSTRING("UTF-8"), spec,
-                                            nextFormatStr);
+        rv = textToSubURI->UnEscapeURIForUI(spec, nextFormatStr);
       }
     } else {
       spec.Assign('?');
@@ -5349,11 +5349,6 @@ nsDocShell::GetIsOffScreenBrowser(bool* aIsOffScreen) {
 
 NS_IMETHODIMP
 nsDocShell::SetIsActive(bool aIsActive) {
-  // We disallow setting active on chrome docshells.
-  if (mItemType == nsIDocShellTreeItem::typeChrome) {
-    return NS_ERROR_INVALID_ARG;
-  }
-
   // Keep track ourselves.
   mIsActive = aIsActive;
 
@@ -5713,64 +5708,21 @@ nsresult nsDocShell::SetCurScrollPosEx(int32_t aCurHorizontalPos,
   return NS_OK;
 }
 
-//*****************************************************************************
-// nsDocShell::nsIScrollable
-//*****************************************************************************
-
-NS_IMETHODIMP
-nsDocShell::GetDefaultScrollbarPreferences(int32_t aScrollOrientation,
-                                           int32_t* aScrollbarPref) {
-  NS_ENSURE_ARG_POINTER(aScrollbarPref);
-  switch (aScrollOrientation) {
-    case ScrollOrientation_X:
-      *aScrollbarPref = mDefaultScrollbarPref.x;
-      return NS_OK;
-
-    case ScrollOrientation_Y:
-      *aScrollbarPref = mDefaultScrollbarPref.y;
-      return NS_OK;
-
-    default:
-      NS_ENSURE_TRUE(false, NS_ERROR_INVALID_ARG);
+void nsDocShell::SetScrollbarPreference(mozilla::ScrollbarPreference aPref) {
+  if (mScrollbarPref == aPref) {
+    return;
   }
-  return NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
-nsDocShell::SetDefaultScrollbarPreferences(int32_t aScrollOrientation,
-                                           int32_t aScrollbarPref) {
-  switch (aScrollOrientation) {
-    case ScrollOrientation_X:
-      mDefaultScrollbarPref.x = aScrollbarPref;
-      return NS_OK;
-
-    case ScrollOrientation_Y:
-      mDefaultScrollbarPref.y = aScrollbarPref;
-      return NS_OK;
-
-    default:
-      NS_ENSURE_TRUE(false, NS_ERROR_INVALID_ARG);
+  mScrollbarPref = aPref;
+  auto* ps = GetPresShell();
+  if (!ps) {
+    return;
   }
-  return NS_ERROR_FAILURE;
-}
-
-NS_IMETHODIMP
-nsDocShell::GetScrollbarVisibility(bool* aVerticalVisible,
-                                   bool* aHorizontalVisible) {
-  nsIScrollableFrame* sf = GetRootScrollFrame();
-  NS_ENSURE_TRUE(sf, NS_ERROR_FAILURE);
-
-  uint32_t scrollbarVisibility = sf->GetScrollbarVisibility();
-  if (aVerticalVisible) {
-    *aVerticalVisible =
-        (scrollbarVisibility & nsIScrollableFrame::VERTICAL) != 0;
+  nsIFrame* scrollFrame = ps->GetRootScrollFrame();
+  if (!scrollFrame) {
+    return;
   }
-  if (aHorizontalVisible) {
-    *aHorizontalVisible =
-        (scrollbarVisibility & nsIScrollableFrame::HORIZONTAL) != 0;
-  }
-
-  return NS_OK;
+  ps->FrameNeedsReflow(scrollFrame, IntrinsicDirty::StyleChange,
+                       NS_FRAME_IS_DIRTY);
 }
 
 //*****************************************************************************
@@ -9020,12 +8972,10 @@ nsresult nsDocShell::MaybeHandleSameDocumentNavigation(
     }
   }
 
-  if (!sameExceptHashes && sURIFixup && currentURI && NS_SUCCEEDED(rvURINew)) {
+  if (!sameExceptHashes && currentURI && NS_SUCCEEDED(rvURINew)) {
     // Maybe aLoadState->URI() came from the exposable form of currentURI?
-    nsCOMPtr<nsIURI> currentExposableURI;
-    rv = sURIFixup->CreateExposableURI(currentURI,
-                                       getter_AddRefs(currentExposableURI));
-    NS_ENSURE_SUCCESS(rv, rv);
+    nsCOMPtr<nsIURI> currentExposableURI =
+        nsIOService::CreateExposableURI(currentURI);
     nsresult rvURIOld = currentExposableURI->GetRef(curHash);
     if (NS_SUCCEEDED(rvURIOld)) {
       rvURIOld = currentExposableURI->GetHasRef(&curURIHasRef);
@@ -10007,8 +9957,9 @@ nsresult nsDocShell::DoURILoad(nsDocShellLoadState* aLoadState,
         true,  // aInheritForAboutBlank
         isSrcdoc);
 
-    bool isURIUniqueOrigin = nsIOService::IsDataURIUniqueOpaqueOrigin() &&
-                             SchemeIsData(aLoadState->URI());
+    bool isURIUniqueOrigin =
+        StaticPrefs::security_data_uri_unique_opaque_origin() &&
+        SchemeIsData(aLoadState->URI());
     inheritPrincipal = inheritAttrs && !isURIUniqueOrigin;
   }
 
@@ -10079,11 +10030,6 @@ nsresult nsDocShell::DoURILoad(nsDocShellLoadState* aLoadState,
     return rv;
   }
 
-  // Document loads should set the reload flag on the channel so that it
-  // can be exposed on the service worker FetchEvent.
-  rv = loadInfo->SetIsDocshellReload(mLoadType & LOAD_CMD_RELOAD);
-  NS_ENSURE_SUCCESS(rv, rv);
-
   if (aLoadState->GetIsFromProcessingFrameAttributes()) {
     loadInfo->SetIsFromProcessingFrameAttributes();
   }
@@ -10095,28 +10041,11 @@ nsresult nsDocShell::DoURILoad(nsDocShellLoadState* aLoadState,
 
   nsIURI* baseURI = aLoadState->BaseURI();
   if (!isSrcdoc) {
-    rv = NS_NewChannelInternal(
+    MOZ_TRY(NS_NewChannelInternal(
         getter_AddRefs(channel), aLoadState->URI(), loadInfo,
         nullptr,  // PerformanceStorage
         nullptr,  // loadGroup
-        static_cast<nsIInterfaceRequestor*>(this), loadFlags);
-
-    if (NS_FAILED(rv)) {
-      if (rv == NS_ERROR_UNKNOWN_PROTOCOL) {
-        // This is a uri with a protocol scheme we don't know how
-        // to handle.  Embedders might still be interested in
-        // handling the load, though, so we fire a notification
-        // before throwing the load away.
-        bool abort = false;
-        nsresult rv2 =
-            mContentListener->OnStartURIOpen(aLoadState->URI(), &abort);
-        if (NS_SUCCEEDED(rv2) && abort) {
-          // Hey, they're handling the load for us!  How convenient!
-          return NS_OK;
-        }
-      }
-      return rv;
-    }
+        static_cast<nsIInterfaceRequestor*>(this), loadFlags));
 
     if (baseURI) {
       nsCOMPtr<nsIViewSourceChannel> vsc = do_QueryInterface(channel);
@@ -11162,9 +11091,8 @@ nsDocShell::AddState(JS::Handle<JS::Value> aData, const nsAString& aTitle,
   // step 7.
   bool equalURIs = true;
   nsCOMPtr<nsIURI> currentURI;
-  if (sURIFixup && mCurrentURI) {
-    rv = sURIFixup->CreateExposableURI(mCurrentURI, getter_AddRefs(currentURI));
-    NS_ENSURE_SUCCESS(rv, rv);
+  if (mCurrentURI) {
+    currentURI = nsIOService::CreateExposableURI(mCurrentURI);
   } else {
     currentURI = mCurrentURI;
   }
@@ -11829,18 +11757,6 @@ nsresult nsDocShell::LoadHistoryEntry(nsISHEntry* aEntry, uint32_t aLoadType) {
                     nullptr,   // No nsIDocShell
                     nullptr);  // No nsIRequest
   return rv;
-}
-
-NS_IMETHODIMP
-nsDocShell::GetShouldSaveLayoutState(bool* aShould) {
-  *aShould = false;
-  if (mOSHE) {
-    // Don't capture historystate and save it in history
-    // if the page asked not to do so.
-    *aShould = mOSHE->GetSaveLayoutStateFlag();
-  }
-
-  return NS_OK;
 }
 
 nsresult nsDocShell::PersistLayoutHistoryState() {
@@ -12832,7 +12748,6 @@ nsresult nsDocShell::OnLinkClickSync(
   // referrer, since the current URI in this docshell may be a
   // new document that we're in the process of loading.
   RefPtr<Document> referrerDoc = aContent->OwnerDoc();
-  NS_ENSURE_TRUE(referrerDoc, NS_ERROR_UNEXPECTED);
 
   // Now check that the referrerDoc's inner window is the current inner
   // window for mScriptGlobal.  If it's not, then we don't want to
@@ -12869,12 +12784,9 @@ nsresult nsDocShell::OnLinkClickSync(
     flags |= INTERNAL_LOAD_FLAGS_IS_USER_TRIGGERED;
   }
 
-  nsCOMPtr<nsIReferrerInfo> referrerInfo = new ReferrerInfo();
-  if (isElementAnchorOrArea) {
-    referrerInfo->InitWithNode(aContent);
-  } else {
-    referrerInfo->InitWithDocument(referrerDoc);
-  }
+  nsCOMPtr<nsIReferrerInfo> referrerInfo =
+      isElementAnchorOrArea ? new ReferrerInfo(*aContent->AsElement())
+                            : new ReferrerInfo(*referrerDoc);
 
   RefPtr<nsDocShellLoadState> loadState = new nsDocShellLoadState(aURI);
   loadState->SetReferrerInfo(referrerInfo);
@@ -12916,8 +12828,9 @@ nsresult nsDocShell::OnOverLink(nsIContent* aContent, nsIURI* aURI,
     }
   }
 
+  nsCOMPtr<nsIURI> exposableURI = nsIOService::CreateExposableURI(aURI);
   nsAutoCString spec;
-  rv = aURI->GetDisplaySpec(spec);
+  rv = exposableURI->GetDisplaySpec(spec);
   NS_ENSURE_SUCCESS(rv, rv);
 
   NS_ConvertUTF8toUTF16 uStr(spec);
@@ -12947,7 +12860,7 @@ nsresult nsDocShell::OnLeaveLink() {
 
 bool nsDocShell::ShouldBlockLoadingForBackButton() {
   if (!(mLoadType & LOAD_CMD_HISTORY) ||
-      EventStateManager::IsHandlingUserInput() ||
+      UserActivation::IsHandlingUserInput() ||
       !Preferences::GetBool("accessibility.blockjsredirection")) {
     return false;
   }
@@ -13343,8 +13256,8 @@ nsIRemoteTab* nsDocShell::GetOpener() {
 
 // The caller owns |aAsyncCause| here.
 void nsDocShell::NotifyJSRunToCompletionStart(const char* aReason,
-                                              const char16_t* aFunctionName,
-                                              const char16_t* aFilename,
+                                              const nsAString& aFunctionName,
+                                              const nsAString& aFilename,
                                               const uint32_t aLineNumber,
                                               JS::Handle<JS::Value> aAsyncStack,
                                               const char* aAsyncCause) {
@@ -13554,14 +13467,18 @@ nsDocShell::SetDisplayMode(DisplayMode aDisplayMode) {
   return NS_OK;
 }
 
+#define MATRIX_LENGTH 20
+
 NS_IMETHODIMP
-nsDocShell::SetColorMatrix(float* aMatrix, uint32_t aMatrixLen) {
-  if (aMatrixLen == 20) {
+nsDocShell::SetColorMatrix(const nsTArray<float>& aMatrix) {
+  if (aMatrix.Length() == MATRIX_LENGTH) {
     mColorMatrix.reset(new gfx::Matrix5x4());
-    MOZ_ASSERT(aMatrixLen * sizeof(*aMatrix) ==
-               sizeof(mColorMatrix->components));
-    memcpy(mColorMatrix->components, aMatrix, sizeof(mColorMatrix->components));
-  } else if (aMatrixLen == 0) {
+    static_assert(MATRIX_LENGTH * sizeof(float) ==
+                  sizeof(mColorMatrix->components),
+                  "Size mismatch for our memcpy");
+    memcpy(mColorMatrix->components, aMatrix.Elements(),
+           sizeof(mColorMatrix->components));
+  } else if (aMatrix.Length() == 0) {
     mColorMatrix.reset();
   } else {
     return NS_ERROR_INVALID_ARG;
@@ -13583,22 +13500,20 @@ nsDocShell::SetColorMatrix(float* aMatrix, uint32_t aMatrixLen) {
 }
 
 NS_IMETHODIMP
-nsDocShell::GetColorMatrix(uint32_t* aMatrixLen, float** aMatrix) {
-  NS_ENSURE_ARG_POINTER(aMatrixLen);
-  *aMatrixLen = 0;
-
-  NS_ENSURE_ARG_POINTER(aMatrix);
-  *aMatrix = nullptr;
-
+nsDocShell::GetColorMatrix(nsTArray<float>& aMatrix) {
   if (mColorMatrix) {
-    *aMatrix = (float*)moz_xmalloc(20 * sizeof(float));
-    MOZ_ASSERT(20 * sizeof(float) == sizeof(mColorMatrix->components));
-    *aMatrixLen = 20;
-    memcpy(*aMatrix, mColorMatrix->components, 20 * sizeof(float));
+    aMatrix.SetLength(MATRIX_LENGTH);
+    static_assert(MATRIX_LENGTH * sizeof(float) ==
+                  sizeof(mColorMatrix->components),
+                  "Size mismatch for our memcpy");
+    memcpy(aMatrix.Elements(), mColorMatrix->components,
+           MATRIX_LENGTH * sizeof(float));
   }
 
   return NS_OK;
 }
+
+#undef MATRIX_LENGTH
 
 bool nsDocShell::IsForceReloading() { return IsForceReloadType(mLoadType); }
 

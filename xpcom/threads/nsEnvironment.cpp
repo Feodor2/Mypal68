@@ -33,7 +33,7 @@ nsresult nsEnvironment::Create(nsISupports* aOuter, REFNSIID aIID,
   return rv;
 }
 
-nsEnvironment::~nsEnvironment() {}
+nsEnvironment::~nsEnvironment() = default;
 
 NS_IMETHODIMP
 nsEnvironment::Exists(const nsAString& aName, bool* aOutValue) {

@@ -115,9 +115,7 @@ bool nsCOMArray_base::InsertObjectAt(nsISupports* aObject, int32_t aIndex) {
     return false;
   }
 
-  if (!mArray.InsertElementAt(aIndex, aObject)) {
-    return false;
-  }
+  mArray.InsertElementAt(aIndex, aObject);
 
   NS_IF_ADDREF(aObject);
   return true;
@@ -139,9 +137,7 @@ bool nsCOMArray_base::InsertObjectsAt(const nsCOMArray_base& aObjects,
     return false;
   }
 
-  if (!mArray.InsertElementsAt(aIndex, aObjects.mArray)) {
-    return false;
-  }
+  mArray.InsertElementsAt(aIndex, aObjects.mArray);
 
   // need to addref all these
   uint32_t count = aObjects.Length();

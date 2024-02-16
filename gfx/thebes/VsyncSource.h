@@ -96,7 +96,7 @@ struct VsyncEvent {
 
   VsyncEvent(const VsyncId& aId, const TimeStamp& aTime)
       : mId(aId), mTime(aTime) {}
-  VsyncEvent() {}
+  VsyncEvent() = default;
 };
 
 }  // namespace mozilla

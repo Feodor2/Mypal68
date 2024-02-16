@@ -289,5 +289,13 @@ already_AddRefed<imgIContainer> DynamicImage::Unwrap() {
   return self.forget();
 }
 
+nsresult DynamicImage::GetHotspotX(int32_t* aX) {
+  return Image::GetHotspotX(aX);
+}
+
+nsresult DynamicImage::GetHotspotY(int32_t* aY) {
+  return Image::GetHotspotY(aY);
+}
+
 }  // namespace image
 }  // namespace mozilla

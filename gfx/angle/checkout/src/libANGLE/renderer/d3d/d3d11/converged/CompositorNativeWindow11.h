@@ -17,7 +17,7 @@
 #include <windows.foundation.metadata.h>
 #include <windows.ui.composition.h>
 #include <windows.ui.composition.interop.h>
-#include <wrl.h>
+#include "../../../../../../../../widget/windows/mozwrlbase.h"
 
 namespace rx
 {

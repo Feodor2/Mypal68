@@ -365,13 +365,6 @@ pref("permissions.default.shortcuts", 0);
 
 pref("permissions.postPrompt.animate", true);
 
-// This is primarily meant to be enabled for studies.
-#ifdef NIGHTLY_BUILD
-  pref("permissions.eventTelemetry.enabled", true);
-#else
-  pref("permissions.eventTelemetry.enabled", false);
-#endif
-
 #ifdef NIGHTLY_BUILD
   pref("permissions.delegation.enable", true);
 #else
@@ -1400,11 +1393,6 @@ pref("identity.fxaccounts.commands.enabled", true);
 // Default is 24 hours.
 pref("identity.fxaccounts.commands.missed.fetch_interval", 86400);
 
-// On GTK, we now default to showing the menubar only when alt is pressed:
-#ifdef MOZ_WIDGET_GTK
-  pref("ui.key.menuAccessKeyFocuses", true);
-#endif
-
 // Whether we should run a test-pattern through EME GMPs before assuming they'll
 // decode H.264.
 pref("media.gmp.trial-create.enabled", true);
@@ -1436,11 +1424,6 @@ pref("media.autoplay.default", 1); // 0=Allowed, 1=Blocked, 5=All Blocked
 #else
   pref("media.autoplay.block-webaudio", false);
 #endif
-
-// Play with different values of the decay time and get telemetry,
-// 0 means to randomize (and persist) the experiment value in users' profiles,
-// -1 means no experiment is run and we use the preferred value for frecency (6h)
-pref("browser.cache.frecency_experiment", 0);
 
 pref("browser.translation.detectLanguage", false);
 pref("browser.translation.neverForLanguages", "");
@@ -1703,14 +1686,6 @@ pref("fission.frontend.simulate-events", false);
 // - Only deliver subframe messages that specifies
 //   their destination (using the BrowsingContext id).
 pref("fission.frontend.simulate-messages", false);
-
-// Prio preferences
-// Only enable by default on Nightly.
-// On platforms that do not build libprio, do not set these prefs at all, which gives us a way to detect support.
-
-// Curve25519 public keys for Prio servers
-pref("prio.publicKeyA", "35AC1C7576C7C6EDD7FED6BCFC337B34D48CB4EE45C86BEEFB40BD8875707733");
-pref("prio.publicKeyB", "26E6674E65425B823F1F1D5F96E3BB3EF9E406EC7FBA7DEF8B08A35DD135AF50");
 
 // Coverage ping is disabled by default.
 pref("toolkit.coverage.enabled", false);

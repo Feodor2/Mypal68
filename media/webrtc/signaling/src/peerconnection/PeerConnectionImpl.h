@@ -13,7 +13,6 @@
 
 #include "prlock.h"
 #include "mozilla/RefPtr.h"
-#include "nsAutoPtr.h"
 #include "nsComponentManagerUtils.h"
 #include "nsPIDOMWindow.h"
 #include "nsIUUIDGenerator.h"
@@ -213,12 +212,10 @@ class PeerConnectionImpl final
   static void ConnectThread(void* aData);
 
   // Get the main thread
-  nsCOMPtr<nsIThread> GetMainThread() {
-    return mThread;
-  }
+  nsCOMPtr<nsIThread> GetMainThread() { return mThread; }
 
   // Get the STS thread
-  nsIEventTarget* GetSTSThread() {
+  nsISerialEventTarget* GetSTSThread() {
     PC_AUTO_ENTER_API_CALL_NO_CHECK();
     return mSTSThread;
   }
@@ -297,7 +294,7 @@ class PeerConnectionImpl final
       ErrorResult& rv);
 
   OwningNonNull<dom::MediaStreamTrack> CreateReceiveTrack(
-      SdpMediaSection::MediaType type);
+      SdpMediaSection::MediaType type, nsIPrincipal* aPrincipal);
 
   bool CheckNegotiationNeeded(ErrorResult& rv);
 
@@ -470,7 +467,7 @@ class PeerConnectionImpl final
 
   bool IsClosed() const;
   // called when DTLS connects; we only need this once
-  nsresult OnAlpnNegotiated(const std::string& aAlpn);
+  nsresult OnAlpnNegotiated(bool aPrivacyRequested);
 
   bool HasMedia() const;
 

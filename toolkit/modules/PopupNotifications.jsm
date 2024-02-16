@@ -757,7 +757,7 @@ PopupNotifications.prototype = {
           }
           break;
         }
-
+      // fall through
       case "TabSelect":
         let self = this;
         // setTimeout(..., 0) needed, otherwise openPopup from "activate" event

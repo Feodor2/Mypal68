@@ -29,8 +29,6 @@ const INTERMEDIATES_COLLECTION_PREF =
   "security.remote_settings.intermediates.collection";
 const INTERMEDIATES_DL_PER_POLL_PREF =
   "security.remote_settings.intermediates.downloads_per_poll";
-const INTERMEDIATES_DL_PARALLEL_REQUESTS =
-  "security.remote_settings.intermediates.parallel_downloads";
 const INTERMEDIATES_ENABLED_PREF =
   "security.remote_settings.intermediates.enabled";
 const INTERMEDIATES_SIGNER_PREF =
@@ -119,17 +117,6 @@ function bytesToString(bytes) {
   }
   return String.fromCharCode.apply(null, bytes);
 }
-
-class CRLiteState {
-  constructor(subject, spkiHash, state) {
-    this.subject = subject;
-    this.spkiHash = spkiHash;
-    this.state = state;
-  }
-}
-CRLiteState.prototype.QueryInterface = ChromeUtils.generateQI([
-  Ci.nsICRLiteState,
-]);
 
 class CertInfo {
   constructor(cert, subject) {
@@ -411,10 +398,6 @@ class IntermediatePreloads {
       INTERMEDIATES_DL_PER_POLL_PREF,
       100
     );
-    const parallelDownloads = Services.prefs.getIntPref(
-      INTERMEDIATES_DL_PARALLEL_REQUESTS,
-      8
-    );
 
     // Bug 1519256: Move this to a separate method that's on a separate timer
     // with a higher frequency (so we can attempt to download outstanding
@@ -442,37 +425,22 @@ class IntermediatePreloads {
     const col = await this.client.openCollection();
     // If we don't have prior data, make it so we re-load everything.
     if (!hasPriorCertData) {
-      const { data: current } = await col.list({ order: "" }); // no sort needed.
-      const toReset = current.filter(record => record.cert_import_complete);
-      await col.db.execute(transaction => {
-        toReset.forEach(record => {
-          transaction.update({ ...record, cert_import_complete: false });
-        });
+      let { data: toUpdate } = await col.list();
+      let promises = [];
+      toUpdate.forEach((record) => {
+        record.cert_import_complete = false;
+        promises.push(col.update(record));
       });
+      await Promise.all(promises);
     }
-    const { data: current } = await col.list({ order: "" }); // no sort needed.
+    const { data: current } = await col.list();
     const waiting = current.filter(record => !record.cert_import_complete);
 
     log.debug(`There are ${waiting.length} intermediates awaiting download.`);
-    if (waiting.length == 0) {
-      // Nothing to do.
-      Services.obs.notifyObservers(
-        null,
-        "remote-security-settings:intermediates-updated",
-        "success"
-      );
-      return;
-    }
 
     let toDownload = waiting.slice(0, maxDownloadsPerRun);
-    let recordsCertsAndSubjects = [];
-    for (let i = 0; i < toDownload.length; i += parallelDownloads) {
-      const chunk = toDownload.slice(i, i + parallelDownloads);
-      const downloaded = await Promise.all(
-        chunk.map(record => this.maybeDownloadAttachment(record))
-      );
-      recordsCertsAndSubjects = recordsCertsAndSubjects.concat(downloaded);
-    }
+    let recordsCertsAndSubjects = await Promise.all(
+      toDownload.map(record => this.maybeDownloadAttachment(record)));
 
     let certInfos = [];
     let recordsToUpdate = [];
@@ -489,11 +457,10 @@ class IntermediatePreloads {
       Cu.reportError(`certStorage.addCerts failed: ${result}`);
       return;
     }
-    await col.db.execute(transaction => {
-      recordsToUpdate.forEach(record => {
-        transaction.update({ ...record, cert_import_complete: true });
-      });
-    });
+    await Promise.all(recordsToUpdate.map((record) => {
+      record.cert_import_complete = true;
+      return col.update(record);
+    }));
 
     Services.obs.notifyObservers(
       null,
@@ -513,7 +480,11 @@ class IntermediatePreloads {
   }
 
   // This method returns a promise to RemoteSettingsClient.maybeSync method.
-  async onSync({ data: { current, created, updated, deleted } }) {
+    async onSync(event) {
+        const {
+          data: {deleted},
+        } = event;
+
     if (!Services.prefs.getBoolPref(INTERMEDIATES_ENABLED_PREF, true)) {
       log.debug("Intermediate Preloading is disabled");
       return;
@@ -521,49 +492,6 @@ class IntermediatePreloads {
 
     log.debug(`Removing ${deleted.length} Intermediate certificates`);
     await this.removeCerts(deleted);
-    let certStorage = Cc["@mozilla.org/security/certstorage;1"].getService(
-      Ci.nsICertStorage
-    );
-    let hasPriorCRLiteData = await new Promise(resolve => {
-      certStorage.hasPriorData(
-        Ci.nsICertStorage.DATA_TYPE_CRLITE,
-        (rv, hasPriorData) => {
-          if (rv == Cr.NS_OK) {
-            resolve(hasPriorData);
-          } else {
-            resolve(false);
-          }
-        }
-      );
-    });
-    if (!hasPriorCRLiteData) {
-      deleted = [];
-      updated = [];
-      created = current;
-    }
-    const toAdd = created.concat(updated.map(u => u.new));
-    let entries = [];
-    for (let entry of deleted) {
-      entries.push(
-        new CRLiteState(
-          entry.subjectDN,
-          entry.pubKeyHash,
-          Ci.nsICertStorage.STATE_UNSET
-        )
-      );
-    }
-    for (let entry of toAdd) {
-      entries.push(
-        new CRLiteState(
-          entry.subjectDN,
-          entry.pubKeyHash,
-          entry.crlite_enrolled
-            ? Ci.nsICertStorage.STATE_ENFORCE
-            : Ci.nsICertStorage.STATE_UNSET
-        )
-      );
-    }
-    await new Promise(resolve => certStorage.setCRLiteState(entries, resolve));
   }
 
   /**

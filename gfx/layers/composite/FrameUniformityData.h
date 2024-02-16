@@ -23,7 +23,7 @@ class FrameUniformityData {
 };
 
 struct LayerTransforms {
-  LayerTransforms() {}
+  LayerTransforms() = default;
 
   gfx::Point GetAverage();
   gfx::Point GetStdDev();
@@ -34,7 +34,7 @@ struct LayerTransforms {
 
 class LayerTransformRecorder {
  public:
-  LayerTransformRecorder() {}
+  LayerTransformRecorder() = default;
   ~LayerTransformRecorder();
 
   void RecordTransform(Layer* aLayer, const gfx::Point& aTransform);

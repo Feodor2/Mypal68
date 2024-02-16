@@ -404,7 +404,7 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
   }
 
   if (!mStartPointRange) {
-    mStartPointRange = new nsRange(presShell->GetDocument());
+    mStartPointRange = nsRange::Create(presShell->GetDocument());
   }
 
   // XXXbz Should this really be ignoring errors?
@@ -509,7 +509,7 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
       NS_ASSERTION(window, "document has no window");
       if (!window) return NS_ERROR_UNEXPECTED;
 
-      nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
+      nsFocusManager* fm = nsFocusManager::GetFocusManager();
       if (usesIndependentSelection) {
         /* If a search result is found inside an editable element, we'll focus
          * the element only if focus is in our content window, i.e.
@@ -537,9 +537,11 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
         nsCOMPtr<nsINode> node = returnRange->GetStartContainer();
         while (node) {
           nsCOMPtr<nsIEditor> editor;
-          if (auto input = HTMLInputElement::FromNode(node)) {
+          if (RefPtr<HTMLInputElement> input =
+                  HTMLInputElement::FromNode(node)) {
             editor = input->GetEditor();
-          } else if (auto textarea = HTMLTextAreaElement::FromNode(node)) {
+          } else if (RefPtr<HTMLTextAreaElement> textarea =
+                         HTMLTextAreaElement::FromNode(node)) {
             editor = textarea->GetEditor();
           } else {
             node = node->GetParentNode();
@@ -670,7 +672,7 @@ nsresult nsTypeAheadFind::FindItNow(bool aIsLinksOnly,
         // at end of document and go to beginning
         RefPtr<nsRange> tempRange = mStartPointRange->CloneRange();
         if (!mEndPointRange) {
-          mEndPointRange = new nsRange(presShell->GetDocument());
+          mEndPointRange = nsRange::Create(presShell->GetDocument());
         }
 
         mStartPointRange = mEndPointRange;
@@ -754,7 +756,7 @@ nsresult nsTypeAheadFind::GetSearchContainers(
   }
 
   if (!mSearchRange) {
-    mSearchRange = new nsRange(doc);
+    mSearchRange = nsRange::Create(doc);
   }
   nsCOMPtr<nsINode> searchRootNode(rootContent);
 
@@ -773,21 +775,19 @@ nsresult nsTypeAheadFind::GetSearchContainers(
   mSearchRange->SelectNodeContents(*searchRootNode, IgnoreErrors());
 
   if (!mStartPointRange) {
-    mStartPointRange = new nsRange(doc);
+    mStartPointRange = nsRange::Create(doc);
   }
-  mStartPointRange->SetStart(*searchRootNode, 0, IgnoreErrors());
-  mStartPointRange->Collapse(true);  // collapse to start
+  mStartPointRange->SetStartAndEnd(searchRootNode, 0, searchRootNode, 0);
 
   if (!mEndPointRange) {
-    mEndPointRange = new nsRange(doc);
+    mEndPointRange = nsRange::Create(doc);
   }
-  mEndPointRange->SetEnd(*searchRootNode, searchRootNode->Length(),
-                         IgnoreErrors());
-  mEndPointRange->Collapse(false);  // collapse to end
+  mEndPointRange->SetStartAndEnd(searchRootNode, searchRootNode->Length(),
+                                 searchRootNode, searchRootNode->Length());
 
   // Consider current selection as null if
   // it's not in the currently focused document
-  RefPtr<nsRange> currentSelectionRange;
+  RefPtr<const nsRange> currentSelectionRange;
   RefPtr<PresShell> selectionPresShell = GetPresShell();
   if (aSelectionController && selectionPresShell &&
       selectionPresShell == presShell) {
@@ -804,6 +804,10 @@ nsresult nsTypeAheadFind::GetSearchContainers(
     // IsRangeVisible. It returns the first visible range after searchRange
     IsRangeVisible(mSearchRange, aIsFirstVisiblePreferred, true,
                    getter_AddRefs(mStartPointRange), nullptr);
+    // We want to search in the visible selection range. That means that the
+    // start point needs to be the end if we're looking backwards, or vice
+    // versa.
+    mStartPointRange->Collapse(!aFindPrev);
   } else {
     uint32_t startOffset;
     nsCOMPtr<nsINode> startNode;
@@ -822,9 +826,8 @@ nsresult nsTypeAheadFind::GetSearchContainers(
     // We need to set the start point this way, other methods haven't worked
     mStartPointRange->SelectNode(*startNode, IgnoreErrors());
     mStartPointRange->SetStart(*startNode, startOffset, IgnoreErrors());
+    mStartPointRange->Collapse(true);  // collapse to start
   }
-
-  mStartPointRange->Collapse(true);  // collapse to start
 
   presShell.forget(aPresShell);
   presContext.forget(aPresContext);
@@ -1029,7 +1032,7 @@ nsTypeAheadFind::Find(const nsAString& aSearchString, bool aLinksOnly,
       nsCOMPtr<Document> document = presShell->GetDocument();
       if (!document) return NS_ERROR_UNEXPECTED;
 
-      nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
+      nsFocusManager* fm = nsFocusManager::GetFocusManager();
       if (fm) {
         nsPIDOMWindowOuter* window = document->GetWindow();
         RefPtr<Element> focusedElement;
@@ -1060,7 +1063,7 @@ nsTypeAheadFind::Find(const nsAString& aSearchString, bool aLinksOnly,
 
       mStartFindRange = nullptr;
       if (selection) {
-        RefPtr<nsRange> startFindRange = selection->GetRangeAt(0);
+        RefPtr<const nsRange> startFindRange = selection->GetRangeAt(0);
         if (startFindRange) {
           mStartFindRange = startFindRange->CloneRange();
         }

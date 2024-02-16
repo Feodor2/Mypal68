@@ -19,7 +19,6 @@
 #include "mozilla/dom/WebrtcGlobalInformationBinding.h"
 #include "mozilla/dom/ContentChild.h"
 
-#include "nsAutoPtr.h"
 #include "nsNetCID.h"               // NS_SOCKETTRANSPORTSERVICE_CONTRACTID
 #include "nsServiceManagerUtils.h"  // do_GetService
 #include "mozilla/ErrorResult.h"
@@ -55,8 +54,7 @@ class RequestManager {
     mozilla::StaticMutexAutoLock lock(sMutex);
 
     int id = ++sLastRequestId;
-    auto result =
-        sRequests.insert(std::make_pair(id, Request(id, aCallback, aParam)));
+    auto result = sRequests.try_emplace(id, id, aCallback, aParam);
 
     if (!result.second) {
       return nullptr;
@@ -257,8 +255,10 @@ static void OnStatsReport_m(WebrtcGlobalChild* aThisChild, const int aRequestId,
 
   for (auto& query : aQueryList) {
     if (query) {
-      request->mResult.mReports.Value().AppendElement(*(query->report),
-                                                      fallible);
+      if (!request->mResult.mReports.Value().AppendElement(*(query->report),
+                                                           fallible)) {
+        mozalloc_handle_oom(0);
+      }
     }
   }
 
@@ -266,7 +266,12 @@ static void OnStatsReport_m(WebrtcGlobalChild* aThisChild, const int aRequestId,
   auto ctx = PeerConnectionCtx::GetInstance();
   if (ctx) {
     for (auto&& pc : ctx->mStatsForClosedPeerConnections) {
-      request->mResult.mReports.Value().AppendElement(pc, fallible);
+      if (!request->mResult.mReports.Value().AppendElement(pc, fallible)) {
+        // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
+        // involve multiple reallocations) and potentially crashing here,
+        // SetCapacity could be called outside the loop once.
+        mozalloc_handle_oom(0);
+      }
     }
   }
 
@@ -280,7 +285,10 @@ static void OnGetLogging_m(WebrtcGlobalChild* aThisChild, const int aRequestId,
   MOZ_ASSERT(NS_IsMainThread());
 
   if (!aLogList.IsEmpty()) {
-    aLogList.AppendElement(NS_LITERAL_STRING("+++++++ END ++++++++"), fallible);
+    if (!aLogList.AppendElement(NS_LITERAL_STRING("+++++++ END ++++++++"),
+                                fallible)) {
+      mozalloc_handle_oom(0);
+    }
   }
 
   if (aThisChild) {
@@ -300,7 +308,9 @@ static void OnGetLogging_m(WebrtcGlobalChild* aThisChild, const int aRequestId,
     return;
   }
 
-  request->mResult.AppendElements(std::move(aLogList), fallible);
+  if (!request->mResult.AppendElements(std::move(aLogList), fallible)) {
+    mozalloc_handle_oom(0);
+  }
   request->Complete();
   LogRequest::Delete(aRequestId);
 }
@@ -486,7 +496,7 @@ static nsresult RunLogClear() {
   }
 
   nsresult rv;
-  nsCOMPtr<nsIEventTarget> stsThread =
+  nsCOMPtr<nsISerialEventTarget> stsThread =
       do_GetService(NS_SOCKETTRANSPORTSERVICE_CONTRACTID, &rv);
 
   if (NS_FAILED(rv)) {
@@ -631,7 +641,10 @@ mozilla::ipc::IPCResult WebrtcGlobalParent::RecvGetStatsResult(
   }
 
   for (auto& s : Stats) {
-    request->mResult.mReports.Value().AppendElement(s, fallible);
+    if (!request->mResult.mReports.Value().AppendElement(s, fallible)) {
+      CSFLogError(LOGTAG, "Out of memory");
+      return IPC_FAIL_NO_REASON(this);
+    }
   }
 
   auto next = request->GetNextParent();
@@ -668,7 +681,10 @@ mozilla::ipc::IPCResult WebrtcGlobalParent::RecvGetLogResult(
     CSFLogError(LOGTAG, "Bad RequestId");
     return IPC_FAIL_NO_REASON(this);
   }
-  request->mResult.AppendElements(aLog, fallible);
+  if (!request->mResult.AppendElements(aLog, fallible)) {
+    CSFLogError(LOGTAG, "Out of memory");
+    return IPC_FAIL_NO_REASON(this);
+  }
 
   auto next = request->GetNextParent();
   if (next) {
@@ -1035,7 +1051,10 @@ static void StoreLongTermICEStatisticsImpl_m(nsresult result,
 
   PeerConnectionCtx* ctx = GetPeerConnectionCtx();
   if (ctx) {
-    ctx->mStatsForClosedPeerConnections.AppendElement(*query->report, fallible);
+    if (!ctx->mStatsForClosedPeerConnections.AppendElement(*query->report,
+                                                           fallible)) {
+      mozalloc_handle_oom(0);
+    }
   }
 }
 

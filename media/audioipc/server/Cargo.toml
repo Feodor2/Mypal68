@@ -17,7 +17,7 @@ log = "0.4"
 slab = "0.3.0"
 futures = "0.1.18"
 tokio-core = "0.1"
-tokio-uds = "0.1.7"
+tokio-uds = "0.2.5"
 lazy_static = "1.4.0"
 
 [dependencies.error-chain]

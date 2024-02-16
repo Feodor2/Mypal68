@@ -51,7 +51,7 @@ class HeadlessThemeGTK final : private nsNativeTheme, public nsITheme {
   virtual bool ThemeNeedsComboboxDropmarker() override;
 
  protected:
-  virtual ~HeadlessThemeGTK() {}
+  virtual ~HeadlessThemeGTK() = default;
 };
 
 }  // namespace widget

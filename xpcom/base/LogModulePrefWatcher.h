@@ -30,7 +30,7 @@ class LogModulePrefWatcher : public nsIObserver {
 
  private:
   LogModulePrefWatcher();
-  virtual ~LogModulePrefWatcher() {}
+  virtual ~LogModulePrefWatcher() = default;
 };
 }  // namespace mozilla
 

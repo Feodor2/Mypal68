@@ -848,7 +848,7 @@ nsFaviconService::PreferredSizeFromURI(nsIURI* aURI, uint16_t* _size) {
 //// ExpireFaviconsStatementCallbackNotifier
 
 ExpireFaviconsStatementCallbackNotifier::
-    ExpireFaviconsStatementCallbackNotifier() {}
+    ExpireFaviconsStatementCallbackNotifier() = default;
 
 NS_IMETHODIMP
 ExpireFaviconsStatementCallbackNotifier::HandleCompletion(uint16_t aReason) {

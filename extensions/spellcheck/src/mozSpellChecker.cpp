@@ -343,7 +343,7 @@ nsresult mozSpellChecker::GetDictionaryList(
 
       dictionaries.PutEntry(dictName);
 
-      if (!aDictionaryList->AppendElement(dictName)) {
+      if (!aDictionaryList->AppendElement(dictName, fallible)) {
         NS_FREE_XPCOM_ALLOCATED_POINTER_ARRAY(count, words);
         return NS_ERROR_OUT_OF_MEMORY;
       }

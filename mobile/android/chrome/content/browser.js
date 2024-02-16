@@ -5459,7 +5459,7 @@ Tab.prototype = {
 
     let fixedURI = aLocationURI;
     try {
-      fixedURI = Services.uriFixup.createExposableURI(aLocationURI);
+      fixedURI = Services.io.createExposableURI(aLocationURI);
     } catch (ex) {}
 
     // In restricted profiles, we refuse to let you open various urls.
@@ -6911,7 +6911,7 @@ var IdentityHandler = {
 
     this._uri = aBrowser.currentURI;
     try {
-      this._uri = Services.uriFixup.createExposableURI(this._uri);
+      this._uri = Services.io.createExposableURI(this._uri);
     } catch (e) {}
 
     let identityMode = this.getIdentityMode(aState, this._uri);

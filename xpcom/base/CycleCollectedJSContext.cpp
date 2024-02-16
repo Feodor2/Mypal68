@@ -8,7 +8,6 @@
 #include "mozilla/AsyncEventDispatcher.h"
 #include "mozilla/AutoRestore.h"
 #include "mozilla/CycleCollectedJSRuntime.h"
-#include "mozilla/EventStateManager.h"
 #include "mozilla/Move.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Sprintf.h"
@@ -26,6 +25,7 @@
 #include "mozilla/dom/PromiseRejectionEvent.h"
 #include "mozilla/dom/PromiseRejectionEventBinding.h"
 #include "mozilla/dom/ScriptSettings.h"
+#include "mozilla/dom/UserActivation.h"
 #include "jsapi.h"
 #include "js/Debug.h"
 #include "js/GCAPI.h"
@@ -191,7 +191,7 @@ class PromiseJobRunnable final : public MicroTaskRunnable {
     }
   }
 
-  virtual ~PromiseJobRunnable() {}
+  virtual ~PromiseJobRunnable() = default;
 
  protected:
   MOZ_CAN_RUN_SCRIPT
@@ -328,7 +328,7 @@ void CycleCollectedJSContext::PromiseRejectionTrackerCallback(
       RefPtr<Promise> promise =
           Promise::CreateFromExisting(xpc::NativeGlobal(aPromise), aPromise);
       aboutToBeNotified.AppendElement(promise);
-      unhandled.Put(promiseID, promise);
+      unhandled.Put(promiseID, std::move(promise));
     }
   } else {
     PromiseDebugging::AddConsumedRejection(aPromise);

@@ -393,6 +393,13 @@ class MOZ_STACK_CLASS LayerMetricsWrapper final {
     // value is not used.
     return Nothing();
   }
+  Maybe<uint64_t> GetFixedPositionAnimationId() const {
+    MOZ_ASSERT(IsValid());
+    // This function is only really needed for template-compatibility with
+    // WebRenderScrollDataWrapper. Although it will be called, the return
+    // value is not used.
+    return Nothing();
+  }
 #endif
 
   ScrollableLayerGuid::ViewID GetFixedPositionScrollContainerId() const {

@@ -7,7 +7,7 @@
 #include "nsIVersionComparator.h"
 
 class nsVersionComparatorImpl final : public nsIVersionComparator {
-  ~nsVersionComparatorImpl() {}
+  ~nsVersionComparatorImpl() = default;
 
  public:
   NS_DECL_ISUPPORTS

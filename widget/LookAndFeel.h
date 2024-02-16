@@ -15,13 +15,7 @@
 
 struct gfxFontStyle;
 
-struct LookAndFeelInt {
-  int32_t id;
-  union {
-    int32_t value;
-    nscolor colorValue;
-  };
-};
+struct LookAndFeelInt;
 
 namespace mozilla {
 
@@ -33,60 +27,60 @@ class LookAndFeel {
 
   // When modifying this list, also modify nsXPLookAndFeel::sIntPrefs
   // in widget/xpwidgts/nsXPLookAndFeel.cpp.
-  enum IntID {
+  enum class IntID {
     // default, may be overriden by OS
-    eIntID_CaretBlinkTime,
+    CaretBlinkTime,
     // pixel width of caret
-    eIntID_CaretWidth,
+    CaretWidth,
     // show the caret when text is selected?
-    eIntID_ShowCaretDuringSelection,
+    ShowCaretDuringSelection,
     // select textfields when focused via tab/accesskey?
-    eIntID_SelectTextfieldsOnKeyFocus,
+    SelectTextfieldsOnKeyFocus,
     // delay before submenus open
-    eIntID_SubmenuDelay,
+    SubmenuDelay,
     // can popups overlap menu/task bar?
-    eIntID_MenusCanOverlapOSBar,
+    MenusCanOverlapOSBar,
     // should overlay scrollbars be used?
-    eIntID_UseOverlayScrollbars,
+    UseOverlayScrollbars,
     // allow H and V overlay scrollbars to overlap?
-    eIntID_AllowOverlayScrollbarsOverlap,
+    AllowOverlayScrollbarsOverlap,
     // show/hide scrollbars based on activity
-    eIntID_ShowHideScrollbars,
+    ShowHideScrollbars,
     // skip navigating to disabled menu item?
-    eIntID_SkipNavigatingDisabledMenuItem,
+    SkipNavigatingDisabledMenuItem,
     // begin a drag if the mouse is moved further than the threshold while the
     // button is down
-    eIntID_DragThresholdX,
-    eIntID_DragThresholdY,
+    DragThresholdX,
+    DragThresholdY,
     // Accessibility theme being used?
-    eIntID_UseAccessibilityTheme,
+    UseAccessibilityTheme,
 
     // position of scroll arrows in a scrollbar
-    eIntID_ScrollArrowStyle,
+    ScrollArrowStyle,
     // is scroll thumb proportional or fixed?
-    eIntID_ScrollSliderStyle,
+    ScrollSliderStyle,
 
     // each button can take one of four values:
-    eIntID_ScrollButtonLeftMouseButtonAction,
+    ScrollButtonLeftMouseButtonAction,
     // 0 - scrolls one  line, 1 - scrolls one page
-    eIntID_ScrollButtonMiddleMouseButtonAction,
+    ScrollButtonMiddleMouseButtonAction,
     // 2 - scrolls to end, 3 - button ignored
-    eIntID_ScrollButtonRightMouseButtonAction,
+    ScrollButtonRightMouseButtonAction,
 
     // delay for opening spring loaded folders
-    eIntID_TreeOpenDelay,
+    TreeOpenDelay,
     // delay for closing spring loaded folders
-    eIntID_TreeCloseDelay,
+    TreeCloseDelay,
     // delay for triggering the tree scrolling
-    eIntID_TreeLazyScrollDelay,
+    TreeLazyScrollDelay,
     // delay for scrolling the tree
-    eIntID_TreeScrollDelay,
+    TreeScrollDelay,
     // the maximum number of lines to be scrolled at ones
-    eIntID_TreeScrollLinesMax,
+    TreeScrollLinesMax,
     // What type of tab-order to use
-    eIntID_TabFocusModel,
+    TabFocusModel,
     // Should menu items blink when they're chosen?
-    eIntID_ChosenMenuItemsShouldBlink,
+    ChosenMenuItemsShouldBlink,
 
     /*
      * A Boolean value to determine whether the Windows accent color
@@ -95,7 +89,7 @@ class LookAndFeel {
      * The value of this metric is not used on other platforms. These platforms
      * should return NS_ERROR_NOT_IMPLEMENTED when queried for this metric.
      */
-    eIntID_WindowsAccentColorInTitlebar,
+    WindowsAccentColorInTitlebar,
 
     /*
      * A Boolean value to determine whether the Windows default theme is
@@ -104,7 +98,7 @@ class LookAndFeel {
      * The value of this metric is not used on other platforms. These platforms
      * should return NS_ERROR_NOT_IMPLEMENTED when queried for this metric.
      */
-    eIntID_WindowsDefaultTheme,
+    WindowsDefaultTheme,
 
     /*
      * A Boolean value to determine whether the DWM compositor is being used
@@ -112,7 +106,7 @@ class LookAndFeel {
      * This metric is not used on non-Windows platforms. These platforms
      * should return NS_ERROR_NOT_IMPLEMENTED when queried for this metric.
      */
-    eIntID_DWMCompositor,
+    DWMCompositor,
 
     /*
      * A Boolean value to determine whether Windows is themed (Classic vs.
@@ -121,7 +115,7 @@ class LookAndFeel {
      * This is Windows-specific and is not implemented on other platforms
      * (will return the default of NS_ERROR_FAILURE).
      */
-    eIntID_WindowsClassic,
+    WindowsClassic,
 
     /*
      * A Boolean value to determine whether the current Windows desktop theme
@@ -130,7 +124,7 @@ class LookAndFeel {
      * This is Windows-specific and is not implemented on other platforms
      * (will return the default of NS_ERROR_FAILURE).
      */
-    eIntID_WindowsGlass,
+    WindowsGlass,
 
     /*
      * A Boolean value to determine whether the device is a touch enabled
@@ -139,7 +133,7 @@ class LookAndFeel {
      * Platforms that do not support this metric should return
      * NS_ERROR_NOT_IMPLEMENTED when queried for this metric.
      */
-    eIntID_TouchEnabled,
+    TouchEnabled,
 
     /*
      * A Boolean value to determine whether the Mac graphite theme is
@@ -148,7 +142,7 @@ class LookAndFeel {
      * The value of this metric is not used on other platforms. These platforms
      * should return NS_ERROR_NOT_IMPLEMENTED when queried for this metric.
      */
-    eIntID_MacGraphiteTheme,
+    MacGraphiteTheme,
 
     /*
      * A Boolean value to determine whether the Mac OS X Yosemite-specific
@@ -158,10 +152,10 @@ class LookAndFeel {
      * platforms should return NS_ERROR_NOT_IMPLEMENTED when queried for this
      * metric.
      */
-    eIntID_MacYosemiteTheme,
+    MacYosemiteTheme,
 
     /*
-     * eIntID_AlertNotificationOrigin indicates from which corner of the
+     * AlertNotificationOrigin indicates from which corner of the
      * screen alerts slide in, and from which direction (horizontal/vertical).
      * 0, the default, represents bottom right, sliding vertically.
      * Use any bitwise combination of the following constants:
@@ -175,7 +169,7 @@ class LookAndFeel {
      *     +-----------+
      *       2       0
      */
-    eIntID_AlertNotificationOrigin,
+    AlertNotificationOrigin,
 
     /**
      * If true, clicking on a scrollbar (not as in dragging the thumb) defaults
@@ -183,111 +177,111 @@ class LookAndFeel {
      * only do so if the scrollbar is clicked using the middle mouse button or
      * if shift is pressed when the scrollbar is clicked.
      */
-    eIntID_ScrollToClick,
+    ScrollToClick,
 
     /**
      * IME and spell checker underline styles, the values should be
      * NS_DECORATION_LINE_STYLE_*.  They are defined below.
      */
-    eIntID_IMERawInputUnderlineStyle,
-    eIntID_IMESelectedRawTextUnderlineStyle,
-    eIntID_IMEConvertedTextUnderlineStyle,
-    eIntID_IMESelectedConvertedTextUnderline,
-    eIntID_SpellCheckerUnderlineStyle,
+    IMERawInputUnderlineStyle,
+    IMESelectedRawTextUnderlineStyle,
+    IMEConvertedTextUnderlineStyle,
+    IMESelectedConvertedTextUnderline,
+    SpellCheckerUnderlineStyle,
 
     /**
      * If this metric != 0, support window dragging on the menubar.
      */
-    eIntID_MenuBarDrag,
+    MenuBarDrag,
     /**
      * Return the appropriate WindowsThemeIdentifier for the current theme.
      */
-    eIntID_WindowsThemeIdentifier,
+    WindowsThemeIdentifier,
     /**
      * Return an appropriate os version identifier.
      */
-    eIntID_OperatingSystemVersionIdentifier,
+    OperatingSystemVersionIdentifier,
     /**
      * 0: scrollbar button repeats to scroll only when cursor is on the button.
      * 1: scrollbar button repeats to scroll even if cursor is outside of it.
      */
-    eIntID_ScrollbarButtonAutoRepeatBehavior,
+    ScrollbarButtonAutoRepeatBehavior,
     /**
      * Delay before showing a tooltip.
      */
-    eIntID_TooltipDelay,
+    TooltipDelay,
     /*
      * A Boolean value to determine whether Mac OS X Lion style swipe animations
      * should be used.
      */
-    eIntID_SwipeAnimationEnabled,
+    SwipeAnimationEnabled,
 
     /*
      * Controls whether overlay scrollbars display when the user moves
      * the mouse in a scrollable frame.
      */
-    eIntID_ScrollbarDisplayOnMouseMove,
+    ScrollbarDisplayOnMouseMove,
 
     /*
      * Overlay scrollbar animation constants.
      */
-    eIntID_ScrollbarFadeBeginDelay,
-    eIntID_ScrollbarFadeDuration,
+    ScrollbarFadeBeginDelay,
+    ScrollbarFadeDuration,
 
     /**
      * Distance in pixels to offset the context menu from the cursor
      * on open.
      */
-    eIntID_ContextMenuOffsetVertical,
-    eIntID_ContextMenuOffsetHorizontal,
+    ContextMenuOffsetVertical,
+    ContextMenuOffsetHorizontal,
 
     /*
      * A boolean value indicating whether client-side decorations are
      * supported by the user's GTK version.
      */
-    eIntID_GTKCSDAvailable,
+    GTKCSDAvailable,
 
     /*
      * A boolean value indicating whether GTK+ system titlebar should be
      * disabled by default.
      */
-    eIntID_GTKCSDHideTitlebarByDefault,
+    GTKCSDHideTitlebarByDefault,
 
     /*
      * A boolean value indicating whether client-side decorations should
      * have transparent background.
      */
-    eIntID_GTKCSDTransparentBackground,
+    GTKCSDTransparentBackground,
 
     /*
      * A boolean value indicating whether client-side decorations should
      * contain a minimize button.
      */
-    eIntID_GTKCSDMinimizeButton,
+    GTKCSDMinimizeButton,
 
     /*
      * A boolean value indicating whether client-side decorations should
      * contain a maximize button.
      */
-    eIntID_GTKCSDMaximizeButton,
+    GTKCSDMaximizeButton,
 
     /*
      * A boolean value indicating whether client-side decorations should
      * contain a close button.
      */
-    eIntID_GTKCSDCloseButton,
+    GTKCSDCloseButton,
 
     /*
      * A boolean value indicating whether titlebar buttons are located
      * in left titlebar corner.
      */
-    eIntID_GTKCSDReversedPlacement,
+    GTKCSDReversedPlacement,
 
     /*
      * A boolean value indicating whether or not the OS is using a dark theme,
      * which we may want to switch to as well if not overridden by the user.
      */
-    eIntID_SystemUsesDarkTheme,
+    SystemUsesDarkTheme,
 
     /**
      * Corresponding to prefers-reduced-motion.
@@ -296,7 +290,7 @@ class LookAndFeel {
      * 1: reduce
      */
 
-    eIntID_PrefersReducedMotion,
+    PrefersReducedMotion,
     /**
      * Corresponding to PointerCapabilities in ServoTypes.h
      * 0: None
@@ -304,13 +298,13 @@ class LookAndFeel {
      * 2: Fine
      * 4: Hover
      */
-    eIntID_PrimaryPointerCapabilities,
+    PrimaryPointerCapabilities,
     /**
      * Corresponding to union of PointerCapabilities values in ServoTypes.h
      * E.g. if there is a mouse and a digitizer, the value will be
      * 'Coarse | Fine | Hover'.
      */
-    eIntID_AllPointerCapabilities,
+    AllPointerCapabilities,
   };
 
   /**
@@ -331,13 +325,13 @@ class LookAndFeel {
   /**
    * Operating system versions.
    */
-  enum OperatingSystemVersion {
-    eOperatingSystemVersion_WindowsXP = 0,
-    eOperatingSystemVersion_WindowsVista,
-    eOperatingSystemVersion_Windows7,
-    eOperatingSystemVersion_Windows8,
-    eOperatingSystemVersion_Windows10,
-    eOperatingSystemVersion_Unknown
+  enum class OperatingSystemVersion {
+    WindowsXP = 0,
+    WindowsVista,
+    Windows7,
+    Windows8,
+    Windows10,
+    Unknown
   };
 
   enum {
@@ -368,40 +362,40 @@ class LookAndFeel {
 
   // When modifying this list, also modify nsXPLookAndFeel::sFloatPrefs
   // in widget/xpwidgts/nsXPLookAndFeel.cpp.
-  enum FloatID {
-    eFloatID_IMEUnderlineRelativeSize,
-    eFloatID_SpellCheckerUnderlineRelativeSize,
+  enum class FloatID {
+    IMEUnderlineRelativeSize,
+    SpellCheckerUnderlineRelativeSize,
 
     // The width/height ratio of the cursor. If used, the CaretWidth int metric
     // should be added to the calculated caret width.
-    eFloatID_CaretAspectRatio
+    CaretAspectRatio,
   };
 
   // These constants must be kept in 1:1 correspondence with the
   // NS_STYLE_FONT_* system font constants.
-  enum FontID {
-    eFont_Caption = 1,  // css2
-    FontID_MINIMUM = eFont_Caption,
-    eFont_Icon,
-    eFont_Menu,
-    eFont_MessageBox,
-    eFont_SmallCaption,
-    eFont_StatusBar,
+  enum class FontID {
+    Caption = 1,  // css2
+    MINIMUM = Caption,
+    Icon,
+    Menu,
+    MessageBox,
+    SmallCaption,
+    StatusBar,
 
-    eFont_Window,  // css3
-    eFont_Document,
-    eFont_Workspace,
-    eFont_Desktop,
-    eFont_Info,
-    eFont_Dialog,
-    eFont_Button,
-    eFont_PullDownMenu,
-    eFont_List,
-    eFont_Field,
+    Window,  // css3
+    Document,
+    Workspace,
+    Desktop,
+    Info,
+    Dialog,
+    Button,
+    PullDownMenu,
+    List,
+    Field,
 
-    eFont_Tooltips,  // moz
-    eFont_Widget,
-    FontID_MAXIMUM = eFont_Widget
+    Tooltips,  // moz
+    Widget,
+    MAXIMUM = Widget,
   };
 
   /**
@@ -539,6 +533,15 @@ class LookAndFeel {
 
 }  // namespace mozilla
 
+struct LookAndFeelInt {
+  mozilla::LookAndFeel::IntID id;
+  union {
+    int32_t value;
+    nscolor colorValue;
+  };
+};
+
+
 // On the Mac, GetColor(ColorID::TextSelectForeground, color) returns this
 // constant to specify that the foreground color should not be changed
 // (ie. a colored text keeps its colors  when selected).
@@ -566,7 +569,7 @@ class LookAndFeel {
    (c) == NS_40PERCENT_FOREGROUND_COLOR)
 
 // ------------------------------------------
-//  Bits for eIntID_AlertNotificationOrigin
+//  Bits for IntID::AlertNotificationOrigin
 // ------------------------------------------
 
 #define NS_ALERT_HORIZONTAL 1

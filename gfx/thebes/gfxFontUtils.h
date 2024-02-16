@@ -51,7 +51,7 @@ class gfxSparseBitSet {
   };
 
  public:
-  gfxSparseBitSet() {}
+  gfxSparseBitSet() = default;
   gfxSparseBitSet(const gfxSparseBitSet& aBitset) {
     mBlockIndex.AppendElements(aBitset.mBlockIndex);
     mBlocks.AppendElements(aBitset.mBlocks);
@@ -631,7 +631,7 @@ struct AutoSwap_PRUint24 {
   }
 
  private:
-  AutoSwap_PRUint24() {}
+  AutoSwap_PRUint24() = default;
   uint8_t value[3];
 };
 

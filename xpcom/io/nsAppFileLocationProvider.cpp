@@ -60,7 +60,7 @@
 // nsAppFileLocationProvider::Constructor/Destructor
 //*****************************************************************************
 
-nsAppFileLocationProvider::nsAppFileLocationProvider() {}
+nsAppFileLocationProvider::nsAppFileLocationProvider() = default;
 
 //*****************************************************************************
 // nsAppFileLocationProvider::nsISupports

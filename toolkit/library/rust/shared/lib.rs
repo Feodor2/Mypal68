@@ -44,6 +44,7 @@ extern crate xpcom;
 #[cfg(feature = "new_xulstore")]
 extern crate xulstore;
 
+#[cfg(feature = "webrtc")]
 extern crate mdns_service;
 
 extern crate unic_langid;

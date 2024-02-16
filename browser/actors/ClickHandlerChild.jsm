@@ -77,7 +77,7 @@ class ClickHandlerChild extends ActorChild {
       Ci.nsIReferrerInfo
     );
     if (node) {
-      referrerInfo.initWithNode(node);
+      referrerInfo.initWithElement(node);
     } else {
       referrerInfo.initWithDocument(ownerDoc);
     }

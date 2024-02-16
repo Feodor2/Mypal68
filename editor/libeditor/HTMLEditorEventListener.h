@@ -20,11 +20,8 @@ class HTMLEditorEventListener final : public EditorEventListener {
         mListeningToMouseMoveEventForGrabber(false),
         mListeningToResizeEvent(false) {}
 
-  virtual ~HTMLEditorEventListener() {}
-
   // nsIDOMEventListener
-  MOZ_CAN_RUN_SCRIPT
-  NS_IMETHOD HandleEvent(dom::Event* aEvent) override;
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD HandleEvent(dom::Event* aEvent) override;
 
   /**
    * Connect() fails if aEditorBase isn't an HTMLEditor instance.
@@ -42,10 +39,10 @@ class HTMLEditorEventListener final : public EditorEventListener {
       return NS_OK;
     }
     nsresult rv = ListenToMouseMoveEventForResizersOrGrabber(aListen, false);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-    return NS_OK;
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                         "HTMLEditorEventListener::"
+                         "ListenToMouseMoveEventForResizersOrGrabber() failed");
+    return rv;
   }
 
   /**
@@ -58,10 +55,10 @@ class HTMLEditorEventListener final : public EditorEventListener {
       return NS_OK;
     }
     nsresult rv = ListenToMouseMoveEventForResizersOrGrabber(aListen, true);
-    if (NS_WARN_IF(NS_FAILED(rv))) {
-      return rv;
-    }
-    return NS_OK;
+    NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                         "HTMLEditorEventListener::"
+                         "ListenToMouseMoveEventForResizersOrGrabber() failed");
+    return rv;
   }
 
   /**
@@ -71,12 +68,12 @@ class HTMLEditorEventListener final : public EditorEventListener {
   nsresult ListenToWindowResizeEvent(bool aListen);
 
  protected:
-  MOZ_CAN_RUN_SCRIPT
-  virtual nsresult MouseDown(dom::MouseEvent* aMouseEvent) override;
-  MOZ_CAN_RUN_SCRIPT
-  virtual nsresult MouseUp(dom::MouseEvent* aMouseEvent) override;
-  MOZ_CAN_RUN_SCRIPT
-  virtual nsresult MouseClick(WidgetMouseEvent* aMouseClickEvent) override;
+  MOZ_CAN_RUN_SCRIPT virtual nsresult MouseDown(
+      dom::MouseEvent* aMouseEvent) override;
+  MOZ_CAN_RUN_SCRIPT virtual nsresult MouseUp(
+      dom::MouseEvent* aMouseEvent) override;
+  MOZ_CAN_RUN_SCRIPT virtual nsresult MouseClick(
+      WidgetMouseEvent* aMouseClickEvent) override;
 
   nsresult ListenToMouseMoveEventForResizersOrGrabber(bool aListen,
                                                       bool aForGrabber);

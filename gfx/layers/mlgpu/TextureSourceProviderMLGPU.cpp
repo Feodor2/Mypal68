@@ -16,7 +16,7 @@ TextureSourceProviderMLGPU::TextureSourceProviderMLGPU(
     LayerManagerMLGPU* aLayerManager, MLGDevice* aDevice)
     : mLayerManager(aLayerManager), mDevice(aDevice) {}
 
-TextureSourceProviderMLGPU::~TextureSourceProviderMLGPU() {}
+TextureSourceProviderMLGPU::~TextureSourceProviderMLGPU() = default;
 
 int32_t TextureSourceProviderMLGPU::GetMaxTextureSize() const {
   if (!mDevice) {

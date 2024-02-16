@@ -67,7 +67,7 @@ MLGDevice::MLGDevice()
       mCanUseConstantBufferOffsetBinding(false),
       mMaxConstantBufferBindSize(0) {}
 
-MLGDevice::~MLGDevice() {}
+MLGDevice::~MLGDevice() = default;
 
 bool MLGDevice::Initialize() {
   if (!mMaxConstantBufferBindSize) {

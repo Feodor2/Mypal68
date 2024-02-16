@@ -35,7 +35,7 @@ class Task final : public nsIRunnable {
   }
 
  private:
-  ~Task() {}
+  ~Task() = default;
 
   int mIndex;
   Atomic<int>& mCounter;

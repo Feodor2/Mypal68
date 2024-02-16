@@ -20,6 +20,7 @@ html|*.textbox-input {
   border: none;
   padding: 0 1px;
   background-color: transparent;
+  outline: none;
   color: inherit;
   font: inherit;
   text-shadow: inherit;

@@ -932,7 +932,7 @@ void nsPermissionManager::Startup() {
 // nsPermissionManager Implementation
 
 #define PERMISSIONS_FILE_NAME "permissions.sqlite"
-#define HOSTS_SCHEMA_VERSION 10
+#define HOSTS_SCHEMA_VERSION 11
 
 // Default permissions are read from a URL - this is the preference we read
 // to find that URL. If not set, don't use any default permissions.
@@ -1619,6 +1619,25 @@ nsresult nsPermissionManager::InitDB(bool aRemoveFile) {
         [[fallthrough]];
 
       case 9: {
+        rv = mDBConn->SetSchemaVersion(10);
+        NS_ENSURE_SUCCESS(rv, rv);
+      }
+
+        // fall through to the next upgrade
+        [[fallthrough]];
+
+      case 10: {
+        // Filter out the rows with storage access API permissions with a
+        // granted origin, and remove the granted origin part from the
+        // permission type.
+        rv = mDBConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
+            "UPDATE moz_perms "
+            "SET type=SUBSTR(type, 0, INSTR(SUBSTR(type, INSTR(type, '^') + "
+            "1), '^') + INSTR(type, '^')) "
+            "WHERE INSTR(SUBSTR(type, INSTR(type, '^') + 1), '^') AND "
+            "SUBSTR(type, 0, 18) == \"storageAccessAPI^\";"));
+        NS_ENSURE_SUCCESS(rv, rv);
+
         rv = mDBConn->SetSchemaVersion(HOSTS_SCHEMA_VERSION);
         NS_ENSURE_SUCCESS(rv, rv);
       }
@@ -3084,7 +3103,8 @@ void nsPermissionManager::SetPermissionsWithKey(
     // key, but it's possible.
     return;
   }
-  mPermissionKeyPromiseMap.Put(aPermissionKey, nullptr);
+  mPermissionKeyPromiseMap.Put(aPermissionKey,
+                               RefPtr<GenericPromise::Private>{});
 
   // Add the permissions locally to our process
   for (IPC::Permission& perm : aPerms) {
@@ -3264,8 +3284,7 @@ void nsPermissionManager::WhenPermissionsAvailable(nsIPrincipal* aPrincipal,
       // promise, and send the request to the parent (if we have not already
       // done so).
       promise = new GenericPromise::Private(__func__);
-      mPermissionKeyPromiseMap.Put(
-          key, RefPtr<GenericPromise::Private>(promise).forget());
+      mPermissionKeyPromiseMap.Put(key, RefPtr{promise});
     }
 
     if (promise) {

@@ -63,7 +63,7 @@ class DelayedResolveOrReject : public Runnable {
   void Cancel() { mPromise = nullptr; }
 
  protected:
-  ~DelayedResolveOrReject() {}
+  ~DelayedResolveOrReject() = default;
 
  private:
   RefPtr<TaskQueue> mTaskQueue;

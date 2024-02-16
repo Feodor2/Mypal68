@@ -59,7 +59,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
-#include "nsAutoPtr.h"
 #include "nsIEventTarget.h"
 #include "nsTArray.h"
 
@@ -297,18 +296,16 @@ class NrIceCtx {
 
   // Provide the proxy address. Must be called before
   // StartGathering.
-  nsresult SetProxyServer(NrSocketProxyConfig&& config);
+  nsresult SetProxyConfig(NrSocketProxyConfig&& config);
 
   const std::shared_ptr<NrSocketProxyConfig>& GetProxyConfig() {
     return proxy_config_;
   }
 
-  void SetCtxFlags(bool default_route_only, bool proxy_only);
-
-  bool proxy_only() const { return proxy_only_; }
+  void SetCtxFlags(bool default_route_only);
 
   // Start ICE gathering
-  nsresult StartGathering(bool default_route_only, bool proxy_only,
+  nsresult StartGathering(bool default_route_only,
                           bool obfuscate_host_addresses);
 
   // Start checking
@@ -392,7 +389,6 @@ class NrIceCtx {
   Policy policy_;
   RefPtr<TestNat> nat_;
   std::shared_ptr<NrSocketProxyConfig> proxy_config_;
-  bool proxy_only_;
   bool obfuscate_host_addresses_;
   std::map<std::string, std::string> obfuscated_host_addresses_;
 };

@@ -25,9 +25,6 @@ const { clearTimeout, setTimeout } = ChromeUtils.import(
 const { EcosystemTelemetry } = ChromeUtils.import(
   "resource://gre/modules/EcosystemTelemetry.jsm"
 );
-const { TelemetryPrioPing } = ChromeUtils.import(
-  "resource://gre/modules/PrioPing.jsm"
-);
 
 XPCOMUtils.defineLazyServiceGetters(this, {
   idleService: ["@mozilla.org/widget/idleservice;1", "nsIIdleService"],
@@ -78,7 +75,6 @@ var Policy = {
   now: () => new Date(),
   setSchedulerTickTimeout: (callback, delayMs) => setTimeout(callback, delayMs),
   clearSchedulerTickTimeout: id => clearTimeout(id),
-  prioEncode: (batchID, prioParams) => PrioEncoder.encode(batchID, prioParams),
 };
 
 /**
@@ -376,7 +372,6 @@ var TelemetryScheduler = {
       this._lastPeriodicPingTime = now;
       // Send other pings.
       EcosystemTelemetry.periodicPing();
-      TelemetryPrioPing.periodicPing();
     }
 
     if (shouldSendDaily) {

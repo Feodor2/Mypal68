@@ -23,9 +23,8 @@ include protocol PParentToChildStream; //FIXME: bug #792908
 include protocol PStunAddrsRequest;
 include protocol PFileChannel;
 include protocol PClassifierDummyChannel;
-include protocol PWebrtcProxyChannel;
+include protocol PWebrtcTCPSocket;
 include protocol PSocketProcessBridge;
-include protocol PProxyConfigLookup;
 
 include IPCStream;
 include URIParams;
@@ -64,8 +63,7 @@ nested(upto inside_cpow) sync protocol PNecko
   manages PAltDataOutputStream;
   manages PStunAddrsRequest;
   manages PClassifierDummyChannel;
-  manages PWebrtcProxyChannel;
-  manages PProxyConfigLookup;
+  manages PWebrtcTCPSocket;
 
 parent:
   async __delete__();
@@ -88,10 +86,10 @@ parent:
   async PWebSocketEventListener(uint64_t aInnerWindowID);
 
   /* Predictor Methods */
-  async PredPredict(URIParams? targetURI, URIParams? sourceURI,
+  async PredPredict(nsIURI targetURI, nsIURI sourceURI,
                     uint32_t reason, OriginAttributes originAttributes,
                     bool hasVerifier);
-  async PredLearn(URIParams targetURI, URIParams? sourceURI,
+  async PredLearn(nsIURI targetURI, nsIURI sourceURI,
                   uint32_t reason, OriginAttributes originAttributes);
   async PredReset();
 
@@ -134,9 +132,8 @@ parent:
 
   async PStunAddrsRequest();
 
-  async PWebrtcProxyChannel(TabId tabId);
-
-  async PProxyConfigLookup();
+  /* tabId is only required for web-proxy support, which isn't always needed */
+  async PWebrtcTCPSocket(TabId? tabId);
 
   /**
    * WebExtension-specific remote resource loading
@@ -160,9 +157,9 @@ child:
                                       nsString realm, uint64_t callbackId);
 
   /* Predictor Methods */
-  async PredOnPredictPrefetch(URIParams uri, uint32_t httpStatus);
-  async PredOnPredictPreconnect(URIParams uri);
-  async PredOnPredictDNS(URIParams uri);
+  async PredOnPredictPrefetch(nsIURI uri, uint32_t httpStatus);
+  async PredOnPredictPreconnect(nsIURI uri);
+  async PredOnPredictDNS(nsIURI uri);
 
   async SpeculativeConnectRequest();
 

@@ -7,8 +7,10 @@
 #include "nsITransactionManager.h"
 #include "nsComponentManagerUtils.h"
 #include "mozilla/Likely.h"
+#include "mozilla/EditTransactionBase.h"
 #include "mozilla/TransactionManager.h"
 
+using mozilla::EditTransactionBase;
 using mozilla::TransactionManager;
 
 static int32_t sConstructorCount = 0;
@@ -244,6 +246,10 @@ class TestTransaction : public nsITransaction {
   TestTransaction() {}
 
   NS_DECL_ISUPPORTS
+
+  NS_IMETHOD GetAsEditTransactionBase(EditTransactionBase**) final {
+    return NS_ERROR_NOT_IMPLEMENTED;
+  }
 };
 
 NS_IMPL_ISUPPORTS(TestTransaction, nsITransaction)
@@ -269,7 +275,7 @@ class SimpleTransaction : public TestTransaction {
 
   ~SimpleTransaction() override = default;
 
-  NS_IMETHOD DoTransaction() override {
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD DoTransaction() override {
     //
     // Make sure DoTransaction() is called in the order we expect!
     // Notice that we don't check to see if we go past the end of the array.
@@ -285,7 +291,7 @@ class SimpleTransaction : public TestTransaction {
     return (mFlags & THROWS_DO_ERROR_FLAG) ? NS_ERROR_FAILURE : NS_OK;
   }
 
-  NS_IMETHOD UndoTransaction() override {
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD UndoTransaction() override {
     //
     // Make sure UndoTransaction() is called in the order we expect!
     // Notice that we don't check to see if we go past the end of the array.
@@ -301,7 +307,7 @@ class SimpleTransaction : public TestTransaction {
     return (mFlags & THROWS_UNDO_ERROR_FLAG) ? NS_ERROR_FAILURE : NS_OK;
   }
 
-  NS_IMETHOD RedoTransaction() override {
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD RedoTransaction() override {
     //
     // Make sure RedoTransaction() is called in the order we expect!
     // Notice that we don't check to see if we go past the end of the array.
@@ -371,7 +377,7 @@ class AggregateTransaction : public SimpleTransaction {
 
   ~AggregateTransaction() override = default;
 
-  NS_IMETHOD DoTransaction() override {
+  MOZ_CAN_RUN_SCRIPT NS_IMETHOD DoTransaction() override {
     if (mLevel >= mMaxLevel) {
       // Only leaf nodes can throw errors!
       mFlags |= mErrorFlags;
@@ -389,7 +395,7 @@ class AggregateTransaction : public SimpleTransaction {
     }
 
     if (mFlags & BATCH_FLAG) {
-      rv = mTXMgr->BeginBatch(nullptr);
+      rv = MOZ_KnownLive(mTXMgr)->BeginBatch(nullptr);
       if (NS_FAILED(rv)) {
         return rv;
       }
@@ -415,7 +421,7 @@ class AggregateTransaction : public SimpleTransaction {
       RefPtr<AggregateTransaction> tximpl = new AggregateTransaction(
           mTXMgr, cLevel, i, mMaxLevel, mNumChildrenPerNode, flags);
 
-      rv = mTXMgr->DoTransaction(tximpl);
+      rv = MOZ_KnownLive(mTXMgr)->DoTransaction(tximpl);
       if (NS_FAILED(rv)) {
         if (mFlags & BATCH_FLAG) {
           mTXMgr->EndBatch(false);
@@ -481,7 +487,7 @@ void reset_globals() {
 /**
  * Test behaviors in non-batch mode.
  **/
-void quick_test(TestTransactionFactory* factory) {
+MOZ_CAN_RUN_SCRIPT_BOUNDARY void quick_test(TestTransactionFactory* factory) {
   /*******************************************************************
    *
    * Create a transaction manager implementation:
@@ -496,7 +502,7 @@ void quick_test(TestTransactionFactory* factory) {
    *
    *******************************************************************/
 
-  nsresult rv = mgr->DoTransaction(0);
+  nsresult rv = mgr->DoTransaction(nullptr);
   EXPECT_EQ(rv, NS_ERROR_NULL_POINTER);
 
   /*******************************************************************
@@ -1228,7 +1234,8 @@ TEST(TestTXMgr, AggregationTest)
 /**
  * Test behaviors in batch mode.
  **/
-void quick_batch_test(TestTransactionFactory* factory) {
+MOZ_CAN_RUN_SCRIPT_BOUNDARY void quick_batch_test(
+    TestTransactionFactory* factory) {
   /*******************************************************************
    *
    * Create a transaction manager implementation:
@@ -1857,7 +1864,8 @@ TEST(TestTXMgr, AggregationBatchTest)
  * Create 'iterations * (iterations + 1) / 2' transactions;
  * do/undo/redo/undo them.
  **/
-void stress_test(TestTransactionFactory* factory, int32_t iterations) {
+MOZ_CAN_RUN_SCRIPT_BOUNDARY void stress_test(TestTransactionFactory* factory,
+                                             int32_t iterations) {
   /*******************************************************************
    *
    * Create a transaction manager:

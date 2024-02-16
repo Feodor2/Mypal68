@@ -197,7 +197,10 @@ class NotificationController final : public EventQueue,
    * Pend an accessible subtree relocation.
    */
   void ScheduleRelocation(Accessible* aOwner) {
-    if (!mRelocations.Contains(aOwner) && mRelocations.AppendElement(aOwner)) {
+    if (!mRelocations.Contains(aOwner)) {
+      // XXX(Bug 1631371) Check if this should use a fallible operation as it
+      // pretended earlier, or change the return type to void.
+      mRelocations.AppendElement(aOwner);
       ScheduleProcessing();
     }
   }
@@ -233,8 +236,12 @@ class NotificationController final : public EventQueue,
 
     RefPtr<Notification> notification =
         new TNotification<Class, Args...>(aInstance, aMethod, aArgs...);
-    if (notification && mNotifications.AppendElement(notification))
+    if (notification) {
+      // XXX(Bug 1631371) Check if this should use a fallible operation as it
+      // pretended earlier.
+      mNotifications.AppendElement(notification);
       ScheduleProcessing();
+    }
   }
 
   /**
@@ -248,8 +255,12 @@ class NotificationController final : public EventQueue,
       Class* aInstance, typename TNotification<Class>::Callback aMethod) {
     RefPtr<Notification> notification =
         new TNotification<Class>(aInstance, aMethod);
-    if (notification && mNotifications.AppendElement(notification))
+    if (notification) {
+      // XXX(Bug 1631371) Check if this should use a fallible operation as it
+      // pretended earlier.
+      mNotifications.AppendElement(notification);
       ScheduleProcessing();
+    }
   }
 
   template <class Class, class Arg>
@@ -258,7 +269,10 @@ class NotificationController final : public EventQueue,
       Arg* aArg) {
     RefPtr<Notification> notification =
         new TNotification<Class, Arg>(aInstance, aMethod, aArg);
-    if (notification && mNotifications.AppendElement(notification)) {
+    if (notification) {
+      // XXX(Bug 1631371) Check if this should use a fallible operation as it
+      // pretended earlier.
+      mNotifications.AppendElement(notification);
       ScheduleProcessing();
     }
   }

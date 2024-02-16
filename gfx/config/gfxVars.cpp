@@ -63,7 +63,7 @@ void gfxVars::Initialize() {
   }
 }
 
-gfxVars::gfxVars() {}
+gfxVars::gfxVars() = default;
 
 void gfxVars::Shutdown() {
   sInstance = nullptr;

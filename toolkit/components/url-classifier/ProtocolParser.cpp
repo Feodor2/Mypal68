@@ -71,7 +71,7 @@ static bool ParseChunkRange(nsACString::const_iterator& aBegin,
 
 ProtocolParser::ProtocolParser() : mUpdateStatus(NS_OK), mUpdateWaitSec(0) {}
 
-ProtocolParser::~ProtocolParser() {}
+ProtocolParser::~ProtocolParser() = default;
 
 nsresult ProtocolParser::Begin(const nsACString& aTable,
                                const nsTArray<nsCString>& aUpdateTables) {
@@ -112,7 +112,7 @@ RefPtr<TableUpdate> ProtocolParser::GetTableUpdate(const nsACString& aTable) {
 ProtocolParserV2::ProtocolParserV2()
     : mState(PROTOCOL_STATE_CONTROL), mTableUpdate(nullptr) {}
 
-ProtocolParserV2::~ProtocolParserV2() {}
+ProtocolParserV2::~ProtocolParserV2() = default;
 
 void ProtocolParserV2::SetCurrentTable(const nsACString& aTable) {
   RefPtr<TableUpdate> update = GetTableUpdate(aTable);
@@ -707,9 +707,9 @@ RefPtr<TableUpdate> ProtocolParserV2::CreateTableUpdate(
 ///////////////////////////////////////////////////////////////////////
 // ProtocolParserProtobuf
 
-ProtocolParserProtobuf::ProtocolParserProtobuf() {}
+ProtocolParserProtobuf::ProtocolParserProtobuf() = default;
 
-ProtocolParserProtobuf::~ProtocolParserProtobuf() {}
+ProtocolParserProtobuf::~ProtocolParserProtobuf() = default;
 
 void ProtocolParserProtobuf::SetCurrentTable(const nsACString& aTable) {
   // Should never occur.

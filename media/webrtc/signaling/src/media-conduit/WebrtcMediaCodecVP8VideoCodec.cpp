@@ -171,7 +171,7 @@ static MediaCodec::LocalRef CreateEncoder(const char* aMimeType) {
   return codec;
 }
 
-static void ShutdownThread(nsCOMPtr<nsIThread>& aThread) {
+static void ShutdownThread(const nsCOMPtr<nsIThread>& aThread) {
   aThread->Shutdown();
 }
 

@@ -123,7 +123,7 @@ class HeadlessWidget : public nsBaseWidget {
 
   virtual MOZ_MUST_USE nsresult
   AttachNativeKeyEvent(WidgetKeyboardEvent& aEvent) override;
-  virtual void GetEditCommands(NativeKeyBindingsType aType,
+  virtual bool GetEditCommands(NativeKeyBindingsType aType,
                                const WidgetKeyboardEvent& aEvent,
                                nsTArray<CommandInt>& aCommands) override;
 

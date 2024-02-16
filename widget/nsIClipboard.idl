@@ -51,26 +51,24 @@ interface nsIClipboard : nsISupports
     void emptyClipboard ( in long aWhichClipboard ) ;
 
    /**
-    * This provides a way to give correct UI feedback about, for instance, a paste 
+    * This provides a way to give correct UI feedback about, for instance, a paste
     * should be allowed. It does _NOT_ actually retreive the data and should be a very
     * inexpensive call. All it does is check if there is data on the clipboard matching
     * any of the flavors in the given list.
     *
     * @param  aFlavorList     An array of ASCII strings.
-    * @param  aLength         The length of the aFlavorList.
     * @param  aWhichClipboard Specifies the clipboard to which this operation applies.
-    * @outResult - if data is present matching one of 
+    * @outResult - if data is present matching one of
     * @result NS_OK if successful.
     */
-    boolean hasDataMatchingFlavors ( [array, size_is(aLength)] in string aFlavorList,
-                                     in unsigned long aLength,
+    boolean hasDataMatchingFlavors ( in Array<ACString> aFlavorList,
                                      in long aWhichClipboard ) ;
 
    /**
-    * Allows clients to determine if the implementation supports the concept of a 
+    * Allows clients to determine if the implementation supports the concept of a
     * separate clipboard for selection.
-    * 
-    * @outResult - true if 
+    *
+    * @outResult - true if
     * @result NS_OK if successful.
     */
     boolean supportsSelectionClipboard ( ) ;

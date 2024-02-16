@@ -3285,7 +3285,7 @@ function URLBarSetURI(aURI, updatePopupNotifications) {
     let uri = aURI || gBrowser.currentURI;
     // Strip off usernames and passwords for the location bar
     try {
-      uri = Services.uriFixup.createExposableURI(uri);
+      uri = Services.io.createExposableURI(uri);
     } catch (e) {}
 
     // Replace initial page URIs with an empty string
@@ -5570,7 +5570,7 @@ var XULBrowserWindow = {
 
   setOverLink(url, anchorElt) {
     if (url) {
-      url = Services.textToSubURI.unEscapeURIForUI("UTF-8", url);
+      url = Services.textToSubURI.unEscapeURIForUI(url);
 
       // Encode bidirectional formatting characters.
       // (RFC 3987 sections 3.2 and 4.1 paragraph 6)
@@ -6000,7 +6000,7 @@ var XULBrowserWindow = {
     gURLBarHandler.formatValue();
 
     try {
-      uri = Services.uriFixup.createExposableURI(uri);
+      uri = Services.io.createExposableURI(uri);
     } catch (e) {}
     gIdentityHandler.updateIdentity(this._state, uri);
   },
@@ -7508,7 +7508,7 @@ function handleLinkClick(event, href, linkNode) {
     Ci.nsIReferrerInfo
   );
   if (linkNode) {
-    referrerInfo.initWithNode(linkNode);
+    referrerInfo.initWithElement(linkNode);
   } else {
     referrerInfo.initWithDocument(doc);
   }

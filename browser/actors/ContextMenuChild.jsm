@@ -586,7 +586,7 @@ class ContextMenuChild extends ActorChild {
     let referrerInfo = Cc["@mozilla.org/referrer-info;1"].createInstance(
       Ci.nsIReferrerInfo
     );
-    referrerInfo.initWithNode(
+    referrerInfo.initWithElement(
       context.onLink ? context.link : aEvent.composedTarget
     );
 
@@ -659,7 +659,7 @@ class ContextMenuChild extends ActorChild {
         "@mozilla.org/referrer-info;1"
       ].createInstance(Ci.nsIReferrerInfo);
 
-      targetReferrerInfo.initWithNode(aEvent.composedTarget);
+      targetReferrerInfo.initWithElement(aEvent.composedTarget);
       data.targetReferrerInfo = E10SUtils.serializeReferrerInfo(
         targetReferrerInfo
       );

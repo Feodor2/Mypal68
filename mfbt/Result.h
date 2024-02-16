@@ -266,12 +266,12 @@ struct HasFreeLSB<T&> {
 template <typename V, typename E>
 struct SelectResultImpl {
   static const PackingStrategy value =
-      (IsEmpty<V>::value && UnusedZero<E>::value)
+      (std::is_empty_v<V> && UnusedZero<E>::value)
           ? PackingStrategy::NullIsOk
           : (detail::HasFreeLSB<V>::value && detail::HasFreeLSB<E>::value)
                 ? PackingStrategy::LowBitTagIsError
-                : (IsDefaultConstructible<V>::value &&
-                   IsDefaultConstructible<E>::value &&
+                : (std::is_default_constructible_v<V> &&
+                   std::is_default_constructible_v<E> &&
                    IsPackableVariant<V, E>::value)
                       ? PackingStrategy::PackedVariant
                       : PackingStrategy::Variant;

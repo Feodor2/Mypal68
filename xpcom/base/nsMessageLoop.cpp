@@ -39,7 +39,7 @@ class MessageLoopIdleTask : public Runnable,
   nsCOMPtr<nsIRunnable> mTask;
   nsCOMPtr<nsITimer> mTimer;
 
-  virtual ~MessageLoopIdleTask() {}
+  virtual ~MessageLoopIdleTask() = default;
 };
 
 /**
@@ -67,7 +67,7 @@ class MessageLoopTimerCallback : public nsITimerCallback, public nsINamed {
  private:
   WeakPtr<MessageLoopIdleTask> mTask;
 
-  virtual ~MessageLoopTimerCallback() {}
+  virtual ~MessageLoopTimerCallback() = default;
 };
 
 MessageLoopIdleTask::MessageLoopIdleTask(nsIRunnable* aTask,

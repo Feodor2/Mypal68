@@ -358,11 +358,9 @@ class RemoteSettingsClient extends EventEmitter {
           // The worker only returns an integer. List the imported records to build the sync event.
           if (imported > 0) {
             console.debug(
-              `${this.identifier} ${imported} records loaded from JSON dump`
+              `${imported} records loaded from JSON dump`
             );
-            ({ data: importedFromDump } = await kintoCollection.list({
-              order: "",
-            }));
+            ({ data: importedFromDump } = await kintoCollection.list());
           }
           collectionLastModified = await kintoCollection.db.getLastModified();
         } catch (e) {
@@ -504,12 +502,6 @@ class RemoteSettingsClient extends EventEmitter {
       if (reportStatus === null) {
         reportStatus = UptakeTelemetry.STATUS.SUCCESS;
       }
-      // Report success/error status to Telemetry.
-      await UptakeTelemetry.report(TELEMETRY_COMPONENT, reportStatus, {
-        source: this.identifier,
-        trigger,
-        duration: durationMilliseconds,
-      });
     }
   }
 

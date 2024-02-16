@@ -71,7 +71,7 @@ class MediaTransportHandler {
 
   // We will probably be able to move the proxy lookup stuff into
   // this class once we move mtransport to its own process.
-  virtual void SetProxyServer(NrSocketProxyConfig&& aProxyConfig) = 0;
+  virtual void SetProxyConfig(NrSocketProxyConfig&& aProxyConfig) = 0;
 
   virtual void EnsureProvisionalTransport(const std::string& aTransportId,
                                           const std::string& aLocalUfrag,
@@ -110,7 +110,8 @@ class MediaTransportHandler {
 
   virtual void AddIceCandidate(const std::string& aTransportId,
                                const std::string& aCandidate,
-                               const std::string& aUFrag) = 0;
+                               const std::string& aUFrag,
+                               const std::string& aObfuscatedAddress) = 0;
 
   virtual void UpdateNetworkState(bool aOnline) = 0;
 
@@ -123,12 +124,13 @@ class MediaTransportHandler {
       std::unique_ptr<dom::RTCStatsReportInternal>&& aReport) = 0;
 
   sigslot::signal2<const std::string&, const CandidateInfo&> SignalCandidate;
-  sigslot::signal1<const std::string&> SignalAlpnNegotiated;
+  sigslot::signal2<const std::string&, bool> SignalAlpnNegotiated;
   sigslot::signal1<dom::RTCIceGatheringState> SignalGatheringStateChange;
   sigslot::signal1<dom::RTCIceConnectionState> SignalConnectionStateChange;
 
-  sigslot::signal2<const std::string&, MediaPacket&> SignalPacketReceived;
-  sigslot::signal2<const std::string&, MediaPacket&> SignalEncryptedSending;
+  sigslot::signal2<const std::string&, const MediaPacket&> SignalPacketReceived;
+  sigslot::signal2<const std::string&, const MediaPacket&>
+      SignalEncryptedSending;
   sigslot::signal2<const std::string&, TransportLayer::State> SignalStateChange;
   sigslot::signal2<const std::string&, TransportLayer::State>
       SignalRtcpStateChange;
@@ -143,9 +145,10 @@ class MediaTransportHandler {
   void OnAlpnNegotiated(const std::string& aAlpn);
   void OnGatheringStateChange(dom::RTCIceGatheringState aState);
   void OnConnectionStateChange(dom::RTCIceConnectionState aState);
-  void OnPacketReceived(const std::string& aTransportId, MediaPacket& aPacket);
+  void OnPacketReceived(const std::string& aTransportId,
+                        const MediaPacket& aPacket);
   void OnEncryptedSending(const std::string& aTransportId,
-                          MediaPacket& aPacket);
+                          const MediaPacket& aPacket);
   void OnStateChange(const std::string& aTransportId,
                      TransportLayer::State aState);
   void OnRtcpStateChange(const std::string& aTransportId,

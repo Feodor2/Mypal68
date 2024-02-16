@@ -9,8 +9,8 @@
 #include "xpcAccEvents.h"
 #include "States.h"
 
-#include "mozilla/EventStateManager.h"
 #include "mozilla/dom/Selection.h"
+#include "mozilla/dom/UserActivation.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -30,7 +30,7 @@ AccEvent::AccEvent(uint32_t aEventType, Accessible* aAccessible,
                    EIsFromUserInput aIsFromUserInput, EEventRule aEventRule)
     : mEventType(aEventType), mEventRule(aEventRule), mAccessible(aAccessible) {
   if (aIsFromUserInput == eAutoDetect)
-    mIsFromUserInput = EventStateManager::IsHandlingUserInput();
+    mIsFromUserInput = dom::UserActivation::IsHandlingUserInput();
   else
     mIsFromUserInput = aIsFromUserInput == eFromUserInput ? true : false;
 }

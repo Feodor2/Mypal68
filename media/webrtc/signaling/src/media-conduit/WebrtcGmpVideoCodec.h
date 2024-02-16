@@ -219,7 +219,7 @@ class WebrtcGmpVideoEncoder : public GMPVideoEncoderCallbackProxy,
                       std::string* aErrorOut);
   int32_t InitEncoderForSize(unsigned short aWidth, unsigned short aHeight,
                              std::string* aErrorOut);
-  static void ReleaseGmp_g(RefPtr<WebrtcGmpVideoEncoder>& aEncoder);
+  static void ReleaseGmp_g(const RefPtr<WebrtcGmpVideoEncoder>& aEncoder);
   void Close_g();
 
   class InitDoneCallback : public GetGMPVideoEncoderCallback {
@@ -249,7 +249,7 @@ class WebrtcGmpVideoEncoder : public GMPVideoEncoderCallbackProxy,
     uint32_t mMaxPayloadSize;
   };
 
-  static void Encode_g(RefPtr<WebrtcGmpVideoEncoder>& aEncoder,
+  static void Encode_g(const RefPtr<WebrtcGmpVideoEncoder>& aEncoder,
                        webrtc::VideoFrame aInputImage,
                        std::vector<webrtc::FrameType> aFrameTypes);
   void RegetEncoderForResolutionChange(
@@ -407,7 +407,7 @@ class WebrtcGmpVideoDecoder : public GMPVideoDecoderCallbackProxy {
                            const RefPtr<GmpInitDoneRunnable>& aInitDone);
   int32_t GmpInitDone(GMPVideoDecoderProxy* aGMP, GMPVideoHost* aHost,
                       std::string* aErrorOut);
-  static void ReleaseGmp_g(RefPtr<WebrtcGmpVideoDecoder>& aDecoder);
+  static void ReleaseGmp_g(const RefPtr<WebrtcGmpVideoDecoder>& aDecoder);
   void Close_g();
 
   class InitDoneCallback : public GetGMPVideoDecoderCallback {
@@ -430,7 +430,7 @@ class WebrtcGmpVideoDecoder : public GMPVideoDecoderCallbackProxy {
   };
 
   static void Decode_g(const RefPtr<WebrtcGmpVideoDecoder>& aThis,
-                       nsAutoPtr<GMPDecodeData> aDecodeData);
+                       UniquePtr<GMPDecodeData>&& aDecodeData);
 
   nsCOMPtr<mozIGeckoMediaPluginService> mMPS;
   nsCOMPtr<nsIThread> mGMPThread;

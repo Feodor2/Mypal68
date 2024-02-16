@@ -65,7 +65,6 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/BasicEvents.h"
 #include "mozilla/ErrorResult.h"
-#include "mozilla/EventStateManager.h"
 #include "mozilla/EventStates.h"
 #include "mozilla/FloatingPoint.h"
 #include "mozilla/MouseEvents.h"
@@ -79,6 +78,7 @@
 #include "mozilla/dom/HTMLBodyElement.h"
 #include "mozilla/dom/KeyboardEventBinding.h"
 #include "mozilla/dom/TreeWalker.h"
+#include "mozilla/dom/UserActivation.h"
 
 using namespace mozilla;
 using namespace mozilla::a11y;
@@ -736,7 +736,7 @@ void Accessible::TakeFocus() const {
 
   nsFocusManager* fm = nsFocusManager::GetFocusManager();
   if (fm) {
-    AutoHandlingUserInputStatePusher inputStatePusher(true);
+    dom::AutoHandlingUserInputStatePusher inputStatePusher(true);
     // XXXbz: Can we actually have a non-element content here?
     RefPtr<Element> element =
         focusContent->IsElement() ? focusContent->AsElement() : nullptr;
@@ -2074,7 +2074,7 @@ RootAccessible* Accessible::RootAccessible() const {
   }
 
   nsCOMPtr<nsIDocShellTreeItem> root;
-  docShell->GetRootTreeItem(getter_AddRefs(root));
+  docShell->GetInProcessRootTreeItem(getter_AddRefs(root));
   NS_ASSERTION(root, "No root content tree item");
   if (!root) {
     return nullptr;
@@ -2106,10 +2106,13 @@ bool Accessible::InsertChildAt(uint32_t aIndex, Accessible* aChild) {
   if (!aChild) return false;
 
   if (aIndex == mChildren.Length()) {
-    if (!mChildren.AppendElement(aChild)) return false;
-
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    mChildren.AppendElement(aChild);
   } else {
-    if (!mChildren.InsertElementAt(aIndex, aChild)) return false;
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    mChildren.InsertElementAt(aIndex, aChild);
 
     MOZ_ASSERT(mStateFlags & eKidsMutating, "Illicit children change");
 

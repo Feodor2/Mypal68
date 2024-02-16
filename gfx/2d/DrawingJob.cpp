@@ -9,7 +9,7 @@
 namespace mozilla {
 namespace gfx {
 
-DrawingJobBuilder::DrawingJobBuilder() {}
+DrawingJobBuilder::DrawingJobBuilder() = default;
 
 DrawingJobBuilder::~DrawingJobBuilder() { MOZ_ASSERT(!mDrawTarget); }
 

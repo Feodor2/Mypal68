@@ -187,7 +187,7 @@ TEST(UrlClassifierChunkSet, Stress)
   }
 
   mozilla::safebrowsing::ChunkSet origSet;
-  origSet = chunkSet;
+  origSet = chunkSet.InfallibleClone();
 
   chunkSet.Merge(mergeSet);
   refSet.insert(refMergeSet.begin(), refMergeSet.end());

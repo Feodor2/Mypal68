@@ -131,7 +131,7 @@ class nsThreadClassInfo : public nsIClassInfo {
   NS_DECL_ISUPPORTS_INHERITED  // no mRefCnt
       NS_DECL_NSICLASSINFO
 
-      nsThreadClassInfo() {}
+      nsThreadClassInfo() = default;
 };
 
 NS_IMETHODIMP_(MozExternalRefCountType)
@@ -243,7 +243,7 @@ struct nsThreadShutdownContext {
         mIsMainThreadJoining(NS_IsMainThread()) {
     MOZ_COUNT_CTOR(nsThreadShutdownContext);
   }
-  ~nsThreadShutdownContext() { MOZ_COUNT_DTOR(nsThreadShutdownContext); }
+  MOZ_COUNTED_DTOR(nsThreadShutdownContext)
 
   // NB: This will be the last reference.
   NotNull<RefPtr<nsThread>> mTerminatingThread;
@@ -270,7 +270,7 @@ class nsThreadShutdownAckEvent : public CancelableRunnable {
   nsresult Cancel() override { return Run(); }
 
  private:
-  virtual ~nsThreadShutdownAckEvent() {}
+  virtual ~nsThreadShutdownAckEvent() = default;
 
   NotNull<nsThreadShutdownContext*> mShutdownContext;
 };

@@ -7,13 +7,14 @@
 #ifndef mozilla_Tuple_h
 #define mozilla_Tuple_h
 
-#include "mozilla/Move.h"
+#include <stddef.h>
+
+#include <type_traits>
+#include <utility>
+
 #include "mozilla/Pair.h"
 #include "mozilla/TemplateLib.h"
 #include "mozilla/TypeTraits.h"
-
-#include <stddef.h>
-#include <utility>
 
 namespace mozilla {
 
@@ -456,10 +457,8 @@ void ForEach(Tuple<Elements...>&& aTuple, const F& aFunc) {
  * auto tuple = MakeTuple(42, 0.5f, 'c');  // has type Tuple<int, float, char>
  */
 template <typename... Elements>
-inline Tuple<typename Decay<Elements>::Type...> MakeTuple(
-    Elements&&... aElements) {
-  return Tuple<typename Decay<Elements>::Type...>(
-      std::forward<Elements>(aElements)...);
+inline Tuple<std::decay_t<Elements>...> MakeTuple(Elements&&... aElements) {
+  return Tuple<std::decay_t<Elements>...>(std::forward<Elements>(aElements)...);
 }
 
 /**

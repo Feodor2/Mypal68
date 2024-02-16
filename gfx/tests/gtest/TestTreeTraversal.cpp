@@ -47,7 +47,7 @@ class TestNodeBase {
   MOZ_INIT_OUTSIDE_CTOR T mType;
 
  protected:
-  virtual ~TestNodeBase<T>(){};
+  virtual ~TestNodeBase<T>() = default;
 };
 
 template <class T>
@@ -65,7 +65,7 @@ class TestNodeReverse : public TestNodeBase<T> {
   void SetLastChild(RefPtr<TestNodeReverse<T>> aNode);
   RefPtr<TestNodeReverse<T>> mSiblingNode;
   RefPtr<TestNodeReverse<T>> mLastChildNode;
-  ~TestNodeReverse<T>(){};
+  ~TestNodeReverse<T>() = default;
 };
 
 template <class T>
@@ -86,7 +86,7 @@ class TestNodeForward : public TestNodeBase<T> {
   RefPtr<TestNodeForward<T>> mFirstChildNode = nullptr;
   // Track last child to facilitate appending children
   RefPtr<TestNodeForward<T>> mLastChildNode = nullptr;
-  ~TestNodeForward<T>(){};
+  ~TestNodeForward<T>() = default;
 };
 
 template <class T>
@@ -182,7 +182,7 @@ TestNodeBase<T>::TestNodeBase(T aType, int aExpectedTraversalRank)
       mType(aType) {}
 
 template <class T>
-TestNodeBase<T>::TestNodeBase() {}
+TestNodeBase<T>::TestNodeBase() = default;
 
 template <class T>
 int TestNodeBase<T>::GetActualTraversalRank() {

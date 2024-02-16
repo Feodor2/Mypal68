@@ -42,7 +42,7 @@ class MemoryDIBTextureData : public DIBTextureData {
     MOZ_COUNT_CTOR(MemoryDIBTextureData);
   }
 
-  virtual ~MemoryDIBTextureData() { MOZ_COUNT_DTOR(MemoryDIBTextureData); }
+  MOZ_COUNTED_DTOR_OVERRIDE(MemoryDIBTextureData)
 };
 
 /**

@@ -5,31 +5,31 @@
 #ifndef nsThreadUtils_h__
 #define nsThreadUtils_h__
 
-#include "prthread.h"
-#include "prinrval.h"
+#include <type_traits>
+#include <utility>
+
 #include "MainThreadUtils.h"
+#include "mozilla/AbstractEventQueue.h"
+#include "mozilla/Atomics.h"
+#include "mozilla/Likely.h"
+#include "mozilla/Maybe.h"
+#include "mozilla/TimeStamp.h"
+#include "mozilla/Tuple.h"
+#include "mozilla/TypeTraits.h"
+#include "nsAutoPtr.h"
+#include "nsCOMPtr.h"
 #include "nsICancelableRunnable.h"
 #include "nsIIdlePeriod.h"
 #include "nsIIdleRunnable.h"
 #include "nsINamed.h"
 #include "nsIRunnable.h"
+#include "nsIThread.h"
 #include "nsIThreadManager.h"
 #include "nsITimer.h"
-#include "nsIThread.h"
 #include "nsString.h"
-#include "nsCOMPtr.h"
-#include "nsAutoPtr.h"
+#include "prinrval.h"
+#include "prthread.h"
 #include "xpcpublic.h"
-#include "mozilla/AbstractEventQueue.h"
-#include "mozilla/Atomics.h"
-#include "mozilla/Likely.h"
-#include "mozilla/Maybe.h"
-#include "mozilla/Move.h"
-#include "mozilla/TimeStamp.h"
-#include "mozilla/Tuple.h"
-#include "mozilla/TypeTraits.h"
-
-#include <utility>
 
 //-----------------------------------------------------------------------------
 // These methods are alternatives to the methods on nsIThreadManager, provided
@@ -423,10 +423,10 @@ class IdlePeriod : public nsIIdlePeriod {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIIDLEPERIOD
 
-  IdlePeriod() {}
+  IdlePeriod() = default;
 
  protected:
-  virtual ~IdlePeriod() {}
+  virtual ~IdlePeriod() = default;
 
  private:
   IdlePeriod(const IdlePeriod&) = delete;
@@ -468,7 +468,7 @@ class Runnable : public nsIRunnable
 #  endif
 
  protected:
-  virtual ~Runnable() {}
+  virtual ~Runnable() = default;
 
 #  ifdef MOZ_COLLECTING_RUNNABLE_TELEMETRY
   const char* mName = nullptr;
@@ -491,7 +491,7 @@ class CancelableRunnable : public Runnable, public nsICancelableRunnable {
   explicit CancelableRunnable(const char* aName) : Runnable(aName) {}
 
  protected:
-  virtual ~CancelableRunnable() {}
+  virtual ~CancelableRunnable() = default;
 
  private:
   CancelableRunnable(const CancelableRunnable&) = delete;
@@ -508,7 +508,7 @@ class IdleRunnable : public CancelableRunnable, public nsIIdleRunnable {
   explicit IdleRunnable(const char* aName) : CancelableRunnable(aName) {}
 
  protected:
-  virtual ~IdleRunnable() {}
+  virtual ~IdleRunnable() = default;
 
  private:
   IdleRunnable(const IdleRunnable&) = delete;
@@ -532,7 +532,8 @@ class PrioritizableRunnable : public Runnable, public nsIRunnablePriority {
   NS_DECL_NSIRUNNABLEPRIORITY
 
  protected:
-  virtual ~PrioritizableRunnable(){};
+  virtual ~PrioritizableRunnable() = default;
+  ;
   nsCOMPtr<nsIRunnable> mRunnable;
   uint32_t mPriority;
 };
@@ -663,7 +664,7 @@ class TimerBehaviour {
   void CancelTimer() {}
 
  protected:
-  ~TimerBehaviour() {}
+  ~TimerBehaviour() = default;
 };
 
 template <>
@@ -848,7 +849,7 @@ struct IsParameterStorageClass : public mozilla::FalseType {};
 
 template <typename T>
 struct StoreCopyPassByValue {
-  typedef typename mozilla::Decay<T>::Type stored_type;
+  using stored_type = std::decay_t<T>;
   typedef stored_type passed_type;
   stored_type m;
   template <typename A>
@@ -861,7 +862,7 @@ struct IsParameterStorageClass<StoreCopyPassByValue<S>>
 
 template <typename T>
 struct StoreCopyPassByConstLRef {
-  typedef typename mozilla::Decay<T>::Type stored_type;
+  using stored_type = std::decay_t<T>;
   typedef const stored_type& passed_type;
   stored_type m;
   template <typename A>
@@ -874,7 +875,7 @@ struct IsParameterStorageClass<StoreCopyPassByConstLRef<S>>
 
 template <typename T>
 struct StoreCopyPassByLRef {
-  typedef typename mozilla::Decay<T>::Type stored_type;
+  using stored_type = std::decay_t<T>;
   typedef stored_type& passed_type;
   stored_type m;
   template <typename A>
@@ -887,7 +888,7 @@ struct IsParameterStorageClass<StoreCopyPassByLRef<S>>
 
 template <typename T>
 struct StoreCopyPassByRRef {
-  typedef typename mozilla::Decay<T>::Type stored_type;
+  using stored_type = std::decay_t<T>;
   typedef stored_type&& passed_type;
   stored_type m;
   template <typename A>
@@ -1007,7 +1008,7 @@ struct HasRefCountMethods : decltype(HasRefCountMethodsTest<T>(0)) {};
 template <typename TWithoutPointer>
 struct NonnsISupportsPointerStorageClass
     : mozilla::Conditional<
-          mozilla::IsConst<TWithoutPointer>::value,
+          std::is_const_v<TWithoutPointer>,
           StoreConstPtrPassByConstPtr<
               typename mozilla::RemoveConst<TWithoutPointer>::Type>,
           StorePtrPassByPtr<TWithoutPointer>> {};
@@ -1022,7 +1023,7 @@ struct PointerStorageClass
 template <typename TWithoutRef>
 struct LValueReferenceStorageClass
     : mozilla::Conditional<
-          mozilla::IsConst<TWithoutRef>::value,
+          std::is_const_v<TWithoutRef>,
           StoreConstRefPassByConstLRef<
               typename mozilla::RemoveConst<TWithoutRef>::Type>,
           StoreRefPassByLRef<TWithoutRef>> {};
@@ -1037,21 +1038,21 @@ struct SmartPointerStorageClass
 template <typename T>
 struct NonLValueReferenceStorageClass
     : mozilla::Conditional<
-          mozilla::IsRvalueReference<T>::value,
+          std::is_rvalue_reference_v<T>,
           StoreCopyPassByRRef<typename mozilla::RemoveReference<T>::Type>,
           typename SmartPointerStorageClass<T>::Type> {};
 
 template <typename T>
 struct NonPointerStorageClass
     : mozilla::Conditional<
-          mozilla::IsLvalueReference<T>::value,
+          std::is_lvalue_reference_v<T>,
           typename LValueReferenceStorageClass<
               typename mozilla::RemoveReference<T>::Type>::Type,
           typename NonLValueReferenceStorageClass<T>::Type> {};
 
 template <typename T>
 struct NonParameterStorageClass
-    : mozilla::Conditional<mozilla::IsPointer<T>::value,
+    : mozilla::Conditional<std::is_pointer_v<T>,
                            typename PointerStorageClass<
                                typename mozilla::RemovePointer<T>::Type>::Type,
                            typename NonPointerStorageClass<T>::Type> {};
@@ -1620,7 +1621,7 @@ inline already_AddRefed<T> do_AddRef(nsRevocableEventPtr<T>& aObj) {
  */
 class nsThreadPoolNaming {
  public:
-  nsThreadPoolNaming() : mCounter(0) {}
+  nsThreadPoolNaming() = default;
 
   /**
    * Returns a thread name as "<aPoolName> #<n>" and increments the counter.
@@ -1633,7 +1634,7 @@ class nsThreadPoolNaming {
   }
 
  private:
-  mozilla::Atomic<uint32_t> mCounter;
+  mozilla::Atomic<uint32_t> mCounter{0};
 
   nsThreadPoolNaming(const nsThreadPoolNaming&) = delete;
   void operator=(const nsThreadPoolNaming&) = delete;
@@ -1694,12 +1695,27 @@ extern mozilla::TimeStamp NS_GetTimerDeadlineHintOnCurrentThread(
  * background thread's lifetime.  Not having to manage your own thread also
  * means less resource usage, as the underlying implementation here can manage
  * spinning up and shutting down threads appropriately.
+ *
+ * NOTE: there is no guarantee that events dispatched via these APIs are run
+ * serially, in dispatch order; several dispatched events may run in parallel.
+ * If you depend on serial execution of dispatched events, you should use
+ * NS_CreateBackgroundTaskQueue instead, and dispatch events to the returned
+ * event target.
  */
 extern nsresult NS_DispatchBackgroundTask(
     already_AddRefed<nsIRunnable> aEvent,
     uint32_t aDispatchFlags = NS_DISPATCH_NORMAL);
-extern nsresult NS_DispatchBackgroundTask(
+extern "C" nsresult NS_DispatchBackgroundTask(
     nsIRunnable* aEvent, uint32_t aDispatchFlags = NS_DISPATCH_NORMAL);
+
+/**
+ * Obtain a new serial event target that dispatches runnables to a background
+ * thread.  In many cases, this is a straight replacement for creating your
+ * own, private thread, and is generally preferred to creating your own,
+ * private thread.
+ */
+extern "C" nsresult NS_CreateBackgroundTaskQueue(
+    const char* aName, nsISerialEventTarget** aTarget);
 
 namespace mozilla {
 

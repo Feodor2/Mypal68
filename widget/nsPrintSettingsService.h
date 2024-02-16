@@ -21,7 +21,7 @@ class nsPrintSettingsService : public nsIPrintSettingsService {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIPRINTSETTINGSSERVICE
 
-  nsPrintSettingsService() {}
+  nsPrintSettingsService() = default;
 
   /**
    * method Init
@@ -37,7 +37,7 @@ class nsPrintSettingsService : public nsIPrintSettingsService {
   nsPrintSettingsService& operator=(const nsPrintSettingsService& x) = delete;
 
  protected:
-  virtual ~nsPrintSettingsService() {}
+  virtual ~nsPrintSettingsService() = default;
 
   void ReadBitFieldPref(const char* aPrefId, int32_t anOption);
   void WriteBitFieldPref(const char* aPrefId, int32_t anOption);

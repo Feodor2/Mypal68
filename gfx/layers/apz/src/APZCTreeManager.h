@@ -842,7 +842,8 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    */
   bool mUsingAsyncZoomContainer;
 
-  /** A lock that protects mApzcMap and mScrollThumbInfo. */
+  /** A lock that protects mApzcMap, mScrollThumbInfo, and mFixedPositionInfo.
+   */
   mutable mozilla::Mutex mMapLock;
   /**
    * A map for quick access to get APZC instances by guid, without having to
@@ -892,6 +893,34 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    * mMapLock must be acquired while accessing or modifying mScrollThumbInfo.
    */
   std::vector<ScrollThumbInfo> mScrollThumbInfo;
+
+#ifdef MOZ_BUILD_WEBRENDER
+  /**
+   * A helper structure to store all the information needed to compute the
+   * async transform for a fixed position element on the sampler thread.
+   */
+  struct FixedPositionInfo {
+    uint64_t mFixedPositionAnimationId;
+    SideBits mFixedPosSides;
+
+    FixedPositionInfo(const uint64_t& aFixedPositionAnimationId,
+                      const SideBits aFixedPosSides)
+        : mFixedPositionAnimationId(aFixedPositionAnimationId),
+          mFixedPosSides(aFixedPosSides) {}
+  };
+  /**
+   * If this APZCTreeManager is being used with WebRender, this vector gets
+   * populated during a layers update. It holds a package of information needed
+   * to compute and set the async transforms on fixed position content. This
+   * information is extracted from the HitTestingTreeNodes for the WebRender
+   * case because accessing the HitTestingTreeNodes requires holding the tree
+   * lock which we cannot do on the WR sampler thread. mFixedPositionInfo,
+   * however, can be accessed while just holding the mMapLock which is safe to
+   * do on the sampler thread. mMapLock must be acquired while accessing or
+   * modifying mFixedPositionInfo.
+   */
+  std::vector<FixedPositionInfo> mFixedPositionInfo;
+#endif
 
   /* Holds the zoom constraints for scrollable layers, as determined by the
    * the main-thread gecko code. This can only be accessed on the updater
@@ -946,7 +975,7 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   ScreenPoint mCurrentMousePosition;
   /* Extra margins that should be applied to content that fixed wrt. the
    * RCD-RSF, to account for the dynamic toolbar.
-   * Acquire mTreeLock before accessing this.
+   * Acquire mMapLock before accessing this.
    */
   ScreenMargin mFixedLayerMargins;
   /* For logging the APZC tree for debugging (enabled by the apz.printtree

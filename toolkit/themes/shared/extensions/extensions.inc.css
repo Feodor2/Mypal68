@@ -240,24 +240,6 @@ button.warning {
   width: 692px;
 }
 
-#header-search {
-  margin-top: 0;
-  margin-bottom: 0;
-  min-height: 32px;
-}
-
-#search-label {
-  margin: 0;
-  margin-inline-end: 4px;
-  margin-bottom: 2px;
-}
-
-@media (max-width: 600px) {
-  #header-search {
-    width: 12em;
-  }
-}
-
 #go-back,
 #header-utils-btn {
   -moz-context-properties: fill;

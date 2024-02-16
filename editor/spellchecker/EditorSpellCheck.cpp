@@ -39,7 +39,6 @@
 #include "nsStringFwd.h"            // for nsAFlatString
 #include "nsStyleUtil.h"            // for nsStyleUtil
 #include "nsXULAppAPI.h"            // for XRE_GetProcessType
-#include "nsIPlaintextEditor.h"     // for editor flags
 
 namespace mozilla {
 
@@ -362,7 +361,7 @@ EditorSpellCheck::InitSpellChecker(nsIEditor* aEditor,
     }
 
     if (selection->RangeCount()) {
-      RefPtr<nsRange> range = selection->GetRangeAt(0);
+      RefPtr<const nsRange> range = selection->GetRangeAt(0);
       NS_ENSURE_STATE(range);
 
       if (!range->Collapsed()) {
@@ -505,46 +504,10 @@ EditorSpellCheck::RemoveWordFromDictionary(const nsAString& aWord) {
 }
 
 NS_IMETHODIMP
-EditorSpellCheck::GetDictionaryList(char16_t*** aDictionaryList,
-                                    uint32_t* aCount) {
+EditorSpellCheck::GetDictionaryList(nsTArray<nsString>& aList) {
   NS_ENSURE_TRUE(mSpellChecker, NS_ERROR_NOT_INITIALIZED);
 
-  NS_ENSURE_TRUE(aDictionaryList && aCount, NS_ERROR_NULL_POINTER);
-
-  *aDictionaryList = 0;
-  *aCount = 0;
-
-  nsTArray<nsString> dictList;
-
-  nsresult rv = mSpellChecker->GetDictionaryList(&dictList);
-
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  char16_t** tmpPtr = 0;
-
-  if (dictList.IsEmpty()) {
-    // If there are no dictionaries, return an array containing
-    // one element and a count of one.
-
-    tmpPtr = (char16_t**)moz_xmalloc(sizeof(char16_t*));
-
-    *tmpPtr = 0;
-    *aDictionaryList = tmpPtr;
-    *aCount = 0;
-
-    return NS_OK;
-  }
-
-  tmpPtr = (char16_t**)moz_xmalloc(sizeof(char16_t*) * dictList.Length());
-
-  *aDictionaryList = tmpPtr;
-  *aCount = dictList.Length();
-
-  for (uint32_t i = 0; i < *aCount; i++) {
-    tmpPtr[i] = ToNewUnicode(dictList[i]);
-  }
-
-  return rv;
+  return mSpellChecker->GetDictionaryList(&aList);
 }
 
 NS_IMETHODIMP
@@ -570,7 +533,7 @@ EditorSpellCheck::SetCurrentDictionary(const nsAString& aDictionary) {
 
     uint32_t flags = 0;
     mEditor->GetFlags(&flags);
-    if (!(flags & nsIPlaintextEditor::eEditorMailMask)) {
+    if (!(flags & nsIEditor::eEditorMailMask)) {
       if (!aDictionary.IsEmpty() &&
           (mPreferredLang.IsEmpty() ||
            !mPreferredLang.Equals(aDictionary,
@@ -650,12 +613,20 @@ EditorSpellCheck::UpdateCurrentDictionary(
   nsresult rv;
 
   RefPtr<EditorSpellCheck> kungFuDeathGrip = this;
+  uint32_t flags = 0;
+  mEditor->GetFlags(&flags);
 
   // Get language with html5 algorithm
   nsCOMPtr<nsIContent> rootContent;
   HTMLEditor* htmlEditor = mEditor->AsHTMLEditor();
   if (htmlEditor) {
-    rootContent = htmlEditor->GetFocusedContent();
+    if (flags & nsIEditor::eEditorMailMask) {
+      // Always determine the root content for a mail editor,
+      // even if not focused, to enable further processing below.
+      rootContent = htmlEditor->GetActiveEditingHost();
+    } else {
+      rootContent = htmlEditor->GetFocusedContent();
+    }
   } else {
     rootContent = mEditor->GetRoot();
   }
@@ -665,9 +636,7 @@ EditorSpellCheck::UpdateCurrentDictionary(
   }
 
   // Try to get topmost document's document element for embedded mail editor.
-  uint32_t flags = 0;
-  mEditor->GetFlags(&flags);
-  if (flags & nsIPlaintextEditor::eEditorMailMask) {
+  if (flags & nsIEditor::eEditorMailMask) {
     RefPtr<Document> ownerDoc = rootContent->OwnerDoc();
     Document* parentDoc = ownerDoc->GetInProcessParentDocument();
     if (parentDoc) {
@@ -801,7 +770,7 @@ nsresult EditorSpellCheck::DictionaryFetched(DictionaryFetcher* aFetcher) {
   nsAutoString dictName;
   uint32_t flags;
   mEditor->GetFlags(&flags);
-  if (!(flags & nsIPlaintextEditor::eEditorMailMask)) {
+  if (!(flags & nsIEditor::eEditorMailMask)) {
     dictName.Assign(aFetcher->mDictionary);
     if (!dictName.IsEmpty()) {
       AutoTArray<nsString, 1> tryDictList;

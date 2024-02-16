@@ -91,8 +91,6 @@ class Fuzzyfox final : public Runnable, public nsIObserver {
 
   void UpdateClocks(uint64_t aNewTime, TimeStamp aNewTimeStamp);
 
-  uint64_t GetClockGrain();
-
   uint64_t FloorToGrain(uint64_t aValue);
 
   TimeStamp FloorToGrain(TimeStamp aValue);
@@ -116,7 +114,6 @@ class Fuzzyfox final : public Runnable, public nsIObserver {
   nsCOMPtr<nsISupportsPRInt64> mTimeUpdateWrapper = nullptr;
 
   static Atomic<bool, Relaxed> sFuzzyfoxEnabledPrefMapped;
-  static Atomic<uint32_t, Relaxed> sFuzzyfoxClockGrain;
 };
 
 }  // namespace mozilla

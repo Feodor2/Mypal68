@@ -17,6 +17,7 @@
 #include "nsCommandParams.h"
 #include "nsContentUtils.h"
 #include "nsIContent.h"
+#include "nsIDragSession.h"
 #include "nsPrintfCString.h"
 
 namespace mozilla {
@@ -656,6 +657,53 @@ bool WidgetMouseEvent::IsMiddleClickPasteEnabled() {
 }
 
 /******************************************************************************
+ * mozilla::WidgetDragEvent (MouseEvents.h)
+ ******************************************************************************/
+
+void WidgetDragEvent::InitDropEffectForTests() {
+  MOZ_ASSERT(mFlags.mIsSynthesizedForTests);
+
+  nsCOMPtr<nsIDragSession> session = nsContentUtils::GetDragSession();
+  if (NS_WARN_IF(!session)) {
+    return;
+  }
+
+  uint32_t effectAllowed = session->GetEffectAllowedForTests();
+  uint32_t desiredDropEffect = nsIDragService::DRAGDROP_ACTION_NONE;
+#ifdef XP_MACOSX
+  if (IsAlt()) {
+    desiredDropEffect = IsMeta() ? nsIDragService::DRAGDROP_ACTION_LINK
+                                 : nsIDragService::DRAGDROP_ACTION_COPY;
+  }
+#else
+  // On Linux, we know user's intention from API, but we should use
+  // same modifiers as Windows for tests because GNOME on Ubuntu use
+  // them and that makes each test simpler.
+  if (IsControl()) {
+    desiredDropEffect = IsShift() ? nsIDragService::DRAGDROP_ACTION_LINK
+                                  : nsIDragService::DRAGDROP_ACTION_COPY;
+  } else if (IsShift()) {
+    desiredDropEffect = nsIDragService::DRAGDROP_ACTION_MOVE;
+  }
+#endif  // #ifdef XP_MACOSX #else
+  // First, use modifier state for preferring action which is explicitly
+  // specified by the synthesizer.
+  if (!(desiredDropEffect &= effectAllowed)) {
+    // Otherwise, use an action which is allowed at starting the session.
+    desiredDropEffect = effectAllowed;
+  }
+  if (desiredDropEffect & nsIDragService::DRAGDROP_ACTION_MOVE) {
+    session->SetDragAction(nsIDragService::DRAGDROP_ACTION_MOVE);
+  } else if (desiredDropEffect & nsIDragService::DRAGDROP_ACTION_COPY) {
+    session->SetDragAction(nsIDragService::DRAGDROP_ACTION_COPY);
+  } else if (desiredDropEffect & nsIDragService::DRAGDROP_ACTION_LINK) {
+    session->SetDragAction(nsIDragService::DRAGDROP_ACTION_LINK);
+  } else {
+    session->SetDragAction(nsIDragService::DRAGDROP_ACTION_NONE);
+  }
+}
+
+/******************************************************************************
  * mozilla::WidgetWheelEvent (MouseEvents.h)
  ******************************************************************************/
 
@@ -736,24 +784,39 @@ void WidgetKeyboardEvent::InitAllEditCommands() {
   MOZ_ASSERT(!AreAllEditCommandsInitialized(),
              "Shouldn't be called two or more times");
 
-  InitEditCommandsFor(nsIWidget::NativeKeyBindingsForSingleLineEditor);
-  InitEditCommandsFor(nsIWidget::NativeKeyBindingsForMultiLineEditor);
-  InitEditCommandsFor(nsIWidget::NativeKeyBindingsForRichTextEditor);
+  DebugOnly<bool> okIgnored =
+      InitEditCommandsFor(nsIWidget::NativeKeyBindingsForSingleLineEditor);
+  NS_WARNING_ASSERTION(
+      okIgnored,
+      "InitEditCommandsFor(nsIWidget::NativeKeyBindingsForSingleLineEditor) "
+      "failed, but ignored");
+  okIgnored =
+      InitEditCommandsFor(nsIWidget::NativeKeyBindingsForMultiLineEditor);
+  NS_WARNING_ASSERTION(
+      okIgnored,
+      "InitEditCommandsFor(nsIWidget::NativeKeyBindingsForMultiLineEditor) "
+      "failed, but ignored");
+  okIgnored =
+      InitEditCommandsFor(nsIWidget::NativeKeyBindingsForRichTextEditor);
+  NS_WARNING_ASSERTION(
+      okIgnored,
+      "InitEditCommandsFor(nsIWidget::NativeKeyBindingsForRichTextEditor) "
+      "failed, but ignored");
 }
 
-void WidgetKeyboardEvent::InitEditCommandsFor(
+bool WidgetKeyboardEvent::InitEditCommandsFor(
     nsIWidget::NativeKeyBindingsType aType) {
   if (NS_WARN_IF(!mWidget) || NS_WARN_IF(!IsTrusted())) {
-    return;
+    return false;
   }
 
   bool& initialized = IsEditCommandsInitializedRef(aType);
   if (initialized) {
-    return;
+    return true;
   }
   nsTArray<CommandInt>& commands = EditCommandsRef(aType);
-  mWidget->GetEditCommands(aType, *this, commands);
-  initialized = true;
+  initialized = mWidget->GetEditCommands(aType, *this, commands);
+  return initialized;
 }
 
 bool WidgetKeyboardEvent::ExecuteEditCommands(
@@ -771,7 +834,9 @@ bool WidgetKeyboardEvent::ExecuteEditCommands(
     return false;
   }
 
-  InitEditCommandsFor(aType);
+  if (NS_WARN_IF(!InitEditCommandsFor(aType))) {
+    return false;
+  }
 
   const nsTArray<CommandInt>& commands = EditCommandsRef(aType);
   if (commands.IsEmpty()) {

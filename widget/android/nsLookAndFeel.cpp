@@ -35,9 +35,34 @@ nsLookAndFeel::~nsLookAndFeel() {}
 #define RED_COLOR NS_RGB(0xff, 0x00, 0x00)
 
 nsresult nsLookAndFeel::GetSystemColors() {
-  if (!AndroidBridge::Bridge()) return NS_ERROR_FAILURE;
+  if (!jni::IsAvailable()) {
+    return NS_ERROR_FAILURE;
+  }
 
-  AndroidBridge::Bridge()->GetSystemColors(&mSystemColors);
+  auto arr = java::GeckoAppShell::GetSystemColors();
+  if (!arr) {
+    return NS_ERROR_FAILURE;
+  }
+
+  JNIEnv* const env = arr.Env();
+  uint32_t len = static_cast<uint32_t>(env->GetArrayLength(arr.Get()));
+  jint* elements = env->GetIntArrayElements(arr.Get(), 0);
+
+  uint32_t colorsCount = sizeof(AndroidSystemColors) / sizeof(nscolor);
+  if (len < colorsCount) colorsCount = len;
+
+  // Convert Android colors to nscolor by switching R and B in the ARGB 32 bit
+  // value
+  nscolor* colors = (nscolor*)&mSystemColors;
+
+  for (uint32_t i = 0; i < colorsCount; i++) {
+    uint32_t androidColor = static_cast<uint32_t>(elements[i]);
+    uint8_t r = (androidColor & 0x00ff0000) >> 16;
+    uint8_t b = (androidColor & 0x000000ff);
+    colors[i] = (androidColor & 0xff00ff00) | (b << 16) | r;
+  }
+
+  env->ReleaseIntArrayElements(arr.Get(), elements, 0);
 
   return NS_OK;
 }
@@ -105,12 +130,17 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, nscolor& aColor) {
       aColor = mSystemColors.textColorPrimary;
       break;
     case ColorID::TextSelectBackground:
+      /* matched to action_accent in java codebase */
+      aColor = NS_RGBA(10, 132, 255, 153);
+      break;
+    case ColorID::TextSelectForeground:
+      aColor = NS_RGB(0, 0, 0);
+      break;
     case ColorID::IMESelectedRawTextBackground:
     case ColorID::IMESelectedConvertedTextBackground:
       // still used
       aColor = mSystemColors.textColorHighlight;
       break;
-    case ColorID::TextSelectForeground:
     case ColorID::IMESelectedRawTextForeground:
     case ColorID::IMESelectedConvertedTextForeground:
       // still used
@@ -321,70 +351,70 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
   rv = NS_OK;
 
   switch (aID) {
-    case eIntID_CaretBlinkTime:
+    case IntID::CaretBlinkTime:
       aResult = 500;
       break;
 
-    case eIntID_CaretWidth:
+    case IntID::CaretWidth:
       aResult = 1;
       break;
 
-    case eIntID_ShowCaretDuringSelection:
+    case IntID::ShowCaretDuringSelection:
       aResult = 0;
       break;
 
-    case eIntID_SelectTextfieldsOnKeyFocus:
+    case IntID::SelectTextfieldsOnKeyFocus:
       // Select textfield content when focused by kbd
       // used by EventStateManager::sTextfieldSelectModel
       aResult = 1;
       break;
 
-    case eIntID_SubmenuDelay:
+    case IntID::SubmenuDelay:
       aResult = 200;
       break;
 
-    case eIntID_TooltipDelay:
+    case IntID::TooltipDelay:
       aResult = 500;
       break;
 
-    case eIntID_MenusCanOverlapOSBar:
+    case IntID::MenusCanOverlapOSBar:
       // we want XUL popups to be able to overlap the task bar.
       aResult = 1;
       break;
 
-    case eIntID_ScrollArrowStyle:
+    case IntID::ScrollArrowStyle:
       aResult = eScrollArrowStyle_Single;
       break;
 
-    case eIntID_ScrollSliderStyle:
+    case IntID::ScrollSliderStyle:
       aResult = eScrollThumbStyle_Proportional;
       break;
 
-    case eIntID_TouchEnabled:
+    case IntID::TouchEnabled:
       aResult = 1;
       break;
 
-    case eIntID_WindowsDefaultTheme:
-    case eIntID_WindowsThemeIdentifier:
-    case eIntID_OperatingSystemVersionIdentifier:
+    case IntID::WindowsDefaultTheme:
+    case IntID::WindowsThemeIdentifier:
+    case IntID::OperatingSystemVersionIdentifier:
       aResult = 0;
       rv = NS_ERROR_NOT_IMPLEMENTED;
       break;
 
-    case eIntID_SpellCheckerUnderlineStyle:
+    case IntID::SpellCheckerUnderlineStyle:
       aResult = NS_STYLE_TEXT_DECORATION_STYLE_WAVY;
       break;
 
-    case eIntID_ScrollbarButtonAutoRepeatBehavior:
+    case IntID::ScrollbarButtonAutoRepeatBehavior:
       aResult = 0;
       break;
 
-    case eIntID_ContextMenuOffsetVertical:
-    case eIntID_ContextMenuOffsetHorizontal:
+    case IntID::ContextMenuOffsetVertical:
+    case IntID::ContextMenuOffsetHorizontal:
       aResult = 2;
       break;
 
-    case eIntID_PrefersReducedMotion:
+    case IntID::PrefersReducedMotion:
       if (sIsInPrefersReducedMotionForTest) {
         aResult = sPrefersReducedMotionForTest ? 1 : 0;
         break;
@@ -392,14 +422,14 @@ nsresult nsLookAndFeel::GetIntImpl(IntID aID, int32_t& aResult) {
       aResult = java::GeckoSystemStateListener::PrefersReducedMotion() ? 1 : 0;
       break;
 
-    case eIntID_PrimaryPointerCapabilities:
+    case IntID::PrimaryPointerCapabilities:
       aResult = java::GeckoAppShell::GetPrimaryPointerCapabilities();
       break;
-    case eIntID_AllPointerCapabilities:
+    case IntID::AllPointerCapabilities:
       aResult = java::GeckoAppShell::GetAllPointerCapabilities();
       break;
 
-    case eIntID_SystemUsesDarkTheme:
+    case IntID::SystemUsesDarkTheme:
       // Bail out if AndroidBridge hasn't initialized since we try to query
       // this vailue via nsMediaFeatures::InitSystemMetrics without initializing
       // AndroidBridge on xpcshell tests.
@@ -423,11 +453,11 @@ nsresult nsLookAndFeel::GetFloatImpl(FloatID aID, float& aResult) {
   rv = NS_OK;
 
   switch (aID) {
-    case eFloatID_IMEUnderlineRelativeSize:
+    case FloatID::IMEUnderlineRelativeSize:
       aResult = 1.0f;
       break;
 
-    case eFloatID_SpellCheckerUnderlineRelativeSize:
+    case FloatID::SpellCheckerUnderlineRelativeSize:
       aResult = 1.0f;
       break;
 
@@ -470,11 +500,7 @@ char16_t nsLookAndFeel::GetPasswordCharacterImpl() {
 
 void nsLookAndFeel::EnsureInitSystemColors() {
   if (!mInitializedSystemColors) {
-    if (XRE_IsParentProcess()) {
-      nsresult rv = GetSystemColors();
-      mInitializedSystemColors = NS_SUCCEEDED(rv);
-    }
-    // Child process will set system color cache from ContentParent.
+    mInitializedSystemColors = NS_SUCCEEDED(GetSystemColors());
   }
 }
 
@@ -490,80 +516,3 @@ void nsLookAndFeel::EnsureInitShowPassword() {
   }
 }
 
-nsTArray<LookAndFeelInt> nsLookAndFeel::GetIntCacheImpl() {
-  MOZ_ASSERT(XRE_IsParentProcess());
-  EnsureInitSystemColors();
-  MOZ_ASSERT(mInitializedSystemColors);
-
-  nsTArray<LookAndFeelInt> lookAndFeelCache =
-      nsXPLookAndFeel::GetIntCacheImpl();
-  lookAndFeelCache.SetCapacity(sizeof(AndroidSystemColors) / sizeof(nscolor));
-
-  LookAndFeelInt laf;
-  laf.id = int32_t(ColorID::WindowForeground);
-  laf.colorValue = mSystemColors.textColorPrimary;
-  lookAndFeelCache.AppendElement(laf);
-
-  laf.id = int32_t(ColorID::WidgetBackground);
-  laf.colorValue = mSystemColors.colorBackground;
-  lookAndFeelCache.AppendElement(laf);
-
-  laf.id = int32_t(ColorID::WidgetForeground);
-  laf.colorValue = mSystemColors.colorForeground;
-  lookAndFeelCache.AppendElement(laf);
-
-  laf.id = int32_t(ColorID::WidgetSelectBackground);
-  laf.colorValue = mSystemColors.textColorHighlight;
-  lookAndFeelCache.AppendElement(laf);
-
-  laf.id = int32_t(ColorID::WidgetSelectForeground);
-  laf.colorValue = mSystemColors.textColorPrimaryInverse;
-  lookAndFeelCache.AppendElement(laf);
-
-  laf.id = int32_t(ColorID::Inactivecaptiontext);
-  laf.colorValue = mSystemColors.textColorTertiary;
-  lookAndFeelCache.AppendElement(laf);
-
-  laf.id = int32_t(ColorID::Windowtext);
-  laf.colorValue = mSystemColors.textColorPrimary;
-  lookAndFeelCache.AppendElement(laf);
-
-  // XXX The following colors are unused.
-  // - textColorTertiaryInverse
-  // - panelColorForeground
-  // - panelColorBackground
-
-  return lookAndFeelCache;
-}
-
-void nsLookAndFeel::SetIntCacheImpl(
-    const nsTArray<LookAndFeelInt>& aLookAndFeelCache) {
-  for (auto entry : aLookAndFeelCache) {
-    switch (ColorID(entry.id)) {
-      case ColorID::WindowForeground:
-        mSystemColors.textColorPrimary = entry.colorValue;
-        break;
-      case ColorID::WidgetBackground:
-        mSystemColors.colorBackground = entry.colorValue;
-        break;
-      case ColorID::WidgetForeground:
-        mSystemColors.colorForeground = entry.colorValue;
-        break;
-      case ColorID::WidgetSelectBackground:
-        mSystemColors.textColorHighlight = entry.colorValue;
-        break;
-      case ColorID::WidgetSelectForeground:
-        mSystemColors.textColorPrimaryInverse = entry.colorValue;
-        break;
-      case ColorID::Inactivecaptiontext:
-        mSystemColors.textColorTertiary = entry.colorValue;
-        break;
-      case ColorID::Windowtext:
-        mSystemColors.textColorPrimary = entry.colorValue;
-        break;
-      default:
-        MOZ_ASSERT(false);
-    }
-  }
-  mInitializedSystemColors = true;
-}

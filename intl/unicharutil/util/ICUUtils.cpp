@@ -113,7 +113,7 @@ bool ICUUtils::LocalizeNumber(double aValue,
 }
 
 /* static */
-double ICUUtils::ParseNumber(nsAString& aValue,
+double ICUUtils::ParseNumber(const nsAString& aValue,
                              LanguageTagIterForContent& aLangTags) {
   MOZ_ASSERT(aLangTags.IsAtStart(), "Don't call Next() before passing");
 

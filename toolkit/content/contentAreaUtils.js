@@ -1188,7 +1188,7 @@ function getDefaultFileName(
       } catch (e) {}
     }
     if (fileName) {
-      return validateFileName(fileName);
+      return validateFileName(Services.textToSubURI.unEscapeURIForUI(fileName));
     }
   }
 
@@ -1214,7 +1214,7 @@ function getDefaultFileName(
     if (url.fileName != "") {
       // 3) Use the actual file name, if present
       return validateFileName(
-        Services.textToSubURI.unEscapeURIForUI("UTF-8", url.fileName)
+        Services.textToSubURI.unEscapeURIForUI(url.fileName)
       );
     }
   } catch (e) {
@@ -1434,9 +1434,6 @@ function openURL(aURL) {
     loadgroup.groupObserver = loadListener;
 
     var uriListener = {
-      onStartURIOpen(uri) {
-        return false;
-      },
       doContent(ctype, preferred, request, handler) {
         return false;
       },

@@ -341,7 +341,7 @@ class SCInput {
   typedef js::BufferIterator<uint64_t, SystemAllocPolicy> BufferIterator;
 
  public:
-  SCInput(JSContext* cx, JSStructuredCloneData& data);
+  SCInput(JSContext* cx, const JSStructuredCloneData& data);
 
   JSContext* context() const { return cx; }
 
@@ -629,7 +629,7 @@ bool WriteStructuredClone(JSContext* cx, HandleValue v,
   return true;
 }
 
-bool ReadStructuredClone(JSContext* cx, JSStructuredCloneData& data,
+bool ReadStructuredClone(JSContext* cx, const JSStructuredCloneData& data,
                          JS::StructuredCloneScope scope, MutableHandleValue vp,
                          const JSStructuredCloneCallbacks* cb,
                          void* cbClosure) {
@@ -653,7 +653,7 @@ static bool StructuredCloneHasTransferObjects(
 
 namespace js {
 
-SCInput::SCInput(JSContext* cx, JSStructuredCloneData& data)
+SCInput::SCInput(JSContext* cx, const JSStructuredCloneData& data)
     : cx(cx), point(data) {
   static_assert(JSStructuredCloneData::BufferList::kSegmentAlignment % 8 == 0,
                 "structured clone buffer reads should be aligned");
@@ -3043,7 +3043,7 @@ bool JSStructuredCloneReader::read(MutableHandleValue vp) {
 using namespace js;
 
 JS_PUBLIC_API bool JS_ReadStructuredClone(
-    JSContext* cx, JSStructuredCloneData& buf, uint32_t version,
+    JSContext* cx, const JSStructuredCloneData& buf, uint32_t version,
     JS::StructuredCloneScope scope, MutableHandleValue vp,
     const JSStructuredCloneCallbacks* optionalCallbacks, void* closure) {
   AssertHeapIsIdle();

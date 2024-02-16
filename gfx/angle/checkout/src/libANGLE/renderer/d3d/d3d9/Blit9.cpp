@@ -190,14 +190,14 @@ angle::Result Blit9::boxFilter(Context9 *context9,
 {
     ANGLE_TRY(initialize(context9));
 
-    IDirect3DBaseTexture9 *texture = nullptr;
+    angle::ComPtr<IDirect3DBaseTexture9> texture = nullptr;
     ANGLE_TRY(copySurfaceToTexture(context9, source, getSurfaceRect(source), &texture));
 
     IDirect3DDevice9 *device = mRenderer->getDevice();
 
     saveState();
 
-    device->SetTexture(0, texture);
+    device->SetTexture(0, texture.Get());
     device->SetRenderTarget(0, dest);
 
     ANGLE_TRY(setVertexShader(context9, SHADER_VS_STANDARD));
@@ -236,17 +236,17 @@ angle::Result Blit9::copy2D(const gl::Context *context,
     ANGLE_TRY(colorbuffer->getRenderTarget(context, &renderTarget9));
     ASSERT(renderTarget9);
 
-    IDirect3DSurface9 *source = renderTarget9->getSurface();
+    angle::ComPtr<IDirect3DSurface9> source = renderTarget9->getSurface();
     ASSERT(source);
 
-    IDirect3DSurface9 *destSurface = nullptr;
-    TextureStorage9 *storage9      = GetAs<TextureStorage9>(storage);
+    angle::ComPtr<IDirect3DSurface9> destSurface = nullptr;
+    TextureStorage9 *storage9                    = GetAs<TextureStorage9>(storage);
     ANGLE_TRY(
         storage9->getSurfaceLevel(context, gl::TextureTarget::_2D, level, true, &destSurface));
     ASSERT(destSurface);
 
-    ANGLE_TRY(copy(context9, source, nullptr, sourceRect, destFormat, destOffset,
-                   destSurface, false, false, false));
+    ANGLE_TRY(copy(context9, source.Get(), nullptr, sourceRect, destFormat, destOffset,
+                   destSurface.Get(), false, false, false));
     return angle::Result::Continue;
 }
 
@@ -270,16 +270,16 @@ angle::Result Blit9::copyCube(const gl::Context *context,
     ANGLE_TRY(colorbuffer->getRenderTarget(context, &renderTarget9));
     ASSERT(renderTarget9);
 
-    IDirect3DSurface9 *source = renderTarget9->getSurface();
+    angle::ComPtr<IDirect3DSurface9> source = renderTarget9->getSurface();
     ASSERT(source);
 
-    IDirect3DSurface9 *destSurface = nullptr;
-    TextureStorage9 *storage9      = GetAs<TextureStorage9>(storage);
+    angle::ComPtr<IDirect3DSurface9> destSurface = nullptr;
+    TextureStorage9 *storage9                    = GetAs<TextureStorage9>(storage);
     ANGLE_TRY(storage9->getSurfaceLevel(context, target, level, true, &destSurface));
     ASSERT(destSurface);
 
-    return copy(context9, source, nullptr, sourceRect, destFormat, destOffset,
-                destSurface, false, false, false);
+    return copy(context9, source.Get(), nullptr, sourceRect, destFormat, destOffset,
+                destSurface.Get(), false, false, false);
 }
 
 angle::Result Blit9::copyTexture(const gl::Context *context,
@@ -313,15 +313,15 @@ angle::Result Blit9::copyTexture(const gl::Context *context,
     IDirect3DBaseTexture9 *sourceTexture = nullptr;
     ANGLE_TRY(sourceStorage9->getBaseTexture(context, &sourceTexture));
 
-    IDirect3DSurface9 *sourceSurface = nullptr;
+    angle::ComPtr<IDirect3DSurface9> sourceSurface = nullptr;
     ANGLE_TRY(sourceStorage9->getSurfaceLevel(context, gl::TextureTarget::_2D, sourceLevel, true,
                                               &sourceSurface));
 
-    IDirect3DSurface9 *destSurface = nullptr;
+    angle::ComPtr<IDirect3DSurface9> destSurface = nullptr;
     ANGLE_TRY(destStorage9->getSurfaceLevel(context, destTarget, destLevel, true, &destSurface));
 
-    return copy(context9, sourceSurface, sourceTexture, sourceRect, destFormat, destOffset,
-                destSurface, flipY, premultiplyAlpha, unmultiplyAlpha);
+    return copy(context9, sourceSurface.Get(), sourceTexture, sourceRect, destFormat, destOffset,
+                destSurface.Get(), flipY, premultiplyAlpha, unmultiplyAlpha);
 }
 
 angle::Result Blit9::copy(Context9 *context9,
@@ -357,7 +357,7 @@ angle::Result Blit9::copy(Context9 *context9,
         return angle::Result::Continue;
     }
 
-    IDirect3DBaseTexture9 *texture = sourceTexture;
+    angle::ComPtr<IDirect3DBaseTexture9> texture = sourceTexture;
     RECT adjustedSourceRect                      = sourceRect;
     gl::Extents sourceSize(sourceDesc.Width, sourceDesc.Height, 1);
 
@@ -376,7 +376,7 @@ angle::Result Blit9::copy(Context9 *context9,
         sourceSize.height = sourceRect.bottom - sourceRect.top;
     }
 
-    ANGLE_TRY(formatConvert(context9, texture, adjustedSourceRect, sourceSize, destFormat,
+    ANGLE_TRY(formatConvert(context9, texture.Get(), adjustedSourceRect, sourceSize, destFormat,
                             destOffset, dest, flipY, premultiplyAlpha, unmultiplyAlpha));
     return angle::Result::Continue;
 }
@@ -582,7 +582,7 @@ angle::Result Blit9::setFormatConvertShaders(Context9 *context9,
 angle::Result Blit9::copySurfaceToTexture(Context9 *context9,
                                           IDirect3DSurface9 *surface,
                                           const RECT &sourceRect,
-                                          IDirect3DBaseTexture9 **outTexture)
+                                          angle::ComPtr<IDirect3DBaseTexture9> *outTexture)
 {
     ASSERT(surface);
 
@@ -592,18 +592,18 @@ angle::Result Blit9::copySurfaceToTexture(Context9 *context9,
     surface->GetDesc(&sourceDesc);
 
     // Copy the render target into a texture
-    IDirect3DTexture9 *texture;
+    angle::ComPtr<IDirect3DTexture9> texture;
     HRESULT result = device->CreateTexture(
         sourceRect.right - sourceRect.left, sourceRect.bottom - sourceRect.top, 1,
         D3DUSAGE_RENDERTARGET, sourceDesc.Format, D3DPOOL_DEFAULT, &texture, nullptr);
     ANGLE_TRY_HR(context9, result, "Failed to allocate internal texture for blit");
 
-    IDirect3DSurface9 *textureSurface;
+    angle::ComPtr<IDirect3DSurface9> textureSurface;
     result = texture->GetSurfaceLevel(0, &textureSurface);
     ANGLE_TRY_HR(context9, result, "Failed to query surface of internal blit texture");
 
     mRenderer->endScene();
-    result = device->StretchRect(surface, &sourceRect, textureSurface, nullptr, D3DTEXF_NONE);
+    result = device->StretchRect(surface, &sourceRect, textureSurface.Get(), nullptr, D3DTEXF_NONE);
     ANGLE_TRY_HR(context9, result, "Failed to copy between internal blit textures");
     *outTexture = texture;
 

@@ -10,6 +10,10 @@
 #include "nsStringFwd.h"
 #include "nsTArray.h"
 
+#ifdef DEBUG
+#  include "mozilla/StaticPrefs_dom.h"
+#endif  // #ifdef DEBUG
+
 class nsCommandParams;
 
 /**
@@ -203,6 +207,150 @@ inline bool IsDataTransferAvailableOnHTMLEditor(EditorInputType aInputType) {
   }
 }
 
+/**
+ * MayHaveTargetRangesOnHTMLEditor() returns true if "beforeinput" event whose
+ * whose inputType is aInputType on HTMLEditor may return non-empty static
+ * range array from getTargetRanges().
+ * Note that TextEditor always sets empty array.  Therefore, there is no
+ * method for TextEditor.
+ */
+inline bool MayHaveTargetRangesOnHTMLEditor(EditorInputType aInputType) {
+  switch (aInputType) {
+    // Explicitly documented by the specs.
+    case EditorInputType::eHistoryRedo:
+    case EditorInputType::eHistoryUndo:
+    // Not documented, but other browsers use empty array.
+    case EditorInputType::eFormatSetBlockTextDirection:
+      return false;
+    default:
+      return true;
+  }
+}
+
+/**
+ * IsCancelableBeforeInputEvent() returns true if `beforeinput` event for
+ * aInputType should be cancelable.
+ *
+ * Input Events Level 1:
+ *   https://rawgit.com/w3c/input-events/v1/index.html#x5-1-2-attributes
+ * Input Events Level 2:
+ *   https://w3c.github.io/input-events/#interface-InputEvent-Attributes
+ */
+inline bool IsCancelableBeforeInputEvent(EditorInputType aInputType) {
+  switch (aInputType) {
+    case EditorInputType::eInsertText:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eInsertReplacementText:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eInsertLineBreak:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eInsertParagraph:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eInsertOrderedList:
+      return true;
+    case EditorInputType::eInsertUnorderedList:
+      return true;
+    case EditorInputType::eInsertHorizontalRule:
+      return true;
+    case EditorInputType::eInsertFromYank:
+      return true;
+    case EditorInputType::eInsertFromDrop:
+      return true;
+    case EditorInputType::eInsertFromPaste:
+      return true;
+    case EditorInputType::eInsertFromPasteAsQuotation:
+      return true;
+    case EditorInputType::eInsertTranspose:
+      return true;
+    case EditorInputType::eInsertCompositionText:
+      return false;
+    case EditorInputType::eInsertFromComposition:
+      MOZ_ASSERT(!StaticPrefs::dom_input_events_conform_to_level_1());
+      return true;
+    case EditorInputType::eInsertLink:
+      return true;
+    case EditorInputType::eDeleteByComposition:
+      MOZ_ASSERT(!StaticPrefs::dom_input_events_conform_to_level_1());
+      return true;
+    case EditorInputType::eDeleteCompositionText:
+      MOZ_ASSERT(!StaticPrefs::dom_input_events_conform_to_level_1());
+      return false;
+    case EditorInputType::eDeleteWordBackward:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eDeleteWordForward:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eDeleteSoftLineBackward:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eDeleteSoftLineForward:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eDeleteEntireSoftLine:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eDeleteHardLineBackward:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eDeleteHardLineForward:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eDeleteByDrag:
+      return true;
+    case EditorInputType::eDeleteByCut:
+      return true;
+    case EditorInputType::eDeleteContent:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eDeleteContentBackward:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eDeleteContentForward:
+      return true;  // In Level 1, undefined.
+    case EditorInputType::eHistoryUndo:
+      return true;
+    case EditorInputType::eHistoryRedo:
+      return true;
+    case EditorInputType::eFormatBold:
+      return true;
+    case EditorInputType::eFormatItalic:
+      return true;
+    case EditorInputType::eFormatUnderline:
+      return true;
+    case EditorInputType::eFormatStrikeThrough:
+      return true;
+    case EditorInputType::eFormatSuperscript:
+      return true;
+    case EditorInputType::eFormatSubscript:
+      return true;
+    case EditorInputType::eFormatJustifyFull:
+      return true;
+    case EditorInputType::eFormatJustifyCenter:
+      return true;
+    case EditorInputType::eFormatJustifyRight:
+      return true;
+    case EditorInputType::eFormatJustifyLeft:
+      return true;
+    case EditorInputType::eFormatIndent:
+      return true;
+    case EditorInputType::eFormatOutdent:
+      return true;
+    case EditorInputType::eFormatRemove:
+      return true;
+    case EditorInputType::eFormatSetBlockTextDirection:
+      return true;
+    case EditorInputType::eFormatSetInlineTextDirection:
+      return true;
+    case EditorInputType::eFormatBackColor:
+      return true;
+    case EditorInputType::eFormatFontColor:
+      return true;
+    case EditorInputType::eFormatFontName:
+      return true;
+    case EditorInputType::eUnknown:
+      // This is not declared by Input Events, but it does not make sense to
+      // allow web apps to cancel default action without inputType value check.
+      // If some our specific edit actions should be cancelable, new inputType
+      // value for them should be declared by the spec.
+      return false;
+    default:
+      MOZ_ASSERT_UNREACHABLE("The new input type is not handled");
+      return false;
+  }
+}
+
 #define NS_DEFINE_COMMAND(aName, aCommandStr) , aName
 #define NS_DEFINE_COMMAND_WITH_PARAM(aName, aCommandStr, aParam) , aName
 #define NS_DEFINE_COMMAND_NO_EXEC_COMMAND(aName) , aName
@@ -242,6 +390,13 @@ Command GetInternalCommand(const char* aCommandName,
 
 namespace mozilla {
 
+template <class T>
+class OwningNonNull;
+
+namespace dom {
+class StaticRange;
+}
+
 #define NS_EVENT_CLASS(aPrefix, aName) class aPrefix##aName;
 #define NS_ROOT_EVENT_CLASS(aPrefix, aName) NS_EVENT_CLASS(aPrefix, aName)
 
@@ -277,6 +432,8 @@ struct TextRange;
 class EditCommands;
 class TextRangeArray;
 
+typedef nsTArray<OwningNonNull<dom::StaticRange>> OwningNonNullStaticRangeArray;
+
 // FontRange.h
 struct FontRange;
 
@@ -294,6 +451,8 @@ enum MouseButtonsFlag {
   // mice, see "buttons" attribute document of DOM3 Events.
   e5thFlag = 0x10
 };
+
+enum class TextRangeType : RawTextRangeType;
 
 }  // namespace mozilla
 

@@ -814,7 +814,7 @@ class PushLayerCommand : public DrawingCommand {
 
 class PopClipCommand : public DrawingCommand {
  public:
-  PopClipCommand() {}
+  PopClipCommand() = default;
 
   CommandType GetType() const override { return PopClipCommand::Type; }
 
@@ -834,7 +834,7 @@ class PopClipCommand : public DrawingCommand {
 
 class PopLayerCommand : public DrawingCommand {
  public:
-  PopLayerCommand() {}
+  PopLayerCommand() = default;
 
   CommandType GetType() const override { return PopLayerCommand::Type; }
 

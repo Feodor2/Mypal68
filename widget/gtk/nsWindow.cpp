@@ -3371,7 +3371,7 @@ gboolean nsWindow::OnTouchEvent(GdkEventTouch* aEvent) {
   event.mTime = aEvent->time;
 
   if (aEvent->type == GDK_TOUCH_BEGIN || aEvent->type == GDK_TOUCH_UPDATE) {
-    mTouches.Put(aEvent->sequence, touch.forget());
+    mTouches.Put(aEvent->sequence, std::move(touch));
     // add all touch points to event object
     for (auto iter = mTouches.Iter(); !iter.Done(); iter.Next()) {
       event.mTouches.AppendElement(new dom::Touch(*iter.UserData()));
@@ -6093,11 +6093,13 @@ void nsWindow::GetEditCommandsRemapped(NativeKeyBindingsType aType,
   keyBindings->GetEditCommands(modifiedEvent, aCommands);
 }
 
-void nsWindow::GetEditCommands(NativeKeyBindingsType aType,
+bool nsWindow::GetEditCommands(NativeKeyBindingsType aType,
                                const WidgetKeyboardEvent& aEvent,
                                nsTArray<CommandInt>& aCommands) {
   // Validate the arguments.
-  nsIWidget::GetEditCommands(aType, aEvent, aCommands);
+  if (NS_WARN_IF(!nsIWidget::GetEditCommands(aType, aEvent, aCommands))) {
+    return false;
+  }
 
   if (aEvent.mKeyCode >= NS_VK_LEFT && aEvent.mKeyCode <= NS_VK_DOWN) {
     // Check if we're targeting content with vertical writing mode,
@@ -6143,12 +6145,13 @@ void nsWindow::GetEditCommands(NativeKeyBindingsType aType,
       }
 
       GetEditCommandsRemapped(aType, aEvent, aCommands, geckoCode, gdkCode);
-      return;
+      return true;
     }
   }
 
   NativeKeyBindings* keyBindings = NativeKeyBindings::GetInstance(aType);
   keyBindings->GetEditCommands(aEvent, aCommands);
+  return true;
 }
 
 already_AddRefed<DrawTarget> nsWindow::StartRemoteDrawingInRegion(

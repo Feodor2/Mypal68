@@ -40,7 +40,7 @@ ChromeProcessController::ChromeProcessController(
                         &ChromeProcessController::InitializeRoot));
 }
 
-ChromeProcessController::~ChromeProcessController() {}
+ChromeProcessController::~ChromeProcessController() = default;
 
 void ChromeProcessController::InitializeRoot() {
   APZCCallbackHelper::InitializeRootDisplayport(GetPresShell());

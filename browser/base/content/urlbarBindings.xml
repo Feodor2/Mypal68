@@ -1090,7 +1090,7 @@ file, You can obtain one at http://mozilla.org/MPL/2.0/.
             } else {
               // Only copy exposable URIs
               try {
-                aURI = Services.uriFixup.createExposableURI(aURI);
+                aURI = Services.io.createExposableURI(aURI);
               } catch (ex) {}
             }
             return aURI;

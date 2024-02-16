@@ -20,6 +20,10 @@
   }
 #define NS_SYSTEMPRINCIPAL_CONTRACTID "@mozilla.org/systemprincipal;1"
 
+namespace Json {
+class Value;
+}
+
 namespace mozilla {
 
 class SystemPrincipal final : public BasePrincipal {
@@ -38,6 +42,7 @@ class SystemPrincipal final : public BasePrincipal {
   NS_IMETHOD SetDomain(nsIURI* aDomain) override;
   NS_IMETHOD GetBaseDomain(nsACString& aBaseDomain) override;
   NS_IMETHOD GetAddonId(nsAString& aAddonId) override;
+  NS_IMETHOD GetIsOriginPotentiallyTrustworthy(bool* aResult) override;
 
   virtual nsresult GetScriptLocation(nsACString& aStr) override;
 

@@ -2828,8 +2828,8 @@ static HCURSOR CursorFor(nsCursor aCursor) {
 }
 
 static HCURSOR CursorForImage(imgIContainer* aImageContainer,
-                              uint32_t aHotspotX, uint32_t aHotspotY,
-                              double aScale) {
+                              CSSIntPoint aHotspot,
+                              CSSToLayoutDeviceScale aScale) {
   if (!aImageContainer) {
     return nullptr;
   }
@@ -2850,10 +2850,11 @@ static HCURSOR CursorForImage(imgIContainer* aImageContainer,
     return nullptr;
   }
 
-  IntSize size = RoundedToInt(Size(width * aScale, height * aScale));
+  LayoutDeviceIntSize size = RoundedToInt(CSSIntSize(width, height) * aScale);
+  LayoutDeviceIntPoint hotspot = RoundedToInt(aHotspot * aScale);
   HCURSOR cursor;
-  nsresult rv = nsWindowGfx::CreateIcon(aImageContainer, true, aHotspotX,
-                                        aHotspotY, size, &cursor);
+  nsresult rv =
+      nsWindowGfx::CreateIcon(aImageContainer, true, hotspot, size, &cursor);
   if (NS_FAILED(rv)) {
     return nullptr;
   }
@@ -2869,8 +2870,8 @@ void nsWindow::SetCursor(nsCursor aDefaultCursor, imgIContainer* aImageCursor,
     return;
   }
 
-  double scale = GetDefaultScale().scale;
-  HCURSOR cursor = CursorForImage(aImageCursor, aHotspotX, aHotspotY, scale);
+  HCURSOR cursor = CursorForImage(
+      aImageCursor, CSSIntPoint(aHotspotX, aHotspotY), GetDefaultScale());
   if (cursor) {
     mCursor = eCursorInvalid;
     ::SetCursor(cursor);
@@ -4112,22 +4113,19 @@ bool nsWindow::TouchEventShouldStartDrag(EventMessage aEventMessage,
     hittest.mInputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
     DispatchInputEvent(&hittest);
 
-    EventTarget* target = hittest.GetDOMEventTarget();
-    if (target) {
-      nsCOMPtr<nsIContent> node = do_QueryInterface(target);
-
-      // Check if the element or any parent element has the
-      // attribute we're looking for.
-      while (node) {
-        if (node->IsElement()) {
+    if (EventTarget* target = hittest.GetDOMEventTarget()) {
+      if (nsCOMPtr<nsIContent> content = do_QueryInterface(target)) {
+        // Check if the element or any parent element has the
+        // attribute we're looking for.
+        for (Element* element = content->GetAsElementOrParentElement(); element;
+             element = element->GetParentElement()) {
           nsAutoString startDrag;
-          node->AsElement()->GetAttribute(
-              NS_LITERAL_STRING("touchdownstartsdrag"), startDrag);
+          element->GetAttribute(NS_LITERAL_STRING("touchdownstartsdrag"),
+                                startDrag);
           if (!startDrag.IsEmpty()) {
             return true;
           }
         }
-        node = node->GetParent();
       }
     }
   }

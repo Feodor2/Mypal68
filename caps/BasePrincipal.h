@@ -18,6 +18,9 @@ class nsIURI;
 
 class ExpandedPrincipal;
 
+namespace Json {
+class Value;
+}
 namespace mozilla {
 namespace dom {
 class Document;
@@ -65,11 +68,14 @@ class SiteIdentifier {
  */
 class BasePrincipal : public nsJSPrincipals {
  public:
+  // Warning: this enum impacts Principal serialization into JSON format.
+  // Only update if you know exactly what you are doing
   enum PrincipalKind {
-    eNullPrincipal,
+    eNullPrincipal = 0,
     eCodebasePrincipal,
     eExpandedPrincipal,
-    eSystemPrincipal
+    eSystemPrincipal,
+    eKindMax = eSystemPrincipal
   };
 
   explicit BasePrincipal(PrincipalKind aKind);
@@ -93,9 +99,11 @@ class BasePrincipal : public nsJSPrincipals {
                 DocumentDomainConsideration aConsideration);
 
   NS_IMETHOD GetOrigin(nsACString& aOrigin) final;
+  NS_IMETHOD GetAsciiOrigin(nsACString& aOrigin) override;
   NS_IMETHOD GetOriginNoSuffix(nsACString& aOrigin) final;
   NS_IMETHOD Equals(nsIPrincipal* other, bool* _retval) final;
   NS_IMETHOD EqualsConsideringDomain(nsIPrincipal* other, bool* _retval) final;
+  NS_IMETHOD EqualsURI(nsIURI* aOtherURI, bool* _retval) override;
   NS_IMETHOD Subsumes(nsIPrincipal* other, bool* _retval) final;
   NS_IMETHOD SubsumesConsideringDomain(nsIPrincipal* other,
                                        bool* _retval) final;
@@ -115,7 +123,12 @@ class BasePrincipal : public nsJSPrincipals {
   NS_IMETHOD GetOriginAttributes(JSContext* aCx,
                                  JS::MutableHandle<JS::Value> aVal) final;
   NS_IMETHOD GetAsciiSpec(nsACString& aSpec) override;
+  NS_IMETHOD GetExposablePrePath(nsACString& aResult) override;
+  NS_IMETHOD GetHostPort(nsACString& aRes) override;
+  NS_IMETHOD GetHost(nsACString& aRes) override;
+  NS_IMETHOD GetPrePath(nsACString& aResult) override;
   NS_IMETHOD GetOriginSuffix(nsACString& aOriginSuffix) final;
+  NS_IMETHOD GetIsOnion(bool* aIsOnion) override;
   NS_IMETHOD GetIsInIsolatedMozBrowserElement(
       bool* aIsInIsolatedMozBrowserElement) final;
   NS_IMETHOD GetUserContextId(uint32_t* aUserContextId) final;
@@ -123,6 +136,22 @@ class BasePrincipal : public nsJSPrincipals {
   NS_IMETHOD GetSiteOrigin(nsACString& aOrigin) override;
   NS_IMETHOD IsThirdPartyURI(nsIURI* uri, bool* aRes) override;
   NS_IMETHOD IsThirdPartyPrincipal(nsIPrincipal* uri, bool* aRes) override;
+  NS_IMETHOD GetIsOriginPotentiallyTrustworthy(bool* aResult) override;
+  NS_IMETHOD IsSameOrigin(nsIURI* aURI, bool aIsPrivateWin,
+                          bool* aRes) override;
+  NS_IMETHOD GetPrefLightCacheKey(nsIURI* aURI, bool aWithCredentials,
+                                  nsACString& _retval) override;
+  NS_IMETHOD GetAsciiHost(nsACString& aAsciiHost) override;
+  NS_IMETHOD GetLocalStorageQuotaKey(nsACString& aRes) override;
+  NS_IMETHOD AllowsRelaxStrictFileOriginPolicy(nsIURI* aURI,
+                                               bool* aRes) override;
+  NS_IMETHOD CreateReferrerInfo(mozilla::dom::ReferrerPolicy aReferrerPolicy,
+                                  nsIReferrerInfo** _retval) override;
+  nsresult ToJSON(nsACString& aJSON);
+  static already_AddRefed<BasePrincipal> FromJSON(const nsACString& aJSON);
+  // Method populates a passed Json::Value with serializable fields
+  // which represent all of the fields to deserialize the principal
+  virtual nsresult PopulateJSONObject(Json::Value& aObject);
 
   virtual bool AddonHasPermission(const nsAtom* aPerm);
 
@@ -239,6 +268,17 @@ class BasePrincipal : public nsJSPrincipals {
                   const OriginAttributes& aOriginAttributes);
   void FinishInit(BasePrincipal* aOther,
                   const OriginAttributes& aOriginAttributes);
+
+  // KeyValT holds a principal subtype-specific key value and the associated
+  // parsed value after JSON parsing.
+  template <typename SerializedKey>
+  struct KeyValT {
+    static_assert(sizeof(SerializedKey) == 1,
+                  "SerializedKey should be a uint8_t");
+    SerializedKey key;
+    bool valueWasSerialized;
+    nsCString value;
+  };
 
  private:
   static already_AddRefed<BasePrincipal> CreateCodebasePrincipal(

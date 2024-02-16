@@ -67,10 +67,6 @@ row[unsupported="true"] {
   display: none;
 }
 
-#header-searching:not([active]) {
-  visibility: hidden;
-}
-
 #detail-view {
   overflow: auto;
 }

@@ -328,7 +328,7 @@ void nsWebBrowserFind::SetSelectionAndScroll(nsPIDOMWindowOuter* aWindow,
     selection->AddRangeAndSelectFramesAndNotifyListeners(*aRange,
                                                          IgnoreErrors());
 
-    nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
+    nsFocusManager* fm = nsFocusManager::GetFocusManager();
     if (fm) {
       if (tcFrame) {
         RefPtr<Element> newFocusedElement = Element::FromNode(content);
@@ -428,7 +428,7 @@ nsresult nsWebBrowserFind::GetSearchLimits(nsRange* aSearchRange,
   // There are four possible range endpoints we might use:
   // DocumentStart, SelectionStart, SelectionEnd, DocumentEnd.
 
-  RefPtr<nsRange> range;
+  RefPtr<const nsRange> range;
   nsCOMPtr<nsINode> node;
   uint32_t offset;
 
@@ -631,10 +631,9 @@ nsresult nsWebBrowserFind::SearchInFrame(nsPIDOMWindowOuter* aWindow,
   RefPtr<Selection> sel = GetFrameSelection(aWindow);
   NS_ENSURE_ARG_POINTER(sel);
 
-  RefPtr<nsRange> searchRange = new nsRange(theDoc);
-  RefPtr<nsRange> startPt = new nsRange(theDoc);
-  RefPtr<nsRange> endPt = new nsRange(theDoc);
-  NS_ENSURE_ARG_POINTER(endPt);
+  RefPtr<nsRange> searchRange = nsRange::Create(theDoc);
+  RefPtr<nsRange> startPt = nsRange::Create(theDoc);
+  RefPtr<nsRange> endPt = nsRange::Create(theDoc);
 
   RefPtr<nsRange> foundRange;
 
@@ -726,13 +725,11 @@ nsresult nsWebBrowserFind::OnFind(nsPIDOMWindowOuter* aFoundWindow) {
     ClearFrameSelection(lastFocusedWindow);
   }
 
-  nsCOMPtr<nsIFocusManager> fm = do_GetService(FOCUSMANAGER_CONTRACTID);
-  if (fm) {
+  if (nsFocusManager* fm = nsFocusManager::GetFocusManager()) {
     // get the containing frame and focus it. For top-level windows, the right
     // window should already be focused.
-    RefPtr<Element> frameElement = aFoundWindow->GetFrameElementInternal();
-    if (frameElement) {
-      fm->SetFocus(frameElement, nsIFocusManager::FLAG_BYELEMENTFOCUS);
+    if (RefPtr<Element> frameElement = aFoundWindow->GetFrameElementInternal()) {
+      fm->SetFocus(frameElement, 0);
     }
 
     mLastFocusedWindow = do_GetWeakReference(aFoundWindow);

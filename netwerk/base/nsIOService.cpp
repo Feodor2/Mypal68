@@ -179,9 +179,7 @@ static const char kProfileDoChange[] = "profile-do-change";
 uint32_t nsIOService::gDefaultSegmentSize = 4096;
 uint32_t nsIOService::gDefaultSegmentCount = 24;
 
-bool nsIOService::sIsDataURIUniqueOpaqueOrigin = false;
 bool nsIOService::sBlockToplevelDataUriNavigations = false;
-bool nsIOService::sBlockFTPSubresources = false;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -257,13 +255,9 @@ nsresult nsIOService::Init() {
   } else
     NS_WARNING("failed to get observer service");
 
-  Preferences::AddBoolVarCache(&sIsDataURIUniqueOpaqueOrigin,
-                               "security.data_uri.unique_opaque_origin", false);
   Preferences::AddBoolVarCache(
       &sBlockToplevelDataUriNavigations,
       "security.data_uri.block_toplevel_data_uri_navigations", false);
-  Preferences::AddBoolVarCache(&sBlockFTPSubresources,
-                               "security.block_ftp_subresources", true);
   Preferences::AddBoolVarCache(&mOfflineMirrorsConnectivity,
                                OFFLINE_MIRRORS_CONNECTIVITY, true);
 
@@ -810,6 +804,30 @@ nsIOService::NewFileURI(nsIFile* file, nsIURI** result) {
   if (NS_FAILED(rv)) return rv;
 
   return fileHandler->NewFileURI(file, result);
+}
+
+// static
+already_AddRefed<nsIURI> nsIOService::CreateExposableURI(nsIURI* aURI) {
+  MOZ_ASSERT(aURI, "Must have a URI");
+  nsCOMPtr<nsIURI> uri = aURI;
+
+  nsAutoCString userPass;
+  uri->GetUserPass(userPass);
+  if (!userPass.IsEmpty()) {
+    DebugOnly<nsresult> rv =
+        NS_MutateURI(uri).SetUserPass(EmptyCString()).Finalize(uri);
+    MOZ_ASSERT(NS_SUCCEEDED(rv) && uri, "Mutating URI should never fail");
+  }
+  return uri.forget();
+}
+
+NS_IMETHODIMP
+nsIOService::CreateExposableURI(nsIURI* aURI, nsIURI** _result) {
+  NS_ENSURE_ARG_POINTER(aURI);
+  NS_ENSURE_ARG_POINTER(_result);
+  nsCOMPtr<nsIURI> exposableURI = CreateExposableURI(aURI);
+  exposableURI.forget(_result);
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -1709,8 +1727,7 @@ nsresult nsIOService::SpeculativeConnectInternal(
   if (IsNeckoChild()) {
     ipc::URIParams params;
     SerializeURI(aURI, params);
-    gNeckoChild->SendSpeculativeConnect(params, IPC::Principal(aPrincipal),
-                                        aAnonymous);
+    gNeckoChild->SendSpeculativeConnect(params, aPrincipal, aAnonymous);
     return NS_OK;
   }
 
@@ -1778,17 +1795,9 @@ nsIOService::SpeculativeAnonymousConnect(nsIURI* aURI, nsIPrincipal* aPrincipal,
 }
 
 /*static*/
-bool nsIOService::IsDataURIUniqueOpaqueOrigin() {
-  return sIsDataURIUniqueOpaqueOrigin;
-}
-
-/*static*/
 bool nsIOService::BlockToplevelDataUriNavigations() {
   return sBlockToplevelDataUriNavigations;
 }
-
-/*static*/
-bool nsIOService::BlockFTPSubresources() { return sBlockFTPSubresources; }
 
 NS_IMETHODIMP
 nsIOService::NotImplemented() { return NS_ERROR_NOT_IMPLEMENTED; }

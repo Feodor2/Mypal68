@@ -15,14 +15,14 @@ class nsColorPickerProxy final : public nsIColorPicker,
   NS_DECL_ISUPPORTS
   NS_DECL_NSICOLORPICKER
 
-  nsColorPickerProxy() {}
+  nsColorPickerProxy() = default;
 
   virtual mozilla::ipc::IPCResult RecvUpdate(const nsString& aColor) override;
   virtual mozilla::ipc::IPCResult Recv__delete__(
       const nsString& aColor) override;
 
  private:
-  ~nsColorPickerProxy() {}
+  ~nsColorPickerProxy() = default;
 
   nsCOMPtr<nsIColorPickerShownCallback> mCallback;
   nsString mTitle;

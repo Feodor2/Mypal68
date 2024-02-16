@@ -39,9 +39,6 @@ pref("dom.push.enabled", false);
 // enable external storage API
 pref("dom.storageManager.enabled", true);
 
-// enable Visual Viewport API
-pref("dom.visualviewport.enabled", true);
-
 // Inherit locale from the OS, used for multi-locale builds
 pref("intl.locale.requested", "");
 

@@ -434,7 +434,7 @@ class FilterNode : public external::AtomicRefCounted<FilterNode> {
  protected:
   friend class Factory;
 
-  FilterNode() {}
+  FilterNode() = default;
 };
 
 }  // namespace gfx

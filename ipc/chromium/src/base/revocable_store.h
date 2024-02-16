@@ -7,7 +7,6 @@
 
 #include "base/basictypes.h"
 #include "nsISupportsImpl.h"
-#include "nsAutoPtr.h"
 
 // |RevocableStore| is a container of items that can be removed from the store.
 class RevocableStore {

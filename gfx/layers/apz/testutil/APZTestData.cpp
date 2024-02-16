@@ -5,6 +5,7 @@
 #include "APZTestData.h"
 #include "mozilla/dom/APZTestDataBinding.h"
 #include "mozilla/dom/ToJSValue.h"
+#include "mozilla/mozalloc_oom.h"
 #include "nsString.h"
 
 namespace mozilla {
@@ -17,7 +18,12 @@ struct APZTestDataToJSConverter {
                          void (*aElementConverter)(const Key&, const Value&,
                                                    KeyValuePair&)) {
     for (auto it = aFrom.begin(); it != aFrom.end(); ++it) {
-      aOutTo.AppendElement(fallible);
+      if (!aOutTo.AppendElement(fallible)) {
+        // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
+        // involve multiple reallocations) and potentially crashing here,
+        // SetCapacity could be called outside the loop once.
+        mozalloc_handle_oom(0);
+      }
       aElementConverter(it->first, it->second, aOutTo.LastElement());
     }
   }
@@ -27,7 +33,12 @@ struct APZTestDataToJSConverter {
                           dom::Sequence<Target>& aOutTo,
                           void (*aElementConverter)(const Src&, Target&)) {
     for (auto it = aFrom.begin(); it != aFrom.end(); ++it) {
-      aOutTo.AppendElement(fallible);
+      if (!aOutTo.AppendElement(fallible)) {
+        // XXX(Bug 1632090) Instead of extending the array 1-by-1 (which might
+        // involve multiple reallocations) and potentially crashing here,
+        // SetCapacity could be called outside the loop once.
+        mozalloc_handle_oom(0);
+      }
       aElementConverter(*it, aOutTo.LastElement());
     }
   }

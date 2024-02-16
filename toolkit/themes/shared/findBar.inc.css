@@ -55,6 +55,7 @@ contrast issues, see bug 1506913 */
   border-start-start-radius: 2px;
   border-end-start-radius: 2px;
   margin: 0;
+  outline: none;
   padding: 2px 5px;
   width: 14em;
 }

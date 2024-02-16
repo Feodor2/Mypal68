@@ -131,7 +131,7 @@ var IdentityHandler = {
 
     let uri = aBrowser.currentURI || {};
     try {
-      uri = Services.uriFixup.createExposableURI(uri);
+      uri = Services.io.createExposableURI(uri);
     } catch (e) {}
 
     try {

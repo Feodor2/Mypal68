@@ -56,7 +56,7 @@ class nsStringInputStream final : public nsIStringInputStream,
   nsresult Init(nsTArray<uint8_t>&& aArray);
 
  private:
-  ~nsStringInputStream() {}
+  ~nsStringInputStream() = default;
 
   template <typename M>
   void SerializeInternal(InputStreamParams& aParams, bool aDelayedStart,

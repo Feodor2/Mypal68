@@ -66,10 +66,6 @@ var TelemetryUtils = {
     // Ecosystem Telemetry Preferences
     EcosystemTelemetryEnabled: "toolkit.telemetry.ecosystemtelemetry.enabled",
 
-    // Prio Ping Preferences
-    PrioPingEnabled: "toolkit.telemetry.prioping.enabled",
-    PrioPingDataLimit: "toolkit.telemetry.prioping.dataLimit",
-
     // Log Preferences
     LogLevel: "toolkit.telemetry.log.level",
     LogDump: "toolkit.telemetry.log.dump",

@@ -139,9 +139,18 @@ const ScrollbarData& HitTestingTreeNode::GetScrollbarData() const {
 }
 
 void HitTestingTreeNode::SetFixedPosData(
-    ScrollableLayerGuid::ViewID aFixedPosTarget, SideBits aFixedPosSides) {
+    ScrollableLayerGuid::ViewID aFixedPosTarget, SideBits aFixedPosSides
+#ifdef MOZ_BUILD_WEBRENDER
+    ,
+    const Maybe<uint64_t>& aFixedPositionAnimationId
+#endif
+) {
+
   mFixedPosTarget = aFixedPosTarget;
   mFixedPosSides = aFixedPosSides;
+#ifdef MOZ_BUILD_WEBRENDER
+  mFixedPositionAnimationId = aFixedPositionAnimationId;
+#endif
 }
 
 ScrollableLayerGuid::ViewID HitTestingTreeNode::GetFixedPosTarget() const {
@@ -149,6 +158,12 @@ ScrollableLayerGuid::ViewID HitTestingTreeNode::GetFixedPosTarget() const {
 }
 
 SideBits HitTestingTreeNode::GetFixedPosSides() const { return mFixedPosSides; }
+
+#ifdef MOZ_BUILD_WEBRENDER
+Maybe<uint64_t> HitTestingTreeNode::GetFixedPositionAnimationId() const {
+  return mFixedPositionAnimationId;
+}
+#endif
 
 void HitTestingTreeNode::SetPrevSibling(HitTestingTreeNode* aSibling) {
   mPrevSibling = aSibling;

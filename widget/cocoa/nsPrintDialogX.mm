@@ -13,7 +13,6 @@
 #include "nsQueryObject.h"
 #include "nsServiceManagerUtils.h"
 #include "nsIStringBundle.h"
-#include "nsIWebBrowserPrint.h"
 #include "nsCRT.h"
 
 #import <Cocoa/Cocoa.h>
@@ -31,8 +30,7 @@ NS_IMETHODIMP
 nsPrintDialogServiceX::Init() { return NS_OK; }
 
 NS_IMETHODIMP
-nsPrintDialogServiceX::Show(nsPIDOMWindowOuter* aParent, nsIPrintSettings* aSettings,
-                            nsIWebBrowserPrint* aWebBrowserPrint) {
+nsPrintDialogServiceX::Show(nsPIDOMWindowOuter* aParent, nsIPrintSettings* aSettings) {
   NS_OBJC_BEGIN_TRY_ABORT_BLOCK_NSRESULT;
 
   MOZ_ASSERT(aSettings, "aSettings must not be null");
@@ -48,13 +46,11 @@ nsPrintDialogServiceX::Show(nsPIDOMWindowOuter* aParent, nsIPrintSettings* aSett
   // name to be set.
   settingsX->SetPrinterNameFromPrintInfo();
   printSettingsSvc->InitPrintSettingsFromPrefs(settingsX, true, nsIPrintSettings::kInitSaveAll);
+
   // Set the print job title
   nsAutoString docName;
-  nsresult rv = aWebBrowserPrint->GetDocumentName(docName);
+  nsresult rv = aSettings->GetTitle(docName);
   if (NS_SUCCEEDED(rv)) {
-    // Print Core of Application Service sent print job with names exceeding
-    // 255 bytes. This is a workaround until fix it.
-    // (https://openradar.appspot.com/34428043)
     nsAutoString adjustedTitle;
     PrintTarget::AdjustPrintJobNameForIPP(docName, adjustedTitle);
     CFStringRef cfTitleString = CFStringCreateWithCharacters(

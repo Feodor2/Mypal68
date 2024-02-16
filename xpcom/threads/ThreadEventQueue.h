@@ -18,10 +18,7 @@ class nsIThreadObserver;
 namespace mozilla {
 
 class EventQueue;
-
-template <typename InnerQueueT>
 class PrioritizedEventQueue;
-
 class ThreadEventTarget;
 
 // A ThreadEventQueue implements normal monitor-style synchronization over the
@@ -92,7 +89,7 @@ class ThreadEventQueue final : public SynchronizedEventQueue {
 };
 
 extern template class ThreadEventQueue<EventQueue>;
-extern template class ThreadEventQueue<PrioritizedEventQueue<EventQueue>>;
+extern template class ThreadEventQueue<PrioritizedEventQueue>;
 
 };  // namespace mozilla
 

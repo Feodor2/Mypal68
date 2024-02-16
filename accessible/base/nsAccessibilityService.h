@@ -222,6 +222,15 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
 
   void FireAccessibleEvent(uint32_t aEvent, Accessible* aTarget);
 
+  /**
+   * Notify accessibility that the size has become available for an image.
+   * This occurs when the size of an image is initially not known, but we've
+   * now loaded enough data to know the size.
+   * Called by layout.
+   */
+  void NotifyOfImageSizeAvailable(mozilla::PresShell* aPresShell,
+                                  nsIContent* aContent);
+
   // nsAccessibiltiyService
 
   /**
@@ -244,6 +253,25 @@ class nsAccessibilityService final : public mozilla::a11y::DocManager,
     const mozilla::a11y::HTMLMarkupMapInfo* markupMap =
         mHTMLMarkupMap.Get(aContent->NodeInfo()->NameAtom());
     return markupMap ? markupMap->role : mozilla::a11y::roles::NOTHING;
+  }
+
+  /**
+   * Return the associated value for a given attribute if
+   * it appears in the MarkupMap. Otherwise, it returns null.
+   */
+  nsStaticAtom* MarkupAttribute(const nsIContent* aContent,
+                                nsStaticAtom* aAtom) const {
+    const mozilla::a11y::HTMLMarkupMapInfo* markupMap =
+        mHTMLMarkupMap.Get(aContent->NodeInfo()->NameAtom());
+    if (markupMap) {
+      for (size_t i = 0; i < mozilla::ArrayLength(markupMap->attrs); i++) {
+        const mozilla::a11y::MarkupAttrInfo* info = markupMap->attrs + i;
+        if (info->name == aAtom) {
+          return info->value;
+        }
+      }
+    }
+    return nullptr;
   }
 
   /**

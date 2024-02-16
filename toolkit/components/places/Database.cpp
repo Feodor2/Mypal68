@@ -416,7 +416,7 @@ Database::GetProfileBeforeChangePhase() {
   return shutdownPhase.forget();
 }
 
-Database::~Database() {}
+Database::~Database() = default;
 
 bool Database::IsShutdownStarted() const {
   if (!mConnectionShutdown) {
@@ -719,6 +719,14 @@ nsresult Database::EnsureFaviconsDatabaseAttached(
     rv = conn->ExecuteSimpleSQL(
         NS_LITERAL_CSTRING("PRAGMA auto_vacuum = INCREMENTAL"));
     NS_ENSURE_SUCCESS(rv, rv);
+
+#if !defined(HAVE_64BIT_BUILD)
+    // Ensure that temp tables are held in memory, not on disk, on 32 bit
+    // platforms.
+    rv = conn->ExecuteSimpleSQL(
+        NS_LITERAL_CSTRING("PRAGMA temp_store = MEMORY"));
+    NS_ENSURE_SUCCESS(rv, rv);
+#endif
 
     int32_t defaultPageSize;
     rv = conn->GetDefaultPageSize(&defaultPageSize);
@@ -1025,10 +1033,13 @@ nsresult Database::SetupDatabaseConnection(
                    NS_ERROR_FILE_CORRUPTED);
   }
 
-  // Ensure that temp tables are held in memory, not on disk.
+#if !defined(HAVE_64BIT_BUILD)
+  // Ensure that temp tables are held in memory, not on disk, on 32 bit
+  // platforms.
   rv = mMainConn->ExecuteSimpleSQL(NS_LITERAL_CSTRING(
       MOZ_STORAGE_UNIQUIFY_QUERY_STR "PRAGMA temp_store = MEMORY"));
   NS_ENSURE_SUCCESS(rv, rv);
+#endif
 
   rv = SetupDurability(mMainConn, mDBPageSize);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -2418,7 +2429,7 @@ nsresult Database::MigrateV50Up() {
       getter_AddRefs(stmt));
   if (NS_FAILED(rv)) return rv;
 
-  AutoTArray<Pair<int64_t, nsCString>, 32> placeURLs;
+  AutoTArray<std::pair<int64_t, nsCString>, 32> placeURLs;
 
   bool hasMore = false;
   nsCString url;
@@ -2429,9 +2440,9 @@ nsresult Database::MigrateV50Up() {
     rv = stmt->GetUTF8String(1, url);
     if (NS_FAILED(rv)) return rv;
 
-    if (!placeURLs.AppendElement(MakePair(placeId, url))) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    placeURLs.AppendElement(std::make_pair(placeId, url));
   }
 
   if (placeURLs.IsEmpty()) {
@@ -2440,8 +2451,8 @@ nsresult Database::MigrateV50Up() {
 
   int64_t placeId;
   for (uint32_t i = 0; i < placeURLs.Length(); ++i) {
-    placeId = placeURLs[i].first();
-    url = placeURLs[i].second();
+    placeId = placeURLs[i].first;
+    url = placeURLs[i].second;
 
     rv = ConvertOldStyleQuery(url);
     // Something bad happened, and we can't convert it, so just continue.
@@ -2697,9 +2708,9 @@ nsresult Database::ConvertOldStyleQuery(nsCString& aURL) {
     const QueryKeyValuePair& kvp = tokens[j];
 
     if (!kvp.key.EqualsLiteral("folder")) {
-      if (!newTokens.AppendElement(kvp)) {
-        return NS_ERROR_OUT_OF_MEMORY;
-      }
+      // XXX(Bug 1631371) Check if this should use a fallible operation as it
+      // pretended earlier.
+      newTokens.AppendElement(kvp);
       continue;
     }
 
@@ -2745,9 +2756,9 @@ nsresult Database::ConvertOldStyleQuery(nsCString& aURL) {
     } else {
       newPair = new QueryKeyValuePair(NS_LITERAL_CSTRING("parent"), guid);
     }
-    if (!newTokens.AppendElement(*newPair)) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+    // XXX(Bug 1631371) Check if this should use a fallible operation as it
+    // pretended earlier.
+    newTokens.AppendElement(*newPair);
     delete newPair;
   }
 

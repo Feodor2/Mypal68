@@ -5,6 +5,8 @@
 #ifndef mozilla_interceptor_Arm64_h
 #define mozilla_interceptor_Arm64_h
 
+#include <type_traits>
+
 #include "mozilla/Assertions.h"
 #include "mozilla/Result.h"
 #include "mozilla/Types.h"
@@ -49,12 +51,11 @@ MFBT_API Result<LoadInfo, PCRelCheckError> CheckForPCRel(const uintptr_t aPC,
  */
 template <typename ResultT>
 inline ResultT SignExtend(const uint32_t aValue, const uint8_t aNumValidBits) {
-  static_assert(IsIntegral<ResultT>::value && IsSigned<ResultT>::value,
+  static_assert(std::is_integral_v<ResultT> && std::is_signed_v<ResultT>,
                 "ResultT must be a signed integral type");
   MOZ_ASSERT(aNumValidBits < 32U && aNumValidBits > 1);
 
-  using UnsignedResultT =
-      typename Decay<typename MakeUnsigned<ResultT>::Type>::Type;
+  using UnsignedResultT = std::decay_t<std::make_unsigned_t<ResultT>>;
 
   const uint8_t kResultWidthBits = sizeof(ResultT) * 8;
 

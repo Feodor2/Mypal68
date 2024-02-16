@@ -26,7 +26,6 @@
 #include "mozilla/dom/WorkerRef.h"
 #include "mozilla/ipc/ProtocolTypes.h"
 #include "mozilla/net/SocketProcessBridgeChild.h"
-#include "nsAutoPtr.h"
 #include "nsCOMPtr.h"
 #include "nsIEventTarget.h"
 #include "nsIObserver.h"
@@ -286,7 +285,7 @@ class ChildImpl final : public BackgroundChildImpl {
 
     RefPtr<ChildImpl> mActor;
     RefPtr<SendInitBackgroundRunnable> mSendInitBackgroundRunnable;
-    nsAutoPtr<BackgroundChildImpl::ThreadLocal> mConsumerThreadLocal;
+    UniquePtr<BackgroundChildImpl::ThreadLocal> mConsumerThreadLocal;
 #ifdef DEBUG
     bool mClosed;
 #endif
@@ -425,7 +424,7 @@ class ParentImpl::RequestMessageLoopRunnable final : public Runnable {
   }
 
  private:
-  ~RequestMessageLoopRunnable() {}
+  ~RequestMessageLoopRunnable() = default;
 
   NS_DECL_NSIRUNNABLE
 };
@@ -439,7 +438,7 @@ class ParentImpl::ShutdownBackgroundThreadRunnable final : public Runnable {
   }
 
  private:
-  ~ShutdownBackgroundThreadRunnable() {}
+  ~ShutdownBackgroundThreadRunnable() = default;
 
   NS_DECL_NSIRUNNABLE
 };
@@ -458,7 +457,7 @@ class ParentImpl::ForceCloseBackgroundActorsRunnable final : public Runnable {
   }
 
  private:
-  ~ForceCloseBackgroundActorsRunnable() {}
+  ~ForceCloseBackgroundActorsRunnable() = default;
 
   NS_DECL_NSIRUNNABLE
 };
@@ -527,7 +526,7 @@ class NS_NO_VTABLE ParentImpl::CreateCallback {
   virtual void Failure() = 0;
 
  protected:
-  virtual ~CreateCallback() {}
+  virtual ~CreateCallback() = default;
 };
 
 // -----------------------------------------------------------------------------
@@ -576,7 +575,7 @@ class ChildImpl::SendInitBackgroundRunnable final : public CancelableRunnable {
         mSentInitBackground(false),
         mSendInitfunc(std::move(aFunc)) {}
 
-  ~SendInitBackgroundRunnable() {}
+  ~SendInitBackgroundRunnable() = default;
 
   NS_DECL_NSIRUNNABLE
 };
@@ -976,7 +975,7 @@ void ParentImpl::ShutdownBackgroundThread() {
     nsCOMPtr<nsIThread> thread = sBackgroundThread.get();
     sBackgroundThread = nullptr;
 
-    nsAutoPtr<nsTArray<ParentImpl*>> liveActors(sLiveActorsForBackgroundThread);
+    UniquePtr<nsTArray<ParentImpl*>> liveActors(sLiveActorsForBackgroundThread);
     sLiveActorsForBackgroundThread = nullptr;
 
     MOZ_ASSERT_IF(!sShutdownHasStarted, !sLiveActorCount);
@@ -984,7 +983,7 @@ void ParentImpl::ShutdownBackgroundThread() {
     if (sLiveActorCount) {
       // We need to spin the event loop while we wait for all the actors to be
       // cleaned up. We also set a timeout to force-kill any hanging actors.
-      TimerCallbackClosure closure(thread, liveActors);
+      TimerCallbackClosure closure(thread, liveActors.get());
 
       MOZ_ALWAYS_SUCCEEDS(shutdownTimer->InitWithNamedFuncCallback(
           &ShutdownTimerCallback, &closure, kShutdownTimerDelayMS,
@@ -1428,18 +1427,18 @@ PBackgroundChild* ChildImpl::GetOrCreateForCurrentThread(
                                    PR_GetThreadPrivate(sThreadLocalIndex));
 
   if (!threadLocalInfo) {
-    nsAutoPtr<ThreadLocalInfo> newInfo(new ThreadLocalInfo());
+    auto newInfo = MakeUnique<ThreadLocalInfo>();
 
     if (NS_IsMainThread()) {
-      sMainThreadInfo = newInfo;
+      sMainThreadInfo = newInfo.get();
     } else {
-      if (PR_SetThreadPrivate(sThreadLocalIndex, newInfo) != PR_SUCCESS) {
+      if (PR_SetThreadPrivate(sThreadLocalIndex, newInfo.get()) != PR_SUCCESS) {
         CRASH_IN_CHILD_PROCESS("PR_SetThreadPrivate failed!");
         return nullptr;
       }
     }
 
-    threadLocalInfo = newInfo.forget();
+    threadLocalInfo = newInfo.release();
   }
 
   PBackgroundChild* bgChild =
@@ -1546,19 +1545,19 @@ PBackgroundChild* ChildImpl::GetOrCreateSocketActorForCurrentThread(
                               sThreadLocalIndexForSocketProcess));
 
   if (!threadLocalInfo) {
-    nsAutoPtr<ThreadLocalInfo> newInfo(new ThreadLocalInfo());
+    auto newInfo = MakeUnique<ThreadLocalInfo>();
 
     if (NS_IsMainThread()) {
-      sMainThreadInfoForSocketProcess = newInfo;
+      sMainThreadInfoForSocketProcess = newInfo.get();
     } else {
-      if (PR_SetThreadPrivate(sThreadLocalIndexForSocketProcess, newInfo) !=
-          PR_SUCCESS) {
+      if (PR_SetThreadPrivate(sThreadLocalIndexForSocketProcess,
+                              newInfo.get()) != PR_SUCCESS) {
         CRASH_IN_CHILD_PROCESS("PR_SetThreadPrivate failed!");
         return nullptr;
       }
     }
 
-    threadLocalInfo = newInfo.forget();
+    threadLocalInfo = newInfo.release();
   }
 
   PBackgroundChild* bgChild =
@@ -1683,10 +1682,10 @@ BackgroundChildImpl::ThreadLocal* ChildImpl::GetThreadLocalForCurrentThread() {
 
   if (!threadLocalInfo->mConsumerThreadLocal) {
     threadLocalInfo->mConsumerThreadLocal =
-        new BackgroundChildImpl::ThreadLocal();
+        MakeUnique<BackgroundChildImpl::ThreadLocal>();
   }
 
-  return threadLocalInfo->mConsumerThreadLocal;
+  return threadLocalInfo->mConsumerThreadLocal.get();
 }
 
 // static

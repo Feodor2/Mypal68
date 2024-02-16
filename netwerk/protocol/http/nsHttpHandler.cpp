@@ -2362,8 +2362,7 @@ nsresult nsHttpHandler::SpeculativeConnectInternal(
   if (IsNeckoChild()) {
     ipc::URIParams params;
     SerializeURI(aURI, params);
-    gNeckoChild->SendSpeculativeConnect(params, IPC::Principal(aPrincipal),
-                                        anonymous);
+    gNeckoChild->SendSpeculativeConnect(params, aPrincipal, anonymous);
     return NS_OK;
   }
 

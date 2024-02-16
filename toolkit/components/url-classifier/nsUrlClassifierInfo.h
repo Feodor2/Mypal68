@@ -20,7 +20,7 @@ class nsUrlClassifierPositiveCacheEntry final
   NS_DECL_NSIURLCLASSIFIERPOSITIVECACHEENTRY
 
  private:
-  ~nsUrlClassifierPositiveCacheEntry() {}
+  ~nsUrlClassifierPositiveCacheEntry() = default;
 
  public:
   nsCString fullhash;
@@ -36,7 +36,7 @@ class nsUrlClassifierCacheEntry final : public nsIUrlClassifierCacheEntry {
   NS_DECL_NSIURLCLASSIFIERCACHEENTRY
 
  private:
-  ~nsUrlClassifierCacheEntry() {}
+  ~nsUrlClassifierCacheEntry() = default;
 
  public:
   nsCString prefix;
@@ -54,7 +54,7 @@ class nsUrlClassifierCacheInfo final : public nsIUrlClassifierCacheInfo {
   NS_DECL_NSIURLCLASSIFIERCACHEINFO
 
  private:
-  ~nsUrlClassifierCacheInfo() {}
+  ~nsUrlClassifierCacheInfo() = default;
 
  public:
   nsCString table;

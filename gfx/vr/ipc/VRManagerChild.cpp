@@ -155,8 +155,7 @@ void VRManagerChild::UpdateDisplayInfo(
   nsTArray<uint32_t> disconnectedDisplays;
   nsTArray<uint32_t> connectedDisplays;
 
-  nsTArray<RefPtr<VRDisplayClient>> prevDisplays;
-  prevDisplays = mDisplays;
+  const nsTArray<RefPtr<VRDisplayClient>> prevDisplays(mDisplays);
 
   // Check if any displays have been disconnected
   for (auto& display : prevDisplays) {
@@ -189,7 +188,11 @@ void VRManagerChild::UpdateDisplayInfo(
         if (!displayUpdate.GetIsConnected() && prevInfo.GetIsConnected()) {
           disconnectedDisplays.AppendElement(displayUpdate.GetDisplayID());
         }
-        display->UpdateDisplayInfo(displayUpdate);
+        // MOZ_KnownLive because 'prevDisplays' is guaranteed to keep it alive.
+        //
+        // This can go away once
+        // https://bugzilla.mozilla.org/show_bug.cgi?id=1620312 is fixed.
+        MOZ_KnownLive(display)->UpdateDisplayInfo(displayUpdate);
         displays.AppendElement(display);
         isNewDisplay = false;
         break;
@@ -469,10 +472,14 @@ void VRManagerChild::FireDOMVRDisplayDisconnectEventInternal(
 void VRManagerChild::FireDOMVRDisplayPresentChangeEventInternal(
     uint32_t aDisplayID) {
   // Iterate over a copy of mListeners, as dispatched events may modify it.
-  nsTArray<RefPtr<dom::VREventObserver>> listeners;
+  const nsTArray<RefPtr<dom::VREventObserver>> listeners;
   listeners = mListeners;
   for (auto& listener : listeners) {
-    listener->NotifyVRDisplayPresentChange(aDisplayID);
+    // MOZ_KnownLive because 'listeners' is guaranteed to keep it alive.
+    //
+    // This can go away once
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=1620312 is fixed.
+    MOZ_KnownLive(listener)->NotifyVRDisplayPresentChange(aDisplayID);
   }
 }
 
@@ -549,7 +556,7 @@ void VRManagerChild::HandleFatalError(const char* aMsg) const {
 
 void VRManagerChild::AddPromise(const uint32_t& aID, dom::Promise* aPromise) {
   MOZ_ASSERT(!mGamepadPromiseList.Get(aID, nullptr));
-  mGamepadPromiseList.Put(aID, aPromise);
+  mGamepadPromiseList.Put(aID, RefPtr{aPromise});
 }
 
 mozilla::ipc::IPCResult VRManagerChild::RecvReplyGamepadVibrateHaptic(

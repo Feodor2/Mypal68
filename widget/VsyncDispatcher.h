@@ -26,8 +26,8 @@ class VsyncObserver {
   virtual bool NotifyVsync(const VsyncEvent& aVsync) = 0;
 
  protected:
-  VsyncObserver() {}
-  virtual ~VsyncObserver() {}
+  VsyncObserver() = default;
+  virtual ~VsyncObserver() = default;
 };  // VsyncObserver
 
 // Used to dispatch vsync events in the parent process to compositors.

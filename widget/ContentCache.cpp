@@ -42,7 +42,7 @@ class GetRectText : public nsAutoCString {
     AppendInt(aRect.Height());
     AppendLiteral(" }");
   }
-  virtual ~GetRectText() {}
+  virtual ~GetRectText() = default;
 };
 
 class GetWritingModeName : public nsAutoCString {
@@ -58,7 +58,7 @@ class GetWritingModeName : public nsAutoCString {
     }
     AssignLiteral("Vertical (RTL)");
   }
-  virtual ~GetWritingModeName() {}
+  virtual ~GetWritingModeName() = default;
 };
 
 class GetEscapedUTF8String final : public NS_ConvertUTF16toUTF8 {

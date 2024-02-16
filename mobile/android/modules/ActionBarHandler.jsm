@@ -551,7 +551,6 @@ var ActionBarHandler = {
           let flavors = ["text/unicode"];
           return Services.clipboard.hasDataMatchingFlavors(
             flavors,
-            flavors.length,
             Ci.nsIClipboard.kGlobalClipboard
           );
         },

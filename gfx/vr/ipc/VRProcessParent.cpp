@@ -155,7 +155,7 @@ bool VRProcessParent::InitAfterConnect(bool aSucceeded) {
     mVRChild = MakeUnique<VRChild>(this);
 
     DebugOnly<bool> rv =
-        mVRChild->Open(GetChannel(), base::GetProcId(GetChildProcessHandle()));
+        mVRChild->Open(TakeChannel(), base::GetProcId(GetChildProcessHandle()));
     MOZ_ASSERT(rv);
 
     mVRChild->Init();

@@ -96,6 +96,7 @@
 
 #include "nsThread.h"
 #include "nsThreadUtils.h"
+#include "prenv.h"
 #include "xpcpublic.h"
 
 #ifdef NIGHTLY_BUILD

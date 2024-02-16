@@ -210,8 +210,8 @@ class UrlbarInput {
     this._compositionState = UrlbarUtils.COMPOSITION.NONE;
     this._compositionClosedPopup = false;
 
-    this.editor.QueryInterface(Ci.nsIPlaintextEditor).newlineHandling =
-      Ci.nsIPlaintextEditor.eNewlinesStripSurroundingWhitespace;
+    this.editor.newlineHandling =
+      Ci.nsIEditor.eNewlinesStripSurroundingWhitespace;
   }
 
   /**
@@ -328,7 +328,7 @@ class UrlbarInput {
     }
 
     try {
-      return Services.uriFixup.createExposableURI(uri);
+      return Services.io.createExposableURI(uri);
     } catch (ex) {}
 
     return uri;
@@ -1567,9 +1567,8 @@ class UrlbarInput {
   }
 
   _on_overflow(event) {
-    const targetIsPlaceholder = !event.originalTarget.classList.contains(
-      "anonymous-div"
-    );
+    const targetIsPlaceholder =
+      event.originalTarget.implementedPseudoElement == "::placeholder";
     // We only care about the non-placeholder text.
     // This shouldn't be needed, see bug 1487036.
     if (targetIsPlaceholder) {
@@ -1580,9 +1579,8 @@ class UrlbarInput {
   }
 
   _on_underflow(event) {
-    const targetIsPlaceholder = !event.originalTarget.classList.contains(
-      "anonymous-div"
-    );
+    const targetIsPlaceholder =
+      event.originalTarget.implementedPseudoElement == "::placeholder";
     // We only care about the non-placeholder text.
     // This shouldn't be needed, see bug 1487036.
     if (targetIsPlaceholder) {

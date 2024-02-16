@@ -76,11 +76,6 @@ ChromeUtils.defineModuleGetter(
   "PrivateBrowsingUtils",
   "resource://gre/modules/PrivateBrowsingUtils.jsm"
 );
-ChromeUtils.defineModuleGetter(
-  this,
-  "PermissionUITelemetry",
-  "resource:///modules/PermissionUITelemetry.jsm"
-);
 
 XPCOMUtils.defineLazyServiceGetter(
   this,
@@ -167,17 +162,6 @@ var PermissionPromptPrototype = {
    * will be selected automatically.
    */
   get permissionKey() {
-    return undefined;
-  },
-
-  /**
-   * A string that needs to be set to include this prompt in
-   * experimental event telemetry collection.
-   *
-   * This needs to conform to event telemetry string rules,
-   * i.e. it needs to be an alphabetic string under 20 characters.
-   */
-  get permissionTelemetryKey() {
     return undefined;
   },
 
@@ -445,8 +429,6 @@ var PermissionPromptPrototype = {
       return;
     }
 
-    this._buttonAction = null;
-
     // Transform the PermissionPrompt actions into PopupNotification actions.
     let popupNotificationActions = [];
     for (let promptAction of this.promptActions) {
@@ -489,16 +471,9 @@ var PermissionPromptPrototype = {
             }
 
             // Grant permission if action is ALLOW.
-            // Record buttonAction for telemetry.
             if (promptAction.action == SitePermissions.ALLOW) {
-              this._buttonAction = "accept";
               this.allow();
             } else {
-              if (promptAction.scope == SitePermissions.SCOPE_PERSISTENT) {
-                this._buttonAction = "never";
-              } else {
-                this._buttonAction = "deny";
-              }
               this.cancel();
             }
           } else if (this.permissionKey) {
@@ -596,20 +571,6 @@ var PermissionPromptPrototype = {
 
     let options = this.popupOptions;
 
-    let telemetryData = null;
-    if (this.request && this.permissionTelemetryKey) {
-      telemetryData = {
-        permissionTelemetryKey: this.permissionTelemetryKey,
-        permissionKey: this.permissionKey,
-        principal: this.principal,
-        documentDOMContentLoadedTimestamp: this.request
-          .documentDOMContentLoadedTimestamp,
-        isHandlingUserInput: this.request.isHandlingUserInput,
-        userHadInteractedWithDocument: this.request
-          .userHadInteractedWithDocument,
-      };
-    }
-
     if (!options.hasOwnProperty("displayURI") || options.displayURI) {
       options.displayURI = this.principal.URI;
     }
@@ -641,13 +602,6 @@ var PermissionPromptPrototype = {
       // You can remove this restriction if you need it, but be
       // mindful of other consumers.
       if (topic == "removed" && !postPrompt) {
-        if (telemetryData) {
-          PermissionUITelemetry.onRemoved(
-            telemetryData,
-            this._buttonAction,
-            nextRemovalReason
-          );
-        }
         this.onAfterShow();
       }
       return false;
@@ -670,9 +624,6 @@ var PermissionPromptPrototype = {
         secondaryActions,
         options
       );
-      if (telemetryData) {
-        PermissionUITelemetry.onShow(telemetryData);
-      }
     }
   },
 };
@@ -730,10 +681,6 @@ GeolocationPermissionPrompt.prototype = {
   __proto__: PermissionPromptForRequestPrototype,
 
   get permissionKey() {
-    return "geo";
-  },
-
-  get permissionTelemetryKey() {
     return "geo";
   },
 
@@ -834,10 +781,6 @@ DesktopNotificationPermissionPrompt.prototype = {
 
   get permissionKey() {
     return "desktop-notification";
-  },
-
-  get permissionTelemetryKey() {
-    return "notifications";
   },
 
   get popupOptions() {
@@ -1120,7 +1063,7 @@ StorageAccessPermissionPrompt.prototype = {
 
   prettifyHostPort(uri) {
     try {
-      uri = Services.uriFixup.createExposableURI(uri);
+      uri = Services.io.createExposableURI(uri);
     } catch (e) {
       // ignore, since we can't do anything better
     }

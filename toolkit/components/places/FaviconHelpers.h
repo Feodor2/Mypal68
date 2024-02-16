@@ -152,7 +152,7 @@ class AsyncFetchAndSetIconForPage final : public Runnable,
 
  private:
   nsresult FetchFromNetwork();
-  virtual ~AsyncFetchAndSetIconForPage() {}
+  virtual ~AsyncFetchAndSetIconForPage() = default;
 
   nsMainThreadPtrHandle<nsIFaviconDataCallback> mCallback;
   IconData mIcon;

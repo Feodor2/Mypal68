@@ -80,7 +80,7 @@ static Test kTests[] = {
     Test(nullptr, nullptr)};
 
 class FakeInputStream final : public nsIInputStream {
-  ~FakeInputStream() {}
+  ~FakeInputStream() = default;
 
  public:
   FakeInputStream()

@@ -248,7 +248,7 @@ IPCStreamDestination::IPCStreamDestination()
 {
 }
 
-IPCStreamDestination::~IPCStreamDestination() {}
+IPCStreamDestination::~IPCStreamDestination() = default;
 
 nsresult IPCStreamDestination::Initialize() {
   MOZ_ASSERT(!mReader);

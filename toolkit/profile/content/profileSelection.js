@@ -186,6 +186,7 @@ function onProfilesKey(aEvent) {
       if (AppConstants.platform != "macosx") {
         break;
       }
+    // fall through
     case KeyEvent.DOM_VK_DELETE:
       ConfirmDelete();
       break;

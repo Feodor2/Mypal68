@@ -6,6 +6,7 @@
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/SessionStoreListener.h"
 #include "mozilla/dom/BrowserChild.h"
+#include "nsDocShell.h"
 #include "nsIDocShell.h"
 #include "nsIDocShellTreeOwner.h"
 #include "nsIPrefBranch.h"

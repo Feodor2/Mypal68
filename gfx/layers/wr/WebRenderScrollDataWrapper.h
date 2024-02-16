@@ -337,6 +337,11 @@ class MOZ_STACK_CLASS WebRenderScrollDataWrapper final {
     return mLayer->GetScrollbarAnimationId();
   }
 
+  Maybe<uint64_t> GetFixedPositionAnimationId() const {
+    MOZ_ASSERT(IsValid());
+    return mLayer->GetFixedPositionAnimationId();
+  }
+
   ScrollableLayerGuid::ViewID GetFixedPositionScrollContainerId() const {
     MOZ_ASSERT(IsValid());
     return mLayer->GetFixedPositionScrollContainerId();
@@ -344,9 +349,7 @@ class MOZ_STACK_CLASS WebRenderScrollDataWrapper final {
 
   SideBits GetFixedPositionSides() const {
     MOZ_ASSERT(IsValid());
-
-    // TODO: Implement for WebRender.
-    return SideBits::eNone;
+    return mLayer->GetFixedPositionSides();
   }
 
   Maybe<uint64_t> GetZoomAnimationId() const {
@@ -361,9 +364,8 @@ class MOZ_STACK_CLASS WebRenderScrollDataWrapper final {
   }
 
   bool IsAsyncZoomContainer() const {
-    // Similar to IsBackfaceHidden, this is only used by APZCTM hit testing,
-    // so there is no need to implement it.
-    return false;
+    MOZ_ASSERT(IsValid());
+    return mLayer->IsAsyncZoomContainer();
   }
 
   const void* GetLayer() const {

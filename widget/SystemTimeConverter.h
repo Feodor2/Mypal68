@@ -6,6 +6,7 @@
 #define SystemTimeConverter_h
 
 #include <limits>
+#include <type_traits>
 #include "mozilla/TimeStamp.h"
 #include "mozilla/TypeTraits.h"
 
@@ -35,7 +36,7 @@ class SystemTimeConverter {
         kTimeRange(std::numeric_limits<Time>::max()),
         kTimeHalfRange(kTimeRange / 2),
         kBackwardsSkewCheckInterval(Time(2000)) {
-    static_assert(!IsSigned<Time>::value, "Expected Time to be unsigned");
+    static_assert(!std::is_signed_v<Time>, "Expected Time to be unsigned");
   }
 
   template <typename CurrentTimeGetter>

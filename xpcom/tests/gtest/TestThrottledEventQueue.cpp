@@ -5,11 +5,12 @@
 #include <functional>
 #include <queue>
 #include <string>
+#include <utility>
 
 #include "MainThreadUtils.h"
+#include "gtest/gtest.h"
 #include "mozilla/Attributes.h"
 #include "mozilla/CondVar.h"
-#include "mozilla/Move.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ThrottledEventQueue.h"
@@ -18,8 +19,6 @@
 #include "nsIRunnable.h"
 #include "nsISerialEventTarget.h"
 #include "prinrval.h"
-
-#include "gtest/gtest.h"
 
 using mozilla::CondVar;
 using mozilla::MakeRefPtr;
@@ -42,7 +41,7 @@ struct RunnableQueue : nsISerialEventTarget {
   bool IsEmpty() { return runnables.empty(); }
   size_t Length() { return runnables.size(); }
 
-  MOZ_MUST_USE nsresult Run() {
+  [[nodiscard]] nsresult Run() {
     while (!runnables.empty()) {
       auto runnable = move(runnables.front());
       runnables.pop();
@@ -55,15 +54,15 @@ struct RunnableQueue : nsISerialEventTarget {
 
   // nsIEventTarget methods
 
-  MOZ_MUST_USE NS_IMETHODIMP Dispatch(already_AddRefed<nsIRunnable> aRunnable,
-                                      uint32_t aFlags) override {
+  [[nodiscard]] NS_IMETHODIMP Dispatch(already_AddRefed<nsIRunnable> aRunnable,
+                                       uint32_t aFlags) override {
     MOZ_ALWAYS_TRUE(aFlags == nsIEventTarget::DISPATCH_NORMAL);
     runnables.push(aRunnable);
     return NS_OK;
   }
 
-  MOZ_MUST_USE NS_IMETHODIMP DispatchFromScript(nsIRunnable* aRunnable,
-                                                uint32_t aFlags) override {
+  [[nodiscard]] NS_IMETHODIMP DispatchFromScript(nsIRunnable* aRunnable,
+                                                 uint32_t aFlags) override {
     RefPtr<nsIRunnable> r = aRunnable;
     return Dispatch(r.forget(), aFlags);
   }
@@ -71,12 +70,12 @@ struct RunnableQueue : nsISerialEventTarget {
   NS_IMETHOD_(bool)
   IsOnCurrentThreadInfallible(void) override { return NS_IsMainThread(); }
 
-  MOZ_MUST_USE NS_IMETHOD IsOnCurrentThread(bool* retval) override {
+  [[nodiscard]] NS_IMETHOD IsOnCurrentThread(bool* retval) override {
     *retval = IsOnCurrentThreadInfallible();
     return NS_OK;
   }
 
-  MOZ_MUST_USE NS_IMETHODIMP DelayedDispatch(
+  [[nodiscard]] NS_IMETHODIMP DelayedDispatch(
       already_AddRefed<nsIRunnable> aEvent, uint32_t aDelay) override {
     return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -86,7 +85,7 @@ struct RunnableQueue : nsISerialEventTarget {
   NS_DECL_THREADSAFE_ISUPPORTS
 
  private:
-  virtual ~RunnableQueue() {}
+  virtual ~RunnableQueue() = default;
 };
 
 NS_IMPL_ISUPPORTS(RunnableQueue, nsIEventTarget, nsISerialEventTarget)

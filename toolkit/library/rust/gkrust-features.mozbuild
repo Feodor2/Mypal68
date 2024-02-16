@@ -54,3 +54,6 @@ if CONFIG['MOZ_NEW_XULSTORE']:
 
 if CONFIG['MOZ_NEW_CERT_STORAGE']:
     gkrust_features += ['new_cert_storage']
+
+if CONFIG['MOZ_WEBRTC']:
+    gkrust_features += ['webrtc']

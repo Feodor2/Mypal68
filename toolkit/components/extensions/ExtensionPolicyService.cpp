@@ -141,8 +141,8 @@ bool ExtensionPolicyService::RegisterExtension(WebExtensionPolicy& aPolicy) {
     return false;
   }
 
-  mExtensions.Put(aPolicy.Id(), &aPolicy);
-  mExtensionHosts.Put(aPolicy.MozExtensionHostname(), &aPolicy);
+  mExtensions.Put(aPolicy.Id(), RefPtr{&aPolicy});
+  mExtensionHosts.Put(aPolicy.MozExtensionHostname(), RefPtr{&aPolicy});
   return true;
 }
 
@@ -165,7 +165,7 @@ bool ExtensionPolicyService::RegisterObserver(DocumentObserver& aObserver) {
     return false;
   }
 
-  mObservers.Put(&aObserver, &aObserver);
+  mObservers.Put(&aObserver, RefPtr{&aObserver});
   return true;
 }
 

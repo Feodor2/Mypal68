@@ -346,7 +346,7 @@ class TimeLog {
 #else
 class TimeLog {
  public:
-  TimeLog() {}
+  TimeLog() = default;
   void Checkpoint(const char* aEvent) {}
 };
 #endif
@@ -426,7 +426,7 @@ class EdgePool {
    public:
     Iterator() : mPointer(nullptr) {}
     explicit Iterator(PtrInfoOrBlock* aPointer) : mPointer(aPointer) {}
-    Iterator(const Iterator& aOther) : mPointer(aOther.mPointer) {}
+    Iterator(const Iterator& aOther) = default;
 
     Iterator& operator++() {
       if (!mPointer->ptrInfo) {
@@ -785,7 +785,7 @@ struct CCGraph {
   CCGraph()
       : mRootCount(0), mPtrInfoMap(kInitialMapLength), mOutOfMemory(false) {}
 
-  ~CCGraph() {}
+  ~CCGraph() = default;
 
   void Init() { MOZ_ASSERT(IsEmpty(), "Failed to call CCGraph::Clear"); }
 
@@ -910,7 +910,7 @@ struct nsPurpleBuffer {
         "ill-sized nsPurpleBuffer::mEntries");
   }
 
-  ~nsPurpleBuffer() {}
+  ~nsPurpleBuffer() = default;
 
   // This method compacts mEntries.
   template <class PurpleVisitor>
@@ -1971,7 +1971,7 @@ CCGraphBuilder::CCGraphBuilder(CCGraph& aGraph, CycleCollectorResults& aResults,
              nsCycleCollectionTraversalCallback::WantAllTraces());
 }
 
-CCGraphBuilder::~CCGraphBuilder() {}
+CCGraphBuilder::~CCGraphBuilder() = default;
 
 PtrInfo* CCGraphBuilder::AddNode(void* aPtr,
                                  nsCycleCollectionParticipant* aParticipant) {

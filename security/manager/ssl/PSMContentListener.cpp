@@ -319,13 +319,6 @@ PSMContentListener::~PSMContentListener() {}
 nsresult PSMContentListener::init() { return NS_OK; }
 
 NS_IMETHODIMP
-PSMContentListener::OnStartURIOpen(nsIURI* aURI, bool* aAbortOpen) {
-  // if we don't want to handle the URI, return true in
-  //*aAbortOpen
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 PSMContentListener::IsPreferred(const char* aContentType,
                                 char** aDesiredContentType,
                                 bool* aCanHandleContent) {

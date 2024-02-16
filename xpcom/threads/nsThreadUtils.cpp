@@ -518,15 +518,9 @@ nsCString nsThreadPoolNaming::GetNextThreadName(const nsACString& aPoolName) {
 }
 
 nsresult NS_DispatchBackgroundTask(already_AddRefed<nsIRunnable> aEvent,
-                                       uint32_t aDispatchFlags) {
+                                   uint32_t aDispatchFlags) {
   nsCOMPtr<nsIRunnable> event(aEvent);
   return nsThreadManager::get().DispatchToBackgroundThread(event,
-                                                           aDispatchFlags);
-}
-
-nsresult NS_DispatchBackgroundTask(nsIRunnable* aEvent,
-                                       uint32_t aDispatchFlags) {
-  return nsThreadManager::get().DispatchToBackgroundThread(aEvent,
                                                            aDispatchFlags);
 }
 
@@ -656,6 +650,24 @@ nsresult NS_NewNamedThreadWithDefaultStackSize(const nsACString& aName,
 
 bool NS_IsCurrentThread(nsIEventTarget* aThread) {
   return aThread->IsOnCurrentThread();
+}
+
+nsresult NS_DispatchBackgroundTask(nsIRunnable* aEvent,
+                                   uint32_t aDispatchFlags) {
+  return nsThreadManager::get().DispatchToBackgroundThread(aEvent,
+                                                           aDispatchFlags);
+}
+
+nsresult NS_CreateBackgroundTaskQueue(const char* aName,
+                                      nsISerialEventTarget** aTarget) {
+  nsCOMPtr<nsISerialEventTarget> target =
+      nsThreadManager::get().CreateBackgroundTaskQueue(aName);
+  if (!target) {
+    return NS_ERROR_FAILURE;
+  }
+
+  target.forget(aTarget);
+  return NS_OK;
 }
 
 }  // extern "C"

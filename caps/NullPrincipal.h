@@ -19,6 +19,9 @@
 
 class nsIDocShell;
 class nsIURI;
+namespace Json {
+class Value;
+}
 
 #define NS_NULLPRINCIPAL_CID                         \
   {                                                  \
@@ -46,6 +49,7 @@ class NullPrincipal final : public BasePrincipal {
   NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
   uint32_t GetHashValue() override;
   NS_IMETHOD GetURI(nsIURI** aURI) override;
+  NS_IMETHOD GetIsOriginPotentiallyTrustworthy(bool* aResult) override;
   NS_IMETHOD GetDomain(nsIURI** aDomain) override;
   NS_IMETHOD SetDomain(nsIURI* aDomain) override;
   NS_IMETHOD GetBaseDomain(nsACString& aBaseDomain) override;
@@ -77,6 +81,15 @@ class NullPrincipal final : public BasePrincipal {
     aSite.Init(this);
     return NS_OK;
   }
+
+  virtual nsresult PopulateJSONObject(Json::Value& aObject) override;
+
+  // Serializable keys are the valid enum fields the serialization supports
+  enum SerializableKeys : uint8_t { eSpec = 0, eSuffix, eMax = eSuffix };
+  typedef mozilla::BasePrincipal::KeyValT<SerializableKeys> KeyVal;
+
+  static already_AddRefed<BasePrincipal> FromProperties(
+      nsTArray<NullPrincipal::KeyVal>& aFields);
 
  protected:
   virtual ~NullPrincipal() = default;

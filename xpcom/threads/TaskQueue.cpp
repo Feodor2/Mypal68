@@ -12,7 +12,7 @@ namespace mozilla {
 class TaskQueue::EventTargetWrapper final : public nsISerialEventTarget {
   RefPtr<TaskQueue> mTaskQueue;
 
-  ~EventTargetWrapper() {}
+  ~EventTargetWrapper() = default;
 
  public:
   explicit EventTargetWrapper(TaskQueue* aTaskQueue) : mTaskQueue(aTaskQueue) {
@@ -85,8 +85,7 @@ TaskDispatcher& TaskQueue::TailDispatcher() {
 // Note aRunnable is passed by ref to support conditional ownership transfer.
 // See Dispatch() in TaskQueue.h for more details.
 nsresult TaskQueue::DispatchLocked(nsCOMPtr<nsIRunnable>& aRunnable,
-                                   uint32_t aFlags,
-                                   DispatchReason aReason) {
+                                   uint32_t aFlags, DispatchReason aReason) {
   mQueueMonitor.AssertCurrentThreadOwns();
   if (mIsShutdown) {
     return NS_ERROR_FAILURE;

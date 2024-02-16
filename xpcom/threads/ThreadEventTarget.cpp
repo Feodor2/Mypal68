@@ -71,7 +71,7 @@ class DelayedRunnable : public Runnable, public nsITimerCallback {
   }
 
  private:
-  ~DelayedRunnable() {}
+  ~DelayedRunnable() = default;
 
   nsCOMPtr<nsIEventTarget> mTarget;
   nsCOMPtr<nsIRunnable> mWrappedRunnable;

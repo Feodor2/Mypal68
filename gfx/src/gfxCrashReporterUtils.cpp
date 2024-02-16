@@ -32,7 +32,7 @@ class ObserverToDestroyFeaturesAlreadyReported final : public nsIObserver {
   NS_DECL_ISUPPORTS
   NS_DECL_NSIOBSERVER
 
-  ObserverToDestroyFeaturesAlreadyReported() {}
+  ObserverToDestroyFeaturesAlreadyReported() = default;
 
  private:
   virtual ~ObserverToDestroyFeaturesAlreadyReported() = default;

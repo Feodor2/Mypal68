@@ -20,7 +20,7 @@ struct Foo {
   bool mNotified = false;
 
  private:
-  ~Foo() {}
+  ~Foo() = default;
 };
 
 TEST(WatchManager, Shutdown)

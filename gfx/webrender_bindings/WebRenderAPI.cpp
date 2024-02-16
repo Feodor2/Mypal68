@@ -51,7 +51,7 @@ class NewRenderer : public RendererEvent {
     MOZ_COUNT_CTOR(NewRenderer);
   }
 
-  ~NewRenderer() { MOZ_COUNT_DTOR(NewRenderer); }
+  MOZ_COUNTED_DTOR(NewRenderer)
 
   void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
     layers::AutoCompleteTask complete(mTask);
@@ -138,7 +138,7 @@ class RemoveRenderer : public RendererEvent {
     MOZ_COUNT_CTOR(RemoveRenderer);
   }
 
-  virtual ~RemoveRenderer() { MOZ_COUNT_DTOR(RemoveRenderer); }
+  MOZ_COUNTED_DTOR_OVERRIDE(RemoveRenderer)
 
   void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
     aRenderThread.RemoveRenderer(aWindowId);
@@ -411,19 +411,47 @@ void WebRenderAPI::SendTransactions(
   }
 }
 
+enum SideBitsPacked {
+  eSideBitsPackedTop = 0x1000,
+  eSideBitsPackedRight = 0x2000,
+  eSideBitsPackedBottom = 0x4000,
+  eSideBitsPackedLeft = 0x8000
+};
+
+SideBits ExtractSideBitsFromHitInfoBits(uint16_t& aHitInfoBits) {
+  SideBits sideBits = SideBits::eNone;
+  if (aHitInfoBits & eSideBitsPackedTop) {
+    sideBits |= SideBits::eTop;
+  }
+  if (aHitInfoBits & eSideBitsPackedRight) {
+    sideBits |= SideBits::eRight;
+  }
+  if (aHitInfoBits & eSideBitsPackedBottom) {
+    sideBits |= SideBits::eBottom;
+  }
+  if (aHitInfoBits & eSideBitsPackedLeft) {
+    sideBits |= SideBits::eLeft;
+  }
+
+  aHitInfoBits &= 0x0fff;
+  return sideBits;
+}
+
 bool WebRenderAPI::HitTest(const wr::WorldPoint& aPoint,
                            wr::WrPipelineId& aOutPipelineId,
                            layers::ScrollableLayerGuid::ViewID& aOutScrollId,
-                           gfx::CompositorHitTestInfo& aOutHitInfo) {
-  static_assert(DoesCompositorHitTestInfoFitIntoBits<16>(),
+                           gfx::CompositorHitTestInfo& aOutHitInfo,
+                           SideBits& aOutSideBits) {
+  static_assert(DoesCompositorHitTestInfoFitIntoBits<12>(),
                 "CompositorHitTestFlags MAX value has to be less than number "
-                "of bits in uint16_t");
+                "of bits in uint16_t minus 4 for SideBitsPacked");
 
   uint16_t serialized = static_cast<uint16_t>(aOutHitInfo.serialize());
   const bool result = wr_api_hit_test(mDocHandle, aPoint, &aOutPipelineId,
                                       &aOutScrollId, &serialized);
 
   if (result) {
+    aOutSideBits = ExtractSideBitsFromHitInfoBits(serialized);
     aOutHitInfo.deserialize(serialized);
   }
   return result;
@@ -445,7 +473,7 @@ void WebRenderAPI::Readback(const TimeStamp& aStartTime, gfx::IntSize size,
       MOZ_COUNT_CTOR(Readback);
     }
 
-    virtual ~Readback() { MOZ_COUNT_DTOR(Readback); }
+    MOZ_COUNTED_DTOR_OVERRIDE(Readback)
 
     void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
       aRenderThread.UpdateAndRender(aWindowId, VsyncId(), mStartTime,
@@ -487,7 +515,7 @@ void WebRenderAPI::Pause() {
       MOZ_COUNT_CTOR(PauseEvent);
     }
 
-    virtual ~PauseEvent() { MOZ_COUNT_DTOR(PauseEvent); }
+    MOZ_COUNTED_DTOR_OVERRIDE(PauseEvent)
 
     void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
       aRenderThread.Pause(aWindowId);
@@ -515,7 +543,7 @@ bool WebRenderAPI::Resume() {
       MOZ_COUNT_CTOR(ResumeEvent);
     }
 
-    virtual ~ResumeEvent() { MOZ_COUNT_DTOR(ResumeEvent); }
+    MOZ_COUNTED_DTOR_OVERRIDE(ResumeEvent)
 
     void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
       *mResult = aRenderThread.Resume(aWindowId);
@@ -559,7 +587,7 @@ void WebRenderAPI::WaitFlushed() {
       MOZ_COUNT_CTOR(WaitFlushedEvent);
     }
 
-    virtual ~WaitFlushedEvent() { MOZ_COUNT_DTOR(WaitFlushedEvent); }
+    MOZ_COUNTED_DTOR_OVERRIDE(WaitFlushedEvent)
 
     void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
       layers::AutoCompleteTask complete(mTask);
@@ -750,7 +778,7 @@ class FrameStartTime : public RendererEvent {
     MOZ_COUNT_CTOR(FrameStartTime);
   }
 
-  virtual ~FrameStartTime() { MOZ_COUNT_DTOR(FrameStartTime); }
+  MOZ_COUNTED_DTOR_OVERRIDE(FrameStartTime)
 
   void Run(RenderThread& aRenderThread, WindowId aWindowId) override {
     auto renderer = aRenderThread.GetRenderer(aWindowId);
@@ -1300,26 +1328,53 @@ DisplayListBuilder::GetContainingFixedPosScrollTarget(
              : Nothing();
 }
 
+Maybe<SideBits> DisplayListBuilder::GetContainingFixedPosSideBits(
+    const ActiveScrolledRoot* aAsr) {
+  return mActiveFixedPosTracker
+             ? mActiveFixedPosTracker->GetSideBitsForASR(aAsr)
+             : Nothing();
+}
+
+uint16_t SideBitsToHitInfoBits(SideBits aSideBits) {
+  uint16_t ret = 0;
+  if (aSideBits & SideBits::eTop) {
+    ret |= eSideBitsPackedTop;
+  }
+  if (aSideBits & SideBits::eRight) {
+    ret |= eSideBitsPackedRight;
+  }
+  if (aSideBits & SideBits::eBottom) {
+    ret |= eSideBitsPackedBottom;
+  }
+  if (aSideBits & SideBits::eLeft) {
+    ret |= eSideBitsPackedLeft;
+  }
+  return ret;
+}
+
 void DisplayListBuilder::SetHitTestInfo(
     const layers::ScrollableLayerGuid::ViewID& aScrollId,
-    gfx::CompositorHitTestInfo aHitInfo) {
-  static_assert(DoesCompositorHitTestInfoFitIntoBits<16>(),
+    gfx::CompositorHitTestInfo aHitInfo, SideBits aSideBits) {
+  static_assert(DoesCompositorHitTestInfoFitIntoBits<12>(),
                 "CompositorHitTestFlags MAX value has to be less than number "
-                "of bits in uint16_t");
+                "of bits in uint16_t minus 4 for SideBitsPacked");
 
-  wr_set_item_tag(mWrState, aScrollId,
-                  static_cast<uint16_t>(aHitInfo.serialize()));
+  uint16_t hitInfoBits = static_cast<uint16_t>(aHitInfo.serialize()) |
+                         SideBitsToHitInfoBits(aSideBits);
+
+  wr_set_item_tag(mWrState, aScrollId, hitInfoBits);
 }
 
 void DisplayListBuilder::ClearHitTestInfo() { wr_clear_item_tag(mWrState); }
 
 DisplayListBuilder::FixedPosScrollTargetTracker::FixedPosScrollTargetTracker(
     DisplayListBuilder& aBuilder, const ActiveScrolledRoot* aAsr,
-    layers::ScrollableLayerGuid::ViewID aScrollId)
+    layers::ScrollableLayerGuid::ViewID aScrollId, SideBits aSideBits)
     : mParentTracker(aBuilder.mActiveFixedPosTracker),
       mBuilder(aBuilder),
       mAsr(aAsr),
-      mScrollId(aScrollId) {
+      mScrollId(aScrollId),
+      mSideBits(aSideBits) {
   aBuilder.mActiveFixedPosTracker = this;
 }
 
@@ -1332,6 +1387,12 @@ Maybe<layers::ScrollableLayerGuid::ViewID>
 DisplayListBuilder::FixedPosScrollTargetTracker::GetScrollTargetForASR(
     const ActiveScrolledRoot* aAsr) {
   return aAsr == mAsr ? Some(mScrollId) : Nothing();
+}
+
+Maybe<SideBits>
+DisplayListBuilder::FixedPosScrollTargetTracker::GetSideBitsForASR(
+    const ActiveScrolledRoot* aAsr) {
+  return aAsr == mAsr ? Some(mSideBits) : Nothing();
 }
 
 already_AddRefed<gfxContext> DisplayListBuilder::GetTextContext(

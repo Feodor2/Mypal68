@@ -43,7 +43,7 @@ class MockChannelProxy : public webrtc::voe::ChannelProxy {
 class AudioConduitWithMockChannelProxy : public WebrtcAudioConduit {
  public:
   AudioConduitWithMockChannelProxy(RefPtr<WebRtcCallWrapper> aCall,
-                                   nsCOMPtr<nsIEventTarget> aStsThread)
+                                   nsCOMPtr<nsISerialEventTarget> aStsThread)
       : WebrtcAudioConduit(aCall, aStsThread) {}
 
   MediaConduitErrorCode Init() override {
@@ -72,7 +72,7 @@ class AudioConduitTest : public ::testing::Test {
   AudioConduitTest() : mCall(new MockCall()) {
     mAudioConduit = new AudioConduitWithMockChannelProxy(
         WebRtcCallWrapper::Create(UniquePtr<MockCall>(mCall)),
-        GetCurrentThreadEventTarget());
+        GetCurrentThreadSerialEventTarget());
     mAudioConduit->Init();
   }
 

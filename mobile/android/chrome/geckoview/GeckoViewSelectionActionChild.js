@@ -43,7 +43,6 @@ class GeckoViewSelectionActionChild extends GeckoViewChildModule {
           e.selectionEditable &&
           Services.clipboard.hasDataMatchingFlavors(
             ["text/unicode"],
-            1,
             Ci.nsIClipboard.kGlobalClipboard
           ),
         perform: _ => this._performPaste(),
